@@ -22,32 +22,16 @@
       "reason": "規約チェック導入前の submodule ポインタ更新（fix: 起点 ID 無し）。書き換え不可のため除外。"
     },
     {
-      "hash": "f446e08fe96c76243ce2ea5f1dba9edfdad91a8d",
-      "reason": "リポ初期化時のツールチェーン変更（feat: 起点 ID 無し。本来 chore 相当）。規約チェック（本PRで導入）より前の設定コミットで、force push 禁止のため件名書き換え不可。"
+      "hash": "fdd7ae149b0dd8ab80ba90302510e5fcec51d259",
+      "reason": "planning サブモジュール追加（feat: 起点 ID 無し。本来 chore 相当）。規約チェック導入前のリポ初期化コミットで、force push 禁止のため件名書き換え不可。develop への rebase で SHA が更新された（旧 afe2a66）。"
     },
     {
-      "hash": "a736cbb19486e7af6b7eb9197396e340992a5603",
-      "reason": "規約チェック用スクリプト自体を追加したコミット（feat: 起点 ID 無し。本来 ci/chore 相当）。導入コミットは規約成立前のため遡って満たせず、書き換え不可のため除外。"
+      "hash": "3319bbc72ea99fc8ddbcad21c1f6045bb33c9838",
+      "reason": "submodule 管理方式の整理（.gitmodules 削除。feat: 起点 ID 無し。本来 chore 相当）。規約導入前の設定コミット。develop への rebase で SHA が更新された（旧 10e8c8a）。"
     },
     {
-      "hash": "4739c10afc3045b5a24277a06bb429122f51c26d",
-      "reason": "リポ初期化時の .gitignore 更新（feat: 起点 ID 無し。本来 chore 相当）。規約成立前の設定コミット。書き換え不可のため除外。"
-    },
-    {
-      "hash": "44b18e114d1abdce582d2327a5d7b3cec4d10493",
-      "reason": "リポ初期化時の .gitattributes 追加（feat: 起点 ID 無し。本来 chore 相当）。規約成立前の設定コミット。書き換え不可のため除外。"
-    },
-    {
-      "hash": "10e8c8a924564dd1de44b712dd1a7d61e4f13bfd",
-      "reason": "submodule 管理方式の整理（feat: 起点 ID 無し。本来 chore 相当）。規約成立前の設定コミット。書き換え不可のため除外。"
-    },
-    {
-      "hash": "afe2a66ee1cb0de94645bb493f9cf69b7705ad0a",
-      "reason": "planning サブモジュール追加（feat: 起点 ID 無し。本来 chore 相当）。規約成立前の設定コミット。書き換え不可のため除外。"
-    },
-    {
-      "hash": "4f45424d9625ae983e8fd17ecfe39d9d481d45f4",
-      "reason": "traceability.md の表記修正（fix: 起点 ID 無し。本来 docs 相当）。規約成立前の設定コミット。書き換え不可のため除外。"
+      "hash": "a87d3cfb72518e5ecf24588ff770bdc068d21e61",
+      "reason": "規約チェック用スクリプト自体を追加したコミット（feat: 起点 ID 無し。本来 ci/chore 相当）。導入コミットは規約成立前のため遡って満たせず、書き換え不可。develop への rebase で SHA が更新された（旧 a736cbb）。"
     }
   ]
 }
