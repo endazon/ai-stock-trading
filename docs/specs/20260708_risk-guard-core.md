@@ -47,7 +47,9 @@ moomoo PoC（ADR-0002、Proposed）が未実施のため、証券会社アダプ
       最大DD上限・連敗時縮小・1取引リスクに基づくポジションサイジング（ATR連動）
     - 段階ゲート（FR-20）: Stage 0〜3 の動作モード（ペーパー/実弾）と資金上限の強制
     - 既定値は全体前提条件（05_trading-assumptions §5）どおり。設定は不変オブジェクトとして注入し、AI側から変更不可
-  - `AiStockTrading.Shared.Infrastructure` — `PaperBrokerAdapter`（FR-12。現在値で即時約定する仮想実装）
+  - `AiStockTrading.Shared.Infrastructure` — `PaperBrokerAdapter`（FR-12。現在値で即時約定する仮想実装）。
+    基盤リポの規約に合わせ、可変部分（コネクタ/アダプタ）の実装は `Composable/Adapters/<種別>/` 配下に置く
+    （本アダプタは `Composable/Adapters/Broker/PaperBrokerAdapter.cs`）
   - 上記の単体テスト（xUnit）
 - 対象外（後続スライス）:
   - 各サービスのホスト（ASP.NET Core / Worker）、MassTransit 配線、PostgreSQL 永続化
