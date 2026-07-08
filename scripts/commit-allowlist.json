@@ -32,6 +32,10 @@
     {
       "hash": "a87d3cfb72518e5ecf24588ff770bdc068d21e61",
       "reason": "規約チェック用スクリプト自体を追加したコミット（feat: 起点 ID 無し。本来 ci/chore 相当）。導入コミットは規約成立前のため遡って満たせず、書き換え不可。develop への rebase で SHA が更新された（旧 a736cbb）。"
+    },
+    {
+      "hash": "ddb4609d74b825f3f9049a088323d6987827c031",
+      "reason": "PR #37 の planning submodule ポインタ更新（fix: 起点 ID 無し。本来 chore 相当）。プッシュ済みで force push 禁止（CLAUDE.md）のため件名書き換え不可。153810a / d4835097 と同種の submodule ポインタ更新であり、内容変更を伴わないハウスキーピングのため除外する。"
     }
   ]
 }
