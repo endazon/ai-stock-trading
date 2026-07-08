@@ -1,0 +1,34 @@
+# PR タイトル（＝スカッシュマージ後件名）の規約チェック（Issue #125・再発防止）。
+#
+# 背景: ci.yml の commit-messages ジョブは PR コミット（base..HEAD）を検査するが、スカッシュ
+# マージで develop に載る件名は「PR タイトル + (#番号)」であり、その範囲に含まれず未検査だった。
+# 本ワークフローは PR タイトルを規約 `種別(起点ID): 要約` に照合し、違反ならマージ前に失敗させる。
+#
+# edited を含めることで、PR タイトルを後から編集した場合にも再検査する。
+# bot 作成 PR（dependabot 等）は commit-messages ジョブと同方針で除外する。
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+# タイトル編集の連打時は古い実行をキャンセルする。
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    # bot 作成 PR は規約対象外（check-commit-messages.js の BOT_AUTHORS と同方針）。
+    if: github.event.pull_request.user.type != 'Bot'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Check PR title (squash subject)
+        # タイトルは環境変数経由で渡し、シェル展開による注入を避ける。
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-commit-messages.js

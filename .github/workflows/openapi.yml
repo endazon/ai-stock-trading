@@ -1,0 +1,80 @@
+# OpenAPI / スキーマの自動生成
+#
+# 「生成可能なら必ず生成」の方針:
+#   1) コードからの生成コマンドが用意されていれば、それを実行する。
+#      - scripts/generate-openapi.sh が存在すればそれを実行（例: dotnet swagger / npx 等を記述）。
+#      - または リポジトリ変数 vars.OPENAPI_GENERATE_CMD にコマンドを設定。
+#   2) いずれも無ければ、通信仕様書（docs/api/）から雛形を生成する。
+#   生成物 docs/api/openapi.yaml に変更があればコミットする。
+#
+# このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
+#
+# 注意（ブランチ保護との両立）:
+#   develop/main にブランチ保護（PR 必須・署名必須コミット・必須ステータスチェック）を
+#   かけているため、github-actions[bot] による直接 push は拒否される。そのため
+#   peter-evans/create-pull-request で更新用ブランチを切って PR を作成する方式に
+#   している（changelog.yml と同様。GitHub がマージ時に生成するコミットは検証済み
+#   署名を持つため、署名必須の制約にも抵触しない）。
+
+name: OpenAPI
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "docs/api/**"
+      - "scripts/generate-openapi.sh"
+      - "src/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  openapi:
+    if: "!startsWith(github.event.head_commit.message, 'docs(NFR): OpenAPI を自動更新')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Generate OpenAPI
+        env:
+          OPENAPI_GENERATE_CMD: ${{ vars.OPENAPI_GENERATE_CMD }}
+        run: |
+          if [ -f scripts/generate-openapi.sh ]; then
+            echo "コード由来の生成: scripts/generate-openapi.sh"
+            bash scripts/generate-openapi.sh
+          elif [ -n "${OPENAPI_GENERATE_CMD}" ]; then
+            echo "コード由来の生成: OPENAPI_GENERATE_CMD"
+            bash -c "${OPENAPI_GENERATE_CMD}"
+          else
+            echo "生成コマンド未設定かつ手書き仕様を尊重。雛形上書きはスキップする。"
+            # docs/api/openapi.yaml は手書きの OpenAPI 3.1.0 リッチ仕様であり、生成元の
+            # 通信仕様書が存在しない。--force を付けると空雛形で上書き破壊されるため付けない
+            # （既存があれば上書きしない。Issue #60）。
+            node scripts/gen-openapi-skeleton.js --src docs/api --out docs/api/openapi.yaml || true
+          fi
+
+      - name: Create PR with OpenAPI update
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: docs/api/openapi.yaml
+          commit-message: "docs(NFR): OpenAPI を自動更新"
+          branch: automation/openapi-update-${{ github.ref_name }}
+          delete-branch: true
+          base: ${{ github.ref_name }}
+          title: "docs(NFR): OpenAPI を自動更新"
+          body: |
+            docs/api/openapi.yaml を自動再生成しました。
+            ブランチ保護（PR 必須・署名必須コミット）のため直接 push ではなく本 PR で反映します。
+          labels: automation

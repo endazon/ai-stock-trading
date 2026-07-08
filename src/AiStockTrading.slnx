@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Services/" />
+  <Folder Name="/Services/RiskManagementService/" />
+  <Folder Name="/Services/RiskManagementService/src/">
+    <Project Path="Services/RiskManagementService/src/RiskManagementService.Domain/RiskManagementService.Domain.csproj" />
+  </Folder>
+  <Folder Name="/Services/RiskManagementService/tests/">
+    <Project Path="Services/RiskManagementService/tests/RiskManagementService.Domain.Tests/RiskManagementService.Domain.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
+    <Project Path="Shared/AiStockTrading.Shared.Infrastructure/AiStockTrading.Shared.Infrastructure.csproj" />
+    <Project Path="Shared/AiStockTrading.Shared.Infrastructure.Tests/AiStockTrading.Shared.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>

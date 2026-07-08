@@ -1,0 +1,67 @@
+name: AI 実装タスク
+description: 計画書（要求/UC）由来の実装を AI に依頼するタスク
+title: "[ai-impl] "
+labels: ["ai-implement", "implementation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        生成AIに実装を依頼するタスクです。起票後、有効化したプロファイル（`AI_SETUP.md`）に応じて着手します。
+
+        - Claude（サブスク / API）: コメントで `@claude このタスクを実装してください` とメンション（`.github/workflows/claude-coding.yml`）。
+        - GitHub Copilot: この Issue を Copilot にアサイン（coding agent が `copilot-setup-steps.yml` の環境で実装）。
+
+        AI は仕様書作成 → 実装 → テスト → PR まで行います。運用全体は `docs/ai-workflow.md` を参照してください。
+
+  - type: input
+    id: related_ids
+    attributes:
+      label: 起点となる計画書の ID
+      description: 実装の起点となる FR / UC / SC を記入する
+      placeholder: "例: FR-012, UC-03, SC-01"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何を実装するか（計画書のどの要求に応えるか）
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 受け入れ基準
+      description: 計画書の受け入れ基準を転記する（完了判定の根拠）
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: input
+    id: target_specs
+    attributes:
+      label: 対象仕様書（任意）
+      description: 作成・更新が必要な仕様書の種別（機能/画面/通信/データ/テスト 等）
+      placeholder: "例: functional, screen, test"
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足・制約（任意）
+      description: 関連 ADR・非機能要件・注意点など
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: 確認
+      options:
+        - label: "着手前に作業仕様書を作成し、それに沿って実装すること（DoD: docs/DEFINITION_OF_DONE.md）に同意する"
+          required: true

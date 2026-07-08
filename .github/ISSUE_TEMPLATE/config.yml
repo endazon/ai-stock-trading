@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 計画・仕様に関する相談
+    url: https://github.com/endazon/project-planning
+    about: 要求・ユースケース・ADR など上流工程の内容は計画リポジトリで議論する。

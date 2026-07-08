@@ -1,0 +1,55 @@
+# GitHub Copilot coding agent — 開発環境のセットアップステップ
+#
+# 用途:
+#   Copilot coding agent（Issue を Copilot にアサインすると自律実装する機能）が起動する前に、
+#   その専用環境（GitHub Actions ベース）で実行される準備ステップを定義する。
+#   依存関係・ツールのプリインストール、ランナーの変更、ファイアウォール調整などに使う。
+#
+# 重要な制約:
+#   - ジョブ名は必ず "copilot-setup-steps" にする（この名前でないと Copilot に認識されない）。
+#   - ジョブは 1 つだけにする。ステップの非ゼロ終了時は以降をスキップし現状の環境で作業を続ける。
+#
+# 有効化（このファイルは .example。AI_SETUP.md の Copilot プロファイルで有効化する）:
+#   - 拡張子から .example を外す（git mv copilot-setup-steps.example.yml copilot-setup-steps.yml）。
+#     scripts/apply-profile.sh copilot でも自動化できる。
+#   - 使用スタックに合わせてステップを差し替える（既定は C#/.NET 例）。
+#   - default ブランチへマージ後、Actions タブから手動実行して成功することを確認できる。
+#
+# 参考: https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment
+
+name: Copilot Setup Steps
+
+on:
+  # このファイルを変更した PR で自動実行され、設定の妥当性を検証できる
+  workflow_dispatch: {}
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # ジョブ名は固定（変更不可）
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    # Copilot のセットアップ用途では最小権限でよい
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ↓ 技術スタックに合わせて差し替える（既定は C#/.NET 例）
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: |
+          if ls *.sln **/*.csproj >/dev/null 2>&1; then
+            dotnet restore
+          else
+            echo "復元対象（.sln/.csproj）が無いためスキップする。"
+          fi

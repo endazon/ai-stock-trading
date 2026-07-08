@@ -1,0 +1,121 @@
+# CI（検証ゲート）雛形 — 技術非依存の骨格
+#
+# このファイルは「例示」であり、そのままでは有効化されない（拡張子が .example.yml のため）。
+# 自プロジェクトのスタックに合わせて各ステップを書き換え、ci.yml にリネームして使うこと。
+# build / test / coverage / lint ステップは C#/.NET を例示している。
+#
+# ── スタック別 --allowedTools（claude-coding.example.yml の claude_args 末尾を書き換える） ──
+# このファイルの build/test ステップを変更したら、claude-coding.example.yml の claude_args 末尾
+# 4 行（スタック別ツール）を使用スタックに合わせて書き換えること。
+# .claude/settings.json の permissions.allow にも同じコマンドを追記すること。
+#
+# スタック別の対応コマンド例:
+#   C#/.NET : Bash(dotnet build:*), Bash(dotnet test:*), Bash(dotnet format:*), Bash(dotnet restore:*)
+#   Node.js : Bash(npm run:*), Bash(npm ci:*), Bash(npx:*)
+#   Python  : Bash(pytest:*), Bash(pip install:*), Bash(ruff:*)
+#   Go      : Bash(go build:*), Bash(go test:*), Bash(go vet:*)
+#   Java    : Bash(mvn:*) または Bash(gradle:*)
+# ─────────────────────────────────────────────────────────────────────────────────
+#
+# 推奨運用（README「全自動化のための推奨ツール・運用」も参照）:
+#   - main へのマージ前に lint → build → test → coverage を必須ステータスチェックにする
+#   - ブランチ保護で「マージ前に必須チェックの成功」と「レビュー承認」を要求する
+#   これにより AI が作成した PR も、人手の検証なしに最低限の品質を機械で担保できる。
+
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（Issue #60・再発防止）。
+  # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
+  # fetch-depth: 0 は base..HEAD の範囲解決に必須。
+  commit-messages:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Check commit messages
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: node scripts/check-commit-messages.js
+
+  # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（Issue #59 再発防止）。
+  # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
+  doc-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Check doc links
+        run: node scripts/check-doc-links.js
+
+  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験のみを行う。
+  # 本プロジェクト（ai-stock-trading）は knowledge-platform の pipeline.json を持たないため、
+  # テンプレート由来の具体ファイル検証ステップは対象外として除外する。構成ファイルを持つ
+  # サービスを追加した時点で、そのパスを引数に検証ステップを復活させること。
+  pipeline-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Validate pipeline config (self-test)
+        run: node scripts/validate-pipeline-config.js --self-test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # --- スタック別に書き換え（例: C#/.NET） ---
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Format check
+        run: dotnet format src/AiStockTrading.slnx --verify-no-changes
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # --- スタック別に書き換え（例: C#/.NET） ---
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore src/AiStockTrading.slnx
+      - name: Build
+        run: dotnet build src/AiStockTrading.slnx --no-restore --configuration Release
+      - name: Test (with coverage)
+        run: dotnet test src/AiStockTrading.slnx --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
+      # カバレッジ閾値を強制する場合の例（ツールは任意）:
+      #   - run: dotnet tool install --global dotnet-reportgenerator-globaltool
+      #   - run: reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:TextSummary
+      #   - run: cat coverage/Summary.txt
+
+      # 参考: 他スタックの例
+      # Node.js:
+      #   - uses: actions/setup-node@v6
+      #     with: { node-version: "20" }
+      #   - run: npm ci
+      #   - run: npm run lint --if-present
+      #   - run: npm run build --if-present
+      #   - run: npm test -- --coverage
+      # Python:
+      #   - uses: actions/setup-python@v5
+      #     with: { python-version: "3.12" }
+      #   - run: pip install -e .[test]
+      #   - run: ruff check .
+      #   - run: pytest --cov

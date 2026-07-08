@@ -1,0 +1,69 @@
+# CHANGELOG / リリースノートの自動生成
+#
+# - main への push: コミット履歴から CHANGELOG.md を再生成し、変更があればコミットする。
+# - タグ push: 直近タグからのコミットでリリースノートを生成し、GitHub Release に反映する。
+#
+# このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
+#
+# 注意（ブランチ保護との両立）:
+#   develop/main にブランチ保護（PR 必須・署名必須コミット・必須ステータスチェック）を
+#   かけているため、github-actions[bot] による直接 push は拒否される。そのため
+#   peter-evans/create-pull-request で更新用ブランチを切って PR を作成する方式に
+#   している（GitHub がマージ時に生成するコミットは検証済み署名を持つため、
+#   署名必須の制約にも抵触しない）。
+
+name: Changelog
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  changelog:
+    # PR マージ由来の push による無限ループを避ける（PR ブランチは automation/ 配下）
+    if: "!startsWith(github.event.head_commit.message, 'docs(NFR): CHANGELOG を自動更新')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Generate CHANGELOG.md
+        run: node scripts/gen-changelog.js --out CHANGELOG.md
+
+      - name: Create PR with CHANGELOG update
+        if: startsWith(github.ref, 'refs/heads/')
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: CHANGELOG.md
+          commit-message: "docs(NFR): CHANGELOG を自動更新"
+          branch: automation/changelog-update-${{ github.ref_name }}
+          delete-branch: true
+          base: ${{ github.ref_name }}
+          title: "docs(NFR): CHANGELOG を自動更新"
+          body: |
+            コミット履歴から CHANGELOG.md を自動再生成しました。
+            ブランチ保護（PR 必須・署名必須コミット）のため直接 push ではなく本 PR で反映します。
+          labels: automation
+
+      - name: Build release notes (tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/gen-changelog.js --out RELEASE_NOTES.md
+
+      - name: Create / update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: RELEASE_NOTES.md

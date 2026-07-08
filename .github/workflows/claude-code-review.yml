@@ -1,0 +1,172 @@
+# Claude Code — PR の自動 AI レビュー
+#
+# PR がオープン/更新されたときに、計画書との整合・トレーサビリティの観点で AI レビューを行う。
+#
+# 有効化（このファイルは .example。AI_SETUP.md のプロファイルに従って有効化する）:
+#   - 拡張子から .example を外す（git mv claude-code-review.example.yml claude-code-review.yml）。
+#   - 認証シークレットを「どちらか一方のみ」登録する:
+#       * Claude Code サブスクリプション: CLAUDE_CODE_OAUTH_TOKEN（`claude setup-token` で発行）
+#       * Anthropic API: ANTHROPIC_API_KEY（従量課金）
+#   - このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効
+#
+# モデル:
+#   レビューは速度・コストを優先し既定で claude-sonnet-5 を使う。
+#   PR 本文/タイトルに「@claude opus / sonnet / haiku」と書くとそのモデルで起動する
+#   （"Select model from mention" ステップが解析）。既定は同ステップの MODEL="..." で変更。
+#
+# 権限（GitHub MCP ツール）について:
+#   GitHub MCP ツール（mcp__github__pull_request_review_write 等）は
+#   claude_args の --allowedTools で許可する（これが CI での正しい指定方法）。
+#   アクションはリポジトリの .claude/settings.json を自動では読み込まないため、
+#   settings.json の allow リストに頼らないこと。
+#   注意: additional_permissions は MCP ツール名の列挙ではなく `actions: read` 等の
+#   スコープ指定用なので、ツール許可には使わない（CI ログ参照を許可したい場合のみ使う）。
+#   追加保護: use_sticky_comment: true でアクション自身が出力を投稿（ツール拒否時のフォールバック）。
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # 実装リポの checkout / push には既定の GITHUB_TOKEN を使う（上の
+          # permissions: contents: write が push を許可する）。ここで token を
+          # 上書きしないこと。上書きすると checkout がその資格情報を永続化し、
+          # 後段の git push もそのトークンで実行されるため、実装リポへの書き込み
+          # 権限が無い PAT だと 403（Permission denied）になる。
+
+      # 計画リポジトリ(project-planning)を submodule 参照している場合のみ有効。
+      # SUBMODULE_ACCESS_PAT は organization の secret に登録した fine-grained PAT で、
+      # project-planning への Contents: Read 権限のみを付与する。実装リポの push 認証
+      # (GITHUB_TOKEN) とは分離するため、submodule 取得の間だけ一時的に PAT を使い、
+      # 直後に解除して push へ漏れないようにする（.gitmodules が無ければ何もしない）。
+      - name: Fetch planning submodule (read-only PAT)
+        env:
+          SUBMODULE_PAT: ${{ secrets.SUBMODULE_ACCESS_PAT }}
+        run: |
+          if [ -f .gitmodules ]; then
+            git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "https://github.com/"
+            git submodule sync --recursive
+            git submodule update --init --recursive
+            git config --global --unset-all url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf
+          fi
+
+      # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
+      # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
+      # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # レビューは PR オープン/更新で自動起動するため、モデル指定は PR 本文/タイトルの
+      # 「@claude opus / sonnet / haiku」で切り替える。未指定時は既定 claude-sonnet-5。
+      # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
+      - name: Select model from mention
+        id: model
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          BODY="${PR_BODY}
+          ${PR_TITLE}"
+          MODEL="claude-sonnet-5"
+          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-4-8"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "Selected model: $MODEL"
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # 認証はどちらか一方のみ設定する（未設定の方は空文字で無視される）:
+          #   サブスク = CLAUDE_CODE_OAUTH_TOKEN / API = ANTHROPIC_API_KEY
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # GitHub API アクセス用トークン（MCP GitHub ツール・スティッキーコメント投稿に必要）
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Bot（GitHub App の Claude 等）が開いた PR もレビュー対象にする。
+          # 注意: 公開リポジトリで '*' を指定すると外部 App からも起動され得る（公式警告）。
+          #   公開リポジトリでは 'claude,dependabot[bot]' など特定ボット名に絞ること。
+          #   再帰ループが心配な場合も同様に絞る。
+          allowed_bots: '*'
+          # レビュー結果を PR スティッキーコメントとして投稿する（use_sticky_comment: true が重要）。
+          # アクション自身が必ず PR にスティッキーコメントを投稿する（ツールの成否に関わらず保証される）。
+          use_sticky_comment: true
+          # CI ログにもレビュー本文を出力する（デバッグ・監査用）
+          display_report: true
+          # レビュー進捗コメントを PR に表示する
+          track_progress: true
+          # 既定モデル: 変更可（厳密さ優先なら claude-opus-4-8）。
+          # GitHub MCP ツールはここで許可する（mcp__github__pull_request_review_write 等の
+          # 権限拒否はこれで解消する。additional_permissions は使わない）。
+          # Read は計画書（../project-planning）の参照に必要。
+          claude_args: |
+            --model ${{ steps.model.outputs.model }}
+            --allowedTools Read
+            --allowedTools Bash(gh issue create:*)
+            --allowedTools mcp__github__pull_request_read
+            --allowedTools mcp__github__get_file_contents
+            --allowedTools mcp__github__issue_read
+            --allowedTools mcp__github__pull_request_review_write
+            --allowedTools mcp__github__add_comment_to_pending_review
+            --allowedTools mcp__github__add_issue_comment
+            --allowedTools mcp__github__push_files
+          prompt: |
+            このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
+            CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
+            指摘を「重大 / 推奨 / 軽微」に分類してコメントせよ。
+
+            【出力必須ルール】
+            - 指摘が 0 件であっても、必ず以下のサマリ形式でコメントを出力すること。
+            - 無言終了・出力なし終了は禁止。レビューが完了したら必ずサマリを出力せよ。
+
+            出力フォーマット（Markdown）:
+            ## AI コードレビュー結果
+
+            ### 🔴 重大
+            - （指摘なし）または具体的な指摘内容
+
+            ### 🟡 推奨
+            - （指摘なし）または具体的な指摘内容
+
+            ### 🟢 軽微
+            - （指摘なし）または具体的な指摘内容
+
+            ---
+            *レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+
+            レビュー観点の詳細:
+            1. トレーサビリティ: PR 本文・コミット・コードに起点 ID（FR-xx / UC-xx / SC-xx）が
+               残されているか。実装が対象の計画書（要求・ユースケース・画面）に忠実か。
+            2. 受け入れ基準: 計画書の受け入れ基準を満たし、基本/代替/例外フローを網羅しているか。
+               対応するテストがあるか。
+            3. ADR 制約: 関連 ADR（07_adr/ の Accepted）で確定した制約に違反していないか。
+            4. 一般的な品質: 不具合・抜け漏れがないか。
+            5. AI 実装に特有のリスク（重点）:
+               - 過剰実装（計画外の機能追加・不要な抽象化・起こり得ないケースへの防御）。
+               - 存在しない API/ライブラリ/設定の使用（幻覚）。
+               - エッジケース・例外フローの取りこぼし。
+               - 仕様の表面的充足（テストを通すためだけの空実装・空テスト）。
+               - 秘密情報のハードコードや不適切な扱い。
+
+            計画書は ../project-planning（submodule の場合 planning/）の projects/<name>/ にある。
+            参照できない場合は、その旨を明記したうえで PR 内の情報のみでレビューする。

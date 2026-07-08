@@ -1,0 +1,157 @@
+# Claude Code — @claude メンションで Issue / PR に応答する対話ワークフロー
+#
+# 有効化（このファイルは .example。AI_SETUP.md のプロファイルに従って有効化する）:
+#   - 拡張子から .example を外す（git mv claude-coding.example.yml claude-coding.yml）。
+#     scripts/apply-profile.sh claude-code / api でも自動化できる。
+#   - 認証シークレットを「どちらか一方のみ」登録する
+#     （GitHub → Settings → Secrets and variables → Actions → New repository secret）:
+#       * Claude Code サブスクリプション（Pro/Max）: ローカルで `claude setup-token` を実行し
+#         OAuth トークン（sk-ant-oat01-...）を発行して CLAUDE_CODE_OAUTH_TOKEN に登録する。
+#         利用は購読プランのクォータに計上され、API キーは不要。
+#       * Anthropic API: ANTHROPIC_API_KEY（sk-ant-api03-...）を登録する（従量課金）。
+#     両方を設定しないこと（静的クレデンシャルが競合する）。未設定の方は空文字となり無視される。
+#   - Issue / PR のコメント、PR レビューコメント、Issue 本文で「@claude ...」と書くと起動する
+#   - このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効
+#
+# モデル:
+#   既定は最新の claude-opus-4-8。メンションで「@claude opus / sonnet / haiku」と
+#   書くと、そのモデルで起動する（"Select model from mention" ステップが解析）。
+#   既定値を変えたい場合は同ステップの MODEL="..." を書き換える。
+
+name: Claude Coding
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    # @claude を含むイベントのみ起動する
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # 実装リポの checkout / push には既定の GITHUB_TOKEN を使う（上の
+          # permissions: contents: write が push を許可する）。ここで token を
+          # 上書きしないこと。上書きすると checkout がその資格情報を永続化し、
+          # 後段の git push もそのトークンで実行されるため、実装リポへの書き込み
+          # 権限が無い PAT だと 403（Permission denied）になる。
+
+      # 計画リポジトリ(project-planning)を submodule 参照している場合のみ有効。
+      # SUBMODULE_ACCESS_PAT は organization の secret に登録した fine-grained PAT で、
+      # project-planning への Contents: Read 権限のみを付与する。実装リポの push 認証
+      # (GITHUB_TOKEN) とは分離するため、submodule 取得の間だけ一時的に PAT を使い、
+      # 直後に解除して push へ漏れないようにする（.gitmodules が無ければ何もしない）。
+      - name: Fetch planning submodule (read-only PAT)
+        env:
+          SUBMODULE_PAT: ${{ secrets.SUBMODULE_ACCESS_PAT }}
+        run: |
+          if [ -f .gitmodules ]; then
+            git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "https://github.com/"
+            git submodule sync --recursive
+            git submodule update --init --recursive
+            git config --global --unset-all url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf
+          fi
+
+      # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
+      # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
+      # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # @claude メンションでモデルを選択する。既定は claude-opus-4-8。
+      # 「@claude opus / sonnet / haiku」と書くとそのモデルで起動する。
+      # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
+      - name: Select model from mention
+        id: model
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          BODY="${COMMENT_BODY}
+          ${REVIEW_BODY}
+          ${ISSUE_BODY}
+          ${ISSUE_TITLE}"
+          MODEL="claude-opus-4-8"
+          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-4-8"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "Selected model: $MODEL"
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # 認証はどちらか一方のみ設定する（未設定の方は空文字で無視される）:
+          #   サブスク = CLAUDE_CODE_OAUTH_TOKEN / API = ANTHROPIC_API_KEY
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # GitHub API アクセス用トークン（MCP GitHub ツール・スティッキーコメント投稿に必要）
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 既定モデル: 変更可（レビュー用途は claude-sonnet-5 も可）
+          #
+          # --allowedTools: CI での権限はここ（claude_args）で決まる。アクションは
+          #   リポジトリの .claude/settings.json を自動では読み込まないため、ローカル用
+          #   settings.json とは別に、CI で使うツールはこの一覧に明示する。
+          #   ローカル（.claude/settings.json）と内容を揃えておくと運用が分かりやすい。
+          #   ・ユニバーサルツール（Read〜Bash(node:*)）と GitHub MCP は固定。
+          #   ・スタック別ツール（末尾4行）は ci.example.yml 先頭コメントの対照表を参考に
+          #     使用スタックのコマンドへ書き換えること（例: npm run:* / pytest:* / go test:*）。
+          claude_args: |
+            --model ${{ steps.model.outputs.model }}
+            --allowedTools Read
+            --allowedTools Edit
+            --allowedTools Write
+            --allowedTools Bash(git status:*)
+            --allowedTools Bash(git diff:*)
+            --allowedTools Bash(git log:*)
+            --allowedTools Bash(git add:*)
+            --allowedTools Bash(git commit:*)
+            --allowedTools Bash(git push:*)
+            --allowedTools Bash(git switch:*)
+            --allowedTools Bash(git checkout:*)
+            --allowedTools Bash(git branch:*)
+            --allowedTools Bash(ls:*)
+            --allowedTools Bash(find:*)
+            --allowedTools Bash(rg:*)
+            --allowedTools Bash(cat:*)
+            --allowedTools Bash(mkdir:*)
+            --allowedTools Bash(node:*)
+            --allowedTools Bash(gh issue create:*)
+            --allowedTools mcp__github__pull_request_read
+            --allowedTools mcp__github__get_file_contents
+            --allowedTools mcp__github__issue_read
+            --allowedTools mcp__github__pull_request_review_write
+            --allowedTools mcp__github__add_comment_to_pending_review
+            --allowedTools mcp__github__add_issue_comment
+            --allowedTools mcp__github__push_files
+            --allowedTools Bash(dotnet build:*)
+            --allowedTools Bash(dotnet test:*)
+            --allowedTools Bash(dotnet format:*)
+            --allowedTools Bash(dotnet restore:*)
