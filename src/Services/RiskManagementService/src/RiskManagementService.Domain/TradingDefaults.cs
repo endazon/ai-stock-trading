@@ -2,7 +2,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-17: 全体前提条件（計画書 06_technical/05_trading-assumptions §5、利用者決定 2026-07-06/07）の既定値。
+// FR-17, FR-10, FR-19, FR-20: 全体前提条件（計画書 06_technical/05_trading-assumptions §5、
+// 利用者決定 2026-07-06/07）の既定値。FR-17 で一元管理し、FR-10（リスク上限）・FR-19（取引ガード）・
+// FR-20（段階ゲート）の既定値を提供する。個々の数値の逆算根拠は IADR-0002 を参照。
 // 実運用では設定ストア（PostgreSQL）から読み込む。本クラスは初期値と検証用の基準を提供する。
 public static class TradingDefaults
 {

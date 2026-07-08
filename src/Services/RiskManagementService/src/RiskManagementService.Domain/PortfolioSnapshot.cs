@@ -3,7 +3,11 @@ namespace AiStockTrading.RiskManagement.Domain;
 // FR-10: 判定時点のポートフォリオ・運用状態のスナップショット
 public record PortfolioSnapshot
 {
-    /// <summary>運用資金（基準通貨・円）。</summary>
+    /// <summary>
+    /// 当日開始時点の運用資金（基準通貨・円）。日次損失上限・1取引リスクの判定基準に用いる。
+    /// 当日の実現損益で目減りしない固定基準として扱い（当日中は不変）、しきい値が損失で
+    /// 自己参照的に縮小しないようにする。実現損益は <see cref="DailyRealizedPnl"/> で別途保持する。
+    /// </summary>
     public required decimal Capital { get; init; }
 
     public int OpenPositionCount { get; init; }
