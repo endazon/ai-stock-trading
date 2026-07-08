@@ -40,21 +40,30 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter
 
     public Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {
-        if (!_orders.TryGetValue(orderId, out var order))
+        // read-modify-write を楽観的並行制御（TryUpdate の比較更新）でアトミックにする。
+        // 競合で状態が変わった場合は再読込して再判定する。
+        while (true)
         {
-            throw new InvalidOperationException($"注文が見つからない: {orderId}");
-        }
+            if (!_orders.TryGetValue(orderId, out var order))
+            {
+                throw new InvalidOperationException($"注文が見つからない: {orderId}");
+            }
 
-        if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
-        {
-            throw new InvalidOperationException($"終了状態（{order.Status}）の注文は取消できない: {orderId}");
-        }
+            if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
+            {
+                throw new InvalidOperationException($"終了状態（{order.Status}）の注文は取消できない: {orderId}");
+            }
 
-        _orders[orderId] = order with
-        {
-            Status = OrderStatus.Cancelled,
-            CompletedAt = _timeProvider.GetUtcNow(),
-        };
-        return Task.CompletedTask;
+            var cancelled = order with
+            {
+                Status = OrderStatus.Cancelled,
+                CompletedAt = _timeProvider.GetUtcNow(),
+            };
+
+            if (_orders.TryUpdate(orderId, cancelled, order))
+            {
+                return Task.CompletedTask;
+            }
+        }
     }
 }
