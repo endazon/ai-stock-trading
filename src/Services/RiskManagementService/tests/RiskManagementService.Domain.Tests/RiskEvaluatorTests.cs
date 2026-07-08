@@ -234,4 +234,23 @@ public class RiskEvaluatorTests
 
         result.IsApproved.Should().BeTrue();
     }
+
+    [Fact]
+    public void KillSwitch_日次損失上限_最大DD到達中でも損切りの売り注文は承認する()
+    {
+        // NFR フェイルセーフ（新規発注停止・保有ポジションの損切り監視は最後まで維持）／ADR-0003（損切りは機械的に執行）。
+        // kill switch・日次損失上限・最大DD がすべて成立していても、手仕舞い（売り）は止めない。
+        var snapshot = Snapshot(
+            dailyRealizedPnl: -2_000m, // 資金 100,000 の 2%（日次損失上限）
+            drawdownRatio: 0.10m,      // 最大DD 上限
+            killSwitchEngaged: true);
+        var sell = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, 10, 3000m);
+
+        var result = RiskEvaluator.Evaluate(sell, DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.KillSwitchActive);
+        result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached);
+        result.Reasons.Should().NotContain(RejectionReason.MaxDrawdownReached);
+    }
 }

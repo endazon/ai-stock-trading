@@ -15,8 +15,10 @@ public static class RiskEvaluator
         var reasons = new List<RejectionReason>();
         var isEntry = intent.Side == TradeSide.Buy;
 
-        // 全停止スイッチ（kill switch）: 新規発注を一切行わない
-        if (snapshot.KillSwitchEngaged)
+        // 全停止スイッチ（kill switch）: 新規発注（エントリー）のみ停止する。
+        // NFR フェイルセーフ（02_requirements: 新規発注停止。保有ポジションの損切り監視は最後まで維持）
+        // および ADR-0003（損切りは機械的に執行）により、手仕舞い（売り）は止めない。
+        if (isEntry && snapshot.KillSwitchEngaged)
         {
             reasons.Add(RejectionReason.KillSwitchActive);
         }
@@ -71,12 +73,14 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.MaxPositionsExceeded);
         }
 
-        if (snapshot.DailyRealizedPnl <= -(snapshot.Capital * settings.Limits.DailyLossLimitRatio))
+        // 日次損失上限・最大DD 到達時も「新規発注停止・損切り監視は維持」（フェイルセーフ）。
+        // 損失拡大局面での手仕舞い（売り）を止めないよう、エントリーにのみ適用する。
+        if (isEntry && snapshot.DailyRealizedPnl <= -(snapshot.Capital * settings.Limits.DailyLossLimitRatio))
         {
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }
 
-        if (snapshot.DrawdownRatio >= settings.Limits.MaxDrawdownRatio)
+        if (isEntry && snapshot.DrawdownRatio >= settings.Limits.MaxDrawdownRatio)
         {
             reasons.Add(RejectionReason.MaxDrawdownReached);
         }
