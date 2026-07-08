@@ -40,30 +40,24 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter
 
     public Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {
-        // read-modify-write を楽観的並行制御（TryUpdate の比較更新）でアトミックにする。
-        // 競合で状態が変わった場合は再読込して再判定する。
-        while (true)
+        // 本アダプタは PlaceOrderAsync で常に即時 Filled（終端状態）にするため、非終端状態の注文は存在せず
+        // 取消は必ず下の終端チェックで弾かれる。IBrokerAdapter の契約を満たすための実装であり、
+        // 非同期約定で非終端状態を持つ実発注アダプタ（moomoo 等）は、状態遷移に応じた並行制御を各自で実装する。
+        if (!_orders.TryGetValue(orderId, out var order))
         {
-            if (!_orders.TryGetValue(orderId, out var order))
-            {
-                throw new InvalidOperationException($"注文が見つからない: {orderId}");
-            }
-
-            if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
-            {
-                throw new InvalidOperationException($"終了状態（{order.Status}）の注文は取消できない: {orderId}");
-            }
-
-            var cancelled = order with
-            {
-                Status = OrderStatus.Cancelled,
-                CompletedAt = _timeProvider.GetUtcNow(),
-            };
-
-            if (_orders.TryUpdate(orderId, cancelled, order))
-            {
-                return Task.CompletedTask;
-            }
+            throw new InvalidOperationException($"注文が見つからない: {orderId}");
         }
+
+        if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
+        {
+            throw new InvalidOperationException($"終了状態（{order.Status}）の注文は取消できない: {orderId}");
+        }
+
+        _orders[orderId] = order with
+        {
+            Status = OrderStatus.Cancelled,
+            CompletedAt = _timeProvider.GetUtcNow(),
+        };
+        return Task.CompletedTask;
     }
 }
