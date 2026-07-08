@@ -9,7 +9,7 @@
 
 該当するものを `[x]` にする（複数選択可）。少なくとも 1 つを選ぶ。
 
-- [ ] **Claude Code サブスクリプション**（Pro / Max）… プロファイル `claude-code`
+- [x] **Claude Code サブスクリプション**（Pro / Max）… プロファイル `claude-code`
 - [ ] **Anthropic API キー**（従量課金）… プロファイル `api`
 - [ ] **GitHub Copilot**（coding agent / IDE 補完）… プロファイル `copilot`
 
