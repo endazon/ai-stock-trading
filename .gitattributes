@@ -1,0 +1,34 @@
+# Git 属性 — 改行コードを正規化し、環境差による巨大 diff を防ぐ（IADR-0027 フォローアップ）
+# .editorconfig（end_of_line = lf）と整合。コミット時に正規化し、チェックアウトは LF に固定する。
+
+# 既定: テキストは自動判定しつつ LF に統一
+* text=auto eol=lf
+
+# ソース・設定・ドキュメント（EF Core が Windows で再生成しても LF を維持）
+*.cs        text eol=lf
+*.csx       text eol=lf
+*.csproj    text eol=lf
+*.props     text eol=lf
+*.targets   text eol=lf
+*.slnx      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sh        text eol=lf
+*.js        text eol=lf
+*.editorconfig text eol=lf
+
+# Windows 用スクリプトは CRLF を維持（現状未使用だが将来のため明示）
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# バイナリ（差分・改行変換の対象外）
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
