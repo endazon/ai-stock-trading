@@ -45,7 +45,8 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.MarketDisabled);
         }
 
-        if (settings.Guard.BannedSymbols.Any(b => b.Symbol == intent.Symbol))
+        // 禁止銘柄は銘柄コードと市場の両方で照合する（同一コードが別市場に存在し得るため）。
+        if (settings.Guard.BannedSymbols.Any(b => b.Symbol == intent.Symbol && b.Market == intent.Market))
         {
             reasons.Add(RejectionReason.BannedSymbol);
         }
@@ -57,13 +58,16 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.SameDayReentry);
         }
 
-        // FR-10: リスク上限
-        if (intent.Notional > settings.Limits.MaxOrderAmount)
+        // FR-10: リスク上限。金額系の上限は「新規発注（エントリー）の資金投入」を制限するもの。
+        // フェイルセーフ（新規発注停止・損切り監視は維持）/ ADR-0003（損切りは機械的に執行）により、
+        // 手仕舞い（売り）注文には適用しない。値上がりで時価が上限超過したポジションの全量手仕舞いや、
+        // 当日の発注累計が上限近い状況での損切り売りがブロックされるのを防ぐ。
+        if (isEntry && intent.Notional > settings.Limits.MaxOrderAmount)
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }
 
-        if (snapshot.DailyOrderedAmount + intent.Notional > settings.Limits.MaxDailyOrderAmount)
+        if (isEntry && snapshot.DailyOrderedAmount + intent.Notional > settings.Limits.MaxDailyOrderAmount)
         {
             reasons.Add(RejectionReason.DailyOrderAmountExceeded);
         }

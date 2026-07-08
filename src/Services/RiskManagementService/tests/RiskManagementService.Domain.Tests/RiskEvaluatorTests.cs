@@ -253,4 +253,33 @@ public class RiskEvaluatorTests
         result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached);
         result.Reasons.Should().NotContain(RejectionReason.MaxDrawdownReached);
     }
+
+    [Fact]
+    public void 金額上限を超える状況でも損切りの売り注文は承認する()
+    {
+        // フェイルセーフ／ADR-0003: 1注文金額上限・日次発注金額上限は新規発注（エントリー）の
+        // 資金投入を制限するもの。値上がりで時価が上限超過したポジションの手仕舞いや、当日発注累計が
+        // 上限近い状況での損切り売りをブロックしてはならない。
+        var snapshot = Snapshot(dailyOrderedAmount: 99_000m); // 日次上限 100,000 円の直前
+        // 1株 50,000 円（MaxOrderAmount 35,000 円超）× 1株。売り時価も日次累計上限を超える。
+        var sell = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, 1, 50_000m);
+
+        var result = RiskEvaluator.Evaluate(sell, DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.PerOrderAmountExceeded);
+        result.Reasons.Should().NotContain(RejectionReason.DailyOrderAmountExceeded);
+    }
+
+    [Fact]
+    public void 禁止銘柄コードでも市場が異なれば拒否しない()
+    {
+        // FR-19: 禁止銘柄は銘柄コードと市場の両方で照合する。
+        // 既定の禁止銘柄「6457」は Market.Japan 登録。同一コードでも米国株なら禁止対象外。
+        var intent = Buy(symbol: "6457", market: Market.UnitedStates, quantity: 1, price: 2000m);
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
+
+        result.Reasons.Should().NotContain(RejectionReason.BannedSymbol);
+    }
 }
