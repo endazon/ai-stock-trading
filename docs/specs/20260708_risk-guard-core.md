@@ -7,9 +7,9 @@ author: endazon (with Claude Code)
 created: 2026-07-08
 updated: 2026-07-08
 plan_refs:
-  - ../../../project-planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../../project-planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
-  - ../../../project-planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
+  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
+  - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
+  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
 ---
 
 # 仕様書: 取引ドメイン契約とリスク管理コア（初期実装スライス）
@@ -23,7 +23,7 @@ plan_refs:
 - ユースケース（UC）: UC-01, UC-02（取引サイクルの検証段）、UC-06（設定変更・緊急停止）
 - 画面（SC）: なし（画面は計画側未着手）
 - 関連 ADR: ADR-0003（AI判断のガードレール）、ADR-0007（取引ガードのソフト設定強制）、ADR-0008（段階ゲート）
-- 計画書リンク: `../../../project-planning/projects/ai-stock-trading/`（隣接クローン参照）
+- 計画書リンク: `../../planning/projects/ai-stock-trading/`（隣接クローン参照）
 
 ## 目的・背景
 

@@ -7,8 +7,8 @@ author: endazon (with Claude Code)
 created: 2026-07-08
 updated: 2026-07-08
 plan_refs:
-  - ../../../project-planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
-  - ../../../project-planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
+  - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
 ---
 
 # IADR-0001: リポ構成と技術スタックは microservices-platform 実装リポの規約に揃える
