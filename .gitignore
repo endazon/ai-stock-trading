@@ -1,0 +1,43 @@
+# 共通（技術非依存）
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.cache/
+
+# 秘密情報・ローカル設定（コミット禁止）
+.env
+.env.*
+!.env.example
+*.local
+CLAUDE.local.md
+
+# AI 生成の参照サマリ（生成物）
+.ai-context/
+
+# エディタ / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# --- スタック別（不要な節は削除し、使う言語の分を有効化する） ---
+
+# C# / .NET（例・既定）
+bin/
+obj/
+*.user
+[Tt]est[Rr]esults/
+coverage/
+*.coverage
+*.cobertura.xml
+
+# Node.js（例）
+# node_modules/
+# dist/
+# coverage/
+
+# Python（例）
+# __pycache__/
+# .venv/
+# .pytest_cache/
+# .coverage

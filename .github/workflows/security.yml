@@ -1,0 +1,73 @@
+# セキュリティ自動化: 秘密情報スキャン ＋ 依存関係レビュー ＋ 推移依存の脆弱性スキャン
+#
+# - gitleaks: コミット/履歴に秘密情報が混入していないか検査（AI が誤って鍵を混入するリスクに対処）。
+# - dependency-review: PR で「新たに導入される」依存に既知の重大脆弱性が無いか検査（PR 差分のみ）。
+# - vulnerable-scan: 既存の「推移依存」を含む全依存を `dotnet list package --vulnerable` で走査（NFR・#61 の後継）。
+#     dependency-review は PR 差分しか見ないため、マージ後に公開された advisory（例: NU1903/GHSA-v5pm-xwqc-g5wc）を
+#     取りこぼす。schedule で定期実行し、変更の無い既存依存に対しても新規 advisory を検出する。
+#
+# このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
+
+name: Security
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # 定期実行: 変更が無くても、後から公開された advisory を既存の推移依存に対して検出する（PR 差分検査では不可能）。
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
+
+  # NFR(セキュリティ): 推移依存を含む全依存の既知脆弱性を検出する（#61 NU1903 の後継・恒久化）。
+  # dependency-review が見ない「既存の推移依存 × 後から公開された advisory」を、CPM(Directory.Packages.props)の
+  # 中央定義に対して走査する。schedule での定期実行が主目的（PR/push でも二重に検査する）。
+  vulnerable-scan:
+    name: Vulnerable transitive dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore KnowledgePlatform.slnx
+      - name: List vulnerable packages (incl. transitive)
+        run: |
+          set -o pipefail
+          # `dotnet list package --vulnerable` は脆弱性が有っても exit 0 を返すため、出力を解析して判定する。
+          dotnet list KnowledgePlatform.slnx package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+          # 脆弱な依存の行は必ず GitHub Advisory URL(https://github.com/advisories/GHSA-...)を含む。
+          # 深刻度語(High 等)はパッケージ名に紛れ得るため、より特異な advisory URL の有無で判定する。
+          if grep -Eq 'https?://github\.com/advisories/' vuln-report.txt; then
+            echo "::error::Vulnerable (transitive) dependencies detected. 上記表の advisory を参照し、Directory.Packages.props で該当パッケージをパッチ版へピンすること（#61 と同手順）。"
+            exit 1
+          fi
+          echo "No vulnerable packages found."

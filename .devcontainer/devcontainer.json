@@ -1,0 +1,22 @@
+{
+  "name": "impl-repo (C#/.NET example)",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:8.0",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "postCreateCommand": "bash scripts/setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "editorconfig.editorconfig"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+  }
+}

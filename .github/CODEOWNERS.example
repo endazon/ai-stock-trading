@@ -1,0 +1,16 @@
+# CODEOWNERS 雛形
+#
+# このファイルは「例示」である。自プロジェクトのオーナーに書き換え、
+# CODEOWNERS（拡張子なし）にリネームして .github/ で使うこと。
+#
+# 書式: <パスパターン> <@ユーザー名 または @org/チーム名>
+# 参考: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+# 既定のオーナー（全ファイル）
+# *                       @your-org/maintainers
+
+# 例: 領域ごとにオーナーを分ける
+# /src/                   @your-org/dev-team
+# /tests/                 @your-org/dev-team
+# /.github/               @your-org/maintainers
+# /.claude/               @your-org/maintainers

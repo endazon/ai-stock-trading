@@ -1,0 +1,23 @@
+# Dependabot: 依存関係の自動更新（セキュリティ修正を含む）。
+# github-actions は技術非依存のため常時有効。使用言語のエコシステムを有効化する。
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # 使用スタックに合わせて有効化（コメント解除）:
+  # - package-ecosystem: "nuget"       # C# / .NET
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  # - package-ecosystem: "npm"         # Node.js
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  # - package-ecosystem: "pip"         # Python
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
