@@ -61,6 +61,20 @@ jobs:
       - name: Check doc links
         run: node scripts/check-doc-links.js
 
+  # FR-14, ADR-0018, IADR-0028: 宣言的パイプライン構成のスキーマ検証（安全弁）。
+  # 検証を通らない構成は適用不可（必須チェック）。--self-test で検証器自体も毎回試験する。
+  pipeline-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Validate pipeline config (self-test)
+        run: node scripts/validate-pipeline-config.js --self-test
+      - name: Validate pipeline config
+        run: node scripts/validate-pipeline-config.js deploy/helm/knowledge-platform/files/pipeline.json
+
   lint:
     runs-on: ubuntu-latest
     steps:

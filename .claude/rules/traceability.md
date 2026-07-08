@@ -40,7 +40,24 @@ PR で追加されるコミット（`base..HEAD`）の件名を `scripts/check-c
 - **許可する種別**: `feat` / `fix` / `perf` / `refactor` / `docs` / `test` / `build` / `ci` / `style` / `chore`。
 - **起点 ID の書式**: `FR-\d+` / `NFR` / `UC-\d+` / `SC-\d+` / `ADR-\d{3,4}` / `IADR-\d{3,4}` / `P0`〜`P3`。
   複数 ID はカンマ区切りで併記。スコープ `()` は省略可。
-- **末尾の PR 番号**: `(#123)` はスカッシュマージ既定件名として許容。
+- **末尾の PR 番号**: ` (#123)` はスカッシュマージ既定件名として許容。
+
+### PR タイトル（スカッシュ後件名）の検査（Issue #125・再発防止）
+
+スカッシュマージで develop に載る件名は「**PR タイトル + ` (#番号)`**」であり、PR コミット
+（`base..HEAD`）の範囲に含まれないため、上記のコミット件名チェックだけではすり抜ける
+（`3d8852f`／PR #95 の生載りが該当）。これを防ぐため `pr-title.yml` が PR タイトルを規約
+`種別(起点ID): 要約` に照合し、違反ならマージ前に CI を失敗させる。
+
+- 検査ロジックは `check-commit-messages.js` の単一件名モード（`--title` 引数 / `PR_TITLE` 環境変数）で、
+  `validateSubject` を再利用する（規約の単一情報源）。
+- `pull_request` の `opened/edited/reopened/synchronize` で起動し、タイトル後編集も再検査する。
+- bot 作成 PR（`pull_request.user.type == 'Bot'`）・Revert・`[skip ci]` は除外する。
+
+**事前防止と事後補正の使い分け**: `pr-title.yml` は**マージ前**の予防（規約外件名を止める）。
+万一すり抜けて develop に規約外件名が入った場合は、履歴不変の原則（force push 禁止）に従い、
+下記 CHANGELOG 生成時の `changelog-overrides.json`（`action: "remap"`）で**生成物のみ**是正する。
+前者が第一防衛線、後者が最終手段という役割分担。
 
 ### 検査対象から除外する自動コミット
 

@@ -11,6 +11,49 @@
  */
 const { execSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+
+// 誤記コミットの補正マップ（Issue #60）。git 履歴は書き換えず、CHANGELOG 生成時のみ補正/除外する。
+//   scripts/changelog-overrides.json の { overrides: [{ hash, action, type?, scope?, desc? }] } を読む。
+//   hash は短縮 SHA でも可（前方一致で照合）。ファイルが無ければ何もしない。
+function loadOverrides() {
+  const p = path.join(__dirname, 'changelog-overrides.json');
+  try {
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(data.overrides) ? data.overrides : [];
+  } catch (e) {
+    return [];
+  }
+}
+const OVERRIDES = loadOverrides();
+
+/** コミット短縮 SHA と override の hash を前方一致で照合する。 */
+function hashMatches(commitHash, key) {
+  if (!commitHash || !key) return false;
+  return commitHash.startsWith(key) || key.startsWith(commitHash);
+}
+
+const VALID_ACTIONS = ['remap', 'exclude'];
+
+/** override を適用する。exclude なら null（呼び出し側で除外）、remap なら差し替え済みのコミットを返す。 */
+function applyOverride(c) {
+  const ov = OVERRIDES.find((o) => hashMatches(c.hash, o.hash));
+  if (!ov) return c;
+  if (!VALID_ACTIONS.includes(ov.action)) {
+    // action のタイプミス（例: "romap"）を黙って remap 扱いにしないよう警告し、補正を適用しない。
+    process.stderr.write(
+      `警告: changelog-overrides.json の hash "${ov.hash}" の action "${ov.action}" は未知（許可: ${VALID_ACTIONS.join(' / ')}）。この補正は無視する。\n`
+    );
+    return c;
+  }
+  if (ov.action === 'exclude') return null;
+  return {
+    ...c,
+    type: ov.type || c.type,
+    scope: ov.scope !== undefined ? ov.scope : c.scope,
+    desc: ov.desc || c.desc,
+  };
+}
 
 const TYPE_LABEL = {
   feat: '新機能',
@@ -63,7 +106,7 @@ function commits(range) {
     const m = subject.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.+)$/);
     if (m) return { hash, type: m[1].toLowerCase(), scope: m[2] || '', desc: m[4] };
     return { hash, type: 'other', scope: '', desc: subject };
-  });
+  }).map(applyOverride).filter(Boolean); // 誤記コミットの補正/除外（Issue #60）
 }
 
 function renderSection(title, list) {
@@ -124,4 +167,9 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+// テスト用途に一部関数を公開する（本体実行時の副作用は上記ガードで抑止）。
+module.exports = { applyOverride, hashMatches, VALID_ACTIONS, TYPE_LABEL, TYPE_ORDER };
