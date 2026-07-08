@@ -61,8 +61,10 @@ jobs:
       - name: Check doc links
         run: node scripts/check-doc-links.js
 
-  # FR-14, ADR-0018, IADR-0028: 宣言的パイプライン構成のスキーマ検証（安全弁）。
-  # 検証を通らない構成は適用不可（必須チェック）。--self-test で検証器自体も毎回試験する。
+  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験のみを行う。
+  # 本プロジェクト（ai-stock-trading）は knowledge-platform の pipeline.json を持たないため、
+  # テンプレート由来の具体ファイル検証ステップは対象外として除外する。構成ファイルを持つ
+  # サービスを追加した時点で、そのパスを引数に検証ステップを復活させること。
   pipeline-config:
     runs-on: ubuntu-latest
     steps:
@@ -72,8 +74,6 @@ jobs:
           node-version: "20"
       - name: Validate pipeline config (self-test)
         run: node scripts/validate-pipeline-config.js --self-test
-      - name: Validate pipeline config
-        run: node scripts/validate-pipeline-config.js deploy/helm/knowledge-platform/files/pipeline.json
 
   lint:
     runs-on: ubuntu-latest
@@ -84,7 +84,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Format check
-        run: dotnet format --verify-no-changes
+        run: dotnet format src/AiStockTrading.slnx --verify-no-changes
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -95,11 +95,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore src/AiStockTrading.slnx
       - name: Build
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build src/AiStockTrading.slnx --no-restore --configuration Release
       - name: Test (with coverage)
-        run: dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
+        run: dotnet test src/AiStockTrading.slnx --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
       # カバレッジ閾値を強制する場合の例（ツールは任意）:
       #   - run: dotnet tool install --global dotnet-reportgenerator-globaltool
       #   - run: reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:TextSummary
