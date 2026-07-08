@@ -123,13 +123,14 @@
 
 ## 技術スタック別ルール
 
-<!-- ここに技術スタックに依存する規約を追記する。以下は C#/.NET の例。不要な言語は削除し、自プロジェクトに合わせて書き換えること。 -->
+### C# / .NET
 
-<!--
-### C# / .NET（例）
-- ターゲット: .NET 8 / C# 12 を既定とする。
-- 命名規約: 公開メンバは PascalCase、ローカル変数・引数は camelCase、private フィールドは `_camelCase`。
-- ビルド/テスト: `dotnet build` / `dotnet test` が通ること。テストは xUnit を既定とする。
-- フォーマット: `dotnet format` で整形する。`nullable` を有効化し、警告ゼロを保つ。
-- 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像する。
--->
+- 対象プロジェクト: **ai-stock-trading**（生成AI株取引自動化）。計画書は `../project-planning/projects/ai-stock-trading/`（隣接クローン参照）。
+- 基盤: microservices-platform の拡張（可変部分への組み込み。基盤無改修）。リポ構成・規約は基盤実装リポ `../microservices-platform` に揃える（[IADR-0001](docs/adr/IADR-0001_repo-structure-and-stack.md)）。
+- ターゲット: **net10.0 / C# 13**（`src/Directory.Build.props`）。パッケージは Central Package Management（`src/Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
+- ソリューション: `src/AiStockTrading.slnx`。サービスは `src/Services/<ServiceName>/{src,tests}`、共有物は `src/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
+- 命名規約: 名前空間プレフィックスは `AiStockTrading`。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
+- ビルド/テスト: `dotnet build src/AiStockTrading.slnx` / `dotnet test src/AiStockTrading.slnx` が通ること。テストは xUnit + FluentAssertions（`using Xunit;` を忘れない）。
+- フォーマット: `dotnet format` で整形する。`nullable` 有効・警告ゼロを保つ。
+- 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像し、コメントに起点 ID（FR/UC/ADR）を残す。
+- リスク統制・取引ガードの既定値は計画書の全体前提条件（05_trading-assumptions §5）と一致させ、`TradingDefaults` のテストで固定する。
