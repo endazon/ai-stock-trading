@@ -1,8 +1,20 @@
 # 変更履歴 (CHANGELOG)
 
-> このファイルは `scripts/gen-changelog.js` により、コミット履歴（`種別(起点ID): 要約`）から
-> 自動生成・更新される（`.github/workflows/changelog.yml`）。手動編集は次回生成で上書きされる。
-
 ## Unreleased
 
-- （最初のコミット以降、自動で記載される）
+### 新機能
+
+- **FR-10**: 実装リポジトリ初期化とリスクガードコアを実装 (#3) (da3ba1c)
+- **FR-10**: 実装リポジトリ初期化とリスクガードコアを実装 (#1) (6957b8c)
+
+### ドキュメント
+
+- **NFR**: OpenAPI を自動更新 (#4) (23645a9)
+
+### ビルド
+
+- **deps**: bump peter-evans/create-pull-request from 7 to 8 (#2) (135baf2)
+
+### その他
+
+- Initial commit (fc103e4)
