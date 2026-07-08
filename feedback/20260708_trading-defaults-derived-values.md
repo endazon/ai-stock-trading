@@ -22,7 +22,7 @@ created: 2026-07-08
 - ユースケース（UC）: なし（UC-06 の設定変更対象値ではあるが、UC 記述自体への差異ではない）
 - 画面（SC）: なし
 - 関連 ADR: なし（計画 ADR の新設は不要と考える。実装側では IADR-0002 に根拠を記録済み）
-- 計画書リンク: `../project-planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md` §5「リスク統制・取引ガードの既定値（FR-10, FR-19）」
+- 計画書リンク: `planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md` §5「リスク統制・取引ガードの既定値（FR-10, FR-19）」
 
 ## 現状（計画書の記述 / As-Is）
 
