@@ -2,7 +2,7 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

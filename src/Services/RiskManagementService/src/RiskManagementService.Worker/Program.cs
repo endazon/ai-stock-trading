@@ -5,7 +5,7 @@ using AiStockTrading.RiskManagement.Worker.Composable.Adapters;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
-using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -14,6 +14,12 @@ const string ServiceName = "ai-stock-trading.risk-management-service";
 
 // #12 Slice B, IADR-0011/0029: kill switch/設定変更の HTTP エンドポイント（Keycloak 認可）と
 // ヘルスチェックのため WebApplication を用いる。MassTransit コンシューマは IHostedService として稼働する。
+//
+// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を
+// AiStockTrading.TestSupport.PlatformShim 経由で組む部分）は dev/test/CI でのローカル単体実行のためのもの。
+// 本番（実運用）では ai-stock-trading は platform の可変部分へ組み込まれ、バス設定・可観測性・認証などの共通基盤は
+// platform 本体の Foundation が提供する（本番統合は #22）。取引ドメインの本番実装は Domain/Application と、
+// 本ホストの再利用可能部（TradeDecisionMadeConsumer・EF ストア・エンドポイントハンドラ）である。
 var builder = WebApplication.CreateBuilder(args);
 
 // IADR-0011: 可観測性（Serilog + OTel）。

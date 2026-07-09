@@ -2,7 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
 // IADR-0011（platform ADR-0004 の最小移植・由来: Foundation/Extensions/KeycloakRolesClaimsTransformation.cs）:
 // Keycloak のレルムロール（realm_access.roles）を ClaimTypes.Role へ展開する。

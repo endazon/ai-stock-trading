@@ -54,6 +54,9 @@ JWT 認証・相関ID）がなく、Worker ホスト（#12 Slice B）を platfor
   （introspection/drift）。これらは platform 側スキーマ確定に依存し規模も大きいため、Foundation の上に載る後続 Slice。
 - **移植しない（不要）**: オブジェクトストレージ（S3）— リスク管理では使わない。
 - **命名**: 名前空間 `AiStockTrading.Shared.Infrastructure.Foundation.*`、公開 API は `AiStockTrading` プレフィックス。
+  （**注: 配置・命名・位置づけは [IADR-0013](IADR-0013_platform-foundation-testsupport-shim.md) で更新。**移植 Foundation は
+  本番非使用の最小 shim として `src/TestSupport/AiStockTrading.TestSupport.PlatformShim/` へ移動し、名前空間は
+  `AiStockTrading.TestSupport.PlatformShim.Foundation.*` に変更した。本 IADR の「何を・どう移植するか」は維持。）
 - **認可ポリシー**: 単独利用者運用のため platform の Admin/Operator 二層ではなく `OwnerOnly` 単層（レルムロール
   `trading-owner`）とする。ロール・レルム名は構成で差し替え可能。
 - **バージョン**: 追加パッケージは基盤リポ `Directory.Packages.props` と同一バージョンで CPM 管理する（IADR-0001）。
@@ -75,5 +78,5 @@ JWT 認証・相関ID）がなく、Worker ホスト（#12 Slice B）を platfor
 ## 関連
 
 - Supersedes: なし
-- Superseded by: なし
+- Superseded by: [IADR-0013](IADR-0013_platform-foundation-testsupport-shim.md)（**配置・命名・位置づけのみ**。移植の範囲・方法は本 IADR を維持）
 - 関連: [IADR-0001](IADR-0001_repo-structure-and-stack.md)、[IADR-0010](IADR-0010_risk-service-layering-and-slicing.md)

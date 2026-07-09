@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
 // IADR-0011（platform ADR-0004 の最小移植・由来: Foundation/Extensions/AuthExtensions.cs）:
 // 認可ポリシー／ロールの名称定数。kill switch 操作・リスク設定変更など「利用者のみ」の操作に用いる。

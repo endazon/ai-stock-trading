@@ -1,9 +1,9 @@
-using AiStockTrading.Shared.Infrastructure.Foundation.Middleware;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 
-namespace AiStockTrading.Shared.Infrastructure.Tests.Foundation;
+namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
 // IADR-0011, platform: 相関ID の引き継ぎ・生成・レスポンス反映を検証する。
 public class CorrelationIdMiddlewareTests

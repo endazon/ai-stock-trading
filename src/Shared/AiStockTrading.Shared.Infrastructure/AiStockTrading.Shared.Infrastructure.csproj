@@ -5,21 +5,4 @@
   <ItemGroup>
     <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <!-- IADR-0011: ランタイム Foundation の最小移植（可観測性・ヘルスチェック・認証・相関ID ミドルウェア）。
-         ASP.NET 型（WebApplication/HttpContext/HealthChecks）を使うため共有フレームワークを参照する。
-         Microsoft.Extensions.Diagnostics.HealthChecks は共有フレームワークが提供するため明示参照は不要。 -->
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
-    <PackageReference Include="Serilog.AspNetCore" />
-    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
-    <!-- platform ADR-0003: 全サービス共通の MassTransit 再試行設定（MassTransitExtensions）を提供する。
-         RabbitMQ 依存は各サービス側（*.Worker）が持つため、ここはブローカ非依存の core のみ参照する。 -->
-    <PackageReference Include="MassTransit" />
-  </ItemGroup>
 </Project>

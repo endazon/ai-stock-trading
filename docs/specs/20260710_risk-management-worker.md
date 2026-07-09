@@ -49,6 +49,10 @@ Serilog（`ConfigureAiStockTradingSerilog`）／`AddAiStockTradingObservability`
 `AddMassTransit`（RabbitMQ・`TradeDecisionMadeConsumer`・`UseAiStockTradingRetry`）／起動時 `MigrateAsync`（relational時）／
 `MapAiStockTradingHealthChecks`／`UseAiStockTradingMiddleware`／`MapRiskControlEndpoints`。
 
+> **IADR-0013**: これら `AddAiStockTrading*`/`UseAiStockTradingRetry` は本番非使用の shim
+> `AiStockTrading.TestSupport.PlatformShim`（`src/TestSupport/`）が提供する。本ホストの standalone 起動配線は
+> **dev/test/CI のローカル単体実行用**で、本番は platform 統合（#22）で共通基盤に置き換わる。
+
 ### MassTransit 消費者（`Composable/Steps/TradeDecisionMadeConsumer.cs`）
 
 `IConsumer<TradeDecisionMade>`。DI スコープで `OrderScreeningService` を解決し `Screen(decision)` を実行、
