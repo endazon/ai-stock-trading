@@ -4,10 +4,12 @@
   <Folder Name="/Services/RiskManagementService/src/">
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Application/RiskManagementService.Application.csproj" />
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Domain/RiskManagementService.Domain.csproj" />
+    <Project Path="Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj" />
   </Folder>
   <Folder Name="/Services/RiskManagementService/tests/">
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Application.Tests/RiskManagementService.Application.Tests.csproj" />
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Domain.Tests/RiskManagementService.Domain.Tests.csproj" />
+    <Project Path="Services/RiskManagementService/tests/RiskManagementService.Worker.Tests/RiskManagementService.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />

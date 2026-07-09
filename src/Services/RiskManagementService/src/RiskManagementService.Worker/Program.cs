@@ -1,0 +1,96 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
+using AiStockTrading.RiskManagement.Application.Ports;
+using AiStockTrading.RiskManagement.Application.Services;
+using AiStockTrading.RiskManagement.Worker.Composable.Adapters;
+using AiStockTrading.RiskManagement.Worker.Composable.Steps;
+using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
+using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
+using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+
+const string ServiceName = "ai-stock-trading.risk-management-service";
+
+// #12 Slice B, IADR-0011/0029: kill switch/設定変更の HTTP エンドポイント（Keycloak 認可）と
+// ヘルスチェックのため WebApplication を用いる。MassTransit コンシューマは IHostedService として稼働する。
+var builder = WebApplication.CreateBuilder(args);
+
+// IADR-0011: 可観測性（Serilog + OTel）。
+builder.Services.AddSerilog((_, logConfig) =>
+    logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
+builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
+
+// ADR-0004（platform）, ADR-0007: Keycloak 認証（利用者のみの操作を OwnerOnly で守る）。
+builder.Services.AddAiStockTradingAuth(builder.Configuration);
+
+// ADR-0001（Database per Service）, IADR-0012: リスク管理専有 DB（risk_management_svc）。
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Host=postgres;Port=5432;Database=risk_management_svc;Username=ai;Password=ai";
+builder.Services.AddDbContext<RiskManagementDbContext>(opt => opt.UseNpgsql(connStr));
+
+// DB 到達性の readiness ヘルスチェック。
+builder.Services.AddAiStockTradingHealthChecks()
+    .AddNpgSql(connStr, tags: ["ready"]);
+
+// --- リスク管理のポートとサービス（Slice A）を配線する ---
+// 時刻・営業日はステートレスのため singleton。
+builder.Services.AddSingleton<IClock, SystemClock>();
+builder.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
+// DbContext が scoped のため EF ストアも scoped。
+builder.Services.AddScoped<IRiskSettingsStore, EfRiskSettingsStore>();
+builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
+builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
+builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
+// FR-10: 保有・損益の実データは #13/#17 連携で供給する。現段階はプレースホルダ（既知の制限）。
+// 初回利用時の 1 回警告を機能させるため singleton 登録とする（状態を持たないため singleton で安全）。
+builder.Services.AddSingleton<IPortfolioStateProvider, PlaceholderPortfolioStateProvider>();
+builder.Services.AddScoped<PortfolioSnapshotBuilder>();
+builder.Services.AddScoped<KillSwitchService>();
+builder.Services.AddScoped<RiskSettingsService>();
+// FR-19, IADR-0006: 相場操縦検出器（#49）は未実装のため未登録（null で注入され判定は無効）。
+builder.Services.AddScoped(sp => new OrderScreeningService(
+    sp.GetRequiredService<IRiskSettingsStore>(),
+    sp.GetRequiredService<PortfolioSnapshotBuilder>(),
+    sp.GetRequiredService<ILockoutStore>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<IBusinessCalendar>(),
+    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
+
+// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行する。
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<TradeDecisionMadeConsumer>();
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
+            ?? "amqp://guest:guest@rabbitmq:5672");
+        // 一時的失敗は再試行し、継続失敗はデッドレターへ退避する（回復性）。
+        cfg.UseAiStockTradingRetry();
+        cfg.ConfigureEndpoints(ctx);
+    });
+});
+
+var app = builder.Build();
+
+// IADR-0012: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
+    if (db.Database.IsRelational())
+        await db.Database.MigrateAsync();
+}
+
+// 相関ID・認証・認可のミドルウェア。
+app.UseAiStockTradingMiddleware();
+
+// /health/live・/health/ready。
+app.MapAiStockTradingHealthChecks();
+
+// FR-10, UC-06, ADR-0007: kill switch 操作・設定変更（利用者のみ）。
+app.MapRiskControlEndpoints();
+
+app.Run();
+
+// 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
+public partial class Program { }
