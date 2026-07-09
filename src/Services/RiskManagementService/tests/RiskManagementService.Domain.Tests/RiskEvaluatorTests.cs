@@ -483,6 +483,18 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
+    public void 相場操縦パターンは手仕舞いの注文にも適用する()
+    {
+        // Issue #28 / IADR-0006: 相場操縦判定はエントリー/手仕舞いを問わず適用する（建玉効果非依存）。
+        // 手仕舞い（Close）でも検出器が該当と判定すれば拒否されることを固定する（フェイルセーフの例外）。
+        var result = RiskEvaluator.Evaluate(
+            Close(), DefaultSettings(), Snapshot(), new StubPatternDetector(true));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
+    }
+
+    [Fact]
     public void ショート決済の買い戻しはエントリー制約の対象外()
     {
         // Issue #25: 手仕舞い（ショート決済 = Buy × Close）はフェイルセーフにより
