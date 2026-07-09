@@ -37,11 +37,11 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [ ] 数量 0 以下・価格 0 以下の注文がペーパーで約定せず `Rejected`（FilledQuantity=0, AveragePrice=0）になる
-- [ ] 正常な注文は従来どおり `Filled` になる
-- [ ] `Rejected` 注文は終端状態として取消できない
-- [ ] 証券会社拒否とリスク事前拒否の区別が IADR で明文化される
-- [ ] `dotnet build` / `dotnet test` が全緑
+- [x] 数量 0 以下・価格 0 以下の注文がペーパーで約定せず `Rejected`（FilledQuantity=0, AveragePrice=0）になる
+- [x] 正常な注文は従来どおり `Filled` になる
+- [x] `Rejected` 注文は終端状態として取消できない
+- [x] 証券会社拒否とリスク事前拒否の区別が IADR で明文化される
+- [x] `dotnet build` / `dotnet test` が全緑
 
 ## テスト方針
 
