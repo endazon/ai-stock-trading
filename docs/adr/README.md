@@ -24,3 +24,4 @@
 | IADR | タイトル | 状態 |
 | --- | --- | --- |
 | IADR-0000 | 実装意思決定の記録方針 | Accepted |
+| IADR-0007 | 証券会社拒否は OrderStatus.Rejected で表し、リスク事前拒否と区別する | Accepted |

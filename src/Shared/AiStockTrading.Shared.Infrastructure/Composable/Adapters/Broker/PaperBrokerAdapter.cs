@@ -19,12 +19,18 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter
     public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
+
+        // FR-05, FR-12, Issue #30: 実ブローカーが拒否する不正な注文（数量 0 以下・価格 0 以下）は
+        // ペーパーでも約定させず、証券会社拒否（OrderStatus.Rejected）として記録する。判断・記録・報告の
+        // フローを実発注と同一に保つため（Stage 0/1 の検証価値の維持）、ここで例外にせず終端の Rejected を返す。
+        var isValid = intent.Quantity > 0 && intent.Price > 0m;
+
         var order = new BrokerOrder(
             OrderId: Guid.NewGuid().ToString("N"),
             Intent: intent,
-            Status: OrderStatus.Filled,
-            FilledQuantity: intent.Quantity,
-            AveragePrice: intent.Price,
+            Status: isValid ? OrderStatus.Filled : OrderStatus.Rejected,
+            FilledQuantity: isValid ? intent.Quantity : 0,
+            AveragePrice: isValid ? intent.Price : 0m,
             PlacedAt: now,
             CompletedAt: now);
 
@@ -48,7 +54,7 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter
             throw new InvalidOperationException($"注文が見つからない: {orderId}");
         }
 
-        if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
+        if (order.Status is OrderStatus.Filled or OrderStatus.Cancelled or OrderStatus.Rejected)
         {
             throw new InvalidOperationException($"終了状態（{order.Status}）の注文は取消できない: {orderId}");
         }

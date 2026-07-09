@@ -57,4 +57,33 @@ public class PaperBrokerAdapterTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    [Theory]
+    [InlineData(0, 3000)]   // 数量ゼロ
+    [InlineData(-5, 3000)]  // 数量が負
+    [InlineData(10, 0)]     // 価格ゼロ
+    [InlineData(10, -1)]    // 価格が負
+    public async Task 数量や価格が不正な注文は約定せず証券会社拒否になる(int quantity, decimal price)
+    {
+        // Issue #30 / FR-05, FR-12: 実ブローカーが拒否する不正注文はペーパーでも約定させない。
+        var broker = new PaperBrokerAdapter();
+
+        var order = await broker.PlaceOrderAsync(Intent(quantity: quantity, price: price));
+
+        order.Status.Should().Be(OrderStatus.Rejected);
+        order.FilledQuantity.Should().Be(0);
+        order.AveragePrice.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task 証券会社拒否の注文は取消できない()
+    {
+        // Issue #30: Rejected は終端状態。取消は失敗する。
+        var broker = new PaperBrokerAdapter();
+        var rejected = await broker.PlaceOrderAsync(Intent(quantity: 0));
+
+        var act = () => broker.CancelOrderAsync(rejected.OrderId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
 }
