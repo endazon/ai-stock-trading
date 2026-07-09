@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, UC-01, UC-02, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-09
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -68,6 +68,22 @@ plan_refs:
   （上限内なら承認される）。取引判断サービスのスライスで「発注意図は必ず `PositionSizer` を経由する」
   ことを結合テストで担保する必要がある
 - フォローアップ: 取引判断サービス実装時に、サイジング→発注意図→`RiskEvaluator` 検証の結合テストを追加する
+
+## 追記（2026-07-09, Issue #29）: 金額上限とのキャップは呼び出し側がサイジング時に行う
+
+`PositionSizer.CalculateQuantity` はリスク予算（資金 × 1 取引リスク × 縮小係数）÷ 損切り幅のみで株数を返すため、
+損切り幅が浅い場合は想定金額が 1 注文金額上限・利用可能資金を系統的に超過し、`RiskEvaluator` で必ず拒否される
+（サイジング→拒否のループ。取引機会の空振りと監査ログのノイズ。Issue #29）。
+
+本 ADR の責務分担（サイジング＝判断側、上限検証＝リスク側）を維持したうえで、**金額上限との突き合わせは
+呼び出し側がサイジング時に行う**ことを確定する。そのための primitive として
+`PositionSizer.CalculateCappedQuantity(..., referencePrice, maxOrderAmount, availableCapital, sizeFactor)` を追加した。
+これはリスク予算基準の株数と、金額上限（1 注文金額上限・利用可能資金の小さい方）を参照価格で割った株数の
+小さい方を返す。参照価格が正でない場合は 0（見送り）。
+
+- `RiskEvaluator` は引き続き確定済み `OrderIntent` の検証のみを行い、サイジング・キャップは行わない（責務不変）。
+- 取引判断サービスは発注意図の数量確定に `CalculateCappedQuantity` を用い、想定金額が常に上限内に収まることを保証する。
+- `availableCapital` には段階資金上限の残枠（`CapitalCap - InvestedCapital`。IADR-0005）等を渡すことを想定する。
 
 ## 関連
 
