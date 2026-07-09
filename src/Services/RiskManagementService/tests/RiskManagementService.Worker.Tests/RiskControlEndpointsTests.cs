@@ -76,6 +76,18 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task 理由が空の_kill_switch_操作は400()
+    {
+        // 検証失敗（ADR-0007: 理由必須）は既定の 500 ではなく 400 に写像する。
+        var client = OwnerClient();
+
+        var res = await client.PostAsJsonAsync("/risk-controls/kill-switch/engage",
+            new KillSwitchRequest(""));
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task ヘルスチェック_live_は認証不要で応答する()
     {
         var client = factory.CreateClient();

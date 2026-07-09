@@ -43,7 +43,8 @@ builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-10: 保有・損益の実データは #13/#17 連携で供給する。現段階はプレースホルダ（既知の制限）。
-builder.Services.AddScoped<IPortfolioStateProvider, PlaceholderPortfolioStateProvider>();
+// 初回利用時の 1 回警告を機能させるため singleton 登録とする（状態を持たないため singleton で安全）。
+builder.Services.AddSingleton<IPortfolioStateProvider, PlaceholderPortfolioStateProvider>();
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();

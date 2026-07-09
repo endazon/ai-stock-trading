@@ -68,11 +68,13 @@ Serilog（`ConfigureAiStockTradingSerilog`）／`AddAiStockTradingObservability`
 
 `IPortfolioStateProvider` の実装は保有・約定・損益の実データ（#13/#17）に依存する。本 PR では**プレースホルダ実装**
 `PlaceholderPortfolioStateProvider`（`Capital=TradingDefaults.InitialCapital`・その他ゼロ）を置き、#13/#17 連携で
-差し替える旨をコメント・未決事項に明記する。
+差し替える旨をコメント・未決事項に明記する。singleton 登録とし、差し替え漏れ検知の警告はログ氾濫を避け**初回利用時 1 回**に抑える。
 
 ### 認可エンドポイント（`Foundation/Endpoints/RiskControlEndpoints.cs`）
 
-`/risk-controls` グループ、すべて `RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)`（利用者のみ・ADR-0007）:
+`/risk-controls` グループ、すべて `RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)`（利用者のみ・ADR-0007）。
+グループにエンドポイントフィルタを付け、検証失敗（アクター/理由欠如の `ArgumentException`）を **400**、設定の楽観排他競合
+（`DbUpdateConcurrencyException`・IADR-0012）を **409** に写像する（既定の 500 を避ける）:
 - `POST /kill-switch/engage`・`POST /kill-switch/disengage`（body: reason）→ `KillSwitchService`。actor はトークンの名前。
 - `GET  /kill-switch` → 現在状態。
 - `PUT  /settings/limits`・`/settings/guard`・`/settings/stage` → `RiskSettingsService`。

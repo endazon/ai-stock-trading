@@ -6,6 +6,7 @@ using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 
@@ -19,7 +20,24 @@ internal static class RiskControlEndpoints
         // 利用者のみ（ADR-0007）。未認証は 401、ロール無しは 403。
         var g = app.MapGroup("/risk-controls")
             .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)
-            .WithTags("RiskControls");
+            .WithTags("RiskControls")
+            // 例外→HTTP マッピング: アクター/理由欠如などの検証失敗は 400、設定の楽観排他競合（IADR-0012）は 409。
+            // これらを既定の 500 にせず、クライアントが区別できるステータスに写像する。
+            .AddEndpointFilter(async (ctx, next) =>
+            {
+                try
+                {
+                    return await next(ctx);
+                }
+                catch (ArgumentException e)
+                {
+                    return Results.BadRequest(new { error = e.Message });
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    return Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" });
+                }
+            });
 
         // ---- kill switch（FR-10, ADR-0003） ----
         g.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
