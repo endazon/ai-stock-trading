@@ -36,10 +36,10 @@ plan_refs: []
 
 ## 受け入れ基準
 
-- [ ] リポ内文書・設定・スクリプトが参照する Issue/PR/コミットが、すべて本リポで解決できる（または出典明記）
-- [ ] `node scripts/scripts.test.js` が全緑
-- [ ] `node scripts/check-commit-messages.js` / `node scripts/gen-changelog.js` / `node scripts/check-doc-links.js` が正常動作
-- [ ] `changelog-overrides.json` / `commit-allowlist.json` が有効な JSON
+- [x] リポ内文書・設定・スクリプトが参照する Issue/PR/コミットが、すべて本リポで解決できる（または出典明記）
+- [x] `node scripts/scripts.test.js` が全緑
+- [x] `node scripts/check-commit-messages.js` / `node scripts/gen-changelog.js` / `node scripts/check-doc-links.js` が正常動作
+- [x] `changelog-overrides.json` / `commit-allowlist.json` が有効な JSON
 
 ## 計画書との差異
 
