@@ -84,6 +84,10 @@ plan_refs:
 - `RiskEvaluator` は引き続き確定済み `OrderIntent` の検証のみを行い、サイジング・キャップは行わない（責務不変）。
 - 取引判断サービスは発注意図の数量確定に `CalculateCappedQuantity` を用い、想定金額が常に上限内に収まることを保証する。
 - `availableCapital` には段階資金上限の残枠（`CapitalCap - InvestedCapital`。IADR-0005）等を渡すことを想定する。
+- **フォローアップ（取引判断サービス結線スライス）**: `RiskEvaluator` は 1 日発注金額上限（`MaxDailyOrderAmount`）でも
+  エントリーを系統的に拒否し得る。`availableCapital` の算出に日次発注残枠（`MaxDailyOrderAmount - DailyOrderedAmount`）も
+  含めるか（＝サイジング時点で日次上限も見込むか）を結線スライスで確定する。本 primitive は上限値を引数で受けるため、
+  呼び出し側が min を取る対象に日次残枠を加えるだけで対応できる。
 
 ## 関連
 

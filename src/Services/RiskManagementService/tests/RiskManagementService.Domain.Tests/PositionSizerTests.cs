@@ -113,4 +113,12 @@ public class PositionSizerTests
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 10m, 0m, 35_000m, 100_000m).Should().Be(0);
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 10m, -1m, 35_000m, 100_000m).Should().Be(0);
     }
+
+    [Fact]
+    public void 損切り幅がゼロ以下ならキャップ版も見送りとして株数ゼロを返す()
+    {
+        // Issue #29: キャップ版でも損切り幅が正でなければリスク予算基準が 0 となり、min で 0 株（見送り）。
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 0m, 1_000m, 35_000m, 100_000m).Should().Be(0);
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, -5m, 1_000m, 35_000m, 100_000m).Should().Be(0);
+    }
 }
