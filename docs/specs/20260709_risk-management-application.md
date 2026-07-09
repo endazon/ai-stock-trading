@@ -97,6 +97,15 @@ plan_refs:
 - 実装ADR: [IADR-0010](../adr/IADR-0010_risk-service-layering-and-slicing.md)
 - 先行作業: [20260709_risk-eval-core-fixes](20260709_risk-eval-core-fixes.md)
 
+## Slice B への申し送り（本 PR のレビュー指摘由来）
+
+- **設定更新の排他制御**: `RiskSettingsService` の更新は `IRiskSettingsStore.GetCurrent()` → 加工 → `Save()` の
+  read-modify-write で、インメモリ実装では各呼び出しが個別ロックのため 2 呼び出し間はアトミックでなくロスト
+  アップデートの余地がある（人手・低頻度前提で暫定許容）。Slice B の PostgreSQL 設定ストアでは**楽観的排他制御**
+  （バージョン番号での CAS 等。FR-17 のバージョン管理と統合）を導入する。
+- **`SystemClock` の DI 登録**: 本 PR では未使用（テストは `FakeClock`）。Slice B のホスト配線で `IClock` の実体として
+  DI 登録する（基準タイムゾーンは JST）。登録漏れがないようホストのタスクに含める。
+
 ## 未決事項
 
 - 永続化スキーマ（設定バージョン管理・変更履歴テーブル）は Slice B / #17 で確定する。

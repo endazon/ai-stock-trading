@@ -41,6 +41,9 @@ public sealed class OrderScreeningService(
         {
             // ロックアウトは当日中維持する。含み損が回復して RiskEvaluator が到達と判定しなくても、
             // 一度到達した当日は翌営業日の解除まで新規建てを拒否し続ける（デイリーストップの趣旨）。
+            // 手仕舞い（Close）は isEntry の短絡で本分岐に入らず、フェイルセーフで常に通す。失効した
+            // ロックアウトの掃除（IsLockedOut 内の Clear）は次の新規建て評価時に走れば十分で、Close の
+            // 可否には影響しないため、この短絡は意図どおり（掃除が遅れても状態は失効判定で無効化される）。
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }
 
