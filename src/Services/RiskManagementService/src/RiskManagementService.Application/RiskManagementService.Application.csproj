@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.RiskManagement.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
+  </ItemGroup>
+</Project>
