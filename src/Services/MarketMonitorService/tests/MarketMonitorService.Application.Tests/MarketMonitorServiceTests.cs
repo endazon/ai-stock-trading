@@ -82,6 +82,18 @@ public class MarketMonitorServiceTests
     }
 
     [Fact]
+    public async Task クールダウンちょうど経過は再トリガーする()
+    {
+        // 境界: now - last == Cooldown（ちょうど 15 分）は「クールダウン外」（< 判定のため経過とみなす）。
+        var h = new Harness(Settings(Aapl));
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 1_040m);
+        h.Cooldowns.SetLastTriggered("AAPL", Market.UnitedStates, Now.AddMinutes(-15)); // ちょうど 15 分
+
+        (await h.Service().EvaluateRoundAsync()).PriceMovements.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task 閾値未満なら価格変動イベントを生成しない()
     {
         var h = new Harness(Settings(Aapl));
