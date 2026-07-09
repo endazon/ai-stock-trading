@@ -17,10 +17,12 @@ plan_refs:
 > 対象は `RiskManagementService.Domain.Tests`（RiskEvaluator / PositionSizer / TradingDefaults）と
 > `AiStockTrading.Shared.Infrastructure.Tests`（PaperBrokerAdapter）。
 >
-> **テスト件数の注記**: PR #41（#25〜#31）・#42（#29）・#44 は develop にマージ済み。develop 現状は
-> 58 件（ドメイン 54 / インフラ 4）で、相場操縦・段階資金上限・日次損失合算・サイジングキャップ等を含む。
-> 本 PR は #43（#30・証券会社拒否 `OrderStatus.Rejected`）を統合しており、統合後は 63 件（ドメイン 54 / インフラ 9）。
-> #43 マージ後、develop も 63 件になる。テストメソッド名は日本語識別子で、各テストのコメントに起点 ID を残している。
+> **テスト件数の注記**: リスク評価コア是正（Issue #25〜#31）・サイジングキャップ（#29）・トレーサビリティ整備（#32）は
+> develop にマージ済み。develop 現状は 58 件（ドメイン 54 / インフラ 4）で、相場操縦・段階資金上限・日次損失合算・
+> サイジングキャップ等を含む。本 PR は証券会社拒否（#30・`OrderStatus.Rejected`）を統合しており、統合後は
+> 63 件（ドメイン 54 / インフラ 9）。#30 の統合が develop に載れば develop も 63 件になる。件数は Issue 単位で示す
+> （PR 番号帰属はスカッシュマージのため git 履歴単独では追えないため）。テストメソッド名は日本語識別子で、各テストの
+> コメントに起点 ID を残している。
 
 ## 起点となる計画書（トレーサビリティ）
 
