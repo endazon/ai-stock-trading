@@ -1,5 +1,14 @@
 <Solution>
   <Folder Name="/Services/" />
+  <Folder Name="/Services/MarketMonitorService/" />
+  <Folder Name="/Services/MarketMonitorService/src/">
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Domain/MarketMonitorService.Domain.csproj" />
+  </Folder>
+  <Folder Name="/Services/MarketMonitorService/tests/">
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Application.Tests/MarketMonitorService.Application.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/RiskManagementService/" />
   <Folder Name="/Services/RiskManagementService/src/">
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Application/RiskManagementService.Application.csproj" />
