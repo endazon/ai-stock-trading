@@ -14,6 +14,12 @@ public record PortfolioSnapshot
 
     public int OpenPositionCount { get; init; }
 
+    /// <summary>
+    /// 保有ポジションの投入中資金＝取得額合計（コストベース、基準通貨・円）。段階資金上限の累計判定に用いる
+    /// （Issue #27）。時価ではなく取得額を基準とする理由は IADR-0005 を参照。
+    /// </summary>
+    public decimal InvestedCapital { get; init; }
+
     /// <summary>当日の発注金額累計（基準通貨・円）。</summary>
     public decimal DailyOrderedAmount { get; init; }
 

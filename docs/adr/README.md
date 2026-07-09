@@ -28,3 +28,4 @@
 | IADR-0002 | TradingDefaults の既定値は全体前提条件からの逆算値として明示する | Accepted |
 | IADR-0003 | ポジションサイジングは取引判断サービスが行い、RiskEvaluator は検証のみとする | Accepted |
 | IADR-0004 | エントリー/手仕舞いは建玉効果（PositionEffect）で判定し、売買方向から分離する | Accepted |
+| IADR-0005 | 段階資金上限は保有取得額合計＋当該注文額（コストベース累計）で判定する | Accepted |

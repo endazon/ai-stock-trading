@@ -32,7 +32,9 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.StageProhibitsLiveTrading);
         }
 
-        if (isEntry && intent.Notional > settings.Stage.CapitalCap)
+        // FR-20, ADR-0008, IADR-0005: 段階資金上限は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
+        // 判定する。単一注文額のみで比較すると、上限内の注文を複数回通して累計で上限を超過できる（Issue #27）。
+        if (isEntry && snapshot.InvestedCapital + intent.Notional > settings.Stage.CapitalCap)
         {
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }

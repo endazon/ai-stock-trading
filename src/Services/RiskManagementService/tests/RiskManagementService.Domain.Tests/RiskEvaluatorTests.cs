@@ -44,6 +44,7 @@ public class RiskEvaluatorTests
     private static PortfolioSnapshot Snapshot(
         decimal capital = 100_000m,
         int openPositionCount = 0,
+        decimal investedCapital = 0m,
         decimal dailyOrderedAmount = 0m,
         decimal dailyRealizedPnl = 0m,
         decimal drawdownRatio = 0m,
@@ -54,6 +55,7 @@ public class RiskEvaluatorTests
         {
             Capital = capital,
             OpenPositionCount = openPositionCount,
+            InvestedCapital = investedCapital,
             DailyOrderedAmount = dailyOrderedAmount,
             DailyRealizedPnl = dailyRealizedPnl,
             DrawdownRatio = drawdownRatio,
@@ -111,6 +113,44 @@ public class RiskEvaluatorTests
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    [Fact]
+    public void 保有投入額を含む累計が段階資金上限を超える新規注文は拒否する()
+    {
+        // Issue #27 / FR-20, ADR-0008: 単一注文額は上限内でも、投入中資金＋当該注文で上限超過なら拒否。
+        // 投入中 80,000 円 ＋ 30,000 円 = 110,000 円 > CapitalCap 100,000 円。
+        var snapshot = Snapshot(investedCapital: 80_000m);
+        var intent = Buy(quantity: 1, price: 30_000m);
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    [Fact]
+    public void 保有投入額を含む累計が段階資金上限ちょうどなら承認する()
+    {
+        // Issue #27: 境界値。投入中 70,000 円 ＋ 30,000 円 = 100,000 円 == CapitalCap（判定は超過のみ拒否）。
+        var snapshot = Snapshot(investedCapital: 70_000m);
+        var intent = Buy(quantity: 1, price: 30_000m);
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    [Fact]
+    public void 段階資金上限は手仕舞いの投入額には適用しない()
+    {
+        // Issue #27: 手仕舞い（Close）は投入額判定の対象外（フェイルセーフ）。
+        var snapshot = Snapshot(investedCapital: 100_000m, openPositionCount: 2);
+
+        var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
     }
 
     [Fact]
