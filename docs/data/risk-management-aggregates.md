@@ -16,13 +16,10 @@ plan_refs:
 # データ仕様書: リスク管理ドメインの集約（設定・スナップショット・注文）
 
 > 実装済みドメイン型（`RiskManagementService.Domain` / `AiStockTrading.Shared.Contracts.Trading`）の集約境界・
-> 属性・永続化方針を定義する。本書は develop に加えて在フライトの是正 PR #41〜#44 で確定した属性
-> （`PositionEffect` / `InvestedCapital` / `UnrealizedPnl` / `OrderStatus.Rejected` 等）を反映した**統合後の状態**を
-> 一次情報とする。各属性の逆算根拠は [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md) を参照。
-> 判定での用途は FR-10 機能仕様（docs/functional/FR-10_risk-controls.md、PR #41 で追加）を参照。
->
-> **参照の注記**: IADR-0004〜0008 と FR-10 機能仕様は在フライト PR #41〜#44 で追加される文書のため、本書では
-> リンクではなく名称で参照する（マージ後にファイルが揃う）。develop に既存の IADR-0002/0003 のみリンクする。
+> 属性・永続化方針を定義する。属性 `PositionEffect` / `InvestedCapital` / `UnrealizedPnl` / `OrderStatus.Rejected` 等は
+> PR #41・#42・#44（develop にマージ済み）と本 PR に統合済みの #43 で確定したもの。各属性の逆算根拠は
+> [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)、判定での用途は
+> [FR-10 機能仕様](../functional/FR-10_risk-controls.md) を参照する。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -152,11 +149,11 @@ erDiagram
 
 ## 関連仕様
 
-- 機能仕様書: FR-10 リスク統制（docs/functional/FR-10_risk-controls.md、PR #41）
-- 通信仕様書: docs/api/（#34 で整備）
-- 実装ADR: [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)（既定値の逆算）、[IADR-0003](../adr/IADR-0003_position-sizing-responsibility.md)（サイジング責務）。
-  IADR-0004（建玉効果・PR #41）／IADR-0005（段階資金上限・PR #41）／IADR-0007（証券会社拒否・PR #43）／
-  IADR-0008（日次損失基準・PR #41）はマージ後に `docs/adr/` に揃う。
+- 機能仕様書: [FR-10 リスク統制](../functional/FR-10_risk-controls.md)
+- 通信仕様書: [イベント・ポート契約](../api/events-and-ports.md)
+- 実装ADR: [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)（既定値の逆算）、[IADR-0003](../adr/IADR-0003_position-sizing-responsibility.md)（サイジング責務）、
+  [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)（段階資金上限）、
+  [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失基準）
 
 ## 未決事項
 

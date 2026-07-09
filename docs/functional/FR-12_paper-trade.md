@@ -68,11 +68,11 @@ stateDiagram-v2
 
 ## 関連仕様
 
-- 機能仕様書: FR-10 リスク統制（docs/functional/FR-10_risk-controls.md、PR #41）
+- 機能仕様書: [FR-10 リスク統制](FR-10_risk-controls.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - 通信仕様書: [イベント・ポート契約](../api/events-and-ports.md)
-- 実装ADR: IADR-0007（証券会社拒否とリスク事前拒否の区別・PR #43）
+- 実装ADR: [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否とリスク事前拒否の区別）
 
 ## 未決事項
 

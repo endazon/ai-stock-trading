@@ -73,10 +73,10 @@ stateDiagram-v2
 
 ## 関連仕様
 
-- 機能仕様書: FR-10 リスク統制（docs/functional/FR-10_risk-controls.md、PR #41）、[FR-19 取引ガード](FR-19_trading-guard.md)
+- 機能仕様書: [FR-10 リスク統制](FR-10_risk-controls.md)、[FR-19 取引ガード](FR-19_trading-guard.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
-- 実装ADR: IADR-0005（段階資金上限の定義・PR #41）、IADR-0004（建玉効果・PR #41）
+- 実装ADR: [IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)（段階資金上限の定義）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）
 
 ## 未決事項
 

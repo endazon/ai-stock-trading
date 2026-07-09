@@ -17,9 +17,10 @@ plan_refs:
 > 対象は `RiskManagementService.Domain.Tests`（RiskEvaluator / PositionSizer / TradingDefaults）と
 > `AiStockTrading.Shared.Infrastructure.Tests`（PaperBrokerAdapter）。
 >
-> **テスト件数の注記**: 本表は在フライト PR #41〜#43 を統合した状態を反映する（ドメイン 52 件・インフラ 9 件＝
-> 計 61 件）。develop 現状は 38 件（ドメイン 34 / インフラ 4）で、差分は #25〜#31（PR #41）・#29（PR #42）・
-> #30（PR #43）の追加分。テストメソッド名は日本語識別子で、各テストのコメントに起点 ID を残している。
+> **テスト件数の注記**: PR #41（#25〜#31）・#42（#29）・#44 は develop にマージ済み。develop 現状は
+> 58 件（ドメイン 54 / インフラ 4）で、相場操縦・段階資金上限・日次損失合算・サイジングキャップ等を含む。
+> 本 PR は #43（#30・証券会社拒否 `OrderStatus.Rejected`）を統合しており、統合後は 63 件（ドメイン 54 / インフラ 9）。
+> #43 マージ後、develop も 63 件になる。テストメソッド名は日本語識別子で、各テストのコメントに起点 ID を残している。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -111,7 +112,7 @@ plan_refs:
 
 ## 関連仕様
 
-- 機能仕様書: FR-10 リスク統制（docs/functional/FR-10_risk-controls.md、PR #41）
+- 機能仕様書: [FR-10 リスク統制](../functional/FR-10_risk-controls.md)、[FR-19 取引ガード](../functional/FR-19_trading-guard.md)、[FR-20 段階ゲート](../functional/FR-20_staged-gates.md)、[FR-12 ペーパートレード](../functional/FR-12_paper-trade.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - 作業仕様書: `docs/specs/20260708_risk-guard-core.md` / `docs/specs/20260709_risk-eval-core-fixes.md` / `docs/specs/20260709_position-sizer-cap.md` / `docs/specs/20260709_paper-broker-validation.md`
 

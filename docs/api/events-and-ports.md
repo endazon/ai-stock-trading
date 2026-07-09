@@ -93,7 +93,7 @@ sequenceDiagram
 
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - 機能仕様書: [FR-12 ペーパートレード](../functional/FR-12_paper-trade.md)、[FR-19 取引ガード](../functional/FR-19_trading-guard.md)
-- 実装ADR: [IADR-0009](../adr/IADR-0009_async-contract-format.md)、IADR-0007（拒否の区別・PR #43）
+- 実装ADR: [IADR-0009](../adr/IADR-0009_async-contract-format.md)、[IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（拒否の区別）
 
 ## 未決事項
 

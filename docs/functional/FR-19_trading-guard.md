@@ -63,7 +63,7 @@ plan_refs:
 - **フェイルセーフの原則**（NFR / ADR-0003）: 新規建て（Open）は止めるが、保有ポジションの手仕舞い（Close）は
   ブロックしない。損切り監視は最後まで維持する。モード（Paper/Live）・商品種別・市場・禁止銘柄・相場操縦は
   建玉効果に依存しない性質のため、Close にも適用する。
-- FR-10 の各上限の詳細は FR-10 機能仕様（docs/functional/FR-10_risk-controls.md、PR #41）を参照。
+- FR-10 の各上限の詳細は [FR-10 機能仕様](FR-10_risk-controls.md) を参照。
 
 ## 処理フロー
 
@@ -94,10 +94,10 @@ flowchart TD
 
 ## 関連仕様
 
-- 機能仕様書: FR-10 リスク統制（docs/functional/FR-10_risk-controls.md、PR #41）、[FR-20 段階ゲート](FR-20_staged-gates.md)
+- 機能仕様書: [FR-10 リスク統制](FR-10_risk-controls.md)、[FR-20 段階ゲート](FR-20_staged-gates.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
-- 実装ADR: IADR-0004（建玉効果・PR #41）、IADR-0006（相場操縦拡張点・PR #41）
+- 実装ADR: [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（相場操縦拡張点）
 
 ## 未決事項
 
