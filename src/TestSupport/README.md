@@ -20,3 +20,12 @@ Keycloak 認証・相関ID）。
 
 > 本番統合（platform 側のホスト・基盤との結線）は #22（platform 拡張規約への準拠）で扱う。本 shim はそれまでの間、
 > および CI・ローカルでの単体実行のための最小の代替である。
+
+## ⚠️ 現時点の注意（#22 完了まで）
+
+**#22（本番統合）が未完了の現時点では、この shim が Worker の実行時動作を規定する de facto な配線である。**
+`RiskManagementService.Worker` は本 shim を `ProjectReference` しており、`Program.cs` の起動配線（MassTransit/RabbitMQ・
+OTel・Keycloak 認証）は現状この shim の実装だけで動く。したがって **いまこのサービスをデプロイすれば、実際に動くのは
+この shim のコードそのもの** である。「TestSupport」「本番非使用」という名前だけを見て「このフォルダは削除・変更しても
+デプロイ後の挙動に影響しない」と誤解しないこと。本 shim が「本番非使用」になるのは **#22 で platform 本体の Foundation へ
+差し替えた後** である。それまでは実行時の振る舞いを担う本番相当の配線として扱う。
