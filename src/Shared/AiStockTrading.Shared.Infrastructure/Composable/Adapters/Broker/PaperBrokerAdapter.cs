@@ -46,9 +46,9 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter
 
     public Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {
-        // 本アダプタは PlaceOrderAsync で常に即時 Filled（終端状態）にするため、非終端状態の注文は存在せず
-        // 取消は必ず下の終端チェックで弾かれる。IBrokerAdapter の契約を満たすための実装であり、
-        // 非同期約定で非終端状態を持つ実発注アダプタ（moomoo 等）は、状態遷移に応じた並行制御を各自で実装する。
+        // 本アダプタは PlaceOrderAsync で常に即時に Filled または Rejected（いずれも終端状態）にするため、
+        // 非終端状態の注文は存在せず、取消は必ず下の終端チェックで弾かれる。IBrokerAdapter の契約を満たすための
+        // 実装であり、非同期約定で非終端状態を持つ実発注アダプタ（moomoo 等）は、状態遷移に応じた並行制御を各自で実装する。
         if (!_orders.TryGetValue(orderId, out var order))
         {
             throw new InvalidOperationException($"注文が見つからない: {orderId}");
