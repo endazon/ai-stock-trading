@@ -54,9 +54,11 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.BannedSymbol);
         }
 
+        // 差金決済防止は（銘柄コード, 市場）で照合する。禁止銘柄判定と対称にし、別市場の
+        // 同一コード（例: 日本株 6902 と同名の米国ティッカー）の誤拒否を防ぐ（Issue #26）。
         if (isEntry
             && settings.Guard.PreventSameDayReentry
-            && snapshot.SymbolsTradedToday.Contains(intent.Symbol))
+            && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);
         }

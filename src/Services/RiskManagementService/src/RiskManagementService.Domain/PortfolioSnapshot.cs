@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-10: 判定時点のポートフォリオ・運用状態のスナップショット
@@ -23,8 +25,12 @@ public record PortfolioSnapshot
 
     public int ConsecutiveLosses { get; init; }
 
-    /// <summary>当日に売買が成立した銘柄（差金決済防止の判定に使用）。</summary>
-    public IReadOnlySet<string> SymbolsTradedToday { get; init; } = new HashSet<string>();
+    /// <summary>
+    /// 当日に売買が成立した銘柄を（銘柄コード, 市場）で保持する（差金決済防止の判定に使用）。
+    /// 禁止銘柄判定と対称に市場込みで照合し、別市場の同一コードの誤拒否を防ぐ（Issue #26）。
+    /// </summary>
+    public IReadOnlySet<(string Symbol, Market Market)> SymbolsTradedToday { get; init; }
+        = new HashSet<(string, Market)>();
 
     /// <summary>全停止スイッチ（kill switch）。利用者のみ操作できる。</summary>
     public bool KillSwitchEngaged { get; init; }

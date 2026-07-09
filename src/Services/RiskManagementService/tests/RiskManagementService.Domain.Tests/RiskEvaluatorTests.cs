@@ -48,7 +48,7 @@ public class RiskEvaluatorTests
         decimal dailyRealizedPnl = 0m,
         decimal drawdownRatio = 0m,
         int consecutiveLosses = 0,
-        IReadOnlySet<string>? symbolsTradedToday = null,
+        IReadOnlySet<(string Symbol, Market Market)>? symbolsTradedToday = null,
         bool killSwitchEngaged = false) =>
         new()
         {
@@ -58,7 +58,7 @@ public class RiskEvaluatorTests
             DailyRealizedPnl = dailyRealizedPnl,
             DrawdownRatio = drawdownRatio,
             ConsecutiveLosses = consecutiveLosses,
-            SymbolsTradedToday = symbolsTradedToday ?? new HashSet<string>(),
+            SymbolsTradedToday = symbolsTradedToday ?? new HashSet<(string, Market)>(),
             KillSwitchEngaged = killSwitchEngaged,
         };
 
@@ -160,12 +160,26 @@ public class RiskEvaluatorTests
     public void 同一銘柄の同日再エントリーは拒否する()
     {
         // FR-19: 差金決済防止（現物の同日回転禁止）
-        var snapshot = Snapshot(symbolsTradedToday: new HashSet<string> { "AAPL" });
+        var snapshot = Snapshot(symbolsTradedToday: new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) });
 
         var result = RiskEvaluator.Evaluate(Buy(symbol: "AAPL"), DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.SameDayReentry);
+    }
+
+    [Fact]
+    public void 同日取引済みでも市場が異なれば再エントリーを拒否しない()
+    {
+        // Issue #26 / FR-19: 差金決済防止は（銘柄, 市場）で照合する。禁止銘柄判定と対称。
+        // 日本株「6902」を当日取引済みでも、同一コードの米国株は同日再エントリー対象外。
+        var snapshot = Snapshot(
+            symbolsTradedToday: new HashSet<(string, Market)> { ("6902", Market.Japan) });
+
+        var result = RiskEvaluator.Evaluate(
+            Buy(symbol: "6902", market: Market.UnitedStates), DefaultSettings(), snapshot);
+
+        result.Reasons.Should().NotContain(RejectionReason.SameDayReentry);
     }
 
     [Theory]
@@ -258,7 +272,7 @@ public class RiskEvaluatorTests
         // 手仕舞い（Close）は保有数上限・同日再エントリー・段階資金上限の対象外
         var snapshot = Snapshot(
             openPositionCount: 3,
-            symbolsTradedToday: new HashSet<string> { "AAPL" });
+            symbolsTradedToday: new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) });
 
         var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), snapshot);
 
@@ -345,7 +359,7 @@ public class RiskEvaluatorTests
         var snapshot = Snapshot(
             openPositionCount: 3,
             killSwitchEngaged: true,
-            symbolsTradedToday: new HashSet<string> { "AAPL" });
+            symbolsTradedToday: new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) });
         var shortCover = Close(side: TradeSide.Buy, productType: ProductType.Margin);
 
         var result = RiskEvaluator.Evaluate(shortCover, MarginEnabledSettings(), snapshot);
