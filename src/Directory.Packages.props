@@ -14,6 +14,8 @@
   <ItemGroup>
     <!-- ランタイム Foundation（IADR-0011 最小移植）。バージョンは基盤リポ microservices-platform と同一に保つ。 -->
     <PackageVersion Include="MassTransit" Version="8.4.1" />
+    <!-- MassTransit.RabbitMQ は本 PR のどの csproj からも未参照。RabbitMQ 依存を持つ Worker ホスト
+         （#12 Slice B）向けのバージョン先行宣言（CPM 一元管理）。ブローカ非依存の core は上の MassTransit。 -->
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.4.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />

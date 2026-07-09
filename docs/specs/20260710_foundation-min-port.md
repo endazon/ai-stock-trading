@@ -8,7 +8,7 @@ created: 2026-07-10
 updated: 2026-07-10
 plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_reuse-platform-and-per-service-db.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
 ---
 
 # 仕様書: 基盤ランタイム Foundation の最小移植
