@@ -68,4 +68,57 @@ public class PositionSizerTests
 
         factor.Should().Be(0.25m);
     }
+
+    [Fact]
+    public void リスク予算基準が金額上限内ならキャップされない()
+    {
+        // Issue #29: 損切り幅が十分深くリスク予算基準の株数が金額上限内に収まるケース。
+        // 資金 100,000 × 1% = 1,000 円 ÷ 損切り 30 円 = 33 株。想定金額 33 × 100 = 3,300 円 ≦ 上限 35,000 円。
+        var quantity = PositionSizer.CalculateCappedQuantity(
+            capital: 100_000m, perTradeRiskRatio: 0.01m, stopLossDistancePerShare: 30m,
+            referencePrice: 100m, maxOrderAmount: 35_000m, availableCapital: 100_000m);
+
+        quantity.Should().Be(33);
+    }
+
+    [Fact]
+    public void 損切り幅が浅い場合は1注文金額上限で株数がキャップされる()
+    {
+        // Issue #29: 損切り幅 10 円（浅い）→ リスク予算基準 1,000 ÷ 10 = 100 株（想定金額 100,000 円）。
+        // 1 注文金額上限 35,000 円 ÷ 参照価格 1,000 円 = 35 株にキャップされ、想定金額は上限内に収まる。
+        var quantity = PositionSizer.CalculateCappedQuantity(
+            capital: 100_000m, perTradeRiskRatio: 0.01m, stopLossDistancePerShare: 10m,
+            referencePrice: 1_000m, maxOrderAmount: 35_000m, availableCapital: 100_000m);
+
+        quantity.Should().Be(35);
+        (quantity * 1_000m).Should().BeLessThanOrEqualTo(35_000m);
+    }
+
+    [Fact]
+    public void 利用可能資金が金額上限より小さい場合は資金でキャップされる()
+    {
+        // Issue #29: 段階資金上限の残枠など、利用可能資金が 1 注文金額上限より小さいときは資金基準でキャップ。
+        // 利用可能資金 20,000 円 ÷ 参照価格 1,000 円 = 20 株。
+        var quantity = PositionSizer.CalculateCappedQuantity(
+            capital: 100_000m, perTradeRiskRatio: 0.01m, stopLossDistancePerShare: 10m,
+            referencePrice: 1_000m, maxOrderAmount: 35_000m, availableCapital: 20_000m);
+
+        quantity.Should().Be(20);
+    }
+
+    [Fact]
+    public void 参照価格がゼロ以下なら見送りとして株数ゼロを返す()
+    {
+        // Issue #29: 金額基準のキャップは参照価格で割るため、価格が正でない注文は見送り（0 株）。
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 10m, 0m, 35_000m, 100_000m).Should().Be(0);
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 10m, -1m, 35_000m, 100_000m).Should().Be(0);
+    }
+
+    [Fact]
+    public void 損切り幅がゼロ以下ならキャップ版も見送りとして株数ゼロを返す()
+    {
+        // Issue #29: キャップ版でも損切り幅が正でなければリスク予算基準が 0 となり、min で 0 株（見送り）。
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 0m, 1_000m, 35_000m, 100_000m).Should().Be(0);
+        PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, -5m, 1_000m, 35_000m, 100_000m).Should().Be(0);
+    }
 }
