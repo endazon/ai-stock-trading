@@ -10,7 +10,8 @@ public static class RiskEvaluator
     public static OrderScreeningResult Evaluate(
         OrderIntent intent,
         RiskManagementSettings settings,
-        PortfolioSnapshot snapshot)
+        PortfolioSnapshot snapshot,
+        IManipulativeOrderPatternDetector? patternDetector = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -63,6 +64,15 @@ public static class RiskEvaluator
             && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);
+        }
+
+        // FR-19, IADR-0006: 相場操縦とみなされ得る発注パターンの禁止。ガード有効かつ検出器が注入された
+        // ときにのみ判定する（検出アルゴリズム＝注文履歴統計は後続スライス）。エントリー/手仕舞いを問わず適用する。
+        if (settings.Guard.ProhibitManipulativeOrderPatterns
+            && patternDetector is not null
+            && patternDetector.IsSuspectedManipulation(intent, snapshot))
+        {
+            reasons.Add(RejectionReason.ManipulativeOrderPattern);
         }
 
         // FR-10: リスク上限。金額系の上限は「新規発注（エントリー）の資金投入」を制限するもの。

@@ -391,6 +391,48 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.PerOrderAmountExceeded);
     }
 
+    // Issue #28: テスト用の相場操縦検出器。固定の判定を返すスタブ。
+    private sealed class StubPatternDetector(bool result) : IManipulativeOrderPatternDetector
+    {
+        public bool IsSuspectedManipulation(OrderIntent intent, PortfolioSnapshot snapshot) => result;
+    }
+
+    [Fact]
+    public void 相場操縦パターン検出器が該当と判定した注文は拒否する()
+    {
+        // Issue #28 / FR-19: ガード有効かつ検出器が true を返す場合に拒否する。
+        var result = RiskEvaluator.Evaluate(
+            Buy(), DefaultSettings(), Snapshot(), new StubPatternDetector(true));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
+    }
+
+    [Fact]
+    public void 相場操縦検出器を注入しなければ現行どおり承認する()
+    {
+        // Issue #28: 検出器未注入では判定をスキップし、初期スライスの挙動を保つ（回帰防止）。
+        var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), Snapshot());
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.ManipulativeOrderPattern);
+    }
+
+    [Fact]
+    public void ガード無効時は相場操縦検出器が該当と判定してもスキップする()
+    {
+        // Issue #28: ProhibitManipulativeOrderPatterns = false のとき判定を呼ばない。
+        var settings = DefaultSettings() with
+        {
+            Guard = TradingDefaults.CreateGuardSettings() with { ProhibitManipulativeOrderPatterns = false },
+        };
+
+        var result = RiskEvaluator.Evaluate(
+            Buy(), settings, Snapshot(), new StubPatternDetector(true));
+
+        result.Reasons.Should().NotContain(RejectionReason.ManipulativeOrderPattern);
+    }
+
     [Fact]
     public void ショート決済の買い戻しはエントリー制約の対象外()
     {

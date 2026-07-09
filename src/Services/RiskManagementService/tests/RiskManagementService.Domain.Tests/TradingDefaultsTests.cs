@@ -28,6 +28,7 @@ public class TradingDefaultsTests
         guard.EnabledProductTypes.Should().BeEquivalentTo([ProductType.Cash]); // 信用は無効
         guard.EnabledMarkets.Should().BeEquivalentTo([Market.Japan, Market.UnitedStates]);
         guard.PreventSameDayReentry.Should().BeTrue();
+        guard.ProhibitManipulativeOrderPatterns.Should().BeTrue(); // FR-19: 発注パターン禁止は既定で有効
     }
 
     [Fact]
