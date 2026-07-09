@@ -13,4 +13,10 @@ public record TradingGuardSettings
 
     /// <summary>差金決済防止: 同一銘柄の同日再エントリー禁止（現物）。</summary>
     public bool PreventSameDayReentry { get; init; } = true;
+
+    /// <summary>
+    /// 相場操縦とみなされ得る発注パターン（約定意思のない発注・板演出・過剰な訂正/取消）の禁止（FR-19）。
+    /// 既定で有効。実際の検知は <see cref="IManipulativeOrderPatternDetector"/> の注入実装が担う（後続スライス）。
+    /// </summary>
+    public bool ProhibitManipulativeOrderPatterns { get; init; } = true;
 }
