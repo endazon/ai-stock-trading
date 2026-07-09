@@ -1,0 +1,54 @@
+# Issue #126: フロントエンド SPA の CI（typecheck / lint / build / e2e スモーク）。
+# frontend/ 配下の変更で起動する。バックエンド（.NET）CI とは独立。
+# 単体テスト＝品質ゲートは frontend-tests.yml（npm run test:coverage）が担うため、
+# 本ワークフローではテストを実行しない（同一スイートの二重実行を避ける。IADR-0034）。
+name: Frontend CI
+
+on:
+  push:
+    branches: [develop, main]
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      # 単体テストは frontend-tests.yml（npm run test:coverage）へ集約（二重実行回避・IADR-0034）。
+      - name: Build
+        run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # スクリーンレベル・スモーク（バックエンド不要。ログイン画面到達を検証）。
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: E2E smoke
+        run: npm run test:e2e

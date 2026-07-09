@@ -1,0 +1,43 @@
+# IADR-0033: フロントエンド単体テスト＋カバレッジの専用 CI。
+# frontend.yml（typecheck/lint/build/e2e を含む複合 CI）とは別に、
+# テスト＝品質ゲートを独立させ、カバレッジのレポート生成としきい値ゲートを担う。
+# frontend/ 配下の変更で起動する（バックエンド .NET CI とは独立）。
+name: Frontend Tests
+
+on:
+  push:
+    branches: [develop, main]
+    paths: ["frontend/**", ".github/workflows/frontend-tests.yml"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ["frontend/**", ".github/workflows/frontend-tests.yml"]
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # 単体テスト（Vitest）をカバレッジ付きで実行する。
+      # vite.config.ts の coverage.thresholds を下回ると失敗する（回帰防止ゲート）。
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+      # カバレッジレポート（lcov / html / text-summary）を成果物として保存する。
+      # しきい値未達でも診断できるよう、失敗時も常にアップロードする。
+      - name: Upload coverage report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: warn
+          retention-days: 14
