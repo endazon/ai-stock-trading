@@ -60,7 +60,7 @@ jobs:
             echo "生成コマンド未設定かつ手書き仕様を尊重。雛形上書きはスキップする。"
             # docs/api/openapi.yaml は手書きの OpenAPI 3.1.0 リッチ仕様であり、生成元の
             # 通信仕様書が存在しない。--force を付けると空雛形で上書き破壊されるため付けない
-            # （既存があれば上書きしない。Issue #60）。
+            # （既存があれば上書きしない）。
             node scripts/gen-openapi-skeleton.js --src docs/api --out docs/api/openapi.yaml || true
           fi
 

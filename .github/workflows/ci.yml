@@ -31,7 +31,7 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（Issue #60・再発防止）。
+  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
   # fetch-depth: 0 は base..HEAD の範囲解決に必須。
   commit-messages:
