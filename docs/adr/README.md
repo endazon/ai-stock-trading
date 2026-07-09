@@ -24,3 +24,4 @@
 | IADR | タイトル | 状態 |
 | --- | --- | --- |
 | IADR-0000 | 実装意思決定の記録方針 | Accepted |
+| IADR-0009 | 非同期イベント契約は Markdown 通信仕様で管理し、OpenAPI は同期 API 専用とする | Accepted |
