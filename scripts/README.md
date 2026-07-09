@@ -36,3 +36,12 @@ node scripts/check-doc-links.js                    # 仕様書の相対リンク
 - `.github/workflows/openapi.yml`: OpenAPI を生成する。コードからの生成コマンド（`scripts/generate-openapi.sh` または変数 `OPENAPI_GENERATE_CMD`）が設定されていればそれを実行し、無ければ通信仕様書からの雛形生成にフォールバックする（「生成可能なら必ず生成」）。
 
 > OpenAPI をコードから生成する場合は `scripts/generate-openapi.sh` を用意する（例: `dotnet swagger tofile ...` / `npx ...`）。未整備でも雛形は通信仕様書から生成される。
+
+## 出典（テンプレート由来の設計）
+
+`check-commit-messages.js` / `gen-changelog.js` / `pr-title.yml` と `commit-allowlist.json` / `changelog-overrides.json`
+の仕組みは、上流テンプレート **impl-handoff-kit** から継承したものである。テンプレート側の設計時に付番された
+Issue 番号・PR 番号・コミット SHA（例: 旧ドキュメントにあった `#60` / `#125` / `#95` / `3d8852f` / `b421761` 等）は
+**本リポジトリには存在しない**。本リポの文書・設定・スクリプトからはそれらの参照を除去済みで、機構の説明は実在する
+ファイル名（各スクリプト・ワークフロー）で行う。将来これらの機構を変更する際は、本リポで解決できる Issue/PR/SHA
+のみを参照すること（Issue #32）。

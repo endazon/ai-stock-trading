@@ -5,7 +5,7 @@
  * コミットメッセージ規約（`種別(起点ID): 要約`）の機械チェック。
  * 外部依存ゼロ（Node 標準モジュールのみ）。CI（PR 単位）での再発防止を目的とする。
  *
- * 方針（Issue #60）:
+ * 方針:
  *   - 既存履歴は書き換えない。検査対象は「PR で追加されるコミット」= base..HEAD の範囲のみ。
  *   - dependabot 等の自動コミット・マージコミット・自動生成コミットは除外する。
  *   - 規約違反があれば非ゼロ終了し、CI を失敗させる。
@@ -31,7 +31,7 @@ const VALID_TYPES = ['feat', 'fix', 'perf', 'refactor', 'docs', 'test', 'build',
 
 // 起点 ID（スコープ）の省略を許す種別。ツールチェーン・雑多な housekeeping は計画 ID に
 // 紐づかないことがあるため（traceability.md「雑多な変更は理由を明記する」）。それ以外の
-// 内容変更（feat/fix/perf/refactor/docs/test）は起点 ID を必須とする（Issue #60・再発防止）。
+// 内容変更（feat/fix/perf/refactor/docs/test）は起点 ID を必須とする（再発防止）。
 const TYPES_ALLOW_NO_SCOPE = ['chore', 'style', 'build', 'ci'];
 
 // 起点 ID の書式（.claude/rules/traceability.md と一致）。
@@ -39,7 +39,7 @@ const TYPES_ALLOW_NO_SCOPE = ['chore', 'style', 'build', 'ci'];
 const ID_PATTERN = /^(FR-\d+|NFR(?:-\w+)?|UC-\d+|SC-\d+|ADR-\d{3,4}|IADR-\d{3,4}|P[0-3])$/;
 
 // 除外する自動コミットの著者（メール/名前に部分一致）。
-//   dependabot 等の自動コミットは規約対象外（Issue #60）。
+//   dependabot 等の自動コミットは規約対象外。
 const BOT_AUTHORS = [
   'dependabot[bot]',
   'dependabot',
@@ -185,7 +185,7 @@ function validateSubject(subject) {
     reasons.push(`未知の種別 "${type}"（許可: ${VALID_TYPES.join(' / ')}）`);
   }
   if (scope === undefined) {
-    // スコープ（起点 ID）が無い。内容変更の種別では必須（抜け穴防止・Issue #60）。
+    // スコープ（起点 ID）が無い。内容変更の種別では必須（抜け穴防止）。
     if (!TYPES_ALLOW_NO_SCOPE.includes(lowerType)) {
       reasons.push(
         `起点 ID が無い（${lowerType} は必須）。例: ${lowerType}(FR-08): ...。` +
@@ -210,7 +210,7 @@ function validateSubject(subject) {
 }
 
 /**
- * 単一件名（PR タイトル = スカッシュ後件名の由来）を検査する（Issue #125・再発防止）。
+ * 単一件名（PR タイトル = スカッシュ後件名の由来）を検査する（再発防止）。
  * git を使わず、渡された 1 件名のみを規約に照合する。Revert / [skip ci] はスキップ扱い。
  * 合格・スキップ時 0、違反時 1 を返す。
  */
@@ -246,7 +246,7 @@ function checkSingleTitle(title) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  // 単一件名モード（PR タイトル検査）。git リポジトリ内外を問わず動作する（Issue #125）。
+  // 単一件名モード（PR タイトル検査）。git リポジトリ内外を問わず動作する。
   const title = args.title != null ? args.title : process.env.PR_TITLE;
   if (title != null) {
     process.exit(checkSingleTitle(title));
