@@ -96,7 +96,10 @@ public static class RiskEvaluator
 
         // 日次損失上限・最大DD 到達時も「新規発注停止・損切り監視は維持」（フェイルセーフ）。
         // 損失拡大局面での手仕舞い（売り）を止めないよう、エントリーにのみ適用する。
-        if (isEntry && snapshot.DailyRealizedPnl <= -(snapshot.Capital * settings.Limits.DailyLossLimitRatio))
+        // 日次損失は実現損益と含み損益（評価損益）の合算で判定する（IADR-0008, Issue #31）。実現ゼロでも
+        // 含み損が大きいケースの検知遅れを防ぐデイリーストップ。手仕舞いは含み損を実現・縮小する方向のため対象外。
+        var dailyLoss = snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl;
+        if (isEntry && dailyLoss <= -(snapshot.Capital * settings.Limits.DailyLossLimitRatio))
         {
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }

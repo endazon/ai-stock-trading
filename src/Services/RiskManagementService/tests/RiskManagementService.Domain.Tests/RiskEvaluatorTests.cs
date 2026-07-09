@@ -47,6 +47,7 @@ public class RiskEvaluatorTests
         decimal investedCapital = 0m,
         decimal dailyOrderedAmount = 0m,
         decimal dailyRealizedPnl = 0m,
+        decimal unrealizedPnl = 0m,
         decimal drawdownRatio = 0m,
         int consecutiveLosses = 0,
         IReadOnlySet<(string Symbol, Market Market)>? symbolsTradedToday = null,
@@ -58,6 +59,7 @@ public class RiskEvaluatorTests
             InvestedCapital = investedCapital,
             DailyOrderedAmount = dailyOrderedAmount,
             DailyRealizedPnl = dailyRealizedPnl,
+            UnrealizedPnl = unrealizedPnl,
             DrawdownRatio = drawdownRatio,
             ConsecutiveLosses = consecutiveLosses,
             SymbolsTradedToday = symbolsTradedToday ?? new HashSet<(string, Market)>(),
@@ -266,13 +268,60 @@ public class RiskEvaluatorTests
     [Fact]
     public void 日次損失上限に達したら当日の新規注文を拒否する()
     {
-        // FR-10: 日次損失上限（既定: 資金の2%到達で当日全停止）
+        // FR-10: 日次損失上限（既定: 資金の2%到達で当日全停止）。実現損益のみで到達するケース。
         var snapshot = Snapshot(dailyRealizedPnl: -2_000m); // 資金 100,000 の 2%
 
         var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
+    }
+
+    [Fact]
+    public void 実現ゼロでも含み損の合算で日次損失上限に達したら拒否する()
+    {
+        // Issue #31 / FR-10, IADR-0008: 日次損失は実現損益＋含み損益で判定する。
+        // 実現 0・含み損 -2,000 円（資金 100,000 の 2%）でデイリーストップに到達。
+        var snapshot = Snapshot(dailyRealizedPnl: 0m, unrealizedPnl: -2_000m);
+
+        var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
+    }
+
+    [Fact]
+    public void 実現と含み損の合算が上限未満なら日次損失上限で拒否しない()
+    {
+        // Issue #31: 実現 -1,000 ＋ 含み損 -500 = -1,500 円 > -2,000 円（上限未満）→ 到達しない。
+        var snapshot = Snapshot(dailyRealizedPnl: -1_000m, unrealizedPnl: -500m);
+
+        var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), snapshot);
+
+        result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached);
+    }
+
+    [Fact]
+    public void 含み益は実現損失を相殺して日次損失上限の到達を防ぐ()
+    {
+        // Issue #31: 合算判定のため、含み益 +1,000 は実現損 -2,500 を相殺し、合算 -1,500 円は上限未満。
+        var snapshot = Snapshot(dailyRealizedPnl: -2_500m, unrealizedPnl: 1_000m);
+
+        var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), snapshot);
+
+        result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached);
+    }
+
+    [Fact]
+    public void 含み損で日次損失上限に達していても手仕舞いの売り注文は承認する()
+    {
+        // Issue #31: フェイルセーフ。含み損合算で上限到達中でも手仕舞い（Close）はブロックしない。
+        var snapshot = Snapshot(unrealizedPnl: -3_000m, openPositionCount: 2);
+
+        var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached);
     }
 
     [Fact]

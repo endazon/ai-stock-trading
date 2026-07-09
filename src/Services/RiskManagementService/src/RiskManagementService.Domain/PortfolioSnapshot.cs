@@ -26,6 +26,13 @@ public record PortfolioSnapshot
     /// <summary>当日の実現損益（負値 = 損失）。</summary>
     public decimal DailyRealizedPnl { get; init; }
 
+    /// <summary>
+    /// 保有ポジションの含み損益＝評価損益（負値 = 含み損、基準通貨・円）。日次損失上限は実現損益と含み損益の
+    /// 合算で判定する（IADR-0008, Issue #31）。含み損の大きいポジションを抱えたまま実現ゼロで検知が遅れる穴を塞ぐ。
+    /// 評価損益は日次終値（全体前提条件 §5 の為替評価方法）で算出する想定。集計はリスク管理ホスト（#12）の責務。
+    /// </summary>
+    public decimal UnrealizedPnl { get; init; }
+
     /// <summary>資金ピークからのドローダウン率（0.10 = 10%）。</summary>
     public decimal DrawdownRatio { get; init; }
 
