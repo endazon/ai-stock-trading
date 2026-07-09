@@ -19,6 +19,11 @@ plan_refs:
 > 基盤実装リポ `../microservices-platform` の `KnowledgePlatform.Shared.Infrastructure/Foundation` から
 > `AiStockTrading.Shared.Infrastructure` へ**最小移植**する。#22 本体の 3 要求（イベント共通エンベロープ・宣言的
 > バインディング・構成情報 API 自己申告）はこの Foundation の上に載る後続 Slice とする。
+>
+> **配置・命名の更新（[IADR-0013](../adr/IADR-0013_platform-foundation-testsupport-shim.md)）**: 本移植 Foundation は
+> **本番非使用の最小 shim** であり、`src/TestSupport/AiStockTrading.TestSupport.PlatformShim/`（名前空間
+> `AiStockTrading.TestSupport.PlatformShim.Foundation.*`）へ物理分離した。本文中の `AiStockTrading.Shared.Infrastructure`
+> という配置記述は当初のもので、実配置は TestSupport 側。本番は platform 本体の Foundation を用いる（本番非使用）。
 
 ## 起点となる計画書・課題（トレーサビリティ）
 

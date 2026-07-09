@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using FluentAssertions;
 using Xunit;
 
-namespace AiStockTrading.Shared.Infrastructure.Tests.Foundation;
+namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
 // IADR-0011, platform ADR-0004: Keycloak レルムロールの ClaimTypes.Role 展開の検証。
 // 冪等性・fail-closed（不正入力ではロールを付与しない）を固定する。

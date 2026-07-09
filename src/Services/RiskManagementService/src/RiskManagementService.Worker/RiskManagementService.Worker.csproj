@@ -18,7 +18,9 @@
     </PackageReference>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <ProjectReference Include="..\RiskManagementService.Application\RiskManagementService.Application.csproj" />
-    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。
+         本番では platform 本体の Foundation に置き換わる。standalone 起動配線は dev/test/CI 用。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <InternalsVisibleTo Include="RiskManagementService.Worker.Tests" />
   </ItemGroup>
 </Project>

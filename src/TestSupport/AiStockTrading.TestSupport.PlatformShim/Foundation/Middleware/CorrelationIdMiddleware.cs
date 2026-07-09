@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Middleware;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Middleware;
 
 // IADR-0011（platform の最小移植・由来: Foundation/Middleware/CorrelationIdMiddleware.cs）:
 // X-Correlation-ID を受領ヘッダから引き継ぎ（無ければ生成）、レスポンスへ反映しつつログへ相関付けする。

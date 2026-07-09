@@ -1,4 +1,4 @@
-using AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Trace;
 using Xunit;
 
-namespace AiStockTrading.Shared.Infrastructure.Tests.Foundation;
+namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 
 // IADR-0011: Foundation の登録拡張が例外なくサービス登録できることのスモーク検証（実配線の E2E は #12 Slice B）。
 public class FoundationRegistrationTests

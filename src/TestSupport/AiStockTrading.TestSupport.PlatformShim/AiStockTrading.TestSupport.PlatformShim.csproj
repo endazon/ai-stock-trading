@@ -1,0 +1,22 @@
+<!-- IADR-0013: microservices-platform 由来のランタイム Foundation の最小移植（shim）。
+     ローカルのビルド・テスト・単体実行を成立させるための「足場」であり、本番では platform 本体の
+     Shared.Infrastructure/Foundation を用いるため本プロジェクトは本番非使用。詳細は本フォルダの README を参照。
+     ASP.NET 型（WebApplication/HttpContext/HealthChecks）を使うため共有フレームワークを参照する。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.TestSupport.PlatformShim</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+    <PackageReference Include="MassTransit" />
+  </ItemGroup>
+</Project>

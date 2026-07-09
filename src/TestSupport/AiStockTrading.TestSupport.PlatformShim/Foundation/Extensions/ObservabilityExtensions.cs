@@ -6,7 +6,7 @@ using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
 // IADR-0011（platform ADR-0006 の最小移植・由来: Foundation/Extensions/ObservabilityExtensions.cs）:
 // OTel（トレース/メトリクス）と Serilog（OTLP）への統一計装。各サービスの起動時に登録する。

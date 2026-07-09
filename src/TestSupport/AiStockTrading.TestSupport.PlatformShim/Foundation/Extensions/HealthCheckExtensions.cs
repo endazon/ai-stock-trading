@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
 // IADR-0011（platform の最小移植・由来: Foundation/Extensions/HealthCheckExtensions.cs）:
 // Kubernetes の liveness/readiness プローブ向けエンドポイント。

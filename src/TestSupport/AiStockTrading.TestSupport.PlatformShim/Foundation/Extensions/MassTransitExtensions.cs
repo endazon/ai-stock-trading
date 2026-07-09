@@ -1,6 +1,6 @@
 using MassTransit;
 
-namespace AiStockTrading.Shared.Infrastructure.Foundation.Extensions;
+namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
 // IADR-0011（platform ADR-0003 の最小移植・由来: KnowledgePlatform.Shared.Infrastructure/Foundation/Extensions/MassTransitExtensions.cs）:
 // 非同期メッセージング（MassTransit + RabbitMQ）の「再試行・デッドレターで回復性を確保する」決定を
