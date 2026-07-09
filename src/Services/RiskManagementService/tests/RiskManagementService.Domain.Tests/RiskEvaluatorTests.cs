@@ -18,8 +18,28 @@ public class RiskEvaluatorTests
         ProductType productType = ProductType.Cash,
         TradeMode mode = TradeMode.Paper,
         int quantity = 10,
+        decimal price = 3000m,
+        PositionEffect positionEffect = PositionEffect.Open) =>
+        new(symbol, market, TradeSide.Buy, productType, mode, quantity, price, positionEffect);
+
+    // 手仕舞い（Close）注文。既定はロング決済（売り）。ショート決済の検証では side/productType を差し替える。
+    private static OrderIntent Close(
+        string symbol = "AAPL",
+        Market market = Market.UnitedStates,
+        ProductType productType = ProductType.Cash,
+        TradeSide side = TradeSide.Sell,
+        int quantity = 10,
         decimal price = 3000m) =>
-        new(symbol, market, TradeSide.Buy, productType, mode, quantity, price);
+        new(symbol, market, side, productType, TradeMode.Paper, quantity, price, PositionEffect.Close);
+
+    // ショートエントリー（新規売り建て）。信用有効化後に発生する Side == Sell の Open。
+    private static OrderIntent ShortEntry(
+        string symbol = "AAPL",
+        Market market = Market.UnitedStates,
+        int quantity = 10,
+        decimal price = 3000m,
+        TradeMode mode = TradeMode.Paper) =>
+        new(symbol, market, TradeSide.Sell, ProductType.Margin, mode, quantity, price, PositionEffect.Open);
 
     private static PortfolioSnapshot Snapshot(
         decimal capital = 100_000m,
@@ -43,6 +63,15 @@ public class RiskEvaluatorTests
         };
 
     private static RiskManagementSettings DefaultSettings() => TradingDefaults.CreateSettings();
+
+    // 信用（Margin）を有効化した設定。ショートエントリー（Issue #25）の検証に用いる。
+    private static RiskManagementSettings MarginEnabledSettings() => DefaultSettings() with
+    {
+        Guard = TradingDefaults.CreateGuardSettings() with
+        {
+            EnabledProductTypes = new HashSet<ProductType> { ProductType.Cash, ProductType.Margin },
+        },
+    };
 
     [Fact]
     public void 制約のない買い注文は承認され承認数量が返る()
@@ -226,11 +255,12 @@ public class RiskEvaluatorTests
     [Fact]
     public void 保有ポジションの売り注文にはエントリー専用の制約を適用しない()
     {
-        // 売り（手仕舞い）は保有数上限・同日再エントリー・段階資金上限の対象外
-        var snapshot = Snapshot(openPositionCount: 3, symbolsTradedToday: new HashSet<string> { "AAPL" });
-        var sell = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, 10, 3000m);
+        // 手仕舞い（Close）は保有数上限・同日再エントリー・段階資金上限の対象外
+        var snapshot = Snapshot(
+            openPositionCount: 3,
+            symbolsTradedToday: new HashSet<string> { "AAPL" });
 
-        var result = RiskEvaluator.Evaluate(sell, DefaultSettings(), snapshot);
+        var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeTrue();
     }
@@ -244,9 +274,8 @@ public class RiskEvaluatorTests
             dailyRealizedPnl: -2_000m, // 資金 100,000 の 2%（日次損失上限）
             drawdownRatio: 0.10m,      // 最大DD 上限
             killSwitchEngaged: true);
-        var sell = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, 10, 3000m);
 
-        var result = RiskEvaluator.Evaluate(sell, DefaultSettings(), snapshot);
+        var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeTrue();
         result.Reasons.Should().NotContain(RejectionReason.KillSwitchActive);
@@ -262,7 +291,7 @@ public class RiskEvaluatorTests
         // 上限近い状況での損切り売りをブロックしてはならない。
         var snapshot = Snapshot(dailyOrderedAmount: 99_000m); // 日次上限 100,000 円の直前
         // 1株 50,000 円（MaxOrderAmount 35,000 円超）× 1株。売り時価も日次累計上限を超える。
-        var sell = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, 1, 50_000m);
+        var sell = Close(quantity: 1, price: 50_000m);
 
         var result = RiskEvaluator.Evaluate(sell, DefaultSettings(), snapshot);
 
@@ -281,5 +310,46 @@ public class RiskEvaluatorTests
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
         result.Reasons.Should().NotContain(RejectionReason.BannedSymbol);
+    }
+
+    [Fact]
+    public void KillSwitch起動中はショートエントリーも拒否する()
+    {
+        // Issue #25 / FR-10, FR-19: 信用有効化後の新規売り建て（Side == Sell の Open）も
+        // kill switch の対象。Side == Buy でエントリーを近似していた欠陥の回帰防止。
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(), MarginEnabledSettings(), Snapshot(killSwitchEngaged: true));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.KillSwitchActive);
+    }
+
+    [Fact]
+    public void ショートエントリーにも段階資金上限と金額上限が適用される()
+    {
+        // Issue #25 / FR-10, FR-20: エントリー専用の金額上限がショートエントリーにも効く。
+        var intent = ShortEntry(quantity: 100, price: 3000m); // 300,000 円 > CapitalCap 100,000 円
+
+        var result = RiskEvaluator.Evaluate(intent, MarginEnabledSettings(), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
+        result.Reasons.Should().Contain(RejectionReason.PerOrderAmountExceeded);
+    }
+
+    [Fact]
+    public void ショート決済の買い戻しはエントリー制約の対象外()
+    {
+        // Issue #25: 手仕舞い（ショート決済 = Buy × Close）はフェイルセーフにより
+        // kill switch・保有数上限・同日再エントリーの対象外。
+        var snapshot = Snapshot(
+            openPositionCount: 3,
+            killSwitchEngaged: true,
+            symbolsTradedToday: new HashSet<string> { "AAPL" });
+        var shortCover = Close(side: TradeSide.Buy, productType: ProductType.Margin);
+
+        var result = RiskEvaluator.Evaluate(shortCover, MarginEnabledSettings(), snapshot);
+
+        result.IsApproved.Should().BeTrue();
     }
 }

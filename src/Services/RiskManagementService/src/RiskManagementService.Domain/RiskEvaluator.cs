@@ -13,11 +13,14 @@ public static class RiskEvaluator
         PortfolioSnapshot snapshot)
     {
         var reasons = new List<RejectionReason>();
-        var isEntry = intent.Side == TradeSide.Buy;
+        // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
+        // 信用有効化後はショートエントリー（Side == Sell の新規建て）が発生するため、Side == Buy で
+        // エントリーを近似すると kill switch 含むエントリー専用制約をすり抜ける（Issue #25）。
+        var isEntry = intent.PositionEffect == PositionEffect.Open;
 
-        // 全停止スイッチ（kill switch）: 新規発注（エントリー）のみ停止する。
+        // 全停止スイッチ（kill switch）: 新規建て（エントリー）のみ停止する。
         // NFR フェイルセーフ（02_requirements: 新規発注停止。保有ポジションの損切り監視は最後まで維持）
-        // および ADR-0003（損切りは機械的に執行）により、手仕舞い（売り）は止めない。
+        // および ADR-0003（損切りは機械的に執行）により、手仕舞い（Close）は止めない。
         if (isEntry && snapshot.KillSwitchEngaged)
         {
             reasons.Add(RejectionReason.KillSwitchActive);

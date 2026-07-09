@@ -24,3 +24,7 @@
 | IADR | タイトル | 状態 |
 | --- | --- | --- |
 | IADR-0000 | 実装意思決定の記録方針 | Accepted |
+| IADR-0001 | リポジトリ構成と技術スタック | Accepted |
+| IADR-0002 | TradingDefaults の既定値は全体前提条件からの逆算値として明示する | Accepted |
+| IADR-0003 | ポジションサイジングは取引判断サービスが行い、RiskEvaluator は検証のみとする | Accepted |
+| IADR-0004 | エントリー/手仕舞いは建玉効果（PositionEffect）で判定し、売買方向から分離する | Accepted |
