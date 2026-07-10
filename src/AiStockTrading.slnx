@@ -11,6 +11,16 @@
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Worker.Tests/InformationCollectionService.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/Services/ReportService/" />
+  <Folder Name="/Services/ReportService/src/">
+    <Project Path="Services/ReportService/src/ReportService.Domain/ReportService.Domain.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Application/ReportService.Application.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/ReportService/tests/">
+    <Project Path="Services/ReportService/tests/ReportService.Application.Tests/ReportService.Application.Tests.csproj" />
+    <Project Path="Services/ReportService/tests/ReportService.Worker.Tests/ReportService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/ConfigurationService/" />
   <Folder Name="/Services/ConfigurationService/src/">
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />

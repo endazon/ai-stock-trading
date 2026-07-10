@@ -1,0 +1,115 @@
+using AiStockTrading.Report.Application;
+using AiStockTrading.Report.Application.Ports;
+using AiStockTrading.Report.Application.State;
+using AiStockTrading.Report.Domain;
+using Microsoft.EntityFrameworkCore;
+
+namespace AiStockTrading.Report.Worker.Foundation.Persistence;
+
+// FR-06/07, IADR-0012/0024: 報告書ストアの EF 実装。PeriodKey ごとに 1 行＋Version 楽観排他。確定済みは不変。
+internal sealed class EfReportStore(ReportDbContext db) : IReportStore
+{
+    public VersionedReport? Get(string periodKey)
+    {
+        var row = db.Reports.Find(periodKey);
+        return row is null ? null : new VersionedReport(ToReport(row), row.Version);
+    }
+
+    public IReadOnlyList<TradingReport> List() =>
+        [.. db.Reports.OrderByDescending(r => r.PeriodStart).Select(r => ToReport(r))];
+
+    public int UpsertDraft(TradingReport report, int expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        var row = db.Reports.Find(report.PeriodKey);
+        if (row is null)
+        {
+            if (expectedVersion != 0)
+                throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, 0);
+
+            db.Reports.Add(new ReportRow
+            {
+                PeriodKey = report.PeriodKey,
+                Kind = report.Kind,
+                PeriodStart = report.PeriodStart,
+                State = ReportState.Draft,
+                BasedOn = report.BasedOn,
+                AssumptionsVersion = report.AssumptionsVersion,
+                PolicySummary = report.PolicySummary,
+                ConfirmedAt = null,
+                Version = 1,
+            });
+            try
+            {
+                db.SaveChanges();
+                return 1;
+            }
+            catch (DbUpdateException)
+            {
+                // 同一 PeriodKey の並行作成による一意制約違反。競合として扱う（他リクエストが作成済み）。
+                db.ChangeTracker.Clear();
+                var current = db.Reports.Find(report.PeriodKey);
+                throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, current?.Version ?? 0);
+            }
+        }
+
+        if (row.State == ReportState.Confirmed)
+            throw new InvalidOperationException($"確定済み報告書 {report.PeriodKey} は変更できません。");
+
+        if (expectedVersion != row.Version)
+            throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, row.Version);
+
+        row.Kind = report.Kind;
+        row.PeriodStart = report.PeriodStart;
+        row.BasedOn = report.BasedOn;
+        row.AssumptionsVersion = report.AssumptionsVersion;
+        row.PolicySummary = report.PolicySummary;
+        row.State = ReportState.Draft;
+        row.ConfirmedAt = null;
+        row.Version += 1;
+        db.SaveChanges();
+        return row.Version;
+    }
+
+    public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt)
+    {
+        var row = db.Reports.Find(periodKey);
+        if (row is null)
+            return null;
+
+        // 既に確定済みなら冪等（状態変化なし・イベント発行なし）。
+        if (row.State == ReportState.Confirmed)
+            return new ConfirmResult(ToReport(row), Transitioned: false);
+
+        if (expectedVersion != row.Version)
+            throw new ReportConcurrencyException(periodKey, expectedVersion, row.Version);
+
+        row.State = ReportState.Confirmed;
+        row.ConfirmedAt = confirmedAt;
+        row.Version += 1;
+        db.SaveChanges();
+        return new ConfirmResult(ToReport(row), Transitioned: true);
+    }
+
+    public VersionedReport? GetLatestConfirmed(ReportKind kind)
+    {
+        var row = db.Reports
+            .Where(r => r.Kind == kind && r.State == ReportState.Confirmed)
+            .OrderByDescending(r => r.PeriodStart)
+            .FirstOrDefault();
+        return row is null ? null : new VersionedReport(ToReport(row), row.Version);
+    }
+
+    private static TradingReport ToReport(ReportRow r) => new()
+    {
+        PeriodKey = r.PeriodKey,
+        Kind = r.Kind,
+        PeriodStart = r.PeriodStart,
+        State = r.State,
+        BasedOn = r.BasedOn,
+        AssumptionsVersion = r.AssumptionsVersion,
+        PolicySummary = r.PolicySummary,
+        ConfirmedAt = r.ConfirmedAt,
+    };
+}
