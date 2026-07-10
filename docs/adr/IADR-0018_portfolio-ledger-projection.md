@@ -52,10 +52,17 @@ plan_refs:
 **選択肢 3** を採用する。
 
 - **台帳**: `OrderApproved` を購読して承認済み `Intent` を `DecisionId` で記録（`ApprovedOrderRow`）、`OrderExecuted`
-  （`Status==Filled` かつ `FilledQuantity>0`）を `OrderId` で記録（`TradeFillRow`, FK `DecisionId`）。いずれも追記専用・
+  （`Status==Filled` かつ `FilledQuantity>0`）を `OrderId` で記録（`TradeFillRow`）。`TradeFillRow.DecisionId` は相関・
+  時系列畳み込みのため**インデックス**を張るが、DB 強制の外部キー制約（FK）は張らない。参照整合性はアプリ層で担保する
+  （`EfPortfolioLedgerStore.AppendFill` が事前に承認 Intent の存在を確認し、無ければ記録せず false を返す）。いずれも追記専用・
   リスク管理専有 DB（ADR-0001・IADR-0012 のパターン）。MassTransit 再送に対し `DecisionId`/`OrderId` で冪等。
-- **射影**: `PortfolioProjection.Project(fills, today, initialCapital)` を純関数とし、平均取得単価法で建玉・実現損益を畳み込む。
-  通常経路・損切り機械執行の両方が `OrderApproved` を出すため統一的に扱える。
+- **射影**: `PortfolioProjection.Project(fills, today, initialCapital)` を純関数とし、**符号付き在庫・平均取得単価法**で
+  建玉・実現損益を畳み込む（銘柄ごとに 1 ネットポジション。現物ネッティング口座の会計として経済的に正しい）。通常経路・
+  損切り機械執行の両方が `OrderApproved` を出すため統一的に扱える。
+- **`PositionEffect` と IADR-0004 の関係**: IADR-0004 は発注前スクリーニング（`RiskEvaluator.isEntry`）で Open/Close を
+  売買方向から分離する決定であり、本射影の損益会計とは別関心。現物のみ有効な現段階ではショートエントリー（Sell×Open）が
+  発生せず、符号推論と `PositionEffect` は一致するため会計に差は出ない。`PositionEffect` は監査・将来の両建て（ロング/ショート
+  別ロット）会計のため `LedgerFill`／台帳に保持する。信用有効化後の別ロット会計は margin フォローアップ（ADR-0007／#50）で対応する。
 - **`Capital`（当日開始運用資金・固定基準）** = `initialCapital + 当日より前の Close 実現損益`。当日実現・含みは含めない（当日中不変）。
   `initialCapital` は `TradingDefaults.InitialCapital`（既存プレースホルダと同一基準）。
 - **`DailyOrderedAmount` は約定ベース**（当日約定代金合計）とする。発注（承認）ベースではなく、実際に資本が投下された額を採る。

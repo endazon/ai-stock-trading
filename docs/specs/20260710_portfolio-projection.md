@@ -54,8 +54,14 @@ plan_refs:
 
 - `PortfolioProjection.Project(IReadOnlyList<LedgerFill> fills, DateOnly today, decimal initialCapital)` — 台帳の約定列
   （銘柄・市場・方向・建玉効果・数量・約定単価・約定時刻に補完済み）を畳み込み `PortfolioState` を返す **純関数**。
-  - 建玉: 平均取得単価法。`PositionEffect.Open` は建玉方向へ数量・取得額を積み増し、加重平均で取得単価を更新。
-    `PositionEffect.Close` は建玉を減らし、実現損益 = `(決済単価 − 取得単価) × 決済数量 × 方向符号`（Buy 建て=+/Sell 建て=−）を計上。
+  - 建玉: **符号付き在庫・平均取得単価法**（銘柄ごとに 1 ネットポジション。Buy=+/Sell=−）。同方向の約定は加重平均で
+    取得単価を更新し、反対方向の約定は在庫を減らして実現損益 = `(決済単価 − 取得単価) × 減少数量`（ロングは +、ショートは
+    符号反転）を計上する。これは**現物ネッティング口座の会計として経済的に正しい**（同一銘柄でロング・ショートは同時に持てない）。
+  - **`PositionEffect` の扱い（IADR-0004 との関係）**: IADR-0004 は発注前**スクリーニング**（`RiskEvaluator.isEntry`）で
+    Open/Close を売買方向から分離する決定であり、本射影の**損益会計**とは別関心。現物のみ有効な現段階（信用は無効）では
+    ショートエントリー（Sell×Open）は発生せず、符号推論と `PositionEffect` は完全に一致するため会計に差は出ない。
+    `LedgerFill.PositionEffect` は監査・将来の**両建て（ロング/ショート別ロット）会計**のため台帳に保持する。信用有効化後の
+    別ロット会計は margin フォローアップ（ADR-0007／#50）で対応する（本スライス対象外）。
   - `InvestedCapital` = 建玉中ポジションの `|数量| × 取得単価` の合計（IADR-0005 の段階資金上限＝取得額累計に一致）。
   - `OpenPositionCount` = 建玉数量が 0 でない (銘柄, 市場) の数。
   - `DailyOrderedAmount` = **当日約定分**の約定代金（`数量 × 単価`）合計（IADR-0018 の選択: 発注ではなく約定ベース）。
