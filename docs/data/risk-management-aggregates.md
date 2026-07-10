@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, ADR-0001, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-10
 plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
@@ -112,6 +112,33 @@ plan_refs:
 `BrokerOrder(OrderId, Intent, Status, FilledQuantity, AveragePrice, PlacedAt, CompletedAt?)`。`OrderStatus` は
 Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証券会社拒否 #30/IADR-0007）。
 
+### 取引台帳（`ApprovedOrderRow` / `TradeFillRow`・永続。IADR-0018）
+
+`PortfolioSnapshot` の運用状態を実データ化するための追記専用台帳（PR #63・#12）。`OrderApproved`/`OrderExecuted` を
+購読して記録し、`PortfolioProjection`（符号付き在庫・平均取得単価法の純関数）が `PortfolioState` を都度射影する。
+`OrderExecuted` は銘柄・方向を持たないため、承認 Intent を `DecisionId` で相関して補完する。
+
+`approved_orders`（承認済み注文の Intent。主キー `DecisionId`）:
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| DecisionId | Guid (PK) | 判断/損切りイベント由来の一意キー（冪等）。通常経路・損切り機械執行の両承認を記録 |
+| Symbol / Market / Side / ProductType / PositionEffect / Mode | 各列挙・文字列 | 承認 Intent の写し（約定に銘柄・方向・建玉効果を補完するための権威情報） |
+| Quantity / Price | int / decimal | 承認数量・参照価格 |
+| ApprovedAt | DateTimeOffset | 承認時刻 |
+
+`trade_fills`（約定。主キー `OrderId`）:
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| OrderId | string (PK) | 発注執行が採番した注文ID（冪等）。`Status==Filled` かつ `FilledQuantity>0` のみ記録 |
+| DecisionId | Guid (index) | `approved_orders` との相関キー。DB 強制 FK は張らず、整合性はアプリ層で担保（`AppendFill` が承認存在を確認） |
+| FilledQuantity / AveragePrice | int / decimal | 約定数量・約定単価 |
+| ExecutedAt | DateTimeOffset | 約定時刻（取引日境界は JST 固定オフセットで解釈。IADR-0018） |
+
+> 部分約定の累積更新（実ブローカー）は #13/moomoo 後続でゲート済み（IADR-0016）。含み損益・DD の日次終値マークは市場データ
+> 連携まで対象外（`UnrealizedPnl`/`DrawdownRatio` は射影上 0。IADR-0008 の #12 後続）。
+
 ## ER 図（永続対象＝設定・注文・監査）
 
 ```mermaid
@@ -130,6 +157,7 @@ erDiagram
 | --- | --- | --- | --- |
 | RiskManagementSettings（＋子） | PostgreSQL 設定ストア。バージョン管理（FR-17）で前提条件の履歴を保持 | #12, #17, #19 | 変更は利用者のみ・変更履歴を記録（ADR-0007） |
 | PortfolioSnapshot | 非永続（都度算出） | #12 | 保有・約定・損益から組み立てる派生データ |
+| 取引台帳（`approved_orders` / `trade_fills`） | PostgreSQL 追記専用（専有 DB） | #12（PR #63） | `OrderApproved`/`OrderExecuted` を記録し `PortfolioState` を射影（IADR-0018）。`DecisionId`/`OrderId` で冪等 |
 | BrokerOrder / OrderIntent | PostgreSQL 注文テーブル | #12, #13 | 注文状態遷移（受付→約定/拒否/取消）を追跡 |
 | 監査イベント（FR-11） | PostgreSQL 監査ログ（時系列） | #17 | 判定結果・拒否理由・全イベントを記録 |
 
@@ -153,7 +181,8 @@ erDiagram
 - 通信仕様書: [イベント・ポート契約](../api/events-and-ports.md)
 - 実装ADR: [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)（既定値の逆算）、[IADR-0003](../adr/IADR-0003_position-sizing-responsibility.md)（サイジング責務）、
   [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)（段階資金上限）、
-  [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失基準）
+  [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失基準）、
+  [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（取引台帳射影＝運用状態の実データ化）
 
 ## 未決事項
 

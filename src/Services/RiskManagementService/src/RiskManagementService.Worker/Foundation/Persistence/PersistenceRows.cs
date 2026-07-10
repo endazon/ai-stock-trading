@@ -65,3 +65,43 @@ internal sealed class SettingsChangeRow
 
     public string? After { get; set; }
 }
+
+// FR-10, FR-05, IADR-0018: 承認済み注文の Intent を DecisionId で保持する追記専用行（取引台帳の一部）。
+// OrderExecuted は銘柄・方向を持たないため、これを DecisionId で相関して約定を補完する。
+internal sealed class ApprovedOrderRow
+{
+    public Guid DecisionId { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.TradeSide Side { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.ProductType ProductType { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.PositionEffect PositionEffect { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.TradeMode Mode { get; set; }
+
+    public int Quantity { get; set; }
+
+    public decimal Price { get; set; }
+
+    public DateTimeOffset ApprovedAt { get; set; }
+}
+
+// FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を OrderId で保持する追記専用行（取引台帳の一部）。
+// DecisionId で ApprovedOrderRow を相関して銘柄・方向・建玉効果を補完する。
+internal sealed class TradeFillRow
+{
+    public string OrderId { get; set; } = string.Empty;
+
+    public Guid DecisionId { get; set; }
+
+    public int FilledQuantity { get; set; }
+
+    public decimal AveragePrice { get; set; }
+
+    public DateTimeOffset ExecutedAt { get; set; }
+}
