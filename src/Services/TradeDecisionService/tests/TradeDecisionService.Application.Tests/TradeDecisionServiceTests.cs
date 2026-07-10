@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
@@ -102,6 +103,19 @@ public class TradeDecisionServiceTests
         var decision = await Create(BuyJson, Policy, Context(dailyRemaining: 0m)).DecideAsync(Trigger());
 
         decision.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 定時トリガーでも同一ロジックで判断する_合流()
+    {
+        // FR-02, IADR-0023: 価格変動なしの定時（Scheduled）トリガーでも DecideAsync が判断を行う。
+        var scheduled = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var decision = await Create(BuyJson, Policy).DecideAsync(scheduled);
+
+        decision.Should().NotBeNull();
+        decision!.Intent.Symbol.Should().Be("AAPL");
+        decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
     }
 
     [Fact]

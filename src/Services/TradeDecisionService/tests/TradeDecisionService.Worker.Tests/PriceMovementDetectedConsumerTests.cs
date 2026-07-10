@@ -30,11 +30,18 @@ public class PriceMovementDetectedConsumerTests
     private const string BuyJson =
         """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
 
+    // 判断経路の検証のため常に開場のカレンダーを用いる（実時刻だと週末で揺れるため）。
+    private sealed class AlwaysOpenCalendar : IMarketCalendar
+    {
+        public bool IsOpen(Market market, DateTimeOffset instant) => true;
+    }
+
     private static ServiceProvider Build(string llmOutput, DailyPolicy? policy)
     {
         return new ServiceCollection()
             .AddLogging()
             .AddSingleton<IClock, SystemClock>()
+            .AddSingleton<IMarketCalendar>(new AlwaysOpenCalendar())
             .AddSingleton<ILlmCompletionClient>(new FakeLlm(llmOutput))
             .AddSingleton<IDailyPolicyProvider>(new FakePolicy(policy))
             .AddSingleton<ISizingContextProvider, FakeSizing>()

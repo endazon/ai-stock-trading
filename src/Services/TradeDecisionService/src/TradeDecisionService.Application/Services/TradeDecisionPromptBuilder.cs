@@ -1,15 +1,16 @@
 using System.Globalization;
 using System.Text;
 using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TradeDecision.Application.State;
 
 namespace AiStockTrading.TradeDecision.Application.Services;
 
-// FR-04, ADR-0003: 確定済み日報の方針・価格変動トリガー・サイジング文脈から LLM プロンプトを構築する。
+// FR-02, FR-04, ADR-0003: 確定済み日報の方針・判断トリガー・サイジング文脈から LLM プロンプトを構築する。
 // AI は「確定済み日報の方針とリスク制約の範囲内でのみ」判断する（ADR-0003）。出力は JSON 構造化を要求する。
+// トリガーは定時（Scheduled）と価格変動（PriceMovement）を合流した DecisionTrigger（IADR-0023）。
 public static class TradeDecisionPromptBuilder
 {
-    public static string Build(PriceMovementDetected trigger, DailyPolicy policy, SizingContext context)
+    public static string Build(DecisionTrigger trigger, DailyPolicy policy, SizingContext context)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -23,9 +24,17 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）");
         sb.AppendLine(policy.Summary);
         sb.AppendLine();
-        sb.AppendLine("# 価格変動トリガー");
-        sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
-        sb.AppendLine($"- 現在値: {trigger.Price.ToString(ci)} / 基準値: {trigger.BaselinePrice.ToString(ci)} / 変動率: {trigger.ChangeRatio.ToString("P2", ci)}");
+        if (trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } price)
+        {
+            sb.AppendLine("# 価格変動トリガー");
+            sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
+            sb.AppendLine($"- 現在値: {price.ToString(ci)} / 基準値: {trigger.BaselinePrice?.ToString(ci)} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
+        }
+        else
+        {
+            sb.AppendLine("# 定時サイクル（価格変動トリガーなし）");
+            sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
+        }
         sb.AppendLine();
         sb.AppendLine("# リスク制約");
         sb.AppendLine($"- 運用資金: {context.Capital.ToString(ci)} 円 / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
