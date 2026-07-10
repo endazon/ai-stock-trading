@@ -1,0 +1,17 @@
+<!-- #11 Slice A, IADR-0013/0017: 取引判断 Worker ホスト。ヘルスチェックの HTTP サーフェスのため Web SDK を使用。
+     PriceMovementDetected 購読は MassTransit コンシューマとして稼働する。判断はステートレス（DB なし・監査永続は #17）。
+     実行時基盤は test-support shim（本番非使用・IADR-0013）。実 LLM/実データはプレースホルダ（安全既定＝取引しない）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.TradeDecision.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <ProjectReference Include="..\TradeDecisionService.Application\TradeDecisionService.Application.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="TradeDecisionService.Worker.Tests" />
+  </ItemGroup>
+</Project>
