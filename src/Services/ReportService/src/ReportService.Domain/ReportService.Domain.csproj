@@ -3,4 +3,8 @@
     <OutputType>Library</OutputType>
     <RootNamespace>AiStockTrading.Report.Domain</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- FR-16: 損益集計は前提条件（TradingAssumptions）と概算費用関数（CostCalculator）を再利用する（IADR-0025）。 -->
+    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
+  </ItemGroup>
 </Project>

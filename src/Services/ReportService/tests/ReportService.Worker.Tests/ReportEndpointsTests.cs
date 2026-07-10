@@ -95,5 +95,40 @@ public class ReportEndpointsTests
         (await OwnerClient(factory).GetAsync("/reports/daily-policy")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task 損益集計エンドポイントも_OwnerOnly_未認証は_401()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        var res = await factory.CreateClient().PostAsJsonAsync("/reports/pnl-summary", new { Fills = Array.Empty<object>(), CurrentPrices = (object?)null });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task 損益集計エンドポイントは実現損益を返す()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        var body = new
+        {
+            Fills = new[]
+            {
+                new { Symbol = "AAPL", Market = "UnitedStates", Side = "Buy", PositionEffect = "Open", Quantity = 10, Price = 1000m, ExecutedAt = "2026-07-10T00:00:00Z" },
+                new { Symbol = "AAPL", Market = "UnitedStates", Side = "Sell", PositionEffect = "Close", Quantity = 10, Price = 1200m, ExecutedAt = "2026-07-10T00:01:00Z" },
+            },
+            CurrentPrices = (object?)null,
+        };
+
+        var res = await OwnerClient(factory).PostAsJsonAsync("/reports/pnl-summary", body);
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var summary = await res.Content.ReadFromJsonAsync<PnlSummaryDto>();
+        summary!.RealizedPnlGross.Should().Be(2_000m);
+        summary.RealizingTradeCount.Should().Be(1);
+    }
+
     private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);
+
+    private sealed record PnlSummaryDto(decimal RealizedPnlGross, decimal RealizedPnlNet, int RealizingTradeCount);
 }
