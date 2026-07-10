@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
 
@@ -10,21 +11,32 @@ internal sealed class EfRiskSettingsStore(RiskManagementDbContext db) : IRiskSet
     public RiskManagementSettings GetCurrent()
     {
         var row = db.RiskSettings.Find(SingletonKeys.Id);
-        if (row is null)
+        if (row is not null)
         {
-            var defaults = TradingDefaults.CreateSettings();
-            db.RiskSettings.Add(new RiskSettingsRow
-            {
-                Id = SingletonKeys.Id,
-                Json = RiskSettingsSerialization.Serialize(defaults),
-                Version = 1,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
+            return RiskSettingsSerialization.Deserialize(row.Json);
+        }
+
+        // 未設定: 既定値をシードする。同時初回リクエストが競合して一意制約違反になり得るため、
+        // 失敗時は他リクエストがシード済みとみなして読み直す（冪等・レース窓を 500 にしない。#58 の是正を踏襲）。
+        var defaults = TradingDefaults.CreateSettings();
+        db.RiskSettings.Add(new RiskSettingsRow
+        {
+            Id = SingletonKeys.Id,
+            Json = RiskSettingsSerialization.Serialize(defaults),
+            Version = 1,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        try
+        {
             db.SaveChanges();
             return defaults;
         }
-
-        return RiskSettingsSerialization.Deserialize(row.Json);
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            var seeded = db.RiskSettings.Find(SingletonKeys.Id);
+            return seeded is not null ? RiskSettingsSerialization.Deserialize(seeded.Json) : defaults;
+        }
     }
 
     public void Save(RiskManagementSettings settings)
