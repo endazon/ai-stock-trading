@@ -21,9 +21,13 @@ internal sealed class FinnhubInformationSource(
 
         foreach (var symbol in symbols)
         {
-            var url = $"https://finnhub.io/api/v1/quote?symbol={Uri.EscapeDataString(symbol)}&token={Uri.EscapeDataString(apiKey)}";
+            // API キーはヘッダー（X-Finnhub-Token）で渡す。URL クエリに入れると OTel の HttpClient 計装が
+            // リクエスト URL（クエリ含む）をトレースへ出力し、キーが可観測性基盤に漏えいするため（claude-review 指摘）。
+            var url = $"https://finnhub.io/api/v1/quote?symbol={Uri.EscapeDataString(symbol)}";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-Finnhub-Token", apiKey);
 
-            using var response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("Finnhub 取得失敗（銘柄 {Symbol}）: {Status}。この銘柄をスキップします。", symbol, (int)response.StatusCode);

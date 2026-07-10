@@ -27,7 +27,9 @@ public class FinnhubInformationSourceTests
         item.Symbol.Should().Be("AAPL");
         item.Content.Should().Contain("current=150.25");
         handler.LastUrl.Should().Contain("symbol=AAPL");
-        handler.LastUrl.Should().Contain("token=key");
+        // API キーは URL に載せず（OTel への漏えい防止）、ヘッダーで渡す。
+        handler.LastUrl.Should().NotContain("token");
+        handler.LastToken.Should().Be("key");
     }
 
     [Fact]
@@ -46,10 +48,13 @@ public class FinnhubInformationSourceTests
     {
         public string? LastUrl { get; private set; }
 
+        public string? LastToken { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastUrl = request.RequestUri?.ToString();
+            LastToken = request.Headers.TryGetValues("X-Finnhub-Token", out var values) ? values.FirstOrDefault() : null;
             return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
         }
     }
