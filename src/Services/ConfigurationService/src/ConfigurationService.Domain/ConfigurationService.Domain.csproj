@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Configuration.Domain</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FR-17: 概算費用関数が Market 等の共有取引型を用いるため参照する。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>

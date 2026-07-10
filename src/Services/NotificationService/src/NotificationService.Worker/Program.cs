@@ -36,6 +36,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<OrderExecutedNotificationConsumer>();
     x.AddConsumer<OrderRejectedNotificationConsumer>();
     x.AddConsumer<StopLossTriggeredNotificationConsumer>();
+    // FR-17: 設定管理（#19）の前提条件変更通知。
+    x.AddConsumer<AssumptionsChangedNotificationConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
