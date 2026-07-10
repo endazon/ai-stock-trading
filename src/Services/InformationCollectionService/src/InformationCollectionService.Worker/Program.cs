@@ -45,6 +45,22 @@ builder.Services.AddSingleton<IKnowledgeBaseSink, LoggingKnowledgeBaseSink>();
 // 収集オーケストレーション（scoped）。ポーリングは巡回ごとに DI スコープを作る。
 builder.Services.AddScoped<AppSvc>();
 
+// NFR（費用）, IADR-0031: 定時サイクルの費用統制（#23）ゲート。CostControl:BaseUrl 未設定/不正 URI は Placeholder
+// （Normal＝停止も間隔延長もしない）＝安全既定でゲート。設定時のみ GET /costs/state を同期照会する（解決時に構成を読む）。
+// 同期クリティカルパス（巡回冒頭）に置くため短いタイムアウトを設定する。
+builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddSingleton<PlaceholderCostControlGate>();
+builder.Services.AddScoped<ICostControlGate>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<PlaceholderCostControlGate>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("cost");
+    http.BaseAddress = uri;
+    return new HttpCostControlGate(http, sp.GetRequiredService<ILogger<HttpCostControlGate>>());
+});
+
 // IADR-0011/0022: MassTransit（RabbitMQ）。消費者は持たず、収集完了時の InformationCollected 発行に用いる。
 builder.Services.AddMassTransit(x =>
 {
