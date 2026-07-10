@@ -88,6 +88,31 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task 未認証の_sizing_context_取得は401()
+    {
+        // FR-04/10, IADR-0029: サイジング文脈も OwnerOnly。未認証は 401。
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync("/risk-controls/sizing-context");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task 利用者は_sizing_context_を取得できる()
+    {
+        // FR-04/10, IADR-0029: 設定＋ポートフォリオ状態から導出したサイジング文脈を返す。
+        var client = OwnerClient();
+
+        var view = await client.GetFromJsonAsync<SizingContextDto>("/risk-controls/sizing-context");
+
+        view.Should().NotBeNull();
+        // 段階/日次残枠は上限から使用分を引いた非負値（既定状態では上限＝残枠）。
+        view!.StageCapitalRemaining.Should().BeGreaterThanOrEqualTo(0m);
+        view.DailyOrderRemaining.Should().BeGreaterThanOrEqualTo(0m);
+    }
+
+    [Fact]
     public async Task ヘルスチェック_live_は認証不要で応答する()
     {
         var client = factory.CreateClient();
@@ -101,4 +126,6 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     private sealed record KillSwitchStateDto(bool Engaged, string? Actor, string? Reason);
 
     private sealed record SettingsChangeDto(string Actor, SettingsChangeType ChangeType, string Reason);
+
+    private sealed record SizingContextDto(decimal Capital, decimal StageCapitalRemaining, decimal DailyOrderRemaining);
 }

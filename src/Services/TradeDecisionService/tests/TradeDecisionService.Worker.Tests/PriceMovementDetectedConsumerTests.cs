@@ -23,8 +23,8 @@ public class PriceMovementDetectedConsumerTests
     private sealed class FakePolicy(DailyPolicy? p) : IDailyPolicyProvider { public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) => Task.FromResult(p); }
     private sealed class FakeSizing : ISizingContextProvider
     {
-        public SizingContext GetContext() => new(100_000m, 100_000m, 100_000m, 0, 0m,
-            TradeMode.Paper, TradingDefaults.CreateRiskLimits());
+        public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(new SizingContext(
+            100_000m, 100_000m, 100_000m, 0, 0m, TradeMode.Paper, TradingDefaults.CreateRiskLimits()));
     }
 
     private const string BuyJson =

@@ -39,6 +39,10 @@ internal static class RiskControlEndpoints
                 }
             });
 
+        // ---- サイジング文脈（FR-04/10, IADR-0029） ----
+        // 取引判断（#11）が同期照会するサイジング文脈（設定＋ポートフォリオ状態から導出）。
+        g.MapGet("/sizing-context", (SizingContextService svc) => Results.Ok(svc.Build()));
+
         // ---- kill switch（FR-10, ADR-0003） ----
         g.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
 

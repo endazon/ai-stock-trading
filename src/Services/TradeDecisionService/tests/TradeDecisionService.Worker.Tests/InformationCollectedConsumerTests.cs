@@ -38,8 +38,8 @@ public class InformationCollectedConsumerTests
     }
     private sealed class FakeSizing : ISizingContextProvider
     {
-        public SizingContext GetContext() => new(100_000m, 100_000m, 100_000m, 0, 0m,
-            TradeMode.Paper, TradingDefaults.CreateRiskLimits());
+        public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(new SizingContext(
+            100_000m, 100_000m, 100_000m, 0, 0m, TradeMode.Paper, TradingDefaults.CreateRiskLimits()));
     }
     private sealed class FakeWatchlist(params WatchedSymbol[] symbols) : IWatchlistProvider
     {

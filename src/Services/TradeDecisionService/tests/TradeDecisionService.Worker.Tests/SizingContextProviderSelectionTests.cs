@@ -1,0 +1,61 @@
+using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
+using FluentAssertions;
+using MassTransit;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Xunit;
+
+namespace AiStockTrading.TradeDecision.Worker.Tests;
+
+// FR-04, FR-10, IADR-0029: RiskManagement:BaseUrl の有無で ISizingContextProvider が安全既定（プレースホルダ）/
+// 同期照会（Http）に切り替わることを検証する。選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。
+public class SizingContextProviderSelectionTests
+{
+    [Fact]
+    public void BaseUrl未設定は安全既定のプレースホルダ()
+    {
+        using var factory = new Factory(riskBaseUrl: null);
+        _ = factory.CreateClient(); // ホスト起動
+
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ISizingContextProvider>().Should().BeOfType<PlaceholderSizingContextProvider>();
+    }
+
+    [Fact]
+    public void BaseUrl設定時はリスク管理を同期照会する_Http実装()
+    {
+        using var factory = new Factory(riskBaseUrl: "http://risk");
+        _ = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ISizingContextProvider>().Should().BeOfType<HttpSizingContextProvider>();
+    }
+
+    private sealed class Factory(string? riskBaseUrl) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, cfg) =>
+            {
+                var settings = new Dictionary<string, string?>
+                {
+                    ["RabbitMq:ConnectionString"] = "amqp://localhost",
+                    ["Otlp:Endpoint"] = "http://localhost:4317",
+                };
+                if (riskBaseUrl is not null)
+                    settings["RiskManagement:BaseUrl"] = riskBaseUrl;
+                cfg.AddInMemoryCollection(settings);
+            });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IBusControl>();
+                services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.PriceMovementDetectedConsumer>());
+            });
+        }
+    }
+}

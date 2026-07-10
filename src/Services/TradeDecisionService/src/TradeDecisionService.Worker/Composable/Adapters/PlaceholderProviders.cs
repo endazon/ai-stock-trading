@@ -50,19 +50,19 @@ internal sealed class PlaceholderSizingContextProvider(ILogger<PlaceholderSizing
 {
     private int _warned;
 
-    public SizingContext GetContext()
+    public Task<SizingContext> GetContextAsync(CancellationToken cancellationToken = default)
     {
         PlaceholderLlmCompletionClient.WarnOnce(logger, ref _warned,
-            "PlaceholderSizingContextProvider を使用中: 保有・残枠の実データ（#12/#13）が入るまで既定値を返します。");
+            "PlaceholderSizingContextProvider を使用中: RiskManagement:BaseUrl 未設定のため既定値を返します（実残枠は #12 連携）。");
 
         var limits = TradingDefaults.CreateRiskLimits();
-        return new SizingContext(
+        return Task.FromResult(new SizingContext(
             Capital: TradingDefaults.InitialCapital,
             StageCapitalRemaining: TradingDefaults.InitialCapital,
             DailyOrderRemaining: limits.MaxDailyOrderAmount,
             ConsecutiveLosses: 0,
             DrawdownRatio: 0m,
             Mode: TradeMode.Paper,
-            Limits: limits);
+            Limits: limits));
     }
 }
