@@ -15,6 +15,10 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
 
     public DbSet<SettingsChangeRow> SettingsChangeLog => Set<SettingsChangeRow>();
 
+    public DbSet<ApprovedOrderRow> ApprovedOrders => Set<ApprovedOrderRow>();
+
+    public DbSet<TradeFillRow> TradeFills => Set<TradeFillRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -54,6 +58,24 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
             // 新しい順の照会が既定のため日時にインデックスを張る。
             e.HasIndex(r => r.ChangedAt);
+        });
+
+        // IADR-0018: 取引台帳（承認・約定）。追記専用。DecisionId/OrderId で冪等。
+        mb.Entity<ApprovedOrderRow>(e =>
+        {
+            e.ToTable("approved_orders");
+            e.HasKey(r => r.DecisionId);
+            e.Property(r => r.DecisionId).ValueGeneratedNever();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+        });
+
+        mb.Entity<TradeFillRow>(e =>
+        {
+            e.ToTable("trade_fills");
+            e.HasKey(r => r.OrderId);
+            e.Property(r => r.OrderId).HasMaxLength(128).ValueGeneratedNever();
+            // 承認 Intent との相関・時系列畳み込みのため DecisionId にインデックスを張る。
+            e.HasIndex(r => r.DecisionId);
         });
     }
 }

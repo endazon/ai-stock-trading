@@ -1,7 +1,6 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Worker.Composable.Adapters;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
@@ -48,9 +47,10 @@ builder.Services.AddScoped<IRiskSettingsStore, EfRiskSettingsStore>();
 builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
-// FR-10: 保有・損益の実データは #13/#17 連携で供給する。現段階はプレースホルダ（既知の制限）。
-// 初回利用時の 1 回警告を機能させるため singleton 登録とする（状態を持たないため singleton で安全）。
-builder.Services.AddSingleton<IPortfolioStateProvider, PlaceholderPortfolioStateProvider>();
+// FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。
+// DbContext が scoped のため台帳ストア・プロバイダも scoped。含み損益・DD は市場データ連携まで 0（IADR-0008/0018）。
+builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();
+builder.Services.AddScoped<IPortfolioStateProvider, LedgerPortfolioStateProvider>();
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();
@@ -71,6 +71,9 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<TradeDecisionMadeConsumer>();
     x.AddConsumer<StopLossTriggeredConsumer>();
+    // IADR-0018: 承認・約定を購読して取引台帳へ射影する（IPortfolioStateProvider の実データ源）。
+    x.AddConsumer<OrderApprovedLedgerConsumer>();
+    x.AddConsumer<OrderExecutedLedgerConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
