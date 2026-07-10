@@ -4,10 +4,12 @@
   <Folder Name="/Services/MarketMonitorService/src/">
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Domain/MarketMonitorService.Domain.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/tests/">
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Application.Tests/MarketMonitorService.Application.Tests.csproj" />
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Worker.Tests/MarketMonitorService.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/RiskManagementService/" />
   <Folder Name="/Services/RiskManagementService/src/">
