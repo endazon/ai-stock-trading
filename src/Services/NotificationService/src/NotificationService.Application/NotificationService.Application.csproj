@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Notification.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FR-09: 取引パイプラインのイベントを購読・整形するため共有イベント契約を参照する（通知に固有 Domain 層は持たない）。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>
