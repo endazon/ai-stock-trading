@@ -86,6 +86,19 @@ public class AuditQueryEndpointsTests(AuditWorkerWebApplicationFactory factory)
         entries!.Count.Should().Be(2);
     }
 
+    [Fact]
+    public async Task 直近照会の_limit_は下限_1_にクランプされる()
+    {
+        // limit=0（および負数）は Math.Clamp で 1 に補正され、エラーにならず最低 1 件返す。
+        Seed(Row(Guid.NewGuid(), new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero), "OrderApproved"));
+
+        var res = await OwnerClient().GetAsync("/audit/events?limit=0");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var entries = await res.Content.ReadFromJsonAsync<List<AuditEntryDto>>();
+        entries!.Count.Should().Be(1);
+    }
+
     // 照会レスポンスの逆直列化用（AuditEntry の必要フィールドのみ）。
     private sealed record AuditEntryDto(string EventType, Guid CorrelationId, string? Symbol, DateTimeOffset OccurredAt);
 }
