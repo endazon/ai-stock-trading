@@ -33,7 +33,8 @@ public class InformationCollectedConsumerTests
     }
     private sealed class FakePolicy : IDailyPolicyProvider
     {
-        public DailyPolicy? GetCurrent() => new(new DateOnly(2026, 7, 10), "押し目買い");
+        public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) =>
+            Task.FromResult<DailyPolicy?>(new(new DateOnly(2026, 7, 10), "押し目買い"));
     }
     private sealed class FakeSizing : ISizingContextProvider
     {

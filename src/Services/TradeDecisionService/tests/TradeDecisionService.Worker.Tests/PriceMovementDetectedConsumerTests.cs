@@ -20,7 +20,7 @@ public class PriceMovementDetectedConsumerTests
     {
         public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) => Task.FromResult(output);
     }
-    private sealed class FakePolicy(DailyPolicy? p) : IDailyPolicyProvider { public DailyPolicy? GetCurrent() => p; }
+    private sealed class FakePolicy(DailyPolicy? p) : IDailyPolicyProvider { public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) => Task.FromResult(p); }
     private sealed class FakeSizing : ISizingContextProvider
     {
         public SizingContext GetContext() => new(100_000m, 100_000m, 100_000m, 0, 0m,

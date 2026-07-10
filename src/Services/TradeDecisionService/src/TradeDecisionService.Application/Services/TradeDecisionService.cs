@@ -32,8 +32,8 @@ public sealed class TradeDecisionService(
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
-        // FR-07: 確定済み日報の方針が無ければ取引しない（確定前方針は不適用）。
-        var policy = policyProvider.GetCurrent();
+        // FR-07: 確定済み日報の方針が無ければ取引しない（確定前方針は不適用）。IADR-0028: 報告書サービスを同期照会（依存先障害は null）。
+        var policy = await policyProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (policy is null)
         {
             logger.LogInformation("確定済み日報の方針が無いため取引しない: {Symbol}", trigger.Symbol);

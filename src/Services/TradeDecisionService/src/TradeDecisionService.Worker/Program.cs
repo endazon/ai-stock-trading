@@ -30,7 +30,22 @@ builder.Services.AddAiStockTradingHealthChecks();
 builder.Services.AddSingleton<IClock, SystemClock>();
 // IADR-0017: 実 LLM/実データが揃うまでの安全既定プレースホルダ（取引しない）。
 builder.Services.AddSingleton<ILlmCompletionClient, PlaceholderLlmCompletionClient>();
-builder.Services.AddSingleton<IDailyPolicyProvider, PlaceholderDailyPolicyProvider>();
+// FR-07, IADR-0028: 確定済み日報方針は報告書サービス（#14）の GET /reports/daily-policy を同期照会して供給する。
+// Reports:BaseUrl 未設定なら従来のプレースホルダ（no-op・取引しない）＝安全既定でゲート。設定時のみ実照会する。
+// 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
+// IHttpClientFactory 経由でハンドラをプールする。警告の 1 回化のためプレースホルダは singleton で共有する。
+builder.Services.AddHttpClient("reports");
+builder.Services.AddSingleton<PlaceholderDailyPolicyProvider>();
+builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Reports:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl))
+        return sp.GetRequiredService<PlaceholderDailyPolicyProvider>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("reports");
+    http.BaseAddress = new Uri(baseUrl);
+    return new HttpDailyPolicyProvider(http, sp.GetRequiredService<ILogger<HttpDailyPolicyProvider>>());
+});
 builder.Services.AddSingleton<ISizingContextProvider, PlaceholderSizingContextProvider>();
 // FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
