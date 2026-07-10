@@ -33,6 +33,8 @@ public class AuditEventConsumersTests
                 x.AddConsumer<OrderExecutedAuditConsumer>();
                 x.AddConsumer<AssumptionsChangedAuditConsumer>();
                 x.AddConsumer<ReportConfirmedAuditConsumer>();
+                x.AddConsumer<CostThresholdReachedAuditConsumer>();
+                x.AddConsumer<InformationCollectedAuditConsumer>();
             })
             .BuildServiceProvider(true);
 
@@ -97,6 +99,31 @@ public class AuditEventConsumersTests
             .From(new ReportConfirmed("daily-2026-07-10", "Daily", "x", 0, DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(reportCorr).Should().ContainSingle(e => e.EventType == "ReportConfirmed");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 費用しきい値到達と情報収集完了も監査台帳に記録される()
+    {
+        // #80, FR-11: これまで未購読だった 2 イベントも「全イベントの時系列記録」に含める。
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var collectId = Guid.NewGuid();
+        await harness.Bus.Publish(new CostThresholdReached("2026-07", "Llm", 1.00m, "Halted", DateTimeOffset.UtcNow));
+        await harness.Bus.Publish(new InformationCollected(collectId, 3, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<CostThresholdReached>()).Should().BeTrue();
+        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
+
+        store.GetByCorrelation(collectId).Should().ContainSingle(e => e.EventType == "InformationCollected");
+
+        var costCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(new CostThresholdReached("2026-07", "Llm", 0m, "x", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .CorrelationId;
+        store.GetByCorrelation(costCorr).Should().ContainSingle(e => e.EventType == "CostThresholdReached");
 
         await harness.Stop();
     }

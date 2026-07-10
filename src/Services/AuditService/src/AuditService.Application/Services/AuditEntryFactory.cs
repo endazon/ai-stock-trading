@@ -53,6 +53,18 @@ public static class AuditEntryFactory
         Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
         AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
 
+    // NFR（費用）: 費用しきい値到達（費用統制 #23）。同一月×カテゴリで同一相関になるよう "cost:{Month}:{Category}" の決定的 GUID を相関にする。
+    public static AuditEntry From(CostThresholdReached e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(CostThresholdReached), AuditCorrelation.From($"cost:{e.Month}:{e.Category}"), Symbol: null,
+        $"費用しきい値到達 {e.Category} {e.Percent:P0}→{e.State}（{e.Month}）",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-02: 情報収集の完了（情報収集 #9）。EventId を相関にする（市場系イベントと同様）。
+    public static AuditEntry From(InformationCollected e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationCollected), e.EventId, Symbol: null,
+        $"情報収集完了 {e.ItemCount}件",
+        AuditSerialization.Serialize(e), e.CollectedAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

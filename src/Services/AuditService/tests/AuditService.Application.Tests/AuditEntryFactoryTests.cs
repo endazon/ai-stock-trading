@@ -120,6 +120,40 @@ public class AuditEntryFactoryTests
     }
 
     [Fact]
+    public void CostThresholdReached_は_月とカテゴリの相関でしきい値を記録する()
+    {
+        var e = new CostThresholdReached("2026-07", "Llm", 1.00m, "Halted", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("CostThresholdReached");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("Halted");
+        entry.Summary.Should().Contain("2026-07");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        // 同一「月×カテゴリ」は同一相関、別カテゴリは別相関。
+        var same = AuditEntryFactory.From(new CostThresholdReached("2026-07", "Llm", 0.80m, "Throttled", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        var other = AuditEntryFactory.From(new CostThresholdReached("2026-07", "Infrastructure", 0.80m, "Throttled", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(same.CorrelationId);
+        entry.CorrelationId.Should().NotBe(other.CorrelationId);
+    }
+
+    [Fact]
+    public void InformationCollected_は_EventId_相関で件数を記録する()
+    {
+        var eventId = Guid.NewGuid();
+        var e = new InformationCollected(eventId, 5, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("InformationCollected");
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("5");
+        entry.OccurredAt.Should().Be(e.CollectedAt);
+    }
+
+    [Fact]
     public void StopLossTriggered_は_EventId_相関で損切り情報を記録する()
     {
         var eventId = Guid.NewGuid();

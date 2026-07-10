@@ -94,3 +94,25 @@ internal sealed class ReportConfirmedAuditConsumer(IAuditEventStore store, ICloc
         return Task.CompletedTask;
     }
 }
+
+// NFR（費用）: 費用しきい値到達（費用統制 #23）を監査台帳へ記録する。
+internal sealed class CostThresholdReachedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<CostThresholdReached>
+{
+    public Task Consume(ConsumeContext<CostThresholdReached> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-01, FR-02: 情報収集の完了（情報収集 #9）を監査台帳へ記録する。
+internal sealed class InformationCollectedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<InformationCollected>
+{
+    public Task Consume(ConsumeContext<InformationCollected> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
