@@ -60,12 +60,46 @@ public static class TradeDecisionParser
             && Enum.IsDefined(action);
     }
 
-    // 最初の '{' から対応する最後の '}' までを取り出す（前後の散文を除去）。
+    // 最初の '{' に対応する閉じ '}' までを、括弧の深さを数えて取り出す（前後の散文を除去）。
+    // 文字列リテラル内の括弧・エスケープは無視するため、JSON の後ろに '}' を含む散文が続いても壊れない。
     private static string? ExtractJsonObject(string text)
     {
         var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        return start >= 0 && end > start ? text[start..(end + 1)] : null;
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+        for (var i = start; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"': inString = true; break;
+                case '{': depth++; break;
+                case '}':
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return text[start..(i + 1)];
+                    }
+
+                    break;
+            }
+        }
+
+        return null; // 対応する閉じ括弧が見つからない
     }
 
     private sealed record DecisionDto(

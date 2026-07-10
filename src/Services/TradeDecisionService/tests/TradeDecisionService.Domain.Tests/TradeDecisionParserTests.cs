@@ -32,6 +32,18 @@ public class TradeDecisionParserTests
     }
 
     [Fact]
+    public void JSON後の散文に閉じ括弧が含まれても正しく抽出する()
+    {
+        // 括弧深さで対応括弧を探すため、末尾の散文 "(参考: {1})" に壊されない。
+        var text = """{"action":"Buy","rationale":"上昇","referencePrice":1000,"stopLossDistancePerShare":30} 以上です (参考: {1})""";
+
+        var d = TradeDecisionParser.Parse(text);
+
+        d.Action.Should().Be(TradeAction.Buy);
+        d.ReferencePrice.Should().Be(1000m);
+    }
+
+    [Fact]
     public void Holdは見送りとして解析する()
     {
         TradeDecisionParser.Parse("""{"action":"Hold","rationale":"様子見"}""").Action.Should().Be(TradeAction.Hold);
