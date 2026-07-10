@@ -43,7 +43,7 @@ internal sealed class HttpSizingContextProvider(
         }
     }
 
-    // フェイルセーフ既定: 段階/日次残枠 0 → availableCapital 0 → 数量 0 → 見送り（取引しない）。Limits は PositionSizer が動く既定。
+    // フェイルセーフ既定: 段階/日次残枠 0 → availableCapital 0 → 数量 0 → 見送り（取引しない）。Limits は PositionSizer を動かせる既定値。
     private static SizingContext SafeDefault() => new(
         Capital: TradingDefaults.InitialCapital,
         StageCapitalRemaining: 0m,
