@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.TradeDecision.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -17,8 +18,17 @@ public sealed class TradeDecisionService(
     IClock clock,
     ILogger<TradeDecisionService> logger)
 {
-    public async Task<TradeDecisionMade?> DecideAsync(
+    // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
+    public Task<TradeDecisionMade?> DecideAsync(
         PriceMovementDetected trigger, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(trigger);
+        return DecideAsync(DecisionTrigger.FromPriceMovement(trigger), cancellationToken);
+    }
+
+    // FR-02, IADR-0023: 定時・イベント両系統の合流点。DecisionTrigger を受けて同一ロジックで判断する。
+    public async Task<TradeDecisionMade?> DecideAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(trigger);
 
