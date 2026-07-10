@@ -96,6 +96,16 @@ public class ReportEndpointsTests
     }
 
     [Fact]
+    public async Task 損益集計エンドポイントも_OwnerOnly_未認証は_401()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        var res = await factory.CreateClient().PostAsJsonAsync("/reports/pnl-summary", new { Fills = Array.Empty<object>(), CurrentPrices = (object?)null });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task 損益集計エンドポイントは実現損益を返す()
     {
         await using var factory = new ReportWorkerWebApplicationFactory();

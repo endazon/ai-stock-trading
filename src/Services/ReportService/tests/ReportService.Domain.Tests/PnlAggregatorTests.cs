@@ -105,6 +105,24 @@ public class PnlAggregatorTests
     }
 
     [Fact]
+    public void 反転_ロングからショート_は決済分の実現損益と残ショートの評価損益を扱う()
+    {
+        // ロング10株保有中に15株売却 → 10株を決済（実現 +2,000）、残5株はショートへ転換（取得単価=1,200）。
+        var fills = new[]
+        {
+            Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 0),
+            Fill(TradeSide.Sell, PositionEffect.Close, 15, 1_200m, 1),
+        };
+        var prices = new Dictionary<string, decimal> { ["AAPL"] = 1_100m };
+
+        var s = PnlAggregator.Aggregate(fills, Assumptions(), prices);
+
+        s.RealizedPnlGross.Should().Be(2_000m);       // (1200-1000)*10
+        s.RealizingTradeCount.Should().Be(1);
+        s.UnrealizedPnl.Should().Be(500m);            // ショート5 @1200・現在値1100 → (1100-1200)*(-5)=500
+    }
+
+    [Fact]
     public void 空の約定列はゼロサマリを返す()
     {
         var s = PnlAggregator.Aggregate(Array.Empty<PeriodTradeFill>(), Assumptions());
