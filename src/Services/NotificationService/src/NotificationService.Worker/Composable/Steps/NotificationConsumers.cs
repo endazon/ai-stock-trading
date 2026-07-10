@@ -25,3 +25,10 @@ internal sealed class StopLossTriggeredNotificationConsumer(INotificationSender 
     public Task Consume(ConsumeContext<StopLossTriggered> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// FR-17, UC-06: 全体前提条件の変更（設定管理サービス #19）を購読して通知する。
+internal sealed class AssumptionsChangedNotificationConsumer(INotificationSender sender) : IConsumer<AssumptionsChanged>
+{
+    public Task Consume(ConsumeContext<AssumptionsChanged> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

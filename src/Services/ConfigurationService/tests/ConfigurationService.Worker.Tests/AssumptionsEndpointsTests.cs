@@ -1,0 +1,104 @@
+using System.Net;
+using System.Net.Http.Json;
+using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Contracts.Events;
+using FluentAssertions;
+using MassTransit.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace AiStockTrading.Configuration.Worker.Tests;
+
+// FR-17, UC-06, ADR-0007: 前提条件エンドポイントの OwnerOnly 認可・更新・履歴・楽観排他（409）・変更イベント発行を検証する。
+// 単一行の前提条件は可変状態のため、テストごとに独立した Factory（＝独立 InMemory DB）を用いる。
+public class AssumptionsEndpointsTests
+{
+    private const string OwnerRole = "trading-owner";
+
+    private static HttpClient OwnerClient(ConfigurationWorkerWebApplicationFactory factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+        return client;
+    }
+
+    private static object UpdateBody(TradingAssumptions assumptions, int expectedVersion, string reason) =>
+        new { Assumptions = assumptions, ExpectedVersion = expectedVersion, Reason = reason };
+
+    [Fact]
+    public async Task 未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ConfigurationWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().GetAsync("/assumptions")).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.GetAsync("/assumptions")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 現在値は既定を_Version1_で返す()
+    {
+        await using var factory = new ConfigurationWorkerWebApplicationFactory();
+
+        var res = await OwnerClient(factory).GetAsync("/assumptions");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var current = await res.Content.ReadFromJsonAsync<VersionedDto>();
+        current!.Version.Should().Be(1);
+        current.Assumptions.CapitalGainsTaxRate.Should().Be(0.20315m);
+    }
+
+    [Fact]
+    public async Task 更新で_Version_が上がり_AssumptionsChanged_が発行され履歴に残る()
+    {
+        await using var factory = new ConfigurationWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var modified = TradingAssumptionsDefaults.Create() with { FxSpreadRatio = 0.003m };
+        var put = await client.PutAsJsonAsync("/assumptions", UpdateBody(modified, 1, "為替スプレッド登録"));
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updated = await put.Content.ReadFromJsonAsync<VersionedDto>();
+        updated!.Version.Should().Be(2);
+        updated.Assumptions.FxSpreadRatio.Should().Be(0.003m);
+
+        // 変更通知イベントが発行される。
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+        (await harness.Published.Any<AssumptionsChanged>()).Should().BeTrue();
+
+        // 履歴に残る。
+        var history = await client.GetFromJsonAsync<List<ChangeDto>>("/assumptions/history");
+        history!.Should().ContainSingle(h => h.Reason == "為替スプレッド登録" && h.Version == 2);
+    }
+
+    [Fact]
+    public async Task 版番号が不一致の更新は_409()
+    {
+        await using var factory = new ConfigurationWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/assumptions",
+            UpdateBody(TradingAssumptionsDefaults.Create(), expectedVersion: 99, reason: "遅延更新"));
+
+        put.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 理由が空の更新は_400()
+    {
+        await using var factory = new ConfigurationWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var put = await client.PutAsJsonAsync("/assumptions",
+            UpdateBody(TradingAssumptionsDefaults.Create(), expectedVersion: 1, reason: ""));
+
+        put.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private sealed record VersionedDto(TradingAssumptions Assumptions, int Version);
+
+    private sealed record ChangeDto(string Actor, string Reason, int Version);
+}

@@ -28,6 +28,7 @@ public class NotificationConsumersTests
                 x.AddConsumer<OrderExecutedNotificationConsumer>();
                 x.AddConsumer<OrderRejectedNotificationConsumer>();
                 x.AddConsumer<StopLossTriggeredNotificationConsumer>();
+                x.AddConsumer<AssumptionsChangedNotificationConsumer>();
             })
             .BuildServiceProvider(true);
         return (provider, sender);
@@ -62,6 +63,22 @@ public class NotificationConsumersTests
         (await harness.Consumed.Any<OrderRejected>()).Should().BeTrue();
 
         sender.Sent.Should().ContainSingle(m => m.Content.Contains(nameof(RejectionReason.KillSwitchActive)));
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 前提条件変更イベントは設定変更通知を送信する()
+    {
+        var (provider, sender) = Build();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<AssumptionsChanged>()).Should().BeTrue();
+
+        sender.Sent.Should().ContainSingle(m => m.Title.Contains("設定変更"));
 
         await harness.Stop();
     }

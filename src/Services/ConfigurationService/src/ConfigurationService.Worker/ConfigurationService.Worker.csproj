@@ -1,0 +1,24 @@
+<!-- #19 Slice A, FR-17, IADR-0021: 設定管理 Worker ホスト。全体前提条件のバージョン管理・変更履歴・利用者変更（Keycloak 認可）
+     とヘルスチェックのため Web SDK を使用。更新時に AssumptionsChanged を発行する。実行時基盤は test-support shim（本番非使用・IADR-0013）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.Configuration.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\ConfigurationService.Application\ConfigurationService.Application.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="ConfigurationService.Worker.Tests" />
+  </ItemGroup>
+</Project>
