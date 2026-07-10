@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.CostControl.Domain</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- NFR 費用: 月次費用上限（MonthlyCostLimits）を前提条件ドメインから再利用する（IADR-0027）。 -->
+    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
+  </ItemGroup>
+</Project>

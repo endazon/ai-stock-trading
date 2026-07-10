@@ -30,6 +30,7 @@ public class NotificationConsumersTests
                 x.AddConsumer<StopLossTriggeredNotificationConsumer>();
                 x.AddConsumer<AssumptionsChangedNotificationConsumer>();
                 x.AddConsumer<ReportConfirmedNotificationConsumer>();
+                x.AddConsumer<CostThresholdReachedNotificationConsumer>();
             })
             .BuildServiceProvider(true);
         return (provider, sender);
@@ -96,6 +97,22 @@ public class NotificationConsumersTests
         (await harness.Consumed.Any<ReportConfirmed>()).Should().BeTrue();
 
         sender.Sent.Should().ContainSingle(m => m.Title.Contains("報告書確定") && m.Content.Contains("owner"));
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 費用しきい値到達イベントは費用統制通知を送信する()
+    {
+        var (provider, sender) = Build();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new CostThresholdReached("2026-07", "Llm", 100m, "Halted", DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<CostThresholdReached>()).Should().BeTrue();
+
+        sender.Sent.Should().ContainSingle(m => m.Title.Contains("費用統制") && m.Severity == NotificationSeverity.Critical);
 
         await harness.Stop();
     }

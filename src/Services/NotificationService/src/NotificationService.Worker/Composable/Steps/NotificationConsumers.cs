@@ -39,3 +39,10 @@ internal sealed class ReportConfirmedNotificationConsumer(INotificationSender se
     public Task Consume(ConsumeContext<ReportConfirmed> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// NFR（費用）, FR-09: 費用しきい値到達（費用統制 #23）を購読して通知する。
+internal sealed class CostThresholdReachedNotificationConsumer(INotificationSender sender) : IConsumer<CostThresholdReached>
+{
+    public Task Consume(ConsumeContext<CostThresholdReached> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

@@ -32,6 +32,7 @@ public sealed class NotificationWorkerWebApplicationFactory : WebApplicationFact
                 x.AddConsumer<Composable.Steps.StopLossTriggeredNotificationConsumer>();
                 x.AddConsumer<Composable.Steps.AssumptionsChangedNotificationConsumer>();
                 x.AddConsumer<Composable.Steps.ReportConfirmedNotificationConsumer>();
+                x.AddConsumer<Composable.Steps.CostThresholdReachedNotificationConsumer>();
             });
         });
     }

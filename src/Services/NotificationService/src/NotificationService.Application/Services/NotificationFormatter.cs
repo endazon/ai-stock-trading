@@ -36,4 +36,10 @@ public static class NotificationFormatter
         "報告書確定",
         $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{e.Actor}・前提条件 v{e.AssumptionsVersion}）。",
         NotificationSeverity.Info);
+
+    // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
+    public static NotificationMessage From(CostThresholdReached e) => new(
+        $"費用統制: {e.State}",
+        $"{e.Category} 費用が月次上限の {e.Percent:F0}% に到達しました（{e.Month}・{e.State}）。",
+        e.State == "Halted" ? NotificationSeverity.Critical : NotificationSeverity.Warning);
 }
