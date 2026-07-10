@@ -50,7 +50,9 @@ plan_refs:
 - `StopLossExecutionService.BuildCloseApproval(StopLossTriggered)` が Close の `OrderApproved` を直接組み立てる（純粋関数）。
   - 決済方向は建玉方向の反対（Buy 建て→Sell / Sell 建て→Buy）。`PositionEffect = Close`。
   - `Mode` は現行段階（`settings.Stage.Mode`）、`ProductType` は `Cash`（現物のみ有効な現段階）。
-  - `Quantity`・`Price` はイベントの値。新規 `DecisionId` を採番する（先行する `TradeDecisionMade` は無い＝LLM 迂回）。
+  - `Quantity`・`Price` はイベントの値。先行する `TradeDecisionMade` は無い（LLM 迂回）ため、`DecisionId` は
+    `StopLossTriggered.EventId` から**決定的に採る**（冪等性）。MassTransit の再送で同一イベントが再処理されても
+    同じ `DecisionId` になり、発注執行（#13）側の `DecisionId` ベース重複排除がすり抜けない。
 - **スクリーニング（`RiskEvaluator`）を通さない**。損切りは kill switch・ロックアウト・相場操縦ガード・各上限のいずれでも
   止めない無条件執行とする。
 - 発行先は `OrderApproved`（発注執行が購読）。損切りであることは `PositionEffect.Close`＋先行判断の不在で表される。実行は
@@ -66,7 +68,8 @@ plan_refs:
 
 - 良い影響: 損切りが kill switch・ロックアウト・相場操縦ガードに一切影響されず必ず発行される。判定コアの変更から独立。
 - 悪い影響・トレードオフ: 損切り経路は通常のスクリーニングの監査ログを経ないため、損切り固有のログ/通知/監査を別途用意する
-  必要がある（本 Slice は情報ログ、永続監査は #17、通知は #15）。`ProductType` は現段階 Cash 固定で、信用有効化時に拡張が要る。
+  必要がある（本 Slice は警告ログで可視化、永続監査は #17、通知は #15）。`ProductType` は現段階 Cash 固定で、信用有効化時に拡張が要る。
+- 冪等性: `DecisionId` を `StopLossTriggered.EventId` から決定的に採ることで、再送時の重複 `OrderApproved` を防ぐ。
 - フォローアップ: 発注執行（#13）で Close 発注、通知（#15）・監査（#17）連携、信用時の ProductType 供給。
 
 ## 関連

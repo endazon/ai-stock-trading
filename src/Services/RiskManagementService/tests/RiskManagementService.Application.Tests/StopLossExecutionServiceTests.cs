@@ -61,4 +61,18 @@ public class StopLossExecutionServiceTests
         Create().BuildCloseApproval(Triggered(TradeSide.Buy))
             .Intent.ProductType.Should().Be(ProductType.Cash);
     }
+
+    [Fact]
+    public void DecisionIdはイベントIDから決定的に採られ再送でも同一になる()
+    {
+        // IADR-0015: 冪等性。同一 StopLossTriggered を 2 回処理しても DecisionId は同じ（= EventId）。
+        var service = Create();
+        var triggered = Triggered(TradeSide.Buy);
+
+        var first = service.BuildCloseApproval(triggered);
+        var second = service.BuildCloseApproval(triggered);
+
+        first.DecisionId.Should().Be(triggered.EventId);
+        second.DecisionId.Should().Be(triggered.EventId);
+    }
 }

@@ -29,7 +29,9 @@ public sealed class StopLossExecutionService(IRiskSettingsStore settingsStore, I
             triggered.Price,
             PositionEffect.Close);
 
-        // 先行する TradeDecisionMade は無い（LLM 迂回）。新規 DecisionId を採番する。
-        return new OrderApproved(Guid.NewGuid(), intent, triggered.Quantity, clock.UtcNow);
+        // 先行する TradeDecisionMade は無い（LLM 迂回）。冪等性のため DecisionId は StopLossTriggered.EventId から
+        // 決定的に採る（IADR-0015）。MassTransit の再送で同一イベントが再処理されても同じ DecisionId になり、
+        // 発注執行（#13）側の DecisionId ベース重複排除がすり抜けない。
+        return new OrderApproved(triggered.EventId, intent, triggered.Quantity, clock.UtcNow);
     }
 }

@@ -44,13 +44,14 @@ ADR-0003・ワークフロー 02 により **kill switch 起動中・日報未�
   - 決済方向 `Side` = 建玉方向の反対（`PositionSide == Buy` → `Sell` / `Sell` → `Buy`）。
   - `Mode` = 現行段階の動作モード（`settings.Stage.Mode`）。`ProductType` = `Cash`（現物のみ有効な現段階。信用有効化時は要拡張）。
   - `Quantity` = `ev.Quantity`、`Price` = `ev.Price`（検知時点の現在値）、`PositionEffect` = `Close`。
-  - `OrderApproved(new DecisionId, intent, Quantity, clock.UtcNow)` を返す。
+  - `OrderApproved(DecisionId, intent, Quantity, clock.UtcNow)` を返す。`DecisionId` は `StopLossTriggered.EventId` から
+    決定的に採る（再送時の重複発行を防ぐ冪等性・IADR-0015）。
   - **スクリーニング（RiskEvaluator）を通さない**。損切りは無条件執行（kill switch・ロックアウト・相場操縦ガードで止めない）。
 
 ### Worker（`RiskManagementService.Worker`）
 
 - `Composable/Steps/StopLossTriggeredConsumer.cs`（`IConsumer<StopLossTriggered>`）— `StopLossExecutionService` で Close の
-  `OrderApproved` を組み立て、`context.Publish` する。損切り実行を情報ログに残す（FR-11・監査/通知の起点）。
+  `OrderApproved` を組み立て、`context.Publish` する。損切り実行を警告ログで可視化する（FR-11・監査/通知の起点）。
 - `Program.cs` に `AddConsumer<StopLossTriggeredConsumer>()` と `StopLossExecutionService` の DI 登録を追加する。
 
 ## 受け入れ基準
@@ -68,7 +69,7 @@ CI で緑にする範囲（ユニット＋MassTransit テストハーネス）:
 ## 対象外（後続）
 
 - 発注執行サービス（#13）による実際の Close 発注（本 Slice は `OrderApproved`(Close) の発行まで）。
-- 損切り実行の Discord 通知（FR-09・#15）・監査ログ永続化（FR-11・#17）。本 Slice は情報ログにとどめる。
+- 損切り実行の Discord 通知（FR-09・#15）・監査ログ永続化（FR-11・#17）。本 Slice は警告ログにとどめる。
 - 信用（margin）有効化時の `ProductType` 供給（`StopLossTriggered` への追加 or ポジションストア連携）。
 
 ## テスト方針
