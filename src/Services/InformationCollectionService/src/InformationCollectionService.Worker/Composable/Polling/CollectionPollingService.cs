@@ -52,7 +52,8 @@ internal sealed class CollectionPollingService(
     }
 
     // 費用統制の状態から次回巡回までの実効間隔を算出する純関数（境界テスト用）。
-    // Normal=base、Throttled=base×IntervalMultiplier（≥1）、Halted=base×2（再照会）。
+    // Normal=base、Throttled=base×（サーバ応答の IntervalMultiplier をそのまま使用・下限1・現状 CostGovernor は 2×）、
+    // Halted=base×2（収集はしないが復帰検知のため再照会）。
     public static TimeSpan EffectiveInterval(TimeSpan baseInterval, CostControlGate gate)
     {
         var multiplier = gate.Halted ? HaltedRecheckMultiplier : Math.Max(1m, gate.IntervalMultiplier);

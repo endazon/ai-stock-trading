@@ -8,6 +8,8 @@ namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 // 未取得・非 2xx・例外・タイムアウト・不正応答は Normal（停止せず・1×）の安全既定に倒す。
 // 注意: Normal は「間隔延長/停止を止められない側」の縮退だが、月次予算は緩変で短時間の不達では超過しにくく、
 // 費用統制の一時障害で取引サイクル全体を止める（Halt）のは過大なため（IADR-0031）。
+// 注意（#76 依存）: /costs/state は OwnerOnly のため、service-to-service 認証（#76）が入るまで本呼び出しは
+// 認証ヘッダなし＝常に 401 → Normal に倒れる。よって CostControl:BaseUrl 設定後も #76 完了までは間隔延長/停止は実運用で無効。
 internal sealed class HttpCostControlGate(
     HttpClient httpClient,
     ILogger<HttpCostControlGate> logger)

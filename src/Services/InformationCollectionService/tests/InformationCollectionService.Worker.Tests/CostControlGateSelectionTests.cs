@@ -35,6 +35,17 @@ public class CostControlGateSelectionTests
         scope.ServiceProvider.GetRequiredService<ICostControlGate>().Should().BeOfType<HttpCostControlGate>();
     }
 
+    [Fact]
+    public void 不正なBaseUrlは安全既定のプレースホルダ()
+    {
+        // Uri.TryCreate（絶対 URI）が失敗する文字列は安全既定へ倒す（IADR-0031）。
+        using var factory = new Factory(costBaseUrl: "not-a-url");
+        _ = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ICostControlGate>().Should().BeOfType<PlaceholderCostControlGate>();
+    }
+
     private sealed class Factory(string? costBaseUrl) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
