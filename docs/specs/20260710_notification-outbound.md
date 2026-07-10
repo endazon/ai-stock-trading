@@ -1,7 +1,7 @@
 ---
 title: 通知サービス Slice A（イベント購読→テンプレート整形→Discord アウトバウンド通知・安全既定）
 type: spec
-status: review
+status: done
 related_ids: [FR-09, UC-01, UC-02, UC-06, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-10
@@ -57,13 +57,13 @@ plan_refs:
 ## 受け入れ基準
 
 CI で緑にする範囲（ユニット＋MassTransit テストハーネス＋WebApplicationFactory＋fake HttpMessageHandler）:
-- [ ] `OrderExecuted`／`OrderRejected`／`StopLossTriggered` を購読すると、種別ごとに整形された通知が送信される（fake sender で検証）。
-- [ ] `OrderRejected` の通知に拒否理由（`RejectionReason`）が含まれる。
-- [ ] 既定（`Notifications:Provider` 未設定）では `LoggingNotificationSender`＝**外部送信しない**（安全既定）。
-- [ ] `discord-webhook` 指定かつ WebhookUrl 未設定なら no-op へフォールバックし警告する（設定不備で実送信しない）。
-- [ ] `DiscordWebhookNotificationSender` は Webhook へ `content` を POST し、非 2xx 応答で例外化する（fake HttpMessageHandler）。
-- [ ] Worker が起動しヘルス `/health/live` が応答する（既定の安全 sender で）。
-- [ ] 既存テストを緑に保つ。
+- [x] `OrderExecuted`／`OrderRejected`／`StopLossTriggered` を購読すると、種別ごとに整形された通知が送信される（fake sender で検証）。
+- [x] `OrderRejected` の通知に拒否理由（`RejectionReason`）が含まれる。
+- [x] 既定（`Notifications:Provider` 未設定）では `LoggingNotificationSender`＝**外部送信しない**（安全既定）。
+- [x] `discord-webhook` 指定かつ WebhookUrl 未設定なら no-op へフォールバックし警告する（設定不備で実送信しない）。
+- [x] `DiscordWebhookNotificationSender` は Webhook へ `content` を POST し、非 2xx 応答で例外化する（fake HttpMessageHandler）。`content` は Discord の 2000 文字上限に切り詰める。
+- [x] Worker が起動しヘルス `/health/live` が応答する（既定の安全 sender で）。
+- [x] 既存テストを緑に保つ。
 
 実 API 前提（CI 既定では実行しない）:
 - [ ] 実 Discord Webhook への送信 E2E（トークン/URL は Vault・実 API）。

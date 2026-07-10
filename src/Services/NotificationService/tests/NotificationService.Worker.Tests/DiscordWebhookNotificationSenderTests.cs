@@ -35,6 +35,21 @@ public class DiscordWebhookNotificationSenderTests
     }
 
     [Fact]
+    public async Task content_は_Discord_の_2000文字上限に切り詰められる()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.NoContent);
+        var sender = new DiscordWebhookNotificationSender(
+            new HttpClient(handler), Url, NullLogger<DiscordWebhookNotificationSender>.Instance);
+
+        // 上限を超える長文（タイトル＋本文で 2000 超）を送る。
+        await sender.SendAsync(new NotificationMessage("長い通知", new string('x', 2500), NotificationSeverity.Warning));
+
+        using var doc = JsonDocument.Parse(handler.Body);
+        var content = doc.RootElement.GetProperty("content").GetString();
+        content!.Length.Should().BeLessThanOrEqualTo(2000);
+    }
+
+    [Fact]
     public async Task 非_2xx_応答は例外化する()
     {
         var handler = new CapturingHandler(HttpStatusCode.TooManyRequests);
