@@ -62,11 +62,15 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IBusinessCalendar>(),
     sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
+// FR-10, ADR-0003, IADR-0015: 損切りの機械執行（StopLossTriggered → Close の OrderApproved・無条件）。
+builder.Services.AddScoped<StopLossExecutionService>();
 
-// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行する。
+// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
+// StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<TradeDecisionMadeConsumer>();
+    x.AddConsumer<StopLossTriggeredConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
