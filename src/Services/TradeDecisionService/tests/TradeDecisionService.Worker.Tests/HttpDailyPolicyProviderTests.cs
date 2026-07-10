@@ -49,6 +49,27 @@ public class HttpDailyPolicyProviderTests
         policy.Should().BeNull();
     }
 
+    [Fact]
+    public async Task 不正_空ボディの_200_は_null_取引しない()
+    {
+        (await Provider(new StubHandler(HttpStatusCode.OK, "")).GetCurrentAsync()).Should().BeNull();
+        (await Provider(new StubHandler(HttpStatusCode.OK, "not-json")).GetCurrentAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task タイムアウト_応答遅延_は_null_取引しない()
+    {
+        // HttpClient のタイムアウトを短くし、ハンドラを遅延させてタイムアウトを起こす（呼び出し側キャンセルではない）。
+        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))
+        {
+            BaseAddress = new Uri("http://reports"),
+            Timeout = TimeSpan.FromMilliseconds(50),
+        };
+        var provider = new HttpDailyPolicyProvider(http, NullLogger<HttpDailyPolicyProvider>.Instance);
+
+        (await provider.GetCurrentAsync()).Should().BeNull();
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         public string? LastPath { get; private set; }
@@ -64,5 +85,15 @@ public class HttpDailyPolicyProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             throw new HttpRequestException("報告書サービス不達");
+    }
+
+    // 指定時間待機してから応答するハンドラ（HttpClient のタイムアウトを起こすため）。
+    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        }
     }
 }

@@ -37,8 +37,9 @@ plan_refs:
 - `IDailyPolicyProvider` を**非同期化**（`Task<DailyPolicy?> GetCurrentAsync(CancellationToken)`）。同期 HTTP 呼び出しを sync-over-async に
   しないため。`TradeDecisionService.DecideAsync` は `await` で取得する。
 - Worker: `HttpDailyPolicyProvider`（`HttpClient` で `GET {Reports:BaseUrl}/reports/daily-policy` → `ConfirmedDailyPolicy`(Date/Summary/
-  AssumptionsVersion) を `DailyPolicy`(Date/Summary) に写像。404/非 2xx/例外は null＝取引しない・ログ）。`DailyPolicyProviderFactory`
-  （`Reports:BaseUrl` 未設定→プレースホルダ no-op、設定時→Http）。
+  AssumptionsVersion) を `DailyPolicy`(Date/Summary) に写像。404/非 2xx/例外/タイムアウト/不正応答は null＝取引しない・ログ）。
+  `Program.cs` のインライン登録（`AddScoped<IDailyPolicyProvider>` ラムダ・専用クラスは設けない）で `Reports:BaseUrl` 未設定/不正 URI→
+  プレースホルダ no-op、設定時→Http を**解決時に構成を読んで**選択する。`reports` HttpClient は短いタイムアウト（5s）を設定する。
 - `PlaceholderDailyPolicyProvider` は非同期化して残す（安全既定）。
 
 ## 受け入れ基準

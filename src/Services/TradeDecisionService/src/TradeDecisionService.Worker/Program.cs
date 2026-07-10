@@ -34,16 +34,18 @@ builder.Services.AddSingleton<ILlmCompletionClient, PlaceholderLlmCompletionClie
 // Reports:BaseUrl 未設定なら従来のプレースホルダ（no-op・取引しない）＝安全既定でゲート。設定時のみ実照会する。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
 // IHttpClientFactory 経由でハンドラをプールする。警告の 1 回化のためプレースホルダは singleton で共有する。
-builder.Services.AddHttpClient("reports");
+// 同期クリティカルパス（取引判断）に置くため短いタイムアウトを設定する（応答遅延でサイクルを長時間ブロックしない）。
+builder.Services.AddHttpClient("reports", c => c.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton<PlaceholderDailyPolicyProvider>();
 builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
 {
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Reports:BaseUrl"];
-    if (string.IsNullOrWhiteSpace(baseUrl))
+    // 未設定・不正 URI は安全既定（プレースホルダ＝取引しない）に倒す。
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<PlaceholderDailyPolicyProvider>();
 
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("reports");
-    http.BaseAddress = new Uri(baseUrl);
+    http.BaseAddress = uri;
     return new HttpDailyPolicyProvider(http, sp.GetRequiredService<ILogger<HttpDailyPolicyProvider>>());
 });
 builder.Services.AddSingleton<ISizingContextProvider, PlaceholderSizingContextProvider>();

@@ -32,9 +32,15 @@ internal sealed class HttpDailyPolicyProvider(
             var dto = await response.Content.ReadFromJsonAsync<ConfirmedDailyPolicyDto>(cancellationToken).ConfigureAwait(false);
             return dto is null ? null : new DailyPolicy(dto.Date, dto.Summary);
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // タイムアウト（呼び出し側のキャンセルではない）＝報告書サービス応答遅延。取引しない安全側に倒す。
+            logger.LogWarning("確定済み日報方針の照会がタイムアウト。取引しない安全側に倒します。");
+            return null;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // 報告書サービス不達・タイムアウト等は取引しない安全側に倒す。
+            // 報告書サービス不達・不正応答等は取引しない安全側に倒す。
             logger.LogWarning(ex, "確定済み日報方針の照会で例外。取引しない安全側に倒します。");
             return null;
         }
