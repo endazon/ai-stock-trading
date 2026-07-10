@@ -33,6 +33,17 @@
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Domain.Tests/RiskManagementService.Domain.Tests.csproj" />
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Worker.Tests/RiskManagementService.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/Services/TradeDecisionService/" />
+  <Folder Name="/Services/TradeDecisionService/src/">
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Application/TradeDecisionService.Application.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Domain/TradeDecisionService.Domain.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/TradeDecisionService/tests/">
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Application.Tests/TradeDecisionService.Application.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Domain.Tests/TradeDecisionService.Domain.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Worker.Tests/TradeDecisionService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure/AiStockTrading.Shared.Infrastructure.csproj" />

@@ -25,6 +25,8 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
+    <!-- ロギング抽象（ライブラリでの ILogger 用。net10 の共有フレームワーク・Mvc.Testing 推移依存と揃える）。 -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
   <ItemGroup>
     <!-- Worker ホスト / 永続化（#12 Slice B・IADR-0012）。バージョンは基盤リポと同一に保つ。 -->
