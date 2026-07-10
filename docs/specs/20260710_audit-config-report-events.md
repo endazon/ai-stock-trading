@@ -21,7 +21,7 @@ plan_refs:
 - 機能要求（FR）: FR-11（全イベントの時系列記録・監査）。関連 FR-17（設定変更）・FR-07（報告書確定）
 - ユースケース（UC）: UC-07（監査照会）
 - ADR: ADR-0007（変更は利用者のみ・監査記録）
-- 関連 IADR: [IADR-0019](../adr/IADR-0019_audit-log-service.md)（監査台帳）、[IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)（後続明記）
+- 関連 IADR: [IADR-0019](../adr/IADR-0019_audit-log-service.md)（監査台帳）、[IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)（後続明記）、本作業で新規 [IADR-0026](../adr/IADR-0026_audit-deterministic-correlation.md)（決定的相関 UUID）
 - 対象 Issue: #17（フォローアップ）
 
 ## 目的・背景

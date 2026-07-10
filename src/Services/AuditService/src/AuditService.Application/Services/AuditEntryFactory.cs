@@ -50,7 +50,7 @@ public static class AuditEntryFactory
     // FR-07: 報告書の確定（報告書 #14）。同一 PeriodKey で同一相関になるよう "report:{PeriodKey}" の決定的 GUID を相関にする。
     public static AuditEntry From(ReportConfirmed e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(ReportConfirmed), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
-        $"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）",
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
         AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
 
     private static string Truncate(string s) =>
