@@ -43,8 +43,17 @@ plan_refs:
 | `OrderRejected` | リスク管理（#12） | DecisionId, Intent, Reasons(RejectionReason[]), RejectedAt | 発注前拒否（理由列挙。監査 FR-11・通知 FR-09） |
 | `OrderExecuted` | 発注執行（#13） | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |
 
+市場監視のイベント（FR-03・UC-02）。`EventId`（Guid）で 1 検知を相関する（取引判断サイクルとは別系統。IADR-0014）。
+
+| イベント | 発行元 | 主なフィールド | 用途 |
+| --- | --- | --- | --- |
+| `PriceMovementDetected` | 市場監視（#10） | EventId, Symbol, Market, Price, BaselinePrice, ChangeRatio, DetectedAt | 変動閾値超過→対象銘柄限定の取引サイクル即時起動（取引判断#11／サイクル#21 が購読） |
+| `StopLossTriggered` | 市場監視（#10） | EventId, Symbol, Market, PositionSide(TradeSide), Quantity, Price, StopLossPrice, DetectedAt | 損切りライン到達→リスク管理（#12 Slice C）が LLM 迂回で決済(Close)注文を発行（ADR-0003） |
+
 - `RejectionReason` / `OrderStatus` の値はデータ仕様書を参照。`OrderRejected`（発注前拒否）と
   `OrderExecuted.Status = Rejected`（証券会社拒否）は別事象（IADR-0007）。
+- 損切りは市場監視が「検知」してイベント発行、リスク管理が「執行」する責務分離（IADR-0014）。`ChangeRatio` の基準
+  `BaselinePrice` は前回 AI 判断時点の価格。
 - イベントのエンベロープ（メッセージヘッダ・トピック命名・冪等性キー）は platform 規約（ADR-0001・#22）に合わせる。
 
 ### イベントフロー
