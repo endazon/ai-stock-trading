@@ -23,6 +23,14 @@ public class InformationCollectedConsumerTests
     {
         public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) => Task.FromResult(output);
     }
+    // 特定銘柄でのみ例外を投げる LLM（銘柄はプロンプトに含まれる）。銘柄別の失敗分離を検証する。
+    private sealed class ThrowingForSymbolLlm(string badSymbol, string output) : ILlmCompletionClient
+    {
+        public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) =>
+            prompt.Contains(badSymbol, StringComparison.Ordinal)
+                ? throw new InvalidOperationException($"LLM 障害（{badSymbol}）")
+                : Task.FromResult(output);
+    }
     private sealed class FakePolicy : IDailyPolicyProvider
     {
         public DailyPolicy? GetCurrent() => new(new DateOnly(2026, 7, 10), "押し目買い");
@@ -41,13 +49,13 @@ public class InformationCollectedConsumerTests
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
-    private static ServiceProvider Build(IWatchlistProvider watchlist, IMarketCalendar calendar) =>
+    private static ServiceProvider Build(IWatchlistProvider watchlist, IMarketCalendar calendar, ILlmCompletionClient? llm = null) =>
         new ServiceCollection()
             .AddLogging()
             .AddSingleton<IClock, SystemClock>()
             .AddSingleton(calendar)
             .AddSingleton(watchlist)
-            .AddSingleton<ILlmCompletionClient>(new FakeLlm(BuyJson))
+            .AddSingleton(llm ?? new FakeLlm(BuyJson))
             .AddSingleton<IDailyPolicyProvider, FakePolicy>()
             .AddSingleton<ISizingContextProvider, FakeSizing>()
             .AddScoped<AppSvc>()
@@ -86,6 +94,30 @@ public class InformationCollectedConsumerTests
 
         (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
         (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 一銘柄の失敗は他銘柄の処理を止めない_重複発注防止()
+    {
+        // IADR-0023: 1 銘柄の判断失敗でサイクル全体を再配送させず、他銘柄は継続して発行する。
+        await using var provider = Build(
+            new FakeWatchlist(
+                new WatchedSymbol("BADSYM", Market.UnitedStates),
+                new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new CalendarStub(open: true),
+            new ThrowingForSymbolLlm("BADSYM", BuyJson));
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new InformationCollected(Guid.NewGuid(), 1, DateTimeOffset.UtcNow));
+
+        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
+        (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
+        // AAPL の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
+        harness.Published.Select<TradeDecisionMade>().Should().ContainSingle();
+        harness.Published.Select<TradeDecisionMade>().First().Context.Message.Intent.Symbol.Should().Be("AAPL");
 
         await harness.Stop();
     }

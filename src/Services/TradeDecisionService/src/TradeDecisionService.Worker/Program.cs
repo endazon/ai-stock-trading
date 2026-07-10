@@ -11,8 +11,9 @@ using System.Globalization;
 
 const string ServiceName = "ai-stock-trading.trade-decision-service";
 
-// #11 Slice A, IADR-0013/0017: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。
-// PriceMovementDetected 購読は MassTransit コンシューマとして稼働する。判断はステートレス（DB なし）。
+// #11 Slice A / #21 (FR-02), IADR-0013/0017/0023: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。
+// 価格変動（PriceMovementDetected・イベント駆動）と収集完了（InformationCollected・定時）の両系統を MassTransit
+// コンシューマとして購読し、市場カレンダー（IMarketCalendar）で休場日をゲートしつつ取引判断で合流する。判断はステートレス（DB なし）。
 //
 // IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ を shim 経由で組む部分）は dev/test/CI の
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。

@@ -29,17 +29,27 @@ internal sealed class InformationCollectedConsumer(
                 continue;
             }
 
-            var decision = await decisionService
-                .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), context.CancellationToken)
-                .ConfigureAwait(false);
+            // 1 銘柄の判断/発行失敗でサイクル全体を再配送させない（IADR-0023）。再配送すると発行済み銘柄も再ループされ、
+            // TradeDecisionMade.DecisionId は都度新規採番のため下流（発注執行）の DecisionId 冪等をすり抜け重複発注し得る。
+            // 失敗銘柄はログに残して次銘柄へ継続し、次回巡回で再評価する（キャンセルは伝播させる）。
+            try
+            {
+                var decision = await decisionService
+                    .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), context.CancellationToken)
+                    .ConfigureAwait(false);
 
-            if (decision is null)
-                continue; // 方針なし・Hold・見送り
+                if (decision is null)
+                    continue; // 方針なし・Hold・見送り
 
-            logger.LogInformation(
-                "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity}",
-                decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity);
-            await context.Publish(decision, context.CancellationToken).ConfigureAwait(false);
+                logger.LogInformation(
+                    "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity}",
+                    decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity);
+                await context.Publish(decision, context.CancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!context.CancellationToken.IsCancellationRequested)
+            {
+                logger.LogError(ex, "定時サイクルの銘柄処理でエラー: {Symbol}。この銘柄をスキップし継続します。", watched.Symbol);
+            }
         }
     }
 }

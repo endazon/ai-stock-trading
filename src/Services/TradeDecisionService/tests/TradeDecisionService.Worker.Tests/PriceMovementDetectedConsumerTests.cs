@@ -30,18 +30,18 @@ public class PriceMovementDetectedConsumerTests
     private const string BuyJson =
         """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
 
-    // 判断経路の検証のため常に開場のカレンダーを用いる（実時刻だと週末で揺れるため）。
-    private sealed class AlwaysOpenCalendar : IMarketCalendar
+    // 判断経路の検証のため既定は常に開場のカレンダー（実時刻だと週末で揺れるため）。休場ケースは open:false を注入する。
+    private sealed class CalendarStub(bool open) : IMarketCalendar
     {
-        public bool IsOpen(Market market, DateTimeOffset instant) => true;
+        public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
-    private static ServiceProvider Build(string llmOutput, DailyPolicy? policy)
+    private static ServiceProvider Build(string llmOutput, DailyPolicy? policy, bool open = true)
     {
         return new ServiceCollection()
             .AddLogging()
             .AddSingleton<IClock, SystemClock>()
-            .AddSingleton<IMarketCalendar>(new AlwaysOpenCalendar())
+            .AddSingleton<IMarketCalendar>(new CalendarStub(open))
             .AddSingleton<ILlmCompletionClient>(new FakeLlm(llmOutput))
             .AddSingleton<IDailyPolicyProvider>(new FakePolicy(policy))
             .AddSingleton<ISizingContextProvider, FakeSizing>()
@@ -66,6 +66,22 @@ public class PriceMovementDetectedConsumerTests
         (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
         var decision = harness.Published.Select<TradeDecisionMade>().First().Context.Message;
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 休場日は判断せず発行しない_祝日ガード()
+    {
+        // FR-02, IADR-0023: イベント駆動系統も市場カレンダー閉場ならスキップする。
+        await using var provider = Build(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"), open: false);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(Trigger());
+
+        (await harness.Consumed.Any<PriceMovementDetected>()).Should().BeTrue();
+        (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
 
         await harness.Stop();
     }
