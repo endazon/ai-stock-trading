@@ -27,7 +27,9 @@ public sealed class MarketMonitorService(
         var movements = new List<PriceMovementDetected>();
 
         // (1) 損切りライン検知（保有銘柄）。変動判定・クールダウンと独立に常に評価する（フェイルセーフ）。
-        foreach (var position in positionStore.GetOpenPositions())
+        // 保有ポジションはリスク管理（#63 台帳）を同期照会する（IADR-0030）。照会失敗は空列（＝検知対象なし）。
+        var openPositions = await positionStore.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var position in openPositions)
         {
             var quote = await marketData
                 .GetLatestQuoteAsync(position.Symbol, position.Market, cancellationToken)

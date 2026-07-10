@@ -10,11 +10,11 @@ public sealed class InMemoryPositionStore : IPositionStore
     private readonly Lock _gate = new();
     private IReadOnlyCollection<HeldPosition> _positions = [];
 
-    public IReadOnlyCollection<HeldPosition> GetOpenPositions()
+    public Task<IReadOnlyCollection<HeldPosition>> GetOpenPositionsAsync(CancellationToken cancellationToken = default)
     {
         lock (_gate)
         {
-            return _positions;
+            return Task.FromResult(_positions);
         }
     }
 

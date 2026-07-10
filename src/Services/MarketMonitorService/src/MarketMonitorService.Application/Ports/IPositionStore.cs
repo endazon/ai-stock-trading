@@ -3,8 +3,9 @@ using AiStockTrading.MarketMonitor.Domain;
 namespace AiStockTrading.MarketMonitor.Application.Ports;
 
 // FR-03, FR-10: 損切りライン検知のための保有ポジション（銘柄・建玉方向・数量・損切り価格）の供給。
-// 実データは発注執行（#13）・損益/監査（#17）連携で得る。本 Slice ではポートのみ定義し、後続で実体を配線する。
+// 実データはリスク管理（#12・#63 台帳）の GET /risk-controls/open-positions を同期照会して得る（IADR-0030）。
+// 同期 HTTP を sync-over-async にしないため非同期とする。依存先障害時は空列（＝損切り検知対象なし）に倒す。
 public interface IPositionStore
 {
-    IReadOnlyCollection<HeldPosition> GetOpenPositions();
+    Task<IReadOnlyCollection<HeldPosition>> GetOpenPositionsAsync(CancellationToken cancellationToken = default);
 }
