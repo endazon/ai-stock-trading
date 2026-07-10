@@ -35,8 +35,16 @@ internal sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecut
     {
         return [.. db.ExecutedOrders
             .OrderByDescending(r => r.ExecutedAt)
-            .Select(r => new ExecutionRecord(
-                r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
-                r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt))];
+            .Select(r => ToRecord(r))];
     }
+
+    public ExecutionRecord? FindByDecisionId(Guid decisionId)
+    {
+        var row = db.ExecutedOrders.FirstOrDefault(r => r.DecisionId == decisionId);
+        return row is null ? null : ToRecord(row);
+    }
+
+    private static ExecutionRecord ToRecord(ExecutedOrderRow r) => new(
+        r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
+        r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt);
 }

@@ -25,4 +25,12 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
             return _records.AsEnumerable().Reverse().ToList();
         }
     }
+
+    public ExecutionRecord? FindByDecisionId(Guid decisionId)
+    {
+        lock (_gate)
+        {
+            return _records.FirstOrDefault(r => r.DecisionId == decisionId);
+        }
+    }
 }

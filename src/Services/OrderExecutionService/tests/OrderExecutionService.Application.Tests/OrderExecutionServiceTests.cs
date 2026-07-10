@@ -20,11 +20,16 @@ public class OrderExecutionServiceTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    // 任意の BrokerOrder を返すテスト用ブローカ（スリッページ等の制御用）。
+    // 任意の BrokerOrder を返すテスト用ブローカ（スリッページ等の制御用）。発注回数を数える。
     private sealed class FakeBroker(BrokerOrder order) : IBrokerAdapter
     {
+        public int PlaceCount { get; private set; }
+
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
-            => Task.FromResult(order);
+        {
+            PlaceCount++;
+            return Task.FromResult(order);
+        }
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
             => Task.FromResult<BrokerOrder?>(order);
@@ -93,5 +98,23 @@ public class OrderExecutionServiceTests
         await service.ExecuteAsync(Approved(intent));
 
         store.GetAll().Single().SlippageRatio.Should().Be(0.005m);
+    }
+
+    [Fact]
+    public async Task 同一DecisionIdの再処理では再発注せず既存結果を返す()
+    {
+        // 冪等性: MassTransit 再配送で同一 OrderApproved が再処理されても二重発注・二重計上しない。
+        var store = new InMemoryExecutedOrderStore();
+        var intent = Intent();
+        var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = new AppSvc(broker, store, new FakeClock());
+        var approved = Approved(intent);
+
+        var first = await service.ExecuteAsync(approved);
+        var second = await service.ExecuteAsync(approved); // 再処理
+
+        broker.PlaceCount.Should().Be(1);          // 再発注しない
+        store.GetAll().Should().ContainSingle();    // 二重計上しない
+        second.OrderId.Should().Be(first.OrderId);  // 既存結果を返す
     }
 }

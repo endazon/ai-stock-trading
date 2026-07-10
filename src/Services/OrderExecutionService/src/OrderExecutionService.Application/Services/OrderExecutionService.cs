@@ -17,6 +17,19 @@ public sealed class OrderExecutionService(
     {
         ArgumentNullException.ThrowIfNull(approved);
 
+        // 冪等性: 同一 DecisionId の発注結果が既にあれば、再発注せず既存結果を再発行する。MassTransit の再配送
+        // （UseAiStockTradingRetry）で同一 OrderApproved が再処理されても二重発注・二重計上しない。DecisionId は
+        // 取引判断/損切り1件に対応する（stop-loss は EventId 由来で安定・IADR-0015）。
+        // 注: ブローカ発注は成功したが Save 前に失敗した窓は本チェックでは捕捉できない（記録が無いため）。
+        // 実発注（moomoo）では outbox 等の発注前予約が必要になる（IADR-0016 の後続）。
+        var existing = store.FindByDecisionId(approved.DecisionId);
+        if (existing is not null)
+        {
+            return new OrderExecuted(
+                existing.DecisionId, existing.OrderId, existing.Status,
+                existing.FilledQuantity, existing.AveragePrice, existing.ExecutedAt);
+        }
+
         var intent = approved.Intent;
 
         // ADR-0003: 承認済み注文のみ発注する。Close（損切り）も同一経路。
