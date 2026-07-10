@@ -111,4 +111,23 @@ public class MonitorPollingServiceTests
 
         (await harness.Published.Any<StopLossTriggered>()).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task 同一巡回で損切りと変動が両方成立したとき両方を発行する()
+    {
+        // IADR-0014・損切り優先: 保有 MSFT が損切り到達、監視 AAPL が閾値超過を同一巡回で成立させる。
+        // 発行順（損切り→変動）は RunOnceAsync の構造で保証される（StopLosses を先に Publish）。
+        var msft = new MonitoredSymbol("MSFT", Market.UnitedStates);
+        await using var h = new Harness(Settings(Aapl, msft));
+        h.Positions.Set([new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m)]);
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 1_040m); // +4% 変動
+        h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // 損切り 1900 割れ
+        var (service, harness) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        (await harness.Published.Any<StopLossTriggered>()).Should().BeTrue();
+        (await harness.Published.Any<PriceMovementDetected>()).Should().BeTrue();
+    }
 }

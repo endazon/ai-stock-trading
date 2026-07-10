@@ -1,5 +1,6 @@
 using AiStockTrading.MarketMonitor.Application.Ports;
 using AiStockTrading.MarketMonitor.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.MarketMonitor.Worker.Foundation.Persistence;
 
@@ -10,21 +11,32 @@ internal sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db) : IMonit
     public MarketMonitorSettings GetSettings()
     {
         var row = db.MonitorSettings.Find(SingletonKeys.Id);
-        if (row is null)
+        if (row is not null)
         {
-            var defaults = MonitorDefaults.CreateSettings();
-            db.MonitorSettings.Add(new MonitorSettingsRow
-            {
-                Id = SingletonKeys.Id,
-                Json = MonitorSettingsSerialization.Serialize(defaults),
-                Version = 1,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
+            return MonitorSettingsSerialization.Deserialize(row.Json);
+        }
+
+        // 未設定: 既定値をシードする。同時初回リクエストが競合して一意制約違反になり得るため、
+        // 失敗時は他リクエストがシード済みとみなして読み直す（冪等・レース窓を 500 にしない）。
+        var defaults = MonitorDefaults.CreateSettings();
+        db.MonitorSettings.Add(new MonitorSettingsRow
+        {
+            Id = SingletonKeys.Id,
+            Json = MonitorSettingsSerialization.Serialize(defaults),
+            Version = 1,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        try
+        {
             db.SaveChanges();
             return defaults;
         }
-
-        return MonitorSettingsSerialization.Deserialize(row.Json);
+        catch (DbUpdateException)
+        {
+            db.ChangeTracker.Clear();
+            var seeded = db.MonitorSettings.Find(SingletonKeys.Id);
+            return seeded is not null ? MonitorSettingsSerialization.Deserialize(seeded.Json) : defaults;
+        }
     }
 
     public void Save(MarketMonitorSettings settings)
