@@ -13,9 +13,10 @@ public class AuditConsumerCoverageTests
     [Fact]
     public void 全ドメインイベントに対応する監査コンシューマが存在する()
     {
-        // Shared.Contracts.Events 名前空間の全イベント型（record class）。
+        // Shared.Contracts.Events 名前空間の全イベント型（record のみ）。将来この名前空間へイベント以外の
+        // 補助クラス（static/マーカー等）が追加されても誤検知しないよう、record 型（コンパイラ生成の "<Clone>$" を持つ）に限定する。
         var eventTypes = typeof(InformationCollected).Assembly.GetTypes()
-            .Where(t => t.IsClass && !t.IsAbstract && t.Namespace == "AiStockTrading.Shared.Contracts.Events")
+            .Where(t => t.IsClass && !t.IsAbstract && t.Namespace == "AiStockTrading.Shared.Contracts.Events" && IsRecord(t))
             .ToList();
 
         eventTypes.Should().NotBeEmpty();
@@ -33,4 +34,8 @@ public class AuditConsumerCoverageTests
         missing.Should().BeEmpty(
             "全ドメインイベントは監査台帳へ記録する（FR-11）。未購読のイベントは AuditEventConsumers に Consumer を追加すること");
     }
+
+    // record 型はコンパイラが値等価用の "<Clone>$" メソッドを生成する。これで record と通常 class を判別する。
+    private static bool IsRecord(Type t) =>
+        t.GetMethod("<Clone>$", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance) is not null;
 }
