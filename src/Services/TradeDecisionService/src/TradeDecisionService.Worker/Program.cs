@@ -48,7 +48,20 @@ builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpDailyPolicyProvider(http, sp.GetRequiredService<ILogger<HttpDailyPolicyProvider>>());
 });
-builder.Services.AddSingleton<ISizingContextProvider, PlaceholderSizingContextProvider>();
+// FR-04/10, IADR-0029: サイジング文脈はリスク管理（#12）の GET /risk-controls/sizing-context を同期照会して供給する。
+// RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（既定値）＝安全既定でゲート。選択は解決時に構成を読む。
+builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddSingleton<PlaceholderSizingContextProvider>();
+builder.Services.AddScoped<ISizingContextProvider>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<PlaceholderSizingContextProvider>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpSizingContextProvider(http, sp.GetRequiredService<ILogger<HttpSizingContextProvider>>());
+});
 // FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
 builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider>();

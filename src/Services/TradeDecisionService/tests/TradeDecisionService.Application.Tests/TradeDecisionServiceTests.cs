@@ -26,7 +26,7 @@ public class TradeDecisionServiceTests
     }
     private sealed class FakeSizing(SizingContext ctx) : ISizingContextProvider
     {
-        public SizingContext GetContext() => ctx;
+        public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(ctx);
     }
 
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 7, 10), "米国株の押し目買い方針");

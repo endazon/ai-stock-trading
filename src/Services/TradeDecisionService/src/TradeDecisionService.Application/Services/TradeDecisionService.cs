@@ -40,7 +40,7 @@ public sealed class TradeDecisionService(
             return null;
         }
 
-        var context = sizingProvider.GetContext();
+        var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
         var prompt = TradeDecisionPromptBuilder.Build(trigger, policy, context);
         var output = await llm.CompleteAsync(prompt, cancellationToken).ConfigureAwait(false);
         var decision = TradeDecisionParser.Parse(output);
