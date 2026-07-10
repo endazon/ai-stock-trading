@@ -1,7 +1,7 @@
 ---
 title: 費用統制サービス Slice A（月次費用台帳・LLM 上限の間隔延長/停止判定・しきい値通知）
 type: spec
-status: review
+status: done
 related_ids: [NFR, FR-17, FR-16, FR-09, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-10
@@ -45,12 +45,12 @@ plan_refs:
 ## 受け入れ基準
 
 CI で緑にする範囲（ユニット＋MassTransit テストハーネス＋EF InMemory＋WebApplicationFactory）:
-- [ ] `CostGovernor`: LLM 累計が上限の 80% 未満は Normal、80〜100% は Throttled（間隔倍率 2）、100% 以上は Halted（停止）。
-- [ ] 費用記録で月内累計が加算され、状態がしきい値を上方に跨ぐと `CostThresholdReached` が発行される（同一状態内の追加では発行しない）。
-- [ ] `GET /costs/state` が現在の統制判定を返す。`GET /costs/review` が費用÷資金比率を返す。
-- [ ] `NotificationService` が `CostThresholdReached` を購読し通知する。
-- [ ] 月をまたぐと累計はリセットされる（月次集計）。
-- [ ] Worker が起動しヘルスが応答する。既存テストを緑に保つ。
+- [x] `CostGovernor`: LLM 累計が上限の 80% 未満は Normal、80〜100% は Throttled（間隔倍率 2）、100% 以上は Halted（停止・倍率 0）。
+- [x] 費用記録で月内累計が加算され、状態がしきい値を上方に跨ぐと `CostThresholdReached` が発行される（同一状態内の追加では発行しない）。
+- [x] `GET /costs/state` が現在の統制判定を返す。`GET /costs/review` が費用÷資金比率を返す。
+- [x] `NotificationService` が `CostThresholdReached` を購読し通知する。
+- [x] 月をまたぐと累計はリセットされる（月次集計）。
+- [x] Worker が起動しヘルスが応答する。既存テストを緑に保つ。
 
 ## 対象外（後続）
 

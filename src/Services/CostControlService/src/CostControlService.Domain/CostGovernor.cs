@@ -18,7 +18,8 @@ public enum CostControlState
     Halted,
 }
 
-// 統制判定。IntervalMultiplier は定時サイクル間隔の倍率（Normal=1・Throttled=2）。Halted は停止（IntervalMultiplier は無効）。
+// 統制判定。IntervalMultiplier は定時サイクル間隔の倍率（Normal=1・Throttled=2）。Halted は停止で 0（無効値）＝サイクルを回さない。
+// 呼び出し側は IsHalted を先に見ること（IntervalMultiplier だけで判断しない）。
 public sealed record CostControlDecision(CostControlState State, decimal IntervalMultiplier)
 {
     public bool IsHalted => State == CostControlState.Halted;
@@ -44,7 +45,7 @@ public static class CostGovernor
         var ratio = Math.Max(0m, monthlyLlmCost) / limits.Llm;
 
         if (ratio >= HaltThreshold)
-            return new CostControlDecision(CostControlState.Halted, ThrottledIntervalMultiplier);
+            return new CostControlDecision(CostControlState.Halted, 0m); // 停止＝間隔倍率 0（無効値・IsHalted を見ること）
         if (ratio >= ThrottleThreshold)
             return new CostControlDecision(CostControlState.Throttled, ThrottledIntervalMultiplier);
         return new CostControlDecision(CostControlState.Normal, 1m);

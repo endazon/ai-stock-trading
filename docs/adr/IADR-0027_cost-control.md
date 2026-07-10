@@ -24,7 +24,9 @@ plan_refs:
 - 関連する計画書 ID: NFR（費用）、FR-17（月次費用上限＝前提条件）、FR-09（停止通知）、ADR-0001
 - 対象 Issue: [#23](https://github.com/endazon/ai-stock-trading/issues/23)（Slice A）
 - 関連する実装仕様書: [20260710_cost-control](../specs/20260710_cost-control.md)
-- 関連 IADR: [IADR-0021](IADR-0021_trading-assumptions-configuration.md)（`MonthlyCostLimits`）、[IADR-0020](IADR-0020_notification-safe-outbound.md)（通知）、[IADR-0012](IADR-0012_risk-settings-persistence.md)（永続化パターン）
+- 関連 IADR: [IADR-0021](IADR-0021_trading-assumptions-configuration.md)（`MonthlyCostLimits`）、[IADR-0020](IADR-0020_notification-safe-outbound.md)（通知）、[IADR-0019](IADR-0019_audit-log-service.md)（追記専用台帳パターン）
+  - 補足: `cost_entries` は月×カテゴリで**追記専用**の台帳であり、構造的には監査ログ（IADR-0019）の追記専用パターンに近い。IADR-0012 の
+    「単一行 JSON＋Version 楽観排他」パターンは踏襲しない（専有 DB＝ADR-0001 準拠の点のみ共通）。
 
 ## コンテキストと課題
 
@@ -65,6 +67,10 @@ NFR は LLM 費用に月次上限を設け、超過時に定時サイクル間�
   計上源が無い（費用計上 API を用意するに留まる）。EUR→円換算は前提条件の率近似。
 - フォローアップ: 実 LLM 費用計測（platform ゲートウェイ）、poller（#9/#21）への間隔延長/停止の配線、#19 バージョン付き上限取得、
   月報への費用レビュー供給（#14）。
+- フォローアップ（並行性・claude-review）: `CostControlService.Record` の read-modify-write（before→記録→after で上方遷移を検知）は
+  トランザクション/行ロックを取らない。Slice A は OwnerOnly の低頻度呼び出しで許容だが、#22 で LLM ゲートウェイからの自動計上が繋がり
+  頻度が増えると、同時リクエストの interleave で `CostThresholdReached` の二重発行・遷移検知漏れが起こり得る。#22 着手時に一括採番・
+  トランザクション分離レベル・行ロックのいずれかで対処する。
 
 ## 関連
 
