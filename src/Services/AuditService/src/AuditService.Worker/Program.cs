@@ -50,6 +50,9 @@ builder.Services.AddMassTransit(x =>
     // FR-17/FR-07: 設定変更（#19）・報告書確定（#14）も監査台帳へ記録する。
     x.AddConsumer<AssumptionsChangedAuditConsumer>();
     x.AddConsumer<ReportConfirmedAuditConsumer>();
+    // NFR（費用）/FR-01: 費用しきい値到達（#23）・情報収集完了（#9）も監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+    x.AddConsumer<CostThresholdReachedAuditConsumer>();
+    x.AddConsumer<InformationCollectedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
