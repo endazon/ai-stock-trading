@@ -79,7 +79,8 @@ internal static class ReportEndpoints
         // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行。対象が無ければ 404。
         g.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc, IPublishEndpoint bus, HttpContext http) =>
         {
-            var result = svc.Confirm(periodKey, req.ExpectedVersion, ActorOf(http));
+            var actor = ActorOf(http);
+            var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);
             if (result is null)
                 return Results.NotFound();
 
@@ -87,7 +88,7 @@ internal static class ReportEndpoints
             {
                 var r = result.Report;
                 await bus.Publish(new ReportConfirmed(
-                    r.PeriodKey, r.Kind.ToString(), r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
+                    r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
             }
 
             return Results.Ok(result.Report);

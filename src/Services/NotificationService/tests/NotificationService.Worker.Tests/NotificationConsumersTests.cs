@@ -92,10 +92,10 @@ public class NotificationConsumersTests
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
-        await harness.Bus.Publish(new ReportConfirmed("daily-2026-07-10", "Daily", 1, DateTimeOffset.UtcNow));
+        await harness.Bus.Publish(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 1, DateTimeOffset.UtcNow));
         (await harness.Consumed.Any<ReportConfirmed>()).Should().BeTrue();
 
-        sender.Sent.Should().ContainSingle(m => m.Title.Contains("報告書確定"));
+        sender.Sent.Should().ContainSingle(m => m.Title.Contains("報告書確定") && m.Content.Contains("owner"));
 
         await harness.Stop();
     }

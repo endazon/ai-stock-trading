@@ -5,5 +5,6 @@ namespace AiStockTrading.Shared.Contracts.Events;
 public record ReportConfirmed(
     string PeriodKey,
     string Kind,
+    string Actor,
     int AssumptionsVersion,
     DateTimeOffset ConfirmedAt);
