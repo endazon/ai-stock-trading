@@ -1,0 +1,82 @@
+using AiStockTrading.Audit.Application.Adapters;
+using AiStockTrading.Audit.Application.Ports;
+using AiStockTrading.Audit.Worker.Composable.Steps;
+using AiStockTrading.Audit.Worker.Foundation.Endpoints;
+using AiStockTrading.Audit.Worker.Foundation.Persistence;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+
+const string ServiceName = "ai-stock-trading.audit-service";
+
+// #17 Slice A, FR-11, IADR-0019: 監査ログサービス。全ドメインイベントを購読して監査台帳へ記録し、OwnerOnly の照会
+// エンドポイントとヘルスチェックのため WebApplication を用いる。MassTransit コンシューマは IHostedService として稼働する。
+//
+// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を shim 経由で組む部分）は
+// dev/test/CI でのローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
+var builder = WebApplication.CreateBuilder(args);
+
+// IADR-0011: 可観測性（Serilog + OTel）。
+builder.Services.AddSerilog((_, logConfig) =>
+    logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
+builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
+
+// ADR-0004（platform）, ADR-0007: Keycloak 認証（監査照会は利用者のみ＝OwnerOnly）。
+builder.Services.AddAiStockTradingAuth(builder.Configuration);
+
+// ADR-0001（Database per Service）, IADR-0019: 監査サービス専有 DB（audit_svc）。
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Host=postgres;Port=5432;Database=audit_svc;Username=ai;Password=ai";
+builder.Services.AddDbContext<AuditDbContext>(opt => opt.UseNpgsql(connStr));
+
+// DB 到達性の readiness ヘルスチェック。
+builder.Services.AddAiStockTradingHealthChecks()
+    .AddNpgSql(connStr, tags: ["ready"]);
+
+// FR-11: 記録時刻はステートレスのため singleton。監査台帳ストアは DbContext が scoped のため scoped。
+builder.Services.AddSingleton<IClock, SystemClock>();
+builder.Services.AddScoped<IAuditEventStore, EfAuditEventStore>();
+
+// IADR-0011/0019: MassTransit（RabbitMQ）。全ドメインイベントを購読して監査台帳へ記録する。
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<PriceMovementDetectedAuditConsumer>();
+    x.AddConsumer<StopLossTriggeredAuditConsumer>();
+    x.AddConsumer<TradeDecisionMadeAuditConsumer>();
+    x.AddConsumer<OrderApprovedAuditConsumer>();
+    x.AddConsumer<OrderRejectedAuditConsumer>();
+    x.AddConsumer<OrderExecutedAuditConsumer>();
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
+            ?? "amqp://guest:guest@rabbitmq:5672");
+        // 一時的失敗は再試行し、継続失敗はデッドレターへ退避する（回復性）。
+        cfg.UseAiStockTradingRetry();
+        cfg.ConfigureEndpoints(ctx);
+    });
+});
+
+var app = builder.Build();
+
+// IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+    if (db.Database.IsRelational())
+        await db.Database.MigrateAsync();
+}
+
+// 相関ID・認証・認可のミドルウェア。
+app.UseAiStockTradingMiddleware();
+
+// /health/live・/health/ready。
+app.MapAiStockTradingHealthChecks();
+
+// FR-11, UC-07: 監査台帳の照会（利用者のみ）。
+app.MapAuditQueryEndpoints();
+
+app.Run();
+
+// 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
+public partial class Program { }
