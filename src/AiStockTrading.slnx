@@ -1,5 +1,14 @@
 <Solution>
   <Folder Name="/Services/" />
+  <Folder Name="/Services/AuditService/" />
+  <Folder Name="/Services/AuditService/src/">
+    <Project Path="Services/AuditService/src/AuditService.Application/AuditService.Application.csproj" />
+    <Project Path="Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/AuditService/tests/">
+    <Project Path="Services/AuditService/tests/AuditService.Application.Tests/AuditService.Application.Tests.csproj" />
+    <Project Path="Services/AuditService/tests/AuditService.Worker.Tests/AuditService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/MarketMonitorService/" />
   <Folder Name="/Services/MarketMonitorService/src/">
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
