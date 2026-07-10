@@ -1,0 +1,123 @@
+using AiStockTrading.Report.Application;
+using AiStockTrading.Report.Application.Adapters;
+using AiStockTrading.Report.Application.Ports;
+using AiStockTrading.Report.Domain;
+using FluentAssertions;
+using Xunit;
+using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
+
+namespace AiStockTrading.Report.Application.Tests;
+
+// FR-06/07, UC-03〜05, ADR-0007: 報告書の upsert・版番号付き冪等確定・確定済み日報方針照会を検証する。
+public class ReportServiceTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 7, 10, 6, 0, 0, TimeSpan.Zero);
+    private sealed class FixedClock : IClock { public DateTimeOffset UtcNow => Now; }
+
+    private static AppSvc NewService() => new(new InMemoryReportStore(), new FixedClock());
+
+    private static TradingReport Daily(string key, DateOnly date, string policy = "翌営業日は押し目買い", int av = 1) =>
+        new() { PeriodKey = key, Kind = ReportKind.Daily, PeriodStart = date, PolicySummary = policy, AssumptionsVersion = av };
+
+    [Fact]
+    public void ドラフトを作成すると_Version1_の_Draft_になる()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), expectedVersion: 0).Should().Be(1);
+
+        var stored = svc.Get("daily-2026-07-10");
+        stored!.Version.Should().Be(1);
+        stored.Report.State.Should().Be(ReportState.Draft);
+    }
+
+    [Fact]
+    public void 確定は_Draft_から_Confirmed_へ遷移し_ConfirmedAt_を記録する()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+
+        var result = svc.Confirm("daily-2026-07-10", expectedVersion: 1, actor: "owner");
+
+        result!.Transitioned.Should().BeTrue();
+        result.Report.State.Should().Be(ReportState.Confirmed);
+        result.Report.ConfirmedAt.Should().Be(Now);
+    }
+
+    [Fact]
+    public void 確定済みの再確定は冪等_遷移しない()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+        svc.Confirm("daily-2026-07-10", 1, "owner");
+
+        var again = svc.Confirm("daily-2026-07-10", 1, "owner");
+
+        again!.Transitioned.Should().BeFalse();
+        again.Report.State.Should().Be(ReportState.Confirmed);
+    }
+
+    [Fact]
+    public void 版番号が不一致の確定は競合で弾かれる()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+
+        var act = () => svc.Confirm("daily-2026-07-10", expectedVersion: 99, actor: "owner");
+
+        act.Should().Throw<ReportConcurrencyException>();
+    }
+
+    [Fact]
+    public void 存在しない報告書の確定は_null()
+    {
+        NewService().Confirm("daily-nope", 1, "owner").Should().BeNull();
+    }
+
+    [Fact]
+    public void 確定済み報告書は変更できない()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+        svc.Confirm("daily-2026-07-10", 1, "owner");
+
+        var act = () => svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10), "改ざん"), 2);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void 確定済み日報方針は最新の確定日報を返す()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-09", new DateOnly(2026, 7, 9), "9日方針"), 0);
+        svc.Confirm("daily-2026-07-09", 1, "owner");
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10), "10日方針", av: 2), 0);
+        svc.Confirm("daily-2026-07-10", 1, "owner");
+
+        var policy = svc.GetConfirmedDailyPolicy();
+
+        policy!.Date.Should().Be(new DateOnly(2026, 7, 10)); // 最新
+        policy.Summary.Should().Be("10日方針");
+        policy.AssumptionsVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public void 未確定なら確定済み日報方針は_null()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0); // ドラフトのみ
+
+        svc.GetConfirmedDailyPolicy().Should().BeNull();
+    }
+
+    [Fact]
+    public void 確定にはアクターが必須()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+
+        var act = () => svc.Confirm("daily-2026-07-10", 1, actor: "");
+
+        act.Should().Throw<ArgumentException>();
+    }
+}

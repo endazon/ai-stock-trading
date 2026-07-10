@@ -29,6 +29,7 @@ public class NotificationConsumersTests
                 x.AddConsumer<OrderRejectedNotificationConsumer>();
                 x.AddConsumer<StopLossTriggeredNotificationConsumer>();
                 x.AddConsumer<AssumptionsChangedNotificationConsumer>();
+                x.AddConsumer<ReportConfirmedNotificationConsumer>();
             })
             .BuildServiceProvider(true);
         return (provider, sender);
@@ -79,6 +80,22 @@ public class NotificationConsumersTests
         (await harness.Consumed.Any<AssumptionsChanged>()).Should().BeTrue();
 
         sender.Sent.Should().ContainSingle(m => m.Title.Contains("設定変更"));
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 報告書確定イベントは確定通知を送信する()
+    {
+        var (provider, sender) = Build();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 1, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<ReportConfirmed>()).Should().BeTrue();
+
+        sender.Sent.Should().ContainSingle(m => m.Title.Contains("報告書確定") && m.Content.Contains("owner"));
 
         await harness.Stop();
     }

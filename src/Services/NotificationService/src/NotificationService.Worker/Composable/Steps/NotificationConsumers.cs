@@ -32,3 +32,10 @@ internal sealed class AssumptionsChangedNotificationConsumer(INotificationSender
     public Task Consume(ConsumeContext<AssumptionsChanged> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// FR-07, FR-09: 報告書の確定（報告書サービス #14）を購読して通知する。
+internal sealed class ReportConfirmedNotificationConsumer(INotificationSender sender) : IConsumer<ReportConfirmed>
+{
+    public Task Consume(ConsumeContext<ReportConfirmed> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

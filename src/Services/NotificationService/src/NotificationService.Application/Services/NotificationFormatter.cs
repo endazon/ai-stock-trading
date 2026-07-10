@@ -30,4 +30,10 @@ public static class NotificationFormatter
         "設定変更: 全体前提条件",
         $"前提条件が更新されました（v{e.Version}・{e.Actor}）: {e.Reason}",
         NotificationSeverity.Info);
+
+    // FR-07, FR-09: 報告書の確定（方針が取引に有効化された通知）。
+    public static NotificationMessage From(ReportConfirmed e) => new(
+        "報告書確定",
+        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{e.Actor}・前提条件 v{e.AssumptionsVersion}）。",
+        NotificationSeverity.Info);
 }
