@@ -43,6 +43,10 @@ internal static class RiskControlEndpoints
         // 取引判断（#11）が同期照会するサイジング文脈（設定＋ポートフォリオ状態から導出）。
         g.MapGet("/sizing-context", (SizingContextService svc) => Results.Ok(svc.Build()));
 
+        // ---- 保有ポジション（FR-03/10, IADR-0030） ----
+        // 市場監視（#10）が損切りライン検知のため同期照会する保有ポジション（#63 台帳の射影＋損切り価格の近似導出）。
+        g.MapGet("/open-positions", (OpenPositionsService svc) => Results.Ok(svc.Build()));
+
         // ---- kill switch（FR-10, ADR-0003） ----
         g.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
 

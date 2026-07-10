@@ -11,14 +11,14 @@ internal sealed class PlaceholderPositionStore(ILogger<PlaceholderPositionStore>
 {
     private int _warned;
 
-    public IReadOnlyCollection<HeldPosition> GetOpenPositions()
+    public Task<IReadOnlyCollection<HeldPosition>> GetOpenPositionsAsync(CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _warned, 1) == 0)
         {
             logger.LogWarning(
-                "PlaceholderPositionStore を使用中: 保有・損切り価格の実データ（#13/#17）が入るまで損切り検知は行われません。");
+                "PlaceholderPositionStore を使用中: 保有ポジションの実データ（RiskManagement:BaseUrl）が未設定のため損切り検知は行われません。");
         }
 
-        return [];
+        return Task.FromResult<IReadOnlyCollection<HeldPosition>>([]);
     }
 }

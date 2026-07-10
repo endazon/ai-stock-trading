@@ -87,6 +87,35 @@ public static class PortfolioProjection
         };
     }
 
+    // FR-03, FR-10, IADR-0030: 約定列から銘柄別ネット建玉（数量>0）を射影する純関数。損切りライン検知（市場監視）へ
+    // 供給する保有ポジションの一次射影。実現損益・当日境界は不要のため、符号付き在庫・平均取得単価のみを畳み込む
+    // （Project と同一の Apply を再利用）。数量 0（全決済）は除外する。損切り価格は含まない（OpenPositionsService が導出）。
+    public static IReadOnlyList<OpenPosition> ProjectOpenPositions(IReadOnlyList<LedgerFill> fills)
+    {
+        ArgumentNullException.ThrowIfNull(fills);
+
+        var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
+        foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
+        {
+            var key = (fill.Symbol, fill.Market);
+            var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
+            positions.TryGetValue(key, out var pos);
+            Apply(ref pos, signedQ, fill.Price);
+            positions[key] = pos;
+        }
+
+        var result = new List<OpenPosition>();
+        foreach (var (key, pos) in positions)
+        {
+            if (pos.Qty == 0)
+                continue; // 全決済済みは保有なし
+            var side = pos.Qty > 0 ? TradeSide.Buy : TradeSide.Sell;
+            result.Add(new OpenPosition(key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost));
+        }
+
+        return result;
+    }
+
     // 符号付き在庫へ 1 約定を適用し、在庫が減少した分の実現損益を返す（増加のみなら 0）。
     private static decimal Apply(ref (int Qty, decimal AvgCost) pos, int signedQ, decimal price)
     {

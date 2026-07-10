@@ -197,4 +197,38 @@ public class PortfolioProjectionTests
         state.OpenPositionCount.Should().Be(1);
         state.DailyRealizedPnl.Should().Be(0m);
     }
+
+    // FR-03, FR-10, IADR-0030: 保有ポジションの射影（損切りライン検知への供給）。
+    [Fact]
+    public void 保有射影は銘柄別ネット建玉を平均取得単価で返す()
+    {
+        var goog = "GOOG";
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_400m, TodayAt(10)), // AAPL 平均 1,200・20株
+                Fill(TradeSide.Buy, PositionEffect.Open, 5, 2_000m, TodayAt(11), symbol: goog),
+            });
+
+        positions.Should().HaveCount(2);
+        var aapl = positions.Single(p => p.Symbol == "AAPL");
+        aapl.Side.Should().Be(TradeSide.Buy);
+        aapl.Quantity.Should().Be(20);
+        aapl.AverageEntryPrice.Should().Be(1_200m);
+        positions.Single(p => p.Symbol == goog).Quantity.Should().Be(5);
+    }
+
+    [Fact]
+    public void 保有射影は全決済済み銘柄を除外する()
+    {
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
+                Fill(TradeSide.Sell, PositionEffect.Close, 10, 1_100m, TodayAt(10)), // 全決済
+            });
+
+        positions.Should().BeEmpty();
+    }
 }

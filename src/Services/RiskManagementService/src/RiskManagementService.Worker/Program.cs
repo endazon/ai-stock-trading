@@ -54,6 +54,8 @@ builder.Services.AddScoped<IPortfolioStateProvider, LedgerPortfolioStateProvider
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。
 builder.Services.AddScoped<SizingContextService>();
+// FR-03/10, IADR-0030: 市場監視へ供給する保有ポジション（#63 台帳の射影＋損切り価格の近似導出）。
+builder.Services.AddScoped<OpenPositionsService>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();
 // FR-19, IADR-0006: 相場操縦検出器（#49）は未実装のため未登録（null で注入され判定は無効）。

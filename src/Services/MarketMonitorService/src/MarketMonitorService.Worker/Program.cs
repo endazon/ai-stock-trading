@@ -45,8 +45,22 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
 // FR-03: リアルタイム市況（moomoo・#13）が入るまではプレースホルダ（価格取得不可）。
 builder.Services.AddSingleton<IMarketDataSource, PlaceholderMarketDataSource>();
-// FR-03/FR-10: 保有・損切り価格の実データ（#13/#17）が入るまではプレースホルダ（保有なし）。
-builder.Services.AddSingleton<IPositionStore, PlaceholderPositionStore>();
+// FR-03/FR-10, IADR-0030: 保有ポジションはリスク管理（#12）の GET /risk-controls/open-positions を同期照会して供給する。
+// RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（保有なし＝損切り検知対象なし）＝安全既定でゲート。
+// 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
+// IHttpClientFactory 経由でハンドラをプールする。損切り優先の巡回を長時間ブロックしないため短いタイムアウトを設定する。
+builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddSingleton<PlaceholderPositionStore>();
+builder.Services.AddScoped<IPositionStore>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<PlaceholderPositionStore>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpPositionStore(http, sp.GetRequiredService<ILogger<HttpPositionStore>>());
+});
 // DbContext が scoped のため設定/基準値/クールダウンの EF ストアも scoped。
 builder.Services.AddScoped<IMonitoredSymbolStore, EfMonitoredSymbolStore>();
 builder.Services.AddScoped<IPriceBaselineStore, EfPriceBaselineStore>();

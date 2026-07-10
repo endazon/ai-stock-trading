@@ -113,6 +113,30 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task 未認証の_open_positions_取得は401()
+    {
+        // FR-03/10, IADR-0030: 保有ポジションも OwnerOnly。未認証は 401。
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync("/risk-controls/open-positions");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task 利用者は_open_positions_を取得できる()
+    {
+        // FR-03/10, IADR-0030: #63 台帳の射影から保有ポジション列を返す（空でも 200）。
+        var client = OwnerClient();
+
+        var res = await client.GetAsync("/risk-controls/open-positions");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var positions = await res.Content.ReadFromJsonAsync<List<OpenPositionDto>>();
+        positions.Should().NotBeNull(); // 台帳が空なら空列
+    }
+
+    [Fact]
     public async Task ヘルスチェック_live_は認証不要で応答する()
     {
         var client = factory.CreateClient();
@@ -128,4 +152,6 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     private sealed record SettingsChangeDto(string Actor, SettingsChangeType ChangeType, string Reason);
 
     private sealed record SizingContextDto(decimal Capital, decimal StageCapitalRemaining, decimal DailyOrderRemaining);
+
+    private sealed record OpenPositionDto(string Symbol, int Quantity, decimal EntryPrice, decimal StopLossPrice);
 }

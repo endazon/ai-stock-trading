@@ -11,6 +11,13 @@ public static class TradingDefaults
     /// <summary>初期投入資金 100,000 円（利用者決定 2026-07-07）。</summary>
     public const decimal InitialCapital = 100_000m;
 
+    /// <summary>
+    /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。
+    /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断の ATR 連動 stopLossDistancePerShare）が
+    /// 発注/約定パイプラインに永続化されるまで、平均取得単価からの近似導出に用いる過渡的既定値。
+    /// </summary>
+    public const decimal DefaultStopLossRatio = 0.03m;
+
     public static RiskLimitSettings CreateRiskLimits() => new()
     {
         // 1取引リスク1%・損切り幅3%なら1ポジション約3.3万円（前提条件の目安）を上限とする
