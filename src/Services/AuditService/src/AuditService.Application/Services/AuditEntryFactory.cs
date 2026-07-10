@@ -41,6 +41,18 @@ public static class AuditEntryFactory
         $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
+    // FR-17: 全体前提条件の変更（設定管理 #19）。注文相関を持たないため "assumptions" の決定的 GUID を相関にする。
+    public static AuditEntry From(AssumptionsChanged e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(AssumptionsChanged), AuditCorrelation.From("assumptions"), Symbol: null,
+        Truncate($"前提条件 v{e.Version} 変更（{e.Actor}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.ChangedAt, recordedAt);
+
+    // FR-07: 報告書の確定（報告書 #14）。同一 PeriodKey で同一相関になるよう "report:{PeriodKey}" の決定的 GUID を相関にする。
+    public static AuditEntry From(ReportConfirmed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ReportConfirmed), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
+        AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

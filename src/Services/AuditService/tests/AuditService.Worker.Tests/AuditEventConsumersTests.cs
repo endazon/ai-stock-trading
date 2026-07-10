@@ -31,6 +31,8 @@ public class AuditEventConsumersTests
                 x.AddConsumer<OrderApprovedAuditConsumer>();
                 x.AddConsumer<OrderRejectedAuditConsumer>();
                 x.AddConsumer<OrderExecutedAuditConsumer>();
+                x.AddConsumer<AssumptionsChangedAuditConsumer>();
+                x.AddConsumer<ReportConfirmedAuditConsumer>();
             })
             .BuildServiceProvider(true);
 
@@ -74,6 +76,27 @@ public class AuditEventConsumersTests
         var trail = store.GetByCorrelation(decisionId);
         trail.Should().ContainSingle(e => e.EventType == "OrderRejected")
             .Which.Summary.Should().Contain(nameof(RejectionReason.KillSwitchActive));
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 設定変更と報告書確定も監査台帳に記録される()
+    {
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
+        await harness.Bus.Publish(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 2, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<AssumptionsChanged>()).Should().BeTrue();
+        (await harness.Consumed.Any<ReportConfirmed>()).Should().BeTrue();
+
+        var reportCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(new ReportConfirmed("daily-2026-07-10", "Daily", "x", 0, DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .CorrelationId;
+        store.GetByCorrelation(reportCorr).Should().ContainSingle(e => e.EventType == "ReportConfirmed");
 
         await harness.Stop();
     }

@@ -72,3 +72,25 @@ internal sealed class OrderExecutedAuditConsumer(IAuditEventStore store, IClock 
         return Task.CompletedTask;
     }
 }
+
+// FR-17: 全体前提条件の変更（設定管理 #19）を監査台帳へ記録する。
+internal sealed class AssumptionsChangedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<AssumptionsChanged>
+{
+    public Task Consume(ConsumeContext<AssumptionsChanged> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-07: 報告書の確定（報告書 #14）を監査台帳へ記録する。
+internal sealed class ReportConfirmedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<ReportConfirmed>
+{
+    public Task Consume(ConsumeContext<ReportConfirmed> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
