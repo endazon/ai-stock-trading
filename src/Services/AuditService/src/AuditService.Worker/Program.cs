@@ -47,6 +47,9 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<OrderApprovedAuditConsumer>();
     x.AddConsumer<OrderRejectedAuditConsumer>();
     x.AddConsumer<OrderExecutedAuditConsumer>();
+    // FR-17/FR-07: 設定変更（#19）・報告書確定（#14）も監査台帳へ記録する。
+    x.AddConsumer<AssumptionsChangedAuditConsumer>();
+    x.AddConsumer<ReportConfirmedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

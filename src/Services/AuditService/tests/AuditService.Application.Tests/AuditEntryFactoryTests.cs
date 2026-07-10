@@ -88,6 +88,38 @@ public class AuditEntryFactoryTests
     }
 
     [Fact]
+    public void AssumptionsChanged_は共通相関でバージョンとアクターを記録する()
+    {
+        var e = new AssumptionsChanged(3, "owner", "税率見直し", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("AssumptionsChanged");
+        entry.Summary.Should().Contain("v3");
+        entry.Summary.Should().Contain("owner");
+        // 同一「assumptions」キーは同一相関になる。
+        entry.CorrelationId.Should().Be(AuditEntryFactory.From(
+            new AssumptionsChanged(4, "owner", "別の変更", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt).CorrelationId);
+    }
+
+    [Fact]
+    public void ReportConfirmed_は_PeriodKey_相関で確定者を記録する()
+    {
+        var e = new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 2, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("ReportConfirmed");
+        entry.Summary.Should().Contain("daily-2026-07-10");
+        entry.Summary.Should().Contain("owner");
+        // 同一 PeriodKey は同一相関、別 PeriodKey は別相関。
+        var same = AuditEntryFactory.From(new ReportConfirmed("daily-2026-07-10", "Daily", "u2", 3, DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        var other = AuditEntryFactory.From(new ReportConfirmed("daily-2026-07-11", "Daily", "u2", 3, DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(same.CorrelationId);
+        entry.CorrelationId.Should().NotBe(other.CorrelationId);
+    }
+
+    [Fact]
     public void StopLossTriggered_は_EventId_相関で損切り情報を記録する()
     {
         var eventId = Guid.NewGuid();

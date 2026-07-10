@@ -42,6 +42,8 @@ public sealed class AuditWorkerWebApplicationFactory : WebApplicationFactory<Pro
                 x.AddConsumer<OrderApprovedAuditConsumer>();
                 x.AddConsumer<OrderRejectedAuditConsumer>();
                 x.AddConsumer<OrderExecutedAuditConsumer>();
+                x.AddConsumer<AssumptionsChangedAuditConsumer>();
+                x.AddConsumer<ReportConfirmedAuditConsumer>();
             });
 
             // Keycloak/JWT に依存せず TestAuthHandler で認証する（既定スキームを Test に切替）。
