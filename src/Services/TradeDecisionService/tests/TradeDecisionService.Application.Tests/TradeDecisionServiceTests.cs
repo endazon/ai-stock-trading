@@ -22,7 +22,7 @@ public class TradeDecisionServiceTests
     }
     private sealed class FakePolicy(DailyPolicy? policy) : IDailyPolicyProvider
     {
-        public DailyPolicy? GetCurrent() => policy;
+        public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) => Task.FromResult(policy);
     }
     private sealed class FakeSizing(SizingContext ctx) : ISizingContextProvider
     {

@@ -29,17 +29,17 @@ internal sealed class PlaceholderLlmCompletionClient(ILogger<PlaceholderLlmCompl
     }
 }
 
-// FR-07: 確定済み日報（報告書サービス #14）が未実装のため、方針なし（null）を返す＝取引しない。
+// FR-07, IADR-0028: 報告書サービス照会を無効化した安全既定（Reports:BaseUrl 未設定時）。方針なし（null）＝取引しない。
 internal sealed class PlaceholderDailyPolicyProvider(ILogger<PlaceholderDailyPolicyProvider> logger)
     : IDailyPolicyProvider
 {
     private int _warned;
 
-    public DailyPolicy? GetCurrent()
+    public Task<DailyPolicy?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
         PlaceholderLlmCompletionClient.WarnOnce(logger, ref _warned,
-            "PlaceholderDailyPolicyProvider を使用中: 確定済み日報（#14）が入るまで方針なし（取引しない）を返します。");
-        return null;
+            "PlaceholderDailyPolicyProvider を使用中: Reports:BaseUrl 未設定のため報告書サービスを照会せず方針なし（取引しない）を返します。");
+        return Task.FromResult<DailyPolicy?>(null);
     }
 }
 
