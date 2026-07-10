@@ -47,16 +47,26 @@ internal sealed class EfAssumptionsStore(ConfigurationDbContext db) : IAssumptio
         var row = db.Assumptions.Find(SingletonKeys.Id);
         if (row is null)
         {
-            // 未シードなら既定を v1 でシードしてから排他チェックする。
-            row = new AssumptionsRow
+            // 未シードなら既定を v1 でシードしてから排他チェックする。同時初回 PUT が競合して一意制約違反になり得るため、
+            // 失敗時は他リクエストがシード済みとみなして読み直す（GetCurrent と同じ #58 是正パターン。500 にしない）。
+            db.Assumptions.Add(new AssumptionsRow
             {
                 Id = SingletonKeys.Id,
                 Json = AssumptionsSerialization.Serialize(TradingAssumptionsDefaults.Create()),
                 Version = 1,
                 UpdatedAt = DateTimeOffset.UtcNow,
-            };
-            db.Assumptions.Add(row);
-            db.SaveChanges();
+            });
+            try
+            {
+                db.SaveChanges();
+            }
+            catch (DbUpdateException)
+            {
+                db.ChangeTracker.Clear();
+            }
+
+            row = db.Assumptions.Find(SingletonKeys.Id)
+                ?? throw new InvalidOperationException("前提条件のシードに失敗しました。");
         }
 
         if (expectedVersion != row.Version)

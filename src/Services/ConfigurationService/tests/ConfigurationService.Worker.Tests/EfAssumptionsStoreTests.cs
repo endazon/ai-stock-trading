@@ -48,6 +48,20 @@ public class EfAssumptionsStoreTests
     }
 
     [Fact]
+    public void 未シード状態の_Save_は既定を_v1_でシードしてから更新する()
+    {
+        // GET を経ずに最初のリクエストが PUT のケース（自動化スクリプトの初期登録等）。500 にならず v2 になる。
+        var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfAssumptionsStore(db);
+        var modified = TradingAssumptionsDefaults.Create() with { FxSpreadRatio = 0.004m };
+
+        var version = store.Save(modified, expectedVersion: 1);
+
+        version.Should().Be(2);
+        store.GetCurrent().Assumptions.FxSpreadRatio.Should().Be(0.004m);
+    }
+
+    [Fact]
     public void 版番号が不一致の更新は競合で弾かれる()
     {
         var db = NewContext(Guid.NewGuid().ToString());
