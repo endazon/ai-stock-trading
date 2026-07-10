@@ -11,6 +11,17 @@
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Worker.Tests/MarketMonitorService.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/Services/OrderExecutionService/" />
+  <Folder Name="/Services/OrderExecutionService/src/">
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Application/OrderExecutionService.Application.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Domain/OrderExecutionService.Domain.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/OrderExecutionService/tests/">
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Application.Tests/OrderExecutionService.Application.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Domain.Tests/OrderExecutionService.Domain.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Worker.Tests/OrderExecutionService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/RiskManagementService/" />
   <Folder Name="/Services/RiskManagementService/src/">
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Application/RiskManagementService.Application.csproj" />
