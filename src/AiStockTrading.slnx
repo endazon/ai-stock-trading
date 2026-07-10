@@ -1,5 +1,16 @@
 <Solution>
   <Folder Name="/Services/" />
+  <Folder Name="/Services/InformationCollectionService/" />
+  <Folder Name="/Services/InformationCollectionService/src/">
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Domain/InformationCollectionService.Domain.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Application/InformationCollectionService.Application.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/InformationCollectionService/tests/">
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Domain.Tests/InformationCollectionService.Domain.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Worker.Tests/InformationCollectionService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/ConfigurationService/" />
   <Folder Name="/Services/ConfigurationService/src/">
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />
