@@ -40,6 +40,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<AssumptionsChangedNotificationConsumer>();
     // FR-07/FR-09: 報告書（#14）の確定通知。
     x.AddConsumer<ReportConfirmedNotificationConsumer>();
+    // NFR（費用）/FR-09: 費用統制（#23）のしきい値通知。
+    x.AddConsumer<CostThresholdReachedNotificationConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

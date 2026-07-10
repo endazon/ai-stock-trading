@@ -11,6 +11,17 @@
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Worker.Tests/InformationCollectionService.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/Services/CostControlService/" />
+  <Folder Name="/Services/CostControlService/src/">
+    <Project Path="Services/CostControlService/src/CostControlService.Domain/CostControlService.Domain.csproj" />
+    <Project Path="Services/CostControlService/src/CostControlService.Application/CostControlService.Application.csproj" />
+    <Project Path="Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Services/CostControlService/tests/">
+    <Project Path="Services/CostControlService/tests/CostControlService.Domain.Tests/CostControlService.Domain.Tests.csproj" />
+    <Project Path="Services/CostControlService/tests/CostControlService.Application.Tests/CostControlService.Application.Tests.csproj" />
+    <Project Path="Services/CostControlService/tests/CostControlService.Worker.Tests/CostControlService.Worker.Tests.csproj" />
+  </Folder>
   <Folder Name="/Services/ReportService/" />
   <Folder Name="/Services/ReportService/src/">
     <Project Path="Services/ReportService/src/ReportService.Domain/ReportService.Domain.csproj" />
