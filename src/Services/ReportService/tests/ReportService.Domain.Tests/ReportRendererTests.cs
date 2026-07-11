@@ -81,7 +81,7 @@ public class ReportRendererTests
         md.Should().Contain("## 1. 月間サマリ");
         md.Should().Contain("月間実現損益（税引後・費用込み） | +1,520 円");
         // 04_report-templates の月間サマリ行構成。データ依存行は後続連携で埋める（形式は保つ）。
-        md.Should().Contain("総資産（月初→月末） | （データ連携後）");
+        md.Should().Contain("総資産（月初 → 月末） | （データ連携後）");
         md.Should().Contain("年初来累計損益 | （データ連携後）");
         md.Should().Contain("## 3. 翌月の方針・投資方針");
     }

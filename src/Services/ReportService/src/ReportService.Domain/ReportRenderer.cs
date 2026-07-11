@@ -86,7 +86,7 @@ public static class ReportRenderer
 
             case ReportKind.Monthly:
                 yield return ("月間実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
-                yield return ("総資産（月初→月末）", Pending);
+                yield return ("総資産（月初 → 月末）", Pending); // 04_report-templates の表記に一致（矢印前後に半角スペース）
                 yield return ("年初来累計損益", Pending);
                 yield return ("費用合計 / 費用率", $"{Yen(p.TotalCost)} / {Pending}");
                 yield return ("月次目標に対する達成", Pending);
