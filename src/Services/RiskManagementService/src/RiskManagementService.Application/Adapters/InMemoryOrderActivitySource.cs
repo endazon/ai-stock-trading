@@ -5,7 +5,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Adapters;
 
-// FR-19, IADR-0037: 注文アクティビティ源のインメモリ実装（プロセス内リングバッファ）。
+// FR-19, IADR-0040: 注文アクティビティ源のインメモリ実装（プロセス内リングバッファ）。
 // 実注文履歴テレメトリ（発注・訂正・取消イベントの永続化 #13/#17）が確定するまでの供給。ホスト結線・実 E2E は後続（#82）。
 // （銘柄, 市場）別に直近の OrderActivityRecord を保持し、窓外を刈り込んで返す。
 public sealed class InMemoryOrderActivitySource : IOrderActivitySource

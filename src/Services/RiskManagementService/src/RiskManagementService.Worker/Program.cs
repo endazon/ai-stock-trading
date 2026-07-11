@@ -58,7 +58,7 @@ builder.Services.AddScoped<SizingContextService>();
 builder.Services.AddScoped<OpenPositionsService>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();
-// FR-19, IADR-0006/0037: 相場操縦検出器（#49）の検知アルゴリズム（ManipulativeOrderPatternDetector＋
+// FR-19, IADR-0006/0040: 相場操縦検出器（#49）の検知アルゴリズム（ManipulativeOrderPatternDetector＋
 // ManipulationPatternAnalyzer）は Application/Domain に実装済み。本番 DI 登録は実注文履歴テレメトリ
 // （発注・訂正・取消イベントの永続化 #13/#17）から IOrderActivitySource を供給できるようになってから行う（切り分け）。
 // それまでは未登録（null で注入され判定は無効）とし、検出器を注入した「フラグ ON＋該当→拒否」は結合テストで担保する。

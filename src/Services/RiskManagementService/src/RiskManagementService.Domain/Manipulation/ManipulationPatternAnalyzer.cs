@@ -2,9 +2,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, ADR-0007, IADR-0037: 相場操縦とみなされ得る発注パターンの検知（純関数コア）。
+// FR-19, ADR-0007, IADR-0040: 相場操縦とみなされ得る発注パターンの検知（純関数コア）。
 // 自口座の直近窓（既定 5 分）の発注統計に対するヒューリスティックで、見せ玉・過剰訂正取消・自己レイヤリングを近似検知する。
-// 決定的（IADR-0003/0004）で、RiskEvaluator から同期的に呼べる。市場全体の板（他者注文）は本コアの対象外（IADR-0037）。
+// 決定的（IADR-0003/0004）で、RiskEvaluator から同期的に呼べる。市場全体の板（他者注文）は本コアの対象外（IADR-0040）。
 public static class ManipulationPatternAnalyzer
 {
     public static ManipulationVerdict Analyze(OrderActivityWindow window, ManipulationDetectionSettings settings)

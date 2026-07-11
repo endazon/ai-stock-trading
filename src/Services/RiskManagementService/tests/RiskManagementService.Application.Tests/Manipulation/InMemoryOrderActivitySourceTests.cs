@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
 
-// FR-19, IADR-0037: 注文アクティビティ源（インメモリ）の窓抽出・窓外刈り込み・（銘柄, 市場）分離を固定する。
+// FR-19, IADR-0040: 注文アクティビティ源（インメモリ）の窓抽出・窓外刈り込み・（銘柄, 市場）分離を固定する。
 public class InMemoryOrderActivitySourceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 35, 0, TimeSpan.Zero);

@@ -13,12 +13,12 @@ plan_refs:
 
 # テスト仕様書: 相場操縦パターン検知（FR-19）
 
-> 作業仕様書 [20260711_manipulation-detector](../specs/20260711_manipulation-detector.md)（#49・[IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)）の
+> 作業仕様書 [20260711_manipulation-detector](../specs/20260711_manipulation-detector.md)（#49・[IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)）の
 > 受け入れ基準を、実装済み xUnit テストへ写像した対応表。拡張点（判定ポート）の回帰は [FR-10 リスクガードコア](FR-10_risk-guard-core-tests.md) を参照。
 
 ## 起点となる計画書（トレーサビリティ）
 
-- 機能要求（FR）: FR-19（相場操縦とみなされ得る発注パターンの禁止）。関連 ADR-0007、IADR-0006/0037。
+- 機能要求（FR）: FR-19（相場操縦とみなされ得る発注パターンの禁止）。関連 ADR-0007、IADR-0006/0040。
 - 受け入れ基準の所在: `02_requirements/01_requirements.md`（FR-19）、`06_daytrading-review.md` §2.3（見せ玉・過剰訂正取消・板演出の禁止）。
 
 ## テスト対象・範囲
@@ -40,7 +40,7 @@ plan_refs:
 | 検出器が該当銘柄/市場の窓を取得して判定 | `ManipulativeOrderPatternDetectorTests::該当履歴のある銘柄の注文は相場操縦とみなす` / `履歴のない銘柄の注文は相場操縦とみなさない` / `別市場の同一コードは混同しない` / `正常な履歴の銘柄は相場操縦とみなさない` |
 | 供給源の窓抽出・窓外刈り込み・（銘柄, 市場）分離 | `InMemoryOrderActivitySourceTests::窓内の記録だけを返す` / `記録のない銘柄は空窓を返す` / `銘柄と市場で記録を分離する` |
 | **フラグ ON＋該当→拒否**／該当なし→承認／ガード無効→スキップ | `OrderScreeningManipulationTests::ガード有効かつ該当履歴の注文は相場操縦で拒否される` / `該当履歴がなければ承認される` / `ガード無効時は該当履歴でも相場操縦ではスキップする` |
-| 既定しきい値の固定（IADR-0037） | `TradingDefaultsTests::相場操縦検知の既定しきい値はIADR0037の初期値と一致する` |
+| 既定しきい値の固定（IADR-0040） | `TradingDefaultsTests::相場操縦検知の既定しきい値はIADR0040の初期値と一致する` |
 
 ## テスト方針・件数
 
@@ -52,4 +52,4 @@ plan_refs:
 
 - 作業仕様書: [20260711_manipulation-detector](../specs/20260711_manipulation-detector.md)
 - 機能仕様: [FR-19 取引ガード](../functional/FR-19_trading-guard.md)
-- 実装ADR: [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（アルゴリズム）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）
+- 実装ADR: [IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)（アルゴリズム）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）

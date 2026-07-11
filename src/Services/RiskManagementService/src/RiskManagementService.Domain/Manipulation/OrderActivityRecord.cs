@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0037: 相場操縦検知の入力＝直近窓内の 1 注文のライフサイクル要約。
+// FR-19, IADR-0040: 相場操縦検知の入力＝直近窓内の 1 注文のライフサイクル要約。
 // 自口座の発注統計（見せ玉・過剰訂正取消・自己レイヤリング）から相場操縦とみなされ得る型を近似検知するための素データ。
 // 実注文履歴テレメトリ（発注・訂正・取消イベントの永続化 #13/#17）から供給される想定（本スライスは InMemory 供給）。
 public sealed record OrderActivityRecord

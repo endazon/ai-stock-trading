@@ -42,9 +42,9 @@ public class TradingDefaultsTests
     }
 
     [Fact]
-    public void 相場操縦検知の既定しきい値はIADR0037の初期値と一致する()
+    public void 相場操縦検知の既定しきい値はIADR0040の初期値と一致する()
     {
-        // FR-19, IADR-0037: 検知アルゴリズムの既定しきい値を固定する（運用データによる較正はフォローアップ）。
+        // FR-19, IADR-0040: 検知アルゴリズムの既定しきい値を固定する（運用データによる較正はフォローアップ）。
         var settings = TradingDefaults.CreateManipulationDetectionSettings();
 
         settings.LookbackWindow.Should().Be(TimeSpan.FromMinutes(5));

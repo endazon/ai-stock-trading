@@ -1,6 +1,6 @@
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0037: 相場操縦検知の判定結果。該当シグナルを列挙して保持する（監査/将来のログ用に理由を残す）。
+// FR-19, IADR-0040: 相場操縦検知の判定結果。該当シグナルを列挙して保持する（監査/将来のログ用に理由を残す）。
 public sealed record ManipulationVerdict
 {
     /// <summary>該当した相場操縦シグナル（空＝無嫌疑）。</summary>

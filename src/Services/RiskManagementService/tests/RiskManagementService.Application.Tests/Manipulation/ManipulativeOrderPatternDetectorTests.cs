@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
 
-// FR-19, IADR-0006/0037: 判定ポート具体実装が intent の（銘柄, 市場）の直近窓を取得して純関数コアで判定することを固定する。
+// FR-19, IADR-0006/0040: 判定ポート具体実装が intent の（銘柄, 市場）の直近窓を取得して純関数コアで判定することを固定する。
 public class ManipulativeOrderPatternDetectorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 35, 0, TimeSpan.Zero);

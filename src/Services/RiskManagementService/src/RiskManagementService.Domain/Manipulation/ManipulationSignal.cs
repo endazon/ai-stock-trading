@@ -1,6 +1,6 @@
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0037: 相場操縦とみなされ得る発注パターンのシグナル種別（計画書 06_daytrading-review §2.3 の禁止対象）。
+// FR-19, IADR-0040: 相場操縦とみなされ得る発注パターンのシグナル種別（計画書 06_daytrading-review §2.3 の禁止対象）。
 public enum ManipulationSignal
 {
     /// <summary>過剰な取消: 約定なし取消が発注に占める比率が過大。</summary>

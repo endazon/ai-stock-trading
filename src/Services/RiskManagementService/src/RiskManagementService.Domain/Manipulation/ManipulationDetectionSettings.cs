@@ -1,8 +1,8 @@
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0037: 相場操縦検知の窓長・最小標本数・各しきい値。既定値と逆算根拠は IADR-0037。
+// FR-19, IADR-0040: 相場操縦検知の窓長・最小標本数・各しきい値。既定値と逆算根拠は IADR-0040。
 // 現状は TradingDefaults の静的既定のみで、実行時の変更経路は持たない（生成AI・自動処理が改ざんできない安全側）。
-// 運用ログでの較正は当面コード変更＋再デプロイで行い、設定ストア化は後続で判断する（IADR-0037 のフォローアップ）。
+// 運用ログでの較正は当面コード変更＋再デプロイで行い、設定ストア化は後続で判断する（IADR-0040 のフォローアップ）。
 public record ManipulationDetectionSettings
 {
     /// <summary>判定に用いる直近窓の長さ。</summary>

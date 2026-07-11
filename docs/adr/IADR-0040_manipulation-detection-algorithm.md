@@ -1,5 +1,5 @@
 ---
-title: IADR-0037 相場操縦パターン検知は自口座の直近発注統計に対する純関数ヒューリスティックで判定し、既定しきい値を保守側に置く
+title: IADR-0040 相場操縦パターン検知は自口座の直近発注統計に対する純関数ヒューリスティックで判定し、既定しきい値を保守側に置く
 type: impl-adr
 status: Accepted
 related_ids: [FR-19, ADR-0007]
@@ -12,7 +12,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 ---
 
-# IADR-0037: 相場操縦パターン検知は自口座の直近発注統計に対する純関数ヒューリスティックで判定する
+# IADR-0040: 相場操縦パターン検知は自口座の直近発注統計に対する純関数ヒューリスティックで判定する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

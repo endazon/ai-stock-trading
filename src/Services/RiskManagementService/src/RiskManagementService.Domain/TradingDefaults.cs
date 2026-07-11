@@ -61,9 +61,9 @@ public static class TradingDefaults
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
 
-    // FR-19, IADR-0037: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
+    // FR-19, IADR-0040: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
     // 正常なデイトレード（値動きに応じた建て直し・数件の取消）を誤検知せず濫用パターンだけを捕捉する保守側の初期値。
-    // 各値の逆算根拠は IADR-0037。運用ログで誤検知/見逃しを評価して較正する。
+    // 各値の逆算根拠は IADR-0040。運用ログで誤検知/見逃しを評価して較正する。
     public static ManipulationDetectionSettings CreateManipulationDetectionSettings() => new()
     {
         // 見せ玉・レイヤリングは短時間の連続発注に現れる。判断サイクル（30 分）より十分短い突発窓。

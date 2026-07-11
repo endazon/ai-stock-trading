@@ -26,7 +26,7 @@ plan_refs:
   - **見せ玉（約定意思のない発注）**／**板を演出する型（レイヤリング）**／**過剰な注文訂正・取消の反復**。
 - 拡張点（PR #41）: `IManipulativeOrderPatternDetector.IsSuspectedManipulation(OrderIntent, PortfolioSnapshot)` を
   `RiskEvaluator`／`OrderScreeningService` が「ガード有効かつ検出器注入時のみ」呼ぶ（IADR-0006）。
-- 本作業で新規 [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（検知アルゴリズムと既定しきい値の確定）。
+- 本作業で新規 [IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)（検知アルゴリズムと既定しきい値の確定）。
 
 ## 設計方針
 
@@ -39,7 +39,7 @@ plan_refs:
 - `OrderActivityWindow`: ある（銘柄, 市場）の直近窓の `OrderActivityRecord` 群＋基準時刻 `AsOf`。
 - `ManipulationSignal`（enum）: `ExcessiveCancellations` / `ExcessiveAmendments` / `NoExecutionIntent` / `Layering`。
 - `ManipulationVerdict`: `IsSuspected`＋該当 `Signals`（複数列挙。監査/将来のログ用に理由を保持）。
-- `ManipulationDetectionSettings`: 窓長・最小標本数・各しきい値（[IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md) に既定値と逆算根拠）。
+- `ManipulationDetectionSettings`: 窓長・最小標本数・各しきい値（[IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md) に既定値と逆算根拠）。
 - `ManipulationPatternAnalyzer.Analyze(window, settings) → ManipulationVerdict`: **純関数**。標本数が最小未満なら常に無嫌疑（低頻度の正常取引で誤検知しない安全側）。
 
 判定ロジック（窓内・`placements = 発注数`）:
@@ -63,7 +63,7 @@ plan_refs:
 - Application: `IOrderActivitySource` / `ManipulativeOrderPatternDetector` / `InMemoryOrderActivitySource`。
 - `TradingDefaults.CreateManipulationDetectionSettings()`（既定しきい値）。
 - テスト: アルゴリズムの各シグナル（該当/非該当・境界）・アダプタ（窓取得→判定）・`OrderScreeningService` 結合（**フラグ ON＋該当→拒否**）。
-- IADR-0037（アルゴリズムとしきい値の確定）。
+- IADR-0040（アルゴリズムとしきい値の確定）。
 
 ## 受け入れ基準
 
@@ -71,7 +71,7 @@ CI で緑にする範囲（ユニット・InMemory・結合）:
 - [x] `ManipulationPatternAnalyzer` が 4 シグナルをそれぞれ検知し、最小標本未満・正常取引では無嫌疑を返す（境界含む）。
 - [x] `ManipulativeOrderPatternDetector` が `intent` の銘柄/市場の窓を取得し、該当時に `true`・非該当時に `false` を返す。
 - [x] `OrderScreeningService` にガード有効＋検出器を注入し、該当履歴では `OrderRejected`（`ManipulativeOrderPattern`）、正常履歴では承認（**フラグ ON＋該当→拒否**の担保）。
-- [x] `TradingDefaults` の既定しきい値をテストで固定する（全体前提条件・IADR-0037 と一致）。
+- [x] `TradingDefaults` の既定しきい値をテストで固定する（全体前提条件・IADR-0040 と一致）。
 - [x] 既存テスト（拡張点・回帰）を緑に保つ。`nullable` 有効・警告ゼロ・`dotnet format` 準拠。
 
 実 API/実コンテナ前提（CI 既定では実行しない・切り分け）:
@@ -82,7 +82,7 @@ CI で緑にする範囲（ユニット・InMemory・結合）:
 
 - 実注文履歴の永続化（注文・訂正/取消イベント）＝ #13/#17 連動。本 PR の `InMemoryOrderActivitySource` は結線先確定までのプロセス内実装。
 - 板の**外部**気配（他者注文）を用いた相場操縦検知（本 PR は**自口座**の発注統計に限定）。市場全体の板厚データ供給は対象外。
-- しきい値の運用データによる較正（IADR-0037 のフォローアップ）。監査へ該当シグナル詳細を記録する拡張（#17/#80 連動）。
+- しきい値の運用データによる較正（IADR-0040 のフォローアップ）。監査へ該当シグナル詳細を記録する拡張（#17/#80 連動）。
 
 ## テスト方針
 
@@ -93,11 +93,11 @@ CI で緑にする範囲（ユニット・InMemory・結合）:
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（本作業）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）。
+- 実装ADR: [IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)（本作業）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）。
 - 連携: [20260708_risk-guard-core](20260708_risk-guard-core.md)（取引ガード）／[20260709_risk-eval-core-fixes](20260709_risk-eval-core-fixes.md)。
 - 機能仕様: [FR-19_trading-guard](../functional/FR-19_trading-guard.md)。テスト仕様: [FR-19_manipulation-detection-tests](../tests/FR-19_manipulation-detection-tests.md)。
 
 ## 未決事項
 
 - 本番テレメトリ（#13/#17）確定後、`IOrderActivitySource` の実装差し替えとホスト DI 登録・実 E2E（#82）で `Closes #49` を確定する。
-- 既定しきい値は初期値。運用ログで誤検知/見逃しを評価し IADR-0037 のフォローアップで較正する。
+- 既定しきい値は初期値。運用ログで誤検知/見逃しを評価し IADR-0040 のフォローアップで較正する。

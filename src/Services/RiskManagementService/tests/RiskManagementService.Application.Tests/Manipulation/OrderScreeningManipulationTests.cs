@@ -10,7 +10,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
 
-// FR-19, IADR-0006/0037: 検出器を注入した OrderScreeningService の結合検証。
+// FR-19, IADR-0006/0040: 検出器を注入した OrderScreeningService の結合検証。
 // 受け入れ基準: ガード有効（既定）＋該当履歴 → 拒否（ManipulativeOrderPattern）／正常履歴 → 承認／ガード無効 → スキップ。
 public class OrderScreeningManipulationTests
 {

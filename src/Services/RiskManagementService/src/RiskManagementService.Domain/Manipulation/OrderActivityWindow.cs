@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0037: ある（銘柄, 市場）の直近窓の注文アクティビティ。相場操縦検知アルゴリズムの入力単位。
+// FR-19, IADR-0040: ある（銘柄, 市場）の直近窓の注文アクティビティ。相場操縦検知アルゴリズムの入力単位。
 public sealed record OrderActivityWindow
 {
     /// <summary>対象銘柄コード。</summary>
