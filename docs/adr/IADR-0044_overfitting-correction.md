@@ -1,5 +1,5 @@
 ---
-title: IADR-0038 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
+title: IADR-0044 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
 type: impl-adr
 status: Accepted
 related_ids: [FR-15, ADR-0008]
@@ -11,9 +11,9 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
-# IADR-0038: 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
+# IADR-0044: 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
 
-> 実装リポジトリ内の意思決定記録。[IADR-0037](IADR-0037_backtest-foundation.md)（基盤構成）の Slice B に対応。
+> 実装リポジトリ内の意思決定記録。[IADR-0043](IADR-0043_backtest-foundation.md)（基盤構成）の Slice B に対応。
 
 - 状態: Accepted
 - 日付: 2026-07-11
@@ -46,7 +46,9 @@ FR-15 は「ウォークフォワード検証・試行数記録・DSR/PBO によ
    - 戦略のパフォーマンス指標は**平均リターン**を採用する（CSCV は指標に依存せず順位付けの一貫性のみを要する。
      平均は分散 0 区間でも定義でき決定的でテスト容易）。順位はタイ平均・percentile を `(0,1)` にクランプしてロジットの発散を防ぐ。
 5. **LLM 汚染対策**（`DataCutoffPolicy` / `SymbolAnonymizer`）: 全バー日付が LLM 学習カットオフより後であることを検証する、
-   または銘柄を決定的に匿名化して LLM が銘柄を同定できないようにする（FR-15 検証条件①）。
+   または銘柄を決定的に**仮名化**して LLM がプレーンテキストのティッカーを文脈から認識できないようにする（FR-15 検証条件①）。
+   仮名化は無鍵の決定的 SHA-256 であり、本用途（LLM の文脈認識防止）には十分だが、小さな既知空間に対する総当たり再特定は理論上可能
+   （暗号学的秘匿ではない）。厳格な秘匿が要る場合は鍵付き HMAC 等を後続で検討する。
 
 ## 理由
 
@@ -63,5 +65,5 @@ FR-15 は「ウォークフォワード検証・試行数記録・DSR/PBO によ
 
 ## 関連
 
-- [IADR-0037](IADR-0037_backtest-foundation.md)（基盤構成）、[IADR-0039](IADR-0039_stage0-gate.md)（Stage 0 合格判定・DSR/PBO を消費）
+- [IADR-0043](IADR-0043_backtest-foundation.md)（基盤構成）、[IADR-0045](IADR-0045_stage0-gate.md)（Stage 0 合格判定・DSR/PBO を消費）
 - 仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、[FR-15_backtest](../functional/FR-15_backtest.md)

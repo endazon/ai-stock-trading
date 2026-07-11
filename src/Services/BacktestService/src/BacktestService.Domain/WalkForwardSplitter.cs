@@ -7,7 +7,7 @@ public readonly record struct WalkForwardWindow(
     DateOnly OutOfSampleStart,
     DateOnly OutOfSampleEnd);
 
-// FR-15, 06_daytrading-review §3.2, IADR-0038: ウォークフォワード分割。IS で最適化し OOS で評価することで
+// FR-15, 06_daytrading-review §3.2, IADR-0044: ウォークフォワード分割。IS で最適化し OOS で評価することで
 // In-Sample 最適化の楽観（過剰適合）を排す。ローリング（固定幅スライド）とアンカー（起点固定・IS 拡大）を提供する。
 public static class WalkForwardSplitter
 {

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0038: Probability of Backtest Overfitting（CSCV）。
+// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: Probability of Backtest Overfitting（CSCV）。
 // 「IS で最良の戦略が OOS で中央値以下に落ちる確率」を検証する。performance[block][strategy]。
 public class ProbabilityOfBacktestOverfittingTests
 {
@@ -53,6 +53,15 @@ public class ProbabilityOfBacktestOverfittingTests
     public void 戦略が2未満なら例外()
     {
         double[][] perf = [[1], [2], [3], [4]];
+        var act = () => ProbabilityOfBacktestOverfitting.Compute(perf, 4);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void 行の長さが不揃いなら例外_一貫した入力検証()
+    {
+        // ブロック行の戦略数が不揃い（jagged）→ 他の検証と同じく ArgumentException（#100 レビュー指摘）。
+        double[][] perf = [[1, 2], [1, 2, 3], [2, 1], [1, 2]];
         var act = () => ProbabilityOfBacktestOverfitting.Compute(perf, 4);
         act.Should().Throw<ArgumentException>();
     }
