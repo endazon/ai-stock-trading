@@ -6,6 +6,9 @@ namespace AiStockTrading.Shared.Infrastructure.Tests;
 
 // FR-10, FR-16, IADR-0033: 符号付き在庫・平均取得単価法の畳み込み（共有純関数）の各分岐を検証する。
 // リスク管理 PortfolioProjection と報告書 PnlAggregator の単一情報源。
+// 配置理由: テスト対象は Shared.Contracts.Trading だが、Shared.Contracts 専用のテストプロジェクトは無く、
+// 新設は過剰（IADR-0033 の判断）。Shared.Infrastructure.Tests → Shared.Infrastructure → Shared.Contracts の
+// 推移的参照で本テストから参照できるため、既存の共有テストプロジェクトに収録する。
 public class SignedInventoryTests
 {
     [Fact]

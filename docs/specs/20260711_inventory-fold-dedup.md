@@ -1,7 +1,7 @@
 ---
 title: 平均取得単価法の畳み込み重複を共有ドメインへ集約
 type: spec
-status: review
+status: done
 related_ids: [FR-10, FR-16, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-11
@@ -43,10 +43,10 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [ ] `SignedInventory.Apply` が建て（0→建玉）・建て増し（加重平均・実現0）・一部決済（実現計上・在庫減）・全決済（0）・反転（実現＋新規建て）を正しく畳み込む。
-- [ ] `PortfolioProjection` / `PnlAggregator` が `SignedInventory` を用い、私有 `Apply` を持たない（単一情報源）。
-- [ ] 既存の `PortfolioProjectionTests` / `PnlAggregatorTests` / 依存テストがすべて緑（**挙動不変**）。
-- [ ] 過剰な共通化はしない（畳み込みロジックの単一情報源化に限定・サービス固有の集計は各サービスに残す）。
+- [x] `SignedInventory.Apply` が建て（0→建玉）・建て増し（加重平均・実現0）・一部決済（実現計上・在庫減）・全決済（0）・反転（実現＋新規建て）を正しく畳み込む。
+- [x] `PortfolioProjection` / `PnlAggregator` が `SignedInventory` を用い、私有 `Apply` を持たない（単一情報源）。
+- [x] 既存の `PortfolioProjectionTests` / `PnlAggregatorTests` / 依存テストがすべて緑（**挙動不変**）。
+- [x] 過剰な共通化はしない（畳み込みロジックの単一情報源化に限定・サービス固有の集計は各サービスに残す）。
 
 ## 対象外
 
