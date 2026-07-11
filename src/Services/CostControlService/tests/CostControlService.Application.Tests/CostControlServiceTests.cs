@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
+using AiStockTrading.CostControl.Application.State;
 using AiStockTrading.CostControl.Domain;
 using FluentAssertions;
 using Xunit;
@@ -69,6 +71,25 @@ public class CostControlServiceTests
 
         svc.Record(CostCategory.Infrastructure, 5_000m).CrossedTo.Should().BeNull();
         svc.GetLlmState().State.Should().Be(CostControlState.Normal);
+    }
+
+    [Fact]
+    public async Task 並行計上でもしきい値遷移は各しきい値ちょうど1回()
+    {
+        // NFR（費用）, IADR-0034: 並行計上で before/after が原子化され、CostThresholdReached の重複/取りこぼしが起きない。
+        // 300 × 50 = 15,000 → 80%(12,000)・100%(15,000)を跨ぐ。順序に依らず各しきい値の上方遷移は 1 回のみ。
+        var svc = NewService(new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero), out _);
+        var results = new ConcurrentBag<RecordCostResult>();
+
+        await Parallel.ForEachAsync(Enumerable.Range(0, 50), async (_, _) =>
+        {
+            await Task.Yield();
+            results.Add(svc.Record(CostCategory.Llm, 300m));
+        });
+
+        results.Should().HaveCount(50);
+        results.Count(r => r.CrossedTo == CostControlState.Throttled).Should().Be(1);
+        results.Count(r => r.CrossedTo == CostControlState.Halted).Should().Be(1);
     }
 
     [Fact]

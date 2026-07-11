@@ -1,3 +1,4 @@
+using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.CostControl.Worker.Foundation.Persistence;
 using FluentAssertions;
@@ -37,5 +38,20 @@ public class EfCostLedgerTests
     {
         var db = NewContext(Guid.NewGuid().ToString());
         new EfCostLedger(db).GetMonthlyTotal("2026-07", CostCategory.Llm).Should().Be(0m);
+    }
+
+    [Fact]
+    public void Record_は_LLM累計の計上前後を原子的に返す()
+    {
+        // IADR-0034: しきい値遷移判定の入力（before/after）を計上と不可分に返す。
+        var ledger = new EfCostLedger(NewContext(Guid.NewGuid().ToString()));
+
+        ledger.Record("2026-07", CostCategory.Llm, 1_000m, DateTimeOffset.UtcNow)
+            .Should().Be(new LlmCostRecordOutcome(0m, 1_000m));
+        ledger.Record("2026-07", CostCategory.Llm, 2_000m, DateTimeOffset.UtcNow)
+            .Should().Be(new LlmCostRecordOutcome(1_000m, 3_000m));
+        // 非 LLM 計上は LLM 累計を変えない（before==after）。
+        ledger.Record("2026-07", CostCategory.Infrastructure, 500m, DateTimeOffset.UtcNow)
+            .Should().Be(new LlmCostRecordOutcome(3_000m, 3_000m));
     }
 }

@@ -18,17 +18,14 @@ public sealed class CostControlService(ICostLedger ledger, ICostLimitsProvider l
         var month = MonthKey(now);
         var limits = limitsProvider.GetLimits();
 
-        // LLM 計上のみ上方遷移を検知する（非 LLM は LLM 累計を変えないため before は不要＝crossedTo は常に null）。
-        var beforeState = category == CostCategory.Llm
-            ? CostGovernor.EvaluateLlm(ledger.GetMonthlyTotal(month, CostCategory.Llm), limits).State
-            : (CostControlState?)null;
+        // IADR-0034: 追記と当該月 LLM 累計の before/after を原子的に得る（並行計上でもしきい値遷移を高々 1 回に保つ）。
+        // 非 LLM 計上は LLM 累計を変えないため before==after となり crossedTo は自然に null になる。
+        var outcome = ledger.Record(month, category, amount, now);
 
-        ledger.Record(month, category, amount, now);
-
-        var llmTotal = ledger.GetMonthlyTotal(month, CostCategory.Llm);
-        var decision = CostGovernor.EvaluateLlm(llmTotal, limits);
-        var crossedTo = beforeState is { } before && decision.State > before ? decision.State : (CostControlState?)null;
-        var percent = limits.Llm <= 0m ? 0m : llmTotal / limits.Llm * 100m;
+        var beforeState = CostGovernor.EvaluateLlm(outcome.LlmTotalBefore, limits).State;
+        var decision = CostGovernor.EvaluateLlm(outcome.LlmTotalAfter, limits);
+        var crossedTo = decision.State > beforeState ? decision.State : (CostControlState?)null;
+        var percent = limits.Llm <= 0m ? 0m : outcome.LlmTotalAfter / limits.Llm * 100m;
 
         return new RecordCostResult(decision, crossedTo, percent, month);
     }
