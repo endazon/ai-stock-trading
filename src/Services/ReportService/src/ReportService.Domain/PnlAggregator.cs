@@ -19,6 +19,7 @@ public static class PnlAggregator
         var realizedGross = 0m;
         var totalCost = 0m;
         var realizingCount = 0;
+        var winningCount = 0;
 
         foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
         {
@@ -37,6 +38,8 @@ public static class PnlAggregator
             {
                 realizedGross += applied.RealizedPnl;
                 realizingCount++;
+                if (applied.RealizedPnl > 0m)
+                    winningCount++; // 勝ち決済（勝率の分子）
             }
         }
 
@@ -55,6 +58,6 @@ public static class PnlAggregator
         var tax = taxableGain > 0m ? taxableGain * assumptions.CapitalGainsTaxRate : 0m;
         var net = realizedGross - totalCost - tax;
 
-        return new PnlSummary(realizedGross, totalCost, tax, net, unrealized, fills.Count, realizingCount);
+        return new PnlSummary(realizedGross, totalCost, tax, net, unrealized, fills.Count, realizingCount, winningCount);
     }
 }
