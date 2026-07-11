@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
@@ -88,4 +89,27 @@ public static class TradingDefaults
 
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
+
+    // FR-19, IADR-0040: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
+    // 正常なデイトレード（値動きに応じた建て直し・数件の取消）を誤検知せず濫用パターンだけを捕捉する保守側の初期値。
+    // 各値の逆算根拠は IADR-0040。運用ログで誤検知/見逃しを評価して較正する。
+    public static ManipulationDetectionSettings CreateManipulationDetectionSettings() => new()
+    {
+        // 見せ玉・レイヤリングは短時間の連続発注に現れる。判断サイクル（30 分）より十分短い突発窓。
+        LookbackWindow = TimeSpan.FromMinutes(5),
+        // これ未満は統計的に濫用と正常を区別できない（数件の取消は正常運用でも起こり得る）。
+        MinimumSampleSize = 5,
+        // 窓内の約定なし取消が発注の 7 割超は約定志向の運用として過剰。
+        MaxCancellationRatio = 0.7m,
+        // 1 発注あたり平均 3 回超の訂正反復は板操作的（正常な建て直しは通常 0〜1 回）。
+        MaxAmendmentsPerOrder = 3.0m,
+        // 窓内の約定/一部約定が発注の 1 割未満＝約定意思の希薄さ（見せ玉の兆候）。
+        MinFillRatio = 0.1m,
+        // 発注→即取消（2 秒以内）の反復は見せ玉の典型（人手・通常アルゴの反応より速い）。
+        ShortLivedCancelThreshold = TimeSpan.FromSeconds(2),
+        // 短命取消が 3 件以上で見せ玉パターンとみなす（低約定率と AND）。
+        MaxShortLivedCancels = 3,
+        // 同一方向・約定なし取消の同時生存が 3 本以上＝板に複数段を並べる見せ板の型。
+        LayeringOrderCount = 3,
+    };
 }
