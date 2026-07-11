@@ -32,7 +32,6 @@ public sealed record Stage0GateEvaluation(
     double DeflatedSharpe,
     double ProbabilityOfBacktestOverfitting,
     decimal MaxDrawdown,
-    decimal BaselineTotalReturn,
     decimal DoubledCostTotalReturn,
     decimal WalkForwardOutOfSampleReturn,
     int TrialCount,
@@ -42,7 +41,7 @@ public sealed record Stage0GateEvaluation(
 public sealed record Stage0GateResult(bool Passed, IReadOnlyList<Stage0GateCheck> FailedChecks);
 
 // FR-15, FR-20, ADR-0008, 06_daytrading-review §4, IADR-0039: Stage 0 合格判定（純関数）。
-// DSR 補正後のエッジ・過剰適合・最大DD・コスト2倍頑健性・ウォークフォワードOOS・試行数の 6 条件を合成する。
+// DSR 補正後のエッジ・過剰適合・最大DD・コスト2倍頑健性・ウォークフォワードOOS・試行数・データカットオフの 7 条件を合成する。
 public static class Stage0GateEvaluator
 {
     public static Stage0GateResult Evaluate(Stage0GateEvaluation evaluation, Stage0GateCriteria criteria)

@@ -47,7 +47,6 @@ public sealed class Stage0GateService
             DeflatedSharpe: dsr,
             ProbabilityOfBacktestOverfitting: pbo,
             MaxDrawdown: context.BaselineMetrics.MaxDrawdown,
-            BaselineTotalReturn: context.BaselineMetrics.TotalReturn,
             DoubledCostTotalReturn: context.DoubledCostTotalReturn,
             WalkForwardOutOfSampleReturn: context.WalkForwardOutOfSampleReturn,
             TrialCount: context.Trials.Count,

@@ -11,7 +11,6 @@ public class Stage0GateEvaluatorTests
         DeflatedSharpe: 0.99,
         ProbabilityOfBacktestOverfitting: 0.10,
         MaxDrawdown: 0.08m,
-        BaselineTotalReturn: 0.25m,
         DoubledCostTotalReturn: 0.12m,
         WalkForwardOutOfSampleReturn: 0.05m,
         TrialCount: 10,
@@ -76,6 +75,21 @@ public class Stage0GateEvaluatorTests
     {
         var eval = Passing() with { DataCutoffSatisfied = false };
         Stage0GateEvaluator.Evaluate(eval, Criteria).FailedChecks.Should().Contain(Stage0GateCheck.DataCutoff);
+    }
+
+    [Fact]
+    public void しきい値ちょうどは合格側に倒れる_境界値()
+    {
+        // DSR=0.95（≥）・PBO=0.50（≤）・最大DD=0.15（≤）はいずれも合格（非等号比較の境界固定）。
+        var eval = Passing() with
+        {
+            DeflatedSharpe = 0.95,
+            ProbabilityOfBacktestOverfitting = 0.50,
+            MaxDrawdown = 0.15m,
+        };
+        var result = Stage0GateEvaluator.Evaluate(eval, Criteria);
+        result.Passed.Should().BeTrue();
+        result.FailedChecks.Should().BeEmpty();
     }
 
     [Fact]
