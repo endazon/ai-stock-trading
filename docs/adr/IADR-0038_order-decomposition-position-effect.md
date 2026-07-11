@@ -1,5 +1,5 @@
 ---
-title: IADR-0037 ドテン/部分決済は取引判断が符号付きポジションのゼロ跨ぎで Close+Open に分解する
+title: IADR-0038 ドテン/部分決済は取引判断が符号付きポジションのゼロ跨ぎで Close+Open に分解する
 type: impl-adr
 status: Accepted
 related_ids: [FR-04, FR-05, FR-10, FR-19, ADR-0003, ADR-0007]
@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 ---
 
-# IADR-0037: ドテン/部分決済は取引判断が符号付きポジションのゼロ跨ぎで Close+Open に分解する
+# IADR-0038: ドテン/部分決済は取引判断が符号付きポジションのゼロ跨ぎで Close+Open に分解する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
