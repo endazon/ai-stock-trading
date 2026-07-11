@@ -42,12 +42,14 @@ public readonly record struct BacktestFill(
 // FR-15: シミュレーション設定。
 public sealed record BacktestConfig(decimal InitialCapital, BacktestCostModel CostModel, CostSensitivity Sensitivity);
 
-// FR-15: シミュレーション結果。
+// FR-15: シミュレーション結果。UnfilledOrderCount は約定できなかった注文数（翌営業日に対象バーが無い・最終日決定）。
+// 無音破棄せず件数を残すことで、Stage 0 判定やデバッグ時に「消えた取引」を検知できる（#99 レビュー指摘）。
 public sealed record BacktestRun(
     IReadOnlyList<decimal> EquityCurve,
     IReadOnlyList<decimal> RealizedTradePnls,
     IReadOnlyList<BacktestFill> Fills,
-    BacktestMetrics Metrics);
+    BacktestMetrics Metrics,
+    int UnfilledOrderCount);
 
 // FR-15, 06_daytrading-review §3.2, IADR-0037: 決定的バックテストシミュレータ（純関数）。
 public static class BacktestSimulator
@@ -59,11 +61,19 @@ public static class BacktestSimulator
         ArgumentNullException.ThrowIfNull(config);
 
         // 日付昇順に並べ、当日の (symbol,market) → バーで参照できるようにする。
+        // 同一 (symbol,market,date) の重複（外部データ源の返却揺れ）は後勝ちで採用し、例外にしない（#99 レビュー指摘）。
         var ordered = bars.OrderBy(b => b.Date).ToList();
         var tradingDays = ordered.Select(b => b.Date).Distinct().OrderBy(d => d).ToList();
-        var barsByDay = ordered
-            .GroupBy(b => b.Date)
-            .ToDictionary(g => g.Key, g => g.ToDictionary(b => (b.Symbol, b.Market)));
+        var barsByDay = new Dictionary<DateOnly, Dictionary<(string Symbol, Market Market), PriceBar>>();
+        foreach (var bar in ordered)
+        {
+            if (!barsByDay.TryGetValue(bar.Date, out var forDay))
+            {
+                forDay = [];
+                barsByDay[bar.Date] = forDay;
+            }
+            forDay[(bar.Symbol, bar.Market)] = bar; // 重複は後勝ち
+        }
 
         var positions = new Dictionary<(string Symbol, Market Market), InventoryLot>();
         var lastClose = new Dictionary<(string Symbol, Market Market), decimal>();
@@ -76,6 +86,7 @@ public static class BacktestSimulator
         var equityCurve = new List<decimal>(tradingDays.Count);
         var realizedTradePnls = new List<decimal>();
         var fills = new List<BacktestFill>();
+        var unfilledOrderCount = 0;
 
         foreach (var tradingDay in tradingDays)
         {
@@ -85,8 +96,13 @@ public static class BacktestSimulator
             foreach (var order in pending)
             {
                 var key = (order.Symbol, order.Market);
-                if (order.SignedQuantity == 0 || !todaysBars.TryGetValue(key, out var bar))
-                    continue; // 当日バーが無い銘柄は約定できない（次バーが無い）。
+                if (order.SignedQuantity == 0)
+                    continue;
+                if (!todaysBars.TryGetValue(key, out var bar))
+                {
+                    unfilledOrderCount++; // 当日バーが無い銘柄は約定できない（無音破棄せず計上）。
+                    continue;
+                }
 
                 var price = bar.Open;
                 var notional = Math.Abs(order.SignedQuantity) * price;
@@ -128,7 +144,10 @@ public static class BacktestSimulator
             equityCurve.Add(cash + holdings);
         }
 
+        // 最終日に決定された注文は翌営業日が無く約定しない。無音破棄せず未約定として計上する（#99 レビュー指摘）。
+        unfilledOrderCount += pending.Count(o => o.SignedQuantity != 0);
+
         var metrics = BacktestMetricsCalculator.Compute(equityCurve, realizedTradePnls);
-        return new BacktestRun(equityCurve, realizedTradePnls, fills, metrics);
+        return new BacktestRun(equityCurve, realizedTradePnls, fills, metrics, unfilledOrderCount);
     }
 }

@@ -124,5 +124,40 @@ public class BacktestSimulatorTests
         run.EquityCurve.Should().OnlyContain(e => e == 1_000m);
         run.Metrics.TotalReturn.Should().Be(0m);
         run.Fills.Should().BeEmpty();
+        run.UnfilledOrderCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void 翌営業日が無い最終日の注文は未約定として計上される()
+    {
+        // 最終日（Day2）に出した注文は翌営業日が無く約定しない。無音破棄せず件数を残す（レビュー指摘 #99）。
+        var bars = new[] { Bar(1, 10m, 10m), Bar(2, 10m, 10m) };
+        var script = new Dictionary<DateOnly, BacktestOrder[]>
+        {
+            [new DateOnly(2024, 1, 2)] = [new BacktestOrder("AAA", Market.UnitedStates, 10)],
+        };
+
+        var run = BacktestSimulator.Run(bars, new ScriptedStrategy(script),
+            new BacktestConfig(1_000m, ZeroCost, CostSensitivity.Baseline));
+
+        run.Fills.Should().BeEmpty();
+        run.UnfilledOrderCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void 同一銘柄同日の重複バーは後勝ちで例外にしない()
+    {
+        // IBarDataSource（外部境界）が同一 (Symbol,Market,Date) を重複返却しても例外にせず、後勝ちで評価する（レビュー指摘 #99）。
+        var bars = new[]
+        {
+            Bar(1, 10m, 10m),
+            new PriceBar("AAA", Market.UnitedStates, new DateOnly(2024, 1, 1), 10m, 10m, 10m, 99m, 1_000), // 重複（後勝ち）
+            Bar(2, 10m, 10m),
+        };
+
+        var act = () => BacktestSimulator.Run(bars, new ScriptedStrategy([]),
+            new BacktestConfig(1_000m, ZeroCost, CostSensitivity.Baseline));
+
+        act.Should().NotThrow();
     }
 }
