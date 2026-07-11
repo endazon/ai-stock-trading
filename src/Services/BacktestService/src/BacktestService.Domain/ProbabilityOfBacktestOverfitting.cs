@@ -19,10 +19,14 @@ public static class ProbabilityOfBacktestOverfitting
         if (blockCount < partitions)
             throw new ArgumentException("ブロック数は分割数以上である必要があります。", nameof(performanceByBlock));
 
+        // 先頭行 null を strategyCount 算出前に弾く（素の NullReferenceException を出さない・#100 レビュー持ち越し指摘）。
+        if (performanceByBlock[0] is null)
+            throw new ArgumentException("先頭ブロック行が null です。", nameof(performanceByBlock));
+
         var strategyCount = performanceByBlock[0].Length;
         if (strategyCount < 2)
             throw new ArgumentException("戦略は 2 つ以上である必要があります。", nameof(performanceByBlock));
-        // 全ブロック行の戦略数は揃っている必要がある（不揃いは素の IndexOutOfRange ではなく一貫した検証で弾く・#100 レビュー指摘）。
+        // 全ブロック行の戦略数は揃っている必要がある（不揃い・null は素の例外ではなく一貫した検証で弾く・#100 レビュー指摘）。
         if (performanceByBlock.Any(row => row is null || row.Length != strategyCount))
             throw new ArgumentException("全ブロック行の戦略数は一致している必要があります。", nameof(performanceByBlock));
 
