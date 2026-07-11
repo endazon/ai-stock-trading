@@ -62,7 +62,13 @@ public static class ReportRenderer
         _ => ("日報", "## 1. 当日サマリ", "## 2. 市況・振り返り", "## 3. 翌営業日の方針"),
     };
 
-    // 種別ごとのサマリ表の行（数値は PnlSummary から）。週報/月報は勝率を含む。
+    // データ連携（#63 台帳/#12/#81・市場データ）が必要でこのスライスでは算出しない項目の表記。
+    // テンプレートの「決まった形式」（04_report-templates・FR-16）の行構成は保ちつつ、値は後続連携で埋める。
+    private const string Pending = "（データ連携後）";
+
+    // 種別ごとのサマリ表の行（04_report-templates の各サマリ定義に一致）。数値は PnlSummary（コード集計値）から埋め、
+    // データ依存の行（総資産・年初来・費用率・トリガー内訳・目標達成）は Pending プレースホルダで形式を保つ。
+    // 取引回数（買/売/決済）は計画の「うち変動トリガー・損切り」内訳（#63 台帳連携待ち）の代替表記（仕様書に明記）。
     private static IEnumerable<(string Label, string Value)> SummaryRows(ReportView view)
     {
         var p = view.Pnl;
@@ -72,18 +78,18 @@ public static class ReportRenderer
         {
             case ReportKind.Weekly:
                 yield return ("週間実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
-                yield return ("勝率（勝ち/決済）", WinRate(p));
+                yield return ("勝率（勝ち取引/全決済取引）", WinRate(p));
                 yield return ("取引回数（買/売/決済）", counts);
                 yield return ("費用合計（手数料・諸費用・為替）", Yen(p.TotalCost));
+                yield return ("週次目標に対する達成", Pending);
                 break;
 
             case ReportKind.Monthly:
                 yield return ("月間実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
-                yield return ("勝率（勝ち/決済）", WinRate(p));
-                yield return ("評価損益（税引前・参考）", Yen(p.UnrealizedPnl));
-                yield return ("取引回数（買/売/決済）", counts);
-                yield return ("費用合計（手数料・諸費用・為替）", Yen(p.TotalCost));
-                yield return ("源泉徴収税額", Yen(p.TaxWithheld));
+                yield return ("総資産（月初→月末）", Pending);
+                yield return ("年初来累計損益", Pending);
+                yield return ("費用合計 / 費用率", $"{Yen(p.TotalCost)} / {Pending}");
+                yield return ("月次目標に対する達成", Pending);
                 break;
 
             default: // Daily
@@ -92,17 +98,18 @@ public static class ReportRenderer
                 yield return ("取引回数（買/売/決済）", counts);
                 yield return ("費用合計（手数料・諸費用・為替）", Yen(p.TotalCost));
                 yield return ("源泉徴収税額", Yen(p.TaxWithheld));
+                yield return ("日次目標に対する達成", Pending);
                 break;
         }
     }
 
-    // 勝率（勝ち決済 / 全決済）。決済ゼロなら "0/0（-）"。パーセントは文化非依存で整数表記する。
+    // 勝率（04_report-templates: 週報「<n%（n/n）>」形式）。決済ゼロなら "-（0/0）"。パーセントは文化非依存で整数表記する。
     private static string WinRate(PnlSummary p) =>
         p.RealizingTradeCount == 0
-            ? "0/0（-）"
-            : string.Format(CultureInfo.InvariantCulture, "{0}/{1}（{2:0}%）",
-                p.WinningTradeCount, p.RealizingTradeCount,
-                (decimal)p.WinningTradeCount / p.RealizingTradeCount * 100m);
+            ? "-（0/0）"
+            : string.Format(CultureInfo.InvariantCulture, "{0:0}%（{1}/{2}）",
+                (decimal)p.WinningTradeCount / p.RealizingTradeCount * 100m,
+                p.WinningTradeCount, p.RealizingTradeCount);
 
     // 円建て表記（符号付き・千区切り）。実現/評価損益は符号を明示する。
     private static string Yen(decimal amount) =>

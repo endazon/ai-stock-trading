@@ -62,7 +62,8 @@ public class ReportRendererTests
         md.Should().Contain("# 週報 2026-W28");
         md.Should().Contain("## 1. 週間サマリ");
         md.Should().Contain("週間実現損益（税引後・費用込み） | +1,520 円");
-        md.Should().Contain("勝率（勝ち/決済） | 3/4（75%）"); // WinningTradeCount/RealizingTradeCount
+        md.Should().Contain("勝率（勝ち取引/全決済取引） | 75%（3/4）"); // 04_report-templates の <n%（n/n）> 形式
+        md.Should().Contain("週次目標に対する達成 | （データ連携後）"); // 目標データ連携は後続
         md.Should().Contain("## 2. 振り返りと評価");
         md.Should().Contain("## 3. 翌週の方針");
     }
@@ -79,7 +80,9 @@ public class ReportRendererTests
         md.Should().Contain("# 月報 2026-07");
         md.Should().Contain("## 1. 月間サマリ");
         md.Should().Contain("月間実現損益（税引後・費用込み） | +1,520 円");
-        md.Should().Contain("勝率（勝ち/決済） | 3/4（75%）");
+        // 04_report-templates の月間サマリ行構成。データ依存行は後続連携で埋める（形式は保つ）。
+        md.Should().Contain("総資産（月初→月末） | （データ連携後）");
+        md.Should().Contain("年初来累計損益 | （データ連携後）");
         md.Should().Contain("## 3. 翌月の方針・投資方針");
     }
 
@@ -93,7 +96,7 @@ public class ReportRendererTests
 
         var md = ReportRenderer.RenderMarkdown(view);
 
-        md.Should().Contain("勝率（勝ち/決済） | 0/0（-）");
+        md.Should().Contain("勝率（勝ち取引/全決済取引） | -（0/0）");
     }
 
     [Fact]
