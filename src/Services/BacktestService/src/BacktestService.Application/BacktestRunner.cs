@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Backtest.Application;
 
-// FR-15, IADR-0037: バックテスト実行要求。ユニバース（PIT）・期間・戦略・設定。
+// FR-15, IADR-0043: バックテスト実行要求。ユニバース（PIT）・期間・戦略・設定。
 public sealed record BacktestRequest(
     SecurityUniverse Universe,
     DateOnly From,
@@ -11,7 +11,7 @@ public sealed record BacktestRequest(
     IBacktestStrategy Strategy,
     BacktestConfig Config);
 
-// FR-15, IADR-0037: 過去データ供給の抽象からバーを取得し、PIT ユニバースで生存者バイアスを排して
+// FR-15, IADR-0043: 過去データ供給の抽象からバーを取得し、PIT ユニバースで生存者バイアスを排して
 // 決定的シミュレーションを実行するオーケストレータ。
 public sealed class BacktestRunner
 {

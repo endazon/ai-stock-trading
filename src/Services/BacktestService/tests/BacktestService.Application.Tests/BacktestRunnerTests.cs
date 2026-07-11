@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Application.Tests;
 
-// FR-15, IADR-0037: 過去データ供給の抽象（IBarDataSource）と PIT ユニバースでの生存者バイアス排除を検証する。
+// FR-15, IADR-0043: 過去データ供給の抽象（IBarDataSource）と PIT ユニバースでの生存者バイアス排除を検証する。
 public class BacktestRunnerTests
 {
     private static readonly BacktestCostModel ZeroCost =

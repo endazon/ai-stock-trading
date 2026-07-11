@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0037: 銘柄ユニバースの上場/上場廃止区間。
+// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0043: 銘柄ユニバースの上場/上場廃止区間。
 // 生存者バイアスを排除するため、当時上場していた銘柄（後に廃止された銘柄を含む）を Point-in-Time で表現する。
 // ListedFrom を含み、DelistedOn を含まない半開区間 [ListedFrom, DelistedOn) が構成期間。DelistedOn が null なら現在も上場。
 public sealed record UniverseMembership(string Symbol, Market Market, DateOnly ListedFrom, DateOnly? DelistedOn)

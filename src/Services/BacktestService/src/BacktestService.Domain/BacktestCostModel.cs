@@ -11,7 +11,7 @@ public enum CostSensitivity
     Doubled,
 }
 
-// FR-15, FR-17, IADR-0037: バックテストのコストモデル。FR-17 の概算費用関数（CostCalculator）を基礎に、
+// FR-15, FR-17, IADR-0043: バックテストのコストモデル。FR-17 の概算費用関数（CostCalculator）を基礎に、
 // バックテスト固有のスリッページ（約定代金比・片道）とコスト倍率（感度分析）を上乗せする薄いラッパ。
 // 判断時見積り・事後集計・バックテストが同一の費用式を共有する（乖離防止）。
 public sealed record BacktestCostModel(TradingAssumptions Assumptions, decimal SlippageRatio)
