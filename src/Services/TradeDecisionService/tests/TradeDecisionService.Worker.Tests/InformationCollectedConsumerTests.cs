@@ -21,12 +21,13 @@ public class InformationCollectedConsumerTests
 
     private sealed class FakeLlm(string output) : ILlmCompletionClient
     {
-        public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) => Task.FromResult(output);
+        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default) =>
+            Task.FromResult(output);
     }
     // 特定銘柄でのみ例外を投げる LLM（銘柄はプロンプトに含まれる）。銘柄別の失敗分離を検証する。
     private sealed class ThrowingForSymbolLlm(string badSymbol, string output) : ILlmCompletionClient
     {
-        public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) =>
+        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default) =>
             prompt.Contains(badSymbol, StringComparison.Ordinal)
                 ? throw new InvalidOperationException($"LLM 障害（{badSymbol}）")
                 : Task.FromResult(output);

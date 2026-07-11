@@ -13,7 +13,10 @@ public class BacktestSimulatorTests
         new(TradingAssumptionsDefaults.Create(), SlippageRatio: 0m);
 
     private static PriceBar Bar(int day, decimal open, decimal close) =>
-        new("AAA", Market.UnitedStates, new DateOnly(2024, 1, day), open, Math.Max(open, close), Math.Min(open, close), close, 1_000);
+        Bar("AAA", day, open, close);
+
+    private static PriceBar Bar(string symbol, int day, decimal open, decimal close) =>
+        new(symbol, Market.UnitedStates, new DateOnly(2024, 1, day), open, Math.Max(open, close), Math.Min(open, close), close, 1_000);
 
     // 指定日に指定注文を出すスクリプト戦略。
     private sealed class ScriptedStrategy(Dictionary<DateOnly, BacktestOrder[]> script) : IBacktestStrategy
@@ -142,6 +145,38 @@ public class BacktestSimulatorTests
 
         run.Fills.Should().BeEmpty();
         run.UnfilledOrderCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void 上場廃止で以降バーが来ない建玉は最終終値で凍結評価される_SliceA既知の制約()
+    {
+        // Slice A の既知制約（#99 レビュー指摘）: シミュレータは渡されたバーのみを見る純関数で「上場廃止」を知らない。
+        // PIT ユニバース（SecurityUniverse／BacktestRunner）で廃止後バーが除外されると、当該建玉は以降マークが
+        // 更新されず「最終観測終値」で凍結評価され続ける（強制決済・回収価値モデルは Slice B/C で扱う）。
+        // 本テストはこの挙動を意図として固定し、将来の変更を明示的にする。
+        // AAA を Day2 まで保有 → Day3 以降 AAA のバーは来ない（廃止相当）。BBB が timeline を延長する。
+        var bars = new[]
+        {
+            Bar("AAA", 1, 10m, 10m), Bar("BBB", 1, 5m, 5m),
+            Bar("AAA", 2, 10m, 20m), Bar("BBB", 2, 5m, 5m), // Day2: AAA 約定 @10、終値 20 を記録
+            Bar("BBB", 3, 5m, 5m),                          // Day3: AAA バー無し（廃止相当）
+            Bar("BBB", 4, 5m, 5m),                          // Day4: AAA バー無し
+        };
+        var script = new Dictionary<DateOnly, BacktestOrder[]>
+        {
+            [new DateOnly(2024, 1, 1)] = [new BacktestOrder("AAA", Market.UnitedStates, 10)],
+        };
+
+        var run = BacktestSimulator.Run(bars, new ScriptedStrategy(script),
+            new BacktestConfig(1_000m, ZeroCost, CostSensitivity.Baseline));
+
+        // Day2 に AAA 10株を始値 10 で約定（現金 1000-100=900）。以降 AAA のバーは来ず追加約定なし。
+        run.Fills.Should().ContainSingle();
+        run.UnfilledOrderCount.Should().Be(0); // AAA への新規注文は Day1 のみ → 未約定は発生しない
+        // Day3・Day4 は AAA を最終終値 20 で凍結評価: 900 + 10*20 = 1100（値が更新されず一定）。
+        run.EquityCurve.Should().HaveCount(4);
+        run.EquityCurve[2].Should().Be(1_100m);
+        run.EquityCurve[3].Should().Be(1_100m); // 廃止後も同一価格で凍結（Slice A の既知制約）
     }
 
     [Fact]
