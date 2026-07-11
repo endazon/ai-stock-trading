@@ -42,6 +42,22 @@ public class TradingDefaultsTests
     }
 
     [Fact]
+    public void 相場操縦検知の既定しきい値はIADR0040の初期値と一致する()
+    {
+        // FR-19, IADR-0040: 検知アルゴリズムの既定しきい値を固定する（運用データによる較正はフォローアップ）。
+        var settings = TradingDefaults.CreateManipulationDetectionSettings();
+
+        settings.LookbackWindow.Should().Be(TimeSpan.FromMinutes(5));
+        settings.MinimumSampleSize.Should().Be(5);
+        settings.MaxCancellationRatio.Should().Be(0.7m);
+        settings.MaxAmendmentsPerOrder.Should().Be(3.0m);
+        settings.MinFillRatio.Should().Be(0.1m);
+        settings.ShortLivedCancelThreshold.Should().Be(TimeSpan.FromSeconds(2));
+        settings.MaxShortLivedCancels.Should().Be(3);
+        settings.LayeringOrderCount.Should().Be(3);
+    }
+
+    [Fact]
     public void 運用段階の既定値はStage0のペーパーモードである()
     {
         var stage = TradingDefaults.CreateStageSettings();
@@ -49,5 +65,25 @@ public class TradingDefaultsTests
         stage.Stage.Should().Be(TradingStage.Stage0Verification);
         stage.Mode.Should().Be(TradeMode.Paper);
         stage.CapitalCap.Should().Be(100_000m); // 初期投入資金（利用者決定 2026-07-07）
+    }
+
+    // FR-20, ADR-0008: 段階ゲート方針の既定。Stage 0/1＝ペーパー、Stage 2/3＝実弾。撤退倍率 1.5。
+    [Fact]
+    public void 段階ゲート方針の既定は段階別モードと資金上限を定義する()
+    {
+        var policy = TradingDefaults.CreateStagePolicy();
+
+        policy.WithdrawalDrawdownMultiple.Should().Be(1.5m); // ADR-0008: 実DD ≥ バックテスト最大DD × 1.5
+
+        policy.SettingsFor(TradingStage.Stage0Verification)
+            .Should().Be(new StageSettings(TradingStage.Stage0Verification, TradeMode.Paper, 100_000m));
+        policy.SettingsFor(TradingStage.Stage1Paper)
+            .Should().Be(new StageSettings(TradingStage.Stage1Paper, TradeMode.Paper, 100_000m));
+        // Stage 2 最小実弾: 実弾モード・保守的暫定既定（1 ポジション相当）
+        policy.SettingsFor(TradingStage.Stage2MinimalLive)
+            .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 35_000m));
+        // Stage 3 段階増額: 実弾モード・初期投入資金まで
+        policy.SettingsFor(TradingStage.Stage3ScaledLive)
+            .Should().Be(new StageSettings(TradingStage.Stage3ScaledLive, TradeMode.Live, 100_000m));
     }
 }

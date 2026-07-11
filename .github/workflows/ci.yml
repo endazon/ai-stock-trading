@@ -31,9 +31,10 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
+  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）と、
+  # scripts/ の単体テスト（commit-allowlist の実在性・整合を含む）を実行する。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
-  # fetch-depth: 0 は base..HEAD の範囲解決に必須。
+  # fetch-depth: 0 は base..HEAD の範囲解決と、allowlist の SHA 到達可能性検証（幻 SHA 検出）に必須。
   commit-messages:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
@@ -48,6 +49,10 @@ jobs:
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-commit-messages.js
+      # commit-allowlist.json のエントリが現行履歴に実在・到達可能・非準拠であることを検証する
+      # 回帰テストを含む（幻 SHA 再発防止・Issue #47）。fetch-depth: 0 によりフル履歴で判定される。
+      - name: Run scripts unit tests
+        run: node scripts/scripts.test.js
 
   # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（Issue #59 再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
