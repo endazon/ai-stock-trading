@@ -2,7 +2,7 @@
 title: 報告書サービス 対話的確定ロジック・取引履歴明細レンダリング（fake データ）
 type: spec
 status: review
-related_ids: [FR-06, FR-07, FR-16, UC-03, UC-04, UC-05, ADR-0003, ADR-0007]
+related_ids: [FR-06, FR-07, FR-16, UC-03, UC-04, UC-05, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
 updated: 2026-07-11
@@ -29,7 +29,7 @@ plan_refs:
     シーケンス「ドラフト提示→修正指示→改訂 v2→承認→確定」）
   - `06_technical/04_report-templates.md`（日報 §2 取引履歴（全明細）表・取引詳細ブロック・見送り判断）
   - `04_workflows/03_reporting-cycle.md`（確定で方針有効化）
-- ADR: ADR-0003（確定前方針は不適用）、ADR-0007（確定は利用者のみ）
+- ADR: ADR-0003（確定前方針は不適用・**方針の確定には利用者との対話を要し完全無人での方針変更は行わない**＝OwnerOnly の根拠）
 - 関連 IADR: 本作業で新規 [IADR-0038](../adr/IADR-0038_report-review-state-machine-and-detail-rendering.md)。踏襲 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)（版番号付き冪等確定）・[IADR-0032](../adr/IADR-0032_report-generation.md)（純関数テンプレート化）
 - 対象 Issue: #14（対話的確定ロジック・明細レンダリングのスライス）
 
@@ -60,14 +60,14 @@ Slice A は `TradingReport` の `Draft`/`Confirmed` 二状態と版番号付き�
 
 | 現在状態 | Present | RequestChanges | Revise | Approve |
 | --- | --- | --- | --- | --- |
-| Drafting | → PendingApproval | 不可 | → Drafting（版+1） | 不可 |
+| Drafting | → PendingApproval | 不可 | 不可 | 不可 |
 | PendingApproval | 冪等（変化なし） | → ChangesRequested | → Drafting（版+1） | → Confirmed（版+1） |
 | ChangesRequested | → PendingApproval | 冪等（変化なし） | → Drafting（版+1） | 不可 |
 | Confirmed | 不可 | 不可 | 不可 | 冪等（変化なし・再確定） |
 
 **ガード（不変条件・すべて決定的）**:
 
-- **操作者必須**（OwnerOnly・ADR-0007）: `Actor` が空なら `ActorRequired` で拒否。実際の認証/認可（未認証 401・ロール無し 403）は Worker/HTTP 層の後続結線で担う。
+- **操作者必須**（OwnerOnly・ADR-0003: 方針の確定には利用者との対話を要する）: `Actor` が空なら `ActorRequired` で拒否。実際の認証/認可（未認証 401・ロール無し 403）は Worker/HTTP 層の後続結線で担う。
 - **版番号の楽観排他**（07_discord-bot-design 二重実行防止）: 状態を変える操作は `ExpectedVersion == 現在の Version` を要求。古い版は `VersionConflict` で拒否（「最新ドラフトを確認してください」）。
 - **冪等**: `Approve` 済み（Confirmed）への同版 `Approve` は冪等（`Transitioned=false`・拒否ではない）。同様に提示済みへの `Present`、差し戻し済みへの `RequestChanges` も冪等。
 - **終端不変**: `Confirmed` からの `Present`/`RequestChanges`/`Revise` は `AlreadyConfirmed` で拒否（確定済みは不変・ADR-0003）。

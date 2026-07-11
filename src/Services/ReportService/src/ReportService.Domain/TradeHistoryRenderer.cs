@@ -26,8 +26,9 @@ public static class TradeHistoryRenderer
             sb.Append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
             foreach (var l in view.Lines)
             {
+                // 自由記述（銘柄名・判断根拠）は Markdown 表セルとして安全化する（実 LLM 取引詳細文の結線後にパイプ/改行で表が崩れるのを防ぐ）。
                 sb.Append(CultureInfo.InvariantCulture,
-                    $"| {l.Index} | {Time(l.Time)} | {MarketLabel(l.Market)} | {l.SymbolCode} {l.SymbolName} | {SideLabel(l.Side)} | {Num(l.Quantity)} | {Num(l.FillPrice)} | {Num(l.Cost)} | {Num(l.Tax)} | {Signed(l.RealizedPnl)} | {TriggerLabel(l.Trigger)} | {l.RationaleSummary} |\n");
+                    $"| {l.Index} | {Time(l.Time)} | {MarketLabel(l.Market)} | {Cell(l.SymbolCode)} {Cell(l.SymbolName)} | {SideLabel(l.Side)} | {Num(l.Quantity)} | {Num(l.FillPrice)} | {Num(l.Cost)} | {Num(l.Tax)} | {Signed(l.RealizedPnl)} | {TriggerLabel(l.Trigger)} | {Cell(l.RationaleSummary)} |\n");
             }
 
             sb.Append('\n');
@@ -62,6 +63,10 @@ public static class TradeHistoryRenderer
 
         return sb.ToString();
     }
+
+    // Markdown 表セルの安全化: パイプはエスケープし改行は空白へ畳む（表の区切り崩れ・行崩れを防ぐ）。
+    private static string Cell(string value) =>
+        value.Replace("|", "\\|", StringComparison.Ordinal).ReplaceLineEndings(" ");
 
     private static string Time(TimeOnly time) => time.ToString("HH:mm", CultureInfo.InvariantCulture);
 

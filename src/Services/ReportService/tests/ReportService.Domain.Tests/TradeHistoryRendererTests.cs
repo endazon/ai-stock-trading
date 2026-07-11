@@ -79,6 +79,28 @@ public class TradeHistoryRendererTests
     }
 
     [Fact]
+    public void 表セルのパイプと改行を安全化し表崩れを防ぐ()
+    {
+        // 実 LLM 取引詳細文の結線後に判断根拠へパイプ・改行が混ざっても表が崩れないこと（後続結線に備えた安全化）。
+        var view = new TradeHistoryView
+        {
+            Lines =
+            [
+                new TradeHistoryLine(1, new TimeOnly(9, 0), Market.Japan, "7203", "トヨタ", TradeSide.Buy,
+                    Quantity: 100, FillPrice: 2_500m, Cost: 120m, Tax: 0m, RealizedPnl: 0m,
+                    TradeTrigger.Scheduled, "支持線で反発 | 出来高増\n改行あり"),
+            ],
+        };
+
+        var md = TradeHistoryRenderer.RenderMarkdown(view);
+
+        md.Should().Contain("支持線で反発 \\| 出来高増 改行あり"); // パイプはエスケープ、改行は空白へ
+        // 明細行の構造区切り（|）が崩れていない: エスケープ済み \| を除くと 12 列＝13 本の区切りパイプが残る。
+        var row = md.Split('\n').First(line => line.StartsWith("| 1 |", StringComparison.Ordinal));
+        row.Replace("\\|", "", StringComparison.Ordinal).Count(c => c == '|').Should().Be(13);
+    }
+
+    [Fact]
     public void 約定なしの日はプレースホルダで形式を保つ()
     {
         var md = TradeHistoryRenderer.RenderMarkdown(new TradeHistoryView());

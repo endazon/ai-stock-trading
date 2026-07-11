@@ -37,7 +37,7 @@ public enum ReviewAction
 // 拒否理由。拒否時は状態を変えずに返す。
 public enum ReviewRejectionReason
 {
-    /// <summary>操作者未指定（OwnerOnly・ADR-0007）。</summary>
+    /// <summary>操作者未指定（OwnerOnly・ADR-0003: 方針の確定には利用者との対話を要する）。</summary>
     ActorRequired,
 
     /// <summary>版番号不一致（二重実行防止・「最新ドラフトを確認してください」）。</summary>
@@ -73,7 +73,7 @@ public static class ReportReviewStateMachine
         ArgumentNullException.ThrowIfNull(review);
         ArgumentNullException.ThrowIfNull(command);
 
-        // OwnerOnly: 操作者必須（ADR-0007）。実認可（未認証 401・ロール無し 403）は HTTP 層の後続結線で担う。
+        // OwnerOnly: 操作者必須（ADR-0003: 方針の確定には利用者との対話を要し完全無人での方針変更は行わない）。実認可（未認証 401・ロール無し 403）は HTTP 層の後続結線で担う。
         if (string.IsNullOrWhiteSpace(command.Actor))
             return Reject(review, ReviewRejectionReason.ActorRequired);
 
