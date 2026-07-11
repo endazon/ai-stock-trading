@@ -65,12 +65,12 @@ internal static class ReportEndpoints
             return policy is null ? Results.NotFound() : Results.Ok(policy);
         });
 
-        // FR-06/16, IADR-0032: 日報ドラフト生成（数値はコード集計・散文は LLM ドラフト）。生成のみで永続化しない。
+        // FR-06/16, IADR-0032: 報告書ドラフト生成（日報/週報/月報・数値はコード集計・散文は LLM ドラフト）。生成のみで永続化しない。
         // 前提条件は暫定既定値（#19 のバージョン付き取得・#63 台帳連携は #22 後続）。
         g.MapPost("/{periodKey}/draft", async (string periodKey, DraftReportRequest req, ReportDraftService svc, CancellationToken ct) =>
         {
-            var draft = await svc.BuildDailyDraftAsync(new DailyDraftRequest(
-                periodKey, req.Date, req.Markets, req.AssumptionsVersion, req.BasedOn,
+            var draft = await svc.BuildDraftAsync(new DraftRequest(
+                req.Kind, periodKey, req.Date, req.Markets, req.AssumptionsVersion, req.BasedOn,
                 req.PolicySummary ?? string.Empty, req.Fills, req.CurrentPrices), ct);
             return Results.Ok(new { periodKey, markdown = draft.Markdown, pnl = draft.Pnl });
         });
@@ -137,8 +137,10 @@ internal sealed record ConfirmReportRequest(int ExpectedVersion);
 // 損益集計の要求（約定列＋任意の現在値。銘柄→現在値）。
 internal sealed record PnlSummaryRequest(List<PeriodTradeFill> Fills, Dictionary<string, decimal>? CurrentPrices);
 
-// 日報ドラフト生成の要求（数値はコード集計・散文は LLM ドラフト）。Fills は集計対象の約定列（#63 台帳連携は #22 後続）。
+// 報告書ドラフト生成の要求（数値はコード集計・散文は LLM ドラフト）。Kind で日報/週報/月報を切り替える。
+// Fills は集計対象の約定列（#63 台帳連携は #22 後続）。
 internal sealed record DraftReportRequest(
+    ReportKind Kind,
     DateOnly Date,
     List<string>? Markets,
     int AssumptionsVersion,

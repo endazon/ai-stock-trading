@@ -171,6 +171,7 @@ public class ReportEndpointsTests
 
         var body = new
         {
+            Kind = "Daily",
             Date = "2026-07-10",
             Markets = new[] { "US" },
             AssumptionsVersion = 1,
@@ -192,6 +193,34 @@ public class ReportEndpointsTests
         draft.Markdown.Should().Contain("report_type: daily");
         draft.Markdown.Should().Contain("翌営業日は押し目買い");
         draft.Pnl.RealizedPnlGross.Should().Be(2_000m);
+    }
+
+    [Fact]
+    public async Task 週報ドラフト生成は週間サマリを含むMarkdownを返す()
+    {
+        // FR-06/16: Kind=Weekly・ISO 週 PeriodKey で週報を生成する。
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        var body = new
+        {
+            Kind = "Weekly",
+            Date = "2026-07-06", // ISO 週 2026-W28
+            Markets = new[] { "US" },
+            AssumptionsVersion = 1,
+            BasedOn = (string?)null,
+            PolicySummary = "翌週は半導体重点",
+            Fills = Array.Empty<object>(),
+            CurrentPrices = (object?)null,
+        };
+
+        var res = await OwnerClient(factory).PostAsJsonAsync("/reports/weekly-2026-W28/draft", body);
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var draft = await res.Content.ReadFromJsonAsync<DraftDto>();
+        draft!.Markdown.Should().Contain("# 週報 2026-W28");
+        draft.Markdown.Should().Contain("report_type: weekly");
+        draft.Markdown.Should().Contain("## 1. 週間サマリ");
+        draft.Markdown.Should().Contain("翌週は半導体重点");
     }
 
     private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);

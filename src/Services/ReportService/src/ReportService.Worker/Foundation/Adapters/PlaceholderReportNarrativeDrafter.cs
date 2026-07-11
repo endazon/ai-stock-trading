@@ -10,7 +10,7 @@ internal sealed class PlaceholderReportNarrativeDrafter(ILogger<PlaceholderRepor
 {
     private int _warned;
 
-    public Task<string> DraftDailyNarrativeAsync(DailyNarrativeContext context, CancellationToken cancellationToken = default)
+    public Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _warned, 1) == 0)
         {

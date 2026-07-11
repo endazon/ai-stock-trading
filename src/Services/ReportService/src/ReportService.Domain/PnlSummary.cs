@@ -21,4 +21,7 @@ public sealed record PnlSummary(
     int TradeCount,
 
     /// <summary>決済（実現が発生した）件数。</summary>
-    int RealizingTradeCount);
+    int RealizingTradeCount,
+
+    /// <summary>勝ち決済件数（実現損益 &gt; 0 の決済数）。勝率＝勝ち/決済（週報/月報）。</summary>
+    int WinningTradeCount);
