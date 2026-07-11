@@ -14,10 +14,14 @@ public static class PortfolioProjection
     public static DateOnly TradeDate(DateTimeOffset instant) =>
         DateOnly.FromDateTime(instant.ToOffset(TradingDayOffset).DateTime);
 
+    // IADR-0036: currentPrices（(Symbol,Market)→現在値）と equityHighWaterMark（資金ピーク）を与えると含み損益・DD を
+    // 時価で算出する。既定（null）では従来どおり UnrealizedPnl=0/DrawdownRatio=0（実供給の結線は #22/#82 の後続）。
     public static PortfolioState Project(
         IReadOnlyList<LedgerFill> fills,
         DateOnly today,
-        decimal initialCapital)
+        decimal initialCapital,
+        IReadOnlyDictionary<(string Symbol, Market Market), decimal>? currentPrices = null,
+        decimal? equityHighWaterMark = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
 
@@ -64,26 +68,31 @@ public static class PortfolioProjection
         }
 
         var invested = 0m;
-        var openCount = 0;
-        foreach (var (qty, avgCost) in positions.Values)
+        var openPositions = new List<OpenPosition>();
+        foreach (var (key, pos) in positions)
         {
-            if (qty == 0)
+            if (pos.Qty == 0)
                 continue;
-            openCount++;
-            invested += Math.Abs(qty) * avgCost;
+            invested += Math.Abs(pos.Qty) * pos.AvgCost;
+            var side = pos.Qty > 0 ? TradeSide.Buy : TradeSide.Sell;
+            openPositions.Add(new OpenPosition(key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost));
         }
+
+        // IADR-0036: 含み損益は現在値入力から時価算出（現在値欠損は 0）。当日開始運用資金（固定基準）= 初期資金 + 当日より前の実現損益。
+        var capital = initialCapital + realizedBeforeToday;
+        var unrealized = PortfolioValuation.UnrealizedPnl(openPositions, currentPrices);
+        // 現在エクイティ = 固定基準 + 当日実現 + 含み。DD はピーク入力から算出（ピーク追跡は #22/#82 の後続）。
+        var currentEquity = capital + realizedToday + unrealized;
 
         return new PortfolioState
         {
-            // 当日開始運用資金（固定基準）= 初期資金 + 当日より前の実現損益。当日実現・含みは含めない（当日中不変）。
-            Capital = initialCapital + realizedBeforeToday,
-            OpenPositionCount = openCount,
+            Capital = capital,
+            OpenPositionCount = openPositions.Count,
             InvestedCapital = invested,
             DailyOrderedAmount = orderedToday,
             DailyRealizedPnl = realizedToday,
-            // 含み損益・DD は日次終値マーク（市場データ連携）が必要のため本スライスでは 0（IADR-0008/0018）。
-            UnrealizedPnl = 0m,
-            DrawdownRatio = 0m,
+            UnrealizedPnl = unrealized,
+            DrawdownRatio = PortfolioValuation.DrawdownRatio(equityHighWaterMark, currentEquity),
             ConsecutiveLosses = consecutiveLosses,
             SymbolsTradedToday = symbolsTradedToday,
         };
