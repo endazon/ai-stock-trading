@@ -80,18 +80,20 @@ ok('PR タイトル Revert はスキップ扱いで 0', () =>
 ok('PR タイトル [skip ci] はスキップ扱いで 0', () =>
   assert.strictEqual(silent(() => checkSingleTitle('なんでも [skip ci]')), 0));
 
-// --- check-commit-messages: findAllowlisted（規約導入前コミットの恒久除外） ---
+// --- check-commit-messages: findAllowlisted（適用除外コミットの恒久除外） ---
 
 ok('allowlist は短縮 SHA を前方一致で照合', () => {
-  const al = [{ hash: 'd1652dc', reason: 'x' }];
-  assert.ok(findAllowlisted('d1652dcf44ba3dfff6c4f5797defc38d1b863ca8', al), '前方一致で除外されるべき');
+  // 現行 develop に実在する除外コミット（d1cfeb5f）の短縮 SHA で照合する（Issue #47）。
+  const al = [{ hash: 'd1cfeb5f', reason: 'x' }];
+  assert.ok(findAllowlisted('d1cfeb5ff1d6fcefc44afde8231fdc2644fbb6fe', al), '前方一致で除外されるべき');
   assert.strictEqual(findAllowlisted('deadbeefdeadbeef', al), null, '無関係な SHA は除外されない');
 });
 
-// 規約導入前の非準拠 5 コミットが commit-allowlist.json で除外されること（回帰防止）。
-ok('規約導入前の非準拠5コミットは allowlist 対象', () => {
+// 現行 develop に実在する非準拠コミットが commit-allowlist.json で除外されること（回帰防止・Issue #47）。
+// SHA は develop 上の実コミットに一致させる（rebase 由来の幻 SHA を排除）。
+ok('develop 上の非準拠コミットは allowlist 対象', () => {
   const al = loadAllowlist();
-  const known = ['d1652dcf', '394fa1fd', '079490d1', '153810a4', 'd4835097'];
+  const known = ['d1cfeb5f', '739bf023'];
   for (const h of known) {
     assert.ok(findAllowlisted(h, al), `${h} が commit-allowlist.json に無い`);
   }
