@@ -1,0 +1,111 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
+using AiStockTrading.RiskManagement.Application.Services;
+using AiStockTrading.RiskManagement.Application.State;
+using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.RiskManagement.Domain.Manipulation;
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
+using FluentAssertions;
+using Xunit;
+
+namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
+
+// FR-19, IADR-0006/0037: 検出器を注入した OrderScreeningService の結合検証。
+// 受け入れ基準: ガード有効（既定）＋該当履歴 → 拒否（ManipulativeOrderPattern）／正常履歴 → 承認／ガード無効 → スキップ。
+public class OrderScreeningManipulationTests
+{
+    private static readonly DateOnly TradingDay = new(2026, 7, 11);
+    private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 35, 0, TimeSpan.Zero);
+
+    private static PortfolioState HealthyState => new()
+    {
+        Capital = 100_000m,
+        OpenPositionCount = 0,
+        InvestedCapital = 0m,
+        DailyOrderedAmount = 0m,
+        DailyRealizedPnl = 0m,
+        UnrealizedPnl = 0m,
+    };
+
+    private static OrderIntent EntryIntent() =>
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+
+    private static TradeDecisionMade Decision(OrderIntent intent) =>
+        new(Guid.NewGuid(), intent, "テスト判断", Now);
+
+    // 見せ玉パターンを AAPL/US の窓内に投入する。
+    private static void SeedManipulativeActivity(InMemoryOrderActivitySource source)
+    {
+        for (var i = 0; i < 6; i++)
+        {
+            var placedAt = Now.AddSeconds(-60 + i);
+            source.Record("AAPL", Market.UnitedStates, new OrderActivityRecord
+            {
+                PlacedAt = placedAt,
+                Side = TradeSide.Buy,
+                Quantity = 10,
+                FilledQuantity = 0,
+                Status = OrderStatus.Cancelled,
+                TerminalAt = placedAt.AddSeconds(1),
+            });
+        }
+    }
+
+    private static OrderScreeningService CreateService(
+        InMemoryOrderActivitySource source, InMemoryRiskSettingsStore settingsStore)
+    {
+        var clock = new FakeClock(Now, TradingDay);
+        var portfolio = new FakePortfolioStateProvider(HealthyState);
+        var killSwitch = new InMemoryKillSwitchStore();
+        var lockout = new InMemoryLockoutStore();
+        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch);
+        var detector = new ManipulativeOrderPatternDetector(
+            source, clock, TradingDefaults.CreateManipulationDetectionSettings());
+        return new OrderScreeningService(
+            settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(), detector);
+    }
+
+    [Fact]
+    public void ガード有効かつ該当履歴の注文は相場操縦で拒否される()
+    {
+        var source = new InMemoryOrderActivitySource();
+        SeedManipulativeActivity(source);
+        var service = CreateService(source, new InMemoryRiskSettingsStore());
+
+        var outcome = service.Screen(Decision(EntryIntent()));
+
+        outcome.IsApproved.Should().BeFalse();
+        outcome.Rejected!.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
+    }
+
+    [Fact]
+    public void 該当履歴がなければ承認される()
+    {
+        // 検出器は注入されているが窓が空（該当なし）→ 相場操縦では拒否しない。
+        var service = CreateService(new InMemoryOrderActivitySource(), new InMemoryRiskSettingsStore());
+
+        var outcome = service.Screen(Decision(EntryIntent()));
+
+        outcome.IsApproved.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ガード無効時は該当履歴でも相場操縦ではスキップする()
+    {
+        // ProhibitManipulativeOrderPatterns = false のとき検出器を呼ばない（IADR-0006）。
+        var source = new InMemoryOrderActivitySource();
+        SeedManipulativeActivity(source);
+        var settingsStore = new InMemoryRiskSettingsStore();
+        var current = settingsStore.GetCurrent();
+        settingsStore.Save(current with
+        {
+            Guard = current.Guard with { ProhibitManipulativeOrderPatterns = false },
+        });
+        var service = CreateService(source, settingsStore);
+
+        var outcome = service.Screen(Decision(EntryIntent()));
+
+        outcome.Rejected?.Reasons.Should().NotContain(RejectionReason.ManipulativeOrderPattern);
+        outcome.IsApproved.Should().BeTrue();
+    }
+}
