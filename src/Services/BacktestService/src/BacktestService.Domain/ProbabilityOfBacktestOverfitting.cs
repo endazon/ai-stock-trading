@@ -1,6 +1,6 @@
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0038: Probability of Backtest Overfitting（CSCV）。
+// FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: Probability of Backtest Overfitting（CSCV）。
 // 観測を S 個の部分行列に分割し、S/2 を IS・残りを OOS とする全組合せで「IS 最良戦略の OOS 相対順位」の
 // ロジット λ を求め、PBO = P(λ ≤ 0) を推定する。戦略のパフォーマンス指標は平均（順位付けの一貫性のみを要する）。
 public static class ProbabilityOfBacktestOverfitting

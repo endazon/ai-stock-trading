@@ -1,5 +1,5 @@
 ---
-title: IADR-0038 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
+title: IADR-0044 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
 type: impl-adr
 status: Accepted
 related_ids: [FR-15, ADR-0008]
@@ -11,9 +11,9 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
-# IADR-0038: 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
+# IADR-0044: 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する
 
-> 実装リポジトリ内の意思決定記録。[IADR-0037](IADR-0037_backtest-foundation.md)（基盤構成）の Slice B に対応。
+> 実装リポジトリ内の意思決定記録。[IADR-0043](IADR-0043_backtest-foundation.md)（基盤構成）の Slice B に対応。
 
 - 状態: Accepted
 - 日付: 2026-07-11
@@ -65,5 +65,5 @@ FR-15 は「ウォークフォワード検証・試行数記録・DSR/PBO によ
 
 ## 関連
 
-- [IADR-0037](IADR-0037_backtest-foundation.md)（基盤構成）、[IADR-0039](IADR-0039_stage0-gate.md)（Stage 0 合格判定・DSR/PBO を消費）
+- [IADR-0043](IADR-0043_backtest-foundation.md)（基盤構成）、[IADR-0045](IADR-0045_stage0-gate.md)（Stage 0 合格判定・DSR/PBO を消費）
 - 仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、[FR-15_backtest](../functional/FR-15_backtest.md)

@@ -1,6 +1,6 @@
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, ADR-0008, IADR-0038: 1 試行（戦略構成候補）の記録。IS Sharpe・OOS 実績。
+// FR-15, ADR-0008, IADR-0044: 1 試行（戦略構成候補）の記録。IS Sharpe・OOS 実績。
 public readonly record struct BacktestTrial(string Name, double InSampleSharpe, double OutOfSampleReturn);
 
 // FR-15, 06_daytrading-review §3.2: 試行台帳。試行数 N・IS Sharpe の分散・最良候補を提供し、DSR/PBO の入力にする。

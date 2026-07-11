@@ -61,3 +61,4 @@
 | IADR-0035 | 損切り価格を OrderIntent に載せ #63 台帳へ永続化し、open-positions の近似を実値化する | Accepted |
 | IADR-0036 | 含み損益は現在値入力から純関数で算出し、DD はピーク入力から算出する（実供給は後続） | Accepted |
 | IADR-0043 | バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける | Accepted |
+| IADR-0044 | 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する | Accepted |
