@@ -76,3 +76,4 @@ plan_refs:
 
 - Supersedes: なし
 - Superseded by: なし
+- 再検討結果（フォローアップ）: [IADR-0037](IADR-0037_async-contract-format-reevaluation.md)（契約 4→10 増加時点で AsyncAPI 採用可否を再評価。当面不採用を再確認し、再採用トリガを観測可能な条件へ具体化・Issue #51）

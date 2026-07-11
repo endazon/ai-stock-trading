@@ -60,4 +60,5 @@
 | IADR-0034 | 費用計上の並行 RMW は原子的な台帳メソッド＋月単位アドバイザリロックで直列化する | Accepted |
 | IADR-0035 | 損切り価格を OrderIntent に載せ #63 台帳へ永続化し、open-positions の近似を実値化する | Accepted |
 | IADR-0036 | 含み損益は現在値入力から純関数で算出し、DD はピーク入力から算出する（実供給は後続） | Accepted |
+| IADR-0037 | 非同期イベント契約は当面 AsyncAPI を採用せず、共有 C# 契約＋Markdown を継続し、軽量な URN 回帰ガードで補強する | Accepted |
 | IADR-0038 | ドテン/部分決済は取引判断が符号付きポジションのゼロ跨ぎで Close+Open に分解する | Accepted |

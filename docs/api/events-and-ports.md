@@ -56,6 +56,19 @@ plan_refs:
   `BaselinePrice` は前回 AI 判断時点の価格。
 - イベントのエンベロープ（メッセージヘッダ・トピック命名・冪等性キー）は platform 規約（ADR-0001・#22）に合わせる。
 
+運用・ライフサイクルのイベント（情報収集・費用・設定・報告書）。取引サイクルの相関 ID（`DecisionId`）とは別系統で、
+主に監査（FR-11）・通知（FR-09）・サイクル起動（FR-02）の購読者向け。
+
+| イベント | 発行元 | 主なフィールド | 用途 |
+| --- | --- | --- | --- |
+| `InformationCollected` | 情報収集（#9） | EventId, ItemCount, CollectedAt | 1 巡回の収集完了（正規化・KB 保存済み件数）。定時取引サイクル（FR-02）の起点（IADR-0022/0023） |
+| `CostThresholdReached` | 費用統制（#23） | Month, Category, Percent, State, OccurredAt | 費用しきい値到達で統制状態が上方遷移（Normal→Throttled→Halted）。通知が購読（IADR-0027） |
+| `AssumptionsChanged` | 設定管理（#19） | Version, Actor, Reason, ChangedAt | 全体前提条件が利用者により変更（バージョンつき）。監査・通知が購読（IADR-0021） |
+| `ReportConfirmed` | 報告書（#14） | PeriodKey, Kind, Actor, AssumptionsVersion, ConfirmedAt | 報告書の確定（Draft→Confirmed 遷移時のみ）。監査・通知が購読（IADR-0024） |
+
+- これら 4 件は通知サービスが購読して Discord 送信するが、各サービスは Discord を直接呼ばない（IADR-0020）。
+- `InformationCollected` は取引サイクル配線（#21・IADR-0023）で定時起動の合図になる。
+
 ### イベントフロー
 
 ```mermaid
