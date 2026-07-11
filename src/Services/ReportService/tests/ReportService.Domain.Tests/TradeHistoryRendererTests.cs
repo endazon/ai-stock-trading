@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Domain.Tests;
 
-// FR-16, 04_report-templates 日報 §2, IADR-0038: 取引履歴（全明細）＋取引詳細＋見送り判断のレンダリング（純関数）を fake データで検証する。
+// FR-16, 04_report-templates 日報 §2, IADR-0042: 取引履歴（全明細）＋取引詳細＋見送り判断のレンダリング（純関数）を fake データで検証する。
 public class TradeHistoryRendererTests
 {
     // fake データ（#63 台帳の実約定連携は後続）。買い（定時・実現損益0）と売り決済（損切り・実現益）を含む。

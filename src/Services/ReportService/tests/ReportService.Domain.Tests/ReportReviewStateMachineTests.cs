@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Domain.Tests;
 
-// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0038: 対話的確定の状態遷移（承認/差し戻し/改訂・版番号付き冪等・OwnerOnly）を検証する。
+// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0042: 対話的確定の状態遷移（承認/差し戻し/改訂・版番号付き冪等・OwnerOnly）を検証する。
 public class ReportReviewStateMachineTests
 {
     private const string Owner = "owner";

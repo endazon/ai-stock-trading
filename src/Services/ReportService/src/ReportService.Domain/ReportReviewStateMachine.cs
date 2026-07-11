@@ -1,6 +1,6 @@
 namespace AiStockTrading.Report.Domain;
 
-// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0038: 対話的確定のレビュー状態。
+// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0042: 対話的確定のレビュー状態。
 // 既存の永続 ReportState.Draft/Confirmed の Draft 局面を、提示・差し戻し・改訂・承認の対話ライフサイクルへ精緻化する。
 // Confirmed は ReportState.Confirmed に対応し、それ以外は ReportState.Draft に対応する。
 public enum ReviewState
@@ -63,7 +63,7 @@ public sealed record ReviewDecision(ReportReview Review, bool Transitioned, Revi
     public bool Accepted => Rejection is null;
 }
 
-// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0038: 対話的確定の状態遷移（純関数・決定的・副作用なし）。
+// FR-07, UC-03〜05, 07_discord-bot-design, IADR-0042: 対話的確定の状態遷移（純関数・決定的・副作用なし）。
 // 版番号付き冪等確定（IADR-0024）を状態機械へ一般化する。HTTP/Discord/永続はこの決定を駆動する薄い層として後続で結線する。
 public static class ReportReviewStateMachine
 {

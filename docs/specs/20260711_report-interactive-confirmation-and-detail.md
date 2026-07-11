@@ -30,7 +30,7 @@ plan_refs:
   - `06_technical/04_report-templates.md`（日報 §2 取引履歴（全明細）表・取引詳細ブロック・見送り判断）
   - `04_workflows/03_reporting-cycle.md`（確定で方針有効化）
 - ADR: ADR-0003（確定前方針は不適用・**方針の確定には利用者との対話を要し完全無人での方針変更は行わない**＝OwnerOnly の根拠）
-- 関連 IADR: 本作業で新規 [IADR-0038](../adr/IADR-0038_report-review-state-machine-and-detail-rendering.md)。踏襲 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)（版番号付き冪等確定）・[IADR-0032](../adr/IADR-0032_report-generation.md)（純関数テンプレート化）
+- 関連 IADR: 本作業で新規 [IADR-0042](../adr/IADR-0042_report-review-state-machine-and-detail-rendering.md)。踏襲 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)（版番号付き冪等確定）・[IADR-0032](../adr/IADR-0032_report-generation.md)（純関数テンプレート化）
 - 対象 Issue: #14（対話的確定ロジック・明細レンダリングのスライス）
 
 ## 目的・背景
@@ -124,7 +124,7 @@ CI で緑にする範囲（ユニット・純関数）:
 ## 関連仕様
 
 - 前提: [20260710_report-confirmation](20260710_report-confirmation.md)（Slice A・確定管理）、[20260711_report-generation](20260711_report-generation.md)（ドラフト生成・テンプレート化）
-- 実装ADR: 新規 [IADR-0038](../adr/IADR-0038_report-review-state-machine-and-detail-rendering.md)、踏襲 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md) / [IADR-0032](../adr/IADR-0032_report-generation.md)
+- 実装ADR: 新規 [IADR-0042](../adr/IADR-0042_report-review-state-machine-and-detail-rendering.md)、踏襲 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md) / [IADR-0032](../adr/IADR-0032_report-generation.md)
 
 ## 未決事項
 

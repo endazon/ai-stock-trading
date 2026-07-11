@@ -1,5 +1,5 @@
 ---
-title: IADR-0038 対話的確定は純関数の版番号付きレビュー状態機械で表し、取引履歴明細は純関数でテンプレート化する
+title: IADR-0042 対話的確定は純関数の版番号付きレビュー状態機械で表し、取引履歴明細は純関数でテンプレート化する
 type: impl-adr
 status: Accepted
 related_ids: [FR-06, FR-07, FR-16, UC-03, UC-04, UC-05, ADR-0003]
@@ -12,7 +12,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/04_workflows/03_reporting-cycle.md
 ---
 
-# IADR-0038: 対話的確定は純関数の版番号付きレビュー状態機械で表し、取引履歴明細は純関数でテンプレート化する
+# IADR-0042: 対話的確定は純関数の版番号付きレビュー状態機械で表し、取引履歴明細は純関数でテンプレート化する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
