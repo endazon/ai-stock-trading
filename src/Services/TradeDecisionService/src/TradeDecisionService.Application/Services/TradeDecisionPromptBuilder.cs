@@ -44,4 +44,27 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
         return sb.ToString();
     }
+
+    // FR-04, IADR-0039, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
+    // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させ、Parser を共有する。方針外・不確実は Hold。
+    public static string BuildScreening(DecisionTrigger trigger, DailyPolicy policy, SizingContext context)
+    {
+        ArgumentNullException.ThrowIfNull(trigger);
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("あなたは取引候補の一次スクリーニング担当です。詳細な本判断は行いません。");
+        sb.AppendLine("確定済み日報の方針に照らし、この銘柄が本判断に値する取引候補かを絞り込みます。");
+        sb.AppendLine("方針の範囲外・関心なし・不確実な場合は必ず Hold（見送り）を選びます。");
+        sb.AppendLine();
+        sb.AppendLine($"# 確定済み日報の方針（{policy.Date:yyyy-MM-dd}）");
+        sb.AppendLine(policy.Summary);
+        sb.AppendLine();
+        sb.AppendLine($"# 対象: {trigger.Symbol} / 市場: {trigger.Market}");
+        sb.AppendLine();
+        sb.AppendLine("# 出力形式（JSON のみ・関心の方向のみ）");
+        sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"絞り込み理由\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
+        return sb.ToString();
+    }
 }

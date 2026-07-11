@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
@@ -57,6 +58,58 @@ public static class TradingDefaults
         // Stage 0（検証）から開始。ペーパーのみ・資金上限は初期投入資金
         new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital);
 
+    /// <summary>
+    /// FR-20, ADR-0008: 撤退基準の DD 倍率 1.5（実DD ≥ バックテスト最大DD × 1.5 で自動停止・再検証）。
+    /// </summary>
+    public const decimal WithdrawalDrawdownMultiple = 1.5m;
+
+    /// <summary>
+    /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定
+    /// （1 ポジション相当＝MaxOrderAmount）。実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
+    /// </summary>
+    public const decimal Stage2MinimalLiveCapitalCap = 35_000m;
+
+    // FR-20, ADR-0008: 段階ゲート方針（4 段階の Mode/資金上限＋撤退倍率）。Stage 0/1＝ペーパー、Stage 2/3＝実弾。
+    // 昇格・差し戻しは合格・撤退基準に基づき利用者が承認する（遷移ロジックは StageGate）。
+    public static StageGatePolicy CreateStagePolicy() => new()
+    {
+        Definitions = new Dictionary<TradingStage, StageSettings>
+        {
+            // 検証: ペーパーのみ・資金上限は初期投入資金
+            [TradingStage.Stage0Verification] = new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital),
+            // ペーパー: 検証と同条件（実装・運用・報告サイクルの検証）
+            [TradingStage.Stage1Paper] = new(TradingStage.Stage1Paper, TradeMode.Paper, InitialCapital),
+            // 最小実弾: 実弾モード・最小資金（保守的暫定既定）
+            [TradingStage.Stage2MinimalLive] = new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCap),
+            // 段階増額: 実弾モード・初期投入資金まで（以降の増額は月報レビュー時に FR-17 設定で確定）
+            [TradingStage.Stage3ScaledLive] = new(TradingStage.Stage3ScaledLive, TradeMode.Live, InitialCapital),
+        },
+        WithdrawalDrawdownMultiple = WithdrawalDrawdownMultiple,
+    };
+
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
+
+    // FR-19, IADR-0040: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
+    // 正常なデイトレード（値動きに応じた建て直し・数件の取消）を誤検知せず濫用パターンだけを捕捉する保守側の初期値。
+    // 各値の逆算根拠は IADR-0040。運用ログで誤検知/見逃しを評価して較正する。
+    public static ManipulationDetectionSettings CreateManipulationDetectionSettings() => new()
+    {
+        // 見せ玉・レイヤリングは短時間の連続発注に現れる。判断サイクル（30 分）より十分短い突発窓。
+        LookbackWindow = TimeSpan.FromMinutes(5),
+        // これ未満は統計的に濫用と正常を区別できない（数件の取消は正常運用でも起こり得る）。
+        MinimumSampleSize = 5,
+        // 窓内の約定なし取消が発注の 7 割超は約定志向の運用として過剰。
+        MaxCancellationRatio = 0.7m,
+        // 1 発注あたり平均 3 回超の訂正反復は板操作的（正常な建て直しは通常 0〜1 回）。
+        MaxAmendmentsPerOrder = 3.0m,
+        // 窓内の約定/一部約定が発注の 1 割未満＝約定意思の希薄さ（見せ玉の兆候）。
+        MinFillRatio = 0.1m,
+        // 発注→即取消（2 秒以内）の反復は見せ玉の典型（人手・通常アルゴの反応より速い）。
+        ShortLivedCancelThreshold = TimeSpan.FromSeconds(2),
+        // 短命取消が 3 件以上で見せ玉パターンとみなす（低約定率と AND）。
+        MaxShortLivedCancels = 3,
+        // 同一方向・約定なし取消の同時生存が 3 本以上＝板に複数段を並べる見せ板の型。
+        LayeringOrderCount = 3,
+    };
 }

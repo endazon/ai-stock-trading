@@ -65,6 +65,9 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
 // FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
 builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider>();
+// FR-04, IADR-0039: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
+// ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
+builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
 builder.Services.AddScoped<TradeDecisionService>();
 
 // ADR-0003, IADR-0011, IADR-0023: MassTransit（RabbitMQ）。価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
