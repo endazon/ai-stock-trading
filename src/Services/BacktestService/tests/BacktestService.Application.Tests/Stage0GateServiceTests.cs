@@ -68,6 +68,28 @@ public class Stage0GateServiceTests
     }
 
     [Fact]
+    public void 匿名化済みならカットオフ以前でもデータ健全性を満たす_OR経路()
+    {
+        // ADR-0008/検証条件①は「カットオフ後 または 匿名化」。匿名化済みならカットオフ以前の日付でも健全とみなす。
+        var context = new Stage0GateContext(
+            BaselineMetrics: RisingMetrics(),
+            DoubledCostTotalReturn: 0.30m,
+            Trials: ThreeTrials(),
+            OverfittingPerformanceMatrix: DominantMatrix,
+            OverfittingPartitions: 4,
+            WalkForwardOutOfSampleReturn: 0.05m,
+            Bars: [BarBeforeCutoff(2), BarBeforeCutoff(3)], // カットオフ以前だが匿名化済み
+            LlmTrainingCutoff: Cutoff,
+            Criteria: Stage0GateCriteria.Default,
+            DataAnonymized: true);
+
+        var decision = new Stage0GateService().Evaluate(context);
+
+        decision.DataCutoffSatisfied.Should().BeTrue();
+        decision.Gate.Passed.Should().BeTrue();
+    }
+
+    [Fact]
     public void カットオフ以前のデータを含む戦略は不合格_昇格しない()
     {
         var context = new Stage0GateContext(
