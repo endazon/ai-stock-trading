@@ -16,6 +16,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter)
         ArgumentException.ThrowIfNullOrWhiteSpace(request.PeriodKey);
 
         // periodKey と対象日の不整合を弾く（Date を正とする）。不整合な報告書が後続の永続化/KB 保存で残らないようにする。
+        // 本スライスは日報のみ（PeriodKey 形式は "daily-{yyyy-MM-dd}"）。週報/月報は ReportKind ごとに形式を拡張する（IADR-0032 後続）。
         var expectedKey = $"daily-{request.Date:yyyy-MM-dd}";
         if (!string.Equals(request.PeriodKey, expectedKey, StringComparison.Ordinal))
             throw new ArgumentException($"日報の PeriodKey は対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。");

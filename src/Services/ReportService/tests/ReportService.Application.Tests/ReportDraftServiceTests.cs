@@ -47,8 +47,9 @@ public class ReportDraftServiceTests
         draft.Markdown.Should().Contain("市況の散文ドラフト");
         draft.Markdown.Should().Contain("翌営業日は押し目買い");
         draft.Markdown.Should().Contain("取引回数（買/売/決済） | 1 / 1 / 1");
-        // 散文ドラフトの文脈にも集計済み数値が渡る（LLM に再計算させない・提示のみ）。
+        // 散文ドラフトの文脈にも集計済み数値・対象市場が渡る（LLM に再計算させない・提示のみ）。
         drafter.LastContext!.Pnl.RealizedPnlGross.Should().Be(2_000m);
+        drafter.LastContext!.Markets.Should().BeEquivalentTo(["US"]);
     }
 
     [Fact]
