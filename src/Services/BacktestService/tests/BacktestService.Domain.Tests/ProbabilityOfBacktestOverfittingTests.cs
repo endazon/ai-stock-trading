@@ -65,4 +65,13 @@ public class ProbabilityOfBacktestOverfittingTests
         var act = () => ProbabilityOfBacktestOverfitting.Compute(perf, 4);
         act.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void 先頭行がnullでも素のNRESではなくArgumentException_一貫した入力検証()
+    {
+        // 先頭ブロック行が null → strategyCount 算出前にガードし NullReferenceException を出さない（#100 レビュー持ち越し指摘）。
+        double[]?[] perf = [null, [1, 2], [2, 1], [1, 2]];
+        var act = () => ProbabilityOfBacktestOverfitting.Compute(perf!, 4);
+        act.Should().Throw<ArgumentException>();
+    }
 }
