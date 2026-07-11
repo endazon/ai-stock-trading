@@ -160,6 +160,8 @@ public static class StageGate
         return unmet;
     }
 
+    // 次段階＝現段階の 1 段上（最上段なら null）。TradingStage は連続昇順の数値で固定されている前提に依存する
+    // （StageSettings.cs のコメント参照。値の挿入・並べ替えは禁止）。
     private static TradingStage? NextStage(TradingStage stage) =>
         stage == TradingStage.Stage3ScaledLive ? null : (TradingStage)((int)stage + 1);
 

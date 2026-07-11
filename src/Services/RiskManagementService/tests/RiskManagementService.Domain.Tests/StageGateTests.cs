@@ -197,6 +197,25 @@ public class StageGateTests
         assessment.UnmetCriteria.Should().Contain(StageGateCriterion.AlreadyAtTopStage);
     }
 
+    // FR-20, IADR-0037: RequestTransition が返す遷移は台帳の追記整合（FromStage/Sequence）を満たし、
+    // そのまま StageGateLedger へ追記できる（両純関数のシグネチャがドリフトしていないことのラウンドトリップ検証）。
+    [Fact]
+    public void 受理された遷移はそのまま台帳へ追記できる()
+    {
+        var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification);
+        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "endazon");
+
+        // 台帳の現在段階・次シーケンスを入力に遷移を要求し、受理された遷移を台帳へ追記する
+        var result = StageGate.RequestTransition(
+            ledger.CurrentStage, ledger.NextSequence, approval, Passing(), Policy, Now);
+        result.Accepted.Should().BeTrue();
+
+        var appended = ledger.Append(result.Transition!); // 追記整合違反なら例外
+        appended.CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        appended.NextSequence.Should().Be(2);
+        appended.History.Should().ContainSingle().Which.Should().Be(result.Transition);
+    }
+
     // FR-20, ADR-0008: 実弾段階で実DD がバックテスト最大DD の 1.5 倍以上 → 自動停止＋Stage 0 再検証提案
     [Fact]
     public void 実弾段階でDD超過は自動停止と再検証提案に倒れる()

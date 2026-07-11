@@ -11,6 +11,10 @@ public record StageGatePolicy
     /// <summary>撤退基準の DD 倍率。実DD ≥ バックテスト最大DD × 本値 で撤退。既定 1.5（ADR-0008）。</summary>
     public decimal WithdrawalDrawdownMultiple { get; init; } = 1.5m;
 
-    /// <summary>指定段階の設定（モード・資金上限）を返す。</summary>
+    /// <summary>
+    /// 指定段階の設定（モード・資金上限）を返す。<see cref="Definitions"/> は 4 段階すべてを含むことが前提
+    /// （既定 <c>TradingDefaults.CreateStagePolicy()</c> は全段階を埋める）。該当段階が無い場合は
+    /// <see cref="KeyNotFoundException"/> を投げる（4 段階を欠く方針は設定不備として早期に失敗させる）。
+    /// </summary>
     public StageSettings SettingsFor(TradingStage stage) => Definitions[stage];
 }
