@@ -64,6 +64,8 @@ public class TradeDecisionParserTests
     [InlineData(0, 30)]
     [InlineData(1000, 0)]
     [InlineData(-1, 30)]
+    [InlineData(1000, 1000)] // IADR-0035: 損切り幅 = 参照価格 → 損切り価格 0（ロング監視不能）
+    [InlineData(1000, 1500)] // IADR-0035: 損切り幅 > 参照価格 → 損切り価格 負（幻覚）
     public void Buyで価格または損切り幅が正でなければHoldに倒す(int price, int stop)
     {
         var json = $$"""{"action":"Buy","rationale":"x","referencePrice":{{price}},"stopLossDistancePerShare":{{stop}}}""";

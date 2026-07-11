@@ -73,6 +73,31 @@ public class TradeDecisionServiceTests
         decision.Intent.Symbol.Should().Be("AAPL");
         decision.Rationale.Should().Be("押し目");
         decision.DecidedAt.Should().Be(Now);
+        // IADR-0035: ロングの損切り価格＝参照価格 − 損切り幅（1,000 − 30 = 970）。
+        decision.Intent.StopLossPrice.Should().Be(970m);
+    }
+
+    [Fact]
+    public async Task 損切り幅が参照価格以上の異常値は取引しない()
+    {
+        // IADR-0035: 損切り価格が権威データとして下流へ渡るため、距離≥参照価格（ロング損切り≤0）は幻覚として Hold に倒す。
+        const string badJson =
+            """{"action":"Buy","rationale":"幻覚","referencePrice":1000,"stopLossDistancePerShare":1500}""";
+
+        (await Create(badJson, Policy).DecideAsync(Trigger())).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Sell判断の損切り価格は参照価格より上に置かれる()
+    {
+        // IADR-0035: ショートは参照価格 + 損切り幅（1,000 + 30 = 1,030）。
+        const string sellJson =
+            """{"action":"Sell","rationale":"戻り売り","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+        var decision = await Create(sellJson, Policy).DecideAsync(Trigger());
+
+        decision!.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.StopLossPrice.Should().Be(1_030m);
     }
 
     [Fact]

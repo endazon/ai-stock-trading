@@ -5,6 +5,8 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 // PositionEffect（建玉効果）はエントリー/手仕舞いを表し、既定は Open（新規建て）。エントリー専用の
 // リスク統制の適用可否はこの値で判定する（IADR-0004）。既定を Open とすることで、効果未指定の注文は
 // 制約を厳しく掛ける安全側に倒れる。
+// FR-03/04/10, IADR-0035: StopLossPrice は取引判断が決めた損切り価格（ATR 連動）。#63 台帳へ永続化され、市場監視の
+// 損切りライン検知（IADR-0030）に実値として供給される。後方互換のため nullable（既定 null＝機械執行の Close 等では該当なし）。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -13,7 +15,8 @@ public record OrderIntent(
     TradeMode Mode,
     int Quantity,
     decimal Price,
-    PositionEffect PositionEffect = PositionEffect.Open)
+    PositionEffect PositionEffect = PositionEffect.Open,
+    decimal? StopLossPrice = null)
 {
     public decimal Notional => Quantity * Price;
 }

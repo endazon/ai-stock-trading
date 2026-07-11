@@ -91,12 +91,14 @@ public static class PortfolioProjection
 
     // FR-03, FR-10, IADR-0030: 約定列から銘柄別ネット建玉（数量>0）を射影する純関数。損切りライン検知（市場監視）へ
     // 供給する保有ポジションの一次射影。実現損益・当日境界は不要のため、符号付き在庫・平均取得単価のみを畳み込む
-    // （Project と同一の Apply を再利用）。数量 0（全決済）は除外する。損切り価格は含まない（OpenPositionsService が導出）。
+    // （Project と同一の Apply を再利用）。数量 0（全決済）は除外する。
+    // IADR-0035: 損切り価格は最新の同方向エントリー（新規/建て増し/反転）を採る（一部決済では保持・全決済で消滅）。
     public static IReadOnlyList<OpenPosition> ProjectOpenPositions(IReadOnlyList<LedgerFill> fills)
     {
         ArgumentNullException.ThrowIfNull(fills);
 
         var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
+        var stops = new Dictionary<(string Symbol, Market Market), decimal?>();
         foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
         {
             var key = (fill.Symbol, fill.Market);
@@ -105,6 +107,13 @@ public static class PortfolioProjection
             // IADR-0033: 共有の畳み込み純関数を用いる（実現損益はここでは不要）。
             var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
+
+            // IADR-0035: 建玉が消滅したら損切りも消滅。約定が建玉と同方向（新規/建て増し/反転）なら最新エントリーの損切りに更新。
+            // 一部決済（反対方向で符号は不変）は既存の損切りを保持する。
+            if (applied.Lot.Quantity == 0)
+                stops.Remove(key);
+            else if (Math.Sign(applied.Lot.Quantity) == Math.Sign(signedQ))
+                stops[key] = fill.StopLossPrice;
         }
 
         var result = new List<OpenPosition>();
@@ -113,7 +122,8 @@ public static class PortfolioProjection
             if (pos.Qty == 0)
                 continue; // 全決済済みは保有なし
             var side = pos.Qty > 0 ? TradeSide.Buy : TradeSide.Sell;
-            result.Add(new OpenPosition(key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost));
+            result.Add(new OpenPosition(
+                key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost, stops.GetValueOrDefault(key)));
         }
 
         return result;

@@ -27,6 +27,7 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
             Mode = intent.Mode,
             Quantity = intent.Quantity,
             Price = intent.Price,
+            StopLossPrice = intent.StopLossPrice,
             ApprovedAt = approvedAt,
         });
         db.SaveChanges();
@@ -64,7 +65,7 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
             join a in db.ApprovedOrders on f.DecisionId equals a.DecisionId
             select new LedgerFill(
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
-                f.FilledQuantity, f.AveragePrice, f.ExecutedAt);
+                f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice);
 
         return query.ToList();
     }
