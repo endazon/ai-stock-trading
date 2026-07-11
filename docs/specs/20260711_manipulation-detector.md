@@ -95,7 +95,7 @@ CI で緑にする範囲（ユニット・InMemory・結合）:
 
 - 実装ADR: [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（本作業）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）。
 - 連携: [20260708_risk-guard-core](20260708_risk-guard-core.md)（取引ガード）／[20260709_risk-eval-core-fixes](20260709_risk-eval-core-fixes.md)。
-- テスト仕様: [FR-19_trading-guard](../tests/FR-19_trading-guard.md)。
+- 機能仕様: [FR-19_trading-guard](../functional/FR-19_trading-guard.md)。
 
 ## 未決事項
 
