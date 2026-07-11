@@ -52,7 +52,7 @@ public class TradingDefaultsTests
         settings.MaxCancellationRatio.Should().Be(0.7m);
         settings.MaxAmendmentsPerOrder.Should().Be(3.0m);
         settings.MinFillRatio.Should().Be(0.1m);
-        settings.ShortLivedCancelSeconds.Should().Be(2.0);
+        settings.ShortLivedCancelThreshold.Should().Be(TimeSpan.FromSeconds(2));
         settings.MaxShortLivedCancels.Should().Be(3);
         settings.LayeringOrderCount.Should().Be(3);
     }

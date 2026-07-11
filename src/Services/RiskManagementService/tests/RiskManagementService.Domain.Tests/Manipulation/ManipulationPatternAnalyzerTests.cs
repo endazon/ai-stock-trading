@@ -142,6 +142,75 @@ public class ManipulationPatternAnalyzerTests
     }
 
     [Fact]
+    public void 過剰訂正は境界ちょうど3では検知しない()
+    {
+        // 5 発注・訂正総数 15（1 発注あたり 3.0＝境界）。> 3.0 でないので非該当（`>` の意図を固定）。
+        var verdict = ManipulationPatternAnalyzer.Analyze(
+            Window(
+                Filled(0, amendments: 3),
+                Filled(10, amendments: 3),
+                Filled(20, amendments: 3),
+                Filled(30, amendments: 3),
+                Filled(40, amendments: 3)),
+            Settings());
+
+        verdict.Signals.Should().NotContain(ManipulationSignal.ExcessiveAmendments);
+    }
+
+    [Fact]
+    public void 見せ玉_約定率が境界ちょうど0_1では検知しない()
+    {
+        // 10 発注中 1 件約定（約定率 0.1＝境界）。< 0.1 でないので見せ玉は非該当（`<` の意図を固定）。
+        // 残り 9 件は即取消だが、約定率境界により NoExecutionIntent には至らない。
+        var records = new List<OrderActivityRecord> { Filled(0) };
+        for (var i = 0; i < 9; i++)
+        {
+            records.Add(CancelledNoFill(10 + i * 10, lifetimeSec: 1, side: TradeSide.Buy));
+        }
+
+        var verdict = ManipulationPatternAnalyzer.Analyze(Window([.. records]), Settings());
+
+        verdict.Signals.Should().NotContain(ManipulationSignal.NoExecutionIntent);
+    }
+
+    [Fact]
+    public void 見せ玉_短命取消が閾値ちょうど3件で検知する()
+    {
+        // 約定なし取消 5 件（約定率 0）・うち短命（1 秒）ちょうど 3 件＋長命 2 件。>= 3 で該当（境界を固定）。
+        // 生存区間が重ならないよう配置し Layering と切り分ける。
+        var records = new List<OrderActivityRecord>
+        {
+            CancelledNoFill(0, lifetimeSec: 30, side: TradeSide.Buy),
+            CancelledNoFill(40, lifetimeSec: 30, side: TradeSide.Buy),
+            CancelledNoFill(80, lifetimeSec: 1, side: TradeSide.Buy),
+            CancelledNoFill(90, lifetimeSec: 1, side: TradeSide.Buy),
+            CancelledNoFill(100, lifetimeSec: 1, side: TradeSide.Buy),
+        };
+
+        var verdict = ManipulationPatternAnalyzer.Analyze(Window([.. records]), Settings());
+
+        verdict.Signals.Should().Contain(ManipulationSignal.NoExecutionIntent);
+    }
+
+    [Fact]
+    public void 見せ玉_短命取消が2件では検知しない()
+    {
+        // 約定なし取消 5 件（約定率 0）・うち短命 2 件（< 3）。閾値未満で NoExecutionIntent 非該当（境界を下側から固定）。
+        var records = new List<OrderActivityRecord>
+        {
+            CancelledNoFill(0, lifetimeSec: 30, side: TradeSide.Buy),
+            CancelledNoFill(40, lifetimeSec: 30, side: TradeSide.Buy),
+            CancelledNoFill(80, lifetimeSec: 30, side: TradeSide.Buy),
+            CancelledNoFill(120, lifetimeSec: 1, side: TradeSide.Buy),
+            CancelledNoFill(130, lifetimeSec: 1, side: TradeSide.Buy),
+        };
+
+        var verdict = ManipulationPatternAnalyzer.Analyze(Window([.. records]), Settings());
+
+        verdict.Signals.Should().NotContain(ManipulationSignal.NoExecutionIntent);
+    }
+
+    [Fact]
     public void 見せ玉_低約定率かつ短命取消の反復を検知する()
     {
         // 6 発注すべて約定なし・即取消（生存 1 秒 ≤ 2 秒）。約定率 0 < 0.1・短命取消 6 ≥ 3。

@@ -42,7 +42,7 @@ public static class ManipulationPatternAnalyzer
         // 3. 見せ玉（約定意思のない発注）: 低約定率かつ短命取消の反復。
         var fillRatio = (decimal)records.Count(r => r.IsFilledOrPartial) / placements;
         var shortLivedCancels = cancelledWithoutFill.Count(r =>
-            r.LifetimeSeconds is { } lifetime && lifetime <= settings.ShortLivedCancelSeconds);
+            r.Lifetime is { } lifetime && lifetime <= settings.ShortLivedCancelThreshold);
         if (fillRatio < settings.MinFillRatio && shortLivedCancels >= settings.MaxShortLivedCancels)
         {
             signals.Add(ManipulationSignal.NoExecutionIntent);

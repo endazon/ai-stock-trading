@@ -69,7 +69,7 @@ IADR-0006 は判定ポート `IManipulativeOrderPatternDetector` を用意した
 | `MaxCancellationRatio` | 0.7 | 窓内の約定なし取消が発注の 7 割超は、約定志向の運用として過剰 |
 | `MaxAmendmentsPerOrder` | 3.0 | 1 発注あたり平均 3 回超の訂正反復は板操作的（正常な建て直しは通常 0〜1 回） |
 | `MinFillRatio` | 0.1 | 窓内の約定/一部約定が発注の 1 割未満＝約定意思の希薄さ（見せ玉の兆候） |
-| `ShortLivedCancelSeconds` | 2.0 秒 | 発注→即取消（2 秒以内）の反復は見せ玉の典型。人手・通常アルゴの反応より速い |
+| `ShortLivedCancelThreshold` | 2 秒 | 発注→即取消（2 秒以内）の反復は見せ玉の典型。人手・通常アルゴの反応より速い |
 | `MaxShortLivedCancels` | 3 件 | 短命取消が 3 件以上で見せ玉パターンとみなす（`NoExecutionIntent` は低約定率と AND） |
 | `LayeringOrderCount` | 3 本 | 同一方向・約定なし取消の**同時生存**が 3 本以上＝板に複数段を並べる見せ板の型 |
 
@@ -89,6 +89,12 @@ IADR-0006 は判定ポート `IManipulativeOrderPatternDetector` を用意した
   - 本番での実効化は実注文履歴テレメトリ（#13/#17）の永続化と `IOrderActivitySource` の実装差し替え・ホスト DI 登録が前提（切り分け）。
 - フォローアップ: #13/#17 のテレメトリ確定後に実供給へ差し替え・本番 DI 登録・実 E2E（#82）で `Closes #49`。運用ログでしきい値を較正。
   該当シグナル詳細の監査記録（#17/#80 連動）。
+- しきい値の較正経路: `ManipulationDetectionSettings` は現状 `TradingDefaults` の静的既定のみで実行時変更経路を持たない
+  （生成AI・自動処理が改ざんできない安全側）。当面の較正はコード変更＋再デプロイで行い、設定ストア化（利用者のみ変更・履歴記録）は
+  必要に応じて #19（FR-17）の設定管理に合流させるかを後続で判断する。
+- 窓の母集団: 各比率の分母 `placements` は窓内の全レコード。ブローカー拒否（`OrderStatus.Rejected`）は板に載らず約定意思の指標に
+  ならないため `IsCancelledWithoutFill` には含めない。拒否注文を母集団（分母）に含めるか否かは供給側（`IOrderActivitySource`・#13/#17）の
+  記録方針で定める（本 PR の InMemory 実装では拒否注文を記録しない前提）。
 
 ## 関連
 

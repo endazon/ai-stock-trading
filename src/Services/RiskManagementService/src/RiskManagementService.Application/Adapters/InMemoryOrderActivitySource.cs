@@ -11,6 +11,8 @@ namespace AiStockTrading.RiskManagement.Application.Adapters;
 public sealed class InMemoryOrderActivitySource : IOrderActivitySource
 {
     // 1 キーあたりの保持上限。窓長を大きく超える履歴は不要（相場操縦検知は直近窓のみを見る）。
+    // キー（銘柄, 市場）自体は明示削除しないが、基数は取引対象銘柄数で実質有界。恒久運用の刈り込みは
+    // 実注文履歴テレメトリ（#13/#17）での実装差し替え時に扱う（本実装は結線先確定までの暫定）。
     private const int MaxRecordsPerKey = 512;
 
     private readonly ConcurrentDictionary<(string Symbol, Market Market), List<OrderActivityRecord>> _records = new();

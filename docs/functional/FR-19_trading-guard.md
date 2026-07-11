@@ -98,7 +98,7 @@ flowchart TD
 
 - 機能仕様書: [FR-10 リスク統制](FR-10_risk-controls.md)、[FR-20 段階ゲート](FR-20_staged-gates.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
-- テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
+- テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)、[FR-19 相場操縦パターン検知](../tests/FR-19_manipulation-detection-tests.md)
 - 実装ADR: [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（相場操縦拡張点）、
   [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（相場操縦検知アルゴリズム）
 - 作業仕様書: [20260711_manipulation-detector](../specs/20260711_manipulation-detector.md)（#49）

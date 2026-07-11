@@ -28,14 +28,18 @@ public sealed record OrderActivityRecord
     /// <summary>終端時刻（取消/失効/約定などで確定した時刻）。未確定なら null。生存時間の終点。</summary>
     public DateTimeOffset? TerminalAt { get; init; }
 
-    /// <summary>約定ゼロで取消/失効した注文か（見せ玉・過剰取消・レイヤリングの母集団）。</summary>
+    /// <summary>
+    /// 約定ゼロで取消/失効した注文か（見せ玉・過剰取消・レイヤリングの母集団）。
+    /// ブローカー拒否（<see cref="OrderStatus.Rejected"/>）は板に載らず約定意思の指標にならないため含めない。
+    /// 拒否注文を窓の母集団に含めるか（各比率の分母）は供給側（IOrderActivitySource・#13/#17）の判断とする。
+    /// </summary>
     public bool IsCancelledWithoutFill =>
         FilledQuantity == 0 && Status is OrderStatus.Cancelled or OrderStatus.Expired;
 
     /// <summary>約定または一部約定した注文か（約定意思の有無の判定）。</summary>
     public bool IsFilledOrPartial => FilledQuantity > 0;
 
-    /// <summary>発注→終端の生存秒数。終端未確定なら null。</summary>
-    public double? LifetimeSeconds =>
-        TerminalAt is { } terminal ? (terminal - PlacedAt).TotalSeconds : null;
+    /// <summary>発注→終端の生存時間。終端未確定なら null。短命取消の判定に用いる。</summary>
+    public TimeSpan? Lifetime =>
+        TerminalAt is { } terminal ? terminal - PlacedAt : null;
 }

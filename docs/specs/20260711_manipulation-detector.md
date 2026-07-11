@@ -47,7 +47,7 @@ plan_refs:
 1. `ExcessiveCancellations`: `placements ≥ MinimumSampleSize` かつ `約定なし取消数 / placements > MaxCancellationRatio`。
 2. `ExcessiveAmendments`: `placements ≥ MinimumSampleSize` かつ `訂正総数 / placements > MaxAmendmentsPerOrder`。
 3. `NoExecutionIntent`（見せ玉）: `placements ≥ MinimumSampleSize` かつ 約定率が低い（`約定/一部約定数 / placements < MinFillRatio`）かつ
-   短命取消（`LifetimeSeconds ≤ ShortLivedCancelSeconds` の約定なし取消）が `≥ MaxShortLivedCancels` 件。
+   短命取消（`Lifetime ≤ ShortLivedCancelThreshold` の約定なし取消）が `≥ MaxShortLivedCancels` 件。
 4. `Layering`（板演出）: 同一売買方向の「約定なし取消」注文で、**生存区間が同時に重なる最大本数**が `≥ LayeringOrderCount`（板に複数段の見せ板を同時に並べる型）。
 
 ### Application（アダプタ・CI で緑）
@@ -95,7 +95,7 @@ CI で緑にする範囲（ユニット・InMemory・結合）:
 
 - 実装ADR: [IADR-0037](../adr/IADR-0037_manipulation-detection-algorithm.md)（本作業）／[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（拡張点）。
 - 連携: [20260708_risk-guard-core](20260708_risk-guard-core.md)（取引ガード）／[20260709_risk-eval-core-fixes](20260709_risk-eval-core-fixes.md)。
-- 機能仕様: [FR-19_trading-guard](../functional/FR-19_trading-guard.md)。
+- 機能仕様: [FR-19_trading-guard](../functional/FR-19_trading-guard.md)。テスト仕様: [FR-19_manipulation-detection-tests](../tests/FR-19_manipulation-detection-tests.md)。
 
 ## 未決事項
 

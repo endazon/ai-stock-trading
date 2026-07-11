@@ -77,7 +77,7 @@ public static class TradingDefaults
         // 窓内の約定/一部約定が発注の 1 割未満＝約定意思の希薄さ（見せ玉の兆候）。
         MinFillRatio = 0.1m,
         // 発注→即取消（2 秒以内）の反復は見せ玉の典型（人手・通常アルゴの反応より速い）。
-        ShortLivedCancelSeconds = 2.0,
+        ShortLivedCancelThreshold = TimeSpan.FromSeconds(2),
         // 短命取消が 3 件以上で見せ玉パターンとみなす（低約定率と AND）。
         MaxShortLivedCancels = 3,
         // 同一方向・約定なし取消の同時生存が 3 本以上＝板に複数段を並べる見せ板の型。
