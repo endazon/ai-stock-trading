@@ -2,7 +2,7 @@ using AiStockTrading.Backtest.Domain;
 
 namespace AiStockTrading.Backtest.Application;
 
-// FR-15, FR-20, ADR-0008, IADR-0039: Stage 0 合格判定オーケストレーションの入力。
+// FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定オーケストレーションの入力。
 // Slice A/B の集計・試行台帳・性能行列・カットオフ材料を束ねる。
 // DataAnonymized: 銘柄を匿名化して LLM 汚染を排したか。ADR-0008/検証条件①は「カットオフ後 または 匿名化」の OR。
 public sealed record Stage0GateContext(
@@ -25,7 +25,7 @@ public sealed record Stage0Decision(
     double ProbabilityOfBacktestOverfitting,
     bool DataCutoffSatisfied);
 
-// FR-15, FR-20, ADR-0008, IADR-0039: Stage 0 合格判定を合成するオーケストレータ。
+// FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定を合成するオーケストレータ。
 // DSR（試行台帳＋標本モーメント）・PBO（CSCV）・データカットオフを算出し、ゲート判定と Stage 1 昇格推奨に落とす。
 public sealed class Stage0GateService
 {
@@ -43,7 +43,7 @@ public sealed class Stage0GateService
             moments.SharpePerPeriod, moments.Count, moments.Skewness, moments.Kurtosis, expectedMax);
 
         var pbo = ProbabilityOfBacktestOverfitting.Compute(context.OverfittingPerformanceMatrix, context.OverfittingPartitions);
-        // 検証条件①（ADR-0008/IADR-0038）は「全バーがカットオフ後 または 匿名化」の OR。匿名化済みなら日付は不問。
+        // 検証条件①（ADR-0008/IADR-0044）は「全バーがカットオフ後 または 匿名化」の OR。匿名化済みなら日付は不問。
         var cutoffSatisfied = context.DataAnonymized || DataCutoffPolicy.IsAllAfterCutoff(context.Bars, context.LlmTrainingCutoff);
 
         var evaluation = new Stage0GateEvaluation(

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, IADR-0038/0039: リターン列の標本モーメント（平均・標本SD・歪度・尖度・1期間Sharpe）。DSR の入力。
+// FR-15, IADR-0044/0039: リターン列の標本モーメント（平均・標本SD・歪度・尖度・1期間Sharpe）。DSR の入力。
 public class SampleMomentsTests
 {
     [Fact]

@@ -19,7 +19,7 @@ public sealed record Stage0GateCriteria(
     decimal MaxDrawdownTolerance,
     int MinTrials)
 {
-    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.15・最小試行数 1）。実データでの較正は後続（IADR-0039）。
+    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.15・最小試行数 1）。実データでの較正は後続（IADR-0045）。
     public static Stage0GateCriteria Default => new(
         MinDeflatedSharpe: 0.95,
         MaxProbabilityOfOverfitting: 0.50,
@@ -40,7 +40,7 @@ public sealed record Stage0GateEvaluation(
 // FR-15: Stage 0 合格判定の結果。FailedChecks が空なら合格。
 public sealed record Stage0GateResult(bool Passed, IReadOnlyList<Stage0GateCheck> FailedChecks);
 
-// FR-15, FR-20, ADR-0008, 06_daytrading-review §4, IADR-0039: Stage 0 合格判定（純関数）。
+// FR-15, FR-20, ADR-0008, 06_daytrading-review §4, IADR-0045: Stage 0 合格判定（純関数）。
 // DSR 補正後のエッジ・過剰適合・最大DD・コスト2倍頑健性・ウォークフォワードOOS・試行数・データカットオフの 7 条件を合成する。
 public static class Stage0GateEvaluator
 {

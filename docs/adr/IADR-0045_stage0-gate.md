@@ -1,5 +1,5 @@
 ---
-title: IADR-0039 Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
+title: IADR-0045 Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
 type: impl-adr
 status: Accepted
 related_ids: [FR-15, FR-20, ADR-0008]
@@ -12,9 +12,9 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
-# IADR-0039: Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
+# IADR-0045: Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
 
-> 実装リポジトリ内の意思決定記録。[IADR-0037](IADR-0037_backtest-foundation.md) の Slice C に対応。
+> 実装リポジトリ内の意思決定記録。[IADR-0043](IADR-0043_backtest-foundation.md) の Slice C に対応。
 
 - 状態: Accepted
 - 日付: 2026-07-11
@@ -46,14 +46,14 @@ Stage 1 へ進める。段階遷移（昇格・差し戻し）は**利用者承�
    | データ健全性 | 全バーがカットオフ後/匿名化 | — |
    不合格時は `FailedChecks` に該当条件を列挙する（デバッグ・監査可能性）。データ健全性（検証条件①）は
    **「全バーがカットオフ後（`DataCutoffPolicy`）」または「銘柄匿名化済み（`Stage0GateContext.DataAnonymized`）」の OR** で判定する
-   （ADR-0008/IADR-0038 の代替 2 経路）。匿名化済みなら LLM は銘柄を同定できないためカットオフ日付は不問。
+   （ADR-0008/IADR-0044 の代替 2 経路）。匿名化済みなら LLM は銘柄を同定できないためカットオフ日付は不問。
 2. **FR-20 接続は「昇格推奨」に限定**（`Stage0Promotion`）: 合格なら `Stage0Verification → Stage1Paper` の**推奨**を返す。
    実際の遷移・資金上限変更は FR-20 の**利用者承認フロー（#20）**で行う。本 Issue では判定と推奨まで。
 3. **撤退キルスイッチ**（`KillSwitch`）: `実DD ≥ バックテスト最大DD × 1.5`（既定倍率）で停止判定（ADR-0008）。
    バックテスト最大 DD が 0（無ドローダウン）の場合は、正の実 DD をもって発火する保守側とする。
 4. **段階の型は再利用**: `TradingStage`（`RiskManagement.Domain`, FR-20）を参照し新設しない。
 5. **Application `Stage0GateService`** は DSR・PBO・ゲート・昇格推奨を合成する（オーケストレーション）。試行の全数実行や
-   実データ取得は本 Issue のスコープ外（[IADR-0037] のとおり後続）。
+   実データ取得は本 Issue のスコープ外（[IADR-0043] のとおり後続）。
 
 ## 理由
 
@@ -69,4 +69,4 @@ Stage 1 へ進める。段階遷移（昇格・差し戻し）は**利用者承�
 
 ## 関連
 
-- [IADR-0037](IADR-0037_backtest-foundation.md)、[IADR-0038](IADR-0038_overfitting-correction.md)、[FR-20 機能仕様](../functional/FR-20_staged-gates.md)
+- [IADR-0043](IADR-0043_backtest-foundation.md)、[IADR-0044](IADR-0044_overfitting-correction.md)、[FR-20 機能仕様](../functional/FR-20_staged-gates.md)

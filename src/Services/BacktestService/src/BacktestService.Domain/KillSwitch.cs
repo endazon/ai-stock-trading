@@ -1,6 +1,6 @@
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, FR-20, ADR-0008, IADR-0039: 実弾段階の撤退キルスイッチ（純関数）。
+// FR-15, FR-20, ADR-0008, IADR-0045: 実弾段階の撤退キルスイッチ（純関数）。
 // 実 DD がバックテスト最大 DD の既定 1.5 倍に達したら自動停止・再検証する（ADR-0008 撤退基準）。
 public static class KillSwitch
 {

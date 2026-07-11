@@ -1,6 +1,6 @@
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, IADR-0038/0039: リターン列の標本モーメント。DSR は 1 期間 Sharpe・歪度・尖度・標本長を要する。
+// FR-15, IADR-0044/0039: リターン列の標本モーメント。DSR は 1 期間 Sharpe・歪度・尖度・標本長を要する。
 // SampleStandardDeviation は標本標準偏差（n-1）、歪度・尖度は母集団標準化モーメント（尖度は非超過・正規で 3）。
 public readonly record struct SampleMoments(
     double Mean,

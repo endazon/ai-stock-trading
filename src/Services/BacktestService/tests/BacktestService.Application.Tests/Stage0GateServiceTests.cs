@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Application.Tests;
 
-// FR-15, FR-20, ADR-0008, IADR-0039: Stage 0 合格判定オーケストレーション（DSR・PBO・ゲート・昇格推奨の合成）を検証する。
+// FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定オーケストレーション（DSR・PBO・ゲート・昇格推奨の合成）を検証する。
 public class Stage0GateServiceTests
 {
     // 緩やかに右肩上がり（DD なし・正の Sharpe）のエクイティ曲線を合成する。
