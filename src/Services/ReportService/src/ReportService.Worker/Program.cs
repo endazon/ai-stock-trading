@@ -1,5 +1,7 @@
 using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
+using AiStockTrading.Report.Application.Services;
+using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -41,6 +43,9 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IReportStore, EfReportStore>();
 builder.Services.AddScoped<AppSvc>();
+// FR-06/16, IADR-0032: 報告書生成（数値集計の組み立て＋テンプレート化）。散文は LLM ドラフト（実 LLM は後続・安全既定プレースホルダ）。
+builder.Services.AddSingleton<IReportNarrativeDrafter, PlaceholderReportNarrativeDrafter>();
+builder.Services.AddScoped<ReportDraftService>();
 
 // IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。
 builder.Services.AddMassTransit(x =>
