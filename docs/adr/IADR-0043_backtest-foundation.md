@@ -1,5 +1,5 @@
 ---
-title: IADR-0037 バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける
+title: IADR-0043 バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける
 type: impl-adr
 status: Accepted
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
@@ -12,10 +12,10 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
-# IADR-0037: バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける
+# IADR-0043: バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定（本 ADR は基盤全体の構成方針。
-> 個別方式は [IADR-0038](IADR-0038_overfitting-correction.md)（過剰適合補正）・[IADR-0039](IADR-0039_stage0-gate.md)（Stage 0 合格判定）に分ける）。
+> 個別方式は [IADR-0044](IADR-0044_overfitting-correction.md)（過剰適合補正）・[IADR-0045](IADR-0045_stage0-gate.md)（Stage 0 合格判定）に分ける）。
 
 - 状態: Accepted
 - 日付: 2026-07-11
@@ -55,8 +55,8 @@ Stage 1 へ進めない。Issue #16 は「大きめだが純コードで完結�
    `MembersAsOf(D)` で返す。現在の上場銘柄だけで検証しない。
 7. **スライス分割**（各 PR は `Refs #16`、最終のみ `Closes #16`）:
    - Slice A: シミュレーションコア＋コストモデル＋結果集計（Domain）＋`IBarDataSource`／in-memory（Application）。
-   - Slice B: 過剰適合補正ハーネス（ウォークフォワード・試行台帳・DSR・PBO・カットオフ/匿名化）→ [IADR-0038]。
-   - Slice C: Stage 0 合格判定＋FR-20 遷移接続（昇格推奨・キルスイッチ）→ [IADR-0039]。
+   - Slice B: 過剰適合補正ハーネス（ウォークフォワード・試行台帳・DSR・PBO・カットオフ/匿名化）→ [IADR-0044]。
+   - Slice C: Stage 0 合格判定＋FR-20 遷移接続（昇格推奨・キルスイッチ）→ [IADR-0045]。
 
 ## 理由
 
@@ -78,5 +78,5 @@ Stage 1 へ進めない。Issue #16 は「大きめだが純コードで完結�
 ## 関連
 
 - 計画: FR-15/FR-20（[要求](../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md)）、[ADR-0008](../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md)、06_daytrading-review §3.2/§4
-- 実装: [IADR-0038](IADR-0038_overfitting-correction.md)（DSR/PBO/ウォークフォワード）、[IADR-0039](IADR-0039_stage0-gate.md)（Stage 0 合格判定）
+- 実装: [IADR-0044](IADR-0044_overfitting-correction.md)（DSR/PBO/ウォークフォワード）、[IADR-0045](IADR-0045_stage0-gate.md)（Stage 0 合格判定）
 - 再利用: FR-17 [`CostCalculator`]・FR-20 [`StageSettings`]

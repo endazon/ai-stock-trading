@@ -2,7 +2,7 @@ using AiStockTrading.Backtest.Domain;
 
 namespace AiStockTrading.Backtest.Application;
 
-// FR-15, IADR-0037: 過去データ供給の抽象。指定期間の日足バーを決定的に返す。
+// FR-15, IADR-0043: 過去データ供給の抽象。指定期間の日足バーを決定的に返す。
 // 実データ源コネクタ（J-Quants Free / Stooq 等）は本ポートのアダプタとして後続 Issue で差し込む。
 //
 // 契約: 同一 (Symbol, Market, Date) のバーは重複させず、正規の 1 本のみを返すこと。

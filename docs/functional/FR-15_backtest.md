@@ -15,7 +15,7 @@ plan_refs:
 # 機能仕様書: バックテスト基盤（FR-15）
 
 > 過去データによるバックテストを実弾投入前の**必須ゲート（Stage 0）**とする（ADR-0008）。本基盤は過去データ供給の抽象・
-> シミュレーション実行・結果集計・過剰適合補正・Stage 0 合格判定を提供する。実装は純ドメイン中心（[IADR-0037](../adr/IADR-0037_backtest-foundation.md)）。
+> シミュレーション実行・結果集計・過剰適合補正・Stage 0 合格判定を提供する。実装は純ドメイン中心（[IADR-0043](../adr/IADR-0043_backtest-foundation.md)）。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -81,5 +81,5 @@ plan_refs:
 ## 関連仕様
 
 - 機能仕様: [FR-20 段階ゲート](FR-20_staged-gates.md)、[FR-10 リスク統制](FR-10_risk-controls.md)
-- 実装 ADR: [IADR-0037](../adr/IADR-0037_backtest-foundation.md)、IADR-0038（過剰適合補正）、IADR-0039（Stage 0 合格判定）
+- 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）
 - 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)

@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Backtest.Domain;
 
-// FR-15, IADR-0037: 日足 OHLCV バー（不変レコード）。
+// FR-15, IADR-0043: 日足 OHLCV バー（不変レコード）。
 public readonly record struct PriceBar(
     string Symbol,
     Market Market,
@@ -51,7 +51,7 @@ public sealed record BacktestRun(
     BacktestMetrics Metrics,
     int UnfilledOrderCount);
 
-// FR-15, 06_daytrading-review §3.2, IADR-0037: 決定的バックテストシミュレータ（純関数）。
+// FR-15, 06_daytrading-review §3.2, IADR-0043: 決定的バックテストシミュレータ（純関数）。
 public static class BacktestSimulator
 {
     public static BacktestRun Run(IReadOnlyList<PriceBar> bars, IBacktestStrategy strategy, BacktestConfig config)

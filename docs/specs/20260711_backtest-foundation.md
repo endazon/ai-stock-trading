@@ -16,7 +16,7 @@ plan_refs:
 
 > Issue [#16](https://github.com/endazon/ai-stock-trading/issues/16)（FR-15）。ADR-0008 でバックテストは実弾投入前の
 > **必須ゲート（Stage 0）**に格上げされた。本作業は「過去データ供給の抽象・シミュレーション実行・結果集計・過剰適合補正・
-> Stage 0 合格判定」を**純ドメイン中心**で実装し CI 緑で完結させる（[IADR-0037](../adr/IADR-0037_backtest-foundation.md)）。
+> Stage 0 合格判定」を**純ドメイン中心**で実装し CI 緑で完結させる（[IADR-0043](../adr/IADR-0043_backtest-foundation.md)）。
 > 実データ源コネクタ・Worker ホスト・実コンテナ E2E は後続 Issue に切り分ける。
 
 ## 起点となる計画書・課題（トレーサビリティ）
@@ -38,7 +38,7 @@ plan_refs:
 
 ## アーキテクチャ
 
-新規サービス `src/Services/BacktestService`（[IADR-0037]）。
+新規サービス `src/Services/BacktestService`（[IADR-0043]）。
 
 - `BacktestService.Domain` — 純関数・不変レコード（I/O・時刻・乱数なし）。全計算・判定をここに置く。
 - `BacktestService.Application` — オーケストレーション＋ポート（`IBarDataSource`）＋決定的 in-memory アダプタ。
@@ -57,7 +57,7 @@ plan_refs:
 - `BacktestSimulator.Run(...)`: 決定的にバー単位で再生。**判断＝T 終値／約定＝T+1 始値＋スリッページ**（先読み排除）。→ `BacktestRun`（約定列・日次エクイティ曲線）。
 - `BacktestMetrics`: 純集計。総リターン・Sharpe（日次リターン）・最大ドローダウン・勝率・取引数・エクイティ曲線。
 
-### Slice B — 過剰適合補正ハーネス（PR: `Refs #16`。[IADR-0038]）
+### Slice B — 過剰適合補正ハーネス（PR: `Refs #16`。[IADR-0044]）
 
 - `WalkForwardSplitter`: In-Sample→Out-of-Sample のローリング/アンカー窓分割（検証条件③）。
 - `TrialLedger` / `BacktestTrial`: 試行（戦略構成候補）の Sharpe・OOS 実績・**試行数 N** を記録（検証条件④）。
@@ -65,7 +65,7 @@ plan_refs:
 - `ProbabilityOfBacktestOverfitting`: CSCV（組合せ対称交差検証）で PBO 推定。
 - `DataCutoffPolicy` / `SymbolAnonymizer`: 全バー日付が LLM 学習カットオフ後であることの検証、または決定的匿名化（検証条件①）。
 
-### Slice C — Stage 0 合格判定＋FR-20 遷移接続（PR: `Closes #16`。[IADR-0039]）
+### Slice C — Stage 0 合格判定＋FR-20 遷移接続（PR: `Closes #16`。[IADR-0045]）
 
 - `Stage0GateCriteria` / `Stage0GateEvaluator`: ADR-0008 基準を判定 ＝ DSR 補正後もエッジ正・PBO 閾値以下・最大 DD 許容内・
   **コスト 2 倍でも期待値が正**・ウォークフォワード OOS 正・最小試行数。→ `Stage0GateResult(Passed, reasons[])`。
@@ -87,4 +87,4 @@ plan_refs:
 ## 関連仕様
 
 - 機能仕様: [FR-15 バックテスト](../functional/FR-15_backtest.md)、[FR-20 段階ゲート](../functional/FR-20_staged-gates.md)
-- 実装 ADR: [IADR-0037](../adr/IADR-0037_backtest-foundation.md)（基盤構成）、IADR-0038（過剰適合補正・Slice B）、IADR-0039（Stage 0 合格判定・Slice C）
+- 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)（基盤構成）、IADR-0044（過剰適合補正・Slice B）、IADR-0045（Stage 0 合格判定・Slice C）
