@@ -45,7 +45,7 @@ public static class TradeDecisionPromptBuilder
         return sb.ToString();
     }
 
-    // FR-04, IADR-0037, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
+    // FR-04, IADR-0039, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
     // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させ、Parser を共有する。方針外・不確実は Hold。
     public static string BuildScreening(DecisionTrigger trigger, DailyPolicy policy, SizingContext context)
     {

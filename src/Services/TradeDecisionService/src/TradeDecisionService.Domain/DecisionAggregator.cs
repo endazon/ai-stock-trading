@@ -1,6 +1,6 @@
 namespace AiStockTrading.TradeDecision.Domain;
 
-// FR-04, FR-11, ADR-0003, IADR-0037: 多数決の集約（純関数）。同一入力を複数回 LLM 実行した各判断を安定化する。
+// FR-04, FR-11, ADR-0003, IADR-0039: 多数決の集約（純関数）。同一入力を複数回 LLM 実行した各判断を安定化する。
 // 最多得票の action を採り、同数タイ・空入力は安全側 Hold（ADR-0003「不確実なら取引しない」）。
 // 数値は勝利票から合成せず、参照価格の下側中央値を持つ「代表票」を一体で採用し、実在する 1 票の根拠（FR-11）を保つ。
 public static class DecisionAggregator
@@ -51,6 +51,6 @@ public static class DecisionAggregator
     }
 }
 
-// IADR-0037: 多数決の集約結果。Decision は下流サイジングへ、TotalVotes/AgreementVotes は監査（FR-11）へ。
+// IADR-0039: 多数決の集約結果。Decision は下流サイジングへ、TotalVotes/AgreementVotes は監査（FR-11）へ。
 // AgreementVotes は勝利 action の得票数（タイ・空は 0）。
 public sealed record DecisionVoteResult(LlmDecision Decision, int TotalVotes, int AgreementVotes);

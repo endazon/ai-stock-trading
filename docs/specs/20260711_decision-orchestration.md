@@ -28,7 +28,7 @@ plan_refs:
   - L128: 「取引判断は構造化出力（JSON）とし、**同一入力の複数回実行＋多数決で安定化**する」
   - L129: 「判断の二段化: **軽量モデルによるスクリーニング（対象銘柄の絞り込み）→ 高性能モデルによる本判断**の二段構成とし、費用増を抑える」
   - L34: 「モデル選択・二段判断はゲートウェイの構成で行う」→ 本スライスは**モデル識別子をポート経由でゲートウェイに渡す**形にとどめ、実解決は後続
-- 関連 IADR: [IADR-0017](../adr/IADR-0017_trade-decision-structure.md)（多数決・二段を後続と明記）、本作業で新規 [IADR-0037](../adr/IADR-0037_decision-orchestration.md)
+- 関連 IADR: [IADR-0017](../adr/IADR-0017_trade-decision-structure.md)（多数決・二段を後続と明記）、本作業で新規 [IADR-0039](../adr/IADR-0039_decision-orchestration.md)
 - 対象 Issue: #11（残スライスあり・**クローズしない**。`Refs #11`）
 
 ## 目的・背景
@@ -110,7 +110,7 @@ CI で緑にする範囲（ユニット＋fake LLM。実 LLM/実コンテナ不�
 ## 関連仕様
 
 - 上位: [20260710_trade-decision-core](20260710_trade-decision-core.md)（Slice A・本スライスの基盤）
-- 実装ADR: [IADR-0037](../adr/IADR-0037_decision-orchestration.md)、[IADR-0017](../adr/IADR-0017_trade-decision-structure.md)
+- 実装ADR: [IADR-0039](../adr/IADR-0039_decision-orchestration.md)、[IADR-0017](../adr/IADR-0017_trade-decision-structure.md)
 
 ## 未決事項
 

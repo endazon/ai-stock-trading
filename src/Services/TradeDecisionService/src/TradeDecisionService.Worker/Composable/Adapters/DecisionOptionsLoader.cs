@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
-// FR-04, IADR-0037: Decision:* から多数決・二段オーケストレーションの構成を読む。
+// FR-04, IADR-0039: Decision:* から多数決・二段オーケストレーションの構成を読む。
 // 未設定・不正値は Default（1 票・スクリーニング無効＝現行挙動）に倒す安全側フォールバック。Program.cs から利用し単体テストする。
 public static class DecisionOptionsLoader
 {

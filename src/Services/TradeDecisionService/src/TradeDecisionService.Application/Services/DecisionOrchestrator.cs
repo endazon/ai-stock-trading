@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Application.Services;
 
-// FR-04, FR-11, ADR-0003, IADR-0037: 多数決・二段（一次スクリーニング→二次本判断）オーケストレーション。
+// FR-04, FR-11, ADR-0003, IADR-0039: 多数決・二段（一次スクリーニング→二次本判断）オーケストレーション。
 // LLM 非決定性への対策として、二次は同一入力を VoteCount 回実行し DecisionAggregator で多数決を採る（L128）。
 // 費用統制として、有効時は一次で軽量モデルの絞り込みを行い、Hold なら二次を呼ばず打ち切る（L129）。
 // モデル選択（一次=軽量／二次=高性能）はポート引数でゲートウェイへ渡すのみ（実解決は後続・L34）。
@@ -52,7 +52,7 @@ public sealed class DecisionOrchestrator(
     }
 }
 
-// IADR-0037: オーケストレーション結果。Decision は下流サイジングへ、票数・スクリーニング可否は FR-11 監査ログへ。
+// IADR-0039: オーケストレーション結果。Decision は下流サイジングへ、票数・スクリーニング可否は FR-11 監査ログへ。
 // ScreenedOut=true は一次スクリーニングで打ち切ったこと（TotalVotes=0）を表す。
 public sealed record OrchestratedDecision(
     LlmDecision Decision, int TotalVotes, int AgreementVotes, bool ScreenedOut);

@@ -1,5 +1,5 @@
 ---
-title: IADR-0037 取引判断の多数決はドメイン純関数・二段（一次スクリーニング→二次多数決）はアプリのオーケストレータ・モデル選択はポート引数でゲートウェイへ委譲
+title: IADR-0039 取引判断の多数決はドメイン純関数・二段（一次スクリーニング→二次多数決）はアプリのオーケストレータ・モデル選択はポート引数でゲートウェイへ委譲
 type: impl-adr
 status: Accepted
 related_ids: [FR-04, FR-11, ADR-0003]
@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
 ---
 
-# IADR-0037: 取引判断の多数決・二段オーケストレーションの構成
+# IADR-0039: 取引判断の多数決・二段オーケストレーションの構成
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

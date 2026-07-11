@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Domain.Tests;
 
-// FR-04, FR-11, ADR-0003, IADR-0037: 多数決の集約（純関数）の検証。
+// FR-04, FR-11, ADR-0003, IADR-0039: 多数決の集約（純関数）の検証。
 // 最多得票の action を採り、タイ・空は安全側 Hold。数値は勝利票の参照価格中央値を持つ代表票を一体採用。
 public class DecisionAggregatorTests
 {
@@ -78,7 +78,7 @@ public class DecisionAggregatorTests
     [Fact]
     public void 勝利票の参照価格中央値を持つ代表票を一体採用する()
     {
-        // IADR-0037: 合成値を作らず、勝利票の中で参照価格が中央（下側中央値）の 1 票を丸ごと採る。
+        // IADR-0039: 合成値を作らず、勝利票の中で参照価格が中央（下側中央値）の 1 票を丸ごと採る。
         // 勝利=Buy の参照価格 {900, 1000, 1100} → 中央 1000 の票（stop=25・rationale="中央"）を採用。
         var votes = new[]
         {

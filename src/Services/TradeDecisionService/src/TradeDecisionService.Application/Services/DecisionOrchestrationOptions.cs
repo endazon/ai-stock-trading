@@ -1,6 +1,6 @@
 namespace AiStockTrading.TradeDecision.Application.Services;
 
-// FR-04, ADR-0003, IADR-0037: 多数決・二段オーケストレーションの構成。
+// FR-04, ADR-0003, IADR-0039: 多数決・二段オーケストレーションの構成。
 // Default（VoteCount=1・スクリーニング無効・モデル未指定）は単発判断（IADR-0017）と等価＝現行挙動。
 public sealed record DecisionOrchestrationOptions
 {

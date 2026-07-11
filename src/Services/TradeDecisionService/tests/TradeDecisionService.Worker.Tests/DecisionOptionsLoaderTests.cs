@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// FR-04, IADR-0037: Decision:* 構成の読み取りと安全側フォールバックの検証。
+// FR-04, IADR-0039: Decision:* 構成の読み取りと安全側フォールバックの検証。
 // 既定＝現行挙動（1 票・スクリーニング無効）を config 経由で壊さないことを保証する。
 public class DecisionOptionsLoaderTests
 {

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace AiStockTrading.TradeDecision.Application.Services;
 
 // FR-04, FR-07, FR-10, FR-11, UC-01, UC-02, ADR-0003, IADR-0003/0004/0017/0037: 取引判断の中核。
-// トリガー → 確定済み日報の方針＋リスク制約で LLM 判断（多数決・二段オーケストレーション・IADR-0037）→ 構造化解析
+// トリガー → 確定済み日報の方針＋リスク制約で LLM 判断（多数決・二段オーケストレーション・IADR-0039）→ 構造化解析
 // → PositionSizer で数量確定 → TradeDecisionMade。
 // 安全既定: 確定済み日報なし / Hold / 数量 0 は取引しない（発注意図を作らない）。
 // options 未指定なら DecisionOrchestrationOptions.Default（1 票・スクリーニング無効）＝単発判断（IADR-0017）と等価。
@@ -21,7 +21,7 @@ public sealed class TradeDecisionService(
     ILogger<TradeDecisionService> logger,
     DecisionOrchestrationOptions? options = null)
 {
-    // IADR-0037: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
+    // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
         new(llm, options ?? DecisionOrchestrationOptions.Default, logger);
 
@@ -49,7 +49,7 @@ public sealed class TradeDecisionService(
 
         var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
 
-        // IADR-0037: 本判断プロンプトを構築し、多数決・二段をオーケストレータへ委譲する。一次スクリーニングプロンプトは
+        // IADR-0039: 本判断プロンプトを構築し、多数決・二段をオーケストレータへ委譲する。一次スクリーニングプロンプトは
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
         var decisionPrompt = TradeDecisionPromptBuilder.Build(trigger, policy, context);
         var orchestrated = await _orchestrator.DecideAsync(

@@ -43,7 +43,7 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("現在値");
     }
 
-    // IADR-0037, L129: 一次スクリーニング用プロンプトは絞り込みに徹し、本判断と同じ JSON スキーマを再利用する。
+    // IADR-0039, L129: 一次スクリーニング用プロンプトは絞り込みに徹し、本判断と同じ JSON スキーマを再利用する。
     [Fact]
     public void スクリーニングプロンプトは絞り込み文言と共通JSONスキーマを出力する()
     {

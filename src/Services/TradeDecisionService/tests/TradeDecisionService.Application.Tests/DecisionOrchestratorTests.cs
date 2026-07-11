@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Application.Tests;
 
-// FR-04, FR-11, ADR-0003, IADR-0037: 多数決・二段オーケストレーションの検証。
+// FR-04, FR-11, ADR-0003, IADR-0039: 多数決・二段オーケストレーションの検証。
 // 実 LLM 非決定性を「順次出力の fake」で再現し、票割れ・スクリーニング打ち切り・モデルルーティング・呼び出し回数を決定的に確認する。
 public class DecisionOrchestratorTests
 {
@@ -78,7 +78,7 @@ public class DecisionOrchestratorTests
     [Fact]
     public async Task 二段_一次スクリーニングがHoldなら二次を呼ばず打ち切る()
     {
-        // IADR-0037: 費用統制。一次 Hold → 二次スキップ。呼び出しは一次の 1 回のみ。
+        // IADR-0039: 費用統制。一次 Hold → 二次スキップ。呼び出しは一次の 1 回のみ。
         var llm = new SequencedLlm(Json("Hold"), Json("Buy"), Json("Buy"), Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
@@ -111,7 +111,7 @@ public class DecisionOrchestratorTests
     [Fact]
     public async Task 二段_モデルルーティング_一次は軽量_二次は高性能を渡す()
     {
-        // IADR-0037, L34: モデル選択はポート引数でゲートウェイへ渡す。一次=PrimaryModel、二次=SecondaryModel。
+        // IADR-0039, L34: モデル選択はポート引数でゲートウェイへ渡す。一次=PrimaryModel、二次=SecondaryModel。
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Buy"));
         var options = new DecisionOrchestrationOptions
         {
@@ -130,7 +130,7 @@ public class DecisionOrchestratorTests
     [Fact]
     public async Task スクリーニング無効なら一次プロンプトを構築しない_遅延評価()
     {
-        // IADR-0037: 既定（スクリーニング無効）の経路では screeningPromptFactory を評価しない（無駄な構築を避ける）。
+        // IADR-0039: 既定（スクリーニング無効）の経路では screeningPromptFactory を評価しない（無駄な構築を避ける）。
         var llm = new SequencedLlm(Json("Buy"));
         var factoryCalls = 0;
 
