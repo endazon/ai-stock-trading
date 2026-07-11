@@ -38,7 +38,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"));
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default);
 
-        var result = await orchestrator.DecideAsync("screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision");
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.ScreenedOut.Should().BeFalse();
@@ -54,7 +54,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3 };
 
-        var result = await Create(llm, options).DecideAsync("screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.TotalVotes.Should().Be(3);
@@ -70,7 +70,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 2 };
 
-        var result = await Create(llm, options).DecideAsync("screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
 
         result.Decision.Action.Should().Be(TradeAction.Hold);
     }
@@ -82,7 +82,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Hold"), Json("Buy"), Json("Buy"), Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync("screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
 
         result.Decision.Action.Should().Be(TradeAction.Hold);
         result.ScreenedOut.Should().BeTrue();
@@ -98,7 +98,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync("screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.ScreenedOut.Should().BeFalse();
@@ -121,10 +121,23 @@ public class DecisionOrchestratorTests
             SecondaryModel = "pro",
         };
 
-        await Create(llm, options).DecideAsync("screen", "decision");
+        await Create(llm, options).DecideAsync(() => "screen", "decision");
 
         llm.Calls[0].Model.Should().Be("light"); // 一次スクリーニング
         llm.Calls.Skip(1).Should().OnlyContain(c => c.Model == "pro"); // 二次本判断
+    }
+
+    [Fact]
+    public async Task スクリーニング無効なら一次プロンプトを構築しない_遅延評価()
+    {
+        // IADR-0037: 既定（スクリーニング無効）の経路では screeningPromptFactory を評価しない（無駄な構築を避ける）。
+        var llm = new SequencedLlm(Json("Buy"));
+        var factoryCalls = 0;
+
+        await Create(llm, DecisionOrchestrationOptions.Default)
+            .DecideAsync(() => { factoryCalls++; return "screen"; }, "decision");
+
+        factoryCalls.Should().Be(0);
     }
 
     [Fact]

@@ -1,0 +1,72 @@
+using AiStockTrading.TradeDecision.Application.Services;
+using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Xunit;
+
+namespace AiStockTrading.TradeDecision.Worker.Tests;
+
+// FR-04, IADR-0037: Decision:* 構成の読み取りと安全側フォールバックの検証。
+// 既定＝現行挙動（1 票・スクリーニング無効）を config 経由で壊さないことを保証する。
+public class DecisionOptionsLoaderTests
+{
+    private static DecisionOrchestrationOptions Load(params (string Key, string? Value)[] pairs)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(pairs.Select(p => new KeyValuePair<string, string?>(p.Key, p.Value)))
+            .Build();
+        return DecisionOptionsLoader.FromConfiguration(config);
+    }
+
+    [Fact]
+    public void 未設定なら既定_現行挙動と等価()
+    {
+        var options = Load();
+
+        options.VoteCount.Should().Be(1);
+        options.EnableScreening.Should().BeFalse();
+        options.PrimaryModel.Should().BeNull();
+        options.SecondaryModel.Should().BeNull();
+    }
+
+    [Fact]
+    public void 全項目を設定から読み取る()
+    {
+        var options = Load(
+            ("Decision:VoteCount", "5"),
+            ("Decision:EnableScreening", "true"),
+            ("Decision:PrimaryModel", "light"),
+            ("Decision:SecondaryModel", "pro"));
+
+        options.VoteCount.Should().Be(5);
+        options.EnableScreening.Should().BeTrue();
+        options.PrimaryModel.Should().Be("light");
+        options.SecondaryModel.Should().Be("pro");
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("abc")]
+    [InlineData("")]
+    public void 不正なVoteCountは既定1のまま_安全側(string raw)
+    {
+        // 0・負数・非数値・空は既定 1（現行挙動）を保つ。
+        Load(("Decision:VoteCount", raw)).VoteCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void 空文字のモデル指定はnullに正規化する()
+    {
+        var options = Load(("Decision:PrimaryModel", ""), ("Decision:SecondaryModel", "   "));
+
+        options.PrimaryModel.Should().BeNull();
+        options.SecondaryModel.Should().BeNull();
+    }
+
+    [Fact]
+    public void 不正なEnableScreeningは既定false()
+    {
+        Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeFalse();
+    }
+}

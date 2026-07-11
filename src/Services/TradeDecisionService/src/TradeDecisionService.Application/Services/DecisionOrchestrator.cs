@@ -13,16 +13,17 @@ public sealed class DecisionOrchestrator(
     DecisionOrchestrationOptions options,
     ILogger logger)
 {
+    // screeningPromptFactory は一次スクリーニング時のみ評価する（既定＝スクリーニング無効の経路で無駄なプロンプト構築を避ける）。
     public async Task<OrchestratedDecision> DecideAsync(
-        string screeningPrompt, string decisionPrompt, CancellationToken cancellationToken = default)
+        Func<string> screeningPromptFactory, string decisionPrompt, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(screeningPrompt);
+        ArgumentNullException.ThrowIfNull(screeningPromptFactory);
         ArgumentNullException.ThrowIfNull(decisionPrompt);
 
         // 一次スクリーニング（軽量モデル・1 回）。Hold なら二次をスキップして打ち切る（費用統制）。
         if (options.EnableScreening)
         {
-            var screenOutput = await llm.CompleteAsync(screeningPrompt, options.PrimaryModel, cancellationToken)
+            var screenOutput = await llm.CompleteAsync(screeningPromptFactory(), options.PrimaryModel, cancellationToken)
                 .ConfigureAwait(false);
             var screen = TradeDecisionParser.Parse(screenOutput);
             if (screen.Action == TradeAction.Hold)
