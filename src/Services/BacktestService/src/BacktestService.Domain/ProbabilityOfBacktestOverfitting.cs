@@ -22,6 +22,9 @@ public static class ProbabilityOfBacktestOverfitting
         var strategyCount = performanceByBlock[0].Length;
         if (strategyCount < 2)
             throw new ArgumentException("戦略は 2 つ以上である必要があります。", nameof(performanceByBlock));
+        // 全ブロック行の戦略数は揃っている必要がある（不揃いは素の IndexOutOfRange ではなく一貫した検証で弾く・#100 レビュー指摘）。
+        if (performanceByBlock.Any(row => row is null || row.Length != strategyCount))
+            throw new ArgumentException("全ブロック行の戦略数は一致している必要があります。", nameof(performanceByBlock));
 
         // ブロックを S 個のグループへ連続分割（サイズ差は最大 1）。
         var groups = PartitionBlocks(blockCount, partitions);

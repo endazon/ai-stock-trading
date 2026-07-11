@@ -56,4 +56,13 @@ public class ProbabilityOfBacktestOverfittingTests
         var act = () => ProbabilityOfBacktestOverfitting.Compute(perf, 4);
         act.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void 行の長さが不揃いなら例外_一貫した入力検証()
+    {
+        // ブロック行の戦略数が不揃い（jagged）→ 他の検証と同じく ArgumentException（#100 レビュー指摘）。
+        double[][] perf = [[1, 2], [1, 2, 3], [2, 1], [1, 2]];
+        var act = () => ProbabilityOfBacktestOverfitting.Compute(perf, 4);
+        act.Should().Throw<ArgumentException>();
+    }
 }
