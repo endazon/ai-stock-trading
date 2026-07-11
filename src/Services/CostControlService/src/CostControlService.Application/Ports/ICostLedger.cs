@@ -8,6 +8,10 @@ public interface ICostLedger
     /// <summary>
     /// 費用を追記し、当該月の LLM 累計（計上前/計上後）を<b>原子的に</b>返す（IADR-0034）。
     /// 並行計上でもしきい値遷移を高々 1 回に保つため、実装は月単位で直列化する（EF=トランザクション＋アドバイザリロック / InMemory=ロック）。
+    /// <para>
+    /// 前提: 呼び出し側は<b>アンビエント（既に開始済みの）トランザクション内から呼ばない</b>こと。EF 実装は自前で
+    /// トランザクションを開始するため、入れ子になると例外になる（#79 の自動計上連携時に留意）。
+    /// </para>
     /// </summary>
     LlmCostRecordOutcome Record(string month, CostCategory category, decimal amount, DateTimeOffset at);
 

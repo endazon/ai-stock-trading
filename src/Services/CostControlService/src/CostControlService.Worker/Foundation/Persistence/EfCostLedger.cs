@@ -9,7 +9,8 @@ namespace AiStockTrading.CostControl.Worker.Foundation.Persistence;
 // 直列化し、並行計上でもしきい値遷移を高々 1 回に保つ（IADR-0034）。
 internal sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
 {
-    // 非リレーショナル（テストの InMemory EF）はアドバイザリロック/実トランザクション非対応のためプロセス内ロックで代替直列化する。
+    // 非リレーショナル（テストの InMemory EF）専用のプロセス内直列化ロック。本番の Npgsql 経路はこのロックを通らず
+    // pg_advisory_xact_lock で直列化する。テスト専用のため全インスタンス共有（無関係な test DB 間の待ち合わせは無害）。
     private static readonly Lock NonRelationalGate = new();
 
     public LlmCostRecordOutcome Record(string month, CostCategory category, decimal amount, DateTimeOffset at)
@@ -55,25 +56,12 @@ internal sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
         return new LlmCostRecordOutcome(before, after);
     }
 
-    // "yyyy-MM" から決定的な bigint を導出する（プロセス跨ぎで安定＝複数レプリカでも同月は同キーで直列化。
-    // string.GetHashCode はプロセス毎ランダムのため用いない）。想定外書式は FNV-1a 64bit にフォールバック。
+    // 月キー "yyyy-MM"（常に CostControlService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
+    // （複数レプリカでも同月は同キーで直列化）＝ string.GetHashCode（プロセス毎ランダム）は用いない。
     private static long AdvisoryKey(string month)
     {
         var parts = month.Split('-');
-        if (parts.Length == 2 && int.TryParse(parts[0], out var year) && int.TryParse(parts[1], out var m))
-            return year * 100L + m;
-        return Fnv1a64(month);
-    }
-
-    private static long Fnv1a64(string s)
-    {
-        ulong h = 1469598103934665603UL;
-        foreach (var c in s)
-        {
-            h ^= c;
-            h *= 1099511628211UL;
-        }
-
-        return unchecked((long)h);
+        return int.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture) * 100L
+             + int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
     }
 }

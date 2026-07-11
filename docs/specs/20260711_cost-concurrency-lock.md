@@ -1,7 +1,7 @@
 ---
 title: 費用計上の並行 read-modify-write に行ロック/トランザクションを導入
 type: spec
-status: review
+status: done
 related_ids: [NFR, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-11
@@ -48,10 +48,10 @@ plan_refs:
 ## 受け入れ基準
 
 CI で緑にする範囲（ユニット・InMemory ledger の並行性）:
-- [ ] `ICostLedger.Record` が LLM 累計の before/after を返す。
-- [ ] `CostControlService.Record` が outcome から遷移を判定し、しきい値通知（`CrossedTo`）が上方遷移時のみ返る（挙動不変・回帰）。
-- [ ] `InMemoryCostLedger` の並行計上（N 並列 Record）でしきい値遷移が **80%/100% それぞれ高々 1 回**（重複/取りこぼしなし）。
-- [ ] `EfCostLedger.Record` が before/after を返し、月・カテゴリ別集計は従来どおり（InMemory EF）。
+- [x] `ICostLedger.Record` が LLM 累計の before/after を返す。
+- [x] `CostControlService.Record` が outcome から遷移を判定し、しきい値通知（`CrossedTo`）が上方遷移時のみ返る（挙動不変・回帰）。
+- [x] `InMemoryCostLedger` の並行計上（N 並列 Record）でしきい値遷移が **80%/100% それぞれ高々 1 回**（重複/取りこぼしなし）。
+- [x] `EfCostLedger.Record` が before/after を返し、月・カテゴリ別集計は従来どおり（InMemory EF）。
 
 実 API/実コンテナ前提（CI 既定では実行しない）:
 - [ ] 実 PostgreSQL でのアドバイザリロックによる並行計上の直列化（真の行/ロック競合は実 DB でのみ再現・#82）。
