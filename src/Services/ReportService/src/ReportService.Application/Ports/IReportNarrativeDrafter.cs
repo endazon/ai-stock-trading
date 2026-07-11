@@ -10,8 +10,10 @@ public interface IReportNarrativeDrafter
 }
 
 // 散文ドラフトの文脈（LLM プロンプトの素材）。数値は集計済みの参考値として渡すが、LLM に再計算はさせない（提示のみ）。
+// Markets は対象市場（実 LLM 接続時に市場を踏まえた市況コメントを書けるよう渡す）。
 public sealed record DailyNarrativeContext(
     string PeriodKey,
     DateOnly Date,
+    IReadOnlyList<string> Markets,
     PnlSummary Pnl,
     string PolicySummary);

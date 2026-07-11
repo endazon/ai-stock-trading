@@ -61,4 +61,17 @@ public class ReportDraftServiceTests
         draft.Pnl.TradeCount.Should().Be(0);
         draft.Markdown.Should().Contain("取引回数（買/売/決済） | 0 / 0 / 0");
     }
+
+    [Fact]
+    public async Task PeriodKeyと対象日が不整合なら例外()
+    {
+        // Date を正とし、"daily-{Date}" と一致しない PeriodKey は弾く（不整合な報告書を残さない）。
+        var svc = new ReportDraftService(new FakeDrafter("散文"));
+        var mismatched = new DailyDraftRequest(
+            "daily-2026-07-11", new DateOnly(2026, 7, 10), ["US"], 1, null, "方針", [], null);
+
+        var act = () => svc.BuildDailyDraftAsync(mismatched);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 }

@@ -140,6 +140,30 @@ public class ReportEndpointsTests
     }
 
     [Fact]
+    public async Task 日報ドラフト生成は利用者ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+
+        var res = await client.PostAsJsonAsync("/reports/daily-2026-07-10/draft",
+            new { Date = "2026-07-10", AssumptionsVersion = 1 });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 日報ドラフトのPeriodKeyと対象日が不整合なら_400()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        var res = await OwnerClient(factory).PostAsJsonAsync("/reports/daily-2026-07-10/draft",
+            new { Date = "2026-07-11", AssumptionsVersion = 1 });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task 日報ドラフト生成は数値集計を含むMarkdownを返す()
     {
         // FR-06/16, IADR-0032: 数値はコード集計・散文は LLM ドラフト（安全既定プレースホルダ）。

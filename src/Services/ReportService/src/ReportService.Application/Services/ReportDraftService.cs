@@ -15,6 +15,12 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter)
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.PeriodKey);
 
+        // periodKey と対象日の不整合を弾く（Date を正とする）。不整合な報告書が後続の永続化/KB 保存で残らないようにする。
+        var expectedKey = $"daily-{request.Date:yyyy-MM-dd}";
+        if (!string.Equals(request.PeriodKey, expectedKey, StringComparison.Ordinal))
+            throw new ArgumentException($"日報の PeriodKey は対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。");
+
+        var markets = request.Markets ?? [];
         var fills = request.Fills ?? [];
 
         // 数値はコード集計（FR-16）。前提条件は暫定で既定値（#19 バージョン付き取得・#63 台帳連携は #22 後続）。
@@ -25,14 +31,14 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter)
 
         // 散文のみ LLM ドラフトへ委ねる（数値は提示のみで再計算させない）。
         var narrative = await drafter
-            .DraftDailyNarrativeAsync(new DailyNarrativeContext(request.PeriodKey, request.Date, pnl, request.PolicySummary), cancellationToken)
+            .DraftDailyNarrativeAsync(new DailyNarrativeContext(request.PeriodKey, request.Date, markets, pnl, request.PolicySummary), cancellationToken)
             .ConfigureAwait(false);
 
         var view = new DailyReportView
         {
             PeriodKey = request.PeriodKey,
             Date = request.Date,
-            Markets = request.Markets ?? [],
+            Markets = markets,
             AssumptionsVersion = request.AssumptionsVersion,
             BasedOn = request.BasedOn,
             ConfirmedAt = null, // ドラフトは未確定
