@@ -58,6 +58,35 @@ public static class TradingDefaults
         // Stage 0（検証）から開始。ペーパーのみ・資金上限は初期投入資金
         new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital);
 
+    /// <summary>
+    /// FR-20, ADR-0008: 撤退基準の DD 倍率 1.5（実DD ≥ バックテスト最大DD × 1.5 で自動停止・再検証）。
+    /// </summary>
+    public const decimal WithdrawalDrawdownMultiple = 1.5m;
+
+    /// <summary>
+    /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定
+    /// （1 ポジション相当＝MaxOrderAmount）。実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
+    /// </summary>
+    public const decimal Stage2MinimalLiveCapitalCap = 35_000m;
+
+    // FR-20, ADR-0008: 段階ゲート方針（4 段階の Mode/資金上限＋撤退倍率）。Stage 0/1＝ペーパー、Stage 2/3＝実弾。
+    // 昇格・差し戻しは合格・撤退基準に基づき利用者が承認する（遷移ロジックは StageGate）。
+    public static StageGatePolicy CreateStagePolicy() => new()
+    {
+        Definitions = new Dictionary<TradingStage, StageSettings>
+        {
+            // 検証: ペーパーのみ・資金上限は初期投入資金
+            [TradingStage.Stage0Verification] = new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital),
+            // ペーパー: 検証と同条件（実装・運用・報告サイクルの検証）
+            [TradingStage.Stage1Paper] = new(TradingStage.Stage1Paper, TradeMode.Paper, InitialCapital),
+            // 最小実弾: 実弾モード・最小資金（保守的暫定既定）
+            [TradingStage.Stage2MinimalLive] = new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCap),
+            // 段階増額: 実弾モード・初期投入資金まで（以降の増額は月報レビュー時に FR-17 設定で確定）
+            [TradingStage.Stage3ScaledLive] = new(TradingStage.Stage3ScaledLive, TradeMode.Live, InitialCapital),
+        },
+        WithdrawalDrawdownMultiple = WithdrawalDrawdownMultiple,
+    };
+
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
 
