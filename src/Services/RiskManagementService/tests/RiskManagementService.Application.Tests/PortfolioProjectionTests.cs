@@ -287,4 +287,32 @@ public class PortfolioProjectionTests
 
         positions.Single().StopLossPrice.Should().BeNull();
     }
+
+    // FR-10, IADR-0036: 現在値・ピーク入力による含み損益・DD の時価算出。
+    [Fact]
+    public void 現在値とピークを与えると含み損益とDDを時価で算出する()
+    {
+        // AAPL 10 @1,000 を当日建て。現在値 1,100 → 含み +1,000。Capital=100,000・DailyRealizedPnl=0。
+        // 現在エクイティ = 100,000 + 0 + 1,000 = 101,000。ピーク 105,000 → DD = (105,000−101,000)/105,000。
+        var state = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)) },
+            Today, InitialCapital,
+            currentPrices: new Dictionary<(string, Market), decimal> { [("AAPL", Market.UnitedStates)] = 1_100m },
+            equityHighWaterMark: 105_000m);
+
+        state.UnrealizedPnl.Should().Be(1_000m);
+        state.DrawdownRatio.Should().Be((105_000m - 101_000m) / 105_000m);
+    }
+
+    [Fact]
+    public void 現在値未指定なら含み損益とDDは0のまま_回帰()
+    {
+        // IADR-0036: 既定（引数省略）は production 現挙動を保持（含み 0・DD 0）。
+        var state = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)) },
+            Today, InitialCapital);
+
+        state.UnrealizedPnl.Should().Be(0m);
+        state.DrawdownRatio.Should().Be(0m);
+    }
 }
