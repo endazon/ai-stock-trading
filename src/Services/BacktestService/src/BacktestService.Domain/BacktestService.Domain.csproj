@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Backtest.Domain</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FR-17, IADR-0037: 概算費用関数（CostCalculator）と前提条件（TradingAssumptions）を再利用する。 -->
+    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
+    <!-- IADR-0037: 符号付き在庫の畳み込み（SignedInventory）と Market を共有する。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>
