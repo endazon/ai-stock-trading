@@ -42,4 +42,20 @@ public class TradeDecisionPromptBuilderTests
         // 定時セクションは価格データ行（現在値/基準値/変動率）を含まない。
         prompt.Should().NotContain("現在値");
     }
+
+    // IADR-0037, L129: 一次スクリーニング用プロンプトは絞り込みに徹し、本判断と同じ JSON スキーマを再利用する。
+    [Fact]
+    public void スクリーニングプロンプトは絞り込み文言と共通JSONスキーマを出力する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().Contain("一次スクリーニング");
+        prompt.Should().Contain("絞り込");
+        prompt.Should().Contain("AAPL");
+        prompt.Should().Contain(Policy.Summary);
+        // Parser 共有のため本判断と同じ action スキーマ（Buy|Sell|Hold）を要求する。
+        prompt.Should().Contain("Buy|Sell|Hold");
+    }
 }

@@ -65,6 +65,9 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
 // FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
 builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider>();
+// FR-04, IADR-0037: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
+// ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
+builder.Services.AddSingleton(LoadDecisionOptions(builder.Configuration));
 builder.Services.AddScoped<TradeDecisionService>();
 
 // ADR-0003, IADR-0011, IADR-0023: MassTransit（RabbitMQ）。価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
@@ -107,6 +110,31 @@ static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadHolidays(IConfigu
     }
 
     return result;
+}
+
+// FR-04, IADR-0037: Decision:* から多数決・二段オーケストレーションの構成を読む。未設定・不正値は Default（現行挙動）に倒す。
+static DecisionOrchestrationOptions LoadDecisionOptions(IConfiguration configuration)
+{
+    var section = configuration.GetSection("Decision");
+    var options = DecisionOrchestrationOptions.Default;
+
+    // VoteCount は 1 以上（不正/未満は既定 1 のまま＝安全側で現行挙動）。
+    if (int.TryParse(section["VoteCount"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var voteCount)
+        && voteCount >= 1)
+    {
+        options = options with { VoteCount = voteCount };
+    }
+
+    if (bool.TryParse(section["EnableScreening"], out var enableScreening))
+    {
+        options = options with { EnableScreening = enableScreening };
+    }
+
+    return options with
+    {
+        PrimaryModel = string.IsNullOrWhiteSpace(section["PrimaryModel"]) ? null : section["PrimaryModel"],
+        SecondaryModel = string.IsNullOrWhiteSpace(section["SecondaryModel"]) ? null : section["SecondaryModel"],
+    };
 }
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。

@@ -13,7 +13,7 @@ internal sealed class PlaceholderLlmCompletionClient(ILogger<PlaceholderLlmCompl
 {
     private int _warned;
 
-    public Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
+    public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken cancellationToken = default)
     {
         WarnOnce(logger, ref _warned,
             "PlaceholderLlmCompletionClient を使用中: 実 LLM（platform /complete・#11 後続）が入るまで常に Hold（取引しない）を返します。");

@@ -18,7 +18,8 @@ public class TradeDecisionServiceTests
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => Now; }
     private sealed class FakeLlm(string output) : ILlmCompletionClient
     {
-        public Task<string> CompleteAsync(string prompt, CancellationToken ct = default) => Task.FromResult(output);
+        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default) =>
+            Task.FromResult(output);
     }
     private sealed class FakePolicy(DailyPolicy? policy) : IDailyPolicyProvider
     {
