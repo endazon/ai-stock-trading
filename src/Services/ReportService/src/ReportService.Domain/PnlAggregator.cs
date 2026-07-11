@@ -29,12 +29,13 @@ public static class PnlAggregator
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var pos);
 
-            var (realized, reduced) = Apply(ref pos, signedQ, fill.Price);
-            positions[key] = pos;
+            // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
+            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 
-            if (reduced)
+            if (applied.Reduced)
             {
-                realizedGross += realized;
+                realizedGross += applied.RealizedPnl;
                 realizingCount++;
             }
         }
@@ -55,38 +56,5 @@ public static class PnlAggregator
         var net = realizedGross - totalCost - tax;
 
         return new PnlSummary(realizedGross, totalCost, tax, net, unrealized, fills.Count, realizingCount);
-    }
-
-    // 符号付き在庫へ 1 約定を適用する。戻り値: 減少分の実現損益（税引前）と、在庫が減少したか（決済か）。
-    private static (decimal Realized, bool Reduced) Apply(ref (int Qty, decimal AvgCost) pos, int signedQ, decimal price)
-    {
-        if (pos.Qty == 0)
-        {
-            pos = (signedQ, price);
-            return (0m, false);
-        }
-
-        if (Math.Sign(pos.Qty) == Math.Sign(signedQ))
-        {
-            // 建て増し（加重平均・実現なし）。
-            var newQty = pos.Qty + signedQ;
-            var total = pos.AvgCost * Math.Abs(pos.Qty) + price * Math.Abs(signedQ);
-            pos = (newQty, total / Math.Abs(newQty));
-            return (0m, false);
-        }
-
-        // 反対方向 = 決済（および反転の可能性）。減少分に実現損益を計上。
-        var reduce = Math.Min(Math.Abs(pos.Qty), Math.Abs(signedQ));
-        var realized = pos.Qty > 0 ? (price - pos.AvgCost) * reduce : (pos.AvgCost - price) * reduce;
-
-        var resultQty = pos.Qty + signedQ;
-        if (resultQty == 0)
-            pos = (0, 0m);
-        else if (Math.Sign(resultQty) != Math.Sign(pos.Qty))
-            pos = (resultQty, price); // 反転
-        else
-            pos = (resultQty, pos.AvgCost); // 一部決済
-
-        return (realized, true);
     }
 }
