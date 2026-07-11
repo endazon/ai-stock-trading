@@ -5,9 +5,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-03, FR-10, IADR-0030: 市場監視（#10）の損切りライン検知へ供給する保有ポジションを、#63 取引台帳
-// （IPortfolioLedgerStore）の射影から導出する。損切り価格は権威データが現契約に無いため、既定損切り比率を
-// 平均取得単価へ適用した近似値とする（過渡的措置・後続で実値化）。
+// FR-03, FR-10, IADR-0030/0035: 市場監視（#10）の損切りライン検知へ供給する保有ポジションを、#63 取引台帳
+// （IPortfolioLedgerStore）の射影から導出する。損切り価格は取引判断が決めた権威データ（IADR-0035）を優先し、
+// 欠損する建玉（レガシー等）のみ既定損切り比率を平均取得単価へ適用した近似（IADR-0030）にフォールバックする。
 public sealed class OpenPositionsService(IPortfolioLedgerStore ledger)
 {
     public IReadOnlyList<OpenPositionView> Build()
