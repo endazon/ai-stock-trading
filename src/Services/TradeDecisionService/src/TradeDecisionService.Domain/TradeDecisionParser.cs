@@ -35,7 +35,10 @@ public static class TradeDecisionParser
             }
 
             // Buy/Sell は価格・損切り幅が正でなければサイジング不能のため Hold に倒す。
-            if (dto.ReferencePrice <= 0m || dto.StopLossDistancePerShare <= 0m)
+            // IADR-0035: 損切り幅が参照価格以上だと損切り価格が 0 以下（ロングでは損切り監視から外れる）になるため、
+            // 異常値（幻覚）として Hold に倒す（損切り価格が権威データとして下流に渡るため下限を担保する）。
+            if (dto.ReferencePrice <= 0m || dto.StopLossDistancePerShare <= 0m
+                || dto.StopLossDistancePerShare >= dto.ReferencePrice)
             {
                 return LlmDecision.Hold;
             }

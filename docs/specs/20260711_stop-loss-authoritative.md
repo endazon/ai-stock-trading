@@ -1,7 +1,7 @@
 ---
 title: 損切り価格の権威データ化（OrderIntent 拡張・台帳永続化で近似を実値化）
 type: spec
-status: review
+status: done
 related_ids: [FR-03, FR-04, FR-10, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
@@ -46,11 +46,11 @@ plan_refs:
 ## 受け入れ基準
 
 CI で緑にする範囲（ユニット・InMemory EF）:
-- [ ] `TradeDecisionService` が Buy/Sell で `ReferencePrice ∓ StopLossDistancePerShare` を `StopLossPrice` に設定する。
-- [ ] `OrderIntent.StopLossPrice` が `OrderApproved` 経由で台帳（`ApprovedOrderRow`）に永続化される（EF/InMemory 双方）。
-- [ ] `ProjectOpenPositions` が最新同方向エントリーの損切り価格を建玉に反映する（建て増しで更新・一部決済で保持・全決済で消滅）。
-- [ ] `OpenPositionsService` が実値を返し、損切り価格が無い建玉のみ 3% 近似にフォールバックする。
-- [ ] 既存テストを緑に保つ（`OrderIntent` 追加は後方互換）。
+- [x] `TradeDecisionService` が Buy/Sell で `ReferencePrice ∓ StopLossDistancePerShare` を `StopLossPrice` に設定する。
+- [x] `OrderIntent.StopLossPrice` が `OrderApproved` 経由で台帳（`ApprovedOrderRow`）に永続化される（EF/InMemory 双方）。
+- [x] `ProjectOpenPositions` が最新同方向エントリーの損切り価格を建玉に反映する（建て増しで更新・一部決済で保持・全決済で消滅）。
+- [x] `OpenPositionsService` が実値を返し、損切り価格が無い建玉のみ 3% 近似にフォールバックする。
+- [x] 既存テストを緑に保つ（`OrderIntent` 追加は後方互換）。
 
 実 API/実コンテナ前提（CI 既定では実行しない）:
 - [ ] 実 PostgreSQL でのマイグレーション適用・実パイプライン E2E（#82）。
