@@ -1,7 +1,7 @@
 ---
 title: 含み損益・ドローダウンの時価評価（純関数スライス）
 type: spec
-status: review
+status: done
 related_ids: [FR-10, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
@@ -41,10 +41,10 @@ plan_refs:
 ## 受け入れ基準
 
 CI で緑にする範囲（純関数ユニット）:
-- [ ] `PortfolioValuation.UnrealizedPnl`: ロング含み益/含み損・ショート・現在値欠損（0）・符号を正しく算出する。
-- [ ] `PortfolioValuation.DrawdownRatio`: ピークからの下落率（下限 0）・ピーク未指定/非正は 0・下落なしは 0。
-- [ ] `PortfolioProjection.Project`: `currentPrices` から含み損益を反映し、`equityHighWaterMark` から DD を算出する。
-- [ ] `Project` の既定（引数省略）は従来どおり `UnrealizedPnl=0`/`DrawdownRatio=0`（回帰）。
+- [x] `PortfolioValuation.UnrealizedPnl`: ロング含み益/含み損・ショート・現在値欠損（0）・符号を正しく算出する。
+- [x] `PortfolioValuation.DrawdownRatio`: ピークからの下落率（下限 0）・ピーク未指定/非正は 0・下落なしは 0。
+- [x] `PortfolioProjection.Project`: `currentPrices` から含み損益を反映し、`equityHighWaterMark` から DD を算出する。
+- [x] `Project` の既定（引数省略）は従来どおり `UnrealizedPnl=0`/`DrawdownRatio=0`（回帰）。
 
 実 API/実コンテナ前提（CI 既定では実行しない・#22/#82）:
 - [ ] 現在値（日次終値/為替評価）の実供給と `LedgerPortfolioStateProvider` からの結線。
