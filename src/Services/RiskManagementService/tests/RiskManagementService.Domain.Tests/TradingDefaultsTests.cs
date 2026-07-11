@@ -42,6 +42,22 @@ public class TradingDefaultsTests
     }
 
     [Fact]
+    public void 相場操縦検知の既定しきい値はIADR0040の初期値と一致する()
+    {
+        // FR-19, IADR-0040: 検知アルゴリズムの既定しきい値を固定する（運用データによる較正はフォローアップ）。
+        var settings = TradingDefaults.CreateManipulationDetectionSettings();
+
+        settings.LookbackWindow.Should().Be(TimeSpan.FromMinutes(5));
+        settings.MinimumSampleSize.Should().Be(5);
+        settings.MaxCancellationRatio.Should().Be(0.7m);
+        settings.MaxAmendmentsPerOrder.Should().Be(3.0m);
+        settings.MinFillRatio.Should().Be(0.1m);
+        settings.ShortLivedCancelThreshold.Should().Be(TimeSpan.FromSeconds(2));
+        settings.MaxShortLivedCancels.Should().Be(3);
+        settings.LayeringOrderCount.Should().Be(3);
+    }
+
+    [Fact]
     public void 運用段階の既定値はStage0のペーパーモードである()
     {
         var stage = TradingDefaults.CreateStageSettings();
