@@ -88,6 +88,9 @@ internal sealed class ApprovedOrderRow
 
     public decimal Price { get; set; }
 
+    /// <summary>取引判断が決めた損切り価格（IADR-0035・nullable＝機械執行 Close 等は null）。</summary>
+    public decimal? StopLossPrice { get; set; }
+
     public DateTimeOffset ApprovedAt { get; set; }
 }
 

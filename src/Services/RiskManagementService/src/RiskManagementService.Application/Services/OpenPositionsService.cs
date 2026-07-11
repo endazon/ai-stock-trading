@@ -17,10 +17,11 @@ public sealed class OpenPositionsService(IPortfolioLedgerStore ledger)
         var result = new List<OpenPositionView>(positions.Count);
         foreach (var p in positions)
         {
-            // ロングは取得単価より下、ショートは上に損切りラインを置く（StopLossEvaluator と対称）。
-            var stopLoss = p.Side == TradeSide.Buy
+            // IADR-0035: 取引判断が決めた損切り価格（権威データ）があれば実値を用いる。無い建玉（レガシー/欠損）は
+            // 既定比率の近似にフォールバックする（IADR-0030）。近似はロングが取得単価より下、ショートが上。
+            var stopLoss = p.StopLossPrice ?? (p.Side == TradeSide.Buy
                 ? p.AverageEntryPrice * (1m - TradingDefaults.DefaultStopLossRatio)
-                : p.AverageEntryPrice * (1m + TradingDefaults.DefaultStopLossRatio);
+                : p.AverageEntryPrice * (1m + TradingDefaults.DefaultStopLossRatio));
 
             result.Add(new OpenPositionView(
                 p.Symbol, p.Market, p.Side, p.Quantity, p.AverageEntryPrice, stopLoss));

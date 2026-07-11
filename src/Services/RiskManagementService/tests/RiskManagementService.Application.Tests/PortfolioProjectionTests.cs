@@ -231,4 +231,60 @@ public class PortfolioProjectionTests
 
         positions.Should().BeEmpty();
     }
+
+    // FR-03/04/10, IADR-0035: 損切り価格（最新の同方向エントリー・一部決済で保持・反転で更新・欠損は null）。
+    private static LedgerFill FillSl(TradeSide side, int qty, decimal price, decimal? stop, int hour, string symbol = "AAPL") =>
+        new(symbol, Market.UnitedStates, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close,
+            qty, price, TodayAt(hour), stop);
+
+    [Fact]
+    public void 保有射影の損切りは最新の建て増しエントリーを採る()
+    {
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[]
+            {
+                FillSl(TradeSide.Buy, 10, 1_000m, 970m, 9),
+                FillSl(TradeSide.Buy, 10, 1_400m, 1_358m, 10), // 建て増し → 最新の損切りに更新
+            });
+
+        positions.Single().StopLossPrice.Should().Be(1_358m);
+    }
+
+    [Fact]
+    public void 保有射影の損切りは一部決済で保持される()
+    {
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[]
+            {
+                FillSl(TradeSide.Buy, 10, 1_000m, 970m, 9),
+                FillSl(TradeSide.Sell, 4, 1_100m, null, 10), // 一部決済（反対方向）→ 損切りは保持
+            });
+
+        positions.Single().Quantity.Should().Be(6);
+        positions.Single().StopLossPrice.Should().Be(970m);
+    }
+
+    [Fact]
+    public void 保有射影の損切りは反転で反転約定のエントリーに更新される()
+    {
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[]
+            {
+                FillSl(TradeSide.Buy, 5, 1_000m, 970m, 9),
+                FillSl(TradeSide.Sell, 8, 1_100m, 1_133m, 10), // 反転 → 新ショートの損切り
+            });
+
+        var p = positions.Single();
+        p.Side.Should().Be(TradeSide.Sell);
+        p.StopLossPrice.Should().Be(1_133m);
+    }
+
+    [Fact]
+    public void 保有射影の損切りは欠損なら_null()
+    {
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[] { FillSl(TradeSide.Buy, 10, 1_000m, null, 9) });
+
+        positions.Single().StopLossPrice.Should().BeNull();
+    }
 }

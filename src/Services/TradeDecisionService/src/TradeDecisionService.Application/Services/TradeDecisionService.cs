@@ -75,6 +75,12 @@ public sealed class TradeDecisionService(
             return null;
         }
 
+        // FR-03/04, IADR-0035: 損切り価格を算出して発注意図に載せる（#63 台帳へ永続化し市場監視の損切り検知に実値供給）。
+        // ロングは参照価格より下、ショートは上に損切りラインを置く（StopLossEvaluator と対称）。
+        var stopLossPrice = side == TradeSide.Buy
+            ? decision.ReferencePrice - decision.StopLossDistancePerShare
+            : decision.ReferencePrice + decision.StopLossDistancePerShare;
+
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。判断由来は新規建て（Open）。
         var intent = new OrderIntent(
             trigger.Symbol,
@@ -84,7 +90,8 @@ public sealed class TradeDecisionService(
             context.Mode,
             quantity,
             decision.ReferencePrice,
-            PositionEffect.Open);
+            PositionEffect.Open,
+            stopLossPrice);
 
         return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
     }

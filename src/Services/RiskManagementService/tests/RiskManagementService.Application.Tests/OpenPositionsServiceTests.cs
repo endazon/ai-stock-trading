@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-03, FR-10, IADR-0030: 保有ポジションの公開ビュー導出（#63 台帳射影＋損切り価格の近似）を検証する。
+// FR-03, FR-10, IADR-0030/0035: 保有ポジションの公開ビュー導出（#63 台帳射影＋損切り価格の実値/近似）を検証する。
 public class OpenPositionsServiceTests
 {
     private static readonly DateTimeOffset At = new(2026, 7, 10, 3, 0, 0, TimeSpan.Zero);
@@ -21,8 +21,31 @@ public class OpenPositionsServiceTests
         public IReadOnlyList<LedgerFill> GetFills() => fills;
     }
 
+    // 損切り価格を持たない約定（欠損＝近似フォールバックの検証用）。
     private static LedgerFill Fill(TradeSide side, int qty, decimal price, string symbol = "AAPL") =>
         new(symbol, Market.UnitedStates, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close, qty, price, At);
+
+    // 損切り価格を持つ約定（権威データ・IADR-0035）。
+    private static LedgerFill FillSl(TradeSide side, int qty, decimal price, decimal stop, string symbol = "AAPL") =>
+        new(symbol, Market.UnitedStates, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close, qty, price, At, stop);
+
+    [Fact]
+    public void 損切り価格があれば実値を用いる_近似しない()
+    {
+        // IADR-0035: 権威データ（ATR 連動の実損切り価格 950）をそのまま返す（近似 970 ではない）。
+        var service = new OpenPositionsService(new FakeLedger(FillSl(TradeSide.Buy, 10, 1_000m, 950m)));
+
+        service.Build().Single().StopLossPrice.Should().Be(950m);
+    }
+
+    [Fact]
+    public void 損切り価格が欠損なら近似にフォールバックする()
+    {
+        // IADR-0030/0035: 実値が無いレガシー建玉は既定比率 3% 近似（1,000×0.97=970）。
+        var service = new OpenPositionsService(new FakeLedger(Fill(TradeSide.Buy, 10, 1_000m)));
+
+        service.Build().Single().StopLossPrice.Should().Be(1_000m * (1m - TradingDefaults.DefaultStopLossRatio));
+    }
 
     [Fact]
     public void ロングは取得単価より下に損切り価格を近似導出する()

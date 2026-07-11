@@ -38,7 +38,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             var intent = approval.Intent;
             result.Add(new LedgerFill(
                 intent.Symbol, intent.Market, intent.Side, intent.PositionEffect,
-                fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt));
+                fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt, intent.StopLossPrice));
         }
 
         return result;
