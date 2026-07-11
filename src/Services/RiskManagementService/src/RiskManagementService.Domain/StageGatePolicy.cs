@@ -2,7 +2,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, ADR-0008: 段階ごとの動作モード・資金上限（StageSettings）と撤退基準の倍率を定める方針。
 // 既定は TradingDefaults.CreateStagePolicy()。実弾段階（Stage 2/3）の資金上限は保守的な暫定既定とし、
-// 実運用値は利用者が FR-17 設定で確定・変更する（IADR-0037）。
+// 実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
 public record StageGatePolicy
 {
     /// <summary>段階ごとの設定（モード・資金上限）。4 段階すべてを含む。</summary>

@@ -109,7 +109,7 @@ CI で緑にする範囲（純ロジック・ユニット）:
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0037](../adr/IADR-0037_stage-gate-transitions.md)（承認ゲート／自動停止＋降格提案の分離・段階状態＝履歴畳み込み）
+- 実装ADR: [IADR-0041](../adr/IADR-0041_stage-gate-transitions.md)（承認ゲート／自動停止＋降格提案の分離・段階状態＝履歴畳み込み）
 - 連携元: `RiskEvaluator`（段階モード・資金上限の強制。FR-20 の enforcement 側）／[IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)（資金上限＝投入中資金＋当該注文額）
 
 ## 未決事項

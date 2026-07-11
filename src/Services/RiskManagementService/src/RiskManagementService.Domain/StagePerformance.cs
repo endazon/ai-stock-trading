@@ -2,7 +2,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, ADR-0008, 06_daytrading-review §4: 段階ゲートの合格・撤退基準を評価するための観測実績。
 // FR-15 バックテスト verdict・実DD・統制違反数・スリッページ/費用実績は別コンポーネント（後続）で
-// 判定・計測され、本ドメインには入力として渡す（IADR-0037: メトリクスは入力）。
+// 判定・計測され、本ドメインには入力として渡す（IADR-0041: メトリクスは入力）。
 public record StagePerformance
 {
     /// <summary>Stage 0 合格ゲート: DSR 補正後もエッジが正・最大DDが許容内（FR-15 バックテスト verdict）。</summary>

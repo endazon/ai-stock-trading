@@ -1,6 +1,6 @@
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-20, IADR-0037: 段階遷移履歴の append-only 台帳（純関数・不変）。
+// FR-20, IADR-0041: 段階遷移履歴の append-only 台帳（純関数・不変）。
 // 現在段階・次シーケンスを履歴の畳み込み（fold）で導出し、「遷移履歴が監査できる」を満たす。
 // Append は追記整合（遷移元＝現在段階・シーケンス＝連番）を検証し、破れば例外を投げる。
 public record StageGateLedger

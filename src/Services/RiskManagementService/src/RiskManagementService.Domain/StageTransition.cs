@@ -60,7 +60,7 @@ public enum WithdrawalReason
 }
 
 // AssessWithdrawal の結果。撤退基準到達時に自動停止（HaltNewEntries）と降格提案（ProposedStage）を返す。
-// 段階の実降格は提案に留め、確定は承認付き RequestTransition を要する（IADR-0037）。
+// 段階の実降格は提案に留め、確定は承認付き RequestTransition を要する（IADR-0041）。
 public record WithdrawalAssessment(
     bool Triggered,
     WithdrawalReason? Reason,

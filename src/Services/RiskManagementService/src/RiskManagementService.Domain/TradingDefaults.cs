@@ -64,7 +64,7 @@ public static class TradingDefaults
 
     /// <summary>
     /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定
-    /// （1 ポジション相当＝MaxOrderAmount）。実運用値は利用者が FR-17 設定で確定・変更する（IADR-0037）。
+    /// （1 ポジション相当＝MaxOrderAmount）。実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
     /// </summary>
     public const decimal Stage2MinimalLiveCapitalCap = 35_000m;
 

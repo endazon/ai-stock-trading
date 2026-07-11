@@ -197,7 +197,7 @@ public class StageGateTests
         assessment.UnmetCriteria.Should().Contain(StageGateCriterion.AlreadyAtTopStage);
     }
 
-    // FR-20, IADR-0037: RequestTransition が返す遷移は台帳の追記整合（FromStage/Sequence）を満たし、
+    // FR-20, IADR-0041: RequestTransition が返す遷移は台帳の追記整合（FromStage/Sequence）を満たし、
     // そのまま StageGateLedger へ追記できる（両純関数のシグネチャがドリフトしていないことのラウンドトリップ検証）。
     [Fact]
     public void 受理された遷移はそのまま台帳へ追記できる()

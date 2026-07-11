@@ -1,6 +1,6 @@
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-20, ADR-0008, UC-06, IADR-0037: 段階ゲートの遷移管理（状態機械＋承認フロー・純ロジック）。
+// FR-20, ADR-0008, UC-06, IADR-0041: 段階ゲートの遷移管理（状態機械＋承認フロー・純ロジック）。
 // 段階遷移（StageTransition）を生成する唯一の経路が承認付き RequestTransition であり、承認欠如時の遷移を
 // 構造的に不可能にする。撤退は AssessWithdrawal で「自動停止＋降格提案」に分離する（段階変更は承認を要する）。
 public static class StageGate

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Domain.Tests;
 
-// FR-20, IADR-0037: 遷移履歴の畳み込み。現在段階を append-only 履歴の fold で導出し、遷移履歴が監査できる。
+// FR-20, IADR-0041: 遷移履歴の畳み込み。現在段階を append-only 履歴の fold で導出し、遷移履歴が監査できる。
 public class StageGateLedgerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 0, 0, TimeSpan.Zero);
