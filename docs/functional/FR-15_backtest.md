@@ -57,6 +57,7 @@ plan_refs:
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |
 | ウォークフォワード | OOS が正 | OOS 総リターン > 0 |
 | 試行数 | 最小試行数以上 | N ≥ 1（記録の存在） |
+| データ健全性 | 全バーがカットオフ後/匿名化（検証条件①） | `DataCutoffPolicy` 充足（`Stage0GateCheck.DataCutoff`） |
 
 - 合格 → `Stage0Verification → Stage1Paper` の**昇格推奨**を返す（実際の遷移承認は利用者・#20）。
 - 撤退キルスイッチ: 実 DD がバックテスト最大 DD の **1.5 倍**で自動停止・再検証（ADR-0008。`KillSwitch.ShouldHalt`）。

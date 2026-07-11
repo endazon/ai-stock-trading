@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, FR-20, ADR-0008, 06_daytrading-review §4: Stage 0 合格判定（6 条件の合成）を検証する。
+// FR-15, FR-20, ADR-0008, 06_daytrading-review §4: Stage 0 合格判定（7 条件の合成）を検証する。
 public class Stage0GateEvaluatorTests
 {
     // 全条件を満たす評価（DSR 0.99・PBO 0.1・最大DD 0.08・コスト2倍 +・OOS +・試行 10）。
