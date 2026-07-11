@@ -3,9 +3,11 @@
 /*
  * scripts.test.js
  * check-commit-messages.js / gen-changelog.js の主要ロジックの単体テスト。
- * 外部依存ゼロ（Node 標準 assert のみ）。実行: node scripts/scripts.test.js
+ * Node 標準モジュールのみ（assert / child_process）。実行: node scripts/scripts.test.js
+ * 一部の allowlist 整合テストは best-effort で git を用いる（不在・浅いクローン時はスキップ）。
  */
 const assert = require('assert');
+const { execSync } = require('child_process');
 const {
   validateSubject,
   checkSingleTitle,
@@ -13,6 +15,17 @@ const {
   loadAllowlist,
 } = require('./check-commit-messages.js');
 const { applyOverride, hashMatches } = require('./gen-changelog.js');
+
+// git を best-effort で実行する。失敗時は null（テストはスキップ判断に使う・落とさない）。
+function gitTry(args) {
+  try {
+    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch (e) {
+    return null;
+  }
+}
+const inGitWorkTree = gitTry('rev-parse --is-inside-work-tree') === 'true';
+const isShallowClone = gitTry('rev-parse --is-shallow-repository') === 'true';
 
 let passed = 0;
 function ok(name, fn) {
@@ -89,13 +102,51 @@ ok('allowlist は短縮 SHA を前方一致で照合', () => {
   assert.strictEqual(findAllowlisted('deadbeefdeadbeef', al), null, '無関係な SHA は除外されない');
 });
 
-// 現行 develop に実在する非準拠コミットが commit-allowlist.json で除外されること（回帰防止・Issue #47）。
-// SHA は develop 上の実コミットに一致させる（rebase 由来の幻 SHA を排除）。
-ok('develop 上の非準拠コミットは allowlist 対象', () => {
+// commit-allowlist.json の各エントリが「1 エントリ = 完全 SHA + 理由」の運用に沿うこと（Issue #47）。
+// findAllowlisted で件名を突き合わせる合成データ検査ではなく、ファイルの実エントリ自体を検証する。
+ok('allowlist の各エントリは完全 SHA + 理由を持つ', () => {
   const al = loadAllowlist();
-  const known = ['d1cfeb5f', '739bf023'];
-  for (const h of known) {
-    assert.ok(findAllowlisted(h, al), `${h} が commit-allowlist.json に無い`);
+  assert.ok(al.length >= 1, 'allowlist が空（少なくとも既知の非準拠コミットを 1 件は保持する想定）');
+  for (const e of al) {
+    // 追跡可能性のため短縮 SHA ではなく完全 SHA（40 桁 hex）を必須とする。
+    assert.match(e.hash, /^[0-9a-f]{40}$/, `hash が完全 SHA ではない: ${e.hash}`);
+    assert.ok(e.reason && e.reason.trim(), `reason が空: ${e.hash}`);
+  }
+});
+
+// rebase 由来の幻 SHA 再発防止（Issue #47）: 各エントリが git 履歴に実在し、HEAD から到達可能で、
+// かつ本当に規約違反の件名であること（＝除外に値すること）を検証する。
+// git が無い / 浅いクローンでオブジェクト不在の場合は best-effort でスキップ（CI をブロックしない）。
+ok('allowlist の各エントリは実在・到達可能・非準拠である（best-effort）', () => {
+  const al = loadAllowlist();
+  if (!inGitWorkTree) {
+    process.stdout.write('    ↳ skip: git work tree ではないため実在性検証を省略\n');
+    return;
+  }
+  for (const e of al) {
+    // 注: `^{commit}` の peel は使わない（Windows cmd.exe では `^` がエスケープ扱いされるため）。
+    // hash は完全 SHA を前提とし、commit オブジェクトなら cat-file -t が 'commit' を返す。
+    const type = gitTry(`cat-file -t ${e.hash}`);
+    if (type === null) {
+      // オブジェクトが手元に無い。浅いクローンなら判別不能のためスキップ（fail-open）。
+      // フル履歴なら「存在しない SHA」＝ Issue #47 の幻 SHA 再発なので失敗させる。
+      if (isShallowClone) {
+        process.stdout.write(`    ↳ skip: ${e.hash.slice(0, 8)} は浅いクローンで解決不可（判別不能）\n`);
+        continue;
+      }
+      assert.fail(`${e.hash} がフル履歴に存在しない（幻 SHA・Issue #47 の再発）`);
+    }
+    assert.strictEqual(type, 'commit', `${e.hash} が commit ではない`);
+    // HEAD から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
+    const reachable = gitTry(`merge-base --is-ancestor ${e.hash} HEAD`) !== null;
+    assert.ok(reachable, `${e.hash} が HEAD から到達不可（幻 SHA の疑い）`);
+    // 除外する以上、件名が実際に規約違反であること（準拠件名を無意味に除外していないこと）。
+    const subject = gitTry(`log -1 --pretty=%s ${e.hash}`);
+    assert.ok(subject, `${e.hash} の件名を取得できない`);
+    assert.ok(
+      validateSubject(subject).length >= 1,
+      `${e.hash} は規約準拠件名（除外不要のはず）: ${subject}`
+    );
   }
 });
 
