@@ -8,5 +8,7 @@
     <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
     <!-- IADR-0037: 符号付き在庫の畳み込み（SignedInventory）と Market を共有する。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- FR-20, IADR-0039: 段階（TradingStage）を再利用し新設しない（Stage 0 合格→Stage 1 昇格推奨）。 -->
+    <ProjectReference Include="..\..\..\RiskManagementService\src\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
   </ItemGroup>
 </Project>
