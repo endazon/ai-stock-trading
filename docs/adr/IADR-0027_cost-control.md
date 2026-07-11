@@ -68,9 +68,9 @@ NFR は LLM 費用に月次上限を設け、超過時に定時サイクル間�
 - フォローアップ: 実 LLM 費用計測（platform ゲートウェイ）、poller（#9/#21）への間隔延長/停止の配線、#19 バージョン付き上限取得、
   月報への費用レビュー供給（#14）。
 - フォローアップ（並行性・claude-review）: `CostControlService.Record` の read-modify-write（before→記録→after で上方遷移を検知）は
-  トランザクション/行ロックを取らない。Slice A は OwnerOnly の低頻度呼び出しで許容だが、#22 で LLM ゲートウェイからの自動計上が繋がり
-  頻度が増えると、同時リクエストの interleave で `CostThresholdReached` の二重発行・遷移検知漏れが起こり得る。#22 着手時に一括採番・
-  トランザクション分離レベル・行ロックのいずれかで対処する。
+  トランザクション/行ロックを取らず、並行計上で `CostThresholdReached` の二重発行・遷移検知漏れが起こり得た。
+  **→ [IADR-0034](IADR-0034_cost-concurrency-lock.md) で原子的な台帳メソッド（`ICostLedger.Record` が before/after を返す）＋月単位
+  アドバイザリロックにより解消済み（#78）。**
 
 ## 関連
 
