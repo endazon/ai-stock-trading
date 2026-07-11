@@ -44,13 +44,17 @@ plan_refs: []
   各 `reason` に「develop 直接 push・force push 禁止で書き換え不可・除外の人間レビューは本 PR で承認」を明記。
   `_note` に「追跡可能性のため現行 develop 実在の完全 SHA を明記」旨を追記。
 - `scripts/scripts.test.js`: `findAllowlisted` 系テストの合成 SHA を実在値へ更新。加えて、tautology（ファイルが
-  書いた文字列を含むことの確認）を解消し、**各エントリが実在・HEAD から到達可能・かつ規約違反件名である**ことを
+  書いた文字列を含むことの確認）を解消し、**各エントリが実在・develop から到達可能・かつ規約違反件名である**ことを
   git で best-effort 検証する回帰テストを追加（フル履歴では幻 SHA を検出して失敗、浅いクローンではスキップ）。
+  到達可能性の基準は `origin/develop → develop → HEAD` の順で解決する。
+- `.github/workflows/ci.yml`: 上記回帰テストを CI で実際に走らせるため、`commit-messages` ジョブ
+  （既に `fetch-depth: 0`）に `node scripts/scripts.test.js` の実行ステップを追加（幻 SHA 再発を CI で検出可能にする）。
 
 ## 受け入れ基準
 
 - [x] `commit-allowlist.json` の全エントリが現行 develop に実在する完全 SHA（`git cat-file -t` で commit・到達可能）
 - [x] `node scripts/scripts.test.js` が全緑（28 tests）。幻 SHA を注入するとフル履歴で失敗することを確認
+- [x] 上記テストが CI（`ci.yml` の `commit-messages` ジョブ・`fetch-depth: 0`）で実行される
 - [x] `node scripts/check-commit-messages.js --range <root>..develop` が 2 件を allowlist で除外し違反 0
 - [x] `commit-allowlist.json` が有効な JSON
 - [x] scripts/ ・ docs/ に旧幻 SHA（`d1652dcf` 等・旧 SHA `afe2a66`/`10e8c8a`/`a736cbb`）の残存参照が無い

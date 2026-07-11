@@ -26,6 +26,12 @@ function gitTry(args) {
 }
 const inGitWorkTree = gitTry('rev-parse --is-inside-work-tree') === 'true';
 const isShallowClone = gitTry('rev-parse --is-shallow-repository') === 'true';
+// 到達可能性の基準は「develop に実在」。origin/develop → develop → HEAD の順で解決する
+// （CI の PR チェックアウトでは origin/develop、ローカル worktree では develop/HEAD が該当）。
+const REACH_BASE =
+  ['origin/develop', 'develop', 'HEAD'].find(
+    (r) => gitTry(`rev-parse --verify --quiet ${r}`) !== null
+  ) || 'HEAD';
 
 let passed = 0;
 function ok(name, fn) {
@@ -137,9 +143,9 @@ ok('allowlist の各エントリは実在・到達可能・非準拠である（
       assert.fail(`${e.hash} がフル履歴に存在しない（幻 SHA・Issue #47 の再発）`);
     }
     assert.strictEqual(type, 'commit', `${e.hash} が commit ではない`);
-    // HEAD から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
-    const reachable = gitTry(`merge-base --is-ancestor ${e.hash} HEAD`) !== null;
-    assert.ok(reachable, `${e.hash} が HEAD から到達不可（幻 SHA の疑い）`);
+    // develop（REACH_BASE）から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
+    const reachable = gitTry(`merge-base --is-ancestor ${e.hash} ${REACH_BASE}`) !== null;
+    assert.ok(reachable, `${e.hash} が ${REACH_BASE} から到達不可（幻 SHA の疑い）`);
     // 除外する以上、件名が実際に規約違反であること（準拠件名を無意味に除外していないこと）。
     const subject = gitTry(`log -1 --pretty=%s ${e.hash}`);
     assert.ok(subject, `${e.hash} の件名を取得できない`);
