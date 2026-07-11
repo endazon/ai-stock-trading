@@ -47,18 +47,22 @@ plan_refs:
 1. **IADR-0037**（`docs/adr/IADR-0037_async-contract-format-reevaluation.md`）: 案比較（3 案）・推奨・根拠・再採用トリガの明文化。
 2. `docs/adr/README.md` の一覧に IADR-0037 を追記。
 3. `docs/adr/IADR-0009_async-contract-format.md` の「関連」にフォローアップ結果（IADR-0037）へのリンクを追記（履歴不変・追記のみ）。
+4. `docs/api/events-and-ports.md` を現状の 10 イベントに同期（IADR-0037 が「契約管理の継続先」と名指しするため、未掲載だった
+   `InformationCollected` / `CostThresholdReached` / `AssumptionsChanged` / `ReportConfirmed` の 4 件を運用・ライフサイクル
+   イベント表として追記。決定の前提「Markdown で人間可読な契約が管理されている」を実体化する）。
 
 **スコープ外（後続タスクへ切り出す）**: 推奨に含まれる「軽量な契約ガード（`MessageUrn` 回帰テスト）」の実コード実装。設計文書タスクの
 範囲を超えるため、IADR で後続として明記し別 issue/PR 化する。
 
 ## 受け入れ基準
 
-- [ ] IADR-0037 が **2 案以上**（現状 Markdown / AsyncAPI 即採用 / C# 型からの AsyncAPI 生成）を評価軸ごとに比較している。
-- [ ] IADR-0037 が推奨（結論）と根拠を明示し、現状のイベント契約（`Shared.Contracts.Events`・MassTransit `MessageUrn`）との整合を踏まえている。
-- [ ] IADR-0037 が「再採用トリガ」を観測可能な条件として明文化している（IADR-0009 の曖昧なトリガを具体化）。
-- [ ] IADR-0009 との関係（Supersede か否か）が明示されている。
-- [ ] `docs/adr/README.md` の一覧に IADR-0037 が昇順・欠番なしで追記されている。
-- [ ] 起点 ID（FR-04/FR-05・ADR-0001・IADR-0009）と Issue #51 が各文書に記載され、トレーサビリティが保たれている。
+- [x] IADR-0037 が **2 案以上**（現状 Markdown / AsyncAPI 即採用 / C# 型からの AsyncAPI 生成）を評価軸ごとに比較している。
+- [x] IADR-0037 が推奨（結論）と根拠を明示し、現状のイベント契約（`Shared.Contracts.Events`・MassTransit `MessageUrn`）との整合を踏まえている。
+- [x] IADR-0037 が「再採用トリガ」を観測可能な条件として明文化している（IADR-0009 の曖昧なトリガを具体化）。
+- [x] IADR-0009 との関係（Supersede か否か）が明示されている。
+- [x] `docs/adr/README.md` の一覧に IADR-0037 が昇順・欠番なしで追記されている。
+- [x] 起点 ID（FR-04/FR-05・ADR-0001・IADR-0009）と Issue #51 が各文書に記載され、トレーサビリティが保たれている。
+- [x] `docs/api/events-and-ports.md` が現状の 10 イベントを網羅している（IADR-0037 の前提を実体化）。
 
 ## 関連仕様
 

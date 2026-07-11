@@ -137,6 +137,8 @@ C# 型を権威に保ったまま、生成器で `asyncapi.yaml` を派生物と
   - 契約権威（共有 C# 型）と単一情報源原則を維持し、二重管理・ドリフトを持ち込まない。
   - platform 整合（IADR-0001）を保つ。
   - 契約数増加で生じた唯一の実リスク（URN 破壊的変更）に対する軽量ガードの導入方針が定まった。
+  - 決定の前提（Markdown で人間可読な契約を管理する）を実体化するため、本 PR で `events-and-ports.md` を現状 10 件へ
+    同期した（未掲載だった `InformationCollected` / `CostThresholdReached` / `AssumptionsChanged` / `ReportConfirmed` を追記）。
 - 悪い影響・トレードオフ:
   - 非同期契約は引き続き機械可読（AsyncAPI）でなく、外部購読者が現れた場合のコード生成・契約公開は即応できない
     （トリガ発火時に案 B/C を再評価して対応）。
