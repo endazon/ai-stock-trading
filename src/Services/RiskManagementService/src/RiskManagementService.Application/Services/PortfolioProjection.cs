@@ -37,8 +37,10 @@ public static class PortfolioProjection
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var pos);
 
-            var realized = Apply(ref pos, signedQ, fill.Price);
-            positions[key] = pos;
+            // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
+            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
+            var realized = applied.RealizedPnl;
 
             var date = TradeDate(fill.ExecutedAt);
             var isToday = date == today;
@@ -100,8 +102,9 @@ public static class PortfolioProjection
             var key = (fill.Symbol, fill.Market);
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var pos);
-            Apply(ref pos, signedQ, fill.Price);
-            positions[key] = pos;
+            // IADR-0033: 共有の畳み込み純関数を用いる（実現損益はここでは不要）。
+            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
         }
 
         var result = new List<OpenPosition>();
@@ -114,43 +117,5 @@ public static class PortfolioProjection
         }
 
         return result;
-    }
-
-    // 符号付き在庫へ 1 約定を適用し、在庫が減少した分の実現損益を返す（増加のみなら 0）。
-    private static decimal Apply(ref (int Qty, decimal AvgCost) pos, int signedQ, decimal price)
-    {
-        if (pos.Qty == 0)
-        {
-            pos = (signedQ, price);
-            return 0m;
-        }
-
-        // 同方向 = 建て増し。加重平均で取得単価を更新（実現なし）。
-        if (Math.Sign(pos.Qty) == Math.Sign(signedQ))
-        {
-            var newQty = pos.Qty + signedQ;
-            var total = pos.AvgCost * Math.Abs(pos.Qty) + price * Math.Abs(signedQ);
-            pos = (newQty, total / Math.Abs(newQty));
-            return 0m;
-        }
-
-        // 反対方向 = 建玉の減少（および反転の可能性）。減少分に実現損益を計上する。
-        var reduce = Math.Min(Math.Abs(pos.Qty), Math.Abs(signedQ));
-        // ロング（Qty>0）を売り決済: (決済単価 − 取得単価) × 数量。ショートは (取得単価 − 決済単価) × 数量。
-        var realized = pos.Qty > 0
-            ? (price - pos.AvgCost) * reduce
-            : (pos.AvgCost - price) * reduce;
-
-        var resultQty = pos.Qty + signedQ;
-        if (resultQty == 0)
-            pos = (0, 0m);
-        else if (Math.Sign(resultQty) != Math.Sign(pos.Qty))
-            // 反転: 元の建玉を全決済し、余りを新規建玉として約定単価で建てる。
-            pos = (resultQty, price);
-        else
-            // 同方向のまま一部決済: 取得単価は不変。
-            pos = (resultQty, pos.AvgCost);
-
-        return realized;
     }
 }
