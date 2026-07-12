@@ -8,7 +8,7 @@ created: 2026-07-09
 updated: 2026-07-09
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/06_settings-and-emergency-stop.md
+  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md

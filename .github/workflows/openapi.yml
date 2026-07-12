@@ -24,7 +24,7 @@ on:
     paths:
       - "docs/api/**"
       - "scripts/generate-openapi.sh"
-      - "src/**"
+      - "backend/**"
   workflow_dispatch: {}
 
 permissions:

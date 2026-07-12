@@ -89,7 +89,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Format check
-        run: dotnet format src/AiStockTrading.slnx --verify-no-changes
+        run: dotnet format backend/backend.slnx --verify-no-changes
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -100,11 +100,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Restore
-        run: dotnet restore src/AiStockTrading.slnx
+        run: dotnet restore backend/backend.slnx
       - name: Build
-        run: dotnet build src/AiStockTrading.slnx --no-restore --configuration Release
+        run: dotnet build backend/backend.slnx --no-restore --configuration Release
       - name: Test (with coverage)
-        run: dotnet test src/AiStockTrading.slnx --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
+        run: dotnet test backend/backend.slnx --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
       # カバレッジ閾値を強制する場合の例（ツールは任意）:
       #   - run: dotnet tool install --global dotnet-reportgenerator-globaltool
       #   - run: reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:TextSummary

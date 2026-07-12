@@ -8,7 +8,7 @@ created: 2026-07-10
 updated: 2026-07-10
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/06_settings-and-emergency-stop.md
+  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
   - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md

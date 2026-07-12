@@ -58,12 +58,12 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Restore
-        run: dotnet restore src/AiStockTrading.slnx
+        run: dotnet restore backend/backend.slnx
       - name: List vulnerable packages (incl. transitive)
         run: |
           set -o pipefail
           # `dotnet list package --vulnerable` は脆弱性が有っても exit 0 を返すため、出力を解析して判定する。
-          dotnet list src/AiStockTrading.slnx package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+          dotnet list backend/backend.slnx package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
           # 脆弱な依存の行は必ず GitHub Advisory URL(https://github.com/advisories/GHSA-...)を含む。
           # 深刻度語(High 等)はパッケージ名に紛れ得るため、より特異な advisory URL の有無で判定する。
           if grep -Eq 'https?://github\.com/advisories/' vuln-report.txt; then

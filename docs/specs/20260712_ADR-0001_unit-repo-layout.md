@@ -9,9 +9,9 @@ author: claude
 created: 2026-07-12
 updated: 2026-07-12
 plan_refs:
-  - "../project-planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新）"
-  - "../project-planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md（§フォルダ構成）"
-  - "../project-planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新。submodule pin 未更新のため更新内容は planning リポ main を参照）"
+  - "../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md（§フォルダ構成は planning 側 PR で追加。submodule pin 更新後に反映）"
+  - "https://github.com/endazon/project-planning/blob/main/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
 ---
 
 # 仕様書: ユニットリポジトリレイアウトへの再編（src/ → backend/）

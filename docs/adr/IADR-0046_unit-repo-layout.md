@@ -8,8 +8,8 @@ author: claude
 created: 2026-07-12
 updated: 2026-07-12
 plan_refs:
-  - "../project-planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新）"
-  - "../project-planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新。submodule pin 未更新のため更新内容は planning リポ main を参照）"
+  - "https://github.com/endazon/project-planning/blob/main/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
 ---
 
 # IADR-0046: ユニットリポジトリレイアウト（ルート直下 backend/・import-chain フォールバック props）を採る

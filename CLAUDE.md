@@ -127,10 +127,10 @@
 
 - 対象プロジェクト: **ai-stock-trading**（生成AI株取引自動化）。計画書は `../project-planning/projects/ai-stock-trading/`（隣接クローン参照）。
 - 基盤: microservices-platform の拡張（可変部分への組み込み。基盤無改修）。リポ構成・規約は基盤実装リポ `../microservices-platform` に揃える（[IADR-0001](docs/adr/IADR-0001_repo-structure-and-stack.md)）。
-- ターゲット: **net10.0 / C# 13**（`src/Directory.Build.props`）。パッケージは Central Package Management（`src/Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
-- ソリューション: `src/AiStockTrading.slnx`。サービスは `src/Services/<ServiceName>/{src,tests}`、共有物は `src/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
+- ターゲット: **net10.0 / C# 13**（ルート `Directory.Build.props`＝単独ビルド用 import-chain フォールバック。IADR-0046）。パッケージは Central Package Management（ルート `Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
+- ソリューション: `backend/backend.slnx`（ユニットリポジトリレイアウト。platform ADR-0019 / ADR-0001 2026-07-12 更新 / IADR-0046）。サービスは `backend/Services/<ServiceName>/{src,tests}`、共有物は `backend/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
 - 命名規約: 名前空間プレフィックスは `AiStockTrading`。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
-- ビルド/テスト: `dotnet build src/AiStockTrading.slnx` / `dotnet test src/AiStockTrading.slnx` が通ること。テストは xUnit + FluentAssertions（`using Xunit;` を忘れない）。
+- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは xUnit + FluentAssertions（`using Xunit;` を忘れない）。
 - フォーマット: `dotnet format` で整形する。`nullable` 有効・警告ゼロを保つ。
 - 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像し、コメントに起点 ID（FR/UC/ADR）を残す。
 - リスク統制・取引ガードの既定値は計画書の全体前提条件（05_trading-assumptions §5）と一致させ、`TradingDefaults` のテストで固定する。
