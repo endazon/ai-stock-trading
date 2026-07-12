@@ -43,6 +43,7 @@
 
 ### 不具合修正
 
+- **NFR**: Dependabot/submodule のトークン参照を PLANNING_REPO_TOKEN に統一 (#112) (8f965d1)
 - **NFR**: 費用計上の並行 RMW を原子化ししきい値通知の重複/取りこぼしを解消（IADR-0034） (#89) (f1fa1c1)
 - **FR-10**: 設定ストアの初回シードのレース窓を是正（IADR-0012 踏襲パターン共通） (#59) (badf227)
 - **FR-05,FR-12**: PaperBrokerAdapter の入力検証と OrderStatus.Rejected を追加 (#43) (0f5af77)
@@ -58,6 +59,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#54) (bebf9f9)
 - **FR-04,FR-05**: 建玉効果の注文分解方針（ドテン/部分決済）を IADR-0037 で確定 (#94) (a0752cd)
 - **IADR-0037**: 非同期契約の AsyncAPI 採用可否を再評価し当面不採用を確定（IADR-0009 再検討トリガ） (#93) (f55a4da)
 - **NFR**: CHANGELOG を自動更新 (#46) (ebb0e25)
@@ -72,6 +74,7 @@
 
 ### ビルド
 
+- **deps**: bump planning from `07db93f` to `da20fc4` (#113) (c65ed86)
 - **deps**: bump peter-evans/create-pull-request from 7 to 8 (#2) (135baf2)
 
 ### CI
@@ -82,6 +85,8 @@
 
 ### その他
 
+- **NFR**: dependabot に submodule pin 自動更新（gitsubmodule）を追加 (#111) (fdbb068)
+- **IADR-0048**: ユニット実行環境スキャフォールド（docker-compose / appsettings / .env.example）を整備 (#108) (b1c91eb)
 - commit-allowlist を現行 develop の実在 SHA へ是正（幻 SHA 除去） (#92) (6db0b4d)
 - **ADR-0001**: 基盤ランタイム Foundation の最小移植（MassTransit再試行・可観測性・ヘルスチェック・Keycloak認証・相関ID） (#53) (a6b8c0b)
 - update subproject commit reference in planning (50bf53b)
