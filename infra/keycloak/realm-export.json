@@ -1,0 +1,37 @@
+{
+  "realm": "ai-stock-trading",
+  "enabled": true,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "trading-owner",
+        "description": "dev: OwnerOnly (ADR-0007 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion."
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "dev-owner",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Owner",
+      "credentials": [
+        { "type": "password", "value": "owner", "temporary": false }
+      ],
+      "realmRoles": ["trading-owner"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "ai-stock-trading-dev",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ]
+}

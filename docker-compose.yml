@@ -1,0 +1,289 @@
+# =============================================================================
+# ai-stock-trading ローカル実行環境（dev） — issue #107 / IADR-0048
+# -----------------------------------------------------------------------------
+# 使い方（詳細は docs/how-to/local-run.md）:
+#   cp .env.example .env      # 資格情報・有効化ポイントを編集（機密は空既定=fail-safe）
+#   docker compose up -d      # infra + 10 サービスを起動
+#   docker compose up -d postgres rabbitmq keycloak otel-collector   # infra だけ起動
+#
+# 相対パス（context: . / ボリューム ./infra:）で構成し、単独リポでも submodule 配置
+# （src/ai-stock-trading/）でも、compose を置いたディレクトリ基準で解決される（IADR-0048 決定 3/4）。
+#
+# fail-safe: 実 LLM・実市場データ・実発注・外部送信は既定 no-op。実接続の有効化は .env の
+# 明示設定時のみ（#13/#79/#81/#15/#76）。実基盤を起動しての疎通・E2E は #82。
+# =============================================================================
+name: ai-stock-trading
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  networks: [ast]
+
+# 全 Worker 共通の設定点（環境変数は appsettings より優先。`__` は構成の階層区切り）。
+x-app-env: &app-env
+  ASPNETCORE_ENVIRONMENT: Development
+  ASPNETCORE_URLS: http://+:8080
+  RabbitMq__ConnectionString: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672
+  Otlp__Endpoint: ${OTLP_ENDPOINT:-http://otel-collector:4317}
+
+x-depends-infra: &depends-infra
+  rabbitmq:
+    condition: service_healthy
+  otel-collector:
+    condition: service_started
+
+services:
+  # --------------------------------------------------------------------------
+  # インフラ（dev 既定）
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai}
+      # 既定 DB。サービス専有 DB は init スクリプトで作成する（Database-per-Service / ADR-0001）。
+      POSTGRES_DB: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [ast]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # 管理 UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks: [ast]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"    # 管理コンソール / トークンエンドポイント
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    networks: [ast]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    networks: [ast]
+
+  # --------------------------------------------------------------------------
+  # AST サービス（10 Worker）。全て Web SDK（:8080）。ホストへはポート公開しない
+  # （compose ネットワーク内で相互通信）。#82 が必要に応じて公開・疎通を足す。
+  # --------------------------------------------------------------------------
+  audit-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj
+        SERVICE_DLL: AuditService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=audit_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  configuration-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj
+        SERVICE_DLL: ConfigurationService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=configuration_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  cost-control-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj
+        SERVICE_DLL: CostControlService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=cost_control_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  information-collection-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj
+        SERVICE_DLL: InformationCollectionService.Worker.dll
+    environment:
+      <<: *app-env
+      # fail-safe: 空=NoOp（外部接続しない）。実 Finnhub は #81 で有効化。
+      Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
+      Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
+      # fail-safe: 空=プレースホルダ（Normal）。#79/#76 で有効化。
+      CostControl__BaseUrl: ${COST_CONTROL_BASEURL:-}
+    depends_on:
+      <<: *depends-infra
+
+  market-monitor-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj
+        SERVICE_DLL: MarketMonitorService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=market_monitor_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # fail-safe: 空=プレースホルダ（保有なし）。#76 で有効化。
+      RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  notification-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj
+        SERVICE_DLL: NotificationService.Worker.dll
+    environment:
+      <<: *app-env
+      # fail-safe: 空=NoOp（外部送信しない）。実 Discord は #15 で有効化。
+      Notifications__Provider: ${NOTIFICATIONS_PROVIDER:-}
+      Notifications__Discord__WebhookUrl: ${NOTIFICATIONS_DISCORD_WEBHOOK_URL:-}
+    depends_on:
+      <<: *depends-infra
+
+  order-execution-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj
+        SERVICE_DLL: OrderExecutionService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=order_execution_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      # fail-safe: 既定 paper（実発注しない・IADR-0016）。moomoo 実弾は #13。
+      Broker__Provider: ${BROKER_PROVIDER:-paper}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+
+  report-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj
+        SERVICE_DLL: ReportService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=report_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  risk-management-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj
+        SERVICE_DLL: RiskManagementService.Worker.dll
+    environment:
+      <<: *app-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=risk_management_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+    depends_on:
+      <<: *depends-infra
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  trade-decision-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj
+        SERVICE_DLL: TradeDecisionService.Worker.dll
+    environment:
+      <<: *app-env
+      # fail-safe: 空=プレースホルダ（取引しない）。#76 で有効化。
+      Reports__BaseUrl: ${REPORTS_BASEURL:-}
+      RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
+      # 実 LLM エグレスは未実装（#79）。空=呼ばない。前方互換で受け渡すのみ。
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      <<: *depends-infra
+
+networks:
+  ast:
+    driver: bridge
+
+volumes:
+  postgres-data:
