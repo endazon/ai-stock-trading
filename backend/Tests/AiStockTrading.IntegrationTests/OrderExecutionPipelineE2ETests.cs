@@ -34,6 +34,21 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        try
+        {
+            await InitializeCoreAsync();
+        }
+        catch
+        {
+            // IAsyncLifetime は InitializeAsync が例外送出すると DisposeAsync を呼ばない。片方のみ起動できた
+            // 場合のコンテナリークを防ぐため、ここで確実に破棄する（claude-review 指摘）。
+            await DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task InitializeCoreAsync()
+    {
         await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
 
         // 発注執行 Worker を実 PostgreSQL・実 RabbitMQ へ結線する（InMemory/テストハーネスへ差し替えない）。

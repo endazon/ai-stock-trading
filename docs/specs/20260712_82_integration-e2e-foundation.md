@@ -61,12 +61,12 @@ standalone 配線（IADR-0013）は実基盤で未検証。#22 系は実 RabbitM
 
 ## 受け入れ基準（issue #82 の受け入れ条件へ写像）
 
-- [ ] docker-compose/testcontainers で実 RabbitMQ・PostgreSQL を起動する統合テスト基盤を用意（Slice A）
-- [ ] 主要パイプラインの E2E をペーパーモードで検証（Slice A: 発注執行パイプライン＝OrderApproved→執行→永続→OrderExecuted）
+- [x] docker-compose/testcontainers で実 RabbitMQ・PostgreSQL を起動する統合テスト基盤を用意（Slice A）
+- [x] 主要パイプラインの E2E をペーパーモードで検証（Slice A: 発注執行パイプライン＝OrderApproved→執行→永続→OrderExecuted）
   - 情報収集→…→発注、損切り検知→機械執行の通し E2E は Slice B/C で拡張（本 PR で基盤を用意）
 - [ ] サービス間同期照会（daily-policy/sizing-context/open-positions/costs-state）を実 HTTP＋認証（#76）付きで検証 → **Slice B/C（#76 依存）へ分離**（本 PR は基盤と healthcheck まで）
-- [ ] CI 上は別ジョブ/別トリガー（nightly 等）としてユニット CI と分離（Slice A）
-- [ ] 各サービスに healthcheck を追加し、compose の依存/起動順を healthy 前提に整える（Slice A）
+- [x] CI 上は別ジョブ/別トリガー（nightly 等）としてユニット CI と分離（Slice A）
+- [x] 各サービスに healthcheck を追加し、compose の依存/起動順を healthy 前提に整える（Slice A）
 
 ## 検証方法
 
