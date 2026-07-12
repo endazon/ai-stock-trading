@@ -112,6 +112,10 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 
         record.Should().NotBeNull(
             "TradeDecisionMade→リスク管理承認→ペーパー執行→実 Postgres 永続が複数サービス跨ぎで成立すること");
+        // 承認された注文の内容が意図どおり連鎖したことを確認する（スクリーニングが元 intent を承認して執行された）。
+        record!.Symbol.Should().Be("AAPL");
+        record.Side.Should().Be(TradeSide.Buy);
+        record.Quantity.Should().Be(10);
     }
 
     private static async Task WaitReadyAsync(HttpClient client)
