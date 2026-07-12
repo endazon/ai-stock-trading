@@ -44,5 +44,7 @@
     <PackageVersion Include="Testcontainers" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
+    <!-- Slice B（#82 / IADR-0050）: OwnerOnly エンドポイントを実 Keycloak トークンで検証する。 -->
+    <PackageVersion Include="Testcontainers.Keycloak" Version="4.13.0" />
   </ItemGroup>
 </Project>
