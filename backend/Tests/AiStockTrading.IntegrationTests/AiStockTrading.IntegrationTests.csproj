@@ -7,6 +7,10 @@
     <RootNamespace>AiStockTrading.IntegrationTests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Slice B（IADR-0050）: dev realm を Keycloak コンテナへ import するため出力へ複製する。 -->
+    <Content Include="..\..\..\infra\keycloak\realm-export.json" Link="realm-export.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -15,7 +19,11 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.RabbitMq" />
-    <!-- Slice A の in-process 対象は発注執行 Worker。サービス横断参照は Program 曖昧のため避ける（IADR-0049）。 -->
+    <PackageReference Include="Testcontainers.Keycloak" />
+    <!-- 発注執行 Worker は無名（global）参照。`Program` = 発注執行（Slice A・既存テストは無改修）。 -->
     <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Worker\OrderExecutionService.Worker.csproj" />
+    <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。
+         新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
+    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Worker\RiskManagementService.Worker.csproj" Aliases="RiskManagementWorker" />
   </ItemGroup>
 </Project>

@@ -15,8 +15,10 @@
       "username": "dev-owner",
       "enabled": true,
       "emailVerified": true,
+      "email": "dev-owner@example.com",
       "firstName": "Dev",
       "lastName": "Owner",
+      "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "owner", "temporary": false }
       ],
