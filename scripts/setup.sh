@@ -7,13 +7,14 @@ set -u
 
 log() { printf '[setup] %s\n' "$1"; }
 
-# --- C# / .NET（例・既定） ---
+# --- C# / .NET ---
+# ADR-0001/IADR-0046: ユニットリポジトリレイアウト（backend/backend.slnx）を復元する。
 if command -v dotnet >/dev/null 2>&1; then
-  if ls ./*.sln >/dev/null 2>&1 || find . -maxdepth 3 -name '*.csproj' -print -quit | grep -q .; then
-    log "dotnet restore を実行します"
-    dotnet restore || log "restore でエラー（継続）"
+  if [ -f backend/backend.slnx ]; then
+    log "dotnet restore backend/backend.slnx を実行します"
+    dotnet restore backend/backend.slnx || log "restore でエラー（継続）"
   else
-    log ".sln/.csproj が無いため dotnet セットアップをスキップ"
+    log "backend/backend.slnx が無いため dotnet セットアップをスキップ"
   fi
 fi
 

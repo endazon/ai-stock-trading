@@ -1,0 +1,21 @@
+<!-- ADR-0001(2026-07-12更新)/IADR-0046: ユニットリポジトリの単独ビルド用フォールバック。
+     platform 実装リポへ submodule 配置されたときは、上位（src/Directory.Build.props）の
+     単一情報源を import-chain で継承し、本ファイルの既定は単独時のみ効かせる
+     （platform templates/unit-template/README.md の規約。条件式の入れ子クォート不可のため
+     パスは一旦プロパティへ束ねる）。 -->
+<Project>
+  <PropertyGroup>
+    <ParentDirectoryBuildProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</ParentDirectoryBuildProps>
+  </PropertyGroup>
+  <!-- 上位に platform の Directory.Build.props があれば継承（submodule 配置時）。 -->
+  <Import Project="$(ParentDirectoryBuildProps)" Condition="'$(ParentDirectoryBuildProps)' != ''" />
+  <!-- 単独時のみ効かせる既定（本体継承時は親が既に定義済みのため上書きしない）。 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == ''">
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>13</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
