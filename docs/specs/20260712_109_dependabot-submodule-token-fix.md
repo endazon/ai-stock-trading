@@ -37,6 +37,13 @@ Dependabot が作成する PR は Dependabot secret のみを参照でき、Acti
 `SUBMODULE_ACCESS_PAT`）は渡らない。そのため `claude-code-review.yml` の
 「Fetch planning submodule」ステップが認証失敗し、`claude-review` ジョブ全体が失敗していた。
 
+> 補足（原因の切り分け）: トークン参照名を `PLANNING_REPO_TOKEN` に変えても、Dependabot PR には依然として
+> Actions secret は渡らない（GitHub の制約: Dependabot 起動のワークフローは Dependabot secret と読み取り専用
+> `GITHUB_TOKEN` のみを受け取る）。したがって **Failure 2 を実際に解消するのは
+> `if: ${{ github.actor != 'dependabot[bot]' }}` によるジョブスキップ**である。トークン名統一の目的は
+> (1) 旧 `SUBMODULE_ACCESS_PAT` を削除可能にすること、(2) 通常 PR での planning 取得経路を一本化すること
+> であり、Dependabot PR の失敗解消そのものではない。将来 `if` 条件を外す場合はこの制約に留意する。
+
 ## 対象範囲・変更内容
 
 ### 1. `.github/dependabot.yml`
