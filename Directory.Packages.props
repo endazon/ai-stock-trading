@@ -38,4 +38,11 @@
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 実コンテナ統合 E2E（issue #82 / IADR-0049）。Testcontainers で実 PostgreSQL/RabbitMQ を起動する。
+         Category=Integration のテストのみが参照し、既定 CI では実行しない（nightly/dispatch で実走）。 -->
+    <PackageVersion Include="Testcontainers" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,35 @@
+# 実コンテナ統合 E2E（issue #82 / IADR-0049）
+#
+# 実 PostgreSQL/RabbitMQ を Testcontainers で起動する統合テスト（Category=Integration）を実行する。
+# 既定 CI（ci.yml）とは分離し、既定 CI は同トレイトを --filter で除外する（不安定化・低速化の回避）。
+# 実基盤 E2E は本ワークフローで nightly（schedule）＋手動（workflow_dispatch）に実走する。
+# GitHub の ubuntu ランナーは Docker 同梱のため Testcontainers が動作する。
+name: Integration E2E
+
+on:
+  schedule:
+    # 毎日 UTC 18:00（JST 03:00）に実行。
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+# 同時実行は 1 本に制限（ランナー上の Docker リソース競合回避）。
+concurrency:
+  group: integration-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore backend/backend.slnx
+      - name: Build
+        run: dotnet build backend/backend.slnx --no-restore --configuration Release
+      # 実基盤 E2E のみ実行する（Testcontainers が Docker で実 PostgreSQL/RabbitMQ を起動する）。
+      - name: Integration tests (real containers)
+        run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category=Integration" --verbosity normal

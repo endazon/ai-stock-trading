@@ -1,0 +1,21 @@
+<!-- 実コンテナ統合 E2E（issue #82 / IADR-0049）。Testcontainers で実 PostgreSQL/RabbitMQ を起動し、
+     対象 Worker を WebApplicationFactory で in-process 起動して実基盤へ結線する。
+     テストは Category=Integration トレイトを付し、既定 CI ではフィルタで実行除外する。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.IntegrationTests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
+    <!-- Slice A の in-process 対象は発注執行 Worker。サービス横断参照は Program 曖昧のため避ける（IADR-0049）。 -->
+    <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Worker\OrderExecutionService.Worker.csproj" />
+  </ItemGroup>
+</Project>

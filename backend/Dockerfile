@@ -23,6 +23,11 @@ RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
 ARG SERVICE_DLL
+# dev/E2E 目的の軽量 healthcheck プローブ（compose の healthcheck が /health/ready を叩く・IADR-0049）。
+# 本番配備は platform（#24）の管掌。aspnet 既定タグは Debian ベースで apt を持つ。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app ./
 # ヘルスチェック（/health/live・/health/ready）と各サービスの HTTP サーフェスは 8080 で待受ける。

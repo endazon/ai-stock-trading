@@ -17,7 +17,15 @@ exporters:
   debug:
     verbosity: normal
 
+# health_check 拡張で :13133 に readiness を出す（外部監視用・IADR-0049）。
+# collector イメージは distroless（シェル無し）のため compose の CMD-SHELL healthcheck は付けられない。
+# app は otel を service_started で待つ（テレメトリはベストエフォート・app 稼働の必須依存ではない）。
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 service:
+  extensions: [health_check]
   pipelines:
     traces:
       receivers: [otlp]
