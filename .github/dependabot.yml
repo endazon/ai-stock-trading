@@ -8,6 +8,17 @@ updates:
     schedule:
       interval: "weekly"
 
+  # NFR: submodule の pin 自動更新（gitlink を追跡先の先端へ前進させる更新 PR を生成する）。
+  # 既定は自動マージしない（人手レビュー必須）。
+  # planning（private の project-planning）を含む root .gitmodules の全 submodule が対象。
+  # private submodule の更新には Dependabot が当該 private リポを read できる権限が要る
+  # （詳細・マージ後の確認事項は docs/specs/20260712_109_dependabot-gitsubmodule.md を参照）。
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
   # 使用スタックに合わせて有効化（コメント解除）:
   # - package-ecosystem: "nuget"       # C# / .NET
   #   directory: "/"
