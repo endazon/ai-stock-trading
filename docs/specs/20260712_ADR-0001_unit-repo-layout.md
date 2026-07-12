@@ -1,7 +1,7 @@
 ---
 title: ユニットリポジトリレイアウトへの再編（src/ → backend/、platform ADR-0019 準拠）
 type: spec
-status: draft
+status: review
 related_ids:
   - ADR-0001
   - IADR-0046
@@ -9,9 +9,9 @@ author: claude
 created: 2026-07-12
 updated: 2026-07-12
 plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新。submodule pin 未更新のため更新内容は planning リポ main を参照）"
-  - "../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md（§フォルダ構成は planning 側 PR で追加。submodule pin 更新後に反映）"
-  - "https://github.com/endazon/project-planning/blob/main/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新）"
+  - "../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md（§フォルダ構成）"
+  - "../../planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md"
 ---
 
 # 仕様書: ユニットリポジトリレイアウトへの再編（src/ → backend/）
@@ -65,11 +65,11 @@ ai-stock-trading/                 ← リポジトリルート（= submodule 配
 
 ## 受け入れ基準
 
-- [ ] レイアウトが上記の形（ルート直下 `backend/`、`backend/backend.slnx`）になっている
-- [ ] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` / `dotnet format backend/backend.slnx --verify-no-changes` が通る
-- [ ] CI・スクリプトが新パスで動作する定義になっている
-- [ ] `node scripts/check-doc-links.js` がリンク切れゼロで通る
-- [ ] 移行判断が IADR-0046 に記録されている
+- [x] レイアウトが上記の形（ルート直下 `backend/`、`backend/backend.slnx`）になっている
+- [x] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` / `dotnet format backend/backend.slnx --verify-no-changes` が通る
+- [x] CI・スクリプトが新パスで動作する定義になっている
+- [x] `node scripts/check-doc-links.js` がリンク切れゼロで通る
+- [x] 移行判断が IADR-0046 に記録されている
 
 ## テスト方針
 
