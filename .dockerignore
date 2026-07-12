@@ -1,0 +1,24 @@
+# Docker ビルドコンテキストから除外する（issue #107 / IADR-0048）。
+# ビルド成果物・IDE・VCS・機密・計画サブモジュールはイメージへ入れない。
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+.git
+**/.git/
+.github/
+.claude/
+.devcontainer/
+planning/
+feedback/
+docs/
+scripts/
+# 機密（実値は .env にのみ置く）。テンプレートも含めコンテキストに入れない。
+.env
+.env.*
+!.env.example
+secrets.*
+CLAUDE.local.md
+*.user
+TestResults/
+**/*.md

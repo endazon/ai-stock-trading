@@ -1,0 +1,33 @@
+# OpenTelemetry Collector（dev 既定） — issue #107 / IADR-0048
+# 各サービスは OTLP/gRPC（:4317）でトレース/メトリクス/ログを送る（ObservabilityExtensions）。
+# dev では収集して debug エクスポータで標準出力へ出すのみ（外部送信なし=fail-safe）。
+# 実バックエンド（Tempo/Loki/Prometheus 等・ADR-0006）連携は #82 以降で追加する。
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
