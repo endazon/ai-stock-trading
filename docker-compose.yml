@@ -20,6 +20,15 @@ x-app-common: &app-common
     dockerfile: backend/Dockerfile
   restart: unless-stopped
   networks: [ast]
+  # 全 Worker 共通の healthcheck（Web SDK・:8080 の /health/ready）。DB サービスは "ready" タグの
+  # Npgsql チェックを含み、DB 疎通まで unhealthy。stateless は起動後すぐ healthy（IADR-0049 決定 3）。
+  # runtime イメージへ curl を追加済み（backend/Dockerfile）。start_period で起動時 EF Migration を待つ。
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 40s
 
 # 全 Worker 共通の設定点（環境変数は appsettings より優先。`__` は構成の階層区切り）。
 x-app-env: &app-env
@@ -78,8 +87,19 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
+      # 管理ポート :9000 に /health/* を出す（healthcheck 用・IADR-0049 決定 3）。
+      KC_HEALTH_ENABLED: "true"
     ports:
       - "8081:8080"    # 管理コンソール / トークンエンドポイント
+    # Keycloak イメージは curl/wget を持たないため bash の /dev/tcp で :9000 の /health/ready を確認する。
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     volumes:
       - ./infra/keycloak:/opt/keycloak/data/import:ro
     networks: [ast]
@@ -112,7 +132,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   configuration-service:
     <<: *app-common
@@ -131,7 +151,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   cost-control-service:
     <<: *app-common
@@ -150,7 +170,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   information-collection-service:
     <<: *app-common
@@ -189,7 +209,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   notification-service:
     <<: *app-common
@@ -242,7 +262,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   risk-management-service:
     <<: *app-common
@@ -261,7 +281,7 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   trade-decision-service:
     <<: *app-common
