@@ -1,0 +1,45 @@
+# doc-links（planning submodule 込み）— Issue #104
+#
+# 背景: 本体 CI の `doc-links` ジョブ（ci.yml）は actions/checkout を submodule なしで実行するため、
+# private な planning サブモジュール配下への破損リンクを検出できない（planning が未 populate だと
+# scripts/check-doc-links.js は planning リンクを検査対象外にする）。この隙間で破損リンクが蓄積した
+# 実例がある（platform IADR-0058。本リポジトリでは issue #104 = PR #103 で既存破損 2 件を修正）。
+#
+# 対応（platform IADR-0058 の方式・kit 雛形 planning PR #21 の適用）: planning を含む全リンクの検査を、
+# トークン付きで submodule を取得する専用の定期ジョブに分離する。本体 PR CI の doc-links は従来どおり
+# 高速・トークン不要のまま非 planning リンクを毎回検査し、planning リンクは本ワークフロー（夜間 + 手動）で検査する。
+#
+# 前提（メンテナ設定）:
+#   Secret `PLANNING_REPO_TOKEN` に、本リポジトリと planning リポジトリ（endazon/project-planning）双方へ
+#   read 権限を持つ PAT（fine-grained 推奨）を登録する。未登録の場合、本ジョブは submodule 取得に失敗して
+#   fail する（＝設定漏れを可視化する。PR CI はブロックしない）。
+name: doc-links (planning)
+
+on:
+  schedule:
+    - cron: "0 17 * * *" # 毎日 17:00 UTC（≈ 02:00 JST）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doc-links-planning
+  cancel-in-progress: true
+
+jobs:
+  doc-links-planning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # 本体リポと planning submodule 双方の取得に使う（双方 read 権限が必要）。
+          token: ${{ secrets.PLANNING_REPO_TOKEN }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      # --require-planning: planning が未 populate（＝トークン未設定/取得失敗）なら fail する。
+      # populate 済みなら planning 配下リンクも含めて実在検査する。
+      - name: Check doc links (including planning submodule)
+        run: node scripts/check-doc-links.js --require-planning

@@ -57,13 +57,21 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
+      # ソリューションを自動発見して走査する（kit 雛形と同型。ルート単一 .sln/.slnx でも、
+      # ユニットレイアウト backend/backend.slnx でも編集不要で動く。planning PR #21）
       - name: Restore
-        run: dotnet restore backend/backend.slnx
+        run: |
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+            dotnet restore "$sln"
+          done
       - name: List vulnerable packages (incl. transitive)
         run: |
           set -o pipefail
           # `dotnet list package --vulnerable` は脆弱性が有っても exit 0 を返すため、出力を解析して判定する。
-          dotnet list backend/backend.slnx package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+          : > vuln-report.txt
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+            dotnet list "$sln" package --vulnerable --include-transitive 2>&1 | tee -a vuln-report.txt
+          done
           # 脆弱な依存の行は必ず GitHub Advisory URL(https://github.com/advisories/GHSA-...)を含む。
           # 深刻度語(High 等)はパッケージ名に紛れ得るため、より特異な advisory URL の有無で判定する。
           if grep -Eq 'https?://github\.com/advisories/' vuln-report.txt; then

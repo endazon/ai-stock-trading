@@ -20,17 +20,36 @@
 const fs = require('fs');
 const path = require('path');
 
+// 既定はリポジトリルート。テストで未 populate 状態を再現するため DOC_LINKS_ROOT で上書き可能にする。
+const REPO_ROOT = process.env.DOC_LINKS_ROOT
+  ? path.resolve(process.env.DOC_LINKS_ROOT)
+  : path.resolve(__dirname, '..');
+
 // 参照として実在検査を行う拡張子（仕様書・図・スキーマ等）
 const LINK_EXT = /\.(md|ya?ml|json|puml|mmd|png|jpe?g|svg|drawio)$/i;
 
 function parseArgs(argv) {
-  const a = { dir: 'docs' };
+  const a = { dir: 'docs', requirePlanning: false };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === '--dir') a.dir = argv[++i];
     else if (x.startsWith('--dir=')) a.dir = x.slice(6);
+    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（Issue #232）。
+    // トークン付きで submodule を取得する定期ジョブから使い、取得漏れ（＝planning リンクの検査漏れ）を
+    // 黙って通さず可視化する。
+    else if (x === '--require-planning') a.requirePlanning = true;
   }
   return a;
+}
+
+// planning サブモジュールが populate 済みか（projects/ の実在で判定）。CI が submodule なしで
+// checkout した場合は planning/ が空プレースホルダになるため、存在チェックだけでは判別できない。
+function planningPopulated(root = REPO_ROOT) {
+  try {
+    return fs.existsSync(path.join(root, 'planning', 'projects'));
+  } catch (e) {
+    return false;
+  }
 }
 
 function mdFiles(dir) {
@@ -107,6 +126,15 @@ function collectBroken(fp) {
 
 function main() {
   const a = parseArgs(process.argv.slice(2));
+  // Issue #232: 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
+  // planning リンクは（isBrokenRef により）検査対象外となり破損を見逃すため、ここで明示的に fail する。
+  if (a.requirePlanning && !planningPopulated()) {
+    console.error(
+      '[check-doc-links] --require-planning: planning サブモジュールが未チェックアウトです。\n' +
+        '  submodules を取得（例: actions/checkout の submodules: recursive + PLANNING_REPO_TOKEN）してから実行してください。',
+    );
+    process.exit(1);
+  }
   const files = mdFiles(a.dir);
   let total = 0;
   const report = [];
@@ -130,4 +158,6 @@ function main() {
   process.exit(1);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { parseArgs, planningPopulated, isBrokenRef, collectBroken };

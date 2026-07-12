@@ -48,8 +48,13 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          if ls *.sln **/*.csproj >/dev/null 2>&1; then
-            dotnet restore
-          else
-            echo "復元対象（.sln/.csproj）が無いためスキップする。"
+          # ソリューションを自動発見して復元する（kit 雛形と同型。planning PR #21）。
+          # 旧判定（ls *.sln **/*.csproj）は backend/backend.slnx レイアウトで復元対象を発見できなかった。
+          found=0
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+            dotnet restore "$sln"
+            found=1
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "復元対象（.sln/.slnx）が無いためスキップする。"
           fi

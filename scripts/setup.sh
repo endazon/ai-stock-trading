@@ -8,14 +8,16 @@ set -u
 log() { printf '[setup] %s\n' "$1"; }
 
 # --- C# / .NET ---
-# ADR-0001/IADR-0046: ユニットリポジトリレイアウト（backend/backend.slnx）を復元する。
+# ソリューションを自動発見して復元する（kit 雛形と同型・planning PR #21。ルート単一 .sln/.slnx でも
+# ユニットレイアウト backend/backend.slnx でも編集不要で動く）。
 if command -v dotnet >/dev/null 2>&1; then
-  if [ -f backend/backend.slnx ]; then
-    log "dotnet restore backend/backend.slnx を実行します"
-    dotnet restore backend/backend.slnx || log "restore でエラー（継続）"
-  else
-    log "backend/backend.slnx が無いため dotnet セットアップをスキップ"
-  fi
+  restored=0
+  for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+    log "dotnet restore $sln を実行します"
+    dotnet restore "$sln" || log "restore でエラー（継続）"
+    restored=1
+  done
+  [ "$restored" -eq 1 ] || log ".sln/.slnx が無いため dotnet セットアップをスキップ"
 fi
 
 # --- Node.js（例。使う場合はコメント解除） ---
