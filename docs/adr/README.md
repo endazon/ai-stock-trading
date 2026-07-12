@@ -72,3 +72,4 @@
 | IADR-0044 | 過剰適合補正はウォークフォワード＋DSR＋PBO(CSCV)で構成し、純関数で実装する | Accepted |
 | IADR-0045 | Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する | Accepted |
 | IADR-0046 | ユニットリポジトリレイアウト（ルート直下 backend/・import-chain フォールバック props）を採る | Accepted |
+| IADR-0047 | kit テンプレート更新には追随し、restore 系 CI/スクリプトは slnx 自動発見形を採る（IADR-0046 決定 4 の部分変更） | Accepted |

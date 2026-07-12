@@ -4,6 +4,7 @@ type: spec
 status: review
 related_ids:
   - NFR
+  - IADR-0047
 author: claude
 created: 2026-07-12
 updated: 2026-07-12
@@ -38,14 +39,14 @@ plan_refs:
   - `scripts/check-doc-links.js` を kit/platform の進化版（`--require-planning` 対応）へ同期
   - `security.yml`・`pr-title.yml`（vulnerable-scan）・`copilot-setup-steps.yml`・`scripts/setup.sh` の
     restore/list を slnx/sln 自動発見ループへ
-- 対象外: ci.yml のビルド・テスト（`backend/backend.slnx` 明示のまま。単一ユニットのため変更不要）
+- 対象外: ci.yml のビルド・テスト（`backend/backend.slnx` 明示のまま維持）。restore 系のみ自動発見形とする方針と IADR-0046 決定 4 との関係は [IADR-0047](../adr/IADR-0047_kit-template-sync-policy.md) で正式化
 
 ## 受け入れ基準
 
-- [ ] `node scripts/check-doc-links.js` / `--require-planning`（ローカル・planning populate 済み）が通る
-- [ ] `node scripts/scripts.test.js` が通る（同期した check-doc-links の回帰確認）
-- [ ] `bash -n scripts/setup.sh` が通り、自動発見ループが `backend/backend.slnx` を発見する
-- [ ] doc-links-planning.yml が kit 雛形と同方式（schedule + workflow_dispatch・PLANNING_REPO_TOKEN・--require-planning）
+- [x] `node scripts/check-doc-links.js` / `--require-planning`（ローカル・planning populate 済み）が通る
+- [x] `node scripts/scripts.test.js` が通る（`--require-planning` / `planningPopulated` のテストを追加して回帰確認）
+- [x] `bash -n scripts/setup.sh` が通り、自動発見ループが `backend/backend.slnx` を発見する
+- [x] doc-links-planning.yml が kit 雛形と同方式（schedule + workflow_dispatch・PLANNING_REPO_TOKEN・--require-planning）
 
 ## 計画書との差異
 
