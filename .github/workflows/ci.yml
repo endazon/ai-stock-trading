@@ -116,8 +116,10 @@ jobs:
         run: dotnet restore backend/backend.slnx
       - name: Build
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
+      # 実基盤 E2E（Category=Integration・Docker 依存）は既定 CI から除外し、専用 integration.yml
+      # （nightly/dispatch）で実走する（issue #82 / IADR-0049）。既定 CI の安定性・速度を損なわない。
       - name: Test (with coverage)
-        run: dotnet test backend/backend.slnx --no-build --configuration Release --collect:"XPlat Code Coverage" --verbosity normal
+        run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category!=Integration" --collect:"XPlat Code Coverage" --verbosity normal
       # カバレッジ閾値を強制する場合の例（ツールは任意）:
       #   - run: dotnet tool install --global dotnet-reportgenerator-globaltool
       #   - run: reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:TextSummary
