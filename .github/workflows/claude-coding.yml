@@ -56,13 +56,13 @@ jobs:
           # 権限が無い PAT だと 403（Permission denied）になる。
 
       # 計画リポジトリ(project-planning)を submodule 参照している場合のみ有効。
-      # SUBMODULE_ACCESS_PAT は organization の secret に登録した fine-grained PAT で、
+      # PLANNING_REPO_TOKEN は organization の secret に登録した fine-grained PAT で、
       # project-planning への Contents: Read 権限のみを付与する。実装リポの push 認証
       # (GITHUB_TOKEN) とは分離するため、submodule 取得の間だけ一時的に PAT を使い、
       # 直後に解除して push へ漏れないようにする（.gitmodules が無ければ何もしない）。
       - name: Fetch planning submodule (read-only PAT)
         env:
-          SUBMODULE_PAT: ${{ secrets.SUBMODULE_ACCESS_PAT }}
+          SUBMODULE_PAT: ${{ secrets.PLANNING_REPO_TOKEN }}
         run: |
           if [ -f .gitmodules ]; then
             git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "https://github.com/"
