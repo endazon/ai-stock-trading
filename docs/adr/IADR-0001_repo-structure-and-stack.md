@@ -43,6 +43,11 @@ net10.0（`Directory.Build.props`）・Central Package Management・slnx 形式�
 
 選択肢 2 を採用する。具体的には以下を基盤実装リポから踏襲する。
 
+> **2026-07-12 更新（[IADR-0046](IADR-0046_unit-repo-layout.md) により本節のリポ構成を変更）**:
+> レイアウトはユニットリポジトリ形式（ルート直下 `backend/backend.slnx`・`backend/Services/`・
+> `backend/Shared/`、props はルートで import-chain フォールバック）へ移行した。以下の `src/` 表記は
+> 移行前の記録である。スタック・命名・テスト規約の決定は現行どおり有効。
+
 - `src/` 直下に `AiStockTrading.slnx`・`Directory.Build.props`（net10.0 / Nullable / ImplicitUsings / LangVersion 13）・
   `Directory.Packages.props`（CPM・推移的ピン）を置く
 - サービスは `src/Services/<ServiceName>/{src,tests}`、共有物は `src/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`
