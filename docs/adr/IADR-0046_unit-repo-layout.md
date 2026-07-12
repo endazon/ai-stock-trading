@@ -78,4 +78,5 @@ plan_refs:
 
 - Supersedes: なし（[IADR-0001](IADR-0001_repo-structure-and-stack.md) のリポ構成節を更新する。
   スタック・規約の他の決定は存続）
-- Superseded by: なし
+- Superseded by: [IADR-0047](IADR-0047_kit-template-sync-policy.md)（決定 4 のうち「自動発見は不要」の部分のみ。
+  kit テンプレート更新への追随により restore 系は slnx 自動発見形へ変更。他の決定は存続）

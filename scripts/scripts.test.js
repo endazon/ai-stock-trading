@@ -187,4 +187,38 @@ ok('未一致コミットは素通し', () => {
   assert.deepStrictEqual(applyOverride(c), c);
 });
 
+// --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
+const fsDl = require('fs');
+const osDl = require('os');
+const pathDl = require('path');
+const { parseArgs: dlParseArgs, planningPopulated } = require('./check-doc-links.js');
+
+ok('check-doc-links: parseArgs 既定は requirePlanning=false', () => {
+  const a = dlParseArgs([]);
+  assert.strictEqual(a.requirePlanning, false);
+  assert.strictEqual(a.dir, 'docs');
+});
+ok('check-doc-links: --require-planning で requirePlanning=true', () => {
+  assert.strictEqual(dlParseArgs(['--require-planning']).requirePlanning, true);
+});
+ok('check-doc-links: --dir と --require-planning の併用', () => {
+  const a = dlParseArgs(['--dir', 'notes', '--require-planning']);
+  assert.strictEqual(a.dir, 'notes');
+  assert.strictEqual(a.requirePlanning, true);
+});
+ok('check-doc-links: planningPopulated は planning/projects 実在で true', () => {
+  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-pop-'));
+  fsDl.mkdirSync(pathDl.join(root, 'planning', 'projects'), { recursive: true });
+  assert.strictEqual(planningPopulated(root), true);
+});
+ok('check-doc-links: planningPopulated は空プレースホルダ（planning/ のみ）で false', () => {
+  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-empty-'));
+  fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true });
+  assert.strictEqual(planningPopulated(root), false);
+});
+ok('check-doc-links: planningPopulated は planning/ 不在で false', () => {
+  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-none-'));
+  assert.strictEqual(planningPopulated(root), false);
+});
+
 process.stdout.write(`\n✓ ${passed} tests passed\n`);
