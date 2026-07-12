@@ -67,14 +67,14 @@ appsettings・接続情報が無い。本作業でその土台（fail-safe 既�
 
 ## 受け入れ基準（issue #107 の受け入れ条件へ写像）
 
-- [ ] `docker-compose.yml`（dev）に infra ＋ AST 各サービス（起動プロファイル）が定義される
-- [ ] 各サービスに `appsettings.json` / `appsettings.Development.json` を整備（接続文字列・キュー・認証の設定点・値はプレースホルダ）
-- [ ] `.env.example` に必要な環境変数キー（DB/MQ/Keycloak 資格情報・`ANTHROPIC_API_KEY` 等）をキー名＋用途コメントで列挙（実値なし）
-- [ ] ルート `README.md` / `docs/how-to/local-run.md` にローカル起動手順（`.env.example`→`.env`・`docker compose up`）を記載
-- [ ] `.claude/hooks/guard-secrets.js` を通過（実シークレット混入なし）
-- [ ] submodule 配置時（`src/ai-stock-trading/`）と単独リポ時の両方で compose の相対パス・ボリュームが破綻しない
-- [ ] `dotnet build`／`dotnet test`／`dotnet format --verify-no-changes` が緑（appsettings 追加が既存テストを壊さない）
-- [ ] `docker compose config` が有効な構成としてパースできる（構文・変数解決の静的検証）
+- [x] `docker-compose.yml`（dev）に infra ＋ AST 各サービス（起動プロファイル）が定義される
+- [x] 各サービスに `appsettings.json` / `appsettings.Development.json` を整備（接続文字列・キュー・認証の設定点・値はプレースホルダ）
+- [x] `.env.example` に必要な環境変数キー（DB/MQ/Keycloak 資格情報・`ANTHROPIC_API_KEY` 等）をキー名＋用途コメントで列挙（実値なし）
+- [x] ルート `README.md` / `docs/how-to/local-run.md` にローカル起動手順（`.env.example`→`.env`・`docker compose up`）を記載
+- [x] `.claude/hooks/guard-secrets.js` を通過（実シークレット混入なし）
+- [x] submodule 配置時（`src/ai-stock-trading/`）と単独リポ時の両方で compose の相対パス・ボリュームが破綻しない
+- [x] `dotnet build`／`dotnet test`／`dotnet format --verify-no-changes` が緑（appsettings 追加が既存テストを壊さない）
+- [x] `docker compose config` が有効な構成としてパースできる（構文・変数解決の静的検証）
 
 ## 検証方法
 

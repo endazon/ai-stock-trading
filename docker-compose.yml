@@ -43,7 +43,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ai}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai}
-      # 既定 DB。サービス専有 DB は init スクリプトで作成する（Database-per-Service / ADR-0001）。
+      # 既定 DB。サービス専有 DB は init スクリプトで作成する（ADR-0001 = Database per Service）。
       POSTGRES_DB: postgres
     ports: ["5432:5432"]
     volumes:

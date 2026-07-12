@@ -87,7 +87,9 @@ plan_refs:
 ### 決定 4: infra は既定起動、app サービスはビルドを伴うため同 compose で定義しつつ手順で選択可能にする
 
 - infra（PostgreSQL / RabbitMQ / Keycloak / otel-collector）を dev 既定で定義する。PostgreSQL は
-  Database-per-Service（ADR-0001）に合わせ init スクリプトで 7 つの専有 DB を作成する。
+  ADR-0001（Database per Service）に合わせ init スクリプトで 7 つの専有 DB を作成する。
+  （db-per-service の方針の出所は platform ADR-0002 だが、AST コードベースは既存の 10+ 箇所と同じく
+  `ADR-0001（Database per Service）` として一貫参照する。本 IADR もその表記に揃える。）
 - app サービス（10 Worker）は同 compose に定義し、`depends_on` の healthcheck で infra 起動を待つ。
 - 資格情報は `.env`（`.env.example` からコピー）で注入する。dev ダミー既定のみをコミットし、
   本番値は Vault/Secrets（ADR-0006 / #24）へ委ねる。
