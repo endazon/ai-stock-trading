@@ -7,6 +7,10 @@
       {
         "name": "trading-owner",
         "description": "dev: OwnerOnly (ADR-0007 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion."
+      },
+      {
+        "name": "trading-service",
+        "description": "dev: OwnerOrService read-only (IADR-0051). Service-to-service role for sync queries (sizing-context / open-positions / daily-policy). Cannot operate kill switch / settings."
       }
     ]
   },
@@ -23,6 +27,12 @@
         { "type": "password", "value": "owner", "temporary": false }
       ],
       "realmRoles": ["trading-owner"]
+    },
+    {
+      "username": "service-account-ai-stock-trading-svc",
+      "enabled": true,
+      "serviceAccountClientId": "ai-stock-trading-svc",
+      "realmRoles": ["trading-service"]
     }
   ],
   "clients": [
@@ -34,6 +44,18 @@
       "directAccessGrantsEnabled": true,
       "redirectUris": ["*"],
       "webOrigins": ["*"]
+    },
+    {
+      "clientId": "ai-stock-trading-svc",
+      "description": "dev: confidential service client for s2s sync queries (IADR-0051). client_credentials only. Production secret comes from config (user-secrets / .env), not this dev export.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "dev-only-service-secret",
+      "redirectUris": [],
+      "webOrigins": []
     }
   ]
 }
