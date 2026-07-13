@@ -13,8 +13,15 @@ public static class AiStockTradingAuthPolicies
     // FR-10/FR-19/FR-20, ADR-0007: kill switch・リスク設定・段階昇格は利用者のみ操作できる。
     public const string OwnerOnly = "OwnerOnly";
 
+    // IADR-0051: 読み取り系の同期照会（sizing-context / open-positions / daily-policy）は利用者またはサービスが呼べる。
+    // 書き込み系は OwnerOnly 据え置き（サービスへ書き込み権限を与えない＝最小権限）。
+    public const string OwnerOrService = "OwnerOrService";
+
     // 利用者ロール（Keycloak のレルムロール想定）。単独利用者運用のため単層とする（IADR-0011）。
     public const string OwnerRole = "trading-owner";
+
+    // IADR-0051: サービス間 s2s 認証用の最小権限ロール（読み取り系のみ許可）。kill switch/設定変更は持たない。
+    public const string ServiceRole = "trading-service";
 }
 
 public static class AuthExtensions
@@ -54,6 +61,10 @@ public static class AuthExtensions
         {
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOnly, policy =>
                 policy.RequireRole(AiStockTradingAuthPolicies.OwnerRole));
+
+            // IADR-0051: 読み取り系の同期照会は利用者（trading-owner）またはサービス（trading-service）が呼べる。
+            options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy =>
+                policy.RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole));
         });
         return services;
     }

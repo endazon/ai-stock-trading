@@ -13,11 +13,14 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     : IClassFixture<RiskWorkerWebApplicationFactory>
 {
     private const string Owner = "trading-owner";
+    private const string Service = "trading-service";
 
-    private HttpClient OwnerClient()
+    private HttpClient OwnerClient() => ClientWithRoles(Owner);
+
+    private HttpClient ClientWithRoles(string roles)
     {
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, Owner);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, roles);
         return client;
     }
 
@@ -134,6 +137,62 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
 
         var positions = await res.Content.ReadFromJsonAsync<List<OpenPositionDto>>();
         positions.Should().NotBeNull(); // 台帳が空なら空列
+    }
+
+    [Fact]
+    public async Task サービスロールは_sizing_context_を取得できる()
+    {
+        // IADR-0051: OwnerOrService。s2s の trading-service で読み取り系の同期照会が 200。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/sizing-context");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task サービスロールは_open_positions_を取得できる()
+    {
+        // IADR-0051: OwnerOrService。open-positions を最優先に s2s で 200（サイレント縮退の解消）。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/open-positions");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task サービスロールは_kill_switch_を操作できない_403()
+    {
+        // IADR-0051 最小権限: trading-service は書き込み系（OwnerOnly）を持たない。kill switch は 403。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/kill-switch/engage",
+            new KillSwitchRequest("サービスは操作できない"));
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task サービスロールは_設定変更できない_403()
+    {
+        // IADR-0051 最小権限: trading-service はリスク設定変更（OwnerOnly）を持たない。403。
+        var client = ClientWithRoles(Service);
+        var limits = TradingDefaults.CreateRiskLimits() with { MaxOpenPositions = 5 };
+
+        var res = await client.PutAsJsonAsync("/risk-controls/settings/limits",
+            new LimitsUpdateRequest(limits, "サービスは変更できない"));
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ロール無しは読み取り系も_403()
+    {
+        // OwnerOrService: 認証済みだが owner/service いずれも持たない → 403。
+        var client = ClientWithRoles("viewer");
+
+        (await client.GetAsync("/risk-controls/open-positions")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]

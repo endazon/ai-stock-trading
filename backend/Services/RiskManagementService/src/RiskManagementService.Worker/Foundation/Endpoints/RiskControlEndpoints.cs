@@ -11,18 +11,18 @@ using Microsoft.EntityFrameworkCore;
 namespace AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 
 // FR-10, FR-19, FR-20, UC-06, ADR-0007: kill switch 操作・リスク設定変更の HTTP エンドポイント。
-// すべて OwnerOnly（利用者のみ・Keycloak ロール trading-owner）を要求する。actor は認証済みトークンの名前
+// 書き込み系は OwnerOnly（利用者のみ・Keycloak ロール trading-owner）を要求する。actor は認証済みトークンの名前
 // （preferred_username）を用いる。生成AI・自動処理はこのロールを持たないため変更できない。
+// IADR-0051: 読み取り系の同期照会（sizing-context / open-positions）はサービス間 s2s（trading-service）でも呼べる
+// よう OwnerOrService に分離する（サービスへ書き込み権限は与えない＝最小権限）。
 internal static class RiskControlEndpoints
 {
     public static IEndpointRouteBuilder MapRiskControlEndpoints(this IEndpointRouteBuilder app)
     {
-        // 利用者のみ（ADR-0007）。未認証は 401、ロール無しは 403。
+        // 例外→HTTP マッピング（読み書き共通）: アクター/理由欠如などの検証失敗は 400、設定の楽観排他競合（IADR-0012）は 409。
+        // これらを既定の 500 にせず、クライアントが区別できるステータスに写像する。
         var g = app.MapGroup("/risk-controls")
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)
             .WithTags("RiskControls")
-            // 例外→HTTP マッピング: アクター/理由欠如などの検証失敗は 400、設定の楽観排他競合（IADR-0012）は 409。
-            // これらを既定の 500 にせず、クライアントが区別できるステータスに写像する。
             .AddEndpointFilter(async (ctx, next) =>
             {
                 try
@@ -39,47 +39,52 @@ internal static class RiskControlEndpoints
                 }
             });
 
-        // ---- サイジング文脈（FR-04/10, IADR-0029） ----
-        // 取引判断（#11）が同期照会するサイジング文脈（設定＋ポートフォリオ状態から導出）。
-        g.MapGet("/sizing-context", (SizingContextService svc) => Results.Ok(svc.Build()));
+        // ---- 読み取り系: 利用者またはサービス（IADR-0051・OwnerOrService） ----
+        // 未認証は 401、trading-owner/trading-service いずれも持たなければ 403。
+        var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
-        // ---- 保有ポジション（FR-03/10, IADR-0030） ----
-        // 市場監視（#10）が損切りライン検知のため同期照会する保有ポジション（#63 台帳の射影＋損切り価格の近似導出）。
-        g.MapGet("/open-positions", (OpenPositionsService svc) => Results.Ok(svc.Build()));
+        // サイジング文脈（FR-04/10, IADR-0029）: 取引判断（#11）が同期照会する（設定＋ポートフォリオ状態から導出）。
+        read.MapGet("/sizing-context", (SizingContextService svc) => Results.Ok(svc.Build()));
 
-        // ---- kill switch（FR-10, ADR-0003） ----
-        g.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
+        // 保有ポジション（FR-03/10, IADR-0030）: 市場監視（#10）が損切りライン検知のため同期照会する
+        // （#63 台帳の射影＋損切り価格の近似導出）。
+        read.MapGet("/open-positions", (OpenPositionsService svc) => Results.Ok(svc.Build()));
 
-        g.MapPost("/kill-switch/engage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
+        // ---- 利用者のみ（ADR-0007・OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
+        var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
+
+        owner.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
+
+        owner.MapPost("/kill-switch/engage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
         {
             svc.Engage(ActorOf(http), req.Reason);
             return Results.Ok(svc.GetState());
         });
 
-        g.MapPost("/kill-switch/disengage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
+        owner.MapPost("/kill-switch/disengage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
         {
             svc.Disengage(ActorOf(http), req.Reason);
             return Results.Ok(svc.GetState());
         });
 
         // ---- 設定（FR-10/FR-19/FR-20, ADR-0007） ----
-        g.MapGet("/settings", (RiskSettingsService svc) => Results.Ok(svc.GetCurrent()));
+        owner.MapGet("/settings", (RiskSettingsService svc) => Results.Ok(svc.GetCurrent()));
 
-        g.MapGet("/settings/history", (ISettingsChangeLog changeLog) => Results.Ok(changeLog.GetHistory()));
+        owner.MapGet("/settings/history", (ISettingsChangeLog changeLog) => Results.Ok(changeLog.GetHistory()));
 
-        g.MapPut("/settings/limits", (LimitsUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        owner.MapPut("/settings/limits", (LimitsUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
         {
             svc.UpdateLimits(req.Limits, ActorOf(http), req.Reason);
             return Results.Ok(svc.GetCurrent());
         });
 
-        g.MapPut("/settings/stage", (StageUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        owner.MapPut("/settings/stage", (StageUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
         {
             svc.UpdateStage(req.Stage, ActorOf(http), req.Reason);
             return Results.Ok(svc.GetCurrent());
         });
 
-        g.MapPut("/settings/guard", (GuardUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        owner.MapPut("/settings/guard", (GuardUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
         {
             svc.UpdateGuard(req.ToGuardSettings(), ActorOf(http), req.Reason);
             return Results.Ok(svc.GetCurrent());
