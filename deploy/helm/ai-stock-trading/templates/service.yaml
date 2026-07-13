@@ -1,0 +1,18 @@
+{{- /* #122: 各 Worker の ClusterIP Service（:8080）。サービス間同期照会・CronJob トリガ・
+       BFF/introspection の到達点。ホストへは公開しない（port-forward で個別到達）。 */ -}}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    app: {{ $name }}-service
+spec:
+  selector:
+    app: {{ $name }}-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+{{- end }}

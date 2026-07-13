@@ -1,0 +1,76 @@
+{{- /* #122: 10 Worker を同型の Deployment としてレンダリングする（全て Web SDK :8080）。 */ -}}
+{{- $g := .Values.global -}}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    app: {{ $name }}-service
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}-service
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}-service
+    spec:
+      containers:
+        - name: {{ $name }}-service
+          image: "{{ $g.image.registry }}/{{ $svc.image }}:{{ $svc.tag | default $g.image.tag }}"
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: RabbitMq__ConnectionString
+              value: {{ $g.rabbitmqConnectionString | quote }}
+            - name: Otlp__Endpoint
+              value: {{ $g.otlpEndpoint | quote }}
+            {{- if $svc.db }}
+            # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。
+            - name: ConnectionStrings__DefaultConnection
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password={{ $g.db.password }}"
+            {{- end }}
+            {{- if $svc.auth }}
+            - name: Auth__Authority
+              value: {{ $g.authAuthority | quote }}
+            {{- end }}
+            {{- range $e := $svc.extraEnv }}
+            - name: {{ $e.name }}
+              {{- if $e.secretKeyRef }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $e.secretKeyRef.name }}
+                  key: {{ $e.secretKeyRef.key }}
+                  {{- if $e.secretKeyRef.optional }}
+                  optional: true
+                  {{- end }}
+              {{- else }}
+              value: {{ $e.value | quote }}
+              {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+{{- end }}
