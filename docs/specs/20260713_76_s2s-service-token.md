@@ -8,7 +8,7 @@ created: 2026-07-13
 updated: 2026-07-13
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_owner-only-controls.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
   - ../../planning/projects/microservices-platform/07_adr/ADR-0004_authz-abac.md
 ---
 

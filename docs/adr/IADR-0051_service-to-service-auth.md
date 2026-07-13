@@ -13,7 +13,7 @@ created: 2026-07-13
 updated: 2026-07-13
 plan_refs:
   - "../../planning/projects/microservices-platform/07_adr/ADR-0004_authz-abac.md"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_owner-only-controls.md"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
 ---
 
 # IADR-0051: サービス間同期照会の service-to-service 認証
