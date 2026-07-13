@@ -25,5 +25,7 @@
     <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。
          新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
     <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Worker\RiskManagementService.Worker.csproj" Aliases="RiskManagementWorker" />
+    <!-- 報告書 Worker も extern alias で参照する（Slice D の daily-policy 提供側・IADR-0050 決定1）。 -->
+    <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Worker\ReportService.Worker.csproj" Aliases="ReportWorker" />
   </ItemGroup>
 </Project>
