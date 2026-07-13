@@ -58,6 +58,22 @@ public class FoundationRegistrationTests
     }
 
     [Fact]
+    public async Task OwnerOrService_認可ポリシーが登録される()
+    {
+        // IADR-0051: 読み取り系同期照会は利用者またはサービスが呼べるポリシーが解決できること。
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingAuth(EmptyConfig());
+        var provider = services.BuildServiceProvider();
+
+        var policyProvider = provider
+            .GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider>();
+        var policy = await policyProvider.GetPolicyAsync(AiStockTradingAuthPolicies.OwnerOrService);
+
+        policy.Should().NotBeNull();
+    }
+
+    [Fact]
     public void MassTransit共通再試行を適用したバスは解決できる()
     {
         // platform ADR-0003: UseAiStockTradingRetry を適用してもバス構成が成立すること。

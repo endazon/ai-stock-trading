@@ -19,10 +19,9 @@ internal static class ReportEndpoints
 {
     public static IEndpointRouteBuilder MapReportEndpoints(this IEndpointRouteBuilder app)
     {
+        // 例外→HTTP マッピング（読み書き共通）: 検証失敗は 400、確定済み変更・楽観排他競合は 409。
         var g = app.MapGroup("/reports")
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)
             .WithTags("Reports")
-            // 例外→HTTP マッピング: 検証失敗は 400、確定済み変更・楽観排他競合は 409。
             .AddEndpointFilter(async (ctx, next) =>
             {
                 try
@@ -47,27 +46,34 @@ internal static class ReportEndpoints
                 }
             });
 
-        g.MapGet("", (AppSvc svc) => Results.Ok(svc.List()));
+        // ---- 読み取り系: 利用者またはサービス（IADR-0051・OwnerOrService） ----
+        // 確定済み日報の方針（取引判断#11 の実データ源）を s2s（trading-service）でも同期照会できるよう分離する。
+        var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
+        // 確定済み日報の方針。未確定なら 404。/{periodKey} より優先される（リテラル一致）。
+        read.MapGet("/daily-policy", (AppSvc svc) =>
+        {
+            var policy = svc.GetConfirmedDailyPolicy();
+            return policy is null ? Results.NotFound() : Results.Ok(policy);
+        });
+
+        // ---- 利用者のみ（ADR-0007・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
+        var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
+
+        owner.MapGet("", (AppSvc svc) => Results.Ok(svc.List()));
 
         // FR-16, IADR-0025: 損益集計（数値はコードで集計）。約定列＋任意の現在値から実現損益・費用・税・評価損益を返す。
         // 前提条件は暫定で既定値（#19 のバージョン付き取得・#63 台帳連携は #22 後続）。
-        g.MapPost("/pnl-summary", (PnlSummaryRequest req) =>
+        owner.MapPost("/pnl-summary", (PnlSummaryRequest req) =>
         {
             var summary = PnlAggregator.Aggregate(
                 req.Fills ?? [], TradingAssumptionsDefaults.Create(), req.CurrentPrices);
             return Results.Ok(summary);
         });
 
-        // 確定済み日報の方針（取引判断の実データ源）。未確定なら 404。/{periodKey} より優先される（リテラル一致）。
-        g.MapGet("/daily-policy", (AppSvc svc) =>
-        {
-            var policy = svc.GetConfirmedDailyPolicy();
-            return policy is null ? Results.NotFound() : Results.Ok(policy);
-        });
-
         // FR-06/16, IADR-0032: 報告書ドラフト生成（日報/週報/月報・数値はコード集計・散文は LLM ドラフト）。生成のみで永続化しない。
         // 前提条件は暫定既定値（#19 のバージョン付き取得・#63 台帳連携は #22 後続）。
-        g.MapPost("/{periodKey}/draft", async (string periodKey, DraftReportRequest req, ReportDraftService svc, CancellationToken ct) =>
+        owner.MapPost("/{periodKey}/draft", async (string periodKey, DraftReportRequest req, ReportDraftService svc, CancellationToken ct) =>
         {
             var draft = await svc.BuildDraftAsync(new DraftRequest(
                 req.Kind, periodKey, req.Date, req.Markets, req.AssumptionsVersion, req.BasedOn,
@@ -75,14 +81,14 @@ internal static class ReportEndpoints
             return Results.Ok(new { periodKey, markdown = draft.Markdown, pnl = draft.Pnl });
         });
 
-        g.MapGet("/{periodKey}", (string periodKey, AppSvc svc) =>
+        owner.MapGet("/{periodKey}", (string periodKey, AppSvc svc) =>
         {
             var report = svc.Get(periodKey);
             return report is null ? Results.NotFound() : Results.Ok(report);
         });
 
         // ドラフトの作成/更新（利用者のみ・楽観排他）。
-        g.MapPut("/{periodKey}", (string periodKey, UpsertReportRequest req, AppSvc svc) =>
+        owner.MapPut("/{periodKey}", (string periodKey, UpsertReportRequest req, AppSvc svc) =>
         {
             var report = new TradingReport
             {
@@ -98,7 +104,7 @@ internal static class ReportEndpoints
         });
 
         // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行。対象が無ければ 404。
-        g.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc, IPublishEndpoint bus, HttpContext http) =>
+        owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc, IPublishEndpoint bus, HttpContext http) =>
         {
             var actor = ActorOf(http);
             var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);

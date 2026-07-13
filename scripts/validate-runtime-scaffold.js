@@ -47,6 +47,7 @@ const FORBIDDEN_BASE_KEYS = [
   'ConnectionStrings',
   'RabbitMq',
   'Auth',
+  'ServiceAuth',
   'Otlp',
   'Broker',
   'Collection',

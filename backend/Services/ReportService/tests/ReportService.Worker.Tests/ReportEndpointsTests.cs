@@ -13,11 +13,15 @@ namespace AiStockTrading.Report.Worker.Tests;
 public class ReportEndpointsTests
 {
     private const string OwnerRole = "trading-owner";
+    private const string ServiceRole = "trading-service";
 
-    private static HttpClient OwnerClient(ReportWorkerWebApplicationFactory factory)
+    private static HttpClient OwnerClient(ReportWorkerWebApplicationFactory factory) =>
+        ClientWithRoles(factory, OwnerRole);
+
+    private static HttpClient ClientWithRoles(ReportWorkerWebApplicationFactory factory, string roles)
     {
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, roles);
         return client;
     }
 
@@ -63,6 +67,30 @@ public class ReportEndpointsTests
         var policy = await client.GetFromJsonAsync<DailyPolicyDto>("/reports/daily-policy");
         policy!.Summary.Should().Be("翌営業日は押し目買い");
         policy.AssumptionsVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task サービスロールは確定済み_daily_policy_を照会できる_一覧_確定は不可()
+    {
+        // IADR-0051: daily-policy(GET) は OwnerOrService（取引判断#11 の s2s 照会）。一覧/確定は OwnerOnly のまま。
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        // 利用者が確定させる（前提）。
+        var owner = OwnerClient(factory);
+        await owner.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await owner.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var service = ClientWithRoles(factory, ServiceRole);
+
+        // 読み取り（daily-policy）は 200。
+        var policy = await service.GetFromJsonAsync<DailyPolicyDto>("/reports/daily-policy");
+        policy!.Summary.Should().Be("翌営業日は押し目買い");
+
+        // 一覧（OwnerOnly）は 403。確定（OwnerOnly）も 403。
+        (await service.GetAsync("/reports")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await service.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 2 }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]

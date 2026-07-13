@@ -7,6 +7,7 @@ using AiStockTrading.MarketMonitor.Worker.Composable.Steps;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Endpoints;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -49,7 +50,10 @@ builder.Services.AddSingleton<IMarketDataSource, PlaceholderMarketDataSource>();
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（保有なし＝損切り検知対象なし）＝安全既定でゲート。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
 // IHttpClientFactory 経由でハンドラをプールする。損切り優先の巡回を長時間ブロックしないため短いタイムアウトを設定する。
-builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5));
+// IADR-0051: OwnerOrService エンドポイント（open-positions）へ client_credentials サービストークンを伝播する。
+// ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → 空列の安全既定）＝現行挙動を保持する。
+builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderPositionStore>();
 builder.Services.AddScoped<IPositionStore>(sp =>
 {

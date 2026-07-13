@@ -4,6 +4,7 @@ using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.TradeDecision.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Serilog;
@@ -35,7 +36,10 @@ builder.Services.AddSingleton<ILlmCompletionClient, PlaceholderLlmCompletionClie
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
 // IHttpClientFactory 経由でハンドラをプールする。警告の 1 回化のためプレースホルダは singleton で共有する。
 // 同期クリティカルパス（取引判断）に置くため短いタイムアウトを設定する（応答遅延でサイクルを長時間ブロックしない）。
-builder.Services.AddHttpClient("reports", c => c.Timeout = TimeSpan.FromSeconds(5));
+// IADR-0051: OwnerOrService エンドポイント（daily-policy）へ client_credentials サービストークンを伝播する。
+// ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → 安全既定）＝現行挙動を保持する。
+builder.Services.AddHttpClient("reports", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderDailyPolicyProvider>();
 builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
 {
@@ -50,7 +54,8 @@ builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
 });
 // FR-04/10, IADR-0029: サイジング文脈はリスク管理（#12）の GET /risk-controls/sizing-context を同期照会して供給する。
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（既定値）＝安全既定でゲート。選択は解決時に構成を読む。
-builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderSizingContextProvider>();
 builder.Services.AddScoped<ISizingContextProvider>(sp =>
 {

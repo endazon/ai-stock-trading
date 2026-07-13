@@ -204,6 +204,9 @@ services:
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
       # fail-safe: 空=プレースホルダ（保有なし）。#76 で有効化。
       RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
+      # IADR-0051: s2s サービストークン（client_credentials）。空 secret=無効（認証なし→401→空列の安全既定）。#76。
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -296,6 +299,11 @@ services:
       # fail-safe: 空=プレースホルダ（取引しない）。#76 で有効化。
       Reports__BaseUrl: ${REPORTS_BASEURL:-}
       RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
+      # IADR-0051: s2s サービストークン（client_credentials）。Authority から token エンドポイントを導出する。
+      # 空 secret=無効（認証なし→401→取引しない安全既定）。#76。
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
       # 実 LLM エグレスは未実装（#79）。空=呼ばない。前方互換で受け渡すのみ。
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
