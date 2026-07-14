@@ -1,0 +1,67 @@
+# #124 / IADR-0053: moomoo OpenD 常駐（k8s・オプトイン）。
+# 既定では適用しない（この manifest を明示適用したときのみ opend が立つ）＝fail-safe。
+# 発注執行（#13）は IBrokerAdapter 経由で opend:11111 へ接続する（SIMULATE 前提・実弾なし）。
+# 前提: イメージをローカルビルド＆import 済み（deploy/opend/README.md）、Secret moomoo-credentials 作成済み。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  replicas: 1
+  # OpenD は 1 セッション前提。複数レプリカにしない（ロールアウトは Recreate）。
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: opend }
+  template:
+    metadata:
+      labels: { app: opend }
+    spec:
+      containers:
+        - name: opend
+          image: "k3d-local/ai-stock-trading/opend:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 11111, name: api }
+          env:
+            - name: OPEND_API_PORT
+              value: "11111"
+            - name: OPEND_LOGIN_ACCOUNT
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-account }
+            - name: OPEND_LOGIN_PWD_MD5
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
+          # OpenD は TCP API（HTTP ではない）。TCP 疎通で readiness を判定する。
+          readinessProbe:
+            tcpSocket: { port: 11111 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 20
+          # #124 PoC: デバイス認証情報の永続化で再起動時の再認証を回避できるか検証する。
+          # マウント先は OpenD 版のデバイス/設定保存パスに合わせて要調整（下記は例）。
+          volumeMounts:
+            - name: persist
+              mountPath: /opt/opend/persist
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - name: persist
+          persistentVolumeClaim:
+            claimName: opend-persist
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+  labels: { app: opend }
+spec:
+  selector: { app: opend }
+  ports:
+    - { name: api, port: 11111, targetPort: 11111 }
