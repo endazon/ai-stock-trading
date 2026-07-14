@@ -11,12 +11,24 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
 
 - **バイナリは同梱しない**（EULA/再配布回避・~440MB・`.gitignore` 済）。ビルド時に **tar.gz をビルドコンテキストへ
   一時配置**して取り込む（`scripts/opend-build.sh` が参照ディレクトリから自動コピー→ビルド→import→後片付け）。
-- **実起動検証は未実施**（moomoo 口座・Futu 通信が無いため）。ubuntu:20.04 上で Ubuntu18.04 バイナリを動かすため、
-  不足共有ライブラリがあり得る（`ldd /opt/opend/OpenD` で確認し `Dockerfile` の apt に追加）。デバイス保存パス
-  （PVC マウント先）は起動ログで確認して調整する。
 - **SIMULATE 前提・実弾は撃たない**。取引環境はクライアント（#13 アダプタ）が `TrdEnv.SIMULATE` を選ぶ。
   実弾（`TrdEnv.REAL`）は ADR-0002 の PoC 合格まで行わない（IADR-0016）。
-- **無人運用の成立性は本 PoC の検証項目**（デバイス認証/2FA・取引パスワードのアンロック自動化）。
+
+## PoC 結果（2026-07-15・初回検証）
+
+実バイナリ（`moomoo_OpenD_10.8.6818`）で以下を確認した:
+
+- ✅ **ビルド成功**（ベース `mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy`。docker.io 認証を避けるため mcr を使用）。
+- ✅ **共有ライブラリ充足**（ダミー資格情報で起動しても `error while loading shared libraries` は出ず、OpenD が起動）。
+- 🔑 **OpenD はログイン時に SMS/デバイス認証を要求し、対話コンソール（`>>>`）で待機する**。
+  → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。これが「無人運用の成立性」の要点（ADR-0002 未決）。
+
+**帰結（無人運用の設計）**: **2 段階**とする。
+1. **初回のみ対話でデバイス認証**（実口座＋実 SMS を 1 回入力）→ デバイス情報を **PVC に永続化**。
+2. 以降は Deployment が**永続化済みデバイス認証を再利用して無人起動**する。
+
+> ⚠️ **永続化パスは実口座での本認証後に確定する**。OpenD がデバイス情報を書くファイル（`AppData.dat` 等）の場所を
+> 確認し、PVC マウント先（現状 `/opt/opend/persist`）をそこへ合わせる。→ 結果を IADR-0053 / plan-feedback（ADR-0002）へ。
 
 ## 手順
 
@@ -38,20 +50,47 @@ kubectl create secret generic moomoo-credentials -n ai-stock-trading \
   --from-literal=login-pwd-md5="$PWD_MD5"
 ```
 
-### 3) 適用（オプトイン。既定では立てない）
+（任意）**スモークテスト**（口座不要・共有ライブラリの充足だけ確認）:
 ```bash
-kubectl apply -f deploy/opend/k8s/pvc.yaml
-kubectl apply -f deploy/opend/k8s/opend.yaml
-kubectl -n ai-stock-trading rollout status deploy/opend
-kubectl -n ai-stock-trading logs deploy/opend       # ログイン/デバイス認証の要否を確認
+nerdctl --namespace k8s.io run --rm \
+  -e OPEND_LOGIN_ACCOUNT=dummy -e OPEND_LOGIN_PWD_MD5=00000000000000000000000000000000 \
+  k3d-local/ai-stock-trading/opend:latest
+# `error while loading shared libraries: libXXX` → その lib を Dockerfile の apt に追加。
+# SMS/`>>>` まで進めば lib 充足。Ctrl+C で終了。
 ```
 
-### 4) 発注執行（#13）から利用
+### 3) 初回デバイス認証（対話ブートストラップ・実口座で 1 回）
+Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC をマウントした対話 Pod** で 1 回だけ認証する:
+```bash
+kubectl apply -f deploy/opend/k8s/pvc.yaml
+kubectl -n ai-stock-trading run opend-bootstrap -it --rm \
+  --image=k3d-local/ai-stock-trading/opend:latest --image-pull-policy=IfNotPresent \
+  --overrides='{"spec":{"containers":[{"name":"opend","stdin":true,"tty":true,
+    "image":"k3d-local/ai-stock-trading/opend:latest","imagePullPolicy":"IfNotPresent",
+    "env":[{"name":"OPEND_LOGIN_ACCOUNT","value":"<実account>"},
+           {"name":"OPEND_LOGIN_PWD_MD5","value":"<md5>"}],
+    "volumeMounts":[{"name":"p","mountPath":"/opt/opend/persist"}]}],
+    "volumes":[{"name":"p","persistentVolumeClaim":{"claimName":"opend-persist"}}]}}'
+# `>>>` に届いた SMS コードを入力 → デバイス認証。
+# 認証後、どのファイルが更新されたか確認して PVC マウント先を確定する:
+#   ls -lat /opt/opend | head    （AppData.dat 等の更新ファイルを永続化パスへ）
+```
+
+### 4) 無人 Deployment（デバイス認証後・オプトイン）
+```bash
+kubectl apply -f deploy/opend/k8s/opend.yaml       # Secret（手順2）＋PVC（手順3）を参照
+kubectl -n ai-stock-trading rollout status deploy/opend
+kubectl -n ai-stock-trading logs deploy/opend      # 永続化認証で無人ログインできるか確認
+```
+
+### 5) 発注執行（#13）から利用
 moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
 アダプタ実装・`Broker:Provider=moomoo` の解禁は #13（ADR-0002 PoC 合格後）で行う。
 
 ## PoC で確認する未決事項（→ 結果を IADR-0053/plan-feedback へ）
-- デバイス認証/2FA の無人化（PVC 永続化で再起動時の再認証を回避できるか）
+- ✅ ビルド・共有ライブラリ充足・OpenD 起動（2026-07-15 確認済）
+- 🔑 デバイス認証は**初回対話（SMS）必須**を確認。残: **初回認証後、PVC 永続化で再起動時の再認証を回避できるか**
+  （永続化パス＝OpenD のデバイス保存ファイルの場所を実認証後に確定）
 - 取引パスワードのアンロック自動化（SIMULATE では不要な範囲の切り分け）
 - 海外 IP（Hetzner）からの接続可否・利用規約（ADR-0002 未決）
 - OpenD の長期常駐安定性・強制アップデート頻度
