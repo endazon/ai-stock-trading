@@ -15,14 +15,16 @@
 #
 # 実起動には moomoo 口座（SIMULATE 可）が要る。実弾は撃たない（クライアントが TrdEnv.SIMULATE を選ぶ・IADR-0016）。
 # ---------------------------------------------------------------------------
-# Ubuntu18.04 ビルドのバイナリ。20.04 上でも glibc 前方互換で動く見込み（要検証）。
-FROM ubuntu:20.04
+# Ubuntu18.04 ビルドのバイナリ。20.04(focal) 上でも glibc 前方互換で動く見込み（要検証）。
+# ベースは docker.io ではなく mcr.microsoft.com を使う（nerdctl の Docker Hub 認証ヘルパ失敗を回避。
+# 他イメージ同様 mcr は pull 可能）。runtime-deps は Ubuntu focal 最小＋C/C++ ランタイム native 依存を同梱。
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-focal
 
 # コマンドライン OpenD の実行時依存。ssl/crypto/curl/protobuf は同梱 .so で解決するため、
-# ここでは C/C++ ランタイムと一般的な共有ライブラリのみ入れる。不足時は `ldd OpenD` を見て追加する。
+# ベース未収録の共有ライブラリのみ追加する。不足時は `ldd OpenD` を見て追加する。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates libstdc++6 libgcc-s1 libgomp1 libglib2.0-0 \
+        ca-certificates libgomp1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # ビルドコンテキストの tar.gz を取り込み、コマンドライン版（GUI の AppImage ではない内側フォルダ）を /opt/opend へ。
