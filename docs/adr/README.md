@@ -77,3 +77,7 @@
 | IADR-0049 | 実コンテナ統合 E2E は Testcontainers を基盤とし、CI から分離する | Accepted |
 | IADR-0050 | マルチサービス/認証つき統合 E2E の構成（extern alias・共有 DB・実 Keycloak トークン） | Accepted |
 | IADR-0051 | サービス間同期照会の s2s 認証（client_credentials・呼び出し側トークン伝播・least-privilege サービスロール） | Accepted |
+| IADR-0055 | 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない） | Proposed |
+
+> 注（0052〜0054）: これらは in-flight（PR #123 / feat/122）が採番済み。develop へ未反映のため本索引では
+> 一時的に欠番に見えるが、PR #123 マージで充足する（0055 は衝突回避の先取り採番）。
