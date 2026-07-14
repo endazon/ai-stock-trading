@@ -4,29 +4,30 @@
 > Issue #124 / #13（moomoo アダプタ）/ ADR-0002
 
 moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:11111`、SDK 要求を moomoo サーバへ中継）。
-本ディレクトリは OpenD をコンテナで常駐させる**ダウンロード方式**の試作一式。
+本ディレクトリは **コマンドライン版 OpenD**（`moomoo_OpenD_<ver>_Ubuntu18.04` の内側フォルダ・実行ファイル `OpenD`・
+設定 `OpenD.xml`）をコンテナで常駐させる一式。実バイナリ構成（10.8.6818）に合わせてある。
 
 ## ⚠️ 重要な前提（正直な線引き）
 
-- **バイナリは同梱しない**（EULA/再配布回避）。ビルド時に**あなたの Futu アカウント**のダウンロードセンターで
-  取得した Linux 版 OpenD の tar.gz URL を `--build-arg OPEND_URL` で渡す。
-- **実起動検証は未実施**（moomoo 口座・Futu への通信が無いため）。版により実行ファイル名/フラグ/依存ライブラリ/
-  デバイス保存パスが異なる可能性があり、`Dockerfile`・`entrypoint.sh`・PVC マウント先は**あなたの環境で要調整**。
+- **バイナリは同梱しない**（EULA/再配布回避・~440MB・`.gitignore` 済）。ビルド時に **tar.gz をビルドコンテキストへ
+  一時配置**して取り込む（`scripts/opend-build.sh` が参照ディレクトリから自動コピー→ビルド→import→後片付け）。
+- **実起動検証は未実施**（moomoo 口座・Futu 通信が無いため）。ubuntu:20.04 上で Ubuntu18.04 バイナリを動かすため、
+  不足共有ライブラリがあり得る（`ldd /opt/opend/OpenD` で確認し `Dockerfile` の apt に追加）。デバイス保存パス
+  （PVC マウント先）は起動ログで確認して調整する。
 - **SIMULATE 前提・実弾は撃たない**。取引環境はクライアント（#13 アダプタ）が `TrdEnv.SIMULATE` を選ぶ。
   実弾（`TrdEnv.REAL`）は ADR-0002 の PoC 合格まで行わない（IADR-0016）。
 - **無人運用の成立性は本 PoC の検証項目**（デバイス認証/2FA・取引パスワードのアンロック自動化）。
 
 ## 手順
 
-### 1) イメージをビルド（OpenD URL はあなたが用意）
+### 1) イメージをビルド（tar.gz は参照ディレクトリから自動取り込み）
 ```bash
-docker build -t k3d-local/ai-stock-trading/opend:latest \
-  --build-arg OPEND_URL="https://.../FutuOpenD_<ver>_Ubuntu.tar.gz" \
-  deploy/opend
-# Rancher Desktop(containerd) の場合:
-#   nerdctl --namespace k8s.io build -t k3d-local/ai-stock-trading/opend:latest \
-#     --build-arg OPEND_URL="..." deploy/opend
-# Docker Desktop + k3d の場合はビルド後 `k3d image import k3d-local/ai-stock-trading/opend:latest -c msp-ast-dev`
+# 既定: /c/10_SourceCode/references/moomoo_OpenD_*.tar.gz を使う。別の場所なら引数か OPEND_TARBALL_PATH で指定。
+scripts/opend-build.sh
+#   もしくは: scripts/opend-build.sh /path/to/moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz
+# 手動でビルドする場合は tar.gz を deploy/opend/ に置いてから:
+#   docker build -t k3d-local/ai-stock-trading/opend:latest \
+#     --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" deploy/opend
 ```
 
 ### 2) 資格情報 Secret（実値はコミットしない）

@@ -1,36 +1,41 @@
 #!/usr/bin/env bash
-# #124 / IADR-0053: FutuOpenD ヘッドレス起動。資格情報は env（k8s Secret）から受け取り、
-# コマンドライン引数として渡す。パスワードは MD5 で渡す想定（OpenD の login_pwd_md5）。
+# #124 / IADR-0053: コマンドライン moomoo OpenD をヘッドレス起動する。
+# 資格情報は env（k8s Secret）から受け取り、OpenD.xml を生成して ./OpenD を起動する
+# （OpenD はカレントの OpenD.xml を読む）。パスワードは MD5（小文字 hex）で扱い、平文は保持しない。
 #
 # 必須 env（Secret 由来）:
-#   OPEND_LOGIN_ACCOUNT   moomoo ログイン account（電話/UID 等）
-#   OPEND_LOGIN_PWD_MD5   ログインパスワードの MD5（小文字 hex）。平文は扱わない。
+#   OPEND_LOGIN_ACCOUNT   moomoo ログイン account（ユーザーID / 手機号 "+81 90..." / メール）
+#   OPEND_LOGIN_PWD_MD5   ログインパスワードの MD5（小文字 hex 32桁）
 # 任意 env:
 #   OPEND_API_PORT        API ポート（既定 11111）
-#   OPEND_LOG_LEVEL       ログレベル（既定 no_output/info 等・版依存）
+#   OPEND_LANG            言語（en / chs。既定 en）
+#   OPEND_LOG_LEVEL       no/debug/info/warning/error/fatal（既定 info）
 #
-# ⚠️ 版により実行ファイル名/フラグが異なる（要調整）。実バイナリでの検証はあなたの環境で行う。
+# ⚠️ SIMULATE 前提・実弾は撃たない（取引環境はクライアント側で TrdEnv.SIMULATE を選ぶ）。
 # ⚠️ 新規環境/IP では moomoo のデバイス認証が要求され得る。無人運用の成立性は #124 PoC で検証する
-#    （デバイス情報の永続化＝PVC マウントで再起動時の再認証を回避できるか）。SIMULATE 前提・実弾は撃たない。
+#    （デバイス情報の永続化＝PVC マウントで再起動時の再認証を回避できるか）。
 set -euo pipefail
 
 : "${OPEND_LOGIN_ACCOUNT:?OPEND_LOGIN_ACCOUNT（Secret）が未設定です}"
 : "${OPEND_LOGIN_PWD_MD5:?OPEND_LOGIN_PWD_MD5（Secret）が未設定です}"
 API_PORT="${OPEND_API_PORT:-11111}"
-LOG_LEVEL="${OPEND_LOG_LEVEL:-no_output}"
+LANG_="${OPEND_LANG:-en}"
+LOG_LEVEL="${OPEND_LOG_LEVEL:-info}"
 
-# 実行ファイルを探す（版によりファイル名が異なるため候補から解決）。
-BIN=""
-for candidate in ./FutuOpenD ./FutuOpenD.sh ./OpenD ./moomooOpenD; do
-  if [ -x "$candidate" ]; then BIN="$candidate"; break; fi
-done
-[ -n "$BIN" ] || { echo "ERROR: OpenD 実行ファイルが見つかりません（/opt/opend 配下を確認）。" >&2; ls -la /opt/opend >&2; exit 1; }
+cd /opt/opend
 
-echo "==> starting OpenD ($BIN) api_port=${API_PORT} (SIMULATE 前提・実弾なし)"
-# ip=0.0.0.0 でコンテナネットワークから到達可能にする。フラグ名は版により要調整。
-exec "$BIN" \
-  -login_account="${OPEND_LOGIN_ACCOUNT}" \
-  -login_pwd_md5="${OPEND_LOGIN_PWD_MD5}" \
-  -ip=0.0.0.0 \
-  -api_port="${API_PORT}" \
-  -log_level="${LOG_LEVEL}"
+# OpenD.xml を env から生成する（ip=0.0.0.0 でコンテナネットワークから到達可能に）。
+cat > /opt/opend/OpenD.xml <<EOF
+<moomoo_opend>
+	<ip>0.0.0.0</ip>
+	<api_port>${API_PORT}</api_port>
+	<login_account>${OPEND_LOGIN_ACCOUNT}</login_account>
+	<login_pwd_md5>${OPEND_LOGIN_PWD_MD5}</login_pwd_md5>
+	<lang>${LANG_}</lang>
+	<log_level>${LOG_LEVEL}</log_level>
+</moomoo_opend>
+EOF
+
+echo "==> starting moomoo OpenD (headless) api_port=${API_PORT} ip=0.0.0.0 (SIMULATE 前提・実弾なし)"
+[ -x ./OpenD ] || { echo "ERROR: /opt/opend/OpenD が見つかりません。" >&2; ls -la /opt/opend >&2; exit 1; }
+exec ./OpenD

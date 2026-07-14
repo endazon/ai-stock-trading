@@ -1,43 +1,48 @@
-# #124 / IADR-0053: moomoo OpenD（FutuOpenD・Linux ヘッドレス）のダウンロード方式 Docker Image。
+# #124 / IADR-0053: moomoo OpenD（コマンドライン版・Linux ヘッドレス）の Docker Image。
 # ---------------------------------------------------------------------------
-# ⚠️ バイナリは同梱しない（EULA/再配布回避）。ビルド時に Futu 公式配布からダウンロードする。
-#    OPEND_URL はあなたの Futu アカウントのダウンロードセンターで取得した Linux 版 OpenD の
-#    tar.gz の URL を指定する（未指定ではビルドできない＝意図的）。
+# ⚠️ バイナリは同梱しない（EULA/再配布回避・~440MB）。ビルド時にビルドコンテキストの tar.gz を取り込む。
+#    tar.gz は公式（moomoo OpenAPI ダウンロードセンター）で取得し、ビルド直前にコンテキスト（deploy/opend/）へ
+#    配置する（scripts/opend-build.sh が references から自動コピーする）。コミットしない（.gitignore 済）。
 #
-#    docker build -t ai-stock-trading/opend:local \
-#      --build-arg OPEND_URL="https://.../FutuOpenD_<ver>_Ubuntu.tar.gz" \
-#      --build-arg OPEND_DIR="FutuOpenD_<ver>_Ubuntu" \
-#      deploy/opend
+#    構成（実物 moomoo_OpenD_10.8.6818_Ubuntu18.04）:
+#      <pkg>/<pkg>/OpenD        … コマンドライン実行ファイル（GUI の AppImage ではない方）
+#      <pkg>/<pkg>/OpenD.xml    … 設定（ip/api_port/login_account/login_pwd_md5/lang/log_level）
+#      <pkg>/<pkg>/lib*.so      … 同梱ライブラリ（ssl/crypto/protobuf/curl/libf3c*）→ LD_LIBRARY_PATH で解決
 #
-# 実起動には moomoo 口座（SIMULATE 可）が要る。実弾は撃たない（クライアント側で TrdEnv.SIMULATE を選ぶ）。
-# 本 Dockerfile は #124 の「試作」であり、実バイナリでの起動検証はあなたの環境で行う（IADR-0053 Proposed）。
+#    ビルド（scripts/opend-build.sh 推奨）:
+#      docker build -t k3d-local/ai-stock-trading/opend:latest \
+#        --build-arg OPEND_TARBALL="moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz" deploy/opend
+#
+# 実起動には moomoo 口座（SIMULATE 可）が要る。実弾は撃たない（クライアントが TrdEnv.SIMULATE を選ぶ・IADR-0016）。
 # ---------------------------------------------------------------------------
-FROM ubuntu:22.04
+# Ubuntu18.04 ビルドのバイナリ。20.04 上でも glibc 前方互換で動く見込み（要検証）。
+FROM ubuntu:20.04
 
-# OpenD（Qt ベースのヘッドレスバイナリ）が必要とする実行時ライブラリ。版により増減し得る（要調整）。
+# コマンドライン OpenD の実行時依存。ssl/crypto/curl/protobuf は同梱 .so で解決するため、
+# ここでは C/C++ ランタイムと一般的な共有ライブラリのみ入れる。不足時は `ldd OpenD` を見て追加する。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates wget tar \
-        libnss3 libxml2 libglib2.0-0 libgomp1 \
+        ca-certificates libstdc++6 libgcc-s1 libgomp1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-ARG OPEND_URL
-ARG OPEND_DIR
-# 未指定なら明示的に失敗させる（バイナリ同梱を避けるための取得方式）。
-RUN test -n "${OPEND_URL}" || (echo "ERROR: --build-arg OPEND_URL=<公式 OpenD Linux tar.gz の URL> が必要です" >&2 && exit 1)
-
-WORKDIR /opt
-RUN wget -qO /tmp/opend.tar.gz "${OPEND_URL}" \
+# ビルドコンテキストの tar.gz を取り込み、コマンドライン版（GUI の AppImage ではない内側フォルダ）を /opt/opend へ。
+ARG OPEND_TARBALL
+COPY ${OPEND_TARBALL} /tmp/opend.tar.gz
+RUN mkdir -p /tmp/x && tar -xzf /tmp/opend.tar.gz -C /tmp/x \
+    # 内側の「コマンドライン」フォルダ（GUI=*-GUI_* を除外）に OpenD 実行ファイルがある。
+    && CLI_DIR="$(dirname "$(find /tmp/x -type f -name OpenD ! -path '*-GUI_*' | head -1)")" \
+    && test -n "$CLI_DIR" || (echo "ERROR: コマンドライン OpenD が見つかりません（tar 構成を確認）" >&2 && exit 1) \
     && mkdir -p /opt/opend \
-    && tar -xzf /tmp/opend.tar.gz -C /opt/opend --strip-components=1 \
-    && rm -f /tmp/opend.tar.gz
+    && cp -a "$CLI_DIR"/. /opt/opend/ \
+    && chmod +x /opt/opend/OpenD \
+    && rm -rf /tmp/opend.tar.gz /tmp/x
 
-# 起動スクリプト（env から資格情報を受け取り OpenD をヘッドレス起動する）。
+# 同梱 .so を解決する。
+ENV LD_LIBRARY_PATH=/opt/opend
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# API ポート（既定 11111）。コンテナ内バインドは 0.0.0.0（entrypoint 参照）。
 EXPOSE 11111
-
 WORKDIR /opt/opend
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
