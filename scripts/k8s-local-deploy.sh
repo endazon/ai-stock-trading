@@ -23,7 +23,10 @@ kubectl create secret generic ast-secrets -n "$NS" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [3/3] helm upgrade --install"
-helm upgrade --install ast deploy/helm/ai-stock-trading -n "$NS"
+# namespace は本スクリプトが先に作成（ast-secrets 投入のため）。chart に Namespace を template させると
+# 既存 ns に Helm 所有メタデータが無く install が衝突するため、namespace.create=false で無効化する。
+helm upgrade --install ast deploy/helm/ai-stock-trading -n "$NS" \
+  --set namespace.create=false
 
 echo ""
 echo "done. 状態確認:"
