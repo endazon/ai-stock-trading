@@ -36,8 +36,10 @@ moomoo 発注（#13）は OpenD（FutuOpenD）ゲートウェイの常駐が前�
 
 ## 決定（方向性・Proposed）
 
-1. **ダウンロード方式**の Docker Image とする。FutuOpenD(Linux) の**バイナリはイメージに同梱せず**、ビルド時
-   もしくは初回起動時に公式配布から取得する（再配布/EULA 回避）。バージョンは pin する。
+1. **バイナリ非同梱の Docker Image** とする。OpenD(Linux) の**バイナリはイメージに焼かず・コミットせず**
+   （再配布/EULA 回避・~440MB）、**公式取得の tar.gz をビルド時にコンテキストへ取り込む**（PoC で当初の
+   「ダウンロード URL 方式」から変更。配布が口座ログイン前提のため。`.gitignore`＋ビルドスクリプトで一時配置）。
+   バージョンは pin する。
 2. **k8s には `opend` Deployment/Service（ClusterIP :11111）としてオプトイン配備**する（AST chart に
    `opend.enabled`、**既定 false**＝fail-safe。OpenD 不在時は moomoo を選べず paper のまま）。
 3. **資格情報は k8s Secret / 環境変数**で注入し、`FutuOpenD.xml` をマウントする（コミットしない。暫定 Secret、
@@ -46,11 +48,25 @@ moomoo 発注（#13）は OpenD（FutuOpenD）ゲートウェイの常駐が前�
 5. **デバイス認証の永続化**: 初回のみ対話ログインでデバイス承認 → デバイストークン/設定を PVC に永続化し、
    以降は無人再起動で再ログインを回避する方式を試作で検証する（成立性が Accepted の条件）。
 
-## 未確定（Accepted の条件・#124 で消化）
+## PoC 結果（2026-07-15・初回検証。#124）
 
-- 無人運用（デバイス認証/2FA を通した再起動耐性）の成立性。
+実バイナリ `moomoo_OpenD_10.8.6818`（コマンドライン版・実行ファイル `OpenD`・設定 `OpenD.xml`）で検証:
+
+- ✅ **ビルド成功**。ベースは `mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy`（nerdctl の docker.io 認証ヘルパ
+  失敗を避けるため mcr を採用。当初の「ダウンロード URL 方式」は口座ログインが要る配布のため、**参照 tar.gz を
+  ビルドコンテキストへ一時配置する取り込み方式**へ変更した）。
+- ✅ **共有ライブラリ充足**（ダミー資格情報でも `error while loading shared libraries` は出ず OpenD 起動。
+  追加 apt は `libgomp1`/`libglib2.0-0` のみ）。
+- 🔑 **OpenD はログイン時に SMS/デバイス認証を要求し対話コンソール（`>>>`）で待機**。
+  → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。無人運用は**2 段階**で成立させる:
+  ① 初回のみ対話 Pod（`kubectl run -it`・PVC マウント）でデバイス認証 → 永続化、② 以降 Deployment で無人。
+  永続化パス（OpenD のデバイス保存ファイル）の確定は実口座の本認証後（README 参照）。
+
+## 未確定（Accepted の条件・残）
+
+- **初回デバイス認証後、PVC 永続化で再起動時の再認証を回避できるか**（永続化パス確定含む）。
 - 海外 IP（Hetzner）からの OpenD 接続可否と利用規約上の扱い（ADR-0002 未決）。
-- 口座条件・市況データ権限。
+- 口座条件・市況データ権限・取引パスワードのアンロック（SIMULATE で不要な範囲の切り分け）。
 
 ## トレードオフ・代替案
 
