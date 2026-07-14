@@ -24,11 +24,14 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
   → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。これが「無人運用の成立性」の要点（ADR-0002 未決）。
 - ✅ **実口座で認証→ログイン成功を確認**（画像 CAPTCHA `input_pic_verify_code` ＋ SMS `input_phone_verify_code`。
   権限: HK/US 株等を取得）。**コンテナ内 OpenD が moomoo に認証できることは実証済み**。
-- 🔴 **口座側ブロッカー**: ログイン成功直後に OpenD が終了し、「規制対応のアンケート/同意の完了が必要」
-  （`https://api.moomoo.com/v2/...`）と表示。**ブラウザで moomoo にログインして本アンケートを完了する（一度きり）**まで
-  API は使えない。完了後に再ブートストラップして OpenD が常駐継続するか確認する。
-- ⚠️ 毎セッション検証（画像/SMS）が要求される様子。**デバイス永続化（PVC=`/root/.com.moomoo.OpenD`）で再認証を
-  回避できるか**は、アンケート完了→OpenD 常駐継続後に検証する（できなければ無人運用は要再検討＝ADR-0002 環流）。
+- ✅ **規制アンケート**（`https://api.moomoo.com/v2/...`・口座で一度きり）完了後は、ログイン成功後も OpenD が
+  **常駐継続**することを確認。
+- 🔴 **結論: 完全無人（自動再起動）は不可**。デバイス状態を **home（`/root/.com.moomoo.OpenD`）＋install
+  （`/opt/opend/AppData.dat` 等）の両方**を PVC 永続化しても、**新 Pod（＝新 IP）は再び画像/SMS 検証を要求**した。
+  検証は **IP/セッション依存**で、永続化では回避できない。
+- ➡️ **採用: 常駐モデル**。OpenD を**長時間常駐**させ、**起動/再起動のたびに 1 回だけ対話で検証**する
+  （`kubectl attach` → `input_pic_verify_code` / `input_phone_verify_code`）。**再起動を極力避ける**（安定ノード・
+  rolling 不使用）。→ ADR-0002「無人運用の成立性」は **限定的成立（起動時有人・以降常駐）** として plan-feedback。
 
 **帰結（無人運用の設計）**: **2 段階**とする。
 1. **初回のみ対話でデバイス認証**（実口座＋実 SMS を 1 回入力）→ デバイス情報を **PVC に永続化**。
@@ -66,11 +69,10 @@ nerdctl --namespace k8s.io run --rm \
 # SMS/`>>>` まで進めば lib 充足。Ctrl+C で終了。
 ```
 
-### 3) 初回デバイス認証（対話ブートストラップ・実口座で 1 回）
-Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC をマウントした対話 Pod**（`bootstrap-pod.yaml`）で
-1 回だけ認証する。資格情報は手順2の Secret を参照する（コマンドに書かない）:
-OpenD はデバイス情報/認証状態を **`/root/.com.moomoo.OpenD`**（HOME 配下）に書く。ここを PVC で永続化して
-初回だけ認証すれば、以降は無人再起動できる（想定）。
+### 3) （簡易）対話検証テスト（bootstrap-pod）
+検証フローだけ素早く試す用の使い捨て Pod。実運用の常駐は手順4。資格情報は手順2の Secret を参照する:
+> 注: OpenD はデバイス情報を `/root/.com.moomoo.OpenD` に書くが、**永続化しても再起動時の再検証は回避できない**
+> （PoC 確認済・IADR-0053）。よって本 Pod は「認証フロー確認」用途。
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
 kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
@@ -99,21 +101,30 @@ kubectl -n ai-stock-trading delete pod opend-bootstrap   # 確認後に片付け
 ```
 > `>>>` は OpenD のコンソール。`help` でコマンド一覧。`quit`/`exit` で終了。`attach` で `>>>` が見えなければ Enter を一度。
 
-### 4) 無人 Deployment（デバイス認証後・オプトイン）
+### 4) 常駐 Deployment（★実運用・常駐モデル）— 起動時に 1 回検証、以降は再起動しない
+`opend.yaml` の container は stdin/tty 付き。適用後に `attach` で 1 回だけ検証する（入力は手順3と同じ）:
 ```bash
-kubectl apply -f deploy/opend/k8s/opend.yaml       # Secret（手順2）＋PVC（手順3）を参照
-kubectl -n ai-stock-trading rollout status deploy/opend
-kubectl -n ai-stock-trading logs deploy/opend      # 永続化認証で無人ログインできるか確認
+kubectl apply -f deploy/opend/k8s/pvc.yaml
+kubectl apply -f deploy/opend/k8s/opend.yaml           # Deployment + Service（opend:11111）
+kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_verify_code / input_phone_verify_code
+kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```
+> ⚠️ **再起動（ノード再起動・eviction・rolling）のたびに再検証が必要**（デバイス永続化では回避不可・IADR-0053）。
+> **再起動を避けて常駐**させる。再起動したら再度 `attach` で検証する。
 
 ### 5) 発注執行（#13）から利用
-moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
+moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中の `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
 アダプタ実装・`Broker:Provider=moomoo` の解禁は #13（ADR-0002 PoC 合格後）で行う。
 
-## PoC で確認する未決事項（→ 結果を IADR-0053/plan-feedback へ）
-- ✅ ビルド・共有ライブラリ充足・OpenD 起動（2026-07-15 確認済）
-- 🔑 デバイス認証は**初回対話（SMS）必須**を確認。残: **初回認証後、PVC 永続化で再起動時の再認証を回避できるか**
-  （永続化パス＝OpenD のデバイス保存ファイルの場所を実認証後に確定）
-- 取引パスワードのアンロック自動化（SIMULATE では不要な範囲の切り分け）
-- 海外 IP（Hetzner）からの接続可否・利用規約（ADR-0002 未決）
+## PoC 結論（→ ADR-0002 へ plan-feedback）
+- ✅ ビルド・共有ライブラリ充足・OpenD 起動・**実口座ログイン成功**（2026-07-15）。
+- ✅ 規制アンケート完了後は OpenD が常駐継続。
+- 🔴 **完全無人（自動再起動）は不可**: home＋install（AppData.dat）を永続化しても新 Pod（新 IP）は再検証を要求。
+  検証は IP/セッション依存で回避不可。
+- ➡️ **常駐モデルを採用**: 起動時のみ有人で対話検証（`attach`）、以降は再起動を避けて常駐。#13 は稼働中 `opend:11111` へ。
+- 残（未検証）: 海外 IP（Hetzner）からの接続可否・ToS、長期常駐安定性・強制アップデート、取引 PW アンロック（SIMULATE 範囲）。
+
+## 実験（否定結果・参考）
+`k8s/experiment-appdata.yaml` は install 側（AppData.dat）永続化でも再検証が要ることを確認した検証用（採用しない）。
+不要になったら `kubectl -n ai-stock-trading delete pod opend-appdata; kubectl -n ai-stock-trading delete pvc opend-state`。
 - OpenD の長期常駐安定性・強制アップデート頻度
