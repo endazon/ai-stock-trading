@@ -29,8 +29,27 @@ builder.Services.AddAiStockTradingHealthChecks();
 
 // --- 取引判断のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
-// IADR-0017: 実 LLM/実データが揃うまでの安全既定プレースホルダ（取引しない）。
-builder.Services.AddSingleton<ILlmCompletionClient, PlaceholderLlmCompletionClient>();
+// #79, FR-04, IADR-0017/0039: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
+// LlmGateway:BaseUrl 未設定/不正 URI は従来プレースホルダ（常に Hold・取引しない）＝安全既定でゲート。設定時のみ実照会する。
+// 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。LLM は応答が遅い
+// ため HttpClient のタイムアウトは長め。送信拒否/失敗/タイムアウトは Hold に倒す（HttpLlmCompletionClient）。
+builder.Services.AddHttpClient("llm", c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
+builder.Services.AddScoped<ILlmCompletionClient>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = cfg["LlmGateway:BaseUrl"];
+    // 未設定・不正 URI は安全既定（プレースホルダ＝常に Hold・取引しない）に倒す。
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<PlaceholderLlmCompletionClient>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("llm");
+    http.BaseAddress = uri;
+    return new HttpLlmCompletionClient(http,
+        sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
+        cfg["LlmGateway:Confidentiality"] ?? "internal",
+        cfg["LlmGateway:Purpose"] ?? "trade-decision");
+});
 // FR-07, IADR-0028: 確定済み日報方針は報告書サービス（#14）の GET /reports/daily-policy を同期照会して供給する。
 // Reports:BaseUrl 未設定なら従来のプレースホルダ（no-op・取引しない）＝安全既定でゲート。設定時のみ実照会する。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
