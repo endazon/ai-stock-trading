@@ -65,12 +65,20 @@ Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC �
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
 kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
-kubectl -n ai-stock-trading attach -it opend-bootstrap      # `>>>` に SMS コードを入力 → デバイス認証
-# 認証後、どのファイルが更新されたか確認して PVC マウント先を確定する（AppData.dat 等）:
-kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend
-kubectl -n ai-stock-trading delete pod opend-bootstrap
+kubectl -n ai-stock-trading attach -it opend-bootstrap
 ```
-> `attach` で `>>>` が見えない場合は Enter を一度押す（プロンプト再表示）。Pod は残るので認証完了後に delete する。
+OpenD は起動時に自動で SMS を要求する（携帯に届く）。**`>>>` プロンプトに OpenD のコマンドを入力する**（kubectl は打たない）:
+```
+>>> input_phone_verify_code -code=<携帯に届いた6桁コード>
+```
+成功すればログイン完了・API が `:11111` で待受。**別ターミナル**で永続化パス（デバイス情報の保存先）を確認する:
+```bash
+kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend       # AppData.dat 等の更新を確認
+kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend/persist
+kubectl -n ai-stock-trading delete pod opend-bootstrap   # 確認後に片付け（quit すると OpenD/Pod が終了する）
+```
+> `>>>` は OpenD のコンソール。`help` でコマンド一覧。SMS コードは `input_phone_verify_code -code=...`。`quit` で終了。
+> `attach` で `>>>` が見えない場合は Enter を一度押す。
 
 ### 4) 無人 Deployment（デバイス認証後・オプトイン）
 ```bash
