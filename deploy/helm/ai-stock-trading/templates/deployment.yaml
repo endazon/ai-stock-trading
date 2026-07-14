@@ -58,6 +58,12 @@ spec:
               value: {{ $e.value | quote }}
               {{- end }}
             {{- end }}
+            {{- /* #121: CronJob スケジューラ有効時、情報収集は External（in-process 巡回を停止し run-once 起動）へ切替える。
+                   これを入れないと in-process ポーリングと CronJob が二重起動する。既定（cronjob 無効）は InProcess。 */}}
+            {{- if and (eq $name "information-collection") $.Values.tradingCycle.cronjob.enabled }}
+            - name: Collection__Trigger
+              value: "External"
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health/ready

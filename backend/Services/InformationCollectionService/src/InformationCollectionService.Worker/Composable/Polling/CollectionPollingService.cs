@@ -22,6 +22,15 @@ internal sealed class CollectionPollingService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // #121: External（本番スケジューラ=K8s CronJob）では in-process 巡回を行わない。
+        // サイクルの起動は run-once エンドポイント（RunOnceAsync）経由。休場ガードは下流 TradeDecision（IADR-0023）。
+        if (options.Value.Trigger == CollectionTrigger.External)
+        {
+            logger.LogInformation(
+                "収集トリガは External（スケジューラ駆動）です。in-process ポーリングは停止し、run-once で起動します。");
+            return;
+        }
+
         var baseInterval = TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
 
         while (!stoppingToken.IsCancellationRequested)

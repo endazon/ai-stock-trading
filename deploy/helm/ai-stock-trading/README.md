@@ -43,5 +43,7 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set tradingCycle.cronjob.enabled=true
 ```
 
-⚠️ 有効化には収集の run-once エンドポイント（`/internal/collection/run-once`）が必要。**未実装**のため、
-現状は骨子のみ。C# 実装は #121 の後続 PR で行う（休場日・費用停止は収集側でゲート）。
+有効化すると CronJob が収集の run-once（`POST /internal/collection/run-once`）を叩き、同時に情報収集へ
+`Collection__Trigger=External` が注入され in-process ポーリングは停止する（二重起動防止）。既定（無効）は
+in-process 維持＝fail-safe。休場日ガードは下流 TradeDecision の市場カレンダー（IADR-0023）が担保する。
+run-once/モード切替は実装済み（#121 / IADR-0054）。
