@@ -60,21 +60,17 @@ nerdctl --namespace k8s.io run --rm \
 ```
 
 ### 3) 初回デバイス認証（対話ブートストラップ・実口座で 1 回）
-Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC をマウントした対話 Pod** で 1 回だけ認証する:
+Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC をマウントした対話 Pod**（`bootstrap-pod.yaml`）で
+1 回だけ認証する。資格情報は手順2の Secret を参照する（コマンドに書かない）:
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
-kubectl -n ai-stock-trading run opend-bootstrap -it --rm \
-  --image=k3d-local/ai-stock-trading/opend:latest --image-pull-policy=IfNotPresent \
-  --overrides='{"spec":{"containers":[{"name":"opend","stdin":true,"tty":true,
-    "image":"k3d-local/ai-stock-trading/opend:latest","imagePullPolicy":"IfNotPresent",
-    "env":[{"name":"OPEND_LOGIN_ACCOUNT","value":"<実account>"},
-           {"name":"OPEND_LOGIN_PWD_MD5","value":"<md5>"}],
-    "volumeMounts":[{"name":"p","mountPath":"/opt/opend/persist"}]}],
-    "volumes":[{"name":"p","persistentVolumeClaim":{"claimName":"opend-persist"}}]}}'
-# `>>>` に届いた SMS コードを入力 → デバイス認証。
-# 認証後、どのファイルが更新されたか確認して PVC マウント先を確定する:
-#   ls -lat /opt/opend | head    （AppData.dat 等の更新ファイルを永続化パスへ）
+kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
+kubectl -n ai-stock-trading attach -it opend-bootstrap      # `>>>` に SMS コードを入力 → デバイス認証
+# 認証後、どのファイルが更新されたか確認して PVC マウント先を確定する（AppData.dat 等）:
+kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend
+kubectl -n ai-stock-trading delete pod opend-bootstrap
 ```
+> `attach` で `>>>` が見えない場合は Enter を一度押す（プロンプト再表示）。Pod は残るので認証完了後に delete する。
 
 ### 4) 無人 Deployment（デバイス認証後・オプトイン）
 ```bash
