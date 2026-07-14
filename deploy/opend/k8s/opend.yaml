@@ -42,11 +42,11 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 15
             failureThreshold: 20
-          # #124 PoC: デバイス認証情報の永続化で再起動時の再認証を回避できるか検証する。
-          # マウント先は OpenD 版のデバイス/設定保存パスに合わせて要調整（下記は例）。
+          # #124 PoC: OpenD はデバイス情報/認証状態を HOME 配下 /root/.com.moomoo.OpenD に書く。
+          # 初回対話認証（bootstrap-pod）で作られた状態を同 PVC で再利用し、無人再起動を狙う。
           volumeMounts:
             - name: persist
-              mountPath: /opt/opend/persist
+              mountPath: /root/.com.moomoo.OpenD
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 1Gi }

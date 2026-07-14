@@ -62,23 +62,35 @@ nerdctl --namespace k8s.io run --rm \
 ### 3) 初回デバイス認証（対話ブートストラップ・実口座で 1 回）
 Deployment は TTY を持たず初回 SMS 認証を完了できない。**PVC をマウントした対話 Pod**（`bootstrap-pod.yaml`）で
 1 回だけ認証する。資格情報は手順2の Secret を参照する（コマンドに書かない）:
+OpenD はデバイス情報/認証状態を **`/root/.com.moomoo.OpenD`**（HOME 配下）に書く。ここを PVC で永続化して
+初回だけ認証すれば、以降は無人再起動できる（想定）。
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
 kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
 kubectl -n ai-stock-trading attach -it opend-bootstrap
 ```
-OpenD は起動時に自動で SMS を要求する（携帯に届く）。**`>>>` プロンプトに OpenD のコマンドを入力する**（kubectl は打たない）:
-```
->>> input_phone_verify_code -code=<携帯に届いた6桁コード>
-```
-成功すればログイン完了・API が `:11111` で待受。**別ターミナル**で永続化パス（デバイス情報の保存先）を確認する:
+起動時に OpenD が**検証コードを要求する（SMS か画像 CAPTCHA。moomoo が選ぶ）**。`>>>` に **OpenD コマンド**で入力
+（kubectl は打たない）:
+
+- **SMS の場合**（`Command Tips: input_phone_verify_code ...`）: 携帯に届いた 6 桁を
+  `>>> input_phone_verify_code -code=<6桁>`
+- **画像 CAPTCHA の場合**（`Command Tips: input_pic_verify_code ...`・`PicVerifyCode.png` に保存）:
+  **別ターミナル**で画像を取り出して見る → 4 文字を入力
+  ```bash
+  kubectl -n ai-stock-trading cp opend-bootstrap:/root/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png ./PicVerifyCode.png
+  # PicVerifyCode.png を開いて 4 文字を読む
+  ```
+  ```
+  >>> input_pic_verify_code -code=<4文字>
+  ```
+> コードは数分で失効。失効/やり直しは `>>> relogin` で新コードを出す（画像は再度 cp して読む）。
+
+成功すればログイン完了・API が `:11111` で待受。**別ターミナル**で保存されたデバイス状態を確認:
 ```bash
-kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend       # AppData.dat 等の更新を確認
-kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend/persist
-kubectl -n ai-stock-trading delete pod opend-bootstrap   # 確認後に片付け（quit すると OpenD/Pod が終了する）
+kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /root/.com.moomoo.OpenD
+kubectl -n ai-stock-trading delete pod opend-bootstrap   # 確認後に片付け（>>> quit でも OpenD/Pod が終了する）
 ```
-> `>>>` は OpenD のコンソール。`help` でコマンド一覧。SMS コードは `input_phone_verify_code -code=...`。`quit` で終了。
-> `attach` で `>>>` が見えない場合は Enter を一度押す。
+> `>>>` は OpenD のコンソール。`help` でコマンド一覧。`quit`/`exit` で終了。`attach` で `>>>` が見えなければ Enter を一度。
 
 ### 4) 無人 Deployment（デバイス認証後・オプトイン）
 ```bash

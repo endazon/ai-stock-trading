@@ -31,8 +31,10 @@ spec:
           valueFrom:
             secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
       volumeMounts:
+        # #124 PoC: OpenD はデバイス情報/認証状態を HOME 配下 /root/.com.moomoo.OpenD に書く
+        # （PicVerifyCode.png もここ）。ここを永続化すれば初回認証後は無人再起動できる想定。
         - name: persist
-          mountPath: /opt/opend/persist
+          mountPath: /root/.com.moomoo.OpenD
   volumes:
     - name: persist
       persistentVolumeClaim:
