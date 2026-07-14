@@ -20,8 +20,15 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
 
 - ✅ **ビルド成功**（ベース `mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy`。docker.io 認証を避けるため mcr を使用）。
 - ✅ **共有ライブラリ充足**（ダミー資格情報で起動しても `error while loading shared libraries` は出ず、OpenD が起動）。
-- 🔑 **OpenD はログイン時に SMS/デバイス認証を要求し、対話コンソール（`>>>`）で待機する**。
+- 🔑 **OpenD はログイン時に検証（画像 CAPTCHA / SMS）を対話コンソール（`>>>`）で要求する**。
   → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。これが「無人運用の成立性」の要点（ADR-0002 未決）。
+- ✅ **実口座で認証→ログイン成功を確認**（画像 CAPTCHA `input_pic_verify_code` ＋ SMS `input_phone_verify_code`。
+  権限: HK/US 株等を取得）。**コンテナ内 OpenD が moomoo に認証できることは実証済み**。
+- 🔴 **口座側ブロッカー**: ログイン成功直後に OpenD が終了し、「規制対応のアンケート/同意の完了が必要」
+  （`https://api.moomoo.com/v2/...`）と表示。**ブラウザで moomoo にログインして本アンケートを完了する（一度きり）**まで
+  API は使えない。完了後に再ブートストラップして OpenD が常駐継続するか確認する。
+- ⚠️ 毎セッション検証（画像/SMS）が要求される様子。**デバイス永続化（PVC=`/root/.com.moomoo.OpenD`）で再認証を
+  回避できるか**は、アンケート完了→OpenD 常駐継続後に検証する（できなければ無人運用は要再検討＝ADR-0002 環流）。
 
 **帰結（無人運用の設計）**: **2 段階**とする。
 1. **初回のみ対話でデバイス認証**（実口座＋実 SMS を 1 回入力）→ デバイス情報を **PVC に永続化**。
