@@ -32,9 +32,21 @@ builder.Services.AddDbContext<OrderExecutionDbContext>(opt => opt.UseNpgsql(conn
 builder.Services.AddAiStockTradingHealthChecks()
     .AddNpgSql(connStr, tags: ["ready"]);
 
-// IADR-0016: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
-var brokerAdapter = BrokerFactory.Create(builder.Configuration["Broker:Provider"]);
-builder.Services.AddSingleton(brokerAdapter);
+// IADR-0016, #13: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
+// moomoo 選択時は OpenD 接続クライアント（IMoomooTradeClient）を構成し SIMULATE 限定で発注する（実弾を撃たない）。
+// DI ファクトリで組み、ロガーは DI の ILoggerFactory から取得する（クライアント/アダプタ双方に注入）。
+builder.Services.AddSingleton<IBrokerAdapter>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var provider = cfg["Broker:Provider"];
+    IMoomooTradeClient? moomooClient = BrokerFactory.IsMoomoo(provider)
+        ? new MMApiMoomooTradeClient(
+            MoomooBrokerOptions.FromConfiguration(cfg),
+            loggerFactory.CreateLogger<MMApiMoomooTradeClient>())
+        : null;
+    return BrokerFactory.Create(provider, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>());
+});
 
 builder.Services.AddSingleton<IClock, SystemClock>();
 // DbContext が scoped のため発注結果ストアも scoped。

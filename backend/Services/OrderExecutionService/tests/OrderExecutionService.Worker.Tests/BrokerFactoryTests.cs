@@ -20,13 +20,27 @@ public class BrokerFactoryTests
     }
 
     [Fact]
-    public void moomoo指定は実弾防止のため起動時に停止する()
+    public void moomoo指定は_client提供時に_MoomooBrokerAdapter_を返す()
     {
-        // ADR-0002 は Proposed・OpenD PoC 未了。実装せず選択で停止（実弾を撃たない）。
-        var act = () => BrokerFactory.Create("moomoo");
+        // #13: OpenD 接続（IMoomooTradeClient）を与えると moomoo アダプタ（SIMULATE 限定）を返す。
+        BrokerFactory.Create("moomoo", new StubMoomooClient()).Should().BeOfType<MoomooBrokerAdapter>();
+    }
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*未実装*");
+    [Fact]
+    public void moomoo指定は_client未提供時は起動時に停止する_誤用防止()
+    {
+        // OpenD 未接続で moomoo を選ぶのは誤用。実弾は撃たないが、SIMULATE 発注も OpenD 無しでは不可のため停止。
+        var act = () => BrokerFactory.Create("moomoo");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*OpenD*");
+    }
+
+    private sealed class StubMoomooClient : IMoomooTradeClient
+    {
+        public Task<MoomooOrderResult> PlaceOrderAsync(MoomooOrderRequest r, CancellationToken ct = default) =>
+            Task.FromResult(new MoomooOrderResult("x", MoomooOrderState.FilledAll, 0, 0m));
+        public Task<MoomooOrderResult?> QueryOrderAsync(string id, CancellationToken ct = default) =>
+            Task.FromResult<MoomooOrderResult?>(null);
+        public Task CancelOrderAsync(string id, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     [Fact]
