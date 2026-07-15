@@ -1,14 +1,21 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 
 // #13, FR-05, ADR-0002, IADR-0016: moomoo ブローカアダプタ。OpenD（IMoomooTradeClient）経由で発注する。
 // SIMULATE 限定（client 実装が TrdEnv_Simulate を用いる）。実弾は撃たない。判断・記録・報告のフローは
 // PaperBrokerAdapter と完全に同一（不正注文・不達は終端 Rejected で返しフローを止めない）。
-internal sealed class MoomooBrokerAdapter(IMoomooTradeClient client, TimeProvider? timeProvider = null) : IBrokerAdapter
+internal sealed class MoomooBrokerAdapter(
+    IMoomooTradeClient client,
+    TimeProvider? timeProvider = null,
+    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    // fail-safe で握りつぶす例外も障害切り分けのためログする（既定 NullLogger でテスト時は無害）。
+    private readonly ILogger<MoomooBrokerAdapter> _logger = logger ?? NullLogger<MoomooBrokerAdapter>.Instance;
 
     public async Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default)
     {
@@ -28,7 +35,9 @@ internal sealed class MoomooBrokerAdapter(IMoomooTradeClient client, TimeProvide
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // OpenD 不達・SDK 例外は終端 Rejected（フローを止めない・実弾防止の安全側）。
+            // OpenD 不達・SDK 例外は終端 Rejected（フローを止めない・実弾防止の安全側）。原因はログに残す。
+            _logger.LogWarning(ex, "moomoo 発注に失敗したため Rejected に倒します symbol={Symbol} qty={Qty}",
+                intent.Symbol, intent.Quantity);
             return Terminal(intent, OrderStatus.Rejected, now);
         }
     }
@@ -44,6 +53,7 @@ internal sealed class MoomooBrokerAdapter(IMoomooTradeClient client, TimeProvide
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _logger.LogWarning(ex, "moomoo 状態照会に失敗したため null を返します orderId={OrderId}", orderId);
             return null;
         }
     }

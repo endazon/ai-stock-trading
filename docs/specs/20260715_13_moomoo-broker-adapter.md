@@ -86,8 +86,12 @@ SDK は NuGet `moomoo-api`（`MMAPI4Net` / `Moomoo.OpenApi.MMAPI_Trd`・protobuf
 ## 計画書との差異
 
 - 差異: なし（ADR-0002 の想定実装）。実弾は IADR-0016 の後続で別途解禁。
+- ゲート governance: ADR-0002 は上流で Proposed のままだが、SIMULATE PoC 成功（2026-07-15 live 検証）が
+  Accepted 条件を満たすことを [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) で記録し、
+  **SIMULATE 限定での実装**を正当化する（実弾は引き続きゲート）。ADR-0002 の Accepted 化は上流 triage（plan-feedback 済）。
 
 ## 未決事項
 
 - 執行方針（寄付き直後の成行禁止・実効スリッページ記録）は初期実装後の拡張。
-- `MMApiMoomooTradeClient` の protobuf フィールド詳細は live 検証で確定・微調整。
+- 実弾（`TrdEnv_Real`）解禁は別 IADR＋発注冪等化（outbox / 発注前 `DecisionId` 予約）が前提（IADR-0016/0056 の後続）。
+- 照会/取消の市場は発注時キャッシュ＋対応市場フォールバックで解決（再起動後も US 固定に倒さない）。

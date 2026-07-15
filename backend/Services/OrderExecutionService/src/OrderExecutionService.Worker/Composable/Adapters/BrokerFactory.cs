@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 
@@ -16,13 +17,16 @@ internal static class BrokerFactory
 
     public static bool IsMoomoo(string? provider) => Normalize(provider) == Moomoo;
 
-    public static IBrokerAdapter Create(string? provider, IMoomooTradeClient? moomooClient = null)
+    public static IBrokerAdapter Create(
+        string? provider,
+        IMoomooTradeClient? moomooClient = null,
+        ILogger<MoomooBrokerAdapter>? moomooLogger = null)
     {
         return Normalize(provider) switch
         {
             Paper => new PaperBrokerAdapter(),
             Moomoo => moomooClient is not null
-                ? new MoomooBrokerAdapter(moomooClient)
+                ? new MoomooBrokerAdapter(moomooClient, logger: moomooLogger)
                 : throw new InvalidOperationException(
                     "Broker:Provider=moomoo には OpenD 接続（IMoomooTradeClient）が必要です。OpenD の常駐と接続構成"
                     + "（Broker:Moomoo:OpenD:Host/Port）を確認してください。実弾は撃ちません（SIMULATE 限定・IADR-0016）。"),

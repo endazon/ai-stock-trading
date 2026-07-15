@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
@@ -21,6 +22,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     private readonly ILogger<MMApiMoomooTradeClient> _logger;
     private readonly MMAPI_Trd _trd = new();
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<object>> _pending = new();
+    private readonly object _sendGate = new(); // serial 採番＋登録とコールバック完了の相互排他（レース防止）。
     // 照会/取消は市場（TrdMarket/TrdSecMarket）を要するため、発注時に orderId→市場を控える。
     private readonly ConcurrentDictionary<string, (int TrdMarket, int SecMarket)> _orderMarket = new();
     private readonly SemaphoreSlim _connectGate = new(1, 1);
@@ -93,21 +95,13 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         {
             return null;
         }
-        var (trdMarket, _) = MarketFor(orderId);
-        var c2s = TrdGetOrderList.C2S.CreateBuilder()
-            .SetHeader(BuildHeader(trdMarket))
-            .SetRefreshCache(true)
-            .Build();
-        var req = TrdGetOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
-
-        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _trd.GetOrderList(req), cancellationToken).ConfigureAwait(false);
-        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetOrderList");
-
-        foreach (TrdCommon.Order o in rsp.S2C.OrderListList)
+        // 発注時に市場を控えているが、再起動でキャッシュを失っても US 固定に倒さず対応市場を順に照会する。
+        foreach (var trdMarket in MarketsToTry(orderId))
         {
-            if (o.OrderID == oid)
+            var order = await FindOrderAsync(oid, trdMarket, cancellationToken).ConfigureAwait(false);
+            if (order is not null)
             {
-                return new MoomooOrderResult(orderId, MapState(o.OrderStatus), (int)o.FillQty, (decimal)o.FillAvgPrice);
+                return new MoomooOrderResult(orderId, MapState(order.OrderStatus), (int)order.FillQty, (decimal)order.FillAvgPrice);
             }
         }
         return null;
@@ -120,10 +114,26 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         {
             return;
         }
-        var (trdMarket, _) = MarketFor(orderId);
+        // 市場を特定する（キャッシュ→無ければ照会で発見）。誤った市場での取消（サイレント失敗）を避ける。
+        int? trdMarket = _orderMarket.TryGetValue(orderId, out var mk) ? mk.TrdMarket : null;
+        if (trdMarket is null)
+        {
+            foreach (var m in SupportedMarkets.Select(x => x.TrdMarket))
+            {
+                if (await FindOrderAsync(oid, m, cancellationToken).ConfigureAwait(false) is not null)
+                {
+                    trdMarket = m;
+                    break;
+                }
+            }
+        }
+        if (trdMarket is null)
+        {
+            return; // 注文が見つからない（既に消えた等）→ no-op
+        }
         var c2s = TrdModifyOrder.C2S.CreateBuilder()
             .SetPacketID(_trd.NextPacketID()) // 変更/取消も packetID 必須
-            .SetHeader(BuildHeader(trdMarket))
+            .SetHeader(BuildHeader(trdMarket.Value))
             .SetOrderID(oid)
             .SetModifyOrderOp((int)TrdCommon.ModifyOrderOp.ModifyOrderOp_Cancel)
             .Build();
@@ -132,6 +142,32 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         var rsp = (TrdModifyOrder.Response)await SendAsync(() => _trd.ModifyOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "CancelOrder");
     }
+
+    // 指定市場の注文一覧から orderId 一致を返す（見つからなければ null）。
+    private async Task<TrdCommon.Order?> FindOrderAsync(ulong oid, int trdMarket, CancellationToken cancellationToken)
+    {
+        var c2s = TrdGetOrderList.C2S.CreateBuilder()
+            .SetHeader(BuildHeader(trdMarket))
+            .SetRefreshCache(true)
+            .Build();
+        var req = TrdGetOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _trd.GetOrderList(req), cancellationToken).ConfigureAwait(false);
+        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetOrderList");
+        foreach (TrdCommon.Order o in rsp.S2C.OrderListList)
+        {
+            if (o.OrderID == oid)
+            {
+                return o;
+            }
+        }
+        return null;
+    }
+
+    // 照会に用いる市場: キャッシュがあればそれのみ、無ければ対応市場すべて（再起動後の取りこぼし防止）。
+    private IEnumerable<int> MarketsToTry(string orderId) =>
+        _orderMarket.TryGetValue(orderId, out var mk)
+            ? new[] { mk.TrdMarket }
+            : SupportedMarkets.Select(m => m.TrdMarket);
 
     // ---- 接続・口座 ----
 
@@ -190,19 +226,22 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
             .SetTrdMarket(trdMarket)
             .Build();
 
-    private (int TrdMarket, int SecMarket) MarketFor(string orderId) =>
-        _orderMarket.TryGetValue(orderId, out var mk)
-            ? mk
-            : ((int)TrdCommon.TrdMarket.TrdMarket_US, (int)TrdCommon.TrdSecMarket.TrdSecMarket_US);
+    // 対応市場（TrdMarket, SecMarket）。照会/取消でキャッシュミス時に順に試す対象でもある。
+    private static readonly (int TrdMarket, int SecMarket)[] SupportedMarkets =
+    [
+        ((int)TrdCommon.TrdMarket.TrdMarket_US, (int)TrdCommon.TrdSecMarket.TrdSecMarket_US),
+        ((int)TrdCommon.TrdMarket.TrdMarket_JP, (int)TrdCommon.TrdSecMarket.TrdSecMarket_JP),
+    ];
 
-    private static (int TrdMarket, int SecMarket) MapMarket(MoomooMarket market) => market switch
+    // MoomooMarket → (TrdMarket, TrdSecMarket)。SDK 非依存の写像（単体テスト対象）。
+    internal static (int TrdMarket, int SecMarket) MapMarket(MoomooMarket market) => market switch
     {
         MoomooMarket.Japan => ((int)TrdCommon.TrdMarket.TrdMarket_JP, (int)TrdCommon.TrdSecMarket.TrdSecMarket_JP),
         _ => ((int)TrdCommon.TrdMarket.TrdMarket_US, (int)TrdCommon.TrdSecMarket.TrdSecMarket_US),
     };
 
-    // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する。
-    private static MoomooOrderState MapState(int openDStatus) => openDStatus switch
+    // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する（SDK 非依存・単体テスト対象）。
+    internal static MoomooOrderState MapState(int openDStatus) => openDStatus switch
     {
         0 or 1 or 2 => MoomooOrderState.Submitting,      // Unsubmitted / WaitingSubmit / Submitting
         5 => MoomooOrderState.Submitted,                 // Submitted
@@ -218,14 +257,24 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     private Task<object> SendAsync(Func<uint> send, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var serial = send();
-        _pending[serial] = tcs;
+        // send() 直後にコールバックが返るレースを防ぐため、serial 採番と登録を _sendGate 内で原子的に行う。
+        // Complete も同じロックを取るので、登録前に応答が握りつぶされることはない。
+        lock (_sendGate)
+        {
+            var serial = send();
+            _pending[serial] = tcs;
+        }
         return tcs.Task.WaitAsync(ReplyTimeout, cancellationToken);
     }
 
     private void Complete(uint serial, object rsp)
     {
-        if (_pending.TryRemove(serial, out var tcs))
+        TaskCompletionSource<object>? tcs;
+        lock (_sendGate)
+        {
+            _pending.TryRemove(serial, out tcs);
+        }
+        if (tcs is not null)
         {
             tcs.TrySetResult(rsp);
         }
