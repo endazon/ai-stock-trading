@@ -57,8 +57,11 @@ plan_refs:
    使わない構成とし、`EfCostLedger` の月内直列化（アドバイザリロック）に委ねる。統合テストで確認する。
 5. **冪等性**（再配信対策）: MassTransit の at-least-once（再試行/再配信）で `LlmCostIncurred` が重複配信され得る。
    費用は月次累計のため二重計上は統制判定を誤らせる。実装スライスで **メッセージ ID による重複排除**（消費済み
-   `MessageId` を台帳に記録し既処理なら no-op。IADR-0026 の決定的 UUID 方針と整合）を入れる。単価 0 既定では
-   影響は無害だが、実単価投入時に効くよう最初から冪等にする。
+   `MessageId` を専用ストアに記録し既処理なら no-op）を入れる。これは **MassTransit 標準の再送耐性パターン**
+   （本リポ既存消費者の `AuditConsumerHelper.MessageId` と同手法。トランスポートが送信時に付与する `MessageId` を
+   キーにした重複排除）であり、IADR-0026 の「自然キーからの決定的 UUID(v5) 導出による相関付け」とは目的・生成方法
+   の異なる別メカニズムである（相関付け ≠ 重複排除）。単価 0 既定では影響は無害だが、実単価投入時に効くよう
+   最初から冪等にする。
 
 ## 根拠・トレードオフ
 
@@ -70,7 +73,10 @@ plan_refs:
 
 - 追加: `Shared.Contracts.Events.LlmCostIncurred`、`ILlmUsageReporter`＋`NoOp`/`Publishing`、`LlmPricing`（純関数）、
   `CostControlService` の `LlmCostIncurredConsumer`＋登録、`HttpLlmCompletionClient` への reporter 配線。
-- テスト: 単価純関数／reporter（harness で publish 検証）／消費者（InMemory ledger で計上検証）。
+- 追加（冪等性・決定5）: **消費済み `MessageId` の重複排除ストア**（新設。既存 `ICostLedger`＝月次費用台帳とは
+  別物の processed-message テーブル/ストア）と、`LlmCostIncurredConsumer` からの記録・照合。
+- テスト: 単価純関数／reporter（harness で publish 検証）／消費者（InMemory ledger で計上検証）／
+  **同一 `MessageId` の再配信で二重計上しない回帰テスト**（決定5）。
 - 未着手（さらに後続）: #19 バージョン付き月次上限の取得（現状 `DefaultCostLimitsProvider`）。
 
 ## 代替案
