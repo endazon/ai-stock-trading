@@ -88,7 +88,8 @@ SDK は NuGet `moomoo-api`（`MMAPI4Net` / `Moomoo.OpenApi.MMAPI_Trd`・protobuf
 - 差異: なし（ADR-0002 の想定実装）。実弾は IADR-0016 の後続で別途解禁。
 - ゲート governance: ADR-0002 は上流で Proposed のままだが、SIMULATE PoC 成功（2026-07-15 live 検証）が
   Accepted 条件を満たすことを [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) で記録し、
-  **SIMULATE 限定での実装**を正当化する（実弾は引き続きゲート）。ADR-0002 の Accepted 化は上流 triage（plan-feedback 済）。
+  **SIMULATE 限定での実装**を正当化する（実弾は引き続きゲート）。ADR-0002 の Accepted 化は上流 triage 待ち
+  （plan-feedback 記録は別ブランチ feat/124 / PR #126 の `feedback/` に起票済み・上流 Issue 化は本 PR 群マージ後）。
 
 ## 未決事項
 
