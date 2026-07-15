@@ -39,6 +39,9 @@ spec:
           env:
             - name: OPEND_API_PORT
               value: "11111"
+            # #13: cross-network（worker→opend）trade は RSA 暗号化必須。鍵は Secret moomoo-rsa をマウントし参照する。
+            - name: OPEND_RSA_KEY_FILE
+              value: "/opt/opend/rsa/opend_rsa.pem"
             - name: OPEND_LOGIN_ACCOUNT
               valueFrom:
                 secretKeyRef: { name: moomoo-credentials, key: login-account }
@@ -59,6 +62,10 @@ spec:
           volumeMounts:
             - name: persist
               mountPath: /root/.com.moomoo.OpenD
+            # #13: RSA 秘密鍵（暗号化通信用）を read-only でマウント。クライアントと同一鍵を用いる。
+            - name: rsa
+              mountPath: /opt/opend/rsa
+              readOnly: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 1Gi }
@@ -66,6 +73,11 @@ spec:
         - name: persist
           persistentVolumeClaim:
             claimName: opend-persist
+        - name: rsa
+          secret:
+            secretName: moomoo-rsa
+            items:
+              - { key: opend_rsa.pem, path: opend_rsa.pem }
 ---
 apiVersion: v1
 kind: Service

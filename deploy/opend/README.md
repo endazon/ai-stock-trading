@@ -60,6 +60,19 @@ kubectl create secret generic moomoo-credentials -n ai-stock-trading \
   --from-literal=login-pwd-md5="$PWD_MD5"
 ```
 
+### 2b) RSA 暗号鍵 Secret（#13・cross-network trade 必須）
+moomoo は**別 Pod 間（worker→opend）の trade 接続に RSA 暗号化を要求する**（#13 で確定・実 OpenD で検証）。
+OpenD とクライアント（#13 発注執行）で**同一の PKCS#1 秘密鍵**を用いる。非暗号は OpenD が 127.0.0.1
+listen（同一 Pod/loopback）のときのみ。
+```bash
+openssl genrsa -out opend_rsa_pkcs8.pem 1024
+openssl rsa -in opend_rsa_pkcs8.pem -traditional -out opend_rsa.pem   # PKCS#1（BEGIN RSA PRIVATE KEY）
+kubectl create secret generic moomoo-rsa -n ai-stock-trading --from-file=opend_rsa.pem=opend_rsa.pem
+```
+- OpenD 側: `opend.yaml` が `/opt/opend/rsa/opend_rsa.pem` にマウントし `OPEND_RSA_KEY_FILE` で参照
+  （entrypoint が `<rsa_private_key>` を OpenD.xml に追加。起動ログに `API RSA Enabled: Yes`）。
+- クライアント側: `Broker:Moomoo:OpenD:RsaPrivateKeyPath` に同一鍵パスを設定（AST chart で Secret をマウント）。
+
 （任意）**スモークテスト**（口座不要・共有ライブラリの充足だけ確認）:
 ```bash
 nerdctl --namespace k8s.io run --rm \
@@ -115,6 +128,17 @@ kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ### 5) 発注執行（#13）から利用
 moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中の `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
 アダプタ実装・`Broker:Provider=moomoo` の解禁は #13（ADR-0002 PoC 合格後）で行う。
+
+## 追検証（2026-07-15・#13 結合時）
+
+- ✅ **暗号化で in-cluster trade 成立**: RSA（PKCS#1）を OpenD＋クライアント双方に設定し、実 OpenD の SIMULATE
+  口座で **発注→状態追跡→取消**の一巡を確認（#13・PR #130）。非暗号では OpenD が
+  `cross-network trade connections must be encrypted` を返す。
+- ➕ **自動再ログインの緩和例（要注意・限定条件）**: 本セッションで Deployment を再作成した際、
+  永続化済みデバイス状態（PVC `/root/.com.moomoo.OpenD`）で**対話検証なしに再ログインが成立**した。
+  単一ノード（Rancher Desktop）で egress IP が安定なためと考えられる。IADR-0053 の「再起動＝毎回再検証」は
+  **ノード/IP が変わらない限りにおいて緩和され得る**が、IP/セッション変化時は再検証が要る前提は維持する
+  （マルチノード/クラウドでは従来どおり有人検証を想定）。
 
 ## PoC 結論（→ ADR-0002 へ plan-feedback）
 - ✅ ビルド・共有ライブラリ充足・OpenD 起動・**実口座ログイン成功**（2026-07-15）。
