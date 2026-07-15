@@ -7,7 +7,8 @@ namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
 // FR-04, IADR-0017: 実 LLM/実データが揃うまでの安全既定プレースホルダ（取引しない）。差し替え漏れ検知のため初回に 1 回警告する。
 
-// 実 LLM（platform LLM ゲートウェイ POST /complete）が未実装のため、常に Hold を返す＝取引しない。
+// #79: 実 LLM は HttpLlmCompletionClient（platform ゲートウェイ POST /complete）が担う。本プレースホルダは
+// LlmGateway:BaseUrl 未設定時の安全既定フォールバック（常に Hold を返す＝取引しない）。
 internal sealed class PlaceholderLlmCompletionClient(ILogger<PlaceholderLlmCompletionClient> logger)
     : ILlmCompletionClient
 {
