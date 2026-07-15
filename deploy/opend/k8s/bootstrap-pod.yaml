@@ -6,7 +6,7 @@
 #   kubectl create secret generic moomoo-credentials ...  # 手順2（実口座）
 #   kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
 #   kubectl -n ai-stock-trading attach -it opend-bootstrap   # >>> に SMS コードを入力
-#   kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /opt/opend   # 更新ファイル確認→永続化パス確定
+#   kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /root/.com.moomoo.OpenD   # デバイス状態の更新確認（永続化パスは確定済み）
 #   kubectl -n ai-stock-trading delete pod opend-bootstrap
 apiVersion: v1
 kind: Pod
