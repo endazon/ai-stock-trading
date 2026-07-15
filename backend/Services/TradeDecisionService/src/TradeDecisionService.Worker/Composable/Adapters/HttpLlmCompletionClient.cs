@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
 // #79, FR-04, ADR-0003, IADR-0017/0039: 実 LLM 補完を platform LLM ゲートウェイ（POST /complete）へ委譲する。
-// FR-11: confidentiality/purpose を載せて越境ルーティングを判定させる（送信可否・モデル選択はゲートウェイ側）。
+// ADR-0010（platform LLM ゲートウェイの越境ルーティング。本リポの FR-11=監査ログとは別物のため ID を使わず ADR で示す）:
+// confidentiality/purpose を載せて送信先を判定させる（送信可否・モデル選択はゲートウェイ側）。
 // フェイルセーフ（IADR-0017 の安全既定と一致）: 送信拒否（Sent=false）・非 2xx・例外・タイムアウト・空/不正応答は
 // Hold（取引しない）に倒す。判断パーサはこの JSON を Hold として解釈する。
 internal sealed class HttpLlmCompletionClient(

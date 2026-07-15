@@ -67,7 +67,7 @@ public class HttpLlmCompletionClientTests
         (await client.CompleteAsync("prompt")).Should().Contain("Hold");
     }
 
-    // FR-11: 要求に prompt/model/confidentiality/purpose を載せて越境ルーティングを判定させる。
+    // ADR-0010（platform LLM ゲートウェイの越境ルーティング）: 要求に prompt/model/confidentiality/purpose を載せる。
     [Fact]
     public async Task 要求に_prompt_model_confidentiality_purpose_を載せる()
     {
