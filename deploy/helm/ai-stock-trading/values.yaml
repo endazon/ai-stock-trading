@@ -43,6 +43,18 @@ tradingCycle:
     image: curlimages/curl:8.11.1
     target: http://information-collection-service:8080/internal/collection/run-once
 
+# #13: moomoo（OpenD）発注の in-cluster 配線。既定 disabled = fail-safe（order-execution は paper・実発注しない）。
+# 有効化前提: (1) OpenD 常駐（deploy/opend/k8s/opend.yaml・#124）, (2) Secret moomoo-rsa（RSA 秘密鍵・OpenD と同一鍵）。
+# cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016）。
+moomoo:
+  enabled: false
+  opend:
+    host: opend
+    port: 11111
+    rsaSecretName: moomoo-rsa
+    rsaSecretKey: opend_rsa.pem
+    rsaMountPath: /opt/opend/rsa
+
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
 services:
@@ -88,9 +100,7 @@ services:
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc
-    extraEnv:
-      # fail-safe: 既定 paper（実発注しない・IADR-0016）。moomoo は simulate 口座＋OpenD 前提（#13）。
-      - { name: Broker__Provider, value: "paper" }
+    # Broker__Provider は template が moomoo.enabled で決定する（既定 paper・moomoo 有効時は OpenD 経由 SIMULATE・#13）。
   report:
     image: ai-stock-trading/report-service
     db: report_svc

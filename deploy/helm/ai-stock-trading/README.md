@@ -34,7 +34,25 @@ kubectl -n ai-stock-trading get pods
 | `ANTHROPIC_API_KEY` | `anthropic-api-key` | trade-decision（LLM） | 空=Placeholder（#79） |
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
-| （chart 値）`Broker__Provider` | — | order-execution | `paper`（実発注しない・#13） |
+| （chart 値）`Broker__Provider` | — | order-execution | `paper`（実発注しない・#13。`moomoo.enabled` で切替） |
+
+## #13: moomoo（OpenD）発注
+
+既定 **無効**（`order-execution` は `Broker__Provider=paper`＝実発注しない・fail-safe・IADR-0016）。有効化すると
+`order-execution` が常駐 OpenD（`opend:11111`）へ **SIMULATE 限定**で発注する（実弾は撃たない）。
+
+**前提**: (1) OpenD 常駐（`deploy/opend/k8s/opend.yaml`・#124）、(2) Secret `moomoo-rsa`（OpenD と**同一の RSA 秘密鍵**）。
+cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。鍵生成・Secret 作成は `deploy/opend/README.md` 参照。
+
+```bash
+# 事前: OpenD 常駐 + moomoo-rsa Secret を作成済み（deploy/opend/README.md の 2b）。
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set moomoo.enabled=true
+```
+
+有効化すると `order-execution` へ `Broker__Provider=moomoo` ＋ `Broker__Moomoo__OpenD__{Host=opend,Port=11111,
+RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` が read-only マウントされる。
+OpenD 未接続・鍵不備時はクライアントが `Rejected` に倒す（fail-safe）。実結合は #13（PR #130）で live 検証済。
 
 ## #121: 取引サイクル CronJob
 

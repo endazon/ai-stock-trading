@@ -64,6 +64,20 @@ spec:
             - name: Collection__Trigger
               value: "External"
             {{- end }}
+            {{- /* #13: 発注先。既定 paper（fail-safe・実弾なし）。moomoo.enabled で OpenD 経由 SIMULATE 発注へ。
+                   cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
+            {{- if eq $name "order-execution" }}
+            - name: Broker__Provider
+              value: {{ ternary "moomoo" "paper" $.Values.moomoo.enabled | quote }}
+            {{- if $.Values.moomoo.enabled }}
+            - name: Broker__Moomoo__OpenD__Host
+              value: {{ $.Values.moomoo.opend.host | quote }}
+            - name: Broker__Moomoo__OpenD__Port
+              value: {{ $.Values.moomoo.opend.port | quote }}
+            - name: Broker__Moomoo__OpenD__RsaPrivateKeyPath
+              value: {{ printf "%s/%s" $.Values.moomoo.opend.rsaMountPath $.Values.moomoo.opend.rsaSecretKey | quote }}
+            {{- end }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health/ready
@@ -79,4 +93,20 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml $.Values.resources | nindent 12 }}
+          {{- /* #13: OpenD 暗号化通信用 RSA 秘密鍵（moomoo-rsa Secret）を read-only でマウント。 */}}
+          {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+          volumeMounts:
+            - name: moomoo-rsa
+              mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
+              readOnly: true
+          {{- end }}
+      {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+      volumes:
+        - name: moomoo-rsa
+          secret:
+            secretName: {{ $.Values.moomoo.opend.rsaSecretName }}
+            items:
+              - key: {{ $.Values.moomoo.opend.rsaSecretKey }}
+                path: {{ $.Values.moomoo.opend.rsaSecretKey }}
+      {{- end }}
 {{- end }}
