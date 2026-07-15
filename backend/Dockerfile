@@ -1,4 +1,6 @@
-# syntax=docker/dockerfile:1
+# NOTE(#122): `# syntax=docker/dockerfile:1` は付けない。BuildKit が docker.io から frontend
+# イメージを pull する際、Docker Hub 認証（credential helper）が無い/失敗する環境（Rancher Desktop の
+# nerdctl 等）でビルドが落ちるため。本 Dockerfile は組み込み frontend で足りる標準機能のみを使う。
 # ---------------------------------------------------------------------------
 # ai-stock-trading Worker 共有 Dockerfile（issue #107 / IADR-0048 決定 3）
 # 10 の Worker はすべて Web SDK（aspnet・:8080）で同型のため、単一の多段ビルドを
