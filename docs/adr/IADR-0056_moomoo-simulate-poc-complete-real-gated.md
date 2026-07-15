@@ -24,8 +24,7 @@ plan_refs:
 - 関連する計画書 ID: **FR-05**（発注執行）、**ADR-0002**（moomoo OpenAPI・**Proposed**: デモ取引 `TrdEnv.SIMULATE` の PoC 成功が Accepted 条件）
 - 対象 Issue: [#13](https://github.com/endazon/ai-stock-trading/issues/13)（moomoo アダプタ）/ [#124](https://github.com/endazon/ai-stock-trading/issues/124)（OpenD 常駐）
 - 関連 IADR: [IADR-0016](IADR-0016_safe-broker-execution.md)（安全既定 paper・moomoo ゲート）、
-  `IADR-0053`（OpenD Docker/常駐。別ブランチ feat/124-opend-docker / PR #126 で追加。develop 未マージのため
-  本ブランチにはファイル無し＝リンクにしない。マージ後にリンク化する）
+  [IADR-0053](IADR-0053_moomoo-opend-dockerization.md)（OpenD Docker/常駐・#124 / PR #126・develop マージ済）
 - 関連仕様書: [20260715_13_moomoo-broker-adapter](../specs/20260715_13_moomoo-broker-adapter.md)
 
 ## コンテキストと課題
@@ -50,10 +49,9 @@ plan_refs:
    - 発注の**冪等化**（outbox / 発注前 `DecisionId` 予約行）。現状の冪等性は発注後の `DecisionId` 照合のみで、「ブローカ発注成功→永続化失敗」の窓が未保護（`OrderExecutionService.cs` にコメント済・IADR-0016 の後続）。
    - リスク統制・監査・上限（`TradingDefaults`）の実弾向け再確認、秘匿情報の Vault 化。
 4. **上流への環流**: ADR-0002 の Accepted 化は上流（`project-planning`）の triage に委ねる。PoC 結果・無人運用の追検証は
-   plan-feedback 記録（`feedback/20260715_adr0002-opend-unattended-limited.md`。**別ブランチ feat/124-opend-docker /
-   PR #126 に存在**・develop 未マージのため本ブランチには無い）で AST 側に起票済み。上流計画リポへの Issue 化
-   （`project-planning`）は本 PR 群のマージ後に人手で行う（未完＝「環流予定」）。ADR-0002 が Accepted 化されるまでの間も、
-   本 IADR を根拠に **SIMULATE 限定での実装・利用**を可能とする。
+   plan-feedback 記録（[`feedback/20260715_adr0002-opend-unattended-limited.md`](../../feedback/20260715_adr0002-opend-unattended-limited.md)）で
+   AST 側に起票済み。上流計画リポ（`project-planning`）への Issue 化は本 PR 群のマージ後に人手で行う（未完＝「環流予定」）。
+   ADR-0002 が Accepted 化されるまでの間も、本 IADR を根拠に **SIMULATE 限定での実装・利用**を可能とする。
 
 ## 影響
 
