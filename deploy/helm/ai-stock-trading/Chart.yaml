@@ -2,8 +2,9 @@ apiVersion: v2
 name: ai-stock-trading
 description: ai-stock-trading ユニット（10 Worker）の k8s デプロイ chart。MSP 連結ローカル k8s(k3d) dev 用。
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
-# 起点: #122（AST k8s chart）/ #24（k3s デプロイ）/ #121（取引サイクル CronJob）/ IADR-0052
+# 起点: #122（AST k8s chart）/ #24（k3s デプロイ）/ #121（取引サイクル CronJob）/ #13（moomoo 配線）/ IADR-0052
+# chart version 履歴: 0.1.0 初版 → 0.2.0 CronJob・s2s 認証・moomoo(OpenD) 配線を追加。
 # 共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は MSP 側 platform-infra を参照する
 # （ExternalName エイリアス。MSP IADR-0066 と対）。

@@ -44,7 +44,9 @@ tradingCycle:
     target: http://information-collection-service:8080/internal/collection/run-once
 
 # #13: moomoo（OpenD）発注の in-cluster 配線。既定 disabled = fail-safe（order-execution は paper・実発注しない）。
-# 有効化前提: (1) OpenD 常駐（deploy/opend/k8s/opend.yaml・#124）, (2) Secret moomoo-rsa（RSA 秘密鍵・OpenD と同一鍵）。
+# ⚠️ 有効化前提（いずれも未マージ）: (1) #13（PR #130・moomoo アダプタ本体。未マージのイメージで enabled=true にすると
+#    order-execution は IADR-0016 ゲートで起動時停止＝CrashLoopBackOff）, (2) #124（PR #126・OpenD 常駐＋RSA。
+#    deploy/opend/ は本リポジトリにまだ無い）＋ Secret moomoo-rsa（RSA 秘密鍵・OpenD と同一鍵）。
 # cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016）。
 moomoo:
   enabled: false

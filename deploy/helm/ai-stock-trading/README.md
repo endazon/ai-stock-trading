@@ -39,20 +39,26 @@ kubectl -n ai-stock-trading get pods
 ## #13: moomoo（OpenD）発注
 
 既定 **無効**（`order-execution` は `Broker__Provider=paper`＝実発注しない・fail-safe・IADR-0016）。有効化すると
-`order-execution` が常駐 OpenD（`opend:11111`）へ **SIMULATE 限定**で発注する（実弾は撃たない）。
+`order-execution` へ moomoo 発注構成が注入される（**SIMULATE 限定**・実弾は撃たない）。
 
-**前提**: (1) OpenD 常駐（`deploy/opend/k8s/opend.yaml`・#124）、(2) Secret `moomoo-rsa`（OpenD と**同一の RSA 秘密鍵**）。
-cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。鍵生成・Secret 作成は `deploy/opend/README.md` 参照。
+> ⚠️ **前提となる未マージ PR（本 chart 単独では動かない）**:
+> - **#13（PR #130・moomoo アダプタ本体）**: これが**未マージのイメージ**で `moomoo.enabled=true` にすると、
+>   `order-execution` は起動時に `InvalidOperationException` で停止する（`BrokerFactory` が moomoo 未実装を
+>   拒否する **IADR-0016 の意図的ゲート**）＝Pod は **CrashLoopBackOff**。graceful な per-order `Rejected` では
+>   ない。#13 をマージしたイメージで初めて発注経路が有効になる。
+> - **#124（PR #126・OpenD 常駐＋RSA）**: `deploy/opend/` は本 chart リポジトリにまだ存在しない（#124 未マージ）。
+>   OpenD 常駐と Secret `moomoo-rsa`（OpenD と**同一の RSA 秘密鍵**）が前提。cross-network trade は RSA 暗号化必須。
 
+**有効化**（#13・#124 をマージ済みのイメージ＋ OpenD 常駐＋`moomoo-rsa` Secret 作成後）:
 ```bash
-# 事前: OpenD 常駐 + moomoo-rsa Secret を作成済み（deploy/opend/README.md の 2b）。
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set moomoo.enabled=true
 ```
 
 有効化すると `order-execution` へ `Broker__Provider=moomoo` ＋ `Broker__Moomoo__OpenD__{Host=opend,Port=11111,
 RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` が read-only マウントされる。
-OpenD 未接続・鍵不備時はクライアントが `Rejected` に倒す（fail-safe）。実結合は #13（PR #130）で live 検証済。
+**前提が揃った状態で**は、発注時に OpenD 未接続・鍵不備なら**アダプタが per-order `Rejected` に倒す**（fail-safe）。
+実結合（アダプタ）自体は #13（PR #130）で実 OpenD の SIMULATE 口座に対し live 検証済（本 chart ブランチには未マージ）。
 
 ## #121: 取引サイクル CronJob
 
