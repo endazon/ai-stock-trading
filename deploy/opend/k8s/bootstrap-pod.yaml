@@ -1,0 +1,41 @@
+# #124 / IADR-0053: OpenD 初回デバイス認証（対話ブートストラップ）用 Pod。
+# Deployment は TTY を持たず初回 SMS 認証を完了できないため、stdin/tty 付きの本 Pod で 1 回だけ認証する。
+# 資格情報は Secret moomoo-credentials（手順2で作成）を参照。デバイス情報は PVC opend-persist（手順3で作成）へ。
+#
+#   kubectl apply -f deploy/opend/k8s/pvc.yaml            # 未作成なら
+#   kubectl create secret generic moomoo-credentials ...  # 手順2（実口座）
+#   kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
+#   kubectl -n ai-stock-trading attach -it opend-bootstrap   # >>> に SMS コードを入力
+#   kubectl -n ai-stock-trading exec opend-bootstrap -- ls -lat /root/.com.moomoo.OpenD   # デバイス状態の更新確認（永続化パスは確定済み）
+#   kubectl -n ai-stock-trading delete pod opend-bootstrap
+apiVersion: v1
+kind: Pod
+metadata:
+  name: opend-bootstrap
+  namespace: ai-stock-trading
+  labels: { app: opend-bootstrap }
+spec:
+  restartPolicy: Never
+  containers:
+    - name: opend
+      image: k3d-local/ai-stock-trading/opend:latest
+      imagePullPolicy: IfNotPresent
+      stdin: true
+      stdinOnce: false
+      tty: true
+      env:
+        - name: OPEND_LOGIN_ACCOUNT
+          valueFrom:
+            secretKeyRef: { name: moomoo-credentials, key: login-account }
+        - name: OPEND_LOGIN_PWD_MD5
+          valueFrom:
+            secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
+      volumeMounts:
+        # #124 PoC: OpenD はデバイス情報/認証状態を HOME 配下 /root/.com.moomoo.OpenD に書く
+        # （PicVerifyCode.png もここ）。ここを永続化すれば初回認証後は無人再起動できる想定。
+        - name: persist
+          mountPath: /root/.com.moomoo.OpenD
+  volumes:
+    - name: persist
+      persistentVolumeClaim:
+        claimName: opend-persist

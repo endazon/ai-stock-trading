@@ -1,0 +1,14 @@
+# #124 / IADR-0053: OpenD のデバイス認証情報/設定の永続化用 PVC。
+# 再起動のたびに moomoo のデバイス認証（新規環境/IP 判定）を再要求されるのを回避できるか検証する（PoC）。
+# k3d/Rancher Desktop の既定 StorageClass（local-path）で足りる。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opend-persist
+  namespace: ai-stock-trading
+  labels: { app: opend }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

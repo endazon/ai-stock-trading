@@ -22,6 +22,8 @@
 ## 一覧
 
 > 注（採番の経緯）: 本 issue #14（対話的確定・明細）の IADR は、作成時点で `IADR-0037`〜`IADR-0041` を並行作業中の複数ブランチが採番中だったため、番号衝突回避として調整済みの `IADR-0042` を用いる。当時暫定欠番だった `IADR-0037`〜`IADR-0041` は並行ブランチの `develop` マージにより充足済みで、上記「欠番なし」ルールは現時点で満たされている（下表参照）。今後の並行採番時も、`develop` の最新版号を確認して連番を採る。
+>
+> 注（並行採番の充足）: `IADR-0052`〜`0056` は複数の並行ブランチが採番していたが、develop へのマージで順次充足された（本 PR の `IADR-0055`＝費用計測を含め欠番なし）。今後の並行採番時も `develop` の最新版号を確認して連番を採る（上記 0037〜0041 と同じ運用）。
 
 | IADR | タイトル | 状態 |
 | --- | --- | --- |
@@ -77,7 +79,8 @@
 | IADR-0049 | 実コンテナ統合 E2E は Testcontainers を基盤とし、CI から分離する | Accepted |
 | IADR-0050 | マルチサービス/認証つき統合 E2E の構成（extern alias・共有 DB・実 Keycloak トークン） | Accepted |
 | IADR-0051 | サービス間同期照会の s2s 認証（client_credentials・呼び出し側トークン伝播・least-privilege サービスロール） | Accepted |
+| IADR-0052 | AST の k8s デプロイは Helm chart（10 Worker 同型テンプレート）とし、共有インフラは MSP platform-infra を ExternalName で参照する | Accepted |
+| IADR-0053 | moomoo OpenD はダウンロード方式の Docker Image で常駐させ k8s に opend としてオプトイン配備する | Proposed |
+| IADR-0054 | 取引サイクルの本番スケジューラは収集の run-once HTTP トリガ＋Collection:Trigger モードで実現する | Accepted |
 | IADR-0055 | 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない） | Proposed |
-
-> 注（0052〜0054）: これらは in-flight（PR #123 / feat/122）が採番済み。develop へ未反映のため本索引では
-> 一時的に欠番に見えるが、PR #123 マージで充足する（0055 は衝突回避の先取り採番）。
+| IADR-0056 | moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） | Accepted |

@@ -23,9 +23,12 @@ plan_refs: []
 
 | 項目 | 内容 |
 | --- | --- |
-| 環境 | dev / stg / prod |
-| 手順 |  |
-| ロールバック |  |
+| 環境 | dev（ローカル k8s: k3d / Rancher Desktop 内蔵 k3s）/ stg・prod（k3s・#24） |
+| 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（microservices-platform#266 / IADR-0066） |
+| 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
+| スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
+| moomoo OpenD | 常駐モデル（IADR-0053）。`deploy/opend/`。起動時のみ対話デバイス検証が必要（無人自動再起動は不可）。#13 は `opend:11111` へ SIMULATE 接続 |
+| ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 
 ## 監視・アラート
 

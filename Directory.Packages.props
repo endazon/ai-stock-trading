@@ -6,6 +6,7 @@
   <ItemGroup>
     <!-- テスト（バージョンは基盤リポ microservices-platform と同一に保つ） -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="moomoo-api" Version="10.8.6808" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="FluentAssertions" Version="7.2.0" />

@@ -1,0 +1,36 @@
+{{- /* #121: 取引サイクルの本番スケジューラ（K8s CronJob）骨子。
+       既定 disabled = fail-safe（in-process ポーリング IADR-0023 を維持）。有効化には収集の
+       run-once トリガ（/internal/collection/run-once・#121 の C# 実装）が前提。休場日ガードは
+       run-once 側の市場カレンダー（IADR-0023）で担保する（CronJob は寄り〜引け相当のみ起動）。 */ -}}
+{{- if .Values.tradingCycle.cronjob.enabled }}
+{{- $c := .Values.tradingCycle.cronjob }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trading-cycle-trigger
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: trading-cycle-trigger
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  schedule: {{ $c.schedule | quote }}
+  # 前回が長引いても多重起動しない（サイクルの重複起動を避ける）。
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: {{ $c.image | quote }}
+              # run-once を叩く。休場日・費用停止は収集側でゲートされ no-op で返る（fail-safe）。
+              args: ["-fsS", "-m", "20", "-X", "POST", {{ $c.target | quote }}]
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+{{- end }}

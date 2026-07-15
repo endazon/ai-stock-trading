@@ -1,0 +1,7 @@
+# gitleaks 誤検知の無効化（fingerprint 指定）。実鍵は混入していない。
+#
+# deploy/opend/k8s/rsa-secret.example.yaml は RSA 秘密鍵 Secret の「例」（プレースホルダ・実鍵なし・#124/#13）。
+# commit 8b9210e で説明のため PEM マーカ行（BEGIN/END RSA PRIVATE KEY）を含めたため gitleaks の
+# private-key ルールが検知した。マーカ行は後続コミットで除去済みだが、gitleaks は commit 範囲（履歴）を
+# 走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない＝force-push しない方針）。
+8b9210e355f2cf83c455e67ecfcfe6884198f0c0:deploy/opend/k8s/rsa-secret.example.yaml:private-key:22
