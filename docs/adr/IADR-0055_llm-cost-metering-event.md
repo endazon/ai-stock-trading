@@ -55,6 +55,10 @@ plan_refs:
    `LlmCostIncurred` publish）を配線する。egress とメッセージングを疎結合に保つ。
 4. **トランザクション入れ子回避**（課題4）: 消費者内の `Record` は MassTransit の transactional outbox を
    使わない構成とし、`EfCostLedger` の月内直列化（アドバイザリロック）に委ねる。統合テストで確認する。
+5. **冪等性**（再配信対策）: MassTransit の at-least-once（再試行/再配信）で `LlmCostIncurred` が重複配信され得る。
+   費用は月次累計のため二重計上は統制判定を誤らせる。実装スライスで **メッセージ ID による重複排除**（消費済み
+   `MessageId` を台帳に記録し既処理なら no-op。IADR-0026 の決定的 UUID 方針と整合）を入れる。単価 0 既定では
+   影響は無害だが、実単価投入時に効くよう最初から冪等にする。
 
 ## 根拠・トレードオフ
 
