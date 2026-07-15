@@ -60,12 +60,28 @@ SDK は NuGet `moomoo-api`（`MMAPI4Net` / `Moomoo.OpenApi.MMAPI_Trd`・protobuf
 - [x] `MoomooBrokerAdapter` が OrderIntent を SIMULATE リクエストへ写像し、client 応答を BrokerOrder へ変換（TDD）
 - [x] Live 指定でも SIMULATE を用いる（実弾を撃たない）ことをテストで固定
 - [x] `Broker:Provider=moomoo` が解禁され MoomooBrokerAdapter を返す（BrokerFactory テスト）
-- [ ] 実 OpenD（SIMULATE 口座）で発注→状態追跡→約定が動作（ユーザ環境・#124 常駐 OpenD 前提）
+- [x] 実 OpenD（SIMULATE 口座）で発注→状態追跡→取消が動作（**2026-07-15 live 検証済**・#124 常駐 OpenD・RSA 暗号化）
+      - 接続（暗号化）→ GetAccList で SIMULATE 口座 accId=724808 → PlaceOrder(AAPL x1 @1.00 buy)→ orderId 採番 →
+        QueryOrder=Submitted → CancelOrder → Cancelled まで一巡を確認（port-forward `opend:11111`）。
+
+## 実 OpenD 結合（live 検証で確定した SDK 事項・MMAPI4Net 10.8.6808）
+
+- **接続**: `MMAPI.Init()` → `SetClientInfo/SetConnCallback/SetTrdCallback` → `InitConnect(host,port,encrypt)`。
+- **暗号化必須（cross-network）**: moomoo は別 Pod 間（worker→opend）の trade 接続に **RSA 暗号化**を要求する
+  （非暗号は OpenD が 127.0.0.1 listen のときのみ）。OpenD.xml `<rsa_private_key>`（PKCS#1 PEM ファイル）と
+  クライアント `SetRSAPrivateKey(鍵の**内容**文字列)`＋`InitConnect(encrypt:true)` を同一鍵で対にする（#124 側で配備）。
+- **口座取得**: `TrdGetAccList.C2S` は `userID` が protobuf required（`0`=現在ログインユーザ）。応答から
+  `TrdEnv==TrdEnv_Simulate` の `AccID` を採用。
+- **発注/取消**: `TrdPlaceOrder.C2S`／`TrdModifyOrder.C2S` は `packetID` が required（`MMAPI_Trd.NextPacketID()`）。
+  `TrdHeader` に `TrdEnv_Simulate` + `AccID` + `TrdMarket` を設定。成否は `Response.RetType==0`。
+- **相関**: 各リクエストは `uint nSerialNo` を返し、コールバック `OnReply_*(client,nSerialNo,Response)` で相関
+  （`TaskCompletionSource` 辞書・15s タイムアウト）。
 
 ## テスト方針
 
-- 単体（xUnit）: 写像（市場/売買/価格）・SIMULATE 強制・状態変換・fail-safe（client 例外→Rejected）・BrokerFactory 解禁。
-- 実結合（`MMApiMoomooTradeClient`）は live 検証（本セッション実行不可）。
+- 単体（xUnit・20 件）: 写像（市場/売買/価格）・SIMULATE 強制・状態変換・fail-safe（client 例外→Rejected）・BrokerFactory 解禁。
+- 実結合（`MMApiMoomooTradeClient`）は実 OpenD（SIMULATE）で live 検証済（2026-07-15・上記受け入れ基準）。
+  常駐 OpenD 依存のため CI 単体には含めない（手動 opt-in で検証）。
 
 ## 計画書との差異
 
