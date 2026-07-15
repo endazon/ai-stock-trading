@@ -4,6 +4,11 @@
 
 ### 新機能
 
+- **FR-04**: 実 LLM egress を LLM ゲートウェイ /complete へ委譲する (#79) (#125) (39cbcf3)
+- **FR-05**: moomoo ブローカアダプタ（SIMULATE 限定） (#130) (684d981)
+- **ADR-0002**: moomoo OpenD の Docker/k8s 試作一式 (#124) (#126) (eeebdfe)
+- **IADR-0052**: AST k8s Helm chart（10 Worker・共有インフラ参照・CronJob骨子 #121） (#123) (81a2ff4)
+- **IADR-0051**: サービス間同期照会の s2s 認証（呼び出し側トークン伝播・最小権限 trading-service） (#117) (4d4876d)
 - **FR-15,FR-20**: バックテスト基盤 Slice C（Stage 0 合格判定・段階昇格推奨・撤退キルスイッチ） (#101) (138cf6a)
 - **FR-15**: バックテスト基盤 Slice B（過剰適合補正ハーネス: ウォークフォワード・DSR・PBO） (#100) (69571c4)
 - **FR-15**: バックテスト基盤 Slice A（シミュレーションコア・コストモデル・結果集計） (#99) (081f618)
@@ -59,6 +64,9 @@
 
 ### ドキュメント
 
+- **FR-04**: 実 LLM 費用計測の設計（IADR-0055・イベント計上） (#79) (#127) (18e4c13)
+- **IADR-0051**: planning ADR-0007 参照ファイル名を実体に修正（owner-only-controls→trading-guard-and-margin） (#120) (1183fc5)
+- **NFR**: CHANGELOG を自動更新 (#110) (94005b5)
 - **NFR**: CHANGELOG を自動更新 (#54) (bebf9f9)
 - **FR-04,FR-05**: 建玉効果の注文分解方針（ドテン/部分決済）を IADR-0037 で確定 (#94) (a0752cd)
 - **IADR-0037**: 非同期契約の AsyncAPI 採用可否を再評価し当面不採用を確定（IADR-0009 再検討トリガ） (#93) (f55a4da)
@@ -72,8 +80,15 @@
 - **NFR**: CHANGELOG を自動更新 (#5) (abc7fc0)
 - **NFR**: OpenAPI を自動更新 (#4) (23645a9)
 
+### テスト
+
+- **IADR-0051**: s2s トークン伝播つき同期照会の実コンテナ E2E（#82 を締める） (#118) (7c5d5e3)
+- **IADR-0050**: 統合 E2E 基盤 Slice B/C（Keycloak OwnerOnly 認証・マルチサービス通しパイプライン） (#116) (1c19347)
+- **IADR-0049**: 実コンテナ統合 E2E 基盤（Testcontainers・compose healthcheck・CI 分離） (#114) (d070638)
+
 ### ビルド
 
+- **deps**: bump actions/setup-node from 6 to 7 (#128) (6bea0cd)
 - **deps**: bump planning from `07db93f` to `da20fc4` (#113) (c65ed86)
 - **deps**: bump peter-evans/create-pull-request from 7 to 8 (#2) (135baf2)
 
