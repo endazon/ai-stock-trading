@@ -14,4 +14,13 @@ public class HealthEndpointTests(InformationCollectionWorkerWebApplicationFactor
         var res = await factory.CreateClient().GetAsync("/health/live");
         res.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    // #121: 本番スケジューラ（K8s CronJob）の run-once トリガ。1 巡回を起動し 200 を返す
+    //（既定の no-op 情報源では収集ゼロだが、エンドポイントの疎通＝CronJob からの起動を保証する）。
+    [Fact]
+    public async Task RunOnce_エンドポイントは_200_を返す()
+    {
+        var res = await factory.CreateClient().PostAsync("/internal/collection/run-once", content: null);
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }

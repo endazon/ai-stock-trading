@@ -29,6 +29,19 @@
       "realmRoles": ["trading-owner"]
     },
     {
+      "username": "developer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "developer@example.com",
+      "firstName": "Dev",
+      "lastName": "Developer",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "developer", "temporary": false }
+      ],
+      "realmRoles": ["trading-owner"]
+    },
+    {
       "username": "service-account-ai-stock-trading-svc",
       "enabled": true,
       "serviceAccountClientId": "ai-stock-trading-svc",

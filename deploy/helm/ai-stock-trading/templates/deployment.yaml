@@ -1,0 +1,112 @@
+{{- /* #122: 10 Worker を同型の Deployment としてレンダリングする（全て Web SDK :8080）。 */ -}}
+{{- $g := .Values.global -}}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    app: {{ $name }}-service
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}-service
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}-service
+    spec:
+      containers:
+        - name: {{ $name }}-service
+          image: "{{ $g.image.registry }}/{{ $svc.image }}:{{ $svc.tag | default $g.image.tag }}"
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: RabbitMq__ConnectionString
+              value: {{ $g.rabbitmqConnectionString | quote }}
+            - name: Otlp__Endpoint
+              value: {{ $g.otlpEndpoint | quote }}
+            {{- if $svc.db }}
+            # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。
+            - name: ConnectionStrings__DefaultConnection
+              value: "Host={{ $g.db.host }};Port={{ $g.db.port }};Database={{ $svc.db }};Username={{ $g.db.username }};Password={{ $g.db.password }}"
+            {{- end }}
+            {{- if $svc.auth }}
+            - name: Auth__Authority
+              value: {{ $g.authAuthority | quote }}
+            {{- end }}
+            {{- range $e := $svc.extraEnv }}
+            - name: {{ $e.name }}
+              {{- if $e.secretKeyRef }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $e.secretKeyRef.name }}
+                  key: {{ $e.secretKeyRef.key }}
+                  {{- if $e.secretKeyRef.optional }}
+                  optional: true
+                  {{- end }}
+              {{- else }}
+              value: {{ $e.value | quote }}
+              {{- end }}
+            {{- end }}
+            {{- /* #121: CronJob スケジューラ有効時、情報収集は External（in-process 巡回を停止し run-once 起動）へ切替える。
+                   これを入れないと in-process ポーリングと CronJob が二重起動する。既定（cronjob 無効）は InProcess。 */}}
+            {{- if and (eq $name "information-collection") $.Values.tradingCycle.cronjob.enabled }}
+            - name: Collection__Trigger
+              value: "External"
+            {{- end }}
+            {{- /* #13: 発注先。既定 paper（fail-safe・実弾なし）。moomoo.enabled で OpenD 経由 SIMULATE 発注へ。
+                   cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
+            {{- if eq $name "order-execution" }}
+            - name: Broker__Provider
+              value: {{ ternary "moomoo" "paper" $.Values.moomoo.enabled | quote }}
+            {{- if $.Values.moomoo.enabled }}
+            - name: Broker__Moomoo__OpenD__Host
+              value: {{ $.Values.moomoo.opend.host | quote }}
+            - name: Broker__Moomoo__OpenD__Port
+              value: {{ $.Values.moomoo.opend.port | quote }}
+            - name: Broker__Moomoo__OpenD__RsaPrivateKeyPath
+              value: {{ printf "%s/%s" $.Values.moomoo.opend.rsaMountPath $.Values.moomoo.opend.rsaSecretKey | quote }}
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          {{- /* #13: OpenD 暗号化通信用 RSA 秘密鍵（moomoo-rsa Secret）を read-only でマウント。 */}}
+          {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+          volumeMounts:
+            - name: moomoo-rsa
+              mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
+              readOnly: true
+          {{- end }}
+      {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+      volumes:
+        - name: moomoo-rsa
+          secret:
+            secretName: {{ $.Values.moomoo.opend.rsaSecretName }}
+            items:
+              - key: {{ $.Values.moomoo.opend.rsaSecretKey }}
+                path: {{ $.Values.moomoo.opend.rsaSecretKey }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,18 @@
+{{- /* #122 / MSP IADR-0066: AST の各 Worker は共有インフラを素のサービス名で参照する
+       （appsettings/compose 既定と一致）。infra は MSP の platform-infra namespace にあるため、
+       ai-stock-trading namespace 内に同名の ExternalName エイリアスを張り名前解決させる。 */ -}}
+{{- if .Values.infraAliases.enabled }}
+{{- $ns := .Values.namespace.name }}
+{{- $infra := .Values.infraAliases.infraNamespace }}
+{{- range $svc := .Values.infraAliases.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  namespace: {{ $ns }}
+spec:
+  type: ExternalName
+  externalName: {{ $svc }}.{{ $infra }}.svc.cluster.local
+{{- end }}
+{{- end }}

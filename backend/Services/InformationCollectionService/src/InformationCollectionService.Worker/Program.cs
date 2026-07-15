@@ -72,13 +72,25 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
-// 定時ポーリング（収集→保存→イベント発行）。
-builder.Services.AddHostedService<CollectionPollingService>();
+// 定時ポーリング（収集→保存→イベント発行）。#121: run-once エンドポイントから解決できるよう singleton 登録し、
+// 同一インスタンスを HostedService としても起動する（Trigger=External では ExecuteAsync が巡回せず待機のみ）。
+builder.Services.AddSingleton<CollectionPollingService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CollectionPollingService>());
 
 var app = builder.Build();
 
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
+
+// #121, FR-02, IADR-0023: 本番スケジューラ（K8s CronJob）からの run-once トリガ。1 巡回（RunOnceAsync）を起動する。
+// in-process ポーリングと同じ処理で、休場日ガードは下流 TradeDecision（IADR-0023 の市場カレンダー）が担保する。
+// 費用統制 Halted・収集ゼロは RunOnceAsync 内で no-op に倒れる（fail-safe）。
+app.MapPost("/internal/collection/run-once",
+    async (CollectionPollingService poller, CancellationToken ct) =>
+    {
+        await poller.RunOnceAsync(ct);
+        return Results.Ok();
+    });
 
 app.Run();
 

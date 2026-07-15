@@ -1,0 +1,130 @@
+# ai-stock-trading k8s chart values（MSP 連結ローカル k8s dev 既定）。
+# fail-safe: 外部連携（実 LLM/市場データ/Discord/実発注）は既定 no-op / paper。
+# 実接続は Secret `ast-secrets`（空既定）を明示設定したときのみ有効化する。
+
+global:
+  image:
+    # ローカル import 接頭辞（values-local と一致・IfNotPresent で pull しない）。
+    registry: k3d-local
+    tag: latest
+    pullPolicy: IfNotPresent
+  # 共有インフラ（MSP platform-infra）への接続既定。ExternalName エイリアス（下記 infraAliases）で
+  # 素のサービス名を platform-infra の FQDN へ解決する。
+  rabbitmqConnectionString: amqp://guest:guest@rabbitmq:5672
+  otlpEndpoint: http://otel-collector:4317
+  authAuthority: http://keycloak:8080/realms/ai-stock-trading
+  db:
+    host: postgres
+    port: 5432
+    # 共有 Postgres 上の AST 用ユーザ（MSP infra init が作成: user=ai / owner of *_svc）。
+    username: ai
+    password: ai
+
+namespace:
+  create: true
+  name: ai-stock-trading
+
+# 共有インフラを素のサービス名で解決するための ExternalName（platform-infra を指す）。
+infraAliases:
+  enabled: true
+  infraNamespace: platform-infra
+  services: [postgres, rabbitmq, keycloak, otel-collector]
+
+# #121: 取引サイクルの本番スケジューラ（K8s CronJob）。
+# 既定 disabled = fail-safe（in-process ポーリング IADR-0023 を維持）。
+# 有効化には収集の run-once トリガ（#121 の C# 実装）が前提。schedule は市場開場時間帯に合わせる
+# （休場ガードは run-once 側の市場カレンダーで担保する）。
+tradingCycle:
+  cronjob:
+    enabled: false
+    # 例: 平日 米国東部 寄り付き〜引け相当（UTC）。実運用では市場カレンダーで休場日を除外する。
+    schedule: "*/30 13-20 * * 1-5"
+    # 収集の run-once を叩く軽量イメージ（#121 実装後に有効化）。
+    image: curlimages/curl:8.11.1
+    target: http://information-collection-service:8080/internal/collection/run-once
+
+# #13: moomoo（OpenD）発注の in-cluster 配線。既定 disabled = fail-safe（order-execution は paper・実発注しない）。
+# ⚠️ 有効化前提（いずれも未マージ）: (1) #13（PR #130・moomoo アダプタ本体。未マージのイメージで enabled=true にすると
+#    order-execution は IADR-0016 ゲートで起動時停止＝CrashLoopBackOff）, (2) #124（PR #126・OpenD 常駐＋RSA。
+#    deploy/opend/ は本リポジトリにまだ無い）＋ Secret moomoo-rsa（RSA 秘密鍵・OpenD と同一鍵）。
+# cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016）。
+moomoo:
+  enabled: false
+  opend:
+    host: opend
+    port: 11111
+    rsaSecretName: moomoo-rsa
+    rsaSecretKey: opend_rsa.pem
+    rsaMountPath: /opt/opend/rsa
+
+# 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
+# db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
+services:
+  audit:
+    image: ai-stock-trading/audit-service
+    db: audit_svc
+    auth: true
+  configuration:
+    image: ai-stock-trading/configuration-service
+    db: configuration_svc
+    auth: true
+  cost-control:
+    image: ai-stock-trading/cost-control-service
+    db: cost_control_svc
+    auth: true
+  information-collection:
+    image: ai-stock-trading/information-collection-service
+    extraEnv:
+      # fail-safe: 空=NoOp（実 Finnhub は #81）。
+      - { name: Collection__Source__Provider, value: "" }
+      - name: Collection__Source__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      # fail-safe: 空=プレースホルダ（Normal。#79/#76）。
+      - { name: CostControl__BaseUrl, value: "" }
+  market-monitor:
+    image: ai-stock-trading/market-monitor-service
+    db: market_monitor_svc
+    auth: true
+    extraEnv:
+      - { name: RiskManagement__BaseUrl, value: "" }
+      # IADR-0051: s2s 同期照会（open-positions）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+  notification:
+    image: ai-stock-trading/notification-service
+    extraEnv:
+      # fail-safe: 空=NoOp（外部送信しない。実 Discord は #15）。
+      - { name: Notifications__Provider, value: "" }
+      - name: Notifications__Discord__WebhookUrl
+        secretKeyRef: { name: ast-secrets, key: discord-webhook-url, optional: true }
+  order-execution:
+    image: ai-stock-trading/order-execution-service
+    db: order_execution_svc
+    # Broker__Provider は template が moomoo.enabled で決定する（既定 paper・moomoo 有効時は OpenD 経由 SIMULATE・#13）。
+  report:
+    image: ai-stock-trading/report-service
+    db: report_svc
+    auth: true
+  risk-management:
+    image: ai-stock-trading/risk-management-service
+    db: risk_management_svc
+    auth: true
+  trade-decision:
+    image: ai-stock-trading/trade-decision-service
+    extraEnv:
+      - { name: Reports__BaseUrl, value: "" }
+      - { name: RiskManagement__BaseUrl, value: "" }
+      # fail-safe: 空=Placeholder LLM（呼ばない。実 LLM は #79）。
+      - name: ANTHROPIC_API_KEY
+        secretKeyRef: { name: ast-secrets, key: anthropic-api-key, optional: true }
+      # IADR-0051: s2s 同期照会（daily-policy/sizing-context）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }

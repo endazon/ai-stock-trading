@@ -93,6 +93,36 @@ public class CollectionPollingServiceTests
         await harness.Stop();
     }
 
+    // #121: fail-safe。既定トリガは InProcess（現行の in-process ポーリングを維持）。
+    [Fact]
+    public void 既定のトリガは_InProcess()
+    {
+        new CollectionOptions().Trigger.Should().Be(CollectionTrigger.InProcess);
+    }
+
+    // #121: External（本番スケジューラ=K8s CronJob）では in-process 巡回を行わない
+    //（起動しても収集・発行しない。起動は run-once エンドポイント経由）。
+    [Fact]
+    public async Task External_モードでは_in_process_巡回を行わない()
+    {
+        var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "本文", DateTimeOffset.UtcNow);
+        await using var provider = Build(new StubSource([raw]));
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var svc = new CollectionPollingService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new CollectionOptions { Trigger = CollectionTrigger.External, PollIntervalSeconds = 1 }),
+            NullLogger<CollectionPollingService>.Instance);
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(300);
+        await svc.StopAsync(CancellationToken.None);
+
+        (await harness.Published.Any<InformationCollected>()).Should().BeFalse();
+
+        await harness.Stop();
+    }
+
     // NFR（費用）, IADR-0031: 実効間隔の境界（Normal=base、Throttled=base×2、Halted=base×2）。
     [Fact]
     public void 実効間隔は統制状態で決まる()
