@@ -4,6 +4,6 @@ description: ai-stock-trading ユニット（10 Worker）の k8s デプロイ ch
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-# 起点: #122（AST k8s chart）/ #24（k3s デプロイ）/ #121（取引サイクル CronJob）/ IADR-0051
+# 起点: #122（AST k8s chart）/ #24（k3s デプロイ）/ #121（取引サイクル CronJob）/ IADR-0052
 # 共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は MSP 側 platform-infra を参照する
 # （ExternalName エイリアス。MSP IADR-0066 と対）。

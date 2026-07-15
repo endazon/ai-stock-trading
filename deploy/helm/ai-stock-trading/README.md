@@ -17,6 +17,8 @@ MSP 側で `platform-infra` と AST 用 DB（user `ai`・`*_svc`）・Keycloak r
 
 k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推奨）** か **Docker Desktop + k3d**。
 スクリプトが `nerdctl`/`k3d` の有無で自動判定する（`K8S_LOCAL_RUNTIME=rancher|k3d` で明示可）。
+> 注: 判定は **`nerdctl` の存在**を優先し rancher 経路を選ぶ。両方入っている等で意図と異なる場合は
+> `K8S_LOCAL_RUNTIME` で明示指定する。
 
 ```bash
 scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ ast-secrets → helm install

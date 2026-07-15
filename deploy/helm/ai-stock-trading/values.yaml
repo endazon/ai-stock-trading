@@ -73,6 +73,11 @@ services:
     auth: true
     extraEnv:
       - { name: RiskManagement__BaseUrl, value: "" }
+      # IADR-0051: s2s 同期照会（open-positions）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   notification:
     image: ai-stock-trading/notification-service
     extraEnv:
@@ -102,6 +107,11 @@ services:
       # fail-safe: 空=Placeholder LLM（呼ばない。実 LLM は #79）。
       - name: ANTHROPIC_API_KEY
         secretKeyRef: { name: ast-secrets, key: anthropic-api-key, optional: true }
+      # IADR-0051: s2s 同期照会（daily-policy/sizing-context）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
 
 resources:
   requests: { cpu: 50m, memory: 128Mi }

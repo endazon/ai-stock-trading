@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# #122 / IADR-0051: AST を既存の k3d クラスタ（MSP 連結・platform-infra 稼働済み）へデプロイする。
+# #122 / IADR-0052: AST を既存の k3d クラスタ（MSP 連結・platform-infra 稼働済み）へデプロイする。
 # 前提: MSP 側 scripts/k8s-local-up.sh が platform-infra（Postgres/RabbitMQ/Keycloak/otel）と
 # AST 用 DB（ai ユーザ・*_svc）・Keycloak realm `ai-stock-trading` を用意済みであること。
 #
@@ -20,6 +20,8 @@ kubectl create secret generic ast-secrets -n "$NS" \
   --from-literal=anthropic-api-key="${ANTHROPIC_API_KEY:-}" \
   --from-literal=finnhub-api-key="${FINNHUB_API_KEY:-}" \
   --from-literal=discord-webhook-url="${DISCORD_WEBHOOK_URL:-}" \
+  --from-literal=service-auth-client-id="${SERVICEAUTH_CLIENTID:-ai-stock-trading-svc}" \
+  --from-literal=service-auth-client-secret="${SERVICEAUTH_CLIENTSECRET:-dev-only-service-secret}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [3/3] helm upgrade --install"
