@@ -1,0 +1,91 @@
+# #124 / IADR-0053: moomoo OpenD 常駐（k8s・オプトイン・常駐モデル）。
+# 既定では適用しない（この manifest を明示適用したときのみ opend が立つ）＝fail-safe。
+# 発注執行（#13）は IBrokerAdapter 経由で opend:11111 へ接続する（SIMULATE 前提・実弾なし）。
+# 前提: イメージをローカルビルド＆import 済み（deploy/opend/README.md）、Secret moomoo-credentials 作成済み。
+#
+# ⚠️ 常駐モデル（PoC 結論・IADR-0053）: OpenD は**起動/再起動のたびに対話でデバイス検証（画像/SMS）が必要**で、
+#    デバイス状態を永続化しても回避できない（IP/セッション依存を確認）。よって**完全無人の自動再起動は不可**。
+#    運用: 起動後に `kubectl -n ai-stock-trading attach -it deploy/opend` で 1 回検証（input_pic_verify_code /
+#    input_phone_verify_code）→ 以降は**再起動を避けて常駐**させる。再起動時は再度手動検証が要る。
+#    そのため container に stdin/tty を付け、再起動を誘発しない（rolling 不使用・Recreate・単一レプリカ）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  replicas: 1
+  # OpenD は 1 セッション前提。複数レプリカにしない（ロールアウトは Recreate）。
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: opend }
+  template:
+    metadata:
+      labels: { app: opend }
+    spec:
+      containers:
+        - name: opend
+          image: "k3d-local/ai-stock-trading/opend:latest"
+          imagePullPolicy: IfNotPresent
+          # 起動時の対話デバイス検証（kubectl attach）のため stdin/tty を保持する（常駐モデル）。
+          stdin: true
+          tty: true
+          ports:
+            - { containerPort: 11111, name: api }
+          env:
+            - name: OPEND_API_PORT
+              value: "11111"
+            # #13: cross-network（worker→opend）trade は RSA 暗号化必須。鍵は Secret moomoo-rsa をマウントし参照する。
+            - name: OPEND_RSA_KEY_FILE
+              value: "/opt/opend/rsa/opend_rsa.pem"
+            - name: OPEND_LOGIN_ACCOUNT
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-account }
+            - name: OPEND_LOGIN_PWD_MD5
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
+          # OpenD は TCP API（HTTP ではない）。TCP 疎通で readiness を判定する。
+          # 注意: OpenD は**検証前から** 11111 を listen するため、probe 通過≠ログイン完了。
+          # 実運用の「使える」判定は attach でのログイン成功確認（常駐モデル）。
+          # livenessProbe は意図的に付けない: 自動再起動は対話再検証待ちで停止を招く（常駐モデル・README 参照）。
+          readinessProbe:
+            tcpSocket: { port: 11111 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 20
+          # ログ/状態の保存先（/root/.com.moomoo.OpenD）。※デバイス認証の回避には使えない
+          # （PoC で永続化しても再起動時に再検証が必要と確認・IADR-0053）。ログ保全目的で残す。
+          volumeMounts:
+            - name: persist
+              mountPath: /root/.com.moomoo.OpenD
+            # #13: RSA 秘密鍵（暗号化通信用）を read-only でマウント。クライアントと同一鍵を用いる。
+            - name: rsa
+              mountPath: /opt/opend/rsa
+              readOnly: true
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - name: persist
+          persistentVolumeClaim:
+            claimName: opend-persist
+        - name: rsa
+          secret:
+            secretName: moomoo-rsa
+            items:
+              - { key: opend_rsa.pem, path: opend_rsa.pem }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+  labels: { app: opend }
+spec:
+  selector: { app: opend }
+  ports:
+    - { name: api, port: 11111, targetPort: 11111 }

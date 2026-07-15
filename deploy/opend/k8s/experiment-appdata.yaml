@@ -1,0 +1,53 @@
+# #124 実験: OpenD のインストール側状態（/opt/opend/AppData.dat 等）も永続化して、
+# デバイストークンが install 側にあるかを検証する（再認証を回避できるか）。
+# initContainer でイメージの /opt/opend を PVC へ一度シードし、以降は PVC の install/home を使う。
+# ※ 再認証が IP 依存なら本実験でも回避できない（その場合は常駐モデルが結論）。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opend-state
+  namespace: ai-stock-trading
+  labels: { app: opend-experiment }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 4Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: opend-appdata
+  namespace: ai-stock-trading
+  labels: { app: opend-experiment }
+spec:
+  restartPolicy: Never
+  initContainers:
+    # PVC が空なら、イメージの /opt/opend（binary/libs/AppData.dat 等）を install/ へシードする。
+    - name: seed
+      image: k3d-local/ai-stock-trading/opend:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c", "mkdir -p /state/install /state/home && if [ ! -x /state/install/OpenD ]; then cp -a /opt/opend/. /state/install/ && echo seeded; else echo exists; fi"]
+      volumeMounts:
+        - { name: state, mountPath: /state }
+  containers:
+    - name: opend
+      image: k3d-local/ai-stock-trading/opend:latest
+      imagePullPolicy: IfNotPresent
+      stdin: true
+      tty: true
+      env:
+        - name: OPEND_LOGIN_ACCOUNT
+          valueFrom:
+            secretKeyRef: { name: moomoo-credentials, key: login-account }
+        - name: OPEND_LOGIN_PWD_MD5
+          valueFrom:
+            secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
+      volumeMounts:
+        # インストール側（AppData.dat 含む）と HOME 側の両方を PVC から供給し、更新を永続化する。
+        - { name: state, mountPath: /opt/opend, subPath: install }
+        - { name: state, mountPath: /root/.com.moomoo.OpenD, subPath: home }
+  volumes:
+    - name: state
+      persistentVolumeClaim:
+        claimName: opend-state
