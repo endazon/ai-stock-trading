@@ -124,7 +124,17 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 - ➡️ **常駐モデルを採用**: 起動時のみ有人で対話検証（`attach`）、以降は再起動を避けて常駐。#13 は稼働中 `opend:11111` へ。
 - 残（未検証）: 海外 IP（Hetzner）からの接続可否・ToS、長期常駐安定性・強制アップデート、取引 PW アンロック（SIMULATE 範囲）。
 
+## 既知のリスク・制約（dev 割り切り）
+
+- **root 実行**: コンテナは root で動く（OpenD は `/root/.com.moomoo.OpenD` を HOME 前提に使うため）。取引口座資格情報を
+  扱うプロセスとして本番では非 root 化＋`securityContext`（`runAsNonRoot` 等）が望ましい（要 HOME/永続化パスの再調整）。
+  恒久は Vault/External Secrets（暫定は k8s Secret）。
+- **資格情報の露出面**: `entrypoint.sh` は env の資格情報から `OpenD.xml` を生成する（コマンドライン引数には載せない
+  ＝`ps` 露出は回避）。ただし `OpenD.xml` はコンテナ内に平文で存在する。dev 割り切り。
+- **livenessProbe を意図的に付けない**: OpenD は**再起動＝対話再検証**（常駐モデル）。liveness による自動再起動は
+  再検証待ちで停止する状態を招くため付けない（ハング検知は監視＋有人対応とする）。readiness(TCP) も
+  「検証前から listen」する点に注意（probe 通過≠ログイン完了）。
+
 ## 実験（否定結果・参考）
 `k8s/experiment-appdata.yaml` は install 側（AppData.dat）永続化でも再検証が要ることを確認した検証用（採用しない）。
 不要になったら `kubectl -n ai-stock-trading delete pod opend-appdata; kubectl -n ai-stock-trading delete pvc opend-state`。
-- OpenD の長期常駐安定性・強制アップデート頻度

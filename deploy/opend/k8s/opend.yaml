@@ -48,6 +48,7 @@ spec:
           # OpenD は TCP API（HTTP ではない）。TCP 疎通で readiness を判定する。
           # 注意: OpenD は**検証前から** 11111 を listen するため、probe 通過≠ログイン完了。
           # 実運用の「使える」判定は attach でのログイン成功確認（常駐モデル）。
+          # livenessProbe は意図的に付けない: 自動再起動は対話再検証待ちで停止を招く（常駐モデル・README 参照）。
           readinessProbe:
             tcpSocket: { port: 11111 }
             initialDelaySeconds: 20
