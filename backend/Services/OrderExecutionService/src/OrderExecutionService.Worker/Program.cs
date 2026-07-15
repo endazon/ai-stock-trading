@@ -32,8 +32,15 @@ builder.Services.AddDbContext<OrderExecutionDbContext>(opt => opt.UseNpgsql(conn
 builder.Services.AddAiStockTradingHealthChecks()
     .AddNpgSql(connStr, tags: ["ready"]);
 
-// IADR-0016: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
-var brokerAdapter = BrokerFactory.Create(builder.Configuration["Broker:Provider"]);
+// IADR-0016, #13: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
+// moomoo 選択時は OpenD 接続クライアント（IMoomooTradeClient）を構成し SIMULATE 限定で発注する（実弾を撃たない）。
+var brokerProvider = builder.Configuration["Broker:Provider"];
+IMoomooTradeClient? moomooClient = BrokerFactory.IsMoomoo(brokerProvider)
+    ? new MMApiMoomooTradeClient(
+        MoomooBrokerOptions.FromConfiguration(builder.Configuration),
+        LoggerFactory.Create(lb => lb.AddSerilog()).CreateLogger<MMApiMoomooTradeClient>())
+    : null;
+var brokerAdapter = BrokerFactory.Create(brokerProvider, moomooClient);
 builder.Services.AddSingleton(brokerAdapter);
 
 builder.Services.AddSingleton<IClock, SystemClock>();
