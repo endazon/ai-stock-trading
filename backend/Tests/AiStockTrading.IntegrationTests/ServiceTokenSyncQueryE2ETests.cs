@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 extern alias ReportWorker;
+extern alias CostControlWorker;
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
@@ -38,6 +39,7 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
     private IContainer? _keycloak;
     private WebApplicationFactory<RiskManagementWorker::Program>? _riskFactory;
     private WebApplicationFactory<ReportWorker::Program>? _reportFactory;
+    private WebApplicationFactory<CostControlWorker::Program>? _costFactory;
     private HttpClient? _tokenHttp;
     private string _tokenEndpoint = "";
 
@@ -97,6 +99,9 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
             .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
         _reportFactory = new WebApplicationFactory<ReportWorker::Program>()
             .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
+        // #79, IADR-0031/0051: poller が s2s で照会する /costs/state の提供側。
+        _costFactory = new WebApplicationFactory<CostControlWorker::Program>()
+            .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
         _tokenHttp = new HttpClient();
     }
 
@@ -107,6 +112,8 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
             await _riskFactory.DisposeAsync();
         if (_reportFactory is not null)
             await _reportFactory.DisposeAsync();
+        if (_costFactory is not null)
+            await _costFactory.DisposeAsync();
 
         // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
         var disposals = new List<Task>();
@@ -142,15 +149,20 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
         var riskService = _riskFactory.CreateDefaultClient(new ServiceTokenHandler(tokenProvider));
         var reportAnon = _reportFactory!.CreateClient();
         var reportService = _reportFactory.CreateDefaultClient(new ServiceTokenHandler(tokenProvider));
+        var costAnon = _costFactory!.CreateClient();
+        var costService = _costFactory.CreateDefaultClient(new ServiceTokenHandler(tokenProvider));
 
         // 提供側の起動（実 EF Migration・MassTransit 購読）を待つ。
         await WaitReadyAsync(riskAnon);
         await WaitReadyAsync(reportAnon);
+        await WaitReadyAsync(costAnon);
 
         // 無トークン → 401（OwnerOrService も未認証は弾く）。
         (await riskAnon.GetAsync("/risk-controls/open-positions")).StatusCode
             .Should().Be(HttpStatusCode.Unauthorized, "未認証の同期照会は 401");
         (await reportAnon.GetAsync("/reports/daily-policy")).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized, "未認証の同期照会は 401");
+        (await costAnon.GetAsync("/costs/state")).StatusCode
             .Should().Be(HttpStatusCode.Unauthorized, "未認証の同期照会は 401");
 
         // trading-service トークン → 読み取り系を通過。open-positions/sizing-context はデータ有無に依らず 200。
@@ -164,12 +176,24 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
             .Should().Be(HttpStatusCode.NotFound,
                 "trading-service で daily-policy の認可を通過（空 DB のためデータは 404）");
 
+        // #79, IADR-0031: 定時サイクル poller が費用統制の状態を照会できること（実 Keycloak トークンで OwnerOrService を通過）。
+        (await costService.GetAsync("/costs/state")).StatusCode
+            .Should().Be(HttpStatusCode.OK, "trading-service で costs/state を通過（poller の間隔延長/停止の入力）");
+        (await costService.GetAsync("/costs/review?capital=1000000")).StatusCode
+            .Should().Be(HttpStatusCode.OK, "trading-service で costs/review を通過");
+
         // 非回帰（最小権限）: 書き込み系（OwnerOnly）を trading-service で呼ぶと 403。認可は本体実行前に評価される
         // ため、リクエストボディの妥当性に依らず 403 になる。
         var write = await riskService.PostAsJsonAsync(
             "/risk-controls/kill-switch/engage", new { reason = "e2e" });
         write.StatusCode.Should().Be(HttpStatusCode.Forbidden,
             "サービスロール（trading-service）は書き込み系（OwnerOnly）を実行できない");
+
+        // 費用計上（OwnerOnly）も trading-service では 403（サービスからの計上はイベント経由・IADR-0055 決定1）。
+        var costWrite = await costService.PostAsJsonAsync(
+            "/costs/record", new { Category = "Llm", Amount = 1m });
+        costWrite.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "サービスロールは費用の書き込み（/costs/record）を実行できない＝最小権限");
     }
 
     private static async Task WaitReadyAsync(HttpClient client)

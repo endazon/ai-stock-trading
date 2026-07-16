@@ -8,9 +8,10 @@ related_ids:
   - IADR-0029 # sizing-context 同期 API（呼び出し側 HttpSizingContextProvider）
   - IADR-0030 # open-positions 同期 API（呼び出し側 HttpPositionStore・サイレント縮退の指摘元）
   - IADR-0050 # マルチサービス/認証つき統合 E2E（#82・本 IADR に依存）
+  - IADR-0031 # 費用統制 poller の同期照会（#79 で /costs/state を OwnerOrService へ追加）
 author: claude
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-16
 plan_refs:
   - "../../planning/projects/microservices-platform/07_adr/ADR-0004_authz-abac.md"
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
@@ -74,13 +75,20 @@ plan_refs:
 - ADR-0007 は kill switch・リスク設定・段階昇格を「利用者のみ」に限定し、エンドポイントのコメントも
   「**生成AI・自動処理はこのロールを持たない**」と明記している。サービスアカウントへ `trading-owner` を
   与えると kill switch 操作・設定変更まで可能になり、この意図に反する（**過剰権限**）。
-- そこで新ロール `trading-service` を追加し、**読み取り系の 3 エンドポイントのみ** `OwnerOrService`
+- そこで新ロール `trading-service` を追加し、**読み取り系のエンドポイントのみ** `OwnerOrService`
   ポリシー（`trading-owner` **または** `trading-service`）へ分離する。書き込み系（kill switch・settings・
-  report confirm 等）は厳格 `OwnerOnly` のまま。サービスアカウントには `trading-service` のみ付与する。
+  report confirm・費用計上 等）は厳格 `OwnerOnly` のまま。サービスアカウントには `trading-service` のみ付与する。
 - 対象エンドポイントの再編:
   - RiskManagement: `/risk-controls/sizing-context`・`/risk-controls/open-positions` → `OwnerOrService`。
     その他（kill-switch・settings）は `OwnerOnly` 据え置き。
   - Reports: `/reports/daily-policy`（GET）→ `OwnerOrService`。その他（一覧・確定等）は `OwnerOnly` 据え置き。
+  - CostControl（#79 で追加・2026-07-16）: `/costs/state`・`/costs/review`（GET）→ `OwnerOrService`
+    （定時サイクル poller が統制状態を照会する・IADR-0031）。**`/costs/record`（費用計上）は `OwnerOnly` 据え置き**
+    ＝サービスに費用の書き込み権限は与えない（サービスからの計上はイベント `LlmCostIncurred`・IADR-0055 決定1）。
+
+> 実装上の注意（#79 で判明）: 認可は**親グループに付けず** read/owner のサブグループで指定する。親に
+> `RequireAuthorization(OwnerOnly)` を残したままサブグループへ `OwnerOrService` を足すと**ポリシーが合成され**
+> OwnerOnly も要求されてしまい、サービストークンが 403 になる（RiskManagement/Reports は親に付けていない）。
 
 ### 決定 4: 秘密未設定・取得失敗時は fail-safe（現行挙動）を厳密に保つ
 

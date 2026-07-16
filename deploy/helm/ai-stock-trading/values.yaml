@@ -74,13 +74,24 @@ services:
     auth: true
   information-collection:
     image: ai-stock-trading/information-collection-service
+    # auth=true は Auth__Authority の注入を意味する。本サービスは自身の API を認証しない（server 側 auth は無し）が、
+    # **呼び出し側**として s2s トークン（client_credentials）の token エンドポイント導出に Authority が要る（IADR-0051）。
+    auth: true
     extraEnv:
       # fail-safe: 空=NoOp（実 Finnhub は #81）。
       - { name: Collection__Source__Provider, value: "" }
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
-      # fail-safe: 空=プレースホルダ（Normal。#79/#76）。
-      - { name: CostControl__BaseUrl, value: "" }
+      # NFR（費用）, IADR-0031/0051 (#79): 定時サイクルの費用統制ゲート。費用統制サービスの GET /costs/state を
+      # s2s（trading-service）で同期照会し、Throttled なら間隔延長・Halted なら巡回停止する。
+      # 照会不達・401・例外は Normal（停止せず）へ倒す fail-safe（IADR-0031）。単価既定 0（IADR-0055）のため
+      # 費用は積み上がらず、既定では Normal のまま＝実単価を投入して初めて効く。
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      # IADR-0051: s2s 同期照会（costs/state）用の client_credentials。fail-safe: 未設定=認証なし→401→Normal。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   market-monitor:
     image: ai-stock-trading/market-monitor-service
     db: market_monitor_svc
