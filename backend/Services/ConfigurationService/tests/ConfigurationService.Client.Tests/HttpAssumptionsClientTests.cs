@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Configuration.Client.Tests;
 
-// FR-17, IADR-0060 決定 1/5: GET /assumptions の同期照会。失敗（401/500・不正応答・タイムアウト・不達）は例外を出さず
+// FR-17, IADR-0064 決定 1/5: GET /assumptions の同期照会。失敗（401/500・不正応答・タイムアウト・不達）は例外を出さず
 // null（＝取得不可）に倒し、縮退の判断は CachedAssumptionsProvider に委ねることを検証する。
 public class HttpAssumptionsClientTests
 {

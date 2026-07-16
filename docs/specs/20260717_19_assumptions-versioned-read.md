@@ -9,7 +9,7 @@ related_ids:
   - ADR-0007
   - IADR-0021
   - IADR-0051
-  - IADR-0060
+  - IADR-0064
 author: claude
 created: 2026-07-17
 plan_refs:
@@ -20,7 +20,7 @@ related_specs:
   - "20260710_configuration-assumptions.md（#19 Slice A・設定サービス本体）"
   - "../adr/IADR-0021_trading-assumptions-configuration.md（設定サービスが前提条件を所有する決定）"
   - "../adr/IADR-0051_service-to-service-auth.md（s2s 認証・読み取りは OwnerOrService）"
-  - "../adr/IADR-0060_assumptions-versioned-resolution.md（本スライスの決定）"
+  - "../adr/IADR-0064_assumptions-versioned-resolution.md（本スライスの決定）"
 ---
 
 # 仕様書: バージョン付き全体前提条件の解決基盤（Issue #19 Slice B）
@@ -74,7 +74,7 @@ related_specs:
 
 ## 設計
 
-詳細は [IADR-0060](../adr/IADR-0060_assumptions-versioned-resolution.md)。要点:
+詳細は [IADR-0064](../adr/IADR-0064_assumptions-versioned-resolution.md)。要点:
 
 - **認可**: 認可は親グループに付けず read/owner のサブグループで指定する（親に付けると合成され、サービストークンが
   403 になる。IADR-0051 の実装上の注意）。既存の `AssumptionsEndpoints` は**親に OwnerOnly が付いている**ため、

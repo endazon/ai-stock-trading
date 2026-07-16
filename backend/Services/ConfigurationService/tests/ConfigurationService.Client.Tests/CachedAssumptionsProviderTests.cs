@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.Configuration.Client.Tests;
 
-// FR-17, IADR-0060 決定 4/5: バージョン付き前提条件のキャッシュ・イベント無効化・TTL 失効・フェイルセーフ順序を検証する。
+// FR-17, IADR-0064 決定 4/5: バージョン付き前提条件のキャッシュ・イベント無効化・TTL 失効・フェイルセーフ順序を検証する。
 public class CachedAssumptionsProviderTests
 {
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);
@@ -88,7 +88,7 @@ public class CachedAssumptionsProviderTests
         source.FetchCount.Should().Be(2);
     }
 
-    // IADR-0060 決定 4: イベント取りこぼしに備え TTL でも失効させる。
+    // IADR-0064 決定 4: イベント取りこぼしに備え TTL でも失効させる。
     [Fact]
     public async Task TTL経過で再取得する()
     {
@@ -107,7 +107,7 @@ public class CachedAssumptionsProviderTests
         source.FetchCount.Should().Be(2);
     }
 
-    // IADR-0060 決定 5: 一度も取得できていなければ既定値（現行挙動）へ倒れる。例外は出さない。
+    // IADR-0064 決定 5: 一度も取得できていなければ既定値（現行挙動）へ倒れる。例外は出さない。
     [Fact]
     public async Task 一度も取得できなければ既定へ倒れる()
     {
@@ -121,7 +121,7 @@ public class CachedAssumptionsProviderTests
         current.Assumptions.CostLimits.Total.Should().Be(20_000m);
     }
 
-    // IADR-0060 決定 5: 取得済みなら既定へ戻さず last known good を返す（既定へ戻すと利用者が絞った上限が緩む側へ倒れる）。
+    // IADR-0064 決定 5: 取得済みなら既定へ戻さず last known good を返す（既定へ戻すと利用者が絞った上限が緩む側へ倒れる）。
     [Fact]
     public async Task 取得失敗時は既定ではなく最後の成功値を返す()
     {

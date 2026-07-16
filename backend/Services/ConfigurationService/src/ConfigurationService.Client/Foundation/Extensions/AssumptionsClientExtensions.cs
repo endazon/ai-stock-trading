@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Configuration.Client.Foundation.Extensions;
 
-// FR-17, IADR-0060 決定 3/6: バージョン付き全体前提条件の解決を消費側サービスへ 1 行で配線する。
+// FR-17, IADR-0064 決定 3/6: バージョン付き全体前提条件の解決を消費側サービスへ 1 行で配線する。
 //
 //   builder.Services.AddAiStockTradingAssumptions(builder.Configuration);
 //   // MassTransit 側で版の追随を有効にする（任意・推奨）:
@@ -22,7 +22,7 @@ public static class AssumptionsClientExtensions
     /// <summary>設定サービスの名前付き HttpClient。同期クリティカルパスから呼ばれるため短いタイムアウトを持つ。</summary>
     private const string HttpClientName = "assumptions";
 
-    /// <summary>キャッシュ TTL の既定（IADR-0060 決定 4: イベント取りこぼしに対する保険）。</summary>
+    /// <summary>キャッシュ TTL の既定（IADR-0064 決定 4: イベント取りこぼしに対する保険）。</summary>
     internal static readonly TimeSpan DefaultCacheTtl = TimeSpan.FromMinutes(5);
 
     public static IServiceCollection AddAiStockTradingAssumptions(

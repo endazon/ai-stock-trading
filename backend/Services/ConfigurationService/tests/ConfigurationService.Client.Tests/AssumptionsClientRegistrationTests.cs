@@ -10,7 +10,7 @@ using Xunit;
 
 namespace AiStockTrading.Configuration.Client.Tests;
 
-// FR-17, IADR-0060 決定 6: 消費側の 1 行配線（AddAiStockTradingAssumptions）の安全既定を検証する。
+// FR-17, IADR-0064 決定 6: 消費側の 1 行配線（AddAiStockTradingAssumptions）の安全既定を検証する。
 // BaseUrl 未設定なら HTTP を構築せず既定プロバイダ（外部接続なし）＝既定ビルド/CI が緑であること。
 public class AssumptionsClientRegistrationTests
 {
