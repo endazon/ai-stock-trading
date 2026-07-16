@@ -98,6 +98,27 @@ jobs:
             echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
             exit 1
           fi
+      # #132 / IADR-0059 決定 1: chart の opend と dev の生 manifest（deploy/opend/k8s/opend.yaml）は
+      # 意図的な二重管理である。片方だけが変更されて常駐モデルの前提が崩れるのを防ぐため、既定値の描画が
+      # 生 manifest と**同等の不変条件**を満たすことを検査する（バイト等価ではない: chart は HOME 等を明示注入する）。
+      - name: Assert opend default render keeps the resident-model invariants
+        run: |
+          out="$(helm template ast "$CHART" --set opend.enabled=true -s templates/opend.yaml)"
+          fail() { echo "::error::opend の既定描画が常駐モデルの前提を満たさない: $1"; exit 1; }
+          # 単一セッション前提。複数レプリカ・rolling は OpenD のログインを壊す。
+          printf '%s' "$out" | grep -q 'replicas: 1' || fail "replicas: 1 でない"
+          printf '%s' "$out" | grep -q 'type: Recreate' || fail "strategy が Recreate でない"
+          # 初回の有人デバイス検証（kubectl attach）に要る。
+          printf '%s' "$out" | grep -q 'stdin: true' || fail "stdin: true でない"
+          printf '%s' "$out" | grep -q 'tty: true' || fail "tty: true でない"
+          # liveness による自動再起動は、有人再検証待ちの停止を招くため付けない（IADR-0053）。
+          if printf '%s' "$out" | grep -q 'livenessProbe'; then fail "livenessProbe が付いている"; fi
+          # 既定は root 実行のまま（非 root 化は未検証のオプトイン・IADR-0059 決定 2）。
+          if printf '%s' "$out" | grep -q 'runAsNonRoot'; then fail "既定で非 root になっている（未検証の設定を既定にしない）"; fi
+          # デバイス信頼の永続化先は $HOME/.com.moomoo.OpenD。既定 HOME は生 manifest と同じ /root。
+          printf '%s' "$out" | grep -q 'value: "/root"' || fail "既定 HOME が /root でない"
+          printf '%s' "$out" | grep -q 'mountPath: "/root/.com.moomoo.OpenD"' || fail "デバイス信頼の永続化先が /root/.com.moomoo.OpenD でない"
+          echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
       # #132 / IADR-0059: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |

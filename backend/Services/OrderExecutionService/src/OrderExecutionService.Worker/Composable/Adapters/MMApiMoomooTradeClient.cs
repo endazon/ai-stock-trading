@@ -54,7 +54,8 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         _trd.SetTrdCallback(this);
         // moomoo は cross-network の trade 接続に暗号化を要求する。RSA 秘密鍵が構成されていれば暗号化で接続する。
         // SetRSAPrivateKey は鍵の内容（PKCS#1 PEM 文字列）を受け取る（パスではない）。
-        // 鍵パスが構成済みなら存在は preflight が保証済み（不在なら上で停止している）。
+        // 鍵パスが構成済みなら存在は preflight が保証済み（不在なら上で停止している）。同一コンストラクタ内で
+        // 直後に読むため TOCTOU は問題にならない。ここを非同期化・遅延化するなら読み取り失敗の扱いを足すこと。
         if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath))
         {
             _trd.SetRSAPrivateKey(File.ReadAllText(options.RsaPrivateKeyPath));

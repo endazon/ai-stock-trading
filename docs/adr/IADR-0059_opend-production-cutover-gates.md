@@ -25,7 +25,7 @@ plan_refs:
 - 対象 Issue: [#132](https://github.com/endazon/ai-stock-trading/issues/132)（OpenD 常駐の本番化・残検証）／
   [#124](https://github.com/endazon/ai-stock-trading/issues/124)（OpenD Docker 化・常駐モデル）
 - 関連 IADR: [IADR-0016](IADR-0016_safe-broker-execution.md)（安全既定 paper・実弾防止の二重ゲート）、
-  [IADR-0053](IADR-0053_moomoo-opend-dockerization.md)（OpenD の Docker 化・常駐モデル）、
+  [IADR-0053](IADR-0053_moomoo-opend-dockerization.md)（OpenD の Docker 化・常駐モデル。**Proposed のまま**＝下記「前提の状態」）、
   [IADR-0052](IADR-0052_k8s-helm-chart-shared-infra.md)（AST chart）、
   [IADR-0056](IADR-0056_moomoo-simulate-poc-complete-real-gated.md)（SIMULATE PoC 完了・実弾はゲート）、
   [IADR-0058](IADR-0058_helm-chart-ci-gate.md)（chart の CI ゲート）
@@ -49,6 +49,18 @@ plan_refs:
 
 素直にやると「本番化 issue なのに本番で動かさない」という中途半端に見える。しかしこれは**意図した中間状態**であり、
 そう読めるように決定として残す必要がある。
+
+### 前提の状態（本 IADR が Accepted なのに、土台の IADR-0053 は Proposed である件）
+
+本 IADR は Accepted だが、常駐モデルを定めた [IADR-0053](IADR-0053_moomoo-opend-dockerization.md) は **Proposed のまま**であり、
+本 PR でも昇格させない。IADR-0053 自身が Accepted の条件に「**海外 IP（Hetzner）接続の一次確認**」を挙げており、
+それは本 issue で**未充足**（実測・契約判断が要る）だからである。前提が未充足なのに昇格させるのは、本 IADR が
+戒めている「充足していないものを充足扱いする」ことに他ならない。
+
+これは矛盾ではない。本 IADR が決めているのは「**本番化の整備をどう置くか**」であって、「常駐モデルで本番運用してよいか」
+ではない。むしろ IADR-0053 が Proposed である（＝本番運用の可否が未確定である）ことこそが、本 IADR が
+「整備は進めるが**有効化はしない**」を選ぶ理由そのものである。IADR-0053 の昇格は、Hetzner 接続・長期常駐の
+実測（#132 の実測フェーズ）が済んでから行う。同様に上流の **ADR-0002 も Proposed** のままである（IADR-0056 §4）。
 
 ## 決定
 

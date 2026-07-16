@@ -48,8 +48,9 @@ if [ -n "${OPEND_RSA_KEY_FILE:-}" ]; then
 	echo "==> RSA encryption enabled (key=${OPEND_RSA_KEY_FILE})"
 	# 秘密鍵が所有者以外に読める状態なら警告する（Secret の defaultMode 誤設定の検知。#132）。
 	# 読み取り専用マウントのため chmod はできない。是正は k8s 側（defaultMode）で行う。
-	if [ "$(stat -c '%a' "${OPEND_RSA_KEY_FILE}")" != "400" ] && [ "$(stat -c '%a' "${OPEND_RSA_KEY_FILE}")" != "440" ]; then
-		echo "WARN: ${OPEND_RSA_KEY_FILE} のパーミッションが $(stat -c '%a' "${OPEND_RSA_KEY_FILE}") です（推奨 400 / 非 root 時 440）。" >&2
+	RSA_MODE="$(stat -c '%a' "${OPEND_RSA_KEY_FILE}")"
+	if [ "${RSA_MODE}" != "400" ] && [ "${RSA_MODE}" != "440" ]; then
+		echo "WARN: ${OPEND_RSA_KEY_FILE} のパーミッションが ${RSA_MODE} です（推奨 400 / 非 root 時 440）。" >&2
 		echo "      chart の opend.rsaSecretDefaultMode を確認してください。" >&2
 	fi
 fi
