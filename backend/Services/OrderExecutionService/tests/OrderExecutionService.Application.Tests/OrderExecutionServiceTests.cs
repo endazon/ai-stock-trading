@@ -93,6 +93,10 @@ public class OrderExecutionServiceTests
         }
 
         public OrderDispatchReservation? Find(Guid decisionId) => _inner.Find(decisionId);
+
+        // #137, IADR-0059: 本テストの関心事ではないが、ポート実装として委譲する。
+        public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize) =>
+            _inner.PurgeCompletedBefore(cutoff, batchSize);
     }
 
     private static AppSvc NewService(

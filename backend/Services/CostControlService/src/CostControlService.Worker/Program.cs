@@ -1,8 +1,10 @@
 using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
+using AiStockTrading.CostControl.Worker.Composable.Retention;
 using AiStockTrading.CostControl.Worker.Composable.Steps;
 using AiStockTrading.CostControl.Worker.Foundation.Endpoints;
 using AiStockTrading.CostControl.Worker.Foundation.Persistence;
+using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +45,11 @@ builder.Services.AddScoped<ICostLedger, EfCostLedger>();
 // #79, IADR-0055 決定5: LlmCostIncurred の二重計上を防ぐ重複排除ストア（費用台帳とは別テーブル）。
 builder.Services.AddScoped<IProcessedMessageStore, EfProcessedMessageStore>();
 builder.Services.AddScoped<AppSvc>();
+
+// NFR（運用）, #137, IADR-0059: processed_messages の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
+// 保持 90 日・下限 7 日クランプにより、再配信の猶予内にある行は決してパージされない。
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
+builder.Services.AddHostedService<ProcessedMessageRetentionService>();
 
 // IADR-0011/0027: MassTransit（RabbitMQ）。しきい値到達時の CostThresholdReached 発行に用いる。
 // #79, IADR-0055 決定1: さらに LlmCostIncurred を購読し LLM 費用を計上する（HTTP /costs/record は OwnerOnly のため）。

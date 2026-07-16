@@ -13,4 +13,14 @@ public interface IProcessedMessageStore
     /// （マークだけ残って計上が欠落するのを避ける）。
     /// </summary>
     void Unmark(Guid messageId);
+
+    /// <summary>
+    /// NFR（運用）, #137, IADR-0059: <paramref name="cutoff"/> **より古い**（境界ちょうどは含まない）行を
+    /// 最大 <paramref name="batchSize"/> 件パージし、削除件数を返す。
+    ///
+    /// cutoff は <c>RetentionPolicy.CutoffFor</c> が算出した「再配信の猶予より桁違いに古い」境界であること。
+    /// 実装は cutoff より新しい行に**決して触れてはならない**。触れると重複排除が素通りし、LLM 費用を
+    /// 二重計上する（＝上限・停止判定が狂う）。
+    /// </summary>
+    int PurgeProcessedBefore(DateTimeOffset cutoff, int batchSize);
 }

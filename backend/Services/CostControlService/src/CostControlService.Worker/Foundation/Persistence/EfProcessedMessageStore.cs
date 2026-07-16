@@ -49,4 +49,26 @@ internal sealed class EfProcessedMessageStore(DbContextOptions<CostControlDbCont
         db.ProcessedMessages.Remove(row);
         db.SaveChanges();
     }
+
+    // NFR（運用）, #137, IADR-0059: cutoff より古い行のみをバッチ削除する。
+    // ExecuteDelete（set-based）はリレーショナル専用で InMemory プロバイダのテストから外れるため、
+    // 述語を CI で守れる Where + RemoveRange を採る（IADR-0059 決定5）。batchSize がメモリ使用の上限になる。
+    public int PurgeProcessedBefore(DateTimeOffset cutoff, int batchSize)
+    {
+        using var db = new CostControlDbContext(options);
+
+        // 「< cutoff」＝境界ちょうどは残す（消し過ぎない側へ倒す）。古い順に消し、残りは次回の巡回に回す。
+        var expired = db.ProcessedMessages
+            .Where(r => r.ProcessedAt < cutoff)
+            .OrderBy(r => r.ProcessedAt)
+            .Take(batchSize)
+            .ToList();
+
+        if (expired.Count == 0)
+            return 0;
+
+        db.ProcessedMessages.RemoveRange(expired);
+        db.SaveChanges();
+        return expired.Count;
+    }
 }

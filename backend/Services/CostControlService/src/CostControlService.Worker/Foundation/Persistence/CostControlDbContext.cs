@@ -29,6 +29,8 @@ internal sealed class CostControlDbContext(DbContextOptions<CostControlDbContext
             // 主キー（一意制約）そのものが重複排除の要。挿入衝突＝既処理。
             e.HasKey(r => r.MessageId);
             e.Property(r => r.MessageId).ValueGeneratedNever();
+            // #137, IADR-0059: 保持期間パージ（WHERE ProcessedAt < cutoff ORDER BY ProcessedAt）用。
+            e.HasIndex(r => r.ProcessedAt);
         });
     }
 }
