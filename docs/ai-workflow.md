@@ -110,6 +110,10 @@ GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule�
   - `pr-title` は **Issue #129** で復旧した最後の砦。squash-merge で develop に載る件名（= PR タイトル）を
     規約 `種別(起点ID): 要約` に照合する。中間コミットは force push 禁止で事後修正できないため、
     マージ前のこの検査が唯一の予防線になる。全 PR で起動するため必須チェックに指定して差し支えない。
+    - ただし bot 作成 PR（dependabot 等）は `if: github.event.pull_request.user.type != 'Bot'` で
+      ジョブごとスキップする（`commit-messages` と同方針）。**スキップされたチェックは必須チェック上
+      「合格」として扱われる**ためマージは止まらないが、必須指定した直後の dependabot PR で一度
+      実挙動を確認しておくとよい（`security.yml` の `dependency-review` も同型の `if` を持つ）。
   - `helm.yml`（Helm chart / [IADR-0057](adr/IADR-0057_helm-chart-ci-gate.md)）は
     `paths: deploy/helm/**` のトリガフィルタを持つ。**必須チェックには指定しない**——
     GitHub は必須チェックが report されるまでマージを許さないため、chart に触れない PR で

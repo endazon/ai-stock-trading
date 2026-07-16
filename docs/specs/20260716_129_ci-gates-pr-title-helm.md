@@ -1,7 +1,7 @@
 ---
 title: pr-title.yml の是正と Helm chart の CI ゲート追加（Issue #129）
 type: spec
-status: draft
+status: review
 related_ids:
   - NFR
   - IADR-0057
