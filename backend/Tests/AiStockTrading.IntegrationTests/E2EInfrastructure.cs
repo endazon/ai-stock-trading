@@ -22,8 +22,30 @@ internal static class E2EInfrastructure
 
     public static string? KeycloakBaseUrl => Value("E2E_KEYCLOAK_BASEURL");
 
-    /// <summary>Postgres/RabbitMQ が外部注入されているか。true なら Testcontainers を起動しない。</summary>
-    public static bool UseExternal => PostgresConnection is not null && RabbitMqConnection is not null;
+    /// <summary>
+    /// Postgres/RabbitMQ が外部注入されているか。true なら Testcontainers を起動しない。
+    /// <para>
+    /// **片方だけの設定は許さない**（fail fast）。fixture はコンテナ起動を `UseExternal` で、接続先を
+    /// 各 env の有無で決めるため、片方だけ設定されると「Testcontainers を起動したのに接続先は外部」という
+    /// 食い違いが起き、起動していない/無関係な対象を静かに検証してしまう（claude-review 指摘）。
+    /// </para>
+    /// </summary>
+    public static bool UseExternal
+    {
+        get
+        {
+            var hasPostgres = PostgresConnection is not null;
+            var hasRabbitMq = RabbitMqConnection is not null;
+            if (hasPostgres != hasRabbitMq)
+            {
+                throw new InvalidOperationException(
+                    "E2E_POSTGRES_CONNECTION と E2E_RABBITMQ_CONNECTION は両方設定するか両方未設定にしてください"
+                    + "（片方だけだと Testcontainers の起動と実際の接続先が食い違い、意図しない対象を検証します）。"
+                    + " scripts/e2e-local-infra.sh は 3 変数をまとめて出力します。");
+            }
+            return hasPostgres && hasRabbitMq;
+        }
+    }
 
     /// <summary>Keycloak も含め外部注入されているか（Keycloak を要する E2E 用）。</summary>
     public static bool UseExternalKeycloak => KeycloakBaseUrl is not null;

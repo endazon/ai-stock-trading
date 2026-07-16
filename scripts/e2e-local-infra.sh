@@ -29,10 +29,14 @@ MQ_PORT="${E2E_MQ_PORT:-55672}"
 KC_PORT="${E2E_KC_PORT:-58080}"
 REALM_NAME="ai-stock-trading"
 
-# 在庫イメージを使う（docker.io の認証ヘルパ不調でも pull を避けられるよう、dev 環境と同じタグを既定にする）。
+# イメージは Testcontainers 経路と同等のものを既定にする（同じ対象を検証するため）。
+# Keycloak は fixture（KeycloakOwnerOnlyEndpointE2ETests / ServiceTokenSyncQueryE2ETests）と同じ 26.0 を用いる
+# ＝メジャーバージョン差による挙動差（realm import 形式・OIDC/JWKS 等）を作らない。
+# Postgres/RabbitMQ は alpine 版を既定にする（docker.io の認証ヘルパ不調環境でも dev 在庫を再利用でき、
+# サーバ挙動は同一メジャー）。必要なら E2E_*_IMAGE で上書きする。
 PG_IMAGE="${E2E_PG_IMAGE:-postgres:16-alpine}"
 MQ_IMAGE="${E2E_MQ_IMAGE:-rabbitmq:3.13-management-alpine}"
-KC_IMAGE="${E2E_KC_IMAGE:-quay.io/keycloak/keycloak:24.0}"
+KC_IMAGE="${E2E_KC_IMAGE:-quay.io/keycloak/keycloak:26.0}"
 
 if command -v nerdctl >/dev/null 2>&1; then
   # Rancher Desktop の containerd。k8s.io namespace の在庫イメージを再利用する。
@@ -76,8 +80,9 @@ case "${1:-up}" in
     REALM_FILE="$ROOT/infra/keycloak/realm-export.json"
     [ -f "$REALM_FILE" ] || { echo "ERROR: $REALM_FILE が見つかりません" >&2; exit 1; }
     if command -v cygpath >/dev/null 2>&1; then REALM_FILE="$(cygpath -w "$REALM_FILE")"; fi
+    # 管理者 env は Keycloak 26.x 系の KC_BOOTSTRAP_ADMIN_*（fixture の Testcontainers 経路と同じ）。
     $RUN run -d --name e2e-keycloak -p "${KC_PORT}:8080" \
-      -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+      -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
       -v "${REALM_FILE}:/opt/keycloak/data/import/realm-export.json" \
       "$KC_IMAGE" start-dev --import-realm >/dev/null
 

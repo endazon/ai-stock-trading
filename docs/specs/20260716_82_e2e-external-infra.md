@@ -53,6 +53,12 @@ System.AggregateException : Failed to connect to Docker endpoint at 'npipe://./p
 - **既定は不変**: `E2E_*` が未設定なら `UseExternal=false` で従来の Testcontainers 経路（CI は無影響）。
 - **実基盤である点は同じ**: 外部注入でも検証対象は実 PostgreSQL / 実 RabbitMQ / 実 Keycloak。
   InMemory/モックへは差し替えない（IADR-0049 の意義を保つ）。差は「コンテナの起動主体」だけ。
+  - この主張を成立させるため、**スクリプトの既定イメージは Testcontainers 経路と揃える**。特に Keycloak は
+    fixture と同じ **26.0**（管理者 env も `KC_BOOTSTRAP_ADMIN_*`）を用い、メジャーバージョン差による挙動差
+    （realm import 形式・OIDC/JWKS 等）を作らない（claude-review 🟡 指摘）。
+- **部分設定は fail fast**: `E2E_POSTGRES_CONNECTION` と `E2E_RABBITMQ_CONNECTION` の片方だけが設定された場合、
+  「Testcontainers を起動したのに接続先は外部」という食い違いで**意図しない対象を静かに検証**してしまうため、
+  `UseExternal` が明示的な例外を投げる（claude-review 🟡 指摘）。
 - **起動/破棄の責務**: 外部注入時のインフラのライフサイクルは呼び出し側（スクリプト）が持つ。
   fixture はコンテナを生成しないため `Dispose` でも破棄しない。
 - **状態の分離（重要な差分）**: Testcontainers は実行ごとに新コンテナ＝**状態が残らない**が、外部インフラは
@@ -68,6 +74,8 @@ System.AggregateException : Failed to connect to Docker endpoint at 'npipe://./p
 - [x] `E2E_*` 設定時はコンテナを起動せず外部エンドポイントへ結線する
 - [x] Docker API の無い環境（Rancher Desktop/containerd）で **統合 E2E 4/4 が成功**する
 - [x] `scripts/e2e-local-infra.sh up|down|env` でインフラを再現性よく起動・破棄できる（realm import 込み）
+- [x] スクリプトの既定イメージが Testcontainers 経路と同等（Keycloak は同じ 26.0）
+- [x] `E2E_POSTGRES_CONNECTION`/`E2E_RABBITMQ_CONNECTION` の片方だけ設定は例外で停止する（静かな誤検証の防止）
 
 ## テスト方針
 
