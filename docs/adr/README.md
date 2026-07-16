@@ -84,3 +84,4 @@
 | IADR-0054 | 取引サイクルの本番スケジューラは収集の run-once HTTP トリガ＋Collection:Trigger モードで実現する | Accepted |
 | IADR-0055 | 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない） | Accepted |
 | IADR-0056 | moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） | Accepted |
+| IADR-0057 | Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する | Accepted |
