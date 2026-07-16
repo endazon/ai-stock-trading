@@ -63,7 +63,7 @@ plan_refs:
 | --- | --- | --- | --- |
 | `InformationCollected` | 情報収集（#9） | EventId, ItemCount, CollectedAt | 1 巡回の収集完了（正規化・KB 保存済み件数）。定時取引サイクル（FR-02）の起点（IADR-0022/0023） |
 | `CostThresholdReached` | 費用統制（#23） | Month, Category, Percent, State, OccurredAt | 費用しきい値到達で統制状態が上方遷移（Normal→Throttled→Halted）。通知が購読（IADR-0027） |
-| `AssumptionsChanged` | 設定管理（#19） | Version, Actor, Reason, ChangedAt | 全体前提条件が利用者により変更（バージョンつき）。監査・通知が購読（IADR-0021） |
+| `AssumptionsChanged` | 設定管理（#19） | Version, Actor, Reason, ChangedAt | 全体前提条件が利用者により変更（バージョンつき）。監査・通知が購読（IADR-0021）。消費側は前提条件キャッシュの無効化に購読（`AssumptionsChangedConsumer`・IADR-0060） |
 | `ReportConfirmed` | 報告書（#14） | PeriodKey, Kind, Actor, AssumptionsVersion, ConfirmedAt | 報告書の確定（Draft→Confirmed 遷移時のみ）。監査・通知が購読（IADR-0024） |
 
 - これら 4 件は通知サービスが購読して Discord 送信するが、各サービスは Discord を直接呼ばない（IADR-0020）。
