@@ -72,13 +72,29 @@ plan_refs:
   一元化する」と定める。AST 側で重ねると ADR 違反であり、**LLM 呼び出しの費用が多重計上**され、
   同期クリティカルパス（取引判断）の遅延も倍化する。失敗は現行どおり Hold（取引しない）へ倒せば安全側に閉じる。
 
-### 決定5: 設定サーフェスは空既定で口だけ開け、`ANTHROPIC_API_KEY` の注入を除去する
+### 決定5: 設定サーフェスは空既定で口だけ開ける（base appsettings には置かない）
 
-- helm values / docker-compose / `.env.example` / appsettings に `LlmGateway__BaseUrl` ほかを**空既定**で追加する。
-  空＝Placeholder（実 LLM を呼ばない）＝既存の fail-safe を維持し、**本 PR で実キー・実 URL は投入しない**。
-- 併せて trade-decision への **`ANTHROPIC_API_KEY` 注入を削除**する。**コードはこの変数を一切読まない**うえ、
-  ADR-0010 の設計（プロバイダ鍵は MSP ゲートウェイ側の `Llm:ApiKey` が保持し、**AST は鍵を持たない**）と
-  矛盾する。死んだ秘密注入を残すと「AST に鍵を置けばよい」という誤った規範を将来の実装者へ与える。
+- helm values / docker-compose / `.env.example` / appsettings.Development に `LlmGateway__BaseUrl` ほかを
+  **空既定**で追加する。空＝Placeholder（実 LLM を呼ばない）＝既存の fail-safe を維持し、
+  **本 PR で実キー・実 URL は投入しない**。
+- **base `appsettings.json` には置かない**。IADR-0048 決定1（base は挙動中立）に従い、fail-safe 選択キーは
+  `appsettings.Development.json` と環境変数に置く（env=Testing のテストが安全既定のまま走ることを保つ）。
+
+### 決定6: `ANTHROPIC_API_KEY` の死んだ注入は「誤解を招くコメントの是正」に留め、除去は後続とする
+
+trade-decision には `ANTHROPIC_API_KEY` が helm values / docker-compose / `.env.example` から注入されているが、
+**コードはこの変数を一切読まない**。ADR-0010 の設計ではプロバイダ鍵は MSP ゲートウェイ側の `Llm:ApiKey` が
+保持し、**AST は鍵を持たない**。したがって本来は除去が正しい。
+
+しかし除去には `scripts/validate-runtime-scaffold.js`（`SECRET_ENV_KEYS` に本キーを必須列挙しており、
+`.env.example` から消すと**検査が失敗する**）と `scripts/k8s-local-deploy.sh`（`ast-secrets` の
+`anthropic-api-key` を生成）の改修が要り、本スライスのスコープ（trade-decision と設定サーフェス）を越えて
+共有 CI スクリプトへ波及する。#11 の残スコープの達成に必須でもない。
+
+そこで本 PR では、**「実 LLM は未実装（#79）／空=呼ばない」という現状に反するコメントの是正**に留める
+（実 LLM は `LlmGateway:BaseUrl` 経由であり、本キーは AST では未使用であることを明示する）。
+誤ったコメントを残す方が「AST に鍵を置けばよい」という誤った規範を将来の実装者へ与えるため、
+除去より先にまず**事実の明示**を優先する。除去自体は後続 issue とする。
 
 ## 影響
 
@@ -93,8 +109,12 @@ plan_refs:
 - **呼び出し側リトライ（Polly 等）**: 一過性障害に強くなるが ADR-0010 の一元化に反し費用が多重化。→ 不採用（決定4）。
 - **`ANTHROPIC_API_KEY` を AST で読んで直接 Anthropic を呼ぶ**: ゲートウェイの越境統制（送信可否判定・監査）を
   迂回する。→ 不採用（ADR-0010 違反）。
+- **本 PR で `ANTHROPIC_API_KEY` を除去する**: 正しいが共有 CI スクリプトへ波及する。→ 後続（決定6）。
 
 ## 未解決・後続
 
+- **`ANTHROPIC_API_KEY` の死んだ注入の除去**（決定6）: helm values / docker-compose / `.env.example` から除去し、
+  併せて `scripts/validate-runtime-scaffold.js` の `SECRET_ENV_KEYS` と `scripts/k8s-local-deploy.sh` の
+  `anthropic-api-key` 生成を整理する。
 - 実クラスタでの実 LLM 応答の実証（要 MSP 側 Anthropic 鍵・#22 デプロイ配線）→ E2E/後続。
 - RAG 文脈（#18）・実データ供給（#14/#12/#13）・監査永続（#17）・費用統制の実値（#23/#79）。
