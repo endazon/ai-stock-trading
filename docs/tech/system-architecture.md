@@ -2,7 +2,7 @@
 title: システム構成図（ai-stock-trading + microservices-platform）
 type: tech-architecture
 status: draft
-related_ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-14, ADR-0001, ADR-0002, ADR-0003, IADR-0048, IADR-0052, IADR-0055, IADR-0056]
+related_ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-13, FR-14, ADR-0001, ADR-0002, ADR-0003, IADR-0019, IADR-0021, IADR-0027, IADR-0048, IADR-0052, IADR-0055]
 author: endazon (with Claude Code)
 created: 2026-07-16
 updated: 2026-07-16
@@ -17,13 +17,14 @@ plan_refs:
 > 本書は生成 AI 株取引自動化ユニット（ai-stock-trading）を、その土台である
 > microservices-platform（基盤）まで含めて俯瞰するシステム構成図である。上流計画書
 > [`01_architecture-overview.md`](../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md)（fixed）
-> を、現時点の実装（10 サービス構成・LLM ゲートウェイ委譲 IADR-0055）に合わせて詳細化した。
+> を、現時点の実装（10 サービス構成・LLM ゲートウェイ委譲）に合わせて詳細化した。計画上の新規 7 サービスに対し、
+> 実装は監査（IADR-0019）・設定管理（IADR-0021）・費用統制（IADR-0027）を加えた 10 サービスへ拡張済みである。
 
 ## 起点となる計画書（トレーサビリティ）
 
 - 技術検討: ai-stock-trading `06_technical/01_architecture-overview.md`、platform `06_technical/01_architecture-overview.md`
-- ADR: [ADR-0001](../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md)（基盤再利用・無改修）、ADR-0002（証券会社アダプタ）、ADR-0003（損切り執行）
-- 実装 ADR: IADR-0048（ローカル実行）、IADR-0052（k8s デプロイ）、IADR-0055（LLM 費用計上）、IADR-0056（ユニット構成）
+- ADR: [ADR-0001](../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md)（基盤再利用・無改修）、ADR-0002（証券会社アダプタ。計画リポ上 `Proposed`）、ADR-0003（損切り執行）
+- 実装 ADR: IADR-0019（監査サービス）、IADR-0021（設定管理サービス）、IADR-0027（費用統制サービス）、IADR-0048（ローカル実行）、IADR-0052（k8s デプロイ）、IADR-0055（LLM 費用計測イベント。`Proposed`・未実装）
 - 通信契約: [通信仕様書（イベント・ポート）](../api/events-and-ports.md)
 
 ## 読み方（凡例）
@@ -122,8 +123,8 @@ flowchart TB
   TRD -->|POST /complete| GW
   REP -. LLM ドラフト生成 .-> GW
   GW --> ANTH
-  GW -- 費用イベント --> MQ
-  MQ --> COST
+  GW -. "費用イベント（計画・IADR-0055 Proposed / 未実装）" .-> MQ
+  MQ -. 計画 .-> COST
   NTF --> DC
 
   %% 認可・RAG 再利用
@@ -196,8 +197,8 @@ sequenceDiagram
 | RiskManagement | FR-10 | 発注前の制約検証、損切りの機械的執行、kill switch | `OrderApproved` / `OrderRejected` |
 | OrderExecution | FR-05 | 証券会社アダプタ経由の発注・注文状態追跡 | `OrderExecuted` |
 | Report | FR-06 | 日報 / 週報 / 月報の集計・ドラフト生成・対話的確定 | `ReportConfirmed` |
-| Notification | FR-09 | イベント購読 → Discord 送信、Bot 対話の中継 | — |
-| Configuration | FR-14 | 全体前提条件・取引ガード設定の管理 | `AssumptionsChanged` |
+| Notification | FR-09, FR-14 | イベント購読 → Discord 送信、Discord Bot 対話の中継（報告書質疑・kill switch 起動） | — |
+| Configuration | FR-13 | 全体前提条件・取引ガード設定の管理（監視銘柄・閾値・上限の変更） | `AssumptionsChanged` |
 | CostControl | NFR | LLM/運用費用のしきい値監視と統制状態遷移 | `CostThresholdReached` |
 | Audit | FR-11 | 全イベントの監査記録 | — |
 
@@ -210,7 +211,9 @@ sequenceDiagram
   ＋ 10 Worker。全 Worker は Web SDK（`:8080`）で `/health/ready` を公開し、ホストへはポート非公開。
 - **本番 / k8s**: Kubernetes（IADR-0052）。Helm chart `deploy/helm/ai-stock-trading`。共有インフラ
   （Postgres/RabbitMQ/Keycloak/otel）は platform の `platform-infra` を **ExternalName** で参照し、
-  基盤側と共有する。moomoo OpenD は常駐コンテナ（`deploy/opend/`・IADR-0053）。
+  基盤側と共有する。moomoo OpenD は常駐コンテナ（`deploy/opend/`・IADR-0053）。実アダプタは
+  SIMULATE（仮想売買）まで実装済みで、実弾発注は別ゲートで抑止する（ADR-0002 は計画リポ上まだ
+  `Proposed`、実装判断は IADR-0056）。
 - **機密**: `ANTHROPIC_API_KEY` / moomoo 資格情報 / Discord Webhook は Vault/Secrets（ADR-0006）。
 
 ## 関連仕様
