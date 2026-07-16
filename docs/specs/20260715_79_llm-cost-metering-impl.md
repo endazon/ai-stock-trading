@@ -62,7 +62,10 @@ related_specs:
 - **冪等性**（決定5）: 消費者は `context.MessageId` を `IProcessedMessageStore` で重複排除する。
   既処理なら no-op。計上が失敗した場合は**マークを戻して**（`Unmark`）再配信で再試行できるようにする
   （マークのみ残って計上が欠落するのを避ける）。既存 `AuditConsumerHelper.MessageId` と同系の再送耐性パターン。
-- **トランザクション入れ子回避**（決定4）: 消費者は outbox を使わず、`EfCostLedger` の月内直列化に委ねる。
+- **トランザクション入れ子回避／ユニットオブワーク分離**（決定4・IADR-0034）: 消費者は outbox を使わず
+  `EfCostLedger` の月内直列化に委ねる。さらに `EfProcessedMessageStore` は**操作ごとに専用の短命 `DbContext`**
+  を生成し、台帳（scoped `DbContext`）と **ChangeTracker を共有しない**。共有すると、計上の `SaveChanges` 失敗で
+  `Added` のまま残った計上行を `Unmark` の `SaveChanges` が道連れで確定させ得る（claude-review 🔴 指摘）。
 - **計測は best-effort**: reporter の失敗は LLM 応答を壊さない（例外を捕捉しログのみ）。取引判断（FR-04）を
   費用計測の失敗で Hold に倒すのは過剰なため。計上漏れは at-least-once 再配信で緩和される。
 
@@ -79,8 +82,13 @@ related_specs:
 ## テスト方針
 
 - 単体（xUnit＋FluentAssertions）: 単価純関数／reporter（NoOp・Publishing）／HttpLlmCompletionClient（fake handler）／
-  消費者（InMemory ledger＋InMemory processed store。MassTransit `InMemoryTestHarness` もしくは直接 `Consume`）。
+  消費者（InMemory ledger＋InMemory processed store。MassTransit テストハーネス）。
 - 冪等性は「同一 MessageId で 2 回 Consume → 計上 1 回」を固定する。
+- **EF 重複排除ストアは実 `DbContext`（InMemory provider）で検証**し、「台帳の未確定変更を巻き込まない
+  （ChangeTracker 非共有）」を回帰テストで固定する（`EfProcessedMessageStoreTests`）。フェイク
+  （`ThrowingCostLedger`）では検出できない層のため。
+- 実 PostgreSQL に対する統合 E2E（決定4 のアドバイザリロック込みの確認）は #82 の E2E 基盤で別途実施する
+  （本リポの統合 E2E は Docker 依存で CI 分離・IADR-0049）。
 
 ## 計画書との差異
 
