@@ -24,11 +24,14 @@ namespace AiStockTrading.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16")
-        .Build();
+    // 外部インフラ注入時（Docker API が無い環境・E2EInfrastructure 参照）はコンテナを起動しない。
+    private readonly PostgreSqlContainer? _postgres = E2EInfrastructure.UseExternal
+        ? null
+        : new PostgreSqlBuilder("postgres:16").Build();
 
-    private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management")
-        .Build();
+    private readonly RabbitMqContainer? _rabbitMq = E2EInfrastructure.UseExternal
+        ? null
+        : new RabbitMqBuilder("rabbitmq:3.13-management").Build();
 
     private WebApplicationFactory<Program>? _factory;
 
@@ -49,14 +52,17 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
 
     private async Task InitializeCoreAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
+        if (_postgres is not null && _rabbitMq is not null)
+            await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
 
         // 発注執行 Worker を実 PostgreSQL・実 RabbitMQ へ結線する（InMemory/テストハーネスへ差し替えない）。
         // 注意: Worker の Program は接続文字列・キュー・ブローカを WebApplication.CreateBuilder 時点の
         // builder.Configuration から読む。WebApplicationFactory の ConfigureAppConfiguration は build 後に
         // 適用されるため間に合わない。CreateBuilder が読み込む「環境変数」（`__` 区切り）で注入する。
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", _rabbitMq.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection",
+            E2EInfrastructure.PostgresConnection ?? _postgres!.GetConnectionString());
+        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString",
+            E2EInfrastructure.RabbitMqConnection ?? _rabbitMq!.GetConnectionString());
         // OTLP は到達不能でも起動は継続する（エクスポートはベストエフォート）。ノイズ低減の固定値。
         Environment.SetEnvironmentVariable("Otlp__Endpoint", "http://localhost:4317");
         // 明示的にペーパー（実弾防止・IADR-0016）。
@@ -72,7 +78,14 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
     {
         if (_factory is not null)
             await _factory.DisposeAsync();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _rabbitMq.DisposeAsync().AsTask());
+
+        // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
+        var disposals = new List<Task>();
+        if (_postgres is not null)
+            disposals.Add(_postgres.DisposeAsync().AsTask());
+        if (_rabbitMq is not null)
+            disposals.Add(_rabbitMq.DisposeAsync().AsTask());
+        await Task.WhenAll(disposals);
 
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
         Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
