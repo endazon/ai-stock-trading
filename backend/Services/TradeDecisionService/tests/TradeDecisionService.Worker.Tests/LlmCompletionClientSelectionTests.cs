@@ -35,7 +35,25 @@ public class LlmCompletionClientSelectionTests
         scope.ServiceProvider.GetRequiredService<ILlmCompletionClient>().Should().BeOfType<HttpLlmCompletionClient>();
     }
 
-    private sealed class Factory(string? llmGatewayBaseUrl) : WebApplicationFactory<Program>
+    // #11, IADR-0062 決定2: タイムアウトは LlmGateway:TimeoutSeconds（秒）。
+    // fail-safe: 未設定・不正・非正値は既定 30 秒（＝従来値）。無限待ちや 0 秒には倒さない。
+    [Theory]
+    [InlineData(null, 30)]      // 未設定
+    [InlineData("", 30)]        // 空
+    [InlineData("abc", 30)]     // 非数値
+    [InlineData("0", 30)]       // 0 秒（即時タイムアウト）は既定へ
+    [InlineData("-5", 30)]      // 負値は既定へ
+    [InlineData("90", 90)]      // 明示設定は反映
+    public void TimeoutSeconds_は不正値を既定30秒へ倒す(string? configured, int expectedSeconds)
+    {
+        using var factory = new Factory(llmGatewayBaseUrl: "http://llm-gateway", timeoutSeconds: configured);
+        _ = factory.CreateClient();
+
+        var http = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("llm");
+        http.Timeout.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
+    }
+
+    private sealed class Factory(string? llmGatewayBaseUrl, string? timeoutSeconds = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -49,6 +67,8 @@ public class LlmCompletionClientSelectionTests
                 };
                 if (llmGatewayBaseUrl is not null)
                     settings["LlmGateway:BaseUrl"] = llmGatewayBaseUrl;
+                if (timeoutSeconds is not null)
+                    settings["LlmGateway:TimeoutSeconds"] = timeoutSeconds;
                 cfg.AddInMemoryCollection(settings);
             });
             builder.ConfigureServices(services =>

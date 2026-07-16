@@ -33,7 +33,11 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // LlmGateway:BaseUrl 未設定/不正 URI は従来プレースホルダ（常に Hold・取引しない）＝安全既定でゲート。設定時のみ実照会する。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。LLM は応答が遅い
 // ため HttpClient のタイムアウトは長め。送信拒否/失敗/タイムアウトは Hold に倒す（HttpLlmCompletionClient）。
-builder.Services.AddHttpClient("llm", c => c.Timeout = TimeSpan.FromSeconds(30));
+// #11, IADR-0062 決定2: タイムアウトは LlmGateway:TimeoutSeconds（秒）。実運用ではモデル・プロンプト長で適正値が変わる。
+// fail-safe: 未設定・不正・非正値は既定 30 秒（＝従来値）へ倒す（無限待ちや 0 秒にはしない）。
+// IADR-0062 決定3/4: /complete は匿名エンドポイント（platform 側に RequireAuthorization/FallbackPolicy なし）のため
+// s2s トークンは付けない。リトライはゲートウェイ側が一元化する（ADR-0010）ため呼び出し側では重ねない。
+builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]));
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 
 // #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する
@@ -69,6 +73,12 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
         // FR-11, IADR-0062 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
 });
+
+// #11, IADR-0062 決定2: LLM ゲートウェイのタイムアウト（秒）。未設定・不正・非正値は既定 30 秒（fail-safe）。
+static TimeSpan ParseTimeout(string? value) =>
+    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds) && seconds > 0
+        ? TimeSpan.FromSeconds(seconds)
+        : TimeSpan.FromSeconds(30);
 
 // 単価の構成読み取り（円/1k トークン）。未設定・不正・負値は 0（fail-safe）。
 static decimal ParsePricePer1k(string? value) =>
