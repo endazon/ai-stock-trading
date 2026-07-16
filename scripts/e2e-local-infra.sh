@@ -30,10 +30,13 @@ KC_PORT="${E2E_KC_PORT:-58080}"
 REALM_NAME="ai-stock-trading"
 
 # イメージは Testcontainers 経路と同等のものを既定にする（同じ対象を検証するため）。
-# Keycloak は fixture（KeycloakOwnerOnlyEndpointE2ETests / ServiceTokenSyncQueryE2ETests）と同じ 26.0 を用いる
-# ＝メジャーバージョン差による挙動差（realm import 形式・OIDC/JWKS 等）を作らない。
-# Postgres/RabbitMQ は alpine 版を既定にする（docker.io の認証ヘルパ不調環境でも dev 在庫を再利用でき、
-# サーバ挙動は同一メジャー）。必要なら E2E_*_IMAGE で上書きする。
+# Keycloak: fixture（KeycloakOwnerOnlyEndpointE2ETests / ServiceTokenSyncQueryE2ETests）と**同じ 26.0**。
+#   quay.io は下記 docker.io の制約を受けず pull できるため、バージョンを揃えられる。
+# Postgres/RabbitMQ: fixture は非 alpine（postgres:16 / rabbitmq:3.13-management）だが、本スクリプトの想定環境
+#   （Rancher Desktop/containerd）では **docker.io の認証ヘルパ不調で pull 自体が失敗する**
+#   （`unable to retrieve credentials / exit status 22`）。そのため **dev 環境に在庫のある alpine タグ**を既定にする。
+#   サーバのメジャーバージョンは同一（16 / 3.13）でベースイメージのみ異なる。pull できる環境で厳密に揃えたい場合は
+#   E2E_PG_IMAGE / E2E_MQ_IMAGE で上書きする（例: E2E_PG_IMAGE=postgres:16）。
 PG_IMAGE="${E2E_PG_IMAGE:-postgres:16-alpine}"
 MQ_IMAGE="${E2E_MQ_IMAGE:-rabbitmq:3.13-management-alpine}"
 KC_IMAGE="${E2E_KC_IMAGE:-quay.io/keycloak/keycloak:26.0}"
