@@ -1,45 +1,135 @@
 using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
+using AiStockTrading.InformationCollection.Domain.RateLimiting;
+using AiStockTrading.InformationCollection.Worker.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, IADR-0022: 構成 Collection:Source:Provider による情報源の選択。安全既定は no-op（外部接続しない）。
-// finnhub 指定でも APIキー/銘柄が未設定なら no-op へフォールバックし警告（費用/レート違反を起こさない）。未知 provider も no-op。
+// FR-01, ADR-0004, IADR-0022/0061: 構成 Collection:Source:Provider による情報源の選択。安全既定は no-op（外部接続しない）。
+// 案A+ は複数ソースの組み合わせのため、Provider はカンマ区切りで複数指定できる（例: finnhub,sec-edgar,fred）。
+// 各ソースは 1 つずつ独立に検証し、必須構成を欠くソース・未知の provider だけを警告つきで除外する（他ソースは有効なまま
+// ＝1 ソースのキー切れで案A+ 全体を止めない）。有効なソースが 0 件なら no-op へ倒す（IADR-0022 の安全既定）。
+//
+// レート制限の既定は各ソースの公表上限より保守側に置く（IADR-0061）。実測に基づく調整は運用開始後（ADR-0004 フォローアップ）。
 internal static class InformationSourceFactory
 {
     public const string None = "none";
     public const string Finnhub = "finnhub";
+    public const string SecEdgar = "sec-edgar";
+    public const string Edinet = "edinet";
+    public const string Boj = "boj";
+    public const string Fred = "fred";
 
     public static IInformationSource Create(
-        string? provider,
-        string? apiKey,
-        IReadOnlyList<string> symbols,
+        CollectionSourceOptions options,
         HttpClient httpClient,
+        IClock clock,
         ILoggerFactory loggerFactory)
     {
-        var selected = string.IsNullOrWhiteSpace(provider) ? None : provider.Trim().ToLowerInvariant();
+        var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
+        var sources = new List<IInformationSource>();
 
-        switch (selected)
+        foreach (var provider in ParseProviders(options.Provider))
         {
-            case None:
-                return new NoOpInformationSource();
+            var source = CreateSingle(provider, options, httpClient, clock, loggerFactory, logger);
+            if (source is not null)
+                sources.Add(source);
+        }
 
+        return sources.Count switch
+        {
+            0 => new NoOpInformationSource(),
+            1 => sources[0],
+            _ => new CompositeInformationSource(sources, loggerFactory.CreateLogger<CompositeInformationSource>()),
+        };
+    }
+
+    // カンマ区切り・前後空白・大文字小文字を許容する。none は「収集しない」を意味するため列挙から除く。
+    private static IEnumerable<string> ParseProviders(string? provider) =>
+        (provider ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(p => p.ToLowerInvariant())
+        .Where(p => p != None)
+        .Distinct();
+
+    // 構成を欠くソースは null（＝除外）を返す。実接続を伴うため、疑わしいときは接続しない側に倒す。
+    private static IInformationSource? CreateSingle(
+        string provider,
+        CollectionSourceOptions options,
+        HttpClient httpClient,
+        IClock clock,
+        ILoggerFactory loggerFactory,
+        ILogger logger)
+    {
+        switch (provider)
+        {
             case Finnhub:
-                if (string.IsNullOrWhiteSpace(apiKey) || symbols.Count == 0)
-                {
-                    loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!).LogWarning(
-                        "Collection:Source:Provider=finnhub ですが APIキー/銘柄が未設定のため収集しません（no-op へフォールバック・IADR-0022）。");
-                    return new NoOpInformationSource();
-                }
+                if (string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) || options.Finnhub.Symbols.Length == 0)
+                    return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols）");
 
+                // Finnhub Free は 60 回/分。その 1/2 に自制する。
                 return new FinnhubInformationSource(
-                    httpClient, apiKey, symbols, loggerFactory.CreateLogger<FinnhubInformationSource>());
+                    httpClient, options.Finnhub.ApiKey, options.Finnhub.Symbols,
+                    Limiter(30, TimeSpan.FromMinutes(1), clock),
+                    loggerFactory.CreateLogger<FinnhubInformationSource>());
+
+            case SecEdgar:
+                if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent) || options.SecEdgar.Ciks.Length == 0)
+                    return Skip(logger, provider, "連絡先入り User-Agent（SecEdgar:UserAgent）と CIK（SecEdgar:Ciks）");
+
+                // SEC EDGAR は 10 回/秒/IP。その 1/2 に自制する。
+                return new SecEdgarInformationSource(
+                    httpClient, options.SecEdgar.UserAgent, options.SecEdgar.Ciks,
+                    Limiter(5, TimeSpan.FromSeconds(1), clock),
+                    loggerFactory.CreateLogger<SecEdgarInformationSource>());
+
+            case Edinet:
+                if (string.IsNullOrWhiteSpace(options.Edinet.SubscriptionKey))
+                    return Skip(logger, provider, "APIキー（Edinet:SubscriptionKey）");
+
+                // EDINET はレート制限非公表。1 分 1 回程度に自制する。
+                return new EdinetInformationSource(
+                    httpClient, options.Edinet.SubscriptionKey, clock,
+                    Limiter(1, TimeSpan.FromMinutes(1), clock),
+                    loggerFactory.CreateLogger<EdinetInformationSource>());
+
+            case Boj:
+                if (string.IsNullOrWhiteSpace(options.Boj.Db) || options.Boj.SeriesCodes.Length == 0)
+                    return Skip(logger, provider, "統計分類（Boj:Db）と系列コード（Boj:SeriesCodes）");
+
+                // 日銀は「短時間における連続したアクセスは禁止」。系列を 1 要求に束ねたうえで 1 分 1 回に自制する。
+                return new BojInformationSource(
+                    httpClient, options.Boj.Db, options.Boj.SeriesCodes,
+                    Limiter(1, TimeSpan.FromMinutes(1), clock),
+                    loggerFactory.CreateLogger<BojInformationSource>());
+
+            case Fred:
+                if (string.IsNullOrWhiteSpace(options.Fred.ApiKey) || options.Fred.SeriesIds.Length == 0)
+                    return Skip(logger, provider, "APIキー（Fred:ApiKey）と系列ID（Fred:SeriesIds）");
+
+                // FRED は 120 回/分。その 1/2 に自制する。
+                return new FredInformationSource(
+                    httpClient, options.Fred.ApiKey, options.Fred.SeriesIds,
+                    Limiter(60, TimeSpan.FromMinutes(1), clock),
+                    loggerFactory.CreateLogger<FredInformationSource>());
 
             default:
-                loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!).LogWarning(
-                    "未知の Collection:Source:Provider '{Provider}' のため収集しません（no-op・IADR-0022）。", provider);
-                return new NoOpInformationSource();
+                logger.LogWarning(
+                    "未知の Collection:Source:Provider '{Provider}' のため、この情報源は収集しません（安全既定・IADR-0022）。",
+                    provider);
+                return null;
         }
     }
+
+    private static IInformationSource? Skip(ILogger logger, string provider, string required)
+    {
+        logger.LogWarning(
+            "Collection:Source:Provider に {Provider} が指定されていますが、{Required} が未設定のため、この情報源は" +
+            "収集しません（no-op へフォールバック・IADR-0022）。", provider, required);
+        return null;
+    }
+
+    private static IRateLimiter Limiter(int capacity, TimeSpan refillInterval, IClock clock) =>
+        new DelayingRateLimiter(new TokenBucket(capacity, refillInterval), clock);
 }

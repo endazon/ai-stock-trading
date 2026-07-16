@@ -8,10 +8,12 @@ namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
 // FR-01, ADR-0004/0005: Finnhub（案A+・無料枠）から現在値を取得する最小の情報源アダプタ。構成で明示有効化したときのみ用いる。
 // 取得失敗（レート制限・一時エラー）は当該銘柄をスキップしてログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
+// IADR-0061: 無料枠は 60 回/分のため、銘柄ごとの要求前に自制する（IRateLimiter）。
 internal sealed class FinnhubInformationSource(
     HttpClient httpClient,
     string apiKey,
     IReadOnlyList<string> symbols,
+    IRateLimiter rateLimiter,
     ILogger<FinnhubInformationSource> logger)
     : IInformationSource
 {
@@ -21,6 +23,8 @@ internal sealed class FinnhubInformationSource(
 
         foreach (var symbol in symbols)
         {
+            await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+
             // API キーはヘッダー（X-Finnhub-Token）で渡す。URL クエリに入れると OTel の HttpClient 計装が
             // リクエスト URL（クエリ含む）をトレースへ出力し、キーが可観測性基盤に漏えいするため（claude-review 指摘）。
             var url = $"https://finnhub.io/api/v1/quote?symbol={Uri.EscapeDataString(symbol)}";

@@ -16,7 +16,8 @@ public class FinnhubInformationSourceTests
         var handler = new StubHandler(HttpStatusCode.OK,
             """{"c":150.25,"h":151.0,"l":149.0,"o":149.5,"pc":148.0,"t":1720000000}""");
         var source = new FinnhubInformationSource(
-            new HttpClient(handler), "key", ["AAPL"], NullLogger<FinnhubInformationSource>.Instance);
+            new HttpClient(handler), "key", ["AAPL"], new CountingRateLimiter(),
+            NullLogger<FinnhubInformationSource>.Instance);
 
         var items = await source.FetchAsync();
 
@@ -37,11 +38,27 @@ public class FinnhubInformationSourceTests
     {
         var handler = new StubHandler(HttpStatusCode.TooManyRequests, "rate limited");
         var source = new FinnhubInformationSource(
-            new HttpClient(handler), "key", ["AAPL"], NullLogger<FinnhubInformationSource>.Instance);
+            new HttpClient(handler), "key", ["AAPL"], new CountingRateLimiter(),
+            NullLogger<FinnhubInformationSource>.Instance);
 
         var items = await source.FetchAsync();
 
         items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 銘柄ごとにレート制限を待つ()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"c":150.25,"h":151.0,"l":149.0,"o":149.5,"pc":148.0,"t":1720000000}""");
+        var limiter = new CountingRateLimiter();
+        var source = new FinnhubInformationSource(
+            new HttpClient(handler), "key", ["AAPL", "MSFT"], limiter,
+            NullLogger<FinnhubInformationSource>.Instance);
+
+        await source.FetchAsync();
+
+        limiter.Waits.Should().Be(2, "Finnhub Free の 60回/分 制限を送信前に自制する（IADR-0061）");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

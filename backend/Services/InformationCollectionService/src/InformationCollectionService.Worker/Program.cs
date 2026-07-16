@@ -1,3 +1,4 @@
+using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Worker.Composable.Adapters;
@@ -31,13 +32,15 @@ builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(C
 // FR-01, ADR-0004: 案A+ の許可リスト（許可された情報源のみ受理）。
 builder.Services.AddSingleton(SourceAllowlist.Default);
 
-// FR-01, IADR-0022: 情報源の選択（安全既定 no-op）。実 Finnhub 接続は Collection:Source:Provider=finnhub＋APIキーで明示有効化。
+// FR-01, IADR-0022/0061: 情報源の選択（安全既定 no-op）。実接続は Collection:Source:Provider に列挙し、かつ当該ソースの
+// 必須構成（APIキー・銘柄・CIK・系列コード等）が揃ったときのみ有効になる。案A+ の複数ソースはカンマ区切りで指定する
+// （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0061）。
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IInformationSource>(sp => InformationSourceFactory.Create(
-    builder.Configuration["Collection:Source:Provider"],
-    builder.Configuration["Collection:Source:Finnhub:ApiKey"],
-    builder.Configuration.GetSection("Collection:Source:Finnhub:Symbols").Get<string[]>() ?? [],
+    builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
+    sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILoggerFactory>()));
 
 // FR-01, FR-08: KB シンク（既定は no-op/ログ。実 platform KB 連携は #18）。
