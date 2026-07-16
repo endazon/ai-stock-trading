@@ -22,8 +22,14 @@ namespace AiStockTrading.IntegrationTests;
 [Trait("Category", "Integration")]
 public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16").Build();
-    private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management").Build();
+    // 外部インフラ注入時（Docker API が無い環境・E2EInfrastructure 参照）はコンテナを起動しない。
+    private readonly PostgreSqlContainer? _postgres = E2EInfrastructure.UseExternal
+        ? null
+        : new PostgreSqlBuilder("postgres:16").Build();
+
+    private readonly RabbitMqContainer? _rabbitMq = E2EInfrastructure.UseExternal
+        ? null
+        : new RabbitMqBuilder("rabbitmq:3.13-management").Build();
 
     // 発注執行の Program は global（無名参照）、リスク管理は extern alias（IADR-0050 決定1）。
     private WebApplicationFactory<Program>? _executionFactory;
@@ -44,13 +50,16 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 
     private async Task InitializeCoreAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
+        if (_postgres is not null && _rabbitMq is not null)
+            await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
 
         // 両 Worker で同一の接続文字列/キューを共有する。テーブルは非衝突（発注執行=executed_orders・
         // リスク管理=台帳/設定ほか）で、EF の __EFMigrationsHistory は MigrationId が異なるため共存する
         // （IADR-0050 決定2）。プロセスグローバルな環境変数のサービス別競合を回避できる。
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", _rabbitMq.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection",
+            E2EInfrastructure.PostgresConnection ?? _postgres!.GetConnectionString());
+        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString",
+            E2EInfrastructure.RabbitMqConnection ?? _rabbitMq!.GetConnectionString());
         Environment.SetEnvironmentVariable("Otlp__Endpoint", "http://localhost:4317");
         Environment.SetEnvironmentVariable("Broker__Provider", "paper");
 
@@ -66,7 +75,14 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             await _riskFactory.DisposeAsync();
         if (_executionFactory is not null)
             await _executionFactory.DisposeAsync();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _rabbitMq.DisposeAsync().AsTask());
+
+        // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
+        var disposals = new List<Task>();
+        if (_postgres is not null)
+            disposals.Add(_postgres.DisposeAsync().AsTask());
+        if (_rabbitMq is not null)
+            disposals.Add(_rabbitMq.DisposeAsync().AsTask());
+        await Task.WhenAll(disposals);
 
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
         Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);

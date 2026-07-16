@@ -27,8 +27,14 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
 {
     private const string Realm = "ai-stock-trading";
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16").Build();
-    private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management").Build();
+    // 外部インフラ注入時（Docker API が無い環境・E2EInfrastructure 参照）はコンテナを起動しない。
+    private readonly PostgreSqlContainer? _postgres = E2EInfrastructure.UseExternal
+        ? null
+        : new PostgreSqlBuilder("postgres:16").Build();
+
+    private readonly RabbitMqContainer? _rabbitMq = E2EInfrastructure.UseExternal
+        ? null
+        : new RabbitMqBuilder("rabbitmq:3.13-management").Build();
     private IContainer? _keycloak;
     private WebApplicationFactory<RiskManagementWorker::Program>? _riskFactory;
     private WebApplicationFactory<ReportWorker::Program>? _reportFactory;
@@ -52,25 +58,38 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
     {
         // dev realm には trading-service ロールと confidential クライアント ai-stock-trading-svc（client_credentials）が
         // 含まれる（infra/keycloak/realm-export.json・#117）。
-        var realmPath = Path.Combine(AppContext.BaseDirectory, "realm-export.json");
-        _keycloak = new ContainerBuilder("quay.io/keycloak/keycloak:26.0")
-            .WithEnvironment("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-            .WithEnvironment("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
-            .WithResourceMapping(new FileInfo(realmPath), "/opt/keycloak/data/import/")
-            .WithCommand("start-dev", "--import-realm")
-            .WithPortBinding(8080, true)
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPath($"/realms/{Realm}").ForPort(8080)))
-            .Build();
+        if (!E2EInfrastructure.UseExternalKeycloak)
+        {
+            var realmPath = Path.Combine(AppContext.BaseDirectory, "realm-export.json");
+            _keycloak = new ContainerBuilder("quay.io/keycloak/keycloak:26.0")
+                .WithEnvironment("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+                .WithEnvironment("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                .WithResourceMapping(new FileInfo(realmPath), "/opt/keycloak/data/import/")
+                .WithCommand("start-dev", "--import-realm")
+                .WithPortBinding(8080, true)
+                .WithWaitStrategy(Wait.ForUnixContainer()
+                    .UntilHttpRequestIsSucceeded(r => r.ForPath($"/realms/{Realm}").ForPort(8080)))
+                .Build();
+        }
 
-        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync(), _keycloak.StartAsync());
+        var startups = new List<Task>();
+        if (_postgres is not null)
+            startups.Add(_postgres.StartAsync());
+        if (_rabbitMq is not null)
+            startups.Add(_rabbitMq.StartAsync());
+        if (_keycloak is not null)
+            startups.Add(_keycloak.StartAsync());
+        await Task.WhenAll(startups);
 
-        var keycloakBase = $"http://{_keycloak.Hostname}:{_keycloak.GetMappedPublicPort(8080)}";
+        var keycloakBase = E2EInfrastructure.KeycloakBaseUrl
+            ?? $"http://{_keycloak!.Hostname}:{_keycloak.GetMappedPublicPort(8080)}";
         _tokenEndpoint = $"{keycloakBase}/realms/{Realm}/protocol/openid-connect/token";
 
         // 提供側 Worker は同一 PostgreSQL を共有（テーブル非衝突・IADR-0050 決定2）。Auth:Authority を実 Keycloak に向ける。
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", _rabbitMq.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection",
+            E2EInfrastructure.PostgresConnection ?? _postgres!.GetConnectionString());
+        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString",
+            E2EInfrastructure.RabbitMqConnection ?? _rabbitMq!.GetConnectionString());
         Environment.SetEnvironmentVariable("Otlp__Endpoint", "http://localhost:4317");
         Environment.SetEnvironmentVariable("Auth__Authority", $"{keycloakBase}/realms/{Realm}");
 
@@ -89,11 +108,12 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
         if (_reportFactory is not null)
             await _reportFactory.DisposeAsync();
 
-        var disposals = new List<Task>
-        {
-            _postgres.DisposeAsync().AsTask(),
-            _rabbitMq.DisposeAsync().AsTask(),
-        };
+        // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
+        var disposals = new List<Task>();
+        if (_postgres is not null)
+            disposals.Add(_postgres.DisposeAsync().AsTask());
+        if (_rabbitMq is not null)
+            disposals.Add(_rabbitMq.DisposeAsync().AsTask());
         if (_keycloak is not null)
             disposals.Add(_keycloak.DisposeAsync().AsTask());
         await Task.WhenAll(disposals);

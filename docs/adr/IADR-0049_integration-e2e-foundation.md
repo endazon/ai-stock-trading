@@ -84,6 +84,13 @@ E2E を成立させ、かつ **既定 CI を不安定化させない**ことを�
 - 追加する統合テストプロジェクトは `backend/backend.slnx` に含めるが、既定 CI では `--filter` で実行除外
   するため、build-and-test の実行時間・安定性への影響はビルド分のみ。
 - Testcontainers は Docker を要求する。ローカル/nightly でのみ実走し、pull_request 既定 CI では走らせない。
+  - **補足（2026-07-16・#82 後続）**: Testcontainers は **Docker API**（npipe/unix socket）必須のため、
+    containerd 系ランタイム（例: Rancher Desktop の containerd/nerdctl 構成）では
+    `Failed to connect to Docker endpoint` で実走できない。この場合の逃げ道として、外部で用意した実インフラの
+    エンドポイントを環境変数（`E2E_POSTGRES_CONNECTION` / `E2E_RABBITMQ_CONNECTION` / `E2E_KEYCLOAK_BASEURL`）で
+    注入する経路を用意する（`E2EInfrastructure.cs`・`scripts/e2e-local-infra.sh`）。**検証対象が実 PostgreSQL/
+    RabbitMQ/Keycloak である点は同じ**で、差は「コンテナの起動主体（Testcontainers か外部か）」のみ。
+    本決定（Testcontainers を基盤とする）は CI 既定として維持し、外部注入は未設定時に発動しない補助経路。
 - compose の healthcheck・runtime イメージへの `curl` 追加は dev/E2E 目的。本番配備は platform（#24）の管掌。
 
 ## 却下した代替案
