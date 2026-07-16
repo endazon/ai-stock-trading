@@ -95,5 +95,7 @@ internal sealed class HttpLlmCompletionClient(
     // InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。欠落時は 0 として扱う。
     // Model はゲートウェイが実際に選択したモデル（要求の Model は希望値であり、越境ルーティングで変わり得る）。
     // FR-11 の全量ログで「どのモデルが答えたか」を残すために受ける（IADR-0062 決定1）。
+    // 実基盤の契約 Platform.Shared.Contracts.Dtos.CompletionApiResponse に Model は実在する（確認済み）。
+    // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
     private sealed record CompletionResponse(string? Text, bool Sent, int? InputTokens, int? OutputTokens, string? Model);
 }

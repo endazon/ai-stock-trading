@@ -1,7 +1,7 @@
 ---
 title: 実 LLM 接続の実運用化スライス（全量ログ・タイムアウト構成化・設定サーフェス）— Issue #11
 type: spec
-status: draft
+status: review
 related_ids:
   - FR-04
   - FR-11
@@ -68,14 +68,19 @@ related_specs:
 - **全量ログ**（FR-11）: プロンプト本文と LLM 生出力を記録する。プロンプトは長大かつ保有ポジション・資金等の
   機微を含むため、**既定オフ**の明示ゲート（`LlmGateway:LogPrompts`）とする（IADR-0062 決定1）。
 - **タイムアウトの構成化**: `LlmGateway:TimeoutSeconds`（既定 30＝現行値。不正・非正値は既定へ倒す）。
-- **設定サーフェス**（PR 末尾の単一コミット）: helm values / docker-compose / `.env.example` / appsettings に
-  `LlmGateway__BaseUrl` ほかの口を空既定で開ける。**実キー・実 URL は投入しない**。
-- **死んだ秘密注入の除去**: trade-decision への `ANTHROPIC_API_KEY` 注入（helm/compose/`.env.example`）を削除する。
-  コードは同変数を一切読まず、ADR-0010 の設計（鍵は MSP ゲートウェイ側が保持し AST は鍵を持たない）と矛盾する。
+- **設定サーフェス**（PR 末尾の単一コミット）: helm values / docker-compose / `.env.example` /
+  appsettings.Development に `LlmGateway__BaseUrl` ほかの口を空既定で開ける。**実キー・実 URL は投入しない**。
+  base `appsettings.json` には置かない（IADR-0048 決定1 の挙動中立を保つ）。
+- **`ANTHROPIC_API_KEY` の誤解を招くコメントの是正**: 「実 LLM は未実装」「空=呼ばない」という現状に反する
+  記述を、「AST では未使用（鍵は MSP ゲートウェイ側が保持・ADR-0010）」へ改める。
 
 **対象外（後続）**
 
 - **RAG 文脈（#18）**: ナレッジベース連携は本 PR の対象外（交差回避）。
+- **`ANTHROPIC_API_KEY` 注入そのものの除去**（IADR-0062 決定6）: コードが同変数を一切読まず ADR-0010 と矛盾する
+  ため除去が正しいが、`scripts/validate-runtime-scaffold.js`（`SECRET_ENV_KEYS` に必須列挙のため `.env.example`
+  から消すと検査が落ちる）と `scripts/k8s-local-deploy.sh` へ波及し、本スライスのスコープ（trade-decision＋
+  設定サーフェス）を越える。#11 の残スコープの達成にも必須ではないため後続とする。
 - 実クラスタでの実 LLM 応答の実証（要 MSP 側 Anthropic 鍵・#22 デプロイ配線）→ **E2E / 後続**。
 - 実データ供給（#14/#12/#13）・監査永続（#17）・費用統制の実値（#23/#79）。
 - `Shared.Contracts` / RiskManagementService / ReportService / ConfigurationService / `TradingDefaults` は不変更。
@@ -90,12 +95,14 @@ related_specs:
 
 ## 受け入れ基準（テストへの写像）
 
-- [ ] `LogPrompts=true` でプロンプト本文が記録される（FR-11）
-- [ ] `LogPrompts=true` で LLM 生出力が記録される（FR-11）
-- [ ] `LogPrompts` 既定（未設定）ではプロンプト・生出力を記録しない（機微の既定露出を避ける）
-- [ ] `LogPrompts=true` でも非 2xx / 送信拒否 / タイムアウトは Hold に倒れる（IADR-0017 の安全既定が不変）
-- [ ] `LlmGateway:TimeoutSeconds` が未設定・不正・非正値のとき既定 30 秒に倒れる
-- [ ] `LlmGateway:BaseUrl` 未設定は Placeholder（実 LLM を呼ばない）＝**既存の選択テストが不変で緑**
+- [x] `LogPrompts=true` でプロンプト本文が記録される（FR-11）
+- [x] `LogPrompts=true` で LLM 生出力が記録される（FR-11）
+- [x] `LogPrompts` 既定（未設定）ではプロンプト・生出力を記録しない（機微の既定露出を避ける）
+- [x] `LogPrompts=true` でも非 2xx / 送信拒否 / タイムアウトは Hold に倒れる（IADR-0017 の安全既定が不変）
+- [x] **`LlmGateway:LogPrompts` の構成キーが Program.cs の配線を通って全量ログの有無を切り替える**
+      （end-to-end。キー名のタイプミス・既定値の反転を検出する）
+- [x] `LlmGateway:TimeoutSeconds` が未設定・不正・非正値のとき既定 30 秒に倒れる
+- [x] `LlmGateway:BaseUrl` 未設定は Placeholder（実 LLM を呼ばない）＝**既存の選択テストが不変で緑**
 - [ ] 実クラスタでの実 LLM 応答（要 MSP 側鍵）→ **本 PR 対象外・E2E/#22 後続**
 
 ## 検証
