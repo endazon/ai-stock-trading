@@ -24,8 +24,14 @@ public sealed class RetentionOptions
     /// <summary>1 巡回で削除する最大行数。バッチ削除のメモリ上限になる。</summary>
     public int BatchSize { get; set; } = 500;
 
-    /// <summary>巡回間隔（下限 1 時間・設定ミスで高頻度に回らないようにする）。</summary>
-    public TimeSpan Interval => TimeSpan.FromHours(Math.Max(1, IntervalHours));
+    /// <summary>
+    /// 巡回間隔。下限 1 時間（設定ミスで高頻度に回らないため）／上限 1 年（<see cref="TimeSpan.FromHours(double)"/> が
+    /// オーバーフローで例外を投げ、BackgroundService の起動時に落ちるのを防ぐため）。
+    /// </summary>
+    public TimeSpan Interval => TimeSpan.FromHours(Math.Clamp(IntervalHours, 1, MaximumIntervalHours));
+
+    /// <summary>巡回間隔の上限（時間）。1 年。これを超える間隔は「実質無効」であり、無効化は Enabled で行う。</summary>
+    public const int MaximumIntervalHours = 24 * 365;
 
     /// <summary>1 巡回の削除上限（下限 1・上限 10000）。</summary>
     public int EffectiveBatchSize => Math.Clamp(BatchSize, 1, 10_000);

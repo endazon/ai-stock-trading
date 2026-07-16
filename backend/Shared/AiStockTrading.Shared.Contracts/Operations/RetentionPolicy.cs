@@ -34,14 +34,10 @@ public static class RetentionPolicy
         {
             return now - TimeSpan.FromDays(days);
         }
-        catch (ArgumentOutOfRangeException)
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or OverflowException)
         {
-            // 極端な設定値（int.MaxValue 日等）で DateTimeOffset の下限を割る場合。安全側＝「何も消さない」に
-            // 倒すため、表現可能な最古の時刻を返す（＝どの行も cutoff より古くならない）。
-            return DateTimeOffset.MinValue;
-        }
-        catch (OverflowException)
-        {
+            // 極端な設定値（int.MaxValue 日等）で DateTimeOffset の下限を割る／TimeSpan が溢れる場合。
+            // 安全側＝「何も消さない」に倒すため、表現可能な最古の時刻を返す（どの行も cutoff より古くならない）。
             return DateTimeOffset.MinValue;
         }
     }
