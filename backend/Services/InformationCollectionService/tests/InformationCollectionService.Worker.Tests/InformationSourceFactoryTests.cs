@@ -126,6 +126,19 @@ public class InformationSourceFactoryTests
     }
 
     [Fact]
+    public void 一覧の空要素は未設定として扱う()
+    {
+        // 環境変数の空指定（Collection__Source__Fred__SeriesIds__0=""）で実体のない構成のまま有効化しない。
+        var options = new CollectionSourceOptions
+        {
+            Provider = "fred",
+            Fred = new FredOptions { ApiKey = "key", SeriesIds = ["", "  "] },
+        };
+
+        Create(options).Should().BeOfType<NoOpInformationSource>();
+    }
+
+    [Fact]
     public void fred_は_APIキーと系列IDが要る()
     {
         var options = new CollectionSourceOptions { Provider = "fred", Fred = new FredOptions { ApiKey = "key" } };

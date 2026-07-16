@@ -27,6 +27,10 @@ internal static class InformationSourceFactory
         IClock clock,
         ILoggerFactory loggerFactory)
     {
+        // 環境変数の空指定（例: Collection__Source__SecEdgar__Ciks__0=""）は「未設定」として扱う。
+        // 空要素を持つ配列を「設定あり」と見なすと、実体のない構成でソースが有効化されてしまう（安全既定に反する）。
+        options = Normalize(options);
+
         var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
         var sources = new List<IInformationSource>();
 
@@ -44,6 +48,36 @@ internal static class InformationSourceFactory
             _ => new CompositeInformationSource(sources, loggerFactory.CreateLogger<CompositeInformationSource>()),
         };
     }
+
+    // 一覧系の構成から空要素を除く（空だけなら空配列＝未設定として扱われる）。
+    private static CollectionSourceOptions Normalize(CollectionSourceOptions options) => new()
+    {
+        Provider = options.Provider,
+        Finnhub = new FinnhubOptions
+        {
+            ApiKey = options.Finnhub.ApiKey,
+            Symbols = Clean(options.Finnhub.Symbols),
+        },
+        SecEdgar = new SecEdgarOptions
+        {
+            UserAgent = options.SecEdgar.UserAgent,
+            Ciks = Clean(options.SecEdgar.Ciks),
+        },
+        Edinet = options.Edinet,
+        Boj = new BojOptions
+        {
+            Db = options.Boj.Db,
+            SeriesCodes = Clean(options.Boj.SeriesCodes),
+        },
+        Fred = new FredOptions
+        {
+            ApiKey = options.Fred.ApiKey,
+            SeriesIds = Clean(options.Fred.SeriesIds),
+        },
+    };
+
+    private static string[] Clean(string[] values) =>
+        [.. values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim())];
 
     // カンマ区切り・前後空白・大文字小文字を許容する。none は「収集しない」を意味するため列挙から除く。
     private static IEnumerable<string> ParseProviders(string? provider) =>
