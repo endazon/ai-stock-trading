@@ -9,11 +9,13 @@ namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 // confidentiality/purpose を載せて送信先を判定させる（送信可否・モデル選択はゲートウェイ側）。
 // フェイルセーフ（IADR-0017 の安全既定と一致）: 送信拒否（Sent=false）・非 2xx・例外・タイムアウト・空/不正応答は
 // Hold（取引しない）に倒す。判断パーサはこの JSON を Hold として解釈する。
+// #79, IADR-0055 決定3: 成功応答のトークンを ILlmUsageReporter へ渡す（計測点は egress）。既定 NoOp＝publish しない。
 internal sealed class HttpLlmCompletionClient(
     HttpClient httpClient,
     ILogger<HttpLlmCompletionClient> logger,
     string confidentiality,
-    string purpose)
+    string purpose,
+    ILlmUsageReporter usageReporter)
     : ILlmCompletionClient
 {
     private const string HoldFallback = """{"action":"Hold","rationale":"LLM ゲートウェイ送信不可のため見送り"}""";
@@ -46,6 +48,19 @@ internal sealed class HttpLlmCompletionClient(
                 return HoldFallback;
             }
 
+            // #79, IADR-0055: 成功応答のトークンを費用計測へ渡す。計測は best-effort＝失敗しても LLM 応答は壊さない
+            // （費用計測の不調で取引判断を Hold に倒すのは過剰。計上漏れは at-least-once 再配信で緩和される）。
+            try
+            {
+                await usageReporter
+                    .ReportAsync(new LlmUsage(dto.InputTokens ?? 0, dto.OutputTokens ?? 0), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "LLM 費用計測の報告に失敗しました（応答は継続）。");
+            }
+
             return dto.Text;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -65,5 +80,6 @@ internal sealed class HttpLlmCompletionClient(
     private sealed record CompletionRequest(string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose);
 
     // POST /complete の応答（CompletionApiResponse の必要部分）。Sent=false は送信拒否（縮退）。
-    private sealed record CompletionResponse(string? Text, bool Sent);
+    // InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。欠落時は 0 として扱う。
+    private sealed record CompletionResponse(string? Text, bool Sent, int? InputTokens, int? OutputTokens);
 }

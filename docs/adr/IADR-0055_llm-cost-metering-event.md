@@ -75,6 +75,8 @@ plan_refs:
   `CostControlService` の `LlmCostIncurredConsumer`＋登録、`HttpLlmCompletionClient` への reporter 配線。
 - 追加（冪等性・決定5）: **消費済み `MessageId` の重複排除ストア**（新設。既存 `ICostLedger`＝月次費用台帳とは
   別物の processed-message テーブル/ストア）と、`LlmCostIncurredConsumer` からの記録・照合。
+- 追加（監査・FR-11/IADR-0019）: `LlmCostIncurredAuditConsumer`＋`AuditEntryFactory.From(LlmCostIncurred)`。
+  新契約イベントは全て監査台帳へ記録する規約のため必須（`AuditConsumerCoverageTests` が購読漏れを検知する）。
 - テスト: 単価純関数／reporter（harness で publish 検証）／消費者（InMemory ledger で計上検証）／
   **同一 `MessageId` の再配信で二重計上しない回帰テスト**（決定5）。
 - 未着手（さらに後続）: #19 バージョン付き月次上限の取得（現状 `DefaultCostLimitsProvider`）。

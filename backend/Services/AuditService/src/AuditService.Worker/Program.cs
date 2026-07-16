@@ -52,6 +52,7 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<ReportConfirmedAuditConsumer>();
     // NFR（費用）/FR-01: 費用しきい値到達（#23）・情報収集完了（#9）も監査台帳へ記録する（全イベントの時系列記録・FR-11）。
     x.AddConsumer<CostThresholdReachedAuditConsumer>();
+    x.AddConsumer<LlmCostIncurredAuditConsumer>();
     x.AddConsumer<InformationCollectedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
