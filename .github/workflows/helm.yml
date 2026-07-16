@@ -50,11 +50,28 @@ jobs:
         run: helm template ast "$CHART" --set tradingCycle.cronjob.enabled=true > /dev/null
       - name: helm template (moomoo.enabled=true)
         run: helm template ast "$CHART" --set moomoo.enabled=true > /dev/null
+      # #132 / IADR-0059: OpenD の本番配備（opend.enabled）と秘匿の受け口（externalSecrets）も同様に描画する。
+      - name: helm template (opend.enabled=true)
+        run: helm template ast "$CHART" --set opend.enabled=true > /dev/null
+      # #132: 非 root 化（securityContext ＋ HOME 再調整）のオプトイン経路。**実 OpenD での動作確認は実基盤が要り
+      # CI 対象外**（#132 の実測フェーズ）。ここでは描画が壊れないことだけを守る。
+      - name: helm template (opend.enabled=true / 非 root オプトイン)
+        run: |
+          helm template ast "$CHART" \
+            --set opend.enabled=true \
+            --set opend.home=/home/opend \
+            --set opend.securityContext.runAsNonRoot=true \
+            --set opend.securityContext.runAsUser=10001 \
+            --set opend.podSecurityContext.fsGroup=10001 > /dev/null
+      - name: helm template (externalSecrets.enabled=true)
+        run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       - name: helm template (all feature flags on)
         run: |
           helm template ast "$CHART" \
             --set tradingCycle.cronjob.enabled=true \
-            --set moomoo.enabled=true > /dev/null
+            --set moomoo.enabled=true \
+            --set opend.enabled=true \
+            --set externalSecrets.enabled=true > /dev/null
       # 描画結果が空（テンプレート消失・条件の取り違え）でも上記は exit 0 になり得るため、
       # 既定値の描画が実際にリソースを産んでいることを確認する（無検査の緑を作らない）。
       - name: Assert default render is non-empty
@@ -65,3 +82,36 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
+      # #132 / IADR-0059: 既定が no-op（fail-safe）であることを描画で検査する。実弾防止と同じ性質の
+      # 「既定で外部へ触らない」保証であり、うっかり既定を反転させたら CI で落とす。
+      - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
+        run: |
+          out="$(helm template ast "$CHART")"
+          for forbidden in 'kind: ExternalSecret' 'name: opend'; do
+            if printf '%s' "$out" | grep -q "$forbidden"; then
+              echo "::error::既定値の描画に「$forbidden」が現れた（#132 の絶対条件＝既定 no-op に違反）。"
+              exit 1
+            fi
+          done
+          # 既定の発注先は paper（IADR-0016 の安全既定）。moomoo になっていたら実発注経路が既定で開く。
+          if ! printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"'; then
+            echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
+            exit 1
+          fi
+      # #132 / IADR-0059: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
+      - name: Assert misconfiguration gates fail
+        run: |
+          assert_fail() {
+            desc="$1"; shift
+            if helm template ast "$CHART" "$@" > /dev/null 2>&1; then
+              echo "::error::$desc: 描画が通ってしまった（ゲートが機能していない）。"
+              exit 1
+            fi
+            echo "ok (gate fired): $desc"
+          }
+          assert_fail "moomoo.enabled=true / host 空" --set moomoo.enabled=true --set moomoo.opend.host=""
+          assert_fail "moomoo.enabled=true / rsaSecretName 空" --set moomoo.enabled=true --set moomoo.opend.rsaSecretName=""
+          assert_fail "opend.enabled=true / credentialsSecretName 空" --set opend.enabled=true --set opend.credentialsSecretName=""
+          assert_fail "opend.enabled=true / rsaSecretName 空" --set opend.enabled=true --set opend.rsaSecretName=""
+          assert_fail "opend.enabled=true / home 空" --set opend.enabled=true --set opend.home=""
+          assert_fail "externalSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
