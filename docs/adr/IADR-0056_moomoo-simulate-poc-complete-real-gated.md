@@ -2,10 +2,10 @@
 title: IADR-0056 moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート）
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, ADR-0002, IADR-0016, IADR-0053]
+related_ids: [FR-05, ADR-0002, IADR-0016, IADR-0053, IADR-0057]
 author: endazon (with Claude Code)
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-16
 plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
   - ../../planning/projects/ai-stock-trading/06_technical/03_moomoo-integration.md
@@ -24,7 +24,8 @@ plan_refs:
 - 関連する計画書 ID: **FR-05**（発注執行）、**ADR-0002**（moomoo OpenAPI・**Proposed**: デモ取引 `TrdEnv.SIMULATE` の PoC 成功が Accepted 条件）
 - 対象 Issue: [#13](https://github.com/endazon/ai-stock-trading/issues/13)（moomoo アダプタ）/ [#124](https://github.com/endazon/ai-stock-trading/issues/124)（OpenD 常駐）
 - 関連 IADR: [IADR-0016](IADR-0016_safe-broker-execution.md)（安全既定 paper・moomoo ゲート）、
-  [IADR-0053](IADR-0053_moomoo-opend-dockerization.md)（OpenD Docker/常駐・#124 / PR #126・develop マージ済）
+  [IADR-0053](IADR-0053_moomoo-opend-dockerization.md)（OpenD Docker/常駐・#124 / PR #126・develop マージ済）、
+  [IADR-0057](IADR-0057_order-dispatch-idempotency.md)（発注の冪等化＝本 IADR §3 の解禁前提のひとつ・#131）
 - 関連仕様書: [20260715_13_moomoo-broker-adapter](../specs/20260715_13_moomoo-broker-adapter.md)
 
 ## コンテキストと課題
@@ -46,8 +47,14 @@ plan_refs:
 1. **PoC 完了の記録**: 上記 live 検証（2026-07-15）が ADR-0002 の Accepted 条件（SIMULATE デモ取引成功）を満たすことを、本 IADR と仕様書で記録する。IADR-0016 のゲート趣旨（「PoC で実証されるまで実発注経路を作らない」）は、SIMULATE PoC の成功により充足された。
 2. **SIMULATE 固定を維持**: 実アダプタは `TrdHeader` に `TrdEnv_Simulate` を固定する。`OrderIntent.Mode=Live` でも SIMULATE で発注する（IADR-0016 の二重化した実弾防止＝BrokerFactory の config ゲート＋SIMULATE 強制を維持）。
 3. **実弾（`TrdEnv_Real`）解禁は別 IADR＋明示 config を要する**。解禁の前提として、少なくとも次を満たすこと:
-   - 発注の**冪等化**（outbox / 発注前 `DecisionId` 予約行）。現状の冪等性は発注後の `DecisionId` 照合のみで、「ブローカ発注成功→永続化失敗」の窓が未保護（`OrderExecutionService.cs` にコメント済・IADR-0016 の後続）。
+   - ~~発注の**冪等化**（outbox / 発注前 `DecisionId` 予約行）~~ → **充足済み**（2026-07-16・#131 /
+     [IADR-0057](IADR-0057_order-dispatch-idempotency.md)）。発注前 `DecisionId` 予約による3相化で
+     「ブローカ発注成功→永続化失敗」の窓を塞いだ。ただし予約が `Reserved` のまま残った注文の
+     **自動リコンサイルは未実装**（`_error` キュー滞留＋人手対応）であり、実弾解禁時には
+     この滞留の監視・解消手段を併せて用意すること。
    - リスク統制・監査・上限（`TradingDefaults`）の実弾向け再確認、秘匿情報の Vault 化。
+   - **本項の充足は解禁そのものではない**。`TrdEnv_Real` の解禁には引き続き**別 IADR＋明示 config** を要し、
+     IADR-0016 の二重ゲート（BrokerFactory の config ゲート＋SIMULATE 固定）は維持する。
 4. **上流への環流**: ADR-0002 の Accepted 化は上流（`project-planning`）の triage に委ねる。PoC 結果・無人運用の追検証は
    plan-feedback 記録（[`feedback/20260715_adr0002-opend-unattended-limited.md`](../../feedback/20260715_adr0002-opend-unattended-limited.md)）で
    AST 側に起票済み。上流計画リポ（`project-planning`）への Issue 化は本 PR 群のマージ後に人手で行う（未完＝「環流予定」）。
