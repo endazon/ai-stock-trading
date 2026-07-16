@@ -202,7 +202,16 @@ services:
     extraEnv:
       - { name: Reports__BaseUrl, value: "" }
       - { name: RiskManagement__BaseUrl, value: "" }
-      # fail-safe: 空=Placeholder LLM（呼ばない。実 LLM は #79）。
+      # FR-04, ADR-0010, IADR-0062: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
+      # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
+      # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
+      - { name: LlmGateway__BaseUrl, value: "" }
+      # 空・不正・非正値=既定 30 秒（IADR-0062 決定2）。
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0062 決定1）。
+      - { name: LlmGateway__LogPrompts, value: "" }
+      # 【AST では未使用】鍵は MSP の LlmGateway 側（Llm:ApiKey）が保持し AST は鍵を持たない（ADR-0010）。
+      # コードは本変数を読まない。除去は後続（IADR-0062 決定6）。
       - name: ANTHROPIC_API_KEY
         secretKeyRef: { name: ast-secrets, key: anthropic-api-key, optional: true }
       # IADR-0051: s2s 同期照会（daily-policy/sizing-context）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
