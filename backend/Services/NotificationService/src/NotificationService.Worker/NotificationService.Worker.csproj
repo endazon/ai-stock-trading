@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- FR-14, IADR-0063 決定1: Gateway 常駐（詳細設計07 の採用方式）。Application へは漏らさずアダプタに隔離する。 -->
+    <PackageReference Include="Discord.Net.WebSocket" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <ProjectReference Include="..\NotificationService.Application\NotificationService.Application.csproj" />
