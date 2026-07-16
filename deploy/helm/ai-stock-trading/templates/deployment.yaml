@@ -70,7 +70,7 @@ spec:
             - name: Broker__Provider
               value: {{ ternary "moomoo" "paper" $.Values.moomoo.enabled | quote }}
             {{- if $.Values.moomoo.enabled }}
-            {{- /* #132, IADR-0059: 誤配備は描画時に止める。host / RSA 鍵を欠いた moomoo 有効化は
+            {{- /* #132, IADR-0060: 誤配備は描画時に止める。host / RSA 鍵を欠いた moomoo 有効化は
                    「接続はするが trade だけ落ちる」形になりやすい（起動時 preflight でも落ちる）。 */}}
             {{- if not $.Values.moomoo.opend.host }}
             {{- fail "moomoo.enabled=true には moomoo.opend.host（常駐 OpenD のホスト。in-cluster では Service 名 'opend'）が要ります。" }}
@@ -118,7 +118,7 @@ spec:
         - name: moomoo-rsa
           secret:
             secretName: {{ $.Values.moomoo.opend.rsaSecretName }}
-            {{- /* #132, IADR-0059 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。
+            {{- /* #132, IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。
                    ⚠️ 本コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
                    非 root 実行へ移す場合は fsGroup ＋ 0440 が要る（chart README 参照）。 */}}
             defaultMode: {{ $.Values.moomoo.opend.rsaSecretDefaultMode }}

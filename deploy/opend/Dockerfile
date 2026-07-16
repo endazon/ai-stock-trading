@@ -42,7 +42,7 @@ RUN mkdir -p /tmp/x && tar -xzf /tmp/opend.tar.gz -C /tmp/x \
 # 同梱 .so を解決する。
 ENV LD_LIBRARY_PATH=/opt/opend
 
-# #132 / IADR-0059 決定 2: 非 root 実行（securityContext.runAsNonRoot）を**可能にする**下ごしらえ。
+# #132 / IADR-0060 決定 2: 非 root 実行（securityContext.runAsNonRoot）を**可能にする**下ごしらえ。
 # ここでは USER を切り替えない（既定は root 実行のまま＝現行 dev 経路を変えない）。理由:
 #   OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書く。HOME を変えると、確立済みのデバイス信頼を
 #   失って有人の再検証（画像/SMS）からやり直しになる恐れがあり、実 OpenD でしか確かめられない。

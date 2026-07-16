@@ -11,6 +11,7 @@ related_ids:
   - IADR-0056
   - IADR-0057
   - IADR-0059
+  - IADR-0060
 author: endazon (with Claude Code)
 created: 2026-07-08
 updated: 2026-07-16
@@ -41,13 +42,13 @@ plan_refs:
 | 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（microservices-platform#266 / IADR-0066） |
 | 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
-| moomoo OpenD | 常駐モデル（IADR-0053）。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**（#132 / IADR-0059）。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
+| moomoo OpenD | 常駐モデル（IADR-0053）。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**（#132 / IADR-0060）。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 
 ## OpenD の本番切替チェックリスト（#132）
 
 > 起点: [#132](https://github.com/endazon/ai-stock-trading/issues/132)（OpenD 常駐の本番化・残検証）／
-> 設計判断: [IADR-0059](../adr/IADR-0059_opend-production-cutover-gates.md)／
+> 設計判断: [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md)／
 > 仕様書: [20260716_132_opend-production-readiness](../specs/20260716_132_opend-production-readiness.md)
 >
 > **現在地**: 本番化に必要な**整備は済んでいる**（chart 化・ハードニングの切替口・秘匿の受け口・切替ゲート）が、
@@ -58,7 +59,7 @@ plan_refs:
 
 | 段階 | 内容 | 状態 |
 | --- | --- | --- |
-| 1. 整備 | chart 化（`opend.enabled`）・パーミッション・秘匿受け口・切替ゲート・手順書 | **済**（#132 / IADR-0059） |
+| 1. 整備 | chart 化（`opend.enabled`）・パーミッション・秘匿受け口・切替ゲート・手順書 | **済**（#132 / IADR-0060） |
 | 2. シミュレータ環境での全動作確認 | SIMULATE のまま、本番相当の配備（chart 経路）で一巡を確認する | **未** |
 | 3. 本番移行（SIMULATE 常用） | 安定ノード・Vault・監視を整えて常駐運用 | **未** |
 | 4. 実弾解禁 | **別 IADR が要る**。本表と IADR-0056 §3 の前提がすべて充足してから | **未**（本 issue の対象外） |
@@ -82,7 +83,7 @@ plan_refs:
 
 > 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別 IADR ＋ 明示 config** が要り、
 > 現状のコードは `TrdEnv_Simulate` 固定・`BrokerFactory` の config ゲート・`Broker:Moomoo:TrdEnv` の拒否という
-> **三重の閂**で塞いである（IADR-0016 / IADR-0056 / IADR-0059）。
+> **三重の閂**で塞いである（IADR-0016 / IADR-0056 / IADR-0060）。
 
 ### 切替手順（段階 2→3・SIMULATE のまま）
 

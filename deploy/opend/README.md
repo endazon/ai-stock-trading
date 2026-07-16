@@ -154,7 +154,7 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 - ➡️ **常駐モデルを採用**: 初回のみ有人で対話検証（`attach`）、以降は安定 egress IP 下で無人再起動が成立。#13 は稼働中 `opend:11111` へ。
 - 残（未検証）: egress IP 変更時の再検証発生の切り分け、海外 IP（Hetzner）接続・ToS、長期常駐安定性・強制アップデート、取引 PW アンロック（SIMULATE 範囲）。
 
-## 本番化（#132 / IADR-0059）
+## 本番化（#132 / IADR-0060）
 
 本ディレクトリは **dev 経路**（生 manifest）である。**本番配備は chart の `opend.enabled=true`** を使う
 （[chart README](../helm/ai-stock-trading/README.md)）。切替の前提条件・手順は
