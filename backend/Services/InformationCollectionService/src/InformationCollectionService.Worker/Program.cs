@@ -2,6 +2,7 @@ using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 using AiStockTrading.InformationCollection.Worker.Composable.Polling;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Serilog;
@@ -48,7 +49,10 @@ builder.Services.AddScoped<AppSvc>();
 // NFR（費用）, IADR-0031: 定時サイクルの費用統制（#23）ゲート。CostControl:BaseUrl 未設定/不正 URI は Placeholder
 // （Normal＝停止も間隔延長もしない）＝安全既定でゲート。設定時のみ GET /costs/state を同期照会する（解決時に構成を読む）。
 // 同期クリティカルパス（巡回冒頭）に置くため短いタイムアウトを設定する。
-builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(5));
+// IADR-0051: /costs/state は OwnerOrService のため client_credentials サービストークンを伝播する。
+// ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → Normal の安全既定）＝現行挙動を保持する。
+builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderCostControlGate>();
 builder.Services.AddScoped<ICostControlGate>(sp =>
 {

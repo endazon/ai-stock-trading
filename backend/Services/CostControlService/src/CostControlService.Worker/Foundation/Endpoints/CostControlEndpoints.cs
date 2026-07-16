@@ -9,14 +9,20 @@ using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlServic
 
 namespace AiStockTrading.CostControl.Worker.Foundation.Endpoints;
 
-// NFR（費用）, FR-09, IADR-0027: 費用計上・統制判定・費用レビューのエンドポイント。すべて OwnerOnly（利用者/サービスの
-// 認可は #22 で service-to-service に調整）。しきい値の上方遷移時に CostThresholdReached を発行する。
+// NFR（費用）, FR-09, IADR-0027: 費用計上・統制判定・費用レビューのエンドポイント。
+// しきい値の上方遷移時に CostThresholdReached を発行する。
+//
+// 認可（IADR-0051・最小権限）: 既定は OwnerOnly。**読み取り系（/state・/review）のみ OwnerOrService** へ分離し、
+// 定時サイクル poller（情報収集 #9・IADR-0031）がサービストークンで統制状態を照会できるようにする。
+// **書き込み系（/record）は OwnerOnly 据え置き**＝サービスへ費用の書き込み権限は与えない
+// （サービスからの費用計上はイベント LlmCostIncurred で行う・IADR-0055 決定1）。
 internal static class CostControlEndpoints
 {
     public static IEndpointRouteBuilder MapCostControlEndpoints(this IEndpointRouteBuilder app)
     {
+        // 認可は親では付けず read/owner のサブグループで指定する（親に付けると読み取り側で合成され
+        // OwnerOnly も要求されてしまうため。RiskControlEndpoints/ReportEndpoints と同形）。
         var g = app.MapGroup("/costs")
-            .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)
             .WithTags("CostControl")
             .AddEndpointFilter(async (ctx, next) =>
             {
@@ -30,8 +36,12 @@ internal static class CostControlEndpoints
                 }
             });
 
+        // ---- 書き込み系: 利用者のみ（OwnerOnly・最小権限） ----
+        // サービスへ費用の書き込み権限は与えない（サービスからの計上はイベント LlmCostIncurred・IADR-0055 決定1）。
+        var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
+
         // 費用を計上する。統制状態が上方に遷移したら CostThresholdReached を発行する。
-        g.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IPublishEndpoint bus) =>
+        owner.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IPublishEndpoint bus) =>
         {
             var result = svc.Record(req.Category, req.Amount);
 
@@ -44,11 +54,15 @@ internal static class CostControlEndpoints
             return Results.Ok(new { result.Decision.State, result.Decision.IntervalMultiplier, result.Percent, result.Month });
         });
 
+        // ---- 読み取り系: 利用者またはサービス（IADR-0051・OwnerOrService） ----
+        // 定時サイクル poller（IADR-0031）が s2s（trading-service）で統制状態を照会できるよう分離する。
+        var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
         // 現在月の LLM 統制判定（定時サイクルが間隔延長/停止を照会する）。
-        g.MapGet("/state", (AppSvc svc) => Results.Ok(svc.GetLlmState()));
+        read.MapGet("/state", (AppSvc svc) => Results.Ok(svc.GetLlmState()));
 
         // 現在月の費用÷資金比率（月報の費用レビュー）。
-        g.MapGet("/review", (AppSvc svc, decimal capital) => Results.Ok(new { ratio = svc.Review(capital) }));
+        read.MapGet("/review", (AppSvc svc, decimal capital) => Results.Ok(new { ratio = svc.Review(capital) }));
 
         return app;
     }

@@ -185,8 +185,13 @@ services:
       # fail-safe: 空=NoOp（外部接続しない）。実 Finnhub は #81 で有効化。
       Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
       Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
-      # fail-safe: 空=プレースホルダ（Normal）。#79/#76 で有効化。
+      # NFR(費用), IADR-0031 (#79): 費用統制の照会先。空=プレースホルダ（Normal＝間隔延長/停止しない）。
+      # 設定すると GET /costs/state を s2s で照会し Throttled=間隔延長・Halted=巡回停止を適用する。
       CostControl__BaseUrl: ${COST_CONTROL_BASEURL:-}
+      # IADR-0051: /costs/state（OwnerOrService）への s2s トークン導出元＋資格情報。空=認証なし→401→Normal。
+      Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
     depends_on:
       <<: *depends-infra
 
