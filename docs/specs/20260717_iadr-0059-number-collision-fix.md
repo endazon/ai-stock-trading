@@ -1,7 +1,7 @@
 ---
 title: IADR-0059 の番号衝突解消（後着を IADR-0060 へ採番し直し・索引を補完）
 type: spec
-status: draft
+status: review
 related_ids:
   - IADR-0059
   - IADR-0060
@@ -76,16 +76,19 @@ ADR README の運用ルール「連番はリポジトリ内で一意・昇順・
 
 ## 受け入れ基準
 
-- [ ] `docs/adr/` に `IADR-0059` のファイルが 1 件だけ存在する（＝ `IADR-0059_dedupe-retention-purge.md`）
-- [ ] `docs/adr/IADR-0060_opend-production-cutover-gates.md` が存在し、frontmatter `title` と見出しが `IADR-0060` である
-- [ ] 旧ファイル名 `IADR-0059_opend-*` への参照がリポジトリ内に 1 件も残っていない
-- [ ] opend 由来（`#132`）の `IADR-0059` 表記が 1 件も残っていない
-- [ ] パージ由来（`#137`）の `IADR-0059` 表記が 1 件も書き換わっていない（先着の番号は不変）
-- [ ] `docs/adr/README.md` の索引に `IADR-0059`・`IADR-0060` の両行が ID 昇順で並び、既存行が欠落していない
-- [ ] `node scripts/check-doc-links.js` がリンク切れ 0 で通る
-- [ ] `node --test scripts/scripts.test.js` が通る
-- [ ] `dotnet build` / `dotnet test` が通る（コメントのみの変更＝挙動不変の確認）
-- [ ] CI（helm 描画ゲートを含む）が全緑である
+- [x] `docs/adr/` に `IADR-0059` のファイルが 1 件だけ存在する（＝ `IADR-0059_dedupe-retention-purge.md`）
+- [x] `docs/adr/IADR-0060_opend-production-cutover-gates.md` が存在し、frontmatter `title` と見出しが `IADR-0060` である
+- [x] 旧ファイル名 `IADR-0059_opend-*` への**参照**がリポジトリ内に 1 件も残っていない
+      （本仕様書「目的・背景」の**衝突前の状態を記録した記述**を除く。当該箇所はリンクではなく経緯の記録である）
+- [x] opend 由来（`#132`）の `IADR-0059` 表記が 1 件も残っていない
+- [x] パージ由来（`#137`）の `IADR-0059` 表記が 1 件も書き換わっていない（先着の番号は不変・61 箇所）
+- [x] `docs/adr/README.md` の索引に `IADR-0059`・`IADR-0060` の両行が ID 昇順で並び、既存行が欠落していない
+- [x] `node scripts/check-doc-links.js` がリンク切れ 0 で通る（165 件）
+- [x] `node --test scripts/scripts.test.js` が通る（34 件）
+- [x] `dotnet build` / `dotnet test` が通る（コメントのみの変更＝挙動不変の確認）
+      ※ `dotnet test` は CI と同じ `--filter "Category!=Integration"` で全緑。フィルタ無しでは
+      `AiStockTrading.IntegrationTests` が Docker 不在で落ちるが、本変更とは無関係（当該ファイルは未変更）。
+- [x] CI（helm 描画ゲートを含む）が全緑である（14 チェック）
 
 ## テスト方針
 
