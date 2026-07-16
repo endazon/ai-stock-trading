@@ -62,7 +62,8 @@ MassTransit の再配送（`UseAiStockTradingRetry`＝2s/10s/30s の3回）が�
 **対象外（後続 issue に明示分離）**
 
 - **ブローカ照会による自動リコンサイル**（stuck 予約の自動解消）。実 OpenD／実 API 依存のため本 PR では扱わず、
-  別 issue に切り出す（本 PR では `_error` キュー＋ERROR ログで人手のリコンサイルへ回す）。
+  **[#141](https://github.com/endazon/ai-stock-trading/issues/141)** に切り出した（本 PR では `_error` キュー滞留＋
+  人手のリコンサイルへ回す）。
 - **実弾（`TrdEnv_Real`）の解禁そのもの**。別 IADR＋明示 config が必要（IADR-0056 §3 据え置き）。
 - moomoo への client order id 伝播（OpenAPI の対応調査が必要・リコンサイル issue と同時に扱う）。
 
@@ -130,5 +131,5 @@ TDD（テスト先行）。実コンテナ／実 API 非依存の単体で受け
 
 ## 未決事項
 
-- stuck 予約の自動リコンサイル（ブローカ照会）→ 本 PR で別 issue 化する。
-- moomoo への client order id 伝播（OpenAPI 対応の調査）→ 同上。
+- stuck 予約の自動リコンサイル（ブローカ照会）→ **#141 に起票済み**。
+- moomoo への client order id 伝播（OpenAPI 対応の調査）→ #141 に含めた（照会の突き合わせキーの前提となるため）。
