@@ -35,6 +35,22 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // ため HttpClient のタイムアウトは長め。送信拒否/失敗/タイムアウトは Hold に倒す（HttpLlmCompletionClient）。
 builder.Services.AddHttpClient("llm", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
+
+// #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する
+// （費用統制サービスが購読して月次計上。HTTP /costs/record は OwnerOnly のため使わない）。
+// 単価は LlmPricing:InputPer1kTokens / OutputPer1kTokens（円・既定 0）。fail-safe: 未設定=0 円＝統制判定に影響しない。
+// 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
+builder.Services.AddScoped<ILlmUsageReporter>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return new PublishingLlmUsageReporter(
+        sp.GetRequiredService<IPublishEndpoint>(),
+        sp.GetRequiredService<IClock>(),
+        ParsePricePer1k(cfg["LlmPricing:InputPer1kTokens"]),
+        ParsePricePer1k(cfg["LlmPricing:OutputPer1kTokens"]),
+        sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>());
+});
+
 builder.Services.AddScoped<ILlmCompletionClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -48,8 +64,15 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
     return new HttpLlmCompletionClient(http,
         sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
-        cfg["LlmGateway:Purpose"] ?? "trade-decision");
+        cfg["LlmGateway:Purpose"] ?? "trade-decision",
+        sp.GetRequiredService<ILlmUsageReporter>());
 });
+
+// 単価の構成読み取り（円/1k トークン）。未設定・不正・負値は 0（fail-safe）。
+static decimal ParsePricePer1k(string? value) =>
+    decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) && price > 0m
+        ? price
+        : 0m;
 // FR-07, IADR-0028: 確定済み日報方針は報告書サービス（#14）の GET /reports/daily-policy を同期照会して供給する。
 // Reports:BaseUrl 未設定なら従来のプレースホルダ（no-op・取引しない）＝安全既定でゲート。設定時のみ実照会する。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は

@@ -1,26 +1,28 @@
 ---
-title: IADR-0055 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない）（Proposed）
+title: IADR-0055 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない）
 type: impl-adr
-status: Proposed
+status: Accepted
 related_ids:
   - FR-04
+  - FR-11
+  - IADR-0019
   - IADR-0027
   - IADR-0031
   - IADR-0034
 author: claude
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-16
 plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (NFR: 費用統制)"
 ---
 
-# IADR-0055: 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（Proposed）
+# IADR-0055: 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する
 
-- 状態: **Proposed**（設計確定。実装は #79 の後続スライス・#125 の LLM egress に積む）
+- 状態: **Accepted**（設計確定 2026-07-14・実装完了 2026-07-16／#79・PR #134）
 - 日付: 2026-07-14
 - 決定者: claude（実装・起案）
 
-> 採番注記: develop 最新は IADR-0051。IADR-0052〜0054 は in-flight（PR #123 / feat/122）が採番済みのため、
+> 採番注記（起票当時）: develop 最新は IADR-0051。IADR-0052〜0054 は in-flight（PR #123 / feat/122）が採番済みのため、
 > 衝突回避として本 IADR は 0055 を用いる（AST adr README の並行採番ルールに従う）。
 
 ## 起点・関連
@@ -55,6 +57,12 @@ plan_refs:
    `LlmCostIncurred` publish）を配線する。egress とメッセージングを疎結合に保つ。
 4. **トランザクション入れ子回避**（課題4）: 消費者内の `Record` は MassTransit の transactional outbox を
    使わない構成とし、`EfCostLedger` の月内直列化（アドバイザリロック）に委ねる。統合テストで確認する。
+   - **ユニットオブワークの分離**（IADR-0034「`Record` を他のユニットオブワークと組み合わせない」の具体化）:
+     重複排除ストア（`EfProcessedMessageStore`）は **操作ごとに専用の短命 `DbContext` を生成**し、
+     `EfCostLedger`（scoped `DbContext`）と **ChangeTracker を共有しない**。共有すると、計上の `SaveChanges` が
+     失敗して `CostEntryRow` が `Added` のまま残留した状態で `Unmark` の `SaveChanges` を呼んだ際に、
+     ロールバックされるべき計上行が道連れで INSERT される／削除まで巻き込んで失敗する（＝マークが戻らず
+     計上も欠落する）不具合が生じる。回帰テストで固定する（`EfProcessedMessageStoreTests`）。
 5. **冪等性**（再配信対策）: MassTransit の at-least-once（再試行/再配信）で `LlmCostIncurred` が重複配信され得る。
    費用は月次累計のため二重計上は統制判定を誤らせる。実装スライスで **メッセージ ID による重複排除**（消費済み
    `MessageId` を専用ストアに記録し既処理なら no-op）を入れる。これは **MassTransit 標準の再送耐性パターン**
@@ -69,12 +77,14 @@ plan_refs:
   足す案は認可面の緩和になり、費用計上の書き込み口を広げるため不採用。
 - 単価既定 0 は「計測経路を通しても金額 0＝無害」で、実単価は運用で投入（fail-safe）。
 
-## 影響（実装スライス・#79 後続 / #125 に積む）
+## 影響（実装スライス・#79 / PR #134 で実装済み）
 
 - 追加: `Shared.Contracts.Events.LlmCostIncurred`、`ILlmUsageReporter`＋`NoOp`/`Publishing`、`LlmPricing`（純関数）、
   `CostControlService` の `LlmCostIncurredConsumer`＋登録、`HttpLlmCompletionClient` への reporter 配線。
 - 追加（冪等性・決定5）: **消費済み `MessageId` の重複排除ストア**（新設。既存 `ICostLedger`＝月次費用台帳とは
   別物の processed-message テーブル/ストア）と、`LlmCostIncurredConsumer` からの記録・照合。
+- 追加（監査・FR-11/IADR-0019）: `LlmCostIncurredAuditConsumer`＋`AuditEntryFactory.From(LlmCostIncurred)`。
+  新契約イベントは全て監査台帳へ記録する規約のため必須（`AuditConsumerCoverageTests` が購読漏れを検知する）。
 - テスト: 単価純関数／reporter（harness で publish 検証）／消費者（InMemory ledger で計上検証）／
   **同一 `MessageId` の再配信で二重計上しない回帰テスト**（決定5）。
 - 未着手（さらに後続）: #19 バージョン付き月次上限の取得（現状 `DefaultCostLimitsProvider`）。

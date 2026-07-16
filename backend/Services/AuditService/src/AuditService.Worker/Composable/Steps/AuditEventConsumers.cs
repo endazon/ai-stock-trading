@@ -106,6 +106,17 @@ internal sealed class CostThresholdReachedAuditConsumer(IAuditEventStore store, 
     }
 }
 
+// NFR（費用）, FR-04, IADR-0055: 実 LLM 費用の発生（#79）も監査台帳へ記録する（FR-11: 全イベントの時系列記録）。
+internal sealed class LlmCostIncurredAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<LlmCostIncurred>
+{
+    public Task Consume(ConsumeContext<LlmCostIncurred> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
 // FR-01, FR-02: 情報収集の完了（情報収集 #9）を監査台帳へ記録する。
 internal sealed class InformationCollectedAuditConsumer(IAuditEventStore store, IClock clock)
     : IConsumer<InformationCollected>

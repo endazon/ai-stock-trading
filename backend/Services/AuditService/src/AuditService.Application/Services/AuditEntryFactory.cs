@@ -65,6 +65,15 @@ public static class AuditEntryFactory
         $"情報収集完了 {e.ItemCount}件",
         AuditSerialization.Serialize(e), e.CollectedAt, recordedAt);
 
+    // NFR（費用）, FR-04, IADR-0055: 実 LLM 呼び出しの費用発生（#79）。注文相関を持たないため、
+    // 発生月で束ねられるよう "llm-cost:{yyyy-MM}" の決定的 GUID を相関にする（CostThresholdReached と同系）。
+    public static AuditEntry From(LlmCostIncurred e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmCostIncurred),
+        AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        $"LLM 費用発生 {e.Amount:N2} 円",
+        AuditSerialization.Serialize(e), e.At, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

@@ -1,5 +1,6 @@
 using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
+using AiStockTrading.CostControl.Worker.Composable.Steps;
 using AiStockTrading.CostControl.Worker.Foundation.Endpoints;
 using AiStockTrading.CostControl.Worker.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -39,16 +40,21 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // 月次費用上限は暫定で前提条件の既定値（#19 のバージョン付き取得は #22 後続）。
 builder.Services.AddSingleton<ICostLimitsProvider, DefaultCostLimitsProvider>();
 builder.Services.AddScoped<ICostLedger, EfCostLedger>();
+// #79, IADR-0055 決定5: LlmCostIncurred の二重計上を防ぐ重複排除ストア（費用台帳とは別テーブル）。
+builder.Services.AddScoped<IProcessedMessageStore, EfProcessedMessageStore>();
 builder.Services.AddScoped<AppSvc>();
 
-// IADR-0011/0027: MassTransit（RabbitMQ）。消費者は持たず、しきい値到達時の CostThresholdReached 発行に用いる。
+// IADR-0011/0027: MassTransit（RabbitMQ）。しきい値到達時の CostThresholdReached 発行に用いる。
+// #79, IADR-0055 決定1: さらに LlmCostIncurred を購読し LLM 費用を計上する（HTTP /costs/record は OwnerOnly のため）。
 builder.Services.AddMassTransit(x =>
 {
-    x.UsingRabbitMq((_, cfg) =>
+    x.AddConsumer<LlmCostIncurredConsumer>();
+    x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
             ?? "amqp://guest:guest@rabbitmq:5672");
         cfg.UseAiStockTradingRetry();
+        cfg.ConfigureEndpoints(ctx);
     });
 });
 

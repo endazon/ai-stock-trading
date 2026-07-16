@@ -34,6 +34,7 @@ public class AuditEventConsumersTests
                 x.AddConsumer<AssumptionsChangedAuditConsumer>();
                 x.AddConsumer<ReportConfirmedAuditConsumer>();
                 x.AddConsumer<CostThresholdReachedAuditConsumer>();
+                x.AddConsumer<LlmCostIncurredAuditConsumer>();
                 x.AddConsumer<InformationCollectedAuditConsumer>();
             })
             .BuildServiceProvider(true);
