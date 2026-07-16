@@ -84,3 +84,4 @@
 | IADR-0054 | 取引サイクルの本番スケジューラは収集の run-once HTTP トリガ＋Collection:Trigger モードで実現する | Accepted |
 | IADR-0055 | 実 LLM 費用計測はイベント（LlmCostIncurred）で計上する（HTTP /costs/record は OwnerOnly のため使わない） | Accepted |
 | IADR-0056 | moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） | Accepted |
+| IADR-0057 | 発注の冪等化は「発注前 DecisionId 予約」の3相で行い、不明な窓は再発注せず拒否する | Accepted |
