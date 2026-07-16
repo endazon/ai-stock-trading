@@ -1,0 +1,154 @@
+{{- /*
+  #132, IADR-0059 決定 1 / IADR-0053: 常駐 OpenD（moomoo ゲートウェイ）の本番配備。
+  既定 opend.enabled=false = fail-safe（本ファイルは何も描画しない）。dev の現行経路は deploy/opend/k8s の生 manifest。
+
+  既定値での描画は生 manifest（deploy/opend/k8s/{pvc,opend}.yaml）と同等になること（root・HOME=/root・
+  単一レプリカ・Recreate・liveness 無し・stdin/tty あり）。仕様書の受け入れ基準 3。
+
+  ⚠️ 実弾は撃たない。OpenD は口座への窓口にすぎず、取引環境は order-execution 側が TrdEnv_Simulate に固定する
+     （IADR-0016 / IADR-0056）。本テンプレートは OpenD を立てるだけで、発注経路の有効化は moomoo.enabled が担う。
+*/ -}}
+{{- if .Values.opend.enabled }}
+{{- $o := .Values.opend }}
+{{- /* 誤配備を描画時に止める（IADR-0059 §helm 側のゲート）。資格情報が無い OpenD は起動直後に落ちる。 */}}
+{{- if not $o.credentialsSecretName }}
+{{- fail "opend.enabled=true には opend.credentialsSecretName（moomoo 資格情報の Secret 名）が要ります。deploy/opend/k8s/secret.example.yaml を参照。" }}
+{{- end }}
+{{- if not $o.rsaSecretName }}
+{{- fail "opend.enabled=true には opend.rsaSecretName（RSA 秘密鍵の Secret 名）が要ります。cross-network の trade 接続には暗号化が必須（#13）。" }}
+{{- end }}
+{{- if not $o.home }}
+{{- fail "opend.home が空です（OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書くため必須）。既定は /root。" }}
+{{- end }}
+{{- if $o.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opend-persist
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if $o.persistence.storageClassName }}
+  storageClassName: {{ $o.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $o.persistence.size | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: opend
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  replicas: 1
+  {{- /* OpenD は 1 セッション前提。複数レプリカにしない（ロールアウトは Recreate）。 */}}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: opend }
+  template:
+    metadata:
+      labels: { app: opend }
+    spec:
+      {{- with $o.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.nodeSelector }}
+      {{- /* egress IP の安定＝無人再ログインの成立条件。本番ではノードを固定する（IADR-0059 決定 1）。 */}}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: opend
+          image: "{{ .Values.global.image.registry }}/{{ $o.image.repository }}:{{ $o.image.tag | default .Values.global.image.tag }}"
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- with $o.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- /* 初回の対話デバイス検証（kubectl attach）のため stdin/tty を保持する（常駐モデル）。 */}}
+          stdin: true
+          tty: true
+          ports:
+            - { containerPort: {{ $o.apiPort }}, name: api }
+          env:
+            - name: OPEND_API_PORT
+              value: {{ $o.apiPort | quote }}
+            - name: OPEND_LANG
+              value: {{ $o.lang | quote }}
+            - name: OPEND_LOG_LEVEL
+              value: {{ $o.logLevel | quote }}
+            {{- /* #132: HOME を明示する。OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書き、PVC もそこへ張る。
+                   非 root 化（securityContext）時は /home/opend を指す（Dockerfile が uid 10001 用に用意済み）。 */}}
+            - name: HOME
+              value: {{ $o.home | quote }}
+            {{- /* #13: cross-network（worker→opend）trade は RSA 暗号化必須。OpenD 側も同一鍵を使う。 */}}
+            - name: OPEND_RSA_KEY_FILE
+              value: {{ printf "%s/%s" $o.rsaMountPath $o.rsaSecretKey | quote }}
+            - name: OPEND_LOGIN_ACCOUNT
+              valueFrom:
+                secretKeyRef: { name: {{ $o.credentialsSecretName }}, key: login-account }
+            - name: OPEND_LOGIN_PWD_MD5
+              valueFrom:
+                secretKeyRef: { name: {{ $o.credentialsSecretName }}, key: login-pwd-md5 }
+          {{- /* OpenD は TCP API（HTTP ではない）。TCP 疎通で readiness を判定する。
+                 注意: OpenD は**検証前から** listen するため、probe 通過≠ログイン完了。
+                 「使える」判定は attach でのログイン成功確認（常駐モデル・IADR-0053）。
+                 livenessProbe は意図的に付けない: 自動再起動は有人再検証待ちの停止を招き得る。 */}}
+          readinessProbe:
+            tcpSocket: { port: {{ $o.apiPort }} }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 20
+          volumeMounts:
+            {{- if $o.persistence.enabled }}
+            - name: persist
+              mountPath: {{ printf "%s/.com.moomoo.OpenD" $o.home | quote }}
+            {{- end }}
+            - name: rsa
+              mountPath: {{ $o.rsaMountPath | quote }}
+              readOnly: true
+          resources:
+            {{- toYaml $o.resources | nindent 12 }}
+      volumes:
+        {{- if $o.persistence.enabled }}
+        - name: persist
+          persistentVolumeClaim:
+            claimName: opend-persist
+        {{- end }}
+        - name: rsa
+          secret:
+            secretName: {{ $o.rsaSecretName }}
+            {{- /* #132, IADR-0059 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。非 root 化時は fsGroup ＋ 0440。 */}}
+            defaultMode: {{ $o.rsaSecretDefaultMode }}
+            items:
+              - { key: {{ $o.rsaSecretKey }}, path: {{ $o.rsaSecretKey }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opend
+  namespace: {{ .Values.namespace.name }}
+  labels: { app: opend }
+spec:
+  selector: { app: opend }
+  ports:
+    - { name: api, port: {{ $o.apiPort }}, targetPort: {{ $o.apiPort }} }
+{{- end }}

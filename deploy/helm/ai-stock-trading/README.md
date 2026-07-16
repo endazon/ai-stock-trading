@@ -41,24 +41,83 @@ kubectl -n ai-stock-trading get pods
 既定 **無効**（`order-execution` は `Broker__Provider=paper`＝実発注しない・fail-safe・IADR-0016）。有効化すると
 `order-execution` へ moomoo 発注構成が注入される（**SIMULATE 限定**・実弾は撃たない）。
 
-> ⚠️ **前提となる未マージ PR（本 chart 単独では動かない）**:
-> - **#13（PR #130・moomoo アダプタ本体）**: これが**未マージのイメージ**で `moomoo.enabled=true` にすると、
->   `order-execution` は起動時に `InvalidOperationException` で停止する（`BrokerFactory` が moomoo 未実装を
->   拒否する **IADR-0016 の意図的ゲート**）＝Pod は **CrashLoopBackOff**。graceful な per-order `Rejected` では
->   ない。#13 をマージしたイメージで初めて発注経路が有効になる。
-> - **#124（PR #126・OpenD 常駐＋RSA）**: `deploy/opend/` は本 chart リポジトリにまだ存在しない（#124 未マージ）。
->   OpenD 常駐と Secret `moomoo-rsa`（OpenD と**同一の RSA 秘密鍵**）が前提。cross-network trade は RSA 暗号化必須。
+> ⚠️ **前提**（#13・#124 はマージ済み。以下は**運用側で揃える**もの）:
+> - **常駐 OpenD が稼働し、ログイン済みであること**（下記「#132: OpenD の本番配備」または `deploy/opend/k8s` の
+>   生 manifest）。OpenD は初回に**有人**のデバイス検証が要る。listen だけしていてもログイン前は使えない。
+> - **Secret `moomoo-rsa`**（OpenD と**同一の RSA 秘密鍵**）。cross-network（worker→opend）の trade は RSA 暗号化必須。
+>   鍵が構成済みで不在なら `order-execution` は**起動時 preflight で停止する**（#132。従来は黙って非暗号化に倒れ、
+>   「接続はするが trade だけ失敗する」形でしか表面化しなかった）。
 
-**有効化**（#13・#124 をマージ済みのイメージ＋ OpenD 常駐＋`moomoo-rsa` Secret 作成後）:
+**有効化**（OpenD 常駐＋`moomoo-rsa` Secret 作成後）:
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set moomoo.enabled=true
 ```
 
 有効化すると `order-execution` へ `Broker__Provider=moomoo` ＋ `Broker__Moomoo__OpenD__{Host=opend,Port=11111,
-RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` が read-only マウントされる。
-**前提が揃った状態で**は、発注時に OpenD 未接続・鍵不備なら**アダプタが per-order `Rejected` に倒す**（fail-safe）。
-実結合（アダプタ）自体は #13（PR #130）で実 OpenD の SIMULATE 口座に対し live 検証済（本 chart ブランチには未マージ）。
+RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` が read-only（`defaultMode: 0400`）で
+マウントされる。発注時に OpenD 未接続なら**アダプタが per-order `Rejected` に倒す**（fail-safe）。
+実結合は #13 で実 OpenD の SIMULATE 口座に対し live 検証済み（IADR-0056）。
+
+> **実弾（`TrdEnv_Real`）は撃たない。** `moomoo.enabled=true` にしても取引環境は `TrdEnv_Simulate` 固定である
+> （IADR-0016 / IADR-0056）。`Broker:Moomoo:TrdEnv` に `real` 等を与えると `order-execution` は**起動時に停止する**
+> （黙って SIMULATE で流して「実弾で動いている」と誤認させないための閂・#132 / IADR-0059）。実弾解禁には別 IADR と
+> 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)）。
+
+## #132: OpenD の本番配備（`opend.enabled`）
+
+既定 **無効**（何も描画しない＝fail-safe）。dev の現行経路は `deploy/opend/k8s` の生 manifest で、そちらは残してある
+（IADR-0059 決定 1）。本 chart 経路は**本番配備**用で、既定値では生 manifest と同等に描画される。
+
+```bash
+# 前提: イメージのビルド＆import（scripts/opend-build.sh）、Secret moomoo-credentials / moomoo-rsa の作成。
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set opend.enabled=true \
+  --set opend.nodeSelector."kubernetes\.io/hostname"=<安定ノード名>
+# 初回のみ有人のデバイス検証（画像 CAPTCHA / SMS）:
+kubectl -n ai-stock-trading attach -it deploy/opend
+```
+
+> ⚠️ **ノードを固定すること**。無人再ログインの成立条件は「デバイス信頼の永続化（PVC）＋ **egress IP の安定**」で、
+> egress IP はノードの NAT 後 IP である。ノードを跨いで再スケジュールされると**有人の再検証に戻る**見込み
+> （マルチノード/クラウドでの実測は **#132 で未了**）。
+
+### 非 root 実行へ切り替える（既定は root・**未検証**）
+
+OpenD はデバイス信頼を `$HOME/.com.moomoo.OpenD` に書くため、非 root 化は **HOME の再調整とセット**で行う。
+イメージ側は uid/gid **10001** と `/home/opend` を用意済み（`USER` は切り替えていない＝既定 root）。
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set opend.enabled=true \
+  --set opend.home=/home/opend \
+  --set opend.securityContext.runAsNonRoot=true \
+  --set opend.securityContext.runAsUser=10001 \
+  --set opend.podSecurityContext.fsGroup=10001 \
+  --set opend.rsaSecretDefaultMode=288   # 0440（--set は 10 進で渡す。values ファイルなら 0440 と書ける）
+```
+
+> ⚠️ **既定 ON にしていない理由**（IADR-0059 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
+> やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
+> `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
+>
+> ⚠️ `rsaSecretDefaultMode` は **k8s のファイルモード（8 進を 10 進で表す整数）**。values ファイルでは `0400` / `0440`
+> と 8 進で書ける（YAML が解釈する）が、`--set` では **10 進**（`256` / `288`）で渡すこと。非 root では Secret の所有 uid が
+> root のままなので、`fsGroup` を付けたうえで**グループ読み（0440）**が要る。
+
+## #132: 秘匿情報の External Secrets（Vault）受け口（`externalSecrets.enabled`）
+
+既定 **無効**。有効化すると `moomoo-credentials` / `moomoo-rsa` を Vault から同期する `ExternalSecret` を描画する。
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set externalSecrets.enabled=true \
+  --set externalSecrets.secretStoreRef.name=vault-backend
+```
+
+> ⚠️ **これは Vault 化の充足ではない**（IADR-0059 決定 4）。ストア（Vault / External Secrets Operator）は **#24 の管掌**で
+> 本リポジトリには無く、CRD が無いクラスタで有効化すると apply が失敗する。IADR-0056 §3 が実弾解禁の前提に挙げる
+> 「秘匿情報の Vault 化」は**未充足のまま**である。
 
 ## #121: 取引サイクル CronJob
 

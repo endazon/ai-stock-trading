@@ -44,10 +44,9 @@ tradingCycle:
     target: http://information-collection-service:8080/internal/collection/run-once
 
 # #13: moomoo（OpenD）発注の in-cluster 配線。既定 disabled = fail-safe（order-execution は paper・実発注しない）。
-# ⚠️ 有効化前提（いずれも未マージ）: (1) #13（PR #130・moomoo アダプタ本体。未マージのイメージで enabled=true にすると
-#    order-execution は IADR-0016 ゲートで起動時停止＝CrashLoopBackOff）, (2) #124（PR #126・OpenD 常駐＋RSA。
-#    deploy/opend/ は本リポジトリにまだ無い）＋ Secret moomoo-rsa（RSA 秘密鍵・OpenD と同一鍵）。
-# cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016）。
+# ⚠️ 有効化前提: (1) 常駐 OpenD が稼働し**ログイン済み**であること（`opend.enabled` か deploy/opend/k8s の生 manifest）。
+#    OpenD 不在で enabled=true にすると order-execution は接続に失敗する。(2) Secret moomoo-rsa（OpenD と同一の RSA 鍵）。
+# cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016 / IADR-0056）。
 moomoo:
   enabled: false
   opend:
@@ -56,6 +55,82 @@ moomoo:
     rsaSecretName: moomoo-rsa
     rsaSecretKey: opend_rsa.pem
     rsaMountPath: /opt/opend/rsa
+    # #132: OpenD への応答待ち（秒）。空=アダプタ既定（15 秒）。1〜600 の範囲外は order-execution が起動時に停止する。
+    replyTimeoutSeconds: ""
+    # #132, IADR-0059 決定 3: RSA 秘密鍵マウントのパーミッション。0400（YAML の 8 進＝10 進 256）＝所有者のみ読取。
+    # ⚠️ マウント先コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
+    #    非 root 化する場合は fsGroup と 0440 を用いる（chart README 参照）。
+    rsaSecretDefaultMode: 0400
+
+# #132, IADR-0059 決定 1: 常駐 OpenD（moomoo ゲートウェイ）の**本番配備**の経路。
+# 既定 disabled = fail-safe（何も描画しない）。dev の現行経路は deploy/opend/k8s の生 manifest（そちらは残す）。
+#
+# ⚠️ 常駐モデル（IADR-0053）: OpenD は初回に**有人**のデバイス検証（画像/SMS）が要る
+#    （`kubectl -n ai-stock-trading attach -it deploy/opend` → input_pic_verify_code / input_phone_verify_code）。
+#    以降は「デバイス信頼の永続化（PVC）＋ egress IP の安定」が保てれば無人再ログインが成立する（追検証済み）。
+#    → **nodeSelector 等でノードを固定すること**（egress IP はノードの NAT 後 IP。ノードが変わると再検証が要る）。
+#    liveness を付けない・単一レプリカ・Recreate なのは、再起動を誘発しないため（自動再起動＝有人検証待ちの停止）。
+opend:
+  enabled: false
+  image:
+    # global.image.registry を接頭辞に用いる（scripts/opend-build.sh のタグと一致させること）。
+    repository: ai-stock-trading/opend
+    tag: ""
+  apiPort: 11111
+  # OpenD はデバイス信頼を $HOME/.com.moomoo.OpenD に書く。PVC のマウント先は本値から導出する。
+  # ⚠️ 非 root 化するときは /home/opend にする（下記 securityContext とセットで・chart README 参照）。
+  home: /root
+  # 資格情報（login-account / login-pwd-md5）。実値は Git に載せない（deploy/opend/k8s/secret.example.yaml 参照）。
+  # 恒久フェーズは Vault / External Secrets（下記 externalSecrets・**ストア整備は #24 で未充足**）。
+  credentialsSecretName: moomoo-credentials
+  rsaSecretName: moomoo-rsa
+  rsaSecretKey: opend_rsa.pem
+  rsaMountPath: /opt/opend/rsa
+  rsaSecretDefaultMode: 0400
+  lang: en
+  logLevel: info
+  persistence:
+    enabled: true
+    size: 1Gi
+    # 空=クラスタ既定の StorageClass（k3d/Rancher Desktop の local-path で足りる）。
+    storageClassName: ""
+  # ⚠️ 本番では**必ず**ノードを固定する（egress IP の安定＝無人再ログインの成立条件）。
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # #132, IADR-0059 決定 2: 非 root 化（issue #132 のハードニング項目）。
+  # 既定 {} = 現行の root 実行を維持する。**実 OpenD で未検証のため既定 ON にしない**
+  #（HOME が変わるとデバイス信頼を失い、有人検証からやり直しになる恐れがある）。
+  # 切替は home=/home/opend と併せて指定する（Dockerfile が uid/gid 10001 を用意済み）:
+  #   --set opend.home=/home/opend \
+  #   --set opend.securityContext.runAsNonRoot=true \
+  #   --set opend.securityContext.runAsUser=10001 \
+  #   --set opend.podSecurityContext.fsGroup=10001 \
+  #   --set opend.rsaSecretDefaultMode=0440
+  securityContext: {}
+  podSecurityContext: {}
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+# #132, IADR-0059 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
+# ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、
+#    CRD が無いクラスタで有効化すると apply が失敗する。実際に Vault へシークレットが載り ESO が同期して初めて充足。
+#    IADR-0056 §3 が実弾解禁の前提に挙げる「秘匿情報の Vault 化」は**未充足のまま**である。
+externalSecrets:
+  enabled: false
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  # Vault 側のパスとプロパティ名。同期先の Secret 名は opend.credentialsSecretName / opend.rsaSecretName と一致させる。
+  moomooCredentials:
+    remoteKey: ai-stock-trading/moomoo
+    loginAccountProperty: login-account
+    loginPwdMd5Property: login-pwd-md5
+  moomooRsa:
+    remoteKey: ai-stock-trading/moomoo-rsa
+    property: opend_rsa.pem
 
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
