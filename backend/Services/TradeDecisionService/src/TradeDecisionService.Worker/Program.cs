@@ -65,7 +65,9 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
         sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
         cfg["LlmGateway:Purpose"] ?? "trade-decision",
-        sp.GetRequiredService<ILlmUsageReporter>());
+        sp.GetRequiredService<ILlmUsageReporter>(),
+        // FR-11, IADR-0062 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
 });
 
 // 単価の構成読み取り（円/1k トークン）。未設定・不正・負値は 0（fail-safe）。
