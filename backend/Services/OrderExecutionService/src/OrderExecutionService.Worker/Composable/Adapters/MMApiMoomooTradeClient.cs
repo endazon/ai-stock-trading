@@ -16,9 +16,10 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
 {
     private static readonly object InitGate = new();
     private static bool _apiInitialized;
-    private static readonly TimeSpan ReplyTimeout = TimeSpan.FromSeconds(15);
 
     private readonly MoomooBrokerOptions _options;
+    // #132: 応答待ちは構成から外部化する（Broker:Moomoo:OpenD:ReplyTimeoutSeconds・既定 15 秒＝従来のハードコード値）。
+    private readonly TimeSpan _replyTimeout;
     private readonly ILogger<MMApiMoomooTradeClient> _logger;
     private readonly MMAPI_Trd _trd = new();
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<object>> _pending = new();
@@ -35,7 +36,10 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
 
     public MMApiMoomooTradeClient(MoomooBrokerOptions options, ILogger<MMApiMoomooTradeClient> logger)
     {
+        // #132, IADR-0059: 構成ミス（RSA 鍵の未マウント等）は「接続はするが trade だけ落ちる」ではなく起動時に落とす。
+        MoomooPreflight.Validate(options, File.Exists);
         _options = options;
+        _replyTimeout = options.ReplyTimeout;
         _logger = logger;
         lock (InitGate)
         {
@@ -50,7 +54,9 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         _trd.SetTrdCallback(this);
         // moomoo は cross-network の trade 接続に暗号化を要求する。RSA 秘密鍵が構成されていれば暗号化で接続する。
         // SetRSAPrivateKey は鍵の内容（PKCS#1 PEM 文字列）を受け取る（パスではない）。
-        if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath) && File.Exists(options.RsaPrivateKeyPath))
+        // 鍵パスが構成済みなら存在は preflight が保証済み（不在なら上で停止している）。同一コンストラクタ内で
+        // 直後に読むため TOCTOU は問題にならない。ここを非同期化・遅延化するなら読み取り失敗の扱いを足すこと。
+        if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath))
         {
             _trd.SetRSAPrivateKey(File.ReadAllText(options.RsaPrivateKeyPath));
             _encrypt = true;
@@ -190,7 +196,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
             {
                 throw new InvalidOperationException($"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
             }
-            await _connectTcs.Task.WaitAsync(ReplyTimeout, cancellationToken).ConfigureAwait(false);
+            await _connectTcs.Task.WaitAsync(_replyTimeout, cancellationToken).ConfigureAwait(false);
             _simAccId = await FetchSimulateAccIdAsync(cancellationToken).ConfigureAwait(false);
             _connected = true;
             _logger.LogInformation("OpenD 接続完了・SIMULATE 口座 accId={AccId}", _simAccId);
@@ -264,7 +270,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
             var serial = send();
             _pending[serial] = tcs;
         }
-        return tcs.Task.WaitAsync(ReplyTimeout, cancellationToken);
+        return tcs.Task.WaitAsync(_replyTimeout, cancellationToken);
     }
 
     private void Complete(uint serial, object rsp)
