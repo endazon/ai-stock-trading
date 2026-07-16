@@ -77,7 +77,8 @@ bash scripts/apply-profile.sh copilot
 ### 3. レビューとゲート
 
 - PR を開くと AI 自動レビュー（`claude-code-review.yml`）が走る。
-- CI（`ci.yml`）と セキュリティ（`security.yml` / `codeql.yml`）が green であることを必須にする。
+- CI（`ci.yml`）・PR タイトル（`pr-title.yml`）・セキュリティ（`security.yml` / `codeql.yml`）が green であることを必須にする。
+- Helm chart を変更した PR では `helm.yml`（`helm lint` / `helm template`）も green にする。
 - 人間は PR テンプレートの「レビュアー向け（AI実装の確認観点）」で最終確認する。
 
 ### 4. マージ後
@@ -105,7 +106,14 @@ bash scripts/apply-profile.sh copilot
 GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule）で以下を推奨設定する。
 
 - Require a pull request before merging（直接 push 禁止）
-- Require status checks to pass before merging → `CI`・`Security`・`CodeQL` を必須に
+- Require status checks to pass before merging → `CI`・`pr-title`（`pr-title.yml`）・`Security`・`CodeQL` を必須に
+  - `pr-title` は **Issue #129** で復旧した最後の砦。squash-merge で develop に載る件名（= PR タイトル）を
+    規約 `種別(起点ID): 要約` に照合する。中間コミットは force push 禁止で事後修正できないため、
+    マージ前のこの検査が唯一の予防線になる。全 PR で起動するため必須チェックに指定して差し支えない。
+  - `helm.yml`（Helm chart / [IADR-0057](adr/IADR-0057_helm-chart-ci-gate.md)）は
+    `paths: deploy/helm/**` のトリガフィルタを持つ。**必須チェックには指定しない**——
+    GitHub は必須チェックが report されるまでマージを許さないため、chart に触れない PR で
+    永久 pending になる。chart 変更 PR ではレビューで green を確認する。
 - Require review from Code Owners（`CODEOWNERS` を配置）
 - Require conversation resolution before merging
 
