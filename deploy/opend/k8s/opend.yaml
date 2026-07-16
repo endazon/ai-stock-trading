@@ -1,13 +1,19 @@
-# #124 / IADR-0053: moomoo OpenD 常駐（k8s・オプトイン・常駐モデル）。
+# #124 / IADR-0053: moomoo OpenD 常駐（k8s・オプトイン・常駐モデル）。**dev 経路**。
 # 既定では適用しない（この manifest を明示適用したときのみ opend が立つ）＝fail-safe。
 # 発注執行（#13）は IBrokerAdapter 経由で opend:11111 へ接続する（SIMULATE 前提・実弾なし）。
 # 前提: イメージをローカルビルド＆import 済み（deploy/opend/README.md）、Secret moomoo-credentials 作成済み。
 #
-# ⚠️ 常駐モデル（PoC 結論・IADR-0053）: OpenD は**起動/再起動のたびに対話でデバイス検証（画像/SMS）が必要**で、
-#    デバイス状態を永続化しても回避できない（IP/セッション依存を確認）。よって**完全無人の自動再起動は不可**。
+# ⚠️ 本番配備は **chart 側**（`opend.enabled=true`・deploy/helm/ai-stock-trading）を使う（#132 / IADR-0059 決定 1）。
+#    本ファイルは dev の現行経路（#124 / #13 の PoC が通った構成）として残す。
+#
+# ⚠️ 常駐モデル（IADR-0053）: OpenD は**初回に有人**のデバイス検証（画像 CAPTCHA / SMS）が要る。
 #    運用: 起動後に `kubectl -n ai-stock-trading attach -it deploy/opend` で 1 回検証（input_pic_verify_code /
-#    input_phone_verify_code）→ 以降は**再起動を避けて常駐**させる。再起動時は再度手動検証が要る。
-#    そのため container に stdin/tty を付け、再起動を誘発しない（rolling 不使用・Recreate・単一レプリカ）。
+#    input_phone_verify_code）。
+#    以降は「**デバイス信頼の永続化（PVC）＋ egress IP の安定**」が保てれば**無人再ログインが成立**する
+#    （2026-07-15 追検証。Recreate で 3 リビジョン連続の無人再ログインを確認。feedback/20260715_adr0002-* 参照。
+#    初回 PoC の「永続化しても毎回再検証が要る＝完全無人不可」は Pod IP と egress IP の取り違えで、撤回済み）。
+#    → egress IP はノードの NAT 後 IP。**ノードが変わると再検証が要る**見込み（マルチノード/クラウドでの実測は #132 で未了）。
+#    それでも再起動は最小化する（rolling 不使用・Recreate・単一レプリカ・liveness 無し）。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -57,8 +63,9 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 15
             failureThreshold: 20
-          # ログ/状態の保存先（/root/.com.moomoo.OpenD）。※デバイス認証の回避には使えない
-          # （PoC で永続化しても再起動時に再検証が必要と確認・IADR-0053）。ログ保全目的で残す。
+          # デバイス信頼・ログ/状態の保存先（$HOME/.com.moomoo.OpenD＝root 実行なので /root 配下）。
+          # ここを永続化することが**無人再ログインの成立条件のひとつ**（もうひとつは egress IP の安定）。
+          # 初回 PoC は「永続化しても無駄」と結論したが、追検証で覆っている（冒頭の注記参照）。
           volumeMounts:
             - name: persist
               mountPath: /root/.com.moomoo.OpenD
@@ -76,6 +83,8 @@ spec:
         - name: rsa
           secret:
             secretName: moomoo-rsa
+            # #132 / IADR-0059 決定 3: 秘密鍵は所有者のみ読取（0400）。本 Pod は root 実行＝root が所有者なので読める。
+            defaultMode: 0400
             items:
               - { key: opend_rsa.pem, path: opend_rsa.pem }
 ---
