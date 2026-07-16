@@ -6,6 +6,12 @@ using Xunit;
 namespace AiStockTrading.Notification.Application.Tests;
 
 // FR-14, UC-06: スラッシュコマンドの解析。受け入れ基準8: /killswitch・/killswitch off の解析と未知コマンドの拒否。
+//
+// 到達可能性の前提: 本 PR の唯一の呼び出し元 DiscordNetBotGateway は、Discord の構造化スラッシュコマンド
+// （off は真偽値オプション）から文字列を自前で組み立てて渡すため、利用者が自由文字列でタイプミスを入力する
+// 経路は現時点では存在しない。したがって typo 系（"/killswitch of" 等）の検証は**現行経路の防御ではなく**、
+// テキスト入力の受け口（自然文リプライ＝#14 相当）が加わったときに解析器が既定で拒否側に倒れることを
+// 先に固定しておくためのもの。未知入力を暗黙実行しないという解析器の契約を表す。
 public class BotCommandParserTests
 {
     [Theory]

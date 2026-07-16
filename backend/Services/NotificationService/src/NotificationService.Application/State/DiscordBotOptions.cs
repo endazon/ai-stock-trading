@@ -35,6 +35,7 @@ public sealed class DiscordBotOptions
     // 認証層6: kill switch 起動時に入力を要求する確認フレーズ。空なら起動を拒否する。
     public string? KillSwitchConfirmationPhrase { get; set; }
 
-    // Gateway 有効化の条件: 明示的に Enabled かつトークンがある。いずれか欠ければ接続しない（安全側）。
-    public bool IsGatewayEnabled => Enabled && !string.IsNullOrWhiteSpace(Token);
+    // 注: Gateway を有効化してよいかの判定は DiscordBotGatewayFactory が単独で持つ（本型には置かない）。
+    // ここに「有効か」を表すプロパティを重ねると起動可否の判断が二箇所に分かれ、片方だけ条件が変わったときに
+    // 「有効に見えるのに接続しない（またはその逆）」という乖離を生むため。
 }

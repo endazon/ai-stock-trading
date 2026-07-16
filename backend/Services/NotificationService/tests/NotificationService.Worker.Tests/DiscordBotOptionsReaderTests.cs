@@ -17,7 +17,6 @@ public class DiscordBotOptionsReaderTests
         var options = DiscordBotOptionsReader.Read(Config([]));
 
         options.Enabled.Should().BeFalse();
-        options.IsGatewayEnabled.Should().BeFalse();
         options.GuildId.Should().BeNull();
         options.ChannelId.Should().BeNull();
         options.AllowedUserIds.Should().BeEmpty();
@@ -39,7 +38,7 @@ public class DiscordBotOptionsReaderTests
         }));
 
         options.Enabled.Should().BeTrue();
-        options.IsGatewayEnabled.Should().BeTrue();
+        options.Token.Should().Be("bot-token");
         options.GuildId.Should().Be("111");
         options.ChannelId.Should().Be("222");
         options.KillSwitchConfirmationPhrase.Should().Be("STOP TRADING");
