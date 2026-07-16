@@ -2,8 +2,10 @@ using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
+using AiStockTrading.OrderExecution.Worker.Composable.Retention;
 using AiStockTrading.OrderExecution.Worker.Composable.Steps;
 using AiStockTrading.OrderExecution.Worker.Foundation.Persistence;
+using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
@@ -54,6 +56,11 @@ builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
 builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 builder.Services.AddScoped<OrderExecutionService>();
+
+// NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
+// Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
+builder.Services.AddHostedService<OrderReservationRetentionService>();
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 builder.Services.AddMassTransit(x =>

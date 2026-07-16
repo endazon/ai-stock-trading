@@ -52,6 +52,32 @@ internal sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrd
         var row = db.DispatchReservations.AsNoTracking().FirstOrDefault(r => r.DecisionId == decisionId);
         return row is null
             ? null
-            : new OrderDispatchReservation(row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId);
+            : new OrderDispatchReservation(row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt);
+    }
+
+    // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
+    //
+    // **Reserved は述語で明示的に除外する**。Reserved＝「ブローカへ発注済みか不明」であり、どれだけ古くても
+    // 消してはならない（消せば再配送で二重発注＝実弾では実損）。滞留 Reserved の解消は #141 の自動
+    // リコンサイルか人手の判断であって、時間経過ではない。
+    // ExecuteDelete ではなく Where + RemoveRange を採る理由は IADR-0059 決定5（述語を CI で守るため）。
+    public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)
+    {
+        // CompletedAt != null は State の冗長な裏付け（Completed なら必ず設定される）。述語を単独で読んで
+        // 安全と分かるようにするため、あえて明示する。
+        var expired = db.DispatchReservations
+            .Where(r => r.State == OrderDispatchState.Completed
+                        && r.CompletedAt != null
+                        && r.CompletedAt < cutoff)
+            .OrderBy(r => r.CompletedAt)
+            .Take(batchSize)
+            .ToList();
+
+        if (expired.Count == 0)
+            return 0;
+
+        db.DispatchReservations.RemoveRange(expired);
+        db.SaveChanges();
+        return expired.Count;
     }
 }

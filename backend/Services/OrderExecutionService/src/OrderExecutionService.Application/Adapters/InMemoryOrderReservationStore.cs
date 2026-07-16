@@ -30,6 +30,8 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
             {
                 State = OrderDispatchState.Completed,
                 BrokerOrderId = brokerOrderId,
+                // #137, IADR-0059: 確定時刻はパージの述語に用いる（EF 実装と同じく保持する）。
+                CompletedAt = completedAt,
             };
         }
     }
@@ -39,6 +41,25 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
         lock (_gate)
         {
             return _reservations.GetValueOrDefault(decisionId);
+        }
+    }
+
+    // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
+    // Reserved は「発注済みか不明」であり、どれだけ古くても対象にしない（二重発注の防止が最優先）。
+    public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)
+    {
+        lock (_gate)
+        {
+            var expired = _reservations.Values
+                .Where(r => r.State == OrderDispatchState.Completed && r.CompletedAt < cutoff)
+                .Take(batchSize)
+                .Select(r => r.DecisionId)
+                .ToList();
+
+            foreach (var decisionId in expired)
+                _reservations.Remove(decisionId);
+
+            return expired.Count;
         }
     }
 }

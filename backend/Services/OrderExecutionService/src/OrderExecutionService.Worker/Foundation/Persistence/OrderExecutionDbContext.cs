@@ -23,6 +23,9 @@ internal sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbC
             e.Property(r => r.BrokerOrderId).HasMaxLength(64);
             // 未確定（Reserved）の滞留＝要リコンサイルを洗い出すための検索用。
             e.HasIndex(r => r.State);
+            // #137, IADR-0059: 保持期間パージ（WHERE State = Completed AND CompletedAt < cutoff
+            // ORDER BY CompletedAt）用の複合インデックス。
+            e.HasIndex(r => new { r.State, r.CompletedAt });
         });
 
         mb.Entity<ExecutedOrderRow>(e =>
