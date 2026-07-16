@@ -94,11 +94,13 @@ related_specs:
 | サービストークンで更新・履歴は読めない（403） | `AssumptionsEndpointsTests.サービストークンは更新と履歴を拒否される` |
 | 未認証は 401・無関係ロールは 403（現行維持） | `AssumptionsEndpointsTests.未認証は_401_ロール無しは_403` |
 | 取得成功で前提条件と Version が解決される | `CachedAssumptionsProviderTests.初回は取得して返す` |
-| 2 回目はキャッシュから返す（HTTP を叩かない） | `CachedAssumptionsProviderTests.2回目はキャッシュから返す` |
-| 版が上がったら追随する（イベント無効化） | `CachedAssumptionsProviderTests.無効化後は再取得する` / `AssumptionsChangedConsumerTests` |
+| 2 回目はキャッシュから返す（HTTP を叩かない） | `CachedAssumptionsProviderTests.二回目はキャッシュから返す` |
+| 版が上がったら追随する（イベント無効化） | `CachedAssumptionsProviderTests.無効化後は再取得して新しい版を返す` / `AssumptionsChangedConsumerTests.前提条件の変更でキャッシュを無効化する` |
+| 取得中に届いた変更を取りこぼさない | `CachedAssumptionsProviderTests.取得中に届いた変更は取りこぼさない` |
 | TTL 経過で再取得する（イベント取りこぼし対策） | `CachedAssumptionsProviderTests.TTL経過で再取得する` |
 | 取得不可かつ未取得なら既定へ倒れる | `CachedAssumptionsProviderTests.一度も取得できなければ既定へ倒れる` |
-| 取得不可だが取得済みなら last known good | `CachedAssumptionsProviderTests.取得失敗時は最後の成功値を返す` |
+| 取得不可だが取得済みなら last known good | `CachedAssumptionsProviderTests.取得失敗時は既定ではなく最後の成功値を返す` |
+| 障害復旧後は最新版へ戻る | `CachedAssumptionsProviderTests.障害復旧後は最新版へ戻る` |
 | 非 2xx・不正応答・タイムアウトで例外を出さない | `HttpAssumptionsClientTests`（401/500/不正 JSON/タイムアウト） |
 | BaseUrl 未設定なら HTTP を構築しない | `AssumptionsClientRegistrationTests.BaseUrl未設定なら既定プロバイダ` |
 

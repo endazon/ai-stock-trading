@@ -69,6 +69,25 @@ public class CachedAssumptionsProviderTests
         source.FetchCount.Should().Be(2);
     }
 
+    // 取得の最中に版が上がった場合、その取得結果は既に古い。無効化を「取得成功で解除」すると取りこぼして
+    // TTL 経過まで古い版を掴み続けるため、取得開始時点のチケットで失効を判定する。
+    [Fact]
+    public async Task 取得中に届いた変更は取りこぼさない()
+    {
+        var (provider, source, _) = Build(Versioned(3, 12_000m));
+
+        // v3 を取得している最中に利用者が v4 へ変更した（AssumptionsChanged 到着）。
+        source.OnFetching = () => provider.Invalidate();
+        (await provider.GetCurrentAsync()).Version.Should().Be(3);
+
+        source.OnFetching = null;
+        source.Next = Versioned(4, 5_000m);
+        var next = await provider.GetCurrentAsync();
+
+        next.Version.Should().Be(4, "取得中に届いた無効化を取得成功で消してはならない");
+        source.FetchCount.Should().Be(2);
+    }
+
     // IADR-0060 決定 4: イベント取りこぼしに備え TTL でも失効させる。
     [Fact]
     public async Task TTL経過で再取得する()

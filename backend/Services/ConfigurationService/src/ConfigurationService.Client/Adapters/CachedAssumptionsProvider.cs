@@ -19,14 +19,20 @@ internal sealed class CachedAssumptionsProvider(
     TimeSpan ttl)
     : IAssumptionsProvider, IAssumptionsCacheInvalidator
 {
+    // 取得値・取得時刻・取得開始時点の無効化チケットの組。1 つの参照として publish することで、ロック外の
+    // fast-path から読んでも三者が食い違わない（個別フィールドだと DateTimeOffset の読みが裂けうる）。
+    private sealed record CacheEntry(VersionedAssumptions Value, DateTimeOffset FetchedAt, long Ticket);
+
     // 取得の多重発火を単一化する（同時に複数の巡回が失効を観測しても照会は 1 回）。
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    private VersionedAssumptions? _cached;
-    private DateTimeOffset _cachedAt;
-    private volatile bool _invalidated;
+    private CacheEntry? _cache;
 
-    public void Invalidate() => _invalidated = true;
+    // 無効化のたびに単調増加する。取得開始時の値をエントリに持たせ、現在値と異なれば失効とみなす。
+    // 真偽値フラグだと「取得中に届いた AssumptionsChanged」を取得成功時の解除で消してしまい、次の版へ追随できない。
+    private long _invalidationTicket;
+
+    public void Invalidate() => Interlocked.Increment(ref _invalidationTicket);
 
     public async ValueTask<VersionedAssumptions> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
@@ -40,20 +46,22 @@ internal sealed class CachedAssumptionsProvider(
             if (TryGetFresh() is { } refreshed)
                 return refreshed;
 
+            // 取得の「前」にチケットを読む。取得中に変更が届けばチケットが進み、このエントリは即座に失効扱いになる。
+            var ticket = Interlocked.Read(ref _invalidationTicket);
+
             var fetched = await source.FetchAsync(cancellationToken).ConfigureAwait(false);
             if (fetched is not null)
             {
-                _cached = fetched;
-                _cachedAt = timeProvider.GetUtcNow();
-                _invalidated = false;
+                Volatile.Write(ref _cache, new CacheEntry(fetched, timeProvider.GetUtcNow(), ticket));
                 return fetched;
             }
 
             // 取得不可: last known good（陳腐化していても利用者の意図に最も近い）＞ 既定値。
-            if (_cached is { } stale)
+            if (Volatile.Read(ref _cache) is { } stale)
             {
-                logger.LogWarning("全体前提条件を取得できません。最後に取得した版 v{Version} を使い続けます。", stale.Version);
-                return stale;
+                logger.LogWarning(
+                    "全体前提条件を取得できません。最後に取得した版 v{Version} を使い続けます。", stale.Value.Version);
+                return stale.Value;
             }
 
             logger.LogWarning("全体前提条件を一度も取得できていません。既定値へ倒します（未解決）。");
@@ -69,11 +77,16 @@ internal sealed class CachedAssumptionsProvider(
     internal static VersionedAssumptions Unresolved { get; } =
         new(TradingAssumptionsDefaults.Create(), VersionedAssumptions.UnresolvedVersion);
 
+    // ロックを取らない fast-path。キャッシュは 1 参照として読むため三者は必ず整合する。チケットの観測がわずかに
+    // 遅れても、次の参照で失効を観測して取り直すだけ（緩い整合性で足りる＝毎回ロックを取る必要はない）。
     private VersionedAssumptions? TryGetFresh()
     {
-        if (_invalidated || _cached is null)
+        if (Volatile.Read(ref _cache) is not { } entry)
             return null;
 
-        return timeProvider.GetUtcNow() - _cachedAt < ttl ? _cached : null;
+        if (entry.Ticket != Interlocked.Read(ref _invalidationTicket))
+            return null;
+
+        return timeProvider.GetUtcNow() - entry.FetchedAt < ttl ? entry.Value : null;
     }
 }

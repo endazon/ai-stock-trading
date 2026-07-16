@@ -20,9 +20,13 @@ internal sealed class FakeAssumptionsSource : IAssumptionsSource
 
     public VersionedAssumptions? Next { get; set; }
 
+    /// <summary>取得の最中に割り込む処理（取得中に AssumptionsChanged が届く状況の再現）。</summary>
+    public Action? OnFetching { get; set; }
+
     public Task<VersionedAssumptions?> FetchAsync(CancellationToken cancellationToken = default)
     {
         FetchCount++;
+        OnFetching?.Invoke();
         return Task.FromResult(Next);
     }
 }
