@@ -4,14 +4,14 @@ type: spec
 status: review
 related_ids:
   - NFR
-  - IADR-0057
+  - IADR-0058
 author: claude
 created: 2026-07-16
 updated: 2026-07-16
 plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (非機能要件: 運用・保守)"
 related_specs:
-  - "../adr/IADR-0057_helm-chart-ci-gate.md"
+  - "../adr/IADR-0058_helm-chart-ci-gate.md"
   - "../ai-workflow.md"
   - "../../deploy/helm/ai-stock-trading/Chart.yaml"
 ---
@@ -26,7 +26,7 @@ related_specs:
 - 機能要求（FR）: —（CI ゲート整備）
 - 非機能要件（NFR）: 運用・保守（規約・デプロイ資産の健全性をマージ前に機械検査する）
 - 関連ルール: `.claude/rules/traceability.md`「PR タイトル（スカッシュ後件名）の検査」
-- 実装判断: [[IADR-0057]]（本作業で起票。Helm chart の CI ゲート方式）
+- 実装判断: [[IADR-0058]]（本作業で起票。Helm chart の CI ゲート方式）
 - Issue: #129（本 issue）／Refs #122（PR #123 の claude-review で検出）／参考: microservices-platform#268
 
 ## 目的・背景
@@ -63,12 +63,12 @@ vulnerable-scan）と**完全に同一**で、PR タイトル検査のロジッ�
 
 - `check-commit-messages.js` の変更（既に `--title` / `PR_TITLE` に対応済み。**再実装しない**）。
 - `helm install` / 実クラスタへの適用・API サーバ検証（`helm template --validate` は実基盤依存のため除外）。
-- k8s スキーマ適合検査（kubeconform 等）。→ [[IADR-0057]] にフォローアップとして記す。
+- k8s スキーマ適合検査（kubeconform 等）。→ [[IADR-0058]] にフォローアップとして記す。
 - `ci.yml` の変更（共有ファイルの競合回避。独立ワークフローで足りる）。
 
 ## 設計
 
-詳細は [[IADR-0057]]。要点:
+詳細は [[IADR-0058]]。要点:
 
 1. **`pr-title.yml`**: `pull_request` の `opened/edited/reopened/synchronize` で起動し、
    `PR_TITLE` 環境変数経由（シェル展開注入を避ける）で `node scripts/check-commit-messages.js` を実行。
@@ -120,9 +120,9 @@ CI ワークフローは単体テストの対象にならないため、**ゲー
 | --- | --- |
 | `.github/workflows/pr-title.yml` | 全面置換（誤って security.yml の複製だったものを本来の内容へ） |
 | `.github/workflows/helm.yml` | 新規（chart 検証） |
-| `docs/adr/IADR-0057_helm-chart-ci-gate.md` | 新規（設計判断） |
-| `docs/adr/README.md` | IADR-0057 を索引へ追加 |
-| `docs/ai-workflow.md` | 必須チェックへ `PR Title` を追記（`Helm` はパスフィルタのため推奨に留める。理由は [[IADR-0057]]） |
+| `docs/adr/IADR-0058_helm-chart-ci-gate.md` | 新規（設計判断） |
+| `docs/adr/README.md` | IADR-0058 を索引へ追加 |
+| `docs/ai-workflow.md` | 必須チェックへ `PR Title` を追記（`Helm` はパスフィルタのため推奨に留める。理由は [[IADR-0058]]） |
 | `scripts/check-commit-messages.js` | **変更しない**（既に対応済み） |
 | `ci.yml` / `security.yml` | **変更しない**（競合回避） |
 
@@ -135,4 +135,4 @@ CI ワークフローは単体テストの対象にならないため、**ゲー
 - **必須チェック化**: リポ設定（ブランチ保護）はコード変更では完結しないため、`docs/ai-workflow.md`
   に記載し、設定はリポ管理者が行う。`PR Title` は全 PR で起動するため必須チェックに適する。
   一方 `Helm` はトリガ側パスフィルタを持つため、必須にすると対象外 PR が永久 pending になる
-  （GitHub 仕様）。本作業では推奨に留める（[[IADR-0057]] のフォローアップ参照）。
+  （GitHub 仕様）。本作業では推奨に留める（[[IADR-0058]] のフォローアップ参照）。

@@ -1,9 +1,9 @@
-# Issue #129, IADR-0057: Helm chart（deploy/helm/ai-stock-trading）の CI ゲート。
+# Issue #129, IADR-0058: Helm chart（deploy/helm/ai-stock-trading）の CI ゲート。
 #
 # 背景: chart（#122）を追加したが helm lint / helm template を回すジョブが無く、chart 破損を
 # CI で検出できなかった（microservices-platform#268 と同種の「デプロイ資産が CI 未検証」問題）。
 #
-# 設計（詳細は docs/adr/IADR-0057_helm-chart-ci-gate.md）:
+# 設計（詳細は docs/adr/IADR-0058_helm-chart-ci-gate.md）:
 #   - helm バイナリのみで完結させる。--validate / --dry-run=server は実 API サーバ依存のため使わない
 #     （実基盤依存の検査は integration.yml が担う。IADR-0049 / #82 の切り分けを踏襲）。
 #   - 既定値だけでなく、既定 disabled のフィーチャフラグを ON にした派生も描画する。既定値の描画では
@@ -36,14 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # バージョンを固定する（ランナー同梱の helm に依存すると、更新で挙動が変わっても気づけない）。
-      # v4.2.1 は本ゲートの赤/緑をローカル実証したのと同一バージョン（IADR-0057 の実測表）。
+      # v4.2.1 は本ゲートの赤/緑をローカル実証したのと同一バージョン（IADR-0058 の実測表）。
       - uses: azure/setup-helm@v4
         with:
           version: v4.2.1
       - name: helm lint (strict)
         run: helm lint --strict "$CHART"
       # 描画の派生。既定 disabled のフラグを ON にした系も描画し、有効化時に初めて壊れる
-      # テンプレート（#121 CronJob / #13 moomoo）を CI で捕まえる（IADR-0057 の核心）。
+      # テンプレート（#121 CronJob / #13 moomoo）を CI で捕まえる（IADR-0058 の核心）。
       - name: helm template (default values / fail-safe 既定)
         run: helm template ast "$CHART" > /dev/null
       - name: helm template (tradingCycle.cronjob.enabled=true)

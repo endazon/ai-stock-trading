@@ -51,6 +51,8 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 builder.Services.AddSingleton<IClock, SystemClock>();
 // DbContext が scoped のため発注結果ストアも scoped。
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
+// #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
+builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 builder.Services.AddScoped<OrderExecutionService>();
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。

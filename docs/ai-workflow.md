@@ -114,7 +114,7 @@ GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule�
       ジョブごとスキップする（`commit-messages` と同方針）。**スキップされたチェックは必須チェック上
       「合格」として扱われる**ためマージは止まらないが、必須指定した直後の dependabot PR で一度
       実挙動を確認しておくとよい（`security.yml` の `dependency-review` も同型の `if` を持つ）。
-  - `helm.yml`（Helm chart / [IADR-0057](adr/IADR-0057_helm-chart-ci-gate.md)）は
+  - `helm.yml`（Helm chart / [IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）は
     `paths: deploy/helm/**` のトリガフィルタを持つ。**必須チェックには指定しない**——
     GitHub は必須チェックが report されるまでマージを許さないため、chart に触れない PR で
     永久 pending になる。chart 変更 PR ではレビューで green を確認する。

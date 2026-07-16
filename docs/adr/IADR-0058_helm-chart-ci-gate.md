@@ -1,5 +1,5 @@
 ---
-title: IADR-0057 Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する
+title: IADR-0058 Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する
 type: impl-adr
 status: Accepted
 related_ids:
@@ -12,7 +12,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (非機能要件: 運用・保守)"
 ---
 
-# IADR-0057: Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する
+# IADR-0058: Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する
 
 - 状態: Accepted
 - 日付: 2026-07-16

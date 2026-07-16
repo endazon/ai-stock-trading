@@ -1,5 +1,7 @@
 using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
+using AiStockTrading.OrderExecution.Application.Services;
+using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -20,14 +22,24 @@ public class OrderExecutionServiceTests
         public DateTimeOffset UtcNow => Now;
     }
 
+    // 参照の度に時刻が進むクロック。予約時刻と約定時刻が別々に取得されることの確認に使う。
+    private sealed class AdvancingClock(DateTimeOffset start, TimeSpan step) : IClock
+    {
+        private DateTimeOffset _current = start - step;
+
+        public DateTimeOffset UtcNow => _current = _current.Add(step);
+    }
+
     // 任意の BrokerOrder を返すテスト用ブローカ（スリッページ等の制御用）。発注回数を数える。
-    private sealed class FakeBroker(BrokerOrder order) : IBrokerAdapter
+    // onPlace は「発注が起きたその瞬間」の観測用（予約が発注前にコミットされることの確認に使う）。
+    private sealed class FakeBroker(BrokerOrder order, Action? onPlace = null) : IBrokerAdapter
     {
         public int PlaceCount { get; private set; }
 
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
         {
             PlaceCount++;
+            onPlace?.Invoke();
             return Task.FromResult(order);
         }
 
@@ -36,6 +48,56 @@ public class OrderExecutionServiceTests
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
     }
+
+    // Save を指定回数だけ失敗させるストア。「ブローカ発注成功 → 永続化失敗」の窓（#131）を再現する。
+    private sealed class FlakySaveStore : IExecutedOrderStore
+    {
+        private readonly InMemoryExecutedOrderStore _inner = new();
+
+        public int RemainingFailures { get; set; }
+
+        public void Save(ExecutionRecord record)
+        {
+            if (RemainingFailures > 0)
+            {
+                RemainingFailures--;
+                throw new InvalidOperationException("永続化失敗（発注成功→保存失敗の窓を再現）");
+            }
+
+            _inner.Save(record);
+        }
+
+        public IReadOnlyList<ExecutionRecord> GetAll() => _inner.GetAll();
+
+        public ExecutionRecord? FindByDecisionId(Guid decisionId) => _inner.FindByDecisionId(decisionId);
+    }
+
+    // MarkCompleted を指定回数だけ失敗させる予約ストア（Save 成功 → 確定失敗の窓を再現する）。
+    private sealed class FlakyCompleteReservationStore : IOrderReservationStore
+    {
+        private readonly InMemoryOrderReservationStore _inner = new();
+
+        public int RemainingFailures { get; set; }
+
+        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt) => _inner.TryReserve(decisionId, reservedAt);
+
+        public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt)
+        {
+            if (RemainingFailures > 0)
+            {
+                RemainingFailures--;
+                throw new InvalidOperationException("確定失敗（保存成功→確定失敗の窓を再現）");
+            }
+
+            _inner.MarkCompleted(decisionId, brokerOrderId, completedAt);
+        }
+
+        public OrderDispatchReservation? Find(Guid decisionId) => _inner.Find(decisionId);
+    }
+
+    private static AppSvc NewService(
+        IBrokerAdapter broker, IExecutedOrderStore store, IOrderReservationStore? reservations = null) =>
+        new(broker, store, reservations ?? new InMemoryOrderReservationStore(), new FakeClock());
 
     private static OrderApproved Approved(OrderIntent intent) =>
         new(Guid.NewGuid(), intent, intent.Quantity, Now);
@@ -48,7 +110,7 @@ public class OrderExecutionServiceTests
     public async Task 承認注文はペーパーで約定しOrderExecutedを返す()
     {
         var store = new InMemoryExecutedOrderStore();
-        var service = new AppSvc(new PaperBrokerAdapter(), store, new FakeClock());
+        var service = NewService(new PaperBrokerAdapter(), store);
         var approved = Approved(Intent());
 
         var executed = await service.ExecuteAsync(approved);
@@ -65,7 +127,7 @@ public class OrderExecutionServiceTests
     {
         // IADR-0007: 数量 0 は実ブローカが拒否する不正注文 → Rejected（発注前拒否 OrderRejected とは別）。
         var store = new InMemoryExecutedOrderStore();
-        var service = new AppSvc(new PaperBrokerAdapter(), store, new FakeClock());
+        var service = NewService(new PaperBrokerAdapter(), store);
 
         var executed = await service.ExecuteAsync(Approved(Intent(qty: 0)));
 
@@ -78,7 +140,7 @@ public class OrderExecutionServiceTests
     public async Task Close注文も同一経路で約定する()
     {
         var store = new InMemoryExecutedOrderStore();
-        var service = new AppSvc(new PaperBrokerAdapter(), store, new FakeClock());
+        var service = NewService(new PaperBrokerAdapter(), store);
 
         var executed = await service.ExecuteAsync(Approved(Intent(effect: PositionEffect.Close, side: TradeSide.Sell)));
 
@@ -93,7 +155,7 @@ public class OrderExecutionServiceTests
         var store = new InMemoryExecutedOrderStore();
         var intent = Intent(price: 1_000m);
         var brokerOrder = new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_005m, Now, Now);
-        var service = new AppSvc(new FakeBroker(brokerOrder), store, new FakeClock());
+        var service = NewService(new FakeBroker(brokerOrder), store);
 
         await service.ExecuteAsync(Approved(intent));
 
@@ -107,7 +169,7 @@ public class OrderExecutionServiceTests
         var store = new InMemoryExecutedOrderStore();
         var intent = Intent();
         var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
-        var service = new AppSvc(broker, store, new FakeClock());
+        var service = NewService(broker, store);
         var approved = Approved(intent);
 
         var first = await service.ExecuteAsync(approved);
@@ -116,5 +178,142 @@ public class OrderExecutionServiceTests
         broker.PlaceCount.Should().Be(1);          // 再発注しない
         store.GetAll().Should().ContainSingle();    // 二重計上しない
         second.OrderId.Should().Be(first.OrderId);  // 既存結果を返す
+    }
+
+    // ---- #131 / IADR-0057: 発注前 DecisionId 予約による冪等化（予約 → 発注 → 確定の3相）----
+
+    [Fact]
+    public async Task 発注成功後の永続化失敗を跨いでも再発注しない()
+    {
+        // #131 の中核。ブローカ発注は成功したが Save 前に落ちた窓では executed_orders に記録が無いため、
+        // 発注後の DecisionId 照合だけでは再配送時に二重発注し得た。発注前予約がこの窓を塞ぐ。
+        var store = new FlakySaveStore { RemainingFailures = 1 };
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = NewService(broker, store, reservations);
+        var approved = Approved(intent);
+
+        // 1回目: 発注は成功するが永続化で落ちる（プロセス断相当）。
+        var first = async () => await service.ExecuteAsync(approved);
+        await first.Should().ThrowAsync<InvalidOperationException>();
+        broker.PlaceCount.Should().Be(1);
+
+        // 再配送: 予約が Reserved のまま残る＝発注済みか不明。安全側に倒して再発注しない（at-most-once）。
+        var redelivered = async () => await service.ExecuteAsync(approved);
+        await redelivered.Should().ThrowAsync<OrderDispatchReservationConflictException>();
+
+        broker.PlaceCount.Should().Be(1);   // 二重発注しない（受け入れ基準）
+        store.GetAll().Should().BeEmpty();  // 二重計上もしない
+    }
+
+    [Fact]
+    public async Task 予約はブローカ発注の前にコミットされる()
+    {
+        // 予約が発注より後だと、発注成功→予約失敗の窓が新たに空く。順序そのものを固定する。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var approved = Approved(intent);
+        OrderDispatchReservation? seenAtPlace = null;
+        var broker = new FakeBroker(
+            new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now),
+            onPlace: () => seenAtPlace = reservations.Find(approved.DecisionId));
+        var service = NewService(broker, store, reservations);
+
+        await service.ExecuteAsync(approved);
+
+        seenAtPlace.Should().NotBeNull("ブローカ発注の時点で予約がコミット済みであること");
+        seenAtPlace!.State.Should().Be(OrderDispatchState.Reserved);
+    }
+
+    [Fact]
+    public async Task 予約済み未確定の再処理は発注せず拒否する()
+    {
+        // 発注前に落ちた場合も「発注したか不明」と区別が付かないため、同様に拒否する（IADR-0057）。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = NewService(broker, store, reservations);
+        var approved = Approved(intent);
+        reservations.TryReserve(approved.DecisionId, Now).Should().BeTrue();
+
+        var act = async () => await service.ExecuteAsync(approved);
+
+        (await act.Should().ThrowAsync<OrderDispatchReservationConflictException>())
+            .Which.DecisionId.Should().Be(approved.DecisionId);
+        broker.PlaceCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task 保存成功後の確定失敗を跨いだ再処理は既存結果を再発行する()
+    {
+        // Save は済んでいるため結果は確定している。予約が Reserved に取り残されていても、
+        // 完了の権威（executed_orders）が先に効いて既存結果を再発行する（拒否しない）。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new FlakyCompleteReservationStore { RemainingFailures = 1 };
+        var intent = Intent();
+        var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = NewService(broker, store, reservations);
+        var approved = Approved(intent);
+
+        var first = async () => await service.ExecuteAsync(approved);
+        await first.Should().ThrowAsync<InvalidOperationException>();
+
+        var second = await service.ExecuteAsync(approved); // 再配送
+
+        second.OrderId.Should().Be("o1");
+        broker.PlaceCount.Should().Be(1);        // 再発注しない
+        store.GetAll().Should().ContainSingle(); // 二重計上しない
+    }
+
+    [Fact]
+    public async Task 完了した発注の予約はブローカ注文IDつきで確定される()
+    {
+        // 予約の Completed 状態と BrokerOrderId は、stuck 予約（＝要リコンサイル）と完了済みを
+        // 運用上区別するために残す（自動リコンサイルは後続 issue）。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var service = NewService(
+            new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now)), store, reservations);
+        var approved = Approved(intent);
+
+        await service.ExecuteAsync(approved);
+
+        var reservation = reservations.Find(approved.DecisionId);
+        reservation.Should().NotBeNull();
+        reservation!.State.Should().Be(OrderDispatchState.Completed);
+        reservation.BrokerOrderId.Should().Be("o1");
+    }
+
+    [Fact]
+    public async Task 約定時刻はブローカ往復の後に記録される()
+    {
+        // 予約時刻を約定時刻へ流用すると、往復の実時間が記録から消えて監査・リコンサイルを誤らせる。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var service = new AppSvc(
+            new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now)),
+            store, reservations, new AdvancingClock(Now, TimeSpan.FromSeconds(1)));
+        var approved = Approved(intent);
+
+        var executed = await service.ExecuteAsync(approved);
+
+        executed.ExecutedAt.Should().BeAfter(reservations.Find(approved.DecisionId)!.ReservedAt);
+    }
+
+    [Fact]
+    public void 同一DecisionIdの予約は高々1つに限定される()
+    {
+        // 並行配送（同時に2つのコンシューマが同じ OrderApproved を掴む）の防止。実 PostgreSQL の
+        // 一意制約による担保は実基盤 E2E 側で確認する（本テストはポートの契約を固定する）。
+        var reservations = new InMemoryOrderReservationStore();
+        var decisionId = Guid.NewGuid();
+
+        reservations.TryReserve(decisionId, Now).Should().BeTrue();
+        reservations.TryReserve(decisionId, Now).Should().BeFalse();
     }
 }
