@@ -27,13 +27,39 @@ internal static class DiscordBotOptionsReader
         foreach (var id in ReadUserIds(section))
             options.AllowedUserIds.Add(id);
 
-        foreach (var entry in section.GetSection("UserMapping").GetChildren())
-        {
-            if (!string.IsNullOrWhiteSpace(entry.Value))
-                options.UserMapping[entry.Key] = entry.Value;
-        }
+        foreach (var (discordUserId, keycloakUser) in ReadUserMapping(section))
+            options.UserMapping[discordUserId] = keycloakUser;
 
         return options;
+    }
+
+    // UserMapping も 2 形式を受ける:
+    //   1. セクション形式（appsettings / helm）: `UserMapping:<discordUserId>` = <keycloak 利用者名>
+    //   2. コンパクト形式（環境変数 / .env）: `UserMapping` = "<discordUserId>:<利用者名>,<discordUserId>:<利用者名>"
+    // 環境変数で動的キーを組み立てるのは compose/helm 双方で扱いづらいため、1 変数で与えられる形式を用意する。
+    private static IEnumerable<(string DiscordUserId, string KeycloakUser)> ReadUserMapping(IConfiguration section)
+    {
+        var mapping = section.GetSection("UserMapping");
+
+        var fromSection = mapping.GetChildren()
+            .Where(c => !string.IsNullOrWhiteSpace(c.Value))
+            .Select(c => (c.Key, c.Value!))
+            .ToList();
+
+        if (fromSection.Count > 0)
+            return fromSection;
+
+        var raw = mapping.Value;
+        if (string.IsNullOrWhiteSpace(raw))
+            return [];
+
+        return raw
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(pair => pair.Split(':', 2, StringSplitOptions.TrimEntries))
+            // 形式不正（":" 無し・いずれかが空）は黙って捨てる。**推測で対応付けを作らない**
+            // （誤った対応付けは他人の操作を本人として実行させ得るため、拒否側に倒す）。
+            .Where(parts => parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0)
+            .Select(parts => (parts[0], parts[1]));
     }
 
     private static IEnumerable<string> ReadUserIds(IConfiguration section)

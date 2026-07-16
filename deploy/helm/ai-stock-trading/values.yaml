@@ -185,6 +185,28 @@ services:
       - { name: Notifications__Provider, value: "" }
       - name: Notifications__Discord__WebhookUrl
         secretKeyRef: { name: ast-secrets, key: discord-webhook-url, optional: true }
+      # FR-14, IADR-0063: Discord Bot（双方向）。fail-safe: false=Gateway に接続しない。
+      # 有効化には Enabled=true・Token に加え多層認証の設定がすべて要る（1つでも欠ければ接続しない）。
+      # 空の GuildId/ChannelId/AllowedUserIds は「全許可」ではなく全拒否に倒れる。
+      - { name: Notifications__Discord__Bot__Enabled, value: "false" }
+      - name: Notifications__Discord__Bot__Token
+        secretKeyRef: { name: ast-secrets, key: discord-bot-token, optional: true }
+      - { name: Notifications__Discord__Bot__GuildId, value: "" }
+      - { name: Notifications__Discord__Bot__ChannelId, value: "" }
+      - { name: Notifications__Discord__Bot__AllowedUserIds, value: "" }
+      # "discordUserId:keycloak利用者名" のカンマ区切り。対応が無いユーザーは操作できない。
+      - { name: Notifications__Discord__Bot__UserMapping, value: "" }
+      # 空=kill switch を起動できない（誤爆防止の閂を設定漏れで外さない）。
+      - name: Notifications__Discord__Bot__KillSwitchConfirmationPhrase
+        secretKeyRef: { name: ast-secrets, key: discord-bot-killswitch-phrase, optional: true }
+      # kill switch は Risk の OwnerOnly。ServiceAuth（trading-service）では 403 のため、
+      # trading-owner をマップした専用クライアントを使う（IADR-0063 決定4）。未設定=401→操作は失敗（安全側）。
+      - name: Notifications__Discord__OwnerAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - name: Notifications__Discord__OwnerAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
+      # kill switch の呼び先（空=BaseAddress 未設定＝呼び出し失敗）。
+      - { name: RiskManagement__BaseUrl, value: "" }
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc

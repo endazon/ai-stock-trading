@@ -71,6 +71,36 @@ public class DiscordBotOptionsReaderTests
         options.AllowedUserIds.Should().BeEquivalentTo("333", "444");
     }
 
+    // コンパクト形式（環境変数 / .env 向け）。
+    [Fact]
+    public void 利用者対応付けをコンパクト形式で読み取る()
+    {
+        var options = DiscordBotOptionsReader.Read(Config(new Dictionary<string, string?>
+        {
+            ["Notifications:Discord:Bot:UserMapping"] = "333:endazon, 444:other",
+        }));
+
+        options.UserMapping.Should().HaveCount(2);
+        options.UserMapping["333"].Should().Be("endazon");
+        options.UserMapping["444"].Should().Be("other");
+    }
+
+    // 形式不正は推測で対応付けを作らず捨てる（誤った対応付けは他人の操作を本人として実行させ得る）。
+    [Theory]
+    [InlineData("333")]
+    [InlineData("333:")]
+    [InlineData(":endazon")]
+    [InlineData(",")]
+    public void 形式不正の対応付けは取り込まない(string raw)
+    {
+        var options = DiscordBotOptionsReader.Read(Config(new Dictionary<string, string?>
+        {
+            ["Notifications:Discord:Bot:UserMapping"] = raw,
+        }));
+
+        options.UserMapping.Should().BeEmpty();
+    }
+
     // Enabled は厳密に true のときのみ有効（不正値を「有効」と解釈しない）。
     [Theory]
     [InlineData("yes")]
