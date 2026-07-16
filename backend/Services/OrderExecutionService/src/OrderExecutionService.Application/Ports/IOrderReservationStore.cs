@@ -23,7 +23,8 @@ public interface IOrderReservationStore
 {
     /// <summary>
     /// DecisionId を予約する。新規に確保できたら true、既に予約が存在する（＝再配送・並行配送）なら false。
-    /// 実装はブローカ発注より前にコミットすること（呼び出し側の順序に依存させない）。
+    /// 実装は true を返す前に予約をコミットし、他プロセスから観測可能にすること（戻った時点で確定していない
+    /// と、発注前予約の意味が無くなる）。ブローカ発注より前に呼ぶのは呼び出し側の責務である。
     /// </summary>
     bool TryReserve(Guid decisionId, DateTimeOffset reservedAt);
 

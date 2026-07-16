@@ -34,13 +34,12 @@ public sealed class OrderExecutionService(
         }
 
         var intent = approved.Intent;
-        var now = clock.UtcNow;
 
         // 相2（発注着手の権威）: ブローカへ送る「前」に一意予約を確保する。確保できない＝予約済みで未確定であり、
         // 「未発注」と「発注済みだが記録できていない」を区別できない。実弾では二重発注（不可逆）の方が
         // 取りこぼし（可逆）より重いため、再発注せず拒否する（at-most-once・IADR-0057）。
         // 再試行を使い切ると _error キューへ送られ、ブローカ状態を確認するリコンサイルの対象になる。
-        if (!reservations.TryReserve(approved.DecisionId, now))
+        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow))
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（損切り）も同一経路。
@@ -48,6 +47,10 @@ public sealed class OrderExecutionService(
 
         // FR-16: 実効スリッページを取引毎に算出・記録する。
         var slippage = SlippageCalculator.Compute(intent.Price, brokerOrder.AveragePrice, intent.Side);
+
+        // 約定時刻はブローカ往復の「後」に取る。予約時刻を流用すると往復の実時間が記録から消え、
+        // 監査・リコンサイル時に「予約時刻＝約定時刻」に見えてしまう。
+        var now = clock.UtcNow;
 
         // 相4（確定）: 結果を保存してから予約を確定する。この順序により、Save 成功・確定失敗で落ちても
         // 再処理は相1で既存結果を再発行できる（逆順だと結果の無い Completed 予約が生じ、窓が残る）。

@@ -22,6 +22,14 @@ public class OrderExecutionServiceTests
         public DateTimeOffset UtcNow => Now;
     }
 
+    // 参照の度に時刻が進むクロック。予約時刻と約定時刻が別々に取得されることの確認に使う。
+    private sealed class AdvancingClock(DateTimeOffset start, TimeSpan step) : IClock
+    {
+        private DateTimeOffset _current = start - step;
+
+        public DateTimeOffset UtcNow => _current = _current.Add(step);
+    }
+
     // 任意の BrokerOrder を返すテスト用ブローカ（スリッページ等の制御用）。発注回数を数える。
     // onPlace は「発注が起きたその瞬間」の観測用（予約が発注前にコミットされることの確認に使う）。
     private sealed class FakeBroker(BrokerOrder order, Action? onPlace = null) : IBrokerAdapter
@@ -278,6 +286,23 @@ public class OrderExecutionServiceTests
         reservation.Should().NotBeNull();
         reservation!.State.Should().Be(OrderDispatchState.Completed);
         reservation.BrokerOrderId.Should().Be("o1");
+    }
+
+    [Fact]
+    public async Task 約定時刻はブローカ往復の後に記録される()
+    {
+        // 予約時刻を約定時刻へ流用すると、往復の実時間が記録から消えて監査・リコンサイルを誤らせる。
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var intent = Intent();
+        var service = new AppSvc(
+            new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now)),
+            store, reservations, new AdvancingClock(Now, TimeSpan.FromSeconds(1)));
+        var approved = Approved(intent);
+
+        var executed = await service.ExecuteAsync(approved);
+
+        executed.ExecutedAt.Should().BeAfter(reservations.Find(approved.DecisionId)!.ReservedAt);
     }
 
     [Fact]
