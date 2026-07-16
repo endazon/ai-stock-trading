@@ -1,10 +1,10 @@
 ---
-title: IADR-0059 の番号衝突解消（後着を IADR-0060 へ採番し直し・索引を補完）
+title: IADR-0059 の番号衝突解消（後着を IADR-0061 へ採番し直し・索引を補完）
 type: spec
 status: review
 related_ids:
   - IADR-0059
-  - IADR-0060
+  - IADR-0061
 author: endazon (with Claude Code)
 created: 2026-07-17
 updated: 2026-07-17
@@ -22,7 +22,7 @@ plan_refs: []
 - ユースケース（UC）: なし
 - 画面（SC）: なし
 - 関連 ADR: [IADR-0059](../adr/IADR-0059_dedupe-retention-purge.md)（重複排除ストアのパージ・#137 / PR #144）、
-  [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md)（OpenD 本番化・#132 / PR #143。**本 PR で 0059 から採番し直し**）
+  [IADR-0061](../adr/IADR-0061_opend-production-cutover-gates.md)（OpenD 本番化・#132 / PR #143。**本 PR で 0059 から採番し直し**）
 - 計画書リンク: なし
 
 ## 目的・背景
@@ -43,27 +43,46 @@ ADR README の運用ルール「連番はリポジトリ内で一意・昇順・
 ## 対象範囲
 
 - 対象:
-  - 後着（PR #143・OpenD 本番化）の `IADR-0059` → `IADR-0060` への採番し直し。
+  - 後着（PR #143・OpenD 本番化）の `IADR-0059` → `IADR-0061` への採番し直し。
     ファイル名・frontmatter `title`・見出し・本文中の ID 表記・作業仕様書・相互リンク・コード内コメント・
-    Helm chart / CI ワークフロー内の参照を**すべて** 0060 へ統一する。
-  - `docs/adr/README.md` の索引へ `IADR-0059`・`IADR-0060` の 2 行を ID 昇順で追記し、
+    Helm chart / CI ワークフロー内の参照を**すべて** 0061 へ統一する。
+  - `docs/adr/README.md` の索引へ `IADR-0059`・`IADR-0061` の 2 行を ID 昇順で追記し、
     衝突の経緯と再発防止を注記する。
 - 対象外:
   - 先着（PR #144・重複排除パージ）の `IADR-0059`。**番号・内容とも一切触れない**（先着尊重）。
   - 両 IADR の決定内容・状態（Accepted）・設計そのもの。
   - コードの挙動。本作業はコメント／文書の ID 表記のみを変更し、**実行時の挙動を変えない**。
-  - 既存文書が参照する **microservices-platform 側の `IADR-0060`**（別リポジトリの採番空間。
-    `docs/adr/IADR-0046` / `IADR-0048` / `docs/specs/20260712_107_runtime-scaffold.md` 等）。
-    本リポジトリの `IADR-0060` とは別物であり、本 PR では触れない（後述「未決事項」）。
+  - **未マージ PR #145（FR-17・バージョン付き全体前提条件）が採番済みの `IADR-0060`**。
+    当該 PR のブランチ（`feat/FR-17-assumptions-s2s-read`）とその ADR
+    （`docs/adr/IADR-0060_assumptions-versioned-resolution.md`）には**一切触れない**（後述「設計」）。
+  - 既存文書が参照する **microservices-platform 側の `IADR-0060` / `IADR-0064` / `IADR-0066`**
+    （別リポジトリの採番空間。`docs/adr/IADR-0046` / `IADR-0048` /
+    `docs/specs/20260712_107_runtime-scaffold.md` 等）。本リポジトリの採番とは別物であり触れない。
 
 ## 設計
 
-**採番の決定規則**: プレイブックの「先着尊重」に従い、`git log` のマージ順で先にマージされた方が番号を保持する。
+**採番の決定規則**: プレイブックの「先着尊重」に従い、先に採番した側が番号を保持する。
 
-- 先着 = PR #144（`e7b99a8`・00:20:39）→ `IADR-0059` を**保持**
-- 後着 = PR #143（`7a8c151`・00:20:59）→ `IADR-0060` へ**採番し直し**
+- 先着 = PR #144（`e7b99a8`・マージ 00:20:39）→ `IADR-0059` を**保持**
+- 後着 = PR #143（`7a8c151`・マージ 00:20:59）→ **`IADR-0061`** へ採番し直し
 
-`IADR-0060` は本リポジトリの `docs/adr/` において未使用であり（既存は 0000〜0059）、昇順・欠番なしを満たす。
+**空き番号の決定（重要）**: 後着の移動先は単純な「次の番号」ではない。`develop` だけでなく
+**未マージの全ブランチ**を走査した結果、`IADR-0060` は**未マージ PR #145**
+（FR-17・バージョン付き全体前提条件・ブランチ `feat/FR-17-assumptions-s2s-read`）が
+`docs/adr/IADR-0060_assumptions-versioned-resolution.md` として**既に採番していた**。
+
+- PR #145 作成: 2026-07-16 15:45:51 / 本 PR #146 作成: 15:49:13（**#145 が 3 分 22 秒先着**）
+- したがって #145 が `0060` を保持し、本 PR は**次の空き番号 `0061`** を用いる。
+- `IADR-0061` が全リモートブランチ（`develop` / 未マージ PR 含む）で未使用であることを
+  `git ls-tree` の横断走査で確認済み。microservices-platform 側の参照（`0060` / `0064` / `0066`）とも
+  表記が衝突しない。
+
+もし本 PR が `0060` を採ると、**番号衝突を解消する PR が新たな 0060 衝突を生む**という本末転倒になる。
+`develop` の版号だけを見て採番すると未マージ PR の採番を見落とす、というのが本件の根本原因そのものである。
+
+**索引の欠番について**: 本 PR のマージ時点では索引が `0059` → `0061` となり `0060` が一時的に空く。
+これは **#145 が在庫中（未マージ）**であるためで、同 PR のマージで充足される。索引の注記にその旨を明記し、
+第三者が `0060` を重複採番しないようにする（README の「注（採番の経緯）」と同じ運用）。
 
 **置換の安全性**: 単純な一括 `sed` は、両 IADR を参照する文書を破壊する。事前調査により、
 `IADR-0059` を参照する 43 ファイルのうち**混在は `docs/operations/operations.md` の 1 件のみ**で、
@@ -72,17 +91,20 @@ ADR README の運用ルール「連番はリポジトリ内で一意・昇順・
 - opend 側（`#132` を含む）15 ファイル: 一括置換
 - パージ側（`#137` を含む）: 無変更
 - `docs/operations/operations.md`: 行単位で判別して個別置換（opend 側 4 箇所のみ置換。
-  frontmatter `related_ids` は両 IADR を参照するため `IADR-0060` を**追記**する）
+  frontmatter `related_ids` は両 IADR を参照するため `IADR-0061` を**追記**する）
 
 ## 受け入れ基準
 
 - [x] `docs/adr/` に `IADR-0059` のファイルが 1 件だけ存在する（＝ `IADR-0059_dedupe-retention-purge.md`）
-- [x] `docs/adr/IADR-0060_opend-production-cutover-gates.md` が存在し、frontmatter `title` と見出しが `IADR-0060` である
+- [x] `docs/adr/IADR-0061_opend-production-cutover-gates.md` が存在し、frontmatter `title` と見出しが `IADR-0061` である
 - [x] 旧ファイル名 `IADR-0059_opend-*` への**参照**がリポジトリ内に 1 件も残っていない
       （本仕様書「目的・背景」の**衝突前の状態を記録した記述**を除く。当該箇所はリンクではなく経緯の記録である）
 - [x] opend 由来（`#132`）の `IADR-0059` 表記が 1 件も残っていない
 - [x] パージ由来（`#137`）の `IADR-0059` 表記が 1 件も書き換わっていない（先着の番号は不変・61 箇所）
-- [x] `docs/adr/README.md` の索引に `IADR-0059`・`IADR-0060` の両行が ID 昇順で並び、既存行が欠落していない
+- [x] `docs/adr/README.md` の索引に `IADR-0059`・`IADR-0061` の両行が ID 昇順で並び、既存行が欠落していない
+- [x] **未マージ PR #145 の `IADR-0060` と重複しない**（本 PR は 0060 を使わない）。
+      `IADR-0061` が全リモートブランチで未使用であることを確認済み
+- [x] PR #145 のブランチ・ADR ファイルを変更していない
 - [x] `node scripts/check-doc-links.js` がリンク切れ 0 で通る（165 件）
 - [x] `node --test scripts/scripts.test.js` が通る（34 件）
 - [x] `dotnet build` / `dotnet test` が通る（コメントのみの変更＝挙動不変の確認）
@@ -99,7 +121,9 @@ ADR README の運用ルール「連番はリポジトリ内で一意・昇順・
 - スクリプト単体テスト: `scripts/scripts.test.js`
 - ビルド／テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx`
 - Helm: `.github/workflows/helm.yml` の描画ゲート（コメント変更のみだが、YAML の破損がないことを確認）
-- 目視: 上記「受け入れ基準」の grep による確認（0059 / 0060 の残存・混在）
+- 目視: 上記「受け入れ基準」の grep による確認（0059 / 0061 の残存・混在、および 0060 の不使用）
+- 全リモートブランチ横断の重複検査: `git ls-tree` で各ブランチの `docs/adr/` を走査し、同番号の
+  ADR ファイルが二重に存在しないことを確認する（未マージ PR の採番を見落とさないため）
 
 ## 計画書との差異
 
@@ -107,9 +131,11 @@ ADR README の運用ルール「連番はリポジトリ内で一意・昇順・
 
 ## 未決事項
 
-- 本リポジトリの `IADR-0060` と、既存文書が参照する **microservices-platform 側の `IADR-0060`**
-  （submodule ユニット運用・単一情報源継承）が、**プロセス上は別空間だが文面上は同じ表記**になる。
-  参照箇所の多くは「microservices-platform IADR-0060」「platform IADR-0060」と修飾済みだが、
-  `docs/adr/IADR-0046_unit-repo-layout.md` の 1 箇所は修飾がなく、文脈依存で読み分けている。
-  本 PR の scope 外（既存の曖昧さであり、本変更が作り出したものではない）として触れないが、
-  他リポジトリの IADR を参照する際は必ずリポジトリ名で修飾する運用が望ましい。要判断。
+- **索引の一時的な欠番**: 本 PR 単体では `0060` が空く（#145 が在庫中）。#145 がマージされれば充足するが、
+  **#145 が取り下げ・採番変更された場合は恒久的な欠番になる**。その場合は #145 の帰趨を見て、本 PR の
+  `0061` を `0060` へ寄せ直すか、索引に欠番の理由を残すかを判断する必要がある。要判断。
+- **他リポジトリ IADR の無修飾参照**（既存の曖昧さ・本 PR の scope 外）: `docs/adr/IADR-0046_unit-repo-layout.md`
+  の「実装 IADR-0056 / IADR-0060」は microservices-platform 側の番号を指すが修飾がなく、文脈依存で
+  読み分けている。本リポにも `IADR-0056` が別途存在するため既に紛らわしい。本 PR は `0061` を用いるため
+  **本 PR 起因の新たな衝突はない**が、#145 が本リポの `0060` を使うと platform の `0060` と表記が重なる。
+  他リポの IADR はリポジトリ名で修飾する運用が望ましい（別 issue 起票を推奨）。要判断。

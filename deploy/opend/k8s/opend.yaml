@@ -3,7 +3,7 @@
 # 発注執行（#13）は IBrokerAdapter 経由で opend:11111 へ接続する（SIMULATE 前提・実弾なし）。
 # 前提: イメージをローカルビルド＆import 済み（deploy/opend/README.md）、Secret moomoo-credentials 作成済み。
 #
-# ⚠️ 本番配備は **chart 側**（`opend.enabled=true`・deploy/helm/ai-stock-trading）を使う（#132 / IADR-0060 決定 1）。
+# ⚠️ 本番配備は **chart 側**（`opend.enabled=true`・deploy/helm/ai-stock-trading）を使う（#132 / IADR-0061 決定 1）。
 #    本ファイルは dev の現行経路（#124 / #13 の PoC が通った構成）として残す。
 #
 # ⚠️ 常駐モデル（IADR-0053）: OpenD は**初回に有人**のデバイス検証（画像 CAPTCHA / SMS）が要る。
@@ -83,7 +83,7 @@ spec:
         - name: rsa
           secret:
             secretName: moomoo-rsa
-            # #132 / IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400）。本 Pod は root 実行＝root が所有者なので読める。
+            # #132 / IADR-0061 決定 3: 秘密鍵は所有者のみ読取（0400）。本 Pod は root 実行＝root が所有者なので読める。
             defaultMode: 0400
             items:
               - { key: opend_rsa.pem, path: opend_rsa.pem }

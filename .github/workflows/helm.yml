@@ -50,7 +50,7 @@ jobs:
         run: helm template ast "$CHART" --set tradingCycle.cronjob.enabled=true > /dev/null
       - name: helm template (moomoo.enabled=true)
         run: helm template ast "$CHART" --set moomoo.enabled=true > /dev/null
-      # #132 / IADR-0060: OpenD の本番配備（opend.enabled）と秘匿の受け口（externalSecrets）も同様に描画する。
+      # #132 / IADR-0061: OpenD の本番配備（opend.enabled）と秘匿の受け口（externalSecrets）も同様に描画する。
       - name: helm template (opend.enabled=true)
         run: helm template ast "$CHART" --set opend.enabled=true > /dev/null
       # #132: 非 root 化（securityContext ＋ HOME 再調整）のオプトイン経路。**実 OpenD での動作確認は実基盤が要り
@@ -82,7 +82,7 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
-      # #132 / IADR-0060: 既定が no-op（fail-safe）であることを描画で検査する。実弾防止と同じ性質の
+      # #132 / IADR-0061: 既定が no-op（fail-safe）であることを描画で検査する。実弾防止と同じ性質の
       # 「既定で外部へ触らない」保証であり、うっかり既定を反転させたら CI で落とす。
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
         run: |
@@ -98,7 +98,7 @@ jobs:
             echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
             exit 1
           fi
-      # #132 / IADR-0060 決定 1: chart の opend と dev の生 manifest（deploy/opend/k8s/opend.yaml）は
+      # #132 / IADR-0061 決定 1: chart の opend と dev の生 manifest（deploy/opend/k8s/opend.yaml）は
       # 意図的な二重管理である。片方だけが変更されて常駐モデルの前提が崩れるのを防ぐため、既定値の描画が
       # 生 manifest と**同等の不変条件**を満たすことを検査する（バイト等価ではない: chart は HOME 等を明示注入する）。
       - name: Assert opend default render keeps the resident-model invariants
@@ -113,13 +113,13 @@ jobs:
           printf '%s' "$out" | grep -q 'tty: true' || fail "tty: true でない"
           # liveness による自動再起動は、有人再検証待ちの停止を招くため付けない（IADR-0053）。
           if printf '%s' "$out" | grep -q 'livenessProbe'; then fail "livenessProbe が付いている"; fi
-          # 既定は root 実行のまま（非 root 化は未検証のオプトイン・IADR-0060 決定 2）。
+          # 既定は root 実行のまま（非 root 化は未検証のオプトイン・IADR-0061 決定 2）。
           if printf '%s' "$out" | grep -q 'runAsNonRoot'; then fail "既定で非 root になっている（未検証の設定を既定にしない）"; fi
           # デバイス信頼の永続化先は $HOME/.com.moomoo.OpenD。既定 HOME は生 manifest と同じ /root。
           printf '%s' "$out" | grep -q 'value: "/root"' || fail "既定 HOME が /root でない"
           printf '%s' "$out" | grep -q 'mountPath: "/root/.com.moomoo.OpenD"' || fail "デバイス信頼の永続化先が /root/.com.moomoo.OpenD でない"
           echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
-      # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
+      # #132 / IADR-0061: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |
           assert_fail() {

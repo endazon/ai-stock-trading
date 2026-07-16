@@ -1,5 +1,5 @@
 ---
-title: IADR-0060 OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す
+title: IADR-0061 OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す
 type: impl-adr
 status: Accepted
 related_ids: [FR-05, ADR-0002, IADR-0016, IADR-0052, IADR-0053, IADR-0056, IADR-0057, IADR-0058]
@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/03_moomoo-integration.md
 ---
 
-# IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す
+# IADR-0061: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

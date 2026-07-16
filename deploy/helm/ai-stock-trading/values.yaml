@@ -57,12 +57,12 @@ moomoo:
     rsaMountPath: /opt/opend/rsa
     # #132: OpenD への応答待ち（秒）。空=アダプタ既定（15 秒）。1〜600 の範囲外は order-execution が起動時に停止する。
     replyTimeoutSeconds: ""
-    # #132, IADR-0060 決定 3: RSA 秘密鍵マウントのパーミッション。0400（YAML の 8 進＝10 進 256）＝所有者のみ読取。
+    # #132, IADR-0061 決定 3: RSA 秘密鍵マウントのパーミッション。0400（YAML の 8 進＝10 進 256）＝所有者のみ読取。
     # ⚠️ マウント先コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
     #    非 root 化する場合は fsGroup と 0440 を用いる（chart README 参照）。
     rsaSecretDefaultMode: 0400
 
-# #132, IADR-0060 決定 1: 常駐 OpenD（moomoo ゲートウェイ）の**本番配備**の経路。
+# #132, IADR-0061 決定 1: 常駐 OpenD（moomoo ゲートウェイ）の**本番配備**の経路。
 # 既定 disabled = fail-safe（何も描画しない）。dev の現行経路は deploy/opend/k8s の生 manifest（そちらは残す）。
 #
 # ⚠️ 常駐モデル（IADR-0053）: OpenD は初回に**有人**のデバイス検証（画像/SMS）が要る
@@ -98,7 +98,7 @@ opend:
   nodeSelector: {}
   affinity: {}
   tolerations: []
-  # #132, IADR-0060 決定 2: 非 root 化（issue #132 のハードニング項目）。
+  # #132, IADR-0061 決定 2: 非 root 化（issue #132 のハードニング項目）。
   # 既定 {} = 現行の root 実行を維持する。**実 OpenD で未検証のため既定 ON にしない**
   #（HOME が変わるとデバイス信頼を失い、有人検証からやり直しになる恐れがある）。
   # 切替は home=/home/opend と併せて指定する（Dockerfile が uid/gid 10001 を用意済み）:
@@ -113,7 +113,7 @@ opend:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: "1", memory: 1Gi }
 
-# #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
+# #132, IADR-0061 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、
 #    CRD が無いクラスタで有効化すると apply が失敗する。実際に Vault へシークレットが載り ESO が同期して初めて充足。
 #    IADR-0056 §3 が実弾解禁の前提に挙げる「秘匿情報の Vault 化」は**未充足のまま**である。

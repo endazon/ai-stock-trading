@@ -1,5 +1,5 @@
 {{- /*
-  #132, IADR-0060 決定 1 / IADR-0053: 常駐 OpenD（moomoo ゲートウェイ）の本番配備。
+  #132, IADR-0061 決定 1 / IADR-0053: 常駐 OpenD（moomoo ゲートウェイ）の本番配備。
   既定 opend.enabled=false = fail-safe（本ファイルは何も描画しない）。dev の現行経路は deploy/opend/k8s の生 manifest。
 
   既定値での描画は生 manifest（deploy/opend/k8s/{pvc,opend}.yaml）と同等になること（root・HOME=/root・
@@ -10,7 +10,7 @@
 */ -}}
 {{- if .Values.opend.enabled }}
 {{- $o := .Values.opend }}
-{{- /* 誤配備を描画時に止める（IADR-0060 §helm 側のゲート）。資格情報が無い OpenD は起動直後に落ちる。 */}}
+{{- /* 誤配備を描画時に止める（IADR-0061 §helm 側のゲート）。資格情報が無い OpenD は起動直後に落ちる。 */}}
 {{- if not $o.credentialsSecretName }}
 {{- fail "opend.enabled=true には opend.credentialsSecretName（moomoo 資格情報の Secret 名）が要ります。deploy/opend/k8s/secret.example.yaml を参照。" }}
 {{- end }}
@@ -63,7 +63,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with $o.nodeSelector }}
-      {{- /* egress IP の安定＝無人再ログインの成立条件。本番ではノードを固定する（IADR-0060 決定 1）。 */}}
+      {{- /* egress IP の安定＝無人再ログインの成立条件。本番ではノードを固定する（IADR-0061 決定 1）。 */}}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -136,7 +136,7 @@ spec:
         - name: rsa
           secret:
             secretName: {{ $o.rsaSecretName }}
-            {{- /* #132, IADR-0060 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。非 root 化時は fsGroup ＋ 0440。 */}}
+            {{- /* #132, IADR-0061 決定 3: 秘密鍵は所有者のみ読取（0400=10 進 256）。非 root 化時は fsGroup ＋ 0440。 */}}
             defaultMode: {{ $o.rsaSecretDefaultMode }}
             items:
               - { key: {{ $o.rsaSecretKey }}, path: {{ $o.rsaSecretKey }} }

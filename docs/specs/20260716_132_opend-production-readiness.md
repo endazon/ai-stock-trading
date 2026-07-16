@@ -10,7 +10,7 @@ related_ids:
   - IADR-0053
   - IADR-0056
   - IADR-0058
-  - IADR-0060
+  - IADR-0061
 author: claude
 created: 2026-07-16
 plan_refs:
@@ -30,7 +30,7 @@ related_specs:
 - 関連 ADR: **ADR-0002**（証券会社連携＝moomoo OpenAPI・**Proposed**。未決＝無人運用の成立性 / Hetzner 接続・ToS）
 - 関連 IADR: **IADR-0016**（安全既定 paper・実弾防止の二重ゲート）／**IADR-0053**（OpenD Docker 化・常駐モデル）／
   **IADR-0052**（AST k8s Helm chart）／**IADR-0056**（SIMULATE PoC 完了・実弾は引き続きゲート）／
-  **IADR-0058**（chart の CI ゲート）／**IADR-0060**（本仕様の設計判断・本 PR で新規）
+  **IADR-0058**（chart の CI ゲート）／**IADR-0061**（本仕様の設計判断・本 PR で新規）
 - Issue: [#132](https://github.com/endazon/ai-stock-trading/issues/132)（OpenD 常駐の本番化・残検証）
 
 ## 目的
@@ -65,7 +65,7 @@ related_specs:
 5. **接続パラメータの外部化・切替ゲート（C#）**: `MoomooBrokerOptions` に応答タイムアウトを追加（既定 15 秒＝現行値）。
    `Broker:Moomoo:TrdEnv` に `simulate` 以外（＝実弾）が与えられたら**起動時に停止する明示ゲート**を足す。
    RSA 鍵パスが構成済みなのにファイルが無い場合、現行の「黙って非暗号化へフォールバック」を**明示エラー**にする。
-6. **文書**: 本番切替手順・前提条件チェックリスト（`docs/operations/operations.md`）、設計判断（`docs/adr/IADR-0060`）、
+6. **文書**: 本番切替手順・前提条件チェックリスト（`docs/operations/operations.md`）、設計判断（`docs/adr/IADR-0061`）、
    `deploy/opend/README.md` と chart README の追補。
 7. **CI**: helm ゲート（IADR-0058）に `opend.enabled=true` 系の描画を追加する。
 
@@ -95,7 +95,7 @@ related_specs:
 ### chart の `opend`（既定 `false`）
 
 `deploy/opend/k8s/*.yaml`（生 manifest）は **dev の現行経路**として残す。chart 側は**本番配備の経路**として同等物を
-values 駆動で描画する。両者は二重管理になるが、dev の実績ある経路を壊さないことを優先する（IADR-0060 決定①）。
+values 駆動で描画する。両者は二重管理になるが、dev の実績ある経路を壊さないことを優先する（IADR-0061 決定①）。
 
 - 単一レプリカ・`Recreate`（OpenD は 1 セッション前提・常駐モデル）。`livenessProbe` は付けない（自動再起動を誘発しない）。
 - `stdin`/`tty` 保持（初回のデバイス検証 `kubectl attach` のため）。
@@ -169,6 +169,6 @@ OpenD は `$HOME/.com.moomoo.OpenD` にデバイス信頼を書くため、非 r
 - `deploy/helm/ai-stock-trading/{values.yaml,templates/opend.yaml,templates/external-secrets.yaml,templates/deployment.yaml,README.md}`
 - `deploy/opend/{Dockerfile,entrypoint.sh,README.md}`、`deploy/opend/k8s/opend.yaml`（コメント・`defaultMode`）
 - `backend/Services/OrderExecutionService/src/.../Adapters/{MoomooBrokerOptions.cs,MMApiMoomooTradeClient.cs}` ＋ 単体テスト
-- `docs/operations/operations.md`、`docs/adr/IADR-0060_*.md`、`.github/workflows/helm.yml`
+- `docs/operations/operations.md`、`docs/adr/IADR-0061_*.md`、`.github/workflows/helm.yml`
 
 新イベントの追加は無い（監査 Consumer の追加は不要）。認可の変更も無い。

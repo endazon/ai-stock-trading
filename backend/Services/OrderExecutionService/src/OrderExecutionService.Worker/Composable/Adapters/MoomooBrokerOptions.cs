@@ -9,7 +9,7 @@ namespace AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 // moomoo は cross-network（別 Pod 間）の trade 接続に暗号化を要求するため、in-cluster では必須。
 // OpenD 側の <rsa_private_key> と同一鍵を指す（k8s Secret をマウント）。未設定なら非暗号（loopback 用）。
 //
-// #132 / IADR-0060: 本番切替に向けて接続パラメータを外部化した（既定値は現行挙動と同一）。
+// #132 / IADR-0061: 本番切替に向けて接続パラメータを外部化した（既定値は現行挙動と同一）。
 internal sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, string? RsaPrivateKeyPath = null)
 {
     // 実弾（TrdEnv_Real）は撃たない。構成で受理する唯一の取引環境（IADR-0016 / IADR-0056）。
@@ -58,7 +58,7 @@ internal sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, s
         return TimeSpan.FromSeconds(seconds);
     }
 
-    // #132, IADR-0060 決定 5: config で実弾（TrdEnv_Real）を要求されたら「黙って SIMULATE で流す」のではなく停止する。
+    // #132, IADR-0061 決定 5: config で実弾（TrdEnv_Real）を要求されたら「黙って SIMULATE で流す」のではなく停止する。
     // これは実弾を可能にする設定ではない（TrdHeader は TrdEnv_Simulate 固定のまま）。運用者の誤認を防ぐ閂である。
     private static string EnsureSimulate(string? configured)
     {
@@ -78,7 +78,7 @@ internal sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, s
     }
 }
 
-// #132, IADR-0060 決定 5: moomoo 発注経路の起動時 preflight。本番切替で踏みやすい構成ミスを、
+// #132, IADR-0061 決定 5: moomoo 発注経路の起動時 preflight。本番切替で踏みやすい構成ミスを、
 // 「接続はするが trade だけ落ちる」形ではなく起動時の明示エラーとして表面化させる。
 // 実 OpenD 非依存（ファイル存在判定を注入する）＝単体テスト可能。
 internal static class MoomooPreflight
