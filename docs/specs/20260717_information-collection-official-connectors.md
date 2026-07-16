@@ -47,7 +47,8 @@ Slice A で収集の骨格（取得→許可リスト選別→正規化→プロ
 
 - `TokenBucket`（`Domain/RateLimiting/TokenBucket.cs`）: 容量・補充間隔を持つトークンバケットの**純粋な状態機械**。
   `TryConsume(now, out retryAfter)` が消費可否と待機時間を返す。時計を持たない（`now` を引数で受ける）ため決定的に単体検証できる。
-- Worker の `DelayingRateLimiter` が `TimeProvider` と `TokenBucket` を組み合わせ、`WaitAsync` で待機する（ポート `IRateLimiter`）。
+- Worker の `DelayingRateLimiter` が `TokenBucket` と `IClock`（本リポジトリの既存慣行の時刻ポート）を組み合わせ、
+  `WaitAsync` で待機する（ポート `IRateLimiter`）。待機（`Task.Delay`）は関数として注入し、テストでは実時間を使わない。
   各コネクタは HTTP 要求の直前に `WaitAsync` する。既定値は各ソースの公表上限より**保守側**に置く（下表）。
 
 | ソース | 公表上限（技術検討 §1〜§4） | 本実装の既定 | 根拠 |
@@ -92,9 +93,9 @@ Slice A で収集の骨格（取得→許可リスト選別→正規化→プロ
 
 ## 受け入れ基準
 
-CI で緑にする範囲（ユニット＋fake `HttpMessageHandler`＋`FakeTimeProvider`。実ネットワーク不使用）:
+CI で緑にする範囲（ユニット＋fake `HttpMessageHandler`＋フェイク時計。実ネットワーク・実時間不使用）:
 - [ ] `TokenBucket`: 容量内は連続消費でき、超過時は `retryAfter` を返し、時間経過で補充される（境界値）。
-- [ ] `DelayingRateLimiter`: 超過時に `retryAfter` だけ待ってから通す（`FakeTimeProvider` で決定的に検証）。
+- [ ] `DelayingRateLimiter`: 超過時に `retryAfter` だけ待ってから通す（フェイク時計＋フェイク待機で決定的に検証）。
 - [ ] 各コネクタ: 実応答形の JSON を `RawInformationItem` に写像する（種別・ソース名・タイトル・本文・公開時刻・URL）。
 - [ ] 各コネクタ: 非 2xx・空応答は当該対象をスキップし、他対象の取得を継続する（フェイルセーフ）。
 - [ ] `SecEdgarInformationSource`: SEC 規約の User-Agent（連絡先）を要求ヘッダーに付与する。
@@ -123,7 +124,8 @@ CI で緑にする範囲（ユニット＋fake `HttpMessageHandler`＋`FakeTimeP
 ## テスト方針
 
 - `TokenBucket` は純関数として境界値を単体検証（時計を注入しない）。
-- `DelayingRateLimiter` は `Microsoft.Extensions.Time.Testing.FakeTimeProvider` で待機を決定的に検証（実時間を待たない）。
+- `DelayingRateLimiter` はフェイク `IClock`＋フェイク待機（待機した時間だけ時計を進める）で決定的に検証する（実時間を
+  待たない）。時刻抽象は `TimeProvider` ではなく本リポジトリの既存慣行 `IClock` に合わせる（IADR-0061 決定 2・選択肢 4）。
 - 各コネクタは fake `HttpMessageHandler` で**実応答形の JSON**（実 API の応答を一次確認したうえで固定）を与えて写像・スキップを検証。
 - `InformationSourceFactory`・`CompositeInformationSource` は構成選択・部分無効化・例外隔離を検証。
 - 実 API 接続は CI で行わない（費用0円・レート制限順守の担保。IADR-0022 の方針を踏襲）。
