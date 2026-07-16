@@ -86,8 +86,8 @@ nerdctl --namespace k8s.io run --rm \
 
 ### 3) （簡易）対話検証テスト（bootstrap-pod）
 検証フローだけ素早く試す用の使い捨て Pod。実運用の常駐は手順4。資格情報は手順2の Secret を参照する:
-> 注: OpenD はデバイス情報を `/root/.com.moomoo.OpenD` に書くが、**永続化しても再起動時の再検証は回避できない**
-> （PoC 確認済・IADR-0053）。よって本 Pod は「認証フロー確認」用途。
+> 注: 本 Pod は**永続化しない使い捨て**なので「認証フロー確認」用途。デバイス信頼を持ち越して無人再ログインを
+> 成立させる常駐は手順 4（PVC 付き）。
 ```bash
 kubectl apply -f deploy/opend/k8s/pvc.yaml
 kubectl apply -f deploy/opend/k8s/bootstrap-pod.yaml
@@ -124,8 +124,11 @@ kubectl apply -f deploy/opend/k8s/opend.yaml           # Deployment + Service（
 kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_verify_code / input_phone_verify_code
 kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```
-> ⚠️ **再起動（ノード再起動・eviction・rolling）のたびに再検証が必要**（デバイス永続化では回避不可・IADR-0053）。
-> **再起動を避けて常駐**させる。再起動したら再度 `attach` で検証する。
+> ⚠️ 初回の `attach` 検証以降は、**デバイス信頼の永続化（PVC）＋ egress IP の安定**が保てれば
+> **無人再ログインが成立**する（追検証で実証。IADR-0053 の初回結論「再起動＝毎回再検証」は撤回済み）。
+> ただし **egress IP が変わる再起動**（ノード跨ぎの再スケジュール・クラウド/別リージョン）や moomoo 側の
+> セッション失効では**再び有人検証が要る**見込み（実測は #132 で未了）。**再起動は最小化**し、
+> 本番ではノードを固定する（chart の `opend.nodeSelector`）。再検証が要る状態になったら再度 `attach` する。
 
 ### 5) 発注執行（#13）から利用
 moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中の `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
@@ -151,13 +154,23 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 - ➡️ **常駐モデルを採用**: 初回のみ有人で対話検証（`attach`）、以降は安定 egress IP 下で無人再起動が成立。#13 は稼働中 `opend:11111` へ。
 - 残（未検証）: egress IP 変更時の再検証発生の切り分け、海外 IP（Hetzner）接続・ToS、長期常駐安定性・強制アップデート、取引 PW アンロック（SIMULATE 範囲）。
 
+## 本番化（#132 / IADR-0059）
+
+本ディレクトリは **dev 経路**（生 manifest）である。**本番配備は chart の `opend.enabled=true`** を使う
+（[chart README](../helm/ai-stock-trading/README.md)）。切替の前提条件・手順は
+**[運用仕様書の本番切替チェックリスト](../../docs/operations/operations.md#opend-の本番切替チェックリスト132)**
+に集約してある（egress-IP 実測・Vault 化・非 root の実動作確認などは**未充足**）。
+
 ## 既知のリスク・制約（dev 割り切り）
 
-- **root 実行**: コンテナは root で動く（OpenD は `/root/.com.moomoo.OpenD` を HOME 前提に使うため）。取引口座資格情報を
-  扱うプロセスとして本番では非 root 化＋`securityContext`（`runAsNonRoot` 等）が望ましい（要 HOME/永続化パスの再調整）。
-  恒久は Vault/External Secrets（暫定は k8s Secret）。
+- **root 実行**: コンテナは既定 root で動く（OpenD は `$HOME/.com.moomoo.OpenD` を使うため）。
+  #132 でイメージに **uid/gid 10001 と `/home/opend` を用意済み**で、chart の `opend.home=/home/opend` ＋
+  `opend.securityContext` で非 root へ切り替えられる（`USER` は切り替えていない＝既定は現行維持）。
+  **実 OpenD では未検証**（HOME 変更でデバイス信頼を失う恐れ）。恒久の秘匿は Vault/External Secrets
+  （chart の `externalSecrets.enabled`＝**受け口のみ**。ストアは #24 で未整備）。
 - **資格情報の露出面**: `entrypoint.sh` は env の資格情報から `OpenD.xml` を生成する（コマンドライン引数には載せない
-  ＝`ps` 露出は回避）。ただし `OpenD.xml` はコンテナ内に平文で存在する。dev 割り切り。
+  ＝`ps` 露出は回避）。#132 で `umask 077` ＋ `chmod 600` を掛けた（RSA 鍵は Secret の `defaultMode: 0400`）が、
+  **`OpenD.xml` はコンテナ内に平文（MD5）で存在する**ことに変わりはない。
 - **livenessProbe を意図的に付けない**: OpenD は**再起動＝対話再検証**（常駐モデル）。liveness による自動再起動は
   再検証待ちで停止する状態を招くため付けない（ハング検知は監視＋有人対応とする）。readiness(TCP) も
   「検証前から listen」する点に注意（probe 通過≠ログイン完了）。
