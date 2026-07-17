@@ -1,7 +1,7 @@
 ---
 title: 費用統制の月次上限をバージョン付き前提条件から取得する（DefaultCostLimitsProvider 置換）— Issue #139
 type: spec
-status: draft
+status: review
 related_ids:
   - NFR
   - FR-17
