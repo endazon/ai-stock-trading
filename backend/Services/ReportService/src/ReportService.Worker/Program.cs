@@ -4,9 +4,12 @@ using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
+using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
@@ -45,6 +48,18 @@ builder.Services.AddScoped<IReportStore, EfReportStore>();
 builder.Services.AddScoped<AppSvc>();
 // FR-06/16, IADR-0032: 報告書生成（数値集計の組み立て＋テンプレート化）。散文は LLM ドラフト（実 LLM は後続・安全既定プレースホルダ）。
 builder.Services.AddSingleton<IReportNarrativeDrafter, PlaceholderReportNarrativeDrafter>();
+// FR-16, #81, IADR-0025/0065: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
+// ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため
+// リスク管理のような有効化ゲートは持たず、ソース差し替えがそのまま有効化になる。
+// 市況断のあいだは保持期限内の前回値へフォールバックする（超過は取得不可＝0。IADR-0065）。
+builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
+builder.Services.AddSingleton<QuoteCache>();
+builder.Services.AddSingleton<NoOpMarketDataSource>();
+builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
+    sp.GetRequiredService<NoOpMarketDataSource>(),
+    sp.GetRequiredService<QuoteCache>(),
+    TimeProvider.System,
+    TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
 builder.Services.AddScoped<ReportDraftService>();
 
 // IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。

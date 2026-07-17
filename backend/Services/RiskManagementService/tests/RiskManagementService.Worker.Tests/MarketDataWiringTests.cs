@@ -31,7 +31,7 @@ public class MarketDataWiringTests
     private sealed class FixedClock(DateTimeOffset now) : IClock
     {
         public DateTimeOffset UtcNow { get; } = now;
-        public DateOnly Today => DateOnly.FromDateTime(now.UtcDateTime);
+        public DateOnly Today => DateOnly.FromDateTime(UtcNow.UtcDateTime);
     }
 
     private sealed class StubSource(Quote? quote) : IMarketDataSource
