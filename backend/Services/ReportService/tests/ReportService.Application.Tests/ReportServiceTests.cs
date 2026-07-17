@@ -121,6 +121,36 @@ public class ReportServiceTests
         act.Should().Throw<ArgumentException>();
     }
 
+    // FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップ。確定済み月報が無ければ初期監視銘柄のドラフトを返す。
+    [Fact]
+    public void 初回月報ブートストラップ_確定済み月報が無ければドラフトを返す()
+    {
+        var svc = NewService(); // clock = 2026-07-10
+
+        var draft = svc.BuildMonthlyBootstrap(["AAPL", "7203"], assumptionsVersion: 1);
+
+        draft.Should().NotBeNull();
+        draft!.Kind.Should().Be(ReportKind.Monthly);
+        draft.PeriodKey.Should().Be("monthly-2026-07");
+        draft.PolicySummary.Should().Contain("AAPL");
+    }
+
+    [Fact]
+    public void 初回月報ブートストラップ_確定済み月報があれば不要で_null()
+    {
+        var svc = NewService();
+        svc.UpsertDraft(new TradingReport
+        {
+            PeriodKey = "monthly-2026-06",
+            Kind = ReportKind.Monthly,
+            PeriodStart = new DateOnly(2026, 6, 1),
+            PolicySummary = "6月方針",
+        }, 0);
+        svc.Confirm("monthly-2026-06", 1, "owner");
+
+        svc.BuildMonthlyBootstrap(["AAPL"], 1).Should().BeNull();
+    }
+
     // FR-07, ADR-0003, IADR-0071 決定2: 無応答時の既定動作（継続）は構造的に成立している。
     // 提示済みだが未確定の新ドラフトがあっても、方針照会は直近の確定済みを返し続ける（新方針は自動適用されない）。
     [Fact]

@@ -5,6 +5,8 @@ using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using FluentAssertions;
 using MassTransit.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
@@ -254,6 +256,63 @@ public class ReportEndpointsTests
         draft.Markdown.Should().Contain("翌週は半導体重点");
     }
 
+    // FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップは初期監視銘柄（構成）を含む月報ドラフトを返す。
+    [Fact]
+    public async Task 初回月報ブートストラップは初期監視銘柄を含む月報ドラフトを返す()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Reports:Bootstrap:Watchlist:0"] = "AAPL",
+                ["Reports:Bootstrap:Watchlist:1"] = "7203",
+            })));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        var res = await client.GetAsync("/reports/monthly-bootstrap");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var report = await res.Content.ReadFromJsonAsync<BootstrapDto>();
+        report!.Kind.Should().Be("Monthly");
+        report.PolicySummary.Should().Contain("AAPL");
+        report.PolicySummary.Should().Contain("7203");
+    }
+
+    [Fact]
+    public async Task 初回月報ブートストラップは_未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 確定済み月報があればブートストラップは_404()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        // 月報を作成・確定（ブートストラップ済み）。
+        await client.PutAsJsonAsync("/reports/monthly-2026-06", new
+        {
+            Kind = "Monthly",
+            PeriodStart = "2026-06-01",
+            BasedOn = (string?)null,
+            AssumptionsVersion = 1,
+            PolicySummary = "6月方針",
+            ExpectedVersion = 0,
+        });
+        (await client.PostAsJsonAsync("/reports/monthly-2026-06/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     // FR-08, IADR-0069/0071 決定3: 確定遷移で確定報告書が KB へ保存される（既定 no-op を記録用に差し替えて検証）。
     [Fact]
     public async Task 確定すると確定報告書が_KB_へ保存される()
@@ -311,6 +370,8 @@ public class ReportEndpointsTests
             return Task.FromResult(KnowledgeWriteResult.Ok(Guid.NewGuid()));
         }
     }
+
+    private sealed record BootstrapDto(string Kind, string PeriodKey, string PolicySummary);
 
     private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);
 
