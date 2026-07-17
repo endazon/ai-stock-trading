@@ -2,9 +2,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain.Manipulation;
 
-// FR-19, IADR-0040: 相場操縦検知の入力＝直近窓内の 1 注文のライフサイクル要約。
+// FR-19, IADR-0040/0067: 相場操縦検知の入力＝直近窓内の 1 注文のライフサイクル要約。
 // 自口座の発注統計（見せ玉・過剰訂正取消・自己レイヤリング）から相場操縦とみなされ得る型を近似検知するための素データ。
-// 実注文履歴テレメトリ（発注・訂正・取消イベントの永続化 #13/#17）から供給される想定（本スライスは InMemory 供給）。
+// 本番は注文履歴テレメトリ（注文系イベントの Risk 専有 DB への射影・#154）を読む EfOrderActivitySource から供給される。
 public sealed record OrderActivityRecord
 {
     /// <summary>発注時刻（基準時刻）。窓判定・生存時間の起点。</summary>
@@ -31,7 +31,7 @@ public sealed record OrderActivityRecord
     /// <summary>
     /// 約定ゼロで取消/失効した注文か（見せ玉・過剰取消・レイヤリングの母集団）。
     /// ブローカー拒否（<see cref="OrderStatus.Rejected"/>）は板に載らず約定意思の指標にならないため含めない。
-    /// 拒否注文を窓の母集団に含めるか（各比率の分母）は供給側（IOrderActivitySource・#13/#17）の判断とする。
+    /// 拒否注文を窓の母集団に含めるか（各比率の分母）は供給側（IOrderActivitySource・#154 の射影）の判断とする。
     /// </summary>
     public bool IsCancelledWithoutFill =>
         FilledQuantity == 0 && Status is OrderStatus.Cancelled or OrderStatus.Expired;

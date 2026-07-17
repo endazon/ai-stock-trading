@@ -15,7 +15,9 @@ internal sealed class EfOrderActivitySource(RiskManagementDbContext db) : IOrder
     {
         var from = asOf - lookback;
 
+        // 読み取り専用の窓照会のため変更追跡は不要（発注審査ごとに呼ばれるホットパスのオーバーヘッドを避ける）。
         var records = db.OrderActivities
+            .AsNoTracking()
             .Where(r => r.Symbol == symbol && r.Market == market && r.PlacedAt >= from && r.PlacedAt <= asOf)
             .AsEnumerable()
             .Select(r => new OrderActivityRecord

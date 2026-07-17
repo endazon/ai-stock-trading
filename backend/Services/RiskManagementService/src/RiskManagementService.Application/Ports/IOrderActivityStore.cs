@@ -8,6 +8,13 @@ namespace AiStockTrading.RiskManagement.Application.Ports;
 //
 // 承認（OrderApproved）だけが銘柄・方向を持つため、行の生成は承認で行い、以降の約定・訂正・取消は DecisionId で
 // 既存行を更新する（OrderExecuted と同じ相関補完の設計・IADR-0018）。相関する承認が無いイベントは無視する。
+//
+// 到着順序について（許容する制約・IADR-0067）: MassTransit は異なるイベント型間の到着順序を保証しないため、
+// 稀に約定・訂正・取消が承認の射影より先に処理されると、その更新は反映されずに落ちる。ただし注文は「承認→発注」を
+// 経て初めて存在するため実運用の順序では承認が先行し（既存の OrderExecutedLedgerConsumer/AppendFill も同じ前提で
+// 承認欠如時にスキップする・IADR-0018）、かつ相場操縦検知は最小標本ガード付きの窓集計のため単発の取りこぼしは
+// 無嫌疑側（fail-safe）に倒れる。再順序化バッファは過剰実装として持たない（本 PR は配管まで）。厳密な順序保証が
+// 要るなら承認欠如時のバッファリングを別途検討する（IADR-0067 のフォローアップ）。
 public interface IOrderActivityStore
 {
     /// <summary>承認済み注文を新規の注文アクティビティ行として記録する。既存 DecisionId は無視する（冪等）。</summary>

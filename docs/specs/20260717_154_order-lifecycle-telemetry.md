@@ -1,7 +1,7 @@
 ---
 title: 注文履歴テレメトリ（発注・訂正・取消イベントの発行＋永続化と Risk への実 IOrderActivitySource 供給）— Issue #154
 type: spec
-status: draft
+status: review
 related_ids:
   - FR-19
   - FR-05
@@ -161,16 +161,16 @@ builder.Services.AddScoped<IManipulativeOrderPatternDetector, ManipulativeOrderP
 
 ## 受け入れ基準
 
-- [ ] `Shared.Contracts/Events` に `OrderModified`・`OrderCancelled` が追加され、既存イベントの契約が不変である
-- [ ] `OrderAmendmentService` が訂正・取消をブローカへ適用し `order_lifecycle_events` へ永続化する（Migration あり）
-- [ ] `OrderAmendmentDispatcher` が `OrderModified`/`OrderCancelled` を発行する
-- [ ] `AuditEntryFactory` に両イベントの写像があり、監査 Consumer が存在する（`AuditConsumerCoverageTests` 緑）
-- [ ] `EfOrderActivitySource` が `order_activity` から窓を供給する（Migration あり）
-- [ ] 射影 Consumer 群が承認・約定・訂正・取消を `order_activity` へ反映する（再送で冪等）
-- [ ] Risk `Worker/Program.cs` で実 `IOrderActivitySource` と検出器が DI 登録され、相場操縦判定が本番経路で有効になる
-- [ ] `PaperBrokerAdapter` の既定挙動（即時全量約定）が不変である（回帰テストで固定）
-- [ ] `MoomooBrokerAdapter` に訂正・取消の口が生えていない（実接続しない・型で担保）
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が緑
+- [x] `Shared.Contracts/Events` に `OrderModified`・`OrderCancelled` が追加され、既存イベントの契約が不変である
+- [x] `OrderAmendmentService` が訂正・取消をブローカへ適用し `order_lifecycle_events` へ永続化する（Migration あり）
+- [x] `OrderAmendmentDispatcher` が `OrderModified`/`OrderCancelled` を発行する
+- [x] `AuditEntryFactory` に両イベントの写像があり、監査 Consumer が存在する（`AuditConsumerCoverageTests` 緑）
+- [x] `EfOrderActivitySource` が `order_activity` から窓を供給する（Migration あり）
+- [x] 射影 Consumer 群が承認・約定・訂正・取消を `order_activity` へ反映する（再送で冪等）
+- [x] Risk `Worker/Program.cs` で実 `IOrderActivitySource` と検出器が DI 登録され、相場操縦判定が本番経路で有効になる
+- [x] `PaperBrokerAdapter` の既定挙動（即時全量約定）が不変である（回帰テストで固定）
+- [x] `MoomooBrokerAdapter` に訂正・取消の口が生えていない（実接続しない・型で担保）
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が緑（CI 相当 `Category!=Integration` 全緑）
 
 ## テスト方針
 
