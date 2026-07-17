@@ -22,8 +22,8 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md (Database per Service)"
 related_specs:
   - "../specs/20260718_20_stage-gate-transitions.md（本決定の作業仕様書）"
-  - "../adr/IADR-0041_stage-gate-transition-logic.md（純ドメインの段階ゲート状態機械）"
-  - "../adr/IADR-0012_risk-persistence-ef.md（Risk EF 永続化の先行事例）"
+  - "../adr/IADR-0041_stage-gate-transitions.md（純ドメインの段階ゲート状態機械）"
+  - "../adr/IADR-0012_risk-settings-persistence.md（Risk EF 永続化の先行事例）"
   - "../adr/IADR-0051_service-to-service-auth.md（OwnerOnly/OwnerOrService の認可分離）"
 ---
 
@@ -35,7 +35,7 @@ related_specs:
 
 ## コンテキスト
 
-FR-20 の段階ゲートは純ドメイン（`StageGate` / `StageGateLedger` / `StagePerformance` / `StageTransition` / `StageGatePolicy`）として [IADR-0041](IADR-0041_stage-gate-transition-logic.md)（PR #98）で実装済みだが、運用系（永続化・エンドポイント・DI・承認フロー）に結線されていない。Issue #20 の残スコープはこの配管であり、RiskManagementService（`Application`/`Worker`）＋新規 Migration に限定する。
+FR-20 の段階ゲートは純ドメイン（`StageGate` / `StageGateLedger` / `StagePerformance` / `StageTransition` / `StageGatePolicy`）として [IADR-0041](IADR-0041_stage-gate-transitions.md)（PR #98）で実装済みだが、運用系（永続化・エンドポイント・DI・承認フロー）に結線されていない。Issue #20 の残スコープはこの配管であり、RiskManagementService（`Application`/`Worker`）＋新規 Migration に限定する。
 
 依存する #16（バックテスト合格を Stage 1 昇格の前提に接続）は CLOSED で、Stage 0 合格判定は `BacktestService` に純ドメインとして実装済みだが、**別サービス（Database per Service）**であるため verdict の Risk への供給は s2s 統合（本スコープ外）となる。
 

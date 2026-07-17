@@ -23,8 +23,8 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md §4 (段階ゲート提案)"
 related_specs:
   - "../adr/IADR-0070_stage-gate-persistence-and-approval.md（本作業の決定）"
-  - "../adr/IADR-0041_stage-gate-transition-logic.md（純ドメインの段階ゲート状態機械・承認ゲート）"
-  - "../adr/IADR-0012_risk-persistence-ef.md（Risk 専有 DB・EF 永続化・単一行/追記専用の先行事例）"
+  - "../adr/IADR-0041_stage-gate-transitions.md（純ドメインの段階ゲート状態機械・承認ゲート）"
+  - "../adr/IADR-0012_risk-settings-persistence.md（Risk 専有 DB・EF 永続化・単一行/追記専用の先行事例）"
   - "../adr/IADR-0051_service-to-service-auth.md（OwnerOnly／OwnerOrService の認可分離）"
 ---
 
@@ -40,7 +40,7 @@ related_specs:
 
 ## 目的・背景
 
-FR-20 の段階ゲートは、純ドメイン（`StageGate` / `StageGateLedger` / `StagePerformance` / `StageTransition` / `StageGatePolicy`）が [IADR-0041](../adr/IADR-0041_stage-gate-transition-logic.md)（PR #98・develop マージ済み）で実装済みである。承認を伴う `RequestTransition` が遷移生成の唯一の経路であり、承認欠如時の遷移を**構造的に不可能**にしている。
+FR-20 の段階ゲートは、純ドメイン（`StageGate` / `StageGateLedger` / `StagePerformance` / `StageTransition` / `StageGatePolicy`）が [IADR-0041](../adr/IADR-0041_stage-gate-transitions.md)（PR #98・develop マージ済み）で実装済みである。承認を伴う `RequestTransition` が遷移生成の唯一の経路であり、承認欠如時の遷移を**構造的に不可能**にしている。
 
 しかし、この純ドメインは**プロセス内のロジックにとどまり、運用系に結線されていない**。具体的には次が未実装であった:
 
