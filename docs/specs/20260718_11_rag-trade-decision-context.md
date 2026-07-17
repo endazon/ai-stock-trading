@@ -83,6 +83,6 @@ TradeDecisionService に閉じる（`Shared.KnowledgeBase` は変更せず利用
 
 - `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` 緑、`dotnet format` 済、警告ゼロ。
 - 新イベント追加なし（監査 Consumer 変更不要）。`Shared.Contracts`・`Shared.KnowledgeBase` 変更なし。
-- 既定挙動（RAG 未設定＝文脈なし）不変 ＝ 実 LLM 結線（IADR-0062）の挙動を変えない。
+- 既定挙動（RAG 未設定＝文脈なし）不変 ＝ 実 LLM 結線（IADR-0061）の挙動を変えない。
 - 設定キー追加（`KnowledgeBase:Search:*`・`Retrieval:TopK` 等）は PR 末尾の単一コミットに閉じる。
 - IADR-0072 に境界（取得クエリ設計・スクリーニング据え置き・fail-safe・実基盤依存の後続）を明記。
