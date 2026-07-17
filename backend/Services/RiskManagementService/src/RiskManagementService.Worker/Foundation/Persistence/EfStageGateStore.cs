@@ -39,7 +39,7 @@ internal sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateS
         {
             db.SaveChanges();
         }
-        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
+        catch (DbUpdateException ex) when (IsSequenceUniqueViolation(ex))
         {
             // Sequence（主キー）の一意制約違反＝別要求が同シーケンスを先取り（並行二重承認・二重送信・リトライ）。
             // 楽観的整合の競合として扱い、ホスト層フィルタが 409（最新を取得して再試行）へ写像できるよう変換する
@@ -49,4 +49,10 @@ internal sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateS
                 "段階遷移が他の更新と競合しました。最新の現在段階を取得して再試行してください。", ex);
         }
     }
+
+    // Sequence 一意制約違反（PostgreSQL: 23505 unique_violation）のみを競合とみなす。接続断など他の書き込み失敗は
+    // 誤って 409 に丸めず素通しする（正直な 500）。DbUpdateConcurrencyException（設定の楽観排他）はここでは扱わない。
+    private static bool IsSequenceUniqueViolation(DbUpdateException ex) =>
+        ex is not DbUpdateConcurrencyException
+        && ex.InnerException is Npgsql.PostgresException { SqlState: "23505" };
 }
