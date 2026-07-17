@@ -1,0 +1,16 @@
+<!-- FR-08, IADR-0069: platform 文書管理（保存）／検索（RAG 取得）を疎な境界で包む共有クライアント。
+     消費側（InformationCollection / 後続 TradeDecision #11・Report #14）が fail-safe・s2s・DTO 写像を書き写さずに
+     済むよう 1 箇所へ集約する。platform の Knowledge.Contracts へは直接依存せず、HTTP アダプタ内でのみ写像する
+     （ADR-0001 基盤無改修）。s2s トークン付与（AddAiStockTradingServiceToken）を PlatformShim から得る（IADR-0051）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Shared.KnowledgeBase</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiStockTrading.Shared.KnowledgeBase.Tests" />
+  </ItemGroup>
+</Project>
