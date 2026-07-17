@@ -182,9 +182,22 @@ services:
         SERVICE_DLL: InformationCollectionService.Worker.dll
     environment:
       <<: *app-env
-      # fail-safe: 空=NoOp（外部接続しない）。実 Finnhub は #81 で有効化。
+      # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
+      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0065）。
       Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
       Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
+      Collection__Source__Finnhub__Symbols__0: ${COLLECTION_FINNHUB_SYMBOLS_0:-}
+      # SEC EDGAR（米国の開示）: 連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
+      Collection__Source__SecEdgar__UserAgent: ${COLLECTION_SECEDGAR_USERAGENT:-}
+      Collection__Source__SecEdgar__Ciks__0: ${COLLECTION_SECEDGAR_CIKS_0:-}
+      # EDINET API v2（日本の開示）。
+      Collection__Source__Edinet__SubscriptionKey: ${COLLECTION_EDINET_SUBSCRIPTION_KEY:-}
+      # 日銀 時系列統計データ API（キー不要・クレジット表記必須）。
+      Collection__Source__Boj__Db: ${COLLECTION_BOJ_DB:-}
+      Collection__Source__Boj__SeriesCodes__0: ${COLLECTION_BOJ_SERIESCODES_0:-}
+      # FRED（米マクロ）。
+      Collection__Source__Fred__ApiKey: ${COLLECTION_FRED_API_KEY:-}
+      Collection__Source__Fred__SeriesIds__0: ${COLLECTION_FRED_SERIESIDS_0:-}
       # NFR(費用), IADR-0031 (#79): 費用統制の照会先。空=プレースホルダ（Normal＝間隔延長/停止しない）。
       # 設定すると GET /costs/state を s2s で照会し Throttled=間隔延長・Halted=巡回停止を適用する。
       CostControl__BaseUrl: ${COST_CONTROL_BASEURL:-}
