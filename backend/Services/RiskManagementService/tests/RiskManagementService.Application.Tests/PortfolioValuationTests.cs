@@ -64,4 +64,55 @@ public class PortfolioValuationTests
         PortfolioValuation.DrawdownRatio(0m, 90_000m).Should().Be(0m);
         PortfolioValuation.DrawdownRatio(-1m, 90_000m).Should().Be(0m);
     }
+
+    // --- エクイティピーク（#81, IADR-0065）: 台帳から再計算する（永続化しない） ---
+
+    private static LedgerFill Fill(TradeSide side, int qty, decimal price, int day) =>
+        new("AAPL", Market.UnitedStates, side, PositionEffect.Open, qty, price,
+            new DateTimeOffset(2026, 7, day, 0, 0, 0, TimeSpan.FromHours(9)));
+
+    [Fact]
+    public void エクイティピークは約定が無ければ初期資金と現在エクイティの最大()
+    {
+        PortfolioValuation.EquityHighWaterMark([], 100_000m, 100_000m).Should().Be(100_000m);
+        PortfolioValuation.EquityHighWaterMark([], 100_000m, 120_000m).Should().Be(120_000m);
+        // 現在エクイティが初期資金を下回っても、ピークは初期資金（＝開始時点が山）を下回らない。
+        PortfolioValuation.EquityHighWaterMark([], 100_000m, 90_000m).Should().Be(100_000m);
+    }
+
+    [Fact]
+    public void エクイティピークは実現損益の走査最大を採り下落後も保持する()
+    {
+        // 10 株を 1,000 で建て 1,200 で決済（+2,000 実現）→ ピーク 102,000。
+        // その後 10 株を 1,000 で建て 900 で決済（−1,000 実現）→ 現在 101,000 だがピークは 102,000 のまま。
+        LedgerFill[] fills =
+        [
+            Fill(TradeSide.Buy, 10, 1_000m, 1),
+            Fill(TradeSide.Sell, 10, 1_200m, 2),
+            Fill(TradeSide.Buy, 10, 1_000m, 3),
+            Fill(TradeSide.Sell, 10, 900m, 4),
+        ];
+
+        PortfolioValuation.EquityHighWaterMark(fills, 100_000m, 101_000m).Should().Be(102_000m);
+    }
+
+    [Fact]
+    public void エクイティピークは現在エクイティが過去の山を超えればそれを採る()
+    {
+        // 含み益で現在エクイティが過去の実現ベースの山（102,000）を超えるケース。
+        LedgerFill[] fills = [Fill(TradeSide.Buy, 10, 1_000m, 1), Fill(TradeSide.Sell, 10, 1_200m, 2)];
+
+        PortfolioValuation.EquityHighWaterMark(fills, 100_000m, 105_000m).Should().Be(105_000m);
+    }
+
+    [Fact]
+    public void エクイティピークは約定列の順序に依存しない()
+    {
+        // 入力が時系列順でなくても、畳み込み前に整列するため同じピークを返す（射影と同一の規約）。
+        LedgerFill[] ordered = [Fill(TradeSide.Buy, 10, 1_000m, 1), Fill(TradeSide.Sell, 10, 1_200m, 2)];
+        LedgerFill[] shuffled = [ordered[1], ordered[0]];
+
+        PortfolioValuation.EquityHighWaterMark(shuffled, 100_000m, 100_000m)
+            .Should().Be(PortfolioValuation.EquityHighWaterMark(ordered, 100_000m, 100_000m));
+    }
 }

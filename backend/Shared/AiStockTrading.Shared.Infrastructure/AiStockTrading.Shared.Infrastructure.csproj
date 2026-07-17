@@ -3,6 +3,10 @@
     <OutputType>Library</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <!-- IADR-0065: 既定 no-op の現在値ソースが差し替え漏れを警告するためのログ抽象（実装には依存しない）。 -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
   </ItemGroup>
 </Project>
