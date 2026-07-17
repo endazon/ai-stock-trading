@@ -8,7 +8,7 @@ using Xunit;
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
 // FR-01, IADR-0022/0061: 情報源の選択。安全既定（no-op）・設定不備フォールバック（IADR-0022）と、
-// 案A+ の複数ソース合成・ソース単位の除外（IADR-0061）を検証する。
+// 案A+ の複数ソース合成・ソース単位の除外（IADR-0065）を検証する。
 public class InformationSourceFactoryTests
 {
     private static readonly HttpClient Http = new();

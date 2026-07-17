@@ -61,13 +61,13 @@ RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` 
 
 > **実弾（`TrdEnv_Real`）は撃たない。** `moomoo.enabled=true` にしても取引環境は `TrdEnv_Simulate` 固定である
 > （IADR-0016 / IADR-0056）。`Broker:Moomoo:TrdEnv` に `real` 等を与えると `order-execution` は**起動時に停止する**
-> （黙って SIMULATE で流して「実弾で動いている」と誤認させないための閂・#132 / IADR-0059）。実弾解禁には別 IADR と
+> （黙って SIMULATE で流して「実弾で動いている」と誤認させないための閂・#132 / IADR-0061）。実弾解禁には別 IADR と
 > 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)）。
 
 ## #132: OpenD の本番配備（`opend.enabled`）
 
 既定 **無効**（何も描画しない＝fail-safe）。dev の現行経路は `deploy/opend/k8s` の生 manifest で、そちらは残してある
-（IADR-0059 決定 1）。本 chart 経路は**本番配備**用で、既定値では生 manifest と同等に描画される。
+（IADR-0061 決定 1）。本 chart 経路は**本番配備**用で、既定値では生 manifest と同等に描画される。
 
 ```bash
 # 前提: イメージのビルド＆import（scripts/opend-build.sh）、Secret moomoo-credentials / moomoo-rsa の作成。
@@ -97,7 +97,7 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set opend.rsaSecretDefaultMode=288   # 0440（--set は 10 進で渡す。values ファイルなら 0440 と書ける）
 ```
 
-> ⚠️ **既定 ON にしていない理由**（IADR-0059 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
+> ⚠️ **既定 ON にしていない理由**（IADR-0061 決定 2）: HOME が変わると**確立済みのデバイス信頼を失い、有人検証から
 > やり直しになる恐れ**がある。実 OpenD でしか確かめられず、**#132 の実測フェーズで未検証**。切替時は既存 PVC の
 > `.com.moomoo.OpenD` を新 HOME へ移すか、再検証を覚悟すること。
 >
@@ -115,7 +115,7 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
   --set externalSecrets.secretStoreRef.name=vault-backend
 ```
 
-> ⚠️ **これは Vault 化の充足ではない**（IADR-0059 決定 4）。ストア（Vault / External Secrets Operator）は **#24 の管掌**で
+> ⚠️ **これは Vault 化の充足ではない**（IADR-0061 決定 4）。ストア（Vault / External Secrets Operator）は **#24 の管掌**で
 > 本リポジトリには無く、CRD が無いクラスタで有効化すると apply が失敗する。IADR-0056 §3 が実弾解禁の前提に挙げる
 > 「秘匿情報の Vault 化」は**未充足のまま**である。
 

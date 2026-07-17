@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, ADR-0004/0005, IADR-0061: SEC EDGAR（米国の企業開示・無料・APIキー不要）から直近の提出書類を取得する。
+// FR-01, ADR-0004/0005, IADR-0065: SEC EDGAR（米国の企業開示・無料・APIキー不要）から直近の提出書類を取得する。
 // 規約上 User-Agent に連絡先が必須のため、未設定なら本ソースは有効化しない（InformationSourceFactory で除外）。
 // レート上限は 10 回/秒/IP のため送信前に自制する（IRateLimiter）。取得失敗（レート制限・一時エラー）は当該 CIK を
 // スキップしてログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。

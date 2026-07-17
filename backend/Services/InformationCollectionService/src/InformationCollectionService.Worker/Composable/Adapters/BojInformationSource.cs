@@ -9,10 +9,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, ADR-0004/0005, IADR-0061: 日銀 時系列統計データ検索サイトの API（無料・認証不要）から、構成された系列の
+// FR-01, ADR-0004/0005, IADR-0065: 日銀 時系列統計データ検索サイトの API（無料・認証不要）から、構成された系列の
 // 最新観測値を取得する。系列はカンマ連結で 1 要求に束ねる（「短時間における連続したアクセスは禁止」＝要求数を最小化）。
 // 期間パラメータは指定しない（系列の頻度ごとに日付書式が異なり、推測すると静かに欠測するため。全期間を受けて末尾＝
-// 最新観測値のみを採る・IADR-0061）。取得失敗は空を返してログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
+// 最新観測値のみを採る・IADR-0065）。取得失敗は空を返してログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
 internal sealed class BojInformationSource(
     HttpClient httpClient,
     string db,

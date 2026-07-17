@@ -34,7 +34,7 @@ builder.Services.AddSingleton(SourceAllowlist.Default);
 
 // FR-01, IADR-0022/0061: 情報源の選択（安全既定 no-op）。実接続は Collection:Source:Provider に列挙し、かつ当該ソースの
 // 必須構成（APIキー・銘柄・CIK・系列コード等）が揃ったときのみ有効になる。案A+ の複数ソースはカンマ区切りで指定する
-// （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0061）。
+// （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0065）。
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IInformationSource>(sp => InformationSourceFactory.Create(

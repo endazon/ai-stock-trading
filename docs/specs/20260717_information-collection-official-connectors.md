@@ -28,7 +28,7 @@ plan_refs:
   ADR-0005（無料優先）、ADR-0003（プロンプト注入防御）
 - 技術検討: `06_technical/02_datasource-candidates.md`（各ソースの無料枠・レート制限・規約。「レート制限から逆算して監視銘柄数を決める」
   「フォールバックと欠測検知を最初から組み込む」「取得データの外部再配信はしない」）
-- 関連 IADR: 本作業で新規 [IADR-0061](../adr/IADR-0061_official-source-connectors.md)。安全既定は [IADR-0022](../adr/IADR-0022_information-collection-safe-sourcing.md) を踏襲
+- 関連 IADR: 本作業で新規 [IADR-0065](../adr/IADR-0065_official-source-connectors.md)。安全既定は [IADR-0022](../adr/IADR-0022_information-collection-safe-sourcing.md) を踏襲
 - 対象 Issue: #9（Slice B）
 
 ## 目的・背景
@@ -125,7 +125,7 @@ CI で緑にする範囲（ユニット＋fake `HttpMessageHandler`＋フェイ�
 
 - `TokenBucket` は純関数として境界値を単体検証（時計を注入しない）。
 - `DelayingRateLimiter` はフェイク `IClock`＋フェイク待機（待機した時間だけ時計を進める）で決定的に検証する（実時間を
-  待たない）。時刻抽象は `TimeProvider` ではなく本リポジトリの既存慣行 `IClock` に合わせる（IADR-0061 決定 2・選択肢 4）。
+  待たない）。時刻抽象は `TimeProvider` ではなく本リポジトリの既存慣行 `IClock` に合わせる（IADR-0065 決定 2・選択肢 4）。
 - 各コネクタは fake `HttpMessageHandler` で**実応答形の JSON**（実 API の応答を一次確認したうえで固定）を与えて写像・スキップを検証。
 - `InformationSourceFactory`・`CompositeInformationSource` は構成選択・部分無効化・例外隔離を検証。
 - 実 API 接続は CI で行わない（費用0円・レート制限順守の担保。IADR-0022 の方針を踏襲）。
@@ -133,7 +133,7 @@ CI で緑にする範囲（ユニット＋fake `HttpMessageHandler`＋フェイ�
 ## 関連仕様
 
 - Slice A: [20260710_information-collection](20260710_information-collection.md)
-- 実装ADR: [IADR-0061](../adr/IADR-0061_official-source-connectors.md)（本スライス）、[IADR-0022](../adr/IADR-0022_information-collection-safe-sourcing.md)（安全既定・データ分離）
+- 実装ADR: [IADR-0065](../adr/IADR-0065_official-source-connectors.md)（本スライス）、[IADR-0022](../adr/IADR-0022_information-collection-safe-sourcing.md)（安全既定・データ分離）
 
 ## 未決事項
 

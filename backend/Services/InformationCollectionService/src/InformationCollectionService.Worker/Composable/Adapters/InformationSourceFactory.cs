@@ -11,7 +11,7 @@ namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 // 各ソースは 1 つずつ独立に検証し、必須構成を欠くソース・未知の provider だけを警告つきで除外する（他ソースは有効なまま
 // ＝1 ソースのキー切れで案A+ 全体を止めない）。有効なソースが 0 件なら no-op へ倒す（IADR-0022 の安全既定）。
 //
-// レート制限の既定は各ソースの公表上限より保守側に置く（IADR-0061）。実測に基づく調整は運用開始後（ADR-0004 フォローアップ）。
+// レート制限の既定は各ソースの公表上限より保守側に置く（IADR-0065）。実測に基づく調整は運用開始後（ADR-0004 フォローアップ）。
 internal static class InformationSourceFactory
 {
     public const string None = "none";

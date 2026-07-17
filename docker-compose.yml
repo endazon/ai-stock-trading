@@ -183,7 +183,7 @@ services:
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
-      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0061）。
+      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0065）。
       Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
       Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
       Collection__Source__Finnhub__Symbols__0: ${COLLECTION_FINNHUB_SYMBOLS_0:-}

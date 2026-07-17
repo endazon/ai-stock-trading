@@ -1,5 +1,5 @@
 ---
-title: IADR-0061 公式ソースは「ソース単位で有効化する多ソース合成＋ソース単位レート制限」で束ね、推測実装はしない
+title: IADR-0065 公式ソースは「ソース単位で有効化する多ソース合成＋ソース単位レート制限」で束ね、推測実装はしない
 type: impl-adr
 status: Accepted
 related_ids: [FR-01, FR-13, ADR-0003, ADR-0004, ADR-0005]
@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0004_datasource-selection.md
 ---
 
-# IADR-0061: 公式ソースは「ソース単位で有効化する多ソース合成＋ソース単位レート制限」で束ね、推測実装はしない
+# IADR-0065: 公式ソースは「ソース単位で有効化する多ソース合成＋ソース単位レート制限」で束ね、推測実装はしない
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
@@ -25,6 +25,13 @@ plan_refs:
 - 対象 Issue: [#9](https://github.com/endazon/ai-stock-trading/issues/9)（Slice B）
 - 関連する実装仕様書: [20260717_information-collection-official-connectors](../specs/20260717_information-collection-official-connectors.md)
 - 関連 IADR: [IADR-0022](IADR-0022_information-collection-safe-sourcing.md)（安全既定 no-op・データ分離。本 IADR はこれを踏襲・拡張する）
+
+> 注（採番の経緯）: 本 IADR は当初 `IADR-0061` を採番していたが、並行 PR #146（`IADR-0059` の番号衝突解消）が後着
+> （#143・OpenD 本番化）を `IADR-0061` へ採番し直し、**本 PR より先に develop へマージされた**。先着尊重（マージ順）の
+> 運用に従い、後着となった本 IADR を **`IADR-0065`** へ採番し直した。`0062`・`0063` は未マージの PR #147・#148 が、
+> `0064` は PR #145（マージ済）が採番済みのため用いない。`0060` は索引に「新規に採番してはならない」旨の注記があるため
+> 用いない（同注記は #145 が `0060` を保持する前提で書かれているが、#145 は実際には `IADR-0064` でマージされている。
+> **注記と実態の齟齬＝`0060` の在庫状態は本 PR の管掌外**のため、別途起票して解消する）。
 
 ## コンテキストと課題
 

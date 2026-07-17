@@ -36,7 +36,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
 
     public MMApiMoomooTradeClient(MoomooBrokerOptions options, ILogger<MMApiMoomooTradeClient> logger)
     {
-        // #132, IADR-0059: 構成ミス（RSA 鍵の未マウント等）は「接続はするが trade だけ落ちる」ではなく起動時に落とす。
+        // #132, IADR-0061: 構成ミス（RSA 鍵の未マウント等）は「接続はするが trade だけ落ちる」ではなく起動時に落とす。
         MoomooPreflight.Validate(options, File.Exists);
         _options = options;
         _replyTimeout = options.ReplyTimeout;

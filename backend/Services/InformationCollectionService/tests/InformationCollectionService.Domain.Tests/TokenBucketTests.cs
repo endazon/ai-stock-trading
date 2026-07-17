@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Domain.Tests;
 
-// FR-01, ADR-0004, IADR-0061: レート制限のトークンバケット（純粋な状態機械・時計を持たない）を境界値で検証する。
+// FR-01, ADR-0004, IADR-0065: レート制限のトークンバケット（純粋な状態機械・時計を持たない）を境界値で検証する。
 // 各情報源の公表上限（Finnhub 60回/分・SEC EDGAR 10回/秒 等）より保守側の既定で送信前に自制するための土台。
 public class TokenBucketTests
 {

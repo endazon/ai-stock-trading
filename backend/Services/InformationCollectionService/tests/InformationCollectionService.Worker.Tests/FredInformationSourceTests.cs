@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, ADR-0004, IADR-0061: FRED（米セントルイス連銀・無料／要 API キー・120回/分）コネクタ。
+// FR-01, ADR-0004, IADR-0065: FRED（米セントルイス連銀・無料／要 API キー・120回/分）コネクタ。
 // series/observations の写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 public class FredInformationSourceTests
 {

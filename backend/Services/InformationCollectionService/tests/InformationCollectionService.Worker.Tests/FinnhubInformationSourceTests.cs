@@ -58,7 +58,7 @@ public class FinnhubInformationSourceTests
 
         await source.FetchAsync();
 
-        limiter.Waits.Should().Be(2, "Finnhub Free の 60回/分 制限を送信前に自制する（IADR-0061）");
+        limiter.Waits.Should().Be(2, "Finnhub Free の 60回/分 制限を送信前に自制する（IADR-0065）");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

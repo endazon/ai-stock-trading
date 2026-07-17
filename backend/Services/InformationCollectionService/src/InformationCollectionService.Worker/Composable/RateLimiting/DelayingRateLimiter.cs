@@ -3,7 +3,7 @@ using AiStockTrading.InformationCollection.Domain.RateLimiting;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.RateLimiting;
 
-// FR-01, ADR-0004, IADR-0061: トークンバケット（ドメイン純関数）に基づき、消費できるまで待ってから通すレート制限。
+// FR-01, ADR-0004, IADR-0065: トークンバケット（ドメイン純関数）に基づき、消費できるまで待ってから通すレート制限。
 // 待機は注入可能（既定は Task.Delay。テストは実時間を待たずフェイク待機で検証する）。
 // TokenBucket はスレッド安全ではないため、ここでセマフォにより直列化する。
 internal sealed class DelayingRateLimiter(

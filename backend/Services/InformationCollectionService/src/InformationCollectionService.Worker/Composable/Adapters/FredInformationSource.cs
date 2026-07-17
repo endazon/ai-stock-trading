@@ -8,7 +8,7 @@ using OpenTelemetry;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, ADR-0004/0005, IADR-0061: FRED（米セントルイス連銀・無料／要 API キー・120回/分）から、構成された系列の
+// FR-01, ADR-0004/0005, IADR-0065: FRED（米セントルイス連銀・無料／要 API キー・120回/分）から、構成された系列の
 // 最新観測値を取得する。取得失敗（レート制限・一時エラー）は当該系列をスキップしてログする（1 巡回を止めない）。
 // 実 API 前提の E2E は CI 対象外。
 internal sealed class FredInformationSource(
@@ -29,7 +29,7 @@ internal sealed class FredInformationSource(
 
             // 最新の 1 観測のみを要求する（無料枠・転送量の節約）。API キーはクエリ文字列で渡す仕様のため、OTel の
             // HttpClient 計装が URL（クエリ込み）をトレースへ出力してキーが漏えいするのを防ぐべく、この要求のみ
-            // 計装を抑止する（IADR-0061）。
+            // 計装を抑止する（IADR-0065）。
             var url = $"https://api.stlouisfed.org/fred/series/observations?series_id={Uri.EscapeDataString(seriesId)}" +
                       $"&sort_order=desc&limit=1&file_type=json&api_key={Uri.EscapeDataString(apiKey)}";
 
