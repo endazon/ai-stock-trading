@@ -7,6 +7,7 @@ using AiStockTrading.MarketMonitor.Worker.Composable.Steps;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Endpoints;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
@@ -44,8 +45,11 @@ builder.Services.AddAiStockTradingHealthChecks()
 // --- 市場監視のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
-// FR-03: リアルタイム市況（moomoo・#13）が入るまではプレースホルダ（価格取得不可）。
-builder.Services.AddSingleton<IMarketDataSource, PlaceholderMarketDataSource>();
+// FR-03, IADR-0066: 現在値ソースは共有の既定 no-op（価格取得不可）。実市況は後続 issue＋手動 opt-in の live 検証で差し替える。
+// 監視の巡回には前回値フォールバック（LastKnownQuoteSource）を**かけない**: 前回値で損切りライン到達を判定すると、
+// 市況断のあいだ古い価格から StopLossTriggered＝実際の決済発注が誤発火しうる。取得不可はスキップ（＝発注しない）が安全側。
+// 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する。
+builder.Services.AddSingleton<IMarketDataSource, NoOpMarketDataSource>();
 // FR-03/FR-10, IADR-0030: 保有ポジションはリスク管理（#12）の GET /risk-controls/open-positions を同期照会して供給する。
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（保有なし＝損切り検知対象なし）＝安全既定でゲート。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
