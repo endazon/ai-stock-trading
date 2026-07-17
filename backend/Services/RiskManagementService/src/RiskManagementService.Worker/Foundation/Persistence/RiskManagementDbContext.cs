@@ -19,6 +19,9 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
 
     public DbSet<TradeFillRow> TradeFills => Set<TradeFillRow>();
 
+    // FR-19, #154, IADR-0067: 相場操縦検知の入力＝注文アクティビティの射影。
+    public DbSet<OrderActivityRow> OrderActivities => Set<OrderActivityRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -76,6 +79,17 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.OrderId).HasMaxLength(128).ValueGeneratedNever();
             // 承認 Intent との相関・時系列畳み込みのため DecisionId にインデックスを張る。
             e.HasIndex(r => r.DecisionId);
+        });
+
+        // FR-19, #154, IADR-0067: 注文アクティビティの射影（DecisionId で 1 注文＝1 行・更新される）。
+        mb.Entity<OrderActivityRow>(e =>
+        {
+            e.ToTable("order_activity");
+            e.HasKey(r => r.DecisionId);
+            e.Property(r => r.DecisionId).ValueGeneratedNever();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            // 相場操縦検知の窓照会（銘柄・市場別に発注時刻の範囲を切り出す）用の複合インデックス。
+            e.HasIndex(r => new { r.Symbol, r.Market, r.PlacedAt });
         });
     }
 }
