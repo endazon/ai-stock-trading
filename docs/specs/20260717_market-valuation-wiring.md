@@ -58,21 +58,43 @@ plan_refs:
 
 ### 2. 未取得時のフォールバック（受け入れ条件「0 もしくは前回値」の定義）
 
-`LastKnownQuoteSource` デコレータで**前回値フォールバック**を定義する。
+`QuoteCache`（共有）が `(Symbol, Market)` ごとに直近の取得値と**取得時刻**を保持し、保持期限
+（`MarketData:MaxQuoteStalenessSeconds`・既定 300s）の判定も担う唯一の実装とする。
 
-- 内側のソースが `Quote` を返す → そのまま返し、`(Symbol, Market)` ごとに最後の値として保持する。
-- 内側が `null`（取得失敗）→ 保持中の前回値が **TTL 以内**なら前回値を返す（`MarketData:MaxQuoteStaleness`・既定 5 分）。
-- 前回値が無い、または TTL 超過 → `null` を返す＝**その建玉の含みは 0**（`PortfolioValuation` の既存フォールバック）。
+- 取得成功 → 値を保持して返す。
+- 取得不可（`null`）→ 保持中の前回値が**期限以内**なら前回値、無い／期限超過なら `null`＝**その建玉の含みは 0**
+  （`PortfolioValuation` の既存フォールバック）。
 
-TTL を設ける理由: 期限なしの前回値は、市況断で古い価格に基づく含み・DD を無期限に信じ込ませる（＝安全側でない）。
+期限を設ける理由: 期限なしの前回値は、市況断で古い価格に基づく含み・DD を無期限に信じ込ませる（＝安全側でない）。
 古すぎる値は「取得不可」に落として 0 へ倒す方が保守的である。
 
-### 3. リスク管理への結線
+経過時間は `Quote.AsOf` ではなく**取得時刻（受信）**を基準とする: 取得成功パスは `AsOf` を評価せずソースの値をそのまま
+信じるため、フォールバックも同じ規約に揃える（`AsOf` の妥当性は当該ソースの責務）。
 
-- 新ポート `ICurrentPriceSource`（`RiskManagement.Application/Ports`）: 建玉列 → `(Symbol, Market) → 現在値` の辞書。
-- 実装 `MarketDataCurrentPriceSource`（`Application/Adapters`）: 建玉ごとに `IMarketDataSource` を引き、取得できたものだけを辞書へ入れる
-  （取得不可は**キーを入れない**＝当該建玉の含みは 0）。1 銘柄の失敗で全体を落とさない。
-- `LedgerPortfolioStateProvider` が `PortfolioProjection.Project` へ `currentPrices` と `equityHighWaterMark` を渡す。
+同期に読み出す経路（リスク管理）は `QuoteCache` を直接読み、都度取得する経路（報告書）は `LastKnownQuoteSource`
+デコレータ（内側のソース＋同じ `QuoteCache`）を用いる。期限の実装は `QuoteCache` の 1 か所に集約される。
+
+### 3. リスク管理への結線（同期経路のため補充と読み出しを分離する）
+
+`IPortfolioStateProvider.GetCurrent()` は**同期**であり、発注判断の同期経路
+（`OrderScreeningService.Screen` → `PortfolioSnapshotBuilder.Build` → `GetCurrent`）から呼ばれる。ここで非同期の市況取得は
+行えず、また**発注判断のレイテンシにネットワーク往復を持ち込むべきでない**ため、取得（非同期・背景）と読み出し
+（同期・判定時）を分離する。
+
+- 新ポート `ICurrentPriceSource`（`Application/Ports`・**同期**）: 建玉列 → `(Symbol, Market) → 現在値` の辞書。
+- `QuoteRefreshService`（`Worker/Composable/MarketData`・`BackgroundService`）: `RefreshIntervalSeconds` ごとに
+  保有建玉ぶんの現在値を `IMarketDataSource` から引き、取得できたものだけ `QuoteCache` へ入れる。
+  1 銘柄の失敗・巡回の例外で判定を止めない（fail-safe）。
+- `CachedCurrentPriceSource`（`Worker/Composable/MarketData`）: `QuoteCache` を同期に読むだけ（I/O なし）。
+  期限超過・未取得は**キーを入れない**＝当該建玉の含みは 0。
+- `LedgerPortfolioStateProvider`（`Application/Adapters`）がポート経由で現在値を受け、`PortfolioProjection.Project` へ
+  `currentPrices` を渡し、台帳から再計算したピークで `DrawdownRatio` を差し替える。
+
+> `IPortfolioStateProvider` の非同期化は採らない: 発注経路（`OrderScreeningService`・コンシューマ・各テスト）へ広く波及して
+> 並行作業との衝突面が大きい割に、上記の分離で同じ結果が得られ、レイテンシ面ではむしろ劣るため。
+>
+> 実装の配置: `QuoteCache` は `Shared.Infrastructure` にあり、`*.Application` は同アセンブリを参照しない既存の層構成
+> （参照は Worker＝合成ルートのみ）に従って、キャッシュに依存するアダプタは `Worker/Composable` へ置く。
 
 ### 4. エクイティピーク（DrawdownRatio の入力）
 
@@ -85,17 +107,27 @@ TTL を設ける理由: 期限なしの前回値は、市況断で古い価格�
 
 ### 5. ゲート（既定オフ・fail-safe）
 
-`RiskOptions:EnableMarkToMarket`（既定 **false**）で時価評価を明示的に有効化する。
+`MarketData:EnableMarkToMarket`（既定 **false**・リスク管理のみ）で時価評価を明示的に有効化する。
 
-- false（既定）: `currentPrices=null` / `equityHighWaterMark=null` を渡す＝**現行と同一挙動**（含み 0・DD 0）。
-- true: 上記の供給を有効化する。
+- false（既定）: 現在値ソースを**注入しない**＝`currentPrices=null` / `equityHighWaterMark=null`＝**現行と同一挙動**
+  （含み 0・DD 0）。補充（`QuoteRefreshService`）も登録しない＝巡回による台帳アクセスも発生しない。
+- true: 上記の供給を有効化する（それでも現在値ソースが no-op のうちは含み 0・DD 0 のまま）。
 
 ゲートを置く理由: 時価評価の有効化は `DrawdownRatio` を史上初めて非 0 にし、**最大DD の取引ゲート**（IADR-0008）の
 判定入力を変える。実相場データの live 検証を経ずに取引可否の挙動が変わることを避け、切替を人手の判断に残す。
 
+このゲートは「全環境の既定」である base `appsettings.json` に置いてはならないため、`validate-runtime-scaffold.js` の
+`FORBIDDEN_BASE_KEYS` に `MarketData` を加えて機械的に守る（IADR-0048 決定 1/2 に準拠）。設定点は各サービスの
+`appsettings.Development.json`／環境変数に限る。
+
 ### 6. 報告書への結線
 
 `ReportDraftService` は要求に `CurrentPrices` が**無いときだけ**現在値ソースから補完する（要求指定は上書きしない＝既存 API 互換）。
+報告書の生成経路は非同期のため、リスク管理のような補充・読み出しの分離は要らず `IMarketDataSource` を直接引く。
+引くのは**期間末に建玉が残る銘柄のみ**（全決済済みは評価に不要＝無駄な市況取得でレート制限を消費しない）。
+
+報告書は**発注判断を行わない**（評価損益の提示のみ）ため、リスク管理のような有効化ゲートは持たない。既定の no-op
+ソースが取得不可を返すことがそのまま安全既定であり、実市況ソースへの差し替えがそのまま有効化になる。
 
 `PnlAggregator` の現在値辞書は**銘柄コードのみ**をキーとする（市場を持たない）。したがって同一銘柄コードが
 複数市場に現れる場合は**曖昧としてキーを落とす**（＝評価損益 0）。誤った市場の価格で評価するより 0 に倒す（fail-safe）。
@@ -119,19 +151,36 @@ TTL を設ける理由: 期限なしの前回値は、市況断で古い価格�
 
 ## テスト方針（TDD）
 
-- `PortfolioValuation.EquityHighWaterMark`: 単調増加/下落後のピーク保持/空列/現在エクイティが最大、の純関数テスト。
-- `LastKnownQuoteSource`: 成功時そのまま/失敗時に前回値/TTL 超過で null/前回値なしで null。
-- `MarketDataCurrentPriceSource`: 取得できた銘柄だけが辞書に入る/全失敗で空辞書。
-- `LedgerPortfolioStateProvider`: ゲート OFF で含み 0・DD 0（現行挙動）/ON かつ現在値ありで時価算出。
-- `ReportDraftService`: 要求に現在値がなければ補完/あれば上書きしない/同一銘柄が複数市場なら落とす。
+- `PortfolioValuation.EquityHighWaterMark`: 空列/下落後のピーク保持/現在エクイティが最大/入力順に依存しない。
+- `NoOpMarketDataSource`: 常に取得不可。
+- `LastKnownQuoteSource`: 成功時そのまま/失敗時に期限内の前回値/期限超過で null/前回値なしで null/
+  (銘柄, 市場) ごとに分離/成功のたびに保持時刻を更新。
+- `CachedCurrentPriceSource`: 建玉ぶんだけ読む/未取得はキーなし/期限超過は落とす/期限内は読む。
+- `QuoteRefreshService`: 建玉ぶんだけ引いて保持/no-op ソースでは何も補充しない/建玉が無ければ引かない。
+- `LedgerPortfolioStateProvider`: ソース未注入で含み 0・DD 0（現行挙動）/現在値ありで時価算出/含み損で DD/
+  含み益で DD 0/取得不可で含み 0。
+- `ReportDraftService`: 要求に現在値がなければ補完/あれば上書きせず引きもしない/未注入で 0/取得不可で 0/
+  同一銘柄が複数市場なら落とす/曖昧でも他銘柄は供給/全決済済みは引かない。
 - 実市況（実 OpenD・実 HTTP）依存テストは CI 対象外（後続の手動 opt-in）。
 
 ## 影響範囲
 
-- `Shared.Infrastructure`: `NoOpMarketDataSource`・`LastKnownQuoteSource` 追加（新規のみ）。
+- `Shared.Infrastructure`: `NoOpMarketDataSource`・`QuoteCache`・`LastKnownQuoteSource`・`MarketDataOptions` 追加（新規のみ）。
+  ログ抽象（`Microsoft.Extensions.Logging.Abstractions`）の参照を追加する。
 - `MarketMonitorService.Worker`: `PlaceholderMarketDataSource` 削除、共有 no-op の登録へ差し替え（挙動同一）。
-- `RiskManagementService`: `ICurrentPriceSource`＋`MarketDataCurrentPriceSource` 追加、`LedgerPortfolioStateProvider` 変更、
-  `PortfolioValuation` に純関数 1 つ追加、`Program.cs` の DI 追加（隣接行に限定）。`TradingDefaults`・`Shared.Contracts/Events` は触れない。
+  監視の巡回には**前回値フォールバックをかけない**（後述）。
+- `RiskManagementService`: `ICurrentPriceSource`（Application/Ports）＋`CachedCurrentPriceSource`・`QuoteRefreshService`
+  （Worker/Composable/MarketData）追加、`LedgerPortfolioStateProvider` 変更、`PortfolioValuation` に純関数 1 つ追加、
+  `Program.cs` の DI 追加（隣接行に限定）。`TradingDefaults`・`Shared.Contracts/Events` は触れない。
 - `ReportService`: `ReportDraftService` の補完、Worker の DI 追加。
-</content>
-</invoke>
+- `scripts/validate-runtime-scaffold.js`: `FORBIDDEN_BASE_KEYS` に `MarketData` を追加。
+- 各 Worker の `appsettings.Development.json`: 設定点（安全既定つき）を明記。
+
+## 損切り検知には前回値フォールバックをかけない（安全側の非対称）
+
+前回値フォールバックは**発注を伴わない時価評価**（リスク管理の判定入力・報告書の提示）にのみ適用し、市場監視の巡回には
+適用しない。市場監視は損切りライン到達で `StopLossTriggered`＝**実際の決済発注**を引き起こすため、市況断のあいだ古い価格で
+判定すると、既に回復した価格に対して誤発火しうる。取得不可はスキップ（＝発注しない）が安全側であり、現行挙動でもある。
+
+同じ「古い価格」でも、評価（表示・ゲート入力）では前回値の方が 0 より実態に近く、発注では前回値が新たな誤動作を生む。
+非対称なのは意図的である。
