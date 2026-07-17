@@ -46,11 +46,13 @@
   <Folder Name="/Services/ConfigurationService/src/">
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Application/ConfigurationService.Application.csproj" />
+    <Project Path="Services/ConfigurationService/src/ConfigurationService.Client/ConfigurationService.Client.csproj" />
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj" />
   </Folder>
   <Folder Name="/Services/ConfigurationService/tests/">
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Domain.Tests/ConfigurationService.Domain.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Application.Tests/ConfigurationService.Application.Tests.csproj" />
+    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Client.Tests/ConfigurationService.Client.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Worker.Tests/ConfigurationService.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/AuditService/" />

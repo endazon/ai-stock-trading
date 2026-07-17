@@ -94,3 +94,4 @@
 | IADR-0058 | Helm chart の CI ゲートは helm 単体で完結させ、既定 disabled のフラグ ON 派生も描画する | Accepted |
 | IADR-0059 | 重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージし、未確定の行には触れない | Accepted |
 | IADR-0061 | OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す | Accepted |
+| IADR-0064 | バージョン付き全体前提条件は s2s 読み取り API ＋共有クライアント（キャッシュ・イベント無効化・last-known-good）で解決する | Accepted |
