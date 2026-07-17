@@ -90,6 +90,32 @@ internal static class RiskControlEndpoints
             return Results.Ok(svc.GetCurrent());
         });
 
+        // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070）: 利用者のみ（OwnerOnly）----
+        // 承認による昇格・差し戻し。承認者＝認証済み利用者名。承認欠如時の遷移は純ドメインが構造的に拒否する。
+        // 認可は owner サブグループに付与し親グループには付けない（親は 403）。Discord（UC-06）承認は #15 Bot 基盤が
+        // trading-owner マップで本 OwnerOnly エンドポイントを呼ぶ（kill switch と同型・Bot ハンドラは後続）。
+        owner.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()));
+
+        owner.MapGet("/stage-gate/history", (StageGateService svc) => Results.Ok(svc.GetHistory()));
+
+        owner.MapPost("/stage-gate/transition", (StageTransitionRequest req, StageGateService svc, HttpContext http) =>
+        {
+            // 値域検証: targetStage の省略（null）や範囲外 enum は 400。範囲外（負値・4 以上）の降格方向は
+            // StageGate 側の連番検証を素通りし StageGatePolicy.SettingsFor で KeyNotFoundException（500）になり得るため、
+            // サービス到達前に弾く（省略時の暗黙 Stage 0 差し戻しも防ぐ）。
+            if (req.TargetStage is not { } target || !Enum.IsDefined(target))
+            {
+                return Results.BadRequest(new { error = "targetStage は有効な運用段階（Stage 0〜3）を指定してください。" });
+            }
+
+            var result = svc.RequestTransition(target, ActorOf(http));
+            // 受理は 200、受理不能な遷移（未充足基準・飛び級・現段階指定）は 422 に写像する。
+            return result.Accepted ? Results.Ok(result) : Results.UnprocessableEntity(result);
+        });
+
+        // 撤退基準の評価＋自動安全側（HaltNewEntries なら kill switch を自動起動）。実降格は行わず降格提案を返す。
+        owner.MapPost("/stage-gate/withdrawal/evaluate", (StageGateService svc) => Results.Ok(svc.EvaluateWithdrawal()));
+
         return app;
     }
 
@@ -106,6 +132,11 @@ internal sealed record LimitsUpdateRequest(RiskLimitSettings Limits, string Reas
 
 // 段階変更の要求。
 internal sealed record StageUpdateRequest(StageSettings Stage, string Reason);
+
+// FR-20, UC-06: 段階ゲート遷移の要求。承認者は要求本文ではなく認証済みトークン（OwnerOnly）から取る
+// （承認なりすまし防止）。TradingStage は既定 JSON では数値で往復する。TargetStage は nullable とし、省略や
+// 範囲外値をエンドポイントで 400 に弾く（省略時に既定値 0＝Stage 0 として暗黙処理されるのを防ぐ）。
+internal sealed record StageTransitionRequest(TradingStage? TargetStage);
 
 // ガード変更の要求。TradingGuardSettings は IReadOnlySet 等を用いるため、逆直列化可能な具象コレクションで受ける。
 internal sealed record GuardUpdateRequest(

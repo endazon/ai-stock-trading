@@ -109,6 +109,50 @@ internal sealed class TradeFillRow
     public DateTimeOffset ExecutedAt { get; set; }
 }
 
+// FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移履歴（追記専用・監査対象）。Sequence を主キーとし、
+// 現在段階・次シーケンスは履歴の畳み込み（StageGateLedger）で導出する（可変の「現在段階」列は持たない）。
+// Sequence の一意制約により並行する二重追記を弾く（楽観的整合）。
+internal sealed class StageTransitionRow
+{
+    public int Sequence { get; set; }
+
+    public AiStockTrading.RiskManagement.Domain.TradingStage FromStage { get; set; }
+
+    public AiStockTrading.RiskManagement.Domain.TradingStage ToStage { get; set; }
+
+    public AiStockTrading.RiskManagement.Domain.StageTransitionKind Kind { get; set; }
+
+    public string ApprovedBy { get; set; } = string.Empty;
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+}
+
+// FR-20, FR-15, IADR-0070: 段階ゲートの合格・撤退基準の入力＝段階別実績の単一行。未記録時は fail-safe 既定
+// （BacktestPassed=false ほか全 false/0）を返す＝既定で昇格を許可しない安全側。実供給（バックテスト verdict・
+// 実DD・統制違反・スリッページ実績）は後続（BacktestService からの s2s・#82 系）で upsert する。
+internal sealed class StagePerformanceRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    public bool BacktestPassed { get; set; }
+
+    public decimal BacktestMaxDrawdownRatio { get; set; }
+
+    public decimal ObservedMaxDrawdownRatio { get; set; }
+
+    public bool PaperDeviationExplained { get; set; }
+
+    public int ControlViolationCount { get; set; }
+
+    public bool SlippageAndCostWithinExpected { get; set; }
+
+    public bool DailyLossLimitRespected { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 // FR-19, #154, IADR-0067: 相場操縦検知の入力＝1 注文のライフサイクル要約を DecisionId で保持する行。
 // 承認で作成し、約定・訂正・取消で更新する（可変・射影）。取引台帳（ApprovedOrderRow/TradeFillRow）とは別テーブル。
 // 取引台帳は Filled のみを載せる設計で、本用途の母集団である「約定ゼロで取り消された注文」を構造的に捨てるため、
