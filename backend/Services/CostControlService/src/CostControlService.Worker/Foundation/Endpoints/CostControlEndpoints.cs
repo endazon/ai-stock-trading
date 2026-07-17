@@ -41,9 +41,9 @@ internal static class CostControlEndpoints
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         // 費用を計上する。統制状態が上方に遷移したら CostThresholdReached を発行する。
-        owner.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IPublishEndpoint bus) =>
+        owner.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IPublishEndpoint bus, CancellationToken ct) =>
         {
-            var result = svc.Record(req.Category, req.Amount);
+            var result = await svc.RecordAsync(req.Category, req.Amount, ct);
 
             if (result.CrossedTo is { } crossed)
             {
@@ -59,7 +59,7 @@ internal static class CostControlEndpoints
         var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         // 現在月の LLM 統制判定（定時サイクルが間隔延長/停止を照会する）。
-        read.MapGet("/state", (AppSvc svc) => Results.Ok(svc.GetLlmState()));
+        read.MapGet("/state", async (AppSvc svc, CancellationToken ct) => Results.Ok(await svc.GetLlmStateAsync(ct)));
 
         // 現在月の費用÷資金比率（月報の費用レビュー）。
         read.MapGet("/review", (AppSvc svc, decimal capital) => Results.Ok(new { ratio = svc.Review(capital) }));

@@ -34,7 +34,8 @@ internal sealed class LlmCostIncurredConsumer(
 
         try
         {
-            var result = svc.Record(CostCategory.Llm, context.Message.Amount);
+            var result = await svc.RecordAsync(CostCategory.Llm, context.Message.Amount, context.CancellationToken)
+                .ConfigureAwait(false);
 
             // しきい値が上方遷移したら通知（/costs/record エンドポイントと同一の挙動・IADR-0027）。
             if (result.CrossedTo is { } crossed)
