@@ -4,6 +4,8 @@ using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.TradeDecision.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
@@ -85,6 +87,12 @@ static decimal ParsePricePer1k(string? value) =>
     decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) && price > 0m
         ? price
         : 0m;
+
+// FR-08, IADR-0072 決定5: RAG 取得件数（TopK）。未設定・不正・非正値は既定 5（fail-safe）。
+static int ParseTopK(string? value) =>
+    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var topK) && topK > 0
+        ? topK
+        : 5;
 // FR-07, IADR-0028: 確定済み日報方針は報告書サービス（#14）の GET /reports/daily-policy を同期照会して供給する。
 // Reports:BaseUrl 未設定なら従来のプレースホルダ（no-op・取引しない）＝安全既定でゲート。設定時のみ実照会する。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
@@ -121,6 +129,17 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpSizingContextProvider(http, sp.GetRequiredService<ILogger<HttpSizingContextProvider>>());
 });
+// FR-08, IADR-0069/0072: RAG 取得ポート（#18 IKnowledgeBaseSearch）を配線する。KnowledgeBase:Search:BaseUrl 未設定/不正なら
+// #18 の NoOpKnowledgeBaseSearch（空）＝参考情報なし＝実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作（安全既定）。
+builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
+// FR-08, IADR-0072: 判断文脈への RAG 取得アダプタ。常に登録し、実接続の可否は上の IKnowledgeBaseSearch（Search:BaseUrl）で決まる。
+// TopK は Retrieval:TopK（既定 5・不正/非正値は既定へ）。取得失敗・空は判断側で「文脈なし」に縮退する（TradeDecisionService）。
+builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
+    new KnowledgeBaseRetrievalContextProvider(
+        sp.GetRequiredService<IKnowledgeBaseSearch>(),
+        ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
+        sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
+
 // FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
 builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider>();

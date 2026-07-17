@@ -10,6 +10,8 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <ProjectReference Include="..\TradeDecisionService.Application\TradeDecisionService.Application.csproj" />
+    <!-- FR-08, IADR-0069/0072: RAG 取得ポート IKnowledgeBaseSearch（#18 共有クライアント）を判断文脈へ結線するため参照する。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <InternalsVisibleTo Include="TradeDecisionService.Worker.Tests" />
