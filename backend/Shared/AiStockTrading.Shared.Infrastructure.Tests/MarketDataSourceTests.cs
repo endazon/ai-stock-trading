@@ -7,12 +7,12 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests;
 
-// #81, FR-10, IADR-0065: 現在値ソースの既定 no-op と、未取得時の前回値フォールバック（TTL 付き）を検証する。
+// #81, FR-10, IADR-0066: 現在値ソースの既定 no-op と、未取得時の前回値フォールバック（TTL 付き）を検証する。
 public class MarketDataSourceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 9, 0, 0, TimeSpan.FromHours(9));
 
-    // IADR-0064/0065: FakeTimeProvider（Microsoft.Extensions.Time.Testing）は中央パッケージ管理に未登録のため、
+    // IADR-0064/0066: FakeTimeProvider（Microsoft.Extensions.Time.Testing）は中央パッケージ管理に未登録のため、
     // 本テスト内の最小の偽装で足す（TimeProvider は Shared.Infrastructure の既存慣行＝PaperBrokerAdapter と同じ）。
     private sealed class TestTimeProvider(DateTimeOffset now) : TimeProvider
     {

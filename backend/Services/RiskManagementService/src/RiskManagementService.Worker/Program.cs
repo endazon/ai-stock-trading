@@ -54,7 +54,7 @@ builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。
 // DbContext が scoped のため台帳ストア・プロバイダも scoped。
 builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();
-// FR-10, #81, IADR-0065: 含み損益・DD の時価評価。既定（EnableMarkToMarket=false）は現在値を注入せず従来どおり
+// FR-10, #81, IADR-0066: 含み損益・DD の時価評価。既定（EnableMarkToMarket=false）は現在値を注入せず従来どおり
 // 含み 0・DD 0（IADR-0008/0018）。有効化すると DrawdownRatio が非 0 になり最大DD の取引ゲートの入力が変わるため、
 // 実市況の live 検証を経てから人手で切り替える。現在値ソース自体も既定 no-op（実接続しない）。
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));

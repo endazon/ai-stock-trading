@@ -18,7 +18,7 @@
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <ProjectReference Include="..\ReportService.Application\ReportService.Application.csproj" />
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
-    <!-- IADR-0065: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
+    <!-- IADR-0066: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />

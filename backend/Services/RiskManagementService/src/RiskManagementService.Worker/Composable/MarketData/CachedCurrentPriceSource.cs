@@ -6,9 +6,9 @@ using Microsoft.Extensions.Options;
 
 namespace AiStockTrading.RiskManagement.Worker.Composable.MarketData;
 
-// FR-10, #81, IADR-0065: 手元に補充済みの現在値（QuoteCache）を同期に読み出す ICurrentPriceSource 実装。
+// FR-10, #81, IADR-0066: 手元に補充済みの現在値（QuoteCache）を同期に読み出す ICurrentPriceSource 実装。
 // 発注判断の同期経路から呼ばれるため、ここではネットワーク I/O を行わない（補充は QuoteRefreshService が非同期に行う）。
-// 保持期限を超えた前回値は取得不可として扱い、キーを落とす＝当該建玉の含みは 0（安全側・IADR-0065）。
+// 保持期限を超えた前回値は取得不可として扱い、キーを落とす＝当該建玉の含みは 0（安全側・IADR-0066）。
 internal sealed class CachedCurrentPriceSource(
     QuoteCache cache,
     IClock clock,

@@ -45,7 +45,7 @@ builder.Services.AddAiStockTradingHealthChecks()
 // --- 市場監視のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
-// FR-03, IADR-0065: 現在値ソースは共有の既定 no-op（価格取得不可）。実市況は後続 issue＋手動 opt-in の live 検証で差し替える。
+// FR-03, IADR-0066: 現在値ソースは共有の既定 no-op（価格取得不可）。実市況は後続 issue＋手動 opt-in の live 検証で差し替える。
 // 監視の巡回には前回値フォールバック（LastKnownQuoteSource）を**かけない**: 前回値で損切りライン到達を判定すると、
 // 市況断のあいだ古い価格から StopLossTriggered＝実際の決済発注が誤発火しうる。取得不可はスキップ（＝発注しない）が安全側。
 // 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する。

@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Application.Tests;
 
-// #81, FR-16, IADR-0025/0065: 評価損益の現在値供給（要求未指定時のみ市場データ源から補完する）を検証する。
+// #81, FR-16, IADR-0025/0066: 評価損益の現在値供給（要求未指定時のみ市場データ源から補完する）を検証する。
 public class ReportDraftCurrentPriceTests
 {
     private static readonly DateTimeOffset At = new(2026, 7, 10, 0, 0, 0, TimeSpan.Zero);

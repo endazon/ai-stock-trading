@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
-// FR-10, IADR-0065: 直近に取得できた現在値の保持（(銘柄, 市場) ごと）。#81 受け入れ条件のフォールバック
+// FR-10, IADR-0066: 直近に取得できた現在値の保持（(銘柄, 市場) ごと）。#81 受け入れ条件のフォールバック
 // 「0 もしくは前回値」の**前回値**側を担う唯一の実装で、保持期限（maxStaleness）の判定もここに集約する。
 //
 // 期限を設ける理由: 期限なしの前回値は、市況断のあいだ古い価格に基づく含み・DD を無期限に信じ込ませる（＝実際には

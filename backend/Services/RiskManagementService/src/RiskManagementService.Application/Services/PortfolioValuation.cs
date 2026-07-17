@@ -28,10 +28,10 @@ public static class PortfolioValuation
         return total;
     }
 
-    // IADR-0065: エクイティピーク（DrawdownRatio の入力）を取引台帳から再計算する純関数。永続化しない
+    // IADR-0066: エクイティピーク（DrawdownRatio の入力）を取引台帳から再計算する純関数。永続化しない
     // （台帳から常に同値を再現でき、再起動・復旧時に台帳と乖離した第二の真実を作らないため）。
     // 「初期資金 + 累積実現損益」の走査最大と現在エクイティの最大を採る。実現ベースのため含みだけで生じた山は
-    // 捉えず、ピークを過小＝DD を過小に見積もる（暫定。実観測ピークの永続化要否は live 検証後に判断・IADR-0065）。
+    // 捉えず、ピークを過小＝DD を過小に見積もる（暫定。実観測ピークの永続化要否は live 検証後に判断・IADR-0066）。
     public static decimal EquityHighWaterMark(
         IReadOnlyList<LedgerFill> fills,
         decimal initialCapital,

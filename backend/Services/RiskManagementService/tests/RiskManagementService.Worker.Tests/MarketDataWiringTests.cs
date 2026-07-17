@@ -14,7 +14,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;
 
-// #81, FR-10, IADR-0065: 現在値の補充（非同期・背景）と読み出し（同期・判定経路）の結線を検証する。
+// #81, FR-10, IADR-0066: 現在値の補充（非同期・背景）と読み出し（同期・判定経路）の結線を検証する。
 public class MarketDataWiringTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 3, 0, 0, TimeSpan.Zero);

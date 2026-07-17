@@ -10,7 +10,7 @@ namespace AiStockTrading.Report.Application.Services;
 // 約定列＋前提条件から数値をコード集計（PnlAggregator）し、散文は LLM ドラフト（IReportNarrativeDrafter）で得て、
 // ReportRenderer でテンプレートへ組み立てる（数値は LLM に計算させない）。生成のみでステートレス（永続化しない）。
 //
-// #81, IADR-0065: 評価損益（税引前・参考）の現在値は、要求が指定していないときだけ市場データ源から補完する
+// #81, IADR-0066: 評価損益（税引前・参考）の現在値は、要求が指定していないときだけ市場データ源から補完する
 // （要求指定は上書きしない＝既存 API 互換）。marketData 未注入・取得不可なら現在値なし＝評価損益 0（現行挙動）。
 public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketDataSource? marketData = null)
 {
@@ -28,7 +28,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var markets = request.Markets ?? [];
         var fills = request.Fills ?? [];
 
-        // 評価損益の現在値: 要求指定が最優先。無ければ市場データ源から補完する（#81・IADR-0065）。
+        // 評価損益の現在値: 要求指定が最優先。無ければ市場データ源から補完する（#81・IADR-0066）。
         var currentPrices = request.CurrentPrices
             ?? await ResolveCurrentPricesAsync(fills, cancellationToken).ConfigureAwait(false);
 
@@ -62,7 +62,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl);
     }
 
-    // #81, IADR-0065: 期間末に建玉が残る銘柄の現在値を市場データ源から引く（全決済済みは評価に不要なので引かない
+    // #81, IADR-0066: 期間末に建玉が残る銘柄の現在値を市場データ源から引く（全決済済みは評価に不要なので引かない
     // ＝無駄な市況取得でレート制限を消費しない）。取得不可の銘柄はキーを含めない＝当該建玉の評価損益は 0。
     //
     // PnlAggregator の現在値辞書は**銘柄コードのみ**がキーで市場を持たない（IADR-0025）。そのため同一銘柄コードが

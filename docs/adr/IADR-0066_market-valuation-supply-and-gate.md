@@ -1,5 +1,5 @@
 ---
-title: IADR-0065 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える
+title: IADR-0066 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える
 type: impl-adr
 status: Accepted
 related_ids: [FR-10, FR-05, FR-16, FR-03, ADR-0002, ADR-0007, ADR-0008]
@@ -12,7 +12,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
 ---
 
-# IADR-0065: 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える
+# IADR-0066: 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

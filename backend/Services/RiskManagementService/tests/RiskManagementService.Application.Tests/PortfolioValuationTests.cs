@@ -65,7 +65,7 @@ public class PortfolioValuationTests
         PortfolioValuation.DrawdownRatio(-1m, 90_000m).Should().Be(0m);
     }
 
-    // --- エクイティピーク（#81, IADR-0065）: 台帳から再計算する（永続化しない） ---
+    // --- エクイティピーク（#81, IADR-0066）: 台帳から再計算する（永続化しない） ---
 
     private static LedgerFill Fill(TradeSide side, int qty, decimal price, int day) =>
         new("AAPL", Market.UnitedStates, side, PositionEffect.Open, qty, price,

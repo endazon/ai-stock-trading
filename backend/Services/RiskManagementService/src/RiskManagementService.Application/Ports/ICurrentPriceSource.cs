@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Ports;
 
-// FR-10, #81, IADR-0065: 時価評価（含み損益・DD）の入力となる現在値の供給。
+// FR-10, #81, IADR-0066: 時価評価（含み損益・DD）の入力となる現在値の供給。
 // 判定は同期経路（OrderScreeningService → PortfolioSnapshotBuilder → IPortfolioStateProvider.GetCurrent）にあり、
 // 発注判断のレイテンシに市況取得のネットワーク往復を持ち込めないため、本ポートは**同期**とし、実装は非同期に
 // 補充された手元の値（QuoteCache）を読むだけにする（補充は QuoteRefreshService）。

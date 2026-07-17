@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace AiStockTrading.RiskManagement.Worker.Composable.MarketData;
 
-// FR-10, #81, IADR-0065: 保有建玉の現在値を定期的に補充して QuoteCache へ入れる。判定の同期経路
+// FR-10, #81, IADR-0066: 保有建玉の現在値を定期的に補充して QuoteCache へ入れる。判定の同期経路
 // （OrderScreeningService → PortfolioSnapshotBuilder → IPortfolioStateProvider.GetCurrent）から市況取得の
 // ネットワーク往復を切り離すため、取得はここ（背景）で行い、判定側は手元の値を読むだけにする。
 //

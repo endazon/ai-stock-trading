@@ -28,7 +28,7 @@ plan_refs:
   [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（台帳射影・含みは 0 のまま）、
   [IADR-0025](../adr/IADR-0025_pnl-aggregation.md)（報告書の評価損益は現在値入力依存）、
   [IADR-0030](../adr/IADR-0030_position-store-sync-api.md)（保有ポジションの同期照会）、
-  [IADR-0036](../adr/IADR-0036_unrealized-pnl-valuation.md)（純関数コア）。本作業で新規 [IADR-0065](../adr/IADR-0065_market-valuation-supply-and-gate.md)
+  [IADR-0036](../adr/IADR-0036_unrealized-pnl-valuation.md)（純関数コア）。本作業で新規 [IADR-0066](../adr/IADR-0066_market-valuation-supply-and-gate.md)
 - 対象 Issue: #81（残スコープ＝供給アダプタ＋結線）
 
 ## 目的・背景
@@ -135,7 +135,7 @@ plan_refs:
 ### 7. タイムゾーン境界（受け入れ条件）
 
 単一取引日境界は現状どおり `PortfolioProjection.TradingDayOffset`（JST=+9・DST なし）を唯一の定義とし、本作業では変更しない。
-市場別境界（米国市場の取引日が JST 境界と一致しない）は IADR-0018 からの既知の残課題として後続へ送る（IADR-0065 に明記）。
+市場別境界（米国市場の取引日が JST 境界と一致しない）は IADR-0018 からの既知の残課題として後続へ送る（IADR-0066 に明記）。
 
 ## 受け入れ基準（issue #81 との対応）
 

@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
-// FR-10, IADR-0065: 現在値が取得できないときのフォールバック（#81 受け入れ条件「0 もしくは前回値」）を与える
+// FR-10, IADR-0066: 現在値が取得できないときのフォールバック（#81 受け入れ条件「0 もしくは前回値」）を与える
 // デコレータ。取得できた値はそのまま返して QuoteCache へ保持し、取得不可（null）のときだけ保持期限以内の前回値を
 // 返す。前回値が無い／期限超過なら null＝当該建玉の含みは 0 になる（期限の根拠は QuoteCache を参照）。
 //
