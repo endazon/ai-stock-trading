@@ -146,7 +146,18 @@ services:
   cost-control:
     image: ai-stock-trading/cost-control-service
     db: cost_control_svc
+    # auth=true は自身の API の認証（/costs/*）に加え、**呼び出し側**として s2s トークンの token エンドポイント
+    # 導出に Authority が要ることも意味する（GET /assumptions の照会・IADR-0051/0065）。
     auth: true
+    extraEnv:
+      # FR-17, IADR-0065 (#139): 月次費用上限の取得元（設定サービス）。利用者の上限変更を 80%/100% 判定へ反映する。
+      # fail-safe: 空=前提条件の既定値（20,000/15,000）で判定する。
+      - { name: Configuration__BaseUrl, value: "http://configuration-service:8080" }
+      # IADR-0051: /assumptions（OwnerOrService）用の client_credentials。fail-safe: 未設定=認証なし→401→既定値へ縮退。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
   information-collection:
     image: ai-stock-trading/information-collection-service
     # auth=true は Auth__Authority の注入を意味する。本サービスは自身の API を認証しない（server 側 auth は無し）が、

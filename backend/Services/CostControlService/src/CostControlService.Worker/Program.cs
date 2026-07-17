@@ -1,5 +1,8 @@
+using AiStockTrading.Configuration.Client.Composable.Steps;
+using AiStockTrading.Configuration.Client.Foundation.Extensions;
 using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
+using AiStockTrading.CostControl.Worker.Composable.Adapters;
 using AiStockTrading.CostControl.Worker.Composable.Retention;
 using AiStockTrading.CostControl.Worker.Composable.Steps;
 using AiStockTrading.CostControl.Worker.Foundation.Endpoints;
@@ -39,8 +42,13 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 builder.Services.AddSingleton<IClock, SystemClock>();
-// 月次費用上限は暫定で前提条件の既定値（#19 のバージョン付き取得は #22 後続）。
-builder.Services.AddSingleton<ICostLimitsProvider, DefaultCostLimitsProvider>();
+
+// FR-17, #139, IADR-0065: 月次費用上限はバージョン付き全体前提条件（#19・設定サービス）から解決する。
+// 利用者が設定サービスで上限を変更すると、しきい値判定（80%/100%）へ反映される。
+// 安全既定（IADR-0063 決定 6）: `Configuration:BaseUrl` 未設定なら HTTP は構築されず前提条件の既定値へ倒れる
+// （＝従来の DefaultCostLimitsProvider と同じ挙動）。よって既定ビルド/CI は外部接続なしで成立する。
+builder.Services.AddAiStockTradingAssumptions(builder.Configuration);
+builder.Services.AddSingleton<ICostLimitsProvider, AssumptionsCostLimitsProvider>();
 builder.Services.AddScoped<ICostLedger, EfCostLedger>();
 // #79, IADR-0055 決定5: LlmCostIncurred の二重計上を防ぐ重複排除ストア（費用台帳とは別テーブル）。
 builder.Services.AddScoped<IProcessedMessageStore, EfProcessedMessageStore>();
@@ -53,9 +61,12 @@ builder.Services.AddHostedService<ProcessedMessageRetentionService>();
 
 // IADR-0011/0027: MassTransit（RabbitMQ）。しきい値到達時の CostThresholdReached 発行に用いる。
 // #79, IADR-0055 決定1: さらに LlmCostIncurred を購読し LLM 費用を計上する（HTTP /costs/record は OwnerOnly のため）。
+// #139, IADR-0065 決定4: AssumptionsChanged を購読し、上限キャッシュを無効化して新しい版へ追随する
+// （購読が外れると TTL 既定 5 分まで上限変更が反映されない）。
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<LlmCostIncurredConsumer>();
+    x.AddConsumer<AssumptionsChangedConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

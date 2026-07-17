@@ -3,8 +3,15 @@ using AiStockTrading.CostControl.Application.Ports;
 
 namespace AiStockTrading.CostControl.Application.Adapters;
 
-// NFR（費用）, IADR-0027: 月次費用上限の暫定供給（前提条件の既定値）。#19 のバージョン付き前提条件からの取得は #22 後続。
+// NFR（費用）, IADR-0027/0065 決定 5: 外部依存を持たない既定の上限供給（前提条件の既定値・05_trading-assumptions §6）。
+//
+// 本番ホスト（Program.cs）が登録するのは AssumptionsCostLimitsProvider の方であり、`Configuration:BaseUrl` 未設定時に
+// 既定値へ倒す判断は共有クライアントへ一本化してある（同じ条件を 2 箇所で判定しないため）。本クラスは Application 層に
+// 外部依存なしの既定実装を置いておくためのもので、位置づけは同層の InMemoryCostLedger と同じ。
 public sealed class DefaultCostLimitsProvider : ICostLimitsProvider
 {
-    public MonthlyCostLimits GetLimits() => TradingAssumptionsDefaults.Create().CostLimits;
+    private static readonly MonthlyCostLimits Defaults = TradingAssumptionsDefaults.Create().CostLimits;
+
+    public ValueTask<MonthlyCostLimits> GetLimitsAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(Defaults);
 }
