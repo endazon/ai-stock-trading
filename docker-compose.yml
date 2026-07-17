@@ -367,6 +367,11 @@ services:
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
       # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
+      # FR-08, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。
+      # fail-safe: 空=NoOp 検索（参考情報なし＝現行動作）。設定時のみ platform RetrievalService（POST /search）へ s2s 照会する。
+      KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
+      # 取得件数（TopK）。空・不正・非正値=既定 5。
+      Retrieval__TopK: ${RETRIEVAL_TOPK:-}
     depends_on:
       <<: *depends-infra
 
