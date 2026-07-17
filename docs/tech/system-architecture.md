@@ -214,7 +214,9 @@ sequenceDiagram
   基盤側と共有する。moomoo OpenD は常駐コンテナ（`deploy/opend/`・IADR-0053）。実アダプタは
   SIMULATE（仮想売買）まで実装済みで、実弾発注は別ゲートで抑止する（ADR-0002 は計画リポ上まだ
   `Proposed`、実装判断は IADR-0056）。
-- **機密**: `ANTHROPIC_API_KEY` / moomoo 資格情報 / Discord Webhook は Vault/Secrets（ADR-0006）。
+- **機密**: moomoo 資格情報 / Discord Webhook は Vault/Secrets（ADR-0006）。**LLM プロバイダ鍵は AST では
+  扱わない**（鍵は MSP の LlmGateway 側が保持し、AST は `LlmGateway:BaseUrl` 経由でゲートウェイを呼ぶだけ。
+  ADR-0010 / IADR-0062 決定6）。
 
 ## 関連仕様
 

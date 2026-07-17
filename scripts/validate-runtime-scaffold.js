@@ -9,8 +9,9 @@
  *   1. 各 Worker に appsettings.json（base）と appsettings.Development.json が存在する。
  *   2. base appsettings.json は「挙動中立」= fail-safe 選択キー（*:Provider / *:BaseUrl / 接続文字列 /
  *      認証 / OTLP / API キー）を含まない。安全既定を将来の編集で壊さないためのガード（IADR-0048 決定 1/2）。
- *   3. .env.example が存在し、機密キー（ANTHROPIC_API_KEY・証券会社資格情報・Discord Webhook 等）は
+ *   3. .env.example が存在し、機密キー（証券会社資格情報・Discord Webhook 等）は
  *      空既定（実値なし）で列挙される。実シークレットらしき値を含まない。
+ *      LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway が保持する。ADR-0010 / IADR-0062 決定6）。
  *   4. docker-compose.yml が存在し、build コンテキストは相対（submodule/単独 両対応）で、env_file に
  *      .env を用いる。
  *   5. backend/Dockerfile・.dockerignore・infra 補助ファイルが存在する。
@@ -60,8 +61,9 @@ const FORBIDDEN_BASE_KEYS = [
 ];
 
 // .env.example で「空既定でなければならない」機密キー。実値混入をブロックする。
+// LLM プロバイダ鍵（ANTHROPIC_API_KEY 等）は列挙しない: AST は鍵を持たず、実 LLM は MSP の LlmGateway
+// 経由でのみ呼ぶ（ADR-0010 / IADR-0062 決定6）。AST の .env.example に鍵のキーを増やさないこと。
 const SECRET_ENV_KEYS = [
-  'ANTHROPIC_API_KEY',
   'COLLECTION_FINNHUB_API_KEY',
   'NOTIFICATIONS_DISCORD_WEBHOOK_URL',
   'MOOMOO_API_KEY',

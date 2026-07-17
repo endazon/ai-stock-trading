@@ -322,8 +322,14 @@ services:
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
       ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
-      # 実 LLM エグレスは未実装（#79）。空=呼ばない。前方互換で受け渡すのみ。
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # FR-04, ADR-0010, IADR-0062: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
+      # fail-safe: 空=Placeholder（実 LLM を呼ばない＝常に Hold）。設定時のみ実照会する。
+      LlmGateway__BaseUrl: ${LLM_GATEWAY_BASEURL:-}
+      # 空・不正・非正値=既定 30 秒（IADR-0062 決定2）。
+      LlmGateway__TimeoutSeconds: ${LLM_GATEWAY_TIMEOUTSECONDS:-}
+      # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0062 決定1）。
+      LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
+      # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0062 決定6）。
     depends_on:
       <<: *depends-infra
 

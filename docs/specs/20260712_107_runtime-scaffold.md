@@ -9,7 +9,7 @@ related_ids:
   - IADR-0016
 author: claude
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-17
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md"
 ---
@@ -19,6 +19,12 @@ plan_refs:
 > ai-stock-trading を単独で `docker compose up` により起動できる実行環境スキャフォールドを整備する。
 > #82（実コンテナ/実 API 前提の E2E）はこの土台の上で別途進める。設計判断は
 > [IADR-0048](../adr/IADR-0048_runtime-scaffold.md)。
+
+> **後日の変更（2026-07-17・issue #11 / [IADR-0062](../adr/IADR-0062_llm-production-wiring.md) 決定6）**:
+> 本仕様書が「fail-safe 選択キー」の例として挙げる **`ANTHROPIC_API_KEY` は、その後 AST から除去された**
+> （コードが読まない死んだ秘密注入だったため）。実 LLM は MSP の LlmGateway（`LlmGateway:BaseUrl`）経由で
+> のみ呼び、**プロバイダ鍵は AST が持たない**（ADR-0010）。本文は #107 時点の記録として残す
+> （作業仕様書は作業/PR 単位の記録であり、後日の変更で遡って書き換えない）。現在の扱いは IADR-0062 決定6 が単一情報源。
 
 ## 起点となる計画書（トレーサビリティ）
 
