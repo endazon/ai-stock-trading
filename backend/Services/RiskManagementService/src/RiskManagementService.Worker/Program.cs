@@ -83,10 +83,18 @@ builder.Services.AddScoped<SizingContextService>();
 builder.Services.AddScoped<OpenPositionsService>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();
-// FR-19, IADR-0006/0040: 相場操縦検出器（#49）の検知アルゴリズム（ManipulativeOrderPatternDetector＋
-// ManipulationPatternAnalyzer）は Application/Domain に実装済み。本番 DI 登録は実注文履歴テレメトリ
-// （発注・訂正・取消イベントの永続化 #13/#17）から IOrderActivitySource を供給できるようになってから行う（切り分け）。
-// それまでは未登録（null で注入され判定は無効）とし、検出器を注入した「フラグ ON＋該当→拒否」は結合テストで担保する。
+// FR-19, #154, IADR-0006/0040/0067: 相場操縦検出器（#49）を本番有効化する。検知アルゴリズム
+// （ManipulativeOrderPatternDetector＋ManipulationPatternAnalyzer）に、注文履歴テレメトリ（注文系イベントの
+// Risk 専有 DB への射影・#154）から IOrderActivitySource を供給する。IOrderActivitySource は同期契約かつ
+// 発注審査のホットパス上のため、供給は他サービスへの同期照会ではなく射影とする（IADR-0018 と同型・IADR-0067）。
+// DbContext が scoped のため射影ストア・供給源も scoped。検知設定は静的既定（TradingDefaults）で改ざん不可（IADR-0040）。
+builder.Services.AddScoped<IOrderActivityStore, EfOrderActivityStore>();
+builder.Services.AddScoped<IOrderActivitySource, EfOrderActivitySource>();
+builder.Services.AddSingleton(
+    AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateManipulationDetectionSettings());
+builder.Services.AddScoped<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector,
+    ManipulativeOrderPatternDetector>();
+// OrderScreeningService は検出器を GetService（null 許容）で受けるため、上の登録により相場操縦判定が有効になる。
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -106,6 +114,11 @@ builder.Services.AddMassTransit(x =>
     // IADR-0018: 承認・約定を購読して取引台帳へ射影する（IPortfolioStateProvider の実データ源）。
     x.AddConsumer<OrderApprovedLedgerConsumer>();
     x.AddConsumer<OrderExecutedLedgerConsumer>();
+    // FR-19, #154, IADR-0067: 承認・約定・訂正・取消を購読して注文アクティビティへ射影する（相場操縦検知の入力源）。
+    x.AddConsumer<OrderApprovedActivityConsumer>();
+    x.AddConsumer<OrderExecutedActivityConsumer>();
+    x.AddConsumer<OrderModifiedActivityConsumer>();
+    x.AddConsumer<OrderCancelledActivityConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

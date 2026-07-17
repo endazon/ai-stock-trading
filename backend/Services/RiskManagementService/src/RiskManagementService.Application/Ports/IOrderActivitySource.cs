@@ -3,9 +3,10 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Ports;
 
-// FR-19, IADR-0040: 相場操縦検知の入力＝直近の注文アクティビティ窓を供給するポート。
-// RiskEvaluator は同期純関数のため同期契約とする。実注文履歴テレメトリ（発注・訂正・取消イベントの永続化 #13/#17）
-// が確定するまでは InMemoryOrderActivitySource（プロセス内リングバッファ）で供給する。
+// FR-19, IADR-0040/0067: 相場操縦検知の入力＝直近の注文アクティビティ窓を供給するポート。
+// RiskEvaluator は同期純関数のため同期契約とする。本番は注文履歴テレメトリ（注文系イベントの Risk 専有 DB への
+// 射影・#154）を読む EfOrderActivitySource が供給する。単体テスト・ローカル実行では InMemoryOrderActivityStore
+// （射影＋読み取り）または InMemoryOrderActivitySource（事前構築した記録のリングバッファ）を用いる。
 public interface IOrderActivitySource
 {
     /// <summary>

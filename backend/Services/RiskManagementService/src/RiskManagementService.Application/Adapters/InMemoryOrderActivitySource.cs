@@ -5,14 +5,16 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Adapters;
 
-// FR-19, IADR-0040: 注文アクティビティ源のインメモリ実装（プロセス内リングバッファ）。
-// 実注文履歴テレメトリ（発注・訂正・取消イベントの永続化 #13/#17）が確定するまでの供給。ホスト結線・実 E2E は後続（#82）。
+// FR-19, IADR-0040/0067: 注文アクティビティ源のインメモリ実装（プロセス内リングバッファ）。
+// 事前構築した OrderActivityRecord を Record で流し込んで検知アルゴリズムを検証するためのテスト・ローカル用供給。
+// 本番は注文系イベントの射影を読む EfOrderActivitySource が供給し、射影＋読み取りのインメモリ版は
+// InMemoryOrderActivityStore（#154）が担う。実ホスト結線・実 E2E は後続（#82）。
 // （銘柄, 市場）別に直近の OrderActivityRecord を保持し、窓外を刈り込んで返す。
 public sealed class InMemoryOrderActivitySource : IOrderActivitySource
 {
     // 1 キーあたりの保持上限。窓長を大きく超える履歴は不要（相場操縦検知は直近窓のみを見る）。
     // キー（銘柄, 市場）自体は明示削除しないが、基数は取引対象銘柄数で実質有界。恒久運用の刈り込みは
-    // 実注文履歴テレメトリ（#13/#17）での実装差し替え時に扱う（本実装は結線先確定までの暫定）。
+    // 本番の射影ストア（EfOrderActivityStore・#154）側の保持方針で扱う（本実装はテスト・ローカル用）。
     private const int MaxRecordsPerKey = 512;
 
     private readonly ConcurrentDictionary<(string Symbol, Market Market), List<OrderActivityRecord>> _records = new();

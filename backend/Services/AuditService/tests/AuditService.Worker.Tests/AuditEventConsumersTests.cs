@@ -81,6 +81,8 @@ public class AuditEventConsumersTests
         await harness.Bus.Publish(
             new OrderCancelled(decisionId, "ORD-1", "pause による強制取消", DateTimeOffset.UtcNow));
 
+        // 3 イベントすべての消費完了を待ってから台帳を読む（並行負荷下で承認の消費が遅れると取りこぼすため）。
+        (await harness.Consumed.Any<OrderApproved>()).Should().BeTrue();
         (await harness.Consumed.Any<OrderModified>()).Should().BeTrue();
         (await harness.Consumed.Any<OrderCancelled>()).Should().BeTrue();
 

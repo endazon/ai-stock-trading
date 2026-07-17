@@ -108,3 +108,32 @@ internal sealed class TradeFillRow
 
     public DateTimeOffset ExecutedAt { get; set; }
 }
+
+// FR-19, #154, IADR-0067: 相場操縦検知の入力＝1 注文のライフサイクル要約を DecisionId で保持する行。
+// 承認で作成し、約定・訂正・取消で更新する（可変・射影）。取引台帳（ApprovedOrderRow/TradeFillRow）とは別テーブル。
+// 取引台帳は Filled のみを載せる設計で、本用途の母集団である「約定ゼロで取り消された注文」を構造的に捨てるため、
+// 関心・寿命の異なる別ストアに射影する（IADR-0067）。
+internal sealed class OrderActivityRow
+{
+    public Guid DecisionId { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.TradeSide Side { get; set; }
+
+    /// <summary>発注時刻（承認時刻で近似・IADR-0067）。窓判定・生存時間の起点。</summary>
+    public DateTimeOffset PlacedAt { get; set; }
+
+    public int Quantity { get; set; }
+
+    public int FilledQuantity { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.OrderStatus Status { get; set; }
+
+    public int AmendmentCount { get; set; }
+
+    /// <summary>終端時刻（取消/失効/約定などで確定した時刻）。未確定なら null。生存時間の終点。</summary>
+    public DateTimeOffset? TerminalAt { get; set; }
+}
