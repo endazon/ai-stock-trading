@@ -86,4 +86,124 @@ public class PaperBrokerAdapterTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    // --- #154, IADR-0067: 非終端状態（immediateFill=false）と訂正・取消 ---
+    // 既定（immediateFill=true）の挙動は上のテスト群が固定する。ここでは既定を明示指定しても現挙動と同一であること、
+    // および opt-in したときだけ非終端になり訂正・取消が成立することを検証する。
+
+    [Fact]
+    public async Task 即時約定を明示的に有効化しても既定と同じく即時全量約定する()
+    {
+        var broker = new PaperBrokerAdapter(immediateFill: true);
+
+        var order = await broker.PlaceOrderAsync(Intent(quantity: 10, price: 3000m));
+
+        order.Status.Should().Be(OrderStatus.Filled);
+        order.FilledQuantity.Should().Be(10);
+        order.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task 即時約定を無効化すると発注は非終端の受付状態に留まる()
+    {
+        // IADR-0067: 訂正・取消の配管を検証可能にするための最小の仕組み。本番配線の既定では有効にしない。
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+
+        var order = await broker.PlaceOrderAsync(Intent(quantity: 10, price: 3000m));
+
+        order.Status.Should().Be(OrderStatus.Accepted);
+        order.FilledQuantity.Should().Be(0);
+        order.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 即時約定を無効化しても不正な注文は証券会社拒否になる()
+    {
+        // 不正注文の拒否（Issue #30）は約定モードに依らない安全側判定として維持する。
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+
+        var order = await broker.PlaceOrderAsync(Intent(quantity: 0));
+
+        order.Status.Should().Be(OrderStatus.Rejected);
+    }
+
+    [Fact]
+    public async Task 受付状態の注文を取消できる()
+    {
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+        var placed = await broker.PlaceOrderAsync(Intent());
+
+        await broker.CancelOrderAsync(placed.OrderId);
+
+        var fetched = await broker.GetOrderAsync(placed.OrderId);
+        fetched!.Status.Should().Be(OrderStatus.Cancelled);
+        fetched.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task 受付状態の注文を訂正できる()
+    {
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+        var placed = await broker.PlaceOrderAsync(Intent(quantity: 10, price: 3000m));
+
+        var modified = await broker.ModifyOrderAsync(placed.OrderId, quantity: 5, price: 2900m);
+
+        modified.Intent.Quantity.Should().Be(5);
+        modified.Intent.Price.Should().Be(2900m);
+        modified.Status.Should().Be(OrderStatus.Accepted);
+
+        var fetched = await broker.GetOrderAsync(placed.OrderId);
+        fetched!.Intent.Quantity.Should().Be(5);
+        fetched.Intent.Price.Should().Be(2900m);
+    }
+
+    [Fact]
+    public async Task 約定済み注文の訂正は失敗する()
+    {
+        var broker = new PaperBrokerAdapter();
+        var placed = await broker.PlaceOrderAsync(Intent());
+
+        var act = () => broker.ModifyOrderAsync(placed.OrderId, quantity: 5, price: 2900m);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task 未知の注文IDの訂正は失敗する()
+    {
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+
+        var act = () => broker.ModifyOrderAsync("unknown-order-id", quantity: 5, price: 2900m);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task 未知の注文IDの取消は失敗する()
+    {
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+
+        var act = () => broker.CancelOrderAsync("unknown-order-id");
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData(0, 2900)]   // 数量ゼロ
+    [InlineData(-5, 2900)]  // 数量が負
+    [InlineData(5, 0)]      // 価格ゼロ
+    [InlineData(5, -1)]     // 価格が負
+    public async Task 不正な内容への訂正は失敗し元の注文を壊さない(int quantity, decimal price)
+    {
+        // 発注時（Issue #30）と同じ妥当性判定を訂正にも適用する。実ブローカーが拒否する内容へは訂正しない。
+        var broker = new PaperBrokerAdapter(immediateFill: false);
+        var placed = await broker.PlaceOrderAsync(Intent(quantity: 10, price: 3000m));
+
+        var act = () => broker.ModifyOrderAsync(placed.OrderId, quantity, price);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        var fetched = await broker.GetOrderAsync(placed.OrderId);
+        fetched!.Intent.Quantity.Should().Be(10);
+        fetched.Intent.Price.Should().Be(3000m);
+    }
 }
