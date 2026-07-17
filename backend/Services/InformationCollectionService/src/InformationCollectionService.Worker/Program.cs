@@ -3,6 +3,8 @@ using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 using AiStockTrading.InformationCollection.Worker.Composable.Polling;
+using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
@@ -46,8 +48,25 @@ builder.Services.AddSingleton<IInformationSource>(sp => InformationSourceFactory
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>()));
 
-// FR-01, FR-08: KB シンク（既定は no-op/ログ。実 platform KB 連携は #18）。
-builder.Services.AddSingleton<IKnowledgeBaseSink, LoggingKnowledgeBaseSink>();
+// FR-01, FR-08, IADR-0069: KB 連携（保存 IKnowledgeBaseWriter・取得 IKnowledgeBaseSearch）を配線する。
+// KnowledgeBase:Documents:BaseUrl 未設定なら保存は no-op、Search:BaseUrl 未設定なら取得は no-op（安全既定）。
+// s2s トークンは ServiceAuth:ClientId/ClientSecret 設定時のみ付与（未設定は 401 → fail-safe）。
+builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
+
+// FR-01, FR-08, IADR-0069 決定 4: 収集情報の KB シンク。既定は no-op/ログ（LoggingKnowledgeBaseSink）を維持し、
+// KnowledgeBase:Documents:BaseUrl 設定時のみ実 KB 保存（KnowledgeBaseWriterSink → IKnowledgeBaseWriter）へ切り替える。
+// 選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。
+builder.Services.AddSingleton<LoggingKnowledgeBaseSink>();
+builder.Services.AddSingleton<IKnowledgeBaseSink>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["KnowledgeBase:Documents:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
+        return sp.GetRequiredService<LoggingKnowledgeBaseSink>();
+
+    return new KnowledgeBaseWriterSink(
+        sp.GetRequiredService<IKnowledgeBaseWriter>(),
+        sp.GetRequiredService<ILogger<KnowledgeBaseWriterSink>>());
+});
 
 // 収集オーケストレーション（scoped）。ポーリングは巡回ごとに DI スコープを作る。
 builder.Services.AddScoped<AppSvc>();
