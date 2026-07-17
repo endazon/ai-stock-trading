@@ -231,6 +231,10 @@ services:
       # IADR-0051: s2s サービストークン（client_credentials）。空 secret=無効（認証なし→401→空列の安全既定）。#76。
       ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
+      # FR-10, #158, IADR-0066/0068: 損切り検知の現在値。空/none=no-op（実接続しない＝損切り検知対象なし＝安全既定）。
+      # finnhub＋MARKETDATA_FINNHUB_API_KEY で opt-in（手動 live 検証・CI 対象外）。前回値フォールバックはかけない。
+      MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
+      MarketData__Finnhub__ApiKey: ${MARKETDATA_FINNHUB_API_KEY:-}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -301,6 +305,10 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=report_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # FR-16, #158, IADR-0068: 評価損益の現在値。空/none=no-op（評価損益 0）。finnhub＋MARKETDATA_FINNHUB_API_KEY で
+      # opt-in（報告書はゲート無し＝差し替えがそのまま有効化）。手動 live 検証・CI 対象外。
+      MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
+      MarketData__Finnhub__ApiKey: ${MARKETDATA_FINNHUB_API_KEY:-}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -320,6 +328,12 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=risk_management_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # FR-10, #81, #158, IADR-0066/0068: 時価評価（含み損益・DD）。EnableMarkToMarket=true は最大DD の取引ゲート
+      # （IADR-0008）の判定入力を変えるため、実市況の live 検証を経てから人手で切り替える（既定 false）。
+      # Provider 空/none=no-op（実接続しない）。finnhub＋MARKETDATA_FINNHUB_API_KEY で実市況を opt-in する。
+      MarketData__EnableMarkToMarket: ${MARKETDATA_ENABLEMARKTOMARKET:-false}
+      MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
+      MarketData__Finnhub__ApiKey: ${MARKETDATA_FINNHUB_API_KEY:-}
     depends_on:
       <<: *depends-infra
       postgres:

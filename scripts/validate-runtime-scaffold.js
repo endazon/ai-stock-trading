@@ -68,6 +68,8 @@ const FORBIDDEN_BASE_KEYS = [
 // 経由でのみ呼ぶ（ADR-0010 / IADR-0061 決定6）。AST の .env.example に鍵のキーを増やさないこと。
 const SECRET_ENV_KEYS = [
   'COLLECTION_FINNHUB_API_KEY',
+  // IADR-0068 (#158): 実市況（現在値）フィードの Finnhub 鍵。情報収集の鍵とは別枠（有効化・レート予算とも別）。
+  'MARKETDATA_FINNHUB_API_KEY',
   'NOTIFICATIONS_DISCORD_WEBHOOK_URL',
   'MOOMOO_API_KEY',
   'MOOMOO_API_SECRET',
