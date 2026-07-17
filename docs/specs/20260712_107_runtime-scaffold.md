@@ -9,7 +9,7 @@ related_ids:
   - IADR-0016
 author: claude
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-17
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md"
 ---
