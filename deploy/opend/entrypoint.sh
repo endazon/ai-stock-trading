@@ -20,7 +20,7 @@
 #    非暗号は OpenD が 127.0.0.1 listen のとき（同一 Pod/loopback）のみ許可される。
 set -euo pipefail
 
-# #132 / IADR-0059 決定 3: 生成物を所有者のみに絞る。OpenD.xml は login_pwd_md5（＝ログイン資格情報）を含む。
+# #132 / IADR-0061 決定 3: 生成物を所有者のみに絞る。OpenD.xml は login_pwd_md5（＝ログイン資格情報）を含む。
 # 同一ユーザーが読み書きするだけなので挙動は変わらない（純粋なハードニング）。
 umask 077
 
@@ -34,7 +34,7 @@ LOG_LEVEL="${OPEND_LOG_LEVEL:-info}"
 cd /opt/opend
 
 # 暗号化: RSA 秘密鍵ファイルが指定されていれば OpenD.xml に <rsa_private_key> を追加する（#13）。
-# #132 / IADR-0059: 鍵が指定されているのに不在なら**起動時に落とす**。従来は黙って非暗号で起動していたが、
+# #132 / IADR-0061: 鍵が指定されているのに不在なら**起動時に落とす**。従来は黙って非暗号で起動していたが、
 # それだと「接続はするが cross-network の trade だけ失敗する」形でしか表面化しない（Secret のマウント漏れ）。
 # クライアント側（order-execution）の preflight と対称にする。
 RSA_LINE=""
