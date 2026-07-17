@@ -27,7 +27,9 @@ public sealed class LedgerPortfolioStateProvider(
         var state = PortfolioProjection.Project(fills, clock.Today, TradingDefaults.InitialCapital, prices);
 
         // 現在エクイティ＝当日開始基準（初期資金＋当日より前の実現）＋当日実現＋含み（Project の定義と同一）。
-        // ピークは台帳から再計算し（IADR-0065）、DD だけを差し替える（射影を二度走らせない）。
+        // ピークは台帳から再計算し（IADR-0065）、DD だけを差し替える（Project をもう一度走らせない）。
+        // 有効時は台帳を 3 回畳み込む（建玉射影・射影・ピーク）。1 回に畳むには Project がピークも返す必要があり、
+        // 射影の責務に DD の入力を混ぜることになるため採らない。台帳はメモリ上の小さな列で O(n) のため許容する。
         var equity = state.Capital + state.DailyRealizedPnl + state.UnrealizedPnl;
         var highWaterMark = PortfolioValuation.EquityHighWaterMark(fills, TradingDefaults.InitialCapital, equity);
 
