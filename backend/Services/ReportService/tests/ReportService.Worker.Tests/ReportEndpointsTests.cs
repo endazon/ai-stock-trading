@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.KnowledgeBase;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using FluentAssertions;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;
@@ -249,6 +252,64 @@ public class ReportEndpointsTests
         draft.Markdown.Should().Contain("report_type: weekly");
         draft.Markdown.Should().Contain("## 1. 週間サマリ");
         draft.Markdown.Should().Contain("翌週は半導体重点");
+    }
+
+    // FR-08, IADR-0069/0071 決定3: 確定遷移で確定報告書が KB へ保存される（既定 no-op を記録用に差し替えて検証）。
+    [Fact]
+    public async Task 確定すると確定報告書が_KB_へ保存される()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var recorder = new RecordingKnowledgeBaseWriter();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IKnowledgeBaseWriter>();
+                s.AddSingleton<IKnowledgeBaseWriter>(recorder);
+            }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        recorder.Saved.Should().ContainSingle();
+        recorder.Saved[0].Title.Should().Be("確定報告書 Daily daily-2026-07-10");
+        recorder.Saved[0].Confidentiality.Should().Be(KnowledgeConfidentiality.Internal);
+    }
+
+    // 冪等な再確定（遷移なし）では KB 保存を重ねない。
+    [Fact]
+    public async Task 冪等な再確定では_KB_保存を重ねない()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var recorder = new RecordingKnowledgeBaseWriter();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IKnowledgeBaseWriter>();
+                s.AddSingleton<IKnowledgeBaseWriter>(recorder);
+            }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        // 確定済みの再確定（冪等・遷移なし）。
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+
+        recorder.Saved.Should().ContainSingle();
+    }
+
+    private sealed class RecordingKnowledgeBaseWriter : IKnowledgeBaseWriter
+    {
+        public List<KnowledgeDocument> Saved { get; } = [];
+
+        public Task<KnowledgeWriteResult> SaveAsync(KnowledgeDocument document, CancellationToken cancellationToken = default)
+        {
+            Saved.Add(document);
+            return Task.FromResult(KnowledgeWriteResult.Ok(Guid.NewGuid()));
+        }
     }
 
     private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);

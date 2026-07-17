@@ -1,14 +1,18 @@
 using AiStockTrading.Report.Application;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 namespace AiStockTrading.Report.Worker.Foundation.Endpoints;
@@ -103,8 +107,10 @@ internal static class ReportEndpoints
             return Results.Ok(new { periodKey, version });
         });
 
-        // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行。対象が無ければ 404。
-        owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc, IPublishEndpoint bus, HttpContext http) =>
+        // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行し、確定報告書を KB へ保存する。
+        // 対象が無ければ 404。KB 保存は best-effort（既定 no-op・fail-safe＝確定を壊さない・FR-08/IADR-0071 決定3）。
+        owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc,
+            IPublishEndpoint bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, HttpContext http) =>
         {
             var actor = ActorOf(http);
             var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);
@@ -116,6 +122,18 @@ internal static class ReportEndpoints
                 var r = result.Report;
                 await bus.Publish(new ReportConfirmed(
                     r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
+
+                // FR-08, IADR-0069/0071 決定3: 確定報告書を KB へ保存（カタログ登録）。既定 no-op。
+                // 保存の失敗・例外は握りつぶし確定を壊さない（KB は best-effort・保存ポート自体も fail-safe）。
+                try
+                {
+                    await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r), http.RequestAborted);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    loggerFactory.CreateLogger("ReportKnowledgeBase")
+                        .LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
+                }
             }
 
             return Results.Ok(result.Report);

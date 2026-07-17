@@ -6,6 +6,7 @@ using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -93,6 +94,10 @@ builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
     sp.GetRequiredService<TimeProvider>(),
     TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
 builder.Services.AddScoped<ReportDraftService>();
+
+// FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存（共有クライアント）。既定は no-op（KnowledgeBase:Documents:BaseUrl
+// 未設定＝保存しない＝現行挙動）、設定時のみ実 platform 文書管理へ opt-in。保存は fail-safe（確定を壊さない）。
+builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 
 // IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。
 builder.Services.AddMassTransit(x =>
