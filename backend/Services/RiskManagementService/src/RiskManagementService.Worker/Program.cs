@@ -51,6 +51,9 @@ builder.Services.AddScoped<IRiskSettingsStore, EfRiskSettingsStore>();
 builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
+// FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
+builder.Services.AddScoped<IStageGateStore, EfStageGateStore>();
+builder.Services.AddScoped<IStagePerformanceStore, EfStagePerformanceStore>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。
 // DbContext が scoped のため台帳ストア・プロバイダも scoped。
 builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();
@@ -91,6 +94,10 @@ builder.Services.AddScoped<SizingContextService>();
 builder.Services.AddScoped<OpenPositionsService>();
 builder.Services.AddScoped<KillSwitchService>();
 builder.Services.AddScoped<RiskSettingsService>();
+// FR-20, UC-06, ADR-0008, IADR-0041/0070: 段階ゲート遷移サービス。段階ゲート方針は TradingDefaults を参照（変更しない）。
+// 撤退の自動安全側は KillSwitchService を通す（自動＝停止・承認＝段階変更）。
+builder.Services.AddSingleton(AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
+builder.Services.AddScoped<StageGateService>();
 // FR-19, #154, IADR-0006/0040/0067: 相場操縦検出器（#49）を本番有効化する。検知アルゴリズム
 // （ManipulativeOrderPatternDetector＋ManipulationPatternAnalyzer）に、注文履歴テレメトリ（注文系イベントの
 // Risk 専有 DB への射影・#154）から IOrderActivitySource を供給する。IOrderActivitySource は同期契約かつ

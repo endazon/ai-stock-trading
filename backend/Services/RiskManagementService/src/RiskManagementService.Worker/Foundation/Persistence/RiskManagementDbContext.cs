@@ -22,6 +22,11 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // FR-19, #154, IADR-0067: 相場操縦検知の入力＝注文アクティビティの射影。
     public DbSet<OrderActivityRow> OrderActivities => Set<OrderActivityRow>();
 
+    // FR-20, UC-06, IADR-0070: 段階ゲートの遷移履歴（追記専用）と段階別実績（単一行）。
+    public DbSet<StageTransitionRow> StageTransitions => Set<StageTransitionRow>();
+
+    public DbSet<StagePerformanceRow> StagePerformance => Set<StagePerformanceRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -90,6 +95,24 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
             // 相場操縦検知の窓照会（銘柄・市場別に発注時刻の範囲を切り出す）用の複合インデックス。
             e.HasIndex(r => new { r.Symbol, r.Market, r.PlacedAt });
+        });
+
+        // FR-20, UC-06, IADR-0070: 段階遷移履歴（追記専用）。Sequence が主キー＝一意連番で並行二重追記を弾く。
+        mb.Entity<StageTransitionRow>(e =>
+        {
+            e.ToTable("stage_transitions");
+            e.HasKey(r => r.Sequence);
+            e.Property(r => r.Sequence).ValueGeneratedNever();
+            e.Property(r => r.ApprovedBy).HasMaxLength(256).IsRequired();
+            e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
+        });
+
+        // FR-20, FR-15, IADR-0070: 段階別実績（単一行）。未記録は fail-safe 既定を返す（ストア側）。
+        mb.Entity<StagePerformanceRow>(e =>
+        {
+            e.ToTable("stage_performance");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
         });
     }
 }
