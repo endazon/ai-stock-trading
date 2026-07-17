@@ -4,6 +4,7 @@ using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -18,6 +19,24 @@ public class HttpLlmCompletionClientTests
         new(new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
             NullLogger<HttpLlmCompletionClient>.Instance, "internal", "trade-decision",
             reporter ?? new NoOpLlmUsageReporter());
+
+    // #11, FR-11, IADR-0062 決定1: 全量ログ（プロンプト・生出力）を検証するためのクライアント。
+    private static HttpLlmCompletionClient LoggingClient(HttpMessageHandler handler, ILogger<HttpLlmCompletionClient> logger, bool logPrompts) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
+            logger, "internal", "trade-decision", new NoOpLlmUsageReporter(), logPrompts);
+
+    // 出力されたログ本文を記録するだけの fake。
+    private sealed class RecordingLogger : ILogger<HttpLlmCompletionClient>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
 
     // 計測を記録するだけの fake（publish しない）。
     private sealed class RecordingReporter : ILlmUsageReporter
@@ -155,6 +174,52 @@ public class HttpLlmCompletionClientTests
         doc.RootElement.GetProperty("model").GetString().Should().Be("primary-model");
         doc.RootElement.GetProperty("confidentiality").GetString().Should().Be("internal");
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("trade-decision");
+    }
+
+    // #11, FR-11, IADR-0062 決定1: 受け入れ基準「プロンプト・入出力・根拠が全量ログに残る」。
+    // 有効化時はプロンプト本文と LLM の生出力を記録する（事後に判断根拠を再構成できること）。
+    [Fact]
+    public async Task LogPrompts有効時_プロンプト本文と生出力を全量ログに残す()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude","inputTokens":10,"outputTokens":5,"sent":true}""");
+
+        await LoggingClient(handler, logger, logPrompts: true).CompleteAsync("私の長いプロンプト", "primary-model");
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("私の長いプロンプト");
+        log.Should().Contain("上昇基調");
+    }
+
+    // 既定（オフ）ではプロンプト・生出力を残さない。プロンプトは保有ポジション・資金残枠等の機微を含むため、
+    // 既定でログ基盤へ流さない（IADR-0062 決定1 の最小権限）。
+    [Fact]
+    public async Task LogPrompts既定は_プロンプトも生出力も残さない()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude","inputTokens":10,"outputTokens":5,"sent":true}""");
+
+        await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("私の長いプロンプト", "primary-model");
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().NotContain("私の長いプロンプト");
+        log.Should().NotContain("上昇基調");
+    }
+
+    // IADR-0062 決定1 の不変条件: 全量ログを有効にしても安全既定（IADR-0017）は変わらない。
+    [Fact]
+    public async Task LogPrompts有効でも_送信拒否や非2xxは_Hold_取引しない()
+    {
+        var logger = new RecordingLogger();
+        (await LoggingClient(new StubHandler(HttpStatusCode.OK,
+            """{"text":"拒否","sent":false}"""), logger, logPrompts: true).CompleteAsync("p"))
+            .Should().Contain("Hold");
+        (await LoggingClient(new StubHandler(HttpStatusCode.InternalServerError, ""), logger, logPrompts: true).CompleteAsync("p"))
+            .Should().Contain("Hold");
+        (await LoggingClient(new ThrowingHandler(), logger, logPrompts: true).CompleteAsync("p"))
+            .Should().Contain("Hold");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.OrderExecution.Worker.Tests;
 
-// #132, FR-05, ADR-0002, IADR-0016, IADR-0059: OpenD 接続パラメータの外部化と、本番切替の安全ゲートを検証する。
+// #132, FR-05, ADR-0002, IADR-0016, IADR-0061: OpenD 接続パラメータの外部化と、本番切替の安全ゲートを検証する。
 // 本テストは実 OpenD を使わない（構成の解釈と preflight のみ）。実接続・実発注は #132 の実測フェーズ（実基盤）。
 //
 // ⚠️ ここでの「TrdEnv ゲート」は実弾を可能にするものではない。TrdHeader は TrdEnv_Simulate 固定のまま
@@ -74,7 +74,7 @@ public class MoomooBrokerOptionsTests
             .WithMessage("*ReplyTimeoutSeconds*");
     }
 
-    // ---- 実弾（TrdEnv_Real）を拒否する閂（IADR-0059 決定 5）----
+    // ---- 実弾（TrdEnv_Real）を拒否する閂（IADR-0061 決定 5）----
 
     [Fact]
     public void TrdEnv_未設定なら_SIMULATE_として扱う()
@@ -100,7 +100,7 @@ public class MoomooBrokerOptionsTests
     [InlineData("1")]
     public void TrdEnv_に実弾を要求されたら起動時に停止する(string configured)
     {
-        // 黙って SIMULATE へ倒すと「実弾で動いている」と運用者が誤認する。明示的に落とす（IADR-0059 決定 5）。
+        // 黙って SIMULATE へ倒すと「実弾で動いている」と運用者が誤認する。明示的に落とす（IADR-0061 決定 5）。
         var act = () => MoomooBrokerOptions.FromConfiguration(Config(("Broker:Moomoo:TrdEnv", configured)));
 
         act.Should().Throw<InvalidOperationException>()

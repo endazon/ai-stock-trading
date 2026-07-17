@@ -36,5 +36,7 @@ docker compose up -d          # infra + 10 サービス
 
 ## 安全・機密
 
-- 実シークレット（`ANTHROPIC_API_KEY`・証券会社資格情報・Webhook 等）はコミットしない。
+- 実シークレット（証券会社資格情報・Webhook・各種 API キー等）はコミットしない。
   `.env.example` はキー名と用途のみ（空既定）。本番資格情報は Vault/Secrets（ADR-0006 / #24）。
+- **LLM プロバイダ鍵は AST では扱わない**。実 LLM は MSP の LlmGateway 経由でのみ呼び、鍵はゲートウェイ側が
+  保持する（ADR-0010 / [IADR-0062](docs/adr/IADR-0062_llm-production-wiring.md) 決定6）。AST に鍵を置かないこと。
