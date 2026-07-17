@@ -31,6 +31,21 @@ public sealed class ReportService(IReportStore store, IClock clock)
         return store.Confirm(periodKey, expectedVersion, clock.UtcNow);
     }
 
+    /// <summary>FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
+    public ReportReview? GetReview(string periodKey) => store.GetReview(periodKey);
+
+    /// <summary>
+    /// FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー操作（提示・差し戻し）を適用する。利用者のみ（actor 必須）。
+    /// 版番号付きの楽観排他・不正遷移・確定済み変更は状態機械が拒否し、拒否理由を含む決定を返す。対象が無ければ null。
+    /// </summary>
+    public ReviewDecision? ApplyReview(string periodKey, ReviewAction action, int expectedVersion, string actor)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        return store.ApplyReview(periodKey, new ReviewCommand(action, actor, expectedVersion));
+    }
+
     /// <summary>最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。</summary>
     public ConfirmedDailyPolicy? GetConfirmedDailyPolicy()
     {

@@ -256,6 +256,72 @@ public class ReportEndpointsTests
         draft.Markdown.Should().Contain("翌週は半導体重点");
     }
 
+    // FR-07, UC-03〜05, IADR-0042/0071 決定5: 対話的確定のレビュー結線（提示・差し戻し・照会・確定連携）。
+    [Fact]
+    public async Task 提示_差し戻し_のレビュー遷移と照会()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+
+        // 初期はレビュー局面 Drafting。
+        (await client.GetFromJsonAsync<ReviewDto>("/reports/daily-2026-07-10/review"))!.State.Should().Be("Drafting");
+
+        // 提示 → PendingApproval（版は不変）。
+        var present = await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 });
+        present.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await present.Content.ReadFromJsonAsync<ReviewDto>())!.State.Should().Be("PendingApproval");
+
+        // 差し戻し → ChangesRequested。
+        var rc = await client.PostAsJsonAsync("/reports/daily-2026-07-10/request-changes", new { ExpectedVersion = 1 });
+        rc.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await rc.Content.ReadFromJsonAsync<ReviewDto>())!.State.Should().Be("ChangesRequested");
+    }
+
+    [Fact]
+    public async Task レビュー操作は_未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 版番号不一致の提示は_409()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 99 }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 確定済みへの提示は_409()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 2 }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 存在しない報告書のレビュー照会は_404()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        (await OwnerClient(factory).GetAsync("/reports/daily-nope/review")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     // FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップは初期監視銘柄（構成）を含む月報ドラフトを返す。
     [Fact]
     public async Task 初回月報ブートストラップは初期監視銘柄を含む月報ドラフトを返す()
@@ -370,6 +436,8 @@ public class ReportEndpointsTests
             return Task.FromResult(KnowledgeWriteResult.Ok(Guid.NewGuid()));
         }
     }
+
+    private sealed record ReviewDto(string PeriodKey, string State, int Version);
 
     private sealed record BootstrapDto(string Kind, string PeriodKey, string PolicySummary);
 
