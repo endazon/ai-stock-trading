@@ -143,7 +143,7 @@ plan_refs:
 
 ## 残課題（後続）
 
-- 実市況実装（OpenD 市況 or Finnhub 共有化）＋手動 opt-in の live 検証＋ゲート ON → 後続 issue（#81 から分離）。
+- 実市況実装（OpenD 市況 or Finnhub 共有化）＋手動 opt-in の live 検証＋ゲート ON → [#158](https://github.com/endazon/ai-stock-trading/issues/158)（#81 から分離）。
 - **市場別の取引日境界**: 単一取引日境界は `PortfolioProjection.TradingDayOffset`（JST=+9・DST なし）を唯一の定義とし
   変更しない。米国市場の取引日が JST 境界と一致しない点は IADR-0018 からの既知の残課題として引き続き後続とする。
 - 市場監視 `HttpPositionStore` の損切り価格 3% 近似（IADR-0030）は本件と別系統のため対象外のまま。
