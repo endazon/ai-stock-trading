@@ -45,10 +45,10 @@ plan_refs:
 **実接続を既定オフ（opt-in）にすべき決定的な制約（本作業の設計根拠）:**
 
 1. **書き込みは強い認可ゲートの背後** — `POST /documents` は `RequireAuthorization(platform-admin, platform-operator)`
-   （サービス自身が最終防衛線, platform IADR-0044）。当リポの s2s クライアント（`trading-service` / client_credentials）は
+   （サービス自身が最終防衛線, microservices-platform IADR-0044）。当リポの s2s クライアント（`trading-service` / client_credentials）は
    このロールを持たない → **403**。実書き込みには Keycloak でのロール付与が別途必要。
 2. **機密区分が必須** — `POST /documents` は属性 `confidentiality ∈ {public, internal, confidential, restricted}` を必須検証
-   （platform IADR-0047）。欠落・未知値は 400。
+   （microservices-platform IADR-0047）。欠落・未知値は 400。
 3. **「保存＝即 RAG 検索可能」は platform 内部パイプライン依存** — `POST /documents` はカタログ登録＋イベント発行まで。
    本文（Markdown 実体）はオブジェクトストレージ（`storage://`）に載り、Ingestion が Qdrant へ取り込んで初めて検索対象になる。
    当リポ側はオブジェクトストレージ書き込み口を持たない（本作業の対象外・後続）。

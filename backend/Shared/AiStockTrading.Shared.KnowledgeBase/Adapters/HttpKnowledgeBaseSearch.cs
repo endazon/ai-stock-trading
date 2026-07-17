@@ -66,7 +66,7 @@ internal sealed class HttpKnowledgeBaseSearch(
                     r.DocumentId,
                     r.DocumentTitle,
                     r.Text,
-                    r.Score,
+                    (double)r.Score, // platform は float スコア。KnowledgeHit は double のため明示変換（拡大・非損失）。
                     r.MarkdownUri,
                     r.Tags ?? []))
                 .ToList();

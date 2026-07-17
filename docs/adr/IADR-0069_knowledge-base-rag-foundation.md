@@ -31,6 +31,13 @@ plan_refs:
   [IADR-0063](IADR-0063_assumptions-versioned-resolution.md)（共有クライアント＋`BaseUrl` 未設定 fail-safe の先例）、
   [IADR-0049](IADR-0049_integration-e2e-foundation.md)（CI と実基盤依存テストの切り分け）
 
+> **参照上の注意（ADR 番号の跨ぎ）**: 本文中の `microservices-platform IADR-00xx` は上流の基盤リポジトリ
+> [`../microservices-platform`](../../../microservices-platform) 側の ADR を指し、**本リポの `docs/adr/IADR-00xx` とは
+> 別採番（無関係）**である。とくに `microservices-platform IADR-0044`（文書書き込みのロール多層防御）・`IADR-0047`
+> （機密区分の必須検証）は本リポの IADR-0044/0047 とは別物なので混同しないこと。実在は着手前に
+> `microservices-platform/src/knowledge/.../DocumentEndpoints.cs`（`RequireRole(AdminRole, OperatorRole)`）・
+> `.../DocumentAttributes.cs`（`ValidateConfidentiality`）で確認済み。
+
 ## 背景・課題
 
 FR-08 は「確定報告書・収集情報・判断根拠を platform のナレッジベースへ保存し RAG 検索に利用する」ことを求める（Must）。
@@ -41,9 +48,9 @@ FR-08 は「確定報告書・収集情報・判断根拠を platform のナレ�
 「既定オン」にできない制約が判明した:
 
 1. **書き込みは強い認可ゲートの背後**。`POST /documents`（DocumentService）は `platform-admin`/`platform-operator`
-   ロールを要求（サービス自身が最終防衛線, platform IADR-0044）。当リポの s2s クライアント（`trading-service`）は
+   ロールを要求（サービス自身が最終防衛線, microservices-platform IADR-0044）。当リポの s2s クライアント（`trading-service`）は
    このロールを持たない → 403。
-2. **機密区分が必須**。`confidentiality ∈ {public, internal, confidential, restricted}` 欠落・未知値は 400（platform IADR-0047）。
+2. **機密区分が必須**。`confidentiality ∈ {public, internal, confidential, restricted}` 欠落・未知値は 400（microservices-platform IADR-0047）。
 3. **「保存＝即 RAG 検索可能」は platform 内部パイプライン依存**。`POST /documents` はカタログ登録＋イベント発行まで。
    本文（Markdown 実体）はオブジェクトストレージ（`storage://`）に載り、Ingestion が Qdrant へ取り込んで初めて検索対象になる。
    当リポ側はオブジェクトストレージ書き込み口を持たない。

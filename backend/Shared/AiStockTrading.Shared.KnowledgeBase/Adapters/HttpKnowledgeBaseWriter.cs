@@ -8,10 +8,10 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // 当リポ DTO（KnowledgeDocument）を platform 契約（CreateDocumentRequest 形状）へ HTTP 境界の内側でのみ写像する。
 //
 // fail-safe（決定 3）: 非 2xx・例外・タイムアウトはすべて「未保存（NotSaved）」に倒し、業務経路（収集サイクル等）へ
-// 例外を伝播しない。とくに書き込みは platform-admin/operator ロールを要するため（platform IADR-0044）、s2s クライアントが
+// 例外を伝播しない。とくに書き込みは platform-admin/operator ロールを要するため（microservices-platform IADR-0044）、s2s クライアントが
 // ロール未付与なら 403 で未保存に倒れる（IADR-0069 決定 2・実運用のロール付与は後続 #9）。
 //
-// 機密区分（platform IADR-0047）: attributes["confidentiality"] は必須のため、KnowledgeDocument.Confidentiality を
+// 機密区分（microservices-platform IADR-0047）: attributes["confidentiality"] は必須のため、KnowledgeDocument.Confidentiality を
 // 常に補完する（呼び出し側 Attributes が同キーを持っていても機密区分は Confidentiality を優先する）。
 //
 // 注意: 現行の POST /documents は本文（Markdown）を受け取らない（本文はオブジェクトストレージ + Ingestion 経由）。
@@ -79,7 +79,7 @@ internal sealed class HttpKnowledgeBaseWriter(
         }
     }
 
-    // 機密区分を必ず補完する（platform IADR-0047 必須検証。未指定・空は既定 internal）。
+    // 機密区分を必ず補完する（microservices-platform IADR-0047 必須検証。未指定・空は既定 internal）。
     private static Dictionary<string, string> BuildAttributes(KnowledgeDocument document)
     {
         var attributes = document.Attributes is null

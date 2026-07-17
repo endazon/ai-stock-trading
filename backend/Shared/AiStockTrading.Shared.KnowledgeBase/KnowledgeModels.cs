@@ -3,7 +3,7 @@ namespace AiStockTrading.Shared.KnowledgeBase;
 // FR-08, IADR-0069: KB 保存・RAG 取得の当リポ側 DTO（platform の Knowledge.Contracts へ直接依存しない疎な境界）。
 // platform 契約への写像は HTTP アダプタの内側にのみ閉じる。
 
-// FR-08: 機密区分（platform IADR-0047 の正準値）。保存時に必須のため、未指定は既定 Internal を補完する。
+// FR-08: 機密区分（microservices-platform IADR-0047 の正準値。本リポの IADR-0047 とは別採番）。保存時に必須のため、未指定は既定 Internal を補完する。
 public static class KnowledgeConfidentiality
 {
     public const string Public = "public";
