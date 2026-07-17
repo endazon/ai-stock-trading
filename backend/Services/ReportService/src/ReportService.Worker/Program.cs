@@ -1,6 +1,7 @@
 using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
+using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
@@ -10,6 +11,7 @@ using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
 using System.Globalization;
@@ -111,6 +113,14 @@ builder.Services.AddMassTransit(x =>
 });
 
 var app = builder.Build();
+
+// FR-07, IADR-0071 決定2: 無応答時の既定動作を起動時に解釈してログに残す（設定が実際に消費されていることを可視化する）。
+// これによりオペレーターは REPORTS_NORESPONSE_BEHAVIOR の反映を確認できる。期限（翌営業日開場）検知→停止の**実強制**は
+// スケジューラ（#22）が本設定（ReportNoResponsePolicy.Decide）を読み取って行う seam であり、本サービス単体では判定のみを持つ。
+var noResponseBehavior = ReportNoResponsePolicy.ParseBehavior(builder.Configuration["Reports:NoResponseBehavior"]);
+app.Logger.LogInformation(
+    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。期限検知→停止の実強制はスケジューラ #22 が本設定を読む）。",
+    noResponseBehavior);
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
 using (var scope = app.Services.CreateScope())
