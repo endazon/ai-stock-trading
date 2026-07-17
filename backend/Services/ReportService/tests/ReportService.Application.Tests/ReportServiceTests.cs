@@ -120,4 +120,23 @@ public class ReportServiceTests
 
         act.Should().Throw<ArgumentException>();
     }
+
+    // FR-07, ADR-0003, IADR-0071 決定2: 無応答時の既定動作（継続）は構造的に成立している。
+    // 提示済みだが未確定の新ドラフトがあっても、方針照会は直近の確定済みを返し続ける（新方針は自動適用されない）。
+    [Fact]
+    public void 無応答時の既定動作_未確定の新ドラフトは方針を上書きせず直近の確定済みを継続する()
+    {
+        var svc = NewService();
+        // 7/9 を確定（過去に人が承認した方針）。
+        svc.UpsertDraft(Daily("daily-2026-07-09", new DateOnly(2026, 7, 9), "9日方針"), 0);
+        svc.Confirm("daily-2026-07-09", 1, "owner");
+        // 7/10 の新方針をドラフトのみ（提示済みだが未応答＝未確定）。
+        svc.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10), "10日方針（未確定）", av: 2), 0);
+
+        var policy = svc.GetConfirmedDailyPolicy();
+
+        // 無応答（未確定）の新方針は適用されず、直近の確定済み（9日方針）を継続する。
+        policy!.Date.Should().Be(new DateOnly(2026, 7, 9));
+        policy.Summary.Should().Be("9日方針");
+    }
 }
