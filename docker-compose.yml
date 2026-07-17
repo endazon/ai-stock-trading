@@ -165,6 +165,12 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=cost_control_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # FR-17, IADR-0065 (#139): 月次費用上限の取得元（設定サービスの GET /assumptions）。
+      # 空=前提条件の既定値（20,000/15,000）で判定する＝従来挙動。設定すると利用者の上限変更が 80%/100% 判定へ反映される。
+      Configuration__BaseUrl: ${CONFIGURATION_BASEURL:-}
+      # IADR-0051: /assumptions（OwnerOrService）への s2s トークン。空 secret=無効（認証なし→401→既定値へ縮退）。
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
     depends_on:
       <<: *depends-infra
       postgres:
