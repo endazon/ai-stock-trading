@@ -2,7 +2,7 @@ using AiStockTrading.Notification.Application.State;
 
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-14, UC-06, IADR-0063: スラッシュコマンドの解析（純関数）。
+// FR-14, UC-06, IADR-0062: スラッシュコマンドの解析（純関数）。
 // 本 PR のスコープは kill switch のみ（詳細設計07 の /report・/status・/pause・/resume は後続。
 // /report は #14 交差、/pause・/resume は Risk 側に対応エンドポイントが無い）。
 // 未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。

@@ -1,6 +1,6 @@
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-14, IADR-0063 決定6: 詳細設計07「二重実行防止（確定・kill switch の冪等性）」の楽観ロック機構。
+// FR-14, IADR-0062 決定6: 詳細設計07「二重実行防止（確定・kill switch の冪等性）」の楽観ロック機構。
 //
 // 確定要求は `対象ID＋版番号` を必須とし:
 // - 未確定の最新版         → Accepted（呼び出し側が実際の確定を行う）
@@ -10,7 +10,7 @@ namespace AiStockTrading.Notification.Application.Services;
 // チャットUIと Discord が同時に確定しても一度しか有効にならないことを保証する。
 //
 // 本 PR ではこの純粋機構と全数テストのみを提供する。報告書ドラフトへの結線（ReportReviewStateMachine の
-// 駆動）は #14 側で行う（交差回避・IADR-0063 決定6）。
+// 駆動）は #14 側で行う（交差回避・IADR-0062 決定6）。
 //
 // スレッド安全性: Bot は複数の Discord イベントを並行処理し得るため lock で直列化する。
 // 永続化は行わない（Bot はステートレス＝詳細設計07。確定の権威は報告書サービス側の冪等 API が持ち、

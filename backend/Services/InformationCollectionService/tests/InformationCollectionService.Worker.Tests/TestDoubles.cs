@@ -3,7 +3,7 @@ using AiStockTrading.InformationCollection.Application.Ports;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, IADR-0065: 公式ソースコネクタのテスト用テストダブル（実ネットワーク・実時間を使わない）。
+// FR-01, IADR-0064: 公式ソースコネクタのテスト用テストダブル（実ネットワーク・実時間を使わない）。
 
 // 常に同じ応答を返し、直近の要求（URL・ヘッダー）を記録する fake HttpMessageHandler。
 internal sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

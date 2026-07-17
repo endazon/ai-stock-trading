@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, ADR-0004, IADR-0065: 送信前レート制限アダプタ。実時間を待たず、フェイク時計＋フェイク待機で決定的に検証する。
+// FR-01, ADR-0004, IADR-0064: 送信前レート制限アダプタ。実時間を待たず、フェイク時計＋フェイク待機で決定的に検証する。
 public class DelayingRateLimiterTests
 {
     [Fact]

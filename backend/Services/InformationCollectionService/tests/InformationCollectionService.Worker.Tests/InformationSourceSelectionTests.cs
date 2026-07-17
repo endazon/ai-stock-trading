@@ -12,7 +12,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, IADR-0022/0061: Program の構成束縛（Collection:Source:*）が実際に情報源の選択へ効くことを検証する。
+// FR-01, IADR-0022/0064: Program の構成束縛（Collection:Source:*）が実際に情報源の選択へ効くことを検証する。
 // 構成キーの綴り違いは「静かに全ソース無効（ゼロ件収集）」として現れるため、ホスト起動込みで確かめる。
 public class InformationSourceSelectionTests
 {

@@ -2,7 +2,7 @@ using AiStockTrading.Notification.Application.State;
 
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-14, UC-06, IADR-0063 決定3: 詳細設計07「認証・認可（本人確認）」の多層を上から順に評価する純関数。
+// FR-14, UC-06, IADR-0062 決定3: 詳細設計07「認証・認可（本人確認）」の多層を上から順に評価する純関数。
 //
 // 発注機能を持つシステムの操作窓口であるため、**すべての層は不許可を既定とする**。
 // 特に「設定が空＝全許可」にしないことが要（設定漏れを全開放にしない）。層は独立しており、

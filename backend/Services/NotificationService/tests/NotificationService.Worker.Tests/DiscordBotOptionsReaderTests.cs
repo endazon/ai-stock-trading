@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Worker.Tests;
 
-// FR-14, IADR-0063: 構成の読み取り。未設定が「拒否側の既定」のまま残ることを固定する（補完しない）。
+// FR-14, IADR-0062: 構成の読み取り。未設定が「拒否側の既定」のまま残ることを固定する（補完しない）。
 public class DiscordBotOptionsReaderTests
 {
     private static IConfiguration Config(Dictionary<string, string?> values) =>

@@ -183,7 +183,7 @@ services:
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
-      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0065）。
+      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0064）。
       Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
       Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
       Collection__Source__Finnhub__Symbols__0: ${COLLECTION_FINNHUB_SYMBOLS_0:-}
@@ -245,7 +245,7 @@ services:
       # fail-safe: 空=NoOp（外部送信しない）。実 Discord は #15 で有効化。
       Notifications__Provider: ${NOTIFICATIONS_PROVIDER:-}
       Notifications__Discord__WebhookUrl: ${NOTIFICATIONS_DISCORD_WEBHOOK_URL:-}
-      # FR-14, IADR-0063: Discord Bot（双方向）。既定 false=Gateway に接続しない。
+      # FR-14, IADR-0062: Discord Bot（双方向）。既定 false=Gateway に接続しない。
       # 多層認証の設定が1つでも欠ければ接続しない。各 ID が空なら着信は全拒否（空＝全許可にしない）。
       Notifications__Discord__Bot__Enabled: ${DISCORD_BOT_ENABLED:-false}
       Notifications__Discord__Bot__Token: ${DISCORD_BOT_TOKEN:-}
@@ -256,7 +256,7 @@ services:
       Notifications__Discord__Bot__UserMapping: ${DISCORD_BOT_USER_MAPPING:-}
       # 空=kill switch を起動できない（誤爆防止の閂を設定漏れで外さない）。
       Notifications__Discord__Bot__KillSwitchConfirmationPhrase: ${DISCORD_BOT_KILLSWITCH_PHRASE:-}
-      # kill switch は Risk の OwnerOnly。trading-owner をマップした専用クライアントで呼ぶ（IADR-0063 決定4）。
+      # kill switch は Risk の OwnerOnly。trading-owner をマップした専用クライアントで呼ぶ（IADR-0062 決定4）。
       # SERVICEAUTH_*（trading-service）では 403。空=トークンを付けない（→ 401＝安全側）。
       Notifications__Discord__OwnerAuth__ClientId: ${DISCORD_OWNERAUTH_CLIENTID:-}
       Notifications__Discord__OwnerAuth__ClientSecret: ${DISCORD_OWNERAUTH_CLIENTSECRET:-}
@@ -339,14 +339,14 @@ services:
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
       ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
-      # FR-04, ADR-0010, IADR-0062: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
+      # FR-04, ADR-0010, IADR-0061: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
       # fail-safe: 空=Placeholder（実 LLM を呼ばない＝常に Hold）。設定時のみ実照会する。
       LlmGateway__BaseUrl: ${LLM_GATEWAY_BASEURL:-}
-      # 空・不正・非正値=既定 30 秒（IADR-0062 決定2）。
+      # 空・不正・非正値=既定 30 秒（IADR-0061 決定2）。
       LlmGateway__TimeoutSeconds: ${LLM_GATEWAY_TIMEOUTSECONDS:-}
-      # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0062 決定1）。
+      # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
-      # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0062 決定6）。
+      # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
     depends_on:
       <<: *depends-infra
 

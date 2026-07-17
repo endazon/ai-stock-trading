@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;
 
-// FR-14, UC-06, IADR-0063 決定5: 高リスク操作の確認ステップ（確認フレーズ）。
+// FR-14, UC-06, IADR-0062 決定5: 高リスク操作の確認ステップ（確認フレーズ）。
 // 受け入れ基準6: 不一致では起動しない／受け入れ基準7: 未設定なら起動しない。
 public class KillSwitchConfirmationTests
 {

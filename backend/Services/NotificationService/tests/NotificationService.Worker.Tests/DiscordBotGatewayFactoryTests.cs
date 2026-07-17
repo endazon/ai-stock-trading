@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Worker.Tests;
 
-// FR-14, IADR-0063 決定1: Bot Gateway の安全既定。受け入れ基準11: 既定で接続しない／設定不備でも接続しない。
+// FR-14, IADR-0062 決定1: Bot Gateway の安全既定。受け入れ基準11: 既定で接続しない／設定不備でも接続しない。
 // 実 Discord への接続は行わない（Create は接続せずインスタンスを返すのみ）。
 public class DiscordBotGatewayFactoryTests
 {

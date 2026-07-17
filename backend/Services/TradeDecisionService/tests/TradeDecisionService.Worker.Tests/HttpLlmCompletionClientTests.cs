@@ -20,7 +20,7 @@ public class HttpLlmCompletionClientTests
             NullLogger<HttpLlmCompletionClient>.Instance, "internal", "trade-decision",
             reporter ?? new NoOpLlmUsageReporter());
 
-    // #11, FR-11, IADR-0062 決定1: 全量ログ（プロンプト・生出力）を検証するためのクライアント。
+    // #11, FR-11, IADR-0061 決定1: 全量ログ（プロンプト・生出力）を検証するためのクライアント。
     private static HttpLlmCompletionClient LoggingClient(HttpMessageHandler handler, ILogger<HttpLlmCompletionClient> logger, bool logPrompts) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
             logger, "internal", "trade-decision", new NoOpLlmUsageReporter(), logPrompts);
@@ -176,7 +176,7 @@ public class HttpLlmCompletionClientTests
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("trade-decision");
     }
 
-    // #11, FR-11, IADR-0062 決定1: 受け入れ基準「プロンプト・入出力・根拠が全量ログに残る」。
+    // #11, FR-11, IADR-0061 決定1: 受け入れ基準「プロンプト・入出力・根拠が全量ログに残る」。
     // 有効化時はプロンプト本文と LLM の生出力を記録する（事後に判断根拠を再構成できること）。
     [Fact]
     public async Task LogPrompts有効時_プロンプト本文と生出力を全量ログに残す()
@@ -193,7 +193,7 @@ public class HttpLlmCompletionClientTests
     }
 
     // 既定（オフ）ではプロンプト・生出力を残さない。プロンプトは保有ポジション・資金残枠等の機微を含むため、
-    // 既定でログ基盤へ流さない（IADR-0062 決定1 の最小権限）。
+    // 既定でログ基盤へ流さない（IADR-0061 決定1 の最小権限）。
     [Fact]
     public async Task LogPrompts既定は_プロンプトも生出力も残さない()
     {
@@ -208,7 +208,7 @@ public class HttpLlmCompletionClientTests
         log.Should().NotContain("上昇基調");
     }
 
-    // IADR-0062 決定1 の不変条件: 全量ログを有効にしても安全既定（IADR-0017）は変わらない。
+    // IADR-0061 決定1 の不変条件: 全量ログを有効にしても安全既定（IADR-0017）は変わらない。
     [Fact]
     public async Task LogPrompts有効でも_送信拒否や非2xxは_Hold_取引しない()
     {

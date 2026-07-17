@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Configuration.Client.Adapters;
 
-// FR-17, IADR-0064 決定 4/5: バージョン付き前提条件のキャッシュ付き解決器。
+// FR-17, IADR-0063 決定 4/5: バージョン付き前提条件のキャッシュ付き解決器。
 //
 // 失効（決定 4）: AssumptionsChanged 購読による即時無効化 ＋ TTL（既定 5 分）の二段。イベントのみに頼ると
 // ブローカ不達・取りこぼしで恒久的に古い値を掴むため TTL を併用する。
@@ -73,7 +73,7 @@ internal sealed class CachedAssumptionsProvider(
         }
     }
 
-    /// <summary>一度も取得できていないときの既定値（IADR-0064 決定 5・Version は未解決の番兵 0）。</summary>
+    /// <summary>一度も取得できていないときの既定値（IADR-0063 決定 5・Version は未解決の番兵 0）。</summary>
     internal static VersionedAssumptions Unresolved { get; } =
         new(TradingAssumptionsDefaults.Create(), VersionedAssumptions.UnresolvedVersion);
 

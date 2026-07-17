@@ -1,5 +1,5 @@
 ---
-title: IADR-0062 実 LLM 接続の実運用化は「既定オフの全量ログ」「タイムアウト構成化」「空既定の設定サーフェス」に限定し、s2s トークンとリトライは足さない
+title: IADR-0061 実 LLM 接続の実運用化は「既定オフの全量ログ」「タイムアウト構成化」「空既定の設定サーフェス」に限定し、s2s トークンとリトライは足さない
 type: impl-adr
 status: Accepted
 related_ids:
@@ -18,7 +18,7 @@ plan_refs:
   - "../../planning/projects/microservices-platform/07_adr/ADR-0010_llm-gateway.md (LLM ゲートウェイ)"
 ---
 
-# IADR-0062: 実 LLM 接続の実運用化のスコープと安全既定
+# IADR-0061: 実 LLM 接続の実運用化のスコープと安全既定
 
 - 状態: **Accepted**
 - 日付: 2026-07-17

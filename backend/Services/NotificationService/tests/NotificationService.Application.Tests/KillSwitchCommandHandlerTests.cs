@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;
 
-// FR-14, UC-06, IADR-0063: kill switch コマンド処理の閂（多層認証→解析→確認ステップ→Risk 呼び出し）。
+// FR-14, UC-06, IADR-0062: kill switch コマンド処理の閂（多層認証→解析→確認ステップ→Risk 呼び出し）。
 // 受け入れ基準9: 起動済みへの再起動は副作用なし（冪等）。
 // 併せて「拒否時に Risk を呼ばない」ことを検証する（誤爆防止の中核）。
 public class KillSwitchCommandHandlerTests

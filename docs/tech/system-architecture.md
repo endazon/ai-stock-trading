@@ -216,7 +216,7 @@ sequenceDiagram
   `Proposed`、実装判断は IADR-0056）。
 - **機密**: moomoo 資格情報 / Discord Webhook は Vault/Secrets（ADR-0006）。**LLM プロバイダ鍵は AST では
   扱わない**（鍵は MSP の LlmGateway 側が保持し、AST は `LlmGateway:BaseUrl` 経由でゲートウェイを呼ぶだけ。
-  ADR-0010 / IADR-0062 決定6）。
+  ADR-0010 / IADR-0061 決定6）。
 
 ## 関連仕様
 

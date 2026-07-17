@@ -5,7 +5,7 @@
 #
 #   scripts/k8s-local-deploy.sh [cluster-name]
 # 機密の上書き: FINNHUB_API_KEY / DISCORD_WEBHOOK_URL（未設定=空=no-op）。
-# LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0062 決定6）。
+# LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
 set -euo pipefail
 CLUSTER="${1:-msp-ast-dev}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

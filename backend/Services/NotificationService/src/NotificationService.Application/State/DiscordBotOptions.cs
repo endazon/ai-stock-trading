@@ -1,6 +1,6 @@
 namespace AiStockTrading.Notification.Application.State;
 
-// FR-14, IADR-0063: Discord Bot の多層認証・有効化の設定。
+// FR-14, IADR-0062: Discord Bot の多層認証・有効化の設定。
 //
 // 安全既定（fail-safe）が本型の中核である: **すべての既定値は「拒否」側**に倒してある。
 // - Enabled=false: Gateway に接続しない（既定）

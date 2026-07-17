@@ -8,7 +8,7 @@ namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
 // FR-01, ADR-0004/0005: Finnhub（案A+・無料枠）から現在値を取得する最小の情報源アダプタ。構成で明示有効化したときのみ用いる。
 // 取得失敗（レート制限・一時エラー）は当該銘柄をスキップしてログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
-// IADR-0065: 無料枠は 60 回/分のため、銘柄ごとの要求前に自制する（IRateLimiter）。
+// IADR-0064: 無料枠は 60 回/分のため、銘柄ごとの要求前に自制する（IRateLimiter）。
 internal sealed class FinnhubInformationSource(
     HttpClient httpClient,
     string apiKey,

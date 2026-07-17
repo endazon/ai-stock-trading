@@ -8,7 +8,7 @@ using OpenTelemetry;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, ADR-0004/0005, IADR-0065: EDINET API v2（金融庁・日本の企業開示・無料／要 API キー）から当日提出の書類一覧を
+// FR-01, ADR-0004/0005, IADR-0064: EDINET API v2（金融庁・日本の企業開示・無料／要 API キー）から当日提出の書類一覧を
 // 取得する。レート制限は非公表のため 1 分 1 回程度に自制する（IRateLimiter）。取得失敗は空を返してログする
 // （1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
 internal sealed class EdinetInformationSource(
@@ -30,7 +30,7 @@ internal sealed class EdinetInformationSource(
         await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         // type=2 は提出書類のメタデータ一覧。API キーはクエリ文字列で渡す仕様のため、OTel の HttpClient 計装が URL
-        // （クエリ込み）をトレースへ出力してキーが漏えいするのを防ぐべく、この要求のみ計装を抑止する（IADR-0065）。
+        // （クエリ込み）をトレースへ出力してキーが漏えいするのを防ぐべく、この要求のみ計装を抑止する（IADR-0064）。
         var url = $"https://api.edinet-fsa.go.jp/api/v2/documents.json?date={date}&type=2" +
                   $"&Subscription-Key={Uri.EscapeDataString(subscriptionKey)}";
 

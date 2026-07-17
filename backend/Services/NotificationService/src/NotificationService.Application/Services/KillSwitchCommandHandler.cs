@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-14, UC-06, IADR-0063: kill switch コマンドの処理。多層認証 → コマンド解析 → 確認ステップ → Risk 呼び出し
+// FR-14, UC-06, IADR-0062: kill switch コマンドの処理。多層認証 → コマンド解析 → 確認ステップ → Risk 呼び出し
 // の順に閂を掛ける。いずれかで不成立なら Risk を呼ばない（誤爆防止）。
 //
 // 本ハンドラは Discord.Net に依存しない（Gateway アダプタが DiscordCommandContext に変換して渡す）。

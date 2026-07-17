@@ -1,5 +1,5 @@
 ---
-title: IADR-0064 バージョン付き全体前提条件は s2s 読み取り API ＋共有クライアント（キャッシュ・イベント無効化・last-known-good）で解決する
+title: IADR-0063 バージョン付き全体前提条件は s2s 読み取り API ＋共有クライアント（キャッシュ・イベント無効化・last-known-good）で解決する
 type: impl-adr
 status: Accepted
 related_ids:
@@ -17,7 +17,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
 ---
 
-# IADR-0064: バージョン付き全体前提条件の取得・解決方式
+# IADR-0063: バージョン付き全体前提条件の取得・解決方式
 
 - 状態: Accepted
 - 日付: 2026-07-17

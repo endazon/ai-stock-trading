@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Worker.Tests;
 
-// FR-14, UC-06, IADR-0063 決定4: Risk の kill switch エンドポイント呼び出しを fake HttpMessageHandler で検証する
+// FR-14, UC-06, IADR-0062 決定4: Risk の kill switch エンドポイント呼び出しを fake HttpMessageHandler で検証する
 // （実ネットワーク不使用）。受け入れ基準12。
 // 「失敗を成功に見せない」ことが本アダプタの要（停止したつもりで停止していない状態を作らない）。
 public class HttpKillSwitchControllerTests

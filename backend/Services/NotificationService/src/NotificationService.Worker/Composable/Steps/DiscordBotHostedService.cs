@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Worker.Composable.Steps;
 
-// FR-14, IADR-0063: Bot Gateway の常駐をホストのライフサイクルへ結ぶ。
+// FR-14, IADR-0062: Bot Gateway の常駐をホストのライフサイクルへ結ぶ。
 // 既定の実装は NullDiscordBotGateway（接続しない）のため、本サービスは既定では何もしない。
 //
 // 接続失敗で host を落とさない: 通知（FR-09 アウトバウンド）は Bot と独立して動作すべきであり、

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;
 
-// FR-14, UC-06, IADR-0063 決定3: 多層認証（詳細設計07「認証・認可（本人確認）」）。
+// FR-14, UC-06, IADR-0062 決定3: 多層認証（詳細設計07「認証・認可（本人確認）」）。
 // 受け入れ基準 1〜5: DM 拒否・専用サーバー/チャンネル限定・許可リスト・設定が空なら全拒否・Keycloak マッピング必須。
 public class DiscordCommandAuthorizerTests
 {
