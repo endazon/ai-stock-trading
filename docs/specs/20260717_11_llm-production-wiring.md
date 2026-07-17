@@ -71,16 +71,15 @@ related_specs:
 - **設定サーフェス**（PR 末尾の単一コミット）: helm values / docker-compose / `.env.example` /
   appsettings.Development に `LlmGateway__BaseUrl` ほかの口を空既定で開ける。**実キー・実 URL は投入しない**。
   base `appsettings.json` には置かない（IADR-0048 決定1 の挙動中立を保つ）。
-- **`ANTHROPIC_API_KEY` の誤解を招くコメントの是正**: 「実 LLM は未実装」「空=呼ばない」という現状に反する
-  記述を、「AST では未使用（鍵は MSP ゲートウェイ側が保持・ADR-0010）」へ改める。
+- **死んだ秘密注入 `ANTHROPIC_API_KEY` の除去**（IADR-0062 決定6・ユーザー判断で当初の deferral を撤回）:
+  コードが同変数を一切読まず ADR-0010（鍵は MSP ゲートウェイ側が保持し AST は鍵を持たない）と矛盾するため、
+  注入している全箇所（helm values / docker-compose / `.env.example` / `scripts/k8s-local-deploy.sh` /
+  関連ドキュメント）から除去する。併せて波及する共有 CI 配管（`scripts/validate-runtime-scaffold.js` の
+  `SECRET_ENV_KEYS`）を整合させる。**GitHub Actions 用の同名シークレットは用途が別なので触らない**。
 
 **対象外（後続）**
 
 - **RAG 文脈（#18）**: ナレッジベース連携は本 PR の対象外（交差回避）。
-- **`ANTHROPIC_API_KEY` 注入そのものの除去**（IADR-0062 決定6）: コードが同変数を一切読まず ADR-0010 と矛盾する
-  ため除去が正しいが、`scripts/validate-runtime-scaffold.js`（`SECRET_ENV_KEYS` に必須列挙のため `.env.example`
-  から消すと検査が落ちる）と `scripts/k8s-local-deploy.sh` へ波及し、本スライスのスコープ（trade-decision＋
-  設定サーフェス）を越える。#11 の残スコープの達成にも必須ではないため後続とする。
 - 実クラスタでの実 LLM 応答の実証（要 MSP 側 Anthropic 鍵・#22 デプロイ配線）→ **E2E / 後続**。
 - 実データ供給（#14/#12/#13）・監査永続（#17）・費用統制の実値（#23/#79）。
 - `Shared.Contracts` / RiskManagementService / ReportService / ConfigurationService / `TradingDefaults` は不変更。

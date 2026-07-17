@@ -80,21 +80,34 @@ plan_refs:
 - **base `appsettings.json` には置かない**。IADR-0048 決定1（base は挙動中立）に従い、fail-safe 選択キーは
   `appsettings.Development.json` と環境変数に置く（env=Testing のテストが安全既定のまま走ることを保つ）。
 
-### 決定6: `ANTHROPIC_API_KEY` の死んだ注入は「誤解を招くコメントの是正」に留め、除去は後続とする
+### 決定6: `ANTHROPIC_API_KEY` の死んだ注入を本 PR で除去する（AST は LLM 鍵を持たない）
 
-trade-decision には `ANTHROPIC_API_KEY` が helm values / docker-compose / `.env.example` から注入されているが、
-**コードはこの変数を一切読まない**。ADR-0010 の設計ではプロバイダ鍵は MSP ゲートウェイ側の `Llm:ApiKey` が
-保持し、**AST は鍵を持たない**。したがって本来は除去が正しい。
+trade-decision には `ANTHROPIC_API_KEY` が helm values / docker-compose / `.env.example` / `k8s-local-deploy.sh`
+から注入されていたが、**コードはこの変数を一切読まない**。ADR-0010 の設計ではプロバイダ鍵は MSP ゲートウェイ側の
+`Llm:ApiKey` が保持し、**AST は鍵を持たない**。実 LLM は `LlmGateway:BaseUrl` 経由でゲートウェイを呼ぶだけである。
 
-しかし除去には `scripts/validate-runtime-scaffold.js`（`SECRET_ENV_KEYS` に本キーを必須列挙しており、
-`.env.example` から消すと**検査が失敗する**）と `scripts/k8s-local-deploy.sh`（`ast-secrets` の
-`anthropic-api-key` を生成）の改修が要り、本スライスのスコープ（trade-decision と設定サーフェス）を越えて
-共有 CI スクリプトへ波及する。#11 の残スコープの達成に必須でもない。
+したがって**本 PR で除去する**（ユーザー判断により当初の deferral を撤回）。死んだ秘密注入を残すと、
+「AST に鍵を置けばよい」という **ADR-0010 に反する規範**を将来の実装者へ与え、鍵の配布先が不必要に広がる
+（最小権限違反）。コメントでの注意書きは、次の実装者が読む保証がないため恒久策にならない。
 
-そこで本 PR では、**「実 LLM は未実装（#79）／空=呼ばない」という現状に反するコメントの是正**に留める
-（実 LLM は `LlmGateway:BaseUrl` 経由であり、本キーは AST では未使用であることを明示する）。
-誤ったコメントを残す方が「AST に鍵を置けばよい」という誤った規範を将来の実装者へ与えるため、
-除去より先にまず**事実の明示**を優先する。除去自体は後続 issue とする。
+**除去範囲**（実際に注入していた全箇所）:
+
+- `deploy/helm/ai-stock-trading/values.yaml`: trade-decision の `extraEnv` から `ANTHROPIC_API_KEY` を削除。
+- `docker-compose.yml`: trade-decision-service の environment から削除。
+- `.env.example`: キーを削除（代わりに `LLM_GATEWAY_BASEURL` を持つ）。
+- `scripts/k8s-local-deploy.sh`: `ast-secrets` の `anthropic-api-key` 生成を削除。
+- ドキュメント（helm README の秘密対応表・`docs/how-to/local-run.md`・`docs/tech/system-architecture.md`）。
+
+**波及した共有 CI 配管の整合**（除去が本スライスから見て「越境」だった理由そのもの）:
+
+- `scripts/validate-runtime-scaffold.js` の `SECRET_ENV_KEYS` は本キーを**必須列挙**しており、`.env.example`
+  から消すと「機密キーが列挙されていない」で**検査が失敗する**。同配列と冒頭コメントから除去して整合させる。
+- ただし `FORBIDDEN_BASE_KEYS` の `AnthropicApiKey` は**残す**。これは base appsettings に鍵が現れることを
+  **禁じるガード**であり、ADR-0010（AST は鍵を持たない）と同じ方向を向いているため、除去はガードを弱める。
+
+**GitHub Actions の `ANTHROPIC_API_KEY` は別物であり触らない**（`claude-coding.yml` / `claude-code-review.yml` /
+`AI_SETUP.md` / `scripts/apply-profile.sh`）。これは **CI 上で Claude を動かすための鍵**であり、AST 実行時の
+LLM egress とは用途も主体も異なる。同名であるがゆえに混同しやすいので明記する。
 
 ## 影響
 
@@ -109,12 +122,10 @@ trade-decision には `ANTHROPIC_API_KEY` が helm values / docker-compose / `.e
 - **呼び出し側リトライ（Polly 等）**: 一過性障害に強くなるが ADR-0010 の一元化に反し費用が多重化。→ 不採用（決定4）。
 - **`ANTHROPIC_API_KEY` を AST で読んで直接 Anthropic を呼ぶ**: ゲートウェイの越境統制（送信可否判定・監査）を
   迂回する。→ 不採用（ADR-0010 違反）。
-- **本 PR で `ANTHROPIC_API_KEY` を除去する**: 正しいが共有 CI スクリプトへ波及する。→ 後続（決定6）。
+- **`ANTHROPIC_API_KEY` の注入を残しコメントで注意書きする**: 波及は小さいが、死んだ秘密注入と
+  ADR-0010 に反する規範が残る。コメントは次の実装者が読む保証がない。→ 不採用（決定6 で除去）。
 
 ## 未解決・後続
 
-- **`ANTHROPIC_API_KEY` の死んだ注入の除去**（決定6）: helm values / docker-compose / `.env.example` から除去し、
-  併せて `scripts/validate-runtime-scaffold.js` の `SECRET_ENV_KEYS` と `scripts/k8s-local-deploy.sh` の
-  `anthropic-api-key` 生成を整理する。
 - 実クラスタでの実 LLM 応答の実証（要 MSP 側 Anthropic 鍵・#22 デプロイ配線）→ E2E/後続。
 - RAG 文脈（#18）・実データ供給（#14/#12/#13）・監査永続（#17）・費用統制の実値（#23/#79）。

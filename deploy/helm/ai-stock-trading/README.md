@@ -31,10 +31,14 @@ kubectl -n ai-stock-trading get pods
 
 | 環境変数 | `ast-secrets` キー | 対象 | 既定 |
 | --- | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | `anthropic-api-key` | trade-decision（LLM） | 空=Placeholder（#79） |
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
 | （chart 値）`Broker__Provider` | — | order-execution | `paper`（実発注しない・#13。`moomoo.enabled` で切替） |
+| （chart 値）`LlmGateway__BaseUrl` | — | trade-decision | 空=Placeholder LLM（呼ばない＝常に Hold・#11） |
+
+> **LLM プロバイダ鍵は AST では扱わない**。鍵は MSP の LlmGateway 側（`Llm:ApiKey`）が保持し、AST は
+> `LlmGateway__BaseUrl` 経由でゲートウェイを呼ぶだけである（ADR-0010 / IADR-0062 決定6）。
+> `ast-secrets` に LLM 鍵を足さないこと。
 
 ## #13: moomoo（OpenD）発注
 
