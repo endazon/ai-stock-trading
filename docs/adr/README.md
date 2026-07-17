@@ -102,3 +102,4 @@
 | IADR-0064 | 公式ソースは「ソース単位で有効化する多ソース合成＋ソース単位レート制限」で束ね、推測実装はしない | Accepted |
 | IADR-0065 | 費用統制の月次上限はバージョン付き前提条件から解決し、上限ポートを非同期化する（fail-safe は last-known-good を継承） | Accepted |
 | IADR-0066 | 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える | Accepted |
+| IADR-0068 | 実市況は Finnhub の HTTP 層を共有物へ抽出して供給し、構成で opt-in・既定は no-op のままとする | Accepted |
