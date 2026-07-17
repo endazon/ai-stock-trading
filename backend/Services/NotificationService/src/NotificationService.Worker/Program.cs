@@ -1,4 +1,5 @@
 using AiStockTrading.Notification.Application.Ports;
+using AiStockTrading.Notification.Application.Services;
 using AiStockTrading.Notification.Worker.Composable.Adapters;
 using AiStockTrading.Notification.Worker.Composable.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -29,6 +30,33 @@ builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFacto
     builder.Configuration["Notifications:Discord:WebhookUrl"],
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("discord"),
     sp.GetRequiredService<ILoggerFactory>()));
+
+// FR-14, UC-06, IADR-0063: Discord Bot（双方向）。既定は無効（Gateway に接続しない）。
+// Notifications:Discord:Bot:Enabled=true ＋ Token ＋ 多層認証の設定が揃った時のみ実接続する。
+var discordBotOptions = DiscordBotOptionsReader.Read(builder.Configuration);
+builder.Services.AddSingleton(discordBotOptions);
+
+// kill switch は Risk の OwnerOnly エンドポイントを呼ぶ（Risk 側は無改修）。IADR-0051 の s2s トークン
+// （trading-service）では 403 のため、Bot 専用の owner マップ機密クライアントのトークンを付与する（IADR-0063 決定4）。
+// RiskManagement:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝呼び出し失敗（Succeeded=false）に倒す。
+builder.Services.AddHttpClient("risk-kill-switch", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IKillSwitchController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-kill-switch");
+    var baseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpKillSwitchController(http, sp.GetRequiredService<ILogger<HttpKillSwitchController>>());
+});
+
+builder.Services.AddSingleton<KillSwitchCommandHandler>();
+builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
+    discordBotOptions,
+    sp.GetRequiredService<KillSwitchCommandHandler>(),
+    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddHostedService<DiscordBotHostedService>();
 
 // IADR-0011/0020: MassTransit（RabbitMQ）。取引実行・リスク統制発動のイベントを購読して通知する。
 builder.Services.AddMassTransit(x =>

@@ -245,6 +245,23 @@ services:
       # fail-safe: 空=NoOp（外部送信しない）。実 Discord は #15 で有効化。
       Notifications__Provider: ${NOTIFICATIONS_PROVIDER:-}
       Notifications__Discord__WebhookUrl: ${NOTIFICATIONS_DISCORD_WEBHOOK_URL:-}
+      # FR-14, IADR-0063: Discord Bot（双方向）。既定 false=Gateway に接続しない。
+      # 多層認証の設定が1つでも欠ければ接続しない。各 ID が空なら着信は全拒否（空＝全許可にしない）。
+      Notifications__Discord__Bot__Enabled: ${DISCORD_BOT_ENABLED:-false}
+      Notifications__Discord__Bot__Token: ${DISCORD_BOT_TOKEN:-}
+      Notifications__Discord__Bot__GuildId: ${DISCORD_BOT_GUILD_ID:-}
+      Notifications__Discord__Bot__ChannelId: ${DISCORD_BOT_CHANNEL_ID:-}
+      Notifications__Discord__Bot__AllowedUserIds: ${DISCORD_BOT_ALLOWED_USER_IDS:-}
+      # Discord ユーザーID -> Keycloak 利用者名（"id:利用者名" のカンマ区切り）。対応が無いユーザーは操作できない。
+      Notifications__Discord__Bot__UserMapping: ${DISCORD_BOT_USER_MAPPING:-}
+      # 空=kill switch を起動できない（誤爆防止の閂を設定漏れで外さない）。
+      Notifications__Discord__Bot__KillSwitchConfirmationPhrase: ${DISCORD_BOT_KILLSWITCH_PHRASE:-}
+      # kill switch は Risk の OwnerOnly。trading-owner をマップした専用クライアントで呼ぶ（IADR-0063 決定4）。
+      # SERVICEAUTH_*（trading-service）では 403。空=トークンを付けない（→ 401＝安全側）。
+      Notifications__Discord__OwnerAuth__ClientId: ${DISCORD_OWNERAUTH_CLIENTID:-}
+      Notifications__Discord__OwnerAuth__ClientSecret: ${DISCORD_OWNERAUTH_CLIENTSECRET:-}
+      # kill switch の呼び先。空=BaseAddress 未設定＝呼び出し失敗（Succeeded=false）。
+      RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
     depends_on:
       <<: *depends-infra
 
