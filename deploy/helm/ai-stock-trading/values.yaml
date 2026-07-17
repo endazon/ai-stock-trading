@@ -206,6 +206,11 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # FR-10, #158, IADR-0066/0068: 損切り検知の現在値。fail-safe: 空=no-op（実接続しない＝検知対象なし）。
+      # finnhub＋鍵で opt-in（手動 live 検証）。前回値フォールバックはかけない（決定2）。鍵は情報収集とは別枠。
+      - { name: MarketData__Provider, value: "" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
   notification:
     image: ai-stock-trading/notification-service
     extraEnv:
@@ -243,10 +248,24 @@ services:
     image: ai-stock-trading/report-service
     db: report_svc
     auth: true
+    extraEnv:
+      # FR-16, #158, IADR-0068: 評価損益の現在値。fail-safe: 空=no-op（評価損益 0）。報告書はゲート無し＝
+      # 差し替えがそのまま有効化。finnhub＋鍵で opt-in（手動 live 検証）。鍵は情報収集とは別枠。
+      - { name: MarketData__Provider, value: "" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
     auth: true
+    extraEnv:
+      # FR-10, #81, #158, IADR-0066/0068: 時価評価（含み損益・DD）。fail-safe: EnableMarkToMarket=false（既定）。
+      # true は最大DD の取引ゲート（IADR-0008）の判定入力を変えるため、実市況の live 検証後に人手で切り替える（決定4）。
+      # Provider 空=no-op（実接続しない）。finnhub＋鍵で opt-in。鍵は情報収集とは別枠。
+      - { name: MarketData__EnableMarkToMarket, value: "false" }
+      - { name: MarketData__Provider, value: "" }
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
     extraEnv:

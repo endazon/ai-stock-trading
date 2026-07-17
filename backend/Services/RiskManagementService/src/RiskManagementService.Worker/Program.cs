@@ -58,7 +58,15 @@ builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();
 // 含み 0・DD 0（IADR-0008/0018）。有効化すると DrawdownRatio が非 0 になり最大DD の取引ゲートの入力が変わるため、
 // 実市況の live 検証を経てから人手で切り替える。現在値ソース自体も既定 no-op（実接続しない）。
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
-builder.Services.AddSingleton<IMarketDataSource, NoOpMarketDataSource>();
+// FR-10, #158, IADR-0068: 現在値ソースは構成 MarketData:Provider で選択（既定・空・未知は no-op＝実接続しない）。
+// finnhub 指定＋API キーありのときだけ実市況になる。補充（QuoteRefreshService）は EnableMarkToMarket=false の
+// 既定では起動しないため、Provider を指定しても実際の取得はゲートを人手で ON にするまで起きない（IADR-0066 決定 4）。
+builder.Services.AddHttpClient("marketdata");
+builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
+    sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<QuoteCache>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IPortfolioStateProvider>(sp =>

@@ -153,7 +153,7 @@ public class InformationSourceFactoryTests
     };
 
     private static IInformationSource Create(CollectionSourceOptions options) =>
-        InformationSourceFactory.Create(options, Http, new StubClock(), NullLoggerFactory.Instance);
+        InformationSourceFactory.Create(options, Http, new StubClock(), TimeProvider.System, NullLoggerFactory.Instance);
 
     private sealed class StubClock : IClock
     {

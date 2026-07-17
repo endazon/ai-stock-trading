@@ -45,11 +45,19 @@ builder.Services.AddAiStockTradingHealthChecks()
 // --- 市場監視のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
-// FR-03, IADR-0066: 現在値ソースは共有の既定 no-op（価格取得不可）。実市況は後続 issue＋手動 opt-in の live 検証で差し替える。
+// FR-03, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定・空・未知は no-op＝実接続しない・
+// 従来挙動）。finnhub 指定＋API キーありのときだけ実市況になる。構成は解決時に読む（起動時読み取りだと
+// WebApplicationFactory の構成上書きに追随しないため。IPositionStore と同じ規約）。
 // 監視の巡回には前回値フォールバック（LastKnownQuoteSource）を**かけない**: 前回値で損切りライン到達を判定すると、
 // 市況断のあいだ古い価格から StopLossTriggered＝実際の決済発注が誤発火しうる。取得不可はスキップ（＝発注しない）が安全側。
-// 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する。
-builder.Services.AddSingleton<IMarketDataSource, NoOpMarketDataSource>();
+// 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する（IADR-0066 決定 2）。
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpClient("marketdata");
+builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
+    sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
 // FR-03/FR-10, IADR-0030: 保有ポジションはリスク管理（#12）の GET /risk-controls/open-positions を同期照会して供給する。
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（保有なし＝損切り検知対象なし）＝安全既定でゲート。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は

@@ -54,11 +54,18 @@ builder.Services.AddSingleton<IReportNarrativeDrafter, PlaceholderReportNarrativ
 // 市況断のあいだは保持期限内の前回値へフォールバックする（超過は取得不可＝0。IADR-0066）。
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
 builder.Services.AddSingleton<QuoteCache>();
-builder.Services.AddSingleton<NoOpMarketDataSource>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpClient("marketdata");
+// FR-16, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定 no-op＝実接続しない）。報告書は
+// ゲートを持たず、実市況ソースへの差し替えがそのまま評価損益の有効化になる（発注判断を伴わないため・IADR-0066 決定 4）。
 builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
-    sp.GetRequiredService<NoOpMarketDataSource>(),
+    MarketDataSourceFactory.Create(
+        sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>()),
     sp.GetRequiredService<QuoteCache>(),
-    TimeProvider.System,
+    sp.GetRequiredService<TimeProvider>(),
     TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
 builder.Services.AddScoped<ReportDraftService>();
 

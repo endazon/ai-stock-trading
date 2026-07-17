@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Application.State;
 using AiStockTrading.InformationCollection.Domain;
+using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;

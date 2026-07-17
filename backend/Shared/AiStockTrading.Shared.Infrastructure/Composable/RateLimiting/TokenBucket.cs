@@ -1,6 +1,8 @@
-namespace AiStockTrading.InformationCollection.Domain.RateLimiting;
+namespace AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 
 // FR-01, ADR-0004, IADR-0064: 情報源のレート制限を「送信前に自制する」ためのトークンバケット。
+// IADR-0068: 同じ外部ソース（Finnhub）を情報収集（FR-01）と市況（FR-10）の 2 系統から叩くため、自制の実装が
+// 2 つに割れないよう共有物へ移した（元は InformationCollection.Domain）。ロジックは移動前から不変。
 // 時計を持たず現在時刻を引数で受ける純粋な状態機械（決定的に単体検証できる）。実際の待機は Worker 側の
 // アダプタ（IRateLimiter 実装）が担う。429 を受けてから対処するのでは規約違反そのものを防げないため、
 // 消費可否と待機時間をここで決める。

@@ -11,6 +11,8 @@
     <ProjectReference Include="..\InformationCollectionService.Application\InformationCollectionService.Application.csproj" />
     <!-- 収集完了イベント（InformationCollected）の発行に共有契約を参照する。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- IADR-0068: Finnhub 呼び出し（FinnhubQuoteClient）とレート制限（TokenBucket 系）を共有物へ抽出したため参照する。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <InternalsVisibleTo Include="InformationCollectionService.Worker.Tests" />
