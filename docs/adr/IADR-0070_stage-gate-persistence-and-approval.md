@@ -46,8 +46,9 @@ FR-20 の段階ゲートは純ドメイン（`StageGate` / `StageGateLedger` / `
 `stage_transitions` テーブルを追記専用とし、主キーを遷移の `Sequence`（1 始まりの連番）とする。現在段階・次シーケンスは純ドメイン `StageGateLedger`（履歴の fold）で導出し、**可変の「現在段階」列を持たない**。
 
 - 理由: 二重情報源（履歴と現在段階列）は不整合を生む。純ドメインが既に fold で現在段階を導出する権威ロジックを持つため、永続化は履歴の忠実な保存に徹する。
-- Sequence を主キーにすることで、並行する二重追記は一意制約違反（`DbUpdateException`）で自然に弾かれる（楽観的整合）。単一利用者の段階遷移は本質的に低頻度で、これで十分。
+- Sequence を主キーにすることで、並行する二重追記は一意制約違反で自然に弾かれる（楽観的整合）。単一利用者の段階遷移は本質的に低頻度で、これで十分。実装上は `EfStageGateStore.Append` がこの一意制約違反（`DbUpdateException`）を `DbUpdateConcurrencyException` へ変換し、`RiskControlEndpoints` の既存フィルタが 409（最新を取得して再試行）へ写像する（設定の楽観排他と同じ 409 経路に揃える）。
 - 起点段階は `Stage0Verification`（`TradingDefaults.CreateStageSettings()` と一致）。空台帳＝Stage 0。
+- **監査面の分離（意図的）**: 段階遷移の監査は `stage_transitions` 台帳（専用の追記専用テーブル・`GET /risk-controls/stage-gate/history`）で行い、設定・kill switch の変更履歴（`ISettingsChangeLog` / `GET /risk-controls/settings/history`）とは**別窓口**とする。関心（段階遷移 vs 設定変更）と寿命が異なるためで、`settings/history` を単一窓口として見る運用では段階遷移は含まれない。中央監査台帳（FR-11）への統合は後続（決定・結果の `StageTransitioned` バス発行）で扱う。
 
 ### 2. 段階別実績は「単一行・fail-safe 既定」で持つ
 

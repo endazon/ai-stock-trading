@@ -100,7 +100,15 @@ internal static class RiskControlEndpoints
 
         owner.MapPost("/stage-gate/transition", (StageTransitionRequest req, StageGateService svc, HttpContext http) =>
         {
-            var result = svc.RequestTransition(req.TargetStage, ActorOf(http));
+            // 値域検証: targetStage の省略（null）や範囲外 enum は 400。範囲外（負値・4 以上）の降格方向は
+            // StageGate 側の連番検証を素通りし StageGatePolicy.SettingsFor で KeyNotFoundException（500）になり得るため、
+            // サービス到達前に弾く（省略時の暗黙 Stage 0 差し戻しも防ぐ）。
+            if (req.TargetStage is not { } target || !Enum.IsDefined(target))
+            {
+                return Results.BadRequest(new { error = "targetStage は有効な運用段階（Stage 0〜3）を指定してください。" });
+            }
+
+            var result = svc.RequestTransition(target, ActorOf(http));
             // 受理は 200、受理不能な遷移（未充足基準・飛び級・現段階指定）は 422 に写像する。
             return result.Accepted ? Results.Ok(result) : Results.UnprocessableEntity(result);
         });
@@ -126,8 +134,9 @@ internal sealed record LimitsUpdateRequest(RiskLimitSettings Limits, string Reas
 internal sealed record StageUpdateRequest(StageSettings Stage, string Reason);
 
 // FR-20, UC-06: 段階ゲート遷移の要求。承認者は要求本文ではなく認証済みトークン（OwnerOnly）から取る
-// （承認なりすまし防止）。TradingStage は既定 JSON では数値で往復する。
-internal sealed record StageTransitionRequest(TradingStage TargetStage);
+// （承認なりすまし防止）。TradingStage は既定 JSON では数値で往復する。TargetStage は nullable とし、省略や
+// 範囲外値をエンドポイントで 400 に弾く（省略時に既定値 0＝Stage 0 として暗黙処理されるのを防ぐ）。
+internal sealed record StageTransitionRequest(TradingStage? TargetStage);
 
 // ガード変更の要求。TradingGuardSettings は IReadOnlySet 等を用いるため、逆直列化可能な具象コレクションで受ける。
 internal sealed record GuardUpdateRequest(

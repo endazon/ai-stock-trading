@@ -34,6 +34,19 @@ internal sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateS
             OccurredAtUtc = transition.OccurredAtUtc,
             Reason = transition.Reason,
         });
-        db.SaveChanges();
+
+        try
+        {
+            db.SaveChanges();
+        }
+        catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
+        {
+            // Sequence（主キー）の一意制約違反＝別要求が同シーケンスを先取り（並行二重承認・二重送信・リトライ）。
+            // 楽観的整合の競合として扱い、ホスト層フィルタが 409（最新を取得して再試行）へ写像できるよう変換する
+            // （IADR-0070 決定1。設定の DbUpdateConcurrencyException と同じ 409 経路に揃える）。
+            db.ChangeTracker.Clear();
+            throw new DbUpdateConcurrencyException(
+                "段階遷移が他の更新と競合しました。最新の現在段階を取得して再試行してください。", ex);
+        }
     }
 }

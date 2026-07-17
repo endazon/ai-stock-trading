@@ -49,6 +49,11 @@ public class EfStageGateStoreTests
         ledger.History[0].ApprovedBy.Should().Be("owner");
     }
 
+    // 注（IADR-0070 決定1）: 同一 Sequence の並行二重追記は relational プロバイダで一意制約違反（DbUpdateException）となり、
+    // EfStageGateStore.Append がこれを DbUpdateConcurrencyException へ変換して 409 に写像する。InMemory プロバイダは
+    // 一意制約を relational と同型にモデル化せず（キー重複を ArgumentException として送出する）この 409 経路を再現できないため、
+    // 本経路のテストは実 Postgres 前提の実コンテナ E2E（#82 系）に切り分ける（500 は両プロバイダで回避される）。
+
     [Fact]
     public void 段階別実績は未記録時に_fail_safe既定_を返す()
     {

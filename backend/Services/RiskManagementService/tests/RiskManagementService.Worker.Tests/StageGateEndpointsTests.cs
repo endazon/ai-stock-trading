@@ -93,6 +93,19 @@ public class StageGateEndpointsTests
     }
 
     [Fact]
+    public async Task 範囲外の_targetStage_は400で500にならない()
+    {
+        // 範囲外 enum（降格方向）は StageGatePolicy.SettingsFor の KeyNotFoundException（500）に落ちる前に 400 で弾く。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+            new { targetStage = 99 });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task 現況取得は現段階_Stage0_と昇格評価を返す()
     {
         using var factory = new RiskWorkerWebApplicationFactory();
