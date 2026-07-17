@@ -1,7 +1,7 @@
 using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain.RateLimiting;
-using AiStockTrading.InformationCollection.Worker.Composable.RateLimiting;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
@@ -25,6 +25,7 @@ internal static class InformationSourceFactory
         CollectionSourceOptions options,
         HttpClient httpClient,
         IClock clock,
+        TimeProvider timeProvider,
         ILoggerFactory loggerFactory)
     {
         // 環境変数の空指定（例: Collection__Source__SecEdgar__Ciks__0=""）は「未設定」として扱う。
@@ -36,7 +37,7 @@ internal static class InformationSourceFactory
 
         foreach (var provider in ParseProviders(options.Provider))
         {
-            var source = CreateSingle(provider, options, httpClient, clock, loggerFactory, logger);
+            var source = CreateSingle(provider, options, httpClient, clock, timeProvider, loggerFactory, logger);
             if (source is not null)
                 sources.Add(source);
         }
@@ -93,6 +94,7 @@ internal static class InformationSourceFactory
         CollectionSourceOptions options,
         HttpClient httpClient,
         IClock clock,
+        TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         ILogger logger)
     {
@@ -102,11 +104,13 @@ internal static class InformationSourceFactory
                 if (string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) || options.Finnhub.Symbols.Length == 0)
                     return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols）");
 
-                // Finnhub Free は 60 回/分。その 1/2 に自制する。
+                // Finnhub Free は 60 回/分。その 1/2 に自制する。IADR-0068: HTTP は共有の FinnhubQuoteClient。
                 return new FinnhubInformationSource(
-                    httpClient, options.Finnhub.ApiKey, options.Finnhub.Symbols,
-                    Limiter(30, TimeSpan.FromMinutes(1), clock),
-                    loggerFactory.CreateLogger<FinnhubInformationSource>());
+                    new FinnhubQuoteClient(
+                        httpClient, options.Finnhub.ApiKey,
+                        Limiter(30, TimeSpan.FromMinutes(1), timeProvider),
+                        loggerFactory.CreateLogger<FinnhubQuoteClient>()),
+                    options.Finnhub.Symbols);
 
             case SecEdgar:
                 if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent) || options.SecEdgar.Ciks.Length == 0)
@@ -115,7 +119,7 @@ internal static class InformationSourceFactory
                 // SEC EDGAR は 10 回/秒/IP。その 1/2 に自制する。
                 return new SecEdgarInformationSource(
                     httpClient, options.SecEdgar.UserAgent, options.SecEdgar.Ciks,
-                    Limiter(5, TimeSpan.FromSeconds(1), clock),
+                    Limiter(5, TimeSpan.FromSeconds(1), timeProvider),
                     loggerFactory.CreateLogger<SecEdgarInformationSource>());
 
             case Edinet:
@@ -125,7 +129,7 @@ internal static class InformationSourceFactory
                 // EDINET はレート制限非公表。1 分 1 回程度に自制する。
                 return new EdinetInformationSource(
                     httpClient, options.Edinet.SubscriptionKey, clock,
-                    Limiter(1, TimeSpan.FromMinutes(1), clock),
+                    Limiter(1, TimeSpan.FromMinutes(1), timeProvider),
                     loggerFactory.CreateLogger<EdinetInformationSource>());
 
             case Boj:
@@ -135,7 +139,7 @@ internal static class InformationSourceFactory
                 // 日銀は「短時間における連続したアクセスは禁止」。系列を 1 要求に束ねたうえで 1 分 1 回に自制する。
                 return new BojInformationSource(
                     httpClient, options.Boj.Db, options.Boj.SeriesCodes,
-                    Limiter(1, TimeSpan.FromMinutes(1), clock),
+                    Limiter(1, TimeSpan.FromMinutes(1), timeProvider),
                     loggerFactory.CreateLogger<BojInformationSource>());
 
             case Fred:
@@ -145,7 +149,7 @@ internal static class InformationSourceFactory
                 // FRED は 120 回/分。その 1/2 に自制する。
                 return new FredInformationSource(
                     httpClient, options.Fred.ApiKey, options.Fred.SeriesIds,
-                    Limiter(60, TimeSpan.FromMinutes(1), clock),
+                    Limiter(60, TimeSpan.FromMinutes(1), timeProvider),
                     loggerFactory.CreateLogger<FredInformationSource>());
 
             default:
@@ -164,6 +168,6 @@ internal static class InformationSourceFactory
         return null;
     }
 
-    private static IRateLimiter Limiter(int capacity, TimeSpan refillInterval, IClock clock) =>
-        new DelayingRateLimiter(new TokenBucket(capacity, refillInterval), clock);
+    private static IRateLimiter Limiter(int capacity, TimeSpan refillInterval, TimeProvider timeProvider) =>
+        new DelayingRateLimiter(new TokenBucket(capacity, refillInterval), timeProvider);
 }

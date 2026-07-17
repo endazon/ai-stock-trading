@@ -1,5 +1,5 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Application.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 

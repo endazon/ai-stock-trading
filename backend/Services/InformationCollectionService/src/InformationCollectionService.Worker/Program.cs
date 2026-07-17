@@ -37,10 +37,13 @@ builder.Services.AddSingleton(SourceAllowlist.Default);
 // （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0064）。
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IClock, SystemClock>();
+// IADR-0068: レート制限の時刻源は共有物へ揃えるため TimeProvider（IClock は情報源の日付計算で引き続き使う）。
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IInformationSource>(sp => InformationSourceFactory.Create(
     builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
     sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>()));
 
 // FR-01, FR-08: KB シンク（既定は no-op/ログ。実 platform KB 連携は #18）。

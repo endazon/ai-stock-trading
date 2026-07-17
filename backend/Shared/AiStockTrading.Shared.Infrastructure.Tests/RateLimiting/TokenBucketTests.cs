@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Domain.RateLimiting;
+using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using FluentAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.RateLimiting;
 
 // FR-01, ADR-0004, IADR-0064: レート制限のトークンバケット（純粋な状態機械・時計を持たない）を境界値で検証する。
 // 各情報源の公表上限（Finnhub 60回/分・SEC EDGAR 10回/秒 等）より保守側の既定で送信前に自制するための土台。

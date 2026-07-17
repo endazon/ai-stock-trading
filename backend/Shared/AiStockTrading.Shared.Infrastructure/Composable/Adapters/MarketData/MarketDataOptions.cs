@@ -19,4 +19,31 @@ public sealed class MarketDataOptions
 
     /// <summary>前回値の保持期限（秒）。これを超えた前回値は取得不可として扱い、含みを 0 へ倒す。既定 300s（5 分）。</summary>
     public int MaxQuoteStalenessSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// 現在値ソースの選択（#158, IADR-0068 決定 6）。既定・空・"none" は no-op＝実接続しない。
+    /// 現在の実装は "finnhub" のみ（未知の値も安全既定の no-op へ倒す）。
+    /// </summary>
+    public string? Provider { get; set; }
+
+    /// <summary>Finnhub（Provider="finnhub"）の構成。API キーが空なら no-op へ倒す（実接続しない）。</summary>
+    public FinnhubMarketDataOptions Finnhub { get; set; } = new();
+}
+
+// #158, IADR-0068: Finnhub 実市況の構成。情報収集の Collection:Source:Finnhub とは**別枠**にする（有効化の判断も
+// レート予算も別。片方の有効化でもう片方が黙って有効になるのは opt-in の粒度として粗い）。同じ Finnhub アカウントの
+// 鍵を両方へ設定するのは運用上は自由。
+public sealed class FinnhubMarketDataOptions
+{
+    /// <summary>API キー（既定は空＝no-op へフォールバック）。環境変数から与え、appsettings に実値を置かない。</summary>
+    public string? ApiKey { get; set; }
+
+    /// <summary>API のベース URL。既定で足りるため通常は設定不要（テスト・将来の移行用）。</summary>
+    public string BaseUrl { get; set; } = FinnhubQuoteClient.DefaultBaseUrl;
+
+    /// <summary>
+    /// 当サービスに配るレート予算（回/分）。既定 10。プロセスをまたぐ協調は行わないため、全プロセスの合計が
+    /// 無料枠（60 回/分）を超えないよう運用で守る（既定の内訳は IADR-0068 決定 4）。
+    /// </summary>
+    public int RequestsPerMinute { get; set; } = 10;
 }
