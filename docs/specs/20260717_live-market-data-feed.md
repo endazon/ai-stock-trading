@@ -146,7 +146,7 @@ Finnhub 無料枠の `/quote` は米国株のみ。`FinnhubMarketDataSource` は
 | 3 | 非成功応答・解析不能・現在値 0（＝Finnhub の未知銘柄応答）は取得不可（null） | 同上 |
 | 4 | 米国以外の市場は要求を出さずに null | 同上（ハンドラ呼び出し回数 0） |
 | 5 | `Provider` 未設定/`none`/未知/キー無しは `NoOpMarketDataSource`（実接続しない） | `MarketDataSourceFactoryTests` |
-| 6 | 要求前にレート制限を消費する（自制・IADR-0064） | `FinnhubQuoteClientTests`（偽の待機） |
+| 6 | 要求前にレート制限を消費する（自制・IADR-0064） | `FinnhubMarketDataSourceTests.銘柄ごとに送信前レート制限を消費する`／`FinnhubInformationSourceTests.銘柄ごとにレート制限を待つ`（偽のレート制限で消費回数を検証） |
 | 7 | 情報収集の `FinnhubInformationSource` の出力が抽出前と同一（`high`/`low`/`prevClose` を保つ） | 既存 `FinnhubInformationSourceTests`（無改修で緑） |
 | 8 | 移動したレート制限（`TokenBucket`/`DelayingRateLimiter`）の挙動が不変 | 既存テストを `Shared.Infrastructure.Tests` へ移設し無改修で緑 |
 | 9 | 既定（構成なし）で 3 サービスとも no-op が注入され、実接続しない | `MarketDataWiringTests`（既存・リスク管理）＋ 各 Worker の DI 解決テスト |
