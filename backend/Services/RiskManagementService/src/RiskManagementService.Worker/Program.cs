@@ -1,12 +1,16 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
+using AiStockTrading.RiskManagement.Worker.Composable.MarketData;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
+using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 const string ServiceName = "ai-stock-trading.risk-management-service";
@@ -48,9 +52,30 @@ builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。
-// DbContext が scoped のため台帳ストア・プロバイダも scoped。含み損益・DD は市場データ連携まで 0（IADR-0008/0018）。
+// DbContext が scoped のため台帳ストア・プロバイダも scoped。
 builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();
-builder.Services.AddScoped<IPortfolioStateProvider, LedgerPortfolioStateProvider>();
+// FR-10, #81, IADR-0065: 含み損益・DD の時価評価。既定（EnableMarkToMarket=false）は現在値を注入せず従来どおり
+// 含み 0・DD 0（IADR-0008/0018）。有効化すると DrawdownRatio が非 0 になり最大DD の取引ゲートの入力が変わるため、
+// 実市況の live 検証を経てから人手で切り替える。現在値ソース自体も既定 no-op（実接続しない）。
+builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
+builder.Services.AddSingleton<IMarketDataSource, NoOpMarketDataSource>();
+builder.Services.AddSingleton<QuoteCache>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
+{
+    var ledger = sp.GetRequiredService<IPortfolioLedgerStore>();
+    var clock = sp.GetRequiredService<IClock>();
+    var options = sp.GetRequiredService<IOptions<MarketDataOptions>>();
+    // 無効（既定）なら現在値ソースを注入しない＝含み 0・DD 0 の現行挙動をそのまま保つ。
+    return options.Value.EnableMarkToMarket
+        ? new LedgerPortfolioStateProvider(ledger, clock, sp.GetRequiredService<ICurrentPriceSource>())
+        : new LedgerPortfolioStateProvider(ledger, clock);
+});
+builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
+// 現在値の補充は背景で行う（発注判断の同期経路にネットワーク往復を持ち込まない）。
+// 無効（既定）なら補充自体を起動しない＝台帳への巡回アクセスも発生させない。
+if (builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>()?.EnableMarkToMarket == true)
+    builder.Services.AddHostedService<QuoteRefreshService>();
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。
 builder.Services.AddScoped<SizingContextService>();

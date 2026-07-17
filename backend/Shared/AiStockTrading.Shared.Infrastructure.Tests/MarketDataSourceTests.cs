@@ -52,7 +52,7 @@ public class MarketDataSourceTests
     public async Task 取得成功時は内側の現在値をそのまま返す()
     {
         var inner = new StubSource { Next = Quote(1_100m) };
-        var sut = new LastKnownQuoteSource(inner, new TestTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), new TestTimeProvider(Now), TimeSpan.FromMinutes(5));
 
         var quote = await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
 
@@ -64,7 +64,7 @@ public class MarketDataSourceTests
     {
         var time = new TestTimeProvider(Now);
         var inner = new StubSource { Next = Quote(1_100m) };
-        var sut = new LastKnownQuoteSource(inner, time, TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), time, TimeSpan.FromMinutes(5));
 
         await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates); // 前回値を取得・保持
 
@@ -81,7 +81,7 @@ public class MarketDataSourceTests
     {
         var time = new TestTimeProvider(Now);
         var inner = new StubSource { Next = Quote(1_100m) };
-        var sut = new LastKnownQuoteSource(inner, time, TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), time, TimeSpan.FromMinutes(5));
 
         await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
 
@@ -95,7 +95,7 @@ public class MarketDataSourceTests
     public async Task 取得失敗時に前回値が無ければ取得不可を返す()
     {
         var inner = new StubSource { Next = null };
-        var sut = new LastKnownQuoteSource(inner, new TestTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), new TestTimeProvider(Now), TimeSpan.FromMinutes(5));
 
         (await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates)).Should().BeNull();
     }
@@ -105,7 +105,7 @@ public class MarketDataSourceTests
     {
         var time = new TestTimeProvider(Now);
         var inner = new StubSource { Next = Quote(1_100m, "AAPL") };
-        var sut = new LastKnownQuoteSource(inner, time, TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), time, TimeSpan.FromMinutes(5));
 
         await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
 
@@ -123,7 +123,7 @@ public class MarketDataSourceTests
     {
         var time = new TestTimeProvider(Now);
         var inner = new StubSource { Next = Quote(1_100m) };
-        var sut = new LastKnownQuoteSource(inner, time, TimeSpan.FromMinutes(5));
+        var sut = new LastKnownQuoteSource(inner, new QuoteCache(), time, TimeSpan.FromMinutes(5));
 
         await sut.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
         time.Advance(TimeSpan.FromMinutes(4));
