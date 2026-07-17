@@ -41,6 +41,19 @@ public static class AuditEntryFactory
         $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
+    // FR-05, FR-19, #154, IADR-0067: 注文の訂正（注文履歴テレメトリ）。相関は既存の注文系と同じ DecisionId。
+    // OrderExecuted と同様に銘柄を持たない（DecisionId で相関して補完する系）ため Symbol は null。
+    public static AuditEntry From(OrderModified e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(OrderModified), e.DecisionId, Symbol: null,
+        Truncate($"訂正 数量{e.PreviousQuantity}→{e.Quantity} 価格{e.PreviousPrice}→{e.Price}（OrderId={e.OrderId}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.ModifiedAt, recordedAt);
+
+    // FR-05, FR-19, #154, IADR-0067: 注文の取消（注文履歴テレメトリ）。相関は既存の注文系と同じ DecisionId。
+    public static AuditEntry From(OrderCancelled e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(OrderCancelled), e.DecisionId, Symbol: null,
+        Truncate($"取消（OrderId={e.OrderId}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.CancelledAt, recordedAt);
+
     // FR-17: 全体前提条件の変更（設定管理 #19）。注文相関を持たないため "assumptions" の決定的 GUID を相関にする。
     public static AuditEntry From(AssumptionsChanged e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(AssumptionsChanged), AuditCorrelation.From("assumptions"), Symbol: null,

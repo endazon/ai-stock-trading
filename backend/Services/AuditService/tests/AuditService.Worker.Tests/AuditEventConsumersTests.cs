@@ -31,6 +31,8 @@ public class AuditEventConsumersTests
                 x.AddConsumer<OrderApprovedAuditConsumer>();
                 x.AddConsumer<OrderRejectedAuditConsumer>();
                 x.AddConsumer<OrderExecutedAuditConsumer>();
+                x.AddConsumer<OrderModifiedAuditConsumer>();
+                x.AddConsumer<OrderCancelledAuditConsumer>();
                 x.AddConsumer<AssumptionsChangedAuditConsumer>();
                 x.AddConsumer<ReportConfirmedAuditConsumer>();
                 x.AddConsumer<CostThresholdReachedAuditConsumer>();
@@ -59,6 +61,32 @@ public class AuditEventConsumersTests
         var trail = store.GetByCorrelation(decisionId);
         trail.Select(e => e.EventType).Should()
             .Contain(new[] { "TradeDecisionMade", "OrderApproved", "OrderExecuted" });
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 訂正取消も同一_DecisionId_相関で注文チェーンに記録される()
+    {
+        // #154, IADR-0067: 注文履歴テレメトリ。訂正・取消も既存の注文チェーンと同じ相関に載る（FR-11）。
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var decisionId = Guid.NewGuid();
+        await harness.Bus.Publish(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
+        await harness.Bus.Publish(
+            new OrderModified(decisionId, "ORD-1", 10, 1_000m, 4, 990m, "数量縮小", DateTimeOffset.UtcNow));
+        await harness.Bus.Publish(
+            new OrderCancelled(decisionId, "ORD-1", "pause による強制取消", DateTimeOffset.UtcNow));
+
+        (await harness.Consumed.Any<OrderModified>()).Should().BeTrue();
+        (await harness.Consumed.Any<OrderCancelled>()).Should().BeTrue();
+
+        var trail = store.GetByCorrelation(decisionId);
+        trail.Select(e => e.EventType).Should()
+            .Contain(new[] { "OrderApproved", "OrderModified", "OrderCancelled" });
 
         await harness.Stop();
     }

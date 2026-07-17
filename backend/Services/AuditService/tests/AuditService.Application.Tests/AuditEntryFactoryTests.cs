@@ -75,6 +75,38 @@ public class AuditEntryFactoryTests
     }
 
     [Fact]
+    public void OrderModified_は_訂正前後の値つきで_DecisionId_相関を記録する()
+    {
+        // #154, IADR-0067: 注文履歴テレメトリ。訂正は既存の注文系と同じ DecisionId 相関に載せる。
+        var decisionId = Guid.NewGuid();
+        var e = new OrderModified(decisionId, "ORD-1", 10, 3_000m, 4, 2_950m, "数量縮小", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderModified");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("ORD-1").And.Contain("数量縮小");
+        // 監査台帳から「何がどう変わったか」が読めること（FR-11）。
+        entry.Detail.Should().Contain("PreviousQuantity").And.Contain("PreviousPrice");
+    }
+
+    [Fact]
+    public void OrderCancelled_は_理由つきで_DecisionId_相関を記録する()
+    {
+        // #154, IADR-0067: 注文履歴テレメトリ。取消も既存の注文系と同じ DecisionId 相関に載せる。
+        var decisionId = Guid.NewGuid();
+        var e = new OrderCancelled(decisionId, "ORD-1", "pause による強制取消", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderCancelled");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("ORD-1").And.Contain("pause による強制取消");
+    }
+
+    [Fact]
     public void PriceMovementDetected_は_EventId_相関で銘柄を記録する()
     {
         var eventId = Guid.NewGuid();

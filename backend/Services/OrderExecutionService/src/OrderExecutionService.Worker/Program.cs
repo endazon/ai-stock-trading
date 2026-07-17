@@ -57,6 +57,21 @@ builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 builder.Services.AddScoped<OrderExecutionService>();
 
+// #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
+// 訂正・取消の口（IOrderAmendmentBroker）はペーパーだけが実装する。実ブローカー（moomoo）選択時は本経路を
+// 登録しない＝実弾に対する訂正・取消が構成上も存在しない（fail-safe）。実ブローカーの訂正・取消配線は
+// 後続・実コンテナ E2E（#82 系）で扱う。
+// 駆動元（時限取消・#141 リコンサイル基点・#152 pause 強制取消）は本 PR の対象外で、それらが
+// OrderAmendmentDispatcher を呼ぶ。moomoo 構成でそれらを配線した場合は DI 解決に失敗して起動時に気づける。
+builder.Services.AddScoped<IOrderLifecycleStore, EfOrderLifecycleStore>();
+if (!BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
+{
+    builder.Services.AddSingleton<IOrderAmendmentBroker>(sp =>
+        (IOrderAmendmentBroker)sp.GetRequiredService<IBrokerAdapter>());
+    builder.Services.AddScoped<OrderAmendmentService>();
+    builder.Services.AddScoped<OrderAmendmentDispatcher>();
+}
+
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));

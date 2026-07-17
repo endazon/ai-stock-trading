@@ -73,6 +73,28 @@ internal sealed class OrderExecutedAuditConsumer(IAuditEventStore store, IClock 
     }
 }
 
+// FR-05, FR-19, #154, IADR-0067: 注文の訂正（注文履歴テレメトリ）を監査台帳へ記録する（FR-11: 全イベントの時系列記録）。
+internal sealed class OrderModifiedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<OrderModified>
+{
+    public Task Consume(ConsumeContext<OrderModified> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-05, FR-19, #154, IADR-0067: 注文の取消（注文履歴テレメトリ）を監査台帳へ記録する。
+internal sealed class OrderCancelledAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<OrderCancelled>
+{
+    public Task Consume(ConsumeContext<OrderCancelled> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
 // FR-17: 全体前提条件の変更（設定管理 #19）を監査台帳へ記録する。
 internal sealed class AssumptionsChangedAuditConsumer(IAuditEventStore store, IClock clock)
     : IConsumer<AssumptionsChanged>
