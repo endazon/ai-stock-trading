@@ -33,7 +33,15 @@ internal sealed class KnowledgeBaseRetrievalContextProvider(
             .ToList();
     }
 
+    // 検索クエリに載せる方針要約の上限。長文方針でクエリが冗長化しないよう先頭を切り出す（実関連度検証は #82 系）。
+    private const int MaxSummaryChars = 500;
+
     // 収集情報・判断根拠は銘柄・当日方針に紐づくため、この 3 要素で最小の関連検索クエリを組む（IADR-0072 決定5）。
-    private static string BuildQuery(DecisionTrigger trigger, DailyPolicy policy) =>
-        $"{trigger.Symbol} {trigger.Market} {policy.Summary}".Trim();
+    private static string BuildQuery(DecisionTrigger trigger, DailyPolicy policy)
+    {
+        var summary = policy.Summary.Length > MaxSummaryChars
+            ? policy.Summary[..MaxSummaryChars]
+            : policy.Summary;
+        return $"{trigger.Symbol} {trigger.Market} {summary}".Trim();
+    }
 }

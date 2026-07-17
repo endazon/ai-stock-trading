@@ -71,4 +71,19 @@ public class KnowledgeBaseRetrievalContextProviderTests
 
         result.Should().BeEmpty();
     }
+
+    // IADR-0072 決定5: 長文方針でも検索クエリが冗長化しないよう、方針要約は上限（500 文字）で切り詰める。
+    [Fact]
+    public async Task 長文方針の検索クエリは上限で切り詰められる()
+    {
+        var search = new FakeSearch([]);
+        var provider = Create(search);
+        var longPolicy = new DailyPolicy(new DateOnly(2026, 7, 10), new string('方', 2000));
+
+        await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), longPolicy);
+
+        // 銘柄・市場・区切り空白 + 上限 500 文字の要約に収まる（2000 文字の全文は載らない）。
+        search.LastQuery!.Query.Length.Should().BeLessThan(560);
+        search.LastQuery.Query.Should().Contain("AAPL");
+    }
 }

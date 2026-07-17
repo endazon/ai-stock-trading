@@ -96,6 +96,37 @@ public class TradeDecisionPromptBuilderTests
         withEmpty.Should().Be(baseline);
     }
 
+    // FR-08, IADR-0072 決定3: 参考情報の本文抜粋は上限（400 文字）で切り詰め、超過時は省略記号を付す。
+    [Fact]
+    public void RAG参考情報の本文抜粋は上限超で切り詰められ省略記号が付く()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var longText = new string('あ', 500); // 上限 400 を超える
+        var retrieved = new[] { new RetrievedContext("長文メモ", longText, null, 0.5d) };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        prompt.Should().Contain("長文メモ");
+        prompt.Should().Contain("…");
+        // 400 文字ちょうど分は残り、501 文字目（全文）は残らない。
+        prompt.Should().Contain(new string('あ', 400));
+        prompt.Should().NotContain(longText);
+    }
+
+    // FR-08, IADR-0072 決定3: 上限以内の本文抜粋は切り詰めず省略記号を付けない。
+    [Fact]
+    public void RAG参考情報の本文抜粋は上限以内ならそのまま出力される()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var text = new string('い', 400); // ちょうど上限
+        var retrieved = new[] { new RetrievedContext("境界メモ", text, null, 0.5d) };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        prompt.Should().Contain(text);
+        prompt.Should().NotContain("…");
+    }
+
     // FR-08, IADR-0072 決定2: 一次スクリーニングは費用統制のため RAG 文脈を含めない（据え置き）。
     [Fact]
     public void スクリーニングプロンプトはRAG文脈を含まない()
