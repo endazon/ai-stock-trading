@@ -65,7 +65,7 @@ plan_refs:
 ## 照会・変更
 
 - `GET /assumptions`（現在値＋Version）は **OwnerOrService**（利用者＝`trading-owner` またはサービス＝`trading-service`）。
-  消費側サービス（費用統制 #139・損益集計・AI 判断）が単一の真実源を共通参照するため（IADR-0064 決定 2）。
+  消費側サービス（費用統制 #139・損益集計・AI 判断）が単一の真実源を共通参照するため（IADR-0063 決定 2）。
 - `GET /assumptions/history`（新しい順）・`PUT /assumptions`（更新）は **OwnerOnly 据え置き**（最小権限）。履歴は「誰がなぜ
   変えたか」の運用情報のためサービスへ開放しない。
 - `PUT` は `ExpectedVersion`・`Reason` 必須（欠如は 400）。版不一致は 409（楽観排他）。成功時に `AssumptionsChanged` イベントを発行
@@ -73,7 +73,7 @@ plan_refs:
 
 ## 消費側からの参照（共有クライアント）
 
-- 消費側サービスは `AiStockTrading.Configuration.Client` の `IAssumptionsProvider` で参照する（IADR-0064 決定 3）。
+- 消費側サービスは `AiStockTrading.Configuration.Client` の `IAssumptionsProvider` で参照する（IADR-0063 決定 3）。
   配線は `services.AddAiStockTradingAssumptions(configuration)` の 1 行＋`x.AddConsumer<AssumptionsChangedConsumer>()`（版の追随）。
 - キャッシュは `AssumptionsChanged` で無効化し、TTL（`Configuration:AssumptionsCacheTtlSeconds`・既定 300 秒）でも失効する。
 - フェイルセーフ: 取得不可時は ①last known good → ②既定値（`Version=0`＝未解決）の順に倒す（決定 5）。

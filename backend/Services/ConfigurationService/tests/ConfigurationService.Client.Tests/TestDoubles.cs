@@ -3,7 +3,7 @@ using AiStockTrading.Configuration.Domain;
 
 namespace AiStockTrading.Configuration.Client.Tests;
 
-// IADR-0064 決定 4: キャッシュの TTL 失効を決定的に検証するための可変時刻（PlatformShim.Tests の同名テストダブルに倣う）。
+// IADR-0063 決定 4: キャッシュの TTL 失効を決定的に検証するための可変時刻（PlatformShim.Tests の同名テストダブルに倣う）。
 internal sealed class MutableTimeProvider : TimeProvider
 {
     private DateTimeOffset _now = new(2026, 7, 17, 0, 0, 0, TimeSpan.Zero);

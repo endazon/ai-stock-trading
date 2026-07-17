@@ -1,6 +1,6 @@
 namespace AiStockTrading.Notification.Application.Ports;
 
-// FR-14, UC-06, IADR-0063 決定4: リスク管理（#12）の kill switch HTTP エンドポイントの抽象。
+// FR-14, UC-06, IADR-0062 決定4: リスク管理（#12）の kill switch HTTP エンドポイントの抽象。
 // 通知サービスは kill switch の状態を持たず、**既存エンドポイントを呼ぶだけ**（権威は Risk 側）。
 //
 // 当該エンドポイントは OwnerOnly（trading-owner）のため、実装は Bot 専用の owner マップ機密クライアントの

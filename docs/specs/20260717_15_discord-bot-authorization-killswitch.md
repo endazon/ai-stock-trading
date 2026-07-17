@@ -10,14 +10,14 @@ related_ids:
   - ADR-0007
   - IADR-0020
   - IADR-0051
-  - IADR-0063
+  - IADR-0062
 author: claude
 created: 2026-07-17
 plan_refs:
   - "../../planning/projects/ai-stock-trading/06_technical/07_discord-bot-design.md (fixed)"
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-09 / FR-14)"
 related_specs:
-  - "../adr/IADR-0063_discord-bot-gateway-and-authorization.md（本 PR の設計判断）"
+  - "../adr/IADR-0062_discord-bot-gateway-and-authorization.md（本 PR の設計判断）"
   - "20260710_notification-outbound.md（#15 Slice A: アウトバウンド通知・IADR-0020）"
   - "../adr/IADR-0051_service-to-service-auth.md（s2s トークン基盤の再利用元）"
 ---
@@ -55,14 +55,14 @@ Bot は発注機能を持つシステムへの操作窓口であり、`/killswit
 | 項目 | 理由 |
 | --- | --- |
 | `/report show` / `/report approve` の結線 | **#14（ReportReviewStateMachine）と交差**するため。機構（`VersionedConfirmationGuard`）のみ提供 |
-| 自然文リプライの AI 分析サービス中継 | MessageContent Intent が要る（#14 交差）。IADR-0063 決定2 |
+| 自然文リプライの AI 分析サービス中継 | MessageContent Intent が要る（#14 交差）。IADR-0062 決定2 |
 | `/status` / `/pause` / `/resume` | Risk に pause 相当のエンドポイントが無く別途設計が要る |
-| 実 Discord Gateway 依存テスト | 外部 SaaS への WebSocket は CI で張れない。後続 E2E へ分離（IADR-0063 理由3） |
+| 実 Discord Gateway 依存テスト | 外部 SaaS への WebSocket は CI で張れない。後続 E2E へ分離（IADR-0062 理由3） |
 | Risk / Report / Configuration / `Shared.Contracts` / `TradingDefaults` の変更 | 本 PR は `NotificationService/**` に閉じる（kill switch は既存 HTTP を呼ぶだけ） |
 
 ## 設計
 
-設計判断の根拠は **[IADR-0063](../adr/IADR-0063_discord-bot-gateway-and-authorization.md)** に記す。
+設計判断の根拠は **[IADR-0062](../adr/IADR-0062_discord-bot-gateway-and-authorization.md)** に記す。
 
 ### レイヤ構成（Discord.Net を Application に漏らさない）
 
@@ -97,7 +97,7 @@ Worker（外部依存）
 
 **「設定が空＝全許可」にしない**ことが本仕様の要。設定漏れが全開放にならないようにする。
 
-### kill switch の資格情報（IADR-0063 決定4）
+### kill switch の資格情報（IADR-0062 決定4）
 
 Risk の `POST /risk-controls/kill-switch/engage|disengage` は **`OwnerOnly`**（`trading-owner`）であり、
 IADR-0051 の s2s トークン（`trading-service`）では **403**。Bot は**専用の owner マップ Keycloak クライアント**の
@@ -133,7 +133,7 @@ client_credentials で呼ぶ。PlatformShim の `ClientCredentialsTokenProvider`
 
 - `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` 緑
 - `dotnet format` 通過・警告ゼロ
-- **実 Discord Gateway 依存の検証は本 PR に含めない**（IADR-0063 フォローアップ・後続 E2E）
+- **実 Discord Gateway 依存の検証は本 PR に含めない**（IADR-0062 フォローアップ・後続 E2E）
 
 ## 設定キー（PR 末尾の単一コミットに集約）
 

@@ -31,13 +31,13 @@ builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFacto
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("discord"),
     sp.GetRequiredService<ILoggerFactory>()));
 
-// FR-14, UC-06, IADR-0063: Discord Bot（双方向）。既定は無効（Gateway に接続しない）。
+// FR-14, UC-06, IADR-0062: Discord Bot（双方向）。既定は無効（Gateway に接続しない）。
 // Notifications:Discord:Bot:Enabled=true ＋ Token ＋ 多層認証の設定が揃った時のみ実接続する。
 var discordBotOptions = DiscordBotOptionsReader.Read(builder.Configuration);
 builder.Services.AddSingleton(discordBotOptions);
 
 // kill switch は Risk の OwnerOnly エンドポイントを呼ぶ（Risk 側は無改修）。IADR-0051 の s2s トークン
-// （trading-service）では 403 のため、Bot 専用の owner マップ機密クライアントのトークンを付与する（IADR-0063 決定4）。
+// （trading-service）では 403 のため、Bot 専用の owner マップ機密クライアントのトークンを付与する（IADR-0062 決定4）。
 // RiskManagement:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝呼び出し失敗（Succeeded=false）に倒す。
 builder.Services.AddHttpClient("risk-kill-switch", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddDiscordOwnerToken(builder.Configuration);

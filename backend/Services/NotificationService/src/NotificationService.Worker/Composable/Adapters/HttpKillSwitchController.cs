@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 
-// FR-14, UC-06, IADR-0063 決定4: リスク管理（#12）の kill switch エンドポイントを呼ぶだけのアダプタ。
+// FR-14, UC-06, IADR-0062 決定4: リスク管理（#12）の kill switch エンドポイントを呼ぶだけのアダプタ。
 // 通知サービスは kill switch の状態を持たない（権威は Risk 側）。
 //
 // 当該エンドポイントは OwnerOnly（trading-owner）であり、IADR-0051 の s2s トークン（trading-service）では

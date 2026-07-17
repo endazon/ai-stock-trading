@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 
-// FR-14, UC-06, IADR-0063 決定4: Bot が Risk の kill switch（OwnerOnly）を呼ぶための owner トークン配線。
+// FR-14, UC-06, IADR-0062 決定4: Bot が Risk の kill switch（OwnerOnly）を呼ぶための owner トークン配線。
 //
 // IADR-0051 の AddAiStockTradingServiceToken は固定の ServiceAuth セクション（＝trading-service ロール）を読む。
 // kill switch は OwnerOnly のためそのトークンでは 403 になる。Bot は「利用者の代理」であり、trading-owner を

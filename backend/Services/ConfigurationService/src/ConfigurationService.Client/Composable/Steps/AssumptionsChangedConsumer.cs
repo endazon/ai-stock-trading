@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Configuration.Client.Composable.Steps;
 
-// FR-17, UC-06, IADR-0064 決定 1/4: 利用者が前提条件を変更したら（AssumptionsChanged）キャッシュを無効化し、次の参照で
+// FR-17, UC-06, IADR-0063 決定 1/4: 利用者が前提条件を変更したら（AssumptionsChanged）キャッシュを無効化し、次の参照で
 // 新しい版を取り直す。イベント本文の値は使わない（本文から値を復元すると、取りこぼしや順序逆転で誤った版を保持しうる。
 // 版の追随はあくまで GET /assumptions の再取得で行う）。
 //

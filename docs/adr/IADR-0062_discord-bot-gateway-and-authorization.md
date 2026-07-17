@@ -1,5 +1,5 @@
 ---
-title: IADR-0063 Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ
+title: IADR-0062 Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ
 type: impl-adr
 status: Accepted
 related_ids:
@@ -19,7 +19,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-09 通知 / FR-14 対話)"
 ---
 
-# IADR-0063: Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ
+# IADR-0062: Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ
 
 - 状態: Accepted
 - 日付: 2026-07-17

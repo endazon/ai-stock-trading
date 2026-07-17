@@ -7,7 +7,7 @@
     <!-- テスト（バージョンは基盤リポ microservices-platform と同一に保つ） -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="moomoo-api" Version="10.8.6808" />
-    <!-- FR-14, IADR-0063: Discord Bot の Gateway 常駐（詳細設計07 が採用した接続方式）。Worker のアダプタにのみ隔離する。 -->
+    <!-- FR-14, IADR-0062: Discord Bot の Gateway 常駐（詳細設計07 が採用した接続方式）。Worker のアダプタにのみ隔離する。 -->
     <PackageVersion Include="Discord.Net.WebSocket" Version="3.20.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />

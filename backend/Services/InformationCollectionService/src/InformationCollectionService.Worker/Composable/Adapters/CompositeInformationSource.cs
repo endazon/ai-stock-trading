@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 
-// FR-01, ADR-0004, IADR-0065: 案A+ は複数情報源の組み合わせ（開示=EDINET/SEC EDGAR、マクロ=FRED/日銀 等）であるため、
+// FR-01, ADR-0004, IADR-0064: 案A+ は複数情報源の組み合わせ（開示=EDINET/SEC EDGAR、マクロ=FRED/日銀 等）であるため、
 // 有効化された各ソースを束ねて 1 巡回＝1 収集として扱う（1 巡回＝1 InformationCollected の前提を保つ）。
 // 1 ソースの障害・キー切れが他ソースと巡回を巻き込まないよう、失敗はソース単位で隔離してログする（欠測検知）。
 internal sealed class CompositeInformationSource(

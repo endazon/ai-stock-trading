@@ -12,7 +12,7 @@ related_ids:
   - IADR-0017
   - IADR-0039
   - IADR-0055
-  - IADR-0062
+  - IADR-0061
 author: claude
 created: 2026-07-17
 plan_refs:
@@ -21,7 +21,7 @@ plan_refs:
 related_specs:
   - "20260714_79_llm-egress.md（#125・HttpLlmCompletionClient の実装。本スライスの前提）"
   - "20260715_79_llm-cost-metering-impl.md（#79・費用計測。本スライスは計測点を変えない）"
-  - "../adr/IADR-0062_llm-production-wiring.md（本スライスの設計判断）"
+  - "../adr/IADR-0061_llm-production-wiring.md（本スライスの設計判断）"
 ---
 
 # 仕様書: 実 LLM 接続の実運用化スライス（Issue #11）
@@ -31,7 +31,7 @@ related_specs:
 - 機能要求: **FR-04**（生成 AI は方針とリスク制約の範囲内でのみ売買判断を行う）／**FR-11**（判断根拠の記録）
 - ユースケース: **UC-01 / UC-02**
 - 計画 ADR: **ADR-0003**（方針階層＋独立リスク管理）／**ADR-0010**（platform LLM ゲートウェイ）
-- 実装 ADR: **IADR-0062**（本スライス）／IADR-0017（安全既定）／IADR-0039（多数決・二段）／IADR-0055（費用計測）
+- 実装 ADR: **IADR-0061**（本スライス）／IADR-0017（安全既定）／IADR-0039（多数決・二段）／IADR-0055（費用計測）
 - Issue: [#11](https://github.com/endazon/ai-stock-trading/issues/11) の残スコープ「実 LLM 接続の実運用化」
 
 ## 目的・背景
@@ -66,12 +66,12 @@ related_specs:
 **対象（本 PR）**
 
 - **全量ログ**（FR-11）: プロンプト本文と LLM 生出力を記録する。プロンプトは長大かつ保有ポジション・資金等の
-  機微を含むため、**既定オフ**の明示ゲート（`LlmGateway:LogPrompts`）とする（IADR-0062 決定1）。
+  機微を含むため、**既定オフ**の明示ゲート（`LlmGateway:LogPrompts`）とする（IADR-0061 決定1）。
 - **タイムアウトの構成化**: `LlmGateway:TimeoutSeconds`（既定 30＝現行値。不正・非正値は既定へ倒す）。
 - **設定サーフェス**（PR 末尾の単一コミット）: helm values / docker-compose / `.env.example` /
   appsettings.Development に `LlmGateway__BaseUrl` ほかの口を空既定で開ける。**実キー・実 URL は投入しない**。
   base `appsettings.json` には置かない（IADR-0048 決定1 の挙動中立を保つ）。
-- **死んだ秘密注入 `ANTHROPIC_API_KEY` の除去**（IADR-0062 決定6・ユーザー判断で当初の deferral を撤回）:
+- **死んだ秘密注入 `ANTHROPIC_API_KEY` の除去**（IADR-0061 決定6・ユーザー判断で当初の deferral を撤回）:
   コードが同変数を一切読まず ADR-0010（鍵は MSP ゲートウェイ側が保持し AST は鍵を持たない）と矛盾するため、
   注入している全箇所（helm values / docker-compose / `.env.example` / `scripts/k8s-local-deploy.sh` /
   関連ドキュメント）から除去する。併せて波及する共有 CI 配管（`scripts/validate-runtime-scaffold.js` の

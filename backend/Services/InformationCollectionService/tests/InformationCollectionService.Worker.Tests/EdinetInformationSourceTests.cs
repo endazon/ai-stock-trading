@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, ADR-0004, IADR-0065: EDINET API v2（金融庁・日本の企業開示）コネクタ。書類一覧（documents.json・type=2）の
+// FR-01, ADR-0004, IADR-0064: EDINET API v2（金融庁・日本の企業開示）コネクタ。書類一覧（documents.json・type=2）の
 // 写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 public class EdinetInformationSourceTests
 {

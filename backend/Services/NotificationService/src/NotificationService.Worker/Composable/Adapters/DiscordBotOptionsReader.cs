@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 
-// FR-14, IADR-0063: 構成から DiscordBotOptions を読む。
+// FR-14, IADR-0062: 構成から DiscordBotOptions を読む。
 // AllowedUserIds は配列（`Bot:AllowedUserIds:0`）とカンマ区切り文字列の双方を受ける。環境変数で与える場合に
 // 配列添字より 1 変数のカンマ区切りの方が扱いやすいため（docker-compose / helm の値と .env の両方に対応する）。
 //

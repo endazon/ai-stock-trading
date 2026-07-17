@@ -50,7 +50,7 @@ HTTP 疎通（ヘルスチェック `/health/live`・`/health/ready`、同期照
 
 - **compose で使う**: `.env` に記入（`.env.example` のキーを埋める）。例:
   - `LLM_GATEWAY_BASEURL`（実 LLM を使う場合 / #11）。**鍵ではなく MSP の LLM ゲートウェイ URL** を入れる。
-    LLM プロバイダ鍵は AST では扱わず MSP 側が保持する（ADR-0010 / IADR-0062 決定6）。
+    LLM プロバイダ鍵は AST では扱わず MSP 側が保持する（ADR-0010 / IADR-0061 決定6）。
   - `COLLECTION_SOURCE_PROVIDER` + `COLLECTION_FINNHUB_API_KEY`（実市場情報 / #81）
   - `NOTIFICATIONS_PROVIDER=discord-webhook` + `NOTIFICATIONS_DISCORD_WEBHOOK_URL`（実通知 / #15）
   - `MOOMOO_API_KEY` / `MOOMOO_API_SECRET`（実発注 / #13。既定は実弾防止ゲートで無効）

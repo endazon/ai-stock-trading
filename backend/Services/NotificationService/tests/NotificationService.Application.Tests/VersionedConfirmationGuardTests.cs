@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;
 
-// FR-14, IADR-0063 決定6: 版番号付き冪等確定（詳細設計07「二重実行防止」）。
+// FR-14, IADR-0062 決定6: 版番号付き冪等確定（詳細設計07「二重実行防止」）。
 // 受け入れ基準10: 同一 対象ID＋版番号 の再確定は AlreadyConfirmed・古い版は Stale。
 // 会話キーは report_type + period（例: daily-2026-07-07）。
 public class VersionedConfirmationGuardTests

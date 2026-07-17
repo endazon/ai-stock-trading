@@ -1,6 +1,6 @@
 namespace AiStockTrading.Notification.Application.Ports;
 
-// FR-14, IADR-0063 決定1: Discord Gateway（WebSocket）常駐の抽象。
+// FR-14, IADR-0062 決定1: Discord Gateway（WebSocket）常駐の抽象。
 //
 // 詳細設計07 は Gateway 接続（アウトバウンドのみ・受信ポートを外部公開しない）を採用し、Interactions
 // Endpoint 方式を明示的に不採用としている。実装（Discord.Net）は Worker のアダプタに隔離し、Application は

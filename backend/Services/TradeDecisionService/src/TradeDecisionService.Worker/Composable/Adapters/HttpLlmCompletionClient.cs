@@ -10,7 +10,7 @@ namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 // フェイルセーフ（IADR-0017 の安全既定と一致）: 送信拒否（Sent=false）・非 2xx・例外・タイムアウト・空/不正応答は
 // Hold（取引しない）に倒す。判断パーサはこの JSON を Hold として解釈する。
 // #79, IADR-0055 決定3: 成功応答のトークンを ILlmUsageReporter へ渡す（計測点は egress）。既定 NoOp＝publish しない。
-// #11, FR-11, IADR-0062 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する（判断根拠の事後再構成）。
+// #11, FR-11, IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する（判断根拠の事後再構成）。
 // プロンプトは保有ポジション・資金残枠等の機微を含むため既定オフ＝記録しない（最小権限）。
 internal sealed class HttpLlmCompletionClient(
     HttpClient httpClient,
@@ -27,7 +27,7 @@ internal sealed class HttpLlmCompletionClient(
     {
         try
         {
-            // FR-11, IADR-0062 決定1: 送信前にプロンプト全量を記録する（応答前に失敗しても入力は残る）。
+            // FR-11, IADR-0061 決定1: 送信前にプロンプト全量を記録する（応答前に失敗しても入力は残る）。
             if (logPrompts)
                 logger.LogInformation("LLM 要求: model={Model} prompt={Prompt}", model, prompt);
 
@@ -55,7 +55,7 @@ internal sealed class HttpLlmCompletionClient(
                 return HoldFallback;
             }
 
-            // FR-11, IADR-0062 決定1: LLM の生出力を全量記録する（構造化解析前＝パーサが Hold へ丸める前の原文）。
+            // FR-11, IADR-0061 決定1: LLM の生出力を全量記録する（構造化解析前＝パーサが Hold へ丸める前の原文）。
             if (logPrompts)
                 logger.LogInformation("LLM 応答: model={Model} tokens={Input}/{Output} text={Text}",
                     dto.Model, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Text);
@@ -94,7 +94,7 @@ internal sealed class HttpLlmCompletionClient(
     // POST /complete の応答（CompletionApiResponse の必要部分）。Sent=false は送信拒否（縮退）。
     // InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。欠落時は 0 として扱う。
     // Model はゲートウェイが実際に選択したモデル（要求の Model は希望値であり、越境ルーティングで変わり得る）。
-    // FR-11 の全量ログで「どのモデルが答えたか」を残すために受ける（IADR-0062 決定1）。
+    // FR-11 の全量ログで「どのモデルが答えたか」を残すために受ける（IADR-0061 決定1）。
     // 実基盤の契約（microservices-platform リポジトリ
     // src/platform/backend/Shared/Platform.Shared.Contracts/Dtos/CompletionDto.cs の CompletionApiResponse。
     // 2026-07-17 時点で Text/Model/InputTokens/OutputTokens/Sent/Endpoint/RoutingReason）に Model は実在する。

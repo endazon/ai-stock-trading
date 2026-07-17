@@ -7,14 +7,14 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 
-// FR-14, UC-06, IADR-0063 決定1/2: Discord.Net による Gateway（WebSocket）常駐の実装。
+// FR-14, UC-06, IADR-0062 決定1/2: Discord.Net による Gateway（WebSocket）常駐の実装。
 // 詳細設計07 が採用した接続方式（アウトバウンドのみ・受信ポートを外部公開しない）。
 //
 // 本クラスは Discord.Net と Application の純粋コアを繋ぐ**変換層**に徹する。判断（多層認証・確認ステップ・
 // 冪等）は一切持たず、すべて KillSwitchCommandHandler に委ねる（判断ロジックを実 Discord 非依存に保つため）。
 //
 // Intents は最小構成（Guilds のみ）。MessageContent Intent は要求しない（本 PR はスラッシュコマンドのみ。
-// 自然文リプライの中継は #14 交差のため対象外・IADR-0063 決定2）。
+// 自然文リプライの中継は #14 交差のため対象外・IADR-0062 決定2）。
 //
 // 実 Gateway への接続は本 PR では未検証（CI で外部 SaaS への WebSocket は張れない）。後続 E2E で検証する。
 internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
@@ -39,7 +39,7 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         _options = options;
         _logger = logger;
 
-        // IADR-0063 決定2: 最小 Intents。Guilds のみでスラッシュコマンドは受けられる。
+        // IADR-0062 決定2: 最小 Intents。Guilds のみでスラッシュコマンドは受けられる。
         _client = new DiscordSocketClient(new DiscordSocketConfig
         {
             GatewayIntents = GatewayIntents.Guilds,

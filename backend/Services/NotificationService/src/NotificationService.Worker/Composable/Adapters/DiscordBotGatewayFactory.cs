@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 
-// FR-14, IADR-0063 決定1: Bot Gateway の選択。安全既定は接続しない no-op（IADR-0020 の
+// FR-14, IADR-0062 決定1: Bot Gateway の選択。安全既定は接続しない no-op（IADR-0020 の
 // NotificationSenderFactory と同型）。実 Gateway 接続は設定が揃った時のみ。
 //
 // 有効化の条件（すべて満たす必要がある）:
@@ -32,7 +32,7 @@ internal static class DiscordBotGatewayFactory
         {
             logger.LogWarning(
                 "Notifications:Discord:Bot:Enabled=true ですが Token が未設定のため Gateway に接続しません" +
-                "（no-op へフォールバック・IADR-0063）。");
+                "（no-op へフォールバック・IADR-0062）。");
             return NoOp(loggerFactory);
         }
 
@@ -41,7 +41,7 @@ internal static class DiscordBotGatewayFactory
         if (missing.Count > 0)
         {
             logger.LogWarning(
-                "Discord Bot の多層認証の設定が不足しているため Gateway に接続しません（不足: {Missing}・IADR-0063）。",
+                "Discord Bot の多層認証の設定が不足しているため Gateway に接続しません（不足: {Missing}・IADR-0062）。",
                 string.Join(", ", missing));
             return NoOp(loggerFactory);
         }

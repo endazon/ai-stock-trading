@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Worker.Tests;
 
-// FR-01, ADR-0004, IADR-0065: 案A+ の複数情報源の合成。1 ソースの障害が他ソースと巡回を巻き込まないこと（欠測検知・
+// FR-01, ADR-0004, IADR-0064: 案A+ の複数情報源の合成。1 ソースの障害が他ソースと巡回を巻き込まないこと（欠測検知・
 // フォールバック）を検証する。
 public class CompositeInformationSourceTests
 {

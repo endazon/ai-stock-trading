@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Configuration.Client.Adapters;
 
-// FR-17, IADR-0064 決定 1: 設定サービス（#19）の GET /assumptions を同期照会して現在の前提条件と Version を得る。
+// FR-17, IADR-0063 決定 1: 設定サービス（#19）の GET /assumptions を同期照会して現在の前提条件と Version を得る。
 // 非 2xx・例外・タイムアウト・不正応答は null（＝取得不可）に倒し、例外を伝播させない。何へ縮退するかの判断は
 // CachedAssumptionsProvider（決定 5: last known good ＞ 既定値）が持つ。
-// 認証（IADR-0051/0064 決定 2）: /assumptions の GET は OwnerOrService のため、HttpClient に付与された
+// 認証（IADR-0051/0063 決定 2）: /assumptions の GET は OwnerOrService のため、HttpClient に付与された
 // client_credentials サービストークン（trading-service）で認証される（AddAiStockTradingServiceToken）。
 // ServiceAuth:ClientId/ClientSecret 未設定ならヘッダなし＝401 → 取得不可（既定へ縮退）。
 internal sealed class HttpAssumptionsClient(

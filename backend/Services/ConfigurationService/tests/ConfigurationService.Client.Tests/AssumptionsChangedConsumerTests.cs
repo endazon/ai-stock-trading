@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.Configuration.Client.Tests;
 
-// FR-17, UC-06, IADR-0064 決定 1/4: 利用者の前提条件変更（AssumptionsChanged）でキャッシュが無効化され、次の参照で
+// FR-17, UC-06, IADR-0063 決定 1/4: 利用者の前提条件変更（AssumptionsChanged）でキャッシュが無効化され、次の参照で
 // 新しい版へ追随することを検証する（#139 の受け入れ基準「版が上がったときに追随する」）。
 public class AssumptionsChangedConsumerTests
 {

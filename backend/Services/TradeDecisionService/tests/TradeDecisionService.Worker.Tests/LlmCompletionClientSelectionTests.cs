@@ -37,7 +37,7 @@ public class LlmCompletionClientSelectionTests
         scope.ServiceProvider.GetRequiredService<ILlmCompletionClient>().Should().BeOfType<HttpLlmCompletionClient>();
     }
 
-    // #11, IADR-0062 決定2: タイムアウトは LlmGateway:TimeoutSeconds（秒）。
+    // #11, IADR-0061 決定2: タイムアウトは LlmGateway:TimeoutSeconds（秒）。
     // fail-safe: 未設定・不正・非正値は既定 30 秒（＝従来値）。無限待ちや 0 秒には倒さない。
     [Theory]
     [InlineData(null, 30)]      // 未設定
@@ -55,7 +55,7 @@ public class LlmCompletionClientSelectionTests
         http.Timeout.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
     }
 
-    // #11, FR-11, IADR-0062 決定1: LlmGateway:LogPrompts の**構成キーが Program.cs の配線を通って**実際に
+    // #11, FR-11, IADR-0061 決定1: LlmGateway:LogPrompts の**構成キーが Program.cs の配線を通って**実際に
     // 全量ログの有無を切り替えることを end-to-end で検証する（キー名のタイプミス・既定値の反転を検出する）。
     // ILogger<HttpLlmCompletionClient> を差し替えて実際の出力を捕捉し、実 egress は stub ハンドラで受ける。
     [Theory]
