@@ -1,0 +1,8 @@
+# フロント（frontend/）のビルド/検査成果物。ソース管理しない。
+node_modules/
+dist/
+coverage/
+
+# Playwright E2E（IADR-0087）の成果物。
+playwright-report/
+test-results/

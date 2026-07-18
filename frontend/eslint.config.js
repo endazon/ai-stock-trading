@@ -29,6 +29,15 @@ export default tseslint.config(
     files: ['**/*.config.{ts,js}'],
     languageOptions: { globals: globals.node },
   },
+  // IADR-0087: E2E（ハーネス＋spec＝test-only）。Playwright ランナー（node）とブラウザ両方の global を許可し、
+  // Fast Refresh 前提（react-refresh）は本番 SPA 向けのため E2E ハーネスでは無効化する。
+  {
+    files: ['e2e/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
   // IADR-0057 / 依存規則: 可変ユニットは @foundation のみ参照可。platform の合成点（@features）は参照しない。
   {
     files: ['src/**/*.{ts,tsx}'],

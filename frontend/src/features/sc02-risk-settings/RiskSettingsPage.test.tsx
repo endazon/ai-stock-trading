@@ -59,13 +59,14 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('renders current limits into the form', async () => {
     render(<RiskSettingsPage />);
     expect(await screen.findByRole('heading', { name: 'リスク設定' })).toBeInTheDocument();
-    expect(screen.getByLabelText('1注文金額上限')).toHaveValue(100000);
+    // 読み込み完了（フォーム描画）を待ってから現在値を検証する（見出しは読み込み中も描画されるため待受にしない）。
+    expect(await screen.findByLabelText('1注文金額上限')).toHaveValue(100000);
     expect(screen.getByLabelText('保有銘柄数上限')).toHaveValue(5);
   });
 
   it('shows stage as read-only (stage change is via gate approval, not this screen)', async () => {
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     // 段階（数値 enum）がラベルへ写像される（参照表示。直接変更 UI は無い＝#20/#165 段階ゲート承認へ一元化）。
     expect(screen.getByText('Stage 2（少額実弾）')).toBeInTheDocument();
     expect(screen.getByText('実弾')).toBeInTheDocument();
@@ -97,7 +98,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('requires a reason before saving (save disabled until reason entered)', async () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     // ガード変更フォーム（#188）も同名の「保存」「変更理由」を持つため、上限フォームに絞る。
     const form = limitsForm();
     const save = within(form).getByRole('button', { name: '保存' });
@@ -109,7 +110,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('disables save and warns when a numeric field is empty or non-numeric', async () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
     const save = within(form).getByRole('button', { name: '保存' });
@@ -123,7 +124,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('submits PUT to /settings/limits with limits and reason', async () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
     await user.click(within(form).getByRole('button', { name: '保存' }));
@@ -140,7 +141,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('reflects an edited limit in the submitted payload', async () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText('保有銘柄数上限');
     await user.clear(input);
@@ -163,7 +164,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       return SETTINGS;
     });
     render(<RiskSettingsPage />);
-    await screen.findByRole('heading', { name: 'リスク設定' });
+    await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
     await user.click(within(form).getByRole('button', { name: '保存' }));
