@@ -51,7 +51,12 @@ issue: 22
 ## テスト
 
 - `EventBackwardCompatibilityTests`: 現行スキーマ vs 基準 snapshot の後方互換比較（1 ケース）。
-- 手動 negative 検証: 基準に phantom フィールドを足すと失敗する（削除検出）ことを確認済み。
+- 比較ロジック（`FindViolations` 純関数）の自己検証: 削除・イベント削除・型変更・追加許容の 4 ケースを合成
+  スキーマで固定（リファクタ退行を CI で検知）。
+- 母集合は `EventTypeDiscovery.GetEventTypes()` に単一化し、`AuditConsumerCoverageTests` と共有。
+- 既知の限界: enum メンバーの削除・改名は型名不変のため検出対象外（IADR-0079 に明記・PR レビューで担保）。
+- `BaselinePath` は CallerFilePath 隣接＋出力ディレクトリからの上方探索フォールバックで、build/test の
+  ジョブ分離にも耐える。
 
 ## トレーサビリティ
 

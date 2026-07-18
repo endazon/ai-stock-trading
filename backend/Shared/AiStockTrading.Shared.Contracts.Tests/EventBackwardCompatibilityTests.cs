@@ -17,9 +17,11 @@ namespace AiStockTrading.Shared.Contracts.Tests;
 // 本テストは §3 のうち**今 actionable な部分**＝「後方互換の追加のみ許可」を機械化する契約テストである
 // （IADR-0079）。既存イベントのフィールド削除・改名・型変更を破壊的変更として検出し、追加のみを許す。
 // 共通エンベロープ型の導入は上流確定時（IADR-0049 の繰延解除）に本テストの検証対象へ拡張する。
+//
+// 既知の限界（IADR-0079 に明記）: プロパティの**型名**単位で比較するため、enum メンバー
+// （OrderStatus/Market/TradeSide/RejectionReason 等）の削除・改名は検出しない（型名自体は不変のため）。
 public class EventBackwardCompatibilityTests
 {
-    // ドメインイベント名 → (プロパティ名 → 型表示)。追加のみ許可の基準（committed snapshot）。
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     [Fact]
@@ -42,32 +44,7 @@ public class EventBackwardCompatibilityTests
         var baseline = JsonSerializer.Deserialize<SortedDictionary<string, SortedDictionary<string, string>>>(
             File.ReadAllText(baselinePath))!;
 
-        var violations = new List<string>();
-        foreach (var (evt, props) in baseline)
-        {
-            // 既存イベントの削除は破壊的。
-            if (!current.TryGetValue(evt, out var currentProps))
-            {
-                violations.Add($"イベント '{evt}' が削除されています（後方互換違反）");
-                continue;
-            }
-
-            foreach (var (prop, type) in props)
-            {
-                // フィールド削除/改名は破壊的。
-                if (!currentProps.TryGetValue(prop, out var currentType))
-                {
-                    violations.Add($"'{evt}.{prop}' が削除/改名されています（後方互換違反）");
-                    continue;
-                }
-
-                // 型変更は破壊的。
-                if (currentType != type)
-                {
-                    violations.Add($"'{evt}.{prop}' の型が '{type}' → '{currentType}' へ変更されています（後方互換違反）");
-                }
-            }
-        }
+        var violations = FindViolations(baseline, current);
 
         // 新イベント・新フィールドの「追加」は後方互換として許容する（違反にしない）。
         violations.Should().BeEmpty(
@@ -76,15 +53,78 @@ public class EventBackwardCompatibilityTests
             + "\n" + string.Join("\n", violations));
     }
 
-    // Shared.Contracts.Events 名前空間の全 record 型のスキーマを算出する（AuditConsumerCoverage と同じ母集合）。
+    // --- 比較ロジック自体の回帰テスト（削除/改名/型変更を検出し、追加は許容する） -----------------
+
+    [Fact]
+    public void FindViolations_フィールド削除を検出する()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"), ("B", "String"))));
+        var current = Schema(("Evt", Props(("A", "Int32")))); // B が消えた
+        FindViolations(baseline, current).Should().ContainSingle().Which.Should().Contain("Evt.B");
+    }
+
+    [Fact]
+    public void FindViolations_イベント削除を検出する()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"))));
+        var current = new SortedDictionary<string, SortedDictionary<string, string>>(); // Evt ごと消えた
+        FindViolations(baseline, current).Should().ContainSingle().Which.Should().Contain("Evt");
+    }
+
+    [Fact]
+    public void FindViolations_型変更を検出する()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"))));
+        var current = Schema(("Evt", Props(("A", "Int64")))); // 型が変わった
+        FindViolations(baseline, current).Should().ContainSingle().Which.Should().Contain("Int32");
+    }
+
+    [Fact]
+    public void FindViolations_フィールド_イベントの追加は許容する()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"))));
+        var current = Schema(
+            ("Evt", Props(("A", "Int32"), ("B", "String"))), // フィールド追加
+            ("NewEvt", Props(("X", "Guid"))));               // イベント追加
+        FindViolations(baseline, current).Should().BeEmpty();
+    }
+
+    // 後方互換違反（削除・改名・型変更）を列挙する純関数。追加は違反にしない。
+    internal static IReadOnlyList<string> FindViolations(
+        IReadOnlyDictionary<string, SortedDictionary<string, string>> baseline,
+        IReadOnlyDictionary<string, SortedDictionary<string, string>> current)
+    {
+        var violations = new List<string>();
+        foreach (var (evt, props) in baseline)
+        {
+            if (!current.TryGetValue(evt, out var currentProps))
+            {
+                violations.Add($"イベント '{evt}' が削除されています（後方互換違反）");
+                continue;
+            }
+
+            foreach (var (prop, type) in props)
+            {
+                if (!currentProps.TryGetValue(prop, out var currentType))
+                {
+                    violations.Add($"'{evt}.{prop}' が削除/改名されています（後方互換違反）");
+                    continue;
+                }
+
+                if (currentType != type)
+                {
+                    violations.Add($"'{evt}.{prop}' の型が '{type}' → '{currentType}' へ変更されています（後方互換違反）");
+                }
+            }
+        }
+        return violations;
+    }
+
+    // Shared.Contracts.Events の全 record 型のスキーマを算出する（母集合は EventTypeDiscovery で単一化）。
     private static SortedDictionary<string, SortedDictionary<string, string>> ComputeSchema()
     {
-        var eventTypes = typeof(InformationCollected).Assembly.GetTypes()
-            .Where(t => t.IsClass && !t.IsAbstract
-                && t.Namespace == "AiStockTrading.Shared.Contracts.Events" && IsRecord(t));
-
         var schema = new SortedDictionary<string, SortedDictionary<string, string>>(StringComparer.Ordinal);
-        foreach (var t in eventTypes)
+        foreach (var t in EventTypeDiscovery.GetEventTypes())
         {
             var props = new SortedDictionary<string, string>(StringComparer.Ordinal);
             foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -114,9 +154,35 @@ public class EventBackwardCompatibilityTests
         return t.Name;
     }
 
-    private static bool IsRecord(Type t) =>
-        t.GetMethod("<Clone>$", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) is not null;
+    // 基準 snapshot の場所。まずコンパイル時のソース隣接パスを使い、無ければ出力ディレクトリから上方探索する
+    // （build と test を別ジョブ/別ランナーへ分離しても解決できるようにするフォールバック）。
+    private static string BaselinePath([CallerFilePath] string thisFile = "")
+    {
+        const string fileName = "event-schemas.baseline.json";
+        var beside = Path.Combine(Path.GetDirectoryName(thisFile) ?? ".", fileName);
+        if (File.Exists(beside)) return beside;
 
-    private static string BaselinePath([CallerFilePath] string thisFile = "") =>
-        Path.Combine(Path.GetDirectoryName(thisFile)!, "event-schemas.baseline.json");
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return beside; // 見つからなければ元のパスを返す（存在アサートで失敗させる/書き出し先に使う）。
+    }
+
+    // テスト用の合成スキーマ/プロパティ集合を組み立てる補助。
+    private static SortedDictionary<string, string> Props(params (string Prop, string Type)[] props)
+    {
+        var map = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (prop, type) in props) map[prop] = type;
+        return map;
+    }
+
+    private static SortedDictionary<string, SortedDictionary<string, string>> Schema(
+        params (string Event, SortedDictionary<string, string> Props)[] events)
+    {
+        var schema = new SortedDictionary<string, SortedDictionary<string, string>>(StringComparer.Ordinal);
+        foreach (var (evt, props) in events) schema[evt] = props;
+        return schema;
+    }
 }
