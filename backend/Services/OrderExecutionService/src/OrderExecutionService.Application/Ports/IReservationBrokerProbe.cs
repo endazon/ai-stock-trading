@@ -12,6 +12,10 @@ public interface IReservationBrokerProbe
     /// <summary>
     /// DecisionId に対応する注文の実状態をブローカへ照会する。判定不能・照会不達は必ず
     /// <see cref="ReservationProbeOutcome.Indeterminate"/> を返すこと（二重発注を招かない fail-safe）。
+    ///
+    /// 実装は有意な待ち時間を持つ非同期照会になり得る。その待機中に通常フロー（発注確定）が同一 DecisionId を
+    /// 確定する競合はリコンサイラ側が Save 直前の再確認で吸収する（<c>OrderReservationReconciler</c>）。実装側は
+    /// 照会の確度のみに責任を持てばよい（＝確実な場合のみ <c>Placed</c>/<c>NotPlaced</c> を返す）。
     /// </summary>
     Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default);
 }

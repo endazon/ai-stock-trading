@@ -35,51 +35,78 @@ public sealed class OrderReservationReconciler(
         var terminalized = 0;
         var released = 0;
         var indeterminate = 0;
+        var failed = 0;
 
         foreach (var reservation in stalled)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // 1. 記録あり: phase-4 断絶の自己修復。ブローカに照会せず既存記録で確定する。
-            var record = executedOrders.FindByDecisionId(reservation.DecisionId);
-            if (record is not null)
+            // 各予約は独立して処理する。1 件の失敗（照会例外・保存例外等）でバッチ全体を止めない
+            // （最大 batchSize 件の巻き添えを避ける）。失敗は件数のみ集計し、Worker がログして次回巡回で再試行する。
+            // 未処理のまま残る予約は Reserved のまま＝据え置き（fail-safe）で、二重発注は起きない。
+            try
             {
-                reservations.MarkCompleted(reservation.DecisionId, record.OrderId, clock.UtcNow);
-                executed.Add(ToOrderExecuted(record));
-                terminalized++;
-                continue;
-            }
+                var decisionId = reservation.DecisionId;
 
-            // 2. 記録なし: ブローカへ実状態を照会する。
-            var result = await probe.ProbeAsync(reservation.DecisionId, cancellationToken).ConfigureAwait(false);
-            switch (result.Outcome)
-            {
-                case ReservationProbeOutcome.Placed:
-                    // 発注済みが確定 → 記録を保存し確定する。ここへは記録なし（FindByDecisionId==null）でのみ到達する
-                    // ため二重計上・二重発注は起きない。OrderExecuted は既存イベント（監査済み・冪等消費）を再利用する。
-                    var order = result.Order
-                        ?? throw new InvalidOperationException("Placed は BrokerOrder を伴わなければならない。");
-                    var placedRecord = BuildRecord(reservation.DecisionId, order, clock.UtcNow);
-                    executedOrders.Save(placedRecord);
-                    reservations.MarkCompleted(reservation.DecisionId, order.OrderId, clock.UtcNow);
-                    executed.Add(ToOrderExecuted(placedRecord));
+                // 1. 記録あり: phase-4 断絶の自己修復。ブローカに照会せず既存記録で確定する。
+                var record = executedOrders.FindByDecisionId(decisionId);
+                if (record is not null)
+                {
+                    reservations.MarkCompleted(decisionId, record.OrderId, clock.UtcNow);
+                    executed.Add(ToOrderExecuted(record));
                     terminalized++;
-                    break;
+                    continue;
+                }
 
-                case ReservationProbeOutcome.NotPlaced:
-                    // 未発注が確定 → 予約を解放する。解放後は元の OrderApproved 再配送が改めて予約→発注できる。
-                    if (reservations.Release(reservation.DecisionId))
-                        released++;
-                    break;
+                // 2. 記録なし: ブローカへ実状態を照会する。
+                var result = await probe.ProbeAsync(decisionId, cancellationToken).ConfigureAwait(false);
+                switch (result.Outcome)
+                {
+                    case ReservationProbeOutcome.Placed:
+                        var order = result.Order
+                            ?? throw new InvalidOperationException("Placed は BrokerOrder を伴わなければならない。");
 
-                default:
-                    // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。
-                    indeterminate++;
-                    break;
+                        // 照会（ProbeAsync）は実装次第で有意な待ち時間を持つ非同期になり得る。その待機中に通常フロー
+                        // （OrderApprovedConsumer）が同一 DecisionId を確定していないか、Save の直前に再確認する
+                        // （TOCTOU 対策）。確定済みなら二重 Save（executed_orders 主キー競合）を避け自己修復に倒す。
+                        var raced = executedOrders.FindByDecisionId(decisionId);
+                        if (raced is not null)
+                        {
+                            reservations.MarkCompleted(decisionId, raced.OrderId, clock.UtcNow);
+                            executed.Add(ToOrderExecuted(raced));
+                        }
+                        else
+                        {
+                            // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
+                            // （監査済み・Risk/Notification が冪等消費）を再利用する。
+                            var placedRecord = BuildRecord(decisionId, order, clock.UtcNow);
+                            executedOrders.Save(placedRecord);
+                            reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
+                            executed.Add(ToOrderExecuted(placedRecord));
+                        }
+                        terminalized++;
+                        break;
+
+                    case ReservationProbeOutcome.NotPlaced:
+                        // 未発注が確定 → 予約を解放する。解放後は元の OrderApproved 再配送が改めて予約→発注できる。
+                        if (reservations.Release(decisionId))
+                            released++;
+                        break;
+
+                    default:
+                        // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。
+                        indeterminate++;
+                        break;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failed++;
             }
         }
 
-        return new ReservationReconciliationResult(stalled.Count, terminalized, released, indeterminate, executed);
+        return new ReservationReconciliationResult(
+            stalled.Count, terminalized, released, indeterminate, failed, executed);
     }
 
     // ブローカ照会結果（BrokerOrder）から発注結果記録を組み立てる。Intent はブローカが持つ注文実体に由来する。
@@ -114,9 +141,11 @@ public sealed class OrderReservationReconciler(
 }
 
 // #141, IADR-0074: 1 巡回のリコンサイル結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。
+// Failed は当該巡回で例外により処理できなかった件数（据え置き＝次回巡回で再試行）。
 public sealed record ReservationReconciliationResult(
     int Scanned,
     int Terminalized,
     int Released,
     int Indeterminate,
+    int Failed,
     IReadOnlyList<OrderExecuted> Executed);

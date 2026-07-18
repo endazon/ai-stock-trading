@@ -86,8 +86,12 @@ internal sealed class OrderReservationReconciliationService(
 
         if (result.Scanned > 0)
             logger.LogInformation(
-                "発注予約リコンサイル: 滞留 {Scanned} 件を走査（終端化 {Terminalized} / 解放 {Released} / 不確定 {Indeterminate}）。",
-                result.Scanned, result.Terminalized, result.Released, result.Indeterminate);
+                "発注予約リコンサイル: 滞留 {Scanned} 件を走査（終端化 {Terminalized} / 解放 {Released} / 不確定 {Indeterminate} / 失敗 {Failed}）。",
+                result.Scanned, result.Terminalized, result.Released, result.Indeterminate, result.Failed);
+
+        if (result.Failed > 0)
+            logger.LogWarning(
+                "発注予約リコンサイルで {Failed} 件が例外により未処理でした（据え置き＝次回巡回で再試行）。", result.Failed);
 
         return result;
     }

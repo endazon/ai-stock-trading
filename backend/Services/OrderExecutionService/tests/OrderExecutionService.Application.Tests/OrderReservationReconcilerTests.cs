@@ -34,6 +34,13 @@ public class OrderReservationReconcilerTests
         }
     }
 
+    // 照会ごとに任意の副作用＋結果を差し込めるフェイク（TOCTOU・例外の再現用）。
+    private sealed class CallbackProbe(Func<Guid, ReservationProbeResult> fn) : IReservationBrokerProbe
+    {
+        public Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(fn(decisionId));
+    }
+
     private static OrderIntent Intent(string symbol = "AAPL", int qty = 10, decimal price = 100m) =>
         new(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
 
@@ -169,6 +176,56 @@ public class OrderReservationReconcilerTests
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 2);
 
         result.Scanned.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task 照会中に通常フローが確定した場合は二重保存せず自己修復する()
+    {
+        // TOCTOU: 照会（非同期）の最中に通常フロー（OrderApprovedConsumer）が同一 DecisionId を確定した状況を模す。
+        // Save 直前の再確認で既存記録を用い、二重保存（実運用の主キー競合）を避け自己修復に倒す。
+        var reservations = new InMemoryOrderReservationStore();
+        var executed = new InMemoryExecutedOrderStore();
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        var probe = new CallbackProbe(id =>
+        {
+            executed.Save(new ExecutionRecord(
+                id, "BRK-RACE", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                PositionEffect.Open, 10, 100m, 10, 100m, OrderStatus.Filled, 0m, StalledAt));
+            return ReservationProbeResult.Placed(Placed("BRK-PROBE"));
+        });
+        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new FakeClock());
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Terminalized.Should().Be(1);
+        result.Failed.Should().Be(0);
+        executed.GetAll().Should().ContainSingle("照会中に確定済みなら二重保存しない");
+        reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Completed);
+        reservations.Find(decisionId)!.BrokerOrderId.Should().Be("BRK-RACE", "既存記録の注文 ID で確定する");
+    }
+
+    [Fact]
+    public async Task 一件の例外はバッチ全体を止めず据え置かれ他は処理される()
+    {
+        // 1 件の照会例外で残り全件を巻き添えにしない（次回巡回で再試行＝据え置き）。安全側は保たれる。
+        var reservations = new InMemoryOrderReservationStore();
+        var executed = new InMemoryExecutedOrderStore();
+        var bad = Guid.NewGuid();
+        var good = Guid.NewGuid();
+        reservations.TryReserve(bad, StalledAt); // ReservedAt 昇順で先頭
+        reservations.TryReserve(good, StalledAt.AddSeconds(1));
+        var probe = new CallbackProbe(id =>
+            id == bad ? throw new InvalidOperationException("照会失敗") : ReservationProbeResult.NotPlaced);
+        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new FakeClock());
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Scanned.Should().Be(2);
+        result.Failed.Should().Be(1);
+        result.Released.Should().Be(1);
+        reservations.Find(bad)!.State.Should().Be(OrderDispatchState.Reserved, "失敗は据え置き");
+        reservations.Find(good).Should().BeNull("他の予約は処理される");
     }
 
     [Fact]
