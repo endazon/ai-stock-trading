@@ -186,6 +186,15 @@ function checkCompose() {
       err(`docker-compose.yml: build.context "${c}" が絶対パス（相対にすること）`);
     }
   }
+  // FR-08, IADR-0073 (#9): 実 KB 保存の opt-in スイッチ（KnowledgeBase:Documents:BaseUrl）が
+  // デプロイ面に露出していないと、運用者は本番/compose で実 KB 保存を有効化できない（#162 でコード側は opt-in 化済み）。
+  // 空既定＝no-op のまま口だけ開ける露出であり、その露出漏れの退行を止める（既定挙動は不変）。
+  if (!/KnowledgeBase__Documents__BaseUrl/.test(txt)) {
+    err(
+      'docker-compose.yml: 実 KB 保存の opt-in キー "KnowledgeBase__Documents__BaseUrl" が露出していない' +
+        '（情報収集の実 KB 保存を運用者が有効化できない。IADR-0073 / #9）'
+    );
+  }
 }
 
 function checkFileExists(rel) {
