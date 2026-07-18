@@ -15,7 +15,7 @@ CLUSTER="${K8S_LOCAL_CLUSTER:-msp-ast-dev}"
 SRC="${1:-${OPEND_TARBALL_PATH:-}}"
 if [ -z "$SRC" ]; then
   # 開発者固有の絶対パスに依存せず、リポジトリ隣接の references/ を既定探索先とする（#150）。
-  SRC="$(ls -1 "$ROOT"/../references/moomoo_OpenD_*.tar.gz 2>/dev/null | head -1 || true)"
+  SRC="$(ls -1 "$ROOT/../references/"moomoo_OpenD_*.tar.gz 2>/dev/null | head -1 || true)"
 fi
 [ -n "$SRC" ] && [ -f "$SRC" ] || { echo "ERROR: OpenD tar.gz が見つかりません。引数か OPEND_TARBALL_PATH で指定してください。" >&2; exit 1; }
 TARBALL="$(basename "$SRC")"
