@@ -96,6 +96,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#135) (36570d6)
 - **ADR-0001**: ai-stock-trading + platform のシステム構成図を追加 (#133) (9e53e8c)
 - **NFR**: CHANGELOG を自動更新 (#115) (f412882)
 - **FR-04**: 実 LLM 費用計測の設計（IADR-0055・イベント計上） (#79) (#127) (18e4c13)
@@ -125,6 +126,7 @@
 
 ### ビルド
 
+- **deps**: bump planning from `da20fc4` to `98c45d0` (#200) (c5749ed)
 - **deps**: bump actions/setup-node from 6 to 7 (#128) (6bea0cd)
 - **deps**: bump planning from `07db93f` to `da20fc4` (#113) (c65ed86)
 - **deps**: bump peter-evans/create-pull-request from 7 to 8 (#2) (135baf2)
@@ -138,6 +140,7 @@
 
 ### その他
 
+- **P3**: クローズ済み #13/#17 参照の陳腐化コメントを実供給先へ張り替える (#199) (2328101)
 - **P3**: .gitignore に秘密鍵ファイルの汎用除外を追加する（多層防御） (#176) (09697d5)
 - **P3**: opend-build.sh の tarball 既定パスをリポジトリ相対に是正する (#175) (27fe060)
 - **IADR-0060**: IADR の欠番を解消して連番を昇順・欠番なしに揃える (#153) (3731f48)
