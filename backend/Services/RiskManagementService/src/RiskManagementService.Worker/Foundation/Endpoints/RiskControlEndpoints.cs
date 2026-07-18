@@ -1,8 +1,10 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -116,7 +118,8 @@ internal static class RiskControlEndpoints
 
         owner.MapGet("/stage-gate/history", (StageGateService svc) => Results.Ok(svc.GetHistory()));
 
-        owner.MapPost("/stage-gate/transition", (StageTransitionRequest req, StageGateService svc, HttpContext http) =>
+        owner.MapPost("/stage-gate/transition",
+            async (StageTransitionRequest req, StageGateService svc, IPublishEndpoint bus, HttpContext http) =>
         {
             // 値域検証: targetStage の省略（null）や範囲外 enum は 400。範囲外（負値・4 以上）の降格方向は
             // StageGate 側の連番検証を素通りし StageGatePolicy.SettingsFor で KeyNotFoundException（500）になり得るため、
@@ -127,6 +130,16 @@ internal static class RiskControlEndpoints
             }
 
             var result = svc.RequestTransition(target, ActorOf(http));
+
+            // FR-11, #167, IADR-0082: 受理時のみ中央監査集約のため StageTransitioned を発行する（拒否時は非発行）。
+            // 永続化（Risk 専有台帳 stage_transitions）はサービス内で先に完了しており、それが権威（fail-safe）。
+            // 段階/種別は Shared.Contracts が Risk.Domain へ依存しないよう primitive（int/文字列）へ写す。
+            if (result is { Accepted: true, Transition: { } t })
+            {
+                await bus.Publish(new StageTransitioned(
+                    t.Sequence, (int)t.FromStage, (int)t.ToStage, t.Kind.ToString(), t.ApprovedBy, t.Reason, t.OccurredAtUtc));
+            }
+
             // 受理は 200、受理不能な遷移（未充足基準・飛び級・現段階指定）は 422 に写像する。
             return result.Accepted ? Results.Ok(result) : Results.UnprocessableEntity(result);
         });
