@@ -1,8 +1,8 @@
 ---
 title: opend-build.sh の tarball 既定パスをリポジトリ相対に是正する
 type: spec
-status: draft
-related_ids: []
+status: review
+related_ids: [P3]
 author: endazon
 created: 2026-07-18
 updated: 2026-07-18
