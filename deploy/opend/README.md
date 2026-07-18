@@ -46,7 +46,7 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
 
 ### 1) イメージをビルド（tar.gz は参照ディレクトリから自動取り込み）
 ```bash
-# 既定: /c/10_SourceCode/references/moomoo_OpenD_*.tar.gz を使う。別の場所なら引数か OPEND_TARBALL_PATH で指定。
+# 既定: リポジトリ隣接の ../references/moomoo_OpenD_*.tar.gz を使う。別の場所なら引数か OPEND_TARBALL_PATH で指定。
 scripts/opend-build.sh
 #   もしくは: scripts/opend-build.sh /path/to/moomoo_OpenD_10.8.6818_Ubuntu18.04.tar.gz
 # 手動でビルドする場合は tar.gz を deploy/opend/ に置いてから:

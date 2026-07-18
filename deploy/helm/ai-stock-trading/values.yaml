@@ -195,6 +195,12 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # FR-08, #9, IADR-0069/0073: 収集情報の実 KB 保存 opt-in。fail-safe: 空=NoOp（LoggingKnowledgeBaseSink＝保存しない）。
+      # Documents:BaseUrl を platform DocumentService へ向けると実 KB 保存へ切替（KnowledgeBaseWriterSink）。書き込みは
+      # platform-admin/operator ロール必須で trading-service 未付与→403→未保存へ縮退（実運用のロール付与・本文取り込みは後続）。
+      # s2s トークンは上の ServiceAuth__* を再利用。Search は情報収集自身は未使用だが設定サーフェスを対で揃える（空=no-op）。
+      - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
+      - { name: KnowledgeBase__Search__BaseUrl, value: "" }
   market-monitor:
     image: ai-stock-trading/market-monitor-service
     db: market_monitor_svc
