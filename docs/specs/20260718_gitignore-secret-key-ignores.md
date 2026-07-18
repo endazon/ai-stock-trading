@@ -1,8 +1,8 @@
 ---
 title: .gitignore に秘密鍵ファイルの汎用除外を追加する（多層防御）
 type: spec
-status: draft
-related_ids: []
+status: review
+related_ids: [P3]
 author: endazon
 created: 2026-07-18
 updated: 2026-07-18
