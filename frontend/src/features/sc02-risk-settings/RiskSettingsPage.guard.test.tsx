@@ -37,6 +37,9 @@ const SETTINGS = {
 function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string) => {
     if (path === '/risk-controls/settings/history') return [];
+    // 監視銘柄セクション（#196・別サービス）は独立ロードするため、ガードのテストでは空応答で満たす。
+    if (path === '/monitor/watchlist') return [];
+    if (path === '/monitor/watchlist/history') return [];
     return SETTINGS;
   });
 }
