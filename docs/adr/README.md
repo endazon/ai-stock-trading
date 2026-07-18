@@ -115,3 +115,4 @@
 | IADR-0077 | 取引パイプラインの発行・購読バインディングを pipeline.json で宣言し、変換 DAG のみを段として表現して CI 検証＋GitOps 適用する | Accepted |
 | IADR-0078 | 各サービスの実効構成を無認可・メッシュ内部限定の自己申告エンドポイントで公開し、有効な段は pipeline.json 宣言から導出する | Accepted |
 | IADR-0079 | イベント契約の後方互換を snapshot 比較の CI 契約テストで機械化し、共通エンベロープ型は上流確定まで繰延に準拠する | Accepted |
+| IADR-0082 | 段階遷移イベントは Worker 発行点でバス発行し中央監査へ集約する（契約は primitive・Risk 専有台帳を権威に据え置く） | Accepted |

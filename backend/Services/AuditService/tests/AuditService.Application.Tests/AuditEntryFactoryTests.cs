@@ -198,4 +198,26 @@ public class AuditEntryFactoryTests
         entry.Symbol.Should().Be("7203");
         entry.Summary.Should().Contain("損切り");
     }
+
+    [Fact]
+    public void StageTransitioned_は共通相関でfrom_to_承認者_種別を記録する()
+    {
+        // FR-20, FR-11, #167, IADR-0082: 段階遷移は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
+        var e = new StageTransitioned(3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("StageTransitioned");
+        entry.Symbol.Should().BeNull();
+        // from/to・承認者・種別が一行で読める（FR-11）。
+        entry.Summary.Should().Contain("0").And.Contain("1").And.Contain("owner").And.Contain("Promotion");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        // Detail からも承認者・種別が辿れる。
+        entry.Detail.Should().Contain("ApprovedBy").And.Contain("Kind");
+        // 段階遷移はすべて同一「stage-gate」相関で束ねられる（別遷移でも同一相関）。
+        var other = AuditEntryFactory.From(
+            new StageTransitioned(4, 1, 0, "Demotion", "owner", "利用者承認による差し戻し", RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(other.CorrelationId);
+    }
 }

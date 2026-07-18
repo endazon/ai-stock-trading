@@ -38,6 +38,7 @@ public class AuditEventConsumersTests
                 x.AddConsumer<CostThresholdReachedAuditConsumer>();
                 x.AddConsumer<LlmCostIncurredAuditConsumer>();
                 x.AddConsumer<InformationCollectedAuditConsumer>();
+                x.AddConsumer<StageTransitionedAuditConsumer>();
             })
             .BuildServiceProvider(true);
 
@@ -155,6 +156,27 @@ public class AuditEventConsumersTests
             .From(new CostThresholdReached("2026-07", "Llm", 0m, "x", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(costCorr).Should().ContainSingle(e => e.EventType == "CostThresholdReached");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 段階遷移も監査台帳に記録される()
+    {
+        // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移も中央監査台帳へ集約する（全イベントの時系列記録）。
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(
+            new StageTransitioned(1, 0, 1, "Promotion", "owner", "利用者承認による昇格", DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<StageTransitioned>()).Should().BeTrue();
+
+        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .CorrelationId;
+        store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "StageTransitioned");
 
         await harness.Stop();
     }

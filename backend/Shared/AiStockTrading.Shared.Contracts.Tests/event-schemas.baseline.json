@@ -73,6 +73,15 @@
     "Kind": "String",
     "PeriodKey": "String"
   },
+  "StageTransitioned": {
+    "ApprovedBy": "String",
+    "FromStage": "Int32",
+    "Kind": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Reason": "String",
+    "Sequence": "Int32",
+    "ToStage": "Int32"
+  },
   "StopLossTriggered": {
     "DetectedAt": "DateTimeOffset",
     "EventId": "Guid",

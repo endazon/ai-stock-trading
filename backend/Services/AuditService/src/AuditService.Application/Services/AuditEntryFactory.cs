@@ -87,6 +87,13 @@ public static class AuditEntryFactory
         $"LLM 費用発生 {e.Amount:N2} 円",
         AuditSerialization.Serialize(e), e.At, recordedAt);
 
+    // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し）。注文/市場相関を持たないため
+    // "stage-gate" の決定的 GUID を相関にする（すべての段階遷移が同一相関で束ねられ、監査照会でまとめて辿れる）。
+    public static AuditEntry From(StageTransitioned e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(StageTransitioned), AuditCorrelation.From("stage-gate"), Symbol: null,
+        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

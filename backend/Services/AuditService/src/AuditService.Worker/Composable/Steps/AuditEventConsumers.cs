@@ -149,3 +149,14 @@ internal sealed class InformationCollectedAuditConsumer(IAuditEventStore store, 
         return Task.CompletedTask;
     }
 }
+
+// FR-20, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し #20/#167）を中央監査台帳へ記録する。
+internal sealed class StageTransitionedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<StageTransitioned>
+{
+    public Task Consume(ConsumeContext<StageTransitioned> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
