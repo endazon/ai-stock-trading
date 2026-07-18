@@ -137,4 +137,42 @@ public class TradeDecisionPromptBuilderTests
 
         prompt.Should().NotContain("参考情報（ナレッジベース）");
     }
+
+    // FR-17, IADR-0076 決定5: 採算ゲート有効（includeProfitability=true）時のみ採算節と expectedProfitPerShare を出力する。
+    [Fact]
+    public void 採算ゲート有効なら本判断プロンプトは採算評価と想定利益フィールドを出力する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved: null, includeProfitability: true);
+
+        prompt.Should().Contain("採算評価（費用控除後の期待利益）");
+        prompt.Should().Contain("expectedProfitPerShare");
+    }
+
+    // FR-17, IADR-0076 決定5: 採算ゲート無効（既定）はプロンプトに採算節・当該フィールドを出さず現行動作と一致する。
+    [Fact]
+    public void 採算ゲート無効の既定は採算評価節を出さず現行動作と一致する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var withDefault = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+        var withExplicitFalse = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved: null, includeProfitability: false);
+
+        withDefault.Should().NotContain("採算評価（費用控除後の期待利益）");
+        withDefault.Should().NotContain("expectedProfitPerShare");
+        withDefault.Should().Be(withExplicitFalse);
+    }
+
+    // FR-17, IADR-0076: 一次スクリーニングは費用統制のため採算評価節を含めない（本判断のみに載せる）。
+    [Fact]
+    public void スクリーニングプロンプトは採算評価節を含まない()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().NotContain("採算評価（費用控除後の期待利益）");
+        prompt.Should().NotContain("expectedProfitPerShare");
+    }
 }

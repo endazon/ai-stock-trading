@@ -43,7 +43,10 @@ public static class TradeDecisionParser
                 return LlmDecision.Hold;
             }
 
-            return new LlmDecision(action, dto.Rationale ?? string.Empty, dto.ReferencePrice, dto.StopLossDistancePerShare);
+            // FR-17, IADR-0076: 想定利益（任意）。欠損は 0、負値は 0 に正規化する（保守側＝採算ゲート有効時は Hold に倒れる）。
+            var expectedProfit = dto.ExpectedProfitPerShare > 0m ? dto.ExpectedProfitPerShare : 0m;
+            return new LlmDecision(
+                action, dto.Rationale ?? string.Empty, dto.ReferencePrice, dto.StopLossDistancePerShare, expectedProfit);
         }
         catch (JsonException)
         {
@@ -109,5 +112,6 @@ public static class TradeDecisionParser
         string? Action,
         string? Rationale,
         decimal ReferencePrice,
-        decimal StopLossDistancePerShare);
+        decimal StopLossDistancePerShare,
+        decimal ExpectedProfitPerShare);
 }
