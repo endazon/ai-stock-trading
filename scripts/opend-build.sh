@@ -4,7 +4,7 @@
 # ランタイム自動判定（Rancher Desktop nerdctl / docker+k3d）。
 #
 #   scripts/opend-build.sh [tarball-path]
-#     tarball-path 既定: OPEND_TARBALL_PATH env、無ければ /c/10_SourceCode/references の moomoo_OpenD_*.tar.gz
+#     tarball-path 既定: OPEND_TARBALL_PATH env、無ければ リポジトリ隣接 ../references の moomoo_OpenD_*.tar.gz
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OPEND_DIR="$ROOT/deploy/opend"
@@ -14,7 +14,8 @@ CLUSTER="${K8S_LOCAL_CLUSTER:-msp-ast-dev}"
 # tar.gz の場所を解決。
 SRC="${1:-${OPEND_TARBALL_PATH:-}}"
 if [ -z "$SRC" ]; then
-  SRC="$(ls -1 /c/10_SourceCode/references/moomoo_OpenD_*.tar.gz 2>/dev/null | head -1 || true)"
+  # 開発者固有の絶対パスに依存せず、リポジトリ隣接の references/ を既定探索先とする（#150）。
+  SRC="$(ls -1 "$ROOT"/../references/moomoo_OpenD_*.tar.gz 2>/dev/null | head -1 || true)"
 fi
 [ -n "$SRC" ] && [ -f "$SRC" ] || { echo "ERROR: OpenD tar.gz が見つかりません。引数か OPEND_TARBALL_PATH で指定してください。" >&2; exit 1; }
 TARBALL="$(basename "$SRC")"
