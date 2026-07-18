@@ -120,3 +120,4 @@
 | IADR-0082 | 段階遷移イベントは Worker 発行点でバス発行し中央監査へ集約する（契約は primitive・Risk 専有台帳を権威に据え置く） | Accepted |
 | IADR-0083 | 撤退の定期評価は背景ドライバで駆動し、新規自動停止時のみ通知イベントを発行する（kill switch 状態を durable な冪等鍵にする） | Accepted |
 | IADR-0084 | FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる | Accepted |
+| IADR-0088 | 監視銘柄（watchlist）設定 API は権威データ源の MarketMonitorService に置き、Risk 設定の作法（owner サブグループ認可・理由必須・楽観排他・ローカル変更履歴）をミラーする | Accepted |
