@@ -59,22 +59,22 @@ internal sealed class WithdrawalEvaluationService(
 
         using var scope = scopeFactory.CreateScope();
         var stageGate = scope.ServiceProvider.GetRequiredService<StageGateService>();
-        var killSwitch = scope.ServiceProvider.GetRequiredService<KillSwitchService>();
-
-        // 直前の停止状態を durable な重複排除鍵にする（kill switch 状態は DB 永続＝再起動をまたいで冪等）。
-        var wasEngaged = killSwitch.GetState().Engaged;
 
         // EvaluateWithdrawal は撤退基準到達かつ HaltNewEntries なら kill switch を自動起動する（起動済みなら再起動しない）。
-        var assessment = stageGate.EvaluateWithdrawal();
+        // 「この呼び出しで新規に起動したか」は EvaluateWithdrawal が起動可否と同一箇所で判定して返す（NewlyEngaged）。
+        var outcome = stageGate.EvaluateWithdrawal();
 
-        // 新規に自動停止したときだけ通知する（＝今巡回で kill switch を起動した）。これは EvaluateWithdrawal 自身の
-        // 起動ゲート（!Engaged）と一致し、通知と自動起動が 1:1 になる。撤退が継続しても再発行しない（スパム回避・冪等）。
-        if (assessment is { Triggered: true, HaltNewEntries: true } && !wasEngaged)
+        // 新規に自動停止したときだけ通知する。判定はサービス側で確定済みのため、ドライバ側で kill switch 状態を別読みして
+        // 比較する必要がなく、手動評価エンドポイントとの同時起動での誤通知も避けられる。kill switch 状態（DB 永続）が
+        // 起動済みなら NewlyEngaged=false となり、撤退継続中・再起動後も再発行しない（スパム回避・冪等）。
+        if (outcome.NewlyEngaged)
         {
+            // NewlyEngaged ⟹ HaltNewEntries=true ⟹ AssessWithdrawal の契約で ProposedStage は非 null（Stage0Verification）。
+            var assessment = outcome.Assessment;
             var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
             await bus.Publish(
                 new WithdrawalTriggered(
-                    (int)(assessment.ProposedStage ?? default),
+                    (int)assessment.ProposedStage!.Value,
                     assessment.Reason?.ToString() ?? string.Empty,
                     assessment.HaltNewEntries,
                     clock.UtcNow),
