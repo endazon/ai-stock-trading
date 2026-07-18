@@ -80,9 +80,39 @@ function toForm(a: TradingAssumptions): FormModel {
   };
 }
 
-// 数値化。空文字・非数値は 0 とみなす（送信は常に有効な数値。実効検証はサーバ側 400 が担う）。
+// 各フィールドの表示ラベル（入力検証の警告文と <label> の対応に用いる。順序は表示順）。
+const FIELD_LABELS: Record<keyof FormModel, string> = {
+  capitalGainsTaxRate: '譲渡益税率',
+  fxSpreadRatio: '為替スプレッド率',
+  minimumExpectedProfitMultiple: '最小期待利益倍率',
+  jpRate: '日本株 手数料率',
+  jpMin: '日本株 最低手数料',
+  jpCap: '日本株 上限手数料',
+  usRate: '米国株 手数料率',
+  usMin: '米国株 最低手数料',
+  usCap: '米国株 上限手数料',
+  costTotal: '月次費用上限 総額',
+  costLlm: '月次費用上限 LLM',
+  costInfra: '月次費用上限 インフラ',
+  costData: '月次費用上限 データ',
+};
+
+// 財務パラメータの入力検証。空欄・非数値は「無効」とし、黙って 0 送信しない（安全既定）。実効な範囲検証はサーバ側 400 が担う。
+function isValidNumber(s: string): boolean {
+  if (s.trim() === '') return false;
+  return Number.isFinite(Number(s));
+}
+
+// 無効な（空欄/非数値の）フィールドのラベル一覧を返す。
+function invalidFieldLabels(f: FormModel): string[] {
+  return (Object.keys(FIELD_LABELS) as (keyof FormModel)[])
+    .filter((k) => !isValidNumber(f[k]))
+    .map((k) => FIELD_LABELS[k]);
+}
+
+// 数値化。呼び出し前に isValidNumber で有効性を担保する（無効時は保存ボタンが無効なため到達しない）。
 function num(s: string): number {
-  const n = parseFloat(s);
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -168,7 +198,8 @@ export function SettingsPage() {
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (!current || !form || reason.trim() === '') return;
+    // 理由必須・全フィールド有効を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
+    if (!current || !form || reason.trim() === '' || invalidFieldLabels(form).length > 0) return;
     setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
@@ -251,7 +282,16 @@ export function SettingsPage() {
               <textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
             </div>
 
-            <button type="submit" disabled={reason.trim() === '' || saveState === 'saving'}>
+            {invalidFieldLabels(form).length > 0 && (
+              <p role="alert">
+                未入力または数値でない項目があります: {invalidFieldLabels(form).join('、')}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={reason.trim() === '' || saveState === 'saving' || invalidFieldLabels(form).length > 0}
+            >
               保存
             </button>
             {saveState === 'saving' && <span role="status">保存中…</span>}

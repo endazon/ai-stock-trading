@@ -77,6 +77,19 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     expect(save).toBeEnabled();
   });
 
+  it('disables save and warns when a numeric field is empty or non-numeric', async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await screen.findByRole('heading', { name: '設定' });
+    await user.type(screen.getByLabelText('変更理由'), '税率調整');
+    const save = screen.getByRole('button', { name: '保存' });
+    expect(save).toBeEnabled();
+    // 財務パラメータを空欄にすると、黙って 0 送信せず保存を無効化し警告する（安全既定）。
+    await user.clear(screen.getByLabelText('譲渡益税率'));
+    expect(save).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/未入力|数値/);
+  });
+
   it('submits PUT with assumptions, expectedVersion and reason', async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
