@@ -35,6 +35,15 @@ spec:
               value: {{ $g.rabbitmqConnectionString | quote }}
             - name: Otlp__Endpoint
               value: {{ $g.otlpEndpoint | quote }}
+            {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディング（pipeline.json）のマウント先。
+                   自己申告エンドポイント（GET /internal/introspection）が有効な段を導出する。 */}}
+            - name: Pipeline__ConfigPath
+              value: /etc/ai-stock-trading/pipeline.json
+            {{- /* #22 受け入れ基準③: 実効構成バージョン（GitOps 注入）。空なら自己申告は null（fail-safe）。 */}}
+            {{- with $g.configVersion }}
+            - name: Introspection__ConfigVersion
+              value: {{ . | quote }}
+            {{- end }}
             {{- if $svc.db }}
             # ADR-0001(DB per service): 共有 Postgres 上の専有 DB（user=ai, MSP infra init が作成）。
             - name: ConnectionStrings__DefaultConnection
@@ -106,15 +115,23 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml $.Values.resources | nindent 12 }}
-          {{- /* #13: OpenD 暗号化通信用 RSA 秘密鍵（moomoo-rsa Secret）を read-only でマウント。 */}}
-          {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
           volumeMounts:
+            {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディング（pipeline.json）を read-only でマウント。全 Worker 共通。 */}}
+            - name: pipeline-config
+              mountPath: /etc/ai-stock-trading
+              readOnly: true
+            {{- /* #13: OpenD 暗号化通信用 RSA 秘密鍵（moomoo-rsa Secret）を read-only でマウント。 */}}
+            {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
             - name: moomoo-rsa
               mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
               readOnly: true
-          {{- end }}
-      {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+            {{- end }}
       volumes:
+        {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディングの ConfigMap（configmap-pipeline.yaml）。全 Worker 共通。 */}}
+        - name: pipeline-config
+          configMap:
+            name: {{ $.Values.namespace.name }}-pipeline
+        {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
         - name: moomoo-rsa
           secret:
             secretName: {{ $.Values.moomoo.opend.rsaSecretName }}

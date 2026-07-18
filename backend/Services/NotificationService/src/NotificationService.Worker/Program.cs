@@ -3,6 +3,7 @@ using AiStockTrading.Notification.Application.Services;
 using AiStockTrading.Notification.Worker.Composable.Adapters;
 using AiStockTrading.Notification.Worker.Composable.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
 using Serilog;
 
@@ -22,6 +23,9 @@ builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceNa
 
 // liveness ヘルスチェック（DB を持たないため readiness の外部依存チェックは無し）。
 builder.Services.AddAiStockTradingHealthChecks();
+// ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
+// メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName);
 
 // FR-09, IADR-0020: 送信手段の選択（安全既定 no-op）。実 Discord 送信は Notifications:Provider=discord-webhook で明示有効化する。
 builder.Services.AddHttpClient();
@@ -101,6 +105,7 @@ var app = builder.Build();
 
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
+app.MapAiStockTradingIntrospection();
 
 app.Run();
 

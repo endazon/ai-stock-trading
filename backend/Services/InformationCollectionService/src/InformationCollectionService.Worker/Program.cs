@@ -7,6 +7,7 @@ using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
 using Serilog;
 using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
@@ -27,6 +28,12 @@ builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceNa
 
 // liveness ヘルスチェック（DB を持たない）。
 builder.Services.AddAiStockTradingHealthChecks();
+// ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
+// メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
+    .AddPort("source", string.IsNullOrWhiteSpace(builder.Configuration["Collection:Source:Provider"]) ? "noop" : builder.Configuration["Collection:Source:Provider"]!)
+    .AddPortFromBaseUrl("cost-state", builder.Configuration["CostControl:BaseUrl"], "http", "placeholder")
+    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop"));
 
 // 収集ポーリングの構成（間隔）。
 builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(CollectionOptions.SectionName));
@@ -110,6 +117,7 @@ var app = builder.Build();
 
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
+app.MapAiStockTradingIntrospection();
 
 // #121, FR-02, IADR-0023: 本番スケジューラ（K8s CronJob）からの run-once トリガ。1 巡回（RunOnceAsync）を起動する。
 // in-process ポーリングと同じ処理で、休場日ガードは下流 TradeDecision（IADR-0023 の市場カレンダー）が担保する。
