@@ -119,6 +119,7 @@
   </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
+    <Project Path="Shared/AiStockTrading.Shared.Contracts.Tests/AiStockTrading.Shared.Contracts.Tests.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure/AiStockTrading.Shared.Infrastructure.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure.Tests/AiStockTrading.Shared.Infrastructure.Tests.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.KnowledgeBase/AiStockTrading.Shared.KnowledgeBase.csproj" />

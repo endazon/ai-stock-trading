@@ -121,10 +121,17 @@ sequenceDiagram
 
 取引サイクルの変換 DAG（発行・購読バインディング）は `deploy/helm/ai-stock-trading/files/pipeline.json` に
 宣言し、CI（`scripts/validate-pipeline-config.js`）で検証する（[IADR-0077](../adr/IADR-0077_declarative-pipeline-binding.md)）。
-横断オブザーバ（監査・通知・射影）は段に含めない。実効構成の自己申告（`GET /internal/introspection`）は #22 後続 PR。
+横断オブザーバ（監査・通知・射影）は段に含めない。実効構成の自己申告（`GET /internal/introspection`）は
+`PlatformShim.Foundation.Introspection`（#22 PR-B・[IADR-0078](../adr/IADR-0078_config-info-self-report.md)）。
+
+## イベント契約の後方互換（#22・PR-C）
+
+`Shared.Contracts.Events` の全イベント record の後方互換（削除・改名・型変更の禁止／追加は許容）を CI 契約テスト
+（`AiStockTrading.Shared.Contracts.Tests`・committed snapshot 比較）で機械化する（[IADR-0079](../adr/IADR-0079_event-backward-compat-contract-test.md)）。
 
 ## 未決事項
 
-- イベントエンベロープ・トピック命名・冪等性の platform 準拠（#22・受け入れ基準①）は platform 側でも
-  共通エンベロープが繰延中（`IADR-0049`）のため、後方互換の契約テストまでを #22 後続 PR で扱う。
+- **共通エンベロープ型・トピック命名・冪等性キー**の platform 準拠（#22・受け入れ基準①）は platform 側でも
+  共通エンベロープが繰延中（`IADR-0049`）のため導入しない。後方互換の契約テスト（PR-C）までを実装し、
+  エンベロープ型は上流確定時に拡張する（`Refs #22`）。
 - 同期 API はリスク管理ホスト（#12）・設定管理（#19）実装時に確定・追記する。
