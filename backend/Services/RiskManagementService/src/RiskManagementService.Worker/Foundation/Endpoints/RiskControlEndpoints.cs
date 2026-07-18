@@ -67,6 +67,21 @@ internal static class RiskControlEndpoints
             return Results.Ok(svc.GetState());
         });
 
+        // ---- 取引の一時停止/再開（FR-10, FR-14, UC-06, ADR-0009）: 利用者のみ（OwnerOnly）。理由必須 ----
+        // pause は kill switch より軽い統制で、`/resume` は pause のみ解除する（日次損失ロックアウトは解除しない）。
+        // 操作は冪等（停止中の再 pause・非停止中の resume は現状態を返すのみ）。actor は認証済みトークン名。
+        owner.MapGet("/pause", (PauseService svc) => Results.Ok(svc.GetState()));
+
+        owner.MapPost("/pause", (PauseRequest req, PauseService svc, HttpContext http) =>
+            Results.Ok(svc.Pause(ActorOf(http), req.Reason)));
+
+        owner.MapPost("/resume", (PauseRequest req, PauseService svc, HttpContext http) =>
+            Results.Ok(svc.Resume(ActorOf(http), req.Reason)));
+
+        // ---- 稼働状態の集約照会（FR-10, UC-07, ADR-0009）: 表示専用。Discord `/status` が参照する ----
+        // 3 統制の状態・優先順位・段階・当日損益・上限使用率・ポジションを 1 回で返す（設定変更は含まない）。
+        owner.MapGet("/status", (RiskStatusService svc) => Results.Ok(svc.Build()));
+
         // ---- 設定（FR-10/FR-19/FR-20, ADR-0007） ----
         owner.MapGet("/settings", (RiskSettingsService svc) => Results.Ok(svc.GetCurrent()));
 
@@ -126,6 +141,9 @@ internal static class RiskControlEndpoints
 
 // kill switch 操作の要求（理由必須・ADR-0007）。
 internal sealed record KillSwitchRequest(string Reason);
+
+// 一時停止/再開操作の要求（理由必須・ADR-0007/0009）。
+internal sealed record PauseRequest(string Reason);
 
 // 上限変更の要求。RiskLimitSettings は具象プロパティのレコードで標準の逆直列化が可能。
 internal sealed record LimitsUpdateRequest(RiskLimitSettings Limits, string Reason);

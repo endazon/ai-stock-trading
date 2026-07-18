@@ -3,17 +3,19 @@ using AiStockTrading.RiskManagement.Domain;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-10, IADR-0005, IADR-0008: 判定入力 PortfolioSnapshot（Domain・非永続の派生データ）を組み立てる。
-// 生の運用状態（IPortfolioStateProvider）に kill switch 状態（IKillSwitchStore）を合成する。
+// FR-10, IADR-0005, IADR-0008, ADR-0009: 判定入力 PortfolioSnapshot（Domain・非永続の派生データ）を組み立てる。
+// 生の運用状態（IPortfolioStateProvider）に kill switch 状態（IKillSwitchStore）と一時停止状態（IPauseStore）を合成する。
 // InvestedCapital（取得額合計）・UnrealizedPnl（含み損益）はプロバイダが供給した実値をそのまま反映する。
 public sealed class PortfolioSnapshotBuilder(
     IPortfolioStateProvider stateProvider,
-    IKillSwitchStore killSwitchStore)
+    IKillSwitchStore killSwitchStore,
+    IPauseStore pauseStore)
 {
     public PortfolioSnapshot Build()
     {
         var state = stateProvider.GetCurrent();
         var killSwitch = killSwitchStore.GetState();
+        var pause = pauseStore.GetState();
 
         return new PortfolioSnapshot
         {
@@ -27,6 +29,7 @@ public sealed class PortfolioSnapshotBuilder(
             ConsecutiveLosses = state.ConsecutiveLosses,
             SymbolsTradedToday = state.SymbolsTradedToday,
             KillSwitchEngaged = killSwitch.Engaged,
+            TradingPaused = pause.Paused,
         };
     }
 }

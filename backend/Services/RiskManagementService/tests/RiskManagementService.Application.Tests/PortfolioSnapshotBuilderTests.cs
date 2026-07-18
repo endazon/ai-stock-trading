@@ -28,7 +28,8 @@ public class PortfolioSnapshotBuilderTests
             ConsecutiveLosses = 2,
             SymbolsTradedToday = new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) },
         };
-        var builder = new PortfolioSnapshotBuilder(new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore());
+        var builder = new PortfolioSnapshotBuilder(
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore());
 
         var snapshot = builder.Build();
 
@@ -42,6 +43,7 @@ public class PortfolioSnapshotBuilderTests
         snapshot.ConsecutiveLosses.Should().Be(2);
         snapshot.SymbolsTradedToday.Should().Contain(("AAPL", Market.UnitedStates));
         snapshot.KillSwitchEngaged.Should().BeFalse();
+        snapshot.TradingPaused.Should().BeFalse();
     }
 
     [Fact]
@@ -50,8 +52,22 @@ public class PortfolioSnapshotBuilderTests
         var state = new PortfolioState { Capital = 100_000m };
         var killSwitch = new InMemoryKillSwitchStore();
         killSwitch.SetState(new KillSwitchState(true, "user", "停止", Now));
-        var builder = new PortfolioSnapshotBuilder(new FakePortfolioStateProvider(state), killSwitch);
+        var builder = new PortfolioSnapshotBuilder(
+            new FakePortfolioStateProvider(state), killSwitch, new InMemoryPauseStore());
 
         builder.Build().KillSwitchEngaged.Should().BeTrue();
+    }
+
+    [Fact]
+    public void 一時停止の状態をスナップショットへ反映する()
+    {
+        // FR-10, ADR-0009: pause 状態を kill switch と同経路でスナップショットへ合成する。
+        var state = new PortfolioState { Capital = 100_000m };
+        var pause = new InMemoryPauseStore();
+        pause.SetState(new PauseState(true, "user", "様子見", Now));
+        var builder = new PortfolioSnapshotBuilder(
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), pause);
+
+        builder.Build().TradingPaused.Should().BeTrue();
     }
 }

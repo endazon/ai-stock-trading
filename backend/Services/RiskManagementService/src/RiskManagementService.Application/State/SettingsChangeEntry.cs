@@ -18,4 +18,8 @@ public enum SettingsChangeType
     Stage,
     KillSwitchEngaged,
     KillSwitchDisengaged,
+
+    // FR-10, ADR-0009: 取引の一時停止（pause）の発動・解除。監査（アクター・理由・日時）を kill switch と同経路で残す。
+    TradingPaused,
+    TradingResumed,
 }

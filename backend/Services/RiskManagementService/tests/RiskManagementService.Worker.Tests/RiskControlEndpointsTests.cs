@@ -196,6 +196,93 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task 利用者は一時停止と再開ができ状態が永続化される()
+    {
+        // FR-10, ADR-0009: pause は OwnerOnly。往復（pause → resume）と別スコープ永続化を確認する。
+        var client = OwnerClient();
+
+        var pause = await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見のため一時停止"));
+        pause.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterPause = await client.GetFromJsonAsync<PauseStateDto>("/risk-controls/pause");
+        afterPause!.Paused.Should().BeTrue();
+        afterPause.Reason.Should().Be("様子見のため一時停止");
+
+        var resume = await client.PostAsJsonAsync("/risk-controls/resume", new PauseRequest("再開"));
+        resume.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterResume = await client.GetFromJsonAsync<PauseStateDto>("/risk-controls/pause");
+        afterResume!.Paused.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task 一時停止と再開が変更履歴に記録される()
+    {
+        // ADR-0007/0009: pause/resume の監査（アクター・理由・種別）を設定変更履歴へ残す。
+        var client = OwnerClient();
+
+        await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));
+        await client.PostAsJsonAsync("/risk-controls/resume", new PauseRequest("再開"));
+
+        var history = await client.GetFromJsonAsync<List<SettingsChangeDto>>("/risk-controls/settings/history");
+        history.Should().NotBeNull();
+        history!.Should().Contain(e => e.ChangeType == SettingsChangeType.TradingPaused && e.Actor == "test-owner");
+        history!.Should().Contain(e => e.ChangeType == SettingsChangeType.TradingResumed && e.Actor == "test-owner");
+    }
+
+    [Fact]
+    public async Task 理由が空の一時停止操作は400()
+    {
+        var client = OwnerClient();
+
+        var res = await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest(""));
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task サービスロールは一時停止を操作できない_403()
+    {
+        // IADR-0051 最小権限: trading-service は OwnerOnly の pause を持たない。403。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("サービスは操作できない"));
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task サービスロールは_status_を照会できない_403()
+    {
+        // ADR-0009: /status は OwnerOnly（当日損益・ポジション等の機微情報を含む表示）。trading-service は 403。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/status");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 利用者は_status_を照会でき現在状態が返る()
+    {
+        // FR-10, UC-07, ADR-0009: /status は 3 統制の状態・優先順位・段階・損益・上限・ポジションを返す（表示専用）。
+        var client = OwnerClient();
+
+        // 一時停止を成立させてから照会する（優先中の統制が pause として示されること）。
+        await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));
+
+        var status = await client.GetFromJsonAsync<RiskStatusDto>("/risk-controls/status");
+
+        status.Should().NotBeNull();
+        status!.TradingPaused.Should().BeTrue();
+        status.NewEntriesBlocked.Should().BeTrue();
+        status.ActiveControl.Should().Be(ActiveTradingControl.Pause);
+
+        // 後続テストへ状態を持ち越さないよう再開しておく。
+        await client.PostAsJsonAsync("/risk-controls/resume", new PauseRequest("片付け"));
+    }
+
+    [Fact]
     public async Task ヘルスチェック_live_は認証不要で応答する()
     {
         var client = factory.CreateClient();
@@ -207,6 +294,12 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
 
     // 応答 JSON の受け皿（プロパティ名は web 既定=camelCase）。
     private sealed record KillSwitchStateDto(bool Engaged, string? Actor, string? Reason);
+
+    private sealed record PauseStateDto(bool Paused, string? Actor, string? Reason);
+
+    // ActiveControl は enum（SettingsChangeType と同様に enum 型で受ける＝数値/文字列いずれの表現でも往復する）。
+    private sealed record RiskStatusDto(
+        bool KillSwitchEngaged, bool TradingPaused, bool NewEntriesBlocked, ActiveTradingControl ActiveControl);
 
     private sealed record SettingsChangeDto(string Actor, SettingsChangeType ChangeType, string Reason);
 
