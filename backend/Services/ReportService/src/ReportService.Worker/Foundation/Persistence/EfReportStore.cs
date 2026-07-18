@@ -34,6 +34,8 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
                 Kind = report.Kind,
                 PeriodStart = report.PeriodStart,
                 State = ReportState.Draft,
+                // 新規/改訂ドラフトはレビュー局面 Drafting から始まる（IADR-0071 決定5）。
+                ReviewState = ReviewState.Drafting,
                 BasedOn = report.BasedOn,
                 AssumptionsVersion = report.AssumptionsVersion,
                 PolicySummary = report.PolicySummary,
@@ -66,6 +68,8 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.AssumptionsVersion = report.AssumptionsVersion;
         row.PolicySummary = report.PolicySummary;
         row.State = ReportState.Draft;
+        // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
+        row.ReviewState = ReviewState.Drafting;
         row.ConfirmedAt = null;
         row.Version += 1;
         db.SaveChanges();
@@ -86,10 +90,37 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
             throw new ReportConcurrencyException(periodKey, expectedVersion, row.Version);
 
         row.State = ReportState.Confirmed;
+        // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
+        row.ReviewState = ReviewState.Confirmed;
         row.ConfirmedAt = confirmedAt;
         row.Version += 1;
         db.SaveChanges();
         return new ConfirmResult(ToReport(row), Transitioned: true);
+    }
+
+    public ReportReview? GetReview(string periodKey)
+    {
+        var row = db.Reports.Find(periodKey);
+        return row is null ? null : new ReportReview(periodKey, row.ReviewState, row.Version);
+    }
+
+    public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        var row = db.Reports.Find(periodKey);
+        if (row is null)
+            return null;
+
+        var decision = ReportReviewStateMachine.Decide(new ReportReview(periodKey, row.ReviewState, row.Version), command);
+        // 提示・差し戻しは内容不変（Version 不変）。遷移が受理されたときのみレビュー局面を更新する。
+        if (decision.Accepted && decision.Transitioned)
+        {
+            row.ReviewState = decision.Review.State;
+            db.SaveChanges();
+        }
+
+        return decision;
     }
 
     public VersionedReport? GetLatestConfirmed(ReportKind kind)

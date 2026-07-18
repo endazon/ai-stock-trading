@@ -9,7 +9,7 @@ namespace AiStockTrading.Report.Application.Adapters;
 public sealed class InMemoryReportStore : IReportStore
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, (TradingReport Report, int Version)> _rows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (TradingReport Report, int Version, ReviewState Review)> _rows = new(StringComparer.Ordinal);
 
     public VersionedReport? Get(string periodKey)
     {
@@ -36,7 +36,8 @@ public sealed class InMemoryReportStore : IReportStore
             {
                 if (expectedVersion != 0)
                     throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, 0);
-                _rows[report.PeriodKey] = (report, 1);
+                // 新規/改訂ドラフトはレビュー局面 Drafting から始まる（IADR-0071 決定5）。
+                _rows[report.PeriodKey] = (report, 1, ReviewState.Drafting);
                 return 1;
             }
 
@@ -47,7 +48,8 @@ public sealed class InMemoryReportStore : IReportStore
                 throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, existing.Version);
 
             var newVersion = existing.Version + 1;
-            _rows[report.PeriodKey] = (report, newVersion);
+            // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
+            _rows[report.PeriodKey] = (report, newVersion, ReviewState.Drafting);
             return newVersion;
         }
     }
@@ -67,7 +69,8 @@ public sealed class InMemoryReportStore : IReportStore
                 throw new ReportConcurrencyException(periodKey, expectedVersion, existing.Version);
 
             var confirmed = existing.Report with { State = ReportState.Confirmed, ConfirmedAt = confirmedAt };
-            _rows[periodKey] = (confirmed, existing.Version + 1);
+            // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
+            _rows[periodKey] = (confirmed, existing.Version + 1, ReviewState.Confirmed);
             return new ConfirmResult(confirmed, Transitioned: true);
         }
     }
@@ -82,6 +85,33 @@ public sealed class InMemoryReportStore : IReportStore
                 .Select(r => new VersionedReport(r.Report, r.Version))
                 .FirstOrDefault();
             return latest;
+        }
+    }
+
+    public ReportReview? GetReview(string periodKey)
+    {
+        lock (_gate)
+        {
+            return _rows.TryGetValue(periodKey, out var row)
+                ? new ReportReview(periodKey, row.Review, row.Version)
+                : null;
+        }
+    }
+
+    public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue(periodKey, out var row))
+                return null;
+
+            var decision = ReportReviewStateMachine.Decide(new ReportReview(periodKey, row.Review, row.Version), command);
+            // 提示・差し戻しは内容不変（Version 不変）。遷移が受理されたときのみレビュー局面を更新する。
+            if (decision.Accepted && decision.Transitioned)
+                _rows[periodKey] = (row.Report, decision.Review.Version, decision.Review.State);
+
+            return decision;
         }
     }
 }

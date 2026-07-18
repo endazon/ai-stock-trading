@@ -106,3 +106,4 @@
 | IADR-0068 | 実市況は Finnhub の HTTP 層を共有物へ抽出して供給し、構成で opt-in・既定は no-op のままとする | Accepted |
 | IADR-0069 | KB 保存・RAG 取得は共有クライアントの疎な境界で platform 文書管理／検索を包み、既定 no-op・構成で opt-in とする | Accepted |
 | IADR-0070 | 段階ゲートの遷移を追記専用台帳＋単一行実績で永続化し、承認は OwnerOnly エンドポイント、撤退は kill switch 自動起動に結線する | Accepted |
+| IADR-0071 | 報告書サービス残スコープは ReportService に閉じ、実 LLM/実 KB を既定オフ・opt-in、対話的確定は状態機械の薄い HTTP 結線で実装する | Accepted |
