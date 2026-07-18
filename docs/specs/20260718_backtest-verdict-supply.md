@@ -1,7 +1,7 @@
 ---
 title: バックテスト verdict／実 DD を Risk の IStagePerformanceStore へイベント射影で供給する
 type: work
-status: Draft
+status: In progress
 related_ids: [FR-20, FR-15, FR-11, UC-06, ADR-0008, IADR-0070, IADR-0045, IADR-0079, IADR-0089]
 issue: 164
 author: endazon (with Claude Code)
