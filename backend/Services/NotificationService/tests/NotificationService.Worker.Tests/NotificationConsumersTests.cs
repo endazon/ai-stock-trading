@@ -31,6 +31,7 @@ public class NotificationConsumersTests
                 x.AddConsumer<AssumptionsChangedNotificationConsumer>();
                 x.AddConsumer<ReportConfirmedNotificationConsumer>();
                 x.AddConsumer<CostThresholdReachedNotificationConsumer>();
+                x.AddConsumer<WithdrawalTriggeredNotificationConsumer>();
             })
             .BuildServiceProvider(true);
         return (provider, sender);
@@ -130,6 +131,28 @@ public class NotificationConsumersTests
         (await harness.Consumed.Any<StopLossTriggered>()).Should().BeTrue();
 
         sender.Sent.Should().ContainSingle(m => m.Severity == NotificationSeverity.Critical);
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 撤退基準到達イベントは自動停止つきで_Critical_通知を送信する()
+    {
+        // FR-20, FR-09, #166: 撤退基準到達（自動停止）の通知。降格提案は「確定は承認が必要」を本文で明示する。
+        var (provider, sender) = Build();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new WithdrawalTriggered(
+            ProposedStage: 0, "DrawdownBreachedMultiple", HaltNewEntries: true, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<WithdrawalTriggered>()).Should().BeTrue();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Title.Contains("撤退基準到達")
+            && m.Severity == NotificationSeverity.Critical
+            && m.Content.Contains("自動停止")
+            && m.Content.Contains("承認"));
 
         await harness.Stop();
     }

@@ -160,3 +160,14 @@ internal sealed class StageTransitionedAuditConsumer(IAuditEventStore store, ICl
         return Task.CompletedTask;
     }
 }
+
+// FR-20, #166, IADR-0083: 撤退基準到達（自動安全側の発火・撤退の定期評価ドライバ #166）を中央監査台帳へ記録する。
+internal sealed class WithdrawalTriggeredAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<WithdrawalTriggered>
+{
+    public Task Consume(ConsumeContext<WithdrawalTriggered> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}

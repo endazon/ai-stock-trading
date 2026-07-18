@@ -51,22 +51,26 @@ public sealed class StageGateService(
         return result;
     }
 
-    // FR-20, ADR-0008: 撤退基準を評価し、到達時は自動で安全側に倒す（IADR-0041「自動＝停止・承認＝段階変更」）。
+    // FR-20, ADR-0008, IADR-0083: 撤退基準を評価し、到達時は自動で安全側に倒す（IADR-0041「自動＝停止・承認＝段階変更」）。
     // HaltNewEntries（Stage 2/3 で実DD がバックテスト最大DD × 倍率超）なら kill switch を自動起動する。
     // 段階の実降格は行わず ProposedStage を返すにとどめ、確定は承認付き RequestTransition を要する。
-    public WithdrawalAssessment EvaluateWithdrawal()
+    // この呼び出しで新規に起動したか（NewlyEngaged）を戻り値に含める。定期評価ドライバ（#166）は本フラグで
+    // 「新規停止時のみ 1 回通知」を判定し、呼び出し側の snapshot 比較（check-then-act）に依存しない。
+    public WithdrawalEvaluationOutcome EvaluateWithdrawal()
     {
         var ledger = ledgerStore.Load();
         var performance = performanceStore.GetCurrent();
         var assessment = StageGate.AssessWithdrawal(ledger.CurrentStage, performance, policy);
 
+        var newlyEngaged = false;
         if (assessment is { Triggered: true, HaltNewEntries: true } && !killSwitch.GetState().Engaged)
         {
             killSwitch.Engage(
                 "system:stage-gate-withdrawal",
                 $"撤退基準到達（{assessment.Reason}）により自動停止（安全側・FR-20/ADR-0008）");
+            newlyEngaged = true;
         }
 
-        return assessment;
+        return new WithdrawalEvaluationOutcome(assessment, newlyEngaged);
     }
 }

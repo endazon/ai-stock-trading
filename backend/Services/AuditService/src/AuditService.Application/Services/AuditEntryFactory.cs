@@ -94,6 +94,13 @@ public static class AuditEntryFactory
         Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-20, FR-11, #166, IADR-0083: 撤退基準到達（自動安全側の発火）。段階遷移と同じ "stage-gate" 相関で束ね、
+    // 監査照会で撤退と遷移をまとめて辿れるようにする（段階の実降格は提案に留まるため StageTransitioned は伴わない）。
+    public static AuditEntry From(WithdrawalTriggered e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(WithdrawalTriggered), AuditCorrelation.From("stage-gate"), Symbol: null,
+        Truncate($"撤退基準到達 → Stage {e.ProposedStage} 降格提案（{e.Reason}・{(e.HaltNewEntries ? "自動停止" : "提案のみ")}）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

@@ -109,13 +109,29 @@ public class StageGateServiceTests
             ObservedMaxDrawdownRatio = 0.20m, // 0.10 × 1.5 = 0.15 を超過
         });
 
-        var assessment = svc.EvaluateWithdrawal();
+        var outcome = svc.EvaluateWithdrawal();
 
-        assessment.Triggered.Should().BeTrue();
-        assessment.HaltNewEntries.Should().BeTrue();
-        assessment.ProposedStage.Should().Be(TradingStage.Stage0Verification);
-        // 自動で安全側＝kill switch が起動される（段階の実降格は行わない）。
+        outcome.Assessment.Triggered.Should().BeTrue();
+        outcome.Assessment.HaltNewEntries.Should().BeTrue();
+        outcome.Assessment.ProposedStage.Should().Be(TradingStage.Stage0Verification);
+        // 自動で安全側＝kill switch が起動される（段階の実降格は行わない）。今回の呼び出しで新規に起動した。
+        outcome.NewlyEngaged.Should().BeTrue();
         kill.GetState().Engaged.Should().BeTrue();
+    }
+
+    [Fact]
+    public void 既に停止済みなら撤退評価は新規起動と判定しない_冪等()
+    {
+        // IADR-0083: 撤退が継続していても、既に起動済みなら NewlyEngaged=false（＝再通知の起点にならない）。
+        var (svc, _, perf, _) = Build(TradingStage.Stage2MinimalLive);
+        perf.Save(new StagePerformance
+        {
+            BacktestMaxDrawdownRatio = 0.10m,
+            ObservedMaxDrawdownRatio = 0.20m,
+        });
+
+        svc.EvaluateWithdrawal().NewlyEngaged.Should().BeTrue(); // 1 回目: 新規起動
+        svc.EvaluateWithdrawal().NewlyEngaged.Should().BeFalse(); // 2 回目: 起動済み
     }
 
     [Fact]
@@ -124,9 +140,10 @@ public class StageGateServiceTests
         // fail-safe 既定（実績なし・実DD 0）では Stage 2 の撤退は非発火＝kill switch は起動しない。
         var (svc, _, _, kill) = Build(TradingStage.Stage2MinimalLive);
 
-        var assessment = svc.EvaluateWithdrawal();
+        var outcome = svc.EvaluateWithdrawal();
 
-        assessment.Triggered.Should().BeFalse();
+        outcome.Assessment.Triggered.Should().BeFalse();
+        outcome.NewlyEngaged.Should().BeFalse();
         kill.GetState().Engaged.Should().BeFalse();
     }
 
