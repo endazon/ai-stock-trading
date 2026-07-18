@@ -37,7 +37,8 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("llm-completion", builder.Configuration["LlmGateway:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("daily-policy", builder.Configuration["Reports:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("sizing-context", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
-    .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop"));
+    .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop")
+    .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder"));
 
 // --- 取引判断のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();

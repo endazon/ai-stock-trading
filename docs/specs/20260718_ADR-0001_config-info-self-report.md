@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 #22 (PR-B) 構成情報 API 自己申告（実効構成の照会）
 type: work-spec
-status: In Progress
+status: review
 related_ids: [ADR-0001, FR-02, IADR-0013, IADR-0077, IADR-0078]
 author: endazon (with Claude Code)
 created: 2026-07-18
