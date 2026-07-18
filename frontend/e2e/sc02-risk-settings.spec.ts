@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { defaultBff, installBff, pathWithRoles, RISK_SETTINGS } from './fixtures';
+import { defaultBff, installBff, pathWithRoles, RISK_SETTINGS, WATCHLIST } from './fixtures';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, IADR-0087: リスク設定画面（リスク上限の閲覧/変更）の実ブラウザ E2E。
 // BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP #284）。
@@ -119,5 +119,103 @@ test.describe('SC-02 リスク設定（#187）', () => {
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
 
     await expect(page.getByRole('alert').filter({ hasText: 'リスク設定の取得に失敗' })).toBeVisible();
+  });
+});
+
+// SC-02, FR-13, FR-03, FR-11, UC-06, IADR-0088, IADR-0090: 監視銘柄（watchlist）変更 UI（#196）の E2E。
+// 別サービス（MarketMonitor `/monitor/watchlist`）を独立ロードする。BFF は page.route でモックし、画面が叩く
+// パス/メソッド（GET/POST/DELETE /monitor/watchlist）を契約として追認する（実 BFF プロキシ結線は MSP 後続）。
+function watchlistTable(page: Page) {
+  return page.getByRole('table', { name: '監視銘柄' });
+}
+function watchlistAddForm(page: Page) {
+  return page.getByRole('form', { name: '監視銘柄の追加' });
+}
+
+test.describe('SC-02 監視銘柄（#196）', () => {
+  test('trading-owner に監視銘柄一覧を市場ラベル付きで表示する', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    const table = watchlistTable(page);
+    await expect(table.getByRole('row', { name: /7203/ })).toContainText('日本');
+    await expect(table.getByRole('row', { name: /AAPL/ })).toContainText('米国');
+  });
+
+  test('追加は POST /monitor/watchlist（{symbol,market,reason}）を叩き成功通知を出す', async ({ page }) => {
+    let postPath: string | null = null;
+    let postBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'POST /monitor/watchlist': (route) => {
+        postPath = new URL(route.request().url()).pathname;
+        postBody = route.request().postDataJSON();
+        return { status: 200, body: WATCHLIST };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = watchlistAddForm(page);
+    await form.getByLabel('監視銘柄コード').fill('6758');
+    await form.getByLabel('監視銘柄の市場').selectOption('1'); // 米国
+    await form.getByLabel('追加理由').fill('半導体監視');
+    await form.getByRole('button', { name: '監視銘柄を追加' }).click();
+
+    await expect(form.getByText('追加しました。')).toBeVisible();
+    expect(postPath).toBe('/bff/monitor/watchlist');
+    expect(postBody).toEqual({ symbol: '6758', market: 1, reason: '半導体監視' });
+  });
+
+  test('削除は明示確認の後に DELETE /monitor/watchlist（body 理由）を叩く', async ({ page }) => {
+    let deletePath: string | null = null;
+    let deleteBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'DELETE /monitor/watchlist': (route) => {
+        deletePath = new URL(route.request().url()).pathname;
+        deleteBody = route.request().postDataJSON();
+        return { status: 200, body: [WATCHLIST[0]] };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    // 行の「削除」→確認パネル（理由必須）→「監視から削除」で確定する。
+    await watchlistTable(page).getByRole('row', { name: /AAPL/ }).getByRole('button', { name: '削除' }).click();
+    const confirm = page.getByRole('group', { name: '監視銘柄の削除確認' });
+    await expect(confirm).toBeVisible();
+    await confirm.getByLabel('削除理由').fill('監視終了');
+    await confirm.getByRole('button', { name: '監視から削除' }).click();
+
+    expect(deletePath).toBe('/bff/monitor/watchlist');
+    expect(deleteBody).toEqual({ symbol: 'AAPL', market: 1, reason: '監視終了' });
+  });
+
+  test('追加の競合（POST 409）でメッセージを表示し破壊的な再試行をしない', async ({ page }) => {
+    let postCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'POST /monitor/watchlist': () => {
+        postCount += 1;
+        return { status: 409, body: { title: '競合', detail: '競合が発生しました。' } };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = watchlistAddForm(page);
+    await form.getByLabel('監視銘柄コード').fill('6758');
+    await form.getByLabel('追加理由').fill('半導体監視');
+    await form.getByRole('button', { name: '監視銘柄を追加' }).click();
+
+    await expect(form.getByRole('alert').filter({ hasText: '競合' })).toBeVisible();
+    expect(postCount).toBe(1);
+  });
+
+  test('監視銘柄の取得失敗（404・BFF 未結線）は利用不可メッセージへ縮退する', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /monitor/watchlist': { status: 404, body: {} },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    // リスク設定本体は表示され、監視銘柄セクションのみ縮退する（別サービスの独立縮退）。
+    await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
+    await expect(page.getByText('監視銘柄設定は利用できません。')).toBeVisible();
   });
 });

@@ -41,6 +41,9 @@ function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
     if (path === '/risk-controls/settings/history') return HISTORY;
     if (path === '/risk-controls/settings/limits' && req?.method === 'PUT') return SETTINGS;
+    // 監視銘柄セクション（#196・別サービス）は独立ロードするため、本ページのテストでは空応答で満たす。
+    if (path === '/monitor/watchlist') return [];
+    if (path === '/monitor/watchlist/history') return [];
     return SETTINGS;
   });
 }

@@ -73,6 +73,16 @@ export const RISK_STATUS = {
   maxOpenPositions: 5,
 };
 
+// SC-02 監視銘柄（watchlist）セクション（#196・別サービス MarketMonitor）。market は数値 enum（0=日本/1=米国）。
+export const WATCHLIST = [
+  { symbol: '7203', market: 0 },
+  { symbol: 'AAPL', market: 1 },
+];
+
+export const WATCHLIST_HISTORY = [
+  { actor: 'owner', changeType: 0, reason: '監視追加', changedAt: '2026-07-17T00:00:00Z' },
+];
+
 export const STAGE_GATE = {
   currentStage: 1,
   currentSettings: { stage: 1, mode: 0, capitalCap: 1000000 },
@@ -102,6 +112,11 @@ export function defaultBff(): BffConfig {
     'PUT /risk-controls/settings/limits': { status: 200, body: RISK_SETTINGS },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
+    // 監視銘柄（#196・MarketMonitor `/monitor/watchlist`）。POST/DELETE は更新後の一覧を返す（成功時に再取得される）。
+    'GET /monitor/watchlist': { status: 200, body: WATCHLIST },
+    'GET /monitor/watchlist/history': { status: 200, body: WATCHLIST_HISTORY },
+    'POST /monitor/watchlist': { status: 200, body: WATCHLIST },
+    'DELETE /monitor/watchlist': { status: 200, body: WATCHLIST },
   };
 }
 
