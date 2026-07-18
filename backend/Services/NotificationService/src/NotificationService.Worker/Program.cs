@@ -74,10 +74,26 @@ builder.Services.AddSingleton<IPauseController>(sp =>
 });
 builder.Services.AddSingleton<PauseCommandHandler>();
 
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲート（#20）の承認遷移・撤退評価・現況照会。kill switch / pause と
+// 同じく Risk の OwnerOnly エンドポイントを owner マップ機密クライアントのトークンで呼ぶ（trading-service では 403）。Risk 側は無改修。
+builder.Services.AddHttpClient("risk-stage-gate", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IStageGateController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-stage-gate");
+    var baseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpStageGateController(http, sp.GetRequiredService<ILogger<HttpStageGateController>>());
+});
+builder.Services.AddSingleton<StageGateCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
     sp.GetRequiredService<PauseCommandHandler>(),
+    sp.GetRequiredService<StageGateCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

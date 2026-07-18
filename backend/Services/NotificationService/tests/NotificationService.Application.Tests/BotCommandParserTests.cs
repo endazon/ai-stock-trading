@@ -60,8 +60,43 @@ public class BotCommandParserTests
     [InlineData("/pause now")]
     [InlineData("/resume please")]
     [InlineData("/status all")]
+    [InlineData("/stage")]
+    [InlineData("/stage foo")]
+    [InlineData("/stage promote")]
+    [InlineData("/stage promote x")]
+    [InlineData("/stage promote 4")]
+    [InlineData("/stage promote -1")]
+    [InlineData("/stage demote nine")]
+    [InlineData("/stage status now")]
+    [InlineData("/stage withdrawal 2")]
     public void 未知のコマンドは_Unknown_になる(string? raw)
     {
         BotCommandParser.Parse(raw).Kind.Should().Be(BotCommandKind.Unknown);
+    }
+
+    // FR-20, UC-06, IADR-0081: 段階ゲートの副コマンド解析。status/withdrawal は引数なし。
+    [Theory]
+    [InlineData("/stage status", BotCommandKind.StageStatus)]
+    [InlineData("stage status", BotCommandKind.StageStatus)]
+    [InlineData("  /Stage  Status ", BotCommandKind.StageStatus)]
+    [InlineData("/stage withdrawal", BotCommandKind.StageWithdrawal)]
+    [InlineData("/stage WITHDRAWAL", BotCommandKind.StageWithdrawal)]
+    public void stage_status_withdrawal_が解析される(string raw, BotCommandKind expected)
+    {
+        BotCommandParser.Parse(raw).Kind.Should().Be(expected);
+    }
+
+    // FR-20: promote/demote は遷移先（0〜3）を伴い、TargetStage に保持する。
+    [Theory]
+    [InlineData("/stage promote 1", BotCommandKind.StagePromote, 1)]
+    [InlineData("/stage promote 3", BotCommandKind.StagePromote, 3)]
+    [InlineData("/stage demote 0", BotCommandKind.StageDemote, 0)]
+    [InlineData("stage demote 2", BotCommandKind.StageDemote, 2)]
+    public void stage_promote_demote_は遷移先つきで解析される(string raw, BotCommandKind expectedKind, int expectedStage)
+    {
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(expectedKind);
+        command.TargetStage.Should().Be(expectedStage);
     }
 }

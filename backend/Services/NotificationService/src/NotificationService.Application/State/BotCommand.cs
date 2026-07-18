@@ -21,10 +21,23 @@ public enum BotCommandKind
 
     // /status: 稼働状態の参照（表示専用・副作用なし）。
     Status,
+
+    // FR-20, UC-06: /stage status。段階ゲートの現況（現段階・設定・昇格可否・撤退評価・直近履歴）の参照（表示専用）。
+    StageStatus,
+
+    // /stage promote <n>: 段階の昇格（実弾方向・破壊的）。確認ボタンを要する（Gateway が担う）。TargetStage に遷移先。
+    StagePromote,
+
+    // /stage demote <n>: 段階の差し戻し（安全方向）。手動の段階変更のため確認ボタンを要する。TargetStage に遷移先。
+    StageDemote,
+
+    // /stage withdrawal: 撤退基準の評価（安全側＝HaltNewEntries 成立時に Risk が kill switch を自動起動）。確認不要。
+    StageWithdrawal,
 }
 
-// FR-14: 解析済みコマンド。
-public sealed record BotCommand(BotCommandKind Kind)
+// FR-14: 解析済みコマンド。TargetStage は段階遷移（StagePromote/StageDemote）の遷移先（0〜3）。
+// それ以外の種別では null（既定）。
+public sealed record BotCommand(BotCommandKind Kind, int? TargetStage = null)
 {
     public static readonly BotCommand Unknown = new(BotCommandKind.Unknown);
 }

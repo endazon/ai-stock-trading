@@ -22,6 +22,7 @@ internal static class DiscordBotGatewayFactory
         DiscordBotOptions options,
         KillSwitchCommandHandler handler,
         PauseCommandHandler pauseHandler,
+        StageGateCommandHandler stageGateHandler,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
@@ -47,7 +48,8 @@ internal static class DiscordBotGatewayFactory
             return NoOp(loggerFactory);
         }
 
-        return new DiscordNetBotGateway(handler, pauseHandler, options, loggerFactory.CreateLogger<DiscordNetBotGateway>());
+        return new DiscordNetBotGateway(
+            handler, pauseHandler, stageGateHandler, options, loggerFactory.CreateLogger<DiscordNetBotGateway>());
     }
 
     // 不足している認証設定の一覧（運用者が起動時ログで欠落を特定できるようにする）。

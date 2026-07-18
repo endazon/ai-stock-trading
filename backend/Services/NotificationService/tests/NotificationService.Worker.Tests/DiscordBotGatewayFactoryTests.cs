@@ -36,7 +36,10 @@ public class DiscordBotGatewayFactoryTests
             new StubKillSwitchController(), options, NullLogger<KillSwitchCommandHandler>.Instance);
         var pauseHandler = new PauseCommandHandler(
             new StubPauseController(), options, NullLogger<PauseCommandHandler>.Instance);
-        return DiscordBotGatewayFactory.Create(options, handler, pauseHandler, NullLoggerFactory.Instance);
+        var stageGateHandler = new StageGateCommandHandler(
+            new StubStageGateController(), options, NullLogger<StageGateCommandHandler>.Instance);
+        return DiscordBotGatewayFactory.Create(
+            options, handler, pauseHandler, stageGateHandler, NullLoggerFactory.Instance);
     }
 
     // 受け入れ基準11: 何も設定しなければ接続しない。
@@ -148,5 +151,18 @@ public class DiscordBotGatewayFactoryTests
 
         public Task<RiskStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new RiskStatusResult(true, "稼働状態"));
+    }
+
+    private sealed class StubStageGateController : IStageGateController
+    {
+        public Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StageGateStatusResult(true, "段階ゲート"));
+
+        public Task<StageTransitionCommandResult> RequestTransitionAsync(
+            int targetStage, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StageTransitionCommandResult(true, true, "遷移"));
+
+        public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
     }
 }
