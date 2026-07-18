@@ -79,10 +79,9 @@ jobs:
       - name: Validate runtime scaffold
         run: node scripts/validate-runtime-scaffold.js
 
-  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験のみを行う。
-  # 本プロジェクト（ai-stock-trading）は knowledge-platform の pipeline.json を持たないため、
-  # テンプレート由来の具体ファイル検証ステップは対象外として除外する。構成ファイルを持つ
-  # サービスを追加した時点で、そのパスを引数に検証ステップを復活させること。
+  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験に加え、
+  # 取引パイプラインの実宣言（deploy/helm/ai-stock-trading/files/pipeline.json）を検証する
+  # （ADR-0001, IADR-0077, #22）。宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
   pipeline-config:
     runs-on: ubuntu-latest
     steps:
@@ -92,6 +91,8 @@ jobs:
           node-version: "20"
       - name: Validate pipeline config (self-test)
         run: node scripts/validate-pipeline-config.js --self-test
+      - name: Validate trading pipeline config (real file)
+        run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
 
   lint:
     runs-on: ubuntu-latest

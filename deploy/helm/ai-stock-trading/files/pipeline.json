@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "events": [
+    "PriceMovementDetected",
+    "InformationCollected",
+    "StopLossTriggered",
+    "TradeDecisionMade",
+    "OrderApproved",
+    "OrderRejected",
+    "OrderExecuted"
+  ],
+  "sources": [
+    { "event": "PriceMovementDetected", "service": "market-monitor-service" },
+    { "event": "StopLossTriggered", "service": "market-monitor-service" },
+    { "event": "InformationCollected", "service": "information-collection-service" }
+  ],
+  "steps": [
+    {
+      "name": "decide-on-price-movement",
+      "service": "trade-decision-service",
+      "consumer": "AiStockTrading.TradeDecision.Worker.Composable.Steps.PriceMovementDetectedConsumer",
+      "input": "PriceMovementDetected",
+      "outputs": ["TradeDecisionMade"],
+      "enabled": true
+    },
+    {
+      "name": "decide-on-information",
+      "service": "trade-decision-service",
+      "consumer": "AiStockTrading.TradeDecision.Worker.Composable.Steps.InformationCollectedConsumer",
+      "input": "InformationCollected",
+      "outputs": ["TradeDecisionMade"],
+      "enabled": true
+    },
+    {
+      "name": "risk-approve",
+      "service": "risk-management-service",
+      "consumer": "AiStockTrading.RiskManagement.Worker.Composable.Steps.TradeDecisionMadeConsumer",
+      "input": "TradeDecisionMade",
+      "outputs": ["OrderApproved", "OrderRejected"],
+      "enabled": true
+    },
+    {
+      "name": "risk-stop-loss",
+      "service": "risk-management-service",
+      "consumer": "AiStockTrading.RiskManagement.Worker.Composable.Steps.StopLossTriggeredConsumer",
+      "input": "StopLossTriggered",
+      "outputs": ["OrderApproved"],
+      "enabled": true
+    },
+    {
+      "name": "execute-order",
+      "service": "order-execution-service",
+      "consumer": "AiStockTrading.OrderExecution.Worker.Composable.Steps.OrderApprovedConsumer",
+      "input": "OrderApproved",
+      "outputs": ["OrderExecuted"],
+      "enabled": true
+    }
+  ]
+}

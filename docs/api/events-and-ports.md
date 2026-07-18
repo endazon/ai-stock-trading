@@ -117,7 +117,14 @@ sequenceDiagram
 - 機能仕様書: [FR-12 ペーパートレード](../functional/FR-12_paper-trade.md)、[FR-19 取引ガード](../functional/FR-19_trading-guard.md)
 - 実装ADR: [IADR-0009](../adr/IADR-0009_async-contract-format.md)、[IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（拒否の区別）
 
+## 宣言的バインディング（#22・PR-A）
+
+取引サイクルの変換 DAG（発行・購読バインディング）は `deploy/helm/ai-stock-trading/files/pipeline.json` に
+宣言し、CI（`scripts/validate-pipeline-config.js`）で検証する（[IADR-0077](../adr/IADR-0077_declarative-pipeline-binding.md)）。
+横断オブザーバ（監査・通知・射影）は段に含めない。実効構成の自己申告（`GET /internal/introspection`）は #22 後続 PR。
+
 ## 未決事項
 
-- イベントエンベロープ・トピック命名・冪等性の platform 準拠（#22）と連動して詳細化する。
+- イベントエンベロープ・トピック命名・冪等性の platform 準拠（#22・受け入れ基準①）は platform 側でも
+  共通エンベロープが繰延中（`IADR-0049`）のため、後方互換の契約テストまでを #22 後続 PR で扱う。
 - 同期 API はリスク管理ホスト（#12）・設定管理（#19）実装時に確定・追記する。

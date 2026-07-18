@@ -112,3 +112,4 @@
 | IADR-0074 | Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実 OpenD 照会は後続へ分離する | Accepted |
 | IADR-0075 | 取引の一時停止(pause)を kill switch と同経路の別状態として新設し、監査は既存の設定変更履歴で満たす | Accepted |
 | IADR-0076 | 取引判断の採算評価は既存の概算費用関数を再利用し、opt-in の純ドメインゲートで採算不成立・見積り不能を安全側 Hold に倒す | Accepted |
+| IADR-0077 | 取引パイプラインの発行・購読バインディングを pipeline.json で宣言し、変換 DAG のみを段として表現して CI 検証＋GitOps 適用する | Accepted |
