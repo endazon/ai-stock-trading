@@ -68,7 +68,7 @@ owner 認可・理由必須・楽観排他・変更履歴）。#188（FR-13 残 
 | # | 受け入れ基準 | テスト |
 | --- | --- | --- |
 | 1 | 監視銘柄の一覧表示・追加・削除 UI を SC-02 に追加し #191 API（owner）を消費する | `WatchlistForm.test.tsx`：一覧描画（市場ラベル写像）／POST が `{symbol,market,reason}` で送出／DELETE が確認後に `{symbol,market,reason}` で送出／履歴の changeType 写像 |
-| 2 | 理由必須・検証(400)・楽観排他(409)・破壊的自動再試行なし・危険操作は明示確認 | `WatchlistForm.test.tsx`：追加は理由未入力でボタン無効／削除は確認 2 段（理由必須）／409 で競合表示・再試行 1 回のみ／400 で詳細表示 |
+| 2 | 理由必須・検証(400)・楽観排他(409)・権限(403)・破壊的自動再試行なし・危険操作は明示確認 | `WatchlistForm.test.tsx`：追加は理由未入力でボタン無効／削除は確認 2 段（理由必須）／409 で競合表示・再試行 1 回のみ／400 で詳細表示／403 で権限メッセージ |
 | 3 | 数値 enum↔ラベル写像はフロントに閉じ未知値フォールバック | `monitor/contracts.test.ts`：`marketLabel`/`monitorChangeTypeLabel` の既知値・未知値フォールバック |
 | 4 | BFF/合成点の結線を確認・整備（E2E は契約検証） | `e2e/sc02-risk-settings.spec.ts`：`GET/POST/DELETE /monitor/watchlist` のパス/メソッドを page.route で追認。実プロキシは MSP 後続へ分離 |
 

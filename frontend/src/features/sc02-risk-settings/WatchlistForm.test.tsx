@@ -179,6 +179,23 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
     expect(await within(confirm).findByText(/入力内容に誤りがあります/)).toHaveTextContent(/理由は必須です/);
   });
 
+  it('maps a 403 to a permission message on add (IADR-0090 決定 2)', async () => {
+    const user = userEvent.setup();
+    mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
+      if (path === '/monitor/watchlist/history') return HISTORY;
+      if (path === '/monitor/watchlist' && req?.method === 'POST') throw new ApiError('forbidden', '権限なし', 403);
+      if (path === '/monitor/watchlist') return WATCHLIST;
+      return [];
+    });
+    const view = await renderReady();
+    const form = addForm(view);
+    await user.type(within(form).getByLabelText('監視銘柄コード'), '6758');
+    await user.type(within(form).getByLabelText('追加理由'), '半導体監視');
+    await user.click(within(form).getByRole('button', { name: '監視銘柄を追加' }));
+
+    expect(await within(form).findByText('変更する権限がありません。')).toBeInTheDocument();
+  });
+
   it('degrades to a not-available message when the watchlist fetch 404s (BFF unwired)', async () => {
     mocks.apiFetch.mockImplementation(async (path: string) => {
       if (path === '/monitor/watchlist') throw new ApiError('notFound', '未登録', 404);
