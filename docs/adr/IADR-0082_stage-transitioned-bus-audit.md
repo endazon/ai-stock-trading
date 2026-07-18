@@ -47,7 +47,7 @@ Audit Consumer を伴うため後続へ分離」とした。本 issue はこの�
 
 2. **契約は primitive で表現する。** `Shared.Contracts` は Risk.Domain に依存しない（依存方向の逆転を避ける）。
    `StageTransitioned` は段階を `int`（`TradingStage` の数値割当と一致・StageSettings.cs が連続昇順を固定）で、
-   種別を `string`（`nameof(StageTransitionKind)`）で保持する。追加のみで既存イベントは不変（IADR-0079 の後方互換）。
+   種別を `string`（enum 値の `ToString()`＝`"Promotion"`/`"Demotion"`）で保持する。追加のみで既存イベントは不変（IADR-0079 の後方互換）。
    `event-schemas.baseline.json` は `UPDATE_EVENT_BASELINE=1` で再生成し差分を PR レビューする。
 
 3. **Risk 専有台帳を権威として据え置き、中央監査は集約ビューとする（fail-safe）。** 永続化（`ledgerStore.Append`）は
