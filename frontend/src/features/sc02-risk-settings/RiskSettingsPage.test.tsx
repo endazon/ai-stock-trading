@@ -50,6 +50,11 @@ beforeEach(() => {
   mockDefault();
 });
 
+// リスク上限フォーム（#186）。ガード変更フォーム（#188）と同名の要素があるため絞り込みに使う。
+function limitsForm(): HTMLElement {
+  return screen.getByRole('form', { name: 'リスク上限の変更' });
+}
+
 describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('renders current limits into the form', async () => {
     render(<RiskSettingsPage />);
@@ -58,14 +63,16 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     expect(screen.getByLabelText('保有銘柄数上限')).toHaveValue(5);
   });
 
-  it('shows guard and stage as read-only (no editable inputs)', async () => {
+  it('shows stage as read-only (stage change is via gate approval, not this screen)', async () => {
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    // 段階（数値 enum）がラベルへ写像される（参照表示）。
+    // 段階（数値 enum）がラベルへ写像される（参照表示。直接変更 UI は無い＝#20/#165 段階ゲート承認へ一元化）。
     expect(screen.getByText('Stage 2（少額実弾）')).toBeInTheDocument();
     expect(screen.getByText('実弾')).toBeInTheDocument();
-    // 禁止銘柄が市場ラベルつきで表示される。
-    const banned = screen.getByRole('table', { name: '禁止銘柄' });
+    // 段階の編集 UI は存在しない（段階変更フォームは開かない）。
+    expect(screen.queryByRole('form', { name: '運用段階の変更' })).not.toBeInTheDocument();
+    // ガードは編集可能（詳細は RiskSettingsPage.guard.test.tsx）。禁止銘柄は編集表として現在値を表示する。
+    const banned = screen.getByRole('table', { name: '禁止銘柄（編集）' });
     expect(within(banned).getByText('9999')).toBeInTheDocument();
   });
 
@@ -91,9 +98,11 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    const save = screen.getByRole('button', { name: '保存' });
+    // ガード変更フォーム（#188）も同名の「保存」「変更理由」を持つため、上限フォームに絞る。
+    const form = limitsForm();
+    const save = within(form).getByRole('button', { name: '保存' });
     expect(save).toBeDisabled();
-    await user.type(screen.getByLabelText('変更理由'), '上限調整');
+    await user.type(within(form).getByLabelText('変更理由'), '上限調整');
     expect(save).toBeEnabled();
   });
 
@@ -101,21 +110,23 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    await user.type(screen.getByLabelText('変更理由'), '上限調整');
-    const save = screen.getByRole('button', { name: '保存' });
+    const form = limitsForm();
+    await user.type(within(form).getByLabelText('変更理由'), '上限調整');
+    const save = within(form).getByRole('button', { name: '保存' });
     expect(save).toBeEnabled();
     // 上限を空欄にすると、黙って 0 送信せず保存を無効化し警告する（安全既定）。
-    await user.clear(screen.getByLabelText('1注文金額上限'));
+    await user.clear(within(form).getByLabelText('1注文金額上限'));
     expect(save).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/未入力|数値/);
+    expect(within(form).getByRole('alert')).toHaveTextContent(/未入力|数値/);
   });
 
   it('submits PUT to /settings/limits with limits and reason', async () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    await user.type(screen.getByLabelText('変更理由'), '上限調整');
-    await user.click(screen.getByRole('button', { name: '保存' }));
+    const form = limitsForm();
+    await user.type(within(form).getByLabelText('変更理由'), '上限調整');
+    await user.click(within(form).getByRole('button', { name: '保存' }));
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
       '/risk-controls/settings/limits',
@@ -130,11 +141,12 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     const user = userEvent.setup();
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    const input = screen.getByLabelText('保有銘柄数上限');
+    const form = limitsForm();
+    const input = within(form).getByLabelText('保有銘柄数上限');
     await user.clear(input);
     await user.type(input, '8');
-    await user.type(screen.getByLabelText('変更理由'), '保有枠拡大');
-    await user.click(screen.getByRole('button', { name: '保存' }));
+    await user.type(within(form).getByLabelText('変更理由'), '保有枠拡大');
+    await user.click(within(form).getByRole('button', { name: '保存' }));
 
     const putCall = mocks.apiFetch.mock.calls.find(
       ([p, r]) => p === '/risk-controls/settings/limits' && r?.method === 'PUT',
@@ -152,10 +164,11 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     });
     render(<RiskSettingsPage />);
     await screen.findByRole('heading', { name: 'リスク設定' });
-    await user.type(screen.getByLabelText('変更理由'), '上限調整');
-    await user.click(screen.getByRole('button', { name: '保存' }));
+    const form = limitsForm();
+    await user.type(within(form).getByLabelText('変更理由'), '上限調整');
+    await user.click(within(form).getByRole('button', { name: '保存' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/競合/);
+    expect(await within(form).findByRole('alert')).toHaveTextContent(/競合/);
     const putCalls = mocks.apiFetch.mock.calls.filter(
       ([p, r]) => p === '/risk-controls/settings/limits' && r?.method === 'PUT',
     );
