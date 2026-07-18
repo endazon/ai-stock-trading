@@ -84,6 +84,11 @@ builder.Services.AddScoped<IPriceBaselineStore, EfPriceBaselineStore>();
 builder.Services.AddScoped<ICooldownStore, EfCooldownStore>();
 builder.Services.AddScoped<MarketMonitorService>();
 
+// FR-03/FR-11/FR-13, UC-06, IADR-0088: 監視銘柄（watchlist）の取得/追加/削除と変更履歴（Risk 設定の作法をミラー）。
+// IClock は上で singleton 登録済み。変更履歴は DbContext 依存のため scoped。
+builder.Services.AddScoped<IMonitorSettingsChangeLog, EfMonitorSettingsChangeLog>();
+builder.Services.AddScoped<MonitorWatchlistService>();
+
 // FR-03: ポーリング構成（監視間隔）。
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(MonitorOptions.SectionName));
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。

@@ -12,6 +12,8 @@ internal sealed class MarketMonitorDbContext(DbContextOptions<MarketMonitorDbCon
 
     public DbSet<CooldownRow> Cooldowns => Set<CooldownRow>();
 
+    public DbSet<MonitorSettingsChangeRow> MonitorSettingsChangeLog => Set<MonitorSettingsChangeRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<MonitorSettingsRow>(e =>
@@ -35,6 +37,19 @@ internal sealed class MarketMonitorDbContext(DbContextOptions<MarketMonitorDbCon
             e.ToTable("cooldown");
             e.HasKey(r => new { r.Symbol, r.Market });
             e.Property(r => r.Symbol).HasMaxLength(32);
+        });
+
+        // FR-11, FR-13, ADR-0007: 監視設定変更履歴（追記専用）。新しい順の照会のため ChangedAt に索引を張る。
+        mb.Entity<MonitorSettingsChangeRow>(e =>
+        {
+            e.ToTable("monitor_settings_change");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.Actor).HasMaxLength(256).IsRequired();
+            e.Property(r => r.ChangeType).HasMaxLength(64).IsRequired();
+            // Risk の SettingsChangeRow を忠実にミラーする（Reason は 1024 上限・無制限な自由記述を許さない）。
+            e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
+            e.HasIndex(r => r.ChangedAt);
         });
     }
 }

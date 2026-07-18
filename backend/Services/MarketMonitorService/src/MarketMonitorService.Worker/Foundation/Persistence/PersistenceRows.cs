@@ -42,3 +42,21 @@ internal sealed class CooldownRow
 
     public DateTimeOffset LastTriggeredAt { get; set; }
 }
+
+// FR-11, FR-13, ADR-0007: 監視設定（監視銘柄）変更履歴の追記専用行。Risk の SettingsChangeRow をミラーする。
+internal sealed class MonitorSettingsChangeRow
+{
+    public Guid Id { get; set; }
+
+    public string Actor { get; set; } = string.Empty;
+
+    public string ChangeType { get; set; } = string.Empty;
+
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset ChangedAt { get; set; }
+
+    public string? Before { get; set; }
+
+    public string? After { get; set; }
+}
