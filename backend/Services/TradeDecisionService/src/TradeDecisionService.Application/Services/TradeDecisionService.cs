@@ -1,4 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.TradeDecision.Domain;
@@ -19,11 +20,15 @@ public sealed class TradeDecisionService(
     ISizingContextProvider sizingProvider,
     IClock clock,
     ILogger<TradeDecisionService> logger,
+    IRetrievalContextProvider? retrieval = null,
     DecisionOrchestrationOptions? options = null)
 {
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
         new(llm, options ?? DecisionOrchestrationOptions.Default, logger);
+
+    // FR-08, IADR-0072: RAG 取得ポート。未指定＝NoOp（常に空＝参考情報なし＝現行動作）。実結線は Worker が opt-in で差し替える。
+    private readonly IRetrievalContextProvider _retrieval = retrieval ?? new NoOpRetrievalContextProvider();
 
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
     public Task<TradeDecisionMade?> DecideAsync(
@@ -49,9 +54,15 @@ public sealed class TradeDecisionService(
 
         var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
 
+        // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
+        // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
+        //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
+        var retrieved = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+
         // IADR-0039: 本判断プロンプトを構築し、多数決・二段をオーケストレータへ委譲する。一次スクリーニングプロンプトは
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
-        var decisionPrompt = TradeDecisionPromptBuilder.Build(trigger, policy, context);
+        // IADR-0072 決定2: RAG 文脈は本判断のみに載せ、一次スクリーニング（費用統制）には載せない。
+        var decisionPrompt = TradeDecisionPromptBuilder.Build(trigger, policy, context, retrieved);
         var orchestrated = await _orchestrator.DecideAsync(
             () => TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context), decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
@@ -107,5 +118,21 @@ public sealed class TradeDecisionService(
             stopLossPrice);
 
         return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
+    }
+
+    // FR-08, IADR-0072 決定4: RAG 取得の fail-safe ラッパ。取得失敗（例外・遅延）は「文脈なし」に縮退し判断を継続する。
+    // キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
+    private async Task<IReadOnlyList<RetrievedContext>> RetrieveContextSafeAsync(
+        DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _retrieval.GetContextAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "RAG 文脈の取得に失敗しました（文脈なしで判断を継続）: {Symbol}", trigger.Symbol);
+            return [];
+        }
     }
 }
