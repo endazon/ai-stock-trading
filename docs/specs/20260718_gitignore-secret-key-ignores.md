@@ -21,7 +21,7 @@ plan_refs:
 - 機能要求（FR）: なし（保守・ハードニング）
 - ユースケース（UC）: なし
 - 画面（SC）: なし
-- 関連 ADR: [IADR-0053](../adr/IADR-0053_moomoo-opend-dockerization.md)（moomoo OpenD 用 RSA 秘密鍵運用）
+- 関連 ADR: [IADR-0053](../adr/IADR-0053_moomoo-opend-dockerization.md)（moomoo OpenD 用 RSA 秘密鍵運用。status: Proposed の**参考リンク**であり確定制約ではない）
 - 計画書リンク: endazon/ai-stock-trading#151 / endazon/project-planning#27
 
 ## 目的・背景
