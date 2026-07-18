@@ -97,6 +97,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#205) (6270d1b)
 - **NFR**: CHANGELOG を自動更新 (#201) (a48835a)
 - **NFR**: CHANGELOG を自動更新 (#135) (36570d6)
 - **ADR-0001**: ai-stock-trading + platform のシステム構成図を追加 (#133) (9e53e8c)
@@ -128,6 +129,7 @@
 
 ### ビルド
 
+- **deps**: bump planning from `98c45d0` to `8fcc468` (#206) (bf43f21)
 - **deps**: bump planning from `da20fc4` to `98c45d0` (#200) (c5749ed)
 - **deps**: bump actions/setup-node from 6 to 7 (#128) (6bea0cd)
 - **deps**: bump planning from `07db93f` to `da20fc4` (#113) (c65ed86)
