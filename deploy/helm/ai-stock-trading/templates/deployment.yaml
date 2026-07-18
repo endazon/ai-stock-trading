@@ -19,6 +19,10 @@ spec:
     metadata:
       labels:
         app: {{ $name }}-service
+      annotations:
+        {{- /* ADR-0001, IADR-0077/0078, #22: 宣言（pipeline.json）変更時に Pod をロールアウトして
+               自己申告（有効な段）を更新する。全 Worker が同一 ConfigMap をマウントするため共通の checksum。 */}}
+        checksum/pipeline: {{ $.Files.Get "files/pipeline.json" | sha256sum }}
     spec:
       containers:
         - name: {{ $name }}-service
