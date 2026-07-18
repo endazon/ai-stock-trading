@@ -220,4 +220,27 @@ public class AuditEntryFactoryTests
             new StageTransitioned(4, 1, 0, "Demotion", "owner", "利用者承認による差し戻し", RecordedAt), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(other.CorrelationId);
     }
+
+    [Fact]
+    public void BacktestEvaluated_は段階ゲート相関でverdictと実DDを記録する()
+    {
+        // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.30m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0.7, FailedChecks: "DeflatedSharpe, MaxDrawdown", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BacktestEvaluated");
+        entry.Symbol.Should().BeNull();
+        // verdict・最大DD・未達条件が一行で読める（FR-11）。
+        entry.Summary.Should().Contain("不合格").And.Contain("DeflatedSharpe");
+        entry.OccurredAt.Should().Be(e.EvaluatedAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("Passed").And.Contain("MaxDrawdownRatio");
+        // 段階ゲート系（遷移・撤退・バックテスト）は同一「stage-gate」相関で束ねられる。
+        var stage = AuditEntryFactory.From(
+            new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(stage.CorrelationId);
+    }
 }

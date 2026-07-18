@@ -101,6 +101,14 @@ public static class AuditEntryFactory
         Truncate($"撤退基準到達 → Stage {e.ProposedStage} 降格提案（{e.Reason}・{(e.HaltNewEntries ? "自動停止" : "提案のみ")}）"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict（Stage 0 合格判定・#16）。段階ゲート系（Stage 0→1 解錠）の
+    // ため段階遷移と同じ "stage-gate" 相関で束ね、監査照会でバックテスト供給と遷移をまとめて辿れるようにする。
+    public static AuditEntry From(BacktestEvaluated e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BacktestEvaluated), AuditCorrelation.From("stage-gate"), Symbol: null,
+        Truncate($"バックテスト verdict: {(e.Passed ? "合格" : "不合格")}（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}）"
+            + (e.Passed ? string.Empty : $" 未達: {e.FailedChecks}")),
+        AuditSerialization.Serialize(e), e.EvaluatedAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

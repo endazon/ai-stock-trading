@@ -25,7 +25,7 @@ public static class Stage0Promotion
                 Rationale: "Stage 0 合格基準を満たしたため Stage 1（ペーパー）への昇格を推奨（承認は利用者・#20）。");
         }
 
-        var reasons = string.Join(", ", gate.FailedChecks);
+        var reasons = gate.FormatFailedChecks();
         return new StagePromotionRecommendation(
             TradingStage.Stage0Verification,
             ToStage: null,

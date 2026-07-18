@@ -62,6 +62,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<StageTransitionedAuditConsumer>();
     // FR-20/#166, IADR-0083: 撤退基準到達（自動安全側の発火）も中央監査台帳へ集約する（全イベントの時系列記録・FR-11）。
     x.AddConsumer<WithdrawalTriggeredAuditConsumer>();
+    // FR-20/FR-15/#164, IADR-0089: バックテスト verdict（Stage 0 合格判定 #16・Stage 0→1 解錠）も中央監査台帳へ集約する（FR-11）。
+    x.AddConsumer<BacktestEvaluatedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

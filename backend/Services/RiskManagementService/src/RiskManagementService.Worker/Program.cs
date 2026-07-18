@@ -151,6 +151,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<OrderExecutedActivityConsumer>();
     x.AddConsumer<OrderModifiedActivityConsumer>();
     x.AddConsumer<OrderCancelledActivityConsumer>();
+    // FR-20, FR-15, #164, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読し段階別実績へ射影する（Stage 0→1 解錠）。
+    x.AddConsumer<BacktestEvaluatedProjectionConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

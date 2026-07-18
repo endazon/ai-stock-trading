@@ -171,3 +171,14 @@ internal sealed class WithdrawalTriggeredAuditConsumer(IAuditEventStore store, I
         return Task.CompletedTask;
     }
 }
+
+// FR-20, FR-15, #164, IADR-0089: バックテスト verdict（Stage 0 合格判定 #16・Stage 0→1 解錠）を中央監査台帳へ記録する。
+internal sealed class BacktestEvaluatedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<BacktestEvaluated>
+{
+    public Task Consume(ConsumeContext<BacktestEvaluated> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
