@@ -2,7 +2,8 @@
 
 `pipeline.json` は取引ドメインの**イベント発行・購読バインディング**（どの段がどのイベントを購読し、
 どのイベントを発行するか）を宣言する**単一の正**である（ADR-0001／platform ADR-0018 の可変部品規約、
-[IADR-0028（platform）] の宣言的パイプライン構成、[IADR-0077](../../../../docs/adr/IADR-0077_declarative-pipeline-binding.md)）。
+platform IADR-0028（隣接リポ `../microservices-platform`・未リンク）の宣言的パイプライン構成、
+[IADR-0077](../../../../docs/adr/IADR-0077_declarative-pipeline-binding.md)）。
 
 ## 位置づけ
 

@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 #22 (PR-A) 取引パイプラインの宣言的バインディング（pipeline.json）
 type: work-spec
-status: In Progress
+status: review
 related_ids: [ADR-0001, FR-02, FR-04, FR-05, IADR-0028, IADR-0077]
 author: endazon (with Claude Code)
 created: 2026-07-18
