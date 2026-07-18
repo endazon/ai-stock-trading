@@ -14,6 +14,10 @@ internal sealed class ReportRow
 
     public ReportState State { get; set; }
 
+    // FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー局面（Draft の下位状態を精緻化）。
+    // Draft 局面は Drafting/PendingApproval/ChangesRequested のいずれか、確定済みは Confirmed に対応する。
+    public ReviewState ReviewState { get; set; }
+
     public string? BasedOn { get; set; }
 
     public int AssumptionsVersion { get; set; }

@@ -24,4 +24,13 @@ public interface IReportStore
 
     /// <summary>指定種別の最新の確定済み報告書（PeriodStart 最大）。無ければ null。</summary>
     VersionedReport? GetLatestConfirmed(ReportKind kind);
+
+    /// <summary>FR-07, IADR-0042/0071: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
+    ReportReview? GetReview(string periodKey);
+
+    /// <summary>
+    /// FR-07, IADR-0042/0071: レビュー操作（提示・差し戻し）を <see cref="ReportReviewStateMachine"/> で検証し、遷移を永続化する。
+    /// 提示・差し戻しは内容不変のため Version を上げない。拒否時は状態不変で理由を含む決定を返す。対象が無ければ null。
+    /// </summary>
+    ReviewDecision? ApplyReview(string periodKey, ReviewCommand command);
 }
