@@ -16,7 +16,7 @@ plan_refs:
 
 ## 目的 / 背景
 
-段階ゲート（#20・PR #163・[IADR-0070](../adr/IADR-0070_stage-gate-persistence.md)）は、遷移履歴を Risk 専有 DB の
+段階ゲート（#20・PR #163・[IADR-0070](../adr/IADR-0070_stage-gate-persistence-and-approval.md)）は、遷移履歴を Risk 専有 DB の
 `stage_transitions`（追記専用）へ永続化し `GET /risk-controls/stage-gate/history` で照会可能とした。ただしこれは
 **Risk サービス専有の監査面**であり、中央監査台帳（`audit_events`・FR-11・AuditService）へは集約していない。
 IADR-0070 は `StageTransitioned` のバス発行を「`Shared.Contracts` への追加＋Audit Consumer を伴うため後続へ分離」

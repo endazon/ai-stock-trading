@@ -22,7 +22,7 @@ plan_refs:
 
 - 関連する計画書 ID: **FR-20**（段階ゲート）、**FR-11**（監査＝全イベントの時系列記録）、UC-06、ADR-0008（段階的展開）
 - 対象 Issue: [#167](https://github.com/endazon/ai-stock-trading/issues/167)（段階遷移イベントのバス発行と中央監査集約・#20 後続）
-- 関連 IADR: [IADR-0070](IADR-0070_stage-gate-persistence.md)（段階ゲート永続化・本 issue の親）、[IADR-0019](IADR-0019_audit-ledger-service.md)（監査台帳サービス）、[IADR-0079](IADR-0079_event-backward-compat-contract-test.md)（イベント契約の後方互換）
+- 関連 IADR: [IADR-0070](IADR-0070_stage-gate-persistence-and-approval.md)（段階ゲート永続化・本 issue の親）、[IADR-0019](IADR-0019_audit-log-service.md)（監査台帳サービス）、[IADR-0079](IADR-0079_event-backward-compat-contract-test.md)（イベント契約の後方互換）
 
 ## コンテキストと課題
 
