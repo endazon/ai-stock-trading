@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiStockTrading.MarketMonitor.Worker.Migrations
 {
     [DbContext(typeof(MarketMonitorDbContext))]
-    [Migration("20260718104048_AddMonitorSettingsChangeLog")]
+    [Migration("20260718110304_AddMonitorSettingsChangeLog")]
     partial class AddMonitorSettingsChangeLog
     {
         /// <inheritdoc />
@@ -68,7 +68,8 @@ namespace AiStockTrading.MarketMonitor.Worker.Migrations
 
                     b.Property<string>("Reason")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
 
                     b.HasKey("Id");
 

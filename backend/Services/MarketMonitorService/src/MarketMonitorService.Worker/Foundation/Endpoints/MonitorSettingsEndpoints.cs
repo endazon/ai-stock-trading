@@ -55,12 +55,12 @@ internal static class MonitorSettingsEndpoints
         owner.MapGet("/watchlist", (MonitorWatchlistService svc) => Results.Ok(svc.GetWatchlist()));
 
         owner.MapPost("/watchlist", (WatchlistChangeRequest req, MonitorWatchlistService svc, HttpContext http) =>
-            Results.Ok(svc.Add(req.Symbol, req.Market, ActorOf(http), req.Reason)));
+            Results.Ok(svc.Add(req.Symbol, MarketOf(req), ActorOf(http), req.Reason)));
 
         // DELETE に body を持たせて理由を POST と対称に運ぶ（内部メッシュ限定 API・IADR-0088）。
         // DELETE は body 推論を許さないため [FromBody] を明示する。
         owner.MapDelete("/watchlist", ([FromBody] WatchlistChangeRequest req, MonitorWatchlistService svc, HttpContext http) =>
-            Results.Ok(svc.Remove(req.Symbol, req.Market, ActorOf(http), req.Reason)));
+            Results.Ok(svc.Remove(req.Symbol, MarketOf(req), ActorOf(http), req.Reason)));
 
         owner.MapGet("/watchlist/history", (MonitorWatchlistService svc) => Results.Ok(svc.GetHistory()));
 
@@ -70,6 +70,11 @@ internal static class MonitorSettingsEndpoints
     // 認証済みトークンの名前（preferred_username）。OwnerOnly を通過している前提だが、null は unknown に倒す。
     private static string ActorOf(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "unknown";
+
+    // FR-13: market の省略を検証エラー（400）にする。非 nullable enum だと省略時に既定値 Market.Japan(0) へ暗黙バインド
+    // されるため、要求では nullable で受けて明示的な指定を必須にする。
+    private static Market MarketOf(WatchlistChangeRequest req) =>
+        req.Market ?? throw new ArgumentException("market は必須です。", nameof(req));
 }
 
 // 監視設定変更の要求。MonitoredSymbols は逆直列化可能な具象 List で受ける。
@@ -101,4 +106,5 @@ internal sealed record MonitorSettingsUpdateRequest(
 }
 
 // FR-13, UC-06: 監視銘柄の追加/削除の要求（理由必須・ADR-0007）。actor は要求本文ではなく認証済みトークンから取る。
-internal sealed record WatchlistChangeRequest(string Symbol, Market Market, string Reason);
+// Market は nullable で受け、省略（null）を 400 に弾く（非 nullable だと省略時に既定値 0 へ暗黙バインドされるため）。
+internal sealed record WatchlistChangeRequest(string Symbol, Market? Market, string Reason);

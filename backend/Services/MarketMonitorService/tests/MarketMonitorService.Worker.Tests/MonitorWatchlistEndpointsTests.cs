@@ -120,5 +120,13 @@ public class MonitorWatchlistEndpointsTests(MonitorWorkerWebApplicationFactory f
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task marketを省略した追加は400()
+    {
+        // 非 nullable enum の既定値 0（Japan）へ暗黙バインドされず、明示指定を必須にする（IADR-0088・AI レビュー対応）。
+        var res = await OwnerClient().PostAsJsonAsync("/monitor/watchlist", new { Symbol = "AAPL", Reason = "market 省略" });
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private sealed record HistoryDto(string Actor, MonitorSettingsChangeType ChangeType, string Reason);
 }

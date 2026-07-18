@@ -47,7 +47,8 @@ internal sealed class MarketMonitorDbContext(DbContextOptions<MarketMonitorDbCon
             e.Property(r => r.Id).ValueGeneratedNever();
             e.Property(r => r.Actor).HasMaxLength(256).IsRequired();
             e.Property(r => r.ChangeType).HasMaxLength(64).IsRequired();
-            e.Property(r => r.Reason).IsRequired();
+            // Risk の SettingsChangeRow を忠実にミラーする（Reason は 1024 上限・無制限な自由記述を許さない）。
+            e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
             e.HasIndex(r => r.ChangedAt);
         });
     }
