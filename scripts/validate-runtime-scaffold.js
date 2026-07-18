@@ -187,14 +187,27 @@ function checkCompose() {
     }
   }
   // FR-08, IADR-0073 (#9): 実 KB 保存の opt-in スイッチ（KnowledgeBase:Documents:BaseUrl）が
-  // デプロイ面に露出していないと、運用者は本番/compose で実 KB 保存を有効化できない（#162 でコード側は opt-in 化済み）。
-  // 空既定＝no-op のまま口だけ開ける露出であり、その露出漏れの退行を止める（既定挙動は不変）。
-  if (!/KnowledgeBase__Documents__BaseUrl/.test(txt)) {
+  // information-collection-service に露出していないと、運用者は本番/compose で実 KB 保存を有効化できない
+  // （#162 でコード側は opt-in 化済み）。空既定＝no-op のまま口だけ開ける露出であり、その露出漏れの退行を止める。
+  // ※ 全文一致では不十分: report-service など他ブロックが同名キーを持つため、当該サービスブロックに絞って検査する。
+  if (!composeServiceBlock(txt, 'information-collection-service').includes('KnowledgeBase__Documents__BaseUrl')) {
     err(
-      'docker-compose.yml: 実 KB 保存の opt-in キー "KnowledgeBase__Documents__BaseUrl" が露出していない' +
-        '（情報収集の実 KB 保存を運用者が有効化できない。IADR-0073 / #9）'
+      'docker-compose.yml: information-collection-service に 実 KB 保存の opt-in キー' +
+        ' "KnowledgeBase__Documents__BaseUrl" が露出していない（IADR-0073 / #9）'
     );
   }
+}
+
+// docker-compose.yml から 1 サービスの env ブロックを切り出す（2 スペース字下げのサービスキー間）。
+// services 直下のサービスは "  <name>:"（2 スペース）で、その配下は 4 スペース以上。次の 2 スペース字下げ行
+// （次サービス）または 0 字下げ行（volumes/networks 等のトップレベル）の手前までを当該ブロックとみなす。
+function composeServiceBlock(txt, service) {
+  const header = `\n  ${service}:`;
+  const start = txt.indexOf(header);
+  if (start === -1) return '';
+  const rest = txt.slice(start + header.length);
+  const next = rest.search(/\n {2}\S|\n\S/);
+  return next === -1 ? rest : rest.slice(0, next);
 }
 
 function checkFileExists(rel) {

@@ -100,8 +100,19 @@ compose/helm/.env.example の 3 ファイルの env 追加を 1 コミットに�
   持つため、デプロイ面だけ Documents 単独だと設定サーフェスの形が食い違う。空＝no-op で無害なので対で開けて整合させる。
 - **C: 露出せず appsettings 直編集のみに委ねる** — 却下。本番/compose で運用者が env で opt-in できず、FR-08 の実運用前提を満たさない。
 
+## 既知の負債（env 変数名の不一致・本 PR スコープ外）
+
+並行 PR のマージで、同じ「platform DocumentService の Documents:BaseUrl」を指す env 変数名が 2 系統に割れている:
+
+- information-collection（#9・本 PR）・trade-decision（#11）: `KNOWLEDGEBASE_*`（アンダースコアなし）。
+- report-service（#14, PR #169）: `KNOWLEDGE_BASE_DOCUMENTS_BASEURL`（アンダースコアあり・`.env.example` 未定義）。
+
+本 PR は **information-collection スコープに限定**するため report-service の compose/helm には触れず、統一は行わない（触れると #14 のサービスへ越境する）。
+統一・`.env.example` への report 変数の追記は**後続**で扱う（背景タスクとして申し送り済み）。`.env.example` の KB 節にもこの不一致を明記した。
+
 ## 影響・リスク
 
 - 既定挙動は完全に不変（空＝no-op/ログ）。既存サービス・テストへの影響なし。
 - 実接続を有効化しても、ロール未付与では 403（未保存に fail-safe）。これは想定内で、実運用にはロール付与が別途前提。
 - `Shared.Contracts` は不変・新イベント無し → 監査 Consumer への影響なし。
+- 回帰ガードは全文一致では report-service の同名キーで vacuous になるため、**information-collection ブロックに絞って**検査する（レビュー指摘反映）。
