@@ -130,6 +130,22 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
     expect(lastGuardPut()![1].json.prohibitManipulativeOrderPatterns).toBe(false);
   });
 
+  it('re-requires confirmation when a further dangerous change is made after confirming', async () => {
+    const user = userEvent.setup();
+    const view = await renderReady();
+    const form = guardForm(view);
+    await user.type(within(form).getByLabelText('変更理由'), '段階的に緩和');
+    // 危険 1: 相場操縦パターン禁止を OFF → 確認 ON で保存可能。
+    await user.click(within(form).getByRole('checkbox', { name: '相場操縦パターン禁止' }));
+    await user.click(within(form).getByRole('checkbox', { name: /確認/ }));
+    const save = within(form).getByRole('button', { name: '保存' });
+    expect(save).toBeEnabled();
+    // 危険 2 を追加（同日再エントリー禁止も OFF）→ 確認が外れ、再確認が必要（fail-safe）。
+    await user.click(within(form).getByRole('checkbox', { name: '同日再エントリー禁止' }));
+    expect(within(form).getByRole('checkbox', { name: /確認/ })).not.toBeChecked();
+    expect(save).toBeDisabled();
+  });
+
   it('treats enabling margin as a dangerous change requiring confirmation', async () => {
     const user = userEvent.setup();
     const view = await renderReady();

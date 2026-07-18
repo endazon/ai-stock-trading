@@ -30,7 +30,8 @@ plan_refs:
   [IADR-0080](IADR-0080_frontend-settings-screen.md)（frontend 新設・単独リポの @foundation スタブ＋vitest）
 - 前提（develop マージ済み）: Risk `PUT /risk-controls/settings/guard`（OwnerOnly・[RiskControlEndpoints.cs](../../backend/Services/RiskManagementService/src/RiskManagementService.Worker/Foundation/Endpoints/RiskControlEndpoints.cs)）
 - **採番について（IADR-0085 の欠番は意図的）**: 本 IADR は **0086** を用いる。**0085 は並行作業の #189 に先着で割り当て済み**（ユーザー調整による）で、
-  本ブランチで 0085 を使うと #189 と衝突する。番号衝突の扱いは「先着尊重」（`iadr-number-collision-playbook`）に従い、当面 0085 を空けて 0086 とする。
+  本ブランチで 0085 を使うと #189 と衝突する。番号衝突の扱いは「先着尊重」（[README の「採番前の確認手順」](README.md)・
+  前例 [20260717_iadr-0059-number-collision-fix.md](../specs/20260717_iadr-0059-number-collision-fix.md)）に従い、当面 0085 を空けて 0086 とする。
   develop への #189 マージ時に 0085 が埋まり欠番は解消する（履歴不変・番号の再割り当てはしない）。
 
 ## 背景・課題

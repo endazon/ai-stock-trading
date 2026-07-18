@@ -349,18 +349,25 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
   // 現在値に追随してフォームを初期化する。ただし依存を「値のシグネチャ」にして、ガードの内容が実際に変わったとき
   // （＝自分の保存成功後の再取得や外部変更）だけ初期化する。隣接するリスク上限フォームの保存でも親の current は再生成
   // され guard の参照は変わるが、ガードの内容が同一なら初期化しない（編集中のガード内容・理由・危険確認・下書きを
-  // 黙って破棄しない・fail-safe / #188 AI レビュー指摘）。
+  // 黙って破棄しない・fail-safe / #188 AI レビュー指摘）。guard は guardSignature と同一値のため依存に含めない。
   const guardSignature = JSON.stringify(guard);
   useEffect(() => {
-    const g = JSON.parse(guardSignature) as TradingGuardSettings;
-    setForm(toGuardForm(g));
+    setForm(toGuardForm(guard));
     setReason('');
     setConfirmDanger(false);
     setNewSymbol('');
     setNewReason('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guardSignature]);
 
   const dangers = dangerousChanges(guard, form);
+  // 危険確認は「その時点の危険リスト」に紐付ける。確認後にさらに危険な変更が増えたら確認を外し、再確認を要求する
+  // （fail-safe。IADR-0086 決定3 の趣旨＝差分を都度確認させる / #188 AI 再レビュー指摘）。
+  const dangersSignature = dangers.join('｜');
+  useEffect(() => {
+    setConfirmDanger(false);
+  }, [dangersSignature]);
+
   const blocked = reason.trim() === '' || saveState === 'saving' || (dangers.length > 0 && !confirmDanger);
 
   function addBannedSymbol(): void {
