@@ -3,7 +3,7 @@ using AiStockTrading.RiskManagement.Application.State;
 
 namespace AiStockTrading.RiskManagement.Application.Adapters;
 
-// FR-11, ADR-0007: 変更履歴のインメモリ実装。PostgreSQL 監査ログ（#17）は Slice B/後続で差し替える。
+// FR-11, ADR-0007: 変更履歴のインメモリ実装（dev/test 用）。実運用は PostgreSQL 実装（EfSettingsChangeLog）が担う。
 public sealed class InMemorySettingsChangeLog : ISettingsChangeLog
 {
     private readonly Lock _gate = new();
