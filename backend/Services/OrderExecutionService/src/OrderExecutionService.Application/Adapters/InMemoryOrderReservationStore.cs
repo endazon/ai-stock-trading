@@ -44,6 +44,33 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
         }
     }
 
+    // #141, IADR-0074: 滞留 Reserved（reservedBefore より古い Reserved）を ReservedAt 昇順で最大 batchSize 件返す。
+    public IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize)
+    {
+        lock (_gate)
+        {
+            return _reservations.Values
+                .Where(r => r.State == OrderDispatchState.Reserved && r.ReservedAt < reservedBefore)
+                .OrderBy(r => r.ReservedAt)
+                .Take(batchSize)
+                .ToList();
+        }
+    }
+
+    // #141, IADR-0074: 未発注と確定した Reserved 予約のみ削除する。終端行（Completed）は決して消さない安全ガード。
+    public bool Release(Guid decisionId)
+    {
+        lock (_gate)
+        {
+            if (!_reservations.TryGetValue(decisionId, out var reservation)
+                || reservation.State != OrderDispatchState.Reserved)
+                return false;
+
+            _reservations.Remove(decisionId);
+            return true;
+        }
+    }
+
     // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
     // Reserved は「発注済みか不明」であり、どれだけ古くても対象にしない（二重発注の防止が最優先）。
     public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)

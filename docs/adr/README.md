@@ -109,3 +109,4 @@
 | IADR-0071 | 報告書サービス残スコープは ReportService に閉じ、実 LLM/実 KB を既定オフ・opt-in、対話的確定は状態機械の薄い HTTP 結線で実装する | Accepted |
 | IADR-0072 | RAG 文脈は Application 抽象ポートで受け、本判断プロンプトのみに参考情報として注入し、既定 no-op・取得失敗は文脈なしへ縮退する | Accepted |
 | IADR-0073 | 情報収集の実 KB 保存 opt-in はデプロイ面（compose/helm/.env.example）への env 露出のみで開け、既定は空＝no-op のまま据え置く | Accepted |
+| IADR-0074 | Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実 OpenD 照会は後続へ分離する | Accepted |

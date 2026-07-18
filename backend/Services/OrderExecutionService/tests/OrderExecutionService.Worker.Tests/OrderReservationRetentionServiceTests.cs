@@ -34,6 +34,10 @@ public class OrderReservationRetentionServiceTests
 
         public OrderDispatchReservation? Find(Guid decisionId) => null;
 
+        public IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize) => [];
+
+        public bool Release(Guid decisionId) => false;
+
         public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)
         {
             Calls.Add((cutoff, batchSize));

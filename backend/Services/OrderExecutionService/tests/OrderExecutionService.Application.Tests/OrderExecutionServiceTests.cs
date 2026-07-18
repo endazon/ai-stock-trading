@@ -94,7 +94,12 @@ public class OrderExecutionServiceTests
 
         public OrderDispatchReservation? Find(Guid decisionId) => _inner.Find(decisionId);
 
-        // #137, IADR-0059: 本テストの関心事ではないが、ポート実装として委譲する。
+        // #137/#141, IADR-0059/0074: 本テストの関心事ではないが、ポート実装として委譲する。
+        public IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize) =>
+            _inner.FindStalledReserved(reservedBefore, batchSize);
+
+        public bool Release(Guid decisionId) => _inner.Release(decisionId);
+
         public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize) =>
             _inner.PurgeCompletedBefore(cutoff, batchSize);
     }

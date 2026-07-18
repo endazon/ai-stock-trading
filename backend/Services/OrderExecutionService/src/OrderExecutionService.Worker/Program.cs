@@ -1,7 +1,9 @@
 using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
+using AiStockTrading.OrderExecution.Application.Reconciliation;
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
+using AiStockTrading.OrderExecution.Worker.Composable.Reconciliation;
 using AiStockTrading.OrderExecution.Worker.Composable.Retention;
 using AiStockTrading.OrderExecution.Worker.Composable.Steps;
 using AiStockTrading.OrderExecution.Worker.Foundation.Persistence;
@@ -76,6 +78,15 @@ if (!BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.AddHostedService<OrderReservationRetentionService>();
+
+// #141, IADR-0074: Reserved 滞留の自動リコンサイル（既定無効 Reconciliation:Enabled=false）。
+// プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。実 OpenD 照会は後続で
+// 差し替える。有効化しても no-op プローブ下では phase-4 自己修復のみ作動し、二重発注を招く解放は構造上起きない。
+builder.Services.Configure<ReconciliationOptions>(
+    builder.Configuration.GetSection(ReconciliationOptions.SectionName));
+builder.Services.AddSingleton<IReservationBrokerProbe, IndeterminateReservationBrokerProbe>();
+builder.Services.AddScoped<OrderReservationReconciler>();
+builder.Services.AddHostedService<OrderReservationReconciliationService>();
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 builder.Services.AddMassTransit(x =>

@@ -55,6 +55,41 @@ internal sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrd
             : new OrderDispatchReservation(row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt);
     }
 
+    // #141, IADR-0074: 滞留 Reserved（State=Reserved AND ReservedAt < reservedBefore）を ReservedAt 昇順で
+    // 最大 batchSize 件返す。#131 の State インデックス（「滞留 Reserved を洗い出すための検索用」）で洗い出せる。
+    public IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize)
+    {
+        return db.DispatchReservations.AsNoTracking()
+            .Where(r => r.State == OrderDispatchState.Reserved && r.ReservedAt < reservedBefore)
+            .OrderBy(r => r.ReservedAt)
+            .Take(batchSize)
+            .Select(r => new OrderDispatchReservation(
+                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt))
+            .ToList();
+    }
+
+    // #141, IADR-0074: 未発注と確定した Reserved 予約のみ削除する。
+    // 述語で State=Reserved を明示し、終端行（Completed）は決して消さない（消せば再配送で二重発注・実弾では実損）。
+    public bool Release(Guid decisionId)
+    {
+        var row = db.DispatchReservations.FirstOrDefault(r => r.DecisionId == decisionId);
+        if (row is null || row.State != OrderDispatchState.Reserved)
+            return false;
+
+        db.DispatchReservations.Remove(row);
+        try
+        {
+            db.SaveChanges();
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            // 並行で既に解放/確定された等。安全側＝「解放していない」に倒す。
+            db.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
     // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
     //
     // **Reserved は述語で明示的に除外する**。Reserved＝「ブローカへ発注済みか不明」であり、どれだけ古くても

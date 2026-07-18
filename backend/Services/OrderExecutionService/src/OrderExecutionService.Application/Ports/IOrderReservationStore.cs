@@ -38,6 +38,21 @@ public interface IOrderReservationStore
     OrderDispatchReservation? Find(Guid decisionId);
 
     /// <summary>
+    /// #141, IADR-0074: 自動リコンサイルの対象になる**滞留 Reserved**（<see cref="OrderDispatchState.Reserved"/>
+    /// かつ <c>ReservedAt</c> が <paramref name="reservedBefore"/> **より古い**）を、<c>ReservedAt</c> の昇順で
+    /// 最大 <paramref name="batchSize"/> 件返す。<paramref name="reservedBefore"/> は再配送窓の外側に置くこと
+    /// （in-flight の発注を滞留と誤認しないため）。#131 の <c>State</c> インデックスで洗い出せる。
+    /// </summary>
+    IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize);
+
+    /// <summary>
+    /// #141, IADR-0074: **未発注と確定した** Reserved 予約を解放（削除）する。解放後は元の OrderApproved 再配送が
+    /// 改めて予約→発注できる。<see cref="OrderDispatchState.Reserved"/> の行**のみ**削除し、削除したら true を返す。
+    /// 見つからない／Reserved でない（Completed 等）場合は何もせず false を返す（終端行は決して消さない安全ガード）。
+    /// </summary>
+    bool Release(Guid decisionId);
+
+    /// <summary>
     /// NFR（運用）, #137, IADR-0059: <see cref="OrderDispatchState.Completed"/> かつ <c>CompletedAt</c> が
     /// <paramref name="cutoff"/> **より古い**（境界ちょうどは含まない）終端行を、最大
     /// <paramref name="batchSize"/> 件パージし削除件数を返す。
