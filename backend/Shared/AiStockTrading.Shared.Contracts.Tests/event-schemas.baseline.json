@@ -5,6 +5,14 @@
     "Reason": "String",
     "Version": "Int32"
   },
+  "BacktestEvaluated": {
+    "DeflatedSharpe": "Double",
+    "EvaluatedAt": "DateTimeOffset",
+    "FailedChecks": "String",
+    "MaxDrawdownRatio": "Decimal",
+    "Passed": "Boolean",
+    "ProbabilityOfBacktestOverfitting": "Double"
+  },
   "CostThresholdReached": {
     "Category": "String",
     "Month": "String",

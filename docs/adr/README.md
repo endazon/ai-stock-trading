@@ -124,3 +124,4 @@
 | IADR-0086 | SC-02 のガード変更 UI は既存 PUT /settings/guard を全置換で消費し、危険な緩和は明示確認で fail-safe にする（監視銘柄はバックエンド未整備で分離・段階直接変更は開かない） | Accepted |
 | IADR-0087 | フロント E2E は src の実 feature を test-only ハーネスへマウントし、@foundation はスタブ・apiClient のみ実 fetch へ差し替えてモック BFF で検証する | Accepted |
 | IADR-0088 | 監視銘柄（watchlist）設定 API は権威データ源の MarketMonitorService に置き、Risk 設定の作法（owner サブグループ認可・理由必須・楽観排他・ローカル変更履歴）をミラーする | Accepted |
+| IADR-0089 | バックテスト verdict は BacktestEvaluated イベントで発行し Risk が read-modify-write で射影する（s2s 同期照会を退け fail-safe を保つ） | Accepted |

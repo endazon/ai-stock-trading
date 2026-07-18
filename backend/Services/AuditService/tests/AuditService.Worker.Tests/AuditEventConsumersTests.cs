@@ -40,6 +40,7 @@ public class AuditEventConsumersTests
                 x.AddConsumer<InformationCollectedAuditConsumer>();
                 x.AddConsumer<StageTransitionedAuditConsumer>();
                 x.AddConsumer<WithdrawalTriggeredAuditConsumer>();
+                x.AddConsumer<BacktestEvaluatedAuditConsumer>();
             })
             .BuildServiceProvider(true);
 
@@ -200,6 +201,29 @@ public class AuditEventConsumersTests
             .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "WithdrawalTriggered");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task バックテストverdictも段階ゲート相関で監査台帳に記録される()
+    {
+        // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict（Stage 0 合格判定・Stage 0→1 解錠）も
+        // 中央監査台帳へ集約する。段階遷移・撤退と同じ "stage-gate" 相関で束ね、段階ゲート系をまとめて辿れる。
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new BacktestEvaluated(
+            Passed: true, MaxDrawdownRatio: 0.08m, DeflatedSharpe: 1.2,
+            ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+
+        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .CorrelationId;
+        store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "BacktestEvaluated");
 
         await harness.Stop();
     }
