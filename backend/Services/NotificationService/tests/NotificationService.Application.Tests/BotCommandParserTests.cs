@@ -33,6 +33,20 @@ public class BotCommandParserTests
         BotCommandParser.Parse(raw).Kind.Should().Be(BotCommandKind.KillSwitchDisengage);
     }
 
+    // FR-10, ADR-0009: 一時停止/再開/状態照会の解析。確認ステップの有無は呼び出し側（PauseCommandHandler）が担う。
+    [Theory]
+    [InlineData("/pause", BotCommandKind.Pause)]
+    [InlineData("  /Pause  ", BotCommandKind.Pause)]
+    [InlineData("pause", BotCommandKind.Pause)]
+    [InlineData("/resume", BotCommandKind.Resume)]
+    [InlineData("/RESUME", BotCommandKind.Resume)]
+    [InlineData("/status", BotCommandKind.Status)]
+    [InlineData("status", BotCommandKind.Status)]
+    public void pause_resume_status_が解析される(string raw, BotCommandKind expected)
+    {
+        BotCommandParser.Parse(raw).Kind.Should().Be(expected);
+    }
+
     // 未知・空・typo は Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
     // 特に "/killswitch of"（typo）が起動として解釈されないことが重要（誤爆防止）。
     [Theory]
@@ -40,10 +54,12 @@ public class BotCommandParserTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("/report approve")]
-    [InlineData("/status")]
     [InlineData("/killswitch of")]
     [InlineData("/killswitch on")]
     [InlineData("/killswitch off now")]
+    [InlineData("/pause now")]
+    [InlineData("/resume please")]
+    [InlineData("/status all")]
     public void 未知のコマンドは_Unknown_になる(string? raw)
     {
         BotCommandParser.Parse(raw).Kind.Should().Be(BotCommandKind.Unknown);

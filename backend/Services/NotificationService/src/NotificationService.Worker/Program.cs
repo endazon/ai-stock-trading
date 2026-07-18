@@ -52,9 +52,26 @@ builder.Services.AddSingleton<IKillSwitchController>(sp =>
 });
 
 builder.Services.AddSingleton<KillSwitchCommandHandler>();
+
+// FR-10, FR-14, UC-06/07, ADR-0009, IADR-0075: 一時停止/再開・状態照会。kill switch と同じく Risk の OwnerOnly
+// エンドポイントを owner マップ機密クライアントのトークンで呼ぶ（trading-service では 403）。Risk 側は無改修。
+builder.Services.AddHttpClient("risk-pause", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IPauseController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-pause");
+    var baseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpPauseController(http, sp.GetRequiredService<ILogger<HttpPauseController>>());
+});
+builder.Services.AddSingleton<PauseCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
+    sp.GetRequiredService<PauseCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

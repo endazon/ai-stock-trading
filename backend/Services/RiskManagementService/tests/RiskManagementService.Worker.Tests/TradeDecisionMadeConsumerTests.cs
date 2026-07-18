@@ -28,6 +28,7 @@ public class TradeDecisionMadeConsumerTests
             .AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>()
             .AddSingleton<IRiskSettingsStore, InMemoryRiskSettingsStore>()
             .AddSingleton(killSwitch)
+            .AddSingleton<IPauseStore, InMemoryPauseStore>()
             .AddSingleton<ILockoutStore, InMemoryLockoutStore>()
             .AddSingleton<ISettingsChangeLog, InMemorySettingsChangeLog>()
             .AddSingleton<IPortfolioStateProvider>(new HealthyPortfolioProvider())

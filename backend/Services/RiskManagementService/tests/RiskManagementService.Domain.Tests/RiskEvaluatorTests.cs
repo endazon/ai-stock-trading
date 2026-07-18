@@ -51,7 +51,8 @@ public class RiskEvaluatorTests
         decimal drawdownRatio = 0m,
         int consecutiveLosses = 0,
         IReadOnlySet<(string Symbol, Market Market)>? symbolsTradedToday = null,
-        bool killSwitchEngaged = false) =>
+        bool killSwitchEngaged = false,
+        bool tradingPaused = false) =>
         new()
         {
             Capital = capital,
@@ -64,6 +65,7 @@ public class RiskEvaluatorTests
             ConsecutiveLosses = consecutiveLosses,
             SymbolsTradedToday = symbolsTradedToday ?? new HashSet<(string, Market)>(),
             KillSwitchEngaged = killSwitchEngaged,
+            TradingPaused = tradingPaused,
         };
 
     private static RiskManagementSettings DefaultSettings() => TradingDefaults.CreateSettings();
@@ -94,6 +96,37 @@ public class RiskEvaluatorTests
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.KillSwitchActive);
+    }
+
+    [Fact]
+    public void 一時停止中はすべての新規建てを拒否する()
+    {
+        // FR-10, ADR-0009: pause は kill switch と同位置で新規建て（エントリー）を止める。
+        var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), Snapshot(tradingPaused: true));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.TradingPaused);
+    }
+
+    [Fact]
+    public void 一時停止中はショートエントリーも拒否する()
+    {
+        // FR-10, ADR-0009: 信用有効化後の新規売り建て（Side == Sell の Open）も pause の対象（isEntry 判定）。
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(), MarginEnabledSettings(), Snapshot(tradingPaused: true));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.TradingPaused);
+    }
+
+    [Fact]
+    public void 一時停止中でも手仕舞いの売り注文は承認する()
+    {
+        // ADR-0009 共通不変条件: pause は新規建てのみ止め、手仕舞い（Close）・損切りは止めない。
+        var result = RiskEvaluator.Evaluate(Close(), DefaultSettings(), Snapshot(tradingPaused: true));
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().NotContain(RejectionReason.TradingPaused);
     }
 
     [Fact]

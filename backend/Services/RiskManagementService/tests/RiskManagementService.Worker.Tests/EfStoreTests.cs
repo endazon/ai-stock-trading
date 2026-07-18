@@ -84,6 +84,34 @@ public class EfStoreTests
     }
 
     [Fact]
+    public void 一時停止状態はラウンドトリップする()
+    {
+        // FR-10, ADR-0009: pause 状態を単一行で永続化し、別コンテキストからも読める。
+        var dbName = Guid.NewGuid().ToString();
+        var changedAt = DateTimeOffset.UtcNow;
+
+        using (var db = NewContext(dbName))
+        {
+            new EfPauseStore(db).SetState(new PauseState(true, "user", "様子見", changedAt));
+        }
+
+        using var db2 = NewContext(dbName);
+        var state = new EfPauseStore(db2).GetState();
+        state.Paused.Should().BeTrue();
+        state.Actor.Should().Be("user");
+        state.Reason.Should().Be("様子見");
+    }
+
+    [Fact]
+    public void 一時停止は未設定時に非停止を返す()
+    {
+        // 安全既定: 行が無ければ NotPaused（pause 由来の停止を主張しない）。
+        var db = NewContext(Guid.NewGuid().ToString());
+
+        new EfPauseStore(db).GetState().Paused.Should().BeFalse();
+    }
+
+    [Fact]
     public void ロックアウトは設定_取得_解除できる()
     {
         var dbName = Guid.NewGuid().ToString();

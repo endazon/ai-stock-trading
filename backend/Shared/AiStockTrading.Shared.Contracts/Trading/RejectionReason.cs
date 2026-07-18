@@ -18,4 +18,7 @@ public enum RejectionReason
 
     /// <summary>相場操縦とみなされ得る発注パターン（約定意思のない発注・板演出・過剰な訂正/取消）。FR-19。</summary>
     ManipulativeOrderPattern,
+
+    /// <summary>利用者による取引の一時停止（pause）中。新規建てのみ停止し手仕舞い・損切りは止めない。FR-10, ADR-0009。</summary>
+    TradingPaused,
 }

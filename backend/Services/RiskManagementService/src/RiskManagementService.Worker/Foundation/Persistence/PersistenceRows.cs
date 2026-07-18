@@ -36,6 +36,20 @@ internal sealed class KillSwitchRow
     public DateTimeOffset? ChangedAt { get; set; }
 }
 
+// 取引の一時停止（pause）の単一行状態（FR-10, ADR-0009）。kill switch と同型。日次損失ロックアウトとは別テーブル。
+internal sealed class PauseRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    public bool Paused { get; set; }
+
+    public string? Actor { get; set; }
+
+    public string? Reason { get; set; }
+
+    public DateTimeOffset? ChangedAt { get; set; }
+}
+
 // 日次損失ロックアウトの単一行状態（IADR-0008）。行が存在する＝ロックアウト情報を保持している。
 internal sealed class LockoutRow
 {

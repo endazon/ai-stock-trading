@@ -58,7 +58,7 @@ public class OrderScreeningManipulationTests
         var portfolio = new FakePortfolioStateProvider(HealthyState);
         var killSwitch = new InMemoryKillSwitchStore();
         var lockout = new InMemoryLockoutStore();
-        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch);
+        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch, new InMemoryPauseStore());
         var detector = new ManipulativeOrderPatternDetector(
             source, clock, TradingDefaults.CreateManipulationDetectionSettings());
         return new OrderScreeningService(

@@ -49,6 +49,8 @@ builder.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
 // DbContext が scoped のため EF ストアも scoped。
 builder.Services.AddScoped<IRiskSettingsStore, EfRiskSettingsStore>();
 builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
+// FR-10, FR-14, ADR-0009: 取引の一時停止（pause）状態。kill switch と同型・別状態（別テーブル）。
+builder.Services.AddScoped<IPauseStore, EfPauseStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
@@ -93,6 +95,9 @@ builder.Services.AddScoped<SizingContextService>();
 // FR-03/10, IADR-0030: 市場監視へ供給する保有ポジション（#63 台帳の射影＋損切り価格の近似導出）。
 builder.Services.AddScoped<OpenPositionsService>();
 builder.Services.AddScoped<KillSwitchService>();
+// FR-10, FR-14, UC-06/07, ADR-0009: 一時停止/再開の操作と、稼働状態の集約照会（/status・表示専用）。
+builder.Services.AddScoped<PauseService>();
+builder.Services.AddScoped<RiskStatusService>();
 builder.Services.AddScoped<RiskSettingsService>();
 // FR-20, UC-06, ADR-0008, IADR-0041/0070: 段階ゲート遷移サービス。段階ゲート方針は TradingDefaults を参照（変更しない）。
 // 撤退の自動安全側は KillSwitchService を通す（自動＝停止・承認＝段階変更）。

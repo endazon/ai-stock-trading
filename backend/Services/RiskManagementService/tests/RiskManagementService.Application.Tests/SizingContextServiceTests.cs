@@ -13,7 +13,8 @@ public class SizingContextServiceTests
 {
     private static SizingContextService Build(PortfolioState state)
     {
-        var snapshotBuilder = new PortfolioSnapshotBuilder(new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore());
+        var snapshotBuilder = new PortfolioSnapshotBuilder(
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore());
         return new SizingContextService(snapshotBuilder, new InMemoryRiskSettingsStore());
     }
 

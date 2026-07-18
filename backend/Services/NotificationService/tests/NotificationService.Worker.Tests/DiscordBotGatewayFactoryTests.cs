@@ -34,7 +34,9 @@ public class DiscordBotGatewayFactoryTests
     {
         var handler = new KillSwitchCommandHandler(
             new StubKillSwitchController(), options, NullLogger<KillSwitchCommandHandler>.Instance);
-        return DiscordBotGatewayFactory.Create(options, handler, NullLoggerFactory.Instance);
+        var pauseHandler = new PauseCommandHandler(
+            new StubPauseController(), options, NullLogger<PauseCommandHandler>.Instance);
+        return DiscordBotGatewayFactory.Create(options, handler, pauseHandler, NullLoggerFactory.Instance);
     }
 
     // 受け入れ基準11: 何も設定しなければ接続しない。
@@ -134,5 +136,17 @@ public class DiscordBotGatewayFactoryTests
 
         public Task<KillSwitchResult> DisengageAsync(string reason, CancellationToken cancellationToken = default) =>
             Task.FromResult(new KillSwitchResult(true, false, "解除"));
+    }
+
+    private sealed class StubPauseController : IPauseController
+    {
+        public Task<PauseResult> PauseAsync(string reason, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PauseResult(true, true, "一時停止"));
+
+        public Task<PauseResult> ResumeAsync(string reason, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PauseResult(true, false, "再開"));
+
+        public Task<RiskStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new RiskStatusResult(true, "稼働状態"));
     }
 }

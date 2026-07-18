@@ -47,4 +47,11 @@ public record PortfolioSnapshot
 
     /// <summary>全停止スイッチ（kill switch）。利用者のみ操作できる。</summary>
     public bool KillSwitchEngaged { get; init; }
+
+    /// <summary>
+    /// 取引の一時停止（pause）。利用者が手動で発動し、期限を持たず `/resume` まで継続する軽い統制（ADR-0009）。
+    /// kill switch と同じく新規建て（エントリー）のみを止め、手仕舞い（Close）・損切りは止めない。
+    /// 日次損失ロックアウト（IADR-0008）とは別状態で、`/resume` は本状態のみを解除する。
+    /// </summary>
+    public bool TradingPaused { get; init; }
 }

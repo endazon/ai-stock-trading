@@ -11,6 +11,9 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
 
     public DbSet<KillSwitchRow> KillSwitch => Set<KillSwitchRow>();
 
+    // FR-10, ADR-0009: 取引の一時停止（pause）の単一行状態。kill switch と別テーブル・別状態。
+    public DbSet<PauseRow> Pause => Set<PauseRow>();
+
     public DbSet<LockoutRow> Lockout => Set<LockoutRow>();
 
     public DbSet<SettingsChangeRow> SettingsChangeLog => Set<SettingsChangeRow>();
@@ -42,6 +45,15 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
         mb.Entity<KillSwitchRow>(e =>
         {
             e.ToTable("kill_switch");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.Actor).HasMaxLength(256);
+            e.Property(r => r.Reason).HasMaxLength(1024);
+        });
+
+        mb.Entity<PauseRow>(e =>
+        {
+            e.ToTable("pause");
             e.HasKey(r => r.Id);
             e.Property(r => r.Id).ValueGeneratedNever();
             e.Property(r => r.Actor).HasMaxLength(256);

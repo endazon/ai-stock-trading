@@ -27,6 +27,13 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.KillSwitchActive);
         }
 
+        // FR-10, ADR-0009: 取引の一時停止（pause）。kill switch と同じ位置・同じ判定（isEntry のみ）で新規建てを止める。
+        // 日次損失ロックアウトとは別状態の「軽い統制」。手仕舞い（Close）・損切りは isEntry の短絡で止めない。
+        if (isEntry && snapshot.TradingPaused)
+        {
+            reasons.Add(RejectionReason.TradingPaused);
+        }
+
         // FR-20: 段階ゲート（動作モードと資金上限）
         if (intent.Mode == TradeMode.Live && settings.Stage.Mode != TradeMode.Live)
         {

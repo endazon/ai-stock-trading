@@ -2,10 +2,9 @@ using AiStockTrading.Notification.Application.State;
 
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-14, UC-06, IADR-0062: スラッシュコマンドの解析（純関数）。
-// 本 PR のスコープは kill switch のみ（詳細設計07 の /report・/status・/pause・/resume は後続。
-// /report は #14 交差、/pause・/resume は Risk 側に対応エンドポイントが無い）。
-// 未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
+// FR-14, UC-06, ADR-0009, IADR-0062/0075: スラッシュコマンドの解析（純関数）。
+// 扱うのは kill switch（/killswitch・/killswitch off）と一時停止（/pause・/resume）・稼働状態照会（/status）。
+// /report は #14 交差のため対象外。未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
 public static class BotCommandParser
 {
     public static BotCommand Parse(string? raw)
@@ -18,15 +17,23 @@ public static class BotCommandParser
         if (tokens.Length == 0)
             return BotCommand.Unknown;
 
-        if (tokens[0] is not ("/killswitch" or "killswitch"))
-            return BotCommand.Unknown;
+        return tokens[0] switch
+        {
+            "/killswitch" or "killswitch" => ParseKillSwitch(tokens),
+            // pause/resume/status は引数を取らない（余分な引数は typo とみなし Unknown＝誤起動させない）。
+            "/pause" or "pause" when tokens.Length == 1 => new BotCommand(BotCommandKind.Pause),
+            "/resume" or "resume" when tokens.Length == 1 => new BotCommand(BotCommandKind.Resume),
+            "/status" or "status" when tokens.Length == 1 => new BotCommand(BotCommandKind.Status),
+            _ => BotCommand.Unknown,
+        };
+    }
 
+    private static BotCommand ParseKillSwitch(string[] tokens) =>
         // 引数なし＝起動、`off`＝解除。それ以外の引数は Unknown（typo で起動させない）。
-        return tokens.Length switch
+        tokens.Length switch
         {
             1 => new BotCommand(BotCommandKind.KillSwitchEngage),
             2 when tokens[1] == "off" => new BotCommand(BotCommandKind.KillSwitchDisengage),
             _ => BotCommand.Unknown,
         };
-    }
 }
