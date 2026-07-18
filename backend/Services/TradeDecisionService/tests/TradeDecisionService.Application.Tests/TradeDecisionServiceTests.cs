@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -222,6 +223,107 @@ public class TradeDecisionServiceTests
         decision.Should().NotBeNull();
         decision!.Intent.Side.Should().Be(TradeSide.Buy);
         llm.LastPrompt.Should().NotContain("参考情報（ナレッジベース）");
+    }
+
+    // --- FR-17, IADR-0076: 採算評価ゲート（opt-in・fail-safe）の検証 ---
+
+    private sealed class FakeProfitability(TradeCostAssessment? assessment) : IProfitabilityAssumptionsProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<TradeCostAssessment?> AssessAsync(Market market, decimal notional, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(assessment);
+        }
+    }
+
+    // BuyJson（数量 20・約定代金 20,000）で採算成立する想定利益。gross = 10 × 20 = 200 ≥ (100+0)×1.5 = 150。
+    private const string BuyJsonProfitable =
+        """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30,"expectedProfitPerShare":10}""";
+
+    // 採算不成立の想定利益。gross = 5 × 20 = 100 < 150。
+    private const string BuyJsonThinProfit =
+        """{"action":"Buy","rationale":"薄利","referencePrice":1000,"stopLossDistancePerShare":30,"expectedProfitPerShare":5}""";
+
+    private static AppSvc CreateWithGate(
+        string llmOutput, IProfitabilityAssumptionsProvider prof, ProfitabilityGateOptions opts) =>
+        new(new FakeLlm(llmOutput), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            retrieval: null, options: null, profitability: prof, profitabilityOptions: opts);
+
+    // 基準6: ゲート無効（既定）は採算評価せず発注意図を作る（想定利益 0 でも約定）。プロバイダは呼ばれない。
+    [Fact]
+    public async Task 採算ゲート無効なら採算評価せず発注意図を作る()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+
+        var decision = await CreateWithGate(BuyJson, prof, ProfitabilityGateOptions.Default).DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        prof.Calls.Should().Be(0); // 無効時は費用見積りを取りに行かない
+    }
+
+    // 基準9: ゲート有効かつ採算成立なら従来どおり発注意図を作る。
+    [Fact]
+    public async Task 採算ゲート有効かつ採算成立なら発注意図を作る()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+        var opts = ProfitabilityGateOptions.Default with { Enabled = true };
+
+        var decision = await CreateWithGate(BuyJsonProfitable, prof, opts).DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.Quantity.Should().Be(20);
+        prof.Calls.Should().Be(1);
+    }
+
+    // 基準7: ゲート有効かつ採算不成立（想定利益がしきい値未満）なら見送り。
+    [Fact]
+    public async Task 採算ゲート有効かつ採算不成立なら見送り()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+        var opts = ProfitabilityGateOptions.Default with { Enabled = true };
+
+        var decision = await CreateWithGate(BuyJsonThinProfit, prof, opts).DecideAsync(Trigger());
+
+        decision.Should().BeNull();
+    }
+
+    // 基準8: ゲート有効かつ前提条件未解決（Assess=null）は費用見積り不能＝安全側で見送り（想定利益が十分でも）。
+    [Fact]
+    public async Task 採算ゲート有効かつ費用見積り不能なら見送り()
+    {
+        var prof = new FakeProfitability(assessment: null);
+        var opts = ProfitabilityGateOptions.Default with { Enabled = true };
+
+        var decision = await CreateWithGate(BuyJsonProfitable, prof, opts).DecideAsync(Trigger());
+
+        decision.Should().BeNull();
+    }
+
+    // FR-17, IADR-0076 決定5: プロンプトへの採算節注入は opt-in に連動する。有効時のみ LLM へ渡すプロンプトに採算節が載る。
+    [Fact]
+    public async Task 採算ゲートの有効無効でプロンプトの採算節が切り替わる()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+
+        var enabledLlm = new CapturingLlm(BuyJsonProfitable);
+        await new AppSvc(enabledLlm, new FakePolicy(Policy), new FakeSizing(Context()),
+                new FakeClock(), NullLogger<AppSvc>.Instance,
+                retrieval: null, options: null, profitability: prof,
+                profitabilityOptions: ProfitabilityGateOptions.Default with { Enabled = true })
+            .DecideAsync(Trigger());
+
+        var disabledLlm = new CapturingLlm(BuyJson);
+        await new AppSvc(disabledLlm, new FakePolicy(Policy), new FakeSizing(Context()),
+                new FakeClock(), NullLogger<AppSvc>.Instance,
+                retrieval: null, options: null, profitability: prof,
+                profitabilityOptions: ProfitabilityGateOptions.Default)
+            .DecideAsync(Trigger());
+
+        enabledLlm.LastPrompt.Should().Contain("採算評価（費用控除後の期待利益）");
+        disabledLlm.LastPrompt.Should().NotContain("採算評価（費用控除後の期待利益）");
     }
 
     [Fact]

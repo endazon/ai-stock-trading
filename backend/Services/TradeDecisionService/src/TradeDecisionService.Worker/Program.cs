@@ -1,3 +1,5 @@
+using AiStockTrading.Configuration.Client.Foundation.Extensions;
+using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.Services;
@@ -146,6 +148,17 @@ builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider
 // FR-04, IADR-0039: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
 // ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
+
+// FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
+// 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
+builder.Services.AddSingleton(ProfitabilityGateOptionsLoader.FromConfiguration(builder.Configuration));
+// FR-17, IADR-0063/0076: 版付き全体前提条件の解決を配線（Configuration:BaseUrl 未設定なら既定＝未解決＝採算見積り不能）。
+// #139（CostControl）と同一の共有クライアントで、キャッシュ・AssumptionsChanged 無効化・fail-safe を委ねる（二重キャッシュを作らない）。
+builder.Services.AddAiStockTradingAssumptions(builder.Configuration);
+// FR-17, IADR-0076: 採算費用見積りのアダプタ。前提条件の解決可否は上の IAssumptionsProvider（Configuration:BaseUrl）で決まる。
+builder.Services.AddScoped<IProfitabilityAssumptionsProvider>(sp =>
+    new AssumptionsProfitabilityProvider(sp.GetRequiredService<IAssumptionsProvider>()));
+
 builder.Services.AddScoped<TradeDecisionService>();
 
 // ADR-0003, IADR-0011, IADR-0023: MassTransit（RabbitMQ）。価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、

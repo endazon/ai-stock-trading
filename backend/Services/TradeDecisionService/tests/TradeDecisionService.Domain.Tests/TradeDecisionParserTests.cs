@@ -49,6 +49,24 @@ public class TradeDecisionParserTests
         TradeDecisionParser.Parse("""{"action":"Hold","rationale":"様子見"}""").Action.Should().Be(TradeAction.Hold);
     }
 
+    // FR-17, IADR-0076: 想定利益（採算評価の入力）を解析する。
+    [Fact]
+    public void 想定利益を解析する()
+    {
+        var json = """{"action":"Buy","rationale":"x","referencePrice":1000,"stopLossDistancePerShare":30,"expectedProfitPerShare":45}""";
+
+        TradeDecisionParser.Parse(json).ExpectedProfitPerShare.Should().Be(45m);
+    }
+
+    // FR-17, IADR-0076: 想定利益の欠損・負値は 0 に正規化する（保守側＝採算ゲート有効時は Hold に倒れる）。
+    [Theory]
+    [InlineData("""{"action":"Buy","rationale":"x","referencePrice":1000,"stopLossDistancePerShare":30}""")]
+    [InlineData("""{"action":"Buy","rationale":"x","referencePrice":1000,"stopLossDistancePerShare":30,"expectedProfitPerShare":-5}""")]
+    public void 想定利益の欠損または負値は0に正規化する(string json)
+    {
+        TradeDecisionParser.Parse(json).ExpectedProfitPerShare.Should().Be(0m);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
