@@ -10,6 +10,7 @@ using AiStockTrading.OrderExecution.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -101,6 +102,10 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
+// ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
+// メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", string.IsNullOrWhiteSpace(builder.Configuration["Broker:Provider"]) ? "paper" : builder.Configuration["Broker:Provider"]!));
+
 var app = builder.Build();
 
 // 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -112,6 +117,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.MapAiStockTradingHealthChecks();
+app.MapAiStockTradingIntrospection();
 
 app.Run();
 

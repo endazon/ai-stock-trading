@@ -13,6 +13,9 @@ global:
   rabbitmqConnectionString: amqp://guest:guest@rabbitmq:5672
   otlpEndpoint: http://otel-collector:4317
   authAuthority: http://keycloak:8080/realms/ai-stock-trading
+  # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
+  # 空既定 = 自己申告の configVersion は null（fail-safe）。
+  configVersion: ""
   db:
     host: postgres
     port: 5432

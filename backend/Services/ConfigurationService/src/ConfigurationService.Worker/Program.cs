@@ -4,6 +4,7 @@ using AiStockTrading.Configuration.Application.Services;
 using AiStockTrading.Configuration.Worker.Foundation.Endpoints;
 using AiStockTrading.Configuration.Worker.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -50,6 +51,10 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
+// ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
+// メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName);
+
 var app = builder.Build();
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -65,6 +70,7 @@ app.UseAiStockTradingMiddleware();
 
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
+app.MapAiStockTradingIntrospection();
 
 // FR-17, UC-06: 前提条件の照会・変更（利用者のみ）。
 app.MapAssumptionsEndpoints();

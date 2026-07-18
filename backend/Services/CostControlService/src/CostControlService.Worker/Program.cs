@@ -9,6 +9,7 @@ using AiStockTrading.CostControl.Worker.Foundation.Endpoints;
 using AiStockTrading.CostControl.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -76,6 +77,11 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
+// ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
+// メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
+    .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder"));
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -87,6 +93,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseAiStockTradingMiddleware();
 app.MapAiStockTradingHealthChecks();
+app.MapAiStockTradingIntrospection();
 
 // NFR（費用）: 費用計上・統制判定・費用レビュー（利用者/サービス）。
 app.MapCostControlEndpoints();
