@@ -58,6 +58,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<CostThresholdReachedAuditConsumer>();
     x.AddConsumer<LlmCostIncurredAuditConsumer>();
     x.AddConsumer<InformationCollectedAuditConsumer>();
+    // FR-20/#167, IADR-0082: 段階ゲートの遷移（#20 後続）も中央監査台帳へ集約する（全イベントの時系列記録・FR-11）。
+    x.AddConsumer<StageTransitionedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

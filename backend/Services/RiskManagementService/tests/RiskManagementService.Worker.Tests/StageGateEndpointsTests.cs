@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using FluentAssertions;
+using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -90,6 +92,42 @@ public class StageGateEndpointsTests
         history![0].FromStage.Should().Be(TradingStage.Stage0Verification);
         history[0].ToStage.Should().Be(TradingStage.Stage1Paper);
         history[0].ApprovedBy.Should().Be("test-owner");
+    }
+
+    [Fact]
+    public async Task 昇格受理時に_StageTransitioned_をバス発行する()
+    {
+        // FR-20, FR-11, #167, IADR-0082: 受理遷移は中央監査集約のためバスへ発行する（受理時のみ）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        SeedPerformance(factory, new StagePerformance { BacktestPassed = true });
+        var client = OwnerClient(factory);
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+            new { targetStage = (int)TradingStage.Stage1Paper });
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await harness.Published.Any<StageTransitioned>(
+            p => p.Context.Message.FromStage == (int)TradingStage.Stage0Verification
+                && p.Context.Message.ToStage == (int)TradingStage.Stage1Paper
+                && p.Context.Message.Kind == nameof(StageTransitionKind.Promotion)
+                && p.Context.Message.ApprovedBy == "test-owner"))
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task 拒否遷移では_StageTransitioned_を発行しない()
+    {
+        // fail-safe: 受理不能な遷移（バックテスト未合格の昇格）ではイベントを発行しない（拒否時は非発行）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+            new { targetStage = (int)TradingStage.Stage1Paper });
+        res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+
+        (await harness.Published.Any<StageTransitioned>()).Should().BeFalse();
     }
 
     [Fact]
