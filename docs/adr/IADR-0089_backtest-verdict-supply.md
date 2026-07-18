@@ -70,6 +70,10 @@ plan_refs:
   `BacktestEvaluatedAuditConsumer`（AuditService Worker の DI 隣接行）。
 - 変更: `event-schemas.baseline.json` に `BacktestEvaluated` を追加（後方互換の追加）。
 - Database per Service は跨がない（他サービス DB を直接参照せず、Shared.Contracts のイベントのみ介する）。
+- **go-live（#82）側の発行ホストへの契約**: `BacktestEvaluatedFactory.From` の `backtestMaxDrawdownRatio` は、
+  評価に用いた同一 `Stage0GateContext.BaselineMetrics.MaxDrawdown` から導出すること（`Stage0Decision` は最大 DD を
+  保持しないため mapper 単体では強制できず、発行側の責務として残す）。乖離した値を渡すと Stage 0 判定と Risk へ供給する
+  実 DD が食い違う。mapper のドキュメントコメントにも同契約を明記した。
 
 ## 代替案（不採用）
 

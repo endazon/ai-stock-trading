@@ -38,7 +38,12 @@ public sealed record Stage0GateEvaluation(
     bool DataCutoffSatisfied);
 
 // FR-15: Stage 0 合格判定の結果。FailedChecks が空なら合格。
-public sealed record Stage0GateResult(bool Passed, IReadOnlyList<Stage0GateCheck> FailedChecks);
+public sealed record Stage0GateResult(bool Passed, IReadOnlyList<Stage0GateCheck> FailedChecks)
+{
+    // 未達条件を名称の連結で表現する。昇格推奨の根拠（Stage0Promotion）と Risk へ供給する契約イベントの診断
+    // （BacktestEvaluated・IADR-0089）で同一表現を共有し、区切り文字のドリフトを防ぐ単一情報源。
+    public string FormatFailedChecks() => string.Join(", ", FailedChecks);
+}
 
 // FR-15, FR-20, ADR-0008, 06_daytrading-review §4, IADR-0045: Stage 0 合格判定（純関数）。
 // DSR 補正後のエッジ・過剰適合・最大DD・コスト2倍頑健性・ウォークフォワードOOS・試行数・データカットオフの 7 条件を合成する。
