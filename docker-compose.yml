@@ -211,6 +211,12 @@ services:
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
       ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
+      # FR-08, #9, IADR-0069/0073: 収集情報の実 KB 保存の opt-in。空=NoOp（LoggingKnowledgeBaseSink＝保存しない）＝安全既定。
+      # Documents:BaseUrl を platform DocumentService（POST /documents）へ向けると実 KB 保存へ切り替わる（KnowledgeBaseWriterSink）。
+      # 書き込みは platform-admin/operator ロール必須で trading-service は未付与→403→未保存へ fail-safe（実運用のロール付与・本文取り込みは後続）。
+      # s2s トークンは上の ServiceAuth__* を再利用する。Search は情報収集自身は未使用だが、設定サーフェスを対で揃える（空=no-op）。
+      KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGEBASE_DOCUMENTS_BASEURL:-}
+      KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
     depends_on:
       <<: *depends-infra
 
