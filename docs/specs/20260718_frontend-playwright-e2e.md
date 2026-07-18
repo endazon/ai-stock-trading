@@ -45,7 +45,9 @@ MSP（microservices-platform）PR #285（**MERGED**）で、features 合成点�
 
 - **MSP 側 `/bff/risk-controls/*` プロキシ登録＋submodule #186 再 pin**（#285 未了分）＝ MSP リポの別 issue（P2）へ起票。
 - **実 BFF/Keycloak/稼働クラスタ疎通の live E2E** ＝ #82 系／MSP #284（priority:should）。本作業はモック応答で UI フローに限定する。
-- ガード編集（#188）・撤退通知（#189）等、develop 未マージの後続画面。本 E2E は develop 現状（SC-02 はガード参照専用）を対象とする。
+- 本 E2E は develop 現状を対象とする。develop マージにより SC-02 は取引ガードが**変更フォーム**（#188/IADR-0086）になったため、
+  上限フォームの操作は「リスク上限の変更」フォーム（アクセシブル名）で絞って参照する（両フォームに「変更理由」「保存」があるため）。
+  ガード変更フォーム自体の危険確認フロー等の E2E は #188 側の vitest が担い、本 E2E は上限保存フローと表示・縮退・存在秘匿に集中する。
 
 ## 設計（要点・[IADR-0087](../adr/IADR-0087_frontend-playwright-e2e.md)）
 
