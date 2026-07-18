@@ -68,6 +68,35 @@ test.describe('SC-02 リスク設定（#187）', () => {
     expect(putCount).toBe(1);
   });
 
+  test('検証エラー（PUT 400）でメッセージを表示する', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/limits': {
+        status: 400,
+        body: { errors: { limits: ['1注文金額上限は必須です'] } },
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
+
+    await page.getByLabel('変更理由').fill('不正値');
+    await page.getByRole('button', { name: '保存' }).click();
+
+    await expect(page.getByRole('alert').filter({ hasText: '入力' })).toBeVisible();
+  });
+
+  test('履歴取得の失敗（500）は履歴領域のみ縮退する', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /risk-controls/settings/history': { status: 500 },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    // 本体（リスク設定）は表示され、履歴領域のみ縮退表示になる。
+    await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
+    await expect(page.getByText('変更履歴は利用できません。')).toBeVisible();
+  });
+
   test('取得失敗（500）は取得失敗メッセージへ縮退する', async ({ page }) => {
     await installBff(page, {
       ...defaultBff(),

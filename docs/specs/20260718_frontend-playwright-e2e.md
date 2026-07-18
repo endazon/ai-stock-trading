@@ -65,7 +65,7 @@ MSP（microservices-platform）PR #285（**MERGED**）で、features 合成点�
 | --- | --- | --- |
 | 1 | 実ブラウザで SC-01/02/03 が trading-owner に表示され、権限外は NotFound（存在秘匿） | `sc01/02/03-*.spec.ts`（owner で見出し表示・`?roles=user` で「見つかりませんでした」かつ BFF 未呼び出し） |
 | 2 | `/bff/assumptions`・`/bff/risk-controls/*` が疎通し、保存（PUT）が 200/400/409 を返し分ける | `sc01-settings.spec.ts`/`sc02-risk-settings.spec.ts`（PUT 200＝保存通知・400＝入力エラー・409＝競合かつ再試行なし） |
-| 3 | 縮退（一領域の失敗が他を巻き込まない） | 履歴 500→「利用できません」・SC-03 stage-gate 500→段階ゲートのみ縮退（統制状態は表示） |
+| 3 | 縮退（一領域の失敗が他を巻き込まない） | SC-01/SC-02 履歴 500→「利用できません」・SC-02 settings 500→取得失敗・SC-03 stage-gate/status 500→当該領域のみ縮退（他領域は表示） |
 | ― | platform 合成後の vitest が実 foundation 上で緑（MSP 側） | 本 issue 非対象（MSP PR #285 検証ログで確認済＝実 foundation 上 132 passed）。MSP 残りは別 issue |
 
 ## 検証（DoD）
