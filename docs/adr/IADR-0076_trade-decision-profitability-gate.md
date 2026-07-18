@@ -94,6 +94,11 @@ Domain は Configuration.Domain に依存させない（費用の**計算**は W
 の構成口を開放する。**既定 OFF ＝ 現行の判断挙動を一切変えない**（既存テスト不変・段階的有効化）。有効化は
 `Configuration:BaseUrl`（実前提条件）の配線と対で意味を持つ（未配線なら決定 3 により Hold＝空振りせず安全）。
 
+**「現行挙動不変」はコード側の分岐に留めず、LLM へ渡すプロンプト文言も含めて保証する**：決定 4 の採算節・
+`expectedProfitPerShare` フィールドは `TradeDecisionPromptBuilder.Build(..., includeProfitability)` で `Enabled` の
+ときのみ注入し、無効の既定ではプロンプトを現行動作とバイト単位で一致させる（LLM の判断傾向まで変えない）。
+`CapturingLlm` で有効／無効のプロンプト差分をテストする（採算節の有無）。
+
 ### 決定 6: LLM/判断費用は per-trade の固定見積り（既定 0）に留め、月次計測と二重計上しない
 
 IADR-0055 の LLM 費用計測は**月次予算計上**（`LlmCostIncurred` → CostControl）であり、本ゲートの `DecisionCostJpy` は

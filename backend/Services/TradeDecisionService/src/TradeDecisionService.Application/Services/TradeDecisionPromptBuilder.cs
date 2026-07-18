@@ -14,9 +14,12 @@ public static class TradeDecisionPromptBuilder
     private const int MaxSnippetChars = 400;
 
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
+    // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
+    // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
-        IReadOnlyList<RetrievedContext>? retrieved = null)
+        IReadOnlyList<RetrievedContext>? retrieved = null,
+        bool includeProfitability = false)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -48,14 +51,21 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine();
         // FR-08, IADR-0072 決定2/3: RAG（#18）で引いた参考情報。非空のときのみ本判断プロンプトに追記する（一次スクリーニングには載せない）。
         AppendRetrievalSection(sb, retrieved);
-        // FR-17, 05_trading-assumptions §4, IADR-0076: 概算費用（手数料・スプレッド）を控除した採算で判断させる（採算ガードレールの文脈）。
-        // 想定利益は費用控除前の 1 株あたり見込み値幅を数値で示させ、費用が相対的に大きい小口取引は Hold を促す。数値の採算判定はコード側（ProfitabilityGate）で行う。
-        sb.AppendLine("# 採算評価（費用控除後の期待利益）");
-        sb.AppendLine("往復の手数料・スプレッド等の費用を差し引いて採算が合う取引のみ選びます。費用が相対的に大きい小口取引は Hold（見送り）とします。");
-        sb.AppendLine("expectedProfitPerShare には費用控除前の 1 株あたり想定利益（見込み値幅）を数値で示します。採算が不確実なら Hold を選びます。");
-        sb.AppendLine();
+        // FR-17, 05_trading-assumptions §4, IADR-0076 決定5: 採算ゲート有効時のみ、概算費用（手数料・スプレッド）を控除した採算で
+        // 判断させる文脈を注入する。想定利益は費用控除前の 1 株あたり見込み値幅を数値で示させ、費用が相対的に大きい小口取引は Hold を促す。
+        // 数値の採算判定はコード側（ProfitabilityGate）で行う。無効時（既定）は本節・フィールドを出さず現行動作のプロンプトと一致させる。
+        if (includeProfitability)
+        {
+            sb.AppendLine("# 採算評価（費用控除後の期待利益）");
+            sb.AppendLine("往復の手数料・スプレッド等の費用を差し引いて採算が合う取引のみ選びます。費用が相対的に大きい小口取引は Hold（見送り）とします。");
+            sb.AppendLine("expectedProfitPerShare には費用控除前の 1 株あたり想定利益（見込み値幅）を数値で示します。採算が不確実なら Hold を選びます。");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("# 出力形式（JSON のみ）");
-        sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益}");
+        sb.AppendLine(includeProfitability
+            ? "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益}"
+            : "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
         return sb.ToString();
     }
 

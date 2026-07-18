@@ -302,6 +302,30 @@ public class TradeDecisionServiceTests
         decision.Should().BeNull();
     }
 
+    // FR-17, IADR-0076 決定5: プロンプトへの採算節注入は opt-in に連動する。有効時のみ LLM へ渡すプロンプトに採算節が載る。
+    [Fact]
+    public async Task 採算ゲートの有効無効でプロンプトの採算節が切り替わる()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+
+        var enabledLlm = new CapturingLlm(BuyJsonProfitable);
+        await new AppSvc(enabledLlm, new FakePolicy(Policy), new FakeSizing(Context()),
+                new FakeClock(), NullLogger<AppSvc>.Instance,
+                retrieval: null, options: null, profitability: prof,
+                profitabilityOptions: ProfitabilityGateOptions.Default with { Enabled = true })
+            .DecideAsync(Trigger());
+
+        var disabledLlm = new CapturingLlm(BuyJson);
+        await new AppSvc(disabledLlm, new FakePolicy(Policy), new FakeSizing(Context()),
+                new FakeClock(), NullLogger<AppSvc>.Instance,
+                retrieval: null, options: null, profitability: prof,
+                profitabilityOptions: ProfitabilityGateOptions.Default)
+            .DecideAsync(Trigger());
+
+        enabledLlm.LastPrompt.Should().Contain("採算評価（費用控除後の期待利益）");
+        disabledLlm.LastPrompt.Should().NotContain("採算評価（費用控除後の期待利益）");
+    }
+
     [Fact]
     public async Task 連敗時は縮小係数が数量に反映される()
     {

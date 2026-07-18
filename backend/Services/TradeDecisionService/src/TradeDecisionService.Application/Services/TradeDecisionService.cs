@@ -71,7 +71,9 @@ public sealed class TradeDecisionService(
         // IADR-0039: 本判断プロンプトを構築し、多数決・二段をオーケストレータへ委譲する。一次スクリーニングプロンプトは
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
         // IADR-0072 決定2: RAG 文脈は本判断のみに載せ、一次スクリーニング（費用統制）には載せない。
-        var decisionPrompt = TradeDecisionPromptBuilder.Build(trigger, policy, context, retrieved);
+        // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
+        var decisionPrompt = TradeDecisionPromptBuilder.Build(
+            trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled);
         var orchestrated = await _orchestrator.DecideAsync(
             () => TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context), decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
