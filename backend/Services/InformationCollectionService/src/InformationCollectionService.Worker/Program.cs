@@ -31,6 +31,8 @@ builder.Services.AddAiStockTradingHealthChecks();
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
+    // Collection:Source:Provider はカンマ区切りで複数ソース（例 "finnhub,sec-edgar"）を許容する。自己申告は
+    // 構成値をそのまま実装文字列として申告する（有効化中のソース集合を忠実に反映。BFF 突合時は集合として解釈）。
     .AddPort("source", string.IsNullOrWhiteSpace(builder.Configuration["Collection:Source:Provider"]) ? "noop" : builder.Configuration["Collection:Source:Provider"]!)
     .AddPortFromBaseUrl("cost-state", builder.Configuration["CostControl:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop"));

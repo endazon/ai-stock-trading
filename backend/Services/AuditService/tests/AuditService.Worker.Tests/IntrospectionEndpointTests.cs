@@ -21,7 +21,9 @@ public class IntrospectionEndpointTests(AuditWorkerWebApplicationFactory factory
         var dto = await res.Content.ReadFromJsonAsync<ServiceIntrospectionDto>();
         dto.Should().NotBeNull();
         dto!.Service.Should().Be("audit-service");
-        // 監査は pipeline.json の変換段ではない（横断オブザーバ）ため段は空。構成バージョン未注入で null。
+        // 本ファクトリは Pipeline:ConfigPath を設定しないため fail-safe（宣言未マウント）で段は空になる。
+        // 「audit-service が pipeline.json に段を持たない（横断オブザーバ）」ことの検証は宣言パースの単体テスト
+        // （PlatformShim.Tests の IntrospectionTests）側で担保する。ここは無認可応答と DTO 形状の結線を検証する。
         dto.Steps.Should().BeEmpty();
         dto.ConfigVersion.Should().BeNull();
     }
