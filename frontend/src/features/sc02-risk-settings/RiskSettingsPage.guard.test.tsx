@@ -172,6 +172,35 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
     expect(save).toBeEnabled();
   });
 
+  it('requires a ban reason before a banned symbol can be added (FR-19)', async () => {
+    const user = userEvent.setup();
+    const view = await renderReady();
+    const form = guardForm(view);
+    const addBtn = within(form).getByRole('button', { name: '禁止銘柄を追加' });
+    await user.type(within(form).getByLabelText('禁止銘柄コード'), '7203');
+    // 理由未入力では追加できない（禁止根拠の記録を担保）。
+    expect(addBtn).toBeDisabled();
+    await user.type(within(form).getByLabelText('禁止理由'), '流動性');
+    expect(addBtn).toBeEnabled();
+  });
+
+  it('preserves in-progress guard edits when the adjacent limits form is saved', async () => {
+    const user = userEvent.setup();
+    const view = await renderReady();
+    const gForm = guardForm(view);
+    // ガードを編集（米国を無効化＋理由）。
+    await user.click(within(gForm).getByRole('checkbox', { name: '米国' }));
+    await user.type(within(gForm).getByLabelText('変更理由'), '銘柄整理');
+    // 隣接するリスク上限フォームを保存する（current が再生成されるが guard の内容は不変）。
+    const lForm = within(view.container).getByRole('form', { name: 'リスク上限の変更' });
+    await user.type(within(lForm).getByLabelText('変更理由'), '上限調整');
+    await user.click(within(lForm).getByRole('button', { name: '保存' }));
+    await within(lForm).findByText('保存しました。');
+    // ガード側の未保存編集が黙って初期化されない（fail-safe）。
+    expect(within(guardForm(view)).getByRole('checkbox', { name: '米国' })).not.toBeChecked();
+    expect(within(guardForm(view)).getByLabelText('変更理由')).toHaveValue('銘柄整理');
+  });
+
   it('shows a conflict message on 409 without destructive retry', async () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {

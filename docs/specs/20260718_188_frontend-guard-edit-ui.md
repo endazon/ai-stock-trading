@@ -1,7 +1,7 @@
 ---
 title: フロント SC-02 ガード変更 UI（FR-13 残）
 type: work
-status: Draft
+status: In Progress
 related_ids: [FR-13, FR-19, UC-06, SC-02, ADR-0007, IADR-0084, IADR-0086]
 issue: 188
 author: endazon (with Claude Code)

@@ -29,6 +29,9 @@ plan_refs:
 - 前段: [IADR-0084](IADR-0084_frontend-risk-settings-and-control-status.md)（SC-02/SC-03 新設・リスク上限変更のみ・ガード/段階は参照）、
   [IADR-0080](IADR-0080_frontend-settings-screen.md)（frontend 新設・単独リポの @foundation スタブ＋vitest）
 - 前提（develop マージ済み）: Risk `PUT /risk-controls/settings/guard`（OwnerOnly・[RiskControlEndpoints.cs](../../backend/Services/RiskManagementService/src/RiskManagementService.Worker/Foundation/Endpoints/RiskControlEndpoints.cs)）
+- **採番について（IADR-0085 の欠番は意図的）**: 本 IADR は **0086** を用いる。**0085 は並行作業の #189 に先着で割り当て済み**（ユーザー調整による）で、
+  本ブランチで 0085 を使うと #189 と衝突する。番号衝突の扱いは「先着尊重」（`iadr-number-collision-playbook`）に従い、当面 0085 を空けて 0086 とする。
+  develop への #189 マージ時に 0085 が埋まり欠番は解消する（履歴不変・番号の再割り当てはしない）。
 
 ## 背景・課題
 
@@ -57,7 +60,9 @@ plan_refs:
 現在値をフォーム初期値へ読み込み、編集後の全体（商品種別集合・市場集合・禁止銘柄配列・2 トグル）を `reason` とともに送る。
 検証(400)・競合(409)・権限(403) は既存 `saveMessageOf` でメッセージへ写像し、**破壊的な自動再試行はしない**（安全既定）。
 成功後は現在値・履歴を再取得して最新化する。商品種別・市場が空集合でも黙って送らず、実効な範囲検証はサーバ 400 が担う
-（クライアントは「理由未入力」「危険確認未 ON」の明白な無効のみ抑止する・#186 と同方針）。
+（クライアントは「理由未入力」「危険確認未 ON」の明白な無効のみ抑止する・#186 と同方針）。禁止銘柄の追加は FR-19（禁止根拠の記録）
+に沿い、銘柄コードと理由の双方が入るまで許可しない。フォームの再初期化はガード内容の**値シグネチャ**に依存させ、隣接するリスク上限
+フォームの保存で `current` が再生成されてもガードの内容が同一なら初期化しない（編集中のガード編集を黙って破棄しない・fail-safe）。
 
 ### 3. 危険な緩和は「明示確認」を必須にする（fail-safe）
 

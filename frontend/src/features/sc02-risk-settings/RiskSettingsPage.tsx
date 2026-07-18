@@ -274,6 +274,11 @@ function toggleValue(list: number[], value: number): number[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value].sort((a, b) => a - b);
 }
 
+// 禁止銘柄の同一性キー（symbol と market の組）。区切りは銘柄コードに現れない縦棒を用いる。
+function bannedKey(b: BannedSymbol): string {
+  return `${b.symbol}|${b.market}`;
+}
+
 // 現在値（original）に対する送信予定の「危険な緩和」を列挙する。空なら危険なし。
 function dangerousChanges(original: TradingGuardSettings, form: GuardFormState): string[] {
   const dangers: string[] = [];
@@ -286,9 +291,20 @@ function dangerousChanges(original: TradingGuardSettings, form: GuardFormState):
   if (!original.enabledProductTypes.includes(PRODUCT_TYPE_MARGIN) && form.enabledProductTypes.includes(PRODUCT_TYPE_MARGIN)) {
     dangers.push('信用取引を有効化');
   }
-  // 禁止銘柄の削除（登録済みが送信予定に無い）を危険とみなす。
-  const stillBanned = new Set(form.bannedSymbols.map((b) => `${b.symbol} ${b.market}`));
-  const removed = original.bannedSymbols.filter((b) => !stillBanned.has(`${b.symbol} ${b.market}`));
+  // 禁止銘柄の削除（登録済みが送信予定に無い）を危険とみなす。同一 symbol+market の重複登録も正しく扱うため、
+  // 集合ではなく多重集合（件数）で突合する（1 件消しても残り 1 件あれば「削除」とはみなさない）。
+  const remaining = new Map<string, number>();
+  for (const b of form.bannedSymbols) {
+    const k = bannedKey(b);
+    remaining.set(k, (remaining.get(k) ?? 0) + 1);
+  }
+  const removed: BannedSymbol[] = [];
+  for (const b of original.bannedSymbols) {
+    const k = bannedKey(b);
+    const count = remaining.get(k) ?? 0;
+    if (count > 0) remaining.set(k, count - 1);
+    else removed.push(b);
+  }
   if (removed.length > 0) {
     dangers.push(`禁止銘柄の削除（${removed.map((b) => b.symbol).join('、')}）`);
   }
@@ -330,26 +346,33 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
   const [newMarket, setNewMarket] = useState<number>(MARKET_OPTIONS[0]?.value ?? 0);
   const [newReason, setNewReason] = useState('');
 
-  // 現在値（再取得で参照が変わる）に追随してフォームを初期化する。編集中の再取得はサーバ最新に倒す（安全側）。
+  // 現在値に追随してフォームを初期化する。ただし依存を「値のシグネチャ」にして、ガードの内容が実際に変わったとき
+  // （＝自分の保存成功後の再取得や外部変更）だけ初期化する。隣接するリスク上限フォームの保存でも親の current は再生成
+  // され guard の参照は変わるが、ガードの内容が同一なら初期化しない（編集中のガード内容・理由・危険確認・下書きを
+  // 黙って破棄しない・fail-safe / #188 AI レビュー指摘）。
+  const guardSignature = JSON.stringify(guard);
   useEffect(() => {
-    setForm(toGuardForm(guard));
+    const g = JSON.parse(guardSignature) as TradingGuardSettings;
+    setForm(toGuardForm(g));
     setReason('');
     setConfirmDanger(false);
     setNewSymbol('');
     setNewReason('');
-  }, [guard]);
+  }, [guardSignature]);
 
   const dangers = dangerousChanges(guard, form);
   const blocked = reason.trim() === '' || saveState === 'saving' || (dangers.length > 0 && !confirmDanger);
 
   function addBannedSymbol(): void {
     const symbol = newSymbol.trim();
-    if (symbol === '') return;
+    const banReason = newReason.trim();
+    // FR-19: 禁止根拠を記録する趣旨に沿い、銘柄コードと理由の双方が入るまで追加しない。
+    if (symbol === '' || banReason === '') return;
     setForm({
       ...form,
       bannedSymbols: [
         ...form.bannedSymbols,
-        { symbol, market: newMarket, reason: newReason.trim(), registeredOn: todayIso() },
+        { symbol, market: newMarket, reason: banReason, registeredOn: todayIso() },
       ],
     });
     setNewSymbol('');
@@ -478,8 +501,14 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
               ))}
             </select>
             <label htmlFor="guard-new-reason">禁止理由</label>
+            {/* 追加サブフォームの下書き入力には HTML5 required を付けない（付けると本体フォームの送信が空欄で妨げられる）。
+                理由の必須化は「禁止銘柄を追加」ボタンの無効化で担保する（FR-19）。 */}
             <input id="guard-new-reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} />
-            <button type="button" onClick={addBannedSymbol} disabled={newSymbol.trim() === ''}>
+            <button
+              type="button"
+              onClick={addBannedSymbol}
+              disabled={newSymbol.trim() === '' || newReason.trim() === ''}
+            >
               禁止銘柄を追加
             </button>
           </div>
