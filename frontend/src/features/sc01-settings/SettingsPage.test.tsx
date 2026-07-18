@@ -44,7 +44,8 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   it('renders current assumptions and version', async () => {
     render(<SettingsPage />);
     expect(await screen.findByRole('heading', { name: '設定' })).toBeInTheDocument();
-    expect(screen.getByText(/現在のバージョン:\s*3/)).toBeInTheDocument();
+    // 読み込み完了（フォーム描画）を待ってから現在値を検証する（見出しは読み込み中も描画されるため待受にしない）。
+    expect(await screen.findByText(/現在のバージョン:\s*3/)).toBeInTheDocument();
     // 譲渡益税率が現在値として入力に反映される。
     expect(screen.getByLabelText('譲渡益税率')).toHaveValue(0.20315);
   });
@@ -70,7 +71,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   it('requires a reason before saving (save disabled until reason entered)', async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     const save = screen.getByRole('button', { name: '保存' });
     expect(save).toBeDisabled();
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
@@ -80,7 +81,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   it('disables save and warns when a numeric field is empty or non-numeric', async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     const save = screen.getByRole('button', { name: '保存' });
     expect(save).toBeEnabled();
@@ -93,7 +94,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   it('submits PUT with assumptions, expectedVersion and reason', async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -109,7 +110,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   it('reflects an edited field in the submitted payload', async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     const taxInput = screen.getByLabelText('譲渡益税率');
     await user.clear(taxInput);
     await user.type(taxInput, '0.25');
@@ -129,7 +130,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
       return SAMPLE;
     });
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -148,7 +149,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
       return SAMPLE;
     });
     render(<SettingsPage />);
-    await screen.findByRole('heading', { name: '設定' });
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '不正値');
     await user.click(screen.getByRole('button', { name: '保存' }));
 

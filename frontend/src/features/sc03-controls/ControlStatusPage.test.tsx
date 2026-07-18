@@ -71,7 +71,8 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   it('renders control status with the active control mapped to a label', async () => {
     render(<ControlStatusPage />);
     expect(await screen.findByRole('heading', { name: '統制状態' })).toBeInTheDocument();
-    expect(screen.getByText('緊急停止（kill switch）')).toBeInTheDocument();
+    // 読み込み完了（統制状態の描画）を待ってから内容を検証する（見出しは読み込み中も描画されるため待受にしない）。
+    expect(await screen.findByText('緊急停止（kill switch）')).toBeInTheDocument();
     expect(screen.getByText('作動中')).toBeInTheDocument();
     // 新規建てが停止中である旨を表示する。
     expect(screen.getByText('停止中')).toBeInTheDocument();
@@ -134,8 +135,8 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
       return { ...STATUS, activeControl: 9, maxOpenPositions: 0, openPositionCount: 0 };
     });
     render(<ControlStatusPage />);
-    await screen.findByRole('heading', { name: '統制状態' });
-    expect(screen.getByText('不明(9)')).toBeInTheDocument();
+    // 読み込み完了（統制状態の描画）を待つ。未知 enum は安全側フォールバック表示になる。
+    expect(await screen.findByText('不明(9)')).toBeInTheDocument();
     const table = screen.getByRole('table', { name: '上限使用率' });
     // 保有銘柄数の上限 0 → 使用率は「—」（0 除算を安全側に倒す）。
     const positionRow = within(table).getByText('保有銘柄数').closest('tr')!;
