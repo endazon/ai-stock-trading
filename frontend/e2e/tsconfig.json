@@ -1,0 +1,11 @@
+{
+  // SC-01/02/03, IADR-0087: E2E（ハーネス＋spec）の型検査専用設定。
+  // 単独リポの標準設定（@foundation はスタブ・@ai-stock-trading は src へ解決）を継承し、
+  // types を E2E 向け（node・playwright は import で供給）へ差し替える。src/test 本体は既存 typecheck が担う。
+  "extends": "../tsconfig.standalone.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["."]
+}
