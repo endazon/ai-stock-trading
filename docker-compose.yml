@@ -315,6 +315,17 @@ services:
       # opt-in（報告書はゲート無し＝差し替えがそのまま有効化）。手動 live 検証・CI 対象外。
       MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
       MarketData__Finnhub__ApiKey: ${MARKETDATA_FINNHUB_API_KEY:-}
+      # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。空=Placeholder（定型散文＝既定オフ）。設定時のみ実照会。
+      LlmGateway__BaseUrl: ${LLM_GATEWAY_BASEURL:-}
+      LlmGateway__TimeoutSeconds: ${LLM_GATEWAY_TIMEOUTSECONDS:-}
+      LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
+      # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。空=no-op（保存しない）。設定時のみ opt-in。
+      KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGE_BASE_DOCUMENTS_BASEURL:-}
+      # FR-08, IADR-0051: KB 保存の s2s トークン。空=認証なし→401→fail-safe。
+      ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
+      ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
+      # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
+      Reports__NoResponseBehavior: ${REPORTS_NORESPONSE_BEHAVIOR:-}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -373,6 +384,11 @@ services:
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
       # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
+      # FR-08, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。
+      # fail-safe: 空=NoOp 検索（参考情報なし＝現行動作）。設定時のみ platform RetrievalService（POST /search）へ s2s 照会する。
+      KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
+      # 取得件数（TopK）。空・不正・非正値=既定 5。
+      Retrieval__TopK: ${RETRIEVAL_TOPK:-}
     depends_on:
       <<: *depends-infra
 

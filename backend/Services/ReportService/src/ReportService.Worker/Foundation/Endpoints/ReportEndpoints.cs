@@ -1,14 +1,19 @@
 using AiStockTrading.Report.Application;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 namespace AiStockTrading.Report.Worker.Foundation.Endpoints;
@@ -62,6 +67,17 @@ internal static class ReportEndpoints
 
         owner.MapGet("", (AppSvc svc) => Results.Ok(svc.List()));
 
+        // FR-06, UC-03, INDEX 決定事項16, IADR-0071 決定4: 初回月報ブートストラップ（初期監視銘柄の選定ドラフト）。
+        // 確定済み月報が既にあれば 404（不要）、無ければ当月のブートストラップ月報ドラフトを返す。生成のみ・永続化しない。
+        // 初期監視銘柄は構成 Reports:Bootstrap:Watchlist（未設定なら空＝未選定）。/{periodKey} より優先される（リテラル一致）。
+        owner.MapGet("/monthly-bootstrap", (AppSvc svc, IConfiguration cfg) =>
+        {
+            var watchlist = cfg.GetSection("Reports:Bootstrap:Watchlist").Get<string[]>() ?? [];
+            var assumptionsVersion = int.TryParse(cfg["Reports:Bootstrap:AssumptionsVersion"], out var v) && v > 0 ? v : 1;
+            var draft = svc.BuildMonthlyBootstrap(watchlist, assumptionsVersion);
+            return draft is null ? Results.NotFound() : Results.Ok(draft);
+        });
+
         // FR-16, IADR-0025: 損益集計（数値はコードで集計）。約定列＋任意の現在値から実現損益・費用・税・評価損益を返す。
         // 前提条件は暫定で既定値（#19 のバージョン付き取得・#63 台帳連携は #22 後続）。
         owner.MapPost("/pnl-summary", (PnlSummaryRequest req) =>
@@ -103,8 +119,29 @@ internal static class ReportEndpoints
             return Results.Ok(new { periodKey, version });
         });
 
-        // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行。対象が無ければ 404。
-        owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc, IPublishEndpoint bus, HttpContext http) =>
+        // FR-07, UC-03〜05, IADR-0042/0071 決定5: 対話的確定のレビュー操作（提示・差し戻し）。ReportReviewStateMachine を駆動し
+        // レビュー局面（ReviewState）を永続化する。改訂は既存 PUT（新ドラフト＝版+1）、承認は既存 confirm が担う。
+        // #15 Discord Bot はこれらの HTTP を呼んで提示→差し戻し／承認を駆動する。
+
+        // 現在のレビュー局面（状態＋版番号）。Bot/UI が次操作の期待版を得るために照会する。
+        owner.MapGet("/{periodKey}/review", (string periodKey, AppSvc svc) =>
+        {
+            var review = svc.GetReview(periodKey);
+            return review is null ? Results.NotFound() : Results.Ok(review);
+        });
+
+        // 提示（Drafting/ChangesRequested→PendingApproval）。内容不変のため版番号は変わらない。
+        owner.MapPost("/{periodKey}/present", (string periodKey, ReviewCommandRequest req, AppSvc svc, HttpContext http) =>
+            ReviewResult(svc.ApplyReview(periodKey, ReviewAction.Present, req.ExpectedVersion, ActorOf(http))));
+
+        // 差し戻し（PendingApproval→ChangesRequested）。修正指示を受けて改訂を促す。内容不変のため版番号は変わらない。
+        owner.MapPost("/{periodKey}/request-changes", (string periodKey, ReviewCommandRequest req, AppSvc svc, HttpContext http) =>
+            ReviewResult(svc.ApplyReview(periodKey, ReviewAction.RequestChanges, req.ExpectedVersion, ActorOf(http))));
+
+        // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行し、確定報告書を KB へ保存する。
+        // 対象が無ければ 404。KB 保存は best-effort（既定 no-op・fail-safe＝確定を壊さない・FR-08/IADR-0071 決定3）。
+        owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc,
+            IPublishEndpoint bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, HttpContext http) =>
         {
             var actor = ActorOf(http);
             var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);
@@ -116,6 +153,18 @@ internal static class ReportEndpoints
                 var r = result.Report;
                 await bus.Publish(new ReportConfirmed(
                     r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
+
+                // FR-08, IADR-0069/0071 決定3: 確定報告書を KB へ保存（カタログ登録）。既定 no-op。
+                // 保存の失敗・例外は握りつぶし確定を壊さない（KB は best-effort・保存ポート自体も fail-safe）。
+                try
+                {
+                    await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r), http.RequestAborted);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    loggerFactory.CreateLogger("ReportKnowledgeBase")
+                        .LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
+                }
             }
 
             return Results.Ok(result.Report);
@@ -126,7 +175,27 @@ internal static class ReportEndpoints
 
     private static string ActorOf(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "unknown";
+
+    // FR-07, IADR-0042/0071 決定5: レビュー決定を HTTP へ写像する。対象なし=404、受理=200（局面）、
+    // 版不一致・不正遷移・確定済み変更=409。actor は認証から入るため ActorRequired は通常起きないが安全側で 400。
+    private static IResult ReviewResult(ReviewDecision? decision) => decision switch
+    {
+        null => Results.NotFound(),
+        { Accepted: true } d => Results.Ok(d.Review),
+        { Rejection: ReviewRejectionReason.ActorRequired } => Results.BadRequest(new { error = "操作者が必要です。" }),
+        var d => Results.Conflict(new { error = RejectionMessage(d!.Rejection!.Value) }),
+    };
+
+    private static string RejectionMessage(ReviewRejectionReason reason) => reason switch
+    {
+        ReviewRejectionReason.VersionConflict => "版番号が一致しません。最新のドラフトを確認してください。",
+        ReviewRejectionReason.AlreadyConfirmed => "確定済みの報告書は変更できません。",
+        _ => "現在の状態から許可されない操作です。",
+    };
 }
+
+// FR-07, IADR-0071 決定5: レビュー操作の要求（版番号付き楽観排他）。
+internal sealed record ReviewCommandRequest(int ExpectedVersion);
 
 // ドラフト upsert の要求。TradingReport は具象レコードのため標準の逆直列化が可能。
 internal sealed record UpsertReportRequest(

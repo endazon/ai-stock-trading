@@ -58,4 +58,83 @@ public class TradeDecisionPromptBuilderTests
         // Parser 共有のため本判断と同じ action スキーマ（Buy|Sell|Hold）を要求する。
         prompt.Should().Contain("Buy|Sell|Hold");
     }
+
+    // FR-08, IADR-0072 決定2/3: RAG 取得文脈が非空なら本判断プロンプトに参考情報節として注入する（全量ログにも載る）。
+    [Fact]
+    public void RAG取得文脈があれば参考情報節を出力する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var retrieved = new[]
+        {
+            new RetrievedContext("Apple 決算メモ", "第 3 四半期は増収増益。", "kb://doc/1", 0.92d),
+        };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        prompt.Should().Contain("参考情報（ナレッジベース）");
+        // ADR-0003: 参考情報は方針・制約を上書きしない旨を明記する。
+        prompt.Should().Contain("上書きしません");
+        prompt.Should().Contain("Apple 決算メモ");
+        prompt.Should().Contain("第 3 四半期は増収増益。");
+        prompt.Should().Contain("kb://doc/1");
+    }
+
+    // FR-08, IADR-0072 決定4: 取得文脈が空（既定＝現行動作）なら参考情報節を出さない。
+    [Fact]
+    public void RAG取得文脈が空なら参考情報節を出さない()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var withNull = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved: null);
+        var withEmpty = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved: []);
+        var baseline = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        withNull.Should().NotContain("参考情報（ナレッジベース）");
+        withEmpty.Should().NotContain("参考情報（ナレッジベース）");
+        // 既定（RAG 未設定）は実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作を保つ。
+        withNull.Should().Be(baseline);
+        withEmpty.Should().Be(baseline);
+    }
+
+    // FR-08, IADR-0072 決定3: 参考情報の本文抜粋は上限（400 文字）で切り詰め、超過時は省略記号を付す。
+    [Fact]
+    public void RAG参考情報の本文抜粋は上限超で切り詰められ省略記号が付く()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var longText = new string('あ', 500); // 上限 400 を超える
+        var retrieved = new[] { new RetrievedContext("長文メモ", longText, null, 0.5d) };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        prompt.Should().Contain("長文メモ");
+        prompt.Should().Contain("…");
+        // 400 文字ちょうど分は残り、501 文字目（全文）は残らない。
+        prompt.Should().Contain(new string('あ', 400));
+        prompt.Should().NotContain(longText);
+    }
+
+    // FR-08, IADR-0072 決定3: 上限以内の本文抜粋は切り詰めず省略記号を付けない。
+    [Fact]
+    public void RAG参考情報の本文抜粋は上限以内ならそのまま出力される()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var text = new string('い', 400); // ちょうど上限
+        var retrieved = new[] { new RetrievedContext("境界メモ", text, null, 0.5d) };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        prompt.Should().Contain(text);
+        prompt.Should().NotContain("…");
+    }
+
+    // FR-08, IADR-0072 決定2: 一次スクリーニングは費用統制のため RAG 文脈を含めない（据え置き）。
+    [Fact]
+    public void スクリーニングプロンプトはRAG文脈を含まない()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().NotContain("参考情報（ナレッジベース）");
+    }
 }

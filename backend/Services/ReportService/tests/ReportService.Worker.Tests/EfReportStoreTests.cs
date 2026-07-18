@@ -55,6 +55,35 @@ public class EfReportStoreTests
         store.Confirm("daily-2026-07-10", 1, DateTimeOffset.UtcNow)!.Transitioned.Should().BeFalse();
     }
 
+    // FR-07, IADR-0042/0071 決定5: レビュー局面（ReviewState）が別コンテキストへ永続し、提示・確定で正しく遷移する。
+    [Fact]
+    public void レビュー局面が永続し提示と確定で遷移する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfReportStore(db);
+            store.UpsertDraft(Daily("daily-2026-07-10", new DateOnly(2026, 7, 10)), 0);
+
+            store.GetReview("daily-2026-07-10")!.State.Should().Be(ReviewState.Drafting);
+
+            var present = store.ApplyReview("daily-2026-07-10", new ReviewCommand(ReviewAction.Present, "owner", 1));
+            present!.Accepted.Should().BeTrue();
+            present.Review.State.Should().Be(ReviewState.PendingApproval);
+        }
+
+        // 別コンテキストから局面が読める（永続確認）。
+        using (var db2 = NewContext(dbName))
+        {
+            new EfReportStore(db2).GetReview("daily-2026-07-10")!.State.Should().Be(ReviewState.PendingApproval);
+        }
+
+        using var db3 = NewContext(dbName);
+        var store3 = new EfReportStore(db3);
+        store3.Confirm("daily-2026-07-10", 1, DateTimeOffset.UtcNow);
+        store3.GetReview("daily-2026-07-10")!.State.Should().Be(ReviewState.Confirmed);
+    }
+
     [Fact]
     public void 最新の確定済み日報を返す()
     {

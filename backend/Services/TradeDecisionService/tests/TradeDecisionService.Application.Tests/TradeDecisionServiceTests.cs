@@ -30,6 +30,37 @@ public class TradeDecisionServiceTests
         public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(ctx);
     }
 
+    // 本判断プロンプトを捕捉して RAG 文脈の注入を検証するための LLM スタブ。
+    private sealed class CapturingLlm(string output) : ILlmCompletionClient
+    {
+        public string? LastPrompt { get; private set; }
+
+        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        {
+            LastPrompt = prompt;
+            return Task.FromResult(output);
+        }
+    }
+
+    private sealed class FakeRetrieval(IReadOnlyList<RetrievedContext> hits) : IRetrievalContextProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(hits);
+        }
+    }
+
+    private sealed class ThrowingRetrieval : IRetrievalContextProvider
+    {
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default) =>
+            throw new InvalidOperationException("KB 取得の擬似障害");
+    }
+
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 7, 10), "米国株の押し目買い方針");
 
     private static SizingContext Context(decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m,
@@ -142,6 +173,55 @@ public class TradeDecisionServiceTests
         decision.Should().NotBeNull();
         decision!.Intent.Symbol.Should().Be("AAPL");
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // FR-08, IADR-0072 決定1/4/5: 取得ポートが結果を返すと本判断プロンプトに参考情報として渡り、ポートが呼ばれる。
+    [Fact]
+    public async Task RAG取得ポートの結果は本判断プロンプトに注入される()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var retrieval = new FakeRetrieval(new[]
+        {
+            new RetrievedContext("押し目の根拠メモ", "直近の調整は一時的との見立て。", "kb://doc/9", 0.88d),
+        });
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, retrieval);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        retrieval.Calls.Should().Be(1);
+        llm.LastPrompt.Should().Contain("参考情報（ナレッジベース）");
+        llm.LastPrompt.Should().Contain("押し目の根拠メモ");
+    }
+
+    // FR-08, IADR-0072 決定4: 取得ポート未指定（既定 NoOp）は RAG 未結線と等価＝参考情報節を出さない現行動作。
+    [Fact]
+    public async Task 取得ポート未指定なら参考情報節を出さず従来どおり判断する()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        llm.LastPrompt.Should().NotContain("参考情報（ナレッジベース）");
+    }
+
+    // FR-08, IADR-0072 決定4: 取得ポートが例外を投げても判断は止めず「文脈なし」に縮退して継続する（fail-safe）。
+    [Fact]
+    public async Task RAG取得が例外でも判断を止めず文脈なしで継続する()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, new ThrowingRetrieval());
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.Side.Should().Be(TradeSide.Buy);
+        llm.LastPrompt.Should().NotContain("参考情報（ナレッジベース）");
     }
 
     [Fact]

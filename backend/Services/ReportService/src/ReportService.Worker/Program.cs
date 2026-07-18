@@ -1,16 +1,20 @@
 using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
+using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
+using System.Globalization;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 const string ServiceName = "ai-stock-trading.report-service";
@@ -46,8 +50,32 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IReportStore, EfReportStore>();
 builder.Services.AddScoped<AppSvc>();
-// FR-06/16, IADR-0032: 報告書生成（数値集計の組み立て＋テンプレート化）。散文は LLM ドラフト（実 LLM は後続・安全既定プレースホルダ）。
-builder.Services.AddSingleton<IReportNarrativeDrafter, PlaceholderReportNarrativeDrafter>();
+// FR-06/16, IADR-0032/0071: 報告書生成（数値集計の組み立て＋テンプレート化）。散文は LLM ドラフト。
+// 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する（IADR-0071 決定1・#11 IADR-0061 と同形）。
+// LlmGateway:BaseUrl 未設定/不正 URI は現行プレースホルダ（定型散文）＝既定オフ。設定時のみ実照会し、送信拒否/失敗/
+// タイムアウト/空応答はプレースホルダ散文へ倒す（数値には一切関与しない・FR-16）。選択は解決時に構成を読む
+// （起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。LLM は応答が遅いため HttpClient の
+// タイムアウトは構成可能（LlmGateway:TimeoutSeconds・未設定/非正値は既定 30 秒＝fail-safe）。
+builder.Services.AddHttpClient("report-llm",
+    c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]));
+builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
+builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = cfg["LlmGateway:BaseUrl"];
+    // 未設定・不正 URI は安全既定（プレースホルダ＝定型散文）に倒す。
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<PlaceholderReportNarrativeDrafter>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm");
+    http.BaseAddress = uri;
+    return new HttpReportNarrativeDrafter(http,
+        sp.GetRequiredService<ILogger<HttpReportNarrativeDrafter>>(),
+        cfg["LlmGateway:Confidentiality"] ?? "internal",
+        cfg["LlmGateway:Purpose"] ?? "report-narrative",
+        // IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
+});
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため
 // リスク管理のような有効化ゲートは持たず、ソース差し替えがそのまま有効化になる。
@@ -69,6 +97,10 @@ builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
     TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
 builder.Services.AddScoped<ReportDraftService>();
 
+// FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存（共有クライアント）。既定は no-op（KnowledgeBase:Documents:BaseUrl
+// 未設定＝保存しない＝現行挙動）、設定時のみ実 platform 文書管理へ opt-in。保存は fail-safe（確定を壊さない）。
+builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
+
 // IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。
 builder.Services.AddMassTransit(x =>
 {
@@ -81,6 +113,14 @@ builder.Services.AddMassTransit(x =>
 });
 
 var app = builder.Build();
+
+// FR-07, IADR-0071 決定2: 無応答時の既定動作を起動時に解釈してログに残す（設定が実際に消費されていることを可視化する）。
+// これによりオペレーターは REPORTS_NORESPONSE_BEHAVIOR の反映を確認できる。期限（翌営業日開場）検知→停止の**実強制**は
+// スケジューラ（#22）が本設定（ReportNoResponsePolicy.Decide）を読み取って行う seam であり、本サービス単体では判定のみを持つ。
+var noResponseBehavior = ReportNoResponsePolicy.ParseBehavior(builder.Configuration["Reports:NoResponseBehavior"]);
+app.Logger.LogInformation(
+    "報告書の無応答時の既定動作: {Behavior}（確定を経ない新方針は不適用。期限検知→停止の実強制はスケジューラ #22 が本設定を読む）。",
+    noResponseBehavior);
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
 using (var scope = app.Services.CreateScope())
@@ -100,6 +140,13 @@ app.MapAiStockTradingHealthChecks();
 app.MapReportEndpoints();
 
 app.Run();
+
+// IADR-0071 決定1（#11 IADR-0061 決定2 と同形）: 報告書散文 LLM ゲートウェイのタイムアウト（秒）。
+// 未設定・不正・非正値は既定 30 秒（fail-safe）。無限待ちや 0 秒にはしない。
+static TimeSpan ParseTimeout(string? value) =>
+    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds) && seconds > 0
+        ? TimeSpan.FromSeconds(seconds)
+        : TimeSpan.FromSeconds(30);
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }

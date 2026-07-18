@@ -1,9 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.KnowledgeBase;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using FluentAssertions;
 using MassTransit.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;
@@ -250,6 +255,191 @@ public class ReportEndpointsTests
         draft.Markdown.Should().Contain("## 1. 週間サマリ");
         draft.Markdown.Should().Contain("翌週は半導体重点");
     }
+
+    // FR-07, UC-03〜05, IADR-0042/0071 決定5: 対話的確定のレビュー結線（提示・差し戻し・照会・確定連携）。
+    [Fact]
+    public async Task 提示_差し戻し_のレビュー遷移と照会()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+
+        // 初期はレビュー局面 Drafting。
+        (await client.GetFromJsonAsync<ReviewDto>("/reports/daily-2026-07-10/review"))!.State.Should().Be("Drafting");
+
+        // 提示 → PendingApproval（版は不変）。
+        var present = await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 });
+        present.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await present.Content.ReadFromJsonAsync<ReviewDto>())!.State.Should().Be("PendingApproval");
+
+        // 差し戻し → ChangesRequested。
+        var rc = await client.PostAsJsonAsync("/reports/daily-2026-07-10/request-changes", new { ExpectedVersion = 1 });
+        rc.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await rc.Content.ReadFromJsonAsync<ReviewDto>())!.State.Should().Be("ChangesRequested");
+    }
+
+    [Fact]
+    public async Task レビュー操作は_未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 版番号不一致の提示は_409()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 99 }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 確定済みへの提示は_409()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 2 }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 存在しない報告書のレビュー照会は_404()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        (await OwnerClient(factory).GetAsync("/reports/daily-nope/review")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップは初期監視銘柄（構成）を含む月報ドラフトを返す。
+    [Fact]
+    public async Task 初回月報ブートストラップは初期監視銘柄を含む月報ドラフトを返す()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Reports:Bootstrap:Watchlist:0"] = "AAPL",
+                ["Reports:Bootstrap:Watchlist:1"] = "7203",
+            })));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        var res = await client.GetAsync("/reports/monthly-bootstrap");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var report = await res.Content.ReadFromJsonAsync<BootstrapDto>();
+        report!.Kind.Should().Be("Monthly");
+        report.PolicySummary.Should().Contain("AAPL");
+        report.PolicySummary.Should().Contain("7203");
+    }
+
+    [Fact]
+    public async Task 初回月報ブートストラップは_未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task 確定済み月報があればブートストラップは_404()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+
+        // 月報を作成・確定（ブートストラップ済み）。
+        await client.PutAsJsonAsync("/reports/monthly-2026-06", new
+        {
+            Kind = "Monthly",
+            PeriodStart = "2026-06-01",
+            BasedOn = (string?)null,
+            AssumptionsVersion = 1,
+            PolicySummary = "6月方針",
+            ExpectedVersion = 0,
+        });
+        (await client.PostAsJsonAsync("/reports/monthly-2026-06/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // FR-08, IADR-0069/0071 決定3: 確定遷移で確定報告書が KB へ保存される（既定 no-op を記録用に差し替えて検証）。
+    [Fact]
+    public async Task 確定すると確定報告書が_KB_へ保存される()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var recorder = new RecordingKnowledgeBaseWriter();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IKnowledgeBaseWriter>();
+                s.AddSingleton<IKnowledgeBaseWriter>(recorder);
+            }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        recorder.Saved.Should().ContainSingle();
+        recorder.Saved[0].Title.Should().Be("確定報告書 Daily daily-2026-07-10");
+        recorder.Saved[0].Confidentiality.Should().Be(KnowledgeConfidentiality.Internal);
+    }
+
+    // 冪等な再確定（遷移なし）では KB 保存を重ねない。
+    [Fact]
+    public async Task 冪等な再確定では_KB_保存を重ねない()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var recorder = new RecordingKnowledgeBaseWriter();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IKnowledgeBaseWriter>();
+                s.AddSingleton<IKnowledgeBaseWriter>(recorder);
+            }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        // 確定済みの再確定（冪等・遷移なし）。
+        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+
+        recorder.Saved.Should().ContainSingle();
+    }
+
+    private sealed class RecordingKnowledgeBaseWriter : IKnowledgeBaseWriter
+    {
+        public List<KnowledgeDocument> Saved { get; } = [];
+
+        public Task<KnowledgeWriteResult> SaveAsync(KnowledgeDocument document, CancellationToken cancellationToken = default)
+        {
+            Saved.Add(document);
+            return Task.FromResult(KnowledgeWriteResult.Ok(Guid.NewGuid()));
+        }
+    }
+
+    private sealed record ReviewDto(string PeriodKey, string State, int Version);
+
+    private sealed record BootstrapDto(string Kind, string PeriodKey, string PolicySummary);
 
     private sealed record DailyPolicyDto(DateOnly Date, string Summary, int AssumptionsVersion);
 

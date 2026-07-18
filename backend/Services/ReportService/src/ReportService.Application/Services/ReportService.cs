@@ -31,6 +31,21 @@ public sealed class ReportService(IReportStore store, IClock clock)
         return store.Confirm(periodKey, expectedVersion, clock.UtcNow);
     }
 
+    /// <summary>FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
+    public ReportReview? GetReview(string periodKey) => store.GetReview(periodKey);
+
+    /// <summary>
+    /// FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー操作（提示・差し戻し）を適用する。利用者のみ（actor 必須）。
+    /// 版番号付きの楽観排他・不正遷移・確定済み変更は状態機械が拒否し、拒否理由を含む決定を返す。対象が無ければ null。
+    /// </summary>
+    public ReviewDecision? ApplyReview(string periodKey, ReviewAction action, int expectedVersion, string actor)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        return store.ApplyReview(periodKey, new ReviewCommand(action, actor, expectedVersion));
+    }
+
     /// <summary>最新の確定済み日報の方針（取引判断の IDailyPolicyProvider 実データ源）。未確定なら null。</summary>
     public ConfirmedDailyPolicy? GetConfirmedDailyPolicy()
     {
@@ -38,5 +53,20 @@ public sealed class ReportService(IReportStore store, IClock clock)
         return latest is null
             ? null
             : new ConfirmedDailyPolicy(latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion);
+    }
+
+    /// <summary>
+    /// FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップ。確定済み月報がまだ無いとき（＝運用開始直後）に、当月の初期監視銘柄を
+    /// 選定した月報ドラフトを返す。既に確定済み月報があればブートストラップ不要として null を返す。生成のみ（永続化しない）。
+    /// </summary>
+    public TradingReport? BuildMonthlyBootstrap(IReadOnlyList<string> watchlist, int assumptionsVersion)
+    {
+        ArgumentNullException.ThrowIfNull(watchlist);
+
+        if (store.GetLatestConfirmed(ReportKind.Monthly) is not null)
+            return null; // 既にブートストラップ済み（確定済み月報が存在する）。
+
+        var month = DateOnly.FromDateTime(clock.UtcNow.UtcDateTime);
+        return MonthlyBootstrap.BuildDraft(month, watchlist, assumptionsVersion);
     }
 }

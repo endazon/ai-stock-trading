@@ -1,4 +1,5 @@
 using AiStockTrading.Report.Application.Ports;
+using AiStockTrading.Report.Application.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Report.Worker.Foundation.Adapters;
@@ -18,6 +19,6 @@ internal sealed class PlaceholderReportNarrativeDrafter(ILogger<PlaceholderRepor
                 "PlaceholderReportNarrativeDrafter を使用中: 実 LLM ドラフト（platform ゲートウェイ）が未接続のため散文は定型文になります。");
         }
 
-        return Task.FromResult("（本節は LLM 未接続のため自動ドラフトされていません。数値は上記のコード集計値を参照してください。）");
+        return Task.FromResult(ReportNarrativeDefaults.PlaceholderText);
     }
 }

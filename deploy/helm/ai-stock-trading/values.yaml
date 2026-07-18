@@ -260,6 +260,19 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
+      - { name: LlmGateway__BaseUrl, value: "" }
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      - { name: LlmGateway__LogPrompts, value: "" }
+      # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。fail-safe: 空=no-op（保存しない）。設定時のみ opt-in。
+      - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
+      # FR-08, IADR-0051: KB 保存の s2s トークン（client_credentials）。fail-safe: 未設定=認証なし→401→安全側。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
+      - { name: Reports__NoResponseBehavior, value: "" }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
