@@ -19,6 +19,7 @@ import {
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
 } from '../risk/contracts';
+import { WatchlistForm } from './WatchlistForm';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
 // データ源は BFF `/bff/risk-controls/settings`（RiskManagementService・OwnerOnly）。変更は利用者のみ・理由必須。
@@ -241,6 +242,10 @@ export function RiskSettingsPage() {
           <HistoryView status={historyStatus} history={history} />
         </>
       )}
+
+      {/* SC-02, FR-03, FR-13, IADR-0090: 監視銘柄（watchlist）セクション。別サービス（MarketMonitorService `/monitor/watchlist`）を
+          消費するため、リスク設定の取得可否に連動させず独立してロード/縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
+      <WatchlistForm />
     </section>
   );
 }
