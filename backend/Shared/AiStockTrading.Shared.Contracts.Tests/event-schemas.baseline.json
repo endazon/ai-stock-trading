@@ -97,5 +97,11 @@
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
     "Rationale": "String"
+  },
+  "WithdrawalTriggered": {
+    "HaltNewEntries": "Boolean",
+    "OccurredAt": "DateTimeOffset",
+    "ProposedStage": "Int32",
+    "Reason": "String"
   }
 }

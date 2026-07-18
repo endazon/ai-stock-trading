@@ -46,3 +46,10 @@ internal sealed class CostThresholdReachedNotificationConsumer(INotificationSend
     public Task Consume(ConsumeContext<CostThresholdReached> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// FR-20, FR-09, UC-06: 撤退基準到達（撤退の定期評価ドライバ #166）を購読して利用者へ通知する。
+internal sealed class WithdrawalTriggeredNotificationConsumer(INotificationSender sender) : IConsumer<WithdrawalTriggered>
+{
+    public Task Consume(ConsumeContext<WithdrawalTriggered> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

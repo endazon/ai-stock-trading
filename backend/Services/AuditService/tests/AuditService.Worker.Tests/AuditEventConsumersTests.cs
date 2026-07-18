@@ -39,6 +39,7 @@ public class AuditEventConsumersTests
                 x.AddConsumer<LlmCostIncurredAuditConsumer>();
                 x.AddConsumer<InformationCollectedAuditConsumer>();
                 x.AddConsumer<StageTransitionedAuditConsumer>();
+                x.AddConsumer<WithdrawalTriggeredAuditConsumer>();
             })
             .BuildServiceProvider(true);
 
@@ -177,6 +178,28 @@ public class AuditEventConsumersTests
             .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "StageTransitioned");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task 撤退基準到達も段階ゲート相関で監査台帳に記録される()
+    {
+        // FR-20, FR-11, #166, IADR-0083: 撤退基準到達（自動安全側の発火）も中央監査台帳へ集約する。
+        // 段階遷移と同じ "stage-gate" 相関で束ね、撤退と遷移をまとめて辿れる（撤退は StageTransitioned を伴わない）。
+        var store = new InMemoryAuditEventStore();
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(new WithdrawalTriggered(
+            0, "DrawdownBreachedMultiple", HaltNewEntries: true, DateTimeOffset.UtcNow));
+        (await harness.Consumed.Any<WithdrawalTriggered>()).Should().BeTrue();
+
+        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .CorrelationId;
+        store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "WithdrawalTriggered");
 
         await harness.Stop();
     }

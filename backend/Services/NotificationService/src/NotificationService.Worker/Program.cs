@@ -109,6 +109,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<ReportConfirmedNotificationConsumer>();
     // NFR（費用）/FR-09: 費用統制（#23）のしきい値通知。
     x.AddConsumer<CostThresholdReachedNotificationConsumer>();
+    // FR-20/FR-09: 撤退基準到達（撤退の定期評価ドライバ #166）の通知。
+    x.AddConsumer<WithdrawalTriggeredNotificationConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

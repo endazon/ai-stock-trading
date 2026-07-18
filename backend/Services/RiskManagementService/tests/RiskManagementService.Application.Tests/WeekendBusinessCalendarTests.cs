@@ -28,4 +28,19 @@ public class WeekendBusinessCalendarTests
     {
         _calendar.NextBusinessDay(new DateOnly(2026, 7, 11)).Should().Be(new DateOnly(2026, 7, 13));
     }
+
+    [Fact]
+    public void 平日は営業日である()
+    {
+        // #166: 撤退の定期評価の休場ガードに用いる。2026-07-17 は金曜。
+        _calendar.IsBusinessDay(new DateOnly(2026, 7, 17)).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(2026, 7, 18)] // 土曜
+    [InlineData(2026, 7, 19)] // 日曜
+    public void 週末は営業日でない(int year, int month, int day)
+    {
+        _calendar.IsBusinessDay(new DateOnly(year, month, day)).Should().BeFalse();
+    }
 }
