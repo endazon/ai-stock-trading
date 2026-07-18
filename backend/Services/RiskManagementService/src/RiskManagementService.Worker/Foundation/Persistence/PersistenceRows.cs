@@ -167,6 +167,19 @@ internal sealed class StagePerformanceRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+// FR-20, FR-09, IADR-0085, #189: 撤退の非停止（Stage 1 ペーパー乖離）降格提案の「最後に通知したシグネチャ」を保持する
+// 単一行。停止経路（Stage 2/3）は kill switch 状態を冪等鍵にするが、非停止経路は kill switch を起動しないため別の
+// durable な通知済み状態が要る（IADR-0085）。行が無い／Signature が null＝未通知＝fail-safe。
+internal sealed class WithdrawalNotificationRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    /// <summary>最後に通知した撤退提案のシグネチャ（"{Reason}:{(int)ProposedStage}"）。未通知なら null。</summary>
+    public string? Signature { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 // FR-19, #154, IADR-0067: 相場操縦検知の入力＝1 注文のライフサイクル要約を DecisionId で保持する行。
 // 承認で作成し、約定・訂正・取消で更新する（可変・射影）。取引台帳（ApprovedOrderRow/TradeFillRow）とは別テーブル。
 // 取引台帳は Filled のみを載せる設計で、本用途の母集団である「約定ゼロで取り消された注文」を構造的に捨てるため、

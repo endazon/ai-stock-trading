@@ -181,6 +181,20 @@ function labelOf(map: Record<number, string>, value: number): string {
   return map[value] ?? `不明(${value})`;
 }
 
+// FR-13, FR-19, IADR-0086: 編集 UI 用の選択肢（既知 enum 値のみ）。ガード変更 UI のチェックボックス列挙に用いる。
+// バックエンドの数値 enum 表現は変えず、既知値の写像テーブルから選択肢を導出する（未知値は選択肢に出さないが、
+// 現在値としての表示は labelOf のフォールバックで安全側に倒れる）。
+export interface EnumOption {
+  value: number;
+  label: string;
+}
+const optionsOf = (map: Record<number, string>): EnumOption[] =>
+  Object.entries(map).map(([v, label]) => ({ value: Number(v), label }));
+export const PRODUCT_TYPE_OPTIONS: EnumOption[] = optionsOf(PRODUCT_TYPE_LABELS);
+export const MARKET_OPTIONS: EnumOption[] = optionsOf(MARKET_LABELS);
+// ProductType の信用（Margin）。新規有効化を「危険な緩和」と判定するための定数（IADR-0086 決定 3）。
+export const PRODUCT_TYPE_MARGIN = 1;
+
 export const stageLabel = (v: number): string => labelOf(STAGE_LABELS, v);
 export const modeLabel = (v: number): string => labelOf(MODE_LABELS, v);
 export const activeControlLabel = (v: number): string => labelOf(ACTIVE_CONTROL_LABELS, v);

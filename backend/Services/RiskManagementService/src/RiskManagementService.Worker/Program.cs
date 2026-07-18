@@ -58,6 +58,8 @@ builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
 builder.Services.AddScoped<IStageGateStore, EfStageGateStore>();
 builder.Services.AddScoped<IStagePerformanceStore, EfStagePerformanceStore>();
+// FR-20, FR-09, IADR-0085, #189: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（durable な通知済みシグネチャ・単一行）。
+builder.Services.AddScoped<IWithdrawalNotificationStore, EfWithdrawalNotificationStore>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。
 // DbContext が scoped のため台帳ストア・プロバイダも scoped。
 builder.Services.AddScoped<IPortfolioLedgerStore, EfPortfolioLedgerStore>();

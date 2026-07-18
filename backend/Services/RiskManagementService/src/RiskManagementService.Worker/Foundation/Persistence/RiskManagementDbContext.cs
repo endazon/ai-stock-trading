@@ -30,6 +30,9 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
 
     public DbSet<StagePerformanceRow> StagePerformance => Set<StagePerformanceRow>();
 
+    // FR-20, FR-09, IADR-0085: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（最後に通知したシグネチャ・単一行）。
+    public DbSet<WithdrawalNotificationRow> WithdrawalNotifications => Set<WithdrawalNotificationRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -125,6 +128,15 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.ToTable("stage_performance");
             e.HasKey(r => r.Id);
             e.Property(r => r.Id).ValueGeneratedNever();
+        });
+
+        // FR-20, FR-09, IADR-0085: 撤退の非停止降格提案の通知重複排除（単一行）。未記録＝未通知（fail-safe）。
+        mb.Entity<WithdrawalNotificationRow>(e =>
+        {
+            e.ToTable("withdrawal_notification");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.Signature).HasMaxLength(256);
         });
     }
 }
