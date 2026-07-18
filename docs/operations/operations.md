@@ -174,11 +174,43 @@ SELECT count(*) FROM order_dispatch_reservations
 SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
 ```
 
+## 発注予約の自動リコンサイル（#141 / [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md)）
+
+`Reserved` 滞留（上の Runbook で人手対応する「発注済みか不明な予約」）を、ブローカ照会で自動解消する
+バックグラウンド機構（`OrderReservationReconciliationService`）。**二重発注を絶対に起こさない fail-safe** を守る。
+
+- **判定**: 滞留閾値より古い `Reserved` を走査し、①`executed_orders` に記録あり→確定の自己修復／
+  ②発注済み（`Placed`）→記録して確定＋`OrderExecuted` 発行／③未発注（`NotPlaced`）→予約解放／
+  ④照会不達・不確定（`Indeterminate`）→**据え置き**（人手/`_error`・解放しない）。
+- **既定 no-op プローブ**: 既定の照会実装は**常に `Indeterminate`**（`IndeterminateReservationBrokerProbe`）。
+  実 OpenD 照会（`DecisionId` を client order id として伝播 or 時刻窓突合）は opt-in の後続で差し替える
+  （実 API 依存・OpenD SIMULATE E2E は #82 系）。**既定構成では `Placed`/`NotPlaced` 経路は発火せず、
+  自己修復（①）のみが作動する**（ブローカ非依存）。
+
+### 設定（既定は無効）
+
+```yaml
+Reconciliation:
+  Enabled: false # 既定。true で自動リコンサイルを有効化する
+  StallThresholdHours: 24 # 滞留とみなす経過時間（下限 1 時間・再配送窓の外側）
+  IntervalHours: 6 # 巡回間隔（下限 1 時間）
+  BatchSize: 200 # 1 巡回あたりの最大処理件数
+```
+
+- **有効化手順**: appsettings もしくは環境変数（`Reconciliation__Enabled=true`）を設定してデプロイする。
+  無効時はログに「発注予約の自動リコンサイルは無効です（Reconciliation:Enabled=false）」が出る。
+- **`Indeterminate` の意味（運用上の要点）**: 照会が「不明」＝**解放しない**。既定 no-op プローブでは全件が
+  `Indeterminate` になるため、実照会プローブを配線するまで自動解放・自動終端化は起きない（滞留は人手対応のまま）。
+  これは二重発注を招く解放を構造的に封じる安全既定であり、想定挙動である。
+- **監視すべきログ**: 各巡回の `発注予約リコンサイル: 滞留 N 件を走査（終端化 … / 解放 … / 不確定 … / 失敗 …）`。
+  `失敗` が継続的に出る場合は照会・保存の恒常障害（DB 権限・接続・プローブ実装の不具合）を疑う。
+- **停止**: `Reconciliation__Enabled=false` に戻して再デプロイすれば次回巡回から走査しない。
+
 ## 障害対応（Runbook）
 
 | 事象 | 検知 | 一次対応 | エスカレーション |
 | --- | --- | --- | --- |
-| **発注予約が `Reserved` のまま滞留**（#131 / [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md)） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
+| **発注予約が `Reserved` のまま滞留**（#131 / [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) / 自動化は #141 / [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md)） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。自動リコンサイル（#141）が有効かつ実照会プローブが配線済みなら自動解消される。未配線（既定 no-op）なら手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
 | **重複排除ストアが肥大化する**（#137 / [IADR-0059](../adr/IADR-0059_dedupe-retention-purge.md)） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（IADR-0059 代替案） |
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
 

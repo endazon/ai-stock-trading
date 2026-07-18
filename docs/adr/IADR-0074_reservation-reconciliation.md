@@ -66,9 +66,14 @@ IADR-0059 は「Reserved は時間経過で消してはならない（消せば�
      **自己修復**。ブローカ照会せず `MarkCompleted` ＋ `OrderExecuted` 再発行。
    - 記録なし → プローブ照会:
      - `Placed(order)` → `ExecutionRecord` を保存し `MarkCompleted`、`OrderExecuted` を発行（**確定**）。
+       照会（`ProbeAsync`）は実装次第で有意な待ち時間を持つ非同期になり得るため、`Save` の**直前**に
+       `FindByDecisionId` を再確認する（TOCTOU 対策）。照会待機中に通常フローが同一 `DecisionId` を確定していれば、
+       二重 `Save`（`executed_orders` 主キー競合）を避け自己修復（既存記録で `MarkCompleted`）に倒す。
      - `NotPlaced` → 予約を `Release`（削除）。ブローカ呼び出しはしない（未発注＝取り消す対象がない）。
        解放後は元の `OrderApproved` 再配送が改めて予約→発注できる（正しく再発注される）。
      - `Indeterminate` → **据え置き**（人手/`_error` の現行安全側を壊さない）。
+   - **各予約は独立処理**: 1 件の例外（照会・保存失敗等）でバッチ全体を止めない（try/catch で分離し、失敗件数のみ
+     集計して Worker がログ。未処理の予約は `Reserved` のまま＝据え置きで二重発注は起きない）。次回巡回で再試行する。
 
 4. **定期実行は既定無効**: `OrderReservationReconciliationService`（BackgroundService）は IADR-0059 の
    retention と同型。`Reconciliation:Enabled=false` が既定で、有効化しても no-op プローブ下では
