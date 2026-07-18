@@ -1,0 +1,12 @@
+{
+  // IADR-0080 決定 2: 単独リポ（platform 非合成）向けの型検査。@foundation をテスト/型検査専用スタブへ解決し、
+  // platform 非依存で tsc が通るようにする。platform へ合成された時は tsconfig.json（実 foundation への paths）が使われる。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@foundation/*": ["./test/foundation-stub/*"],
+      "@ai-stock-trading/*": ["src/*"]
+    }
+  },
+  "include": ["src", "test"]
+}
