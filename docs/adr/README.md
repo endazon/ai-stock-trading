@@ -118,4 +118,5 @@
 | IADR-0080 | フロントエンドは platform unit-template 規約に準拠し、単独リポの型検査/テストを @foundation スタブ＋ローカル vitest で自己完結させ、設定画面は FR-17 前提条件の閲覧/変更に限定する | Accepted |
 | IADR-0081 | 段階ゲートの Discord コマンドは Bot 側で Risk の OwnerOnly エンドポイントを呼ぶだけの薄い追加とし、数値 enum 整形を Worker に隔離する | Accepted |
 | IADR-0082 | 段階遷移イベントは Worker 発行点でバス発行し中央監査へ集約する（契約は primitive・Risk 専有台帳を権威に据え置く） | Accepted |
+| IADR-0083 | 撤退の定期評価は背景ドライバで駆動し、新規自動停止時のみ通知イベントを発行する（kill switch 状態を durable な冪等鍵にする） | Accepted |
 | IADR-0084 | FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる | Accepted |

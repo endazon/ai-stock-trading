@@ -42,4 +42,13 @@ public static class NotificationFormatter
         $"費用統制: {e.State}",
         $"{e.Category} 費用が月次上限の {e.Percent:F0}% に到達しました（{e.Month}・{e.State}）。",
         e.State == "Halted" ? NotificationSeverity.Critical : NotificationSeverity.Warning);
+
+    // FR-20, FR-09, UC-06, #166: 撤退基準到達（自動安全側の発火）。新規建ての自動停止を伴う撤退は Critical。
+    // 段階の実降格は提案に留まる（確定は利用者承認による差し戻しを要する）ことを本文で明示する。
+    public static NotificationMessage From(WithdrawalTriggered e) => new(
+        "リスク統制: 撤退基準到達",
+        $"撤退基準に到達しました（{e.Reason}）。"
+            + $"{(e.HaltNewEntries ? "新規建てを自動停止しました。" : string.Empty)}"
+            + $"Stage {e.ProposedStage} への差し戻しを提案します（確定は利用者承認が必要）。",
+        e.HaltNewEntries ? NotificationSeverity.Critical : NotificationSeverity.Warning);
 }

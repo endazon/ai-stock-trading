@@ -2,6 +2,7 @@ using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Worker.Composable.MarketData;
+using AiStockTrading.RiskManagement.Worker.Composable.StageGate;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
 using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
@@ -104,6 +105,14 @@ builder.Services.AddScoped<RiskSettingsService>();
 // 撤退の自動安全側は KillSwitchService を通す（自動＝停止・承認＝段階変更）。
 builder.Services.AddSingleton(AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
 builder.Services.AddScoped<StageGateService>();
+// FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
+// 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の
+// 既定実績では発火しない（QuoteRefreshService と同じく副作用を伴う背景処理は既定起動しない）。
+builder.Services.Configure<WithdrawalEvaluationOptions>(
+    builder.Configuration.GetSection(WithdrawalEvaluationOptions.SectionName));
+if (builder.Configuration.GetSection(WithdrawalEvaluationOptions.SectionName)
+        .Get<WithdrawalEvaluationOptions>()?.Enabled == true)
+    builder.Services.AddHostedService<WithdrawalEvaluationService>();
 // FR-19, #154, IADR-0006/0040/0067: 相場操縦検出器（#49）を本番有効化する。検知アルゴリズム
 // （ManipulativeOrderPatternDetector＋ManipulationPatternAnalyzer）に、注文履歴テレメトリ（注文系イベントの
 // Risk 専有 DB への射影・#154）から IOrderActivitySource を供給する。IOrderActivitySource は同期契約かつ

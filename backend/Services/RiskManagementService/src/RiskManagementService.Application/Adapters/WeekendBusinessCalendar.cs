@@ -16,4 +16,8 @@ public sealed class WeekendBusinessCalendar : IBusinessCalendar
 
         return next;
     }
+
+    // #166, #21: 週末（土日）でなければ営業日。祝日データを含む市場カレンダーは #21 で差し替える。
+    public bool IsBusinessDay(DateOnly date) =>
+        date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
 }
