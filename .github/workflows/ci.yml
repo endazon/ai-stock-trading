@@ -140,3 +140,28 @@ jobs:
       #   - run: pip install -e .[test]
       #   - run: ruff check .
       #   - run: pytest --cov
+
+  # フロントエンド（frontend/）の型検査・lint・単体/コンポーネントテスト（issue #106 / FR-13,FR-17,UC-06 / IADR-0080）。
+  # 単独リポでは @foundation をテスト/型検査用スタブへ解決し、platform 非依存で自己完結する（合成時は platform の
+  # src/vitest.config.ts が実 foundation へ解決して同じテストを走らせる）。実ブラウザ E2E（Playwright）・実 BFF/Keycloak
+  # 疎通は実基盤依存として後続スライスへ分離するため、本ジョブは Node のみ（Docker 不要）で完結する。
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm run test
