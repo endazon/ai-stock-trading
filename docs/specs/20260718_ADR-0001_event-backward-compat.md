@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 #22 (PR-C) イベント契約の後方互換 CI 契約テスト
 type: work-spec
-status: In Progress
+status: review
 related_ids: [ADR-0001, FR-11, IADR-0049, IADR-0079]
 author: endazon (with Claude Code)
 created: 2026-07-18
