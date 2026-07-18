@@ -29,20 +29,28 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     private const string PauseConfirmButtonId = "ast-pause-confirm";
     private const string ResumeConfirmButtonId = "ast-resume-confirm";
 
+    // FR-20, ADR-0008: 段階遷移（昇格/差し戻し）の確認ボタン。遷移先はボタンの CustomId に載せる（押下時に再解析）。
+    // 例: "ast-stage-promote-2" / "ast-stage-demote-1"。
+    private const string StagePromoteButtonPrefix = "ast-stage-promote-";
+    private const string StageDemoteButtonPrefix = "ast-stage-demote-";
+
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
     private readonly PauseCommandHandler _pauseHandler;
+    private readonly StageGateCommandHandler _stageGateHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
     public DiscordNetBotGateway(
         KillSwitchCommandHandler handler,
         PauseCommandHandler pauseHandler,
+        StageGateCommandHandler stageGateHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
         _handler = handler;
         _pauseHandler = pauseHandler;
+        _stageGateHandler = stageGateHandler;
         _options = options;
         _logger = logger;
 
@@ -116,12 +124,36 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             .WithDescription("稼働状態（統制・段階・当日損益・上限使用率・ポジション）を表示します")
             .Build();
 
+        // FR-20, UC-06, ADR-0008: 段階ゲート（現況照会・昇格/差し戻し・撤退評価）。action で操作を選び、
+        // promote/demote は遷移先（Stage 0〜3）を stage オプションで受ける。promote/demote は確認ボタンを要する。
+        var stage = new SlashCommandBuilder()
+            .WithName("stage")
+            .WithDescription("段階ゲート（現況・昇格/差し戻し・撤退評価）を操作します")
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("action")
+                .WithDescription("操作")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .AddChoice("status", "status")
+                .AddChoice("promote", "promote")
+                .AddChoice("demote", "demote")
+                .AddChoice("withdrawal", "withdrawal"))
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("stage")
+                .WithDescription("遷移先の段階（promote/demote 時に必須・0〜3）")
+                .WithType(ApplicationCommandOptionType.Integer)
+                .WithRequired(false)
+                .WithMinValue(0)
+                .WithMaxValue(3))
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(pause).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(resume).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(status).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(stage).ConfigureAwait(false);
             _logger.LogInformation("スラッシュコマンドを登録しました（guild={GuildId}）。", guildId);
         }
         catch (Exception ex)
@@ -146,6 +178,9 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 return;
             case "status":
                 await OnStatusSlashAsync(command).ConfigureAwait(false);
+                return;
+            case "stage":
+                await OnStageSlashAsync(command).ConfigureAwait(false);
                 return;
             default:
                 return;
@@ -215,6 +250,83 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         await command.FollowupAsync(PauseResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
     }
 
+    // FR-20, UC-06, ADR-0008: /stage → action で分岐。status/withdrawal は参照・安全側のため直接実行。
+    // promote/demote は破壊的（実弾方向）／手動の段階変更のため確認ボタンを提示する（ここでは Risk を呼ばない）。
+    private async Task OnStageSlashAsync(SocketSlashCommand command)
+    {
+        var action = command.Data.Options.FirstOrDefault(o => o.Name == "action")?.Value as string;
+        var stageValue = command.Data.Options.FirstOrDefault(o => o.Name == "stage")?.Value;
+
+        // 認証は最終実行時（ボタン押下）にも再評価するが、許可外にはボタンすら出さない。
+        var context = ContextOf(command, $"/stage {action}");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        switch (action)
+        {
+            case "status":
+            case "withdrawal":
+                {
+                    await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+                    var result = await _stageGateHandler
+                        .HandleAsync(ContextOf(command, $"/stage {action}"))
+                        .ConfigureAwait(false);
+                    await command.FollowupAsync(StageResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+                    return;
+                }
+
+            case "promote":
+            case "demote":
+                {
+                    // 遷移先が無い・範囲外なら実行しない（Discord 側の 0〜3 制約に加え防御的に確認）。
+                    if (stageValue is not (long or int) || !TryStage(stageValue, out var target))
+                    {
+                        await command.RespondAsync(
+                            "promote/demote には遷移先の段階（0〜3）を指定してください。", ephemeral: true).ConfigureAwait(false);
+                        return;
+                    }
+
+                    var isPromote = action == "promote";
+                    var button = (isPromote ? StagePromoteButtonPrefix : StageDemoteButtonPrefix) + target;
+                    var builder = new ComponentBuilder().WithButton(
+                        isPromote ? $"Stage {target} へ昇格する" : $"Stage {target} へ差し戻す",
+                        button,
+                        // 昇格は実弾方向のため危険色、差し戻しは安全方向のため Primary。
+                        isPromote ? ButtonStyle.Danger : ButtonStyle.Primary);
+
+                    await command.RespondAsync(
+                        isPromote
+                            ? $"本当に Stage {target} へ昇格しますか？（実弾方向の段階前進です）"
+                            : $"Stage {target} へ差し戻しますか？",
+                        components: builder.Build(),
+                        ephemeral: true).ConfigureAwait(false);
+                    return;
+                }
+
+            default:
+                await command.RespondAsync("不明な操作です。", ephemeral: true).ConfigureAwait(false);
+                return;
+        }
+    }
+
+    // Discord の整数オプションは long で届く。0〜3 のみ受け付ける。
+    private static bool TryStage(object? value, out int stage)
+    {
+        stage = value switch
+        {
+            long l => (int)l,
+            int i => i,
+            _ => -1,
+        };
+        return stage is >= 0 and <= 3;
+    }
+
     // 確認ボタン押下 → 起動は確認フレーズのモーダルを出す。解除はそのまま実行する
     // （詳細設計07:「解除のみ確認ステップを追加」＝起動はフレーズまで要求する）。
     private async Task OnButtonAsync(SocketMessageComponent component)
@@ -258,8 +370,31 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 }
 
             default:
+                // FR-20, ADR-0008: 段階遷移の確認ボタン（CustomId に遷移先を載せる）。押下で promote/demote を実行する。
+                // 認証はハンドラ側で再評価される（押下者のすり替え防止）。二重押下はボタン無効化＋Risk 側連番検証で弾く。
+                await OnStageButtonAsync(component).ConfigureAwait(false);
                 return;
         }
+    }
+
+    // FR-20, UC-06: 段階遷移確認ボタンの押下。CustomId のプレフィックスで昇格/差し戻しを判別し、末尾の遷移先を復元する。
+    private async Task OnStageButtonAsync(SocketMessageComponent component)
+    {
+        var customId = component.Data.CustomId;
+        string? raw = null;
+        if (customId.StartsWith(StagePromoteButtonPrefix, StringComparison.Ordinal))
+            raw = $"/stage promote {customId[StagePromoteButtonPrefix.Length..]}";
+        else if (customId.StartsWith(StageDemoteButtonPrefix, StringComparison.Ordinal))
+            raw = $"/stage demote {customId[StageDemoteButtonPrefix.Length..]}";
+
+        if (raw is null)
+            return; // 未知のボタン（他機能）。
+
+        await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _stageGateHandler
+            .HandleAsync(ContextOf(component, raw))
+            .ConfigureAwait(false);
+        await DisableComponentsAsync(component, StageResponseTextOf(result)).ConfigureAwait(false);
     }
 
     // 確認フレーズの入力 → 最終実行。認証はハンドラ側で再評価される。
@@ -289,6 +424,13 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     // FR-10, UC-07: 一時停止系（pause/resume/status）の結果文言。拒否時は理由を出さず一般化する。
     // status は Result を持たないため Message（整形済み状態テキスト）をそのまま表示する。
     private static string PauseResponseTextOf(PauseCommandResult result) =>
+        result.WasExecuted
+            ? result.Message
+            : "この操作は実行されませんでした（許可されていません）。";
+
+    // FR-20, UC-06: 段階ゲート系（status/promote/demote/withdrawal）の結果文言。拒否時は理由を出さず一般化する。
+    // 実行済み（照会・撤退評価・遷移受理/422 拒否）はハンドラが組んだ整形済み Message をそのまま表示する。
+    private static string StageResponseTextOf(StageGateCommandResult result) =>
         result.WasExecuted
             ? result.Message
             : "この操作は実行されませんでした（許可されていません）。";
