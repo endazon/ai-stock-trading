@@ -5,7 +5,7 @@ import type { User } from 'oidc-client-ts';
 import { AuthContext } from '@foundation/auth/AuthContext';
 import type { AuthState } from '@foundation/auth/AuthContext';
 
-// SC-03, FR-10, FR-20, UC-07, IADR-0009/0035/0084: 統制状態参照画面のアクセス制御（利用者 trading-owner 限定＋存在秘匿）。
+// SC-03, FR-10, FR-20, UC-06, IADR-0009/0035/0084: 統制状態参照画面のアクセス制御（利用者 trading-owner 限定＋存在秘匿）。
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 

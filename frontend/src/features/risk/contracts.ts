@@ -1,4 +1,4 @@
-// FR-10, FR-13, FR-19, FR-20, UC-06, UC-07, IADR-0084: RiskManagementService `/risk-controls/*`（OwnerOnly）の
+// FR-10, FR-13, FR-19, FR-20, UC-06, IADR-0084: RiskManagementService `/risk-controls/*`（OwnerOnly）の
 // 応答型と数値 enum の表示ラベル写像。SC-02（リスク設定）と SC-03（統制状態参照）が共有する。
 // バックエンド（Risk Worker）は HTTP 応答に JsonStringEnumConverter を設定していないため enum は「数値」で届く。
 // フロントは数値→ラベルの写像を持ち、未知値は安全側フォールバック表示にする（画面を壊さない・fail-safe）。

@@ -2,7 +2,7 @@
 title: 作業仕様書 — フロントエンド T1 残スライス（FR-13 リスク設定画面・#20 承認/統制状態参照画面）
 type: work
 status: In progress
-related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, UC-07, SC-02, SC-03, ADR-0007, ADR-0008, ADR-0009]
+related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, SC-02, SC-03, ADR-0007, ADR-0008, ADR-0009]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -33,7 +33,7 @@ related_specs:
 - **1b（FR-13/FR-19/FR-20）リスク設定画面（SC-02・素案）**: リスク管理サービスの設定を利用者（`trading-owner`）が閲覧し、
   **リスク上限（`RiskLimitSettings` の 8 項目）** を変更する。ガード（`Guard`）・段階（`Stage`）は参照表示に留める（変更は後続）。
   変更履歴（`SettingsChangeEntry[]`）を新しい順に表示する。
-- **1c（FR-10/FR-20/UC-06/UC-07）承認・統制状態参照画面（SC-03・素案）**: 3 統制（kill switch・日次損失ロックアウト・一時停止）
+- **1c（FR-10/FR-20/UC-06）承認・統制状態参照画面（SC-03・素案）**: 3 統制（kill switch・日次損失ロックアウト・一時停止）
   の現況、運用段階、当日損益・上限使用率・保有ポジションを表示し、段階ゲート（現段階・設定・遷移履歴・昇格評価・撤退評価）を
   参照表示する。**参照中心**。破壊的操作（pause/resume・kill switch・段階遷移承認）は **#165 の Discord Bot 側と役割分担** し、
   本画面には置かない（安全既定）。
@@ -107,5 +107,5 @@ related_specs:
 ## 計画環流
 
 計画リポジトリ `05_screens/` は空（SC 未定義）。本作業は **SC-02（リスク設定）・SC-03（統制状態参照）** を素案として実装し、
-`/plan-feedback`（project-planning#31 で SC 定義を環流中）で確定を提案する。未確定部分は確定済み契約の範囲で実装し、素案は
+`/plan-feedback`（project-planning#33・#31 後続 で SC-02/SC-03 の確定を提案）で確定を提案する。未確定部分は確定済み契約の範囲で実装し、素案は
 draft 継続とする。

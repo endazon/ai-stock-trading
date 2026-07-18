@@ -2,7 +2,7 @@
 title: 画面仕様書（素案） — SC-03 承認・統制状態参照画面
 type: screen
 status: Draft
-related_ids: [SC-03, FR-10, FR-20, UC-06, UC-07, ADR-0008, ADR-0009]
+related_ids: [SC-03, FR-10, FR-20, UC-06, ADR-0008, ADR-0009]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -17,8 +17,8 @@ related_specs:
 
 # SC-03 承認・統制状態参照画面【素案】
 
-> 起点: **FR-10**（取引統制）、**FR-20**（段階ゲート）、**UC-06**（設定変更・一時停止・緊急停止）、**UC-07**（稼働状態の確認）。
-> 計画リポジトリ `05_screens/` は空のため SC-03 は素案（project-planning#31 で環流）。データ源は RiskManagementService
+> 起点: **FR-10**（取引統制）、**FR-20**（段階ゲート）、**UC-06**（設定変更・一時停止・緊急停止。本画面は当該統制の状態を閲覧する参照面）。
+> 計画リポジトリ `05_screens/` は空のため SC-03 は素案（project-planning#33・#31 後続 で環流）。データ源は RiskManagementService
 > `/risk-controls/status`・`/risk-controls/stage-gate`（OwnerOnly）。**参照中心**の画面。
 
 ## 画面の位置づけ

@@ -2,7 +2,7 @@
 title: IADR-0084 FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, UC-07, SC-02, SC-03, ADR-0007, ADR-0008, ADR-0009]
+related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, SC-02, SC-03, ADR-0007, ADR-0008, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -24,8 +24,17 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **FR-13**（利用者が設定を変更できる）、**FR-10/FR-19/FR-20**（リスク統制・相場操縦ガード・段階ゲート）、
-  **UC-06**（設定変更・一時停止・緊急停止）、**UC-07**（稼働状態の確認）、ADR-0007（Keycloak・変更は利用者のみ）、
-  ADR-0008（段階的展開）、ADR-0009（取引統制の優先順位）
+  **UC-06**（設定変更・一時停止・緊急停止。SC-03 の統制状態参照は本 UC で変更する統制の**閲覧面**として位置づける）、
+  ADR-0007（取引ガード・信用取引）、ADR-0008（段階ゲート・バックテスト）、ADR-0009（取引統制の優先順位・既存慣行 ID）
+- **計画の未定義・未検証参照（計画環流対象）**:
+  - 計画リポジトリ `05_screens/` は空で SC-02/SC-03 は未定義（素案）。
+  - 「稼働状態の確認」に対応する UC は計画に未定義。計画 **UC-07 は「取引履歴・判断根拠の参照」**（RAG・別概念）であり、
+    当初 SC-03 の起点に誤って UC-07 を挙げていたのを **UC-06 の閲覧面**へ是正した。稼働状態確認 UC の新設を計画へ提案する。
+  - 計画 **ADR-0009** は既存バックエンド（`RiskStatusService`/`RiskControlEndpoints`）および `IADR-0075` が「取引統制の優先順位」
+    の根拠として参照する既存慣行 ID だが、pin 済み planning submodule の `07_adr/` には ADR-0001〜0008 しか存在せず ADR-0009 の
+    ファイルは未在（plan_refs には含めない）。ADR-0009 の実在・採番確認を計画へ提案する。
+  - 上記は `/plan-feedback` で **project-planning#33**（#31 後続）へ環流済み（SC-02/SC-03 の採番確定・UC-07 誤参照の是正・
+    ADR-0009 の実在確認を提案）。
 - 対象 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)（T1 残スライス 1b/1c）
 - 関連する実装仕様書: [作業仕様](../specs/20260718_106_frontend-risk-settings-and-controls.md)、
   画面 [SC-02 リスク設定](../screens/20260718_SC-02_risk-settings.md)・[SC-03 統制状態参照](../screens/20260718_SC-03_control-status.md)
@@ -53,7 +62,7 @@ T1 残スライスは **1b: FR-13 個別設定**と **1c: #20 承認・統制状
 `sc01-settings`（FR-17・ConfigurationService）に対し、本スライスは 2 つの feature を新設する:
 
 - `sc02-risk-settings`（route `settings/risk`・nav「リスク設定」）: FR-13/FR-19/FR-20。RiskManagementService `/risk-controls/settings`。
-- `sc03-controls`（route `controls`・nav「統制状態」）: FR-10/FR-20/UC-06/UC-07。`/risk-controls/status` ＋ `/risk-controls/stage-gate`。
+- `sc03-controls`（route `controls`・nav「統制状態」）: FR-10/FR-20/UC-06。`/risk-controls/status` ＋ `/risk-controls/stage-gate`。
 
 根拠: 消費するサービス・認可・失敗縮退が SC-01 と独立で、`FeatureModule`（1 画面 = 1 モジュール）の粒度に沿う。単一の巨大
 コンポーネントに畳むより、所有サービス単位で分離した方がテスト・保守・存在秘匿の出し分けが明快。SC-01 画面仕様書の「同画面へ

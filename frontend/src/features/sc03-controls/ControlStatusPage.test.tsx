@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { ApiError } from '@foundation/api/ApiError';
 
-// SC-03, FR-10, FR-20, UC-06, UC-07, IADR-0084: 承認・統制状態参照画面（参照専用）の振る舞い。
+// SC-03, FR-10, FR-20, UC-06, IADR-0084: 承認・統制状態参照画面（参照専用）の振る舞い。
 // データ取得は apiFetch をモックし、実 BFF 疎通に依存しない。破壊的操作の UI を持たないことも検証する。
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
@@ -125,6 +125,21 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
     });
     render(<ControlStatusPage />);
     expect(await screen.findByText('統制状態は利用できません。')).toBeInTheDocument();
+  });
+
+  it('renders unknown enum values and a zero limit safely (fail-safe UI)', async () => {
+    // 未知の activeControl(9) はラベル写像テーブルに無く「不明(9)」へ、上限 0 の使用率は「—」へ安全側に倒す。
+    mocks.apiFetch.mockImplementation(async (path: string) => {
+      if (path === '/risk-controls/stage-gate') return STAGE_GATE;
+      return { ...STATUS, activeControl: 9, maxOpenPositions: 0, openPositionCount: 0 };
+    });
+    render(<ControlStatusPage />);
+    await screen.findByRole('heading', { name: '統制状態' });
+    expect(screen.getByText('不明(9)')).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: '上限使用率' });
+    // 保有銘柄数の上限 0 → 使用率は「—」（0 除算を安全側に倒す）。
+    const positionRow = within(table).getByText('保有銘柄数').closest('tr')!;
+    expect(within(positionRow).getByText('—')).toBeInTheDocument();
   });
 
   it('shows a triggered withdrawal assessment as an alert with reason label', async () => {

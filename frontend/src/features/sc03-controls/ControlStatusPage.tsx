@@ -14,7 +14,7 @@ import {
   withdrawalReasonLabel,
 } from '../risk/contracts';
 
-// SC-03, FR-10, FR-20, UC-06, UC-07, ADR-0008, ADR-0009, IADR-0084: 承認・統制状態参照画面（参照専用）。
+// SC-03, FR-10, FR-20, UC-06, ADR-0008, ADR-0009, IADR-0084: 承認・統制状態参照画面（参照専用）。
 // データ源は BFF `/bff/risk-controls/status`・`/bff/risk-controls/stage-gate`（RiskManagementService・OwnerOnly）。
 // 破壊的操作（pause/resume・kill switch・段階遷移承認）は #165 の Discord Bot 側と役割分担し、本画面には置かない
 // （統制入口の一元化・安全既定）。統制状態・段階ゲートの各領域は独立に縮退する（一方の失敗が他方を巻き込まない）。
@@ -59,7 +59,7 @@ export function ControlStatusPage() {
     <section>
       <h1>統制状態</h1>
       <p>
-        取引統制（緊急停止・日次損失ロックアウト・一時停止）と運用段階の現況を参照します（UC-07）。統制の変更・段階の承認は
+        取引統制（緊急停止・日次損失ロックアウト・一時停止）と運用段階の現況を参照します（UC-06 の統制状態の閲覧面）。統制の変更・段階の承認は
         Discord からのみ行えます（本画面は参照専用）。
       </p>
 
