@@ -21,7 +21,9 @@ public sealed class TradeDecisionService(
     IClock clock,
     ILogger<TradeDecisionService> logger,
     IRetrievalContextProvider? retrieval = null,
-    DecisionOrchestrationOptions? options = null)
+    DecisionOrchestrationOptions? options = null,
+    IProfitabilityAssumptionsProvider? profitability = null,
+    ProfitabilityGateOptions? profitabilityOptions = null)
 {
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
@@ -29,6 +31,13 @@ public sealed class TradeDecisionService(
 
     // FR-08, IADR-0072: RAG 取得ポート。未指定＝NoOp（常に空＝参考情報なし＝現行動作）。実結線は Worker が opt-in で差し替える。
     private readonly IRetrievalContextProvider _retrieval = retrieval ?? new NoOpRetrievalContextProvider();
+
+    // FR-17, IADR-0076: 採算費用見積りの供給口。未指定＝NoOp（常に null＝未解決）。実見積りは Worker が opt-in で差し替える。
+    private readonly IProfitabilityAssumptionsProvider _profitability =
+        profitability ?? new NoOpProfitabilityAssumptionsProvider();
+
+    // FR-17, IADR-0076: 採算評価ゲートの構成。未指定＝Default（無効＝現行挙動）。
+    private readonly ProfitabilityGateOptions _profitabilityOptions = profitabilityOptions ?? ProfitabilityGateOptions.Default;
 
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
     public Task<TradeDecisionMade?> DecideAsync(
@@ -99,6 +108,14 @@ public sealed class TradeDecisionService(
             return null;
         }
 
+        // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（opt-in・既定無効＝現行挙動）。
+        // 有効時は往復の概算費用に対して想定利益が最小期待利益しきい値を満たすかを評価し、採算不成立・費用見積り不能は Hold に倒す。
+        if (_profitabilityOptions.Enabled &&
+            !await IsProfitableAsync(trigger, decision, quantity, cancellationToken).ConfigureAwait(false))
+        {
+            return null; // 採算不成立・見積り不能（安全側で見送り）
+        }
+
         // FR-03/04, IADR-0035: 損切り価格を算出して発注意図に載せる（#63 台帳へ永続化し市場監視の損切り検知に実値供給）。
         // ロングは参照価格より下、ショートは上に損切りラインを置く（StopLossEvaluator と対称）。
         var stopLossPrice = side == TradeSide.Buy
@@ -118,6 +135,45 @@ public sealed class TradeDecisionService(
             stopLossPrice);
 
         return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
+    }
+
+    // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価。数量確定後の約定代金に対する往復概算費用と最小期待利益倍率を
+    // 設定サービス由来の見積り（_profitability）から取り、想定利益（LLM 由来・想定値幅 × 数量）と ProfitabilityGate で突き合わせる。
+    // 採算成立（Viable）のみ true。採算不成立（NotViable）・費用見積り不能（Indeterminate＝前提条件未解決・実額未登録）は false（Hold）。
+    // fail-safe: 見積り取得の例外は「見積り不能」に縮退して false（安全側）へ倒す。キャンセルは伝播させる。
+    private async Task<bool> IsProfitableAsync(
+        DecisionTrigger trigger, LlmDecision decision, decimal quantity, CancellationToken cancellationToken)
+    {
+        var notional = decision.ReferencePrice * quantity;
+        TradeCostAssessment? assessment;
+        try
+        {
+            assessment = await _profitability.AssessAsync(trigger.Market, notional, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "採算費用の見積り取得に失敗しました（採算不能として見送り）: {Symbol}", trigger.Symbol);
+            assessment = null;
+        }
+
+        var expectedGrossProfit = decision.ExpectedProfitPerShare * quantity;
+        var verdict = ProfitabilityGate.Evaluate(
+            expectedGrossProfit,
+            assessment?.RoundTripCost,
+            _profitabilityOptions.DecisionCostJpy,
+            assessment?.MinimumProfitMultiple ?? 0m);
+
+        if (verdict == ProfitabilityVerdict.Viable)
+        {
+            return true;
+        }
+
+        // FR-11: 採算見送りの根拠（想定利益・往復費用・倍率・版・判定）を記録する。
+        logger.LogInformation(
+            "採算評価により見送り: {Symbol} verdict={Verdict} expectedProfit={ExpectedProfit} roundTripCost={RoundTripCost} multiple={Multiple} decisionCost={DecisionCost} assumptionsVersion={Version}",
+            trigger.Symbol, verdict, expectedGrossProfit, assessment?.RoundTripCost, assessment?.MinimumProfitMultiple,
+            _profitabilityOptions.DecisionCostJpy, assessment?.AssumptionsVersion);
+        return false;
     }
 
     // FR-08, IADR-0072 決定4: RAG 取得の fail-safe ラッパ。取得失敗（例外・遅延）は「文脈なし」に縮退し判断を継続する。

@@ -137,4 +137,28 @@ public class TradeDecisionPromptBuilderTests
 
         prompt.Should().NotContain("参考情報（ナレッジベース）");
     }
+
+    // FR-17, IADR-0076: 本判断プロンプトは採算評価の文脈と expectedProfitPerShare を出力スキーマに含める。
+    [Fact]
+    public void 本判断プロンプトは採算評価と想定利益フィールドを出力する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain("採算評価（費用控除後の期待利益）");
+        prompt.Should().Contain("expectedProfitPerShare");
+    }
+
+    // FR-17, IADR-0076: 一次スクリーニングは費用統制のため採算評価節を含めない（本判断のみに載せる）。
+    [Fact]
+    public void スクリーニングプロンプトは採算評価節を含まない()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().NotContain("採算評価（費用控除後の期待利益）");
+        prompt.Should().NotContain("expectedProfitPerShare");
+    }
 }
