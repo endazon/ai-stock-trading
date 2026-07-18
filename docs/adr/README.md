@@ -106,3 +106,4 @@
 | IADR-0068 | 実市況は Finnhub の HTTP 層を共有物へ抽出して供給し、構成で opt-in・既定は no-op のままとする | Accepted |
 | IADR-0069 | KB 保存・RAG 取得は共有クライアントの疎な境界で platform 文書管理／検索を包み、既定 no-op・構成で opt-in とする | Accepted |
 | IADR-0070 | 段階ゲートの遷移を追記専用台帳＋単一行実績で永続化し、承認は OwnerOnly エンドポイント、撤退は kill switch 自動起動に結線する | Accepted |
+| IADR-0073 | 情報収集の実 KB 保存 opt-in はデプロイ面（compose/helm/.env.example）への env 露出のみで開け、既定は空＝no-op のまま据え置く | Accepted |
