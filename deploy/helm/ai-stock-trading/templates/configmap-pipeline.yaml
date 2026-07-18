@@ -1,0 +1,15 @@
+{{- /* ADR-0001, IADR-0077, #22: 取引パイプラインの宣言的バインディング（files/pipeline.json）を
+       ConfigMap としてクラスタへ公開する（構成の正 = GitOps 適用点）。ArgoCD がチャート同期時に適用し、
+       Git revert がロールバックになる。自己申告エンドポイント（#22 後続 PR）が本 ConfigMap をマウントして
+       実効構成（有効な段）を照会する。checksum/pipeline アノテーションで宣言変更時に購読側をロールアウトする。 */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.namespace.name }}-pipeline
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/part-of: ai-stock-trading
+    app.kubernetes.io/component: pipeline-binding
+data:
+  pipeline.json: |-
+{{ .Files.Get "files/pipeline.json" | indent 4 }}

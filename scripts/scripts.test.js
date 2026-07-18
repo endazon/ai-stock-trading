@@ -221,4 +221,18 @@ ok('check-doc-links: planningPopulated は planning/ 不在で false', () => {
   assert.strictEqual(planningPopulated(root), false);
 });
 
+// --- validate-pipeline-config: 実 pipeline.json の契約テスト -------------------
+// ADR-0001, IADR-0077, #22: 取引パイプラインの宣言（deploy/helm/ai-stock-trading/files/pipeline.json）が
+// 検証器（V1〜V6）に合格することを回帰テストとして固定する。宣言が壊れた・接続性/循環違反へ退行した場合に
+// CI（node scripts/scripts.test.js）と実ファイル検証ステップの両方で検知する。
+const pathPc = require('path');
+const PIPELINE_JSON = pathPc.join(__dirname, '..', 'deploy', 'helm', 'ai-stock-trading', 'files', 'pipeline.json');
+ok('validate-pipeline-config: 実 pipeline.json が検証器に合格する', () => {
+  const out = execSync(
+    `node ${JSON.stringify(pathPc.join(__dirname, 'validate-pipeline-config.js'))} ${JSON.stringify(PIPELINE_JSON)}`,
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  assert.match(out, /^OK: /m, `検証器が OK を返すべき（実出力: ${out}）`);
+});
+
 process.stdout.write(`\n✓ ${passed} tests passed\n`);
