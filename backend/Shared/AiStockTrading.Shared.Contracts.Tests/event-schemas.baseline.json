@@ -1,0 +1,92 @@
+{
+  "AssumptionsChanged": {
+    "Actor": "String",
+    "ChangedAt": "DateTimeOffset",
+    "Reason": "String",
+    "Version": "Int32"
+  },
+  "CostThresholdReached": {
+    "Category": "String",
+    "Month": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Percent": "Decimal",
+    "State": "String"
+  },
+  "InformationCollected": {
+    "CollectedAt": "DateTimeOffset",
+    "EventId": "Guid",
+    "ItemCount": "Int32"
+  },
+  "LlmCostIncurred": {
+    "Amount": "Decimal",
+    "At": "DateTimeOffset"
+  },
+  "OrderApproved": {
+    "ApprovedAt": "DateTimeOffset",
+    "ApprovedQuantity": "Int32",
+    "DecisionId": "Guid",
+    "Intent": "OrderIntent"
+  },
+  "OrderCancelled": {
+    "CancelledAt": "DateTimeOffset",
+    "DecisionId": "Guid",
+    "OrderId": "String",
+    "Reason": "String"
+  },
+  "OrderExecuted": {
+    "AveragePrice": "Decimal",
+    "DecisionId": "Guid",
+    "ExecutedAt": "DateTimeOffset",
+    "FilledQuantity": "Int32",
+    "OrderId": "String",
+    "Status": "OrderStatus"
+  },
+  "OrderModified": {
+    "DecisionId": "Guid",
+    "ModifiedAt": "DateTimeOffset",
+    "OrderId": "String",
+    "PreviousPrice": "Decimal",
+    "PreviousQuantity": "Int32",
+    "Price": "Decimal",
+    "Quantity": "Int32",
+    "Reason": "String"
+  },
+  "OrderRejected": {
+    "DecisionId": "Guid",
+    "Intent": "OrderIntent",
+    "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
+    "RejectedAt": "DateTimeOffset"
+  },
+  "PriceMovementDetected": {
+    "BaselinePrice": "Decimal",
+    "ChangeRatio": "Decimal",
+    "DetectedAt": "DateTimeOffset",
+    "EventId": "Guid",
+    "Market": "Market",
+    "Price": "Decimal",
+    "Symbol": "String"
+  },
+  "ReportConfirmed": {
+    "Actor": "String",
+    "AssumptionsVersion": "Int32",
+    "ConfirmedAt": "DateTimeOffset",
+    "Kind": "String",
+    "PeriodKey": "String"
+  },
+  "StopLossTriggered": {
+    "DetectedAt": "DateTimeOffset",
+    "EventId": "Guid",
+    "Market": "Market",
+    "PositionSide": "TradeSide",
+    "Price": "Decimal",
+    "Quantity": "Int32",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String"
+  },
+  "TradeDecisionMade": {
+    "DecidedAt": "DateTimeOffset",
+    "DecisionId": "Guid",
+    "Intent": "OrderIntent",
+    "Rationale": "String"
+  }
+}
