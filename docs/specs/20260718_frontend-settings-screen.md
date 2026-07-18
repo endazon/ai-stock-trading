@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 — フロントエンド新設（frontend/）と設定画面（FR-17 全体前提条件の閲覧/変更）第1スライス
 type: work
-status: In progress
+status: Done（第1スライス。残スライスは #106 に別掲）
 related_ids: [FR-13, FR-17, UC-06, ADR-0001, ADR-0007]
 issue: 106
 author: endazon (with Claude Code)
@@ -60,15 +60,18 @@ related_specs:
   fxSpreadRatio, minimumExpectedProfitMultiple, costLimits:{total,llm,infrastructure,data} }, version, isResolved }`
 - `AssumptionsChangeEntry`: `{ actor, reason, changedAt, version, before?, after? }`
 
-## 受け入れ基準（テストへ写像）
+## 受け入れ基準（テストへ写像・第1スライス完了）
 
-- [ ] `frontend/` が unit-template 規約で作成され、`npm run typecheck`／`npm run lint`／`npm run test` が緑（自己完結・platform 非依存）
-- [ ] 設定画面が `trading-owner` に許可され、権限外は `NotFound`（存在秘匿）で構成 API を呼ばない
-- [ ] 現在の前提条件＋version が描画される
-- [ ] 変更フォーム送信が PUT `/assumptions` を `{assumptions, expectedVersion, reason}` で呼ぶ（理由未入力は送信不可）
-- [ ] 競合（409）・検証エラー（400）でメッセージを表示し、破壊的な自動再試行をしない
-- [ ] 変更履歴が新しい順に一覧される。履歴取得失敗時はその領域のみ縮退する
-- [ ] `ci.yml` の既存ジョブが不変で、`frontend` ジョブが追加されている
+- [x] `frontend/` が unit-template 規約で作成され、`npm run typecheck`／`npm run lint`／`npm run test`（12/12）が緑（自己完結・platform 非依存）。CI `frontend` ジョブでも緑。
+- [x] 設定画面が `trading-owner` に許可され、権限外は `NotFound`（存在秘匿）で構成 API を呼ばない（`access.test.tsx`）
+- [x] 現在の前提条件＋version が描画される（`SettingsPage.test.tsx`）
+- [x] 変更フォーム送信が PUT `/assumptions` を `{assumptions, expectedVersion, reason}` で呼ぶ（理由未入力は送信不可）
+- [x] 空欄・非数値の財務パラメータは保存を無効化し警告する（黙って 0 送信しない・安全既定。レビュー 🟡 対応）
+- [x] 競合（409）・検証エラー（400）でメッセージを表示し、破壊的な自動再試行をしない
+- [x] 変更履歴が新しい順に一覧される。履歴取得失敗時はその領域のみ縮退する
+- [x] `ci.yml` の既存ジョブが不変で、`frontend` ジョブが追加されている
+
+> 後続スライスの受け入れ基準（FR-13 設定・#20 承認/統制状態参照・Playwright E2E・platform 合成点登録・SC-01 確定反映）は #106 に別掲。
 
 ## 安全既定（fail-safe）
 
