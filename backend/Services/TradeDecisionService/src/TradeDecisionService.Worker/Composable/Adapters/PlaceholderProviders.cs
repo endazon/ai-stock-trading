@@ -44,8 +44,9 @@ internal sealed class PlaceholderDailyPolicyProvider(ILogger<PlaceholderDailyPol
     }
 }
 
-// FR-10: 保有・段階/日次残枠の実データ（#12/#13）が未実装のため、TradingDefaults ＋残枠を初期資金として返す。
-// 方針プレースホルダにより実際には呼ばれない（取引しないため）が、安全な既定値を用意する。
+// FR-10, IADR-0029: 実残枠はリスク管理（#12 台帳）の GET /risk-controls/sizing-context を照会する HttpSizingContextProvider が供給する。
+// 本プレースホルダは RiskManagement:BaseUrl 未設定時のフォールバックで、TradingDefaults ＋残枠を初期資金として返す
+// （方針プレースホルダにより実際には呼ばれないが、安全な既定値を用意する）。
 internal sealed class PlaceholderSizingContextProvider(ILogger<PlaceholderSizingContextProvider> logger)
     : ISizingContextProvider
 {

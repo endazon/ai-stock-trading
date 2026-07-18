@@ -2,7 +2,7 @@ namespace AiStockTrading.MarketMonitor.Application.State;
 
 // FR-03, FR-11, FR-13, ADR-0007: 監視設定（監視銘柄）変更履歴の 1 レコード。
 // 「変更は利用者のみ・変更履歴を記録する」（ADR-0007）を満たすため、アクター・種別・理由・前後値・日時を残す。
-// Risk の SettingsChangeEntry（#17/ADR-0007）をミラーする（サービスは履歴ポートを自己所有する）。
+// Risk の SettingsChangeEntry（ADR-0007）をミラーする（サービスは履歴ポートを自己所有する）。
 public record MonitorSettingsChangeEntry(
     string Actor,
     MonitorSettingsChangeType ChangeType,
