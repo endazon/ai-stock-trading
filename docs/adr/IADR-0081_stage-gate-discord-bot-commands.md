@@ -85,6 +85,7 @@ demote は安全方向だが、手動の段階変更で監査に残る操作の�
 
 - **Risk・`Shared.Contracts` 無改修**: HTTP 呼び出しのみ。変更は NotificationService 配下に閉じる（#167 が Risk/Audit、
   #106 が frontend を並行で触るための境界）。
+- **履歴のペイロード**: `/stage status` は `GET /risk-controls/stage-gate` の応答（`StageGateStatus.History` は追記専用台帳の**全件**）を受け、表示は直近 `RecentHistoryCount` 件のみに絞る。低頻度操作のため実害は小さいが、遷移回数の積み上げに対し Risk→Bot 間のペイロード・デシリアライズが線形に増える。Risk 側の絞り込み（`GET /risk-controls/stage-gate/history?limit=N` 相当）は **Risk 無改修の本スコープ外**であり、必要になった時点で別 issue として起票する（本 PR では対応しない）。
 - **非対象**: 実 Discord Gateway 接続・実 Keycloak 認可の疎通確認（CI で外部 SaaS へは張れない）。後続 E2E（#82 系）で検証する。
   Gateway アダプタ（`DiscordNetBotGateway`）の `/stage` 配線は CI では単体テストせず、Application ハンドラ・パーサ・
   HTTP アダプタを fake handler で全数テストする（pause 先例と同じ切り分け）。

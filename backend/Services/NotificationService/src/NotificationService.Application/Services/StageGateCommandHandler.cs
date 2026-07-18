@@ -64,7 +64,10 @@ public sealed class StageGateCommandHandler(
                 }
 
             default:
-                logger.LogWarning("段階ゲート系以外のコマンドを拒否しました（Actor={Actor}・Kind={Kind}）。", auth.Actor, command.Kind);
+                // 他系（kill switch/pause 等）のほか、範囲外の遷移先・typo でパーサが Unknown に丸めた場合もここを通る。
+                logger.LogWarning(
+                    "段階ゲート系として解釈できないコマンドを拒否しました（Actor={Actor}・Kind={Kind}・未知/範囲外/他系）。",
+                    auth.Actor, command.Kind);
                 return StageGateCommandResult.Denied("段階ゲート系コマンドではない");
         }
     }
