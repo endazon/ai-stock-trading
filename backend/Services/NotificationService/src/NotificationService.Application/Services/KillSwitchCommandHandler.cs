@@ -33,12 +33,14 @@ public sealed class KillSwitchCommandHandler(
             return KillSwitchCommandResult.Denied(auth.Reason);
         }
 
-        // 閂2: コマンド解析。未知は実行しない。
+        // 閂2: コマンド解析。kill switch 以外（未知・pause/resume/status）は本ハンドラでは実行しない。
+        // pause 系は PauseCommandHandler が扱う。ここで種別を明示的に絞ることで、非 kill switch 種別が
+        // 末尾の「起動でなければ解除」分岐へ落ちて誤って解除されることを構造的に防ぐ。
         var command = BotCommandParser.Parse(context.RawCommand);
-        if (command.Kind == BotCommandKind.Unknown)
+        if (command.Kind is not (BotCommandKind.KillSwitchEngage or BotCommandKind.KillSwitchDisengage))
         {
-            logger.LogWarning("未知のコマンドを拒否しました（Actor={Actor}）。", auth.Actor);
-            return KillSwitchCommandResult.Denied("未知のコマンド");
+            logger.LogWarning("kill switch 以外のコマンドを拒否しました（Actor={Actor}・Kind={Kind}）。", auth.Actor, command.Kind);
+            return KillSwitchCommandResult.Denied("kill switch コマンドではない");
         }
 
         // 閂3: 起動は確認フレーズ必須（未設定なら拒否）。解除には要求しない。

@@ -25,17 +25,24 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     private const string KillSwitchModalId = "ast-killswitch-modal";
     private const string KillSwitchPhraseInputId = "ast-killswitch-phrase";
 
+    // FR-10, ADR-0009: 一時停止/再開の確認ボタン（確認フレーズは求めない＝pause は可逆のため）。
+    private const string PauseConfirmButtonId = "ast-pause-confirm";
+    private const string ResumeConfirmButtonId = "ast-resume-confirm";
+
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
+    private readonly PauseCommandHandler _pauseHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
     public DiscordNetBotGateway(
         KillSwitchCommandHandler handler,
+        PauseCommandHandler pauseHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
         _handler = handler;
+        _pauseHandler = pauseHandler;
         _options = options;
         _logger = logger;
 
@@ -94,9 +101,27 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 isRequired: false)
             .Build();
 
+        // FR-10, ADR-0009: 一時停止（pause）・再開（resume）・状態照会（status）。pause/resume は kill switch より
+        // 軽い統制で、確認ボタンのみ（確認フレーズは求めない）。status は表示専用。
+        var pause = new SlashCommandBuilder()
+            .WithName("pause")
+            .WithDescription("新規建てを一時停止します（手仕舞い・損切りは継続します）")
+            .Build();
+        var resume = new SlashCommandBuilder()
+            .WithName("resume")
+            .WithDescription("一時停止を解除します")
+            .Build();
+        var status = new SlashCommandBuilder()
+            .WithName("status")
+            .WithDescription("稼働状態（統制・段階・当日損益・上限使用率・ポジション）を表示します")
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(pause).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(resume).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(status).ConfigureAwait(false);
             _logger.LogInformation("スラッシュコマンドを登録しました（guild={GuildId}）。", guildId);
         }
         catch (Exception ex)
@@ -110,9 +135,25 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     // ここでは Risk を呼ばない。認証は最終実行時にも再評価する（ボタン押下者のすり替えを防ぐ）。
     private async Task OnSlashCommandAsync(SocketSlashCommand command)
     {
-        if (command.Data.Name != "killswitch")
-            return;
+        switch (command.Data.Name)
+        {
+            case "killswitch":
+                await OnKillSwitchSlashAsync(command).ConfigureAwait(false);
+                return;
+            case "pause":
+            case "resume":
+                await OnPauseSlashAsync(command, isResume: command.Data.Name == "resume").ConfigureAwait(false);
+                return;
+            case "status":
+                await OnStatusSlashAsync(command).ConfigureAwait(false);
+                return;
+            default:
+                return;
+        }
+    }
 
+    private async Task OnKillSwitchSlashAsync(SocketSlashCommand command)
+    {
         var isOff = command.Data.Options.Any(o => o.Name == "off" && o.Value is true);
 
         // 詳細設計07: 許可外の着信は無視しログのみ残す。ここで早期に弾き、ボタンすら出さない。
@@ -136,6 +177,42 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             isOff ? "本当に停止を解除しますか？" : "本当に全取引を停止しますか？",
             components: builder.Build(),
             ephemeral: true).ConfigureAwait(false);
+    }
+
+    // FR-10, ADR-0009: /pause・/resume → 確認ボタンを提示する（確認フレーズは求めない）。ここでは Risk を呼ばない。
+    // 認証は最終実行時（ボタン押下）にも再評価する（押下者のすり替えを防ぐ）。
+    private async Task OnPauseSlashAsync(SocketSlashCommand command, bool isResume)
+    {
+        var context = ContextOf(command, isResume ? "/resume" : "/pause");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        var builder = new ComponentBuilder().WithButton(
+            isResume ? "一時停止を解除する" : "新規建てを一時停止する",
+            isResume ? ResumeConfirmButtonId : PauseConfirmButtonId,
+            // pause は kill switch ほど重くない可逆操作のため Primary（危険色にしない）。
+            ButtonStyle.Primary);
+
+        await command.RespondAsync(
+            isResume ? "一時停止を解除しますか？" : "新規建てを一時停止しますか？（手仕舞い・損切りは継続します）",
+            components: builder.Build(),
+            ephemeral: true).ConfigureAwait(false);
+    }
+
+    // FR-10, UC-07, ADR-0009: /status → 参照のみ。認証を通過していれば現在状態を表示する（確認ステップ無し）。
+    private async Task OnStatusSlashAsync(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _pauseHandler
+            .HandleAsync(ContextOf(command, "/status"))
+            .ConfigureAwait(false);
+        await command.FollowupAsync(PauseResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
     }
 
     // 確認ボタン押下 → 起動は確認フレーズのモーダルを出す。解除はそのまま実行する
@@ -163,6 +240,20 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                         .ConfigureAwait(false);
                     // 押されたボタンは無効化し、結果をメッセージ編集で明示する（詳細設計07）。
                     await DisableComponentsAsync(component, ResponseTextOf(result)).ConfigureAwait(false);
+                    return;
+                }
+
+            case PauseConfirmButtonId:
+            case ResumeConfirmButtonId:
+                {
+                    // FR-10, ADR-0009: 確認ボタン押下で pause/resume を実行する（確認フレーズは無い）。
+                    // 認証はハンドラ側で再評価される（押下者のすり替え防止）。
+                    var isResume = component.Data.CustomId == ResumeConfirmButtonId;
+                    await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+                    var result = await _pauseHandler
+                        .HandleAsync(ContextOf(component, isResume ? "/resume" : "/pause"))
+                        .ConfigureAwait(false);
+                    await DisableComponentsAsync(component, PauseResponseTextOf(result)).ConfigureAwait(false);
                     return;
                 }
 
@@ -194,6 +285,13 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         result.WasExecuted
             ? result.Result!.Message
             : "この操作は実行されませんでした（許可・確認ステップを満たしていません）。";
+
+    // FR-10, UC-07: 一時停止系（pause/resume/status）の結果文言。拒否時は理由を出さず一般化する。
+    // status は Result を持たないため Message（整形済み状態テキスト）をそのまま表示する。
+    private static string PauseResponseTextOf(PauseCommandResult result) =>
+        result.WasExecuted
+            ? result.Message
+            : "この操作は実行されませんでした（許可されていません）。";
 
     private static async Task DisableComponentsAsync(SocketMessageComponent component, string text)
     {
