@@ -117,6 +117,11 @@
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Domain.Tests/TradeDecisionService.Domain.Tests.csproj" />
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Worker.Tests/TradeDecisionService.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/Bff/">
+    <!-- FR-14, IADR-0063 / IADR-0091: 例外3 の unit-owned BFF エンドポイント（platform BFF 合成点から参照）。 -->
+    <Project Path="Bff/AiStockTrading.Bff.Endpoints/AiStockTrading.Bff.Endpoints.csproj" />
+    <Project Path="Bff/AiStockTrading.Bff.Endpoints.Tests/AiStockTrading.Bff.Endpoints.Tests.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Contracts.Tests/AiStockTrading.Shared.Contracts.Tests.csproj" />
