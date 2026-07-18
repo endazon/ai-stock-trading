@@ -54,6 +54,15 @@ DELETE 本文転送・502/4xx/409 透過・匿名 401・`Authorization` 伝播�
 - 将来 BFF で AST 契約へ型付けしたくなった場合は本プロジェクトが AST の `AiStockTrading.Shared.Contracts` を
   参照すればよく、MSP は無変更（境界が AST 側に閉じる）。
 
+### 3. AST 単独 CI で振る舞いを固定するテストを同梱する（回帰バックストップ）
+
+プロジェクトが AST リポに常駐する以上、AST 側だけで変更された際の回帰は AST 自身の CI（test）で検知できる
+べきである（`docs/DEFINITION_OF_DONE.md`・受け入れ基準のテスト写像）。`AiStockTrading.Bff.Endpoints.Tests`
+（xUnit + TestServer）で 3 モジュールを最小ホストへ map し、後段スタブに対して **匿名 401・pass-through
+（ステータス/本文/`Authorization` 伝播/後段パス）・4xx 透過・502 縮退・DELETE 本文転送**を固定する（20 tests）。
+移設時点の「バイト等価」担保（MSP interim との diff）に加え、以後の AST 独自変更に対する機械的バックストップを持つ。
+MSP 側の `Platform.Bff.Tests` とは二重化になるが、単独 CI の独立性のため許容する。
+
 ## 影響・トレードオフ
 
 - **利点**: 例外3 の恒久像（ユニット所有 BFF）に一致し、AST の BFF が AST 側へ閉じる。MSP は合成点 1 行参照＋

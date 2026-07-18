@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- FR-14, IADR-0063 / IADR-0091: unit-owned BFF エンドポイント（pass-through）の振る舞いを AST 単独 CI で
+       固定する。MSP へ submodule 提供する前でも、AST 側だけでこのプロジェクトが変更された際の回帰を検知する。
+       TestServer（Mvc.Testing 経由）で 3 モジュールを最小ホストへ map し、認証必須(401)・pass-through・
+       502 縮退・DELETE 本文転送を後段スタブで検証する。 -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.Bff.Endpoints.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Minimal API のホスト（WebApplication / TestServer）を使うため ASP.NET Core を参照。 -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <!-- TestServer（Microsoft.AspNetCore.TestHost）を推移的に参照する。 -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <ProjectReference Include="..\AiStockTrading.Bff.Endpoints\AiStockTrading.Bff.Endpoints.csproj" />
+  </ItemGroup>
+</Project>

@@ -120,6 +120,7 @@
   <Folder Name="/Bff/">
     <!-- FR-14, IADR-0063 / IADR-0091: 例外3 の unit-owned BFF エンドポイント（platform BFF 合成点から参照）。 -->
     <Project Path="Bff/AiStockTrading.Bff.Endpoints/AiStockTrading.Bff.Endpoints.csproj" />
+    <Project Path="Bff/AiStockTrading.Bff.Endpoints.Tests/AiStockTrading.Bff.Endpoints.Tests.csproj" />
   </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
