@@ -34,7 +34,8 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 
 1. **リスク上限（変更可）**: `RiskLimitSettings` の 8 項目 — 1注文金額上限・1日発注金額上限・保有銘柄数上限・日次損失上限（比）・
    1取引リスク（比）・最大DD（比）・連敗しきい値・連敗縮小係数。数値入力（文字列保持・送信時に数値化）。
-2. **ガード（参照）**: 有効な商品種別・市場、禁止銘柄、同日再エントリ禁止、相場操縦パターン禁止を表示（変更は後続）。
+2. **ガード（変更可・#188/IADR-0086）**: 有効な商品種別・市場（チェックボックス）、禁止銘柄（追加/削除）、同日再エントリ禁止・
+   相場操縦パターン禁止（トグル）を編集。危険な緩和（トグル OFF・禁止銘柄削除・信用の新規有効化）は明示確認を要求（fail-safe）。
 3. **段階（参照）**: 現段階・モード（ペーパー/実弾）・資金上限を表示（段階変更は段階ゲート承認フロー＝#165 Bot 側）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 
@@ -45,6 +46,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 初期表示 | `GET /risk-controls/settings` | `RiskManagementSettings`。404/失敗=縮退表示 |
 | 履歴 | `GET /risk-controls/settings/history` | `SettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`） | 成功=再取得。400=検証、409=競合（DbUpdateConcurrency）＋再取得を促す |
+| ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す（#188/IADR-0086） |
 
 ## 振る舞い（安全既定）
 
@@ -56,4 +58,5 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 
 ## スコープ外（後続）
 
-ガード・段階の変更 UI、監視銘柄（watchlist）設定、Playwright E2E、platform 合成点（features/BFF）登録。
+段階の直接変更 UI（段階ゲート承認へ一元化）、監視銘柄（watchlist）設定（設定ストア側 API 未整備・バックエンド起票先行）、
+Playwright E2E、platform 合成点（features/BFF）登録。

@@ -121,3 +121,4 @@
 | IADR-0083 | 撤退の定期評価は背景ドライバで駆動し、新規自動停止時のみ通知イベントを発行する（kill switch 状態を durable な冪等鍵にする） | Accepted |
 | IADR-0084 | FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる | Accepted |
 | IADR-0085 | 撤退の非停止（ペーパー乖離）降格提案は durable な通知済みシグネチャで重複排除し、ドライバ側で 1 回だけ通知する | Accepted |
+| IADR-0086 | SC-02 のガード変更 UI は既存 PUT /settings/guard を全置換で消費し、危険な緩和は明示確認で fail-safe にする（監視銘柄はバックエンド未整備で分離・段階直接変更は開かない） | Accepted |
