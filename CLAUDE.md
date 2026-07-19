@@ -77,6 +77,7 @@
 | `migration` | 移行仕様書 | `docs/migration/` |
 | `error` | エラー・メッセージ仕様書 | `docs/errors/` |
 | `infra` | インフラ・構成仕様書 | `docs/infra/` |
+| `runbook` | 運用 Runbook（手順書・運用仕様書の下位） | `docs/operations/` |
 
 - 詳細・計画書との対応は `docs/README.md` を参照。実装着手前に少なくとも作業仕様書を作成する。
 - 重要な実装判断（内部設計・ライブラリ選定等）は**実装ADR（`docs/adr/`、`IADR-XXXX`）に必ず残す**。計画に影響する決定は `/plan-feedback` で計画側へ環流する（計画ADR `ADR-XXXX` と区別する）。

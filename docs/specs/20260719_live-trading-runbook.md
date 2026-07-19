@@ -41,7 +41,8 @@ plan_refs:
 - 対象: [`docs/operations/live-trading-cutover-runbook.md`](../operations/live-trading-cutover-runbook.md) の新設、
   [`docs/operations/operations.md`](../operations/operations.md) からの相互リンク、`docs/README.md` への `runbook` 種別の登録。
 - 対象外: コード・設定の既定値変更、新規 IADR の起票、`docs/adr/README.md`・IADR 連番、
-  #141 が触る Risk/OrderExecution コード・IADR-0092。
+  #141 の Risk/OrderExecution コード、および並行の #141 セッションが起票予定の IADR-0092
+  （**本 PR 時点では未起票**の将来番号。#141 の自動リコンサイル実装は既存の IADR-0074 に対応する。両者に触れない）。
 
 ## 設計
 
