@@ -13,6 +13,13 @@ public sealed class ReconciliationOptions
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// #141, IADR-0092: 実照会プローブ（moomoo/OpenD SIMULATE）を使うか（fail-safe 既定: false＝no-op プローブ）。
+    /// true かつ Broker:Provider=moomoo のときだけ実プローブが配線される。paper／OpenD 無しでは無視され、
+    /// 既定の no-op プローブ（常に Indeterminate＝何も解放・終端化しない）のままになる。
+    /// </summary>
+    public bool UseBrokerProbe { get; set; }
+
+    /// <summary>
     /// 滞留とみなす閾値（時間）。既定 24 時間。<see cref="ReconciliationPolicy.MinimumStallThresholdHours"/>
     /// 未満を設定しても下限クランプされるため、in-flight の予約に触れることはない。
     /// </summary>

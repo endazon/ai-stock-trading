@@ -58,8 +58,9 @@ public sealed class OrderReservationReconciler(
                     continue;
                 }
 
-                // 2. 記録なし: ブローカへ実状態を照会する。
-                var result = await probe.ProbeAsync(decisionId, cancellationToken).ConfigureAwait(false);
+                // 2. 記録なし: ブローカへ実状態を照会する。実照会は履歴窓を予約の ReservedAt で覆う必要があるため
+                //    予約そのものを渡す（IADR-0092）。DecisionId 単体では健全な NotPlaced 判定ができない。
+                var result = await probe.ProbeAsync(reservation, cancellationToken).ConfigureAwait(false);
                 switch (result.Outcome)
                 {
                     case ReservationProbeOutcome.Placed:

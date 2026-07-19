@@ -127,3 +127,4 @@
 | IADR-0089 | バックテスト verdict は BacktestEvaluated イベントで発行し Risk が read-modify-write で射影する（s2s 同期照会を退け fail-safe を保つ） | Accepted |
 | IADR-0090 | SC-02 の監視銘柄変更 UI は MarketMonitor /monitor/watchlist を個別操作で消費し、削除は明示確認で fail-safe にする（別サービスとして独立ロード・実 BFF プロキシは MSP 後続） | Accepted |
 | IADR-0091 | AST の BFF エンドポイント（assumptions/risk-controls/monitor）を unit-owned プロジェクト AiStockTrading.Bff.Endpoints として保持し、DTO 非結合の FrameworkReference のみで自己完結させる | Accepted |
+| IADR-0092 | Reserved 滞留の実照会プローブは DecisionId を moomoo remark に伝播し SIMULATE の現在＋履歴注文を照合する（解放は「確実に未発注」の既知窓のみ・他は Indeterminate・既定 no-op / opt-in） | Accepted |
