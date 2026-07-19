@@ -199,11 +199,18 @@ services:
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       # FR-08, #9, IADR-0069/0073: 収集情報の実 KB 保存 opt-in。fail-safe: 空=NoOp（LoggingKnowledgeBaseSink＝保存しない）。
-      # Documents:BaseUrl を platform DocumentService へ向けると実 KB 保存へ切替（KnowledgeBaseWriterSink）。書き込みは
-      # platform-admin/operator ロール必須で trading-service 未付与→403→未保存へ縮退（実運用のロール付与・本文取り込みは後続）。
-      # s2s トークンは上の ServiceAuth__* を再利用。Search は情報収集自身は未使用だが設定サーフェスを対で揃える（空=no-op）。
+      # Documents:BaseUrl を platform DocumentService へ向けると実 KB 保存へ切替（KnowledgeBaseWriterSink）。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
+      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP `microservices-platform` レルムの専用クライアント
+      # （ai-stock-trading-kb-writer／service-account に platform-operator）で認証する。AST レルムの ServiceAuth__* は
+      # issuer 不一致（401）・role 不一致（403）で KB 書き込みに使えないため（IADR-0093）。fail-safe: 空=トークン無し→401→未保存。
+      # Authority は MSP レルムを指す（例 http://keycloak:8080/realms/microservices-platform）。ClientSecret は Secret 経由（空既定）。
+      - { name: KnowledgeBase__Auth__Authority, value: "" }
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
   market-monitor:
     image: ai-stock-trading/market-monitor-service
     db: market_monitor_svc
@@ -269,11 +276,18 @@ services:
       - { name: LlmGateway__LogPrompts, value: "" }
       # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。fail-safe: 空=no-op（保存しない）。設定時のみ opt-in。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
-      # FR-08, IADR-0051: KB 保存の s2s トークン（client_credentials）。fail-safe: 未設定=認証なし→401→安全側。
+      # FR-08, IADR-0051: 自身の API・s2s の Authority 導出元（AST レルム）。
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # FR-08, #18, IADR-0093: KB 保存の s2s は MSP レルムの専用クライアント（ai-stock-trading-kb-writer／platform-operator）で
+      # 認証する（AST レルムの ServiceAuth__* では 401/403）。fail-safe: 空=トークン無し→401→未保存。Authority は MSP レルムを指す。
+      - { name: KnowledgeBase__Auth__Authority, value: "" }
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       - { name: Reports__NoResponseBehavior, value: "" }
   risk-management:
