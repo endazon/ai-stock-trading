@@ -123,6 +123,23 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > 本リポジトリには無く、CRD が無いクラスタで有効化すると apply が失敗する。IADR-0056 §3 が実弾解禁の前提に挙げる
 > 「秘匿情報の Vault 化」は**未充足のまま**である。
 
+### #24, IADR-0094: API 鍵群（`ast-secrets`）の Vault 同期（`externalSecrets.appSecrets.enabled`）
+
+既定 **無効**。`externalSecrets.enabled=true` と併せて有効化すると、API 鍵群の Secret `ast-secrets` を Vault の
+単一 KV から `dataFrom.extract` で同期する `ExternalSecret` を描画する（**平文の鍵は values にも manifest にも無い**）。
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set externalSecrets.enabled=true \
+  --set externalSecrets.appSecrets.enabled=true \
+  --set externalSecrets.secretStoreRef.name=vault-backend
+```
+
+> Vault 側のプロパティ名は **Secret キー名**（`finnhub-api-key` / `service-auth-client-id` 等）に一致させる。
+> 欠けた鍵は同期されず、消費側 `secretKeyRef.optional=true` で許容する（fail-safe）。既定オフ＝手動 Secret 直運用を維持。
+> 手順は [`docs/operations/vault-secrets-runbook.md`](../../../docs/operations/vault-secrets-runbook.md)。GitOps（ArgoCD）は
+> [`deploy/argocd`](../../argocd/README.md)、可観測性は [`docs/observability/observability.md`](../../../docs/observability/observability.md)。
+
 ## #121: 取引サイクル CronJob
 
 既定 **無効**（在来 in-process ポーリング IADR-0023 を維持＝fail-safe）。有効化:

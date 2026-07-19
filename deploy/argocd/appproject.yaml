@@ -1,0 +1,40 @@
+# ADR-0006, IADR-0094 (#24): GitOps（ArgoCD）で AST チャートを宣言的同期するための AppProject。
+# 許可するソース Git・配備先 Namespace・リソース種別を制約する（最小権限）。
+# ⚠️ すべて opt-in。ブートストラップ（このマニフェストの kubectl 適用）は任意で、既定の経路B 起動には影響しない。
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ai-stock-trading
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: ai-stock-trading
+spec:
+  description: 生成AI株取引自動化（AST）— microservices-platform 拡張の可変機能（10 Worker + OpenD ゲートウェイ）
+  # 許可するソースリポジトリ（Git を単一の真実源とする）。
+  sourceRepos:
+    - https://github.com/endazon/ai-stock-trading.git
+  # 配備先クラスタ・Namespace。
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: ai-stock-trading
+  # クラスタ規模リソースは Namespace の作成のみ許可する（チャートの namespace.yaml 由来）。
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  # 配備先 Namespace 内で許可する種別を、AST チャートが実際にレンダリングする種別に限定する（最小権限）。
+  # deployment.yaml/opend.yaml=Deployment、service.yaml/externalname-aliases.yaml/opend.yaml=Service、
+  # configmap-pipeline.yaml=ConfigMap、cronjob.yaml=CronJob、opend.yaml=PersistentVolumeClaim、
+  # external-secrets.yaml=ExternalSecret（externalSecrets.enabled 有効時のみ・external-secrets.io CRD が前提）。
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: "batch"
+      kind: CronJob
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: "external-secrets.io"
+      kind: ExternalSecret

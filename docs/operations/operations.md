@@ -44,6 +44,11 @@ plan_refs:
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
 | moomoo OpenD | 常駐モデル（IADR-0053）。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**（#132 / IADR-0060）。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
+| GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24 / IADR-0094）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
+| 秘匿情報 | 既定は k8s Secret 直（`ast-secrets` 手動）。Vault 化は opt-in（[Vault 秘匿 runbook](vault-secrets-runbook.md)・#24 / IADR-0094）。実充足は MSP stand-up＋Tier 3 |
+| 可観測性 | OTLP→otel-collector→Prometheus/Loki/Tempo（[可観測性仕様](../observability/observability.md)）。環境境界は [インフラ仕様](../infra/infra.md) |
+
+> 環境境界（経路A/B／実基盤 Tier 3）と #24 受け入れ基準の充足状況は [インフラ仕様](../infra/infra.md) を単一情報源とする。
 
 ## OpenD の本番切替チェックリスト（#132）
 
