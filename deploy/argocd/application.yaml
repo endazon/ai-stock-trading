@@ -1,0 +1,52 @@
+# ADR-0006, IADR-0094 (#24): GitOps（ArgoCD）で AST の Helm チャート（deploy/helm/ai-stock-trading）を
+# ai-stock-trading Namespace へ宣言的に同期する Application。Git の状態が単一の真実源であり、手動 kubectl 適用に依存しない。
+#
+# ⚠️ opt-in。実運用（Hetzner 実 k3s での実同期）は Tier 3（本 PR 対象外）。本マニフェストは宣言の妥当性
+#    （kubectl --dry-run / ArgoCD 描画）までをスコープとする。ローカル（経路B）で回すには MSP 側の ArgoCD install
+#    （別 PR・MSP IADR-0077）が前提。docs/infra/infra.md の Tier 境界を参照。
+#
+# 独立デプロイ・ロールバック（NFR）:
+#   - サービス単位のデプロイは values の services.<name>.tag を Git で更新して行う。
+#   - ロールバックは `argocd app rollback ai-stock-trading <revision>` もしくは Git revert で行う。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-stock-trading
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: ai-stock-trading
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ai-stock-trading
+  source:
+    repoURL: https://github.com/endazon/ai-stock-trading.git
+    # GitOps の配備対象リビジョン（安定版）。運用ポリシーに応じて変更する。
+    targetRevision: main
+    path: deploy/helm/ai-stock-trading
+    helm:
+      releaseName: ai-stock-trading
+      # #22 受け入れ基準③: 実効構成バージョン（適用中リビジョン）の GitOps 注入。
+      # ArgoCD ネイティブ Helm は build 変数をパラメータへ自動展開しないため、SHA は CD 側で供給する
+      #   （`argocd app set ai-stock-trading --helm-set global.configVersion=<sha>`、
+      #    または release automation が values-<env>.yaml の global.configVersion を更新）。
+      # 空既定 = 自己申告 configVersion は null（fail-safe）。手順は docs/operations/operations.md を参照。
+      # 環境別の上書きは values-<env>.yaml を valueFiles に追加する。
+      # valueFiles:
+      #   - values-production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-stock-trading
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,79 @@
+{
+  "title": "AI Stock Trading Overview",
+  "uid": "ai-stock-trading-overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["ai-stock-trading"],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(http_server_duration_milliseconds_count, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "regex": "/audit-service|configuration-service|cost-control-service|information-collection-service|market-monitor-service|notification-service|order-execution-service|report-service|risk-management-service|trade-decision-service/"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Request Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (service_name) (rate(http_server_duration_milliseconds_count{service_name=~\"$service\"}[1m]))",
+        "legendFormat": "{{service_name}}"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "HTTP Error Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (service_name) (rate(http_server_duration_milliseconds_count{service_name=~\"$service\",http_status_code=~\"5..\"}[1m])) / sum by (service_name) (rate(http_server_duration_milliseconds_count{service_name=~\"$service\"}[1m])) * 100",
+        "legendFormat": "{{service_name}}"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "HTTP P99 Latency (ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.99, sum by (le, service_name) (rate(http_server_duration_milliseconds_bucket{service_name=~\"$service\"}[5m])))",
+        "legendFormat": "{{service_name}}"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "Process CPU (cores)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (service_name) (rate(process_runtime_dotnet_cpu_time_seconds_total{service_name=~\"$service\"}[1m]))",
+        "legendFormat": "{{service_name}}"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Service Logs",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 10 },
+      "targets": [{
+        "datasource": "Loki",
+        "expr": "{namespace=\"ai-stock-trading\"}"
+      }]
+    }
+  ]
+}

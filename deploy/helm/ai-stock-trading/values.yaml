@@ -134,6 +134,18 @@ externalSecrets:
   moomooRsa:
     remoteKey: ai-stock-trading/moomoo-rsa
     property: opend_rsa.pem
+  # ADR-0006, IADR-0094 (#24): API 鍵群（Secret `ast-secrets`）の Vault 同期。既定 disabled = fail-safe
+  # （現行の手動 k8s Secret 直運用を維持）。有効化には externalSecrets.enabled=true も要る。
+  # ⚠️ 平文の鍵は置かない。Vault の単一 KV（remoteKey）に **Secret キー名と同名のプロパティ**で格納し
+  #    （finnhub-api-key / service-auth-client-id / discord-bot-token 等・deployment.yaml の secretKeyRef.key）、
+  #    dataFrom.extract で吸い上げる。欠けた鍵は消費側 optional=true で許容（fail-safe）。
+  #    ストア（ESO/Vault）は #24 の MSP 側 stand-up・実運用は Tier 3。
+  appSecrets:
+    enabled: false
+    # 同期先 Secret 名（services.*.extraEnv の secretKeyRef.name と一致）。
+    targetName: ast-secrets
+    # 全プロパティを吸い上げる Vault KV のパス。
+    remoteKey: ai-stock-trading/app-secrets
 
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
