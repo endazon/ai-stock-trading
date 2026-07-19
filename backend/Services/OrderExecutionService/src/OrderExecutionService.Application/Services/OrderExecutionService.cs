@@ -43,7 +43,11 @@ public sealed class OrderExecutionService(
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（損切り）も同一経路。
-        var brokerOrder = await broker.PlaceOrderAsync(intent, cancellationToken).ConfigureAwait(false);
+        // #141, IADR-0092: ブローカが client order id 伝播に対応していれば DecisionId を紐づけて発注する
+        // （滞留 Reserved を後から DecisionId で照合＝実照会リコンサイルの前提）。非対応（paper 等）は従来経路。
+        var brokerOrder = broker is IClientOrderIdBroker correlating
+            ? await correlating.PlaceOrderAsync(intent, approved.DecisionId, cancellationToken).ConfigureAwait(false)
+            : await broker.PlaceOrderAsync(intent, cancellationToken).ConfigureAwait(false);
 
         // FR-16: 実効スリッページを取引毎に算出・記録する。
         var slippage = SlippageCalculator.Compute(intent.Price, brokerOrder.AveragePrice, intent.Side);

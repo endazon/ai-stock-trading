@@ -39,17 +39,19 @@ builder.Services.AddAiStockTradingHealthChecks()
 
 // IADR-0016, #13: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
 // moomoo 選択時は OpenD 接続クライアント（IMoomooTradeClient）を構成し SIMULATE 限定で発注する（実弾を撃たない）。
-// DI ファクトリで組み、ロガーは DI の ILoggerFactory から取得する（クライアント/アダプタ双方に注入）。
+// #141, IADR-0092: moomoo 時は IMoomooTradeClient を単一インスタンスで DI 共有し、発注アダプタ（IBrokerAdapter）と
+// 実照会プローブ（MoomooReservationBrokerProbe）が同一の OpenD 接続を使う（接続を二重化しない）。paper/未知では登録しない。
+if (BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
+{
+    builder.Services.AddSingleton<IMoomooTradeClient>(sp => new MMApiMoomooTradeClient(
+        MoomooBrokerOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<MMApiMoomooTradeClient>()));
+}
 builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 {
-    var cfg = sp.GetRequiredService<IConfiguration>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    var provider = cfg["Broker:Provider"];
-    IMoomooTradeClient? moomooClient = BrokerFactory.IsMoomoo(provider)
-        ? new MMApiMoomooTradeClient(
-            MoomooBrokerOptions.FromConfiguration(cfg),
-            loggerFactory.CreateLogger<MMApiMoomooTradeClient>())
-        : null;
+    var provider = sp.GetRequiredService<IConfiguration>()["Broker:Provider"];
+    var moomooClient = sp.GetService<IMoomooTradeClient>(); // moomoo 時のみ登録済み
     return BrokerFactory.Create(provider, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>());
 });
 
@@ -81,11 +83,23 @@ builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(Re
 builder.Services.AddHostedService<OrderReservationRetentionService>();
 
 // #141, IADR-0074: Reserved 滞留の自動リコンサイル（既定無効 Reconciliation:Enabled=false）。
-// プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。実 OpenD 照会は後続で
-// 差し替える。有効化しても no-op プローブ下では phase-4 自己修復のみ作動し、二重発注を招く解放は構造上起きない。
+// プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。
+// #141, IADR-0092: Broker:Provider=moomoo かつ Reconciliation:UseBrokerProbe=true のときだけ実照会プローブ
+// （MoomooReservationBrokerProbe・OpenD SIMULATE）を配線する。それ以外（paper／OpenD 無し／既定）は no-op のまま。
+// no-op プローブ下では phase-4 自己修復のみ作動し、二重発注を招く解放は構造上起きない。
 builder.Services.Configure<ReconciliationOptions>(
     builder.Configuration.GetSection(ReconciliationOptions.SectionName));
-builder.Services.AddSingleton<IReservationBrokerProbe, IndeterminateReservationBrokerProbe>();
+if (BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"])
+    && builder.Configuration.GetSection(ReconciliationOptions.SectionName).Get<ReconciliationOptions>()?.UseBrokerProbe == true)
+{
+    builder.Services.AddSingleton<IReservationBrokerProbe>(sp => new MoomooReservationBrokerProbe(
+        sp.GetRequiredService<IMoomooTradeClient>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<MoomooReservationBrokerProbe>()));
+}
+else
+{
+    builder.Services.AddSingleton<IReservationBrokerProbe, IndeterminateReservationBrokerProbe>();
+}
 builder.Services.AddScoped<OrderReservationReconciler>();
 builder.Services.AddHostedService<OrderReservationReconciliationService>();
 

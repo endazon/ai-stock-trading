@@ -71,7 +71,9 @@ public class OrderReservationReconcileStoreTests
     [Fact]
     public async Task noopプローブは常にIndeterminateを返す()
     {
-        var result = await new IndeterminateReservationBrokerProbe().ProbeAsync(Guid.NewGuid());
+        var reservation = new OrderDispatchReservation(
+            Guid.NewGuid(), OrderDispatchState.Reserved, DateTimeOffset.UtcNow, BrokerOrderId: null);
+        var result = await new IndeterminateReservationBrokerProbe().ProbeAsync(reservation);
         result.Outcome.Should().Be(ReservationProbeOutcome.Indeterminate);
         result.Order.Should().BeNull();
     }

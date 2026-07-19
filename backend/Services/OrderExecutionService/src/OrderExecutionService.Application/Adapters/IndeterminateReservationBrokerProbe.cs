@@ -9,6 +9,7 @@ namespace AiStockTrading.OrderExecution.Application.Adapters;
 // 実照会（DecisionId を client order id として伝播 or 時刻窓突合）は opt-in の後続・#82 系 E2E で差し替える。
 public sealed class IndeterminateReservationBrokerProbe : IReservationBrokerProbe
 {
-    public Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default) =>
+    public Task<ReservationProbeResult> ProbeAsync(
+        OrderDispatchReservation reservation, CancellationToken cancellationToken = default) =>
         Task.FromResult(ReservationProbeResult.Indeterminate);
 }
