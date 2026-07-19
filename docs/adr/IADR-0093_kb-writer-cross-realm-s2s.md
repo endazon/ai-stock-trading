@@ -2,7 +2,7 @@
 title: IADR-0093 KB 保存・検索の s2s は MSP レルムの専用 confidential client（platform-operator）でクロスレルムに認証し、AST レルムの ServiceAuth とは分離した inline ハンドラで発行する
 type: impl-adr
 status: Accepted
-related_ids: [FR-08, FR-01, FR-06, ADR-0001]
+related_ids: [FR-08, FR-01, FR-06, ADR-0001, ADR-0010]
 author: endazon (with Claude Code)
 created: 2026-07-19
 updated: 2026-07-19

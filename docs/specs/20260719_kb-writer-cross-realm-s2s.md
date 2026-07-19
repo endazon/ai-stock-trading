@@ -2,7 +2,7 @@
 title: 実 KB 保存のクロスレルム s2s 配線（MSP レルムの専用クライアントで platform-operator 認証）
 type: work
 status: review
-related_ids: [FR-08, FR-01, FR-06, ADR-0001]
+related_ids: [FR-08, FR-01, FR-06, ADR-0001, ADR-0010]
 author: endazon (with Claude Code)
 created: 2026-07-19
 updated: 2026-07-19

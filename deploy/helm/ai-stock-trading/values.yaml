@@ -321,6 +321,15 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # FR-08, #11, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。fail-safe: 空=NoOp 検索（参考情報なし）。
+      - { name: KnowledgeBase__Search__BaseUrl, value: "" }
+      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP `microservices-platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
+      # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。Authority は MSP レルムを指す。
+      - { name: KnowledgeBase__Auth__Authority, value: "" }
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
 
 resources:
   requests: { cpu: 50m, memory: 128Mi }
