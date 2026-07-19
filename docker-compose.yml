@@ -213,10 +213,15 @@ services:
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
       # FR-08, #9, IADR-0069/0073: 収集情報の実 KB 保存の opt-in。空=NoOp（LoggingKnowledgeBaseSink＝保存しない）＝安全既定。
       # Documents:BaseUrl を platform DocumentService（POST /documents）へ向けると実 KB 保存へ切り替わる（KnowledgeBaseWriterSink）。
-      # 書き込みは platform-admin/operator ロール必須で trading-service は未付与→403→未保存へ fail-safe（実運用のロール付与・本文取り込みは後続）。
-      # s2s トークンは上の ServiceAuth__* を再利用する。Search は情報収集自身は未使用だが、設定サーフェスを対で揃える（空=no-op）。
       KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGEBASE_DOCUMENTS_BASEURL:-}
       KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
+      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は上の ServiceAuth__*（AST レルム）ではなく、
+      # MSP `microservices-platform` レルムの専用クライアント（ai-stock-trading-kb-writer／platform-operator）で認証する。
+      # AST レルムのトークンは issuer 不一致で 401・role 不一致で 403 になるため（IADR-0093）。空=トークン無し→401→未保存へ fail-safe。
+      # 実運用は MSP realm へ ai-stock-trading-kb-writer を反映（MSP 側 PR）した上で ClientSecret を投入する。Authority は MSP レルムを指す。
+      KnowledgeBase__Auth__Authority: ${KNOWLEDGEBASE_AUTH_AUTHORITY:-}
+      KnowledgeBase__Auth__ClientId: ${KNOWLEDGEBASE_AUTH_CLIENTID:-}
+      KnowledgeBase__Auth__ClientSecret: ${KNOWLEDGEBASE_AUTH_CLIENTSECRET:-}
     depends_on:
       <<: *depends-infra
 
@@ -321,9 +326,14 @@ services:
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
       # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。空=no-op（保存しない）。設定時のみ opt-in。
       KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGE_BASE_DOCUMENTS_BASEURL:-}
-      # FR-08, IADR-0051: KB 保存の s2s トークン。空=認証なし→401→fail-safe。
+      # FR-08, IADR-0051: 自身の API・s2s の Authority 導出元（AST レルム）。
       ServiceAuth__ClientId: ${SERVICEAUTH_CLIENTID:-}
       ServiceAuth__ClientSecret: ${SERVICEAUTH_CLIENTSECRET:-}
+      # FR-08, #18, IADR-0093: KB 保存の s2s は MSP レルムの専用クライアント（ai-stock-trading-kb-writer／platform-operator）で認証する
+      # （AST レルムの ServiceAuth では 401/403）。空=トークン無し→401→未保存へ fail-safe。Authority は MSP レルムを指す。
+      KnowledgeBase__Auth__Authority: ${KNOWLEDGEBASE_AUTH_AUTHORITY:-}
+      KnowledgeBase__Auth__ClientId: ${KNOWLEDGEBASE_AUTH_CLIENTID:-}
+      KnowledgeBase__Auth__ClientSecret: ${KNOWLEDGEBASE_AUTH_CLIENTSECRET:-}
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       Reports__NoResponseBehavior: ${REPORTS_NORESPONSE_BEHAVIOR:-}
     depends_on:
@@ -387,6 +397,11 @@ services:
       # FR-08, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。
       # fail-safe: 空=NoOp 検索（参考情報なし＝現行動作）。設定時のみ platform RetrievalService（POST /search）へ s2s 照会する。
       KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
+      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP レルムの専用クライアントで認証する（AST レルムの ServiceAuth ではない）。
+      # 空=トークン無し（現行の NoOp 検索/参考情報なしを保持）。Authority は MSP レルムを指す。
+      KnowledgeBase__Auth__Authority: ${KNOWLEDGEBASE_AUTH_AUTHORITY:-}
+      KnowledgeBase__Auth__ClientId: ${KNOWLEDGEBASE_AUTH_CLIENTID:-}
+      KnowledgeBase__Auth__ClientSecret: ${KNOWLEDGEBASE_AUTH_CLIENTSECRET:-}
       # 取得件数（TopK）。空・不正・非正値=既定 5。
       Retrieval__TopK: ${RETRIEVAL_TOPK:-}
     depends_on:
