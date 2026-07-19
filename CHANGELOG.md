@@ -4,6 +4,9 @@
 
 ### 新機能
 
+- **ADR-0006**: ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps を opt-in で整備する (#219) (e4570dd)
+- **FR-08**: 実 KB 保存のクロスレルム s2s 配線（MSP レルムの専用クライアント認証） (#218) (f8fb2ae)
+- **FR-05**: 発注予約 Reserved 滞留の実照会プローブ（moomoo/OpenD SIMULATE）を配線する (#214) (16040fc)
 - **IADR-0091**: AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP #286 の依存） (#202) (594deed)
 - **FR-20,FR-15**: バックテスト verdict／実DDを段階別実績へイベント射影で供給する (#198) (36555f1)
 - **FR-13,FR-03,SC-02**: 監視銘柄(watchlist)の変更UIをSC-02に追加する (#197) (d34c25b)
@@ -97,6 +100,9 @@
 
 ### ドキュメント
 
+- **IADR-0091**: ADR 一覧に IADR-0091 の行を追記する (#216) (fd8a902)
+- **IADR-0056**: 実弾解禁 Runbook を追加（切替手順・前提・切り戻し・現状フラグ off） (#213) (7a015ff)
+- **NFR**: CHANGELOG を自動更新 (#207) (4a9a8d1)
 - **NFR**: CHANGELOG を自動更新 (#205) (6270d1b)
 - **NFR**: CHANGELOG を自動更新 (#201) (a48835a)
 - **NFR**: CHANGELOG を自動更新 (#135) (36570d6)
@@ -129,6 +135,7 @@
 
 ### ビルド
 
+- **deps**: bump planning from `8fcc468` to `f128c20` (#220) (ed1f4a1)
 - **deps**: bump planning from `98c45d0` to `8fcc468` (#206) (bf43f21)
 - **deps**: bump planning from `da20fc4` to `98c45d0` (#200) (c5749ed)
 - **deps**: bump actions/setup-node from 6 to 7 (#128) (6bea0cd)
