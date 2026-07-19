@@ -32,6 +32,30 @@ public class MoomooBrokerAdapterTests
             CancelledId = orderId;
             return Task.CompletedTask;
         }
+
+        public Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
+            string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken ct = default) =>
+            Task.FromResult<MoomooOrderSnapshot?>(null);
+    }
+
+    // #141, IADR-0092: DecisionId を remark（client order id相当）として発注リクエストに載せることを検証する。
+    [Fact]
+    public async Task client_order_id_発注は_DecisionId_を_remark_に載せる()
+    {
+        var client = new FakeClient();
+        var decisionId = Guid.NewGuid();
+
+        await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(), decisionId);
+
+        client.LastRequest!.Remark.Should().Be(decisionId.ToString("N"));
+    }
+
+    [Fact]
+    public async Task 通常発注は_remark_を付けない()
+    {
+        var client = new FakeClient();
+        await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent());
+        client.LastRequest!.Remark.Should().BeNull();
     }
 
     private static OrderIntent Intent(int qty = 10, decimal price = 100m, Market market = Market.UnitedStates,

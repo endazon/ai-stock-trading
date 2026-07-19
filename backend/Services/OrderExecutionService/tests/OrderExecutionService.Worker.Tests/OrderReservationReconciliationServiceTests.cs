@@ -30,7 +30,8 @@ public class OrderReservationReconciliationServiceTests
 
     private sealed class StubProbe(ReservationProbeResult result) : IReservationBrokerProbe
     {
-        public Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default) =>
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
     }
 

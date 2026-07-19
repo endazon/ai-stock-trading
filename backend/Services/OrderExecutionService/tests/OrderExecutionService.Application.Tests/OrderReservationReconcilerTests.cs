@@ -27,7 +27,8 @@ public class OrderReservationReconcilerTests
     {
         public int Calls { get; private set; }
 
-        public Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default)
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default)
         {
             Calls++;
             return Task.FromResult(result);
@@ -37,8 +38,9 @@ public class OrderReservationReconcilerTests
     // 照会ごとに任意の副作用＋結果を差し込めるフェイク（TOCTOU・例外の再現用）。
     private sealed class CallbackProbe(Func<Guid, ReservationProbeResult> fn) : IReservationBrokerProbe
     {
-        public Task<ReservationProbeResult> ProbeAsync(Guid decisionId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(fn(decisionId));
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default) =>
+            Task.FromResult(fn(reservation.DecisionId));
     }
 
     private static OrderIntent Intent(string symbol = "AAPL", int qty = 10, decimal price = 100m) =>

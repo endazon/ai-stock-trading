@@ -71,7 +71,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         var (trdMarket, secMarket) = MapMarket(request.Market);
         var side = request.Side == MoomooSide.Sell ? TrdCommon.TrdSide.TrdSide_Sell : TrdCommon.TrdSide.TrdSide_Buy;
 
-        var c2s = TrdPlaceOrder.C2S.CreateBuilder()
+        var c2sBuilder = TrdPlaceOrder.C2S.CreateBuilder()
             .SetPacketID(_trd.NextPacketID()) // 発注は packetID（冪等キー）必須
             .SetHeader(BuildHeader(trdMarket))
             .SetTrdSide((int)side)
@@ -79,9 +79,12 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
             .SetCode(request.Symbol)
             .SetQty(request.Quantity)
             .SetPrice((double)request.Price)
-            .SetSecMarket(secMarket)
-            .Build();
-        var req = TrdPlaceOrder.Request.CreateBuilder().SetC2S(c2s).Build();
+            .SetSecMarket(secMarket);
+        // #141, IADR-0092: DecisionId を remark（client order id相当）として紐づける。滞留 Reserved を後から
+        // DecisionId で照合し、実照会リコンサイルで発注済みを終端化・未発注を解放できるようにする。
+        if (!string.IsNullOrEmpty(request.Remark))
+            c2sBuilder.SetRemark(request.Remark);
+        var req = TrdPlaceOrder.Request.CreateBuilder().SetC2S(c2sBuilder.Build()).Build();
 
         var rsp = (TrdPlaceOrder.Response)await SendAsync(() => _trd.PlaceOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "PlaceOrder");
@@ -112,6 +115,123 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         }
         return null;
     }
+
+    // #141, IADR-0092: 発注時に付与した remark（clientOrderId＝DecisionId）で滞留 Reserved を照合する。
+    // SIMULATE 口座の全対応市場について「現在（当日 GetOrderList）」→「履歴（GetHistoryOrderList・ReservedAt を覆う窓）」の
+    // 順に走査し、remark 一致注文を返す。全て成功裏に列挙して一致ゼロなら null（＝確実に未発注）。
+    //
+    // fail-safe の要: いずれかの照会が失敗（EnsureSucceeded が投げる／タイムアウト）すれば例外がそのまま伝播し、
+    // 呼び出し側（MoomooReservationBrokerProbe）が Indeterminate に倒す。「不明」を null と取り違えないこと。
+    public async Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
+        string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(clientOrderId))
+        {
+            // remark 無し（伝播前の注文等）は DecisionId で照合不能。誤って NotPlaced（=null）に倒さず「不明」を送出する。
+            throw new InvalidOperationException("clientOrderId（remark）が空です。remark 照合による確実な判定はできません。");
+        }
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+        // 履歴窓は ReservedAt を確実に覆うよう広めに取る（境界・タイムゾーンのずれを margin で吸収）。
+        var endUtc = DateTimeOffset.UtcNow.AddDays(1);
+        var beginUtc = reservedAtUtc.AddDays(-2);
+
+        foreach (var (trdMarket, _) in SupportedMarkets)
+        {
+            var current = await FindByRemarkInCurrentAsync(clientOrderId, trdMarket, cancellationToken).ConfigureAwait(false);
+            if (current is not null)
+            {
+                return current;
+            }
+            var history = await FindByRemarkInHistoryAsync(clientOrderId, trdMarket, beginUtc, endUtc, cancellationToken)
+                .ConfigureAwait(false);
+            if (history is not null)
+            {
+                return history;
+            }
+        }
+        // 全市場・現在＋履歴を成功裏に列挙して一致ゼロ＝確実に未発注。
+        return null;
+    }
+
+    // 当日注文（GetOrderList）から remark 一致を返す。
+    private async Task<MoomooOrderSnapshot?> FindByRemarkInCurrentAsync(
+        string remark, int trdMarket, CancellationToken cancellationToken)
+    {
+        var c2s = TrdGetOrderList.C2S.CreateBuilder()
+            .SetHeader(BuildHeader(trdMarket))
+            .SetRefreshCache(true)
+            .Build();
+        var req = TrdGetOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _trd.GetOrderList(req), cancellationToken).ConfigureAwait(false);
+        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetOrderList");
+        return MatchByRemark(rsp.S2C.OrderListList, remark);
+    }
+
+    // 履歴注文（GetHistoryOrderList・時刻窓）から remark 一致を返す。
+    private async Task<MoomooOrderSnapshot?> FindByRemarkInHistoryAsync(
+        string remark, int trdMarket, DateTimeOffset beginUtc, DateTimeOffset endUtc, CancellationToken cancellationToken)
+    {
+        var filter = TrdCommon.TrdFilterConditions.CreateBuilder()
+            .SetBeginTime(FormatFilterTime(beginUtc))
+            .SetEndTime(FormatFilterTime(endUtc))
+            .Build();
+        var c2s = TrdGetHistoryOrderList.C2S.CreateBuilder()
+            .SetHeader(BuildHeader(trdMarket))
+            .SetFilterConditions(filter)
+            .Build();
+        var req = TrdGetHistoryOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetHistoryOrderList.Response)await SendAsync(() => _trd.GetHistoryOrderList(req), cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetHistoryOrderList");
+        return MatchByRemark(rsp.S2C.OrderListList, remark);
+    }
+
+    // remark 一致の探索。一致ゼロは null。
+    private static MoomooOrderSnapshot? MatchByRemark(IEnumerable<TrdCommon.Order> orders, string remark)
+    {
+        foreach (TrdCommon.Order o in orders)
+        {
+            if (o.HasRemark && string.Equals(o.Remark, remark, StringComparison.Ordinal))
+            {
+                return ToSnapshot(o);
+            }
+        }
+        return null;
+    }
+
+    // moomoo Order → SDK 非依存スナップショット。状態・約定はブローカ実体。時刻は create/update timestamp（無ければ null）。
+    // 写像は SDK（protobuf Order）依存のため live 検証（既存 mapping テストの方針＝protobuf を組まない）に委ねる。
+    private static MoomooOrderSnapshot ToSnapshot(TrdCommon.Order o)
+    {
+        var state = MapState(o.OrderStatus);
+        var placedAt = FromUnixTimestamp(o.HasCreateTimestamp ? o.CreateTimestamp : (double?)null);
+        var completedAt = IsTerminal(state)
+            ? FromUnixTimestamp(o.HasUpdateTimestamp ? o.UpdateTimestamp : (double?)null)
+            : null;
+        return new MoomooOrderSnapshot(
+            OrderId: o.OrderID.ToString(),
+            State: state,
+            Symbol: o.Code,
+            Market: o.TrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates,
+            Side: o.TrdSide == (int)TrdCommon.TrdSide.TrdSide_Sell ? MoomooSide.Sell : MoomooSide.Buy,
+            Quantity: (int)o.Qty,
+            Price: (decimal)o.Price,
+            FilledQuantity: (int)o.FillQty,
+            AveragePrice: (decimal)o.FillAvgPrice,
+            PlacedAt: placedAt,
+            CompletedAt: completedAt);
+    }
+
+    private static bool IsTerminal(MoomooOrderState state) =>
+        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
+
+    private static DateTimeOffset? FromUnixTimestamp(double? seconds) =>
+        seconds is > 0 ? DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds.Value * 1000)) : null;
+
+    // moomoo の履歴フィルタ時刻書式（"yyyy-MM-dd HH:mm:ss"）。タイムゾーンずれは呼び出し側の広い窓で吸収する。
+    private static string FormatFilterTime(DateTimeOffset t) =>
+        t.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
 
     public async Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {
@@ -323,6 +443,8 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     public void OnReply_PlaceOrder(MMAPI_Conn client, uint nSerialNo, TrdPlaceOrder.Response rsp) => Complete(nSerialNo, rsp);
     public void OnReply_GetOrderList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderList.Response rsp) => Complete(nSerialNo, rsp);
     public void OnReply_ModifyOrder(MMAPI_Conn client, uint nSerialNo, TrdModifyOrder.Response rsp) => Complete(nSerialNo, rsp);
+    // #141, IADR-0092: リコンサイル照会（滞留 Reserved の remark 突合）で履歴注文を列挙する。
+    public void OnReply_GetHistoryOrderList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderList.Response rsp) => Complete(nSerialNo, rsp);
 
     // ---- MMSPI_Trd（未使用・no-op）----
 
@@ -333,7 +455,6 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     public void OnReply_GetMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetMaxTrdQtys.Response rsp) { }
     public void OnReply_GetComboMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetComboMaxTrdQtys.Response rsp) { }
     public void OnReply_GetOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFillList.Response rsp) { }
-    public void OnReply_GetHistoryOrderList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderList.Response rsp) { }
     public void OnReply_GetHistoryOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderFillList.Response rsp) { }
     public void OnReply_GetMarginRatio(MMAPI_Conn client, uint nSerialNo, TrdGetMarginRatio.Response rsp) { }
     public void OnReply_GetOrderFee(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFee.Response rsp) { }

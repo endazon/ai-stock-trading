@@ -49,6 +49,30 @@ public class OrderExecutionServiceTests
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
     }
 
+    // #141, IADR-0092: client order id（DecisionId）伝播に対応するブローカ。伝播された DecisionId を記録する。
+    private sealed class FakeCorrelatingBroker(BrokerOrder order) : IBrokerAdapter, IClientOrderIdBroker
+    {
+        public Guid? PropagatedDecisionId { get; private set; }
+        public int PlainPlaceCount { get; private set; }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, Guid decisionId, CancellationToken ct = default)
+        {
+            PropagatedDecisionId = decisionId;
+            return Task.FromResult(order);
+        }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
+        {
+            PlainPlaceCount++; // client order id 対応ブローカでは呼ばれてはならない経路（回帰検出用）。
+            return Task.FromResult(order);
+        }
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
+            => Task.FromResult<BrokerOrder?>(order);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     // Save を指定回数だけ失敗させるストア。「ブローカ発注成功 → 永続化失敗」の窓（#131）を再現する。
     private sealed class FlakySaveStore : IExecutedOrderStore
     {
@@ -312,6 +336,39 @@ public class OrderExecutionServiceTests
         var executed = await service.ExecuteAsync(approved);
 
         executed.ExecutedAt.Should().BeAfter(reservations.Find(approved.DecisionId)!.ReservedAt);
+    }
+
+    // ---- #141 / IADR-0092: client order id（DecisionId）伝播（実照会リコンサイルの前提）----
+
+    [Fact]
+    public async Task client_order_id対応ブローカにはDecisionIdが伝播される()
+    {
+        // 滞留 Reserved を後から DecisionId で照合できるよう、発注時に DecisionId をブローカへ紐づける（remark 等）。
+        var store = new InMemoryExecutedOrderStore();
+        var intent = Intent();
+        var broker = new FakeCorrelatingBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = NewService(broker, store);
+        var approved = Approved(intent);
+
+        await service.ExecuteAsync(approved);
+
+        broker.PropagatedDecisionId.Should().Be(approved.DecisionId, "実照会の突合キーになる DecisionId を伝播する");
+        broker.PlainPlaceCount.Should().Be(0, "client order id 対応時は伝播経路のみを使う");
+    }
+
+    [Fact]
+    public async Task client_order_id非対応ブローカは従来経路で発注される()
+    {
+        // paper・既存 fake（IClientOrderIdBroker 非実装）は無改修で従来どおり発注できる（capability は任意）。
+        var store = new InMemoryExecutedOrderStore();
+        var intent = Intent();
+        var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
+        var service = NewService(broker, store);
+
+        var executed = await service.ExecuteAsync(Approved(intent));
+
+        executed.Status.Should().Be(OrderStatus.Filled);
+        broker.PlaceCount.Should().Be(1);
     }
 
     [Fact]

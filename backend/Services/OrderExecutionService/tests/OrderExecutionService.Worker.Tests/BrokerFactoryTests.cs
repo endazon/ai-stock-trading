@@ -41,6 +41,9 @@ public class BrokerFactoryTests
         public Task<MoomooOrderResult?> QueryOrderAsync(string id, CancellationToken ct = default) =>
             Task.FromResult<MoomooOrderResult?>(null);
         public Task CancelOrderAsync(string id, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
+            string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken ct = default) =>
+            Task.FromResult<MoomooOrderSnapshot?>(null);
     }
 
     [Fact]

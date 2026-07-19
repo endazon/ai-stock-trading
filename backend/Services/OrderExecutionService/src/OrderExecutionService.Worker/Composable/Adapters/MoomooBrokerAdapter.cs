@@ -1,3 +1,4 @@
+using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
@@ -8,16 +9,28 @@ namespace AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 // #13, FR-05, ADR-0002, IADR-0016: moomoo ブローカアダプタ。OpenD（IMoomooTradeClient）経由で発注する。
 // SIMULATE 限定（client 実装が TrdEnv_Simulate を用いる）。実弾は撃たない。判断・記録・報告のフローは
 // PaperBrokerAdapter と完全に同一（不正注文・不達は終端 Rejected で返しフローを止めない）。
+//
+// #141, IADR-0092: IClientOrderIdBroker を実装し、発注時に DecisionId を moomoo の remark（client order id相当）へ
+// 伝播する。これにより滞留 Reserved を後から DecisionId で照合できる（実照会リコンサイル）。paper は本 capability を
+// 持たないため OrderExecutionService は従来経路に倒れる。
 internal sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
     TimeProvider? timeProvider = null,
-    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter
+    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter, IClientOrderIdBroker
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     // fail-safe で握りつぶす例外も障害切り分けのためログする（既定 NullLogger でテスト時は無害）。
     private readonly ILogger<MoomooBrokerAdapter> _logger = logger ?? NullLogger<MoomooBrokerAdapter>.Instance;
 
-    public async Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default)
+    public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default) =>
+        PlaceCoreAsync(intent, remark: null, cancellationToken);
+
+    // #141, IADR-0092: DecisionId を remark として付与して発注する（滞留 Reserved の突合キー）。
+    public Task<BrokerOrder> PlaceOrderAsync(
+        OrderIntent intent, Guid decisionId, CancellationToken cancellationToken = default) =>
+        PlaceCoreAsync(intent, remark: MoomooClientOrderId.From(decisionId), cancellationToken);
+
+    private async Task<BrokerOrder> PlaceCoreAsync(OrderIntent intent, string? remark, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
 
@@ -29,7 +42,7 @@ internal sealed class MoomooBrokerAdapter(
         {
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
-                intent.Quantity, intent.Price);
+                intent.Quantity, intent.Price, remark);
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return ToBrokerOrder(intent, result, now);
         }
