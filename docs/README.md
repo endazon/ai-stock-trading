@@ -52,6 +52,10 @@ docs/
 | `migration` | 移行仕様書 | `docs/migration/` |
 | `error` | エラー・メッセージ仕様書 | `docs/errors/` |
 | `infra` | インフラ・構成仕様書 | `docs/infra/` |
+| `runbook` | 運用 Runbook（手順書・運用仕様書の下位） | `docs/operations/` |
+
+> 運用 Runbook は運用仕様書（`operations`・リポ単位で 1 つ）の**下位の手順書**であり、状態の単一情報源は
+> `operations.md` に置く（Runbook は手順に特化して複数存在してよい）。例: [実弾解禁 Runbook](operations/live-trading-cutover-runbook.md)。
 
 ## 補助成果物の自動生成
 
