@@ -128,3 +128,4 @@
 | IADR-0090 | SC-02 の監視銘柄変更 UI は MarketMonitor /monitor/watchlist を個別操作で消費し、削除は明示確認で fail-safe にする（別サービスとして独立ロード・実 BFF プロキシは MSP 後続） | Accepted |
 | IADR-0091 | AST の BFF エンドポイント（assumptions/risk-controls/monitor）を unit-owned プロジェクト AiStockTrading.Bff.Endpoints として保持し、DTO 非結合の FrameworkReference のみで自己完結させる | Accepted |
 | IADR-0092 | Reserved 滞留の実照会プローブは DecisionId を moomoo remark に伝播し SIMULATE の現在＋履歴注文を照合する（解放は「確実に未発注」の既知窓のみ・他は Indeterminate・既定 no-op / opt-in） | Accepted |
+| IADR-0093 | KB 保存・検索の s2s は MSP レルムの専用 confidential client（platform-operator）でクロスレルムに認証し、AST レルムの ServiceAuth とは分離した inline ハンドラで発行する（既定 no-op・秘密は Secret 経由・realm 定義は MSP 側 PR） | Accepted |
