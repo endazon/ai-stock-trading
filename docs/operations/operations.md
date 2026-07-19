@@ -84,6 +84,8 @@ plan_refs:
 > 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別 IADR ＋ 明示 config** が要り、
 > 現状のコードは `TrdEnv_Simulate` 固定・`BrokerFactory` の config ゲート・`Broker:Moomoo:TrdEnv` の拒否という
 > **三重の閂**で塞いである（IADR-0016 / IADR-0056 / IADR-0060）。
+>
+> 実弾解禁（段階 4）の前提確認・go-live 手順・切り戻しは [実弾解禁 Runbook](live-trading-cutover-runbook.md) を参照。
 
 ### 切替手順（段階 2→3・SIMULATE のまま）
 
