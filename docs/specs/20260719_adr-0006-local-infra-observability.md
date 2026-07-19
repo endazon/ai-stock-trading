@@ -77,12 +77,13 @@ OTLP 送出（`Otlp__Endpoint`→otel-collector）まで既に配線済みだが
 
 ## 受け入れ基準
 
-- [ ] `deploy/argocd/`（AppProject/Application/README）が追加され、`kubectl apply --dry-run=client` で妥当
-- [ ] `externalSecrets.appSecrets.enabled=true` で `ast-secrets` の `ExternalSecret` が描画され、既定オフでは描画されない
-- [ ] External Secrets manifest・values・docs に**平文の秘密が無い**
-- [ ] `helm lint` と `helm template`（既定オフ／opt-in の両条件）が通る
-- [ ] `docs/observability/observability.md`・`docs/infra/infra.md`・`docs/operations/vault-secrets-runbook.md` が
+- [x] `deploy/argocd/`（AppProject/Application/README）が追加され、YAML が妥当（`argoproj.io` CRD 前提のため
+      `kubectl apply --dry-run=client` は CRD 未導入で "no matches for kind"＝パース自体は成功。CRD は ArgoCD install 後）
+- [x] `externalSecrets.appSecrets.enabled=true` で `ast-secrets` の `ExternalSecret` が描画され、既定オフでは描画されない
+- [x] External Secrets manifest・values・docs に**平文の秘密が無い**
+- [x] `helm lint --strict` と `helm template`（既定オフ／opt-in の両条件）が通る
+- [x] `docs/observability/observability.md`・`docs/infra/infra.md`・`docs/operations/vault-secrets-runbook.md` が
       OTLP 経路・Tier 境界・Vault opt-in 手順を記す
-- [ ] Grafana ダッシュボード JSON が妥当な JSON である
-- [ ] Hetzner 実デプロイ・実測・GitOps 実同期は **Tier 3** として PR/issue に明示分離
-- [ ] `check-doc-links` が通る（相対リンク切れなし）
+- [x] Grafana ダッシュボード JSON が妥当な JSON である
+- [x] Hetzner 実デプロイ・実測・GitOps 実同期は **Tier 3** として PR/issue に明示分離
+- [x] `check-doc-links` が通る（相対リンク切れなし）

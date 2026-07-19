@@ -14,6 +14,11 @@ Git を単一の真実源とし、ArgoCD が AST の Helm チャート（[`../he
 | `appproject.yaml` | `AppProject` | 許可するソース Git・配備先 Namespace・リソース種別を最小権限で制約 |
 | `application.yaml` | `Application` | AST チャートを同期（`prune`/`selfHeal` 有効） |
 
+> **`targetRevision: main` について**: `Application` は**安定版ブランチ `main`** を同期対象にしている（本 PR のベースは
+> `develop`）。したがって `develop` へマージされた変更は、`main` へのリリースマージ後に初めて ArgoCD の同期対象になる。
+> dev 環境で `develop` を回したい場合のみ、`targetRevision` を一時的に `develop` へ上書きする
+> （`argocd app set ai-stock-trading --revision develop`）。
+
 ## Tier 境界（重要）
 
 - **本 PR のスコープ**: 宣言マニフェストの**妥当性**（`kubectl apply --dry-run=client` / ArgoCD 描画）まで。
