@@ -65,13 +65,21 @@ jobs:
             --set opend.podSecurityContext.fsGroup=10001 > /dev/null
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
+      # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
+      # ON にした派生を描画し、有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
+      - name: helm template (externalSecrets.appSecrets.enabled=true)
+        run: |
+          helm template ast "$CHART" \
+            --set externalSecrets.enabled=true \
+            --set externalSecrets.appSecrets.enabled=true > /dev/null
       - name: helm template (all feature flags on)
         run: |
           helm template ast "$CHART" \
             --set tradingCycle.cronjob.enabled=true \
             --set moomoo.enabled=true \
             --set opend.enabled=true \
-            --set externalSecrets.enabled=true > /dev/null
+            --set externalSecrets.enabled=true \
+            --set externalSecrets.appSecrets.enabled=true > /dev/null
       # 描画結果が空（テンプレート消失・条件の取り違え）でも上記は exit 0 になり得るため、
       # 既定値の描画が実際にリソースを産んでいることを確認する（無検査の緑を作らない）。
       - name: Assert default render is non-empty
@@ -136,3 +144,5 @@ jobs:
           assert_fail "opend.enabled=true / rsaSecretName 空" --set opend.enabled=true --set opend.rsaSecretName=""
           assert_fail "opend.enabled=true / home 空" --set opend.enabled=true --set opend.home=""
           assert_fail "externalSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
+          # #24 / IADR-0094: appSecrets 有効化でストア名が空なら描画時に止まる（誤有効化の防止）。
+          assert_fail "appSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.appSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
