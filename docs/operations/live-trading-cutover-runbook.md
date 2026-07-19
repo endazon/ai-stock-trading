@@ -1,6 +1,6 @@
 ---
 title: 実弾（live trading・TrdEnv_Real）解禁 Runbook
-type: operations-runbook
+type: runbook
 status: draft
 related_ids:
   - FR-05
