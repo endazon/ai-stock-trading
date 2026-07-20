@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 — SC-02 で変更した監視銘柄（watchlist）を TradeDecision の定時サイクルへ結線する（暫定実装の恒久化）
 type: work
-status: In progress
+status: Done
 related_ids: [FR-02, FR-13, UC-06, SC-02, IADR-0051, IADR-0088, IADR-0090]
 issue: 209
 author: endazon (with Claude Code)
@@ -54,14 +54,15 @@ related_specs:
 
 ## 受け入れ基準（→ テストへ写像）
 
-- [ ] SC-02（または API）で watchlist を変更すると、以後の定時サイクルの判断対象に反映される
+- [x] SC-02（または API）で watchlist を変更すると、以後の定時サイクルの判断対象に反映される
       （`HttpWatchlistProvider` が権威源 GET `/monitor/watchlist` を照会し、`MonitoredSymbol`→`WatchedSymbol` を返す）。
-- [ ] 供給不達時のフォールバック（既定 watchlist）が fail-safe に定義される
+- [x] 供給不達時のフォールバック（既定 watchlist）が fail-safe に定義される
       （BaseUrl 未設定/不正 → 構成ベース、照会失敗 → 構成 watchlist へ委譲）。
-- [ ] MarketMonitor GET `/monitor/watchlist` が `OwnerOrService`（trading-service で s2s 照会可）に開放され、
+- [x] MarketMonitor GET `/monitor/watchlist` が `OwnerOrService`（trading-service で s2s 照会可）に開放され、
       変更系（POST/DELETE/history/settings）は `OwnerOnly` のまま。
-- [ ] SC-02 画面仕様書に暫定状態の解消を反映する。
-- [ ] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` 緑・`dotnet format` 済・警告ゼロ。
+- [x] SC-02 画面仕様書に暫定状態の解消を反映する。
+- [x] 選択中実装の自己申告（IADR-0078 決定4）: introspection に `watchlist` ポートを追加し、http/configuration を判別可能にする。
+- [x] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` 緑・`dotnet format` 済・警告ゼロ。
 
 ## 設計判断（→ IADR-0095）
 
