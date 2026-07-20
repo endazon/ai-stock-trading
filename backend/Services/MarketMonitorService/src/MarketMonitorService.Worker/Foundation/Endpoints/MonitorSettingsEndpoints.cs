@@ -37,6 +37,10 @@ internal static class MonitorSettingsEndpoints
                 }
             });
 
+        // ---- 読み取り系: 利用者またはサービス（IADR-0051/0095・OwnerOrService） ----
+        // 未認証は 401、trading-owner/trading-service いずれも持たなければ 403。認可は read サブグループに付与し親には付けない。
+        var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
         // ---- 利用者のみ（ADR-0007・OwnerOnly）: 認可は owner サブグループに付与し親グループには付けない（親は 403）----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
@@ -49,10 +53,12 @@ internal static class MonitorSettingsEndpoints
             return Results.Ok(store.GetSettings());
         });
 
-        // ---- 監視銘柄（watchlist）の取得/追加/削除（FR-03/FR-13, UC-06, IADR-0088）----
+        // ---- 監視銘柄（watchlist）の取得/追加/削除（FR-03/FR-13, UC-06, IADR-0088/0095）----
         // 追加/削除は理由必須（reason 空欄は 400）。actor は認証済みトークン名（preferred_username）から取る。
         // 重複追加・不在削除・空 symbol・未定義 market は 400、設定行の Version 楽観排他競合は 409（親の例外フィルタで写像）。
-        owner.MapGet("/watchlist", (MonitorWatchlistService svc) => Results.Ok(svc.GetWatchlist()));
+        // FR-02, IADR-0095: 取得は read（OwnerOrService）に置き、定時サイクル（#11 TradeDecision）が s2s 同期照会できるようにする。
+        // 変更（追加/削除）と履歴は owner（OwnerOnly）据え置き＝変更は利用者のみ・ADR-0007 維持。
+        read.MapGet("/watchlist", (MonitorWatchlistService svc) => Results.Ok(svc.GetWatchlist()));
 
         owner.MapPost("/watchlist", (WatchlistChangeRequest req, MonitorWatchlistService svc, HttpContext http) =>
             Results.Ok(svc.Add(req.Symbol, MarketOf(req), ActorOf(http), req.Reason)));
