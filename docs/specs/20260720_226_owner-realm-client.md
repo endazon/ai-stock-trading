@@ -1,7 +1,7 @@
 ---
 title: dev realm に Discord Bot 制御コマンド用 OwnerAuth 機密クライアントを追加する
 type: work
-status: review
+status: done
 related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0007, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-20
@@ -52,27 +52,29 @@ dev レルムに owner マップの機密 client を追加し、helm 側で Toke
    dev secret `dev-only-owner-secret`・`redirectUris:[]`・`webOrigins:[]`。`description` は 255 文字以内。
    `users` に service-account ユーザー `service-account-ai-stock-trading-owner`（`serviceAccountClientId` 指定・
    `realmRoles:["trading-owner"]`）を追加。**既存 client / ロール / ユーザーは不変**。
-2. **helm values.yaml**: notification の extraEnv に
-   `Notifications__Discord__OwnerAuth__TokenEndpoint`（値 = `http://keycloak:8080/realms/ai-stock-trading/protocol/openid-connect/token`
-   ＝global `authAuthority` と一致）を **追加のみ**。既存の client-id/secret 配線は不変。
-3. **scripts/k8s-local-deploy.sh**: ast-secrets 生成に owner-auth の dev 既定を service-auth と同型で追加
-   （`discord-owner-auth-client-id`=`ai-stock-trading-owner`・`discord-owner-auth-client-secret`=`dev-only-owner-secret`・
-   環境変数で上書き可）。Bot 自体は `Enabled:false` 既定のため opt-in を維持。
+2. **helm templates/deployment.yaml**: notification に `Notifications__Discord__OwnerAuth__TokenEndpoint` を
+   `{{ $g.authAuthority }}/protocol/openid-connect/token` として算出注入する（`Auth__Authority` と同一ソース＝
+   `--set global.authAuthority` に追随）。`values.yaml` にリテラルを置かない（レビュー指摘の反映・非テンプレート値は
+   authAuthority 変更に追随せず 401 が別経路で再発するため）。既存の client-id/secret 配線は不変。
+3. **scripts/k8s-local-deploy.sh ＋ docker-compose.yml**: owner-auth の dev 既定を service-auth と同型で追加
+   （`ClientId`=`ai-stock-trading-owner`・`ClientSecret`=`dev-only-owner-secret`・環境変数で上書き可）。
+   docker-compose は TokenEndpoint を `KEYCLOAK_REALM` に追随させる。両ローカル経路（k8s-local / docker-compose）で
+   realm 再インポートだけで制御コマンドが通るようにする。Bot 自体は `Enabled:false` 既定のため opt-in を維持。
 4. **README 注記**: `infra/README.md` に owner client の説明とローカル反映手順（realm 再インポート）を追記。
    `deploy/helm/ai-stock-trading/README.md` の ast-secrets 表に owner-auth 行を追加。`docs/adr/README.md` に
    IADR-0098 の 1 行を追加。
 
 ## 受け入れ基準
 
-- [ ] `infra/keycloak/realm-export.json` に `ai-stock-trading-owner`（confidential・service-account）が追加され、
+- [x] `infra/keycloak/realm-export.json` に `ai-stock-trading-owner`（confidential・service-account）が追加され、
       service-account に `trading-owner` が割り当たる。既存 client（dev/svc）は不変。→ JSON 妥当性・差分レビュー。
-- [ ] `description` は 255 文字以内（realm-constraints ガードがあれば通す）。
-- [ ] helm values に `Notifications__Discord__OwnerAuth__TokenEndpoint`（AST レルム token エンドポイント）が
-      解決される。→ `helm template` で notification Deployment の env に出現。
-- [ ] `scripts/k8s-local-deploy.sh` の ast-secrets に owner-auth の dev 既定が入り、再デプロイで OwnerAuth の
-      `IsEnabled` 条件（client-id/secret/token-endpoint）が満たされる。
-- [ ] `helm lint --strict` OK・`helm template`（既定＋派生）OK。既定は Bot 無効/opt-in を維持。
-- [ ] 平文の本番秘密をコミットしない（dev プレースホルダ `dev-only-owner-secret` のみ）。
+- [x] `description` は 255 文字以内（216 文字）。
+- [x] helm で `Notifications__Discord__OwnerAuth__TokenEndpoint`（AST レルム token エンドポイント）が
+      `global.authAuthority` から導出され解決される。→ `helm template` で notification Deployment の env に出現。
+- [x] `scripts/k8s-local-deploy.sh` の ast-secrets ／ `docker-compose.yml` に owner-auth の dev 既定が入り、
+      再デプロイ／再インポートで OwnerAuth の `IsEnabled` 条件（client-id/secret/token-endpoint）が満たされる。
+- [x] `helm lint --strict` OK・`helm template`（既定＋派生）OK。既定は Bot 無効/opt-in を維持。
+- [x] 平文の本番秘密をコミットしない（dev プレースホルダ `dev-only-owner-secret` のみ）。
 
 ## スコープ外
 

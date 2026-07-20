@@ -69,21 +69,27 @@ dev secret `dev-only-owner-secret`・`redirectUris:[]`・`webOrigins:[]`。servi
   （`ai-stock-trading`）の Authority で検証するため、owner クライアントも同一 AST レルムに置く（issuer 一致）。
   クロスレルムにする必要は無い。
 
-### 2. helm では OwnerAuth の TokenEndpoint を明示する（notification に auth:true は付けない）
-`values.yaml` の notification extraEnv に `Notifications__Discord__OwnerAuth__TokenEndpoint`
-（= `http://keycloak:8080/realms/ai-stock-trading/protocol/openid-connect/token`＝global `authAuthority` と一致）を
-**追加する**。notification に `auth: true` を付けて `Auth__Authority` を注入し導出させる案は採らない。
+### 2. OwnerAuth の TokenEndpoint は Auth:Authority と同一ソースから導出する（notification に auth:true は付けない）
+notification は OwnerOnly の**受け口を持たない**（inbound JWT 検証が不要な worker）ため `auth: true` は付けない
+（inbound 認証設定を増やす副作用があり本課題＝outbound owner トークンの発行には不要）。代わりに OwnerAuth の
+`TokenEndpoint` を、**inbound の `Auth__Authority` と同一ソースから導出**して注入する:
 
-- 理由: notification は OwnerOnly の**受け口を持たない**（inbound JWT 検証が不要な worker）。`auth: true` は
-  inbound 認証設定を増やす副作用があり、本課題（outbound owner トークンの発行）には不要。TokenEndpoint を
-  明示するのが最小・最安全（`IsEnabled` の三点目を直接満たす）。値は global `authAuthority` と機械的に一致する
-  AST レルムの token エンドポイントで、環境が変われば同時に追随する（単一の realm 名で決まる）。
+- **helm**: `templates/deployment.yaml` が notification（`$name == "notification"`）に対し
+  `Notifications__Discord__OwnerAuth__TokenEndpoint` を `{{ $g.authAuthority }}/protocol/openid-connect/token`
+  として算出注入する（`Auth__Authority` と同じ `$g.authAuthority` を単一ソースにする）。`values.yaml` にリテラルで
+  置かない — 非テンプレート値では `global.authAuthority` を `--set` で変えたときに追随せず、本 ADR が塞いだ
+  「TokenEndpoint 不一致 → `IsEnabled=false` → 401」を別経路で再発させるため（レビュー指摘の反映）。
+- **docker-compose**: `http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}/protocol/openid-connect/token`
+  として `KEYCLOAK_REALM`（`Auth__Authority` と同一変数）に追随させる。
+- これで `IsEnabled` の三点目（TokenEndpoint）が、realm 名の単一ソースから機械的に満たされる。
 
-### 3. dev の資格は k8s-local-deploy スクリプトの ast-secrets 既定で解決する。平文の本番秘密は置かない
-`scripts/k8s-local-deploy.sh` の `ast-secrets` 生成に owner-auth の dev 既定を [IADR-0051] の service-auth と
-同型で追加する（`discord-owner-auth-client-id`=`ai-stock-trading-owner`・`discord-owner-auth-client-secret`=
-`dev-only-owner-secret`・環境変数で上書き可）。dev secret は realm-export.json の値と一致する使い捨てプレースホルダで、
-本番秘密は Vault/Secret（[IADR-0094] / #24）から注入する（コミットしない）。
+### 3. dev の資格は k8s-local-deploy スクリプト／docker-compose の dev 既定で解決する。平文の本番秘密は置かない
+`scripts/k8s-local-deploy.sh` の `ast-secrets` 生成と `docker-compose.yml` の notification-service 環境に、
+owner-auth の dev 既定を [IADR-0051] の service-auth と同型で追加する（`ClientId`=`ai-stock-trading-owner`・
+`ClientSecret`=`dev-only-owner-secret`・環境変数で上書き可）。**両ローカル経路（k8s-local / docker-compose）で
+制御コマンドが realm 再インポートだけで通る**ようにする（docker-compose だけ空既定に取り残すと同じ 401 を再現するため）。
+dev secret は realm-export.json の値と一致する使い捨てプレースホルダで、本番秘密は Vault/Secret（[IADR-0094] / #24）
+から注入する（コミットしない）。
 
 ### 4. 既定は Bot 無効（opt-in）を厳密保持する
 owner クライアント・TokenEndpoint・ast-secrets 既定が揃っても、Bot 自体は

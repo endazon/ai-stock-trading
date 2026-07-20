@@ -278,9 +278,13 @@ services:
       # 空=kill switch を起動できない（誤爆防止の閂を設定漏れで外さない）。
       Notifications__Discord__Bot__KillSwitchConfirmationPhrase: ${DISCORD_BOT_KILLSWITCH_PHRASE:-}
       # kill switch は Risk の OwnerOnly。trading-owner をマップした専用クライアントで呼ぶ（IADR-0062 決定4）。
-      # SERVICEAUTH_*（trading-service）では 403。空=トークンを付けない（→ 401＝安全側）。
-      Notifications__Discord__OwnerAuth__ClientId: ${DISCORD_OWNERAUTH_CLIENTID:-}
-      Notifications__Discord__OwnerAuth__ClientSecret: ${DISCORD_OWNERAUTH_CLIENTSECRET:-}
+      # #226, IADR-0098: dev 既定は realm-export.json の owner クライアント（ai-stock-trading-owner /
+      # dev-only-owner-secret）と一致。SERVICEAUTH_*（trading-service）では 403。上書きは環境変数で。
+      Notifications__Discord__OwnerAuth__ClientId: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
+      Notifications__Discord__OwnerAuth__ClientSecret: ${DISCORD_OWNERAUTH_CLIENTSECRET:-dev-only-owner-secret}
+      # owner トークンの token エンドポイント（AST レルム）。空だと OwnerAuth.IsEnabled が false に倒れ 401。
+      # KEYCLOAK_REALM に追随させる（Auth__Authority と同一ソース）。Bot は Enabled=false 既定のため opt-in 維持。
+      Notifications__Discord__OwnerAuth__TokenEndpoint: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}/protocol/openid-connect/token
       # kill switch の呼び先。空=BaseAddress 未設定＝呼び出し失敗（Succeeded=false）。
       RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
     depends_on:
