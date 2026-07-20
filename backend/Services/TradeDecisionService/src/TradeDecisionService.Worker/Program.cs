@@ -151,9 +151,25 @@ builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
         ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
         sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
 
-// FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄（暫定=構成ベース）。
+// FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄。
 builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
-builder.Services.AddSingleton<IWatchlistProvider, ConfigurationWatchlistProvider>();
+// FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）は権威源（市場監視 #10）の GET /monitor/watchlist を
+// s2s 同期照会（OwnerOrService・IADR-0051）して供給する。MarketMonitor:BaseUrl 未設定/不正 URI は従来どおり構成ベース
+// （TradeCycle:Watchlist）＝現行挙動・後方互換。照会失敗（非 2xx・timeout・例外）は構成ベース（既定 watchlist）へ倒す fail-safe。
+builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<ConfigurationWatchlistProvider>();
+builder.Services.AddScoped<IWatchlistProvider>(sp =>
+{
+    var configFallback = sp.GetRequiredService<ConfigurationWatchlistProvider>();
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["MarketMonitor:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return configFallback;
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("monitor");
+    http.BaseAddress = uri;
+    return new HttpWatchlistProvider(http, configFallback, sp.GetRequiredService<ILogger<HttpWatchlistProvider>>());
+});
 // FR-04, IADR-0039: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
 // ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
