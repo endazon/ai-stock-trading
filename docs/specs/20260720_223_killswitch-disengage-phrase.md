@@ -87,7 +87,7 @@ controller 側で維持する。起動側の既存挙動は不変。
 
 - `NotificationService.Application`（`KillSwitchCommandHandler.cs`・`KillSwitchConfirmation.cs`）
 - `NotificationService.Worker`（`DiscordNetBotGateway.cs`）
-- テスト（`KillSwitchCommandHandlerTests.cs`・`KillSwitchConfirmationTests.cs`）
+- テスト（`KillSwitchCommandHandlerTests.cs` を変更。`KillSwitchConfirmationTests.cs` は部分一致アサーションのため変更不要）
 - `Shared.Contracts` は不変。新イベント無し。realm-export.json・helm values（OwnerAuth secret 配線）は**別セッション領域につき触れない**。
 
 ## 非スコープ
