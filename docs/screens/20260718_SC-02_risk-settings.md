@@ -42,9 +42,9 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 3. **段階（参照）**: 現段階・モード（ペーパー/実弾）・資金上限を表示（段階変更は段階ゲート承認フロー＝#165 Bot 側）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 5. **監視銘柄（変更可・#196/IADR-0090）**: `MonitoredSymbol[]`（銘柄コード・市場）の一覧・追加・削除。データ源は
-   **別サービス** MarketMonitorService `/monitor/watchlist`（OwnerOnly）で、リスク設定の取得可否に連動せず**独立ロード/縮退**する。
-   追加は理由必須（1 段）。削除は破壊的なため**明示確認**（削除理由必須＋確認ボタン）を要求（fail-safe）。市場は数値 enum を写像。
-   監視銘柄の変更履歴（`MonitorSettingsChangeEntry[]`・changeType=追加/削除）を別表で一覧。
+   **別サービス** MarketMonitorService `/monitor/watchlist`（取得は OwnerOrService・変更は OwnerOnly）で、リスク設定の取得可否に
+   連動せず**独立ロード/縮退**する。追加は理由必須（1 段）。削除は破壊的なため**明示確認**（削除理由必須＋確認ボタン）を要求
+   （fail-safe）。市場は数値 enum を写像。監視銘柄の変更履歴（`MonitorSettingsChangeEntry[]`・changeType=追加/削除）を別表で一覧。
 
 ## データ取得・更新（BFF `/bff/*` 経由・`apiFetch`）
 
@@ -54,7 +54,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 履歴 | `GET /risk-controls/settings/history` | `SettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`） | 成功=再取得。400=検証、409=競合（DbUpdateConcurrency）＋再取得を促す |
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す（#188/IADR-0086） |
-| 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
+| 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す（#196/IADR-0090） |
 | 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す（#196/IADR-0090） |
@@ -74,3 +74,9 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 
 > 監視銘柄（watchlist）変更 UI は **#196（IADR-0090）で実装済み**（上表「監視銘柄」）。計画 `05_screens/01_screens.md` は監視銘柄を
 > SC-01 の運用パラメータ節に置くが、所有サービス単位に画面を分ける方針（IADR-0084）と #196 の指定に従い SC-02 に載せた（環流対象）。
+
+> **暫定結線の解消（#209/IADR-0095・2026-07-20）**: 従来 TradeDecision の定時サイクルは監視銘柄を構成ファイル（`TradeCycle:Watchlist`）
+> から読む暫定実装で、本画面（SC-02）での変更が判断対象に反映されなかった。#209 で TradeDecision は権威源（本画面と同じ
+> MarketMonitor `GET /monitor/watchlist`）を **s2s 同期照会**（`OwnerOrService`）するよう恒久化され、**本画面での監視銘柄変更は
+> 以後の定時サイクルの判断対象に反映される**。供給不達時は構成ベース（既定 watchlist）へ fail-safe に倒す。詳細は
+> [IADR-0095](../adr/IADR-0095_watchlist-authoritative-wiring.md)。
