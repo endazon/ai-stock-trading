@@ -53,7 +53,7 @@ TradeDecision の `TradeCycle:Watchlist`（Configuration）は暫定 stopgap に
 
 | メソッド | パス | 概要 | 認可 |
 | --- | --- | --- | --- |
-| GET | `/monitor/watchlist` | 現在の監視銘柄一覧 | OwnerOnly |
+| GET | `/monitor/watchlist` | 現在の監視銘柄一覧 | OwnerOrService（#209/IADR-0095 で変更。旧: OwnerOnly） |
 | POST | `/monitor/watchlist` | 監視銘柄の追加（body: `symbol, market, reason`） | OwnerOnly |
 | DELETE | `/monitor/watchlist` | 監視銘柄の削除（body: `symbol, market, reason`） | OwnerOnly |
 | GET | `/monitor/watchlist/history` | 監視銘柄の変更履歴（新しい順） | OwnerOnly |
