@@ -38,6 +38,7 @@ related_specs:
 - frontend（SC-02）の監視銘柄変更 UI（本 API 整備後に別 issue で着手）→ フォローアップ issue を優先度ラベル付きで起票。
 - 段階（stage）の直接変更（段階ゲート承認フロー #20/#165 へ一元化）。
 - TradeDecision の暫定 watchlist（`TradeCycle:Watchlist`・Configuration）の置換（別スコープ・後続）。
+  → **#209（IADR-0095・2026-07-20）で解消**: TradeDecision は本 API（`GET /monitor/watchlist`）を s2s 同期照会して権威源へ一本化した。
 - `Shared.Contracts` の変更（新イベント無し・`Market` は既存。**追加のみの原則**に従い本作業では変更しない）。
 
 ## 設計判断（→ IADR-0088）
@@ -52,7 +53,7 @@ TradeDecision の `TradeCycle:Watchlist`（Configuration）は暫定 stopgap に
 
 | メソッド | パス | 概要 | 認可 |
 | --- | --- | --- | --- |
-| GET | `/monitor/watchlist` | 現在の監視銘柄一覧 | OwnerOnly |
+| GET | `/monitor/watchlist` | 現在の監視銘柄一覧 | OwnerOrService（#209/IADR-0095 で変更。旧: OwnerOnly） |
 | POST | `/monitor/watchlist` | 監視銘柄の追加（body: `symbol, market, reason`） | OwnerOnly |
 | DELETE | `/monitor/watchlist` | 監視銘柄の削除（body: `symbol, market, reason`） | OwnerOnly |
 | GET | `/monitor/watchlist/history` | 監視銘柄の変更履歴（新しい順） | OwnerOnly |

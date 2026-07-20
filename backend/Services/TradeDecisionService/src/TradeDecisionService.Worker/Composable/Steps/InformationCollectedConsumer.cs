@@ -21,7 +21,10 @@ internal sealed class InformationCollectedConsumer(
     {
         var now = clock.UtcNow;
 
-        foreach (var watched in watchlist.GetWatchlist())
+        // FR-02, IADR-0095: 権威源（市場監視 #10）から当該サイクルの監視銘柄を照会する（実装未接続/失敗時は構成ベースへ倒す）。
+        var watchlistSymbols = await watchlist.GetWatchlistAsync(context.CancellationToken).ConfigureAwait(false);
+
+        foreach (var watched in watchlistSymbols)
         {
             if (!calendar.IsOpen(watched.Market, now))
             {

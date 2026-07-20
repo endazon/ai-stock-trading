@@ -62,6 +62,31 @@ public class MonitorWatchlistEndpointsTests(MonitorWorkerWebApplicationFactory f
         res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    // FR-02, IADR-0095: 読み取り（GET /watchlist）はサービス（trading-service）でも s2s 照会できる（OwnerOrService）。
+    // 定時サイクル（#11 TradeDecision）が権威源から監視銘柄を取得するための開放。
+    [Fact]
+    public async Task サービスロールは監視銘柄を取得できる()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+
+        var res = await client.GetAsync("/monitor/watchlist");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // FR-02, IADR-0095: 変更（追加）はサービスに許さない（OwnerOnly 据え置き・変更は利用者のみ・ADR-0007）。
+    [Fact]
+    public async Task サービスロールの追加は403()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+
+        var res = await AddAsync(client, "AAPL", Market.UnitedStates, "理由");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
     [Fact]
     public async Task 利用者は監視銘柄を追加でき取得と履歴に反映される()
     {

@@ -66,6 +66,8 @@
 | `security` | セキュリティ仕様書 | `docs/security/` | リポ単位（原則1つ） |
 | `adr` | 実装ADR（`IADR-XXXX`） | `docs/adr/` | 決定単位（重要判断ごとに必須） |
 
+> **機能仕様書・テスト仕様書の必須範囲（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211)・[作業仕様書 20260720](docs/specs/20260720_required-spec-coverage-arbitration.md)）**: 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核 FR＝FR-10（リスク統制）・FR-12（ペーパートレード）・FR-15（バックテスト）・FR-19（取引ガード）・FR-20（段階ゲート）**を必須範囲とする（設定駆動・横断的で独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み FR は、作業仕様書（`docs/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数 FR をまとめてよい。
+
 **任意**（必要に応じて作成）:
 
 | 種別 | 文書 | 出力先 |
