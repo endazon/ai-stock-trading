@@ -1,7 +1,7 @@
 ---
 title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
-status: draft
+status: review
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-20

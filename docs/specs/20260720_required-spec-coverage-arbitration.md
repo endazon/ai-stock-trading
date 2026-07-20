@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 — 必須仕様書（機能/テスト）の網羅裁定と規約明確化
 type: work
-status: In progress
+status: review
 related_ids: [NFR, FR-10, FR-12, FR-15, FR-19, FR-20]
 issue: 211
 author: endazon (with Claude Code)
@@ -109,12 +109,17 @@ Issue #211 が提示した二択のうち、**案 B（規約裁定）を採用�
 - `docs/adr/README.md` の連番変更・新規 IADR の作成（下記「実装 ADR の扱い」）。
 - 既存 functional/test 仕様書 5 件の内容改訂（本件のスコープ外）。
 
-## 実装 ADR の扱い（受け入れ基準との差異）
+## 実装 ADR の扱い（受け入れ基準との差異・要メンテナ判断）
 
-Issue #211 の受け入れ基準は「案 A/B の裁定が **IADR に記録される**」だが、本 PR は並行作業（[#209](https://github.com/endazon/ai-stock-trading/issues/209)）
-との `docs/adr/README.md` 連番衝突を避けるため、**新規 IADR を作成しない**方針で進める。裁定は本作業仕様書（point-in-time 記録）
-と CLAUDE.md / docs/README.md の規約本文に**実体として記録**する。将来 IADR へ昇格する場合は本書を一次情報として参照できる。
-この差異は PR 説明と Issue コメントに明記し、利用者の判断に委ねる。
+Issue #211 の受け入れ基準は「案 A/B の裁定が **IADR に記録される**」である。本 PR は、**本作業に与えられた明示のスコープ制約
+（`docs/adr/README.md` の連番・新規 IADR に触れず docs に閉じる）に従い**、新規 IADR を作成していない。裁定は本作業仕様書
+（point-in-time 記録）と CLAUDE.md / docs/README.md の規約本文に**実体として記録**しており、内容面では受け入れ基準を満たす。
+
+- `docs/adr/README.md` には採番前に未マージの全ブランチを確認して連番衝突を避ける手順が整備されている。並行して IADR を採番する
+  作業（例: [#209](https://github.com/endazon/ai-stock-trading/issues/209)）が進行中であり、本 docs スコープの PR で採番手順まで
+  踏み込むのは責務外と判断した。IADR へ昇格する場合は本書を一次情報として、その手順に沿って採番できる。
+- したがって「**IADR へ昇格するか / 受け入れ基準側を緩和して work spec ＋ 規約本文の記録で足りるとするか**」は、
+  マージ前にメンテナが明示的に決定すべき事項である。本 PR は後者を推奨としつつ、判断を委ねる（PR 説明・Issue コメントに明記）。
 
 ## 受け入れ基準
 
