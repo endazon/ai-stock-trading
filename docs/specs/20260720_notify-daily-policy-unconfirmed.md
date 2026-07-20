@@ -1,7 +1,7 @@
 ---
 title: 日報未確定による取引スキップ時に確定を促す通知イベントを発行する
 type: work
-status: review
+status: done
 related_ids: [UC-01, FR-09, FR-07, FR-11, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-20
@@ -39,10 +39,10 @@ plan_refs:
 
 ## 受け入れ基準（issue 由来）
 
-- [ ] 日報未確定で取引サイクルがスキップされた際、通知イベント（`DailyPolicyUnconfirmed`）が発行される。
-- [ ] 同一営業日内の重複通知が抑止される。
-- [ ] 監査ログに記録される（FR-11・`AuditConsumerCoverageTests` 緑）。
-- [ ] 既定挙動を壊さない（未 opt-in では publish しない＝現行のログのみ）。後方互換（イベントは追加のみ）。
+- [x] 日報未確定で取引サイクルがスキップされた際、通知イベント（`DailyPolicyUnconfirmed`）が発行される。
+- [x] 同一営業日内の重複通知が抑止される。
+- [x] 監査ログに記録される（FR-11・`AuditConsumerCoverageTests` 緑）。
+- [x] 既定挙動を壊さない（未 opt-in では publish しない＝現行のログのみ）。後方互換（イベントは追加のみ）。
 
 ## 実装方針
 

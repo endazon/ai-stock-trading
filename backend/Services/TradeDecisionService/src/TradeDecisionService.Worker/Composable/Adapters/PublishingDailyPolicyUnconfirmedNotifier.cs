@@ -26,6 +26,8 @@ internal sealed class PublishingDailyPolicyUnconfirmedNotifier(
     public async Task NotifyAsync(CancellationToken cancellationToken = default)
     {
         var occurredAt = clock.UtcNow;
+        // BusinessDay/dedup 鍵は UTC 暦日（JST 営業日ではない）。ReportService と同一の慣行に揃える（IADR-0096 決定4・
+        // イベント定義コメント参照）。トリガーは実運用上ほぼ市場営業時間内に発火するため JST 境界のずれは実害が小さい。
         var businessDay = DateOnly.FromDateTime(occurredAt.UtcDateTime);
 
         // 当日既通知なら抑止（当日初回のみ true）。チェックと記録を一体に行い、巡回内の並行呼び出しでも 1 回に収束させる。

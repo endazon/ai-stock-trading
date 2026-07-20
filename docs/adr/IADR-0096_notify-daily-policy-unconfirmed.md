@@ -76,6 +76,12 @@ EF/永続化層を新設するのは過剰（計画外の大規模化）。ト�
 これは無害（利用者への「確定してください」の再掲）。撤退降格（[IADR-0085]）が durable を要したのは、握り潰すと降格提案を
 恒久的に失う安全性の問題があったからで、本件（無害な再掲）とは性質が異なる。
 
+**dedup 鍵・BusinessDay は UTC 暦日（JST 営業日ではない）**: 鍵は `clock.UtcNow` の UTC 暦日で、`IBusinessCalendar` の JST
+営業日判定・週末判定は用いない（`ReportService` の `clock.UtcNow.UtcDateTime` 由来と同一の既存慣行）。「翌営業日で再通知」は
+実質「翌 UTC 暦日で再通知」を意味する。JST 0:00〜9:00（UTC 前日 15:00〜24:00）の境界では表示・dedup 粒度が JST 営業日と
+ずれ得るが、トリガー（定時・価格変動）は実運用上ほぼ市場営業時間内に発火するため実害は小さい。将来 `IBusinessCalendar` 経由へ
+寄せる余地は残す（命名「BusinessDay」と実装「UTC 暦日」の乖離はコメント・イベント定義で明示済み）。
+
 ## 影響・波及
 
 - 追加のみ: `Shared.Contracts`（イベント 1 件）／Application（ポート＋NoOp）／Worker（実 notifier＋DI＋フラグ）／
