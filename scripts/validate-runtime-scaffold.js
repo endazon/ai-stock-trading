@@ -55,6 +55,7 @@ const FORBIDDEN_BASE_KEYS = [
   'Notifications',
   'Reports',
   'RiskManagement',
+  'MarketMonitor',
   'CostControl',
   'ApiKey',
   'AnthropicApiKey',

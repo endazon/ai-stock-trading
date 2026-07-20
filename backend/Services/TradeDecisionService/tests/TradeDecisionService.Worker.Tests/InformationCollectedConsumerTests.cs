@@ -44,7 +44,8 @@ public class InformationCollectedConsumerTests
     }
     private sealed class FakeWatchlist(params WatchedSymbol[] symbols) : IWatchlistProvider
     {
-        public IReadOnlyList<WatchedSymbol> GetWatchlist() => symbols;
+        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>>(symbols);
     }
     private sealed class CalendarStub(bool open) : IMarketCalendar
     {
