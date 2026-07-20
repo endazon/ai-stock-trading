@@ -71,6 +71,15 @@ spec:
               value: {{ $e.value | quote }}
               {{- end }}
             {{- end }}
+            {{- /* #226, IADR-0098: Discord Bot 制御コマンドの owner トークンの token エンドポイント。
+                   notification は auth:true を持たず Auth__Authority が注入されないため、ここで
+                   global.authAuthority から算出して注入する。空だと OwnerAuth.IsEnabled が false に倒れ 401。
+                   values にリテラルを置くと authAuthority を --set で変えても追随しないため、テンプレート側で
+                   Auth__Authority と同一ソース（$g.authAuthority）から導出する。 */}}
+            {{- if eq $name "notification" }}
+            - name: Notifications__Discord__OwnerAuth__TokenEndpoint
+              value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
+            {{- end }}
             {{- /* #121: CronJob スケジューラ有効時、情報収集は External（in-process 巡回を停止し run-once 起動）へ切替える。
                    これを入れないと in-process ポーリングと CronJob が二重起動する。既定（cronjob 無効）は InProcess。 */}}
             {{- if and (eq $name "information-collection") $.Values.tradingCycle.cronjob.enabled }}

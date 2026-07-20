@@ -266,6 +266,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       - name: Notifications__Discord__OwnerAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
+      # #226, IADR-0098: owner トークンの token エンドポイント（AST レルム）は templates/deployment.yaml が
+      # global.authAuthority から導出して注入する（Auth__Authority と同一ソース＝--set 追随）。ここには置かない
+      # （非テンプレート値では authAuthority 変更に追随せず 401 が別経路で再発するため）。
       # kill switch の呼び先（空=BaseAddress 未設定＝呼び出し失敗）。
       - { name: RiskManagement__BaseUrl, value: "" }
   order-execution:

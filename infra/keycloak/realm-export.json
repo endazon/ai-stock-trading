@@ -46,6 +46,12 @@
       "enabled": true,
       "serviceAccountClientId": "ai-stock-trading-svc",
       "realmRoles": ["trading-service"]
+    },
+    {
+      "username": "service-account-ai-stock-trading-owner",
+      "enabled": true,
+      "serviceAccountClientId": "ai-stock-trading-owner",
+      "realmRoles": ["trading-owner"]
     }
   ],
   "clients": [
@@ -67,6 +73,18 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "secret": "dev-only-service-secret",
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "ai-stock-trading-owner",
+      "description": "dev: confidential owner client for Discord Bot control commands (pause/resume/killswitch/stage). client_credentials with trading-owner (IADR-0098/0062). Production secret comes from Secret/Vault, not this dev export.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "dev-only-owner-secret",
       "redirectUris": [],
       "webOrigins": []
     }

@@ -5,6 +5,9 @@
 #
 #   scripts/k8s-local-deploy.sh [cluster-name]
 # 機密の上書き: FINNHUB_API_KEY / DISCORD_WEBHOOK_URL（未設定=空=no-op）。
+# #226, IADR-0098: Discord Bot 制御コマンドの owner 認証は dev 既定（ai-stock-trading-owner /
+# dev-only-owner-secret＝realm-export.json と一致）で解決する。DISCORD_OWNERAUTH_CLIENTID /
+# DISCORD_OWNERAUTH_CLIENTSECRET で上書き可。Bot は Enabled=false 既定のため opt-in を維持。
 # LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
 set -euo pipefail
 CLUSTER="${1:-msp-ast-dev}"
@@ -22,6 +25,8 @@ kubectl create secret generic ast-secrets -n "$NS" \
   --from-literal=discord-webhook-url="${DISCORD_WEBHOOK_URL:-}" \
   --from-literal=service-auth-client-id="${SERVICEAUTH_CLIENTID:-ai-stock-trading-svc}" \
   --from-literal=service-auth-client-secret="${SERVICEAUTH_CLIENTSECRET:-dev-only-service-secret}" \
+  --from-literal=discord-owner-auth-client-id="${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}" \
+  --from-literal=discord-owner-auth-client-secret="${DISCORD_OWNERAUTH_CLIENTSECRET:-dev-only-owner-secret}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [3/3] helm upgrade --install"
