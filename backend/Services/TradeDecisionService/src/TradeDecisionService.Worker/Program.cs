@@ -187,6 +187,15 @@ builder.Services.AddAiStockTradingAssumptions(builder.Configuration);
 builder.Services.AddScoped<IProfitabilityAssumptionsProvider>(sp =>
     new AssumptionsProfitabilityProvider(sp.GetRequiredService<IAssumptionsProvider>()));
 
+// UC-01, FR-09, FR-11, IADR-0096, #210: 日報未確定（policy-null）による見送りの通知。既定は NoOp（何もしない＝現行の
+// ログのみ）。TradeCycle:NotifyOnUnconfirmedPolicy=true のときだけ実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）へ
+// 差し替える。既定・CI・未結線（Placeholder が常に null を返す）状態では publish しない＝現行挙動を完全維持する。実 Reports が
+// 結線され null が真に「本日未確定」を意味する環境でのみ有効化する想定（IADR-0096 決定2）。singleton＝dedup 状態をプロセス内で共有。
+if (bool.TryParse(builder.Configuration["TradeCycle:NotifyOnUnconfirmedPolicy"], out var notifyUnconfirmed) && notifyUnconfirmed)
+    builder.Services.AddSingleton<IDailyPolicyUnconfirmedNotifier, PublishingDailyPolicyUnconfirmedNotifier>();
+else
+    builder.Services.AddSingleton<IDailyPolicyUnconfirmedNotifier, NoOpDailyPolicyUnconfirmedNotifier>();
+
 builder.Services.AddScoped<TradeDecisionService>();
 
 // ADR-0003, IADR-0011, IADR-0023: MassTransit（RabbitMQ）。価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、

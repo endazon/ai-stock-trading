@@ -43,6 +43,13 @@ public static class NotificationFormatter
         $"{e.Category} 費用が月次上限の {e.Percent:F0}% に到達しました（{e.Month}・{e.State}）。",
         e.State == "Halted" ? NotificationSeverity.Critical : NotificationSeverity.Warning);
 
+    // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
+    // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。
+    public static NotificationMessage From(DailyPolicyUnconfirmed e) => new(
+        "取引スキップ: 日報未確定",
+        $"確定済みの日報がないため取引を見送りました（営業日 {e.BusinessDay:yyyy-MM-dd}）。日報を確定してください。",
+        NotificationSeverity.Warning);
+
     // FR-20, FR-09, UC-06, #166: 撤退基準到達（自動安全側の発火）。新規建ての自動停止を伴う撤退は Critical。
     // 段階の実降格は提案に留まる（確定は利用者承認による差し戻しを要する）ことを本文で明示する。
     public static NotificationMessage From(WithdrawalTriggered e) => new(

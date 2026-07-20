@@ -64,6 +64,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<WithdrawalTriggeredAuditConsumer>();
     // FR-20/FR-15/#164, IADR-0089: バックテスト verdict（Stage 0 合格判定 #16・Stage 0→1 解錠）も中央監査台帳へ集約する（FR-11）。
     x.AddConsumer<BacktestEvaluatedAuditConsumer>();
+    // UC-01/FR-09/FR-07/#210: 日報未確定による取引スキップ（取引判断 #11）も中央監査台帳へ集約する（全イベントの時系列記録・FR-11）。
+    x.AddConsumer<DailyPolicyUnconfirmedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

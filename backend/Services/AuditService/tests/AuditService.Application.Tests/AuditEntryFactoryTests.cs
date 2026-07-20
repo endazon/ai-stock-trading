@@ -243,4 +243,24 @@ public class AuditEntryFactoryTests
             new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(stage.CorrelationId);
     }
+
+    [Fact]
+    public void DailyPolicyUnconfirmed_は共通相関で営業日を記録する()
+    {
+        // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による見送りは注文/市場相関を持たないため "daily-policy" 共通相関に載せる。
+        var e = new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 20), RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("DailyPolicyUnconfirmed");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("日報未確定").And.Contain("2026-07-20");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("BusinessDay");
+        // 日報未確定の見送りはすべて同一「daily-policy」相関で束ねられる（別営業日でも同一相関）。
+        var other = AuditEntryFactory.From(
+            new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 21), RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(other.CorrelationId);
+    }
 }

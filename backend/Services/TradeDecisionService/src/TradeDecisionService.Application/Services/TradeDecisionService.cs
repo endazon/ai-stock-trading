@@ -23,11 +23,18 @@ public sealed class TradeDecisionService(
     IRetrievalContextProvider? retrieval = null,
     DecisionOrchestrationOptions? options = null,
     IProfitabilityAssumptionsProvider? profitability = null,
-    ProfitabilityGateOptions? profitabilityOptions = null)
+    ProfitabilityGateOptions? profitabilityOptions = null,
+    IDailyPolicyUnconfirmedNotifier? unconfirmedNotifier = null)
 {
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
         new(llm, options ?? DecisionOrchestrationOptions.Default, logger);
+
+    // UC-01, FR-09, IADR-0096: 日報未確定（policy-null）で見送った際に確定を促す通知を促す出力ポート。
+    // 未指定＝NoOp（何もしない＝現行のログのみ）。実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）は Worker が
+    // opt-in（TradeCycle:NotifyOnUnconfirmedPolicy）で差し替える。
+    private readonly IDailyPolicyUnconfirmedNotifier _unconfirmedNotifier =
+        unconfirmedNotifier ?? new NoOpDailyPolicyUnconfirmedNotifier();
 
     // FR-08, IADR-0072: RAG 取得ポート。未指定＝NoOp（常に空＝参考情報なし＝現行動作）。実結線は Worker が opt-in で差し替える。
     private readonly IRetrievalContextProvider _retrieval = retrieval ?? new NoOpRetrievalContextProvider();
@@ -58,6 +65,9 @@ public sealed class TradeDecisionService(
         if (policy is null)
         {
             logger.LogInformation("確定済み日報の方針が無いため取引しない: {Symbol}", trigger.Symbol);
+            // UC-01, FR-09, IADR-0096: 日報未確定による見送りを通知（確定を促す）。営業日単位の重複抑止は notifier 側。
+            // fail-safe: 通知は取引判断のクリティカルパス外。発行失敗・例外で見送り（null 返却）を壊さない。キャンセルは伝播。
+            await NotifyDailyPolicyUnconfirmedSafeAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
 
@@ -176,6 +186,20 @@ public sealed class TradeDecisionService(
             trigger.Symbol, verdict, expectedGrossProfit, assessment?.RoundTripCost, assessment?.MinimumProfitMultiple,
             _profitabilityOptions.DecisionCostJpy, assessment?.AssumptionsVersion);
         return false;
+    }
+
+    // UC-01, FR-09, IADR-0096: 日報未確定通知の fail-safe ラッパ。通知は判断のクリティカルパス外のため、発行の例外・失敗は
+    // 見送り（null 返却）を壊さないよう握って継続する。キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
+    private async Task NotifyDailyPolicyUnconfirmedSafeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _unconfirmedNotifier.NotifyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "日報未確定の通知発行に失敗しました（見送りは継続）。");
+        }
     }
 
     // FR-08, IADR-0072 決定4: RAG 取得の fail-safe ラッパ。取得失敗（例外・遅延）は「文脈なし」に縮退し判断を継続する。

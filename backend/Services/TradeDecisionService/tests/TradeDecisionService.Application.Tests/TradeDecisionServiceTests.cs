@@ -95,6 +95,69 @@ public class TradeDecisionServiceTests
         (await service.DecideAsync(Trigger())).Should().BeNull();
     }
 
+    // --- UC-01, FR-09, IADR-0096, #210: 日報未確定による見送り時の通知フックの検証 ---
+
+    private sealed class FakeUnconfirmedNotifier : IDailyPolicyUnconfirmedNotifier
+    {
+        public int Calls { get; private set; }
+        public Task NotifyAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingUnconfirmedNotifier : IDailyPolicyUnconfirmedNotifier
+    {
+        public Task NotifyAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("通知発行の擬似障害");
+    }
+
+    private static AppSvc CreateWithNotifier(
+        string llmOutput, DailyPolicy? policy, IDailyPolicyUnconfirmedNotifier notifier) =>
+        new(new FakeLlm(llmOutput), new FakePolicy(policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            retrieval: null, options: null, profitability: null, profitabilityOptions: null,
+            unconfirmedNotifier: notifier);
+
+    // 基準1: 日報未確定（policy-null）の見送り時に通知フックが呼ばれる。
+    [Fact]
+    public async Task 日報未確定で見送るとき通知フックが呼ばれる()
+    {
+        var notifier = new FakeUnconfirmedNotifier();
+
+        (await CreateWithNotifier(BuyJson, policy: null, notifier).DecideAsync(Trigger())).Should().BeNull();
+
+        notifier.Calls.Should().Be(1);
+    }
+
+    // 日報が有る（見送り理由が policy-null 以外）ときは日報未確定通知を出さない（他の見送りに波及しない）。
+    [Fact]
+    public async Task 日報が有れば日報未確定通知は出さない()
+    {
+        var notifier = new FakeUnconfirmedNotifier();
+
+        // Hold で見送るが、これは日報未確定ではないため通知しない。
+        await CreateWithNotifier("""{"action":"Hold","rationale":"様子見"}""", Policy, notifier).DecideAsync(Trigger());
+
+        notifier.Calls.Should().Be(0);
+    }
+
+    // 既定挙動: notifier 未指定（NoOp）でも日報未確定の見送りは従来どおり null を返す（現行挙動を壊さない）。
+    [Fact]
+    public async Task notifier未指定でも日報未確定は従来どおり見送る()
+    {
+        (await Create(BuyJson, policy: null).DecideAsync(Trigger())).Should().BeNull();
+    }
+
+    // fail-safe: 通知発行が例外でも判断経路（見送り＝null 返却）を壊さない。
+    [Fact]
+    public async Task 通知発行が例外でも見送りは継続する()
+    {
+        (await CreateWithNotifier(BuyJson, policy: null, new ThrowingUnconfirmedNotifier())
+            .DecideAsync(Trigger())).Should().BeNull();
+    }
+
     [Fact]
     public async Task Buy判断は発注意図をOpenで組み立てTradeDecisionMadeを返す()
     {
