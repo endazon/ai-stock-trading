@@ -79,8 +79,9 @@ kill switch の解除は「全取引停止の解除」＝実弾方向へ戻す�
 
 - 変更（追加なし）: `KillSwitchCommandHandler.cs`（閂3を両種別へ）／`KillSwitchConfirmation.cs`（未設定文言の一般化）／
   `DiscordNetBotGateway.cs`（解除もモーダル導線・モーダル ID 分離）。
-- テスト: `KillSwitchCommandHandlerTests`（解除のフレーズ一致/不一致/未入力/未設定/冪等を追加、旧「フレーズなしで解除」を反転）／
-  `KillSwitchConfirmationTests`（未設定文言の追随）。
+- テスト: `KillSwitchCommandHandlerTests`（解除のフレーズ一致/不一致/未入力/未設定/冪等を追加、旧「フレーズなしで解除」を反転）。
+  `KillSwitchConfirmationTests` は既存アサーションが `Reason` の部分一致（「未設定」を含む）のみで未設定文言の一般化に
+  影響されないため**変更不要**（グリーン維持・本 PR では同ファイルを変更していない）。
 - `Shared.Contracts`・realm-export.json・helm values（OwnerAuth secret 配線）は不変（後者は別 issue の領域）。
 
 ## 代替案と却下理由
