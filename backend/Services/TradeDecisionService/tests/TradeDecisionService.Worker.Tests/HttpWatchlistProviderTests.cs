@@ -87,7 +87,7 @@ public class HttpWatchlistProviderTests
     }
 
     [Fact]
-    public async Task 不正_空ボディの_200_は既定_watchlist_へフォールバックする()
+    public async Task 不正_null応答の_200_は既定_watchlist_へフォールバックする()
     {
         var result = await Provider(new StubHandler(HttpStatusCode.OK, "null"), new FakeFallback(FallbackSymbols))
             .GetWatchlistAsync();
