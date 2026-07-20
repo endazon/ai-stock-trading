@@ -79,17 +79,76 @@ public class KillSwitchCommandHandlerTests
         controller.LastReason.Should().Contain("endazon");
     }
 
+    // #223, IADR-0097: 裁定（project-planning#35 / ADR-0009）により解除も確認フレーズを要する。
     [Fact]
-    public async Task 解除は確認フレーズなしで実行できる()
+    public async Task 本人が確認フレーズを入力すれば解除される()
+    {
+        var controller = new FakeKillSwitchController();
+
+        var result = await Handler(controller, FullyConfigured())
+            .HandleAsync(Context("/killswitch off"), Phrase);
+
+        result.WasExecuted.Should().BeTrue();
+        controller.DisengageCalls.Should().Be(1);
+        controller.Engaged.Should().BeFalse();
+        controller.LastReason.Should().Contain("endazon");
+    }
+
+    // #223, IADR-0097: 解除もフレーズ不一致では Risk を呼ばない（誤爆防止を解除方向にも掛ける）。
+    [Fact]
+    public async Task 解除も確認フレーズが不一致なら_Risk_を呼ばない()
+    {
+        var controller = new FakeKillSwitchController();
+
+        var result = await Handler(controller, FullyConfigured())
+            .HandleAsync(Context("/killswitch off"), "wrong phrase");
+
+        result.WasExecuted.Should().BeFalse();
+        controller.DisengageCalls.Should().Be(0);
+    }
+
+    // #223, IADR-0097: 解除もフレーズ未入力（null）では Risk を呼ばない。
+    [Fact]
+    public async Task 解除も確認フレーズなしなら_Risk_を呼ばない()
     {
         var controller = new FakeKillSwitchController();
 
         var result = await Handler(controller, FullyConfigured())
             .HandleAsync(Context("/killswitch off"), confirmationPhrase: null);
 
-        result.WasExecuted.Should().BeTrue();
-        controller.DisengageCalls.Should().Be(1);
+        result.WasExecuted.Should().BeFalse();
+        controller.DisengageCalls.Should().Be(0);
+    }
+
+    // #223, IADR-0097（安全既定）: フレーズ未設定なら解除も拒否する（設定漏れで解除の閂が外れない）。
+    [Fact]
+    public async Task 解除も確認フレーズが未設定なら_Risk_を呼ばない()
+    {
+        var controller = new FakeKillSwitchController();
+        var options = FullyConfigured();
+        options.KillSwitchConfirmationPhrase = null;
+
+        var result = await Handler(controller, options)
+            .HandleAsync(Context("/killswitch off"), Phrase);
+
+        result.WasExecuted.Should().BeFalse();
+        controller.DisengageCalls.Should().Be(0);
+    }
+
+    // #223, IADR-0097: 冪等。正しいフレーズでの再解除も状態は解除のまま（controller が現状態を返す）。
+    [Fact]
+    public async Task 解除済みへの再解除は状態を変えない()
+    {
+        var controller = new FakeKillSwitchController();
+        var handler = Handler(controller, FullyConfigured());
+
+        var first = await handler.HandleAsync(Context("/killswitch off"), Phrase);
+        var second = await handler.HandleAsync(Context("/killswitch off"), Phrase);
+
+        first.Result!.Engaged.Should().BeFalse();
+        second.Result!.Engaged.Should().BeFalse();
         controller.Engaged.Should().BeFalse();
+        controller.DisengageCalls.Should().Be(2);
     }
 
     // 受け入れ基準9（冪等）: 起動済みへの再起動は状態を変えない。

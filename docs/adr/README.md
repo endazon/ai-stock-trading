@@ -132,3 +132,4 @@
 | IADR-0094 | ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps は AST リポ内の opt-in manifest／docs として整備し（既定オフ・平文秘密なし・`dataFrom.extract`）、共有スタックの stand-up と Hetzner 実デプロイ（Tier 3）は分離する | Accepted |
 | IADR-0095 | TradeDecision の watchlist 供給を権威源 MarketMonitor の s2s 同期照会（GET `/monitor/watchlist` を `OwnerOrService` に開放）へ一本化し、構成ベース（`TradeCycle:Watchlist`）は BaseUrl 未設定/照会失敗時の fail-safe フォールバックへ降格する（新イベント無し・`Shared.Contracts` 不変） | Accepted |
 | IADR-0096 | 日報未確定による取引スキップは DailyPolicyUnconfirmed イベントで通知し、営業日単位の in-memory dedup で抑止する（発火は DecideAsync の policy-null 分岐・既定 no-op / opt-in・durable にしない） | Accepted |
+| IADR-0097 | kill switch 解除にも起動と同一の確認フレーズ検証（`Verify`）を要求し、Gateway は解除もモーダル導線（ID 分離）へ揃える。安全既定は解除も拒否（未設定＝フレーズ不要にしない・摩擦を下げない）・監査/冪等は既存経路踏襲・`Shared.Contracts` 不変 | Accepted |
