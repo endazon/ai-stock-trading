@@ -20,9 +20,11 @@ namespace AiStockTrading.Notification.Worker.Composable.Adapters;
 internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 {
     // 確認フレーズを受け取るモーダル・ボタンの識別子。
+    // IADR-0097: 起動・解除でモーダル ID を分離する（送信ハンドラが ID 一致だけで種別を確定でき、誤操作の余地が無い）。
     private const string KillSwitchEngageButtonId = "ast-killswitch-engage-confirm";
     private const string KillSwitchDisengageButtonId = "ast-killswitch-disengage-confirm";
-    private const string KillSwitchModalId = "ast-killswitch-modal";
+    private const string KillSwitchEngageModalId = "ast-killswitch-modal";
+    private const string KillSwitchDisengageModalId = "ast-killswitch-disengage-modal";
     private const string KillSwitchPhraseInputId = "ast-killswitch-phrase";
 
     // FR-10, ADR-0009: 一時停止/再開の確認ボタン（確認フレーズは求めない＝pause は可逆のため）。
@@ -327,8 +329,8 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         return stage is >= 0 and <= 3;
     }
 
-    // 確認ボタン押下 → 起動は確認フレーズのモーダルを出す。解除はそのまま実行する
-    // （詳細設計07:「解除のみ確認ステップを追加」＝起動はフレーズまで要求する）。
+    // 確認ボタン押下 → 起動・解除ともに確認フレーズのモーダルを出す（IADR-0097・planning#35 裁定）。
+    // ここでは Risk を呼ばない。モーダル送信時に Handler がフレーズを検証し、認証も再評価する。
     private async Task OnButtonAsync(SocketMessageComponent component)
     {
         switch (component.Data.CustomId)
@@ -337,7 +339,7 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 {
                     var modal = new ModalBuilder()
                         .WithTitle("全取引の停止")
-                        .WithCustomId(KillSwitchModalId)
+                        .WithCustomId(KillSwitchEngageModalId)
                         .AddTextInput("確認フレーズを入力してください", KillSwitchPhraseInputId, required: true)
                         .Build();
                     await component.RespondWithModalAsync(modal).ConfigureAwait(false);
@@ -346,12 +348,13 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
 
             case KillSwitchDisengageButtonId:
                 {
-                    await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
-                    var result = await _handler
-                        .HandleAsync(ContextOf(component, "/killswitch off"), confirmationPhrase: null)
-                        .ConfigureAwait(false);
-                    // 押されたボタンは無効化し、結果をメッセージ編集で明示する（詳細設計07）。
-                    await DisableComponentsAsync(component, ResponseTextOf(result)).ConfigureAwait(false);
+                    // IADR-0097: 解除も起動と同じくフレーズ入力モーダルを提示する（確認ボタンのみでは解除しない）。
+                    var modal = new ModalBuilder()
+                        .WithTitle("停止の解除")
+                        .WithCustomId(KillSwitchDisengageModalId)
+                        .AddTextInput("確認フレーズを入力してください", KillSwitchPhraseInputId, required: true)
+                        .Build();
+                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
                     return;
                 }
 
@@ -397,10 +400,18 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         await DisableComponentsAsync(component, StageResponseTextOf(result)).ConfigureAwait(false);
     }
 
-    // 確認フレーズの入力 → 最終実行。認証はハンドラ側で再評価される。
+    // 確認フレーズの入力 → 最終実行。認証・フレーズ検証はハンドラ側で行われる。
+    // IADR-0097: 起動用・解除用でモーダル ID が分かれており、ID により渡すコマンドを出し分ける
+    // （送信ハンドラは ID 一致だけで種別を確定でき、誤って別操作を実行する余地が無い）。
     private async Task OnModalAsync(SocketModal modal)
     {
-        if (modal.Data.CustomId != KillSwitchModalId)
+        var rawCommand = modal.Data.CustomId switch
+        {
+            KillSwitchEngageModalId => "/killswitch",
+            KillSwitchDisengageModalId => "/killswitch off",
+            _ => null,
+        };
+        if (rawCommand is null)
             return;
 
         await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
@@ -409,7 +420,7 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             .FirstOrDefault(c => c.CustomId == KillSwitchPhraseInputId)?.Value;
 
         var result = await _handler
-            .HandleAsync(ContextOf(modal, "/killswitch"), phrase)
+            .HandleAsync(ContextOf(modal, rawCommand), phrase)
             .ConfigureAwait(false);
 
         await modal.FollowupAsync(ResponseTextOf(result), ephemeral: true).ConfigureAwait(false);

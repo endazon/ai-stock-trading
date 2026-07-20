@@ -14,7 +14,8 @@ public sealed class KillSwitchCommandHandler(
     DiscordBotOptions options,
     ILogger<KillSwitchCommandHandler> logger)
 {
-    // confirmationPhrase は起動時のみ要求される（解除は確認ボタンのみ＝詳細設計07「解除のみ確認ステップを追加」）。
+    // FR-14, UC-06, ADR-0009, IADR-0097: confirmationPhrase は起動・解除の双方で要求する（planning#35 裁定）。
+    // 起動・解除いずれも「確認ボタン＋確認フレーズ」を要し、フレーズ不一致・未入力・未設定は Risk を呼ばず拒否する。
     public async Task<KillSwitchCommandResult> HandleAsync(
         DiscordCommandContext context,
         string? confirmationPhrase,
@@ -43,23 +44,23 @@ public sealed class KillSwitchCommandHandler(
             return KillSwitchCommandResult.Denied("kill switch コマンドではない");
         }
 
-        // 閂3: 起動は確認フレーズ必須（未設定なら拒否）。解除には要求しない。
-        if (command.Kind == BotCommandKind.KillSwitchEngage)
+        // 閂3: 起動・解除ともに確認フレーズ必須（未設定なら双方拒否＝安全既定・IADR-0097）。
+        // 解除も実弾方向へ戻す高リスク操作のため、起動と同一の Verify を通す。フレーズ不一致・未入力・未設定は
+        // Risk を呼ばず拒否する。拒否理由（内部の層名）は操作種別を添えてログに残す（監査は既存経路＝LogWarning）。
+        var confirmation = KillSwitchConfirmation.Verify(confirmationPhrase, options);
+        if (!confirmation.IsConfirmed)
         {
-            var confirmation = KillSwitchConfirmation.Verify(confirmationPhrase, options);
-            if (!confirmation.IsConfirmed)
-            {
-                logger.LogWarning(
-                    "kill switch 起動を確認ステップで拒否しました（Actor={Actor}・理由={Reason}）。",
-                    auth.Actor, confirmation.Reason);
-                return KillSwitchCommandResult.Denied(confirmation.Reason);
-            }
+            var operation = command.Kind == BotCommandKind.KillSwitchEngage ? "起動" : "解除";
+            logger.LogWarning(
+                "kill switch {Operation}を確認ステップで拒否しました（Actor={Actor}・理由={Reason}）。",
+                operation, auth.Actor, confirmation.Reason);
+            return KillSwitchCommandResult.Denied(confirmation.Reason);
         }
 
         // 理由には操作者（Keycloak 利用者名）と経路を残す。Risk 側は理由必須（ADR-0007）。
         var reason = $"Discord Bot 経由の操作（actor={auth.Actor}）";
 
-        // 起動は冪等（起動済みなら Risk が現状態を返すのみ）。
+        // 起動・解除いずれも冪等（既に当該状態なら Risk が現状態を返すのみ）。
         var result = command.Kind == BotCommandKind.KillSwitchEngage
             ? await controller.EngageAsync(reason, cancellationToken).ConfigureAwait(false)
             : await controller.DisengageAsync(reason, cancellationToken).ConfigureAwait(false);
