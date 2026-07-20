@@ -266,6 +266,10 @@ services:
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       - name: Notifications__Discord__OwnerAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
+      # #226, IADR-0098: owner トークンの token エンドポイント（AST レルム）。notification は auth:true を持たず
+      # Auth__Authority が注入されないため、ここで明示しないと IsEnabled が false に倒れ 401 になる。
+      # 値は global.authAuthority（http://keycloak:8080/realms/ai-stock-trading）＋ /protocol/openid-connect/token と一致。
+      - { name: Notifications__Discord__OwnerAuth__TokenEndpoint, value: "http://keycloak:8080/realms/ai-stock-trading/protocol/openid-connect/token" }
       # kill switch の呼び先（空=BaseAddress 未設定＝呼び出し失敗）。
       - { name: RiskManagement__BaseUrl, value: "" }
   order-execution:
