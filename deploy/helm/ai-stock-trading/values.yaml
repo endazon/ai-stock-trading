@@ -319,6 +319,10 @@ services:
     extraEnv:
       - { name: Reports__BaseUrl, value: "" }
       - { name: RiskManagement__BaseUrl, value: "" }
+      # FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）の権威源＝市場監視の GET /monitor/watchlist を s2s 同期照会。
+      # fail-safe: 空=構成ベース（TradeCycle:Watchlist）＝現行挙動。実結線時は市場監視サービス URL（例: http://market-monitor-service:8080）を入れると
+      # SC-02 での監視銘柄変更が定時サイクルの判断対象に反映される。本 PR では実 URL を投入しない（他 s2s と足並みを揃える）。
+      - { name: MarketMonitor__BaseUrl, value: "" }
       # FR-04, ADR-0010, IADR-0061: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
