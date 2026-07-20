@@ -58,4 +58,18 @@ public class NotificationFormatterTests
         msg.Severity.Should().Be(NotificationSeverity.Critical);
         msg.Content.Should().Contain("7203");
     }
+
+    // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップは確定を促す Warning として整形される。
+    [Fact]
+    public void 日報未確定は確定を促す_Warning_で整形される()
+    {
+        var e = new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 20), DateTimeOffset.UtcNow);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Title.Should().Contain("日報未確定");
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Content.Should().Contain("2026-07-20");
+        msg.Content.Should().Contain("確定");
+    }
 }

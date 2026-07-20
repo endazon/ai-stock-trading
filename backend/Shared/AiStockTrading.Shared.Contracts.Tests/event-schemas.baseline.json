@@ -20,6 +20,10 @@
     "Percent": "Decimal",
     "State": "String"
   },
+  "DailyPolicyUnconfirmed": {
+    "BusinessDay": "DateOnly",
+    "OccurredAt": "DateTimeOffset"
+  },
   "InformationCollected": {
     "CollectedAt": "DateTimeOffset",
     "EventId": "Guid",

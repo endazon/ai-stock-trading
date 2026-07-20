@@ -182,3 +182,14 @@ internal sealed class BacktestEvaluatedAuditConsumer(IAuditEventStore store, ICl
         return Task.CompletedTask;
     }
 }
+
+// UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+internal sealed class DailyPolicyUnconfirmedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<DailyPolicyUnconfirmed>
+{
+    public Task Consume(ConsumeContext<DailyPolicyUnconfirmed> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}

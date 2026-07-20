@@ -111,6 +111,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<CostThresholdReachedNotificationConsumer>();
     // FR-20/FR-09: 撤退基準到達（撤退の定期評価ドライバ #166）の通知。
     x.AddConsumer<WithdrawalTriggeredNotificationConsumer>();
+    // UC-01/FR-09/FR-07: 日報未確定による取引スキップ（取引判断 #11・#210）の確定を促す通知。
+    x.AddConsumer<DailyPolicyUnconfirmedNotificationConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

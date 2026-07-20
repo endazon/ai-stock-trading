@@ -109,6 +109,13 @@ public static class AuditEntryFactory
             + (e.Passed ? string.Empty : $" 未達: {e.FailedChecks}")),
         AuditSerialization.Serialize(e), e.EvaluatedAt, recordedAt);
 
+    // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
+    // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
+    public static AuditEntry From(DailyPolicyUnconfirmed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(DailyPolicyUnconfirmed), AuditCorrelation.From("daily-policy"), Symbol: null,
+        $"日報未確定により取引を見送り（営業日 {e.BusinessDay:yyyy-MM-dd}）",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }

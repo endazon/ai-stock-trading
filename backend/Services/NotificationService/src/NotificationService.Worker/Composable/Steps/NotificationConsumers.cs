@@ -53,3 +53,10 @@ internal sealed class WithdrawalTriggeredNotificationConsumer(INotificationSende
     public Task Consume(ConsumeContext<WithdrawalTriggered> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を購読して確定を促す通知を送る。
+internal sealed class DailyPolicyUnconfirmedNotificationConsumer(INotificationSender sender) : IConsumer<DailyPolicyUnconfirmed>
+{
+    public Task Consume(ConsumeContext<DailyPolicyUnconfirmed> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

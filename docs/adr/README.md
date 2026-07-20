@@ -130,3 +130,4 @@
 | IADR-0092 | Reserved 滞留の実照会プローブは DecisionId を moomoo remark に伝播し SIMULATE の現在＋履歴注文を照合する（解放は「確実に未発注」の既知窓のみ・他は Indeterminate・既定 no-op / opt-in） | Accepted |
 | IADR-0093 | KB 保存・検索の s2s は MSP レルムの専用 confidential client（platform-operator）でクロスレルムに認証し、AST レルムの ServiceAuth とは分離した inline ハンドラで発行する（既定 no-op・秘密は Secret 経由・realm 定義は MSP 側 PR） | Accepted |
 | IADR-0094 | ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps は AST リポ内の opt-in manifest／docs として整備し（既定オフ・平文秘密なし・`dataFrom.extract`）、共有スタックの stand-up と Hetzner 実デプロイ（Tier 3）は分離する | Accepted |
+| IADR-0096 | 日報未確定による取引スキップは DailyPolicyUnconfirmed イベントで通知し、営業日単位の in-memory dedup で抑止する（発火は DecideAsync の policy-null 分岐・既定 no-op / opt-in・durable にしない） | Accepted |
