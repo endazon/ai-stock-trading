@@ -4,6 +4,10 @@
 
 ### 新機能
 
+- **FR-14**: dev realm に Discord Bot 制御コマンド用 OwnerAuth クライアントを追加 (#228) (1cf6c73)
+- **FR-14,UC-06**: kill switch 解除に確認フレーズ検証を追加する (#227) (9ebb873)
+- **UC-01,FR-09**: 日報未確定による取引スキップ時に確定を促す通知を発行する (#225) (642f012)
+- **FR-02,FR-13**: SC-02 の監視銘柄変更を TradeDecision の定時サイクルへ結線する (#222) (197e368)
 - **ADR-0006**: ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps を opt-in で整備する (#219) (e4570dd)
 - **FR-08**: 実 KB 保存のクロスレルム s2s 配線（MSP レルムの専用クライアント認証） (#218) (f8fb2ae)
 - **FR-05**: 発注予約 Reserved 滞留の実照会プローブ（moomoo/OpenD SIMULATE）を配線する (#214) (16040fc)
@@ -100,6 +104,8 @@
 
 ### ドキュメント
 
+- **NFR,FR-15**: 必須仕様書（機能/テスト）の網羅裁定と FR-15 テスト仕様の補完 (#221) (c1298f8)
+- **NFR**: CHANGELOG を自動更新 (#215) (451cd7d)
 - **IADR-0091**: ADR 一覧に IADR-0091 の行を追記する (#216) (fd8a902)
 - **IADR-0056**: 実弾解禁 Runbook を追加（切替手順・前提・切り戻し・現状フラグ off） (#213) (7a015ff)
 - **NFR**: CHANGELOG を自動更新 (#207) (4a9a8d1)
@@ -135,6 +141,7 @@
 
 ### ビルド
 
+- **deps**: bump planning from `f128c20` to `f099322` (#229) (7cebe5b)
 - **deps**: bump planning from `8fcc468` to `f128c20` (#220) (ed1f4a1)
 - **deps**: bump planning from `98c45d0` to `8fcc468` (#206) (bf43f21)
 - **deps**: bump planning from `da20fc4` to `98c45d0` (#200) (c5749ed)
