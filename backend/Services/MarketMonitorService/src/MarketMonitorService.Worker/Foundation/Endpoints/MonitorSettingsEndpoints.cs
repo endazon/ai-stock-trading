@@ -11,9 +11,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.MarketMonitor.Worker.Foundation.Endpoints;
 
-// FR-03, FR-13, UC-06, ADR-0007: 監視設定（監視銘柄・変動閾値・クールダウン）の照会・変更。利用者のみ（OwnerOnly）。
-// 生成AI・自動処理はこのロールを持たないため変更できない。
-// IADR-0088: 認可は owner サブグループに付与し、親グループには付けない（親は例外→HTTP 写像のみ）。Risk `/risk-controls` と同型。
+// FR-03, FR-13, UC-06, ADR-0007: 監視設定（監視銘柄・変動閾値・クールダウン）の照会・変更。
+// 変更（PUT /settings・POST/DELETE /watchlist）と履歴は利用者のみ（OwnerOnly）＝生成AI・自動処理はこのロールを持たず変更できない。
+// FR-02, IADR-0095: 監視銘柄の取得（GET /watchlist）のみサービス（trading-service）にも開放（OwnerOrService）＝定時サイクルが s2s 照会する。
+// IADR-0088: 認可は read/owner サブグループに付与し、親グループには付けない（親は例外→HTTP 写像のみ）。Risk `/risk-controls` と同型。
 internal static class MonitorSettingsEndpoints
 {
     public static IEndpointRouteBuilder MapMonitorSettingsEndpoints(this IEndpointRouteBuilder app)
