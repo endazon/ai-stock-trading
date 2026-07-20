@@ -88,6 +88,9 @@ s2s 境界は JSON（camelCase・列挙は数値で往復）で、`HttpWatchlist
 
 - MarketMonitor: `MonitorSettingsEndpoints` の認可グループ分割（GET は read へ・変更系は owner 据え置き）。ロジック不変。
 - TradeDecision: `IWatchlistProvider` 非同期化、`HttpWatchlistProvider` 追加、`Program.cs` の DI 選択、`InformationCollectedConsumer` の `await` 化。
+- 自己申告（IADR-0078 決定4）: `AddAiStockTradingIntrospection` に `watchlist` ポートを追加し、`MarketMonitor:BaseUrl` の有無で
+  `http`（権威源へ結線）/`configuration`（構成フォールバック）を `GET /internal/introspection` から判別可能にする。
+  他の外部ポート選択（sizing-context/daily-policy 等）と同じ規約。暫定残存を自己申告の面でも再発させない。
 - 既定挙動: `MarketMonitor:BaseUrl` 未設定なら**不変**（構成ベース）。実環境では BaseUrl を設定して権威源に接続する。
 - 監査 Consumer: **不変**（新イベント無し）。`Shared.Contracts`: **不変**。
 

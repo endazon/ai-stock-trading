@@ -38,7 +38,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("daily-policy", builder.Configuration["Reports:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("sizing-context", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop")
-    .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder"));
+    .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder")
+    // FR-02, IADR-0095/0078 決定4: 監視銘柄（watchlist）供給の選択中実装を自己申告する。MarketMonitor:BaseUrl 設定時=http
+    // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（構成フォールバック）。introspection から結線状態を判別可能にする。
+    .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration"));
 
 // --- 取引判断のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
