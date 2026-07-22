@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
       # バージョンを固定する（ランナー同梱の helm に依存すると、更新で挙動が変わっても気づけない）。
       # v4.2.1 は本ゲートの赤/緑をローカル実証したのと同一バージョン（IADR-0058 の実測表）。
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v4.2.1
       - name: helm lint (strict)
