@@ -42,7 +42,7 @@ jobs:
 
       # ↓ 技術スタックに合わせて差し替える（既定は C#/.NET 例）
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
 
