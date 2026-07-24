@@ -99,7 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: Format check
@@ -110,7 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: Restore
