@@ -5,9 +5,12 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.TradeDecision.Worker.Composable.Steps;
+using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
+using Microsoft.Extensions.Options;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
@@ -41,7 +44,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder")
     // FR-02, IADR-0095/0078 決定4: 監視銘柄（watchlist）供給の選択中実装を自己申告する。MarketMonitor:BaseUrl 設定時=http
     // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（構成フォールバック）。introspection から結線状態を判別可能にする。
-    .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration"));
+    .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
+    // FR-02, #158, IADR-0068/0099: 判断文脈の現在値ソースの選択中実装を自己申告する。MarketData:Provider 設定時=その値
+    //（finnhub 等）、未設定=noop（現在値なし＝現行挙動）。introspection から現在値供給の結線状態を判別可能にする。
+    .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!));
 
 // --- 取引判断のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
@@ -195,6 +201,34 @@ if (bool.TryParse(builder.Configuration["TradeCycle:NotifyOnUnconfirmedPolicy"],
     builder.Services.AddSingleton<IDailyPolicyUnconfirmedNotifier, PublishingDailyPolicyUnconfirmedNotifier>();
 else
     builder.Services.AddSingleton<IDailyPolicyUnconfirmedNotifier, NoOpDailyPolicyUnconfirmedNotifier>();
+
+// FR-02, FR-10, #158, IADR-0068/0099: 判断文脈の現在値（価格文脈）供給。現在値ソースは共有 MarketDataSourceFactory が
+// MarketData:Provider で選ぶ（既定・空・未知・キー無しは no-op＝実接続しない＝現行挙動）。finnhub 指定＋API キーありの
+// ときだけ実市況になる。ICurrentPriceProvider は鮮度（MaxQuoteStalenessSeconds・既定 300s）を検査し、取得不可・鮮度切れは
+// 現在値なしへ倒す。IsEnabled は生成物が no-op でない（実結線）ときのみ true とし、判断側の fail-safe ゲート
+// （有効化時のみ取得不可/鮮度切れを Hold）に用いる。定時サイクルでも現在値が供給され、権威価格でサイジングされる。
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
+builder.Services.AddHttpClient("marketdata");
+builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
+    sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
+{
+    var source = sp.GetRequiredService<IMarketDataSource>();
+    var options = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
+    // 鮮度期限は共通概念（IADR-0066）。非正値は既定 300s（fail-safe）。
+    var stalenessSeconds = options.MaxQuoteStalenessSeconds > 0 ? options.MaxQuoteStalenessSeconds : 300;
+    // 実結線（no-op でない）ときのみ有効化＝有効化時に取得不可/鮮度切れを Hold へ倒すゲートを効かせる。
+    return new MarketDataCurrentPriceProvider(
+        source,
+        enabled: source is not NoOpMarketDataSource,
+        sp.GetRequiredService<IClock>(),
+        TimeSpan.FromSeconds(stalenessSeconds),
+        sp.GetRequiredService<ILogger<MarketDataCurrentPriceProvider>>());
+});
 
 builder.Services.AddScoped<TradeDecisionService>();
 

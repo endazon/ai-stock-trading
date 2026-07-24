@@ -16,10 +16,14 @@ public static class TradeDecisionPromptBuilder
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
     // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
+    // FR-02, IADR-0099 決定2: currentPrice（権威ある現在値）は定時（Scheduled）トリガーの価格文脈を補う。非 null のとき
+    // だけ定時節に「現在値」行を追記する（既定 null＝現行動作＝価格行なし）。価格変動（PriceMovement）節は既に trigger.Price
+    // を出しているため currentPrice の有無で変えない（現在値供給の有無で PriceMovement 経路のプロンプト文言を変えない）。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         IReadOnlyList<RetrievedContext>? retrieved = null,
-        bool includeProfitability = false)
+        bool includeProfitability = false,
+        decimal? currentPrice = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -43,6 +47,12 @@ public static class TradeDecisionPromptBuilder
         {
             sb.AppendLine("# 定時サイクル（価格変動トリガーなし）");
             sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
+            // FR-02, IADR-0099 決定2: 権威ある現在値があれば価格文脈として載せる（定時トリガーは価格を持たないため
+            // これが無いと LLM は Buy/Sell の根拠を持てず常に Hold に倒れる）。null（既定）なら行を出さず現行動作。
+            if (currentPrice is { } cp)
+            {
+                sb.AppendLine($"- 現在値: {cp.ToString(ci)}");
+            }
         }
         sb.AppendLine();
         sb.AppendLine("# リスク制約");
