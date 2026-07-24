@@ -76,7 +76,8 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
 
   # ============ ①評価損益 ＋ ②実LLM散文 ＋ ③確定報告書の KB保存: report ============
-  # FR-06/07/16/08, ADR-0010, IADR-0068/0071/0093。LogPrompts=true は dev 検証（機微含む・"" で無効化）。
+  # FR-06/07/16/08, ADR-0003, IADR-0068/0071/0093。LogPrompts は既定 ""（記録しない・安全側）。
+  # プロンプトレベル検証時のみ "true" へ opt-in（README 参照）。
   report:
     extraEnv:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（報告書の評価損益）
@@ -100,7 +101,7 @@ services:
       - { name: Reports__NoResponseBehavior, value: "" }
 
   # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
-  # FR-02/04/11, ADR-0010, IADR-0061/0088/0095/0099。
+  # FR-02/04/11, ADR-0003, IADR-0061/0088/0095/0099。LogPrompts は既定 ""（記録しない・安全側）。
   trade-decision:
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
