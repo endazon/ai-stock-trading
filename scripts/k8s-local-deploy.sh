@@ -9,7 +9,8 @@
 # values.yaml のみ）はバイト等価のまま。有効化に要る実値は下記 ast-secrets を env で与える（未設定=空=no-op の fail-safe）。
 #
 # 機密の上書き（未設定=空=no-op）:
-#   FINNHUB_API_KEY（情報収集）/ MARKETDATA_FINNHUB_API_KEY（時価・別枠。未設定は FINNHUB_API_KEY にフォールバック）/
+#   FINNHUB_API_KEY（情報収集）/ MARKETDATA_FINNHUB_API_KEY（①時価・価格文脈。IADR-0068 の別枠＝収集鍵とは独立の
+#     opt-in。FINNHUB_API_KEY へはフォールバックしない＝収集鍵の設定だけで①が黙って全面有効化されない）/
 #   EDINET_SUBSCRIPTION_KEY / FRED_API_KEY / DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
 #   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）。
 # #226, IADR-0098: Discord Bot 制御コマンドの owner 認証は dev 既定（ai-stock-trading-owner /
@@ -30,7 +31,7 @@ echo "==> [2/3] namespace & ast-secrets (fail-safe 空既定)"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic ast-secrets -n "$NS" \
   --from-literal=finnhub-api-key="${FINNHUB_API_KEY:-}" \
-  --from-literal=marketdata-finnhub-api-key="${MARKETDATA_FINNHUB_API_KEY:-${FINNHUB_API_KEY:-}}" \
+  --from-literal=marketdata-finnhub-api-key="${MARKETDATA_FINNHUB_API_KEY:-}" \
   --from-literal=edinet-subscription-key="${EDINET_SUBSCRIPTION_KEY:-}" \
   --from-literal=fred-api-key="${FRED_API_KEY:-}" \
   --from-literal=discord-webhook-url="${DISCORD_WEBHOOK_URL:-}" \

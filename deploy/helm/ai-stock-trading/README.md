@@ -54,7 +54,7 @@ kubectl -n ai-stock-trading get pods
 
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
-| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集とは別枠。未設定は `FINNHUB_API_KEY` にフォールバック） | 空=NoOp |
+| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない） | 空=NoOp |
 | `EDINET_SUBSCRIPTION_KEY` / `FRED_API_KEY` | `edinet-subscription-key` / `fred-api-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
@@ -64,6 +64,10 @@ kubectl -n ai-stock-trading get pods
 > 使うときは各自の値を `values-local.yaml`（またはローカル専用の上乗せ values）へ記入する。**空のまま**だと IADR-0062 の
 > 安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で Bot は接続しても操作を受け付けない。
 > Discord を使わないなら `Notifications__Provider=""` / `Bot__Enabled="false"` に戻す。
+
+> **プロンプト全量ログは既定オフ（opt-in）**: `values-local.yaml` の `LlmGateway__LogPrompts` は安全既定 `""`（記録しない・
+> IADR-0061 決定1）。②実 LLM の要求/生応答（判断根拠・監視銘柄等の機微を含む）をログ基盤に残してプロンプトレベルで
+> 検証したいときだけ、report / trade-decision の当該値を `"true"` に変える（ローカル専用の上乗せ values でも可）。
 
 > **G4（日報の確定）はランタイム操作**であり設定化しない。定時サイクルの判断が確定済み日報方針を要求するため、
 > 検証時は Discord Bot（`/report confirm` 等・FR-07/14）または該当 API で当日方針を確定してから回す

@@ -84,7 +84,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
-      - { name: LlmGateway__LogPrompts, value: "true" }           # ← dev: 要求/応答を記録（"" で無効化）
+      # 安全既定 "" ＝プロンプト/生応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
+      # プロンプトレベルの検証時のみ "true" へ（README 参照）。恒常設定では既定オフに寄せる。
+      - { name: LlmGateway__LogPrompts, value: "" }
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -106,7 +108,9 @@ services:
       - { name: MarketMonitor__BaseUrl, value: "" }                                    # 空=構成 watchlist(下)を使う(IADR-0095)
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
-      - { name: LlmGateway__LogPrompts, value: "true" }           # ← dev: 判断の要求/応答を記録（"" で無効化）
+      # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
+      # プロンプトレベルの検証時のみ "true" へ（README 参照）。
+      - { name: LlmGateway__LogPrompts, value: "" }
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
