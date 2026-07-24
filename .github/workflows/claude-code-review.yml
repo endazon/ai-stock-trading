@@ -85,7 +85,7 @@ jobs:
           ${PR_TITLE}"
           MODEL="claude-sonnet-5"
           if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-4-8"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
           fi
@@ -116,7 +116,7 @@ jobs:
           display_report: true
           # レビュー進捗コメントを PR に表示する
           track_progress: true
-          # 既定モデル: 変更可（厳密さ優先なら claude-opus-4-8）。
+          # 既定モデル: 変更可（厳密さ優先なら claude-opus-5）。
           # GitHub MCP ツールはここで許可する（mcp__github__pull_request_review_write 等の
           # 権限拒否はこれで解消する。additional_permissions は使わない）。
           # Read は計画書（../project-planning）の参照に必要。

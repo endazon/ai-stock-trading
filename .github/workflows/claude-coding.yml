@@ -14,7 +14,7 @@
 #   - このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効
 #
 # モデル:
-#   既定は最新の claude-opus-4-8。メンションで「@claude opus / sonnet / haiku」と
+#   既定は最新の claude-opus-5。メンションで「@claude opus / sonnet / haiku」と
 #   書くと、そのモデルで起動する（"Select model from mention" ステップが解析）。
 #   既定値を変えたい場合は同ステップの MODEL="..." を書き換える。
 
@@ -78,7 +78,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # @claude メンションでモデルを選択する。既定は claude-opus-4-8。
+      # @claude メンションでモデルを選択する。既定は claude-opus-5。
       # 「@claude opus / sonnet / haiku」と書くとそのモデルで起動する。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
       - name: Select model from mention
@@ -93,9 +93,9 @@ jobs:
           ${REVIEW_BODY}
           ${ISSUE_BODY}
           ${ISSUE_TITLE}"
-          MODEL="claude-opus-4-8"
+          MODEL="claude-opus-5"
           if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-4-8"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
           fi
