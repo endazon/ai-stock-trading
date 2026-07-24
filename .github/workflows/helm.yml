@@ -80,6 +80,11 @@ jobs:
             --set opend.enabled=true \
             --set externalSecrets.enabled=true \
             --set externalSecrets.appSecrets.enabled=true > /dev/null
+      # #238 / IADR-0100: 経路B（ローカル SIMULATE）の有効化プロファイル values-local.yaml も描画する。
+      # 既定 no-op のキー（MarketData/LlmGateway/KnowledgeBase/Discord）を ON にした派生であり、有効化時に
+      # 初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
+      - name: helm template (values-local / 経路B 有効化)
+        run: helm template ast "$CHART" -f "$CHART/values-local.yaml" > /dev/null
       # 描画結果が空（テンプレート消失・条件の取り違え）でも上記は exit 0 になり得るため、
       # 既定値の描画が実際にリソースを産んでいることを確認する（無検査の緑を作らない）。
       - name: Assert default render is non-empty
@@ -106,6 +111,52 @@ jobs:
             echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
             exit 1
           fi
+      # #238 / IADR-0100: 本番バイト等価の担保。ArgoCD は values.yaml のみを描画する（valueFiles 無し）ため、
+      # 経路B の有効化（values-local.yaml）が既定描画へ漏れていないことを検査する。既定描画に実 LLM/実市況/Discord の
+      # 有効化痕跡が現れたら、本番へ漏れたということなので落とす（fail-safe 既定の反転検出）。
+      - name: Assert prod default excludes route-B activations (本番バイト等価)
+        run: |
+          out="$(helm template ast "$CHART")"
+          # ① 時価: 既定は EnableMarkToMarket=false・Provider 空（finnhub の実接続なし）。
+          if ! printf '%s' "$out" | grep -A1 'name: MarketData__EnableMarkToMarket' | grep -q 'value: "false"'; then
+            echo "::error::既定描画の MarketData__EnableMarkToMarket が false でない（本番へ①が漏れた）。"; exit 1
+          fi
+          for leak in 'value: "finnhub"' 'llmgateway-service' 'document-service.microservices-platform' 'value: "discord-webhook"'; do
+            if printf '%s' "$out" | grep -q "$leak"; then
+              echo "::error::既定描画に経路B有効化の痕跡「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
+            fi
+          done
+          echo "ok: 既定描画（本番）は経路B有効化を含まない＝バイト等価の担保"
+      # #238 / IADR-0100: 経路B の有効化プロファイルが ①②③＋Discord＋価格文脈を実際に ON にし、かつ実弾/危険既定は
+      # OFF のまま（Broker=paper・opend/ExternalSecret 不在）であることを描画で検査する。有効化の空振り・過剰有効化を防ぐ。
+      - name: Assert values-local activates route-B features (実弾/危険既定は OFF)
+        run: |
+          out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          need() { printf '%s' "$out" | grep -q "$2" || { echo "::error::values-local 描画に「$1」が無い（有効化の空振り）。"; exit 1; }; }
+          # ① 時価（risk-management は EnableMarkToMarket=true・finnhub）。
+          printf '%s' "$out" | grep -A1 'name: MarketData__EnableMarkToMarket' | grep -q 'value: "true"' \
+            || { echo "::error::values-local で MarketData__EnableMarkToMarket=true が描画されない（①未有効）。"; exit 1; }
+          need "① finnhub 市況" 'value: "finnhub"'
+          # ② 実 LLM（MSP LlmGateway・trade-decision/report）。
+          need "② LlmGateway BaseUrl" 'llmgateway-service.microservices-platform'
+          # ③ 実 KB（MSP DocumentService・information-collection/report）。
+          need "③ KnowledgeBase Documents BaseUrl" 'document-service.microservices-platform'
+          # Discord 通知（配線恒常化）。
+          printf '%s' "$out" | grep -A1 'name: Notifications__Provider' | grep -q 'value: "discord-webhook"' \
+            || { echo "::error::values-local で Notifications__Provider=discord-webhook が描画されない（Discord 未配線）。"; exit 1; }
+          printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__Enabled' | grep -q 'value: "true"' \
+            || { echo "::error::values-local で Bot__Enabled=true が描画されない。"; exit 1; }
+          # 価格文脈（#236/IADR-0099・trade-decision の鮮度設定）。
+          need "価格文脈 鮮度設定" 'name: MarketData__MaxQuoteStalenessSeconds'
+          # 実弾/危険既定は OFF のまま（有効化しても paper・秘匿ストア/OpenD 不在）。
+          printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
+            || { echo "::error::values-local 描画の Broker__Provider が paper でない（実弾 OFF 不変に違反）。"; exit 1; }
+          for forbidden in 'kind: ExternalSecret' 'name: opend'; do
+            if printf '%s' "$out" | grep -q "$forbidden"; then
+              echo "::error::values-local 描画に「$forbidden」が現れた（経路B有効化で危険既定が開いた）。"; exit 1
+            fi
+          done
+          echo "ok: values-local は ①②③＋Discord＋価格文脈を有効化し、実弾/危険既定は OFF のまま"
       # #132 / IADR-0060 決定 1: chart の opend と dev の生 manifest（deploy/opend/k8s/opend.yaml）は
       # 意図的な二重管理である。片方だけが変更されて常駐モデルの前提が崩れるのを防ぐため、既定値の描画が
       # 生 manifest と**同等の不変条件**を満たすことを検査する（バイト等価ではない: chart は HOME 等を明示注入する）。

@@ -1,0 +1,152 @@
+# ai-stock-trading — local/SIMULATE 有効化プロファイル（経路B・IADR-0100 / #238）。
+#
+# 目的: 経路B（ローカル k8s / SIMULATE）で ①時価(finnhub) ②実LLM(MSP LlmGateway) ③実KB(MSP DocumentService)
+#       ＋ Discord通知 ＋ #236/IADR-0099 の価格文脈(ICurrentPriceProvider) を、臨時 overlay 無しに有効化する。
+#       標準手順 `scripts/k8s-local-deploy.sh` が `helm upgrade -f values-local.yaml` で本ファイルを重ねる。
+#
+# ★ 本番バイト等価（厳守）:
+#   - 本ファイルは ArgoCD の描画対象ではない（deploy/argocd/application.yaml は valueFiles 無し＝values.yaml のみ）。
+#   - values.yaml・templates・Chart.yaml は不変。`helm template ast <chart>`（既定＝本番）はバイト等価のまま。
+#     有効化は本ファイルを `-f` で明示したとき（＝ローカル標準手順）に限る。
+#
+# ★ 非破壊・安全の前提:
+#   - Helm はリスト(extraEnv)を「置換」する。よって各サービスの extraEnv は values.yaml の全要素＋有効化分を写す
+#     （欠落=そのキーが消える）。image/db/auth はマップのため merge され保持される（extraEnv のみ置換）。
+#   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は k8s-local-deploy.sh の ast-secrets
+#     作成（env 上書き）／ ESO(Vault) 同期（IADR-0094）に委ねる。
+#   - order-execution は含めない → Broker__Provider は template 既定 paper（moomoo.enabled=false）＝実弾 OFF 不変。
+#   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
+#   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は空既定。未設定時は IADR-0062 の安全既定
+#     （空は「全許可」ではなく全拒否）で no-op。値はユーザーが与える。
+#
+# DNS: 同 ns=短名(<svc>-service)、MSP=<svc>.microservices-platform、keycloak=ExternalName alias(短名可・infraAliases)。
+
+services:
+
+  # ============ ① 時価評価（mark-to-market）============
+  # FR-10, #81, #158, IADR-0066/0068: 含み損益・DD の判定入力を実市況にする。true は最大DD 取引ゲートの入力を変える。
+  risk-management:
+    extraEnv:
+      - { name: MarketData__EnableMarkToMarket, value: "true" }   # ← ①（既定 "false"）
+      - { name: MarketData__Provider, value: "finnhub" }          # ← ①（既定 ""）
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+
+  # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
+  market-monitor:
+    extraEnv:
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }  # 建玉照会(HttpPositionStore)
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: MarketData__Provider, value: "finnhub" }          # ← ①
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+
+  # ============ ③ 実KB保存（収集情報）＋ 収集起動（サイクル配線）============
+  # FR-01/08, #9/#18, IADR-0064/0069/0073/0093: 収集を finnhub＋AAPL で起動し（Count>0 で InformationCollected 発行）、
+  # 収集情報を MSP DocumentService へ実 KB 保存（Auth は MSP レルムの kb-writer）。
+  information-collection:
+    extraEnv:
+      - { name: Collection__Source__Provider, value: "finnhub" }                 # ← 収集起動（既定 ""）
+      - name: Collection__Source__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
+      - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
+      - name: Collection__Source__Edinet__SubscriptionKey
+        secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
+      - { name: Collection__Source__Boj__Db, value: "" }
+      - { name: Collection__Source__Boj__SeriesCodes__0, value: "" }
+      - name: Collection__Source__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - { name: Collection__Source__Fred__SeriesIds__0, value: "" }
+      - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
+      - { name: KnowledgeBase__Search__BaseUrl, value: "" }
+      - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/microservices-platform" }       # ← ③（MSP レルム）
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+
+  # ============ ①評価損益 ＋ ②実LLM散文 ＋ ③確定報告書の KB保存: report ============
+  # FR-06/07/16/08, ADR-0010, IADR-0068/0071/0093。LogPrompts=true は dev 検証（機微含む・"" で無効化）。
+  report:
+    extraEnv:
+      - { name: MarketData__Provider, value: "finnhub" }          # ← ①（報告書の評価損益）
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      - { name: LlmGateway__LogPrompts, value: "true" }           # ← dev: 要求/応答を記録（"" で無効化）
+      - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/microservices-platform" }       # ← ③（MSP レルム）
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+      - { name: Reports__NoResponseBehavior, value: "" }
+
+  # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
+  # FR-02/04/11, ADR-0010, IADR-0061/0088/0095/0099。
+  trade-decision:
+    extraEnv:
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }# サイジング文脈(残枠/DD)
+      - { name: MarketMonitor__BaseUrl, value: "" }                                    # 空=構成 watchlist(下)を使う(IADR-0095)
+      - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
+      - { name: LlmGateway__TimeoutSeconds, value: "" }
+      - { name: LlmGateway__LogPrompts, value: "true" }           # ← dev: 判断の要求/応答を記録（"" で無効化）
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      - { name: KnowledgeBase__Search__BaseUrl, value: "" }       # RAG 読み取りは任意（空=NoOp）
+      - { name: KnowledgeBase__Auth__Authority, value: "" }
+      - name: KnowledgeBase__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: KnowledgeBase__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+      # --- 監視銘柄（構成ベース watchlist・MarketMonitor__BaseUrl 空のため使われる。Market は列挙名）。収集の銘柄と揃える。
+      - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
+      - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }
+      # --- 価格文脈（#236/IADR-0099）: 判断へ現在値を供給し権威価格でサイジング。MarketData:Provider=finnhub＋鍵で実結線
+      #     （ICurrentPriceProvider.IsEnabled が真）。鮮度 MaxQuoteStalenessSeconds 超過・取得不可は現在値なし（fail-safe）。
+      - { name: MarketData__Provider, value: "finnhub" }          # ← 価格文脈（既定 ""＝no-op・IsEnabled=false）
+      - name: MarketData__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      - { name: MarketData__MaxQuoteStalenessSeconds, value: "300" }  # 鮮度期限（秒・既定 300）。非正値は既定 300s。
+
+  # ============ Discord notification ============
+  # FR-09/14, IADR-0062/0098。Provider/Bot__Enabled は配線恒常化。GuildId/ChannelId/AllowedUserIds/UserMapping は
+  # 環境固有＝空既定（ユーザーが与える。未設定は安全既定＝全拒否で no-op）。TokenEndpoint は template 自動注入で入れない。
+  # Discord を使わないなら Provider="" と Bot__Enabled="false" に戻す（他は secret 空で送信されない）。
+  notification:
+    extraEnv:
+      - { name: Notifications__Provider, value: "discord-webhook" }        # 配線恒常化（WebhookUrl 空なら送らない）
+      - name: Notifications__Discord__WebhookUrl
+        secretKeyRef: { name: ast-secrets, key: discord-webhook-url, optional: true }
+      - { name: Notifications__Discord__Bot__Enabled, value: "true" }      # 配線恒常化（Token 空なら接続しない）
+      - name: Notifications__Discord__Bot__Token
+        secretKeyRef: { name: ast-secrets, key: discord-bot-token, optional: true }
+      - { name: Notifications__Discord__Bot__GuildId, value: "" }          # ← 環境固有（ユーザーが与える）
+      - { name: Notifications__Discord__Bot__ChannelId, value: "" }        # ← 環境固有
+      - { name: Notifications__Discord__Bot__AllowedUserIds, value: "" }   # ← 環境固有（空=全拒否）
+      - { name: Notifications__Discord__Bot__UserMapping, value: "" }      # ← 環境固有（"discordUserId:利用者名" のカンマ区切り）
+      - name: Notifications__Discord__Bot__KillSwitchConfirmationPhrase
+        secretKeyRef: { name: ast-secrets, key: discord-bot-killswitch-phrase, optional: true }
+      - name: Notifications__Discord__OwnerAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      - name: Notifications__Discord__OwnerAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }  # kill switch/pause の呼び先
