@@ -293,10 +293,12 @@ public class TradeDecisionServiceTests
     private sealed class FakeProfitability(TradeCostAssessment? assessment) : IProfitabilityAssumptionsProvider
     {
         public int Calls { get; private set; }
+        public decimal LastNotional { get; private set; }
 
         public Task<TradeCostAssessment?> AssessAsync(Market market, decimal notional, CancellationToken ct = default)
         {
             Calls++;
+            LastNotional = notional;
             return Task.FromResult(assessment);
         }
     }
@@ -401,5 +403,139 @@ public class TradeDecisionServiceTests
         var decision = await Create(BuyJson, Policy, ctx).DecideAsync(Trigger());
 
         decision!.Intent.Quantity.Should().Be(expected);
+    }
+
+    // --- FR-02, FR-04, FR-10, IADR-0099: 現在値（価格文脈）供給と権威価格アンカリングの検証 ---
+
+    private sealed class FakeCurrentPrice(decimal? price, bool enabled = true) : ICurrentPriceProvider
+    {
+        public int Calls { get; private set; }
+        public bool IsEnabled => enabled;
+
+        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(price);
+        }
+    }
+
+    private sealed class ThrowingCurrentPrice(bool enabled = true) : ICurrentPriceProvider
+    {
+        public bool IsEnabled => enabled;
+
+        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
+            throw new InvalidOperationException("現在値取得の擬似障害");
+    }
+
+    private static AppSvc CreateWithPrice(string llmOutput, ICurrentPriceProvider price, SizingContext? ctx = null) =>
+        new(new FakeLlm(llmOutput), new FakePolicy(Policy), new FakeSizing(ctx ?? Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, currentPrice: price);
+
+    // 現在値ありのとき、サイジング・OrderIntent・損切り価格は LLM の referencePrice ではなく権威ある現在値を用いる。
+    [Fact]
+    public async Task 現在値ありなら参照価格を権威価格へアンカリングする()
+    {
+        // 現在値 1,200（LLM の referencePrice 1,000 は使わない）。損切り価格＝1,200 − 30 = 1,170（IADR-0035）。
+        var ctx = Context();
+        var expectedQty = PositionSizer.CalculateCappedQuantity(
+            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_200m, ctx.Limits.MaxOrderAmount, 20_000m, 1m);
+
+        var decision = await CreateWithPrice(BuyJson, new FakeCurrentPrice(1_200m), ctx).DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.StopLossPrice.Should().Be(1_170m);
+        decision.Intent.Quantity.Should().Be(expectedQty);
+    }
+
+    // fail-safe: 現在値ソースが有効化（IsEnabled=true）されているのに現在値が取れないなら発注抑止（見送り）。
+    [Fact]
+    public async Task 現在値ソース有効かつ現在値が取れないなら見送り()
+    {
+        (await CreateWithPrice(BuyJson, new FakeCurrentPrice(null, enabled: true)).DecideAsync(Trigger()))
+            .Should().BeNull();
+    }
+
+    // 未有効化（IsEnabled=false・既定 no-op と等価）は現在値が無くても発注抑止せず従来どおり判断する（現行挙動）。
+    [Fact]
+    public async Task 現在値ソース無効なら現在値が無くても従来どおり判断する()
+    {
+        var decision = await CreateWithPrice(BuyJson, new FakeCurrentPrice(null, enabled: false)).DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.StopLossPrice.Should().Be(970m); // LLM 参照価格 1,000 − 30
+    }
+
+    // fail-safe: 現在値取得が例外でも判断は止めず、有効化時は安全側（見送り）へ倒す。
+    [Fact]
+    public async Task 現在値取得が例外_有効なら安全側で見送り()
+    {
+        (await CreateWithPrice(BuyJson, new ThrowingCurrentPrice(enabled: true)).DecideAsync(Trigger()))
+            .Should().BeNull();
+    }
+
+    // fail-safe: 現在値取得が例外でも未有効化なら現行どおり継続する（現在値なしに縮退）。
+    [Fact]
+    public async Task 現在値取得が例外_無効なら現行どおり継続する()
+    {
+        var decision = await CreateWithPrice(BuyJson, new ThrowingCurrentPrice(enabled: false)).DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.StopLossPrice.Should().Be(970m); // 現在値なし → LLM 参照価格でアンカリング
+    }
+
+    // アンカリング後、損切り幅が権威価格以上（損切り価格≤0）になる異常は権威価格に対する不変量違反として見送り（IADR-0035）。
+    [Fact]
+    public async Task アンカリング後に損切り幅が現在値以上なら見送り()
+    {
+        // 現在値 25 に対し損切り幅 30（≥現在値）。
+        (await CreateWithPrice(BuyJson, new FakeCurrentPrice(25m)).DecideAsync(Trigger()))
+            .Should().BeNull();
+    }
+
+    // 定時トリガー（価格を持たない）でも、現在値が供給されればプロンプトに載り LLM が Buy できる。
+    [Fact]
+    public async Task 定時トリガーでも現在値ありならプロンプトに現在値を載せる()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, currentPrice: new FakeCurrentPrice(1_200m));
+
+        var decision = await service.DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
+
+        decision.Should().NotBeNull();
+        llm.LastPrompt.Should().Contain("定時サイクル（価格変動トリガーなし）");
+        llm.LastPrompt.Should().Contain("現在値: 1200");
+    }
+
+    // 現在値未供給（既定 no-op）なら定時プロンプトに現在値行を出さない＝現行動作。
+    [Fact]
+    public async Task 定時トリガーで現在値未供給ならプロンプトに現在値行を出さない()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance);
+
+        await service.DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
+
+        llm.LastPrompt.Should().Contain("定時サイクル（価格変動トリガーなし）");
+        llm.LastPrompt.Should().NotContain("現在値");
+    }
+
+    // 採算ゲート有効時の notional はアンカリング済みの参照価格（現在値）× 数量で算出される。
+    [Fact]
+    public async Task 採算ゲート有効時のnotionalは権威価格由来()
+    {
+        var prof = new FakeProfitability(new TradeCostAssessment(100m, 1.5m, 3));
+        var opts = ProfitabilityGateOptions.Default with { Enabled = true };
+        var service = new AppSvc(new FakeLlm(BuyJsonProfitable), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            retrieval: null, options: null, profitability: prof, profitabilityOptions: opts,
+            unconfirmedNotifier: null, currentPrice: new FakeCurrentPrice(1_200m));
+
+        await service.DecideAsync(Trigger());
+
+        // 数量＝floor(min(50,000,20,000)/1,200)=16。notional＝1,200 × 16 = 19,200。
+        prof.Calls.Should().Be(1);
+        prof.LastNotional.Should().Be(19_200m);
     }
 }
