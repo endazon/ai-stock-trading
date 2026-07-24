@@ -31,7 +31,10 @@ internal sealed class HttpLlmCompletionClient(
             if (logPrompts)
                 logger.LogInformation("LLM 要求: model={Model} prompt={Prompt}", model, prompt);
 
-            var request = new CompletionRequest(prompt, MaxTokens: 1024, model, confidentiality, purpose);
+            // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
+            // purpose=trade-decision は基盤の PurposeModels に未登録で default（Opus 5 化される層）へ着地するため、
+            // 1024 のままだと思考が上限を食い本文が空になり、下の空応答判定で全判断が Hold に固定される。
+            var request = new CompletionRequest(prompt, MaxTokens: 4096, model, confidentiality, purpose);
             using var response = await httpClient
                 .PostAsJsonAsync("/complete", request, cancellationToken)
                 .ConfigureAwait(false);
