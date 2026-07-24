@@ -31,7 +31,10 @@ internal sealed class HttpReportNarrativeDrafter(
                 logger.LogInformation("報告書散文 LLM 要求: kind={Kind} periodKey={PeriodKey} prompt={Prompt}",
                     context.Kind, context.PeriodKey, prompt);
 
-            var request = new CompletionRequest(prompt, MaxTokens: 1024, Model: null, confidentiality, purpose);
+            // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
+            // purpose=report-narrative は AST/ADR-0011 §決定により基盤の既定モデル（default）追随が正しいため、
+            // 1024 のままだと思考が上限を食い、途中で切れた文章がそのまま成果物になる（安全網なし）。
+            var request = new CompletionRequest(prompt, MaxTokens: 4096, Model: null, confidentiality, purpose);
             using var response = await httpClient
                 .PostAsJsonAsync("/complete", request, cancellationToken)
                 .ConfigureAwait(false);
