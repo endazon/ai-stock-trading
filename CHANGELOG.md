@@ -104,6 +104,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#224) (c3ffbdd)
 - **NFR,FR-15**: 必須仕様書（機能/テスト）の網羅裁定と FR-15 テスト仕様の補完 (#221) (c1298f8)
 - **NFR**: CHANGELOG を自動更新 (#215) (451cd7d)
 - **IADR-0091**: ADR 一覧に IADR-0091 の行を追記する (#216) (fd8a902)
@@ -141,6 +142,11 @@
 
 ### ビルド
 
+- **deps**: bump planning from `34d9409` to `94a7b78` (#235) (e196a09)
+- **deps**: bump planning from `f099322` to `34d9409` (#234) (e51e424)
+- **deps**: bump azure/setup-helm from 4 to 5 (#232) (4c1c979)
+- **deps**: bump actions/upload-artifact from 4 to 7 (#231) (ef61ac1)
+- **deps**: bump actions/setup-dotnet from 5 to 6 (#230) (f6d8162)
 - **deps**: bump planning from `f128c20` to `f099322` (#229) (7cebe5b)
 - **deps**: bump planning from `8fcc468` to `f128c20` (#220) (ed1f4a1)
 - **deps**: bump planning from `98c45d0` to `8fcc468` (#206) (bf43f21)
