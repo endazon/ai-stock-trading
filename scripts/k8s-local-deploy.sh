@@ -54,7 +54,10 @@ kubectl create secret generic ast-secrets -n "$NS" \
 
 echo "==> [3/3] helm upgrade --install (local/SIMULATE プロファイル)"
 # #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
-# 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。
+# 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。これで helm へは値がそのまま届く。
+# 注: 届いた先（DiscordBotOptionsReader のコンパクト形式）は `,` で要素分割するため、**keycloak 利用者名に `,` は
+# 使えない**（本スクリプトのエスケープではなくアプリ側の値形式の制約。`:` は最初の 1 つのみ区切り・形式不正の
+# 要素は破棄＝拒否側。chart README「Discord の環境固有 ID」参照）。
 helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
 # namespace は本スクリプトが先に作成（ast-secrets 投入のため）。chart に Namespace を template させると
 # 既存 ns に Helm 所有メタデータが無く install が衝突するため、namespace.create=false で無効化する。
