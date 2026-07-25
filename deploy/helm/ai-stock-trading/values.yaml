@@ -147,6 +147,28 @@ externalSecrets:
     # 全プロパティを吸い上げる Vault KV のパス。
     remoteKey: ai-stock-trading/app-secrets
 
+# FR-09/14, #245, IADR-0102: Discord Bot の**環境固有 ID**（非機密）の設定点。すべて空既定 = 差し替えなし。
+# templates/deployment.yaml が notification の extraEnv 値を**非空のときだけ**上書きする（env は増やさない）
+# ため、空既定の描画は本設定点を追加する前と**バイト等価**である。
+# 空のままなら IADR-0062 の安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で
+# Bot は接続しても操作を受け付けない。値を与えるのは利用者の明示操作である。
+# ⚠️ `kubectl set env deploy/notification-service ...` で注入しないこと。env の所有が Helm と kubectl(kubectl-set)へ
+#    割れ、次回の helm upgrade が `conflict with "kubectl-set"` で失敗する（#245 の実発生事象）。ここか
+#    scripts/k8s-local-deploy.sh の DISCORD_BOT_* env（→ --set-string）で与える。
+# ⚠️ 機密（Bot Token / kill switch 確認フレーズ / OwnerAuth 資格情報）はここに置かない。ast-secrets の
+#    secretKeyRef のままとする（services.notification.extraEnv 参照）。
+discord:
+  bot:
+    # 運用サーバー（ギルド）ID。18〜19 桁の snowflake。--set ではなく **--set-string** で渡す
+    # （--set は float64 に解釈して 1.234567890123456e+18 に化ける）。
+    guildId: ""
+    # 運用チャンネル ID（同上）。
+    channelId: ""
+    # 許可ユーザー ID のカンマ区切り。手動で --set-string するときはカンマを `\,` にエスケープする。
+    allowedUserIds: ""
+    # "discordUserId:keycloak利用者名" のカンマ区切り（同上のエスケープが要る）。対応が無いユーザーは操作できない。
+    userMapping: ""
+
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
 services:

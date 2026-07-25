@@ -1,6 +1,19 @@
 {{- /* #122: 10 Worker を同型の Deployment としてレンダリングする（全て Web SDK :8080）。 */ -}}
 {{- $g := .Values.global -}}
 {{- range $name, $svc := .Values.services }}
+{{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
+       env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
+       登録しない ＝ 既定描画（本番 values.yaml）・values-local 描画は本設定点の追加前とバイト等価。
+       これにより Helm が env を単独所有し、`kubectl set env`（フィールドマネージャ kubectl-set）との
+       所有権競合（helm upgrade の `conflict with "kubectl-set"`）が構造的に起きない。 */}}
+{{- $envOverrides := dict -}}
+{{- if eq $name "notification" -}}
+{{- $bot := (($.Values.discord | default dict).bot) | default dict -}}
+{{- with $bot.guildId }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__GuildId" . -}}{{- end -}}
+{{- with $bot.channelId }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__ChannelId" . -}}{{- end -}}
+{{- with $bot.allowedUserIds }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__AllowedUserIds" . -}}{{- end -}}
+{{- with $bot.userMapping }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__UserMapping" . -}}{{- end -}}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,7 +81,8 @@ spec:
                   optional: true
                   {{- end }}
               {{- else }}
-              value: {{ $e.value | quote }}
+              {{- /* #245, IADR-0102: 上記 $envOverrides に同名の非空値があればそれを使う（無ければ values の値）。 */}}
+              value: {{ index $envOverrides $e.name | default $e.value | quote }}
               {{- end }}
             {{- end }}
             {{- /* #226, IADR-0098: Discord Bot 制御コマンドの owner トークンの token エンドポイント。

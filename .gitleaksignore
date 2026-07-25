@@ -5,3 +5,13 @@
 # private-key ルールが検知した。マーカ行は後続コミットで除去済みだが、gitleaks は commit 範囲（履歴）を
 # 走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない＝force-push しない方針）。
 8b9210e355f2cf83c455e67ecfcfe6884198f0c0:deploy/opend/k8s/rsa-secret.example.yaml:private-key:22
+#
+# #245: Discord Bot の環境固有 ID（GuildId/ChannelId）を values 経路で渡す手順を書いた際、README・作業仕様書の
+# **ダミー**の 18 桁 ID（123456789012345678 等）を gitleaks の discord-client-id ルールが検知した。Discord の
+# サーバー/チャンネル ID は**認証情報ではない**うえ、当該値は実在しないダミーである（実 ID はコミットせず
+# DISCORD_BOT_* env で与える設計＝IADR-0102）。現行ツリーの例はプレースホルダ（`<ギルドID>` 等）へ置換済みだが、
+# gitleaks は commit 範囲（履歴）を走査するため当該コミットの finding を fingerprint で無効化する
+# （履歴は書き換えない＝force-push しない方針）。
+ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:discord-client-id:83
+ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:discord-client-id:84
+687f4bdfa391aa340ed3e2e8de49e1004583221e:docs/specs/20260725_245_discord-ids-via-values.md:discord-client-id:109
