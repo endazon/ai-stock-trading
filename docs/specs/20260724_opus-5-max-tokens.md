@@ -11,7 +11,7 @@ related_ids:
   - IADR-0101
 author: claude
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-25
 related_specs:
   - "../adr/IADR-0101_opus-5-max-tokens.md"
 ---
