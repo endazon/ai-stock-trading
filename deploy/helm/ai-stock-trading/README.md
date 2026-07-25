@@ -80,10 +80,10 @@ kubectl -n ai-stock-trading get pods
 | `DISCORD_BOT_USER_MAPPING` | `discord.bot.userMapping` | `…:UserMapping` | `discordUserId:keycloak利用者名` のカンマ区切り |
 
 ```bash
-export DISCORD_BOT_GUILD_ID=123456789012345678
-export DISCORD_BOT_CHANNEL_ID=987654321098765432
-export DISCORD_BOT_ALLOWED_USER_IDS=111111111111111111,222222222222222222
-export DISCORD_BOT_USER_MAPPING=111111111111111111:owner,222222222222222222:ops
+export DISCORD_BOT_GUILD_ID=<ギルドID>                        # 18〜19 桁の数字
+export DISCORD_BOT_CHANNEL_ID=<チャンネルID>
+export DISCORD_BOT_ALLOWED_USER_IDS=<ユーザーID>,<ユーザーID>   # カンマ区切り
+export DISCORD_BOT_USER_MAPPING=<ユーザーID>:owner,<ユーザーID>:ops
 scripts/k8s-local-deploy.sh
 ```
 
@@ -108,6 +108,11 @@ scripts/k8s-local-deploy.sh
 >
 > **機密は values に載せない**: Bot Token・kill switch 確認フレーズ・OwnerAuth 資格情報は従来どおり
 > `ast-secrets`（`secretKeyRef`）で与える。
+
+> 値そのものの制約（本設定点より下流・`DiscordBotOptionsReader` のコンパクト形式）: `AllowedUserIds` /
+> `UserMapping` はアプリ側が **`,` で要素分割**するため、**keycloak 利用者名に `,` は使えない**（helm への受け渡しは
+> エスケープされるが、アプリのパース時に分割される）。`:` は最初の 1 つだけが区切りなので利用者名に含めてよい。
+> 形式不正の要素は**黙って捨てられる**（推測で対応付けを作らない＝拒否側・IADR-0062）。
 
 > **プロンプト全量ログは既定オフ（opt-in）**: `values-local.yaml` の `LlmGateway__LogPrompts` は安全既定 `""`（記録しない・
 > IADR-0061 決定1）。②実 LLM の要求/生応答（判断根拠・監視銘柄等の機微を含む）をログ基盤に残してプロンプトレベルで

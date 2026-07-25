@@ -106,7 +106,7 @@ Helm の所有として apply しようとするため、**server-side apply の
 
 CI ゲートは `helm.yml`（IADR-0058: helm バイナリのみで完結・実 API サーバ非依存）。本変更で追加する検査:
 
-1. **上書きが効く**: `--set-string discord.bot.guildId=123456789012345678` 等 4 値を与えた描画で、notification の
+1. **上書きが効く**: `--set-string discord.bot.guildId=<18 桁のダミー ID>` 等 4 値を与えた描画で、notification の
    `Notifications__Discord__Bot__{GuildId,ChannelId,AllowedUserIds,UserMapping}` にその値が現れる。
    snowflake が指数表記に化けていないこと（`e+` を含まないこと）も同時に検査する。
 2. **空既定はバイト等価**: `helm template ast $CHART` と `helm template ast $CHART --set-string discord.bot.guildId=""
