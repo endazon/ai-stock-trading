@@ -144,6 +144,14 @@ plan_refs:
 
 双方向とも **read-modify-write** で自分の所有フィールドだけを更新し、他は `with` で温存する。
 
+### 単一行への複数ライタ（ロスト・アップデートの検討）
+
+本作業でライタが 1 つ（backtest 射影）から 3 つ（＋実DD ドライバ・差し戻しリセット）に増える。
+**担当列が異なるライタ間ではロスト・アップデートは起きない**（各ライタは担当外を読み値のまま書き戻すため、
+EF Core が実際に変わった列だけを UPDATE に含める）。回帰テストで契約を固定した。
+同一列（実DD）の競合は「リセット × サンプリング」のみで、ドライバが値を下げない性質から**保守側に倒れる**。
+詳細と楽観排他トークンを採らない理由は [IADR-0103](../adr/IADR-0103_observed-drawdown-supply.md) 決定 7 を参照。
+
 ### 三重の安全（既定挙動はバイト等価）
 
 1. `ObservedDrawdownRefresh:Enabled` 既定 `false` → ドライバの `HostedService` 自体が登録されない。
@@ -173,6 +181,8 @@ plan_refs:
 | 13 | 承認による差し戻し受理で観測窓がリセットされる（他フィールドは温存） | `StageGateServiceTests.差し戻し受理で実DDの観測窓をリセットする` |
 | 14 | 昇格受理では観測窓をリセットしない（証拠を消さない） | `StageGateServiceTests.昇格受理では実DDの観測窓を保持する` |
 | 15 | 受理されない遷移要求では観測窓を変更しない | `StageGateServiceTests.受理されない遷移では実DDの観測窓を変更しない` |
+| 16 | リセット後は過去のピークを復活させず現在 DD から観測しなおす | `ObservedDrawdownRefreshServiceTests.差し戻しリセット後は現在DDから観測しなおす` |
+| 17 | 別供給源の同時 read-modify-write で担当外フィールドを失わない（IADR-0103 決定 7） | `EfStageGateStoreTests.別供給源の同時_read_modify_write_で担当外フィールドを失わない` |
 
 ## 完了条件
 

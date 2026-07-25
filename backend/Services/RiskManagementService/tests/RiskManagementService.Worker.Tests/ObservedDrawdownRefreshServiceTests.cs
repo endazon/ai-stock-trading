@@ -124,6 +124,25 @@ public class ObservedDrawdownRefreshServiceTests
     }
 
     [Fact]
+    public async Task 差し戻しリセット後は現在DDから観測しなおす()
+    {
+        // IADR-0103 決定3/7: 差し戻し（Demotion）で観測窓を 0 に戻したあと、ドライバは過去のピークではなく
+        // その時点の現在 DD から latch をやり直す＝観測窓が本当に区切られている。
+        var (driver, store, provider) = Build(FridayUtc, drawdownRatio: 0.20m);
+
+        await driver.RunOnceAsync(CancellationToken.None);
+        store.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.20m);
+
+        // 差し戻しによる観測窓リセット（StageGateService.RequestTransition と同じ射影を使う）。
+        store.Save(StagePerformanceProjection.WithoutObservedDrawdown(store.GetCurrent()));
+        provider.DrawdownRatio = 0.05m;
+
+        await driver.RunOnceAsync(CancellationToken.None);
+
+        store.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.05m, "過去のピークを復活させず現在 DD から観測しなおす");
+    }
+
+    [Fact]
     public async Task 実DD供給で撤退基準に到達し自動停止する_通し()
     {
         // 受け入れ基準 10（#164）: verdict（バックテスト最大DD）＋実DD の供給が揃うと ADR-0008 の撤退基準
