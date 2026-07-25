@@ -97,4 +97,40 @@ public class EfStageGateStoreTests
         reloaded.BacktestMaxDrawdownRatio.Should().Be(0.12m);
         reloaded.ObservedMaxDrawdownRatio.Should().Be(0.05m);
     }
+
+    [Fact]
+    public void 別供給源の同時_read_modify_write_で担当外フィールドを失わない()
+    {
+        // IADR-0089/0103 決定7: 単一行 StagePerformance には複数の供給源（backtest 由来の射影 / 実DD ドライバ /
+        // 差し戻しリセット）が read-modify-write で書き込む。各供給源は担当外フィールドを読み値のまま書き戻すため、
+        // EF Core の変更追跡が「実際に値が変わったプロパティ」だけを UPDATE に含める＝担当外の列を送信しない。
+        // よって供給源が互いの列を巻き戻すロスト・アップデートは構造的に起きない。本テストはその契約を固定する。
+        //
+        // 筋書き: A が T0 に読み（backtest 未合格）、その後 B が backtest verdict を確定させ、最後に A が
+        // 自分の担当（実DD）だけを更新して保存する。A の古い backtest 値で B の確定が巻き戻ってはならない。
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = NewContext(dbName))
+            new EfStagePerformanceStore(seed).Save(new StagePerformance());
+
+        using var dbA = NewContext(dbName);
+        var storeA = new EfStagePerformanceStore(dbA);
+        var snapshotA = storeA.GetCurrent(); // T0: BacktestPassed=false
+        snapshotA.BacktestPassed.Should().BeFalse();
+
+        using (var dbB = NewContext(dbName))
+        {
+            // T1: 別供給源（BacktestEvaluatedProjectionConsumer 相当）が verdict を確定させる。
+            new EfStagePerformanceStore(dbB).Save(
+                new StagePerformance { BacktestPassed = true, BacktestMaxDrawdownRatio = 0.10m });
+        }
+
+        // T2: A が古いスナップショットを基に自分の担当（実DD）だけを更新する。
+        storeA.Save(snapshotA with { ObservedMaxDrawdownRatio = 0.20m });
+
+        using var db3 = NewContext(dbName);
+        var reloaded = new EfStagePerformanceStore(db3).GetCurrent();
+        reloaded.ObservedMaxDrawdownRatio.Should().Be(0.20m, "実DD 供給源の更新は反映される");
+        reloaded.BacktestPassed.Should().BeTrue("担当外フィールドを古い値で巻き戻さない");
+        reloaded.BacktestMaxDrawdownRatio.Should().Be(0.10m, "担当外フィールドを古い値で巻き戻さない");
+    }
 }

@@ -46,6 +46,18 @@ public sealed class StageGateService(
         if (result is { Accepted: true, Transition: not null })
         {
             ledgerStore.Append(result.Transition);
+
+            // FR-20, ADR-0008, IADR-0103, #164: 受理された差し戻し（降格）で実DD の観測窓を区切る。
+            // 実DD は単調非減少で累積するため、リセット経路が無いと「撤退 → 降格 → 再昇格」の直後に過去の実DD で
+            // 撤退が恒久的に再発火する。差し戻しは再検証のやり直しであり、観測もそこで区切るのが ADR-0008 の意図に合う。
+            // 昇格側ではリセットしない（撤退の証拠を消さない＝厳しい側）。台帳追記の後（＝遷移確定後）に行い、
+            // 実DD 以外のフィールドは温存する（フィールド所有権の分離・IADR-0089 の鏡像）。
+            // 既に 0（未供給・リセット済み）なら書き込まない＝未記録の実績行を差し戻しだけで作らない。
+            if (result.Transition.Kind == StageTransitionKind.Demotion
+                && performance.ObservedMaxDrawdownRatio != 0m)
+            {
+                performanceStore.Save(StagePerformanceProjection.WithoutObservedDrawdown(performance));
+            }
         }
 
         return result;

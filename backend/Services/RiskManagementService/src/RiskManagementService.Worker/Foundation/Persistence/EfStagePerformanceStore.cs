@@ -5,6 +5,12 @@ namespace AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
 
 // FR-20, FR-15, IADR-0070: 段階別実績の EF 実装（単一行 upsert）。未記録時は fail-safe 既定
 // （BacktestPassed=false ほか全 false/0）を返す＝既定で昇格を許可しない安全側。DbContext は scoped のため本ストアも scoped。
+//
+// IADR-0103 決定7（新しい供給源を足すときの前提）: 本行は複数の供給源が read-modify-write で更新する
+// （backtest 由来の射影 / 実DD ドライバ / 差し戻しリセット）。各供給源が担当外フィールドを巻き戻さないのは、
+// 下の Save が Find で「同一スコープの追跡済みエンティティ」を取り、GetCurrent() 時点のオリジナル値との差分だけが
+// Modified になる＝担当外列が UPDATE に載らないためである。**読みと書きは必ず同一スコープ（同一 DbContext）で行うこと。**
+// 別スコープで読んだ値を持ち込むと Find が DB を再読して全列 Modified になり、この保証が静かに崩れる。
 internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStagePerformanceStore
 {
     public StagePerformance GetCurrent()
