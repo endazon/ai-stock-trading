@@ -155,8 +155,11 @@ scoped な `StageGateService`・`BacktestEvaluatedProjectionConsumer`）はい�
   リセットが競合せず永続した通常経路は
   `ObservedDrawdownRefreshServiceTests.差し戻しリセット後は現在DDから観測しなおす` で固定している
   （打ち消し経路は本テストの対象外＝許容する制約であることの明示）。
-- 差し戻し先は Stage 0／Stage 1 であり、`AssessWithdrawal` の実DD 判定は Stage 2/3 でしか評価されない。
-  したがって打ち消しが起きても、影響が現れるのは再び Stage 2 へ昇格した後に限られる。
+- 影響が現れる時期は**差し戻し先の段階による**。`AssessWithdrawal` の実DD 判定は Stage 2/3 でしか評価されないため
+  （`StageGate.cs`）、差し戻し先が Stage 0／Stage 1 なら打ち消しが起きても影響は再び Stage 2 へ昇格するまで現れない。
+  ただし `RequestTransition` は差し戻し方向に段数制約を持たない（昇格のみ 1 段ずつ）ため **Stage 3 → Stage 2 の
+  差し戻しが可能**であり、この場合の着地先 Stage 2 は実DD 判定の対象段階なので、打ち消しが起きると**再昇格を待たず
+  着地直後に撤退が再発火し得る**（回復には Stage 2 → 1/0 の再差し戻しを要する）。方向は保守側のままである。
 - 差し戻しは利用者承認を要する稀な手動操作で、ドライバは既定 opt-in 無効。同時実行の機会自体が小さい。
 
 **楽観排他トークン（`RowVersion`/`IsConcurrencyToken`）を追加しない理由**: `EfRiskSettingsStore`／`EfStageGateStore` は
