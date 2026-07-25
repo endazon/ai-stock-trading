@@ -115,6 +115,15 @@ builder.Services.Configure<WithdrawalEvaluationOptions>(
 if (builder.Configuration.GetSection(WithdrawalEvaluationOptions.SectionName)
         .Get<WithdrawalEvaluationOptions>()?.Enabled == true)
     builder.Services.AddHostedService<WithdrawalEvaluationService>();
+// FR-20, FR-10, ADR-0008, IADR-0103, #164: 実DD（観測最大ドローダウン）の供給ドライバ。時価評価つき DrawdownRatio を
+// 定時サンプリングして段階別実績へ単調 latch し、撤退基準（実DD ≥ バックテスト最大DD × 1.5）の入力を満たす。
+// 供給は Risk 専有データ（取引台帳＋時価評価）のみで完結する（他サービスへの s2s 照会・イベント購読は不要）。
+// 既定は無効（opt-in・安全側）。有効化しても EnableMarkToMarket が既定無効なら DD は常に 0 で書き込みも起きない。
+builder.Services.Configure<ObservedDrawdownRefreshOptions>(
+    builder.Configuration.GetSection(ObservedDrawdownRefreshOptions.SectionName));
+if (builder.Configuration.GetSection(ObservedDrawdownRefreshOptions.SectionName)
+        .Get<ObservedDrawdownRefreshOptions>()?.Enabled == true)
+    builder.Services.AddHostedService<ObservedDrawdownRefreshService>();
 // FR-19, #154, IADR-0006/0040/0067: 相場操縦検出器（#49）を本番有効化する。検知アルゴリズム
 // （ManipulativeOrderPatternDetector＋ManipulationPatternAnalyzer）に、注文履歴テレメトリ（注文系イベントの
 // Risk 専有 DB への射影・#154）から IOrderActivitySource を供給する。IOrderActivitySource は同期契約かつ

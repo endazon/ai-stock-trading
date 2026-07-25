@@ -99,6 +99,58 @@ public class StageGateServiceTests
     }
 
     [Fact]
+    public void 差し戻し受理で実DDの観測窓をリセットする()
+    {
+        // FR-20, ADR-0008, IADR-0103, #164: 実DD は単調非減少で累積するため、差し戻し（再検証のやり直し）で
+        // 観測窓を区切らないと「撤退 → 降格 → 再昇格」の直後に過去の実DD で撤退が恒久的に再発火する。
+        // 実DD 以外（backtest 由来・他の運用系）は温存する。
+        var (svc, _, perf, _) = Build(TradingStage.Stage2MinimalLive);
+        perf.Save(new StagePerformance
+        {
+            BacktestPassed = true,
+            BacktestMaxDrawdownRatio = 0.10m,
+            ObservedMaxDrawdownRatio = 0.20m,
+            ControlViolationCount = 2,
+        });
+
+        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+
+        result.Accepted.Should().BeTrue();
+        result.Transition!.Kind.Should().Be(StageTransitionKind.Demotion);
+        var after = perf.GetCurrent();
+        after.ObservedMaxDrawdownRatio.Should().Be(0m);
+        after.BacktestPassed.Should().BeTrue();
+        after.BacktestMaxDrawdownRatio.Should().Be(0.10m);
+        after.ControlViolationCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void 昇格受理では実DDの観測窓を保持する()
+    {
+        // IADR-0103: 昇格側でリセットすると撤退の証拠を消して緩む。安全側（厳しい側）に倒し、観測は維持する。
+        var (svc, _, perf, _) = Build();
+        perf.Save(new StagePerformance { BacktestPassed = true, ObservedMaxDrawdownRatio = 0.20m });
+
+        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+
+        result.Accepted.Should().BeTrue();
+        perf.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.20m);
+    }
+
+    [Fact]
+    public void 受理されない遷移では実DDの観測窓を変更しない()
+    {
+        // IADR-0103: リセットは「受理された差し戻し」のみ。承認欠如で拒否された要求で観測が消えてはならない。
+        var (svc, _, perf, _) = Build(TradingStage.Stage2MinimalLive);
+        perf.Save(new StagePerformance { ObservedMaxDrawdownRatio = 0.20m });
+
+        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "  ");
+
+        result.Accepted.Should().BeFalse();
+        perf.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.20m);
+    }
+
+    [Fact]
     public void 実DDがバックテスト最大DDの倍率を超えると撤退で自動停止し降格提案する()
     {
         // 受け入れ基準: 差し戻し基準到達時に自動で安全側（停止・降格提案）に倒れる。

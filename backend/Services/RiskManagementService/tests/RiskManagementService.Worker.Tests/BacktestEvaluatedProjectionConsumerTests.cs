@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
+using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
@@ -83,6 +84,43 @@ public class BacktestEvaluatedProjectionConsumerTests
     }
 
     [Fact]
+    public async Task 合格verdict供給後にStage0から1への昇格が受理される()
+    {
+        // #164 受け入れ基準 2（in-repo 分）: verdict 供給 → 段階別実績 → 昇格ゲートまでの通しを検証する。
+        // 供給前は BacktestNotPassed で拒否され、供給後は同じ承認要求が受理される（BacktestNotPassed が解消する）。
+        // 実 publish ホスト（BacktestService 側）と実コンテナ E2E は #82 に残す。
+        var store = new InMemoryStagePerformanceStore();
+        var ledger = new InMemoryStageGateStore(TradingStage.Stage0Verification);
+        var clock = new FixedClock(new DateTimeOffset(2026, 7, 26, 9, 0, 0, TimeSpan.Zero));
+        var stageGate = new StageGateService(
+            ledger,
+            store,
+            TradingDefaults.CreateStagePolicy(),
+            new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
+            clock);
+
+        // 供給前: fail-safe 既定で昇格は拒否される。
+        var before = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        before.Accepted.Should().BeFalse();
+        before.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
+
+        await using var provider = BuildProvider(store);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await harness.Bus.Publish(Verdict(passed: true, maxDd: 0.08m));
+        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+
+        // 供給後: 同じ承認要求が受理され、Stage 1 へ遷移する（昇格ゲートが解錠される）。
+        var after = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        after.Accepted.Should().BeTrue();
+        after.Transition!.Kind.Should().Be(StageTransitionKind.Promotion);
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Paper);
+
+        await harness.Stop();
+    }
+
+    [Fact]
     public async Task 不合格verdictは昇格拒否を維持しつつ実DDを更新する()
     {
         var store = new InMemoryStagePerformanceStore();
@@ -98,5 +136,13 @@ public class BacktestEvaluatedProjectionConsumerTests
         perf.BacktestMaxDrawdownRatio.Should().Be(0.30m);
 
         await harness.Stop();
+    }
+
+    // 段階ゲートの遷移時刻を固定するための時計（本テストでは時刻自体は検証しない）。
+    private sealed class FixedClock(DateTimeOffset now) : IClock
+    {
+        public DateTimeOffset UtcNow => now;
+
+        public DateOnly Today => DateOnly.FromDateTime(now.UtcDateTime);
     }
 }
