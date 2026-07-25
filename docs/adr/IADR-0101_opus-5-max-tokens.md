@@ -11,7 +11,7 @@ related_ids:
   - IADR-0061
 author: claude
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-25
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md (取引判断の LLM モデル固定・Accepted)"
   - "../../planning/projects/microservices-platform/07_adr/ADR-0025_llm-model-opus-5.md (基盤のグローバル既定を Opus 5 へ改定・Accepted)"
@@ -26,7 +26,7 @@ plan_refs:
 ## 起点・関連
 
 - 基盤側 `MSP/ADR-0025` によりゲートウェイのグローバル既定が `claude-opus-4-8` → `claude-opus-5` へ改定される
-  （実装追従は `MSP/IADR-0100`）。本 IADR はその改定に対する本リポジトリ側の防御的追従である。
+  （実装追従は `MSP/IADR-0101`）。本 IADR はその改定に対する本リポジトリ側の防御的追従である。
 - 仕様書: `docs/specs/20260724_opus-5-max-tokens.md`。
 
 ## コンテキストと課題
@@ -60,7 +60,7 @@ Opus 5 は Opus 4.8 と異なり `thinking` 省略時に adaptive thinking が�
 
 `HttpLlmCompletionClient`（`trade-decision`）と `HttpReportNarrativeDrafter`（`report-narrative`）の
 `/complete` 要求の `MaxTokens` を **1024 → 4096** に引き上げる。基盤の
-`CompletionApiRequest` 既定値（`MSP/IADR-0100`）と同値に揃える。
+`CompletionApiRequest` 既定値（`MSP/IADR-0101`）と同値に揃える。
 
 `thinking` / `effort` の明示送信は行わない（ゲートウェイの責務であり、本リポジトリからは送れない）。
 
@@ -78,7 +78,7 @@ Opus 5 は Opus 4.8 と異なり `thinking` 省略時に adaptive thinking が�
 - 悪い影響 / トレードオフ: 1 応答あたりの最大出力トークンが 4 倍になり、異常系での最大コストが増える。
   実消費の増分は思考分に限られる見込みだが、実測で確認する。
 - フォローアップ:
-  1. Opus 5 化後の出力トークン実測と 4096 の再調整（基盤 `MSP/IADR-0100` のフォローアップ 1 と対で行う）。
+  1. Opus 5 化後の出力トークン実測と 4096 の再調整（基盤 `MSP/IADR-0101` のフォローアップ 1 と対で行う）。
   2. **`ADR-0011` の未実施フォローアップ**（基盤 `PurposeModels` の取引用途に固定モデル ID を設定する）。
      本 IADR は `max_tokens` のみを扱い、モデルの自動追随そのものは解消しない。基盤側での対応が必要。
   3. 月次 LLM 費用上限（15,000 円・`05_trading-assumptions` §6）の消費見積り再評価。
@@ -87,5 +87,11 @@ Opus 5 は Opus 4.8 と異なり `thinking` 省略時に adaptive thinking が�
 
 - Supersedes: なし
 - Superseded by: なし
+- 参照の是正（2026-07-25）: 基盤側の実装ADR は当初 `MSP/IADR-0100` として起票されたが、基盤 develop に
+  別の `IADR-0100`（経路B ノードの inotify 上限を sysctl DaemonSet で引き上げる決定・
+  endazon/microservices-platform#375）が先にマージされたため **`MSP/IADR-0101`** へ採番し直された
+  （endazon/microservices-platform#376）。本 IADR 内の参照 3 箇所を是正した。決定内容の変更はない。
+  なお本リポジトリの `IADR-0100`（経路B の values-local 恒常設定）とは無関係であり、基盤側を指す参照には
+  `MSP/` 接頭辞を付けて区別する。
 - 関連要求 / UC: FR-04（AI 判断のガードレール）、FR-06/16（報告書生成）、
   [ADR-0011](../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md)

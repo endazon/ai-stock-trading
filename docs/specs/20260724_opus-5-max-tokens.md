@@ -11,7 +11,7 @@ related_ids:
   - IADR-0101
 author: claude
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-25
 related_specs:
   - "../adr/IADR-0101_opus-5-max-tokens.md"
 ---
@@ -22,7 +22,7 @@ related_specs:
 
 - 計画根拠: `MSP/ADR-0025`（LLM 利用モデルの改定 — グローバル既定を Claude Opus 5 へ更新・Accepted）。
   基盤 microservices-platform の LLM ゲートウェイのグローバル既定が `claude-opus-4-8` → `claude-opus-5`
-  へ改定される（実装追従は `MSP/IADR-0100`、PR endazon/microservices-platform#376）。
+  へ改定される（実装追従は `MSP/IADR-0101`、PR endazon/microservices-platform#376）。
 - 制約: [ADR-0011](../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md)
   （取引判断の LLM はモデルバージョンを固定し、基盤のモデル改定に自動追随しない・Accepted）。
   同 §決定は「**報告書生成の LLM は別扱い**。基盤の既定モデルを用いてよい」とも定める。
