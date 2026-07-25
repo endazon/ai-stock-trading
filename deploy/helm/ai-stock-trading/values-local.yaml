@@ -17,7 +17,8 @@
 #   - order-execution は含めない → Broker__Provider は template 既定 paper（moomoo.enabled=false）＝実弾 OFF 不変。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
 #   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は空既定。未設定時は IADR-0062 の安全既定
-#     （空は「全許可」ではなく全拒否）で no-op。値はユーザーが与える。
+#     （空は「全許可」ではなく全拒否）で no-op。値は chart の設定点 discord.bot.*（#245/IADR-0102）から与える
+#     （標準手順 = k8s-local-deploy.sh の DISCORD_BOT_* env → --set-string。`kubectl set env` は使わない）。
 #
 # DNS: 同 ns=短名(<svc>-service)、MSP=<svc>.microservices-platform、keycloak=ExternalName alias(短名可・infraAliases)。
 
@@ -144,8 +145,12 @@ services:
       - { name: Notifications__Discord__Bot__Enabled, value: "true" }      # 配線恒常化（Token 空なら接続しない）
       - name: Notifications__Discord__Bot__Token
         secretKeyRef: { name: ast-secrets, key: discord-bot-token, optional: true }
-      - { name: Notifications__Discord__Bot__GuildId, value: "" }          # ← 環境固有（ユーザーが与える）
-      - { name: Notifications__Discord__Bot__ChannelId, value: "" }        # ← 環境固有
+      # 環境固有 ID（非機密）。値は chart の設定点 discord.bot.*（空既定）が非空のとき template が上書きする
+      # （#245, IADR-0102）。標準手順では k8s-local-deploy.sh の DISCORD_BOT_GUILD_ID / DISCORD_BOT_CHANNEL_ID /
+      # DISCORD_BOT_ALLOWED_USER_IDS / DISCORD_BOT_USER_MAPPING を env で与える（→ --set-string）。
+      # ⚠️ `kubectl set env` で注入しないこと（次回の helm upgrade が `conflict with "kubectl-set"` で失敗する）。
+      - { name: Notifications__Discord__Bot__GuildId, value: "" }          # ← 環境固有（空=全拒否）
+      - { name: Notifications__Discord__Bot__ChannelId, value: "" }        # ← 環境固有（空=全拒否）
       - { name: Notifications__Discord__Bot__AllowedUserIds, value: "" }   # ← 環境固有（空=全拒否）
       - { name: Notifications__Discord__Bot__UserMapping, value: "" }      # ← 環境固有（"discordUserId:利用者名" のカンマ区切り）
       - name: Notifications__Discord__Bot__KillSwitchConfirmationPhrase

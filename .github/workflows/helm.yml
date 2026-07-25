@@ -157,6 +157,82 @@ jobs:
             fi
           done
           echo "ok: values-local は ①②③＋Discord＋価格文脈を有効化し、実弾/危険既定は OFF のまま"
+      # #245 / IADR-0102: Discord Bot の環境固有 ID（非機密）の設定点 discord.bot.*。
+      # (a) 値を与えたら notification の env に入る（空振り検出）・snowflake が指数表記に化けない
+      # (b) 空指定は既定描画とバイト一致（本番 values.yaml をバイト等価に保つ担保）
+      # (c) env は「追加」ではなく「上書き」＝同名 env の二重定義を作らない
+      # (d) 上書きは notification-service にのみ効く（他サービスの env を汚さない）
+      - name: Assert discord.bot.* overrides notification env (#245)
+        run: |
+          GUILD=123456789012345678
+          CHANNEL=987654321098765432
+          USERS='111111111111111111\,222222222222222222'
+          MAPPING='111111111111111111:owner\,222222222222222222:ops'
+          render() {
+            helm template ast "$CHART" "$@" \
+              --set-string discord.bot.guildId="$GUILD" \
+              --set-string discord.bot.channelId="$CHANNEL" \
+              --set-string discord.bot.allowedUserIds="$USERS" \
+              --set-string discord.bot.userMapping="$MAPPING"
+          }
+          check() {
+            out="$1"; label="$2"
+            printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__GuildId' | grep -q "value: \"$GUILD\"" \
+              || { echo "::error::$label: GuildId が描画されない（指数表記化＝--set-string 忘れの可能性も）。"; exit 1; }
+            printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__ChannelId' | grep -q "value: \"$CHANNEL\"" \
+              || { echo "::error::$label: ChannelId が描画されない。"; exit 1; }
+            # カンマ区切り値はエスケープを解いた素の値で入る（helm の --set パーサ経由）。
+            printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__AllowedUserIds' \
+              | grep -q 'value: "111111111111111111,222222222222222222"' \
+              || { echo "::error::$label: AllowedUserIds が描画されない（カンマのエスケープ崩れ）。"; exit 1; }
+            printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__UserMapping' \
+              | grep -q 'value: "111111111111111111:owner,222222222222222222:ops"' \
+              || { echo "::error::$label: UserMapping が描画されない。"; exit 1; }
+            # (c) 二重定義しない: 各 env 名の出現は 1 回のみ。
+            for key in GuildId ChannelId AllowedUserIds UserMapping; do
+              n="$(printf '%s' "$out" | grep -c "name: Notifications__Discord__Bot__$key" || true)"
+              if [ "$n" -ne 1 ]; then
+                echo "::error::$label: Notifications__Discord__Bot__$key が $n 回描画された（env の二重定義）。"; exit 1
+              fi
+            done
+          }
+          # (a) 既定 values（本番形）＋ 値指定。
+          check "$(render)" "既定values"
+          # (a') 経路B プロファイル（標準手順 k8s-local-deploy.sh と同じ組み合わせ）。
+          local_out="$(render -f "$CHART/values-local.yaml")"
+          check "$local_out" "values-local"
+          # 値を与えても実弾/危険既定は OFF のまま。
+          printf '%s' "$local_out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
+            || { echo "::error::ID 指定で Broker__Provider が paper でなくなった（実弾 OFF 不変に違反）。"; exit 1; }
+          for forbidden in 'kind: ExternalSecret' 'name: opend'; do
+            if printf '%s' "$local_out" | grep -q "$forbidden"; then
+              echo "::error::ID 指定の描画に「$forbidden」が現れた（危険既定が開いた）。"; exit 1
+            fi
+          done
+          # (d) 上書きが効くのは notification-service の Deployment のみ。
+          owner="$(render -s templates/deployment.yaml \
+            | awk '/^  name: /{svc=$2} /name: Notifications__Discord__Bot__GuildId/{print svc}')"
+          if [ "$owner" != "notification-service" ]; then
+            echo "::error::GuildId の上書き先が notification-service ではない（実際: 「$owner」）。"; exit 1
+          fi
+          echo "ok: discord.bot.* は notification の env を 1 度だけ上書きする"
+      - name: Assert empty discord.bot.* is byte-identical to default (本番バイト等価)
+        run: |
+          # 空指定（= k8s-local-deploy.sh で DISCORD_BOT_* 未設定の場合）が描画を 1 バイトも変えないこと。
+          empty_args=(--set-string discord.bot.guildId="" --set-string discord.bot.channelId=""
+                      --set-string discord.bot.allowedUserIds="" --set-string discord.bot.userMapping="")
+          diff <(helm template ast "$CHART") <(helm template ast "$CHART" "${empty_args[@]}") \
+            || { echo "::error::空の discord.bot.* 指定が既定描画を変えた（バイト等価に違反）。"; exit 1; }
+          diff <(helm template ast "$CHART" -f "$CHART/values-local.yaml") \
+               <(helm template ast "$CHART" -f "$CHART/values-local.yaml" "${empty_args[@]}") \
+            || { echo "::error::空の discord.bot.* 指定が values-local 描画を変えた。"; exit 1; }
+          # 既定描画では 4 ID が空のまま（IADR-0062 の安全既定＝全拒否）であること。
+          out="$(helm template ast "$CHART")"
+          for key in GuildId ChannelId AllowedUserIds UserMapping; do
+            printf '%s' "$out" | grep -A1 "name: Notifications__Discord__Bot__$key" | grep -q 'value: ""' \
+              || { echo "::error::既定描画の Notifications__Discord__Bot__$key が空でない（安全既定の反転）。"; exit 1; }
+          done
+          echo "ok: 空既定は描画を変えず、4 ID は空（全拒否）のまま"
       # #132 / IADR-0060 決定 1: chart の opend と dev の生 manifest（deploy/opend/k8s/opend.yaml）は
       # 意図的な二重管理である。片方だけが変更されて常駐モデルの前提が崩れるのを防ぐため、既定値の描画が
       # 生 manifest と**同等の不変条件**を満たすことを検査する（バイト等価ではない: chart は HOME 等を明示注入する）。

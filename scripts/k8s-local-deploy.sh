@@ -16,6 +16,13 @@
 # #226, IADR-0098: Discord Bot 制御コマンドの owner 認証は dev 既定（ai-stock-trading-owner /
 # dev-only-owner-secret＝realm-export.json と一致）で解決する。DISCORD_OWNERAUTH_CLIENTID /
 # DISCORD_OWNERAUTH_CLIENTSECRET で上書き可。Bot は values-local で Enabled=true だが Token 空なら接続しない（安全側）。
+# #245, IADR-0102: Discord Bot の**環境固有 ID**（非機密）は values 経路（--set-string discord.bot.*）で渡す:
+#   DISCORD_BOT_GUILD_ID / DISCORD_BOT_CHANNEL_ID / DISCORD_BOT_ALLOWED_USER_IDS / DISCORD_BOT_USER_MAPPING。
+#   未設定=空=差し替えなし（IADR-0062 の安全既定＝空は「全許可」ではなく全拒否で no-op）。
+#   ⚠️ `kubectl set env deploy/notification-service ...` で注入しないこと。env の所有が Helm と kubectl(kubectl-set)へ
+#      割れ、次回の helm upgrade が `conflict with "kubectl-set"` で失敗する。既に競合している場合は
+#      `kubectl set env deploy/notification-service -n ai-stock-trading Notifications__Discord__Bot__GuildId- ...`
+#      （`KEY-`＝削除）で剥がしてから本スクリプトを回す（chart README 参照）。
 # #18, IADR-0093: KB 書き込みの s2s は MSP レルムの client ai-stock-trading-kb-writer（KB_AUTH_CLIENTID で上書き可）。
 # LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
 set -euo pipefail
@@ -46,11 +53,20 @@ kubectl create secret generic ast-secrets -n "$NS" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [3/3] helm upgrade --install (local/SIMULATE プロファイル)"
+# #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
+# 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。
+helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
 # namespace は本スクリプトが先に作成（ast-secrets 投入のため）。chart に Namespace を template させると
 # 既存 ns に Helm 所有メタデータが無く install が衝突するため、namespace.create=false で無効化する。
 # #238, IADR-0100: values-local.yaml を重ねて ①時価②実LLM③実KB＋Discord＋価格文脈を有効化する（本番描画には不関与）。
+# #245, IADR-0102: Discord の環境固有 ID は --set-string（--set だと 18〜19 桁の snowflake が float64 に解釈され
+# 1.234567890123456e+18 に化ける）。空指定は差し替えなし＝描画は既定のまま（fail-safe）。
 helm upgrade --install ast deploy/helm/ai-stock-trading -n "$NS" \
   --set namespace.create=false \
+  --set-string discord.bot.guildId="$(helm_escape "${DISCORD_BOT_GUILD_ID:-}")" \
+  --set-string discord.bot.channelId="$(helm_escape "${DISCORD_BOT_CHANNEL_ID:-}")" \
+  --set-string discord.bot.allowedUserIds="$(helm_escape "${DISCORD_BOT_ALLOWED_USER_IDS:-}")" \
+  --set-string discord.bot.userMapping="$(helm_escape "${DISCORD_BOT_USER_MAPPING:-}")" \
   -f deploy/helm/ai-stock-trading/values-local.yaml
 
 echo ""

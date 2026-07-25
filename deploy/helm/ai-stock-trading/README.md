@@ -60,10 +60,54 @@ kubectl -n ai-stock-trading get pods
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
 
-> **Discord の環境固有値**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は `values-local.yaml` で**空既定**にしている。
-> 使うときは各自の値を `values-local.yaml`（またはローカル専用の上乗せ values）へ記入する。**空のまま**だと IADR-0062 の
+> **Discord の環境固有 ID**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は**空既定**であり、
+> 下記「Discord の環境固有 ID」の env（`DISCORD_BOT_*`）で与える（[#245](https://github.com/endazon/ai-stock-trading/issues/245) /
+> [IADR-0102](../../../docs/adr/IADR-0102_discord-env-ids-via-values.md)）。**空のまま**だと IADR-0062 の
 > 安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で Bot は接続しても操作を受け付けない。
 > Discord を使わないなら `Notifications__Provider=""` / `Bot__Enabled="false"` に戻す。
+
+### Discord の環境固有 ID（`kubectl set env` は使わない）
+
+`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping` は**非機密**の識別子であり、chart の設定点
+`discord.bot.*`（空既定）から与える。`scripts/k8s-local-deploy.sh` が下表の env を読み、`helm upgrade` へ
+`--set-string discord.bot.*` として渡す（未設定=空=差し替えなし＝全拒否のまま）。
+
+| 環境変数 | chart 値 | 設定キー | 備考 |
+| --- | --- | --- | --- |
+| `DISCORD_BOT_GUILD_ID` | `discord.bot.guildId` | `Notifications:Discord:Bot:GuildId` | 運用サーバー（ギルド）ID |
+| `DISCORD_BOT_CHANNEL_ID` | `discord.bot.channelId` | `…:ChannelId` | 運用チャンネル ID |
+| `DISCORD_BOT_ALLOWED_USER_IDS` | `discord.bot.allowedUserIds` | `…:AllowedUserIds` | 許可ユーザー ID（カンマ区切り） |
+| `DISCORD_BOT_USER_MAPPING` | `discord.bot.userMapping` | `…:UserMapping` | `discordUserId:keycloak利用者名` のカンマ区切り |
+
+```bash
+export DISCORD_BOT_GUILD_ID=123456789012345678
+export DISCORD_BOT_CHANNEL_ID=987654321098765432
+export DISCORD_BOT_ALLOWED_USER_IDS=111111111111111111,222222222222222222
+export DISCORD_BOT_USER_MAPPING=111111111111111111:owner,222222222222222222:ops
+scripts/k8s-local-deploy.sh
+```
+
+> ⚠️ **`kubectl set env deploy/notification-service ...` で注入しないこと。** `kubectl set env` は当該 env を
+> フィールドマネージャ `kubectl-set` の所有にするため、次回の `helm upgrade`（＝`k8s-local-deploy.sh`）が
+> 同じフィールドを Helm 所有として apply しようとして **`conflict with "kubectl-set"` で失敗する**。
+> **既に競合している場合の解消**（該当 env を削除してから再デプロイ）:
+>
+> ```bash
+> kubectl set env deploy/notification-service -n ai-stock-trading \
+>   Notifications__Discord__Bot__GuildId- Notifications__Discord__Bot__ChannelId- \
+>   Notifications__Discord__Bot__AllowedUserIds- Notifications__Discord__Bot__UserMapping-
+> scripts/k8s-local-deploy.sh
+> ```
+>
+> （`KEY-` は当該 env の削除。削除で `kubectl-set` の所有が外れ、以後は Helm が単独所有する。）
+
+> 手で `helm --set-string` を打つ場合の注意: **`--set` ではなく `--set-string`**（18〜19 桁の snowflake は
+> `--set` だと float64 に解釈され `1.234567890123456e+18` に化ける）。また `AllowedUserIds` / `UserMapping` の
+> **カンマは `\,` にエスケープ**する（helm の `--set` パーサはカンマを要素区切りとして解釈する）。
+> `k8s-local-deploy.sh` 経由ならどちらもスクリプトが処理する。
+>
+> **機密は values に載せない**: Bot Token・kill switch 確認フレーズ・OwnerAuth 資格情報は従来どおり
+> `ast-secrets`（`secretKeyRef`）で与える。
 
 > **プロンプト全量ログは既定オフ（opt-in）**: `values-local.yaml` の `LlmGateway__LogPrompts` は安全既定 `""`（記録しない・
 > IADR-0061 決定1）。②実 LLM の要求/生応答（判断根拠・監視銘柄等の機微を含む）をログ基盤に残してプロンプトレベルで
