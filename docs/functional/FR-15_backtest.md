@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-26
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
@@ -37,6 +37,26 @@ plan_refs:
 
 ## 機能詳細
 
+### 過去データの供給（#208・[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)）
+
+取得（非同期・外部 I/O）と評価（同期・純粋）をポートで分ける。取得はシミュレーションの**外側で 1 回だけ**行い、
+結果をスナップショットへ固定するため、ウォークフォワードの分割ごと・試行ごとの再取得で結果が揺れない（決定性の保全）。
+
+| 役割 | 実装 | 備考 |
+| --- | --- | --- |
+| 取得（実データ源） | `IHistoricalBarSource`（Application のポート） | 非同期。戻り値 `HistoricalBarLoad(Bars, Gaps)` で欠測を銘柄と理由つきで残す |
+| 実アダプタ | `StooqHistoricalBarSource`（Worker） | ADR-0004 が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。送信前に `IRateLimiter` で自制 |
+| 安全既定 | `NoOpHistoricalBarSource`（Worker） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・不正 URL も警告して no-op |
+| 合成・自己申告 | `BacktestService.Worker` | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
+| 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
+| 評価（テスト用） | `InMemoryBarDataSource` | **テスト・検証専用**（決定的スタブ） |
+| 取得対象の導出 | `SecurityUniverse.MembersBetween` | 期間内に一度でも構成銘柄だった銘柄（廃止銘柄含む）＝生存者バイアス排除を取得段階から一貫 |
+
+- **欠測は無音破棄しない**: 非成功応答・データなし・解析不能・銘柄記法へ写像不能は `HistoricalBarGap` に残す。
+  壊れた行がある銘柄は**部分採用せず丸ごと欠測**とする（偽の価格ギャップは約定不能・過小な DD として判定へ混入する）。
+- **通信例外は送出する**: 取得が失敗すればバックテストは完走せず verdict も出ない＝昇格は起きない（fail-safe）。
+- 取得データは個人利用の範囲に留め、外部へ再配信しない（計画書 `02_datasource-candidates.md` の運用制約）。
+
 ### シミュレーション（Slice A）
 
 - 入力: 過去データ（`IBarDataSource`）・銘柄ユニバース（PIT）・戦略（`IBacktestStrategy`）・コストモデル・期間。
@@ -58,7 +78,7 @@ plan_refs:
 | 最大 DD | 許容内 | ≤ 許容 DD（既定 15%＝前提条件の DD 上限） |
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |
 | ウォークフォワード | OOS が正 | OOS 総リターン > 0 |
-| 試行数 | 最小試行数以上 | N ≥ 1（記録の存在） |
+| 試行数 | 最小試行数以上 | N ≥ 1（記録の存在）。**実データでの較正前の暫定値**（IADR-0045・較正は #208） |
 | データ健全性 | 全バーがカットオフ後/匿名化（検証条件①） | `DataCutoffPolicy` 充足（`Stage0GateCheck.DataCutoff`） |
 
 - 合格 → `Stage0Verification → Stage1Paper` の**昇格推奨**を返す（実際の遷移承認は利用者・#20）。
@@ -73,6 +93,7 @@ plan_refs:
 | 保有中の銘柄が上場廃止（PIT で以降バーが除外） | **Slice A の既知の制約**: シミュレータは最終観測終値で当該建玉を凍結評価し続ける（強制決済しない。下記「既知の制約」参照） |
 | 試行数 0 / 標本長不足 | DSR/PBO は保守側（合格させない方向）に倒す |
 | いずれかの合格基準を満たさない | `Stage0GateResult.Passed=false` と不合格理由を返す |
+| 実過去データ源が未接続（provider 既定 `none`）／取得できた銘柄が無い | バーが 0 本になり `DeflatedSharpe`・`CostRobustness`・`WalkForward` が不成立＝**不合格・昇格拒否**（fail-safe）。なお `DataCutoffPolicy` は空バーを違反と見なさない（空は真空的に真）ため、拒否はこの 3 条件が担う（#208・IADR-0105） |
 
 ## 受け入れ基準
 
@@ -94,5 +115,8 @@ plan_refs:
 ## 関連仕様
 
 - 機能仕様: [FR-20 段階ゲート](FR-20_staged-gates.md)、[FR-10 リスク統制](FR-10_risk-controls.md)
-- 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）
-- 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)
+- 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
+  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）
+- テスト仕様: [FR-15 バックテスト基盤](../tests/FR-15_backtest-tests.md)
+- 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、
+  [20260726_backtest-historical-bar-source](../specs/20260726_backtest-historical-bar-source.md)

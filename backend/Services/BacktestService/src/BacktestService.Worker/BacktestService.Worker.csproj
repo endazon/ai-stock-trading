@@ -1,0 +1,20 @@
+<!-- FR-15, #208, IADR-0105: バックテスト Worker ホスト。実過去データ源（IHistoricalBarSource）の合成面を持ち、
+     ヘルスチェックと実効構成の自己申告（GET /internal/introspection）のため Web SDK を使用する。
+     DB・メッセージバスは持たない（永続化は無く、verdict の実 publish は #82）。実行時基盤は test-support shim（IADR-0013）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.Backtest.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <ProjectReference Include="..\BacktestService.Application\BacktestService.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- #208, IADR-0105 決定 5: 外部データ源のレート制御（IRateLimiter / TokenBucket・IADR-0064）を再利用する。
+         アダプタは合成面である Worker が保持し、Application は同期・純粋なポートに閉じる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="BacktestService.Worker.Tests" />
+  </ItemGroup>
+</Project>

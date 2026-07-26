@@ -112,7 +112,7 @@ services:
     networks: [ast]
 
   # --------------------------------------------------------------------------
-  # AST サービス（10 Worker）。全て Web SDK（:8080）。ホストへはポート公開しない
+  # AST サービス（11 Worker）。全て Web SDK（:8080）。ホストへはポート公開しない
   # （compose ネットワーク内で相互通信）。#82 が必要に応じて公開・疎通を足す。
   # --------------------------------------------------------------------------
   audit-service:
@@ -133,6 +133,23 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+
+  # FR-15, #208, IADR-0105: バックテスト（Stage 0 検証）。DB もメッセージバスも持たない。
+  # 実過去データ源は既定 no-op（Backtest__BarData__Provider 空＝外部へ 1 リクエストも出さない）。
+  # "stooq" を指定すると Stooq（登録不要・鍵なし）から実過去データを取得する。
+  backtest-service:
+    <<: *app-common
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE_PROJECT: backend/Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj
+        SERVICE_DLL: BacktestService.Worker.dll
+    environment:
+      <<: *app-env
+      Backtest__BarData__Provider: ${BACKTEST_BAR_DATA_PROVIDER:-}
+    depends_on:
+      <<: *depends-infra
 
   configuration-service:
     <<: *app-common

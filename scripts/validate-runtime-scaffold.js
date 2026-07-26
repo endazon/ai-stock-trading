@@ -28,9 +28,10 @@ const REPO_ROOT = process.env.RUNTIME_SCAFFOLD_ROOT
   ? path.resolve(process.env.RUNTIME_SCAFFOLD_ROOT)
   : path.resolve(__dirname, '..');
 
-// 10 Worker ホスト（BacktestService は Worker を持たない）。dir はサービスディレクトリ名。
+// 11 Worker ホスト。dir はサービスディレクトリ名。
 const WORKERS = [
   'AuditService',
+  'BacktestService',
   'ConfigurationService',
   'CostControlService',
   'InformationCollectionService',
