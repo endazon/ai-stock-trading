@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Domain;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -220,6 +221,130 @@ public class HttpLlmCompletionClientTests
             .Should().Contain("Hold");
         (await LoggingClient(new ThrowingHandler(), logger, logPrompts: true).CompleteAsync("p"))
             .Should().Contain("Hold");
+    }
+
+    // --- #247, FR-04, IADR-0104: 終了理由（stopReason）の評価 -------------------------------------
+
+    // IADR-0104 決定2: 拒否は本文を読む前に評価し、本文が非空でも判断へ流さない（上流の破棄に依存しない多層防御）。
+    [Fact]
+    public async Task 拒否_refusal_は本文が非空でも判断へ流さず_Hold_取引しない()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"拒否された断片\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","model":"claude","inputTokens":10,"outputTokens":5,"sent":true,"stopReason":"refusal"}""");
+
+        var text = await Client(handler).CompleteAsync("prompt");
+
+        // 拒否された断片（Buy の判断材料）が一切返らないこと。
+        text.Should().NotContain("Buy");
+        text.Should().NotContain("拒否された断片");
+
+        // FR-11: 判断へ倒す先は Hold であり、その理由として拒否が識別できること。
+        var decision = TradeDecisionParser.Parse(text);
+        decision.Action.Should().Be(TradeAction.Hold);
+        decision.Rationale.Should().Contain("拒否");
+    }
+
+    [Theory]
+    [InlineData("REFUSAL")]
+    [InlineData("Refusal")]
+    public async Task 拒否の判定は大小を無視する(string stopReason)
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            $$"""{"text":"{\"action\":\"Buy\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","sent":true,"stopReason":"{{stopReason}}"}""");
+
+        TradeDecisionParser.Parse(await Client(handler).CompleteAsync("prompt")).Rationale.Should().Contain("拒否");
+    }
+
+    // IADR-0104 決定3: 送信拒否（Sent=false）／応答不正／空応答／上限到達／拒否が相互に区別できること。
+    [Fact]
+    public async Task 拒否_送信拒否_空応答_上限到達は_相互に区別できる理由になる()
+    {
+        var refused = await Client(new StubHandler(HttpStatusCode.OK,
+            """{"text":"断片","sent":true,"stopReason":"refusal"}""")).CompleteAsync("p");
+        var notSent = await Client(new StubHandler(HttpStatusCode.OK,
+            """{"text":"機密区分により送信できません","sent":false}""")).CompleteAsync("p");
+        var empty = await Client(new StubHandler(HttpStatusCode.OK,
+            """{"text":"","sent":true,"stopReason":"end_turn"}""")).CompleteAsync("p");
+        var maxTokens = await Client(new StubHandler(HttpStatusCode.OK,
+            """{"text":"","sent":true,"stopReason":"max_tokens"}""")).CompleteAsync("p");
+        var malformed = await Client(new StubHandler(HttpStatusCode.OK, "not-json")).CompleteAsync("p");
+
+        var rationales = new[] { refused, notSent, empty, maxTokens, malformed }
+            .Select(t => TradeDecisionParser.Parse(t))
+            .ToList();
+
+        rationales.Should().AllSatisfy(d => d.Action.Should().Be(TradeAction.Hold));
+        rationales.Select(d => d.Rationale).Should().OnlyHaveUniqueItems();
+    }
+
+    // IADR-0104 決定3: 全量ログが無効でも「上流が非空の断片を渡してきた」事実（本文の長さ）を残す。
+    [Fact]
+    public async Task 拒否は本文長つきで警告ログに残す_全量ログ無効でも本文自体は残さない()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"拒否された断片です","sent":true,"stopReason":"refusal"}""");
+
+        await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("p");
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("refusal");
+        log.Should().Contain("textLength=9"); // 本文の長さ（断片が届いた事実）は残す
+        log.Should().NotContain("拒否された断片です");
+    }
+
+    // IADR-0104 決定4: 拒否は Sent=true かつ課金済み（実送信されている）。費用計測へ渡す（過少計上を避ける）。
+    [Fact]
+    public async Task 拒否でもトークンを費用計測へ渡す()
+    {
+        var reporter = new RecordingReporter();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"断片","model":"claude","inputTokens":80,"outputTokens":12,"sent":true,"stopReason":"refusal"}""");
+
+        await Client(handler, reporter).CompleteAsync("p");
+
+        reporter.Calls.Should().Be(1);
+        reporter.Last.Should().Be(new LlmUsage(80, 12));
+    }
+
+    // IADR-0104 決定4: 上限到達で本文が空になる場合も思考トークンは課金済み（IADR-0101）。Sent=true なら計測する。
+    [Fact]
+    public async Task 空応答_上限到達でもトークンを費用計測へ渡す()
+    {
+        var reporter = new RecordingReporter();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"","model":"claude","inputTokens":50,"outputTokens":4096,"sent":true,"stopReason":"max_tokens"}""");
+
+        await Client(handler, reporter).CompleteAsync("p");
+
+        reporter.Calls.Should().Be(1);
+        reporter.Last.Should().Be(new LlmUsage(50, 4096));
+    }
+
+    // IADR-0104 決定5: 上限到達は劣化であり拒否ではない。本文は破棄せず判断へ渡す（IADR-0101 の劣化観測を壊さない）。
+    [Fact]
+    public async Task 上限到達_max_tokens_は本文を破棄せず返し_劣化を警告ログに残す()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"{\"action\":\"Hold\",\"rationale\":\"様子見\"}","model":"claude","sent":true,"stopReason":"max_tokens"}""");
+
+        var text = await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("p");
+
+        text.Should().Be("""{"action":"Hold","rationale":"様子見"}""");
+        string.Join("\n", logger.Messages).Should().Contain("max_tokens");
+    }
+
+    // 非破壊: stopReason 未設定（上流未更新・未対応プロバイダ）・未知値・正常終了は現行挙動のまま本文を返す。
+    [Theory]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","sent":true}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","sent":true,"stopReason":null}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","sent":true,"stopReason":"end_turn"}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","sent":true,"stopReason":"future_reason"}""")]
+    public async Task stopReason_欠落_未知値_正常終了は現行どおり本文を返す(string body)
+    {
+        (await Client(new StubHandler(HttpStatusCode.OK, body)).CompleteAsync("p"))
+            .Should().Be("""{"action":"Buy"}""");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

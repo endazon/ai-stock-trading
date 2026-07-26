@@ -32,13 +32,13 @@ public static class DecisionAggregator
 
         var winner = leaders[0];
         var agreement = topCount;
-        if (winner == TradeAction.Hold)
-        {
-            return new DecisionVoteResult(LlmDecision.Hold, total, agreement);
-        }
 
-        // Buy/Sell 勝利: 勝利票のうち参照価格の下側中央値を持つ代表票を一体で採る（合成しない）。
+        // 勝利票のうち参照価格の下側中央値を持つ代表票を一体で採る（合成しない）。
         // 決定的順序（参照価格→損切り幅→根拠）でソートし、下側中央 index=(n-1)/2 を選ぶ。
+        // #247, IADR-0104 決定6: Hold 勝利にも同じ規則を適用し、代表票の根拠（Rationale）を保つ。Hold は
+        // TradeDecisionMade を発行しないため DecideAsync の FR-11 ログ 1 行が唯一の監査記録であり、ここで根拠を
+        // 捨てると LLM 由来の見送り理由（拒否・空応答等）が監査へ届かない。Hold 票は価格・損切り幅が 0 のため
+        // 実質は根拠の序数順＝入力順に依存せず決定的。Action は Hold のままで発注挙動は変わらない。
         var winningVotes = decisions
             .Where(d => d.Action == winner)
             .OrderBy(d => d.ReferencePrice)

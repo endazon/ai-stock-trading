@@ -107,6 +107,38 @@ public class DecisionAggregatorTests
         result.Decision.Rationale.Should().Be("低");
     }
 
+    // #247, IADR-0104 決定6: Hold 勝利時も「実在する 1 票を代表として一体で採る」規則を適用し根拠を保つ。
+    // Hold は TradeDecisionMade を発行しないため、DecideAsync の FR-11 ログ 1 行が唯一の監査記録であり、
+    // ここで根拠を捨てると LLM 由来の見送り理由（拒否等）が監査へ届かない。
+    [Fact]
+    public void Hold勝利時は代表票の根拠を保つ()
+    {
+        var result = DecisionAggregator.Aggregate([Hold("LLM が要求を拒否したため見送り")]);
+
+        result.Decision.Action.Should().Be(TradeAction.Hold);
+        result.Decision.Rationale.Should().Be("LLM が要求を拒否したため見送り");
+        result.AgreementVotes.Should().Be(1);
+    }
+
+    [Fact]
+    public void Hold勝利の代表票は決定的に選ばれる()
+    {
+        // 根拠の序数順（価格・損切り幅は Hold では 0）で下側中央値の票を採る＝入力順に依存しない。
+        var forward = DecisionAggregator.Aggregate([Hold("A"), Hold("B"), Hold("C"), Buy()]);
+        var reversed = DecisionAggregator.Aggregate([Buy(), Hold("C"), Hold("B"), Hold("A")]);
+
+        forward.Decision.Rationale.Should().Be("B");
+        reversed.Decision.Rationale.Should().Be("B");
+    }
+
+    [Fact]
+    public void 首位タイと空入力は実在票の根拠を騙らず安全既定のHoldを返す()
+    {
+        // どの票も勝っていないため、特定の票の根拠を代表として採らない（定数 Hold のまま）。
+        DecisionAggregator.Aggregate([Buy(), Sell()]).Decision.Should().Be(LlmDecision.Hold);
+        DecisionAggregator.Aggregate([]).Decision.Should().Be(LlmDecision.Hold);
+    }
+
     [Fact]
     public void 少数派の数値は集約に影響しない()
     {

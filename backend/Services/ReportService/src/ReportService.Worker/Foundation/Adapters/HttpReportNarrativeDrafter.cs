@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
 using Microsoft.Extensions.Logging;
@@ -45,19 +47,61 @@ internal sealed class HttpReportNarrativeDrafter(
                 return ReportNarrativeDefaults.PlaceholderText;
             }
 
-            var dto = await response.Content
-                .ReadFromJsonAsync<CompletionResponse>(cancellationToken)
-                .ConfigureAwait(false);
-
             // Sent=false は機密区分による送信拒否（縮退）。空応答・欠落もプレースホルダ散文に倒す。
-            if (dto is null || !dto.Sent || string.IsNullOrWhiteSpace(dto.Text))
+            // #247, IADR-0104 決定3: 縮退の理由（応答不正 / 送信拒否 / 拒否 / 空応答 / 上限到達）を区別して記録する。
+            CompletionResponse? dto;
+            try
             {
-                logger.LogWarning("報告書散文 LLM が送信不可/空応答（Sent={Sent}）。プレースホルダ散文に倒します。", dto?.Sent);
+                dto = await response.Content
+                    .ReadFromJsonAsync<CompletionResponse>(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                logger.LogWarning(ex, "報告書散文 LLM /complete の応答を解釈できません（不正 JSON・想定外の形式）。プレースホルダ散文に倒します。");
                 return ReportNarrativeDefaults.PlaceholderText;
             }
 
+            if (dto is null)
+            {
+                logger.LogWarning("報告書散文 LLM /complete の応答が空です（JSON null）。プレースホルダ散文に倒します。");
+                return ReportNarrativeDefaults.PlaceholderText;
+            }
+
+            if (!dto.Sent)
+            {
+                logger.LogWarning("報告書散文 LLM が送信不可（Sent=false・機密区分による縮退）。プレースホルダ散文に倒します。");
+                return ReportNarrativeDefaults.PlaceholderText;
+            }
+
+            // IADR-0061 決定1: 生出力の全量記録は、以降で破棄し得る本文も含めて拒否・空応答の判定より前に行う。
             if (logPrompts)
-                logger.LogInformation("報告書散文 LLM 応答: model={Model} text={Text}", dto.Model, dto.Text);
+                logger.LogInformation("報告書散文 LLM 応答: model={Model} stopReason={StopReason} text={Text}",
+                    dto.Model, dto.StopReason, dto.Text);
+
+            // #247, IADR-0104 決定2: 拒否（安全性分類器による停止）は**本文を読む前に**評価し、本文が非空でも破棄する。
+            // 拒否された断片が報告書の成果物になることを、上流の破棄実装に依存せず防ぐ（多層防御）。
+            if (LlmStopReasons.IsRefusal(dto.StopReason))
+            {
+                logger.LogWarning(
+                    "報告書散文 LLM が要求を拒否しました（stopReason={StopReason} textLength={TextLength}）。本文を破棄し、プレースホルダ散文に倒します。",
+                    dto.StopReason, dto.Text?.Length ?? 0);
+                return ReportNarrativeDefaults.PlaceholderText;
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Text))
+            {
+                logger.LogWarning("報告書散文 LLM の応答本文が空です（stopReason={StopReason}）。プレースホルダ散文に倒します。",
+                    dto.StopReason);
+                return ReportNarrativeDefaults.PlaceholderText;
+            }
+
+            // IADR-0104 決定5, IADR-0101: 上限到達は拒否ではなく劣化。本文は破棄せず（途中で切れることの観測を残し）、
+            // 劣化として記録するにとどめる。
+            if (LlmStopReasons.IsMaxTokens(dto.StopReason))
+                logger.LogWarning(
+                    "報告書散文 LLM の応答が出力上限に到達しました（stopReason={StopReason}）。散文が途中で切れている可能性があります。",
+                    dto.StopReason);
 
             return dto.Text;
         }
@@ -78,5 +122,7 @@ internal sealed class HttpReportNarrativeDrafter(
 
     // POST /complete の応答（CompletionApiResponse の必要部分）。Sent=false は送信拒否（縮退）。
     // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
-    private sealed record CompletionResponse(string? Text, bool Sent, string? Model);
+    // #247, IADR-0104: StopReason は送信が成立した場合のモデル側の終了理由（Sent とは独立した軸）。
+    // 未設定（null）＝上流未更新・未対応プロバイダでは従来どおりの分岐へ素通りする（非破壊）。
+    private sealed record CompletionResponse(string? Text, bool Sent, string? Model, string? StopReason = null);
 }
