@@ -91,6 +91,24 @@ public class DecisionOrchestratorTests
         llm.Calls[0].Prompt.Should().Be("screen");
     }
 
+    // #247, IADR-0104 決定6: 一次で打ち切る場合も見送りの根拠（LLM 由来・拒否等）を保つ。
+    // Hold は TradeDecisionMade を発行しないため、FR-11 ログが唯一の監査記録である。
+    [Fact]
+    public async Task 二段_一次で打ち切る場合も見送りの根拠を保つ()
+    {
+        var refused = """{"action":"Hold","rationale":"LLM が要求を拒否したため見送り"}""";
+        var llm = new SequencedLlm(refused, Json("Buy"));
+        var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
+
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+
+        result.Decision.Action.Should().Be(TradeAction.Hold);
+        result.Decision.Rationale.Should().Be("LLM が要求を拒否したため見送り");
+        result.ScreenedOut.Should().BeTrue();
+        result.TotalVotes.Should().Be(0);
+        llm.Calls.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task 二段_一次が通過なら二次を多数決で実行する()
     {

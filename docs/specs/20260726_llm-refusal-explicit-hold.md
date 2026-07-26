@@ -103,14 +103,18 @@ public static class LlmStopReasons
 応答 DTO に `StopReason`（`string?`・欠落時 `null`）を追加し、**`Text` を読む前に**評価する。
 
 ```
-非 2xx / 例外 / タイムアウト → Hold（LLM ゲートウェイ送信不可のため見送り）      ※ 現行のまま
-dto is null（本文が空・不正 JSON）→ Hold（LLM ゲートウェイ応答不正のため見送り）
-!dto.Sent（機密区分による送信拒否）→ Hold（LLM ゲートウェイ送信不可のため見送り）※ 現行のまま
-IsRefusal(dto.StopReason)      → 本文を破棄して Hold（LLM が要求を拒否したため見送り）
-Text が空                      → Hold（上限到達なら「出力上限に到達し本文が無いため見送り」／それ以外は「応答が空のため見送り」）
-IsMaxTokens(dto.StopReason)    → 本文は破棄せず継続（劣化として警告ログのみ・IADR-0101）
+非 2xx / 例外 / タイムアウト     → Hold（LLM ゲートウェイ送信不可のため見送り）    ※ 現行のまま
+不正 JSON / JSON null            → Hold（LLM ゲートウェイ応答不正のため見送り）
+!dto.Sent（機密区分の送信拒否）  → Hold（LLM ゲートウェイ送信不可のため見送り）    ※ 現行のまま
+（ここで費用計測＝送信が成立した応答は本文の扱いによらず計上する。下記 3）
+IsRefusal(dto.StopReason)        → 本文を破棄して Hold（LLM が要求を拒否したため見送り）
+Text が空                        → Hold（上限到達なら「出力上限に到達し本文が無いため見送り」／それ以外は「応答が空のため見送り」）
+IsMaxTokens(dto.StopReason)      → 本文は破棄せず継続（劣化として警告ログのみ・IADR-0101）
 それ以外（end_turn / 未知値 / 欠落）→ 現行どおり本文を返す
 ```
+
+不正 JSON は `ReadFromJsonAsync` が `JsonException` を投げるため、そのままでは外側の例外ハンドラ（＝伝送の失敗）に
+落ちて「送信不可」と区別できない。読み取りを個別に握って「応答不正」へ分ける。
 
 - Hold の理由文字列は 5 系統（送信不可 / 応答不正 / 拒否 / 空応答 / 上限到達で空）に分離し、`rationale` とログの
   双方で相互に区別できるようにする。倒れる先は全て Hold＝**安全側は一切変わらない**。
@@ -118,12 +122,15 @@ IsMaxTokens(dto.StopReason)    → 本文は破棄せず継続（劣化として
   無効でも「上流が非空の断片を渡してきた」事実を観測できる。本文そのものは従来どおり `logPrompts` 有効時のみ記録する。
 - **`StopReason` 未設定（`null`）は現行挙動と完全に一致する**（未送信・未対応プロバイダ・上流未更新でも壊れない）。
 
-### 3. 拒否時の費用計測（IADR-0055 との関係）
+### 3. 費用計測の位置（IADR-0055 との関係）
 
-拒否は **`Sent=true` かつトークンを消費している**（上流はモデルへ実際に送信している）。したがって拒否時も
-`ILlmUsageReporter` へトークンを渡す（best-effort＝計測失敗は応答を壊さない・現行と同じ）。`Sent=false`（越境させて
-いない＝費用が発生していない）で計測しない現行の扱いとは別事象である。計上漏れは NFR の費用統制（月次上限・#23）を
-過少評価させるため、拒否のみ計測へ含める。
+拒否は **`Sent=true` かつトークンを消費している**（上流はモデルへ実際に送信しており、「拒否でも `Sent=true` を保つ」
+と決定している）。空応答・上限到達も同じで、とくに上限到達は**思考トークンを消費し切って本文が空になる形で課金される**
+（IADR-0101）。そこで計測を本文の扱いから独立させ、`Sent` 判定の直後に一度だけ行う（計測点は egress 1 箇所のまま・
+best-effort＝計測失敗は応答を壊さない）。
+
+これは現行からの挙動変更である（従来は本文が非空の成功応答のみ計測し、拒否・空応答・上限到達は計上漏れしていた）。
+`Sent=false`・非 2xx・例外は従来どおり計測しない。
 
 ### 4. 報告書散文 egress（`HttpReportNarrativeDrafter`）
 
@@ -138,6 +145,8 @@ Hold が勝利したとき、Buy/Sell と同じ「**実在する 1 票を代表�
 
 - 首位タイ・空入力は現行どおり定数 `LlmDecision.Hold`（どの票も勝っていないため、実在票の根拠を騙らない）。
 - `Action` は変わらない（Hold は Hold）ため**発注挙動は不変**。変わるのは FR-11 ログに残る理由文字列だけ。
+- 二段オーケストレーション（`DecisionOrchestrator`）の**一次スクリーニングで打ち切る経路**も同様に、定数 Hold では
+  なくスクリーニング判断そのものを返して根拠を保つ（`ScreenedOut=true` / `TotalVotes=0` は不変）。
 - これにより、既定構成（`VoteCount=1`）で `stopReason=refusal` → `"LLM が要求を拒否したため見送り"` が
   `DecideAsync` の FR-11 ログ（`rationale=`）へ到達する。
 
@@ -148,7 +157,7 @@ Hold が勝利したとき、Buy/Sell と同じ「**実在する 1 票を代表�
 - 拒否（`stopReason=refusal`）かつ**本文が非空**: Hold へ倒れ、返却 JSON に本文の断片が**含まれない**／`rationale` が拒否である
 - 拒否は `Sent=false`・空応答・`max_tokens` と**相互に区別できる**理由文字列／ログである
 - 拒否の大文字小文字（`REFUSAL`）を同一視する
-- 拒否でも費用計測へトークンを渡す（`Sent=false` では渡さない＝現行維持）
+- 拒否・空応答（上限到達）でも費用計測へトークンを渡す（`Sent=false`・非 2xx では渡さない＝現行維持）
 - `max_tokens` かつ本文非空: 本文を返す（破棄しない）が上限到達を警告ログに残す
 - `max_tokens` かつ本文が空: 空応答と区別できる理由で Hold
 - `stopReason` 欠落・未知値（`end_turn` / `future_reason`）: 現行挙動どおり本文を返す（非破壊）
@@ -162,6 +171,10 @@ Hold が勝利したとき、Buy/Sell と同じ「**実在する 1 票を代表�
 `DecisionAggregatorTests`（`TradeDecisionService.Domain.Tests`）
 
 - Hold 勝利時に代表票の根拠を保つ（決定的選択）／首位タイ・空入力は定数 Hold のまま
+
+`DecisionOrchestratorTests`（`TradeDecisionService.Application.Tests`）
+
+- 一次スクリーニングで打ち切るときも見送りの根拠を保つ（`ScreenedOut` / 票数は不変）
 
 `TradeDecisionServiceTests`（`TradeDecisionService.Application.Tests`）
 
