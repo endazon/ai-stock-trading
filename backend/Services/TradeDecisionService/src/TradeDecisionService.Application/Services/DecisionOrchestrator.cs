@@ -28,8 +28,10 @@ public sealed class DecisionOrchestrator(
             var screen = TradeDecisionParser.Parse(screenOutput);
             if (screen.Action == TradeAction.Hold)
             {
-                logger.LogInformation("一次スクリーニングで見送り（二次判断をスキップ・費用統制）");
-                return new OrchestratedDecision(LlmDecision.Hold, TotalVotes: 0, AgreementVotes: 0, ScreenedOut: true);
+                // #247, IADR-0104 決定6: 一次で打ち切る場合も見送りの根拠（LLM 由来。拒否・空応答等）を保つ。
+                // Hold は TradeDecisionMade を発行しないため、FR-11 ログが唯一の監査記録である。
+                logger.LogInformation("一次スクリーニングで見送り（二次判断をスキップ・費用統制）: rationale={Rationale}", screen.Rationale);
+                return new OrchestratedDecision(screen, TotalVotes: 0, AgreementVotes: 0, ScreenedOut: true);
             }
         }
 

@@ -112,6 +112,62 @@ public class HttpReportNarrativeDrafterTests
         log.Should().NotContain("堅調でした。");
     }
 
+    // --- #247, FR-06, IADR-0104: 終了理由（stopReason）の評価 -------------------------------------
+
+    // IADR-0104 決定2: 拒否は本文を読む前に評価し、本文が非空でも成果物にしない（上流の破棄に依存しない多層防御）。
+    [Fact]
+    public async Task 拒否_refusal_は本文が非空でも成果物にせずプレースホルダ散文へ倒す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"拒否された散文の断片","model":"claude","sent":true,"stopReason":"refusal"}""");
+
+        var text = await Drafter(handler).DraftNarrativeAsync(Ctx);
+
+        text.Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        text.Should().NotContain("拒否された散文の断片");
+    }
+
+    // IADR-0104 決定3: 拒否は送信拒否・空応答と区別できるログに残す（本文長で断片到達の事実も残す）。
+    [Fact]
+    public async Task 拒否は本文長つきで警告ログに残す_全量ログ無効でも本文自体は残さない()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"拒否された散文の断片","sent":true,"stopReason":"refusal"}""");
+
+        await Drafter(handler, logger, logPrompts: false).DraftNarrativeAsync(Ctx);
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("refusal");
+        log.Should().Contain("textLength=10");
+        log.Should().NotContain("拒否された散文の断片");
+    }
+
+    // IADR-0104 決定5: 上限到達は劣化であり拒否ではない。本文は破棄しない（IADR-0101 の劣化観測を壊さない）。
+    [Fact]
+    public async Task 上限到達_max_tokens_は本文を破棄せず返し_劣化を警告ログに残す()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"本日は堅調でした。","model":"claude","sent":true,"stopReason":"max_tokens"}""");
+
+        var text = await Drafter(handler, logger, logPrompts: false).DraftNarrativeAsync(Ctx);
+
+        text.Should().Be("本日は堅調でした。");
+        string.Join("\n", logger.Messages).Should().Contain("max_tokens");
+    }
+
+    // 非破壊: stopReason 未設定（上流未更新）・未知値・正常終了は現行挙動のまま本文を返す。
+    [Theory]
+    [InlineData("""{"text":"散文","sent":true}""")]
+    [InlineData("""{"text":"散文","sent":true,"stopReason":null}""")]
+    [InlineData("""{"text":"散文","sent":true,"stopReason":"end_turn"}""")]
+    [InlineData("""{"text":"散文","sent":true,"stopReason":"future_reason"}""")]
+    public async Task stopReason_欠落_未知値_正常終了は現行どおり本文を返す(string body)
+    {
+        (await Drafter(new StubHandler(HttpStatusCode.OK, body)).DraftNarrativeAsync(Ctx)).Should().Be("散文");
+    }
+
     private sealed class RecordingLogger : ILogger<HttpReportNarrativeDrafter>
     {
         public List<string> Messages { get; } = [];

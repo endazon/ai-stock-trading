@@ -5,6 +5,7 @@ using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
@@ -537,5 +538,33 @@ public class TradeDecisionServiceTests
         // 数量＝floor(min(50,000,20,000)/1,200)=16。notional＝1,200 × 16 = 19,200。
         prof.Calls.Should().Be(1);
         prof.LastNotional.Should().Be(19_200m);
+    }
+
+    // #247, FR-04, FR-11, IADR-0104: LLM 拒否に由来する Hold は発注意図を作らず、その理由が監査ログへ到達する
+    // （Hold は TradeDecisionMade を発行しないため、この FR-11 ログ 1 行が唯一の記録である）。
+    [Fact]
+    public async Task 拒否由来のHoldは発注せず拒否の理由が監査ログに残る()
+    {
+        var logger = new RecordingLogger();
+        var refusedHold = """{"action":"Hold","rationale":"LLM が要求を拒否したため見送り"}""";
+        var service = new AppSvc(new FakeLlm(refusedHold), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), logger);
+
+        var result = await service.DecideAsync(Trigger());
+
+        result.Should().BeNull(); // 発注意図を作らない
+        string.Join("\n", logger.Messages).Should().Contain("LLM が要求を拒否したため見送り");
+    }
+
+    private sealed class RecordingLogger : ILogger<AppSvc>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
     }
 }
