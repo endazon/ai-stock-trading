@@ -6,8 +6,10 @@ namespace AiStockTrading.Backtest.Application;
 // FR-15, #208, IADR-0105: IHistoricalBarSource の安全既定＝外部へ一切接続せず常に空を返す。
 // 実過去データ源は provider の明示指定（Backtest:BarData:Provider）でのみ有効化する（opt-in）。
 // バーが 0 本なら Stage 0 は DSR・コスト2倍・ウォークフォワードで落ちるため、昇格は従来どおり拒否される（fail-safe）。
-// 差し替え漏れ検知のため警告する。警告はインスタンスごとに 1 回（取得のたびのログ氾濫を避ける。
-// singleton として解決される前提で「起動後 1 回」になる。NoOpMarketDataSource・IADR-0066 と同型）。
+// 差し替え漏れ検知のため警告する。抑止の単位は**インスタンス**であり、取得のたびのログ氾濫を防ぐ
+// （NoOpMarketDataSource・IADR-0066 と同型）。1 プロセスあたり 1 回に収まるかは合成側の寿命次第で、
+// 本ポートはまだ DI に配線されていない（BacktestService に Worker が無い・IADR-0105）。将来ホストを設ける際は
+// singleton で登録すること。
 public sealed class NoOpHistoricalBarSource(ILogger<NoOpHistoricalBarSource> logger) : IHistoricalBarSource
 {
     private int _warned;
