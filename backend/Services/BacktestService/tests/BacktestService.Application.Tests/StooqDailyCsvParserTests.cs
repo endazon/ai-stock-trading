@@ -12,7 +12,7 @@ public class StooqDailyCsvParserTests
 {
     private const string ValidCsv = """
         Date,Open,High,Low,Close,Volume
-        2024-01-04,185.52,186.06,182.73,181.91,71983570
+        2024-01-04,182.15,183.09,180.88,181.91,71983570
         2024-01-05,181.99,182.76,180.17,181.18,62303250
         """;
 
@@ -24,7 +24,7 @@ public class StooqDailyCsvParserTests
         ok.Should().BeTrue(reason);
         bars.Should().HaveCount(2);
         bars[0].Should().Be(new PriceBar(
-            "AAPL", Market.UnitedStates, new DateOnly(2024, 1, 4), 185.52m, 186.06m, 182.73m, 181.91m, 71_983_570));
+            "AAPL", Market.UnitedStates, new DateOnly(2024, 1, 4), 182.15m, 183.09m, 180.88m, 181.91m, 71_983_570));
         bars[1].Date.Should().Be(new DateOnly(2024, 1, 5));
     }
 
@@ -34,7 +34,7 @@ public class StooqDailyCsvParserTests
         const string unordered = """
             Date,Open,High,Low,Close,Volume
             2024-01-05,181.99,182.76,180.17,181.18,62303250
-            2024-01-04,185.52,186.06,182.73,181.91,71983570
+            2024-01-04,182.15,183.09,180.88,181.91,71983570
             """;
 
         var ok = StooqDailyCsvParser.TryParse(unordered, "AAPL", Market.UnitedStates, out var bars, out _);
@@ -60,13 +60,26 @@ public class StooqDailyCsvParserTests
         // 指数・一部銘柄は出来高列が空になる。欠損は 0 として通す（価格の破損とは別扱い）。
         const string csv = """
             Date,Open,High,Low,Close,Volume
-            2024-01-04,185.52,186.06,182.73,181.91,
+            2024-01-04,182.15,183.09,180.88,181.91,
             """;
 
         var ok = StooqDailyCsvParser.TryParse(csv, "AAPL", Market.UnitedStates, out var bars, out _);
 
         ok.Should().BeTrue();
         bars[0].Volume.Should().Be(0);
+    }
+
+    [Fact]
+    public void 始値終値が高値安値の境界と一致する行は受け入れる()
+    {
+        // 寄り天・寄り底（Open==High / Close==Low 等）は正常なデータ。境界を破損として弾かない。
+        const string csv = """
+            Date,Open,High,Low,Close,Volume
+            2024-01-04,186.06,186.06,182.73,182.73,100
+            """;
+
+        StooqDailyCsvParser.TryParse(csv, "AAPL", Market.UnitedStates, out var bars, out _).Should().BeTrue();
+        bars.Should().ContainSingle();
     }
 
     [Fact]
@@ -111,12 +124,17 @@ public class StooqDailyCsvParserTests
     [InlineData("2024-01-04,1,2,0,1.5,100")]
     [InlineData("2024-01-04,1,0.4,0.5,0.45,100")]
     [InlineData("2024-01-04,1,2,0.5,1.5,-1")]
+    // 始値・終値が [安値, 高値] の外（OHLC の整合が壊れている）
+    [InlineData("2024-01-04,2.5,2,0.5,1.5,100")]
+    [InlineData("2024-01-04,1,2,0.5,0.4,100")]
+    [InlineData("2024-01-04,0.4,2,0.5,1.5,100")]
+    [InlineData("2024-01-04,1,2,0.5,2.5,100")]
     public void 不正な行があれば部分採用せず解析失敗とする(string badRow)
     {
         // 部分採用は偽の価格ギャップを作り、約定不能・誤った DD を生む。銘柄丸ごと欠測にする。
         var csv = $"""
             Date,Open,High,Low,Close,Volume
-            2024-01-04,185.52,186.06,182.73,181.91,71983570
+            2024-01-04,182.15,183.09,180.88,181.91,71983570
             {badRow}
             """;
 

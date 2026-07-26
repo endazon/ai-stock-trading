@@ -20,7 +20,7 @@ public class StooqHistoricalBarSourceTests
 
     private const string AppleCsv = """
         Date,Open,High,Low,Close,Volume
-        2024-01-04,185.52,186.06,182.73,181.91,71983570
+        2024-01-04,182.15,183.09,180.88,181.91,71983570
         """;
 
     private const string ToyotaCsv = """
@@ -65,7 +65,7 @@ public class StooqHistoricalBarSourceTests
         const string csv = """
             Date,Open,High,Low,Close,Volume
             2023-12-29,180,181,179,180.5,100
-            2024-01-04,185.52,186.06,182.73,181.91,71983570
+            2024-01-04,182.15,183.09,180.88,181.91,71983570
             2024-02-01,190,191,189,190.5,100
             """;
         var source = Create(new RoutingHandler { ["aapl.us"] = (HttpStatusCode.OK, csv) });

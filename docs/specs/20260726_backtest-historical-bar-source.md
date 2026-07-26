@@ -157,7 +157,7 @@ Stooq は個人運営で SLA が無く、予告なく停止し得る（計画書
 | --- | --- | --- |
 | 1 | 日足 CSV を `PriceBar` へ解析する（`InvariantCulture`・日付昇順） | `StooqDailyCsvParserTests.日足CSVをバーへ解析する` |
 | 2 | ヘッダ不正・`No data`・空本文は解析失敗として扱う | `StooqDailyCsvParserTests.データなし応答は解析失敗として扱う` ほか |
-| 3 | 不正な行が 1 行でもあれば銘柄丸ごと解析失敗（部分採用しない） | `StooqDailyCsvParserTests.不正な行があれば部分採用せず解析失敗とする` |
+| 3 | 不正な行（日付/数値/列数/価格 0 以下/OHLC 整合崩れ/出来高負値）が 1 行でもあれば銘柄丸ごと解析失敗（部分採用しない）。寄り天・寄り底の境界は正常として受け入れる | `StooqDailyCsvParserTests.不正な行があれば部分採用せず解析失敗とする` / `始値終値が高値安値の境界と一致する行は受け入れる` |
 | 4 | 市場ごとの銘柄記法へ写像する（`.jp` / `.us`・小文字） | `StooqSymbolMapperTests.市場ごとの銘柄記法へ写像する` |
 | 5 | 複数銘柄を取得し期間で絞ったバーを返す（スタブ HTTP・外部送信なし） | `StooqHistoricalBarSourceTests.複数銘柄の日足を取得する` |
 | 6 | 非成功応答・データなしは欠測として記録し他銘柄の取得を続ける | `StooqHistoricalBarSourceTests.非成功応答は欠測として記録し他銘柄を続行する` |

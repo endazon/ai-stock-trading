@@ -80,8 +80,9 @@ public static class StooqDailyCsvParser
             !TryParsePrice(columns[4], out var close))
             return false;
 
-        // 高値 < 安値 は破損データ。素通しすると約定価格・DD が壊れる。
-        if (high < low)
+        // OHLC の整合が壊れた行は破損データ。素通しすると約定価格（翌営業日始値）・時価評価（終値）・DD が壊れる。
+        // 高値 < 安値、および始値・終値が [安値, 高値] の外はいずれも実在し得ないため弾く（境界一致＝寄り天/寄り底は正常）。
+        if (high < low || open < low || open > high || close < low || close > high)
             return false;
 
         // 出来高は指数等で空になり得る（価格の破損とは別扱い）。欠損は 0、負値は破損として弾く。
