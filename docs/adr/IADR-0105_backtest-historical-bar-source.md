@@ -114,6 +114,10 @@ Domain 以外への依存を持たない（レイヤリングの逸脱なし・�
   実行する対象が無い以上、定時トリガを置いても回すものが無い。
 - `BacktestEvaluated` の実 publish と実コンテナ E2E は #82（IADR-0089 で整理済）。
 
+なお [IADR-0089](IADR-0089_backtest-verdict-supply.md) / [IADR-0103](IADR-0103_observed-drawdown-supply.md) と当時の作業仕様書は
+「`BacktestService` は Domain＋Application のライブラリのみでホストを持たない」を前提に書かれている。その前提は本 ADR で
+更新される（履歴文書は書き換えず、現在の権威は本 ADR）。ただし**実 publish が #82 である点は変わらない**。
+
 したがって現時点のホストは「構成から過去データ源を解決し、実効構成を自己申告する」薄い合成面である。
 公開する HTTP 面は `/health/*` と `GET /internal/introspection` のみで、いずれも無認可（メッシュ内部限定）。
 DB もメッセージバスも持たない。定時トリガ・publish を足す場所はこのホストであり、別 issue で載せる。
