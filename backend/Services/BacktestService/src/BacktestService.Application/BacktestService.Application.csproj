@@ -4,6 +4,15 @@
     <RootNamespace>AiStockTrading.Backtest.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- #208, IADR-0105: 実過去データ源アダプタの構成不備・欠測を警告するためのログ抽象（実装には依存しない）。 -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\BacktestService.Domain\BacktestService.Domain.csproj" />
+    <!--
+      #208, IADR-0105 決定 5: 外部データ源のレート制御（IRateLimiter / TokenBucket・IADR-0064）を再利用するための参照。
+      BacktestService には Worker（合成面）が無く、アダプタは Application/Adapters に置く既存慣行に従う。
+    -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
