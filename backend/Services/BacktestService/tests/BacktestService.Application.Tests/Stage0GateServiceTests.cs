@@ -3,7 +3,6 @@ using AiStockTrading.Backtest.Domain;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AiStockTrading.Backtest.Application.Tests;
@@ -119,11 +118,11 @@ public class Stage0GateServiceTests
     public async Task 実データ未供給ならStage0は不合格で昇格しない_failsafe()
     {
         var universe = new SecurityUniverse([new UniverseMembership("AAA", Market.UnitedStates, new DateOnly(2025, 1, 1), null)]);
-        var noOp = new NoOpHistoricalBarSource(NullLogger<NoOpHistoricalBarSource>.Instance);
 
-        // 既定構成（provider=none）で取得 → バー 0 本のスナップショット → 空のシミュレーション結果。
+        // 実過去データ源が何も返さない場合（安全既定の no-op・取得全滅のいずれも同じ状態）＝
+        // バー 0 本のスナップショット → 空のシミュレーション結果。
         var dataSource = await MaterializedBarDataSource.LoadAsync(
-            noOp, universe, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
+            new EmptyBarSource(), universe, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
         var run = new BacktestRunner(dataSource).Run(new BacktestRequest(
             universe,
             new DateOnly(2025, 1, 1),
@@ -155,5 +154,17 @@ public class Stage0GateServiceTests
     private sealed class NoOrderStrategy : IBacktestStrategy
     {
         public IReadOnlyList<BacktestOrder> DecideOrders(BacktestContext context) => [];
+    }
+
+    // 実データ未供給の状態（安全既定の no-op アダプタ・全銘柄取得失敗のいずれでも同じ）を表すスタブ。
+    private sealed class EmptyBarSource : IHistoricalBarSource
+    {
+        public Task<HistoricalBarLoad> LoadBarsAsync(
+            IReadOnlyList<(string Symbol, Market Market)> symbols,
+            DateOnly from,
+            DateOnly to,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HistoricalBarLoad(
+                [], [.. symbols.Select(s => new HistoricalBarGap(s.Symbol, s.Market, "実過去データ源が未接続"))]));
     }
 }

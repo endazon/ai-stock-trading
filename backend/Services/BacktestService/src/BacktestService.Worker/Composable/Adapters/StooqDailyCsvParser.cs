@@ -2,7 +2,7 @@ using System.Globalization;
 using AiStockTrading.Backtest.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Application;
+namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
 
 // FR-15, ADR-0004, #208, IADR-0105: Stooq 日足 CSV（Date,Open,High,Low,Close,Volume）の解析（純関数）。
 //

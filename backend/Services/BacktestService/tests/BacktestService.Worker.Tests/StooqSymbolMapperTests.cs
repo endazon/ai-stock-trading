@@ -1,9 +1,10 @@
 using AiStockTrading.Backtest.Application;
+using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace AiStockTrading.Backtest.Worker.Tests;
 
 // FR-15, ADR-0004, #208, IADR-0105: 社内の銘柄表現（"AAPL" / "7203" ＋ Market）から Stooq の銘柄記法への写像。
 public class StooqSymbolMapperTests

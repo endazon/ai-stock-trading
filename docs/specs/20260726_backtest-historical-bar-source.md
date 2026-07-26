@@ -143,13 +143,21 @@ Stooq は個人運営で SLA が無く、予告なく停止し得る（計画書
    未知 provider・不正 URL も no-op へ倒し、必ず警告を出す（「有効化したつもりで効いていない」の検知）。
 3. バーが 0 本なら Stage 0 は `CostRobustness`／`WalkForward` で落ち、昇格は拒否される（受け入れ基準③）。
 
-### 配置とレート制御の依存
+### 配置（合成面 `BacktestService.Worker` の新設）
 
-アダプタは既存慣行どおり `BacktestService.Application/Adapters/`（`InMemoryBarDataSource` の隣）に置く。
-レート制御は基盤の `IRateLimiter`／`TokenBucket`／`DelayingRateLimiter`（IADR-0064）を再利用するため、
-`BacktestService.Application` → `AiStockTrading.Shared.Infrastructure` の ProjectReference を新設する。
-`BacktestService` には Worker（合成面）が存在しないための判断であり、根拠は
-[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md) 決定 5 に記録する。
+外部 I/O を伴うアダプタ（Stooq 一式・no-op・ファクトリ・オプション）は新設の
+`BacktestService.Worker/Composable/Adapters/` に置き、レート制御の基盤依存
+（`IRateLimiter`／`TokenBucket`／`DelayingRateLimiter`・IADR-0064 の再利用）も Worker が持つ。
+これにより `BacktestService.Application` は同期・純粋なポートと `IBarDataSource` 実装に閉じ、Domain 以外へ依存しない。
+
+ホストの責務は**過去データ源の合成と実効構成の自己申告**に限る（定時実行・verdict の実 publish は行わない。
+本番戦略 `IBacktestStrategy` の実装がまだ無く、publish は #82）。公開する HTTP 面は `/health/*` と
+`GET /internal/introspection` のみ・無認可（メッシュ内部限定）、DB もメッセージバスも持たない。
+根拠は [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md) 決定 5 に記録する。
+
+**運用面の登録**: `backend.slnx`／`docker-compose.yml`／helm `values.yaml`（`services.backtest`）／
+`scripts/k8s-local-images.sh`／`scripts/validate-runtime-scaffold.js`（Worker 一覧）に新サービスを追加する。
+有効化点は `Backtest__BarData__Provider`（空既定＝外部接続なし）のみ。
 
 ## 受け入れ基準 → テスト写像
 
@@ -167,6 +175,9 @@ Stooq は個人運営で SLA が無く、予告なく停止し得る（計画書
 | 10 | **実データ未供給（バー 0 本）では Stage 0 不合格＝昇格拒否**（fail-safe 維持） | `Stage0GateServiceTests.実データ未供給ならStage0は不合格で昇格しない_failsafe` |
 | 11 | 期間内に構成銘柄だった銘柄を取得対象に含める（上場廃止銘柄を落とさない） | `SecurityUniverseTests.期間内に構成銘柄だった銘柄を返す` |
 | 12 | PIT ユニバースから取得 → スナップショット化の通し（外部送信なし） | `MaterializedBarDataSourceTests.ユニバースから取得してスナップショットを作る` |
+| 13 | ホストの配線（既定 no-op／`stooq` 指定で実データ源／未知 provider でも起動／singleton） | `BacktestWorkerWiringTests.*`（4 ケース） |
+| 14 | 実効構成の自己申告が選択中の過去データ源を示す（不正 URL では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` |
+| 15 | ヘルスチェックが起動直後に ready（DB・バスを持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` |
 
 ## 完了条件
 

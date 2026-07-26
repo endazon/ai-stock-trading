@@ -1,12 +1,13 @@
 using System.Net;
 using AiStockTrading.Backtest.Application;
+using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace AiStockTrading.Backtest.Worker.Tests;
 
 // FR-15, ADR-0004, #208, IADR-0105: Stooq 実過去データ源アダプタを fake HttpMessageHandler で検証する。
 // 実 Stooq は叩かない（CI 緑と実基盤依存の切り分け・IADR-0049）。欠測は無音破棄せず Gaps に残ることを固定する。

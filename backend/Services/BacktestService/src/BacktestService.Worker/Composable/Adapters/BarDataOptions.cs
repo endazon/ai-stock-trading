@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Application;
+namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
 
 // FR-15, ADR-0004, #208, IADR-0105: バックテストの過去データ源の構成（セクション "Backtest:BarData"）。
 public sealed class BarDataOptions

@@ -97,16 +97,32 @@ Stooq は登録不要で API キーを持たないため、**opt-in の唯一の
 された銘柄を含む）を取得対象にする。現存銘柄だけを取りに行くと、日付単位のフィルタ（`MembersAsOf`）が正しくても
 入力データの時点で生存者バイアスが混入する。日付単位の構成判定は従来どおり `BacktestRunner` が権威。
 
-### 5. アダプタは `BacktestService.Application/Adapters/` に置き、レート制御は共有基盤を再利用する
+### 5. 合成面として `BacktestService.Worker` を新設し、アダプタと基盤依存をそこに閉じる
 
-`BacktestService` には Worker（合成面）が存在せず、既存の `InMemoryBarDataSource` も `Application/Adapters/` に
-ある。この慣行に合わせ、`BacktestService.Application` → `AiStockTrading.Shared.Infrastructure` の
-ProjectReference を新設して `IRateLimiter` / `TokenBucket` / `DelayingRateLimiter`（IADR-0064）を再利用する。
+外部 I/O を伴うアダプタ（`StooqHistoricalBarSource` / `StooqDailyCsvParser` / `StooqSymbolMapper` /
+`NoOpHistoricalBarSource` / `HistoricalBarSourceFactory` / `BarDataOptions`）は
+`BacktestService.Worker/Composable/Adapters/` に置く（他サービスの慣行と同じ）。`AiStockTrading.Shared.Infrastructure`
+への参照（`IRateLimiter` / `TokenBucket` / `DelayingRateLimiter`・IADR-0064 の再利用）も Worker が持つ。
 
-「Application が Infrastructure を参照する」形は他サービス（Worker が合成面を持つ）とは異なるが、
-**レート制御の実装を 2 つに割らない**ことを優先した。IADR-0064/0068 が「送信前に自制する」実装を共有物へ
-一元化した経緯があり、バックテスト用に別実装を持つとその一元化が崩れる。将来 `BacktestService.Worker`
-（#82 の go-live ホスト）を作る際に、アダプタ一式をそちらへ移せば依存の向きは自然に整う。
+これにより **`BacktestService.Application` は同期・純粋なポートと `IBarDataSource` 実装に閉じ**、
+Domain 以外への依存を持たない（レイヤリングの逸脱なし・レート制御の実装も 2 つに割らない）。
+
+**本ホストの責務は実過去データ源の合成に限る。** Stage 0 判定そのものは純ドメインが持ち、ホストは
+定時実行も verdict の実 publish も行わない。理由は 2 つある。
+
+- **本番戦略（`IBacktestStrategy` 実装）がまだ存在しない**（リポジトリ内の実装はテストダブルのみ）。
+  実行する対象が無い以上、定時トリガを置いても回すものが無い。
+- `BacktestEvaluated` の実 publish と実コンテナ E2E は #82（IADR-0089 で整理済）。
+
+したがって現時点のホストは「構成から過去データ源を解決し、実効構成を自己申告する」薄い合成面である。
+公開する HTTP 面は `/health/*` と `GET /internal/introspection` のみで、いずれも無認可（メッシュ内部限定）。
+DB もメッセージバスも持たない。定時トリガ・publish を足す場所はこのホストであり、別 issue で載せる。
+
+### 5.1 実効構成の自己申告で「効いていない有効化」を検知可能にする
+
+`GET /internal/introspection` が選択中の過去データ源（`historical-bar-data` ポート）を申告する（#22 受け入れ基準③）。
+申告値と実際の選択がずれると検知そのものが嘘になるため、選択規則は `HistoricalBarSourceFactory.ResolveProvider`
+を単一情報源とし、`Create` と自己申告が同じ答えを返すことを構造で保証する（ベース URL 不正時は双方 `none`）。
 
 ### 6. `InMemoryBarDataSource` はテスト・検証用に限定する
 
@@ -139,8 +155,9 @@ ProjectReference を新設して `IRateLimiter` / `TokenBucket` / `DelayingRateL
   回帰テストで固定した。
 - **トレードオフ**: Stooq は日足 EOD のみで SLA が無い。分足・Tick を要する執行分析には使えない
   （計画上は有料プランの領域）。欠測時の代替源（J-Quants）は未実装のため、当面フォールバックは「欠測として記録」に留まる。
-- **トレードオフ**: `BacktestService.Application` が `Shared.Infrastructure` を参照する（決定 5）。
-  Worker 新設時に解消できる形にしてある。
+- **トレードオフ**: 実行する仕事（定時バックテスト）を持たないホストが 1 つ増える（決定 5）。合成面が実在することで
+  「構成で有効化したつもりが no-op のまま」を配線テストと自己申告で検知できる一方、compose / helm に
+  当面ほぼ何もしないサービスが並ぶ。本番戦略の実装と定時トリガが載るまではこの状態が続く。
 - **残る前提**: `HttpClient` の調整（タイムアウト・User-Agent・リトライ方針）は合成面（将来の go-live ホスト・#82）の
   責務として外に出してある。アダプタは注入された `HttpClient` をそのまま使う（`FinnhubQuoteClient` と同じ形）。
   実 Stooq に対する挙動（応答ヘッダ・実効レート上限・User-Agent 要否）の確認は実データ取得の実施回（#208）で行う。

@@ -1,10 +1,11 @@
 using AiStockTrading.Backtest.Application;
+using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace AiStockTrading.Backtest.Worker.Tests;
 
 // FR-15, #208, IADR-0105: 構成 Backtest:BarData:Provider による過去データ源の選択。
 // 安全既定は no-op（外部へ 1 リクエストも出さない）。構成不備は起動を落とさず警告して no-op へ倒す（IADR-0068 と同形）。

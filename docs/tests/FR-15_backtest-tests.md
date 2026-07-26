@@ -36,8 +36,9 @@ related_specs:
 
 ## テスト対象・範囲
 
-- 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）と
-  `BacktestService.Application.Tests`（過去データ取得・PIT ユニバース適用・verdict 供給の結合）。
+- 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）、
+  `BacktestService.Application.Tests`（過去データのスナップショット化・PIT ユニバース適用・verdict 供給の結合）、
+  `BacktestService.Worker.Tests`（実過去データ源アダプタ・provider 選択・ホストの配線と実効構成の自己申告）。
 - 対象外（別スライス）: 実データでの Stage 0 閾値較正（`MinTrials` 暫定・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
   実 Stooq に対する live 検証（手動 opt-in・CI 対象外）、Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、
   段階遷移の承認オペレーション（[#20](https://github.com/endazon/ai-stock-trading/issues/20)）。
@@ -154,6 +155,9 @@ related_specs:
 | T-15-48 | 取得対象を PIT ユニバースから導出し欠測を保持する（ユニバース空なら取得しない） | `MaterializedBarDataSourceTests.ユニバースから取得してスナップショットを作る` / `欠測は取得結果として保持する` / `ユニバースが空なら取得しない` | 自動 |
 | T-15-49 | 期間内に構成銘柄だった銘柄を取得対象に含める（廃止銘柄・端・再上場の重複排除） | `SecurityUniverseTests.期間内に構成銘柄だった銘柄を返す` / `期間外の銘柄は取得対象に含めない` / `期間の端で構成だった銘柄を含める` / `開始日が終了日より後なら空を返す` / `重複する構成期間があっても銘柄は一度だけ返す` | 自動 |
 | T-15-50 | **実データ未供給（バー 0 本）では Stage 0 不合格＝昇格拒否**（fail-safe 維持・#208 受け入れ基準③） | `Stage0GateServiceTests.実データ未供給ならStage0は不合格で昇格しない_failsafe` | 自動 |
+| T-15-51 | ホストの配線: 既定は no-op／`stooq` 指定で実データ源／未知 provider でも起動して no-op／単一インスタンス | `BacktestWorkerWiringTests.既定構成では外部へ接続しないno_opが解決される_failsafe` / `provider_stooq_の指定で実データ源が解決される` / `未知のproviderでもホストは起動しno_opへ倒れる` / `過去データ源は単一インスタンスとして解決される` | 自動 |
+| T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` | 自動 |
+| T-15-53 | ヘルスチェックが起動直後に ready（DB もバスも持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` | 自動 |
 
 > T-15-50 は fail-safe が「どこで」効いているかも固定している。DSR（標本不足で 0）・コスト 2 倍・ウォークフォワードの
 > 3 条件が落ちて昇格が拒否される一方、`DataCutoffPolicy.IsAllAfterCutoff([]) == true`（空は真空的に真）のため

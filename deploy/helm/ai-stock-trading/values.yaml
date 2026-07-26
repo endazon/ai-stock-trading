@@ -176,6 +176,15 @@ services:
     image: ai-stock-trading/audit-service
     db: audit_svc
     auth: true
+  backtest:
+    image: ai-stock-trading/backtest-service
+    # DB もメッセージバスも持たない（永続化なし・verdict の実 publish は #82）。auth も要らない
+    # （公開する HTTP 面はヘルスチェックと実効構成の自己申告のみ・いずれもメッシュ内部限定）。
+    extraEnv:
+      # FR-15, ADR-0004, #208, IADR-0105: バックテストの実過去データ源。
+      # fail-safe: 空/"none"/未知の値/不正な BaseUrl はすべて no-op＝**外部へ 1 リクエストも出さない**。
+      # "stooq"（登録不要・鍵なし）を入れると実過去データ取得が有効になる。
+      - { name: Backtest__BarData__Provider, value: "" }
   configuration:
     image: ai-stock-trading/configuration-service
     db: configuration_svc
