@@ -5,7 +5,7 @@ status: review
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-26
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
@@ -38,10 +38,12 @@ related_specs:
 
 - 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）と
   `BacktestService.Application.Tests`（過去データ取得・PIT ユニバース適用・verdict 供給の結合）。
-- 対象外（別スライス）: 実過去データ源の接続（現状 `InMemoryBarDataSource` のみ・Stage 0 較正は[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
-  Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、段階遷移の承認オペレーション（[#20](https://github.com/endazon/ai-stock-trading/issues/20)）。
+- 対象外（別スライス）: 実データでの Stage 0 閾値較正（`MinTrials` 暫定・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
+  実 Stooq に対する live 検証（手動 opt-in・CI 対象外）、Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、
+  段階遷移の承認オペレーション（[#20](https://github.com/endazon/ai-stock-trading/issues/20)）。
 - 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)（基盤）、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
-  [IADR-0089](../adr/IADR-0089_backtest-verdict-supply.md)（verdict 供給）。
+  [IADR-0089](../adr/IADR-0089_backtest-verdict-supply.md)（verdict 供給）、
+  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）。
 
 ## テスト観点
 
@@ -132,17 +134,46 @@ related_specs:
 | T-15-36 | 合格戦略は Stage 0 合格・Stage 1 昇格推奨（サービス結合） | `全条件を満たす戦略はStage0合格しStage1昇格を推奨する` / `匿名化済みならカットオフ以前でもデータ健全性を満たす_OR経路` / `カットオフ以前のデータを含む戦略は不合格_昇格しない` | 自動 |
 | T-15-37 | 合格 verdict と実 DD を契約イベント（`BacktestEvaluated`）へ写像（FR-20 供給） | `合格verdictと実DDを契約イベントへ写す` / `不合格は未達条件を名称で連結して持つ` / `decisionがnullなら例外` | 自動 |
 
+### 実過去データ源（Stooq）と安全既定（#208・[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)）
+
+外部へは一切送信しない（`HttpMessageHandler` スタブ）。実 Stooq に対する確認は手動 opt-in の live 検証（CI 対象外・IADR-0049）。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-38 | 日足 CSV をバーへ解析（ロケール非依存・日付昇順・CRLF/末尾空行許容・出来高欠損は 0） | `StooqDailyCsvParserTests.日足CSVをバーへ解析する` / `解析結果は日付昇順で返す` / `CRLF改行と末尾空行を許容する` / `出来高が空の行は0として扱う` | 自動 |
+| T-15-39 | データなし・空・ヘッダのみ・想定外形式は解析失敗（欠測扱い） | `StooqDailyCsvParserTests.データなし応答は解析失敗として扱う` / `空応答は解析失敗として扱う` / `ヘッダのみでデータ行が無ければ解析失敗として扱う` / `想定外のヘッダは解析失敗として扱う` | 自動 |
+| T-15-40 | 破損行（日付/数値/列数/価格 0 以下/高安逆転/出来高負値）は部分採用せず銘柄丸ごと失敗 | `StooqDailyCsvParserTests.不正な行があれば部分採用せず解析失敗とする`（Theory 6 ケース） | 自動 |
+| T-15-41 | 市場ごとの銘柄記法へ写像（`.us`/`.jp`・小文字）・空/未知市場は写像しない | `StooqSymbolMapperTests.市場ごとの銘柄記法へ写像する` / `空の銘柄は写像できない` / `未知の市場は写像できない` | 自動 |
+| T-15-42 | 複数銘柄の日足取得・要求 URL に市場記法と期間を載せる・期間外は返さない | `StooqHistoricalBarSourceTests.複数銘柄の日足を取得する` / `要求URLに市場記法と期間を載せる` / `期間外のバーは返さない` | 自動 |
+| T-15-43 | 欠測（非成功応答・解析不能・写像不能）は理由つきで記録し他銘柄を続行 | `StooqHistoricalBarSourceTests.非成功応答は欠測として記録し他銘柄を続行する` / `解析できない応答は欠測として記録する` / `写像できない銘柄は外部へ要求せず欠測として記録する` | 自動 |
+| T-15-44 | 送信前にレート制御を通す（取得回数＝銘柄数）・銘柄が空なら外部へ要求しない | `StooqHistoricalBarSourceTests.送信前にレート制御を通す` / `銘柄が空なら外部へ要求しない` | 自動 |
+| T-15-45 | 通信例外は握りつぶさず送出（完走しない＝verdict も出ない） | `StooqHistoricalBarSourceTests.通信例外は握りつぶさず送出する` | 自動 |
+| T-15-46 | provider 既定・空・`none`・未知・不正 URL は no-op＝**外部へ接続しない**（`stooq` のみ実データ源） | `HistoricalBarSourceFactoryTests.既定と構成不備は外部へ接続しない_no_op`（Theory 5 ケース） / `provider_stooq_で実データ源を組み立てる` / `ベースURLが不正なら_no_op_へ倒す` / `ベースURL未設定なら既定のURLを使う` | 自動 |
+| T-15-47 | スナップショットは期間で絞り・重複を後勝ちで畳み・日付/銘柄で安定ソートする | `MaterializedBarDataSourceTests.期間内のバーだけを返す` / `同一銘柄同一日の重複を排除する_後勝ち` / `日付昇順_同日は銘柄順で安定ソートする` | 自動 |
+| T-15-48 | 取得対象を PIT ユニバースから導出し欠測を保持する（ユニバース空なら取得しない） | `MaterializedBarDataSourceTests.ユニバースから取得してスナップショットを作る` / `欠測は取得結果として保持する` / `ユニバースが空なら取得しない` | 自動 |
+| T-15-49 | 期間内に構成銘柄だった銘柄を取得対象に含める（廃止銘柄・端・再上場の重複排除） | `SecurityUniverseTests.期間内に構成銘柄だった銘柄を返す` / `期間外の銘柄は取得対象に含めない` / `期間の端で構成だった銘柄を含める` / `開始日が終了日より後なら空を返す` / `重複する構成期間があっても銘柄は一度だけ返す` | 自動 |
+| T-15-50 | **実データ未供給（バー 0 本）では Stage 0 不合格＝昇格拒否**（fail-safe 維持・#208 受け入れ基準③） | `Stage0GateServiceTests.実データ未供給ならStage0は不合格で昇格しない_failsafe` | 自動 |
+
+> T-15-50 は fail-safe が「どこで」効いているかも固定している。DSR（標本不足で 0）・コスト 2 倍・ウォークフォワードの
+> 3 条件が落ちて昇格が拒否される一方、`DataCutoffPolicy.IsAllAfterCutoff([]) == true`（空は真空的に真）のため
+> **データカットオフ条件は空データを検出しない**。この非自明な依存関係を明示的に検証する。
+
 ## テストデータ
 
-- 過去データは `InMemoryBarDataSource`（決定的なバー列）。境界ケースは `Bar` / `SecurityUniverse` メンバーシップ / 試行台帳を
-  ヘルパで組み立て、しきい値ちょうど・カットオフ当日・上場廃止日を注入する。実過去データ源の接続と Stage 0 較正
-  （`MinTrials` 暫定）は[#208](https://github.com/endazon/ai-stock-trading/issues/208)で扱う。
+- 過去データは `InMemoryBarDataSource`（決定的なバー列・テスト検証専用）。境界ケースは `Bar` / `SecurityUniverse`
+  メンバーシップ / 試行台帳をヘルパで組み立て、しきい値ちょうど・カットオフ当日・上場廃止日を注入する。
+- 実過去データ源（Stooq）は `HttpMessageHandler` スタブで CSV 応答・HTTP 状態を注入する（外部送信ゼロ）。
+  安全既定の検証は「呼ばれたら例外を投げるハンドラ」を使い、外部へ接続しないことを構造的に固定する。
+  Stage 0 閾値の較正（`MinTrials` 暫定）は実データでの実測が要るため
+  [#208](https://github.com/endazon/ai-stock-trading/issues/208) に残る。
 
 ## 未カバー・実施予定
 
 | 項目 | 理由 | 追跡 |
 | --- | --- | --- |
-| 実過去データ源での Stage 0 較正 | 現状 `InMemoryBarDataSource` のみ・`MinTrials=1` 暫定 | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
+| 実データでの Stage 0 閾値較正（`MinTrials` ほか） | データ源アダプタは実装済（#208・IADR-0105）だが、閾値較正は実データでの実測そのもの。`MinTrials=1` は暫定のまま | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
+| 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | CI からは外部へ出さない方針（IADR-0049）。手動 opt-in で確認する | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
+| J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | Risk への verdict 実 publish / E2E | イベント射影は実装済み・実バス配線は統合基盤側 | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |
 | 段階遷移の承認オペレーション | バックテストは昇格「推奨」まで・実遷移は利用者承認 | [#20](https://github.com/endazon/ai-stock-trading/issues/20) |
 
