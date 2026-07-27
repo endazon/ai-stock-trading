@@ -4,7 +4,7 @@
     <RootNamespace>AiStockTrading.RiskManagement.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- #257, IADR-0106: 損切り決済の換算レート縮退（fail-safe）を検知可能にするためのログ抽象（実装には依存しない）。
+    <!-- #257, IADR-0107: 損切り決済の換算レート縮退（fail-safe）を検知可能にするためのログ抽象（実装には依存しない）。
          他サービスの Application 層（TradeDecision/Notification）と同じ扱い。 -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
