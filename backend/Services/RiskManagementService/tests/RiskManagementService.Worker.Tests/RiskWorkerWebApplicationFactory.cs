@@ -17,9 +17,19 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
     // Factory ごとに一意な InMemory DB 名で他テストと隔離する。
     private readonly string _dbName = Guid.NewGuid().ToString();
 
+    /// <summary>
+    /// #257, IADR-0108: Program.cs が**登録時に**読む構成（例 <c>Risk:SimulatorProfile:Enabled</c>）を与える。
+    /// <c>ConfigureAppConfiguration</c> の追加分は登録時読み取りに間に合わないため <c>UseSetting</c>（ホスト構成）で渡す。
+    /// xUnit の <c>IClassFixture</c> は公開コンストラクタが 1 つであることを要求するため、引数ではなく初期化子で与える。
+    /// </summary>
+    public IDictionary<string, string?> HostSettings { get; init; } = new Dictionary<string, string?>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        foreach (var (key, value) in HostSettings)
+            builder.UseSetting(key, value);
+
         builder.ConfigureAppConfiguration((_, cfg) =>
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {

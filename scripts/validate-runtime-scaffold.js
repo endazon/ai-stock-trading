@@ -66,6 +66,9 @@ const FORBIDDEN_BASE_KEYS = [
   // #257, IADR-0107: 為替レート源の有効化（Fx:Provider）は外貨建て銘柄を発注可能にする切替のため、
   // base（＝全環境の既定）へ置いてはならない。設定点は Development / 環境変数に限る。
   'Fx',
+  // #257, IADR-0108: SIMULATE 限定のリスク上限プロファイル（Risk:SimulatorProfile:Enabled）は統制上限を
+  // 引き上げる切替のため、base（＝全環境の既定）へ置いてはならない。設定点は Development / 環境変数に限る。
+  'Risk',
 ];
 
 // .env.example で「空既定でなければならない」機密キー。実値混入をブロックする。

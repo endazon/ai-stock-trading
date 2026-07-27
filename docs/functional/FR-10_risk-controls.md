@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-10, FR-11, FR-17, UC-01, UC-02, UC-06, ADR-0003, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-27
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -55,6 +55,23 @@ plan_refs:
 
 `Price` を円換算しないのは、発注執行がこの値をブローカーの注文価格として送るため（円換算すると実発注価格が壊れる）。
 建玉の平均取得単価・損切り価格も現在値と同一通貨で比較するためローカル通貨のまま保持する。
+
+### SIMULATE 限定のリスク上限プロファイル（#257 / IADR-0108）
+
+検証（ペーパー）環境では moomoo シミュレータ口座の残高（USD $1,000,000 / JPY ¥20,000,000）に見合う上限を用いる。
+
+| 設定 | 本番既定 | SIMULATE プロファイル |
+| --- | --- | --- |
+| 基準資金 | ¥100,000 | ¥170,000,000（`$1M × ¥150 + ¥20M`） |
+| 1 注文金額上限 | ¥35,000 | ¥59,500,000（×1,700・資金比 35% を維持） |
+| 日次発注累計上限 | ¥100,000 | ¥170,000,000 |
+| Stage 0/1（ペーパー）資金上限 | ¥100,000 | ¥170,000,000 |
+| **Stage 2/3（実弾）資金上限** | ¥35,000 / ¥100,000 | **不変** |
+| 比率系・保有銘柄数・取引ガード | — | **不変**（スケール不変量） |
+
+適用は `Risk:SimulatorProfile:Enabled`（既定 false）に限り、上限値は Domain 定数（`SimulatorTradingDefaults`）が
+単一情報源である（構成から任意の金額を注入できない）。適用は読み取り時のデコレータで行い DB は書き換えないため、
+フラグを外せば即座に本番既定へ戻る。本番 `values.yaml` には設定点を置かない（既定描画はバイト等価）。
 
 ### 判定基準の確定（Issue #31 / IADR-0008）
 
