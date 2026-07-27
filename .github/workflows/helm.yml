@@ -121,6 +121,11 @@ jobs:
           if ! printf '%s' "$out" | grep -A1 'name: MarketData__EnableMarkToMarket' | grep -q 'value: "false"'; then
             echo "::error::既定描画の MarketData__EnableMarkToMarket が false でない（本番へ①が漏れた）。"; exit 1
           fi
+          # SIMULATE 限定のリスク上限プロファイル（#257/IADR-0108）は本番 values.yaml に設定点自体を置かない。
+          # 描画に現れたら検証用の緩和が本番へ漏れたということなので落とす。
+          if printf '%s' "$out" | grep -q 'Risk__SimulatorProfile__Enabled'; then
+            echo "::error::既定描画に Risk__SimulatorProfile__Enabled が現れた（SIMULATE 限定の上限緩和が本番へ漏れた）。"; exit 1
+          fi
           for leak in 'value: "finnhub"' 'llmgateway-service' 'document-service.microservices-platform' 'value: "discord-webhook"'; do
             if printf '%s' "$out" | grep -q "$leak"; then
               echo "::error::既定描画に経路B有効化の痕跡「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
@@ -148,6 +153,9 @@ jobs:
             || { echo "::error::values-local で Bot__Enabled=true が描画されない。"; exit 1; }
           # 価格文脈（#236/IADR-0099・trade-decision の鮮度設定）。
           need "価格文脈 鮮度設定" 'name: MarketData__MaxQuoteStalenessSeconds'
+          # SIMULATE 限定のリスク上限プロファイル（#257/IADR-0108）: 経路B でのみ有効化する（本番描画には現れない）。
+          printf '%s' "$out" | grep -A1 'name: Risk__SimulatorProfile__Enabled' | grep -q 'value: "true"' \
+            || { echo "::error::values-local で Risk__SimulatorProfile__Enabled=true が描画されない（SIMULATE 上限が本番既定のまま）。"; exit 1; }
           # 通貨換算（#257/IADR-0107）: 外貨建て銘柄はレート源が無いと新規建てを見送るため、経路B では実 provider が要る。
           printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -q 'value: "fred"' \
             || { echo "::error::values-local で Fx__Provider=fred が描画されない（外貨建て銘柄が恒久的に見送られる）。"; exit 1; }

@@ -1,6 +1,7 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
+using AiStockTrading.RiskManagement.Worker.Composable;
 using AiStockTrading.RiskManagement.Worker.Composable.MarketData;
 using AiStockTrading.RiskManagement.Worker.Composable.StageGate;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
@@ -49,7 +50,17 @@ builder.Services.AddAiStockTradingHealthChecks()
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
 // DbContext が scoped のため EF ストアも scoped。
-builder.Services.AddScoped<IRiskSettingsStore, EfRiskSettingsStore>();
+// FR-10, FR-12, #257, IADR-0108: SIMULATE 限定のリスク上限プロファイル（既定 false＝本番既定＝現行挙動）。
+// 有効時は読み取り時デコレータで金額系の上限とペーパー段階の資金上限だけを差し替える（DB は書き換えない）。
+// 実弾段階（Stage 2/3・TradeMode.Live）の資金上限は有効時も本番既定のまま（IADR-0108 決定4）。
+builder.Services.Configure<SimulatorProfileOptions>(
+    builder.Configuration.GetSection(SimulatorProfileOptions.SectionName));
+var simulatorProfileEnabled = builder.Configuration.GetSection(SimulatorProfileOptions.SectionName)
+    .Get<SimulatorProfileOptions>()?.Enabled == true;
+builder.Services.AddScoped<EfRiskSettingsStore>();
+builder.Services.AddScoped<IRiskSettingsStore>(sp => simulatorProfileEnabled
+    ? new SimulatorProfileRiskSettingsStore(sp.GetRequiredService<EfRiskSettingsStore>())
+    : sp.GetRequiredService<EfRiskSettingsStore>());
 builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 // FR-10, FR-14, ADR-0009: 取引の一時停止（pause）状態。kill switch と同型・別状態（別テーブル）。
 builder.Services.AddScoped<IPauseStore, EfPauseStore>();
@@ -84,9 +95,14 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
     var clock = sp.GetRequiredService<IClock>();
     var options = sp.GetRequiredService<IOptions<MarketDataOptions>>();
     // 無効（既定）なら現在値ソースを注入しない＝含み 0・DD 0 の現行挙動をそのまま保つ。
+    // #257, IADR-0108: 基準資金（台帳射影の初期資金）もプロファイルに追随させる。無効（既定）は null＝本番既定。
+    var initialCapital = simulatorProfileEnabled
+        ? AiStockTrading.RiskManagement.Domain.SimulatorTradingDefaults.InitialCapital
+        : (decimal?)null;
     return options.Value.EnableMarkToMarket
-        ? new LedgerPortfolioStateProvider(ledger, clock, sp.GetRequiredService<ICurrentPriceSource>())
-        : new LedgerPortfolioStateProvider(ledger, clock);
+        ? new LedgerPortfolioStateProvider(
+            ledger, clock, sp.GetRequiredService<ICurrentPriceSource>(), initialCapital)
+        : new LedgerPortfolioStateProvider(ledger, clock, currentPrices: null, initialCapital);
 });
 builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
 // 現在値の補充は背景で行う（発注判断の同期経路にネットワーク往復を持ち込まない）。
@@ -105,7 +121,11 @@ builder.Services.AddScoped<RiskStatusService>();
 builder.Services.AddScoped<RiskSettingsService>();
 // FR-20, UC-06, ADR-0008, IADR-0041/0070: 段階ゲート遷移サービス。段階ゲート方針は TradingDefaults を参照（変更しない）。
 // 撤退の自動安全側は KillSwitchService を通す（自動＝停止・承認＝段階変更）。
-builder.Services.AddSingleton(AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
+// #257, IADR-0108 決定4: プロファイル有効時はペーパー段階（Stage 0/1）の資金上限のみ引き上げる。
+// 実弾段階（Stage 2/3）の定義・撤退倍率は本番既定のまま（検証用フラグで実弾の上限を動かさない）。
+builder.Services.AddSingleton(simulatorProfileEnabled
+    ? AiStockTrading.RiskManagement.Domain.SimulatorTradingDefaults.CreateStagePolicy()
+    : AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
 builder.Services.AddScoped<StageGateService>();
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の

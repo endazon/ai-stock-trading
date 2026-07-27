@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-27
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -68,6 +68,12 @@ plan_refs:
 | T-10-15 | 換算後の金額でサイジングし、発注意図の価格はローカル通貨のまま載せる | `TradeDecisionServiceTests.外貨建て銘柄は換算後の金額でサイジングし価格はローカル通貨のまま載せる` / `換算後に1注文金額上限を超える高価格株は見送る` / `採算評価のnotionalは基準通貨で突き合わせる` | 自動 |
 
 | T-10-16 | 損切りの機械執行も建玉の換算レートを決済注文へ引き継ぐ。引けない場合もレート 1 へ縮退して決済は必ず発行する（ADR-0003） | `StopLossExecutionServiceTests.損切り決済は建玉の換算レートを引き継ぐ` / `該当建玉が台帳に無くても決済は必ず発行する_failsafe` / `台帳未注入でも決済は従来どおり発行する_回帰` | 自動 |
+
+| T-10-17 | SIMULATE 限定プロファイルの金額はシミュレータ残高に基づき、比率系・取引ガードは本番既定と同一 | `SimulatorTradingDefaultsTests.金額系の上限はシミュレータ残高に基づく` / `比率系は本番既定と同一である` / `取引ガードは本番既定と同一である` | 自動 |
+| T-10-18 | プロファイル有効時も実弾段階（Stage 2/3）の資金上限は不変・ペーパー段階のみ引き上がる | `SimulatorTradingDefaultsTests.実弾段階の資金上限は本番既定から変えない` / `ペーパー段階の資金上限だけを引き上げる` / `SimulatorProfileRiskSettingsStoreTests.実弾段階の資金上限は上書きしない` / `SimulatorProfileWiringTests.有効時も実弾段階の資金上限は本番既定のまま` | 自動 |
+| T-10-19 | 既定（未設定・明示 false）は本番既定のまま。有効時のみ上限と基準資金が上がる | `SimulatorProfileWiringTests.既定は本番既定の上限のまま` / `明示的に無効化しても本番既定のまま` / `有効時は金額上限とペーパー段階の資金上限が上がる` / `有効時は基準資金もシミュレータ残高になる` | 自動 |
+| T-10-20 | 米国株（AAPL 相当 ¥50,250/株）でプロファイル有効時は数量が算出され、本番既定では 0 株になる | `SimulatorTradingDefaultsTests.米国株の代表銘柄でも数量が算出される` | 自動 |
+| T-10-21 | プロファイルは金額系 2 項目とペーパー段階の資金上限だけを差し替え、保存は素通しする（DB を汚さない） | `SimulatorProfileRiskSettingsStoreTests.有効時は金額系の上限をプロファイル値へ差し替える` / `有効時も比率系と取引ガードは内側の設定のまま` / `保存は素通しする` | 自動 |
 
 ### FR-19 取引ガード（RiskEvaluatorTests）
 
