@@ -527,6 +527,54 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
     }
 
+    // --- FR-10, FR-17, #257, IADR-0107: 金額上限は基準通貨（円）で判定する ---
+
+    [Fact]
+    public void 外貨建て注文の金額上限は換算後の金額で判定する()
+    {
+        // 100 USD × 5 株 = 500 USD。レート 150 なら 75,000 円で 1 注文金額上限（35,000 円）を超える。
+        // 換算しなければ 500 が「500 円」として通り、統制が桁で緩む（本 issue の症状）。
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            5, 100m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.PerOrderAmountExceeded);
+    }
+
+    [Fact]
+    public void 外貨建て注文の日次発注累計と段階資金上限も換算後の金額で判定する()
+    {
+        // 20 USD × 10 株 = 200 USD ＝ 30,000 円（レート 150）。1 注文上限（35,000）は超えないが、
+        // 当日発注累計 80,000 円との合計 110,000 円は日次上限（100,000）を、
+        // 投入中資金 90,000 円との合計 120,000 円は段階資金上限（100,000）を超える。
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            10, 20m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
+
+        var result = RiskEvaluator.Evaluate(
+            intent, DefaultSettings(), Snapshot(dailyOrderedAmount: 80_000m, investedCapital: 90_000m));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
+        result.Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    [Fact]
+    public void 換算レート既定1の注文は従来どおり判定される()
+    {
+        // 基準通貨（日本株）およびレート未記録の既存データ＝現行挙動と等価であることを固定する。
+        var intent = new OrderIntent(
+            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 3_000m);
+
+        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
+
+        result.IsApproved.Should().BeTrue();
+        intent.FxRateToBase.Should().Be(1m);
+    }
+
     [Fact]
     public void ショート決済の買い戻しはエントリー制約の対象外()
     {

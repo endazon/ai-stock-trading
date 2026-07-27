@@ -65,11 +65,14 @@ public class InformationCollectedConsumerTests
             .AddMassTransitTestHarness(x => x.AddConsumer<InformationCollectedConsumer>())
             .BuildServiceProvider(true);
 
+    // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の監視銘柄を用いる
+    // （外貨建てはレート未解決だと見送りになる。換算そのものの検証は Application テストと FxWiringTests が担う）。
+
     [Fact]
     public async Task 開場中は監視銘柄について判断し_TradeDecisionMade_を発行する()
     {
         await using var provider = Build(
-            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: true));
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
@@ -79,7 +82,7 @@ public class InformationCollectedConsumerTests
         (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
         (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
         var decision = harness.Published.Select<TradeDecisionMade>().First().Context.Message;
-        decision.Intent.Symbol.Should().Be("AAPL");
+        decision.Intent.Symbol.Should().Be("7203");
 
         await harness.Stop();
     }
@@ -88,7 +91,7 @@ public class InformationCollectedConsumerTests
     public async Task 休場日は判断せず発行しない()
     {
         await using var provider = Build(
-            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: false));
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
@@ -107,8 +110,8 @@ public class InformationCollectedConsumerTests
         // IADR-0023: 1 銘柄の判断失敗でサイクル全体を再配送させず、他銘柄は継続して発行する。
         await using var provider = Build(
             new FakeWatchlist(
-                new WatchedSymbol("BADSYM", Market.UnitedStates),
-                new WatchedSymbol("AAPL", Market.UnitedStates)),
+                new WatchedSymbol("BADSYM", Market.Japan),
+                new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: true),
             new ThrowingForSymbolLlm("BADSYM", BuyJson));
         var harness = provider.GetRequiredService<ITestHarness>();
@@ -118,9 +121,9 @@ public class InformationCollectedConsumerTests
 
         (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
         (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
-        // AAPL の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
+        // 7203 の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
         harness.Published.Select<TradeDecisionMade>().Should().ContainSingle();
-        harness.Published.Select<TradeDecisionMade>().First().Context.Message.Intent.Symbol.Should().Be("AAPL");
+        harness.Published.Select<TradeDecisionMade>().First().Context.Message.Intent.Symbol.Should().Be("7203");
 
         await harness.Stop();
     }

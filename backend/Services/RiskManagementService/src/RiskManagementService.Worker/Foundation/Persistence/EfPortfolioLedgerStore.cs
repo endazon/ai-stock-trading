@@ -28,6 +28,8 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
             Quantity = intent.Quantity,
             Price = intent.Price,
             StopLossPrice = intent.StopLossPrice,
+            // IADR-0107: 承認時点の換算レート（＝約定時レートの近似）を台帳に固定する。後から引き直さない。
+            FxRateToBase = intent.FxRateToBase,
             ApprovedAt = approvedAt,
         });
         db.SaveChanges();
@@ -63,9 +65,10 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
         var query =
             from f in db.TradeFills
             join a in db.ApprovedOrders on f.DecisionId equals a.DecisionId
+            // IADR-0107: 列追加前の既存行（FxRateToBase が null）はレート 1＝基準通貨建てとして扱う（当時の暗黙の前提）。
             select new LedgerFill(
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
-                f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice);
+                f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice, a.FxRateToBase ?? 1m);
 
         return query.ToList();
     }

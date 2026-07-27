@@ -2,10 +2,10 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: draft
-related_ids: [FR-10, FR-11, UC-01, UC-02, UC-06, ADR-0003, ADR-0008]
+related_ids: [FR-10, FR-11, FR-17, UC-01, UC-02, UC-06, ADR-0003, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -40,6 +40,21 @@ plan_refs:
 | 処理 | 日次損失 = `DailyRealizedPnl + UnrealizedPnl`。`日次損失 <= -(Capital × DailyLossLimitRatio)` なら到達と判定 |
 | 出力 | 到達時、新規建て（Open）注文を `RejectionReason.DailyLossLimitReached` で拒否。手仕舞い（Close）は対象外 |
 | 業務ルール | 資金の 2% 到達で当日全停止・翌営業日までロックアウト（§5）。判定基準は**実現損益＋含み損益の合算**（A 案。IADR-0008） |
+
+### 金額判定の通貨（#257 / IADR-0107）
+
+統制の金額（1 注文金額上限・日次発注累計・段階資金上限・日次損失・最大DD）は**基準通貨（円）**で判定する
+（計画 06_technical/05_trading-assumptions §3「基準通貨 = JPY」）。
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 | `OrderIntent.Price`（**ローカル通貨**＝銘柄の市場の通貨）、`OrderIntent.FxRateToBase`（ローカル通貨 1 単位あたりの円。取引判断が意図生成時に確定・既定 1） |
+| 処理 | 金額の突き合わせは `NotionalInBase = Quantity × Price × FxRateToBase`。台帳（取得額・当日発注累計・実現/含み損益・エクイティ）も同レートで基準通貨に積む |
+| 出力 | 円換算後の金額が上限を超えれば該当の `RejectionReason` で拒否する |
+| 業務ルール | 換算レートは判断境界の 1 点でのみ解決し、下流は同伴レートを使う（評価時点で判定が変わらない）。**非基準通貨でレートが解決できない場合、取引判断は新規建てを作らない**（古い/無いレートで発注しない） |
+
+`Price` を円換算しないのは、発注執行がこの値をブローカーの注文価格として送るため（円換算すると実発注価格が壊れる）。
+建玉の平均取得単価・損切り価格も現在値と同一通貨で比較するためローカル通貨のまま保持する。
 
 ### 判定基準の確定（Issue #31 / IADR-0008）
 

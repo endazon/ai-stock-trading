@@ -380,6 +380,13 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+      # FR-10/17, #257, IADR-0107: 基準通貨（円）への換算レート源。統制上限・サイジングは円建てで判定するため、
+      # 外貨建て銘柄はレートが解決できないと新規建てを見送る（過大発注を招かない安全側）。
+      # fail-safe: 空/none/未知/キー無し=no-op（外部へ接続しない）。日本株は定義上レート 1 で従来どおり判断できる。
+      # 実結線は fred＋API キー（FRED の DEXJPUS＝円/ドル）。本 PR では実 provider を投入しない。
+      - { name: Fx__Provider, value: "" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
 resources:
   requests: { cpu: 50m, memory: 128Mi }

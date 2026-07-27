@@ -148,6 +148,9 @@ jobs:
             || { echo "::error::values-local で Bot__Enabled=true が描画されない。"; exit 1; }
           # 価格文脈（#236/IADR-0099・trade-decision の鮮度設定）。
           need "価格文脈 鮮度設定" 'name: MarketData__MaxQuoteStalenessSeconds'
+          # 通貨換算（#257/IADR-0107）: 外貨建て銘柄はレート源が無いと新規建てを見送るため、経路B では実 provider が要る。
+          printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -q 'value: "fred"' \
+            || { echo "::error::values-local で Fx__Provider=fred が描画されない（外貨建て銘柄が恒久的に見送られる）。"; exit 1; }
           # 実弾/危険既定は OFF のまま（有効化しても paper・秘匿ストア/OpenD 不在）。
           printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
             || { echo "::error::values-local 描画の Broker__Provider が paper でない（実弾 OFF 不変に違反）。"; exit 1; }

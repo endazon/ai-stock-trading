@@ -315,4 +315,74 @@ public class PortfolioProjectionTests
         state.UnrealizedPnl.Should().Be(0m);
         state.DrawdownRatio.Should().Be(0m);
     }
+
+    // --- FR-10, FR-17, #257, IADR-0107: 金額集計は基準通貨（円）、建玉はローカル通貨 ---
+
+    private static LedgerFill UsdFill(
+        TradeSide side, PositionEffect effect, int qty, decimal price, DateTimeOffset at, decimal rate) =>
+        new("AAPL", Market.UnitedStates, side, effect, qty, price, at, StopLossPrice: null, FxRateToBase: rate);
+
+    [Fact]
+    public void 外貨建ての取得額と当日発注累計は基準通貨で積まれる()
+    {
+        // 20 USD × 10 株 × 150 円 = 30,000 円。換算しなければ 200（円と誤読）で統制が桁で緩む。
+        var state = PortfolioProjection.Project(
+            new[] { UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(), rate: 150m) },
+            Today, InitialCapital);
+
+        state.InvestedCapital.Should().Be(30_000m);
+        state.DailyOrderedAmount.Should().Be(30_000m);
+    }
+
+    [Fact]
+    public void 外貨建ての実現損益は基準通貨で計上される()
+    {
+        // 20 USD で 10 株建て（レート 150）→ 25 USD で全決済（レート 150）。実現＝5 USD × 10 × 150 = 7,500 円。
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(9), rate: 150m),
+                UsdFill(TradeSide.Sell, PositionEffect.Close, 10, 25m, TodayAt(11), rate: 150m),
+            },
+            Today, InitialCapital);
+
+        state.DailyRealizedPnl.Should().Be(7_500m);
+        state.OpenPositionCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void 外貨建ての含み損益は建玉の約定時レートで換算される()
+    {
+        // 20 USD → 現在値 25 USD。含み＝5 USD × 10 株 × 150 = 7,500 円。
+        var prices = new Dictionary<(string, Market), decimal> { [("AAPL", Market.UnitedStates)] = 25m };
+
+        var state = PortfolioProjection.Project(
+            new[] { UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(), rate: 150m) },
+            Today, InitialCapital, prices);
+
+        state.UnrealizedPnl.Should().Be(7_500m);
+    }
+
+    [Fact]
+    public void 建玉の平均取得単価はローカル通貨のまま射影される()
+    {
+        // 損切り検知（市場監視）は現在値（ローカル通貨）と比較するため、建玉側は換算しない。
+        var positions = PortfolioProjection.ProjectOpenPositions(
+            new[] { UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(), rate: 150m) });
+
+        positions.Should().ContainSingle();
+        positions[0].AverageEntryPrice.Should().Be(20m);
+    }
+
+    [Fact]
+    public void レート未記録の約定は従来どおり基準通貨建てとして積まれる_回帰()
+    {
+        // 既定 1＝日本株および列追加前の既存データ。現行挙動と等価であることを固定する。
+        var state = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(), symbol: "7203", market: Market.Japan) },
+            Today, InitialCapital);
+
+        state.InvestedCapital.Should().Be(10_000m);
+        state.DailyOrderedAmount.Should().Be(10_000m);
+    }
 }
