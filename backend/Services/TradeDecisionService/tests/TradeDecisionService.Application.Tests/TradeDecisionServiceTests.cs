@@ -624,11 +624,12 @@ public class TradeDecisionServiceTests
         (await CreateForCurrency(new ThrowingFxRate()).DecideAsync(UsdTrigger())).Should().BeNull();
     }
 
-    // 基準7: 基準通貨（日本株）は FX 源へ問い合わせず従来どおり判断する。
+    // 基準7: 基準通貨（日本株）は実 FX 源を結線しなくても従来どおり発注意図を作る（影響を非基準通貨に限定する）。
+    // 「基準通貨では外部レート源へ問い合わせない」ことは源側で検証する
+    //（FredFxRateSourceTests.基準通貨は外部へ問い合わせずレート1を返す＝送信 0 件）。
     [Fact]
-    public async Task 基準通貨の市場はレート源へ問い合わせず従来どおり判断する()
+    public async Task 基準通貨の市場は実FX源が無くても従来どおり判断する()
     {
-        var fx = new FakeFxRate(null); // 呼ばれれば見送りになる＝呼ばれていないことを結果でも確認できる
         var service = new AppSvc(new FakeLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance,
             retrieval: null, options: null, profitability: null, profitabilityOptions: null,
@@ -638,7 +639,7 @@ public class TradeDecisionServiceTests
         var decision = await service.DecideAsync(Trigger());
 
         decision.Should().NotBeNull();
-        fx.Calls.Should().Be(0);
+        decision!.Intent.FxRateToBase.Should().Be(1m, "基準通貨の市場は定義上レート 1（換算しない）");
     }
 
     // 基準5/6: レートありなら換算後の金額でサイジングし、発注意図の価格はローカル通貨のまま載せる。
