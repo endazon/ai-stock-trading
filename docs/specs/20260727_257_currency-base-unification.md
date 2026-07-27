@@ -91,6 +91,8 @@ plan_refs:
      **建玉はローカル通貨のまま**畳み込み、金額集計（取得額・当日発注累計・実現損益・含み損益）を基準通貨で積む。
    - `OpenPosition` に加重平均の `FxRateToBase` を追加し、含み損益の換算に用いる。
    - 永続化（`ApprovedOrderRow.FxRateToBase`）と EF マイグレーション、InMemory 実装の追随。
+   - 損切りの機械執行（`StopLossExecutionService`）が台帳の建玉レートを決済注文へ引き継ぐ
+     （判断境界を通らない経路のため。照会失敗・建玉なしはレート 1 へ縮退し決済は止めない＝ADR-0003）。
 5. **構成点**: `Fx:Provider`（既定空＝no-op）ほかを `appsettings.Development.json`・`docker-compose.yml`・
    helm `values.yaml`／`values-local.yaml`（経路B の有効化）に追加する。FRED の鍵は既存 `ast-secrets/fred-api-key` を再利用する。
 6. **文書**: 本仕様書・[IADR-0106](../adr/IADR-0106_base-currency-conversion.md)・機能仕様書 FR-10・テスト仕様書 FR-10 の更新。
@@ -164,7 +166,8 @@ TTL キャッシュ（既定 6 時間）で叩く回数を抑え、**鮮度上�
 | 13 | 欠測（`.`）・非成功応答はレート無しに縮退する | `FredFxRateSourceTests` |
 | 14 | 鮮度上限を超えたレートは採らない／TTL 内はキャッシュを返す | `CachingFxRateSourceTests` |
 | 15 | provider 既定・空・未知・キー無しは no-op（外部へ接続しない・警告する） | `FxRateSourceFactoryTests` |
-| 16 | 判断ホストの配線（既定 no-op／`fred` 指定で実源／singleton／自己申告） | `TradeDecisionWorkerWiringTests` |
+| 16 | 判断ホストの配線（既定 no-op／`fred` 指定で実源／singleton／自己申告） | `FxWiringTests` |
+| 17 | 損切り決済が建玉の換算レートを引き継ぐ／引けなくても決済は必ず発行する | `StopLossExecutionServiceTests`（3 ケース） |
 
 ## 完了条件
 

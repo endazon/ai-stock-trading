@@ -75,4 +75,58 @@ public class StopLossExecutionServiceTests
         first.DecisionId.Should().Be(triggered.EventId);
         second.DecisionId.Should().Be(triggered.EventId);
     }
+
+    // --- FR-17, #257, IADR-0106: 決済レグにも建玉の換算レートを引き継ぐ ---
+
+    // 20 USD × 10 株をレート 150 で建てた台帳（承認＋約定）。
+    private static InMemoryPortfolioLedgerStore LedgerWithUsdPosition(decimal fxRateToBase)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var decisionId = Guid.NewGuid();
+        ledger.AppendApproval(
+            decisionId,
+            new OrderIntent(
+                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+                10, 20m, PositionEffect.Open, StopLossPrice: 19m, FxRateToBase: fxRateToBase),
+            Now.AddHours(-1));
+        ledger.AppendFill(decisionId, "order-1", 10, 20m, Now.AddHours(-1));
+        return ledger;
+    }
+
+    [Fact]
+    public void 損切り決済は建玉の換算レートを引き継ぐ()
+    {
+        // 引き継がないと決済レグだけ未換算（レート 1）で台帳へ積まれ、実現損益・取得額が桁で誤る。
+        var service = new StopLossExecutionService(
+            new InMemoryRiskSettingsStore(null), new FakeClock(Now, new DateOnly(2026, 7, 10)),
+            LedgerWithUsdPosition(fxRateToBase: 150m));
+
+        var approval = service.BuildCloseApproval(Triggered(TradeSide.Buy, price: 19m));
+
+        approval.Intent.FxRateToBase.Should().Be(150m);
+        approval.Intent.Price.Should().Be(19m, "決済価格はローカル通貨（USD）のまま");
+        approval.Intent.NotionalInBase.Should().Be(10 * 19m * 150m);
+    }
+
+    [Fact]
+    public void 該当建玉が台帳に無くても決済は必ず発行する_failsafe()
+    {
+        // ADR-0003: 損切りは必ず実行する。レートが引けないことを理由に決済を止めない（レート 1 へ縮退）。
+        var service = new StopLossExecutionService(
+            new InMemoryRiskSettingsStore(null), new FakeClock(Now, new DateOnly(2026, 7, 10)),
+            new InMemoryPortfolioLedgerStore());
+
+        var approval = service.BuildCloseApproval(Triggered(TradeSide.Buy));
+
+        approval.Intent.Quantity.Should().Be(10);
+        approval.Intent.FxRateToBase.Should().Be(1m);
+    }
+
+    [Fact]
+    public void 台帳未注入でも決済は従来どおり発行する_回帰()
+    {
+        var approval = Create().BuildCloseApproval(Triggered(TradeSide.Buy));
+
+        approval.Intent.FxRateToBase.Should().Be(1m);
+    }
 }
