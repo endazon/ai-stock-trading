@@ -74,8 +74,8 @@ plan_refs:
    - `Currency`（`Jpy`/`Usd`）と `MarketCurrency.Of(Market)`（純関数）、基準通貨 `MarketCurrency.Base = Jpy`。
    - `OrderIntent` に `FxRateToBase`（既定 `1m`＝JPY と等価）を追加し、`NotionalBase = Quantity × Price × FxRateToBase`
      を新設する。`Price` は**ローカル通貨**（執行価格の権威）と定義し直し、陳腐化した契約コメントを実体に合わせる。
-2. **FX レート源（`Shared.Infrastructure/Composable/Adapters/Fx/`）**
-   - ポート `IFxRateSource`（`Shared.Contracts/Ports`）と `FxRate(Quote, Base, Rate, AsOf)`。
+2. **FX レート源（`TradeDecisionService.Worker/Composable/Adapters/`）**
+   - ポート `IFxRateSource`（`Shared.Contracts/Ports`）と `FxRate(Quote, Base, Rate, AsOf)`。実装（アダプタ）は唯一の消費者である判断ホストに置く（IADR-0064 の FRED アダプタと同じ配置）。
    - `FredFxRateSource`: FRED 系列（既定 `DEXJPUS`＝JPY per USD）の最新観測を取得。欠測（`.`）は採らない。
    - `CachingFxRateSource`: TTL キャッシュ＋**鮮度上限**（既定 7 日）。上限超過は `null`（＝レート無し）。
    - `NoOpFxRateSource`（常に `null`・初回 1 回だけ警告）と `FxRateSourceFactory`（`Fx:Provider` 既定 `none`）。
