@@ -65,7 +65,7 @@ public class InformationCollectedConsumerTests
             .AddMassTransitTestHarness(x => x.AddConsumer<InformationCollectedConsumer>())
             .BuildServiceProvider(true);
 
-    // #257, IADR-0106: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の監視銘柄を用いる
+    // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の監視銘柄を用いる
     // （外貨建てはレート未解決だと見送りになる。換算そのものの検証は Application テストと FxWiringTests が担う）。
 
     [Fact]

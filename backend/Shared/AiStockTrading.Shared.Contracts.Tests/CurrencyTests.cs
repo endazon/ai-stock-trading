@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Contracts.Tests;
 
-// FR-10, FR-17, #257, IADR-0106: 市場から通貨を導く純関数と、基準通貨（JPY）の定義。
+// FR-10, FR-17, #257, IADR-0107: 市場から通貨を導く純関数と、基準通貨（JPY）の定義。
 public class MarketCurrencyTests
 {
     [Theory]
@@ -30,7 +30,7 @@ public class MarketCurrencyTests
     }
 }
 
-// FR-10, #257, IADR-0106: 注文意図の金額は「ローカル通貨の Notional」と「基準通貨の NotionalInBase」を区別する。
+// FR-10, #257, IADR-0107: 注文意図の金額は「ローカル通貨の Notional」と「基準通貨の NotionalInBase」を区別する。
 public class OrderIntentCurrencyTests
 {
     private static OrderIntent Intent(decimal price, int quantity, decimal fxRateToBase) =>

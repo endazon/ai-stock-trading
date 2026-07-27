@@ -42,7 +42,7 @@ public static class RiskEvaluator
 
         // FR-20, ADR-0008, IADR-0005: 段階資金上限は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
         // 判定する。単一注文額のみで比較すると、上限内の注文を複数回通して累計で上限を超過できる（Issue #27）。
-        // FR-10, FR-17, #257, IADR-0106: 金額の突き合わせは基準通貨（円）で行う。外貨建て銘柄の Notional
+        // FR-10, FR-17, #257, IADR-0107: 金額の突き合わせは基準通貨（円）で行う。外貨建て銘柄の Notional
         //（ローカル通貨）を円建ての上限と比較すると、上限が桁で緩む（過大発注を招く向き）。
         if (isEntry && snapshot.InvestedCapital + intent.NotionalInBase > settings.Stage.CapitalCap)
         {

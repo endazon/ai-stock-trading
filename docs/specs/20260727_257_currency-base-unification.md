@@ -38,7 +38,7 @@ plan_refs:
   [IADR-0064](../adr/IADR-0064_official-source-connectors.md)（FRED アダプタとレート制御の型）／
   [IADR-0068](../adr/IADR-0068_live-quote-feed-finnhub-extraction.md)（provider 選択・構成不備は no-op へ）／
   [IADR-0099](../adr/IADR-0099_current-price-context-for-decision.md)（現在値の判断文脈供給＝USD 生値の流入点）／
-  本作業で新規 [IADR-0106](../adr/IADR-0106_base-currency-conversion.md)
+  本作業で新規 [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)
 - 対象 Issue: [#257](https://github.com/endazon/ai-stock-trading/issues/257)（`Refs #257`）
 
 ## 現状（develop `3447a7d` の実コードで確定した事実）
@@ -95,7 +95,7 @@ plan_refs:
      （判断境界を通らない経路のため。照会失敗・建玉なしはレート 1 へ縮退し決済は止めない＝ADR-0003）。
 5. **構成点**: `Fx:Provider`（既定空＝no-op）ほかを `appsettings.Development.json`・`docker-compose.yml`・
    helm `values.yaml`／`values-local.yaml`（経路B の有効化）に追加する。FRED の鍵は既存 `ast-secrets/fred-api-key` を再利用する。
-6. **文書**: 本仕様書・[IADR-0106](../adr/IADR-0106_base-currency-conversion.md)・機能仕様書 FR-10・テスト仕様書 FR-10 の更新。
+6. **文書**: 本仕様書・[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)・機能仕様書 FR-10・テスト仕様書 FR-10 の更新。
 
 ### 対象外（本 PR 外）
 
@@ -139,7 +139,7 @@ plan_refs:
 
 - 理由: Risk サービスへ外部 FX 依存（鮮度・障害・縮退）を持ち込まずに、桁違いの誤り（150 倍）を解消できる。
   残差は FX 変動分のみ（数%オーダー）であり、統制の実効性に対する影響は本件の主因と比べて小さい。
-- 影響: 円安/円高による評価損益のずれは日次損失上限・DD 判定に残る。厳密化は #257 に残置し IADR-0106 に記録する。
+- 影響: 円安/円高による評価損益のずれは日次損失上限・DD 判定に残る。厳密化は #257 に残置し IADR-0107 に記録する。
 
 ### 決定5: FRED を FX レート源にする（`DEXJPUS`）
 
@@ -174,4 +174,4 @@ TTL キャッシュ（既定 6 時間）で叩く回数を抑え、**鮮度上�
 - `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が緑。`dotnet format` 適用済み・警告ゼロ。
 - 既定構成（`Fx:Provider` 未設定・JPY 市場）の挙動が現行と等価。実弾 OFF・SIMULATE 不変。
 - テストが外部ネットワークへ送信しない（`HttpMessageHandler` スタブのみ）。
-- `docs/DEFINITION_OF_DONE.md` を満たす。IADR-0106 に決定を記録する。
+- `docs/DEFINITION_OF_DONE.md` を満たす。IADR-0107 に決定を記録する。

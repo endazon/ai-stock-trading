@@ -63,7 +63,7 @@ const FORBIDDEN_BASE_KEYS = [
   // IADR-0066: 時価評価の有効化（MarketData:EnableMarkToMarket）は最大DD の取引ゲート（IADR-0008）の判定入力を
   // 変える切替のため、base（＝全環境の既定）へ置いてはならない。設定点は Development / 環境変数に限る。
   'MarketData',
-  // #257, IADR-0106: 為替レート源の有効化（Fx:Provider）は外貨建て銘柄を発注可能にする切替のため、
+  // #257, IADR-0107: 為替レート源の有効化（Fx:Provider）は外貨建て銘柄を発注可能にする切替のため、
   // base（＝全環境の既定）へ置いてはならない。設定点は Development / 環境変数に限る。
   'Fx',
 ];

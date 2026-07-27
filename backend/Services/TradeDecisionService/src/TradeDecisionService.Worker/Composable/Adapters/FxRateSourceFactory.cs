@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
-// FR-10, FR-17, #257, IADR-0106 決定5: 構成 Fx:Provider による為替レート源の選択。
+// FR-10, FR-17, #257, IADR-0107 決定5: 構成 Fx:Provider による為替レート源の選択。
 // 安全既定は no-op（外部接続しない）。形は MarketDataSourceFactory（IADR-0068）に揃える。
 //
 // 構成不備（キー無し・未知の provider）は**起動を失敗させず** no-op へ倒す: レートが無ければ非基準通貨の
@@ -37,7 +37,7 @@ internal static class FxRateSourceFactory
                 {
                     logger.LogWarning(
                         "Fx:Provider に fred が指定されていますが、APIキー（Fx:Fred:ApiKey）が未設定のため" +
-                        "為替レートを取得しません（no-op へフォールバック・IADR-0106）。");
+                        "為替レートを取得しません（no-op へフォールバック・IADR-0107）。");
                     return NoOp(loggerFactory);
                 }
 
@@ -60,7 +60,7 @@ internal static class FxRateSourceFactory
 
             default:
                 logger.LogWarning(
-                    "未知の Fx:Provider '{Provider}' のため為替レートを取得しません（安全既定・IADR-0106）。",
+                    "未知の Fx:Provider '{Provider}' のため為替レートを取得しません（安全既定・IADR-0107）。",
                     Provider(options));
                 return NoOp(loggerFactory);
         }

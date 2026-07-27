@@ -164,7 +164,7 @@ public class TradeDecisionPromptBuilderTests
         withDefault.Should().Be(withExplicitFalse);
     }
 
-    // FR-10, FR-17, #257, IADR-0106: 外貨建て市場では価格の通貨を明示し、円建てのリスク制約との混在を注記する
+    // FR-10, FR-17, #257, IADR-0107: 外貨建て市場では価格の通貨を明示し、円建てのリスク制約との混在を注記する
     // （実測: 単位が無いため LLM が 336.77 USD を「購入額 336.77 円」と解釈した）。
     [Fact]
     public void 外貨建て市場では価格に通貨を明示し円建て制約との混在を注記する()

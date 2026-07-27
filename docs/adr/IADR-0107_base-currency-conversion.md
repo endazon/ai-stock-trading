@@ -1,5 +1,5 @@
 ---
-title: IADR-0106 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う（レートは注文意図に同伴・既定 no-op）
+title: IADR-0107 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う（レートは注文意図に同伴・既定 no-op）
 type: impl-adr
 status: Accepted
 related_ids: [FR-10, FR-17, FR-04, FR-05, ADR-0003, ADR-0004]
@@ -13,7 +13,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0004_datasource-selection.md
 ---
 
-# IADR-0106: 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う
+# IADR-0107: 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

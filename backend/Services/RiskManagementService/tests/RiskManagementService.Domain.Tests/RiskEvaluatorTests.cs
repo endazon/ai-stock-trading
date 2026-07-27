@@ -527,7 +527,7 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
     }
 
-    // --- FR-10, FR-17, #257, IADR-0106: 金額上限は基準通貨（円）で判定する ---
+    // --- FR-10, FR-17, #257, IADR-0107: 金額上限は基準通貨（円）で判定する ---
 
     [Fact]
     public void 外貨建て注文の金額上限は換算後の金額で判定する()

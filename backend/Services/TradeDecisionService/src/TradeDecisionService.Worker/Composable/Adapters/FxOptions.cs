@@ -1,6 +1,6 @@
 namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
-// FR-10, FR-17, #257, IADR-0106: 為替レート源の構成（セクション "Fx"）。既定は no-op＝外部へ接続しない。
+// FR-10, FR-17, #257, IADR-0107: 為替レート源の構成（セクション "Fx"）。既定は no-op＝外部へ接続しない。
 // レートが解決できない間、非基準通貨（米国株）の新規建ては見送られる（基準通貨の日本株は影響を受けない）。
 internal sealed class FxOptions
 {
@@ -20,7 +20,7 @@ internal sealed class FxOptions
 
     /// <summary>
     /// 採用してよい観測の古さの上限（日）。既定 7 日。週末・連休で数日空くのは正常だが、これを超えた観測は
-    /// 「レート無し」として扱い、古いレートでの発注を止める（IADR-0106 決定5）。0 以下は既定 7 日へ丸める。
+    /// 「レート無し」として扱い、古いレートでの発注を止める（IADR-0107 決定5）。0 以下は既定 7 日へ丸める。
     /// </summary>
     public int MaxRateAgeDays { get; set; } = 7;
 

@@ -1,6 +1,6 @@
 namespace AiStockTrading.Shared.Contracts.Trading;
 
-// FR-10, FR-17, #257, IADR-0106: 為替レートの観測。Rate は「Quote 通貨 1 単位あたりの Base 通貨額」。
+// FR-10, FR-17, #257, IADR-0107: 為替レートの観測。Rate は「Quote 通貨 1 単位あたりの Base 通貨額」。
 // AsOf は観測時点（FRED の日次系列なら観測日）で、鮮度判定に用いる（古い観測で発注しないため）。
 public sealed record FxRate(Currency Quote, Currency Base, decimal Rate, DateTimeOffset AsOf)
 {

@@ -1,6 +1,6 @@
 namespace AiStockTrading.Shared.Contracts.Trading;
 
-// FR-10, FR-17, #257, IADR-0106: 取り扱う通貨。計画 06_technical/05_trading-assumptions §3 の
+// FR-10, FR-17, #257, IADR-0107: 取り扱う通貨。計画 06_technical/05_trading-assumptions §3 の
 // 「基準通貨 = JPY（円換算で統一、外貨併記）」に従い、統制・台帳の金額はすべて基準通貨で判定する。
 public enum Currency
 {
@@ -8,7 +8,7 @@ public enum Currency
     Usd,
 }
 
-// FR-10, FR-17, #257, IADR-0106: 市場と通貨の対応（純関数）。通貨は市場から一意に導けるため、
+// FR-10, FR-17, #257, IADR-0107: 市場と通貨の対応（純関数）。通貨は市場から一意に導けるため、
 // 注文意図やイベントに列挙値を重複して持たせない（同じ事実の第二の真実源を作らない）。
 public static class MarketCurrency
 {

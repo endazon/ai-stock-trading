@@ -76,7 +76,7 @@ public class StopLossExecutionServiceTests
         second.DecisionId.Should().Be(triggered.EventId);
     }
 
-    // --- FR-17, #257, IADR-0106: 決済レグにも建玉の換算レートを引き継ぐ ---
+    // --- FR-17, #257, IADR-0107: 決済レグにも建玉の換算レートを引き継ぐ ---
 
     // 20 USD × 10 株をレート 150 で建てた台帳（承認＋約定）。
     private static InMemoryPortfolioLedgerStore LedgerWithUsdPosition(decimal fxRateToBase)

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// FR-10, #257, IADR-0106 決定5: 取得回数の抑制（TTL）と、古すぎる観測を使わない鮮度上限。
+// FR-10, #257, IADR-0107 決定5: 取得回数の抑制（TTL）と、古すぎる観測を使わない鮮度上限。
 // いずれも「そのレートを使ってよいか」を決める判断であり、同じ装飾に置く。
 public class CachingFxRateSourceTests
 {

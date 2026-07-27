@@ -9,9 +9,9 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 // OrderApproved を組み立てる。損切りは「必ず実行」（kill switch・ロックアウト・相場操縦ガードで止めない）ため、
 // 発注前スクリーニング（RiskEvaluator）を通さず無条件に承認を発行する。
 //
-// FR-17, #257, IADR-0106: 決済注文にも建玉の換算レート（FxRateToBase）を引き継ぐ。引き継がないと外貨建て建玉の
+// FR-17, #257, IADR-0107: 決済注文にも建玉の換算レート（FxRateToBase）を引き継ぐ。引き継がないと外貨建て建玉の
 // 決済レグだけが未換算（レート 1）で台帳へ積まれ、実現損益・取得額の基準通貨集計が桁で誤る。
-// レートは台帳が持つ建玉の加重平均約定時レートを用いる（外部 FX 源に依存しない＝IADR-0106 決定2/4 と同じ近似）。
+// レートは台帳が持つ建玉の加重平均約定時レートを用いる（外部 FX 源に依存しない＝IADR-0107 決定2/4 と同じ近似）。
 public sealed class StopLossExecutionService(
     IRiskSettingsStore settingsStore,
     IClock clock,
@@ -46,7 +46,7 @@ public sealed class StopLossExecutionService(
         return new OrderApproved(triggered.EventId, intent, triggered.Quantity, clock.UtcNow);
     }
 
-    // #257, IADR-0106: 決済対象の建玉が持つ加重平均約定時レートを台帳から引く。
+    // #257, IADR-0107: 決済対象の建玉が持つ加重平均約定時レートを台帳から引く。
     // fail-safe: 損切りは必ず実行する（ADR-0003）ため、台帳未注入・該当建玉なし・照会失敗のいずれでも決済を止めず
     // レート 1（基準通貨建てとみなす）へ倒す。基準通貨（日本株）はレート 1 が正であり縮退の影響を受けない。
     private decimal ResolveFxRateToBase(StopLossTriggered triggered)

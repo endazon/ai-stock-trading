@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// FR-10, #257, IADR-0106 決定5: FX レート源の選択。既定・構成不備はすべて no-op（実接続しない）へ倒す
+// FR-10, #257, IADR-0107 決定5: FX レート源の選択。既定・構成不備はすべて no-op（実接続しない）へ倒す
 // （MarketDataSourceFactory・IADR-0068 と同形）。
 public class FxRateSourceFactoryTests
 {
@@ -77,7 +77,7 @@ public class FxRateSourceFactoryTests
     [Fact]
     public async Task no_opでも基準通貨はレート1で解決する()
     {
-        // FX 未有効化の環境でも基準通貨（日本株）は従来どおり取引できる＝影響を非基準通貨に限定する（IADR-0106 決定3）。
+        // FX 未有効化の環境でも基準通貨（日本株）は従来どおり取引できる＝影響を非基準通貨に限定する（IADR-0107 決定3）。
         var source = new NoOpFxRateSource(NullLogger<NoOpFxRateSource>.Instance);
 
         var rate = await source.GetRateToBaseAsync(Currency.Jpy);

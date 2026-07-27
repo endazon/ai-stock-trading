@@ -74,7 +74,7 @@ public class TradeDecisionServiceTests
         new(new FakeLlm(llmOutput), new FakePolicy(policy), new FakeSizing(ctx ?? Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance);
 
-    // #257, IADR-0106: 本スイートは通貨換算の影響を分離するため基準通貨（日本株・円建て）の銘柄を用いる
+    // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株・円建て）の銘柄を用いる
     // （価格 1,000 円・損切り幅 30 円として読む）。非基準通貨（米国株）の換算・レート未解決時の見送りは
     // 後段の「通貨換算」節で明示的に検証する。
     private static PriceMovementDetected Trigger() =>
@@ -560,7 +560,7 @@ public class TradeDecisionServiceTests
         string.Join("\n", logger.Messages).Should().Contain("LLM が要求を拒否したため見送り");
     }
 
-    // --- FR-10, FR-17, #257, IADR-0106: 通貨換算（基準通貨 JPY）の検証 ---
+    // --- FR-10, FR-17, #257, IADR-0107: 通貨換算（基準通貨 JPY）の検証 ---
 
     private sealed class FakeFxRate(decimal? rate) : IFxRateProvider
     {

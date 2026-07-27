@@ -316,7 +316,7 @@ public class PortfolioProjectionTests
         state.DrawdownRatio.Should().Be(0m);
     }
 
-    // --- FR-10, FR-17, #257, IADR-0106: 金額集計は基準通貨（円）、建玉はローカル通貨 ---
+    // --- FR-10, FR-17, #257, IADR-0107: 金額集計は基準通貨（円）、建玉はローカル通貨 ---
 
     private static LedgerFill UsdFill(
         TradeSide side, PositionEffect effect, int qty, decimal price, DateTimeOffset at, decimal rate) =>

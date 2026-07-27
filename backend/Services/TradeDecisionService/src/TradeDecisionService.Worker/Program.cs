@@ -48,7 +48,7 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // FR-02, #158, IADR-0068/0099: 判断文脈の現在値ソースの選択中実装を自己申告する。MarketData:Provider 設定時=その値
     //（finnhub 等）、未設定=noop（現在値なし＝現行挙動）。introspection から現在値供給の結線状態を判別可能にする。
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
-    // FR-10, FR-17, #257, IADR-0106: 基準通貨への換算レート源の選択中実装を自己申告する。解決規則は
+    // FR-10, FR-17, #257, IADR-0107: 基準通貨への換算レート源の選択中実装を自己申告する。解決規則は
     // FxRateSourceFactory.ResolveProvider を単一情報源にし（構成不備で no-op へ倒れる場合は none）、申告と実体をずらさない。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
         builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions())));
@@ -234,7 +234,7 @@ builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
         sp.GetRequiredService<ILogger<MarketDataCurrentPriceProvider>>());
 });
 
-// FR-10, FR-17, #257, IADR-0106: 基準通貨（円）への換算レート供給。レート源は Fx:Provider で選ぶ
+// FR-10, FR-17, #257, IADR-0107: 基準通貨（円）への換算レート供給。レート源は Fx:Provider で選ぶ
 //（既定・空・未知・キー無しは no-op＝実接続しない）。基準通貨の市場（日本株）はレート 1 が定義から決まるため
 // レート源に依存せず従来どおり判断でき、非基準通貨（米国株）はレートが解決できなければ新規建てを見送る（安全側）。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));

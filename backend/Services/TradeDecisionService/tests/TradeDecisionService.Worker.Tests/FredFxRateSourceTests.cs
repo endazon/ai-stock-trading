@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// FR-10, FR-17, #257, IADR-0106 決定5: FRED（DEXJPUS＝JPY per USD）の FX レート源を fake HttpMessageHandler で検証する。
+// FR-10, FR-17, #257, IADR-0107 決定5: FRED（DEXJPUS＝JPY per USD）の FX レート源を fake HttpMessageHandler で検証する。
 // 実 FRED API は叩かない（IADR-0049）。
 public class FredFxRateSourceTests
 {
@@ -73,7 +73,7 @@ public class FredFxRateSourceTests
     [Fact]
     public async Task 通信エラーはレート無しに縮退する()
     {
-        // レート無し＝非基準通貨の新規建て見送り（IADR-0106 決定3）＝安全側。
+        // レート無し＝非基準通貨の新規建て見送り（IADR-0107 決定3）＝安全側。
         var source = Create(new ThrowingHandler());
 
         (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();

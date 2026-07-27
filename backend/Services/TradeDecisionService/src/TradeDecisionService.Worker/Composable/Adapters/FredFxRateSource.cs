@@ -11,7 +11,7 @@ namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
 // FR-10, FR-17, #257, ADR-0004, IADR-0064/0106: FRED の為替系列（既定 DEXJPUS＝円/ドル・営業日次）から
 // 直近の観測を取得する。取得できない場合はすべて null（＝レート無し）へ縮退し、呼び出し側が
-// 非基準通貨の新規建てを見送る（IADR-0106 決定3）。実 FRED API 前提の検証は手動 opt-in の live 検証（IADR-0049）。
+// 非基準通貨の新規建てを見送る（IADR-0107 決定3）。実 FRED API 前提の検証は手動 opt-in の live 検証（IADR-0049）。
 internal sealed class FredFxRateSource(
     HttpClient httpClient,
     string apiKey,

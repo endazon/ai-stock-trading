@@ -14,7 +14,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// FR-10, FR-17, #257, IADR-0106: 為替レート源の配線を固定する。配線が外れると、構成で有効化したつもりのレート源が
+// FR-10, FR-17, #257, IADR-0107: 為替レート源の配線を固定する。配線が外れると、構成で有効化したつもりのレート源が
 // 黙って no-op のままになり、外貨建て銘柄が恒久的に見送られる（＝症状が「取引しない」なので気づきにくい）。
 public class FxWiringTests
 {

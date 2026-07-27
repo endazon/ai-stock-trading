@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 
-// FR-10, #257, IADR-0106 決定5: 「そのレートを取りに行くか」「そのレートを使ってよいか」を決める装飾。
+// FR-10, #257, IADR-0107 決定5: 「そのレートを取りに行くか」「そのレートを使ってよいか」を決める装飾。
 //   - TTL: 取得済みレートの再利用時間。日次系列（DEXJPUS）を判断サイクルごとに叩かない。
 //   - 鮮度上限: 観測日が古すぎるレートは採らない（null＝レート無し＝非基準通貨の新規建て見送り）。
 // 失敗（null）・鮮度切れはキャッシュしない。一時障害を TTL のあいだ引きずると、回復後も見送りが続くため。
@@ -37,7 +37,7 @@ internal sealed class CachingFxRateSource(
         {
             logger.LogWarning(
                 "為替レートの観測が古いため採用しません（{Quote}: 観測日 {AsOf} / 上限 {MaxAgeDays} 日）。" +
-                "当該通貨建て銘柄の新規建ては見送られます（IADR-0106）。",
+                "当該通貨建て銘柄の新規建ては見送られます（IADR-0107）。",
                 quote, rate.AsOf, maxRateAge.TotalDays);
             return null;
         }
