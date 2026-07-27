@@ -132,6 +132,12 @@ services:
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
       - { name: MarketData__MaxQuoteStalenessSeconds, value: "300" }  # 鮮度期限（秒・既定 300）。非正値は既定 300s。
+      # --- 通貨換算（#257/IADR-0106）: 統制上限・サイジングは基準通貨（円）で判定する。外貨建て（米国株）は
+      #     レートが解決できないと新規建てを見送るため、経路B で米国株を回すには本設定と鍵が要る。
+      #     鍵は既存の ast-secrets/fred-api-key（情報収集の FRED と同じ FRED アカウント）を再利用する。
+      - { name: Fx__Provider, value: "fred" }                     # ← 換算レート源（既定 ""＝no-op＝外貨は見送り）
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
   # ============ Discord notification ============
   # FR-09/14, IADR-0062/0098。Provider/Bot__Enabled は配線恒常化。GuildId/ChannelId/AllowedUserIds/UserMapping は
