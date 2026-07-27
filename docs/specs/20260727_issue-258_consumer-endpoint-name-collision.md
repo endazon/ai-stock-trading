@@ -1,21 +1,23 @@
 ---
 title: TradeDecisionMade のキュー名衝突を解消し、取引判断の取りこぼしを止める（Issue #258・IADR-0106）
 type: spec
-status: in-progress
+status: review
 related_ids:
   - FR-03
   - FR-10
   - UC-01
   - UC-02
-  - ADR-0003
-  - IADR-0011
+  - ADR-0013
+  - IADR-0010
+  - IADR-0014
   - IADR-0106
 author: claude
 created: 2026-07-27
 updated: 2026-07-27
 related_specs:
   - "../adr/IADR-0106_consumer-endpoint-name-uniqueness.md"
-  - "../adr/IADR-0011_foundation-min-port.md"
+  - "../adr/IADR-0010_risk-service-layering-and-slicing.md"
+  - "../adr/IADR-0014_market-monitor-events-and-boundary.md"
   - "../functional/FR-10_risk-controls.md"
   - "../tests/FR-10_risk-guard-core-tests.md"
 ---
@@ -26,7 +28,12 @@ related_specs:
 
 - 要求: FR-03（市場監視・基準値更新）／FR-10（リスク統制＝発注前の決定的検証）。
 - ユースケース: UC-01・UC-02（取引判断 → 承認/拒否 → 発注）。
-- 決定: [[IADR-0106]]（本作業で新規）。前提は [[ADR-0003]]（イベント駆動）・[[IADR-0011]]（MassTransit + RabbitMQ）。
+- 決定: [[IADR-0106]]（本作業で新規）。購読責務の出所は [[IADR-0010]]（リスク管理の層構成）・
+  [[IADR-0014]]（市場監視のイベント契約と責務境界）。
+- メッセージング方針: [[ADR-0013]]（**Wolverine 移行と Kafka 併用に追随**。Accepted 2026-07-25）。
+  現行実装の根拠だった platform `ADR-0003`（MassTransit + RabbitMQ）は platform `ADR-0027` により Superseded。
+  **本作業は MassTransit の既定命名を前提とするため、Wolverine 移行時に再検証が要る**
+  （[[IADR-0106]]「⚠️ Wolverine 移行時の再検証」）。
 - Issue: #258。増幅要因（MSP 側の重複デプロイ）は endazon/microservices-platform#407。
 
 ## 背景と問題（実測）

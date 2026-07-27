@@ -7,13 +7,15 @@ related_ids:
   - FR-10
   - UC-01
   - UC-02
-  - ADR-0003
-  - IADR-0011
+  - ADR-0013
+  - IADR-0010
+  - IADR-0014
 author: claude
 created: 2026-07-27
 updated: 2026-07-27
 plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ (ADR-0003 イベント駆動アーキテクチャ)"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md"
+  - "../../planning/projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md"
 ---
 
 # IADR-0106: consumer クラス名＝キュー名（サービス跨ぎの一意性）
@@ -25,9 +27,22 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: FR-03（市場監視・基準値）／FR-10（リスク統制）／UC-01・UC-02（取引判断→発注）
-- 関連 ADR: [[ADR-0003]]（イベント駆動アーキテクチャ）／[[IADR-0011]]（MassTransit + RabbitMQ）
+- 関連 ADR:
+  - [[ADR-0013]]（メッセージング基盤の **Wolverine 移行と Kafka 併用に追随する**。Accepted 2026-07-25）
+    — 現時点で有効なメッセージング方針。本 ADR は後述「⚠️ Wolverine 移行時の再検証」で従属関係を明記する。
+  - platform `ADR-0027`（Wolverine 移行）／platform `ADR-0028`（RabbitMQ + Kafka 併用）
+    — 現行実装の根拠だった platform `ADR-0003`（MassTransit + RabbitMQ）は `ADR-0027` により **Superseded**。
+  - [[IADR-0010]]（リスク管理サービスの層構成）／[[IADR-0014]]（市場監視のイベント契約と責務境界）
+    — 本 ADR が扱う 2 サービスの購読責務の出所。
 - 関連仕様書: `docs/specs/20260727_issue-258_consumer-endpoint-name-collision.md`
 - Issue: #258（bug）。増幅要因（MSP 側の重複デプロイ）は endazon/microservices-platform#407
+
+> **注記（既存の誤参照を踏襲しない）**: 各 Worker の `Program.cs` にある
+> `// ADR-0003, IADR-0011: MassTransit（RabbitMQ）` というコメントは既存の誤参照である。
+> 本ユニットの `ADR-0003` は「生成AIの売買判断を方針階層とリスク管理で拘束する」（AI ガードレール）であり、
+> `IADR-0011` は「基盤ランタイム Foundation は最小移植」であって、いずれもメッセージングの決定ではない
+> （意図されていたのは platform `ADR-0003`＝現 `ADR-0027`）。本 ADR ではこれを踏襲せず、上記の正しい参照を用いる。
+> 既存コメントの一括是正は本 PR のスコープ外（別途対応）。
 
 ## コンテキストと課題
 
@@ -112,6 +127,28 @@ namespace 込みでキュー名を一意化する。**棄却理由**: 案B と�
   **それぞれ全件**受け取る。取りこぼしはゼロになる。
 - **fail-safe / 実弾**: 不変。`UseAiStockTradingRetry`（2s/10s/30s の3回）とデッドレター退避も不変。
 - **CI**: `consumer-endpoint-names` ジョブが 1 つ増える（外部依存ゼロ・Node のみ・数秒）。
+
+## ⚠️ Wolverine 移行時の再検証（[[ADR-0013]] 追随）
+
+**本 ADR の決定と `scripts/check-consumer-endpoint-names.js` は、MassTransit の
+`DefaultEndpointNameFormatter` の挙動（キュー名＝`Consumer` 接尾辞を落とした consumer クラス名・
+namespace 非包含）を前提としている。この前提は Wolverine 移行で失われる。**
+
+[[ADR-0013]]（Accepted 2026-07-25）により、本ユニットは基盤の Wolverine 移行（platform `ADR-0027`）と
+RabbitMQ + Kafka 併用（platform `ADR-0028`）へ追随することが確定している。Wolverine はキュー／エンドポイントの
+命名規約が MassTransit と異なるため、移行時には以下を**必ず再検証**すること。
+
+- 本 ADR の「クラス名＝キュー名」という前提が Wolverine でも成り立つか。成り立たない場合、
+  `TradeDecisionMadeBaselineConsumer` への改名がキュー分離として機能し続けるか。
+- `check-consumer-endpoint-names.js` の判定規則（`endpointNameOf`＝末尾 `Consumer` を落とす）を
+  Wolverine の命名規約へ更新するか、あるいは検査自体を Wolverine の仕組み（明示的なエンドポイント宣言等）へ
+  置き換えるか。**規則が変わったまま検査だけ残すと、通っているのに守られていない状態になる。**
+- `ConsumerEndpointNameTests`（両サービス）が `DefaultEndpointNameFormatter` を直接参照しているため、
+  MassTransit 依存の除去に伴い書き換えが必要になる。
+
+なお [[ADR-0013]] は「フォローアップ: 実装リポジトリで移行を Issue 化し、基盤側の移行スケジュールと同期する」
+と定めているが、本 PR 時点で本リポジトリに Wolverine 移行の Issue は起票されていない（確認済み）。
+移行 Issue を起票する際は、本節を移行作業のチェック項目として取り込むこと。
 
 ## 前提（本 ADR の範囲外）
 
