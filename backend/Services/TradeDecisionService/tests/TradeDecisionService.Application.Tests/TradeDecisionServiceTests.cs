@@ -658,7 +658,7 @@ public class TradeDecisionServiceTests
         decision.Intent.Price.Should().Be(20m, "発注執行へ渡す価格はローカル通貨（USD）のまま");
         decision.Intent.StopLossPrice.Should().Be(19.5m, "損切り価格もローカル通貨（20 USD − 0.5 USD）");
         decision.Intent.FxRateToBase.Should().Be(150m);
-        decision.Intent.NotionalBase.Should().Be(18_000m); // 6 × 20 USD × 150
+        decision.Intent.NotionalInBase.Should().Be(18_000m); // 6 × 20 USD × 150
     }
 
     // 基準3 の判断側の対: 換算後の金額が 1 注文金額上限を超える高価格株は数量 0＝見送りになる（正しい帰結）。

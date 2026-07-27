@@ -11,7 +11,7 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 //（既定 null＝機械執行の Close 等では該当なし）。
 // FR-10, FR-17, #257, IADR-0106: FxRateToBase は「ローカル通貨 1 単位あたりの基準通貨（円）額」。取引判断が
 // 意図生成時（＝約定時レートの近似・計画 05_trading-assumptions §3）に確定して同伴させ、統制・台帳は
-// NotionalBase で基準通貨の金額を判定する。既定 1＝基準通貨市場（日本株）およびレート未記録の既存データと等価。
+// NotionalInBase で基準通貨の金額を判定する。既定 1＝基準通貨市場（日本株）およびレート未記録の既存データと等価。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -28,5 +28,5 @@ public record OrderIntent(
     public decimal Notional => Quantity * Price;
 
     /// <summary>基準通貨（円）建ての概算約定金額。リスク統制の金額判定はこちらを用いる（IADR-0106）。</summary>
-    public decimal NotionalBase => Quantity * Price * FxRateToBase;
+    public decimal NotionalInBase => Quantity * Price * FxRateToBase;
 }

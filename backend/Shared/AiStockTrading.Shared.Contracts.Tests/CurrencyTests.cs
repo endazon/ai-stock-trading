@@ -30,7 +30,7 @@ public class MarketCurrencyTests
     }
 }
 
-// FR-10, #257, IADR-0106: 注文意図の金額は「ローカル通貨の Notional」と「基準通貨の NotionalBase」を区別する。
+// FR-10, #257, IADR-0106: 注文意図の金額は「ローカル通貨の Notional」と「基準通貨の NotionalInBase」を区別する。
 public class OrderIntentCurrencyTests
 {
     private static OrderIntent Intent(decimal price, int quantity, decimal fxRateToBase) =>
@@ -46,7 +46,7 @@ public class OrderIntentCurrencyTests
 
         intent.FxRateToBase.Should().Be(1m);
         intent.Notional.Should().Be(25_000m);
-        intent.NotionalBase.Should().Be(25_000m);
+        intent.NotionalInBase.Should().Be(25_000m);
     }
 
     [Fact]
@@ -57,6 +57,6 @@ public class OrderIntentCurrencyTests
         // ローカル通貨（USD）の約定代金は執行・スリッページ用に保つ。
         intent.Notional.Should().Be(673.54m);
         // 統制判定に用いる基準通貨（円）の約定代金。
-        intent.NotionalBase.Should().Be(101_031m);
+        intent.NotionalInBase.Should().Be(101_031m);
     }
 }

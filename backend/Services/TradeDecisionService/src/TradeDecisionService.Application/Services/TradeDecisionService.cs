@@ -102,9 +102,10 @@ public sealed class TradeDecisionService(
         var fxRateToBase = await GetFxRateToBaseSafeAsync(trigger.Market, cancellationToken).ConfigureAwait(false);
         if (fxRateToBase is not { } rateToBase || rateToBase <= 0m)
         {
+            // 通貨は市場から導けるため、ここでは市場だけを記録する（未定義の市場でも記録が例外で欠けないように）。
             logger.LogInformation(
-                "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market} currency={Currency}",
-                trigger.Symbol, trigger.Market, MarketCurrency.Of(trigger.Market));
+                "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market}",
+                trigger.Symbol, trigger.Market);
             return null;
         }
 

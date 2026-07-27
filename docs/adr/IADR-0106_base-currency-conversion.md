@@ -67,7 +67,7 @@ LLM も「購入額 336.77 円」と解釈していた。
 
 ```
 Notional     = Quantity × Price                  // ローカル通貨（執行・スリッページ用）
-NotionalBase = Quantity × Price × FxRateToBase   // 基準通貨（統制判定用）
+NotionalInBase = Quantity × Price × FxRateToBase   // 基準通貨（統制判定用）
 ```
 
 `FxRateToBase` の既定は `1m` である。JPY 市場・既存の永続データ・既存イベントはこの既定で**現行と等価**に動く。

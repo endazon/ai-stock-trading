@@ -44,7 +44,7 @@ public static class RiskEvaluator
         // 判定する。単一注文額のみで比較すると、上限内の注文を複数回通して累計で上限を超過できる（Issue #27）。
         // FR-10, FR-17, #257, IADR-0106: 金額の突き合わせは基準通貨（円）で行う。外貨建て銘柄の Notional
         //（ローカル通貨）を円建ての上限と比較すると、上限が桁で緩む（過大発注を招く向き）。
-        if (isEntry && snapshot.InvestedCapital + intent.NotionalBase > settings.Stage.CapitalCap)
+        if (isEntry && snapshot.InvestedCapital + intent.NotionalInBase > settings.Stage.CapitalCap)
         {
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
@@ -88,12 +88,12 @@ public static class RiskEvaluator
         // フェイルセーフ（新規発注停止・損切り監視は維持）/ ADR-0003（損切りは機械的に執行）により、
         // 手仕舞い（売り）注文には適用しない。値上がりで時価が上限超過したポジションの全量手仕舞いや、
         // 当日の発注累計が上限近い状況での損切り売りがブロックされるのを防ぐ。
-        if (isEntry && intent.NotionalBase > settings.Limits.MaxOrderAmount)
+        if (isEntry && intent.NotionalInBase > settings.Limits.MaxOrderAmount)
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }
 
-        if (isEntry && snapshot.DailyOrderedAmount + intent.NotionalBase > settings.Limits.MaxDailyOrderAmount)
+        if (isEntry && snapshot.DailyOrderedAmount + intent.NotionalInBase > settings.Limits.MaxDailyOrderAmount)
         {
             reasons.Add(RejectionReason.DailyOrderAmountExceeded);
         }

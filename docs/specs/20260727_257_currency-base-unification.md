@@ -72,7 +72,7 @@ plan_refs:
 
 1. **通貨の明示（`Shared.Contracts`）**
    - `Currency`（`Jpy`/`Usd`）と `MarketCurrency.Of(Market)`（純関数）、基準通貨 `MarketCurrency.Base = Jpy`。
-   - `OrderIntent` に `FxRateToBase`（既定 `1m`＝JPY と等価）を追加し、`NotionalBase = Quantity × Price × FxRateToBase`
+   - `OrderIntent` に `FxRateToBase`（既定 `1m`＝JPY と等価）を追加し、`NotionalInBase = Quantity × Price × FxRateToBase`
      を新設する。`Price` は**ローカル通貨**（執行価格の権威）と定義し直し、陳腐化した契約コメントを実体に合わせる。
 2. **FX レート源（`TradeDecisionService.Worker/Composable/Adapters/`）**
    - ポート `IFxRateSource`（`Shared.Contracts/Ports`）と `FxRate(Quote, Base, Rate, AsOf)`。実装（アダプタ）は唯一の消費者である判断ホストに置く（IADR-0064 の FRED アダプタと同じ配置）。
@@ -86,7 +86,7 @@ plan_refs:
      基準通貨へ換算する。`OrderIntent` にはローカル通貨の価格とレートを載せる。
    - プロンプトの単位を明示する（現在値＝銘柄の通貨コード、リスク制約＝円）。
 4. **統制・台帳の通貨整合（`RiskManagementService`）**
-   - `RiskEvaluator` の 3 箇所を `NotionalBase` に切り替える。
+   - `RiskEvaluator` の 3 箇所を `NotionalInBase` に切り替える。
    - `LedgerFill` に `FxRateToBase` を追加（承認 Intent 由来）。`PortfolioProjection` は
      **建玉はローカル通貨のまま**畳み込み、金額集計（取得額・当日発注累計・実現損益・含み損益）を基準通貨で積む。
    - `OpenPosition` に加重平均の `FxRateToBase` を追加し、含み損益の換算に用いる。
@@ -101,7 +101,7 @@ plan_refs:
 | --- | --- | --- |
 | 含み損益（評価損益）を**日次終値レート**で評価する（計画 §3 の厳密な方式） | #257 に残置 | 本 PR は建玉の加重平均約定時レートで近似する（下記「設計」の逸脱記録）。厳密化は Risk へ FX 依存を持ち込む判断が要る |
 | 日銀 API を FX provider として追加 | #257 に残置 | 計画 §3 は「日銀API **または** FRED」。FRED 単独で USD/JPY を満たす |
-| 外貨建て資産の**為替損益（FX P&L）の分離計上**・報告書の外貨併記 | 後続（FR-06/07/16） | 損益計上方式の設計が要る。統制の実効化とは別問題 |
+| 報告書の損益集計（`ReportService.Domain/PnlAggregator`）の通貨整合・外貨併記・為替損益（FX P&L）の分離計上 | 後続（FR-06/07/16）・#257 に残置 | 報告書は統制ゲートを持たない（段階ゲートの実績はリスク管理の台帳が権威）。`OrderExecuted` 経由でレートは届くため、損益計上方式（併記/分離）を決めてから当てる |
 | バックテスト（FR-15）の通貨整合 | #208 に残置 | Stooq の米国株バーも USD。閾値較正と同時に扱うのが妥当 |
 | 1 注文金額上限（35,000 円）で米国高価格株が数量 0 になる問題 | 利用者判断 | 換算後の**正しい**帰結。上限の見直し・銘柄選定は運用判断であり本 PR で勝手に変えない |
 
@@ -116,7 +116,7 @@ plan_refs:
 ### 決定1: 基準通貨は JPY、`OrderIntent.Price` はローカル通貨、レートを同伴させる
 
 `Price` は執行価格の権威（ブローカーへ送る値）であるためローカル通貨で確定する。統制が必要とする基準通貨の金額は
-同伴レートから導出する（`NotionalBase`）。既定 `FxRateToBase = 1m` により JPY 市場と既存データは挙動不変。
+同伴レートから導出する（`NotionalInBase`）。既定 `FxRateToBase = 1m` により JPY 市場と既存データは挙動不変。
 
 ### 決定2: 換算点は判断境界の 1 点だけ
 
@@ -150,7 +150,7 @@ TTL キャッシュ（既定 6 時間）で叩く回数を抑え、**鮮度上�
 | # | 受け入れ基準 | テスト |
 | --- | --- | --- |
 | 1 | 市場から通貨を導く（日本＝JPY／米国＝USD） | `MarketCurrencyTests` |
-| 2 | `NotionalBase` が同伴レートで基準通貨額になる（既定 1 は現行と等価） | `OrderIntentTests` |
+| 2 | `NotionalInBase` が同伴レートで基準通貨額になる（既定 1 は現行と等価） | `OrderIntentTests` |
 | 3 | 統制上限（1注文・日次・段階資金）が基準通貨額で判定される | `RiskEvaluatorTests`（通貨換算ケース） |
 | 4 | 非基準通貨でレートが無ければ新規建てを見送る | `TradeDecisionServiceTests` |
 | 5 | 非基準通貨でレートがあれば、換算後の金額でサイジングされる（過大発注しない） | `TradeDecisionServiceTests` |
