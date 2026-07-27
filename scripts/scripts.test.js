@@ -235,4 +235,74 @@ ok('validate-pipeline-config: 実 pipeline.json が検証器に合格する', ()
   assert.match(out, /^OK: /m, `検証器が OK を返すべき（実出力: ${out}）`);
 });
 
+// --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 再発防止） ---
+// ADR-0003, IADR-0011 / IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
+// namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
+// pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
+const {
+  endpointNameOf,
+  consumerClassesIn,
+  pathService,
+  findCollisions,
+  checkTree: checkConsumerEndpointNames,
+} = require('./check-consumer-endpoint-names.js');
+
+const RISK_CS = [
+  'namespace AiStockTrading.RiskManagement.Worker.Composable.Steps;',
+  '',
+  '// FR-10: 取引判断を購読し承認/拒否を発行する。',
+  'internal sealed class TradeDecisionMadeConsumer(',
+  '    OrderScreeningService screeningService,',
+  '    ILogger<TradeDecisionMadeConsumer> logger)',
+  '    : IConsumer<TradeDecisionMade>',
+  '{',
+  '}',
+].join('\n');
+
+ok('endpointNameOf: 末尾 Consumer を落とす（DefaultEndpointNameFormatter と同じ規則）', () => {
+  assert.strictEqual(endpointNameOf('TradeDecisionMadeConsumer'), 'TradeDecisionMade');
+  assert.strictEqual(endpointNameOf('TradeDecisionMadeBaselineConsumer'), 'TradeDecisionMadeBaseline');
+  assert.strictEqual(endpointNameOf('Foo'), 'Foo');
+});
+
+ok('consumerClassesIn: 複数行プライマリコンストラクタの IConsumer 実装を検出する', () => {
+  assert.deepStrictEqual(consumerClassesIn(RISK_CS), ['TradeDecisionMadeConsumer']);
+});
+
+ok('consumerClassesIn: IConsumer を実装しないクラス・コメント中の IConsumer は拾わない', () => {
+  assert.deepStrictEqual(consumerClassesIn('// : IConsumer<T>\nclass Poller : BackgroundService\n{\n}'), []);
+});
+
+ok('pathService: backend/Services/<Service>/ からサービス名を得る', () => {
+  assert.strictEqual(pathService('backend/Services/RiskManagementService/src/W/X.cs'), 'RiskManagementService');
+  assert.strictEqual(pathService('backend/Shared/X.cs'), null);
+});
+
+ok('findCollisions: サービス跨ぎの同名 consumer を衝突として検出する（#258 の回帰）', () => {
+  const collisions = findCollisions([
+    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
+    { service: 'MarketMonitorService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'b.cs' },
+  ]);
+  assert.strictEqual(collisions.length, 1);
+  assert.strictEqual(collisions[0].endpoint, 'TradeDecisionMade');
+});
+
+ok('findCollisions: 改名でキューが分離されれば衝突しない', () => {
+  assert.deepStrictEqual(findCollisions([
+    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
+    { service: 'MarketMonitorService', className: 'TradeDecisionMadeBaselineConsumer', endpoint: 'TradeDecisionMadeBaseline', file: 'b.cs' },
+  ]), []);
+});
+
+ok('findCollisions: 同一サービス内は衝突判定の対象外（同名はコンパイルエラーで防がれる）', () => {
+  assert.deepStrictEqual(findCollisions([
+    { service: 'S', className: 'AConsumer', endpoint: 'A', file: 'a.cs' },
+    { service: 'S', className: 'BConsumer', endpoint: 'B', file: 'b.cs' },
+  ]), []);
+});
+
+ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
+  assert.deepStrictEqual(checkConsumerEndpointNames(), []);
+});
+
 process.stdout.write(`\n✓ ${passed} tests passed\n`);

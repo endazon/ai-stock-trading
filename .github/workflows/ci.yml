@@ -94,6 +94,24 @@ jobs:
       - name: Validate trading pipeline config (real file)
         run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
 
+  # FR-03/FR-10, ADR-0003, IADR-0011 / IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
+  # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の
+  # DefaultEndpointNameFormatter はキュー名を consumer クラス名のみから導き namespace を含まないため、
+  # 別サービスで同名の consumer を作ると同一キューを共有し、pub/sub のつもりが competing consumer になる。
+  # 実測では RiskManagement と MarketMonitor が TradeDecisionMade を取り合い、取引判断を無言で取りこぼした。
+  # 外部依存ゼロ（Node のみ）。--self-test で検査器自体も毎回試験する。
+  consumer-endpoint-names:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test consumer endpoint name checker
+        run: node scripts/check-consumer-endpoint-names.js --self-test
+      - name: Check consumer endpoint name uniqueness across services
+        run: node scripts/check-consumer-endpoint-names.js
+
   lint:
     runs-on: ubuntu-latest
     steps:
