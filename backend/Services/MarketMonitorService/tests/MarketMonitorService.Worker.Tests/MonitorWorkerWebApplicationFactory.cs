@@ -32,7 +32,7 @@ public sealed class MonitorWorkerWebApplicationFactory : WebApplicationFactory<P
             ReplaceDbContextWithInMemory(services, _dbName);
 
             services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.TradeDecisionMadeConsumer>());
+            services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.TradeDecisionMadeBaselineConsumer>());
 
             services.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });

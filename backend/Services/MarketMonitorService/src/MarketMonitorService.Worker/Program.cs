@@ -24,7 +24,7 @@ const string ServiceName = "ai-stock-trading.market-monitor-service";
 // AiStockTrading.TestSupport.PlatformShim 経由で組む部分）は dev/test/CI でのローカル単体実行のためのもの。
 // 本番（実運用）では market-monitor は platform の可変部分へ組み込まれ、共通基盤は platform 本体の Foundation が
 // 提供する（本番統合は #22）。取引ドメインの本番実装は Domain/Application と、本ホストの再利用可能部
-// （MonitorPollingService・TradeDecisionMadeConsumer・EF ストア・エンドポイントハンドラ）である。
+// （MonitorPollingService・TradeDecisionMadeBaselineConsumer・EF ストア・エンドポイントハンドラ）である。
 var builder = WebApplication.CreateBuilder(args);
 
 // IADR-0011/0013: 可観測性（Serilog + OTel）。
@@ -97,7 +97,7 @@ builder.Services.AddHostedService<MonitorPollingService>();
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。基準値更新のため TradeDecisionMade を購読、監視イベントを発行する。
 builder.Services.AddMassTransit(x =>
 {
-    x.AddConsumer<TradeDecisionMadeConsumer>();
+    x.AddConsumer<TradeDecisionMadeBaselineConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
