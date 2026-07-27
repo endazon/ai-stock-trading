@@ -26,7 +26,11 @@ public static class PortfolioProjection
         ArgumentNullException.ThrowIfNull(fills);
 
         // 銘柄（銘柄コード, 市場）ごとの符号付き在庫（+ ロング / − ショート）と平均取得単価。
+        // FR-10, FR-17, #257, IADR-0106 決定1/4: 建玉はローカル通貨のまま畳み込み（市場監視の損切り検知が現在値と
+        // 同一通貨で比較するため）、金額集計・実現損益は同じ畳み込みを基準通貨（円）の単価でもう一度行って積む。
+        // 基準通貨側の平均取得単価は建玉の加重平均約定時レートを内包するため、実現損益には為替の影響も自然に入る。
         var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
+        var positionsInBase = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
 
         decimal realizedBeforeToday = 0m;
         decimal realizedToday = 0m;
@@ -44,13 +48,19 @@ public static class PortfolioProjection
             // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
             var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
-            var realized = applied.RealizedPnl;
+
+            // IADR-0106: 同じ畳み込みを基準通貨の単価で行う。実現損益・取得額・エクイティはこちらを採る。
+            positionsInBase.TryGetValue(key, out var posInBase);
+            var appliedInBase = SignedInventory.Apply(
+                new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase);
+            positionsInBase[key] = (appliedInBase.Lot.Quantity, appliedInBase.Lot.AverageCost);
+            var realized = appliedInBase.RealizedPnl;
 
             var date = TradeDate(fill.ExecutedAt);
             var isToday = date == today;
             if (isToday)
             {
-                orderedToday += fill.Quantity * fill.Price;
+                orderedToday += fill.Quantity * fill.PriceInBase;
                 symbolsTradedToday.Add(key);
                 realizedToday += realized;
             }
@@ -73,9 +83,15 @@ public static class PortfolioProjection
         {
             if (pos.Qty == 0)
                 continue;
-            invested += Math.Abs(pos.Qty) * pos.AvgCost;
+            var avgCostInBase = positionsInBase[key].AvgCost;
+            // IADR-0106: 取得額（段階資金上限の累計判定・IADR-0005）は基準通貨で積む。
+            invested += Math.Abs(pos.Qty) * avgCostInBase;
             var side = pos.Qty > 0 ? TradeSide.Buy : TradeSide.Sell;
-            openPositions.Add(new OpenPosition(key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost));
+            // 建玉に紐づく加重平均の約定時レート（基準通貨の平均取得単価 ÷ ローカル通貨の平均取得単価）。
+            // 含み損益の換算に用いる（IADR-0106 決定4）。単価 0（理論上のみ）はレート 1 に倒す。
+            var impliedRate = pos.AvgCost > 0m ? avgCostInBase / pos.AvgCost : 1m;
+            openPositions.Add(new OpenPosition(
+                key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost, StopLossPrice: null, impliedRate));
         }
 
         // IADR-0036: 含み損益は現在値入力から時価算出（現在値欠損は 0）。当日開始運用資金（固定基準）= 初期資金 + 当日より前の実現損益。
@@ -102,6 +118,8 @@ public static class PortfolioProjection
     // 供給する保有ポジションの一次射影。実現損益・当日境界は不要のため、符号付き在庫・平均取得単価のみを畳み込む
     // （Project と同一の Apply を再利用）。数量 0（全決済）は除外する。
     // IADR-0035: 損切り価格は最新の同方向エントリー（新規/建て増し/反転）を採る（一部決済では保持・全決済で消滅）。
+    // IADR-0106: 本射影の消費者（現在値取得・損切り検知・建玉照会）はローカル通貨で完結するため、
+    // FxRateToBase は既定 1 のままとする。基準通貨での金額集計・含み損益が要る経路は Project を用いる。
     public static IReadOnlyList<OpenPosition> ProjectOpenPositions(IReadOnlyList<LedgerFill> fills)
     {
         ArgumentNullException.ThrowIfNull(fills);

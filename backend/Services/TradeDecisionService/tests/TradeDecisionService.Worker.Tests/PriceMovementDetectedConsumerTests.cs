@@ -51,8 +51,10 @@ public class PriceMovementDetectedConsumerTests
             .BuildServiceProvider(true);
     }
 
+    // #257, IADR-0106: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の銘柄を用いる
+    // （外貨建てはレート未解決だと見送りになる。換算そのものの検証は Application テストと FxWiringTests が担う）。
     private static PriceMovementDetected Trigger() =>
-        new(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_040m, 1_000m, 0.04m, DateTimeOffset.UtcNow);
+        new(Guid.NewGuid(), "7203", Market.Japan, 1_040m, 1_000m, 0.04m, DateTimeOffset.UtcNow);
 
     [Fact]
     public async Task 方針ありでBuy判断ならTradeDecisionMadeを発行する()

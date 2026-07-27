@@ -105,6 +105,12 @@ internal sealed class ApprovedOrderRow
     /// <summary>取引判断が決めた損切り価格（IADR-0035・nullable＝機械執行 Close 等は null）。</summary>
     public decimal? StopLossPrice { get; set; }
 
+    /// <summary>
+    /// 基準通貨（円）への換算レート（IADR-0106・約定時レートの近似）。nullable＝本列の追加前に記録された行で、
+    /// 読み出し時はレート 1（基準通貨建て＝当時の暗黙の前提）として扱う。
+    /// </summary>
+    public decimal? FxRateToBase { get; set; }
+
     public DateTimeOffset ApprovedAt { get; set; }
 }
 

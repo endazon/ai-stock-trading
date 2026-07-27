@@ -7,7 +7,10 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 // （実供給＝市場データ源・ピーク追跡は #22/#82 の後続）。日次損失上限（実現＋含み）・最大DD 判定の入力を供給する。
 public static class PortfolioValuation
 {
-    // 含み損益＝Σ 建玉 (現在値 − 平均取得単価) × 符号付き数量。現在値の無い建玉は 0（フォールバック）。
+    // 含み損益＝Σ 建玉 (現在値 − 平均取得単価) × 符号付き数量 × 換算レート。現在値の無い建玉は 0（フォールバック）。
+    // FR-10, #257, IADR-0106 決定4: 現在値・平均取得単価はローカル通貨のため、建玉の加重平均約定時レートで
+    // 基準通貨（円）へ換算してから合算する（日次損失上限・最大DD は基準通貨で判定される）。
+    // 計画 05_trading-assumptions §3 の「評価損益＝日次終値レート」に対する近似であり、残差は FX 変動分に限られる。
     public static decimal UnrealizedPnl(
         IReadOnlyList<OpenPosition> positions,
         IReadOnlyDictionary<(string Symbol, Market Market), decimal>? currentPrices)
@@ -22,7 +25,7 @@ public static class PortfolioValuation
             if (!currentPrices.TryGetValue((p.Symbol, p.Market), out var price))
                 continue; // 現在値欠損はスキップ（含み 0）
             var signedQty = p.Side == TradeSide.Buy ? p.Quantity : -p.Quantity;
-            total += (price - p.AverageEntryPrice) * signedQty;
+            total += (price - p.AverageEntryPrice) * signedQty * p.FxRateToBase;
         }
 
         return total;
@@ -52,7 +55,8 @@ public static class PortfolioValuation
             positions.TryGetValue(key, out var pos);
 
             // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
-            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            // IADR-0106: エクイティは基準通貨（円）で追跡するため、基準通貨の約定単価で畳み込む。
+            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.PriceInBase);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 
             equity += applied.RealizedPnl;
