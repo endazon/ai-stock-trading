@@ -25,7 +25,8 @@ public sealed class TradeDecisionService(
     IProfitabilityAssumptionsProvider? profitability = null,
     ProfitabilityGateOptions? profitabilityOptions = null,
     IDailyPolicyUnconfirmedNotifier? unconfirmedNotifier = null,
-    ICurrentPriceProvider? currentPrice = null)
+    ICurrentPriceProvider? currentPrice = null,
+    IFxRateProvider? fxRate = null)
 {
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
@@ -50,6 +51,10 @@ public sealed class TradeDecisionService(
     // FR-02, IADR-0099: 判断文脈の現在値（価格文脈）供給口。未指定＝NoOp（IsEnabled=false・常に null＝現行動作）。
     // 実供給（MarketDataCurrentPriceProvider）は Worker が MarketData:Provider 設定時に opt-in で差し替える。
     private readonly ICurrentPriceProvider _currentPrice = currentPrice ?? new NoOpCurrentPriceProvider();
+
+    // FR-10, FR-17, #257, IADR-0106: 基準通貨（円）への換算レートの供給口。未指定＝基準通貨の市場だけレート 1
+    // （日本株は現行どおり／米国株は解決不能＝新規建て見送り）。実供給は Worker が Fx:Provider 設定時に差し替える。
+    private readonly IFxRateProvider _fxRate = fxRate ?? new BaseCurrencyOnlyFxRateProvider();
 
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
     public Task<TradeDecisionMade?> DecideAsync(
@@ -88,6 +93,18 @@ public sealed class TradeDecisionService(
         if (_currentPrice.IsEnabled && currentPrice is null)
         {
             logger.LogInformation("現在値が取得できない/鮮度切れのため見送り（発注抑止・安全側）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+
+        // FR-10, FR-17, #257, IADR-0106 決定2/3: 発注意図を作る前に基準通貨（円）への換算レートを確定させる。
+        // 解決できない（レート源未設定・取得失敗・鮮度切れ）非基準通貨の銘柄は、誤った実効上限で発注せず見送る。
+        // 基準通貨の市場（日本株）は常に 1 が返るため現行挙動と等価。LLM 呼び出しより前に倒すことで無駄な費用も避ける。
+        var fxRateToBase = await GetFxRateToBaseSafeAsync(trigger.Market, cancellationToken).ConfigureAwait(false);
+        if (fxRateToBase is not { } rateToBase || rateToBase <= 0m)
+        {
+            logger.LogInformation(
+                "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market} currency={Currency}",
+                trigger.Symbol, trigger.Market, MarketCurrency.Of(trigger.Market));
             return null;
         }
 
@@ -135,14 +152,20 @@ public sealed class TradeDecisionService(
             return null;
         }
 
+        // FR-10, FR-17, #257, IADR-0106 決定1/2: サイジングの入力を基準通貨（円）へ揃える。資金・上限・残枠は基準通貨、
+        // 参照価格・損切り幅は銘柄のローカル通貨のため、1 株あたり金額にレートを掛けてから PositionSizer へ渡す
+        // （混在させると金額上限が桁で誤り、過大発注を招く）。基準通貨の市場はレート 1 で現行と同値。
+        var referencePriceBase = referencePrice * rateToBase;
+        var stopLossDistanceBase = decision.StopLossDistancePerShare * rateToBase;
+
         // IADR-0003: サイジングは判断サービスの責務。availableCapital は段階残枠と日次発注残枠の小さい方（IADR-0017）。
         var sizeFactor = PositionSizer.GetSizeFactor(context.ConsecutiveLosses, context.DrawdownRatio, context.Limits);
         var availableCapital = Math.Max(0m, Math.Min(context.StageCapitalRemaining, context.DailyOrderRemaining));
         var quantity = PositionSizer.CalculateCappedQuantity(
             context.Capital,
             context.Limits.PerTradeRiskRatio,
-            decision.StopLossDistancePerShare,
-            referencePrice,
+            stopLossDistanceBase,
+            referencePriceBase,
             context.Limits.MaxOrderAmount,
             availableCapital,
             sizeFactor);
@@ -155,8 +178,11 @@ public sealed class TradeDecisionService(
 
         // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（opt-in・既定無効＝現行挙動）。
         // 有効時は往復の概算費用に対して想定利益が最小期待利益しきい値を満たすかを評価し、採算不成立・費用見積り不能は Hold に倒す。
+        // IADR-0106 決定2: 費用・最小期待利益は基準通貨で登録されている（計画 05_trading-assumptions §2）ため、
+        // notional・想定利益も基準通貨で突き合わせる。
         if (_profitabilityOptions.Enabled &&
-            !await IsProfitableAsync(trigger, decision, referencePrice, quantity, cancellationToken).ConfigureAwait(false))
+            !await IsProfitableAsync(
+                trigger, decision, referencePriceBase, rateToBase, quantity, cancellationToken).ConfigureAwait(false))
         {
             return null; // 採算不成立・見積り不能（安全側で見送り）
         }
@@ -168,6 +194,8 @@ public sealed class TradeDecisionService(
             : referencePrice + decision.StopLossDistancePerShare;
 
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。判断由来は新規建て（Open）。
+        // IADR-0106 決定1: 価格・損切り価格はローカル通貨のまま載せ（発注執行がそのまま注文価格に用いる）、
+        // 統制・台帳が基準通貨で判定できるよう確定したレートを同伴させる。
         var intent = new OrderIntent(
             trigger.Symbol,
             trigger.Market,
@@ -177,7 +205,8 @@ public sealed class TradeDecisionService(
             quantity,
             referencePrice,
             PositionEffect.Open,
-            stopLossPrice);
+            stopLossPrice,
+            rateToBase);
 
         return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
     }
@@ -187,11 +216,12 @@ public sealed class TradeDecisionService(
     // 採算成立（Viable）のみ true。採算不成立（NotViable）・費用見積り不能（Indeterminate＝前提条件未解決・実額未登録）は false（Hold）。
     // fail-safe: 見積り取得の例外は「見積り不能」に縮退して false（安全側）へ倒す。キャンセルは伝播させる。
     private async Task<bool> IsProfitableAsync(
-        DecisionTrigger trigger, LlmDecision decision, decimal referencePrice, decimal quantity,
-        CancellationToken cancellationToken)
+        DecisionTrigger trigger, LlmDecision decision, decimal referencePriceBase, decimal fxRateToBase,
+        decimal quantity, CancellationToken cancellationToken)
     {
         // IADR-0099: notional はアンカリング済みの参照価格（現在値ありなら権威価格）× 数量で算出する。
-        var notional = referencePrice * quantity;
+        // IADR-0106: 参照価格は基準通貨へ換算済み（費用見積りの単位と揃える）。
+        var notional = referencePriceBase * quantity;
         TradeCostAssessment? assessment;
         try
         {
@@ -203,7 +233,8 @@ public sealed class TradeDecisionService(
             assessment = null;
         }
 
-        var expectedGrossProfit = decision.ExpectedProfitPerShare * quantity;
+        // 想定利益（LLM 由来）は 1 株あたりのローカル通貨額のため、費用と同じ基準通貨へ換算してから突き合わせる。
+        var expectedGrossProfit = decision.ExpectedProfitPerShare * fxRateToBase * quantity;
         var verdict = ProfitabilityGate.Evaluate(
             expectedGrossProfit,
             assessment?.RoundTripCost,
@@ -234,6 +265,22 @@ public sealed class TradeDecisionService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "日報未確定の通知発行に失敗しました（見送りは継続）。");
+        }
+    }
+
+    // FR-10, FR-17, #257, IADR-0106 決定3: 換算レート取得の fail-safe ラッパ。取得失敗（例外）は「レート無し（null）」に
+    // 縮退する。呼び出し側が null を新規建ての見送りへ倒すため、例外は安全側（過大発注を招かない側）に働く。
+    // キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
+    private async Task<decimal?> GetFxRateToBaseSafeAsync(Market market, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _fxRate.GetRateToBaseAsync(market, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "基準通貨への換算レート取得に失敗しました（レート無しとして継続）: {Market}", market);
+            return null;
         }
     }
 

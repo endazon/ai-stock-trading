@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.State;
 
@@ -30,6 +31,11 @@ public static class TradeDecisionPromptBuilder
         ArgumentNullException.ThrowIfNull(context);
 
         var ci = CultureInfo.InvariantCulture;
+        // FR-10, FR-17, #257, IADR-0106: 価格は銘柄の市場の通貨、リスク制約は基準通貨（円）である。両者が異なる市場では
+        // 単位を明示しないと LLM が外貨建ての価格を円と解釈する（実測: 336.77 USD を「購入額 336.77 円」と解釈）。
+        // 基準通貨の市場（日本株）では単位注記を出さず、従来のプロンプト文言と一致させる。
+        var currency = MarketCurrency.Of(trigger.Market);
+        var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {currency.ToString().ToUpperInvariant()}";
         var sb = new StringBuilder();
         sb.AppendLine("あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。");
         sb.AppendLine("方針の範囲外・不確実な場合は必ず Hold（取引しない）を選びます。");
@@ -41,7 +47,7 @@ public static class TradeDecisionPromptBuilder
         {
             sb.AppendLine("# 価格変動トリガー");
             sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
-            sb.AppendLine($"- 現在値: {price.ToString(ci)} / 基準値: {trigger.BaselinePrice?.ToString(ci)} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
+            sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
         }
         else
         {
@@ -51,13 +57,21 @@ public static class TradeDecisionPromptBuilder
             // これが無いと LLM は Buy/Sell の根拠を持てず常に Hold に倒れる）。null（既定）なら行を出さず現行動作。
             if (currentPrice is { } cp)
             {
-                sb.AppendLine($"- 現在値: {cp.ToString(ci)}");
+                sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
             }
         }
         sb.AppendLine();
         sb.AppendLine("# リスク制約");
         sb.AppendLine($"- 運用資金: {context.Capital.ToString(ci)} 円 / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
         sb.AppendLine($"- 1注文金額上限: {context.Limits.MaxOrderAmount.ToString(ci)} 円 / 段階残枠: {context.StageCapitalRemaining.ToString(ci)} / 当日発注残枠: {context.DailyOrderRemaining.ToString(ci)}");
+        if (priceUnit.Length > 0)
+        {
+            // #257, IADR-0106: 円建ての上限と外貨建ての価格が混在することを明示し、回答の単位も固定する
+            // （円換算はコード側で行う。LLM に為替計算をさせない＝ADR-0003）。
+            sb.AppendLine(
+                $"- 上記のリスク制約は円建てです。価格・損切り幅・想定利益は{priceUnit.Trim()}建てで回答します（円換算はシステムが行います）。");
+        }
+
         sb.AppendLine();
         // FR-08, IADR-0072 決定2/3: RAG（#18）で引いた参考情報。非空のときのみ本判断プロンプトに追記する（一次スクリーニングには載せない）。
         AppendRetrievalSection(sb, retrieved);

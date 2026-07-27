@@ -164,6 +164,46 @@ public class TradeDecisionPromptBuilderTests
         withDefault.Should().Be(withExplicitFalse);
     }
 
+    // FR-10, FR-17, #257, IADR-0106: 外貨建て市場では価格の通貨を明示し、円建てのリスク制約との混在を注記する
+    // （実測: 単位が無いため LLM が 336.77 USD を「購入額 336.77 円」と解釈した）。
+    [Fact]
+    public void 外貨建て市場では価格に通貨を明示し円建て制約との混在を注記する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, currentPrice: 336.77m);
+
+        prompt.Should().Contain("現在値: 336.77 USD");
+        prompt.Should().Contain("リスク制約は円建てです");
+        prompt.Should().Contain("USD建てで回答します");
+    }
+
+    [Fact]
+    public void 価格変動トリガーでも外貨建てなら価格と基準値に通貨を明示する()
+    {
+        var trigger = DecisionTrigger.FromPriceMovement(
+            new PriceMovementDetected(Guid.NewGuid(), "AAPL", Market.UnitedStates, 336.77m, 320m, 0.05m, DateTimeOffset.UtcNow));
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain("現在値: 336.77 USD");
+        prompt.Should().Contain("基準値: 320 USD");
+    }
+
+    // 基準通貨（日本株）のプロンプトは従来の文言と一致させる（単位注記も出さない）。
+    [Fact]
+    public void 基準通貨の市場では通貨表記も混在注記も出さない()
+    {
+        var trigger = DecisionTrigger.FromPriceMovement(
+            new PriceMovementDetected(Guid.NewGuid(), "7203", Market.Japan, 1_040m, 1_000m, 0.04m, DateTimeOffset.UtcNow));
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain("現在値: 1040 / 基準値: 1000");
+        prompt.Should().NotContain("JPY");
+        prompt.Should().NotContain("リスク制約は円建てです");
+    }
+
     // FR-17, IADR-0076: 一次スクリーニングは費用統制のため採算評価節を含めない（本判断のみに載せる）。
     [Fact]
     public void スクリーニングプロンプトは採算評価節を含まない()
