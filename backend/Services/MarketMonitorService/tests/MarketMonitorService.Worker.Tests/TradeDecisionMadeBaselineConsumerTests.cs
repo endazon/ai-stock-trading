@@ -12,7 +12,7 @@ using Xunit;
 namespace AiStockTrading.MarketMonitor.Worker.Tests;
 
 // FR-03, UC-02: TradeDecisionMade 購読で基準値が判断時点価格へ更新されることを検証する。
-public class TradeDecisionMadeConsumerTests
+public class TradeDecisionMadeBaselineConsumerTests
 {
     [Fact]
     public async Task 判断確定で対象銘柄の基準値を判断時点価格へ更新する()
@@ -20,7 +20,7 @@ public class TradeDecisionMadeConsumerTests
         var baselines = new InMemoryPriceBaselineStore();
         await using var provider = new ServiceCollection()
             .AddSingleton<IPriceBaselineStore>(baselines)
-            .AddMassTransitTestHarness(x => x.AddConsumer<TradeDecisionMadeConsumer>())
+            .AddMassTransitTestHarness(x => x.AddConsumer<TradeDecisionMadeBaselineConsumer>())
             .BuildServiceProvider(true);
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
