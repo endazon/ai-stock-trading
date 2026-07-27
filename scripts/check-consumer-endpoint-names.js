@@ -3,7 +3,7 @@
 /*
  * check-consumer-endpoint-names.js
  * サービスを跨いで MassTransit のエンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する
- * （FR-03/FR-10, ADR-0003, IADR-0011 / IADR-0106, Issue #258）。外部依存ゼロ（Node 標準モジュールのみ）。
+ * （FR-03/FR-10, ADR-0013, IADR-0106, Issue #258）。外部依存ゼロ（Node 標準モジュールのみ）。
  * check-doc-links.js / validate-runtime-scaffold.js と同型。
  *
  * 背景（Issue #258）: 各 Worker は `cfg.ConfigureEndpoints(ctx)` を `IEndpointNameFormatter` 未設定で呼ぶ。

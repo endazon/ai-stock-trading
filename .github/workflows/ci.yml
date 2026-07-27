@@ -94,7 +94,7 @@ jobs:
       - name: Validate trading pipeline config (real file)
         run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
 
-  # FR-03/FR-10, ADR-0003, IADR-0011 / IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
+  # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
   # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の
   # DefaultEndpointNameFormatter はキュー名を consumer クラス名のみから導き namespace を含まないため、
   # 別サービスで同名の consumer を作ると同一キューを共有し、pub/sub のつもりが competing consumer になる。

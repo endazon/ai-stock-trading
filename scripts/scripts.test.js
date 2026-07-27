@@ -236,7 +236,7 @@ ok('validate-pipeline-config: 実 pipeline.json が検証器に合格する', ()
 });
 
 // --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 再発防止） ---
-// ADR-0003, IADR-0011 / IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
+// ADR-0013, IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
 // namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
 // pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
 const {
