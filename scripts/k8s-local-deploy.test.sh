@@ -59,6 +59,9 @@ export AST_DEPLOY_LIB
 # shellcheck source=./k8s-local-deploy.sh
 . "$ROOT_DIR/scripts/k8s-local-deploy.sh"
 set +e +o pipefail   # 対象が有効化した set -e を戻し、失敗ケースを観測できるようにする
+# 対象スクリプトの `trap ast_cleanup EXIT` が上の EXIT トラップを上書きするため、両方を呼ぶ形で張り直す
+# （張り直さないと本スクリプトが確保した一時ディレクトリが残置される）。
+trap 'ast_cleanup; rm -rf "$STATE" "$STUB_BIN"' EXIT
 
 # ---- テストハーネス -------------------------------------------------------
 PASSED=0
