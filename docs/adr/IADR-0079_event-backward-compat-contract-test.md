@@ -2,7 +2,7 @@
 title: IADR-0079 イベント契約の後方互換を snapshot 比較の CI 契約テストで機械化し、共通エンベロープ型は上流確定まで繰延に準拠する
 type: impl-adr
 status: Accepted
-related_ids: [ADR-0001, FR-11, IADR-0077, IADR-0078]
+related_ids: [ADR-0001, FR-11, IADR-0037, IADR-0077, IADR-0078]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-28

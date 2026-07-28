@@ -2,7 +2,7 @@
 title: IADR-0037 非同期イベント契約は当面 AsyncAPI を採用せず、共有 C# 契約＋Markdown を継続し、軽量な URN 回帰ガードで補強する
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-05, ADR-0001, ADR-0002, IADR-0009]
+related_ids: [FR-04, FR-05, ADR-0001, ADR-0002, IADR-0009, IADR-0079]
 author: endazon (with Claude Code)
 created: 2026-07-11
 updated: 2026-07-28
