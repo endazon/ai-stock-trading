@@ -111,6 +111,37 @@ jobs:
             echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
             exit 1
           fi
+      # #267 / IADR-0111: ブローカ階層（broker.tier＝provider × environment）の 3 系統検査。
+      #   ① 既定（paper）描画がバイト等価であること（Broker__Environment を注入しない）
+      #   ② 各 tier が期待どおり描画されること（新スイッチ・非推奨エイリアスの双方）
+      #   ③ 実弾（moomoo-live）・矛盾指定・未知 tier が**描画時に止まる**こと（外周の閂）
+      - name: Assert broker tier switch (paper / moomoo-sim / moomoo-live)
+        run: |
+          # ① 既定は paper 階層＝取引環境の env を注入しない（本設定点の追加前とバイト等価）。
+          if helm template ast "$CHART" | grep -q 'name: Broker__Environment'; then
+            echo "::error::既定描画に Broker__Environment が現れた（既定 paper のバイト等価に違反・IADR-0111）。"; exit 1
+          fi
+          # ② 新スイッチ（broker.tier）と非推奨エイリアス（moomoo.enabled）が同じ階層へ解決されること。
+          for args in "--set broker.tier=moomoo-sim" "--set moomoo.enabled=true"; do
+            out="$(helm template ast "$CHART" $args)"
+            printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "moomoo"' \
+              || { echo "::error::[$args] Broker__Provider が moomoo でない（tier 解決の破綻）。"; exit 1; }
+            printf '%s' "$out" | grep -A1 'name: Broker__Environment' | grep -q 'value: "sim"' \
+              || { echo "::error::[$args] Broker__Environment が sim でない（SIMULATE 限定に違反）。"; exit 1; }
+            printf '%s' "$out" | grep -q 'name: moomoo-rsa' \
+              || { echo "::error::[$args] RSA 鍵のマウントが描画されない（cross-network trade は暗号化必須・#13）。"; exit 1; }
+          done
+          # ③ 実弾・矛盾・未知は描画時に止める。ここが通ってしまうと誤設定がクラスタへ届く。
+          #    実弾（moomoo-live）はアプリ側の LiveTradingGate（閂 0）でも停止するが、外周でも塞ぐ。
+          assert_render_fails() {
+            if helm template ast "$CHART" $1 >/dev/null 2>&1; then
+              echo "::error::[$1] が描画に成功した（$2）。"; exit 1
+            fi
+          }
+          assert_render_fails "--set broker.tier=moomoo-live" "実弾は未解禁＝描画時に止めねばならない・IADR-0056 §3 / IADR-0111"
+          assert_render_fails "--set broker.tier=paper --set moomoo.enabled=true" "tier とエイリアスの矛盾指定は止めねばならない"
+          assert_render_fails "--set broker.tier=bogus-tier" "未知の tier は止めねばならない"
+          echo "ok: broker.tier は paper（既定・バイト等価）/ moomoo-sim（SIMULATE）のみ描画でき、実弾は到達不能"
       # #238 / IADR-0100: 本番バイト等価の担保。ArgoCD は values.yaml のみを描画する（valueFiles 無し）ため、
       # 経路B の有効化（values-local.yaml）が既定描画へ漏れていないことを検査する。既定描画に実 LLM/実市況/Discord の
       # 有効化痕跡が現れたら、本番へ漏れたということなので落とす（fail-safe 既定の反転検出）。

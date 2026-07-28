@@ -46,7 +46,21 @@ tradingCycle:
     image: curlimages/curl:8.11.1
     target: http://information-collection-service:8080/internal/collection/run-once
 
+# FR-05, #267, IADR-0111: ブローカ階層の**単一スイッチ**。運用の本番近接順は
+#   paper（内蔵擬似・実発注しない） ＜ moomoo-sim（OpenD 経由 SIMULATE） ＜ moomoo-live（実弾）。
+# template がこれを Broker__Provider（証券会社）× Broker__Environment（取引環境）の 2 軸へ展開する。
+#
+# ⚠️ moomoo-live（実弾）は**未解禁**であり、指定すると**描画時に fail する**（外周の閂）。
+#    アプリ側も LiveTradingGate（閂 0）が起動時に停止させる。解禁には別の実装 ADR と
+#    IADR-0056 §3 の前提充足が要る。本チャートで実弾は撃てない。
+broker:
+  # "" （空）= 非推奨エイリアス moomoo.enabled から導出する（false→paper / true→moomoo-sim）。
+  # 明示指定する場合は "paper" または "moomoo-sim"。明示しつつ moomoo.enabled=true にすると描画時に止まる。
+  tier: ""
+
 # #13: moomoo（OpenD）発注の in-cluster 配線。既定 disabled = fail-safe（order-execution は paper・実発注しない）。
+# ⚠️ IADR-0111 以降、`moomoo.enabled` は**非推奨**（broker.tier=moomoo-sim を使う）。broker.tier が空のときだけ
+#    エイリアスとして解釈される（既存構成の互換維持）。opend.* の接続パラメータは引き続き本節が持つ。
 # ⚠️ 有効化前提: (1) 常駐 OpenD が稼働し**ログイン済み**であること（`opend.enabled` か deploy/opend/k8s の生 manifest）。
 #    OpenD 不在で enabled=true にすると order-execution は接続に失敗する。(2) Secret moomoo-rsa（OpenD と同一の RSA 鍵）。
 # cross-network（worker→opend）trade は RSA 暗号化必須（#13 で確定）。実弾は撃たない（SIMULATE 固定・IADR-0016 / IADR-0056）。
@@ -305,7 +319,8 @@ services:
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc
-    # Broker__Provider は template が moomoo.enabled で決定する（既定 paper・moomoo 有効時は OpenD 経由 SIMULATE・#13）。
+    # Broker__Provider / Broker__Environment は template が broker.tier から決定する
+    # （既定 paper・moomoo-sim は OpenD 経由 SIMULATE・moomoo-live は描画時 fail＝実弾は未解禁・#13 / IADR-0111）。
   report:
     image: ai-stock-trading/report-service
     db: report_svc

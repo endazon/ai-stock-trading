@@ -37,11 +37,20 @@ builder.Services.AddDbContext<OrderExecutionDbContext>(opt => opt.UseNpgsql(conn
 builder.Services.AddAiStockTradingHealthChecks()
     .AddNpgSql(connStr, tags: ["ready"]);
 
-// IADR-0016, #13: ブローカ選択（構成 Broker:Provider・既定 paper）。moomoo/未知は起動時に安全停止（実弾防止）。
+// IADR-0016, IADR-0111, #13: ブローカ選択（構成 Broker:Provider × Broker:Environment・既定 paper/sim）。
+// 未知の provider / environment・paper と live の矛盾指定は起動時に安全停止（実弾防止・fail-safe は発注抑止側）。
+// 選択は合成起点で 1 度だけ解決し、以降は BrokerSelection を参照する（文字列を各所で読み直さない）。
+var brokerSelection = BrokerSelection.FromConfiguration(builder.Configuration);
+
+// IADR-0111 閂 0: 実弾（live 階層）は未解禁。OpenD 接続クライアントを構成する前に停止させる
+// （＝live を選んでも OpenD への接続も IBrokerAdapter の生成も起きない）。解禁は LiveTradingGate の
+// LiveTradingReleased を true にする 1 ファイルの変更に集約され、別 IADR＋IADR-0056 §3 の前提充足を要する。
+LiveTradingGate.Ensure(brokerSelection);
+
 // moomoo 選択時は OpenD 接続クライアント（IMoomooTradeClient）を構成し SIMULATE 限定で発注する（実弾を撃たない）。
 // #141, IADR-0092: moomoo 時は IMoomooTradeClient を単一インスタンスで DI 共有し、発注アダプタ（IBrokerAdapter）と
-// 実照会プローブ（MoomooReservationBrokerProbe）が同一の OpenD 接続を使う（接続を二重化しない）。paper/未知では登録しない。
-if (BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
+// 実照会プローブ（MoomooReservationBrokerProbe）が同一の OpenD 接続を使う（接続を二重化しない）。paper では登録しない。
+if (brokerSelection.IsMoomoo)
 {
     builder.Services.AddSingleton<IMoomooTradeClient>(sp => new MMApiMoomooTradeClient(
         MoomooBrokerOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()),
@@ -50,9 +59,8 @@ if (BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
 builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 {
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    var provider = sp.GetRequiredService<IConfiguration>()["Broker:Provider"];
     var moomooClient = sp.GetService<IMoomooTradeClient>(); // moomoo 時のみ登録済み
-    return BrokerFactory.Create(provider, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>());
+    return BrokerFactory.Create(brokerSelection, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>());
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();
@@ -69,7 +77,7 @@ builder.Services.AddScoped<OrderExecutionService>();
 // 駆動元（時限取消・#141 リコンサイル基点・#152 pause 強制取消）は本 PR の対象外で、それらが
 // OrderAmendmentDispatcher を呼ぶ。moomoo 構成でそれらを配線した場合は DI 解決に失敗して起動時に気づける。
 builder.Services.AddScoped<IOrderLifecycleStore, EfOrderLifecycleStore>();
-if (!BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"]))
+if (!brokerSelection.IsMoomoo)
 {
     builder.Services.AddSingleton<IOrderAmendmentBroker>(sp =>
         (IOrderAmendmentBroker)sp.GetRequiredService<IBrokerAdapter>());
@@ -89,7 +97,7 @@ builder.Services.AddHostedService<OrderReservationRetentionService>();
 // no-op プローブ下では phase-4 自己修復のみ作動し、二重発注を招く解放は構造上起きない。
 builder.Services.Configure<ReconciliationOptions>(
     builder.Configuration.GetSection(ReconciliationOptions.SectionName));
-if (BrokerFactory.IsMoomoo(builder.Configuration["Broker:Provider"])
+if (brokerSelection.IsMoomoo
     && builder.Configuration.GetSection(ReconciliationOptions.SectionName).Get<ReconciliationOptions>()?.UseBrokerProbe == true)
 {
     builder.Services.AddSingleton<IReservationBrokerProbe>(sp => new MoomooReservationBrokerProbe(
@@ -118,7 +126,9 @@ builder.Services.AddMassTransit(x =>
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
-builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", string.IsNullOrWhiteSpace(builder.Configuration["Broker:Provider"]) ? "paper" : builder.Configuration["Broker:Provider"]!));
+// IADR-0111: 自己申告は正準名 Tier（paper ＜ moomoo-sim ＜ moomoo-live＝本番近接順）で行う。
+// 生の Broker:Provider だけでは取引環境（シム／実弾）が判らず「今どの階層か」を実行時に確認できない。
+builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", brokerSelection.Tier));
 
 var app = builder.Build();
 

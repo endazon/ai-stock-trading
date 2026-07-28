@@ -33,23 +33,31 @@ plan_refs:
   **別途の実装 ADR（`IADR-XXXX`・未起票）**に委ねる。本 Runbook はその ADR が Accepted 化された後の**手順書**である。
 
 > **⚠️ 重要な事実（誇張しない）**: 実弾は「config を 1 つ書き換えるだけ」では**現状は有効化できない**。
-> 下記「三重の閂」のうち 2 本（SIMULATE のヘッダ固定・`TrdEnv=real` の起動時拒否）は**コードで塞いである**。
-> 単一 config フリップは、**解禁 IADR がその 2 本を緩めた後**に初めて「日々の運用スイッチ」として機能する。
-> 現時点で `Broker:Moomoo:TrdEnv=real` を与えても、Worker は**起動時に停止する**（意図した安全設計）。
+> 下記の閂のうち 3 本（解禁ゲート・SIMULATE のヘッダ固定・`TrdEnv=real` の起動時拒否）は**コードで塞いである**。
+> 単一 config フリップは、**解禁 IADR がそれらを緩めた後**に初めて「日々の運用スイッチ」として機能する。
+> 現時点で `broker.tier=moomoo-live`（＝`Broker:Environment=live`）や `Broker:Moomoo:TrdEnv=real` を与えても、
+> Worker は**起動時に停止する**（前者は Helm 描画時にも止まる）。意図した安全設計である。
 
-## 三重の閂（現行の実弾防止）— 何が config で、何がコードか
+## 実弾防止の閂（現行）— 何が config で、何がコードか
 
-実弾は次の三重で塞いである。**config で開くのは 1 本目だけ**であり、2〜3 本目はコード上の固定・拒否である
-（[IADR-0016](../adr/IADR-0016_safe-broker-execution.md) の二重ゲート ＋ [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) §5 の第三の閂）。
+実弾は次の多重で塞いである。**config で「実弾を選ぼうとする」ことはできる**が、それは*拒否される入口*であって
+*開く入口ではない*（[IADR-0016](../adr/IADR-0016_safe-broker-execution.md) の二重ゲート ＋
+[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) §5 の第三の閂 ＋
+[IADR-0111](../adr/IADR-0111_broker-tier-selection.md) の解禁ゲート）。
 
 | # | 閂 | 実体 | 実装箇所 | config で通せるか |
 | --- | --- | --- | --- | --- |
+| 0 | **実弾解禁ゲート** | ブローカ階層が実弾（`Broker:Environment=live`）なら**起動時に `InvalidOperationException`**。`LiveTradingReleased`（`const false`）が唯一の解禁点で、OpenD 接続クライアントを構成する前に停止する | `.../Composable/Adapters/LiveTradingGate.cs` | **いいえ（コード拒否）** |
 | 1 | **ブローカ選択ゲート** | `Broker:Provider` 既定 `paper`（実発注しない）。`moomoo` は OpenD 接続クライアント必須で、無ければ**起動時停止**。未知値も停止 | `backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/Composable/Adapters/BrokerFactory.cs` | **はい**（`Broker:Provider=moomoo`）。ただし SIMULATE 発注になるだけ |
 | 2 | **SIMULATE のヘッダ固定** | 発注ヘッダ `TrdHeader` に `TrdEnv_Simulate` を**無条件**でセット。`OrderIntent.Mode=Live` でも SIMULATE で発注する | `.../Composable/Adapters/MMApiMoomooTradeClient.cs`（`BuildHeader` の `SetTrdEnv(TrdEnv_Simulate)`）／ `MoomooBrokerAdapter.cs` | **いいえ（コード固定）** |
 | 3 | **`TrdEnv=real` の起動時拒否** | `Broker:Moomoo:TrdEnv` が `simulate` 以外なら**起動時に `InvalidOperationException`**。黙って SIMULATE で流さず、運用者の「実弾で動いている」誤認を防ぐ | `.../Composable/Adapters/MoomooBrokerOptions.cs`（`EnsureSimulate`） | **いいえ（コード拒否）** |
+| 外周 | **Helm 描画時の拒否** | `broker.tier=moomoo-live` は `helm template` の時点で `fail`＝誤設定がクラスタへ届かない | `deploy/helm/ai-stock-trading/templates/deployment.yaml` | **いいえ（描画時 fail）** |
 
-> 閂 3 は「実弾を可能にする設定の入口」**ではない**。`simulate` 以外を*拒否する*入口である（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定 5 / トレードオフ）。
-> 実弾の入口は**別 IADR**でのみ開く。
+> このほか、OpenD の口座選択も SIMULATE 口座のみを採用する（`MMApiMoomooTradeClient.FetchSimulateAccIdAsync`）。
+>
+> 閂 0・3 は「実弾を可能にする設定の入口」**ではない**。実弾を*拒否する*入口である
+> （[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定 5 / トレードオフ、
+> [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) 決定 5）。実弾の入口は**別 IADR**でのみ開く。
 
 ## 関連する config キー（実コードで確認済み）
 
@@ -57,34 +65,42 @@ plan_refs:
 
 | キー | 既定 | 挙動 | 出所 |
 | --- | --- | --- | --- |
-| `Broker:Provider` | `paper` | `paper` / `moomoo`。`moomoo` は OpenD クライアント必須・未提供や未知値は起動時停止 | `BrokerFactory.cs` |
+| `Broker:Provider` | `paper` | `paper` / `moomoo`。`moomoo` は OpenD クライアント必須・未提供や未知値は起動時停止 | `BrokerFactory.cs` / `BrokerSelection.cs` |
+| `Broker:Environment` | （空＝）`sim` | `sim` / `live`。`live` は**起動時停止**（閂 0）。未知値も停止。`paper` との同時指定も停止 | `BrokerSelection.cs` / `LiveTradingGate.cs` |
 | `Broker:Moomoo:TrdEnv` | （空＝）`simulate` | **`simulate` のみ受理**。`real` 等は**起動時停止**（閂 3） | `MoomooBrokerOptions.EnsureSimulate` |
 | `Broker:Moomoo:OpenD:Host` | `opend` | OpenD ホスト（in-cluster では Service 名） | `MoomooBrokerOptions.FromConfiguration` |
 | `Broker:Moomoo:OpenD:Port` | `11111` | OpenD API ポート | 同上 |
 | `Broker:Moomoo:OpenD:RsaPrivateKeyPath` | （空＝非暗号） | cross-network trade に必須の RSA 秘密鍵パス。設定済みでファイル不在なら起動時停止（preflight） | 同上 / `MoomooPreflight.Validate` |
 | `Broker:Moomoo:OpenD:ReplyTimeoutSeconds` | `15` | OpenD 応答待ち上限（1〜600 秒）。範囲外は起動時停止 | `MoomooBrokerOptions.ParseReplyTimeout` |
 
-Helm では `moomoo.enabled=true` で `Broker__Provider=moomoo` ＋ OpenD 接続パラメータが注入される
-（[`deploy/helm/ai-stock-trading/README.md`](../../deploy/helm/ai-stock-trading/README.md)）。**`TrdEnv` を values で `real` にできる口は用意していない**（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) トレードオフ）。
+Helm では **`broker.tier`**（単一スイッチ・[IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）が階層を決める。
+`moomoo-sim` で `Broker__Provider=moomoo` ＋ `Broker__Environment=sim` ＋ OpenD 接続パラメータが注入される
+（[`deploy/helm/ai-stock-trading/README.md`](../../deploy/helm/ai-stock-trading/README.md)）。
+`moomoo.enabled=true` は**非推奨エイリアス**で、`broker.tier` 未指定のときだけ `moomoo-sim` として解釈される。
+**`moomoo-live` は描画時に `fail` し、`TrdEnv` を values で `real` にできる口も用意していない**
+（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) トレードオフ / [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) 決定 5）。
 
 ## 切替の設計（目標像）: 解禁 IADR 後の「単一 config フリップ」
 
-実弾解禁 IADR が Accepted 化され、その中で**閂 2・閂 3 を緩める**（`TrdHeader` を config 駆動にし、`EnsureSimulate` を
-「解禁時のみ `real` を許可」へ変える）実装が入った**後**、日々の運用スイッチは**単一の config フリップ**に収束させることを目標とする。
+実弾解禁 IADR が Accepted 化され、その中で**閂 0・閂 2・閂 3 を緩める**（`LiveTradingReleased` を `true` にし、
+`TrdHeader` を config 駆動にし、`EnsureSimulate` を「解禁時のみ `real` を許可」へ変える）実装が入った**後**、
+日々の運用スイッチは**単一の config フリップ**に収束させることを目標とする。
 
 ```yaml
-# 目標像（解禁 IADR が閂 2・3 を緩めた後にのみ有効。現状は起動時停止する）
-Broker:
-  Provider: moomoo
-  Moomoo:
-    TrdEnv: real   # ← 解禁後の運用スイッチはこの 1 行
+# 目標像（解禁 IADR が閂 0・2・3 を緩めた後にのみ有効。現状は helm 描画時と起動時の双方で止まる）
+broker:
+  tier: moomoo-live   # ← 解禁後の運用スイッチはこの 1 行（= Broker__Provider=moomoo + Broker__Environment=live）
 ```
 
 - **なぜ単一フリップに寄せるか**: 実弾/SIMULATE の切替が「1 行の値」に閉じていれば、運用者の誤認・手順ミスを最小化でき、
-  監査ログ・GitOps 差分でも「いつ実弾に切り替えたか」が 1 行で追える。
-- **現状の保証**: 上記 YAML を**今**適用しても実弾にはならない。閂 3 が**起動を止める**。したがって「うっかり実弾」は起きない。
-- **コード変更の要否（正確に）**: 解禁には**コード変更が要る**（閂 2・3 の緩和）。それは*運用手順*ではなく*解禁 IADR の実装*であり、
-  本 Runbook の範囲外である。本 Runbook は「その実装が済んだ後、運用としてどう切り替え・戻すか」を定める。
+  監査ログ・GitOps 差分でも「いつ実弾に切り替えたか」が 1 行で追える。階層名（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`）が
+  そのまま本番近接順を表し、稼働中の階層は `GET /internal/introspection` の `broker` ポートが自己申告する。
+- **現状の保証**: 上記 YAML を**今**適用しても実弾にはならない。**Helm 描画が止まり**、仮に環境変数で直接与えても
+  閂 0 が**起動を止める**。したがって「うっかり実弾」は起きない。
+- **コード変更の要否（正確に）**: 解禁には**コード変更が要る**（閂 0・2・3 の緩和）。閂 0 は `LiveTradingGate` の
+  定数 1 つに集約してあるため、解禁の意思決定がどのコード変更に対応するかが 1 対 1 で追える。
+  それは*運用手順*ではなく*解禁 IADR の実装*であり、本 Runbook の範囲外である。本 Runbook は
+  「その実装が済んだ後、運用としてどう切り替え・戻すか」を定める。
 
 ## 解禁前チェックリスト（すべて充足するまで解禁しない）
 
@@ -107,24 +123,26 @@ Broker:
 > 上表に一つでも未充足があれば、実弾解禁 IADR を Accepted 化してはならない。とりわけ #2〜#5 は
 > `operations.md` で 🔴 **未充足**であり（2026-07-19 時点）、**現状は解禁段階に達していない**。
 
-## 実弾 go-live の手順（解禁 IADR 承認後・三重の閂を「正しく」開ける）
+## 実弾 go-live の手順（解禁 IADR 承認後・閂を「正しく」開ける）
 
-前提: 解禁 IADR が Accepted 化され、閂 2・3 を緩める実装がマージ済みであること。SIMULATE 常駐（`operations.md`
+前提: 解禁 IADR が Accepted 化され、閂 0・2・3 を緩める実装がマージ済みであること。SIMULATE 常駐（`operations.md`
 段階 3）で一巡が確認済みであること。上記チェックリストがすべて充足済みであること。
 
 1. **少額・単一銘柄から**。`TradingDefaults` の上限を実弾向けの最小値に設定して再デプロイする（前提 #6）。
-2. **閂 1 を確認**: `Broker:Provider=moomoo`（Helm では `moomoo.enabled=true`）で OpenD 経由発注が有効なこと。
+2. **閂 1 を確認**: `broker.tier=moomoo-sim`（＝`Broker:Provider=moomoo`）で OpenD 経由発注が有効なこと。
+   稼働中の階層は `GET /internal/introspection` の `broker` ポート（`moomoo-sim`）で確認する。
 3. **OpenD のログイン成功を確認**（readiness 通過では判定しない・`operations.md` 前提 #10）。
-4. **閂 3 を開ける（config）**: `Broker:Moomoo:TrdEnv=real` を設定して再デプロイする。
+4. **閂 0・3 を開ける（config）**: `broker.tier=moomoo-live`（＝`Broker:Environment=live`）と
+   `Broker:Moomoo:TrdEnv=real` を設定して再デプロイする。
    - 解禁 IADR 実装後は、これで `TrdHeader` が `TrdEnv_Real` になる（閂 2 が緩められている前提）。
    - 起動ログで実弾モードである旨（実装が出力する warning）を確認する。**黙って実弾になってはならない**（明示ログが要件）。
 5. **1 件だけ実弾発注→照会→約定→（必要なら）取消**の一巡を最小ロットで確認する。
 6. **建玉・約定を台帳（`executed_orders`）と突き合わせ**、`Reserved` 滞留が無いことを確認する（前提 #3 の監視を稼働させたまま）。
 7. 段階的にロット・銘柄数を上げる。各段で kill switch（撤退）と `Reserved` 監視を確認する。
 
-> **三重の閂を「正しく開ける」とは**: 閂 2・3 を*コードから消す*のではなく、**解禁 IADR が定めた条件下でのみ**
+> **閂を「正しく開ける」とは**: 閂 0・2・3 を*コードから消す*のではなく、**解禁 IADR が定めた条件下でのみ**
 > `real` を許可する形に緩めること。config だけで無条件に実弾へ倒せる状態にはしない（解禁後も
-> `Provider=moomoo` ＋ `TrdEnv=real` の**二段**を要求し、既定は依然 `paper`/`simulate` に保つ）。
+> `Provider=moomoo` ＋ `Environment=live` ＋ `TrdEnv=real` の**多段**を要求し、既定は依然 `paper`/`sim`/`simulate` に保つ）。
 
 ## 切り戻し（実弾 → SIMULATE / ペーパー・即時）
 
@@ -133,8 +151,9 @@ Broker:
 
 1. **kill switch（撤退）で新規建てを止める**（最速・コード変更不要）。既存の運用系 kill switch を起動する。
    新規発注のみ停止し、建玉の手仕舞い判断は人間が行う。
-2. **`Broker:Moomoo:TrdEnv=simulate` に戻して再デプロイ**（閂 3 を再び閉じる）。以降の発注は SIMULATE に戻る。
-3. **`Broker:Provider=paper`（Helm `moomoo.enabled=false`）に戻す**（閂 1）。発注はペーパーに戻り、OpenD 発注経路が外れる。
+2. **`broker.tier=moomoo-sim`（＝`Broker:Environment=sim`）＋ `Broker:Moomoo:TrdEnv=simulate` に戻して再デプロイ**
+   （閂 0・3 を再び閉じる）。以降の発注は SIMULATE に戻る。
+3. **`broker.tier=paper`（＝`Broker:Provider=paper`）に戻す**（閂 1）。発注はペーパーに戻り、OpenD 発注経路が外れる。
 4. OpenD 自体を落とす（`opend.enabled=false`）のは**最後の手段**。Pod を消すと**デバイス信頼の再確立（有人検証）**が
    要る場合があるため、発注を止めるだけなら 1〜3 に留める（`operations.md` 切り戻し節と同じ判断）。
 
@@ -148,8 +167,9 @@ Broker:
   撤退（kill switch）が発火したら段は戻り、実弾は継続しない。
 - **少額から**: `TradingDefaults` の上限を実弾向け最小値にし、単一銘柄・最小ロットで開始する。
 - **監視を先に**: `Reserved` 滞留監視（前提 #3）と費用統制・撤退監視を**稼働させてから**発注する。滞留＝未確定の実弾建玉。
-- **「うっかり実弾」を許さない**: 解禁後も既定は `paper`/`simulate`。実弾は `Provider=moomoo` ＋ `TrdEnv=real` の**二段の明示**を要求し、
-  起動時に実弾モードである旨を明示ログに出す。黙って実弾で動く経路を作らない。
+- **「うっかり実弾」を許さない**: 解禁後も既定は `paper`/`sim`/`simulate`。実弾は `Provider=moomoo` ＋ `Environment=live`
+  ＋ `TrdEnv=real` の**多段の明示**を要求し、起動時に実弾モードである旨を明示ログに出す。黙って実弾で動く経路を作らない。
+  なお `Provider=paper` と `Environment=live` の同時指定は**起動時に拒否**する（擬似発注を実弾と誤認させない）。
 - **本 Runbook は解禁しない**: 実弾を有効化する意思決定・コード変更は**別 IADR** に属する。本 Runbook は手順書であり、
   現在のフラグ状態（実弾 off・SIMULATE 固定）を変えない。
 
@@ -161,3 +181,4 @@ Broker:
 - [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) — 発注の冪等化（at-most-once）
 - [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) — OpenD 本番化・切替ゲート（決定 5＝第三の閂）
 - [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md) — 発注予約の自動リコンサイル（#141）
+- [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) — ブローカ階層（provider × environment）・解禁ゲート（閂 0）

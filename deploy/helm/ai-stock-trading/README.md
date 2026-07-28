@@ -250,17 +250,33 @@ scripts/k8s-local-deploy.sh
 | `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098） |
 | `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定 `dev-only-owner-secret`（realm-export.json と一致・本番は Secret/Vault） |
 | （chart 値）`Notifications__Discord__OwnerAuth__TokenEndpoint` | — | notification | AST レルム token エンドポイント（#226。空だと IsEnabled=false→401） |
-| （chart 値）`Broker__Provider` | — | order-execution | `paper`（実発注しない・#13。`moomoo.enabled` で切替） |
+| （chart 値）`Broker__Provider` / `Broker__Environment` | — | order-execution | `paper`（実発注しない・#13。`broker.tier` で切替・IADR-0111） |
 | （chart 値）`LlmGateway__BaseUrl` | — | trade-decision | 空=Placeholder LLM（呼ばない＝常に Hold・#11） |
 
 > **LLM プロバイダ鍵は AST では扱わない**。鍵は MSP の LlmGateway 側（`Llm:ApiKey`）が保持し、AST は
 > `LlmGateway__BaseUrl` 経由でゲートウェイを呼ぶだけである（ADR-0010 / IADR-0061 決定6）。
 > `ast-secrets` に LLM 鍵を足さないこと。
 
-## #13: moomoo（OpenD）発注
+## #13, #267: ブローカ階層（`broker.tier`）と moomoo（OpenD）発注
 
-既定 **無効**（`order-execution` は `Broker__Provider=paper`＝実発注しない・fail-safe・IADR-0016）。有効化すると
-`order-execution` へ moomoo 発注構成が注入される（**SIMULATE 限定**・実弾は撃たない）。
+発注先は**単一スイッチ `broker.tier`** で選ぶ（IADR-0111）。運用の本番近接順は次の 3 階層である。
+
+| `broker.tier` | 注入される env | 意味 |
+| --- | --- | --- |
+| `paper`（既定） | `Broker__Provider=paper` | 内蔵擬似発注。実発注しない（fail-safe・IADR-0016） |
+| `moomoo-sim` | `Broker__Provider=moomoo` ＋ `Broker__Environment=sim` ＋ OpenD 接続構成 | OpenD 経由の **SIMULATE 発注**。実弾は撃たない |
+| `moomoo-live` | — | **実弾。未解禁につき `helm template` が `fail` する**（外周の閂・IADR-0111） |
+
+- `tier` は provider（証券会社）と environment（取引環境）の直交 2 軸へ展開される。将来の証券会社追加は
+  tier 値を 1 つ足すだけで済む（ADR-0002 が挙げる立花証券 e支店 API 等）。
+- 未知の tier も描画時に `fail` する。アプリ側も未知値・`paper`＋`live` の矛盾を起動時に停止させる。
+- 稼働中の階層は `GET /internal/introspection` の `broker` ポートが自己申告する（`paper` / `moomoo-sim`）。
+- **`moomoo.enabled` は非推奨エイリアス**である。`broker.tier` を指定していないときだけ `moomoo-sim` として
+  解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
+
+以下は `moomoo-sim` 階層（＝旧 `moomoo.enabled=true`）の詳細である。既定 **無効**（`Broker__Provider=paper`
+＝実発注しない・fail-safe・IADR-0016）。有効化すると `order-execution` へ moomoo 発注構成が注入される
+（**SIMULATE 限定**・実弾は撃たない）。
 
 > ⚠️ **前提**（#13・#124 はマージ済み。以下は**運用側で揃える**もの）:
 > - **常駐 OpenD が稼働し、ログイン済みであること**（下記「#132: OpenD の本番配備」または `deploy/opend/k8s` の
@@ -272,18 +288,22 @@ scripts/k8s-local-deploy.sh
 **有効化**（OpenD 常駐＋`moomoo-rsa` Secret 作成後）:
 ```bash
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
-  --set moomoo.enabled=true
+  --set broker.tier=moomoo-sim
 ```
 
-有効化すると `order-execution` へ `Broker__Provider=moomoo` ＋ `Broker__Moomoo__OpenD__{Host=opend,Port=11111,
-RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、`moomoo-rsa` が read-only（`defaultMode: 0400`）で
-マウントされる。発注時に OpenD 未接続なら**アダプタが per-order `Rejected` に倒す**（fail-safe）。
+有効化すると `order-execution` へ `Broker__Provider=moomoo` ＋ `Broker__Environment=sim` ＋
+`Broker__Moomoo__OpenD__{Host=opend,Port=11111, RsaPrivateKeyPath=/opt/opend/rsa/opend_rsa.pem}` が注入され、
+`moomoo-rsa` が read-only（`defaultMode: 0400`）でマウントされる。発注時に OpenD 未接続なら
+**アダプタが per-order `Rejected` に倒す**（fail-safe）。
 実結合は #13 で実 OpenD の SIMULATE 口座に対し live 検証済み（IADR-0056）。
 
-> **実弾（`TrdEnv_Real`）は撃たない。** `moomoo.enabled=true` にしても取引環境は `TrdEnv_Simulate` 固定である
-> （IADR-0016 / IADR-0056）。`Broker:Moomoo:TrdEnv` に `real` 等を与えると `order-execution` は**起動時に停止する**
+> **実弾（`TrdEnv_Real`）は撃たない。** `broker.tier=moomoo-sim` にしても取引環境は `TrdEnv_Simulate` 固定である
+> （IADR-0016 / IADR-0056）。実弾は多重に塞いである: `broker.tier=moomoo-live` は**描画時に `fail`**（IADR-0111）、
+> 環境変数で `Broker__Environment=live` を直接与えても `LiveTradingGate`（閂 0）が**起動時に停止**、
+> `Broker:Moomoo:TrdEnv` に `real` 等を与えても**起動時に停止する**
 > （黙って SIMULATE で流して「実弾で動いている」と誤認させないための閂・#132 / IADR-0060）。実弾解禁には別 IADR と
-> 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)）。
+> 前提条件の充足が要る（[運用仕様書の本番切替チェックリスト](../../../docs/operations/operations.md#opend-の本番切替チェックリスト132)・
+> [実弾切替 Runbook](../../../docs/operations/live-trading-cutover-runbook.md)）。
 
 ## #132: OpenD の本番配備（`opend.enabled`）
 

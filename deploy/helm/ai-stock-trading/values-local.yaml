@@ -14,7 +14,7 @@
 #     （欠落=そのキーが消える）。image/db/auth はマップのため merge され保持される（extraEnv のみ置換）。
 #   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は k8s-local-deploy.sh の ast-secrets
 #     作成（env 上書き）／ ESO(Vault) 同期（IADR-0094）に委ねる。
-#   - order-execution は含めない → Broker__Provider は template 既定 paper（moomoo.enabled=false）＝実弾 OFF 不変。
+#   - order-execution は含めない → Broker__Provider は template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
 #   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は空既定。未設定時は IADR-0062 の安全既定
 #     （空は「全許可」ではなく全拒否）で no-op。値は chart の設定点 discord.bot.*（#245/IADR-0102）から与える
