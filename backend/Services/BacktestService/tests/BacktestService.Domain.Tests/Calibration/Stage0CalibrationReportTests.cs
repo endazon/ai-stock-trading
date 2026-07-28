@@ -4,7 +4,7 @@ using Xunit.Abstractions;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, FR-20, ADR-0008, #208, IADR-0109: IADR-0109 に記録した較正表を再生成する実行。
+// FR-15, FR-20, ADR-0008, #208, IADR-0110: IADR-0110 に記録した較正表を再生成する実行。
 //
 // 反復回数が多く実行時間が長いため CI では走らせない（既定はスキップ）。較正値を再確認・更新するときだけ
 // 環境変数で明示的に有効化する:

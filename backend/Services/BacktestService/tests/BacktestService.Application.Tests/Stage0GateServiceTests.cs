@@ -23,7 +23,7 @@ public class Stage0GateServiceTests
         return BacktestMetricsCalculator.Compute(equity, [5m, 4m, -1m, 3m]);
     }
 
-    // 較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0109）を満たす台帳。
+    // 較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0110）を満たす台帳。
     // IS Sharpe は 2.8〜3.0 付近に散らし、補正項 SR0 が 0 にならない（分散を持つ）ようにする。
     private static TrialLedger CalibratedTrials()
     {

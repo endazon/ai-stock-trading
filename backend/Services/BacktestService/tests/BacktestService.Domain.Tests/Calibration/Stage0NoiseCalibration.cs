@@ -1,13 +1,13 @@
 namespace AiStockTrading.Backtest.Domain.Tests.Calibration;
 
-// FR-15, FR-20, ADR-0008, #208, IADR-0109: Stage 0 のエッジ有意条件（DSR）に対する較正ハーネス。
+// FR-15, FR-20, ADR-0008, #208, IADR-0110: Stage 0 のエッジ有意条件（DSR）に対する較正ハーネス。
 //
 // 真のエッジが 0 の候補を searchSize 個生成して IS Sharpe 最良を選び、台帳へ recordedTrials 件だけ記録した
 // ときの DSR を求める。「探索したが記録しなかった」状況（過少申告）を再現できるのが要点で、
 // MinTrials がこの過少申告をどこまで許すかが較正の対象である。
 //
 // 実市場データは使わない。ここで測るのは多重検定補正が働くかどうかという統計的性質であり、
-// 真のエッジ 0 の合成標本で決まる（実データでの水準確認は #208 に残置・IADR-0109）。
+// 真のエッジ 0 の合成標本で決まる（実データでの水準確認は #208 に残置・IADR-0110）。
 internal static class Stage0NoiseCalibration
 {
     /// <summary>1 回の探索結果。DSR・期待最大 Sharpe（補正項）・選ばれた候補の 1 期間 Sharpe。</summary>

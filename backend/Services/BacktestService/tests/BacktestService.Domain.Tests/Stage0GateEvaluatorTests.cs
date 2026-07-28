@@ -7,7 +7,7 @@ namespace AiStockTrading.Backtest.Domain.Tests;
 public class Stage0GateEvaluatorTests
 {
     // 全条件を満たす評価（DSR 0.99・PBO 0.1・最大DD 0.08・コスト2倍 +・OOS +・試行 20）。
-    // 試行数は較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0109）ちょうどに置き、
+    // 試行数は較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0110）ちょうどに置き、
     // 下限が上がったときに本ヘルパが黙って不合格側へ倒れないよう既定値へ追随させる。
     private static Stage0GateEvaluation Passing() => new(
         DeflatedSharpe: 0.99,
@@ -72,7 +72,7 @@ public class Stage0GateEvaluatorTests
         Stage0GateEvaluator.Evaluate(eval, Criteria).FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
     }
 
-    // #208, IADR-0109: 較正で下限が 1 → 20 へ上がった。過少申告された台帳（1〜2 件）は、
+    // #208, IADR-0110: 較正で下限が 1 → 20 へ上がった。過少申告された台帳（1〜2 件）は、
     // 他の 6 条件を満たしていても不合格になる（多重検定補正が効かない台帳を通さない）。
     [Theory]
     [InlineData(1)]

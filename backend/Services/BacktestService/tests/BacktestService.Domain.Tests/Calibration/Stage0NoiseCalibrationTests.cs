@@ -4,13 +4,13 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, FR-20, ADR-0008, #208, IADR-0109: Stage 0 の試行数下限（MinTrials）較正の土台。
+// FR-15, FR-20, ADR-0008, #208, IADR-0110: Stage 0 の試行数下限（MinTrials）較正の土台。
 //
 // 較正の問い: 「真のエッジが 0 の候補を N 個試して最良を選ぶ」とき、Stage 0 のエッジ有意条件
 // （DSR ≥ MinDeflatedSharpe）はどれだけ誤って合格を出すか。DSR の多重検定補正（期待最大 Sharpe SR0）は
 // **台帳に記録された試行数**からしか計算できないため、記録の粒度が補正の効き方を決める。
 //
-// 実市場データは用いない（Stooq は現在プログラム取得不可・IADR-0109）。ここで測るのは
+// 実市場データは用いない（Stooq は現在プログラム取得不可・IADR-0110）。ここで測るのは
 // 「補正が働くかどうか」という統計的性質であり、真のエッジ 0 の合成標本で十分に決まる。
 public class Stage0NoiseCalibrationTests
 {

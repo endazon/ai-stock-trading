@@ -107,7 +107,7 @@ public class StooqDailyCsvParserTests
             .Should().BeFalse();
     }
 
-    // FR-15, #208, IADR-0109: 2026-07-28 時点の Stooq は、プログラムからの取得に対して CSV ではなく
+    // FR-15, #208, IADR-0110: 2026-07-28 時点の Stooq は、プログラムからの取得に対して CSV ではなく
     // JavaScript の proof-of-work によるボット検知チャレンジ（HTTP 200）を返す。実際の応答で確認済み。
     // チャレンジの回避は行わない方針のため、この応答は**欠測**として扱われなければならない
     //（価格 0 本のまま合格判定へ進ませない）。

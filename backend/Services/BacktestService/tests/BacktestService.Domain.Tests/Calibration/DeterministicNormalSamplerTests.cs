@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 
-// FR-15, ADR-0008, #208, IADR-0109: 閾値較正に使う決定論的な正規乱数源。
+// FR-15, ADR-0008, #208, IADR-0110: 閾値較正に使う決定論的な正規乱数源。
 // 較正の数値は根拠として IADR に記録するため、実行のたびに変わってはならない。
 // .NET の Random は実装（ランタイム版）によって系列が変わり得るため、較正専用に自前の splitmix64 を用いる。
 public class DeterministicNormalSamplerTests

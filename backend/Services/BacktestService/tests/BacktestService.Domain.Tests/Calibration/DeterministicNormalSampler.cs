@@ -1,6 +1,6 @@
 namespace AiStockTrading.Backtest.Domain.Tests.Calibration;
 
-// FR-15, ADR-0008, #208, IADR-0109: 閾値較正専用の決定論的な正規乱数源（splitmix64 ＋ Box-Muller）。
+// FR-15, ADR-0008, #208, IADR-0110: 閾値較正専用の決定論的な正規乱数源（splitmix64 ＋ Box-Muller）。
 //
 // `System.Random` を使わない理由: 種を固定しても系列がランタイム実装に依存するため、IADR に記録した較正値を
 // 後から再現できる保証が無い。較正の根拠は「同じ種なら同じ数値」が成り立って初めて検証可能になる。
