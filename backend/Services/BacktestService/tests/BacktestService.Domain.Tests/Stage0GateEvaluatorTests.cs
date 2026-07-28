@@ -6,14 +6,16 @@ namespace AiStockTrading.Backtest.Domain.Tests;
 // FR-15, FR-20, ADR-0008, 06_daytrading-review §4: Stage 0 合格判定（7 条件の合成）を検証する。
 public class Stage0GateEvaluatorTests
 {
-    // 全条件を満たす評価（DSR 0.99・PBO 0.1・最大DD 0.08・コスト2倍 +・OOS +・試行 10）。
+    // 全条件を満たす評価（DSR 0.99・PBO 0.1・最大DD 0.08・コスト2倍 +・OOS +・試行 20）。
+    // 試行数は較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0109）ちょうどに置き、
+    // 下限が上がったときに本ヘルパが黙って不合格側へ倒れないよう既定値へ追随させる。
     private static Stage0GateEvaluation Passing() => new(
         DeflatedSharpe: 0.99,
         ProbabilityOfBacktestOverfitting: 0.10,
         MaxDrawdown: 0.08m,
         DoubledCostTotalReturn: 0.12m,
         WalkForwardOutOfSampleReturn: 0.05m,
-        TrialCount: 10,
+        TrialCount: Stage0GateCriteria.Default.MinTrials,
         DataCutoffSatisfied: true);
 
     private static readonly Stage0GateCriteria Criteria = Stage0GateCriteria.Default;
@@ -68,6 +70,22 @@ public class Stage0GateEvaluatorTests
     {
         var eval = Passing() with { TrialCount = 0 };
         Stage0GateEvaluator.Evaluate(eval, Criteria).FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
+    }
+
+    // #208, IADR-0109: 較正で下限が 1 → 20 へ上がった。過少申告された台帳（1〜2 件）は、
+    // 他の 6 条件を満たしていても不合格になる（多重検定補正が効かない台帳を通さない）。
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(19)]
+    public void 較正後の下限未満の台帳は他条件を満たしても不合格(int trialCount)
+    {
+        var eval = Passing() with { TrialCount = trialCount };
+
+        var result = Stage0GateEvaluator.Evaluate(eval, Criteria);
+
+        result.Passed.Should().BeFalse();
+        result.FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
     }
 
     [Fact]

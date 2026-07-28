@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-26
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
@@ -78,7 +78,7 @@ plan_refs:
 | 最大 DD | 許容内 | ≤ 許容 DD（既定 15%＝前提条件の DD 上限） |
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |
 | ウォークフォワード | OOS が正 | OOS 総リターン > 0 |
-| 試行数 | 最小試行数以上 | N ≥ 1（記録の存在）。**実データでの較正前の暫定値**（IADR-0045・較正は #208） |
+| 試行数 | 最小試行数以上 | **N ≥ 20**（[IADR-0109](../adr/IADR-0109_stage0-criteria-calibration.md) で 1 から較正）。1 では多重検定補正（期待最大 Sharpe）が恒等的に 0 になり、探索の過少申告を素通しさせる |
 | データ健全性 | 全バーがカットオフ後/匿名化（検証条件①） | `DataCutoffPolicy` 充足（`Stage0GateCheck.DataCutoff`） |
 
 - 合格 → `Stage0Verification → Stage1Paper` の**昇格推奨**を返す（実際の遷移承認は利用者・#20）。
@@ -116,7 +116,8 @@ plan_refs:
 
 - 機能仕様: [FR-20 段階ゲート](FR-20_staged-gates.md)、[FR-10 リスク統制](FR-10_risk-controls.md)
 - 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
-  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）
+  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
+  [IADR-0109](../adr/IADR-0109_stage0-criteria-calibration.md)（合格基準の閾値較正）
 - テスト仕様: [FR-15 バックテスト基盤](../tests/FR-15_backtest-tests.md)
 - 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、
   [20260726_backtest-historical-bar-source](../specs/20260726_backtest-historical-bar-source.md)

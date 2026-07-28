@@ -5,7 +5,7 @@ status: review
 related_ids: [FR-15, FR-20, FR-17, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-07-26
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
@@ -39,12 +39,15 @@ related_specs:
 - 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）、
   `BacktestService.Application.Tests`（過去データのスナップショット化・PIT ユニバース適用・verdict 供給の結合）、
   `BacktestService.Worker.Tests`（実過去データ源アダプタ・provider 選択・ホストの配線と実効構成の自己申告）。
-- 対象外（別スライス）: 実データでの Stage 0 閾値較正（`MinTrials` 暫定・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
-  実 Stooq に対する live 検証（手動 opt-in・CI 対象外）、Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、
+- 対象外（別スライス）: **実市場データによる閾値の水準確認**（偽陰性の測定。閾値そのものの較正は
+  [IADR-0109](../adr/IADR-0109_stage0-criteria-calibration.md) で実施済・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
+  実 Stooq に対する live 検証（2026-07-28 時点でボット検知チャレンジのため取得不可・回避はしない）、
+  Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、
   段階遷移の承認オペレーション（[#20](https://github.com/endazon/ai-stock-trading/issues/20)）。
 - 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)（基盤）、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
   [IADR-0089](../adr/IADR-0089_backtest-verdict-supply.md)（verdict 供給）、
-  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）。
+  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
+  [IADR-0109](../adr/IADR-0109_stage0-criteria-calibration.md)（合格基準の閾値較正）。
 
 ## テスト観点
 
@@ -159,6 +162,24 @@ related_specs:
 | T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` | 自動 |
 | T-15-53 | ヘルスチェックが起動直後に ready（DB もバスも持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` | 自動 |
 
+### 合格基準の閾値較正（#208・[IADR-0109](../adr/IADR-0109_stage0-criteria-calibration.md)）
+
+較正は真のエッジ 0 の合成標本による決定論モンテカルロ（種固定）。実市場データは使わない（Stooq は
+2026-07-28 時点でボット検知チャレンジを返し取得不可・回避はしない）。実データでの水準確認は #208 に残置。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-54 | 較正用乱数源が決定論的（同一種→同一系列）で標準正規に従う | `DeterministicNormalSamplerTests.同じ種は同じ系列を返す_較正の再現性` / `異なる種は異なる系列を返す` / `標準正規に従う_平均0_標準偏差1` | 自動 |
+| T-15-55 | 記録 1 件では期待最大 Sharpe が 0＝多重検定補正が不活性（`MinTrials=1` の実害） | `Stage0NoiseCalibrationTests.記録試行数1では期待最大Sharpeが0になる_多重検定補正が不活性` | 自動 |
+| T-15-56 | 同じ探索結果でも記録件数を増やすと DSR は下がる（補正は緩む方向へ動かない） | `Stage0NoiseCalibrationTests.同じ標本でも記録試行数を増やすとDSRは下がる_補正が効く` | 自動 |
+| T-15-57 | 偽陽性率: 単一試行は名目 5% 付近／過少申告で跳ね上がる／正直な記録なら抑えられる | `Stage0NoiseCalibrationTests.単一候補を正直に記録した場合の偽陽性率は名目水準付近` / `探索を過少申告すると偽陽性率が跳ね上がる_MinTrials1の実害` / `正直に記録すれば探索を広げても偽陽性率は抑えられる` | 自動 |
+| T-15-58 | 真のエッジ 0 の PBO は 0.5 付近＝閾値 0.5 は雑音の中心（据え置き判断の土台） | `Stage0NoiseCalibrationTests.真のエッジ0の性能行列ではPBOが05付近に集まる_閾値05は雑音の中心` | 自動 |
+| T-15-59 | 記録 2 件では SR0 の推定が不安定（下限を構造的境界に置けない根拠） | `Stage0NoiseCalibrationTests.記録試行数2は期待最大Sharpeの推定が不安定_下限を2に置けない根拠` | 自動 |
+| T-15-60 | 既定値の固定: 最小試行数 20・構造的下限（2）超・据え置き 3 閾値 | `Stage0GateCriteriaTests.最小試行数の既定は20_多重検定補正が効く水準` / `最小試行数は2以上でなければ補正が消える_構造的下限` / `較正で変更しない閾値は据え置く` | 自動 |
+| T-15-61 | 較正後の下限未満（1/2/19 件）の台帳は他 6 条件を満たしても不合格 | `Stage0GateEvaluatorTests.較正後の下限未満の台帳は他条件を満たしても不合格`（Theory 3 ケース） | 自動 |
+| T-15-62 | Stooq のボット検知チャレンジ応答は欠測として扱う（バー 0 本→昇格拒否） | `StooqDailyCsvParserTests.ボット検知チャレンジ応答は解析失敗として扱う` | 自動 |
+| — | 較正表の再生成（IADR-0109 の数値） | `Stage0CalibrationReportTests.較正表を再生成する`（`STAGE0_CALIBRATION_REPORT=1` で有効化・**既定スキップ／CI 対象外**） | 手動 opt-in |
+
 > T-15-50 は fail-safe が「どこで」効いているかも固定している。DSR（標本不足で 0）・コスト 2 倍・ウォークフォワードの
 > 3 条件が落ちて昇格が拒否される一方、`DataCutoffPolicy.IsAllAfterCutoff([]) == true`（空は真空的に真）のため
 > **データカットオフ条件は空データを検出しない**。この非自明な依存関係を明示的に検証する。
@@ -169,14 +190,15 @@ related_specs:
   メンバーシップ / 試行台帳をヘルパで組み立て、しきい値ちょうど・カットオフ当日・上場廃止日を注入する。
 - 実過去データ源（Stooq）は `HttpMessageHandler` スタブで CSV 応答・HTTP 状態を注入する（外部送信ゼロ）。
   安全既定の検証は「呼ばれたら例外を投げるハンドラ」を使い、外部へ接続しないことを構造的に固定する。
-  Stage 0 閾値の較正（`MinTrials` 暫定）は実データでの実測が要るため
+- 閾値較正（IADR-0109）は真のエッジ 0 の**合成標本**を決定論モンテカルロ（種固定の splitmix64）で回す。
+  市場データは使わない。実在の戦略が基準を通せるか（偽陰性の水準）だけが実データ待ちで
   [#208](https://github.com/endazon/ai-stock-trading/issues/208) に残る。
 
 ## 未カバー・実施予定
 
 | 項目 | 理由 | 追跡 |
 | --- | --- | --- |
-| 実データでの Stage 0 閾値較正（`MinTrials` ほか） | データ源アダプタは実装済（#208・IADR-0105）だが、閾値較正は実データでの実測そのもの。`MinTrials=1` は暫定のまま | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
+| 実市場データによる閾値の水準確認（偽陰性の測定） | `MinTrials` は決定論モンテカルロで較正済（IADR-0109）。実在の戦略が基準を通せるかは実データが要り、Stooq は取得不可・代替は資格情報が必要 | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | CI からは外部へ出さない方針（IADR-0049）。手動 opt-in で確認する | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | Risk への verdict 実 publish / E2E | イベント射影は実装済み・実バス配線は統合基盤側 | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |

@@ -19,12 +19,20 @@ public sealed record Stage0GateCriteria(
     decimal MaxDrawdownTolerance,
     int MinTrials)
 {
-    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.15・最小試行数 1）。実データでの較正は後続（IADR-0045）。
+    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.15・最小試行数 20）。
+    //
+    // #208, IADR-0109: MinTrials を暫定値 1 から 20 へ較正した。1 では ExpectedMaxSharpe が 0 を返し
+    // （trials<2）多重検定補正が恒等的に消えるため、探索を過少申告した Stage 0 判定を素通しさせていた。
+    // 実測（決定論モンテカルロ・真のエッジ 0）: 200 候補を探索して 1 件だけ記録すると偽陽性率 100%、
+    // 2 件で 57.20%、20 件で 0.62%。SR0 の推定変動係数も N=2 の 75.9% から N=20 で 16.3% へ収束する。
+    // 他の 3 閾値は据え置き（DSR 0.95 は名目 5% 水準と実測整合・PBO 0.5 の厳格化は既知エッジも同程度に
+    // 落とすため見送り・最大DD 0.15 は計画書 05_trading-assumptions の DD 上限由来）。
+    // 実市場データによる水準確認は #208 に残置（資格情報を要するデータ源が必要）。
     public static Stage0GateCriteria Default => new(
         MinDeflatedSharpe: 0.95,
         MaxProbabilityOfOverfitting: 0.50,
         MaxDrawdownTolerance: 0.15m,
-        MinTrials: 1);
+        MinTrials: 20);
 }
 
 // FR-15, ADR-0008: Stage 0 合格判定の入力（Slice A/B の集計・補正結果）。

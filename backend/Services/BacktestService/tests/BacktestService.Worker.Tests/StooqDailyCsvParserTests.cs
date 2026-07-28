@@ -107,6 +107,23 @@ public class StooqDailyCsvParserTests
             .Should().BeFalse();
     }
 
+    // FR-15, #208, IADR-0109: 2026-07-28 時点の Stooq は、プログラムからの取得に対して CSV ではなく
+    // JavaScript の proof-of-work によるボット検知チャレンジ（HTTP 200）を返す。実際の応答で確認済み。
+    // チャレンジの回避は行わない方針のため、この応答は**欠測**として扱われなければならない
+    //（価格 0 本のまま合格判定へ進ませない）。
+    [Fact]
+    public void ボット検知チャレンジ応答は解析失敗として扱う()
+    {
+        const string challenge =
+            """<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><noscript>This site requires JavaScript to verify your browser.</noscript><script>/* proof-of-work */</script></body></html>""";
+
+        var ok = StooqDailyCsvParser.TryParse(challenge, "AAPL", Market.UnitedStates, out var bars, out var reason);
+
+        ok.Should().BeFalse();
+        bars.Should().BeEmpty();
+        reason.Should().NotBeNullOrWhiteSpace();
+    }
+
     [Fact]
     public void 想定外のヘッダは解析失敗として扱う()
     {
