@@ -11,7 +11,9 @@
 # 機密の上書き（未設定=空=no-op）:
 #   FINNHUB_API_KEY（情報収集）/ MARKETDATA_FINNHUB_API_KEY（①時価・価格文脈。IADR-0068 の別枠＝収集鍵とは独立の
 #     opt-in。FINNHUB_API_KEY へはフォールバックしない＝収集鍵の設定だけで①が黙って全面有効化されない）/
-#   EDINET_SUBSCRIPTION_KEY / FRED_API_KEY / DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
+#   EDINET_SUBSCRIPTION_KEY / FRED_API_KEY（**US 株取引の必須前提**＝基準通貨・円への換算レート源 FRED DEXJPUS。
+#     #262, IADR-0107。未設定だと USD 建て銘柄は判断前に全件見送りになる。日本株は定義上レート 1 で無影響）/
+#   DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
 #   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）。
 # #226, IADR-0098: Discord Bot 制御コマンドの owner 認証は dev 既定（ai-stock-trading-owner /
 # dev-only-owner-secret＝realm-export.json と一致）で解決する。DISCORD_OWNERAUTH_CLIENTID /

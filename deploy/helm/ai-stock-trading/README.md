@@ -43,6 +43,8 @@ kubectl -n ai-stock-trading get pods
 - **Discord 通知**: notification `Notifications__Provider=discord-webhook` / `Bot__Enabled=true`（FR-09/14・IADR-0062）。
 - **価格文脈（#236 / IADR-0099）**: trade-decision へ現在値を供給し権威価格でサイジング
   （`MarketData__Provider=finnhub`＋鍵で `ICurrentPriceProvider.IsEnabled` が真・鮮度 `MaxQuoteStalenessSeconds=300`）。
+- **為替換算（#257 / IADR-0107）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
+  **US 株を取引するための必須前提**（下記「為替換算」参照）。未設定だと USD 建て銘柄は LLM 呼び出し前に全件見送りになる。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
 
 **本番（ArgoCD）はバイト等価**: `deploy/argocd/application.yaml` は `valueFiles` を持たず `values.yaml` のみを描画するため、
@@ -55,7 +57,8 @@ kubectl -n ai-stock-trading get pods
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
 | `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない） | 空=NoOp |
-| `EDINET_SUBSCRIPTION_KEY` / `FRED_API_KEY` | `edinet-subscription-key` / `fred-api-key` | 収集ソース（任意） | 空=当該ソース無効 |
+| `FRED_API_KEY` | `fred-api-key` | **US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・IADR-0107）。収集ソース（FRED）にも同じ鍵を使う | **空=USD 建て銘柄が全件見送り**（日本株は無影響）。下記「為替換算」参照 |
+| `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
@@ -65,6 +68,65 @@ kubectl -n ai-stock-trading get pods
 > [IADR-0102](../../../docs/adr/IADR-0102_discord-env-ids-via-values.md)）。**空のまま**だと IADR-0062 の
 > 安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で Bot は接続しても操作を受け付けない。
 > Discord を使わないなら `Notifications__Provider=""` / `Bot__Enabled="false"` に戻す。
+
+### 為替換算（`FRED_API_KEY`）— **US 株取引の必須前提**
+
+> 起点: [#262](https://github.com/endazon/ai-stock-trading/issues/262) / [#257](https://github.com/endazon/ai-stock-trading/issues/257) /
+> [IADR-0107](../../../docs/adr/IADR-0107_base-currency-conversion.md) /
+> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md)
+
+統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝日本円**で行う（IADR-0107）。
+非基準通貨（USD 建て）の銘柄は、円への換算レートが解決できない限り**新規建てを見送る**（決定3 の fail-safe＝
+「古い/無いレートで発注しない」）。したがって **`FRED_API_KEY` は US 株を取引するための必須前提**であり、
+「任意の収集ソース鍵」ではない。
+
+| 項目 | 値 | 実装上の根拠 |
+| --- | --- | --- |
+| 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
+| 系列 | `DEXJPUS`（円/ドル・**営業日次**） | `FredFxOptions.SeriesId` 既定 |
+| 鮮度上限 | **7 日**（超過した観測は採らない＝レート無し扱い） | `FxOptions.MaxRateAgeDays` 既定 |
+| キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
+| 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
+
+**日本株（基準通貨）は本キー無しでも従来どおり取引できる。** 円建て市場はレート 1 が定義から決まるため
+FX 源へ問い合わせない。すなわち症状は「**米国株だけ何も起きない**」という形（沈黙）で出る。
+
+**未設定時の観測ログ**（症状 → 原因の辿り方）:
+
+```text
+# trade-decision（レート源が未接続）— 判断サイクルごとではなく初回 1 回だけ出る
+warn: NoOpFxRateSource を使用中: 為替レート源が未接続のため Usd 建て銘柄の新規建ては見送られます（IADR-0107）。
+
+# Fx__Provider=fred だが鍵が空（＝「有効化したつもり」の典型）
+warn: Fx:Provider に fred が指定されていますが、APIキー（Fx:Fred:ApiKey）が未設定のため為替レートを取得しません（no-op へフォールバック・IADR-0107）。
+
+# 実際に見送られた銘柄（LLM 呼び出しより前・銘柄ごと）
+warn: 基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: AAPL market=UnitedStates
+```
+
+**切り分け**（ログを待たずに現状を確認する）— 自己申告の `fx-rate` ポートが `none` なら効いていない:
+
+```bash
+kubectl -n ai-stock-trading port-forward svc/trade-decision-service 8080:8080 &
+curl -s localhost:8080/internal/introspection | tr ',' '\n' | grep -A1 fx-rate
+#   "port":"fx-rate"
+#   "implementation":"none"     ← 未接続（鍵未設定・provider 未指定・未知の値）。"fred" なら接続済み
+```
+
+`implementation` は実際に選択された実装を申告する（`FxRateSourceFactory.ResolveProvider` が単一情報源）。
+**`Fx__Provider=fred` を設定していても鍵が空なら `none` を申告する**ため、「設定したのに効いていない」を
+ここで検知できる。
+
+```bash
+export FRED_API_KEY=<FRED の API キー>   # https://fred.stlouisfed.org/docs/api/api_key.html
+scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（既存の他キーは保持される・#263）
+```
+
+> 換算を正した結果 AAPL は 1 株あたり約 5.2 万円となり、本番既定の 1 注文金額上限 35,000 円を超えて
+> **数量 0＝見送り**になる。これは通貨を正した後の正しい帰結である。経路B では
+> [IADR-0108](../../../docs/adr/IADR-0108_simulator-risk-profile.md) の SIMULATE 限定プロファイル
+> （`values-local.yaml` の `Risk__SimulatorProfile__Enabled=true`・本番既定は false）が上限をシミュレータ残高に
+> 合わせるため発注まで到達する。本番既定での上限見直し・銘柄選定は運用判断として #257 に残置。
 
 ### Discord の環境固有 ID（`kubectl set env` は使わない）
 
