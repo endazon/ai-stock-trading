@@ -318,8 +318,11 @@ services:
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=order_execution_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
-      # fail-safe: 既定 paper（実発注しない・IADR-0016）。moomoo 実弾は #13。
+      # fail-safe: 既定 paper / sim（実発注しない・IADR-0016 / IADR-0111）。
+      # 階層は provider × environment の 2 軸: paper ＜ moomoo-sim ＜ moomoo-live（実弾）。
+      # ⚠️ Broker__Environment=live は**未解禁**であり、指定すると起動時に停止する（LiveTradingGate＝閂 0）。
       Broker__Provider: ${BROKER_PROVIDER:-paper}
+      Broker__Environment: ${BROKER_ENVIRONMENT:-sim}
     depends_on:
       <<: *depends-infra
       postgres:

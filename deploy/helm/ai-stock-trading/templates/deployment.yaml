@@ -1,5 +1,24 @@
 {{- /* #122: 10 Worker を同型の Deployment としてレンダリングする（全て Web SDK :8080）。 */ -}}
 {{- $g := .Values.global -}}
+{{- /* FR-05, #267, IADR-0111: ブローカ階層（運用の本番近接順）の単一スイッチ broker.tier を
+       provider × environment の 2 軸へ展開する。paper ＜ moomoo-sim ＜ moomoo-live。
+       moomoo.enabled は**非推奨エイリアス**で、tier 未指定（""）のときだけ moomoo-sim と解釈する
+       ＝既存構成を壊さない。tier を明示しつつ moomoo.enabled=true にした矛盾は描画時に止める。 */ -}}
+{{- $tier := ((.Values.broker | default dict).tier) | default "" -}}
+{{- if eq $tier "" -}}
+{{- $tier = ternary "moomoo-sim" "paper" .Values.moomoo.enabled -}}
+{{- else if and .Values.moomoo.enabled (not (hasPrefix "moomoo-" $tier)) -}}
+{{- fail (printf "broker.tier=%q と非推奨エイリアス moomoo.enabled=true が矛盾しています。broker.tier に一本化してください（moomoo を使うなら broker.tier=moomoo-sim・moomoo.enabled は省略）。" $tier) -}}
+{{- end -}}
+{{- /* IADR-0111 外周の閂: 実弾は未解禁。誤設定をクラスタへ届かせない（アプリ側は LiveTradingGate が閂 0 として停止させる）。 */ -}}
+{{- if eq $tier "moomoo-live" -}}
+{{- fail "broker.tier=moomoo-live（実弾）は受理しません。実弾は未解禁です（IADR-0016 / IADR-0056 / IADR-0111）。解禁には別の実装 ADR と IADR-0056 §3 の前提充足（リスク統制・監査・上限の実弾向け再確認、秘匿情報の Vault 化、発注予約 Reserved 滞留の自動リコンサイル #141）が要ります。シミュレーションには broker.tier=moomoo-sim を使ってください。" -}}
+{{- end -}}
+{{- $brokerTiers := dict "paper" (dict "provider" "paper" "environment" "sim") "moomoo-sim" (dict "provider" "moomoo" "environment" "sim") -}}
+{{- if not (hasKey $brokerTiers $tier) -}}
+{{- fail (printf "未知の broker.tier %q。'paper'（内蔵擬似）または 'moomoo-sim'（OpenD 経由 SIMULATE）を指定してください（IADR-0111）。" $tier) -}}
+{{- end -}}
+{{- $broker := get $brokerTiers $tier -}}
 {{- range $name, $svc := .Values.services }}
 {{- /* FR-09/14, #245, IADR-0102: Discord Bot の環境固有 ID（非機密）を values（discord.bot.*）から与える設定点。
        env を**追加**せず extraEnv の**値を上書き**する（同名 env の二重定義を作らない）。空既定では 1 つも
@@ -100,19 +119,25 @@ spec:
             - name: Collection__Trigger
               value: "External"
             {{- end }}
-            {{- /* #13: 発注先。既定 paper（fail-safe・実弾なし）。moomoo.enabled で OpenD 経由 SIMULATE 発注へ。
-                   cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
+            {{- /* #13, IADR-0111: 発注先。既定 paper（fail-safe・実弾なし）。broker.tier=moomoo-sim で OpenD 経由
+                   SIMULATE 発注へ。cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
             {{- if eq $name "order-execution" }}
             - name: Broker__Provider
-              value: {{ ternary "moomoo" "paper" $.Values.moomoo.enabled | quote }}
-            {{- if $.Values.moomoo.enabled }}
+              value: {{ $broker.provider | quote }}
+            {{- /* IADR-0111: 取引環境。アプリ既定と同じ sim の paper 階層では注入しない
+                   ＝既定描画（本番 values.yaml）は本設定点の追加前とバイト等価。 */}}
+            {{- if ne $broker.provider "paper" }}
+            - name: Broker__Environment
+              value: {{ $broker.environment | quote }}
+            {{- end }}
+            {{- if eq $broker.provider "moomoo" }}
             {{- /* #132, IADR-0060: 誤配備は描画時に止める。host / RSA 鍵を欠いた moomoo 有効化は
                    「接続はするが trade だけ落ちる」形になりやすい（起動時 preflight でも落ちる）。 */}}
             {{- if not $.Values.moomoo.opend.host }}
-            {{- fail "moomoo.enabled=true には moomoo.opend.host（常駐 OpenD のホスト。in-cluster では Service 名 'opend'）が要ります。" }}
+            {{- fail "broker.tier=moomoo-sim には moomoo.opend.host（常駐 OpenD のホスト。in-cluster では Service 名 'opend'）が要ります。" }}
             {{- end }}
             {{- if not $.Values.moomoo.opend.rsaSecretName }}
-            {{- fail "moomoo.enabled=true には moomoo.opend.rsaSecretName（OpenD と同一の RSA 鍵 Secret）が要ります。cross-network の trade 接続には暗号化が必須（#13）。" }}
+            {{- fail "broker.tier=moomoo-sim には moomoo.opend.rsaSecretName（OpenD と同一の RSA 鍵 Secret）が要ります。cross-network の trade 接続には暗号化が必須（#13）。" }}
             {{- end }}
             - name: Broker__Moomoo__OpenD__Host
               value: {{ $.Values.moomoo.opend.host | quote }}
@@ -148,7 +173,7 @@ spec:
               mountPath: /etc/ai-stock-trading
               readOnly: true
             {{- /* #13: OpenD 暗号化通信用 RSA 秘密鍵（moomoo-rsa Secret）を read-only でマウント。 */}}
-            {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+            {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}
             - name: moomoo-rsa
               mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
               readOnly: true
@@ -158,7 +183,7 @@ spec:
         - name: pipeline-config
           configMap:
             name: {{ $.Values.namespace.name }}-pipeline
-        {{- if and (eq $name "order-execution") $.Values.moomoo.enabled }}
+        {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}
         - name: moomoo-rsa
           secret:
             secretName: {{ $.Values.moomoo.opend.rsaSecretName }}
