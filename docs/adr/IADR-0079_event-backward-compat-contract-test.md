@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [ADR-0001, FR-11, IADR-0077, IADR-0078]
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
 ---
@@ -51,6 +51,22 @@ plan_refs:
    本契約テストの検証対象をエンベロープへ拡張する。**それまではエンベロープ型を定義しない。**
 
 ## 既知の限界
+
+- **名前空間の移動は検出対象外（→ `EventMessageUrnTests` が分担）**: snapshot のキーを **`Type.Name`（単純型名）**
+  で構成するため、イベント型を別名前空間へ移しても（型名・プロパティが不変なら）本テストは**緑のまま**である。
+  一方 MassTransit の wire 識別子は正準 URN `urn:message:<Namespace>:<TypeName>` で、名前空間から導出されるため、
+  名前空間の移動は **wire 契約を破壊する**（キューに滞留中／`_error` キュー内のメッセージが再消費不能になる）。
+  この分担は `EventMessageUrnTests`（[IADR-0037](IADR-0037_async-contract-format-reevaluation.md) の決定・
+  [#253](https://github.com/endazon/ai-stock-trading/issues/253)）が担い、全イベントの正準 URN を固定する。
+  **実測（#253 の PR で確認）**: 全イベントを `Contracts.Events` → `Contracts.EventsMoved` へ移す実験で、
+  本テストは 5/5 緑のまま、`EventMessageUrnTests` は 17 件が赤になった。両テストの検出範囲は以下のとおり。
+
+  | 変更 | `EventBackwardCompatibilityTests`（本 ADR） | `EventMessageUrnTests`（#253） |
+  | --- | --- | --- |
+  | プロパティの削除・改名・型変更 | 検出する | 検出しない |
+  | イベント型の削除・改名 | 検出する | 検出する |
+  | **名前空間の移動（URN 破壊）** | **検出しない** | **検出する** |
+  | enum メンバーの削除・改名 | 検出しない（下記） | 検出しない |
 
 - **enum メンバーの変更は検出対象外**: 契約テストはプロパティの**型名**単位で比較するため、`OrderStatus` /
   `Market` / `TradeSide` / `RejectionReason` 等の enum の**メンバー削除・改名**は検出しない（プロパティの型名

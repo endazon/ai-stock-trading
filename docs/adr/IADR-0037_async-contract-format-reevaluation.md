@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-05, ADR-0001, ADR-0002, IADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-28
 plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
@@ -144,8 +144,12 @@ C# 型を権威に保ったまま、生成器で `asyncapi.yaml` を派生物と
     （トリガ発火時に案 B/C を再評価して対応）。
   - Markdown 通信仕様は人手保守のままで、契約数の一層の増加時は保守負荷が漸増する（トリガ 4 で見直す）。
 - フォローアップ:
-  - **`MessageUrn` 回帰テストの実装**（platform `EventMessageUrnTests` と同型）を別 issue/PR で行う。10 イベントの
-    正準 URN（`urn:message:AiStockTrading.Shared.Contracts.Events:<Type>`）を固定し、破壊的変更を CI で検知する。
+  - ~~**`MessageUrn` 回帰テストの実装**（platform `EventMessageUrnTests` と同型）を別 issue/PR で行う。10 イベントの
+    正準 URN（`urn:message:AiStockTrading.Shared.Contracts.Events:<Type>`）を固定し、破壊的変更を CI で検知する。~~
+    → **完了**（[#253](https://github.com/endazon/ai-stock-trading/issues/253)）。
+    `AiStockTrading.Shared.Contracts.Tests/EventMessageUrnTests.cs` が全イベント（本テスト追加時点で 17 件）の
+    正準 URN を固定する。検出範囲の [IADR-0079](IADR-0079_event-backward-compat-contract-test.md) との分担は
+    同 ADR「既知の限界」を参照。
   - 上記「再採用トリガ」のいずれかが観測された時点で本 IADR を見直し、案 B/C を再評価する（必要なら新 IADR で Supersede）。
   - platform のイベント規約（#22）の進展を監視し、platform が AsyncAPI を採る場合は整合のため追随を検討する。
 
