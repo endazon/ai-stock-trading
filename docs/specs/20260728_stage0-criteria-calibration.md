@@ -1,7 +1,7 @@
 ---
 title: Stage 0 合格基準（Stage0GateCriteria）の閾値較正と Stooq 取得不可の記録
 type: spec
-status: In progress
+status: review
 related_ids: [FR-15, FR-20, ADR-0004, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-28
