@@ -69,6 +69,57 @@ kubectl -n ai-stock-trading get pods
 > 安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で Bot は接続しても操作を受け付けない。
 > Discord を使わないなら `Notifications__Provider=""` / `Bot__Enabled="false"` に戻す。
 
+### 鍵の供給と再実行時の挙動（`ast-secrets`）
+
+> 起点: [#263](https://github.com/endazon/ai-stock-trading/issues/263) /
+> [IADR-0109](../../../docs/adr/IADR-0109_deploy-secret-preservation.md) /
+> [IADR-0052](../../../docs/adr/IADR-0052_k8s-helm-chart-shared-infra.md)
+
+`ast-secrets` は**手動作成の Secret**（既定は Vault 非依存）。`scripts/k8s-local-deploy.sh` が上表の env を読み、
+**キー単位の差分パッチ**で同期する。**env を export せずに再実行しても、投入済みの値は失われない。**
+
+| env の状態 | `ast-secrets` の当該キー | 挙動 |
+| --- | --- | --- |
+| 未設定 | 値あり | **触らない（保持）**。「保持: `<キー名>`」として表示される |
+| 未設定 | 空/不在 | 既定値で設定（多くは空。dev 既定を持つキーはその既定） |
+| 非空を指定 | 任意 | 指定値で上書き |
+| **空を明示指定**（`export KEY=`） | 値あり | **キー名を列挙して中断**（下記） |
+| 空を明示指定 | 空/不在 | 空のまま（失うものが無い） |
+
+```console
+$ scripts/k8s-local-deploy.sh
+==> [2/3] namespace & ast-secrets (fail-safe 空既定・既存値は保持)
+  ast-secrets: 設定 8 件 / 既存値を保持 5 件（値は表示しません）
+    保持: fred-api-key
+    保持: marketdata-finnhub-api-key
+```
+
+```console
+$ FRED_API_KEY= scripts/k8s-local-deploy.sh
+ERROR: 次のキーは ast-secrets に値がありますが、環境変数が**空**で指定されています。
+       空で上書きすると投入済みの値を失うため中断しました（#263 / IADR-0109）:
+         - fred-api-key ($FRED_API_KEY)
+       - export し忘れなら当該変数を unset して再実行する（現在値がそのまま保持されます）。
+       - 意図した消去なら --force-empty-secrets を付けて再実行する。
+```
+
+現在どのキーに値が入っているかは**キー名だけ**で確認できる（値は出さない）:
+
+```bash
+kubectl -n ai-stock-trading get secret ast-secrets \
+  -o go-template='{{range $k,$v := .data}}{{if $v}}{{$k}}{{"\n"}}{{end}}{{end}}'   # 値ありのキー
+kubectl -n ai-stock-trading get secret ast-secrets \
+  -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'  # 空のキー
+```
+
+> **鍵の実値は端末外へ出さない**（リポジトリ・ログ・Issue/PR に貼らない）。スクリプトは既存値を読み出さず、
+> 表示は常にキー名のみである。挙動は `scripts/k8s-local-deploy.test.sh` が CI で固定する。
+>
+> **ESO（Vault）同期を有効化した環境**（`externalSecrets.appSecrets.enabled=true`・IADR-0094）では
+> `ast-secrets` は `ExternalSecret` が所有する。値の投入は
+> [Vault 秘匿 runbook](../../../docs/operations/vault-secrets-runbook.md) 側で行い、本スクリプトの env は使わない
+> （両方から書くと所有が割れる）。既定はオフ＝手動 Secret 直運用。
+
 ### 為替換算（`FRED_API_KEY`）— **US 株取引の必須前提**
 
 > 起点: [#262](https://github.com/endazon/ai-stock-trading/issues/262) / [#257](https://github.com/endazon/ai-stock-trading/issues/257) /

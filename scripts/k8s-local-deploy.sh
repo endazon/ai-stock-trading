@@ -27,32 +27,139 @@
 #      （`KEY-`＝削除）で剥がしてから本スクリプトを回す（chart README 参照）。
 # #18, IADR-0093: KB 書き込みの s2s は MSP レルムの client ai-stock-trading-kb-writer（KB_AUTH_CLIENTID で上書き可）。
 # LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
+# #263, IADR-0109: ast-secrets は**再作成しない**。env 未設定のキーには触れず（投入済みの値を保持）、
+# 明示的な空指定が既存の非空値を消す場合だけキー名を列挙して中断する（--force-empty-secrets で許可）。
+# 従来の「env から毎回まるごと再作成」は、export し忘れた鍵を空で上書きして無言で壊していた
+# （症状は「デプロイは成功するのに外部連携が静かに no-op へ倒れる」）。挙動は
+# scripts/k8s-local-deploy.test.sh が固定する。
 set -euo pipefail
-CLUSTER="${1:-msp-ast-dev}"
+
+FORCE_EMPTY=0
+CLUSTER=""
+for arg in "$@"; do
+  case "$arg" in
+    --force-empty-secrets) FORCE_EMPTY=1 ;;
+    -*) echo "unknown option: $arg" >&2; exit 2 ;;
+    *) CLUSTER="$arg" ;;
+  esac
+done
+CLUSTER="${CLUSTER:-msp-ast-dev}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 NS="ai-stock-trading"
+SECRET_NAME="ast-secrets"
+
+# ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
+# 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
+# 非空の既定を持つ 5 キーは dev 既定（realm-export.json と一致）。
+AST_SECRET_KEYS=(
+  "finnhub-api-key|FINNHUB_API_KEY|"
+  "marketdata-finnhub-api-key|MARKETDATA_FINNHUB_API_KEY|"
+  "edinet-subscription-key|EDINET_SUBSCRIPTION_KEY|"
+  "fred-api-key|FRED_API_KEY|"
+  "discord-webhook-url|DISCORD_WEBHOOK_URL|"
+  "discord-bot-token|DISCORD_BOT_TOKEN|"
+  "discord-bot-killswitch-phrase|DISCORD_BOT_KILLSWITCH_PHRASE|"
+  "service-auth-client-id|SERVICEAUTH_CLIENTID|ai-stock-trading-svc"
+  "service-auth-client-secret|SERVICEAUTH_CLIENTSECRET|dev-only-service-secret"
+  "kb-auth-client-id|KB_AUTH_CLIENTID|ai-stock-trading-kb-writer"
+  "kb-auth-client-secret|KB_AUTH_CLIENTSECRET|"
+  "discord-owner-auth-client-id|DISCORD_OWNERAUTH_CLIENTID|ai-stock-trading-owner"
+  "discord-owner-auth-client-secret|DISCORD_OWNERAUTH_CLIENTSECRET|dev-only-owner-secret"
+)
+
+AST_PATCH_DIR=""
+ast_cleanup() { [ -n "$AST_PATCH_DIR" ] && rm -rf "$AST_PATCH_DIR"; return 0; }
+trap ast_cleanup EXIT
+
+# 既存 Secret のうち**非空の値を持つキー名だけ**を列挙する（IADR-0109 決定3: 平文は読み出さない）。
+# Secret 不在・data 不在は空を返す（呼び出し側は「保持すべき値は無い」と解釈する）。
+ast_secret_nonempty_keys() {
+  kubectl get secret "$SECRET_NAME" -n "$NS" \
+    -o 'go-template={{if .data}}{{range $k, $v := .data}}{{if $v}}{{$k}}{{"\n"}}{{end}}{{end}}{{end}}' \
+    2>/dev/null || true
+}
+
+ast_has_value() { printf '%s\n' "$1" | grep -Fxq -- "$2"; }
+
+# 値は base64 で載せる（"・\・改行・空白を含む値のエスケープ問題が構造的に消える。IADR-0109 決定4）。
+ast_b64() { printf '%s' "${1:-}" | base64 | tr -d '\r\n'; }
+
+sync_ast_secrets() {
+  local existing entries='' preserved='' clobber='' spec key var default value
+  local n_set=0 n_preserved=0
+  existing="$(ast_secret_nonempty_keys)"
+
+  for spec in "${AST_SECRET_KEYS[@]}"; do
+    key="${spec%%|*}"
+    var="${spec#*|}"; var="${var%%|*}"
+    default="${spec##*|}"
+
+    if [ -n "${!var+set}" ]; then
+      # env の明示指定が唯一の権威。ただし「明示的な空」で既存の非空値を消すのは確認を挟む。
+      value="${!var}"
+      if [ -z "$value" ] && ast_has_value "$existing" "$key"; then
+        clobber="${clobber}${key} (\$${var})
+"
+        [ "$FORCE_EMPTY" = "1" ] || continue
+      fi
+    elif ast_has_value "$existing" "$key"; then
+      # #263 の本丸: export し忘れは「消したい」という意思表示ではない。触らない＝現在値が残る。
+      preserved="${preserved}${key}
+"
+      n_preserved=$((n_preserved + 1))
+      continue
+    else
+      value="$default"
+    fi
+
+    entries="${entries},\"${key}\":\"$(ast_b64 "$value")\""
+    n_set=$((n_set + 1))
+  done
+
+  if [ -n "$clobber" ] && [ "$FORCE_EMPTY" != "1" ]; then
+    {
+      echo "ERROR: 次のキーは $SECRET_NAME に値がありますが、環境変数が**空**で指定されています。"
+      echo "       空で上書きすると投入済みの値を失うため中断しました（#263 / IADR-0109）:"
+      printf '%s' "$clobber" | sed 's/^/         - /'
+      echo "       - export し忘れなら当該変数を unset して再実行する（現在値がそのまま保持されます）。"
+      echo "       - 意図した消去なら --force-empty-secrets を付けて再実行する。"
+    } >&2
+    return 1
+  fi
+
+  # 新規環境（Secret 不在）のみ作成する。kubectl apply は last-applied との 3-way merge で
+  # 「明示しなかったキー」を削除するため使わない（本件と同じ破壊が再発する・IADR-0109 決定5）。
+  if ! kubectl get secret "$SECRET_NAME" -n "$NS" >/dev/null 2>&1; then
+    kubectl create secret generic "$SECRET_NAME" -n "$NS" >/dev/null
+  fi
+
+  if [ -n "$entries" ]; then
+    # パッチはコマンドライン引数ではなく一時ファイルで渡す（ps から平文が見えないようにする）。
+    AST_PATCH_DIR="$(mktemp -d)"
+    ( umask 077; printf '{"data":{%s}}' "${entries#,}" > "$AST_PATCH_DIR/ast-secrets.json" )
+    kubectl patch secret "$SECRET_NAME" -n "$NS" --type=merge \
+      --patch-file "$AST_PATCH_DIR/ast-secrets.json" >/dev/null
+    ast_cleanup
+    AST_PATCH_DIR=""
+  fi
+
+  echo "  $SECRET_NAME: 設定 ${n_set} 件 / 既存値を保持 ${n_preserved} 件（値は表示しません）"
+  [ -n "$preserved" ] && printf '%s' "$preserved" | sed 's/^/    保持: /'
+  return 0
+}
+
+# scripts/k8s-local-deploy.test.sh から関数だけを読み込むための入口（デプロイ手順は実行しない）。
+if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 echo "==> [1/3] build & import AST images"
 "$ROOT/scripts/k8s-local-images.sh" "$CLUSTER"
 
-echo "==> [2/3] namespace & ast-secrets (fail-safe 空既定)"
+echo "==> [2/3] namespace & ast-secrets (fail-safe 空既定・既存値は保持)"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic ast-secrets -n "$NS" \
-  --from-literal=finnhub-api-key="${FINNHUB_API_KEY:-}" \
-  --from-literal=marketdata-finnhub-api-key="${MARKETDATA_FINNHUB_API_KEY:-}" \
-  --from-literal=edinet-subscription-key="${EDINET_SUBSCRIPTION_KEY:-}" \
-  --from-literal=fred-api-key="${FRED_API_KEY:-}" \
-  --from-literal=discord-webhook-url="${DISCORD_WEBHOOK_URL:-}" \
-  --from-literal=discord-bot-token="${DISCORD_BOT_TOKEN:-}" \
-  --from-literal=discord-bot-killswitch-phrase="${DISCORD_BOT_KILLSWITCH_PHRASE:-}" \
-  --from-literal=service-auth-client-id="${SERVICEAUTH_CLIENTID:-ai-stock-trading-svc}" \
-  --from-literal=service-auth-client-secret="${SERVICEAUTH_CLIENTSECRET:-dev-only-service-secret}" \
-  --from-literal=kb-auth-client-id="${KB_AUTH_CLIENTID:-ai-stock-trading-kb-writer}" \
-  --from-literal=kb-auth-client-secret="${KB_AUTH_CLIENTSECRET:-}" \
-  --from-literal=discord-owner-auth-client-id="${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}" \
-  --from-literal=discord-owner-auth-client-secret="${DISCORD_OWNERAUTH_CLIENTSECRET:-dev-only-owner-secret}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+sync_ast_secrets
 
 echo "==> [3/3] helm upgrade --install (local/SIMULATE プロファイル)"
 # #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
