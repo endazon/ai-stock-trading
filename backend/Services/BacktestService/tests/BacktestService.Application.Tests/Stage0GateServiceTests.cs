@@ -23,12 +23,13 @@ public class Stage0GateServiceTests
         return BacktestMetricsCalculator.Compute(equity, [5m, 4m, -1m, 3m]);
     }
 
-    private static TrialLedger ThreeTrials()
+    // 較正後の下限（Stage0GateCriteria.Default.MinTrials=20・#208/IADR-0110）を満たす台帳。
+    // IS Sharpe は 2.8〜3.0 付近に散らし、補正項 SR0 が 0 にならない（分散を持つ）ようにする。
+    private static TrialLedger CalibratedTrials()
     {
         var ledger = new TrialLedger();
-        ledger.Record(new BacktestTrial("a", 2.9, 0.20));
-        ledger.Record(new BacktestTrial("b", 3.0, 0.22));
-        ledger.Record(new BacktestTrial("c", 2.8, 0.18));
+        for (var i = 0; i < Stage0GateCriteria.Default.MinTrials; i++)
+            ledger.Record(new BacktestTrial($"trial-{i}", 2.8 + (i % 5) * 0.05, 0.18 + (i % 5) * 0.01));
         return ledger;
     }
 
@@ -50,7 +51,7 @@ public class Stage0GateServiceTests
         var context = new Stage0GateContext(
             BaselineMetrics: RisingMetrics(),
             DoubledCostTotalReturn: 0.30m,
-            Trials: ThreeTrials(),
+            Trials: CalibratedTrials(),
             OverfittingPerformanceMatrix: DominantMatrix,
             OverfittingPartitions: 4,
             WalkForwardOutOfSampleReturn: 0.05m,
@@ -75,7 +76,7 @@ public class Stage0GateServiceTests
         var context = new Stage0GateContext(
             BaselineMetrics: RisingMetrics(),
             DoubledCostTotalReturn: 0.30m,
-            Trials: ThreeTrials(),
+            Trials: CalibratedTrials(),
             OverfittingPerformanceMatrix: DominantMatrix,
             OverfittingPartitions: 4,
             WalkForwardOutOfSampleReturn: 0.05m,
@@ -96,7 +97,7 @@ public class Stage0GateServiceTests
         var context = new Stage0GateContext(
             BaselineMetrics: RisingMetrics(),
             DoubledCostTotalReturn: 0.30m,
-            Trials: ThreeTrials(),
+            Trials: CalibratedTrials(),
             OverfittingPerformanceMatrix: DominantMatrix,
             OverfittingPartitions: 4,
             WalkForwardOutOfSampleReturn: 0.05m,
@@ -134,7 +135,7 @@ public class Stage0GateServiceTests
         var decision = new Stage0GateService().Evaluate(new Stage0GateContext(
             BaselineMetrics: run.Metrics,
             DoubledCostTotalReturn: run.Metrics.TotalReturn,
-            Trials: ThreeTrials(),
+            Trials: CalibratedTrials(),
             OverfittingPerformanceMatrix: DominantMatrix,
             OverfittingPartitions: 4,
             WalkForwardOutOfSampleReturn: 0m,
