@@ -54,6 +54,15 @@ jobs:
       - name: Run scripts unit tests
         run: node scripts/scripts.test.js
 
+  # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
+  # kubectl スタブで検証する。実クラスタ・実 kubectl・追加パッケージは不要（Bash のみ）。
+  shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test k8s-local-deploy.sh (ast-secrets sync)
+        run: bash scripts/k8s-local-deploy.test.sh
+
   # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（Issue #59 再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
   doc-links:

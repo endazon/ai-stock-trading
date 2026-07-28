@@ -7,9 +7,11 @@ related_ids:
   - NFR
   - IADR-0060
   - IADR-0094
+  - IADR-0107
+  - IADR-0109
 author: endazon (with Claude Code)
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-07-28
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md"
 ---
@@ -41,6 +43,16 @@ plan_refs:
 `service-auth-client-id` / `service-auth-client-secret` / `kb-auth-client-id` / `kb-auth-client-secret` /
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
 `discord-owner-auth-client-id` / `discord-owner-auth-client-secret`。
+
+> **`fred-api-key` は US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・#262 /
+> [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)）。欠けると USD 建て銘柄は判断前に全件見送りになる
+> （日本株は無影響）。他の API 鍵と違い「無ければ当該ソースが無効」で済まないため、US 株を回す環境では
+> 投入必須として扱う。詳細は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)。
+>
+> **既定（Vault 非依存）の手動 Secret では `scripts/k8s-local-deploy.sh` が env 未設定のキーに触れない**
+> （投入済みの値を保持する・#263 / [IADR-0109](../adr/IADR-0109_deploy-secret-preservation.md)）。
+> ESO 同期を有効化した環境では `ast-secrets` は `ExternalSecret` が所有するため、値の投入は Vault 側で行い、
+> スクリプトの env は使わない（両者を併用すると所有が割れる）。
 
 ## 前提
 

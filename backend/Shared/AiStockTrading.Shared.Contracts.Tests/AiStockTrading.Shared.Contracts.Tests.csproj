@@ -9,6 +9,10 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="coverlet.collector" />
+    <!-- NFR, Issue #253: MessageUrn 回帰テスト（EventMessageUrnTests）が MassTransit の URN 導出規約を
+         実際に呼んで検証するためのテスト専用参照。契約アセンブリ（AiStockTrading.Shared.Contracts）は
+         引き続き MassTransit に依存しない。バージョンはルート Directory.Packages.props の CPM で一元管理。 -->
+    <PackageReference Include="MassTransit" />
     <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
   </ItemGroup>
 </Project>
