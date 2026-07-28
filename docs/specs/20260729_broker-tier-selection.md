@@ -1,7 +1,7 @@
 ---
 title: ブローカー選択の階層化（provider × environment）と任意切替
 type: spec
-status: In progress
+status: review
 related_ids: [FR-05, FR-12, FR-20, ADR-0002]
 author: endazon (with Claude Code)
 created: 2026-07-29
@@ -82,13 +82,13 @@ paper は environment 非該当（内蔵擬似）であり `Tier` は常に `pap
 | --- | --- | --- | --- |
 | App | `Broker:Provider`（**既存キー据置**） | `paper` | `paper` \| `moomoo` |
 | App | `Broker:Environment`（新規） | `sim` | `sim` \| `live` |
-| Helm | `broker.tier`（新規・単一スイッチ） | `paper` | `paper` \| `moomoo-sim` \| `moomoo-live` |
+| Helm | `broker.tier`（新規・単一スイッチ） | `""`＝非推奨エイリアスから導出（既定は `paper`） | `paper` \| `moomoo-sim` \| `moomoo-live` |
 
 `Broker:Tier` の単一キーにしなかった理由: provider 軸は将来増え、environment 軸は 2 で固定である。
 単一文字列にすると直積の列挙になり、証券会社を足すたびに parse 側が増える。逆に Helm 面は運用者の
 誤設定を減らすため単一 tier に畳み、template が 2 つの環境変数へ展開する。
 
-`moomoo.enabled` は**非推奨エイリアス**として温存する。`broker.tier` が既定のままで `moomoo.enabled=true`
+`moomoo.enabled` は**非推奨エイリアス**として温存する。`broker.tier` 未指定（`""`）で `moomoo.enabled=true`
 なら `moomoo-sim` として描画し（既存構成が壊れない）、両者を矛盾指定したら描画時 `fail` で止める。
 
 ### 3. fail-safe（すべて「発注抑止」側へ倒れる）
@@ -119,8 +119,9 @@ paper は environment 非該当（内蔵擬似）であり `Tier` は常に `pap
 | 4 | 口座選択 | SIMULATE 口座のみ採用 | `MMApiMoomooTradeClient.FetchSimulateAccIdAsync` | **不変** |
 | **外周（新）** | Helm 描画 | `broker.tier=moomoo-live` は描画時 `fail`＝クラスタに届かない | `deployment.yaml` | **新設** |
 
-閂 0 は `Program.cs` の合成起点（`BrokerSelection` を組み立てた直後）で作動する。したがって
-`moomoo-live` を設定しても、OpenD への接続も `IBrokerAdapter` の生成も起きない。
+閂 0 は `Program.cs` の合成起点（`BrokerSelection` を組み立てた直後）と `BrokerFactory.Create` の入口の
+双方で作動する。前者により `moomoo-live` を設定しても OpenD への接続も `IBrokerAdapter` の生成も起きず、
+後者により合成起点を経由しない呼び出し（テスト・将来の呼び出し点）でも live はアダプタを得られない。
 
 **将来の解禁は `LiveTradingReleased` を `true` にする 1 ファイルの変更に集約される**（別 IADR が必要）。
 これはコード comment と PR 本文の双方に明記する。
@@ -150,14 +151,14 @@ paper は environment 非該当（内蔵擬似）であり `Tier` は常に `pap
 
 ## 受け入れ基準チェック
 
-- [ ] provider（`paper`/`moomoo`/将来）と environment（`sim`/`live`）が独立した型として表現されている
-- [ ] 単一のスイッチ体系（アプリ 2 キー ＋ Helm 単一 `broker.tier`）で 3 階層を切り替えられる
-- [ ] 未設定は `paper`、不正な provider / environment は起動時に明示エラーで停止する
-- [ ] `paper` と `live` の同時指定は起動時に拒否する
-- [ ] live 階層を選んでも発注に到達しない（閂 0 ＋ 既存 4 層 ＋ Helm 外周）
-- [ ] 既存の `moomoo.enabled=false`（既定）構成が描画バイト等価（Helm CI で検証）
-- [ ] `live-trading-cutover-runbook.md` の閂表が新体系に追随している
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` green・CI green
+- [x] provider（`paper`/`moomoo`/将来）と environment（`sim`/`live`）が独立した型として表現されている
+- [x] 単一のスイッチ体系（アプリ 2 キー ＋ Helm 単一 `broker.tier`）で 3 階層を切り替えられる
+- [x] 未設定は `paper`、不正な provider / environment は起動時に明示エラーで停止する
+- [x] `paper` と `live` の同時指定は起動時に拒否する
+- [x] live 階層を選んでも発注に到達しない（閂 0 ＋ 既存 4 層 ＋ Helm 外周）
+- [x] 既存の `moomoo.enabled=false`（既定）構成が描画バイト等価（Helm CI で検証）
+- [x] `live-trading-cutover-runbook.md` の閂表が新体系に追随している
+- [x] `dotnet build` / `dotnet test` / `dotnet format` green・CI green
 
 ## スコープ外
 
