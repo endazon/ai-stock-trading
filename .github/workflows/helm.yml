@@ -162,6 +162,24 @@ jobs:
               echo "::error::既定描画に経路B有効化の痕跡「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
             fi
           done
+          # #279 / IADR-0114: 実DD 供給ドライバは経路B 限定の opt-in。本番 values.yaml には設定点自体を置かない。
+          if printf '%s' "$out" | grep -q 'ObservedDrawdownRefresh__Enabled'; then
+            echo "::error::既定描画に ObservedDrawdownRefresh__Enabled が現れた（経路B 限定の有効化が本番へ漏れた）。"; exit 1
+          fi
+          # #279 / IADR-0114 決定3: 撤退の実行側（自動 kill switch 起動）は経路B 限定。本番既定には現れない。
+          if printf '%s' "$out" | grep -q 'WithdrawalEvaluation__Enabled'; then
+            echo "::error::既定描画に WithdrawalEvaluation__Enabled が現れた（自動停止が本番既定で開いた）。"; exit 1
+          fi
+          # #279 / IADR-0114 決定6: LLM 単価は変動する外部価格。本番 values.yaml には置かず経路B 限定で与える。
+          if printf '%s' "$out" | grep -q 'LlmPricing__'; then
+            echo "::error::既定描画に LlmPricing__ が現れた（経路B 限定の単価が本番へ漏れた）。"; exit 1
+          fi
+          # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）の実値も本番既定には現れない（空のまま）。
+          for leak in 'value: "0000320193"' 'value: "DEXJPUS"' 'value: "DGS10"' 'key: sec-edgar-user-agent'; do
+            if printf '%s' "$out" | grep -q "$leak"; then
+              echo "::error::既定描画に公式情報源の実値「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
+            fi
+          done
           echo "ok: 既定描画（本番）は経路B有効化を含まない＝バイト等価の担保"
       # #238 / IADR-0100: 経路B の有効化プロファイルが ①②③＋Discord＋価格文脈を実際に ON にし、かつ実弾/危険既定は
       # OFF のまま（Broker=paper・opend/ExternalSecret 不在）であることを描画で検査する。有効化の空振り・過剰有効化を防ぐ。
@@ -198,7 +216,55 @@ jobs:
               echo "::error::values-local 描画に「$forbidden」が現れた（経路B有効化で危険既定が開いた）。"; exit 1
             fi
           done
-          echo "ok: values-local は ①②③＋Discord＋価格文脈を有効化し、実弾/危険既定は OFF のまま"
+          # #279 / IADR-0114: 実DD（観測最大ドローダウン）の供給ドライバ。時価評価が既に true のため latch が動く。
+          printf '%s' "$out" | grep -A1 'name: ObservedDrawdownRefresh__Enabled' | grep -q 'value: "true"' \
+            || { echo "::error::values-local で ObservedDrawdownRefresh__Enabled=true が描画されない（撤退基準の入力が供給されない）。"; exit 1; }
+          # #279 / IADR-0114 決定3: 撤退の実行側。実DD 供給（上）とセットで初めて撤退基準が発火する。
+          # 利用者承認のうえ有効化しており、条件成立時は自動で kill switch が起動する（解除は確認フレーズ必須）。
+          printf '%s' "$out" | grep -A1 'name: WithdrawalEvaluation__Enabled' | grep -q 'value: "true"' \
+            || { echo "::error::values-local で WithdrawalEvaluation__Enabled=true が描画されない（撤退基準が発火しない）。"; exit 1; }
+          # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
+          printf '%s' "$out" | grep -A1 'name: LlmPricing__InputPer1kTokens' | grep -q 'value: "0.819"' \
+            || { echo "::error::values-local で LlmPricing__InputPer1kTokens=0.819 が描画されない（費用が ¥0 計上のまま）。"; exit 1; }
+          printf '%s' "$out" | grep -A1 'name: LlmPricing__OutputPer1kTokens' | grep -q 'value: "4.093"' \
+            || { echo "::error::values-local で LlmPricing__OutputPer1kTokens=4.093 が描画されない（費用が ¥0 計上のまま）。"; exit 1; }
+          # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）を収集へ合流させる。provider の列挙漏れは全体の空振りになる。
+          printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'sec-edgar' \
+            || { echo "::error::values-local の Collection__Source__Provider に sec-edgar が無い（SEC EDGAR 未収集）。"; exit 1; }
+          printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'fred' \
+            || { echo "::error::values-local の Collection__Source__Provider に fred が無い（FRED 未収集）。"; exit 1; }
+          need "SEC EDGAR の CIK（AAPL）" 'value: "0000320193"'
+          need "FRED 系列 DEXJPUS" 'value: "DEXJPUS"'
+          need "FRED 系列 DGS10" 'value: "DGS10"'
+          # SEC 規約が要る連絡先入り UA は個人情報のため values へ直書きせず ast-secrets 経由（IADR-0114 決定2）。
+          need "SEC EDGAR UserAgent の secretKeyRef" 'key: sec-edgar-user-agent'
+          printf '%s' "$out" | grep -A3 'name: Collection__Source__SecEdgar__UserAgent' | grep -q 'secretKeyRef' \
+            || { echo "::error::SecEdgar__UserAgent が secretKeyRef 経由でない（連絡先メールを values へ直書きしていないか確認）。"; exit 1; }
+          echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源を有効化し、実弾/危険既定は OFF のまま"
+      # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
+      # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで
+      # 機能を落とす）。既定描画に在る env 名が values-local 描画から失われていないことを検査する。
+      - name: Assert values-local drops no env from prod default (Helm リスト置換の防御)
+        run: |
+          names() { helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+            | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
+          names > /tmp/env-prod.txt
+          names -f "$CHART/values-local.yaml" > /tmp/env-local.txt
+          # 抽出は deployment.yaml のインデントに依存する。将来インデントが変わると 0 件になり
+          # 「差分なし＝緑」で静かに壊れるため、下限件数を置いて抽出自体の破綻を検出する。
+          prod_count="$(wc -l < /tmp/env-prod.txt)"
+          if [ "$prod_count" -lt 100 ]; then
+            echo "::error::env 名の抽出が $prod_count 件しか取れなかった（deployment.yaml のインデント変更で awk が破綻した可能性）。"
+            echo "         この検査は抽出が壊れると常に緑になるため、件数下限で破綻を検出している。"
+            exit 1
+          fi
+          missing="$(comm -23 /tmp/env-prod.txt /tmp/env-local.txt)"
+          if [ -n "$missing" ]; then
+            echo "::error::values-local の extraEnv 上書きで次の env が消えている（本番 values.yaml から写し忘れ）:"
+            printf '%s\n' "$missing"
+            exit 1
+          fi
+          echo "ok: values-local は既定描画の env を 1 つも落としていない（$(wc -l < /tmp/env-prod.txt) 件を照合）"
       # #245 / IADR-0102: Discord Bot の環境固有 ID（非機密）の設定点 discord.bot.*。
       # (a) 値を与えたら notification の env に入る（空振り検出）・snowflake が指数表記に化けない
       # (b) 空指定は既定描画とバイト一致（本番 values.yaml をバイト等価に保つ担保）
