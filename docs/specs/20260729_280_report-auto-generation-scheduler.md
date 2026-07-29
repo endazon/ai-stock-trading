@@ -65,7 +65,9 @@ plan_refs:
 市場別の取引日境界の解釈は [#249](https://github.com/endazon/ai-stock-trading/issues/249) の管轄で、本 PR では扱わない。
 
 ```
-ReportSchedule.Due(instant, options, holidays) -> IReadOnlyList<DueReport>
+ReportSchedule.Due(instant, ReportScheduleOptions) -> IReadOnlyList<DueReport>
+    ReportScheduleOptions = { DailyAt, WeeklyAt, MonthlyAt（JST の壁時計時刻）, Holidays }
+    DueReport             = { Kind, PeriodKey, PeriodStart, PeriodEnd }
 ```
 
 営業日判定は純関数（土日 ＋ 構成注入の休場日集合）。`TradeDecisionService` の `MarketCalendar`（IADR-0023）と同型で、
@@ -121,14 +123,18 @@ foreach d in due:
 ### 4. 本文 Markdown の永続化
 
 `TradingReport.Body`（`string`・既定空）／`ReportRow.Body`（nullable text）／Migration を追加する。
-既存行は `null` → 読み出し時に空文字（後方互換）。HTTP の `PUT /{periodKey}` は本文を受け取らず、既存の
-upsert 経路では `Body` を空のまま保つ（既存 API の互換を壊さない）。
+既存行は `null` → 読み出し時に空文字（後方互換）。
+
+本文は**明示的に非空を渡されたときだけ差し替える**。HTTP の `PUT /{periodKey}` は本文を受け取らないため
+`Body` は空で届くが、そこで上書きすると利用者が方針を直した瞬間に報告書の中身を失う。したがって空の upsert は
+既存本文を保持する（`EfReportStore` と `InMemoryReportStore` で同一規則・テストで両実装を固定）。
 
 ### 5. 約定の供給（権威源への s2s 同期照会）
 
 - **risk-management 側**: `GET /risk-controls/fills?from=YYYY-MM-DD&to=YYYY-MM-DD` を `OwnerOrService` で追加する
   （読み取りのみ。書き込み系 OwnerOnly は不変）。`IPortfolioLedgerStore.GetFills()`（承認 Intent × 約定の結合）を
-  `PortfolioProjection.TradingDay`（JST）で期間フィルタして返す。**新規テーブル・新規イベントは無い。**
+  `PortfolioProjection.TradeDate`（JST）で期間フィルタして返す（純関数 `PeriodFillQuery.InTradingDayRange`）。
+  **新規テーブル・新規イベントは無い。** 期間（`from`/`to`）は必須で、未指定は 400（黙って全期間を返さない）。
 - **report-service 側**: ポート `IPeriodFillSource`。既定実装は no-op（空列）。`RiskManagement:BaseUrl` 設定時のみ
   HTTP 実装を選択する（IADR-0095 と同型・s2s トークンは `AddAiStockTradingServiceToken`）。
 - **fail-safe**: 非 2xx・timeout・例外・不正応答はすべて**空列**へ倒し、数値 0 の報告書を生成する。
@@ -149,7 +155,8 @@ upsert 経路では `Body` を空のまま保つ（既存 API の互換を壊さ
 | `Reports:AutoGeneration:MonthlyAtJst` | `17:00` | 月報の生成境界（JST） |
 | `Reports:AutoGeneration:Holidays` | `[]` | 休場日（`yyyy-MM-dd` の配列・既定は週末のみ） |
 | `Reports:AutoGeneration:Markets` | `[]` | フロントマターの対象市場表記 |
-| `RiskManagement:BaseUrl` | 未設定 | 約定の権威源。未設定＝no-op（空列） |
+| `Reports:AutoGeneration:AssumptionsVersion` | `1` | 適用する全体前提条件のバージョン（FR-17・非正値は 1） |
+| `RiskManagement:BaseUrl` | 未設定 | 約定の権威源。未設定・不正 URI＝no-op（空列） |
 
 不正・非正値はすべて既定へ倒す（`TimeOnly` のパース失敗、`IntervalSeconds <= 0` 等）。
 Helm / values / デプロイ資材は**本 PR では触らない**（稼働中環境不変・有効化は別途）。
@@ -182,12 +189,12 @@ Helm / values / デプロイ資材は**本 PR では触らない**（稼働中�
 
 ## 受け入れ基準（`docs/DEFINITION_OF_DONE.md` と併せて）
 
-- [ ] 有効化時に日報・週報・月報のドラフトが自動生成され `PendingApproval` で止まる
-- [ ] 確定（`Confirmed`）へは自動で遷移しない。`ReportReviewStateMachine` は変更しない
-- [ ] JST 境界・休場ガード・`PeriodKey` 冪等・再起動耐性がテストで固定されている
-- [ ] 約定の供給不達で生成が止まらない（fail-safe）
-- [ ] 既定無効で現行挙動とバイト等価。Helm / values は不変
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] 有効化時に日報・週報・月報のドラフトが自動生成され `PendingApproval` で止まる
+- [x] 確定（`Confirmed`）へは自動で遷移しない。`ReportReviewStateMachine` は変更しない
+- [x] JST 境界・休場ガード・`PeriodKey` 冪等・再起動耐性がテストで固定されている
+- [x] 約定の供給不達で生成が止まらない（fail-safe）
+- [x] 既定無効で現行挙動とバイト等価。Helm / values は不変
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外（PR 2/2 以降）
 
