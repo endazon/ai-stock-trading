@@ -69,6 +69,15 @@ internal sealed class ReportAutoGenerationService(
                 periodKey);
         }
 
+        foreach (var periodKey in result.NotificationFailed)
+        {
+            // FR-09, IADR-0116 決定2: 提示はできたが確定依頼が発行できていない。ドラフトは承認待ちに並んでいるので
+            // 生成は巻き戻さないが、利用者が「届かない」ことに気付けるよう警告として残す（黙って捨てない）。
+            logger.LogWarning(
+                "報告書ドラフト {PeriodKey} の提示通知を発行できませんでした。承認待ちには並んでいます（確定依頼は届きません）。",
+                periodKey);
+        }
+
         foreach (var failure in result.Failed)
         {
             // 期間単位の失敗。他の期間の生成は継続しており、この期間は次周期で再試行される。

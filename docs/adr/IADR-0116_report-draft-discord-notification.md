@@ -79,7 +79,9 @@ Application 層を MassTransit へ依存させないため、通知はポート 
 （singleton）で `ReportDraftPresented` を発行する。常駐は巡回ごとにスコープを作るが、発行はスコープに依存しないため
 scoped な `IPublishEndpoint` は引かない。通知の失敗・例外は生成側で捕捉し、**生成・提示は成功のまま**とする
 （通知は best-effort・IADR-0020 の方針と同じ。報告書は既に永続化され承認待ちに並んでおり、通知不達で作り直すほうが
-害が大きい）。
+害が大きい）。ただし**黙って捨てない**。失敗した期間は結果の `NotificationFailed` に載せて常駐が警告ログに残す
+（`Failed`・`NotPresented` と同じ扱い）。確定依頼が届かないまま気付けない状態は、`NotifyOnDraftPresented` を既定 true に
+した理由（有効化したのに何も届かない状態を作らない）と正面から矛盾するため。
 
 重複送信の抑止は新たに作らない。生成そのものが `PeriodKey` で冪等（IADR-0115 決定 3）であり、
 提示は 1 回しか起きないため、`#210`（IADR-0096）のような営業日単位の dedup を持つ必要がない。

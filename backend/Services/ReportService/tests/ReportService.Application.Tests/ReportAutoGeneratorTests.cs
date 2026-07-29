@@ -353,6 +353,32 @@ public class ReportAutoGeneratorTests
     }
 
     [Fact]
+    public async Task 通知の失敗は黙って捨てず結果に載せる()
+    {
+        // 「有効化したのに何も届かない」に気付けないのは、通知を既定 true にした理由と正面から矛盾する。
+        var result = await NewGenerator(new InMemoryReportStore(), WedAfterClose, notifier: new ThrowingNotifier()).RunOnceAsync();
+
+        result.NotificationFailed.Should().BeEquivalentTo(["daily-2026-07-08"]);
+    }
+
+    [Fact]
+    public async Task 通知が成功すれば通知失敗は空になる()
+    {
+        var result = await NewGenerator(new InMemoryReportStore(), WedAfterClose, notifier: new RecordingNotifier()).RunOnceAsync();
+
+        result.NotificationFailed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 通知ポートが無い構成は通知失敗にしない()
+    {
+        // 通知を無効化した構成（no-op）は「届かない」ではなく「送らない」。警告を出す対象ではない。
+        var result = await NewGenerator(new InMemoryReportStore(), WedAfterClose).RunOnceAsync();
+
+        result.NotificationFailed.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task 通知の要約は散文をサニタイズして載せる()
     {
         var notifier = new RecordingNotifier();

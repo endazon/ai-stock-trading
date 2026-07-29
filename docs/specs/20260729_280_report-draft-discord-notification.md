@@ -81,7 +81,8 @@ public record ReportDraftPresented(
   既定実装は no-op で、Worker が MassTransit アダプタ（`IBus` で `ReportDraftPresented` を発行）を選ぶ。
   **Application 層は MassTransit に依存しない**（`ReportAutoGenerator` は単体テスト可能なまま）。
 - **fail-safe**: 通知の失敗・例外は生成側で捕捉し、**生成・提示を巻き戻さない**（報告書は既に永続化され承認待ちに
-  並んでいる。通知不達で作り直すほうが害が大きい）。
+  並んでいる。通知不達で作り直すほうが害が大きい）。ただし**黙って捨てない**: 失敗した期間を結果の
+  `NotificationFailed` に載せ、常駐が警告ログに残す（`Failed`・`NotPresented` と同じ扱い）。
 - 冪等: 生成自体が `PeriodKey` で冪等（IADR-0115 決定3）のため、同じドラフトの提示通知は 1 回だけ発生する。
 - 構成 `Reports:AutoGeneration:NotifyOnDraftPresented`（既定 **true**）が false のときは DI が no-op 実装を選ぶ
   ＝イベントを 1 件も発行しない。既定 true とするのは、常駐そのものが既定無効（opt-in）であり、有効化した
@@ -157,7 +158,7 @@ LLM プロンプトに埋める用途には正しいが、人間が読む Discor
 | 2 | サニタイズ | `@everyone`・`<@123>` が mention として成立しない／制御文字が消える／境界語が消える／上限で切り詰める |
 | 3 | サニタイズ必須 | `ReportSummary.Build` が未サニタイズの散文をそのまま通さない |
 | 4 | 発行 | 提示まで到達した報告書だけ発行される／未提示・失敗は発行されない |
-| 5 | fail-safe | 発行が例外でも生成・提示が壊れない |
+| 5 | fail-safe | 発行が例外でも生成・提示が壊れない／失敗は `NotificationFailed` に載り常駐が警告する |
 | 6 | 構成 | `NotifyOnDraftPresented=false` で発行しない |
 | 7 | 通知整形 | `NotificationFormatter.From(ReportDraftPresented)` が要約と確定依頼を含む |
 | 8 | 監査 | `AuditEntryFactory.From` が `PeriodKey` 相関で記録する／`AuditConsumerCoverageTests` が green |
