@@ -162,6 +162,51 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task 未認証の_fills_取得は401()
+    {
+        // FR-06/16, IADR-0115 決定5, #280: 期間約定も読み取り系（OwnerOrService）。未認証は 401。
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync("/risk-controls/fills?from=2026-07-06&to=2026-07-10");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task 読み取りロールを持たない_fills_取得は403()
+    {
+        var client = ClientWithRoles("viewer");
+
+        var res = await client.GetAsync("/risk-controls/fills?from=2026-07-06&to=2026-07-10");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task サービスロールは_fills_を取得できる()
+    {
+        // IADR-0051/0115: 報告書サービスが s2s（trading-service）で期間約定を照会する。台帳が空なら空列で 200。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/fills?from=2026-07-06&to=2026-07-10");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var fills = await res.Content.ReadFromJsonAsync<List<LedgerFill>>();
+        fills.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task 期間未指定の_fills_取得は400()
+    {
+        // 期間は必須。黙って全期間を返すと、報告書の集計範囲が意図せず広がる。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/fills");
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task サービスロールは_kill_switch_を操作できない_403()
     {
         // IADR-0051 最小権限: trading-service は書き込み系（OwnerOnly）を持たない。kill switch は 403。
