@@ -41,6 +41,14 @@ internal static class FxRateSourceFactory
                     return NoOp(loggerFactory);
                 }
 
+                if (options.MaxRateAgeDays > FxOptions.MaxAllowedRateAgeDays)
+                {
+                    logger.LogWarning(
+                        "Fx:MaxRateAgeDays（{Configured} 日）は上限 {Max} 日を超えるため丸めます。" +
+                        "公表周期（DEXJPUS＝週次）で説明できない古さの観測は採らない（IADR-0112 決定2）。",
+                        options.MaxRateAgeDays, FxOptions.MaxAllowedRateAgeDays);
+                }
+
                 return new CachingFxRateSource(
                     new FredFxRateSource(
                         httpClient,
@@ -54,7 +62,7 @@ internal static class FxRateSourceFactory
                             ? FredFxRateSource.DefaultBaseUrl
                             : options.Fred.BaseUrl),
                     Ttl(options),
-                    MaxRateAge(options),
+                    ResolveMaxRateAge(options),
                     timeProvider,
                     loggerFactory.CreateLogger<CachingFxRateSource>());
 
@@ -81,14 +89,25 @@ internal static class FxRateSourceFactory
         };
     }
 
+    /// <summary>
+    /// 実際に適用される鮮度上限（#271, IADR-0112）。両側でクランプする。
+    /// 下側: 0 以下は「無制限」ではなく既定へ倒す（構成ミスで歯止めを失わない）。
+    /// 上側: <see cref="FxOptions.MaxAllowedRateAgeDays"/> 超は丸める（設定で guard を実質無効化させない）。
+    /// <see cref="Create"/> と同じ規則を単一情報源にする（申告・テストと実体をずらさない）。
+    /// </summary>
+    internal static TimeSpan ResolveMaxRateAge(FxOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var days = options.MaxRateAgeDays > 0 ? options.MaxRateAgeDays : FxOptions.DefaultMaxRateAgeDays;
+        return TimeSpan.FromDays(Math.Min(days, FxOptions.MaxAllowedRateAgeDays));
+    }
+
     private static string Provider(FxOptions options) => (options.Provider ?? "").Trim().ToLowerInvariant();
 
-    // 0 以下の構成は「無制限」ではなく既定値へ倒す（構成ミスで鮮度・レート予算の歯止めを失わない）。
+    // 0 以下の構成は「無制限」ではなく既定値へ倒す（構成ミスでレート予算の歯止めを失わない）。
     private static TimeSpan Ttl(FxOptions options) =>
         TimeSpan.FromSeconds(options.CacheTtlSeconds > 0 ? options.CacheTtlSeconds : new FxOptions().CacheTtlSeconds);
-
-    private static TimeSpan MaxRateAge(FxOptions options) =>
-        TimeSpan.FromDays(options.MaxRateAgeDays > 0 ? options.MaxRateAgeDays : new FxOptions().MaxRateAgeDays);
 
     private static IFxRateSource NoOp(ILoggerFactory loggerFactory) =>
         new NoOpFxRateSource(loggerFactory.CreateLogger<NoOpFxRateSource>());

@@ -14,9 +14,10 @@ related_ids:
   - IADR-0060
   - IADR-0107
   - IADR-0109
+  - IADR-0111
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-07-28
+updated: 2026-07-29
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
 ---
@@ -44,6 +45,7 @@ plan_refs:
 | 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（microservices-platform#266 / IADR-0066） |
 | 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
+| 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267 / [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
 | moomoo OpenD | 常駐モデル（IADR-0053）。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**（#132 / IADR-0060）。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 | GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24 / IADR-0094）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
@@ -223,7 +225,7 @@ Reconciliation:
 | **発注予約が `Reserved` のまま滞留**（#131 / [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) / 自動化は #141 / [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md)） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。自動リコンサイル（#141）が有効かつ実照会プローブが配線済みなら自動解消される。未配線（既定 no-op）なら手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
 | **重複排除ストアが肥大化する**（#137 / [IADR-0059](../adr/IADR-0059_dedupe-retention-purge.md)） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（IADR-0059 代替案） |
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
-| **米国株だけ何も起きない**（日本株は判断・発注が回る）（#262 / [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=UnitedStates`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源（FRED `DEXJPUS`）が未接続。**`FRED_API_KEY` は US 株取引の必須前提**（任意の収集ソース鍵ではない）。鍵を `export FRED_API_KEY=…` して `scripts/k8s-local-deploy.sh` を再実行し、`fx-rate` が `fred` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` でも鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点 | 鍵が正しいのに `none` のままなら provider 名の誤り（未知の値は警告して no-op）。`fred` 申告でも見送りが続く場合は FRED 側の `DEXJPUS` 更新停止（**鮮度上限 7 日**超過は採らない）を疑う。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・日本株の取引は継続する） |
+| **米国株だけ何も起きない**（日本株は判断・発注が回る）（#262 / [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=UnitedStates`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源（FRED `DEXJPUS`）が未接続。**`FRED_API_KEY` は US 株取引の必須前提**（任意の収集ソース鍵ではない）。鍵を `export FRED_API_KEY=…` して `scripts/k8s-local-deploy.sh` を再実行し、`fx-rate` が `fred` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` でも鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点 | 鍵が正しいのに `none` のままなら provider 名の誤り（未知の値は警告して no-op）。`fred` 申告でも見送りが続く場合は FRED 側の `DEXJPUS` 更新停止（**鮮度上限 14 日**超過は採らない・[IADR-0112](../adr/IADR-0112_fx-rate-freshness-publication-cadence.md)）を疑う。`DEXJPUS` の公表は **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であり、**最新観測が 10 日前でも正常**である点に注意する（鮮度上限はこの公表周期から導いており、これを超える空白は系列側の異常）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・日本株の取引は継続する） |
 | **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263 / [IADR-0109](../adr/IADR-0109_deploy-secret-preservation.md)） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
 
 > **`Reserved` 滞留の発生条件**: ブローカ発注の前後でプロセスが落ちる／DB が書けない場合に限る。moomoo の
