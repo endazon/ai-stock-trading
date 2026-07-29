@@ -36,7 +36,9 @@ require_rsa_key_file() {
 		return 1
 	fi
 	local mode
-	mode="$(stat -Lc '%a' "${key_file}")"
+	# 直前の -f 通過により stat は失敗し得ないが、失敗時の扱いを呼び出し文脈へ依存させない
+	# （set -e は `f || exit 1` の文脈では関数内でも抑止され、素の呼び出しでは即座に落ちる）。
+	mode="$(stat -Lc '%a' "${key_file}")" || mode="unknown"
 	if [ "${mode}" != "400" ] && [ "${mode}" != "440" ]; then
 		echo "WARN: ${key_file} のパーミッションが ${mode} です（推奨 400 / 非 root 時 440）。" >&2
 		echo "      chart の opend.rsaSecretDefaultMode を確認してください。" >&2

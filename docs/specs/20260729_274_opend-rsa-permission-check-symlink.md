@@ -80,7 +80,10 @@ IADR-0060 決定3 のハードニングが「効いていないように見え�
 `stat -c '%a'` → `stat -Lc '%a'`。`-L` は symlink を辿る（`stat(2)` 相当）。
 
 - 直前の存在検査 `[ ! -f "$key_file" ]` は `test -f` ＝ symlink を辿るため、`-L` を付けても
-  「壊れた symlink で `stat` が失敗して `set -e` で落ちる」経路は生じない（存在検査を通過した時点で実体がある）。
+  「壊れた symlink で `stat` が失敗する」経路は生じない（存在検査を通過した時点で実体がある）。
+  それでも `|| mode="unknown"` を明示し、**失敗時の扱いを呼び出し文脈へ依存させない**。
+  `set -e` は `f || exit 1` の文脈では関数内でも抑止される（＝空のまま警告へ倒れる）が、
+  素の呼び出しでは代入の失敗で即座に落ちる——この差を読み手に推論させないための 1 語である。
 - ベースイメージは `mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy`（Ubuntu 22.04・GNU coreutils）であり
   `stat -L` を持つ。BusyBox の `stat` も `-L` を持つため、将来イメージを差し替えても壊れない。
 - 実体が `400` / `440` でない場合だけ警告する点（推奨値・是正先の案内）は従来どおり。
@@ -114,14 +117,18 @@ IADR-0060 決定3 のハードニングが「効いていないように見え�
 
 ## 受け入れ基準（Issue #274 の基準に対応）
 
-- [ ] `deploy/opend/entrypoint.sh` の RSA パーミッション検査が `stat -Lc`（symlink 追跡）になっている
-- [ ] k8s Secret ボリュームと同じ構成（`..data/` 実体 ＋ symlink・実体 `0400`）で **警告が出ない**（自動テストで固定）
-- [ ] 実体のパーミッションが誤っている（`0400`/`0440` 以外）場合は**従来どおり警告が出る**（自動テストで固定）
-- [ ] 鍵ファイル不在時の起動停止（`exit 1`）は不変（自動テストで固定）
-- [ ] `entrypoint.sh` に他の lstat 誤検知が無いことを確認済み
-- [ ] CI（ci / security(gitleaks) / helm / doc-links / pr-title）が緑
-- [ ] `dotnet build` / `dotnet test` は**変更なしで緑**（`backend/` に一切触れない）
-- [ ] 実弾 OFF・SIMULATE 固定・chart の本番描画バイト等価が不変
+- [x] `deploy/opend/entrypoint.sh` の RSA パーミッション検査が `stat -Lc`（symlink 追跡）になっている
+- [x] k8s Secret ボリュームと同じ構成（`..data/` 実体 ＋ symlink・実体 `0400`）で **警告が出ない**（T-274-01/02）
+- [x] 実体のパーミッションが誤っている（`0400`/`0440` 以外）場合は**従来どおり警告が出る**（T-274-03/05）
+- [x] 鍵ファイル不在時の起動停止（`exit 1`）は不変（T-274-06）
+- [x] `entrypoint.sh` に他の lstat 誤検知が無いことを確認済み（リポジトリ全体で `stat` の使用は本 1 箇所）
+- [x] CI（ci / security(gitleaks) / helm / doc-links / pr-title）が緑（PR [#275](https://github.com/endazon/ai-stock-trading/pull/275)）
+- [x] `dotnet build` / `dotnet test` は**変更なしで緑**（`backend/` に一切触れない＝差分ゼロ）
+- [x] 実弾 OFF・SIMULATE 固定・chart の本番描画バイト等価が不変（chart・`backend/` とも差分ゼロ）
+
+検証記録（PR #275・`ubuntu-latest`）: `deploy/opend/entrypoint.test.sh` は **17 passed, 0 failed, 0 skipped**。
+`stat -Lc` を修正前の `stat -c` へ戻す変異版では **13 passed, 4 failed**（rc=1）となり、テストが回帰を捕まえる
+ことを実測した。
 
 ## テスト方針
 
