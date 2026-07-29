@@ -83,6 +83,46 @@ public class EfPortfolioLedgerStoreTests
         store.GetFills().Should().HaveCount(1);
     }
 
+    // #270, IADR-0112: 約定数量は累積値。同一 OrderId は累積が増えたときだけ更新する（差分加算しない）。
+    [Fact]
+    public void 同一_OrderId_の累積約定は一行のまま最新値へ更新される()
+    {
+        var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var decisionId = Guid.NewGuid();
+        var t0 = DateTimeOffset.UtcNow;
+        store.AppendApproval(decisionId, BuyIntent(1_000, 340m), t0);
+
+        store.AppendFill(decisionId, "ORD-1", 300, 340.5m, t0.AddSeconds(30)).Should().BeTrue();
+        store.AppendFill(decisionId, "ORD-1", 1_000, 340.8m, t0.AddSeconds(60)).Should().BeTrue();
+
+        var fills = store.GetFills();
+        fills.Should().HaveCount(1, "1 注文 = 1 行（差分行を追記しない＝二重計上しない）");
+        fills[0].Quantity.Should().Be(1_000);
+        fills[0].Price.Should().Be(340.8m);
+        fills[0].ExecutedAt.Should().Be(t0.AddSeconds(60));
+    }
+
+    [Fact]
+    public void 少ない数量の後追いでは約定が巻き戻らない()
+    {
+        var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var decisionId = Guid.NewGuid();
+        var t0 = DateTimeOffset.UtcNow;
+        store.AppendApproval(decisionId, BuyIntent(1_000, 340m), t0);
+
+        store.AppendFill(decisionId, "ORD-1", 1_000, 340.8m, t0.AddSeconds(60)).Should().BeTrue();
+        // 順序が前後して届いた古いスナップショット（部分約定）。
+        store.AppendFill(decisionId, "ORD-1", 300, 340.5m, t0.AddSeconds(30)).Should().BeTrue();
+
+        var fills = store.GetFills();
+        fills.Should().HaveCount(1);
+        fills[0].Quantity.Should().Be(1_000);
+        fills[0].Price.Should().Be(340.8m);
+        fills[0].ExecutedAt.Should().Be(t0.AddSeconds(60));
+    }
+
     [Fact]
     public void 同一_DecisionId_の承認再送は最初の内容を保持する()
     {

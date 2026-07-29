@@ -43,9 +43,22 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
         if (db.ApprovedOrders.Find(decisionId) is null)
             return false;
 
-        // 冪等: 同一 OrderId の再送は無視する。
-        if (db.TradeFills.Find(orderId) is not null)
+        // #270, IADR-0112: 単調 upsert。ブローカの約定数量は**累積値**であり差分ではないため、1 注文 = 1 行に
+        // 最新の累積を保持する。累積が増えたときだけ更新し、それ以外（同数・少ない数量の後追い）は無視する。
+        // これにより (1) 部分約定 → 全量約定の進捗が台帳に届き、(2) 再送・巡回重複・順序前後でも二重計上せず、
+        // (3) 数量が巻き戻ることもない。差分行として追記すると OrderId 一意の冪等キー（IADR-0018）が壊れる。
+        var existing = db.TradeFills.Find(orderId);
+        if (existing is not null)
+        {
+            if (filledQuantity <= existing.FilledQuantity)
+                return true;
+
+            existing.FilledQuantity = filledQuantity;
+            existing.AveragePrice = averagePrice;
+            existing.ExecutedAt = executedAt;
+            db.SaveChanges();
             return true;
+        }
 
         db.TradeFills.Add(new TradeFillRow
         {

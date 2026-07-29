@@ -111,6 +111,20 @@ plan_refs:
 | T-12-03 | 約定済み（終端）注文は取消不可 | `約定済み注文の取消は失敗する` | 自動 |
 | T-12-04 | 不正注文（数量/価格）は約定せず証券会社拒否（#30） | `数量や価格が不正な注文は約定せず証券会社拒否になる` / `証券会社拒否の注文は取消できない` | 自動 |
 
+### FR-10/FR-05 約定の台帳到達＝統制の前提（#270 / IADR-0112）
+
+統制の入力は約定行（`trade_fills`）であり、非同期に約定するブローカー（moomoo）では約定状態の追跡が
+統制成立の前提になる（機能仕様書 FR-10「統制の入力は『約定』であるという前提」）。
+
+| ID | 受け入れ基準 | テストメソッド（テストクラス） | 区分 |
+| --- | --- | --- | --- |
+| T-10-70 | 未約定（`Accepted`・約定 0）は枠を消費せず、約定が届いた後は同日再エントリーと金額枠が拘束する | `約定が台帳へ届くまで統制は拘束せず届いた後は同日再エントリーを拒否する`（`MoomooFillControlRegressionTests`） | 自動 |
+| T-10-71 | 部分約定でも約定分だけ日次発注枠・段階資金枠が減り、全量約定で累積へ置き換わる（二重計上しない） | `部分約定でも統制の入力は約定分だけ進む`（同上） | 自動 |
+| T-10-72 | 約定があれば全量約定を待たず台帳に載り、同一 `OrderId` は累積で更新される | `部分約定は約定時点で台帳に載り全量約定で累積値へ更新される`（`PortfolioLedgerConsumersTests`） | 自動 |
+| T-10-73 | 部分約定のまま取消・失効した注文の約定分を落とさない | `部分約定のまま取消された注文も約定分が台帳に載る`（同上） | 自動 |
+| T-10-74 | 再送・順序前後で約定数量が巻き戻らない（単調 upsert） | `同一注文の再送や少ない数量の後追いでは台帳が巻き戻らない`（同上）／`少ない数量の後追いでは約定が巻き戻らない`（`EfPortfolioLedgerStoreTests`） | 自動 |
+| T-10-75 | 未約定注文を終端化まで追跡し、照会不能はブローカ状態を推測しない | `OrderFillPollerTests`（発注執行サービス・11 ケース） | 自動 |
+
 ## テストデータ
 
 - 既定設定は `TradingDefaults.CreateSettings()`。個別ケースは `PortfolioSnapshot` / `OrderIntent` のヘルパ
@@ -129,7 +143,7 @@ plan_refs:
 
 - 機能仕様書: [FR-10 リスク統制](../functional/FR-10_risk-controls.md)、[FR-19 取引ガード](../functional/FR-19_trading-guard.md)、[FR-20 段階ゲート](../functional/FR-20_staged-gates.md)、[FR-12 ペーパートレード](../functional/FR-12_paper-trade.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
-- 作業仕様書: `docs/specs/20260708_risk-guard-core.md` / `docs/specs/20260709_risk-eval-core-fixes.md` / `docs/specs/20260709_position-sizer-cap.md` / `docs/specs/20260709_paper-broker-validation.md`
+- 作業仕様書: `docs/specs/20260708_risk-guard-core.md` / `docs/specs/20260709_risk-eval-core-fixes.md` / `docs/specs/20260709_position-sizer-cap.md` / `docs/specs/20260709_paper-broker-validation.md` / [20260729_270_moomoo-fill-polling](../specs/20260729_270_moomoo-fill-polling.md)
 
 ## 未決事項
 

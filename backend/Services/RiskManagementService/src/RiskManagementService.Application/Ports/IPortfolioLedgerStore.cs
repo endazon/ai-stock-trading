@@ -12,8 +12,10 @@ public interface IPortfolioLedgerStore
     void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt);
 
     /// <summary>
-    /// 約定を OrderId で記録する。DecisionId で承認 Intent を相関して補完する。既存 OrderId は無視する（冪等）。
+    /// 約定を OrderId で記録する。DecisionId で承認 Intent を相関して補完する。
     /// 相関する承認 Intent が無い場合は記録せず false を返す。
+    /// #270, IADR-0112: <paramref name="filledQuantity"/> はブローカの**累積**約定数量（差分ではない）。
+    /// 既存 OrderId は単調 upsert＝累積が増えたときだけ更新し、同数・少ない数量の後追いは無視する（冪等）。
     /// </summary>
     bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt);
 
