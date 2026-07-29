@@ -48,8 +48,11 @@ public sealed class InMemoryReportStore : IReportStore
                 throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, existing.Version);
 
             var newVersion = existing.Version + 1;
+            // FR-06, IADR-0115: 本文（Markdown）は明示的に非空を渡されたときだけ差し替える（EfReportStore と同じ規則）。
+            // 手動 upsert（PUT /reports/{periodKey}）は本文を持たないため、空で上書きして生成済みの本文を消さない。
+            var merged = string.IsNullOrEmpty(report.Body) ? report with { Body = existing.Report.Body } : report;
             // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
-            _rows[report.PeriodKey] = (report, newVersion, ReviewState.Drafting);
+            _rows[report.PeriodKey] = (merged, newVersion, ReviewState.Drafting);
             return newVersion;
         }
     }

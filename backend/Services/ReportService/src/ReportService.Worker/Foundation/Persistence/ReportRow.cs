@@ -24,6 +24,9 @@ internal sealed class ReportRow
 
     public string PolicySummary { get; set; } = string.Empty;
 
+    // FR-06, IADR-0115, #280: 報告書本文（Markdown）。既存行は NULL＝読み出し時に空文字（後方互換）。
+    public string? Body { get; set; }
+
     public DateTimeOffset? ConfirmedAt { get; set; }
 
     public int Version { get; set; }
