@@ -26,8 +26,12 @@ internal sealed class FredFxRateSource(
     /// <summary>円/ドル（1 USD あたりの円）の日次系列。</summary>
     public const string DefaultSeriesId = "DEXJPUS";
 
-    // 直近の観測は休日・未公表で "." になり得るため、数営業日ぶんを降順で取って最初の数値を採る。
-    private const int ObservationLimit = 10;
+    // 直近の観測は休日・未公表で "." になり得るため、降順で取って最初の数値を採る。
+    // #271, IADR-0112 決定3: 件数は**取得窓 ≥ 受容窓**を満たす必要がある。欠測は "." の観測レコードとして
+    // 返ることがあり、そのぶん件数を消費するため、件数が足りないと鮮度上限を広げても窓の端にある観測へ到達できず、
+    // 広げた窓が部分的に無効になる。設定できる最大の受容窓（FxOptions.MaxAllowedRateAgeDays 日）を営業日へ
+    // 換算した数（暦日 × 5/7 の切り上げ）とする。リクエストは 1 回のままでレート予算・費用は変わらない。
+    private const int ObservationLimit = ((FxOptions.MaxAllowedRateAgeDays * 5) + 6) / 7;
 
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
 

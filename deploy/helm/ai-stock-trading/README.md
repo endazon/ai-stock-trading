@@ -150,8 +150,8 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 | 項目 | 値 | 実装上の根拠 |
 | --- | --- | --- |
 | 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
-| 系列 | `DEXJPUS`（円/ドル・**営業日次**） | `FredFxOptions.SeriesId` 既定 |
-| 鮮度上限 | **7 日**（超過した観測は採らない＝レート無し扱い） | `FxOptions.MaxRateAgeDays` 既定 |
+| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載） | `FredFxOptions.SeriesId` 既定 |
+| 鮮度上限 | **14 日**（超過した観測は採らない＝レート無し扱い）。公表周期から導いた値（#271 / IADR-0112）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**31 日超は 31 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
 
@@ -336,6 +336,33 @@ scripts/k8s-local-deploy.sh
 - 稼働中の階層は `GET /internal/introspection` の `broker` ポートが自己申告する（`paper` / `moomoo-sim`）。
 - **`moomoo.enabled` は非推奨エイリアス**である。`broker.tier` を指定していないときだけ `moomoo-sim` として
   解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
+
+### ⚠️ `paper` と `moomoo-sim` は「どちらも実弾でない」だけで**別物**である（#268）
+
+検証で最も踏みやすい取り違えである。**`paper` の約定を moomoo の模擬口座で探しても構造的に見つからない。**
+
+| 観点 | `paper`（既定） | `moomoo-sim` |
+| --- | --- | --- |
+| 約定の主体 | **AST プロセス内蔵**（`PaperBrokerAdapter`）。参照価格で即時全量約定 | moomoo 側の模擬取引エンジン |
+| 外部通信 | **無し**（OpenD へ 1 リクエストも出さない） | 有り（`opend:11111`） |
+| 状態遷移 | 発注＝即 `Filled` | 発注直後は `Accepted`、約定は**後追い** |
+| 残高・注文履歴 | AST の内部台帳（`executed_orders` / `trade_fills`）のみ。現金・建玉は仮想 | **moomoo 模擬口座が権威**（moomoo アプリで目視可）。AST 台帳は現状これを取り込まない（[#270](https://github.com/endazon/ai-stock-trading/issues/270)） |
+| `OrderId` の形 | 32 桁 hex（`Guid` の `"N"`） | moomoo 採番の数値（例 `9049618348733212748`） |
+
+**どちらで動いているかの確認**（詳細・識別手順は
+[発注経路の区別と識別 Runbook](../../../docs/operations/broker-execution-paths-runbook.md)）:
+
+```bash
+# 1) 自己申告（"paper" / "moomoo-sim"）
+kubectl -n ai-stock-trading port-forward svc/order-execution-service 8080:8080 &
+curl -s localhost:8080/internal/introspection | tr ',' '\n' | grep -A1 '"broker"'
+
+# 2) moomoo 経路だけが出すログ（出ていなければ paper で回っている）
+kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD 接続完了・SIMULATE 口座 accId=|moomoo SIMULATE 発注成功"
+```
+
+moomoo 側の注文は**備考（remark）に `DecisionId`**（ハイフン無し 32 桁 hex）が入るため、AST の判断と 1 対 1 で
+突き合わせられる（IADR-0092）。
 
 以下は `moomoo-sim` 階層（＝旧 `moomoo.enabled=true`）の詳細である。既定 **無効**（`Broker__Provider=paper`
 ＝実発注しない・fail-safe・IADR-0016）。有効化すると `order-execution` へ moomoo 発注構成が注入される

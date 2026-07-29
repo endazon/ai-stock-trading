@@ -1,8 +1,10 @@
 using AiStockTrading.OrderExecution.Application.Adapters;
+using AiStockTrading.OrderExecution.Application.Polling;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Reconciliation;
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
+using AiStockTrading.OrderExecution.Worker.Composable.Polling;
 using AiStockTrading.OrderExecution.Worker.Composable.Reconciliation;
 using AiStockTrading.OrderExecution.Worker.Composable.Retention;
 using AiStockTrading.OrderExecution.Worker.Composable.Steps;
@@ -110,6 +112,16 @@ else
 }
 builder.Services.AddScoped<OrderReservationReconciler>();
 builder.Services.AddHostedService<OrderReservationReconciliationService>();
+
+// #270, FR-10, IADR-0113: 約定状態の追跡ポーリング（既定有効・短周期）。moomoo は発注時に Accepted（未約定）を
+// 返すため、これが無いと約定が取引台帳へ届かず統制上限（SameDayReentry・日次発注上限・段階資金上限）が実効しない。
+// paper は即時終端で非終端の記録が生まれないため、配線を moomoo 選択時に限定する（構造的な非干渉）。
+builder.Services.Configure<FillPollingOptions>(builder.Configuration.GetSection(FillPollingOptions.SectionName));
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddScoped<OrderFillPoller>();
+    builder.Services.AddHostedService<OrderFillPollingService>();
+}
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 builder.Services.AddMassTransit(x =>

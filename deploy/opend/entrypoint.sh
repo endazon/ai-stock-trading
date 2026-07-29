@@ -20,6 +20,39 @@
 #    非暗号は OpenD が 127.0.0.1 listen のとき（同一 Pod/loopback）のみ許可される。
 set -euo pipefail
 
+# RSA 秘密鍵（$1）を検査する。不在なら 1 を返す（呼び出し側が起動を止める）。
+# パーミッションが所有者読取専用でなければ警告する（Secret の defaultMode 誤設定の検知。#132）。
+# 読み取り専用マウントのため chmod はできない。是正は k8s 側（defaultMode）で行う。
+#
+# #274: モードは **symlink を辿って実体**を見る（`stat -Lc`）。k8s の Secret ボリュームは実体を `..data/`
+# 配下に置き、可視パスを symlink にする。symlink 自身のパーミッションは常に 777 のため、辿らない
+# `stat -c`（lstat）では実体が正しく 0400 でも必ず誤警告になり、本物の誤設定を検知できなくなっていた。
+# 直前の `-f`（test は symlink を辿る）を通過した時点で実体は存在するため、`stat -L` が失敗する経路は無い。
+require_rsa_key_file() {
+	local key_file="$1"
+	if [ ! -f "${key_file}" ]; then
+		echo "ERROR: OPEND_RSA_KEY_FILE=${key_file} が指定されていますが、ファイルがありません。" >&2
+		echo "       Secret moomoo-rsa のマウントを確認してください（cross-network の trade は暗号化必須・#13）。" >&2
+		return 1
+	fi
+	local mode
+	# 直前の -f 通過により stat は失敗し得ないが、失敗時の扱いを呼び出し文脈へ依存させない
+	# （set -e は `f || exit 1` の文脈では関数内でも抑止され、素の呼び出しでは即座に落ちる）。
+	mode="$(stat -Lc '%a' "${key_file}")" || mode="unknown"
+	if [ "${mode}" != "400" ] && [ "${mode}" != "440" ]; then
+		echo "WARN: ${key_file} のパーミッションが ${mode} です（推奨 400 / 非 root 時 440）。" >&2
+		echo "      chart の opend.rsaSecretDefaultMode を確認してください。" >&2
+	fi
+	return 0
+}
+
+# deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
+# scripts/k8s-local-deploy.sh の AST_DEPLOY_LIB と同じ idiom（#263 / IADR-0109）。
+# コンテナ実行時には設定されない（Dockerfile / chart のいずれにも現れない）。
+if [ "${AST_OPEND_LIB:-}" = "1" ]; then
+	return 0 2>/dev/null || exit 0
+fi
+
 # #132 / IADR-0060 決定 3: 生成物を所有者のみに絞る。OpenD.xml は login_pwd_md5（＝ログイン資格情報）を含む。
 # 同一ユーザーが読み書きするだけなので挙動は変わらない（純粋なハードニング）。
 umask 077
@@ -39,20 +72,9 @@ cd /opt/opend
 # クライアント側（order-execution）の preflight と対称にする。
 RSA_LINE=""
 if [ -n "${OPEND_RSA_KEY_FILE:-}" ]; then
-	if [ ! -f "${OPEND_RSA_KEY_FILE}" ]; then
-		echo "ERROR: OPEND_RSA_KEY_FILE=${OPEND_RSA_KEY_FILE} が指定されていますが、ファイルがありません。" >&2
-		echo "       Secret moomoo-rsa のマウントを確認してください（cross-network の trade は暗号化必須・#13）。" >&2
-		exit 1
-	fi
+	require_rsa_key_file "${OPEND_RSA_KEY_FILE}" || exit 1
 	RSA_LINE="<rsa_private_key>${OPEND_RSA_KEY_FILE}</rsa_private_key>"
 	echo "==> RSA encryption enabled (key=${OPEND_RSA_KEY_FILE})"
-	# 秘密鍵が所有者以外に読める状態なら警告する（Secret の defaultMode 誤設定の検知。#132）。
-	# 読み取り専用マウントのため chmod はできない。是正は k8s 側（defaultMode）で行う。
-	RSA_MODE="$(stat -c '%a' "${OPEND_RSA_KEY_FILE}")"
-	if [ "${RSA_MODE}" != "400" ] && [ "${RSA_MODE}" != "440" ]; then
-		echo "WARN: ${OPEND_RSA_KEY_FILE} のパーミッションが ${RSA_MODE} です（推奨 400 / 非 root 時 440）。" >&2
-		echo "      chart の opend.rsaSecretDefaultMode を確認してください。" >&2
-	fi
 fi
 
 # OpenD.xml を env から生成する（既定 ip=0.0.0.0 でコンテナネットワークから到達可能に）。

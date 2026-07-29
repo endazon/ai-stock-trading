@@ -23,7 +23,14 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         if (!_approvals.ContainsKey(decisionId))
             return false;
 
-        _fills.TryAdd(orderId, new FillRecord(decisionId, filledQuantity, averagePrice, executedAt));
+        // #270, IADR-0113: 単調 upsert（EfPortfolioLedgerStore と同一の意味論）。約定数量は累積値であり、
+        // 累積が増えたときだけ更新する。再送・順序前後で二重計上も巻き戻りも起こさない。
+        _fills.AddOrUpdate(
+            orderId,
+            _ => new FillRecord(decisionId, filledQuantity, averagePrice, executedAt),
+            (_, current) => filledQuantity > current.FilledQuantity
+                ? new FillRecord(decisionId, filledQuantity, averagePrice, executedAt)
+                : current);
         return true;
     }
 
