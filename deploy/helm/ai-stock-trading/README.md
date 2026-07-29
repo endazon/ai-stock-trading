@@ -46,10 +46,21 @@ kubectl -n ai-stock-trading get pods
 - **為替換算（#257 / IADR-0107）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
   **US 株を取引するための必須前提**（下記「為替換算」参照）。未設定だと USD 建て銘柄は LLM 呼び出し前に全件見送りになる。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
+- **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
+  risk-management `ObservedDrawdownRefresh__Enabled=true`。営業日の定時に建玉台帳の `DrawdownRatio` をサンプリングし段階実績台帳へ
+  単調 latch する（ADR-0008 の撤退基準の**入力**）。**撤退の実行側 `WithdrawalEvaluation__Enabled` は据え置き**＝自動 kill switch は起きない。
+  経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
+  [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
+- **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
+  SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
+  （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
 
 **本番（ArgoCD）はバイト等価**: `deploy/argocd/application.yaml` は `valueFiles` を持たず `values.yaml` のみを描画するため、
 `values-local.yaml` は本番描画に一切関与しない。`helm.yml` の CI が「既定描画に経路B有効化が漏れていないこと」と
-「`values-local` 描画で①②③＋Discord＋価格文脈が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を両検証する。
+「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を
+両検証する。加えて「**`values-local` が既定描画の env を 1 つも落としていないこと**」も検査する（#279 / IADR-0114 決定4）——
+Helm は**リストを置換する**ため、`extraEnv` を上書きしているサービスでは本番 `values.yaml` にキーが増えたときの写し忘れが
+**当該 env の消失**になり、「有効化したつもりで別の機能を落とす」事故になるため。
 
 **secret は平文で埋め込まない**: `values-local.yaml` の鍵・トークンはすべて `secretKeyRef`（`ast-secrets`・`optional`）参照。
 実値は下記 env で `ast-secrets` へ与える（未設定=空=no-op の fail-safe）か、ESO(Vault) 同期（IADR-0094）に委ねる。
@@ -59,6 +70,7 @@ kubectl -n ai-stock-trading get pods
 | `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない） | 空=NoOp |
 | `FRED_API_KEY` | `fred-api-key` | **US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・IADR-0107）。収集ソース（FRED）にも同じ鍵を使う | **空=USD 建て銘柄が全件見送り**（日本株は無影響）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
+| `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |

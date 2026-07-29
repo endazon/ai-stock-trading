@@ -15,6 +15,10 @@
 #     #262, IADR-0107。未設定だと USD 建て銘柄は判断前に全件見送りになる。日本株は定義上レート 1 で無影響）/
 #   DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
 #   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）。
+# #279, IADR-0114: SEC_EDGAR_USER_AGENT は**機密ではない**が、SEC 規約が求める**連絡先（実在のメール
+#   アドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本 Secret 経由で与える
+#   （例: export SEC_EDGAR_USER_AGENT="AiStockTrading/1.0 (you@example.com)"）。
+#   未設定=空 → SEC EDGAR **だけ**が警告つきで収集対象から外れる（finnhub/FRED は有効なまま・IADR-0064 決定1）。
 # #226, IADR-0098: Discord Bot 制御コマンドの owner 認証は dev 既定（ai-stock-trading-owner /
 # dev-only-owner-secret＝realm-export.json と一致）で解決する。DISCORD_OWNERAUTH_CLIENTID /
 # DISCORD_OWNERAUTH_CLIENTSECRET で上書き可。Bot は values-local で Enabled=true だが Token 空なら接続しない（安全側）。
@@ -57,6 +61,7 @@ AST_SECRET_KEYS=(
   "marketdata-finnhub-api-key|MARKETDATA_FINNHUB_API_KEY|"
   "edinet-subscription-key|EDINET_SUBSCRIPTION_KEY|"
   "fred-api-key|FRED_API_KEY|"
+  "sec-edgar-user-agent|SEC_EDGAR_USER_AGENT|"
   "discord-webhook-url|DISCORD_WEBHOOK_URL|"
   "discord-bot-token|DISCORD_BOT_TOKEN|"
   "discord-bot-killswitch-phrase|DISCORD_BOT_KILLSWITCH_PHRASE|"

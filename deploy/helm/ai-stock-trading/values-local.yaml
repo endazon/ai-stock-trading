@@ -37,6 +37,15 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（既定 ""）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ============ 実DD（観測最大ドローダウン）の供給（#279/IADR-0114・#164/IADR-0103）============
+      # ADR-0008 の撤退基準は実DD を入力に取るが、それを書く本番コードがバックテスト射影 1 箇所しか無いため
+      # 構造的に発火し得なかった。本ドライバが営業日の定時に建玉台帳の DrawdownRatio をサンプリングし、
+      # 段階実績台帳へ単調 latch する（IADR-0103）。上の EnableMarkToMarket=true が前提で、経路B では既に満たす。
+      # 台帳依存: 経路B の既定ブローカは paper で擬似約定が台帳へ入るため実効する。moomoo SIMULATE 経路は
+      # 約定が台帳へ伝播しないため #270 が入るまで DD は 0 のまま＝不活性（安全側）。
+      # ★ 撤退の**実行側**（WithdrawalEvaluation:Enabled）は据え置く。有効化すると撤退判定が自動で kill switch を
+      #   起動し、解除に確認フレーズが要る（IADR-0097）ため dogfood が人手介入まで止まる（IADR-0114 決定3）。
+      - { name: ObservedDrawdownRefresh__Enabled, value: "true" }  # ← 実DD 供給（既定 false＝本番既定）
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -55,19 +64,31 @@ services:
   # 収集情報を MSP DocumentService へ実 KB 保存（Auth は MSP レルムの kb-writer）。
   information-collection:
     extraEnv:
-      - { name: Collection__Source__Provider, value: "finnhub" }                 # ← 収集起動（既定 ""）
+      # 案A+（ADR-0004）の情報源はカンマ区切りで合流する（CompositeInformationSource）。必須構成を欠くソースだけが
+      # 警告つきで除外され、他ソースは有効なまま（IADR-0064 決定1＝1 ソースの不備で全体を止めない）。
+      # edinet は API キー（EDINET_SUBSCRIPTION_KEY）、boj は統計分類/系列コードの一次確認が要るため列挙しない（#279 残置）。
+      - { name: Collection__Source__Provider, value: "finnhub,sec-edgar,fred" }  # ← 収集起動（既定 ""）
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
-      - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
-      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
+      # ============ SEC EDGAR（米国の開示・API キー不要）: #279/IADR-0114 ============
+      # SEC 規約は**連絡先（実在のメールアドレス）入り**の User-Agent を必須とする（IADR-0064 決定4 が構成必須化）。
+      # これは環境固有の個人情報のため values へ直書きせず ast-secrets 経由で与える（IADR-0114 決定2）。
+      # 実値は k8s-local-deploy.sh の SEC_EDGAR_USER_AGENT env から投入する。
+      # fail-safe: 未設定/空 → SEC EDGAR **だけ**が収集対象から外れる（finnhub/fred は有効なまま）。
+      - name: Collection__Source__SecEdgar__UserAgent
+        secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "0000320193" }     # ← Apple Inc.（収集銘柄 AAPL と揃える）
       - name: Collection__Source__Edinet__SubscriptionKey
         secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
       - { name: Collection__Source__Boj__Db, value: "" }
       - { name: Collection__Source__Boj__SeriesCodes__0, value: "" }
+      # ============ FRED（米マクロ・#279/IADR-0114）============
+      # 鍵は Fx 換算（#262/IADR-0107）で既に投入済みの fred-api-key を再利用する＝新規の資格情報を要求しない。
       - name: Collection__Source__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
-      - { name: Collection__Source__Fred__SeriesIds__0, value: "" }
+      - { name: Collection__Source__Fred__SeriesIds__0, value: "DEXJPUS" }       # ← 円/ドル為替（Fx の換算源と同じ系列）
+      - { name: Collection__Source__Fred__SeriesIds__1, value: "DGS10" }         # ← 米 10 年国債利回り（定数満期）
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
