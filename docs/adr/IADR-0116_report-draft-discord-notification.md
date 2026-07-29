@@ -70,22 +70,27 @@ IADR-0115（PR 1/2）で報告書のドラフトは閉場後に自動生成さ�
 
 ### 決定 2: 発行は「提示まで到達したものだけ」。best-effort で生成を壊さない
 
-発行点は report-service の常駐（`ReportAutoGenerationService`）で、1 巡回の結果のうち
-**提示（`PendingApproval`）まで到達した報告書だけ**を対象にする。IADR-0115 決定 1 で導入した `NotPresented`
-（提示が受理されなかった期間）は発行しない。承認待ち一覧に並んでいないものを「確認してください」と通知すると、
-利用者が探しても見つからない状態になるためである。
+通知点は `ReportAutoGenerator` で、**提示（`Present`）が受理された直後だけ**通知する。IADR-0115 決定 1 で導入した
+`NotPresented`（提示が受理されなかった期間）は通知しない。承認待ち一覧に並んでいないものを「確認してください」と
+通知すると、利用者が探しても見つからない状態になるためである。
 
-発行は `IBus`（singleton）で行い、Application 層（`ReportAutoGenerator`）は MassTransit に依存させない
-（純粋なオーケストレーションのまま単体テストできる状態を保つ）。発行の失敗・例外は 1 件ずつ捕捉して警告ログに倒し、
-**生成・提示は成功のまま**とする（通知は best-effort・IADR-0020 の方針と同じ）。
+Application 層を MassTransit へ依存させないため、通知はポート `IReportDraftPresentedNotifier`（既定 no-op）を挟む
+（`#210`／IADR-0096 の通知ポートと同型）。実装は Worker 側の `MassTransitReportDraftPresentedNotifier` が `IBus`
+（singleton）で `ReportDraftPresented` を発行する。常駐は巡回ごとにスコープを作るが、発行はスコープに依存しないため
+scoped な `IPublishEndpoint` は引かない。通知の失敗・例外は生成側で捕捉し、**生成・提示は成功のまま**とする
+（通知は best-effort・IADR-0020 の方針と同じ。報告書は既に永続化され承認待ちに並んでおり、通知不達で作り直すほうが
+害が大きい）。
 
 重複送信の抑止は新たに作らない。生成そのものが `PeriodKey` で冪等（IADR-0115 決定 3）であり、
 提示は 1 回しか起きないため、`#210`（IADR-0096）のような営業日単位の dedup を持つ必要がない。
 
-構成 `Reports:AutoGeneration:NotifyOnDraftPresented` の既定は **true** とする。`#210` が既定 false（opt-in）だったのは
-発行点が常時稼働の取引サイクル上にあったためで、本件の発行点は**既定無効の常駐の内側**にある。有効化した利用者にとって
-「報告書は作られているのに何も届かない」は #279 が問題視した「無言で止まっている」状態そのものであり、
-二段目の opt-in を要求するほうが危険である。既定挙動のバイト等価は常駐の既定無効が担保する。
+構成 `Reports:AutoGeneration:NotifyOnDraftPresented`（既定 **true**）が false のときは DI が no-op 実装を選び、
+イベントを 1 件も発行しない。
+
+既定を true にするのは発行点の位置が違うためである。`#210`（IADR-0096）が既定 false（opt-in）だったのは、
+発行点が**常時稼働の取引サイクル上**にあったからで、本件の発行点は**既定無効の常駐の内側**にある。
+有効化した利用者にとって「報告書は作られているのに何も届かない」は #279 が問題視した「無言で止まっている」状態
+そのものであり、二段目の opt-in を要求するほうが危険である。既定挙動のバイト等価は常駐の既定無効が担保する。
 
 ### 決定 3: `PromptSafetySanitizer` は共有化せず、Discord 向けの専用サニタイザを置く
 

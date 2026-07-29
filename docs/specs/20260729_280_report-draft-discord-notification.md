@@ -74,15 +74,19 @@ public record ReportDraftPresented(
 
 ### 2. 発行点（report-service Worker）
 
-`ReportAutoGenerationService`（PR 1/2 の常駐）が 1 巡回の結果から**提示まで到達した報告書だけ**発行する。
-未提示（`NotPresented`）・失敗した期間は発行しない（届く通知と実状態を食い違わせない）。
+`ReportAutoGenerator`（PR 1/2）が**提示（`Present`）が受理された直後にだけ**通知する。
+未提示（`NotPresented`）・失敗した期間は通知しない（届く通知と実状態を食い違わせない）。
 
-- 発行は `IBus`（singleton）。Application 層は MassTransit に依存させない（`ReportAutoGenerator` は純粋なまま）。
-- **fail-safe**: 発行の失敗・例外は 1 件ずつ捕捉して警告ログに倒し、**生成・提示を壊さない**（通知は best-effort）。
+- 発行は Application ポート `IReportDraftPresentedNotifier` 経由（`#210`／IADR-0096 の通知ポートと同型）。
+  既定実装は no-op で、Worker が MassTransit アダプタ（`IBus` で `ReportDraftPresented` を発行）を選ぶ。
+  **Application 層は MassTransit に依存しない**（`ReportAutoGenerator` は単体テスト可能なまま）。
+- **fail-safe**: 通知の失敗・例外は生成側で捕捉し、**生成・提示を巻き戻さない**（報告書は既に永続化され承認待ちに
+  並んでいる。通知不達で作り直すほうが害が大きい）。
 - 冪等: 生成自体が `PeriodKey` で冪等（IADR-0115 決定3）のため、同じドラフトの提示通知は 1 回だけ発生する。
-- 構成 `Reports:AutoGeneration:NotifyOnDraftPresented`（既定 **true**）で止められる。既定 true とするのは、
-  常駐そのものが既定無効（opt-in）であり、有効化した利用者にとって「生成したのに何も届かない」ほうが危険なため
-  （#279 が問題視した「無言で止まっている」状態を新たに作らない）。既定挙動のバイト等価は常駐の既定無効が担保する。
+- 構成 `Reports:AutoGeneration:NotifyOnDraftPresented`（既定 **true**）が false のときは DI が no-op 実装を選ぶ
+  ＝イベントを 1 件も発行しない。既定 true とするのは、常駐そのものが既定無効（opt-in）であり、有効化した
+  利用者にとって「生成したのに何も届かない」ほうが危険なため（#279 が問題視した「無言で止まっている」状態を
+  新たに作らない）。既定挙動のバイト等価は常駐の既定無効が担保する。
 
 ### 3. 要約の組み立て（純関数・`ReportService.Domain`）
 
@@ -90,10 +94,13 @@ public record ReportDraftPresented(
 
 ```
 日報 2026-07-29（承認待ち）
-実現損益（税引後・費用込み）: +12,300 円 ／ 費用: 450 円 ／ 取引: 4 件（決済 2）
-—
-（散文抜粋・サニタイズ済み）
+実現損益（税引後・費用込み）: +12,300 円 ／ 費用: 450 円 ／ 取引: 4 件（決済 2・勝ち 1）
+
+（散文・サニタイズ済み）
 ```
+
+金額表記は `ReportAmountFormat.Yen` に単一化し、本文テンプレート（`ReportRenderer`）と同じ表記にする
+（同じ数値が経路によって違って見えないようにする）。散文は要約の残り枠に収める（数値行は切り落とさない）。
 
 - 数値は**コード集計値**（`PnlSummary`）のみを使う。LLM に数値を語らせない（FR-16・IADR-0032 の踏襲）。
 - 散文は LLM 出力のため**必ずサニタイズを通し**、全体長を上限で丸める（Discord の実務上の長さと監査の可読性）。
@@ -135,9 +142,9 @@ LLM プロンプトに埋める用途には正しいが、人間が読む Discor
 | --- | --- |
 | `Shared.Contracts` | `ReportDraftPresented`（**新規イベント 1 件・既存は不変**） |
 | `Shared.Contracts.Tests` | `event-schemas.baseline.json` 再生成、`EventMessageUrnTests` へ `[InlineData]` 追加 |
-| `ReportService.Domain` | `ReportSummary`（新規・純関数）、`ReportSummarySanitizer`（新規・純関数） |
-| `ReportService.Application` | `ReportDraft.Narrative` 追加、`ReportAutoGenerationResult` に要約を同伴 |
-| `ReportService.Worker` | 常駐から `IBus` で発行（fail-safe）、構成 `NotifyOnDraftPresented`、introspection 自己申告 |
+| `ReportService.Domain` | `ReportSummary`／`ReportSummarySanitizer`（新規・純関数）、`ReportAmountFormat`（金額表記を本文と要約で単一化） |
+| `ReportService.Application` | `IReportDraftPresentedNotifier` ＋ `NoOpReportDraftPresentedNotifier`（新規ポート・既定 no-op）、`ReportDraft.Narrative` 追加、提示成功時の通知（fail-safe） |
+| `ReportService.Worker` | `MassTransitReportDraftPresentedNotifier`（新規アダプタ）、構成 `NotifyOnDraftPresented` による実装選択、introspection 自己申告 |
 | `NotificationService` | `NotificationFormatter.From` ＋ Consumer ＋ 登録 |
 | `AuditService` | `AuditEntryFactory.From` ＋ Consumer ＋ 登録 |
 | Helm / values / compose | **不変**（稼働中環境へは触れない） |
@@ -159,13 +166,13 @@ LLM プロンプトに埋める用途には正しいが、人間が読む Discor
 
 ## 受け入れ基準
 
-- [ ] 自動生成されたドラフトの要約が `ReportDraftPresented` として発行され、通知サービスが Discord へ整形する
-- [ ] 提示まで到達していない報告書は通知されない
-- [ ] 投稿本文がサニタイズを通っている（メンション・制御文字・境界語・長さ）
-- [ ] Discord 未設定時は従来どおり no-op（送信経路の追加のみ）
-- [ ] 新イベントに監査 Consumer があり、契約テスト（後方互換・URN）が green
-- [ ] 発行失敗が生成・提示を壊さない（fail-safe）
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] 自動生成されたドラフトの要約が `ReportDraftPresented` として発行され、通知サービスが Discord へ整形する
+- [x] 提示まで到達していない報告書は通知されない
+- [x] 投稿本文がサニタイズを通っている（メンション・制御文字・境界語・長さ）
+- [x] Discord 未設定時は従来どおり no-op（送信経路の追加のみ）
+- [x] 新イベントに監査 Consumer があり、契約テスト（後方互換・URN）が green
+- [x] 発行失敗が生成・提示を壊さない（fail-safe）
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外
 
