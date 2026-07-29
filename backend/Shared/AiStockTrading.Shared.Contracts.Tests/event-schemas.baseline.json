@@ -85,6 +85,14 @@
     "Kind": "String",
     "PeriodKey": "String"
   },
+  "ReportDraftPresented": {
+    "Kind": "String",
+    "OccurredAt": "DateTimeOffset",
+    "PeriodKey": "String",
+    "PeriodLabel": "String",
+    "Summary": "String",
+    "Version": "Int32"
+  },
   "StageTransitioned": {
     "ApprovedBy": "String",
     "FromStage": "Int32",

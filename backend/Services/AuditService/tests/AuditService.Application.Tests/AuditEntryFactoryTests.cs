@@ -263,4 +263,25 @@ public class AuditEntryFactoryTests
             new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 21), RecordedAt), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(other.CorrelationId);
     }
+
+    [Fact]
+    public void ReportDraftPresented_は確定と同じ報告書相関で提示を記録する()
+    {
+        // FR-06/07/09, FR-11, IADR-0116, #280: 提示と確定を同一相関で束ね、提示から確定までを監査照会で辿れるようにする。
+        var e = new ReportDraftPresented("daily-2026-07-29", "Daily", "2026-07-29", "日報の要約", 2, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("ReportDraftPresented");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("daily-2026-07-29").And.Contain("提示");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("PeriodKey");
+
+        // 同一 PeriodKey の確定（ReportConfirmed）と同じ相関になる。
+        var confirmed = AuditEntryFactory.From(
+            new ReportConfirmed("daily-2026-07-29", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(confirmed.CorrelationId);
+    }
 }

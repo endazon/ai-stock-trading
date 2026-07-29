@@ -117,6 +117,18 @@ internal sealed class ReportConfirmedAuditConsumer(IAuditEventStore store, ICloc
     }
 }
 
+// FR-06/07/09, FR-11, IADR-0116, #280: 報告書ドラフトの提示（自動生成スケジューラ）を監査台帳へ記録する。
+// 確定（ReportConfirmed）と同じ相関で束ねられ、提示から確定までのリードタイムを監査照会で辿れる。
+internal sealed class ReportDraftPresentedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<ReportDraftPresented>
+{
+    public Task Consume(ConsumeContext<ReportDraftPresented> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
 // NFR（費用）: 費用しきい値到達（費用統制 #23）を監査台帳へ記録する。
 internal sealed class CostThresholdReachedAuditConsumer(IAuditEventStore store, IClock clock)
     : IConsumer<CostThresholdReached>
