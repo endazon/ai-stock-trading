@@ -7,10 +7,14 @@ namespace AiStockTrading.Report.Domain.Tests;
 // 自動生成では新しい方針を機械が提案せず、直近の確定済み方針の「継続案」に留める（確定は利用者の対話・ADR-0003）。
 public class ReportPolicyDraftTests
 {
+    // 期間表記は自然キー（ReportPeriod.ExpectedKey）そのもの。定数に括り出して各テストの意図を読みやすくする。
+    private const string ParentWeekly = "weekly-2026-W31";
+    private const string PreviousDaily = "daily-2026-07-28";
+
     [Fact]
     public void 未確定である旨を必ず明記する()
     {
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, "daily-2026-07-28", "押し目買い", "weekly-2026-W31");
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, PreviousDaily, "押し目買い", ParentWeekly);
 
         policy.Should().Contain("未確定");
     }
@@ -18,16 +22,16 @@ public class ReportPolicyDraftTests
     [Fact]
     public void 直近の確定済み方針を継続案として引き継ぐ()
     {
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, "daily-2026-07-28", "押し目買い・上限 3 銘柄", "weekly-2026-W31");
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, PreviousDaily, "押し目買い・上限 3 銘柄", ParentWeekly);
 
-        policy.Should().Contain("daily-2026-07-28");
+        policy.Should().Contain(PreviousDaily);
         policy.Should().Contain("押し目買い・上限 3 銘柄");
     }
 
     [Fact]
     public void 継続元が無ければ方針の記入を促す()
     {
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, previousPeriodKey: null, previousPolicy: null, parentPeriodKey: "weekly-2026-W31");
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, previousPeriodKey: null, previousPolicy: null, parentPeriodKey: ParentWeekly);
 
         policy.Should().Contain("記入");
         policy.Should().NotContain("継続する案");
@@ -36,17 +40,17 @@ public class ReportPolicyDraftTests
     [Fact]
     public void 継続元の方針文が空白のみなら継続案にしない()
     {
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, "daily-2026-07-28", "   ", "weekly-2026-W31");
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, PreviousDaily, "   ", ParentWeekly);
 
         policy.Should().Contain("記入");
-        policy.Should().NotContain("daily-2026-07-28");
+        policy.Should().NotContain(PreviousDaily);
     }
 
     [Fact]
     public void 上位方針が未確定ならその旨を明記する()
     {
         // 03_reporting-cycle「上位方針の欠落」: 参照できない場合はドラフトに明記する。
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, "daily-2026-07-28", "押し目買い", parentPeriodKey: null);
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, PreviousDaily, "押し目買い", parentPeriodKey: null);
 
         policy.Should().Contain("週報");
         policy.Should().Contain("未確定");
@@ -55,7 +59,7 @@ public class ReportPolicyDraftTests
     [Fact]
     public void 上位方針を参照できていれば欠落の注記は入らない()
     {
-        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, "daily-2026-07-28", "押し目買い", "weekly-2026-W31");
+        var policy = ReportPolicyDraft.CarryOver(ReportKind.Daily, PreviousDaily, "押し目買い", ParentWeekly);
 
         policy.Should().NotContain("上位方針（週報）は未確定");
     }
