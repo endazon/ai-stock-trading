@@ -49,7 +49,11 @@ internal sealed class ReportAutoGenerationService(
 
         var result = await generator.RunOnceAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var report in result.Generated)
+        // 提示まで到達した期間だけを「提示しました」と記録する。未提示の期間は直後の警告が正であり、
+        // 同一 PeriodKey に矛盾する 2 行を出さない。
+        var notPresented = result.NotPresented.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var report in result.Generated.Where(r => !notPresented.Contains(r.PeriodKey)))
         {
             logger.LogInformation(
                 "報告書ドラフトを自動生成し提示しました: {PeriodKey}（{Kind}）。確定は利用者の承認が必要です（ADR-0003）。",
