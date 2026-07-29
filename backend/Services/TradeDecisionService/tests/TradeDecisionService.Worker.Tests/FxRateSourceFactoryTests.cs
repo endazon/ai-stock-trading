@@ -2,6 +2,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -106,6 +107,37 @@ public class FxRateSourceFactoryTests
     }
 
     [Fact]
+    public void 上限を超える鮮度指定は丸めたことを警告する()
+    {
+        // 丸めが黙って起きると「365 日に設定したのに見送られる」が説明不能になる（＝クランプの意図である
+        // 「緩めようとした操作に気づける」が失われる）。IADR-0112 決定2。
+        var logs = new CapturingLoggerFactory();
+
+        _ = Create(Fred(days: 365), logs);
+
+        logs.Warnings.Should().ContainSingle(message =>
+            message.Contains("Fx:MaxRateAgeDays", StringComparison.Ordinal)
+            && message.Contains("365", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void 範囲内の鮮度指定では丸めの警告を出さない()
+    {
+        var logs = new CapturingLoggerFactory();
+
+        _ = Create(Fred(days: FxOptions.MaxAllowedRateAgeDays), logs);
+
+        logs.Warnings.Should().BeEmpty();
+    }
+
+    private static FxOptions Fred(int days) => new()
+    {
+        Provider = "fred",
+        MaxRateAgeDays = days,
+        Fred = new FredFxOptions { ApiKey = "key" },
+    };
+
+    [Fact]
     public async Task no_opは外貨のレートを解決しない()
     {
         var source = new NoOpFxRateSource(NullLogger<NoOpFxRateSource>.Instance);
@@ -124,6 +156,44 @@ public class FxRateSourceFactoryTests
         rate!.Rate.Should().Be(1m);
     }
 
-    private static IFxRateSource Create(FxOptions options) =>
-        FxRateSourceFactory.Create(options, new HttpClient(), TimeProvider.System, NullLoggerFactory.Instance);
+    private static IFxRateSource Create(FxOptions options, ILoggerFactory? loggerFactory = null) =>
+        FxRateSourceFactory.Create(
+            options, new HttpClient(), TimeProvider.System, loggerFactory ?? NullLoggerFactory.Instance);
+
+    // 構成不備・クランプの警告は「有効化したつもりで効いていない／緩めたつもりで丸められた」の唯一の検知点
+    // であるため、出力そのものを検証する。中央パッケージ管理にログ用の偽装は無いので最小の実装を置く。
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<string> _warnings = [];
+
+        public IReadOnlyList<string> Warnings => _warnings;
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_warnings);
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(List<string> warnings) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (logLevel >= LogLevel.Warning)
+                    warnings.Add(formatter(state, exception));
+            }
+        }
+    }
 }

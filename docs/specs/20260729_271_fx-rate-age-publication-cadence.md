@@ -148,18 +148,20 @@ Helm の `values.yaml` / `values-local.yaml` は `Fx__MaxRateAgeDays` を**描�
 | 7 | 0 以下は既定へ倒す | `FxRateSourceFactoryTests` |
 | 8 | 上限超過の設定は 31 日へ丸める | `FxRateSourceFactoryTests` |
 | 9 | 範囲内の設定はそのまま尊重する | `FxRateSourceFactoryTests` |
+| 9b | 丸めた事実は警告として出力される（範囲内では出さない） | `FxRateSourceFactoryTests`: 捕捉ロガーで出力を検証 |
 | 10 | 取得窓 ≥ 受容窓 | `FredFxRateSourceTests`: 要求 URL の `limit` が「設定できる最大の受容窓」の営業日換算件数以上 |
 | 11 | 鮮度切れの棄却・非キャッシュは不変 | 既存 `CachingFxRateSourceTests` を無改変で緑 |
 
 ## 受け入れ基準チェック
 
-- [ ] 週末・連休・公表遅延（最大 12.84 日）でも直近公表値で新規建てができる
-- [ ] 真に古い観測（リリース欠落＝17.84 日）は従来どおり見送る
-- [ ] 構成値で鮮度 guard を無効化できない（上限 31 日でクランプ・警告）
-- [ ] 取得窓が受容窓以上である
-- [ ] 本番（`values.yaml`）描画がバイト等価（`Fx__MaxRateAgeDays` を描画しない設計を維持）
-- [ ] IADR-0107 決定5 から本 IADR への逆リンクがある
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` green・CI green
+- [x] 週末・連休・公表遅延（最大 12.84 日）でも直近公表値で新規建てができる
+- [x] 真に古い観測（リリース欠落＝17.84 日）は従来どおり見送る
+- [x] 構成値で鮮度 guard を無効化できない（上限 31 日でクランプ・警告）。**丸めた事実は警告として出力される**
+      （テストで出力そのものを検証。黙って丸めると「緩めたつもりが効いていない」に気づけない）
+- [x] 取得窓が受容窓以上である
+- [x] 本番（`values.yaml`）描画がバイト等価（`Fx__MaxRateAgeDays` を描画しない設計を維持）
+- [x] IADR-0107 決定5 から本 IADR への逆リンクがある
+- [x] `dotnet build` / `dotnet test` / `dotnet format` green・CI green
 
 ## スコープ外
 
