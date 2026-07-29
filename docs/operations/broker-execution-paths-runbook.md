@@ -171,8 +171,9 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
 | 4 | SIMULATE 口座のみ採用 | OpenD の口座一覧から `TrdEnv_Simulate` の口座だけを掴む（`MMApiMoomooTradeClient.FetchSimulateAccIdAsync`） |
 | 外周 | Helm 描画時の拒否 | `broker.tier=moomoo-live` は `helm template` の時点で `fail` |
 
-> 閂 1（ブローカ選択ゲート＝`Broker:Provider` の既定 paper・未知値停止）を含む全体像・実装箇所・解禁手順は
-> [実弾切替 Runbook](live-trading-cutover-runbook.md) を**単一情報源**とする（本表は要約であり、重複管理しない）。
+> 上表は要約である。閂 1（ブローカ選択ゲート＝`Broker:Provider` の既定 paper・未知値停止）を含む全体像・実装箇所・
+> 「config で通せるか」・解禁手順は [実弾切替 Runbook](live-trading-cutover-runbook.md) を**単一情報源**とし、
+> 番号（0〜4）も同表および `LiveTradingGate.cs` のコメントと一致させてある。
 > 解禁には別の実装 ADR と [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 の前提充足が要る。
 
 ## 既知の制約（検証結果の読み方）
