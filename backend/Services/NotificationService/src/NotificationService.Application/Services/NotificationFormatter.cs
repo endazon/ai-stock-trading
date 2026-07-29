@@ -37,6 +37,16 @@ public static class NotificationFormatter
         $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{e.Actor}・前提条件 v{e.AssumptionsVersion}）。",
         NotificationSeverity.Info);
 
+    // FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（＝確定依頼）。
+    // 要約は発行側でサニタイズ済み（IADR-0116 決定3/4）。確定は利用者のみが行う（ADR-0003）ため本文で確定を促し、
+    // 版番号を載せる（確定 API は版番号付き冪等・IADR-0024。通知だけで期待版が分かるようにする）。
+    public static NotificationMessage From(ReportDraftPresented e) => new(
+        "報告書ドラフト（承認待ち）",
+        $"{e.Summary}\n\n"
+            + $"内容を確認のうえ確定してください（{e.PeriodKey}・版 {e.Version}）。"
+            + "確定するまで取引方針は変わりません。",
+        NotificationSeverity.Info);
+
     // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
     public static NotificationMessage From(CostThresholdReached e) => new(
         $"費用統制: {e.State}",

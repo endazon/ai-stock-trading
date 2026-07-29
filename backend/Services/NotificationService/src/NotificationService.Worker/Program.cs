@@ -107,6 +107,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<AssumptionsChangedNotificationConsumer>();
     // FR-07/FR-09: 報告書（#14）の確定通知。
     x.AddConsumer<ReportConfirmedNotificationConsumer>();
+    // FR-06/07/09/#280, IADR-0116: 報告書ドラフトの提示（確定依頼）の通知。
+    x.AddConsumer<ReportDraftPresentedNotificationConsumer>();
     // NFR（費用）/FR-09: 費用統制（#23）のしきい値通知。
     x.AddConsumer<CostThresholdReachedNotificationConsumer>();
     // FR-20/FR-09: 撤退基準到達（撤退の定期評価ドライバ #166）の通知。
