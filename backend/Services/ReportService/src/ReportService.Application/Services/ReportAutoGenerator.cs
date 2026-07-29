@@ -17,7 +17,8 @@ public sealed class ReportAutoGenerator(
     ReportDraftService draftService,
     IPeriodFillSource fillSource,
     IClock clock,
-    ReportAutoGenerationSettings settings)
+    ReportAutoGenerationSettings settings,
+    IReportDraftPresentedNotifier? notifier = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -40,6 +41,7 @@ public sealed class ReportAutoGenerator(
                 generated.Add(report);
                 if (!presented)
                     notPresented.Add(due.PeriodKey);
+
             }
             catch (OperationCanceledException)
             {
@@ -101,7 +103,38 @@ public sealed class ReportAutoGenerator(
         var decision = store.ApplyReview(due.PeriodKey, new ReviewCommand(ReviewAction.Present, settings.Actor, version));
         var presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
 
+        // FR-09, IADR-0116 決定4: 提示通知の要約。数値はコード集計値のみ、散文はサニタイズ済み（Build の内側で適用）。
+        var summary = ReportSummary.Build(due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative);
+
+        // FR-09, IADR-0116 決定2: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
+        if (presented)
+            await NotifyAsync(due, summary, version, cancellationToken).ConfigureAwait(false);
+
         return (report, presented);
+    }
+
+    // FR-09, IADR-0116 決定2: 提示（確定依頼）の通知。best-effort であり、失敗しても生成・提示は巻き戻さない
+    // （報告書は既に永続化され承認待ちに並んでいる）。通知の不達で報告書を作り直すほうが害が大きい。
+    private async Task NotifyAsync(DueReport due, string summary, int version, CancellationToken cancellationToken)
+    {
+        if (notifier is null)
+            return;
+
+        try
+        {
+            await notifier.NotifyAsync(
+                new PresentedReportNotice(
+                    due.PeriodKey, due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), summary, version),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // 通知経路の失敗はここで握る。呼び出し側（常駐）へは「生成・提示は成功」として返す。
+        }
     }
 
     // 供給不達は空列へ倒す（IADR-0115 決定5）。報告書は発注判断を行わないため、欠測が過大発注へ繋がる経路が無く、
@@ -145,6 +178,7 @@ public sealed record ReportAutoGenerationResult(
     IReadOnlyList<TradingReport> Generated,
     IReadOnlyList<ReportAutoGenerationFailure> Failed,
     IReadOnlyList<string> NotPresented);
+
 
 // 期間単位の失敗（常駐側のログ出力に用いる）。
 public sealed record ReportAutoGenerationFailure(string PeriodKey, Exception Error);

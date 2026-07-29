@@ -127,6 +127,12 @@ builder.Services.Configure<ReportAutoGenerationOptions>(
     builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName));
 builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToSettings());
+// FR-09, IADR-0116 決定2, #280: 提示（確定依頼）の通知。NotifyOnDraftPresented（既定 true）が false のときは
+// no-op＝イベントを 1 件も発行しない。実送信は通知サービス側の Discord 設定が入って初めて発火する（IADR-0020/0062）。
+builder.Services.AddSingleton<IReportDraftPresentedNotifier>(sp =>
+    sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.NotifyOnDraftPresented
+        ? new MassTransitReportDraftPresentedNotifier(sp.GetRequiredService<IBus>(), sp.GetRequiredService<IClock>())
+        : new NoOpReportDraftPresentedNotifier());
 // EF ストア・ドラフト生成が scoped のため、オーケストレータも scoped（常駐は巡回ごとにスコープを作る）。
 builder.Services.AddScoped<ReportAutoGenerator>();
 if (builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
@@ -154,7 +160,11 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("period-fills", builder.Configuration["RiskManagement:BaseUrl"], "http", "noop")
     .AddPort("report-auto-generation",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
-            .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled"));
+            .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled")
+    // IADR-0116: 提示（確定依頼）の通知経路。bus=ReportDraftPresented を発行する／noop=発行しない。
+    .AddPort("report-draft-notification",
+        builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
+            .Get<ReportAutoGenerationOptions>()?.NotifyOnDraftPresented == false ? "noop" : "bus"));
 
 var app = builder.Build();
 

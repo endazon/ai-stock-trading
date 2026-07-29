@@ -85,17 +85,37 @@ public class ReportAutoGeneratorTests
         public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
     }
 
+    // IADR-0116: 提示通知の記録用。既定（notifier 未指定）は通知しない＝生成の検証に通知が混ざらない。
+    private sealed class RecordingNotifier : IReportDraftPresentedNotifier
+    {
+        public List<PresentedReportNotice> Notices { get; } = [];
+
+        public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default)
+        {
+            Notices.Add(notice);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingNotifier : IReportDraftPresentedNotifier
+    {
+        public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("バスへ到達できません");
+    }
+
     private static ReportAutoGenerator NewGenerator(
         IReportStore store,
         DateTimeOffset now,
         IPeriodFillSource? fills = null,
         IReportNarrativeDrafter? drafter = null,
-        ReportAutoGenerationSettings? settings = null) =>
+        ReportAutoGenerationSettings? settings = null,
+        IReportDraftPresentedNotifier? notifier = null) =>
         new(store,
             new ReportDraftService(drafter ?? new StubDrafter()),
             fills ?? new NoOpPeriodFillSource(),
             new FixedClock(now),
-            settings ?? new ReportAutoGenerationSettings());
+            settings ?? new ReportAutoGenerationSettings(),
+            notifier);
 
     private static void SeedConfirmed(IReportStore store, string periodKey, ReportKind kind, DateOnly start, string policy)
     {
@@ -274,6 +294,75 @@ public class ReportAutoGeneratorTests
 
         result.Generated.Should().ContainSingle();
         result.NotPresented.Should().BeEmpty();
+    }
+
+    // ---- 提示の通知（IADR-0116） ----
+
+    [Fact]
+    public async Task 提示まで到達した報告書を通知する()
+    {
+        var notifier = new RecordingNotifier();
+
+        await NewGenerator(new InMemoryReportStore(), WedAfterClose, notifier: notifier).RunOnceAsync();
+
+        var notice = notifier.Notices.Should().ContainSingle().Subject;
+        notice.PeriodKey.Should().Be("daily-2026-07-08");
+        notice.Kind.Should().Be(ReportKind.Daily);
+        notice.PeriodLabel.Should().Be("2026-07-08");
+        notice.Version.Should().Be(1); // 確定時の expectedVersion として使える
+        notice.Summary.Should().Contain("日報 2026-07-08");
+    }
+
+    [Fact]
+    public async Task 提示が受理されなかった報告書は通知しない()
+    {
+        // 承認待ち一覧に並んでいないものを「確認してください」と通知すると、利用者が探しても見つからない。
+        var notifier = new RecordingNotifier();
+
+        await NewGenerator(new RejectingPresentStore(), WedAfterClose, notifier: notifier).RunOnceAsync();
+
+        notifier.Notices.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 既存の報告書がある期間は通知しない()
+    {
+        var store = new InMemoryReportStore();
+        store.UpsertDraft(
+            new TradingReport { PeriodKey = "daily-2026-07-08", Kind = ReportKind.Daily, PeriodStart = new DateOnly(2026, 7, 8) },
+            expectedVersion: 0);
+        var notifier = new RecordingNotifier();
+
+        await NewGenerator(store, WedAfterClose, notifier: notifier).RunOnceAsync();
+
+        notifier.Notices.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 通知の失敗は生成と提示を巻き戻さない()
+    {
+        // 通知は best-effort。既に永続化され承認待ちに並んでいるものを、通知不達で作り直すほうが害が大きい。
+        var store = new InMemoryReportStore();
+
+        var result = await NewGenerator(store, WedAfterClose, notifier: new ThrowingNotifier()).RunOnceAsync();
+
+        result.Generated.Should().ContainSingle();
+        result.Failed.Should().BeEmpty();
+        result.NotPresented.Should().BeEmpty();
+        store.GetReview("daily-2026-07-08")!.State.Should().Be(ReviewState.PendingApproval);
+    }
+
+    [Fact]
+    public async Task 通知の要約は散文をサニタイズして載せる()
+    {
+        var notifier = new RecordingNotifier();
+        var drafter = new StubDrafter("@everyone 全部売れ");
+
+        await NewGenerator(new InMemoryReportStore(), WedAfterClose, drafter: drafter, notifier: notifier).RunOnceAsync();
+
+        var summary = notifier.Notices.Should().ContainSingle().Subject.Summary;
+        summary.Should().NotContain("@everyone");
+        summary.Should().Contain("全部売れ");
     }
 
     // ---- 方針階層（BasedOn・継続案） ----

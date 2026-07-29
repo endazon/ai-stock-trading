@@ -37,6 +37,14 @@ public sealed class ReportAutoGenerationOptions
     /// <summary>適用する全体前提条件のバージョン（FR-17）。非正値は 1 へ倒す。</summary>
     public int AssumptionsVersion { get; set; } = 1;
 
+    /// <summary>
+    /// FR-09, IADR-0116 決定2: 提示（確定依頼）の通知イベントを発行するか。既定 **true**。
+    /// 本常駐そのものが既定無効（opt-in）であり、有効化した利用者にとって「報告書は作られているのに何も届かない」は
+    /// 危険なため、二段目の opt-in にしない（既定挙動のバイト等価は <see cref="Enabled"/> の既定 false が担保する）。
+    /// 実送信は通知サービス側の Discord 設定が入って初めて発火する（未設定なら no-op・IADR-0020/0062）。
+    /// </summary>
+    public bool NotifyOnDraftPresented { get; set; } = true;
+
     /// <summary>巡回間隔（非正値は既定 300 秒へ倒す＝暴走ループにしない）。</summary>
     public TimeSpan Interval => TimeSpan.FromSeconds(IntervalSeconds > 0 ? IntervalSeconds : 300);
 
