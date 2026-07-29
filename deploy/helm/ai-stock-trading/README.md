@@ -134,8 +134,8 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 | 項目 | 値 | 実装上の根拠 |
 | --- | --- | --- |
 | 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
-| 系列 | `DEXJPUS`（円/ドル・**営業日次**） | `FredFxOptions.SeriesId` 既定 |
-| 鮮度上限 | **7 日**（超過した観測は採らない＝レート無し扱い） | `FxOptions.MaxRateAgeDays` 既定 |
+| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載） | `FredFxOptions.SeriesId` 既定 |
+| 鮮度上限 | **14 日**（超過した観測は採らない＝レート無し扱い）。公表周期から導いた値（#271 / IADR-0112）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**31 日超は 31 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
 

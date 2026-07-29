@@ -2,6 +2,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -66,6 +67,76 @@ public class FxRateSourceFactoryTests
             .Should().Be("fred");
     }
 
+    // FR-10, #271, IADR-0112 決定1: 既定の鮮度上限はデータ源の公表周期（DEXJPUS＝H.10 週次リリース）から導く。
+    // 内訳: 公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 2 日 ＋ 公表時刻 ≒ 12.84 日 に約 1.2 日の余裕。
+    [Fact]
+    public void 既定の鮮度上限は公表周期から導いた14日()
+    {
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()).Should().Be(TimeSpan.FromDays(14));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void ゼロ以下の鮮度上限は既定へ倒す(int days)
+    {
+        // 構成ミスで「無制限」にはしない（歯止めを失わない）。
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(FxOptions.DefaultMaxRateAgeDays));
+    }
+
+    [Theory]
+    [InlineData(32)]
+    [InlineData(365)]
+    public void 上限を超える鮮度指定はクランプする(int days)
+    {
+        // IADR-0112 決定2: 週次公表が 4 回以上連続で落ちる事態は公表周期では説明できない。「動かないので 365 に
+        // する」といった運用の逃げ道で鮮度 guard を実質無効化させない（設定値ではなく構造で担保する）。
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(FxOptions.MaxAllowedRateAgeDays));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(31)]
+    public void 範囲内の鮮度指定はそのまま尊重する(int days)
+    {
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(days));
+    }
+
+    [Fact]
+    public void 上限を超える鮮度指定は丸めたことを警告する()
+    {
+        // 丸めが黙って起きると「365 日に設定したのに見送られる」が説明不能になる（＝クランプの意図である
+        // 「緩めようとした操作に気づける」が失われる）。IADR-0112 決定2。
+        var logs = new CapturingLoggerFactory();
+
+        _ = Create(Fred(days: 365), logs);
+
+        logs.Warnings.Should().ContainSingle(message =>
+            message.Contains("Fx:MaxRateAgeDays", StringComparison.Ordinal)
+            && message.Contains("365", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void 範囲内の鮮度指定では丸めの警告を出さない()
+    {
+        var logs = new CapturingLoggerFactory();
+
+        _ = Create(Fred(days: FxOptions.MaxAllowedRateAgeDays), logs);
+
+        logs.Warnings.Should().BeEmpty();
+    }
+
+    private static FxOptions Fred(int days) => new()
+    {
+        Provider = "fred",
+        MaxRateAgeDays = days,
+        Fred = new FredFxOptions { ApiKey = "key" },
+    };
+
     [Fact]
     public async Task no_opは外貨のレートを解決しない()
     {
@@ -85,6 +156,44 @@ public class FxRateSourceFactoryTests
         rate!.Rate.Should().Be(1m);
     }
 
-    private static IFxRateSource Create(FxOptions options) =>
-        FxRateSourceFactory.Create(options, new HttpClient(), TimeProvider.System, NullLoggerFactory.Instance);
+    private static IFxRateSource Create(FxOptions options, ILoggerFactory? loggerFactory = null) =>
+        FxRateSourceFactory.Create(
+            options, new HttpClient(), TimeProvider.System, loggerFactory ?? NullLoggerFactory.Instance);
+
+    // 構成不備・クランプの警告は「有効化したつもりで効いていない／緩めたつもりで丸められた」の唯一の検知点
+    // であるため、出力そのものを検証する。中央パッケージ管理にログ用の偽装は無いので最小の実装を置く。
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<string> _warnings = [];
+
+        public IReadOnlyList<string> Warnings => _warnings;
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_warnings);
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(List<string> warnings) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (logLevel >= LogLevel.Warning)
+                    warnings.Add(formatter(state, exception));
+            }
+        }
+    }
 }

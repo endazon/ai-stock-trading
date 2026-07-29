@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
@@ -101,6 +102,21 @@ public class FredFxRateSourceTests
     }
 
     [Fact]
+    public async Task 取得窓は設定できる最大の受容窓を賄う()
+    {
+        // #271, IADR-0112 決定3: 取得窓 ≥ 受容窓。FRED は欠測（休場・未公表）を "." の観測レコードとして返すため、
+        // 要求件数はそのぶん消費される。件数が受容窓に届かないと、鮮度上限を広げても窓の端にある観測へ到達できず、
+        // 広げた窓が部分的に無効になる。設定できる最大の受容窓（MaxAllowedRateAgeDays 日）を営業日へ換算した
+        // 件数以上を要求する（リクエストは 1 回のままでレート予算・費用は変わらない）。
+        var handler = new StubHandler(HttpStatusCode.OK, OkBody);
+
+        await Create(handler).GetRateToBaseAsync(Currency.Usd);
+
+        var required = (int)Math.Ceiling(FxOptions.MaxAllowedRateAgeDays * 5m / 7m);
+        RequestedLimit(handler.LastRequestUri!).Should().BeGreaterThanOrEqualTo(required);
+    }
+
+    [Fact]
     public async Task 送信前にレート制御を通す()
     {
         var limiter = new CountingRateLimiter();
@@ -123,6 +139,14 @@ public class FredFxRateSourceTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // 要求 URL のクエリから observations の要求件数（limit）を取り出す。
+    private static int RequestedLimit(Uri requestUri)
+    {
+        var limit = requestUri.Query.TrimStart('?').Split('&')
+            .Single(pair => pair.StartsWith("limit=", StringComparison.Ordinal))["limit=".Length..];
+        return int.Parse(limit, CultureInfo.InvariantCulture);
+    }
+
     private static FredFxRateSource Create(HttpMessageHandler handler, IRateLimiter? limiter = null) =>
         new(
             new HttpClient(handler),
@@ -135,11 +159,14 @@ public class FredFxRateSourceTests
     {
         public int Requests { get; private set; }
 
+        public Uri? LastRequestUri { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests++;
+            LastRequestUri = request.RequestUri;
             return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
         }
     }
