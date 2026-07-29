@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.OrderExecution.Domain;
 
-// #270, FR-05, IADR-0112: 注文状態の終端判定。約定追跡（ポーラー）と発注結果ストアが同じ定義を用いるための
+// #270, FR-05, IADR-0113: 注文状態の終端判定。約定追跡（ポーラー）と発注結果ストアが同じ定義を用いるための
 // 単一情報源。終端＝これ以上ブローカ側で状態が変わらない状態であり、追跡の打ち切り条件になる。
 public static class OrderStatusLifecycle
 {

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace AiStockTrading.OrderExecution.Worker.Composable.Polling;
 
-// #270, FR-05, FR-10, IADR-0112: 約定状態の追跡ポーリングを短周期（既定 30 秒）で回す。
+// #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングを短周期（既定 30 秒）で回す。
 //
 // moomoo は発注時に Accepted（未約定）を返すため、約定の成立を観測しないと取引台帳（統制の入力）が
 // 空のままになる。本サービスが非終端の発注結果を追跡し、終端化・部分約定の進捗を OrderExecuted として
@@ -29,7 +29,7 @@ internal sealed class OrderFillPollingService(
     {
         if (!options.Value.Enabled)
         {
-            // 明示的に無効化された場合のみ止まる（既定は有効・IADR-0112）。統制が実効しなくなることを明示する。
+            // 明示的に無効化された場合のみ止まる（既定は有効・IADR-0113）。統制が実効しなくなることを明示する。
             logger.LogWarning(
                 "約定状態の追跡は無効です（FillPolling:Enabled=false）。"
                     + " 未約定のまま成立した約定は取引台帳へ届かず、統制上限は実効しません。");

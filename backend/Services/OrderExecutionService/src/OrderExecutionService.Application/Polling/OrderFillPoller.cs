@@ -5,7 +5,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 
 namespace AiStockTrading.OrderExecution.Application.Polling;
 
-// #270, FR-05, FR-10, IADR-0112: 発注済み・非終端の注文をブローカへ照会し、約定の進捗・終端化を記録へ反映して
+// #270, FR-05, FR-10, IADR-0113: 発注済み・非終端の注文をブローカへ照会し、約定の進捗・終端化を記録へ反映して
 // OrderExecuted を再発行する（＝統制の入力である取引台帳へ約定を届ける）。
 //
 // 背景: moomoo は発注時に Accepted（未約定）を返し、約定は後から非同期に成立する。この遷移を観測しないと
@@ -99,7 +99,7 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
     }
 }
 
-// #270, IADR-0112: 1 巡回の結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。
+// #270, IADR-0113: 1 巡回の結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。
 // Updated は記録を更新した件数（うち終端化が Terminalized）。Unknown は照会できず据え置いた件数。
 public sealed record OrderFillPollResult(
     int Scanned,

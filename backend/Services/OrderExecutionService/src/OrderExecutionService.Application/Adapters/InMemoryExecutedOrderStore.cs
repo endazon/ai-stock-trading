@@ -35,7 +35,7 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
-    // #270, IADR-0112: 追跡対象＝非終端かつ追跡上限内の記録を古い順に返す。
+    // #270, IADR-0113: 追跡対象＝非終端かつ追跡上限内の記録を古い順に返す。
     public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize)
     {
         lock (_gate)
@@ -48,7 +48,7 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
-    // #270, IADR-0112: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
+    // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(
         string orderId,
         OrderStatus status,

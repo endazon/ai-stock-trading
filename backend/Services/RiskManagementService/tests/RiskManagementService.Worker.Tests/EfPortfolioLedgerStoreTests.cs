@@ -83,7 +83,7 @@ public class EfPortfolioLedgerStoreTests
         store.GetFills().Should().HaveCount(1);
     }
 
-    // #270, IADR-0112: 約定数量は累積値。同一 OrderId は累積が増えたときだけ更新する（差分加算しない）。
+    // #270, IADR-0113: 約定数量は累積値。同一 OrderId は累積が増えたときだけ更新する（差分加算しない）。
     [Fact]
     public void 同一_OrderId_の累積約定は一行のまま最新値へ更新される()
     {

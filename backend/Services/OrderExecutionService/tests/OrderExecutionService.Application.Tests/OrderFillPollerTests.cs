@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.OrderExecution.Application.Tests;
 
-// #270, FR-05, FR-10, IADR-0112: 約定状態の追跡ポーリング。moomoo は発注時に Accepted（未約定）を返すため、
+// #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリング。moomoo は発注時に Accepted（未約定）を返すため、
 // 終端化するまで追い続けて記録を更新し、OrderExecuted を再発行して台帳（統制の入力）へ届ける。
 public class OrderFillPollerTests
 {

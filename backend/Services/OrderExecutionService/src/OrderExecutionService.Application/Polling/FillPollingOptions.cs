@@ -1,6 +1,6 @@
 namespace AiStockTrading.OrderExecution.Application.Polling;
 
-// #270, FR-05, FR-10, IADR-0112: 約定状態の追跡ポーリングの構成。
+// #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングの構成。
 //
 // **既定は有効（Enabled=true）**。リポの「新規の常駐処理は既定オフ」慣行からの意図的な逸脱で、理由は
 // (1) 本ポーリングは統制（FR-10）が実効するための必要条件であり、既定オフは「統制が効かない状態」を

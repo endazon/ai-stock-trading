@@ -76,7 +76,7 @@ public class PortfolioLedgerConsumersTests
         await harness.Stop();
     }
 
-    // #270, IADR-0112: moomoo は Accepted（約定 0）→ 部分約定 → 全量約定と非同期に遷移する。
+    // #270, IADR-0113: moomoo は Accepted（約定 0）→ 部分約定 → 全量約定と非同期に遷移する。
     // 約定があれば（全量を待たずに）台帳へ載せ、同一 OrderId は累積値で単調に更新する。
     [Fact]
     public async Task 部分約定は約定時点で台帳に載り全量約定で累積値へ更新される()
@@ -115,7 +115,7 @@ public class PortfolioLedgerConsumersTests
         await harness.Stop();
     }
 
-    // #270, IADR-0112: 部分約定のまま取消・失効した注文の約定分を落とさない（従来は Status で弾いて過少計上だった）。
+    // #270, IADR-0113: 部分約定のまま取消・失効した注文の約定分を落とさない（従来は Status で弾いて過少計上だった）。
     [Fact]
     public async Task 部分約定のまま取消された注文も約定分が台帳に載る()
     {
@@ -137,7 +137,7 @@ public class PortfolioLedgerConsumersTests
         await harness.Stop();
     }
 
-    // #270, IADR-0112: 再配送・巡回重複・順序前後で約定数量が巻き戻らない（単調 upsert）。
+    // #270, IADR-0113: 再配送・巡回重複・順序前後で約定数量が巻き戻らない（単調 upsert）。
     [Fact]
     public async Task 同一注文の再送や少ない数量の後追いでは台帳が巻き戻らない()
     {

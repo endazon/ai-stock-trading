@@ -45,7 +45,7 @@ internal sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecut
         return row is null ? null : ToRecord(row);
     }
 
-    // #270, IADR-0112: 約定追跡の対象＝非終端かつ追跡上限内の記録を古い順に返す。
+    // #270, IADR-0113: 約定追跡の対象＝非終端かつ追跡上限内の記録を古い順に返す。
     // 終端判定は OrderStatusLifecycle と同一の集合を列挙する（EF が SQL へ翻訳できる形で書く）。
     public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize)
     {
@@ -57,7 +57,7 @@ internal sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecut
             .Select(r => ToRecord(r))];
     }
 
-    // #270, IADR-0112: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
+    // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(
         string orderId,

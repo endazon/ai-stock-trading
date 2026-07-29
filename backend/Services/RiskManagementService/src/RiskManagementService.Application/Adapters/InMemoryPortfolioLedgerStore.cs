@@ -23,7 +23,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         if (!_approvals.ContainsKey(decisionId))
             return false;
 
-        // #270, IADR-0112: 単調 upsert（EfPortfolioLedgerStore と同一の意味論）。約定数量は累積値であり、
+        // #270, IADR-0113: 単調 upsert（EfPortfolioLedgerStore と同一の意味論）。約定数量は累積値であり、
         // 累積が増えたときだけ更新する。再送・順序前後で二重計上も巻き戻りも起こさない。
         _fills.AddOrUpdate(
             orderId,

@@ -53,7 +53,7 @@ public class EfExecutedOrderStoreTests
         new EfExecutedOrderStore(db2).GetAll()[0].OrderId.Should().Be("new");
     }
 
-    // #270, IADR-0112: 約定追跡の対象抽出（非終端・追跡上限内・古い順・件数上限）。
+    // #270, IADR-0113: 約定追跡の対象抽出（非終端・追跡上限内・古い順・件数上限）。
     [Fact]
     public void 追跡対象は非終端かつ追跡上限内の記録だけを古い順に返す()
     {
@@ -93,7 +93,7 @@ public class EfExecutedOrderStoreTests
             .Select(r => r.OrderId).Should().Equal("o0", "o1");
     }
 
-    // #270, IADR-0112: 観測した状態は既存行へ反映され、別コンテキストからも読める（新規行は作らない）。
+    // #270, IADR-0113: 観測した状態は既存行へ反映され、別コンテキストからも読める（新規行は作らない）。
     [Fact]
     public void 観測した約定は既存行を更新し新規行を作らない()
     {

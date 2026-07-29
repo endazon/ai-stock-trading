@@ -73,7 +73,7 @@ plan_refs:
 単一情報源である（構成から任意の金額を注入できない）。適用は読み取り時のデコレータで行い DB は書き換えないため、
 フラグを外せば即座に本番既定へ戻る。本番 `values.yaml` には設定点を置かない（既定描画はバイト等価）。
 
-### 統制の入力は「約定」であるという前提（#270 / IADR-0112）
+### 統制の入力は「約定」であるという前提（#270 / IADR-0113）
 
 金額系・保有系の統制（日次発注累計・段階資金上限・同日再エントリー・保有銘柄数）は、いずれも取引台帳の
 **約定行（`trade_fills`）**から導出した `PortfolioState` を入力とする。したがって**約定が台帳へ届いていること**が
@@ -128,7 +128,7 @@ flowchart TD
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0112](../adr/IADR-0112_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）
+- 実装ADR: [IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）
 - 作業仕様書: [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - テスト仕様書: Issue #36 で作成
 - データ仕様書: Issue #35 で作成

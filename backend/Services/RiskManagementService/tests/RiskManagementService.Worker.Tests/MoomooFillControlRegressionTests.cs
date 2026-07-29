@@ -12,7 +12,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;
 
-// #270, FR-10, FR-05, IADR-0112: moomoo 経路（非同期約定）でも統制上限が paper と同等に実効することの回帰。
+// #270, FR-10, FR-05, IADR-0113: moomoo 経路（非同期約定）でも統制上限が paper と同等に実効することの回帰。
 //
 // 事象（#270 実測）: moomoo は発注時に Accepted（約定 0）を返し、約定を追跡する経路が無かったため trade_fills が
 // 0 行のまま＝「まだ何も取引していない」状態となり、5 分ごとの判断サイクルのたびに新規発注が積み上がった

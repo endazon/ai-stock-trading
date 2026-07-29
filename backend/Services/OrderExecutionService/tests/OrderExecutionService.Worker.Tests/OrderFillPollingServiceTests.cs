@@ -17,7 +17,7 @@ using Xunit;
 
 namespace AiStockTrading.OrderExecution.Worker.Tests;
 
-// #270, FR-05, FR-10, IADR-0112: 約定状態の追跡ポーリングの定期実行。終端化・進捗の OrderExecuted 発行と、
+// #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングの定期実行。終端化・進捗の OrderExecuted 発行と、
 // 無効時に一切走査しないことを MassTransit テストハーネスで検証する。
 public class OrderFillPollingServiceTests
 {
@@ -139,7 +139,7 @@ public class OrderFillPollingServiceTests
         await harness.Stop();
     }
 
-    // #270: 既定は有効（IADR-0112）。統制の必要条件であり、既定オフでは「統制が効かない状態」を出荷することになる。
+    // #270: 既定は有効（IADR-0113）。統制の必要条件であり、既定オフでは「統制が効かない状態」を出荷することになる。
     [Fact]
     public void 既定は有効で巡回間隔は短周期にクランプされる()
     {
@@ -155,7 +155,7 @@ public class OrderFillPollingServiceTests
         new FillPollingOptions { BatchSize = 0 }.EffectiveBatchSize.Should().Be(1);
     }
 
-    // #270, IADR-0112: moomoo の状態遷移（Submitted → FilledPart → FilledAll）が追跡経由で
+    // #270, IADR-0113: moomoo の状態遷移（Submitted → FilledPart → FilledAll）が追跡経由で
     // Accepted → PartiallyFilled → Filled として台帳へ届くことを、実アダプタの写像で通しで確認する。
     [Fact]
     public async Task moomoo状態遷移が追跡経由で約定として届く()

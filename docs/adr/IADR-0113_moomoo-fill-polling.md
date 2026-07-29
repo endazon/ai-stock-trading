@@ -1,5 +1,5 @@
 ---
-title: IADR-0112 非同期に約定するブローカーの約定状態は短周期ポーリングで追跡し、台帳は OrderId 単位の単調 upsert で受ける
+title: IADR-0113 非同期に約定するブローカーの約定状態は短周期ポーリングで追跡し、台帳は OrderId 単位の単調 upsert で受ける
 type: impl-adr
 status: Accepted
 related_ids: [FR-05, FR-10, FR-12, ADR-0002]
@@ -12,7 +12,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
 ---
 
-# IADR-0112: 約定状態は短周期ポーリングで追跡し、台帳は OrderId 単位の単調 upsert で受ける
+# IADR-0113: 約定状態は短周期ポーリングで追跡し、台帳は OrderId 単位の単調 upsert で受ける
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

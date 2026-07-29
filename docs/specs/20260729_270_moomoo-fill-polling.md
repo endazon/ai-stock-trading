@@ -29,7 +29,7 @@ plan_refs:
   [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md)（滞留リコンサイル・既定無効）／
   [IADR-0092](../adr/IADR-0092_reservation-broker-probe-moomoo.md)（moomoo 実照会プローブ）／
   [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)（ブローカー階層・閂 0）／
-  本作業で新規 [IADR-0112](../adr/IADR-0112_moomoo-fill-polling.md)
+  本作業で新規 [IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)
 - 対象 Issue: [#270](https://github.com/endazon/ai-stock-trading/issues/270)（`Closes #270`）
 
 ## 現状（この変更の直前・実コードで確定）
