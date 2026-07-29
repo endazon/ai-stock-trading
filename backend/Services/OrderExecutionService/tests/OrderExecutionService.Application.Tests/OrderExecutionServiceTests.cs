@@ -94,6 +94,14 @@ public class OrderExecutionServiceTests
         public IReadOnlyList<ExecutionRecord> GetAll() => _inner.GetAll();
 
         public ExecutionRecord? FindByDecisionId(Guid decisionId) => _inner.FindByDecisionId(decisionId);
+
+        public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize)
+            => _inner.FindPendingSince(since, batchSize);
+
+        public bool UpdateOutcome(
+            string orderId, OrderStatus status, int filledQuantity, decimal averagePrice,
+            decimal slippageRatio, DateTimeOffset executedAt)
+            => _inner.UpdateOutcome(orderId, status, filledQuantity, averagePrice, slippageRatio, executedAt);
     }
 
     // MarkCompleted を指定回数だけ失敗させる予約ストア（Save 成功 → 確定失敗の窓を再現する）。
