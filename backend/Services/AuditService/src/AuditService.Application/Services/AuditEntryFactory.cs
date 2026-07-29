@@ -66,6 +66,13 @@ public static class AuditEntryFactory
         Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
         AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
 
+    // FR-06/07/09, IADR-0116, #280: 報告書ドラフトの提示（承認待ち）。確定（ReportConfirmed）と同じ "report:{PeriodKey}" 相関で
+    // 束ね、監査照会で「いつ提示され、いつ確定したか」を 1 本の相関で辿れるようにする。
+    public static AuditEntry From(ReportDraftPresented e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ReportDraftPresented), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} のドラフトを提示（版 {e.Version}・承認待ち）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // NFR（費用）: 費用しきい値到達（費用統制 #23）。同一月×カテゴリで同一相関になるよう "cost:{Month}:{Category}" の決定的 GUID を相関にする。
     public static AuditEntry From(CostThresholdReached e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(CostThresholdReached), AuditCorrelation.From($"cost:{e.Month}:{e.Category}"), Symbol: null,

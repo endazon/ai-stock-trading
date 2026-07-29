@@ -39,6 +39,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(OrderRejected), "urn:message:AiStockTrading.Shared.Contracts.Events:OrderRejected")]
         [InlineData(typeof(PriceMovementDetected), "urn:message:AiStockTrading.Shared.Contracts.Events:PriceMovementDetected")]
         [InlineData(typeof(ReportConfirmed), "urn:message:AiStockTrading.Shared.Contracts.Events:ReportConfirmed")]
+        [InlineData(typeof(ReportDraftPresented), "urn:message:AiStockTrading.Shared.Contracts.Events:ReportDraftPresented")]
         [InlineData(typeof(StageTransitioned), "urn:message:AiStockTrading.Shared.Contracts.Events:StageTransitioned")]
         [InlineData(typeof(StopLossTriggered), "urn:message:AiStockTrading.Shared.Contracts.Events:StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "urn:message:AiStockTrading.Shared.Contracts.Events:TradeDecisionMade")]

@@ -39,6 +39,8 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
                 BasedOn = report.BasedOn,
                 AssumptionsVersion = report.AssumptionsVersion,
                 PolicySummary = report.PolicySummary,
+                // FR-06, IADR-0115: 本文（Markdown）は自動生成経路のみが持つ。空なら NULL のまま。
+                Body = string.IsNullOrEmpty(report.Body) ? null : report.Body,
                 ConfirmedAt = null,
                 Version = 1,
             });
@@ -67,6 +69,10 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.BasedOn = report.BasedOn;
         row.AssumptionsVersion = report.AssumptionsVersion;
         row.PolicySummary = report.PolicySummary;
+        // FR-06, IADR-0115: 本文は明示的に非空を渡されたときだけ差し替える。手動 upsert（PUT /reports/{periodKey}）は
+        // 本文を持たないため、空で上書きして生成済みの Markdown を消さない。
+        if (!string.IsNullOrEmpty(report.Body))
+            row.Body = report.Body;
         row.State = ReportState.Draft;
         // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
         row.ReviewState = ReviewState.Drafting;
@@ -141,6 +147,7 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
         BasedOn = r.BasedOn,
         AssumptionsVersion = r.AssumptionsVersion,
         PolicySummary = r.PolicySummary,
+        Body = r.Body ?? string.Empty,
         ConfirmedAt = r.ConfirmedAt,
     };
 }

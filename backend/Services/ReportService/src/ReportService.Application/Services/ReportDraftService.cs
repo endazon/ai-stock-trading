@@ -59,7 +59,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             Narrative = narrative,
         };
 
-        return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl);
+        return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
     }
 
     // #81, IADR-0066: 期間末に建玉が残る銘柄の現在値を市場データ源から引く（全決済済みは評価に不要なので引かない
@@ -117,5 +117,6 @@ public sealed record DraftRequest(
     IReadOnlyList<PeriodTradeFill>? Fills,
     IReadOnlyDictionary<string, decimal>? CurrentPrices);
 
-// 生成結果（Markdown 本文＋集計した数値サマリ）。永続化はしない（本スライス）。
-public sealed record ReportDraft(string Markdown, PnlSummary Pnl);
+// 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
+// Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。
+public sealed record ReportDraft(string Markdown, PnlSummary Pnl, string Narrative);

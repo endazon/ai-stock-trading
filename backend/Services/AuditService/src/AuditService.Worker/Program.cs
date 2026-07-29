@@ -66,6 +66,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<BacktestEvaluatedAuditConsumer>();
     // UC-01/FR-09/FR-07/#210: 日報未確定による取引スキップ（取引判断 #11）も中央監査台帳へ集約する（全イベントの時系列記録・FR-11）。
     x.AddConsumer<DailyPolicyUnconfirmedAuditConsumer>();
+    // FR-06/07/09/#280, IADR-0116: 報告書ドラフトの提示（自動生成スケジューラ）も中央監査台帳へ集約する（FR-11）。
+    x.AddConsumer<ReportDraftPresentedAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

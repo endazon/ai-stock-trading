@@ -40,6 +40,14 @@ internal sealed class ReportConfirmedNotificationConsumer(INotificationSender se
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
 
+// FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（報告書サービスの自動生成スケジューラ）を購読し、
+// 要約と確定依頼を通知する。Discord 未設定なら送信ポートが no-op に倒れる（IADR-0020/0062）＝送信経路の追加のみ。
+internal sealed class ReportDraftPresentedNotificationConsumer(INotificationSender sender) : IConsumer<ReportDraftPresented>
+{
+    public Task Consume(ConsumeContext<ReportDraftPresented> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}
+
 // NFR（費用）, FR-09: 費用しきい値到達（費用統制 #23）を購読して通知する。
 internal sealed class CostThresholdReachedNotificationConsumer(INotificationSender sender) : IConsumer<CostThresholdReached>
 {

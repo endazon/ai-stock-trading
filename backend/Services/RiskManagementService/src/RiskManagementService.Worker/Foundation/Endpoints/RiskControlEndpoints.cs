@@ -52,6 +52,17 @@ internal static class RiskControlEndpoints
         // （#63 台帳の射影＋損切り価格の近似導出）。
         read.MapGet("/open-positions", (OpenPositionsService svc) => Results.Ok(svc.Build()));
 
+        // 期間の約定（FR-06/16, IADR-0115 決定5, #280）: 報告書サービス（#14）が日報/週報/月報の数値集計のため
+        // 同期照会する。取引台帳（承認 Intent × 約定）を取引日（JST 境界）で絞って返す。読み取り専用で、
+        // 新規テーブル・新規イベントは持たない。期間が逆順・未指定でも 200（空列）＝報告書生成を止めない。
+        read.MapGet("/fills", (DateOnly? from, DateOnly? to, IPortfolioLedgerStore ledger) =>
+        {
+            if (from is not { } fromDay || to is not { } toDay)
+                return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
+
+            return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger.GetFills(), fromDay, toDay));
+        });
+
         // ---- 利用者のみ（ADR-0007・OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 

@@ -72,4 +72,31 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("2026-07-20");
         msg.Content.Should().Contain("確定");
     }
+
+    // FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示は確定依頼として整形される。
+    [Fact]
+    public void 報告書ドラフトの提示は要約と確定依頼を含む_Info_で整形される()
+    {
+        var e = new ReportDraftPresented(
+            "daily-2026-07-29", "Daily", "2026-07-29",
+            "日報 2026-07-29（承認待ち）\n実現損益（税引後・費用込み）: +12,300 円", 3, DateTimeOffset.UtcNow);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Title.Should().Contain("承認待ち");
+        msg.Severity.Should().Be(NotificationSeverity.Info);
+        msg.Content.Should().Contain("+12,300 円");        // 発行側で組み立てた要約をそのまま載せる
+        msg.Content.Should().Contain("daily-2026-07-29");
+        msg.Content.Should().Contain("版 3");               // 確定 API の expectedVersion（IADR-0024）
+        msg.Content.Should().Contain("確定");
+    }
+
+    [Fact]
+    public void 報告書ドラフトの提示は確定前に方針が変わらないことを明示する()
+    {
+        // ADR-0003: 確定するまで取引方針は変わらない。通知を読んだ利用者が「もう適用された」と誤解しないようにする。
+        var e = new ReportDraftPresented("weekly-2026-W31", "Weekly", "2026-W31", "週報の要約", 1, DateTimeOffset.UtcNow);
+
+        NotificationFormatter.From(e).Content.Should().Contain("確定するまで取引方針は変わりません");
+    }
 }
