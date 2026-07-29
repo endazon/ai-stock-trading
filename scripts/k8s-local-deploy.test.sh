@@ -73,6 +73,7 @@ assert_missing() { case "$2" in *"$3"*) ng "$1" "expected NOT to contain: $3" ;;
 assert_eq() { [ "$2" = "$3" ] && ok "$1" || ng "$1" "expected [$3] but was [$2]"; }
 
 SECRET_ENV_VARS="FINNHUB_API_KEY MARKETDATA_FINNHUB_API_KEY EDINET_SUBSCRIPTION_KEY FRED_API_KEY
+SEC_EDGAR_USER_AGENT
 DISCORD_WEBHOOK_URL DISCORD_BOT_TOKEN DISCORD_BOT_KILLSWITCH_PHRASE SERVICEAUTH_CLIENTID
 SERVICEAUTH_CLIENTSECRET KB_AUTH_CLIENTID KB_AUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTID
 DISCORD_OWNERAUTH_CLIENTSECRET"
@@ -167,6 +168,47 @@ run_sync
 assert_eq   'T-263-08 既定巻き戻し防止: 正常終了する' "$RC" "0"
 assert_missing 'T-263-08 既定巻き戻し防止: s2s シークレットを dev 既定へ戻さない' "$PATCH" '"service-auth-client-secret"'
 assert_missing 'T-263-08 既定巻き戻し防止: OwnerAuth シークレットを dev 既定へ戻さない' "$PATCH" '"discord-owner-auth-client-secret"'
+
+# ---- #279 / IADR-0114: SEC EDGAR の連絡先入り User-Agent -------------------
+# SEC 規約で必須の連絡先（実在のメールアドレス）は個人情報のため values へ直書きせず ast-secrets 経由で与える。
+# 供給経路が IADR-0109 の不変条件（保持・上書き・空中断・新規作成）をそのまま継承することを固定する。
+
+# T-279-01: 新規環境では空既定で作られる（未設定＝SEC EDGAR だけが無効に倒れる fail-safe）
+given_secret "absent"
+run_sync
+assert_eq   'T-279-01 新規: 正常終了する' "$RC" "0"
+assert_contains 'T-279-01 新規: 空既定のキーが作られる' "$PATCH" '"sec-edgar-user-agent":""'
+
+# T-279-02: env に指定した UA がそのまま載る（連絡先入りの文字列）
+given_secret ""
+SEC_EDGAR_USER_AGENT="AiStockTrading/1.0 (ops@example.com)"; export SEC_EDGAR_USER_AGENT
+run_sync
+assert_eq   'T-279-02 供給: 正常終了する' "$RC" "0"
+assert_contains 'T-279-02 供給: 指定した UA が base64 で載る' \
+  "$PATCH" "\"sec-edgar-user-agent\":\"$(b64 'AiStockTrading/1.0 (ops@example.com)')\""
+
+# T-279-03: export し忘れ（env 未設定）＋既存に非空値 → 触らない（保持）
+given_secret "sec-edgar-user-agent"
+run_sync
+assert_eq   'T-279-03 保持: 正常終了する' "$RC" "0"
+assert_missing 'T-279-03 保持: パッチに sec-edgar-user-agent を載せない' "$PATCH" '"sec-edgar-user-agent"'
+assert_contains 'T-279-03 保持: 保持したキー名を表示する' "$OUT" 'sec-edgar-user-agent'
+
+# T-279-04: 明示的な空指定 ＋ 既存が非空 → キー名を列挙して中断（無言で SEC 収集を止めない）
+given_secret "sec-edgar-user-agent"
+SEC_EDGAR_USER_AGENT=""; export SEC_EDGAR_USER_AGENT
+run_sync
+assert_eq   'T-279-04 中断: 非ゼロ終了する' "$RC" "1"
+assert_contains 'T-279-04 中断: 対象キー名を列挙する' "$ERR" 'sec-edgar-user-agent'
+assert_contains 'T-279-04 中断: 環境変数名を示す' "$ERR" 'SEC_EDGAR_USER_AGENT'
+assert_eq   'T-279-04 中断: パッチを適用しない' "$PATCH" ""
+
+# T-279-05: UA は機密ではないが、他の値と同様に平文を stdout/stderr へ出さない
+given_secret ""
+SEC_EDGAR_USER_AGENT="ua-canary-do-not-log"; export SEC_EDGAR_USER_AGENT
+run_sync
+assert_missing 'T-279-05 秘匿: stdout に平文を出さない' "$OUT" 'ua-canary-do-not-log'
+assert_missing 'T-279-05 秘匿: stderr に平文を出さない' "$ERR" 'ua-canary-do-not-log'
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1

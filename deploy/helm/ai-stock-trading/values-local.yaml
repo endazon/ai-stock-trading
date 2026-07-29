@@ -37,6 +37,22 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（既定 ""）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ============ 実DD（観測最大ドローダウン）の供給（#279/IADR-0114・#164/IADR-0103）============
+      # ADR-0008 の撤退基準は実DD を入力に取るが、それを書く本番コードがバックテスト射影 1 箇所しか無いため
+      # 構造的に発火し得なかった。本ドライバが営業日の定時に建玉台帳の DrawdownRatio をサンプリングし、
+      # 段階実績台帳へ単調 latch する（IADR-0103）。上の EnableMarkToMarket=true が前提で、経路B では既に満たす。
+      # 台帳依存: 経路B の既定ブローカは paper で擬似約定が台帳へ入るため実効する。moomoo SIMULATE 経路は
+      # 約定が台帳へ伝播しないため #270 が入るまで DD は 0 のまま＝不活性（安全側）。
+      - { name: ObservedDrawdownRefresh__Enabled, value: "true" }  # ← 実DD 供給（既定 false＝本番既定）
+      # ★ 撤退の**実行側**（IADR-0083）。上の実DD 供給とセットで初めて ADR-0008 の撤退基準が評価される。
+      #   ⚠️ 条件成立時は**自動で kill switch が起動**し、解除には確認フレーズが要る（IADR-0097）＝
+      #      dogfood は人手で解除するまで止まる。利用者承認のうえ有効化している（IADR-0114 決定3）。
+      #   ただし自動起動（HaltNewEntries=true）は **Stage 2/3（実弾段階）で実DD ≥ バックテスト最大DD × 倍率**
+      #   のときだけ。Stage 1（ペーパー）は降格提案＋通知のみ（HaltNewEntries=false・IADR-0085）、Stage 0 は
+      #   Triggered=false。現在は Stage 0 かつ実弾未解禁（LiveTradingReleased=false）＝**自動停止は起きない**。
+      #   実利は「Stage 1 到達後の乖離検出」と「将来 Stage 2/3 で最初から効いていること」。
+      #   実際に起動したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
+      - { name: WithdrawalEvaluation__Enabled, value: "true" }     # ← 撤退評価（既定 false＝本番既定）
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -55,19 +71,31 @@ services:
   # 収集情報を MSP DocumentService へ実 KB 保存（Auth は MSP レルムの kb-writer）。
   information-collection:
     extraEnv:
-      - { name: Collection__Source__Provider, value: "finnhub" }                 # ← 収集起動（既定 ""）
+      # 案A+（ADR-0004）の情報源はカンマ区切りで合流する（CompositeInformationSource）。必須構成を欠くソースだけが
+      # 警告つきで除外され、他ソースは有効なまま（IADR-0064 決定1＝1 ソースの不備で全体を止めない）。
+      # edinet は API キー（EDINET_SUBSCRIPTION_KEY）、boj は統計分類/系列コードの一次確認が要るため列挙しない（#279 残置）。
+      - { name: Collection__Source__Provider, value: "finnhub,sec-edgar,fred" }  # ← 収集起動（既定 ""）
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
-      - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
-      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
+      # ============ SEC EDGAR（米国の開示・API キー不要）: #279/IADR-0114 ============
+      # SEC 規約は**連絡先（実在のメールアドレス）入り**の User-Agent を必須とする（IADR-0064 決定4 が構成必須化）。
+      # これは環境固有の個人情報のため values へ直書きせず ast-secrets 経由で与える（IADR-0114 決定2）。
+      # 実値は k8s-local-deploy.sh の SEC_EDGAR_USER_AGENT env から投入する。
+      # fail-safe: 未設定/空 → SEC EDGAR **だけ**が収集対象から外れる（finnhub/fred は有効なまま）。
+      - name: Collection__Source__SecEdgar__UserAgent
+        secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "0000320193" }     # ← Apple Inc.（収集銘柄 AAPL と揃える）
       - name: Collection__Source__Edinet__SubscriptionKey
         secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
       - { name: Collection__Source__Boj__Db, value: "" }
       - { name: Collection__Source__Boj__SeriesCodes__0, value: "" }
+      # ============ FRED（米マクロ・#279/IADR-0114）============
+      # 鍵は Fx 換算（#262/IADR-0107）で既に投入済みの fred-api-key を再利用する＝新規の資格情報を要求しない。
       - name: Collection__Source__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
-      - { name: Collection__Source__Fred__SeriesIds__0, value: "" }
+      - { name: Collection__Source__Fred__SeriesIds__0, value: "DEXJPUS" }       # ← 円/ドル為替（Fx の換算源と同じ系列）
+      - { name: Collection__Source__Fred__SeriesIds__1, value: "DGS10" }         # ← 米 10 年国債利回り（定数満期）
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -118,6 +146,23 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
+      # ============ LLM 費用の単価（#279/IADR-0114 決定6・NFR/IADR-0055）============
+      # 未設定（既定 0）だと PublishingLlmUsageReporter が毎回 ¥0 を計上し、月次費用上限（¥15,000）が
+      # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
+      #
+      # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」・global 単一ペアで per-model ではない）。
+      # 実効モデル: AST は Model を指定しない（Decision:PrimaryModel/SecondaryModel 未設定＝null）ため
+      #   ゲートウェイ既定に従う。MSP/ADR-0025 により既定は claude-opus-5（IADR-0101）。ADR-0011 が意図する
+      #   固定先 claude-opus-4-8 も**同単価**のため、どちらでも本値は変わらない。
+      #
+      # 出典・前提（2026-07 時点・恒久値ではない）:
+      #   Anthropic 公開単価 opus 系 = 入力 $5 / 出力 $25（いずれも 1M トークン）
+      #   → 1k 換算 $0.005 / $0.025 → USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列）
+      #   → 0.005 × 163.71 = 0.81855 ≒ 0.819 / 0.025 × 163.71 = 4.09275 ≒ 4.093（切り上げ側＝統制に安全）
+      #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243 を更新する。
+      #   ※ 報告書散文（report-service）の費用はそもそも計上経路が無い（#282）。本値は判断側のみに効く。
+      - { name: LlmPricing__InputPer1kTokens, value: "0.819" }    # ← 円/1k トークン（既定 0＝計上 ¥0）
+      - { name: LlmPricing__OutputPer1kTokens, value: "4.093" }   # ← 円/1k トークン（既定 0＝計上 ¥0）
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

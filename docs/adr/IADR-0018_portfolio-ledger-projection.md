@@ -89,6 +89,8 @@ plan_refs:
 ## 関連
 
 - Supersedes: なし（`PlaceholderPortfolioStateProvider` を置き換え）
-- Superseded by: なし
+- Superseded by: [IADR-0113](IADR-0113_moomoo-fill-polling.md)（**約定の受け口条件と `trade_fills` の追記専用性のみ**。
+  受け口は `Status == Filled` から「約定があること（`FilledQuantity > 0`）」へ広がり、`AppendFill` は `OrderId` 単位の
+  単調 upsert＝累積約定数が増えたときだけ既存行を更新する。相関キー・射影・冪等の方針は本 IADR を維持）
 - 関連: [IADR-0005](IADR-0005_stage-capital-cap-definition.md)（InvestedCapital=取得額累計）、
   [IADR-0008](IADR-0008_daily-loss-limit-basis.md)（含み損益は後続）、[IADR-0004](IADR-0004_position-effect-entry-scoping.md)（建玉効果）

@@ -46,10 +46,25 @@ kubectl -n ai-stock-trading get pods
 - **為替換算（#257 / IADR-0107）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
   **US 株を取引するための必須前提**（下記「為替換算」参照）。未設定だと USD 建て銘柄は LLM 呼び出し前に全件見送りになる。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
+- **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
+  risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
+  建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
+  **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
+  経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
+  [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
+- **LLM 費用の単価（#279 / IADR-0114 決定6 / IADR-0055）**: trade-decision `LlmPricing__InputPer1kTokens=0.819` /
+  `LlmPricing__OutputPer1kTokens=4.093`（**円 / 1,000 トークン**）。未設定（既定 0）だと毎回 ¥0 計上で
+  月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
+- **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
+  SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
+  （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
 
 **本番（ArgoCD）はバイト等価**: `deploy/argocd/application.yaml` は `valueFiles` を持たず `values.yaml` のみを描画するため、
 `values-local.yaml` は本番描画に一切関与しない。`helm.yml` の CI が「既定描画に経路B有効化が漏れていないこと」と
-「`values-local` 描画で①②③＋Discord＋価格文脈が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を両検証する。
+「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を
+両検証する。加えて「**`values-local` が既定描画の env を 1 つも落としていないこと**」も検査する（#279 / IADR-0114 決定4）——
+Helm は**リストを置換する**ため、`extraEnv` を上書きしているサービスでは本番 `values.yaml` にキーが増えたときの写し忘れが
+**当該 env の消失**になり、「有効化したつもりで別の機能を落とす」事故になるため。
 
 **secret は平文で埋め込まない**: `values-local.yaml` の鍵・トークンはすべて `secretKeyRef`（`ast-secrets`・`optional`）参照。
 実値は下記 env で `ast-secrets` へ与える（未設定=空=no-op の fail-safe）か、ESO(Vault) 同期（IADR-0094）に委ねる。
@@ -59,6 +74,7 @@ kubectl -n ai-stock-trading get pods
 | `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない） | 空=NoOp |
 | `FRED_API_KEY` | `fred-api-key` | **US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・IADR-0107）。収集ソース（FRED）にも同じ鍵を使う | **空=USD 建て銘柄が全件見送り**（日本株は無影響）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
+| `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
@@ -134,8 +150,8 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 | 項目 | 値 | 実装上の根拠 |
 | --- | --- | --- |
 | 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
-| 系列 | `DEXJPUS`（円/ドル・**営業日次**） | `FredFxOptions.SeriesId` 既定 |
-| 鮮度上限 | **7 日**（超過した観測は採らない＝レート無し扱い） | `FxOptions.MaxRateAgeDays` 既定 |
+| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載） | `FredFxOptions.SeriesId` 既定 |
+| 鮮度上限 | **14 日**（超過した観測は採らない＝レート無し扱い）。公表周期から導いた値（#271 / IADR-0112）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**31 日超は 31 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
 
@@ -178,6 +194,53 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 > [IADR-0108](../../../docs/adr/IADR-0108_simulator-risk-profile.md) の SIMULATE 限定プロファイル
 > （`values-local.yaml` の `Risk__SimulatorProfile__Enabled=true`・本番既定は false）が上限をシミュレータ残高に
 > 合わせるため発注まで到達する。本番既定での上限見直し・銘柄選定は運用判断として #257 に残置。
+
+### 撤退評価と自動 kill switch（#279 / IADR-0114 決定3）
+
+経路B では実DD 供給（`ObservedDrawdownRefresh__Enabled`）と撤退評価（`WithdrawalEvaluation__Enabled`）を**ともに true** にしている。
+[ADR-0008](../../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md) の撤退基準に該当すると、
+**撤退評価が自動で kill switch を起動する**（[IADR-0083](../../../docs/adr/IADR-0083_withdrawal-evaluation-driver.md)）。
+
+**発火するのは実弾段階だけ**（`StageGate.AssessWithdrawal`）。過度に身構えないための整理:
+
+| 段階 | 判定 | kill switch |
+| --- | --- | --- |
+| Stage 0（検証） | `Triggered: false` | **起動しない** |
+| Stage 1（ペーパー） | 乖離が説明不能なら `Triggered: true` だが `HaltNewEntries: false` | **起動しない**（降格提案＋通知のみ・[IADR-0085](../../../docs/adr/IADR-0085_paper-withdrawal-notification-dedup.md)） |
+| Stage 2/3（実弾） | 実DD ≥ バックテスト最大DD × 倍率 | **起動する** |
+
+現在の段階は Stage 0 で、Stage 2/3 は実弾未解禁（`LiveTradingReleased=false`・IADR-0111 の閂 0）のため到達不能。
+つまり**いまの経路B で自動停止が起きることはない**。有効化の実利は「Stage 1 到達後の乖離検出」と
+「将来 Stage 2/3 が解禁されたとき最初から効いていること」。以下は実際に起動した場合の手順。
+
+- 起動すると**新規建てが止まる**。既存建玉の損切りは止まらない。
+- **解除は自動では起きない**。確認フレーズの入力が要る（[IADR-0097](../../../docs/adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）。
+  フレーズは `DISCORD_BOT_KILLSWITCH_PHRASE`（`ast-secrets/discord-bot-killswitch-phrase`）で与えた値で、
+  **未設定なら解除できない**（摩擦を下げない設計）。解除の導線は Discord Bot の制御コマンドか SC-03 の統制状態画面。
+- 「dogfood が動かない」ときは、まず kill switch 状態を疑う（`kubectl -n ai-stock-trading logs deploy/risk-management-service` に
+  撤退トリガの記録が出る）。**止まったこと自体は統制が効いた結果**であり、無効化ではなく原因（DD の悪化）を確認する。
+
+撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
+（実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
+
+### LLM 費用の単価（#279 / IADR-0114 決定6）
+
+`LlmPricing__InputPer1kTokens` / `LlmPricing__OutputPer1kTokens` は **円 / 1,000 トークン**（global 単一ペア・per-model ではない）。
+未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
+80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
+
+| 項目 | 値 | 備考 |
+| --- | --- | --- |
+| 公開単価（2026-07 時点） | 入力 $5 / 出力 $25（1M トークン） | opus 系（`claude-opus-5` / `claude-opus-4-8` は同単価） |
+| USD→JPY 換算 | **163.71** | システムの為替源 FRED `DEXJPUS` と同一系列（IADR-0107） |
+| 投入値 | `0.819` / `4.093` | `0.005×163.71=0.81855` / `0.025×163.71=4.09275` を切り上げ側へ丸め（統制に安全） |
+
+**恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は **2026-08-31 までの導入価格**であり、
+`Decision:PrimaryModel` を sonnet 等へ切り替えるなら本値の再計算が要る。再評価は
+[#243](https://github.com/endazon/ai-stock-trading/issues/243)。本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
+
+> **過少申告が残る点**: report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても実消費より
+> 少なく見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。
 
 ### Discord の環境固有 ID（`kubectl set env` は使わない）
 
@@ -273,6 +336,33 @@ scripts/k8s-local-deploy.sh
 - 稼働中の階層は `GET /internal/introspection` の `broker` ポートが自己申告する（`paper` / `moomoo-sim`）。
 - **`moomoo.enabled` は非推奨エイリアス**である。`broker.tier` を指定していないときだけ `moomoo-sim` として
   解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
+
+### ⚠️ `paper` と `moomoo-sim` は「どちらも実弾でない」だけで**別物**である（#268）
+
+検証で最も踏みやすい取り違えである。**`paper` の約定を moomoo の模擬口座で探しても構造的に見つからない。**
+
+| 観点 | `paper`（既定） | `moomoo-sim` |
+| --- | --- | --- |
+| 約定の主体 | **AST プロセス内蔵**（`PaperBrokerAdapter`）。参照価格で即時全量約定 | moomoo 側の模擬取引エンジン |
+| 外部通信 | **無し**（OpenD へ 1 リクエストも出さない） | 有り（`opend:11111`） |
+| 状態遷移 | 発注＝即 `Filled` | 発注直後は `Accepted`、約定は**後追い** |
+| 残高・注文履歴 | AST の内部台帳（`executed_orders` / `trade_fills`）のみ。現金・建玉は仮想 | **moomoo 模擬口座が権威**（moomoo アプリで目視可）。AST 台帳は現状これを取り込まない（[#270](https://github.com/endazon/ai-stock-trading/issues/270)） |
+| `OrderId` の形 | 32 桁 hex（`Guid` の `"N"`） | moomoo 採番の数値（例 `9049618348733212748`） |
+
+**どちらで動いているかの確認**（詳細・識別手順は
+[発注経路の区別と識別 Runbook](../../../docs/operations/broker-execution-paths-runbook.md)）:
+
+```bash
+# 1) 自己申告（"paper" / "moomoo-sim"）
+kubectl -n ai-stock-trading port-forward svc/order-execution-service 8080:8080 &
+curl -s localhost:8080/internal/introspection | tr ',' '\n' | grep -A1 '"broker"'
+
+# 2) moomoo 経路だけが出すログ（出ていなければ paper で回っている）
+kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD 接続完了・SIMULATE 口座 accId=|moomoo SIMULATE 発注成功"
+```
+
+moomoo 側の注文は**備考（remark）に `DecisionId`**（ハイフン無し 32 桁 hex）が入るため、AST の判断と 1 対 1 で
+突き合わせられる（IADR-0092）。
 
 以下は `moomoo-sim` 階層（＝旧 `moomoo.enabled=true`）の詳細である。既定 **無効**（`Broker__Provider=paper`
 ＝実発注しない・fail-safe・IADR-0016）。有効化すると `order-execution` へ moomoo 発注構成が注入される

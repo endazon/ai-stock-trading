@@ -62,6 +62,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test k8s-local-deploy.sh (ast-secrets sync)
         run: bash scripts/k8s-local-deploy.test.sh
+      # #274, IADR-0060 決定3: OpenD entrypoint の RSA 鍵検査（k8s Secret の symlink 越しに実体の
+      # パーミッションを見る）を固定する。symlink と chmod が要るため ubuntu-latest で実行する。
+      - name: Test opend entrypoint.sh (RSA key permission check)
+        run: bash deploy/opend/entrypoint.test.sh
 
   # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（Issue #59 再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
