@@ -250,6 +250,14 @@ jobs:
             | awk '/^  name: /{svc=$2} /^            - name: /{print svc" "$3}' | sort -u; }
           names > /tmp/env-prod.txt
           names -f "$CHART/values-local.yaml" > /tmp/env-local.txt
+          # 抽出は deployment.yaml のインデントに依存する。将来インデントが変わると 0 件になり
+          # 「差分なし＝緑」で静かに壊れるため、下限件数を置いて抽出自体の破綻を検出する。
+          prod_count="$(wc -l < /tmp/env-prod.txt)"
+          if [ "$prod_count" -lt 100 ]; then
+            echo "::error::env 名の抽出が $prod_count 件しか取れなかった（deployment.yaml のインデント変更で awk が破綻した可能性）。"
+            echo "         この検査は抽出が壊れると常に緑になるため、件数下限で破綻を検出している。"
+            exit 1
+          fi
           missing="$(comm -23 /tmp/env-prod.txt /tmp/env-local.txt)"
           if [ -n "$missing" ]; then
             echo "::error::values-local の extraEnv 上書きで次の env が消えている（本番 values.yaml から写し忘れ）:"

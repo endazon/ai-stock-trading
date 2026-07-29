@@ -44,10 +44,14 @@ services:
       # 台帳依存: 経路B の既定ブローカは paper で擬似約定が台帳へ入るため実効する。moomoo SIMULATE 経路は
       # 約定が台帳へ伝播しないため #270 が入るまで DD は 0 のまま＝不活性（安全側）。
       - { name: ObservedDrawdownRefresh__Enabled, value: "true" }  # ← 実DD 供給（既定 false＝本番既定）
-      # ★ 撤退の**実行側**（IADR-0083）。上の実DD 供給とセットで初めて ADR-0008 の撤退基準が発火する。
-      #   ⚠️ 条件成立時は**自動で kill switch が起動**し、解除には確認フレーズが要る（IADR-0097）。
-      #      すなわち dogfood は人手で解除するまで止まる。利用者承認のうえ有効化している（IADR-0114 決定3）。
-      #   停止したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
+      # ★ 撤退の**実行側**（IADR-0083）。上の実DD 供給とセットで初めて ADR-0008 の撤退基準が評価される。
+      #   ⚠️ 条件成立時は**自動で kill switch が起動**し、解除には確認フレーズが要る（IADR-0097）＝
+      #      dogfood は人手で解除するまで止まる。利用者承認のうえ有効化している（IADR-0114 決定3）。
+      #   ただし自動起動（HaltNewEntries=true）は **Stage 2/3（実弾段階）で実DD ≥ バックテスト最大DD × 倍率**
+      #   のときだけ。Stage 1（ペーパー）は降格提案＋通知のみ（HaltNewEntries=false・IADR-0085）、Stage 0 は
+      #   Triggered=false。現在は Stage 0 かつ実弾未解禁（LiveTradingReleased=false）＝**自動停止は起きない**。
+      #   実利は「Stage 1 到達後の乖離検出」と「将来 Stage 2/3 で最初から効いていること」。
+      #   実際に起動したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
       - { name: WithdrawalEvaluation__Enabled, value: "true" }     # ← 撤退評価（既定 false＝本番既定）
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。

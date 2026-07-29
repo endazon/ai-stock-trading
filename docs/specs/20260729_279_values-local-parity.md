@@ -65,9 +65,14 @@ plan_refs:
   経路B の既定ブローカは **paper**（`broker.tier` 既定・`values.yaml:54` 相当）で、擬似約定が台帳へ反映されるため実効する。
   **moomoo SIMULATE 経路では約定が台帳へ伝播しないため [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで不活性**（DD は 0 のまま＝安全側）。
 - **撤退の実行側も有効化する（利用者承認済み）**: `WithdrawalEvaluation__Enabled="true"` を併せて投入し、
-  ADR-0008 の撤退基準が実際に評価・発火する状態にする。⚠️ 条件成立時は自動で kill switch が起動し、
+  ADR-0008 の撤退基準が実際に評価される状態にする。⚠️ 条件成立時は自動で kill switch が起動し、
   解除には確認フレーズが要る（[IADR-0097](../adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）＝
   **dogfood は人手で解除するまで停止する**。この代償を提示したうえで利用者が「入れる」と判断した（IADR-0114 決定3）。
+- **ただし自動停止の発火範囲は実弾段階に限られる**（`StageGate.AssessWithdrawal` の実測）。`HaltNewEntries: true`＝
+  kill switch 起動は **Stage 2/3 で「実DD ≥ バックテスト最大DD × 倍率」** のときだけで、Stage 1（ペーパー）は
+  `Triggered: true` でも `HaltNewEntries: false`（降格提案＋通知のみ・IADR-0085）、Stage 0 は `Triggered: false`。
+  現在の段階は Stage 0 で、Stage 2/3 は実弾未解禁（`LiveTradingReleased=false`・IADR-0111 閂0）のため到達不能＝
+  **現構成では自動停止は起きない**。実利は「Stage 1 到達後の乖離検出」と「将来 Stage 2/3 で最初から効いていること」。
 
 ### 2. SEC EDGAR 収集の結線（FR-01 / ADR-0004 / IADR-0064）
 

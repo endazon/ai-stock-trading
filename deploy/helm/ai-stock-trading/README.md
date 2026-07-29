@@ -49,7 +49,7 @@ kubectl -n ai-stock-trading get pods
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
-  **⚠️ 条件成立時は自動で kill switch が起動し、解除するまで新規建てが止まる**（下記「撤退評価と自動 kill switch」）。
+  **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
   経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
   [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
 - **LLM 費用の単価（#279 / IADR-0114 決定6 / IADR-0055）**: trade-decision `LlmPricing__InputPer1kTokens=0.819` /
@@ -200,6 +200,18 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 経路B では実DD 供給（`ObservedDrawdownRefresh__Enabled`）と撤退評価（`WithdrawalEvaluation__Enabled`）を**ともに true** にしている。
 [ADR-0008](../../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md) の撤退基準に該当すると、
 **撤退評価が自動で kill switch を起動する**（[IADR-0083](../../../docs/adr/IADR-0083_withdrawal-evaluation-driver.md)）。
+
+**発火するのは実弾段階だけ**（`StageGate.AssessWithdrawal`）。過度に身構えないための整理:
+
+| 段階 | 判定 | kill switch |
+| --- | --- | --- |
+| Stage 0（検証） | `Triggered: false` | **起動しない** |
+| Stage 1（ペーパー） | 乖離が説明不能なら `Triggered: true` だが `HaltNewEntries: false` | **起動しない**（降格提案＋通知のみ・[IADR-0085](../../../docs/adr/IADR-0085_paper-withdrawal-notification-dedup.md)） |
+| Stage 2/3（実弾） | 実DD ≥ バックテスト最大DD × 倍率 | **起動する** |
+
+現在の段階は Stage 0 で、Stage 2/3 は実弾未解禁（`LiveTradingReleased=false`・IADR-0111 の閂 0）のため到達不能。
+つまり**いまの経路B で自動停止が起きることはない**。有効化の実利は「Stage 1 到達後の乖離検出」と
+「将来 Stage 2/3 が解禁されたとき最初から効いていること」。以下は実際に起動した場合の手順。
 
 - 起動すると**新規建てが止まる**。既存建玉の損切りは止まらない。
 - **解除は自動では起きない**。確認フレーズの入力が要る（[IADR-0097](../../../docs/adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）。
