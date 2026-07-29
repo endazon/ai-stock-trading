@@ -66,6 +66,45 @@ public class FxRateSourceFactoryTests
             .Should().Be("fred");
     }
 
+    // FR-10, #271, IADR-0112 決定1: 既定の鮮度上限はデータ源の公表周期（DEXJPUS＝H.10 週次リリース）から導く。
+    // 内訳: 公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 2 日 ＋ 公表時刻 ≒ 12.84 日 に約 1.2 日の余裕。
+    [Fact]
+    public void 既定の鮮度上限は公表周期から導いた14日()
+    {
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()).Should().Be(TimeSpan.FromDays(14));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void ゼロ以下の鮮度上限は既定へ倒す(int days)
+    {
+        // 構成ミスで「無制限」にはしない（歯止めを失わない）。
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(FxOptions.DefaultMaxRateAgeDays));
+    }
+
+    [Theory]
+    [InlineData(32)]
+    [InlineData(365)]
+    public void 上限を超える鮮度指定はクランプする(int days)
+    {
+        // IADR-0112 決定2: 週次公表が 4 回以上連続で落ちる事態は公表周期では説明できない。「動かないので 365 に
+        // する」といった運用の逃げ道で鮮度 guard を実質無効化させない（設定値ではなく構造で担保する）。
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(FxOptions.MaxAllowedRateAgeDays));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(31)]
+    public void 範囲内の鮮度指定はそのまま尊重する(int days)
+    {
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })
+            .Should().Be(TimeSpan.FromDays(days));
+    }
+
     [Fact]
     public async Task no_opは外貨のレートを解決しない()
     {
