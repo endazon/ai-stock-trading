@@ -37,6 +37,13 @@ public sealed record TradingReport
     /// <summary>翌期間の方針（確定で取引方針として有効化される）。</summary>
     public string PolicySummary { get; init; } = string.Empty;
 
+    /// <summary>
+    /// FR-06, IADR-0115, #280: 報告書の本文（Markdown・ReportRenderer の出力）。自動生成スケジューラが保存し、
+    /// 利用者がレビューする実体。手動 upsert 経路（PUT /reports/{periodKey}）は本文を受け取らないため空のまま
+    /// （既存 API 互換）。既存行は空文字として読み出す。
+    /// </summary>
+    public string Body { get; init; } = string.Empty;
+
     /// <summary>確定日時（確定時に記録）。</summary>
     public DateTimeOffset? ConfirmedAt { get; init; }
 }
