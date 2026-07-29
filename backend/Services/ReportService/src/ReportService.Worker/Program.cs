@@ -2,12 +2,15 @@ using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Report.Worker.Composable.Adapters;
+using AiStockTrading.Report.Worker.Composable.Polling;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Report.Worker.Foundation.Endpoints;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;
@@ -102,6 +105,34 @@ builder.Services.AddScoped<ReportDraftService>();
 // 未設定＝保存しない＝現行挙動）、設定時のみ実 platform 文書管理へ opt-in。保存は fail-safe（確定を壊さない）。
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 
+// FR-06/16, IADR-0115 決定5, #280: 集計対象期間の約定。権威源はリスク管理（#12）の取引台帳であり、
+// GET /risk-controls/fills（OwnerOrService・IADR-0051）へ s2s 同期照会する（IADR-0095 と同型）。
+// RiskManagement:BaseUrl 未設定/不正 URI は no-op（空列）＝数値 0 の報告書＝現行挙動。照会失敗も空列へ倒す。
+builder.Services.AddHttpClient("risk-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<IPeriodFillSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new NoOpPeriodFillSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
+});
+
+// FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
+// 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
+builder.Services.Configure<ReportAutoGenerationOptions>(
+    builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName));
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToSettings());
+// EF ストア・ドラフト生成が scoped のため、オーケストレータも scoped（常駐は巡回ごとにスコープを作る）。
+builder.Services.AddScoped<ReportAutoGenerator>();
+if (builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
+        .Get<ReportAutoGenerationOptions>()?.Enabled == true)
+    builder.Services.AddHostedService<ReportAutoGenerationService>();
+
 // IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。
 builder.Services.AddMassTransit(x =>
 {
@@ -118,7 +149,12 @@ builder.Services.AddMassTransit(x =>
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPortFromBaseUrl("llm-completion", builder.Configuration["LlmGateway:BaseUrl"], "http", "placeholder")
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
-    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop"));
+    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop")
+    // IADR-0115: 期間約定の供給（権威源へ s2s 照会 or no-op）と、自動生成スケジューラの有効/無効を自己申告する。
+    .AddPortFromBaseUrl("period-fills", builder.Configuration["RiskManagement:BaseUrl"], "http", "noop")
+    .AddPort("report-auto-generation",
+        builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
+            .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled"));
 
 var app = builder.Build();
 

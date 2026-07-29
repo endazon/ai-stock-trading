@@ -1,0 +1,66 @@
+using AiStockTrading.Report.Application.Services;
+using Microsoft.Extensions.Options;
+
+namespace AiStockTrading.Report.Worker.Composable.Polling;
+
+// FR-06/07, UC-03〜05, 04_workflows/03_reporting-cycle, IADR-0115, #280: 報告書自動生成の常駐ドライバ。
+// 閉場後の日報・週報・月報のドラフトを生成し、提示（PendingApproval）まで進める。**確定はしない**（ADR-0003）。
+//
+// 実装作法は ObservedDrawdownRefreshService（IADR-0103）・WithdrawalEvaluationService（IADR-0083）に準拠する:
+// PeriodicTimer で定時、巡回ごとに DI スコープを作って scoped な ReportAutoGenerator（EF ストア）を解決し、
+// 例外は捕捉して次周期へ縮退する（1 巡回の失敗で常駐を落とさない）。多重起動は逐次 await で防ぐ。
+//
+// 生成対象の判定は「境界時刻を過ぎていて未生成」であり、巡回時刻の一致を要求しない。したがって巡回の遅延・
+// プロセス再起動があっても当期ぶんは次の巡回で回収される（IADR-0115 決定2/3）。
+internal sealed class ReportAutoGenerationService(
+    IServiceScopeFactory scopeFactory,
+    IOptions<ReportAutoGenerationOptions> options,
+    ILogger<ReportAutoGenerationService> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(options.Value.Interval);
+
+        do
+        {
+            try
+            {
+                await RunOnceAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break; // 停止要求
+            }
+            catch (Exception ex)
+            {
+                // フェイルセーフ: 1 巡回の失敗で常駐を落とさない。未生成の期間は次周期で再び対象になる
+                // （冪等の根拠は PeriodKey の存在であり、部分的に生成された期間は二度作られない）。
+                logger.LogError(ex, "報告書の自動生成でエラーが発生しました。次回巡回を継続します。");
+            }
+        }
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
+    }
+
+    // 1 巡回。単体テスト可能な単位として公開する。
+    public async Task RunOnceAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var generator = scope.ServiceProvider.GetRequiredService<ReportAutoGenerator>();
+
+        var result = await generator.RunOnceAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var report in result.Generated)
+        {
+            logger.LogInformation(
+                "報告書ドラフトを自動生成し提示しました: {PeriodKey}（{Kind}）。確定は利用者の承認が必要です（ADR-0003）。",
+                report.PeriodKey, report.Kind);
+        }
+
+        foreach (var failure in result.Failed)
+        {
+            // 期間単位の失敗。他の期間の生成は継続しており、この期間は次周期で再試行される。
+            logger.LogWarning(failure.Error, "報告書ドラフトの自動生成に失敗しました: {PeriodKey}。次回巡回で再試行します。",
+                failure.PeriodKey);
+        }
+    }
+}
