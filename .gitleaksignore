@@ -15,3 +15,10 @@
 ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:discord-client-id:83
 ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:discord-client-id:84
 687f4bdfa391aa340ed3e2e8de49e1004583221e:docs/specs/20260725_245_discord-ids-via-values.md:discord-client-id:109
+#
+# #280: 報告書の方針テストで、報告書の**自然キー**（`weekly-2026-W31`）を名前付き引数
+# `parentPeriodKey:` へ直に渡した行を gitleaks の generic-api-key ルールが検知した（キーワード "key" ＋
+# エントロピー 3.5）。当該値は認証情報ではなく、ReportPeriod.ExpectedKey が導出する期間表記そのものである。
+# 現行ツリーでは定数（ParentWeekly）へ括り出して同型の記述を解消済みだが、gitleaks は commit 範囲（履歴）を
+# 走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない＝force-push しない方針）。
+01c54d386770c93be9727fd9c8e18085bb63844a:backend/Services/ReportService/tests/ReportService.Domain.Tests/ReportPolicyDraftTests.cs:generic-api-key:30
