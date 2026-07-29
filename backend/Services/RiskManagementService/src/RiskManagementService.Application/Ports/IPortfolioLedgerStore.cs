@@ -3,9 +3,12 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Ports;
 
-// FR-10, FR-05, FR-11, IADR-0018: 追記専用の取引台帳。承認済み注文の Intent（銘柄・方向・建玉効果）を
-// DecisionId で保持し、OrderExecuted の約定を OrderId で記録して DecisionId で相関する。
-// GetFills は相関済みの LedgerFill 列（射影入力）を返す。実装は冪等（同一 DecisionId/OrderId の再送を無視）。
+// FR-10, FR-05, FR-11, IADR-0018: 取引台帳。承認済み注文の Intent（銘柄・方向・建玉効果）を DecisionId で保持し、
+// OrderExecuted の約定を OrderId で記録して DecisionId で相関する。GetFills は相関済みの LedgerFill 列（射影入力）を返す。
+//
+// #270, IADR-0112: 承認は追記専用（同一 DecisionId の再送は無視）だが、約定は 1 注文 = 1 行に**累積**約定数を保つ
+// 単調 upsert である（追記専用ではない）。ブローカが返す約定数は累積値であり差分ではないため、行の更新が忠実な写像になる。
+// いずれの操作も冪等（再送・順序前後で二重計上せず、数量は巻き戻らない）。
 public interface IPortfolioLedgerStore
 {
     /// <summary>承認済み注文の Intent を DecisionId で記録する。既存なら無視する（冪等）。</summary>
