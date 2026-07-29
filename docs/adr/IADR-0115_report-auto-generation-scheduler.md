@@ -70,12 +70,16 @@ ADR-0003 の否定であり、実装リポジトリの IADR で上書きして�
 （HTTP エンドポイントは OwnerOnly のまま）。提示は計画書のシーケンスで**システム側の動作**として定義されており、
 in-process のドメイン操作として正しい。状態機械が要求する「actor 必須」（`ActorRequired`）も満たす。
 
+提示の結果（`ReviewDecision`）は捨てない。生成直後の遷移のため通常は必ず受理されるが、拒否されると
+「報告書は存在するのに承認待ち一覧に並ばない」＝利用者が気付けない状態になり、しかも次巡回は `PeriodKey` 一致で
+スキップされるため自動回復しない。よって受理されなかった期間を `NotPresented` として返し、常駐が警告ログに残す。
+
 ### 決定 2: 生成境界は JST 固定・営業日基準。バックフィルは当期のみ
 
 時刻境界は JST（UTC+9）に固定し、`PortfolioProjection.TradingDayOffset` と揃える。市場別の取引日境界の解釈は
 [#249](https://github.com/endazon/ai-stock-trading/issues/249) の管轄であり、本 IADR では扱わない。
 
-判定は純関数 `ReportSchedule.Due(instant, options, holidays)` に閉じる（`BackgroundService` から分離してテスト可能にする）。
+判定は純関数 `ReportSchedule.Due(instant, ReportScheduleOptions)` に閉じる（`BackgroundService` から分離してテスト可能にする）。
 日報は「閉場境界を過ぎた**直近の営業日** 1 件」、週報・月報は「当 ISO 週・当月の**最終営業日**の境界を過ぎていれば当期 1 件」。
 
 日報だけ直前の営業日まで遡るのは非対称に見えるが、意図的である。**確定した日報が翌営業日の取引方針になる**ため、
@@ -117,8 +121,9 @@ risk-management の取引台帳（`approved_orders` × `trade_fills`）であり
 欠測が過大発注へ繋がる経路が無く、「数値 0 のドラフトを提示して利用者に気付かせる」ほうが「何も出さない」より安全である
 （`#210` の「未確定を黙って続けない」と同じ方向）。
 
-台帳の `AveragePrice` はローカル通貨（IADR-0107）、`PeriodTradeFill.Price` は基準通貨（円）建てのため、
-照会結果は `AveragePrice × FxRateToBase` で基準通貨へ換算して渡す。
+台帳（`LedgerFill.Price`）はローカル通貨（IADR-0107）、`PeriodTradeFill.Price` は基準通貨（円）建てのため、
+照会結果は `Price × FxRateToBase` で基準通貨へ換算して渡す（`LedgerFill.PriceInBase` と同じ規則を、
+別サービスの型を参照せずに一次フィールドから導出する）。
 
 実約定が台帳に入るかどうかは [#270](https://github.com/endazon/ai-stock-trading/issues/270) 依存であり、
 本 IADR は構造の結線までを担当する。

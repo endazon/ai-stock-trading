@@ -1,6 +1,7 @@
 using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
+using AiStockTrading.Report.Application.State;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using FluentAssertions;
@@ -49,6 +50,39 @@ public class ReportAutoGeneratorTests
     {
         public Task<IReadOnlyList<PeriodTradeFill>> GetFillsAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
             throw new HttpRequestException("台帳へ到達できません");
+    }
+
+    // upsert だけが失敗するストア（競合・確定済み・想定外の失敗を作り分ける）。他の操作は素通しする。
+    private sealed class ThrowingUpsertStore(Exception error) : IReportStore
+    {
+        private readonly InMemoryReportStore _inner = new();
+
+        public int UpsertDraft(TradingReport report, int expectedVersion) => throw error;
+
+        public VersionedReport? Get(string periodKey) => _inner.Get(periodKey);
+        public IReadOnlyList<TradingReport> List() => _inner.List();
+        public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
+            _inner.Confirm(periodKey, expectedVersion, confirmedAt);
+        public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
+        public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
+        public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) => _inner.ApplyReview(periodKey, command);
+    }
+
+    // 提示（Present）だけが受理されないストア。生成は成功するが承認待ちへ進まない状況を作る。
+    private sealed class RejectingPresentStore : IReportStore
+    {
+        private readonly InMemoryReportStore _inner = new();
+
+        public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>
+            new(new ReportReview(periodKey, ReviewState.Drafting, 1), Transitioned: false, ReviewRejectionReason.InvalidTransition);
+
+        public VersionedReport? Get(string periodKey) => _inner.Get(periodKey);
+        public IReadOnlyList<TradingReport> List() => _inner.List();
+        public int UpsertDraft(TradingReport report, int expectedVersion) => _inner.UpsertDraft(report, expectedVersion);
+        public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
+            _inner.Confirm(periodKey, expectedVersion, confirmedAt);
+        public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
+        public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
     }
 
     private static ReportAutoGenerator NewGenerator(
@@ -180,6 +214,66 @@ public class ReportAutoGeneratorTests
         var result = await NewGenerator(store, MonthEndAfterClose).RunOnceAsync();
 
         result.Generated.Select(r => r.PeriodKey).Should().BeEquivalentTo(["weekly-2026-W31", "monthly-2026-07"]);
+    }
+
+    [Fact]
+    public async Task 他レプリカとの競合は失敗にせず当該期間を飛ばす()
+    {
+        // 多重レプリカが同時に同じ期間を作ると expectedVersion 0 の主キー競合で片方が負ける。
+        // 二重生成を避けた結果であり異常ではない（失敗として記録しない・警告も出さない）。
+        var store = new ThrowingUpsertStore(new ReportConcurrencyException("daily-2026-07-08", 0, 1));
+
+        var result = await NewGenerator(store, WedAfterClose).RunOnceAsync();
+
+        result.Generated.Should().BeEmpty();
+        result.Failed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 生成中に確定された期間は失敗にせず当該期間を飛ばす()
+    {
+        // 巡回中に利用者が同じ期間を確定した場合、確定済みは不変のため upsert が拒否される。
+        // 次巡回では PeriodKey 一致でスキップされるため、失敗として記録しない。
+        var store = new ThrowingUpsertStore(new InvalidOperationException("確定済み報告書は変更できません。"));
+
+        var result = await NewGenerator(store, WedAfterClose).RunOnceAsync();
+
+        result.Generated.Should().BeEmpty();
+        result.Failed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 想定外の失敗は期間ごとに記録し他の期間の生成を止めない()
+    {
+        var store = new ThrowingUpsertStore(new TimeoutException("ストアが応答しません"));
+
+        var result = await NewGenerator(store, MonthEndAfterClose).RunOnceAsync();
+
+        result.Generated.Should().BeEmpty();
+        result.Failed.Select(f => f.PeriodKey).Should()
+            .BeEquivalentTo(["daily-2026-07-31", "weekly-2026-W31", "monthly-2026-07"]);
+        result.Failed.Should().OnlyContain(f => f.Error is TimeoutException);
+    }
+
+    [Fact]
+    public async Task 提示が受理されなければ生成できても未提示として報告する()
+    {
+        // 提示が黙って失敗すると承認待ち一覧に並ばず、利用者は報告書の存在に気付けない。
+        var store = new RejectingPresentStore();
+
+        var result = await NewGenerator(store, WedAfterClose).RunOnceAsync();
+
+        result.Generated.Should().ContainSingle();
+        result.NotPresented.Should().BeEquivalentTo(["daily-2026-07-08"]);
+    }
+
+    [Fact]
+    public async Task 提示が受理されれば未提示は空になる()
+    {
+        var result = await NewGenerator(new InMemoryReportStore(), WedAfterClose).RunOnceAsync();
+
+        result.Generated.Should().ContainSingle();
+        result.NotPresented.Should().BeEmpty();
     }
 
     // ---- 方針階層（BasedOn・継続案） ----

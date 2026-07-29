@@ -101,14 +101,15 @@ ReportSchedule.Due(instant, ReportScheduleOptions) -> IReadOnlyList<DueReport>
 `ReportAutoGenerator.RunOnceAsync`（`ReportService.Application`・BackgroundService とは分離してテスト可能にする）:
 
 ```
-due = ReportSchedule.Due(clock.UtcNow, options, holidays)
+due = ReportSchedule.Due(clock.UtcNow, settings.Schedule)
 foreach d in due:
     if store.Get(d.PeriodKey) is not null: continue                // 冪等
     basedOn = store.GetLatestConfirmed(ParentKind(d.Kind))         // 日報→週報 / 週報→月報 / 月報→前月報
     fills   = fillSource.GetFillsAsync(d.PeriodFrom, d.PeriodTo)   // fail-safe: 失敗は空
     draft   = draftService.BuildDraftAsync(...)                    // 数値=コード集計 / 散文=LLM
     version = store.UpsertDraft(report with Body=draft.Markdown, expectedVersion: 0)
-    store.ApplyReview(d.PeriodKey, Present, version, actor: "report-scheduler")
+    decision = store.ApplyReview(d.PeriodKey, Present, version, actor: "report-scheduler")
+    # 提示が受理されなかった期間は NotPresented として返し、常駐が警告ログに残す（黙って承認待ちに並ばない事故の検知）
 ```
 
 - **`Confirm` は呼ばない。** 生成物は `ReviewState.PendingApproval` で止まり、`ReportState` は `Draft` のまま。
@@ -139,8 +140,8 @@ foreach d in due:
   HTTP 実装を選択する（IADR-0095 と同型・s2s トークンは `AddAiStockTradingServiceToken`）。
 - **fail-safe**: 非 2xx・timeout・例外・不正応答はすべて**空列**へ倒し、数値 0 の報告書を生成する。
   生成そのものは止めない（報告書は発注判断を行わないため、欠測は過大発注に繋がらない）。
-- **通貨**: 台帳の `AveragePrice` はローカル通貨（IADR-0107）。`PeriodTradeFill.Price` は基準通貨（円）建てのため、
-  `AveragePrice × FxRateToBase` を渡す。
+- **通貨**: 台帳（`LedgerFill.Price`）はローカル通貨（IADR-0107）。`PeriodTradeFill.Price` は基準通貨（円）建てのため、
+  `Price × FxRateToBase` を渡す（`LedgerFill.PriceInBase` と同じ規則を一次フィールドから導出する）。
 - 実約定が台帳へ入るかは [#270](https://github.com/endazon/ai-stock-trading/issues/270)（moomoo の fill 伝播）依存。
   本 PR は**構造の結線**まで。
 

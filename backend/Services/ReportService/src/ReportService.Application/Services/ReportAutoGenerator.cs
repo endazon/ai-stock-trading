@@ -24,6 +24,7 @@ public sealed class ReportAutoGenerator(
     {
         var generated = new List<TradingReport>();
         var failed = new List<ReportAutoGenerationFailure>();
+        var notPresented = new List<string>();
 
         foreach (var due in ReportSchedule.Due(clock.UtcNow, settings.Schedule))
         {
@@ -35,7 +36,10 @@ public sealed class ReportAutoGenerator(
 
             try
             {
-                generated.Add(await GenerateAsync(due, cancellationToken).ConfigureAwait(false));
+                var (report, presented) = await GenerateAsync(due, cancellationToken).ConfigureAwait(false);
+                generated.Add(report);
+                if (!presented)
+                    notPresented.Add(due.PeriodKey);
             }
             catch (OperationCanceledException)
             {
@@ -55,10 +59,10 @@ public sealed class ReportAutoGenerator(
             }
         }
 
-        return new ReportAutoGenerationResult(generated, failed);
+        return new ReportAutoGenerationResult(generated, failed, notPresented);
     }
 
-    private async Task<TradingReport> GenerateAsync(DueReport due, CancellationToken cancellationToken)
+    private async Task<(TradingReport Report, bool Presented)> GenerateAsync(DueReport due, CancellationToken cancellationToken)
     {
         // 方針階層（03_reporting-cycle）: BasedOn は上位種別の直近確定済み。参照できなければ null＝方針文に明記する。
         var parentKind = ReportPolicyDraft.ParentKind(due.Kind);
@@ -92,9 +96,12 @@ public sealed class ReportAutoGenerator(
         var version = store.UpsertDraft(report, expectedVersion: 0);
 
         // 提示（Drafting→PendingApproval）。承認・確定は利用者の OwnerOnly 経路のみ（ADR-0003・IADR-0115 決定1）。
-        store.ApplyReview(due.PeriodKey, new ReviewCommand(ReviewAction.Present, settings.Actor, version));
+        // 直後の遷移のため通常は必ず受理されるが、ストア実装や状態機械の規則が変わったときに「提示が黙って失敗し
+        // 承認待ちに並ばない」事故を検知できるよう、結果を捨てずに呼び出し側へ返す（常駐が警告ログに残す）。
+        var decision = store.ApplyReview(due.PeriodKey, new ReviewCommand(ReviewAction.Present, settings.Actor, version));
+        var presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
 
-        return report;
+        return (report, presented);
     }
 
     // 供給不達は空列へ倒す（IADR-0115 決定5）。報告書は発注判断を行わないため、欠測が過大発注へ繋がる経路が無く、
@@ -132,10 +139,12 @@ public sealed record ReportAutoGenerationSettings
     public string Actor { get; init; } = "report-scheduler";
 }
 
-// 1 巡回の結果。Generated は新規に生成・提示した報告書、Failed は当該期間だけ落ちたもの（他期間は継続している）。
+// 1 巡回の結果。Generated は新規に生成した報告書、Failed は当該期間だけ落ちたもの（他期間は継続している）、
+// NotPresented は生成できたが提示（PendingApproval への遷移）が受理されなかった期間（通常は空）。
 public sealed record ReportAutoGenerationResult(
     IReadOnlyList<TradingReport> Generated,
-    IReadOnlyList<ReportAutoGenerationFailure> Failed);
+    IReadOnlyList<ReportAutoGenerationFailure> Failed,
+    IReadOnlyList<string> NotPresented);
 
 // 期間単位の失敗（常駐側のログ出力に用いる）。
 public sealed record ReportAutoGenerationFailure(string PeriodKey, Exception Error);

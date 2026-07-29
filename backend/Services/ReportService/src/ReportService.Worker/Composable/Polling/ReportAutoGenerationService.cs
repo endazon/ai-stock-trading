@@ -56,6 +56,15 @@ internal sealed class ReportAutoGenerationService(
                 report.PeriodKey, report.Kind);
         }
 
+        foreach (var periodKey in result.NotPresented)
+        {
+            // 生成はできたが承認待ちに並んでいない（状態機械が提示を拒否した）。次巡回は PeriodKey 一致でスキップされるため
+            // 自動では回復しない＝利用者が気付けるよう警告として残す。
+            logger.LogWarning(
+                "報告書ドラフト {PeriodKey} の提示（承認待ちへの遷移）が受理されませんでした。承認待ち一覧に並びません。",
+                periodKey);
+        }
+
         foreach (var failure in result.Failed)
         {
             // 期間単位の失敗。他の期間の生成は継続しており、この期間は次周期で再試行される。
