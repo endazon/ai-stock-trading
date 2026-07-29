@@ -13,7 +13,7 @@ related_ids:
   - IADR-0074
 author: endazon (with Claude Code)
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-07-29
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
 ---
@@ -176,6 +176,8 @@ broker:
 ## 参照
 
 - [運用仕様書 `operations.md`](operations.md) — OpenD 本番切替チェックリスト（#132）・`Reserved` 滞留 Runbook・データ保持
+- [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) — paper（内蔵擬似約定）と moomoo SIMULATE の違い・
+  どちらの経路で約定したかの識別（#268）
 - [IADR-0016](../adr/IADR-0016_safe-broker-execution.md) — 安全既定 paper・実弾防止の二重ゲート
 - [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) — SIMULATE PoC 完了・実弾ゲート（§3 解禁前提）
 - [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) — 発注の冪等化（at-most-once）

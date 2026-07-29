@@ -274,6 +274,33 @@ scripts/k8s-local-deploy.sh
 - **`moomoo.enabled` は非推奨エイリアス**である。`broker.tier` を指定していないときだけ `moomoo-sim` として
   解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
 
+### ⚠️ `paper` と `moomoo-sim` は「どちらも実弾でない」だけで**別物**である（#268）
+
+検証で最も踏みやすい取り違えである。**`paper` の約定を moomoo の模擬口座で探しても構造的に見つからない。**
+
+| 観点 | `paper`（既定） | `moomoo-sim` |
+| --- | --- | --- |
+| 約定の主体 | **AST プロセス内蔵**（`PaperBrokerAdapter`）。参照価格で即時全量約定 | moomoo 側の模擬取引エンジン |
+| 外部通信 | **無し**（OpenD へ 1 リクエストも出さない） | 有り（`opend:11111`） |
+| 状態遷移 | 発注＝即 `Filled` | 発注直後は `Accepted`、約定は**後追い** |
+| 残高・注文履歴 | AST の内部台帳（`executed_orders` / `trade_fills`）のみ。現金・建玉は仮想 | **moomoo 模擬口座が権威**（moomoo アプリで目視可）。AST 台帳は現状これを取り込まない（[#270](https://github.com/endazon/ai-stock-trading/issues/270)） |
+| `OrderId` の形 | 32 桁 hex（`Guid` の `"N"`） | moomoo 採番の数値（例 `9049618348733212748`） |
+
+**どちらで動いているかの確認**（詳細・識別手順は
+[発注経路の区別と識別 Runbook](../../../docs/operations/broker-execution-paths-runbook.md)）:
+
+```bash
+# 1) 自己申告（"paper" / "moomoo-sim"）
+kubectl -n ai-stock-trading port-forward svc/order-execution-service 8080:8080 &
+curl -s localhost:8080/internal/introspection | tr ',' '\n' | grep -A1 '"broker"'
+
+# 2) moomoo 経路だけが出すログ（出ていなければ paper で回っている）
+kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD 接続完了・SIMULATE 口座 accId=|moomoo SIMULATE 発注成功"
+```
+
+moomoo 側の注文は**備考（remark）に `DecisionId`**（ハイフン無し 32 桁 hex）が入るため、AST の判断と 1 対 1 で
+突き合わせられる（IADR-0092）。
+
 以下は `moomoo-sim` 階層（＝旧 `moomoo.enabled=true`）の詳細である。既定 **無効**（`Broker__Provider=paper`
 ＝実発注しない・fail-safe・IADR-0016）。有効化すると `order-execution` へ moomoo 発注構成が注入される
 （**SIMULATE 限定**・実弾は撃たない）。

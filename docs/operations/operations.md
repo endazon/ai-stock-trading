@@ -14,9 +14,10 @@ related_ids:
   - IADR-0060
   - IADR-0107
   - IADR-0109
+  - IADR-0111
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-07-28
+updated: 2026-07-29
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
 ---
@@ -44,6 +45,7 @@ plan_refs:
 | 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（microservices-platform#266 / IADR-0066） |
 | 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
+| 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267 / [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
 | moomoo OpenD | 常駐モデル（IADR-0053）。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**（#132 / IADR-0060）。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 | GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24 / IADR-0094）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
