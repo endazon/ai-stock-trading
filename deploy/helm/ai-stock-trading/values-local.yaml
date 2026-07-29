@@ -43,9 +43,12 @@ services:
       # 段階実績台帳へ単調 latch する（IADR-0103）。上の EnableMarkToMarket=true が前提で、経路B では既に満たす。
       # 台帳依存: 経路B の既定ブローカは paper で擬似約定が台帳へ入るため実効する。moomoo SIMULATE 経路は
       # 約定が台帳へ伝播しないため #270 が入るまで DD は 0 のまま＝不活性（安全側）。
-      # ★ 撤退の**実行側**（WithdrawalEvaluation:Enabled）は据え置く。有効化すると撤退判定が自動で kill switch を
-      #   起動し、解除に確認フレーズが要る（IADR-0097）ため dogfood が人手介入まで止まる（IADR-0114 決定3）。
       - { name: ObservedDrawdownRefresh__Enabled, value: "true" }  # ← 実DD 供給（既定 false＝本番既定）
+      # ★ 撤退の**実行側**（IADR-0083）。上の実DD 供給とセットで初めて ADR-0008 の撤退基準が発火する。
+      #   ⚠️ 条件成立時は**自動で kill switch が起動**し、解除には確認フレーズが要る（IADR-0097）。
+      #      すなわち dogfood は人手で解除するまで止まる。利用者承認のうえ有効化している（IADR-0114 決定3）。
+      #   停止したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
+      - { name: WithdrawalEvaluation__Enabled, value: "true" }     # ← 撤退評価（既定 false＝本番既定）
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -139,6 +142,23 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
+      # ============ LLM 費用の単価（#279/IADR-0114 決定6・NFR/IADR-0055）============
+      # 未設定（既定 0）だと PublishingLlmUsageReporter が毎回 ¥0 を計上し、月次費用上限（¥15,000）が
+      # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
+      #
+      # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」・global 単一ペアで per-model ではない）。
+      # 実効モデル: AST は Model を指定しない（Decision:PrimaryModel/SecondaryModel 未設定＝null）ため
+      #   ゲートウェイ既定に従う。MSP/ADR-0025 により既定は claude-opus-5（IADR-0101）。ADR-0011 が意図する
+      #   固定先 claude-opus-4-8 も**同単価**のため、どちらでも本値は変わらない。
+      #
+      # 出典・前提（2026-07 時点・恒久値ではない）:
+      #   Anthropic 公開単価 opus 系 = 入力 $5 / 出力 $25（いずれも 1M トークン）
+      #   → 1k 換算 $0.005 / $0.025 → USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列）
+      #   → 0.005 × 163.71 = 0.81855 ≒ 0.819 / 0.025 × 163.71 = 4.09275 ≒ 4.093（切り上げ側＝統制に安全）
+      #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243 を更新する。
+      #   ※ 報告書散文（report-service）の費用はそもそも計上経路が無い（#282）。本値は判断側のみに効く。
+      - { name: LlmPricing__InputPer1kTokens, value: "0.819" }    # ← 円/1k トークン（既定 0＝計上 ¥0）
+      - { name: LlmPricing__OutputPer1kTokens, value: "4.093" }   # ← 円/1k トークン（既定 0＝計上 ¥0）
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

@@ -47,10 +47,14 @@ kubectl -n ai-stock-trading get pods
   **US 株を取引するための必須前提**（下記「為替換算」参照）。未設定だと USD 建て銘柄は LLM 呼び出し前に全件見送りになる。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
-  risk-management `ObservedDrawdownRefresh__Enabled=true`。営業日の定時に建玉台帳の `DrawdownRatio` をサンプリングし段階実績台帳へ
-  単調 latch する（ADR-0008 の撤退基準の**入力**）。**撤退の実行側 `WithdrawalEvaluation__Enabled` は据え置き**＝自動 kill switch は起きない。
+  risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
+  建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
+  **⚠️ 条件成立時は自動で kill switch が起動し、解除するまで新規建てが止まる**（下記「撤退評価と自動 kill switch」）。
   経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
   [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
+- **LLM 費用の単価（#279 / IADR-0114 決定6 / IADR-0055）**: trade-decision `LlmPricing__InputPer1kTokens=0.819` /
+  `LlmPricing__OutputPer1kTokens=4.093`（**円 / 1,000 トークン**）。未設定（既定 0）だと毎回 ¥0 計上で
+  月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
 - **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
   SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
   （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
@@ -190,6 +194,41 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 > [IADR-0108](../../../docs/adr/IADR-0108_simulator-risk-profile.md) の SIMULATE 限定プロファイル
 > （`values-local.yaml` の `Risk__SimulatorProfile__Enabled=true`・本番既定は false）が上限をシミュレータ残高に
 > 合わせるため発注まで到達する。本番既定での上限見直し・銘柄選定は運用判断として #257 に残置。
+
+### 撤退評価と自動 kill switch（#279 / IADR-0114 決定3）
+
+経路B では実DD 供給（`ObservedDrawdownRefresh__Enabled`）と撤退評価（`WithdrawalEvaluation__Enabled`）を**ともに true** にしている。
+[ADR-0008](../../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md) の撤退基準に該当すると、
+**撤退評価が自動で kill switch を起動する**（[IADR-0083](../../../docs/adr/IADR-0083_withdrawal-evaluation-driver.md)）。
+
+- 起動すると**新規建てが止まる**。既存建玉の損切りは止まらない。
+- **解除は自動では起きない**。確認フレーズの入力が要る（[IADR-0097](../../../docs/adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）。
+  フレーズは `DISCORD_BOT_KILLSWITCH_PHRASE`（`ast-secrets/discord-bot-killswitch-phrase`）で与えた値で、
+  **未設定なら解除できない**（摩擦を下げない設計）。解除の導線は Discord Bot の制御コマンドか SC-03 の統制状態画面。
+- 「dogfood が動かない」ときは、まず kill switch 状態を疑う（`kubectl -n ai-stock-trading logs deploy/risk-management-service` に
+  撤退トリガの記録が出る）。**止まったこと自体は統制が効いた結果**であり、無効化ではなく原因（DD の悪化）を確認する。
+
+撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
+（実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
+
+### LLM 費用の単価（#279 / IADR-0114 決定6）
+
+`LlmPricing__InputPer1kTokens` / `LlmPricing__OutputPer1kTokens` は **円 / 1,000 トークン**（global 単一ペア・per-model ではない）。
+未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
+80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
+
+| 項目 | 値 | 備考 |
+| --- | --- | --- |
+| 公開単価（2026-07 時点） | 入力 $5 / 出力 $25（1M トークン） | opus 系（`claude-opus-5` / `claude-opus-4-8` は同単価） |
+| USD→JPY 換算 | **163.71** | システムの為替源 FRED `DEXJPUS` と同一系列（IADR-0107） |
+| 投入値 | `0.819` / `4.093` | `0.005×163.71=0.81855` / `0.025×163.71=4.09275` を切り上げ側へ丸め（統制に安全） |
+
+**恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は **2026-08-31 までの導入価格**であり、
+`Decision:PrimaryModel` を sonnet 等へ切り替えるなら本値の再計算が要る。再評価は
+[#243](https://github.com/endazon/ai-stock-trading/issues/243)。本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
+
+> **過少申告が残る点**: report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても実消費より
+> 少なく見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。
 
 ### Discord の環境固有 ID（`kubectl set env` は使わない）
 

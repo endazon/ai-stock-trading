@@ -73,22 +73,25 @@ SEC は規約で連絡先（実在のメールアドレス）入りの User-Agen
 - fail-safe: キー未設定／空 → env が空 → `InformationSourceFactory` が **SEC EDGAR だけ**を警告つきで除外する
   （finnhub・fred は有効なまま。IADR-0064 決定1「1 ソースの構成不備で案A+ 全体を止めない」）。
 
-### 決定3: 撤退の実行側（`WithdrawalEvaluation:Enabled`）は本作業で有効化しない
+### 決定3: 撤退の実行側（`WithdrawalEvaluation:Enabled`）も有効化し、撤退基準を実際に発火させる
 
-実DD の供給（決定1）は撤退基準の**入力**を観測・記録可能にするだけで、自動停止は起こさない。
-`WithdrawalEvaluation:Enabled=true` を同時に入れると、撤退判定が自動で kill switch を起動し得る。
-解除には確認フレーズが要る（IADR-0097）ため、**dogfood が人手介入まで停止する**。
+実DD の供給（決定1）だけでは撤退基準の**入力**が観測・記録されるにとどまり、自動停止は起こらない。
+`WithdrawalEvaluation:Enabled=true` を併せて入れることで、ADR-0008 の撤退基準が実際に評価・発火する状態になる。
 
-これは「止まってよいか」という運用判断であって実装判断ではないため、利用者の明示的な判断を待つ。
-IADR-0103 が述べる「自動停止までに 3 つの明示的な有効化を要する」構造のうち、本作業は 2 つ目までを満たす。
+**代償を明記する**: 条件成立時は撤退判定が**自動で kill switch を起動**し、解除には確認フレーズが要る（IADR-0097）。
+すなわち **dogfood は人手で解除するまで停止する**。これは「止まってよいか」という運用判断であって実装判断ではないため、
+利用者へ提示して**明示的な承認を得たうえで**有効化した。停止時の解除手順は chart README に記す。
+
+IADR-0103 が述べる「自動停止までに 3 つの明示的な有効化を要する」構造は、経路B では 3 つとも満たされる
+（時価評価＝IADR-0100 で既存、実DD 供給＝決定1、撤退評価＝本決定）。本番 `values.yaml` は 3 つとも既定 false のまま。
 
 ### 決定4: 本番 `values.yaml`・`templates/`・`Chart.yaml` は不変とし、バイト等価を描画で検査する
 
 ArgoCD は `valueFiles` を持たず `values.yaml` のみを描画する（IADR-0100）。本作業の変更は
 `values-local.yaml`（`-f` で明示したときだけ効く）と `scripts/`・`.github/` に閉じる。
 
-`.github/workflows/helm.yml` の既存 2 ステップへ、①既定描画に本作業の有効化痕跡が現れないこと
-②values-local 描画で 3 トグルが実際に ON になること ③`WithdrawalEvaluation__Enabled` がどちらにも現れないこと
+`.github/workflows/helm.yml` の既存 2 ステップへ、①既定描画に本作業の有効化痕跡（実DD 供給・撤退評価・LLM 単価・
+公式情報源の実値）が現れないこと ②values-local 描画でそれらが実際に ON になり、単価が期待値どおりであること
 を追加する。さらに **Helm がリストを「置換」する**性質への防御として、
 **values-local 描画が既定描画の env 名を 1 つも失っていないこと**を検査するステップを新設する
 （`extraEnv` を上書きする values-local では、本番側にキーが増えたときに写し忘れると当該キーが**消える**）。
@@ -125,16 +128,44 @@ ArgoCD は `valueFiles` を持たず `values.yaml` のみを描画する（IADR-
 
 5. **Prometheus の scrape target**: AST chart には metrics／scrape 設定が**存在しない**。AST 側 values で是正できる対象が無い。
 
-6. **`LlmPricing:*`**: 単価は [#243](https://github.com/endazon/ai-stock-trading/issues/243) で未確定の政策値。
-   未設定＝常に ¥0 計上のため月次費用上限（15,000 円）が構造的に発火しない点は既知事項として PR 本文へ明記する。
+### 決定6: LLM 単価は経路B 限定で実値を与え、出典・換算率・時点を values のコメントに残す
+
+`LlmPricing:InputPer1kTokens` / `OutputPer1kTokens` は `deploy/` のどこにも設定されておらず既定 0 だった。
+そのため `PublishingLlmUsageReporter` は毎回 **¥0 を計上**し、費用統制の月次上限（¥15,000）が
+**構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B で実単価を与えて統制を実効化する。
+
+実コードで確認したスキーマ（投入前の必須確認事項）:
+
+| 観点 | 実際 | 出典 |
+| --- | --- | --- |
+| 粒度 | **global 単一ペア**（per-model ではない）。`TradeDecisionService.Worker/Program.cs` が DI 時に 1 組だけ読む | `ParsePricePer1k(cfg["LlmPricing:InputPer1kTokens"])` |
+| 単位 | **円 / 1,000 トークン** | `LlmPricing.Compute` のコメント「いずれも円」・月次上限が ¥15,000 |
+| 解釈 | `InvariantCulture` で解析し、**正値でなければ 0** に倒す | `ParsePricePer1k` |
+
+したがって per-model 表ではなく、**主用途 = trade-decision の実効モデル 1 つ分**を投入する。
+実効モデルは `Decision:PrimaryModel`／`SecondaryModel` が未設定（null）でゲートウェイ既定に従うため、
+MSP/ADR-0025 により **`claude-opus-5`**（IADR-0101）。ADR-0011 が意図する固定先 `claude-opus-4-8` も**同単価**のため、
+どちらに解決されても投入値は変わらない。
+
+- 公開単価（2026-07 時点）: opus 系 = 入力 **$5** / 出力 **$25**（いずれも 1M トークン）
+- 1k 換算: $0.005 / $0.025 → USD→JPY 換算 **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）
+- 投入値: `0.005 × 163.71 = 0.81855 ≒ **0.819**` / `0.025 × 163.71 = 4.09275 ≒ **4.093**`（切り上げ側＝統制に安全）
+
+**恒久値ではない**: 為替も公開単価も変動する。sonnet-5 の $2/$10 は 2026-08-31 までの導入価格であり、
+将来 `Decision:PrimaryModel` を sonnet 等へ切り替えるなら本値の再計算が要る。時点・出典・換算率を values のコメントへ残し、
+再評価は [#243](https://github.com/endazon/ai-stock-trading/issues/243) に委ねる。
+
+本番 `values.yaml` には置かない（外部価格の変動をリポジトリの本番既定に固定しない）。
+なお本値が効くのは**判断側のみ**で、report-service の散文費用は計上経路自体が無い（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。
 
 ## 根拠
 
 - **見かけの有効化は休眠より悪い**。実効しないトグルを入れると「結線済み」という記録だけが残り、
   次の監査で同じ調査をやり直すことになる。実コードで実効性を確認できたものだけを入れ、
   残りは根拠つきで「入れない」と宣言するほうが、状態の可視性が高い。
-- **fail-safe の一貫性**。3 トグルはいずれも「供給が無ければ従来どおり no-op」に倒れる
-  （実DD は台帳が空なら 0 のまま、SEC/FRED は必須構成を欠けば当該ソースのみ除外）。
+- **fail-safe の一貫性**。投入するトグルはいずれも「供給が無ければ従来どおり no-op」に倒れる
+  （実DD は台帳が空なら 0 のまま、SEC/FRED は必須構成を欠けば当該ソースのみ除外、単価は不正値なら 0）。
+  唯一の例外が撤退評価（決定3）で、これは**能動的に停止させる**トグルであるため利用者承認を要件とした。
 - **本番への影響ゼロを構造で保証する**。templates を触らない選択（決定2 (c)）により、
   バイト等価の証明が「values.yaml と templates を変更していない」という事実に還元される。
 
@@ -142,7 +173,12 @@ ArgoCD は `valueFiles` を持たず `values.yaml` のみを描画する（IADR-
 
 - 経路B で SEC EDGAR（AAPL の開示）と FRED（DEXJPUS / DGS10）が収集対象に加わり、収集件数が増える。
   KB 保存・`InformationCollected` 発行・報告書への反映が実データで動く。LLM 費用は増えない（収集は LLM を使わない）。
-- 実DD が段階実績台帳へ latch され、ADR-0008 の撤退基準が**評価可能な状態**になる（自動停止は決定3 により起きない）。
+- 実DD が段階実績台帳へ latch され、ADR-0008 の撤退基準が**実際に発火する**（決定3）。条件成立時は
+  自動で kill switch が起動し、**解除するまで新規建てが止まる**（解除は確認フレーズ必須・IADR-0097）。
+  これは経路B（ローカル SIMULATE）限定で、本番既定は従来どおり無効。
+- LLM 費用が実単価で計上され、月次費用上限（¥15,000）の 80%／100% 判定が実効化する（決定6）。
+  従来は毎回 ¥0 計上で発火し得なかった。ただし report-service の散文費用は計上経路が無いままで、
+  依然として**実消費より少なく**見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。
 - `ast-secrets` に `sec-edgar-user-agent` が増える。未設定の既存環境では空のまま＝挙動は従来と同じ。
 - 本番（ArgoCD＝`values.yaml` のみ）の描画は不変。実弾の閂（IADR-0111 / IADR-0060）にも触れない。
 
@@ -150,5 +186,10 @@ ArgoCD は `valueFiles` を持たず `values.yaml` のみを描画する（IADR-
 
 - **候補を全部入れる**: 却下。決定5 の 1・2 は実効しないか退行する。とくに 2 は取引サイクルを停止させる。
 - **SEC の UA を chart の設定点にする（IADR-0102 方式）**: 却下（決定2 (b)）。templates 改修に見合う汎用性が無い。
-- **`WithdrawalEvaluation` も同時に有効化する**: 保留（決定3）。運用判断であり実装判断ではない。
+- **`WithdrawalEvaluation` は実DD 供給だけ入れて据え置く**: 却下（決定3）。入力を観測するだけでは撤退基準は
+  発火せず、「統制が効いているつもりで効いていない」状態が続く。停止の代償を提示して利用者承認を得た。
+- **LLM 単価を本番 `values.yaml` にも置く**: 却下（決定6）。為替・公開単価は変動し、sonnet-5 の $2/$10 は
+  2026-08-31 までの導入価格。変動する外部価格をリポジトリの本番既定に固定すると陳腐化が検出されない。
+- **`LlmPricing` を per-model 化する**: 本作業の範囲外。現行スキーマは global 単一ペアで、
+  複数モデルを使い分けるなら計上側（`PublishingLlmUsageReporter`）が応答の `Model` を見て単価を引く改修が要る。
 - **RAG 検索を「実効するように」直す**: 本作業の範囲外。ABAC Scope の送出・KB 本文取り込み・#252 のサニタイズが揃って初めて意味を持つ。

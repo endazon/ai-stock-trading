@@ -29,7 +29,9 @@ plan_refs:
 - 関連 IADR:
   - [IADR-0064](../adr/IADR-0064_official-source-connectors.md)（公式コネクタ SEC EDGAR / EDINET / 日銀 / FRED・ソース単位の縮退）
   - [IADR-0103](../adr/IADR-0103_observed-drawdown-supply.md)（実DD 供給ドライバ `ObservedDrawdownRefresh`・単調 latch・3 段の opt-in）
-  - [IADR-0083](../adr/IADR-0083_withdrawal-evaluation-driver.md)（撤退の定期評価ドライバ `WithdrawalEvaluation`・本作業では**有効化しない**）
+  - [IADR-0083](../adr/IADR-0083_withdrawal-evaluation-driver.md)（撤退の定期評価ドライバ `WithdrawalEvaluation`・本作業で有効化する）
+  - [IADR-0055](../adr/IADR-0055_llm-cost-metering-event.md)（LLM 費用計測・単価適用・`LlmCostIncurred` による月次計上）
+  - [IADR-0097](../adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)（kill switch の解除は確認フレーズ必須）
   - [IADR-0100](../adr/IADR-0100_route-b-values-local-standing-config.md)（経路B の恒常設定＝本作業が拡張する土台）
   - [IADR-0109](../adr/IADR-0109_deploy-secret-preservation.md)（`ast-secrets` の差分パッチ同期＝新規キーの追加先）
   - [IADR-0058](../adr/IADR-0058_helm-chart-ci-gate.md)（Helm chart の CI ゲート＝派生描画の検査）
@@ -62,10 +64,10 @@ plan_refs:
 - **台帳依存**: サンプリング元は `IPortfolioStateProvider.GetCurrent().DrawdownRatio`＝建玉台帳。
   経路B の既定ブローカは **paper**（`broker.tier` 既定・`values.yaml:54` 相当）で、擬似約定が台帳へ反映されるため実効する。
   **moomoo SIMULATE 経路では約定が台帳へ伝播しないため [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで不活性**（DD は 0 のまま＝安全側）。
-- **撤退の実行側は有効化しない**: `WithdrawalEvaluation:Enabled` は **false のまま据え置く**。有効化すると撤退判定が
-  自動で kill switch を起動し、解除には確認フレーズが要る（[IADR-0097](../adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）ため、
-  dogfood が人手介入まで停止する。判断は利用者に委ね、本 PR には含めない（後続）。
-  したがって本作業の効果は「**撤退基準の入力が観測され記録される**」ところまでで、自動停止は起きない。
+- **撤退の実行側も有効化する（利用者承認済み）**: `WithdrawalEvaluation__Enabled="true"` を併せて投入し、
+  ADR-0008 の撤退基準が実際に評価・発火する状態にする。⚠️ 条件成立時は自動で kill switch が起動し、
+  解除には確認フレーズが要る（[IADR-0097](../adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）＝
+  **dogfood は人手で解除するまで停止する**。この代償を提示したうえで利用者が「入れる」と判断した（IADR-0114 決定3）。
 
 ### 2. SEC EDGAR 収集の結線（FR-01 / ADR-0004 / IADR-0064）
 
@@ -90,7 +92,25 @@ Discord の環境固有 ID（[IADR-0102](../adr/IADR-0102_discord-env-ids-via-va
 - API キーは既存の `ast-secrets/fred-api-key` を再利用する。**新規の資格情報を要求しない**
   （FRED キーは [#262](https://github.com/endazon/ai-stock-trading/issues/262) / IADR-0107 により**米国株取引の必須前提**として既に投入済み）。
 
-### 4. デプロイ手順（`scripts/k8s-local-deploy.sh`）
+### 4. LLM 費用の単価（NFR / IADR-0055 / IADR-0114 決定6）
+
+`services.trade-decision.extraEnv` へ次を追加する。
+
+- `LlmPricing__InputPer1kTokens` = `"0.819"`
+- `LlmPricing__OutputPer1kTokens` = `"4.093"`
+
+未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、月次費用上限（¥15,000）が構造的に発火しない。
+
+**スキーマの実コード確認（投入前の必須事項）**: `LlmPricing` は **global 単一ペア**（per-model ではない）で、
+単位は **円 / 1,000 トークン**（`LlmPricing.Compute` のコメント「いずれも円」）。`ParsePricePer1k` は
+`InvariantCulture` で解析し正値でなければ 0 に倒す。したがって主用途 = trade-decision の実効モデル 1 つ分を投入する。
+
+**値の根拠（2026-07 時点・恒久値ではない）**: opus 系 = 入力 $5 / 出力 $25（1M トークン）→ 1k 換算 $0.005 / $0.025
+→ USD→JPY 換算 163.71（FRED `DEXJPUS`＝システムの為替源と同一系列）→ **0.81855 ≒ 0.819** / **4.09275 ≒ 4.093**（切り上げ側＝統制に安全）。
+実効モデルは `Decision:PrimaryModel` 未設定＝ゲートウェイ既定 `claude-opus-5`（IADR-0101 / MSP ADR-0025）だが、
+ADR-0011 が意図する `claude-opus-4-8` も同単価のため投入値は変わらない。sonnet-5 の $2/$10 は 2026-08-31 までの導入価格。
+
+### 5. デプロイ手順（`scripts/k8s-local-deploy.sh`）
 
 `AST_SECRET_KEYS` へ `sec-edgar-user-agent|SEC_EDGAR_USER_AGENT|`（空既定）を 1 行追加する。
 [IADR-0109](../adr/IADR-0109_deploy-secret-preservation.md) の差分パッチ同期に自動的に従うため、
@@ -108,7 +128,6 @@ Discord の環境固有 ID（[IADR-0102](../adr/IADR-0102_discord-env-ids-via-va
 | `Reconciliation__Enabled` | 経路B の既定 paper では no-op プローブ＝phase-4 自己修復のみ。巡回間隔は下限 1 時間にクランプされ短周期検証もできない。領域が [#270](https://github.com/endazon/ai-stock-trading/issues/270) と重複する |
 | CronJob（`tradingCycle.cronjob.enabled`） | 既定 disabled が正。in-process ポーリング（IADR-0023）が現行の正経路で実害なし。有効化は run-once（#121）実装が前提 |
 | Prometheus scrape target | AST chart に metrics/scrape 設定が**そもそも存在しない**。AST 側の values で是正できるものが無い（platform 側の課題） |
-| `LlmPricing:*`（費用単価） | 単価は #243 で未確定の政策値。未設定＝常に ¥0 計上で月次上限が発火しない点は既知事項として PR 本文へ明記する |
 
 ## 受け入れ基準
 
@@ -121,7 +140,8 @@ Discord の環境固有 ID（[IADR-0102](../adr/IADR-0102_discord-env-ids-via-va
    - `Collection__Source__Fred__SeriesIds__0` = `"DEXJPUS"` / `__1` = `"DGS10"`
 3. 既定描画に上記の有効化痕跡が**現れない**（本番へ漏れていない）。
 4. values-local 描画で実弾／危険既定が OFF のまま（`Broker__Provider=paper`・`kind: ExternalSecret` 不在・`name: opend` 不在）。
-5. `WithdrawalEvaluation__Enabled` はどちらの描画にも現れない（本作業では有効化しない）。
+5. values-local 描画に `WithdrawalEvaluation__Enabled` = `"true"` と `LlmPricing__InputPer1kTokens` = `"0.819"` /
+   `LlmPricing__OutputPer1kTokens` = `"4.093"` が現れ、既定描画には**いずれも現れない**。
 6. values-local の `extraEnv` が本番 `values.yaml` の env 名を**1 つも落としていない**（Helm のリスト置換による欠落の防止）。
 7. `scripts/k8s-local-deploy.test.sh` が緑で、`SEC_EDGAR_USER_AGENT` について IADR-0109 の不変条件（保持・上書き・空中断・新規作成）が成り立つ。
 8. `dotnet build` / `dotnet test` が緑（コード無改修のため回帰が無いことの確認）。
@@ -131,6 +151,7 @@ Discord の環境固有 ID（[IADR-0102](../adr/IADR-0102_discord-env-ids-via-va
 - **Helm 描画検査**（`.github/workflows/helm.yml`）: 既存の 2 ステップ
   「Assert prod default excludes route-B activations」「Assert values-local activates route-B features」へ
   受け入れ基準 2〜5 の検査を追加する。加えて **env 欠落検出**（基準 6）のステップを新設する。
+  単価は値そのもの（`0.819` / `4.093`）を照合し、桁誤り・単位取り違え（1M 単価の直投入・USD のまま投入）を落とす。
 - **Bash テスト**（`scripts/k8s-local-deploy.test.sh`）: `SEC_EDGAR_USER_AGENT` の保持／上書き／空中断／新規作成を追加する
   （実クラスタ不要。`kubectl` スタブ＋`AST_DEPLOY_LIB=1` の既存ハーネス）。
 - **C# テスト**: コード無改修のため新規は書かない。既存の全テストが緑であることを回帰確認に用いる。
@@ -146,10 +167,12 @@ Discord の環境固有 ID（[IADR-0102](../adr/IADR-0102_discord-env-ids-via-va
 | `deploy/helm/ai-stock-trading/README.md` | 運用手順（`SEC_EDGAR_USER_AGENT`・実DD 供給）の追記 |
 | バックエンド（C#） | **変更なし** |
 
-## 未決事項（本 PR の対象外・利用者判断待ち）
+## 未決事項（本 PR の対象外）
 
-1. `WithdrawalEvaluation__Enabled` を経路B で有効化するか（自動 kill switch 起動＝dogfood 停止を許容するか）。
-2. `LlmPricing:InputPer1kTokens` / `OutputPer1kTokens` の単価（#243）。未設定のままでは月次費用上限が発火しない。
+1. LLM 単価は **2026-07 時点の公開単価と為替 163.71** に基づく点推定であり恒久値ではない。
+   為替・公開単価の変動、および `Decision:PrimaryModel` を sonnet 等へ切り替える場合は再計算が要る（#243）。
+   sonnet-5 の $2/$10 は 2026-08-31 までの導入価格。
+2. report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても**実消費より少なく**見積もられる（#282）。
 3. 日銀（BOJ）収集は**資格情報不要**だが、`Boj:Db`（統計分類）の値を一次ソースで確認できていないため見送る
    （IADR-0064 決定5「推測実装をしない」に従う）。
-4. report-service の実 LLM 散文費用が計上されない（`ILlmUsageReporter` が trade-decision にしか無い）。コード改修が要るため別 issue。
+4. `LlmPricing` は global 単一ペアのため、複数モデルを使い分けるなら計上側が応答の `Model` を見て単価を引く改修が要る（本作業の範囲外）。
