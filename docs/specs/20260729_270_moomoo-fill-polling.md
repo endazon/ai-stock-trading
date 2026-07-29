@@ -184,14 +184,14 @@ moomoo の `FillQty` / `FillAvgPrice` は**累積値**であり差分ではな�
 
 ## 受け入れ基準チェック
 
-- [ ] moomoo（SIMULATE）で発注した注文の約定が `trade_fills` に届く
-- [ ] `SameDayReentry` / 日次発注上限 / 段階資金上限 / 建玉が moomoo 経路で paper と同等に実効する
-- [ ] 部分約定・未約定・取消/失効・拒否のエッジが台帳へ正しく（過大にも過少にも）反映される
-- [ ] 二重計上・取りこぼしがない（`DecisionId` 1:1・`OrderId` 1:1 の不変を維持）
-- [ ] paper 経路の挙動が不変（構造的に到達しない）
-- [ ] SIMULATE / 実弾 OFF が不変（閂 0〜4 に差分ゼロ・発注/訂正/取消の呼び出しを増やさない）
-- [ ] `Shared.Contracts` 不変・新規イベント無し・DB スキーマ変更無し（Migration 無し）
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` green・CI green・gitleaks green
+- [x] moomoo（SIMULATE）で発注した注文の約定が `trade_fills` に届く
+- [x] `SameDayReentry` / 日次発注上限 / 段階資金上限 / 建玉が moomoo 経路で paper と同等に実効する
+- [x] 部分約定・未約定・取消/失効・拒否のエッジが台帳へ正しく（過大にも過少にも）反映される
+- [x] 二重計上・取りこぼしがない（`DecisionId` 1:1・`OrderId` 1:1 の不変を維持）
+- [x] paper 経路の挙動が不変（構造的に到達しない）
+- [x] SIMULATE / 実弾 OFF が不変（閂 0〜4 に差分ゼロ・発注/訂正/取消の呼び出しを増やさない）
+- [x] `Shared.Contracts` 不変・新規イベント無し・DB スキーマ変更無し（Migration 無し）
+- [x] `dotnet build` / `dotnet test` / `dotnet format` green・CI green・gitleaks green
 
 ## スコップ外
 
