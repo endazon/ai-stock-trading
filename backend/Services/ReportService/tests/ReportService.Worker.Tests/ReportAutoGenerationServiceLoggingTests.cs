@@ -43,13 +43,30 @@ public class ReportAutoGenerationServiceLoggingTests
         logger.Messages.Should().NotContain(m => m.Contains("提示しました"));
     }
 
-    private static ReportAutoGenerationService NewService(IReportStore store, ILogger<ReportAutoGenerationService> logger)
+    [Fact]
+    public async Task 提示通知の発行に失敗したら警告として残す()
+    {
+        // IADR-0116 決定2: 確定依頼が届かないまま気付けない状態を作らない（通知を既定 true にした理由と整合させる）。
+        var logger = new RecordingLogger();
+
+        await NewService(new InMemoryReportStore(), logger, new ThrowingNotifier()).RunOnceAsync(CancellationToken.None);
+
+        logger.Messages.Should().ContainSingle(m => m.Contains("提示通知を発行できませんでした") && m.Contains(PeriodKey));
+        // ドラフト自体は承認待ちに並んでいるので、生成・提示は成功として記録される。
+        logger.Messages.Should().Contain(m => m.Contains("提示しました"));
+    }
+
+    private static ReportAutoGenerationService NewService(
+        IReportStore store,
+        ILogger<ReportAutoGenerationService> logger,
+        IReportDraftPresentedNotifier? notifier = null)
     {
         var services = new ServiceCollection()
             .AddSingleton(store)
             .AddSingleton<IPeriodFillSource, NoOpPeriodFillSource>()
             .AddSingleton<IClock>(new FixedClock(WedAfterClose))
             .AddSingleton<IReportNarrativeDrafter, StubDrafter>()
+            .AddSingleton(notifier ?? new NoOpReportDraftPresentedNotifier())
             .AddSingleton(new ReportAutoGenerationSettings())
             .AddScoped<ReportDraftService>()
             .AddScoped<ReportAutoGenerator>()
@@ -70,6 +87,12 @@ public class ReportAutoGenerationServiceLoggingTests
     {
         public Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default) =>
             Task.FromResult("自動生成の散文");
+    }
+
+    private sealed class ThrowingNotifier : IReportDraftPresentedNotifier
+    {
+        public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("バスへ到達できません");
     }
 
     // 提示（Present）だけが受理されないストア。生成は成功するが承認待ちへ進まない状況を作る。

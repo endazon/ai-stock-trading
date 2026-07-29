@@ -111,7 +111,6 @@ public static class ReportRenderer
                 (decimal)p.WinningTradeCount / p.RealizingTradeCount * 100m,
                 p.WinningTradeCount, p.RealizingTradeCount);
 
-    // 円建て表記（符号付き・千区切り）。実現/評価損益は符号を明示する。
-    private static string Yen(decimal amount) =>
-        amount.ToString("+#,##0;-#,##0;0", CultureInfo.InvariantCulture) + " 円";
+    // 円建て表記（符号付き・千区切り）。書式は ReportAmountFormat に単一化する（IADR-0116: Discord 要約と同じ表記）。
+    private static string Yen(decimal amount) => ReportAmountFormat.Yen(amount);
 }

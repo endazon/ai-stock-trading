@@ -59,6 +59,24 @@ public class ReportAutoGenerationWiringTests(ReportWorkerWebApplicationFactory f
     }
 
     [Fact]
+    public void 既定では提示通知がバスへ発行される経路が選ばれる()
+    {
+        // IADR-0116 決定2: 常駐そのものが既定無効のため、二段目の opt-in にしない（有効化したのに届かない状態を作らない）。
+        factory.Services.GetRequiredService<IReportDraftPresentedNotifier>()
+            .Should().BeOfType<MassTransitReportDraftPresentedNotifier>();
+    }
+
+    [Fact]
+    public void 提示通知を無効にすると_no_op_が選ばれる()
+    {
+        using var quiet = factory.WithWebHostBuilder(b =>
+            b.UseSetting("Reports:AutoGeneration:NotifyOnDraftPresented", "false"));
+
+        quiet.Services.GetRequiredService<IReportDraftPresentedNotifier>()
+            .Should().BeOfType<NoOpReportDraftPresentedNotifier>();
+    }
+
+    [Fact]
     public async Task 常駐の一巡回は実_DI_経由で生成し提示までで止まる()
     {
         // scoped な EF ストア・ドラフト生成を巡回ごとのスコープで解決できることと、確定へ進まないことを
