@@ -123,6 +123,13 @@ public static class AuditEntryFactory
         $"日報未確定により取引を見送り（営業日 {e.BusinessDay:yyyy-MM-dd}）",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者による建玉の手仕舞い要求。後続の OrderApproved / OrderExecuted と
+    // 同一の DecisionId を相関に採り、「誰が・なぜ決済したか」から約定までを 1 本の相関で辿れるようにする。
+    public static AuditEntry From(PositionCloseRequested e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionCloseRequested), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 手仕舞い要求 {e.Side} 数量{e.Quantity}@{e.Price}（{e.Actor}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }
