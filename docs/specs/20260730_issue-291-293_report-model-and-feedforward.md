@@ -21,7 +21,7 @@ created: 2026-07-30
 updated: 2026-07-30
 related_specs:
   - "../adr/IADR-0117_report-kind-purpose-and-parent-policy-feedforward.md"
-  - "../adr/IADR-0115_report-auto-generation.md"
+  - "../adr/IADR-0115_report-auto-generation-scheduler.md"
   - "../adr/IADR-0071_report-service-remaining.md"
   - "../adr/IADR-0028_daily-policy-sync-api.md"
   - "./20260729_280_report-auto-generation-scheduler.md"
