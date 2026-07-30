@@ -68,4 +68,21 @@ public static class NotificationFormatter
             + $"{(e.HaltNewEntries ? "新規建てを自動停止しました。" : string.Empty)}"
             + $"Stage {e.ProposedStage} への差し戻しを提案します（確定は利用者承認が必要）。",
         e.HaltNewEntries ? NotificationSeverity.Critical : NotificationSeverity.Warning);
+
+    // FR-05, FR-09, FR-10, #292, IADR-0118: 取引台帳とブローカ実ポジションの乖離。
+    // 是正は行わない（自動で建玉を合わせにいかない）ため、利用者が判断できるよう双方の数量を並べて示す。
+    // 台帳が誤っていれば統制上限の判定そのものが狂うため Critical とする。
+    public static NotificationMessage From(PositionReconciliationDrift e) => new(
+        "リスク統制: 建玉の乖離を検知",
+        $"取引台帳とブローカの建玉が一致しません（{e.Drifts.Count} 件・観測 {e.ObservedAt:yyyy-MM-dd HH:mm:ss}Z）。"
+            + $"{string.Join("、", e.Drifts.Select(Describe))}。"
+            + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。",
+        NotificationSeverity.Critical);
+
+    private static string Describe(PositionDriftItem d) => d.Kind switch
+    {
+        PositionDriftKind.BrokerOnly => $"{d.Symbol}/{d.Market}: 台帳に無い建玉がブローカに {d.BrokerQuantity}",
+        PositionDriftKind.LedgerOnly => $"{d.Symbol}/{d.Market}: ブローカに無い建玉が台帳に {d.LedgerQuantity}",
+        _ => $"{d.Symbol}/{d.Market}: 台帳 {d.LedgerQuantity} ≠ ブローカ {d.BrokerQuantity}",
+    };
 }

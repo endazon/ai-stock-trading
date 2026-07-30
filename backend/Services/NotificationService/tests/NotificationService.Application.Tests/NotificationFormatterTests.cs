@@ -99,4 +99,26 @@ public class NotificationFormatterTests
 
         NotificationFormatter.From(e).Content.Should().Contain("確定するまで取引方針は変わりません");
     }
+
+    [Fact]
+    public void 建玉の乖離は双方の数量と是正しないことを明示する()
+    {
+        // FR-05/FR-09/FR-10, #292, IADR-0118: 自動是正しないため、通知が検知の唯一の出口になる。
+        // どちらが正しいかを断定せず双方の数量を並べ、利用者が判断できるようにする。
+        var e = new PositionReconciliationDrift(
+            [
+                new PositionDriftItem("AAPL", Market.UnitedStates, 0, 4072, PositionDriftKind.BrokerOnly),
+                new PositionDriftItem("7203", Market.Japan, 100, 80, PositionDriftKind.QuantityMismatch),
+            ],
+            new DateTimeOffset(2026, 7, 30, 6, 0, 0, TimeSpan.Zero),
+            DateTimeOffset.UtcNow);
+
+        var msg = NotificationFormatter.From(e);
+
+        // 台帳が誤っていれば統制上限の判定そのものが狂うため Critical。
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("AAPL").And.Contain("4072");
+        msg.Content.Should().Contain("7203").And.Contain("100").And.Contain("80");
+        msg.Content.Should().Contain("自動是正は行いません");
+    }
 }

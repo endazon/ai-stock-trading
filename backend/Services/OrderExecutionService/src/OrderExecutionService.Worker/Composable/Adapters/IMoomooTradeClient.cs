@@ -23,7 +23,23 @@ internal interface IMoomooTradeClient
     // <paramref name="reservedAtUtc"/> は履歴照会窓の下限に用いる（窓外の発注済み注文を見落とさないため）。
     Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
         string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken cancellationToken = default);
+
+    // #292, IADR-0118: SIMULATE 口座の現在建玉を全対応市場について列挙する。
+    //
+    // 契約（fail-safe の要）:
+    //   - 全市場を**成功裏に列挙**できた → その一覧（建玉が無ければ空列）。
+    //   - いずれかの市場の照会が失敗（不達・応答異常）→ **例外を送出**する（部分列挙を返してはならない）。
+    // 呼び出し側（MoomooBrokerAdapter）は例外を null（＝不明）へ倒す。部分列挙を「全部」と誤ると、
+    // 列挙できなかった市場の建玉がすべて乖離として報告される。
+    Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default);
 }
+
+// #292, IADR-0118: SDK 非依存の建玉スナップショット。Quantity は符号付き（+ ロング / − ショート）。
+internal sealed record MoomooPositionSnapshot(
+    string Symbol,
+    MoomooMarket Market,
+    int Quantity,
+    decimal AverageCost);
 
 // SDK 非依存の発注リクエスト（マーケタブルリミット。SIMULATE は実装側で固定）。
 // #141, IADR-0092: Remark は client order id相当（DecisionId）。滞留 Reserved を後から DecisionId で照合するために

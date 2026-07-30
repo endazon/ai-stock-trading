@@ -306,4 +306,30 @@ public class AuditEntryFactoryTests
             new ReportConfirmed("daily-2026-07-29", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(confirmed.CorrelationId);
     }
+
+    [Fact]
+    public void BrokerPositionsObserved_と_PositionReconciliationDrift_は同一相関で束ねられる()
+    {
+        // FR-05/FR-10/FR-11, #292, IADR-0118: 是正を伴わないため、この記録が乖離の唯一の永続証跡になる。
+        // 観測と検知を同一相関に載せ、「いつ何を観測して、いつ乖離と判定したか」を 1 本で辿れるようにする。
+        var observed = new BrokerPositionsObserved(
+            [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 4072, 20.5m)], RecordedAt);
+        var drift = new PositionReconciliationDrift(
+            [new PositionDriftItem("AAPL", Market.UnitedStates, 0, 4072, PositionDriftKind.BrokerOnly)],
+            RecordedAt, RecordedAt);
+
+        var observedEntry = AuditEntryFactory.From(observed, Id, RecordedAt);
+        var driftEntry = AuditEntryFactory.From(drift, Guid.NewGuid(), RecordedAt);
+
+        observedEntry.EventType.Should().Be("BrokerPositionsObserved");
+        observedEntry.Summary.Should().Contain("AAPL").And.Contain("4072");
+        observedEntry.OccurredAt.Should().Be(observed.ObservedAt);
+
+        driftEntry.EventType.Should().Be("PositionReconciliationDrift");
+        driftEntry.Summary.Should().Contain("AAPL").And.Contain("4072").And.Contain("BrokerOnly");
+        driftEntry.OccurredAt.Should().Be(drift.DetectedAt);
+        driftEntry.Detail.Should().Contain("Drifts");
+
+        driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
+    }
 }

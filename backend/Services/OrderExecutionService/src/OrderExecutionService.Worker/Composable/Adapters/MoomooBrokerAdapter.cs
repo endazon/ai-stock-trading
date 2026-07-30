@@ -13,10 +13,12 @@ namespace AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 // #141, IADR-0092: IClientOrderIdBroker を実装し、発注時に DecisionId を moomoo の remark（client order id相当）へ
 // 伝播する。これにより滞留 Reserved を後から DecisionId で照合できる（実照会リコンサイル）。paper は本 capability を
 // 持たないため OrderExecutionService は従来経路に倒れる。
+// #292, IADR-0118: IBrokerPositionSource も実装し、建玉突合へ現在建玉を供給する。照会不能は null（＝不明）に倒す。
+// paper（PaperBrokerAdapter）は本ポートを実装しないため、突合の常駐は paper 構成では起動時に自己停止する。
 internal sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
     TimeProvider? timeProvider = null,
-    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter, IClientOrderIdBroker
+    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     // fail-safe で握りつぶす例外も障害切り分けのためログする（既定 NullLogger でテスト時は無害）。
@@ -73,6 +75,31 @@ internal sealed class MoomooBrokerAdapter(
 
     public Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default) =>
         client.CancelOrderAsync(orderId, cancellationToken);
+
+    // #292, IADR-0118: 現在建玉の照会。失敗は **null（不明）** に倒す。空列（建玉ゼロ）と取り違えると
+    // 台帳の全建玉が乖離として報告されるため、この区別が本メソッドの中核である。
+    public async Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var positions = await client.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+            return positions
+                .Select(p => new BrokerPositionSnapshot(p.Symbol, MapMarketBack(p.Market), p.Quantity, p.AverageCost))
+                .ToList();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "moomoo 建玉照会に失敗したため不明（null）を返します。");
+            return null;
+        }
+    }
+
+    internal static Market MapMarketBack(MoomooMarket market) => market switch
+    {
+        MoomooMarket.Japan => Market.Japan,
+        _ => Market.UnitedStates,
+    };
 
     private BrokerOrder ToBrokerOrder(OrderIntent intent, MoomooOrderResult result, DateTimeOffset now) =>
         new(result.OrderId, intent, MapState(result.State), result.FilledQuantity, result.AveragePrice,
