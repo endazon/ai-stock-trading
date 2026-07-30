@@ -200,6 +200,28 @@ public class AuditEntryFactoryTests
     }
 
     [Fact]
+    public void PositionCloseRequested_は操作者と理由を残し注文と同一相関になる()
+    {
+        // FR-10/FR-11, #292, IADR-0117: OrderApproved はアクターも理由も持たないため、これが唯一の「誰が・なぜ」の証跡。
+        var decisionId = Guid.NewGuid();
+        var e = new PositionCloseRequested(
+            decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 4072, 21m,
+            "owner-1", "過大建玉の清算", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("PositionCloseRequested");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("owner-1").And.Contain("過大建玉の清算").And.Contain("4072");
+        entry.OccurredAt.Should().Be(e.RequestedAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("Actor");
+
+        // 後続の承認・約定と同一 DecisionId 相関で束ねられ、要求から約定までを 1 本で辿れる。
+        entry.CorrelationId.Should().Be(decisionId);
+    }
+
+    [Fact]
     public void StageTransitioned_は共通相関でfrom_to_承認者_種別を記録する()
     {
         // FR-20, FR-11, #167, IADR-0082: 段階遷移は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
@@ -283,5 +305,31 @@ public class AuditEntryFactoryTests
         var confirmed = AuditEntryFactory.From(
             new ReportConfirmed("daily-2026-07-29", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(confirmed.CorrelationId);
+    }
+
+    [Fact]
+    public void BrokerPositionsObserved_と_PositionReconciliationDrift_は同一相関で束ねられる()
+    {
+        // FR-05/FR-10/FR-11, #292, IADR-0118: 是正を伴わないため、この記録が乖離の唯一の永続証跡になる。
+        // 観測と検知を同一相関に載せ、「いつ何を観測して、いつ乖離と判定したか」を 1 本で辿れるようにする。
+        var observed = new BrokerPositionsObserved(
+            [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 4072, 20.5m)], RecordedAt);
+        var drift = new PositionReconciliationDrift(
+            [new PositionDriftItem("AAPL", Market.UnitedStates, 0, 4072, PositionDriftKind.BrokerOnly)],
+            RecordedAt, RecordedAt);
+
+        var observedEntry = AuditEntryFactory.From(observed, Id, RecordedAt);
+        var driftEntry = AuditEntryFactory.From(drift, Guid.NewGuid(), RecordedAt);
+
+        observedEntry.EventType.Should().Be("BrokerPositionsObserved");
+        observedEntry.Summary.Should().Contain("AAPL").And.Contain("4072");
+        observedEntry.OccurredAt.Should().Be(observed.ObservedAt);
+
+        driftEntry.EventType.Should().Be("PositionReconciliationDrift");
+        driftEntry.Summary.Should().Contain("AAPL").And.Contain("4072").And.Contain("BrokerOnly");
+        driftEntry.OccurredAt.Should().Be(drift.DetectedAt);
+        driftEntry.Detail.Should().Contain("Drifts");
+
+        driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
     }
 }

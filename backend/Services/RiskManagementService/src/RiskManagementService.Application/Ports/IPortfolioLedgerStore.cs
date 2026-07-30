@@ -24,4 +24,17 @@ public interface IPortfolioLedgerStore
 
     /// <summary>相関済みの約定列（射影入力）。</summary>
     IReadOnlyList<LedgerFill> GetFills();
+
+    /// <summary>
+    /// #292, IADR-0117: 指定銘柄について「<paramref name="approvedAtOrAfter"/> 以降に承認された決済（Close）注文のうち
+    /// まだ約定していない数量」の合計を返す。
+    ///
+    /// 取引台帳は**約定でしか動かない**ため、決済を要求してから約定が届くまで建玉数量は減らない。在庫判定を建玉数量
+    /// だけで行うと多重投入で在庫を超える決済（意図しないショート化）を作れてしまう。本メソッドはその「処理中の決済」を
+    /// 数える。未約定数量は承認数量 − 当該 DecisionId の約定数量合計（負にはクランプする）。
+    ///
+    /// <paramref name="approvedAtOrAfter"/> で古い承認を除外するのは、永久に約定しない滞留承認が決済を恒久的に
+    /// ブロックするのを防ぐため（#270 破損期のような状況で建玉を落とせなくなる）。
+    /// </summary>
+    int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter);
 }

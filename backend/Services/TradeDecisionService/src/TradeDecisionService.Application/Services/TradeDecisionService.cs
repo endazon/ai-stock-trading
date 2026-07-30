@@ -26,7 +26,8 @@ public sealed class TradeDecisionService(
     ProfitabilityGateOptions? profitabilityOptions = null,
     IDailyPolicyUnconfirmedNotifier? unconfirmedNotifier = null,
     ICurrentPriceProvider? currentPrice = null,
-    IFxRateProvider? fxRate = null)
+    IFxRateProvider? fxRate = null,
+    IHeldPositionProvider? heldPosition = null)
 {
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
@@ -55,6 +56,11 @@ public sealed class TradeDecisionService(
     // FR-10, FR-17, #257, IADR-0107: 基準通貨（円）への換算レートの供給口。未指定＝基準通貨の市場だけレート 1
     // （日本株は現行どおり／米国株は解決不能＝新規建て見送り）。実供給は Worker が Fx:Provider 設定時に差し替える。
     private readonly IFxRateProvider _fxRate = fxRate ?? new BaseCurrencyOnlyFxRateProvider();
+
+    // FR-04, FR-05, FR-10, #292, IADR-0119: 判断由来の決済（AI の出口）に用いる保有建玉の照会口。
+    // 未指定＝NoOp（常に null＝不明）。不明のもとでは売り判断が見送りへ倒れる（裸の新規売りを出さない）。
+    // 実照会（HttpHeldPositionProvider）は Worker が RiskManagement:BaseUrl 設定時に差し替える。
+    private readonly IHeldPositionProvider _heldPosition = heldPosition ?? new NoOpHeldPositionProvider();
 
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
     public Task<TradeDecisionMade?> DecideAsync(
@@ -139,16 +145,65 @@ public sealed class TradeDecisionService(
 
         var side = decision.Action == TradeAction.Buy ? TradeSide.Buy : TradeSide.Sell;
 
+        // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉から建玉効果を決める。従来は Open がリテラル固定で、
+        // LLM の Sell が「保有ロングの決済」ではなく新規ショート建てとして扱われていた（AI に出口が無かった）。
+        var heldQuantity = await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+        var effect = PositionEffectResolver.Resolve(side, heldQuantity);
+        if (effect.IsSkipped)
+        {
+            // 保有なし・不明での売り＝裸の新規ショート建て。現物のみ有効な段階では成立せず、取引ガードは方向を
+            // 見ないため素通りしてブローカへ飛ぶ。ADR-0003（不確実なら Hold）に従い見送る。
+            logger.LogInformation(
+                "保有建玉が無い、または不明な売り判断のため見送り（裸の新規売りを出さない・IADR-0119）: {Symbol} held={Held}",
+                trigger.Symbol, heldQuantity.HasValue ? heldQuantity.Value : "不明");
+            return null;
+        }
+
         // FR-02, FR-10, IADR-0099 決定2: 発注に用いる参照価格を権威ある現在値へアンカリングする。現在値ありのときは
         // LLM の幻覚しうる ReferencePrice ではなく実市場価格でサイジング・損切り・採算 notional を効かせる。現在値なし
-        // （既定 no-op）は従来どおり decision.ReferencePrice＝現行挙動。アンカリング後は IADR-0035 の不変量（損切り幅は
-        // 参照価格より小さく正）を権威価格に対して再検証する（既定は Parser が保証済みのため素通り＝挙動不変）。
+        // （既定 no-op）は従来どおり decision.ReferencePrice＝現行挙動。
         var referencePrice = currentPrice ?? decision.ReferencePrice;
-        if (referencePrice <= 0m || decision.StopLossDistancePerShare <= 0m
-            || decision.StopLossDistancePerShare >= referencePrice)
+        if (referencePrice <= 0m)
         {
             logger.LogInformation(
-                "参照価格が不正、または損切り幅が現在値以上のため見送り: {Symbol} referencePrice={ReferencePrice} stopLossDistance={StopLossDistance}",
+                "参照価格が不正のため見送り: {Symbol} referencePrice={ReferencePrice}",
+                trigger.Symbol, referencePrice);
+            return null;
+        }
+
+        // #292, IADR-0119: 決済（手仕舞い）はここで確定する。数量は保有数の全量で、以下は**通さない**。
+        //   - サイジング: 出口の数量は保有数であって新規建てのリスク基準サイズではない。
+        //   - 採算ゲート（IADR-0076）: 最小期待利益で撤退を止めてはならない（損失を止める決済が通らなくなる）。
+        //   - 損切り幅の検証: 決済注文に損切り価格は無い（StopLossPrice=null・IADR-0035 は建玉側が保持する）。
+        // 発注前スクリーニングは通すが、RiskEvaluator の isEntry=(PositionEffect==Open) により kill switch・pause・
+        // ロックアウト・段階資金上限・同日再エントリーは構造的に素通りする（FR-10「手仕舞いは止めない」）。
+        if (effect.IsClose)
+        {
+            var closeIntent = new OrderIntent(
+                trigger.Symbol,
+                trigger.Market,
+                side,
+                ProductType.Cash,
+                context.Mode,
+                effect.CloseQuantity,
+                referencePrice,
+                PositionEffect.Close,
+                StopLossPrice: null,
+                FxRateToBase: rateToBase);
+
+            logger.LogInformation(
+                "判断由来の決済: {Symbol} {Side} 数量={Quantity}（保有全量・統制で止めない）",
+                trigger.Symbol, side, effect.CloseQuantity);
+
+            return new TradeDecisionMade(Guid.NewGuid(), closeIntent, decision.Rationale, clock.UtcNow);
+        }
+
+        // 以降は新規建て（Open）の従来経路。IADR-0035 の不変量（損切り幅は参照価格より小さく正）を権威価格に対して
+        // 再検証する（既定は Parser が保証済みのため素通り＝挙動不変）。
+        if (decision.StopLossDistancePerShare <= 0m || decision.StopLossDistancePerShare >= referencePrice)
+        {
+            logger.LogInformation(
+                "損切り幅が不正、または現在値以上のため見送り: {Symbol} referencePrice={ReferencePrice} stopLossDistance={StopLossDistance}",
                 trigger.Symbol, referencePrice, decision.StopLossDistancePerShare);
             return null;
         }
@@ -194,7 +249,8 @@ public sealed class TradeDecisionService(
             ? referencePrice - decision.StopLossDistancePerShare
             : referencePrice + decision.StopLossDistancePerShare;
 
-        // IADR-0004: 発注意図には PositionEffect を必ず設定する。判断由来は新規建て（Open）。
+        // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
+        // 決済（Close）は上で確定済み（#292, IADR-0119）。
         // IADR-0107 決定1: 価格・損切り価格はローカル通貨のまま載せ（発注執行がそのまま注文価格に用いる）、
         // 統制・台帳が基準通貨で判定できるよう確定したレートを同伴させる。
         var intent = new OrderIntent(
@@ -210,6 +266,25 @@ public sealed class TradeDecisionService(
             rateToBase);
 
         return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
+    }
+
+    // FR-04, FR-05, #292, IADR-0119: 保有建玉の照会（fail-safe ラッパ）。
+    // 例外・キャンセル以外の失敗は **null（不明）** に縮退する。0（保有なし）へ倒すと「保有していない」と誤断定し、
+    // 裸の新規売りを通してしまうため、この区別を境界でも守る（アダプタ自体も同じ契約）。
+    private async Task<int?> GetSignedHeldQuantitySafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _heldPosition
+                .GetSignedQuantityAsync(trigger.Symbol, trigger.Market, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "保有建玉の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
+            return null;
+        }
     }
 
     // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価。数量確定後の約定代金に対する往復概算費用と最小期待利益倍率を

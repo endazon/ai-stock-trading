@@ -165,6 +165,12 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, ADR-0003, IADR-0015: 損切りの機械執行（StopLossTriggered → Close の OrderApproved・無条件）。
 builder.Services.AddScoped<StopLossExecutionService>();
+// FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
+// 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
+builder.Services.AddScoped<PositionCloseService>();
+// FR-05, FR-10, #292, IADR-0118: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。巡回をまたいで
+// 状態を持つためシングルトン。乖離の権威は毎回の観測であって履歴ではないためインメモリで足りる。
+builder.Services.AddSingleton<PositionDriftTracker>();
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
 // StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。
@@ -182,6 +188,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<OrderCancelledActivityConsumer>();
     // FR-20, FR-15, #164, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読し段階別実績へ射影する（Stage 0→1 解錠）。
     x.AddConsumer<BacktestEvaluatedProjectionConsumer>();
+    // FR-05, FR-10, #292, IADR-0118: ブローカ実ポジションの観測を購読し、台帳との乖離を検知して報告する（是正はしない）。
+    x.AddConsumer<BrokerPositionsObservedConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

@@ -36,6 +36,17 @@ public class MoomooBrokerAdapterTests
         public Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
             string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken ct = default) =>
             Task.FromResult<MoomooOrderSnapshot?>(null);
+
+        // #292, IADR-0118: 建玉照会。既定は空列（建玉なし）。例外側は Throw で差し替える。
+        public Func<Exception>? PositionsThrow { get; set; }
+
+        public IReadOnlyList<MoomooPositionSnapshot> Positions { get; set; } = [];
+
+        public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken ct = default)
+        {
+            if (PositionsThrow is not null) throw PositionsThrow();
+            return Task.FromResult(Positions);
+        }
     }
 
     // #141, IADR-0092: DecisionId を remark（client order id相当）として発注リクエストに載せることを検証する。
@@ -135,5 +146,48 @@ public class MoomooBrokerAdapterTests
         var client = new FakeClient();
         await new MoomooBrokerAdapter(client).CancelOrderAsync("mo-3");
         client.CancelledId.Should().Be("mo-3");
+    }
+
+    // --- #292, IADR-0118: 建玉照会（突合の入力） ---
+
+    [Fact]
+    public async Task 建玉を符号付きで共有契約へ写す()
+    {
+        var client = new FakeClient
+        {
+            Positions =
+            [
+                new MoomooPositionSnapshot("AAPL", MoomooMarket.UnitedStates, 4072, 20.5m),
+                new MoomooPositionSnapshot("7203", MoomooMarket.Japan, -100, 2500m),
+            ],
+        };
+        var adapter = new MoomooBrokerAdapter(client);
+
+        var positions = await adapter.GetPositionsAsync();
+
+        positions.Should().NotBeNull();
+        positions!.Should().HaveCount(2);
+        positions[0].Should().Be(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 4072, 20.5m));
+        positions[1].Should().Be(new BrokerPositionSnapshot("7203", Market.Japan, -100, 2500m));
+    }
+
+    [Fact]
+    public async Task 建玉が無ければ空列を返す()
+    {
+        // 空列（建玉ゼロ）は観測事実。null（不明）と取り違えない。
+        var positions = await new MoomooBrokerAdapter(new FakeClient()).GetPositionsAsync();
+
+        positions.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
+    public async Task 照会に失敗したら不明として_null_を返す()
+    {
+        // 空列に倒すと「ブローカは何も持っていない」と誤断定し、台帳の全建玉が乖離として報告される。
+        var client = new FakeClient { PositionsThrow = () => new InvalidOperationException("OpenD 不達") };
+
+        var positions = await new MoomooBrokerAdapter(client).GetPositionsAsync();
+
+        positions.Should().BeNull();
     }
 }

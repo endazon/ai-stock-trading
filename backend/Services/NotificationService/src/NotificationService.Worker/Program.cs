@@ -115,6 +115,8 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<WithdrawalTriggeredNotificationConsumer>();
     // UC-01/FR-09/FR-07: 日報未確定による取引スキップ（取引判断 #11・#210）の確定を促す通知。
     x.AddConsumer<DailyPolicyUnconfirmedNotificationConsumer>();
+    // FR-05/FR-10/#292, IADR-0118: 取引台帳とブローカ実ポジションの乖離（是正しないため通知が唯一の出口）。
+    x.AddConsumer<PositionReconciliationDriftNotificationConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

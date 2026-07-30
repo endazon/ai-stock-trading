@@ -57,6 +57,8 @@ public class BrokerFactoryTests
         public Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
             string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken ct = default) =>
             Task.FromResult<MoomooOrderSnapshot?>(null);
+        public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<MoomooPositionSnapshot>>([]);
     }
 
     [Fact]

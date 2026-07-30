@@ -201,5 +201,8 @@ public class OrderFillPollingServiceTests
         public Task<MoomooOrderSnapshot?> FindOrderByClientIdAsync(
             string clientOrderId, DateTimeOffset reservedAtUtc, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("追跡は remark 照合を用いない。");
+
+        public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("約定追跡は建玉照会を用いない。");
     }
 }

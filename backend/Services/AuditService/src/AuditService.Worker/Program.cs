@@ -68,6 +68,11 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<DailyPolicyUnconfirmedAuditConsumer>();
     // FR-06/07/09/#280, IADR-0116: 報告書ドラフトの提示（自動生成スケジューラ）も中央監査台帳へ集約する（FR-11）。
     x.AddConsumer<ReportDraftPresentedAuditConsumer>();
+    // FR-10/FR-11/#292, IADR-0117: 利用者による建玉の手仕舞い要求（誰が・なぜ）も中央監査台帳へ集約する（FR-11）。
+    x.AddConsumer<PositionCloseRequestedAuditConsumer>();
+    // FR-05/FR-10/#292, IADR-0118: ブローカ建玉の観測と、台帳との乖離検知も中央監査台帳へ集約する（FR-11）。
+    x.AddConsumer<BrokerPositionsObservedAuditConsumer>();
+    x.AddConsumer<PositionReconciliationDriftAuditConsumer>();
     x.UsingRabbitMq((ctx, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]

@@ -52,6 +52,36 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return result;
     }
 
+    // #292, IADR-0117: 処理中の決済数量（EfPortfolioLedgerStore と同一の意味論）。
+    public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
+    {
+        // DecisionId ごとの約定累計。1 承認に複数の注文行が対応し得る形（リコンサイル経路）でも取りこぼさない。
+        var filledByDecision = new Dictionary<Guid, int>();
+        foreach (var fill in _fills.Values)
+        {
+            filledByDecision.TryGetValue(fill.DecisionId, out var current);
+            filledByDecision[fill.DecisionId] = current + fill.FilledQuantity;
+        }
+
+        var total = 0;
+        foreach (var (decisionId, approval) in _approvals)
+        {
+            var intent = approval.Intent;
+            if (intent.PositionEffect != PositionEffect.Close
+                || intent.Symbol != symbol
+                || intent.Market != market
+                || approval.ApprovedAt < approvedAtOrAfter)
+            {
+                continue;
+            }
+
+            // 未約定 = 承認数量 − 約定累計。約定が承認を超えた場合（部分列挙・訂正）も負に振れさせない。
+            total += Math.Max(0, intent.Quantity - filledByDecision.GetValueOrDefault(decisionId));
+        }
+
+        return total;
+    }
+
     private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt);
 
     private sealed record FillRecord(Guid DecisionId, int FilledQuantity, decimal AveragePrice, DateTimeOffset ExecutedAt);

@@ -13,6 +13,10 @@
     "Passed": "Boolean",
     "ProbabilityOfBacktestOverfitting": "Double"
   },
+  "BrokerPositionsObserved": {
+    "ObservedAt": "DateTimeOffset",
+    "Positions": "IReadOnlyList\u003CBrokerPositionSnapshot\u003E"
+  },
   "CostThresholdReached": {
     "Category": "String",
     "Month": "String",
@@ -68,6 +72,22 @@
     "Intent": "OrderIntent",
     "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
     "RejectedAt": "DateTimeOffset"
+  },
+  "PositionCloseRequested": {
+    "Actor": "String",
+    "DecisionId": "Guid",
+    "Market": "Market",
+    "Price": "Decimal",
+    "Quantity": "Int32",
+    "Reason": "String",
+    "RequestedAt": "DateTimeOffset",
+    "Side": "TradeSide",
+    "Symbol": "String"
+  },
+  "PositionReconciliationDrift": {
+    "DetectedAt": "DateTimeOffset",
+    "Drifts": "IReadOnlyList\u003CPositionDriftItem\u003E",
+    "ObservedAt": "DateTimeOffset"
   },
   "PriceMovementDetected": {
     "BaselinePrice": "Decimal",

@@ -195,11 +195,46 @@ internal sealed class BacktestEvaluatedAuditConsumer(IAuditEventStore store, ICl
     }
 }
 
+// FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い要求を中央監査台帳へ記録する。
+// 後続の OrderApproved はアクターも理由も持たないため、本記録が「誰が・なぜ落としたか」の唯一の証跡になる。
+internal sealed class PositionCloseRequestedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<PositionCloseRequested>
+{
+    public Task Consume(ConsumeContext<PositionCloseRequested> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
 // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
 internal sealed class DailyPolicyUnconfirmedAuditConsumer(IAuditEventStore store, IClock clock)
     : IConsumer<DailyPolicyUnconfirmed>
 {
     public Task Consume(ConsumeContext<DailyPolicyUnconfirmed> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+internal sealed class BrokerPositionsObservedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<BrokerPositionsObserved>
+{
+    public Task Consume(ConsumeContext<BrokerPositionsObserved> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知を中央監査台帳へ記録する。
+// 是正は伴わないため、この記録が「いつ・どの銘柄で乖離が生じたか」の唯一の永続証跡になる。
+internal sealed class PositionReconciliationDriftAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<PositionReconciliationDrift>
+{
+    public Task Consume(ConsumeContext<PositionReconciliationDrift> context)
     {
         store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
         return Task.CompletedTask;
