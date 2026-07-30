@@ -423,8 +423,8 @@ public class ReportAutoGeneratorTests
         await NewGenerator(store, WedAfterClose, drafter: drafter).RunOnceAsync();
 
         var ctx = drafter.Contexts.Should().ContainSingle().Which;
-        ctx.ParentPeriodKey.Should().Be("weekly-2026-W28");
-        ctx.ParentPolicySummary.Should().Contain("半導体を重点監視");
+        ctx.ParentPolicy!.PeriodKey.Should().Be("weekly-2026-W28");
+        ctx.ParentPolicy.Summary.Should().Contain("半導体を重点監視");
     }
 
     // T-7, IADR-0117 決定3, 03_reporting-cycle「上位方針の欠落」: 上位が未確定でも生成は継続する
@@ -440,8 +440,7 @@ public class ReportAutoGeneratorTests
         result.Generated.Should().ContainSingle();
         result.Failed.Should().BeEmpty();
         var ctx = drafter.Contexts.Should().ContainSingle().Which;
-        ctx.ParentPeriodKey.Should().BeNull();
-        ctx.ParentPolicySummary.Should().BeNull();
+        ctx.ParentPolicy.Should().BeNull();
     }
 
     // T-6, IADR-0117 決定3: 月報の上位は前月の月報（ParentKind(Monthly) == Monthly）。
@@ -456,8 +455,8 @@ public class ReportAutoGeneratorTests
         await NewGenerator(store, MonthEndAfterClose, drafter: drafter).RunOnceAsync();
 
         var monthly = drafter.Contexts.Should().ContainSingle(c => c.Kind == ReportKind.Monthly).Which;
-        monthly.ParentPeriodKey.Should().Be("monthly-2026-06");
-        monthly.ParentPolicySummary.Should().Contain("現金比率");
+        monthly.ParentPolicy!.PeriodKey.Should().Be("monthly-2026-06");
+        monthly.ParentPolicy.Summary.Should().Contain("現金比率");
     }
 
     // T-6, IADR-0117 決定3: PolicySummary（確定すると取引に効くフィールド）へ上位方針の本文を

@@ -50,11 +50,10 @@ public static class ReportNarrativePromptBuilder
         // 計画の業務フローは「AI がドラフト生成＝上位方針の目標との差異評価＋翌期間の目標案」と定めており、
         // 期間キーだけでは差異評価が書けない。上位が未確定なら**その旨を明記**する（捏造させない）。
         var parentLabel = ParentLabel(context.Kind);
-        if (!string.IsNullOrWhiteSpace(context.ParentPolicySummary))
+        if (context.ParentPolicy is { } parent)
         {
-            var parentKey = string.IsNullOrWhiteSpace(context.ParentPeriodKey) ? "期間キー不明" : context.ParentPeriodKey;
-            sb.AppendLine($"上位方針（{parentLabel}・{parentKey}・確定済み）:");
-            sb.AppendLine(context.ParentPolicySummary.Trim());
+            sb.AppendLine($"上位方針（{parentLabel}・{parent.PeriodKey}・確定済み）:");
+            sb.AppendLine(parent.Summary.Trim());
             sb.AppendLine();
             sb.AppendLine($"当期の振り返りでは、上記の{parentLabel}方針の目標に対する達成度と差異を評価してください。");
         }

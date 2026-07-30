@@ -38,14 +38,18 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var buyCount = fills.Count(f => f.Side == TradeSide.Buy);
         var sellCount = fills.Count(f => f.Side == TradeSide.Sell);
 
+        // FR-07, IADR-0117 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
+        // 期間キーと本文の**両方が揃ったときだけ**参照とする。片方だけでは差異評価も出典提示もできないため、
+        // 欠損は「上位未確定」の 1 通りに閉じる（プロンプト側がその旨を明記する＝捏造しない）。
+        var parentPolicy = !string.IsNullOrWhiteSpace(request.BasedOn) && !string.IsNullOrWhiteSpace(request.ParentPolicySummary)
+            ? new ParentPolicyReference(request.BasedOn, request.ParentPolicySummary)
+            : null;
+
         // 散文のみ LLM ドラフトへ委ねる（数値は提示のみで再計算させない）。
-        // FR-07, IADR-0117 決定3, #293: 上位方針（BasedOn の期間キーと本文）を散文の文脈として渡す。
-        // 未指定なら null＝上位未確定としてプロンプト側がその旨を明記する（捏造しない）。
         var narrative = await drafter
             .DraftNarrativeAsync(
                 new ReportNarrativeContext(
-                    request.Kind, request.PeriodKey, periodLabel, markets, pnl, request.PolicySummary,
-                    request.BasedOn, request.ParentPolicySummary),
+                    request.Kind, request.PeriodKey, periodLabel, markets, pnl, request.PolicySummary, parentPolicy),
                 cancellationToken)
             .ConfigureAwait(false);
 

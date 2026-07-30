@@ -132,7 +132,12 @@ AST 側にモデル ID を持たない方針は [[IADR-0071]] から不変であ
 
 ### 決定 3: 上位方針は散文の文脈としてのみ渡す（`PolicySummary` には混ぜない）
 
-- `ReportNarrativeContext` に上位方針の**期間キーと本文**を追加する（いずれも nullable＝上位未確定を表現）。
+- `ReportNarrativeContext` に上位方針の参照 `ParentPolicyReference(PeriodKey, Summary)` を追加する
+  （nullable＝上位未確定を表現）。**期間キーと本文を 1 つの record に束ね、「片方だけ在る」状態を表現不能にする。**
+  差異評価には本文が要り、出典提示には期間キーが要るため、どちらが欠けても意味をなさない。欠損の表現を
+  record ごと null の 1 通りに閉じることで、プロンプト側に「期間キー不明」のような苦しいフォールバックを作らない。
+  片方だけ揃う入力（手動経路で `BasedOn` のみ指定した場合等）は `ReportDraftService` が参照を組み立てる
+  1 箇所で「上位未確定」へ倒す。
 - `DraftRequest` に上位方針本文を追加し、`ReportDraftService` が `ReportNarrativeContext` へ渡す。
 - `ReportAutoGenerator` は既に取得している `parent?.Report.PolicySummary` を渡す（**捨てるのをやめる**）。
 - `ReportNarrativePromptBuilder` に上位方針の節を追加し、「**上位方針との差異を評価する**」ことを

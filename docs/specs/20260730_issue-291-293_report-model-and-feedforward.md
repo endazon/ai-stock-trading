@@ -135,7 +135,7 @@ var parent = store.GetLatestConfirmed(parentKind);   // ← 取得している
 | `ReportNarrativePurpose.cs`（新規・Application） | `ReportKind` → purpose の純関数写像 |
 | `HttpReportNarrativeDrafter.cs` | 要求ごとに `context.Kind` から purpose を決めて送出。構成値は**上書き**として扱う |
 | `Program.cs` | `LlmGateway:Purpose` を既定値なしで渡す（未設定＝種別ごとの purpose） |
-| `IReportNarrativeDrafter.cs` | `ReportNarrativeContext` に上位方針（期間キー・本文）を追加 |
+| `IReportNarrativeDrafter.cs` | `ReportNarrativeContext` に上位方針の参照 `ParentPolicyReference`（期間キー＋本文）を追加。片方だけ在る状態を表現不能にする |
 | `ReportNarrativePromptBuilder.cs` | 上位方針の節を追加し「差異評価」を指示に含める。未確定なら明記 |
 | `ReportDraftService.cs` | `DraftRequest` に上位方針本文を追加し `ReportNarrativeContext` へ渡す |
 | `ReportAutoGenerator.cs` | 取得済みの `parent?.Report.PolicySummary` を渡す（捨てるのをやめる） |
@@ -160,6 +160,7 @@ var parent = store.GetLatestConfirmed(parentKind);   // ← 取得している
       `report-monthly` になることをテストで固定した
 - [x] `LlmGateway:Purpose` を明示設定した場合は全種別へ上書き適用される（既存デプロイの非破壊）
 - [x] `ReportAutoGenerator` が上位方針の**本文**を `ReportNarrativeContext` へ渡す
+- [x] 上位方針の「期間キーだけ / 本文だけ」という半端な状態が型として表現不能である
 - [x] プロンプトに上位方針の節が入り、「上位方針との差異を評価する」指示が含まれる
 - [x] 上位方針が未確定のときは、その旨がプロンプトに明記される（捏造しない）
 - [x] 数値はコード集計が権威という制約が崩れていない（プロンプトの指示文は不変）

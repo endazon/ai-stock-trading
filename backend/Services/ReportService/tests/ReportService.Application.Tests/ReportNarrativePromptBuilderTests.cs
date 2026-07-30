@@ -76,8 +76,7 @@ public class ReportNarrativePromptBuilderTests
     {
         var prompt = ReportNarrativePromptBuilder.Build(Context() with
         {
-            ParentPeriodKey = "weekly-2026-W29",
-            ParentPolicySummary = "今週は半導体セクターを重点監視し、1 銘柄あたりの建玉を 2 単位までとする",
+            ParentPolicy = new("weekly-2026-W29", "今週は半導体セクターを重点監視し、1 銘柄あたりの建玉を 2 単位までとする"),
         });
 
         prompt.Should().Contain("週報");                        // 日報の上位は週報
@@ -91,7 +90,7 @@ public class ReportNarrativePromptBuilderTests
     [Fact]
     public void 上位方針が未確定ならその旨を明記する()
     {
-        var prompt = ReportNarrativePromptBuilder.Build(Context());  // ParentPolicySummary 未指定
+        var prompt = ReportNarrativePromptBuilder.Build(Context());  // ParentPolicy 未指定
 
         prompt.Should().MatchRegex("上位方針.*(未確定|参照していません|参照できません)");
     }
@@ -103,8 +102,7 @@ public class ReportNarrativePromptBuilderTests
     {
         var prompt = ReportNarrativePromptBuilder.Build(Context(ReportKind.Monthly) with
         {
-            ParentPeriodKey = "monthly-2026-06",
-            ParentPolicySummary = "6 月は現金比率を 30% 以上に保つ",
+            ParentPolicy = new("monthly-2026-06", "6 月は現金比率を 30% 以上に保つ"),
         });
 
         prompt.Should().Contain("前月の月報");
@@ -119,8 +117,7 @@ public class ReportNarrativePromptBuilderTests
     {
         var prompt = ReportNarrativePromptBuilder.Build(Context() with
         {
-            ParentPeriodKey = "weekly-2026-W29",
-            ParentPolicySummary = "週次の損失上限は 5000 円とする",
+            ParentPolicy = new("weekly-2026-W29", "週次の損失上限は 5000 円とする"),
         });
 
         prompt.Should().MatchRegex("再計算|改変|変更しない");
