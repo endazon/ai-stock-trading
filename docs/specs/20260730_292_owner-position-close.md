@@ -1,15 +1,14 @@
 ---
 title: 建玉の owner 決済経路（部分/全量・正規の注文パス・統制で止めない）
 type: spec
-status: review
-related_ids: [FR-05, FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0007]
+status: accepted
+related_ids: [FR-05, FR-10, FR-11, UC-02, UC-06, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-30
 updated: 2026-07-30
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_risk-control-authority.md
 ---
 
 # 仕様書: 建玉の owner 決済経路
@@ -25,8 +24,8 @@ plan_refs:
     損切りは止めない**」と明記されている。本 PR の統制迂回はこの要求の実装であり、新規の裁定ではない。
   - FR-05（発注・注文状態追跡）／FR-11（監査ログ）
 - ユースケース: UC-02（価格変動起点の取引）・UC-06（利用者による統制操作）
-- ADR: [ADR-0007](../../planning/projects/ai-stock-trading/07_adr/ADR-0007_risk-control-authority.md)（統制の権限＝
-  変更操作は利用者のみ）、[ADR-0003](../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md)
+- ADR: [ADR-0003](../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md)（生成AIは統制を上書きできない＝
+  統制操作は利用者のみ。FR-10 本文「生成AIはこれらを上書きできない」と対）
 - 関連 IADR: [IADR-0015](../adr/IADR-0015_stop-loss-mechanical-close.md)（損切りの機械執行・スクリーニング迂回の先例）／
   [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（取引台帳と射影）／
   [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定は `PositionEffect`）／
@@ -127,7 +126,7 @@ POST /risk-controls/positions/close
 | 数量・価格の不正、在庫超過 | 422 |
 
 - 認可は既存の `owner` サブグループ（`AiStockTradingAuthPolicies.OwnerOnly`）。サービストークンには**開かない**
-  （生成AI・自動処理が建玉を落とせないようにする＝ADR-0007 の最小権限）。
+  （生成AI・自動処理が建玉を落とせないようにする＝FR-10「生成AIはこれらを上書きできない」・ADR-0003）。
 - **`OrderScreeningService` を通さない。** 損切りの機械執行と同型（IADR-0015）。kill switch・pause・
   日次損失ロックアウト・取引ガード・段階資金上限のいずれでも止まらない。根拠は FR-10 本文。
 
@@ -198,12 +197,12 @@ Helm / values / compose / `.env.example` は**不変**。
 
 ## 受け入れ基準（`docs/DEFINITION_OF_DONE.md` と併せて）
 
-- [ ] owner が建玉の全量／部分決済を要求でき、在庫超過・多重投入が構造的に拒否される
-- [ ] kill switch／ロックアウト／pause で決済が阻害されない
-- [ ] 決済の要求（誰が・いつ・何を・なぜ）が監査へ残る
-- [ ] 決済の約定が既存経路で台帳へ届き、Discord 通知される（新規経路を作らない）
-- [ ] SIMULATE 限定・実弾 OFF が不変。Helm / values / Migration に差分が無い
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] owner が建玉の全量／部分決済を要求でき、在庫超過・多重投入が構造的に拒否される
+- [x] kill switch／ロックアウト／pause で決済が阻害されない
+- [x] 決済の要求（誰が・いつ・何を・なぜ）が監査へ残る
+- [x] 決済の約定が既存経路で台帳へ届き、Discord 通知される（新規経路を作らない）
+- [x] SIMULATE 限定・実弾 OFF が不変。Helm / values / Migration に差分が無い
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外
 
