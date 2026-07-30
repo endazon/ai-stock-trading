@@ -33,6 +33,19 @@ public class TradeDecisionServiceTests
         public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(ctx);
     }
 
+    // #292, IADR-0119: 保有建玉の供給。null は「不明」（照会不能）で 0（保有なし）とは区別する。
+    private sealed class FakeHeld(int? signedQuantity) : IHeldPositionProvider
+    {
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult(signedQuantity);
+    }
+
+    private sealed class ThrowingHeld : IHeldPositionProvider
+    {
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            throw new InvalidOperationException("建玉照会の擬似障害");
+    }
+
     // 本判断プロンプトを捕捉して RAG 文脈の注入を検証するための LLM スタブ。
     private sealed class CapturingLlm(string output) : ILlmCompletionClient
     {
@@ -73,6 +86,12 @@ public class TradeDecisionServiceTests
     private static AppSvc Create(string llmOutput, DailyPolicy? policy, SizingContext? ctx = null) =>
         new(new FakeLlm(llmOutput), new FakePolicy(policy), new FakeSizing(ctx ?? Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance);
+
+    // #292, IADR-0119: 保有建玉を与える版。既定（Create）は NoOp＝常に不明。
+    private static AppSvc CreateWithHeld(
+        string llmOutput, IHeldPositionProvider held, SizingContext? ctx = null) =>
+        new(new FakeLlm(llmOutput), new FakePolicy(Policy), new FakeSizing(ctx ?? Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, heldPosition: held);
 
     // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株・円建て）の銘柄を用いる
     // （価格 1,000 円・損切り幅 30 円として読む）。非基準通貨（米国株）の換算・レート未解決時の見送りは
@@ -195,9 +214,12 @@ public class TradeDecisionServiceTests
         const string sellJson =
             """{"action":"Sell","rationale":"戻り売り","referencePrice":1000,"stopLossDistancePerShare":30}""";
 
-        var decision = await Create(sellJson, Policy).DecideAsync(Trigger());
+        // #292, IADR-0119: 売り判断が新規建て（Open）になるのはショートへの建て増しのときだけ。
+        // 保有なし・不明の売りは見送りへ倒れるため、既存ショート（-50）を与えてエントリー経路を通す。
+        var decision = await CreateWithHeld(sellJson, new FakeHeld(-50)).DecideAsync(Trigger());
 
         decision!.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
         decision.Intent.StopLossPrice.Should().Be(1_030m);
     }
 
@@ -699,5 +721,99 @@ public class TradeDecisionServiceTests
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
+
+    // --- #292, IADR-0119: 判断由来の決済（AI の出口） ---
+
+    private const string SellJson =
+        """{"action":"Sell","rationale":"利確","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+    [Fact]
+    public async Task ロング保有への売り判断は全量の決済を発行する()
+    {
+        // 従来は PositionEffect.Open 固定で、保有ロングの売却が「新規ショート建て」として扱われていた。
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(4072)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.Quantity.Should().Be(4072, "出口の数量は保有数であってサイジング結果ではない");
+        decision.Intent.StopLossPrice.Should().BeNull("決済注文に損切り価格は無い");
+    }
+
+    [Fact]
+    public async Task ショート保有への買い判断は全量の決済を発行する()
+    {
+        const string buyJson =
+            """{"action":"Buy","rationale":"買い戻し","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+        var decision = await CreateWithHeld(buyJson, new FakeHeld(-100)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Buy);
+        decision.Intent.Quantity.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task ロング保有への買い判断は従来どおり新規建てになる()
+    {
+        var decision = await CreateWithHeld(BuyJson, new FakeHeld(100)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+        decision.Intent.StopLossPrice.Should().Be(970m);
+    }
+
+    [Fact]
+    public async Task 保有なしの売り判断は発注しない()
+    {
+        // 裸の新規ショート建て。現物のみ有効な段階では成立せず、取引ガードは方向を見ないため素通りしてしまう。
+        (await CreateWithHeld(SellJson, new FakeHeld(0)).DecideAsync(Trigger())).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 建玉が不明な売り判断は発注しない()
+    {
+        // 既定（NoOpHeldPositionProvider）は常に不明。ADR-0003「不確実なら Hold」。
+        (await Create(SellJson, Policy).DecideAsync(Trigger())).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 建玉照会が失敗しても買い判断は従来どおり成立する()
+    {
+        // fail-safe: 照会例外は「不明」に縮退する。買いは裸になり得ず、金額系上限がそのまま効く。
+        var service = new AppSvc(
+            new FakeLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, heldPosition: new ThrowingHeld());
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    [Fact]
+    public async Task 決済はサイジングの残枠に妨げられない()
+    {
+        // 残枠 0 は「新規建てできない」であって「手仕舞いできない」ではない（FR-10）。
+        var noRoom = Context(stageRemaining: 0m, dailyRemaining: 0m);
+
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(4072), noRoom).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Quantity.Should().Be(4072);
+    }
+
+    [Fact]
+    public async Task 決済は採算ゲートに妨げられない()
+    {
+        // IADR-0076 の最小期待利益で撤退を止めてはならない（損失を止めるための決済が通らなくなる）。
+        // 採算ゲートを有効化し、費用見積り不能（NoOp）＝新規建てなら必ず見送りになる条件で決済が通ることを固定する。
+        var service = new AppSvc(
+            new FakeLlm(SellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            profitabilityOptions: new ProfitabilityGateOptions { Enabled = true },
+            heldPosition: new FakeHeld(4072));
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
     }
 }
