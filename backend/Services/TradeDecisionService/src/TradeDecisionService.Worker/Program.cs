@@ -153,6 +153,20 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpSizingContextProvider(http, sp.GetRequiredService<ILogger<HttpSizingContextProvider>>());
 });
+// FR-04/05/10, #292, IADR-0119: 判断由来の決済（AI の出口）に用いる保有建玉。リスク管理の既存
+// GET /risk-controls/open-positions を同期照会する（新規エンドポイントは作らない・s2s トークンは "risk" クライアント）。
+// RiskManagement:BaseUrl 未設定/不正 URI は NoOp（常に不明）＝売り判断は見送りへ倒れ、裸の新規売りを出さない。
+builder.Services.AddSingleton<NoOpHeldPositionProvider>();
+builder.Services.AddScoped<IHeldPositionProvider>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<NoOpHeldPositionProvider>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpHeldPositionProvider(http, sp.GetRequiredService<ILogger<HttpHeldPositionProvider>>());
+});
 // FR-08, IADR-0069/0072: RAG 取得ポート（#18 IKnowledgeBaseSearch）を配線する。KnowledgeBase:Search:BaseUrl 未設定/不正なら
 // #18 の NoOpKnowledgeBaseSearch（空）＝参考情報なし＝実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作（安全既定）。
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
