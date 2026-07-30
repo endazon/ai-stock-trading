@@ -69,6 +69,17 @@
     "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
     "RejectedAt": "DateTimeOffset"
   },
+  "PositionCloseRequested": {
+    "Actor": "String",
+    "DecisionId": "Guid",
+    "Market": "Market",
+    "Price": "Decimal",
+    "Quantity": "Int32",
+    "Reason": "String",
+    "RequestedAt": "DateTimeOffset",
+    "Side": "TradeSide",
+    "Symbol": "String"
+  },
   "PriceMovementDetected": {
     "BaselinePrice": "Decimal",
     "ChangeRatio": "Decimal",

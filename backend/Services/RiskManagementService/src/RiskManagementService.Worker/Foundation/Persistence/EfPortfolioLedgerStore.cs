@@ -72,6 +72,32 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
         return true;
     }
 
+    // #292, IADR-0117: 処理中の決済数量（InMemoryPortfolioLedgerStore と同一の意味論）。
+    public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
+    {
+        var approvals = db.ApprovedOrders
+            .Where(a => a.Symbol == symbol
+                     && a.Market == market
+                     && a.PositionEffect == PositionEffect.Close
+                     && a.ApprovedAt >= approvedAtOrAfter)
+            .Select(a => new { a.DecisionId, a.Quantity })
+            .ToList();
+
+        if (approvals.Count == 0)
+            return 0;
+
+        // DecisionId ごとの約定累計。1 承認に複数の注文行が対応し得る形（リコンサイル経路）でも取りこぼさない。
+        var decisionIds = approvals.Select(a => a.DecisionId).ToList();
+        var filledByDecision = db.TradeFills
+            .Where(f => decisionIds.Contains(f.DecisionId))
+            .GroupBy(f => f.DecisionId)
+            .Select(g => new { DecisionId = g.Key, Filled = g.Sum(x => x.FilledQuantity) })
+            .ToDictionary(x => x.DecisionId, x => x.Filled);
+
+        // 未約定 = 承認数量 − 約定累計。約定が承認を超えた場合（部分列挙・訂正）も負に振れさせない。
+        return approvals.Sum(a => Math.Max(0, a.Quantity - filledByDecision.GetValueOrDefault(a.DecisionId)));
+    }
+
     public IReadOnlyList<LedgerFill> GetFills()
     {
         // 約定 × 承認 Intent を DecisionId で結合し、銘柄・方向・建玉効果を補完して射影入力を返す。

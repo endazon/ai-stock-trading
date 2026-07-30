@@ -19,6 +19,7 @@ public class OpenPositionsServiceTests
         public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt) { }
         public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt) => true;
         public IReadOnlyList<LedgerFill> GetFills() => fills;
+        public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
     }
 
     // 損切り価格を持たない約定（欠損＝近似フォールバックの検証用）。
