@@ -2,14 +2,13 @@
 title: IADR-0117 建玉の手仕舞いは利用者専用の同期経路で受け、統制を通さず既存の注文パスへ載せる
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0007]
+related_ids: [FR-05, FR-10, FR-11, UC-02, UC-06, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-30
 updated: 2026-07-30
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_risk-control-authority.md
 ---
 
 # IADR-0117: 建玉の手仕舞いは利用者専用の同期経路で受け、統制を通さず既存の注文パスへ載せる
@@ -24,7 +23,7 @@ plan_refs:
 
 - 関連する計画書 ID: **FR-10**（リスク統制。本文に「kill switch・日次損失ロックアウト・一時停止は…いずれも
   手仕舞い（Close）と損切りは止めない」）、FR-05（発注執行）、FR-11（監査ログ）、UC-02 / UC-06、
-  [ADR-0007](../../planning/projects/ai-stock-trading/07_adr/ADR-0007_risk-control-authority.md)（統制の権限）
+  [ADR-0003](../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md)（生成AIは統制を上書きできない）
 - 対象 Issue: [#292](https://github.com/endazon/ai-stock-trading/issues/292)（傘 [#279](https://github.com/endazon/ai-stock-trading/issues/279)）
 - 関連する実装仕様書: [20260730_292_owner-position-close](../specs/20260730_292_owner-position-close.md)
 - 関連 IADR: [IADR-0015](IADR-0015_stop-loss-mechanical-close.md)（損切りの機械執行・スクリーニング迂回の先例）、

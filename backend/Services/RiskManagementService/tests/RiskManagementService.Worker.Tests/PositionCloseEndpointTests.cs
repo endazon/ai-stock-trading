@@ -12,7 +12,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;
 
-// FR-10, FR-11, UC-06, ADR-0007, #292, IADR-0117: 建玉の手仕舞いエンドポイント。
+// FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 建玉の手仕舞いエンドポイント。
 // 認可（OwnerOnly）・入力検証・HTTP 写像・発行イベント、そして「統制で止まらない」ことを固定する。
 public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
     : IClassFixture<RiskWorkerWebApplicationFactory>
@@ -58,7 +58,7 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
     [Fact]
     public async Task サービスロールでは403()
     {
-        // 最小権限（ADR-0007・IADR-0051）: 建玉を落とす操作はサービス（生成AI・自動処理）へ開かない。
+        // 最小権限（ADR-0003・IADR-0051）: 建玉を落とす操作はサービス（生成AI・自動処理）へ開かない。
         var res = await ClientWithRoles(Service)
             .PostAsJsonAsync("/risk-controls/positions/close", Body("AUTH2"));
 

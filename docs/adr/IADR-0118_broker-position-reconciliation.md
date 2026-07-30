@@ -22,7 +22,9 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-05（発注・注文状態の追跡）、FR-10（リスク統制）、FR-11（監査）、FR-09（通知）、
+- 関連する計画書 ID: FR-05（発注・注文状態の追跡。**本 ADR は FR-05 の拡張解釈**である＝計画書本文は
+  「自 AST が出した注文の状態追跡」を指しており、ブローカ実ポジションとの突合はその自然な延長として扱う。
+  乖離が統制の入力（台帳）を狂わせるという意味では FR-10 が直接の根拠になる）、FR-10（リスク統制）、FR-11（監査）、FR-09（通知）、
   [ADR-0002](../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md)（証券会社連携）
 - 対象 Issue: [#292](https://github.com/endazon/ai-stock-trading/issues/292)（傘 [#279](https://github.com/endazon/ai-stock-trading/issues/279)）
 - 関連する実装仕様書: [20260730_292_broker-position-reconciliation](../specs/20260730_292_broker-position-reconciliation.md)
@@ -127,10 +129,19 @@ IADR-0113 と同じ理由。副作用が**読み取り照会のみ**で、発注
 挙動が変わるのは moomoo 経路だけであり、その変化こそが本 ADR の目的である。停止は
 `Reconciliation__Positions__Enabled=false` の 1 環境変数で足りる。
 
-### 状態をインメモリに置く理由
+### 状態をインメモリに置く理由と、その前提
 
 乖離の権威は**毎回の観測**であって履歴ではない。再起動後は連続条件を数え直し、乖離が継続していれば
 1 度だけ再報告される。監査は `MessageId` で重複を識別でき、通知も 1 通で済むため、専用テーブルを持つ価値がない。
+
+**ただしこれは「リスク管理サービスが単一レプリカである」ことに依存する。** 現行の
+`deploy/helm/ai-stock-trading/templates/deployment.yaml` は `replicas: 1` 固定であり、`BrokerPositionsObserved` は
+単一の競合コンシューマ（1 Pod）でのみ処理される。将来レプリカを増やすと、同一シグネチャの連続観測が Pod 間に
+分散して「連続 2 回」条件が実質的に満たされなくなり、**乖離が恒久的に未報告のまま**になり得る（受け入れ基準
+「乖離が定期的に検知され、監査・通知へ届く」を静かに損なう向きの縮退である）。
+
+リスク管理サービスを水平スケールする際は、本トラッカーを durable な重複排除（`IWithdrawalNotificationStore`
+と同型の DB 単一行）へ置き換えること。本 ADR は単一レプリカ前提のもとでの決定である。
 
 ## 影響・追随
 
