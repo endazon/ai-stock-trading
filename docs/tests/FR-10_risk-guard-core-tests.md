@@ -138,6 +138,20 @@ plan_refs:
 | T-10-86 | 「誰が・なぜ」決済したかが監査へ残る | `要求イベントに操作者と理由と数量が載る`／`要求イベントは承認と同一のDecisionIdで相関する`（`PositionCloseServiceTests`）／`PositionCloseRequested_は操作者と理由を残し注文と同一相関になる`（`AuditEntryFactoryTests`） | 自動 |
 | T-10-87 | 処理中決済の集計が EF / InMemory の両実装で同一意味論 | `PortfolioLedgerInFlightCloseTests`（9 ケース）／`EfPortfolioLedgerInFlightCloseTests`（10 ケース） | 自動 |
 
+### FR-10/FR-04 判断由来の決済＝AI の出口（#292 / IADR-0119）
+
+| ID | 受け入れ基準 | テストメソッド（テストクラス） | 区分 |
+| --- | --- | --- | --- |
+| T-10-90 | 保有建玉の反対売買は `Close`・数量は保有全量として発行される（8 通りの組み合わせを固定） | `PositionEffectResolverTests`（8 ケース） | 自動 |
+| T-10-91 | ロング保有への売り・ショート保有への買いが全量決済になり、損切り価格を持たない | `ロング保有への売り判断は全量の決済を発行する`／`ショート保有への買い判断は全量の決済を発行する`（`TradeDecisionServiceTests`） | 自動 |
+| T-10-92 | **保有なし・不明の売りは発注に至らない**（裸の新規ショート建ての根絶） | `保有なしの売り判断は発注しない`／`建玉が不明な売り判断は発注しない`（同上） | 自動 |
+| T-10-93 | 撤退がサイジング残枠・採算ゲートに妨げられない | `決済はサイジングの残枠に妨げられない`／`決済は採算ゲートに妨げられない`（同上） | 自動 |
+| T-10-94 | 建玉照会は空配列＝0（保有なし）／失敗＝null（不明）を厳格に区別する | `空配列は保有なしのゼロ`／`非2xx_は不明`／`不正な応答は不明`／`例外は不明`（`HttpHeldPositionProviderTests`） | 自動 |
+| T-10-95 | 建玉照会が失敗しても買い判断は従来どおり成立する（fail-safe の非対称） | `建玉照会が失敗しても買い判断は従来どおり成立する`（`TradeDecisionServiceTests`） | 自動 |
+
+> 「Close が kill switch・pause・ロックアウト・段階資金上限・同日再エントリーで拒否されない」は
+> 既存の `RiskEvaluatorTests`（T-10-xx 群・`Close(...)` ヘルパを用いるケース）が担保しており、重複させていない。
+
 ## テストデータ
 
 - 既定設定は `TradingDefaults.CreateSettings()`。個別ケースは `PortfolioSnapshot` / `OrderIntent` のヘルパ

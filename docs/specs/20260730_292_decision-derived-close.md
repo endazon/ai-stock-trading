@@ -1,7 +1,7 @@
 ---
 title: 判断由来の決済（AI の出口）— 保有中の反対売買を Close に写し、裸の新規売りを止める
 type: spec
-status: review
+status: accepted
 related_ids: [FR-04, FR-05, FR-10, FR-19, UC-01, UC-02, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-30
@@ -150,12 +150,12 @@ Helm / values / compose / `.env.example` は**不変**（`values-local.yaml` は
 
 ## 受け入れ基準（`docs/DEFINITION_OF_DONE.md` と併せて）
 
-- [ ] AI が保有建玉を自分で手仕舞える（`PositionEffect.Close`・全量）
-- [ ] 決済が kill switch・pause・ロックアウト・同日再エントリー・段階資金上限で止まらない
-- [ ] 保有なし／不明の `Sell` が発注に至らない（裸の新規売りの根絶）
-- [ ] 採算ゲート・サイジングが撤退を妨げない
-- [ ] Helm / values / Migration / 実弾ゲートが不変
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] AI が保有建玉を自分で手仕舞える（`PositionEffect.Close`・全量）
+- [x] 決済が kill switch・pause・ロックアウト・同日再エントリー・段階資金上限で止まらない
+- [x] 保有なし／不明の `Sell` が発注に至らない（裸の新規売りの根絶）
+- [x] 採算ゲート・サイジングが撤退を妨げない
+- [x] Helm / values / Migration / 実弾ゲートが不変
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外
 
