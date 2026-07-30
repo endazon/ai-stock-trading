@@ -28,7 +28,7 @@ public class ReportAutoGeneratorTests
     {
         public int Calls { get; private set; }
 
-        // IADR-0117 決定3, #293: 上位方針が散文ドラフトの文脈として届いているかを検証するため、
+        // IADR-0120 決定3, #293: 上位方針が散文ドラフトの文脈として届いているかを検証するため、
         // 受け取った文脈を記録する（生成の副作用ではなく「何を渡したか」が本作業の検証対象）。
         public List<ReportNarrativeContext> Contexts { get; } = [];
 
@@ -409,7 +409,7 @@ public class ReportAutoGeneratorTests
         store.Get("daily-2026-07-08")!.Report.BasedOn.Should().Be("weekly-2026-W28");
     }
 
-    // T-6, FR-06/07, IADR-0117 決定3, #293, 04_workflows/03_reporting-cycle:
+    // T-6, FR-06/07, IADR-0120 決定3, #293, 04_workflows/03_reporting-cycle:
     // 上位方針は**本文**まで散文ドラフトへ届く。従来は GetLatestConfirmed で取得済みの上位報告書から
     // PeriodKey だけを使い、PolicySummary（＝上位方針の本文）を破棄していたため、LLM は
     // 「週報の目標との差異評価」を書けなかった。参照連鎖がリンクとしてしか存在しない状態を解消する。
@@ -427,7 +427,7 @@ public class ReportAutoGeneratorTests
         ctx.ParentPolicy.Summary.Should().Contain("半導体を重点監視");
     }
 
-    // T-7, IADR-0117 決定3, 03_reporting-cycle「上位方針の欠落」: 上位が未確定でも生成は継続する
+    // T-7, IADR-0120 決定3, 03_reporting-cycle「上位方針の欠落」: 上位が未確定でも生成は継続する
     // （例外にしない）。文脈は null＝「参照できなかった」ことをプロンプト側が明記する。
     [Fact]
     public async Task 上位方針が未確定なら文脈は空のまま生成を継続する()
@@ -443,7 +443,7 @@ public class ReportAutoGeneratorTests
         ctx.ParentPolicy.Should().BeNull();
     }
 
-    // T-6, IADR-0117 決定3: 月報の上位は前月の月報（ParentKind(Monthly) == Monthly）。
+    // T-6, IADR-0120 決定3: 月報の上位は前月の月報（ParentKind(Monthly) == Monthly）。
     // 最上位ゆえ自種別を遡るという既存の階層定義が、feed-forward でもそのまま効くことを固定する。
     [Fact]
     public async Task 月報の上位方針は前月の月報の本文になる()
@@ -459,7 +459,7 @@ public class ReportAutoGeneratorTests
         monthly.ParentPolicy.Summary.Should().Contain("現金比率");
     }
 
-    // T-6, IADR-0117 決定3: PolicySummary（確定すると取引に効くフィールド）へ上位方針の本文を
+    // T-6, IADR-0120 決定3: PolicySummary（確定すると取引に効くフィールド）へ上位方針の本文を
     // 混ぜてはならない（IADR-0115 決定4「自動生成では新しい方針を機械に提案させない」）。
     // 上位方針は散文の文脈としてのみ渡す。同じ値でも投入先で意味が正反対になるため明示的に固定する。
     [Fact]

@@ -14,7 +14,7 @@ namespace AiStockTrading.Report.Worker.Foundation.Adapters;
 //   報告書は発注を伴わないため、安全側＝捏造しない定型散文（数値には一切関与しない）。
 // - ADR-0010: /complete は匿名エンドポイントゆえ s2s トークンは付けない。リトライはゲートウェイ側一元化に委ね重ねない。
 // - IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する。既定オフ＝機微を既定でログ基盤へ流さない。
-// - IADR-0117 決定1/2: purpose は要求ごとに種別（context.Kind）から決める。purposeOverride は構成
+// - IADR-0120 決定1/2: purpose は要求ごとに種別（context.Kind）から決める。purposeOverride は構成
 //   LlmGateway:Purpose の明示設定で、指定時は全種別へ適用する（既存デプロイの非破壊）。
 internal sealed class HttpReportNarrativeDrafter(
     HttpClient httpClient,
@@ -29,7 +29,7 @@ internal sealed class HttpReportNarrativeDrafter(
         ArgumentNullException.ThrowIfNull(context);
         var prompt = ReportNarrativePromptBuilder.Build(context);
 
-        // IADR-0117 決定1, #291: 報告書は方針階層（月報→週報→日報→取引）をなす方針書であり、上位ほど難度が高い。
+        // IADR-0120 決定1, #291: 報告書は方針階層（月報→週報→日報→取引）をなす方針書であり、上位ほど難度が高い。
         // 種別ごとの purpose を送ることで基盤の Llm:Routing:PurposeModels が種別ごとのモデルを解決する。
         // 従来は単一の固定値を送っており、基盤に該当エントリが無いため 3 種別すべてが DefaultModel へ着地していた。
         var purpose = string.IsNullOrWhiteSpace(purposeOverride)
@@ -44,7 +44,7 @@ internal sealed class HttpReportNarrativeDrafter(
 
             // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
             // 1024 のままだと思考が上限を食い、途中で切れた文章がそのまま成果物になる（安全網なし）。
-            // IADR-0117 決定1: Model は引き続き明示しない（null）＝モデルの決定権は基盤の LlmRouter に残す。
+            // IADR-0120 決定1: Model は引き続き明示しない（null）＝モデルの決定権は基盤の LlmRouter に残す。
             // AST がモデル ID を持つと NonZdrModels による除外や版数改定へ追随できず、許可一覧との整合も崩れる。
             var request = new CompletionRequest(prompt, MaxTokens: 4096, Model: null, confidentiality, purpose);
             using var response = await httpClient

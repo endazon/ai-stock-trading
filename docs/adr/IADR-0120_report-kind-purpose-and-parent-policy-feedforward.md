@@ -1,5 +1,5 @@
 ---
-title: IADR-0117 報告書を種別ごとの purpose で生成し、上位方針の本文を散文の文脈として feed-forward する
+title: IADR-0120 報告書を種別ごとの purpose で生成し、上位方針の本文を散文の文脈として feed-forward する
 type: impl-adr
 status: Accepted
 related_ids:
@@ -25,7 +25,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md (取引判断の LLM モデル固定・Accepted)"
 ---
 
-# IADR-0117: 報告書の種別別 purpose と上位方針の feed-forward
+# IADR-0120: 報告書の種別別 purpose と上位方針の feed-forward
 
 - 状態: Accepted
 - 日付: 2026-07-30
@@ -42,6 +42,11 @@ plan_refs:
   ADR-0011 §決定「報告書生成の LLM は別扱い。基盤の既定モデルを用いてよい」は、報告書を方針書と
   位置づける以上整合しないため、新 ADR による改定を起案依頼済み。
 - 仕様書: `docs/specs/20260730_issue-291-293_report-model-and-feedforward.md`。
+- **採番の経緯**: 当初 `IADR-0117` で起票したが、並行 PR [#294](https://github.com/endazon/ai-stock-trading/pull/294)
+  （`IADR-0117_owner-position-close-path`）が同番号を先に確保しており、0118 / 0119 も同系列の
+  [#297](https://github.com/endazon/ai-stock-trading/pull/297) / [#298](https://github.com/endazon/ai-stock-trading/pull/298)
+  が使用中だったため、**本 IADR を 0120 へ改番した**。IADR 番号は develop へマージされた時点で確定するため、
+  open な PR が並走すると着手時の「最大+1」では衝突する。先着側を動かすと連鎖するので、単発の本 PR 側を動かした。
 
 ## コンテキストと課題
 

@@ -12,7 +12,7 @@ public interface IReportNarrativeDrafter
 // 散文ドラフトの文脈（LLM プロンプトの素材）。数値は集計済みの参考値として渡すが、LLM に再計算はさせない（提示のみ）。
 // Kind/PeriodLabel/Markets で対象種別・期間・市場を踏まえた散文を書けるようにする。
 //
-// FR-07, IADR-0117 決定3, #293, 04_workflows/03_reporting-cycle:
+// FR-07, IADR-0120 決定3, #293, 04_workflows/03_reporting-cycle:
 // ParentPolicy は**上位方針**（日報なら当週の週報・週報なら当月の月報・月報なら前月の月報）。
 // null 可＝上位が未確定であることを表す（プロンプト側でその旨を明記する＝捏造しない）。
 //
@@ -27,7 +27,7 @@ public sealed record ReportNarrativeContext(
     string PolicySummary,
     ParentPolicyReference? ParentPolicy = null);
 
-// FR-07, IADR-0117 決定3: 上位方針の参照（期間キーと本文）。
+// FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。
 // 期間キーと本文を 1 つの record に束ねることで「片方だけ在る」状態を表現不能にする
 // （計画の業務フローが求める「上位方針の目標との差異評価」は本文が要り、出典を示すには期間キーが要る。
 // どちらが欠けても意味をなさないため、欠損の表現は record ごと null の 1 通りに閉じる）。

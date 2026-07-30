@@ -38,7 +38,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var buyCount = fills.Count(f => f.Side == TradeSide.Buy);
         var sellCount = fills.Count(f => f.Side == TradeSide.Sell);
 
-        // FR-07, IADR-0117 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
+        // FR-07, IADR-0120 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
         // 期間キーと本文の**両方が揃ったときだけ**参照とする。片方だけでは差異評価も出典提示もできないため、
         // 欠損は「上位未確定」の 1 通りに閉じる（プロンプト側がその旨を明記する＝捏造しない）。
         var parentPolicy = !string.IsNullOrWhiteSpace(request.BasedOn) && !string.IsNullOrWhiteSpace(request.ParentPolicySummary)
@@ -117,7 +117,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
 
 // 報告書ドラフト生成の要求。Kind で日報/週報/月報を切り替える。Fills は集計対象の約定列（#63 台帳の実データ連携は #22 後続）。
 //
-// FR-07, IADR-0117 決定3, #293: ParentPolicySummary は上位方針（BasedOn が指す報告書）の本文。
+// FR-07, IADR-0120 決定3, #293: ParentPolicySummary は上位方針（BasedOn が指す報告書）の本文。
 // BasedOn（期間キー）だけでは「上位方針の目標との差異評価」が書けないため本文を伴わせる。
 // null＝上位未確定。既定 null により既存の呼び出し側は非破壊で通る。
 public sealed record DraftRequest(

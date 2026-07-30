@@ -92,7 +92,7 @@ public class HttpReportNarrativeDrafterTests
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("report-narrative");
     }
 
-    // T-2, FR-06/11, IADR-0117 決定1, #291: 構成の purpose 上書きが無いとき、送出する purpose は
+    // T-2, FR-06/11, IADR-0120 決定1, #291: 構成の purpose 上書きが無いとき、送出する purpose は
     // **要求ごとに種別から決まる**。従来は単一の固定値を送っており、基盤の PurposeModels に該当
     // エントリが無いため 3 種別すべてが DefaultModel へ着地していた（種別がルーティングに届かない）。
     [Theory]
@@ -108,7 +108,7 @@ public class HttpReportNarrativeDrafterTests
         doc.RootElement.GetProperty("purpose").GetString().Should().Be(expected);
     }
 
-    // T-3, IADR-0117 決定2: LlmGateway:Purpose を明示設定したデプロイでは**全種別へ上書き適用**する。
+    // T-3, IADR-0120 決定2: LlmGateway:Purpose を明示設定したデプロイでは**全種別へ上書き適用**する。
     // 構成値を単に削ると設定済みのデプロイで挙動が変わるため、既定値だけを外し上書きの意味を残す。
     [Theory]
     [InlineData(ReportKind.Daily)]
@@ -122,7 +122,7 @@ public class HttpReportNarrativeDrafterTests
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("report-narrative");
     }
 
-    // IADR-0071 / IADR-0117 決定1: モデルの決定権は基盤の LlmRouter に残す。AST はモデル ID を持たない
+    // IADR-0071 / IADR-0120 決定1: モデルの決定権は基盤の LlmRouter に残す。AST はモデル ID を持たない
     // （持つと NonZdrModels による除外や版数改定へ追随できず、Models 許可一覧との整合も崩れる）。
     [Fact]
     public async Task モデルは明示せず基盤のルーティングに委ねる()

@@ -45,7 +45,7 @@ public static class ReportNarrativePromptBuilder
         sb.AppendLine($"翌期間の方針要旨（参考）: {context.PolicySummary}");
         sb.AppendLine();
 
-        // FR-07, IADR-0117 決定3, #293, 04_workflows/03_reporting-cycle:
+        // FR-07, IADR-0120 決定3, #293, 04_workflows/03_reporting-cycle:
         // 上位方針（日報→週報 / 週報→月報 / 月報→前月の月報）の本文を提示し、差異評価を求める。
         // 計画の業務フローは「AI がドラフト生成＝上位方針の目標との差異評価＋翌期間の目標案」と定めており、
         // 期間キーだけでは差異評価が書けない。上位が未確定なら**その旨を明記**する（捏造させない）。

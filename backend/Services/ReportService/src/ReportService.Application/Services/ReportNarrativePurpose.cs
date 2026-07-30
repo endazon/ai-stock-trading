@@ -2,7 +2,7 @@ using AiStockTrading.Report.Domain;
 
 namespace AiStockTrading.Report.Application.Services;
 
-// FR-06/11, IADR-0117 決定1, #291, 04_workflows/03_reporting-cycle:
+// FR-06/11, IADR-0120 決定1, #291, 04_workflows/03_reporting-cycle:
 // 報告書は取引方針を「月報→週報→日報→取引」の階層で管理する方針書であり、上位ほど難度が高い。
 // 種別ごとに用途（purpose）を分けることで、基盤（platform LLM ゲートウェイ）の
 // `Llm:Routing:PurposeModels` が種別ごとのモデルを解決できる（月報=最難関 / 日報=定型）。

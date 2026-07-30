@@ -15,12 +15,12 @@ related_ids:
   - IADR-0032
   - IADR-0071
   - IADR-0115
-  - IADR-0117
+  - IADR-0120
 author: claude
 created: 2026-07-30
 updated: 2026-07-30
 related_specs:
-  - "../adr/IADR-0117_report-kind-purpose-and-parent-policy-feedforward.md"
+  - "../adr/IADR-0120_report-kind-purpose-and-parent-policy-feedforward.md"
   - "../adr/IADR-0115_report-auto-generation-scheduler.md"
   - "../adr/IADR-0071_report-service-remaining.md"
   - "../adr/IADR-0028_daily-policy-sync-api.md"
@@ -60,7 +60,8 @@ related_specs:
   [#421](https://github.com/endazon/microservices-platform/issues/421)、
   [PR #422](https://github.com/endazon/microservices-platform/pull/422)（`PurposeModels` へ
   `report-monthly` / `report-weekly` / `report-daily` を追加）。**別リポ・別 PR**。
-- 本作業の実装判断は [[IADR-0117]]。
+- 本作業の実装判断は [[IADR-0120]]（当初 `IADR-0117` で起票したが、並行 PR #294 が同番号を先に確保し
+  0118 / 0119 も #297 / #298 が使用中だったため 0120 へ改番した）。
 
 ## 背景と問題（原因の確定）
 

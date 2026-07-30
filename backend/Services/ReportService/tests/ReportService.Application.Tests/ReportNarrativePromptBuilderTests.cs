@@ -67,7 +67,7 @@ public class ReportNarrativePromptBuilderTests
         ReportNarrativePromptBuilder.Build(Context()).Should().Be(ReportNarrativePromptBuilder.Build(Context()));
     }
 
-    // T-4, FR-06/07, IADR-0117 決定3, #293, 04_workflows/03_reporting-cycle:
+    // T-4, FR-06/07, IADR-0120 決定3, #293, 04_workflows/03_reporting-cycle:
     // 上位方針（日報なら当週の週報）の**本文**をプロンプトへ載せ、差異評価を指示する。
     // 計画の業務フローは「AI がドラフト生成＝週報の目標との差異評価＋翌営業日の目標案」と明記しており、
     // 期間キーだけでは差異評価が書けない（本文が要る）。
@@ -85,7 +85,7 @@ public class ReportNarrativePromptBuilderTests
         prompt.Should().MatchRegex("差異|達成度");               // 差異評価の指示
     }
 
-    // T-5, IADR-0117 決定3, 03_reporting-cycle「上位方針の欠落」:
+    // T-5, IADR-0120 決定3, 03_reporting-cycle「上位方針の欠落」:
     // 上位が未確定なら**その旨を明記**する。捏造せず、参照できなかった事実を散文へ反映させる。
     [Fact]
     public void 上位方針が未確定ならその旨を明記する()
@@ -95,7 +95,7 @@ public class ReportNarrativePromptBuilderTests
         prompt.Should().MatchRegex("上位方針.*(未確定|参照していません|参照できません)");
     }
 
-    // T-4, IADR-0117 決定3: 月報の上位は「前月の月報」（ParentKind(Monthly) == Monthly）。
+    // T-4, IADR-0120 決定3: 月報の上位は「前月の月報」（ParentKind(Monthly) == Monthly）。
     // 自種別の継続案（PolicySummary）と紛れないよう、上位はその呼称で提示する。
     [Fact]
     public void 月報の上位は前月の月報として提示する()
