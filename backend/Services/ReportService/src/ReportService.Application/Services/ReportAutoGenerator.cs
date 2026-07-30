@@ -81,10 +81,16 @@ public sealed class ReportAutoGenerator(
         var fills = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
+        //
+        // FR-07, IADR-0120 決定3, #293: 上位方針は **PeriodKey だけでなく本文まで**散文ドラフトへ渡す。
+        // 従来は取得済みの parent から PeriodKey のみを使い PolicySummary を破棄していたため、計画
+        // （04_workflows/03_reporting-cycle）が求める「上位方針の目標との差異評価」を LLM が書けなかった。
+        // 渡し先は散文の文脈のみ。方針文（policy）へは混ぜない（IADR-0115 決定4・ADR-0003）。
         var draft = await draftService.BuildDraftAsync(
             new DraftRequest(
                 due.Kind, due.PeriodKey, due.PeriodStart, settings.Markets, settings.AssumptionsVersion,
-                parent?.Report.PeriodKey, policy, fills, CurrentPrices: null),
+                parent?.Report.PeriodKey, policy, fills, CurrentPrices: null,
+                ParentPolicySummary: parent?.Report.PolicySummary),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport

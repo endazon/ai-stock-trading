@@ -66,4 +66,61 @@ public class ReportNarrativePromptBuilderTests
     {
         ReportNarrativePromptBuilder.Build(Context()).Should().Be(ReportNarrativePromptBuilder.Build(Context()));
     }
+
+    // T-4, FR-06/07, IADR-0120 決定3, #293, 04_workflows/03_reporting-cycle:
+    // 上位方針（日報なら当週の週報）の**本文**をプロンプトへ載せ、差異評価を指示する。
+    // 計画の業務フローは「AI がドラフト生成＝週報の目標との差異評価＋翌営業日の目標案」と明記しており、
+    // 期間キーだけでは差異評価が書けない（本文が要る）。
+    [Fact]
+    public void 上位方針の期間キーと本文を含め差異評価を指示する()
+    {
+        var prompt = ReportNarrativePromptBuilder.Build(Context() with
+        {
+            ParentPolicy = new("weekly-2026-W29", "今週は半導体セクターを重点監視し、1 銘柄あたりの建玉を 2 単位までとする"),
+        });
+
+        prompt.Should().Contain("週報");                        // 日報の上位は週報
+        prompt.Should().Contain("weekly-2026-W29");
+        prompt.Should().Contain("半導体セクターを重点監視");     // 本文がそのまま入る
+        prompt.Should().MatchRegex("差異|達成度");               // 差異評価の指示
+    }
+
+    // T-5, IADR-0120 決定3, 03_reporting-cycle「上位方針の欠落」:
+    // 上位が未確定なら**その旨を明記**する。捏造せず、参照できなかった事実を散文へ反映させる。
+    [Fact]
+    public void 上位方針が未確定ならその旨を明記する()
+    {
+        var prompt = ReportNarrativePromptBuilder.Build(Context());  // ParentPolicy 未指定
+
+        prompt.Should().MatchRegex("上位方針.*(未確定|参照していません|参照できません)");
+    }
+
+    // T-4, IADR-0120 決定3: 月報の上位は「前月の月報」（ParentKind(Monthly) == Monthly）。
+    // 自種別の継続案（PolicySummary）と紛れないよう、上位はその呼称で提示する。
+    [Fact]
+    public void 月報の上位は前月の月報として提示する()
+    {
+        var prompt = ReportNarrativePromptBuilder.Build(Context(ReportKind.Monthly) with
+        {
+            ParentPolicy = new("monthly-2026-06", "6 月は現金比率を 30% 以上に保つ"),
+        });
+
+        prompt.Should().Contain("前月の月報");
+        prompt.Should().Contain("monthly-2026-06");
+        prompt.Should().Contain("現金比率");
+    }
+
+    // T-8, FR-16 回帰: 上位方針を足しても「数値はコード集計が唯一の権威」という制約は崩さない。
+    // 上位方針の本文に数値が含まれ得るため、再計算禁止の指示が残っていることを明示的に固定する。
+    [Fact]
+    public void 上位方針を載せても数値の再計算禁止の指示は残る()
+    {
+        var prompt = ReportNarrativePromptBuilder.Build(Context() with
+        {
+            ParentPolicy = new("weekly-2026-W29", "週次の損失上限は 5000 円とする"),
+        });
+
+        prompt.Should().MatchRegex("再計算|改変|変更しない");
+        prompt.Should().Contain("散文");
+    }
 }

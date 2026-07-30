@@ -76,7 +76,9 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
     return new HttpReportNarrativeDrafter(http,
         sp.GetRequiredService<ILogger<HttpReportNarrativeDrafter>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
-        cfg["LlmGateway:Purpose"] ?? "report-narrative",
+        // IADR-0120 決定1/2: 未設定なら要求ごとに種別から purpose（report-daily/weekly/monthly）を決める。
+        // 明示設定時は全種別へ上書き適用する（LlmGateway__Purpose を設定済みのデプロイを壊さない）。
+        cfg["LlmGateway:Purpose"],
         // IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
 });
