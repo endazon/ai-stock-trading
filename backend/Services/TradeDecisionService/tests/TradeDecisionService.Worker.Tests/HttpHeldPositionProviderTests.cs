@@ -26,8 +26,8 @@ public class HttpHeldPositionProviderTests
     // OpenPositionView（RiskManagement）の web 既定 JSON（camelCase・列挙は数値）。
     private const string TwoPositions = """
         [
-          {"symbol":"AAPL","market":1,"side":0,"quantity":4072,"averageEntryPrice":20.5,"stopLossPrice":19.0},
-          {"symbol":"7203","market":0,"side":1,"quantity":100,"averageEntryPrice":2500,"stopLossPrice":2600}
+          {"symbol":"AAPL","market":1,"side":0,"quantity":4072,"entryPrice":20.5,"stopLossPrice":19.0},
+          {"symbol":"7203","market":0,"side":1,"quantity":100,"entryPrice":2500,"stopLossPrice":2600}
         ]
         """;
 
