@@ -1,7 +1,7 @@
 ---
 title: AST 取引台帳とブローカ実ポジションの定期突合（検知・記録のみ・是正しない）
 type: spec
-status: review
+status: accepted
 related_ids: [FR-05, FR-09, FR-10, FR-11, UC-02, UC-06, ADR-0002]
 author: endazon (with Claude Code)
 created: 2026-07-30
@@ -19,7 +19,9 @@ plan_refs:
 
 ## 起点となる計画書・課題（トレーサビリティ）
 
-- 機能要求（FR）: FR-05（発注・注文状態の追跡）／FR-10（リスク統制）／FR-11（監査）／FR-09（通知）
+- 機能要求（FR）: FR-05（発注・注文状態の追跡。**拡張解釈**＝計画書本文は「自 AST が出した注文の状態追跡」を指す。
+  ブローカ実ポジションとの突合はその延長で、乖離が統制の入力を狂わせるという意味では FR-10 が直接の根拠）／
+  FR-10（リスク統制）／FR-11（監査）／FR-09（通知）
 - ADR: [ADR-0002](../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md)（証券会社連携）
 - 関連 IADR: [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（取引台帳と射影）／
   [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md)・[IADR-0092](../adr/IADR-0092_reservation-broker-probe-moomoo.md)
@@ -110,6 +112,8 @@ Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken
 - **前回**報告したシグネチャと同一なら再報告しない（10 分ごとに Discord を叩かない）。
 - 乖離が解消したら報告済みシグネチャを消す（同じ乖離が再発したら再び報告する）。
 - 状態はプロセス内のみ。再起動後に 1 度だけ再報告され得るが、監査上は無害（重複は `MessageId` で識別できる）。
+- **単一レプリカ前提**。現行 Helm は `replicas: 1` 固定で、購読は 1 Pod に閉じる。水平スケールする際は
+  durable な重複排除（`IWithdrawalNotificationStore` と同型）へ置き換えること（IADR-0118 に明記）。
 - `N` は構成キーにしない（`PositionCloseService` の窓と同じ方針＝運用で触る値ではない）。
 
 ### 5. 是正しない
@@ -180,12 +184,12 @@ paper では `IBrokerPositionSource` が存在せず構造的に無害。Helm / 
 
 ## 受け入れ基準（`docs/DEFINITION_OF_DONE.md` と併せて）
 
-- [ ] AST 台帳とブローカ実ポジションの乖離が定期的に検知され、監査・通知へ届く
-- [ ] 一過性の未反映で誤検知しない（連続 N 回）／同一乖離で通知が繰り返されない
-- [ ] 照会不能（不明）を「建玉ゼロ」と取り違えない
-- [ ] 是正（自動発注）を行わない
-- [ ] paper で構造的に無害。SIMULATE 限定・実弾 OFF・Helm / values / Migration が不変
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] AST 台帳とブローカ実ポジションの乖離が定期的に検知され、監査・通知へ届く
+- [x] 一過性の未反映で誤検知しない（連続 N 回）／同一乖離で通知が繰り返されない
+- [x] 照会不能（不明）を「建玉ゼロ」と取り違えない
+- [x] 是正（自動発注）を行わない
+- [x] paper で構造的に無害。SIMULATE 限定・実弾 OFF・Helm / values / Migration が不変
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外
 
