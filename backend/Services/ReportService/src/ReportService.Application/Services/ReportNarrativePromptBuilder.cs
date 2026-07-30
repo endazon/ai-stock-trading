@@ -44,10 +44,39 @@ public static class ReportNarrativePromptBuilder
         sb.AppendLine();
         sb.AppendLine($"翌期間の方針要旨（参考）: {context.PolicySummary}");
         sb.AppendLine();
+
+        // FR-07, IADR-0117 決定3, #293, 04_workflows/03_reporting-cycle:
+        // 上位方針（日報→週報 / 週報→月報 / 月報→前月の月報）の本文を提示し、差異評価を求める。
+        // 計画の業務フローは「AI がドラフト生成＝上位方針の目標との差異評価＋翌期間の目標案」と定めており、
+        // 期間キーだけでは差異評価が書けない。上位が未確定なら**その旨を明記**する（捏造させない）。
+        var parentLabel = ParentLabel(context.Kind);
+        if (!string.IsNullOrWhiteSpace(context.ParentPolicySummary))
+        {
+            var parentKey = string.IsNullOrWhiteSpace(context.ParentPeriodKey) ? "期間キー不明" : context.ParentPeriodKey;
+            sb.AppendLine($"上位方針（{parentLabel}・{parentKey}・確定済み）:");
+            sb.AppendLine(context.ParentPolicySummary.Trim());
+            sb.AppendLine();
+            sb.AppendLine($"当期の振り返りでは、上記の{parentLabel}方針の目標に対する達成度と差異を評価してください。");
+        }
+        else
+        {
+            sb.AppendLine($"上位方針（{parentLabel}）は未確定のため参照していません。上位方針との差異評価は行わず、その旨を散文に明記してください。");
+        }
+
+        sb.AppendLine();
         sb.AppendLine("上記を踏まえ、市況所感・当期の振り返り・翌期間の見通しを簡潔な散文で述べてください。数値の羅列や再計算はしないこと。");
 
         return sb.ToString();
     }
+
+    // 上位の呼称。月報の上位は「前月の月報」であり、自種別の呼称と紛れないようにする
+    // （ReportPolicyDraft.ParentKind(Monthly) == Monthly＝最上位ゆえ自種別を遡るため）。
+    private static string ParentLabel(ReportKind kind) => kind switch
+    {
+        ReportKind.Daily => "週報",
+        ReportKind.Weekly => "月報",
+        _ => "前月の月報",
+    };
 
     private static string Num(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
 }

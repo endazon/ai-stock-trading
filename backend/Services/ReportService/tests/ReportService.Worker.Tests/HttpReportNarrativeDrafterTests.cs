@@ -20,9 +20,14 @@ public class HttpReportNarrativeDrafterTests
         ReportKind.Daily, "daily-2026-07-18", "2026-07-18", ["JP"],
         new PnlSummary(1m, 0m, 0m, 1m, 0m, 1, 1, 1), "翌日は継続");
 
-    private static HttpReportNarrativeDrafter Drafter(HttpMessageHandler handler, ILogger<HttpReportNarrativeDrafter>? logger = null, bool logPrompts = false) =>
+    // 既存テストは purpose 上書きあり（従来挙動）を既定とする。種別ごとの purpose は purposeOverride: null で検証する。
+    private static HttpReportNarrativeDrafter Drafter(
+        HttpMessageHandler handler,
+        ILogger<HttpReportNarrativeDrafter>? logger = null,
+        bool logPrompts = false,
+        string? purposeOverride = "report-narrative") =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
-            logger ?? NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", "report-narrative", logPrompts);
+            logger ?? NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", purposeOverride, logPrompts);
 
     [Fact]
     public async Task 送信成功_Sent_true_は_散文本文を返す()
@@ -85,6 +90,48 @@ public class HttpReportNarrativeDrafterTests
         doc.RootElement.GetProperty("prompt").GetString().Should().Contain("日報");
         doc.RootElement.GetProperty("confidentiality").GetString().Should().Be("internal");
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("report-narrative");
+    }
+
+    // T-2, FR-06/11, IADR-0117 決定1, #291: 構成の purpose 上書きが無いとき、送出する purpose は
+    // **要求ごとに種別から決まる**。従来は単一の固定値を送っており、基盤の PurposeModels に該当
+    // エントリが無いため 3 種別すべてが DefaultModel へ着地していた（種別がルーティングに届かない）。
+    [Theory]
+    [InlineData(ReportKind.Daily, "report-daily")]
+    [InlineData(ReportKind.Weekly, "report-weekly")]
+    [InlineData(ReportKind.Monthly, "report-monthly")]
+    public async Task 上書き未設定なら種別ごとのpurposeを送る(ReportKind kind, string expected)
+    {
+        var handler = new CapturingHandler("""{"text":"散文","sent":true}""");
+        await Drafter(handler, purposeOverride: null).DraftNarrativeAsync(Ctx with { Kind = kind });
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("purpose").GetString().Should().Be(expected);
+    }
+
+    // T-3, IADR-0117 決定2: LlmGateway:Purpose を明示設定したデプロイでは**全種別へ上書き適用**する。
+    // 構成値を単に削ると設定済みのデプロイで挙動が変わるため、既定値だけを外し上書きの意味を残す。
+    [Theory]
+    [InlineData(ReportKind.Daily)]
+    [InlineData(ReportKind.Monthly)]
+    public async Task 上書きが設定されていれば全種別へ適用する(ReportKind kind)
+    {
+        var handler = new CapturingHandler("""{"text":"散文","sent":true}""");
+        await Drafter(handler, purposeOverride: "report-narrative").DraftNarrativeAsync(Ctx with { Kind = kind });
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("purpose").GetString().Should().Be("report-narrative");
+    }
+
+    // IADR-0071 / IADR-0117 決定1: モデルの決定権は基盤の LlmRouter に残す。AST はモデル ID を持たない
+    // （持つと NonZdrModels による除外や版数改定へ追随できず、Models 許可一覧との整合も崩れる）。
+    [Fact]
+    public async Task モデルは明示せず基盤のルーティングに委ねる()
+    {
+        var handler = new CapturingHandler("""{"text":"散文","sent":true}""");
+        await Drafter(handler, purposeOverride: null).DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly });
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("model").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
