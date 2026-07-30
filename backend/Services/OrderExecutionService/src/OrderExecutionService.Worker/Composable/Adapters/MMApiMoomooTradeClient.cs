@@ -154,6 +154,47 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         return null;
     }
 
+    // #292, IADR-0118: SIMULATE 口座の現在建玉を全対応市場について列挙する。
+    // いずれかの市場で失敗すれば EnsureSucceeded／タイムアウトの例外がそのまま伝播する（部分列挙を返さない）。
+    public async Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+        var positions = new List<MoomooPositionSnapshot>();
+        foreach (var (trdMarket, _) in SupportedMarkets)
+        {
+            var c2s = TrdGetPositionList.C2S.CreateBuilder()
+                .SetHeader(BuildHeader(trdMarket))
+                .SetRefreshCache(true)
+                .Build();
+            var req = TrdGetPositionList.Request.CreateBuilder().SetC2S(c2s).Build();
+            var rsp = (TrdGetPositionList.Response)await SendAsync(() => _trd.GetPositionList(req), cancellationToken)
+                .ConfigureAwait(false);
+            EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetPositionList");
+
+            foreach (TrdCommon.Position p in rsp.S2C.PositionListList)
+                positions.Add(ToPositionSnapshot(p));
+        }
+
+        return positions;
+    }
+
+    // moomoo Position → SDK 非依存スナップショット。moomoo の Qty は常に非負で方向は PositionSide が持つため
+    // 符号付きへ畳む（取引台帳の射影と同じ表現に揃える）。写像は protobuf 依存のため live 検証に委ねる。
+    private static MoomooPositionSnapshot ToPositionSnapshot(TrdCommon.Position p)
+    {
+        var quantity = (int)p.Qty;
+        if (p.PositionSide == (int)TrdCommon.PositionSide.PositionSide_Short)
+            quantity = -quantity;
+
+        return new MoomooPositionSnapshot(
+            Symbol: p.Code,
+            Market: p.TrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates,
+            Quantity: quantity,
+            AverageCost: (decimal)p.CostPrice);
+    }
+
     // 当日注文（GetOrderList）から remark 一致を返す。
     private async Task<MoomooOrderSnapshot?> FindByRemarkInCurrentAsync(
         string remark, int trdMarket, CancellationToken cancellationToken)
@@ -445,13 +486,14 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     public void OnReply_ModifyOrder(MMAPI_Conn client, uint nSerialNo, TrdModifyOrder.Response rsp) => Complete(nSerialNo, rsp);
     // #141, IADR-0092: リコンサイル照会（滞留 Reserved の remark 突合）で履歴注文を列挙する。
     public void OnReply_GetHistoryOrderList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderList.Response rsp) => Complete(nSerialNo, rsp);
+    // #292, IADR-0118: 建玉突合の照会。応答を捨てると GetPositionsAsync が応答待ちのままタイムアウトする。
+    public void OnReply_GetPositionList(MMAPI_Conn client, uint nSerialNo, TrdGetPositionList.Response rsp) => Complete(nSerialNo, rsp);
 
     // ---- MMSPI_Trd（未使用・no-op）----
 
     public void OnReply_UnlockTrade(MMAPI_Conn client, uint nSerialNo, TrdUnlockTrade.Response rsp) { }
     public void OnReply_SubAccPush(MMAPI_Conn client, uint nSerialNo, TrdSubAccPush.Response rsp) { }
     public void OnReply_GetFunds(MMAPI_Conn client, uint nSerialNo, TrdGetFunds.Response rsp) { }
-    public void OnReply_GetPositionList(MMAPI_Conn client, uint nSerialNo, TrdGetPositionList.Response rsp) { }
     public void OnReply_GetMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetMaxTrdQtys.Response rsp) { }
     public void OnReply_GetComboMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetComboMaxTrdQtys.Response rsp) { }
     public void OnReply_GetOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFillList.Response rsp) { }

@@ -68,3 +68,12 @@ internal sealed class DailyPolicyUnconfirmedNotificationConsumer(INotificationSe
     public Task Consume(ConsumeContext<DailyPolicyUnconfirmed> context) =>
         sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
 }
+
+// FR-05, FR-09, FR-10, #292, IADR-0118: 取引台帳とブローカ実ポジションの乖離を購読して通知する。
+// 是正は行わないため、通知が利用者へ届くことが検知の唯一の出口になる。
+internal sealed class PositionReconciliationDriftNotificationConsumer(INotificationSender sender)
+    : IConsumer<PositionReconciliationDrift>
+{
+    public Task Consume(ConsumeContext<PositionReconciliationDrift> context) =>
+        sender.SendAsync(NotificationFormatter.From(context.Message), context.CancellationToken);
+}

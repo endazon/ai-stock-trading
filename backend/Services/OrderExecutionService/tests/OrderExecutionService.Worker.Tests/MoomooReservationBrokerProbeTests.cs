@@ -29,6 +29,9 @@ public class MoomooReservationBrokerProbeTests
             return Task.FromResult(Snapshot);
         }
 
+        public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("予約照合は建玉照会を用いない。");
+
         // 本テストで未使用（発注/取消/単純照会）。
         public Task<MoomooOrderResult> PlaceOrderAsync(MoomooOrderRequest request, CancellationToken ct = default) =>
             throw new NotSupportedException();

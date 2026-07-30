@@ -123,6 +123,20 @@ if (brokerSelection.IsMoomoo)
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 
+// #292, FR-05, FR-10, IADR-0118: ブローカ実ポジションの定期観測（既定有効）。突合はリスク管理が行う。
+// 建玉照会を実装するアダプタ（IBrokerPositionSource）がある構成でのみ配線する。paper は実装しないため
+// 常駐そのものが登録されず、1 度も照会が起きない（構造的な非干渉）。
+builder.Services.Configure<PositionReconciliationOptions>(
+    builder.Configuration.GetSection(PositionReconciliationOptions.SectionName));
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddSingleton<IBrokerPositionSource>(sp =>
+        (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>());
+    // TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddHostedService<BrokerPositionSnapshotService>();
+}
+
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 builder.Services.AddMassTransit(x =>
 {

@@ -217,3 +217,26 @@ internal sealed class DailyPolicyUnconfirmedAuditConsumer(IAuditEventStore store
         return Task.CompletedTask;
     }
 }
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+internal sealed class BrokerPositionsObservedAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<BrokerPositionsObserved>
+{
+    public Task Consume(ConsumeContext<BrokerPositionsObserved> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知を中央監査台帳へ記録する。
+// 是正は伴わないため、この記録が「いつ・どの銘柄で乖離が生じたか」の唯一の永続証跡になる。
+internal sealed class PositionReconciliationDriftAuditConsumer(IAuditEventStore store, IClock clock)
+    : IConsumer<PositionReconciliationDrift>
+{
+    public Task Consume(ConsumeContext<PositionReconciliationDrift> context)
+    {
+        store.Append(AuditEntryFactory.From(context.Message, AuditConsumerHelper.MessageId(context), clock.UtcNow));
+        return Task.CompletedTask;
+    }
+}

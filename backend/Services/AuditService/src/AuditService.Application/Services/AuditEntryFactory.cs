@@ -130,6 +130,21 @@ public static class AuditEntryFactory
         Truncate($"{e.Symbol} 手仕舞い要求 {e.Side} 数量{e.Quantity}@{e.Price}（{e.Actor}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
 
+    // FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測。注文相関を持たないため "position-reconciliation" の
+    // 決定的 GUID を相関にする（観測と乖離検知が同一相関で束ねられ、監査照会でまとめて辿れる）。
+    public static AuditEntry From(BrokerPositionsObserved e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BrokerPositionsObserved), AuditCorrelation.From("position-reconciliation"), Symbol: null,
+        Truncate($"ブローカ建玉を観測 {e.Positions.Count}件"
+            + (e.Positions.Count == 0 ? string.Empty : $": {string.Join(", ", e.Positions.Select(p => $"{p.Symbol}/{p.Market} {p.Quantity}"))}")),
+        AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
+
+    // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知（是正は伴わない）。観測と同一相関で束ねる。
+    public static AuditEntry From(PositionReconciliationDrift e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionReconciliationDrift), AuditCorrelation.From("position-reconciliation"), Symbol: null,
+        Truncate($"建玉の乖離 {e.Drifts.Count}件: "
+            + string.Join(", ", e.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳{d.LedgerQuantity}≠ブローカ{d.BrokerQuantity}({d.Kind})"))),
+        AuditSerialization.Serialize(e), e.DetectedAt, recordedAt);
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }
