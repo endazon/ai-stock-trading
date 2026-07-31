@@ -119,6 +119,13 @@ services:
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
+      # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=fable-5・IADR-0120／MSP#422）
+      # ため所要時間も違う。共通 30 秒では週報・月報が構造的に間に合わず所感がプレースホルダへ縮退していた。
+      # 組込既定（日報 30 秒 / 週報・月報 120 秒）と同じ値を経路B では**明示**する＝live で効いている上限を
+      # マニフェスト上で読めるようにする。空/不正/非正値は組込既定へ倒す（fail-safe）。
+      - { name: LlmGateway__TimeoutSecondsByKind__Daily, value: "30" }
+      - { name: LlmGateway__TimeoutSecondsByKind__Weekly, value: "120" }
+      - { name: LlmGateway__TimeoutSecondsByKind__Monthly, value: "120" }
       # 安全既定 "" ＝プロンプト/生応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。恒常設定では既定オフに寄せる。
       - { name: LlmGateway__LogPrompts, value: "" }

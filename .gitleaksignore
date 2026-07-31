@@ -22,3 +22,10 @@ ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:
 # 現行ツリーでは定数（ParentWeekly）へ括り出して同型の記述を解消済みだが、gitleaks は commit 範囲（履歴）を
 # 走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない＝force-push しない方針）。
 01c54d386770c93be9727fd9c8e18085bb63844a:backend/Services/ReportService/tests/ReportService.Domain.Tests/ReportPolicyDraftTests.cs:generic-api-key:30
+#
+# #308: 上と同型（報告書の自然キーの誤検知）。散文 LLM のタイムアウトを種別ごとに検証するテストで
+# `PeriodKey = "weekly-…"` / `"monthly-…"` と書いた行を generic-api-key ルールが検知した。
+# 現行ツリーでは定数（WeeklyPeriod / MonthlyPeriod）へ括り出して同型の記述を解消済みだが、
+# gitleaks は commit 範囲（履歴）を走査するため当該コミットの finding を fingerprint で無効化する。
+121e18b94f63ea84e0df10873214b7af6114d219:backend/Services/ReportService/tests/ReportService.Worker.Tests/HttpReportNarrativeDrafterTests.cs:generic-api-key:99
+121e18b94f63ea84e0df10873214b7af6114d219:backend/Services/ReportService/tests/ReportService.Worker.Tests/HttpReportNarrativeDrafterTests.cs:generic-api-key:118

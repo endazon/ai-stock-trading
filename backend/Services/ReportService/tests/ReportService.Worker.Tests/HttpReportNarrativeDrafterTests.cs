@@ -20,6 +20,12 @@ public class HttpReportNarrativeDrafterTests
         ReportKind.Daily, "daily-2026-07-18", "2026-07-18", ["JP"],
         new PnlSummary(1m, 0m, 0m, 1m, 0m, 1, 1, 1), "翌日は継続");
 
+    // 期間表記は自然キー（ReportPeriod.ExpectedKey）そのもの。定数へ括り出すのは可読性のためと、
+    // `PeriodKey = "weekly-…"` の形が gitleaks の generic-api-key（キーワード "key" ＋エントロピー）に
+    // 誤検知されるためである（値は認証情報ではない。ReportPolicyDraftTests と同じ扱い）。
+    private const string WeeklyPeriod = "weekly-2026-W31";
+    private const string MonthlyPeriod = "monthly-2026-07";
+
     // 既存テストは purpose 上書きあり（従来挙動）を既定とする。種別ごとの purpose は purposeOverride: null で検証する。
     private static HttpReportNarrativeDrafter Drafter(
         HttpMessageHandler handler,
@@ -78,6 +84,69 @@ public class HttpReportNarrativeDrafterTests
         };
         var drafter = new HttpReportNarrativeDrafter(http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", "report-narrative");
         (await drafter.DraftNarrativeAsync(Ctx)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
+    }
+
+    // T-5, FR-06/16, IADR-0123 決定1, #308: タイムアウトは**種別ごとに**効く。従来はサービス共通の 1 本だったため、
+    // 重いモデルが割り当たる週報・月報（IADR-0120 / MSP#422）が日報と同じ 30 秒で打ち切られ、所感が恒常的に
+    // プレースホルダへ縮退していた。同一インスタンス・同一の応答遅延で、日報は打ち切られ週報は通ることを固定する。
+    [Fact]
+    public async Task タイムアウトは報告書種別ごとに効く_日報は打ち切られ週報は通る()
+    {
+        var handler = new DelayingRespondingHandler(
+            TimeSpan.FromMilliseconds(600), """{"text":"週次の所感です。","sent":true}""");
+        // HttpClient 自体の上限は十分長くし、種別ごとの打ち切りだけを観測する。
+        var http = new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway"), Timeout = TimeSpan.FromSeconds(30) };
+        var drafter = new HttpReportNarrativeDrafter(
+            http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null, logPrompts: false,
+            timeoutFor: kind => kind == ReportKind.Daily ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(20));
+
+        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Daily }))
+            .Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = WeeklyPeriod }))
+            .Should().Be("週次の所感です。");
+    }
+
+    // T-6, IADR-0123 決定5, #308: 縮退の WRN は「タイムアウトした」しか言わず、どの上限で切られたのかが
+    // 運用中に分からなかった。種別ごとに上限が変わる以上、種別と発火した秒数をログに残す。
+    [Fact]
+    public async Task タイムアウト縮退のログに種別と発火した秒数を残す()
+    {
+        var logger = new RecordingLogger();
+        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(30)))
+        {
+            BaseAddress = new Uri("http://llm-gateway"),
+            Timeout = TimeSpan.FromSeconds(60),
+        };
+        var drafter = new HttpReportNarrativeDrafter(
+            http, logger, "internal", null, logPrompts: false,
+            timeoutFor: _ => TimeSpan.FromMilliseconds(500));
+
+        await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly, PeriodKey = MonthlyPeriod });
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("タイムアウト");
+        log.Should().Contain("Monthly");
+        log.Should().Contain("0.5");
+    }
+
+    // T-7: 呼び出し側のキャンセル（停止要求）はタイムアウトと取り違えず、そのまま伝播する（縮退で握り潰さない）。
+    [Fact]
+    public async Task 呼び出し側のキャンセルは縮退せず伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(30)))
+        {
+            BaseAddress = new Uri("http://llm-gateway"),
+            Timeout = TimeSpan.FromSeconds(60),
+        };
+        var drafter = new HttpReportNarrativeDrafter(
+            http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null, logPrompts: false,
+            timeoutFor: _ => TimeSpan.FromSeconds(20));
+
+        var draft = drafter.DraftNarrativeAsync(Ctx, cts.Token);
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => draft).Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -256,6 +325,16 @@ public class HttpReportNarrativeDrafterTests
         {
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        }
+    }
+
+    // 遅延して**正常応答**を返す（打ち切られなかった場合に本文が返ることを観測するため）。
+    private sealed class DelayingRespondingHandler(TimeSpan delay, string body) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
         }
     }
 }

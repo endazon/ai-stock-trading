@@ -18,7 +18,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
-using System.Globalization;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 const string ServiceName = "ai-stock-trading.report-service";
@@ -58,10 +57,13 @@ builder.Services.AddScoped<AppSvc>();
 // 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する（IADR-0071 決定1・#11 IADR-0061 と同形）。
 // LlmGateway:BaseUrl 未設定/不正 URI は現行プレースホルダ（定型散文）＝既定オフ。設定時のみ実照会し、送信拒否/失敗/
 // タイムアウト/空応答はプレースホルダ散文へ倒す（数値には一切関与しない・FR-16）。選択は解決時に構成を読む
-// （起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。LLM は応答が遅いため HttpClient の
-// タイムアウトは構成可能（LlmGateway:TimeoutSeconds・未設定/非正値は既定 30 秒＝fail-safe）。
+// （起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。
+//
+// IADR-0123 決定1/2, #308: LLM は応答が遅く、しかも所要時間は**報告書種別ごとに違う**（種別ごとに別モデルが
+// 割り当たる・IADR-0120）。タイムアウトは種別ごとに解決し（ReportNarrativeTimeouts）、要求単位で適用する。
+// HttpClient 自体の Timeout には解決値の最大を置く＝要求単位の打ち切りが壊れても無制限に待たない上限（多層防御）。
 builder.Services.AddHttpClient("report-llm",
-    c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]));
+    c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max);
 builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
 builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
 {
@@ -80,7 +82,9 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
         // 明示設定時は全種別へ上書き適用する（LlmGateway__Purpose を設定済みのデプロイを壊さない）。
         cfg["LlmGateway:Purpose"],
         // IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
-        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
+        // IADR-0123 決定1: 要求ごとに種別のタイムアウトを解決する（日報 30 秒 / 週報・月報 120 秒が組込既定）。
+        timeoutFor: NarrativeTimeouts(cfg).For);
 });
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため
@@ -200,10 +204,14 @@ app.Run();
 
 // IADR-0071 決定1（#11 IADR-0061 決定2 と同形）: 報告書散文 LLM ゲートウェイのタイムアウト（秒）。
 // 未設定・不正・非正値は既定 30 秒（fail-safe）。無限待ちや 0 秒にはしない。
-static TimeSpan ParseTimeout(string? value) =>
-    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds) && seconds > 0
-        ? TimeSpan.FromSeconds(seconds)
-        : TimeSpan.FromSeconds(30);
+// IADR-0123, #308: 報告書散文 LLM のタイムアウト（種別別）。解決順は
+// LlmGateway:TimeoutSecondsByKind:{Daily,Weekly,Monthly} → LlmGateway:TimeoutSeconds（全種別）→ 組込既定。
+// 空・非数値・非正値はいずれの段でも「未設定」として次段へ倒す（fail-safe）。
+static ReportNarrativeTimeouts NarrativeTimeouts(IConfiguration cfg) => new(
+    cfg["LlmGateway:TimeoutSeconds"],
+    cfg["LlmGateway:TimeoutSecondsByKind:Daily"],
+    cfg["LlmGateway:TimeoutSecondsByKind:Weekly"],
+    cfg["LlmGateway:TimeoutSecondsByKind:Monthly"]);
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }
