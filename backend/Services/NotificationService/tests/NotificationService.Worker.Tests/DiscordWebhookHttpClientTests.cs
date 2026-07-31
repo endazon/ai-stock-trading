@@ -47,6 +47,28 @@ public class DiscordWebhookHttpClientTests
         recorder.Entries.Should().NotContain(e => e.Contains(WebhookUrl, StringComparison.Ordinal));
     }
 
+    // 応答が返らない経路（接続拒否・DNS 失敗・タイムアウト）は IHttpClientLogger.LogRequestFailed を通る。
+    // ここでも URL が出ず、切り分けに要る情報（宛先ホスト・例外）は残ることを固定する。
+    [Fact]
+    public async Task 送信が例外で失敗しても_URL_は現れず失敗が記録される()
+    {
+        var recorder = new RecordingLoggerProvider();
+        var services = NewServices(recorder);
+        services.AddDiscordWebhookHttpClient();
+        services.AddHttpClient(DiscordWebhookHttpClientExtensions.ClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new ThrowingHandler());
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => CreateSender(provider).SendAsync(Message());
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        recorder.Entries.Should().Contain(e =>
+            e.Contains("HTTP 送信失敗", StringComparison.Ordinal)
+            && e.Contains("https://discord.com/***", StringComparison.Ordinal));
+        recorder.Entries.Should().NotContain(e => e.Contains(WebhookUrl, StringComparison.Ordinal));
+        recorder.Entries.Should().NotContain(e => e.Contains("wh-test-token", StringComparison.Ordinal));
+    }
+
     // 抑止は Webhook クライアントに閉じる。他の名前付きクライアント（risk-kill-switch 等）の既定ログは変えない。
     [Fact]
     public async Task 他の名前付きクライアントの既定リクエストログは変わらない()
@@ -90,6 +112,14 @@ public class DiscordWebhookHttpClientTests
         new(provider.GetRequiredService<IHttpClientFactory>().CreateClient(DiscordWebhookHttpClientExtensions.ClientName),
             WebhookUrl,
             provider.GetRequiredService<ILogger<DiscordWebhookNotificationSender>>());
+
+    // 応答を返さず送出時に失敗するハンドラ（接続拒否相当）。.NET の HttpRequestException は URI を含まない。
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
+    }
 
     private sealed class StubHandler(HttpStatusCode status) : HttpMessageHandler
     {

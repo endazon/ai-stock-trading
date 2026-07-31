@@ -92,8 +92,9 @@ services.AddHttpClient(ClientName)
 | --- | --- | --- |
 | 1 | Webhook URL が平文で現れない | `Webhook_送信のログに_URL_が平文で現れない`（URL 全体・トークン片の双方を否定） |
 | 2 | 送信成否のログは残る | 同上（`https://discord.com/***` と `204` を**肯定**で固定。空振り検出を兼ねる）／`送信失敗時はステータスがログに残る`（`429`） |
-| 3 | 他クライアントの挙動不変 | `他の名前付きクライアントの既定リクエストログは変わらない`（`risk-kill-switch` の URI がログに**出ること**を固定） |
-| 4 | Webhook 未設定時の no-op 不変 | 既存 `NotificationSenderFactoryTests`（変更なし・そのまま緑） |
+| 3 | 応答が返らない失敗（接続拒否・DNS 失敗・タイムアウト）でも URL が出ない | `送信が例外で失敗しても_URL_は現れず失敗が記録される`（`IHttpClientLogger.LogRequestFailed` 経路。`HTTP 送信失敗` と伏せた宛先を**肯定**で固定） |
+| 4 | 他クライアントの挙動不変 | `他の名前付きクライアントの既定リクエストログは変わらない`（`risk-kill-switch` の URI がログに**出ること**を固定） |
+| 5 | Webhook 未設定時の no-op 不変 | 既存 `NotificationSenderFactoryTests`（変更なし・そのまま緑） |
 
 テストは本番と同じ登録（`AddDiscordWebhookHttpClient()`）を使い、**一次ハンドラだけ**を差し替える
 （`ConfigurePrimaryHttpMessageHandler`）。ログ経路は本番と同一のまま検証するため、
