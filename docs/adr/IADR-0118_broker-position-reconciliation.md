@@ -131,6 +131,11 @@ IADR-0113 と同じ理由。副作用が**読み取り照会のみ**で、発注
 
 ### 状態をインメモリに置く理由と、その前提
 
+> **2026-07-31 追記: 本節の決定は [IADR-0121](IADR-0121_position-drift-state-durable.md) により置き換えられた**
+> （[#305](https://github.com/endazon/ai-stock-trading/issues/305)）。追跡状態は DB 単一行＋並行トークン
+> （`position_drift_state`）へ移り、単一レプリカ前提は解消された。本 ADR の他の決定（決定 1〜5 の判定意味論・
+> 是正しない方針）は不変であり、「Migration 無し」だけが更新される。以下は当時の判断の記録として残す。
+
 乖離の権威は**毎回の観測**であって履歴ではない。再起動後は連続条件を数え直し、乖離が継続していれば
 1 度だけ再報告される。監査は `MessageId` で重複を識別でき、通知も 1 通で済むため、専用テーブルを持つ価値がない。
 
@@ -142,11 +147,14 @@ IADR-0113 と同じ理由。副作用が**読み取り照会のみ**で、発注
 
 リスク管理サービスを水平スケールする際は、本トラッカーを durable な重複排除（`IWithdrawalNotificationStore`
 と同型の DB 単一行）へ置き換えること。本 ADR は単一レプリカ前提のもとでの決定である。
+——この置き換えを実施したのが IADR-0121 である。
 
 ## 影響・追随
 
 - **実弾ゲート（閂 0〜4）に差分ゼロ。** 増えるのは読み取り照会のみ。SIMULATE 限定・実弾 OFF は不変。
 - DB スキーマ変更なし（Migration 無し）。Helm / values / compose / `.env.example` は不変。
+  （**IADR-0121 で更新**: 追跡状態の durable 化により `position_drift_state` テーブル 1 つが追加された。
+  Helm / values / compose / `.env.example` は引き続き不変。）
 - `Shared.Contracts` にイベント 2 件（`BrokerPositionsObserved` / `PositionReconciliationDrift`）と
   型 2 件（`BrokerPositionSnapshot` / `PositionDriftItem`）を追加する。契約ガード 3 点
   （baseline / URN 固定 / 監査 Consumer）に追随済み。
