@@ -86,11 +86,14 @@ public sealed class ReportAutoGenerator(
         // 従来は取得済みの parent から PeriodKey のみを使い PolicySummary を破棄していたため、計画
         // （04_workflows/03_reporting-cycle）が求める「上位方針の目標との差異評価」を LLM が書けなかった。
         // 渡し先は散文の文脈のみ。方針文（policy）へは混ぜない（IADR-0115 決定4・ADR-0003）。
+        //
+        // IADR-0125 決定4, #310: 渡すのは**方針の実体だけ**（Substance）。累積済みのレコードを持つ環境では
+        // 上位方針の本文が定型文で膨らんでおり、そのまま渡すとプロンプトの大半が前置きで埋まる。
         var draft = await draftService.BuildDraftAsync(
             new DraftRequest(
                 due.Kind, due.PeriodKey, due.PeriodStart, settings.Markets, settings.AssumptionsVersion,
                 parent?.Report.PeriodKey, policy, fills, CurrentPrices: null,
-                ParentPolicySummary: parent?.Report.PolicySummary),
+                ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary)),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
