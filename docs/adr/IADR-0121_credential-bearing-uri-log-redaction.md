@@ -90,7 +90,7 @@ Serilog は OTLP で collector へ送るため、これらは **Loki に蓄積**
 `ObservabilityExtensions` の `AddHttpClientInstrumentation()` により、HTTP クライアントアクティビティの
 `url.full` タグには**フル URL（パス込み）**が載る（ローカル実送信で実測）。したがって **トレース（Tempo）側には
 Webhook URL が残る**。本 ADR はログ経路（Loki）に対する決定であり、トレース側の対策は共有 shim の計装
-（全サービス共通）に手を入れるため別途扱う。
+（全サービス共通）に手を入れるため [#313](https://github.com/endazon/ai-stock-trading/issues/313) で別途扱う。
 
 ## 代替案（棄却）
 

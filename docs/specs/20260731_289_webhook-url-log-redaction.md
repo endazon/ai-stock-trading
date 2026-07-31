@@ -124,4 +124,4 @@ System.Net.Http|POST|url.full=http://localhost:18289/api/webhooks/wh-test-id/wh-
 
 つまり**トレース（Tempo）側には Webhook URL が残る**。これはログ経路（Loki）とは別の出口であり、
 対策は共有 shim（全 11 サービスのトレース計装）に手を入れることになるため本 issue のスコープ外とし、
-別途起票して扱う。#289 の受け入れ基準はいずれもログを対象としており、本 PR で充足する。
+追跡用に [#313](https://github.com/endazon/ai-stock-trading/issues/313) を起票して扱う。#289 の受け入れ基準はいずれもログを対象としており、本 PR で充足する。
