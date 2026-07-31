@@ -1,5 +1,6 @@
 extern alias RiskManagementWorker;
 
+using System.Data;
 using AiStockTrading.RiskManagement.Application.Ports;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -95,20 +96,42 @@ public sealed class PositionDriftStateConcurrencyE2ETests : IAsyncLifetime
     [Fact]
     public async Task 初回行の同時挿入は実DBでも片方だけが勝つ()
     {
-        // InMemory では到達できない経路（主キー衝突 23505）。例外を呼び出し側へ漏らさず false へ写像する。
-        await using var dbA = NewContext();
+        // InMemory では到達できない経路（主キー衝突 23505 → DbUpdateException）を実 DB で通す。
+        //
+        // 単に 2 つのコンテキストから逐次 TrySave しても**この経路には入らない**。後発の TrySave が行う
+        // Find が先発のコミット済み行を見つけてしまい、手前の版不一致判定で false になるからである。
+        // Task.WhenAll による真の同時実行は、どちらの Find がどちらの INSERT より先かが非決定でありフレークする。
+        //
+        // そこで **REPEATABLE READ のスナップショット**で「行が無い」という読みを固定する。Postgres は
+        // トランザクション最初の文でスナップショットを取るため、先に 1 度読んでおけば以降の Find は
+        // 他トランザクションのコミットを見ない。一方で一意制約は実データに対して効くため、INSERT は
+        // 確実に 23505 になる——同時挿入と同じ状況を決定的に再現できる。
         await using var dbB = NewContext();
-        var storeA = new EfPositionDriftStateStore(dbA);
+        await using var tx = await dbB.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
         var storeB = new EfPositionDriftStateStore(dbB);
 
-        storeA.Get().Should().Be(PositionDriftState.Initial);
-        storeB.Get().Should().Be(PositionDriftState.Initial, "双方が「行なし」を読んだ状態から同時に INSERT する");
+        // この読みがスナップショットを確定させる（以降 dbB からは「行なし」に見え続ける）。
+        storeB.Get().Should().Be(PositionDriftState.Initial);
 
-        storeA.TrySave(new PositionDriftState("A", 1, string.Empty, 0)).Should().BeTrue();
+        // 別接続（＝別レプリカ）が先に行を作ってコミットする。
+        await using (var dbA = NewContext())
+        {
+            new EfPositionDriftStateStore(dbA).TrySave(new PositionDriftState("A", 1, string.Empty, 0))
+                .Should().BeTrue();
+        }
 
+        // **本テストが主張どおりの経路を通ることの証明**: ここが Initial でなければ TrySave 内部の Find も
+        // 行を見つけてしまい、以降の false は「版不一致」による別経路になる（23505 は通らない）。
+        storeB.Get().Should().Be(
+            PositionDriftState.Initial,
+            "スナップショットが他トランザクションのコミットを見ない＝TrySave は INSERT を試みるしかない");
+
+        // dbB は依然「行なし」を読むため INSERT を試み、一意制約違反（23505）になる。
         var act = () => storeB.TrySave(new PositionDriftState("B", 1, string.Empty, 0));
 
-        act.Should().NotThrow().Which.Should().BeFalse();
+        act.Should().NotThrow("主キー衝突を呼び出し側へ漏らさない").Which.Should().BeFalse();
+
+        await tx.RollbackAsync();
 
         await using var verify = NewContext();
         new EfPositionDriftStateStore(verify).Get().ObservedSignature
