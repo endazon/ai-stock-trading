@@ -20,6 +20,12 @@ public class HttpReportNarrativeDrafterTests
         ReportKind.Daily, "daily-2026-07-18", "2026-07-18", ["JP"],
         new PnlSummary(1m, 0m, 0m, 1m, 0m, 1, 1, 1), "翌日は継続");
 
+    // 期間表記は自然キー（ReportPeriod.ExpectedKey）そのもの。定数へ括り出すのは可読性のためと、
+    // `PeriodKey = "weekly-…"` の形が gitleaks の generic-api-key（キーワード "key" ＋エントロピー）に
+    // 誤検知されるためである（値は認証情報ではない。ReportPolicyDraftTests と同じ扱い）。
+    private const string WeeklyPeriod = "weekly-2026-W31";
+    private const string MonthlyPeriod = "monthly-2026-07";
+
     // 既存テストは purpose 上書きあり（従来挙動）を既定とする。種別ごとの purpose は purposeOverride: null で検証する。
     private static HttpReportNarrativeDrafter Drafter(
         HttpMessageHandler handler,
@@ -96,7 +102,7 @@ public class HttpReportNarrativeDrafterTests
 
         (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Daily }))
             .Should().Be(ReportNarrativeDefaults.PlaceholderText);
-        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = "weekly-2026-W31" }))
+        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = WeeklyPeriod }))
             .Should().Be("週次の所感です。");
     }
 
@@ -115,7 +121,7 @@ public class HttpReportNarrativeDrafterTests
             http, logger, "internal", null, logPrompts: false,
             timeoutFor: _ => TimeSpan.FromMilliseconds(500));
 
-        await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly, PeriodKey = "monthly-2026-07" });
+        await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly, PeriodKey = MonthlyPeriod });
 
         var log = string.Join("\n", logger.Messages);
         log.Should().Contain("タイムアウト");
