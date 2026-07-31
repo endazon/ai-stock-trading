@@ -8,6 +8,7 @@ using AiStockTrading.TradeDecision.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Options;
@@ -68,7 +69,9 @@ builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 
 // #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する
 // （費用統制サービスが購読して月次計上。HTTP /costs/record は OwnerOnly のため使わない）。
-// 単価は LlmPricing:InputPer1kTokens / OutputPer1kTokens（円・既定 0）。fail-safe: 未設定=0 円＝統制判定に影響しない。
+// #303, IADR-0121 決定2/3: 単価は**応答が名乗った実効モデル**で引く（用途別モデル割当でモデルが混在するため）。
+// モデル別は LlmPricing:PerModel:<model-id>:InputPer1kTokens / OutputPer1kTokens（円/1k）。
+// 未設定なら従来キー LlmPricing:InputPer1kTokens / OutputPer1kTokens（global 単一ペア）へ倒れる＝後方互換。
 // 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
 builder.Services.AddScoped<ILlmUsageReporter>(sp =>
 {
@@ -76,8 +79,7 @@ builder.Services.AddScoped<ILlmUsageReporter>(sp =>
     return new PublishingLlmUsageReporter(
         sp.GetRequiredService<IPublishEndpoint>(),
         sp.GetRequiredService<IClock>(),
-        ParsePricePer1k(cfg["LlmPricing:InputPer1kTokens"]),
-        ParsePricePer1k(cfg["LlmPricing:OutputPer1kTokens"]),
+        BuildLlmPriceTable(cfg),
         sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>());
 });
 
@@ -106,11 +108,14 @@ static TimeSpan ParseTimeout(string? value) =>
         ? TimeSpan.FromSeconds(seconds)
         : TimeSpan.FromSeconds(30);
 
-// 単価の構成読み取り（円/1k トークン）。未設定・不正・負値は 0（fail-safe）。
-static decimal ParsePricePer1k(string? value) =>
-    decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) && price > 0m
-        ? price
-        : 0m;
+// #303, IADR-0121 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
+//（未知モデル＝表の最大単価 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
+static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
+    LlmPriceTable.From(
+        cfg.GetSection("LlmPricing:PerModel").GetChildren()
+            .Select(m => (Model: m.Key, Input: m["InputPer1kTokens"], Output: m["OutputPer1kTokens"])),
+        cfg["LlmPricing:InputPer1kTokens"],
+        cfg["LlmPricing:OutputPer1kTokens"]);
 
 // FR-08, IADR-0072 決定5: RAG 取得件数（TopK）。未設定・不正・非正値は既定 5（fail-safe）。
 static int ParseTopK(string? value) =>

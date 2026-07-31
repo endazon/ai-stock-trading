@@ -218,6 +218,25 @@ Reconciliation:
   `失敗` が継続的に出る場合は照会・保存の恒常障害（DB 権限・接続・プローブ実装の不具合）を疑う。
 - **停止**: `Reconciliation__Enabled=false` に戻して再デプロイすれば次回巡回から走査しない。
 
+## LLM 単価の定期見直し（#303 / [IADR-0121](../adr/IADR-0121_per-model-llm-pricing.md)）
+
+LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__PerModel__<model-id>__*`・円/1k トークン）で計上する。
+単価は外部の公開価格と為替から導いた値であり、**恒久値ではない**。放置すると月次上限（¥15,000）の判定が
+実態からずれる（過大なら取引機会を失い、過小なら上限を素通りする）。
+
+| 見直し契機 | 期日・条件 | 対応 |
+| --- | --- | --- |
+| **`claude-sonnet-5` の導入価格終了** | **2026-08-31**（$2/$10 は同日までの導入価格） | 公開単価を再確認し `values-local.yaml` の該当行を更新する。`trade-decision`・`report-daily` の計上額が直接変わる |
+| 公開単価の改定・モデルの追加 | 基盤の `Llm:Routing:PurposeModels` が変わったとき | 新しい実効モデルの行を表へ足す。**足さないと最大単価で過大計上される**（安全側だが実態とずれる） |
+| 為替の乖離 | USD→JPY が投入時の **163.71**（FRED `DEXJPUS`・IADR-0107）から大きく離れたとき | 換算し直して表を更新する |
+
+- 実測に基づく再ベースライン（実消費と月次上限の妥当性）は
+  [#243](https://github.com/endazon/ai-stock-trading/issues/243)、計画側の上限評価は
+  [project-planning#54](https://github.com/endazon/project-planning/issues/54) が担う。本節は**単価の鮮度**のみを扱う。
+- 単価の出所・換算・丸めは `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」に表で残している。
+- 本番（ArgoCD＝`values.yaml`）には単価を置かない。よって本番の計上は従来どおり ¥0 であり、
+  本節の見直しは経路B（`values-local.yaml`）に対して行う。
+
 ## 障害対応（Runbook）
 
 | 事象 | 検知 | 一次対応 | エスカレーション |

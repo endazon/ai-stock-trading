@@ -113,17 +113,32 @@ public class HttpLlmCompletionClientTests
     }
 
     // #79, IADR-0055 決定3: 成功応答のトークンを費用計測へ渡す（計測点は egress）。
+    // #303, IADR-0121 決定1: 応答が名乗った実効モデルも併せて渡す（単価解決の唯一の根拠）。
     [Fact]
-    public async Task 送信成功時_応答トークンを費用計測へ渡す()
+    public async Task 送信成功時_応答トークンと実効モデルを費用計測へ渡す()
     {
         var reporter = new RecordingReporter();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\"}","model":"claude","inputTokens":120,"outputTokens":34,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","inputTokens":120,"outputTokens":34,"sent":true}""");
 
         await Client(handler, reporter).CompleteAsync("prompt");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(120, 34));
+        reporter.Last.Should().Be(new LlmUsage(120, 34, "claude-sonnet-5"));
+    }
+
+    // #303, IADR-0121 決定1: 要求の model は希望値でしかなく、越境ルーティング（ADR-0010）で別モデルへ着地し得る。
+    // 計測へ渡すのは**応答の報告値**であること（希望値で単価を引くと恒久的にずれる）。
+    [Fact]
+    public async Task 要求と異なるモデルで応答しても実効モデルを計測へ渡す()
+    {
+        var reporter = new RecordingReporter();
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"text":"{\"action\":\"Hold\"}","model":"claude-fable-5","inputTokens":10,"outputTokens":5,"sent":true}""");
+
+        await Client(handler, reporter).CompleteAsync("prompt", "claude-sonnet-5");
+
+        reporter.Last.Should().Be(new LlmUsage(10, 5, "claude-fable-5"));
     }
 
     // 送信拒否・失敗時は費用が発生していないため計測しない。
@@ -154,13 +169,14 @@ public class HttpLlmCompletionClientTests
     }
 
     // 応答にトークンが無い（欠落）場合は 0 として扱う。
+    // #303, IADR-0121: モデル名も欠落し得る（上流未更新・部分写像）。null のまま渡し、単価解決側で安全側へ倒す。
     [Fact]
     public async Task 応答にトークンが無い場合は_0_として計測する()
     {
         var reporter = new RecordingReporter();
         await Client(new StubHandler(HttpStatusCode.OK, """{"text":"{}","sent":true}"""), reporter).CompleteAsync("p");
 
-        reporter.Last.Should().Be(new LlmUsage(0, 0));
+        reporter.Last.Should().Be(new LlmUsage(0, 0, null));
     }
 
     // ADR-0010（platform LLM ゲートウェイの越境ルーティング）: 要求に prompt/model/confidentiality/purpose を載せる。
@@ -304,7 +320,7 @@ public class HttpLlmCompletionClientTests
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(80, 12));
+        reporter.Last.Should().Be(new LlmUsage(80, 12, "claude"));
     }
 
     // IADR-0104 決定4: 上限到達で本文が空になる場合も思考トークンは課金済み（IADR-0101）。Sent=true なら計測する。
@@ -318,7 +334,7 @@ public class HttpLlmCompletionClientTests
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(50, 4096));
+        reporter.Last.Should().Be(new LlmUsage(50, 4096, "claude"));
     }
 
     // IADR-0104 決定5: 上限到達は劣化であり拒否ではない。本文は破棄せず判断へ渡す（IADR-0101 の劣化観測を壊さない）。

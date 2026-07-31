@@ -52,9 +52,9 @@ kubectl -n ai-stock-trading get pods
   **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
   経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
   [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
-- **LLM 費用の単価（#279 / IADR-0114 決定6 / IADR-0055）**: trade-decision `LlmPricing__InputPer1kTokens=0.819` /
-  `LlmPricing__OutputPer1kTokens=4.093`（**円 / 1,000 トークン**）。未設定（既定 0）だと毎回 ¥0 計上で
-  月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
+- **LLM 費用の単価（#303 / IADR-0121 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
+  `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
+  未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
 - **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
   SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
   （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
@@ -223,24 +223,40 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
 （実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
 
-### LLM 費用の単価（#279 / IADR-0114 決定6）
+### LLM 費用の単価（#303 / IADR-0121 ／ #279 / IADR-0114 決定6）
 
-`LlmPricing__InputPer1kTokens` / `LlmPricing__OutputPer1kTokens` は **円 / 1,000 トークン**（global 単一ペア・per-model ではない）。
+`LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens` は **円 / 1,000 トークン**の**モデル別**単価。
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
 80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
 
-| 項目 | 値 | 備考 |
-| --- | --- | --- |
-| 公開単価（2026-07 時点） | 入力 $5 / 出力 $25（1M トークン） | opus 系（`claude-opus-5` / `claude-opus-4-8` は同単価） |
-| USD→JPY 換算 | **163.71** | システムの為替源 FRED `DEXJPUS` と同一系列（IADR-0107） |
-| 投入値 | `0.819` / `4.093` | `0.005×163.71=0.81855` / `0.025×163.71=4.09275` を切り上げ側へ丸め（統制に安全） |
+用途別モデル割当（計画 `ADR-0014` / MSP IADR-0112）で `trade-decision`=sonnet-5 / `report-monthly`=fable-5 /
+`report-weekly`=opus-5 / `report-daily`=sonnet-5 とモデルが混在するため、単価は**応答が名乗った実効モデル**
+（`CompletionApiResponse.Model`）で引く。要求側の希望モデルは根拠にしない（ゲートウェイは越境ルーティング
+〈ADR-0010〉で別モデルへ着地し得る）。
+
+| モデル | 公開単価 $/1M（入力/出力） | 投入値 ¥/1k（入力/出力） | 用途 |
+| --- | --- | --- | --- |
+| `claude-fable-5` | 10 / 50 | `1.637` / `8.186` | `report-monthly`（＝表の最大単価） |
+| `claude-opus-5` | 5 / 25 | `0.819` / `4.093` | `report-weekly`・ゲートウェイ既定 |
+| `claude-opus-4-8` | 5 / 25 | `0.819` / `4.093` | ADR-0011 が意図する固定先 |
+| `claude-sonnet-5` | 2 / 10 ※導入価格 | `0.327` / `1.637` | **`trade-decision`**・`report-daily` |
+| `claude-haiku-4-5` | 1 / 5 | `0.164` / `0.819` | （基盤の `diagram-coding`） |
+
+USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入。
+例: `0.002×163.71=0.32742 ≒ 0.327`。
+
+**fail-safe（IADR-0121 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**表の最大単価**
+（現行 fable-5）へ倒れる。0 に倒すと未知モデルが素通りして月次上限が効かなくなるため、過小計上を作らない側へ倒す。
+表そのものが空なら従来キー `LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens`（global 単一ペア・未設定 0）へ倒れる
+＝ per-model を持たない既存デプロイは従来どおり動く。
 
 **恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は **2026-08-31 までの導入価格**であり、
-`Decision:PrimaryModel` を sonnet 等へ切り替えるなら本値の再計算が要る。再評価は
-[#243](https://github.com/endazon/ai-stock-trading/issues/243)。本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
+**同日以降は必ず再確認する**。再評価は [#243](https://github.com/endazon/ai-stock-trading/issues/243)。
+本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
 
 > **過少申告が残る点**: report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても実消費より
-> 少なく見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。
+> 少なく見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。本表は #282 の解消後に
+> 報告書側にもそのまま効く（単価は共有され、種別ごとのモデルで正しく引かれる）。
 
 ### Discord の環境固有 ID（`kubectl set env` は使わない）
 
