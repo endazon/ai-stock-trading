@@ -113,7 +113,7 @@ public class HttpLlmCompletionClientTests
     }
 
     // #79, IADR-0055 決定3: 成功応答のトークンを費用計測へ渡す（計測点は egress）。
-    // #303, IADR-0121 決定1: 応答が名乗った実効モデルも併せて渡す（単価解決の唯一の根拠）。
+    // #303, IADR-0122 決定1: 応答が名乗った実効モデルも併せて渡す（単価解決の唯一の根拠）。
     [Fact]
     public async Task 送信成功時_応答トークンと実効モデルを費用計測へ渡す()
     {
@@ -127,7 +127,7 @@ public class HttpLlmCompletionClientTests
         reporter.Last.Should().Be(new LlmUsage(120, 34, "claude-sonnet-5"));
     }
 
-    // #303, IADR-0121 決定1: 要求の model は希望値でしかなく、越境ルーティング（ADR-0010）で別モデルへ着地し得る。
+    // #303, IADR-0122 決定1: 要求の model は希望値でしかなく、越境ルーティング（ADR-0010）で別モデルへ着地し得る。
     // 計測へ渡すのは**応答の報告値**であること（希望値で単価を引くと恒久的にずれる）。
     [Fact]
     public async Task 要求と異なるモデルで応答しても実効モデルを計測へ渡す()
@@ -169,7 +169,7 @@ public class HttpLlmCompletionClientTests
     }
 
     // 応答にトークンが無い（欠落）場合は 0 として扱う。
-    // #303, IADR-0121: モデル名も欠落し得る（上流未更新・部分写像）。null のまま渡し、単価解決側で安全側へ倒す。
+    // #303, IADR-0122: モデル名も欠落し得る（上流未更新・部分写像）。null のまま渡し、単価解決側で安全側へ倒す。
     [Fact]
     public async Task 応答にトークンが無い場合は_0_として計測する()
     {

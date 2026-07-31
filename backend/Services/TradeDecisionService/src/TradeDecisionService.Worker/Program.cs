@@ -69,7 +69,7 @@ builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 
 // #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する
 // （費用統制サービスが購読して月次計上。HTTP /costs/record は OwnerOnly のため使わない）。
-// #303, IADR-0121 決定2/3: 単価は**応答が名乗った実効モデル**で引く（用途別モデル割当でモデルが混在するため）。
+// #303, IADR-0122 決定2/3: 単価は**応答が名乗った実効モデル**で引く（用途別モデル割当でモデルが混在するため）。
 // モデル別は LlmPricing:PerModel:<model-id>:InputPer1kTokens / OutputPer1kTokens（円/1k）。
 // 未設定なら従来キー LlmPricing:InputPer1kTokens / OutputPer1kTokens（global 単一ペア）へ倒れる＝後方互換。
 // 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
@@ -108,7 +108,7 @@ static TimeSpan ParseTimeout(string? value) =>
         ? TimeSpan.FromSeconds(seconds)
         : TimeSpan.FromSeconds(30);
 
-// #303, IADR-0121 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
+// #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
 //（未知モデル＝表の最大単価 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
 static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
     LlmPriceTable.From(

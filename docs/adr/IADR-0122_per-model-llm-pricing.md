@@ -1,5 +1,5 @@
 ---
-title: IADR-0121 LLM 費用は応答が名乗った実効モデルの単価で計上し、未知モデルは最大単価へ倒す
+title: IADR-0122 LLM 費用は応答が名乗った実効モデルの単価で計上し、未知モデルは最大単価へ倒す
 type: impl-adr
 status: Accepted
 related_ids:
@@ -22,7 +22,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md (取引判断の LLM モデル固定・Accepted)"
 ---
 
-# IADR-0121: LLM 費用のモデル別単価解決
+# IADR-0122: LLM 費用のモデル別単価解決
 
 - 状態: Accepted
 - 日付: 2026-07-31
@@ -42,6 +42,12 @@ plan_refs:
   - [project-planning#54](https://github.com/endazon/project-planning/issues/54) = **計画**（3 種別で別モデルを使う前提の月次上限の妥当性）
 - 前提の更新: IADR-0114 決定6 は「per-model 化は本作業の範囲外」と明記して global 単一ペアを投入した。
   本 IADR はその宿題を解く（決定6 の**単価の出典・換算・経路B 限定という方針は維持**し、粒度だけを変える）。
+- **採番の経緯**: 当初 `IADR-0121` で起票したが、並行 PR [#311](https://github.com/endazon/ai-stock-trading/pull/311)
+  （`IADR-0121_credential-bearing-uri-log-redaction`）が先に develop へマージされて同番号を確保したため、
+  **本 IADR を 0122 へ改番した**（[[IADR-0120]] と同じ事象・同じ解き方）。IADR 番号は develop へマージされた
+  時点で確定するため、open な PR が並走すると着手時の「最大+1」では衝突する。先着側を動かすと連鎖するので、
+  後着の本 PR 側を動かした。ブランチ名 `feat/IADR-0121-per-model-llm-pricing` は
+  IADR-0120（`feat/IADR-0117-...`）の先例に倣い改名していない（PR の同一性を保つため）。
 
 ## コンテキストと課題
 

@@ -218,7 +218,7 @@ Reconciliation:
   `失敗` が継続的に出る場合は照会・保存の恒常障害（DB 権限・接続・プローブ実装の不具合）を疑う。
 - **停止**: `Reconciliation__Enabled=false` に戻して再デプロイすれば次回巡回から走査しない。
 
-## LLM 単価の定期見直し（#303 / [IADR-0121](../adr/IADR-0121_per-model-llm-pricing.md)）
+## LLM 単価の定期見直し（#303 / [IADR-0122](../adr/IADR-0122_per-model-llm-pricing.md)）
 
 LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__PerModel__<model-id>__*`・円/1k トークン）で計上する。
 単価は外部の公開価格と為替から導いた値であり、**恒久値ではない**。放置すると月次上限（¥15,000）の判定が

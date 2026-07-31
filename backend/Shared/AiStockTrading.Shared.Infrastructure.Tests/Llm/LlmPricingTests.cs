@@ -6,7 +6,7 @@ namespace AiStockTrading.Shared.Infrastructure.Tests.Llm;
 
 // NFR（費用）, FR-04, IADR-0055 決定2: LLM 単価適用（純関数）。
 // fail-safe: 単価未設定（0）なら 0 円＝計上しても統制判定に影響しない。
-// IADR-0121 決定2: モデル別単価を #282（report-service）と共有するため TradeDecisionService.Domain から移設した。
+// IADR-0122 決定2: モデル別単価を #282（report-service）と共有するため TradeDecisionService.Domain から移設した。
 public class LlmPricingTests
 {
     [Fact]
@@ -42,7 +42,7 @@ public class LlmPricingTests
         LlmPricing.Compute(0, 0, 100m, 100m).Should().Be(0m);
     }
 
-    // IADR-0121 決定1: 単価表が解決した LlmPrice をそのまま適用できる（計上側が単価を分解しない）。
+    // IADR-0122 決定1: 単価表が解決した LlmPrice をそのまま適用できる（計上側が単価を分解しない）。
     [Fact]
     public void 解決済みの単価をそのまま適用する()
     {

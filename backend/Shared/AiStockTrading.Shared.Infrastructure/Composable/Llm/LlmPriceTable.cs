@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 
-// NFR（費用）, FR-04, IADR-0121 決定2/3: モデル別の単価表。**応答が名乗った実効モデル**から単価を引く。
+// NFR（費用）, FR-04, IADR-0122 決定2/3: モデル別の単価表。**応答が名乗った実効モデル**から単価を引く。
 // 用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で trade-decision=sonnet-5・report-*=fable-5/opus-5/sonnet-5 と
 // モデルが混在したため、global 単一ペアでは実態と乖離する（#303）。ゲートウェイは越境ルーティング（ADR-0010）で
 // 要求と異なるモデルを選び得るので、用途→単価の静的対応では追随できない。
@@ -10,7 +10,7 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 // 単価の解析（InvariantCulture）と fail-safe を本型に閉じ込め、構成の読み出しだけを各サービスに残す
 // （共有プロジェクトへ構成パッケージを持ち込まないため、単価は文字列で受ける）。
 //
-// fail-safe（IADR-0121 決定3・**「安全側 = 0」ではない**）:
+// fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
 //   1. 完全一致（大小無視）           → その単価
 //   2. 未知・モデル名なし かつ 表が非空 → 表の**成分ごとの最大単価**
 //   3. 表が空                         → 既定ペア（従来キー・未設定 0）

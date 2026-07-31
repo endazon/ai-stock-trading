@@ -146,17 +146,17 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
-      # ====== LLM 費用の単価（#303/IADR-0121・#279/IADR-0114 決定6・NFR/IADR-0055）======
+      # ====== LLM 費用の単価（#303/IADR-0122・#279/IADR-0114 決定6・NFR/IADR-0055）======
       # 未設定（既定 0）だと PublishingLlmUsageReporter が毎回 ¥0 を計上し、月次費用上限（¥15,000）が
       # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
       #
       # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」）。
-      # 粒度: **モデル別**（IADR-0121 決定1）。用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で
+      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で
       #   trade-decision=sonnet-5 / report-monthly=fable-5 / report-weekly=opus-5 / report-daily=sonnet-5 と
       #   モデルが混在するため、global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の
       #   過大計上だった）。単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
-      # fail-safe（IADR-0121 決定3・**「安全側 = 0」ではない**）:
+      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
       #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
       #   表が空（本番 values.yaml の状態）→ 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
       #
@@ -165,7 +165,7 @@ services:
       #     sonnet-5 = 2/10、haiku-4-5 = 1/5
       #   USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列・IADR-0107）／小数第 3 位で四捨五入
       #   例: 0.002 × 163.71 = 0.32742 ≒ 0.327、0.010 × 163.71 = 1.6371 ≒ 1.637（sonnet-5）
-      #   ⚠️ **sonnet-5 の $2/$10 は 2026-08-31 までの導入価格**。同日以降は必ず再確認する（IADR-0121 決定5）。
+      #   ⚠️ **sonnet-5 の $2/$10 は 2026-08-31 までの導入価格**。同日以降は必ず再確認する（IADR-0122 決定5）。
       #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243（実測再ベースライン）を更新する。
       #   ※ 報告書散文（report-service）は計上経路自体が無い（#282）。本表は #282 の解消後に報告書へも効く。
       - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（report-monthly）

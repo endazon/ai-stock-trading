@@ -9,7 +9,7 @@ related_ids:
   - ADR-0014
   - IADR-0055
   - IADR-0114
-  - IADR-0121
+  - IADR-0122
 author: claude
 created: 2026-07-31
 updated: 2026-07-31
@@ -31,7 +31,7 @@ plan_refs:
 - ユースケース（UC）: UC-02（日次の取引判断サイクル）
 - 関連 ADR: ADR-0014（用途別モデル割当・Accepted・2026-07-31）、ADR-0011（取引判断のモデル固定）
 - 関連 IADR: IADR-0055（LLM 費用計測イベント）、IADR-0114 決定6（現行単価の根拠）、
-  IADR-0120（報告書の種別別 purpose）、本作業の決定は IADR-0121
+  IADR-0120（報告書の種別別 purpose）、本作業の決定は IADR-0122
 
 ## 目的・背景
 
@@ -142,7 +142,7 @@ Resolve(model):
 
 `claude-sonnet-5` の $2/$10 は **2026-08-31 までの導入価格**であり、為替も変動する。
 時限で失敗するテストは無関係な PR の CI を壊すため採らず、
-`values-local.yaml` のコメント・本仕様書・IADR-0121 の運用節に再確認期日を明記し、
+`values-local.yaml` のコメント・本仕様書・IADR-0122 の運用節に再確認期日を明記し、
 実測再ベースラインの [#243](https://github.com/endazon/ai-stock-trading/issues/243) に寄せる。
 
 ## 受け入れ基準

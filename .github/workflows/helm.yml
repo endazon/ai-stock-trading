@@ -224,13 +224,13 @@ jobs:
           printf '%s' "$out" | grep -A1 'name: WithdrawalEvaluation__Enabled' | grep -q 'value: "true"' \
             || { echo "::error::values-local で WithdrawalEvaluation__Enabled=true が描画されない（撤退基準が発火しない）。"; exit 1; }
           # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
-          # #303 / IADR-0121: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
+          # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
           # （global 単一ペアの opus 基準では trade-decision＝sonnet-5 が約 2.5 倍の過大計上だった）。
           printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens' | grep -q 'value: "0.327"' \
             || { echo "::error::values-local で claude-sonnet-5 の入力単価 0.327 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
           printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens' | grep -q 'value: "1.637"' \
             || { echo "::error::values-local で claude-sonnet-5 の出力単価 1.637 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
-          # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0121 決定3）。
+          # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
           printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
             || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
           # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）を収集へ合流させる。provider の列挙漏れは全体の空振りになる。

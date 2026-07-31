@@ -4,11 +4,11 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.Llm;
 
-// NFR（費用）, FR-04, IADR-0121 決定2/3: 応答が名乗った実効モデルから単価を引く。
+// NFR（費用）, FR-04, IADR-0122 決定2/3: 応答が名乗った実効モデルから単価を引く。
 // fail-safe: 未知モデルは 0 でも既定ペアでもなく**表の最大単価**へ倒す（費用統制の危険側は過小計上のため）。
 public class LlmPriceTableTests
 {
-    // IADR-0121 決定4 の投入値（換算率 163.71・2026-07 時点）。実運用の values-local.yaml と同じ表を使う。
+    // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。実運用の values-local.yaml と同じ表を使う。
     private static readonly (string Model, string? Input, string? Output)[] Catalog =
     [
         ("claude-fable-5", "1.637", "8.186"),

@@ -52,7 +52,7 @@ kubectl -n ai-stock-trading get pods
   **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
   経路B の既定ブローカ paper では擬似約定が台帳へ入るため実効し、moomoo SIMULATE 経路は約定が台帳へ伝播しないため
   [#270](https://github.com/endazon/ai-stock-trading/issues/270) が入るまで DD は 0 のまま（不活性・安全側）。
-- **LLM 費用の単価（#303 / IADR-0121 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
+- **LLM 費用の単価（#303 / IADR-0122 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
   `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
   未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
 - **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
@@ -223,7 +223,7 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
 （実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
 
-### LLM 費用の単価（#303 / IADR-0121 ／ #279 / IADR-0114 決定6）
+### LLM 費用の単価（#303 / IADR-0122 ／ #279 / IADR-0114 決定6）
 
 `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens` は **円 / 1,000 トークン**の**モデル別**単価。
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
@@ -245,7 +245,7 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入。
 例: `0.002×163.71=0.32742 ≒ 0.327`。
 
-**fail-safe（IADR-0121 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**表の最大単価**
+**fail-safe（IADR-0122 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**表の最大単価**
 （現行 fable-5）へ倒れる。0 に倒すと未知モデルが素通りして月次上限が効かなくなるため、過小計上を作らない側へ倒す。
 表そのものが空なら従来キー `LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens`（global 単一ペア・未設定 0）へ倒れる
 ＝ per-model を持たない既存デプロイは従来どおり動く。

@@ -11,7 +11,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0121: 応答が名乗った実効モデルの単価で計上額を決める。
+// NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0122: 応答が名乗った実効モデルの単価で計上額を決める。
 // 用途別モデル割当（ADR-0014 / MSP IADR-0112）で trade-decision=claude-sonnet-5 になったため、
 // opus 単価（¥0.819/¥4.093）のままでは約 2.5 倍の過大計上になる（#303）。
 public class PublishingLlmUsageReporterTests
@@ -23,7 +23,7 @@ public class PublishingLlmUsageReporterTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    // IADR-0121 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
+    // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
     private static LlmPriceTable Prices() => LlmPriceTable.From(
     [
         ("claude-fable-5", "1.637", "8.186"),

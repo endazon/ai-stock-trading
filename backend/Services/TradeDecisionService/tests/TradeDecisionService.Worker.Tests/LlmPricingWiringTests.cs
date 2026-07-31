@@ -11,7 +11,7 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;
 
-// NFR（費用）, FR-04, #303, IADR-0121: モデル別単価（LlmPricing:PerModel:<model>:*）が実際に計上へ届くことを固定する。
+// NFR（費用）, FR-04, #303, IADR-0122: モデル別単価（LlmPricing:PerModel:<model>:*）が実際に計上へ届くことを固定する。
 // 配線が外れると「単価を入れたつもりで global 単一ペア（または 0）のまま」になり、症状が金額のズレなので気づきにくい。
 public class LlmPricingWiringTests
 {
@@ -70,7 +70,7 @@ public class LlmPricingWiringTests
         (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(9.005m);
     }
 
-    // 本番既定（values.yaml に単価を置かない・IADR-0114 決定6 / IADR-0121 決定4）は従来どおり ¥0 計上＝挙動不変。
+    // 本番既定（values.yaml に単価を置かない・IADR-0114 決定6 / IADR-0122 決定4）は従来どおり ¥0 計上＝挙動不変。
     [Fact]
     public async Task 単価未設定なら_0_円で計上される()
     {
