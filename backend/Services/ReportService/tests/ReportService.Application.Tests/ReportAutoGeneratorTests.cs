@@ -626,4 +626,25 @@ public class ReportAutoGeneratorTests
         saved.AssumptionsVersion.Should().Be(7);
         saved.Body.Should().Contain("markets: [JP, US]");
     }
+
+    // IADR-0125 決定3, #310: 自動生成 → 確定 のあとに**取引が読む**テキスト（`GetConfirmedDailyPolicy`＝
+    // `GET /reports/daily-policy`・IADR-0028）が自己矛盾しないことを、生成器と消費側の境界で固定する。
+    // 従来は確定しても本文が「（自動生成ドラフト・未確定）」を名乗り続け、判断プロンプトへそのまま載っていた。
+    [Fact]
+    public async Task 自動生成した日報を確定すると取引が読む方針に未確定の文言が残らない()
+    {
+        var store = new InMemoryReportStore();
+        SeedConfirmed(store, "daily-2026-07-07", ReportKind.Daily, new DateOnly(2026, 7, 7), "押し目買い・上限 3 銘柄");
+        SeedConfirmed(store, "weekly-2026-W28", ReportKind.Weekly, new DateOnly(2026, 7, 6), "今週は半導体を重点監視");
+
+        await NewGenerator(store, WedAfterClose).RunOnceAsync();
+        var generated = store.Get("daily-2026-07-08")!;
+        store.Confirm("daily-2026-07-08", generated.Version, WedAfterClose);
+
+        var policy = new Services.ReportService(store, new FixedClock(WedAfterClose)).GetConfirmedDailyPolicy();
+
+        policy!.Summary.Should().Be("押し目買い・上限 3 銘柄");
+        policy.Summary.Should().NotContain("未確定");
+        policy.Summary.Should().NotContain("見直してください");
+    }
 }
