@@ -146,6 +146,8 @@ BrokerPositionsObservedConsumer (scoped / 1 メッセージ 1 スコープ)
 | `RiskManagementService.Worker/Foundation/Persistence` | `PositionDriftStateRow` / `EfPositionDriftStateStore`（新規）、`DbContext` に DbSet ＋ マッピング |
 | `RiskManagementService.Worker/Migrations` | `AddPositionDriftState`（**新規テーブル 1 つ**） |
 | `RiskManagementService.Worker/Program.cs` | `AddSingleton<PositionDriftTracker>` → `AddScoped` 2 本 |
+| `RiskManagementService.Worker.csproj` | `InternalsVisibleTo` に `AiStockTrading.IntegrationTests` を追加（実 DB での並行制御検証のため永続化層を公開） |
+| `AiStockTrading.IntegrationTests` | `PositionDriftStateConcurrencyE2ETests`（`Category=Integration`・実 PostgreSQL） |
 | `Shared.Contracts` / イベント | **不変**（新規イベント無し・baseline / URN 固定に差分なし） |
 | Helm / values / compose / `.env.example` / 構成キー | **不変**（設定点を 1 つも足さない） |
 | 実弾ゲート（閂 0〜4） | **不変** |
@@ -163,19 +165,26 @@ BrokerPositionsObservedConsumer (scoped / 1 メッセージ 1 スコープ)
 | R-7 | 版不一致 | 古い `Version` での `TrySave` が `false` を返す（ロストアップデートを起こさない） |
 | R-8 | 初期状態 | 未記録の行は「未観測・カウント 0・未報告」を返す（fail-safe＝報告しない側ではなく**数え直す**側） |
 | R-9 | 無駄な書き込み | 乖離ゼロが続く巡回では状態が不変＝**版が進まない**（10 分ごとに DB を叩かない） |
+| R-10 | **実 DB での並行制御** | 実 PostgreSQL（Testcontainers・`Category=Integration`）で ①同版からの同時保存は片方だけ勝ち版が 1 回だけ進む ②**初回行の同時 INSERT（23505）** も例外を漏らさず false ③古い版では何も書かない |
 | 既存 1-9 | 意味論不変 | `PositionDriftTrackerTests` の 9 件（連続条件・dedup・解消・再発・順序非依存・回数構成・下限丸め）が全て緑 |
 | 既存 | consumer | `BrokerPositionsObservedConsumerTests` が全て緑（DI が scoped になっただけ） |
 
+R-6〜R-9 は EF Core InMemory provider で、R-10 は**実 Npgsql** で検証する。本作業の安全性は最終的に
+Npgsql が発行する `UPDATE ... WHERE Id=1 AND Version=@original` の実挙動に依存するため、InMemory だけに
+閉じない（他の単一行ストアの慣習より一段厚くする）。とくに**初回行の同時 INSERT は InMemory では到達できない**
+（共有ストアのため後発の `Find` が必ず行を見つける）ので、実 DB でのみ固定できる。統合テストは既定 CI から
+`Category!=Integration` で除外され、`integration.yml`（nightly / dispatch・Docker 前提）で実走する。
+
 ## 受け入れ基準（`docs/DEFINITION_OF_DONE.md` と併せて）
 
-- [ ] `PositionDriftTracker` の状態がレプリカ間で一貫している（DB 単一行＋並行トークン）
-- [ ] レプリカを増やしても乖離報告が無言で止まらないことがテストで固定されている（R-1・R-4）
-- [ ] 単一レプリカ前提の暗黙依存が明示的な保証（DB の `IsConcurrencyToken`）へ置き換わっている
-- [ ] 方針の理由（とくに競合時にリトライしない根拠）が IADR-0121 に記録されている
-- [ ] IADR-0118 の該当節が本決定で置き換えられたことが追記されている
-- [ ] IADR-0118 の判定意味論・是正しない方針が不変（既存テストが緑）
-- [ ] SIMULATE 限定・実弾 OFF・Helm / values / 構成キーが不変
-- [ ] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
+- [x] `PositionDriftTracker` の状態がレプリカ間で一貫している（DB 単一行＋並行トークン）
+- [x] レプリカを増やしても乖離報告が無言で止まらないことがテストで固定されている（R-1・R-4）
+- [x] 単一レプリカ前提の暗黙依存が明示的な保証（DB の `IsConcurrencyToken`）へ置き換わっている
+- [x] 方針の理由（とくに競合時にリトライしない根拠）が IADR-0121 に記録されている
+- [x] IADR-0118 の該当節が本決定で置き換えられたことが追記されている
+- [x] IADR-0118 の判定意味論・是正しない方針が不変（既存テストが緑）
+- [x] SIMULATE 限定・実弾 OFF・Helm / values / 構成キーが不変
+- [x] `dotnet build` / `dotnet test` / `dotnet format` が green・CI / gitleaks が green
 
 ## スコープ外
 

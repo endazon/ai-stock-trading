@@ -80,6 +80,13 @@ IADR-0118 はこの前提を文章として明記していた（「本 ADR は�
 | `EfPositionDriftStateStore` | 単一行 upsert。`DbUpdateConcurrencyException` を `false` へ写像する |
 | `InMemoryPositionDriftStateStore` | ユニット試験・非 relational 用。**版意味論も実装する**（競合を再現できる） |
 
+並行制御の検証は **InMemory provider に閉じない**。本決定の安全性は最終的に Npgsql が発行する
+`UPDATE ... WHERE Id=1 AND Version=@original` の実挙動に依存するため、実 PostgreSQL の統合テスト
+（`PositionDriftStateConcurrencyE2ETests`・`Category=Integration`）を 1 本置く。とくに**初回行の同時 INSERT
+（主キー衝突 23505）は InMemory では到達できない**（共有ストアのため後発の `Find` が必ず行を見つける）ため、
+実 DB でのみ固定できる経路である。他の単一行ストア（IADR-0085 等）は実 DB テストを持たないが、本 ADR は
+「レプリカ間の read-modify-write を守る」ことが主題であるため一段厚くする。
+
 ### 決定 2: 競合に負けた観測は捨てる（リトライしない）
 
 `TrySave` が `false`（別レプリカが先に状態を進めた）を返したら、その観測は報告せずに終える。
