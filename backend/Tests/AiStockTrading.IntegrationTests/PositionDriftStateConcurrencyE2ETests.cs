@@ -11,7 +11,7 @@ using EfPositionDriftStateStore = RiskManagementWorker::AiStockTrading.RiskManag
 
 namespace AiStockTrading.IntegrationTests;
 
-// #305 / IADR-0121, FR-05/FR-10: 建玉乖離の追跡状態ストアの**並行制御を実 PostgreSQL で**検証する。
+// #305 / IADR-0124, FR-05/FR-10: 建玉乖離の追跡状態ストアの**並行制御を実 PostgreSQL で**検証する。
 //
 // ユニット試験は EF Core InMemory provider で並行トークンを検証しているが、本 PR の安全性は最終的に
 // Npgsql が発行する `UPDATE ... WHERE Id=1 AND Version=@original` の実挙動に依存する。InMemory は

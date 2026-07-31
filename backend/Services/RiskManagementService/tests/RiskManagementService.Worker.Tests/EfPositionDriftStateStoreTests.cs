@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;
 
-// FR-05, FR-10, #305, IADR-0121: 建玉乖離の追跡状態ストア（単一行）の EF 永続化を InMemory DB で検証する。
+// FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態ストア（単一行）の EF 永続化を InMemory DB で検証する。
 // 別コンテキストは「別レプリカ／再起動」の代理。連続観測回数と報告済みシグネチャが跨いで一貫すること、
 // 並行更新に負けた側が**何も書かずに** false を返すこと（ロストアップデートを起こさないこと）を担保する。
 public class EfPositionDriftStateStoreTests

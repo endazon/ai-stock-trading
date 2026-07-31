@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
 
-// FR-05, FR-10, #305, IADR-0121: 建玉乖離の追跡状態ストアの EF 実装（単一行・楽観的排他）。
+// FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態ストアの EF 実装（単一行・楽観的排他）。
 //
 // 連続観測回数と報告済みシグネチャを DB へ永続することで、レプリカ間で状態が一貫する
 // （インメモリでは replicas>1 で観測が Pod へ分散し、乖離が無言で未報告になり得た）。

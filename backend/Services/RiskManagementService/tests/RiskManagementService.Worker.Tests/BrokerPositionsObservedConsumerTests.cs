@@ -25,7 +25,7 @@ public class BrokerPositionsObservedConsumerTests
         public DateOnly Today => DateOnly.FromDateTime(At.UtcDateTime);
     }
 
-    // #305, IADR-0121: 追跡状態は共有ストア経由になった。ここでは 1 レプリカ相当のインメモリストアを与える。
+    // #305, IADR-0124: 追跡状態は共有ストア経由になった。ここでは 1 レプリカ相当のインメモリストアを与える。
     private static PositionDriftTracker NewTracker() =>
         new(new InMemoryPositionDriftStateStore(), NullLogger<PositionDriftTracker>.Instance);
 

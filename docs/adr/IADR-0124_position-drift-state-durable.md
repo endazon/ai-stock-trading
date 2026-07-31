@@ -1,5 +1,5 @@
 ---
-title: IADR-0121 建玉乖離トラッカーの状態は DB 単一行＋並行トークンで持ち、競合に負けた観測は捨てる
+title: IADR-0124 建玉乖離トラッカーの状態は DB 単一行＋並行トークンで持ち、競合に負けた観測は捨てる
 type: impl-adr
 status: Accepted
 related_ids: [FR-05, FR-09, FR-10, FR-11, NFR, UC-02, ADR-0002]
@@ -12,7 +12,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
 ---
 
-# IADR-0121: 建玉乖離トラッカーの状態を durable 化し、単一レプリカ前提を明示的な保証へ置き換える
+# IADR-0124: 建玉乖離トラッカーの状態を durable 化し、単一レプリカ前提を明示的な保証へ置き換える
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

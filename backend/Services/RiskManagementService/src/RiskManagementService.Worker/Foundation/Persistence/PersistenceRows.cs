@@ -186,7 +186,7 @@ internal sealed class WithdrawalNotificationRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-// FR-05, FR-10, #305, IADR-0121: 建玉乖離の報告可否を決める追跡状態の単一行。IADR-0118 はこれをプロセス内に
+// FR-05, FR-10, #305, IADR-0124: 建玉乖離の報告可否を決める追跡状態の単一行。IADR-0118 はこれをプロセス内に
 // 持っていたが、replicas>1 では観測が Pod へ分散して「連続 N 回」条件が満たされず、乖離が例外もログも出さずに
 // 恒久未報告になり得た。Version を並行トークンにして、レプリカ間の read-modify-write を明示的に守る。
 internal sealed class PositionDriftStateRow

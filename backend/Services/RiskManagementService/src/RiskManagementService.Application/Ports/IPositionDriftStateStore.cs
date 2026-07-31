@@ -1,6 +1,6 @@
 namespace AiStockTrading.RiskManagement.Application.Ports;
 
-// FR-05, FR-09, FR-10, #305, IADR-0121: 建玉乖離の報告可否を決める追跡状態。**レプリカ間で共有する**。
+// FR-05, FR-09, FR-10, #305, IADR-0124: 建玉乖離の報告可否を決める追跡状態。**レプリカ間で共有する**。
 //
 // IADR-0118 はこの状態をプロセス内に置いていたが、`BrokerPositionsObserved` は consumer クラス名から導かれる
 // 単一キューで受ける（IADR-0106）ため、replicas>1 では観測が Pod へ分散し「連続 N 回」条件が満たされなくなる。

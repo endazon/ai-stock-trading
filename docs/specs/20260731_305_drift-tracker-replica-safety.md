@@ -27,7 +27,7 @@ plan_refs:
   [IADR-0085](../adr/IADR-0085_paper-withdrawal-notification-dedup.md)（durable な通知重複排除・**本作業が倣う型**）／
   [IADR-0106](../adr/IADR-0106_consumer-endpoint-name-uniqueness.md)（MassTransit のキュー名＝競合コンシューマの構造）／
   [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md)（単一行＋`Version` 楽観的排他）／
-  本作業で新規 [IADR-0121](../adr/IADR-0121_position-drift-state-durable.md)
+  本作業で新規 [IADR-0124](../adr/IADR-0124_position-drift-state-durable.md)
 - 対象 Issue: [#305](https://github.com/endazon/ai-stock-trading/issues/305)（`Refs #305`）・
   親 [#292](https://github.com/endazon/ai-stock-trading/issues/292)
 
@@ -111,7 +111,7 @@ BrokerPositionsObservedConsumer (scoped / 1 メッセージ 1 スコープ)
 振る舞いは**同値**であり、IADR-0118 で書いた既存 9 テストは store 注入へ置換するだけで全て緑のまま通る。
 
 **変わる 1 点**: 再起動をまたいで連続カウントと報告済みが保持される。IADR-0118 は「再起動後に 1 度だけ
-再報告され得るが許容」としていたが、durable 化でその再報告も消える（改善方向・IADR-0121 に記録）。
+再報告され得るが許容」としていたが、durable 化でその再報告も消える（改善方向・IADR-0124 に記録）。
 
 ### 4. 変えないもの
 
@@ -180,7 +180,7 @@ Npgsql が発行する `UPDATE ... WHERE Id=1 AND Version=@original` の実挙�
 - [x] `PositionDriftTracker` の状態がレプリカ間で一貫している（DB 単一行＋並行トークン）
 - [x] レプリカを増やしても乖離報告が無言で止まらないことがテストで固定されている（R-1・R-4）
 - [x] 単一レプリカ前提の暗黙依存が明示的な保証（DB の `IsConcurrencyToken`）へ置き換わっている
-- [x] 方針の理由（とくに競合時にリトライしない根拠）が IADR-0121 に記録されている
+- [x] 方針の理由（とくに競合時にリトライしない根拠）が IADR-0124 に記録されている
 - [x] IADR-0118 の該当節が本決定で置き換えられたことが追記されている
 - [x] IADR-0118 の判定意味論・是正しない方針が不変（既存テストが緑）
 - [x] SIMULATE 限定・実弾 OFF・Helm / values / 構成キーが不変

@@ -168,7 +168,7 @@ builder.Services.AddScoped<StopLossExecutionService>();
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();
-// FR-05, FR-10, #292, #305, IADR-0118, IADR-0121: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。
+// FR-05, FR-10, #292, #305, IADR-0118, IADR-0124: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。
 // 追跡状態は DB 単一行＋並行トークンで持ちレプリカ間で一貫させる（インメモリでは replicas>1 で観測が Pod へ
 // 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。
 builder.Services.AddScoped<IPositionDriftStateStore, EfPositionDriftStateStore>();

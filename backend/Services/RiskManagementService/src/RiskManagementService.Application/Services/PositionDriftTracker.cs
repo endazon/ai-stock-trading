@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-05, FR-09, FR-10, #292, #305, IADR-0118, IADR-0121: 乖離を報告するかの判断。
+// FR-05, FR-09, FR-10, #292, #305, IADR-0118, IADR-0124: 乖離を報告するかの判断。
 //
 // 判定そのものは純関数 PositionDriftDecision が持ち、本クラスは「シグネチャの正準化」と
 // 「状態の読み取り → 判定 → 保存」の束ねに徹する。状態は durable なストア（既定は DB 単一行）にあり、
-// **レプリカ間で一貫**する（IADR-0121）。インメモリ時代は replicas>1 で連続観測が Pod へ分散し、
+// **レプリカ間で一貫**する（IADR-0124）。インメモリ時代は replicas>1 で連続観測が Pod へ分散し、
 // 乖離が例外もログも出さずに恒久未報告になり得た（#305）。
 public sealed class PositionDriftTracker(
     IPositionDriftStateStore store,
@@ -44,7 +44,7 @@ public sealed class PositionDriftTracker(
             return shouldReport;
         }
 
-        // 別レプリカが先に同じ状態を進めた。この観測は捨てて報告しない（リトライしない・IADR-0121 決定 2）。
+        // 別レプリカが先に同じ状態を進めた。この観測は捨てて報告しない（リトライしない・IADR-0124 決定 2）。
         // 競合しても必ずどれか 1 つは勝つため状態は単調に前進し、捨てた内容は乖離が解消するまで毎巡回で
         // 再観測される。失うのは最大 1 巡回分の時間であって報告そのものではない。無言にはしない。
         logger.LogDebug(

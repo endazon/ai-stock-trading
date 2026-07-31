@@ -33,7 +33,7 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // FR-20, FR-09, IADR-0085: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（最後に通知したシグネチャ・単一行）。
     public DbSet<WithdrawalNotificationRow> WithdrawalNotifications => Set<WithdrawalNotificationRow>();
 
-    // FR-05, FR-10, #305, IADR-0121: 建玉乖離の追跡状態（連続観測回数・報告済みシグネチャ・単一行）。
+    // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態（連続観測回数・報告済みシグネチャ・単一行）。
     public DbSet<PositionDriftStateRow> PositionDriftStates => Set<PositionDriftStateRow>();
 
     protected override void OnModelCreating(ModelBuilder mb)
@@ -142,7 +142,7 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.Signature).HasMaxLength(256);
         });
 
-        // FR-05, FR-10, #305, IADR-0121: 建玉乖離の追跡状態（単一行）。Version を並行トークンにして
+        // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態（単一行）。Version を並行トークンにして
         // レプリカ間の read-modify-write を守る（負けた側は何も書かない）。シグネチャは銘柄数に比例して
         // 伸びるため上限を置かない（text）。
         mb.Entity<PositionDriftStateRow>(e =>

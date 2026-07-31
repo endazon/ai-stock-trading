@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-05, FR-09, FR-10, #292, #305, IADR-0118, IADR-0121: 乖離の報告可否。
+// FR-05, FR-09, FR-10, #292, #305, IADR-0118, IADR-0124: 乖離の報告可否。
 // 一過性の未反映（発注直後〜約定反映待ち）で鳴らないための連続観測条件と、通知過多を避けるシグネチャ dedup。
 // #305 以降は追跡状態を共有ストアに置くため、**複数レプリカに分散した観測でも連続条件が成立する**。
 public class PositionDriftTrackerTests
@@ -178,7 +178,7 @@ public class PositionDriftTrackerTests
     [Fact]
     public void 並行更新に負けた観測は報告しないが次の観測で報告できる()
     {
-        // IADR-0121 決定 2: 負けた側は捨てる（リトライしない）。必ずどれか 1 つは勝つため状態は単調に前進し、
+        // IADR-0124 決定 2: 負けた側は捨てる（リトライしない）。必ずどれか 1 つは勝つため状態は単調に前進し、
         // 捨てた内容は乖離が解消するまで毎巡回で再観測される＝失うのは最大 1 巡回分の時間であって報告ではない。
         var store = new LosesNthSaveStore(new InMemoryPositionDriftStateStore(), losingSaveNumber: 2);
         var tracker = NewTracker(store);
