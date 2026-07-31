@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;
 
-// T-7, FR-06/16, IADR-0123 決定1/2/4, #308: 散文 LLM のタイムアウト構成が Program.cs へ結線されていることを固定する。
+// T-8, FR-06/16, IADR-0123 決定1/2/4, #308: 散文 LLM のタイムアウト構成が Program.cs へ結線されていることを固定する。
 //
 // 名前付きクライアント "report-llm" の Timeout は「全種別の解決値の最大」＝要求単位の打ち切りが壊れても
 // 無制限に待たない上限（多層防御）。この値を通して、構成が実際に読まれていることを外側から観測できる。

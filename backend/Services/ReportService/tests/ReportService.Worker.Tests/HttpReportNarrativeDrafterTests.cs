@@ -129,7 +129,7 @@ public class HttpReportNarrativeDrafterTests
         log.Should().Contain("0.5");
     }
 
-    // 呼び出し側のキャンセル（停止要求）はタイムアウトと取り違えず、そのまま伝播する（縮退で握り潰さない）。
+    // T-7: 呼び出し側のキャンセル（停止要求）はタイムアウトと取り違えず、そのまま伝播する（縮退で握り潰さない）。
     [Fact]
     public async Task 呼び出し側のキャンセルは縮退せず伝播する()
     {
