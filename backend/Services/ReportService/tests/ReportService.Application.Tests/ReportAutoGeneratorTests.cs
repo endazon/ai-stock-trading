@@ -474,8 +474,10 @@ public class ReportAutoGeneratorTests
         saved.PolicySummary.Should().NotContain("半導体を重点監視");
     }
 
+    // IADR-0125 決定3, #310: 上位が参照できない事実は残すが、「未確定」というドラフトの状態は名乗らせない
+    // （確定するとそのまま取引方針のテキストになるため、確定後に自己矛盾する）。
     [Fact]
-    public async Task 上位方針が未確定なら_BasedOn_は空でその旨を方針文に明記する()
+    public async Task 上位方針が参照できなければ_BasedOn_は空でその旨を方針文に明記する()
     {
         var store = new InMemoryReportStore();
 
@@ -483,22 +485,67 @@ public class ReportAutoGeneratorTests
 
         var saved = store.Get("daily-2026-07-08")!.Report;
         saved.BasedOn.Should().BeNull();
-        saved.PolicySummary.Should().Contain("週報");
-        saved.PolicySummary.Should().Contain("未確定");
+        saved.PolicySummary.Should().Contain("上位方針（週報）");
+        saved.PolicySummary.Should().NotContain("未確定");
     }
 
+    // T-1, IADR-0125 決定1, #310: 方針文は同種別の直近確定済み方針の**実体だけ**を引き継ぐ。
+    // 従来は前置き（「（自動生成ドラフト・未確定）」「…継続する案です。確定前に内容を見直してください。」）
+    // ごと引き継いでいたため、継続のたびに定型文が積み上がり、確定後も「未確定」を名乗る本文が
+    // 取引判断（G4 の確定方針）へ渡っていた。
     [Fact]
-    public async Task 方針文は同種別の直近確定済み方針の継続案になる()
+    public async Task 方針文は同種別の直近確定済み方針の実体だけを引き継ぐ()
     {
         var store = new InMemoryReportStore();
         SeedConfirmed(store, "daily-2026-07-07", ReportKind.Daily, new DateOnly(2026, 7, 7), "押し目買い・上限 3 銘柄");
+        SeedConfirmed(store, "weekly-2026-W28", ReportKind.Weekly, new DateOnly(2026, 7, 6), "今週は半導体を重点監視");
 
         await NewGenerator(store, WedAfterClose).RunOnceAsync();
 
         var policy = store.Get("daily-2026-07-08")!.Report.PolicySummary;
-        policy.Should().Contain("daily-2026-07-07");
-        policy.Should().Contain("押し目買い・上限 3 銘柄");
-        policy.Should().Contain("未確定");
+        policy.Should().Be("押し目買い・上限 3 銘柄");
+    }
+
+    // T-2, IADR-0125 決定1, #310: 生成 → 確定 → 次の生成 を繰り返しても方針文が伸びない（世代累積しない）。
+    [Fact]
+    public async Task 生成と確定を繰り返しても方針文が累積しない()
+    {
+        var store = new InMemoryReportStore();
+        SeedConfirmed(store, "daily-2026-07-06", ReportKind.Daily, new DateOnly(2026, 7, 6), "押し目買い・上限 3 銘柄");
+
+        // 07-07（火）→ 07-08（水）と 2 世代ぶん、生成のたびに確定する（利用者が承認した状況）。
+        foreach (var (now, key) in new[]
+                 {
+                     (new DateTimeOffset(2026, 7, 7, 7, 0, 0, TimeSpan.Zero), "daily-2026-07-07"),
+                     (WedAfterClose, "daily-2026-07-08"),
+                 })
+        {
+            await NewGenerator(store, now).RunOnceAsync();
+            var versioned = store.Get(key)!;
+            store.Confirm(key, versioned.Version, now);
+        }
+
+        store.Get("daily-2026-07-08")!.Report.PolicySummary.Should().Be(
+            store.Get("daily-2026-07-07")!.Report.PolicySummary);
+    }
+
+    // T-8, IADR-0125 決定4, #310: 散文の文脈へ渡す上位方針（IADR-0120 決定3 の feed-forward）にも実体だけを渡す
+    // ＝累積済みの上位本文がプロンプトを定型文で埋めない。
+    [Fact]
+    public async Task 上位方針は実体だけが散文の文脈へ渡る()
+    {
+        var store = new InMemoryReportStore();
+        var accumulated = string.Join("\n\n",
+            "（自動生成ドラフト・未確定）",
+            "直近の確定済み週報方針（weekly-2026-W27）を継続する案です。確定前に内容を見直してください。",
+            "今週は半導体を重点監視");
+        SeedConfirmed(store, "weekly-2026-W28", ReportKind.Weekly, new DateOnly(2026, 7, 6), accumulated);
+        var drafter = new StubDrafter();
+
+        await NewGenerator(store, WedAfterClose, drafter: drafter).RunOnceAsync();
+
+        var ctx = drafter.Contexts.Single(c => c.Kind == ReportKind.Daily);
+        ctx.ParentPolicy!.Summary.Should().Be("今週は半導体を重点監視");
     }
 
     // ---- 約定の供給 ----
