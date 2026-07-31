@@ -186,6 +186,28 @@ internal sealed class WithdrawalNotificationRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+// FR-05, FR-10, #305, IADR-0121: 建玉乖離の報告可否を決める追跡状態の単一行。IADR-0118 はこれをプロセス内に
+// 持っていたが、replicas>1 では観測が Pod へ分散して「連続 N 回」条件が満たされず、乖離が例外もログも出さずに
+// 恒久未報告になり得た。Version を並行トークンにして、レプリカ間の read-modify-write を明示的に守る。
+internal sealed class PositionDriftStateRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    /// <summary>観測中の乖離の正準シグネチャ。空文字＝乖離なし。</summary>
+    public string ObservedSignature { get; set; } = string.Empty;
+
+    /// <summary>同一シグネチャを連続で観測した回数。</summary>
+    public int ConsecutiveCount { get; set; }
+
+    /// <summary>最後に報告した乖離のシグネチャ。空文字＝未報告（解消時にも空へ戻す）。</summary>
+    public string ReportedSignature { get; set; } = string.Empty;
+
+    /// <summary>楽観的排他制御用の版番号（IADR-0012 と同型）。並行更新に負けた側は何も書かない。</summary>
+    public int Version { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 // FR-19, #154, IADR-0067: 相場操縦検知の入力＝1 注文のライフサイクル要約を DecisionId で保持する行。
 // 承認で作成し、約定・訂正・取消で更新する（可変・射影）。取引台帳（ApprovedOrderRow/TradeFillRow）とは別テーブル。
 // 取引台帳は Filled のみを載せる設計で、本用途の母集団である「約定ゼロで取り消された注文」を構造的に捨てるため、

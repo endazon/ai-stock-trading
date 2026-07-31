@@ -8,6 +8,7 @@ using FluentAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;
@@ -23,6 +24,10 @@ public class BrokerPositionsObservedConsumerTests
 
         public DateOnly Today => DateOnly.FromDateTime(At.UtcDateTime);
     }
+
+    // #305, IADR-0121: 追跡状態は共有ストア経由になった。ここでは 1 レプリカ相当のインメモリストアを与える。
+    private static PositionDriftTracker NewTracker() =>
+        new(new InMemoryPositionDriftStateStore(), NullLogger<PositionDriftTracker>.Instance);
 
     private static ServiceProvider BuildProvider(InMemoryPortfolioLedgerStore ledger, PositionDriftTracker tracker) =>
         new ServiceCollection()
@@ -53,7 +58,7 @@ public class BrokerPositionsObservedConsumerTests
     [Fact]
     public async Task 一致していれば乖離を発行しない()
     {
-        await using var provider = BuildProvider(LedgerWithAapl(100), new PositionDriftTracker());
+        await using var provider = BuildProvider(LedgerWithAapl(100), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
@@ -67,7 +72,7 @@ public class BrokerPositionsObservedConsumerTests
     public async Task 一度きりの乖離では発行しない()
     {
         // 発注直後〜約定が台帳へ届くまでの一過性のズレで鳴らせない。
-        await using var provider = BuildProvider(LedgerWithAapl(100), new PositionDriftTracker());
+        await using var provider = BuildProvider(LedgerWithAapl(100), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
@@ -80,7 +85,7 @@ public class BrokerPositionsObservedConsumerTests
     [Fact]
     public async Task 連続で同一の乖離なら双方の数量つきで発行する()
     {
-        await using var provider = BuildProvider(LedgerWithAapl(100), new PositionDriftTracker());
+        await using var provider = BuildProvider(LedgerWithAapl(100), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
@@ -103,7 +108,7 @@ public class BrokerPositionsObservedConsumerTests
     public async Task 台帳が空でもブローカにだけある建玉を検出する()
     {
         // 手動売買・外部約定。#270 破損期の過大建玉もこの形で現れる。
-        await using var provider = BuildProvider(new InMemoryPortfolioLedgerStore(), new PositionDriftTracker());
+        await using var provider = BuildProvider(new InMemoryPortfolioLedgerStore(), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
@@ -120,7 +125,7 @@ public class BrokerPositionsObservedConsumerTests
     [Fact]
     public async Task 建玉ゼロの観測で台帳側の建玉を乖離として検出する()
     {
-        await using var provider = BuildProvider(LedgerWithAapl(100), new PositionDriftTracker());
+        await using var provider = BuildProvider(LedgerWithAapl(100), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
@@ -137,7 +142,7 @@ public class BrokerPositionsObservedConsumerTests
     public async Task 是正の発注は行わない()
     {
         // 乖離に対して自律的に発注する経路を作らない（IADR-0118）。承認イベントが 1 件も出ないことを固定する。
-        await using var provider = BuildProvider(LedgerWithAapl(100), new PositionDriftTracker());
+        await using var provider = BuildProvider(LedgerWithAapl(100), NewTracker());
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 

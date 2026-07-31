@@ -168,9 +168,11 @@ builder.Services.AddScoped<StopLossExecutionService>();
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();
-// FR-05, FR-10, #292, IADR-0118: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。巡回をまたいで
-// 状態を持つためシングルトン。乖離の権威は毎回の観測であって履歴ではないためインメモリで足りる。
-builder.Services.AddSingleton<PositionDriftTracker>();
+// FR-05, FR-10, #292, #305, IADR-0118, IADR-0121: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。
+// 追跡状態は DB 単一行＋並行トークンで持ちレプリカ間で一貫させる（インメモリでは replicas>1 で観測が Pod へ
+// 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。
+builder.Services.AddScoped<IPositionDriftStateStore, EfPositionDriftStateStore>();
+builder.Services.AddScoped<PositionDriftTracker>();
 
 // ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
 // StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。
