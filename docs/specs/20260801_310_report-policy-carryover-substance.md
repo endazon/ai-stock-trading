@@ -5,7 +5,6 @@ status: done
 related_ids:
   - FR-06
   - FR-07
-  - FR-11
   - UC-01
   - UC-03
   - UC-04
