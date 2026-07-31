@@ -195,6 +195,13 @@ jobs:
           need "② LlmGateway BaseUrl" 'llmgateway-service.microservices-platform'
           # ③ 実 KB（MSP DocumentService・information-collection/report）。
           need "③ KnowledgeBase Documents BaseUrl" 'document-service.microservices-platform'
+          # #308 / IADR-0122: 報告書散文の種別別タイムアウト。共通 30 秒だと週報（opus-5）・月報が構造的に
+          # 間に合わず所感がプレースホルダへ縮退する。経路B は組込既定と同じ値を明示する。
+          for kind in Daily:30 Weekly:120 Monthly:120; do
+            printf '%s' "$out" | grep -A1 "name: LlmGateway__TimeoutSecondsByKind__${kind%%:*}" \
+              | grep -q "value: \"${kind##*:}\"" \
+              || { echo "::error::values-local で LlmGateway__TimeoutSecondsByKind__${kind%%:*}=${kind##*:} が描画されない（週報/月報の所感が縮退する）。"; exit 1; }
+          done
           # Discord 通知（配線恒常化）。
           printf '%s' "$out" | grep -A1 'name: Notifications__Provider' | grep -q 'value: "discord-webhook"' \
             || { echo "::error::values-local で Notifications__Provider=discord-webhook が描画されない（Discord 未配線）。"; exit 1; }
