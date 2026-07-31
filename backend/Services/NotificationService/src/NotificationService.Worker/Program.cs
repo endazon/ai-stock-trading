@@ -30,11 +30,12 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("risk-control", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder"));
 
 // FR-09, IADR-0020: 送信手段の選択（安全既定 no-op）。実 Discord 送信は Notifications:Provider=discord-webhook で明示有効化する。
-builder.Services.AddHttpClient();
+// #289: Webhook URL は資格情報のため、送信専用クライアントの既定リクエストログ（URI を平文で出す）を抑止する。
+builder.Services.AddDiscordWebhookHttpClient();
 builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFactory.Create(
     builder.Configuration["Notifications:Provider"],
     builder.Configuration["Notifications:Discord:WebhookUrl"],
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("discord"),
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(DiscordWebhookHttpClientExtensions.ClientName),
     sp.GetRequiredService<ILoggerFactory>()));
 
 // FR-14, UC-06, IADR-0062: Discord Bot（双方向）。既定は無効（Gateway に接続しない）。

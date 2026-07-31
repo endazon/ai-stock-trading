@@ -17,12 +17,12 @@ related_ids:
   - IADR-0071
   - IADR-0115
   - IADR-0120
-  - IADR-0122
+  - IADR-0123
 author: claude
 created: 2026-08-01
 updated: 2026-08-01
 related_specs:
-  - "../adr/IADR-0122_report-narrative-timeout-by-kind.md"
+  - "../adr/IADR-0123_report-narrative-timeout-by-kind.md"
   - "../adr/IADR-0120_report-kind-purpose-and-parent-policy-feedforward.md"
   - "../adr/IADR-0115_report-auto-generation-scheduler.md"
   - "../adr/IADR-0071_report-service-remaining.md"
@@ -159,5 +159,5 @@ IADR-0120 / [MSP#422](https://github.com/endazon/microservices-platform/pull/422
 - [x] 受け入れ基準 1〜9 を満たす
 - [x] `dotnet build` / `dotnet test` / `dotnet format` 緑
 - [x] `helm template`（既定）が変更前とバイト等価
-- [x] IADR-0122 を作成し、決定と根拠を残す
+- [x] IADR-0123 を作成し、決定と根拠を残す
 - [x] PR に起点 ID（`Refs #308,#295,#283,#279`）を記載

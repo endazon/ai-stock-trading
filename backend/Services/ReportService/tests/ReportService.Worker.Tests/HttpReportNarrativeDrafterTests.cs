@@ -80,7 +80,7 @@ public class HttpReportNarrativeDrafterTests
         (await drafter.DraftNarrativeAsync(Ctx)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
     }
 
-    // T-5, FR-06/16, IADR-0122 決定1, #308: タイムアウトは**種別ごとに**効く。従来はサービス共通の 1 本だったため、
+    // T-5, FR-06/16, IADR-0123 決定1, #308: タイムアウトは**種別ごとに**効く。従来はサービス共通の 1 本だったため、
     // 重いモデルが割り当たる週報・月報（IADR-0120 / MSP#422）が日報と同じ 30 秒で打ち切られ、所感が恒常的に
     // プレースホルダへ縮退していた。同一インスタンス・同一の応答遅延で、日報は打ち切られ週報は通ることを固定する。
     [Fact]
@@ -100,7 +100,7 @@ public class HttpReportNarrativeDrafterTests
             .Should().Be("週次の所感です。");
     }
 
-    // T-6, IADR-0122 決定5, #308: 縮退の WRN は「タイムアウトした」しか言わず、どの上限で切られたのかが
+    // T-6, IADR-0123 決定5, #308: 縮退の WRN は「タイムアウトした」しか言わず、どの上限で切られたのかが
     // 運用中に分からなかった。種別ごとに上限が変わる以上、種別と発火した秒数をログに残す。
     [Fact]
     public async Task タイムアウト縮退のログに種別と発火した秒数を残す()

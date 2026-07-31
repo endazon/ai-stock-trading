@@ -3,7 +3,7 @@ using AiStockTrading.Report.Domain;
 
 namespace AiStockTrading.Report.Application.Services;
 
-// FR-06/16, IADR-0122, #308, 04_workflows/03_reporting-cycle:
+// FR-06/16, IADR-0123, #308, 04_workflows/03_reporting-cycle:
 // 報告書散文 LLM（POST /complete）のタイムアウトを**報告書種別ごとに**解決する純関数。
 //
 // IADR-0120 / platform#422 で種別ごとに別モデルが割り当たった（日報=sonnet-5 / 週報=opus-5 / 月報=fable-5）結果、
@@ -17,7 +17,7 @@ namespace AiStockTrading.Report.Application.Services;
 // 期待値を単体テストで固定するためである（ReportNarrativePurpose と同じ方針）。
 public sealed class ReportNarrativeTimeouts(string? allKinds, string? daily, string? weekly, string? monthly)
 {
-    // IADR-0122 決定2: 日報は現に成功しているため据置（延ばすと遅延検知が鈍る＝退行を作らない）。
+    // IADR-0123 決定2: 日報は現に成功しているため据置（延ばすと遅延検知が鈍る＝退行を作らない）。
     // 週報・月報は重いモデルが割り当てられており 30 秒では構造的に間に合わないため 120 秒。
     // タイムアウトは異常検知の上限であって所要時間の目標値ではない。
     private static readonly TimeSpan DailyDefault = TimeSpan.FromSeconds(30);

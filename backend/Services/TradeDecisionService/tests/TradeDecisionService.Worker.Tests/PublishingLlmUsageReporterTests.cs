@@ -1,0 +1,95 @@
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
+using AiStockTrading.TradeDecision.Application.Ports;
+using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
+using FluentAssertions;
+using MassTransit;
+using MassTransit.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace AiStockTrading.TradeDecision.Worker.Tests;
+
+// NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0122: 応答が名乗った実効モデルの単価で計上額を決める。
+// 用途別モデル割当（ADR-0014 / MSP IADR-0112）で trade-decision=claude-sonnet-5 になったため、
+// opus 単価（¥0.819/¥4.093）のままでは約 2.5 倍の過大計上になる（#303）。
+public class PublishingLlmUsageReporterTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 7, 31, 1, 0, 0, TimeSpan.Zero);
+
+    private sealed class FixedClock : IClock
+    {
+        public DateTimeOffset UtcNow => Now;
+    }
+
+    // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
+    private static LlmPriceTable Prices() => LlmPriceTable.From(
+    [
+        ("claude-fable-5", "1.637", "8.186"),
+        ("claude-opus-5", "0.819", "4.093"),
+        ("claude-opus-4-8", "0.819", "4.093"),
+        ("claude-sonnet-5", "0.327", "1.637"),
+        ("claude-haiku-4-5", "0.164", "0.819"),
+    ]);
+
+    private static async Task<decimal> ReportAsync(LlmUsage usage, LlmPriceTable prices)
+    {
+        var provider = new ServiceCollection().AddMassTransitTestHarness().BuildServiceProvider(true);
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var reporter = new PublishingLlmUsageReporter(
+            harness.Bus, new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
+
+        await reporter.ReportAsync(usage);
+
+        var published = harness.Published.Select<LlmCostIncurred>().Single().Context.Message;
+        published.At.Should().Be(Now);
+        await harness.Stop();
+        return published.Amount;
+    }
+
+    // 基準2（#303）: trade-decision は claude-sonnet-5。入力 1000 × 0.327 + 出力 2000 × 1.637 = 3.601 円。
+    // 従来の opus 単価なら 0.819 + 8.186 = 9.005 円で、約 2.5 倍の過大計上だった。
+    [Fact]
+    public async Task trade_decision_は_sonnet_5_の単価で計上する()
+    {
+        var amount = await ReportAsync(new LlmUsage(1000, 2000, "claude-sonnet-5"), Prices());
+
+        amount.Should().Be(3.601m);
+    }
+
+    // 基準3（#303）: 報告書 3 種別が別モデルへ解決されても、それぞれの単価で計上できる（#282 で経路を足す）。
+    [Theory]
+    [InlineData("claude-fable-5", 18.009)]   // report-monthly: 1.637 + 2×8.186
+    [InlineData("claude-opus-5", 9.005)]     // report-weekly:  0.819 + 2×4.093
+    [InlineData("claude-sonnet-5", 3.601)]   // report-daily:   0.327 + 2×1.637
+    public async Task 報告書の種別ごとのモデルでも実効単価で計上する(string model, double expected)
+    {
+        var amount = await ReportAsync(new LlmUsage(1000, 2000, model), Prices());
+
+        amount.Should().Be((decimal)expected);
+    }
+
+    // 基準4（#303）: 未知モデル・モデル名なしは最大単価（fable-5）へ倒す。0 に倒すと月次上限が効かなくなる。
+    [Theory]
+    [InlineData("claude-sonnet-4-6")]
+    [InlineData(null)]
+    public async Task 未知のモデルは最大単価で計上する(string? model)
+    {
+        var amount = await ReportAsync(new LlmUsage(1000, 2000, model), Prices());
+
+        amount.Should().Be(18.009m);
+    }
+
+    // IADR-0055: 単価未設定でも publish する（金額 0 は統制判定に無害で、計上経路の健全性を保てる）。
+    [Fact]
+    public async Task 単価未設定でも金額_0_で発行する()
+    {
+        var amount = await ReportAsync(new LlmUsage(1000, 2000, "claude-sonnet-5"), LlmPriceTable.From([]));
+
+        amount.Should().Be(0m);
+    }
+}

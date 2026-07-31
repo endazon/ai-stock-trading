@@ -17,7 +17,7 @@ namespace AiStockTrading.Report.Worker.Foundation.Adapters;
 // - IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する。既定オフ＝機微を既定でログ基盤へ流さない。
 // - IADR-0120 決定1/2: purpose は要求ごとに種別（context.Kind）から決める。purposeOverride は構成
 //   LlmGateway:Purpose の明示設定で、指定時は全種別へ適用する（既存デプロイの非破壊）。
-// - IADR-0122 決定1, #308: タイムアウトも要求ごとに種別から決める（timeoutFor）。種別ごとに別モデルが
+// - IADR-0123 決定1, #308: タイムアウトも要求ごとに種別から決める（timeoutFor）。種別ごとに別モデルが
 //   割り当たる（IADR-0120）以上、サービス共通の 1 本では週報・月報が構造的に間に合わない。
 //   timeoutFor 未注入なら従来どおり HttpClient.Timeout のみが効く（非破壊）。
 internal sealed class HttpReportNarrativeDrafter(
@@ -41,7 +41,7 @@ internal sealed class HttpReportNarrativeDrafter(
             ? ReportNarrativePurpose.For(context.Kind)
             : purposeOverride;
 
-        // IADR-0122 決定1, #308: 種別ごとの上限を要求単位で適用する。呼び出し側の停止要求と linked にすることで、
+        // IADR-0123 決定1, #308: 種別ごとの上限を要求単位で適用する。呼び出し側の停止要求と linked にすることで、
         // 「タイムアウト（縮退してよい）」と「停止要求（伝播すべき）」の区別は下の catch の条件式がそのまま担う。
         var timeout = timeoutFor?.Invoke(context.Kind);
         using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -129,7 +129,7 @@ internal sealed class HttpReportNarrativeDrafter(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // IADR-0122 決定5: どの上限で切られたのかを残す（種別ごとに上限が変わるため、秒数が無いと切り分けできない）。
+            // IADR-0123 決定5: どの上限で切られたのかを残す（種別ごとに上限が変わるため、秒数が無いと切り分けできない）。
             // timeout が null（種別別の上限が無い構成）のときは HttpClient 自体の上限で切られている。
             logger.LogWarning(
                 "報告書散文 LLM /complete がタイムアウト（kind={Kind} timeoutSeconds={TimeoutSeconds}）。プレースホルダ散文に倒します。",

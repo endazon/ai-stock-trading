@@ -1,5 +1,5 @@
 ---
-title: IADR-0122 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する
+title: IADR-0123 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する
 type: impl-adr
 status: Accepted
 related_ids:
@@ -26,7 +26,7 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md (取引判断の LLM モデル固定・Accepted)"
 ---
 
-# IADR-0122: 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する
+# IADR-0123: 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する
 
 - 状態: Accepted
 - 日付: 2026-08-01

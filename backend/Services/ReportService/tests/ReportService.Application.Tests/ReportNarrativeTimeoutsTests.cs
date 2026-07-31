@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Application.Tests;
 
-// T-1〜T-4, FR-06/16, IADR-0122, #308: 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する純関数。
+// T-1〜T-4, FR-06/16, IADR-0123, #308: 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する純関数。
 //
 // 週報（opus-5）・月報（fable-5）は日報（sonnet-5）より重いモデルが割り当てられており（IADR-0120 / MSP#422）、
 // サービス共通の 30 秒では構造的に間に合わない（2026-07-31 の経路B live 検証で週報がちょうど 30 秒で縮退）。

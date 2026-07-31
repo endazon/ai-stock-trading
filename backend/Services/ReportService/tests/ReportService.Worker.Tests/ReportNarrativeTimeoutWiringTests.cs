@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;
 
-// T-7, FR-06/16, IADR-0122 決定1/2/4, #308: 散文 LLM のタイムアウト構成が Program.cs へ結線されていることを固定する。
+// T-7, FR-06/16, IADR-0123 決定1/2/4, #308: 散文 LLM のタイムアウト構成が Program.cs へ結線されていることを固定する。
 //
 // 名前付きクライアント "report-llm" の Timeout は「全種別の解決値の最大」＝要求単位の打ち切りが壊れても
 // 無制限に待たない上限（多層防御）。この値を通して、構成が実際に読まれていることを外側から観測できる。
@@ -14,7 +14,7 @@ public class ReportNarrativeTimeoutWiringTests(ReportWorkerWebApplicationFactory
     private static TimeSpan ClientTimeout(IServiceProvider services) =>
         services.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm").Timeout;
 
-    // IADR-0122 決定4: 設定を 1 つも足さない環境（本番 values.yaml は空文字を注入）でも週報・月報は 120 秒。
+    // IADR-0123 決定4: 設定を 1 つも足さない環境（本番 values.yaml は空文字を注入）でも週報・月報は 120 秒。
     // 上限＝最大値なので 120 秒になる。従来はここが 30 秒で、週報が構造的に間に合わなかった。
     [Fact]
     public void 未設定なら上限は組込既定の最大_120秒()
@@ -22,7 +22,7 @@ public class ReportNarrativeTimeoutWiringTests(ReportWorkerWebApplicationFactory
         ClientTimeout(factory.Services).Should().Be(TimeSpan.FromSeconds(120));
     }
 
-    // IADR-0122 決定3: 既存の全種別設定は生きたまま（設定済みデプロイの非破壊）。
+    // IADR-0123 決定3: 既存の全種別設定は生きたまま（設定済みデプロイの非破壊）。
     [Fact]
     public void 全種別設定を入れると上限がその値になる()
     {

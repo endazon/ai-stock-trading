@@ -24,5 +24,8 @@
          本番では platform 本体の Foundation に置き換わる。standalone 起動配線は dev/test/CI 用。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <InternalsVisibleTo Include="RiskManagementService.Worker.Tests" />
+    <!-- #305, IADR-0124: 並行トークン（IsConcurrencyToken）の実 DB（Npgsql）挙動を実コンテナ E2E で
+         検証するため、永続化層（internal）を統合テストへ公開する。 -->
+    <InternalsVisibleTo Include="AiStockTrading.IntegrationTests" />
   </ItemGroup>
 </Project>
