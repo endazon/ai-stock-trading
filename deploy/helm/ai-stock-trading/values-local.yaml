@@ -146,23 +146,38 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
-      # ============ LLM 費用の単価（#279/IADR-0114 決定6・NFR/IADR-0055）============
+      # ====== LLM 費用の単価（#303/IADR-0122・#279/IADR-0114 決定6・NFR/IADR-0055）======
       # 未設定（既定 0）だと PublishingLlmUsageReporter が毎回 ¥0 を計上し、月次費用上限（¥15,000）が
       # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
       #
-      # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」・global 単一ペアで per-model ではない）。
-      # 実効モデル: AST は Model を指定しない（Decision:PrimaryModel/SecondaryModel 未設定＝null）ため
-      #   ゲートウェイ既定に従う。MSP/ADR-0025 により既定は claude-opus-5（IADR-0101）。ADR-0011 が意図する
-      #   固定先 claude-opus-4-8 も**同単価**のため、どちらでも本値は変わらない。
+      # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」）。
+      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で
+      #   trade-decision=sonnet-5 / report-monthly=fable-5 / report-weekly=opus-5 / report-daily=sonnet-5 と
+      #   モデルが混在するため、global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の
+      #   過大計上だった）。単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
+      #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
+      # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
+      #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
+      #   表が空（本番 values.yaml の状態）→ 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
       #
-      # 出典・前提（2026-07 時点・恒久値ではない）:
-      #   Anthropic 公開単価 opus 系 = 入力 $5 / 出力 $25（いずれも 1M トークン）
-      #   → 1k 換算 $0.005 / $0.025 → USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列）
-      #   → 0.005 × 163.71 = 0.81855 ≒ 0.819 / 0.025 × 163.71 = 4.09275 ≒ 4.093（切り上げ側＝統制に安全）
-      #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243 を更新する。
-      #   ※ 報告書散文（report-service）の費用はそもそも計上経路が無い（#282）。本値は判断側のみに効く。
-      - { name: LlmPricing__InputPer1kTokens, value: "0.819" }    # ← 円/1k トークン（既定 0＝計上 ¥0）
-      - { name: LlmPricing__OutputPer1kTokens, value: "4.093" }   # ← 円/1k トークン（既定 0＝計上 ¥0）
+      # 出典・前提（2026-07 時点・**恒久値ではない**）:
+      #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、
+      #     sonnet-5 = 2/10、haiku-4-5 = 1/5
+      #   USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列・IADR-0107）／小数第 3 位で四捨五入
+      #   例: 0.002 × 163.71 = 0.32742 ≒ 0.327、0.010 × 163.71 = 1.6371 ≒ 1.637（sonnet-5）
+      #   ⚠️ **sonnet-5 の $2/$10 は 2026-08-31 までの導入価格**。同日以降は必ず再確認する（IADR-0122 決定5）。
+      #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243（実測再ベースライン）を更新する。
+      #   ※ 報告書散文（report-service）は計上経路自体が無い（#282）。本表は #282 の解消後に報告書へも効く。
+      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（report-monthly）
+      - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-weekly・既定）
+      - { name: LlmPricing__PerModel__claude-opus-5__OutputPer1kTokens, value: "4.093" }    # $25/1M
+      - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
+      - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
+      - { name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens, value: "0.327" }   # $2/1M（trade-decision・report-daily）
+      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M ※導入価格〜2026-08-31
+      - { name: LlmPricing__PerModel__claude-haiku-4-5__InputPer1kTokens, value: "0.164" }  # $1/1M
+      - { name: LlmPricing__PerModel__claude-haiku-4-5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

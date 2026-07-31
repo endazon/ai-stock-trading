@@ -95,10 +95,12 @@ internal sealed class HttpLlmCompletionClient(
             // （とくに上限到達は思考トークンを消費し切って本文が空になる形で課金される・IADR-0101）。
             // 計測は best-effort＝失敗しても LLM 応答は壊さない（費用計測の不調で取引判断を Hold に倒すのは過剰。
             // 計上漏れは at-least-once 再配信で緩和される）。
+            // #303, IADR-0122 決定1: 応答が名乗った実効モデル（dto.Model）を併せて渡す。用途別モデル割当
+            //（ADR-0014 / MSP IADR-0112）でモデルが混在するため、単価は要求側の希望値ではなく実効モデルで引く。
             try
             {
                 await usageReporter
-                    .ReportAsync(new LlmUsage(dto.InputTokens ?? 0, dto.OutputTokens ?? 0), cancellationToken)
+                    .ReportAsync(new LlmUsage(dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
