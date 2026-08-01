@@ -260,6 +260,26 @@ ok('未一致コミットは素通し', () => {
   assert.deepStrictEqual(applyOverride(c), c);
 });
 
+// gen-changelog.js を実際に起動して CHANGELOG が生成できること（呼び出し側の回帰）。
+// applyOverride に overrides を注入できるよう第 2 引数を足した結果、呼び出し側を point-free の
+// `.map(applyOverride)` にすると index（数値）が overrides を上書きして全件 TypeError になる。
+// applyOverride 単体のテストではこの形を検出できないため、実行して確認する。
+ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側の回帰）', () => {
+  if (!inGitWorkTree) {
+    process.stdout.write('    ↳ skip: git work tree ではないため実行検証を省略\n');
+    return;
+  }
+  const fsGc = require('fs');
+  const osGc = require('os');
+  const pathGc = require('path');
+  const out = pathGc.join(fsGc.mkdtempSync(pathGc.join(osGc.tmpdir(), 'gc-')), 'CHANGELOG.md');
+  execSync(
+    `node ${JSON.stringify(pathGc.join(__dirname, 'gen-changelog.js'))} --out ${JSON.stringify(out)}`,
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  assert.ok(fsGc.readFileSync(out, 'utf8').trim().length > 0, '生成された CHANGELOG が空');
+});
+
 // --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
 const fsDl = require('fs');
 const osDl = require('os');
