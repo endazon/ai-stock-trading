@@ -92,6 +92,34 @@ function parseAllowedTools(body) {
   return entries;
 }
 
+/**
+ * claude_args ブロックの `--<flag> <値>` をすべて取り出す。
+ *
+ * 記法の落とし穴（空白で割れて無効になる）は `--allowedTools` に固有ではない。
+ * issue #149 で `--append-system-prompt "…"` を導入したように、値に空白を含む指定は
+ * 今後も増える。フラグ名で限定していると、次に増えたものが同じ形で黙って壊れる
+ * ——このキットが繰り返し潰してきた型そのものになる。よってフラグ横断で検査する。
+ *
+ * `${{ ... }}` は実行時に単一トークンへ展開されるため、空白とみなさない
+ * （`--model ${{ steps.model.outputs.model }}` を誤検知しないため。これを入れないと
+ * 既存の全ワークフローが一斉に ERROR になる）。
+ */
+function parseFlagArgs(body) {
+  const entries = [];
+  for (const raw of body) {
+    const line = raw.trim();
+    const m = line.match(/^(--[A-Za-z][A-Za-z0-9-]*)\s+(.+)$/);
+    if (!m) continue;
+    const flag = m[1];
+    const value = m[2].trim();
+    if (!value) continue;
+    const quoted = /^"(.*)"$/.test(value) || /^'(.*)'$/.test(value);
+    const probe = value.replace(/\$\{\{[^}]*\}\}/g, 'X');
+    entries.push({ flag, raw: value, quoted, hasSpace: /\s/.test(probe) });
+  }
+  return entries;
+}
+
 /** ツール指定の集合から Bash(<コマンド> ...) のコマンド名を抜き出す。 */
 function bashCommandsOf(tools) {
   const cmds = new Set();
@@ -257,6 +285,17 @@ function checkWorkflow(file, text) {
         );
       }
     }
+    // --allowedTools 以外のフラグも同じ形で壊れる（--append-system-prompt 等）。
+    for (const e of parseFlagArgs(block.body)) {
+      if (e.flag === '--allowedTools') continue; // 上で専用のメッセージを出している
+      if (!e.quoted && e.hasSpace) {
+        errors.push(
+          `${e.flag} の値が引用符で囲まれておらず空白を含む: ${e.raw}` +
+            '（claude_args は空白区切りで argv へトークン化されるため、2 つ目以降が別の引数になり' +
+            'この指定は意図どおり効かない。値全体を二重引用符でくくって 1 引数にする）'
+        );
+      }
+    }
   }
 
   if (blocks.length === 0) return { errors, warnings, tools: allTools, applicable: false };
@@ -345,6 +384,30 @@ function selfTest() {
     {
       name: 'setup-dotnet と dotnet 許可が揃えば OK',
       yaml: 'jobs:\n  x:\n    steps:\n      - uses: actions/setup-dotnet@v5\n      - with:\n          claude_args: |\n            --allowedTools "Read,Bash(dotnet test:*)"\n',
+      expect: (r) => r.errors.length === 0,
+    },
+    // issue #149: 記法の穴は --allowedTools に固有ではない。
+    {
+      // 実際の文面は「Task ツールによる spawn」のように空白を含む。
+      name: '引用符なしで空白を含む --append-system-prompt は ERROR',
+      yaml: 'jobs:\n  x:\n    steps:\n      - with:\n          claude_args: |\n            --append-system-prompt サブエージェント（Task ツール）は使用しない\n',
+      expect: (r) => r.errors.some((e) => e.includes('--append-system-prompt')),
+    },
+    {
+      // 空白が 1 つも無い値は分割されないため、引用符が無くても壊れない（誤検知しない）。
+      name: '空白を含まない値は引用符なしでも OK（フラグ横断の検査でも同じ）',
+      yaml: 'jobs:\n  x:\n    steps:\n      - with:\n          claude_args: |\n            --append-system-prompt サブエージェントは使用しない\n',
+      expect: (r) => r.errors.length === 0,
+    },
+    {
+      name: '引用符付きの --append-system-prompt は OK',
+      yaml: 'jobs:\n  x:\n    steps:\n      - with:\n          claude_args: |\n            --append-system-prompt "サブエージェントは使用しない。単一セッションで完結する。"\n',
+      expect: (r) => r.errors.length === 0,
+    },
+    {
+      // これを誤検知すると既存の全ワークフローが一斉に ERROR になる。
+      name: '${{ }} 式は空白とみなさない（--model を誤検知しない）',
+      yaml: 'jobs:\n  x:\n    steps:\n      - with:\n          claude_args: |\n            --model ${{ steps.model.outputs.model }}\n',
       expect: (r) => r.errors.length === 0,
     },
     {
@@ -525,6 +588,7 @@ if (require.main === module) {
 module.exports = {
   extractClaudeArgsBlocks,
   parseAllowedTools,
+  parseFlagArgs,
   bashCommandsOf,
   toolchainCommandsOf,
   toolchainDrift,

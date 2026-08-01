@@ -120,7 +120,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 // 件数はログに出ていたが誰も見ておらず、CI は緑・PR には進行中コメントだけが残った。
 
 {
-  const { parseEvents, collectDenials, formatDenials, looksLikeDenial } = require('./check-permission-denials.js');
+  const { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf } = require('./check-permission-denials.js');
 
   ok('拒否ゼロは count 0（正常な実行を落とさない）', () =>
     assert.strictEqual(collectDenials([{ type: 'result', permission_denials_count: 0 }]).count, 0));
@@ -152,6 +152,29 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   ok('権限拒否でないツールエラー（File not found 等）は数えない', () =>
     assert.strictEqual(looksLikeDenial('File not found'), false));
 
+  // issue #146: 報告が「Bash（4 件）」で止まると、許可リストに何を足せばよいか決められない。
+  // 許可リストの粒度はコマンド単位（Bash(git diff:*)）なので、報告もそこへ揃える。
+  ok('Bash はコマンド名まで報告する（実障害 issue #146 の形）', () => {
+    const r = collectDenials([
+      {
+        type: 'result',
+        permission_denials: [
+          { tool_name: 'Bash', tool_input: { command: 'git status' } },
+          { tool_name: 'Bash', tool_input: { command: 'git diff' } },
+          { tool_name: 'Bash', tool_input: { command: 'git diff origin/main...HEAD' } },
+        ],
+      },
+    ]);
+    assert.strictEqual(r.byTool.get('Bash(git diff)'), 2);
+    assert.strictEqual(r.byTool.get('Bash(git status)'), 1);
+    assert.match(formatDenials(r), /Bash\(git diff\)/);
+  });
+
+  ok('引数はラベルに出さない（トークン・パスの漏洩を避ける）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'gh api /repos/x --header "Authorization: token SECRET"' }), 'Bash(gh api)'));
+
+  ok('Bash 以外はツール名のまま', () => assert.strictEqual(labelOf('Task', {}), 'Task'));
+
   ok('ツール名が判らなくても件数は必ず報告する（実運用の 17 件の形）', () => {
     const r = collectDenials([{ type: 'result', permission_denials_count: 17 }]);
     assert.strictEqual(r.count, 17);
@@ -165,6 +188,57 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   // 検証器自身の自己試験が通ること（check-ai-workflow-config と同じ扱い）。
   ok('check-permission-denials の自己試験が通る', () => {
     execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-permission-denials.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
+// --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue #148） ---
+//
+// Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか
+// 走査しない。dependabot.yml に directory: エントリを足しても no-op であり、しかも
+// 失敗せず単に走らないため「対処済み」に見えてしまう。実測で upload-artifact が v4 のまま
+// 取り残され、実装リポ側で毎回手作業の差し戻しが発生していた。
+
+{
+  const { collectUses, majorOf, evaluate, loadManifest } = require('./check-action-versions.js');
+  const mkFound = (entries) =>
+    new Map(entries.map(([a, major, file]) => [a, { major, files: new Set([file || 'w.yml']) }]));
+  const manifest = { expected: { 'actions/checkout': 7, 'actions/upload-artifact': 7 }, exempt: {} };
+
+  ok('uses: を収集し owner/repo へ正規化する', () => {
+    const u = collectUses('steps:\n  - uses: actions/checkout@v7\n  - uses: github/codeql-action/init@v4\n');
+    assert.deepStrictEqual(u.map((x) => x.action), ['actions/checkout', 'github/codeql-action']);
+  });
+
+  ok('ローカル / docker 指定とコメント行は対象外', () =>
+    assert.strictEqual(collectUses('  - uses: ./x\n  - uses: docker://alpine:3\n  #   - uses: actions/setup-python@v7\n').length, 0));
+
+  ok('SHA pin はメジャーを取れず比較対象外', () => assert.strictEqual(majorOf('a81bbbf8298c0fa03ea29cdc473d45769f953675'), null));
+
+  ok('下限を下回れば ERROR（実障害 upload-artifact@v4 の形）', () =>
+    assert.match(evaluate(mkFound([['actions/upload-artifact', 4]]), manifest).errors.join(' '), /upload-artifact/));
+
+  ok('比較対象（Dependabot 管理下）より古ければ ERROR', () =>
+    assert.match(
+      evaluate(mkFound([['actions/checkout', 6]]), { expected: {}, exempt: {} }, mkFound([['actions/checkout', 7, 'root.yml']])).errors.join(' '),
+      /比較対象/
+    ));
+
+  ok('表に無いアクションは WARN（黙って検査対象外にしない）', () =>
+    assert.match(evaluate(mkFound([['foo/bar', 1]]), manifest).warnings.join(' '), /foo\/bar/));
+
+  ok('実ツリー: 配布テンプレートの Actions に退行が無い', () => {
+    const { scanDir } = require('./check-action-versions.js');
+    const patq = require('path');
+    const m = loadManifest();
+    assert.ok(m, 'action-versions.json を読めること');
+    const r = evaluate(scanDir(patq.join(__dirname, '..', '.github', 'workflows')), m);
+    assert.deepStrictEqual(r.errors, []);
+  });
+
+  ok('check-action-versions の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-action-versions.js'))} --self-test`, {
       stdio: 'ignore',
     });
   });

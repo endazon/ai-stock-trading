@@ -146,8 +146,21 @@ jobs:
           #
           # 末尾のビルド/テスト系（node / dotnet）がスタック別の可変部分である。
           # claude-code-review.example.yml の対応箇所と**同じ内容**に保つこと。
+          #
+          # 【--append-system-prompt: サブエージェント禁止】レビュー用は同じ制約を prompt:
+          # 入力に書いているが、本ファイルは `@claude` メンション本文で駆動する構造のため
+          # prompt: を持たず、置き場所がここしか無い（issue #149）。
+          # 制約が無いと次の形で**成果物が正しくてもジョブが赤くなる**:
+          #   AI が Task（サブエージェント）を試みる → 許可リストにも既定にも無いので拒否
+          #   → Task 抜きで実装を完遂しコミット・PR も正しく出せる
+          #   → 末尾の Check permission denials が拒否 1 件を検出して exit 1
+          # Task を許可する選択もあるが採らない。CI ではサブエージェントの起動が完了せず
+          # 停止する不具合が出ており（HOWTO 付録3）、レビュー用と同じ (b) に揃える。
+          # 【記法】この値も空白区切りでトークン化される。**1 行・二重引用符でくくる**こと
+          # （改行して書くと後続行が別の引数になり、指示が壊れる）。
           claude_args: |
             --model ${{ steps.model.outputs.model }}
+            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。"
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(cat:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
 
       # 権限拒否の可視化（安全弁）。claude-code-review.example.yml と同じ内容に保つこと。

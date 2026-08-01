@@ -168,6 +168,14 @@ jobs:
         env:
           STRICT_AI_WORKFLOW_CONFIG: "1"
         run: node scripts/check-ai-workflow-config.js
+      # Actions のメジャーバージョン退行を止める（キット issue #148）。
+      # キットの ci.example.yml には本ステップが無く、実装リポ側では検証器の自己試験
+      # （scripts-tests ジョブ経由）しか走らない。しかし巻き戻りが実際に起きるのは
+      # 「キットを同期した実装リポ」であり、検査が無ければ誰も気付けない
+      # （実測: キット pin 0847687 時点で本リポは upload-artifact@v7・キットは @v4 だった）。
+      # 本リポは opt-in で実ツリー検査まで有効にする。
+      - name: Check action versions
+        run: node scripts/check-action-versions.js
 
   # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
   # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の
@@ -228,7 +236,7 @@ jobs:
       #   - run: npm run build --if-present
       #   - run: npm test -- --coverage
       # Python:
-      #   - uses: actions/setup-python@v5
+      #   - uses: actions/setup-python@v7
       #     with: { python-version: "3.12" }
       #   - run: pip install -e .[test]
       #   - run: ruff check .

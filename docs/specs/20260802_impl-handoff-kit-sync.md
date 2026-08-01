@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14 巡）
+title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜15 巡）
 type: work
 status: review
 related_ids: [NFR]
@@ -16,7 +16,7 @@ related_specs:
   - ../../.claude/rules/traceability.md
 ---
 
-# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14 巡）
+# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜15 巡）
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -50,7 +50,8 @@ impl-handoff-kit の是正が 1 巡進んだ。本作業はその内容を本リ
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`9cd3499` → `0847687`）
+  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2`。第 14 巡の起票 2 件が
+    計画側 PR [project-planning#150](https://github.com/endazon/project-planning/pull/150) で即日反映されたため、続けて第 15 巡を取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -101,6 +102,30 @@ impl-handoff-kit の是正が 1 巡進んだ。本作業はその内容を本リ
 `actions/upload-artifact@v7`（キットは `@v4`）。`github/codeql-action` の `@v4.37.3` ピンも本リポジトリの
 Dependabot が管理するため維持する（キットの `@v4` はテンプレート既定として妥当）。前者は後述のとおり環流する。
 
+### 第 15 巡（pin `3b0deb2`）で追加した反映
+
+計画側 PR [project-planning#147](https://github.com/endazon/project-planning/pull/147)（issue #146）と
+PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)（issue [#148](https://github.com/endazon/project-planning/issues/148) / [#149](https://github.com/endazon/project-planning/issues/149)＝**本作業の第 14 巡で起票した 2 件**）の内容を取り込む。
+
+**そのままテンプレートを採用するもの**（コピー後にバイト一致を確認済み）
+
+| ファイル | 内容 |
+| --- | --- |
+| `scripts/check-action-versions.js` | **新規**。ワークフローの `uses: <action>@vN` を集め、`action-versions.json` の下限（または `--compare-with` 先）を下回るメジャーを ERROR にする。`--check-latest` は GitHub API で新メジャーを確認（warn のみ）。`--self-test` 14 件 |
+| `scripts/check-ai-workflow-config.js` | `--append-system-prompt` を含む新しい `claude_args` を正しく扱えるよう更新（自己試験 19 → 23 件） |
+| `scripts/check-permission-denials.js` | Bash の拒否を `Bash(git status)` のように**コマンド名まで**出すよう更新（許可リストの粒度がコマンド単位のため、ツール名だけでは何を足すか決められない。引数は出さない）。自己試験 11 → 15 件 |
+| `scripts/scripts.test.js` | 上記 2 件のテストを追加（92 → 103 件）。**キットとバイト一致を維持** |
+| `.github/workflows/claude-code-review.yml` | `--allowedTools` に `Bash(git status:*)` を追加。アクションの**組み込みプロンプト自身**が `git status` / `git diff origin/main...HEAD` を差分取得手段として指示するため、許可しないと**差分の内容と無関係に毎回拒否が出る**（キット issue #146） |
+| `.github/workflows/claude-coding.yml` | `claude_args` に `--append-system-prompt` を追加し、サブエージェント禁止を明示（第 14 巡で起票した #149 の反映。`prompt:` を持たない構造のため置き場所がここしか無い） |
+
+**本リポジトリ側の判断で足したもの**
+
+| 対象 | 内容 | 理由 |
+| --- | --- | --- |
+| `ci.yml` の `ai-workflow-config` ジョブ | `node scripts/check-action-versions.js`（実ツリー検査）を追加 | キットの `ci.example.yml` には本ステップが無く、実装リポでは検証器の**自己試験しか走らない**。しかし巻き戻りが実際に起きるのは「キットを同期した実装リポ」である（後述の指摘 1）。`STRICT_AI_WORKFLOW_CONFIG` / `REQUIRE_REPO_TESTS` と同じ opt-in 方式 |
+| `scripts/action-versions.json` | `azure/setup-helm: 5` を追記（キットの表には無い本リポ固有アクション） | 追記しないと `warn` が毎回 CI アノテーションとして出続ける。`commit-allowlist.json` / `changelog-overrides.json` と同じ「リポジトリが自分の分を埋めるデータファイル」として扱う（後述の指摘 2） |
+| `ci.yml` のコメント例 | `actions/setup-python@v5` → `@v7`（キットの `ci.example.yml` に追随） | コメント中の参考例。実使用は無い |
+
 ### CI ジョブの追加は不要
 
 `check-permission-denials.js` は `ci.yml` のジョブではなく **AI ワークフロー 2 本の末尾ステップ**として動く。
@@ -109,18 +134,19 @@ Dependabot が管理するため維持する（キットの `@v4` はテンプ�
 
 ## 受け入れ基準
 
-- [x] `planning` submodule が `origin/main` の先端（`0847687`）を指す
+- [x] `planning` submodule が `origin/main` の先端（`3b0deb2`）を指す
 - [x] `repo-template/` と本リポジトリの残差分が、判断ルールで説明できるものだけになる
-- [x] キット由来の 4 ファイルがキットと**バイト一致**である（`cmp` で確認）
-- [x] `node scripts/check-permission-denials.js --self-test` が合格する（11 件）
-- [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（19 件・不備 0 件）
-- [x] `node scripts/scripts.test.js` が全件合格する（92 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
+- [x] キット由来のファイル（第 14 巡 4 件＋第 15 巡 7 件）がキットと**バイト一致**である（`cmp` で確認）
+- [x] `node scripts/check-permission-denials.js --self-test` が合格する（15 件）
+- [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（14 件・退行 0・warn 0）
+- [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（23 件・不備 0 件。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0）
+- [x] `node scripts/scripts.test.js` が全件合格する（103 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
 - [x] `node scripts/check-doc-links.js` の結果が pin 前進の前後で不変である（既存 20 件のみ・新規破損なし）
 - [x] `dotnet build backend/backend.slnx` が通る（コード無変更の回帰確認）
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
 - [x] テンプレート側の不足・混入が `/plan-feedback` として起票されている
-      （[project-planning#148](https://github.com/endazon/project-planning/issues/148) /
-      [project-planning#149](https://github.com/endazon/project-planning/issues/149)）
+      （第 14 巡: [project-planning#148](https://github.com/endazon/project-planning/issues/148) /
+      [project-planning#149](https://github.com/endazon/project-planning/issues/149)。第 15 巡: 後述）
 
 ## テスト方針
 
@@ -134,15 +160,17 @@ Dependabot が管理するため維持する（キットの `@v4` はテンプ�
 
 ## 検証（実測）
 
-| 検証 | 結果 |
+| 検証 | 結果（最終＝第 15 巡取り込み後） |
 | --- | --- |
-| `check-permission-denials.js --self-test` | ✅ 11 件合格 |
-| `check-ai-workflow-config.js --self-test` | ✅ 19 件合格 |
-| `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし |
-| `scripts.test.js`（ローカル） | ✅ 92 件合格（前巡 85 件 → キットの新規 7 件） |
-| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 92 件合格 |
+| `check-permission-denials.js --self-test` | ✅ 15 件合格（第 14 巡は 11 件） |
+| `check-action-versions.js --self-test` | ✅ 14 件合格 |
+| `check-action-versions.js`（実ツリー・11 アクション） | ✅ 退行なし・warn 0（`azure/setup-helm` を表へ追記する前は warn 1 件） |
+| `check-ai-workflow-config.js --self-test` | ✅ 23 件合格（第 14 巡は 19 件） |
+| `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0 |
+| `scripts.test.js`（ローカル） | ✅ 103 件合格（前巡 85 → 第 14 巡 92 → 第 15 巡 103） |
+| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 103 件合格 |
 | `dotnet build backend/backend.slnx` | ✅ 0 警告 0 エラー |
-| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..0847687 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
+| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..3b0deb2 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
 
 **新ステップの変異テスト**（合成した `execution_file` を与えて実測）
 
@@ -151,6 +179,7 @@ Dependabot が管理するため維持する（キットの `@v4` はテンプ�
 | `permission_denials: [Task, Task, Bash]`（3 件） | `error … 権限拒否が 3 件発生した … Task（2 件） / Bash（1 件）` | **1** |
 | `permission_denials: []`（0 件） | `✓ ツールの権限拒否は発生していない` | 0 |
 | パス未指定（ログを読めない） | `warn … 検査していない` | 0（fail-open） |
+| （第 15 巡）`Bash` の拒否に `command: "git status --short"` を添えたログ | `error … Bash(git status)（1 件）`＝**コマンド名まで出る**（引数は出ない） | **1** |
 
 ## 計画書との差異
 
@@ -200,6 +229,59 @@ HOWTO は `Task` 拒否への恒久対処を 2 択（(a) `Task` を `--allowedTo
 偽陽性が新たに生じる。`prompt:` を持たない構造上、対策を置くには `.github/workflows` 側で
 `--append-system-prompt` を使うか、`Task` を許可する（(a) 側）かのいずれかが要る。キット側の設計判断が要る事項のため起票する。
 
+### 第 15 巡（pin `3b0deb2`）— 第 14 巡の 2 件は即日反映済み。新たに 2 件を起票
+
+第 14 巡で起票した [#148](https://github.com/endazon/project-planning/issues/148) / [#149](https://github.com/endazon/project-planning/issues/149) は、計画側 PR
+[project-planning#150](https://github.com/endazon/project-planning/pull/150) で**いずれも提案どおり反映**された
+（#148 → `check-action-versions.js` ＋ `action-versions.json` ＋ planning 自身の CI ジョブ、
+#149 → `claude-coding` への `--append-system-prompt`）。取り込んだうえで、新たに 2 件が見つかった。
+
+**[🟡 1 件目] `check-action-versions.js` を配布しながら、実装リポの CI で実ツリーを検査する口が無い。**
+
+キットは検証器と表を `repo-template/scripts/` に配布する一方、`ci.example.yml` には本検査のステップが無い。
+実装リポで走るのは `scripts.test.js` 経由の `--self-test`（＝検証器自身の試験）だけであり、
+**そのリポジトリのワークフローが実際に退行していないかは検査されない**。
+
+これは「誰かが手で叩いたときだけ走る」形であり、キット自身が `scripts.test.js` を CI に載せる理由として
+繰り返し戒めている型である。しかも #148 が記述する巻き戻りが実際に起きるのは
+「**キットを同期した実装リポ**」の側である。実測でも、本作業の第 14 巡（pin `0847687`）の時点で
+キットの `frontend-tests.example.yml` は `upload-artifact@v4`・本リポは `@v7` であり、
+キットの方針（「テンプレートを正とする」）どおり素直にコピーしていれば**3 メジャー分の退行を持ち込んでいた**。
+本作業では手作業のバージョン走査で気付いたにすぎない。
+
+さらに、仮にステップを足しても検出できない形が残る。表（`action-versions.json`）はキットの下限であり、
+実装リポが Dependabot で**下限より先へ進んだ**あとにキットのファイルをコピーすると、
+実装リポにとっては退行なのに表の上では合格する（キットが v7、実装リポが v8 だった場合など）。
+`--compare-with` は 2 つのワークフローディレクトリを比べる仕組みで、単一ディレクトリの実装リポでは使えない。
+同期前後の比較（git 由来）でしか捉えられない。
+
+提案:
+1. `ci.example.yml` に `check-action-versions.js`（実ツリー）のステップを足し、`scripts/README.md` の
+   「検査（CI）」表にも載せる（本リポジトリは先行して `ai-workflow-config` ジョブへ opt-in で追加済み）。
+2. 可能なら、同期時の退行（表より先へ進んだ実装リポがキットのコピーで巻き戻る形）を
+   `--compare-with <git ref>` 等で検出できるようにする。少なくとも HOWTO Part B-5 に
+   「キットのワークフローをコピーする際は `uses:` のバージョンを実装リポ側の値で維持する」ことを
+   置換点として明記する。
+
+**[🟡 2 件目] `action-versions.json` に、実装リポ固有アクションの受け口が無い。**
+
+`MANIFEST_PATH` は `__dirname/action-versions.json` に固定で、companion／上書きの口が無い。
+そのため実装リポがキットに無いアクションを使うと、次のどちらかしか選べない。
+
+| 選択 | 帰結 |
+| --- | --- |
+| キットの表を編集して足す | **バイト一致が崩れ**、以後の同期で毎回手動マージが要る |
+| 足さない | `… は action-versions.json に無いため下限を検査していない` の `warn` が CI アノテーションとして**毎回出続ける** |
+
+本リポジトリでの実測: `azure/setup-helm`（`helm.yml`）で warn 1 件。前者を選び、
+`expected` に `"azure/setup-helm": 5` を追記した（`$comment` にも本リポの追記である旨を明記）。
+
+これは `scripts.test.js` が第 6〜7 巡（[#112](https://github.com/endazon/project-planning/issues/112) / [#115](https://github.com/endazon/project-planning/issues/115)）で通ったのと**同型の問題**であり、
+そのときは companion（`scripts.repo.test.js`）を設けてキットとのバイト一致を回復した。
+同じ設計を表にも適用できる（例: `action-versions.repo.json` があればマージして読む）ことを提案する。
+なお `$exempt` に `github/codeql-action` が入っている点から、キットは実装リポ固有の事情を
+既に一部この表で吸収する設計であり、受け口を設けるのは既存方針と整合すると考える。
+
 ## 未決事項
 
-- 上記フィードバック 2 件の採否は計画側の `/triage-feedback` の判断に委ねる。
+- 上記フィードバック 4 件（第 14 巡 2 件は反映済み・第 15 巡 2 件は起票）の採否は計画側の `/triage-feedback` の判断に委ねる。

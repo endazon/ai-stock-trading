@@ -9,7 +9,9 @@
 | `gen-changelog.js` | コミット履歴（`種別(起点ID): 要約`）から変更履歴を生成 | `CHANGELOG.md` |
 | `gen-openapi-skeleton.js` | 通信仕様書（`docs/api/`）から OpenAPI 雛形を生成 | `docs/api/openapi.yaml` |
 | `check-doc-links.js` | `docs/` 配下 Markdown の相対リンク（frontmatter の `plan_refs`/`related_specs`・本文リンク・インラインコードのパス）の実在を検査。破損があれば終了コード 1。**未 populate な submodule 配下は対象外にし、その件数を submodule 別に `notice` で報告する**（黙って飛ばすと「破損リンクはありません」が検査していない範囲まで含んだ断定になる） | 標準出力（レポート） |
-| `check-permission-denials.js` | claude-code-action の実行ログ（`outputs.execution_file`）を読み、**権限拒否で実行できなかったツール**を名前と件数で報告。1 件でもあれば終了コード 1。CI には承認する人間が居ないため、拒否は「待たされた」ではなく「その作業は永久に実行されない」を意味する（実測: レビューが 17 件の拒否で潰れ、本文を書けないまま `success` で終了）。実行ログを読めない場合は `warn` を出して終了コード 0（fail-open）。`--self-test` で検証器自体も試験 | 標準出力（レポート） |
+| `check-permission-denials.js` | claude-code-action の実行ログ（`outputs.execution_file`）を読み、**権限拒否で実行できなかったツール**を名前と件数で報告（Bash は `Bash(git diff)` のように**コマンド名まで**出す。許可リストの粒度がコマンド単位のため、ツール名だけでは何を足せばよいか決められない。引数は出さない）。1 件でもあれば終了コード 1。CI には承認する人間が居ないため、拒否は「待たされた」ではなく「その作業は永久に実行されない」を意味する（実測: レビューが 17 件の拒否で潰れ、本文を書けないまま `success` で終了）。実行ログを読めない場合は `warn` を出して終了コード 0（fail-open）。`--self-test` で検証器自体も試験 | 標準出力（レポート） |
+| `check-action-versions.js` | ワークフローの `uses: <action>@vN` を集め、**メジャーバージョンの退行**を検出。`action-versions.json` の下限を下回る、または `--compare-with` で指定したディレクトリより古ければ終了コード 1。Dependabot は github-actions エコシステムでは**リポジトリ直下しか走査しない**ため、配布テンプレートは自動追随しない（キット issue #148）。表に無いアクション・使われていない表エントリは `warn`。`--check-latest` で GitHub API から新しいメジャーを確認（warn のみ・fail-open）。`--self-test` あり | 標準出力（レポート） |
+| `action-versions.json` | 上記の下限表。**本リポジトリはキットの表に固有アクション（`azure/setup-helm`）を追記している**（`commit-allowlist.json` 等と同じくリポジトリが自分の分を埋めるデータファイル扱い） | — |
 | `check-ai-workflow-config.js` | Claude 系ワークフローのツール許可設定を検査。`claude_args` の記法誤り（空白分割で無効化）・ブロック内コメント・「SDK を用意して実行ツールを許可していない」不一致・**実装用とレビュー用のスタック別実行ツールのドリフト**（片方にだけ `Bash(node:*)` が無い等）を検出。不備があれば終了コード 1。`--self-test` で検証器自体も試験 | 標準出力（レポート） |
 | `lib/ci-annotate.js` | 検査器共通。警告を GitHub Actions のアノテーション（`::warning::` / `::notice::`）として出す。素の出力は緑ジョブのログに埋もれて読まれないため。ローカル実行時の見た目は従来どおり | — |
 | `check-commit-messages.js` | コミット件名（`種別(起点ID): 要約`）の規約適合と ADR/IADR の実在性を検査。除外は `commit-allowlist.json`。**置換点**: 計画 ADR の名前空間は `PLAN_PROJECT`（既定 `ai-stock-trading`・環境変数で上書き可）が決める | 標準出力（レポート） |
@@ -47,6 +49,8 @@ node scripts/gen-changelog.js --out CHANGELOG.md
 node scripts/gen-openapi-skeleton.js --src docs/api --out docs/api/openapi.yaml
 node scripts/check-doc-links.js                    # 仕様書の相対リンク切れを検査（再発防止）
 node scripts/check-ai-workflow-config.js           # AI ワークフローのツール許可設定を検査
+node scripts/check-action-versions.js              # Actions のバージョン退行を検査
+node scripts/check-action-versions.js --check-latest  # 新しいメジャーが出ていないか確認
 node scripts/check-permission-denials.js <log>     # 実行ログの権限拒否を検査（CI では自動実行）
 node scripts/scripts.test.js                       # 上記スクリプト群の単体テスト
 ```
@@ -80,7 +84,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `scripts-tests` | `node scripts/scripts.test.js`（本 README のスクリプト群の横断テスト。`fetch-depth: 0` が必要） |
 | `commit-messages` | `check-commit-messages.js`（コミット件名の規約と ADR/IADR 実在性） |
 | `doc-links` | `check-doc-links.js`（相対リンクの実在） |
-| `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査 |
+| `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査、および `check-action-versions.js`（実ツリー。キット既定には無い本リポの opt-in） |
 | `pipeline-config` | `validate-pipeline-config.js --self-test` ＋ 実ファイル（`PIPELINE_CONFIG`。本リポは採用する） |
 | `consumer-endpoint-names` | `check-consumer-endpoint-names.js --self-test` と本検査（本リポ固有） |
 | `runtime-scaffold` | `validate-runtime-scaffold.js`（本リポ固有） |

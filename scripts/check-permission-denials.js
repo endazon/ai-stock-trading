@@ -71,6 +71,29 @@ function contentOf(event) {
 }
 
 /**
+ * 報告用のラベルを作る。Bash は**コマンド名まで**出す。
+ *
+ * 背景（issue #146）: 当初はツール名だけを出していたため、報告が「Bash（4 件）」で止まり
+ * **どのコマンドが拒否されたのか判らなかった**。許可リストは `Bash(git diff:*)` のように
+ * コマンド単位で書くため、ツール名だけでは何を足せばよいか決められない。実際、起票者は
+ * ジョブログを追って読み取り系 git だと推定する必要があった。報告が行動につながらないなら、
+ * 件数だけを出していた元の状態とさして変わらない。
+ *
+ * 先頭 2 トークンまでに切り詰める（`git diff origin/main...HEAD` → `git diff`）。
+ * 理由は 2 つある。許可リストの粒度がコマンド＋サブコマンドであること、そして引数には
+ * トークン・パス等が入り得るため、ログへ丸ごと出さないことである。
+ */
+function labelOf(name, input) {
+  if (name !== 'Bash') return name || '(不明なツール)';
+  const cmd = input && typeof input.command === 'string' ? input.command.trim() : '';
+  if (!cmd) return 'Bash';
+  // パイプ・リダイレクト・連結より前だけを見る（後続コマンドは別の話）。
+  const head = cmd.split(/[|;&><]/)[0].trim();
+  const tokens = head.split(/\s+/).filter(Boolean).slice(0, 2);
+  return tokens.length ? `Bash(${tokens.join(' ')})` : 'Bash';
+}
+
+/**
  * tool_result のテキストが「権限拒否」を表しているか。
  *
  * SDK が itemize した `permission_denials` を持たない版のためのフォールバック経路であり、
@@ -108,16 +131,18 @@ function collectDenials(events) {
   // 1. SDK が itemize した配列。
   const itemizedList = result && Array.isArray(result.permission_denials) ? result.permission_denials : null;
   if (itemizedList && itemizedList.length) {
-    for (const d of itemizedList) bump((d && (d.tool_name || d.toolName)) || '(不明なツール)');
+    for (const d of itemizedList) {
+      bump(labelOf(d && (d.tool_name || d.toolName), d && (d.tool_input || d.toolInput)));
+    }
     return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials' };
   }
 
-  // 2. tool_use_id → ツール名を作ってから tool_result を走査する。
-  const nameById = new Map();
+  // 2. tool_use_id → ラベルを作ってから tool_result を走査する。
+  const labelById = new Map();
   for (const e of events) {
     if (!e || e.type !== 'assistant') continue;
     for (const b of contentOf(e)) {
-      if (b && b.type === 'tool_use' && b.id) nameById.set(b.id, b.name || '(不明なツール)');
+      if (b && b.type === 'tool_use' && b.id) labelById.set(b.id, labelOf(b.name, b.input));
     }
   }
   for (const e of events) {
@@ -126,7 +151,7 @@ function collectDenials(events) {
       if (!b || b.type !== 'tool_result') continue;
       if (!b.is_error) continue;
       if (!looksLikeDenial(resultTextOf(b))) continue;
-      bump(nameById.get(b.tool_use_id) || '(不明なツール)');
+      bump(labelById.get(b.tool_use_id) || '(不明なツール)');
     }
   }
   if (byTool.size) {
@@ -203,6 +228,42 @@ function selfTest() {
       name: 'ツール名を特定できなくても件数は報告する',
       events: [{ type: 'result', permission_denials_count: 17 }],
       expect: (r) => r.count === 17 && r.itemized === false,
+    },
+    // issue #146: 「Bash（4 件）」ではどのコマンドを許可すればよいか決められない。
+    {
+      name: 'Bash はコマンド名まで報告する（許可リストの粒度に合わせる）',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'git diff origin/main...HEAD' } },
+            { tool_name: 'Bash', tool_input: { command: 'git diff' } },
+            { tool_name: 'Bash', tool_input: { command: 'git status' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(git diff)') === 2 && r.byTool.get('Bash(git status)') === 1,
+    },
+    {
+      name: 'パイプ以降は見ない（後続コマンドを取り違えない）',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git log | head -5' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(git log)') === 1,
+    },
+    {
+      name: 'command が無い Bash はツール名のみ（落ちない）',
+      events: [{ type: 'result', permission_denials: [{ tool_name: 'Bash' }] }],
+      expect: (r) => r.byTool.get('Bash') === 1,
+    },
+    {
+      name: 'tool_result 経由でもコマンド名まで出る',
+      events: [
+        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'git show HEAD' } }] } },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'b1', is_error: true, content: denial }] } },
+        { type: 'result', permission_denials_count: 1 },
+      ],
+      expect: (r) => r.byTool.get('Bash(git show)') === 1,
     },
     {
       name: 'tool_result の content が配列でも読める',
@@ -307,4 +368,4 @@ if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { parseEvents, collectDenials, formatDenials, looksLikeDenial, selfTest };
+module.exports = { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf, selfTest };

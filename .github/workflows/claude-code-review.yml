@@ -155,6 +155,11 @@ jobs:
           # pull_request_target を使わない構成を維持すること。
           # 書き込み系の git（commit / push / reset 等）はレビューには不要なので入れない。
           #
+          # 【読み取り系 git は必須】アクション自身の組み込みプロンプトが差分の取得手段を
+          # 指示している（`git diff origin/main...HEAD` / `git log origin/main..HEAD` /
+          # `git status`）。許可しないと差分の内容と無関係に**毎回必ず拒否が出る**
+          # （planning 側で同じ欠落により全 PR の CI が赤くなった。issue #146）。
+          #
           # 【前方一致の落とし穴】Bash の許可は**コマンド文字列の前方一致**である。したがって
           # `Bash(git log:*)` を許可しても `git -C planning log` には当たらない。planning を
           # submodule 参照する構成では、pin の進み方・差分・「変更が無いこと」といった
@@ -178,7 +183,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
