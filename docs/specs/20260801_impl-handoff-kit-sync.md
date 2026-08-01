@@ -462,6 +462,14 @@ Node 製検査器の側だけがこの可視化手段を使っていない状態
 | `STRICT_AI_WORKFLOW_CONFIG=1`・同上 | exit **1** |
 | `STRICT_AI_WORKFLOW_CONFIG=1`・正常時 | exit 0（誤検知なし） |
 
+**[🔴 取り込み後に判明・[project-planning#142](https://github.com/endazon/project-planning/issues/142)]** キット `cd6c4f4` の `scripts.test.js` は
+**GitHub Actions 上でだけ失敗する**。`ci-annotate` の `emit()` は Actions では出力先を stdout に固定するが、
+当該テストは stderr だけを捕捉しているため空文字列になり `assert.match` が落ちる。
+ローカル（`GITHUB_ACTIONS` 未設定）では通るため、取り込んだリポジトリが CI を回して初めて出る。
+本リポの CI（run 30697105803 の `scripts-tests`）で実際に発生した。**実装は正しく、テストの捕捉対象だけが
+追随していない**（同じジョブのログには警告がアノテーションとして正しく出ている）。
+`scripts.test.js` はキットとバイト一致を保つ方針のため本リポでは修正せず、キット側の是正を待つ。
+
 **[🟡 残り 1 件・[project-planning#139](https://github.com/endazon/project-planning/issues/139)]** `check-doc-links.js` が `ci-annotate` をまだ使っておらず、
 未 populate な submodule 配下のリンクを**何件飛ばしたか報告しない**。実測では PR CI の `doc-links`
 ジョブが「OK: 315 件の Markdown に破損した相対リンクはありません。」とだけ出す一方、
