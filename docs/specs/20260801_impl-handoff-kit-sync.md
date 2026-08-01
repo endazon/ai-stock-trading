@@ -46,7 +46,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `35b830a`。作業中に計画側で #98 / #105 / #107 が続けてマージされたため計 3 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `7701d25`。作業中に計画側で #98 / #105 / #107 / #110 が続けてマージされたため計 4 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -118,7 +118,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`35b830a`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`7701d25`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -241,6 +241,32 @@ pin だけ tip（`bf94477`）へ追従させた。
 複数プロジェクトが見えている構成でのみ実害があり、本リポは値を設定済みのため現時点の実害は無い。
 キット側で fail-open を可視化（stderr 警告・終了コードは変えない）するのが筋のため、
 本リポでは独自実装せず起票のみとした。
+
+### 第 5 巡（pin `7701d25`）— #109 も反映済み。残り 1 件を起票
+
+計画側 PR #110（issue #108 / #109）で、`PLAN_PROJECT` の fail-open 可視化が反映された。実測:
+
+```
+warning: PLAN_PROJECT="<project-name>" に対応する <project-name>/07_adr/ が見つからないため、
+         計画 ADR の実在性検査を全プロジェクト走査へ退避した（…）
+```
+
+単一プロジェクト構成では警告を出さない条件（`entries.length > 1`）も含めて提案どおり。
+配布物に他プロジェクトの痕跡が 1 件も残っていないことも再スキャンで確認した。
+
+本リポ側の追随:
+
+- `scripts/check-commit-messages.js` / `scripts.test.js` はキット版を採用（`PLAN_PROJECT` の値のみ維持）
+- `ci.yml` — キットが新設した `scripts-tests` ジョブを取り込み、`commit-messages` ジョブに
+  相乗りさせていた `node scripts/scripts.test.js` をそちらへ移した（キットと同型）
+- `scripts/README.md` — キットの「検査（CI）」ジョブ対応表を採用し、本リポ固有ジョブ 3 行を追記
+
+**[🟡 残り 1 件・[project-planning#112](https://github.com/endazon/project-planning/issues/112)]** `scripts.test.js` にリポジトリ固有テストの受け口が無く、
+同期のたびに手動マージが要る（本リポは `+120/-0` を抱えている）。本セッション中の 4 回の同期すべてで発生し、
+うち 2 回は**キットが本リポの提案テストを取り込んだことによる重複**の手動削除が必要だった
+（重複はテストが落ちないため気付きにくく、`grep '^  ok' | sort | uniq -d` で検出した）。
+companion ファイル（`scripts.local.test.js`）を任意で読み込む受け口を提案した。
+キット側に入れば本リポの `scripts.test.js` はキットとバイト一致にできるため、本リポでは独自実装しない。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

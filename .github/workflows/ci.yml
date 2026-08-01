@@ -1,6 +1,6 @@
 # CI（検証ゲート）— impl-handoff-kit の ci.example.yml を本リポジトリのスタック（C#/.NET）へ適用したもの。
 #
-# 技術非依存のジョブ（commit-messages / doc-links / pipeline-config / ai-workflow-config）は
+# 技術非依存のジョブ（commit-messages / scripts-tests / doc-links / pipeline-config / ai-workflow-config）は
 # キットの雛形と同型に保つ。スタック依存のジョブ（lint / build-and-test）と本リポジトリ固有の
 # ジョブ（shell-scripts / runtime-scaffold / consumer-endpoint-names / frontend / frontend-e2e）は
 # 本リポジトリ側で維持する。
@@ -33,10 +33,9 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）と、
-  # scripts/ の単体テスト（commit-allowlist の実在性・整合を含む）を実行する。
+  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
-  # fetch-depth: 0 は base..HEAD の範囲解決と、allowlist の SHA 到達可能性検証（幻 SHA 検出）に必須。
+  # fetch-depth: 0 は base..HEAD の範囲解決に必須。
   commit-messages:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
@@ -51,8 +50,26 @@ jobs:
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-commit-messages.js
-      # commit-allowlist.json のエントリが現行履歴に実在・到達可能・非準拠であることを検証する
-      # 回帰テストを含む（幻 SHA 再発防止・Issue #47）。fetch-depth: 0 によりフル履歴で判定される。
+
+  # スタック非依存: scripts/ 配下の単体テスト（外部依存ゼロ・Node 標準 assert のみ）。
+  #
+  # 個別の検証器（validate-pipeline-config / check-ai-workflow-config）は下のジョブで
+  # --self-test を走らせるが、それらは検証器**単体**の試験である。scripts.test.js は
+  # 横断的なテストであり、両者は重複しない。
+  # 【重要】このジョブが無いと、scripts.test.js は「誰かが手で叩いたときだけ走るテスト」になる。
+  # 実際に、CHANGELOG 生成が全面的に壊れる回帰が、PR の CI をすべて green のまま通り抜けた
+  # ことがある（changelog.yml は push でしか起動しないため、壊れるのはマージ後）。
+  # fetch-depth: 0 は allowlist の到達可能性検査と gen-changelog の実行に必要
+  # （浅いクローンでは当該テストが best-effort で skip されるため、検査が実効しない）。
+  scripts-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
       - name: Run scripts unit tests
         run: node scripts/scripts.test.js
 

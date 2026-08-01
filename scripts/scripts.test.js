@@ -297,9 +297,45 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
     assert.ok(!ids.has('ADR-0009'), '他プロジェクトにしか無い ID を実在として受理してはならない');
   });
 
+  // stderr を捕捉して戻り値と警告文の両方を取る。
+  const captureStderr = (fn) => {
+    const orig = process.stderr.write;
+    let out = '';
+    process.stderr.write = (s) => {
+      out += s;
+      return true;
+    };
+    try {
+      return { value: fn(), stderr: out };
+    } finally {
+      process.stderr.write = orig;
+    }
+  };
+
   ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
-    const ids = loadExistingPlanAdrIds(root, 'no-such-project');
+    const { value: ids } = captureStderr(() => loadExistingPlanAdrIds(root, 'no-such-project'));
     assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002', 'ADR-0009']);
+  });
+
+  // 退避は「黙って検査を無効化する」形にしない。配布既定のプレースホルダのまま複数プロジェクト
+  // 構成で使うと、他プロジェクトの ADR まで実在扱いになるため警告で可視化する。
+  ok('複数プロジェクト構成で退避したときは警告を出す（silently inert にしない）', () => {
+    const { stderr } = captureStderr(() => loadExistingPlanAdrIds(root, '<project-name>'));
+    assert.match(stderr, /PLAN_PROJECT/);
+    assert.match(stderr, /全プロジェクト走査へ退避/);
+  });
+
+  ok('単一プロジェクト構成では退避しても警告を出さない（実害が無いケースを騒がせない）', () => {
+    const fsy = require('fs');
+    const paty = require('path');
+    const osy = require('os');
+    const solo = fsy.mkdtempSync(paty.join(osy.tmpdir(), 'plan1-'));
+    const d = paty.join(solo, 'only-project', '07_adr');
+    fsy.mkdirSync(d, { recursive: true });
+    fsy.writeFileSync(paty.join(d, 'ADR-0001_a.md'), '');
+    const { value: ids, stderr } = captureStderr(() => loadExistingPlanAdrIds(solo, '<project-name>'));
+    assert.deepStrictEqual([...ids], ['ADR-0001'], '全走査＝自プロジェクト走査になる');
+    assert.strictEqual(stderr, '', '警告は出さない');
   });
 
   ok('planning 未 populate では null（実在性検査を skip）', () =>

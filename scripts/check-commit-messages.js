@@ -227,6 +227,22 @@ function loadExistingPlanAdrIds(
 
   // 自プロジェクト名を解決できない（PLAN_PROJECT 未設定・単一プロジェクト構成等）場合は
   // 全走査へ退避する。検査が甘くなるが、CI をローカル環境差で落とさない。
+  //
+  // ただし**複数プロジェクトが見えている構成では、退避した時点で本検査は実質無効**になる
+  // （他プロジェクトにしか無い ADR 番号まで「実在」として受理する）。配布既定の PLAN_PROJECT は
+  // プレースホルダであり、設定を忘れると黙ってこの状態に落ちる。架空の ID（ADR-9999 等）は
+  // 依然として検出されるため、利用者からは検査が効いているように見えてしまう。
+  // 「ジョブは成功するのに実は効いていない」状態を作らないよう、退避したことを警告で可視化する。
+  // 終了コードは変えない（既存リポジトリの CI を新たに落とさない）。
+  if (entries.length > 1) {
+    process.stderr.write(
+      `warning: PLAN_PROJECT="${project}" に対応する ${project}/07_adr/ が見つからないため、\n` +
+        `         計画 ADR の実在性検査を全プロジェクト走査へ退避した（他プロジェクトの ADR 番号も\n` +
+        `         「実在」として受理される）。scripts/check-commit-messages.js の PLAN_PROJECT を\n` +
+        `         自プロジェクト名へ設定すること（impl-handoff-kit/HOWTO.md Part B-5）。\n`
+    );
+  }
+
   const ids = new Set();
   let found = false;
   for (const name of entries) {
