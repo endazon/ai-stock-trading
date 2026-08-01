@@ -151,6 +151,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # check-action-versions の --compare-with-ref が統合ブランチ時点のワークフローを
+          # 読むため、履歴が要る（shallow だと当該検査が warn で skip される）。
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
@@ -168,14 +172,27 @@ jobs:
         env:
           STRICT_AI_WORKFLOW_CONFIG: "1"
         run: node scripts/check-ai-workflow-config.js
-      # Actions のメジャーバージョン退行を止める（キット issue #148）。
-      # キットの ci.example.yml には本ステップが無く、実装リポ側では検証器の自己試験
-      # （scripts-tests ジョブ経由）しか走らない。しかし巻き戻りが実際に起きるのは
-      # 「キットを同期した実装リポ」であり、検査が無ければ誰も気付けない
-      # （実測: キット pin 0847687 時点で本リポは upload-artifact@v7・キットは @v4 だった）。
-      # 本リポは opt-in で実ツリー検査まで有効にする。
+      # Actions のバージョン退行を止める（キット issue #148 / #152）。
+      #
+      # **巻き戻りが実際に起きるのはここ（キットを同期した実装リポ）である。** 配布元
+      # （project-planning）にも同じ検査があるが、それが守るのは「テンプレートが取り残されて
+      # いないか」であり、実装リポがキットのファイルをコピーした瞬間の退行は守らない。
+      # 実測: キット pin 0847687 の時点でキットは upload-artifact@v4・本リポは既に @v7 で、
+      # 素直にコピーしていれば 3 メジャー分の退行を持ち込んでいた。
+      #
+      # 2 つの基準で検査する。
+      #   - scripts/action-versions.json の下限（キット既定 ＋ action-versions.repo.json の追記）
+      #   - --compare-with-ref: **統合ブランチ時点の同じファイル**より下がっていないか
+      # 後者が要るのは、本リポが Dependabot で下限より先へ進んだあとにキットをコピーすると、
+      # 本リポにとっては退行なのに表の上では合格してしまうためである。
+      #
+      # 【置換点】本リポの統合ブランチは develop（キット既定は origin/main）。
+      # ref を読めない場合（shallow clone 等）は warn を出して素通りする（fail-open）。
       - name: Check action versions
-        run: node scripts/check-action-versions.js
+        run: |
+          node scripts/check-action-versions.js \
+            --dir .github/workflows \
+            --compare-with-ref origin/develop
 
   # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
   # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の

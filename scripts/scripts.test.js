@@ -237,6 +237,39 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     assert.deepStrictEqual(r.errors, []);
   });
 
+  // issue #153: キットの表を直接編集するとバイト一致が崩れる。companion で受ける。
+  {
+    const fsv = require('fs');
+    const patv = require('path');
+    const osv = require('os');
+    const mkTmp = (companion) => {
+      const d = fsv.mkdtempSync(patv.join(osv.tmpdir(), 'actver-'));
+      fsv.writeFileSync(patv.join(d, 'action-versions.json'), JSON.stringify({ expected: { 'actions/checkout': 7 } }));
+      if (companion !== undefined) fsv.writeFileSync(patv.join(d, 'action-versions.repo.json'), companion);
+      return d;
+    };
+    const loadIn = (d) =>
+      loadManifest(patv.join(d, 'action-versions.json'), patv.join(d, 'action-versions.repo.json'));
+
+    ok('companion が無ければキットの表だけを読む', () =>
+      assert.deepStrictEqual(loadIn(mkTmp()).expected, { 'actions/checkout': 7 }));
+
+    ok('companion の固有アクションをマージする（実測 azure/setup-helm の形）', () =>
+      assert.strictEqual(loadIn(mkTmp(JSON.stringify({ expected: { 'azure/setup-helm': 5 } }))).expected['azure/setup-helm'], 5));
+
+    ok('壊れた companion は ERROR（置いたのに効かない状態にしない）', () =>
+      assert.match(loadIn(mkTmp('{壊れ')).errors.join(' '), /解析できない/));
+
+    ok('キットの下限を下げる companion は WARN', () =>
+      assert.match(loadIn(mkTmp(JSON.stringify({ expected: { 'actions/checkout': 5 } }))).warnings.join(' '), /下げている/));
+  }
+
+  // issue #152: 表の下限だけでは、実装リポが下限より先へ進んでいる場合の同期退行を捉えられない。
+  ok('存在しない ref では null（fail-open の判断材料になる）', () => {
+    const { scanRef } = require('./check-action-versions.js');
+    assert.strictEqual(scanRef('refs/heads/__no_such_ref__', process.cwd()), null);
+  });
+
   ok('check-action-versions の自己試験が通る', () => {
     execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-action-versions.js'))} --self-test`, {
       stdio: 'ignore',

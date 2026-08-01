@@ -5,10 +5,7 @@
     "Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか",
     "走査しないため、テンプレート配下は自動追随しない（issue #148）。この表が単一情報源である。",
     "更新方法: node scripts/check-action-versions.js --check-latest で新しいメジャーを確認し、",
-    "テンプレートの uses: と本表を同時に上げる。",
-    "【本リポジトリでの追記】キットに無い本リポ固有のアクションもここへ足す（commit-allowlist.json /",
-    "changelog-overrides.json と同じくリポジトリが自分の分を埋めるデータファイルとして扱う）。",
-    "現在の追記は azure/setup-helm（helm.yml）。キット側に固有分の受け口が無い点は endazon/project-planning#153 へ環流済み。"
+    "テンプレートの uses: と本表を同時に上げる。"
   ],
   "expected": {
     "actions/checkout": 7,
@@ -19,8 +16,7 @@
     "peter-evans/create-pull-request": 8,
     "softprops/action-gh-release": 3,
     "gitleaks/gitleaks-action": 3,
-    "anthropics/claude-code-action": 1,
-    "azure/setup-helm": 5
+    "anthropics/claude-code-action": 1
   },
   "$exempt": {
     "github/codeql-action": "リリースタグが codeql-bundle-vX.Y.Z 形式でメジャー番号を引けない。実装リポ側の Dependabot が個別に pin する運用のため、テンプレート既定は v4 のままでよい。"

@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜15 巡）
+title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜16 巡）
 type: work
 status: review
 related_ids: [NFR]
@@ -16,7 +16,7 @@ related_specs:
   - ../../.claude/rules/traceability.md
 ---
 
-# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜15 巡）
+# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜16 巡）
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -32,10 +32,13 @@ related_specs:
 前回の同期（[#322](https://github.com/endazon/ai-stock-trading/pull/322)、pin `9cd3499`）以降、計画リポジトリで
 impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジトリへ取り込む。
 
-本作業は 2 巡に分かれる。**第 14 巡**（pin `0847687`）で計画側 PR
-[project-planning#145](https://github.com/endazon/project-planning/pull/145)「権限拒否で潰れた AI 実行を緑にせず、拒否ツールを名前で報告する」を取り込み、
-その過程で本リポから 2 件を起票した。それが計画側 PR [project-planning#150](https://github.com/endazon/project-planning/pull/150) で即日反映されたため、
-続けて**第 15 巡**（pin `3b0deb2`。#150 ＋ [project-planning#147](https://github.com/endazon/project-planning/pull/147)）まで取り込んでいる。
+本作業は 3 巡に分かれる。起票 → 反映 → 取り込みが同日中に 2 往復したためである。
+
+| 巡 | pin | 取り込んだ計画側 PR | 本リポから起票した指摘 |
+| --- | --- | --- | --- |
+| 第 14 巡 | `0847687` | [#145](https://github.com/endazon/project-planning/pull/145)（権限拒否の可視化） | [#148](https://github.com/endazon/project-planning/issues/148) / [#149](https://github.com/endazon/project-planning/issues/149) |
+| 第 15 巡 | `3b0deb2` | [#147](https://github.com/endazon/project-planning/pull/147)（読み取り系 git）＋ [#150](https://github.com/endazon/project-planning/pull/150)（#148 / #149 の反映） | [#152](https://github.com/endazon/project-planning/issues/152) / [#153](https://github.com/endazon/project-planning/issues/153) |
+| 第 16 巡 | `e448f33` | [#154](https://github.com/endazon/project-planning/pull/154)（#152 / #153 の反映） | なし（キット側の残課題は無くなった） |
 
 第 14 巡が解決している失敗モードは次のとおり。
 
@@ -54,8 +57,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2`。第 14 巡の起票 2 件が
-    計画側 PR [project-planning#150](https://github.com/endazon/project-planning/pull/150) で即日反映されたため、続けて第 15 巡を取り込んでいる）
+  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33`）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -130,6 +132,25 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 | `scripts/action-versions.json` | `azure/setup-helm: 5` を追記（キットの表には無い本リポ固有アクション） | 追記しないと `warn` が毎回 CI アノテーションとして出続ける。`commit-allowlist.json` / `changelog-overrides.json` と同じ「リポジトリが自分の分を埋めるデータファイル」として扱う（後述の指摘 2） |
 | `ci.yml` のコメント例 | `actions/setup-python@v5` → `@v7`（キットの `ci.example.yml` に追随） | コメント中の参考例。実使用は無い |
 
+### 第 16 巡（pin `e448f33`）で追加した反映
+
+計画側 PR [project-planning#154](https://github.com/endazon/project-planning/pull/154)（issue [#152](https://github.com/endazon/project-planning/issues/152) / [#153](https://github.com/endazon/project-planning/issues/153)＝**第 15 巡で起票した 2 件**）の反映。
+**第 15 巡で本リポジトリが独自に足した 2 点は、いずれもキット側の正式な仕組みへ置き換える**。
+
+| ファイル | 内容 |
+| --- | --- |
+| `scripts/check-action-versions.js` | companion（`action-versions.repo.json`）のマージ読み込みと `--compare-with-ref <git ref>` を追加。自己試験 14 → 22 件。**キットとバイト一致** |
+| `scripts/scripts.test.js` | 上記のテストを追加（103 → 108 件）。**キットとバイト一致** |
+| `scripts/action-versions.json` | **第 15 巡で足した `azure/setup-helm` と `$comment` の追記を取り消し、キットとバイト一致へ戻した** |
+| `scripts/action-versions.repo.json` | **新規**。`azure/setup-helm: 5` を移設（キット新設の受け口。#153 の反映） |
+| `ci.yml` の `ai-workflow-config` ジョブ | `fetch-depth: 0` を追加し、検査を `--dir .github/workflows --compare-with-ref origin/develop` へ変更（#152 の反映）。**置換点**: キット既定は `origin/main`、本リポの統合ブランチは `develop` |
+| `scripts/README.md` | キット新設の「リポジトリ固有の Actions を足す場所」節を採用。表の行・ローカル実行例もキット文面へ寄せ、置換点（`origin/develop`）と本リポの登録状況を 1 行ずつ添える |
+
+`--compare-with-ref` が必要な理由は、`action-versions.json` が**キットの下限**にすぎないためである。
+本リポが Dependabot で下限より先へ進んだあとにキットのファイルをコピーすると、本リポにとっては
+退行なのに下限検査では合格する。この形は同期前後の比較でしか捉えられない。
+併せて HOWTO Part B-5 に「**バージョンは高い方を残す**（キットのテンプレートで上書きしない）」の原則が入った。
+
 ### CI ジョブの追加は不要
 
 `check-permission-denials.js` は `ci.yml` のジョブではなく **AI ワークフロー 2 本の末尾ステップ**として動く。
@@ -138,13 +159,14 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 ## 受け入れ基準
 
-- [x] `planning` submodule が `origin/main` の先端（`3b0deb2`）を指す
+- [x] `planning` submodule が `origin/main` の先端（`e448f33`）を指す
 - [x] `repo-template/` と本リポジトリの残差分が、判断ルールで説明できるものだけになる
-- [x] キット由来のファイル（第 14 巡 4 件＋第 15 巡 7 件）がキットと**バイト一致**である（`cmp` で確認）
+- [x] キット由来のファイルがすべてキットと**バイト一致**である（`cmp` で全 102 ファイルを機械照合。
+      残差分は「固有の実コンテンツ」「置換点」だけ）
 - [x] `node scripts/check-permission-denials.js --self-test` が合格する（15 件）
-- [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（14 件・退行 0・warn 0）
+- [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（22 件・退行 0・warn 0）
 - [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（23 件・不備 0 件。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0）
-- [x] `node scripts/scripts.test.js` が全件合格する（103 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
+- [x] `node scripts/scripts.test.js` が全件合格する（108 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
 - [x] `node scripts/check-doc-links.js` の結果が pin 前進の前後で不変である（既存 20 件のみ・新規破損なし）
 - [x] `dotnet build backend/backend.slnx` が通る（コード無変更の回帰確認）
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
@@ -152,7 +174,9 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
       （第 14 巡: [project-planning#148](https://github.com/endazon/project-planning/issues/148) /
       [project-planning#149](https://github.com/endazon/project-planning/issues/149)。
       第 15 巡: [project-planning#152](https://github.com/endazon/project-planning/issues/152) /
-      [project-planning#153](https://github.com/endazon/project-planning/issues/153)）
+      [project-planning#153](https://github.com/endazon/project-planning/issues/153)。
+      **4 件とも計画側で反映済み**。第 16 巡では新たな指摘なし）
+- [x] `--compare-with-ref` による巻き戻し検知の実効性を変異テストで実測する（`@v7` → `@v4` で exit 1・復元で exit 0）
 
 ## テスト方針
 
@@ -169,14 +193,14 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 | 検証 | 結果（最終＝第 15 巡取り込み後） |
 | --- | --- |
 | `check-permission-denials.js --self-test` | ✅ 15 件合格（第 14 巡は 11 件） |
-| `check-action-versions.js --self-test` | ✅ 14 件合格 |
-| `check-action-versions.js`（実ツリー・11 アクション） | ✅ 退行なし・warn 0（`azure/setup-helm` を表へ追記する前は warn 1 件） |
+| `check-action-versions.js --self-test` | ✅ 22 件合格（第 15 巡は 14 件） |
+| `check-action-versions.js --dir .github/workflows --compare-with-ref origin/develop`（CI と同条件・11 アクション） | ✅ 退行なし・warn 0（companion 未追跡のあいだは `warning:` が出ることも実測） |
 | `check-ai-workflow-config.js --self-test` | ✅ 23 件合格（第 14 巡は 19 件） |
 | `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0 |
-| `scripts.test.js`（ローカル） | ✅ 103 件合格（前巡 85 → 第 14 巡 92 → 第 15 巡 103） |
-| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 103 件合格 |
+| `scripts.test.js`（ローカル） | ✅ 108 件合格（前巡 85 → 第 14 巡 92 → 第 15 巡 103 → 第 16 巡 108） |
+| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 108 件合格 |
 | `dotnet build backend/backend.slnx` | ✅ 0 警告 0 エラー |
-| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..3b0deb2 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
+| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..e448f33 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
 
 **新ステップの変異テスト**（合成した `execution_file` を与えて実測）
 
@@ -186,6 +210,17 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 | `permission_denials: []`（0 件） | `✓ ツールの権限拒否は発生していない` | 0 |
 | パス未指定（ログを読めない） | `warn … 検査していない` | 0（fail-open） |
 | （第 15 巡）`Bash` の拒否に `command: "git status --short"` を添えたログ | `error … Bash(git status)（1 件）`＝**コマンド名まで出る**（引数は出ない） | **1** |
+
+**（第 16 巡）巻き戻し検知の変異テスト**。`frontend-tests.example.yml` の `upload-artifact` を
+`@v7` → `@v4` に落として実測した（＝キットが第 14 巡時点で持っていた値をそのままコピーした状況の再現）。
+
+| 条件 | 結果 |
+| --- | --- |
+| `@v4` へ変異 | ✗ 退行 **2 件**・exit **1**。①下限 v7 を下回る ②「`origin/develop` 時点より古い。キットの同期でバージョンが巻き戻った可能性がある」 |
+| 復元後 | ✓ 退行なし・exit 0（誤検知なし） |
+
+2 系統が同時に発火することを確認した。仮に将来キットの下限が本リポより先に進まれても、
+②（統合ブランチとの比較）は独立に効く。
 
 ## 計画書との差異
 
@@ -288,6 +323,20 @@ HOWTO は `Task` 拒否への恒久対処を 2 択（(a) `Task` を `--allowedTo
 なお `$exempt` に `github/codeql-action` が入っている点から、キットは実装リポ固有の事情を
 既に一部この表で吸収する設計であり、受け口を設けるのは既存方針と整合すると考える。
 
+### 第 16 巡（pin `e448f33`）— 起票した 4 件すべてが反映され、キット側の残課題は無くなった
+
+計画側 PR [project-planning#154](https://github.com/endazon/project-planning/pull/154)（issue #152 / #153）で、第 15 巡の 2 件が**いずれも提案どおり**反映された。
+
+| 起票 | 反映内容 | 実測 |
+| --- | --- | --- |
+| [#152](https://github.com/endazon/project-planning/issues/152)（実装リポの CI に実ツリー検査の口が無い） | `ci.example.yml` に検査ステップと `fetch-depth: 0` を追加。さらに提案 2（同期時の退行検出）も `--compare-with-ref <git ref>` として実装され、提案 3（HOWTO の置換点明記）も「**バージョンは高い方を残す**」の原則として入った | 変異テストで下限・ref 比較の 2 系統が同時に発火（前掲） |
+| [#153](https://github.com/endazon/project-planning/issues/153)（固有アクションの受け口が無い） | 提案 1（companion）を採用。`action-versions.repo.json` を `expected` / `$exempt` ごとマージ読み込み。空・壊れた JSON・下限の引き下げ・git 未追跡の 4 状態を検出する規約まで含む | 本リポの追記を companion へ移設し、`action-versions.json` を**キットとバイト一致へ戻せた**。未追跡状態では `warning:` が出ることも実測 |
+
+**本巡では新たな指摘は無い。** `repo-template/` との残差分は「本リポジトリ固有の実コンテンツ」
+「HOWTO Part B-5 の置換点」「本リポジトリ固有の CI ジョブ」だけになった（全 102 ファイルを `cmp` で機械照合）。
+
+第 14〜16 巡で本リポから起票した 4 件（#148 / #149 / #152 / #153）はすべて反映済みである。
+
 ## 未決事項
 
-- 上記フィードバック 4 件（第 14 巡 2 件は反映済み・第 15 巡 2 件は起票）の採否は計画側の `/triage-feedback` の判断に委ねる。
+- なし（起票した 4 件はいずれも計画側で反映済み）。

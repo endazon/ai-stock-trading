@@ -1,0 +1,13 @@
+{
+  "$comment": [
+    "本リポジトリ固有のアクションのメジャーバージョン下限。キットの action-versions.json は編集しない",
+    "（編集するとバイト一致が崩れ、キット同期のたびに手動マージが要る。scripts.repo.test.js と同じ理由）。",
+    "受け口の新設は本リポジトリからの環流 endazon/project-planning#153 による。",
+    "追記しないと『表に無いため下限を検査していない』の警告が CI アノテーションとして毎回出続ける。",
+    "azure/setup-helm: helm.yml の Helm チャート検査（IADR-0058）で使用。"
+  ],
+  "expected": {
+    "azure/setup-helm": 5
+  },
+  "$exempt": {}
+}
