@@ -32,6 +32,26 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
+      # 【落とし穴】autobuild はリポジトリ全体を走査してビルド対象を推定するため、**ビルド不可の
+      # 雛形ソリューション**（スキャフォールド用に置いてあり、共通 props を継承せず単体では
+      # ビルドできないもの）を同梱するリポジトリでは、それを拾ってジョブが失敗する。
+      # エラーは「ビルドに失敗した」としか出ず、原因が雛形であることは出力から読み取れない。
+      # CodeQL は実行時間が長いため試行錯誤のコストも高い。
+      #
+      # 同種のトラップへの対処が scripts/setup.sh・security.yml（2 か所）・
+      # copilot-setup-steps.example.yml にもあるが、それらは `find` の除外で対処できるのに対し、
+      # **autobuild は find を使わないため同じ方法では直せない**。該当する場合は下の Autobuild を
+      # 削除し、実ビルド対象を明示するステップへ置き換えること。置き換え例:
+      #
+      #   - name: Build backend units (traced)
+      #     run: |
+      #       for slnx in src/*/backend/backend.slnx; do
+      #         echo "::group::$slnx"
+      #         dotnet build "$slnx" --configuration Release
+      #         echo "::endgroup::"
+      #       done
+      #
+      # 明示ビルドにする場合は、init と analyze の間に置いて CodeQL のトレーサに載せること。
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
       - name: Perform CodeQL Analysis

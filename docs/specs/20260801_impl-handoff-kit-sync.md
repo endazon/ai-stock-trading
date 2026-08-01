@@ -46,7 +46,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `7701d25`。作業中に計画側で #98 / #105 / #107 / #110 が続けてマージされたため計 4 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `c72dbf2`。作業中に計画側で #98 / #105 / #107 / #110 / #113 が続けてマージされたため計 5 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -118,7 +118,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`7701d25`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`c72dbf2`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -267,6 +267,27 @@ warning: PLAN_PROJECT="<project-name>" に対応する <project-name>/07_adr/ �
 （重複はテストが落ちないため気付きにくく、`grep '^  ok' | sort | uniq -d` で検出した）。
 companion ファイル（`scripts.local.test.js`）を任意で読み込む受け口を提案した。
 キット側に入れば本リポの `scripts.test.js` はキットとバイト一致にできるため、本リポでは独自実装しない。
+
+### 第 6 巡（pin `c72dbf2`）— #112 も反映済み。`scripts.test.js` がキットとバイト一致になった
+
+計画側 PR #113（issue #111 / #112）で、リポジトリ固有テストの受け口が新設された。
+本リポの固有テスト 118 行を `scripts/scripts.local.test.js` へ移した結果、
+**`scripts/scripts.test.js` はキットとバイト一致**（`diff -q` で確認）になり、
+以後の同期は上書きコピー 1 回で済む（68 件全合格・重複ゼロ）。
+
+- `codeql.yml` — autobuild が雛形ソリューションを拾って失敗するトラップの注記を取り込んだ。
+  本リポは `backend/backend.slnx` 単独で雛形ソリューションを持たないため**該当しない**が、注記ごと取り込む
+- `copilot-setup-steps.yml` / `scripts/README.md` — キット版を採用（README には固有スクリプト表へ
+  `scripts.local.test.js` の行を追記）
+
+**[🟡 残り 1 件・[project-planning#115](https://github.com/endazon/project-planning/issues/115)]** 受け口のファイル名 `scripts.local.test.js` が
+「個人設定・コミットしない」の慣習（`.local`）と衝突する。`.gitignore` に `*.local.*` / `*local*` 系の
+パターンがあると除外され、**固有テストが CI から黙って消える**（companion が無ければ何もしない設計のため
+テストは減るだけで落ちない）。キット自身が `CLAUDE.local.md` / `*.gitignore` の `*.local` で
+`.local` を「追跡しない」の目印に使っている点が紛らわしい。
+
+本リポは `git check-ignore -v scripts/scripts.local.test.js` が exit 1（除外されない）で**影響を受けていない**。
+予防的な報告として改名（`scripts.repo.test.js` 等）または追跡状態の警告を提案した。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

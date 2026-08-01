@@ -26,6 +26,7 @@
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
 | `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
+| `scripts.local.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
 
 ## プロファイルの適用
 
@@ -69,6 +70,27 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 > `scripts.test.js` を CI に載せないと「誰かが手で叩いたときだけ走るテスト」になる。
 > 実際に、CHANGELOG 生成が全面的に壊れる回帰が PR の CI をすべて green のまま通り抜けたことがある
 > （`changelog.yml` は push でしか起動しないため、壊れるのはマージ後）。
+
+### リポジトリ固有のテストを足す場所
+
+`scripts.test.js` は**キットが配布する共通テスト**であり、キットの更新のたびに差し替わる。
+自前スクリプトの検査を同ファイルへ直接追記すると、同期のたびに手動マージが要り、
+キットが同じテストを取り込んだ際に重複も生じる（重複はテストが落ちないため気付きにくい）。
+
+固有テストは **`scripts/scripts.local.test.js`** に置く。`scripts.test.js` が存在すれば自動で
+読み込む（無ければ何もしない）。これにより `scripts.test.js` をキットとバイト一致に保て、
+同期は上書きコピー 1 回で済む。
+
+```js
+// scripts/scripts.local.test.js
+module.exports = ({ ok, assert }) => {
+  ok('本リポ固有の検査', () => {
+    assert.ok(true);
+  });
+};
+```
+
+`ok` をそのまま受け取るため、件数の集計は自動で正しくなる（カウンタが分かれない）。
 
 ## 自動生成（CI）
 

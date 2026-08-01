@@ -366,124 +366,55 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
   });
 }
 
-// ==== ここから本リポジトリ固有のテスト（キットには無いスクリプト・呼び出し側の回帰） ====
+// --- リポジトリ固有テストの受け口 ------------------------------------------
+//
+// 本ファイルはキット（impl-handoff-kit）が配布する共通テストであり、キットの更新のたびに
+// 差し替わる。リポジトリ固有のテスト（キットに無い自前スクリプトの検査）を本ファイルへ直接
+// 追記すると、同期のたびに手動マージが要り、キットが同じテストを取り込んだ際に重複も生じる
+// （重複はテストが落ちないため気付きにくい）。
+//
+// 固有テストは `scripts/scripts.local.test.js` に置く。本ファイルはキットとバイト一致に保て、
+// 同期は上書きコピー 1 回で済む。ファイルが無ければ何もしない（キット既定の挙動は変わらない）。
+//
+//   // scripts/scripts.local.test.js
+//   module.exports = ({ ok, assert }) => {
+//     ok('本リポ固有の検査', () => { /* ... */ });
+//   };
+//
+// `ok` をそのまま渡すため、件数の集計は自動で正しくなる。
 
-// --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
-const fsDl = require('fs');
-const osDl = require('os');
-const pathDl = require('path');
-const { parseArgs: dlParseArgs, planningPopulated } = require('./check-doc-links.js');
-
-ok('check-doc-links: parseArgs 既定は requirePlanning=false', () => {
-  const a = dlParseArgs([]);
-  assert.strictEqual(a.requirePlanning, false);
-  assert.strictEqual(a.dir, 'docs');
-});
-ok('check-doc-links: --require-planning で requirePlanning=true', () => {
-  assert.strictEqual(dlParseArgs(['--require-planning']).requirePlanning, true);
-});
-ok('check-doc-links: --dir と --require-planning の併用', () => {
-  const a = dlParseArgs(['--dir', 'notes', '--require-planning']);
-  assert.strictEqual(a.dir, 'notes');
-  assert.strictEqual(a.requirePlanning, true);
-});
-ok('check-doc-links: planningPopulated は planning/projects 実在で true', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-pop-'));
-  fsDl.mkdirSync(pathDl.join(root, 'planning', 'projects'), { recursive: true });
-  assert.strictEqual(planningPopulated(root), true);
-});
-ok('check-doc-links: planningPopulated は空プレースホルダ（planning/ のみ）で false', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-empty-'));
-  fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true });
-  assert.strictEqual(planningPopulated(root), false);
-});
-ok('check-doc-links: planningPopulated は planning/ 不在で false', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-none-'));
-  assert.strictEqual(planningPopulated(root), false);
-});
-
-// --- validate-pipeline-config: 実 pipeline.json の契約テスト -------------------
-// ADR-0001, IADR-0077, #22: 取引パイプラインの宣言（deploy/helm/ai-stock-trading/files/pipeline.json）が
-// 検証器（V1〜V6）に合格することを回帰テストとして固定する。宣言が壊れた・接続性/循環違反へ退行した場合に
-// CI（node scripts/scripts.test.js）と実ファイル検証ステップの両方で検知する。
-const pathPc = require('path');
-const PIPELINE_JSON = pathPc.join(__dirname, '..', 'deploy', 'helm', 'ai-stock-trading', 'files', 'pipeline.json');
-ok('validate-pipeline-config: 実 pipeline.json が検証器に合格する', () => {
-  const out = execSync(
-    `node ${JSON.stringify(pathPc.join(__dirname, 'validate-pipeline-config.js'))} ${JSON.stringify(PIPELINE_JSON)}`,
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+// 受け口そのものの回帰テスト。仕組みは、動いていることを確かめないと黙って壊れる。
+// 本ファイルを子プロセスで起動して、companion のテストが実際に走ることを確認する。
+// 既に companion がある環境（＝固有テストを持つリポジトリ）では上書きを避けて skip する
+// （子プロセス側もこの条件で skip するため、再帰しない）。
+ok('固有テストの受け口: scripts.local.test.js があれば読み込まれる', () => {
+  const fsx = require('fs');
+  const pathx = require('path');
+  const companion = pathx.join(__dirname, 'scripts.local.test.js');
+  if (fsx.existsSync(companion)) return; // best-effort（既存ファイルを壊さない）
+  const marker = 'companion-loaded-marker';
+  fsx.writeFileSync(
+    companion,
+    `module.exports = ({ ok, assert }) => { ok('${marker}', () => assert.ok(true)); };\n`
   );
-  assert.match(out, /^OK: /m, `検証器が OK を返すべき（実出力: ${out}）`);
+  try {
+    const out = execSync(`node ${JSON.stringify(__filename)}`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    assert.match(out, new RegExp(marker), 'companion のテストが実行されていない');
+  } finally {
+    fsx.unlinkSync(companion);
+  }
 });
 
-// --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 再発防止） ---
-// ADR-0013, IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
-// namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
-// pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
-const {
-  endpointNameOf,
-  consumerClassesIn,
-  pathService,
-  findCollisions,
-  checkTree: checkConsumerEndpointNames,
-} = require('./check-consumer-endpoint-names.js');
-
-const RISK_CS = [
-  'namespace AiStockTrading.RiskManagement.Worker.Composable.Steps;',
-  '',
-  '// FR-10: 取引判断を購読し承認/拒否を発行する。',
-  'internal sealed class TradeDecisionMadeConsumer(',
-  '    OrderScreeningService screeningService,',
-  '    ILogger<TradeDecisionMadeConsumer> logger)',
-  '    : IConsumer<TradeDecisionMade>',
-  '{',
-  '}',
-].join('\n');
-
-ok('endpointNameOf: 末尾 Consumer を落とす（DefaultEndpointNameFormatter と同じ規則）', () => {
-  assert.strictEqual(endpointNameOf('TradeDecisionMadeConsumer'), 'TradeDecisionMade');
-  assert.strictEqual(endpointNameOf('TradeDecisionMadeBaselineConsumer'), 'TradeDecisionMadeBaseline');
-  assert.strictEqual(endpointNameOf('Foo'), 'Foo');
-});
-
-ok('consumerClassesIn: 複数行プライマリコンストラクタの IConsumer 実装を検出する', () => {
-  assert.deepStrictEqual(consumerClassesIn(RISK_CS), ['TradeDecisionMadeConsumer']);
-});
-
-ok('consumerClassesIn: IConsumer を実装しないクラス・コメント中の IConsumer は拾わない', () => {
-  assert.deepStrictEqual(consumerClassesIn('// : IConsumer<T>\nclass Poller : BackgroundService\n{\n}'), []);
-});
-
-ok('pathService: backend/Services/<Service>/ からサービス名を得る', () => {
-  assert.strictEqual(pathService('backend/Services/RiskManagementService/src/W/X.cs'), 'RiskManagementService');
-  assert.strictEqual(pathService('backend/Shared/X.cs'), null);
-});
-
-ok('findCollisions: サービス跨ぎの同名 consumer を衝突として検出する（#258 の回帰）', () => {
-  const collisions = findCollisions([
-    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-    { service: 'MarketMonitorService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'b.cs' },
-  ]);
-  assert.strictEqual(collisions.length, 1);
-  assert.strictEqual(collisions[0].endpoint, 'TradeDecisionMade');
-});
-
-ok('findCollisions: 改名でキューが分離されれば衝突しない', () => {
-  assert.deepStrictEqual(findCollisions([
-    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-    { service: 'MarketMonitorService', className: 'TradeDecisionMadeBaselineConsumer', endpoint: 'TradeDecisionMadeBaseline', file: 'b.cs' },
-  ]), []);
-});
-
-ok('findCollisions: 同一サービス内は衝突判定の対象外（同名はコンパイルエラーで防がれる）', () => {
-  assert.deepStrictEqual(findCollisions([
-    { service: 'S', className: 'AConsumer', endpoint: 'A', file: 'a.cs' },
-    { service: 'S', className: 'BConsumer', endpoint: 'B', file: 'b.cs' },
-  ]), []);
-});
-
-ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
-  assert.deepStrictEqual(checkConsumerEndpointNames(), []);
-});
+{
+  const fsx = require('fs');
+  const pathx = require('path');
+  const localTests = pathx.join(__dirname, 'scripts.local.test.js');
+  if (fsx.existsSync(localTests)) {
+    require(localTests)({ ok, assert });
+  }
+}
 
 process.stdout.write(`\n✓ ${passed} tests passed\n`);

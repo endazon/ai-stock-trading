@@ -55,6 +55,8 @@ jobs:
           # ビルド不可の雛形ソリューション（共通 props を継承せず単体では restore できないもの）を
           # 同梱するリポジトリでは、それも拾って失敗する。既定で ./templates/* を除外してある。
           # 同一パターンが scripts/setup.sh と security.yml（2 か所）にもある。片方だけ直さないこと。
+          # さらに codeql.example.yml の autobuild も同じ雛形を拾って失敗するが、あちらは find を
+          # 使わないため除外では直せない（実ビルド対象の明示指定へ置き換える。同ファイルの注記参照）。
           for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' -not -path './templates/*' | sort); do
             dotnet restore "$sln"
             found=1
