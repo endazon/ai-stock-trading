@@ -13,8 +13,9 @@ const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|java|kt|go|rs|rb|php|py|js|jsx|ts|tsx|vue
 
 function tryGit(args) {
   try {
-    // 最大 3 回呼ばれるため、合計が全体の安全弁（5 秒）を超えないよう 1 回あたりを短く保つ。
-    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500 }).trim();
+    // 最悪 4 回呼ばれる（rev-parse ×2 → diff → ls-files）ため、合計が全体の
+    // 安全弁（5 秒）を超えないよう 1 回あたりを 1.2 秒に保つ（4 × 1200ms = 4800ms < 5000ms）。
+    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1200 }).trim();
   } catch (e) { return null; }
 }
 
