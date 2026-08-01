@@ -48,7 +48,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `4d3eb6b`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 / #132 が続けてマージされたため計 10 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `168f53d`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 / #132 / #135 が続けてマージされたため計 11 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -120,7 +120,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`4d3eb6b`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`168f53d`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -418,6 +418,25 @@ companion ファイル（`scripts.local.test.js`）を任意で読み込む受�
 すべて実行されなくなった。この状態からレビューの実行ツールが全部消えても検出されず、
 #323（レビューが検証できず静的読解へ退行）へ**検査器が入ったまま**戻れてしまう。
 既定名のファイルが存在するのに applicable でないなら警告する案を提案した。
+
+### 第 11 巡（pin `168f53d`）— #134 解消。残り 1 件を起票
+
+計画側 PR #135（issue #134）で、`claude_args` を解析できないファイルが検査から丸ごと消える経路が
+可視化された。既定名のファイルがディスクに在るのに applicable でなければ warn を出す。
+「そもそも既定名のファイルが無い構成」は警告しない切り分けも入っている。自己試験は 17 → 19 件。
+
+変異テストで確認した。`claude_args:` を `claude_arg:` に変えると
+「claude-code-review.yml は存在するが claude_args を解析できず、検査対象から外れている」と警告される
+（exit 0 のまま＝fail-open は維持）。
+
+**[🟡 残り 1 件・[project-planning#137](https://github.com/endazon/project-planning/issues/137)]** キットの Node 製検査器が出す warn / notice は
+すべて素の stderr 行であり、**GitHub のアノテーションにならない**。exit 0 のためジョブは緑で終わり、
+Actions の UI には何も現れない。キット自身は `security.yml` で `::error::` を使っているため、
+Node 製検査器の側だけがこの可視化手段を使っていない状態である。
+
+実例として、[project-planning#122](https://github.com/endazon/project-planning/issues/122) の 3 系統乖離は修正までのあいだ CI で毎回 warn が出ていたが、
+気付いたのは「ローカル実行」と「AI レビューが自分で実走した」の 2 経路だけで、**CI ログ経由ではなかった**。
+`GITHUB_ACTIONS` が立っているときだけ `::warning::` / `::notice::` で出す案（exit コードは変えない）を提案した。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

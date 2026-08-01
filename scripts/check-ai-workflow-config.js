@@ -96,15 +96,43 @@ function pickCanonical(files, keyword) {
 }
 
 /**
- * 2 ファイル間の突き合わせが**成立しなかった**ことを警告する（失敗はさせない）。
+ * 検査が**成立しなかった**ことを警告する（失敗はさせない）。
  *
- * toolchainDrift は既定名で 2 ファイルを引き当てられなければ黙って何も返さない。
- * 2 つを 1 ファイルに統合した構成や別名を採ったリポジトリでは、エラーも警告も出ないまま
- * 検査だけが無効になる——キットが繰り返し潰してきた「ジョブは成功するのに実は効いていない」
- * 型そのものである（issue #130 副次指摘）。名前は各リポジトリの自由なので失敗はさせず、
- * 「この検査は効いていない」ことだけを可視化する。
+ * キットが繰り返し潰してきた「ジョブは成功するのに実は効いていない」型を 2 つ塞ぐ。
+ * いずれも ERROR ではなく **warn**（exit 0 のまま）にしている。理由は 2 つある。
+ *   - ファイル名・ワークフロー構成の自由度を各リポジトリに残すため。
+ *   - 1 は claude-code-action の**入力名が将来変わった**場合にも成立してしまう。ERROR に
+ *     すると、新しい版へ追随した全リポジトリの CI が検証器の更新まで一斉に落ちる。
+ *     キットが他所（PLAN_PROJECT・check-doc-links）で採っている fail-open と揃える。
+ * その代わり「効いていない」ことは必ず出力に出す。warn を読まない運用だと 1 は
+ * 素通りするため、CI ログの warn は無視しないこと。
+ *
+ * 1. **既定名のファイルがあるのに claude_args を解析できない**（issue #134）。
+ *    checkWorkflow は claude_args ブロックを 1 つも取れないと applicable: false を返し、
+ *    呼び出し側が集計から丸ごと除外する。結果、記法検査・SDK 整合検査・ドリフト検査の
+ *    **すべてが実行されない**のに green で終わる。手がかりは「2 件を検査」→「1 件を検査」
+ *    という件数の変化だけで、これは誰も見ていない。この状態からレビュー側の実行ツールが
+ *    全部消えても検出されず、検査器が入ったまま元の障害へ戻れてしまう。
+ *    起こり方は現実的である（入力名の変更・YAML のインデント崩れ・`with:` の付け替えミス）。
+ * 2. **既定名で 2 ファイルを引き当てられない**（issue #130 副次指摘）。2 つを 1 ファイルへ
+ *    統合した構成や別名を採ったリポジトリでは、ドリフト検査だけが黙って無効になる。
+ *
+ * allFiles はディスク上の全ワークフローのパス（listWorkflowFiles の結果）。
+ * 省略時は 1 の検査を行わない（自己試験など、ディスクを持たない呼び出し向け）。
  */
-function driftScopeWarnings(files) {
+function driftScopeWarnings(files, allFiles = []) {
+  const unparsed = [];
+  for (const kw of ['claude-coding', 'claude-code-review']) {
+    const onDisk = allFiles.find((p) => path.basename(p).includes(kw));
+    if (onDisk && !pickCanonical(files, kw)) unparsed.push(path.basename(onDisk));
+  }
+  if (unparsed.length) {
+    return [
+      `${unparsed.join(', ')} は存在するが claude_args を解析できず、検査対象から外れている` +
+        '（記法検査・SDK 整合・ドリフト検査がいずれも実行されていない）。' +
+        'キー名（claude_args）とインデントを確認すること',
+    ];
+  }
   if (files.length < 2) return []; // 実装用のみ・レビュー用のみの構成は正常
   if (pickCanonical(files, 'claude-coding') && pickCanonical(files, 'claude-code-review')) return [];
   return [
@@ -346,9 +374,11 @@ function selfTest() {
     ['レビュー側にだけあるツールも検出する', pair(FULL, `${FULL},Bash(node:*)`), true],
   ];
 
-  // issue #130 副次: 既定名で引き当てられないと検査が無言で無効になる。
+  // issue #130 副次 / #134: 検査が無言で無効になる経路。
+  // 第 3 要素は allFiles（ディスク上の全ワークフロー）。
+  const CANON = ['.github/workflows/claude-coding.example.yml', '.github/workflows/claude-code-review.example.yml'];
   const scopeCases = [
-    ['既定名で 2 ファイル引き当てられれば警告しない', pair(FULL, FULL), false],
+    ['既定名で 2 ファイル引き当てられれば警告しない', pair(FULL, FULL), false, CANON],
     [
       '既定名で引き当てられない 2 ファイル構成は警告する',
       [
@@ -358,11 +388,26 @@ function selfTest() {
       true,
     ],
     ['1 ファイルのみの構成は警告しない', [{ file: 'claude.yml', text: mkWf(FULL), tools: FULL.split(',') }], false],
+    // issue #134: 既定名のファイルはディスクに在るが、claude_args を解析できず
+    // applicable: false で除外された（＝ files に現れない）状態。
+    [
+      '既定名のファイルがあるのに claude_args を解析できなければ警告する',
+      [{ file: CANON[0], text: mkWf(FULL), tools: FULL.split(',') }],
+      true,
+      CANON,
+    ],
+    // 既定名のファイルがディスクにも無い構成（レビュー用のみ等）は警告しない。
+    [
+      '既定名のファイルがそもそも無ければ警告しない',
+      [{ file: CANON[1], text: mkWf(FULL), tools: FULL.split(',') }],
+      false,
+      [CANON[1]],
+    ],
   ];
 
   let failed = 0;
-  for (const [label, files, expectWarn] of scopeCases) {
-    const got = driftScopeWarnings(files).length > 0;
+  for (const [label, files, expectWarn, allFiles] of scopeCases) {
+    const got = driftScopeWarnings(files, allFiles).length > 0;
     if (got === expectWarn) {
       process.stdout.write(`  ok  ${label}\n`);
     } else {
@@ -431,7 +476,9 @@ function main(argv) {
   allErrors.push(...toolchainDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
-  for (const w of driftScopeWarnings(forDrift)) process.stdout.write(`  warn  ${w}\n`);
+  // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue #134 の検査は黙って
+  // 効かなくなる——この検査器が塞いでいる不具合と同じ形になる。省略しないこと。
+  for (const w of driftScopeWarnings(forDrift, files)) process.stdout.write(`  warn  ${w}\n`);
   for (const w of parityWarnings(perFile)) process.stdout.write(`  warn  ${w}\n`);
 
   if (allErrors.length) {
