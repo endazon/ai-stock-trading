@@ -48,7 +48,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `3325903`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 が続けてマージされたため計 9 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `4d3eb6b`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 / #132 が続けてマージされたため計 10 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -120,7 +120,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`3325903`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`4d3eb6b`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -390,6 +390,34 @@ companion ファイル（`scripts.local.test.js`）を任意で読み込む受�
 実 run では `node scripts/*.js` が 59 回・`dotnet build` が 5 回だった。落ちるとキットの検査器の実走が全滅する。
 2 ファイル間の比較でだけ `uses:` ゲートを外す案を、誤検知が増えないことの実測（2 ファイルの
 `Bash(...)` 差は `cat` / `find` / `mkdir` / `git` 系のみ＝`TOOLCHAINS` 外）とともに提案した。
+
+### 第 10 巡（pin `4d3eb6b`）— #131 解消。残り 1 件を起票
+
+計画側 PR #132（issue #128 / #129 / #130 / #131）で、本リポから起票した
+`Bash(node:*)` の検出漏れが解消された。2 ファイル間の比較では `uses: setup-*` で絞らず
+`TOOLCHAINS` 全体を対象にする（`requireUses: false`）方式で、提案どおりである。
+併せて本リポが見つけていなかった**偽陽性**（`setup-*` 構成が非対称だと `--allowedTools` が
+同一でも ERROR になる・#130）も是正された。自己試験は 11 → 17 件。
+
+変異テストで確認した。
+
+| 変異 | 検出 |
+| --- | --- |
+| レビュー側から `Bash(node:*)` を削除 | ✅ exit 1・「実装用にあるスタック別の実行ツールが欠けている: Bash(node:*)」 |
+| レビュー側の `claude_args` キーを壊す | ❌ **検出されない**（下記） |
+
+あわせて計画側 PR #133 で `/sync-impl`（実装 → 計画の逆方向同期）が新設された。
+実装リポの `docs/adr/` と `feedback/` を GitHub API で読み、IADR ↔ 計画 ADR の対応表を生成する。
+**本リポは入力契約を満たしている**ことを確認した（IADR 126 件すべてに `title` / `related_ids` /
+`status` の frontmatter があり、`feedback/` の 3 記録も `status: open` と `title` を持つ）。
+
+**[🟡 残り 1 件・[project-planning#134](https://github.com/endazon/project-planning/issues/134)]** `claude_args` を解析できないファイルは
+`applicable: false` として集計から丸ごと除外され、`driftScopeWarnings` も `files.length < 2` を
+「片方だけの構成」とみなすため、**エラーも警告も出ない**。実測では `claude_args:` を `claude_arg:` に
+変えるだけで「1 件を検査 ✓ 問題なし」（exit 0）になり、レビュー側の記法検査・SDK 整合・ドリフト検査が
+すべて実行されなくなった。この状態からレビューの実行ツールが全部消えても検出されず、
+#323（レビューが検証できず静的読解へ退行）へ**検査器が入ったまま**戻れてしまう。
+既定名のファイルが存在するのに applicable でないなら警告する案を提案した。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

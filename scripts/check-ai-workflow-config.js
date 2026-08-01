@@ -39,7 +39,9 @@ const TOOLCHAINS = [
   { action: 'setup-node', commands: ['node', 'npm', 'npx', 'pnpm', 'yarn'] },
   { action: 'setup-python', commands: ['python', 'python3', 'pytest', 'pip'] },
   { action: 'setup-go', commands: ['go'] },
-  { action: 'setup-java', commands: ['mvn', 'gradle', './gradlew'] },
+  // gradle ラッパは `Bash(./gradlew build:*)` と書かれる。下の照合はコマンド名を
+  // 末尾（`gradlew`）へ正規化するため、`./gradlew` だけでは永久に一致しない。両方載せる。
+  { action: 'setup-java', commands: ['mvn', 'gradle', './gradlew', 'gradlew'] },
 ];
 
 /** `claude_args: |` のブロックスカラー本文を配列で返す（複数あれば複数要素）。 */
@@ -88,15 +90,48 @@ function bashCommandsOf(tools) {
   return cmds;
 }
 
+/** 既定名（claude-coding / claude-code-review）でファイルを引き当てる。 */
+function pickCanonical(files, keyword) {
+  return files.find((f) => path.basename(f.file).includes(keyword));
+}
+
 /**
- * 実際に `uses:` されている setup-* に対応するスタック別実行コマンドだけを抜き出す。
- * 2 ファイル間の突き合わせに使う。全ツールの単純比較は誤検知する
- * （実装側の Edit / Write / 書き込み系 git は、レビュー側に**無いのが正しい**設計）。
+ * 2 ファイル間の突き合わせが**成立しなかった**ことを警告する（失敗はさせない）。
+ *
+ * toolchainDrift は既定名で 2 ファイルを引き当てられなければ黙って何も返さない。
+ * 2 つを 1 ファイルに統合した構成や別名を採ったリポジトリでは、エラーも警告も出ないまま
+ * 検査だけが無効になる——キットが繰り返し潰してきた「ジョブは成功するのに実は効いていない」
+ * 型そのものである（issue #130 副次指摘）。名前は各リポジトリの自由なので失敗はさせず、
+ * 「この検査は効いていない」ことだけを可視化する。
  */
-function toolchainCommandsOf(text, tools) {
-  const used = TOOLCHAINS.filter((tc) =>
-    new RegExp(`^\\s*-?\\s*uses:\\s*\\S*${tc.action}`, 'm').test(text)
-  );
+function driftScopeWarnings(files) {
+  if (files.length < 2) return []; // 実装用のみ・レビュー用のみの構成は正常
+  if (pickCanonical(files, 'claude-coding') && pickCanonical(files, 'claude-code-review')) return [];
+  return [
+    'claude_args を持つワークフローが ' +
+      `${files.length} 件あるが、既定名（claude-coding / claude-code-review）で 2 ファイルを` +
+      `引き当てられないため、実装用とレビュー用のドリフト検査は**実行されていない**` +
+      `（対象: ${files.map((f) => path.basename(f.file)).join(', ')}）。` +
+      '既定名へ寄せるか、この検査に頼らない運用であることを承知して使うこと',
+  ];
+}
+
+/**
+ * スタック別実行コマンドに該当するツール指定だけを抜き出す。
+ * 全ツールの単純比較は誤検知する（実装側の Edit / Write / 書き込み系 git は、
+ * レビュー側に**無いのが正しい**設計）ため、TOOLCHAINS で対象を絞る。
+ *
+ * `requireUses` は「実際に `uses:` されている setup-* に対応するものだけ」へさらに絞る。
+ *   - 単一ファイルの検査（「setup-* があるのに実行ツールが無い」）では **true が必要**。
+ *     用意していないツールチェーンを要求してしまうため。
+ *   - 2 ファイル間の突き合わせでは **false にする**。理由は toolchainDrift を参照。
+ */
+function toolchainCommandsOf(text, tools, { requireUses = true } = {}) {
+  const used = requireUses
+    ? TOOLCHAINS.filter((tc) =>
+        new RegExp(`^\\s*-?\\s*uses:\\s*\\S*${tc.action}`, 'm').test(text)
+      )
+    : TOOLCHAINS;
   // 比較は**ツール指定そのもの**（`Bash(dotnet build:*)`）の粒度で行う。
   // bashCommandsOf はコマンド名（`dotnet`）へ畳み込むため、build と test の差が消えて
   // 部分的なドリフトを検出できない。
@@ -118,16 +153,27 @@ function toolchainCommandsOf(text, tools) {
  * すり抜け、レビューは「一部のコマンドだけ承認待ちでブロックされる」という中途半端な
  * 劣化を起こす。レビュー本文には検証結果が載るため、全滅より気付きにくい。
  * files は [{ file, text, tools }]。
+ *
+ * 【重要】比較の基準は TOOLCHAINS 全体であり、`uses: setup-*` の有無で絞らない
+ * （`requireUses: false`）。各ファイル自身の setup-* で絞ると 2 方向に壊れた:
+ *   - **偽陰性**: ランナーにプリインストール済みのランタイムは setup-* を書かないため
+ *     比較対象から外れる。`Bash(node:*)` の複製漏れが検出できなかった。これは
+ *     キットの検査器群（scripts.test.js / check-*.js …）をレビューが実走する唯一の口で、
+ *     落ちると検証が全滅する。`dotnet test` 1 つより影響が広い（issue #131）。
+ *   - **偽陽性**: 2 ファイルの setup-* 構成が非対称だと、`--allowedTools` が完全に同一でも
+ *     差分として報告された。「両ファイルを同じ内容に保つ」という規約を守っている利用者ほど
+ *     踏む形であり、しかも ERROR（exit 1）だった（issue #130）。
+ * 2 ファイル間では、片方にあって片方に無ければ setup-* の有無に関わらずドリフトである。
  */
 function toolchainDrift(files) {
   const errors = [];
-  const pick = (kw) => files.find((f) => path.basename(f.file).includes(kw));
-  const coding = pick('claude-coding');
-  const review = pick('claude-code-review');
+  const coding = pickCanonical(files, 'claude-coding');
+  const review = pickCanonical(files, 'claude-code-review');
   if (!coding || !review) return errors; // 片方しか無い構成は対象外
 
-  const a = toolchainCommandsOf(coding.text, coding.tools);
-  const b = toolchainCommandsOf(review.text, review.tools);
+  const opts = { requireUses: false };
+  const a = toolchainCommandsOf(coding.text, coding.tools, opts);
+  const b = toolchainCommandsOf(review.text, review.tools, opts);
   const missingInReview = [...a].filter((c) => !b.has(c));
   const missingInCoding = [...b].filter((c) => !a.has(c));
 
@@ -268,21 +314,62 @@ function selfTest() {
     },
   ];
   // 2 ファイル間の突き合わせ（toolchainDrift）は checkWorkflow 単体では検証できないため個別に試す。
-  const mkWf = (tools) =>
-    `jobs:\n  x:\n    steps:\n      - uses: actions/setup-dotnet@v6\n      - with:\n          claude_args: |\n            --allowedTools "${tools}"\n`;
-  const pair = (codingTools, reviewTools) => [
-    { file: 'claude-coding.example.yml', text: mkWf(codingTools), tools: codingTools.split(',') },
-    { file: 'claude-code-review.example.yml', text: mkWf(reviewTools), tools: reviewTools.split(',') },
+  const mkWf = (tools, setups = ['setup-dotnet']) =>
+    `jobs:\n  x:\n    steps:\n` +
+    setups.map((s) => `      - uses: actions/${s}@v6\n`).join('') +
+    `      - with:\n          claude_args: |\n            --allowedTools "${tools}"\n`;
+  const pairWith = (codingTools, reviewTools, codingSetups, reviewSetups) => [
+    { file: 'claude-coding.example.yml', text: mkWf(codingTools, codingSetups), tools: codingTools.split(',') },
+    { file: 'claude-code-review.example.yml', text: mkWf(reviewTools, reviewSetups), tools: reviewTools.split(',') },
   ];
+  const pair = (codingTools, reviewTools) => pairWith(codingTools, reviewTools, undefined, undefined);
   const FULL = 'Read,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)';
   const driftCases = [
     ['部分的な複製漏れ（レビュー側に一部が無い）を検出する', pair(FULL, 'Read,Bash(dotnet test:*)'), true],
     ['両者が揃っていれば検出しない', pair(FULL, FULL), false],
     // 実装側にしか無いのが正しいツール（Edit / Write / 書き込み系 git）で誤検知しないこと。
     ['設計上の差（Edit / 書き込み系 git）では誤検知しない', pair(`${FULL},Edit,Write,Bash(git commit:*)`, FULL), false],
+    // issue #131: setup-* を書かないツールチェーン（node はランナーにプリインストール）。
+    // これを取りこぼすと、レビューがキットの検査器群を実走できなくなる。
+    [
+      'setup-* を書かないツールチェーン（node）の複製漏れも検出する',
+      pair(`${FULL},Bash(node:*)`, FULL),
+      true,
+    ],
+    // issue #130: setup-* が非対称でも、ツール指定が同一なら差分ではない。
+    [
+      'setup-* が非対称でもツール指定が同一なら検出しない',
+      pairWith(`${FULL},Bash(npm run:*)`, `${FULL},Bash(npm run:*)`, ['setup-dotnet', 'setup-node'], ['setup-dotnet']),
+      false,
+    ],
+    // 逆向き（レビュー側にだけある）も同じく検出すること。
+    ['レビュー側にだけあるツールも検出する', pair(FULL, `${FULL},Bash(node:*)`), true],
+  ];
+
+  // issue #130 副次: 既定名で引き当てられないと検査が無言で無効になる。
+  const scopeCases = [
+    ['既定名で 2 ファイル引き当てられれば警告しない', pair(FULL, FULL), false],
+    [
+      '既定名で引き当てられない 2 ファイル構成は警告する',
+      [
+        { file: 'claude.yml', text: mkWf(FULL), tools: FULL.split(',') },
+        { file: 'claude-2.yml', text: mkWf(FULL), tools: FULL.split(',') },
+      ],
+      true,
+    ],
+    ['1 ファイルのみの構成は警告しない', [{ file: 'claude.yml', text: mkWf(FULL), tools: FULL.split(',') }], false],
   ];
 
   let failed = 0;
+  for (const [label, files, expectWarn] of scopeCases) {
+    const got = driftScopeWarnings(files).length > 0;
+    if (got === expectWarn) {
+      process.stdout.write(`  ok  ${label}\n`);
+    } else {
+      failed++;
+      process.stderr.write(`  NG  ${label}（期待 ${expectWarn} / 実際 ${got}）\n`);
+    }
+  }
   for (const [label, files, expectDrift] of driftCases) {
     const got = toolchainDrift(files).length > 0;
     if (got === expectDrift) {
@@ -306,7 +393,9 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + driftCases.length} 件すべて合格\n`);
+  process.stdout.write(
+    `✓ 検証器の自己試験 ${cases.length + driftCases.length + scopeCases.length} 件すべて合格\n`
+  );
   return 0;
 }
 
@@ -342,6 +431,7 @@ function main(argv) {
   allErrors.push(...toolchainDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
+  for (const w of driftScopeWarnings(forDrift)) process.stdout.write(`  warn  ${w}\n`);
   for (const w of parityWarnings(perFile)) process.stdout.write(`  warn  ${w}\n`);
 
   if (allErrors.length) {
@@ -367,6 +457,7 @@ module.exports = {
   bashCommandsOf,
   toolchainCommandsOf,
   toolchainDrift,
+  driftScopeWarnings,
   checkWorkflow,
   selfTest,
 };
