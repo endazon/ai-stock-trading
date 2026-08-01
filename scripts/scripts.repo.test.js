@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * scripts.local.test.js
+ * scripts.repo.test.js
  * 本リポジトリ固有のテスト（キットには無い自前スクリプトの検査・呼び出し側の回帰）。
  *
  * キットが配布する scripts.test.js から自動で読み込まれる（受け口は impl-handoff-kit が提供）。

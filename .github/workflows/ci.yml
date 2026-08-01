@@ -71,6 +71,11 @@ jobs:
         with:
           node-version: "20"
       - name: Run scripts unit tests
+        # 本リポジトリは固有テスト（scripts/scripts.repo.test.js）を持つため有効化する。
+        # companion が消失（誤削除・リネーム・キット同期での上書き）したときに失敗する。
+        # 未設定だとテスト件数が静かに減るだけで CI は green のままになる。
+        env:
+          REQUIRE_REPO_TESTS: "1"
         run: node scripts/scripts.test.js
 
   # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を

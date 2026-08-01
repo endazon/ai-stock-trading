@@ -26,7 +26,7 @@
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
 | `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
-| `scripts.local.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
+| `scripts.repo.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
 
 ## プロファイルの適用
 
@@ -77,12 +77,12 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 自前スクリプトの検査を同ファイルへ直接追記すると、同期のたびに手動マージが要り、
 キットが同じテストを取り込んだ際に重複も生じる（重複はテストが落ちないため気付きにくい）。
 
-固有テストは **`scripts/scripts.local.test.js`** に置く。`scripts.test.js` が存在すれば自動で
+固有テストは **`scripts/scripts.repo.test.js`** に置く。`scripts.test.js` が存在すれば自動で
 読み込む（無ければ何もしない）。これにより `scripts.test.js` をキットとバイト一致に保て、
 同期は上書きコピー 1 回で済む。
 
 ```js
-// scripts/scripts.local.test.js
+// scripts/scripts.repo.test.js
 module.exports = ({ ok, assert }) => {
   ok('本リポ固有の検査', () => {
     assert.ok(true);
@@ -91,6 +91,21 @@ module.exports = ({ ok, assert }) => {
 ```
 
 `ok` をそのまま受け取るため、件数の集計は自動で正しくなる（カウンタが分かれない）。
+
+> **このファイルは必ずコミットする。** 追跡されていないと CI（clean checkout）に存在せず、
+> 固有テストが黙って走らなくなる。`scripts.test.js` は未追跡を検出して警告するが、
+> `.gitignore` を確認しておくこと。
+> `.local` を名前に使わないのは、多くのプロジェクトで「コミットしない」の目印だからである
+> （キット自身も `CLAUDE.local.md` をその意味で使っている）。旧名 `scripts.local.test.js` は
+> 移行のあいだ読み込むが、改名を促す警告を出す。
+
+**消失を検出したい場合**（固有テストを持つリポジトリ向け）: `ci.yml` の `scripts-tests` ジョブで
+`REQUIRE_REPO_TESTS=1` を設定すると、companion が見つからないときに失敗する。未設定だと
+誤削除やマージ事故でテスト件数が静かに減るだけで CI は green のままになる。
+また companion が存在するのに 1 件もテストを登録しない場合（export 忘れ・空実装）は、
+設定に関わらず失敗する。
+>
+> **本リポジトリは `ci.yml` の `scripts-tests` ジョブで `REQUIRE_REPO_TESTS=1` を有効化済み**（固有テストを持つため）。
 
 ## 自動生成（CI）
 

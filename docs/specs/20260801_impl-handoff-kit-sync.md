@@ -46,7 +46,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `c72dbf2`。作業中に計画側で #98 / #105 / #107 / #110 / #113 が続けてマージされたため計 5 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `30a4b78`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 が続けてマージされたため計 6 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -118,7 +118,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`c72dbf2`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`30a4b78`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -288,6 +288,27 @@ companion ファイル（`scripts.local.test.js`）を任意で読み込む受�
 
 本リポは `git check-ignore -v scripts/scripts.local.test.js` が exit 1（除外されない）で**影響を受けていない**。
 予防的な報告として改名（`scripts.repo.test.js` 等）または追跡状態の警告を提案した。
+
+### 第 7 巡（pin `30a4b78`）— #115 が提案以上の形で反映。残り 1 件を起票
+
+計画側 PR #116（issue #114 / #115）で、受け口の改名（`scripts.local.test.js` → `scripts.repo.test.js`）に加え、
+旧名の移行読み込み＋警告・未追跡の警告・空実装（1 件も登録しない）の検出・`REQUIRE_REPO_TESTS=1` による
+消失検出・受け口の回帰テストの常時実効化まで入った。
+
+本リポ側の追随:
+
+- `scripts/scripts.local.test.js` → `scripts/scripts.repo.test.js` へ `git mv`
+- `scripts/scripts.test.js` — キット版で上書き（バイト一致を維持）
+- `ci.yml` の `scripts-tests` ジョブで **`REQUIRE_REPO_TESTS: "1"` を有効化**（本リポは固有テストを持つため）。
+  companion を退避して実測し、消失時に exit 1 で落ちることを確認した
+- `scripts/README.md` — キットの該当節を採用し、本リポで `REQUIRE_REPO_TESTS` を有効化済みである旨を追記
+
+**[🟡 残り 1 件・[project-planning#118](https://github.com/endazon/project-planning/issues/118)]** 新旧の companion が**両方存在する**場合、
+旧名側は読み込まれないうえ警告も出ない（`else if` のため）。いま起きているのは旧名から新名への移行そのものであり、
+「新名を作ったが旧名の中身を移し切れていない」部分移行では旧名側のテストが落ちも警告もせず消える。
+`REQUIRE_REPO_TESTS=1` でも検出できない（新名があるため `res.file` は null にならない）。
+キットの `loadCompanionTests` を取り出した実測で、新名 1 件・旧名 2 件を置くと旧名 2 件が実行されないことを確認した。
+本リポは `git mv` で改名したため旧名が残っておらず実害は無い。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

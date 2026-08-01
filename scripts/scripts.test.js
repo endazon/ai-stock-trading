@@ -373,47 +373,127 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
 // 追記すると、同期のたびに手動マージが要り、キットが同じテストを取り込んだ際に重複も生じる
 // （重複はテストが落ちないため気付きにくい）。
 //
-// 固有テストは `scripts/scripts.local.test.js` に置く。本ファイルはキットとバイト一致に保て、
+// 固有テストは `scripts/scripts.repo.test.js` に置く。本ファイルはキットとバイト一致に保て、
 // 同期は上書きコピー 1 回で済む。ファイルが無ければ何もしない（キット既定の挙動は変わらない）。
 //
-//   // scripts/scripts.local.test.js
+//   // scripts/scripts.repo.test.js
 //   module.exports = ({ ok, assert }) => {
 //     ok('本リポ固有の検査', () => { /* ... */ });
 //   };
 //
-// `ok` をそのまま渡すため、件数の集計は自動で正しくなる。
+// **このファイルは必ずコミットする。** 追跡されていないと CI（clean checkout）に存在せず、
+// 固有テストが黙って走らなくなる。旧名 `scripts.local.test.js` は `.gitignore` の `*.local.*` 系
+// パターンに当たり得るため使わない（`.local` は多くのプロジェクトで「コミットしない」の目印であり、
+// キット自身も `CLAUDE.local.md` をその意味で使っている）。旧名は移行のあいだ読み込むが警告する。
 
-// 受け口そのものの回帰テスト。仕組みは、動いていることを確かめないと黙って壊れる。
-// 本ファイルを子プロセスで起動して、companion のテストが実際に走ることを確認する。
-// 既に companion がある環境（＝固有テストを持つリポジトリ）では上書きを避けて skip する
-// （子プロセス側もこの条件で skip するため、再帰しない）。
-ok('固有テストの受け口: scripts.local.test.js があれば読み込まれる', () => {
+const COMPANION = 'scripts.repo.test.js';
+const COMPANION_LEGACY = 'scripts.local.test.js';
+
+/**
+ * companion（リポジトリ固有テスト）を読み込む。
+ * ディレクトリを引数に取るのは、受け口自体を実ファイルに触らず検証できるようにするため
+ * （実 companion がある環境でだけ検証が skip される、という穴を作らない）。
+ * 返り値の registered は companion が登録したテスト件数。
+ */
+function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
   const fsx = require('fs');
   const pathx = require('path');
-  const companion = pathx.join(__dirname, 'scripts.local.test.js');
-  if (fsx.existsSync(companion)) return; // best-effort（既存ファイルを壊さない）
-  const marker = 'companion-loaded-marker';
-  fsx.writeFileSync(
-    companion,
-    `module.exports = ({ ok, assert }) => { ok('${marker}', () => assert.ok(true)); };\n`
-  );
-  try {
-    const out = execSync(`node ${JSON.stringify(__filename)}`, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    assert.match(out, new RegExp(marker), 'companion のテストが実行されていない');
-  } finally {
-    fsx.unlinkSync(companion);
-  }
-});
+  const warnings = [];
 
+  const primary = pathx.join(dir, COMPANION);
+  const legacy = pathx.join(dir, COMPANION_LEGACY);
+  let file = null;
+  if (fsx.existsSync(primary)) {
+    file = primary;
+  } else if (fsx.existsSync(legacy)) {
+    file = legacy;
+    warnings.push(
+      `${COMPANION_LEGACY} は旧名である。${COMPANION} へ改名すること` +
+        '（.local. は gitignore の「コミットしない」慣習と衝突し、除外されると固有テストが黙って消える）'
+    );
+  }
+  if (!file) return { file: null, registered: 0, warnings };
+
+  // 追跡されていない companion は CI（clean checkout）に存在せず、固有テストが黙って走らない。
+  if (gitTry(`ls-files --error-unmatch ${JSON.stringify(file)}`) === null) {
+    warnings.push(
+      `${pathx.basename(file)} が git に追跡されていない。.gitignore に除外されている可能性がある` +
+        '（このままでは CI で固有テストが走らない）。必ずコミットすること'
+    );
+  }
+
+  let registered = 0;
+  const countingOk = (name, fn) => {
+    registered++;
+    return okFn(name, fn);
+  };
+  require(file)({ ok: countingOk, assert: assertObj });
+  return { file, registered, warnings };
+}
+
+// 受け口そのものの回帰テスト。仕組みは、動いていることを確かめないと黙って壊れる。
+// 一時ディレクトリ上で検証するため、実 companion の有無に関わらず**常に**実効する。
 {
   const fsx = require('fs');
   const pathx = require('path');
-  const localTests = pathx.join(__dirname, 'scripts.local.test.js');
-  if (fsx.existsSync(localTests)) {
-    require(localTests)({ ok, assert });
+  const osx = require('os');
+  const mkTmp = () => fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'companion-'));
+  const run = (name, fn) => fn(); // ok を握りつぶさず本体を実行するだけの薄いスタブ
+
+  ok('受け口: companion を読み込み登録件数を数える', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION),
+      "module.exports = ({ ok, assert }) => { ok('a', () => assert.ok(true)); ok('b', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 2, 'companion のテストが登録・実行されていない');
+  });
+
+  ok('受け口: companion が無ければ何もしない（キット既定の挙動）', () => {
+    const r = loadCompanionTests(mkTmp(), { ok: run, assert });
+    assert.strictEqual(r.file, null);
+    assert.strictEqual(r.registered, 0);
+  });
+
+  ok('受け口: 旧名は読み込むが改名を促す警告を出す', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION_LEGACY),
+      "module.exports = ({ ok, assert }) => { ok('legacy', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 1, '旧名でも読み込むこと（移行中に固有テストを失わせない）');
+    assert.match(r.warnings.join(' '), /旧名/);
+  });
+
+  ok('受け口: 追跡されていない companion は警告する（CI で黙って消えるため）', () => {
+    const d = mkTmp(); // git 管理外の一時ディレクトリ＝未追跡として扱われる
+    fsx.writeFileSync(pathx.join(d, COMPANION), 'module.exports = () => {};\n');
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.match(r.warnings.join(' '), /追跡されていない/);
+  });
+}
+
+// 実ツリーの companion を読み込む。
+{
+  const res = loadCompanionTests(__dirname, { ok, assert });
+  for (const w of res.warnings) process.stderr.write(`warning: ${w}\n`);
+
+  if (res.file) {
+    // 読み込まれてはいるが何もしていない（export 忘れ・空実装・全件 skip）状態を検出する。
+    assert.ok(
+      res.registered > 0,
+      `${require('path').basename(res.file)} が 1 件もテストを登録していない（export 忘れ・空実装の可能性）`
+    );
+  } else if (process.env.REQUIRE_REPO_TESTS === '1') {
+    // 固有テストを持つリポジトリは、companion の消失（誤削除・マージ事故・同期での上書き）を
+    // 検出できるよう REQUIRE_REPO_TESTS=1 を CI に設定する。既定は未設定＝従来どおり何もしない。
+    process.stderr.write(
+      `✗ ${COMPANION} が見つからない（REQUIRE_REPO_TESTS=1）。\n` +
+        '  固有テストが消失している可能性がある（誤削除・リネーム・キット同期での上書き）。\n'
+    );
+    process.exit(1);
   }
 }
 
