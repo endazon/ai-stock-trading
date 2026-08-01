@@ -19,6 +19,7 @@
  *   [ERROR] claude_args ブロック内のコメント行（引数として解釈され起動が壊れる）
  *   [ERROR] 引用符で囲まれていない --allowedTools 値に空白が含まれる（分割されて無効になる）
  *   [ERROR] setup-* でツールチェーンを用意しているのに、対応する実行ツールを許可していない
+ *   [ERROR] 実装用とレビュー用でスタック別の実行ツールが食い違う（部分的な複製漏れ）
  *   [WARN ] .claude/settings.json の allow とワークフローのツール集合の乖離（情報提供のみ）
  *
  * 使い方:
@@ -85,6 +86,64 @@ function bashCommandsOf(tools) {
     if (m) cmds.add(m[1].replace(/^.*\//, '')); // フルパス指定は末尾のみ見る
   }
   return cmds;
+}
+
+/**
+ * 実際に `uses:` されている setup-* に対応するスタック別実行コマンドだけを抜き出す。
+ * 2 ファイル間の突き合わせに使う。全ツールの単純比較は誤検知する
+ * （実装側の Edit / Write / 書き込み系 git は、レビュー側に**無いのが正しい**設計）。
+ */
+function toolchainCommandsOf(text, tools) {
+  const used = TOOLCHAINS.filter((tc) =>
+    new RegExp(`^\\s*-?\\s*uses:\\s*\\S*${tc.action}`, 'm').test(text)
+  );
+  // 比較は**ツール指定そのもの**（`Bash(dotnet build:*)`）の粒度で行う。
+  // bashCommandsOf はコマンド名（`dotnet`）へ畳み込むため、build と test の差が消えて
+  // 部分的なドリフトを検出できない。
+  return new Set(
+    tools.filter((t) => {
+      const m = t.match(/^Bash\(([^\s:)]+)/);
+      if (!m) return false;
+      const cmd = m[1].replace(/^.*\//, '');
+      return used.some((tc) => tc.commands.includes(cmd));
+    })
+  );
+}
+
+/**
+ * 実装用とレビュー用のスタック別実行ツールの差分を検出する。
+ *
+ * 単一ファイルの検査（「setup-* があるのに実行ツールを 1 つも許可していない」）は
+ * **全滅**の形しか捉えられない。片方にだけ一部のコマンドが無い**部分的なドリフト**は
+ * すり抜け、レビューは「一部のコマンドだけ承認待ちでブロックされる」という中途半端な
+ * 劣化を起こす。レビュー本文には検証結果が載るため、全滅より気付きにくい。
+ * files は [{ file, text, tools }]。
+ */
+function toolchainDrift(files) {
+  const errors = [];
+  const pick = (kw) => files.find((f) => path.basename(f.file).includes(kw));
+  const coding = pick('claude-coding');
+  const review = pick('claude-code-review');
+  if (!coding || !review) return errors; // 片方しか無い構成は対象外
+
+  const a = toolchainCommandsOf(coding.text, coding.tools);
+  const b = toolchainCommandsOf(review.text, review.tools);
+  const missingInReview = [...a].filter((c) => !b.has(c));
+  const missingInCoding = [...b].filter((c) => !a.has(c));
+
+  if (missingInReview.length) {
+    errors.push(
+      `${path.basename(review.file)}: 実装用にあるスタック別の実行ツールが欠けている: ` +
+        `${missingInReview.join(', ')}（レビューがその検証を実行できず、承認待ちでブロックされる）`
+    );
+  }
+  if (missingInCoding.length) {
+    errors.push(
+      `${path.basename(coding.file)}: レビュー用にあるスタック別の実行ツールが欠けている: ` +
+        `${missingInCoding.join(', ')}（両ファイルは同じ内容に保つ）`
+    );
+  }
+  return errors;
 }
 
 /** 1 ファイルを検査し {errors, warnings, tools} を返す。 */
@@ -208,7 +267,32 @@ function selfTest() {
       expect: (r) => r.applicable === false,
     },
   ];
+  // 2 ファイル間の突き合わせ（toolchainDrift）は checkWorkflow 単体では検証できないため個別に試す。
+  const mkWf = (tools) =>
+    `jobs:\n  x:\n    steps:\n      - uses: actions/setup-dotnet@v6\n      - with:\n          claude_args: |\n            --allowedTools "${tools}"\n`;
+  const pair = (codingTools, reviewTools) => [
+    { file: 'claude-coding.example.yml', text: mkWf(codingTools), tools: codingTools.split(',') },
+    { file: 'claude-code-review.example.yml', text: mkWf(reviewTools), tools: reviewTools.split(',') },
+  ];
+  const FULL = 'Read,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)';
+  const driftCases = [
+    ['部分的な複製漏れ（レビュー側に一部が無い）を検出する', pair(FULL, 'Read,Bash(dotnet test:*)'), true],
+    ['両者が揃っていれば検出しない', pair(FULL, FULL), false],
+    // 実装側にしか無いのが正しいツール（Edit / Write / 書き込み系 git）で誤検知しないこと。
+    ['設計上の差（Edit / 書き込み系 git）では誤検知しない', pair(`${FULL},Edit,Write,Bash(git commit:*)`, FULL), false],
+  ];
+
   let failed = 0;
+  for (const [label, files, expectDrift] of driftCases) {
+    const got = toolchainDrift(files).length > 0;
+    if (got === expectDrift) {
+      process.stdout.write(`  ok  ${label}\n`);
+    } else {
+      failed++;
+      process.stderr.write(`  NG  ${label}（期待 ${expectDrift} / 実際 ${got}）\n`);
+    }
+  }
+
   for (const c of cases) {
     const r = checkWorkflow('self-test', c.yaml);
     if (c.expect(r)) {
@@ -222,7 +306,7 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length} 件すべて合格\n`);
+  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + driftCases.length} 件すべて合格\n`);
   return 0;
 }
 
@@ -242,6 +326,7 @@ function main(argv) {
 
   const allErrors = [];
   const perFile = [];
+  const forDrift = [];
   let checked = 0;
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
@@ -249,8 +334,12 @@ function main(argv) {
     if (!r.applicable) continue;
     checked++;
     perFile.push({ file: path.basename(file), tools: r.tools });
+    forDrift.push({ file, text, tools: r.tools });
     for (const e of r.errors) allErrors.push(`${path.basename(file)}: ${e}`);
   }
+
+  // 2 ファイル間の突き合わせ（部分的な複製漏れ）。単一ファイルの検査では捉えられない。
+  allErrors.push(...toolchainDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
   for (const w of parityWarnings(perFile)) process.stdout.write(`  warn  ${w}\n`);
@@ -272,4 +361,12 @@ if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { extractClaudeArgsBlocks, parseAllowedTools, bashCommandsOf, checkWorkflow, selfTest };
+module.exports = {
+  extractClaudeArgsBlocks,
+  parseAllowedTools,
+  bashCommandsOf,
+  toolchainCommandsOf,
+  toolchainDrift,
+  checkWorkflow,
+  selfTest,
+};
