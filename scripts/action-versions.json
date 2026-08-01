@@ -8,7 +8,7 @@
     "テンプレートの uses: と本表を同時に上げる。",
     "【本リポジトリでの追記】キットに無い本リポ固有のアクションもここへ足す（commit-allowlist.json /",
     "changelog-overrides.json と同じくリポジトリが自分の分を埋めるデータファイルとして扱う）。",
-    "現在の追記は azure/setup-helm（helm.yml）。キット側に固有分の受け口が無い点は環流する。"
+    "現在の追記は azure/setup-helm（helm.yml）。キット側に固有分の受け口が無い点は endazon/project-planning#153 へ環流済み。"
   ],
   "expected": {
     "actions/checkout": 7,

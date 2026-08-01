@@ -30,10 +30,14 @@ related_specs:
 ## 目的・背景
 
 前回の同期（[#322](https://github.com/endazon/ai-stock-trading/pull/322)、pin `9cd3499`）以降、計画リポジトリで
-impl-handoff-kit の是正が 1 巡進んだ。本作業はその内容を本リポジトリへ取り込む。
+impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジトリへ取り込む。
 
-上流の前進は計画側 PR [project-planning#145](https://github.com/endazon/project-planning/pull/145)
-「権限拒否で潰れた AI 実行を緑にせず、拒否ツールを名前で報告する」の 1 件である。解決している失敗モードは次のとおり。
+本作業は 2 巡に分かれる。**第 14 巡**（pin `0847687`）で計画側 PR
+[project-planning#145](https://github.com/endazon/project-planning/pull/145)「権限拒否で潰れた AI 実行を緑にせず、拒否ツールを名前で報告する」を取り込み、
+その過程で本リポから 2 件を起票した。それが計画側 PR [project-planning#150](https://github.com/endazon/project-planning/pull/150) で即日反映されたため、
+続けて**第 15 巡**（pin `3b0deb2`。#150 ＋ [project-planning#147](https://github.com/endazon/project-planning/pull/147)）まで取り込んでいる。
+
+第 14 巡が解決している失敗モードは次のとおり。
 
 **claude-code-action は、AI がツールを 1 つも実行できなくても `"subtype": "success"` / `"is_error": false` で終わる。**
 そのためジョブは緑になり、PR には「並列精査中」等の進行中コメントだけが残る。CI には承認する人間が居ないため、
@@ -146,7 +150,9 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
 - [x] テンプレート側の不足・混入が `/plan-feedback` として起票されている
       （第 14 巡: [project-planning#148](https://github.com/endazon/project-planning/issues/148) /
-      [project-planning#149](https://github.com/endazon/project-planning/issues/149)。第 15 巡: 後述）
+      [project-planning#149](https://github.com/endazon/project-planning/issues/149)。
+      第 15 巡: [project-planning#152](https://github.com/endazon/project-planning/issues/152) /
+      [project-planning#153](https://github.com/endazon/project-planning/issues/153)）
 
 ## テスト方針
 
@@ -236,7 +242,7 @@ HOWTO は `Task` 拒否への恒久対処を 2 択（(a) `Task` を `--allowedTo
 （#148 → `check-action-versions.js` ＋ `action-versions.json` ＋ planning 自身の CI ジョブ、
 #149 → `claude-coding` への `--append-system-prompt`）。取り込んだうえで、新たに 2 件が見つかった。
 
-**[🟡 1 件目] `check-action-versions.js` を配布しながら、実装リポの CI で実ツリーを検査する口が無い。**
+**[🟡 1 件目・[project-planning#152](https://github.com/endazon/project-planning/issues/152)] `check-action-versions.js` を配布しながら、実装リポの CI で実ツリーを検査する口が無い。**
 
 キットは検証器と表を `repo-template/scripts/` に配布する一方、`ci.example.yml` には本検査のステップが無い。
 実装リポで走るのは `scripts.test.js` 経由の `--self-test`（＝検証器自身の試験）だけであり、
@@ -263,7 +269,7 @@ HOWTO は `Task` 拒否への恒久対処を 2 択（(a) `Task` を `--allowedTo
    「キットのワークフローをコピーする際は `uses:` のバージョンを実装リポ側の値で維持する」ことを
    置換点として明記する。
 
-**[🟡 2 件目] `action-versions.json` に、実装リポ固有アクションの受け口が無い。**
+**[🟡 2 件目・[project-planning#153](https://github.com/endazon/project-planning/issues/153)] `action-versions.json` に、実装リポ固有アクションの受け口が無い。**
 
 `MANIFEST_PATH` は `__dirname/action-versions.json` に固定で、companion／上書きの口が無い。
 そのため実装リポがキットに無いアクションを使うと、次のどちらかしか選べない。
