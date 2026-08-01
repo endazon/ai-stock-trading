@@ -283,6 +283,48 @@ ok('未一致コミットは素通し', () => {
 
 // ==== ここから本リポジトリ固有のテスト（キットには無いスクリプト・呼び出し側の回帰） ====
 
+// --- check-commit-messages: 計画 ADR の名前空間スコープ ---------------------
+// 計画 ID はプロジェクトごとに独立採番のため、`projects/` 配下を全走査して和集合を作ると
+// 番号帯が丸ごと重複し、他プロジェクトにしか存在しない ID まで「実在」として受理してしまう。
+// loadExistingPlanAdrIds は自プロジェクト（PLAN_PROJECT）の名前空間だけを実在集合とする。
+{
+  const fsNs = require('fs');
+  const osNs = require('os');
+  const pathNs = require('path');
+  const { loadExistingPlanAdrIds: loadNs } = require('./check-commit-messages.js');
+
+  // 2 プロジェクトが重複する番号帯を持つ planning/projects を合成する。
+  const root = fsNs.mkdtempSync(pathNs.join(osNs.tmpdir(), 'plan-ns-'));
+  const mk = (proj, files) => {
+    const d = pathNs.join(root, proj, '07_adr');
+    fsNs.mkdirSync(d, { recursive: true });
+    for (const f of files) fsNs.writeFileSync(pathNs.join(d, f), '');
+  };
+  mk('ai-stock-trading', ['ADR-0001_a.md', 'ADR-0015_o.md']);
+  mk('microservices-platform', ['ADR-0001_x.md', 'ADR-0019_y.md', 'ADR-0032_z.md']);
+
+  ok('計画 ADR の実在集合は自プロジェクトの名前空間に限定される', () => {
+    const ids = loadNs(root);
+    assert.ok(ids, '集合が取れるべき');
+    assert.ok(ids.has('ADR-0015'), '自プロジェクトの ADR は実在扱い');
+    assert.ok(!ids.has('ADR-0019'), '他プロジェクト固有の ADR を実在扱いしてはならない');
+    assert.ok(!ids.has('ADR-0032'), '他プロジェクト固有の ADR を実在扱いしてはならない');
+  });
+
+  ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
+    const other = fsNs.mkdtempSync(pathNs.join(osNs.tmpdir(), 'plan-ns2-'));
+    fsNs.mkdirSync(pathNs.join(other, 'some-other-project', '07_adr'), { recursive: true });
+    fsNs.writeFileSync(pathNs.join(other, 'some-other-project', '07_adr', 'ADR-0007_q.md'), '');
+    const ids = loadNs(other);
+    assert.ok(ids && ids.has('ADR-0007'), '自プロジェクト不在なら従来どおり全走査する');
+  });
+
+  ok('planning 未 populate では null（実在性検査を skip）', () => {
+    assert.strictEqual(loadNs(pathNs.join(root, 'does-not-exist')), null);
+  });
+}
+
+
 // gen-changelog.js を実際に起動して CHANGELOG が生成できること（呼び出し側の回帰）。
 // applyOverride に overrides を注入できるよう第 2 引数を足した結果、呼び出し側を point-free の
 // `.map(applyOverride)` にすると index（数値）が overrides を上書きして全件 TypeError になる。

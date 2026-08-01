@@ -196,10 +196,23 @@ function loadExistingIadrIds(dir = path.join(__dirname, '..', 'docs', 'adr')) {
   return loadExistingAdrIds('IADR', dir);
 }
 
+// 【置換点】本リポジトリが主に実装する計画プロジェクト名（`planning/projects/<name>/`）。
+// `.claude/rules/traceability.md` の規約により、裸（無修飾）の `ADR-xxxx` はこの名前空間を指す。
+// 他プロジェクトの ID は `<PROJ>/ADR-xxxx` と修飾して書くため、実在性検査の対象外である。
+const PLAN_PROJECT = process.env.PLAN_PROJECT || 'ai-stock-trading';
+
 /**
  * 計画 ADR（planning submodule の `projects/<name>/07_adr/`）の実在番号集合。
- * プロジェクト名は可変のため `projects/` 配下を走査して全プロジェクトの ADR を集める。
  * submodule 未 populate なら null（skip）。
+ *
+ * **自プロジェクトの名前空間だけを実在集合とする。** 計画 ID はプロジェクトごとに独立採番のため、
+ * `projects/` 配下を全走査して和集合を作ると番号帯が丸ごと重複し、他プロジェクトにしか存在しない
+ * ID まで「実在」として受理してしまう（実測: ai-stock-trading は ADR-0001〜0015、
+ * microservices-platform は ADR-0001〜0032 で、和集合では MSP 固有の ADR-0019 / ADR-0032 が
+ * 素通りした）。それでは本検査の目的である「実体と別内容の ADR を名乗る件名の混入検出」が働かない。
+ *
+ * 自プロジェクトのディレクトリを解決できない構成（PLAN_PROJECT の設定漏れ・別レイアウト）では、
+ * 従来どおり全プロジェクトを走査する（fail-open。検査を過剰に厳しくして CI を落とさない）。
  */
 function loadExistingPlanAdrIds(projectsDir = path.join(__dirname, '..', 'planning', 'projects')) {
   let entries;
@@ -208,6 +221,8 @@ function loadExistingPlanAdrIds(projectsDir = path.join(__dirname, '..', 'planni
   } catch (e) {
     return null;
   }
+  const own = loadExistingAdrIds('ADR', path.join(projectsDir, PLAN_PROJECT, '07_adr'));
+  if (own && own.size > 0) return own;
   const ids = new Set();
   let found = false;
   for (const name of entries) {

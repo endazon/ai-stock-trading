@@ -21,7 +21,7 @@
 # 同じ理由で、`scripts/check-commit-messages.js` の計画 ADR 実在性検査も PR CI では常時
 # skip される（submodule 未取得のため）。実効するのは実装 ADR（IADR）側のみである。
 #
-# 有効化手順:
+# 有効化手順（**本リポジトリでは 1) は完了済み＝本ファイルは稼働中**。キット雛形向けの手順を残す）:
 #   1) 本ファイルを `doc-links-planning.yml` にリネームする。
 #   2) Secret `PLANNING_REPO_TOKEN` に、本リポジトリと planning リポジトリ双方へ read 権限を持つ
 #      PAT（fine-grained 推奨）を登録する。未登録の場合、本ジョブは submodule 取得に失敗して fail する

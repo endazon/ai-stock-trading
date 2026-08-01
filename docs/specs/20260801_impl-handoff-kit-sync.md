@@ -179,6 +179,21 @@ TypeError: overrides.find is not a function
 **実際に起動して CHANGELOG が生成できることを確かめる回帰テスト**を追加した（point-free へ戻す変異で
 赤になることを実測済み）。テンプレートにも同じ是正とテストが要る。
 
+
+**[🟡 推奨] 計画 ADR の実在性検査が、他プロジェクトの ADR 番号を「実在」として受理する。**
+テンプレートの `loadExistingPlanAdrIds` は `projects/` 配下を全走査して和集合を作る。ところが
+計画 ID はプロジェクトごとに独立採番のため番号帯が丸ごと重複し、他プロジェクトにしか存在しない ID も
+実在扱いになる。本リポの planning submodule には `ai-stock-trading`（ADR-0001〜0015）と
+`microservices-platform`（ADR-0001〜0032）が入っており、実測で和集合 32 件・MSP 固有の
+`ADR-0019` / `ADR-0032` が素通りした。これでは本検査の目的（実体と別内容の ADR を名乗る件名の混入検出）が働かない。
+テンプレートが同時に追加した `.claude/rules/traceability.md` の文言
+（「実在性検査は**本リポジトリの名前空間しか解決できない**」）とも実装が矛盾する。
+
+本リポでは `PLAN_PROJECT`（既定 `ai-stock-trading`・置換点）で**自プロジェクトの名前空間だけ**を
+実在集合とし、自プロジェクトを解決できない構成では従来どおり全走査へ退避する（fail-open）ように是正した。
+実測で和集合 32 件 → 自名前空間 15 件になり、`ADR-0019` / `ADR-0032` が正しく違反として検出される。
+合成 `projects/` を使った回帰テストも追加した。テンプレート側にも同じ設計が要る。
+
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 
 submodule を populate した状態で `node scripts/check-doc-links.js` を実行すると、**planning 配下への
