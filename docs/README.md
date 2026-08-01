@@ -19,7 +19,8 @@ docs/
 │                                     ├── batch/         # バッチ・ジョブ（任意）
 │                                     ├── migration/     # 移行（任意）
 │                                     ├── errors/        # エラー・メッセージ（任意）
-│                                     └── infra/         # インフラ・構成（任意）
+│                                     ├── infra/         # インフラ・構成（任意）
+│                                     └── how-to/        # 手順ガイド（任意）
 ```
 
 ## 必須の仕様書
@@ -59,11 +60,16 @@ docs/
 | `migration` | 移行仕様書 | `docs/migration/` |
 | `error` | エラー・メッセージ仕様書 | `docs/errors/` |
 | `infra` | インフラ・構成仕様書 | `docs/infra/` |
-| `runbook` | 運用 Runbook（手順書・運用仕様書の下位） | `docs/operations/` |
+| `runbook` | 運用 Runbook（運用仕様書の**下位**にあたる手順書） | `docs/operations/` |
+| `how-to` | 手順ガイド（開発環境の起動・デプロイ・submodule 追加など） | `docs/how-to/` |
 
-> 運用 Runbook は運用仕様書（`operations`・リポ単位で 1 つ）の**下位の手順書**であり、状態の単一情報源は
-> `operations.md` に置く（Runbook は手順に特化して複数存在してよい）。例: [実弾解禁 Runbook](operations/live-trading-cutover-runbook.md)・
+> `operations` はリポ単位で 1 つと定めているため、手順書が複数必要になると置き場が無くなる。
+> **状態の単一情報源は `operations.md` に置き、Runbook は手順に特化して複数存在してよい**。
+> 本リポジトリの Runbook 例: [実弾解禁 Runbook](operations/live-trading-cutover-runbook.md)・
 > [発注経路の区別と識別 Runbook](operations/broker-execution-paths-runbook.md)。
+>
+> `how-to` は仕様ではなく作業手順の案内であり、起点 ID を持たないことがある。
+> その場合はフロントマターの起点 ID を空にしてよい（他の仕様書と異なり必須としない）。
 
 ## 補助成果物の自動生成
 

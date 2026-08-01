@@ -3,11 +3,11 @@
 /*
  * scripts.test.js
  * check-commit-messages.js / gen-changelog.js の主要ロジックの単体テスト。
- * Node 標準モジュールのみ（assert / child_process）。実行: node scripts/scripts.test.js
- * 一部の allowlist 整合テストは best-effort で git を用いる（不在・浅いクローン時はスキップ）。
+ * 外部依存ゼロ（Node 標準 assert のみ）。実行: node scripts/scripts.test.js
  */
 const assert = require('assert');
 const { execSync } = require('child_process');
+const { warn, notice } = require('./lib/ci-annotate.js');
 const {
   validateSubject,
   checkSingleTitle,
@@ -16,7 +16,14 @@ const {
 } = require('./check-commit-messages.js');
 const { applyOverride, hashMatches } = require('./gen-changelog.js');
 
-// git を best-effort で実行する。失敗時は null（テストはスキップ判断に使う・落とさない）。
+let passed = 0;
+function ok(name, fn) {
+  fn();
+  passed++;
+  process.stdout.write(`  ok  ${name}\n`);
+}
+
+// git を best-effort で実行する。失敗時は null（テストはスキップ判断に使い、落とさない）。
 function gitTry(args) {
   try {
     return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -26,19 +33,11 @@ function gitTry(args) {
 }
 const inGitWorkTree = gitTry('rev-parse --is-inside-work-tree') === 'true';
 const isShallowClone = gitTry('rev-parse --is-shallow-repository') === 'true';
-// 到達可能性の基準は「develop に実在」。origin/develop → develop → HEAD の順で解決する
-// （CI の PR チェックアウトでは origin/develop、ローカル worktree では develop/HEAD が該当）。
+// 到達可能性の基準となる統合ブランチ。origin/develop → develop → origin/main → main → HEAD の順で解決する。
 const REACH_BASE =
-  ['origin/develop', 'develop', 'HEAD'].find(
+  ['origin/develop', 'develop', 'origin/main', 'main', 'HEAD'].find(
     (r) => gitTry(`rev-parse --verify --quiet ${r}`) !== null
   ) || 'HEAD';
-
-let passed = 0;
-function ok(name, fn) {
-  fn();
-  passed++;
-  process.stdout.write(`  ok  ${name}\n`);
-}
 
 // --- validateSubject ---------------------------------------------------------
 
@@ -68,19 +67,188 @@ ok('未知の種別は違反', () => assert.strictEqual(validateSubject('feet(FR
 ok('不正な ID 書式は違反', () => assert.strictEqual(validateSubject('feat(FR08): ハイフン無し').length >= 1, true));
 ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat(): 空').length >= 1, true));
 
-// --- check-commit-messages: validateIdExistence（IADR/計画 ADR の実在性・issue #319） ---
+// --- check-ai-workflow-config: claude_args の記法・ツール許可の整合 ---
+
+{
+  const { checkWorkflow, parseAllowedTools, bashCommandsOf } = require('./check-ai-workflow-config.js');
+  const wf = (body, extra = '') =>
+    `jobs:\n  x:\n    steps:\n${extra}      - with:\n          claude_args: |\n${body}`;
+
+  ok('引用符なしで空白を含む --allowedTools は違反（実運用で全 dotnet 系が無効化された形）', () =>
+    assert.match(
+      checkWorkflow('t', wf('            --allowedTools Bash(dotnet test:*)\n')).errors.join(' '),
+      /引用符で囲まれておらず/
+    ));
+  ok('引用符ありカンマ区切りは合格（公式記法）', () =>
+    assert.deepStrictEqual(
+      checkWorkflow('t', wf('            --allowedTools "Read,Bash(dotnet test:*)"\n')).errors,
+      []
+    ));
+  ok('claude_args ブロック内のコメント行は違反', () =>
+    assert.match(
+      checkWorkflow('t', wf('            # c\n            --allowedTools Read\n')).errors.join(' '),
+      /コメント行/
+    ));
+  ok('SDK を用意して実行ツールを許可しないのは違反', () =>
+    assert.match(
+      checkWorkflow('t', wf('            --allowedTools "Read"\n', '      - uses: actions/setup-dotnet@v5\n')).errors.join(' '),
+      /setup-dotnet/
+    ));
+  ok('parseAllowedTools はカンマ区切りを展開する', () =>
+    assert.deepStrictEqual(parseAllowedTools(['--allowedTools "A,B"'])[0].tools, ['A', 'B']));
+  ok('bashCommandsOf は Bash(cmd ...) のコマンド名を取り出す', () =>
+    assert.deepStrictEqual(
+      [...bashCommandsOf(['Bash(dotnet test:*)', 'Read', 'Bash(gh issue view:*)'])].sort(),
+      ['dotnet', 'gh']
+    ));
+  ok('実ツリー: ワークフローのツール許可設定に不備が無い', () => {
+    const dir = require('path').join(__dirname, '..', '.github', 'workflows');
+    const fsx = require('fs');
+    const errs = [];
+    for (const f of fsx.readdirSync(dir)) {
+      const r = checkWorkflow(f, fsx.readFileSync(require('path').join(dir, f), 'utf8'));
+      if (r.applicable) errs.push(...r.errors.map((e) => `${f}: ${e}`));
+    }
+    assert.deepStrictEqual(errs, []);
+  });
+}
+
+// --- check-doc-links: 未 populate な submodule の除外を可視化する（issue #139） ---
+
+{
+  const { unpopulatedSubmoduleOf, underUnpopulatedSubmodule, collectBroken } = require('./check-doc-links.js');
+  const fsz = require('fs');
+  const patz = require('path');
+  const osz = require('os');
+
+  // 未 populate な submodule を持つリポジトリを模したフィクスチャを作る。
+  const mkFixture = () => {
+    const r = fsz.mkdtempSync(patz.join(osz.tmpdir(), 'dlinks-'));
+    fsz.writeFileSync(patz.join(r, '.gitmodules'), '[submodule "planning"]\n\tpath = planning\n\turl = x\n');
+    fsz.mkdirSync(patz.join(r, 'planning'), { recursive: true }); // 空＝未 populate
+    fsz.mkdirSync(patz.join(r, 'docs'), { recursive: true });
+    fsz.writeFileSync(
+      patz.join(r, 'docs', 'a.md'),
+      '# A\n- [p](../planning/projects/x/07_adr/ADR-0001_a.md)\n- [q](../planning/projects/x/02_requirements/01_r.md)\n'
+    );
+    return r;
+  };
+
+  ok('未 populate な submodule 配下は対象の submodule 名を返す', () => {
+    const r = mkFixture();
+    const got = unpopulatedSubmoduleOf(patz.join(r, 'planning', 'projects', 'x.md'), r);
+    assert.strictEqual(got, 'planning');
+  });
+
+  ok('populate 済みなら null を返す（＝通常どおり実在検査する）', () => {
+    const r = mkFixture();
+    fsz.writeFileSync(patz.join(r, 'planning', 'keep'), '');
+    assert.strictEqual(unpopulatedSubmoduleOf(patz.join(r, 'planning', 'projects', 'x.md'), r), null);
+  });
+
+  // 除外を黙って行うと「破損リンクはありません」が検査していない範囲まで含んだ断定になる。
+  // 実際に ai-stock-trading で破損 20 件がこの隙間に蓄積した（issue #139）。
+  ok('除外したリンクは onSkip で件数を数えられる（黙って消えない）', () => {
+    const r = mkFixture();
+    const prev = process.env.DOC_LINKS_ROOT;
+    process.env.DOC_LINKS_ROOT = r;
+    try {
+      // REPO_ROOT はモジュール読み込み時に確定するため、別プロセスで検証する。
+      const out = execSync(
+        `node ${JSON.stringify(patz.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(patz.join(r, 'docs'))}`,
+        { env: { ...process.env, DOC_LINKS_ROOT: r }, encoding: 'utf8' }
+      );
+      assert.match(out, /未 populate の submodule 配下 2 件/, '除外件数が報告される');
+      assert.match(out, /planning: 2 件/, 'submodule 別の内訳が出る');
+      assert.match(out, /対象外/, 'OK メッセージが断定になっていない');
+    } finally {
+      if (prev === undefined) delete process.env.DOC_LINKS_ROOT;
+      else process.env.DOC_LINKS_ROOT = prev;
+    }
+  });
+
+  ok('除外が無ければ OK メッセージに但し書きを付けない', () => {
+    const r = fsz.mkdtempSync(patz.join(osz.tmpdir(), 'dlinks2-'));
+    fsz.mkdirSync(patz.join(r, 'docs'), { recursive: true });
+    fsz.writeFileSync(patz.join(r, 'docs', 'a.md'), '# A\n');
+    const out = execSync(
+      `node ${JSON.stringify(patz.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(patz.join(r, 'docs'))}`,
+      { env: { ...process.env, DOC_LINKS_ROOT: r }, encoding: 'utf8' }
+    );
+    assert.doesNotMatch(out, /対象外/, '除外が無いときは但し書きを出さない');
+  });
+
+  // collectBroken / isBrokenRef の onSkip は省略可能（既存の呼び出しを壊さない）。
+  // REPO_ROOT はモジュール読み込み時に確定するため、ここではフィクスチャの submodule 判定は
+  // 効かない。検証したいのは「onSkip 無しでも例外にならず配列を返す」ことである。
+  ok('onSkip を渡さなくても例外にならない（後方互換）', () => {
+    const r = mkFixture();
+    const got = collectBroken(patz.join(r, 'docs', 'a.md'));
+    assert.ok(Array.isArray(got), '配列を返す');
+  });
+
+  ok('underUnpopulatedSubmodule は真偽値の互換 API として残る', () => {
+    const r = mkFixture();
+    assert.strictEqual(underUnpopulatedSubmodule(patz.join(r, 'planning', 'x.md'), r), true);
+    fsz.writeFileSync(patz.join(r, 'planning', 'keep'), '');
+    assert.strictEqual(underUnpopulatedSubmodule(patz.join(r, 'planning', 'x.md'), r), false);
+  });
+}
+
+// --- lib/ci-annotate: CI 上の警告を GitHub アノテーションとして出す（issue #136 / #137） ---
+
+{
+  const ann = require('./lib/ci-annotate.js');
+  const withActions = (value, fn) => {
+    const prev = process.env.GITHUB_ACTIONS;
+    if (value === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = value;
+    try { return fn(); } finally {
+      if (prev === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = prev;
+    }
+  };
+
+  ok('GITHUB_ACTIONS 上では ::warning:: の workflow コマンドになる', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('warning', 'ダメな設定', '  warn  '), '::warning::ダメな設定\n')));
+
+  ok('ローカル実行では従来どおりの見た目を保つ', () =>
+    withActions(undefined, () =>
+      assert.strictEqual(ann.format('warning', 'ダメな設定', '  warn  '), '  warn  ダメな設定\n')));
+
+  // workflow コマンドは改行を含められない。畳まないとアノテーションが途中で切れる。
+  ok('複数行メッセージは 1 行へ畳まれる', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('notice', '一行目\n   二行目\n三行目', 'notice: '),
+        '::notice::一行目 二行目 三行目\n')));
+
+  // `%` を escape しないと GitHub 側で %XX として解釈され、文字が消える。
+  ok('% はエスケープされる（%25）', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('warning', '達成率 100%', '  warn  '), '::warning::達成率 100%25\n')));
+
+  ok('エスケープは % を先に処理する（二重変換しない）', () =>
+    assert.strictEqual(ann.escapeData('a%b\nc'), 'a%25b%0Ac'));
+
+  ok('GITHUB_ACTIONS が true 以外ならローカル扱い', () =>
+    withActions('false', () =>
+      assert.strictEqual(ann.isActions(), false)));
+}
+
+// --- check-commit-messages: validateIdExistence（ADR/IADR の実在性・採番衝突の再発防止） ---
 
 {
   const { validateIdExistence, loadExistingIadrIds, loadExistingPlanAdrIds } = require('./check-commit-messages.js');
   const iadrIds = loadExistingIadrIds();
   if (iadrIds && iadrIds.size > 0) {
     const existing = iadrIds.values().next().value; // 実ツリーの任意の実在 IADR
-    ok('実在する IADR は合格（#319）', () =>
+    ok('実在する IADR は合格', () =>
       assert.deepStrictEqual(validateIdExistence(`fix(${existing}): 是正`, iadrIds, null), []));
-    ok('実在しない IADR-9999 は違反（#319 の回帰）', () =>
+    ok('実在しない IADR-9999 は違反', () =>
       assert.match(validateIdExistence('feat(NFR,IADR-9999): x', iadrIds, null).join(' '), /実在しない/));
-    ok('末尾 PR 番号付きでも実在しない IADR を検出する（#314 の混入形）', () =>
-      assert.match(validateIdExistence('feat(IADR-9999): x (#314)', iadrIds, null).join(' '), /実在しない/));
+    ok('末尾 PR 番号付きでも実在しない IADR を検出する', () =>
+      assert.match(validateIdExistence('feat(IADR-9999): x (#123)', iadrIds, null).join(' '), /実在しない/));
     ok('IADR 以外の ID（FR/NFR）は実在性検査の対象外', () =>
       assert.deepStrictEqual(validateIdExistence('feat(FR-04,NFR): x', iadrIds, null), []));
   }
@@ -88,10 +256,10 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     assert.deepStrictEqual(validateIdExistence('feat(IADR-9999,ADR-9999): x', null, null), []));
   const planIds = loadExistingPlanAdrIds();
   if (planIds && planIds.size > 0) {
-    ok('実在しない計画 ADR-9999 は違反（#319）', () =>
+    ok('実在しない計画 ADR-9999 は違反', () =>
       assert.match(validateIdExistence('feat(ADR-9999): x', null, planIds).join(' '), /実在しない/));
   } else {
-    ok('planning 未 populate では計画 ADR 検査が skip される（#319 受け入れ基準）', () =>
+    ok('planning 未 populate では計画 ADR 検査が skip される', () =>
       assert.strictEqual(planIds, null));
   }
 }
@@ -127,59 +295,45 @@ ok('PR タイトル Revert はスキップ扱いで 0', () =>
 ok('PR タイトル [skip ci] はスキップ扱いで 0', () =>
   assert.strictEqual(silent(() => checkSingleTitle('なんでも [skip ci]')), 0));
 
-// --- check-commit-messages: findAllowlisted（適用除外コミットの恒久除外） ---
+// --- check-commit-messages: findAllowlisted（規約導入前コミットの恒久除外） ---
 
 ok('allowlist は短縮 SHA を前方一致で照合', () => {
-  // 現行 develop に実在する除外コミット（d1cfeb5f）の短縮 SHA で照合する（Issue #47）。
-  const al = [{ hash: 'd1cfeb5f', reason: 'x' }];
-  assert.ok(findAllowlisted('d1cfeb5ff1d6fcefc44afde8231fdc2644fbb6fe', al), '前方一致で除外されるべき');
+  const al = [{ hash: 'd1652dc', reason: 'x' }];
+  assert.ok(findAllowlisted('d1652dcf44ba3dfff6c4f5797defc38d1b863ca8', al), '前方一致で除外されるべき');
   assert.strictEqual(findAllowlisted('deadbeefdeadbeef', al), null, '無関係な SHA は除外されない');
 });
 
-// commit-allowlist.json の各エントリが「1 エントリ = 完全 SHA + 理由」の運用に沿うこと（Issue #47）。
-// findAllowlisted で件名を突き合わせる合成データ検査ではなく、ファイルの実エントリ自体を検証する。
-ok('allowlist の各エントリは完全 SHA + 理由を持つ', () => {
-  const al = loadAllowlist();
-  assert.ok(al.length >= 1, 'allowlist が空（少なくとも既知の非準拠コミットを 1 件は保持する想定）');
-  for (const e of al) {
-    // 追跡可能性のため短縮 SHA ではなく完全 SHA（40 桁 hex）を必須とする。
-    assert.match(e.hash, /^[0-9a-f]{40}$/, `hash が完全 SHA ではない: ${e.hash}`);
+// commit-allowlist.json は「そのリポジトリで実際に必要になった分だけ」を持つため、
+// 特定 SHA をハードコードして検査しない（他リポジトリへコピーすると必ず落ちる）。
+// 代わりに、実際に載っているエントリ自体が運用ルールを満たすかを検証する。
+
+ok('allowlist の各エントリは完全 SHA と reason を持つ', () => {
+  for (const e of loadAllowlist()) {
+    assert.match(e.hash, /^[0-9a-f]{40}$/i, `hash は完全 SHA（40 桁）であること: ${e.hash}`);
     assert.ok(e.reason && e.reason.trim(), `reason が空: ${e.hash}`);
   }
 });
 
-// rebase 由来の幻 SHA 再発防止（Issue #47）: 各エントリが git 履歴に実在し、HEAD から到達可能で、
-// かつ本当に規約違反の件名であること（＝除外に値すること）を検証する。
-// git が無い / 浅いクローンでオブジェクト不在の場合は best-effort でスキップ（CI をブロックしない）。
-ok('allowlist の各エントリは実在・到達可能・非準拠である（best-effort）', () => {
+ok('allowlist の各エントリは git 履歴に実在し統合ブランチから到達可能（幻 SHA の検出）', () => {
   const al = loadAllowlist();
-  if (!inGitWorkTree) {
-    process.stdout.write('    ↳ skip: git work tree ではないため実在性検証を省略\n');
-    return;
-  }
+  if (!inGitWorkTree || isShallowClone || al.length === 0) return; // best-effort
   for (const e of al) {
-    // 注: `^{commit}` の peel は使わない（Windows cmd.exe では `^` がエスケープ扱いされるため）。
-    // hash は完全 SHA を前提とし、commit オブジェクトなら cat-file -t が 'commit' を返す。
     const type = gitTry(`cat-file -t ${e.hash}`);
-    if (type === null) {
-      // オブジェクトが手元に無い。浅いクローンなら判別不能のためスキップ（fail-open）。
-      // フル履歴なら「存在しない SHA」＝ Issue #47 の幻 SHA 再発なので失敗させる。
-      if (isShallowClone) {
-        process.stdout.write(`    ↳ skip: ${e.hash.slice(0, 8)} は浅いクローンで解決不可（判別不能）\n`);
-        continue;
-      }
-      assert.fail(`${e.hash} がフル履歴に存在しない（幻 SHA・Issue #47 の再発）`);
-    }
-    assert.strictEqual(type, 'commit', `${e.hash} が commit ではない`);
-    // develop（REACH_BASE）から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
-    const reachable = gitTry(`merge-base --is-ancestor ${e.hash} ${REACH_BASE}`) !== null;
-    assert.ok(reachable, `${e.hash} が ${REACH_BASE} から到達不可（幻 SHA の疑い）`);
-    // 除外する以上、件名が実際に規約違反であること（準拠件名を無意味に除外していないこと）。
-    const subject = gitTry(`log -1 --pretty=%s ${e.hash}`);
-    assert.ok(subject, `${e.hash} の件名を取得できない`);
+    assert.strictEqual(type, 'commit', `履歴に実在しない SHA（rebase 後の幻 SHA の可能性）: ${e.hash}`);
+    const reachable = gitTry(`merge-base --is-ancestor ${e.hash} ${REACH_BASE} && echo yes`);
+    assert.ok(reachable !== null, `${REACH_BASE} から到達できない SHA: ${e.hash}`);
+  }
+});
+
+ok('allowlist は規約に準拠した件名を無意味に除外していない', () => {
+  const al = loadAllowlist();
+  if (!inGitWorkTree || isShallowClone || al.length === 0) return; // best-effort
+  for (const e of al) {
+    const subject = gitTry(`log -1 --pretty=format:%s ${e.hash}`);
+    if (subject === null) continue;
     assert.ok(
       validateSubject(subject).length >= 1,
-      `${e.hash} は規約準拠件名（除外不要のはず）: ${subject}`
+      `規約に準拠している件名が除外されている（不要なエントリ）: ${e.hash} "${subject}"`
     );
   }
 });
@@ -187,150 +341,362 @@ ok('allowlist の各エントリは実在・到達可能・非準拠である（
 // --- gen-changelog: hashMatches / applyOverride ------------------------------
 
 ok('hashMatches は短縮 SHA を前方一致', () => {
-  assert.strictEqual(hashMatches('a1b2c3d9abc', 'a1b2c3d'), true);
-  assert.strictEqual(hashMatches('a1b2c3d', 'a1b2c3d9abc'), true);
-  assert.strictEqual(hashMatches('deadbeef', 'a1b2c3d'), false);
+  assert.strictEqual(hashMatches('abc1234def', 'abc1234'), true);
+  assert.strictEqual(hashMatches('abc1234', 'abc1234def'), true);
+  assert.strictEqual(hashMatches('deadbeef', 'abc1234'), false);
 });
 
-// remap は type を保持し scope のみ差し替える（docs へ誤 remap しない回帰防止）。
-// 合成 override を注入して検証する（changelog-overrides.json の実データに依存しない）。
-ok('remap は type 保持・scope のみ差し替え', () => {
-  const overrides = [{ hash: 'a1b2c3d', action: 'remap', scope: 'P0' }];
-  const c = applyOverride({ hash: 'a1b2c3d0000', type: 'feat', scope: 'FR-10', desc: '元件名' }, overrides);
+// override は第 2 引数で注入する（実データ＝特定プロジェクトの実コミットに依存しない）。
+// overrides が空の正常なリポジトリでも remap / exclude の挙動を検証できる。
+ok('remap は指定項目だけを差し替え、省略項目は元の値を保つ', () => {
+  const ovs = [{ hash: 'aaaaaaa', action: 'remap', scope: 'P0' }];
+  const c = applyOverride({ hash: 'aaaaaaabbb', type: 'feat', scope: 'FR-10', desc: '元件名' }, ovs);
   assert.notStrictEqual(c, null, 'exclude されるべきではない');
-  assert.strictEqual(c.type, 'feat', 'docs へ誤 remap してはならない');
-  assert.strictEqual(c.scope, 'P0');
+  assert.strictEqual(c.type, 'feat', '省略した type は元のまま（docs へ誤 remap しない）');
+  assert.strictEqual(c.scope, 'P0', '指定した scope は差し替わる');
+  assert.strictEqual(c.desc, '元件名');
 });
 
-// exclude は null を返す（合成 override を注入）。
-ok('exclude は null を返す', () => {
-  const overrides = [{ hash: 'a1b2c3d', action: 'exclude' }];
-  const c = applyOverride({ hash: 'a1b2c3d0000', type: 'feat', scope: 'FR-01', desc: 'x' }, overrides);
-  assert.strictEqual(c, null);
+ok('exclude は null を返す（生成物から除外）', () => {
+  const ovs = [{ hash: 'bbbbbbb', action: 'exclude' }];
+  assert.strictEqual(applyOverride({ hash: 'bbbbbbbccc', type: 'feat', scope: 'P0', desc: 'x' }, ovs), null);
+});
+
+ok('未知の action は補正を無視する（黙って remap 扱いにしない）', () => {
+  const ovs = [{ hash: 'ccccccc', action: 'romap', scope: 'P0' }];
+  const c = { hash: 'cccccccddd', type: 'feat', scope: 'FR-01', desc: 'x' };
+  // stdout も抑止する。gen-changelog は現状 stderr へ直接書くが、ci-annotate へ移すと
+  // Actions 上では stdout へ出るため、片方だけの抑止は警告をテスト実行中に漏らす
+  // （issue #140 / #142 と同型。silent() と同じく最初から両方を塞いでおく）。
+  const silencedErr = process.stderr.write;
+  const silencedOut = process.stdout.write;
+  process.stderr.write = () => true;
+  process.stdout.write = () => true;
+  try {
+    assert.deepStrictEqual(applyOverride(c, ovs), c);
+  } finally {
+    process.stderr.write = silencedErr;
+    process.stdout.write = silencedOut;
+  }
 });
 
 // override に一致しないコミットは素通しする。
 ok('未一致コミットは素通し', () => {
   const c = { hash: 'ffffffff', type: 'fix', scope: 'FR-01', desc: 'x' };
-  assert.deepStrictEqual(applyOverride(c), c);
+  assert.deepStrictEqual(applyOverride(c, []), c);
 });
 
-// --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
-const fsDl = require('fs');
-const osDl = require('os');
-const pathDl = require('path');
-const { parseArgs: dlParseArgs, planningPopulated } = require('./check-doc-links.js');
-
-ok('check-doc-links: parseArgs 既定は requirePlanning=false', () => {
-  const a = dlParseArgs([]);
-  assert.strictEqual(a.requirePlanning, false);
-  assert.strictEqual(a.dir, 'docs');
-});
-ok('check-doc-links: --require-planning で requirePlanning=true', () => {
-  assert.strictEqual(dlParseArgs(['--require-planning']).requirePlanning, true);
-});
-ok('check-doc-links: --dir と --require-planning の併用', () => {
-  const a = dlParseArgs(['--dir', 'notes', '--require-planning']);
-  assert.strictEqual(a.dir, 'notes');
-  assert.strictEqual(a.requirePlanning, true);
-});
-ok('check-doc-links: planningPopulated は planning/projects 実在で true', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-pop-'));
-  fsDl.mkdirSync(pathDl.join(root, 'planning', 'projects'), { recursive: true });
-  assert.strictEqual(planningPopulated(root), true);
-});
-ok('check-doc-links: planningPopulated は空プレースホルダ（planning/ のみ）で false', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-empty-'));
-  fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true });
-  assert.strictEqual(planningPopulated(root), false);
-});
-ok('check-doc-links: planningPopulated は planning/ 不在で false', () => {
-  const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-none-'));
-  assert.strictEqual(planningPopulated(root), false);
-});
-
-// --- validate-pipeline-config: 実 pipeline.json の契約テスト -------------------
-// ADR-0001, IADR-0077, #22: 取引パイプラインの宣言（deploy/helm/ai-stock-trading/files/pipeline.json）が
-// 検証器（V1〜V6）に合格することを回帰テストとして固定する。宣言が壊れた・接続性/循環違反へ退行した場合に
-// CI（node scripts/scripts.test.js）と実ファイル検証ステップの両方で検知する。
-const pathPc = require('path');
-const PIPELINE_JSON = pathPc.join(__dirname, '..', 'deploy', 'helm', 'ai-stock-trading', 'files', 'pipeline.json');
-ok('validate-pipeline-config: 実 pipeline.json が検証器に合格する', () => {
-  const out = execSync(
-    `node ${JSON.stringify(pathPc.join(__dirname, 'validate-pipeline-config.js'))} ${JSON.stringify(PIPELINE_JSON)}`,
+// 単体テストは applyOverride を常に 2 引数で呼ぶため、**呼び出し側の形**を一切カバーしない。
+// 実際に `.map(applyOverride)` と point-free で書かれていると、map が渡す index（数値）が
+// 第 2 引数 overrides を上書きし、1 件目から TypeError で CHANGELOG 生成が全面的に壊れる。
+// 原理的に単体テストでは検出できないため、実行して確かめる。
+ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側の回帰）', () => {
+  if (!inGitWorkTree) return; // best-effort
+  const os = require('os');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const out = pathx.join(fsx.mkdtempSync(pathx.join(os.tmpdir(), 'gc-')), 'CHANGELOG.md');
+  execSync(
+    `node ${JSON.stringify(pathx.join(__dirname, 'gen-changelog.js'))} --out ${JSON.stringify(out)}`,
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
   );
-  assert.match(out, /^OK: /m, `検証器が OK を返すべき（実出力: ${out}）`);
+  assert.ok(fsx.readFileSync(out, 'utf8').trim().length > 0, '生成された CHANGELOG が空');
 });
 
-// --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 再発防止） ---
-// ADR-0013, IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
-// namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
-// pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
-const {
-  endpointNameOf,
-  consumerClassesIn,
-  pathService,
-  findCollisions,
-  checkTree: checkConsumerEndpointNames,
-} = require('./check-consumer-endpoint-names.js');
+// --- check-commit-messages: 計画 ADR の名前空間限定（他プロジェクトの ID を誤受理しない） ---
 
-const RISK_CS = [
-  'namespace AiStockTrading.RiskManagement.Worker.Composable.Steps;',
-  '',
-  '// FR-10: 取引判断を購読し承認/拒否を発行する。',
-  'internal sealed class TradeDecisionMadeConsumer(',
-  '    OrderScreeningService screeningService,',
-  '    ILogger<TradeDecisionMadeConsumer> logger)',
-  '    : IConsumer<TradeDecisionMade>',
-  '{',
-  '}',
-].join('\n');
+{
+  const os = require('os');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const { loadExistingPlanAdrIds } = require('./check-commit-messages.js');
 
-ok('endpointNameOf: 末尾 Consumer を落とす（DefaultEndpointNameFormatter と同じ規則）', () => {
-  assert.strictEqual(endpointNameOf('TradeDecisionMadeConsumer'), 'TradeDecisionMade');
-  assert.strictEqual(endpointNameOf('TradeDecisionMadeBaselineConsumer'), 'TradeDecisionMadeBaseline');
-  assert.strictEqual(endpointNameOf('Foo'), 'Foo');
-});
+  // 番号帯が重複する 2 プロジェクトを合成する（実データに依存させない）。
+  const root = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'plan-'));
+  const mk = (proj, files) => {
+    const d = pathx.join(root, proj, '07_adr');
+    fsx.mkdirSync(d, { recursive: true });
+    for (const f of files) fsx.writeFileSync(pathx.join(d, f), '');
+  };
+  mk('own-project', ['ADR-0001_a.md', 'ADR-0002_b.md']);
+  mk('other-project', ['ADR-0001_x.md', 'ADR-0009_y.md']);
 
-ok('consumerClassesIn: 複数行プライマリコンストラクタの IConsumer 実装を検出する', () => {
-  assert.deepStrictEqual(consumerClassesIn(RISK_CS), ['TradeDecisionMadeConsumer']);
-});
+  ok('計画 ADR の実在集合は自プロジェクトの名前空間に限定される', () => {
+    const ids = loadExistingPlanAdrIds(root, 'own-project');
+    assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002']);
+    assert.ok(!ids.has('ADR-0009'), '他プロジェクトにしか無い ID を実在として受理してはならない');
+  });
 
-ok('consumerClassesIn: IConsumer を実装しないクラス・コメント中の IConsumer は拾わない', () => {
-  assert.deepStrictEqual(consumerClassesIn('// : IConsumer<T>\nclass Poller : BackgroundService\n{\n}'), []);
-});
+  // 戻り値と警告文の両方を取る。
+  // 【重要】stdout と stderr の**両方**を捕捉する。ci-annotate は GITHUB_ACTIONS 上では
+  // workflow コマンドの要件から必ず stdout へ書くため、stderr だけを捕捉すると
+  //   - Actions 上で警告文が取れず、このテストが落ちる（ローカルは緑・CI だけ赤）
+  //   - テストのフィクスチャが出した警告が**本物のアノテーション**として PR に漏れる
+  // という 2 つの不具合が同時に起きる（issue #140。実際に #138 で発生させた）。
+  const captureOutput = (fn) => {
+    const origErr = process.stderr.write;
+    const origOut = process.stdout.write;
+    let out = '';
+    const sink = (s) => {
+      out += s;
+      return true;
+    };
+    process.stderr.write = sink;
+    process.stdout.write = sink;
+    try {
+      return { value: fn(), output: out };
+    } finally {
+      process.stderr.write = origErr;
+      process.stdout.write = origOut;
+    }
+  };
 
-ok('pathService: backend/Services/<Service>/ からサービス名を得る', () => {
-  assert.strictEqual(pathService('backend/Services/RiskManagementService/src/W/X.cs'), 'RiskManagementService');
-  assert.strictEqual(pathService('backend/Shared/X.cs'), null);
-});
+  ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
+    const { value: ids } = captureOutput(() => loadExistingPlanAdrIds(root, 'no-such-project'));
+    assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002', 'ADR-0009']);
+  });
 
-ok('findCollisions: サービス跨ぎの同名 consumer を衝突として検出する（#258 の回帰）', () => {
-  const collisions = findCollisions([
-    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-    { service: 'MarketMonitorService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'b.cs' },
-  ]);
-  assert.strictEqual(collisions.length, 1);
-  assert.strictEqual(collisions[0].endpoint, 'TradeDecisionMade');
-});
+  // 退避は「黙って検査を無効化する」形にしない。配布既定のプレースホルダのまま複数プロジェクト
+  // 構成で使うと、他プロジェクトの ADR まで実在扱いになるため警告で可視化する。
+  ok('複数プロジェクト構成で退避したときは警告を出す（silently inert にしない）', () => {
+    const { output } = captureOutput(() => loadExistingPlanAdrIds(root, '<project-name>'));
+    assert.match(output, /PLAN_PROJECT/);
+    assert.match(output, /全プロジェクト走査へ退避/);
+  });
 
-ok('findCollisions: 改名でキューが分離されれば衝突しない', () => {
-  assert.deepStrictEqual(findCollisions([
-    { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-    { service: 'MarketMonitorService', className: 'TradeDecisionMadeBaselineConsumer', endpoint: 'TradeDecisionMadeBaseline', file: 'b.cs' },
-  ]), []);
-});
+  ok('単一プロジェクト構成では退避しても警告を出さない（実害が無いケースを騒がせない）', () => {
+    const fsy = require('fs');
+    const paty = require('path');
+    const osy = require('os');
+    const solo = fsy.mkdtempSync(paty.join(osy.tmpdir(), 'plan1-'));
+    const d = paty.join(solo, 'only-project', '07_adr');
+    fsy.mkdirSync(d, { recursive: true });
+    fsy.writeFileSync(paty.join(d, 'ADR-0001_a.md'), '');
+    const { value: ids, output } = captureOutput(() => loadExistingPlanAdrIds(solo, '<project-name>'));
+    assert.deepStrictEqual([...ids], ['ADR-0001'], '全走査＝自プロジェクト走査になる');
+    assert.strictEqual(output, '', '警告は出さない');
+  });
 
-ok('findCollisions: 同一サービス内は衝突判定の対象外（同名はコンパイルエラーで防がれる）', () => {
-  assert.deepStrictEqual(findCollisions([
-    { service: 'S', className: 'AConsumer', endpoint: 'A', file: 'a.cs' },
-    { service: 'S', className: 'BConsumer', endpoint: 'B', file: 'b.cs' },
-  ]), []);
-});
+  ok('planning 未 populate では null（実在性検査を skip）', () =>
+    assert.strictEqual(loadExistingPlanAdrIds(pathx.join(root, 'missing'), 'own-project'), null));
+}
 
-ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
-  assert.deepStrictEqual(checkConsumerEndpointNames(), []);
-});
+// --- check-doc-links: submodule 判定の一般化 ---------------------------------
+
+{
+  const path = require('path');
+  const { submodulePaths, underUnpopulatedSubmodule } = require('./check-doc-links.js');
+
+  ok('submodulePaths は .gitmodules が無ければ空配列（誤検知しない）', () =>
+    assert.deepStrictEqual(submodulePaths(path.join(__dirname, '..', 'docs')), []));
+
+  ok('submodule 配下でないパスは対象外（通常どおり実在検査する）', () =>
+    assert.strictEqual(underUnpopulatedSubmodule(path.join(__dirname, 'check-doc-links.js')), false));
+
+  // planning 固定だった判定が .gitmodules 由来へ一般化されたこと（planning 以外の submodule も対象）。
+  ok('planning 以外の submodule も判定対象になっている', () => {
+    const src = require('fs').readFileSync(path.join(__dirname, 'check-doc-links.js'), 'utf8');
+    assert.match(src, /\.gitmodules/, '.gitmodules を読んで判定すること');
+    assert.doesNotMatch(
+      src,
+      /\(\^\|\\\/\)planning\\\//,
+      'planning 固定の正規表現判定が残っていないこと'
+    );
+  });
+}
+
+// --- リポジトリ固有テストの受け口 ------------------------------------------
+//
+// 本ファイルはキット（impl-handoff-kit）が配布する共通テストであり、キットの更新のたびに
+// 差し替わる。リポジトリ固有のテスト（キットに無い自前スクリプトの検査）を本ファイルへ直接
+// 追記すると、同期のたびに手動マージが要り、キットが同じテストを取り込んだ際に重複も生じる
+// （重複はテストが落ちないため気付きにくい）。
+//
+// 固有テストは `scripts/scripts.repo.test.js` に置く。本ファイルはキットとバイト一致に保て、
+// 同期は上書きコピー 1 回で済む。ファイルが無ければ何もしない（キット既定の挙動は変わらない）。
+//
+//   // scripts/scripts.repo.test.js
+//   module.exports = ({ ok, assert }) => {
+//     ok('本リポ固有の検査', () => { /* ... */ });
+//   };
+//
+// **このファイルは必ずコミットする。** 追跡されていないと CI（clean checkout）に存在せず、
+// 固有テストが黙って走らなくなる。旧名 `scripts.local.test.js` は `.gitignore` の `*.local.*` 系
+// パターンに当たり得るため使わない（`.local` は多くのプロジェクトで「コミットしない」の目印であり、
+// キット自身も `CLAUDE.local.md` をその意味で使っている）。旧名は移行のあいだ読み込むが警告する。
+
+const COMPANION = 'scripts.repo.test.js';
+const COMPANION_LEGACY = 'scripts.local.test.js';
+
+/**
+ * companion（リポジトリ固有テスト）を読み込む。
+ * ディレクトリを引数に取るのは、受け口自体を実ファイルに触らず検証できるようにするため
+ * （実 companion がある環境でだけ検証が skip される、という穴を作らない）。
+ * 返り値の registered は companion が登録したテスト件数。
+ */
+function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
+  const fsx = require('fs');
+  const pathx = require('path');
+  const warnings = [];
+
+  const primary = pathx.join(dir, COMPANION);
+  const legacy = pathx.join(dir, COMPANION_LEGACY);
+  const hasPrimary = fsx.existsSync(primary);
+  const hasLegacy = fsx.existsSync(legacy);
+  let file = null;
+  if (hasPrimary) {
+    file = primary;
+    if (hasLegacy) {
+      // 部分移行の検出。新名を優先するため旧名は読み込まれず、残したままだとその中身が
+      // 落ちも警告もせず消える。「新名を作ったが旧名の中身を移し切っていない」は
+      // 改名の移行期に起こりやすい人的ミスであり、まさに本機能が防ぐべき silently inert。
+      warnings.push(
+        `${COMPANION_LEGACY} が残っているが読み込まれていない（${COMPANION} を優先した）。` +
+          '移行漏れならテストを移し、不要なら削除すること'
+      );
+    }
+  } else if (hasLegacy) {
+    file = legacy;
+    warnings.push(
+      `${COMPANION_LEGACY} は旧名である。${COMPANION} へ改名すること` +
+        '（.local. は gitignore の「コミットしない」慣習と衝突し、除外されると固有テストが黙って消える）'
+    );
+  }
+  if (!file) return { file: null, registered: 0, warnings };
+
+  // 追跡されていない companion は CI（clean checkout）に存在せず、固有テストが黙って走らない。
+  if (gitTry(`ls-files --error-unmatch ${JSON.stringify(file)}`) === null) {
+    warnings.push(
+      `${pathx.basename(file)} が git に追跡されていない。.gitignore に除外されている可能性がある` +
+        '（このままでは CI で固有テストが走らない）。必ずコミットすること'
+    );
+  }
+
+  let registered = 0;
+  const countingOk = (name, fn) => {
+    registered++;
+    return okFn(name, fn);
+  };
+  require(file)({ ok: countingOk, assert: assertObj });
+  return { file, registered, warnings };
+}
+
+// 受け口そのものの回帰テスト。仕組みは、動いていることを確かめないと黙って壊れる。
+// 一時ディレクトリ上で検証するため、実 companion の有無に関わらず**常に**実効する。
+{
+  const fsx = require('fs');
+  const pathx = require('path');
+  const osx = require('os');
+  const mkTmp = () => fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'companion-'));
+  const run = (name, fn) => fn(); // ok を握りつぶさず本体を実行するだけの薄いスタブ
+
+  ok('受け口: companion を読み込み登録件数を数える', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION),
+      "module.exports = ({ ok, assert }) => { ok('a', () => assert.ok(true)); ok('b', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 2, 'companion のテストが登録・実行されていない');
+  });
+
+  ok('受け口: companion が無ければ何もしない（キット既定の挙動）', () => {
+    const r = loadCompanionTests(mkTmp(), { ok: run, assert });
+    assert.strictEqual(r.file, null);
+    assert.strictEqual(r.registered, 0);
+  });
+
+  ok('受け口: 新旧が両方あるとき旧名の残存を警告する（部分移行の検出）', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION),
+      "module.exports = ({ ok, assert }) => { ok('new-1', () => assert.ok(true)); };\n"
+    );
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION_LEGACY),
+      "module.exports = ({ ok, assert }) => { ok('legacy-1', () => assert.ok(true)); ok('legacy-2', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 1, '新名を優先すること');
+    assert.match(r.warnings.join(' '), /残っているが読み込まれていない/);
+  });
+
+  ok('受け口: 旧名は読み込むが改名を促す警告を出す', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION_LEGACY),
+      "module.exports = ({ ok, assert }) => { ok('legacy', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 1, '旧名でも読み込むこと（移行中に固有テストを失わせない）');
+    assert.match(r.warnings.join(' '), /旧名/);
+  });
+
+  ok('受け口: 追跡されていない companion は警告する（CI で黙って消えるため）', () => {
+    const d = mkTmp(); // git 管理外の一時ディレクトリ＝未追跡として扱われる
+    fsx.writeFileSync(pathx.join(d, COMPANION), 'module.exports = () => {};\n');
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.match(r.warnings.join(' '), /追跡されていない/);
+  });
+}
+
+// 実ツリーの companion を読み込む。
+{
+  const res = loadCompanionTests(__dirname, { ok, assert });
+  for (const w of res.warnings) warn(w, { stream: process.stderr, prefix: 'warning: ' });
+
+  if (res.file) {
+    // 読み込まれてはいるが何もしていない（export 忘れ・空実装・全件 skip）状態を検出する。
+    assert.ok(
+      res.registered > 0,
+      `${require('path').basename(res.file)} が 1 件もテストを登録していない（export 忘れ・空実装の可能性）`
+    );
+    // 消失検出は「companion を置く」「REQUIRE_REPO_TESTS を設定する」の 2 ステップで初めて効く。
+    // 2 つ目を忘れると、companion が消えてもテスト件数が減るだけで CI は green のままになる
+    // （未追跡は警告するのに、より起きやすいこの状態が無言では筋が通らない）。失敗はさせない。
+    if (process.env.REQUIRE_REPO_TESTS !== '1') {
+      notice(
+        `${require('path').basename(res.file)} を読み込んだが REQUIRE_REPO_TESTS が未設定である。\n` +
+          'このままでは companion が消失してもテスト件数が減るだけで CI は green のままになる。\n' +
+          'ci.yml の scripts-tests ジョブで REQUIRE_REPO_TESTS=1 を設定すること。',
+        { stream: process.stderr }
+      );
+    }
+  } else if (process.env.REQUIRE_REPO_TESTS === '1') {
+    // 固有テストを持つリポジトリは、companion の消失（誤削除・マージ事故・同期での上書き）を
+    // 検出できるよう REQUIRE_REPO_TESTS=1 を CI に設定する。既定は未設定＝従来どおり何もしない。
+    process.stderr.write(
+      `✗ ${COMPANION} が見つからない（REQUIRE_REPO_TESTS=1）。\n` +
+        '  固有テストが消失している可能性がある（誤削除・リネーム・キット同期での上書き）。\n'
+    );
+    process.exit(1);
+  }
+}
+
+// --- 環境依存の出力先切り替えの回帰防止（issue #140） ---
+//
+// ci-annotate は GITHUB_ACTIONS の有無で書き込み先（stdout / 呼び出し側指定）を変える。
+// **片方の環境でしかテストしないと必ず見落とす**。実際 #138 は「ローカルで緑・CI で赤」
+// という最も気付きにくい形で入り、取り込んだ全リポジトリの scripts-tests を落とした。
+// 子プロセスで GITHUB_ACTIONS=true を与えて自分自身を回し、次の 2 点を確認する。
+//   (1) 全テストが通る（execSync は非 0 終了で throw する）
+//   (2) テストのフィクスチャが出した警告が本物のアノテーションとして漏れない
+//       （漏れると PR の Checks 画面に事実でない警告が毎回出て、アノテーションが読まれなくなる）
+// SCRIPTS_TEST_CHILD で再帰を止める。
+if (!process.env.SCRIPTS_TEST_CHILD) {
+  ok('GITHUB_ACTIONS=true でも全テストが通り、フィクスチャ由来のアノテーションが漏れない', () => {
+    const out = execSync(`node ${JSON.stringify(__filename)}`, {
+      env: { ...process.env, GITHUB_ACTIONS: 'true', SCRIPTS_TEST_CHILD: '1' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    // フィクスチャ固有の値だけを対象にする。実リポジトリの正当な警告（companion 未追跡等）で
+    // 誤って落とさないため、件数ではなく**フィクスチャの目印**で判定する。
+    const leaked = out
+      .split('\n')
+      .filter((l) => /^::(warning|notice)::/.test(l) && /no-such-project|<project-name>/.test(l));
+    assert.deepStrictEqual(leaked, [], `フィクスチャ由来のアノテーションが漏れている:\n${leaked.join('\n')}`);
+  });
+}
 
 process.stdout.write(`\n✓ ${passed} tests passed\n`);

@@ -44,14 +44,20 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore dependencies
         run: |
-          # ソリューションを自動発見して復元する（kit 雛形と同型。planning PR #21）。
-          # 旧判定（ls *.sln **/*.csproj）は backend/backend.slnx レイアウトで復元対象を発見できなかった。
+          # ソリューションを自動発見して復元する（ルート単一 .sln/.slnx でも、ユニット第一構成
+          # `src/<unit>/backend/backend.slnx` でも編集不要で動く）。
           found=0
-          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+          # 【落とし穴】自動発見は「編集不要」を謳う分、拾ってほしくないものまで拾う。
+          # ビルド不可の雛形ソリューション（共通 props を継承せず単体では restore できないもの）を
+          # 同梱するリポジトリでは、それも拾って失敗する。既定で ./templates/* を除外してある。
+          # 同一パターンが scripts/setup.sh と security.yml（2 か所）にもある。片方だけ直さないこと。
+          # さらに codeql.example.yml の autobuild も同じ雛形を拾って失敗するが、あちらは find を
+          # 使わないため除外では直せない（実ビルド対象の明示指定へ置き換える。同ファイルの注記参照）。
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' -not -path './templates/*' | sort); do
             dotnet restore "$sln"
             found=1
           done

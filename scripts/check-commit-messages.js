@@ -22,6 +22,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { warn, notice } = require('./lib/ci-annotate.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
 const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
@@ -171,8 +172,11 @@ function isSkippable(subject) {
  * 指定ディレクトリのファイル名から実在する ADR/IADR 番号の集合を返す。ディレクトリを
  * 読めない環境（チェックアウト無しの単独実行・planning submodule 未 populate 等）では
  * null を返し、実在性検査をスキップする（fail-open。check-doc-links.js と同じ扱い）。
- * 背景（issue #319）: 並行実装の採番衝突で改番した際、PR タイトル（= squash 後件名）だけが
- * 人手の追随に依存し、#314 が別内容の IADR-0121 を名乗ったまま develop に載った。
+ *
+ * 背景: 並行実装では ADR 番号の採番衝突が起こり、後発が改番を強いられる。改番はファイル名・
+ * 本文・索引・仕様書に及ぶ一方、**PR タイトル（= スカッシュ後のコミット件名）だけが人手の
+ * 追随に依存する**ため、実体と別内容の ADR を名乗る件名が統合ブランチへ混入しやすい。
+ * 書式チェック（ID_PATTERN）だけではこれを検知できない。
  */
 function loadExistingAdrIds(prefix, dir) {
   try {
@@ -188,20 +192,73 @@ function loadExistingAdrIds(prefix, dir) {
   }
 }
 
-/** 実装 ADR（本リポ docs/adr/）の実在番号集合。読めなければ null。 */
+/** 実装 ADR（本リポ `docs/adr/`）の実在番号集合。読めなければ null。 */
 function loadExistingIadrIds(dir = path.join(__dirname, '..', 'docs', 'adr')) {
   return loadExistingAdrIds('IADR', dir);
 }
 
-/** 計画 ADR（planning submodule 07_adr/）の実在番号集合。未 populate なら null（skip）。 */
+// 【置換点】本リポジトリが主に実装する計画プロジェクト名（`planning/projects/<name>/`）。
+// 裸（無修飾）の `ADR-xxxx` はこの名前空間を指す（.claude/rules/traceability.md の規約）。
+// 環境変数 PLAN_PROJECT で上書きできる（テスト・複数構成の検証用）。
+const PLAN_PROJECT = process.env.PLAN_PROJECT || 'ai-stock-trading';
+
+/**
+ * 計画 ADR（planning submodule の `projects/<name>/07_adr/`）の実在番号集合。
+ * submodule 未 populate なら null（skip）。
+ *
+ * **自プロジェクトの名前空間に限定する**こと。計画 ID はプロジェクトごとに独立採番のため
+ * 番号帯が丸ごと重複する。全プロジェクトの和集合を実在集合にすると、他プロジェクトにしか
+ * 存在しない ID まで「実在」として受理され、本検査の目的（改番時に PR タイトルの追随が
+ * 漏れて実体と別内容の ADR を名乗る事故の検出）が働かなくなる。
+ * 自プロジェクトを解決できない構成では、従来どおり全走査へ退避する（fail-open）。
+ */
 function loadExistingPlanAdrIds(
-  dir = path.join(__dirname, '..', 'planning', 'projects', 'ai-stock-trading', '07_adr')
+  projectsDir = path.join(__dirname, '..', 'planning', 'projects'),
+  project = PLAN_PROJECT
 ) {
-  return loadExistingAdrIds('ADR', dir);
+  let entries;
+  try {
+    entries = fs.readdirSync(projectsDir);
+  } catch (e) {
+    return null;
+  }
+  // 自プロジェクトの名前空間だけを実在集合とする（規約どおりの厳密な検査）。
+  const own = loadExistingAdrIds('ADR', path.join(projectsDir, project, '07_adr'));
+  if (own && own.size > 0) return own;
+
+  // 自プロジェクト名を解決できない（PLAN_PROJECT 未設定・単一プロジェクト構成等）場合は
+  // 全走査へ退避する。検査が甘くなるが、CI をローカル環境差で落とさない。
+  //
+  // ただし**複数プロジェクトが見えている構成では、退避した時点で本検査は実質無効**になる
+  // （他プロジェクトにしか無い ADR 番号まで「実在」として受理する）。配布既定の PLAN_PROJECT は
+  // プレースホルダであり、設定を忘れると黙ってこの状態に落ちる。架空の ID（ADR-9999 等）は
+  // 依然として検出されるため、利用者からは検査が効いているように見えてしまう。
+  // 「ジョブは成功するのに実は効いていない」状態を作らないよう、退避したことを警告で可視化する。
+  // 終了コードは変えない（既存リポジトリの CI を新たに落とさない）。
+  if (entries.length > 1) {
+    warn(
+      `PLAN_PROJECT="${project}" に対応する ${project}/07_adr/ が見つからないため、\n` +
+        `計画 ADR の実在性検査を全プロジェクト走査へ退避した（他プロジェクトの ADR 番号も\n` +
+        `「実在」として受理される）。scripts/check-commit-messages.js の PLAN_PROJECT を\n` +
+        `自プロジェクト名へ設定すること（impl-handoff-kit/HOWTO.md Part B-5）。`,
+      { stream: process.stderr, prefix: 'warning: ' }
+    );
+  }
+
+  const ids = new Set();
+  let found = false;
+  for (const name of entries) {
+    const got = loadExistingAdrIds('ADR', path.join(projectsDir, name, '07_adr'));
+    if (got) {
+      found = true;
+      for (const id of got) ids.add(id);
+    }
+  }
+  return found ? ids : null;
 }
 
 /**
- * 件名スコープ中の IADR-xxxx / ADR-xxxx が実在するか検証し、違反理由の配列を返す。
+ * 件名スコープ中の `IADR-xxxx` / `ADR-xxxx` が実在するか検証し、違反理由の配列を返す。
  * 各集合が null（読めない環境）の場合は該当種別の検査をスキップする。
  * 書式違反の検出は validateSubject が担う（本関数は書式適合を前提に実在のみ見る）。
  */
@@ -212,9 +269,9 @@ function validateIdExistence(subject, iadrIds, planAdrIds) {
   const reasons = [];
   for (const id of m[2].split(',').map((x) => x.trim()).filter(Boolean)) {
     if (iadrIds && /^IADR-\d{3,4}$/.test(id) && !iadrIds.has(id)) {
-      reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性。issue #319）`);
+      reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性）`);
     } else if (planAdrIds && /^ADR-\d{3,4}$/.test(id) && !planAdrIds.has(id)) {
-      reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性。issue #319）`);
+      reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性）`);
     }
   }
   return reasons;
@@ -323,11 +380,20 @@ function main() {
   const allowlist = loadAllowlist();
   const iadrIds = loadExistingIadrIds();
   const planAdrIds = loadExistingPlanAdrIds();
+  // 検査を skip したことは notice で可視化する（issue #139）。素の stderr 行は緑ジョブの
+  // ログに埋もれて読まれず、「検査していない範囲があること」が CI の UI から読み取れない。
+  // 終了コードは変えない（fail-open。ローカル環境差で CI を落とさない）。
+  // 注: notice はここ（実行時の呼び出し側）でのみ出す。loadExisting* の内部に置くと、
+  // 未 populate を模したテストのフィクスチャが本物のアノテーションを漏らす（#140 と同型）。
   if (!iadrIds) {
-    process.stderr.write('docs/adr/ を読めないため IADR 実在性チェックをスキップする。\n');
+    notice('docs/adr/ を読めないため IADR 実在性チェックをスキップした（この範囲は検査されていない）');
   }
   if (!planAdrIds) {
-    process.stderr.write('planning submodule が未 populate のため計画 ADR 実在性チェックをスキップする。\n');
+    notice(
+      'planning submodule が未 populate のため計画 ADR 実在性チェックをスキップした' +
+        '（この範囲は検査されていない。実効しているのは IADR 検査のみである）。' +
+        'PR 段階で検査するには checkout に submodules とトークンを付けること'
+    );
   }
 
   process.stdout.write(`コミット規約チェック: 範囲 ${range}（${commits.length} 件）\n`);

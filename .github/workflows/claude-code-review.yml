@@ -22,6 +22,13 @@
 #   注意: additional_permissions は MCP ツール名の列挙ではなく `actions: read` 等の
 #   スコープ指定用なので、ツール許可には使わない（CI ログ参照を許可したい場合のみ使う）。
 #   追加保護: use_sticky_comment: true でアクション自身が出力を投稿（ツール拒否時のフォールバック）。
+#
+# 【重要】レビュー用と実装用でツール許可を食い違わせないこと:
+#   claude-coding.example.yml のスタック別コマンド（build / test / format）は、**必ず同じ内容を
+#   本ファイルの --allowedTools にも複製する**。下の setup ステップで SDK を用意しているのに
+#   実行を許可しないと、レビューは検証できず静的読解へ退行し、毎回「Bash が承認待ちでブロック
+#   されたため実行結果は検証できていません」という無価値な指摘を 1 枠消費する（CI には承認する
+#   人間がいないため、この待ちは必ず失敗に終わる）。実運用でこの退行が 2 週間継続した実績がある。
 
 name: Claude Code Review
 
@@ -29,10 +36,22 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+# 連続 push でレビューが多重起動するのを防ぐ（古い実行はキャンセルする）。
+# 未設定だと 1 PR で 3〜4 本が並走し、サブスク枠を消費したうえ陳腐化した結果で
+# スティッキーコメントを上書きし合う。
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    # dependabot に加え、bot が自動生成する PR（CHANGELOG 更新等）も除外する。
+    # GITHUB_TOKEN で作られた PR はワークフローが `action_required`（承認待ち）で
+    # 止まるため、対象に含めても実行されずキューを汚すだけである（changelog.yml 参照）。
+    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'automation/') }}
     runs-on: ubuntu-latest
+    # ハングした実行が上限まで回り続けるのを防ぐ。
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
@@ -120,17 +139,37 @@ jobs:
           # GitHub MCP ツールはここで許可する（mcp__github__pull_request_review_write 等の
           # 権限拒否はこれで解消する。additional_permissions は使わない）。
           # Read は計画書（../project-planning）の参照に必要。
+          # 安全性の注記: 下のビルド/テスト許可は PR のコードを**実行**する。fork からの
+          # pull_request では secrets が渡らずアクションの認証自体が成立しない（＝実質
+          # 同一リポの PR のみが対象）ため既定では許容範囲だが、公開リポジトリで fork の
+          # レビューまで走らせる運用にする場合は、実行系（dotnet test / node 等）を外すか
+          # pull_request_target を使わない構成を維持すること。
+          # 書き込み系の git（commit / push / reset 等）はレビューには不要なので入れない。
+          #
+          # 【前方一致の落とし穴】Bash の許可は**コマンド文字列の前方一致**である。したがって
+          # `Bash(git log:*)` を許可しても `git -C planning log` には当たらない。planning を
+          # submodule 参照する構成では、pin の進み方・差分・「変更が無いこと」といった
+          # **履歴に関する主張だけ検証できない**状態になる（ファイル内容は Read/Grep で読める）。
+          # そのため読み取り専用サブコマンドを個別に列挙してある。
+          # `Bash(git -C:*)` と一括で許可してはならない（前方一致で `git -C planning push` /
+          # `commit` / `reset` まで通り、書き込み系を外した設計が崩れる）。
+          # 【置換点】submodule のパスが `planning` でない場合は 4 か所とも書き換える。
+          #
+          # 【記法・最重要】claude_args は**空白区切りで argv へトークン化**される。
+          # したがって `--allowedTools Bash(dotnet test:*)` のように 1 ツール 1 行で書くと、
+          # 空白を含む指定が `Bash(dotnet` と `test:*)` に割れて**すべて無効**になる。
+          # 正しい記法は公式ドキュメントどおり「二重引用符でくくった 1 引数・カンマ区切り」。
+          #   誤: --allowedTools Bash(gh issue create:*)
+          #   正: --allowedTools "Read,Bash(gh issue create:*)"
+          # 検証方法: ジョブログの `SDK options:` にある allowedTools 配列を目視する。
+          # `"Bash(gh", "issue", "create:*)"` のように割れていたら記法が誤っている。
+          #
+          # 末尾のビルド/テスト系（node / dotnet）が**スタック別**の可変部分である。
+          # claude-coding.example.yml の対応箇所と同じ内容に保つこと（既定は C#/.NET）。
+          # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools Read
-            --allowedTools Bash(gh issue create:*)
-            --allowedTools mcp__github__pull_request_read
-            --allowedTools mcp__github__get_file_contents
-            --allowedTools mcp__github__issue_read
-            --allowedTools mcp__github__pull_request_review_write
-            --allowedTools mcp__github__add_comment_to_pending_review
-            --allowedTools mcp__github__add_issue_comment
-            --allowedTools mcp__github__push_files
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -180,5 +219,32 @@ jobs:
                - 仕様の表面的充足（テストを通すためだけの空実装・空テスト）。
                - 秘密情報のハードコードや不適切な扱い。
 
-            計画書は ../project-planning（submodule の場合 planning/）の projects/<name>/ にある。
-            参照できない場合は、その旨を明記したうえで PR 内の情報のみでレビューする。
+            【計画書の場所】この順で探すこと:
+            1. `planning/projects/<name>/` — **CI ではこちら**。checkout 直後のステップで
+               submodule を populate 済みであり、ワークスペース内なので Read が届く。
+            2. `../project-planning/projects/<name>/` — 隣接クローン運用のローカル環境のみ。
+               CI ではワークスペース外のため Read が届かない。
+            **1 を試さずに「計画リポジトリは参照不可」と結論してはならない。**
+            両方とも存在しない場合に限り、その旨を明記したうえで PR 内の情報のみでレビューする。
+
+            【他リポジトリ・issue 参照の扱い】
+            - GitHub の issue / PR を読む MCP ツール名は `mcp__github__issue_read` /
+              `mcp__github__pull_request_read` である（`get_issue` / `get_pull_request` は廃止名。
+              廃止名を試して「権限がない」と結論しないこと）。
+            - `github_token` は本リポジトリにスコープされるため、**他リポジトリの issue / PR は
+              参照できない**。これは設定不備ではないので「未検証」と書かず、「他リポジトリの
+              参照は本セッションの対象外」と明記して先へ進むこと。
+
+            【検証の実行】
+            ビルド・テスト・フォーマットの実行は許可されている。PR 本文が「テストが通る」と
+            主張している場合は、可能な限り**自分で実走して確認**し、結果を報告に含めること。
+            計画書 submodule の**履歴**（pin の進み方・その差分・「変更が無いこと」）についても
+            `git -C planning log / show / diff / ls-tree` で検証できる。PR が submodule の pin に
+            言及している場合は、その主張を実際に確かめること。
+
+            【.claude / CLAUDE.md を変更する PR での注意】
+            アクションはセキュリティ上、`.claude` / `CLAUDE.md` / `.mcp.json` 等を統合ブランチ版へ
+            復元し、PR 版を `.claude-pr/` へ退避する（PR head は untrusted 扱いのため）。
+            そのため作業ツリーに「直近コミットを打ち消す未コミット差分」が見えるのは**正常**であり、
+            異常として報告しないこと。これらのファイルをレビューするときは `.claude-pr/` または
+            `git show HEAD:<path>` を参照すること。

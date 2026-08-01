@@ -38,6 +38,17 @@
 1. 計画リポジトリ `project-planning` を参照可能にする（submodule か隣接クローン。既定パス `../project-planning`）。
 2. 技術スタックに合わせて `*.example` の CI 系（`ci.example.yml` / `codeql.example.yml`）を有効化する。
 3. ブランチ保護で必須ステータスチェックを設定する（手順は `docs/ai-workflow.md`）。
+4. **`.github/CODEOWNERS.example` を `CODEOWNERS` にリネームし、レビュアを設定する。**
+   AI が実装し AI がレビューする運用では、必須レビュアが不在だと「AI の実装を AI が承認して
+   同一人物がマージする」ループになり、人間のレビュー関門が形骸化する。
+5. **ビルド/テスト/フォーマットのコマンドを技術スタックへ合わせるときは、次の 3 か所すべてを
+   同じ内容に揃える。** 1 か所でも漏れると AI の実装・レビューが検証できなくなる。
+   - `.claude/settings.json` の `permissions.allow`（ローカルの Claude Code 用）
+   - `.github/workflows/claude-coding.yml` の `claude_args`（CI の実装用）
+   - `.github/workflows/claude-code-review.yml` の `claude_args`（CI のレビュー用）
+   > レビュー用だけ実行系が抜けていると、AI レビューは毎回「Bash が承認待ちでブロックされた
+   > ため検証できていません」と報告するだけになる（CI には承認する人間がいないため必ず失敗する）。
+   > 実運用でこの退行が 2 週間継続した実績がある。
 
 ### プロファイル `claude-code`（サブスクリプション）
 

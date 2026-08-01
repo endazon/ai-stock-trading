@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-// FR-14, ADR-0018, IADR-0028: 宣言的パイプライン構成（pipeline.json）の CI 検証。
-// 依存パッケージなしで JSON Schema（pipeline.schema.json）と同等の構造規則に加え、
-// 接続性・循環などの意味的検証を行う（10_composability-design.md §5 安全弁）。
+// 宣言的パイプライン構成（イベント駆動の段構成を JSON で宣言する方式）の CI 検証。
+// 依存パッケージなしで、JSON Schema 相当の構造規則に加え、接続性・循環などの意味的検証を行う。
+//
+// 【任意コンポーネント】この方式を採るかどうかは各実装リポジトリが判断する。
+//   採らないプロジェクトでは本スクリプトと ci.yml の pipeline-config ジョブごと削除してよい。
+//   採る場合は、構成ファイルのパスを ci.yml の PIPELINE_CONFIG に設定する。
+//   採用の背景・判断基準は impl-handoff-kit/HOWTO.md「任意コンポーネントの採否」を参照。
 //
 // 使い方:
-//   node scripts/validate-pipeline-config.js <pipeline.json のパス>
+//   node scripts/validate-pipeline-config.js <構成ファイルのパス>
 //   node scripts/validate-pipeline-config.js --self-test   # 違反フィクスチャで検証器自体を試験
 //
 // 検証規則:
@@ -13,7 +17,8 @@
 //   V3: input/outputs/sources[].event が events に列挙済み
 //   V4: 各段の input が「他段の outputs ∪ sources」に含まれる（接続性）
 //   V5: イベントグラフ（step.input → step.outputs）に循環がない
-//   V6: consumer が .NET 型完全名の形式
+//   V6: consumer が .NET 型完全名の形式（**スタック依存の置換点**。他スタックでは
+//       DOTNET_TYPE の正規表現を使用言語の型名・ハンドラ識別子の形式へ書き換える）
 
 'use strict';
 

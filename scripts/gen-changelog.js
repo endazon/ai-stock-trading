@@ -35,10 +35,10 @@ function hashMatches(commitHash, key) {
 
 const VALID_ACTIONS = ['remap', 'exclude'];
 
-/**
- * override を適用する。exclude なら null（呼び出し側で除外）、remap なら差し替え済みのコミットを返す。
- * overrides は既定で changelog-overrides.json 由来（OVERRIDES）。テスト等で任意の一覧を注入できる。
- */
+/** override を適用する。exclude なら null（呼び出し側で除外）、remap なら差し替え済みのコミットを返す。 */
+// overrides は既定でモジュールスコープの OVERRIDES（changelog-overrides.json 由来）を使う。
+// 第 2 引数で注入できるのは、単体テストが実データ（特定プロジェクトの実コミット）に依存しない
+// ようにするため。overrides が空の正常なリポジトリでも remap / exclude の挙動を検証できる。
 function applyOverride(c, overrides = OVERRIDES) {
   const ov = overrides.find((o) => hashMatches(c.hash, o.hash));
   if (!ov) return c;
@@ -109,6 +109,9 @@ function commits(range) {
     const m = subject.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.+)$/);
     if (m) return { hash, type: m[1].toLowerCase(), scope: m[2] || '', desc: m[4] };
     return { hash, type: 'other', scope: '', desc: subject };
+    // 注: 下の補正は point-free の `.map(applyOverride)` にしてはならない。map はコールバックへ
+    // (element, index, array) を渡すため、index（数値）が applyOverride の第 2 引数 overrides を
+    // 上書きし、既定値（OVERRIDES）が効かず 1 件目から TypeError になる。
   }).map((c) => applyOverride(c)).filter(Boolean); // 誤記コミットの補正/除外
 }
 

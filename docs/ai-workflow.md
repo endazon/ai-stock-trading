@@ -78,6 +78,8 @@ bash scripts/apply-profile.sh copilot
 
 - PR を開くと AI 自動レビュー（`claude-code-review.yml`）が走る。
 - CI（`ci.yml`）・PR タイトル（`pr-title.yml`）・セキュリティ（`security.yml` / `codeql.yml`）が green であることを必須にする。
+  `pr-title.yml` はスカッシュ後件名の唯一の予防線であり（中間コミットは force push 禁止で事後修正できない）、
+  全 PR で起動するため必須チェックに指定してよい（後述「必須チェックに指定する際の注意」）。
 - Helm chart を変更した PR では `helm.yml`（`helm lint` / `helm template`）も green にする。
 - 人間は PR テンプレートの「レビュアー向け（AI実装の確認観点）」で最終確認する。
 
@@ -107,21 +109,22 @@ GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule�
 
 - Require a pull request before merging（直接 push 禁止）
 - Require status checks to pass before merging → `CI`・`pr-title`（`pr-title.yml`）・`Security`・`CodeQL` を必須に
-  - `pr-title` は **Issue #129** で復旧した最後の砦。squash-merge で develop に載る件名（= PR タイトル）を
-    規約 `種別(起点ID): 要約` に照合する。中間コミットは force push 禁止で事後修正できないため、
-    マージ前のこの検査が唯一の予防線になる。全 PR で起動するため必須チェックに指定して差し支えない。
-    - ただし bot 作成 PR（dependabot 等）は `if: github.event.pull_request.user.type != 'Bot'` で
-      ジョブごとスキップする（`commit-messages` と同方針）。**スキップされたチェックは必須チェック上
-      「合格」として扱われる**ためマージは止まらないが、必須指定した直後の dependabot PR で一度
-      実挙動を確認しておくとよい（`security.yml` の `dependency-review` も同型の `if` を持つ）。
-  - `helm.yml`（Helm chart / [IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）は
-    `paths: deploy/helm/**` のトリガフィルタを持つ。**必須チェックには指定しない**——
-    GitHub は必須チェックが report されるまでマージを許さないため、chart に触れない PR で
-    永久 pending になる。chart 変更 PR ではレビューで green を確認する。
 - Require review from Code Owners（`CODEOWNERS` を配置）
 - Require conversation resolution before merging
 
 これにより、AI が作成した PR も「機械チェック green ＋ 必要なレビュー承認」を満たさない限りマージされない。
+
+#### 必須チェックに指定する際の注意
+
+- **`paths:` フィルタを持つワークフローを必須チェックにしてはならない。** GitHub は必須チェックが
+  report されるまでマージを許さないが、対象パスに触れない PR ではそのチェックが**起動しない**ため、
+  **永久に pending のままマージ不能**になる。デプロイ用・フロントエンド用など特定ディレクトリだけを
+  対象にするワークフローが該当する。必須にするのは全 PR で起動するものに限る。
+- **`pr-title.yml` は必須チェックに指定してよい。** 全 PR で起動し、かつスカッシュ後件名の唯一の
+  予防線である（中間コミットは force push 禁止で事後修正できない）。
+- **bot 作成 PR で `if:` によりジョブごとスキップされたチェックは、必須チェック上「合格」として扱われる**
+  ためマージは止まらない。bot を除外する条件を書いてもブランチ保護と矛盾しない。
+  - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
 
 ## よくある詰まり（FAQ）
 

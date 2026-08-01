@@ -21,7 +21,6 @@ updates:
   # （planning=private の project-planning を含む）。private submodule の更新には
   # Dependabot secret の PLANNING_REPO_TOKEN を registries(planning-git) 経由で使う。
   # 特定 submodule だけ除外するなら ignore の dependency-name にそのパスを指定する。
-  # （詳細・マージ後の確認事項は docs/specs/20260712_109_dependabot-submodule-token-fix.md を参照）。
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     registries:

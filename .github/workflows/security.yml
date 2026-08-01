@@ -30,6 +30,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # 誤検知の扱い（実運用の知見）:
+      #   - 単発・履歴上の誤検知（例示鍵・ダミー ID 等）は `.gitleaksignore` に fingerprint を
+      #     追記して無効化する（履歴は書き換えない＝force-push しない方針）。
+      #   - **同型の誤検知が繰り返し出る**場合（アプリが生成する自然キー等、値の形が決まっている
+      #     もの）は fingerprint 追記では再発を止められない。新しいコミットは別 fingerprint に
+      #     なるためである。この場合は `.gitleaks.toml` を置き、`[extend] useDefault = true` で
+      #     既定ルールを維持したまま、その値形だけを `[allowlist]` の正規表現で狙い撃ちする。
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v3
         env:
@@ -57,11 +64,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      # ソリューションを自動発見して走査する（kit 雛形と同型。ルート単一 .sln/.slnx でも、
-      # ユニットレイアウト backend/backend.slnx でも編集不要で動く。planning PR #21）
+      # ソリューションを自動発見して走査する（ルート単一 .sln/.slnx でも、ユニット第一構成
+      # `src/<unit>/backend/backend.slnx` でも編集不要で動く）。スタックが異なる場合は差し替える。
       - name: Restore
         run: |
-          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' -not -path './templates/*' | sort); do
             dotnet restore "$sln"
           done
       - name: List vulnerable packages (incl. transitive)
@@ -69,7 +76,7 @@ jobs:
           set -o pipefail
           # `dotnet list package --vulnerable` は脆弱性が有っても exit 0 を返すため、出力を解析して判定する。
           : > vuln-report.txt
-          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' -not -path './templates/*' | sort); do
             dotnet list "$sln" package --vulnerable --include-transitive 2>&1 | tee -a vuln-report.txt
           done
           # 脆弱な依存の行は必ず GitHub Advisory URL(https://github.com/advisories/GHSA-...)を含む。

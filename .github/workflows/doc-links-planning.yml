@@ -1,27 +1,42 @@
-# doc-links（planning submodule 込み）— Issue #104
+# doc-links（planning submodule 込み）— 定期・トークン付き検査の雛形
 #
 # 背景: 本体 CI の `doc-links` ジョブ（ci.yml）は actions/checkout を submodule なしで実行するため、
 # private な planning サブモジュール配下への破損リンクを検出できない（planning が未 populate だと
 # scripts/check-doc-links.js は planning リンクを検査対象外にする）。この隙間で破損リンクが蓄積した
-# 実例がある（platform IADR-0058。本リポジトリでは issue #104 = PR #103 で既存破損 2 件を修正）。
+# 実例がある（microservices-platform #232 / IADR-0058、ai-stock-trading #104）。
 #
-# 対応（platform IADR-0058 の方式・kit 雛形 planning PR #21 の適用）: planning を含む全リンクの検査を、
-# トークン付きで submodule を取得する専用の定期ジョブに分離する。本体 PR CI の doc-links は従来どおり
-# 高速・トークン不要のまま非 planning リンクを毎回検査し、planning リンクは本ワークフロー（夜間 + 手動）で検査する。
+# 対応（IADR-0058 の方式）: planning を含む全リンクの検査を、トークン付きで submodule を取得する
+# 専用の定期ジョブに分離する。本体 PR CI の doc-links は従来どおり高速・トークン不要のまま
+# 非 planning リンクを毎回検査し、planning リンクは本ワークフロー（夜間 + 手動）で検査する。
 #
-# 前提（メンテナ設定）:
-#   Secret `PLANNING_REPO_TOKEN` に、本リポジトリと planning リポジトリ（endazon/project-planning）双方へ
-#   read 権限を持つ PAT（fine-grained 推奨）を登録する。未登録の場合、本ジョブは submodule 取得に失敗して
-#   fail する（＝設定漏れを可視化する。PR CI はブロックしない）。
+# 【この分離が抱える弱点（運用前に必ず判断すること）】
+# planning リンクは PR では検査されないため、計画側のファイル改名や実装側の参照ミスは
+# **マージを止められず、夜間に初めて赤くなる**。しかも失敗が PR に紐づかないため気付かれにくい。
+# 実例: 計画側の ADR ファイル改名に実装側 2 ファイルが未追随となり、夜間ジョブが 4 夜連続で
+# 失敗したまま放置された（microservices-platform #430）。同型の事故は複数回発生している。
+#   - `PLANNING_REPO_TOKEN` を PR CI でも使える場合は、`ci.yml` の `doc-links` ジョブに
+#     `submodules: recursive` + `token:` を付け、**PR 段階で落とす**方が望ましい。
+#   - 夜間のみで運用する場合は、失敗に気付く導線（issue 自動起票・通知）を必ず用意すること。
+#     導線が無いと「誰も見ない赤」が常態化する。
+# 同じ理由で、`scripts/check-commit-messages.js` の計画 ADR 実在性検査も PR CI では常時
+# skip される（submodule 未取得のため）。実効するのは実装 ADR（IADR）側のみである。
+#
+# 有効化手順（**本リポジトリでは 1) は完了済み＝本ファイルは稼働中**。キット雛形向けの手順を残す）:
+#   1) 本ファイルを `doc-links-planning.yml` にリネームする。
+#   2) Secret `PLANNING_REPO_TOKEN` に、本リポジトリと planning リポジトリ双方へ read 権限を持つ
+#      PAT（fine-grained 推奨）を登録する。未登録の場合、本ジョブは submodule 取得に失敗して fail する
+#      （＝設定漏れを可視化する。PR CI はブロックしない）。
 name: doc-links (planning)
 
 on:
   schedule:
-    - cron: "0 17 * * *" # 毎日 17:00 UTC（≈ 02:00 JST）
+    - cron: "0 17 * * *" # 毎日 17:00 UTC（≈ 02:00 JST）。プロジェクトに合わせて調整する
   workflow_dispatch:
 
 permissions:
   contents: read
+  # 失敗時に検知用 issue を起票するため（下の Notify ステップ）。不要なら削る。
+  issues: write
 
 concurrency:
   group: doc-links-planning
@@ -30,6 +45,7 @@ concurrency:
 jobs:
   doc-links-planning:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,3 +59,21 @@ jobs:
       # populate 済みなら planning 配下リンクも含めて実在検査する。
       - name: Check doc links (including planning submodule)
         run: node scripts/check-doc-links.js --require-planning
+
+      # 失敗の気付き導線。夜間ジョブは PR に紐づかないため、通知が無いと「誰も見ない赤」が
+      # 常態化する（実運用で 14 夜連続の失敗が放置された実績がある）。
+      # 既に open の検知 issue があれば起票せず、無ければ 1 件だけ作る。
+      - name: Notify on failure (open a tracking issue)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="fix(NFR): doc-links (planning) が失敗している"
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "夜間の doc-links (planning) が再び失敗した: $RUN_URL"
+          else
+            gh issue create --title "$TITLE" \
+              --body "$(printf 'planning submodule を含むリンク検査が失敗した。\n\n実行ログ: %s\n\n計画側のファイル改名に実装側の参照が未追随か、参照先ファイル名の誤り（存在しない計画書名）の可能性が高い。`node scripts/check-doc-links.js --require-planning` をローカルで実行して破損リンクを特定すること。' "$RUN_URL")"
+          fi

@@ -1,13 +1,23 @@
-# CI（検証ゲート）雛形 — 技術非依存の骨格
+# CI（検証ゲート）— impl-handoff-kit の ci.example.yml を本リポジトリのスタック（C#/.NET）へ適用したもの。
 #
-# このファイルは「例示」であり、そのままでは有効化されない（拡張子が .example.yml のため）。
-# 自プロジェクトのスタックに合わせて各ステップを書き換え、ci.yml にリネームして使うこと。
-# build / test / coverage / lint ステップは C#/.NET を例示している。
+# 技術非依存のジョブ（commit-messages / scripts-tests / doc-links / pipeline-config / ai-workflow-config）は
+# キットの雛形と同型に保つ。スタック依存のジョブ（lint / build-and-test）と本リポジトリ固有の
+# ジョブ（shell-scripts / runtime-scaffold / consumer-endpoint-names / frontend / frontend-e2e）は
+# 本リポジトリ側で維持する。
 #
-# ── スタック別 --allowedTools（claude-coding.example.yml の claude_args 末尾を書き換える） ──
-# このファイルの build/test ステップを変更したら、claude-coding.example.yml の claude_args 末尾
-# 4 行（スタック別ツール）を使用スタックに合わせて書き換えること。
-# .claude/settings.json の permissions.allow にも同じコマンドを追記すること。
+# ── スタック別 --allowedTools（claude-coding / claude-code-review の claude_args を書き換える） ──
+# このファイルの build/test ステップを変更したら、claude-coding.example.yml と
+# claude-code-review.example.yml の claude_args（スタック別ツール）を使用スタックに合わせて
+# 書き換えること。**両方**を同じ内容に保つ（レビュー側から実行系を落とすと、AI レビューは
+# 検証できず静的読解へ退行し、毎回「Bash が承認待ちでブロックされた」と報告するだけになる）。
+# .claude/settings.json の permissions.allow にも同じコマンドを追記すること（3 系統を揃える）。
+# 記法誤りと複製漏れ（レビュー側に一部/全部の実行ツールが無い）は ai-workflow-config ジョブが
+# 機械検出する。比較対象はスタック別の実行ツール（dotnet / node・npm / python・pytest / go /
+# mvn・gradle）であり、setup-* を書いていないもの（node のようにランナー既定で入るランタイム）も
+# 含む。設計上の差（Edit / Write / 書き込み系 git がレビュー側に無いこと）は対象外である。
+#
+# 注: claude_args の --allowedTools は「二重引用符でくくった 1 引数・カンマ区切り」で書く。
+# 1 ツール 1 行に戻すと空白で割れて全指定が無効になる（各ワークフローの記法コメントを参照）。
 #
 # スタック別の対応コマンド例:
 #   C#/.NET : Bash(dotnet build:*), Bash(dotnet test:*), Bash(dotnet format:*), Bash(dotnet restore:*)
@@ -31,10 +41,9 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）と、
-  # scripts/ の単体テスト（commit-allowlist の実在性・整合を含む）を実行する。
+  # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
-  # fetch-depth: 0 は base..HEAD の範囲解決と、allowlist の SHA 到達可能性検証（幻 SHA 検出）に必須。
+  # fetch-depth: 0 は base..HEAD の範囲解決に必須。
   commit-messages:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
@@ -49,9 +58,32 @@ jobs:
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-commit-messages.js
-      # commit-allowlist.json のエントリが現行履歴に実在・到達可能・非準拠であることを検証する
-      # 回帰テストを含む（幻 SHA 再発防止・Issue #47）。fetch-depth: 0 によりフル履歴で判定される。
+
+  # スタック非依存: scripts/ 配下の単体テスト（外部依存ゼロ・Node 標準 assert のみ）。
+  #
+  # 個別の検証器（validate-pipeline-config / check-ai-workflow-config）は下のジョブで
+  # --self-test を走らせるが、それらは検証器**単体**の試験である。scripts.test.js は
+  # 横断的なテストであり、両者は重複しない。
+  # 【重要】このジョブが無いと、scripts.test.js は「誰かが手で叩いたときだけ走るテスト」になる。
+  # 実際に、CHANGELOG 生成が全面的に壊れる回帰が、PR の CI をすべて green のまま通り抜けた
+  # ことがある（changelog.yml は push でしか起動しないため、壊れるのはマージ後）。
+  # fetch-depth: 0 は allowlist の到達可能性検査と gen-changelog の実行に必要
+  # （浅いクローンでは当該テストが best-effort で skip されるため、検査が実効しない）。
+  scripts-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
       - name: Run scripts unit tests
+        # 本リポジトリは固有テスト（scripts/scripts.repo.test.js）を持つため有効化する。
+        # companion が消失（誤削除・リネーム・キット同期での上書き）したときに失敗する。
+        # 未設定だとテスト件数が静かに減るだけで CI は green のままになる。
+        env:
+          REQUIRE_REPO_TESTS: "1"
         run: node scripts/scripts.test.js
 
   # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
@@ -67,7 +99,7 @@ jobs:
       - name: Test opend entrypoint.sh (RSA key permission check)
         run: bash deploy/opend/entrypoint.test.sh
 
-  # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（Issue #59 再発防止）。
+  # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
   doc-links:
     runs-on: ubuntu-latest
@@ -92,20 +124,50 @@ jobs:
       - name: Validate runtime scaffold
         run: node scripts/validate-runtime-scaffold.js
 
-  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験に加え、
-  # 取引パイプラインの実宣言（deploy/helm/ai-stock-trading/files/pipeline.json）を検証する
-  # （ADR-0001, IADR-0077, #22）。宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
+  # 【任意コンポーネント・本リポジトリは採用】宣言的パイプライン構成のスキーマ検証。
+  # 検証器自体の自己試験に加え、取引パイプラインの実宣言を検証する（ADR-0001, IADR-0077, #22）。
+  # 宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
   pipeline-config:
+    runs-on: ubuntu-latest
+    env:
+      # 【置換点】キット既定は空（採らないプロジェクトでは自己試験だけが走る）。本リポは取引パイプラインを宣言する。
+      PIPELINE_CONFIG: "deploy/helm/ai-stock-trading/files/pipeline.json"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      # 検証器自体の試験。構成ファイルの有無に関わらず毎回走らせ、検証ロジックの退行を防ぐ。
+      - name: Validate pipeline config (self-test)
+        run: node scripts/validate-pipeline-config.js --self-test
+      - name: Validate pipeline config
+        if: env.PIPELINE_CONFIG != ''
+        run: node scripts/validate-pipeline-config.js "$PIPELINE_CONFIG"
+
+  # Claude 系ワークフローのツール許可設定を検査する（安全弁）。
+  # claude_args の記法誤りは CI を失敗させずに「AI が検証できない」状態を作るため、
+  # 人間にもジョブ結果にも現れない。ここで機械的に止める。
+  ai-workflow-config:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Validate pipeline config (self-test)
-        run: node scripts/validate-pipeline-config.js --self-test
-      - name: Validate trading pipeline config (real file)
-        run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
+      - name: Check AI workflow config (self-test)
+        run: node scripts/check-ai-workflow-config.js --self-test
+      # 警告（検査そのものが成立していない状態）は GitHub のアノテーションとして出るため、
+      # ジョブログを開かなくても PR の Checks 画面で気付ける。
+      #
+      # 本リポジトリはファイル名・ワークフロー構成が固まっている（既定名の 2 ファイルが
+      # ともに claude_args を解析できる）ため、警告を失敗として扱う（scripts-tests の
+      # REQUIRE_REPO_TESTS と同じ opt-in 方式）。キット既定が fail-open なのは、
+      # claude-code-action の入力名が変わったときに全リポジトリの CI が検証器の更新まで
+      # 一斉に落ちるのを避けるためである。追随できない事態になったら本 env を外す。
+      - name: Check AI workflow config
+        env:
+          STRICT_AI_WORKFLOW_CONFIG: "1"
+        run: node scripts/check-ai-workflow-config.js
 
   # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
   # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の
