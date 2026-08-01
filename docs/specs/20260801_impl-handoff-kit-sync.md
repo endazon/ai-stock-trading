@@ -3,6 +3,7 @@ title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit �
 type: work
 status: review
 related_ids: [NFR]
+issue: 323
 author: endazon (with Claude Code)
 created: 2026-08-01
 updated: 2026-08-01
@@ -20,6 +21,7 @@ related_specs:
 ## 起点となる計画書（トレーサビリティ）
 
 - 機能要求（FR）: なし（開発基盤・運用規約の同期。NFR 相当）
+- 起票: [#323](https://github.com/endazon/ai-stock-trading/issues/323)（bug・最優先「`claude_args` の記法誤りで @claude 実装と AI レビューがビルド・テストを実行できない」）を本作業が解消する
 - ユースケース（UC）: なし
 - 画面（SC）: なし
 - 関連 ADR: なし（新規 IADR も作らない。本作業は上流テンプレートの取り込みであり、本リポ固有の設計判断を行わない）
@@ -127,6 +129,31 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 - [ ] `node scripts/check-commit-messages.js --title "<本 PR タイトル>"` が合格する
 - [ ] `dotnet build backend/backend.slnx` が通る（本作業はコードを変更しないため回帰しないことの確認）
 - [ ] テンプレート側の不足・混入が `/plan-feedback` として起票されている
+
+## issue #323 の受け入れ基準（実測）
+
+本作業は [#323](https://github.com/endazon/ai-stock-trading/issues/323) を解消する。同 issue の受け入れ基準を実測で検証した結果は次のとおり。
+
+| 受け入れ基準 | 検証 |
+| --- | --- |
+| `check-ai-workflow-config.js` が両ファイルについて不備 0 件 | ✅ 是正前 16 件（coding 14 / review 2）→ 是正後 0 件。CI の `ai-workflow-config` ジョブで常時検査 |
+| ジョブログの `SDK options:` で `allowedTools` が割れていない | ✅ レビュー run `30688790059` のダンプで `"Bash(dotnet test:*)"` 等が単一要素。issue が挙げた `"Bash(gh"` / `"issue"` / `"create:*)"` の 3 分割は解消 |
+| AI レビューが `dotnet test` を実走し結果を報告に含めている | ✅ 同 run で `node scripts/scripts.test.js`（18 回）・`dotnet build backend/backend.slnx`（5 回）等を実行。「承認待ちでブロック」の報告は消えた |
+| 1 PR に対するレビュー起動が 1 本に収まる | ✅ push 9 回に対しレビュー run 9 件（1 push = 1 run）。`concurrency` ＋ `cancel-in-progress: true` |
+
+**実効性の実証**: 是正後のレビューが `node` を実走し、本作業自身が持ち込んだ `gen-changelog.js` の
+クラッシュ回帰をスタックトレース付きの 🔴 として検出した。是正前なら「承認待ちで検証できず」で終わっていた。
+
+なお同 issue が指摘する「`.github/workflows/` は GitHub App の権限では編集できず、テンプレート同期の PR が
+この 2 ファイルを運べない」問題は、`workflow` スコープを持つローカル認証から push することで解消した。
+
+### 本作業の範囲外とした #323 の関連事項
+
+- **`git -C planning …` の拒否**: 是正後のレビューは submodule の履歴を参照しようとして拒否される
+  （`Bash(git log:*)` は前方一致のため `git -C <path> log` に当たらない）。素朴に `Bash(git -C:*)` を足すと
+  `git -C <path> push` まで通り、レビューから書き込み系 git を外す設計を崩すため、キット側の設計判断として
+  [project-planning#120](https://github.com/endazon/project-planning/issues/120) へ分離した。
+- **microservices-platform への同一是正**: 別リポジトリのため本作業では扱わない。
 
 ## テスト方針
 
