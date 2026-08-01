@@ -19,6 +19,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { notice } = require('./lib/ci-annotate.js');
 
 // 既定はリポジトリルート。テストで未 populate 状態を再現するため DOC_LINKS_ROOT で上書き可能にする。
 const REPO_ROOT = process.env.DOC_LINKS_ROOT
@@ -67,13 +68,16 @@ function submodulePaths(root = REPO_ROOT) {
   }
 }
 
-// 解決済み絶対パスが、未 populate（空プレースホルダ）な submodule 配下にあるか。
-// トークン不要の PR CI は submodule を populate しないため、その配下のリンクは検査対象外にする
-// （populate 済みなら通常どおり実在検査する）。
+// 解決済み絶対パスが未 populate（空プレースホルダ）な submodule 配下にあれば、その submodule の
+// パスを返す（無ければ null）。トークン不要の PR CI は submodule を populate しないため、
+// その配下のリンクは検査対象外にする（populate 済みなら通常どおり実在検査する）。
 // かつては `planning/` 固定で判定していたが、それでは planning 以外の submodule
 // （ユニットを submodule で取り込む構成等）配下のリンクが PR CI で破損と誤検知された。
 // .gitmodules 由来の一般則へ拡張してある。
-function underUnpopulatedSubmodule(resolvedAbs, root = REPO_ROOT) {
+//
+// 真偽値ではなく**対象を返す**のは、どの submodule を何件飛ばしたかを報告するためである。
+// 黙って除外すると「検査していない範囲があること」が出力から読み取れない（issue #139）。
+function unpopulatedSubmoduleOf(resolvedAbs, root = REPO_ROOT) {
   const rel = path.relative(root, resolvedAbs).replace(/\\/g, '/');
   for (const sub of submodulePaths(root)) {
     if (rel === sub || rel.startsWith(sub + '/')) {
@@ -84,10 +88,14 @@ function underUnpopulatedSubmodule(resolvedAbs, root = REPO_ROOT) {
       } catch (e) {
         populated = false;
       }
-      if (!populated) return true;
+      if (!populated) return sub;
     }
   }
-  return false;
+  return null;
+}
+
+function underUnpopulatedSubmodule(resolvedAbs, root = REPO_ROOT) {
+  return unpopulatedSubmoduleOf(resolvedAbs, root) !== null;
 }
 
 function mdFiles(dir) {
@@ -103,7 +111,7 @@ function mdFiles(dir) {
 }
 
 // 相対リンク候補を1つ検査。実在しなければ true（＝リンク切れ）。判定不能・対象外は false。
-function isBrokenRef(ref, baseDir) {
+function isBrokenRef(ref, baseDir, onSkip) {
   if (!ref) return false;
   let t = String(ref).trim().replace(/^["'`]|["'`]$/g, '').trim();
   if (!t) return false;
@@ -118,12 +126,18 @@ function isBrokenRef(ref, baseDir) {
   // 未チェックアウトの submodule 配下は検査しない。CI の actions/checkout（サブモジュール
   // 取得なし）は submodule を「空のプレースホルダディレクトリ」として作るため、存在チェック
   // だけでは未チェックアウトを判別できない。中身が空（＝未 populate）なら対象外とする。
-  if (underUnpopulatedSubmodule(resolved)) return false;
+  const skippedSub = unpopulatedSubmoduleOf(resolved);
+  if (skippedSub) {
+    // 除外したことを呼び出し側へ知らせる。件数を報告しないと「破損リンクはありません」が
+    // 検査していない範囲まで含んだ断定になる（issue #139）。
+    if (onSkip) onSkip(skippedSub);
+    return false;
+  }
   try { return !fs.existsSync(resolved); } catch (e) { return false; }
 }
 
 // 1ファイルの破損リンクを収集。
-function collectBroken(fp) {
+function collectBroken(fp, onSkip) {
   let content = '';
   try { content = fs.readFileSync(fp, 'utf8'); } catch (e) { return []; }
   const baseDir = path.dirname(fp);
@@ -138,19 +152,19 @@ function collectBroken(fp) {
       const val = m[1].trim()
         .replace(/^["'`]|["'`]$/g, '').trim()
         .replace(/\s*\([^)]*\)\s*$/, '').trim();
-      if (LINK_EXT.test(val) && isBrokenRef(val, baseDir)) broken.add(val);
+      if (LINK_EXT.test(val) && isBrokenRef(val, baseDir, onSkip)) broken.add(val);
     }
   }
   // 2) 本文の Markdown リンク [text](path)
   const linkRe = /\]\(([^)]+)\)/g;
   while ((m = linkRe.exec(content))) {
-    if (isBrokenRef(m[1], baseDir)) broken.add(m[1].trim());
+    if (isBrokenRef(m[1], baseDir, onSkip)) broken.add(m[1].trim());
   }
   // 3) 本文のインラインコード内の相対パス `./ ../`
   const codeRe = /`([^`]+)`/g;
   while ((m = codeRe.exec(content))) {
     const v = m[1].trim();
-    if ((v.startsWith('./') || v.startsWith('../')) && LINK_EXT.test(v) && isBrokenRef(v, baseDir)) broken.add(v);
+    if ((v.startsWith('./') || v.startsWith('../')) && LINK_EXT.test(v) && isBrokenRef(v, baseDir, onSkip)) broken.add(v);
   }
   return Array.from(broken);
 }
@@ -169,15 +183,38 @@ function main() {
   const files = mdFiles(a.dir);
   let total = 0;
   const report = [];
+  // 未 populate な submodule 配下として除外したリンクを submodule 別に数える。
+  const skipped = new Map();
+  const onSkip = (sub) => skipped.set(sub, (skipped.get(sub) || 0) + 1);
   for (const fp of files) {
-    const b = collectBroken(fp);
+    const b = collectBroken(fp, onSkip);
     if (b.length) {
       total += b.length;
       report.push({ fp, links: b });
     }
   }
+
+  // 検査対象外にした範囲を必ず知らせる（issue #139）。
+  // これを黙っていると「破損した相対リンクはありません」が、実際には検査していない範囲まで
+  // 含んだ断定になる。実際に ai-stock-trading では PR CI が planning 配下 753 件を毎回飛ばし、
+  // その隙間で破損 20 件が蓄積した（夜間の doc-links-planning は PR に紐づかず、
+  // PLANNING_REPO_TOKEN 未登録なら動かない）。
+  const skippedTotal = [...skipped.values()].reduce((n, v) => n + v, 0);
+  let skipNote = '';
+  if (skippedTotal > 0) {
+    const detail = [...skipped.entries()].map(([sub, n]) => `${sub}: ${n} 件`).join(', ');
+    skipNote = `（未 populate の submodule 配下 ${skippedTotal} 件は対象外 — ${detail}）`;
+    notice(
+      `未 populate の submodule 配下 ${skippedTotal} 件のリンクを検査対象外にした（${detail}）。` +
+        'この範囲は本実行では検査されていない。PR 段階で検査するには checkout に ' +
+        'submodules とトークンを付けるか、定期ジョブ（doc-links-planning）の結果を確認すること'
+    );
+  }
+
   if (total === 0) {
-    console.log(`[check-doc-links] OK: ${files.length} 件の Markdown に破損した相対リンクはありません。`);
+    console.log(
+      `[check-doc-links] OK: ${files.length} 件の Markdown に破損した相対リンクはありません${skipNote}。`
+    );
     process.exit(0);
   }
   console.error(`[check-doc-links] 破損リンク ${total} 件を検出しました:`);
@@ -196,6 +233,7 @@ module.exports = {
   planningPopulated,
   submodulePaths,
   underUnpopulatedSubmodule,
+  unpopulatedSubmoduleOf,
   isBrokenRef,
   collectBroken,
 };

@@ -113,6 +113,88 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
+// --- check-doc-links: 未 populate な submodule の除外を可視化する（issue #139） ---
+
+{
+  const { unpopulatedSubmoduleOf, underUnpopulatedSubmodule, collectBroken } = require('./check-doc-links.js');
+  const fsz = require('fs');
+  const patz = require('path');
+  const osz = require('os');
+
+  // 未 populate な submodule を持つリポジトリを模したフィクスチャを作る。
+  const mkFixture = () => {
+    const r = fsz.mkdtempSync(patz.join(osz.tmpdir(), 'dlinks-'));
+    fsz.writeFileSync(patz.join(r, '.gitmodules'), '[submodule "planning"]\n\tpath = planning\n\turl = x\n');
+    fsz.mkdirSync(patz.join(r, 'planning'), { recursive: true }); // 空＝未 populate
+    fsz.mkdirSync(patz.join(r, 'docs'), { recursive: true });
+    fsz.writeFileSync(
+      patz.join(r, 'docs', 'a.md'),
+      '# A\n- [p](../planning/projects/x/07_adr/ADR-0001_a.md)\n- [q](../planning/projects/x/02_requirements/01_r.md)\n'
+    );
+    return r;
+  };
+
+  ok('未 populate な submodule 配下は対象の submodule 名を返す', () => {
+    const r = mkFixture();
+    const got = unpopulatedSubmoduleOf(patz.join(r, 'planning', 'projects', 'x.md'), r);
+    assert.strictEqual(got, 'planning');
+  });
+
+  ok('populate 済みなら null を返す（＝通常どおり実在検査する）', () => {
+    const r = mkFixture();
+    fsz.writeFileSync(patz.join(r, 'planning', 'keep'), '');
+    assert.strictEqual(unpopulatedSubmoduleOf(patz.join(r, 'planning', 'projects', 'x.md'), r), null);
+  });
+
+  // 除外を黙って行うと「破損リンクはありません」が検査していない範囲まで含んだ断定になる。
+  // 実際に ai-stock-trading で破損 20 件がこの隙間に蓄積した（issue #139）。
+  ok('除外したリンクは onSkip で件数を数えられる（黙って消えない）', () => {
+    const r = mkFixture();
+    const prev = process.env.DOC_LINKS_ROOT;
+    process.env.DOC_LINKS_ROOT = r;
+    try {
+      // REPO_ROOT はモジュール読み込み時に確定するため、別プロセスで検証する。
+      const out = execSync(
+        `node ${JSON.stringify(patz.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(patz.join(r, 'docs'))}`,
+        { env: { ...process.env, DOC_LINKS_ROOT: r }, encoding: 'utf8' }
+      );
+      assert.match(out, /未 populate の submodule 配下 2 件/, '除外件数が報告される');
+      assert.match(out, /planning: 2 件/, 'submodule 別の内訳が出る');
+      assert.match(out, /対象外/, 'OK メッセージが断定になっていない');
+    } finally {
+      if (prev === undefined) delete process.env.DOC_LINKS_ROOT;
+      else process.env.DOC_LINKS_ROOT = prev;
+    }
+  });
+
+  ok('除外が無ければ OK メッセージに但し書きを付けない', () => {
+    const r = fsz.mkdtempSync(patz.join(osz.tmpdir(), 'dlinks2-'));
+    fsz.mkdirSync(patz.join(r, 'docs'), { recursive: true });
+    fsz.writeFileSync(patz.join(r, 'docs', 'a.md'), '# A\n');
+    const out = execSync(
+      `node ${JSON.stringify(patz.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(patz.join(r, 'docs'))}`,
+      { env: { ...process.env, DOC_LINKS_ROOT: r }, encoding: 'utf8' }
+    );
+    assert.doesNotMatch(out, /対象外/, '除外が無いときは但し書きを出さない');
+  });
+
+  // collectBroken / isBrokenRef の onSkip は省略可能（既存の呼び出しを壊さない）。
+  // REPO_ROOT はモジュール読み込み時に確定するため、ここではフィクスチャの submodule 判定は
+  // 効かない。検証したいのは「onSkip 無しでも例外にならず配列を返す」ことである。
+  ok('onSkip を渡さなくても例外にならない（後方互換）', () => {
+    const r = mkFixture();
+    const got = collectBroken(patz.join(r, 'docs', 'a.md'));
+    assert.ok(Array.isArray(got), '配列を返す');
+  });
+
+  ok('underUnpopulatedSubmodule は真偽値の互換 API として残る', () => {
+    const r = mkFixture();
+    assert.strictEqual(underUnpopulatedSubmodule(patz.join(r, 'planning', 'x.md'), r), true);
+    fsz.writeFileSync(patz.join(r, 'planning', 'keep'), '');
+    assert.strictEqual(underUnpopulatedSubmodule(patz.join(r, 'planning', 'x.md'), r), false);
+  });
+}
+
 // --- lib/ci-annotate: CI 上の警告を GitHub アノテーションとして出す（issue #136 / #137） ---
 
 {
@@ -283,12 +365,18 @@ ok('exclude は null を返す（生成物から除外）', () => {
 ok('未知の action は補正を無視する（黙って remap 扱いにしない）', () => {
   const ovs = [{ hash: 'ccccccc', action: 'romap', scope: 'P0' }];
   const c = { hash: 'cccccccddd', type: 'feat', scope: 'FR-01', desc: 'x' };
-  const silenced = process.stderr.write;
+  // stdout も抑止する。gen-changelog は現状 stderr へ直接書くが、ci-annotate へ移すと
+  // Actions 上では stdout へ出るため、片方だけの抑止は警告をテスト実行中に漏らす
+  // （issue #140 / #142 と同型。silent() と同じく最初から両方を塞いでおく）。
+  const silencedErr = process.stderr.write;
+  const silencedOut = process.stdout.write;
   process.stderr.write = () => true;
+  process.stdout.write = () => true;
   try {
     assert.deepStrictEqual(applyOverride(c, ovs), c);
   } finally {
-    process.stderr.write = silenced;
+    process.stderr.write = silencedErr;
+    process.stdout.write = silencedOut;
   }
 });
 
@@ -339,32 +427,41 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
     assert.ok(!ids.has('ADR-0009'), '他プロジェクトにしか無い ID を実在として受理してはならない');
   });
 
-  // stderr を捕捉して戻り値と警告文の両方を取る。
-  const captureStderr = (fn) => {
-    const orig = process.stderr.write;
+  // 戻り値と警告文の両方を取る。
+  // 【重要】stdout と stderr の**両方**を捕捉する。ci-annotate は GITHUB_ACTIONS 上では
+  // workflow コマンドの要件から必ず stdout へ書くため、stderr だけを捕捉すると
+  //   - Actions 上で警告文が取れず、このテストが落ちる（ローカルは緑・CI だけ赤）
+  //   - テストのフィクスチャが出した警告が**本物のアノテーション**として PR に漏れる
+  // という 2 つの不具合が同時に起きる（issue #140。実際に #138 で発生させた）。
+  const captureOutput = (fn) => {
+    const origErr = process.stderr.write;
+    const origOut = process.stdout.write;
     let out = '';
-    process.stderr.write = (s) => {
+    const sink = (s) => {
       out += s;
       return true;
     };
+    process.stderr.write = sink;
+    process.stdout.write = sink;
     try {
-      return { value: fn(), stderr: out };
+      return { value: fn(), output: out };
     } finally {
-      process.stderr.write = orig;
+      process.stderr.write = origErr;
+      process.stdout.write = origOut;
     }
   };
 
   ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
-    const { value: ids } = captureStderr(() => loadExistingPlanAdrIds(root, 'no-such-project'));
+    const { value: ids } = captureOutput(() => loadExistingPlanAdrIds(root, 'no-such-project'));
     assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002', 'ADR-0009']);
   });
 
   // 退避は「黙って検査を無効化する」形にしない。配布既定のプレースホルダのまま複数プロジェクト
   // 構成で使うと、他プロジェクトの ADR まで実在扱いになるため警告で可視化する。
   ok('複数プロジェクト構成で退避したときは警告を出す（silently inert にしない）', () => {
-    const { stderr } = captureStderr(() => loadExistingPlanAdrIds(root, '<project-name>'));
-    assert.match(stderr, /PLAN_PROJECT/);
-    assert.match(stderr, /全プロジェクト走査へ退避/);
+    const { output } = captureOutput(() => loadExistingPlanAdrIds(root, '<project-name>'));
+    assert.match(output, /PLAN_PROJECT/);
+    assert.match(output, /全プロジェクト走査へ退避/);
   });
 
   ok('単一プロジェクト構成では退避しても警告を出さない（実害が無いケースを騒がせない）', () => {
@@ -375,9 +472,9 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
     const d = paty.join(solo, 'only-project', '07_adr');
     fsy.mkdirSync(d, { recursive: true });
     fsy.writeFileSync(paty.join(d, 'ADR-0001_a.md'), '');
-    const { value: ids, stderr } = captureStderr(() => loadExistingPlanAdrIds(solo, '<project-name>'));
+    const { value: ids, output } = captureOutput(() => loadExistingPlanAdrIds(solo, '<project-name>'));
     assert.deepStrictEqual([...ids], ['ADR-0001'], '全走査＝自プロジェクト走査になる');
-    assert.strictEqual(stderr, '', '警告は出さない');
+    assert.strictEqual(output, '', '警告は出さない');
   });
 
   ok('planning 未 populate では null（実在性検査を skip）', () =>
@@ -574,6 +671,32 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     );
     process.exit(1);
   }
+}
+
+// --- 環境依存の出力先切り替えの回帰防止（issue #140） ---
+//
+// ci-annotate は GITHUB_ACTIONS の有無で書き込み先（stdout / 呼び出し側指定）を変える。
+// **片方の環境でしかテストしないと必ず見落とす**。実際 #138 は「ローカルで緑・CI で赤」
+// という最も気付きにくい形で入り、取り込んだ全リポジトリの scripts-tests を落とした。
+// 子プロセスで GITHUB_ACTIONS=true を与えて自分自身を回し、次の 2 点を確認する。
+//   (1) 全テストが通る（execSync は非 0 終了で throw する）
+//   (2) テストのフィクスチャが出した警告が本物のアノテーションとして漏れない
+//       （漏れると PR の Checks 画面に事実でない警告が毎回出て、アノテーションが読まれなくなる）
+// SCRIPTS_TEST_CHILD で再帰を止める。
+if (!process.env.SCRIPTS_TEST_CHILD) {
+  ok('GITHUB_ACTIONS=true でも全テストが通り、フィクスチャ由来のアノテーションが漏れない', () => {
+    const out = execSync(`node ${JSON.stringify(__filename)}`, {
+      env: { ...process.env, GITHUB_ACTIONS: 'true', SCRIPTS_TEST_CHILD: '1' },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    // フィクスチャ固有の値だけを対象にする。実リポジトリの正当な警告（companion 未追跡等）で
+    // 誤って落とさないため、件数ではなく**フィクスチャの目印**で判定する。
+    const leaked = out
+      .split('\n')
+      .filter((l) => /^::(warning|notice)::/.test(l) && /no-such-project|<project-name>/.test(l));
+    assert.deepStrictEqual(leaked, [], `フィクスチャ由来のアノテーションが漏れている:\n${leaked.join('\n')}`);
+  });
 }
 
 process.stdout.write(`\n✓ ${passed} tests passed\n`);

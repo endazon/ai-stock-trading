@@ -22,7 +22,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { warn } = require('./lib/ci-annotate.js');
+const { warn, notice } = require('./lib/ci-annotate.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
 const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
@@ -380,11 +380,20 @@ function main() {
   const allowlist = loadAllowlist();
   const iadrIds = loadExistingIadrIds();
   const planAdrIds = loadExistingPlanAdrIds();
+  // 検査を skip したことは notice で可視化する（issue #139）。素の stderr 行は緑ジョブの
+  // ログに埋もれて読まれず、「検査していない範囲があること」が CI の UI から読み取れない。
+  // 終了コードは変えない（fail-open。ローカル環境差で CI を落とさない）。
+  // 注: notice はここ（実行時の呼び出し側）でのみ出す。loadExisting* の内部に置くと、
+  // 未 populate を模したテストのフィクスチャが本物のアノテーションを漏らす（#140 と同型）。
   if (!iadrIds) {
-    process.stderr.write('docs/adr/ を読めないため IADR 実在性チェックをスキップする。\n');
+    notice('docs/adr/ を読めないため IADR 実在性チェックをスキップした（この範囲は検査されていない）');
   }
   if (!planAdrIds) {
-    process.stderr.write('planning submodule が未 populate のため計画 ADR 実在性チェックをスキップする。\n');
+    notice(
+      'planning submodule が未 populate のため計画 ADR 実在性チェックをスキップした' +
+        '（この範囲は検査されていない。実効しているのは IADR 検査のみである）。' +
+        'PR 段階で検査するには checkout に submodules とトークンを付けること'
+    );
   }
 
   process.stdout.write(`コミット規約チェック: 範囲 ${range}（${commits.length} 件）\n`);
