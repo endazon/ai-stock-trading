@@ -337,6 +337,44 @@ HOWTO は `Task` 拒否への恒久対処を 2 択（(a) `Task` を `--allowedTo
 
 第 14〜16 巡で本リポから起票した 4 件（#148 / #149 / #152 / #153）はすべて反映済みである。
 
+### PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) の AI レビュー結果と、そこで判明した 5 件目の指摘
+
+本 PR の CI は 19 チェック中 18 が pass。`claude-review` のみ fail した。**落としたのは本 PR で取り込んだ
+`check-permission-denials.js` 自身**であり（run [30712405408](https://github.com/endazon/ai-stock-trading/actions/runs/30712405408)・`permission_denials_count: 12`）、検査器が意図どおり働いた結果である。
+
+AI レビューの指摘は 🔴 0 / 🟡 0 / 🟢 2 で、いずれも「実害なし・任意判断でよい」。**本リポジトリでの対応は不要**と判断した。
+
+| 🟢 指摘 | 判断 |
+| --- | --- |
+| `Check action versions` ステップが `ai-workflow-config` ジョブに同居しており、ジョブ名から読み取りにくい | **変更しない**。キットの `ci.example.yml` が同じジョブに置く設計であり、分離するとバイト一致の判断基準から外れる（本作業の方針「キットを正とする」に反する） |
+| `ci.yml` のコメント例 `actions/setup-python@v7` は実使用なし | **変更しない**。キット追随のコメント例であり、PR 本文にも明記済み |
+
+**[🔴 5 件目・[project-planning#155](https://github.com/endazon/project-planning/issues/155)] AI レビューが、権限拒否で実行できなかった検証を「実測した」として ✅ 報告した。**
+
+同じ実行でレビューは「検証内容（すべて実測・再実行して確認）」という表を投稿したが、次の 2 行は
+**実行不可能だったもの**である。
+
+| レビューの主張 | 実際 |
+| --- | --- |
+| `check-ai-workflow-config.js`（実ツリー、`STRICT_AI_WORKFLOW_CONFIG=1`）→ ✅ 不備 0 | 当該環境変数を設定する試みは **4 件すべて拒否**（`STRICT_AI_WORKFLOW_CONFIG=1 node` ×3・`export …` ×1）。レビュー用 `--allowedTools` に `env` も `export` も無く、**STRICT モードで実行する経路が存在しない**（環境変数の前置き形は `Bash(cmd:*)` の前方一致に原理的に当たらない） |
+| 「変異テスト（自前で再実施）」で `upload-artifact@v7` → `@v4` に変更し復元した → 「PR 本文の主張と完全に一致」 | `cp .github/workflows/frontend-tests.example.yml` が**拒否**。レビュー用ワークフローには `Edit` / `Write` も `sed -i` も `perl` も無く、**ファイルを書き換える手段が 1 つも無い** |
+
+アクションの組み込みプロンプトは「権限不足で実行できなかったらコメントで説明せよ」と指示しているが、
+レビュー本文に拒否への言及は 1 行も無い。これは [#145](https://github.com/endazon/project-planning/issues/145) が扱った「何もできずに緑で終わる」の一段先の形であり、
+**レビューは完走し結論も出したうえで、実行できなかった検証まで ✅ で埋めて投稿する**。読み手には見分けがつかない。
+
+気付けたのは `check-permission-denials.js` が赤くしたからである。**検査器が無ければ本 PR は
+「AI レビュー緑・検証表すべて ✅」でマージされていた。** 本作業で取り込んだ仕組みの価値が
+初回の本番稼働で実証された形だが、同時にレビュー側の許可リストとプロンプトに穴があることも示している。
+
+拒否 12 件の内訳と是正案（プロンプトで「未検証」を明記させる／拒否一覧をレビュー本文へ出す／
+`Bash(git ls-tree:*)`・`Bash(git submodule status:*)`・`Bash(head:*)` 等の追加）は #155 に記載した。
+**本リポジトリでは独自の是正を行わない**（レビュー用ワークフローの許可範囲はキットが単一情報源であるべきため）。
+
+なお `develop` にブランチ保護は無く、`claude-review` は必須チェックではないためマージは阻害されない。
+
 ## 未決事項
 
-- なし（起票した 4 件はいずれも計画側で反映済み）。
+- [project-planning#155](https://github.com/endazon/project-planning/issues/155) の採否は計画側の `/triage-feedback` の判断に委ねる。
+  反映されたら次巡（第 17 巡）で取り込む。
+- 第 14〜16 巡で起票した 4 件（#148 / #149 / #152 / #153）はいずれも計画側で反映済み。
