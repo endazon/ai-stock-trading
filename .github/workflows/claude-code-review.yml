@@ -146,6 +146,15 @@ jobs:
           # pull_request_target を使わない構成を維持すること。
           # 書き込み系の git（commit / push / reset 等）はレビューには不要なので入れない。
           #
+          # 【前方一致の落とし穴】Bash の許可は**コマンド文字列の前方一致**である。したがって
+          # `Bash(git log:*)` を許可しても `git -C planning log` には当たらない。planning を
+          # submodule 参照する構成では、pin の進み方・差分・「変更が無いこと」といった
+          # **履歴に関する主張だけ検証できない**状態になる（ファイル内容は Read/Grep で読める）。
+          # そのため読み取り専用サブコマンドを個別に列挙してある。
+          # `Bash(git -C:*)` と一括で許可してはならない（前方一致で `git -C planning push` /
+          # `commit` / `reset` まで通り、書き込み系を外した設計が崩れる）。
+          # 【置換点】submodule のパスが `planning` でない場合は 4 か所とも書き換える。
+          #
           # 【記法・最重要】claude_args は**空白区切りで argv へトークン化**される。
           # したがって `--allowedTools Bash(dotnet test:*)` のように 1 ツール 1 行で書くと、
           # 空白を含む指定が `Bash(dotnet` と `test:*)` に割れて**すべて無効**になる。
@@ -160,7 +169,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -229,6 +238,9 @@ jobs:
             【検証の実行】
             ビルド・テスト・フォーマットの実行は許可されている。PR 本文が「テストが通る」と
             主張している場合は、可能な限り**自分で実走して確認**し、結果を報告に含めること。
+            計画書 submodule の**履歴**（pin の進み方・その差分・「変更が無いこと」）についても
+            `git -C planning log / show / diff / ls-tree` で検証できる。PR が submodule の pin に
+            言及している場合は、その主張を実際に確かめること。
 
             【.claude / CLAUDE.md を変更する PR での注意】
             アクションはセキュリティ上、`.claude` / `CLAUDE.md` / `.mcp.json` 等を統合ブランチ版へ

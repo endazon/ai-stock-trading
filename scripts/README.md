@@ -102,10 +102,19 @@ module.exports = ({ ok, assert }) => {
 **消失を検出したい場合**（固有テストを持つリポジトリ向け）: `ci.yml` の `scripts-tests` ジョブで
 `REQUIRE_REPO_TESTS=1` を設定すると、companion が見つからないときに失敗する。未設定だと
 誤削除やマージ事故でテスト件数が静かに減るだけで CI は green のままになる。
-また companion が存在するのに 1 件もテストを登録しない場合（export 忘れ・空実装）は、
-設定に関わらず失敗する。
->
-> **本リポジトリは `ci.yml` の `scripts-tests` ジョブで `REQUIRE_REPO_TESTS=1` を有効化済み**（固有テストを持つため）。
+**companion があるのに未設定の場合は `notice:` で促す**（失敗はさせない）。
+
+`scripts.test.js` が検出して知らせる状態は以下のとおり。
+
+| 状態 | 挙動 |
+| --- | --- |
+| companion なし | 何もしない（キット既定） |
+| companion なし ＋ `REQUIRE_REPO_TESTS=1` | **失敗**（消失の検出） |
+| companion あり・登録 0 件 | **失敗**（export 忘れ・空実装・全件 skip） |
+| companion あり ＋ `REQUIRE_REPO_TESTS` 未設定 | `notice:` で設定を促す（**本リポジトリは設定済み**のため出ない） |
+| companion が git 未追跡 | `warning:`（CI に存在せず固有テストが走らないため） |
+| 旧名 `scripts.local.test.js` のみ | 読み込む ＋ `warning:` で改名を促す |
+| 新旧が**両方**ある | 新名を優先して読み込み、`warning:` で旧名の残存を知らせる（移行漏れならテストを移し、不要なら削除する） |
 
 ## 自動生成（CI）
 

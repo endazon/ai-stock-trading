@@ -48,7 +48,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `30a4b78`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 が続けてマージされたため計 6 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `cff9b6c`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 が続けてマージされたため計 7 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -120,7 +120,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`30a4b78`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`cff9b6c`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -140,6 +140,8 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 | ジョブログの `SDK options:` で `allowedTools` が割れていない | ✅ レビュー run `30688790059` のダンプで `"Bash(dotnet test:*)"` 等が単一要素。issue が挙げた `"Bash(gh"` / `"issue"` / `"create:*)"` の 3 分割は解消 |
 | AI レビューが `dotnet test` を実走し結果を報告に含めている | ✅ 同 run で `node scripts/scripts.test.js`（18 回）・`dotnet build backend/backend.slnx`（5 回）等を実行。「承認待ちでブロック」の報告は消えた |
 | 1 PR に対するレビュー起動が 1 本に収まる | ✅ push 9 回に対しレビュー run 9 件（1 push = 1 run）。`concurrency` ＋ `cancel-in-progress: true` |
+| （追記）両ワークフローに `git -C planning` の読み取り専用 4 件 | ✅ `log` / `show` / `diff` / `ls-tree` を両ファイルに（キット `cff9b6c` 由来） |
+| （追記）レビュー側に書き込み系 git が入っていない | ✅ `push` / `commit` / `reset` / `add` / `switch` / `checkout` / `branch` / `rm` のいずれも無し |
 
 **実効性の実証**: 是正後のレビューが `node` を実走し、本作業自身が持ち込んだ `gen-changelog.js` の
 クラッシュ回帰をスタックトレース付きの 🔴 として検出した。是正前なら「承認待ちで検証できず」で終わっていた。
@@ -149,10 +151,9 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ### 本作業の範囲外とした #323 の関連事項
 
-- **`git -C planning …` の拒否**: 是正後のレビューは submodule の履歴を参照しようとして拒否される
-  （`Bash(git log:*)` は前方一致のため `git -C <path> log` に当たらない）。素朴に `Bash(git -C:*)` を足すと
-  `git -C <path> push` まで通り、レビューから書き込み系 git を外す設計を崩すため、キット側の設計判断として
-  [project-planning#120](https://github.com/endazon/project-planning/issues/120) へ分離した。
+- **`git -C planning …` の拒否**: [project-planning#120](https://github.com/endazon/project-planning/issues/120) として分離したうえで、計画側 PR #119 で
+  読み取り専用サブコマンドの個別列挙（`log` / `show` / `diff` / `ls-tree`）として反映され、**本作業で取り込み済み**。
+  素朴な `Bash(git -C:*)` は前方一致で `git -C <path> push` まで通るため採らない。
 - **microservices-platform への同一是正**: 別リポジトリのため本作業では扱わない。
 
 ## テスト方針

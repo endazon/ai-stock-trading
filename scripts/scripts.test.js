@@ -402,10 +402,21 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
 
   const primary = pathx.join(dir, COMPANION);
   const legacy = pathx.join(dir, COMPANION_LEGACY);
+  const hasPrimary = fsx.existsSync(primary);
+  const hasLegacy = fsx.existsSync(legacy);
   let file = null;
-  if (fsx.existsSync(primary)) {
+  if (hasPrimary) {
     file = primary;
-  } else if (fsx.existsSync(legacy)) {
+    if (hasLegacy) {
+      // 部分移行の検出。新名を優先するため旧名は読み込まれず、残したままだとその中身が
+      // 落ちも警告もせず消える。「新名を作ったが旧名の中身を移し切っていない」は
+      // 改名の移行期に起こりやすい人的ミスであり、まさに本機能が防ぐべき silently inert。
+      warnings.push(
+        `${COMPANION_LEGACY} が残っているが読み込まれていない（${COMPANION} を優先した）。` +
+          '移行漏れならテストを移し、不要なら削除すること'
+      );
+    }
+  } else if (hasLegacy) {
     file = legacy;
     warnings.push(
       `${COMPANION_LEGACY} は旧名である。${COMPANION} へ改名すること` +
@@ -456,6 +467,21 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     assert.strictEqual(r.registered, 0);
   });
 
+  ok('受け口: 新旧が両方あるとき旧名の残存を警告する（部分移行の検出）', () => {
+    const d = mkTmp();
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION),
+      "module.exports = ({ ok, assert }) => { ok('new-1', () => assert.ok(true)); };\n"
+    );
+    fsx.writeFileSync(
+      pathx.join(d, COMPANION_LEGACY),
+      "module.exports = ({ ok, assert }) => { ok('legacy-1', () => assert.ok(true)); ok('legacy-2', () => assert.ok(true)); };\n"
+    );
+    const r = loadCompanionTests(d, { ok: run, assert });
+    assert.strictEqual(r.registered, 1, '新名を優先すること');
+    assert.match(r.warnings.join(' '), /残っているが読み込まれていない/);
+  });
+
   ok('受け口: 旧名は読み込むが改名を促す警告を出す', () => {
     const d = mkTmp();
     fsx.writeFileSync(
@@ -486,6 +512,16 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
       res.registered > 0,
       `${require('path').basename(res.file)} が 1 件もテストを登録していない（export 忘れ・空実装の可能性）`
     );
+    // 消失検出は「companion を置く」「REQUIRE_REPO_TESTS を設定する」の 2 ステップで初めて効く。
+    // 2 つ目を忘れると、companion が消えてもテスト件数が減るだけで CI は green のままになる
+    // （未追跡は警告するのに、より起きやすいこの状態が無言では筋が通らない）。失敗はさせない。
+    if (process.env.REQUIRE_REPO_TESTS !== '1') {
+      process.stderr.write(
+        `notice: ${require('path').basename(res.file)} を読み込んだが REQUIRE_REPO_TESTS が未設定である。\n` +
+          '        このままでは companion が消失してもテスト件数が減るだけで CI は green のままになる。\n' +
+          '        ci.yml の scripts-tests ジョブで REQUIRE_REPO_TESTS=1 を設定すること。\n'
+      );
+    }
   } else if (process.env.REQUIRE_REPO_TESTS === '1') {
     // 固有テストを持つリポジトリは、companion の消失（誤削除・マージ事故・同期での上書き）を
     // 検出できるよう REQUIRE_REPO_TESTS=1 を CI に設定する。既定は未設定＝従来どおり何もしない。
