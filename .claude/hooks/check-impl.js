@@ -7,11 +7,29 @@
  */
 'use strict';
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|java|kt|go|rs|rb|php|py|js|jsx|ts|tsx|vue|swift|scala|sql)$/i;
 
+function tryGit(args) {
+  try {
+    // 最悪 4 回呼ばれる（rev-parse ×2 → diff → ls-files）ため、合計が全体の
+    // 安全弁（5 秒）を超えないよう 1 回あたりを 1.2 秒に保つ（4 × 1200ms = 4800ms < 5000ms）。
+    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1200 }).trim();
+  } catch (e) { return null; }
+}
+
 function hasWorkSpec() {
   try {
+    // 作業仕様書は「作業/PR 単位・着手前に必須」（CLAUDE.md）。docs/specs/ に過去の仕様書が
+    // 蓄積しても判定が形骸化しないよう、現在のブランチで追加された仕様書を数える
+    // （base との差分＋未追跡の新規ファイル）。base を解決できない環境では従来判定へ退避する。
+    const base = ['origin/develop', 'develop'].find((r) => tryGit(`rev-parse --verify --quiet ${r}`) !== null);
+    if (base) {
+      const diffed = tryGit(`diff --name-only --diff-filter=A ${base} -- docs/specs`) || '';
+      const untracked = tryGit('ls-files --others --exclude-standard -- docs/specs') || '';
+      return `${diffed}\n${untracked}`.split('\n').some((f) => f.trim().endsWith('.md'));
+    }
     const files = fs.readdirSync('docs/specs');
     return files.some((f) => f.endsWith('.md'));
   } catch (e) { return true; } // ディレクトリが無い等は判定しない（誤検知回避）

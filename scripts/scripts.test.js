@@ -68,6 +68,34 @@ ok('未知の種別は違反', () => assert.strictEqual(validateSubject('feet(FR
 ok('不正な ID 書式は違反', () => assert.strictEqual(validateSubject('feat(FR08): ハイフン無し').length >= 1, true));
 ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat(): 空').length >= 1, true));
 
+// --- check-commit-messages: validateIdExistence（IADR/計画 ADR の実在性・issue #319） ---
+
+{
+  const { validateIdExistence, loadExistingIadrIds, loadExistingPlanAdrIds } = require('./check-commit-messages.js');
+  const iadrIds = loadExistingIadrIds();
+  if (iadrIds && iadrIds.size > 0) {
+    const existing = iadrIds.values().next().value; // 実ツリーの任意の実在 IADR
+    ok('実在する IADR は合格（#319）', () =>
+      assert.deepStrictEqual(validateIdExistence(`fix(${existing}): 是正`, iadrIds, null), []));
+    ok('実在しない IADR-9999 は違反（#319 の回帰）', () =>
+      assert.match(validateIdExistence('feat(NFR,IADR-9999): x', iadrIds, null).join(' '), /実在しない/));
+    ok('末尾 PR 番号付きでも実在しない IADR を検出する（#314 の混入形）', () =>
+      assert.match(validateIdExistence('feat(IADR-9999): x (#314)', iadrIds, null).join(' '), /実在しない/));
+    ok('IADR 以外の ID（FR/NFR）は実在性検査の対象外', () =>
+      assert.deepStrictEqual(validateIdExistence('feat(FR-04,NFR): x', iadrIds, null), []));
+  }
+  ok('集合が null（未チェックアウト環境）なら skip して合格', () =>
+    assert.deepStrictEqual(validateIdExistence('feat(IADR-9999,ADR-9999): x', null, null), []));
+  const planIds = loadExistingPlanAdrIds();
+  if (planIds && planIds.size > 0) {
+    ok('実在しない計画 ADR-9999 は違反（#319）', () =>
+      assert.match(validateIdExistence('feat(ADR-9999): x', null, planIds).join(' '), /実在しない/));
+  } else {
+    ok('planning 未 populate では計画 ADR 検査が skip される（#319 受け入れ基準）', () =>
+      assert.strictEqual(planIds, null));
+  }
+}
+
 // --- check-commit-messages: checkSingleTitle（PR タイトル＝スカッシュ後件名の検査） ---
 
 // stdout/stderr を抑止して戻り値（0=合格/1=違反）のみ検査する。

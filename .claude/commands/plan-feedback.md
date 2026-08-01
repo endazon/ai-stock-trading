@@ -14,10 +14,13 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*), Bash(git log:
 2. 種別を判定する: `要求の誤り` / `要求の不足` / `UC/画面の差異` / `新たな制約(ADR要)` / `用語追加` / `その他`。
 3. `feedback/TEMPLATE.md` を雛形に、`feedback/<YYYYMMDD>_<概要のケバブケース>.md` を作成する。
    メタ情報（`category`・`related_ids`・`source_ref`=ブランチ/コミット/仕様書・`created`=本日）を埋める。
-4. 計画リポジトリへの伝達を**両経路**で用意する。
-   - 記録ファイル経路: 作成した記録を計画リポの `draft/feedback/` にコピーする手順を案内する。
-   - GitHub Issue 経路: `endazon/project-planning` の「計画へのフィードバック」テンプレートに合わせた
-     **Issue 本文（タイトル・本文）を生成**し、貼り付け or GitHub MCP/`gh` での起票を案内する。
+4. 計画リポジトリへの伝達を用意する。**主経路は GitHub Issue**（実運用の実績経路。計画側の
+   `/triage-feedback` が `plan-feedback` ラベルの open Issue を自動で `draft/feedback/` へ取り込む）。
+   - GitHub Issue 経路（**主**）: `endazon/project-planning` の「計画へのフィードバック」テンプレートに
+     合わせた **Issue 本文（タイトル・本文）を生成**し、GitHub MCP/`gh` で起票する
+     （`plan-feedback` ラベルを付ける）。起票できない場合は貼り付け用本文を提示する。
+   - 記録ファイル経路（従・Issue を起票できない環境向け）: 作成した記録を計画リポの
+     `draft/feedback/` にコピーする手順を案内する。
 5. 作成した記録のパスと、計画側で想定される反映先（要求更新 / 新 ADR / 用語追加 等）を報告する。
 
 注意: 記録は事実と提案を分けて書く。計画書の確定変更は計画側（`/triage-feedback` と人間）が判断する。
