@@ -2,7 +2,7 @@
 'use strict';
 /*
  * scripts.test.js
- * check-commit-messages.js / gen-changelog.js の主要ロジックの単体テスト。
+ * check-commit-messages.js / gen-changelog.js ほか scripts/ 配下の主要ロジックの単体テスト。
  * Node 標準モジュールのみ（assert / child_process）。実行: node scripts/scripts.test.js
  * 一部の allowlist 整合テストは best-effort で git を用いる（不在・浅いクローン時はスキップ）。
  */
@@ -26,7 +26,7 @@ function gitTry(args) {
 }
 const inGitWorkTree = gitTry('rev-parse --is-inside-work-tree') === 'true';
 const isShallowClone = gitTry('rev-parse --is-shallow-repository') === 'true';
-// 到達可能性の基準は「develop に実在」。origin/develop → develop → HEAD の順で解決する
+// 到達可能性の基準は「統合ブランチに実在」。origin/develop → develop → HEAD の順で解決する
 // （CI の PR チェックアウトでは origin/develop、ローカル worktree では develop/HEAD が該当）。
 const REACH_BASE =
   ['origin/develop', 'develop', 'HEAD'].find(
@@ -68,19 +68,65 @@ ok('未知の種別は違反', () => assert.strictEqual(validateSubject('feet(FR
 ok('不正な ID 書式は違反', () => assert.strictEqual(validateSubject('feat(FR08): ハイフン無し').length >= 1, true));
 ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat(): 空').length >= 1, true));
 
-// --- check-commit-messages: validateIdExistence（IADR/計画 ADR の実在性・issue #319） ---
+// --- check-ai-workflow-config: claude_args の記法・ツール許可の整合 ---
+
+{
+  const { checkWorkflow, parseAllowedTools, bashCommandsOf } = require('./check-ai-workflow-config.js');
+  const wf = (body, extra = '') =>
+    `jobs:\n  x:\n    steps:\n${extra}      - with:\n          claude_args: |\n${body}`;
+
+  ok('引用符なしで空白を含む --allowedTools は違反（実運用で全 dotnet 系が無効化された形）', () =>
+    assert.match(
+      checkWorkflow('t', wf('            --allowedTools Bash(dotnet test:*)\n')).errors.join(' '),
+      /引用符で囲まれておらず/
+    ));
+  ok('引用符ありカンマ区切りは合格（公式記法）', () =>
+    assert.deepStrictEqual(
+      checkWorkflow('t', wf('            --allowedTools "Read,Bash(dotnet test:*)"\n')).errors,
+      []
+    ));
+  ok('claude_args ブロック内のコメント行は違反', () =>
+    assert.match(
+      checkWorkflow('t', wf('            # c\n            --allowedTools Read\n')).errors.join(' '),
+      /コメント行/
+    ));
+  ok('SDK を用意して実行ツールを許可しないのは違反', () =>
+    assert.match(
+      checkWorkflow('t', wf('            --allowedTools "Read"\n', '      - uses: actions/setup-dotnet@v5\n')).errors.join(' '),
+      /setup-dotnet/
+    ));
+  ok('parseAllowedTools はカンマ区切りを展開する', () =>
+    assert.deepStrictEqual(parseAllowedTools(['--allowedTools "A,B"'])[0].tools, ['A', 'B']));
+  ok('bashCommandsOf は Bash(cmd ...) のコマンド名を取り出す', () =>
+    assert.deepStrictEqual(
+      [...bashCommandsOf(['Bash(dotnet test:*)', 'Read', 'Bash(gh issue view:*)'])].sort(),
+      ['dotnet', 'gh']
+    ));
+  ok('実ツリー: ワークフローのツール許可設定に不備が無い', () => {
+    const dir = require('path').join(__dirname, '..', '.github', 'workflows');
+    const fsx = require('fs');
+    const errs = [];
+    for (const f of fsx.readdirSync(dir)) {
+      const r = checkWorkflow(f, fsx.readFileSync(require('path').join(dir, f), 'utf8'));
+      if (r.applicable) errs.push(...r.errors.map((e) => `${f}: ${e}`));
+    }
+    assert.deepStrictEqual(errs, []);
+  });
+}
+
+// --- check-commit-messages: validateIdExistence（ADR/IADR の実在性・採番衝突の再発防止） ---
 
 {
   const { validateIdExistence, loadExistingIadrIds, loadExistingPlanAdrIds } = require('./check-commit-messages.js');
   const iadrIds = loadExistingIadrIds();
   if (iadrIds && iadrIds.size > 0) {
     const existing = iadrIds.values().next().value; // 実ツリーの任意の実在 IADR
-    ok('実在する IADR は合格（#319）', () =>
+    ok('実在する IADR は合格', () =>
       assert.deepStrictEqual(validateIdExistence(`fix(${existing}): 是正`, iadrIds, null), []));
-    ok('実在しない IADR-9999 は違反（#319 の回帰）', () =>
+    ok('実在しない IADR-9999 は違反', () =>
       assert.match(validateIdExistence('feat(NFR,IADR-9999): x', iadrIds, null).join(' '), /実在しない/));
-    ok('末尾 PR 番号付きでも実在しない IADR を検出する（#314 の混入形）', () =>
-      assert.match(validateIdExistence('feat(IADR-9999): x (#314)', iadrIds, null).join(' '), /実在しない/));
+    ok('末尾 PR 番号付きでも実在しない IADR を検出する', () =>
+      assert.match(validateIdExistence('feat(IADR-9999): x (#123)', iadrIds, null).join(' '), /実在しない/));
     ok('IADR 以外の ID（FR/NFR）は実在性検査の対象外', () =>
       assert.deepStrictEqual(validateIdExistence('feat(FR-04,NFR): x', iadrIds, null), []));
   }
@@ -88,10 +134,10 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     assert.deepStrictEqual(validateIdExistence('feat(IADR-9999,ADR-9999): x', null, null), []));
   const planIds = loadExistingPlanAdrIds();
   if (planIds && planIds.size > 0) {
-    ok('実在しない計画 ADR-9999 は違反（#319）', () =>
+    ok('実在しない計画 ADR-9999 は違反', () =>
       assert.match(validateIdExistence('feat(ADR-9999): x', null, planIds).join(' '), /実在しない/));
   } else {
-    ok('planning 未 populate では計画 ADR 検査が skip される（#319 受け入れ基準）', () =>
+    ok('planning 未 populate では計画 ADR 検査が skip される', () =>
       assert.strictEqual(planIds, null));
   }
 }
@@ -130,13 +176,12 @@ ok('PR タイトル [skip ci] はスキップ扱いで 0', () =>
 // --- check-commit-messages: findAllowlisted（適用除外コミットの恒久除外） ---
 
 ok('allowlist は短縮 SHA を前方一致で照合', () => {
-  // 現行 develop に実在する除外コミット（d1cfeb5f）の短縮 SHA で照合する（Issue #47）。
   const al = [{ hash: 'd1cfeb5f', reason: 'x' }];
   assert.ok(findAllowlisted('d1cfeb5ff1d6fcefc44afde8231fdc2644fbb6fe', al), '前方一致で除外されるべき');
   assert.strictEqual(findAllowlisted('deadbeefdeadbeef', al), null, '無関係な SHA は除外されない');
 });
 
-// commit-allowlist.json の各エントリが「1 エントリ = 完全 SHA + 理由」の運用に沿うこと（Issue #47）。
+// commit-allowlist.json の各エントリが「1 エントリ = 完全 SHA + 理由」の運用に沿うこと。
 // findAllowlisted で件名を突き合わせる合成データ検査ではなく、ファイルの実エントリ自体を検証する。
 ok('allowlist の各エントリは完全 SHA + 理由を持つ', () => {
   const al = loadAllowlist();
@@ -148,7 +193,7 @@ ok('allowlist の各エントリは完全 SHA + 理由を持つ', () => {
   }
 });
 
-// rebase 由来の幻 SHA 再発防止（Issue #47）: 各エントリが git 履歴に実在し、HEAD から到達可能で、
+// rebase 由来の幻 SHA 再発防止: 各エントリが git 履歴に実在し、統合ブランチから到達可能で、
 // かつ本当に規約違反の件名であること（＝除外に値すること）を検証する。
 // git が無い / 浅いクローンでオブジェクト不在の場合は best-effort でスキップ（CI をブロックしない）。
 ok('allowlist の各エントリは実在・到達可能・非準拠である（best-effort）', () => {
@@ -163,15 +208,15 @@ ok('allowlist の各エントリは実在・到達可能・非準拠である（
     const type = gitTry(`cat-file -t ${e.hash}`);
     if (type === null) {
       // オブジェクトが手元に無い。浅いクローンなら判別不能のためスキップ（fail-open）。
-      // フル履歴なら「存在しない SHA」＝ Issue #47 の幻 SHA 再発なので失敗させる。
+      // フル履歴なら「存在しない SHA」＝幻 SHA の再発なので失敗させる。
       if (isShallowClone) {
         process.stdout.write(`    ↳ skip: ${e.hash.slice(0, 8)} は浅いクローンで解決不可（判別不能）\n`);
         continue;
       }
-      assert.fail(`${e.hash} がフル履歴に存在しない（幻 SHA・Issue #47 の再発）`);
+      assert.fail(`${e.hash} がフル履歴に存在しない（幻 SHA の再発）`);
     }
     assert.strictEqual(type, 'commit', `${e.hash} が commit ではない`);
-    // develop（REACH_BASE）から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
+    // 統合ブランチ（REACH_BASE）から到達可能であること（幻 SHA・別ブランチ限定の SHA を排除）。
     const reachable = gitTry(`merge-base --is-ancestor ${e.hash} ${REACH_BASE}`) !== null;
     assert.ok(reachable, `${e.hash} が ${REACH_BASE} から到達不可（幻 SHA の疑い）`);
     // 除外する以上、件名が実際に規約違反であること（準拠件名を無意味に除外していないこと）。

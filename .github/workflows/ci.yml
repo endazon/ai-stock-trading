@@ -1,13 +1,15 @@
-# CI（検証ゲート）雛形 — 技術非依存の骨格
+# CI（検証ゲート）— impl-handoff-kit の ci.example.yml を本リポジトリのスタック（C#/.NET）へ適用したもの。
 #
-# このファイルは「例示」であり、そのままでは有効化されない（拡張子が .example.yml のため）。
-# 自プロジェクトのスタックに合わせて各ステップを書き換え、ci.yml にリネームして使うこと。
-# build / test / coverage / lint ステップは C#/.NET を例示している。
+# 技術非依存のジョブ（commit-messages / doc-links / pipeline-config / ai-workflow-config）は
+# キットの雛形と同型に保つ。スタック依存のジョブ（lint / build-and-test）と本リポジトリ固有の
+# ジョブ（shell-scripts / runtime-scaffold / consumer-endpoint-names / frontend / frontend-e2e）は
+# 本リポジトリ側で維持する。
 #
-# ── スタック別 --allowedTools（claude-coding.example.yml の claude_args 末尾を書き換える） ──
-# このファイルの build/test ステップを変更したら、claude-coding.example.yml の claude_args 末尾
-# 4 行（スタック別ツール）を使用スタックに合わせて書き換えること。
-# .claude/settings.json の permissions.allow にも同じコマンドを追記すること。
+# ── スタック別 --allowedTools（claude-coding.yml の claude_args 末尾を書き換える） ──
+# このファイルの build/test ステップを変更したら、claude-coding.yml / claude-code-review.yml の
+# claude_args 末尾（スタック別ツール）を使用スタックに合わせて書き換えること。
+# .claude/settings.json の permissions.allow にも同じコマンドを追記すること（3 系統を揃える）。
+# 記法誤り・複製漏れは ai-workflow-config ジョブが機械検出する。
 #
 # スタック別の対応コマンド例:
 #   C#/.NET : Bash(dotnet build:*), Bash(dotnet test:*), Bash(dotnet format:*), Bash(dotnet restore:*)
@@ -106,6 +108,21 @@ jobs:
         run: node scripts/validate-pipeline-config.js --self-test
       - name: Validate trading pipeline config (real file)
         run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
+
+  # Claude 系ワークフローのツール許可設定を検査する（安全弁）。
+  # claude_args の記法誤りは CI を失敗させずに「AI が検証できない」状態を作るため、
+  # 人間にもジョブ結果にも現れない。ここで機械的に止める。
+  ai-workflow-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Check AI workflow config (self-test)
+        run: node scripts/check-ai-workflow-config.js --self-test
+      - name: Check AI workflow config
+        run: node scripts/check-ai-workflow-config.js
 
   # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
   # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の

@@ -2,15 +2,30 @@
 
 補助成果物（CHANGELOG / OpenAPI）の生成・環境セットアップ・プロファイル適用を行う依存ゼロのスクリプト群。
 
+**キット共通**（impl-handoff-kit の `repo-template/scripts/` 由来。文面・挙動をキットに揃える）:
+
 | スクリプト | 役割 | 出力 |
 | --- | --- | --- |
 | `gen-changelog.js` | コミット履歴（`種別(起点ID): 要約`）から変更履歴を生成 | `CHANGELOG.md` |
 | `gen-openapi-skeleton.js` | 通信仕様書（`docs/api/`）から OpenAPI 雛形を生成 | `docs/api/openapi.yaml` |
 | `check-doc-links.js` | `docs/` 配下 Markdown の相対リンク（frontmatter の `plan_refs`/`related_specs`・本文リンク・インラインコードのパス）の実在を検査。破損があれば終了コード 1 | 標準出力（レポート） |
-| `check-commit-messages.js` | コミット件名（`種別(起点ID): 要約`）の規約適合を検査。除外は `commit-allowlist.json` | 標準出力（レポート） |
+| `check-commit-messages.js` | コミット件名（`種別(起点ID): 要約`）の規約適合と ADR/IADR の実在性を検査。除外は `commit-allowlist.json` | 標準出力（レポート） |
+| `check-ai-workflow-config.js` | Claude 系ワークフローのツール許可設定を検査。`claude_args` の記法誤り（空白分割で無効化）・ブロック内コメント・「SDK を用意して実行ツールを許可していない」不一致を検出。不備があれば終了コード 1。`--self-test` で検証器自体も試験 | 標準出力（レポート） |
 | `validate-pipeline-config.js` | 宣言的パイプライン構成のスキーマ検証（`--self-test` で検証器自体も試験） | 標準出力（判定） |
+| `scripts.test.js` | 上記スクリプト群と本リポジトリ固有スクリプトの単体テスト | 標準出力（判定） |
 | `setup.sh` | 開発環境セットアップ（SessionStart hook / devcontainer から実行） | — |
 | `apply-profile.sh` | `AI_SETUP.md` で宣言したプロファイルに応じてキットを構成（`.example` 有効化等） | `.ai-profile` |
+
+**本リポジトリ固有**（ai-stock-trading の実装・運用に依存する。キットには無い）:
+
+| スクリプト | 役割 | 出力 |
+| --- | --- | --- |
+| `check-consumer-endpoint-names.js` | サービスを跨ぐ MassTransit エンドポイント名（＝RabbitMQ キュー名）の衝突を検査（`--self-test` あり） | 標準出力（レポート） |
+| `validate-runtime-scaffold.js` | 実行環境スキャフォールド（docker-compose / appsettings / `.env.example`）の静的検査 | 標準出力（レポート） |
+| `k8s-local-deploy.sh` / `k8s-local-deploy.test.sh` | ローカル k8s へのデプロイと、その `ast-secrets` 同期の Bash テスト（kubectl スタブ・実クラスタ不要） | — |
+| `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
+| `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
+| `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
 
 ## プロファイルの適用
 
@@ -28,7 +43,13 @@ bash scripts/apply-profile.sh --prune copilot      # Copilot のみ（Claude 系
 node scripts/gen-changelog.js --out CHANGELOG.md
 node scripts/gen-openapi-skeleton.js --src docs/api --out docs/api/openapi.yaml
 node scripts/check-doc-links.js                    # 仕様書の相対リンク切れを検査（再発防止）
+node scripts/check-ai-workflow-config.js           # AI ワークフローのツール許可設定を検査
+node scripts/scripts.test.js                       # 上記スクリプト群の単体テスト
 ```
+
+> `check-ai-workflow-config.js` は、AI レビュー / 実装が「ジョブは成功するのに検証を実行できない」
+> 状態に陥る設定不備を機械的に止める。失敗モードの一覧は `impl-handoff-kit/HOWTO.md` の
+> 付録3（トラブルシューティング）を参照。
 
 ## 自動生成（CI）
 
@@ -37,11 +58,9 @@ node scripts/check-doc-links.js                    # 仕様書の相対リンク
 
 > OpenAPI をコードから生成する場合は `scripts/generate-openapi.sh` を用意する（例: `dotnet swagger tofile ...` / `npx ...`）。未整備でも雛形は通信仕様書から生成される。
 
-## 出典（テンプレート由来の設計）
+## 上流テンプレートとの関係
 
-`check-commit-messages.js` / `gen-changelog.js` / `pr-title.yml` と `commit-allowlist.json` / `changelog-overrides.json`
-の仕組みは、上流テンプレート **impl-handoff-kit** から継承したものである。テンプレート側の設計時に付番された
-Issue 番号・PR 番号・コミット SHA（例: 旧ドキュメントにあった `#60` / `#125` / `#95` / `3d8852f` / `b421761` 等）は
-**本リポジトリには存在しない**。本リポの文書・設定・スクリプトからはそれらの参照を除去済みで、機構の説明は実在する
-ファイル名（各スクリプト・ワークフロー）で行う。将来これらの機構を変更する際は、本リポで解決できる Issue/PR/SHA
-のみを参照すること（Issue #32）。
+これらの仕組みの単一情報源は上流テンプレート **impl-handoff-kit**（`planning/tools/impl-handoff-kit/repo-template/`）である。
+「キット共通」の行を変更するときは、まずキット側へ `/plan-feedback` で環流し、キットが正となる状態を保つこと。
+キット側の文面に他プロジェクト固有の Issue 番号・PR 番号・コミット SHA が含まれる場合は、本リポジトリでは
+実在するファイル名で説明する（本リポジトリで解決できない番号を持ち込まない）。

@@ -30,6 +30,13 @@ on:
   pull_request_review:
     types: [submitted]
 
+# 同一 issue / PR への連続メンションで多重起動しないようにする。
+# レビュー用（claude-code-review）と違い cancel-in-progress は false にする。
+# 実装途中のセッションを打ち切ると、コミット前の変更が失われるため。
+concurrency:
+  group: claude-coding-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   claude:
     # @claude を含むイベントのみ起動する
@@ -39,6 +46,9 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    # ハングした実装セッションが上限まで回り続けるのを防ぐ。
+    # レビュー（20 分）より長めに取る（実装はビルド・テストを伴うため）。
+    timeout-minutes: 45
     permissions:
       contents: write
       pull-requests: write
@@ -120,38 +130,17 @@ jobs:
           #   リポジトリの .claude/settings.json を自動では読み込まないため、ローカル用
           #   settings.json とは別に、CI で使うツールはこの一覧に明示する。
           #   ローカル（.claude/settings.json）と内容を揃えておくと運用が分かりやすい。
-          #   ・ユニバーサルツール（Read〜Bash(node:*)）と GitHub MCP は固定。
-          #   ・スタック別ツール（末尾4行）は ci.example.yml 先頭コメントの対照表を参考に
-          #     使用スタックのコマンドへ書き換えること（例: npm run:* / pytest:* / go test:*）。
+          #   ・ユニバーサルツールと GitHub MCP は固定。
+          #   ・スタック別ツール（一覧末尾の node / dotnet 系）は ci.example.yml 先頭コメントの
+          #     対照表を参考に使用スタックのコマンドへ書き換えること（例: npm run:* / pytest:* / go test:*）。
+          # 【記法・最重要】claude_args は**空白区切りで argv へトークン化**される。
+          # 1 ツール 1 行で書くと `Bash(dotnet test:*)` が `Bash(dotnet` と `test:*)` に割れ、
+          # 空白を含む指定（git 系・dotnet 系・gh 系）が**すべて無効**になる。正しい記法は
+          # 「二重引用符でくくった 1 引数・カンマ区切り」（公式ドキュメント準拠）。
+          # 検証: ジョブログの `SDK options:` の allowedTools 配列が割れていないか目視する。
+          #
+          # 末尾のビルド/テスト系（node / dotnet）がスタック別の可変部分である。
+          # claude-code-review.example.yml の対応箇所と**同じ内容**に保つこと。
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools Read
-            --allowedTools Edit
-            --allowedTools Write
-            --allowedTools Bash(git status:*)
-            --allowedTools Bash(git diff:*)
-            --allowedTools Bash(git log:*)
-            --allowedTools Bash(git add:*)
-            --allowedTools Bash(git commit:*)
-            --allowedTools Bash(git push:*)
-            --allowedTools Bash(git switch:*)
-            --allowedTools Bash(git checkout:*)
-            --allowedTools Bash(git branch:*)
-            --allowedTools Bash(ls:*)
-            --allowedTools Bash(find:*)
-            --allowedTools Bash(rg:*)
-            --allowedTools Bash(cat:*)
-            --allowedTools Bash(mkdir:*)
-            --allowedTools Bash(node:*)
-            --allowedTools Bash(gh issue create:*)
-            --allowedTools mcp__github__pull_request_read
-            --allowedTools mcp__github__get_file_contents
-            --allowedTools mcp__github__issue_read
-            --allowedTools mcp__github__pull_request_review_write
-            --allowedTools mcp__github__add_comment_to_pending_review
-            --allowedTools mcp__github__add_issue_comment
-            --allowedTools mcp__github__push_files
-            --allowedTools Bash(dotnet build:*)
-            --allowedTools Bash(dotnet test:*)
-            --allowedTools Bash(dotnet format:*)
-            --allowedTools Bash(dotnet restore:*)
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(cat:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"

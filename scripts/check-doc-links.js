@@ -34,7 +34,7 @@ function parseArgs(argv) {
     const x = argv[i];
     if (x === '--dir') a.dir = argv[++i];
     else if (x.startsWith('--dir=')) a.dir = x.slice(6);
-    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（本リポ Issue #104。platform #232 と同根）。
+    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（microservices-platform #232・本リポ #104 と同根）。
     // トークン付きで submodule を取得する定期ジョブから使い、取得漏れ（＝planning リンクの検査漏れ）を
     // 黙って通さず可視化する。
     else if (x === '--require-planning') a.requirePlanning = true;
@@ -126,7 +126,7 @@ function collectBroken(fp) {
 
 function main() {
   const a = parseArgs(process.argv.slice(2));
-  // Issue #104（platform #232 と同根）: 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
+  // microservices-platform #232（本リポ #104 と同根）: 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
   // planning リンクは（isBrokenRef により）検査対象外となり破損を見逃すため、ここで明示的に fail する。
   if (a.requirePlanning && !planningPopulated()) {
     console.error(

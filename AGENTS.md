@@ -7,6 +7,7 @@
 - 上流工程リポジトリ `project-planning` で確定した計画書を**実装する**作業リポジトリ。
 - 計画書は `project-planning` の `projects/<name>/00_vision 〜 07_adr` にある（submodule もしくは隣接クローンで参照。既定パス `../project-planning`）。
 - 利用可能な AI（Claude Code サブスク / Anthropic API / GitHub Copilot）と有効化するファイルは `AI_SETUP.md` で宣言する。AI 機能の一部はプロファイル依存である。
+- 成果物の主従（主たる成果物と付随成果物）は README 冒頭・`CLAUDE.md` に明示し、計画書と一致させ続ける。
 
 ## 最優先原則：トレーサビリティ
 

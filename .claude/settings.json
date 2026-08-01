@@ -3,11 +3,14 @@
   "permissions": {
     "allow": [
       "Read",
+      "Grep",
+      "Glob",
       "Edit",
       "Write",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git show:*)",
       "Bash(git add:*)",
       "Bash(git switch:*)",
       "Bash(git checkout:*)",
@@ -26,6 +29,9 @@
       "Bash(git push:*)",
       "Bash(gh issue create:*)",
       "Bash(gh pr create:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh run list:*)",
       "mcp__github__get_file_contents",
       "mcp__github__issue_read",
       "mcp__github__list_issues",
@@ -111,5 +117,5 @@
       }
     ]
   },
-  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する（両者を揃えると運用しやすい）。GitHub MCP のツール名は現行サーバ準拠（issue_read / pull_request_read / pull_request_review_write 等。旧 get_issue / get_pull_request / create_*_review は廃止名）。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。"
+  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する。【重要】許可リストは「本ファイル / claude-coding / claude-code-review」の3系統を手作業で同期する構造であり、実際に乖離した実績がある（レビュー側にビルド/テスト系が無く、AI レビューが検証できず静的読解へ退行した状態が2週間継続）。ビルド/テスト/フォーマットのコマンドを増減したときは必ず3系統すべてを更新すること。とくにレビュー側から実行系を落とすと、レビューは毎回「実行できませんでした」という無価値な指摘を返すようになる。GitHub MCP のツール名は現行サーバ準拠（issue_read / pull_request_read / pull_request_review_write 等。旧 get_issue / get_pull_request / create_*_review は廃止名）。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。"
 }

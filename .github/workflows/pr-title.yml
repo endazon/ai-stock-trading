@@ -1,18 +1,20 @@
-# PR タイトル（＝スカッシュマージ後件名）の規約チェック（Issue #129・再発防止）。
+# PR タイトル（＝スカッシュマージ後件名）の規約チェック。
 #
 # 背景: ci.yml の commit-messages ジョブは PR コミット（base..HEAD）を検査するが、スカッシュ
-# マージで develop に載る件名は「PR タイトル + (#番号)」であり、その範囲に含まれず未検査だった。
-# 中間コミットは force push 禁止のため事後修正できず、PR タイトル検査が最後の砦にあたる。
-# 本ワークフローは PR タイトルを規約 `種別(起点ID): 要約` に照合し、違反ならマージ前に失敗させる。
+# マージで統合ブランチに載る件名は「PR タイトル + 半角スペース + (#番号)」であり、その範囲に
+# 含まれず未検査になる。中間コミットは force push 禁止のため事後修正できないため、PR タイトル
+# 検査が最後の砦にあたる。本ワークフローは PR タイトルを規約 `種別(起点ID): 要約` に照合し、
+# 違反ならマージ前に CI を失敗させる。
 #
-# 注: 本ファイルは以前 security.yml の完全な複製になっており、PR タイトル検査が名ばかりの状態だった
-# （Issue #129 / PR #123 の claude-review で検出）。検査ロジックは scripts/check-commit-messages.js の
-# 単一件名モード（--title 引数 / PR_TITLE 環境変数 → validateSubject を再利用）に既に実装済みで、
-# scripts/scripts.test.js に単体テストもある。本ファイルはその呼び出し配線のみを担う（規約の単一情報源を
-# 二重実装しない）。
+# 検査ロジックは scripts/check-commit-messages.js の単一件名モード（--title 引数 / PR_TITLE
+# 環境変数 → validateSubject を再利用）に実装済みで、scripts/scripts.test.js に単体テストもある。
+# 本ファイルはその呼び出し配線のみを担う（規約の単一情報源を二重実装しない）。
 #
 # edited を含めることで、PR タイトルを後から編集した場合にも再検査する。
 # bot 作成 PR（dependabot 等）は commit-messages ジョブと同方針で除外する。
+#
+# このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
+
 name: PR Title
 
 on:
@@ -30,6 +32,7 @@ permissions:
 jobs:
   pr-title:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # bot 作成 PR は規約対象外（check-commit-messages.js の BOT_AUTHORS と同方針）。
     if: github.event.pull_request.user.type != 'Bot'
     steps:

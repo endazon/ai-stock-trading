@@ -109,7 +109,7 @@ function commits(range) {
     const m = subject.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.+)$/);
     if (m) return { hash, type: m[1].toLowerCase(), scope: m[2] || '', desc: m[4] };
     return { hash, type: 'other', scope: '', desc: subject };
-  }).map((c) => applyOverride(c)).filter(Boolean); // 誤記コミットの補正/除外
+  }).map(applyOverride).filter(Boolean); // 誤記コミットの補正/除外（Issue #60）
 }
 
 function renderSection(title, list) {

@@ -7,9 +7,9 @@ set -u
 
 log() { printf '[setup] %s\n' "$1"; }
 
-# --- C# / .NET ---
-# ソリューションを自動発見して復元する（kit 雛形と同型・planning PR #21。ルート単一 .sln/.slnx でも
-# ユニットレイアウト backend/backend.slnx でも編集不要で動く）。
+# --- C# / .NET（例・既定） ---
+# ソリューションを自動発見して復元する（ルート単一 .sln/.slnx でも、ユニット第一構成
+# `src/<unit>/backend/backend.slnx` でも編集不要で動く）。
 if command -v dotnet >/dev/null 2>&1; then
   restored=0
   for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
