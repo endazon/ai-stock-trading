@@ -186,6 +186,59 @@ function formatDenials({ count, byTool, itemized }) {
   );
 }
 
+/**
+ * 拒否の内訳を GitHub の実行サマリ（$GITHUB_STEP_SUMMARY）へ書く。
+ *
+ * 背景（issue #155）: 拒否の内訳を知るにはジョブログを開く必要があり、**人が読む場所には
+ * 出ていなかった**。実運用で、レビューが「実行できなかった検証」を ✅ として報告し、
+ * 拒否への言及を本文に 1 行も書かなかった事例が出た。結論（レビュー本文）と、その結論が
+ * どこまで裏付けられているか（拒否の内訳）が別々の場所にあると、読み手には見分けが付かない。
+ *
+ * ステップサマリは PR の Checks 画面から 1 クリックで開ける。スティッキーコメント本体は
+ * アクションが所有しており、このステップからは安全に書き換えられないため、まずここへ出す。
+ * 失敗しても本処理は続ける（可視化のために検査を落とすのは本末転倒である）。
+ */
+function writeStepSummary({ count, byTool, itemized }) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return false;
+  const lines = [
+    '## ⚠️ ツールの権限拒否を検出',
+    '',
+    `AI の実行中に **${count} 件**の権限拒否が発生した。CI には承認する人間が居ないため、`,
+    'これらの作業は**実行されていない**。',
+    '',
+  ];
+  if (itemized) {
+    lines.push('| 拒否されたツール | 件数 |', '| --- | --- |');
+    for (const [name, n] of [...byTool.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+      lines.push(`| \`${name}\` | ${n} |`);
+    }
+  } else {
+    lines.push('実行ログにツール名が残っていないため内訳を特定できない。');
+  }
+  lines.push(
+    '',
+    '### 読むときの注意',
+    '',
+    'AI の出力に「実測した」「✅ 確認済み」とある項目が、**実際には実行できていない**可能性がある。',
+    '上記のツールを要する主張は、裏付けが取れているか個別に確認すること。',
+    '',
+    '### 対処',
+    '',
+    '1. 必要なツールを `claude_args` の `--allowedTools` に加える',
+    '2. そのツールを使わせないようプロンプト側で作業手順を狭める',
+    '',
+    '放置すると、ジョブは success のまま成果物だけが欠けた状態が続く。',
+    ''
+  );
+  try {
+    fs.appendFileSync(file, lines.join('\n'));
+    return true;
+  } catch (e) {
+    return false; // 可視化に失敗しても検査自体は続ける
+  }
+}
+
 /** 検証器自体の自己試験（CI で毎回実行し、検査ロジックの退行を防ぐ）。 */
 function selfTest() {
   const denial = 'Claude requested permissions to use Task, but you haven\'t granted it yet.';
@@ -302,6 +355,39 @@ function selfTest() {
       process.stderr.write(`  NG  ${c.name}\n      got=${JSON.stringify({ ...r, byTool: [...r.byTool] })}\n`);
     }
   }
+  // issue #155: 内訳が「人が読む場所」へ出ること。
+  {
+    const osq = require('os');
+    const pathq = require('path');
+    const tmp = pathq.join(fs.mkdtempSync(pathq.join(osq.tmpdir(), 'pdsum-')), 'summary.md');
+    const prev = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = tmp;
+    const wrote = writeStepSummary(collectDenials([
+      { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git ls-tree HEAD' } }] },
+    ]));
+    const body = fs.existsSync(tmp) ? fs.readFileSync(tmp, 'utf8') : '';
+    if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = prev;
+
+    const okSummary = wrote && body.includes('Bash(git ls-tree)') && body.includes('実測');
+    if (okSummary) process.stdout.write('  ok  拒否の内訳を実行サマリへ書く\n');
+    else {
+      failed++;
+      process.stderr.write(`  NG  拒否の内訳を実行サマリへ書く\n      body=${JSON.stringify(body.slice(0, 200))}\n`);
+    }
+
+    // 環境変数が無い環境（ローカル実行）では何もしない＝落ちない。
+    const prev2 = process.env.GITHUB_STEP_SUMMARY;
+    delete process.env.GITHUB_STEP_SUMMARY;
+    const noop = writeStepSummary({ count: 1, byTool: new Map(), itemized: false }) === false;
+    if (prev2 !== undefined) process.env.GITHUB_STEP_SUMMARY = prev2;
+    if (noop) process.stdout.write('  ok  GITHUB_STEP_SUMMARY 未設定では何もしない\n');
+    else {
+      failed++;
+      process.stderr.write('  NG  GITHUB_STEP_SUMMARY 未設定では何もしない\n');
+    }
+  }
+
   // 実運用で起きた形（17 件・内訳不明）がメッセージに載ることを確かめる。
   const msg = formatDenials(collectDenials([{ type: 'result', permission_denials_count: 17 }]));
   if (msg.includes('17 件')) process.stdout.write('  ok  件数がメッセージに載る\n');
@@ -314,7 +400,8 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 1} 件すべて合格\n`);
+  // +3 は、上のループに含まれない個別検査（実行サマリ 2 件・件数メッセージ 1 件）。
+  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 3} 件すべて合格\n`);
   return 0;
 }
 
@@ -355,6 +442,9 @@ function main(argv) {
     process.exit(0);
   }
 
+  // 人が読む場所（実行サマリ）へも出す。ジョブログを開かないと内訳が判らない状態を残さない。
+  writeStepSummary(denials);
+
   const message = formatDenials(denials);
   if (process.env.ALLOW_PERMISSION_DENIALS === '1') {
     warn(`${message}（ALLOW_PERMISSION_DENIALS=1 のため失敗させない）`);
@@ -368,4 +458,12 @@ if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf, selfTest };
+module.exports = {
+  parseEvents,
+  collectDenials,
+  formatDenials,
+  looksLikeDenial,
+  labelOf,
+  writeStepSummary,
+  selfTest,
+};

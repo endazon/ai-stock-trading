@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜16 巡）
+title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜17 巡）
 type: work
 status: review
 related_ids: [NFR]
@@ -16,7 +16,7 @@ related_specs:
   - ../../.claude/rules/traceability.md
 ---
 
-# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜16 巡）
+# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜17 巡）
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -32,13 +32,17 @@ related_specs:
 前回の同期（[#322](https://github.com/endazon/ai-stock-trading/pull/322)、pin `9cd3499`）以降、計画リポジトリで
 impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジトリへ取り込む。
 
-本作業は 3 巡に分かれる。起票 → 反映 → 取り込みが同日中に 2 往復したためである。
+本作業は 4 巡に分かれる。起票 → 反映 → 取り込みが同日中に 3 往復したためである。
 
 | 巡 | pin | 取り込んだ計画側 PR | 本リポから起票した指摘 |
 | --- | --- | --- | --- |
 | 第 14 巡 | `0847687` | [#145](https://github.com/endazon/project-planning/pull/145)（権限拒否の可視化） | [#148](https://github.com/endazon/project-planning/issues/148) / [#149](https://github.com/endazon/project-planning/issues/149) |
 | 第 15 巡 | `3b0deb2` | [#147](https://github.com/endazon/project-planning/pull/147)（読み取り系 git）＋ [#150](https://github.com/endazon/project-planning/pull/150)（#148 / #149 の反映） | [#152](https://github.com/endazon/project-planning/issues/152) / [#153](https://github.com/endazon/project-planning/issues/153) |
-| 第 16 巡 | `e448f33` | [#154](https://github.com/endazon/project-planning/pull/154)（#152 / #153 の反映） | なし（キット側の残課題は無くなった） |
+| 第 16 巡 | `e448f33` | [#154](https://github.com/endazon/project-planning/pull/154)（#152 / #153 の反映） | なし（この時点ではキット側の残課題は無かった） |
+| 第 17 巡 | `cc4a826` | [#156](https://github.com/endazon/project-planning/pull/156) ＋ [#157](https://github.com/endazon/project-planning/pull/157)（#155 の反映） | なし |
+
+第 17 巡の起点である [#155](https://github.com/endazon/project-planning/issues/155) は、**第 16 巡までを載せた PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) の CI で
+本作業自身が取り込んだ検査器が捕捉した問題**である（後述「PR #328 の AI レビュー結果」）。
 
 第 14 巡が解決している失敗モードは次のとおり。
 
@@ -57,7 +61,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33`）
+  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33` → `cc4a826`）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -151,6 +155,28 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 退行なのに下限検査では合格する。この形は同期前後の比較でしか捉えられない。
 併せて HOWTO Part B-5 に「**バージョンは高い方を残す**（キットのテンプレートで上書きしない）」の原則が入った。
 
+### 第 17 巡（pin `cc4a826`）で追加した反映
+
+計画側 PR [project-planning#156](https://github.com/endazon/project-planning/pull/156) / [#157](https://github.com/endazon/project-planning/pull/157)（issue [#155](https://github.com/endazon/project-planning/issues/155)＝**PR #328 の CI で捕捉した問題**）の反映。
+すべてキットからそのまま採用し、**バイト一致**を確認した（本リポジトリ側の追加判断は無し）。
+
+| ファイル | 内容 |
+| --- | --- |
+| `.claude/settings.json` | `Bash(git ls-tree:*)` / `Bash(git submodule status:*)` / `Bash(git fetch:*)` / `Bash(head:*)` / `Bash(tail:*)` の 5 件を追加（3 系統を揃えるため） |
+| `.github/workflows/claude-code-review.yml` | ① `--allowedTools` に上記 5 件を追加 ② `prompt:` に**【検証の誠実性・最重要】節**を新設 ③ 出力形式に **`### 🔍 実行できなかったこと`** を必須節として追加 |
+| `scripts/check-permission-denials.js` | 拒否の内訳を **`$GITHUB_STEP_SUMMARY`**（PR の Checks 画面から 1 クリック）へも出力。自己試験 15 → 17 件 |
+| `scripts/scripts.test.js` | 上記のテストを追加（108 → 109 件） |
+| `scripts/README.md` | `check-permission-denials.js` の行を更新（出力欄が「標準出力＋実行サマリ」に） |
+
+**プロンプトの誠実性節**が本巡の中心である。「✅ と書けるのは**このセッション内で実際にコマンドを
+実行し出力を見た項目だけ**」「未検証は理由付きで明記する（未検証と書くことは減点ではない。嘘の ✅ だけが問題）」
+を明示し、さらに**原理的に実行できない 2 類型**（環境変数の前置き形・ファイルを書き換える検証）を
+名指しして「試みる必要はなく、必要なら未検証と書け」と指示する。
+
+`claude-coding.example.yml` はキット側で無変更のため、本リポジトリでも変更していない
+（`check-ai-workflow-config.js` のドリフト検査対象は言語別の実行ツールであり、
+`head` / `tail` / `git fetch` は該当しない。実測でも不備 0 件）。
+
 ### CI ジョブの追加は不要
 
 `check-permission-denials.js` は `ci.yml` のジョブではなく **AI ワークフロー 2 本の末尾ステップ**として動く。
@@ -159,14 +185,14 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 ## 受け入れ基準
 
-- [x] `planning` submodule が `origin/main` の先端（`e448f33`）を指す
+- [x] `planning` submodule が `origin/main` の先端（`cc4a826`）を指す
 - [x] `repo-template/` と本リポジトリの残差分が、判断ルールで説明できるものだけになる
 - [x] キット由来のファイルがすべてキットと**バイト一致**である（`cmp` で全 102 ファイルを機械照合。
       残差分は「固有の実コンテンツ」「置換点」だけ）
-- [x] `node scripts/check-permission-denials.js --self-test` が合格する（15 件）
+- [x] `node scripts/check-permission-denials.js --self-test` が合格する（17 件）
 - [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（22 件・退行 0・warn 0）
 - [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（23 件・不備 0 件。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0）
-- [x] `node scripts/scripts.test.js` が全件合格する（108 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
+- [x] `node scripts/scripts.test.js` が全件合格する（109 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
 - [x] `node scripts/check-doc-links.js` の結果が pin 前進の前後で不変である（既存 20 件のみ・新規破損なし）
 - [x] `dotnet build backend/backend.slnx` が通る（コード無変更の回帰確認）
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
@@ -192,15 +218,15 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 | 検証 | 結果（最終＝第 15 巡取り込み後） |
 | --- | --- |
-| `check-permission-denials.js --self-test` | ✅ 15 件合格（第 14 巡は 11 件） |
+| `check-permission-denials.js --self-test` | ✅ 17 件合格（第 14 巡 11 → 第 15 巡 15 → 第 17 巡 17） |
 | `check-action-versions.js --self-test` | ✅ 22 件合格（第 15 巡は 14 件） |
 | `check-action-versions.js --dir .github/workflows --compare-with-ref origin/develop`（CI と同条件・11 アクション） | ✅ 退行なし・warn 0（companion 未追跡のあいだは `warning:` が出ることも実測） |
 | `check-ai-workflow-config.js --self-test` | ✅ 23 件合格（第 14 巡は 19 件） |
 | `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0 |
-| `scripts.test.js`（ローカル） | ✅ 108 件合格（前巡 85 → 第 14 巡 92 → 第 15 巡 103 → 第 16 巡 108） |
-| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 108 件合格 |
+| `scripts.test.js`（ローカル） | ✅ 109 件合格（前巡 85 → 92 → 103 → 108 → 第 17 巡 109） |
+| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 109 件合格 |
 | `dotnet build backend/backend.slnx` | ✅ 0 警告 0 エラー |
-| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..e448f33 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
+| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..cc4a826 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
 
 **新ステップの変異テスト**（合成した `execution_file` を与えて実測）
 
@@ -221,6 +247,16 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 2 系統が同時に発火することを確認した。仮に将来キットの下限が本リポより先に進まれても、
 ②（統合ブランチとの比較）は独立に効く。
+
+**（第 17 巡）実行サマリ出力の実測**。`GITHUB_STEP_SUMMARY` を指定して実行した。
+
+| 条件 | 実行サマリ | 終了コード |
+| --- | --- | --- |
+| 拒否 3 件 | 見出し・件数表に加え「**AI の出力に『実測した』『✅ 確認済み』とある項目が、実際には実行できていない可能性がある**」という読み手向けの注意を出力 | **1** |
+| 拒否 0 件 | **何も書かない**（緑のときにノイズを残さない） | 0 |
+
+PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) では同じ趣旨の注意を手作業で PR コメントへ投稿したが、
+本巡以降は検査器が自動で出す。
 
 ## 計画書との差異
 
@@ -373,8 +409,18 @@ AI レビューの指摘は 🔴 0 / 🟡 0 / 🟢 2 で、いずれも「実害
 
 なお `develop` にブランチ保護は無く、`claude-review` は必須チェックではないためマージは阻害されない。
 
+#### #155 は第 17 巡で反映・取り込み済み
+
+計画側 PR [project-planning#156](https://github.com/endazon/project-planning/pull/156) / [#157](https://github.com/endazon/project-planning/pull/157) で、提案した 3 系統がすべて反映された。
+
+| 本リポの提案 | 反映 |
+| --- | --- |
+| 1. プロンプトで「✅ はこのセッションで実行し出力を見た項目だけ」「未検証は明記」「末尾に実行できなかったこと節」 | **採用**（【検証の誠実性・最重要】節と `### 🔍 実行できなかったこと` の必須節） |
+| 2. 拒否の内訳を人が読む場所へ | **採用**（`$GITHUB_STEP_SUMMARY`。PR コメントで手作業投稿した「読むときの注意」も検査器の出力に組み込まれた） |
+| 3. 許可漏れ（`git ls-tree` / `git submodule status` / `head` / `tail` / `git fetch`）と、環境変数前置き・書き込み検証はプロンプトで抑える | **採用**（`--allowedTools` と `.claude/settings.json` の 3 系統に反映。環境変数前置き・書き込み検証は「原理的に実行できない」として名指しで抑止） |
+
+これで第 14〜17 巡に本リポから起票した 5 件（#148 / #149 / #152 / #153 / #155）はすべて反映済みとなった。
+
 ## 未決事項
 
-- [project-planning#155](https://github.com/endazon/project-planning/issues/155) の採否は計画側の `/triage-feedback` の判断に委ねる。
-  反映されたら次巡（第 17 巡）で取り込む。
-- 第 14〜16 巡で起票した 4 件（#148 / #149 / #152 / #153）はいずれも計画側で反映済み。
+- なし。起票した 5 件はいずれも計画側で反映され、本作業で取り込み済みである。

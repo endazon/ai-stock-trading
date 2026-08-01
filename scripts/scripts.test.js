@@ -175,6 +175,28 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 
   ok('Bash 以外はツール名のまま', () => assert.strictEqual(labelOf('Task', {}), 'Task'));
 
+  // issue #155: 内訳がジョブログにしか無いと、レビュー本文の「✅ 実測」との突き合わせができない。
+  ok('拒否の内訳を実行サマリ（人が読む場所）へ書く', () => {
+    const { writeStepSummary } = require('./check-permission-denials.js');
+    const fsw = require('fs');
+    const patw = require('path');
+    const osw = require('os');
+    const tmp = patw.join(fsw.mkdtempSync(patw.join(osw.tmpdir(), 'pdsum-')), 'summary.md');
+    const prev = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = tmp;
+    try {
+      assert.strictEqual(writeStepSummary(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git ls-tree HEAD' } }] },
+      ])), true);
+      const body = fsw.readFileSync(tmp, 'utf8');
+      assert.match(body, /Bash\(git ls-tree\)/);
+      assert.match(body, /実測/); // 「実測したという主張を疑え」の注意書き
+    } finally {
+      if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = prev;
+    }
+  });
+
   ok('ツール名が判らなくても件数は必ず報告する（実運用の 17 件の形）', () => {
     const r = collectDenials([{ type: 'result', permission_denials_count: 17 }]);
     assert.strictEqual(r.count, 17);
