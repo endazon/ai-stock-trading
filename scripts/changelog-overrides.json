@@ -1,4 +1,14 @@
 {
-  "_note": "gen-changelog.js が参照するコミット補正マップ。git 履歴は書き換えず、CHANGELOG 生成時のみ誤記コミットを補正/除外する。overrides は本リポジトリの実在コミットのみを対象とし、各エントリに hash（短縮 SHA 可・前方一致）と reason を必須とする。action は 'remap'（type/scope/desc を差し替え）または 'exclude'（CHANGELOG から除外）。現時点で補正対象のコミットは無いため空とする。書式例（コメント）: {\"hash\":\"<短縮SHA>\",\"action\":\"remap\",\"scope\":\"P0\",\"desc\":\"...\",\"reason\":\"件名の起点 ID 誤記を生成物のみ是正。履歴は不変。\"}。この仕組みは上流テンプレート impl-handoff-kit 由来（設計上の Issue 番号は本リポには存在しない。scripts/README.md『出典』参照）。",
+  "_note": "gen-changelog.js が参照するコミット補正マップ。git 履歴は書き換えず、CHANGELOG 生成時のみ誤記コミットを補正/除外する。hash は短縮 SHA でも可（前方一致で照合）。テンプレート配布時は空であり、各リポジトリで実際に必要になった分だけを追加する。他リポジトリの SHA を引き継がないこと（履歴に実在しない『幻 SHA』が残るうえ、hash は前方一致のため 7 桁プレフィックスが偶然一致すると、無関係なコミットの件名を CHANGELOG 上で他プロジェクトの説明文へ差し替えてしまう）。",
+  "_actions": {
+    "remap": "誤った起点 ID・種別・要約を CHANGELOG 上でのみ差し替える。type / scope / desc を任意に指定でき、省略した項目は元コミットの値を保つ。",
+    "exclude": "CHANGELOG に載せるべきでないコミット（試験的・巻き戻し前提の作業等）を生成物から除外する。git 履歴には残るため追跡可能性は失われない。"
+  },
+  "_example": {
+    "hash": "0123456",
+    "action": "remap",
+    "scope": "P0",
+    "reason": "なぜ元の起点 ID が誤記なのか、なぜ type は変えないのか等の判断根拠を必ず残す。"
+  },
   "overrides": []
 }

@@ -46,7 +46,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `bf94477`。作業中に計画側 #98 がマージされたため kit は 2 度取り込み、その後 pin だけ tip へ追従した）
+  - `planning` submodule の pin 前進（`10d8ce2` → `35b830a`。作業中に計画側で #98 / #105 / #107 が続けてマージされたため計 3 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -118,7 +118,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`bf94477`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`35b830a`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -210,6 +210,37 @@ TypeError: overrides.find is not a function
 なお planning の tip は作業中にさらに 4 コミット進んだが、いずれも計画リポ自身の workflow への
 Dependabot 更新で `tools/impl-handoff-kit/` には無変更である（差分ファイル一覧が pin 前後で完全一致することを確認）。
 pin だけ tip（`bf94477`）へ追従させた。
+
+### 第 4 巡（pin `35b830a`）— 第 2・3 巡の指摘はすべて反映済み。残り 1 件を起票
+
+計画側 PR #105（issue #103 / #104）と PR #107（issue #106）で、第 2・3 巡の指摘が**全件反映**された。
+反映内容を取り込んだ結果、キットとの残差分は「本リポ固有の実コンテンツ」と
+「HOWTO Part B-5 の置換点」だけになった（`scripts.test.js` はキットに対し純粋な追加のみ＝ `+120/-0`）。
+
+反映に伴って本リポ側で追随したもの:
+
+- `scripts/check-commit-messages.js` — キット版を採用し、`PLAN_PROJECT` の値だけ `ai-stock-trading` を維持
+- `scripts/gen-changelog.js` / `changelog-overrides.json` / `check-doc-links.js` / `validate-pipeline-config.js` /
+  `.claude/rules/traceability.md` / `copilot-setup-steps.yml` — キット版をそのまま採用
+- `ci.yml` の `pipeline-config` ジョブ — キットの `PIPELINE_CONFIG` 環境変数方式へ寄せ、値に本リポの
+  `deploy/helm/ai-stock-trading/files/pipeline.json` を設定（採用する任意コンポーネント）
+- `docs/ai-workflow.md` — キットの「必須チェックに指定する際の注意」節を採用し、本リポの実例
+  （`helm.yml` が `paths:` フィルタ付きのため必須チェックにしない）を 1 行だけ残す
+- `scripts.test.js` — キットが取り込んだ 4 テスト（名前空間 3 件・gen-changelog 実行 1 件）が
+  本リポ側と重複したため、本リポ側の複製を削除した
+
+**[🟡 残り 1 件・[project-planning#109](https://github.com/endazon/project-planning/issues/109)]** キットの `PLAN_PROJECT` 配布既定が `'<project-name>'` というプレースホルダで、
+そのディレクトリは存在しないため**コピーしただけの状態では必ず全走査へ fail-open する**＝
+#103 指摘 2 の修正が既定で無効になる。しかも警告が無いため気付けない。実測:
+
+| `PLAN_PROJECT` | 実在集合 | `ADR-0019`（他プロジェクト固有）を実在扱いするか |
+| --- | --- | --- |
+| `<project-name>`（配布既定） | 32 | する（誤受理） |
+| `ai-stock-trading` | 15 | しない |
+
+複数プロジェクトが見えている構成でのみ実害があり、本リポは値を設定済みのため現時点の実害は無い。
+キット側で fail-open を可視化（stderr 警告・終了コードは変えない）するのが筋のため、
+本リポでは独自実装せず起票のみとした。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

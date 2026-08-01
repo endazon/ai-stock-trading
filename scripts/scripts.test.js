@@ -2,9 +2,8 @@
 'use strict';
 /*
  * scripts.test.js
- * check-commit-messages.js / gen-changelog.js ほか scripts/ 配下の主要ロジックの単体テスト。
- * Node 標準モジュールのみ（assert / child_process）。実行: node scripts/scripts.test.js
- * 一部の allowlist 整合テストは best-effort で git を用いる（不在・浅いクローン時はスキップ）。
+ * check-commit-messages.js / gen-changelog.js の主要ロジックの単体テスト。
+ * 外部依存ゼロ（Node 標準 assert のみ）。実行: node scripts/scripts.test.js
  */
 const assert = require('assert');
 const { execSync } = require('child_process');
@@ -218,9 +217,9 @@ ok('allowlist は規約に準拠した件名を無意味に除外していない
 // --- gen-changelog: hashMatches / applyOverride ------------------------------
 
 ok('hashMatches は短縮 SHA を前方一致', () => {
-  assert.strictEqual(hashMatches('b4217619abc', 'b421761'), true);
-  assert.strictEqual(hashMatches('b421761', 'b4217619abc'), true);
-  assert.strictEqual(hashMatches('deadbeef', 'b421761'), false);
+  assert.strictEqual(hashMatches('abc1234def', 'abc1234'), true);
+  assert.strictEqual(hashMatches('abc1234', 'abc1234def'), true);
+  assert.strictEqual(hashMatches('deadbeef', 'abc1234'), false);
 });
 
 // override は第 2 引数で注入する（実データ＝特定プロジェクトの実コミットに依存しない）。
@@ -257,6 +256,56 @@ ok('未一致コミットは素通し', () => {
   assert.deepStrictEqual(applyOverride(c, []), c);
 });
 
+// 単体テストは applyOverride を常に 2 引数で呼ぶため、**呼び出し側の形**を一切カバーしない。
+// 実際に `.map(applyOverride)` と point-free で書かれていると、map が渡す index（数値）が
+// 第 2 引数 overrides を上書きし、1 件目から TypeError で CHANGELOG 生成が全面的に壊れる。
+// 原理的に単体テストでは検出できないため、実行して確かめる。
+ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側の回帰）', () => {
+  if (!inGitWorkTree) return; // best-effort
+  const os = require('os');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const out = pathx.join(fsx.mkdtempSync(pathx.join(os.tmpdir(), 'gc-')), 'CHANGELOG.md');
+  execSync(
+    `node ${JSON.stringify(pathx.join(__dirname, 'gen-changelog.js'))} --out ${JSON.stringify(out)}`,
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  assert.ok(fsx.readFileSync(out, 'utf8').trim().length > 0, '生成された CHANGELOG が空');
+});
+
+// --- check-commit-messages: 計画 ADR の名前空間限定（他プロジェクトの ID を誤受理しない） ---
+
+{
+  const os = require('os');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const { loadExistingPlanAdrIds } = require('./check-commit-messages.js');
+
+  // 番号帯が重複する 2 プロジェクトを合成する（実データに依存させない）。
+  const root = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'plan-'));
+  const mk = (proj, files) => {
+    const d = pathx.join(root, proj, '07_adr');
+    fsx.mkdirSync(d, { recursive: true });
+    for (const f of files) fsx.writeFileSync(pathx.join(d, f), '');
+  };
+  mk('own-project', ['ADR-0001_a.md', 'ADR-0002_b.md']);
+  mk('other-project', ['ADR-0001_x.md', 'ADR-0009_y.md']);
+
+  ok('計画 ADR の実在集合は自プロジェクトの名前空間に限定される', () => {
+    const ids = loadExistingPlanAdrIds(root, 'own-project');
+    assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002']);
+    assert.ok(!ids.has('ADR-0009'), '他プロジェクトにしか無い ID を実在として受理してはならない');
+  });
+
+  ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
+    const ids = loadExistingPlanAdrIds(root, 'no-such-project');
+    assert.deepStrictEqual([...ids].sort(), ['ADR-0001', 'ADR-0002', 'ADR-0009']);
+  });
+
+  ok('planning 未 populate では null（実在性検査を skip）', () =>
+    assert.strictEqual(loadExistingPlanAdrIds(pathx.join(root, 'missing'), 'own-project'), null));
+}
+
 // --- check-doc-links: submodule 判定の一般化 ---------------------------------
 
 {
@@ -282,68 +331,6 @@ ok('未一致コミットは素通し', () => {
 }
 
 // ==== ここから本リポジトリ固有のテスト（キットには無いスクリプト・呼び出し側の回帰） ====
-
-// --- check-commit-messages: 計画 ADR の名前空間スコープ ---------------------
-// 計画 ID はプロジェクトごとに独立採番のため、`projects/` 配下を全走査して和集合を作ると
-// 番号帯が丸ごと重複し、他プロジェクトにしか存在しない ID まで「実在」として受理してしまう。
-// loadExistingPlanAdrIds は自プロジェクト（PLAN_PROJECT）の名前空間だけを実在集合とする。
-{
-  const fsNs = require('fs');
-  const osNs = require('os');
-  const pathNs = require('path');
-  const { loadExistingPlanAdrIds: loadNs } = require('./check-commit-messages.js');
-
-  // 2 プロジェクトが重複する番号帯を持つ planning/projects を合成する。
-  const root = fsNs.mkdtempSync(pathNs.join(osNs.tmpdir(), 'plan-ns-'));
-  const mk = (proj, files) => {
-    const d = pathNs.join(root, proj, '07_adr');
-    fsNs.mkdirSync(d, { recursive: true });
-    for (const f of files) fsNs.writeFileSync(pathNs.join(d, f), '');
-  };
-  mk('ai-stock-trading', ['ADR-0001_a.md', 'ADR-0015_o.md']);
-  mk('microservices-platform', ['ADR-0001_x.md', 'ADR-0019_y.md', 'ADR-0032_z.md']);
-
-  ok('計画 ADR の実在集合は自プロジェクトの名前空間に限定される', () => {
-    const ids = loadNs(root);
-    assert.ok(ids, '集合が取れるべき');
-    assert.ok(ids.has('ADR-0015'), '自プロジェクトの ADR は実在扱い');
-    assert.ok(!ids.has('ADR-0019'), '他プロジェクト固有の ADR を実在扱いしてはならない');
-    assert.ok(!ids.has('ADR-0032'), '他プロジェクト固有の ADR を実在扱いしてはならない');
-  });
-
-  ok('自プロジェクトを解決できない構成では全走査へ退避する（fail-open）', () => {
-    const other = fsNs.mkdtempSync(pathNs.join(osNs.tmpdir(), 'plan-ns2-'));
-    fsNs.mkdirSync(pathNs.join(other, 'some-other-project', '07_adr'), { recursive: true });
-    fsNs.writeFileSync(pathNs.join(other, 'some-other-project', '07_adr', 'ADR-0007_q.md'), '');
-    const ids = loadNs(other);
-    assert.ok(ids && ids.has('ADR-0007'), '自プロジェクト不在なら従来どおり全走査する');
-  });
-
-  ok('planning 未 populate では null（実在性検査を skip）', () => {
-    assert.strictEqual(loadNs(pathNs.join(root, 'does-not-exist')), null);
-  });
-}
-
-
-// gen-changelog.js を実際に起動して CHANGELOG が生成できること（呼び出し側の回帰）。
-// applyOverride に overrides を注入できるよう第 2 引数を足した結果、呼び出し側を point-free の
-// `.map(applyOverride)` にすると index（数値）が overrides を上書きして全件 TypeError になる。
-// applyOverride 単体のテストではこの形を検出できないため、実行して確認する。
-ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側の回帰）', () => {
-  if (!inGitWorkTree) {
-    process.stdout.write('    ↳ skip: git work tree ではないため実行検証を省略\n');
-    return;
-  }
-  const fsGc = require('fs');
-  const osGc = require('os');
-  const pathGc = require('path');
-  const out = pathGc.join(fsGc.mkdtempSync(pathGc.join(osGc.tmpdir(), 'gc-')), 'CHANGELOG.md');
-  execSync(
-    `node ${JSON.stringify(pathGc.join(__dirname, 'gen-changelog.js'))} --out ${JSON.stringify(out)}`,
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-  );
-  assert.ok(fsGc.readFileSync(out, 'utf8').trim().length > 0, '生成された CHANGELOG が空');
-});
 
 // --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
 const fsDl = require('fs');

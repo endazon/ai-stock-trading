@@ -197,32 +197,36 @@ function loadExistingIadrIds(dir = path.join(__dirname, '..', 'docs', 'adr')) {
 }
 
 // 【置換点】本リポジトリが主に実装する計画プロジェクト名（`planning/projects/<name>/`）。
-// `.claude/rules/traceability.md` の規約により、裸（無修飾）の `ADR-xxxx` はこの名前空間を指す。
-// 他プロジェクトの ID は `<PROJ>/ADR-xxxx` と修飾して書くため、実在性検査の対象外である。
+// 裸（無修飾）の `ADR-xxxx` はこの名前空間を指す（.claude/rules/traceability.md の規約）。
+// 環境変数 PLAN_PROJECT で上書きできる（テスト・複数構成の検証用）。
 const PLAN_PROJECT = process.env.PLAN_PROJECT || 'ai-stock-trading';
 
 /**
  * 計画 ADR（planning submodule の `projects/<name>/07_adr/`）の実在番号集合。
  * submodule 未 populate なら null（skip）。
  *
- * **自プロジェクトの名前空間だけを実在集合とする。** 計画 ID はプロジェクトごとに独立採番のため、
- * `projects/` 配下を全走査して和集合を作ると番号帯が丸ごと重複し、他プロジェクトにしか存在しない
- * ID まで「実在」として受理してしまう（実測: ai-stock-trading は ADR-0001〜0015、
- * microservices-platform は ADR-0001〜0032 で、和集合では MSP 固有の ADR-0019 / ADR-0032 が
- * 素通りした）。それでは本検査の目的である「実体と別内容の ADR を名乗る件名の混入検出」が働かない。
- *
- * 自プロジェクトのディレクトリを解決できない構成（PLAN_PROJECT の設定漏れ・別レイアウト）では、
- * 従来どおり全プロジェクトを走査する（fail-open。検査を過剰に厳しくして CI を落とさない）。
+ * **自プロジェクトの名前空間に限定する**こと。計画 ID はプロジェクトごとに独立採番のため
+ * 番号帯が丸ごと重複する。全プロジェクトの和集合を実在集合にすると、他プロジェクトにしか
+ * 存在しない ID まで「実在」として受理され、本検査の目的（改番時に PR タイトルの追随が
+ * 漏れて実体と別内容の ADR を名乗る事故の検出）が働かなくなる。
+ * 自プロジェクトを解決できない構成では、従来どおり全走査へ退避する（fail-open）。
  */
-function loadExistingPlanAdrIds(projectsDir = path.join(__dirname, '..', 'planning', 'projects')) {
+function loadExistingPlanAdrIds(
+  projectsDir = path.join(__dirname, '..', 'planning', 'projects'),
+  project = PLAN_PROJECT
+) {
   let entries;
   try {
     entries = fs.readdirSync(projectsDir);
   } catch (e) {
     return null;
   }
-  const own = loadExistingAdrIds('ADR', path.join(projectsDir, PLAN_PROJECT, '07_adr'));
+  // 自プロジェクトの名前空間だけを実在集合とする（規約どおりの厳密な検査）。
+  const own = loadExistingAdrIds('ADR', path.join(projectsDir, project, '07_adr'));
   if (own && own.size > 0) return own;
+
+  // 自プロジェクト名を解決できない（PLAN_PROJECT 未設定・単一プロジェクト構成等）場合は
+  // 全走査へ退避する。検査が甘くなるが、CI をローカル環境差で落とさない。
   const ids = new Set();
   let found = false;
   for (const name of entries) {

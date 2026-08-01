@@ -94,20 +94,25 @@ jobs:
       - name: Validate runtime scaffold
         run: node scripts/validate-runtime-scaffold.js
 
-  # 宣言的パイプライン構成の検証器（scripts/validate-pipeline-config.js）の自己試験に加え、
-  # 取引パイプラインの実宣言（deploy/helm/ai-stock-trading/files/pipeline.json）を検証する
-  # （ADR-0001, IADR-0077, #22）。宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
+  # 【任意コンポーネント・本リポジトリは採用】宣言的パイプライン構成のスキーマ検証。
+  # 検証器自体の自己試験に加え、取引パイプラインの実宣言を検証する（ADR-0001, IADR-0077, #22）。
+  # 宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
   pipeline-config:
     runs-on: ubuntu-latest
+    env:
+      # 【置換点】キット既定は空（採らないプロジェクトでは自己試験だけが走る）。本リポは取引パイプラインを宣言する。
+      PIPELINE_CONFIG: "deploy/helm/ai-stock-trading/files/pipeline.json"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
+      # 検証器自体の試験。構成ファイルの有無に関わらず毎回走らせ、検証ロジックの退行を防ぐ。
       - name: Validate pipeline config (self-test)
         run: node scripts/validate-pipeline-config.js --self-test
-      - name: Validate trading pipeline config (real file)
-        run: node scripts/validate-pipeline-config.js deploy/helm/ai-stock-trading/files/pipeline.json
+      - name: Validate pipeline config
+        if: env.PIPELINE_CONFIG != ''
+        run: node scripts/validate-pipeline-config.js "$PIPELINE_CONFIG"
 
   # Claude 系ワークフローのツール許可設定を検査する（安全弁）。
   # claude_args の記法誤りは CI を失敗させずに「AI が検証できない」状態を作るため、

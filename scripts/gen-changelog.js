@@ -104,14 +104,14 @@ function commits(range) {
     raw = execSync(`git log ${range} --no-merges --pretty=format:%h%x1f%s`, { encoding: 'utf8' });
   } catch (e) { return []; }
   if (!raw.trim()) return [];
-  // 注: 下の補正は point-free の `.map(applyOverride)` にしてはならない。map はコールバックへ
-  // (element, index, array) を渡すため、index（数値）が applyOverride の第 2 引数 overrides を
-  // 上書きし、既定値（OVERRIDES）が効かず 1 件目から TypeError になる。
   return raw.split('\n').map((line) => {
     const [hash, subject = ''] = line.split('\x1f');
     const m = subject.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.+)$/);
     if (m) return { hash, type: m[1].toLowerCase(), scope: m[2] || '', desc: m[4] };
     return { hash, type: 'other', scope: '', desc: subject };
+    // 注: 下の補正は point-free の `.map(applyOverride)` にしてはならない。map はコールバックへ
+    // (element, index, array) を渡すため、index（数値）が applyOverride の第 2 引数 overrides を
+    // 上書きし、既定値（OVERRIDES）が効かず 1 件目から TypeError になる。
   }).map((c) => applyOverride(c)).filter(Boolean); // 誤記コミットの補正/除外
 }
 

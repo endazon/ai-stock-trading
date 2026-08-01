@@ -51,7 +51,11 @@ jobs:
           # ソリューションを自動発見して復元する（ルート単一 .sln/.slnx でも、ユニット第一構成
           # `src/<unit>/backend/backend.slnx` でも編集不要で動く）。
           found=0
-          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' | sort); do
+          # 【落とし穴】自動発見は「編集不要」を謳う分、拾ってほしくないものまで拾う。
+          # ビルド不可の雛形ソリューション（共通 props を継承せず単体では restore できないもの）を
+          # 同梱するリポジトリでは、それも拾って失敗する。既定で ./templates/* を除外してある。
+          # 同一パターンが scripts/setup.sh と security.yml（2 か所）にもある。片方だけ直さないこと。
+          for sln in $(find . -maxdepth 4 \( -name '*.slnx' -o -name '*.sln' \) -not -path '*/node_modules/*' -not -path './templates/*' | sort); do
             dotnet restore "$sln"
             found=1
           done
