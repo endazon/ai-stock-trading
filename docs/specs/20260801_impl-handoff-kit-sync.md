@@ -46,7 +46,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `12cc9b8`。作業中に計画側 #98 がマージされたため 2 度取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `bf94477`。作業中に計画側 #98 がマージされたため kit は 2 度取り込み、その後 pin だけ tip へ追従した）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -118,7 +118,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`12cc9b8`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`bf94477`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -193,6 +193,23 @@ TypeError: overrides.find is not a function
 実在集合とし、自プロジェクトを解決できない構成では従来どおり全走査へ退避する（fail-open）ように是正した。
 実測で和集合 32 件 → 自名前空間 15 件になり、`ADR-0019` / `ADR-0032` が正しく違反として検出される。
 合成 `projects/` を使った回帰テストも追加した。テンプレート側にも同じ設計が要る。
+
+### 第 3 巡（残差分の棚卸し）で判明した指摘
+
+`repo-template/` と本リポジトリの残差分を 1 件ずつ「固有の実コンテンツ」「スタック依存の置換点」
+「キット側の課題」に分類したところ、前 2 者で説明できないものが 4 件残った。
+[project-planning#106](https://github.com/endazon/project-planning/issues/106) として起票済み。
+
+| # | 指摘 | 性質 |
+| --- | --- | --- |
+| 1 | 削除済み `verify-qdrant-attribute-payload.sh` の行が `scripts/README.md` に残る | #97 指摘 2 の追随漏れ |
+| 2 | 他プロジェクト固有の Issue 番号・SHA が **9 ファイル**に残り、同期のたびに再一般化が要る（実際に本作業で同じ箇所を 2 度一般化した） | #97 指摘 1 と同じ「巻き戻る」類型 |
+| 3 | `changelog-overrides.json` の配布既定が他プロジェクトの実コミット 2 件のまま（`commit-allowlist.json` は空に是正済みで非対称）。`hash` は前方一致のため誤爆すると生成物を黙って誤る | #97 指摘 5 の非対称 |
+| 4 | `docs/ai-workflow.md` に「`paths:` フィルタ付きワークフローを必須チェックにすると**永久 pending** でマージ不能になる」注意が無い | 一般則の不足 |
+
+なお planning の tip は作業中にさらに 4 コミット進んだが、いずれも計画リポ自身の workflow への
+Dependabot 更新で `tools/impl-handoff-kit/` には無変更である（差分ファイル一覧が pin 前後で完全一致することを確認）。
+pin だけ tip（`bf94477`）へ追従させた。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 
