@@ -13,7 +13,8 @@ const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|java|kt|go|rs|rb|php|py|js|jsx|ts|tsx|vue
 
 function tryGit(args) {
   try {
-    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim();
+    // 最大 3 回呼ばれるため、合計が全体の安全弁（5 秒）を超えないよう 1 回あたりを短く保つ。
+    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500 }).trim();
   } catch (e) { return null; }
 }
 
