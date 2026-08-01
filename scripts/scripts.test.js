@@ -7,6 +7,7 @@
  */
 const assert = require('assert');
 const { execSync } = require('child_process');
+const { warn, notice } = require('./lib/ci-annotate.js');
 const {
   validateSubject,
   checkSingleTitle,
@@ -110,6 +111,47 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     }
     assert.deepStrictEqual(errs, []);
   });
+}
+
+// --- lib/ci-annotate: CI 上の警告を GitHub アノテーションとして出す（issue #136 / #137） ---
+
+{
+  const ann = require('./lib/ci-annotate.js');
+  const withActions = (value, fn) => {
+    const prev = process.env.GITHUB_ACTIONS;
+    if (value === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = value;
+    try { return fn(); } finally {
+      if (prev === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = prev;
+    }
+  };
+
+  ok('GITHUB_ACTIONS 上では ::warning:: の workflow コマンドになる', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('warning', 'ダメな設定', '  warn  '), '::warning::ダメな設定\n')));
+
+  ok('ローカル実行では従来どおりの見た目を保つ', () =>
+    withActions(undefined, () =>
+      assert.strictEqual(ann.format('warning', 'ダメな設定', '  warn  '), '  warn  ダメな設定\n')));
+
+  // workflow コマンドは改行を含められない。畳まないとアノテーションが途中で切れる。
+  ok('複数行メッセージは 1 行へ畳まれる', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('notice', '一行目\n   二行目\n三行目', 'notice: '),
+        '::notice::一行目 二行目 三行目\n')));
+
+  // `%` を escape しないと GitHub 側で %XX として解釈され、文字が消える。
+  ok('% はエスケープされる（%25）', () =>
+    withActions('true', () =>
+      assert.strictEqual(ann.format('warning', '達成率 100%', '  warn  '), '::warning::達成率 100%25\n')));
+
+  ok('エスケープは % を先に処理する（二重変換しない）', () =>
+    assert.strictEqual(ann.escapeData('a%b\nc'), 'a%25b%0Ac'));
+
+  ok('GITHUB_ACTIONS が true 以外ならローカル扱い', () =>
+    withActions('false', () =>
+      assert.strictEqual(ann.isActions(), false)));
 }
 
 // --- check-commit-messages: validateIdExistence（ADR/IADR の実在性・採番衝突の再発防止） ---
@@ -504,7 +546,7 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
 // 実ツリーの companion を読み込む。
 {
   const res = loadCompanionTests(__dirname, { ok, assert });
-  for (const w of res.warnings) process.stderr.write(`warning: ${w}\n`);
+  for (const w of res.warnings) warn(w, { stream: process.stderr, prefix: 'warning: ' });
 
   if (res.file) {
     // 読み込まれてはいるが何もしていない（export 忘れ・空実装・全件 skip）状態を検出する。
@@ -516,10 +558,11 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     // 2 つ目を忘れると、companion が消えてもテスト件数が減るだけで CI は green のままになる
     // （未追跡は警告するのに、より起きやすいこの状態が無言では筋が通らない）。失敗はさせない。
     if (process.env.REQUIRE_REPO_TESTS !== '1') {
-      process.stderr.write(
-        `notice: ${require('path').basename(res.file)} を読み込んだが REQUIRE_REPO_TESTS が未設定である。\n` +
-          '        このままでは companion が消失してもテスト件数が減るだけで CI は green のままになる。\n' +
-          '        ci.yml の scripts-tests ジョブで REQUIRE_REPO_TESTS=1 を設定すること。\n'
+      notice(
+        `${require('path').basename(res.file)} を読み込んだが REQUIRE_REPO_TESTS が未設定である。\n` +
+          'このままでは companion が消失してもテスト件数が減るだけで CI は green のままになる。\n' +
+          'ci.yml の scripts-tests ジョブで REQUIRE_REPO_TESTS=1 を設定すること。',
+        { stream: process.stderr }
       );
     }
   } else if (process.env.REQUIRE_REPO_TESTS === '1') {

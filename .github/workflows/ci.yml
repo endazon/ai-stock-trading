@@ -156,7 +156,17 @@ jobs:
           node-version: "20"
       - name: Check AI workflow config (self-test)
         run: node scripts/check-ai-workflow-config.js --self-test
+      # 警告（検査そのものが成立していない状態）は GitHub のアノテーションとして出るため、
+      # ジョブログを開かなくても PR の Checks 画面で気付ける。
+      #
+      # 本リポジトリはファイル名・ワークフロー構成が固まっている（既定名の 2 ファイルが
+      # ともに claude_args を解析できる）ため、警告を失敗として扱う（scripts-tests の
+      # REQUIRE_REPO_TESTS と同じ opt-in 方式）。キット既定が fail-open なのは、
+      # claude-code-action の入力名が変わったときに全リポジトリの CI が検証器の更新まで
+      # 一斉に落ちるのを避けるためである。追随できない事態になったら本 env を外す。
       - name: Check AI workflow config
+        env:
+          STRICT_AI_WORKFLOW_CONFIG: "1"
         run: node scripts/check-ai-workflow-config.js
 
   # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の

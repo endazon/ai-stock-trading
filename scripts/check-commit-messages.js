@@ -22,6 +22,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { warn } = require('./lib/ci-annotate.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
 const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
@@ -235,11 +236,12 @@ function loadExistingPlanAdrIds(
   // 「ジョブは成功するのに実は効いていない」状態を作らないよう、退避したことを警告で可視化する。
   // 終了コードは変えない（既存リポジトリの CI を新たに落とさない）。
   if (entries.length > 1) {
-    process.stderr.write(
-      `warning: PLAN_PROJECT="${project}" に対応する ${project}/07_adr/ が見つからないため、\n` +
-        `         計画 ADR の実在性検査を全プロジェクト走査へ退避した（他プロジェクトの ADR 番号も\n` +
-        `         「実在」として受理される）。scripts/check-commit-messages.js の PLAN_PROJECT を\n` +
-        `         自プロジェクト名へ設定すること（impl-handoff-kit/HOWTO.md Part B-5）。\n`
+    warn(
+      `PLAN_PROJECT="${project}" に対応する ${project}/07_adr/ が見つからないため、\n` +
+        `計画 ADR の実在性検査を全プロジェクト走査へ退避した（他プロジェクトの ADR 番号も\n` +
+        `「実在」として受理される）。scripts/check-commit-messages.js の PLAN_PROJECT を\n` +
+        `自プロジェクト名へ設定すること（impl-handoff-kit/HOWTO.md Part B-5）。`,
+      { stream: process.stderr, prefix: 'warning: ' }
     );
   }
 

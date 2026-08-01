@@ -48,7 +48,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `168f53d`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 / #132 / #135 が続けてマージされたため計 11 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `cd6c4f4`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 / #127 / #132 / #135 / #138 が続けてマージされたため計 12 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -120,7 +120,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`168f53d`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`cd6c4f4`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -437,6 +437,38 @@ Node 製検査器の側だけがこの可視化手段を使っていない状態
 実例として、[project-planning#122](https://github.com/endazon/project-planning/issues/122) の 3 系統乖離は修正までのあいだ CI で毎回 warn が出ていたが、
 気付いたのは「ローカル実行」と「AI レビューが自分で実走した」の 2 経路だけで、**CI ログ経由ではなかった**。
 `GITHUB_ACTIONS` が立っているときだけ `::warning::` / `::notice::` で出す案（exit コードは変えない）を提案した。
+
+### 第 12 巡（pin `cd6c4f4`）— #137 解消。残り 1 件を起票
+
+計画側 PR #138（issue #136 / #137）で、検査器の警告が GitHub アノテーションとして出るようになった。
+`scripts/lib/ci-annotate.js` として共有モジュール化され、`check-ai-workflow-config` /
+`check-commit-messages` / `scripts.test` の 3 系統が利用する。ローカル実行の見た目は従来どおり。
+
+本リポ側の追随:
+
+- `scripts/lib/ci-annotate.js`（新規）と 3 検査器をキット版で取り込む（`scripts.test.js` はバイト一致）
+- **`ci.yml` の `ai-workflow-config` ジョブで `STRICT_AI_WORKFLOW_CONFIG: "1"` を有効化**。
+  本リポは既定名の 2 ファイルがともに `claude_args` を解析でき構成が固まっているため、
+  「検査そのものが成立していない」警告を失敗として扱う（`REQUIRE_REPO_TESTS` と同じ opt-in）。
+  キット既定が fail-open なのは、claude-code-action の入力名変更で全リポジトリの CI が
+  一斉に落ちるのを避けるためであり、追随できない事態になったら本 env を外す
+
+変異テストで 3 通りを実測した。
+
+| 条件 | 結果 |
+| --- | --- |
+| ローカル・`claude_args` 誤記 | `  warn  …`（exit 0） |
+| `GITHUB_ACTIONS=true`・同上 | `::warning::…`（exit 0） |
+| `STRICT_AI_WORKFLOW_CONFIG=1`・同上 | exit **1** |
+| `STRICT_AI_WORKFLOW_CONFIG=1`・正常時 | exit 0（誤検知なし） |
+
+**[🟡 残り 1 件・[project-planning#139](https://github.com/endazon/project-planning/issues/139)]** `check-doc-links.js` が `ci-annotate` をまだ使っておらず、
+未 populate な submodule 配下のリンクを**何件飛ばしたか報告しない**。実測では PR CI の `doc-links`
+ジョブが「OK: 315 件の Markdown に破損した相対リンクはありません。」とだけ出す一方、
+同じリポジトリを planning populate 済みで検査すると**破損 20 件**が出る。
+`docs/` から planning 配下への相対リンクは **753 件**あり、PR CI ではその全部が黙って対象外である。
+本リポの既存破損 20 件はまさにこの隙間で蓄積したものであり、除外件数の報告と
+OK メッセージの範囲明示を提案した（`notice` で exit 0 のまま）。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

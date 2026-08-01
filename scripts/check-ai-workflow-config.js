@@ -21,12 +21,24 @@
  *   [ERROR] setup-* でツールチェーンを用意しているのに、対応する実行ツールを許可していない
  *   [ERROR] 実装用とレビュー用でスタック別の実行ツールが食い違う（部分的な複製漏れ）
  *   [WARN ] .claude/settings.json の allow とワークフローのツール集合の乖離（情報提供のみ）
+ *   [WARN ] 検査そのものが成立していない（claude_args を解析できない / 既定名で引き当てられない）
+ *
+ * 警告の出し方:
+ *   GitHub Actions 上では workflow コマンド（`::warning::`）で出し、PR の Checks 画面と
+ *   実行サマリのアノテーションに載せる。素の stdout 行は**緑ジョブのログに埋もれて読まれない**
+ *   （issue #122 の 3 系統乖離は、修正までのあいだ CI で毎回 warn が出ていたのに、
+ *   気付いたのはローカル実行と AI レビューの実走であり CI ログ経由ではなかった）。
+ *   ローカル実行時の見た目は従来どおり。実装は scripts/lib/ci-annotate.js。
  *
  * 使い方:
  *   node scripts/check-ai-workflow-config.js [--self-test] [--dir .github/workflows]
+ *
+ * 環境変数:
+ *   STRICT_AI_WORKFLOW_CONFIG=1  警告を失敗として扱う（既定は fail-open。opt-in）
  */
 const fs = require('fs');
 const path = require('path');
+const { warn } = require('./lib/ci-annotate.js');
 
 const REPO_ROOT = path.join(__dirname, '..');
 const DEFAULT_DIR = path.join(REPO_ROOT, '.github', 'workflows');
@@ -478,8 +490,20 @@ function main(argv) {
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
   // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue #134 の検査は黙って
   // 効かなくなる——この検査器が塞いでいる不具合と同じ形になる。省略しないこと。
-  for (const w of driftScopeWarnings(forDrift, files)) process.stdout.write(`  warn  ${w}\n`);
-  for (const w of parityWarnings(perFile)) process.stdout.write(`  warn  ${w}\n`);
+  const warnings = [...driftScopeWarnings(forDrift, files), ...parityWarnings(perFile)];
+  for (const w of warnings) warn(w);
+
+  // 【任意・opt-in】警告を失敗として扱う厳格モード（issue #136）。
+  // 警告はいずれも「検査そのものが効いていない」状態を指すため、ファイル名・構成が
+  // 固まったリポジトリでは失敗させたい。既定は fail-open のまま（アクションの入力名変更で
+  // 全リポジトリの CI が一斉に落ちるのを避ける）。scripts.test.js の REQUIRE_REPO_TESTS と
+  // 同じ「既定はオフ、確定したリポジトリだけ厳格化」の運用に揃える。
+  if (warnings.length && process.env.STRICT_AI_WORKFLOW_CONFIG === '1') {
+    process.stderr.write(
+      `\n✗ 検査が成立していない警告が ${warnings.length} 件ある（STRICT_AI_WORKFLOW_CONFIG=1）\n`
+    );
+    process.exit(1);
+  }
 
   if (allErrors.length) {
     process.stderr.write(`\n✗ 設定の不備 ${allErrors.length} 件:\n`);
