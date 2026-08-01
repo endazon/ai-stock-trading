@@ -48,7 +48,12 @@ related_specs:
    スコープの `IADR-xxxx` は `docs/adr/IADR-xxxx_*.md`、`ADR-xxxx` は planning submodule の
    `07_adr/ADR-xxxx_*.md` の実在を照合し、無ければ CI を失敗させる。範囲検査（PR コミット）と
    単一件名検査（PR タイトル）の両方に適用する。`docs/adr/` を読めない環境・planning 未 populate の
-   環境では該当検査をスキップする（fail-open。`check-doc-links.js` と同じ扱い）。あわせて
+   環境では該当検査をスキップする（fail-open。`check-doc-links.js` と同じ扱い）。
+   **有効範囲の注意**: PR の CI（`ci.yml` / `pr-title.yml`）は submodule を取得しないため、
+   計画 ADR 検査はそこでは常に skip され、実効的に働くのは IADR 検査（issue #319 の実害と
+   同型の主要ケース）のみである。計画 ADR 検査は submodule を取得できる環境（ローカル・
+   夜間の planning 系ジョブ）で有効になる。夜間ジョブへの結線（ワークフロー変更）は
+   issue #319 の後続とする。あわせて
    採番衝突時の改番手順（先着尊重・欠番を作らない・**PR タイトルも直す**）を
    `.claude/rules/traceability.md` へ明文化する。FR/UC/SC の実在性検証は定義箇所が
    ファイル名に現れず走査コストが高いため対象外とし、issue #319 の判断に委ねる。
@@ -59,11 +64,11 @@ related_specs:
 
 ## 受け入れ基準
 
-- [ ] `node scripts/scripts.test.js` が既存テストと追加テスト（IADR 実在性）を含め合格する。
-- [ ] `node scripts/check-commit-messages.js` が本ブランチのコミットで合格する。
-- [ ] `check-impl.js` が「ブランチに仕様書追加なし＋コード編集」で警告を出し、本仕様書の
+- [x] `node scripts/scripts.test.js` が既存テストと追加テスト（IADR 実在性）を含め合格する。
+- [x] `node scripts/check-commit-messages.js` が本ブランチのコミットで合格する。
+- [x] `check-impl.js` が「ブランチに仕様書追加なし＋コード編集」で警告を出し、本仕様書の
   追加後は警告を出さない（手動確認）。
-- [ ] gitleaks の既定ルールが無効化されていない（`extend.useDefault = true`）。
+- [x] gitleaks の既定ルールが無効化されていない（`extend.useDefault = true`）。
 
 ## 影響範囲
 

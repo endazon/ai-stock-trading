@@ -45,6 +45,9 @@ PR で追加されるコミット（`base..HEAD`）の件名を `scripts/check-c
   `ADR-xxxx` は planning submodule の `07_adr/` に該当ファイルが実在することを検査する
   （PR コミットと PR タイトルの両方）。planning 未 populate の環境では計画 ADR の検査を skip する
   （`check-doc-links.js` と同じ扱い。ローカル環境差で CI を落とさない）。
+  **注**: PR の CI（`ci.yml` / `pr-title.yml`）は submodule を取得しないため、実効的に働くのは
+  IADR 検査（#314 型の主要ケース）のみ。計画 ADR 検査は submodule を取得できる環境
+  （ローカル・夜間の planning 系ジョブ）で有効になる。夜間ジョブへの結線は issue #319 の後続。
 
 ### 採番衝突時の改番手順（issue #319・再発防止）
 
