@@ -57,6 +57,14 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      # CI の状態・ログを参照するために必要。2 か所が同時にこれへ依存する:
+      #   1. アクションが注入する mcp__github_ci__* サーバー。導入前にワークフロートークンが
+      #      actions: read を持つか実際に検証し、無ければ「Skipping CI server installation」と
+      #      警告して導入を取り止める（許可済みのはずのツールが存在しない状態になる）。
+      #   2. --allowedTools の `Bash(gh run list:*)`。gh CLI 側が actions: read を要求するため、
+      #      権限が無いと許可されていても実行時に失敗する。
+      # 注: ツール許可に additional_permissions は使わない（あれはアプリトークンのスコープ用）。
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -112,6 +120,7 @@ jobs:
           echo "Selected model: $MODEL"
 
       - name: Run Claude Code Review
+        id: claude
         uses: anthropics/claude-code-action@v1
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
         env:
@@ -248,3 +257,20 @@ jobs:
             そのため作業ツリーに「直近コミットを打ち消す未コミット差分」が見えるのは**正常**であり、
             異常として報告しないこと。これらのファイルをレビューするときは `.claude-pr/` または
             `git show HEAD:<path>` を参照すること。
+
+      # 権限拒否の可視化（安全弁）。
+      #
+      # claude-code-action は、AI がツールを 1 つも実行できなくても
+      # `"subtype": "success", "is_error": false` で終わる。ジョブは緑になり、PR には
+      # 進行中コメントだけが残る。「CI が緑 ＝ レビューが通った」ではなく
+      # 「エラー無く終了した」に過ぎない状態であり、レビュー未実施が誰にも見えない。
+      # CI には承認する人間が居ないため、権限拒否は「待たされた」ではなく
+      # **「その作業は永久に実行されない」**を意味する。ここで止める。
+      #
+      # if: always() が必須である（上の step が失敗した場合こそ内訳を知りたい）。
+      # 実行ログを読めない構成では warn を出して exit 0（fail-open）。
+      - name: Check permission denials
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/check-permission-denials.js "$EXECUTION_FILE"

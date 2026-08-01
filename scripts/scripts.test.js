@@ -113,6 +113,63 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
+// --- check-permission-denials: 権限拒否で潰れた実行を緑にしない ---
+//
+// 実運用の形: claude-doc-review が 21 ターン中 17 件の権限拒否で潰れ、レビュー本文を
+// 1 文字も書けないまま `"subtype": "success", "is_error": false` で終わった。
+// 件数はログに出ていたが誰も見ておらず、CI は緑・PR には進行中コメントだけが残った。
+
+{
+  const { parseEvents, collectDenials, formatDenials, looksLikeDenial } = require('./check-permission-denials.js');
+
+  ok('拒否ゼロは count 0（正常な実行を落とさない）', () =>
+    assert.strictEqual(collectDenials([{ type: 'result', permission_denials_count: 0 }]).count, 0));
+
+  ok('permission_denials 配列からツール名を特定する', () => {
+    const r = collectDenials([
+      { type: 'result', permission_denials: [{ tool_name: 'Task' }, { tool_name: 'Task' }] },
+    ]);
+    assert.strictEqual(r.count, 2);
+    assert.strictEqual(r.byTool.get('Task'), 2);
+  });
+
+  ok('配列が無い版でも tool_result からツール名を逆引きする', () => {
+    const r = collectDenials([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Task' }] } },
+      {
+        type: 'user',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'a', is_error: true, content: 'Permission to use Task was denied' },
+          ],
+        },
+      },
+      { type: 'result', permission_denials_count: 1 },
+    ]);
+    assert.strictEqual(r.byTool.get('Task'), 1);
+  });
+
+  ok('権限拒否でないツールエラー（File not found 等）は数えない', () =>
+    assert.strictEqual(looksLikeDenial('File not found'), false));
+
+  ok('ツール名が判らなくても件数は必ず報告する（実運用の 17 件の形）', () => {
+    const r = collectDenials([{ type: 'result', permission_denials_count: 17 }]);
+    assert.strictEqual(r.count, 17);
+    assert.strictEqual(r.itemized, false);
+    assert.match(formatDenials(r), /17 件/);
+  });
+
+  ok('NDJSON・壊れた行があっても読めた分で判断する', () =>
+    assert.strictEqual(parseEvents('{"type":"result","permission_denials_count":3}\n{壊れ').length, 1));
+
+  // 検証器自身の自己試験が通ること（check-ai-workflow-config と同じ扱い）。
+  ok('check-permission-denials の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-permission-denials.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
 // --- check-doc-links: 未 populate な submodule の除外を可視化する（issue #139） ---
 
 {
