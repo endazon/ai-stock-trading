@@ -1,0 +1,20 @@
+# gitleaks 設定。既定ルールは維持し（extend.useDefault）、リポジトリ固有の恒常的な
+# 誤検知だけを値の形で狙い撃ちして許可する。
+#
+# 経緯: 報告書の期間キー（daily-2026-07-31 / weekly-2026-W31 / monthly-2026-07）は
+# ReportPeriod.ExpectedKey が導出する自然キーであり認証情報ではないが、キーワード "key" との
+# 近接とエントロピーにより generic-api-key ルールが繰り返し誤検知した（#280 / #308）。
+# `.gitleaksignore` への fingerprint 事後追記は再発を止められない（新しいコミットは別
+# fingerprint になる）ため、期間キーの値形そのものを allowlist する。
+# 個別コミットの履歴上の誤検知（RSA 例示・ダミー Discord ID 等）は従来どおり
+# `.gitleaksignore` の fingerprint で管理する。
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "報告書の期間キー（ReportPeriod.ExpectedKey が導出する自然キー。認証情報ではない）"
+regexTarget = "secret"
+regexes = [
+  '''^(daily|weekly|monthly)-\d{4}(-W?\d{1,2})?(-\d{2})?$''',
+]
