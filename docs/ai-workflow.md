@@ -124,7 +124,6 @@ GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule�
   ためマージは止まらない。bot を除外する条件を書いてもブランチ保護と矛盾しない。
   - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
 
-
 ## よくある詰まり（FAQ）
 
 | 症状 | 対処 |
