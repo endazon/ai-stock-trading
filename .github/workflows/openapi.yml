@@ -24,6 +24,10 @@ on:
     paths:
       - "docs/api/**"
       - "scripts/generate-openapi.sh"
+      # 【置換点】ソースディレクトリはリポジトリレイアウトに合わせて書き換えること（本リポは backend/）。
+      # キット既定は `src/`。レイアウトと食い違ったまま放置すると、コードを変更しても本ワークフローが
+      # 起動しなくなる。**失敗せず単に走らないため気付きにくい**。
+      # 差し替え箇所の一覧は impl-handoff-kit/HOWTO.md Part B-5 を参照。
       - "backend/**"
   workflow_dispatch: {}
 

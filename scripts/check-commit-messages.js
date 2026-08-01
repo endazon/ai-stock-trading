@@ -171,8 +171,11 @@ function isSkippable(subject) {
  * 指定ディレクトリのファイル名から実在する ADR/IADR 番号の集合を返す。ディレクトリを
  * 読めない環境（チェックアウト無しの単独実行・planning submodule 未 populate 等）では
  * null を返し、実在性検査をスキップする（fail-open。check-doc-links.js と同じ扱い）。
- * 背景（issue #319）: 並行実装の採番衝突で改番した際、PR タイトル（= squash 後件名）だけが
- * 人手の追随に依存し、#314 が別内容の IADR-0121 を名乗ったまま develop に載った。
+ *
+ * 背景: 並行実装では ADR 番号の採番衝突が起こり、後発が改番を強いられる。改番はファイル名・
+ * 本文・索引・仕様書に及ぶ一方、**PR タイトル（= スカッシュ後のコミット件名）だけが人手の
+ * 追随に依存する**ため、実体と別内容の ADR を名乗る件名が統合ブランチへ混入しやすい。
+ * 書式チェック（ID_PATTERN）だけではこれを検知できない。
  */
 function loadExistingAdrIds(prefix, dir) {
   try {
@@ -188,20 +191,37 @@ function loadExistingAdrIds(prefix, dir) {
   }
 }
 
-/** 実装 ADR（本リポ docs/adr/）の実在番号集合。読めなければ null。 */
+/** 実装 ADR（本リポ `docs/adr/`）の実在番号集合。読めなければ null。 */
 function loadExistingIadrIds(dir = path.join(__dirname, '..', 'docs', 'adr')) {
   return loadExistingAdrIds('IADR', dir);
 }
 
-/** 計画 ADR（planning submodule 07_adr/）の実在番号集合。未 populate なら null（skip）。 */
-function loadExistingPlanAdrIds(
-  dir = path.join(__dirname, '..', 'planning', 'projects', 'ai-stock-trading', '07_adr')
-) {
-  return loadExistingAdrIds('ADR', dir);
+/**
+ * 計画 ADR（planning submodule の `projects/<name>/07_adr/`）の実在番号集合。
+ * プロジェクト名は可変のため `projects/` 配下を走査して全プロジェクトの ADR を集める。
+ * submodule 未 populate なら null（skip）。
+ */
+function loadExistingPlanAdrIds(projectsDir = path.join(__dirname, '..', 'planning', 'projects')) {
+  let entries;
+  try {
+    entries = fs.readdirSync(projectsDir);
+  } catch (e) {
+    return null;
+  }
+  const ids = new Set();
+  let found = false;
+  for (const name of entries) {
+    const got = loadExistingAdrIds('ADR', path.join(projectsDir, name, '07_adr'));
+    if (got) {
+      found = true;
+      for (const id of got) ids.add(id);
+    }
+  }
+  return found ? ids : null;
 }
 
 /**
- * 件名スコープ中の IADR-xxxx / ADR-xxxx が実在するか検証し、違反理由の配列を返す。
+ * 件名スコープ中の `IADR-xxxx` / `ADR-xxxx` が実在するか検証し、違反理由の配列を返す。
  * 各集合が null（読めない環境）の場合は該当種別の検査をスキップする。
  * 書式違反の検出は validateSubject が担う（本関数は書式適合を前提に実在のみ見る）。
  */
@@ -212,9 +232,9 @@ function validateIdExistence(subject, iadrIds, planAdrIds) {
   const reasons = [];
   for (const id of m[2].split(',').map((x) => x.trim()).filter(Boolean)) {
     if (iadrIds && /^IADR-\d{3,4}$/.test(id) && !iadrIds.has(id)) {
-      reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性。issue #319）`);
+      reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性）`);
     } else if (planAdrIds && /^ADR-\d{3,4}$/.test(id) && !planAdrIds.has(id)) {
-      reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性。issue #319）`);
+      reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性）`);
     }
   }
   return reasons;

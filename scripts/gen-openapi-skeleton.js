@@ -99,7 +99,7 @@ function main() {
   out.push('  description: 通信仕様書（docs/api/）から自動生成した雛形。詳細はコードからの生成または手動で補完する。');
   out.push('paths:');
   if (byPath.size === 0) {
-    out.push('  # 同期 HTTP API は未実装のため paths は空。非同期イベント/ポート契約は docs/api/events-and-ports.md を参照（IADR-0009）。');
+    out.push('  # 通信仕様書のエンドポイント一覧表が見つからなかった。docs/api/ に通信仕様書を作成すること。');
     out.push('  {}');
   } else {
     for (const [p, eps] of byPath) {

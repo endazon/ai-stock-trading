@@ -42,11 +42,23 @@ jobs:
       - name: Generate CHANGELOG.md
         run: node scripts/gen-changelog.js --out CHANGELOG.md
 
+      # 【既知の制約・重要】GITHUB_TOKEN で作成した PR では、GitHub の仕様により
+      # ワークフローが自動起動しない（再帰実行の防止）。必須チェックを設定していると、
+      # この PR は CI・Security・PR Title・AI レビュー等がすべて `action_required`
+      # （承認待ち）のまま滞留し、**永久にマージできない**。実運用で 2 週間以上滞留し、
+      # AI レビューの実行キューの 28% を無駄に占有した実績がある。
+      #
+      # 回避策（いずれか）:
+      #   a) `token:` に PAT（例 `secrets.AUTOMATION_PR_TOKEN`。Contents: write /
+      #      Pull requests: write を持つ fine-grained PAT）を設定する。PAT で作成した
+      #      PR にはワークフローが通常どおり起動する。← 必須チェック運用ではこちらを推奨
+      #   b) CHANGELOG 更新を PR にせず develop へ直接 push する（ブランチ保護と要調整）。
+      #   c) 現状のまま運用し、当該 PR のチェックを手動承認する（毎回の手作業が必要）。
       - name: Create PR with CHANGELOG update
         if: startsWith(github.ref, 'refs/heads/')
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.AUTOMATION_PR_TOKEN || secrets.GITHUB_TOKEN }}
           add-paths: CHANGELOG.md
           commit-message: "docs(NFR): CHANGELOG を自動更新"
           branch: automation/changelog-update-${{ github.ref_name }}

@@ -34,7 +34,7 @@ function parseArgs(argv) {
     const x = argv[i];
     if (x === '--dir') a.dir = argv[++i];
     else if (x.startsWith('--dir=')) a.dir = x.slice(6);
-    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（本リポ Issue #104。platform #232 と同根）。
+    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（microservices-platform #232・本リポ #104 と同根）。
     // トークン付きで submodule を取得する定期ジョブから使い、取得漏れ（＝planning リンクの検査漏れ）を
     // 黙って通さず可視化する。
     else if (x === '--require-planning') a.requirePlanning = true;
@@ -44,12 +44,50 @@ function parseArgs(argv) {
 
 // planning サブモジュールが populate 済みか（projects/ の実在で判定）。CI が submodule なしで
 // checkout した場合は planning/ が空プレースホルダになるため、存在チェックだけでは判別できない。
+// `--require-planning` 用の判定であり、リンク検査の対象外判定は下の一般則を使う。
 function planningPopulated(root = REPO_ROOT) {
   try {
     return fs.existsSync(path.join(root, 'planning', 'projects'));
   } catch (e) {
     return false;
   }
+}
+
+// .gitmodules から submodule の path 一覧を得る。
+function submodulePaths(root = REPO_ROOT) {
+  try {
+    const txt = fs.readFileSync(path.join(root, '.gitmodules'), 'utf8');
+    const out = [];
+    const re = /^\s*path\s*=\s*(.+?)\s*$/gm;
+    let m;
+    while ((m = re.exec(txt))) out.push(m[1].replace(/\\/g, '/'));
+    return out;
+  } catch (e) {
+    return [];
+  }
+}
+
+// 解決済み絶対パスが、未 populate（空プレースホルダ）な submodule 配下にあるか。
+// トークン不要の PR CI は submodule を populate しないため、その配下のリンクは検査対象外にする
+// （populate 済みなら通常どおり実在検査する）。
+// かつては `planning/` 固定で判定していたが、それでは planning 以外の submodule
+// （ユニットを submodule で取り込む構成等）配下のリンクが PR CI で破損と誤検知された。
+// .gitmodules 由来の一般則へ拡張してある。
+function underUnpopulatedSubmodule(resolvedAbs, root = REPO_ROOT) {
+  const rel = path.relative(root, resolvedAbs).replace(/\\/g, '/');
+  for (const sub of submodulePaths(root)) {
+    if (rel === sub || rel.startsWith(sub + '/')) {
+      const subAbs = path.join(root, sub);
+      let populated = false;
+      try {
+        populated = fs.existsSync(subAbs) && fs.readdirSync(subAbs).length > 0;
+      } catch (e) {
+        populated = false;
+      }
+      if (!populated) return true;
+    }
+  }
+  return false;
 }
 
 function mdFiles(dir) {
@@ -76,18 +114,11 @@ function isBrokenRef(ref, baseDir) {
   const looksRelative = t.startsWith('./') || t.startsWith('../') || (t.includes('/') && !t.startsWith('/'));
   if (!looksRelative) return false;
   if (!LINK_EXT.test(t)) return false;
-  // planning/ サブモジュール未チェックアウト時は planning 配下リンクを検査しない。
-  // CI の actions/checkout（サブモジュール取得なし）は planning/ を「空のプレースホルダ
-  // ディレクトリ」として作るため、存在チェックだけでは未チェックアウトを判別できない。
-  // 中身が空（＝未 populate）の場合も検査対象外とする。
-  if (/(^|\/)planning\//.test(t)) {
-    const idx = t.indexOf('planning/') + 'planning'.length;
-    const subRoot = path.resolve(baseDir, t.slice(0, idx));
-    let populated = false;
-    try { populated = fs.existsSync(subRoot) && fs.readdirSync(subRoot).length > 0; } catch (e) { populated = false; }
-    if (!populated) return false;
-  }
   const resolved = path.resolve(baseDir, t);
+  // 未チェックアウトの submodule 配下は検査しない。CI の actions/checkout（サブモジュール
+  // 取得なし）は submodule を「空のプレースホルダディレクトリ」として作るため、存在チェック
+  // だけでは未チェックアウトを判別できない。中身が空（＝未 populate）なら対象外とする。
+  if (underUnpopulatedSubmodule(resolved)) return false;
   try { return !fs.existsSync(resolved); } catch (e) { return false; }
 }
 
@@ -126,7 +157,7 @@ function collectBroken(fp) {
 
 function main() {
   const a = parseArgs(process.argv.slice(2));
-  // Issue #104（platform #232 と同根）: 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
+  // microservices-platform #232（本リポ #104 と同根）: 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
   // planning リンクは（isBrokenRef により）検査対象外となり破損を見逃すため、ここで明示的に fail する。
   if (a.requirePlanning && !planningPopulated()) {
     console.error(
@@ -160,4 +191,11 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseArgs, planningPopulated, isBrokenRef, collectBroken };
+module.exports = {
+  parseArgs,
+  planningPopulated,
+  submodulePaths,
+  underUnpopulatedSubmodule,
+  isBrokenRef,
+  collectBroken,
+};
