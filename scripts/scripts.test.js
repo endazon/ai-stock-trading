@@ -175,6 +175,48 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 
   ok('Bash 以外はツール名のまま', () => assert.strictEqual(labelOf('Task', {}), 'Task'));
 
+  // issue #158: 旧実装は先頭セグメントだけを見て、許可済みの git show を名指しし、
+  // 実際の原因（未許可の cmp）を隠していた。報告が原因を指さないと塞ぎようがない。
+  ok('パイプの全セグメントを列挙する（実障害 git show | cmp の形）', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git show origin/main:a.yml | cmp - a.yml' }),
+      'Bash(git show | cmp)'
+    ));
+
+  ok('フラグは 2 トークン目に採らない（head -5 は head）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'git log | head -5' }), 'Bash(git log | head)'));
+
+  // issue #160: 2 トークン固定だと Bash(git -C) になり、対処に必要なサブコマンドが消える。
+  ok('git -C <dir> <sub> は許可リストと同じ粒度で出す', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git -C planning rev-parse HEAD' }),
+      'Bash(git -C planning rev-parse)'
+    ));
+
+  ok('リダイレクトが原因の拒否は注記で示す（許可済みに見えるため）', () => {
+    const r = collectDenials([
+      { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b > /tmp/x' } }] },
+    ]);
+    assert.strictEqual(r.redirect, true);
+    assert.match(formatDenials(r), /リダイレクト/);
+  });
+
+  ok('パイプがあれば「後段を疑え」の注記を出す', () =>
+    assert.match(
+      formatDenials(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a | cmp - b' } }] },
+      ])),
+      /後段のコマンドかもしれない/
+    ));
+
+  ok('パイプが無ければ注記を出さない', () =>
+    assert.doesNotMatch(
+      formatDenials(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git diff' } }] },
+      ])),
+      /後段のコマンドかもしれない/
+    ));
+
   // issue #155: 内訳がジョブログにしか無いと、レビュー本文の「✅ 実測」との突き合わせができない。
   ok('拒否の内訳を実行サマリ（人が読む場所）へ書く', () => {
     const { writeStepSummary } = require('./check-permission-denials.js');

@@ -79,18 +79,77 @@ function contentOf(event) {
  * ジョブログを追って読み取り系 git だと推定する必要があった。報告が行動につながらないなら、
  * 件数だけを出していた元の状態とさして変わらない。
  *
- * 先頭 2 トークンまでに切り詰める（`git diff origin/main...HEAD` → `git diff`）。
+ * 各セグメントは先頭 2 トークンまでに切り詰める（`git diff origin/main...HEAD` → `git diff`）。
  * 理由は 2 つある。許可リストの粒度がコマンド＋サブコマンドであること、そして引数には
  * トークン・パス等が入り得るため、ログへ丸ごと出さないことである。
+ *
+ * 【パイプライン（issue #158）】当初は「パイプ以降は別の話」として**先頭セグメントだけ**を
+ * 見ていた。これは権限判定については誤りである。Claude Code の Bash 許可は
+ * **パイプラインの各コマンドを個別に判定する**ため、`git show X | cmp - Y` は `cmp` が
+ * 未許可なら拒否される。ところが先頭だけを見る実装では、報告に出るのは**無実の `git show`**
+ * であった。結果として検査器は「原因のコマンドを隠し」「既に許可済みのコマンドを名指しし」
+ * 「それを --allowedTools に加えよ」と助言する、誤誘導つきの報告を出していた。
+ * 実測では 3 回の run で連続して発生し（3 / 3 / 7 件）、報告が原因を指さないため塞げなかった。
+ *
+ * よって `|` `&&` `||` `;` で分割し、**各セグメントの先頭 2 トークンをすべて列挙**する。
+ * どれが原因かまでは実行ログから判らないが、**候補に原因が含まれる**ことが重要である
+ * （従来は候補集合から原因が構造的に抜け落ちていた）。
+ * 1 件の拒否は 1 件として数えたいので、セグメントごとに行を分けず 1 ラベルへまとめる。
  */
+// シェルの複合コマンドで先頭に現れる予約語。コマンド名ではないので読み飛ばす。
+const SHELL_KEYWORDS = new Set(['do', 'done', 'then', 'fi', 'else', 'elif', 'esac', 'in', '{', '}']);
+
 function labelOf(name, input) {
   if (name !== 'Bash') return name || '(不明なツール)';
   const cmd = input && typeof input.command === 'string' ? input.command.trim() : '';
   if (!cmd) return 'Bash';
-  // パイプ・リダイレクト・連結より前だけを見る（後続コマンドは別の話）。
-  const head = cmd.split(/[|;&><]/)[0].trim();
-  const tokens = head.split(/\s+/).filter(Boolean).slice(0, 2);
-  return tokens.length ? `Bash(${tokens.join(' ')})` : 'Bash';
+
+  const labels = [];
+  // パイプ・`&&` `||` `;` で分割する。各セグメントが個別に許可判定を受ける。
+  for (const raw of cmd.split(/[|;&\n]+/)) {
+    // リダイレクト以降はファイル名であってコマンドではない。
+    const seg = raw.split(/[><]/)[0].trim();
+    if (!seg) continue;
+    const tokens = seg.split(/\s+/).filter(Boolean);
+    while (tokens.length && SHELL_KEYWORDS.has(tokens[0])) tokens.shift();
+    if (!tokens.length) continue;
+    // `git -C <dir> <sub>` は 4 トークンまで採る（issue #160）。2 トークン固定だと
+    // `Bash(git -C)` になり、**対処に必要なサブコマンドが消える**。キットは
+    // `Bash(git -C planning log:*)` 等を自ら配布しており、planning を submodule 参照する
+    // 全リポジトリでこの形が日常的に出る。許可リストのエントリと同じ粒度へ揃える。
+    let label;
+    if (tokens[0] === 'git' && tokens[1] === '-C' && tokens.length >= 4) {
+      label = tokens.slice(0, 4).join(' ');
+    } else {
+      // 2 トークン目はサブコマンド／スクリプト名のときだけ採る（`git log` / `node x.js`）。
+      // フラグ（`head -5` の `-5`、`cmp -` の `-`）は許可リストの粒度に無く、ノイズになる。
+      label = tokens[1] && !tokens[1].startsWith('-') ? `${tokens[0]} ${tokens[1]}` : tokens[0];
+    }
+    if (!labels.includes(label)) labels.push(label);
+  }
+  if (!labels.length) return 'Bash';
+  const shown = labels.slice(0, 4);
+  if (labels.length > shown.length) shown.push('…');
+  return `Bash(${shown.join(' | ')})`;
+}
+
+/** ラベルにパイプライン（複数セグメント）が含まれるか。報告の注記を出す判断に使う。 */
+function hasPipeline(byTool) {
+  for (const name of byTool.keys()) if (name.includes(' | ')) return true;
+  return false;
+}
+
+/**
+ * コマンドがリダイレクト（`>` / `>>`）を含むか。
+ *
+ * リダイレクトはラベルから落とす（ファイル名はコマンドではない）が、**拒否の原因が
+ * リダイレクトそのもの**である場合がある（レビュー用は書き込み手段を持たない設計のため。
+ * issue #160 で `git show X > /tmp/a` が `Bash(git show)` として報告された）。
+ * ラベルだけ見ると「許可済みのはずが拒否された」と読めてしまうので、注記の材料に使う。
+ */
+function hasRedirect(input) {
+  const cmd = input && typeof input.command === 'string' ? input.command : '';
+  return /[^0-9\s]?>>?\s*\S/.test(cmd);
 }
 
 /**
@@ -127,22 +186,29 @@ function collectDenials(events) {
   const result = events.find((e) => e && e.type === 'result') || null;
   const byTool = new Map();
   const bump = (name) => byTool.set(name, (byTool.get(name) || 0) + 1);
+  let redirect = false;
 
   // 1. SDK が itemize した配列。
   const itemizedList = result && Array.isArray(result.permission_denials) ? result.permission_denials : null;
   if (itemizedList && itemizedList.length) {
     for (const d of itemizedList) {
-      bump(labelOf(d && (d.tool_name || d.toolName), d && (d.tool_input || d.toolInput)));
+      const input = d && (d.tool_input || d.toolInput);
+      if (hasRedirect(input)) redirect = true;
+      bump(labelOf(d && (d.tool_name || d.toolName), input));
     }
-    return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials' };
+    return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials', redirect };
   }
 
   // 2. tool_use_id → ラベルを作ってから tool_result を走査する。
   const labelById = new Map();
+  const redirectById = new Set();
   for (const e of events) {
     if (!e || e.type !== 'assistant') continue;
     for (const b of contentOf(e)) {
-      if (b && b.type === 'tool_use' && b.id) labelById.set(b.id, labelOf(b.name, b.input));
+      if (b && b.type === 'tool_use' && b.id) {
+        labelById.set(b.id, labelOf(b.name, b.input));
+        if (hasRedirect(b.input)) redirectById.add(b.id);
+      }
     }
   }
   for (const e of events) {
@@ -151,22 +217,23 @@ function collectDenials(events) {
       if (!b || b.type !== 'tool_result') continue;
       if (!b.is_error) continue;
       if (!looksLikeDenial(resultTextOf(b))) continue;
+      if (redirectById.has(b.tool_use_id)) redirect = true;
       bump(labelById.get(b.tool_use_id) || '(不明なツール)');
     }
   }
   if (byTool.size) {
     let n = 0;
     for (const v of byTool.values()) n += v;
-    return { count: n, byTool, itemized: true, source: 'tool_result' };
+    return { count: n, byTool, itemized: true, source: 'tool_result', redirect };
   }
 
   // 3. 件数のみ。
   const count = result && Number.isFinite(result.permission_denials_count) ? result.permission_denials_count : 0;
-  return { count, byTool, itemized: false, source: 'permission_denials_count' };
+  return { count, byTool, itemized: false, source: 'permission_denials_count', redirect };
 }
 
 /** 報告用の 1 行メッセージを組み立てる。 */
-function formatDenials({ count, byTool, itemized }) {
+function formatDenials({ count, byTool, itemized, redirect }) {
   const head = `AI の実行中にツールの権限拒否が ${count} 件発生した（CI には承認する人間が居ないため、これらの作業は実行されていない）`;
   if (!itemized) {
     return (
@@ -178,8 +245,16 @@ function formatDenials({ count, byTool, itemized }) {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([name, n]) => `${name}（${n} 件）`)
     .join(' / ');
+  const pipeNote = hasPipeline(byTool)
+    ? '`A | B` の形は**各コマンドが個別に許可判定される**ため、拒否されたのは後段のコマンドかもしれない。' +
+      '前段が既に許可済みなら、まず後段（例: cmp / diff / head / tail）を疑うこと。'
+    : '';
+  const redirectNote = redirect
+    ? '**リダイレクト（`>`）を含むコマンドがある**。レビュー用は書き込み手段を持たない設計のため、' +
+      'コマンド名ではなくリダイレクトそのものが拒否の原因かもしれない。出力はファイルへ書かず、そのまま読むこと。'
+    : '';
   return (
-    `${head}: ${detail}。` +
+    `${head}: ${detail}。${pipeNote}${redirectNote}` +
     '対処は 2 通りである: (a) 必要なツールを claude_args の --allowedTools に加える、' +
     '(b) そのツールを使わせないようプロンプト側で作業手順を狭める。' +
     'どちらも取らずに放置すると、ジョブは success のまま成果物だけが欠けた状態が続く'
@@ -298,11 +373,106 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(git diff)') === 2 && r.byTool.get('Bash(git status)') === 1,
     },
     {
-      name: 'パイプ以降は見ない（後続コマンドを取り違えない）',
+      // issue #158: 旧実装は先頭だけを見て `Bash(git log)` と報告し、原因の head を隠していた。
+      name: 'パイプの各セグメントを列挙する（原因を隠さない）',
       events: [
         { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git log | head -5' } }] },
       ],
-      expect: (r) => r.byTool.get('Bash(git log)') === 1,
+      expect: (r) => r.byTool.get('Bash(git log | head)') === 1,
+    },
+    {
+      // 実測の形: 許可済みの git show だけが 6 件報告され、未許可の cmp が出なかった。
+      name: '許可済み前段 + 未許可後段（git show | cmp）で後段が候補に載る',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'git show origin/main:a.yml | cmp - a.yml' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(git show | cmp)') === 1,
+    },
+    {
+      name: '&& / ; 連結も分割する',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'cd x && npm ci; npm test' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(cd x | npm ci | npm test)') === 1,
+    },
+    {
+      // `for f in …; do …; done` は先頭トークンが for になり許可リストで表現できない。
+      name: 'シェルのループは予約語を飛ばして中身のコマンドを出す',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'for f in a b; do cmp $f x; done' } },
+          ],
+        },
+      ],
+      expect: (r) => /cmp/.test([...r.byTool.keys()][0]),
+    },
+    {
+      name: 'リダイレクト先のファイル名はコマンドとして数えない',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'node x.js > out.txt' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(node x.js)') === 1,
+    },
+    {
+      // issue #160: `git show X > /tmp/a` が `Bash(git show)`（許可済み）として報告された。
+      name: 'リダイレクトを含むなら注記を出す（許可済みに見えて実は書き込みが原因）',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b > /tmp/x' } }] },
+      ],
+      expect: (r) => r.redirect === true && /リダイレクト/.test(formatDenials(r)),
+    },
+    {
+      name: 'リダイレクトが無ければ注記を出さない',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b' } }] },
+      ],
+      expect: (r) => !r.redirect && !/リダイレクト/.test(formatDenials(r)),
+    },
+    {
+      // issue #160: 2 トークン固定だと `Bash(git -C)` になりサブコマンドが消える。
+      name: 'git -C <dir> <sub> は 4 トークンまで採る（許可リストと同じ粒度）',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'git -C planning rev-parse HEAD' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(git -C planning rev-parse)') === 1,
+    },
+    {
+      name: 'セグメントが多い場合は省略記号を付ける（ラベルが暴れない）',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'a | b | c | d | e | f' } },
+          ],
+        },
+      ],
+      expect: (r) => [...r.byTool.keys()][0].endsWith('| …)'),
+    },
+    {
+      name: 'パイプがあれば「後段を疑え」の注記を出す',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a | cmp - b' } }] },
+      ],
+      expect: (r) => /後段のコマンドかもしれない/.test(formatDenials(r)),
+    },
+    {
+      name: 'パイプが無ければ注記を出さない（余計な誘導をしない）',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git diff' } }] },
+      ],
+      expect: (r) => !/後段のコマンドかもしれない/.test(formatDenials(r)),
     },
     {
       name: 'command が無い Bash はツール名のみ（落ちない）',

@@ -196,7 +196,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -229,6 +229,15 @@ jobs:
               - **ファイルを書き換える検証**（変異テスト・設定を壊して再実行する類）。レビュー用の
                 ツールに書き込み手段は無く、これは設計どおりである。PR 本文がそうした検証結果を
                 主張していても、**追試はできない**ので「未検証（書き込み不可）」と書く。
+              - **シェルのループ・複合形**（`for` / `while` / `if … then … fi`）。先頭トークンが
+                `for` 等になるため許可リストで表現できず、必ず拒否される。複数ファイルを調べる
+                ときは**1 ファイルずつ個別のコマンドで**実行すること。
+            - **パイプは各コマンドが個別に許可判定される。** `git show X | cmp - Y` は `cmp` が
+              未許可なら拒否される（前段が許可済みでも通らない）。バイト一致の確認には
+              `cmp` / `diff` を許可してあるので、そのまま使ってよい。
+            - **出力をファイルへリダイレクトしない**（`> /tmp/a` 等）。レビュー用は書き込み手段を
+              持たないため拒否される。出力はそのまま読むこと。2 つのファイルを比べるなら
+              一時ファイルを作らず `git show <ref>:<path> | diff - <path>` の形で行う。
             - レビュー本文の末尾に **「実行できなかったこと」節を必ず設ける**。拒否された、または
               実行を諦めたツール／コマンドと、**それによって裏付けが取れていない主張**を列挙する。
               何も無かった場合は「なし」と 1 行書く（節自体を省略しない）。
