@@ -48,7 +48,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`10d8ce2` → `cff9b6c`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 が続けてマージされたため計 7 巡取り込んでいる）
+  - `planning` submodule の pin 前進（`10d8ce2` → `25b4291`。作業中に計画側で #98 / #105 / #107 / #110 / #113 / #116 / #119 / #125 が続けてマージされたため計 8 巡取り込んでいる）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -120,7 +120,7 @@ AI 実装・AI レビューが「ジョブは success なのに検証を実行�
 
 ## 受け入れ基準
 
-- [ ] `planning` submodule が `origin/main` の先端（`cff9b6c`）を指す
+- [ ] `planning` submodule が `origin/main` の先端（`25b4291`）を指す
 - [ ] `repo-template/` と本リポジトリの残差分が、上表の判断ルールで説明できるものだけになる
 - [ ] `node scripts/check-ai-workflow-config.js --self-test` と `node scripts/check-ai-workflow-config.js` が合格する
 - [ ] `node scripts/scripts.test.js` が全件合格する（テンプレート由来のテスト＋本リポ固有のテスト双方）
@@ -337,6 +337,36 @@ companion ファイル（`scripts.local.test.js`）を任意で読み込む受�
 `REQUIRE_REPO_TESTS=1` でも検出できない（新名があるため `res.file` は null にならない）。
 キットの `loadCompanionTests` を取り出した実測で、新名 1 件・旧名 2 件を置くと旧名 2 件が実行されないことを確認した。
 本リポは `git mv` で改名したため旧名が残っておらず実害は無い。
+
+### 第 8 巡（pin `25b4291`）— 起票した全件が反映され、キット側の残課題は無くなった
+
+計画側 PR #125（issue #121 / #122 / #124）で、本リポから起票した最後の 2 件が反映された。
+
+- `.claude/settings.json` に `Bash(git -C planning log|show|diff|ls-tree:*)` の 4 件が追加され、
+  **3 系統乖離の warn が消えた**（`check-ai-workflow-config.js` が不備 0 件・warn 0 件）。
+  本リポの `settings.json` はキットとバイト一致に戻った
+- `ci.example.yml` のヘッダが是正後の実態へ更新された（`claude-code-review` を併記・
+  「末尾 4 行」の記述を削除・引用符付き 1 引数の注記と `ai-workflow-config` への言及を追加）
+- `docs/ai-workflow.md` §3 に `pr-title.yml` が追加された
+
+#### 検証中に生じた誤りと再訂正（記録として残す）
+
+`git -C planning` の 4 件（#120）について、次の 2 つの誤りを犯し、いずれも訂正した。
+
+1. **「AI レビューが実行して検証した」と報告した**が、ログの grep ヒットは*自分が PR コメントに
+   書いたコマンド例*がプロンプトへ取り込まれたものだった（タイムスタンプがモデル実行開始前）。
+2. 1 の訂正時に planning#123 を引いて**「PR CI では submodule 未取得のため誤答する」と書いた**が、
+   #123 は起票者自身が取り下げ済み（`NOT_PLANNED`）であり、私はその取り下げを読まずに
+   **同じ見落としを繰り返した**。`actions/checkout` の `submodules:` 指定だけを見て、
+   後続の `Fetch planning submodule (read-only PAT)` ステップを見落としていた。
+
+実 run（`30690504515`）のログでは planning が pin どおり `cff9b6c` で取得されており、
+`git -C planning` は CI でも正しく submodule の履歴を返す。正確な状態は
+**「許可は正しく機能する。当該 run ではたまたま使われなかった」**である。
+
+教訓として、ワークフローの挙動を判断するときは `actions/checkout` の設定だけでなく
+**後続ステップまで読む**こと、および**実 run のログで裏を取る**ことを徹底する
+（本作業ではログ確認によって 1 も 2 も検出できた）。
 
 ## 本作業で扱わない既存不具合（別 issue へ切り出す）
 

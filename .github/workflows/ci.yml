@@ -5,11 +5,16 @@
 # ジョブ（shell-scripts / runtime-scaffold / consumer-endpoint-names / frontend / frontend-e2e）は
 # 本リポジトリ側で維持する。
 #
-# ── スタック別 --allowedTools（claude-coding.yml の claude_args 末尾を書き換える） ──
-# このファイルの build/test ステップを変更したら、claude-coding.yml / claude-code-review.yml の
-# claude_args 末尾（スタック別ツール）を使用スタックに合わせて書き換えること。
+# ── スタック別 --allowedTools（claude-coding / claude-code-review の claude_args を書き換える） ──
+# このファイルの build/test ステップを変更したら、claude-coding.example.yml と
+# claude-code-review.example.yml の claude_args（スタック別ツール）を使用スタックに合わせて
+# 書き換えること。**両方**を同じ内容に保つ（レビュー側から実行系を落とすと、AI レビューは
+# 検証できず静的読解へ退行し、毎回「Bash が承認待ちでブロックされた」と報告するだけになる）。
 # .claude/settings.json の permissions.allow にも同じコマンドを追記すること（3 系統を揃える）。
 # 記法誤り・複製漏れは ai-workflow-config ジョブが機械検出する。
+#
+# 注: claude_args の --allowedTools は「二重引用符でくくった 1 引数・カンマ区切り」で書く。
+# 1 ツール 1 行に戻すと空白で割れて全指定が無効になる（各ワークフローの記法コメントを参照）。
 #
 # スタック別の対応コマンド例:
 #   C#/.NET : Bash(dotnet build:*), Bash(dotnet test:*), Bash(dotnet format:*), Bash(dotnet restore:*)
