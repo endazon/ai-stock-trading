@@ -9,7 +9,10 @@ updated: 2026-08-02
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0017_llm-fallback-policy.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md
 ---
 
 # IADR-0126: 全面再実装は「1 issue = 1 PR」で行い、統制コアを結線より先に完成させる
