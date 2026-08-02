@@ -196,7 +196,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -238,6 +238,10 @@ jobs:
             - **出力をファイルへリダイレクトしない**（`> /tmp/a` 等）。レビュー用は書き込み手段を
               持たないため拒否される。出力はそのまま読むこと。2 つのファイルを比べるなら
               一時ファイルを作らず `git show <ref>:<path> | diff - <path>` の形で行う。
+            - **長い連鎖のワンライナーを作らない。** `… | head -20 | echo "exit:$?"` のように
+              `|` `&&` でつなぐほど、鎖のどこかに未許可コマンドが混ざる確率が上がり、拒否されると
+              **鎖全体が実行されない**（前段の結果も得られない）。1 コマンドずつ実行すること。
+              なお `$?` はパイプの後では直前の 1 コマンドの結果しか表さないため、判定にも使えない。
             - レビュー本文の末尾に **「実行できなかったこと」節を必ず設ける**。拒否された、または
               実行を諦めたツール／コマンドと、**それによって裏付けが取れていない主張**を列挙する。
               何も無かった場合は「なし」と 1 行書く（節自体を省略しない）。

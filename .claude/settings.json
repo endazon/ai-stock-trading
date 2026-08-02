@@ -28,6 +28,7 @@
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
+      "Bash(echo:*)",
       "Bash(cmp:*)",
       "Bash(diff:*)",
       "Bash(mkdir:*)",

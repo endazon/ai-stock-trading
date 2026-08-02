@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜18 巡）
+title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜19 巡）
 type: work
 status: review
 related_ids: [NFR]
@@ -16,7 +16,7 @@ related_specs:
   - ../../.claude/rules/traceability.md
 ---
 
-# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜18 巡）
+# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜19 巡）
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -32,7 +32,7 @@ related_specs:
 前回の同期（[#322](https://github.com/endazon/ai-stock-trading/pull/322)、pin `9cd3499`）以降、計画リポジトリで
 impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジトリへ取り込む。
 
-本作業は 5 巡に分かれる。起票 → 反映 → 取り込みが同日中に 4 往復したためである。
+本作業は 6 巡に分かれる。起票 → 反映 → 取り込みが同日中に 5 往復したためである。
 
 | 巡 | pin | 取り込んだ計画側 PR | 本リポから起票した指摘 |
 | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 | 第 16 巡 | `e448f33` | [#154](https://github.com/endazon/project-planning/pull/154)（#152 / #153 の反映） | なし（この時点ではキット側の残課題は無かった） |
 | 第 17 巡 | `cc4a826` | [#156](https://github.com/endazon/project-planning/pull/156) ＋ [#157](https://github.com/endazon/project-planning/pull/157)（#155 の反映） | [#158](https://github.com/endazon/project-planning/issues/158) |
 | 第 18 巡 | `65adb87` | [#159](https://github.com/endazon/project-planning/pull/159)（#158 / #160 の反映） | なし |
+| 第 19 巡 | `3bdc8f8` | [#161](https://github.com/endazon/project-planning/pull/161)（`echo` の許可とラベル汚染の是正） | なし |
 
 第 17 巡の起点である [#155](https://github.com/endazon/project-planning/issues/155) は、**第 16 巡までを載せた PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) の CI で
 本作業自身が取り込んだ検査器が捕捉した問題**である（後述「PR #328 の AI レビュー結果」）。
@@ -62,7 +63,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33` → `cc4a826` → `65adb87`）
+  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33` → `cc4a826` → `65adb87` → `3bdc8f8`）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -193,6 +194,18 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 `scripts/README.md` はキット側で無変更のため、本リポジトリでも変更していない。
 
+### 第 19 巡（pin `3bdc8f8`）で追加した反映
+
+計画側 PR [project-planning#161](https://github.com/endazon/project-planning/pull/161) の反映。**第 18 巡を載せた実 run が示した残り 2 系統**を塞ぐものである
+（本リポジトリからの起票ではなく、計画側が同 run の結果を見て是正した）。すべてバイト一致で採用した。
+
+| ファイル | 内容 |
+| --- | --- |
+| `.claude/settings.json` / `claude-code-review.yml` / `claude-coding.yml` | `Bash(echo:*)` を追加（3 系統）。第 18 巡の実 run で拒否の原因が `echo` だったと判明したため |
+| `scripts/check-permission-denials.js` | ラベルを汚す 2 つの不具合を是正。① `2>&1` の**fd 複製**が `1` という架空のコマンドとして混入する ② `echo "exit:$?"` の**引用符付き引数**がそのままラベルに載る。自己試験 27 → 30 件 |
+| `claude-code-review.yml` の `prompt:` | 「**長い連鎖のワンライナーを作らない**」を追加。`\|` `&&` でつなぐほど鎖のどこかに未許可コマンドが混ざる確率が上がり、拒否されると**鎖全体が実行されない**（前段の結果も得られない）。`$?` がパイプ後では直前 1 コマンドの結果しか表さない点も明記 |
+| `scripts/scripts.test.js` | 上記のテストを追加（115 → 118 件） |
+
 ### CI ジョブの追加は不要
 
 `check-permission-denials.js` は `ci.yml` のジョブではなく **AI ワークフロー 2 本の末尾ステップ**として動く。
@@ -201,14 +214,14 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 ## 受け入れ基準
 
-- [x] `planning` submodule が `origin/main` の先端（`65adb87`）を指す
+- [x] `planning` submodule が `origin/main` の先端（`3bdc8f8`）を指す
 - [x] `repo-template/` と本リポジトリの残差分が、判断ルールで説明できるものだけになる
 - [x] キット由来のファイルがすべてキットと**バイト一致**である（`cmp` で全 102 ファイルを機械照合。
       残差分は「固有の実コンテンツ」「置換点」だけ）
-- [x] `node scripts/check-permission-denials.js --self-test` が合格する（27 件）
+- [x] `node scripts/check-permission-denials.js --self-test` が合格する（30 件）
 - [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（22 件・退行 0・warn 0）
 - [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（23 件・不備 0 件。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0）
-- [x] `node scripts/scripts.test.js` が全件合格する（115 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
+- [x] `node scripts/scripts.test.js` が全件合格する（118 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
 - [x] `node scripts/check-doc-links.js` の結果が pin 前進の前後で不変である（既存 20 件のみ・新規破損なし）
 - [x] `dotnet build backend/backend.slnx` が通る（コード無変更の回帰確認）
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
@@ -234,15 +247,15 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 | 検証 | 結果（最終＝第 15 巡取り込み後） |
 | --- | --- |
-| `check-permission-denials.js --self-test` | ✅ 27 件合格（11 → 15 → 17 → 第 18 巡 27） |
+| `check-permission-denials.js --self-test` | ✅ 30 件合格（11 → 15 → 17 → 27 → 第 19 巡 30） |
 | `check-action-versions.js --self-test` | ✅ 22 件合格（第 15 巡は 14 件） |
 | `check-action-versions.js --dir .github/workflows --compare-with-ref origin/develop`（CI と同条件・11 アクション） | ✅ 退行なし・warn 0（companion 未追跡のあいだは `warning:` が出ることも実測） |
 | `check-ai-workflow-config.js --self-test` | ✅ 23 件合格（第 14 巡は 19 件） |
 | `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0 |
-| `scripts.test.js`（ローカル） | ✅ 115 件合格（前巡 85 → 92 → 103 → 108 → 109 → 第 18 巡 115） |
-| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 115 件合格 |
+| `scripts.test.js`（ローカル） | ✅ 118 件合格（前巡 85 → 92 → 103 → 108 → 109 → 115 → 第 19 巡 118） |
+| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 118 件合格 |
 | `dotnet build backend/backend.slnx` | ✅ 0 警告 0 エラー |
-| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..65adb87 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
+| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..3bdc8f8 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
 
 **新ステップの変異テスト**（合成した `execution_file` を与えて実測）
 
@@ -504,6 +517,33 @@ const head = cmd.split(/[|;&><]/)[0].trim();
 という誘導が入った。**「許可済みのコマンドを名指しされて塞ぎようがない」状態は解消した。**
 
 これで第 14〜18 巡に本リポから起票した 6 件（#148 / #149 / #152 / #153 / #155 / #158）はすべて反映・取り込み済みとなった。
+
+### 第 19 巡（pin `3bdc8f8`）— 第 18 巡の効果と、残り 2 系統の解消を実測した
+
+第 18 巡を載せた実 run（[30715183510](https://github.com/endazon/ai-stock-trading/actions/runs/30715183510)）で、`labelOf` 是正の効果が数字に出た。
+
+| | 第 17 巡時点の run | 第 18 巡時点の run |
+| --- | --- | --- |
+| 拒否件数 | 8 件 | **3 件** |
+| ラベル | `Bash(git show)`（＝許可済み・**原因が見えない**） | `Bash(git show \| diff \| head \| echo "exit:$?")`（＝**原因の `echo` が見える**） |
+
+つまり「許可済みのコマンドを名指しされて塞ぎようがない」状態は解消し、**原因が `echo` だと判った**。
+計画側はこの run の結果を見て PR [project-planning#161](https://github.com/endazon/project-planning/pull/161) で 2 系統を塞いだ（本リポジトリからの起票ではない）。
+
+1. `Bash(echo:*)` を 3 系統へ追加
+2. ラベルを汚す 2 つの不具合を是正
+
+**是正の実効性を、実 run で出た形そのままの合成ログで実測した。**
+
+| 与えたコマンド | 是正前のラベル | 是正後のラベル |
+| --- | --- | --- |
+| `git show HEAD:scripts/x.js \| diff - scripts/x.js \| head -20; echo "exit:$?"` | `Bash(git show \| diff \| head \| echo "exit:$?")`（引用符付き引数がそのまま載る） | **`Bash(git show \| diff \| head \| echo)`** |
+| `ls -la planning 2>&1 \| head -5; echo "---"; cat planning/README.md` | `Bash(ls \| 1 \| head \| echo "---" \| …)`（`2>&1` の **fd 複製が `1` という架空のコマンド**として混入） | **`Bash(ls \| head \| echo \| cat planning/README.md)`** |
+
+終了コードは拒否ありで 1、拒否なしで 0（誤検知なし）。
+
+これで第 14〜19 巡に本リポから起票した 6 件（#148 / #149 / #152 / #153 / #155 / #158）はすべて反映・取り込み済みであり、
+第 18 巡以降は**計画側が本リポの実 run を見て先回りで是正する**流れになっている。
 
 ## 未決事項
 

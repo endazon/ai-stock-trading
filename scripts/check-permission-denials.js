@@ -104,11 +104,15 @@ function labelOf(name, input) {
   const cmd = input && typeof input.command === 'string' ? input.command.trim() : '';
   if (!cmd) return 'Bash';
 
+  // リダイレクトは**分割の前に**取り除く。`2>&1` は `&` を含むため、先に分割すると
+  // `1` が独立したセグメントとして残り、`Bash(ls | 1 | head)` のような存在しない
+  // コマンドを報告してしまう（実測でこの形が出た）。
+  const stripped = cmd.replace(/(\d?>>?&?\d?|<)/g, ' ');
+
   const labels = [];
   // パイプ・`&&` `||` `;` で分割する。各セグメントが個別に許可判定を受ける。
-  for (const raw of cmd.split(/[|;&\n]+/)) {
-    // リダイレクト以降はファイル名であってコマンドではない。
-    const seg = raw.split(/[><]/)[0].trim();
+  for (const raw of stripped.split(/[|;&\n]+/)) {
+    const seg = raw.trim();
     if (!seg) continue;
     const tokens = seg.split(/\s+/).filter(Boolean);
     while (tokens.length && SHELL_KEYWORDS.has(tokens[0])) tokens.shift();
@@ -122,8 +126,11 @@ function labelOf(name, input) {
       label = tokens.slice(0, 4).join(' ');
     } else {
       // 2 トークン目はサブコマンド／スクリプト名のときだけ採る（`git log` / `node x.js`）。
-      // フラグ（`head -5` の `-5`、`cmp -` の `-`）は許可リストの粒度に無く、ノイズになる。
-      label = tokens[1] && !tokens[1].startsWith('-') ? `${tokens[0]} ${tokens[1]}` : tokens[0];
+      // フラグ（`head -5` の `-5`、`cmp -` の `-`）・引用符付き文字列（`echo "exit:$?"`）・
+      // 変数展開（`cmp $f`）は許可リストの粒度に無く、ノイズになるので採らない。
+      const second = tokens[1];
+      const isArgument = !second || /^[-"'$]/.test(second);
+      label = isArgument ? tokens[0] : `${tokens[0]} ${second}`;
     }
     if (!labels.includes(label)) labels.push(label);
   }
@@ -149,7 +156,10 @@ function hasPipeline(byTool) {
  */
 function hasRedirect(input) {
   const cmd = input && typeof input.command === 'string' ? input.command : '';
-  return /[^0-9\s]?>>?\s*\S/.test(cmd);
+  // `2>&1` 等の fd 複製は**ファイルへの書き込みではない**ので、注記の対象から外す
+  // （これを数えると「書き込みが原因かもしれない」という誤った案内を毎回出すことになる）。
+  const withoutFdDup = cmd.replace(/\d*>&\d*/g, ' ');
+  return />>?\s*\S/.test(withoutFdDup);
 }
 
 /**
@@ -434,6 +444,35 @@ function selfTest() {
         { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b' } }] },
       ],
       expect: (r) => !r.redirect && !/リダイレクト/.test(formatDenials(r)),
+    },
+    {
+      // 実測: `2>&1` が `&` で分割され、`1` が独立したコマンドとして報告された。
+      name: '2>&1 は分割せず、存在しないコマンド `1` を作らない',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'ls -la 2>&1 | head -5' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(ls | head)') === 1,
+    },
+    {
+      // fd 複製はファイルへの書き込みではないので、書き込み注記の対象にしない。
+      name: '2>&1 だけならリダイレクト注記を出さない',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'node x.js 2>&1' } }] },
+      ],
+      expect: (r) => r.redirect !== true,
+    },
+    {
+      // 実測: `echo "exit:$?"` の引用符付き引数がラベルに出ていた。
+      name: '引用符付き引数・変数展開は 2 トークン目に採らない',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'git show a | diff - b | head -20 | echo "exit:$?"' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(git show | diff | head | echo)') === 1,
     },
     {
       // issue #160: 2 トークン固定だと `Bash(git -C)` になりサブコマンドが消える。

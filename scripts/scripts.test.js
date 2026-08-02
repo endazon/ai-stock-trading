@@ -193,6 +193,25 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       'Bash(git -C planning rev-parse)'
     ));
 
+  // 実測: `2>&1` が `&` で分割され、存在しないコマンド `1` が報告に出た。
+  ok('2>&1 を分割してコマンド `1` を作らない', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'ls -la 2>&1 | head -5' }), 'Bash(ls | head)'));
+
+  ok('fd 複製だけならリダイレクト注記の対象にしない', () =>
+    assert.notStrictEqual(
+      collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'node x.js 2>&1' } }] },
+      ]).redirect,
+      true
+    ));
+
+  // 実測: `echo "exit:$?"` の引用符付き引数がそのままラベルに出ていた。
+  ok('引用符付き引数はラベルに出さない', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git show a | diff - b | head -20 | echo "exit:$?"' }),
+      'Bash(git show | diff | head | echo)'
+    ));
+
   ok('リダイレクトが原因の拒否は注記で示す（許可済みに見えるため）', () => {
     const r = collectDenials([
       { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b > /tmp/x' } }] },
