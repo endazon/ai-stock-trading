@@ -120,7 +120,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 // 件数はログに出ていたが誰も見ておらず、CI は緑・PR には進行中コメントだけが残った。
 
 {
-  const { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf } = require('./check-permission-denials.js');
+  const { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf, isCritical } = require('./check-permission-denials.js');
 
   ok('拒否ゼロは count 0（正常な実行を落とさない）', () =>
     assert.strictEqual(collectDenials([{ type: 'result', permission_denials_count: 0 }]).count, 0));
@@ -267,6 +267,27 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 
   ok('NDJSON・壊れた行があっても読めた分で判断する', () =>
     assert.strictEqual(parseEvents('{"type":"result","permission_denials_count":3}\n{壊れ').length, 1));
+
+  // 6 巡目の実測（issue #158 の続報）: プロセス置換が壊れたラベルになっていた。
+  ok('プロセス置換 <(…) の中のコマンドを露出させる', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'diff <(git show a:f) <(git show b:f)' }),
+      'Bash(diff | git show)'
+    ));
+
+  ok('サブコマンドを持たないコマンドの引数はラベルへ出さない（echo done → echo）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'git -C planning show x | echo done' }), 'Bash(git -C planning show | echo)'));
+
+  // 段階ポリシー: 「拒否 1 件でも赤」をやめ、「実行を実質潰した拒否だけ赤」にする。
+  // 根拠は実運用 6 巡の実測（17 → 12 → 8 → 5 → 3 → 2 件）。5 件以上はすべて実害を伴い、
+  // 4 件以下はすべてレビュー本文が正常だった。境界はその間に置く。
+  ok('段階ポリシー: 元障害（17/21）は失敗・探索的な 2/43 は失敗させない', () => {
+    assert.strictEqual(isCritical({ count: 17, numTurns: 21 }, 4), true);
+    assert.strictEqual(isCritical({ count: 12, numTurns: 30 }, 4), true);
+    assert.strictEqual(isCritical({ count: 2, numTurns: 43 }, 4), false);
+    assert.strictEqual(isCritical({ count: 3, numTurns: 6 }, 4), true); // 半数以上は件数が少なくても失敗
+    assert.strictEqual(isCritical({ count: 1, numTurns: 43 }, 0), true); // STRICT は従来どおり
+  });
 
   // 検証器自身の自己試験が通ること（check-ai-workflow-config と同じ扱い）。
   ok('check-permission-denials の自己試験が通る', () => {

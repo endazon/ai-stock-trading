@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜19 巡）
+title: 作業仕様書 — planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜20 巡）
 type: work
 status: review
 related_ids: [NFR]
@@ -16,7 +16,7 @@ related_specs:
   - ../../.claude/rules/traceability.md
 ---
 
-# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜19 巡）
+# 作業仕様書: planning submodule の最新化と impl-handoff-kit の全面反映（第 14〜20 巡）
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -32,7 +32,7 @@ related_specs:
 前回の同期（[#322](https://github.com/endazon/ai-stock-trading/pull/322)、pin `9cd3499`）以降、計画リポジトリで
 impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジトリへ取り込む。
 
-本作業は 6 巡に分かれる。起票 → 反映 → 取り込みが同日中に 5 往復したためである。
+本作業は 7 巡に分かれる。起票 → 反映 → 取り込みが 6 往復したためである。
 
 | 巡 | pin | 取り込んだ計画側 PR | 本リポから起票した指摘 |
 | --- | --- | --- | --- |
@@ -42,6 +42,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 | 第 17 巡 | `cc4a826` | [#156](https://github.com/endazon/project-planning/pull/156) ＋ [#157](https://github.com/endazon/project-planning/pull/157)（#155 の反映） | [#158](https://github.com/endazon/project-planning/issues/158) |
 | 第 18 巡 | `65adb87` | [#159](https://github.com/endazon/project-planning/pull/159)（#158 / #160 の反映） | なし |
 | 第 19 巡 | `3bdc8f8` | [#161](https://github.com/endazon/project-planning/pull/161)（`echo` の許可とラベル汚染の是正） | なし |
+| 第 20 巡 | `aeb97c4` | [#162](https://github.com/endazon/project-planning/pull/162)（拒否判定の段階ポリシー化） | なし |
 
 第 17 巡の起点である [#155](https://github.com/endazon/project-planning/issues/155) は、**第 16 巡までを載せた PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) の CI で
 本作業自身が取り込んだ検査器が捕捉した問題**である（後述「PR #328 の AI レビュー結果」）。
@@ -63,7 +64,7 @@ impl-handoff-kit の是正が進んだ。本作業はその内容を本リポジ
 ## 対象範囲
 
 - 対象:
-  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33` → `cc4a826` → `65adb87` → `3bdc8f8`）
+  - `planning` submodule の pin 前進（`9cd3499` → `0847687` → `3b0deb2` → `e448f33` → `cc4a826` → `65adb87` → `3bdc8f8` → `aeb97c4`）
   - `repo-template/` と本リポジトリ直下の全差分の解消（採否の判断と反映）
   - テンプレート側の不足・混入のフィードバック起票
 - 対象外:
@@ -206,6 +207,24 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 | `claude-code-review.yml` の `prompt:` | 「**長い連鎖のワンライナーを作らない**」を追加。`\|` `&&` でつなぐほど鎖のどこかに未許可コマンドが混ざる確率が上がり、拒否されると**鎖全体が実行されない**（前段の結果も得られない）。`$?` がパイプ後では直前 1 コマンドの結果しか表さない点も明記 |
 | `scripts/scripts.test.js` | 上記のテストを追加（115 → 118 件） |
 
+### 第 20 巡（pin `aeb97c4`）で追加した反映
+
+計画側 PR [project-planning#162](https://github.com/endazon/project-planning/pull/162) の反映。**拒否判定を「1 件でも失敗」から段階ポリシーへ変更する**、
+本連鎖でもっとも設計判断の大きい変更である。すべてバイト一致で採用した（本リポジトリの追加判断は無し）。
+
+| ファイル | 内容 |
+| --- | --- |
+| `scripts/check-permission-denials.js` | **段階ポリシー**へ変更。件数が許容値（既定 4・`PERMISSION_DENIALS_TOLERANCE` で変更可）を超えるか、拒否がターン数の半分以上なら終了コード 1。それ未満は警告のみで 0。`STRICT_PERMISSION_DENIALS=1` で旧挙動（1 件でも失敗）へ戻せる。自己試験 30 → 42 件 |
+| `claude-code-review.yml` の `prompt:` | 許可リストで解決できない構文を追記。`> /dev/null` も**宛先に関わらず**拒否されること、**プロセス置換 `<(…)`・コマンド置換 `$(…)`** は中のコマンドが許可済みでも拒否されること、2 版の比較は `git show <ref>:<path> \| diff - <path>` を使うこと |
+| `scripts/scripts.test.js` | 上記のテストを追加（118 → 121 件） |
+| `scripts/README.md` | `check-permission-denials.js` の行を段階ポリシーの説明へ更新 |
+
+**なぜ「1 件でも失敗」をやめるのか。** AI は探索の過程でプロセス置換・コマンド置換・`> /dev/null`・
+環境変数の前置き等、**許可リストでは原理的に解決できない構文**を時折試す。ツールを足しても根絶できない。
+実際、本リポジトリの 6 巡の実測は **17 → 12 → 8 → 5 → 3 → 2 件**と収束したがゼロにならなかった。
+「成果物は正しいのに赤」が常態化すると、拒否の赤を無視する学習が生まれ、検査の目的自体が壊れる。
+可視化（アノテーション＋実行サマリ）は件数に関わらず常に行うため、**見えなくなるわけではない**。
+
 ### CI ジョブの追加は不要
 
 `check-permission-denials.js` は `ci.yml` のジョブではなく **AI ワークフロー 2 本の末尾ステップ**として動く。
@@ -214,14 +233,14 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 ## 受け入れ基準
 
-- [x] `planning` submodule が `origin/main` の先端（`3bdc8f8`）を指す
+- [x] `planning` submodule が `origin/main` の先端（`aeb97c4`）を指す
 - [x] `repo-template/` と本リポジトリの残差分が、判断ルールで説明できるものだけになる
 - [x] キット由来のファイルがすべてキットと**バイト一致**である（`cmp` で全 102 ファイルを機械照合。
       残差分は「固有の実コンテンツ」「置換点」だけ）
-- [x] `node scripts/check-permission-denials.js --self-test` が合格する（30 件）
+- [x] `node scripts/check-permission-denials.js --self-test` が合格する（42 件）
 - [x] `node scripts/check-action-versions.js --self-test` と実ツリー検査が合格する（22 件・退行 0・warn 0）
 - [x] `node scripts/check-ai-workflow-config.js --self-test` と本検査が合格する（23 件・不備 0 件。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0）
-- [x] `node scripts/scripts.test.js` が全件合格する（118 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
+- [x] `node scripts/scripts.test.js` が全件合格する（121 件。ローカルと `GITHUB_ACTIONS=true` の両モード）
 - [x] `node scripts/check-doc-links.js` の結果が pin 前進の前後で不変である（既存 20 件のみ・新規破損なし）
 - [x] `dotnet build backend/backend.slnx` が通る（コード無変更の回帰確認）
 - [x] 新ステップの実効性を変異テストで実測する（拒否あり=exit 1 / 拒否なし=exit 0 / ログ無し=fail-open）
@@ -247,15 +266,15 @@ PR [project-planning#150](https://github.com/endazon/project-planning/pull/150)�
 
 | 検証 | 結果（最終＝第 15 巡取り込み後） |
 | --- | --- |
-| `check-permission-denials.js --self-test` | ✅ 30 件合格（11 → 15 → 17 → 27 → 第 19 巡 30） |
+| `check-permission-denials.js --self-test` | ✅ 42 件合格（11 → 15 → 17 → 27 → 30 → 第 20 巡 42） |
 | `check-action-versions.js --self-test` | ✅ 22 件合格（第 15 巡は 14 件） |
 | `check-action-versions.js --dir .github/workflows --compare-with-ref origin/develop`（CI と同条件・11 アクション） | ✅ 退行なし・warn 0（companion 未追跡のあいだは `warning:` が出ることも実測） |
 | `check-ai-workflow-config.js --self-test` | ✅ 23 件合格（第 14 巡は 19 件） |
 | `check-ai-workflow-config.js`（実ツリー・2 ファイル） | ✅ 問題なし。`STRICT_AI_WORKFLOW_CONFIG=1` でも exit 0 |
-| `scripts.test.js`（ローカル） | ✅ 118 件合格（前巡 85 → 92 → 103 → 108 → 109 → 115 → 第 19 巡 118） |
-| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 118 件合格 |
+| `scripts.test.js`（ローカル） | ✅ 121 件合格（前巡 85 → 92 → 103 → 108 → 109 → 115 → 118 → 第 20 巡 121） |
+| `scripts.test.js`（`GITHUB_ACTIONS=true` ＋ `REQUIRE_REPO_TESTS=1`） | ✅ 121 件合格 |
 | `dotnet build backend/backend.slnx` | ✅ 0 警告 0 エラー |
-| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..3bdc8f8 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
+| `check-doc-links.js`（planning populate 済み） | 破損 **20 件**（pin 前進の前後で不変。`git -C planning diff 9cd3499..aeb97c4 -- projects/` が空＝計画書本体は無変更）。20 件すべてが `planning/` 配下＝PR CI（submodule 未取得）では対象外 |
 
 **新ステップの変異テスト**（合成した `execution_file` を与えて実測）
 
@@ -545,6 +564,44 @@ const head = cmd.split(/[|;&><]/)[0].trim();
 これで第 14〜19 巡に本リポから起票した 6 件（#148 / #149 / #152 / #153 / #155 / #158）はすべて反映・取り込み済みであり、
 第 18 巡以降は**計画側が本リポの実 run を見て先回りで是正する**流れになっている。
 
+### 第 20 巡（pin `aeb97c4`）— 収束の実測と、段階ポリシーの実効性
+
+第 19 巡を載せた実 run（[30731852757](https://github.com/endazon/ai-stock-trading/actions/runs/30731852757)）の拒否は **2 件**（`Bash(diff …)` / `Bash(git show | diff …)`）だった。
+`Bash(diff:*)` は許可済みであり、メッセージにリダイレクト系の注意が出ていたことから、
+プロセス置換 `<(…)` 等の**許可リストで解決できない構文**が残っていたと考えられる。
+
+**6 巡の実測は収束したがゼロにはならなかった。**
+
+| 巡 | 拒否件数 | そのとき塞いだもの |
+| --- | --- | --- |
+| 上流の起点 | 17 | （Task 拒否でレビューが潰れた事故） |
+| 第 14 巡時点 | 12 | 読み取り系 git・`actions: read` |
+| 第 15〜16 巡時点 | 8 | `git status`・サブエージェント禁止 |
+| 第 17 巡時点 | 5 → 3 | `git ls-tree` / `submodule status` / `head` / `tail` / 誠実性の強制 |
+| 第 18 巡時点 | 3 | `cmp` / `diff`・`labelOf` の是正 |
+| 第 19 巡時点 | **2** | `echo`・ラベル汚染の是正 |
+
+キットはこれを受けて、**「1 件でも失敗」をやめて段階ポリシーへ変更した**。
+「成果物は正しいのに赤」が常態化すると拒否の赤を無視する学習が生まれ、検査の目的自体が壊れるためである。
+可視化（アノテーション＋実行サマリ）は件数に関わらず常に行うので、見えなくなるわけではない。
+
+**段階ポリシーの実効性を、実 run と同条件を含む 5 通りで実測した。**
+
+| 条件 | 判定 | 終了コード |
+| --- | --- | --- |
+| 2 件 / 20 ターン（**実 run と同条件**） | `warn`「許容値 4 以下かつ実行の大半は成立しているため、ジョブは失敗させない」 | **0** |
+| 5 件 / 20 ターン（許容値 4 超過） | 失敗 | **1** |
+| 3 件 / 6 ターン（**ターン数の半分以上**） | 失敗 | **1** |
+| 2 件 ＋ `STRICT_PERMISSION_DENIALS=1` | 失敗（旧挙動へ復帰） | **1** |
+| 2 件 ＋ `PERMISSION_DENIALS_TOLERANCE=1` | 失敗（許容値の変更が効く） | **1** |
+
+**本リポジトリは既定（許容値 4）のまま採用する。** `STRICT_AI_WORKFLOW_CONFIG` / `REQUIRE_REPO_TESTS` は
+「検査そのものが成立していない状態」を失敗にする opt-in であり性質が異なる。こちらは
+「AI が探索の過程で試した構文」であって成果物の正しさとは無関係なため、既定の緩和が妥当と判断した。
+
+これにより、**PR [#328](https://github.com/endazon/ai-stock-trading/pull/328) の `claude-review` は次の run から緑になる見込み**である（2 件は許容値内）。
+
 ## 未決事項
 
 - なし。起票した 6 件はいずれも計画側で反映され、本作業で取り込み済みである。
+- 拒否件数は今後も 0 にはならない前提で運用する（段階ポリシーの許容値内なら緑・内訳は常に可視化）。

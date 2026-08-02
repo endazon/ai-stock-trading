@@ -3,7 +3,7 @@
 /*
  * check-permission-denials.js
  * claude-code-action の実行ログ（execution_file）を読み、**権限拒否で実行できなかった
- * ツール**を itemize して報告する。拒否が 1 件でもあれば exit 1 でジョブを止める。
+ * ツール**を itemize して報告する。拒否が実行を実質潰した規模ならジョブを止める。
  * 外部依存ゼロ（Node 標準モジュールのみ）。
  *
  * 背景（実運用で発生した障害）:
@@ -20,19 +20,30 @@
  *   本スクリプトは 2 を塞ぐ。1 は許可ツールを直せば消えるが、次に別のツールが不足した
  *   ときに再び黙って潰れるため、汎用の安全弁が要る。
  *
- * なぜ warn ではなく **exit 1** か:
- *   CI には承認する人間が居ない。したがって CI での権限拒否は「待たされた」ではなく
- *   **「その作業は永久に実行されない」**を意味する。レビュー用ワークフローなら
- *   「レビューが実施されていない」と同義であり、緑で通してはならない。
- *   キットの他の検査器（check-ai-workflow-config 等）が fail-open なのは「検査器側の
- *   都合で全リポジトリの CI を落とさない」ためだが、ここで報告するのは検査器の推測では
- *   なく **実行時に実際に起きた事実**であり、見逃す理由が無い。
+ * 失敗判定（段階ポリシー）:
+ *   当初は「拒否 1 件でも exit 1」だった。しかし実運用 6 巡（拒否 17 → 12 → 8 → 5 → 3 → 2 件）
+ *   の実測で、拒否は 2 種類に分かれることが判った。
+ *     A. 実行を実質潰す拒否（17/21 ターン・Task 全滅、12 件・検証をすべて偽装）
+ *     B. 探索的コマンド 1〜2 件の拒否（レビュー本文は正常・「実行できなかったこと」節も
+ *        誠実に出力。プロセス置換・env 前置きなど**許可リストでは原理的に解決できない構文**
+ *        が主で、ツールを足しても根絶できない）
+ *   B まで赤にすると「成果物は正しいのにジョブが赤」（issue #146 / #149 / #160 が繰り返し
+ *   問題視した形）が常態化し、「権限拒否の赤は無視してよい」という学習を生む。それは
+ *   本検査器を入れた目的（A を見逃さない）を逆から壊す。
+ *
+ *   よって既定は: **件数 > 許容値（既定 4）または拒否がターン数の半分以上**で exit 1。
+ *   それ未満は警告（アノテーション + 実行サマリ）を出して exit 0。可視化は件数に関わらず
+ *   常に行う——「見えるが緑」と「見えずに緑」はまったく別物である。
+ *   過去の実測に当てはめると: 17/21・12・8・7・5 件は失敗（すべて実害があった）、
+ *   4 件以下は警告つき成功（いずれもレビュー本文は正常だった）。
  *
  * 使い方:
  *   node scripts/check-permission-denials.js <execution-file> [--self-test]
  *
  * 環境変数:
- *   ALLOW_PERMISSION_DENIALS=1  拒否があっても失敗させない（警告のみ。移行期の緊急避難用）
+ *   ALLOW_PERMISSION_DENIALS=1     拒否があっても失敗させない（警告のみ。緊急避難用）
+ *   STRICT_PERMISSION_DENIALS=1    拒否 1 件でも失敗させる（旧来の挙動。opt-in）
+ *   PERMISSION_DENIALS_TOLERANCE   失敗としない上限件数（既定 4）
  */
 const fs = require('fs');
 const { emit, warn } = require('./lib/ci-annotate.js');
@@ -99,6 +110,17 @@ function contentOf(event) {
 // シェルの複合コマンドで先頭に現れる予約語。コマンド名ではないので読み飛ばす。
 const SHELL_KEYWORDS = new Set(['do', 'done', 'then', 'fi', 'else', 'elif', 'esac', 'in', '{', '}']);
 
+// 2 トークン目（サブコマンド／スクリプト名）を採るコマンド。許可リストがこの粒度で
+// 書かれるもの（`Bash(git log:*)` / `Bash(node scripts/x.js:*)`）に限る。
+// この集合に無いコマンド（echo / ls / diff / cmp …）の 2 トークン目は**引数**であり、
+// ラベルに出すと `Bash(echo done)` / `Bash(diff .claude-pr/…)` のようなノイズになる
+// （実測で両方の形が出た）。
+const SUBCOMMAND_COMMANDS = new Set([
+  'git', 'gh', 'node', 'npm', 'npx', 'pnpm', 'yarn', 'dotnet',
+  'python', 'python3', 'pip', 'go', 'cargo', 'docker', 'kubectl', 'helm',
+  'make', 'bash', 'sh', 'gradle',
+]);
+
 function labelOf(name, input) {
   if (name !== 'Bash') return name || '(不明なツール)';
   const cmd = input && typeof input.command === 'string' ? input.command.trim() : '';
@@ -107,7 +129,12 @@ function labelOf(name, input) {
   // リダイレクトは**分割の前に**取り除く。`2>&1` は `&` を含むため、先に分割すると
   // `1` が独立したセグメントとして残り、`Bash(ls | 1 | head)` のような存在しない
   // コマンドを報告してしまう（実測でこの形が出た）。
-  const stripped = cmd.replace(/(\d?>>?&?\d?|<)/g, ' ');
+  let stripped = cmd.replace(/(\d?>>?&?\d?|<)/g, ' ');
+  // プロセス置換 `<(cmd)`・コマンド置換 `$(cmd)`・サブシェル `(cmd)` の中身も個別に
+  // 判定対象になる。括弧を区切りへ正規化して中のコマンドを露出させる。放置すると
+  // `diff <(git show A) <(git show B)` が `Bash(diff (git)` という壊れたラベルになる
+  // （実測でこの形が出た。`<` は上で除去済みのため `(` だけが残る）。
+  stripped = stripped.replace(/[$]?\(/g, '|').replace(/\)/g, ' ').replace(/`/g, '|');
 
   const labels = [];
   // パイプ・`&&` `||` `;` で分割する。各セグメントが個別に許可判定を受ける。
@@ -124,13 +151,16 @@ function labelOf(name, input) {
     let label;
     if (tokens[0] === 'git' && tokens[1] === '-C' && tokens.length >= 4) {
       label = tokens.slice(0, 4).join(' ');
+    } else if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) {
+      // 環境変数の前置き形（`VAR=1 cmd`）。前方一致に当たらないこと自体が原因なので、
+      // 割り当てとコマンド名を並べて見せる（`STRICT_…=1 node` の形。実測で出た表示を維持）。
+      label = tokens.slice(0, 2).join(' ');
     } else {
-      // 2 トークン目はサブコマンド／スクリプト名のときだけ採る（`git log` / `node x.js`）。
-      // フラグ（`head -5` の `-5`、`cmp -` の `-`）・引用符付き文字列（`echo "exit:$?"`）・
-      // 変数展開（`cmp $f`）は許可リストの粒度に無く、ノイズになるので採らない。
+      // 2 トークン目はサブコマンドを持つコマンドに限って採る。フラグ（`head -5`）・
+      // 引用符付き文字列（`echo "exit:$?"`）・変数展開（`cmp $f`）も引数なので採らない。
       const second = tokens[1];
-      const isArgument = !second || /^[-"'$]/.test(second);
-      label = isArgument ? tokens[0] : `${tokens[0]} ${second}`;
+      const takeSecond = second && !/^[-"'$]/.test(second) && SUBCOMMAND_COMMANDS.has(tokens[0]);
+      label = takeSecond ? `${tokens[0]} ${second}` : tokens[0];
     }
     if (!labels.includes(label)) labels.push(label);
   }
@@ -194,6 +224,7 @@ function resultTextOf(block) {
  */
 function collectDenials(events) {
   const result = events.find((e) => e && e.type === 'result') || null;
+  const numTurns = result && Number.isFinite(result.num_turns) ? result.num_turns : null;
   const byTool = new Map();
   const bump = (name) => byTool.set(name, (byTool.get(name) || 0) + 1);
   let redirect = false;
@@ -206,7 +237,7 @@ function collectDenials(events) {
       if (hasRedirect(input)) redirect = true;
       bump(labelOf(d && (d.tool_name || d.toolName), input));
     }
-    return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials', redirect };
+    return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials', redirect, numTurns };
   }
 
   // 2. tool_use_id → ラベルを作ってから tool_result を走査する。
@@ -234,12 +265,27 @@ function collectDenials(events) {
   if (byTool.size) {
     let n = 0;
     for (const v of byTool.values()) n += v;
-    return { count: n, byTool, itemized: true, source: 'tool_result', redirect };
+    return { count: n, byTool, itemized: true, source: 'tool_result', redirect, numTurns };
   }
 
   // 3. 件数のみ。
   const count = result && Number.isFinite(result.permission_denials_count) ? result.permission_denials_count : 0;
-  return { count, byTool, itemized: false, source: 'permission_denials_count', redirect };
+  return { count, byTool, itemized: false, source: 'permission_denials_count', redirect, numTurns };
+}
+
+/**
+ * 拒否が「実行を実質潰した」規模かを判定する（段階ポリシーの本体）。
+ *
+ * - 件数 > tolerance（既定 4）: 探索的な取りこぼしの規模を超えている。
+ *   実測では 5 件以上の run はすべて実害（許可リストの構造的欠落・検証の偽装）を伴った。
+ * - 拒否がターン数の半分以上: 件数が少なくても、短い実行の大半が拒否されたなら
+ *   成果物は成立していない（元障害は 17/21 = 81% だった）。
+ * 純粋関数（I/O を持たない。テスト可能にするため）。
+ */
+function isCritical({ count, numTurns }, tolerance) {
+  if (count > tolerance) return true;
+  if (Number.isFinite(numTurns) && numTurns > 0 && count / numTurns >= 0.5) return true;
+  return false;
 }
 
 /** 報告用の 1 行メッセージを組み立てる。 */
@@ -404,11 +450,53 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(git show | cmp)') === 1,
     },
     {
+      // cd の 2 トークン目はディレクトリ名（引数）なので採らない。
       name: '&& / ; 連結も分割する',
       events: [
         { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'cd x && npm ci; npm test' } }] },
       ],
-      expect: (r) => r.byTool.get('Bash(cd x | npm ci | npm test)') === 1,
+      expect: (r) => r.byTool.get('Bash(cd | npm ci | npm test)') === 1,
+    },
+    {
+      // 実測（issue #158 の 6 巡目）: `diff <(git show A) <(git show B)` が
+      // `Bash(diff (git` という壊れたラベルになっていた。
+      name: 'プロセス置換の中のコマンドを露出させる',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'diff <(git show a:f) <(git show b:f)' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(diff | git show)') === 1,
+    },
+    {
+      name: 'コマンド置換 $(…) の中も露出させる',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'echo $(git log -1)' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(echo | git log)') === 1,
+    },
+    {
+      // 実測: `echo done` の `done` は引数なのにラベルへ出ていた。
+      name: 'サブコマンドを持たないコマンドの引数は採らない',
+      events: [
+        {
+          type: 'result',
+          permission_denials: [
+            { tool_name: 'Bash', tool_input: { command: 'git -C planning show x | echo done' } },
+          ],
+        },
+      ],
+      expect: (r) => r.byTool.get('Bash(git -C planning show | echo)') === 1,
+    },
+    {
+      name: '環境変数の前置き形は割り当てとコマンド名を並べる',
+      events: [
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'FOO=1 node x.js' } }] },
+      ],
+      expect: (r) => r.byTool.get('Bash(FOO=1 node)') === 1,
     },
     {
       // `for f in …; do …; done` は先頭トークンが for になり許可リストで表現できない。
@@ -597,6 +685,27 @@ function selfTest() {
     }
   }
 
+  // --- 段階ポリシー（isCritical）。実運用 6 巡の実測値で固定する ---
+  {
+    const policyCases = [
+      ['元障害 17 件 / 21 ターンは失敗', { count: 17, numTurns: 21 }, 4, true],
+      ['検証偽装の 12 件は失敗', { count: 12, numTurns: 30 }, 4, true],
+      ['許容値を超える 5 件は失敗', { count: 5, numTurns: 40 }, 4, true],
+      ['探索的な 2 件 / 43 ターンは失敗させない', { count: 2, numTurns: 43 }, 4, false],
+      ['4 件 / 16 ターンは失敗させない（#146 の形）', { count: 4, numTurns: 16 }, 4, false],
+      ['件数が少なくても実行の半分が拒否なら失敗', { count: 3, numTurns: 6 }, 4, true],
+      ['ターン数が取れない場合は件数だけで判定', { count: 2, numTurns: null }, 4, false],
+      ['STRICT（許容 0）では 1 件でも失敗', { count: 1, numTurns: 43 }, 0, true],
+    ];
+    for (const [label, denials, tol, expected] of policyCases) {
+      if (isCritical(denials, tol) === expected) process.stdout.write(`  ok  ${label}\n`);
+      else {
+        failed++;
+        process.stderr.write(`  NG  ${label}\n`);
+      }
+    }
+  }
+
   // 実運用で起きた形（17 件・内訳不明）がメッセージに載ることを確かめる。
   const msg = formatDenials(collectDenials([{ type: 'result', permission_denials_count: 17 }]));
   if (msg.includes('17 件')) process.stdout.write('  ok  件数がメッセージに載る\n');
@@ -609,8 +718,8 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  // +3 は、上のループに含まれない個別検査（実行サマリ 2 件・件数メッセージ 1 件）。
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 3} 件すべて合格\n`);
+  // +11 は、上のループに含まれない個別検査（ポリシー 8 件・実行サマリ 2 件・件数メッセージ 1 件）。
+  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 11} 件すべて合格\n`);
   return 0;
 }
 
@@ -659,6 +768,21 @@ function main(argv) {
     warn(`${message}（ALLOW_PERMISSION_DENIALS=1 のため失敗させない）`);
     process.exit(0);
   }
+
+  // 段階ポリシー（ファイル冒頭のコメント参照）。可視化（アノテーション・実行サマリ）は
+  // 件数に関わらず済んでいる——ここで決めるのは exit code だけである。
+  const strict = process.env.STRICT_PERMISSION_DENIALS === '1';
+  const tolRaw = parseInt(process.env.PERMISSION_DENIALS_TOLERANCE, 10);
+  const tolerance = strict ? 0 : Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : 4;
+
+  if (!isCritical(denials, tolerance)) {
+    warn(
+      `${message}（判定: ${denials.count} 件 / ${denials.numTurns ?? '?'} ターン。` +
+        `許容値 ${tolerance} 以下かつ実行の大半は成立しているため、ジョブは失敗させない。` +
+        '拒否 1 件でも失敗させるには STRICT_PERMISSION_DENIALS=1 を設定する）'
+    );
+    process.exit(0);
+  }
   emit('error', message, { stream: process.stderr, prefix: '  error  ' });
   process.exit(1);
 }
@@ -673,6 +797,7 @@ module.exports = {
   formatDenials,
   looksLikeDenial,
   labelOf,
+  isCritical,
   writeStepSummary,
   selfTest,
 };
