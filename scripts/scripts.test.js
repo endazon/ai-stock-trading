@@ -113,6 +113,274 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
+// --- check-permission-denials: 権限拒否で潰れた実行を緑にしない ---
+//
+// 実運用の形: claude-doc-review が 21 ターン中 17 件の権限拒否で潰れ、レビュー本文を
+// 1 文字も書けないまま `"subtype": "success", "is_error": false` で終わった。
+// 件数はログに出ていたが誰も見ておらず、CI は緑・PR には進行中コメントだけが残った。
+
+{
+  const { parseEvents, collectDenials, formatDenials, looksLikeDenial, labelOf, isCritical } = require('./check-permission-denials.js');
+
+  ok('拒否ゼロは count 0（正常な実行を落とさない）', () =>
+    assert.strictEqual(collectDenials([{ type: 'result', permission_denials_count: 0 }]).count, 0));
+
+  ok('permission_denials 配列からツール名を特定する', () => {
+    const r = collectDenials([
+      { type: 'result', permission_denials: [{ tool_name: 'Task' }, { tool_name: 'Task' }] },
+    ]);
+    assert.strictEqual(r.count, 2);
+    assert.strictEqual(r.byTool.get('Task'), 2);
+  });
+
+  ok('配列が無い版でも tool_result からツール名を逆引きする', () => {
+    const r = collectDenials([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Task' }] } },
+      {
+        type: 'user',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'a', is_error: true, content: 'Permission to use Task was denied' },
+          ],
+        },
+      },
+      { type: 'result', permission_denials_count: 1 },
+    ]);
+    assert.strictEqual(r.byTool.get('Task'), 1);
+  });
+
+  ok('権限拒否でないツールエラー（File not found 等）は数えない', () =>
+    assert.strictEqual(looksLikeDenial('File not found'), false));
+
+  // issue #146: 報告が「Bash（4 件）」で止まると、許可リストに何を足せばよいか決められない。
+  // 許可リストの粒度はコマンド単位（Bash(git diff:*)）なので、報告もそこへ揃える。
+  ok('Bash はコマンド名まで報告する（実障害 issue #146 の形）', () => {
+    const r = collectDenials([
+      {
+        type: 'result',
+        permission_denials: [
+          { tool_name: 'Bash', tool_input: { command: 'git status' } },
+          { tool_name: 'Bash', tool_input: { command: 'git diff' } },
+          { tool_name: 'Bash', tool_input: { command: 'git diff origin/main...HEAD' } },
+        ],
+      },
+    ]);
+    assert.strictEqual(r.byTool.get('Bash(git diff)'), 2);
+    assert.strictEqual(r.byTool.get('Bash(git status)'), 1);
+    assert.match(formatDenials(r), /Bash\(git diff\)/);
+  });
+
+  ok('引数はラベルに出さない（トークン・パスの漏洩を避ける）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'gh api /repos/x --header "Authorization: token SECRET"' }), 'Bash(gh api)'));
+
+  ok('Bash 以外はツール名のまま', () => assert.strictEqual(labelOf('Task', {}), 'Task'));
+
+  // issue #158: 旧実装は先頭セグメントだけを見て、許可済みの git show を名指しし、
+  // 実際の原因（未許可の cmp）を隠していた。報告が原因を指さないと塞ぎようがない。
+  ok('パイプの全セグメントを列挙する（実障害 git show | cmp の形）', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git show origin/main:a.yml | cmp - a.yml' }),
+      'Bash(git show | cmp)'
+    ));
+
+  ok('フラグは 2 トークン目に採らない（head -5 は head）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'git log | head -5' }), 'Bash(git log | head)'));
+
+  // issue #160: 2 トークン固定だと Bash(git -C) になり、対処に必要なサブコマンドが消える。
+  ok('git -C <dir> <sub> は許可リストと同じ粒度で出す', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git -C planning rev-parse HEAD' }),
+      'Bash(git -C planning rev-parse)'
+    ));
+
+  // 実測: `2>&1` が `&` で分割され、存在しないコマンド `1` が報告に出た。
+  ok('2>&1 を分割してコマンド `1` を作らない', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'ls -la 2>&1 | head -5' }), 'Bash(ls | head)'));
+
+  ok('fd 複製だけならリダイレクト注記の対象にしない', () =>
+    assert.notStrictEqual(
+      collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'node x.js 2>&1' } }] },
+      ]).redirect,
+      true
+    ));
+
+  // 実測: `echo "exit:$?"` の引用符付き引数がそのままラベルに出ていた。
+  ok('引用符付き引数はラベルに出さない', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'git show a | diff - b | head -20 | echo "exit:$?"' }),
+      'Bash(git show | diff | head | echo)'
+    ));
+
+  ok('リダイレクトが原因の拒否は注記で示す（許可済みに見えるため）', () => {
+    const r = collectDenials([
+      { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b > /tmp/x' } }] },
+    ]);
+    assert.strictEqual(r.redirect, true);
+    assert.match(formatDenials(r), /リダイレクト/);
+  });
+
+  ok('パイプがあれば「後段を疑え」の注記を出す', () =>
+    assert.match(
+      formatDenials(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a | cmp - b' } }] },
+      ])),
+      /後段のコマンドかもしれない/
+    ));
+
+  ok('パイプが無ければ注記を出さない', () =>
+    assert.doesNotMatch(
+      formatDenials(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git diff' } }] },
+      ])),
+      /後段のコマンドかもしれない/
+    ));
+
+  // issue #155: 内訳がジョブログにしか無いと、レビュー本文の「✅ 実測」との突き合わせができない。
+  ok('拒否の内訳を実行サマリ（人が読む場所）へ書く', () => {
+    const { writeStepSummary } = require('./check-permission-denials.js');
+    const fsw = require('fs');
+    const patw = require('path');
+    const osw = require('os');
+    const tmp = patw.join(fsw.mkdtempSync(patw.join(osw.tmpdir(), 'pdsum-')), 'summary.md');
+    const prev = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = tmp;
+    try {
+      assert.strictEqual(writeStepSummary(collectDenials([
+        { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git ls-tree HEAD' } }] },
+      ])), true);
+      const body = fsw.readFileSync(tmp, 'utf8');
+      assert.match(body, /Bash\(git ls-tree\)/);
+      assert.match(body, /実測/); // 「実測したという主張を疑え」の注意書き
+    } finally {
+      if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = prev;
+    }
+  });
+
+  ok('ツール名が判らなくても件数は必ず報告する（実運用の 17 件の形）', () => {
+    const r = collectDenials([{ type: 'result', permission_denials_count: 17 }]);
+    assert.strictEqual(r.count, 17);
+    assert.strictEqual(r.itemized, false);
+    assert.match(formatDenials(r), /17 件/);
+  });
+
+  ok('NDJSON・壊れた行があっても読めた分で判断する', () =>
+    assert.strictEqual(parseEvents('{"type":"result","permission_denials_count":3}\n{壊れ').length, 1));
+
+  // 6 巡目の実測（issue #158 の続報）: プロセス置換が壊れたラベルになっていた。
+  ok('プロセス置換 <(…) の中のコマンドを露出させる', () =>
+    assert.strictEqual(
+      labelOf('Bash', { command: 'diff <(git show a:f) <(git show b:f)' }),
+      'Bash(diff | git show)'
+    ));
+
+  ok('サブコマンドを持たないコマンドの引数はラベルへ出さない（echo done → echo）', () =>
+    assert.strictEqual(labelOf('Bash', { command: 'git -C planning show x | echo done' }), 'Bash(git -C planning show | echo)'));
+
+  // 段階ポリシー: 「拒否 1 件でも赤」をやめ、「実行を実質潰した拒否だけ赤」にする。
+  // 根拠は実運用 6 巡の実測（17 → 12 → 8 → 5 → 3 → 2 件）。5 件以上はすべて実害を伴い、
+  // 4 件以下はすべてレビュー本文が正常だった。境界はその間に置く。
+  ok('段階ポリシー: 元障害（17/21）は失敗・探索的な 2/43 は失敗させない', () => {
+    assert.strictEqual(isCritical({ count: 17, numTurns: 21 }, 4), true);
+    assert.strictEqual(isCritical({ count: 12, numTurns: 30 }, 4), true);
+    assert.strictEqual(isCritical({ count: 2, numTurns: 43 }, 4), false);
+    assert.strictEqual(isCritical({ count: 3, numTurns: 6 }, 4), true); // 半数以上は件数が少なくても失敗
+    assert.strictEqual(isCritical({ count: 1, numTurns: 43 }, 0), true); // STRICT は従来どおり
+  });
+
+  // 検証器自身の自己試験が通ること（check-ai-workflow-config と同じ扱い）。
+  ok('check-permission-denials の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-permission-denials.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
+// --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue #148） ---
+//
+// Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか
+// 走査しない。dependabot.yml に directory: エントリを足しても no-op であり、しかも
+// 失敗せず単に走らないため「対処済み」に見えてしまう。実測で upload-artifact が v4 のまま
+// 取り残され、実装リポ側で毎回手作業の差し戻しが発生していた。
+
+{
+  const { collectUses, majorOf, evaluate, loadManifest } = require('./check-action-versions.js');
+  const mkFound = (entries) =>
+    new Map(entries.map(([a, major, file]) => [a, { major, files: new Set([file || 'w.yml']) }]));
+  const manifest = { expected: { 'actions/checkout': 7, 'actions/upload-artifact': 7 }, exempt: {} };
+
+  ok('uses: を収集し owner/repo へ正規化する', () => {
+    const u = collectUses('steps:\n  - uses: actions/checkout@v7\n  - uses: github/codeql-action/init@v4\n');
+    assert.deepStrictEqual(u.map((x) => x.action), ['actions/checkout', 'github/codeql-action']);
+  });
+
+  ok('ローカル / docker 指定とコメント行は対象外', () =>
+    assert.strictEqual(collectUses('  - uses: ./x\n  - uses: docker://alpine:3\n  #   - uses: actions/setup-python@v7\n').length, 0));
+
+  ok('SHA pin はメジャーを取れず比較対象外', () => assert.strictEqual(majorOf('a81bbbf8298c0fa03ea29cdc473d45769f953675'), null));
+
+  ok('下限を下回れば ERROR（実障害 upload-artifact@v4 の形）', () =>
+    assert.match(evaluate(mkFound([['actions/upload-artifact', 4]]), manifest).errors.join(' '), /upload-artifact/));
+
+  ok('比較対象（Dependabot 管理下）より古ければ ERROR', () =>
+    assert.match(
+      evaluate(mkFound([['actions/checkout', 6]]), { expected: {}, exempt: {} }, mkFound([['actions/checkout', 7, 'root.yml']])).errors.join(' '),
+      /比較対象/
+    ));
+
+  ok('表に無いアクションは WARN（黙って検査対象外にしない）', () =>
+    assert.match(evaluate(mkFound([['foo/bar', 1]]), manifest).warnings.join(' '), /foo\/bar/));
+
+  ok('実ツリー: 配布テンプレートの Actions に退行が無い', () => {
+    const { scanDir } = require('./check-action-versions.js');
+    const patq = require('path');
+    const m = loadManifest();
+    assert.ok(m, 'action-versions.json を読めること');
+    const r = evaluate(scanDir(patq.join(__dirname, '..', '.github', 'workflows')), m);
+    assert.deepStrictEqual(r.errors, []);
+  });
+
+  // issue #153: キットの表を直接編集するとバイト一致が崩れる。companion で受ける。
+  {
+    const fsv = require('fs');
+    const patv = require('path');
+    const osv = require('os');
+    const mkTmp = (companion) => {
+      const d = fsv.mkdtempSync(patv.join(osv.tmpdir(), 'actver-'));
+      fsv.writeFileSync(patv.join(d, 'action-versions.json'), JSON.stringify({ expected: { 'actions/checkout': 7 } }));
+      if (companion !== undefined) fsv.writeFileSync(patv.join(d, 'action-versions.repo.json'), companion);
+      return d;
+    };
+    const loadIn = (d) =>
+      loadManifest(patv.join(d, 'action-versions.json'), patv.join(d, 'action-versions.repo.json'));
+
+    ok('companion が無ければキットの表だけを読む', () =>
+      assert.deepStrictEqual(loadIn(mkTmp()).expected, { 'actions/checkout': 7 }));
+
+    ok('companion の固有アクションをマージする（実測 azure/setup-helm の形）', () =>
+      assert.strictEqual(loadIn(mkTmp(JSON.stringify({ expected: { 'azure/setup-helm': 5 } }))).expected['azure/setup-helm'], 5));
+
+    ok('壊れた companion は ERROR（置いたのに効かない状態にしない）', () =>
+      assert.match(loadIn(mkTmp('{壊れ')).errors.join(' '), /解析できない/));
+
+    ok('キットの下限を下げる companion は WARN', () =>
+      assert.match(loadIn(mkTmp(JSON.stringify({ expected: { 'actions/checkout': 5 } }))).warnings.join(' '), /下げている/));
+  }
+
+  // issue #152: 表の下限だけでは、実装リポが下限より先へ進んでいる場合の同期退行を捉えられない。
+  ok('存在しない ref では null（fail-open の判断材料になる）', () => {
+    const { scanRef } = require('./check-action-versions.js');
+    assert.strictEqual(scanRef('refs/heads/__no_such_ref__', process.cwd()), null);
+  });
+
+  ok('check-action-versions の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-action-versions.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
 // --- check-doc-links: 未 populate な submodule の除外を可視化する（issue #139） ---
 
 {

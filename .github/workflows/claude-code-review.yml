@@ -57,6 +57,14 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      # CI の状態・ログを参照するために必要。2 か所が同時にこれへ依存する:
+      #   1. アクションが注入する mcp__github_ci__* サーバー。導入前にワークフロートークンが
+      #      actions: read を持つか実際に検証し、無ければ「Skipping CI server installation」と
+      #      警告して導入を取り止める（許可済みのはずのツールが存在しない状態になる）。
+      #   2. --allowedTools の `Bash(gh run list:*)`。gh CLI 側が actions: read を要求するため、
+      #      権限が無いと許可されていても実行時に失敗する。
+      # 注: ツール許可に additional_permissions は使わない（あれはアプリトークンのスコープ用）。
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -112,6 +120,7 @@ jobs:
           echo "Selected model: $MODEL"
 
       - name: Run Claude Code Review
+        id: claude
         uses: anthropics/claude-code-action@v1
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
         env:
@@ -146,6 +155,24 @@ jobs:
           # pull_request_target を使わない構成を維持すること。
           # 書き込み系の git（commit / push / reset 等）はレビューには不要なので入れない。
           #
+          # 【読み取り系 git は必須】アクション自身の組み込みプロンプトが差分の取得手段を
+          # 指示している（`git diff origin/main...HEAD` / `git log origin/main..HEAD` /
+          # `git status`）。許可しないと差分の内容と無関係に**毎回必ず拒否が出る**
+          # （planning 側で同じ欠落により全 PR の CI が赤くなった。issue #146）。
+          #
+          # 【整形パイプと submodule 確認（issue #155）】拒否の実測から 2 つの穴が判った。
+          #   - `cat` / `head` / `tail` が 1 つも無かった。パイプは**各コマンドが個別に判定される**
+          #     ため、`node scripts/x.js | tail -5` は先頭が許可済みでも tail で拒否される。
+          #     報告に出るのは先頭コマンド名なので、原因が判りにくい形で毎回落ちる。
+          #     実装用には `cat` があり、レビュー用にだけ無いのも非対称であった。
+          #   - `git -C planning ls-tree` は許可済みなのに、直下の `git ls-tree` と
+          #     `git submodule status` が無かった。submodule の pin を確認する最も自然な手段であり、
+          #     キット同期 PR のレビューでは毎回要る。いずれも読み取り専用である。
+          # `git submodule` を丸ごと許可しないこと（前方一致で `update` / `add` まで通る）。
+          # なお `VAR=1 cmd` 形（環境変数の前置き）は**許可リストでは解決できない**。先頭トークンが
+          # `VAR=1` になり前方一致しないためである。`Bash(env:*)` を許すと任意コマンドが通るので
+          # 危険であり、プロンプト側で「実行できない。未検証と明記せよ」と指示してある。
+          #
           # 【前方一致の落とし穴】Bash の許可は**コマンド文字列の前方一致**である。したがって
           # `Bash(git log:*)` を許可しても `git -C planning log` には当たらない。planning を
           # submodule 参照する構成では、pin の進み方・差分・「変更が無いこと」といった
@@ -169,7 +196,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -186,6 +213,43 @@ jobs:
             - レビューの最後に、下記フォーマットのサマリコメントを必ず自分で投稿してから終了する
               こと。サブエージェントの結果待ちで停止したり、監査を委譲したまま終了してはならない。
 
+            【検証の誠実性・最重要】
+            実運用で、レビューが**自分が実行できなかった検証を「実測した」として ✅ で報告した**
+            事例がある（権限拒否 12 件が発生していたが、本文に言及が 1 行も無かった）。
+            読み手にはこれを見分ける手段が無い。以下を厳守すること。
+            - 「実測」「確認済み」「✅」と書けるのは、**このセッション内で実際にコマンドを実行し、
+              その出力を自分の目で見た項目だけ**である。
+            - 実行できなかった項目を、推測・PR 本文の引き写し・「そうなっているはず」で
+              埋めてはならない。**「未検証（理由）」と明記する**こと。未検証と書くことは減点ではない。
+              嘘の ✅ だけが問題である。
+            - **次は原理的に実行できない。試みる必要はなく、必要なら未検証と書くこと**:
+              - 環境変数を前置きする形（`VAR=1 cmd` / `export VAR=1`）。ツール許可はコマンド文字列の
+                前方一致で判定されるため、先頭が `VAR=1` になるこの形は**必ず拒否される**。
+                （例: `STRICT_AI_WORKFLOW_CONFIG=1 node …` は実行できない）
+              - **ファイルを書き換える検証**（変異テスト・設定を壊して再実行する類）。レビュー用の
+                ツールに書き込み手段は無く、これは設計どおりである。PR 本文がそうした検証結果を
+                主張していても、**追試はできない**ので「未検証（書き込み不可）」と書く。
+              - **シェルのループ・複合形**（`for` / `while` / `if … then … fi`）。先頭トークンが
+                `for` 等になるため許可リストで表現できず、必ず拒否される。複数ファイルを調べる
+                ときは**1 ファイルずつ個別のコマンドで**実行すること。
+            - **パイプは各コマンドが個別に許可判定される。** `git show X | cmp - Y` は `cmp` が
+              未許可なら拒否される（前段が許可済みでも通らない）。バイト一致の確認には
+              `cmp` / `diff` を許可してあるので、そのまま使ってよい。
+            - **出力をファイルへリダイレクトしない**（`> /tmp/a` に加え **`> /dev/null` も**）。
+              レビュー用は書き込み手段を持たないため、宛先に関わらず拒否される。
+              出力はそのまま読むこと（捨てたい出力は最初から生成しない）。
+            - **プロセス置換 `<(…)`・コマンド置換 `$(…)` も実行できない**。ツール許可はコマンド
+              文字列を解析して判定するため、これらの構文は**中のコマンドが許可済みでも**拒否される。
+              2 つの版を比べるときは `diff <(git show A) <(git show B)` ではなく、
+              `git show <ref>:<path> | diff - <path>` の形（パイプ + 標準入力）を使う。
+            - **長い連鎖のワンライナーを作らない。** `… | head -20 | echo "exit:$?"` のように
+              `|` `&&` でつなぐほど、鎖のどこかに未許可コマンドが混ざる確率が上がり、拒否されると
+              **鎖全体が実行されない**（前段の結果も得られない）。1 コマンドずつ実行すること。
+              なお `$?` はパイプの後では直前の 1 コマンドの結果しか表さないため、判定にも使えない。
+            - レビュー本文の末尾に **「実行できなかったこと」節を必ず設ける**。拒否された、または
+              実行を諦めたツール／コマンドと、**それによって裏付けが取れていない主張**を列挙する。
+              何も無かった場合は「なし」と 1 行書く（節自体を省略しない）。
+
             【出力必須ルール】
             - 指摘が 0 件であっても、必ず以下のサマリ形式でコメントを出力すること。
             - 無言終了・出力なし終了は禁止。レビューが完了したら必ずサマリを出力せよ。
@@ -201,6 +265,9 @@ jobs:
 
             ### 🟢 軽微
             - （指摘なし）または具体的な指摘内容
+
+            ### 🔍 実行できなかったこと
+            - なし / または「`<コマンド>` は権限拒否（このため <どの主張> は未検証）」の形で列挙
 
             ---
             *レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
@@ -248,3 +315,20 @@ jobs:
             そのため作業ツリーに「直近コミットを打ち消す未コミット差分」が見えるのは**正常**であり、
             異常として報告しないこと。これらのファイルをレビューするときは `.claude-pr/` または
             `git show HEAD:<path>` を参照すること。
+
+      # 権限拒否の可視化（安全弁）。
+      #
+      # claude-code-action は、AI がツールを 1 つも実行できなくても
+      # `"subtype": "success", "is_error": false` で終わる。ジョブは緑になり、PR には
+      # 進行中コメントだけが残る。「CI が緑 ＝ レビューが通った」ではなく
+      # 「エラー無く終了した」に過ぎない状態であり、レビュー未実施が誰にも見えない。
+      # CI には承認する人間が居ないため、権限拒否は「待たされた」ではなく
+      # **「その作業は永久に実行されない」**を意味する。ここで止める。
+      #
+      # if: always() が必須である（上の step が失敗した場合こそ内訳を知りたい）。
+      # 実行ログを読めない構成では warn を出して exit 0（fail-open）。
+      - name: Check permission denials
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/check-permission-denials.js "$EXECUTION_FILE"

@@ -54,6 +54,10 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      # claude-code-review.example.yml と同じ理由（mcp__github_ci__* サーバーの導入条件）。
+      # 実装セッションでは、自分が出した PR の CI 失敗を自分で読んで直すために要る。
+      # 注: ツール許可に additional_permissions は使わない（あれはアプリトークンのスコープ用）。
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -113,6 +117,7 @@ jobs:
           echo "Selected model: $MODEL"
 
       - name: Run Claude Code
+        id: claude
         uses: anthropics/claude-code-action@v1
         # gh CLI（Issue 発行等）を既定トークンで認証する。gh は GH_TOKEN/GITHUB_TOKEN を参照する。
         env:
@@ -141,6 +146,41 @@ jobs:
           #
           # 末尾のビルド/テスト系（node / dotnet）がスタック別の可変部分である。
           # claude-code-review.example.yml の対応箇所と**同じ内容**に保つこと。
+          #
+          # 【読み取り専用ツールの対称性（issue #160）】head / tail / cmp / diff /
+          # git ls-tree / git submodule status / git fetch はレビュー用に先に入ったが、
+          # 実装用にも同じ作業（キット同期時のバイト一致確認・submodule pin の確認）が
+          # あるため揃えてある。**ドリフト検査（check-ai-workflow-config）はスタック別の
+          # 実行ツールしか見ないため、この種の非対称は機械的に検出されない。**手で揃えること。
+          #
+          # 【--append-system-prompt: サブエージェント禁止】レビュー用は同じ制約を prompt:
+          # 入力に書いているが、本ファイルは `@claude` メンション本文で駆動する構造のため
+          # prompt: を持たず、置き場所がここしか無い（issue #149）。
+          # 制約が無いと次の形で**成果物が正しくてもジョブが赤くなる**:
+          #   AI が Task（サブエージェント）を試みる → 許可リストにも既定にも無いので拒否
+          #   → Task 抜きで実装を完遂しコミット・PR も正しく出せる
+          #   → 末尾の Check permission denials が拒否 1 件を検出して exit 1
+          # Task を許可する選択もあるが採らない。CI ではサブエージェントの起動が完了せず
+          # 停止する不具合が出ており（HOWTO 付録3）、レビュー用と同じ (b) に揃える。
+          # 【記法】この値も空白区切りでトークン化される。**1 行・二重引用符でくくる**こと
+          # （改行して書くと後続行が別の引数になり、指示が壊れる）。
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(cat:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。"
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"
+
+      # 権限拒否の可視化（安全弁）。claude-code-review.example.yml と同じ内容に保つこと。
+      #
+      # claude-code-action は、AI がツールを 1 つも実行できなくても
+      # `"subtype": "success", "is_error": false` で終わる。実装側では「実装したつもりで
+      # 何もコミットされていない」形になり、ジョブは緑のままである。
+      # CI には承認する人間が居ないため、権限拒否は「待たされた」ではなく
+      # **「その作業は永久に実行されない」**を意味する。ここで止める。
+      #
+      # if: always() が必須である（上の step が失敗した場合こそ内訳を知りたい）。
+      # 実行ログを読めない構成では warn を出して exit 0（fail-open）。
+      - name: Check permission denials
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
