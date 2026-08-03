@@ -175,6 +175,9 @@ _TeamCity*
 coverage*.json
 coverage*.xml
 coverage*.info
+# ただし coverage-floor.json は Coverlet の出力ではなく、カバレッジ下限を宣言する
+# リポジトリの設定ファイルである（scripts/check-coverage.js が読む。issue #343 / IADR-0127）。
+!coverage-floor.json
 
 # Visual Studio code coverage results
 *.coverage

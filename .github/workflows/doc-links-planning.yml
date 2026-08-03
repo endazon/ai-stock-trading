@@ -60,6 +60,14 @@ jobs:
       - name: Check doc links (including planning submodule)
         run: node scripts/check-doc-links.js --require-planning
 
+      # テストが参照する FR/UC/SC が計画書に実在するかの検査（issue #343 / IADR-0127）。
+      # PR CI（ci.yml の test-traceability）は submodule 無しのため本検査だけを skip している。
+      # 上の doc-links と同じ弱点（PR では止まらず夜間に初めて赤くなる）を共有するため、
+      # 失敗の気付き導線は下の Notify ステップが共通で担う。
+      - name: Check test traceability (including planning submodule)
+        if: always()
+        run: node scripts/check-test-traceability.js --require-planning
+
       # 失敗の気付き導線。夜間ジョブは PR に紐づかないため、通知が無いと「誰も見ない赤」が
       # 常態化する（実運用で 14 夜連続の失敗が放置された実績がある）。
       # 既に open の検知 issue があれば起票せず、無ければ 1 件だけ作る。

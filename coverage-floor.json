@@ -1,0 +1,12 @@
+{
+  "$comment": [
+    "バックエンドの行カバレッジ下限（#343・退行防止テスト基盤）。scripts/check-coverage.js が検査する。",
+    "集計は (ファイル, 行番号) の和集合で行う（複数テストプロジェクトの重複計上を避けるため）。",
+    "引き上げ（ratchet）は人手の PR で行う。`node scripts/check-coverage.js --suggest` が候補値を出す。",
+    "自動では上げない: 不安定テストの揺れで floor が跳ね上がると、無関係な後続 PR が落ちるため。"
+  ],
+  "lineRateFloor": 0.62,
+  "measuredAt": "2026-08-03",
+  "measuredLineRate": 0.6447,
+  "measuredNote": "Category!=Integration・39 レポート・12051/18692 行。全面再実装（#344）の各 issue で引き上げる。"
+}
