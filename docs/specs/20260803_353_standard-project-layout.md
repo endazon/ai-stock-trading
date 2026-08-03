@@ -602,7 +602,15 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
    `AiStockTrading.IntegrationTests` の `extern alias CostControlWorker` / `RiskManagementWorker` /
    `ReportWorker` は、テスト本文を触らないため据え置いた。改名はテストファイルの一括編集になり、
    「テストの表明を変えない」の確認コストに見合わない。#354 以降で名前の整理をまとめて行う。
-9. **Program.cs 直書きのエンドポイント**。`Foundation/Endpoints/` を持たないサービス
+9. **`dotnet ef` の実走確認が未了**。本セッションの環境に `dotnet-ef` ツールが入っておらず
+   （CI・`scripts/` も使用していない＝Migration は開発者が手元で追加している）、
+   分割後に `dotnet ef migrations add` が通ることを**実走では確認できていない**。
+   根拠づけは「DbContext と `Migrations/` を同じ Infrastructure へ一緒に移したため既定の
+   migrations assembly は保たれる」「`Microsoft.EntityFrameworkCore.Design` を Api（startup project）と
+   Infrastructure（target project）の両方に置いた」という設計上のものに留まる。
+   次に Migration を追加する担当者は `dotnet ef migrations add <名前> -p <Svc>.Infrastructure -s <Svc>.Api` の
+   形で実走し、通らなければ本仕様書へ追記すること。
+10. **Program.cs 直書きのエンドポイント**。`Foundation/Endpoints/` を持たないサービス
    （Backtest / InformationCollection / Notification / OrderExecution / TradeDecision）は
    エンドポイント定義が Program.cs にある。Vertical Slice としての切り出しは再配置の範囲を超えるため
    本 issue では行わない。
