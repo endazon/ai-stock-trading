@@ -197,8 +197,9 @@ CI 検査 `scripts/check-test-traceability.js`:
 1. **カバレッジ floor の初期値** — 本 PR の実測値に基づき決定する（実測後に確定）。
 2. **性能ゲート（NFR: 取引サイクル 10 分 / 変動→発注 5 分）の実測方法** — 取引サイクルの実体（#337）が
    無い段階では枠組みのみ規定し、実測の CI 結線は #337 で行う。
-3. **`FluentAssertions` → `AwesomeAssertions` 置換に伴う本基盤の追随** — #345 が全置換する際、本基盤の
-   テストも対象に含める（#345 の受け入れ基準「移行でテストの意味が変わらない」の確認対象）。
+3. ~~**`FluentAssertions` → `AwesomeAssertions` 置換に伴う本基盤の追随**~~ → **対応済み（2026-08-03）**。
+   #351（#345 の分割 1/4）が本基盤の `AiStockTrading.PlanConformance.Tests` も置換した
+   （[作業仕様書](./20260803_351_awesomeassertions-migration.md)）。
 
 ## 変更履歴
 

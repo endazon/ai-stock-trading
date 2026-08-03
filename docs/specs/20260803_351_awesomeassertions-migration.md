@@ -43,8 +43,8 @@ AwesomeAssertions（FluentAssertions v7 系のフォーク）を標準と定め�
 
 - 対象:
   - `Directory.Packages.props` の `FluentAssertions 7.2.0` → `AwesomeAssertions 9.5.0`
-  - 全テストプロジェクト（**38 `.csproj`**）の `PackageReference`
-  - 全テストファイル（**286 `.cs`**）の `using FluentAssertions;`
+  - 全テストプロジェクト（**39 `.csproj`**。うち 1 件は develop 取り込みで加わった `PlanConformance.Tests`）の `PackageReference`
+  - 全テストファイル（**287 `.cs`**。同上）の `using FluentAssertions;`
   - 不採用ライブラリの再混入を止める CI 検査（`scripts/check-banned-libraries.js` ＋ `banned-libraries` ジョブ）
   - `CLAUDE.md` の技術スタック別ルールの記載
 - 対象外:
@@ -120,13 +120,15 @@ AwesomeAssertions（FluentAssertions v7 系のフォーク）を標準と定め�
 
 1. **基盤リポとのバージョン整合** — `microservices-platform` の Central Package Management が指定する
    AwesomeAssertions の版と一致するかを確認する。相違があれば揃える（platform#455 の完了後）。
-2. **#343（PR #350）とのマージ順** — #343 は `AiStockTrading.PlanConformance.Tests` を新設し、
-   その時点では FluentAssertions を使っている。**#343 が先にマージされた場合、本ブランチを rebase して
-   当該プロジェクトも置換する**必要がある。置換漏れは `banned-libraries` ジョブが検出するため、
-   気付かずマージされることはない。
+2. ~~**#343（PR #350）とのマージ順**~~ → **対応済み（2026-08-03）**。#343（PR #350）が先に develop へ
+   マージされたため、本ブランチへ `git merge origin/develop` で取り込み（force push 禁止のため rebase は
+   採らない）、新設された `AiStockTrading.PlanConformance.Tests` も AwesomeAssertions へ置換した
+   （`.cs` 1・`.csproj` 1）。競合した `ci.yml`（`test-traceability` / `banned-libraries`）と
+   `scripts/scripts.repo.test.js` は両側の追加を残して解消した。
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
 | 2026-08-03 | 初版作成（#351） |
+| 2026-08-03 | develop（#350 マージ済み）を取り込み、`AiStockTrading.PlanConformance.Tests` も置換（未決事項 2 を解消） |
