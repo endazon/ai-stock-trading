@@ -167,6 +167,26 @@ module.exports = ({ ok, assert }) => {
     }
   });
 
+  ok('check-banned-libraries: PENDING に置いてよいのは実際に使われているものだけ', () => {
+    // 使われていないものを PENDING に置くのは、防げる再混入を見送っているだけになる
+    // （PR #355 のレビュー指摘）。実ツリーで参照が 0 件なら BANNED へ移すべきである。
+    const root = pathBl.resolve(__dirname, '..');
+    for (const p of bl.PENDING) {
+      const hits = bl.checkTree(root, [{ name: p.name, replacement: p.replacement, reason: 'pending' }]);
+      assert.ok(
+        hits.length > 0,
+        `${p.name} は実ツリーで参照 0 件である。PENDING ではなく BANNED へ移すこと（担当 #${p.owningIssue}）`
+      );
+    }
+  });
+
+  ok('check-banned-libraries: BANNED には未導入のライブラリも含められる（先回りの禁止）', () => {
+    const names = bl.BANNED.map((b) => b.name);
+    for (const n of ['MediatR', 'AutoMapper', 'Mapster']) {
+      assert.ok(names.includes(n), `${n} は参照 0 件のため先回りで BANNED に置く`);
+    }
+  });
+
   ok('実ツリー: 不採用ライブラリの混入が無い（#351 の回帰）', () => {
     assert.deepStrictEqual(bl.checkTree(pathBl.resolve(__dirname, '..')), []);
   });

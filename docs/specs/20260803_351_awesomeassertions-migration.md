@@ -43,8 +43,8 @@ AwesomeAssertions（FluentAssertions v7 系のフォーク）を標準と定め�
 
 - 対象:
   - `Directory.Packages.props` の `FluentAssertions 7.2.0` → `AwesomeAssertions 9.5.0`
-  - 全テストプロジェクト（**39 `.csproj`**）の `PackageReference`
-  - 全テストファイル（**287 `.cs`**）の `using FluentAssertions;`
+  - 全テストプロジェクト（**38 `.csproj`**）の `PackageReference`
+  - 全テストファイル（**286 `.cs`**）の `using FluentAssertions;`
   - 不採用ライブラリの再混入を止める CI 検査（`scripts/check-banned-libraries.js` ＋ `banned-libraries` ジョブ）
   - `CLAUDE.md` の技術スタック別ルールの記載
 - 対象外:
@@ -72,11 +72,17 @@ AwesomeAssertions（FluentAssertions v7 系のフォーク）を標準と定め�
 剥がした事実をコードレビューの記憶に頼ると、サンプルコードの貼り付け・AI の既定選択・依存の推移で
 容易に戻る。`scripts/check-banned-libraries.js` が機械的に止める。
 
-- `BANNED`: **移行が完了したもののみ**を載せる（現時点は FluentAssertions の 1 件）
-- `PENDING`: 移行未完了のものを担当 issue 付きで残す（MassTransit / MediatR → #354、AutoMapper / Mapster → #353）
+- `BANNED`: **今すぐ検査してよいもの**を載せる（FluentAssertions ＋ MediatR / AutoMapper / Mapster の 4 件）
+- `PENDING`: **現に使われていて剥がすまで BANNED にできないもの**（MassTransit のみ。実測 140 ファイル → #354）
 
 **移行前に BANNED へ登録して検査を skip する運用は採らない**。無効化された検査は無いのと同じであり、
 再有効化は必ず忘れられる。`PENDING` に一覧を残すのは「忘れられた移行」を可視化するためである。
+
+**ただし「移行未完了」と「そもそも導入されていない」は別物である**。MediatR / AutoMapper / Mapster は
+実測で**参照 0 件**であり、今 `BANNED` に置いても既存コードを一切壊さない。むしろ #353 / #354 の
+着手前に置くことに意味がある — 本検査器が動機として挙げる再混入経路（AI の既定選択・サンプルコードの
+貼り付け）が最も働くのはまさにその作業中であり、無コストで防げるものを見送る理由が無い
+（PR #355 の AI レビュー指摘）。
 
 検出は `Include="<名前>"` と `using <名前>` の 2 パターンに限定し、**散文中の言及は誤検出しない**
 （「FluentAssertions から移行した」と経緯をコメントへ書けること）。前方一致による巻き込み

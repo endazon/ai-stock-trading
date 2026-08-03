@@ -39,17 +39,39 @@ const BANNED = [
     replacement: 'AwesomeAssertions',
     reason: 'v8 で商用ライセンスへ移行したため不採用（platform ADR-0030 / #351）',
   },
+  // 以下 3 件は**そもそも導入されたことがない**（実測で参照 0 件）。「移行未完了だから
+  // BANNED に置けない」という PENDING の趣旨に当たらず、今登録しても既存コードを壊さない。
+  // むしろ #353 / #354 の着手前に登録しておくことに意味がある。本検査器が動機として挙げている
+  // 再混入経路（AI の既定選択・サンプルコードの貼り付け）が最も働くのはまさにその作業中であり、
+  // 無コストで防げるものを見送る理由が無い。
+  {
+    name: 'MediatR',
+    replacement: 'Wolverine ハンドラ',
+    reason: 'ローカルディスパッチは Wolverine に統一する（platform ADR-0030 / ADR-0013 / #354）',
+  },
+  {
+    name: 'AutoMapper',
+    replacement: 'Riok.Mapperly',
+    reason: 'マッピングは Riok.Mapperly に統一する（platform ADR-0030 / #353）',
+  },
+  {
+    name: 'Mapster',
+    replacement: 'Riok.Mapperly',
+    reason: 'マッピングは Riok.Mapperly に統一する（platform ADR-0030 / #353）',
+  },
 ];
 
 /**
  * 移行が完了していないため、まだ検査対象にできないもの。
  * 担当 issue の完了時に BANNED へ移す（一覧を残すのは「忘れられた移行」を可視化するため）。
+ * <para>
+ * ここに置いてよいのは「**現に使われていて、剥がすまで BANNED にできない**」ものだけである。
+ * 使われていないものを PENDING に置くのは、防げる再混入を見送っているだけになる。
+ * </para>
  */
 const PENDING = [
+  // 実測で 140 ファイルが参照している。Wolverine への移行（#354）が済むまで BANNED にできない。
   { name: 'MassTransit', replacement: 'Wolverine', owningIssue: 354 },
-  { name: 'MediatR', replacement: 'Wolverine ハンドラ', owningIssue: 354 },
-  { name: 'AutoMapper', replacement: 'Riok.Mapperly', owningIssue: 353 },
-  { name: 'Mapster', replacement: 'Riok.Mapperly', owningIssue: 353 },
 ];
 
 const SCAN_EXT = new Set(['.cs', '.csproj', '.props']);
