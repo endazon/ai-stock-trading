@@ -136,7 +136,8 @@
 - ターゲット: **net10.0 / C# 13**（ルート `Directory.Build.props`＝単独ビルド用 import-chain フォールバック。IADR-0046）。パッケージは Central Package Management（ルート `Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
 - ソリューション: `backend/backend.slnx`（ユニットリポジトリレイアウト。platform ADR-0019 / ADR-0001 2026-07-12 更新 / IADR-0046）。サービスは `backend/Services/<ServiceName>/{src,tests}`、共有物は `backend/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
 - 命名規約: 名前空間プレフィックスは `AiStockTrading`。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
-- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは xUnit + **AwesomeAssertions**（`using Xunit;` を忘れない）。**FluentAssertions は v8 の商用化により不採用**であり、`scripts/check-banned-libraries.js` が CI で再混入を止める（platform ADR-0030 / [#351](https://github.com/endazon/ai-stock-trading/issues/351)）。
+- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは **xUnit v3**（パッケージ ID は `xunit.v3`。`xunit` は v2 系）+ **AwesomeAssertions**（`using Xunit;` を忘れない）。**FluentAssertions は v8 の商用化により不採用**であり、`scripts/check-banned-libraries.js` が CI で再混入を止める（platform ADR-0030 / [#351](https://github.com/endazon/ai-stock-trading/issues/351)）。
+  - v3 での注意（[#352](https://github.com/endazon/ai-stock-trading/issues/352) / [作業仕様書](docs/specs/20260803_352_xunit-v3-migration.md)）: `IAsyncLifetime` は `ValueTask` を返す。`ITestOutputHelper` は `Xunit` 名前空間（`Xunit.Abstractions` は無い）。テストアセンブリは実行可能（`OutputType=Exe` は自動設定・`.csproj` への記述不要）。実行は `Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` 3.x の **VSTest 経路**を維持する（`dotnet test` のフィルタとカバレッジ収集をそのまま使うため）。
 - フォーマット: `dotnet format` で整形する。`nullable` 有効・警告ゼロを保つ。
 - 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像し、コメントに起点 ID（FR/UC/ADR）を残す。
 - リスク統制・取引ガードの既定値は計画書の全体前提条件（05_trading-assumptions §5）と一致させ、`TradingDefaults` のテストで固定する。
