@@ -67,7 +67,10 @@ public static class PlanRiskDefaults
         new("Stage.Stage1BrokerProvider", "MoomooSimulate", $"{Assumptions5} / FR-20"),
         new("Stage.Stage2OrderableCapRatio", "total funds ratio 0.30", Assumptions5),
         new("Stage.WithdrawalDrawdownMultiple", "1.5", "ADR-0008"),
-        new("Stage0.MaxDrawdownPassThreshold", "equity ratio 0.10", "ADR-0018"),
+        // ADR-0018 決定2 が名指しするのは Stage 0 合格判定の許容値（Stage0GateCriteria）であり、
+        // 運用の DD 停止ライン（RiskLimits.MaxDrawdownRatio）とは**別のフィールド**である。
+        // 両者を取り違えると「たまたま計画と一致している別の値」を見て逸脱を見逃す。
+        new("Stage0GateCriteria.MaxDrawdownTolerance", "ratio 0.10", "ADR-0018 決定2"),
     ];
 
     public static IReadOnlyDictionary<string, PlanDefault> ByKey { get; } =

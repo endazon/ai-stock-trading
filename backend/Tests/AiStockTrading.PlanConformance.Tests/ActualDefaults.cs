@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using AiStockTrading.Backtest.Domain;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
@@ -80,7 +81,11 @@ public static class ActualDefaults
             ["Stage.Stage2OrderableCapRatio"] =
                 FixedAmount(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap),
             ["Stage.WithdrawalDrawdownMultiple"] = Number(policy.WithdrawalDrawdownMultiple),
-            ["Stage0.MaxDrawdownPassThreshold"] = EquityRatio(limits.MaxDrawdownRatio),
+
+            // Stage 0 合格判定の DD 許容値。**運用の DD 停止ライン（RiskLimits.MaxDrawdownRatio）ではない**。
+            // ADR-0018 決定2 が問題視するのはこちらであり、別フィールドから抽出すると
+            // 「たまたま計画と一致している値」を見て本来の逸脱を素通しする（PR #350 の指摘）。
+            ["Stage0GateCriteria.MaxDrawdownTolerance"] = Ratio(Stage0GateCriteria.Default.MaxDrawdownTolerance),
         };
     }
 
@@ -91,6 +96,9 @@ public static class ActualDefaults
 
     /// <summary>equity に対する割合として保持されている値。</summary>
     private static string EquityRatio(decimal ratio) => $"equity ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>基準を持たない純粋な割合（バックテスト結果に対する比率など）。</summary>
+    private static string Ratio(decimal ratio) => $"ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
 
     /// <summary>
     /// 基準通貨（円）建ての固定額として保持されている値。計画は equity 比での保持を求めており、

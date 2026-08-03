@@ -73,6 +73,14 @@ public static class KnownPlanDeviations
             "JPY 35000 (fixed amount)",
             333,
             "固定額で保持している。計画は総資金比 30%（$900）を発注可能額としてシステム側で制限する"),
+        new(
+            "Stage0GateCriteria.MaxDrawdownTolerance",
+            "ratio 0.15",
+            333,
+            "旧レンジ 10〜15% の上限側を採っている。ADR-0018 決定2 が運用の DD 停止ライン（10%）と同値へ"
+                + "厳格化した。現状は Stage 0 が運用停止ラインより 5 ポイント緩い戦略を合格させ得る"
+                + "（検証を通った戦略が運用開始と同時に停止条件へ抵触し得る）。"
+                + "IADR-0045（0.15 採用の一次記録）・IADR-0110（凍結の記録）への追記も要る"),
     ];
 
     public static IReadOnlyDictionary<string, KnownDeviation> ByKey { get; } =
