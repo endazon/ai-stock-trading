@@ -349,8 +349,18 @@ git mv "$S/src/<Svc>.Infrastructure/Foundation/Endpoints"      "$S/src/<Svc>.Api
 `<Svc>.Api.csproj` を新規作成する（雛形は §7.5）。
 
 > **注（ビルド出力の残骸）**: `git mv` したディレクトリには旧名の `bin/` `obj/` `TestResults/` が
-> 残る。`obj/project.assets.json` は旧 csproj 名を指したままだが restore で再生成されるため実害はない。
-> 気になる場合はリポジトリ外へ `mv` する（**`rm -rf` は `.claude/hooks/guard-bash.js` が禁止**）。
+> 残る。`obj/project.assets.json` は旧 csproj 名を指したままだが restore で再生成される。
+> リポジトリ外へ `mv` する（**`rm -rf` は `.claude/hooks/guard-bash.js` が禁止**）。
+>
+> **訂正（第 2 段階で判明・「実害はない」は誤り）**: ビルドと合格数には影響しないが、
+> **カバレッジ測定は壊れる**。`bin/Debug/net10.0/` に旧名の `<Svc>.Worker.Tests.dll` と
+> `<Svc>.Worker.dll`（＋ `.pdb`）が残ると、coverlet は**それらを「テスト対象アセンブリ」として
+> 追加で計装する**（現在のテストアセンブリ以外はすべて計測対象になる）。結果、既に存在しない
+> パスのテストソースが 0% 被覆の「本番コード」として合計行数へ加算される。
+> 実測: 全 11 サービス移行後に残骸ありで測ると **45.07%（12040 / 26716 行）**、
+> `backend` 配下の `bin` `obj` `TestResults` をすべてリポジトリ外へ退避して再測すると
+> **64.52%（12061 / 18692 行）**——8024 行が残骸由来の水増しだった。
+> **カバレッジを測る前に `bin` / `obj` / `TestResults` を退避して full rebuild すること。**
 
 ### 手順 2: テストプロジェクトを割る
 
@@ -548,7 +558,7 @@ RiskManagement（Worker 51 ファイル・テスト 149 件）を最後に置く
 
 issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け入れ基準を写し、第 1 段階での状況を併記する。
 
-- [ ] 全 11 サービスが標準構成に揃っている（第 1 段階: **2 / 11**）
+- [x] 全 11 サービスが標準構成に揃っている（第 1 段階: 2 / 11 → **第 2 段階完了時 11 / 11**）
 - [x] **Domain 層の外部依存ゼロ**をアーキテクチャテストが強制する
 - [x] 不採用ライブラリ（AutoMapper / Mapster）の混入を CI が検知する
       — **#351 で対応済み**。`scripts/check-banned-libraries.js` の `BANNED` に
@@ -595,6 +605,35 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
 | `<PackageReference Include="Microsoft.EntityFrameworkCore" />` を Domain へ追加 | 検査 1 が失敗 | **失敗した**（違反プロジェクト名とパッケージ名がメッセージに出る） |
 | `<ProjectReference … ConfigurationService.Application.csproj />` を Domain へ追加 | 検査 2 が失敗 | **失敗した** |
 | `AiStockTrading.Shared.Contracts.csproj` へ `<PackageReference Include="Microsoft.EntityFrameworkCore" />` を追加 | 検査 3（推移閉包）が失敗 | **失敗した**（検査 1 では検出できない迂回を捕まえた） |
+
+### 10.2 第 2 段階（残り 9 サービス）の検証結果
+
+移行順: Audit → Backtest → InformationCollection → Notification → TradeDecision → MarketMonitor →
+Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス = 1 コミット）。
+
+| 対象 | 方法 | 結果 |
+| --- | --- | --- |
+| **合格数の一致** | 第 1 段階完了時（2260 / 42 アセンブリ）との**アセンブリ別内訳の差分** | 合計 **2260 で不変**（Failed=0）。差分は 9 行の `Worker.Tests` が消えて 18 行の `Api.Tests` / `Infrastructure.Tests` が現れただけで、**9 サービスすべてで旧＝新の和が一致**（Audit 19=6+13 / Backtest 51=7+44 / InformationCollection 73=12+61 / MarketMonitor 35=18+17 / Notification 70=1+69 / OrderExecution 124=1+123 / Report 100=35+65 / RiskManagement 149=62+87 / TradeDecision 186=48+138）。他 33 アセンブリは 1 件も動いていない |
+| アセンブリ数 | 同上 | 42 → **51**（Worker.Tests 9 件が割れて +9） |
+| ビルド | `dotnet build backend/backend.slnx --no-incremental` | **0 Warning / 0 Error** |
+| アーキテクチャテスト | 4 件 green（Domain 9 件の探索空振り防止テストを含む） | 合格 |
+| カバレッジ | `--collect:"XPlat Code Coverage"` ＋ `check-coverage.js`（**bin/obj/TestResults を退避して full rebuild 後**・§7 手順 1 の訂正） | **64.52%（12061 / 18692 行・レポート 51 件）**。総行数は第 1 段階と**完全一致**（18692）。floor 62.00% を上回る |
+| 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし |
+| リポジトリ検査 | `scripts.test.js`（142 passed）/ `check-banned-libraries.js` / `check-test-traceability.js`（316 ファイル・25 ID）/ `check-consumer-endpoint-names.js`（consumer 47 件・衝突なし）/ `validate-runtime-scaffold.js`（Worker 11）/ `check-commit-messages.js` | すべて OK |
+
+**第 2 段階で追加した手作業補正は 2 種類**（いずれも §7 手順 3 に追記済み）:
+
+1. **相対名（`Composable.Steps.*`）参照** — Notification / TradeDecision（11 ファイル）/ MarketMonitor（2）/
+   OrderExecution（1）/ RiskManagement（1）。名前空間別名で解決した。
+2. **Web SDK の暗黙 using** — Report（1 ファイル）/ RiskManagement（3 ファイル）の常駐 `BackgroundService`。
+   不足 using を明示した。
+
+**サービス固有の追随**:
+
+- `AiStockTrading.IntegrationTests` は OrderExecution（無名参照）・Report（`ReportWorker` 別名）を Api へ。
+  RiskManagement は **Api と Infrastructure の双方に同じ別名 `RiskManagementWorker` を与えた**
+  （`Program` は Api、`#305`/IADR-0124 の並行トークン E2E が使う `internal` 永続化型は Infrastructure に
+  分かれたため。`InternalsVisibleTo Include="AiStockTrading.IntegrationTests"` は Infrastructure が引き継ぐ）。
 
 ## 11. 計画書との差異
 
@@ -660,3 +699,4 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
 | --- | --- |
 | 2026-08-03 | 初版作成（#353・第 1 段階着手前） |
 | 2026-08-03 | 第 1 段階（アーキテクチャテスト・パイロット 2 サービス）の実施結果を §10 へ反映。パイロットで判明した `internal` の可視性の落とし穴（§5.7・§7 手順 4）とプロジェクト数の実測（§8）を追記 |
+| 2026-08-03 | 第 2 段階（残り 9 サービス）完了。§10.2 に検証結果、§7 に補正 3（相対名参照）・補正 4（Web SDK の暗黙 using）・ビルド残骸がカバレッジ測定を壊す件の訂正、Endpoints を持たないサービスの移行形の補足を追記 |
