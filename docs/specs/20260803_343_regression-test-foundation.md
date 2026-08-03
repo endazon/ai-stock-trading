@@ -2,7 +2,7 @@
 title: 作業仕様書 — 再実装の退行防止テスト基盤（TradingDefaults 計画適合・写像規約・カバレッジ ratchet）
 type: work
 status: review
-related_ids: [NFR, FR-10, FR-12, FR-15, FR-19, FR-20, IADR-0127]
+related_ids: [NFR, FR-10, FR-12, FR-15, FR-17, FR-19, FR-20, IADR-0127]
 author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-03
@@ -69,7 +69,9 @@ issue（#329〜#348）のテストが載る共通基盤と横断ルールを先�
 ## 対象範囲
 
 - 対象:
-  1. `TradingDefaults` の計画適合テスト（計画確定値テーブル ＋ 既知逸脱レジストリ）
+  1. `TradingDefaults` の計画適合テスト（計画確定値テーブル ＋ 既知逸脱レジストリ）。
+     対象とする計画確定値は **§5 ＋ ADR-0008 / 0016 / 0018 ＋ §1 / §4 / §6（全体前提条件・FR-17。
+     実装は `TradingAssumptionsDefaults`）**（[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md) 決定の対象範囲）
   2. 受け入れ基準 → テスト写像の規約と、その CI 検査（`scripts/check-test-traceability.js`）
   3. カバレッジ floor ＋ ratchet 運用（`scripts/check-coverage.js`）と CI 結線
   4. 統制系の網羅テスト方式（境界値テーブル・プロパティベース・否定形の 3 点セット）の標準化
@@ -97,7 +99,7 @@ issue（#329〜#348）のテストが載る共通基盤と横断ルールを先�
 backend/Tests/AiStockTrading.PlanConformance.Tests/
 ├── PlanDefault.cs            計画確定値 1 行（キー・値・出典）
 ├── KnownDeviation.cs         既知逸脱 1 行（キー・現行値・担当 issue・理由）
-├── PlanRiskDefaults.cs       §5 / ADR-0008 / ADR-0016 / ADR-0018 の確定値テーブル
+├── PlanRiskDefaults.cs       §5 / §1 / §6 / ADR-0008 / ADR-0016 / ADR-0018 の確定値テーブル
 ├── KnownPlanDeviations.cs    現時点で受容する逸脱の登録簿
 ├── ActualDefaults.cs         実装側スナップショット（TradingDefaults ＋ 契約 enum → 正規化文字列）
 └── PlanConformanceTests.cs   4 本の検査
@@ -199,3 +201,4 @@ CI 検査 `scripts/check-test-traceability.js`:
 | 日付 | 内容 |
 | --- | --- |
 | 2026-08-03 | 初版作成（#343 着手前） |
+| 2026-08-03（追補） | 計画適合レジストリの対象範囲へ **§1（譲渡益税率）・§6（月次費用上限 4 値）** を追加（FR-17）。§4（最小期待利益倍率）は計画 **2 倍** と実装 **1.5** の不一致を実測で発見したため収録を保留し、裁定待ちとした（[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md) フォローアップ） |

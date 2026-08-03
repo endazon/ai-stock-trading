@@ -2,7 +2,7 @@
 title: IADR-0127 計画確定値の適合は「計画値テーブル＋既知逸脱レジストリ」で検査し、逸脱の解消を機械的に強制する
 type: impl-adr
 status: Accepted
-related_ids: [NFR, FR-10, FR-19, FR-20]
+related_ids: [NFR, FR-10, FR-17, FR-19, FR-20]
 author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-03
@@ -20,7 +20,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-10（リスク統制）・FR-19（取引ガード）・FR-20（段階ゲート）／ ADR-0008・ADR-0016・ADR-0018
+- 関連する計画書 ID: FR-10（リスク統制）・FR-17（全体前提条件）・FR-19（取引ガード）・FR-20（段階ゲート）／ ADR-0008・ADR-0016・ADR-0018
 - 関連 issue: [#343](https://github.com/endazon/ai-stock-trading/issues/343)（退行防止テスト基盤）・[#344](https://github.com/endazon/ai-stock-trading/issues/344)（親）
 - 関連する実装仕様書: [作業仕様書 20260803](../specs/20260803_343_regression-test-foundation.md)・[テスト戦略](../tests/README.md)
 - 先行する事故: [#306](https://github.com/endazon/ai-stock-trading/issues/306)（統制既定値が計画と乖離したまま検知されなかった）
@@ -54,6 +54,14 @@ plan_refs:
 ## 決定
 
 **案 D を採る。** 具体的には次の構成とする（`backend/Tests/AiStockTrading.PlanConformance.Tests`）。
+
+**対象範囲**: 05_trading-assumptions **§5**（リスク統制・取引ガードの既定値）＋ **ADR-0008 / ADR-0016 / ADR-0018**
+＋ **§1 / §4 / §6（全体前提条件の確定値。FR-17）** とする。§1（譲渡益税率）・§4（最小期待利益倍率）・§6
+（月次費用上限の総額 / LLM / インフラ / データ）も §5 と同じ**利用者決定の確定値**であり、実装では
+`TradingAssumptionsDefaults` にハードコードされている。サービス内のユニットテストは実装と一緒に書き換わり得るため、
+**確定値である限り本レジストリの中央検査に含める**（§2 手数料・§3 為替スプレッドは計画上「要確認」であり
+確定値を持たないため対象外。§6.1 の「LLM 費用上限の対象は取引判断サイクルのみ」のような**適用範囲の規則は
+値ではない**ため、後述のとおり本レジストリでは扱わない）。
 
 1. **`PlanRiskDefaults`** — 計画書の確定値テーブル。**計画側の単一情報源**であり、実装値を書き写さない。
    各行は「キー・正規化した値・出典（節 / ADR 番号）」を持つ。
@@ -108,6 +116,12 @@ plan_refs:
 - フォローアップ:
   - #329 / #332 / #333 / #334 の各 PR は、値の修正と同時に `KnownPlanDeviations` から該当行を削除する
     （削除しなければ CI が赤になるため、忘れることはできない）
+  - **§4 の最小期待利益倍率は対象範囲に含むが、行の収録を保留している**。対象範囲を §1 / §4 / §6 へ広げた
+    時点の実測で、計画の確定値（**往復費用＋税の 2 倍**。2026-07-23 利用者決定。それ以前は未確定の
+    `<1.5 倍>` だった）と実装（`TradingAssumptionsDefaults.MinimumExpectedProfitMultiple` = **1.5**、
+    かつ基準に税を含まない）の**不一致**を発見した。既知逸脱の新規登録は担当 issue の割当を伴う監査判断で
+    あるため、本 ADR の更新では登録簿へ追加せず、**計画側の是正か担当 issue 付きの逸脱登録かの裁定を待つ**。
+    裁定後に `PlanRiskDefaults` へ行を追加する
   - #345（AwesomeAssertions への全置換）は本テストも対象に含める。移行でテストの意味が変わらないことの確認対象
 
 ## 関連

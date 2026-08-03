@@ -1,13 +1,14 @@
 using System.Globalization;
 using System.Reflection;
 using AiStockTrading.Backtest.Domain;
+using AiStockTrading.Configuration.Domain;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.PlanConformance.Tests;
 
 /// <summary>
-/// 実装側の既定値スナップショット（FR-10, FR-19, FR-20）。
+/// 実装側の既定値スナップショット（FR-10, FR-17, FR-19, FR-20）。
 /// <para>
 /// すべての値を**実装から機械的に導出**する（定数・設定フィールド・enum の列挙・型の有無）。
 /// 手で書き写すと <see cref="PlanRiskDefaults"/> と同じ紙の上の一致になり、
@@ -44,6 +45,8 @@ public static class ActualDefaults
         var limits = TradingDefaults.CreateRiskLimits();
         var guard = TradingDefaults.CreateGuardSettings();
         var policy = TradingDefaults.CreateStagePolicy();
+        // FR-17: 全体前提条件（§1 税制・§6 運用費用上限）の既定は本ファクトリが単一の出所である。
+        var assumptions = TradingAssumptionsDefaults.Create();
 
         return new Dictionary<string, string>
         {
@@ -86,6 +89,14 @@ public static class ActualDefaults
             // ADR-0018 決定2 が問題視するのはこちらであり、別フィールドから抽出すると
             // 「たまたま計画と一致している値」を見て本来の逸脱を素通しする（PR #350 の指摘）。
             ["Stage0GateCriteria.MaxDrawdownTolerance"] = Ratio(Stage0GateCriteria.Default.MaxDrawdownTolerance),
+
+            // 全体前提条件（§1 / §6）。計画が名指しするのは「譲渡益税率」と「月次の費用上限 4 値」であり、
+            // いずれも TradingAssumptions の対応フィールドが抽出元である。
+            ["Assumptions.CapitalGainsTaxRate"] = RealizedGainRatio(assumptions.CapitalGainsTaxRate),
+            ["CostLimits.Total"] = MonthlyAmount(assumptions.CostLimits.Total),
+            ["CostLimits.Llm"] = MonthlyAmount(assumptions.CostLimits.Llm),
+            ["CostLimits.Infrastructure"] = MonthlyAmount(assumptions.CostLimits.Infrastructure),
+            ["CostLimits.Data"] = MonthlyAmount(assumptions.CostLimits.Data),
         };
     }
 
@@ -106,6 +117,20 @@ public static class ActualDefaults
     /// </summary>
     private static string FixedAmount(decimal amount) =>
         $"JPY {amount.ToString("0.############", CultureInfo.InvariantCulture)} (fixed amount)";
+
+    /// <summary>
+    /// 譲渡益（実現益）に対する税率として保持されている値。基準（何に対する率か）を含めることで、
+    /// 配当課税・源泉徴収率など別基準の率との取り違えを検知可能にする。
+    /// </summary>
+    private static string RealizedGainRatio(decimal ratio) =>
+        $"realized gain ratio {ratio.ToString("0.############", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// 月あたりの基準通貨（円）建て上限額。単位（円）と期間（月）を含めることで、
+    /// 割合・一回限りの金額・別通貨との取り違えを検知可能にする。
+    /// </summary>
+    private static string MonthlyAmount(decimal amount) =>
+        $"JPY {amount.ToString("0.############", CultureInfo.InvariantCulture)} per month";
 
     private static string Sorted(IEnumerable<string> values) =>
         string.Join(", ", values.OrderBy(v => v, StringComparer.Ordinal));

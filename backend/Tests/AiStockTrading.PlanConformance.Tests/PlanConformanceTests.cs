@@ -4,7 +4,7 @@ using Xunit;
 namespace AiStockTrading.PlanConformance.Tests;
 
 /// <summary>
-/// FR-10, FR-19, FR-20, ADR-0008, ADR-0016, ADR-0018:
+/// FR-10, FR-17, FR-19, FR-20, ADR-0008, ADR-0016, ADR-0018:
 /// 計画確定値（<see cref="PlanRiskDefaults"/>）と実装（<see cref="ActualDefaults"/>）の適合検査。
 /// 全面再実装（#344）の途上で受容する逸脱は <see cref="KnownPlanDeviations"/> に登録する（IADR-0127）。
 /// </summary>

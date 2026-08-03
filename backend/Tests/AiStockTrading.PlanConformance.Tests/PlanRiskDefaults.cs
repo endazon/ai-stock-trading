@@ -1,8 +1,9 @@
 namespace AiStockTrading.PlanConformance.Tests;
 
 /// <summary>
-/// 計画書で確定したリスク統制・取引ガード・段階ゲートの既定値テーブル（FR-10, FR-19, FR-20）。
-/// 出典は 06_technical/05_trading-assumptions §5 と ADR-0008 / ADR-0016 / ADR-0018。
+/// 計画書で確定した既定値テーブル（FR-10, FR-17, FR-19, FR-20）。
+/// 出典は 06_technical/05_trading-assumptions の §5（リスク統制・取引ガード）・§1（税制）・§6（運用費用上限）と
+/// ADR-0008 / ADR-0016 / ADR-0018。
 /// <para>
 /// 本テーブルが**計画側の単一情報源**である。実装値をここへ写してはならない（実装のスナップショットを
 /// 固定するだけになり、計画との乖離を永久に検知できなくなる — #306 の再発）。
@@ -16,7 +17,9 @@ namespace AiStockTrading.PlanConformance.Tests;
 /// </summary>
 public static class PlanRiskDefaults
 {
+    private const string Assumptions1 = "05_trading-assumptions §1";
     private const string Assumptions5 = "05_trading-assumptions §5";
+    private const string Assumptions6 = "05_trading-assumptions §6";
 
     public static IReadOnlyList<PlanDefault> All { get; } =
     [
@@ -71,6 +74,18 @@ public static class PlanRiskDefaults
         // 運用の DD 停止ライン（RiskLimits.MaxDrawdownRatio）とは**別のフィールド**である。
         // 両者を取り違えると「たまたま計画と一致している別の値」を見て逸脱を見逃す。
         new("Stage0GateCriteria.MaxDrawdownTolerance", "ratio 0.10", "ADR-0018 決定2"),
+
+        // --- 全体前提条件の確定値（FR-17）。§5 と同じく利用者決定であり、実装は
+        //     TradingAssumptionsDefaults.Create() が保持する。§2/§3 は「要確認」のため確定値を持たず対象外。 ---
+        new(
+            "Assumptions.CapitalGainsTaxRate",
+            "realized gain ratio 0.20315",
+            $"{Assumptions1}（20.315% ＝ 所得税 15.315% ＋ 住民税 5%）"),
+        // 月次費用上限は円建ての「月あたりの上限額」であり、割合でも一回限りの金額でもない。
+        new("CostLimits.Total", "JPY 20000 per month", $"{Assumptions6}（LLM＋インフラ＋データの合計）"),
+        new("CostLimits.Llm", "JPY 15000 per month", $"{Assumptions6}（対象は取引判断サイクルのみ。§6.1）"),
+        new("CostLimits.Infrastructure", "JPY 5000 per month", Assumptions6),
+        new("CostLimits.Data", "JPY 0 per month", $"{Assumptions6}（有料情報源の導入時に総枠内で配分）"),
     ];
 
     public static IReadOnlyDictionary<string, PlanDefault> ByKey { get; } =
