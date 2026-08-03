@@ -228,7 +228,9 @@ Api ──▶ Application ──▶ Domain ──▶ (Shared.Contracts のみ)
   EF Core・Npgsql・MassTransit 等の技術パッケージを持つ
 - **Api**: Application / Infrastructure / TestSupport.PlatformShim を参照する。**Api → Infrastructure は
   DI 構成のために必要**（Program.cs が具象実装を登録する）であり、Clean Architecture の
-  composition root として許容される
+  composition root として許容される。旧 Worker が持っていた他の `ProjectReference`
+  （`Shared.Contracts`・`ConfigurationService.Client` 等）のうち **Program.cs が使うものは Api にも残す**
+  （推移的に届くが、明示参照＝使用箇所という対応を保つ方がレビューしやすい）
 
 ### 5.7 振る舞いを変えないことの担保（移行前に確認済みの事項）
 
@@ -240,6 +242,7 @@ Api ──▶ Application ──▶ Domain ──▶ (Shared.Contracts のみ)
 | **EF Core の Migration 解決**（DbContext が別アセンブリへ移る） | **影響なし**。既定の migrations assembly は「DbContext を含むアセンブリ」であり、DbContext と `Migrations/` を**同じ Infrastructure へ一緒に移す**ため関係は保たれる。`__EFMigrationsHistory` はマイグレーション ID のみを保持し、アセンブリ名・名前空間を持たないため既存 DB への影響もない |
 | **`WebApplicationFactory<Program>`** | Api が `Program` を持ち、Api.Tests が Api を参照する形で従来どおり動く（`MvcTestingAppManifest.json` はビルド時に再生成される） |
 | **コンテナのエントリポイント** | `SERVICE_DLL` が `<Svc>.Worker.dll` → `<Svc>.Api.dll` に変わる。`docker-compose.yml` と `scripts/k8s-local-images.sh` を同一コミットで追随させる（§5.8）。Helm chart はイメージ名しか持たず**変更不要**（実測） |
+| **型の公開面（`internal`）** | 旧 Worker の永続化・アダプタ実装は `internal` である。分割すると Program.cs から見えなくなる（CS0122）。**`public` へ広げず `InternalsVisibleTo` で解決する**（§7 手順 4 の「必須の落とし穴」）。公開面を分割前と一致させることも「振る舞いを変えない」に含める |
 
 ### 5.8 リポジトリ横断の追随箇所（サービス移行と同一コミットで直す）
 
@@ -323,13 +326,21 @@ mkdir -p "$S/src/<Svc>.Api"
 git mv "$S/src/<Svc>.Infrastructure/Program.cs"                "$S/src/<Svc>.Api/"
 git mv "$S/src/<Svc>.Infrastructure/appsettings.json"          "$S/src/<Svc>.Api/"
 git mv "$S/src/<Svc>.Infrastructure/appsettings.Development.json" "$S/src/<Svc>.Api/"
-git mv "$S/src/<Svc>.Infrastructure/Foundation/Endpoints"      "$S/src/<Svc>.Api/Endpoints"   # ※下記注
+mkdir -p "$S/src/<Svc>.Api/Foundation"
+git mv "$S/src/<Svc>.Infrastructure/Foundation/Endpoints"      "$S/src/<Svc>.Api/Foundation/Endpoints"
 ```
 
-> **注（Endpoints のフォルダ階層）**: `Foundation/Endpoints` は Api では `Foundation/Endpoints` のまま
+> **注（Endpoints のフォルダ階層）**: `Foundation/Endpoints` は Api でも `Foundation/Endpoints` のまま
 > 置く（名前空間の変換規則 §5.4 が「層セグメントの置換 1 回」で閉じるため。パイロット 2 件はこの形で実施した）。
+> `Foundation/Endpoints` を持たないサービス（Backtest / InformationCollection / Notification /
+> OrderExecution / TradeDecision）はこの行を飛ばす。エンドポイントが Program.cs に直書きされている場合、
+> 本 issue では**切り出さない**（再配置の範囲を超える）。
 
 `<Svc>.Api.csproj` を新規作成する（雛形は §7.5）。
+
+> **注（ビルド出力の残骸）**: `git mv` したディレクトリには旧名の `bin/` `obj/` `TestResults/` が
+> 残る。`obj/project.assets.json` は旧 csproj 名を指したままだが restore で再生成されるため実害はない。
+> 気になる場合はリポジトリ外へ `mv` する（**`rm -rf` は `.claude/hooks/guard-bash.js` が禁止**）。
 
 ### 手順 2: テストプロジェクトを割る
 
@@ -362,22 +373,44 @@ grep -rl 'AiStockTrading.<Short>.Worker' "$S/src/<Svc>.Infrastructure" "$S/tests
 **そのうえで手作業の補正が 2 種類だけ要る**（機械置換では出せない）。
 
 1. **Api → Infrastructure の参照**: Program.cs は Persistence / Composable の型を DI 登録するため、
-   `using AiStockTrading.<Short>.Infrastructure.…` が要る（上の置換で `…Api.Foundation.Persistence` に
-   なってしまう箇所を戻す）。**Program.cs のみで発生する**。
+   `using AiStockTrading.<Short>.Infrastructure.…` が要る（上の置換で `…Api.Foundation.Persistence` /
+   `…Api.Composable.…` になってしまう箇所を戻す）。**Program.cs のみで発生する**。
 2. **Api.Tests → Infrastructure の参照**: `<Svc>WorkerWebApplicationFactory` は DbContext を差し替えるため
-   `using AiStockTrading.<Short>.Infrastructure.Foundation.Persistence;` が要る。
+   `using AiStockTrading.<Short>.Infrastructure.Foundation.Persistence;` が要る。DI 配線を検証するテスト
+   （CostControl の `CostControlWiringTests` 等）も `…Infrastructure.Composable.Adapters` を参照する。
+
+**判定は「置換後に `AiStockTrading.<Short>.Api.` で始まる `using` が残っていたら疑う」**でよい。Api の
+名前空間は `Foundation.Endpoints`（と `Api.Tests`）しか存在しないため、それ以外は戻し忘れである。
 
 > 実務上は、**先に Infrastructure 側を置換 → 次に Api 側を置換 → ビルドエラーが出た箇所だけ直す**のが速い。
 > ビルドエラーは「型が見つからない（CS0246）」の形で必ず出るため、見落としが起きない。
 
 ### 手順 4: csproj の相互参照を直す
 
-- `<Svc>.Infrastructure.csproj`: `InternalsVisibleTo` を `<Svc>.Infrastructure.Tests` へ。
-  `Microsoft.NET.Sdk.Web` → `Microsoft.NET.Sdk` へ変更し、`<FrameworkReference Include="Microsoft.AspNetCore.App" />` を足す
-  （`BackgroundService` / `IHealthCheck` / `IOptions` 等の共有フレームワーク型を使うため）
+- `<Svc>.Infrastructure.csproj`: `Microsoft.NET.Sdk.Web` → `Microsoft.NET.Sdk` へ変更し
+  （`<OutputType>Library</OutputType>` を明示）、`<FrameworkReference Include="Microsoft.AspNetCore.App" />` を足す
+  （`BackgroundService` / `IHealthCheck` / `IOptions` 等の共有フレームワーク型を使うため）。
+  **`InternalsVisibleTo` は 3 つ**（後述の「必須の落とし穴」）
 - `<Svc>.Api.csproj`: §7.5 の雛形
-- `<Svc>.Infrastructure.Tests.csproj` / `<Svc>.Api.Tests.csproj`: `ProjectReference` を張り替える
-- 他サービス・`backend/Tests/AiStockTrading.IntegrationTests` からの `<Svc>.Worker` 参照を `<Svc>.Api` へ
+- `<Svc>.Infrastructure.Tests.csproj` / `<Svc>.Api.Tests.csproj`: `ProjectReference` を張り替える。
+  `Microsoft.AspNetCore.Mvc.Testing` は **Api.Tests のみ**（Infrastructure.Tests からは外す）
+- 他サービス・`backend/Tests/AiStockTrading.IntegrationTests` からの `<Svc>.Worker` 参照を `<Svc>.Api` へ。
+  `Aliases="…Worker"`（extern alias）は**名前を変えない**（テスト本文の `extern alias` 行を触らないため）
+
+> **必須の落とし穴 —— `internal` の可視性（パイロットで実際に踏んだ）**
+>
+> 旧 Worker の永続化・アダプタ実装は `internal` である（`ConfigurationDbContext` / `EfAssumptionsStore` /
+> `EfCostLedger` 等）。同一アセンブリだったから Program.cs が DI 登録できていたのであって、
+> 分割した瞬間に **CS0122「保護レベルのためアクセスできません」**が出る。
+>
+> **`public` へ広げてはならない。** 分割前に無かった公開面が生まれ、「再配置＝振る舞いも公開面も変えない」
+> という前提が崩れる。代わりに Infrastructure 側へ `InternalsVisibleTo` を 3 つ置く。
+>
+> ```xml
+> <InternalsVisibleTo Include="<Svc>.Api" />
+> <InternalsVisibleTo Include="<Svc>.Api.Tests" />
+> <InternalsVisibleTo Include="<Svc>.Infrastructure.Tests" />
+> ```
 
 ### 手順 5: slnx・compose・スクリプトの追随（§5.8）
 
@@ -460,17 +493,17 @@ PR は #353 に対して 1 本（第 1〜3 段階を通しで積む）。
 TradeDecision → MarketMonitor → Report → OrderExecution → RiskManagement。
 RiskManagement（Worker 51 ファイル・テスト 149 件）を最後に置くのは、そこまでにレシピが枯れているようにするため。
 
-**プロジェクト数の推移**
+**プロジェクト数の推移**（`backend.slnx` の `<Project Path=` 実測）
 
-| | 現行 | 移行後 |
-| --- | --- | --- |
-| サービス本番 | 34（Domain 9・Application 11・Worker 11・Client 1・Domain 無しの補正含む） | 45（＋Api 11 / Worker→Infrastructure） |
-| サービステスト | 33 | 44 |
-| その他（Shared / TestSupport / Bff / Tests） | 12 | 13（アーキテクチャテスト +1） |
-| **合計** | **79** | **102** |
+| | 移行前（`b4b4096`） | 第 1 段階完了時 | 全段階完了時（見込み） |
+| --- | --- | --- | --- |
+| サービス本番（`Services/*/src`） | 32（Domain 9・Application 11・Worker 11・Client 1） | 34 | 43（Worker→Infrastructure 11 ＋ Api 11） |
+| サービステスト（`Services/*/tests`） | 32 | 34 | 43 |
+| その他（Shared 6・TestSupport 2・Bff 2・Tests 2） | 12 | 13（アーキテクチャテスト +1） | 13 |
+| **合計** | **76** | **81** | **99** |
 
 > issue 本文の「76 → 約 130」は「7 プロジェクトを常に作る」前提の見積もりである。§5.2 の決定により
-> 実数は上表となる（現行実数 79 は `backend.slnx` の登録数の実測）。
+> 実数は **76 → 99**（1 サービスあたり +2＝Api とその Tests）となる。
 
 ## 9. 受け入れ基準
 
@@ -483,8 +516,9 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
       `AutoMapper` / `Mapster`（＋ `MediatR` / `FluentAssertions`）が登録済みで、
       `.csproj` / `Directory.Packages.props` / `*.cs` の `using` を走査する。**本 issue での追加作業は無い**
 - [ ] `dotnet build` / `dotnet test`（`Category!=Integration`）が**再配置前と同一の合格数**で green
-      （第 1 段階時点で確認済み。全段階完了時に再確認）
+      （第 1 段階時点で確認済み＝既存 2256 件が不変。全段階完了時に再確認）
 - [ ] カバレッジが floor を下回らない（#343）
+      （第 1 段階時点で 64.47%・移行前と行数まで一致。全段階完了時に再確認）
 - [ ] `docs/tech/`（技術要件書）が新標準を反映している（第 3 段階）
 
 ## 10. テスト方針・検証結果（第 1 段階）
@@ -497,12 +531,21 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
 
 | 対象 | 方法 | 結果 |
 | --- | --- | --- |
-| 合格数の一致 | 移行前後の合計とアセンブリ別内訳 | **2256 → 2256**（Failed=0）。アセンブリ数は 39 → **42**（Worker.Tests 2 件が Api/Infrastructure に割れて +2、アーキテクチャテスト +1）。内訳は ConfigurationService 13 = Api.Tests 8 + Infrastructure.Tests 5、CostControlService 40 = Api.Tests 9 + Infrastructure.Tests 31 |
+| **合格数の一致** | 移行前後の合計と**アセンブリ別内訳の差分** | 合計 **2256 → 2260**。増分 4 は**新設したアーキテクチャテストの 4 件のみ**であり、既存テストは 2256 のまま（Failed=0）。アセンブリ別内訳の diff は次の 5 行だけで、他 37 アセンブリは 1 件も動いていない: `+AiStockTrading.Architecture.Tests 4` / `-ConfigurationService.Worker.Tests 13` → `+Api.Tests 8` `+Infrastructure.Tests 5` / `-CostControlService.Worker.Tests 40` → `+Api.Tests 9` `+Infrastructure.Tests 31`（**13 = 8+5・40 = 9+31 で完全一致**） |
+| アセンブリ数 | 同上 | 39 → **42**（Worker.Tests 2 件が割れて +2、アーキテクチャテスト +1） |
 | ビルド | `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
-| アーキテクチャテストの変異確認 | Domain csproj へ故意に禁止参照を追加 → 実行 → 復元 | §10.1 |
-| 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし |
-| リポジトリ検査 | `scripts.test.js` / `check-banned-libraries.js` / `check-test-traceability.js` / `check-consumer-endpoint-names.js` / `validate-runtime-scaffold.js` | すべて OK |
-| カバレッジ | `--collect:"XPlat Code Coverage"` ＋ `check-coverage.js` | floor 62.00% を上回る |
+| アーキテクチャテストの変異確認 | Domain csproj へ故意に禁止参照を追加 → 実行 → 復元 | §10.1（3 変異すべて検出） |
+| 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし（終了コード 0） |
+| リポジトリ検査 | `scripts.test.js`（142 passed）/ `check-banned-libraries.js` / `check-test-traceability.js`（316 ファイル・25 ID）/ `check-consumer-endpoint-names.js`（consumer 47 件・衝突なし）/ `validate-runtime-scaffold.js`（Worker 11）/ `check-action-versions.js` | すべて OK |
+| カバレッジ | `--collect:"XPlat Code Coverage"` ＋ `check-coverage.js` | **64.47%（12051 / 18692 行・レポート 42 件）**。移行前の記録（`coverage-floor.json` の `measuredLineRate` 0.6447・12051/18692 行）と**行数・被覆行数とも完全一致**。floor 62.00% を上回る。ソースに実質的な変更が無いことの傍証になる |
+
+> **カバレッジ測定時の注意**: `TestResults/` は過去の実行分が残る。古いレポート（旧パスの `.Worker` を指すもの）が
+> 混ざると合計行数が水増しされる（実測で 74 レポート・19173 行・62.91% になった）。測り直す前に
+> `backend` 配下の `TestResults/` をリポジトリ外へ退避すること。
+
+**consumer のキュー名が不変であることの確認**: `check-consumer-endpoint-names.js` が 47 件の consumer を
+走査して衝突ゼロ。名前空間を変えた `LlmCostIncurredConsumer`（CostControl）もクラス名は不変であり、
+`DefaultEndpointNameFormatter` が導くキュー名 `LlmCostIncurred` は変わらない（§5.7）。
 
 ### 10.1 アーキテクチャテストの変異確認（実施記録）
 
@@ -555,10 +598,18 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
    サービス間同期呼び出しの形が変わる際に再検討する。
 7. **`Foundation` / `Composable` のフォルダ階層の要否**。Infrastructure 配下の `Foundation/Persistence` は
    階層が重複気味だが、platform ADR-0018 の固定/可変区分に対応する既存の意味づけであり本 issue では変えない。
+8. **`Worker` を含む名前の残骸**。`<Svc>WorkerWebApplicationFactory`（テスト補助クラス）と
+   `AiStockTrading.IntegrationTests` の `extern alias CostControlWorker` / `RiskManagementWorker` /
+   `ReportWorker` は、テスト本文を触らないため据え置いた。改名はテストファイルの一括編集になり、
+   「テストの表明を変えない」の確認コストに見合わない。#354 以降で名前の整理をまとめて行う。
+9. **Program.cs 直書きのエンドポイント**。`Foundation/Endpoints/` を持たないサービス
+   （Backtest / InformationCollection / Notification / OrderExecution / TradeDecision）は
+   エンドポイント定義が Program.cs にある。Vertical Slice としての切り出しは再配置の範囲を超えるため
+   本 issue では行わない。
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
 | 2026-08-03 | 初版作成（#353・第 1 段階着手前） |
-| 2026-08-03 | 第 1 段階（アーキテクチャテスト・パイロット 2 サービス）の実施結果を §10 へ反映 |
+| 2026-08-03 | 第 1 段階（アーキテクチャテスト・パイロット 2 サービス）の実施結果を §10 へ反映。パイロットで判明した `internal` の可視性の落とし穴（§5.7・§7 手順 4）とプロジェクト数の実測（§8）を追記 |
