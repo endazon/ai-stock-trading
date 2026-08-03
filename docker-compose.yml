@@ -373,8 +373,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj
-        SERVICE_DLL: RiskManagementService.Worker.dll
+        SERVICE_PROJECT: backend/Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj
+        SERVICE_DLL: RiskManagementService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=risk_management_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

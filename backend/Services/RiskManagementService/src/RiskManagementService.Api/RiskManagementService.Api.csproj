@@ -1,0 +1,31 @@
+<!-- #12 Slice B, IADR-0010/0011/0012, IADR-0128: リスク管理サービスの API ホスト。
+     kill switch/設定変更の HTTP エンドポイント（Keycloak 認可）とヘルスチェックのため Web SDK を使用。
+     技術詳細（EF Core 永続化・Migration・consumer・常駐ジョブ）は Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.RiskManagement.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- dotnet ef の startup project となるため Design を保持する（Migration 本体は Infrastructure）。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\RiskManagementService.Application\RiskManagementService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（EF ストア・DbContext・consumer・常駐ジョブ）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\RiskManagementService.Infrastructure\RiskManagementService.Infrastructure.csproj" />
+    <!-- IADR-0066: 現在値ソース（既定 no-op）と手元保持（QuoteCache）は共有物を用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。
+         本番では platform 本体の Foundation に置き換わる。standalone 起動配線は dev/test/CI 用。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="RiskManagementService.Api.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,245 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
+using AiStockTrading.RiskManagement.Application.Ports;
+using AiStockTrading.RiskManagement.Application.Services;
+using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+using AiStockTrading.Shared.Contracts.Events;
+using AwesomeAssertions;
+using MassTransit.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Xunit;
+
+namespace AiStockTrading.RiskManagement.Api.Tests;
+
+// FR-20, FR-11, FR-09, UC-06, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバの結線を検証する。
+// 休場ガード・新規停止時のみ通知（冪等）・fail-safe 非発火・多重実行防止（逐次）を受け入れ基準へ写像する。
+// WebApplicationFactory（InMemory DB・MassTransit ハーネス）上で、ドライバを直接構成して RunOnceAsync を叩く。
+public class WithdrawalEvaluationServiceTests
+{
+    // 2026-07-17 金曜（営業日）/ 2026-07-18 土曜（休場）。
+    private static readonly DateTimeOffset FridayUtc = new(2026, 7, 17, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset SaturdayUtc = new(2026, 7, 18, 9, 0, 0, TimeSpan.Zero);
+
+    // 段階を Stage 2（実弾最小）に据える。台帳は追記専用で現在段階は履歴の畳み込みなので、単一遷移で到達させる。
+    private static void SeedStage(RiskWorkerWebApplicationFactory factory, TradingStage stage)
+    {
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStageGateStore>().Append(new StageTransition(
+            1, TradingStage.Stage0Verification, stage, StageTransitionKind.Promotion,
+            "seed", FridayUtc, "test seed"));
+    }
+
+    private static void SeedPerformance(RiskWorkerWebApplicationFactory factory, StagePerformance performance)
+    {
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStagePerformanceStore>().Save(performance);
+    }
+
+    // 実DD がバックテスト最大DD × 倍率を超える＝Stage 2/3 の撤退（自動停止）を発火させる実績。
+    private static StagePerformance DrawdownBreach() => new()
+    {
+        BacktestMaxDrawdownRatio = 0.10m,
+        ObservedMaxDrawdownRatio = 0.20m, // 0.10 × 1.5 = 0.15 を超過
+    };
+
+    // Stage 1 ペーパー乖離が説明不能＝非停止の降格提案（HaltNewEntries=false）を発火させる実績。
+    private static StagePerformance PaperDeviationUnexplained() => new() { PaperDeviationExplained = false };
+
+    // 乖離が説明可能＝撤退非該当（提案は解消）。
+    private static StagePerformance PaperDeviationResolved() => new() { PaperDeviationExplained = true };
+
+    private static int NonHaltingCount(ITestHarness harness) =>
+        harness.Published.Select<WithdrawalTriggered>(p => !p.Context.Message.HaltNewEntries).Count();
+
+    private static WithdrawalEvaluationService BuildDriver(
+        RiskWorkerWebApplicationFactory factory, DateTimeOffset now) =>
+        new(
+            factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            new FixedClock(now),
+            new WeekendBusinessCalendar(),
+            Options.Create(new WithdrawalEvaluationOptions()),
+            NullLogger<WithdrawalEvaluationService>.Instance);
+
+    private static bool KillSwitchEngaged(RiskWorkerWebApplicationFactory factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<KillSwitchService>().GetState().Engaged;
+    }
+
+    [Fact]
+    public async Task 撤退基準到達時に自動停止し_WithdrawalTriggered_を発行する()
+    {
+        // 受け入れ基準: 撤退基準到達時に kill switch 自動起動＋降格提案を通知（#15）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient(); // ホスト（＋ハーネスバス）を起動する。
+        SeedStage(factory, TradingStage.Stage2MinimalLive);
+        SeedPerformance(factory, DrawdownBreach());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+
+        KillSwitchEngaged(factory).Should().BeTrue();
+        (await harness.Published.Any<WithdrawalTriggered>(
+            p => p.Context.Message.HaltNewEntries
+                && p.Context.Message.ProposedStage == (int)TradingStage.Stage0Verification
+                && p.Context.Message.Reason == nameof(WithdrawalReason.DrawdownBreachedMultiple)))
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task 既に停止済みなら再発行しない_冪等()
+    {
+        // 受け入れ基準: 非発火時は副作用なし・冪等（既に kill switch 起動済みなら再起動しない＝再通知しない）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage2MinimalLive);
+        SeedPerformance(factory, DrawdownBreach());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+        var driver = BuildDriver(factory, FridayUtc);
+
+        await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規停止 → 発行
+        await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 起動済み → 非発行
+
+        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeTrue();
+        harness.Published.Select<WithdrawalTriggered>()
+            .Should().ContainSingle("新規に停止した 1 回だけ通知する（撤退継続中の再通知はしない）");
+    }
+
+    [Fact]
+    public async Task 休場日は評価をスキップし発火しない()
+    {
+        // 受け入れ基準: 市場休場ガード。土曜は評価せず、撤退基準を満たす実績でも自動停止・通知しない。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage2MinimalLive);
+        SeedPerformance(factory, DrawdownBreach());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        await BuildDriver(factory, SaturdayUtc).RunOnceAsync(CancellationToken.None);
+
+        KillSwitchEngaged(factory).Should().BeFalse();
+        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task 撤退基準に達していなければ副作用なし_非発行()
+    {
+        // 受け入れ基準: 実績未供給（既定・起点 Stage 0）は fail-safe で非発火＝停止も通知もしない。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+
+        KillSwitchEngaged(factory).Should().BeFalse();
+        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeFalse();
+    }
+
+    // --- #189/IADR-0085: Stage 1 ペーパー乖離（非停止）の降格提案通知（durable な重複排除） ---
+
+    [Fact]
+    public async Task ペーパー乖離で非停止の降格提案を通知する_停止しない()
+    {
+        // 受け入れ基準（#189）: Stage 1 のバックテスト乖離が説明不能 → WithdrawalTriggered(HaltNewEntries=false,
+        // ProposedStage=Stage0) を発行する。kill switch は起動しない（ペーパーのため即時停止不要・降格提案に留める）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedPerformance(factory, PaperDeviationUnexplained());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+
+        KillSwitchEngaged(factory).Should().BeFalse("ペーパー乖離は停止させず降格提案に留める");
+        (await harness.Published.Any<WithdrawalTriggered>(
+            p => !p.Context.Message.HaltNewEntries
+                && p.Context.Message.ProposedStage == (int)TradingStage.Stage0Verification
+                && p.Context.Message.Reason == nameof(WithdrawalReason.PaperDeviationUnexplained)))
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ペーパー乖離が継続しても再通知しない_durable冪等()
+    {
+        // 受け入れ基準（#189）: 巡回ごとの重複通知を避ける。同一乖離が継続する間は 1 回だけ通知する。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedPerformance(factory, PaperDeviationUnexplained());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+        var driver = BuildDriver(factory, FridayUtc);
+
+        await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規乖離 → 発行
+        await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 同一シグネチャ → 非発行
+
+        NonHaltingCount(harness).Should().Be(1, "同一乖離継続中は 1 回だけ通知する（スパム回避）");
+    }
+
+    [Fact]
+    public async Task 別ドライバインスタンスでも重複排除する_再起動またぎ冪等()
+    {
+        // 受け入れ基準（#189）: 重複排除状態は DB 永続。別ドライバインスタンス（＝プロセス再起動の代理）でも再通知しない。
+        // in-memory だと破綻する経路を、共有 DB のシグネチャで冪等化する（IADR-0085）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedPerformance(factory, PaperDeviationUnexplained());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+
+        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 1
+        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 2（別構築・同一 DB）
+
+        NonHaltingCount(harness).Should().Be(1, "永続シグネチャで別インスタンス・再起動をまたいでも重複通知しない");
+    }
+
+    [Fact]
+    public async Task 乖離が解消後に再発生したら再通知する()
+    {
+        // 受け入れ基準（#189）: 乖離が一旦解消（説明可能）してから再発生したら、再通知できる（シグネチャをクリアする）。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage1Paper);
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+        var driver = BuildDriver(factory, FridayUtc);
+
+        SeedPerformance(factory, PaperDeviationUnexplained());
+        await driver.RunOnceAsync(CancellationToken.None); // 乖離 → 発行（1）
+        SeedPerformance(factory, PaperDeviationResolved());
+        await driver.RunOnceAsync(CancellationToken.None); // 解消 → クリア・非発行
+        SeedPerformance(factory, PaperDeviationUnexplained());
+        await driver.RunOnceAsync(CancellationToken.None); // 再乖離 → 再発行（2）
+
+        NonHaltingCount(harness).Should().Be(2, "解消を挟めば再乖離で再通知する");
+    }
+
+    [Fact]
+    public async Task 停止経路は非停止の重複排除に影響されない_二重通知しない()
+    {
+        // 受け入れ基準（#189）: #166 停止経路（Stage 2/3）は従来どおり新規停止で 1 回のみ。非停止のシグネチャストアに
+        // 依存せず、二重通知しない。停止経路は HaltNewEntries=true で発行される。
+        using var factory = new RiskWorkerWebApplicationFactory();
+        factory.CreateClient();
+        SeedStage(factory, TradingStage.Stage2MinimalLive);
+        SeedPerformance(factory, DrawdownBreach());
+        var harness = factory.Services.GetRequiredService<ITestHarness>();
+        var driver = BuildDriver(factory, FridayUtc);
+
+        await driver.RunOnceAsync(CancellationToken.None);
+        await driver.RunOnceAsync(CancellationToken.None);
+
+        harness.Published.Select<WithdrawalTriggered>()
+            .Should().ContainSingle("停止経路は新規停止の 1 回のみ")
+            .Which.Context.Message.HaltNewEntries.Should().BeTrue();
+        NonHaltingCount(harness).Should().Be(0, "停止経路では非停止通知を出さない");
+    }
+
+    // 休場ガードの当日判定を制御するための固定時計。
+    private sealed class FixedClock(DateTimeOffset now) : IClock
+    {
+        public DateTimeOffset UtcNow => now;
+
+        public DateOnly Today => DateOnly.FromDateTime(now.UtcDateTime);
+    }
+}

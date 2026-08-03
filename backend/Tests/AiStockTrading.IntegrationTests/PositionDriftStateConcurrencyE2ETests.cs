@@ -6,8 +6,8 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Xunit;
-using RiskManagementDbContext = RiskManagementWorker::AiStockTrading.RiskManagement.Worker.Foundation.Persistence.RiskManagementDbContext;
-using EfPositionDriftStateStore = RiskManagementWorker::AiStockTrading.RiskManagement.Worker.Foundation.Persistence.EfPositionDriftStateStore;
+using RiskManagementDbContext = RiskManagementWorker::AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.RiskManagementDbContext;
+using EfPositionDriftStateStore = RiskManagementWorker::AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.EfPositionDriftStateStore;
 
 namespace AiStockTrading.IntegrationTests;
 
