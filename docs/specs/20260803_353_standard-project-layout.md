@@ -564,11 +564,13 @@ issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け�
       — **#351 で対応済み**。`scripts/check-banned-libraries.js` の `BANNED` に
       `AutoMapper` / `Mapster`（＋ `MediatR` / `FluentAssertions`）が登録済みで、
       `.csproj` / `Directory.Packages.props` / `*.cs` の `using` を走査する。**本 issue での追加作業は無い**
-- [ ] `dotnet build` / `dotnet test`（`Category!=Integration`）が**再配置前と同一の合格数**で green
-      （第 1 段階時点で確認済み＝既存 2256 件が不変。全段階完了時に再確認）
-- [ ] カバレッジが floor を下回らない（#343）
-      （第 1 段階時点で 64.47%・移行前と行数まで一致。全段階完了時に再確認）
-- [ ] `docs/tech/`（技術要件書）が新標準を反映している（第 3 段階）
+- [x] `dotnet build` / `dotnet test`（`Category!=Integration`）が**再配置前と同一の合格数**で green
+      （**第 3 段階で再確認: 0 Warning / 0 Error・2260 passed / 0 failed / 51 アセンブリ**。
+      既存 2256 件は不変で、増分 4 は新設したアーキテクチャテストのみ）
+- [x] カバレッジが floor を下回らない（#343）
+      （第 2 段階完了時に **64.52%（12061 / 18692 行・レポート 51 件）**・floor 62.00% を上回る＝§10.2。
+      第 3 段階は文書のみの変更でソース差分ゼロのため再測不要）
+- [x] `docs/tech/`（技術要件書）が新標準を反映している（第 3 段階＝§10.3）
 
 ## 10. テスト方針・検証結果（第 1 段階）
 
@@ -635,6 +637,44 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
   （`Program` は Api、`#305`/IADR-0124 の並行トークン E2E が使う `internal` 永続化型は Infrastructure に
   分かれたため。`InternalsVisibleTo Include="AiStockTrading.IntegrationTests"` は Infrastructure が引き継ぐ）。
 
+### 10.3 第 3 段階（文書整備）の実施内容と総検証
+
+**ソースコードの差分はゼロ**（文書のみ）。よって合格数・カバレッジの再測は「不変であること」の確認である。
+
+| 対象 | 方法 | 結果 |
+| --- | --- | --- |
+| ビルド | `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| テスト | `dotnet test backend/backend.slnx --filter "Category!=Integration"` | **2260 passed / 0 failed / 51 アセンブリ**（第 2 段階と一致） |
+| 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし（終了コード 0） |
+| リポジトリ検査 | `scripts.test.js`（142 passed）/ `check-test-traceability.js`（316 ファイル・25 ID）/ `check-banned-libraries.js` / `check-consumer-endpoint-names.js`（consumer 47 件）/ `validate-runtime-scaffold.js`（Worker 11） | すべて OK |
+| 文書リンク | `check-doc-links.js` | 破損 **20 件**（第 3 段階の着手前と同数＝**新規破損なし**。既存 20 件はいずれも planning submodule 側のリネーム由来の既知） |
+
+**更新した文書**
+
+| 文書 | 更新内容 |
+| --- | --- |
+| [`docs/tech/tech-requirements.md`](../tech/tech-requirements.md) | §プロジェクト構成（サービス単位）を新設。7 標準への対応表（`Contracts` はユニット単位 1 つ・`SharedKernel` は作らない・標準外の `*.Client`）、名前空間規則、アーキテクチャテストによる強制（検査 4 点）、`backend/Dockerfile` の build args、総プロジェクト数 99。起点計画書欄と `plan_refs` も記入 |
+| [`docs/adr/README.md`](../adr/README.md) | IADR-0128 行のプロジェクト数を起草時見積（79 → 102）から実測（**76 → 99**）へ是正。「注（`Worker` 表記の読み替え）」を追加＝#353 以前の文書の `Worker` は現在の `Api` + `Infrastructure`。過去 IADR は原文のまま据え置く旨を明記 |
+| [`IADR-0128`](../adr/IADR-0128_standard-project-layout.md) | §結果 のプロジェクト数に実測値の註記を追加（決定内容は変更していない） |
+| [`docs/tests/README.md`](../tests/README.md) | §5 テストの層の表を Api.Tests / Infrastructure.Tests に分割し、`AiStockTrading.Architecture.Tests` の行を追加 |
+| [`docs/how-to/local-run.md`](../how-to/local-run.md) | `dotnet user-secrets` の実行ディレクトリを `<Svc>.Worker` → `<Svc>.Api` へ（**そのままでは `cd` が失敗する**） |
+| [`docs/operations/live-trading-cutover-runbook.md`](../operations/live-trading-cutover-runbook.md) | 閂 1 の実装箇所パスを `OrderExecutionService.Worker/…` → `OrderExecutionService.Infrastructure/…` へ |
+| [`docs/functional/FR-15_backtest.md`](../functional/FR-15_backtest.md) | 過去データ供給の実装欄を `（Worker）` → `（Infrastructure）`、合成・自己申告を `BacktestService.Api`（ホスト）へ |
+| [`docs/tests/FR-15_backtest-tests.md`](../tests/FR-15_backtest-tests.md) | テスト対象を `BacktestService.Infrastructure.Tests` / `BacktestService.Api.Tests` に分割（テストクラス名 `BacktestWorker…` は据え置き＝§12 未決事項 8） |
+| [`docs/integration/20260718_msp-frontend-integration-requirements.md`](../integration/20260718_msp-frontend-integration-requirements.md) | MSP 側 deploy 登録の項へ註記を追加（`ConfigurationService.Worker/Dockerfile` は**元から存在しない**。AST は単一 `backend/Dockerfile` ＋ build args。プロジェクト名は `.Api`）。本文の他の記述は起票時の point-in-time 記録として据え置き |
+| [`feedback/20260803_adr0030-project-structure-per-service-scope.md`](../../feedback/20260803_adr0030-project-structure-per-service-scope.md) | §12 未決事項 3・6 を計画側（platform ADR-0030 / 12_backend-application-stack）へ環流するフィードバック記録を**起草**（送付は未実施） |
+
+**更新しなかったもの（判断と理由）**
+
+| 対象 | 判断 | 理由 |
+| --- | --- | --- |
+| `docs/specs/` の各作業仕様書（`20260710_market-monitor-worker.md` 等 100 件超の `Worker` 言及） | 据え置き | PR 単位の **point-in-time 記録**。当時の構成を記述した歴史的記録であり、改変するとレビュー時の事実と食い違う |
+| `IADR-0082`（タイトル・決定 1「発行点は Worker に置く」）・`IADR-0089`（`AuditService Worker` の DI 隣接行） | 据え置き（`docs/adr/README.md` に読み替えの註記を 1 箇所だけ追加） | 決定当時の**経緯説明**。決定の実質（「Application は純粋・ホスト側が発行を統率」「監査 consumer は監査サービスのホストに置く」）は再配置後も成立しており、実害が無い。個々の ADR を書き換えるより索引に 1 つ註記を置く方が改変面が小さい |
+| `docs/infra/infra.md` / `docs/observability/observability.md` / `docs/operations/operations.md` / `docs/tech/system-architecture.md` / Helm chart README の「10 Worker」 | 据え置き | ここでの `Worker` は**実行時のワークロード**（常駐サービス）を指しており、プロジェクト名ではない。再配置で変わっていない |
+| `docs/how-to/local-run.md` の「EF Migration は各 Worker 起動時に適用される」 | 据え置き | 同上（compose サービス＝実行時ワークロードの意味） |
+| `docs/operations/live-trading-cutover-runbook.md` の「Worker は起動時に停止する」・`.../Composable/Adapters/*.cs` の相対表記 | 据え置き | 前者は実行時ワークロード。後者は `.../` で始まる相対表記でありパスとして壊れていない |
+| `CHANGELOG.md` | 触らない | CI（`changelog.yml`）がコミット履歴から生成する |
+
 ## 11. 計画書との差異
 
 - **差異: あり（2 点。いずれも ADR-0030 に反しない範囲の実装判断）**
@@ -647,7 +687,10 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
    `Contracts` か `Infrastructure` に紛れ込んで意味が崩れる。
 
 いずれも計画側へ環流すべき論点を含む（ADR-0030 が per-service Contracts / SharedKernel を必須とするのか、
-サービス公開クライアントの置き場所をどう定めるのか）。第 3 段階で `/plan-feedback` に出す（§12 未決事項 3・6）。
+サービス公開クライアントの置き場所をどう定めるのか）。第 3 段階で
+[`feedback/20260803_adr0030-project-structure-per-service-scope.md`](../../feedback/20260803_adr0030-project-structure-per-service-scope.md)
+として**起草した**（§12 未決事項 3・6）。**計画リポへの送付（`plan-feedback` ラベル付き Issue の起票、または
+計画リポ `draft/feedback/` へのコピー）は未実施**であり、人間または別セッションに委ねる。
 
 ## 12. 未決事項
 
@@ -665,6 +708,8 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
 3. **基盤リポ（microservices-platform）実装の実構成との突合**。IADR-0001 が「揃える先は基盤実装リポ」と
    定めている以上、基盤が per-service に `Contracts` / `SharedKernel` を置いているかを確認し、
    食い違うなら §5.2 の決定を見直す。本セッションでは基盤リポが参照範囲外のため未確認。
+   → **第 3 段階で計画側へのフィードバックを起草**（[`feedback/20260803_adr0030-project-structure-per-service-scope.md`](../../feedback/20260803_adr0030-project-structure-per-service-scope.md) の
+   提案 (1)(2)）。**送付は未実施**。裁定が出るまで §5.2 の決定を暫定として維持する。
 4. **Application 層の依存規律の機械検査**。本 issue のアーキテクチャテストは Domain のみを対象とする。
    「Application が EF Core / ASP.NET へ依存しない」も検査可能だが、現行の成立を実測していないため
    本 issue では入れない（落ちる検査を入れると検査ごと無視される。`check-banned-libraries.js` の
@@ -674,6 +719,7 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
    共有カーネルの明示化が望ましいが、再配置ではなくドメイン設計の変更になるため本 issue では触れない。
 6. **サービス公開クライアント（`*.Client`）の標準上の位置づけ**。#354（Wolverine）・ADR-0029（gRPC/REST 基準）で
    サービス間同期呼び出しの形が変わる際に再検討する。
+   → **第 3 段階で計画側へのフィードバックを起草**（同記録の提案 (3)・3 案提示）。**送付は未実施**。
 7. **`Foundation` / `Composable` のフォルダ階層の要否**。Infrastructure 配下の `Foundation/Persistence` は
    階層が重複気味だが、platform ADR-0018 の固定/可変区分に対応する既存の意味づけであり本 issue では変えない。
 8. **`Worker` を含む名前の残骸**。`<Svc>WorkerWebApplicationFactory`（テスト補助クラス）と
@@ -692,6 +738,10 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
    （Backtest / InformationCollection / Notification / OrderExecution / TradeDecision）は
    エンドポイント定義が Program.cs にある。Vertical Slice としての切り出しは再配置の範囲を超えるため
    本 issue では行わない。
+11. **`scripts/validate-runtime-scaffold.js` の旧レイアウトへのフォールバック**（§5.8）。移行中に新旧が
+   混在する期間を通すための暫定であり、全 11 サービスの移行完了により**到達しない経路になった**。
+   削除はスクリプト本体と `scripts/scripts.test.js` の双方に手を入れる**コード変更**であり、
+   文書整備を範囲とする第 3 段階では行わない。後続の掃除（#346 の旧実装削除）に合流させる。
 
 ## 変更履歴
 
@@ -700,3 +750,4 @@ Report → OrderExecution → RiskManagement（§8 の推奨順。1 サービス
 | 2026-08-03 | 初版作成（#353・第 1 段階着手前） |
 | 2026-08-03 | 第 1 段階（アーキテクチャテスト・パイロット 2 サービス）の実施結果を §10 へ反映。パイロットで判明した `internal` の可視性の落とし穴（§5.7・§7 手順 4）とプロジェクト数の実測（§8）を追記 |
 | 2026-08-03 | 第 2 段階（残り 9 サービス）完了。§10.2 に検証結果、§7 に補正 3（相対名参照）・補正 4（Web SDK の暗黙 using）・ビルド残骸がカバレッジ測定を壊す件の訂正、Endpoints を持たないサービスの移行形の補足を追記 |
+| 2026-08-03 | 第 3 段階（文書整備）完了。§10.3 に更新文書一覧・据え置き判断・総検証結果を追加。§9 受け入れ基準を全項目 [x] 化。§11・§12（未決事項 3・6）へ計画フィードバック起草の参照を追加し、未決事項 11（`validate-runtime-scaffold.js` の死んだフォールバック）を追加 |
