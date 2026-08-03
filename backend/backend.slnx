@@ -80,11 +80,13 @@
   <Folder Name="/Services/NotificationService/" />
   <Folder Name="/Services/NotificationService/src/">
     <Project Path="Services/NotificationService/src/NotificationService.Application/NotificationService.Application.csproj" />
-    <Project Path="Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj" />
+    <Project Path="Services/NotificationService/src/NotificationService.Infrastructure/NotificationService.Infrastructure.csproj" />
+    <Project Path="Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/NotificationService/tests/">
     <Project Path="Services/NotificationService/tests/NotificationService.Application.Tests/NotificationService.Application.Tests.csproj" />
-    <Project Path="Services/NotificationService/tests/NotificationService.Worker.Tests/NotificationService.Worker.Tests.csproj" />
+    <Project Path="Services/NotificationService/tests/NotificationService.Infrastructure.Tests/NotificationService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/NotificationService/tests/NotificationService.Api.Tests/NotificationService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/" />
   <Folder Name="/Services/MarketMonitorService/src/">

@@ -1,0 +1,24 @@
+<!-- #15 Slice A, FR-09, IADR-0020, IADR-0128: 通知サービスの技術詳細（Discord Webhook / Bot Gateway アダプタ・
+     操作系 HTTP コントローラ・イベント consumer）。ホスト（Program.cs・DI 構成）は Api に置く。実 Discord 送信は
+     既定で無効（安全既定）。共有フレームワーク型（IHostedService/IOptions/ILogger 等）を使うため
+     FrameworkReference を持つ（TestSupport.PlatformShim と同型）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Notification.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- FR-14, IADR-0062 決定1: Gateway 常駐（詳細設計07 の採用方式）。Application へは漏らさずアダプタに隔離する。 -->
+    <PackageReference Include="Discord.Net.WebSocket" />
+    <ProjectReference Include="..\NotificationService.Application\NotificationService.Application.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
+         テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
+    <InternalsVisibleTo Include="NotificationService.Api" />
+    <InternalsVisibleTo Include="NotificationService.Api.Tests" />
+    <InternalsVisibleTo Include="NotificationService.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>

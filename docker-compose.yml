@@ -276,8 +276,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj
-        SERVICE_DLL: NotificationService.Worker.dll
+        SERVICE_PROJECT: backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj
+        SERVICE_DLL: NotificationService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部送信しない）。実 Discord は #15 で有効化。
