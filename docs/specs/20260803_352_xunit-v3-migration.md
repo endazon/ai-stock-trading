@@ -218,7 +218,7 @@ issue [#352](https://github.com/endazon/ai-stock-trading/issues/352) の受け�
 | --- | --- | --- |
 | 移行でテストの意味が変わらない | 移行前後の合格数を比較 | **2256 → 2256**（Failed=0・39 アセンブリ）。**アセンブリ別の内訳も全 39 件が完全一致**（合計だけでなく内訳を突き合わせ、増減の相殺を排除した） |
 | ビルドの健全性 | `dotnet build backend/backend.slnx --no-incremental` | 0 Warning / 0 Error |
-| カバレッジ収集が機能する | `dotnet test --collect:"XPlat Code Coverage"` ＋ `node scripts/check-coverage.js` | 39 レポート・行カバレッジ **64.45%**（12047/18692・floor 62.00% を上回る） |
+| カバレッジ収集が機能する | `dotnet test --collect:"XPlat Code Coverage"` ＋ `node scripts/check-coverage.js` | 39 レポート・行カバレッジ **64.45〜64.50%**（12047〜12057/18692・floor 62.00% を上回る）。2 回測って 10 行ほど揺れた（移行前からある性質で、`coverage-floor.json` が自動 ratchet を採らない理由そのもの） |
 | `Category!=Integration` が効く | 上記実行で `AiStockTrading.IntegrationTests` の Integration テストが実行されないこと | 同アセンブリの実行数が移行前後で 5 件のまま一致（Integration の 7 件は不実行） |
 | `Category=Integration` が効く | `dotnet test backend/Tests/AiStockTrading.IntegrationTests --filter "Category=Integration" --list-tests` | **7 件が選択された**。この環境には実インフラ（Docker）が無いため実走はせず、**フィルタが対象を選ぶこと**のみ確認した（実走は `integration.yml` の夜間実行） |
 | 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし（終了コード 0） |
@@ -258,3 +258,4 @@ issue [#352](https://github.com/endazon/ai-stock-trading/issues/352) の受け�
 | 日付 | 内容 |
 | --- | --- |
 | 2026-08-03 | 初版作成（#352） |
+| 2026-08-03 | 移行完了後の再測定でカバレッジに実行ごとの揺れ（12047〜12057 行）を確認し、検証結果を更新 |
