@@ -107,12 +107,14 @@
   <Folder Name="/Services/OrderExecutionService/src/">
     <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Application/OrderExecutionService.Application.csproj" />
     <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Domain/OrderExecutionService.Domain.csproj" />
-    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Infrastructure/OrderExecutionService.Infrastructure.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/OrderExecutionService/tests/">
     <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Application.Tests/OrderExecutionService.Application.Tests.csproj" />
     <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Domain.Tests/OrderExecutionService.Domain.Tests.csproj" />
-    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Worker.Tests/OrderExecutionService.Worker.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Infrastructure.Tests/OrderExecutionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Api.Tests/OrderExecutionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/RiskManagementService/" />
   <Folder Name="/Services/RiskManagementService/src/">

@@ -313,8 +313,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj
-        SERVICE_DLL: OrderExecutionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj
+        SERVICE_DLL: OrderExecutionService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=order_execution_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

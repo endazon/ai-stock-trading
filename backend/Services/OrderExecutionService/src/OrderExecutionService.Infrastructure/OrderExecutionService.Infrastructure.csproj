@@ -1,0 +1,30 @@
+<!-- #13 Slice A, IADR-0013/0016, IADR-0128: 発注執行サービスの技術詳細（EF Core 永続化・Migration・
+     moomoo ブローカアダプタ・OrderApproved の consumer・約定ポーリング/建玉突合/予約保持の常駐ジョブ）。
+     ホスト（Program.cs・DI 構成）は Api に置く。ブローカ既定はペーパー（実弾を撃たない・IADR-0016）。
+     共有フレームワーク型（BackgroundService/IOptions/ILogger 等）を使うため FrameworkReference を持つ
+     （TestSupport.PlatformShim と同型）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.OrderExecution.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="moomoo-api" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\OrderExecutionService.Application\OrderExecutionService.Application.csproj" />
+    <!-- 安全なペーパーブローカ（本番実装・FR-12）。既定のブローカ実装。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
+         テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
+    <InternalsVisibleTo Include="OrderExecutionService.Api" />
+    <InternalsVisibleTo Include="OrderExecutionService.Api.Tests" />
+    <InternalsVisibleTo Include="OrderExecutionService.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>
