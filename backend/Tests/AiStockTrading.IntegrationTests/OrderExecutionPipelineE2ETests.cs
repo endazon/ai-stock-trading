@@ -35,7 +35,7 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
 
     private WebApplicationFactory<Program>? _factory;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         try
         {
@@ -74,7 +74,7 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
             builder.UseEnvironment("IntegrationTest"));
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_factory is not null)
             await _factory.DisposeAsync();

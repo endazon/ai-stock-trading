@@ -35,7 +35,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
     private WebApplicationFactory<Program>? _executionFactory;
     private WebApplicationFactory<RiskManagementWorker::Program>? _riskFactory;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         try
         {
@@ -69,7 +69,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_riskFactory is not null)
             await _riskFactory.DisposeAsync();

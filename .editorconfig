@@ -21,5 +21,14 @@ indent_style = tab
 [*.{cs,csx}]
 indent_size = 4
 
+# NFR, IADR-0001, #352: xUnit v3 が同梱する xunit.analyzers 1.27 の新規則 xUnit1051
+# 「CancellationToken を受ける呼び出しには TestContext.Current.CancellationToken を渡せ」を無効化する。
+#
+# 助言的な規則（テストのキャンセル応答性の向上）であり、検証の正しさには関わらない。既存テストの
+# 該当箇所は 1054 件・119 ファイルに及び、v2 → v3 移行（#352）と同時に機械的な引数追加を行うと
+# オーバーロード解決やタイムアウト挙動を変えかねない。**移行はテストの意味を変えないことを
+# 受け入れ条件としている**ため、ここでは抑止し、採用の可否は独立した課題として扱う。
+dotnet_diagnostic.xUnit1051.severity = none
+
 [*.{yml,yaml,json}]
 indent_size = 2
