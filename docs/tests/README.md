@@ -101,7 +101,9 @@ ADR-0008 / 0016 / 0018）と実装の既定値を突き合わせる。再実装�
 | --- | --- | --- |
 | ドメイン単体 | `backend/Services/<Svc>/tests/<Svc>.Domain.Tests` | 既定 CI |
 | アプリケーション単体 | `.../<Svc>.Application.Tests` | 既定 CI |
-| Worker / エンドポイント | `.../<Svc>.Worker.Tests` | 既定 CI |
+| ホスト / エンドポイント（Api） | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 既定 CI |
+| 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 既定 CI |
+| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析・[IADR-0128](../adr/IADR-0128_standard-project-layout.md)） | 既定 CI |
 | 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 既定 CI |
 | 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走（IADR-0049） |
 

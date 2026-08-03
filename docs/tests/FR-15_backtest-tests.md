@@ -38,7 +38,8 @@ related_specs:
 
 - 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）、
   `BacktestService.Application.Tests`（過去データのスナップショット化・PIT ユニバース適用・verdict 供給の結合）、
-  `BacktestService.Worker.Tests`（実過去データ源アダプタ・provider 選択・ホストの配線と実効構成の自己申告）。
+  `BacktestService.Infrastructure.Tests`（実過去データ源アダプタ・provider 選択）、
+  `BacktestService.Api.Tests`（ホストの配線と実効構成の自己申告。クラス名 `BacktestWorker…` は据え置き＝[IADR-0128](../adr/IADR-0128_standard-project-layout.md)）。
 - 対象外（別スライス）: **実市場データによる閾値の水準確認**（偽陰性の測定。閾値そのものの較正は
   [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md) で実施済・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
   実 Stooq に対する live 検証（2026-07-28 時点でボット検知チャレンジのため取得不可・回避はしない）、

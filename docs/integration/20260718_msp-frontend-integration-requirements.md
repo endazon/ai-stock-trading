@@ -51,6 +51,13 @@ related_specs:
   - `deploy/helm/microservices-platform/values.yaml` ＋ templates: service/deployment を追加。
   - `scripts/k8s-local-images.sh` の `MAPPING`: `microservices-platform/configuration-service|src/ai-stock-trading/backend/Services/ConfigurationService/src/ConfigurationService.Worker/Dockerfile` を追記。
   - **#275 整合**: compose の `build` と `MAPPING` の一致（ドリフト検査）を保つ。AST service を足すなら両方に足す（片方漏れは #275 検査で落ちる）。
+  - **注（2026-08-03・#353 追記）**: 上の 2 行が指す `ConfigurationService.Worker/Dockerfile` は**存在しない**。AST は
+    サービスごとの Dockerfile を持たず、**単一の `backend/Dockerfile` を build args で切り替える**
+    （`SERVICE_PROJECT=backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj`・
+    `SERVICE_DLL=ConfigurationService.Api.dll`。AST 側の `docker-compose.yml` / `scripts/k8s-local-images.sh` と同形）。
+    プロジェクト名が `.Worker` → `.Api` へ変わったのは標準プロジェクト構成への再配置
+    （[IADR-0128](../adr/IADR-0128_standard-project-layout.md)・[#353](https://github.com/endazon/ai-stock-trading/issues/353)）による。
+    MSP 側で実装する際は本注記の形で登録すること（本書の他の記述は起票時＝2026-07-18 の point-in-time 記録として据え置く）。
 - **依存**: —（ただし ConfigurationService の実行時依存＝DB/バス等の解決が要る。AST バックデプロイの初回導入点）。
 - **受け入れ基準**: `k8s-local-images.sh` がドリフトなく AST service イメージをビルド。ConfigurationService が起動しヘルスチェック緑。
 - **注**: 本 issue の設定画面に必要なのは ConfigurationService のみ。AST バックエンド全体の MSP デプロイは別エピック（本書では設定画面に必要な最小に限定）。
