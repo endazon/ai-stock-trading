@@ -59,10 +59,10 @@ HTTP 疎通（ヘルスチェック `/health/live`・`/health/ready`、同期照
   - `COLLECTION_SOURCE_PROVIDER` + `COLLECTION_FINNHUB_API_KEY`（実市場情報 / #81）
   - `NOTIFICATIONS_PROVIDER=discord-webhook` + `NOTIFICATIONS_DISCORD_WEBHOOK_URL`（実通知 / #15）
   - `MOOMOO_API_KEY` / `MOOMOO_API_SECRET`（実発注 / #13。既定は実弾防止ゲートで無効）
-- **ホストで `dotnet run` する**: `dotnet user-secrets`（Worker プロジェクトごと）に設定する。例:
+- **ホストで `dotnet run` する**: `dotnet user-secrets`（ホスト＝`<Svc>.Api` プロジェクトごと・IADR-0128）に設定する。例:
 
   ```sh
-  cd backend/Services/TradeDecisionService/src/TradeDecisionService.Worker
+  cd backend/Services/TradeDecisionService/src/TradeDecisionService.Api
   dotnet user-secrets init
   dotnet user-secrets set "Anthropic:ApiKey" "<your-key>"
   ```

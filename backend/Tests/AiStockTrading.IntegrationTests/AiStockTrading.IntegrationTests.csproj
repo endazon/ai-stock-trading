@@ -21,13 +21,22 @@
     <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="Testcontainers.Keycloak" />
     <!-- 発注執行 Worker は無名（global）参照。`Program` = 発注執行（Slice A・既存テストは無改修）。 -->
-    <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Worker\OrderExecutionService.Worker.csproj" />
+    <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Api\OrderExecutionService.Api.csproj" />
     <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。
          新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
-    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Worker\RiskManagementService.Worker.csproj" Aliases="RiskManagementWorker" />
+    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（RiskManagementWorker）は
+         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。
+         永続化（#305/IADR-0124 の並行トークン E2E が使う internal 型）は Infrastructure へ移ったため、
+         同じ別名を Infrastructure にも与え `RiskManagementWorker::…Infrastructure.Foundation.Persistence` で解決する。 -->
+    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Api\RiskManagementService.Api.csproj" Aliases="RiskManagementWorker" />
+    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Infrastructure\RiskManagementService.Infrastructure.csproj" Aliases="RiskManagementWorker" />
     <!-- 報告書 Worker も extern alias で参照する（Slice D の daily-policy 提供側・IADR-0050 決定1）。 -->
-    <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Worker\ReportService.Worker.csproj" Aliases="ReportWorker" />
+    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（ReportWorker）は
+         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->
+    <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Api\ReportService.Api.csproj" Aliases="ReportWorker" />
     <!-- 費用統制 Worker（#79・IADR-0031/0051: poller が s2s で照会する /costs/state の提供側）。 -->
-    <ProjectReference Include="..\..\Services\CostControlService\src\CostControlService.Worker\CostControlService.Worker.csproj" Aliases="CostControlWorker" />
+    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（CostControlWorker）は
+         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->
+    <ProjectReference Include="..\..\Services\CostControlService\src\CostControlService.Api\CostControlService.Api.csproj" Aliases="CostControlWorker" />
   </ItemGroup>
 </Project>

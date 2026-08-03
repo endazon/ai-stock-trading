@@ -1,0 +1,21 @@
+<!-- #9 Slice A, FR-01, IADR-0022, IADR-0128: 情報収集サービスの API ホスト。定時ポーリングの合成（DI 構成）と
+     ヘルスチェックのため Web SDK を使用。DB・認可なし。外部情報源・KB 保存は安全既定（no-op）でゲート。
+     実行時基盤は test-support shim（IADR-0013）。技術詳細（情報源アダプタ・ポーリング）は Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.InformationCollection.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <ProjectReference Include="..\InformationCollectionService.Application\InformationCollectionService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（情報源アダプタ・KB シンク・ポーリング）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\InformationCollectionService.Infrastructure\InformationCollectionService.Infrastructure.csproj" />
+    <!-- FR-08, IADR-0069: 実 KB 保存（IKnowledgeBaseWriter）の登録に共有 KB クライアントを参照する。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="InformationCollectionService.Api.Tests" />
+  </ItemGroup>
+</Project>

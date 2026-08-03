@@ -1,0 +1,33 @@
+<!-- #12 Slice B, IADR-0010/0011/0012, IADR-0128: リスク管理サービスの技術詳細（EF Core 永続化・Migration・
+     各種 consumer（TradeDecisionMade / OrderApproved / OrderExecuted / StopLossTriggered 等）・
+     段階ゲートと撤退評価の常駐ジョブ・現在値キャッシュ）。ホスト（Program.cs・エンドポイント・DI 構成）は
+     Api に置く。共有フレームワーク型（BackgroundService/IOptions/ILogger 等）を使うため
+     FrameworkReference を持つ（TestSupport.PlatformShim と同型）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.RiskManagement.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\RiskManagementService.Application\RiskManagementService.Application.csproj" />
+    <!-- IADR-0066: 現在値ソース（既定 no-op）と手元保持（QuoteCache）は共有物を用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
+         テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
+    <InternalsVisibleTo Include="RiskManagementService.Api" />
+    <InternalsVisibleTo Include="RiskManagementService.Api.Tests" />
+    <InternalsVisibleTo Include="RiskManagementService.Infrastructure.Tests" />
+    <!-- #305, IADR-0124: 並行トークン（IsConcurrencyToken）の実 DB（Npgsql）挙動を実コンテナ E2E で
+         検証するため、永続化層（internal）を統合テストへ公開する。 -->
+    <InternalsVisibleTo Include="AiStockTrading.IntegrationTests" />
+  </ItemGroup>
+</Project>

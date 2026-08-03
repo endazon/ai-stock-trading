@@ -121,8 +121,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj
-        SERVICE_DLL: AuditService.Worker.dll
+        SERVICE_PROJECT: backend/Services/AuditService/src/AuditService.Api/AuditService.Api.csproj
+        SERVICE_DLL: AuditService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=audit_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -143,8 +143,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj
-        SERVICE_DLL: BacktestService.Worker.dll
+        SERVICE_PROJECT: backend/Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj
+        SERVICE_DLL: BacktestService.Api.dll
     environment:
       <<: *app-env
       Backtest__BarData__Provider: ${BACKTEST_BAR_DATA_PROVIDER:-}
@@ -157,8 +157,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj
-        SERVICE_DLL: ConfigurationService.Worker.dll
+        SERVICE_PROJECT: backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj
+        SERVICE_DLL: ConfigurationService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=configuration_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -176,8 +176,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj
-        SERVICE_DLL: CostControlService.Worker.dll
+        SERVICE_PROJECT: backend/Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj
+        SERVICE_DLL: CostControlService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=cost_control_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -201,8 +201,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj
-        SERVICE_DLL: InformationCollectionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj
+        SERVICE_DLL: InformationCollectionService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
@@ -248,8 +248,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj
-        SERVICE_DLL: MarketMonitorService.Worker.dll
+        SERVICE_PROJECT: backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj
+        SERVICE_DLL: MarketMonitorService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=market_monitor_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -276,8 +276,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj
-        SERVICE_DLL: NotificationService.Worker.dll
+        SERVICE_PROJECT: backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj
+        SERVICE_DLL: NotificationService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部送信しない）。実 Discord は #15 で有効化。
@@ -313,8 +313,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj
-        SERVICE_DLL: OrderExecutionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj
+        SERVICE_DLL: OrderExecutionService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=order_execution_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -334,8 +334,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj
-        SERVICE_DLL: ReportService.Worker.dll
+        SERVICE_PROJECT: backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj
+        SERVICE_DLL: ReportService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=report_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -373,8 +373,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj
-        SERVICE_DLL: RiskManagementService.Worker.dll
+        SERVICE_PROJECT: backend/Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj
+        SERVICE_DLL: RiskManagementService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=risk_management_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
@@ -398,8 +398,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj
-        SERVICE_DLL: TradeDecisionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj
+        SERVICE_DLL: TradeDecisionService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=プレースホルダ（取引しない）。#76 で有効化。

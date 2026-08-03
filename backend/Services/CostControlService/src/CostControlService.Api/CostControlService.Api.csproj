@@ -1,0 +1,31 @@
+<!-- #23 Slice A, NFR（費用）, IADR-0027, IADR-0128: 費用統制サービスの API ホスト。月次費用台帳・LLM 上限の
+     間隔延長/停止判定（Keycloak 認可）とヘルスチェックのため Web SDK を使用。しきい値の上方遷移時に
+     CostThresholdReached を発行。実行時基盤は test-support shim（IADR-0013）。技術詳細は Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.CostControl.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- dotnet ef の startup project となるため Design を保持する（Migration 本体は Infrastructure）。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\CostControlService.Application\CostControlService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（EF 台帳・consumer・保持期間ジョブ）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\CostControlService.Infrastructure\CostControlService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- #139, IADR-0065: 月次費用上限をバージョン付き全体前提条件（#19・設定サービス）から解決する共有クライアント。 -->
+    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Client\ConfigurationService.Client.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="CostControlService.Api.Tests" />
+  </ItemGroup>
+</Project>

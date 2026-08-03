@@ -23,17 +23,17 @@ echo "==> runtime: $RUNTIME"
 
 # service-name : SERVICE_PROJECT : SERVICE_DLL（compose の build args と一致）
 MAPPING=(
-  "audit-service|backend/Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj|AuditService.Worker.dll"
-  "backtest-service|backend/Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj|BacktestService.Worker.dll"
-  "configuration-service|backend/Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj|ConfigurationService.Worker.dll"
-  "cost-control-service|backend/Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj|CostControlService.Worker.dll"
-  "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj|InformationCollectionService.Worker.dll"
-  "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj|MarketMonitorService.Worker.dll"
-  "notification-service|backend/Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj|NotificationService.Worker.dll"
-  "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj|OrderExecutionService.Worker.dll"
-  "report-service|backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj|ReportService.Worker.dll"
-  "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj|RiskManagementService.Worker.dll"
-  "trade-decision-service|backend/Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj|TradeDecisionService.Worker.dll"
+  "audit-service|backend/Services/AuditService/src/AuditService.Api/AuditService.Api.csproj|AuditService.Api.dll"
+  "backtest-service|backend/Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj|BacktestService.Api.dll"
+  "configuration-service|backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj|ConfigurationService.Api.dll"
+  "cost-control-service|backend/Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj|CostControlService.Api.dll"
+  "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj|InformationCollectionService.Api.dll"
+  "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj|MarketMonitorService.Api.dll"
+  "notification-service|backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj|NotificationService.Api.dll"
+  "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj|OrderExecutionService.Api.dll"
+  "report-service|backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj|ReportService.Api.dll"
+  "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj|RiskManagementService.Api.dll"
+  "trade-decision-service|backend/Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj|TradeDecisionService.Api.dll"
 )
 
 k3d_images=()

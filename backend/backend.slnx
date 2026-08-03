@@ -4,120 +4,143 @@
   <Folder Name="/Services/InformationCollectionService/src/">
     <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Domain/InformationCollectionService.Domain.csproj" />
     <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Application/InformationCollectionService.Application.csproj" />
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Infrastructure/InformationCollectionService.Infrastructure.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/InformationCollectionService/tests/">
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Domain.Tests/InformationCollectionService.Domain.Tests.csproj" />
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Worker.Tests/InformationCollectionService.Worker.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Infrastructure.Tests/InformationCollectionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Api.Tests/InformationCollectionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/BacktestService/" />
   <Folder Name="/Services/BacktestService/src/">
     <Project Path="Services/BacktestService/src/BacktestService.Domain/BacktestService.Domain.csproj" />
     <Project Path="Services/BacktestService/src/BacktestService.Application/BacktestService.Application.csproj" />
-    <Project Path="Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj" />
+    <Project Path="Services/BacktestService/src/BacktestService.Infrastructure/BacktestService.Infrastructure.csproj" />
+    <Project Path="Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/BacktestService/tests/">
     <Project Path="Services/BacktestService/tests/BacktestService.Domain.Tests/BacktestService.Domain.Tests.csproj" />
     <Project Path="Services/BacktestService/tests/BacktestService.Application.Tests/BacktestService.Application.Tests.csproj" />
-    <Project Path="Services/BacktestService/tests/BacktestService.Worker.Tests/BacktestService.Worker.Tests.csproj" />
+    <Project Path="Services/BacktestService/tests/BacktestService.Infrastructure.Tests/BacktestService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/BacktestService/tests/BacktestService.Api.Tests/BacktestService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/CostControlService/" />
   <Folder Name="/Services/CostControlService/src/">
     <Project Path="Services/CostControlService/src/CostControlService.Domain/CostControlService.Domain.csproj" />
     <Project Path="Services/CostControlService/src/CostControlService.Application/CostControlService.Application.csproj" />
-    <Project Path="Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj" />
+    <Project Path="Services/CostControlService/src/CostControlService.Infrastructure/CostControlService.Infrastructure.csproj" />
+    <Project Path="Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/CostControlService/tests/">
     <Project Path="Services/CostControlService/tests/CostControlService.Domain.Tests/CostControlService.Domain.Tests.csproj" />
     <Project Path="Services/CostControlService/tests/CostControlService.Application.Tests/CostControlService.Application.Tests.csproj" />
-    <Project Path="Services/CostControlService/tests/CostControlService.Worker.Tests/CostControlService.Worker.Tests.csproj" />
+    <Project Path="Services/CostControlService/tests/CostControlService.Infrastructure.Tests/CostControlService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/CostControlService/tests/CostControlService.Api.Tests/CostControlService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/ReportService/" />
   <Folder Name="/Services/ReportService/src/">
     <Project Path="Services/ReportService/src/ReportService.Domain/ReportService.Domain.csproj" />
     <Project Path="Services/ReportService/src/ReportService.Application/ReportService.Application.csproj" />
-    <Project Path="Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Infrastructure/ReportService.Infrastructure.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Api/ReportService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/ReportService/tests/">
     <Project Path="Services/ReportService/tests/ReportService.Domain.Tests/ReportService.Domain.Tests.csproj" />
     <Project Path="Services/ReportService/tests/ReportService.Application.Tests/ReportService.Application.Tests.csproj" />
-    <Project Path="Services/ReportService/tests/ReportService.Worker.Tests/ReportService.Worker.Tests.csproj" />
+    <Project Path="Services/ReportService/tests/ReportService.Infrastructure.Tests/ReportService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/ReportService/tests/ReportService.Api.Tests/ReportService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/ConfigurationService/" />
   <Folder Name="/Services/ConfigurationService/src/">
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Application/ConfigurationService.Application.csproj" />
+    <Project Path="Services/ConfigurationService/src/ConfigurationService.Infrastructure/ConfigurationService.Infrastructure.csproj" />
+    <Project Path="Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj" />
+    <!-- IADR-0128 決定 5: 標準 7 層に当たらない「他サービスへ公開するクライアントライブラリ」（IADR-0063 決定 3）。 -->
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Client/ConfigurationService.Client.csproj" />
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj" />
   </Folder>
   <Folder Name="/Services/ConfigurationService/tests/">
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Domain.Tests/ConfigurationService.Domain.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Application.Tests/ConfigurationService.Application.Tests.csproj" />
+    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Infrastructure.Tests/ConfigurationService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Api.Tests/ConfigurationService.Api.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Client.Tests/ConfigurationService.Client.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Worker.Tests/ConfigurationService.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/AuditService/" />
   <Folder Name="/Services/AuditService/src/">
     <Project Path="Services/AuditService/src/AuditService.Application/AuditService.Application.csproj" />
-    <Project Path="Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj" />
+    <Project Path="Services/AuditService/src/AuditService.Infrastructure/AuditService.Infrastructure.csproj" />
+    <Project Path="Services/AuditService/src/AuditService.Api/AuditService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/AuditService/tests/">
     <Project Path="Services/AuditService/tests/AuditService.Application.Tests/AuditService.Application.Tests.csproj" />
-    <Project Path="Services/AuditService/tests/AuditService.Worker.Tests/AuditService.Worker.Tests.csproj" />
+    <Project Path="Services/AuditService/tests/AuditService.Infrastructure.Tests/AuditService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/AuditService/tests/AuditService.Api.Tests/AuditService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/NotificationService/" />
   <Folder Name="/Services/NotificationService/src/">
     <Project Path="Services/NotificationService/src/NotificationService.Application/NotificationService.Application.csproj" />
-    <Project Path="Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj" />
+    <Project Path="Services/NotificationService/src/NotificationService.Infrastructure/NotificationService.Infrastructure.csproj" />
+    <Project Path="Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/NotificationService/tests/">
     <Project Path="Services/NotificationService/tests/NotificationService.Application.Tests/NotificationService.Application.Tests.csproj" />
-    <Project Path="Services/NotificationService/tests/NotificationService.Worker.Tests/NotificationService.Worker.Tests.csproj" />
+    <Project Path="Services/NotificationService/tests/NotificationService.Infrastructure.Tests/NotificationService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/NotificationService/tests/NotificationService.Api.Tests/NotificationService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/" />
   <Folder Name="/Services/MarketMonitorService/src/">
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Domain/MarketMonitorService.Domain.csproj" />
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Infrastructure/MarketMonitorService.Infrastructure.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/tests/">
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Application.Tests/MarketMonitorService.Application.Tests.csproj" />
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Worker.Tests/MarketMonitorService.Worker.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Infrastructure.Tests/MarketMonitorService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Api.Tests/MarketMonitorService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/OrderExecutionService/" />
   <Folder Name="/Services/OrderExecutionService/src/">
     <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Application/OrderExecutionService.Application.csproj" />
     <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Domain/OrderExecutionService.Domain.csproj" />
-    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Infrastructure/OrderExecutionService.Infrastructure.csproj" />
+    <Project Path="Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/OrderExecutionService/tests/">
     <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Application.Tests/OrderExecutionService.Application.Tests.csproj" />
     <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Domain.Tests/OrderExecutionService.Domain.Tests.csproj" />
-    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Worker.Tests/OrderExecutionService.Worker.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Infrastructure.Tests/OrderExecutionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/OrderExecutionService/tests/OrderExecutionService.Api.Tests/OrderExecutionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/RiskManagementService/" />
   <Folder Name="/Services/RiskManagementService/src/">
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Application/RiskManagementService.Application.csproj" />
     <Project Path="Services/RiskManagementService/src/RiskManagementService.Domain/RiskManagementService.Domain.csproj" />
-    <Project Path="Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj" />
+    <Project Path="Services/RiskManagementService/src/RiskManagementService.Infrastructure/RiskManagementService.Infrastructure.csproj" />
+    <Project Path="Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/RiskManagementService/tests/">
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Application.Tests/RiskManagementService.Application.Tests.csproj" />
     <Project Path="Services/RiskManagementService/tests/RiskManagementService.Domain.Tests/RiskManagementService.Domain.Tests.csproj" />
-    <Project Path="Services/RiskManagementService/tests/RiskManagementService.Worker.Tests/RiskManagementService.Worker.Tests.csproj" />
+    <Project Path="Services/RiskManagementService/tests/RiskManagementService.Infrastructure.Tests/RiskManagementService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/RiskManagementService/tests/RiskManagementService.Api.Tests/RiskManagementService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/TradeDecisionService/" />
   <Folder Name="/Services/TradeDecisionService/src/">
     <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Application/TradeDecisionService.Application.csproj" />
     <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Domain/TradeDecisionService.Domain.csproj" />
-    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Infrastructure/TradeDecisionService.Infrastructure.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/TradeDecisionService/tests/">
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Application.Tests/TradeDecisionService.Application.Tests.csproj" />
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Domain.Tests/TradeDecisionService.Domain.Tests.csproj" />
-    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Worker.Tests/TradeDecisionService.Worker.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Infrastructure.Tests/TradeDecisionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Api.Tests/TradeDecisionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Bff/">
     <!-- FR-14, IADR-0063 / IADR-0091: 例外3 の unit-owned BFF エンドポイント（platform BFF 合成点から参照）。 -->
@@ -137,6 +160,8 @@
     <Project Path="TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/AiStockTrading.TestSupport.PlatformShim.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <!-- NFR, IADR-0128: Domain 層の依存規律（platform ADR-0030）の機械的強制。 -->
+    <Project Path="Tests/AiStockTrading.Architecture.Tests/AiStockTrading.Architecture.Tests.csproj" />
     <Project Path="Tests/AiStockTrading.IntegrationTests/AiStockTrading.IntegrationTests.csproj" />
     <Project Path="Tests/AiStockTrading.PlanConformance.Tests/AiStockTrading.PlanConformance.Tests.csproj" />
   </Folder>

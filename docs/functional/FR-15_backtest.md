@@ -45,9 +45,9 @@ plan_refs:
 | 役割 | 実装 | 備考 |
 | --- | --- | --- |
 | 取得（実データ源） | `IHistoricalBarSource`（Application のポート） | 非同期。戻り値 `HistoricalBarLoad(Bars, Gaps)` で欠測を銘柄と理由つきで残す |
-| 実アダプタ | `StooqHistoricalBarSource`（Worker） | ADR-0004 が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。送信前に `IRateLimiter` で自制 |
-| 安全既定 | `NoOpHistoricalBarSource`（Worker） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・不正 URL も警告して no-op |
-| 合成・自己申告 | `BacktestService.Worker` | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
+| 実アダプタ | `StooqHistoricalBarSource`（Infrastructure） | ADR-0004 が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。送信前に `IRateLimiter` で自制 |
+| 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・不正 URL も警告して no-op |
+| 合成・自己申告 | `BacktestService.Api`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
 | 評価（テスト用） | `InMemoryBarDataSource` | **テスト・検証専用**（決定的スタブ） |
 | 取得対象の導出 | `SecurityUniverse.MembersBetween` | 期間内に一度でも構成銘柄だった銘柄（廃止銘柄含む）＝生存者バイアス排除を取得段階から一貫 |
