@@ -1,0 +1,16 @@
+<!-- NFR, IADR-0128, platform ADR-0030: 層の依存規律（Domain は外部ライブラリ依存ゼロ）の機械的強制（#353）。
+     検査は csproj の静的解析であり、被検査プロジェクトを ProjectReference しない
+     （参照すると「アーキテクチャテストが Domain に依存する」構図になり、また未使用参照を検出できなくなる）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.Architecture.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+</Project>

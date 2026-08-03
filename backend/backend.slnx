@@ -137,6 +137,8 @@
     <Project Path="TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/AiStockTrading.TestSupport.PlatformShim.Tests.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <!-- NFR, IADR-0128: Domain 層の依存規律（platform ADR-0030）の機械的強制。 -->
+    <Project Path="Tests/AiStockTrading.Architecture.Tests/AiStockTrading.Architecture.Tests.csproj" />
     <Project Path="Tests/AiStockTrading.IntegrationTests/AiStockTrading.IntegrationTests.csproj" />
     <Project Path="Tests/AiStockTrading.PlanConformance.Tests/AiStockTrading.PlanConformance.Tests.csproj" />
   </Folder>
