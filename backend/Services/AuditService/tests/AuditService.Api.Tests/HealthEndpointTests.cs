@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Api.Tests;
 
 // FR-11: 監査サービスホストが起動し、ヘルスエンドポイントが応答することを検証する。
 public class HealthEndpointTests(AuditWorkerWebApplicationFactory factory)

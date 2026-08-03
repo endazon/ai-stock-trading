@@ -1,6 +1,6 @@
 using AiStockTrading.Audit.Application.Adapters;
 using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Worker.Composable.Steps;
+using AiStockTrading.Audit.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -9,7 +9,7 @@ using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Infrastructure.Tests;
 
 // FR-11, UC-07, IADR-0019: 全ドメインイベントを購読して監査台帳へ記録する Consumer を
 // MassTransit テストハーネス + インメモリ台帳で検証する。

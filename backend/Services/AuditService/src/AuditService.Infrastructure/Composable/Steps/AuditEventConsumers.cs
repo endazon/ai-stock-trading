@@ -3,7 +3,7 @@ using AiStockTrading.Audit.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using MassTransit;
 
-namespace AiStockTrading.Audit.Worker.Composable.Steps;
+namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
 
 // FR-11, UC-07, IADR-0019: 全ドメインイベントを購読して監査台帳へ記録する Consumer 群。
 // 冪等キーは MassTransit MessageId（再送で重複記録しない）。記録時刻は IClock。写像は AuditEntryFactory（純関数）。

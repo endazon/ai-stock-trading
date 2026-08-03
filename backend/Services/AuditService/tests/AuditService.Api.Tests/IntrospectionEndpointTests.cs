@@ -4,7 +4,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Api.Tests;
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成の自己申告エンドポイントの結線を代表 1 サービスで検証する
 // （全 10 Worker は同一の 2 行結線・自己申告の内容ロジックは PlatformShim.Tests で網羅）。

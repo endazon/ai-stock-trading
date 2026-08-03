@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
-    <RootNamespace>AiStockTrading.Audit.Worker.Tests</RootNamespace>
+    <RootNamespace>AiStockTrading.Audit.Api.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -11,6 +11,6 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <ProjectReference Include="..\..\src\AuditService.Worker\AuditService.Worker.csproj" />
+    <ProjectReference Include="..\..\src\AuditService.Api\AuditService.Api.csproj" />
   </ItemGroup>
 </Project>

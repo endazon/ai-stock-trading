@@ -1,8 +1,8 @@
 using AiStockTrading.Audit.Application.Adapters;
 using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Worker.Composable.Steps;
-using AiStockTrading.Audit.Worker.Foundation.Endpoints;
-using AiStockTrading.Audit.Worker.Foundation.Persistence;
+using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AiStockTrading.Audit.Api.Foundation.Endpoints;
+using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;

@@ -1,10 +1,10 @@
 using AiStockTrading.Audit.Application.State;
-using AiStockTrading.Audit.Worker.Foundation.Persistence;
+using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Infrastructure.Tests;
 
 // FR-11, IADR-0019: 監査台帳 EF ストアの追記・冪等・相関/期間照会を InMemory DB で検証する。
 public class EfAuditEventStoreTests

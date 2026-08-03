@@ -121,8 +121,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj
-        SERVICE_DLL: AuditService.Worker.dll
+        SERVICE_PROJECT: backend/Services/AuditService/src/AuditService.Api/AuditService.Api.csproj
+        SERVICE_DLL: AuditService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=audit_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

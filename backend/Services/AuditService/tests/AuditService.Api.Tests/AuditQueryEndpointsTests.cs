@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using AiStockTrading.Audit.Worker.Foundation.Persistence;
+using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Api.Tests;
 
 // FR-11, UC-07, IADR-0019: 監査照会エンドポイントの OwnerOnly 認可・時系列・limit を WebApplicationFactory で検証する。
 public class AuditQueryEndpointsTests(AuditWorkerWebApplicationFactory factory)

@@ -1,10 +1,10 @@
-using AiStockTrading.Audit.Worker.Composable.Steps;
+using AiStockTrading.Audit.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using MassTransit;
 using Xunit;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Infrastructure.Tests;
 
 // FR-11, #80: 「全イベントの時系列記録」の担保。Shared.Contracts.Events の全イベントに対応する監査 Consumer が
 // 存在することをリフレクションで検証し、新規イベント追加時の監査購読の追随漏れを CI で検知する。

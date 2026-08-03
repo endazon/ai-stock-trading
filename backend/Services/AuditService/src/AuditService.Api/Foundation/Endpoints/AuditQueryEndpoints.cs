@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
-namespace AiStockTrading.Audit.Worker.Foundation.Endpoints;
+namespace AiStockTrading.Audit.Api.Foundation.Endpoints;
 
 // FR-11, UC-07, IADR-0019: 監査台帳の照会エンドポイント。監査は取引履歴＝機微情報のため、すべて OwnerOnly
 // （利用者のみ・Keycloak ロール trading-owner）を要求する（RiskControl と同じ認可方針）。

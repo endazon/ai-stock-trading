@@ -1,5 +1,5 @@
-using AiStockTrading.Audit.Worker.Composable.Steps;
-using AiStockTrading.Audit.Worker.Foundation.Persistence;
+using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace AiStockTrading.Audit.Worker.Tests;
+namespace AiStockTrading.Audit.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、InMemory DB・
 // MassTransit テストハーネス・TestAuthHandler へ差し替えてイベント記録と照会エンドポイントを検証する。
