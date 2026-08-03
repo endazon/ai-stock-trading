@@ -1,0 +1,564 @@
+---
+title: 作業仕様書 — 全 11 サービスを Api/Application/Domain/Infrastructure/Contracts/SharedKernel/Tests 標準構成へ揃える
+type: work
+status: review
+related_ids: [NFR, IADR-0001, IADR-0046, IADR-0128]
+author: endazon (with Claude Code)
+created: 2026-08-03
+updated: 2026-08-03
+plan_refs:
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md
+  - ../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
+related_specs:
+  - ../adr/IADR-0001_repo-structure-and-stack.md
+  - ../adr/IADR-0046_unit-repo-layout.md
+  - ../adr/IADR-0128_standard-project-layout.md
+  - ./20260803_351_awesomeassertions-migration.md
+  - ./20260803_352_xunit-v3-migration.md
+  - ./20260802_344_reimplementation-preparation.md
+  - ../DEFINITION_OF_DONE.md
+---
+
+# 作業仕様書: 標準プロジェクト構成への再配置（#353）
+
+> **本書は後続段階の引き継ぎ資料を兼ねる。** 第 2 段階（残り 9 サービス）は本書 §7「移行レシピ」を
+> そのまま機械的に適用すれば再現できるように書いてある。第 2 段階の担当者は §5（規則）と §7（手順）と
+> §9（検証）だけ読めば作業できる。
+
+## 起点となる計画書（トレーサビリティ）
+
+- 機能要求（FR）: なし（NFR。プロジェクト構成の標準追随）
+- ユースケース（UC）: なし
+- 画面（SC）: なし
+- 関連 ADR（計画）: platform **ADR-0030**（アプリ層ライブラリ標準・§決定の選定基準 3「層の依存規律」）／
+  platform [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed・§プロジェクト構成が 7 標準の本文）／
+  platform ADR-0019（ユニット第一構成）・ADR-0020（.NET 10）・ADR-0027（Wolverine）・ADR-0029（gRPC/REST 基準）／
+  AST ADR-0001（platform 再利用）
+- 実装 ADR: [IADR-0001](../adr/IADR-0001_repo-structure-and-stack.md)（基盤リポに規約を揃える）・
+  [IADR-0046](../adr/IADR-0046_unit-repo-layout.md)（ユニットリポジトリレイアウト）・
+  **[IADR-0128](../adr/IADR-0128_standard-project-layout.md)（本作業で確定した対応規則。決定の正本）**
+- 起点 issue: [#353](https://github.com/endazon/ai-stock-trading/issues/353)（親 [#345](https://github.com/endazon/ai-stock-trading/issues/345) / [#344](https://github.com/endazon/ai-stock-trading/issues/344)）
+
+## 目的・背景
+
+platform [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed）は、サービス単位のプロジェクト構成の標準を
+
+```text
+src/
+ ├── Api             # エンドポイント定義・DI 構成・ProblemDetails 変換
+ ├── Application     # ユースケース（Wolverine ハンドラ）・検証・マッピング
+ ├── Domain          # エンティティ・値オブジェクト（外部依存なし）
+ ├── Infrastructure  # EF Core・Redis・オブジェクトストレージ等の実装
+ ├── Contracts       # 公開契約（proto・イベント・DTO）
+ ├── SharedKernel    # Result / Error・共通基底（過度な共通化は避ける）
+ └── Tests           # Unit / Integration
+```
+
+と定めた。現行は 1 サービスあたり `Domain / Application / Worker`（＋テスト）である。**`Worker` という単位が
+標準に無い**ことが本質的な差分で、実体としては「ホスト（Program.cs・エンドポイント・DI）」と
+「技術詳細（EF Core・メッセージング consumer・外部 API アダプタ）」が 1 プロジェクトに同居している。
+この同居があるかぎり **Domain 外部依存ゼロ以外の層の規律は機械検査できない**。
+
+本作業は #345 の分割 **3/4**。#351（AwesomeAssertions）・#352（xUnit v3）の完了後に着手する。
+
+## 対象範囲
+
+### 対象（本 issue 全体）
+
+- 11 サービス（RiskManagement / OrderExecution / TradeDecision / InformationCollection / MarketMonitor /
+  Report / Notification / Audit / Backtest / Configuration / CostControl）の標準構成への**再配置**
+- `backend/backend.slnx` の更新
+- **Domain 層の外部依存ゼロ**を強制するアーキテクチャテストの新設
+- 再配置に伴うリポジトリ横断の追随（`docker-compose.yml` / `scripts/k8s-local-images.sh` /
+  `scripts/validate-runtime-scaffold.js` / `docs/tech/`）
+
+### 対象外（本 issue でやらない）
+
+| 項目 | 理由・担当 |
+| --- | --- |
+| **ライブラリ標準への新規適用**（Riok.Mapperly 導入・FluentValidation 導入・Polly（`Microsoft.Extensions.Http.Resilience`）への置換・ProblemDetails 化） | **本 PR ではやらない**（§12 未決事項 1）。いずれも既存コードの書き換えを伴い「再配置＝振る舞いを変えない」という本 issue の受け入れ条件（合格数 2256 の完全一致）と両立しない。構成移動に**不可避**な参照調整のみ行う |
+| MassTransit → Wolverine | #354（#345 分割 4/4） |
+| SharedKernel（自前 `Result` / `Error` 型）の導入 | 新規実装であり再配置ではない（§5.2・§12 未決事項 2） |
+| 旧実装の物理削除 | IADR-0126 決定 5 により #346 へ集約。本作業は `git mv` による**移動のみ**で削除しない |
+| Controller の Minimal API 化 | 既に達成済み（Controller 0 件） |
+
+### 第 1 段階の対象（本セッション）
+
+1. 本作業仕様書と [IADR-0128](../adr/IADR-0128_standard-project-layout.md)
+2. アーキテクチャテスト基盤（`backend/Tests/AiStockTrading.Architecture.Tests`）
+3. パイロット 2 サービス（**ConfigurationService** / **CostControlService**）の移行
+
+## 設計
+
+### 5.1 7 標準への対応表
+
+**現行 → 新構成**（`<Svc>` = `ConfigurationService` 等のサービス名。`<Short>` = `Configuration` 等の
+名前空間用短縮名＝サービス名から接尾辞 `Service` を除いたもの）。
+
+| 標準（ADR-0030） | 本リポジトリでの実体 | 備考 |
+| --- | --- | --- |
+| **Api** | `backend/Services/<Svc>/src/<Svc>.Api`（新設。`Microsoft.NET.Sdk.Web`） | 旧 `<Svc>.Worker` の **Program.cs・`appsettings*.json`・`Foundation/Endpoints/**`** が移る |
+| **Application** | `backend/Services/<Svc>/src/<Svc>.Application`（**現状のまま**） | 移動なし |
+| **Domain** | `backend/Services/<Svc>/src/<Svc>.Domain`（**現状のまま**。無いサービスは作らない） | 移動なし。外部依存ゼロをアーキテクチャテストで固定 |
+| **Infrastructure** | `backend/Services/<Svc>/src/<Svc>.Infrastructure`（新設。`Microsoft.NET.Sdk`） | 旧 `<Svc>.Worker` の **Program.cs / appsettings / Foundation/Endpoints 以外すべて**が移る |
+| **Contracts** | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。サービス個別には作らない） | platform ADR-0019 決定 4「ユニット固有のイベント契約はユニット側の契約プロジェクトに置く」。§5.2 |
+| **SharedKernel** | **作らない**（本 issue では該当する実体が無い） | §5.2・§12 未決事項 2 |
+| **Tests** | `backend/Services/<Svc>/tests/<Svc>.<Layer>.Tests`（本番プロジェクトと 1:1） | §5.5 |
+
+**標準に無いが残す例外プロジェクト**
+
+| プロジェクト | 扱い | 根拠 |
+| --- | --- | --- |
+| `ConfigurationService.Client` | **そのまま残す**（`Api` へも `Infrastructure` へも畳まない） | サービスが**他サービスへ公開する**クライアントライブラリであり、7 標準のどの層にも当たらない（`Contracts` は型だけを持つ場所であって HTTP クライアント・キャッシュ・DI 拡張・consumer を置く場所ではない）。詳細と代替案の棄却理由は [IADR-0128](../adr/IADR-0128_standard-project-layout.md) §決定 5 |
+| `backend/Bff/*`・`backend/TestSupport/*`・`backend/Shared/*`・`backend/Tests/*` | 対象外（サービス単位の構成ではない） | IADR-0046 / IADR-0063 / IADR-0091 |
+
+### 5.2 「7 プロジェクトを常に作るのか、実体があるものだけ作るのか」
+
+**決定: 実体があるものだけ作る。空プロジェクトは作らない。**（正本は [IADR-0128](../adr/IADR-0128_standard-project-layout.md) §決定 2）
+
+根拠は ADR-0030 の文面そのものに 3 つある。
+
+1. §プロジェクト構成の `SharedKernel` 行に **「過度な共通化は避ける」** と明記されている。中身のない
+   SharedKernel を 11 個並べるのは、この但し書きが避けよと言っている当のものである。
+2. §決定 の選定基準 2 は **「標準機能優先 = .NET / ASP.NET Core 標準で足りるものは標準を使う」**、
+   すなわち依存と構成要素を増やさないことを基準に据えている。空プロジェクトは restore・build・
+   slnx 登録・CI 時間を増やすだけで、何も足さない。
+3. 同 §決定 の主要決定は **`Result` = 「SharedKernel の自前実装」** と述べており、SharedKernel は
+   「Result 型を置くための場所」として定義されている。Result 型を導入していない現時点で
+   SharedKernel を作れば、**空の器だけが標準に見える**という最悪の状態（構成は揃っているのに規律は無い）になる。
+
+`Contracts` についても同様に、**ユニット単位で 1 つ**（`AiStockTrading.Shared.Contracts`）を正とする。
+platform ADR-0019 決定 4 が「ユニット固有のイベント契約はユニット側の契約プロジェクトに置く」と定めており、
+AST はそれ自体が 1 つの可変機能ユニットである。サービスごとに `Contracts` を切ると、**サービス間で共有される
+イベント契約が置き場所を失う**（`OrderApproved` は発注執行と リスク統制の双方が使う）。
+
+> **判断が割れる論点として残すもの**: 「標準に列挙された 7 つは常に存在すべき」という読み方も文面上は可能である。
+> 本作業は上記 3 点を根拠に「実体があるものだけ」を採ったが、基盤リポ（microservices-platform）の実装が
+> 空の SharedKernel / Contracts を各サービスに置いている場合は、揃える先が基盤である（IADR-0001）以上
+> 再検討を要する。基盤リポは本セッションの参照範囲外のため未確認である（§12 未決事項 3）。
+
+**結果として 1 サービスあたりの本番プロジェクトは 3 → 4**（Domain を持たない Audit / Notification は 2 → 3）。
+issue 本文が見積もった「76 → 約 130」ではなく **76 → 98** になる（内訳は §8）。
+
+### 5.3 Worker → Api / Infrastructure の分割基準
+
+**唯一の規則（例外なし・機械的に適用できる）**:
+
+| 旧 `<Svc>.Worker` 内のパス | 行き先 |
+| --- | --- |
+| `Program.cs` | **Api** |
+| `appsettings.json` / `appsettings.Development.json` | **Api** |
+| `Foundation/Endpoints/**` | **Api** |
+| `Foundation/Persistence/**` | **Infrastructure** |
+| `Foundation/Adapters/**` | **Infrastructure** |
+| `Migrations/**` | **Infrastructure** |
+| `Composable/**`（`Steps` = consumer・`Adapters`・`Polling`・`Retention`・`Reconciliation`・`StageGate`・`MarketData`） | **Infrastructure** |
+| 上記以外のすべて | **Infrastructure** |
+
+言い換えると **「ホストの起動と HTTP の入口だけが Api、残りはすべて Infrastructure」**。判断を要する
+灰色地帯を作らないため、`Api` の中身は 3 種類（Program・appsettings・Endpoints）に**限定列挙**する。
+
+- **なぜ consumer（`Composable/Steps`）が Api でなく Infrastructure か**: consumer はメッセージング
+  基盤（MassTransit → Wolverine）というインフラ技術に張り付いた入口であり、ADR-0030 の Api の定義
+  （「エンドポイント定義・DI 構成・ProblemDetails 変換」）に当たらない。#354 で Wolverine へ移る際、
+  ハンドラ本体が Application へ上がる余地も Infrastructure に置いた方が素直である。
+- **なぜ `Foundation` / `Composable` のフォルダ階層を残すか**: platform ADR-0018 の固定（Foundation）/
+  可変（Composable）区分に対応する既存の意味づけであり、本 issue の目的（層の分離）と直交する。
+  同時に変えると差分が「再配置」でなくなる。
+
+### 5.4 命名規則
+
+| 対象 | 規則 | 例 |
+| --- | --- | --- |
+| プロジェクトフォルダ | `backend/Services/<Svc>/src/<Svc>.<Layer>` | `backend/Services/CostControlService/src/CostControlService.Api` |
+| `.csproj` ファイル名 | `<Svc>.<Layer>.csproj`（＝アセンブリ名） | `CostControlService.Infrastructure.csproj` |
+| `RootNamespace` / C# 名前空間 | `AiStockTrading.<Short>.<Layer>[.<既存の下位階層>]` | `AiStockTrading.CostControl.Infrastructure.Foundation.Persistence` |
+| テストプロジェクト | `backend/Services/<Svc>/tests/<Svc>.<Layer>.Tests` / ns `AiStockTrading.<Short>.<Layer>.Tests` | `CostControlService.Api.Tests` |
+| slnx のフォルダ | 既存どおり `/Services/<Svc>/src/` と `/Services/<Svc>/tests/` | — |
+
+**名前空間の変換は「層セグメントの置換 1 回」だけである。**
+
+```text
+AiStockTrading.<Short>.Worker            → AiStockTrading.<Short>.Api            （Program/Endpoints 由来）
+AiStockTrading.<Short>.Worker.<Rest>     → AiStockTrading.<Short>.Api.<Rest>     （同上）
+AiStockTrading.<Short>.Worker[.<Rest>]   → AiStockTrading.<Short>.Infrastructure[.<Rest>]（それ以外）
+AiStockTrading.<Short>.Worker.Tests      → AiStockTrading.<Short>.{Api,Infrastructure}.Tests
+```
+
+`<Short>` は既存の `RootNamespace` から読む（`CostControlService` → `CostControl`、
+`InformationCollectionService` → `InformationCollection`）。**新たに決め直さない。**
+
+### 5.5 テストプロジェクトの分割
+
+`<Svc>.Worker.Tests` を **`<Svc>.Api.Tests` と `<Svc>.Infrastructure.Tests` の 2 つに割る**。
+
+振り分けは §5.3 と同じ規則を「そのテストが検証している本番クラスの行き先」に適用する。ただし
+**`WebApplicationFactory<Program>` を使うテストは常に Api.Tests**（`Program` は Api にしかない）。
+テスト補助クラス（`<Svc>WorkerWebApplicationFactory` / `TestAuthHandler`）は Api.Tests へ移す。
+
+| 例（CostControlService・40 件） | 行き先 | 件数 |
+| --- | --- | --- |
+| `CostControlEndpointsTests` / `CostControlWiringTests` / `HealthEndpointTests` | Api.Tests | 5 / 3 / 1 |
+| `EfCostLedgerTests` / `EfProcessedMessageStoreTests` / `EfProcessedMessageStorePurgeTests` | Infrastructure.Tests | 3 / 3 / 5 |
+| `LlmCostIncurredConsumerTests` / `ProcessedMessageRetentionServiceTests` | Infrastructure.Tests | 5 / 6 |
+| `AssumptionsCostLimitsProviderTests` / `VersionedCostLimitsTests` | Infrastructure.Tests | 2 / 7 |
+
+**テストファイルの中身は `namespace` 行・`using` 行以外 1 文字も変えない**（表明の変更禁止）。
+
+WebApplicationFactory 名（`<Svc>WorkerWebApplicationFactory`）は**改名しない**。改名は差分を増やすだけで
+本 issue の目的に寄与せず、テストコード本文の変更を誘発する。命名の整理は #354 以降の機会に委ねる。
+
+### 5.6 層の参照規則（移行後に成立していること）
+
+```text
+Api ──▶ Application ──▶ Domain ──▶ (Shared.Contracts のみ)
+ │           ▲
+ └──▶ Infrastructure ─┘
+```
+
+- **Domain**: `PackageReference` **ゼロ**。`ProjectReference` は `AiStockTrading.Shared.Contracts` と
+  他サービスの `*.Domain` のみ（後者は現行の既知の状態。§5.9・アーキテクチャテストの許可リスト）
+- **Application**: Domain と Shared.Contracts を参照する。EF Core・MassTransit・ASP.NET へは依存しない
+  （現行で既に成立。本 issue では検査対象にしない＝§12 未決事項 4）
+- **Infrastructure**: Application / Domain / Shared.Contracts / TestSupport.PlatformShim を参照し、
+  EF Core・Npgsql・MassTransit 等の技術パッケージを持つ
+- **Api**: Application / Infrastructure / TestSupport.PlatformShim を参照する。**Api → Infrastructure は
+  DI 構成のために必要**（Program.cs が具象実装を登録する）であり、Clean Architecture の
+  composition root として許容される
+
+### 5.7 振る舞いを変えないことの担保（移行前に確認済みの事項）
+
+再配置は「名前が変わるだけ」ではない。実際に振る舞いへ波及しうる 4 点を事前に確認した。
+
+| 論点 | 実測・結論 |
+| --- | --- |
+| **RabbitMQ キュー名**（consumer の名前空間を変える） | **影響なし**。MassTransit の `DefaultEndpointNameFormatter` は**クラス名のみ**からエンドポイント名を導き名前空間を含まない（`scripts/check-consumer-endpoint-names.js` の冒頭コメントが同じ前提を明文化している）。本作業はクラス名を変えないためキュー名は不変 |
+| **EF Core の Migration 解決**（DbContext が別アセンブリへ移る） | **影響なし**。既定の migrations assembly は「DbContext を含むアセンブリ」であり、DbContext と `Migrations/` を**同じ Infrastructure へ一緒に移す**ため関係は保たれる。`__EFMigrationsHistory` はマイグレーション ID のみを保持し、アセンブリ名・名前空間を持たないため既存 DB への影響もない |
+| **`WebApplicationFactory<Program>`** | Api が `Program` を持ち、Api.Tests が Api を参照する形で従来どおり動く（`MvcTestingAppManifest.json` はビルド時に再生成される） |
+| **コンテナのエントリポイント** | `SERVICE_DLL` が `<Svc>.Worker.dll` → `<Svc>.Api.dll` に変わる。`docker-compose.yml` と `scripts/k8s-local-images.sh` を同一コミットで追随させる（§5.8）。Helm chart はイメージ名しか持たず**変更不要**（実測） |
+
+### 5.8 リポジトリ横断の追随箇所（サービス移行と同一コミットで直す）
+
+| ファイル | 追随内容 |
+| --- | --- |
+| `backend/backend.slnx` | 旧 Worker 系 3 行を削り、Api / Infrastructure / それぞれの Tests を登録する |
+| `docker-compose.yml` | `SERVICE_PROJECT`（`…/src/<Svc>.Api/<Svc>.Api.csproj`）・`SERVICE_DLL`（`<Svc>.Api.dll`） |
+| `scripts/k8s-local-images.sh` | 同上（`SERVICES` 配列の該当行） |
+| `scripts/validate-runtime-scaffold.js` | `appsettings*.json` の探索先。**移行中は新旧が混在する**ため、`<Svc>.Api` を優先し無ければ `<Svc>.Worker` へフォールバックする形にする（第 2 段階の各コミットで CI が落ちないため） |
+| `backend/Tests/AiStockTrading.IntegrationTests/*.csproj` | OrderExecution / RiskManagement / Report / CostControl の Worker への `ProjectReference` を Api へ（該当サービス移行時） |
+| `docs/tech/tech-requirements.md`・`docs/adr/README.md` | 第 3 段階でまとめて更新 |
+
+`scripts/check-test-traceability.js` と `scripts/check-coverage.js` は**追随不要**（実測）。前者は
+`tests/` ディレクトリまたは `*.Tests` で終わるディレクトリを再帰探索する実装、後者は
+`coverage.cobertura.xml` をファイル名で再帰探索する実装であり、いずれもプロジェクト名を決め打ちしていない。
+
+### 5.9 現行 Domain の既知の状態（アーキテクチャテストの許可リストの根拠）
+
+実測（全 9 Domain プロジェクト）:
+
+- `PackageReference` は **0 件**（＝ADR-0030 の「Domain は外部ライブラリ依存ゼロ」は既に成立している）
+- `ProjectReference` は 2 種類のみ
+  - `AiStockTrading.Shared.Contracts`（6 件）— それ自体 `PackageReference` 0 件の純粋な契約プロジェクト
+  - 他サービスの `*.Domain`（Backtest → Configuration/RiskManagement、CostControl → Configuration、
+    Report → Configuration の 4 件）— サービス境界の観点では議論の余地があるが、**本 issue の対象外**
+    （再配置ではなくドメイン境界の再設計になる）。アーキテクチャテストは許可し、§12 未決事項 5 に残す
+
+## 6. アーキテクチャテスト（Domain 外部依存ゼロの機械的強制）
+
+### 方式
+
+`backend/Tests/AiStockTrading.Architecture.Tests`（xUnit v3 ＋ AwesomeAssertions）。
+**csproj の静的解析**で検査する（リフレクションではない）。
+
+| 選択 | 理由 |
+| --- | --- |
+| csproj 解析（採用） | 「依存が**宣言されている**か」を直接見る。ビルド成果物・推移解決に依存せず、失敗メッセージが「どの csproj のどの行が違反か」を直接指せる。**未使用の参照も検出する**（リフレクションでは、参照を足しても型を使わなければ検出できない） |
+| リフレクション（不採用） | `Assembly.GetReferencedAssemblies()` はコンパイラが最適化で落とした参照を見逃す。Domain アセンブリを本テストが読み込む＝**アーキテクチャテストが Domain を参照する**という循環じみた構図にもなる |
+
+### 検査項目
+
+| # | 検査 | 意図 |
+| --- | --- | --- |
+| 1 | Domain プロジェクトの `PackageReference` が 0 件 | ADR-0030 「Domain は外部ライブラリへ依存しない（.NET 標準のみ）」 |
+| 2 | Domain の `ProjectReference` が許可リスト内（`*.Domain` / `*.SharedKernel` / `AiStockTrading.Shared.Contracts`）のみ | Application / Infrastructure / Api / Client への逆流を止める |
+| 3 | Domain から到達する**推移閉包**上のすべてのプロジェクトも `PackageReference` 0 件 | 「Shared.Contracts に EF Core を足す」形の**迂回**を塞ぐ。1 だけでは守れない |
+| 4 | 発見した Domain プロジェクトが 9 件以上 | **検査器の空振り防止**。glob が壊れて 0 件になれば 1〜3 は無条件に成功してしまう |
+
+検査 4 は「テストが何も検査していない状態で緑になる」ことを防ぐためのもので、実質的にはメタテストである。
+
+### 起点 ID コメント
+
+各テストに `// NFR, platform ADR-0030 §決定 選定基準 3（層の依存規律）: …` を付す（`.claude/rules/traceability.md`）。
+
+### 変異確認（テストが「正しく壊れる」ことの確認）
+
+第 1 段階の検証で、Domain の csproj へ故意に禁止参照を一時追加 → 失敗を確認 → 復元する（§9）。
+
+## 7. 移行レシピ（1 サービス分・第 2 段階はこれをそのまま適用する）
+
+`<Svc>` = サービス名（例 `ReportService`）、`<Short>` = 短縮名（例 `Report`）。
+**すべて `git mv` で行う**（rename 検出を保ち履歴を保全する。`cp` + `rm` は使わない）。
+
+### 手順 0: 事前確認
+
+```bash
+cd backend/Services/<Svc>
+find . -type f -not -path '*/bin/*' -not -path '*/obj/*' | sort   # 移動対象の全量を控える
+grep -rn 'RootNamespace' src/*/*.csproj                            # <Short> を確認する
+```
+
+### 手順 1: Api / Infrastructure のフォルダを作り、Worker の中身を振り分ける
+
+```bash
+S=backend/Services/<Svc>
+git mv "$S/src/<Svc>.Worker" "$S/src/<Svc>.Infrastructure"
+git mv "$S/src/<Svc>.Infrastructure/<Svc>.Worker.csproj" "$S/src/<Svc>.Infrastructure/<Svc>.Infrastructure.csproj"
+
+mkdir -p "$S/src/<Svc>.Api"
+# §5.3 の限定列挙（存在するものだけ）
+git mv "$S/src/<Svc>.Infrastructure/Program.cs"                "$S/src/<Svc>.Api/"
+git mv "$S/src/<Svc>.Infrastructure/appsettings.json"          "$S/src/<Svc>.Api/"
+git mv "$S/src/<Svc>.Infrastructure/appsettings.Development.json" "$S/src/<Svc>.Api/"
+git mv "$S/src/<Svc>.Infrastructure/Foundation/Endpoints"      "$S/src/<Svc>.Api/Endpoints"   # ※下記注
+```
+
+> **注（Endpoints のフォルダ階層）**: `Foundation/Endpoints` は Api では `Foundation/Endpoints` のまま
+> 置く（名前空間の変換規則 §5.4 が「層セグメントの置換 1 回」で閉じるため。パイロット 2 件はこの形で実施した）。
+
+`<Svc>.Api.csproj` を新規作成する（雛形は §7.5）。
+
+### 手順 2: テストプロジェクトを割る
+
+```bash
+git mv "$S/tests/<Svc>.Worker.Tests" "$S/tests/<Svc>.Infrastructure.Tests"
+git mv "$S/tests/<Svc>.Infrastructure.Tests/<Svc>.Worker.Tests.csproj" \
+       "$S/tests/<Svc>.Infrastructure.Tests/<Svc>.Infrastructure.Tests.csproj"
+mkdir -p "$S/tests/<Svc>.Api.Tests"
+# WebApplicationFactory を使うテスト＋Endpoints のテスト＋テスト補助クラスを Api.Tests へ
+git mv "$S/tests/<Svc>.Infrastructure.Tests/<Svc>WorkerWebApplicationFactory.cs" "$S/tests/<Svc>.Api.Tests/"
+git mv "$S/tests/<Svc>.Infrastructure.Tests/TestAuthHandler.cs"                  "$S/tests/<Svc>.Api.Tests/"
+git mv "$S/tests/<Svc>.Infrastructure.Tests/<...>EndpointsTests.cs"              "$S/tests/<Svc>.Api.Tests/"
+git mv "$S/tests/<Svc>.Infrastructure.Tests/HealthEndpointTests.cs"              "$S/tests/<Svc>.Api.Tests/"
+```
+
+`<Svc>.Api.Tests.csproj` を新規作成する（雛形は §7.5）。
+
+### 手順 3: 名前空間・using の機械置換
+
+```bash
+S=backend/Services/<Svc>
+# Api 側（Program.cs は file-scoped namespace を持たないが using は書き換わる）
+grep -rl 'AiStockTrading.<Short>.Worker' "$S/src/<Svc>.Api" "$S/tests/<Svc>.Api.Tests" \
+  | xargs sed -i 's/AiStockTrading\.<Short>\.Worker/AiStockTrading.<Short>.Api/g'
+# Infrastructure 側
+grep -rl 'AiStockTrading.<Short>.Worker' "$S/src/<Svc>.Infrastructure" "$S/tests/<Svc>.Infrastructure.Tests" \
+  | xargs sed -i 's/AiStockTrading\.<Short>\.Worker/AiStockTrading.<Short>.Infrastructure/g'
+```
+
+**そのうえで手作業の補正が 2 種類だけ要る**（機械置換では出せない）。
+
+1. **Api → Infrastructure の参照**: Program.cs は Persistence / Composable の型を DI 登録するため、
+   `using AiStockTrading.<Short>.Infrastructure.…` が要る（上の置換で `…Api.Foundation.Persistence` に
+   なってしまう箇所を戻す）。**Program.cs のみで発生する**。
+2. **Api.Tests → Infrastructure の参照**: `<Svc>WorkerWebApplicationFactory` は DbContext を差し替えるため
+   `using AiStockTrading.<Short>.Infrastructure.Foundation.Persistence;` が要る。
+
+> 実務上は、**先に Infrastructure 側を置換 → 次に Api 側を置換 → ビルドエラーが出た箇所だけ直す**のが速い。
+> ビルドエラーは「型が見つからない（CS0246）」の形で必ず出るため、見落としが起きない。
+
+### 手順 4: csproj の相互参照を直す
+
+- `<Svc>.Infrastructure.csproj`: `InternalsVisibleTo` を `<Svc>.Infrastructure.Tests` へ。
+  `Microsoft.NET.Sdk.Web` → `Microsoft.NET.Sdk` へ変更し、`<FrameworkReference Include="Microsoft.AspNetCore.App" />` を足す
+  （`BackgroundService` / `IHealthCheck` / `IOptions` 等の共有フレームワーク型を使うため）
+- `<Svc>.Api.csproj`: §7.5 の雛形
+- `<Svc>.Infrastructure.Tests.csproj` / `<Svc>.Api.Tests.csproj`: `ProjectReference` を張り替える
+- 他サービス・`backend/Tests/AiStockTrading.IntegrationTests` からの `<Svc>.Worker` 参照を `<Svc>.Api` へ
+
+### 手順 5: slnx・compose・スクリプトの追随（§5.8）
+
+### 手順 6: 検証
+
+```bash
+dotnet build backend/backend.slnx                                  # 0 warning / 0 error
+dotnet test  backend/backend.slnx --filter "Category!=Integration"  # 合計 2256・当該サービスの内訳一致
+dotnet format backend/backend.slnx --verify-no-changes
+node scripts/scripts.test.js && node scripts/check-banned-libraries.js \
+  && node scripts/check-test-traceability.js && node scripts/check-consumer-endpoint-names.js \
+  && node scripts/validate-runtime-scaffold.js
+```
+
+**合格数は「合計」だけでなく「当該サービスのアセンブリ別内訳」を突き合わせる**
+（Api.Tests + Infrastructure.Tests = 旧 Worker.Tests。増減の相殺を見逃さないため）。
+
+### 7.5 csproj 雛形
+
+**`<Svc>.Api.csproj`**（旧 Worker の `PackageReference` のうち Program.cs が使うものだけを残す）
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.<Short>.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />   <!-- UseNpgsql を Program で呼ぶ場合 -->
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />          <!-- 同上 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">      <!-- dotnet ef の startup project -->
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\<Svc>.Application\<Svc>.Application.csproj" />
+    <ProjectReference Include="..\<Svc>.Infrastructure\<Svc>.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="<Svc>.Api.Tests" />
+  </ItemGroup>
+</Project>
+```
+
+**`<Svc>.Infrastructure.csproj`**（旧 Worker から Sdk と `InternalsVisibleTo` を替え、`FrameworkReference` を足す）
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.<Short>.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- 旧 Worker の PackageReference をそのまま引き継ぐ（EF/Npgsql/MassTransit 等） -->
+    <ProjectReference Include="..\<Svc>.Application\<Svc>.Application.csproj" />
+    <!-- 旧 Worker が持っていた他の ProjectReference をそのまま引き継ぐ -->
+    <InternalsVisibleTo Include="<Svc>.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>
+```
+
+## 8. 段階分割とコミット単位
+
+**1 サービス = 1 コミット**（レビュー可能な粒度。IADR-0126 決定 1 の「1 issue = 1 PR」の下位分割）。
+PR は #353 に対して 1 本（第 1〜3 段階を通しで積む）。
+
+| 段階 | 内容 | コミット |
+| --- | --- | --- |
+| **1**（本セッション） | 作業仕様書・IADR-0128 | `docs(NFR,IADR-0128): 標準プロジェクト構成への再配置の作業仕様と実装ADR を定める` |
+| | アーキテクチャテスト基盤 | `test(NFR): Domain 層の外部依存ゼロを強制するアーキテクチャテストを追加する` |
+| | ConfigurationService | `refactor(NFR): ConfigurationService を標準構成へ再配置する` |
+| | CostControlService | `refactor(NFR): CostControlService を標準構成へ再配置する` |
+| **2** | 残り 9 サービス（Audit / Backtest / InformationCollection / MarketMonitor / Notification / OrderExecution / Report / RiskManagement / TradeDecision） | 各 1 コミット `refactor(NFR): <Svc> を標準構成へ再配置する` |
+| **3** | `docs/tech/tech-requirements.md` の構成節・`docs/adr/README.md`・本仕様書の検証結果更新・総検証 | `docs(NFR): 標準プロジェクト構成を技術要件書へ反映する` |
+
+すべてのコミット footer に `Refs #353` を付す。
+
+**推奨順序（第 2 段階）**: 小さい順に Audit → Backtest → InformationCollection → Notification →
+TradeDecision → MarketMonitor → Report → OrderExecution → RiskManagement。
+RiskManagement（Worker 51 ファイル・テスト 149 件）を最後に置くのは、そこまでにレシピが枯れているようにするため。
+
+**プロジェクト数の推移**
+
+| | 現行 | 移行後 |
+| --- | --- | --- |
+| サービス本番 | 34（Domain 9・Application 11・Worker 11・Client 1・Domain 無しの補正含む） | 45（＋Api 11 / Worker→Infrastructure） |
+| サービステスト | 33 | 44 |
+| その他（Shared / TestSupport / Bff / Tests） | 12 | 13（アーキテクチャテスト +1） |
+| **合計** | **79** | **102** |
+
+> issue 本文の「76 → 約 130」は「7 プロジェクトを常に作る」前提の見積もりである。§5.2 の決定により
+> 実数は上表となる（現行実数 79 は `backend.slnx` の登録数の実測）。
+
+## 9. 受け入れ基準
+
+issue [#353](https://github.com/endazon/ai-stock-trading/issues/353) の受け入れ基準を写し、第 1 段階での状況を併記する。
+
+- [ ] 全 11 サービスが標準構成に揃っている（第 1 段階: **2 / 11**）
+- [x] **Domain 層の外部依存ゼロ**をアーキテクチャテストが強制する
+- [x] 不採用ライブラリ（AutoMapper / Mapster）の混入を CI が検知する
+      — **#351 で対応済み**。`scripts/check-banned-libraries.js` の `BANNED` に
+      `AutoMapper` / `Mapster`（＋ `MediatR` / `FluentAssertions`）が登録済みで、
+      `.csproj` / `Directory.Packages.props` / `*.cs` の `using` を走査する。**本 issue での追加作業は無い**
+- [ ] `dotnet build` / `dotnet test`（`Category!=Integration`）が**再配置前と同一の合格数**で green
+      （第 1 段階時点で確認済み。全段階完了時に再確認）
+- [ ] カバレッジが floor を下回らない（#343）
+- [ ] `docs/tech/`（技術要件書）が新標準を反映している（第 3 段階）
+
+## 10. テスト方針・検証結果（第 1 段階）
+
+本作業はテストの意味を変えないため、**合格数の完全一致**が受け入れの中心である。
+
+### 基準値（移行前・`b4b4096`）
+
+**2256 passed / 0 failed / 39 アセンブリ**（`dotnet test backend/backend.slnx --filter "Category!=Integration"`）。
+
+| 対象 | 方法 | 結果 |
+| --- | --- | --- |
+| 合格数の一致 | 移行前後の合計とアセンブリ別内訳 | **2256 → 2256**（Failed=0）。アセンブリ数は 39 → **42**（Worker.Tests 2 件が Api/Infrastructure に割れて +2、アーキテクチャテスト +1）。内訳は ConfigurationService 13 = Api.Tests 8 + Infrastructure.Tests 5、CostControlService 40 = Api.Tests 9 + Infrastructure.Tests 31 |
+| ビルド | `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| アーキテクチャテストの変異確認 | Domain csproj へ故意に禁止参照を追加 → 実行 → 復元 | §10.1 |
+| 整形 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし |
+| リポジトリ検査 | `scripts.test.js` / `check-banned-libraries.js` / `check-test-traceability.js` / `check-consumer-endpoint-names.js` / `validate-runtime-scaffold.js` | すべて OK |
+| カバレッジ | `--collect:"XPlat Code Coverage"` ＋ `check-coverage.js` | floor 62.00% を上回る |
+
+### 10.1 アーキテクチャテストの変異確認（実施記録）
+
+`ConfigurationService.Domain.csproj` に一時的に次を追加し、検査が落ちることを確認したうえで復元した。
+
+| 変異 | 期待 | 結果 |
+| --- | --- | --- |
+| `<PackageReference Include="Microsoft.EntityFrameworkCore" />` を Domain へ追加 | 検査 1 が失敗 | **失敗した**（違反プロジェクト名とパッケージ名がメッセージに出る） |
+| `<ProjectReference … ConfigurationService.Application.csproj />` を Domain へ追加 | 検査 2 が失敗 | **失敗した** |
+| `AiStockTrading.Shared.Contracts.csproj` へ `<PackageReference Include="Microsoft.EntityFrameworkCore" />` を追加 | 検査 3（推移閉包）が失敗 | **失敗した**（検査 1 では検出できない迂回を捕まえた） |
+
+## 11. 計画書との差異
+
+- **差異: あり（2 点。いずれも ADR-0030 に反しない範囲の実装判断）**
+
+1. **7 プロジェクトのうち `SharedKernel` を作らず、`Contracts` はユニット単位で 1 つとする**（§5.2）。
+   ADR-0030 の但し書き「過度な共通化は避ける」・選定基準 2「標準機能優先」・platform ADR-0019 決定 4 を
+   根拠とする。決定の正本は [IADR-0128](../adr/IADR-0128_standard-project-layout.md)。
+2. **`ConfigurationService.Client` という標準外プロジェクトを残す**（§5.1）。7 標準のどの層にも当たらない
+   「他サービスへ公開するクライアントライブラリ」であり、畳むと HTTP・キャッシュ・DI 拡張が
+   `Contracts` か `Infrastructure` に紛れ込んで意味が崩れる。
+
+いずれも計画側へ環流すべき論点を含む（ADR-0030 が per-service Contracts / SharedKernel を必須とするのか、
+サービス公開クライアントの置き場所をどう定めるのか）。第 3 段階で `/plan-feedback` に出す（§12 未決事項 3・6）。
+
+## 12. 未決事項
+
+1. **ライブラリ標準への追随（Riok.Mapperly・FluentValidation・Polly・ProblemDetails）を本 PR で行わない**。
+   issue #353 のスコープ節には列挙されているが、いずれも**新規導入または既存コードの書き換え**であり、
+   受け入れ基準「再配置前と同一の合格数で green」と両立しない（マッピングを Mapperly へ替えれば
+   生成コードの差でテストが動く可能性があり、ProblemDetails 化は HTTP 応答本文が変わる＝**振る舞いの変更**）。
+   CLAUDE.md の「計画外の大規模リファクタ・過剰な抽象化を行わない」にも抵触する。
+   **後続 issue の提案**: 「(a) 手書きマッピングの Riok.Mapperly 化」「(b) 入力検証の FluentValidation 統一」
+   「(c) `Microsoft.Extensions.Http.Resilience` への集約」「(d) 例外応答の標準 ProblemDetails 化」を
+   4 件に分けて起票する（いずれも振る舞いの変更を伴うため、変更点を個別にレビューできる粒度に割る）。
+   なお **Polly / ProblemDetails は現状の採否そのものが未調査**であり、起票前に実測が要る。
+2. **SharedKernel（自前 `Result` / `Error`）の導入**。ADR-0030 が Result 型の置き場所として定義した
+   プロジェクトであり、導入すれば例外ベースの現行コードを広範に書き換えることになる。独立 issue。
+3. **基盤リポ（microservices-platform）実装の実構成との突合**。IADR-0001 が「揃える先は基盤実装リポ」と
+   定めている以上、基盤が per-service に `Contracts` / `SharedKernel` を置いているかを確認し、
+   食い違うなら §5.2 の決定を見直す。本セッションでは基盤リポが参照範囲外のため未確認。
+4. **Application 層の依存規律の機械検査**。本 issue のアーキテクチャテストは Domain のみを対象とする。
+   「Application が EF Core / ASP.NET へ依存しない」も検査可能だが、現行の成立を実測していないため
+   本 issue では入れない（落ちる検査を入れると検査ごと無視される。`check-banned-libraries.js` の
+   PENDING 節と同じ考え方）。
+5. **Domain → 他サービス Domain の参照 4 件**（Backtest → Configuration / RiskManagement、
+   CostControl → Configuration、Report → Configuration）。サービス境界（platform ADR-0002）の観点では
+   共有カーネルの明示化が望ましいが、再配置ではなくドメイン設計の変更になるため本 issue では触れない。
+6. **サービス公開クライアント（`*.Client`）の標準上の位置づけ**。#354（Wolverine）・ADR-0029（gRPC/REST 基準）で
+   サービス間同期呼び出しの形が変わる際に再検討する。
+7. **`Foundation` / `Composable` のフォルダ階層の要否**。Infrastructure 配下の `Foundation/Persistence` は
+   階層が重複気味だが、platform ADR-0018 の固定/可変区分に対応する既存の意味づけであり本 issue では変えない。
+
+## 変更履歴
+
+| 日付 | 内容 |
+| --- | --- |
+| 2026-08-03 | 初版作成（#353・第 1 段階着手前） |
+| 2026-08-03 | 第 1 段階（アーキテクチャテスト・パイロット 2 サービス）の実施結果を §10 へ反映 |
