@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AiStockTrading.Configuration.Domain;
 
-namespace AiStockTrading.Configuration.Worker.Foundation.Persistence;
+namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 
 // IADR-0021: TradingAssumptions の JSON 直列化。すべて具象レコード/数値のため標準の Web 既定で往復可能。
 internal static class AssumptionsSerialization

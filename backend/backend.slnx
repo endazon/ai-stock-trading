@@ -48,14 +48,17 @@
   <Folder Name="/Services/ConfigurationService/src/">
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Application/ConfigurationService.Application.csproj" />
+    <Project Path="Services/ConfigurationService/src/ConfigurationService.Infrastructure/ConfigurationService.Infrastructure.csproj" />
+    <Project Path="Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj" />
+    <!-- IADR-0128 決定 5: 標準 7 層に当たらない「他サービスへ公開するクライアントライブラリ」（IADR-0063 決定 3）。 -->
     <Project Path="Services/ConfigurationService/src/ConfigurationService.Client/ConfigurationService.Client.csproj" />
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Worker/ConfigurationService.Worker.csproj" />
   </Folder>
   <Folder Name="/Services/ConfigurationService/tests/">
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Domain.Tests/ConfigurationService.Domain.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Application.Tests/ConfigurationService.Application.Tests.csproj" />
+    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Infrastructure.Tests/ConfigurationService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Api.Tests/ConfigurationService.Api.Tests.csproj" />
     <Project Path="Services/ConfigurationService/tests/ConfigurationService.Client.Tests/ConfigurationService.Client.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Worker.Tests/ConfigurationService.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/AuditService/" />
   <Folder Name="/Services/AuditService/src/">

@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Worker.Tests;
+namespace AiStockTrading.Configuration.Api.Tests;
 
 // FR-17: 設定管理サービスホストが起動し、ヘルスが応答することを検証する。
 public class HealthEndpointTests(ConfigurationWorkerWebApplicationFactory factory)

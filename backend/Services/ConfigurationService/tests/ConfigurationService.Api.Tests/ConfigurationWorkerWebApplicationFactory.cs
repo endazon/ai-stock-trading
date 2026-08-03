@@ -1,4 +1,4 @@
-using AiStockTrading.Configuration.Worker.Foundation.Persistence;
+using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace AiStockTrading.Configuration.Worker.Tests;
+namespace AiStockTrading.Configuration.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、InMemory DB・
 // MassTransit テストハーネス（AssumptionsChanged 発行の検証用）・TestAuthHandler へ差し替える。

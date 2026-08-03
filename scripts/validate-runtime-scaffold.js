@@ -123,8 +123,21 @@ function topLevelKeysDeep(obj, prefix, acc) {
   return acc;
 }
 
+/**
+ * ホストプロジェクトのディレクトリ。標準構成（#353 / IADR-0128）では `<Svc>.Api`、
+ * 未移行のサービスは `<Svc>.Worker` に appsettings がある。**移行は 1 サービス = 1 コミットで進む**ため、
+ * 途中のコミットでは新旧が混在する。両方を見て、どちらも無ければ新（`.Api`）の名前で報告する。
+ */
+function hostDir(svc) {
+  const api = `backend/Services/${svc}/src/${svc}.Api`;
+  const worker = `backend/Services/${svc}/src/${svc}.Worker`;
+  if (exists(`${api}/appsettings.json`)) return api;
+  if (exists(`${worker}/appsettings.json`)) return worker;
+  return api;
+}
+
 function checkWorker(svc) {
-  const dir = `backend/Services/${svc}/src/${svc}.Worker`;
+  const dir = hostDir(svc);
   const base = `${dir}/appsettings.json`;
   const dev = `${dir}/appsettings.Development.json`;
   if (!exists(base)) return err(`${svc}: ${base} が存在しない`);

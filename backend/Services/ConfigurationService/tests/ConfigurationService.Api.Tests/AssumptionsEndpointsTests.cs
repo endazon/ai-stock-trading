@@ -7,7 +7,7 @@ using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Worker.Tests;
+namespace AiStockTrading.Configuration.Api.Tests;
 
 // FR-17, UC-06, ADR-0007: 前提条件エンドポイントの認可・更新・履歴・楽観排他（409）・変更イベント発行を検証する。
 // IADR-0063 決定 2: 読み取り（GET /assumptions）のみ OwnerOrService、更新・履歴は OwnerOnly 据え置き（最小権限）。

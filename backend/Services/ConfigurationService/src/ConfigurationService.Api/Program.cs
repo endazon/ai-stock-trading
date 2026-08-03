@@ -1,8 +1,8 @@
 using AiStockTrading.Configuration.Application.Adapters;
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.Services;
-using AiStockTrading.Configuration.Worker.Foundation.Endpoints;
-using AiStockTrading.Configuration.Worker.Foundation.Persistence;
+using AiStockTrading.Configuration.Api.Foundation.Endpoints;
+using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using MassTransit;

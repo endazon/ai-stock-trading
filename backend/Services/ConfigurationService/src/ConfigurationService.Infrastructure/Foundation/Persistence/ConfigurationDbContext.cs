@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Configuration.Worker.Foundation.Persistence;
+namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0012/0021: 設定管理サービス専有の DbContext。
 // 前提条件は単一行（Json＋Version）、変更履歴は追記専用。

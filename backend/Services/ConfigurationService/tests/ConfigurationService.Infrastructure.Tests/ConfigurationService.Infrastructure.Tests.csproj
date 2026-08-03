@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
-    <RootNamespace>AiStockTrading.Configuration.Worker.Tests</RootNamespace>
+    <RootNamespace>AiStockTrading.Configuration.Infrastructure.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -9,8 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <ProjectReference Include="..\..\src\ConfigurationService.Worker\ConfigurationService.Worker.csproj" />
+    <ProjectReference Include="..\..\src\ConfigurationService.Infrastructure\ConfigurationService.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

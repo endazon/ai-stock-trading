@@ -1,12 +1,12 @@
 using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.State;
 using AiStockTrading.Configuration.Domain;
-using AiStockTrading.Configuration.Worker.Foundation.Persistence;
+using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Worker.Tests;
+namespace AiStockTrading.Configuration.Infrastructure.Tests;
 
 // FR-17, IADR-0012/0021: 前提条件 EF ストア（シード・往復・Version 増分・楽観排他）と変更履歴を InMemory DB で検証する。
 public class EfAssumptionsStoreTests

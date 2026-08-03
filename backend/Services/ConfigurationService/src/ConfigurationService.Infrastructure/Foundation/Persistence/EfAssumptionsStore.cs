@@ -4,7 +4,7 @@ using AiStockTrading.Configuration.Application.State;
 using AiStockTrading.Configuration.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Configuration.Worker.Foundation.Persistence;
+namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 
 // FR-17, IADR-0012/0021: 全体前提条件ストアの EF 実装。単一行 JSON＋Version 楽観排他。未設定時は既定シード。
 internal sealed class EfAssumptionsStore(ConfigurationDbContext db) : IAssumptionsStore

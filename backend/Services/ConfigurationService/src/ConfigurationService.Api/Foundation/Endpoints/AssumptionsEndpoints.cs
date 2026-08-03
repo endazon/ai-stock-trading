@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Configuration.Worker.Foundation.Endpoints;
+namespace AiStockTrading.Configuration.Api.Foundation.Endpoints;
 
 // FR-17, UC-06, ADR-0007: 全体前提条件の照会・変更エンドポイント。actor は認証済みトークンの名前（preferred_username）。
 //

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.Configuration.Worker.Tests;
+namespace AiStockTrading.Configuration.Api.Tests;
 
 // テスト用認証ハンドラ（RiskManagement.Worker.Tests 準拠）。JWT/Keycloak に依存せず ClaimsPrincipal を注入する。
 // ロールはヘッダ "X-Test-Roles"（カンマ区切り）で指定する（無し→401、trading-owner 含む→OwnerOnly 通過、含まない→403）。

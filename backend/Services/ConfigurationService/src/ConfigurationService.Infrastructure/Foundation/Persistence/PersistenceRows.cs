@@ -1,4 +1,4 @@
-namespace AiStockTrading.Configuration.Worker.Foundation.Persistence;
+namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 
 // FR-17, IADR-0012/0021: 永続化の行モデル。前提条件は単一行（Json＋Version 楽観排他）、変更履歴は追記専用。
 internal static class SingletonKeys
