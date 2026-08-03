@@ -1,0 +1,19 @@
+<!-- FR-15, #208, IADR-0105, IADR-0128: バックテストサービスの API ホスト。ヘルスチェックと実効構成の
+     自己申告（GET /internal/introspection）のため Web SDK を使用する。DB・メッセージバスは持たない
+     （永続化は無く、verdict の実 publish は #82）。実行時基盤は test-support shim（IADR-0013）。
+     実過去データ源のアダプタ（Stooq 等）は Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.Backtest.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <ProjectReference Include="..\BacktestService.Application\BacktestService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（過去データ源アダプタ）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\BacktestService.Infrastructure\BacktestService.Infrastructure.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="BacktestService.Api.Tests" />
+  </ItemGroup>
+</Project>

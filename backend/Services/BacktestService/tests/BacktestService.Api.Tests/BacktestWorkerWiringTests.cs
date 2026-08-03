@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Worker.Composable.Adapters;
+using AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Worker.Tests;
+namespace AiStockTrading.Backtest.Api.Tests;
 
 // FR-15, #208, IADR-0105: ホストの配線を固定する。
 // 「Program.cs の配線が外れていないこと」だけを見る（挙動は各アダプタの単体テストが見る）。配線が外れると、

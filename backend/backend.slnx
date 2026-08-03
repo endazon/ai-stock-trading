@@ -15,12 +15,14 @@
   <Folder Name="/Services/BacktestService/src/">
     <Project Path="Services/BacktestService/src/BacktestService.Domain/BacktestService.Domain.csproj" />
     <Project Path="Services/BacktestService/src/BacktestService.Application/BacktestService.Application.csproj" />
-    <Project Path="Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj" />
+    <Project Path="Services/BacktestService/src/BacktestService.Infrastructure/BacktestService.Infrastructure.csproj" />
+    <Project Path="Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/BacktestService/tests/">
     <Project Path="Services/BacktestService/tests/BacktestService.Domain.Tests/BacktestService.Domain.Tests.csproj" />
     <Project Path="Services/BacktestService/tests/BacktestService.Application.Tests/BacktestService.Application.Tests.csproj" />
-    <Project Path="Services/BacktestService/tests/BacktestService.Worker.Tests/BacktestService.Worker.Tests.csproj" />
+    <Project Path="Services/BacktestService/tests/BacktestService.Infrastructure.Tests/BacktestService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/BacktestService/tests/BacktestService.Api.Tests/BacktestService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/CostControlService/" />
   <Folder Name="/Services/CostControlService/src/">

@@ -1,11 +1,11 @@
 using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Worker.Composable.Adapters;
+using AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 using AiStockTrading.Backtest.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Worker.Tests;
+namespace AiStockTrading.Backtest.Infrastructure.Tests;
 
 // FR-15, ADR-0004, #208, IADR-0105: Stooq 日足 CSV の解析（純関数）。
 // 実 Stooq は叩かない。解析はロケール非依存（InvariantCulture）で、破損データは部分採用せず銘柄丸ごと失敗させる。

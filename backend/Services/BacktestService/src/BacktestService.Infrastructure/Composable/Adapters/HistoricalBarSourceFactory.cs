@@ -2,7 +2,7 @@ using AiStockTrading.Backtest.Application;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
+namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 
 // FR-15, ADR-0004, #208, IADR-0105: 構成 Backtest:BarData:Provider による過去データ源の選択。
 // 安全既定は no-op（外部接続しない）。形は現在値の MarketDataSourceFactory（IADR-0068）に揃える。

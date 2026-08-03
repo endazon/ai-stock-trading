@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
+namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 
 // FR-15, ADR-0004, #208, IADR-0105: 社内の銘柄表現（"AAPL" / "7203" ＋ Market）から Stooq の銘柄記法への写像（純関数）。
 // Stooq は市場サフィックス付きの小文字表記（米国株 = <symbol>.us、日本株 = <code>.jp）で銘柄を指定する。

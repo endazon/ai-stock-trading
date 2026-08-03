@@ -5,7 +5,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
+namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 
 // FR-15, ADR-0004, #208, IADR-0105: Stooq（無料・登録不要・日足 EOD・CSV）からの実過去データ取得。
 // ADR-0004 は Stooq を「検証・学習用」の情報源として採用しており、バックテスト（FR-15）はその用途に当たる。

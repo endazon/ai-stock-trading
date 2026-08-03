@@ -2,7 +2,7 @@ using AiStockTrading.Backtest.Application;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Backtest.Worker.Composable.Adapters;
+namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 
 // FR-15, #208, IADR-0105: IHistoricalBarSource の安全既定＝外部へ一切接続せず常に空を返す。
 // 実過去データ源は provider の明示指定（Backtest:BarData:Provider）でのみ有効化する（opt-in）。

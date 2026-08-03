@@ -1,5 +1,5 @@
 using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Worker.Composable.Adapters;
+using AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.Extensions.Options;
