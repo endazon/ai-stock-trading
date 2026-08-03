@@ -43,7 +43,7 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
     private HttpClient? _tokenHttp;
     private string _tokenEndpoint = "";
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         try
         {
@@ -105,7 +105,7 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
         _tokenHttp = new HttpClient();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         _tokenHttp?.Dispose();
         if (_riskFactory is not null)

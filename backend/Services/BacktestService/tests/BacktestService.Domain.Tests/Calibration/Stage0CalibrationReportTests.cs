@@ -1,6 +1,6 @@
 using AiStockTrading.Backtest.Domain.Tests.Calibration;
+// NFR, IADR-0001, #352: xUnit v3 では ITestOutputHelper が Xunit 名前空間へ移り、Xunit.Abstractions は無い。
 using Xunit;
-using Xunit.Abstractions;
 
 namespace AiStockTrading.Backtest.Domain.Tests;
 

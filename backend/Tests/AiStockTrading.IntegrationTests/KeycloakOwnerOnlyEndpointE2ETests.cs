@@ -34,7 +34,7 @@ public sealed class KeycloakOwnerOnlyEndpointE2ETests : IAsyncLifetime
     private WebApplicationFactory<RiskManagementWorker::Program>? _factory;
     private string _keycloakBaseUrl = "";
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         try
         {
@@ -92,7 +92,7 @@ public sealed class KeycloakOwnerOnlyEndpointE2ETests : IAsyncLifetime
             .WithWebHostBuilder(b => b.UseEnvironment("IntegrationTest"));
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_factory is not null)
             await _factory.DisposeAsync();

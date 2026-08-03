@@ -91,9 +91,12 @@ namespace AiStockTrading.Shared.Contracts.Tests
             var method = typeof(EventMessageUrnTests)
                 .GetMethod(nameof(全イベントの正準URNは固定値である), BindingFlags.Public | BindingFlags.Instance)!;
 
+            // NFR, IADR-0001, #352: xUnit v3 の DataAttribute.GetData は
+            // `ValueTask<IReadOnlyCollection<ITheoryDataRow>> GetData(MethodInfo, DisposalTracker)` へ変わった。
+            // InlineData は 1 属性 = 1 行であり、v3 が公開する Data プロパティ（属性の実引数）から
+            // 直接取り出せば非同期 API を呼ばずに済む（取り出す値は v2 と同一）。
             return method.GetCustomAttributes<InlineDataAttribute>()
-                .SelectMany(a => a.GetData(method))
-                .Select(row => (Type)row[0]!)
+                .Select(a => (Type)a.Data[0]!)
                 .ToList();
         }
     }

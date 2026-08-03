@@ -30,7 +30,7 @@ public sealed class PositionDriftStateConcurrencyE2ETests : IAsyncLifetime
 
     private string _connectionString = string.Empty;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         try
         {
@@ -53,7 +53,7 @@ public sealed class PositionDriftStateConcurrencyE2ETests : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_postgres is not null)
         {

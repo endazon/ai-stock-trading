@@ -313,6 +313,13 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         // FR-10, UC-07, ADR-0009: /status は 3 統制の状態・優先順位・段階・損益・上限・ポジションを返す（表示専用）。
         var client = OwnerClient();
 
+        // NFR, #352: 本テストは「pause が優先中の統制として示されること」を見るため、kill switch が
+        // 起動していないことを前提にする。同クラスの別テスト（kill switch の永続化）は起動したまま
+        // 終わるうえ、xUnit v3 は既定のテストケース順序が v2 と異なる（IClassFixture の InMemory DB は
+        // クラス内で共有される）。前提を順序に依存させず、ここで自ら成立させる。
+        await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage",
+            new KillSwitchRequest("前提条件の初期化"));
+
         // 一時停止を成立させてから照会する（優先中の統制が pause として示されること）。
         await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));
 
