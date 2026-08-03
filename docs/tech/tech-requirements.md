@@ -2,11 +2,14 @@
 title: 技術要件書
 type: tech-requirements
 status: draft
-related_ids: []
+related_ids: [NFR, IADR-0128]
 author: <作成者>
 created: <YYYY-MM-DD>
-updated: <YYYY-MM-DD>
-plan_refs: []
+updated: 2026-08-03
+plan_refs:
+  - ../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md
+  - ../../planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md
 ---
 
 # 技術要件書
@@ -16,8 +19,9 @@ plan_refs: []
 
 ## 起点となる計画書（トレーサビリティ）
 
-- 技術検討（06_technical）:
-- 関連 ADR / 非機能要件（NFR）:
+- 技術検討（06_technical）: platform [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed・§プロジェクト構成）
+- 関連 ADR / 非機能要件（NFR）: platform ADR-0030（アプリ層ライブラリ標準）・ADR-0019（ユニット第一構成）／
+  実装 ADR [IADR-0128](../adr/IADR-0128_standard-project-layout.md)（標準プロジェクト構成）・[IADR-0046](../adr/IADR-0046_unit-repo-layout.md)（ユニットリポジトリレイアウト）
 
 ## 技術スタック
 
@@ -44,6 +48,41 @@ flowchart TB
 | セキュリティ |  |  |
 | 運用・保守 |  |  |
 | 拡張性 |  |  |
+
+## プロジェクト構成（サービス単位）
+
+platform **ADR-0030** / [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed）が定めた 7 標準
+（`Api` / `Application` / `Domain` / `Infrastructure` / `Contracts` / `SharedKernel` / `Tests`）へ、
+**実体があるものだけを作る**方針で揃える（[IADR-0128](../adr/IADR-0128_standard-project-layout.md)・#353）。
+旧構成の `<Svc>.Worker`（ホストと技術詳細の同居）は廃止し、`Api` と `Infrastructure` に割った。
+
+```text
+backend/Services/<Svc>/
+ ├── src/
+ │    ├── <Svc>.Api             # Program.cs・appsettings*.json・Foundation/Endpoints（この 3 種類だけ）
+ │    ├── <Svc>.Application     # ユースケース・ポート定義
+ │    ├── <Svc>.Domain          # エンティティ・値オブジェクト（外部依存ゼロ。実体が無いサービスは作らない）
+ │    └── <Svc>.Infrastructure  # EF Core・Migration・メッセージング consumer・外部 API アダプタ（上記以外すべて）
+ └── tests/
+      └── <Svc>.<Layer>.Tests   # 本番プロジェクトと 1:1
+```
+
+| 標準 | 本リポジトリでの実体 |
+| --- | --- |
+| Api / Application / Domain / Infrastructure | `backend/Services/<Svc>/src/<Svc>.<Layer>`（11 サービス。`Domain` は実体のある 9 サービスのみ） |
+| Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。サービス個別には作らない＝platform ADR-0019 決定 4。サービス間共有のイベント契約の置き場） |
+| SharedKernel | **作らない**（`Result` / `Error` 型が未導入。ADR-0030 の但し書き「過度な共通化は避ける」に従う。導入は別 issue） |
+| Tests | `backend/Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,PlanConformance,Integration}.Tests` |
+| （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。7 標準のどの層にも当たらないため第 8 のプロジェクトとして残す |
+
+- 名前空間・アセンブリ名は `AiStockTrading.<Short>.<Layer>[.<下位階層>]`（`<Short>` = サービス名から接尾辞 `Service` を除いたもの）。
+- **層の依存規律はアーキテクチャテストで機械的に強制する**（`backend/Tests/AiStockTrading.Architecture.Tests`。csproj の静的解析）。
+  検査は (1) `Domain` の `PackageReference` が 0 件 (2) `ProjectReference` が許可リスト（`*.Domain` / `*.SharedKernel` /
+  `AiStockTrading.Shared.Contracts`）内 (3) **推移閉包上のすべてのプロジェクトも `PackageReference` 0 件**（迂回の遮断）
+  (4) 発見した `Domain` が 9 件以上（探索が空振りしたまま緑になるのを防ぐ）の 4 点。
+- コンテナのエントリポイントは単一 `backend/Dockerfile` を `SERVICE_PROJECT` / `SERVICE_DLL`（＝`<Svc>.Api`）で切り替える
+  （`docker-compose.yml` / `scripts/k8s-local-images.sh` と同一の build args）。
+- 総プロジェクト数は **99**（`backend/backend.slnx` 実測）。
 
 ## 開発・ビルド・テスト・デプロイ
 

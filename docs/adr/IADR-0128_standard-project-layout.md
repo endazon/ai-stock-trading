@@ -139,6 +139,8 @@ platform 12_backend-application-stack（fixed）は、サービス単位のプ�
   - Api（ホスト）が 3 種類のファイルだけになり、Program.cs の配線がレビューしやすくなる
 - 悪い影響 / トレードオフ:
   - 大きな（ただし機械的な）移動差分が発生する。プロジェクト数は 79 → 102 に増える
+    （**起草時の見積。全段階完了後の実測は 76 → 99**＝`backend/backend.slnx` の `<Project Path=` 実測値。
+    作業仕様書 §8 のプロジェクト数表を正とする）
   - `docker-compose.yml` / `scripts/k8s-local-images.sh` / `scripts/validate-runtime-scaffold.js` の
     `<Svc>.Worker` → `<Svc>.Api` 追随が要る。移行中は**新旧レイアウトが混在**するため、
     `validate-runtime-scaffold.js` は両対応にする
