@@ -36,6 +36,10 @@ public static class PlanRiskDefaults
         // --- 取引ガード（FR-19。商品種別は 3 値で独立制御） ---
         new("ProductType.Values", "Cash, MarginLong, ShortSell", $"{Assumptions5} / ADR-0016 決定8"),
         new("Market.Values", "Japan, UnitedStates", Assumptions5),
+        // 本行は「設定の既定値（いずれも現物のみ有効）」であり、段階別の可否
+        // （Stage 1＝3 種／Stage 2＝現物のみ／Stage 3＝条件付き全種）は**別の規則**である。
+        // 段階×商品種別が結線される時点（#332 / #333 / #334）で、既定値と段階別強制を
+        // 混同しないこと。段階別の強制は値ではなく振る舞いのため、3 点セットのテストで検証する。
         new("Guard.EnabledProductTypes", "Cash", Assumptions5),
         new("Guard.EnabledMarkets", "Japan, UnitedStates", Assumptions5),
         // 比較は序数順に正規化するため、登録順ではなく昇順で記す。
