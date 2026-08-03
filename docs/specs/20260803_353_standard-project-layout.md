@@ -392,6 +392,22 @@ grep -rl 'AiStockTrading.<Short>.Worker' "$S/src/<Svc>.Infrastructure" "$S/tests
 **判定は「置換後に `AiStockTrading.<Short>.Api.` で始まる `using` が残っていたら疑う」**でよい。Api の
 名前空間は `Foundation.Endpoints`（と `Api.Tests`）しか存在しないため、それ以外は戻し忘れである。
 
+> **補正 3（第 2 段階で追加・相対名で型を参照しているファイル。実例 NotificationService `53938ca`）**:
+> `using` を一切書かず**相対名**で型を参照しているファイルがある
+> （`NotificationWorkerWebApplicationFactory` の `x.AddConsumer<Composable.Steps.OrderExecutedNotificationConsumer>()`）。
+> これは名前空間 `AiStockTrading.<Short>.Worker.Tests` の親（`…Worker`）から相対解決していたもので、
+> `…Api.Tests` へ移すと壊れる（CS0246）。**`using` の追加だけでは直らない**——C# の
+> using ディレクティブは名前空間に含まれる**型**を import するが、**入れ子の名前空間は import しない**ため
+> `using AiStockTrading.<Short>.Infrastructure;` を足しても `Composable.Steps.…` は解決しない。
+>
+> **名前空間別名で解決する**（テスト本文を 1 文字も触らずに済む唯一の手段）:
+>
+> ```csharp
+> using Composable = AiStockTrading.<Short>.Infrastructure.Composable;
+> ```
+>
+> 型を完全修飾名へ書き換える案は、テスト本文の編集になるため採らない（§5.5「本文は 1 文字も変えない」）。
+
 > 実務上は、**先に Infrastructure 側を置換 → 次に Api 側を置換 → ビルドエラーが出た箇所だけ直す**のが速い。
 > ビルドエラーは「型が見つからない（CS0246）」の形で必ず出るため、見落としが起きない。
 
