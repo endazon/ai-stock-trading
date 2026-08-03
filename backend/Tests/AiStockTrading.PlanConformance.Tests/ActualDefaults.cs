@@ -93,6 +93,7 @@ public static class ActualDefaults
             // 全体前提条件（§1 / §6）。計画が名指しするのは「譲渡益税率」と「月次の費用上限 4 値」であり、
             // いずれも TradingAssumptions の対応フィールドが抽出元である。
             ["Assumptions.CapitalGainsTaxRate"] = RealizedGainRatio(assumptions.CapitalGainsTaxRate),
+            ["Assumptions.MinimumExpectedProfitMultiple"] = MinimumExpectedProfit(assumptions),
             ["CostLimits.Total"] = MonthlyAmount(assumptions.CostLimits.Total),
             ["CostLimits.Llm"] = MonthlyAmount(assumptions.CostLimits.Llm),
             ["CostLimits.Infrastructure"] = MonthlyAmount(assumptions.CostLimits.Infrastructure),
@@ -124,6 +125,42 @@ public static class ActualDefaults
     /// </summary>
     private static string RealizedGainRatio(decimal ratio) =>
         $"realized gain ratio {ratio.ToString("0.############", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// 最小期待利益の「倍率」と「基準」を組にした値。倍率は
+    /// <see cref="TradingAssumptionsDefaults.MinimumExpectedProfitMultiple"/>、基準は
+    /// <see cref="CostCalculator.MinimumViableProfit"/> の実際の計算結果から導出する。
+    /// <para>
+    /// 倍率だけを見ると「2 へ直したが基準に税を含めない」という中途半端な追随を素通しする。
+    /// 計画（§4）は<b>往復費用＋税</b>の 2 倍を求めているため、基準も検知対象に含める。
+    /// </para>
+    /// </summary>
+    private static string MinimumExpectedProfit(TradingAssumptions assumptions) =>
+        $"{assumptions.MinimumExpectedProfitMultiple.ToString("0.############", CultureInfo.InvariantCulture)}x "
+            + $"of ({MinimumProfitBasis(assumptions)})";
+
+    /// <summary>
+    /// 最小期待利益の基準に税が含まれるかを、実装を実際に呼び出して判定する（手書きで断定しない）。
+    /// 税率と手数料が非ゼロの前提条件で <see cref="CostCalculator.MinimumViableProfit"/> を評価し、
+    /// 「往復費用 × 倍率」と一致すれば税は基準に入っていない。上回れば入っている。
+    /// </summary>
+    private static string MinimumProfitBasis(TradingAssumptions assumptions)
+    {
+        // 既定の手数料・為替スプレッドは「未登録＝0」であり、そのままでは往復費用が 0 になって
+        // 税の有無が差として現れない。判定用に手数料と税率を非ゼロへ置いた前提条件で評価する。
+        var probe = assumptions with
+        {
+            CapitalGainsTaxRate = 0.2m,
+            UnitedStatesCommission = new CommissionSchedule(Rate: 0.001m, Minimum: 0m, Cap: 0m),
+        };
+        const decimal Notional = 100_000m;
+
+        var roundTrip = CostCalculator.EstimateRoundTripCost(probe, Market.UnitedStates, Notional);
+        var minimum = CostCalculator.MinimumViableProfit(probe, Market.UnitedStates, Notional);
+        return minimum > roundTrip * probe.MinimumExpectedProfitMultiple
+            ? "round-trip cost + tax"
+            : "round-trip cost";
+    }
 
     /// <summary>
     /// 月あたりの基準通貨（円）建て上限額。単位（円）と期間（月）を含めることで、

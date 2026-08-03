@@ -1,4 +1,4 @@
-<!-- 計画確定値（05_trading-assumptions §1/§5/§6 / ADR-0008 / ADR-0016 / ADR-0018）と実装の適合検査（#343・IADR-0127）。
+<!-- 計画確定値（05_trading-assumptions §1/§4/§5/§6 / ADR-0008 / ADR-0016 / ADR-0018）と実装の適合検査（#343・IADR-0127）。
      全面再実装（#344）中は既知逸脱レジストリで受容し、担当 issue が解消したら登録簿の更新を強制する。 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
@@ -14,7 +14,8 @@
     <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
     <!-- Stage 0 合格基準の DD 許容値（ADR-0018 決定2）は Stage0GateCriteria が保持する。 -->
     <ProjectReference Include="..\..\Services\BacktestService\src\BacktestService.Domain\BacktestService.Domain.csproj" />
-    <!-- 全体前提条件の確定値（§1 譲渡益税率 / §6 月次費用上限）は TradingAssumptionsDefaults が保持する。 -->
+    <!-- 全体前提条件の確定値（§1 譲渡益税率 / §4 最小期待利益 / §6 月次費用上限）は
+         TradingAssumptionsDefaults と CostCalculator が保持する。 -->
     <ProjectReference Include="..\..\Services\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
   </ItemGroup>

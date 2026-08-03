@@ -2,8 +2,8 @@ namespace AiStockTrading.PlanConformance.Tests;
 
 /// <summary>
 /// 計画書で確定した既定値テーブル（FR-10, FR-17, FR-19, FR-20）。
-/// 出典は 06_technical/05_trading-assumptions の §5（リスク統制・取引ガード）・§1（税制）・§6（運用費用上限）と
-/// ADR-0008 / ADR-0016 / ADR-0018。
+/// 出典は 06_technical/05_trading-assumptions の §5（リスク統制・取引ガード）・§1（税制）・§4（計算方針）・
+/// §6（運用費用上限）と ADR-0008 / ADR-0016 / ADR-0018。
 /// <para>
 /// 本テーブルが**計画側の単一情報源**である。実装値をここへ写してはならない（実装のスナップショットを
 /// 固定するだけになり、計画との乖離を永久に検知できなくなる — #306 の再発）。
@@ -18,6 +18,7 @@ namespace AiStockTrading.PlanConformance.Tests;
 public static class PlanRiskDefaults
 {
     private const string Assumptions1 = "05_trading-assumptions §1";
+    private const string Assumptions4 = "05_trading-assumptions §4";
     private const string Assumptions5 = "05_trading-assumptions §5";
     private const string Assumptions6 = "05_trading-assumptions §6";
 
@@ -81,6 +82,12 @@ public static class PlanRiskDefaults
             "Assumptions.CapitalGainsTaxRate",
             "realized gain ratio 0.20315",
             $"{Assumptions1}（20.315% ＝ 所得税 15.315% ＋ 住民税 5%）"),
+        // 倍率と**基準**の両方を正規化に含める。基準を含めないと「倍率だけ 2 へ直し、税を基準に
+        // 含めないまま」という中途半端な追随を素通しする（計画は「往復費用**＋税**の 2 倍」）。
+        new(
+            "Assumptions.MinimumExpectedProfitMultiple",
+            "2x of (round-trip cost + tax)",
+            $"{Assumptions4}（利用者決定 2026-07-23）"),
         // 月次費用上限は円建ての「月あたりの上限額」であり、割合でも一回限りの金額でもない。
         new("CostLimits.Total", "JPY 20000 per month", $"{Assumptions6}（LLM＋インフラ＋データの合計）"),
         new("CostLimits.Llm", "JPY 15000 per month", $"{Assumptions6}（対象は取引判断サイクルのみ。§6.1）"),

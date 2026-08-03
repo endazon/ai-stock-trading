@@ -81,6 +81,16 @@ public static class KnownPlanDeviations
                 + "厳格化した。現状は Stage 0 が運用停止ラインより 5 ポイント緩い戦略を合格させ得る"
                 + "（検証を通った戦略が運用開始と同時に停止条件へ抵触し得る）。"
                 + "IADR-0045（0.15 採用の一次記録）・IADR-0110（凍結の記録）への追記も要る"),
+
+        // --- #358 全体前提条件: §4 最小期待利益の計画追随漏れ ---
+        new(
+            "Assumptions.MinimumExpectedProfitMultiple",
+            "1.5x of (round-trip cost)",
+            358,
+            "値 1.5 vs 2・基準に税を含まない、の 2 点乖離。計画は 2026-07-23 に「往復費用＋税の 2 倍」へ"
+                + "確定したが（それ以前は未確定の <1.5 倍>）、2026-07-18 の実装が追随していない。"
+                + "IADR-0021・docs/specs/20260718_trade-decision-profitability-gate.md・"
+                + "docs/data/trading-assumptions.md の是正も #358 の範囲"),
     ];
 
     public static IReadOnlyDictionary<string, KnownDeviation> ByKey { get; } =
