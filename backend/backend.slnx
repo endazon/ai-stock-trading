@@ -92,12 +92,14 @@
   <Folder Name="/Services/MarketMonitorService/src/">
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
     <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Domain/MarketMonitorService.Domain.csproj" />
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Infrastructure/MarketMonitorService.Infrastructure.csproj" />
+    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/tests/">
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Application.Tests/MarketMonitorService.Application.Tests.csproj" />
     <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Worker.Tests/MarketMonitorService.Worker.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Infrastructure.Tests/MarketMonitorService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Api.Tests/MarketMonitorService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/OrderExecutionService/" />
   <Folder Name="/Services/OrderExecutionService/src/">

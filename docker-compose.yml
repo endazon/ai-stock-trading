@@ -248,8 +248,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj
-        SERVICE_DLL: MarketMonitorService.Worker.dll
+        SERVICE_PROJECT: backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj
+        SERVICE_DLL: MarketMonitorService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=market_monitor_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

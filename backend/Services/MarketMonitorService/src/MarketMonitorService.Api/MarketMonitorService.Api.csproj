@@ -1,0 +1,31 @@
+<!-- #10 Slice B, IADR-0013/0014, IADR-0128: 市場監視サービスの API ホスト。
+     監視設定変更の HTTP エンドポイント（Keycloak 認可）とヘルスチェックのため Web SDK を使用。
+     実行時基盤は test-support shim（本番非使用・IADR-0013）を参照する。
+     技術詳細（EF Core 永続化・ポーリング・consumer・アダプタ）は Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.MarketMonitor.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- dotnet ef の startup project となるため Design を保持する（Migration 本体は Infrastructure）。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\MarketMonitorService.Application\MarketMonitorService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（EF ストア・DbContext・ポーリング・consumer）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\MarketMonitorService.Infrastructure\MarketMonitorService.Infrastructure.csproj" />
+    <!-- IADR-0066: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）。本番は platform 本体へ差し替え。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="MarketMonitorService.Api.Tests" />
+  </ItemGroup>
+</Project>

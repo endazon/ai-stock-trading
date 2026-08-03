@@ -1,0 +1,30 @@
+<!-- #10 Slice B, IADR-0013/0014, IADR-0128: 市場監視サービスの技術詳細（EF Core 永続化・Migration・
+     監視ポーリング（BackgroundService）・TradeDecisionMade の consumer・建玉照会/市場カレンダーのアダプタ）。
+     ホスト（Program.cs・エンドポイント・DI 構成）は Api に置く。共有フレームワーク型
+     （BackgroundService/IOptions/ILogger 等）を使うため FrameworkReference を持つ
+     （TestSupport.PlatformShim と同型）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.MarketMonitor.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\MarketMonitorService.Application\MarketMonitorService.Application.csproj" />
+    <!-- IADR-0066: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
+         テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
+    <InternalsVisibleTo Include="MarketMonitorService.Api" />
+    <InternalsVisibleTo Include="MarketMonitorService.Api.Tests" />
+    <InternalsVisibleTo Include="MarketMonitorService.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>
