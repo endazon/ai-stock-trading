@@ -1,6 +1,6 @@
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Report.Application.Tests;

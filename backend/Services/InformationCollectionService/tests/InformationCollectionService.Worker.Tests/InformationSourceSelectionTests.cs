@@ -1,7 +1,7 @@
 using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

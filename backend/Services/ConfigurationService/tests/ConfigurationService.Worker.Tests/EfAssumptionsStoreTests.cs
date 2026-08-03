@@ -2,7 +2,7 @@ using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.State;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Configuration.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

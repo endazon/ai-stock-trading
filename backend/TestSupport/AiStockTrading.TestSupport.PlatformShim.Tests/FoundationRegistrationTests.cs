@@ -1,5 +1,5 @@
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

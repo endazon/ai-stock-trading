@@ -1,7 +1,7 @@
 using AiStockTrading.MarketMonitor.Application.Adapters;
 using AiStockTrading.MarketMonitor.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
 

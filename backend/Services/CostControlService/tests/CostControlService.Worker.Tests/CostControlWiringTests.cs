@@ -2,7 +2,7 @@ using AiStockTrading.Configuration.Client.Composable.Steps;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

@@ -1,5 +1,5 @@
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

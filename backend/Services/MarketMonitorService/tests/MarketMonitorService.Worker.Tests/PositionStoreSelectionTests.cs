@@ -1,7 +1,7 @@
 using AiStockTrading.MarketMonitor.Application.Ports;
 using AiStockTrading.MarketMonitor.Worker.Composable.Adapters;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;

@@ -3,7 +3,7 @@ using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

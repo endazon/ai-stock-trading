@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Audit.Worker.Tests;

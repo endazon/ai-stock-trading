@@ -4,7 +4,7 @@ using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.TradeDecision.Application.Tests;

@@ -2,7 +2,7 @@ using AiStockTrading.Notification.Application.Ports;
 using AiStockTrading.Notification.Application.Services;
 using AiStockTrading.Notification.Application.State;
 using AiStockTrading.Notification.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

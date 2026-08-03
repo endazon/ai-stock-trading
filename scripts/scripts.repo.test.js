@@ -131,4 +131,43 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
     assert.deepStrictEqual(checkConsumerEndpointNames(), []);
   });
+
+  // --- check-banned-libraries.js: 不採用ライブラリの再混入検査（#345 / #351） ---
+  const pathBl = require('path');
+  const bl = require('./check-banned-libraries.js');
+
+  ok('check-banned-libraries: csproj の PackageReference を検出する', () => {
+    const hits = bl.findViolations('  <PackageReference Include="FluentAssertions" />', bl.BANNED);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].lib.name, 'FluentAssertions');
+    assert.strictEqual(hits[0].line, 1);
+  });
+
+  ok('check-banned-libraries: using ディレクティブを検出する（global using も）', () => {
+    assert.strictEqual(bl.findViolations('using FluentAssertions;', bl.BANNED).length, 1);
+    assert.strictEqual(bl.findViolations('global using FluentAssertions;', bl.BANNED).length, 1);
+  });
+
+  ok('check-banned-libraries: 散文中の言及は誤検出しない（移行の経緯を書けること）', () => {
+    const prose = '// FluentAssertions から AwesomeAssertions へ移行した（#351）';
+    assert.deepStrictEqual(bl.findViolations(prose, bl.BANNED), []);
+  });
+
+  ok('check-banned-libraries: 名前の前方一致では誤検出しない', () => {
+    // FluentAssertionsExtras のような別パッケージを巻き込まないこと。
+    assert.deepStrictEqual(bl.findViolations('using FluentAssertionsExtras;', bl.BANNED), []);
+    assert.deepStrictEqual(bl.findViolations('<PackageReference Include="FluentAssertionsExtras" />', bl.BANNED), []);
+  });
+
+  ok('check-banned-libraries: 移行未完了のものは PENDING にあり BANNED には無い', () => {
+    const bannedNames = bl.BANNED.map((b) => b.name);
+    for (const p of bl.PENDING) {
+      assert.ok(!bannedNames.includes(p.name), `${p.name} は移行未完了のため BANNED に置かない`);
+      assert.ok(p.owningIssue > 0, `${p.name} には担当 issue が必要`);
+    }
+  });
+
+  ok('実ツリー: 不採用ライブラリの混入が無い（#351 の回帰）', () => {
+    assert.deepStrictEqual(bl.checkTree(pathBl.resolve(__dirname, '..')), []);
+  });
 };

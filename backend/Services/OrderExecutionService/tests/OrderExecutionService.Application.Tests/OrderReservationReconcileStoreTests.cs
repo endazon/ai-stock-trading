@@ -1,7 +1,7 @@
 using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Reconciliation;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Application.Tests;

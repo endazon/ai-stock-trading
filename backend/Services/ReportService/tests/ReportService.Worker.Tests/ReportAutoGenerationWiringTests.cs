@@ -3,7 +3,7 @@ using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Composable.Adapters;
 using AiStockTrading.Report.Worker.Composable.Polling;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;

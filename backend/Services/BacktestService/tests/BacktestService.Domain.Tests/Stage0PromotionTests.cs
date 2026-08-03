@@ -1,5 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Backtest.Domain.Tests;

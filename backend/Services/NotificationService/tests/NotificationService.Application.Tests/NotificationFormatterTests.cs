@@ -2,7 +2,7 @@ using AiStockTrading.Notification.Application.Services;
 using AiStockTrading.Notification.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;

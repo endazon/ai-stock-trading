@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AiStockTrading.Notification.Application.State;
 using AiStockTrading.Notification.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

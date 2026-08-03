@@ -1,6 +1,6 @@
 using AiStockTrading.Audit.Application.State;
 using AiStockTrading.Audit.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

@@ -1,6 +1,6 @@
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.CostControl.Application.Tests;

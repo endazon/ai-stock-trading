@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.Backtest.Application;
 using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

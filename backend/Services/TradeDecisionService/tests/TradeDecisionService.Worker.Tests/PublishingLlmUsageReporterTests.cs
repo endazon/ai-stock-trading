@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;

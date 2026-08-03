@@ -3,7 +3,7 @@ using AiStockTrading.Configuration.Application.Adapters;
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.Services;
 using AiStockTrading.Configuration.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Configuration.Application.Tests;

@@ -2,7 +2,7 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

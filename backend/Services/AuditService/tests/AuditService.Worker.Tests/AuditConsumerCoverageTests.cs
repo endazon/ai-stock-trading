@@ -1,6 +1,6 @@
 using AiStockTrading.Audit.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Xunit;
 

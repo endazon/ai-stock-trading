@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;

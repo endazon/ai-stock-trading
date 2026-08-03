@@ -2,7 +2,7 @@ using AiStockTrading.Configuration.Client.Adapters;
 using AiStockTrading.Configuration.Client.Foundation.Extensions;
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

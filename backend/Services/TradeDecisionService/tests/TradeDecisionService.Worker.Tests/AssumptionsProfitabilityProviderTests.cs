@@ -2,7 +2,7 @@ using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;

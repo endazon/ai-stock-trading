@@ -1,5 +1,5 @@
 using AiStockTrading.Report.Worker.Composable.Polling;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;

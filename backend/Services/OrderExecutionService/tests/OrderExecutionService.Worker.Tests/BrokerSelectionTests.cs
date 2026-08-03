@@ -1,5 +1,5 @@
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 

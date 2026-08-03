@@ -2,7 +2,7 @@ using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

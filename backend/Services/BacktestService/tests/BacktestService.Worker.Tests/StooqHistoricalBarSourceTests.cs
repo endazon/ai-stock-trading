@@ -3,7 +3,7 @@ using AiStockTrading.Backtest.Application;
 using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

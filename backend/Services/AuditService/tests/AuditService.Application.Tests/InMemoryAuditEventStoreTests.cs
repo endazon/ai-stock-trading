@@ -1,6 +1,6 @@
 using AiStockTrading.Audit.Application.Adapters;
 using AiStockTrading.Audit.Application.State;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Audit.Application.Tests;

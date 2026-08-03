@@ -1,6 +1,6 @@
 using System.Reflection;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Xunit;
 using Xunit.Sdk;

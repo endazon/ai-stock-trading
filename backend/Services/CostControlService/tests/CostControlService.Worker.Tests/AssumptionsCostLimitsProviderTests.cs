@@ -1,7 +1,7 @@
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.CostControl.Worker.Tests;

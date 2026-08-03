@@ -1,5 +1,5 @@
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.Llm;

@@ -4,7 +4,7 @@ using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Application.State;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Composable.Polling;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

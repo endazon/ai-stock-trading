@@ -1,5 +1,5 @@
 using AiStockTrading.MarketMonitor.Worker.Composable.Steps;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using Xunit;
 

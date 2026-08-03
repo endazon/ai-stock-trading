@@ -1,6 +1,6 @@
 using AiStockTrading.Notification.Application.Services;
 using AiStockTrading.Notification.Application.State;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;

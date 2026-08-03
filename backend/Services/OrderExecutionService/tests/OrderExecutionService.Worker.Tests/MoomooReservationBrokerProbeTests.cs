@@ -1,7 +1,7 @@
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Worker.Tests;

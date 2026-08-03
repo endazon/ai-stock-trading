@@ -6,7 +6,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
 
