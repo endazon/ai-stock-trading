@@ -10,10 +10,24 @@
 - [ ] 起点 ID（FR/UC/SC/ADR）をブランチ名・コミット・コード・PR に残した
 - [ ] 計画書（fixed/Accepted）に反していない。差異があれば `/plan-feedback` で環流した
 
+## 全面再実装（#344）中の追加条件
+
+全面再実装の子 issue（#329〜#348）では、上記に加えて次を満たす（[IADR-0126](adr/IADR-0126_reimplementation-sequencing-and-pr-granularity.md) / [IADR-0127](adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
+
+- [ ] **1 issue = 1 PR** である（複数 issue をまとめていない・1 issue を分割していない）。PR 本文に `Closes #<issue>` を書いた
+- [ ] 依存する先行 issue がマージ済みである（フェーズ順。フェーズ内は並行可）
+- [ ] **統制系（FR-10 / 19 / 20）のテストは 3 点セットを揃えた**（境界値テーブル・プロパティベース・**否定形**。[docs/tests/README.md](tests/README.md)）
+- [ ] 統制値を実装・変更した場合、`PlanRiskDefaults`（計画値）と `ActualDefaults`（実装からの抽出）を更新した
+- [ ] **担当 issue として登録されていた既知逸脱を解消した場合、`KnownPlanDeviations` から該当行を削除した**
+      （削除しないと計画適合テストが失敗するため、CI が通っていればこの項目は自動的に満たされている）
+- [ ] 旧実装の**物理削除を行っていない**（削除は #346 の切替計画に集約する。監査証跡・業務台帳は 7 年保持で破棄不可）
+
 ## 品質・検証
 
 - [ ] ビルドが成功する
 - [ ] 受け入れ基準・ユースケースのフロー（基本/代替/例外）をテストに写像し、テストが green
+- [ ] **必須範囲 FR（FR-10 / 12 / 15 / 19 / 20）のテストと仕様書が揃っている**（CI の `test-traceability` が検査する）
+- [ ] **カバレッジが floor を下回っていない**（CI の `build-and-test` が `coverage-floor.json` で検査する）
 - [ ] フォーマット/lint が通る
 - [ ] `/verify` を実行し合格した
 - [ ] 計画外の機能追加・過剰な抽象化・不要な防御的実装がない

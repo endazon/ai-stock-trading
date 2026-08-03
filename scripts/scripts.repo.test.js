@@ -131,4 +131,123 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
     assert.deepStrictEqual(checkConsumerEndpointNames(), []);
   });
+
+  // --- check-test-traceability.js: 受け入れ基準 → テスト写像の検査（#343 / IADR-0127） ---
+  const fsTt = require('fs');
+  const osTt = require('os');
+  const pathTt = require('path');
+  const tt = require('./check-test-traceability.js');
+
+  ok('check-test-traceability: parseArgs 既定は requirePlanning=false', () => {
+    assert.strictEqual(tt.parseArgs([]).requirePlanning, false);
+    assert.strictEqual(tt.parseArgs(['--require-planning']).requirePlanning, true);
+  });
+
+  ok('check-test-traceability: 起点 ID を 2 桁へ正規化して収集する（FR-5 と FR-05 を同一視）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-refs-'));
+    const dir = pathTt.join(root, 'backend', 'Services', 'X', 'tests', 'X.Domain.Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'A.cs'), '// FR-5, UC-06: something\n');
+    fsTt.writeFileSync(pathTt.join(dir, 'B.cs'), '// FR-05 again, SC-01\n');
+    const refs = tt.collectReferences(tt.testFiles(root), root);
+    assert.strictEqual(refs.get('FR-05').length, 2);
+    assert.strictEqual(refs.get('UC-06').length, 1);
+    assert.strictEqual(refs.get('SC-01').length, 1);
+  });
+
+  ok('check-test-traceability: bin/obj 配下は収集しない（生成物の誤検出を避ける）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-binobj-'));
+    const dir = pathTt.join(root, 'backend', 'Services', 'X', 'tests', 'X.Domain.Tests');
+    fsTt.mkdirSync(pathTt.join(dir, 'bin'), { recursive: true });
+    fsTt.mkdirSync(pathTt.join(dir, 'obj'), { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'bin', 'Gen.cs'), '// FR-10\n');
+    fsTt.writeFileSync(pathTt.join(dir, 'obj', 'Gen.cs'), '// FR-19\n');
+    assert.deepStrictEqual(tt.testFiles(root), []);
+  });
+
+  ok('check-test-traceability: tests/ 以外に *.Tests ディレクトリも収集する（backend/Tests/ 直下）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-toplevel-'));
+    const dir = pathTt.join(root, 'backend', 'Tests', 'AiStockTrading.PlanConformance.Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'A.cs'), '// FR-20\n');
+    assert.strictEqual(tt.testFiles(root).length, 1);
+  });
+
+  ok('check-test-traceability: 必須 FR の仕様書欠落を列挙する', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-specs-'));
+    fsTt.mkdirSync(pathTt.join(root, 'docs', 'tests'), { recursive: true });
+    fsTt.mkdirSync(pathTt.join(root, 'docs', 'functional'), { recursive: true });
+    fsTt.writeFileSync(pathTt.join(root, 'docs', 'tests', 'FR-10_x.md'), '');
+    fsTt.writeFileSync(pathTt.join(root, 'docs', 'functional', 'FR-10_x.md'), '');
+    const missing = tt.missingSpecs(root);
+    // FR-10 は揃っているので出ず、残り 4 FR × 2 種 = 8 件が欠落として出る。
+    assert.strictEqual(missing.length, 8);
+    assert.ok(!missing.some((m) => m.startsWith('FR-10:')));
+  });
+
+  ok('check-test-traceability: planning 未 populate なら planIds は null（実在検査を skip する合図）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-noplan-'));
+    assert.strictEqual(tt.planIds(root), null);
+  });
+
+  ok('check-test-traceability: 実ツリーで必須 FR にテストと仕様書が揃っている（#343 の受け入れ）', () => {
+    const refs = tt.collectReferences(tt.testFiles(pathTt.resolve(__dirname, '..')), pathTt.resolve(__dirname, '..'));
+    for (const n of tt.REQUIRED_FRS) {
+      const id = `FR-${String(n).padStart(2, '0')}`;
+      assert.ok(refs.has(id), `${id} を参照するテストが無い`);
+    }
+    assert.deepStrictEqual(tt.missingSpecs(pathTt.resolve(__dirname, '..')), []);
+  });
+
+  // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
+  const cov = require('./check-coverage.js');
+
+  ok('check-coverage: parseArgs は --floor / --root / --suggest を解釈する', () => {
+    const a = cov.parseArgs(['--floor', '0.7', '--root', 'src', '--suggest']);
+    assert.strictEqual(a.floor, 0.7);
+    assert.strictEqual(a.root, 'src');
+    assert.strictEqual(a.suggest, true);
+    assert.strictEqual(cov.parseArgs(['--floor=0.55']).floor, 0.55);
+  });
+
+  ok('check-coverage: 同一行を複数レポートが計測しても二重計上しない（和集合で数える）', () => {
+    const report = (hits) =>
+      `<class filename="A.cs"><lines><line number="1" hits="${hits[0]}" /><line number="2" hits="${hits[1]}" /></lines></class>`;
+    const acc = new Map();
+    cov.accumulate(report([1, 0]), acc);
+    cov.accumulate(report([0, 0]), acc);
+    const s = cov.summarize(acc);
+    // 2 レポートあっても行数は 2 のまま。1 行目はどちらかで被覆されていれば covered。
+    assert.strictEqual(s.total, 2);
+    assert.strictEqual(s.covered, 1);
+    assert.strictEqual(s.lineRate, 0.5);
+  });
+
+  ok('check-coverage: 別レポートで被覆された行は covered に昇格する', () => {
+    const acc = new Map();
+    cov.accumulate('<class filename="A.cs"><lines><line number="1" hits="0" /></lines></class>', acc);
+    cov.accumulate('<class filename="A.cs"><lines><line number="1" hits="3" /></lines></class>', acc);
+    assert.strictEqual(cov.summarize(acc).covered, 1);
+  });
+
+  ok('check-coverage: 別ファイルの同じ行番号は別行として数える', () => {
+    const acc = new Map();
+    cov.accumulate('<class filename="A.cs"><lines><line number="1" hits="1" /></lines></class>', acc);
+    cov.accumulate('<class filename="B.cs"><lines><line number="1" hits="0" /></lines></class>', acc);
+    const s = cov.summarize(acc);
+    assert.strictEqual(s.total, 2);
+    assert.strictEqual(s.covered, 1);
+  });
+
+  ok('check-coverage: coverage-floor.json の lineRateFloor を読む', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'cov-floor-'));
+    fsTt.writeFileSync(pathTt.join(root, 'coverage-floor.json'), JSON.stringify({ lineRateFloor: 0.42 }));
+    assert.strictEqual(cov.readFloor(root), 0.42);
+    assert.strictEqual(cov.readFloor(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'cov-none-'))), null);
+  });
+
+  ok('check-coverage: 実ツリーの coverage-floor.json は 0〜1 の比率である', () => {
+    const floor = cov.readFloor(pathTt.resolve(__dirname, '..'));
+    assert.ok(typeof floor === 'number' && floor > 0 && floor < 1, `floor=${floor}`);
+  });
 };
