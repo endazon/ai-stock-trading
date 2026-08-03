@@ -2,7 +2,7 @@ using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Worker.Composable.Adapters;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

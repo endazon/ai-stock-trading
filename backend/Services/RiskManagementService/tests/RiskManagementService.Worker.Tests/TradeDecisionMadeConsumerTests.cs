@@ -5,7 +5,7 @@ using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Worker.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;

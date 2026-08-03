@@ -136,7 +136,7 @@
 - ターゲット: **net10.0 / C# 13**（ルート `Directory.Build.props`＝単独ビルド用 import-chain フォールバック。IADR-0046）。パッケージは Central Package Management（ルート `Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
 - ソリューション: `backend/backend.slnx`（ユニットリポジトリレイアウト。platform ADR-0019 / ADR-0001 2026-07-12 更新 / IADR-0046）。サービスは `backend/Services/<ServiceName>/{src,tests}`、共有物は `backend/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
 - 命名規約: 名前空間プレフィックスは `AiStockTrading`。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
-- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは xUnit + FluentAssertions（`using Xunit;` を忘れない）。
+- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは xUnit + **AwesomeAssertions**（`using Xunit;` を忘れない）。**FluentAssertions は v8 の商用化により不採用**であり、`scripts/check-banned-libraries.js` が CI で再混入を止める（platform ADR-0030 / [#351](https://github.com/endazon/ai-stock-trading/issues/351)）。
 - フォーマット: `dotnet format` で整形する。`nullable` 有効・警告ゼロを保つ。
 - 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像し、コメントに起点 ID（FR/UC/ADR）を残す。
 - リスク統制・取引ガードの既定値は計画書の全体前提条件（05_trading-assumptions §5）と一致させ、`TradingDefaults` のテストで固定する。

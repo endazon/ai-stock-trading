@@ -1,6 +1,6 @@
 using System.Net;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 

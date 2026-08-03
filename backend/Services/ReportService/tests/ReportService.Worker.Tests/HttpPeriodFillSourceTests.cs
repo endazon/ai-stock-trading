@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using AiStockTrading.Report.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

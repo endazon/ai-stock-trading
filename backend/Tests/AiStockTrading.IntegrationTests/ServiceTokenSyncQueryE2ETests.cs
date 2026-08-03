@@ -6,7 +6,7 @@ using System.Net.Http.Json;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging.Abstractions;

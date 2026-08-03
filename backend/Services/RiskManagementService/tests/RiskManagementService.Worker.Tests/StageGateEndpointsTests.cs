@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

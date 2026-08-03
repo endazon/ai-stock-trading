@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Worker.Foundation.Endpoints;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Worker.Tests;

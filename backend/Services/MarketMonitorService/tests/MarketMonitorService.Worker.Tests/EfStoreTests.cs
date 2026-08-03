@@ -1,7 +1,7 @@
 using AiStockTrading.MarketMonitor.Domain;
 using AiStockTrading.MarketMonitor.Worker.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

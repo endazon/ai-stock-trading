@@ -5,7 +5,7 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;

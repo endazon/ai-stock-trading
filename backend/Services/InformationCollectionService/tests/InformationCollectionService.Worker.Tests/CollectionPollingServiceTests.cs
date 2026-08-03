@@ -4,7 +4,7 @@ using AiStockTrading.InformationCollection.Application.State;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Worker.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;

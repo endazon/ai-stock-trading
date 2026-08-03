@@ -4,7 +4,7 @@ using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

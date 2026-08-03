@@ -8,7 +8,7 @@ using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.CostControl.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

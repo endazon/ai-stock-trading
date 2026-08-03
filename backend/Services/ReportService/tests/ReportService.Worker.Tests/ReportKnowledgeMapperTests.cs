@@ -1,7 +1,7 @@
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Foundation.Adapters;
 using AiStockTrading.Shared.KnowledgeBase;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Report.Worker.Tests;

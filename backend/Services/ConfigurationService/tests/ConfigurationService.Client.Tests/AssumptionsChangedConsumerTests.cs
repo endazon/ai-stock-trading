@@ -1,7 +1,7 @@
 using AiStockTrading.Configuration.Client.Composable.Steps;
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;

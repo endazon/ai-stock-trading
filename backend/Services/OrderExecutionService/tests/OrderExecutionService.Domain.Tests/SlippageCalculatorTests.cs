@@ -1,6 +1,6 @@
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Domain.Tests;

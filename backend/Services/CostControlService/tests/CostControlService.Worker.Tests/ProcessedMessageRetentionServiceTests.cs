@@ -1,7 +1,7 @@
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Worker.Composable.Retention;
 using AiStockTrading.Shared.Contracts.Operations;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

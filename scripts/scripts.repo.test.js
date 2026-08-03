@@ -250,4 +250,63 @@ module.exports = ({ ok, assert }) => {
     const floor = cov.readFloor(pathTt.resolve(__dirname, '..'));
     assert.ok(typeof floor === 'number' && floor > 0 && floor < 1, `floor=${floor}`);
   });
+
+  // --- check-banned-libraries.js: 不採用ライブラリの再混入検査（#345 / #351） ---
+  const pathBl = require('path');
+  const bl = require('./check-banned-libraries.js');
+
+  ok('check-banned-libraries: csproj の PackageReference を検出する', () => {
+    const hits = bl.findViolations('  <PackageReference Include="FluentAssertions" />', bl.BANNED);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].lib.name, 'FluentAssertions');
+    assert.strictEqual(hits[0].line, 1);
+  });
+
+  ok('check-banned-libraries: using ディレクティブを検出する（global using も）', () => {
+    assert.strictEqual(bl.findViolations('using FluentAssertions;', bl.BANNED).length, 1);
+    assert.strictEqual(bl.findViolations('global using FluentAssertions;', bl.BANNED).length, 1);
+  });
+
+  ok('check-banned-libraries: 散文中の言及は誤検出しない（移行の経緯を書けること）', () => {
+    const prose = '// FluentAssertions から AwesomeAssertions へ移行した（#351）';
+    assert.deepStrictEqual(bl.findViolations(prose, bl.BANNED), []);
+  });
+
+  ok('check-banned-libraries: 名前の前方一致では誤検出しない', () => {
+    // FluentAssertionsExtras のような別パッケージを巻き込まないこと。
+    assert.deepStrictEqual(bl.findViolations('using FluentAssertionsExtras;', bl.BANNED), []);
+    assert.deepStrictEqual(bl.findViolations('<PackageReference Include="FluentAssertionsExtras" />', bl.BANNED), []);
+  });
+
+  ok('check-banned-libraries: 移行未完了のものは PENDING にあり BANNED には無い', () => {
+    const bannedNames = bl.BANNED.map((b) => b.name);
+    for (const p of bl.PENDING) {
+      assert.ok(!bannedNames.includes(p.name), `${p.name} は移行未完了のため BANNED に置かない`);
+      assert.ok(p.owningIssue > 0, `${p.name} には担当 issue が必要`);
+    }
+  });
+
+  ok('check-banned-libraries: PENDING に置いてよいのは実際に使われているものだけ', () => {
+    // 使われていないものを PENDING に置くのは、防げる再混入を見送っているだけになる
+    // （PR #355 のレビュー指摘）。実ツリーで参照が 0 件なら BANNED へ移すべきである。
+    const root = pathBl.resolve(__dirname, '..');
+    for (const p of bl.PENDING) {
+      const hits = bl.checkTree(root, [{ name: p.name, replacement: p.replacement, reason: 'pending' }]);
+      assert.ok(
+        hits.length > 0,
+        `${p.name} は実ツリーで参照 0 件である。PENDING ではなく BANNED へ移すこと（担当 #${p.owningIssue}）`
+      );
+    }
+  });
+
+  ok('check-banned-libraries: BANNED には未導入のライブラリも含められる（先回り登録の許容）', () => {
+    const names = bl.BANNED.map((b) => b.name);
+    for (const n of ['MediatR', 'AutoMapper', 'Mapster']) {
+      assert.ok(names.includes(n), `${n} は参照 0 件のため先回りで BANNED に置く`);
+    }
+  });
+
+  ok('実ツリー: 不採用ライブラリの混入が無い（#351 の回帰）', () => {
+    assert.deepStrictEqual(bl.checkTree(pathBl.resolve(__dirname, '..')), []);
+  });
 };

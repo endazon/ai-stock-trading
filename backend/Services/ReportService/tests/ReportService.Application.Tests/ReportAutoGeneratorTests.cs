@@ -4,7 +4,7 @@ using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Application.State;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Report.Application.Tests;

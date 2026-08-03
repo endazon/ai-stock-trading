@@ -2,7 +2,7 @@ using AiStockTrading.Backtest.Application;
 using AiStockTrading.Backtest.Domain;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Backtest.Application.Tests;

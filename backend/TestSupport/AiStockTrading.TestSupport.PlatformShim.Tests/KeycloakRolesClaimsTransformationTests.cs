@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Tests;

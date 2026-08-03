@@ -2,7 +2,7 @@ using AiStockTrading.Report.Application;
 using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 

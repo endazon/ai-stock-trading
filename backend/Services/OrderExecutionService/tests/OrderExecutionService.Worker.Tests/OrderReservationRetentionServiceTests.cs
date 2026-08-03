@@ -2,7 +2,7 @@ using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Worker.Composable.Retention;
 using AiStockTrading.Shared.Contracts.Operations;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

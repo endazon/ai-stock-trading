@@ -4,7 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Worker.Composable.StageGate;
 using AiStockTrading.Shared.Contracts.Events;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

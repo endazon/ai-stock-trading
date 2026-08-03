@@ -1,5 +1,5 @@
 using AiStockTrading.Shared.Contracts.Llm;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Shared.Contracts.Tests;

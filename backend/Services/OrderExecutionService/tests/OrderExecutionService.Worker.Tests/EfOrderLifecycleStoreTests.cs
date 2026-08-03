@@ -1,6 +1,6 @@
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.OrderExecution.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

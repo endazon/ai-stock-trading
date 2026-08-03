@@ -1,5 +1,5 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;

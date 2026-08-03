@@ -1,7 +1,7 @@
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;

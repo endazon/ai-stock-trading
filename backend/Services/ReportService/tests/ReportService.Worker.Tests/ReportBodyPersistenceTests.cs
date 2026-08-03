@@ -2,7 +2,7 @@ using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Report.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

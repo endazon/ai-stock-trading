@@ -2,7 +2,7 @@ extern alias RiskManagementWorker;
 
 using System.Data;
 using AiStockTrading.RiskManagement.Application.Ports;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Xunit;

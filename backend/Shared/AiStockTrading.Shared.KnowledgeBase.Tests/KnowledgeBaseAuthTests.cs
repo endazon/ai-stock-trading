@@ -2,7 +2,7 @@ using System.Net;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

@@ -1,6 +1,6 @@
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.CostControl.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

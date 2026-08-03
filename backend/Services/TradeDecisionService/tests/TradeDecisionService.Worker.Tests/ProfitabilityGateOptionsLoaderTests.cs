@@ -1,6 +1,6 @@
 using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 

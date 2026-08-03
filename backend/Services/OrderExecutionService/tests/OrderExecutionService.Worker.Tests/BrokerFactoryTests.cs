@@ -1,6 +1,6 @@
 using AiStockTrading.OrderExecution.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Worker.Tests;

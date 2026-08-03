@@ -7,7 +7,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
     <!-- NFR, Issue #253: MessageUrn 回帰テスト（EventMessageUrnTests）が MassTransit の URN 導出規約を
          実際に呼んで検証するためのテスト専用参照。契約アセンブリ（AiStockTrading.Shared.Contracts）は

@@ -1,5 +1,5 @@
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.RateLimiting;

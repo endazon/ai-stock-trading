@@ -3,7 +3,7 @@ using AiStockTrading.MarketMonitor.Application.Services;
 using AiStockTrading.MarketMonitor.Application.State;
 using AiStockTrading.MarketMonitor.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Application.Tests;

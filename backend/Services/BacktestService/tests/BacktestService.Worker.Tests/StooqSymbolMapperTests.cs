@@ -1,7 +1,7 @@
 using AiStockTrading.Backtest.Application;
 using AiStockTrading.Backtest.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.Backtest.Worker.Tests;

@@ -4,7 +4,7 @@ using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Application.Tests;

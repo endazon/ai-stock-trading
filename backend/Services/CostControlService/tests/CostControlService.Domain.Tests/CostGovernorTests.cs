@@ -1,5 +1,5 @@
 using AiStockTrading.Configuration.Domain;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.CostControl.Domain.Tests;

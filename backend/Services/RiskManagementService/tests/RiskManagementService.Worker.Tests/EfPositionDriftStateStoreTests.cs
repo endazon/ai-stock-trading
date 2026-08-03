@@ -1,6 +1,6 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Worker.Foundation.Persistence;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 

@@ -1,5 +1,5 @@
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Middleware;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 

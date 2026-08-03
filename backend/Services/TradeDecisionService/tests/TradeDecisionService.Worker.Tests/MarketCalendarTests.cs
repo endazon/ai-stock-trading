@@ -1,6 +1,6 @@
 using AiStockTrading.TradeDecision.Worker.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace AiStockTrading.TradeDecision.Worker.Tests;

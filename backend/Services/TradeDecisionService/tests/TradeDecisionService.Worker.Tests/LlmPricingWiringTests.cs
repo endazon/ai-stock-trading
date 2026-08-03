@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TradeDecision.Application.Ports;
-using FluentAssertions;
+using AwesomeAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.AspNetCore.Hosting;
