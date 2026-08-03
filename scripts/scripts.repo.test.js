@@ -180,7 +180,7 @@ module.exports = ({ ok, assert }) => {
     }
   });
 
-  ok('check-banned-libraries: BANNED には未導入のライブラリも含められる（先回りの禁止）', () => {
+  ok('check-banned-libraries: BANNED には未導入のライブラリも含められる（先回り登録の許容）', () => {
     const names = bl.BANNED.map((b) => b.name);
     for (const n of ['MediatR', 'AutoMapper', 'Mapster']) {
       assert.ok(names.includes(n), `${n} は参照 0 件のため先回りで BANNED に置く`);
