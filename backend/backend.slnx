@@ -4,12 +4,14 @@
   <Folder Name="/Services/InformationCollectionService/src/">
     <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Domain/InformationCollectionService.Domain.csproj" />
     <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Application/InformationCollectionService.Application.csproj" />
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Infrastructure/InformationCollectionService.Infrastructure.csproj" />
+    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/InformationCollectionService/tests/">
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Domain.Tests/InformationCollectionService.Domain.Tests.csproj" />
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Worker.Tests/InformationCollectionService.Worker.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Infrastructure.Tests/InformationCollectionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Api.Tests/InformationCollectionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/BacktestService/" />
   <Folder Name="/Services/BacktestService/src/">

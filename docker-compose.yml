@@ -201,8 +201,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj
-        SERVICE_DLL: InformationCollectionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj
+        SERVICE_DLL: InformationCollectionService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
