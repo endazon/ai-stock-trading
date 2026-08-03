@@ -336,6 +336,16 @@ git mv "$S/src/<Svc>.Infrastructure/Foundation/Endpoints"      "$S/src/<Svc>.Api
 > OrderExecution / TradeDecision）はこの行を飛ばす。エンドポイントが Program.cs に直書きされている場合、
 > 本 issue では**切り出さない**（再配置の範囲を超える）。
 
+> **補足（第 2 段階・`Foundation/Endpoints` を持たないサービスの実例 = BacktestService `e929e12`）**:
+> この形では **`Api` の中身は `Program.cs` と `appsettings*.json` の 2 種類だけ**になり、`Foundation/`
+> フォルダ自体を作らない（`mkdir -p "$S/src/<Svc>.Api/Foundation"` も不要）。公開 HTTP 面はヘルスチェックと
+> `/internal/introspection` のみで、いずれも共通拡張（`MapAiStockTradingHealthChecks` /
+> `MapAiStockTradingIntrospection`）を Program.cs が呼ぶ形であり、Api に固有のエンドポイント型は存在しない。
+> **Api プロジェクトが「Program.cs ほぼ単体」になること自体は正常**であり、それを避けるために
+> Infrastructure から何かを引き上げてはならない（§5.3 の限定列挙が唯一の規則）。
+> テスト側も同様で、`Api.Tests` は WebApplicationFactory 系（`<Svc>WorkerWebApplicationFactory` と
+> 配線テスト）だけになる。
+
 `<Svc>.Api.csproj` を新規作成する（雛形は §7.5）。
 
 > **注（ビルド出力の残骸）**: `git mv` したディレクトリには旧名の `bin/` `obj/` `TestResults/` が
