@@ -7,7 +7,7 @@
     <!-- IADR-0013: shim の HttpContext・ClaimsPrincipal を用いるテストのため共有フレームワークを参照する。 -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
