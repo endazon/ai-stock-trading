@@ -138,5 +138,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/AiStockTrading.IntegrationTests/AiStockTrading.IntegrationTests.csproj" />
+    <Project Path="Tests/AiStockTrading.PlanConformance.Tests/AiStockTrading.PlanConformance.Tests.csproj" />
   </Folder>
 </Solution>
