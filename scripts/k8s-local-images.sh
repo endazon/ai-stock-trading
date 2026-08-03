@@ -26,7 +26,7 @@ MAPPING=(
   "audit-service|backend/Services/AuditService/src/AuditService.Worker/AuditService.Worker.csproj|AuditService.Worker.dll"
   "backtest-service|backend/Services/BacktestService/src/BacktestService.Worker/BacktestService.Worker.csproj|BacktestService.Worker.dll"
   "configuration-service|backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj|ConfigurationService.Api.dll"
-  "cost-control-service|backend/Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj|CostControlService.Worker.dll"
+  "cost-control-service|backend/Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj|CostControlService.Api.dll"
   "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Worker/InformationCollectionService.Worker.csproj|InformationCollectionService.Worker.dll"
   "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Worker/MarketMonitorService.Worker.csproj|MarketMonitorService.Worker.dll"
   "notification-service|backend/Services/NotificationService/src/NotificationService.Worker/NotificationService.Worker.csproj|NotificationService.Worker.dll"

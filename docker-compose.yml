@@ -176,8 +176,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/CostControlService/src/CostControlService.Worker/CostControlService.Worker.csproj
-        SERVICE_DLL: CostControlService.Worker.dll
+        SERVICE_PROJECT: backend/Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj
+        SERVICE_DLL: CostControlService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=cost_control_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

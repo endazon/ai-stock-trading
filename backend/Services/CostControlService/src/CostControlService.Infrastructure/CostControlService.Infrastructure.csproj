@@ -1,0 +1,30 @@
+<!-- #23 Slice A, NFR（費用）, IADR-0027, IADR-0128: 費用統制サービスの技術詳細（EF Core 台帳・Migration・
+     LlmCostIncurred の consumer・保持期間ジョブ・前提条件由来の上限アダプタ）。ホスト（Program.cs・
+     エンドポイント・DI 構成）は Api に置く。共有フレームワーク型（BackgroundService/IOptions/ILogger 等）を
+     使うため FrameworkReference を持つ（TestSupport.PlatformShim と同型）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.CostControl.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\CostControlService.Application\CostControlService.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- #139, IADR-0065: 月次費用上限をバージョン付き全体前提条件（#19・設定サービス）から解決する共有クライアント。 -->
+    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Client\ConfigurationService.Client.csproj" />
+    <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
+         テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
+    <InternalsVisibleTo Include="CostControlService.Api" />
+    <InternalsVisibleTo Include="CostControlService.Api.Tests" />
+    <InternalsVisibleTo Include="CostControlService.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>
