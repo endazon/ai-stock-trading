@@ -334,8 +334,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj
-        SERVICE_DLL: ReportService.Worker.dll
+        SERVICE_PROJECT: backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj
+        SERVICE_DLL: ReportService.Api.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=report_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

@@ -31,7 +31,7 @@ MAPPING=(
   "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj|MarketMonitorService.Api.dll"
   "notification-service|backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj|NotificationService.Api.dll"
   "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj|OrderExecutionService.Worker.dll"
-  "report-service|backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj|ReportService.Worker.dll"
+  "report-service|backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj|ReportService.Api.dll"
   "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj|RiskManagementService.Worker.dll"
   "trade-decision-service|backend/Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj|TradeDecisionService.Api.dll"
 )

@@ -43,12 +43,14 @@
   <Folder Name="/Services/ReportService/src/">
     <Project Path="Services/ReportService/src/ReportService.Domain/ReportService.Domain.csproj" />
     <Project Path="Services/ReportService/src/ReportService.Application/ReportService.Application.csproj" />
-    <Project Path="Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Infrastructure/ReportService.Infrastructure.csproj" />
+    <Project Path="Services/ReportService/src/ReportService.Api/ReportService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/ReportService/tests/">
     <Project Path="Services/ReportService/tests/ReportService.Domain.Tests/ReportService.Domain.Tests.csproj" />
     <Project Path="Services/ReportService/tests/ReportService.Application.Tests/ReportService.Application.Tests.csproj" />
-    <Project Path="Services/ReportService/tests/ReportService.Worker.Tests/ReportService.Worker.Tests.csproj" />
+    <Project Path="Services/ReportService/tests/ReportService.Infrastructure.Tests/ReportService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/ReportService/tests/ReportService.Api.Tests/ReportService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/ConfigurationService/" />
   <Folder Name="/Services/ConfigurationService/src/">

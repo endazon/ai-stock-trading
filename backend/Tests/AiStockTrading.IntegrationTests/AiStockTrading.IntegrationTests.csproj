@@ -26,7 +26,9 @@
          新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
     <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Worker\RiskManagementService.Worker.csproj" Aliases="RiskManagementWorker" />
     <!-- 報告書 Worker も extern alias で参照する（Slice D の daily-policy 提供側・IADR-0050 決定1）。 -->
-    <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Worker\ReportService.Worker.csproj" Aliases="ReportWorker" />
+    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（ReportWorker）は
+         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->
+    <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Api\ReportService.Api.csproj" Aliases="ReportWorker" />
     <!-- 費用統制 Worker（#79・IADR-0031/0051: poller が s2s で照会する /costs/state の提供側）。 -->
     <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（CostControlWorker）は
          テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->

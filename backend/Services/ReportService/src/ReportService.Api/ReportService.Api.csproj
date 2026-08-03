@@ -1,0 +1,34 @@
+<!-- #14 Slice A, FR-06/07, IADR-0024, IADR-0128: 報告書サービスの API ホスト。確定管理（版番号付き冪等・Keycloak 認可）・
+     確定済み日報方針の照会とヘルスチェックのため Web SDK を使用。確定遷移時に ReportConfirmed を発行。
+     実行時基盤は test-support shim（本番非使用・IADR-0013）。技術詳細（EF Core 永続化・草案アダプタ・自動生成）は
+     Infrastructure に置く。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>AiStockTrading.Report.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- dotnet ef の startup project となるため Design を保持する（Migration 本体は Infrastructure）。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\ReportService.Application\ReportService.Application.csproj" />
+    <!-- IADR-0128 決定 1: 具象実装（EF ストア・DbContext・草案アダプタ・自動生成）の DI 登録は composition root（Api）が行う。 -->
+    <ProjectReference Include="..\ReportService.Infrastructure\ReportService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- IADR-0066: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- FR-08, IADR-0069/0071: 確定報告書の KB 保存（既定 no-op・BaseUrl 設定で opt-in）は共有クライアントを用いる。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <InternalsVisibleTo Include="ReportService.Api.Tests" />
+  </ItemGroup>
+</Project>
