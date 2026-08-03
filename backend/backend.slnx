@@ -125,12 +125,14 @@
   <Folder Name="/Services/TradeDecisionService/src/">
     <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Application/TradeDecisionService.Application.csproj" />
     <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Domain/TradeDecisionService.Domain.csproj" />
-    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Infrastructure/TradeDecisionService.Infrastructure.csproj" />
+    <Project Path="Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj" />
   </Folder>
   <Folder Name="/Services/TradeDecisionService/tests/">
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Application.Tests/TradeDecisionService.Application.Tests.csproj" />
     <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Domain.Tests/TradeDecisionService.Domain.Tests.csproj" />
-    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Worker.Tests/TradeDecisionService.Worker.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Infrastructure.Tests/TradeDecisionService.Infrastructure.Tests.csproj" />
+    <Project Path="Services/TradeDecisionService/tests/TradeDecisionService.Api.Tests/TradeDecisionService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/Bff/">
     <!-- FR-14, IADR-0063 / IADR-0091: 例外3 の unit-owned BFF エンドポイント（platform BFF 合成点から参照）。 -->

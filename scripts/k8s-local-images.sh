@@ -33,7 +33,7 @@ MAPPING=(
   "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Worker/OrderExecutionService.Worker.csproj|OrderExecutionService.Worker.dll"
   "report-service|backend/Services/ReportService/src/ReportService.Worker/ReportService.Worker.csproj|ReportService.Worker.dll"
   "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Worker/RiskManagementService.Worker.csproj|RiskManagementService.Worker.dll"
-  "trade-decision-service|backend/Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj|TradeDecisionService.Worker.dll"
+  "trade-decision-service|backend/Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj|TradeDecisionService.Api.dll"
 )
 
 k3d_images=()

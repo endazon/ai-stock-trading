@@ -398,8 +398,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/TradeDecisionService/src/TradeDecisionService.Worker/TradeDecisionService.Worker.csproj
-        SERVICE_DLL: TradeDecisionService.Worker.dll
+        SERVICE_PROJECT: backend/Services/TradeDecisionService/src/TradeDecisionService.Api/TradeDecisionService.Api.csproj
+        SERVICE_DLL: TradeDecisionService.Api.dll
     environment:
       <<: *app-env
       # fail-safe: 空=プレースホルダ（取引しない）。#76 で有効化。
