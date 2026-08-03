@@ -408,6 +408,19 @@ grep -rl 'AiStockTrading.<Short>.Worker' "$S/src/<Svc>.Infrastructure" "$S/tests
 >
 > 型を完全修飾名へ書き換える案は、テスト本文の編集になるため採らない（§5.5「本文は 1 文字も変えない」）。
 
+> **補正 4（第 2 段階で追加・暗黙 using の差。実例 ReportService `2e4c6d2`）**:
+> 旧 Worker は `Microsoft.NET.Sdk.Web` であり、**Web SDK の暗黙 using**（`Microsoft.Extensions.Hosting` /
+> `Microsoft.Extensions.DependencyInjection` / `Microsoft.Extensions.Logging` / `Microsoft.AspNetCore.*` 等）が
+> 効いていた。Infrastructure は `Microsoft.NET.Sdk`（暗黙 using は `System` 系のみ）へ変わるため、
+> **これらに依存していたファイルが CS0246 で落ちる**（`BackgroundService` / `ILogger<>` /
+> `IServiceScopeFactory` が見つからない）。`FrameworkReference` を足しても暗黙 using は復活しない。
+>
+> **不足している `using` を当該ファイルへ明示的に足して直す**（using 行のみの変更＝振る舞い不変）。
+> csproj へ `<Using Include="…" />` を並べて Web SDK の暗黙 using を再現する案は、
+> 「どの型がどこから来るか」を隠す方向であり採らない。
+> 全サービスで起きるわけではない（多くのファイルは元から using を明示している）。ビルドエラーが出た
+> ファイルだけ直せばよい。
+
 > 実務上は、**先に Infrastructure 側を置換 → 次に Api 側を置換 → ビルドエラーが出た箇所だけ直す**のが速い。
 > ビルドエラーは「型が見つからない（CS0246）」の形で必ず出るため、見落としが起きない。
 
