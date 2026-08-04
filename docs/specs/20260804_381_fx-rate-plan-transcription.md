@@ -170,7 +170,6 @@ ADR-0022 により §3 に確定値が入ったため、この説明は現状と
 | `backend/Tests/AiStockTrading.PlanConformance.Tests/AiStockTrading.PlanConformance.Tests.csproj` | Infrastructure へのプロジェクト参照 |
 | `backend/Tests/AiStockTrading.PlanConformance.Tests/KnownPlanDeviations.cs` | 逸脱 3 件（担当 #381）の登録 |
 | `docs/adr/IADR-0135_*.md` / `docs/adr/README.md` | 実装 ADR の起案と索引 |
-| `feedback/20260804_adr0022-fx-rate-source-and-freshness.md` | 環流の裁定結果の控え（新規。#59 の控えが本リポに無かったため） |
 
 ## 受け入れ基準
 
@@ -254,6 +253,20 @@ $ dotnet test backend/backend.slnx --filter "FullyQualifiedName~PlanConformance"
    （`boj` / `fred`）の集合に留めた。系列 ID が確定したら §3 の「取得元」行が具体化するため、
    そのときに再度転記の要否を判断する。
 
+## 環流記録（`feedback/`）の追随
+
+**`feedback/` に project-planning#57 / #59 に対応する控えは存在しない**（grep で確認。
+同ディレクトリ最古の記録は `20260708_trading-defaults-derived-values.md` であり、
+#57 / #59 はそれ以前に **Issue 経路**で起票されたため実装リポ側の控えが残っていない）。
+したがって #374 で `feedback/20260804_adr0016-*.md` に対して行った「裁定結果の追記と `status` 更新」に
+相当する作業は**対象が無い**。
+
+**存在しない控えを遡って作らない。** 送っていない記録を送ったことにすると環流の履歴が信用できなくなる。
+裁定結果の一次記録は planning 側の
+[ADR-0022](../../planning/projects/ai-stock-trading/07_adr/ADR-0022_fx-rate-source-and-freshness.md)・
+[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) であり、
+実装側の記録は本仕様書と [IADR-0135](../adr/IADR-0135_fx-freshness-plan-transcription-and-section3-scope.md) が担う。
+
 ## 検証結果
 
 - `dotnet build backend/backend.slnx`: **0 Warning / 0 Error**
@@ -270,4 +283,3 @@ $ dotnet test backend/backend.slnx --filter "FullyQualifiedName~PlanConformance"
 - [IADR-0134](../adr/IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) 決定3（本作業が実行する運用規律）
 - [IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合レジストリ）
 - [作業仕様書 20260804（#374）](./20260804_374_short-sell-rejection-reasons-nine.md)（同じ規律の前回の作業）
-- [環流記録: ADR-0022 の裁定](../../feedback/20260804_adr0022-fx-rate-source-and-freshness.md)
