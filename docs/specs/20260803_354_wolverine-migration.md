@@ -673,3 +673,46 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   （`OrderApproved` は本サービスが発行し本サービスが購読する。決定 3 が無ければ発注執行へ 1 通も届かない）。
 
 合格数: 62 / 209 / 109 / 87（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+### 12.3 第 2 段階の総検証（実測値）
+
+| 検証 | 結果 |
+| --- | --- |
+| `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| `dotnet test --filter "Category!=Integration"` | **2264 passed / 0 failed / 51 アセンブリ**。移行前（第 2 段階着手時）の per-assembly 内訳と**完全一致**（差分ゼロ・`diff` で確認）。トポロジテストの増分は無し（第 1 段階の +4 が最後） |
+| `dotnet format --verify-no-changes` | 差分なし |
+| `node scripts/check-consumer-endpoint-names.js` | OK。**Wolverine 移行済み 10 件 / MassTransit 未移行 0 件・consumer 0 件**（旧規則の対象が 0 になった） |
+| 同 `--self-test` | 23 件 OK |
+| `node scripts/check-banned-libraries.js` | OK（不採用 4 件の混入なし。MassTransit は #354 のため未検査のまま＝第 3 段階で BANNED 昇格） |
+| `node scripts/scripts.test.js` | 147 件 OK |
+| アーキテクチャテスト | `AiStockTrading.Architecture.Tests` 4 件 / `AiStockTrading.PlanConformance.Tests` 6 件 いずれも緑 |
+
+**サービス別の移行結果**（consumer 数は移行前の `IConsumer<T>` 実装数）:
+
+| サービス | consumer → ハンドラ | 発行箇所 | 書き換えたテスト |
+| --- | --- | --- | --- |
+| InformationCollection | 0 | 1 | 4 |
+| Report | 0 | 2 | 2 |
+| MarketMonitor | 1 | 2 | 6 |
+| TradeDecision | 2 | 4 | 17 |
+| OrderExecution | 1 | 5 | 16 |
+| Notification | 10 | 0 | 7 |
+| Audit | 21 | 0 | 10 |
+| RiskManagement | 10 | 8 | 31 |
+| **合計** | **45** | **22** | **93** |
+
+### 12.4 MassTransit の残存（意図的・第 3 段階の対象）
+
+サービス（`backend/Services/*`）からの MassTransit 参照は **0 件**である（`using MassTransit` / `PackageReference` の実測）。
+残っているのは次の 4 箇所で、いずれも第 3 段階の作業として意図的に残した。
+
+| 箇所 | 内容 | 残す理由 |
+| --- | --- | --- |
+| `Directory.Packages.props` | `MassTransit` / `MassTransit.RabbitMQ` の CPM 宣言 | 下記の残存参照が消えるまで必要 |
+| `AiStockTrading.TestSupport.PlatformShim` | `MassTransitExtensions`（`UseAiStockTradingRetry`）＋ その `FoundationRegistrationTests` | §5 のとおり削除は第 3 段階。今は誰も呼んでいない |
+| `AiStockTrading.Shared.Contracts.Tests/EventMessageUrnTests` | イベントの MassTransit 正準 URN（`urn:message:<ns>:<Type>`）を固定する回帰ガード（21 件） | **要注意**。本テスト自身が「ADR-0013 の Wolverine 移行時に Wolverine の識別子規約へ更新するか置き換えが必要」と明記している。移行完了後の現在、**もはや誰も使わない wire 契約を守っている**（＝ガードが静かに意味を失っている）。第 3 段階で Wolverine の識別子（`ToMessageTypeName()`＝完全名）を固定する形へ置き換えること。本段階では合格数を変えないため触っていない |
+| `AiStockTrading.IntegrationTests` | 実 RabbitMQ の E2E（`Category=Integration`・Testcontainers） | §5 のとおり第 3 段階。**ローカルに Docker が無く実行できない**（§7.3） |
+
+`check-banned-libraries.js` の PENDING → BANNED 昇格は、上記が片づく第 3 段階で行う
+（§5 は「第 2 段階（全サービス移行完了）で行う」としていたが、**CPM 宣言と上記 3 箇所が残る限り昇格すると CI が赤になる**。
+実施は第 3 段階が正しい。本節が §5 の該当記述を補正する）。
