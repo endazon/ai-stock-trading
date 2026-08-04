@@ -1,7 +1,7 @@
 ---
-title: MassTransit → Wolverine 移行（#354）— 第 1 段階（パイロット）作業仕様書
+title: MassTransit → Wolverine 移行（#354）作業仕様書（第 1〜3 段階）
 type: spec
-status: draft
+status: review
 related_ids:
   - NFR
   - FR-03
@@ -18,7 +18,7 @@ related_ids:
   - IADR-0129
 author: claude
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md"
   - "../../planning/projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md"
@@ -26,10 +26,11 @@ plan_refs:
   - "../../planning/projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md"
 ---
 
-# 仕様書: MassTransit を Wolverine へ移行しローカルディスパッチを統一する（#354・第 1 段階）
+# 仕様書: MassTransit を Wolverine へ移行しローカルディスパッチを統一する（#354）
 
-> 本仕様書は実装着手前に作成した。#345 分割 4/4（#354）のうち **第 1 段階のみ**を対象とする。
-> 第 2・第 3 段階の範囲も本書に定義するが、実施は別セッション（別 PR）とする。
+> 本仕様書は実装着手前に作成した。当初は #345 分割 4/4（#354）のうち **第 1 段階のみ**を対象としていた。
+> **第 2 段階の記録は §12、第 3 段階（最終）の記録は §13 に追記した**（§1〜§11 は第 1 段階当時のまま据え置く）。
+> 各段階の実施は別セッション・別コミット列である。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -716,3 +717,261 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
 `check-banned-libraries.js` の PENDING → BANNED 昇格は、上記が片づく第 3 段階で行う
 （§5 は「第 2 段階（全サービス移行完了）で行う」としていたが、**CPM 宣言と上記 3 箇所が残る限り昇格すると CI が赤になる**。
 実施は第 3 段階が正しい。本節が §5 の該当記述を補正する）。
+
+---
+
+## 13. 第 3 段階（最終）— MassTransit の完全除去と検査器・文書の最終化
+
+> 以下は第 3 段階（別 PR・別セッション）の実施記録である。§1〜§12 は当時のまま残す。
+> 第 2 段階の申し送り（§12.4 の 4 箇所）をすべて片づけ、**本ユニットから MassTransit を完全に除去した**。
+
+### 13.1 実施項目と結果
+
+| # | 申し送り（§12.4） | 実施内容 |
+| --- | --- | --- |
+| 1 | `EventMessageUrnTests` の置き換え | `EventMessageTypeNameTests` へ置換（下記 §13.2） |
+| 2 | `MassTransitExtensions` の削除 | 削除。`FoundationRegistrationTests` の該当テストは Wolverine の共通再試行へ置き換え（§13.3） |
+| 3 | Integration テストの追随 | 2 クラスを Wolverine 化し、**fan-out の実配線検証**を追加（§13.4） |
+| 4 | MassTransit の完全除去と BANNED 昇格 | CPM から削除し `check-banned-libraries.js` の PENDING → BANNED（§13.5） |
+| 5 | 検査器の旧規則撤去 | `check-consumer-endpoint-names.js` から O1 と新旧併存を撤去（§13.6） |
+| 6 | [[IADR-0106]] の Superseded 化 | 状態欄・関連欄・索引を更新（本文は不変）（§13.7） |
+| 7 | 旧キュー 47 本の削除手順 | 運用 Runbook を新設（§13.8） |
+
+### 13.2 `EventMessageUrnTests` → `EventMessageTypeNameTests`（wire 識別子の固定）
+
+**なぜ置き換えたのか**: 旧テストは MassTransit の正準 URN（`urn:message:<ns>:<Type>`）を 21 件固定していたが、
+移行完了により**その URN は wire 上のどこにも現れない**。すなわち「通っているのに何も守っていないガード」に
+なっていた（旧テスト自身が「Wolverine 移行時は識別子規約へ更新するか置き換えが必要」と明記していた）。
+
+**表明の意図は維持した**: 守る不変条件は「**メッセージ識別子が意図せず変わらないこと**」であり不変である。
+識別子が変わると、発行側と購読側が別の exchange／キューで待ち合わせ、滞留中・DLQ 内のメッセージが
+再消費不能になる。固定する文字列だけが URN から Wolverine の識別子へ入れ替わった。
+
+| 項目 | 旧（`EventMessageUrnTests`） | 新（`EventMessageTypeNameTests`） |
+| --- | --- | --- |
+| 固定する値の出所 | `MassTransit.MessageUrn.ForType(t).ToString()` | `t.ToMessageTypeName()`（`Wolverine.Util`） |
+| 値の形 | `urn:message:AiStockTrading.Shared.Contracts.Events:<Type>` | `AiStockTrading.Shared.Contracts.Events.<Type>`（完全名） |
+| その値の wire 上の役割 | MassTransit の exchange 名・`messageType` ヘッダ | Wolverine の **exchange 名・binding key・`message-type` ヘッダ**（[[IADR-0129]] 決定 2） |
+| テスト 1（Theory 21 行） | `全イベントの正準URNは固定値である` | `全イベントのメッセージ識別子は固定値である` |
+| テスト 2 | `URN固定の対象はイベント型の母集合と完全に一致する` | `識別子固定の対象はイベント型の母集合と完全に一致する`（母集合は `EventTypeDiscovery` で単一化・不変） |
+| テスト 3 | `名前空間が変わればURNも変わる_本ガードが名前空間移動を検出できることの証明` | `名前空間が変われば識別子も変わる_本ガードが名前空間移動を検出できることの証明`（`MovedNamespaceProbe` をそのまま引き継ぐ） |
+| 件数 | 21 + 2 = **23** | 21 + 2 = **23**（増減なし） |
+
+**固定した 21 件（新旧の対応）**: 21 イベントすべてで `urn:message:AiStockTrading.Shared.Contracts.Events:<Type>`
+→ `AiStockTrading.Shared.Contracts.Events.<Type>`（**区切りが `:` から `.` へ変わるだけ**で、対象の型は 1 つも
+増減していない）。対象型は `AssumptionsChanged` / `BacktestEvaluated` / `BrokerPositionsObserved` /
+`CostThresholdReached` / `DailyPolicyUnconfirmed` / `InformationCollected` / `LlmCostIncurred` / `OrderApproved` /
+`OrderCancelled` / `OrderExecuted` / `OrderModified` / `OrderRejected` / `PositionCloseRequested` /
+`PositionReconciliationDrift` / `PriceMovementDetected` / `ReportConfirmed` / `ReportDraftPresented` /
+`StageTransitioned` / `StopLossTriggered` / `TradeDecisionMade` / `WithdrawalTriggered` の 21 型。
+
+**テスト名を変えた理由**（§7.1 基準 2 の例外として明記する）: 基準 2（テスト名を変えない）は
+「**同じ対象**をハーネスだけ替えて検証する書き換え」に対する規律である。本件は検証対象そのもの
+（MassTransit の URN）が消滅したための**置き換え**であり、名前に `URN` を残すと存在しない契約を守っている
+ように読める。テスト名は仕様の言明であるため、言明が指す対象が変わった以上、名前も追随させた。
+**件数・母集合・検出できる退行（名前空間の移動・型名の変更）はすべて同じである。**
+
+**[[IADR-0106]] 由来の「同名クラス衝突の露顕」の行き先**: 本テストが持っていたのは
+`MovedNamespaceProbe.TradeDecisionMade`（**本物と同じ単純型名・別名前空間**）を用いた
+「名前空間移動を検出できることの構造的証明」であり、これは新テストへそのまま引き継いだ。
+一方 [[IADR-0106]] が守っていた **キュー名の一意性**（consumer クラス名の衝突）は本テストの担当ではなく、
+第 2 段階で書き換えた各サービスの `ConsumerEndpointNameTests`（MarketMonitor / RiskManagement）と
+`scripts/check-consumer-endpoint-names.js`（N1）が担う。行き先は第 2 段階で確定済みである。
+
+`AiStockTrading.Shared.Contracts.Tests` のテスト専用 `PackageReference` は `MassTransit` → `WolverineFx`
+（契約アセンブリ本体は引き続きメッセージング基盤に依存しない）。通信仕様書
+（`docs/api/events-and-ports.md`）の該当節も現行の識別子へ更新し、置き換えの経緯を残した。
+
+### 13.3 `MassTransitExtensions` の撤去（呼び出し元 0 件）
+
+- `AiStockTrading.TestSupport.PlatformShim/Foundation/Extensions/MassTransitExtensions.cs`（`UseAiStockTradingRetry`）を削除。
+  PlatformShim の `MassTransit` `PackageReference` も除去。
+- `FoundationRegistrationTests` の `MassTransit共通再試行を適用したバスは解決できる` を
+  **`共通再試行を適用したメッセージ基盤は解決できる`** へ置き換えた（1 テスト → 1 テスト・件数不変）。
+  表明は保存のうえ**強化**した: 旧は `IBusControl` が解決できることだけを見ていたが、新は Wolverine が
+  組み立てた規則の記述そのもの（`attempt 1: … 00:00:02 / attempt 2: … 00:00:10 / attempt 3: … 00:00:30 /
+  attempt 4: Move to error queue`）を実測で固定する。**再試行間隔と退避先が黙って変われば赤になる**
+  （[[IADR-0129]] 決定 5 の運用手順の連続性が壊れるのを検出できる）。
+- 実装コメント・運用仕様書に残っていた呼称 `UseAiStockTradingRetry` を現行の
+  `UseAiStockTradingRabbitMq` の共通再試行へ改めた（値 2s/10s/30s は不変）。
+
+### 13.4 Integration テスト（`Category=Integration`）の Wolverine 追随と fan-out の実配線検証
+
+| ファイル | 変更 |
+| --- | --- |
+| `OrderExecutionPipelineE2ETests` | `IBus.Publish`（singleton）→ scope から解決した `IMessageBus.PublishAsync`（Wolverine の `IMessageBus` は **scoped**）。購読準備の待ち合わせを ready ヘルスチェック（実体は DB 疎通のみ）から**キューに consumer が付くまで待つ**形へ強化。購読キュー名（`ai-stock-trading.order-execution-service.OrderApproved`）と DLQ（`_error`）が**実ブローカに宣言されている**ことを検証する表明を追加 |
+| `TradeExecutionPipelineE2ETests` | 同上の発行方法の写像。既存テスト（TradeDecisionMade → 承認 → ペーパー執行 → 永続）の表明は不変 |
+| 同（新規） | **`同一イベントは購読する全サービスへ届く_fan_outがcompeting_consumerへ退行していない`** |
+| `RabbitMqTopologyProbe`（新規・テスト補助） | 実 RabbitMQ へ**受動宣言**（passive declare）で問い合わせ、キューの存在・`consumers`・`messages` を読む |
+| `ServiceTokenSyncQueryE2ETests` | コメントの `MassTransit 購読` → `Wolverine 購読`（表明は不変） |
+
+**fan-out 退行検査の仕組み**（#354 の受け入れ基準）: 退行は 2 つの形を取り、どちらもビルド・ユニットテストが
+緑のまま起こる。
+
+- 退行 A（competing consumer）: 複数サービスが 1 本のキューを共有し round-robin で取り合う（#258 の形）。
+- 退行 B（ローカル閉じ込め）: 発行元プロセスにハンドラがあると発行がプロセス内に閉じる（[[IADR-0129]] 決定 3 が無い場合）。
+
+検査は 2 段構えである。**片方だけでは足りない**（①だけでは「宣言はされたが配送されない」を、
+②だけでは「たまたま両方動いた」を排除できない）。
+
+1. **トポロジ**: `OrderApproved` の購読キューが `ai-stock-trading.order-execution-service.OrderApproved` と
+   `ai-stock-trading.risk-management-service.OrderApproved` の**別々 2 本**として実在し、**各々に consumer が
+   付いている**ことを受動宣言で確かめる（1 本を取り合っていれば、この 2 本のうち一方は存在しない）。
+   併せて各 `_error` の存在も確かめる。**受動宣言**を使うのが要点である（能動宣言だと「無いキューを
+   自分で作って緑にする」ため検査にならない）。
+2. **実配送**: `OrderApproved` を **1 通だけ**発行し、**発注執行の執行結果（`executed_orders`）と
+   リスク管理の取引台帳（`ApprovedOrders`）の両方**が動くことを確かめる。退行 A なら round-robin で
+   どちらか一方しか動かず、退行 B なら発注執行がまったく動かない。
+   発行元は**リスク管理**（`OrderApproved` を発行しつつ購読する＝退行 B の直撃対象）である。
+
+**ローカルでは実行できない（Docker 無し・§7.3）。** ローカル検証は「コンパイルが通ること」と
+`--filter "Category=Integration" --list-tests` での選択（**8 件**。移行前 7 件＋本 PR の fan-out 1 件）までである。
+**実走は `integration.yml`（nightly / workflow_dispatch）へ委ねる。**
+`integration.yml` 自体の変更は不要であることを確認した（Testcontainers が Docker で実 RabbitMQ を起動する構成であり、
+ワークフローにブローカのサービス定義は無い。実行コマンド `--filter "Category=Integration"` も不変）。
+
+> 受動宣言のために `RabbitMQ.Client`（7.1.2）を Integration テストだけが直接参照する。版は
+> `WolverineFx.RabbitMQ` が推移的に持ち込むものと同一で、CPM に宣言して固定した。
+
+### 13.5 MassTransit の完全除去と BANNED 昇格
+
+- `Directory.Packages.props` から `MassTransit` / `MassTransit.RabbitMQ` の `PackageVersion` を削除。
+- `scripts/check-banned-libraries.js`: `PENDING`（#354 担当）→ **`BANNED`**（理由: ADR-0013 / platform ADR-0027・
+  ADR-0030・#354 完了）。**PENDING は 0 件**になった。
+- 検出パターンを**サブパッケージ（ドット区切り）まで**広げた（`Include="MassTransit.RabbitMQ"` を捕らえる）。
+  本体だけ止めてもサブパッケージ経由で同じ依存が戻るため。前方一致（`FluentAssertionsExtras` 等）は従来どおり誤検出しない。
+- scripts テストの更新: PENDING の**各要素**を検査する 2 件は、PENDING が空になると無条件に通る（空振り）。
+  そこで「**PENDING は現在 0 件で、MassTransit は BANNED にある**」ことを明示的に表明するテストを追加した
+  （[[IADR-0127]] と同じ「静かに失効する経路を塞ぐ」思想）。サブパッケージ検出のテストも追加。
+
+### 13.6 検査器の最終化（`scripts/check-consumer-endpoint-names.js`）
+
+| | 撤去したもの | 残した／追加したもの |
+| --- | --- | --- |
+| 規則 | **O1**（MassTransit の `DefaultEndpointNameFormatter` に基づくクラス名の一意性）と、その補助関数（`endpointNameOf` / `consumerClassesIn` / `findCollisions` / `collectEntries`） | **N1**（`ServiceName` の一意性）・**N2**（トポロジの直接指定の禁止） |
+| 移行期間の仕掛け | 新旧の自動判定（`messagingModeOf`）と併存モード、**N3（新旧混在の禁止）** | **N3 を差し替え**: 「`UseWolverine(` を呼ぶなら必ず `UseAiStockTradingRabbitMq(` を通す」 |
+| メタ検査 | — | **M1**（走査サービス数の下限 11）を維持し、**M2**（Wolverine 配線サービス数の下限 10）を追加 |
+
+- N3 を差し替えた理由: 新旧混在は MassTransit の BANNED 化により**構造的に不能**になった。一方
+  「ヘルパを呼ばずに素で Wolverine を配線する」穴は依然として開いており、そちらが新世界での退行経路である。
+- M2 を足した理由: N1〜N3 はいずれも「Wolverine を配線しているサービス」に対してのみ意味を持つ。
+  その母数が静かに 0 になると、検査は緑のまま何も守らなくなる（M1 だけではこの経路を塞げない）。
+- 自己試験は **23 → 16 件**（旧規則の 8 件を削除し、N1 の追加ケースと N3 の 4 ケースを新設）。
+  `scripts.test.js` は **149 → 143 件**（旧規則のテストを削除し、N3 と BANNED 関連を追加した差引）。
+- 「正しく壊れる」ことを**実ツリーの変異**で確認した（3 種類とも検出して終了コード 1）:
+  ① `AuditService` の `ServiceName` を `notification-service` と同じにする → **N1** が検出
+  ② `AuditService` に素の `UseConventionalRouting(` を書く → **N2** が検出
+  ③ `AuditService` から `UseAiStockTradingRabbitMq(` を消す → **N3** が検出
+- `ci.yml` の `consumer-endpoint-names` ジョブの説明も現行の規則へ更新した（ジョブ名・ファイル名は追跡の
+  連続性のため据え置き＝[[IADR-0129]] 決定 8）。
+
+### 13.7 [[IADR-0106]] の Superseded 化
+
+- `IADR-0106` の**状態のみ** `Accepted` → **`Superseded`**（by [[IADR-0129]]）とし、末尾に失効の理由と
+  「本文は当時の記録として原文のまま据え置く」旨を追記した。**本文（#258 の原因分析・代替案の検討）は
+  一切改変していない**（歴史的記録であり、現在の設計を読む上での文脈として価値がある）。
+- `IADR-0129` の「関連」に **Supersedes: [[IADR-0106]]** を追記した（第 1・2 段階では未移行サービスに対して
+  現に有効だったため、状態を変えていなかった）。
+- `docs/adr/README.md` の索引で両者の状態欄を更新した。
+
+### 13.8 旧キュー 47 本の削除 Runbook
+
+`docs/operations/wolverine-queue-cleanup-runbook.md` を新設した（運用仕様書の下位 Runbook）。
+
+- 旧 47 本の一覧と**移行後のキューとの対応表**を、移行前ツリー（`origin/develop`）で旧検査器を走らせた
+  **実測**から起こした。旧 47 → 新 45 の差は、RiskManagement の `OrderApproved` / `OrderExecuted` が
+  「1 イベント型 = 1 キュー」へ統合されたことによる（[[IADR-0129]] 決定 10）。
+- 手順: ① 新 45 本に consumer が付いていることの確認（付いていなければ**削除を中止**）→ ② 旧キューの
+  残メッセージの判断（`_error` の中身は監査台帳と突き合わせる。**MassTransit のエンベロープは Wolverine で
+  再消費できない**ため「再投入」ではなく「読んで再発行」）→ ③ `--if-empty --if-unused` を必須にした削除
+  （`_error` / `_skipped` も併せて）→ ④ 旧 exchange（URN 形式・コロン区切り）の削除 → ⑤ 事後確認。
+- ロールバック: **消したキューは戻せないが、キューそのものは起動時に自動再生成される**（失うのは
+  滞留していたメッセージだけ）。誤って新キューを消した場合の復旧（Pod 再起動＋監査台帳との突き合わせ）も記載。
+- 運用仕様書（`operations.md`）に「メッセージング（RabbitMQ のキュー）」節を新設し、命名規則と本 Runbook への
+  導線を張った。`docs/README.md` の Runbook 一覧にも追加した。
+
+### 13.9 第 3 段階の総検証（実測値）
+
+| 検証 | 結果 |
+| --- | --- |
+| `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| `dotnet test --filter "Category!=Integration"` | **2264 passed / 0 failed / 51 アセンブリ**（第 2 段階と同数。内訳も一致） |
+| `dotnet test --filter "Category=Integration" --list-tests` | **8 件**（7 件＋ fan-out の新規 1 件）。**実走はローカル不可（Docker 無し）＝ `integration.yml` へ委任** |
+| `dotnet format --verify-no-changes` | 差分なし |
+| `grep -rn "^using MassTransit"` / `grep -rn 'Include="MassTransit'` | **いずれも 0 件**（散文コメント中の言及＝移行の経緯の記録は残る） |
+| `node scripts/check-banned-libraries.js` | OK（**BANNED 5 件 / PENDING 0 件**） |
+| `node scripts/check-consumer-endpoint-names.js` | OK（11 サービス走査 / Wolverine 配線 10 件） |
+| 同 `--self-test` | **16 件 OK** |
+| `node scripts/scripts.test.js` | **143 件 OK** |
+| `node scripts/check-test-traceability.js` | OK（テスト 317 ファイル・起点 ID 25 種） |
+| `node scripts/check-commit-messages.js origin/develop..HEAD` | OK（23 件すべて規約適合） |
+| アーキテクチャテスト | `AiStockTrading.Architecture.Tests` 4 件 / `AiStockTrading.PlanConformance.Tests` 6 件 いずれも緑 |
+
+**テスト件数が第 2 段階と同数（2264）である内訳**: 置き換えはすべて 1 → 1 で行った。
+`EventMessageUrnTests`（23）→ `EventMessageTypeNameTests`（23）、
+`MassTransit共通再試行を適用したバスは解決できる`（1）→ `共通再試行を適用したメッセージ基盤は解決できる`（1）。
+Integration の新規 1 件（fan-out）は `Category=Integration` のため既定の実行対象に入らない
+（`--filter "Category!=Integration"` の合格数には現れない）。
+
+### 13.10 受け入れ基準（#354 全体・第 3 段階時点）
+
+- [x] 全サービス（10 サービス）が Wolverine で動作する（第 2 段階完了・§12.3）
+- [x] キュー名の導出規則の新旧対応表がある（§2.2）
+- [x] fan-out 経路を機械的に列挙し、移行後の構成で維持されることを設計として示した（§3）
+- [x] **pub/sub の fan-out が competing consumer に退行していないこと**を静的検査で守っている
+      （`check-consumer-endpoint-names.js` の N1〜N3。実ツリーの変異で「正しく壊れる」ことを確認済み・§13.6）
+- [x] 同上を**実 broker で検証する**テストがある（§13.4）
+      — **ただし実走は CI へ委任**（ローカルに Docker が無く、本 PR では `--list-tests` の選択までを確認した。
+      `integration.yml` の nightly / workflow_dispatch で実走する）
+- [x] MassTransit への参照が 0 件（`using` / `PackageReference` / CPM 宣言。§13.9）
+- [x] `check-banned-libraries.js` で MassTransit が **BANNED**（PENDING 0 件）
+- [x] 検査器から旧規則を撤去し、Wolverine 単独の規則になっている（§13.6）
+- [x] [[IADR-0106]] が **Superseded**（by [[IADR-0129]]）で、索引・関連が整合している（§13.7）
+- [x] 旧キューの削除手順が運用 Runbook にある（§13.8）
+- [x] `dotnet build` 0 警告 0 エラー / `dotnet test`（既定フィルタ）合格数が移行前と同数
+- [x] `dotnet format --verify-no-changes` が通る
+- [x] 文書（運用仕様書・通信仕様書・CI 説明）の MassTransit 表記が、**現行の説明としては**残っていない
+      （移行の経緯・#258 の原因分析としての言及は意図的に残す＝歴史の記録）
+
+### 13.11 混在デプロイ禁止（[[IADR-0129]] 決定 7）の解除条件
+
+第 1 段階から「**MassTransit と Wolverine の混在状態をブローカ上で動かしてはならない**」という制約を置いてきた
+（exchange 名の区切りが `:` と `.` で異なり、エンベロープ形式も違うため、混在すると連携が無言で切れる）。
+第 3 段階の完了により、**この制約は解除される**。根拠と条件を明示する。
+
+- **解除の根拠**: 混在は「一部のサービスだけが移行済み」の状態を指す。本リポジトリのコードベースには
+  MassTransit を配線し得るコードもパッケージ参照も**存在しない**（§13.9 の実測）。したがって本リポジトリから
+  作られる成果物の間で混在は**構造的に起こり得ない**。再混入は `check-banned-libraries.js`（BANNED）と
+  `check-consumer-endpoint-names.js`（N3）が CI で止める。
+- **解除後に残る唯一の注意**: **稼働中のブローカに旧版の Pod が残っていないこと**。デプロイは手動
+  （`scripts/k8s-local-deploy.sh`）であり、一部のサービスだけ古い版のまま置き去りにすることは運用上は可能である。
+  よって**デプロイは全サービスをまとめて行う**（部分デプロイをしない）。確認は §13.8 Runbook の手順①
+  （旧キューに `consumers = 0`／新キューに `consumers >= 1`）でそのまま行える。
+- **旧キューの削除は「解除」の前提ではない**（消さなくても連携は成立する）。削除は運用衛生の作業であり、
+  Wolverine 版の安定稼働を確認してから §13.8 の Runbook に従う。
+- **本ユニット外との相互運用**（platform 側や別プロダクトが同一ブローカへ MassTransit で同居する場合）は
+  本 issue の範囲外である。その必要が生じたときは、[[IADR-0129]] 決定 7 のとおり
+  `UseMassTransitInterop()` ＋ exchange 名の合わせ込みを**新しい IADR を起こして**判断する。
+
+### 13.12 未決事項（第 3 段階終了時点）
+
+1. **`EfOrderActivityStore.RecordModification` の非冪等**（`AmendmentCount++` が再配信で二重計上する）。
+   本移行が作ったものではなく、悪化もしていない（[[IADR-0129]] 決定 10 に記録済み）。**別 issue で扱う**。
+2. **Wolverine の追跡テストの所要時間依存**。第 2 段階で導入した `TrackActivity()` ベースのテストは
+   既定の待ち時間に依存する。本セッションの総検証では、**ソリューション全体の並列実行時に
+   `CostControlService.Infrastructure.Tests` が 1 件だけ落ちる事象を 6 回中 2 回観測した**
+   （単体実行 5 回・全体実行 3 回では再現せず、最終の 3 連続実行はいずれも 2264 全緑）。
+   本段階の変更（同アセンブリに触れていない）に由来しないが、**負荷時に不安定な可能性**として記録する。
+   再現したら `TrackActivity().Timeout(...)` の明示を検討する。
+3. `<Svc>WorkerWebApplicationFactory` / `extern alias …Worker` の改名は据え置き（#353 §12 未決事項 8 を踏襲）。
+4. 計画への環流（`/plan-feedback`）は未実施: (a) Wolverine 6 のランタイムコンパイラ分離、
+   (b) Wolverine の既定が fan-out を壊すこと。いずれも platform ADR-0027 の前提に対する重要な但し書きであり、
+   基盤側の移行にも同じ罠がある（§9・[[IADR-0129]] フォローアップ 3）。
+
+## 変更履歴
+
+| 日付 | 段階 | 内容 |
+| --- | --- | --- |
+| 2026-08-03 | 第 1 段階 | 本仕様書と [[IADR-0129]] を作成。Wolverine パッケージ選定・共通ヘルパ新設・パイロット 2 サービス（Configuration / CostControl）移行・検査器の新旧併存対応（§1〜§11） |
+| 2026-08-03 | 第 2 段階 | 残り 8 サービス（実測。当初「9 サービス＋ BFF」は数え違い）の移行。書き換えたテスト 93 件・合格数は移行前と完全一致。MassTransit の意図的な残存 4 箇所を記録（§12） |
+| 2026-08-04 | 第 3 段階 | wire 識別子テストの置き換え・`MassTransitExtensions` 撤去・Integration テストの追随と fan-out の実配線検証・MassTransit の完全除去と BANNED 昇格・検査器の旧規則撤去・[[IADR-0106]] の Superseded 化・旧キュー削除 Runbook・混在デプロイ禁止の解除条件（§13） |
