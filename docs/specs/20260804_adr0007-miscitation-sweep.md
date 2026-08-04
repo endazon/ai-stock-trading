@@ -87,21 +87,51 @@ related_specs:
 | 段階 | 範囲 | 件数 | 本書での扱い |
 | --- | --- | --- | --- |
 | 第 1 段階 | `backend/` `frontend/` のコード内コメント・テストコメント | 116 → 31 | 完了（[PR #376](https://github.com/endazon/ai-stock-trading/pull/376)・マージ済み） |
-| **第 2 段階の前半（本 PR）** | `docs/` のうち曖昧さのない 5 群 | 172 → 107 | 完了 |
-| 第 2 段階の後半（後続 PR） | `docs/` の残り | 107 | 未着手 |
+| 第 2 段階の前半 | `docs/` のうち曖昧さのない 5 群 | 172 → 106 | 完了（[PR #377](https://github.com/endazon/ai-stock-trading/pull/377)） |
+| **第 2 段階の後半（本 PR）** | `docs/` `feedback/` `infra/` の残り全件 | 122 → 113（全件が正当） | 完了 |
+
+> **計数の再訂正（第 2 段階の後半で実測し直した）**: 前半 PR は残数を「107」と書いたが、
+> `93f4b64` 時点の実測は **`docs/` 106 行**（`IADR-0007` 行と本作業自身の仕様書 2 本を除く）である。
+> これに **`feedback/` 7 行**・**`infra/` 2 行**・下記の**圧縮表記 7 行**を加えた **122 行**が
+> 後半の実際の対象だった。前半 PR の内訳表（維持 45 ＋ 併記 21 ＋ 個別判定 35 ＋ 対象外 4 ＝ 105）も、
+> この 122 と突き合わせて下表へ置き換える。**目安ではなく実測値のみを載せる。**
+>
+> 残存 113 行が「減っていない」ように見えるのは、**圧縮表記 3 行を展開した結果
+> `ADR-0007` の grep に新たに掛かるようになった**ためである（是正で 9 行から ADR-0007 が消え、
+> 展開で 3 行が可視化された。122 − 9 = 113）。
 
 第 2 段階を前後半に分けたのは、後半に残るのが**1 行ずつ文脈判定を要する群**だからである。前半の 5 群
 （FR-17 / FR-13 / FR-06・07 / FR-20 / pause・kill switch）は**文書の主題で一意に決まる**ため機械的に
 処理でき、レビューも群単位で追試できる。両者を混ぜると、判定の難易度が違うものが同じ差分に並ぶ。
 
-**第 2 段階の後半に残る 107 箇所の内訳**:
+**第 2 段階の後半＝対象 122 行の内訳（`93f4b64` 時点の実測）**:
 
-| 区分 | 対象 | 目安 |
+| 範囲 | 実測 |
+| --- | --- |
+| `docs/` の裸の `ADR-0007`（`IADR-0007` 行と本作業自身の仕様書 2 本を除く） | 106 |
+| `feedback/` の裸の `ADR-0007` | 7 |
+| **`infra/`**（前半までの探索範囲に入っていなかった。後述） | 2 |
+| **圧縮表記 `ADR-000X/0007`**（`ADR-0007` の grep に掛からない。後述） | 7 |
+| **合計** | **122** |
+
+**処理結果**:
+
+| 区分 | 対象 | 実測 |
 | --- | --- | --- |
-| **維持**（ガード文脈 FR-19） | IADR-0004 / 0006 / 0038 / 0040 / 0132、`functional/FR-19_trading-guard.md`、`tests/FR-19_*`、332_trading-guards、risk-eval-core-fixes、order-decomposition、manipulation-detector、risk-guard-core | 約 45 |
-| **併記**（設定ストア混在） | IADR-0010 / 0012、`data/risk-management-aggregates.md`、risk-management-application、risk-management-worker | 約 21 |
-| 個別判定が要る | IADR-0066 / 0067 / 0084 / 0086、market-valuation-wiring、154_order-lifecycle-telemetry、106/188_frontend-*、`screens/SC-02`、`api/events-and-ports` ほか | 約 35 |
-| **対象外**（point-in-time 記録） | `20260801_impl-handoff-kit-sync.md`、`20260804_plan-feedback-sent-issue-links.md` | 4 |
+| **維持**（ガード・信用文脈 FR-19。全行を ADR-0007 実物と 1 行ずつ突き合わせ済み） | IADR-0004 / 0006 / 0038 / 0040 / 0132、`functional/FR-19_trading-guard.md`、`tests/FR-19_*`、332_trading-guards、risk-eval-core-fixes、risk-guard-core、order-decomposition、manipulation-detector、portfolio-projection、IADR-0035 / 0018、154_order-lifecycle-telemetry / IADR-0067、188_frontend-guard-edit-ui / IADR-0086、IADR-0042（先行是正の記録）、foundation-min-port / IADR-0051（併記済み）、`feedback/20260804_fr19-guard-scope.md` | **85** |
+| **是正**（内訳は下表） | — | **32** |
+| **対象外**（point-in-time 記録） | `20260801_impl-handoff-kit-sync.md`（2）・`20260804_plan-feedback-sent-issue-links.md`（2）・`20260802_344_reimplementation-preparation.md`（1・改定された ADR 番号の列挙であり引用ではない） | **5** |
+
+| 是正の種別 | 対象 | 実測 |
+| --- | --- | --- |
+| **併記**（設定ストア混在・1 画面に複数系統） | IADR-0010 / 0012、`data/risk-management-aggregates.md`、risk-management-application、risk-management-worker、SC-02、106_frontend-risk-settings、IADR-0084、`infra/README.md`、`infra/keycloak/realm-export.json` | 23 |
+| **張り替え → ADR-0003** | market-valuation-wiring / IADR-0066（時価評価はガードでなく FR-10 の判定入力）、`data/reports.md` / IADR-0024 / IADR-0071 / 20260710_report-confirmation（報告書の確定）、`ReportEndpoints.cs`（第 1 段階の取りこぼし） | 8 |
+| **参照削除**（FR へ寄せる） | 209_watchlist-authoritative-wiring → FR-13・IADR-0088 | 1 |
+
+> **「維持」が 85 行と多いことこそが本作業の結論である。** #299 の前提（ADR-0007 は統制の権限を
+> 決めていない）は不正確であり、ガード設定・その変更権限・信用取引に関する引用はいずれも
+> ADR-0007 §決定そのものだった。後半で実際に是正を要したのは **32 行**である。
+> 残存 113 行（維持 85 ＋ 併記で ADR-0007 を残した 23 ＋ 対象外 5）はすべて正当な引用である。
 
 コード側を先にした理由は、**コメントは実装者が編集中に読む一次情報**であり、誤帰属が新しい実装へ
 伝播する経路がもっとも短いためである。文書側は参照時に読むもので、伝播は間接的である。
@@ -129,6 +159,39 @@ related_specs:
     （[20260804_planning-plan-refs-repair.md](./20260804_planning-plan-refs-repair.md) に記録済み。検査器の設計判断を伴う）。
 
 ## 設計
+
+### 探索そのものが 2 つの穴を持っていた（再発防止の知見）
+
+第 2 段階の後半で判明した。**どちらも「件数を数えた手段が対象を取りこぼしていた」**という同型の失敗である。
+
+1. **圧縮表記は `ADR-0007` の grep に掛からない。** `ADR-0003/0007`・`ADR-0001/0003/0007` のように
+   ハイフン以降だけを `/` で連ねる表記が 7 箇所あり、**第 1 段階（コード側・マージ済み）の
+   `ReportEndpoints.cs` すら取りこぼしていた**（PR #377 の AI レビューが検出）。
+   探索は次の 2 本を併用しなければならない。
+
+   ```sh
+   grep -rn  "ADR-0007" <path>                                  # 裸の参照
+   grep -rnE "ADR-[0-9]{4}(\s*/\s*[0-9]{4})+" <path> | grep -E "/\s*0007"   # 圧縮表記
+   ```
+
+   本作業では、見つけた圧縮表記を**すべて展開**した（`ADR-0003 / ADR-0007` の形）。以後この表記を
+   新たに作らないこと。**同じ穴は `IADR-0006/0040` 等の実装 ADR 側にも残っている**が、
+   別名前空間であり本 issue の対象外である。
+
+2. **探索範囲に `infra/` が入っていなかった。** 第 1・2 段階とも `docs/` `backend/` `frontend/` しか
+   数えておらず、`infra/README.md` と `infra/keycloak/realm-export.json` の 2 箇所が未検査のまま
+   残っていた。いずれも `trading-owner`（OwnerOnly）の根拠を ADR-0007 単独に帰属させる誤りだった。
+   **範囲は「リポジトリ全体から生成物と `planning/` を除く」で取るのが正しい**（`CHANGELOG.md` は
+   コミット履歴からの生成物であり、過去の件名を記録しているため対象外）。
+
+### 併記は「対象明示形」で書く
+
+`ADR-0003 / ADR-0007 / ADR-0008` と羅列するだけでは、**どの ADR が何を決めたかが復元できず**、
+読んだ人が同じ誤帰属を再生産する。本作業では次の形に統一した。
+
+```
+（ガード設定: ADR-0007 / 統制上限・kill switch: ADR-0003 / 段階設定: ADR-0008）
+```
 
 ### 判定は「その行が何の権限・何の内容を述べているか」で行う
 
@@ -197,10 +260,25 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
       **先行是正の記録は残した**（「IADR-0024 は ADR-0007 と誤引用していた」の記述）。末尾の
       「別タスクへ切り分け」だけを訂正済みへ更新した。
 
-### 第 2 段階の後半（後続 PR）の受け入れ基準
+### 第 2 段階の後半（本 PR）の受け入れ基準
 
-- [ ] `docs/` の `ADR-0007` 残存参照が、すべてガード設定の文脈か正しい併記である。
-- [ ] 維持すべき約 45 箇所（ガード文脈）から `ADR-0007` が失われていない。
+- [x] **残存参照 113 行を全件、行単位で ADR-0007 実物と突き合わせた**。すべてガード設定・信用取引の
+      文脈か、正しい併記か、point-in-time 記録である（維持 85・併記で残した 23・対象外 5）。
+- [x] 維持すべきガード文脈から `ADR-0007` が**失われていない**（過剰削除ゼロ）。`plan_refs` からの
+      ADR-0007 削除は後半では **0 件**（対象 5 ファイルはいずれもガード設定を扱う正当な参照）。
+- [x] 関連 ADR が無い FR-13 に**別の ADR を当てはめていない**（209_watchlist は FR-13・IADR-0088 へ寄せた）。
+- [x] **圧縮表記 `ADR-000X/0007` を全件（7）検出し処理した**。第 1 段階の取りこぼし
+      （`ReportEndpoints.cs`）を含む。残る 1 件は改定 ADR 番号の列挙であり引用ではない。
+- [x] **`infra/` を新たに探索範囲へ入れ**、`trading-owner` の OwnerOnly 根拠 2 箇所を併記へ是正した。
+- [x] `IADR-0007` を 1 箇所も変更していない。
+- [x] `node scripts/check-doc-links.js` が破損 0 件。
+- [x] `dotnet build backend/backend.slnx` が警告 0・エラー 0。**ローカルでは未実行**（本セッションの
+      実行環境に .NET SDK が無いため）で、**CI の実測結果を援用している**。
+      出典は `30bd5cd` に対する [run 30930409079](https://github.com/endazon/ai-stock-trading/actions/runs/30930409079)
+      の `build-and-test` ジョブ（success・3m27s）である。以降のコミットは `docs/specs/` のみを変更しており
+      （`git diff 30bd5cd..HEAD -- backend/` が 0 行）、援用が成立する。
+      本 PR の backend への変更は `ReportEndpoints.cs` の**コメント 1 行**のみである。
+- [x] point-in-time 記録を書き換えていない。
 
 ## テスト方針
 
@@ -220,4 +298,17 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 
 ## 未決事項
 
-なし。
+いずれも**本作業（引用の是正）の範囲外**であり、無編集のまま記録する。埋めると別種の変更が
+同じ差分に混ざる。
+
+1. **`feedback/20260804_fr19-guard-scope.md` の鮮度**（誤帰属ではなく状態の未反映）。
+   同書 106 行は「ADR-0007 に手仕舞いへの適用の記述が無い」として論点 2 の裁定を仰いでいるが、
+   計画側 ADR-0007 には **2026-08-04 追補**が入り「取引禁止銘柄リスト＝**全注文（手仕舞いにも適用）**」
+   と**選択肢 A で裁定済み**である。frontmatter は `status: open` のまま。同じ「裁定待ち」表記が
+   [20260804_332_trading-guards](./20260804_332_trading-guards.md) 未決事項 1・
+   [FR-19_trading-guard](../functional/FR-19_trading-guard.md) 未決事項・
+   [IADR-0132](../adr/IADR-0132_product-type-tri-state-and-guard-scope.md) にも残る。
+   **裁定の実装への反映状況の確認を含むため、別 issue で追随すべきである。**
+2. **圧縮表記 `ADR-000X/000Y` を禁じる機械検査**。本作業で検出手順は確立したが（上記「再発防止の
+   知見」）、CI ゲートの追加は検査器の設計判断を伴うため、`check-doc-links.js` の改修と同じく
+   [20260804_planning-plan-refs-repair.md](./20260804_planning-plan-refs-repair.md) 側の判断に委ねる。

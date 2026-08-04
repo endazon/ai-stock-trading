@@ -2,7 +2,7 @@
 title: リスク管理ドメインの集約（設定・スナップショット・注文）データ仕様書
 type: data-spec
 status: draft
-related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, ADR-0001, ADR-0007, ADR-0008]
+related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, ADR-0001, ADR-0003, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-04
@@ -24,7 +24,7 @@ plan_refs:
 ## 起点となる計画書（トレーサビリティ）
 
 - 関連機能要求（FR）: FR-10（リスク統制）、FR-12（ペーパートレード）、FR-17（前提条件の一元管理）、FR-19（取引ガード）、FR-20（段階ゲート）
-- 技術検討 / ADR: ADR-0001（platform 再利用・Database per Service）、ADR-0007（取引ガード）、ADR-0008（段階ゲート）、IADR-0001（リポ構成）
+- 技術検討 / ADR: ADR-0001（platform 再利用・Database per Service）、ADR-0003（リスク統制値を決定的コードで強制・AI は上書き不可）、ADR-0007（取引ガード）、ADR-0008（段階ゲート）、IADR-0001（リポ構成）
 - 計画書リンク: `05_trading-assumptions.md` §5、`01_architecture-overview.md`
 
 ## 概要
@@ -32,7 +32,7 @@ plan_refs:
 リスク管理ドメインは 3 系統のデータを扱う。
 
 1. **設定（`RiskManagementSettings` 集約）**: 取引ガード・リスク上限・段階ゲートの確定値。利用者のみ変更でき、生成AIは
-   上書きできない（ADR-0003/0007）。実運用では設定ストア（PostgreSQL）から読み込み、既定値は `TradingDefaults` が提供する。
+   上書きできない（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008）。実運用では設定ストア（PostgreSQL）から読み込み、既定値は `TradingDefaults` が提供する。
 2. **運用状態スナップショット（`PortfolioSnapshot` 値オブジェクト）**: 判定時点のポートフォリオ・当日損益・kill switch 等。
    永続エンティティではなく、リスク管理ホスト（#12）が保有・約定・損益から**都度組み立てる派生データ**。
 3. **注文（`OrderIntent` / `BrokerOrder`）**: 取引判断が生成する注文意図と、証券会社アダプタが返す注文実体。注文・監査ログの
@@ -167,14 +167,14 @@ erDiagram
 
 | 集約 | 永続化 | 実装 issue | 備考 |
 | --- | --- | --- | --- |
-| RiskManagementSettings（＋子） | PostgreSQL 設定ストア。バージョン管理（FR-17）で前提条件の履歴を保持 | #12, #17, #19 | 変更は利用者のみ・変更履歴を記録（ADR-0007） |
+| RiskManagementSettings（＋子） | PostgreSQL 設定ストア。バージョン管理（FR-17）で前提条件の履歴を保持 | #12, #17, #19 | 変更は利用者のみ・変更履歴を記録（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008） |
 | PortfolioSnapshot | 非永続（都度算出） | #12 | 保有・約定・損益から組み立てる派生データ |
 | 取引台帳（`approved_orders` / `trade_fills`） | PostgreSQL 追記専用（専有 DB） | #12（PR #63） | `OrderApproved`/`OrderExecuted` を記録し `PortfolioState` を射影（IADR-0018）。`DecisionId`/`OrderId` で冪等 |
 | BrokerOrder / OrderIntent | PostgreSQL 注文テーブル | #12, #13 | 注文状態遷移（受付→約定/拒否/取消）を追跡 |
 | 監査イベント（FR-11） | PostgreSQL 監査ログ（時系列） | #17 | 判定結果・拒否理由・全イベントを記録 |
 
 - Database per Service（ADR-0001）に従い、リスク管理サービス専有スキーマに配置する。他サービスは直接参照せずイベント経由で連携する。
-- 設定値は不変オブジェクトとして注入し、生成AI・自動処理は変更できない（ADR-0003/0007）。
+- 設定値は不変オブジェクトとして注入し、生成AI・自動処理は変更できない（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008）。
 
 ## 整合性・制約ルール
 

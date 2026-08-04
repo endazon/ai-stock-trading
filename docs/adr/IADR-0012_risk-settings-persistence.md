@@ -2,7 +2,7 @@
 title: IADR-0012 リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-17, ADR-0001, ADR-0007]
+related_ids: [FR-10, FR-17, ADR-0001, ADR-0003, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -21,7 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-10（リスク統制）、FR-17（設定の一元管理・バージョン）、ADR-0001（Database per Service）、ADR-0007（変更は利用者のみ・履歴記録）
+- 関連する計画書 ID: FR-10（リスク統制）、FR-17（設定の一元管理・バージョン）、ADR-0001（Database per Service）、ADR-0003（統制上限・kill switch は決定的コードで強制し AI は上書きできない）、ADR-0007（ガード設定の変更は利用者のみ・履歴記録）、ADR-0008（段階設定）
 - 対象 Issue: [#12](https://github.com/endazon/ai-stock-trading/issues/12)（Slice B）
 - 関連する実装仕様書: [20260710_risk-management-worker](../specs/20260710_risk-management-worker.md)
 - 関連 IADR: [IADR-0010](IADR-0010_risk-service-layering-and-slicing.md)（Slice A のレビュー指摘＝楽観排他を Slice B で導入）

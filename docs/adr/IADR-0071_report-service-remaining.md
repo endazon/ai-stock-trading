@@ -24,7 +24,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **FR-06/07/16**（報告書の自動生成・対話的確定・数値のコード集計）、FR-08（確定報告書の KB 保存）、
-  FR-09（確定通知）、UC-03〜05、**ADR-0003**（human-in-the-loop・完全無人での方針変更をしない）、FR-06/FR-07（利用者のみが確定）
+  FR-09（確定通知）、UC-03〜05、**ADR-0003**（human-in-the-loop・完全無人での方針変更をしない＝利用者のみが確定）
 - 対象 Issue: [#14](https://github.com/endazon/ai-stock-trading/issues/14)
 - 関連する実装仕様書: [20260718_report-service-remaining](../specs/20260718_report-service-remaining.md)
 - 関連 IADR: [IADR-0032](IADR-0032_report-generation.md)（散文 LLM ドラフトのポート `IReportNarrativeDrafter`＝本作業で実 LLM 実装を差し込む）、
