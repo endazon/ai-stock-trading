@@ -11,8 +11,8 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md # UC-01（定時取引サイクル）・UC-06（設定変更・一時停止・緊急停止）
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md # FR-10 トレーサビリティ行
+  - "../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md (UC-01: 定時取引サイクル / UC-06: 設定変更・一時停止・緊急停止)"
+  - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 トレーサビリティ行)"
 related_specs:
   - ./20260801_impl-handoff-kit-sync.md
 ---
@@ -99,13 +99,28 @@ PR CI の `doc-links` ジョブは submodule を取得しないため planning �
 **ユースケースは計画側で単一ファイルへ統合されている**（`03_usecases/` の実体は `01_usecases.md` のみ）。
 実体確認: `### UC-01: 定時取引サイクル`（L61）・`### UC-06: 設定変更・取引の一時停止・緊急停止`（L134）。
 
-パスを畳むと**どの UC を指していたかが失われる**ため、本リポに既にある書式に揃えて UC 番号を注記する。
+パスを畳むと**どの UC を指していたかが失われる**ため、UC 番号を注記として残す。
+
+**注記の書式は「引用符でくくり、半角括弧で末尾に置く」形でなければならない。**
 
 ```yaml
-  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md # UC-01（定時取引サイクル）
+  - "../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md (UC-01: 定時取引サイクル)"
 ```
 
-注記付きの引用形（`"path (説明)"`）を採る既存ファイルは、その形のまま説明部分に UC 番号を保つ。
+当初は本リポに既にある `01_usecases.md # UC-01（…）`（YAML コメント）の形を採ったが、**これは誤りだった**。
+`check-doc-links.js`（L148-156）が `plan_refs` の値から外すのは**引用符と末尾の半角括弧注記だけ**であり、
+`#` 以降のコメントは残る。結果として値が `.md` で終わらなくなり `LINK_EXT` に掛からないため、
+**そのエントリは検査対象から丸ごと外れる**。リンクを直したつもりで「検査から見えなくしただけ」になる。
+
+実測（`LINK_EXT` と同じ剥がし処理を再現）:
+
+| 書式 | 検査されるか |
+| --- | --- |
+| `path.md # UC-01（…）` | **されない** |
+| `"path.md (UC-01: …)"` | される |
+| `path.md`（注記なし） | される |
+
+全角括弧 `（…）` も剥がされないため、注記には**半角括弧**を使う。
 
 ### 分類 2: 参照先 ADR そのものの誤り（2 件・誤帰属）
 
@@ -143,6 +158,8 @@ ADR-0007 を「**kill switch 認可＝利用者のみ**」として引用して�
 - [ ] `ADR-0007` を「kill switch 認可 / 統制の権限」の意味で引用している箇所が、本作業の対象 2 ファイルに
       残っていない（`related_ids` / `plan_refs` / 本文のいずれにも）。
 - [ ] UC を指していた参照が、どの UC かを失っていない（UC 番号の注記が残っている）。
+- [ ] 本作業で追加・変更した `plan_refs` エントリが、**すべて `check-doc-links.js` の検査対象になっている**
+      （注記付きでも `LINK_EXT` に掛かる書式である）。
 - [ ] [20260801_impl-handoff-kit-sync.md](./20260801_impl-handoff-kit-sync.md) を書き換えていない。
 - [ ] 本作業で新たに `ADR-0007` を「取引ガード／信用」以外の意味で使っていない。
 
@@ -165,6 +182,28 @@ ADR-0007 を「**kill switch 認可＝利用者のみ**」として引用して�
 ## 未決事項
 
 なし。
+
+## 本作業で見つけた別の穴: 検査対象から漏れている `plan_refs` が 25 件ある（対象外）
+
+上記の書式の誤りを調べる過程で、**`docs/` 全体で 25 件の `plan_refs` エントリが `check-doc-links.js` の
+検査対象から外れている**ことが判った（うち 4 件は本作業が一度作り込んだもので、本 PR で是正した）。
+残る 21 件は本作業の変更前から存在する。原因は 4 種類ある。
+
+| 原因 | 例 | 件数の目安 |
+| --- | --- | --- |
+| `#` 以降の YAML コメント注記 | `01_usecases.md  # UC-06（設定変更）` | 最多 |
+| **全角**括弧の注記（剥がされるのは半角のみ） | `ADR-0001_platform-reuse.md（2026-07-12 更新）` | 3 |
+| ディレクトリを指す参照（拡張子が無い） | `02_requirements/` / `05_screens/` | 6 |
+| 外部 URL | `https://github.com/endazon/project-planning/pull/29` | 3 |
+
+最後の 1 つ（外部 URL）は相対リンク検査の対象外で正しい挙動である。**残る 3 種は「壊れていても気付けない」
+という点で、本 PR が是正した破損 20 件と同じ性質の穴**である。
+
+**本 PR では扱わない。** 是正には (a) 既存 21 件の書式統一と (b) `check-doc-links.js` 側で `#` 注記・全角括弧を
+剥がすかディレクトリ参照を検査する改修、のどちらを採るかという**検査器の設計判断**を伴い、
+「壊れたリンクを直す」という本 PR の単位とは別だからである。issue
+[#299](https://github.com/endazon/ai-stock-trading/issues/299) の「やること」4 番目
+（PR CI で `plan_refs` のファイル名を検査する仕組みの検討）と同じ領域にあたるため、そちらへ寄せる。
 
 ## 持ち越す既知の誤帰属（本 PR の対象外・別 PR で扱う）
 
