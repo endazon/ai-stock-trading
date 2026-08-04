@@ -1,4 +1,5 @@
 using System.Reflection;
+using JasperFx.CodeGeneration.Model;
 using Wolverine;
 using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
@@ -21,6 +22,11 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 //   2. Wolverine の既定は、発行しようとした型に**自プロセス内のハンドラがある**と、発行先をローカルキューに
 //      閉じる。RiskManagementService は OrderApproved を発行しつつ購読しているため、既定のままでは
 //      承認済みの発注が OrderExecutionService へ一通も届かない（発注が執行されない）。
+//   3. Wolverine 6 の既定は、ハンドラの生成コードが **service location を要する構成を拒否する**
+//      （ServiceLocationPolicy.NotAllowed）。本ユニットの永続アダプタは `internal sealed`（25 型）であり
+//      生成コードから直接 new できないため、既定のままでは**1 通目の受信時に**例外になる。
+//      しかもこれは起動時ではなくハンドラ生成が走る初回受信時に起きるため、起動もヘルスチェックも
+//      キュー宣言も consumer 接続も成功したまま、メッセージだけが無言で処理されない（IADR-0129 決定 11）。
 public static class WolverineExtensions
 {
     // 再試行間隔（MassTransit 時代の UseAiStockTradingRetry と同値）。
@@ -72,6 +78,15 @@ public static class WolverineExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
         options.ServiceName = serviceName;
+
+        // IADR-0129 決定 11: ハンドラの生成コードに service location を許可する。
+        // 本ユニットの永続アダプタ（EfExecutedOrderStore 等）は `internal sealed` であり、生成コードは
+        // これを直接 new できず IServiceProvider から解決する（＝service location）しかない。
+        // Wolverine 6 の既定 NotAllowed のままだと、**キュー宣言も consumer 接続も起動も成功したうえで**、
+        // 1 通目の受信時のハンドラ生成が InvalidServiceLocationException で失敗し、メッセージが無言で
+        // 処理されない（実測: 実 RabbitMQ の E2E で発注が一件も執行されなかった）。
+        // 代替（全アダプタを public 化）は本ユニットの内部実装隠蔽（`internal sealed`・25 型）を壊すため採らない。
+        options.ServiceLocationPolicy = ServiceLocationPolicy.AlwaysAllowed;
 
         // IADR-0129 決定 3: 発行がプロセス内へ閉じるのを止める。
         // これが無いと、発行元サービス自身が同じ型を購読している経路（OrderApproved / StopLossTriggered）で
