@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
@@ -36,11 +37,32 @@ public class MaintenanceMarginReductionServiceTests
 
     private static MaintenanceMarginReductionService Create(
         MaintenanceMarginSnapshot? snapshot,
-        IPortfolioLedgerStore? ledger = null) =>
+        IPortfolioLedgerStore? ledger = null,
+        RecordingLogger<MaintenanceMarginReductionService>? logger = null) =>
         new(new InMemoryRiskSettingsStore(),
             new FixedSnapshotSource(snapshot),
             new FakeClock(Now, DateOnly.FromDateTime(Now.UtcDateTime)),
-            ledger);
+            ledger,
+            logger);
+
+    // ログ出力を捕捉する最小のロガー（PositionDriftTrackerTests と同型）。
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Records { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Records.Add((logLevel, formatter(state, exception)));
+    }
 
     // 純資産 40,000／建玉 100,000（$100 × 1,000 株）＝ 維持率 40%（閾値ちょうど・発動する）。
     private static MaintenanceMarginSnapshot BreachedSnapshot() =>
@@ -51,7 +73,10 @@ public class MaintenanceMarginReductionServiceTests
     [Fact]
     public void 発動すると決済の承認と記録イベントが対で出る()
     {
-        var outcome = Create(BreachedSnapshot()).Evaluate()!;
+        var evaluation = Create(BreachedSnapshot()).Evaluate();
+
+        evaluation.Status.Should().Be(MaintenanceMarginEvaluationStatus.Reduced);
+        var outcome = evaluation.Outcome!;
 
         outcome.Approvals.Should().ContainSingle();
         var intent = outcome.Approvals[0].Intent;
@@ -71,7 +96,7 @@ public class MaintenanceMarginReductionServiceTests
     [Fact]
     public void 記録イベントは日報が要求する項目をすべて持つ()
     {
-        var executed = Create(BreachedSnapshot()).Evaluate()!.Executed;
+        var executed = Create(BreachedSnapshot()).Evaluate().Outcome!.Executed;
 
         executed.ExecutedAt.Should().Be(Now);                 // 時刻
         executed.RatioBefore.Should().Be(0.40m);              // 決済前の維持率
@@ -104,7 +129,7 @@ public class MaintenanceMarginReductionServiceTests
         dependencies.Should().BeEquivalentTo(
             [
                 nameof(IRiskSettingsStore), nameof(IMaintenanceMarginSnapshotSource),
-                nameof(IClock), nameof(IPortfolioLedgerStore),
+                nameof(IClock), nameof(IPortfolioLedgerStore), "ILogger`1",
             ],
             "自動縮小は統制でも AI でも止められない経路である（ADR-0009・UC-06）");
     }
@@ -113,9 +138,10 @@ public class MaintenanceMarginReductionServiceTests
     [Fact]
     public void 維持率の供給が無いなら決済しない()
     {
-        Create(snapshot: null).Evaluate().Should().BeNull();
+        Create(snapshot: null).Evaluate().Status
+            .Should().Be(MaintenanceMarginEvaluationStatus.NoActionRequired);
         Create(new MaintenanceMarginSnapshot { NetEquityUsd = 100_000m, Positions = [] })
-            .Evaluate().Should().BeNull();
+            .Evaluate().Status.Should().Be(MaintenanceMarginEvaluationStatus.NoActionRequired);
     }
 
     // T-10-199: 維持率が閾値を上回っていれば発動しない。
@@ -128,7 +154,7 @@ public class MaintenanceMarginReductionServiceTests
             Positions = [Short("AAPL", 100m, 1_000, 30_000m)],
         };
 
-        Create(healthy).Evaluate().Should().BeNull();
+        Create(healthy).Evaluate().Status.Should().Be(MaintenanceMarginEvaluationStatus.NoActionRequired);
     }
 
     // T-10-200: #257/IADR-0107 — 決済レグへ建玉の加重平均約定時レートを引き継ぐ。
@@ -147,7 +173,54 @@ public class MaintenanceMarginReductionServiceTests
             Now.AddDays(-1));
         ledger.AppendFill(decisionId, $"open-{decisionId:N}", 1_000, 100m, Now.AddDays(-1));
 
-        Create(BreachedSnapshot(), ledger).Evaluate()!.Approvals[0].Intent.FxRateToBase.Should().Be(150m);
-        Create(BreachedSnapshot()).Evaluate()!.Approvals[0].Intent.FxRateToBase.Should().Be(1m);
+        Create(BreachedSnapshot(), ledger).Evaluate().Outcome!.Approvals[0].Intent.FxRateToBase.Should().Be(150m);
+        Create(BreachedSnapshot()).Evaluate().Outcome!.Approvals[0].Intent.FxRateToBase.Should().Be(1m);
+    }
+
+    // T-10-206（境界・否定形）: **非正の株価**を含むスナップショットは信頼できないものとして扱い、決済しない。
+    // かつ「健全ゆえの無動作」と**区別できる**状態を返し、警告ログを残す（IADR-0133 決定8）。
+    // 例外で中断させない——定期評価ドライバ（#331）で未処理例外が上がると評価ループごと死ぬ。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void 非正の株価を含むスナップショットは信頼せず決済しない(double price)
+    {
+        var logger = new RecordingLogger<MaintenanceMarginReductionService>();
+        var snapshot = new MaintenanceMarginSnapshot
+        {
+            NetEquityUsd = 40_000m,
+            Positions = [Short("BROKEN", (decimal)price, 1_000, 30_000m)],
+        };
+
+        var evaluation = Create(snapshot, logger: logger).Evaluate();
+
+        // (a) 決済が起きない。
+        evaluation.Outcome.Should().BeNull();
+        // (b) 拒否が観測可能である（状態と警告ログの両方。無動作と同じ値に潰さない）。
+        evaluation.Status.Should().Be(MaintenanceMarginEvaluationStatus.SnapshotUntrusted);
+        evaluation.UntrustedPositions.Should().ContainSingle().Which.Symbol.Should().Be("BROKEN");
+        logger.Records.Should().ContainSingle()
+            .Which.Should().Match<(LogLevel Level, string Message)>(r =>
+                r.Level == LogLevel.Warning && r.Message.Contains("BROKEN") && r.Message.Contains("統制が働いていません"));
+    }
+
+    // T-10-207（否定形）: 健全な建玉が同居していても**部分的に処理しない**。
+    // 壊れた建玉だけを除くと分母（建玉評価額の合計）が縮んで維持率が実際より良く見え、過少縮小へ倒れる。
+    // 「壊れた 1 件を除けば発動していた」ことを対照で示し、除外案を採っていないことを固定する。
+    [Fact]
+    public void 健全な建玉が同居していても部分的に処理して分母を歪めない()
+    {
+        var healthy = Short("AAPL", 100m, 1_000, 30_000m);
+        var broken = Short("BROKEN", 0m, 500, 10_000m);
+        var mixed = new MaintenanceMarginSnapshot { NetEquityUsd = 40_000m, Positions = [healthy, broken] };
+
+        var evaluation = Create(mixed).Evaluate();
+
+        evaluation.Status.Should().Be(MaintenanceMarginEvaluationStatus.SnapshotUntrusted);
+        evaluation.Outcome.Should().BeNull("健全な建玉だけを決済すると、壊れた建玉ぶんの分母が消えて維持率が良く見える");
+
+        // 対照: 壊れた建玉を除いた（＝除外案を採った）場合は発動する。両者の差が「除外の危険」そのものである。
+        var excluded = new MaintenanceMarginSnapshot { NetEquityUsd = 40_000m, Positions = [healthy] };
+        Create(excluded).Evaluate().Status.Should().Be(MaintenanceMarginEvaluationStatus.Reduced);
     }
 }

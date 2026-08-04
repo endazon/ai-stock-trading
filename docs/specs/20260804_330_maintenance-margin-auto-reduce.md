@@ -131,6 +131,19 @@ MarginPosition { Symbol; Market; Side; ProductType; Quantity; PriceUsd; Required
 （建玉 1 件を丸ごと閉じる規則を計画が棄却しているため。株数は端株が無いので切り上げが最小限）。
 目標に到達した時点で打ち切る。
 
+### 2-2. 壊れた入力の扱い（IADR-0133 決定8・#330 レビュー指摘の是正）
+
+株価・数量が **0 以下**、必要証拠金が**負**の建玉は市場・口座の実態としてあり得ず、**フィードが壊れて
+いることの証拠**である。1 件でも混じれば**スナップショット全体を信頼せず決済しない**。
+
+- **該当建玉だけを除外しない**——除くと分母（建玉評価額の合計）が縮んで**維持率が実際より良く見え**、
+  過少縮小へ倒れる（統制として危険な向き）。
+- **例外で中断させない**——`ShortSellingLimits.MaintenanceMarginThresholdFor` は非正の株価に対して
+  `ArgumentOutOfRangeException` を投げる。入口で検査しないと `Plan` 全体が例外で落ち、定期評価ドライバ
+  （#331）の評価ループごと死ぬ。
+- **黙って何もしない状態にしない**——「健全ゆえの無動作」と区別できる状態（`SnapshotUntrusted`）を返し、
+  警告ログを残す。記録先は増やさない（新しいイベント種別は計画に無いため作らない）。
+
 ### 3. 実行（`MaintenanceMarginReductionService`）
 
 - 計画の各明細から、建玉方向の**反対売買**（`PositionEffect.Close`）の `OrderApproved` を組み立てる
@@ -208,7 +221,7 @@ MarginPosition { Symbol; Market; Side; ProductType; Quantity; PriceUsd; Required
 | 検査 | 結果 |
 | --- | --- |
 | `dotnet build backend/backend.slnx` | **0 warning / 0 error** |
-| `dotnet test --filter "Category!=Integration"` | **2,513 passed / 0 failed**（着手前 2,477 ＋ 本 issue 36 件） |
+| `dotnet test --filter "Category!=Integration"` | **2,522 passed / 0 failed**（着手前 2,477 ＋ 本 issue 45 件） |
 | `scripts/check-coverage.js` | 行カバレッジ **66.31%**（13,324/20,094）／ floor 62% |
 | `scripts/check-test-traceability.js` | OK（テスト 325 ファイル・起点 ID 25 種） |
 | `scripts/check-banned-libraries.js` | OK（不採用ライブラリの混入なし） |
@@ -219,5 +232,18 @@ MarginPosition { Symbol; Market; Side; ProductType; Quantity; PriceUsd; Required
 | `PlanConformance.Tests` | green。**既知逸脱レジストリは 6 行のまま**（#333 / #334 / #358 担当。#330 担当の行は無い） |
 | `scripts/check-commit-messages.js` | OK（5 件） |
 
-追加したテスト 36 件の内訳: Domain 21（`MaintenanceMarginAutoReduceTests`）／ Application 6
+追加したテスト 45 件の内訳: Domain 27（`MaintenanceMarginAutoReduceTests`）／ Application 9
 （`MaintenanceMarginReductionServiceTests`）／ 監査 2 ／ 通知 1 ／ 報告書 6。
+うち 9 件は**壊れた入力の扱い**（IADR-0133 決定8・T-10-206〜209）の追加分である
+（AI レビュー 🟡 の是正。初版のコード注釈が「弾く」と「例外で中断する」を取り違えていた）。
+
+## レビュー指摘の是正（2026-08-04・AI レビュー 🟡）
+
+`MaintenanceMarginReducer` の注釈が「株価 0 以下は閾値算出が先に**弾く**」と書いていたが、実際は
+`MaintenanceMarginThresholdFor` が**例外を投げる**（＝`Plan` 全体が中断する）。意味が違い、次の実装者が
+「処理済み」と誤読する。供給元が実ブローカー照会へ繋がる（#331 / #342）と、低ティアのデータソースでは
+0 や欠損値が現実に混ざるため、この経路は生きる。
+
+是正: 入口で検査して**スナップショット全体を信頼しない**（IADR-0133 決定8）／注釈を実挙動に合わせた／
+境界テスト（T-10-206〜209）で (a) 決済が起きないこと (b) 拒否が観測可能であること
+(c) 健全な建玉が同居しても部分処理して分母を歪めないこと、を固定した。

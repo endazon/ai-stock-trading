@@ -31,4 +31,21 @@ public sealed record MaintenanceMarginSnapshot
     /// </summary>
     public decimal? MaintenanceMarginRatio =>
         TotalMarketValueUsd > 0m ? NetEquityUsd / TotalMarketValueUsd : null;
+
+    /// <summary>
+    /// 値として成立しない建玉（IADR-0133 決定8）。**株価・数量が 0 以下**、または**必要証拠金が負**のもの。
+    /// <para>
+    /// いずれも市場・口座の実態としてあり得ず、**フィードが壊れていることの証拠**である。株価と数量は
+    /// 維持率の分母（建玉評価額）を、必要証拠金は決済の優先順位を直接歪めるため、混ざったまま計算すると
+    /// 「実際より良い維持率」「誤った順序」を生む。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<MarginPosition> UntrustedPositions =>
+        [.. Positions.Where(p => p.PriceUsd <= 0m || p.Quantity <= 0 || p.RequiredMarginUsd < 0m)];
+
+    /// <summary>
+    /// スナップショット全体を信頼してよいか。**1 件でも壊れていれば全体を信頼しない**
+    /// （壊れた建玉だけを除くと分母が縮んで維持率が実際より良く見え、過少縮小へ倒れる。IADR-0133 決定8）。
+    /// </summary>
+    public bool IsTrustworthy => UntrustedPositions.Count == 0;
 }

@@ -322,4 +322,49 @@ public class MaintenanceMarginAutoReduceTests
         plan.Legs.Should().OnlyContain(l => l.Quantity <= 100);
         plan.Legs[0].Quantity.Should().Be(100, "1 件目は全量決済でクランプされる");
     }
+
+    // T-10-208（境界）: 値として成立しない建玉（**株価・数量が 0 以下／必要証拠金が負**）を含むスナップショットは
+    // 信頼できないものとして扱い、**決済しない**（IADR-0133 決定8）。例外で中断もしない。
+    //
+    // 閾値算出 `MaintenanceMarginThresholdFor` は非正の株価に対して例外を投げるため、入口で弾かないと
+    // `Plan` 全体が例外で中断する（＝定期評価ドライバの評価ループが死ぬ）。本テストがその入口を固定する。
+    [Theory]
+    [InlineData(0, 1_000, 30_000)]   // 株価 0（フィードの欠損値）
+    [InlineData(-1, 1_000, 30_000)]  // 負の株価
+    [InlineData(100, 0, 30_000)]     // 数量 0（分母が歪む）
+    [InlineData(100, -10, 30_000)]   // 負の数量
+    [InlineData(100, 1_000, -1)]     // 負の必要証拠金（決済の優先順位が歪む）
+    public void 成立しない値を含むスナップショットでは決済も例外も起きない(
+        double price, int quantity, double requiredMargin)
+    {
+        var snapshot = Snapshot(
+            40_000m,
+            Position("BROKEN", (decimal)price, quantity, (decimal)requiredMargin));
+
+        var act = () => MaintenanceMarginReducer.Plan(snapshot, Limits);
+
+        act.Should().NotThrow("評価ループごと死ぬ経路を作らない（拒否は呼び出し側が観測可能にする）");
+        act().Should().BeNull("壊れたデータで建玉を決済する方が、しないことより危険である");
+        snapshot.IsTrustworthy.Should().BeFalse();
+        snapshot.UntrustedPositions.Should().ContainSingle().Which.Symbol.Should().Be("BROKEN");
+    }
+
+    // T-10-209（否定形）: 壊れた建玉が 1 件でもあれば**スナップショット全体**を信頼しない。
+    // 壊れた建玉だけを除くと分母（建玉評価額の合計）が縮み、**維持率が実際より良く見えて過少縮小へ倒れる**。
+    // 除外した場合に何が起きるか（別の、より緩い縮小計画が立つこと）を対照で示す。
+    [Fact]
+    public void 壊れた建玉を除外して分母を縮めない()
+    {
+        var healthy = Position("AAPL", SelfThresholdPrice, 1_000, 30_000m);
+        var broken = Position("BROKEN", 0m, 500, 10_000m);
+
+        MaintenanceMarginReducer.Plan(Snapshot(40_000m, healthy, broken), Limits)
+            .Should().BeNull("1 件でも壊れていれば全体を信頼しない");
+
+        // 対照（＝棄却した「該当建玉だけ除外する案」の姿）: 除外すると発動し、しかも
+        // 壊れた建玉ぶんの評価額が分母から消えているため、実際より小さい縮小量で「回復した」と判断される。
+        var excludedPlan = MaintenanceMarginReducer.Plan(Snapshot(40_000m, healthy), Limits)!;
+        excludedPlan.RatioBefore.Should().Be(0.40m,
+            "除外後の維持率は健全建玉だけで計算され、壊れた建玉を含む実際の口座より良く見える");
+    }
 }

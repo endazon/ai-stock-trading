@@ -28,6 +28,15 @@ public static class MaintenanceMarginReducer
         if (snapshot is null || snapshot.Positions.Count == 0)
             return null;
 
+        // IADR-0133 決定8: 値として成立しない建玉（株価・数量が 0 以下／必要証拠金が負）が 1 件でもあれば、
+        // **スナップショット全体を信頼できない**ものとして決済しない。壊れたデータで建玉を決済する方が、
+        // しないことより危険である。**壊れた建玉だけを除く案は採らない**——除くと分母（建玉評価額の合計）が
+        // 縮んで維持率が実際より良く見え、過少縮小へ倒れる（統制として危険な向き）。
+        // 呼び出し側が「健全で発動不要」と区別できるよう、拒否の事実は
+        // MaintenanceMarginReductionService が観測可能にする（黙って何もしない状態を作らない）。
+        if (!snapshot.IsTrustworthy)
+            return null;
+
         if (snapshot.MaintenanceMarginRatio is not { } ratio)
             return null;
 
@@ -81,7 +90,9 @@ public static class MaintenanceMarginReducer
                 break;
 
             // 端株が無いため株数は切り上げ。建玉数量を超えないようにクランプする。
-            // 株価が 0 以下の建玉は上の閾値算出（MaintenanceMarginThresholdFor）が先に弾くためここには来ない。
+            // 株価が 0 以下の建玉は Plan の入口（IsTrustworthy）が**スナップショットごと**弾いているため
+            // ここには来ない（ゼロ除算は起こらない）。なお閾値算出 MaintenanceMarginThresholdFor は
+            // 非正の株価に対して**例外を投げる**ため、入口の検査を外すと Plan 全体が例外で中断する。
             var neededQuantity = (int)Math.Min(position.Quantity, Math.Ceiling(remaining / position.PriceUsd));
 
             legs.Add(new MaintenanceMarginReductionLeg

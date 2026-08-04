@@ -2,6 +2,7 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
@@ -21,18 +22,40 @@ public sealed class MaintenanceMarginReductionService(
     IRiskSettingsStore settingsStore,
     IMaintenanceMarginSnapshotSource snapshotSource,
     IClock clock,
-    IPortfolioLedgerStore? ledger = null)
+    IPortfolioLedgerStore? ledger = null,
+    ILogger<MaintenanceMarginReductionService>? logger = null)
 {
     /// <summary>
     /// 現在の維持率を評価し、発動条件（維持率 ≦ 閾値）を満たすなら縮小の決済注文と記録イベントを組み立てる。
-    /// 発動しない場合は <c>null</c>（供給なし・建玉なし・維持率が閾値を上回る）。
+    /// <para>
+    /// 戻り値は 3 状態を**区別する**（IADR-0133 決定8）。とくに <see cref="MaintenanceMarginEvaluationStatus.SnapshotUntrusted"/>
+    /// を <see cref="MaintenanceMarginEvaluationStatus.NoActionRequired"/> と同じ「何も起きなかった」に
+    /// 潰さないこと——**統制が実質オフラインになっているのに誰も気づかない**状態を作らないためである。
+    /// </para>
     /// </summary>
-    public MaintenanceMarginReductionOutcome? Evaluate()
+    public MaintenanceMarginEvaluation Evaluate()
     {
         var limits = settingsStore.GetCurrent().ShortSell.Limits;
+        var snapshot = snapshotSource.GetCurrent();
 
-        if (MaintenanceMarginReducer.Plan(snapshotSource.GetCurrent(), limits) is not { } plan)
-            return null;
+        // IADR-0133 決定8: 値として成立しない建玉（株価・数量が 0 以下／必要証拠金が負）が 1 件でもあれば、
+        // スナップショット全体を信頼せず決済しない。壊れた建玉だけを除くと分母が縮んで維持率が実際より
+        // 良く見え、過少縮小へ倒れる。**拒否したことは必ず観測可能にする**（黙って何もしない状態を作らない）。
+        if (snapshot is { IsTrustworthy: false })
+        {
+            var untrusted = snapshot.UntrustedPositions;
+            logger?.LogWarning(
+                "維持率スナップショットに成立しない値（株価・数量が 0 以下／必要証拠金が負）が {Count} 件含まれるため、"
+                + "自動縮小の評価を見送りました（統制が働いていません。銘柄: {Symbols}）。"
+                + "供給元のフィードを確認してください。",
+                untrusted.Count,
+                string.Join(", ", untrusted.Select(p => $"{p.Symbol}/{p.Market}")));
+
+            return MaintenanceMarginEvaluation.Untrusted(untrusted);
+        }
+
+        if (MaintenanceMarginReducer.Plan(snapshot, limits) is not { } plan)
+            return MaintenanceMarginEvaluation.NoAction;
 
         var executedAt = clock.UtcNow;
         var approvals = new List<OrderApproved>(plan.Legs.Count);
@@ -80,7 +103,8 @@ public sealed class MaintenanceMarginReductionService(
             items,
             executedAt);
 
-        return new MaintenanceMarginReductionOutcome(plan, approvals, executed);
+        return MaintenanceMarginEvaluation.Reduce(
+            new MaintenanceMarginReductionOutcome(plan, approvals, executed));
     }
 
     // 台帳の建玉が持つ加重平均約定時レート（IADR-0107 決定4 と同じ近似＝外部 FX 源に依存しない）。
@@ -100,3 +124,35 @@ public sealed record MaintenanceMarginReductionOutcome(
     MaintenanceMarginReductionPlan Plan,
     IReadOnlyList<OrderApproved> Approvals,
     MaintenanceMarginReductionExecuted Executed);
+
+// FR-10, UC-06, #330, IADR-0133 決定8: 1 回の評価の結果。
+// **「何もしなかった」を 1 つに潰さない**——健全ゆえの無動作（NoActionRequired）と、
+// 入力が壊れていて評価できなかった（SnapshotUntrusted）は、運用上まったく別の事実である。
+public enum MaintenanceMarginEvaluationStatus
+{
+    /// <summary>発動条件を満たさない（供給なし・建玉なし・維持率が閾値を上回る）。統制は正常に働いている。</summary>
+    NoActionRequired,
+
+    /// <summary>発動した（決済注文と記録イベントを組み立てた）。</summary>
+    Reduced,
+
+    /// <summary>
+    /// スナップショットに成立しない値が含まれ、**評価そのものを見送った**（＝統制が働いていない）。
+    /// 呼び出し側（定期評価ドライバ・#331）は、これを無動作と同じに扱わず利用者へ届けること。
+    /// </summary>
+    SnapshotUntrusted,
+}
+
+public sealed record MaintenanceMarginEvaluation(
+    MaintenanceMarginEvaluationStatus Status,
+    MaintenanceMarginReductionOutcome? Outcome = null,
+    IReadOnlyList<MarginPosition>? UntrustedPositions = null)
+{
+    public static MaintenanceMarginEvaluation NoAction { get; } = new(MaintenanceMarginEvaluationStatus.NoActionRequired);
+
+    public static MaintenanceMarginEvaluation Reduce(MaintenanceMarginReductionOutcome outcome) =>
+        new(MaintenanceMarginEvaluationStatus.Reduced, outcome);
+
+    public static MaintenanceMarginEvaluation Untrusted(IReadOnlyList<MarginPosition> positions) =>
+        new(MaintenanceMarginEvaluationStatus.SnapshotUntrusted, UntrustedPositions: positions);
+}
