@@ -13,7 +13,7 @@ using Xunit;
 
 namespace AiStockTrading.IntegrationTests;
 
-// issue #82 Slice B / IADR-0050, FR-10/ADR-0007: OwnerOnly 同期照会エンドポイントを実 Keycloak トークンで検証する。
+// issue #82 Slice B / IADR-0050, FR-10/ADR-0003: OwnerOnly 同期照会エンドポイントを実 Keycloak トークンで検証する。
 // リスク管理 Worker を実 Keycloak＋実 PostgreSQL＋実 RabbitMQ へ結線し、dev realm の ROPC で取得した
 // trading-owner トークンで GET /risk-controls/open-positions（#76 最優先）を叩く。トークンあり→200・なし→401。
 // 実 OIDC 発見・JWKS 検証・realm ロール→OwnerOnly ポリシーを通しで確認する（呼び出し側のトークン伝播＝#76 は対象外）。

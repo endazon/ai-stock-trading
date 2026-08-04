@@ -1,6 +1,6 @@
 namespace AiStockTrading.Notification.Application.Ports;
 
-// FR-20, FR-14, UC-06, ADR-0007/0008, IADR-0070/0081: 段階ゲート（#20）の OwnerOnly エンドポイントの抽象。
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲート（#20）の OwnerOnly エンドポイントの抽象。
 // 通知サービスは段階ゲートの状態を持たず、既存の Risk エンドポイント（GET /risk-controls/stage-gate,
 // POST /risk-controls/stage-gate/transition, POST /risk-controls/stage-gate/withdrawal/evaluate）を呼ぶだけ
 // （権威は Risk 側）。kill switch / pause（IKillSwitchController / IPauseController）と同型。

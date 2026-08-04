@@ -23,7 +23,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: FR-07（対話的確定）、FR-06（階層方針）、FR-16（テンプレート準拠・数値はコード集計）、ADR-0003（確定前は不適用・**方針の確定には利用者との対話を要し完全無人での方針変更は行わない**＝OwnerOnly の根拠）
-  - ※ 既存 [IADR-0024](IADR-0024_report-confirmation-and-policy.md) は OwnerOnly の根拠を ADR-0007 と誤引用していたが、実際の ADR-0007 は「取引商品（現物/信用）とガード設定」の決定であり無関係。本 IADR では ADR-0003 に訂正する。既存の Slice A 実装ファイル・IADR-0024 側の同誤引用の訂正は別タスクへ切り分け。
+  - ※ 既存 [IADR-0024](IADR-0024_report-confirmation-and-policy.md) は OwnerOnly の根拠を ADR-0007 と誤引用していたが、実際の ADR-0007 は「取引商品（現物/信用）とガード設定」の決定であり無関係。本 IADR では ADR-0003 に訂正する。既存の Slice A 実装ファイル・IADR-0024 側の同誤引用は #299（PR #376・本 PR）で訂正済み。
 - 対象 Issue: [#14](https://github.com/endazon/ai-stock-trading/issues/14)（対話的確定ロジック・明細レンダリングのスライス）
 - 関連する実装仕様書: [20260711_report-interactive-confirmation-and-detail](../specs/20260711_report-interactive-confirmation-and-detail.md)
 - 関連 IADR: [IADR-0024](IADR-0024_report-confirmation-and-policy.md)（版番号付き冪等確定・踏襲）、[IADR-0032](IADR-0032_report-generation.md)（純関数テンプレート化・踏襲）

@@ -2,14 +2,13 @@
 title: IADR-0088 監視銘柄（watchlist）設定 API は権威データ源の MarketMonitorService に置き、Risk 設定の作法（owner サブグループ認可・理由必須・楽観排他・ローカル変更履歴）をミラーする
 type: impl-adr
 status: Accepted
-related_ids: [FR-03, FR-13, FR-11, UC-06, ADR-0007]
+related_ids: [FR-03, FR-13, FR-11, UC-06]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 ---
 
 # IADR-0088: 監視銘柄（watchlist）設定 API は MarketMonitorService に置き、Risk 設定の作法をミラーする
@@ -23,7 +22,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **FR-13**（利用者が設定を変更できる）、**FR-03**（市場監視・監視銘柄）、**FR-11**（変更履歴の記録）、
-  **UC-06**（設定変更）、ADR-0007（取引ガード・監視設定は利用者のみ変更）。
+  **UC-06**（設定変更）、FR-13（監視設定の変更は利用者のみ）。
 - 対象 Issue: [#191](https://github.com/endazon/ai-stock-trading/issues/191)（#188 FR-13 残 UI の前提として分離起票）。
 - 関連する実装仕様書: [作業仕様](../specs/20260718_191_watchlist-settings-api.md)。
 - 前提（develop マージ済み）: #10 市場監視（`IMonitoredSymbolStore`・`MarketMonitorSettings.MonitoredSymbols`・

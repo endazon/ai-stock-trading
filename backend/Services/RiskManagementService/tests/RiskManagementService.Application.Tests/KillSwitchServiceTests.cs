@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-10, UC-06, ADR-0007: kill switch 操作の検証。利用者のみ（アクター・理由必須）・変更履歴の記録。
+// FR-10, UC-06, ADR-0003: kill switch 操作の検証。利用者のみ（アクター・理由必須）・変更履歴の記録。
 public class KillSwitchServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 9, 6, 0, 0, TimeSpan.Zero);
@@ -37,7 +37,7 @@ public class KillSwitchServiceTests
     [Fact]
     public void 起動と解除は変更履歴に記録される()
     {
-        // ADR-0007: 変更履歴を記録する。
+        // FR-11: 変更履歴を記録する。
         var (service, _, log) = Create();
 
         service.Engage("user", "停止");
@@ -56,7 +56,7 @@ public class KillSwitchServiceTests
     [InlineData("  ", "reason")]
     public void アクターまたは理由が空なら操作を拒否する(string actor, string reason)
     {
-        // ADR-0007: 監査性のためアクター・理由のない変更は受け付けない。
+        // FR-11: 監査性のためアクター・理由のない変更は受け付けない。
         var (service, _, _) = Create();
 
         var act = () => service.Engage(actor, reason);

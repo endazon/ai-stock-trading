@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 
-// SC-01, FR-17, UC-06, ADR-0007, IADR-0080: 設定画面（全体前提条件の閲覧/変更）。
+// SC-01, FR-17, UC-06, IADR-0080: 設定画面（全体前提条件の閲覧/変更）。
 // データ源は BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。変更は利用者のみ（サーバ側 OwnerOnly）、
 // 楽観排他（expectedVersion）＋理由必須。検証(400)・競合(409)はメッセージ表示し、破壊的な自動再試行はしない（安全既定）。
 // 第1スライスは FR-17 のみ。FR-13（監視銘柄/閾値/リスク上限）は後続スライスで同画面へ節を追加する。
@@ -326,7 +326,7 @@ function Field({
   );
 }
 
-// FR-17, ADR-0007: 変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
+// FR-17: 変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
 function HistoryView({ status, history }: { status: HistoryStatus; history: ChangeEntry[] }) {
   return (
     <Section title={`変更履歴（${status === 'ok' ? history.length : '—'}）`}>

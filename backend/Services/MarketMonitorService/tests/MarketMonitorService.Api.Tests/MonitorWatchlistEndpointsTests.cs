@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Api.Tests;
 
-// FR-03, FR-11, FR-13, UC-06, ADR-0007, IADR-0088: 監視銘柄（watchlist）エンドポイントの認可（owner サブグループ）・
+// FR-03, FR-11, FR-13, UC-06, IADR-0088: 監視銘柄（watchlist）エンドポイントの認可（owner サブグループ）・
 // 追加/削除・検証(400)・変更履歴を検証する。
 public class MonitorWatchlistEndpointsTests(MonitorWorkerWebApplicationFactory factory)
     : IClassFixture<MonitorWorkerWebApplicationFactory>
@@ -75,7 +75,7 @@ public class MonitorWatchlistEndpointsTests(MonitorWorkerWebApplicationFactory f
         res.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // FR-02, IADR-0095: 変更（追加）はサービスに許さない（OwnerOnly 据え置き・変更は利用者のみ・ADR-0007）。
+    // FR-02, IADR-0095: 変更（追加）はサービスに許さない（OwnerOnly 据え置き・変更は利用者のみ・FR-13）。
     [Fact]
     public async Task サービスロールの追加は403()
     {

@@ -5,8 +5,8 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.MarketMonitor.Application.Services;
 
-// FR-03, FR-11, FR-13, UC-06, ADR-0007: 監視銘柄（watchlist）の取得・追加・削除。変更（追加・削除）は利用者のみ（アクター・理由必須）。
-// 変更は前後値つきで履歴に記録する（ADR-0007「変更は利用者のみ・変更履歴を記録」）。Risk の RiskSettingsService を
+// FR-03, FR-11, FR-13, UC-06: 監視銘柄（watchlist）の取得・追加・削除。変更（追加・削除）は利用者のみ（アクター・理由必須）。
+// 変更は前後値つきで履歴に記録する（FR-13。変更は利用者のみ・変更履歴を記録する）。Risk の RiskSettingsService を
 // ミラーする。永続化は IMonitoredSymbolStore の単一行 JSON＋Version（楽観排他・IADR-0012 踏襲）に委ね、
 // 競合はホスト層の例外フィルタで 409 に写像する。変更（Add/Remove）は生成AI・自動処理から呼べない（ホスト層 owner サブグループ
 // OwnerOnly で担保）。取得（GetWatchlist）はホスト層 read サブグループ OwnerOrService で定時サイクル（#11）にも開放する（FR-02, IADR-0095）。

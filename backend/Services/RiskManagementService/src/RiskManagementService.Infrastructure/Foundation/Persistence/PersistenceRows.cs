@@ -62,7 +62,7 @@ internal sealed class LockoutRow
     public DateTimeOffset EngagedAt { get; set; }
 }
 
-// 設定・kill switch の変更履歴（FR-11, ADR-0007）。追記専用。
+// 設定・kill switch の変更履歴（FR-11）。追記専用。
 internal sealed class SettingsChangeRow
 {
     public Guid Id { get; set; }

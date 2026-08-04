@@ -13,8 +13,10 @@ created: 2026-08-04
 
 # フィードバック: 実行できない形の列挙に `cd` が無い
 
-> **本書は起草のみである。** 計画リポジトリ（`project-planning`）への送付（`plan-feedback` ラベル付き
-> Issue の起票）は**未実施**。送付は人間または別セッションに委ねる。
+> **送付済み（2026-08-05）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#196](https://github.com/endazon/project-planning/issues/196)。
+> 末尾の `mcp__github__actions_list` の実在確認依頼も同 Issue に含めた。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
 
 ## 種別
 

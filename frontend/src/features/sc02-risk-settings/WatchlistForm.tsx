@@ -263,7 +263,7 @@ export function WatchlistForm() {
   );
 }
 
-// FR-11, ADR-0007: 監視銘柄の変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
+// FR-11, FR-13: 監視銘柄の変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
 function HistoryView({ status, history }: { status: HistoryStatus; history: MonitorSettingsChangeEntry[] }) {
   return (
     <details open style={{ margin: '0.5rem 0' }}>

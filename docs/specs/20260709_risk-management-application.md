@@ -51,7 +51,7 @@ plan_refs:
 | `ILockoutStore` | 日次損失ロックアウト（当日ロック・翌営業日解除）の状態 | インメモリ | PostgreSQL 永続化 |
 | `IPortfolioStateProvider` | 保有・当日発注累計・実現/含み損益・DD・連敗・当日取引銘柄の供給 | テスト用スタブ | 約定/損益集計（#13/#17 連携） |
 | `IBusinessCalendar` | 翌営業日の算出（ロックアウト解除日時） | 週末スキップの既定実装 | 市場カレンダー（#21 連携） |
-| `ISettingsChangeLog` | ガード・上限設定の変更履歴記録（ADR-0007） | インメモリ | PostgreSQL 監査（#17） |
+| `ISettingsChangeLog` | ガード・上限設定の変更履歴記録（ガード設定: ADR-0007 / 統制上限: ADR-0003） | インメモリ | PostgreSQL 監査（#17） |
 | `IClock` | 現在時刻（テスト容易性） | システムクロック | 同左 |
 
 ### アプリケーションサービス
@@ -63,7 +63,7 @@ plan_refs:
   を実行、(4) 承認なら `OrderApproved`、拒否なら `OrderRejected` を返す。あわせて日次損失上限到達を検知したら
   `ILockoutStore` にロックアウトを設定する（当日全停止・翌営業日まで）。
 - `KillSwitchService`: 利用者による kill switch のオン/オフ操作（アクター・理由つき）。操作は `ISettingsChangeLog` に記録。
-- `RiskSettingsService`: 利用者による設定変更（ガード・上限・段階）。変更は `ISettingsChangeLog` に記録（ADR-0007）。
+- `RiskSettingsService`: 利用者による設定変更（ガード・上限・段階）。変更は `ISettingsChangeLog` に記録（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008）。
   生成AI・自動処理からの変更は受け付けない（呼び出し側の権限はホスト層の Keycloak 認可で担保・Slice B）。
 
 ## 受け入れ基準（本 PR で検証する範囲）
@@ -72,7 +72,7 @@ plan_refs:
 - [ ] 日次損失上限到達を検知するとロックアウトが設定され、以降の新規建ては翌営業日まで拒否される
 - [ ] ロックアウトは翌営業日（`IBusinessCalendar`）に解除され、新規建てが再び可能になる
 - [ ] ロックアウト中でも手仕舞い（Close）注文は承認される（フェイルセーフ・ADR-0003）
-- [ ] 設定変更（ガード・上限・段階）と kill switch 操作は履歴（アクター・理由・日時・前後値）が記録される（ADR-0007）
+- [ ] 設定変更（ガード・上限・段階）と kill switch 操作は履歴（アクター・理由・日時・前後値）が記録される（ガード設定: ADR-0007 / 統制上限・kill switch: ADR-0003 / 段階設定: ADR-0008）
 - [ ] `PortfolioSnapshotBuilder` が `InvestedCapital`・`UnrealizedPnl`・`KillSwitchEngaged` を正しく反映する
 - [ ] 承認時は `OrderApproved`（承認数量つき）、拒否時は `OrderRejected`（理由列挙つき）を生成する
 

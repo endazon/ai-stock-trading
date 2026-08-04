@@ -47,7 +47,7 @@ public class FoundationRegistrationTests
     [Fact]
     public async Task OwnerOnly_認可ポリシーが登録される()
     {
-        // FR-10/FR-19/FR-20, ADR-0007: 利用者のみポリシーが解決できること。
+        // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみポリシーが解決できること。
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAiStockTradingAuth(EmptyConfig());

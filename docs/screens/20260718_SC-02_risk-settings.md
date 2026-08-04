@@ -2,7 +2,7 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007]
+related_ids: [SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Api.Tests;
 
-// FR-03, FR-13, ADR-0007: 監視設定エンドポイントの認可（OwnerOnly）と永続化・反映を検証する。
+// FR-03, FR-13: 監視設定エンドポイントの認可（OwnerOnly）と永続化・反映を検証する。
 public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory factory)
     : IClassFixture<MonitorWorkerWebApplicationFactory>
 {

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Application.Tests;
 
-// FR-20, FR-14, UC-06, ADR-0007/0008, IADR-0070/0081: 段階ゲートコマンド処理の閂（多層認証→解析→Risk 呼び出し）。
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲートコマンド処理の閂（多層認証→解析→Risk 呼び出し）。
 // kill switch / pause と同水準の多層認証。確認（promote/demote のボタン）は Gateway が担い、ハンドラは確認済み前提で呼ばれる。
 // 拒否時に Risk を呼ばない。
 public class StageGateCommandHandlerTests

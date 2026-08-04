@@ -2,7 +2,7 @@
 title: 設定管理サービス Slice A（全体前提条件のバージョン管理・変更履歴・利用者変更・概算費用関数・変更通知）
 type: spec
 status: review
-related_ids: [FR-17, FR-13, UC-06, ADR-0001, ADR-0007]
+related_ids: [FR-17, FR-13, UC-06, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -24,7 +24,7 @@ plan_refs:
 - ユースケース（UC）: UC-06（設定変更・変更履歴・通知）
 - 技術検討: `05_trading-assumptions.md`（税制・手数料・為替・計算方針・概算費用関数・月次費用上限）、`01_architecture-overview.md`
   （「全体前提条件の一元管理」＝設定ストアで一元管理し、損益集計・AI判断・リスク統制が共通参照する）
-- ADR: ADR-0001（新規サービス・Database per Service）、ADR-0007（変更は利用者のみ・変更履歴を記録）
+- ADR: ADR-0001（新規サービス・Database per Service）、FR-17（変更は利用者のみ・変更履歴を記録）
 - 関連 IADR: 本作業で新規 [IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)。バージョニング/履歴は [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md) を踏襲
 - 対象 Issue: #19（Slice A）
 

@@ -2,7 +2,7 @@
 title: IADR-0066 現在値は moomoo 非依存の既定 no-op ポートで供給し、時価評価は既定オフのゲートで切り替える
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, FR-16, FR-03, ADR-0002, ADR-0007, ADR-0008]
+related_ids: [FR-10, FR-05, FR-16, FR-03, ADR-0002, ADR-0003, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-17
 updated: 2026-07-17
@@ -23,7 +23,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: FR-10（リスク統制）、FR-05（発注）、FR-16（報告書の数値定義）、FR-03（市場監視）、
-  ADR-0002（証券会社=moomoo）、ADR-0007（取引ガード・信用）、ADR-0008（段階ゲート）
+  ADR-0002（証券会社=moomoo）、ADR-0003（リスク統制はリスク管理サービスが強制する）、ADR-0008（段階ゲート）
 - 対象 Issue: [#81](https://github.com/endazon/ai-stock-trading/issues/81)（残スコープ＝供給アダプタ＋結線）
 - 関連する実装仕様書: [20260717_market-valuation-wiring](../specs/20260717_market-valuation-wiring.md)
 - 関連 IADR: [IADR-0036](IADR-0036_unrealized-pnl-valuation.md)（純関数コア。本 IADR はその**供給側**を決める）、

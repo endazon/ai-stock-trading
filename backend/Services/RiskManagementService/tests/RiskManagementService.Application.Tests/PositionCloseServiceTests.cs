@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-10, FR-11, UC-06, ADR-0007, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い。
+// FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い。
 // 統制（kill switch/pause/ロックアウト）は本サービスの依存に含まれない＝手仕舞いを止めない（FR-10 本文）。
 public class PositionCloseServiceTests
 {

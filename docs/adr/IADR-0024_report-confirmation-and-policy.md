@@ -2,7 +2,7 @@
 title: IADR-0024 報告書サービスが確定管理と確定済み日報方針を所有し、確定はイベントで通知する
 type: impl-adr
 status: Accepted
-related_ids: [FR-06, FR-07, FR-16, FR-09, ADR-0001, ADR-0003, ADR-0007]
+related_ids: [FR-06, FR-07, FR-16, FR-09, ADR-0001, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -21,7 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-06/07（階層方針・確定）、FR-16（テンプレート・集計）、FR-09（確定通知）、ADR-0001/0003/0007
+- 関連する計画書 ID: FR-06/07（階層方針・確定）、FR-16（テンプレート・集計）、FR-09（確定通知）、ADR-0001/0003
 - 対象 Issue: [#14](https://github.com/endazon/ai-stock-trading/issues/14)（Slice A）
 - 関連する実装仕様書: [20260710_report-confirmation](../specs/20260710_report-confirmation.md)
 - 関連 IADR: [IADR-0012](IADR-0012_risk-settings-persistence.md)（版番号楽観排他・踏襲）、[IADR-0020](IADR-0020_notification-safe-outbound.md)（確定通知の購読先）、[IADR-0021](IADR-0021_trading-assumptions-configuration.md)（AssumptionsVersion）
@@ -46,7 +46,7 @@ plan_refs:
 
 - **新規サービス `ReportService`**（Domain + Application + Worker）が `TradingReport`（日報/週報/月報）を所有する。PeriodKey を
   自然キーとし、State（Draft/Confirmed）・PolicySummary（翌期間の方針）・AssumptionsVersion・BasedOn（上位方針）を持つ。
-- **確定は利用者のみ**（ADR-0007・OwnerOnly）。**版番号付き冪等確定**（07_discord-bot-design）: Version の楽観排他（IADR-0012 踏襲）で
+- **確定は利用者のみ**（ADR-0003・OwnerOnly）。**版番号付き冪等確定**（07_discord-bot-design）: Version の楽観排他（IADR-0012 踏襲）で
   ロストアップデートを防ぎ、既に確定済みの再確定は冪等（状態変化なし・イベント重複発行なし）。Draft→Confirmed の遷移時のみ
   `ConfirmedAt` を記録し `ReportConfirmed` を発行する。
 - **確定済み日報方針の照会**を提供する（`GET /reports/daily-policy`＝最新の確定済み日報の Date・Summary・AssumptionsVersion）。

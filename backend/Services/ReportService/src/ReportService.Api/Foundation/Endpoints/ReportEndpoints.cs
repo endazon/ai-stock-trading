@@ -18,8 +18,8 @@ using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 namespace AiStockTrading.Report.Api.Foundation.Endpoints;
 
-// FR-06/07, UC-03〜05, ADR-0007: 報告書のドラフト管理・確定・照会エンドポイント。確定は OwnerOnly（利用者のみ・Keycloak
-// trading-owner）。生成AI・自動処理は確定できない（ADR-0003/0007）。確定の遷移時に ReportConfirmed を発行する。
+// FR-06/07, UC-03〜05, ADR-0003: 報告書のドラフト管理・確定・照会エンドポイント。確定は OwnerOnly（利用者のみ・Keycloak
+// trading-owner）。生成AI・自動処理は確定できない（ADR-0003）。確定の遷移時に ReportConfirmed を発行する。
 internal static class ReportEndpoints
 {
     public static IEndpointRouteBuilder MapReportEndpoints(this IEndpointRouteBuilder app)
@@ -62,7 +62,7 @@ internal static class ReportEndpoints
             return policy is null ? Results.NotFound() : Results.Ok(policy);
         });
 
-        // ---- 利用者のみ（ADR-0007・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
+        // ---- 利用者のみ（ADR-0003・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         owner.MapGet("", (AppSvc svc) => Results.Ok(svc.List()));

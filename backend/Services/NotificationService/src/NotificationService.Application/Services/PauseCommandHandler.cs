@@ -48,7 +48,7 @@ public sealed class PauseCommandHandler(
             return PauseCommandResult.StatusView(status);
         }
 
-        // 理由には操作者（Keycloak 利用者名）と経路を残す。Risk 側は理由必須（ADR-0007）。
+        // 理由には操作者（Keycloak 利用者名）と経路を残す。Risk 側は理由必須（FR-11・ADR-0009）。
         var reason = $"Discord Bot 経由の操作（actor={auth.Actor}）";
 
         // pause/resume は冪等（Risk が現状態を返す）。確認フレーズは要求しない（確認ボタンのみ）。

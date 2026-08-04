@@ -58,7 +58,7 @@ RiskControlEndpoints（IADR-0051）と同型に、`/monitor` 配下を **`read` 
 **`owner` サブグループ（`OwnerOnly`）** に分ける。
 
 - `read`（`OwnerOrService`）: GET `/watchlist`, GET `/settings`（読み取り系。trading-owner / trading-service の双方で照会可）。
-- `owner`（`OwnerOnly`）: POST/DELETE `/watchlist`, GET `/watchlist/history`, PUT `/settings`（**変更は利用者のみ**・ADR-0007 維持。
+- `owner`（`OwnerOnly`）: POST/DELETE `/watchlist`, GET `/watchlist/history`, PUT `/settings`（**変更は利用者のみ**・FR-13 維持。
   履歴は監査系のため owner 限定）。
 
 認可は**サブグループに付与し親グループには付けない**（親は例外→HTTP 写像のみ・IADR-0088 の原則を踏襲）。

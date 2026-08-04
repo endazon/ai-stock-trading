@@ -57,7 +57,7 @@ public sealed class KillSwitchCommandHandler(
             return KillSwitchCommandResult.Denied(confirmation.Reason);
         }
 
-        // 理由には操作者（Keycloak 利用者名）と経路を残す。Risk 側は理由必須（ADR-0007）。
+        // 理由には操作者（Keycloak 利用者名）と経路を残す。Risk 側は理由必須（FR-11・ADR-0003）。
         var reason = $"Discord Bot 経由の操作（actor={auth.Actor}）";
 
         // 起動・解除いずれも冪等（既に当該状態なら Risk が現状態を返すのみ）。

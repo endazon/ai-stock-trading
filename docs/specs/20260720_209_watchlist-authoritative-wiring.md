@@ -38,7 +38,8 @@ related_specs:
 - TradeDecision の暫定 watchlist 供給を、権威源（MarketMonitor の watchlist・#191 API）へ**一本化**する。二重の真実源を作らない。
 - 供給方式は **s2s 同期照会**（IADR-0051 の sizing-context / open-positions の作法をミラー）。イベント射影は採らない（→ IADR-0095）。
 - MarketMonitor 側: GET `/monitor/watchlist` を **`read` サブグループ（`OwnerOrService`）** へ移動し、trading-service にも
-  読み取りを開放する。POST/DELETE/`/watchlist/history`/`/settings` は `OwnerOnly` 据え置き（変更は利用者のみ・ADR-0007 維持）。
+  読み取りを開放する。POST/DELETE/`/watchlist/history`/`/settings` は `OwnerOnly` 据え置き（監視設定の変更は利用者のみ＝FR-13・
+  [IADR-0088](../adr/IADR-0088_watchlist-settings-api.md) の owner サブグループ認可を維持）。
 - TradeDecision 側: `IWatchlistProvider` を非同期化（`ISizingContextProvider` と同型）。`HttpWatchlistProvider`（s2s トークン・
   `MarketMonitor:BaseUrl`）を追加し、`MonitoredSymbol`→`WatchedSymbol` を同形 JSON で逆直列化する。
 - **fail-safe フォールバック**（受け入れ基準 2）: `MarketMonitor:BaseUrl` 未設定/不正 → 構成ベース（`ConfigurationWatchlistProvider`＝

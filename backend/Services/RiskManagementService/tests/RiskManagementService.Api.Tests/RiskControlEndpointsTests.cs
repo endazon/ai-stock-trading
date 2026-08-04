@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Api.Tests;
 
-// FR-10, UC-06, ADR-0007: kill switch/設定エンドポイントの認可（OwnerOnly）と永続化・履歴を検証する。
+// FR-10, UC-06, ADR-0003, ADR-0007: kill switch/設定エンドポイントの認可（OwnerOnly）と永続化・履歴を検証する。
 public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     : IClassFixture<RiskWorkerWebApplicationFactory>
 {
@@ -65,7 +65,7 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     [Fact]
     public async Task 設定変更が履歴に記録される()
     {
-        // FR-11, ADR-0007: 上限変更が変更履歴に残る。
+        // FR-11, ADR-0003: 上限変更が変更履歴に残る。
         var client = OwnerClient();
         var limits = TradingDefaults.CreateRiskLimits() with { MaxOpenPositions = 5 };
 
@@ -81,7 +81,7 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     [Fact]
     public async Task 理由が空の_kill_switch_操作は400()
     {
-        // 検証失敗（ADR-0007: 理由必須）は既定の 500 ではなく 400 に写像する。
+        // 検証失敗（FR-11: 理由必須）は既定の 500 ではなく 400 に写像する。
         var client = OwnerClient();
 
         var res = await client.PostAsJsonAsync("/risk-controls/kill-switch/engage",
@@ -263,7 +263,7 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     [Fact]
     public async Task 一時停止と再開が変更履歴に記録される()
     {
-        // ADR-0007/0009: pause/resume の監査（アクター・理由・種別）を設定変更履歴へ残す。
+        // FR-11・ADR-0009: pause/resume の監査（アクター・理由・種別）を設定変更履歴へ残す。
         var client = OwnerClient();
 
         await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));

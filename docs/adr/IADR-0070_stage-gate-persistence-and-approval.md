@@ -6,7 +6,6 @@ related_ids:
   - FR-20
   - FR-15
   - UC-06
-  - ADR-0007
   - ADR-0008
   - ADR-0001
   - IADR-0012
@@ -18,7 +17,6 @@ updated: 2026-07-18
 plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-20: 運用段階の管理・段階遷移は利用者承認／FR-15: バックテスト必須ゲート)"
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md (段階的実弾投入・撤退基準)"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md (変更は利用者のみ・履歴記録)"
   - "../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md (Database per Service)"
 related_specs:
   - "../specs/20260718_20_stage-gate-transitions.md（本決定の作業仕様書）"
@@ -31,7 +29,7 @@ related_specs:
 
 - 状態: Accepted
 - 日付: 2026-07-18
-- 起点: FR-20 / FR-15 / UC-06 / ADR-0008 / ADR-0007（Issue #20）
+- 起点: FR-20 / FR-15 / UC-06 / ADR-0008（Issue #20）
 
 ## コンテキスト
 

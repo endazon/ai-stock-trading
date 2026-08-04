@@ -31,7 +31,7 @@ internal sealed class HttpPauseController(
     {
         try
         {
-            // ADR-0007: 理由必須。actor は Risk 側が認証済みトークン（preferred_username）から採る。
+            // FR-11・ADR-0009: 理由必須。actor は Risk 側が認証済みトークン（preferred_username）から採る。
             using var response = await httpClient
                 .PostAsJsonAsync(path, new PauseRequest(reason), cancellationToken)
                 .ConfigureAwait(false);

@@ -60,7 +60,7 @@ plan_refs:
 
 `AiStockTradingAuthPolicies`:
 - `OwnerOnly`（= 利用者のみ）: kill switch 操作・リスク設定変更・段階昇格など「利用者のみ」の操作に用いる
-  （FR-10/FR-19/FR-20・ADR-0007「変更は利用者のみ」）。Keycloak レルムロール `trading-owner` を要求する。
+  （FR-10/FR-19/FR-20・ADR-0003 / ADR-0007 / ADR-0008「変更は利用者のみ」）。Keycloak レルムロール `trading-owner` を要求する。
 
 > リスク管理は単独利用者運用（計画書の前提）のため、platform の Admin/Operator 二層ではなく `OwnerOnly` 単層とする。
 > ロール名・レルム名は構成（`Auth:Authority`）で差し替え可能。

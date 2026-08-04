@@ -3,7 +3,7 @@ using AiStockTrading.RiskManagement.Application.State;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-10, FR-14, UC-06, ADR-0007, ADR-0009: 取引の一時停止（pause）/再開（resume）の操作。利用者のみ（アクター・理由必須）。
+// FR-10, FR-14, UC-06, ADR-0009: 取引の一時停止（pause）/再開（resume）の操作。利用者のみ（アクター・理由必須）。
 // kill switch（KillSwitchService）と同型。呼び出し側の権限（利用者か否か）はホスト層の Keycloak 認可で担保する。
 // 操作は監査のため設定変更履歴（ISettingsChangeLog）に記録する（kill switch と同経路・新イベントは足さない）。
 //
@@ -58,7 +58,7 @@ public sealed class PauseService(
 
     private static void RequireActorAndReason(string actor, string reason)
     {
-        // 監査性（ADR-0007）: アクターと理由のない変更は受け付けない。
+        // 監査性（FR-11・ADR-0009）: アクターと理由のない変更は受け付けない。
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
     }

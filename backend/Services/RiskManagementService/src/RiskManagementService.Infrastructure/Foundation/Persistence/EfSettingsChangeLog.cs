@@ -3,7 +3,7 @@ using AiStockTrading.RiskManagement.Application.State;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
 
-// FR-11, ADR-0007: 変更履歴の EF 実装（追記専用）。新しい順で照会する。
+// FR-11: 変更履歴の EF 実装（追記専用）。新しい順で照会する。
 internal sealed class EfSettingsChangeLog(RiskManagementDbContext db) : ISettingsChangeLog
 {
     public void Record(SettingsChangeEntry entry)
