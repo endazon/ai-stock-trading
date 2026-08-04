@@ -52,7 +52,9 @@ public class TradingGuardProductTypeTests
     // FR-19, ADR-0016 決定1: 商品種別 3 値 × 有効/無効 × 市場（日本 / 米国）の全 12 通り。
     // 「有効ならば商品種別を理由に拒否されない・無効ならば必ず拒否される」を固定する。
     // 空売りは対象市場が米国株のみ（決定13）だが、その拒否理由は ShortSellDisabled であり
-    // 商品種別ガード（ProductTypeDisabled）とは別物である点も同時に固定する。
+    // 商品種別ガード（ProductTypeDisabled）とは別物である。本テストが見るのは
+    // ProductTypeDisabled の有無だけであり（空売り×日本×有効 が別理由で拒否されても本テストは
+    // 通る）、ShortSellDisabled 自体は ShortSellingControlsTests が固定する。
     [Theory]
     [InlineData(ProductType.Cash, true, Market.Japan)]
     [InlineData(ProductType.Cash, true, Market.UnitedStates)]
