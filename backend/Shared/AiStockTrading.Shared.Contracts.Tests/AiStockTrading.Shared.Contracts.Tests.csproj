@@ -9,10 +9,12 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
-    <!-- NFR, Issue #253: MessageUrn 回帰テスト（EventMessageUrnTests）が MassTransit の URN 導出規約を
-         実際に呼んで検証するためのテスト専用参照。契約アセンブリ（AiStockTrading.Shared.Contracts）は
-         引き続き MassTransit に依存しない。バージョンはルート Directory.Packages.props の CPM で一元管理。 -->
-    <PackageReference Include="MassTransit" />
+    <!-- NFR, ADR-0013, IADR-0129, Issue #253 / #354: メッセージ識別子の回帰テスト
+         （EventMessageTypeNameTests）が Wolverine の識別子導出規約（ToMessageTypeName）を実際に呼んで
+         検証するためのテスト専用参照。契約アセンブリ（AiStockTrading.Shared.Contracts）は引き続き
+         メッセージング基盤に依存しない。バージョンはルート Directory.Packages.props の CPM で一元管理。
+         （#354 第 3 段階で MassTransit 参照から置き換えた。旧テストは EventMessageUrnTests） -->
+    <PackageReference Include="WolverineFx" />
     <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
   </ItemGroup>
 </Project>
