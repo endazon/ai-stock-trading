@@ -63,76 +63,25 @@ module.exports = ({ ok, assert }) => {
   });
 
   // --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 / #354 再発防止） ---
-  // ADR-0013, IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
-  // namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
-  // pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
-  // IADR-0129 / #354: Wolverine ではキュー名にハンドラのクラス名が関与しないため、不変条件を
-  // 「ServiceName の一意性＋共通ヘルパの迂回禁止＋新旧混在の禁止」へ入れ替えた。移行期間は両規則が並走する。
+  // ADR-0013, IADR-0106, IADR-0129: #258 では 2 サービスが同一キューを共有し、pub/sub のつもりが
+  // competing consumer になって取引判断が無言で消えた。Wolverine（#354 で全面移行）はキュー名の導出に
+  // ハンドラのクラス名を一切使わないため、一意性は `<ServiceName>.<メッセージ型名>` の ServiceName に
+  // 帰着する。検査する不変条件は N1（ServiceName の一意性）・N2（トポロジの直接指定の禁止）・
+  // N3（共通ヘルパ経由でのみ Wolverine を配線する）＋メタ検査（走査数の下限）である。
+  // 旧 MassTransit 規則（consumer クラス名の一意性）は移行完了に伴い #354 第 3 段階で撤去した。
   const {
-    endpointNameOf,
     wolverineQueueNameOf,
-    consumerClassesIn,
     pathService,
     serviceNameConstantIn,
-    messagingModeOf,
+    wiringOf,
     forbiddenTopologyCallsIn,
-    findCollisions,
     findServiceNameCollisions,
     checkTree: checkConsumerEndpointNames,
   } = require('./check-consumer-endpoint-names.js');
 
-  const RISK_CS = [
-    'namespace AiStockTrading.RiskManagement.Worker.Composable.Steps;',
-    '',
-    '// FR-10: 取引判断を購読し承認/拒否を発行する。',
-    'internal sealed class TradeDecisionMadeConsumer(',
-    '    OrderScreeningService screeningService,',
-    '    ILogger<TradeDecisionMadeConsumer> logger)',
-    '    : IConsumer<TradeDecisionMade>',
-    '{',
-    '}',
-  ].join('\n');
-
-  ok('endpointNameOf: 末尾 Consumer を落とす（DefaultEndpointNameFormatter と同じ規則）', () => {
-    assert.strictEqual(endpointNameOf('TradeDecisionMadeConsumer'), 'TradeDecisionMade');
-    assert.strictEqual(endpointNameOf('TradeDecisionMadeBaselineConsumer'), 'TradeDecisionMadeBaseline');
-    assert.strictEqual(endpointNameOf('Foo'), 'Foo');
-  });
-
-  ok('consumerClassesIn: 複数行プライマリコンストラクタの IConsumer 実装を検出する', () => {
-    assert.deepStrictEqual(consumerClassesIn(RISK_CS), ['TradeDecisionMadeConsumer']);
-  });
-
-  ok('consumerClassesIn: IConsumer を実装しないクラス・コメント中の IConsumer は拾わない', () => {
-    assert.deepStrictEqual(consumerClassesIn('// : IConsumer<T>\nclass Poller : BackgroundService\n{\n}'), []);
-  });
-
   ok('pathService: backend/Services/<Service>/ からサービス名を得る', () => {
     assert.strictEqual(pathService('backend/Services/RiskManagementService/src/W/X.cs'), 'RiskManagementService');
     assert.strictEqual(pathService('backend/Shared/X.cs'), null);
-  });
-
-  ok('findCollisions: サービス跨ぎの同名 consumer を衝突として検出する（#258 の回帰）', () => {
-    const collisions = findCollisions([
-      { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-      { service: 'MarketMonitorService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'b.cs' },
-    ]);
-    assert.strictEqual(collisions.length, 1);
-    assert.strictEqual(collisions[0].endpoint, 'TradeDecisionMade');
-  });
-
-  ok('findCollisions: 改名でキューが分離されれば衝突しない', () => {
-    assert.deepStrictEqual(findCollisions([
-      { service: 'RiskManagementService', className: 'TradeDecisionMadeConsumer', endpoint: 'TradeDecisionMade', file: 'a.cs' },
-      { service: 'MarketMonitorService', className: 'TradeDecisionMadeBaselineConsumer', endpoint: 'TradeDecisionMadeBaseline', file: 'b.cs' },
-    ]), []);
-  });
-
-  ok('findCollisions: 同一サービス内は衝突判定の対象外（同名はコンパイルエラーで防がれる）', () => {
-    assert.deepStrictEqual(findCollisions([
-      { service: 'S', className: 'AConsumer', endpoint: 'A', file: 'a.cs' },
-      { service: 'S', className: 'BConsumer', endpoint: 'B', file: 'b.cs' },
-    ]), []);
   });
 
   ok('wolverineQueueNameOf: キュー名は ServiceName とメッセージ型名から導く（IADR-0129 決定 1）', () => {
@@ -140,7 +89,7 @@ module.exports = ({ ok, assert }) => {
       wolverineQueueNameOf('ai-stock-trading.cost-control-service', 'LlmCostIncurred'),
       'ai-stock-trading.cost-control-service.LlmCostIncurred'
     );
-    // #258 の新世界版: 同じイベントでもサービスが違えばキューは別。
+    // #258 の再発経路: 同じイベントを購読しても、サービスが違えばキューは別。
     assert.notStrictEqual(
       wolverineQueueNameOf('ai-stock-trading.risk-management-service', 'TradeDecisionMade'),
       wolverineQueueNameOf('ai-stock-trading.market-monitor-service', 'TradeDecisionMade')
@@ -155,14 +104,16 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(serviceNameConstantIn('var x = 1;'), null);
   });
 
-  ok('messagingModeOf: 新旧の配線を判定し、混在を検出する', () => {
-    assert.strictEqual(messagingModeOf('opts.UseAiStockTradingRabbitMq(ServiceName, null);'), 'wolverine');
-    assert.strictEqual(messagingModeOf('builder.Services.AddMassTransit(x => { });'), 'masstransit');
-    assert.strictEqual(
-      messagingModeOf('builder.Services.AddMassTransit(x => { });\nopts.UseAiStockTradingRabbitMq(S, null);'),
-      'mixed'
+  ok('wiringOf: Wolverine 配線と共通ヘルパの通過を判定する（N3）', () => {
+    const viaHelper = 'builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));';
+    assert.deepStrictEqual(wiringOf(viaHelper), { wiresWolverine: true, usesHelper: true });
+    assert.deepStrictEqual(
+      wiringOf('builder.Host.UseWolverine(opts => opts.UseRabbitMq(new Uri("amqp://rabbitmq")));'),
+      { wiresWolverine: true, usesHelper: false }
     );
-    assert.strictEqual(messagingModeOf('var x = 1;'), 'none');
+    assert.deepStrictEqual(wiringOf('var x = 1;'), { wiresWolverine: false, usesHelper: false });
+    // 説明文で API 名に触れることは禁止しない（コメント行は対象外）。
+    assert.strictEqual(wiringOf('// builder.Host.UseWolverine( を呼ぶ').wiresWolverine, false);
   });
 
   ok('forbiddenTopologyCallsIn: 共通ヘルパを迂回したトポロジ指定を検出する（IADR-0129 決定 4）', () => {
@@ -172,7 +123,7 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(forbiddenTopologyCallsIn('// UseConventionalRouting( は共通ヘルパに閉じる').length, 0);
   });
 
-  ok('findServiceNameCollisions: ServiceName の重複を検出する（新世界の #258 相当）', () => {
+  ok('findServiceNameCollisions: ServiceName の重複を検出する（#258 の唯一の再発経路）', () => {
     const collisions = findServiceNameCollisions([
       { service: 'AService', serviceName: 'ai-stock-trading.a-service' },
       { service: 'BService', serviceName: 'ai-stock-trading.a-service' },
@@ -186,14 +137,17 @@ module.exports = ({ ok, assert }) => {
     ]), []);
   });
 
-  ok('実ツリー: キュー名の衝突・ヘルパ迂回・新旧混在がいずれも無い（#258 / #354 の回帰）', () => {
+  ok('実ツリー: ServiceName の重複・ヘルパ迂回・ヘルパ非経由の配線がいずれも無い（#258 / #354 の回帰）', () => {
     const result = checkConsumerEndpointNames();
-    assert.deepStrictEqual(result.consumerCollisions, [], '未移行サービスのキュー名が衝突している');
     assert.deepStrictEqual(result.serviceNameCollisions, [], 'ServiceName が重複している');
-    assert.deepStrictEqual(result.mixed, [], '新旧のメッセージング配線が混在している');
     assert.deepStrictEqual(result.forbidden, [], '共通ヘルパを迂回したトポロジ指定がある');
+    assert.deepStrictEqual(result.bypassed, [], '共通ヘルパを通さない Wolverine 配線がある');
     // 検査器が空振りして無条件に緑になる経路を塞ぐ（IADR-0127 と同じ性質）。
     assert.ok(result.services.length >= 11, `走査できたサービスが少なすぎる: ${result.services.length}`);
+    assert.ok(
+      result.services.filter((s) => s.wiresWolverine).length >= 10,
+      'Wolverine を配線しているサービスが少なすぎる（N1〜N3 の母数が消えている）'
+    );
   });
 
   // --- check-test-traceability.js: 受け入れ基準 → テスト写像の検査（#343 / IADR-0127） ---

@@ -6,36 +6,35 @@
  * （FR-03/FR-10, ADR-0013, IADR-0106, IADR-0129, Issue #258 / #354）。外部依存ゼロ（Node 標準モジュールのみ）。
  * check-doc-links.js / validate-runtime-scaffold.js と同型。
  *
- * ── 背景（Issue #258・MassTransit 時代）
- * 各 Worker は `cfg.ConfigureEndpoints(ctx)` を `IEndpointNameFormatter` 未設定で呼ぶ。MassTransit の既定
- * （`DefaultEndpointNameFormatter`）は**エンドポイント名を consumer クラス名のみから導き、namespace を含まない**
- * （`Consumer` 接尾辞を落とす）。そのため別サービスの consumer でもクラス名が同じなら同一キューを宣言し、
- * pub/sub のつもりが competing consumer（取り合い）になる。実測では `RiskManagementService` と
- * `MarketMonitorService` がともに `TradeDecisionMadeConsumer` を持ち、同一キュー `TradeDecisionMade` を
- * consumers=4 で奪い合って取引判断を無言で取りこぼした。
+ * ── 背景（Issue #258）
+ * 取引フェーズ2 検証で `TradeDecisionMade` が承認・拒否・エラーのいずれにも現れず**無言で消えた**。
+ * 原因は 2 サービスが同一キューを共有し、pub/sub のつもりが competing consumer（取り合い）になっていたこと。
+ * 当時（MassTransit）はキュー名が consumer クラス名だけから導かれ、別サービスの同名 consumer が
+ * **たまたま**衝突していた。対策は「クラス名をサービス跨ぎで一意にする」であった（IADR-0106）。
  *
- * ── 前提の入れ替え（#354・Wolverine 移行・IADR-0129）
+ * ── 現在の前提（#354 で Wolverine へ全面移行済み・IADR-0129）
  * **Wolverine ではキュー名の導出にハンドラのクラス名が一切関与しない**（既定はメッセージ型だけから導く）。
- * よって「クラス名を一意にする」対策は無効化され、同じイベントを購読する別サービスは**必ず**同一キューを
- * 共有する。IADR-0129 はこれを次で防ぐ:
+ * よって「クラス名を一意にする」対策は無効であり、放っておくと同じイベントを購読する別サービスは
+ * **必ず**同一キューを共有する（#258 が偶然ではなく構造的に起きる）。IADR-0129 はこれを次で防ぐ:
  *   決定1: リスニングキュー名を `<ServiceName>.<メッセージ型名>` とする（一意性を ServiceName に帰着させる）
  *   決定2: exchange はメッセージ型ごとの fanout を共有する（サービス名を混ぜると fan-out が壊れる）
  *   決定3: `DisableConventionalLocalRouting()`（発行がプロセス内へ閉じるのを防ぐ）
  *   決定4: 決定1〜3 を共通ヘルパ `UseAiStockTradingRabbitMq` に封じ込め、サービス側に選択肢を残さない
  *
  * ── 不変条件（本検査器が守るもの）
- *   [新] N1. 各サービスの `ServiceName` 定数がサービス跨ぎで一意である（＝キュー名前空間が衝突しない）
- *   [新] N2. Wolverine 配線のサービスが共通ヘルパを迂回していない
- *            （素の UseConventionalRouting / ListenToRabbitQueue / PrefixIdentifiers / 直接の exchange 発行を禁止）
- *   [新] N3. 1 サービスが MassTransit と Wolverine を同時に配線していない（移行途中の中途半端な状態を止める）
- *   [旧] O1. **未移行（MassTransit）サービス**の `IConsumer<T>` 実装について、DefaultEndpointNameFormatter が
- *            導くエンドポイント名が全サービス横断で一意である
- *   [メタ] M1. 走査したサービス数が下限を下回らない（検査器が空振りして無条件に緑になる経路を塞ぐ）
+ *   N1. 各サービスの `ServiceName` 定数がサービス跨ぎで一意である（＝キュー名前空間が衝突しない）
+ *   N2. トポロジを直接指定していない
+ *       （素の UseConventionalRouting / ListenToRabbitQueue / PrefixIdentifiers / 直接の exchange 発行を禁止）
+ *   N3. Wolverine を配線するサービスは**必ず共通ヘルパ経由**である（`UseWolverine(` があるのに
+ *       `UseAiStockTradingRabbitMq(` が無い＝規則の外でトポロジを組んでいる）
+ *   M1. 走査したサービス数が下限を下回らない（検査器が空振りして無条件に緑になる経路を塞ぐ）
+ *   M2. Wolverine を配線しているサービス数が下限を下回らない（同上。全サービスが配線を失っても緑にしない）
  *
- * ── 移行期間の扱い（暫定・owningIssue: 354）
- * 除外リストは作らない。サービスごとに `Program.cs` の内容から移行済み（Wolverine）／未移行（MassTransit）を
- * 自動判定し、それぞれの規則を当てる。第 2 段階（全サービス移行）が終われば O1 の対象は 0 件になり、
- * 第 3 段階で O1 の実装ごと撤去する。**それまでは旧規則も生きている**（無効化された検査は無いのと同じであるため）。
+ * ── 履歴（#354 第 3 段階で撤去した規則）
+ * 移行期間中は「未移行（MassTransit）サービスは旧規則（consumer クラス名の一意性）で検査する」新旧併存モードを
+ * 持っていた。全サービスの移行完了で対象が 0 件になり、**規則が効いていないのに検査だけ残る**状態になったため
+ * 撤去した（旧規則の詳細は IADR-0106 と本ファイルの git 履歴に残る）。MassTransit 自体の再混入は
+ * `scripts/check-banned-libraries.js` が BANNED として止める。
  *
  * 使い方:
  *   node scripts/check-consumer-endpoint-names.js             # 実ツリーを走査。違反があれば終了コード 1。
@@ -50,6 +49,11 @@ const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', '.git']);
 
 // M1: 走査で見つかるべきサービス数の下限（実測 11）。探索が壊れて 0 件になると全検査が無条件に緑になる。
 const MIN_SERVICES = 11;
+
+// M2: Wolverine を配線しているサービス数の下限（実測 10。BacktestService はメッセージングを持たない）。
+// N1〜N3 はいずれも「Wolverine を配線しているサービス」に対して意味を持つため、その母数が静かに 0 になると
+// 検査は緑のまま何も守らなくなる（IADR-0127 / IADR-0128 決定 6 と同じ「静かに失効する経路を塞ぐ」思想）。
+const MIN_WOLVERINE_SERVICES = 10;
 
 // N2: サービス側で直接呼んではならない Wolverine の API。すべて共通ヘルパ経由に限る（IADR-0129 決定 4）。
 const FORBIDDEN_TOPOLOGY_CALLS = [
@@ -68,32 +72,10 @@ function toPosix(p) {
   return String(p).replace(/\\/g, '/');
 }
 
-// [旧・O1] MassTransit の DefaultEndpointNameFormatter と同じ規則でエンドポイント名を導く。
-// 末尾の `Consumer` を落としたクラス名（namespace は含まない）。
-function endpointNameOf(className) {
-  return String(className).replace(/Consumer$/, '');
-}
-
-// [新] IADR-0129 決定 1 のキュー名。C# 側の WolverineExtensions.QueueNameFor と同じ規則
+// IADR-0129 決定 1 のキュー名。C# 側の WolverineExtensions.QueueNameFor と同じ規則
 // （こちらは静的検査用の写し。規則を変えるときは両方を直す）。
 function wolverineQueueNameOf(serviceName, messageTypeName) {
   return `${serviceName}.${messageTypeName}`;
-}
-
-// C# ソースから `IConsumer<...>` を実装するクラス名を抽出する。
-// プライマリコンストラクタで宣言が複数行にまたがる形にも対応するため、クラス名の直後から
-// 本体開始の `{` までを宣言ヘッダとみなし、そこに IConsumer< が現れるかで判定する。
-function consumerClassesIn(csText) {
-  const text = String(csText);
-  const out = [];
-  const re = /\bclass\s+([A-Za-z0-9_]+)/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const brace = text.indexOf('{', re.lastIndex);
-    const header = brace === -1 ? text.slice(re.lastIndex) : text.slice(re.lastIndex, brace);
-    if (/\bIConsumer\s*</.test(header)) out.push(m[1]);
-  }
-  return out;
 }
 
 // リポジトリ相対パス（posix）から所属サービス名（backend/Services/<Service>/ の <Service>）を返す。
@@ -108,16 +90,18 @@ function serviceNameConstantIn(csText) {
   return m ? m[1] : null;
 }
 
-// サービスのソース全体から、メッセージング方式を判定する。
-//   'wolverine' / 'masstransit' / 'mixed'（両方＝違反）/ 'none'（メッセージングを持たない）
-function messagingModeOf(csText) {
-  const text = String(csText);
-  const hasWolverine = /UseAiStockTradingRabbitMq\s*\(/.test(text);
-  const hasMassTransit = /AddMassTransit\s*\(/.test(text);
-  if (hasWolverine && hasMassTransit) return 'mixed';
-  if (hasWolverine) return 'wolverine';
-  if (hasMassTransit) return 'masstransit';
-  return 'none';
+// メッセージング配線の状態を返す。
+//   { wiresWolverine: Wolverine を起動しているか, usesHelper: 共通ヘルパを通しているか }
+// コメント行は対象外（説明文で API 名に言及することは禁止しない）。
+function wiringOf(csText) {
+  const code = String(csText)
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+  return {
+    wiresWolverine: /UseWolverine\s*\(/.test(code),
+    usesHelper: /UseAiStockTradingRabbitMq\s*\(/.test(code),
+  };
 }
 
 // N2: 共通ヘルパを迂回するトポロジ指定を探す。行番号付きで返す。
@@ -135,23 +119,8 @@ function forbiddenTopologyCallsIn(csText) {
   return hits;
 }
 
-// [旧・O1] { endpoint -> [{ service, className, file }] } から、2 サービス以上に跨る衝突を返す。
-function findCollisions(entries) {
-  const byName = new Map();
-  for (const e of entries) {
-    if (!byName.has(e.endpoint)) byName.set(e.endpoint, []);
-    byName.get(e.endpoint).push(e);
-  }
-  const collisions = [];
-  for (const [endpoint, list] of byName) {
-    const services = new Set(list.map((e) => e.service));
-    if (list.length > 1 && services.size > 1) collisions.push({ endpoint, entries: list });
-  }
-  return collisions.sort((a, b) => a.endpoint.localeCompare(b.endpoint));
-}
-
-// [新・N1] { service -> serviceName } から、同じ ServiceName を持つサービスの組を返す。
-// これが新世界における #258 相当の唯一の衝突経路である（キュー名は ServiceName を前置するため）。
+// [N1] { service -> serviceName } から、同じ ServiceName を持つサービスの組を返す。
+// これが #258（キュー名の衝突）の唯一の再発経路である（キュー名は ServiceName を前置するため）。
 function findServiceNameCollisions(services) {
   const byName = new Map();
   for (const s of services) {
@@ -180,7 +149,7 @@ function walkCsFiles(absDir, relBase, acc) {
   return acc;
 }
 
-// サービスごとに src/ 配下の .cs を読み、方式・ServiceName・consumer・逸脱を集計する。
+// サービスごとに src/ 配下の .cs を読み、配線の状態・ServiceName・逸脱を集計する。
 // テスト資産（tests/ 配下）は実デプロイのキューを宣言しないため対象外。
 function collectServices() {
   const files = walkCsFiles(path.join(REPO_ROOT, SERVICES_DIR), SERVICES_DIR, []);
@@ -191,7 +160,13 @@ function collectServices() {
     const service = pathService(posix);
     if (service === null) continue;
     if (!byService.has(service)) {
-      byService.set(service, { service, serviceName: null, mode: 'none', consumers: [], forbidden: [] });
+      byService.set(service, {
+        service,
+        serviceName: null,
+        wiresWolverine: false,
+        usesHelper: false,
+        forbidden: [],
+      });
     }
     const acc = byService.get(service);
     const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -201,15 +176,10 @@ function collectServices() {
       if (name !== null) acc.serviceName = name;
     }
 
-    const mode = messagingModeOf(text);
-    if (mode !== 'none') {
-      // 1 サービス内の複数ファイルで方式が分かれていれば mixed とみなす。
-      acc.mode = acc.mode === 'none' || acc.mode === mode ? mode : 'mixed';
-    }
+    const wiring = wiringOf(text);
+    acc.wiresWolverine = acc.wiresWolverine || wiring.wiresWolverine;
+    acc.usesHelper = acc.usesHelper || wiring.usesHelper;
 
-    for (const className of consumerClassesIn(text)) {
-      acc.consumers.push({ service, className, endpoint: endpointNameOf(className), file: posix });
-    }
     for (const hit of forbiddenTopologyCallsIn(text)) {
       acc.forbidden.push({ service, file: posix, ...hit });
     }
@@ -217,49 +187,19 @@ function collectServices() {
   return [...byService.values()].sort((a, b) => a.service.localeCompare(b.service));
 }
 
-// 旧規則の互換 API（既存の呼び出し・自己試験のため残す）。未移行サービスの consumer のみを返す。
-function collectEntries() {
-  return collectServices()
-    .filter((s) => s.mode !== 'wolverine')
-    .flatMap((s) => s.consumers);
-}
-
 function checkTree() {
   const services = collectServices();
   return {
     services,
     serviceNameCollisions: findServiceNameCollisions(services),
-    consumerCollisions: findCollisions(collectEntries()),
-    mixed: services.filter((s) => s.mode === 'mixed'),
-    forbidden: services.filter((s) => s.mode === 'wolverine').flatMap((s) => s.forbidden),
+    bypassed: services.filter((s) => s.wiresWolverine && !s.usesHelper),
+    forbidden: services.flatMap((s) => s.forbidden),
   };
 }
 
 // --- 自己試験 ----------------------------------------------------------------
 
 function selfTest() {
-  const RISK = [
-    'namespace AiStockTrading.RiskManagement.Worker.Composable.Steps;',
-    '',
-    '// FR-10: 取引判断を購読し承認/拒否を発行する。',
-    'internal sealed class TradeDecisionMadeConsumer(',
-    '    OrderScreeningService screeningService,',
-    '    ILogger<TradeDecisionMadeConsumer> logger)',
-    '    : IConsumer<TradeDecisionMade>',
-    '{',
-    '    public async Task Consume(ConsumeContext<TradeDecisionMade> context) { }',
-    '}',
-  ].join('\n');
-  const MONITOR_BAD = RISK.replace(/RiskManagement/g, 'MarketMonitor');
-  const MONITOR_OK = MONITOR_BAD.replace(/TradeDecisionMadeConsumer/g, 'TradeDecisionMadeBaselineConsumer');
-  const NOT_A_CONSUMER = [
-    'namespace X;',
-    '// IConsumer<T> について説明するコメント',
-    'internal sealed class MonitorPollingService : BackgroundService',
-    '{',
-    '}',
-  ].join('\n');
-
   const WOLVERINE_OK = [
     'const string ServiceName = "ai-stock-trading.cost-control-service";',
     'builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(',
@@ -273,51 +213,34 @@ function selfTest() {
     '    opts.UseRabbitMq().UseConventionalRouting();',
     '});',
   ].join('\n');
-  const MASSTRANSIT_PROGRAM = [
-    'const string ServiceName = "ai-stock-trading.risk-management-service";',
-    'builder.Services.AddMassTransit(x => x.UsingRabbitMq((ctx, cfg) => cfg.ConfigureEndpoints(ctx)));',
+  const WOLVERINE_WITHOUT_HELPER = [
+    'const string ServiceName = "ai-stock-trading.cost-control-service";',
+    'builder.Host.UseWolverine(opts => opts.UseRabbitMq(new Uri("amqp://rabbitmq")));',
   ].join('\n');
-  const MIXED_PROGRAM = [WOLVERINE_OK, MASSTRANSIT_PROGRAM].join('\n');
-
-  const entriesOf = (text, service, file) =>
-    consumerClassesIn(text).map((c) => ({ service, className: c, endpoint: endpointNameOf(c), file }));
+  const NO_MESSAGING = [
+    'const string ServiceName = "ai-stock-trading.backtest-service";',
+    'var builder = WebApplication.CreateBuilder(args);',
+  ].join('\n');
 
   const cases = [
-    // --- 旧規則（#258 の回帰。未移行サービスに対して現に有効） ---
-    ['[旧] 末尾 Consumer を落としてエンドポイント名を導く', () => endpointNameOf('TradeDecisionMadeConsumer') === 'TradeDecisionMade'],
-    ['[旧] Consumer で終わらない名はそのまま', () => endpointNameOf('Foo') === 'Foo'],
-    ['[旧] 複数行のプライマリコンストラクタでも検出する', () => JSON.stringify(consumerClassesIn(RISK)) === JSON.stringify(['TradeDecisionMadeConsumer'])],
-    ['[旧] IConsumer を実装しないクラスは拾わない', () => consumerClassesIn(NOT_A_CONSUMER).length === 0],
-    ['[旧] クラス宣言より前のコメント中の IConsumer に反応しない', () => consumerClassesIn('// : IConsumer<T>\nclass Foo : BackgroundService\n{\n}').length === 0],
-    ['[旧] サービス跨ぎの同名を衝突として検出する（#258 の回帰）', () => {
-      const c = findCollisions([
-        ...entriesOf(RISK, 'RiskManagementService', 'a.cs'),
-        ...entriesOf(MONITOR_BAD, 'MarketMonitorService', 'b.cs'),
-      ]);
-      return c.length === 1 && c[0].endpoint === 'TradeDecisionMade' && c[0].entries.length === 2;
-    }],
-    ['[旧] 改名後は衝突しない', () => findCollisions([
-      ...entriesOf(RISK, 'RiskManagementService', 'a.cs'),
-      ...entriesOf(MONITOR_OK, 'MarketMonitorService', 'b.cs'),
-    ]).length === 0],
-    ['[旧] 同一サービス内の別名は衝突ではない', () => findCollisions([
-      { service: 'S', className: 'AConsumer', endpoint: 'A', file: 'a.cs' },
-      { service: 'S', className: 'BConsumer', endpoint: 'B', file: 'b.cs' },
-    ]).length === 0],
-    ['サービス相対パスからサービス名を得る', () => pathService('backend/Services/RiskManagementService/src/X/Y.cs') === 'RiskManagementService'],
-    ['サービス外は null', () => pathService('backend/Shared/X.cs') === null],
-
-    // --- 新規則（IADR-0129） ---
-    ['[新] キュー名は ServiceName とメッセージ型名から導く',
+    // --- キュー名の規則（IADR-0129 決定 1） ---
+    ['キュー名は ServiceName とメッセージ型名から導く',
       () => wolverineQueueNameOf('ai-stock-trading.cost-control-service', 'LlmCostIncurred')
         === 'ai-stock-trading.cost-control-service.LlmCostIncurred'],
-    ['[新] 同じイベントでもサービスが違えばキュー名は衝突しない',
+    ['同じイベントでもサービスが違えばキュー名は衝突しない（#258 の再発経路が閉じている）',
       () => wolverineQueueNameOf('ai-stock-trading.risk-management-service', 'TradeDecisionMade')
         !== wolverineQueueNameOf('ai-stock-trading.market-monitor-service', 'TradeDecisionMade')],
-    ['[新] ServiceName 定数を読み取る',
+
+    // --- パス・定数の読み取り ---
+    ['サービス相対パスからサービス名を得る',
+      () => pathService('backend/Services/RiskManagementService/src/X/Y.cs') === 'RiskManagementService'],
+    ['サービス外は null', () => pathService('backend/Shared/X.cs') === null],
+    ['ServiceName 定数を読み取る',
       () => serviceNameConstantIn(WOLVERINE_OK) === 'ai-stock-trading.cost-control-service'],
-    ['[新] ServiceName が無ければ null', () => serviceNameConstantIn('var x = 1;') === null],
-    ['[新] ServiceName の重複を検出する（新世界の #258 相当）', () => {
+    ['ServiceName が無ければ null', () => serviceNameConstantIn('var x = 1;') === null],
+
+    // --- N1: ServiceName の一意性 ---
+    ['[N1] ServiceName の重複を検出する（#258 相当の唯一の衝突経路）', () => {
       const c = findServiceNameCollisions([
         { service: 'AService', serviceName: 'ai-stock-trading.a-service' },
         { service: 'BService', serviceName: 'ai-stock-trading.a-service' },
@@ -325,19 +248,32 @@ function selfTest() {
       ]);
       return c.length === 1 && c[0].serviceName === 'ai-stock-trading.a-service' && c[0].entries.length === 2;
     }],
-    ['[新] ServiceName が全て違えば衝突なし', () => findServiceNameCollisions([
+    ['[N1] ServiceName が全て違えば衝突なし', () => findServiceNameCollisions([
       { service: 'AService', serviceName: 'ai-stock-trading.a-service' },
       { service: 'BService', serviceName: 'ai-stock-trading.b-service' },
     ]).length === 0],
-    ['[新] Wolverine 配線を判定する', () => messagingModeOf(WOLVERINE_OK) === 'wolverine'],
-    ['[新] MassTransit 配線を判定する', () => messagingModeOf(MASSTRANSIT_PROGRAM) === 'masstransit'],
-    ['[新] 新旧の混在を検出する', () => messagingModeOf(MIXED_PROGRAM) === 'mixed'],
-    ['[新] メッセージングを持たないサービスは none', () => messagingModeOf('var x = 1;') === 'none'],
-    ['[新] 共通ヘルパを迂回したトポロジ指定を検出する',
+    ['[N1] ServiceName を持たないサービスは衝突判定に入れない', () => findServiceNameCollisions([
+      { service: 'AService', serviceName: null },
+      { service: 'BService', serviceName: null },
+    ]).length === 0],
+
+    // --- N2: トポロジの直接指定 ---
+    ['[N2] 共通ヘルパを迂回したトポロジ指定を検出する',
       () => forbiddenTopologyCallsIn(WOLVERINE_BYPASS).some((h) => h.call === 'UseConventionalRouting(')],
-    ['[新] ヘルパのみの配線は迂回として検出しない', () => forbiddenTopologyCallsIn(WOLVERINE_OK).length === 0],
-    ['[新] コメント中の API 名には反応しない',
+    ['[N2] ヘルパのみの配線は迂回として検出しない', () => forbiddenTopologyCallsIn(WOLVERINE_OK).length === 0],
+    ['[N2] コメント中の API 名には反応しない',
       () => forbiddenTopologyCallsIn('// UseConventionalRouting( は共通ヘルパに閉じる').length === 0],
+
+    // --- N3: 共通ヘルパ経由であること ---
+    ['[N3] ヘルパ経由の Wolverine 配線を認める',
+      () => wiringOf(WOLVERINE_OK).wiresWolverine === true && wiringOf(WOLVERINE_OK).usesHelper === true],
+    ['[N3] ヘルパを通さない Wolverine 配線を検出する',
+      () => wiringOf(WOLVERINE_WITHOUT_HELPER).wiresWolverine === true
+        && wiringOf(WOLVERINE_WITHOUT_HELPER).usesHelper === false],
+    ['[N3] メッセージングを持たないサービスは配線なしと判定する',
+      () => wiringOf(NO_MESSAGING).wiresWolverine === false],
+    ['[N3] コメント中の UseWolverine( には反応しない',
+      () => wiringOf('// builder.Host.UseWolverine( を呼ぶ').wiresWolverine === false],
   ];
 
   let failed = 0;
@@ -356,7 +292,8 @@ function selfTest() {
 function main() {
   if (process.argv.includes('--self-test')) { selfTest(); return; }
 
-  const { services, serviceNameCollisions, consumerCollisions, mixed, forbidden } = checkTree();
+  const { services, serviceNameCollisions, bypassed, forbidden } = checkTree();
+  const wolverine = services.filter((s) => s.wiresWolverine);
   const errors = [];
 
   // M1: 検査器が空振りしていないこと。
@@ -367,11 +304,12 @@ function main() {
     );
   }
 
-  // N3: 新旧の混在。
-  for (const s of mixed) {
+  // M2: 検査対象（Wolverine を配線しているサービス）が静かに消えていないこと。
+  if (wolverine.length < MIN_WOLVERINE_SERVICES) {
     errors.push(
-      `[N3] ${s.service} が MassTransit と Wolverine を同時に配線しています。`
-        + 'どちらか一方に決めてください（移行途中の中途半端な配線は、どちらの規則でもキュー名を保証できません）。'
+      `[M2] Wolverine を配線しているサービスが ${wolverine.length} 件しかありません`
+        + `（下限 ${MIN_WOLVERINE_SERVICES}）。配線の検出が壊れているか、サービスがメッセージングを失っています。`
+        + 'N1〜N3 はこの母数に対してのみ意味を持つため、静かに空振りする前に失敗させます。'
     );
   }
 
@@ -393,50 +331,41 @@ function main() {
     );
   }
 
-  // O1: 未移行（MassTransit）サービスのキュー名衝突。
-  for (const c of consumerCollisions) {
-    const detail = c.entries.map((e) => `      ${e.service}: ${e.className}  (${e.file})`).join('\n');
+  // N3: 共通ヘルパを通さない Wolverine 配線。
+  for (const s of bypassed) {
     errors.push(
-      `[O1] MassTransit のキュー名 "${c.endpoint}" がサービスを跨いで衝突しています:\n${detail}\n`
-        + '    既定のエンドポイント名は consumer クラス名のみから導かれ namespace を含みません。'
-        + '関心事を表す語をクラス名に含めてキューを分離してください（例: TradeDecisionMadeBaselineConsumer）。'
+      `[N3] ${s.service} が UseWolverine を呼びながら UseAiStockTradingRabbitMq を通していません。`
+        + 'Wolverine の既定はキュー名をメッセージ型だけから導き（別サービスと必ず衝突する）、'
+        + '発行元にハンドラがあれば発行をプロセス内へ閉じます。共通ヘルパを必ず経由してください'
+        + '（IADR-0129 決定 1・3・4）。'
     );
   }
-
-  const wolverine = services.filter((s) => s.mode === 'wolverine');
-  const masstransit = services.filter((s) => s.mode === 'masstransit');
-  const consumerCount = masstransit.reduce((n, s) => n + s.consumers.length, 0);
 
   if (errors.length === 0) {
     console.log(
       `[check-consumer-endpoint-names] OK: ${services.length} サービスを検査しました。`
-        + `\n  Wolverine 移行済み: ${wolverine.length} 件（${wolverine.map((s) => s.service).join(', ') || 'なし'}）`
-        + `\n  MassTransit 未移行: ${masstransit.length} 件 / consumer ${consumerCount} 件（旧規則で検査）`
-        + '\n  ※ 新旧併存は #354 の移行期間中の暫定状態です。全サービス移行後に旧規則を撤去します。'
+        + `\n  Wolverine 配線: ${wolverine.length} 件（${wolverine.map((s) => s.service).join(', ') || 'なし'}）`
+        + '\n  キュー名は <ServiceName>.<メッセージ型名>（IADR-0129 決定 1）。一意性は ServiceName に帰着します。'
     );
     process.exit(0);
   }
 
   console.error(`[check-consumer-endpoint-names] 違反 ${errors.length} 件を検出しました:`);
   for (const e of errors) console.error(`\n  ${e}`);
-  console.error('\n根拠は docs/adr/IADR-0129_wolverine-messaging-topology.md（新規則）と');
-  console.error('docs/adr/IADR-0106_consumer-endpoint-name-uniqueness.md（旧規則）を参照してください。');
+  console.error('\n根拠は docs/adr/IADR-0129_wolverine-messaging-topology.md を参照してください');
+  console.error('（前身の規則と #258 の経緯は docs/adr/IADR-0106_consumer-endpoint-name-uniqueness.md）。');
   process.exit(1);
 }
 
 if (require.main === module) main();
 
 module.exports = {
-  endpointNameOf,
   wolverineQueueNameOf,
-  consumerClassesIn,
   pathService,
   serviceNameConstantIn,
-  messagingModeOf,
+  wiringOf,
   forbiddenTopologyCallsIn,
-  findCollisions,
   findServiceNameCollisions,
-  collectEntries,
   collectServices,
   checkTree,
 };

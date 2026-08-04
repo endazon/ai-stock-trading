@@ -224,13 +224,14 @@ jobs:
 
   # FR-03/FR-10, ADR-0013, IADR-0106, IADR-0129, Issue #258 / #354 再発防止:
   # サービスを跨いで RabbitMQ のキュー名が衝突していないかを機械検査する。
-  # [旧・未移行サービス] MassTransit の既定 DefaultEndpointNameFormatter はキュー名を consumer クラス名のみから
-  #   導き namespace を含まないため、別サービスで同名の consumer を作ると同一キューを共有し、pub/sub のつもりが
-  #   competing consumer になる。実測では RiskManagement と MarketMonitor が TradeDecisionMade を取り合い、
-  #   取引判断を無言で取りこぼした（#258）。
-  # [新・Wolverine 移行済みサービス] Wolverine はキュー名にハンドラのクラス名を一切使わないため上記の対策が効かない。
-  #   代わりに ServiceName の一意性・共通ヘルパ（UseAiStockTradingRabbitMq）の迂回禁止・新旧混在の禁止を検査する。
-  # 移行期間（#354）は Program.cs の内容から新旧を自動判定し、サービスごとに該当規則を当てる。
+  # #258 では 2 サービスが同一キューを共有し、pub/sub のつもりが competing consumer（取り合い）になって
+  # 取引判断が承認・拒否・エラーのいずれにも現れず無言で消えた。
+  # Wolverine（#354 で全面移行）はキュー名の導出にハンドラのクラス名を一切使わないため、当時の対策
+  #（クラス名をサービス跨ぎで一意にする）は効かない。キュー名は <ServiceName>.<メッセージ型名> であり、
+  # 一意性は ServiceName の一意性へ帰着する。よって検査するのは
+  #   N1 ServiceName の一意性 / N2 トポロジの直接指定の禁止 / N3 共通ヘルパ経由でのみ Wolverine を配線する
+  # ＋ メタ検査（走査したサービス数・Wolverine 配線サービス数の下限＝検査の空振り防止）である。
+  # 旧 MassTransit 規則は移行完了に伴い #354 第 3 段階で撤去した（再混入は check-banned-libraries.js が止める）。
   # 外部依存ゼロ（Node のみ）。--self-test で検査器自体も毎回試験する。
   consumer-endpoint-names:
     runs-on: ubuntu-latest
