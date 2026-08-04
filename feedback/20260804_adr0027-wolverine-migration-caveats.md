@@ -19,9 +19,11 @@ created: 2026-08-04
 
 # フィードバック: Wolverine 移行で実測した 3 つの罠（起動失敗・fan-out の破壊・ハンドラの生成失敗）
 
-> **本書は起草のみである。** 計画リポジトリ（`microservices-platform`）への送付（`plan-feedback` ラベル付き
-> Issue の起票、または計画リポ `draft/feedback/` へのコピー）は**未実施**。送付は人間または別セッションに委ねる。
-> 計画リポは本セッションでは読み取り専用参照であり、直接の書き換えは行っていない。
+> **送付済み（2026-08-04）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#181](https://github.com/endazon/project-planning/issues/181)。
+> 宛先は計画リポジトリ `project-planning` であり、裁定の対象は同リポ内の
+> `projects/microservices-platform/`（基盤側）の文書である。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
 
 ## 種別
 
