@@ -222,11 +222,15 @@ jobs:
             --dir .github/workflows \
             --compare-with-ref origin/develop
 
-  # FR-03/FR-10, ADR-0013, IADR-0106, Issue #258 再発防止: サービスを跨いで MassTransit の
-  # エンドポイント名（＝RabbitMQ のキュー名）が衝突していないかを機械検査する。既定の
-  # DefaultEndpointNameFormatter はキュー名を consumer クラス名のみから導き namespace を含まないため、
-  # 別サービスで同名の consumer を作ると同一キューを共有し、pub/sub のつもりが competing consumer になる。
-  # 実測では RiskManagement と MarketMonitor が TradeDecisionMade を取り合い、取引判断を無言で取りこぼした。
+  # FR-03/FR-10, ADR-0013, IADR-0106, IADR-0129, Issue #258 / #354 再発防止:
+  # サービスを跨いで RabbitMQ のキュー名が衝突していないかを機械検査する。
+  # [旧・未移行サービス] MassTransit の既定 DefaultEndpointNameFormatter はキュー名を consumer クラス名のみから
+  #   導き namespace を含まないため、別サービスで同名の consumer を作ると同一キューを共有し、pub/sub のつもりが
+  #   competing consumer になる。実測では RiskManagement と MarketMonitor が TradeDecisionMade を取り合い、
+  #   取引判断を無言で取りこぼした（#258）。
+  # [新・Wolverine 移行済みサービス] Wolverine はキュー名にハンドラのクラス名を一切使わないため上記の対策が効かない。
+  #   代わりに ServiceName の一意性・共通ヘルパ（UseAiStockTradingRabbitMq）の迂回禁止・新旧混在の禁止を検査する。
+  # 移行期間（#354）は Program.cs の内容から新旧を自動判定し、サービスごとに該当規則を当てる。
   # 外部依存ゼロ（Node のみ）。--self-test で検査器自体も毎回試験する。
   consumer-endpoint-names:
     runs-on: ubuntu-latest
@@ -237,7 +241,7 @@ jobs:
           node-version: "20"
       - name: Self-test consumer endpoint name checker
         run: node scripts/check-consumer-endpoint-names.js --self-test
-      - name: Check consumer endpoint name uniqueness across services
+      - name: Check queue name uniqueness across services
         run: node scripts/check-consumer-endpoint-names.js
 
   lint:

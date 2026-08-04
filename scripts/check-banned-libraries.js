@@ -69,7 +69,11 @@ const BANNED = [
  * 使われていないものを PENDING に置くのは、防げる再混入を見送っているだけになる。
  */
 const PENDING = [
-  // 実測で 140 ファイルが参照している。Wolverine への移行（#354）が済むまで BANNED にできない。
+  // Wolverine への移行（#354）は段階制であり、第 1 段階（パイロット 2 サービス）完了時点で
+  // 実測 91 ファイル・113 箇所（PackageReference / using）がまだ MassTransit を参照している。
+  // **全サービスの移行が終わる第 2 段階まで PENDING のままにする**。ここで BANNED へ昇格させると
+  // CI が常時赤になり、本ファイルが冒頭で戒めている「検査ごと無視される」状態を自ら作ることになる。
+  // 昇格の条件: check-consumer-endpoint-names.js の出力で「MassTransit 未移行: 0 件」になること。
   { name: 'MassTransit', replacement: 'Wolverine', owningIssue: 354 },
 ];
 

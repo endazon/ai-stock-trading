@@ -62,15 +62,22 @@ module.exports = ({ ok, assert }) => {
     assert.match(out, /^OK: /m, `検証器が OK を返すべき（実出力: ${out}）`);
   });
 
-  // --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 再発防止） ---
+  // --- check-consumer-endpoint-names: サービス跨ぎのキュー名衝突検査（Issue #258 / #354 再発防止） ---
   // ADR-0013, IADR-0106: MassTransit の既定エンドポイント名は consumer クラス名のみから導かれ
   // namespace を含まない。別サービスで同名の consumer を作ると同一キューを共有して competing consumer になり、
   // pub/sub のつもりが取り合いになる（RiskManagement と MarketMonitor が TradeDecisionMade を取り合った）。
+  // IADR-0129 / #354: Wolverine ではキュー名にハンドラのクラス名が関与しないため、不変条件を
+  // 「ServiceName の一意性＋共通ヘルパの迂回禁止＋新旧混在の禁止」へ入れ替えた。移行期間は両規則が並走する。
   const {
     endpointNameOf,
+    wolverineQueueNameOf,
     consumerClassesIn,
     pathService,
+    serviceNameConstantIn,
+    messagingModeOf,
+    forbiddenTopologyCallsIn,
     findCollisions,
+    findServiceNameCollisions,
     checkTree: checkConsumerEndpointNames,
   } = require('./check-consumer-endpoint-names.js');
 
@@ -128,8 +135,65 @@ module.exports = ({ ok, assert }) => {
     ]), []);
   });
 
-  ok('実ツリー: サービス跨ぎのキュー名衝突が無い（#258 の回帰）', () => {
-    assert.deepStrictEqual(checkConsumerEndpointNames(), []);
+  ok('wolverineQueueNameOf: キュー名は ServiceName とメッセージ型名から導く（IADR-0129 決定 1）', () => {
+    assert.strictEqual(
+      wolverineQueueNameOf('ai-stock-trading.cost-control-service', 'LlmCostIncurred'),
+      'ai-stock-trading.cost-control-service.LlmCostIncurred'
+    );
+    // #258 の新世界版: 同じイベントでもサービスが違えばキューは別。
+    assert.notStrictEqual(
+      wolverineQueueNameOf('ai-stock-trading.risk-management-service', 'TradeDecisionMade'),
+      wolverineQueueNameOf('ai-stock-trading.market-monitor-service', 'TradeDecisionMade')
+    );
+  });
+
+  ok('serviceNameConstantIn: Program.cs の ServiceName 定数を読む', () => {
+    assert.strictEqual(
+      serviceNameConstantIn('const string ServiceName = "ai-stock-trading.audit-service";'),
+      'ai-stock-trading.audit-service'
+    );
+    assert.strictEqual(serviceNameConstantIn('var x = 1;'), null);
+  });
+
+  ok('messagingModeOf: 新旧の配線を判定し、混在を検出する', () => {
+    assert.strictEqual(messagingModeOf('opts.UseAiStockTradingRabbitMq(ServiceName, null);'), 'wolverine');
+    assert.strictEqual(messagingModeOf('builder.Services.AddMassTransit(x => { });'), 'masstransit');
+    assert.strictEqual(
+      messagingModeOf('builder.Services.AddMassTransit(x => { });\nopts.UseAiStockTradingRabbitMq(S, null);'),
+      'mixed'
+    );
+    assert.strictEqual(messagingModeOf('var x = 1;'), 'none');
+  });
+
+  ok('forbiddenTopologyCallsIn: 共通ヘルパを迂回したトポロジ指定を検出する（IADR-0129 決定 4）', () => {
+    assert.strictEqual(forbiddenTopologyCallsIn('opts.UseRabbitMq().UseConventionalRouting();').length, 1);
+    assert.strictEqual(forbiddenTopologyCallsIn('opts.UseAiStockTradingRabbitMq(S, null);').length, 0);
+    // 説明文で API 名に触れることは禁止しない（コメント行は対象外）。
+    assert.strictEqual(forbiddenTopologyCallsIn('// UseConventionalRouting( は共通ヘルパに閉じる').length, 0);
+  });
+
+  ok('findServiceNameCollisions: ServiceName の重複を検出する（新世界の #258 相当）', () => {
+    const collisions = findServiceNameCollisions([
+      { service: 'AService', serviceName: 'ai-stock-trading.a-service' },
+      { service: 'BService', serviceName: 'ai-stock-trading.a-service' },
+      { service: 'CService', serviceName: 'ai-stock-trading.c-service' },
+    ]);
+    assert.strictEqual(collisions.length, 1);
+    assert.strictEqual(collisions[0].serviceName, 'ai-stock-trading.a-service');
+    assert.deepStrictEqual(findServiceNameCollisions([
+      { service: 'AService', serviceName: 'ai-stock-trading.a-service' },
+      { service: 'BService', serviceName: 'ai-stock-trading.b-service' },
+    ]), []);
+  });
+
+  ok('実ツリー: キュー名の衝突・ヘルパ迂回・新旧混在がいずれも無い（#258 / #354 の回帰）', () => {
+    const result = checkConsumerEndpointNames();
+    assert.deepStrictEqual(result.consumerCollisions, [], '未移行サービスのキュー名が衝突している');
+    assert.deepStrictEqual(result.serviceNameCollisions, [], 'ServiceName が重複している');
+    assert.deepStrictEqual(result.mixed, [], '新旧のメッセージング配線が混在している');
+    assert.deepStrictEqual(result.forbidden, [], '共通ヘルパを迂回したトポロジ指定がある');
+    // 検査器が空振りして無条件に緑になる経路を塞ぐ（IADR-0127 と同じ性質）。
+    assert.ok(result.services.length >= 11, `走査できたサービスが少なすぎる: ${result.services.length}`);
   });
 
   // --- check-test-traceability.js: 受け入れ基準 → テスト写像の検査（#343 / IADR-0127） ---
