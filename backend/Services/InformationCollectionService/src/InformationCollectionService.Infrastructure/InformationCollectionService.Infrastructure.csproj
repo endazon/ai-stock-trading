@@ -9,7 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（IMessageBus による発行）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <ProjectReference Include="..\InformationCollectionService.Application\InformationCollectionService.Application.csproj" />
     <!-- 収集完了イベント（InformationCollected）の発行に共有契約を参照する。 -->

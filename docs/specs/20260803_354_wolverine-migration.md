@@ -407,3 +407,54 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
 3. Wolverine のハンドラは**public でなければ発見されない**（実測: `internal sealed class ...Consumer` は発見されず `IndeterminateRoutesException`）。現行の consumer は大半が `internal sealed` であり、移行時に `public sealed` へ広げる。可視性を広げること自体の是非は第 2 段階で再確認する（`InternalsVisibleTo` で回避できるかは未検証）。[[IADR-0128]] 決定 4 は「実装型は internal のまま据え置き公開面を増やさない」としており、本移行はそれを一部崩す。第 2 段階で 45 consumer 分をまとめて判断する。
 4. 同一サービス内で同じイベント型を複数ハンドラが処理する箇所の再試行意味変化（§6.2）。**パイロットには該当が無く、第 1 段階では検証できていない。**RiskManagementService の移行時に必ず扱うこと。
 5. 旧キュー（`TradeDecisionMade` 等 47 本）はブローカ上に consumer 不在で残る。**削除手順は第 3 段階で運用仕様書へ書く**（本段階では未着手）。
+
+---
+
+## 12. 第 2 段階（残り全サービスの移行）
+
+> 以下は第 2 段階（別 PR・別セッション）の実施記録である。第 1 段階の §1〜§11 は当時のまま残す。
+
+### 12.1 実測した移行対象
+
+第 1 段階終了時点の検査器出力（`node scripts/check-consumer-endpoint-names.js`）は
+「Wolverine 移行済み 2 件 / MassTransit 未移行 8 件・consumer 45 件」であった。
+**§5 の表と [[IADR-0129]] は「残り 9 サービス」と書いていたが、実測では 8 サービスである。**
+
+- `BacktestService` は**メッセージングを一切持たない**（`AddMassTransit` も `IConsumer<T>` も `IPublishEndpoint` も 0 件。
+  `BacktestEvaluatedFactory` は Stage 0 判定 → 契約イベントへの純写像のみで、発行の実駆動は go-live ホスト（#82 系）に未結線）。
+  よって移行対象ではない。第 1 段階の「残り 9 サービス」は BacktestService を数え違えていた（本節が正）。
+- BFF（`AiStockTrading.Bff`）もメッセージングを持たない（HTTP プロキシのみ）。第 1 段階の「＋ BFF」も対象外である。
+
+移行対象（8 サービス）と実測値:
+
+| サービス | consumer 数 | 発行箇所 | 備考 |
+| --- | --- | --- | --- |
+| InformationCollection | 0 | 1（`InformationCollected`） | 発行専用 |
+| Report | 0 | 3（`ReportConfirmed` ×2 経路・`ReportDraftPresented`） | 発行専用。singleton からの発行あり |
+| MarketMonitor | 1（`TradeDecisionMade`） | 2（`StopLossTriggered`・`PriceMovementDetected`） | |
+| TradeDecision | 2（`PriceMovementDetected`・`InformationCollected`） | 4（`TradeDecisionMade` ×2 経路・`LlmCostIncurred`・`DailyPolicyUnconfirmed`） | 購読 → 再発行 |
+| OrderExecution | 1（`OrderApproved`） | 5（`OrderExecuted` ×3 経路・`OrderModified`・`OrderCancelled`・`BrokerPositionsObserved`） | singleton からの発行あり |
+| Notification | 10 | 0 | 購読専用 |
+| Audit | 21 | 0 | 購読専用（最大） |
+| RiskManagement | 10 | 8（`OrderApproved` ×3 経路・`OrderRejected`・`PositionCloseRequested`・`StageTransitioned`・`WithdrawalTriggered`・`PositionReconciliationDrift`） | **自己購読あり**・1 イベント 2 ハンドラあり |
+
+### 12.2 書き換えたテストの一覧（§7.1 の基準に照らした旧 → 新の対応）
+
+**基準（§7.1）の再掲**: 1 テスト → 1 テスト／テスト名不変／表明の対象を落とさない／期待値不変／強化のみ可。
+
+#### InformationCollectionService
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `InformationCollectionService.Infrastructure.Tests/CollectionPollingServiceTests.cs` | `収集があれば_InformationCollected_を発行する` | `harness.Published.Any<InformationCollected>()` ＋ `ItemCount == 1` | `session.Sent.MessagesOf<InformationCollected>()` ＋ `ItemCount == 1` **＋ 宛先 exchange の実測固定** | 1〜4 充足・5（強化） |
+| 同上 | `収集ゼロなら発行しない` | `harness.Published.Any<InformationCollected>()` が false | `session.Sent.MessagesOf<InformationCollected>()` が空 | 1〜4 充足 |
+| 同上 | `費用統制が停止_Halted_なら収集があっても発行しない` | 同上（false） | 同上（空） | 1〜4 充足 |
+| 同上 | `External_モードでは_in_process_巡回を行わない` | 常駐を 300ms 起動 → `harness.Published` が false | 常駐を 300ms 起動（追跡ブロック内）→ `session.Sent` が空 | 1〜4 充足（起動・待ち時間・停止の手順は不変） |
+
+テスト補助（テストではないため合格数に影響しない）:
+
+| ファイル | 変更 |
+| --- | --- |
+| `InformationCollectionWorkerWebApplicationFactory` / `CostControlGateSelectionTests` / `InformationSourceSelectionTests` / `KnowledgeBaseSinkSelectionTests` の各 private factory | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness()` → `DisableAllExternalWolverineTransports()`（いずれも「実ブローカへ接続しない」） |
+
+合格数: 12 / 4 / 11 / 61（Api / Application / Domain / Infrastructure）＝移行前と同数。
