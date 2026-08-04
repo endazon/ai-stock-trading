@@ -21,7 +21,8 @@ public class SizingContextServiceTests
     [Fact]
     public void 段階_日次残枠は上限から使用分を引いて導出する()
     {
-        // 既定: Stage.CapitalCap=100,000 / MaxDailyOrderAmount=100,000。
+        // 既定: Stage.CapitalCap=TradingDefaults.InitialCapital（¥491,100＝$3,000）/
+        // 日次上限は equity 比 150%（#329・計画 §5）。
         var state = new PortfolioState
         {
             Capital = 100_000m,
@@ -34,12 +35,13 @@ public class SizingContextServiceTests
         var view = Build(state).Build();
 
         view.Capital.Should().Be(100_000m);
-        view.StageCapitalRemaining.Should().Be(60_000m); // 100,000 − 40,000
-        view.DailyOrderRemaining.Should().Be(50_000m);   // 100,000 − 50,000
+        view.StageCapitalRemaining.Should().Be(TradingDefaults.InitialCapital - 40_000m);
+        // FR-10, #329: 日次上限は equity 比 150%。100,000 × 1.5 − 50,000 = 100,000。
+        view.DailyOrderRemaining.Should().Be(100_000m);
         view.ConsecutiveLosses.Should().Be(2);
         view.DrawdownRatio.Should().Be(0.05m);
         view.Mode.Should().Be(TradeMode.Paper);          // Stage0 は Paper
-        view.Limits.MaxOrderAmount.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmount);
+        view.Limits.MaxOrderAmountRatio.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio);
     }
 
     [Fact]
@@ -48,8 +50,8 @@ public class SizingContextServiceTests
         var state = new PortfolioState
         {
             Capital = 100_000m,
-            InvestedCapital = 150_000m,   // CapitalCap 超過
-            DailyOrderedAmount = 120_000m, // 日次上限超過
+            InvestedCapital = TradingDefaults.InitialCapital + 1m, // CapitalCap 超過
+            DailyOrderedAmount = 200_000m, // 日次上限（100,000 × 150% = 150,000）超過
         };
 
         var view = Build(state).Build();
