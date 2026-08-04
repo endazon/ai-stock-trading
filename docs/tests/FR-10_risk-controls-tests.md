@@ -88,7 +88,7 @@ related_specs:
 | T-10-145 | 維持率閾値の交点（**$12.50** で規制側と自前 40% が入れ替わる） | `維持率閾値は株価12ドル50セントを境に規制側と自前側が入れ替わる` | $12.49 / $12.50 / $12.51 |
 | T-10-146 | 維持率が適用閾値を割り込んだら拒否 | `維持率は適用閾値の境界で切り替わる` | 閾値 −ε / 一致 / +ε |
 | T-10-147 | 権利確定日の**前日のみ**新規空売り禁止 | `権利確定日前日のみ新規空売りを禁止する` | 前々日 / 前日 / 当日 / 翌日 |
-| T-10-148 | 強制買戻し検知後 **30 日間**の禁止 | `強制買戻し検知銘柄は30日間空売りできない` | 0 / 29 / 30 / 31 日後 |
+| T-10-148 | 強制買戻し検知後 **30 日間**の禁止（理由は `BuyInBanned`。#374） | `強制買戻し検知銘柄は30日間空売りできない` | 0 / 29 / 30 / 31 日後 |
 | T-10-149 | 3 統制（kill / ロックアウト / pause）の成立 **8 通り**と優先順位 | `三統制の優先順位と新規建て停止は成立の組み合わせで決まる`（`TradingControlPriorityTests`） | 2³ = 8 通り全数 |
 
 ### 2. プロパティベース（入力によらず成り立つ不変条件）
@@ -104,7 +104,7 @@ related_specs:
 | T-10-152 | 空売りの 1 銘柄上限も **equity に比例**する（k = 0.5 / 1 / 2 / 1,700） | `equityをk倍すると1銘柄あたり空売り上限もk倍になる`（同上） |
 | T-10-153 | 維持率閾値は株価によらず**自前 40% と規制要求の大きい方**であり、回復目標は常に「閾値 + 5pt」 | `維持率閾値は常に自前と規制要求の厳しい方であり回復目標は閾値に連動する`（同上。$5 / $9.99 / $12.50 / $16.67 / $100 / $3,000） |
 | T-10-154 | 新規建て停止は 3 統制の **OR** であり、優先順位は表示にのみ効く（8 通りで不変） | `新規建て停止は三統制のORであり優先順位は表示にのみ効く`（`TradingControlPriorityTests`） |
-| T-10-155 | 空売りの拒否理由は**すべてクラス A**（クラス C は限定列挙・既定はクラス A へ落ちる） | `空売りの拒否理由はいずれもクラスAであり統制違反に計上しない`（`ShortSellingControlsTests`）・`クラスCは禁止銘柄と相場操縦パターンの2種に限られる` ほか（`RejectionReasonClassificationTests`） |
+| T-10-155 | 空売りの拒否理由 **9 種**は**すべてクラス A**（クラス C は限定列挙・既定はクラス A へ落ちる） | `空売りの拒否理由はいずれもクラスAであり統制違反に計上しない`（`ShortSellingControlsTests`）・`クラスCは禁止銘柄と相場操縦パターンの2種に限られる` ほか（`RejectionReasonClassificationTests`） |
 | T-10-156 | **空売り比率 50% の判定は「空売り建玉の合計 ≦ ロング建玉の総額」と等価**である（`(S+N) ≦ (L+S+N)×0.5 ⇔ S+N ≦ L`）。ロング建玉が空売り枠の上限そのものであり、建玉構成に依存しない（#329 第 3 段階） | `空売り比率の判定は空売り合計がロング建玉総額を超えないことと等価である`（`ShortSellingControlsTests`。L/S/N の 6 組。L = 0 を含む） |
 
 ### 3. 否定形（統制を迂回できないこと）
@@ -135,6 +135,10 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-163 | **逆指値を付けずに空売りを建てる**（損失に上限の無い建玉を損切り機構なしで持つ） | `逆指値を伴わない空売りは通らない`（同上） |
 | T-10-164 | **$5 未満の除外をクラス C（`BannedSymbol`）へ寄せる**（市況由来の事象を AI の違反件数へ混入させる） | `株価5ドル未満の空売りは通らずクラスCにも計上されない`（同上） |
 | T-10-165 | **強制買戻し禁止をクラス C へ寄せる**（同上） | `強制買戻しの禁止期間中は通らずクラスCにも計上されない`（同上） |
+| T-10-172 | **禁止期間の拒否を `BorrowUnavailable` へ写像する**（原因も解除条件も異なる 2 事象を畳み、監査ログから区別できなくする。ADR-0016 決定10 の 2026-08-04 追記が明示的に禁じた）。借株が成立している状態で見る | `強制買戻しの禁止期間中の拒否は借株不可へ写像されない`（同上。#374） |
+| T-10-173 | **逆向きの写像**（locate 失敗を `BuyInBanned` へ寄せ、日報・月報の「強制買戻しの発生回数」を起きていない事象で水増しする） | `借株できないだけの拒否は強制買戻し禁止へ写像されない`（同上。#374） |
+| T-10-174 | 2 つのコードを**別名にする**（enum レベルでの統合） | `強制買戻しの禁止と借株不可は別の拒否理由である`（`RejectionReasonClassificationTests`。#374） |
+| T-10-175 | **既存メンバの序数を変える**（拒否理由は HTTP 経路で整数として往来するため、過去の記録の意味が変わる）／ 序数表の更新漏れ | `拒否理由の序数は不変である` / `序数表はすべての拒否理由を網羅する`（`RejectionReasonOrdinalStabilityTests`。IADR-0134 決定2・#374） |
 | T-10-166 | **無効設定のまま統制値だけで通す** | `空売りが無効なら他の条件をすべて満たしても通らない`（同上） |
 | T-10-167 | **別市場（円建て株価）で USD の $5.00 下限を素通りする**（¥300 > 5 の比較） | `米国株以外の空売りは株価下限を素通りせずに拒否される`（同上） |
 | T-10-168 | **分割発注で 1 銘柄上限を積み上げる**（1 件ずつ上限内なら通る経路） | `分割発注しても1銘柄あたり空売り上限は累計で効く`（同上） |
@@ -184,7 +188,7 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | キー | 削除前（実装） | 削除後（＝計画値） |
 | --- | --- | --- |
 | `ShortSell.Limits` | `(type ShortSellingLimits not found)` | `type ShortSellingLimits with members: BorrowRateCapAnnual, BuyInBanDurationDays, ExposureRatioCap, MaintenanceMarginThreshold, MaintenanceRecoveryTargetOffset, PerSymbolCapRatio, PriceFloorUsd` |
-| `RejectionReason.ShortSellReasons` | `(none of the RejectionReason members defined)` | `BorrowCostExceeded, BorrowUnavailable, DividendRecordDateNear, MaintenanceMarginBreach, ShortExposureExceeded, ShortPriceFloorBreach, ShortSellDisabled` |
+| `RejectionReason.ShortSellReasons` | `(none of the RejectionReason members defined)` | `BorrowCostExceeded, BorrowUnavailable, DividendRecordDateNear, MaintenanceMarginBreach, ShortExposureExceeded, ShortPriceFloorBreach, ShortSellDisabled`（**#374 で 9 種へ改訂**。後述） |
 
 **赤→緑の実測**（IADR-0127 の機械的証明）:
 
@@ -192,6 +196,16 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
    **検査4（登録済み逸脱の現行値は実装の実際値と一致する）**が失敗（`Failed: 2, Passed: 4`）。
    失敗メッセージが該当キーを名指しする（第 1 段階＝金額系 4 キー・第 2 段階＝空売り 2 キー）
 2. 該当行を削除して実行 → **`Failed: 0, Passed: 6`**（両段階とも実測）
+
+**#374（計画側 9 種への追随）の実測**——**submodule のピン更新だけでは赤くならない**ことが判明した。
+`PlanRiskDefaults` は計画書からの**人手転記**であり、テストは planning submodule のファイルを読まないためである
+（[IADR-0134](../adr/IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) 決定3）。
+
+| 段階 | 結果 |
+| --- | --- |
+| 1. submodule のみ `4cbd3e2` へ更新 | **`Failed: 0, Passed: 6`**（＝赤くならない） |
+| 2. 計画側の転記（`PlanRiskDefaults` を 9 種へ）を追加 | **`Failed: 1, Passed: 5`**。検査1 が `RejectionReason.ShortSellReasons: 計画「…, BuyInBanned, …, StopOrderRequired」/ 実装「…（7 種）」` を名指し |
+| 3. 実装（`BuyInBanned` の新設・写像の切替・抽出候補の是正） | **`Failed: 0, Passed: 6`** |
 
 ## テストデータ
 
@@ -304,12 +318,15 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 
 ## 未決事項
 
-- `StopOrderRequired`（逆指値必須の拒否理由）は計画に無いコード名であり、T-10-163 / T-10-155 が
-  現行実装を固定している。計画側で追認・改名された場合は本書とテストを追随させる
-  （[feedback/20260804_adr0016-stop-order-rejection-reason.md](../../feedback/20260804_adr0016-stop-order-rejection-reason.md)）。
-- **空売り比率 50% の分母**（建玉 0 件のとき空売りを開始できないこと）は計画側の裁定待ちである。
-  T-10-156 / T-10-171 が現行の読み（文字どおり）を固定しており、案 B（建玉 0 件時の例外）または
-  案 C（分母を equity へ）が採られた場合は両テストと `ShortSellEvaluator` を同時に改める
+- ~~`StopOrderRequired`（逆指値必須の拒否理由）は計画に無いコード名~~ → **2026-08-04 に裁定済み**。
+  計画が拒否理由を **7 種 → 9 種**へ改訂し、`StopOrderRequired` を**同名で追認**、`BuyInBanned` を**新設**した
+  （ADR-0016 決定10 の改訂）。強制買戻しの 30 日禁止は `BorrowUnavailable` への写像を**明示的に禁じられ**、
+  `BuyInBanned` へ切り替えた（#374・[IADR-0134](../adr/IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) 決定1）。
+  写像の再統合は T-10-172 / T-10-173 / T-10-174 が**両向き**で塞いでいる。
+- ~~**空売り比率 50% の分母**は計画側の裁定待ち~~ → **2026-08-04 に案 A（文字どおり維持）で確定**。
+  T-10-156（等価形 `S + N ≦ L`）・T-10-171（否定形）は**現行のまま有効**であり、実装の変更は無い。
+  計画は決定9 の本文へ等価形と「ロング建玉が無ければ空売りは開始できない」を明記し、Stage 1 の検証には
+  「先にロング建玉を作る手順が要る」と補った
   （[feedback/20260804_adr0016-short-ratio-denominator.md](../../feedback/20260804_adr0016-short-ratio-denominator.md)）。
 - **維持率の算式・複数建玉時の適用閾値**は計画に無く、T-10-184・187 が現行の読み（純資産 ÷ 建玉評価額／
   最も厳しい閾値）を固定している。計画側の裁定（[環流](../../feedback/20260804_uc06-maintenance-ratio-formula.md)）で
