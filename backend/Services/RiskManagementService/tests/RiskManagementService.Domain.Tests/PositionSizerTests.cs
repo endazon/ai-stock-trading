@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Domain.Tests;
 
-// FR-10: 1取引あたりリスク（既定: 資金の0.5〜1%、ATR連動サイジング）と連敗時縮小
+// FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%・ATR 連動サイジング）と連敗時縮小（既定: 5 連敗で半減）
 public class PositionSizerTests
 {
     [Fact]
@@ -35,10 +35,12 @@ public class PositionSizerTests
     }
 
     [Theory]
+    // FR-10, #329, ADR-0018: 確定単一値は **5 連敗**（旧レンジ「3〜5」の保守側 3 からの是正）。
+    // 境界値: 4（直下・縮小しない）/ 5（一致・半減）/ 6（直上・半減）。
     [InlineData(0, 1.0)]
-    [InlineData(2, 1.0)]
-    [InlineData(3, 0.5)] // 既定: 3連敗でサイズ半減
+    [InlineData(4, 1.0)]
     [InlineData(5, 0.5)]
+    [InlineData(6, 0.5)]
     public void 連敗数に応じた縮小係数を返す(int consecutiveLosses, decimal expectedFactor)
     {
         var limits = TradingDefaults.CreateRiskLimits();
@@ -64,7 +66,7 @@ public class PositionSizerTests
     {
         var limits = TradingDefaults.CreateRiskLimits();
 
-        var factor = PositionSizer.GetSizeFactor(consecutiveLosses: 3, drawdownRatio: 0.05m, limits);
+        var factor = PositionSizer.GetSizeFactor(consecutiveLosses: 5, drawdownRatio: 0.05m, limits);
 
         factor.Should().Be(0.25m);
     }

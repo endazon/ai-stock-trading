@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, ADR-0001, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-10
+updated: 2026-08-04
 plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
@@ -62,22 +62,34 @@ plan_refs:
 | PreventSameDayReentry | bool | | true | 差金決済防止（同日再エントリー禁止） |
 | ProhibitManipulativeOrderPatterns | bool | | true | 相場操縦パターン禁止（判定は検出器注入時。IADR-0006） |
 
-### RiskLimitSettings（FR-10。既定値の出所は IADR-0002）
+### RiskLimitSettings（FR-10。既定値は計画 05_trading-assumptions §5 の確定単一値。#329 / IADR-0130）
+
+**金額系は固定額を持たない**（計画 §5 注記）。equity 比で保持し、判定時に
+`MaxOrderAmountFor(equity)` / `MaxDailyOrderAmountFor(equity)` で解決する。
 
 | 属性 | 型 | 既定値 | 制約 | 説明 |
 | --- | --- | --- | --- | --- |
-| MaxOrderAmount | decimal | 35,000 | > 0 | 1注文金額上限（円）。逆算値 |
-| MaxDailyOrderAmount | decimal | 100,000 | > 0 | 1日発注金額上限（円）。逆算値 |
-| MaxOpenPositions | int | 3 | ≥ 0 | 保有銘柄数上限。逆算値 |
-| DailyLossLimitRatio | decimal | 0.02 | 0〜1 | 日次損失上限（資金比）。§5 明記 |
-| PerTradeRiskRatio | decimal | 0.01 | 0〜1 | 1取引リスク（資金比）。§5（0.5〜1%）上限側 |
-| MaxDrawdownRatio | decimal | 0.10 | 0〜1 | 最大DD上限。§5（10〜15%）保守側 |
-| LosingStreakThreshold | int | 3 | ≥ 1 | 連敗縮小しきい値。§5（3〜5）保守側 |
+| MaxOrderAmountRatio | decimal | 0.25 | > 0 | 1 注文あたりの発注金額上限（**equity 比**）。§5 |
+| MaxDailyOrderAmountRatio | decimal | 1.50 | > 0 | 1 日あたりの発注金額上限（**equity 比・日次**）。新規建てのみ算入。§5 / #302 |
+| MaxOpenPositions | int | 3 | ≥ 0 | 保有**建玉**数上限（「保有銘柄数」では数えない）。§5 / ADR-0016 決定9 |
+| DailyLossLimitRatio | decimal | 0.02 | 0〜1 | 日次損失上限（equity 比）。§5 / ADR-0018 |
+| PerTradeRiskRatio | decimal | 0.01 | 0〜1 | 1 取引リスク（equity 比・ATR 連動）。§5 / ADR-0018 |
+| MaxDrawdownRatio | decimal | 0.10 | 0〜1 | 最大 DD 上限。§5 / ADR-0018 |
+| LosingStreakThreshold | int | 5 | ≥ 1 | 連敗縮小しきい値。§5 / ADR-0018（旧レンジの保守側 3 からの是正） |
 | LosingStreakSizeFactor | decimal | 0.5 | 0〜1 | 連敗時サイズ縮小係数 |
+
+> **API 契約の破壊的変更（#329・申し送り）**: `PUT /risk-controls/settings/limits` は本レコードをそのまま
+> 受けるため、フィールド名が `maxOrderAmount` → `maxOrderAmountRatio`・`maxDailyOrderAmount` →
+> `maxDailyOrderAmountRatio` へ変わる。**SC-02（リスク設定画面）は旧名で送るため保存が 400 で拒否される**
+> （＝古い画面から誤った単位の値を保存できない安全側の縮退）。画面の追随は
+> [#340](https://github.com/endazon/ai-stock-trading/issues/340) の担当であり、比率と「現在 equity での実額」の
+> 併記が要る。既存の永続化行（JSON）も旧名のままでは復元できないため、切替計画（#346）で扱う。
 
 ### StageSettings（FR-20, ADR-0008）
 
-`record StageSettings(Stage, Mode, CapitalCap)`。既定は `(Stage0Verification, Paper, 100,000)`。
+`record StageSettings(Stage, Mode, CapitalCap)`。既定は
+`(Stage0Verification, Paper, TradingDefaults.InitialCapital)`（#329: $3,000 ＝ ¥491,100）。
+計画が定める Stage 2 の総資金比 30% 化は [#333](https://github.com/endazon/ai-stock-trading/issues/333) の担当。
 
 | 属性 | 型 | 説明 |
 | --- | --- | --- |
@@ -93,10 +105,10 @@ plan_refs:
 
 | 属性 | 型 | 既定 | 説明 |
 | --- | --- | --- | --- |
-| Capital | decimal | 必須 | 当日開始時運用資金（固定基準。当日中不変） |
-| OpenPositionCount | int | 0 | 保有銘柄数 |
+| Capital | decimal | 必須 | 判定に用いる自己資金（**equity**）＝当日開始時運用資金（前営業日終値時点・当日中不変）。金額系上限もこの値から解決する（#329/IADR-0130） |
+| OpenPositionCount | int | 0 | 保有**建玉**数 |
 | InvestedCapital | decimal | 0 | 保有取得額合計（コストベース）。段階資金上限の累計判定（#27/IADR-0005） |
-| DailyOrderedAmount | decimal | 0 | 当日発注金額累計 |
+| DailyOrderedAmount | decimal | 0 | 当日発注金額累計。**新規建て（Open）の約定のみ**を積む（#302/#329） |
 | DailyRealizedPnl | decimal | 0 | 当日実現損益（負=損失） |
 | UnrealizedPnl | decimal | 0 | 含み損益（日次終値評価）。日次損失上限は実現+含みの合算で判定（#31/IADR-0008） |
 | DrawdownRatio | decimal | 0 | 資金ピークからのDD率 |

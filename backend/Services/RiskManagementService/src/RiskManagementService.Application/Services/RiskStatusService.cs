@@ -51,7 +51,8 @@ public sealed class RiskStatusService(
             DailyPnl: snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl,
             Capital: snapshot.Capital,
             DailyOrderedAmount: snapshot.DailyOrderedAmount,
-            MaxDailyOrderAmount: settings.Limits.MaxDailyOrderAmount,
+            // FR-10, #329, IADR-0130 決定1: 上限は equity 比のため、表示も equity から解決した実額を載せる。
+            MaxDailyOrderAmount: settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital),
             DrawdownRatio: snapshot.DrawdownRatio,
             MaxDrawdownRatio: settings.Limits.MaxDrawdownRatio,
             OpenPositionCount: snapshot.OpenPositionCount,

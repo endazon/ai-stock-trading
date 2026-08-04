@@ -18,7 +18,8 @@ public class RiskEvaluatorTests
         ProductType productType = ProductType.Cash,
         TradeMode mode = TradeMode.Paper,
         int quantity = 10,
-        decimal price = 3000m,
+        // #329: 既定の注文額 20,000 円は 1 注文上限（equity 100,000 × 25% ＝ 25,000 円）の内側。
+        decimal price = 2_000m,
         PositionEffect positionEffect = PositionEffect.Open) =>
         new(symbol, market, TradeSide.Buy, productType, mode, quantity, price, positionEffect);
 
@@ -37,10 +38,12 @@ public class RiskEvaluatorTests
         string symbol = "AAPL",
         Market market = Market.UnitedStates,
         int quantity = 10,
-        decimal price = 3000m,
+        decimal price = 2_000m,
         TradeMode mode = TradeMode.Paper) =>
         new(symbol, market, TradeSide.Sell, ProductType.Margin, mode, quantity, price, PositionEffect.Open);
 
+    // FR-10, #329, IADR-0130 決定2: capital は判定に用いる自己資金（equity・前営業日終値時点）。
+    // 金額系の上限（1 注文 25% / 1 日 150%）はこの値から解決される。
     private static PortfolioSnapshot Snapshot(
         decimal capital = 100_000m,
         int openPositionCount = 0,
@@ -142,8 +145,8 @@ public class RiskEvaluatorTests
     [Fact]
     public void 段階別資金上限を超える注文は拒否する()
     {
-        // FR-20: 段階ごとの資金上限を強制
-        var intent = Buy(quantity: 100, price: 3000m); // 300,000 円 > CapitalCap 100,000 円
+        // FR-20: 段階ごとの資金上限を強制（既定 CapitalCap ＝ TradingDefaults.InitialCapital ＝ 491,100 円）
+        var intent = Buy(quantity: 100, price: 6_000m); // 600,000 円 > CapitalCap
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
@@ -154,9 +157,9 @@ public class RiskEvaluatorTests
     public void 保有投入額を含む累計が段階資金上限を超える新規注文は拒否する()
     {
         // Issue #27 / FR-20, ADR-0008: 単一注文額は上限内でも、投入中資金＋当該注文で上限超過なら拒否。
-        // 投入中 80,000 円 ＋ 30,000 円 = 110,000 円 > CapitalCap 100,000 円。
-        var snapshot = Snapshot(investedCapital: 80_000m);
-        var intent = Buy(quantity: 1, price: 30_000m);
+        // 投入中（CapitalCap − 10,000）＋ 20,000 = CapitalCap + 10,000 > CapitalCap。
+        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 10_000m);
+        var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
@@ -167,9 +170,9 @@ public class RiskEvaluatorTests
     [Fact]
     public void 保有投入額を含む累計が段階資金上限ちょうどなら承認する()
     {
-        // Issue #27: 境界値。投入中 70,000 円 ＋ 30,000 円 = 100,000 円 == CapitalCap（判定は超過のみ拒否）。
-        var snapshot = Snapshot(investedCapital: 70_000m);
-        var intent = Buy(quantity: 1, price: 30_000m);
+        // Issue #27: 境界値。投入中（CapitalCap − 20,000）＋ 20,000 == CapitalCap（判定は超過のみ拒否）。
+        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 20_000m);
+        var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
@@ -257,12 +260,14 @@ public class RiskEvaluatorTests
         result.Reasons.Should().NotContain(RejectionReason.SameDayReentry);
     }
 
+    // FR-10, #329, 05_trading-assumptions §5: 1 注文あたりの発注金額上限は **equity の 25%**。
+    // equity 100,000 円 → 上限 25,000 円。境界値テーブル（直下 / 一致 / 直上）。
     [Theory]
-    [InlineData(35_000, true)]  // 上限ちょうど → 承認
-    [InlineData(35_001, false)] // 上限超過 → 拒否
+    [InlineData(24_999, true)]  // 上限の直下 → 承認
+    [InlineData(25_000, true)]  // 上限ちょうど → 承認
+    [InlineData(25_001, false)] // 上限超過 → 拒否
     public void 一注文あたり金額上限を境界値で強制する(decimal notional, bool expectedApproved)
     {
-        // FR-10: 1注文あたり金額上限
         var intent = Buy(quantity: 1, price: notional);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
@@ -277,9 +282,10 @@ public class RiskEvaluatorTests
     [Fact]
     public void 一日あたり発注金額上限を累計で強制する()
     {
-        // FR-10: 1日あたり発注金額上限（当日累計＋今回注文で判定）
-        var snapshot = Snapshot(dailyOrderedAmount: 80_000m);
-        var intent = Buy(quantity: 1, price: 30_000m); // 80,000 + 30,000 > 100,000
+        // FR-10, #329: 1 日あたり発注金額上限は equity の 150%/日（当日累計＋今回注文で判定）。
+        // equity 100,000 円 → 上限 150,000 円。140,000 + 20,000 > 150,000。
+        var snapshot = Snapshot(dailyOrderedAmount: 140_000m);
+        var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
@@ -288,9 +294,10 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
-    public void 保有銘柄数上限に達した状態の新規買いは拒否する()
+    public void 保有建玉数上限に達した状態の新規買いは拒否する()
     {
-        var snapshot = Snapshot(openPositionCount: 3); // 既定上限 3
+        // FR-10, ADR-0016 決定9: 保有**建玉**数の上限（既定 3）。「保有銘柄数」では数えない。
+        var snapshot = Snapshot(openPositionCount: 3);
 
         var result = RiskEvaluator.Evaluate(Buy(), DefaultSettings(), snapshot);
 
@@ -464,7 +471,7 @@ public class RiskEvaluatorTests
     public void ショートエントリーにも段階資金上限と金額上限が適用される()
     {
         // Issue #25 / FR-10, FR-20: エントリー専用の金額上限がショートエントリーにも効く。
-        var intent = ShortEntry(quantity: 100, price: 3000m); // 300,000 円 > CapitalCap 100,000 円
+        var intent = ShortEntry(quantity: 100, price: 6_000m); // 600,000 円 > CapitalCap・1 注文上限
 
         var result = RiskEvaluator.Evaluate(intent, MarginEnabledSettings(), Snapshot());
 
@@ -547,15 +554,19 @@ public class RiskEvaluatorTests
     [Fact]
     public void 外貨建て注文の日次発注累計と段階資金上限も換算後の金額で判定する()
     {
-        // 20 USD × 10 株 = 200 USD ＝ 30,000 円（レート 150）。1 注文上限（35,000）は超えないが、
-        // 当日発注累計 80,000 円との合計 110,000 円は日次上限（100,000）を、
-        // 投入中資金 90,000 円との合計 120,000 円は段階資金上限（100,000）を超える。
+        // 15 USD × 10 株 = 150 USD ＝ 22,500 円（レート 150）。1 注文上限（equity 100,000 × 25% ＝ 25,000）は
+        // 超えないが、当日発注累計 140,000 円との合計 162,500 円は日次上限（150,000）を、
+        // 投入中資金（CapitalCap − 10,000）との合計は段階資金上限を超える。
         var intent = new OrderIntent(
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
-            10, 20m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
+            10, 15m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
 
         var result = RiskEvaluator.Evaluate(
-            intent, DefaultSettings(), Snapshot(dailyOrderedAmount: 80_000m, investedCapital: 90_000m));
+            intent,
+            DefaultSettings(),
+            Snapshot(
+                dailyOrderedAmount: 140_000m,
+                investedCapital: TradingDefaults.InitialCapital - 10_000m));
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
@@ -567,7 +578,7 @@ public class RiskEvaluatorTests
     {
         // 基準通貨（日本株）およびレート未記録の既存データ＝現行挙動と等価であることを固定する。
         var intent = new OrderIntent(
-            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 3_000m);
+            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 2_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 

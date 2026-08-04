@@ -7,8 +7,9 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-10, FR-12, FR-20, #257, IADR-0108 決定3/4: SIMULATE 限定プロファイルの読み取り時適用。
-// 「上限だけ差し替える」「実弾段階は書き換えない」「DB（内側ストア）は汚さない」を固定する。
+// FR-10, FR-12, FR-20, #257, #329, IADR-0108 決定3/4, IADR-0130 決定6: SIMULATE 限定プロファイルの読み取り時適用。
+// 金額系が equity 比になったため、プロファイルが差し替えるのは**ペーパー段階の資金上限だけ**である。
+// 「実弾段階は書き換えない」「DB（内側ストア）は汚さない」を固定する。
 public class SimulatorProfileRiskSettingsStoreTests
 {
     private sealed class RecordingStore(RiskManagementSettings current) : IRiskSettingsStore
@@ -32,16 +33,29 @@ public class SimulatorProfileRiskSettingsStoreTests
             TradingDefaults.CreateStagePolicy().SettingsFor(stage));
 
     [Fact]
-    public void 有効時は金額系の上限をプロファイル値へ差し替える()
+    public void 有効時はペーパー段階の資金上限をプロファイル値へ差し替える()
     {
         var inner = new RecordingStore(Production());
         var store = new SimulatorProfileRiskSettingsStore(inner);
 
         var current = store.GetCurrent();
 
-        current.Limits.MaxOrderAmount.Should().Be(59_500_000m);
-        current.Limits.MaxDailyOrderAmount.Should().Be(170_000_000m);
         current.Stage.CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);
+    }
+
+    // FR-10, #329, IADR-0130 決定6: 上限は equity 比のため、プロファイルは上限そのものを書き換えない。
+    // 基準資金がシミュレータ残高になることで、解決後の上限額が比例して上がる。
+    [Fact]
+    public void 有効時も上限の比率は内側の設定のまま_解決額だけが基準資金に比例する()
+    {
+        var inner = new RecordingStore(Production());
+        var store = new SimulatorProfileRiskSettingsStore(inner);
+
+        var current = store.GetCurrent();
+
+        current.Limits.Should().Be(TradingDefaults.CreateRiskLimits());
+        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);
+        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m);
     }
 
     [Fact]
@@ -87,7 +101,7 @@ public class SimulatorProfileRiskSettingsStoreTests
         inner.Current.Limits.MaxOpenPositions.Should().Be(2);
         // 保存後も読み取りは上限だけ差し替わる（内側の編集内容＝保有数は保たれる）。
         store.GetCurrent().Limits.MaxOpenPositions.Should().Be(2);
-        store.GetCurrent().Limits.MaxOrderAmount.Should().Be(59_500_000m);
+        store.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio);
     }
 
     [Fact]
@@ -96,7 +110,7 @@ public class SimulatorProfileRiskSettingsStoreTests
         // 無効時はデコレータを噛ませない配線のため、内側ストアの値がそのまま返る（現行等価）。
         IRiskSettingsStore inner = new RecordingStore(Production());
 
-        inner.GetCurrent().Limits.MaxOrderAmount.Should().Be(35_000m);
+        inner.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(0.25m);
         inner.GetCurrent().Stage.CapitalCap.Should().Be(TradingDefaults.InitialCapital);
     }
 }

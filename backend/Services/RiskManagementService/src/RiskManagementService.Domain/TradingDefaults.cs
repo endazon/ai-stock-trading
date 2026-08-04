@@ -9,8 +9,34 @@ namespace AiStockTrading.RiskManagement.Domain;
 // 実運用では設定ストア（PostgreSQL）から読み込む。本クラスは初期値と検証用の基準を提供する。
 public static class TradingDefaults
 {
-    /// <summary>初期投入資金 100,000 円（利用者決定 2026-07-07）。</summary>
-    public const decimal InitialCapital = 100_000m;
+    /// <summary>
+    /// FR-10, FR-17, #329, IADR-0130 決定3: 初期投入資金 **$3,000**（利用者決定 2026-07-31・
+    /// 05_trading-assumptions §5）。信用取引の解禁に伴い旧 100,000 円から増資した確定値である。
+    /// **判定に用いる自己資金（equity）の権威値**であり、計画適合検査（IADR-0127）はここを抽出する。
+    /// </summary>
+    public const decimal InitialEquityUsd = 3_000m;
+
+    /// <summary>
+    /// FR-10, #329: 統制判定に用いる自己資金（equity）の通貨。計画 §3 は判定の基準通貨を **USD**
+    /// （表示は JPY）と定める（利用者決定 2026-07-31）。単位の取り違え（USD / JPY）を検知可能にするため、
+    /// 金額そのものと通貨を対にして保持する。
+    /// </summary>
+    public const Currency EquityCurrency = Currency.Usd;
+
+    /// <summary>
+    /// FR-10, #329, IADR-0130 決定3: 参照為替レート（1 USD あたりの円）。計画 §5 が初期投入資金を
+    /// 「**$3,000（約 491,000 円。1 USD ≈ 163.7 円）**」と明記した値であり、実装が定めた値ではない。
+    /// 基準通貨（円）建てのパイプライン（IADR-0107）へ equity を供給する 1 点換算にのみ用いる。
+    /// </summary>
+    public const decimal ReferenceUsdToJpyRate = 163.7m;
+
+    /// <summary>
+    /// 基準通貨（円）建ての初期投入資金 ＝ <see cref="InitialEquityUsd"/> × <see cref="ReferenceUsdToJpyRate"/>。
+    /// **判定の正は USD 値**であり（計画 §3「円換算は参考表示」）、本値は JPY 基準のパイプラインへの供給用である。
+    /// 統制の実効は equity に対する比率であるため、equity と注文金額を同一通貨で評価する限り判定結果は
+    /// 通貨に依存しない（IADR-0130 決定3。プロパティベーステストで固定）。
+    /// </summary>
+    public const decimal InitialCapital = InitialEquityUsd * ReferenceUsdToJpyRate;
 
     /// <summary>
     /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。
@@ -19,23 +45,52 @@ public static class TradingDefaults
     /// </summary>
     public const decimal DefaultStopLossRatio = 0.03m;
 
+    // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
+    // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
     public static RiskLimitSettings CreateRiskLimits() => new()
     {
-        // 1取引リスク1%・損切り幅3%なら1ポジション約3.3万円（前提条件の目安）を上限とする
-        MaxOrderAmount = 35_000m,
-        // 1日の発注累計は初期資金を超えない
-        MaxDailyOrderAmount = 100_000m,
-        // 2〜3銘柄分散が目安（前提条件）
+        // 1 注文あたりの発注金額上限: equity の 25%（$3,000 で $750）。単一建玉への集中上限。
+        // 1 取引リスク 1% と併用し厳しい方が効く（本上限が効くのはストップ幅が 4% より狭い場合）。
+        MaxOrderAmountRatio = 0.25m,
+        // 1 日あたりの発注金額上限: equity の 150%/日（$3,000 で $4,500）。目的は暴走の遮断であり、
+        // 損失の統制は日次損失上限（2%）が担う。新規建てのみ算入し決済は算入しない（#302 の裁定）。
+        MaxDailyOrderAmountRatio = 1.50m,
+        // 保有建玉数上限 3（ADR-0016 決定9）。「保有銘柄数」では数えない。
         MaxOpenPositions = 3,
-        // 日次損失上限: 資金の2%到達で当日全停止
+        // 日次損失上限: 資金の 2% 到達で当日全停止・翌営業日までロックアウト
         DailyLossLimitRatio = 0.02m,
-        // 1取引あたりリスク: 資金の0.5〜1%（上限側を既定とする）
+        // 1 取引あたりリスク: 資金の 1%（ATR 連動サイジングの基礎。ADR-0018 決定1）
         PerTradeRiskRatio = 0.01m,
-        // 最大DD上限: 10〜15%（保守側を既定とする）
+        // 最大 DD 上限: 10% 到達で全停止・再検証（ADR-0018 決定1）
         MaxDrawdownRatio = 0.10m,
-        // 連敗時縮小: 3〜5連敗でサイズ半減（保守側を既定とする）
-        LosingStreakThreshold = 3,
+        // 連敗時縮小: 5 連敗でサイズ半減（ADR-0018 決定1。旧レンジ「3〜5」の保守側 3 からの是正）
+        LosingStreakThreshold = 5,
         LosingStreakSizeFactor = 0.5m,
+    };
+
+    // FR-10, UC-06, ADR-0016 決定2,3,4,5,7,9, #329 第 2 段階: 空売り専用統制の既定値。
+    // 既定は**無効**（計画 §5「商品種別の既定はいずれも現物のみ有効」・決定1/8）。統制値は無効時も保持し、
+    // 段階解禁（Stage 3・自己資金 $5,000 以上）で有効化した瞬間から計画どおりの上限が効くようにする。
+    public static ShortSellSettings CreateShortSellSettings() => new()
+    {
+        Enabled = false,
+        Limits = new ShortSellingLimits
+        {
+            // 1 銘柄あたりの空売り建玉: equity の 10%（$3,000 で $300）。決定2(a)
+            PerSymbolCapRatio = 0.10m,
+            // 借株料: 年率 20% 超は拒否。照会不可なら空売りしない。決定3
+            BorrowRateCapAnnual = 0.20m,
+            // 維持率: 自前 40%。実効値は規制要求（max($5.00 ÷ 株価, 30%)）との厳しい方。決定7
+            MaintenanceMarginThreshold = 0.40m,
+            // 維持率割れによる自動縮小の回復目標: 適用される閾値 + 5 ポイント（§5・#90 第 10 回）
+            MaintenanceRecoveryTargetOffset = 0.05m,
+            // 空売り対象の株価下限: USD 5.00（未満は対象外）。決定7
+            PriceFloorUsd = 5.00m,
+            // 空売り比率: 建玉総額の 50% を超えない。決定9
+            ExposureRatioCap = 0.50m,
+            // 強制買戻し検知銘柄の空売り禁止期間: 30 日。決定4
+            BuyInBanDurationDays = 30,
+        },
     };
 
     public static TradingGuardSettings CreateGuardSettings() => new()
@@ -64,8 +119,13 @@ public static class TradingDefaults
     public const decimal WithdrawalDrawdownMultiple = 1.5m;
 
     /// <summary>
-    /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定
-    /// （1 ポジション相当＝MaxOrderAmount）。実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
+    /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定。
+    /// 実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
+    /// <para>
+    /// **計画との逸脱（#333 担当・KnownPlanDeviations 登録済み）**: 計画 §5 は Stage 2 の発注可能額を
+    /// **総資金比 30%（$900）**と定めており、固定額での保持は計画に追随していない。#329（本 issue）は
+    /// リスク上限（FR-10）の比率化のみを扱い、段階の資金上限（FR-20）は #333 の担当のため触れない。
+    /// </para>
     /// </summary>
     public const decimal Stage2MinimalLiveCapitalCap = 35_000m;
 
@@ -88,7 +148,10 @@ public static class TradingDefaults
     };
 
     public static RiskManagementSettings CreateSettings() =>
-        new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
+        new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings())
+        {
+            ShortSell = CreateShortSellSettings(),
+        };
 
     // FR-19, IADR-0040: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
     // 正常なデイトレード（値動きに応じた建て直し・数件の取消）を誤検知せず濫用パターンだけを捕捉する保守側の初期値。

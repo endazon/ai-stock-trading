@@ -165,6 +165,65 @@ public class PortfolioProjectionTests
         state.OpenPositionCount.Should().Be(3); // AAPL, MSFT, GOOG
     }
 
+    // FR-10, #302, #329, IADR-0130 決定4（否定形）: 日次発注枠のカウンタは**新規建てだけ**を積む。
+    // 計画 §5「新規建ての発注代金の合計で判定し、手仕舞い（決済）注文は算入しない」。
+    // ゲート（RiskEvaluator）だけを直してカウンタを直さないと「拒否はされないが枠は減る」状態が残り、
+    // 大口決済が当日の新規建て枠を枯渇させて手仕舞いをためらわせる（ADR-0009 と逆向きの誘因）。
+    [Fact]
+    public void 決済の約定は当日発注累計を消費しない()
+    {
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),    // 新規建て 10,000
+                Fill(TradeSide.Sell, PositionEffect.Close, 10, 5_000m, TodayAt(10)), // 決済 50,000 は算入しない
+            },
+            Today, InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(10_000m);
+    }
+
+    // FR-10, #302（否定形）: 決済しか無い日は当日発注累計が 0 のままである（枠が丸ごと残る）。
+    [Fact]
+    public void 決済だけの日は当日発注累計がゼロのままである()
+    {
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, OnDay(9, 10)),  // 前日の新規建て
+                Fill(TradeSide.Sell, PositionEffect.Close, 10, 5_000m, TodayAt(10)), // 当日は決済のみ
+            },
+            Today, InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(0m);
+        // 決済そのものは当日取引銘柄・実現損益には反映される（差金決済防止・日次損失の入力）。
+        state.SymbolsTradedToday.Should().Contain(("AAPL", Market.UnitedStates));
+        state.DailyRealizedPnl.Should().Be(40_000m);
+    }
+
+    // FR-10, #302, #329 第 3 段階（否定形）: **決済に見せかけた新規建てで日次枠を逃れられない**。
+    // 日次枠は新規建て（Open）のみを算入するため、「決済」と称した約定は枠を消費しない。在庫を超えて
+    // 反転した分は**新しい建玉**であるが、それも投入額（段階資金上限の入力）と保有建玉数へ計上されるため、
+    // 露出そのものは統制の視界から消えない。
+    //
+    // なお建玉効果は上流（TradeDecision の PositionEffectResolver・IADR-0119）が**保有建玉から**決めており、
+    // 保有なし・不明の売りは Close にならず見送られる（AI が「決済」と申告して統制を外す経路は無い）。
+    [Fact]
+    public void 決済に見せかけて在庫を超えた約定でも残る建玉は投入額と建玉数に計上される()
+    {
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),    // ロング 10 株
+                Fill(TradeSide.Sell, PositionEffect.Close, 30, 1_000m, TodayAt(10)), // 「決済」30 株＝20 株の反転
+            },
+            Today, InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(10_000m, "決済（Close）は当日発注累計を消費しない");
+        state.OpenPositionCount.Should().Be(1, "反転して残ったショート建玉は保有建玉数に数える");
+        state.InvestedCapital.Should().Be(20_000m, "残ったショート建玉の取得額は段階資金上限の累計に載る");
+    }
+
     [Fact]
     public void 空の台帳は初期資金のみの状態を返す()
     {

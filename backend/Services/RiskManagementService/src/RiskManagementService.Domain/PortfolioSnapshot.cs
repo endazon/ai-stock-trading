@@ -6,12 +6,22 @@ namespace AiStockTrading.RiskManagement.Domain;
 public record PortfolioSnapshot
 {
     /// <summary>
-    /// 当日開始時点の運用資金（基準通貨・円）。日次損失上限・1取引リスクの判定基準に用いる。
+    /// 判定に用いる自己資金（**equity**）。当日開始時点の運用資金（基準通貨・円）であり、
+    /// <b>前営業日終値時点の評価額</b>と同義である（計画 05_trading-assumptions §5 注記）。
+    /// <para>
+    /// FR-10, #329, IADR-0130 決定2: 日次損失上限・1 取引リスク・最大 DD に加え、
+    /// **金額系の統制上限 3 値（1 注文 25% / 1 日 150% / 保有建玉数）もこの値を基準に解決する**。
     /// 当日の実現損益で目減りしない固定基準として扱い（当日中は不変）、しきい値が損失で
     /// 自己参照的に縮小しないようにする。実現損益は <see cref="DailyRealizedPnl"/> で別途保持する。
+    /// </para>
+    /// <para>
+    /// 日中の評価損益を含めないのは、含み益で上限が緩み含み損で締まるという**逆方向の作用**を避けるため
+    /// （計画 §5 注記。米国の日計り買付余力が前営業日終値時点で固定されるのと同じ考え方）。
+    /// </para>
     /// </summary>
     public required decimal Capital { get; init; }
 
+    /// <summary>保有**建玉**数（ADR-0016 決定9。「保有銘柄数」では数えない）。</summary>
     public int OpenPositionCount { get; init; }
 
     /// <summary>
@@ -20,7 +30,11 @@ public record PortfolioSnapshot
     /// </summary>
     public decimal InvestedCapital { get; init; }
 
-    /// <summary>当日の発注金額累計（基準通貨・円）。</summary>
+    /// <summary>
+    /// 当日の発注金額累計（基準通貨・円）。**新規建て（<c>PositionEffect.Open</c>）の約定のみ**を積む
+    /// （計画 §5「新規建ての発注代金の合計で判定し、手仕舞い〔決済〕注文は算入しない」・#302 の裁定・
+    /// IADR-0130 決定4）。集計は <c>PortfolioProjection</c> の責務。
+    /// </summary>
     public decimal DailyOrderedAmount { get; init; }
 
     /// <summary>当日の実現損益（負値 = 損失）。</summary>

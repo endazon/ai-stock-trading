@@ -234,7 +234,7 @@ public class TradeDecisionServiceTests
             perTradeRiskRatio: ctx.Limits.PerTradeRiskRatio,
             stopLossDistancePerShare: 30m,
             referencePrice: 1_000m,
-            maxOrderAmount: ctx.Limits.MaxOrderAmount,
+            maxOrderAmount: ctx.Limits.MaxOrderAmountFor(ctx.Capital),
             availableCapital: 20_000m, // min(50,000, 20,000)
             sizeFactor: 1m);
 
@@ -421,11 +421,11 @@ public class TradeDecisionServiceTests
     [Fact]
     public async Task 連敗時は縮小係数が数量に反映される()
     {
-        // GetSizeFactor: 連敗しきい値(3)以上で半減。数量が縮小される。
-        var ctx = Context(losses: 3);
+        // FR-10, #329, ADR-0018: GetSizeFactor は連敗しきい値(5)以上で半減。数量が縮小される。
+        var ctx = Context(losses: 5);
         var expected = PositionSizer.CalculateCappedQuantity(
-            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_000m, ctx.Limits.MaxOrderAmount,
-            20_000m, PositionSizer.GetSizeFactor(3, 0m, ctx.Limits));
+            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_000m, ctx.Limits.MaxOrderAmountFor(ctx.Capital),
+            20_000m, PositionSizer.GetSizeFactor(5, 0m, ctx.Limits));
 
         var decision = await Create(BuyJson, Policy, ctx).DecideAsync(Trigger());
 
@@ -465,7 +465,7 @@ public class TradeDecisionServiceTests
         // 現在値 1,200（LLM の referencePrice 1,000 は使わない）。損切り価格＝1,200 − 30 = 1,170（IADR-0035）。
         var ctx = Context();
         var expectedQty = PositionSizer.CalculateCappedQuantity(
-            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_200m, ctx.Limits.MaxOrderAmount, 20_000m, 1m);
+            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_200m, ctx.Limits.MaxOrderAmountFor(ctx.Capital), 20_000m, 1m);
 
         var decision = await CreateWithPrice(BuyJson, new FakeCurrentPrice(1_200m), ctx).DecideAsync(Trigger());
 

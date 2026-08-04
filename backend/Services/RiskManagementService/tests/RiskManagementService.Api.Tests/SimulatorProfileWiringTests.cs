@@ -33,7 +33,7 @@ public class SimulatorProfileWiringTests
         var store = scope.ServiceProvider.GetRequiredService<IRiskSettingsStore>();
 
         store.Should().NotBeOfType<SimulatorProfileRiskSettingsStore>();
-        store.GetCurrent().Limits.MaxOrderAmount.Should().Be(35_000m);
+        store.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(0.25m);
         store.GetCurrent().Stage.CapitalCap.Should().Be(TradingDefaults.InitialCapital);
     }
 
@@ -49,7 +49,7 @@ public class SimulatorProfileWiringTests
     }
 
     [Fact]
-    public void 有効時は金額上限とペーパー段階の資金上限が上がる()
+    public void 有効時はペーパー段階の資金上限が上がり解決後の金額上限も比例する()
     {
         using var factory = Factory(enabled: true);
         _ = factory.CreateClient();
@@ -59,8 +59,9 @@ public class SimulatorProfileWiringTests
 
         store.Should().BeOfType<SimulatorProfileRiskSettingsStore>();
         var current = store.GetCurrent();
-        current.Limits.MaxOrderAmount.Should().Be(59_500_000m);
-        current.Limits.MaxDailyOrderAmount.Should().Be(170_000_000m);
+        // FR-10, #329, IADR-0130 決定6: 上限は equity 比のまま。解決額が基準資金に比例して上がる。
+        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);
+        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m);
         current.Stage.Mode.Should().Be(TradeMode.Paper);
         current.Stage.CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);
     }

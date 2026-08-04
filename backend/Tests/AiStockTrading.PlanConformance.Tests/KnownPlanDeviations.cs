@@ -13,37 +13,12 @@ public static class KnownPlanDeviations
 {
     public static IReadOnlyList<KnownDeviation> All { get; } =
     [
-        // --- #329 リスク統制コア: 金額系 3 値の equity 割合化・空売り統制・拒否理由 7 種 ---
-        new(
-            "Capital.Initial",
-            "JPY 100000 (fixed amount)",
-            329,
-            "旧資金 100,000 円のまま。計画は増資後の $3,000（USD 建て）を確定値とする"),
-        new(
-            "RiskLimits.MaxOrderAmount",
-            "JPY 35000 (fixed amount)",
-            329,
-            "固定額で保持している。計画は equity 比 25% での保持を求める（資金増減に比例調整させるため）"),
-        new(
-            "RiskLimits.MaxDailyOrderAmount",
-            "JPY 100000 (fixed amount)",
-            329,
-            "固定額で保持している。計画は equity 比 150%/日（新規建てのみ算入）"),
-        new(
-            "RiskLimits.LosingStreakThreshold",
-            "3",
-            329,
-            "旧レンジ 3〜5 の保守側を採っていた。ADR-0018 が確定単一値 5 へ同期した"),
-        new(
-            "ShortSell.Limits",
-            "(type ShortSellingLimits not found)",
-            329,
-            "空売り専用統制（ADR-0016 決定2,3,4,7,9）が未実装。専用型の追加が必要"),
-        new(
-            "RejectionReason.ShortSellReasons",
-            "(none of the RejectionReason members defined)",
-            329,
-            "空売り固有の拒否理由 7 種（ADR-0016 決定10）が未定義。いずれもクラス A として扱う"),
+        // --- #329 リスク統制コア: 担当分の逸脱 6 件はすべて解消済み ---
+        // 第 1 段階（IADR-0130）: Capital.Initial（→ USD 3000）/ RiskLimits.MaxOrderAmount
+        // （→ equity ratio 0.25）/ RiskLimits.MaxDailyOrderAmount（→ equity ratio 1.50 per day）/
+        // RiskLimits.LosingStreakThreshold（→ 5）。
+        // 第 2 段階（IADR-0131）: ShortSell.Limits（→ 型 ShortSellingLimits・7 メンバ）/
+        // RejectionReason.ShortSellReasons（→ 拒否理由 7 種。いずれもクラス A）。
 
         // --- #332 取引ガード: 商品種別の 3 値化 ---
         new(

@@ -10,10 +10,16 @@ namespace AiStockTrading.RiskManagement.Domain;
 // 読み取り時に適用され、フラグを外せば即座に本番既定へ戻る（IADR-0108 決定3）。
 //
 // 設計上の不変条件（IADR-0108 決定1/4）:
-//   - 金額系のみを一律スケールし、比率系（1取引リスク・日次損失・最大DD・連敗縮小）と保有銘柄数は本番既定と同一。
+//   - 比率系（1取引リスク・日次損失・最大DD・連敗縮小）と保有建玉数は本番既定と同一。
 //     比率はスケール不変であり、変えるとリスクモデルそのものが変わる。
 //   - 実弾段階（Stage 2/3・TradeMode.Live）の資金上限には触れない。検証用プロファイルが実弾のリスク上限を
 //     緩められる経路を作らない。
+//
+// #329, IADR-0130 決定6: 金額系の上限も equity 比で保持するようになったため（計画 §5）、
+// **本プロファイルが差し替えるのは基準資金とペーパー段階の資金上限だけ**になった。
+// 上限額は基準資金に比例して自動的に上がるため、旧実装の金額スケール（ScaleFactor＝1,700 倍・
+// CreateRiskLimits のオーバーライド）は不要となり削除した。
+// 例: 基準資金 ¥170,000,000 × 25% ＝ ¥42,500,000（AAPL ≒ ¥50,250/株 でも数量が算出される）。
 public static class SimulatorTradingDefaults
 {
     /// <summary>シミュレータ口座の USD 残高（$1,000,000）。</summary>
@@ -29,31 +35,10 @@ public static class SimulatorTradingDefaults
     public const decimal UsdToJpyRate = 150m;
 
     /// <summary>
-    /// 基準資金（円）＝ USD 残高の円換算 ＋ JPY 残高 = ¥170,000,000。
-    /// 本番既定（<see cref="TradingDefaults.InitialCapital"/>＝¥100,000）の 1,700 倍。
+    /// 基準資金（equity・円）＝ USD 残高の円換算 ＋ JPY 残高 = ¥170,000,000。
+    /// 金額系の上限は本値に比例して解決される（#329・IADR-0130 決定6）。
     /// </summary>
     public const decimal InitialCapital = SimulatorUsdBalance * UsdToJpyRate + SimulatorJpyBalance;
-
-    /// <summary>本番既定に対する金額系のスケール係数（1,700 倍）。比率系には適用しない。</summary>
-    public const decimal ScaleFactor = InitialCapital / TradingDefaults.InitialCapital;
-
-    /// <summary>
-    /// リスク上限（金額系のみスケール）。1 注文金額上限を資金比 35% に保つのは、本番既定が
-    /// 「1 取引リスク 1% ÷ 損切り幅 3% ≒ 1 ポジション 33%」から逆算されているため（IADR-0002）。
-    /// 比を崩すと、サイジングでリスク予算基準と金額上限のどちらが実効的に効くかが本番と変わる。
-    /// </summary>
-    public static RiskLimitSettings CreateRiskLimits()
-    {
-        var production = TradingDefaults.CreateRiskLimits();
-        return production with
-        {
-            // ¥35,000 × 1,700 = ¥59,500,000
-            MaxOrderAmount = production.MaxOrderAmount * ScaleFactor,
-            // ¥100,000 × 1,700 = ¥170,000,000（本番と同じ「基準資金と同額」の関係）
-            MaxDailyOrderAmount = production.MaxDailyOrderAmount * ScaleFactor,
-            // MaxOpenPositions・各比率は本番既定のまま（スケール不変量）
-        };
-    }
 
     /// <summary>
     /// 現行段階の設定（Stage 0＝検証・ペーパー）。資金上限のみプロファイル値へ引き上げる。
@@ -61,8 +46,10 @@ public static class SimulatorTradingDefaults
     public static StageSettings CreateStageSettings() =>
         new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital);
 
+    // #329, IADR-0130 決定6: リスク上限は本番既定をそのまま用いる（比率はスケール不変であり、
+    // 上限額は基準資金 InitialCapital に比例して自動的に上がる）。
     public static RiskManagementSettings CreateSettings() =>
-        new(TradingDefaults.CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
+        new(TradingDefaults.CreateGuardSettings(), TradingDefaults.CreateRiskLimits(), CreateStageSettings());
 
     /// <summary>
     /// ペーパー段階（<see cref="TradeMode.Paper"/>）の資金上限だけをプロファイル値へ引き上げた段階設定を返す。

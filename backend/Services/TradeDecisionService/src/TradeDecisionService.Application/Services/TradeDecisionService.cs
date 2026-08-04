@@ -222,7 +222,9 @@ public sealed class TradeDecisionService(
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
-            context.Limits.MaxOrderAmount,
+            // FR-10, #329, IADR-0130 決定1: 1 注文金額上限は equity 比のため equity（context.Capital）から解決する。
+            // 「1 取引リスク 1%」と「1 注文 25%」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
+            context.Limits.MaxOrderAmountFor(context.Capital),
             availableCapital,
             sizeFactor);
 
