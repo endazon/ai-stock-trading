@@ -192,3 +192,7 @@ public const decimal InitialCapital = InitialEquityUsd * ReferenceUsdToJpyRate; 
 - Supersedes: なし（[IADR-0108](IADR-0108_simulator-risk-profile.md) の**金額スケール部分のみ**を決定 6 で廃する。
   同 IADR の他の決定〔読み取り時デコレータ・実弾段階不変・設定点の限定〕は有効）
 - Superseded by: なし
+- **後続（2026-08-04 追記）**: [IADR-0131](IADR-0131_short-selling-controls-fail-closed.md) が #329 第 2 段階として
+  空売り専用統制を決めている。本 IADR 決定2（equity ＝ `PortfolioSnapshot.Capital`）は空売りの
+  1 銘柄あたり上限（equity の 10%）の基準としてそのまま用いられ、決定1 の「解決点を 1 つに閉じる」規律も
+  `ShortSellingLimits.PerSymbolCapFor(equity)` で踏襲されている。本 IADR の決定は変更していない。

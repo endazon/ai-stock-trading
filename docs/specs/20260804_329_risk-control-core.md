@@ -1,5 +1,5 @@
 ---
-title: 作業仕様書 — リスク統制コアの再実装（第 1 段階: 金額系上限 3 値の equity 割合化・既定値の計画同期）
+title: 作業仕様書 — リスク統制コアの再実装（第 1 段階: 金額系上限 3 値の equity 割合化・既定値の計画同期／第 3 段階: 3 点セットの完成と最終化）
 type: work
 status: review
 related_ids: [FR-10, FR-17, FR-19, FR-20, UC-06, ADR-0003, ADR-0009, ADR-0016, ADR-0018, IADR-0130]
@@ -54,9 +54,11 @@ issue #329 の範囲は広く、統制の意味を変える変更（金額系の
 | --- | --- | --- |
 | **第 1 段階（本書）** | 仕様書一式＋IADR-0130／金額系上限 3 値の equity 割合化・既定値の計画同期・決済注文の日次枠除外 | `Capital.Initial` / `RiskLimits.MaxOrderAmount` / `RiskLimits.MaxDailyOrderAmount` / `RiskLimits.LosingStreakThreshold` の **4 件** |
 | 第 2 段階 | 空売り専用統制 8 規則（`ShortSellingLimits`）・拒否理由 7 種（クラス A）・3 統制の優先順位 | `ShortSell.Limits` / `RejectionReason.ShortSellReasons` の 2 件 |
-| 第 3 段階 | 3 点セットテストの完成・機能仕様書 / テスト仕様書の最終化 | （なし。網羅の完成） |
+| **第 3 段階（本書・後述 §第 3 段階）** | 3 点セットテストの完成・機能仕様書 / テスト仕様書の最終化・計画への環流の補完 | （なし。網羅の完成） |
 
-本書は**第 1 段階**の作業仕様である。第 2・3 段階は本書へ追補するのではなく、それぞれの作業仕様書を作成する。
+本書は**第 1 段階**の作業仕様として起草した。第 2 段階は独立した
+[作業仕様書](./20260804_329_short-selling-controls.md)を持つ。**第 3 段階は実装の追加を伴わない
+（テスト 3 件と文書のみ）**ため、新たな作業仕様書を起こさず本書へ追補する（後述「第 3 段階（最終化）」）。
 
 ## 対象範囲
 
@@ -219,9 +221,14 @@ trade_fills（台帳）→ PortfolioProjection.Project(fills, today, initialCapi
 - [x] 日次損失上限（2%）・1 取引リスク（1%）・最大 DD（10%）・連敗（5）の既定値が計画の確定単一値と一致する
 - [x] 同一の注文に複数の上限が掛かる場合、常に厳しい方が効く
 - [x] 金額系上限の適用が手仕舞い（Close）・損切りを止めない（ADR-0009）
-- [ ] 空売り専用統制・拒否理由 7 種（第 2 段階）
-- [ ] 3 統制（kill switch ＞ 日次損失ロックアウト ＞ 一時停止）の優先順位の明示（第 2 段階。
-      現行 `RiskStatusView.ActiveControl` に既にあるが、issue の要求としては第 2 段階で仕上げる）
+- [x] 空売り専用統制・拒否理由 7 種（＋ `StopOrderRequired`）（**第 2 段階で完了**。
+      [作業仕様書 第 2 段階](./20260804_329_short-selling-controls.md) の受け入れ基準を正とする）
+- [x] 3 統制（kill switch ＞ 日次損失ロックアウト ＞ 一時停止）の優先順位の明示（**第 2 段階で完了**。
+      実装は `RiskStatusView.ActiveControl` に既にあり、8 通り全数の 3 点セット化で仕上げた）
+- [x] 統制系 FR-10 の 3 点セット（境界値・プロパティベース・否定形）が揃っている（**第 3 段階で完了**。
+      [テスト仕様書](../tests/FR-10_risk-controls-tests.md)「第 3 段階で埋めた穴」）
+- [x] 計画書の誤り・不足を環流した（**第 3 段階で完了**。拒否理由コードの不足＋空売り比率 50% の
+      構造的含意の 2 件。いずれも起草のみで送付は未実施）
 
 ## テスト方針
 
@@ -264,7 +271,8 @@ trade_fills（台帳）→ PortfolioProjection.Project(fills, today, initialCapi
 2. **旧設定行の移行**: `RiskLimitSettings` は JSON で永続化されており（`RiskSettingsSerialization`）、
    プロパティ名の変更で既存行が読めなくなる（`required` のため復元時に失敗する）。
    再実装版への切替（#346）で扱う旧データの取り扱いに含める必要がある。
-3. **SC-02 / SC-03 の表示と API 契約の破壊的変更**: `PUT /risk-controls/settings/limits` は
+3. **SC-02 / SC-03 の表示と API 契約の破壊的変更**（**[#362](https://github.com/endazon/ai-stock-trading/issues/362) として起票済み**。
+   「リスク上限の設定画面を equity 割合の入力へ作り直す」）: `PUT /risk-controls/settings/limits` は
    `RiskLimitSettings` をそのまま受けるため、要求本文のフィールド名が
    `maxOrderAmount` → `maxOrderAmountRatio`・`maxDailyOrderAmount` → `maxDailyOrderAmountRatio` へ変わる。
    **現行の SC-02 画面は旧名で送るため、リスク上限の保存が 400 で拒否される**。
@@ -275,27 +283,85 @@ trade_fills（台帳）→ PortfolioProjection.Project(fills, today, initialCapi
    - 追随しない状態は**安全側に倒れる**（保存が拒否されるだけで、現行の統制値は変わらない）。
      フィールド名だけ合わせて意味を合わせない方が危険である
 4. **画面の表示値**: SC-03（統制状態）は `MaxDailyOrderAmount` を equity から解決した実額で受け取るため
-   表示は従来どおり成立する（読み取り専用のため破壊的変更はない）。
-4. **Stage 2 の発注可能額との併用**: 計画 §5 注記は「Stage 2 では Stage の発注可能額（総資金の 30%＝$900）が
+   表示は従来どおり成立する（読み取り専用のため破壊的変更はない）。表示の作り直し自体は #340 / #362。
+5. **Stage 2 の発注可能額との併用**: 計画 §5 注記は「Stage 2 では Stage の発注可能額（総資金の 30%＝$900）が
    先に効く」と述べる。Stage 側の比率化は #333 の担当であり、本段階では段階資金上限を触らない
    （現行の固定額 35,000 のまま＝`KnownPlanDeviations` に #333 担当で登録済み）。
+6. **空売り比率 50% の分母**（第 3 段階で環流）: 決定9 を文字どおり実装すると
+   `空売り建玉 ≦ ロング建玉総額` と等価になり、**ロング建玉が 0 件では空売りを開始できない**。
+   Stage 1（SIMULATE）で空売り単独の検証ができないという運用上の含意があるため、計画側の裁定を仰ぐ
+   （[環流文書](../../feedback/20260804_adr0016-short-ratio-denominator.md)。案 A 文字どおり維持 /
+   案 B 建玉 0 件時の例外 / 案 C 分母を equity へ）。現行実装は案 A であり、T-10-156 / T-10-171 が固定している。
+7. **保有建玉数を数える粒度**: 台帳の建玉キーは `(銘柄, 市場)` であり商品種別を含まないため、
+   同一銘柄の現物と信用買いの併存は 1 件と数える。計画 §5 は「銘柄数で数えると上限が実効しない」と
+   述べており、**商品種別の 3 値化（#332）と同時に建玉キーの見直しが要る**（用語だけを是正した第 1 段階の
+   積み残し。値〔3〕は計画どおり）。
+
+### 起票の要否を監査判断へ委ねるもの（第 3 段階時点の棚卸し）
+
+| # | 未決事項 | 現状 | 起票の要否 |
+| --- | --- | --- | --- |
+| 1 | 判定通貨の USD 移行（IADR-0107 の改定） | 実装は比率のため統制の実効は計画どおり。記録上の不一致のみ残る | **要**（#338 / #339 / #346 と範囲が重なるため、独立 issue か既存 issue への追記かの判断を含む） |
+| 2 | 強制買戻し（buy-in）の検知・通知・禁止リストの永続化 | 値と期間判定のみ実装（T-10-148 / T-10-165）。受信経路・永続化は無い | **要**（ADR-0016 決定4・決定14。実弾解禁前の疎通確認が前提） |
+| 6 | 空売り比率 50% の分母 | 環流済み（送付は未実施）。実装は案 A | 計画側の裁定が先。裁定後に実装 issue の要否が決まる |
+| 7 | 保有建玉数の粒度 | #332 の範囲に含めるのが自然 | #332 へ追記（新規起票は不要） |
+| 3 / 4 | SC-02 の保存 400・SC-03 の表示 | [#362](https://github.com/endazon/ai-stock-trading/issues/362) 起票済み（#340 と併走） | 不要 |
+| 2（旧設定行）・5 | 設定行の移行・Stage 側の比率化 | #346 / #333 の担当として明記済み | 不要 |
+
+## 第 3 段階（最終化）
+
+実装（本番コード）の変更は無い。**テスト 3 件の追加と、文書の最終化・環流の補完**のみである。
+
+| 区分 | 内容 |
+| --- | --- |
+| テスト | 否定形 2 件（T-10-127 分割発注 / T-10-128 決済偽装）・プロパティ 1 件（T-10-156 比率の等価形）。詳細は[テスト仕様書](../tests/FR-10_risk-controls-tests.md)「第 3 段階で埋めた穴」 |
+| 環流 | 空売り比率 50% の構造的含意を新しい環流文書へ起草（[20260804_adr0016-short-ratio-denominator](../../feedback/20260804_adr0016-short-ratio-denominator.md)）。既存の環流文書（拒否理由コードの不足）へ「送付は未実施」の注記と相互リンクを補った |
+| 文書 | 機能仕様書・テスト仕様書を `approved` へ。本書の受け入れ基準・未決事項・変更履歴を最終化。IADR-0130 / IADR-0131 の相互参照を追記 |
 
 ## 検証結果
+
+### 第 1 段階
 
 | 検証 | 結果 |
 | --- | --- |
 | `dotnet build backend/backend.slnx` | 0 Warning / 0 Error |
-| `dotnet test`（`Category!=Integration`） | 全 green |
+| `dotnet test`（`Category!=Integration`） | 全 green（2,298 passed） |
 | 計画適合の赤→緑 | 逸脱 4 行を残したまま実装を計画へ一致させると **検査 3・4 が失敗（赤）**、4 行削除で **緑**（実測） |
 | `node scripts/check-test-traceability.js` | OK |
 | `node scripts/check-coverage.js` | floor 62% 以上 |
 
+### 第 3 段階（最終）
+
+| 検証 | 結果 |
+| --- | --- |
+| `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| `dotnet test`（`Category!=Integration`） | **2,426 passed / 0 failed**（第 2 段階 2,418 から +8＝追加テスト 3 件・うち 1 件は 6 ケースの Theory） |
+| `AiStockTrading.PlanConformance.Tests` | **6 passed / 0 failed**（#329 担当の既知逸脱 6 件はすべて解消済み） |
+| `dotnet format --verify-no-changes` | 差分なし |
+| `AiStockTrading.Architecture.Tests` | 4 passed |
+| `node scripts/check-test-traceability.js` | OK（テスト 322 ファイル・起点 ID 25 種。FR-10 の機能仕様書・テスト仕様書は `approved`） |
+| `node scripts/check-coverage.js` | 行カバレッジ **65.56%**（12,750/19,448 行）/ floor 62.00% |
+| `node scripts/scripts.test.js` | 143 tests passed |
+| `node scripts/check-banned-libraries.js` | OK |
+| `node scripts/check-doc-links.js` | 破損 **20 件**（すべて既知の既存分。本段階の新規文書からの破損なし） |
+
+## 変更履歴
+
+| 日付 | 段階 | 内容 |
+| --- | --- | --- |
+| 2026-08-04 | 第 1 段階 | 本書と [IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md) を作成。金額系上限 3 値の equity 割合化・既定値の計画同期・決済注文の日次枠除外（ゲートとカウンタの両方）・SIMULATE の金額スケール廃止。既知逸脱 4 行を削除（赤→緑を実測） |
+| 2026-08-04 | 第 2 段階 | [別作業仕様書](./20260804_329_short-selling-controls.md)。空売り専用統制 8 規則・拒否理由 7 種＋`StopOrderRequired`・クラス分類・3 統制の優先順位。既知逸脱 2 行を削除し #329 担当 6 件がすべて解消 |
+| 2026-08-04 | 第 3 段階（最終） | 3 点セットの穴埋め（否定形 2 件・プロパティ 1 件）。空売り比率 50% の構造的含意を計画へ環流（起草のみ・送付は未実施）。機能仕様書・テスト仕様書を `approved` へ。受け入れ基準・未決事項（起票要否の棚卸しを含む）・検証結果を最終化 |
+
 ## 関連仕様
 
 - 実装 ADR: [IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決）・
+  [IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズ・第 2 段階）・
   [IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)・
   [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）・
   [IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）
+- 計画への環流: [拒否理由コードの不足](../../feedback/20260804_adr0016-stop-order-rejection-reason.md)・
+  [空売り比率 50% の構造的含意](../../feedback/20260804_adr0016-short-ratio-denominator.md)（いずれも送付は未実施）
 - 機能仕様書: [FR-10 リスク統制](../functional/FR-10_risk-controls.md)
 - テスト仕様書: [FR-10 リスク統制（再実装）](../tests/FR-10_risk-controls-tests.md)・
   [FR-10 リスクガードコア（再実装前）](../tests/FR-10_risk-guard-core-tests.md)

@@ -190,5 +190,12 @@ FR-10 本文と ADR-0016 決定2(b) は「逆指値（ストップ注文）を�
 
 ## 関連
 
-- Supersedes: なし（[IADR-0130](IADR-0130_equity-ratio-risk-limits.md) の続き。金額系の保持形式は同 IADR が有効）
+- Supersedes: なし（[IADR-0130](IADR-0130_equity-ratio-risk-limits.md) の続き。金額系の保持形式は同 IADR が有効。
+  本 IADR は同 IADR 決定1〔解決点を 1 つに閉じる〕・決定2〔equity の定義〕を前提として用いる）
 - Superseded by: なし
+- **決定 5 の環流（2026-08-04 追記・#329 第 3 段階）**: 空売り比率 50% を文字どおり実装した帰結
+  （`空売り建玉 ≦ ロング建玉総額` と等価であり、ロング建玉が 0 件では空売りを開始できない＝
+  Stage 1 で空売り単独の検証ができない）を計画へ環流した
+  （[feedback/20260804_adr0016-short-ratio-denominator.md](../../feedback/20260804_adr0016-short-ratio-denominator.md)）。
+  等価形はプロパティテスト T-10-156 で機械的に固定してある。**計画側が案 B（建玉 0 件時の例外）または
+  案 C（分母を equity へ）を採る場合、本 IADR の決定 5 は新しい IADR で改める**（本文は書き換えない）。
