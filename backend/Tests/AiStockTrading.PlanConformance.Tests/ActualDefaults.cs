@@ -37,6 +37,12 @@ public static class ActualDefaults
     private const string FxRateSourceFactoryTypeName =
         "AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters.FxRateSourceFactory";
 
+    /// <summary>
+    /// provider 名の集合を公開する実装側メンバ名（<c>FxRateSourceFactory.ProviderNames</c>）。
+    /// 抽出は**このメンバだけ**を読む（IADR-0135 決定6）。
+    /// </summary>
+    internal const string FxProviderNamesMemberName = "ProviderNames";
+
     /// <summary>「未接続（no-op）」を表す provider 名。情報源ではないため集合に数えない。</summary>
     private const string FxProviderNone = "none";
 
@@ -227,32 +233,54 @@ public static class ActualDefaults
     }
 
     /// <summary>
-    /// 実装が選択できる為替レート源（provider 識別子）の集合。<c>FxRateSourceFactory</c> の
-    /// <c>public const string</c> を機械的に読み、「未接続」を表す <see cref="FxProviderNone"/> は除く。
+    /// 実装が選択できる為替レート源（provider 識別子）の集合。
     /// <para>
     /// 計画（ADR-0022 決定1・2）は日銀を第一・FRED をフォールバックとする 2 源を求めるが、
     /// <b>順位そのものは値ではなく振る舞い</b>（切り替え条件・記録・通知）であるため集合として比較する
     /// （IADR-0127 決定4 / IADR-0135 決定2）。
     /// </para>
     /// </summary>
-    private static string FxProviderNames()
+    private static string FxProviderNames() =>
+        FxProviderNamesFrom(FindTradeDecisionType(FxRateSourceFactoryTypeName));
+
+    /// <summary>
+    /// provider 識別子の集合を、型の <see cref="FxProviderNamesMemberName"/> メンバ**だけ**から読む
+    /// （IADR-0135 決定6 / #378）。「未接続」を表す <see cref="FxProviderNone"/> は情報源ではないので除く。
+    /// <para>
+    /// 型の <c>public const string</c> を全件収集する形は採らない。その形では、実装が
+    /// provider と無関係な定数（<c>SectionName</c>・ログ接頭辞・構成キー名など）を足した瞬間に
+    /// <b>黙って provider として数えられ</b>、計画適合検査が誤った実際値のまま緑になる。
+    /// 統制の検証機構が誤った値で緑になるのは最も悪い失敗モードである。
+    /// </para>
+    /// <para>
+    /// 逆向き（実装が受け付けるのに集合に無い）は実装側で塞いである。
+    /// <c>FxRateSourceFactory</c> の分岐は同メンバを関門として通るため、集合に無い名前は到達しない
+    /// （<c>FxRateSourceFactoryTests.公開するprovider集合は実装が実際に受け付ける集合と一致する</c>）。
+    /// </para>
+    /// </summary>
+    /// <param name="type">
+    /// 読み取り対象の型。<c>null</c> は型の不在。**引数で受けるのは検査可能性のため**であり、
+    /// 「無関係な定数を混入させない」ことを偽の型に対して実証できるようにしている。
+    /// </param>
+    internal static string FxProviderNamesFrom(Type? type)
     {
-        var type = FindTradeDecisionType(FxRateSourceFactoryTypeName);
         if (type is null)
         {
             return "(type FxRateSourceFactory not found)";
         }
 
-        var names = type
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .Select(f => f.GetRawConstantValue() as string)
+        var member = type.GetField(FxProviderNamesMemberName, BindingFlags.Public | BindingFlags.Static);
+        if (member?.GetValue(null) is not IEnumerable<string> declared)
+        {
+            return $"(FxRateSourceFactory.{FxProviderNamesMemberName} not found)";
+        }
+
+        var names = declared
             .Where(v => !string.IsNullOrWhiteSpace(v)
                 && !string.Equals(v, FxProviderNone, StringComparison.Ordinal))
-            .Select(v => v!)
             .ToArray();
 
-        return names.Length == 0 ? "(no fx provider constants defined)" : Sorted(names);
+        return names.Length == 0 ? "(no fx provider names declared)" : Sorted(names);
     }
 
     /// <summary>

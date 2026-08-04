@@ -99,6 +99,8 @@ Stooq 関連は [#382](https://github.com/endazon/ai-stock-trading/issues/382) �
 1. planning submodule のピン更新（`4cbd3e2` → `d980a01`）。
 2. `PlanRiskDefaults` への ADR-0022 確定値の転記（3 行）と、§2/§3 の対象外コメントの是正。
 3. `ActualDefaults` への抽出経路の追加（`Fx` の 3 キー）。**これが無いと検査2 が恒久的に赤になる**（後述）。
+   provider 集合の抽出は**実装側の単一メンバ**（`FxRateSourceFactory.ProviderNames`）だけを読む形にし、
+   同メンバを実装の分岐が通る関門にする（IADR-0135 決定6・PR #372 レビュー指摘。設計 5）。
 4. `KnownPlanDeviations` への逸脱 3 件の登録（担当 #381）。
 5. 実装 ADR [IADR-0135](../adr/IADR-0135_fx-freshness-plan-transcription-and-section3-scope.md) の起案と索引更新。
 
@@ -154,11 +156,32 @@ ADR-0022 により §3 に確定値が入ったため、この説明は現状と
 [IADR-0134](../adr/IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) 決定3 が
 `ActualDefaults` の抽出候補について指摘したのと**同種の穴**である。
 
-したがって次を追加する。**実装には触れない**（可視性も広げない。`InternalsVisibleTo` は増やさない）。
+したがって次を追加する。**可視性は広げない**（`InternalsVisibleTo` は増やさない）。
 
 - `AiStockTrading.PlanConformance.Tests.csproj` へ `TradeDecisionService.Infrastructure` のプロジェクト参照。
 - `ActualDefaults` に**リフレクションによる**抽出（`internal` 型でも `Assembly.GetType` と
   `BindingFlags.Public | BindingFlags.Static` で読める。既存の `FindType` と同じ方式）。
+
+### 5. provider 集合の抽出を単一メンバへ寄せる（PR #372 レビュー指摘・IADR-0135 決定6）
+
+上記 4 の初版は `FxRateSourceFactory` の `public const string` を**全件収集**し `"none"` だけを除く形で
+あった。この形は**逆向きに脆い**——provider と無関係な `public const string`（`SectionName = "Fx"`・
+ログ接頭辞・構成キー名など）を実装が足すと**黙って provider として数えられ**、計画適合検査の実際値が
+誤る。値の一致だけを見る検査1〜4 はこれを検知できず、**統制の検証機構が誤った値のまま緑になる**。
+
+レビューの指摘は「注意喚起コメントがあるとより堅牢（必須ではない）」であったが、**コメントは止められない**
+ため構造で塞ぐ（根拠と棄却案は
+[IADR-0135](../adr/IADR-0135_fx-freshness-plan-transcription-and-section3-scope.md) 決定6）。
+
+- **実装側**: `FxRateSourceFactory.ProviderNames`（`ImmutableArray<string>`。`none` を含む）を単一情報源
+  として公開し、`Create` / `ResolveProvider` の分岐は `SelectProvider` 経由で**必ずこの集合を通す**。
+  集合に無い名前は `case` を書いても到達しないため、**集合への追加を忘れた provider は動かない**。
+  よって「検査が読む集合」と「実装が受け付ける集合」は構造的に乖離できない。
+- **抽出側**: `ActualDefaults.FxProviderNamesFrom(Type?)` が同メンバ**だけ**を読む。入力の型を
+  差し替えられる形にして、無関係な定数を持つ偽の型に対する**否定形テスト**で実証する。
+- **値は変えない**: `FxOptions` / `FredFxRateSource` の既定（`DefaultMaxRateAgeDays = 14` 等）と
+  provider の集合（`none` / `fred`）は**一切変えない**。実装追随は #381、日銀の追加も #381 の担当である。
+  `Fx.RateSourceProviders` の実際値は `fred` のままであり、登録簿（担当 #381）も変わらない。
 
 ### 変更するファイル
 
@@ -166,7 +189,10 @@ ADR-0022 により §3 に確定値が入ったため、この説明は現状と
 | --- | --- |
 | `planning`（submodule） | ピンを `d980a01` へ |
 | `backend/Tests/AiStockTrading.PlanConformance.Tests/PlanRiskDefaults.cs` | `Fx` 3 行の追加・§2/§3 のコメント是正・`Assumptions3` 定数の追加 |
-| `backend/Tests/AiStockTrading.PlanConformance.Tests/ActualDefaults.cs` | `Fx` 3 キーの抽出（リフレクション） |
+| `backend/Tests/AiStockTrading.PlanConformance.Tests/ActualDefaults.cs` | `Fx` 3 キーの抽出（リフレクション）。provider 集合は `ProviderNames` メンバのみから読む（設計 5） |
+| `backend/Services/TradeDecisionService/src/.../Composable/Adapters/FxRateSourceFactory.cs` | `ProviderNames` の公開と `SelectProvider` の関門化（設計 5。**既定値・provider の集合は不変**） |
+| `backend/Tests/AiStockTrading.PlanConformance.Tests/ActualDefaultsFxProviderTests.cs` | 抽出の否定形テスト（新規） |
+| `backend/Services/TradeDecisionService/tests/.../FxRateSourceFactoryTests.cs` | 公開集合と実際に受け付ける集合の一致を検査 |
 | `backend/Tests/AiStockTrading.PlanConformance.Tests/AiStockTrading.PlanConformance.Tests.csproj` | Infrastructure へのプロジェクト参照 |
 | `backend/Tests/AiStockTrading.PlanConformance.Tests/KnownPlanDeviations.cs` | 逸脱 3 件（担当 #381）の登録 |
 | `docs/adr/IADR-0135_*.md` / `docs/adr/README.md` | 実装 ADR の起案と索引 |
@@ -183,12 +209,31 @@ ADR-0022 により §3 に確定値が入ったため、この説明は現状と
 - [x] `dotnet test backend/backend.slnx --filter "Category!=Integration"` が全件成功。
 - [x] `dotnet format backend/backend.slnx --verify-no-changes` が通る。
 - [x] `check-commit-messages.js` / `check-test-traceability.js` / `check-doc-links.js` / `check-banned-libraries.js` が通る。
+- [x] provider 集合の抽出が**実装側の単一メンバのみ**を読み、無関係な `public const string` を混入させない
+      ことが否定形テストで証明されている（旧方式へ戻すと当該テストが落ちることも実測した）。
+- [x] `FxOptions` / `FredFxRateSource` の既定値と provider の集合（`none` / `fred`）を**変えていない**
+      （実装追随は #381 の担当。`Fx.RateSourceProviders` の実際値は `fred` のまま）。
 
 ## テスト方針
 
-新しいテストは足さない。**既存の計画適合テスト 6 検査が本作業の検証手段そのもの**である。
-本作業で検証するのは「転記が赤を生み、登録が緑へ戻す」という機構の往復であり、これは
+転記そのものについては新しいテストを足さない。**既存の計画適合テスト 6 検査が本作業の検証手段そのもの**
+である。本作業で検証するのは「転記が赤を生み、登録が緑へ戻す」という機構の往復であり、これは
 [IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md) の設計意図どおりの動作である。
+
+ただし**抽出そのもの**（設計 5）は 6 検査の対象外——検査1〜4 は抽出値を正しい前提で突き合わせるため、
+抽出が誤っていても緑になる——なので、**否定形テストを別に足す**（`docs/tests/README.md` の 3 点セットの
+「否定形＝統制が迂回できないことを証明する」に相当）。
+
+| テスト | 何を証明するか |
+| --- | --- |
+| `ActualDefaultsFxProviderTests.provider集合に無関係なpublic_const_stringは混入しない` | 無関係な `public const string`（`SectionName` / `LogPrefix` / `ConfigurationKey`）を持つ偽の型を渡しても抽出値が `fred` のみであること。**旧方式ではこれらが provider として数えられた** |
+| `…宣言メンバが無ければ定数からは組み立てず不在をそのまま値とする` | provider らしい定数だけを持ちメンバを持たない型では `(… not found)` を返すこと（＝定数から組み立てる経路が残っていない） |
+| `…型が見つからなければ不在をそのまま値とする` / `…未接続を表すnoneは情報源として数えない` | 不在・`none` の扱いが変わっていないこと |
+| `…実装スナップショットのprovider集合はfredのみである` | seam が偽の型だけでなく**本物の型に結線**されていること（実際値は `fred` のまま＝登録簿は不変） |
+| `FxRateSourceFactoryTests.公開するprovider集合は実装が実際に受け付ける集合と一致する` | `ProviderNames` が**飾りではない**こと。集合の各名前は分岐へ到達し、集合外の名前（`boj`）は構成が整っていても到達しない |
+
+**逆向きの脆さが実際に塞がったこと**は、抽出を旧方式へ一時的に戻す変異試験で確認した
+（上位 2 件が `Failed`、戻すと `Passed`）。テストが**旧実装を落とせる**ことまで確かめている。
 
 為替鮮度の**振る舞い**（3 日超で警告・30 日超で新規建て停止・フォールバックの通知）のテストは
 **#381 の担当**である。値の一致だけを本作業が担保する。

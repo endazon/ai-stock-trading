@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,29 @@ internal static class FxRateSourceFactory
     public const string None = "none";
     public const string Fred = "fred";
 
+    /// <summary>
+    /// 実装が受け付ける provider 名の**単一情報源**（未接続を表す <see cref="None"/> を含む）。
+    /// <para>
+    /// FR-10, ADR-0022, IADR-0135 決定6: 計画適合検査（<c>ActualDefaults</c>）は為替レート源の集合を
+    /// **本メンバだけ**から読む。型の <c>public const string</c> を全件収集する形だと、provider と無関係な
+    /// 定数（構成キー名・ログ接頭辞など）を足した瞬間に黙って provider として数えられ、
+    /// **統制の検査機構が誤った実際値のまま緑になる**（最悪の失敗モード）。
+    /// </para>
+    /// <para>
+    /// 同時に、本メンバは**飾りではなく実装の分岐そのものが通る関門**である。
+    /// <see cref="Create"/> / <see cref="ResolveProvider"/> はいずれも <see cref="SelectProvider"/> を
+    /// 経由し、本集合に無い名前は <c>case</c> を書いても到達しない。よって「検査が読む集合」と
+    /// 「実装が実際に受け付ける集合」は構造的に乖離できない（集合への追加を忘れた provider は動かない）。
+    /// </para>
+    /// </summary>
+    public static readonly ImmutableArray<string> ProviderNames = [None, Fred];
+
+    /// <summary>
+    /// <see cref="ProviderNames"/> に属さない provider 指定を表す番兵。
+    /// 識別子として使われ得ない形にして、正規の名前と衝突させない。
+    /// </summary>
+    private const string Unknown = "?unknown";
+
     public static IFxRateSource Create(
         FxOptions options,
         HttpClient httpClient,
@@ -25,11 +49,10 @@ internal static class FxRateSourceFactory
 
         var logger = loggerFactory.CreateLogger(typeof(FxRateSourceFactory).FullName!);
 
-        switch (Provider(options))
+        switch (SelectProvider(options))
         {
-            case "":
             case None:
-                // 既定。差し替え漏れの警告は NoOpFxRateSource 自身が初回 1 回だけ出す。
+                // 既定（未指定を含む）。差し替え漏れの警告は NoOpFxRateSource 自身が初回 1 回だけ出す。
                 return NoOp(loggerFactory);
 
             case Fred:
@@ -69,7 +92,7 @@ internal static class FxRateSourceFactory
             default:
                 logger.LogWarning(
                     "未知の Fx:Provider '{Provider}' のため為替レートを取得しません（安全既定・IADR-0107）。",
-                    Provider(options));
+                    RequestedProvider(options));
                 return NoOp(loggerFactory);
         }
     }
@@ -82,7 +105,7 @@ internal static class FxRateSourceFactory
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        return Provider(options) switch
+        return SelectProvider(options) switch
         {
             Fred when !string.IsNullOrWhiteSpace(options.Fred.ApiKey) => Fred,
             _ => None,
@@ -103,7 +126,25 @@ internal static class FxRateSourceFactory
         return TimeSpan.FromDays(Math.Min(days, FxOptions.MaxAllowedRateAgeDays));
     }
 
-    private static string Provider(FxOptions options) => (options.Provider ?? "").Trim().ToLowerInvariant();
+    /// <summary>構成が指定した provider 名（正規化のみ。未知の名前も**そのまま**返す＝警告文の材料）。</summary>
+    private static string RequestedProvider(FxOptions options) =>
+        (options.Provider ?? "").Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// 構成の指定を <see cref="ProviderNames"/> の名前へ解決する。未指定は <see cref="None"/>（安全既定）、
+    /// 集合に無い名前は <see cref="Unknown"/> を返す。**provider の分岐は必ず本メソッドを経由する**ため、
+    /// <see cref="ProviderNames"/> に無い名前は実装のどの分岐にも到達しない（IADR-0135 決定6）。
+    /// </summary>
+    private static string SelectProvider(FxOptions options)
+    {
+        var requested = RequestedProvider(options);
+        if (requested.Length == 0)
+        {
+            return None;
+        }
+
+        return ProviderNames.Contains(requested, StringComparer.Ordinal) ? requested : Unknown;
+    }
 
     // 0 以下の構成は「無制限」ではなく既定値へ倒す（構成ミスでレート予算の歯止めを失わない）。
     private static TimeSpan Ttl(FxOptions options) =>

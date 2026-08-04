@@ -67,6 +67,32 @@ public class FxRateSourceFactoryTests
             .Should().Be("fred");
     }
 
+    // FR-10, ADR-0022, IADR-0135 決定6, #378: ProviderNames は「計画適合検査が読む集合」と
+    // 「実装が実際に受け付ける集合」を一致させるための単一情報源であり、飾りのメンバではない。
+    // 分岐（Create / ResolveProvider）が同メンバを関門として通ることを、両向きで確かめる。
+    [Fact]
+    public void 公開するprovider集合は実装が実際に受け付ける集合と一致する()
+    {
+        FxRateSourceFactory.ProviderNames.Should().Equal(FxRateSourceFactory.None, FxRateSourceFactory.Fred);
+
+        // (1) 集合の各名前は実際に分岐へ到達する（到達しなければ「飾りのメンバ」である）。
+        FxRateSourceFactory.ResolveProvider(new FxOptions { Provider = FxRateSourceFactory.None })
+            .Should().Be(FxRateSourceFactory.None);
+        FxRateSourceFactory.ResolveProvider(Fred(days: FxOptions.DefaultMaxRateAgeDays))
+            .Should().Be(FxRateSourceFactory.Fred);
+
+        // (2) 集合に無い名前は、構成が整っていても分岐へ到達しない。
+        //     ＝ 集合への追加を忘れた provider は動かないので、更新漏れが「黙って通る」形にならない
+        //     （日銀 boj の追加は #381 の担当。追加時は本テストの期待も同時に更新される）。
+        var outsideTheSet = new FxOptions
+        {
+            Provider = "boj",
+            Fred = new FredFxOptions { ApiKey = "key" },
+        };
+        FxRateSourceFactory.ResolveProvider(outsideTheSet).Should().Be(FxRateSourceFactory.None);
+        Create(outsideTheSet).Should().BeOfType<NoOpFxRateSource>();
+    }
+
     // FR-10, #271, IADR-0112 決定1: 既定の鮮度上限はデータ源の公表周期（DEXJPUS＝H.10 週次リリース）から導く。
     // 内訳: 公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 2 日 ＋ 公表時刻 ≒ 12.84 日 に約 1.2 日の余裕。
     [Fact]
