@@ -121,4 +121,24 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("7203").And.Contain("100").And.Contain("80");
         msg.Content.Should().Contain("自動是正は行いません");
     }
+
+    // FR-09, FR-10, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 2: Discord 通知**）。
+    // 利用者の承認を待たずに決済するため、通知が「建玉が減ったこと」を利用者が知る最初の経路になる。
+    // 決済前後の維持率・閾値・回復目標・決済した建玉を本文に出す（数値が無ければ規則どおりの作動を確かめられない）。
+    [Fact]
+    public void 維持率割れの自動縮小は決済前後の維持率と建玉をCriticalで通知する()
+    {
+        var e = new MaintenanceMarginReductionExecuted(
+            Guid.NewGuid(), RatioBefore: 0.40m, Threshold: 0.40m, RecoveryTarget: 0.45m, RatioAfter: 0.4504m,
+            [new MaintenanceMarginReductionItem(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 112, 100m, 3_360m)],
+            new DateTimeOffset(2026, 8, 4, 14, 30, 0, TimeSpan.Zero));
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("40.0%").And.Contain("45.0%").And.Contain("45.0%");
+        msg.Content.Should().Contain("AAPL").And.Contain("ショート").And.Contain("112").And.Contain("3,360.00");
+        msg.Content.Should().Contain("承認と AI の判断は介在していません");
+    }
 }

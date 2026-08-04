@@ -1,6 +1,7 @@
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
@@ -67,6 +68,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             SellCount = sellCount,
             PolicySummary = request.PolicySummary,
             Narrative = narrative,
+            // FR-10, UC-06, #330: 自動縮小の記録はコード集計値であり LLM に語らせない（散文と分ける）。
+            MarginReductions = request.MarginReductions,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
@@ -130,7 +133,10 @@ public sealed record DraftRequest(
     string PolicySummary,
     IReadOnlyList<PeriodTradeFill>? Fills,
     IReadOnlyDictionary<string, decimal>? CurrentPrices,
-    string? ParentPolicySummary = null);
+    string? ParentPolicySummary = null,
+    // FR-10, UC-06, #330: 当期間の「維持率割れによる自動縮小」。空列＝発動なし／null＝照会できていない
+    // （04_report-templates は「空欄と『なし』を区別する」ことを求める）。既定 null により既存の呼び出しは非破壊。
+    IReadOnlyList<MaintenanceMarginReductionExecuted>? MarginReductions = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Report.Domain;
 
@@ -51,8 +52,72 @@ public static class ReportRenderer
         sb.Append(string.IsNullOrWhiteSpace(view.PolicySummary) ? "（方針未設定）" : view.PolicySummary.Trim());
         sb.Append('\n');
 
+        // 4. リスク統制の記録（維持率割れによる自動縮小）。日報＝明細・月報＝発動回数（04_report-templates）。
+        AppendMarginReductions(sb, view);
+
         return sb.ToString();
     }
+
+    // FR-10, FR-06, UC-06, #330, IADR-0133 決定7, 04_report-templates（日報 §4・月報 §6）:
+    // 「維持率割れによる自動縮小」の記録。**システムが自ら決済注文を発注する唯一の統制**であるため、
+    // 記録が無ければ「知らないうちに建玉が減っていた」状態になる。
+    //
+    // 日報は**発動の有無・決済した建玉・決済前後の維持率**（表 7 列）、月報は**当月の発動回数**。
+    // 週報は計画が記載を求めていないため出さない（求められていない節を勝手に増やさない）。
+    //
+    // 発動が無い日は「なし」、無い月は「0 件」と**明記する**（計画: 空欄と「なし」を区別する）。
+    // **照会できなかった場合は「なし」と書かない**——発動を隠したのと同じ結果になるため区別する。
+    private static void AppendMarginReductions(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind == ReportKind.Weekly)
+            return;
+
+        sb.Append("\n## 4. リスク統制の記録\n\n");
+        sb.Append("### 維持率割れによる自動縮小");
+        sb.Append(view.Kind == ReportKind.Monthly ? "（当月）\n\n" : "（当日）\n\n");
+
+        if (view.MarginReductions is not { } reductions)
+        {
+            sb.Append("- **記録を照会できませんでした（要確認）**: 「発動なし」とは区別しています。\n");
+            return;
+        }
+
+        if (view.Kind == ReportKind.Monthly)
+        {
+            // 月報は回数のみ。個々の内容は該当日報に委ねる（04_report-templates 月報 §6 の裁定）。
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **発動回数: {reductions.Count} 件**（個々の発動内容〔決済した建玉・決済前後の維持率〕は該当日報を参照）\n");
+            return;
+        }
+
+        if (reductions.Count == 0)
+        {
+            sb.Append("- **発動の有無**: なし\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $"- **発動の有無**: あり — {reductions.Count} 回\n\n");
+        sb.Append("| # | 時刻 | 決済前の維持率 | 閾値 | 回復目標（閾値+5pt） | 決済した建玉（銘柄・方向・数量・必要証拠金） | 決済後の維持率 |\n");
+        sb.Append("| --- | --- | --- | --- | --- | --- | --- |\n");
+
+        var index = 0;
+        foreach (var r in reductions.OrderBy(r => r.ExecutedAt))
+        {
+            index++;
+            var legs = string.Join("<br>", r.Items.Select(i =>
+                $"{i.Symbol} / {(i.PositionSide == TradeSide.Buy ? "ロング" : "ショート")} / {i.Quantity} 株 / "
+                + $"{i.RequiredMarginUsd.ToString("N2", CultureInfo.InvariantCulture)} USD"));
+
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {index} | {r.ExecutedAt:HH:mm} | {Percent(r.RatioBefore)} | {Percent(r.Threshold)} | "
+                + $"{Percent(r.RecoveryTarget)} | {legs} | {(r.RatioAfter is { } after ? Percent(after) : "建玉なし")} |\n");
+        }
+    }
+
+    // 維持率の表記（小数第 1 位。04_report-templates の <n%> に合わせる）。
+    // "P1" は文化により数値と % の間に空白が入るため使わない（テンプレートの表記は <n%>）。
+    private static string Percent(decimal ratio) =>
+        (ratio * 100m).ToString("0.0", CultureInfo.InvariantCulture) + "%";
 
     // 種別ごとの見出し（漢字名・サマリ/散文/方針の各見出し）。
     private static (string Kanji, string Summary, string Narrative, string Policy) Labels(ReportKind kind) => kind switch

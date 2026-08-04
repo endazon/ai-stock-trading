@@ -2,8 +2,8 @@ namespace AiStockTrading.PlanConformance.Tests;
 
 /// <summary>
 /// 計画書で確定した既定値テーブル（FR-10, FR-17, FR-19, FR-20）。
-/// 出典は 06_technical/05_trading-assumptions の §5（リスク統制・取引ガード）・§1（税制）・§4（計算方針）・
-/// §6（運用費用上限）と ADR-0008 / ADR-0016 / ADR-0018。
+/// 出典は 06_technical/05_trading-assumptions の §5（リスク統制・取引ガード）・§1（税制）・§3（為替・通貨）・
+/// §4（計算方針）・§6（運用費用上限）と ADR-0008 / ADR-0016 / ADR-0018 / ADR-0022。
 /// <para>
 /// 本テーブルが**計画側の単一情報源**である。実装値をここへ写してはならない（実装のスナップショットを
 /// 固定するだけになり、計画との乖離を永久に検知できなくなる — #306 の再発）。
@@ -18,6 +18,7 @@ namespace AiStockTrading.PlanConformance.Tests;
 public static class PlanRiskDefaults
 {
     private const string Assumptions1 = "05_trading-assumptions §1";
+    private const string Assumptions3 = "05_trading-assumptions §3";
     private const string Assumptions4 = "05_trading-assumptions §4";
     private const string Assumptions5 = "05_trading-assumptions §5";
     private const string Assumptions6 = "05_trading-assumptions §6";
@@ -58,11 +59,14 @@ public static class PlanRiskDefaults
                 + "ExposureRatioCap, MaintenanceMarginThreshold, MaintenanceRecoveryTargetOffset, "
                 + "PerSymbolCapRatio, PriceFloorUsd",
             "ADR-0016 決定2,3,4,7,9 / UC-06"),
+        // 2026-08-04 改訂: 7 種 → 9 種（`StopOrderRequired` の追認・`BuyInBanned` の新設）。
+        // `BuyInBanned` を `BorrowUnavailable` へ写像してはならない（決定10 の 2026-08-04 追記）。
         new(
             "RejectionReason.ShortSellReasons",
-            "BorrowCostExceeded, BorrowUnavailable, DividendRecordDateNear, MaintenanceMarginBreach, "
-                + "ShortExposureExceeded, ShortPriceFloorBreach, ShortSellDisabled",
-            "ADR-0016 決定10（7 種。いずれもクラス A）"),
+            "BorrowCostExceeded, BorrowUnavailable, BuyInBanned, DividendRecordDateNear, "
+                + "MaintenanceMarginBreach, ShortExposureExceeded, ShortPriceFloorBreach, "
+                + "ShortSellDisabled, StopOrderRequired",
+            "ADR-0016 決定10（9 種。いずれもクラス A。2026-08-04 に 7 種から改訂）"),
 
         // --- 段階ゲートと発注先（FR-20。段階と発注先は独立した 2 軸） ---
         new("BrokerProvider.Values", "InternalPaper, MoomooReal, MoomooSimulate", $"{Assumptions5} / FR-20"),
@@ -76,8 +80,33 @@ public static class PlanRiskDefaults
         // 両者を取り違えると「たまたま計画と一致している別の値」を見て逸脱を見逃す。
         new("Stage0GateCriteria.MaxDrawdownTolerance", "ratio 0.10", "ADR-0018 決定2"),
 
+        // --- 為替レート源と鮮度（FR-10, FR-17。ADR-0022。§3 の確定行 ＋ §5「為替レートの鮮度による縮退」） ---
+        // 計画は 2026-08-04 に、実装が独自に持っていた FxOptions.DefaultMaxRateAgeDays = 14 を
+        // 「警告 3 日／絶対上限 30 日」へ置き換えた（ADR-0022 決定4・5）。値の**根拠が計画側へ移った**ため、
+        // 情報源の都合（FRED の週次公表）から逆算された 14 は計画からの逸脱になる。
+        //
+        // 収録するのは値だけである。優先順位そのもの（第一＝日銀／フォールバック＝FRED）・切り替えの通知・
+        // 縮退の段階（3 日超は続行して警告／30 日超で新規建て停止・手仕舞いは止めない）は**振る舞いの規則**で
+        // あり、テスト仕様書の 3 点セットで担当 issue（#381）が検証する（IADR-0127 決定4）。
+        // 日数は単位つきで正規化する。無次元の件数（RiskLimits.MaxOpenPositions の "3"）との取り違えを防ぐ。
+        new("Fx.RateSourceProviders", "boj, fred", $"{Assumptions3} / ADR-0022 決定1・2"),
+        new("Fx.StaleRateWarningDays", "3 days", $"{Assumptions3} / {Assumptions5} / ADR-0022 決定4"),
+        new("Fx.MaxRateAgeDays", "30 days", $"{Assumptions3} / {Assumptions5} / ADR-0022 決定5"),
+
         // --- 全体前提条件の確定値（FR-17）。§5 と同じく利用者決定であり、実装は
-        //     TradingAssumptionsDefaults.Create() が保持する。§2/§3 は「要確認」のため確定値を持たず対象外。 ---
+        //     TradingAssumptionsDefaults.Create() が保持する。
+        //
+        //     **対象化は節単位ではなく行単位である**（IADR-0135 決定1）。旧コメントは「§2/§3 は『要確認』の
+        //     ため確定値を持たず対象外」としていたが、これは 2 点で実態と食い違っていた——(a) §3 の
+        //     「基準通貨（判定）＝USD」は 2026-07-31 の利用者決定であり当初から確定値であった、(b) 2026-08-04 の
+        //     ADR-0022 が §3 へ為替レートの取得元と鮮度の確定値を追加した。節を単位に除外すると、節の中の
+        //     1 行が確定するたびに前提が崩れる。
+        //
+        //     現時点の行単位の扱い:
+        //       - §2（手数料・取引諸費用）: 全行が「要確認」（口座開設後に登録）のため**対象なし**。
+        //       - §3（為替・通貨）: 上の Fx 3 行が対象。残りのうち「基準通貨（判定）＝USD」は
+        //         Capital.Initial の通貨（TradingDefaults.EquityCurrency）として既に検知対象であり二重に持たない。
+        //         「基準通貨（表示）＝JPY」「為替評価方法」は表示・計算の規則であり値ではない。 ---
         new(
             "Assumptions.CapitalGainsTaxRate",
             "realized gain ratio 0.20315",

@@ -168,6 +168,11 @@ builder.Services.AddScoped<StopLossExecutionService>();
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();
+// FR-10, UC-06, ADR-0016 決定7, #330, IADR-0133: 維持率割れによる建玉の自動縮小（システム自動・AI 非介在）。
+// 統制ストアもスクリーニングも依存に持たない＝3 統制が成立していても動く（UC-06・ADR-0009）。
+// 維持率の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。
+builder.Services.AddSingleton<IMaintenanceMarginSnapshotSource, UnavailableMaintenanceMarginSnapshotSource>();
+builder.Services.AddScoped<MaintenanceMarginReductionService>();
 // FR-05, FR-10, #292, #305, IADR-0118, IADR-0124: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。
 // 追跡状態は DB 単一行＋並行トークンで持ちレプリカ間で一貫させる（インメモリでは replicas>1 で観測が Pod へ
 // 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。

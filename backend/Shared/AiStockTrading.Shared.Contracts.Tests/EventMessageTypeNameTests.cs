@@ -45,6 +45,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(DailyPolicyUnconfirmed), "AiStockTrading.Shared.Contracts.Events.DailyPolicyUnconfirmed")]
         [InlineData(typeof(InformationCollected), "AiStockTrading.Shared.Contracts.Events.InformationCollected")]
         [InlineData(typeof(LlmCostIncurred), "AiStockTrading.Shared.Contracts.Events.LlmCostIncurred")]
+        [InlineData(typeof(MaintenanceMarginReductionExecuted), "AiStockTrading.Shared.Contracts.Events.MaintenanceMarginReductionExecuted")]
         [InlineData(typeof(OrderApproved), "AiStockTrading.Shared.Contracts.Events.OrderApproved")]
         [InlineData(typeof(OrderCancelled), "AiStockTrading.Shared.Contracts.Events.OrderCancelled")]
         [InlineData(typeof(OrderExecuted), "AiStockTrading.Shared.Contracts.Events.OrderExecuted")]

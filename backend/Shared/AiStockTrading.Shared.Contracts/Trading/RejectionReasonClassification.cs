@@ -27,7 +27,7 @@ public enum RejectionReasonClass
 /// <summary>
 /// FR-10, FR-20, ADR-0016 決定10: 拒否理由のクラス分類。
 /// <para>
-/// **空売りの拒否理由 7 種はすべてクラス A** であり、クラス C（<see cref="RejectionReason.BannedSymbol"/> /
+/// **空売りの拒否理由 9 種はすべてクラス A** であり、クラス C（<see cref="RejectionReason.BannedSymbol"/> /
 /// <see cref="RejectionReason.ManipulativeOrderPattern"/>）に混ぜてはならない。市況由来の事象を
 /// 「AI が禁止事項を犯そうとした件数」に混入させると、段階昇格ゲートが機能しなくなる。
 /// </para>
@@ -48,7 +48,7 @@ public static class RejectionReasonClassification
             or RejectionReason.ProductTypeDisabled
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 
-        // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則）。
+        // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種）。
         _ => RejectionReasonClass.A,
     };
 

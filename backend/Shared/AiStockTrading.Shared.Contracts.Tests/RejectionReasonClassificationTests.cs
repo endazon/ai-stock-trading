@@ -21,7 +21,8 @@ public class RejectionReasonClassificationTests
             [RejectionReason.BannedSymbol, RejectionReason.ManipulativeOrderPattern]);
     }
 
-    // ADR-0016 決定10:「7 種すべてクラス A（統制が設計どおり作動した記録）に分類する」。
+    // ADR-0016 決定10:「9 種すべてクラス A（統制が設計どおり作動した記録）に分類する」
+    //（2026-08-04 に 7 種から改訂。#374）。
     [Theory]
     [InlineData(RejectionReason.ShortSellDisabled)]
     [InlineData(RejectionReason.BorrowUnavailable)]
@@ -30,8 +31,10 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.MaintenanceMarginBreach)]
     [InlineData(RejectionReason.DividendRecordDateNear)]
     [InlineData(RejectionReason.ShortPriceFloorBreach)]
-    // FR-10 の逆指値同時発注（ADR-0016 決定2(b)）に対応する実装追加分。同じくクラス A（IADR-0131 決定3）。
+    // 逆指値同時発注（決定2(b)）は #329 で実装が先行し、2026-08-04 に計画が同名で追認した。
     [InlineData(RejectionReason.StopOrderRequired)]
+    // 強制買戻しの 30 日禁止（決定4）。計画が 2026-08-04 に新設したコード。
+    [InlineData(RejectionReason.BuyInBanned)]
     public void 空売りの拒否理由はクラスAであり統制違反に計上しない(RejectionReason reason)
     {
         RejectionReasonClassification.ClassOf(reason).Should().Be(RejectionReasonClass.A);
@@ -83,18 +86,37 @@ public class RejectionReasonClassificationTests
         RejectionReason[] allShortSellReasons =
         [
             RejectionReason.ShortSellDisabled,
+            RejectionReason.StopOrderRequired,
             RejectionReason.BorrowUnavailable,
             RejectionReason.BorrowCostExceeded,
+            RejectionReason.BuyInBanned,
             RejectionReason.ShortExposureExceeded,
             RejectionReason.MaintenanceMarginBreach,
             RejectionReason.DividendRecordDateNear,
             RejectionReason.ShortPriceFloorBreach,
-            RejectionReason.StopOrderRequired,
         ];
 
+        allShortSellReasons.Should().HaveCount(9, "ADR-0016 決定10 は 2026-08-04 に 9 種へ改訂された");
         RejectionReasonClassification.CountsAsControlViolation(allShortSellReasons).Should().BeFalse();
         allShortSellReasons.Should().OnlyContain(
             r => RejectionReasonClassification.ClassOf(r) == RejectionReasonClass.A);
+    }
+
+    // **否定形**（ADR-0016 決定10 の 2026-08-04 追記）: 強制買戻しの禁止（BuyInBanned）と借株不可
+    //（BorrowUnavailable）は**別のコード**であり、一方を他方の別名にしてはならない。原因（期間の経過で
+    // 解除される禁止 vs 都度の借株需給）も解除条件も異なるため、統合すると監査ログ（FR-11）の理由が
+    // 実態と食い違い、日報・月報の「強制買戻しの発生有無・発生回数」（決定15）を復元できなくなる。
+    [Fact]
+    public void 強制買戻しの禁止と借株不可は別の拒否理由である()
+    {
+        RejectionReason.BuyInBanned.Should().NotBe(RejectionReason.BorrowUnavailable);
+        Enum.GetNames<RejectionReason>().Should().Contain("BuyInBanned");
+
+        // どちらもクラス A であり、区別は「統制違反 0 件」の計上には影響しない（分類ではなく記録の粒度の問題）。
+        RejectionReasonClassification.ClassOf(RejectionReason.BuyInBanned)
+            .Should().Be(RejectionReasonClass.A);
+        RejectionReasonClassification.ClassOf(RejectionReason.BorrowUnavailable)
+            .Should().Be(RejectionReasonClass.A);
     }
 
     // 分類は**全理由を網羅**する（未分類が既定でクラス C 側へ落ちない）。

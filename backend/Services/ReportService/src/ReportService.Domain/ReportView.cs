@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Events;
+
 namespace AiStockTrading.Report.Domain;
 
 // FR-06/16, 04_report-templates, IADR-0032: 報告書 Markdown 生成の入力（日報/週報/月報 共通）。数値は PnlSummary
@@ -39,4 +41,14 @@ public sealed record ReportView
 
     /// <summary>LLM ドラフトの散文（市況・振り返り・評価等）。数値は含めない。</summary>
     public string Narrative { get; init; } = string.Empty;
+
+    /// <summary>
+    /// FR-10, UC-06, #330, IADR-0133 決定7: 当期間に発動した「維持率割れによる自動縮小」（04_report-templates
+    /// 日報 §4・月報 §6）。**空列＝「発動なし」／`null`＝記録源に照会できていない**であり、両者を区別する。
+    /// <para>
+    /// 計画は「発動が無い日も『なし』と明記する（**空欄と「なし」を区別する**）」と定めた。同じ理由で、
+    /// **照会できなかったものを「なし」と書いてはならない**——発動を隠したのと同じ結果になる。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<MaintenanceMarginReductionExecuted>? MarginReductions { get; init; }
 }

@@ -11,7 +11,7 @@ namespace AiStockTrading.Notification.Infrastructure.Composable.Steps;
 // ADR-0013, IADR-0129, #354: MassTransit の IConsumer<T> から Wolverine のハンドラへ移行した。
 // ConsumeContext<T> は消え、メッセージ本体と CancellationToken をメソッド引数で受け取る。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
-// 本サービスは購読専用（発行 0）であり、10 種のイベントそれぞれに 1 本ずつキューを持つ
+// 本サービスは購読専用（発行 0）であり、11 種のイベントそれぞれに 1 本ずつキューを持つ
 // （ai-stock-trading.notification-service.<イベント型名>）。
 
 public sealed class OrderExecutedNotificationHandler(INotificationSender sender)
@@ -80,5 +80,13 @@ public sealed class DailyPolicyUnconfirmedNotificationHandler(INotificationSende
 public sealed class PositionReconciliationDriftNotificationHandler(INotificationSender sender)
 {
     public Task Handle(PositionReconciliationDrift message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小を購読して利用者へ通知する。
+// 利用者の承認を待たずに決済するため、通知が「建玉が減ったこと」を利用者が知る最初の経路になる。
+public sealed class MaintenanceMarginReductionExecutedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(MaintenanceMarginReductionExecuted message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
