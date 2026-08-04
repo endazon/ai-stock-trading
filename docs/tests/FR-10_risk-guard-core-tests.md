@@ -5,7 +5,7 @@ status: draft
 related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-07-28
+updated: 2026-08-04
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -13,6 +13,12 @@ plan_refs:
 
 # テスト仕様書: リスクガードコア（FR-10/12/19/20）
 
+> **本書は再実装（[#329](https://github.com/endazon/ai-stock-trading/issues/329)）より前の写像表である。**
+> 金額系の統制上限 3 値（equity 割合化）・既定値の確定単一値・空売り専用統制は
+> [FR-10 リスク統制コア（再実装）](./FR-10_risk-controls-tests.md) を正とする。
+> 本書の T-10-03 / T-10-04（1 注文 ¥35,000・日次 ¥100,000 の固定額境界）・T-10-17〜21
+> （SIMULATE の 1,700 倍スケール）は同書が置き換えた。
+>
 > 計画書の受け入れ基準と作業仕様書のチェックリストを、実装済みの xUnit テストへ写像した対応表。
 > 対象は `RiskManagementService.Domain.Tests`（RiskEvaluator / PositionSizer / TradingDefaults）と
 > `AiStockTrading.Shared.Infrastructure.Tests`（PaperBrokerAdapter）。
