@@ -23,18 +23,20 @@ public class ShortSellingControlsTests
 
     private static ShortSellingLimits Limits => TradingDefaults.CreateShortSellSettings().Limits;
 
-    // 空売りを有効にした設定。商品種別の 3 値化（現物 / 信用買い / 空売り）は #332 の担当のため、
-    // 本 issue では有効・無効を ShortSellSettings.Enabled で持つ（IADR-0131 決定1）。
+    // 空売りを有効にした設定。#332・IADR-0132 決定2 により、空売りの有効・無効は
+    // 取引ガードの商品種別（3 値）が単一情報源である（専用フラグ ShortSellSettings.Enabled は廃止した）。
     private static RiskManagementSettings Settings(bool shortSellEnabled = true)
     {
         var settings = TradingDefaults.CreateSettings();
+        var productTypes = new HashSet<ProductType> { ProductType.Cash, ProductType.MarginLong };
+        if (shortSellEnabled)
+        {
+            productTypes.Add(ProductType.ShortSell);
+        }
+
         return settings with
         {
-            Guard = settings.Guard with
-            {
-                EnabledProductTypes = new HashSet<ProductType> { ProductType.Cash, ProductType.Margin },
-            },
-            ShortSell = settings.ShortSell with { Enabled = shortSellEnabled },
+            Guard = settings.Guard with { EnabledProductTypes = productTypes },
         };
     }
 
@@ -44,7 +46,7 @@ public class ShortSellingControlsTests
     // 名目額を指定した空売り（新規売り建て）。数量 1・株価 ＝ 名目額とする（株価下限 $5.00 は満たす）。
     // 逆指値（StopLossPrice）を同時に持つのが既定の姿である（ADR-0016 決定2(b)）。
     private static OrderIntent ShortEntry(decimal notional) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Margin, TradeMode.Paper,
+        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
             Quantity: 1, Price: notional, PositionEffect.Open, StopLossPrice: notional * 1.1m);
 
     // 株価を明示した空売り（株価下限・維持率の判定用）。数量で名目額を作る。
@@ -53,7 +55,7 @@ public class ShortSellingControlsTests
         int quantity = 1,
         decimal? stopLossPrice = 1_000m,
         Market market = Market.UnitedStates) =>
-        new("AAPL", market, TradeSide.Sell, ProductType.Margin, TradeMode.Paper,
+        new("AAPL", market, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
             quantity, price, PositionEffect.Open, stopLossPrice);
 
     private static ShortSellOrderContext Context(
@@ -290,7 +292,7 @@ public class ShortSellingControlsTests
 
         var shortResult = Evaluate(ShortEntry(notional), Context(), settings);
         var buyResult = RiskEvaluator.Evaluate(
-            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Margin,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.MarginLong,
                 TradeMode.Paper, 1, notional, PositionEffect.Open),
             settings,
             Snapshot());
@@ -438,7 +440,7 @@ public class ShortSellingControlsTests
     public void 米国株以外の空売りは株価下限を素通りせずに拒否される()
     {
         var lowPricedJapaneseStock = new OrderIntent(
-            "6502", Market.Japan, TradeSide.Sell, ProductType.Margin, TradeMode.Paper,
+            "6502", Market.Japan, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
             Quantity: 10, Price: 300m, PositionEffect.Open, StopLossPrice: 330m);
 
         var result = Evaluate(lowPricedJapaneseStock, Context());
@@ -487,7 +489,7 @@ public class ShortSellingControlsTests
     public void 空売りの買い戻しは空売り統制で止まらない()
     {
         var buyToCover = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Margin, TradeMode.Paper,
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.ShortSell, TradeMode.Paper,
             Quantity: 1_000, Price: 1.00m, PositionEffect.Close);
 
         var result = Evaluate(buyToCover, context: null);

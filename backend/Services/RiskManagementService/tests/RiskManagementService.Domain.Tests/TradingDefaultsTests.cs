@@ -78,7 +78,10 @@ public class TradingDefaultsTests
         var shortSell = TradingDefaults.CreateShortSellSettings();
         var limits = shortSell.Limits;
 
-        shortSell.Enabled.Should().BeFalse();                     // 既定は現物のみ（決定1/8）
+        // 既定は現物のみ有効＝空売りは無効。#332・IADR-0132 決定2 により、有効・無効の単一情報源は
+        // 取引ガードの商品種別である（専用フラグ ShortSellSettings.Enabled は廃止した）。
+        TradingDefaults.CreateGuardSettings().EnabledProductTypes
+            .Should().NotContain(ProductType.ShortSell);          // 既定は現物のみ（決定1/8）
         limits.PerSymbolCapRatio.Should().Be(0.10m);              // 1 銘柄あたり equity の 10%（決定2(a)）
         limits.BorrowRateCapAnnual.Should().Be(0.20m);            // 借株料 年率 20%（決定3）
         limits.MaintenanceMarginThreshold.Should().Be(0.40m);     // 維持率 40%（決定7）

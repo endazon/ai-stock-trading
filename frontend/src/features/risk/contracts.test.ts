@@ -8,7 +8,8 @@ import {
   MARKET_OPTIONS,
   modeLabel,
   productTypeLabel,
-  PRODUCT_TYPE_MARGIN,
+  PRODUCT_TYPE_MARGIN_LONG,
+  PRODUCT_TYPE_SHORT_SELL,
   PRODUCT_TYPE_OPTIONS,
   ratioPercent,
   stageLabel,
@@ -46,16 +47,19 @@ describe('risk contracts — enum label mapping (fail-safe fallback)', () => {
 
 describe('risk contracts — enum options for guard editing (#188/IADR-0086)', () => {
   it('derives product-type / market options from the known label tables', () => {
+    // FR-19 / ADR-0016 決定1・#332: 商品種別は 3 値（現物 / 信用買い / 空売り）。
     expect(PRODUCT_TYPE_OPTIONS).toEqual([
       { value: 0, label: '現物' },
-      { value: 1, label: '信用' },
+      { value: 1, label: '信用買い' },
+      { value: 2, label: '空売り' },
     ]);
     expect(MARKET_OPTIONS).toEqual([
       { value: 0, label: '日本' },
       { value: 1, label: '米国' },
     ]);
-    // 危険判定に使う信用(Margin)の値がラベルと整合する。
-    expect(productTypeLabel(PRODUCT_TYPE_MARGIN)).toBe('信用');
+    // 危険判定に使う信用買い・空売りの値がラベルと整合する。
+    expect(productTypeLabel(PRODUCT_TYPE_MARGIN_LONG)).toBe('信用買い');
+    expect(productTypeLabel(PRODUCT_TYPE_SHORT_SELL)).toBe('空売り');
   });
 });
 

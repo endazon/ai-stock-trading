@@ -20,12 +20,9 @@ public static class KnownPlanDeviations
         // 第 2 段階（IADR-0131）: ShortSell.Limits（→ 型 ShortSellingLimits・7 メンバ）/
         // RejectionReason.ShortSellReasons（→ 拒否理由 7 種。いずれもクラス A）。
 
-        // --- #332 取引ガード: 商品種別の 3 値化 ---
-        new(
-            "ProductType.Values",
-            "Cash, Margin",
-            332,
-            "信用を 1 値でまとめている。計画は現物 / 信用買い / 空売り の 3 値で独立に制御する"),
+        // --- #332 取引ガード: 担当分の逸脱 1 件は解消済み ---
+        // IADR-0132: ProductType.Values（→ Cash, MarginLong, ShortSell の 3 値・独立制御）。
+        // 既定「現物のみ有効」（Guard.EnabledProductTypes）は逸脱していなかったため登録が無い。
 
         // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離 ---
         new(

@@ -50,8 +50,14 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
 
-        // FR-19: 取引ガード
-        if (!settings.Guard.EnabledProductTypes.Contains(intent.ProductType))
+        // FR-19, ADR-0016 決定1, #332, IADR-0132: 取引ガード（商品種別は 現物 / 信用買い / 空売り の 3 値を
+        // それぞれ独立に制御する。既定は現物のみ有効）。
+        // 照合は**実効商品種別**で行う（決定3）。新規売り建てを Cash と申告してガードを迂回できないようにする。
+        // 適用は**新規建てのみ**である（決定4）。無効な商品種別の建玉を手仕舞えないと、
+        // FR-10 の不変条件「手仕舞い（Close）と損切りは止めない」（ADR-0009）に反する。
+        // 例: 既定では空売りが無効であり、全注文へ適用すると空売り建玉の買戻し（Buy × Close）が拒否される。
+        var effectiveProductType = ProductTypeResolver.Resolve(intent);
+        if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, effectiveProductType))
         {
             reasons.Add(RejectionReason.ProductTypeDisabled);
         }
@@ -62,15 +68,25 @@ public static class RiskEvaluator
         }
 
         // 禁止銘柄は銘柄コードと市場の両方で照合する（同一コードが別市場に存在し得るため）。
-        if (settings.Guard.BannedSymbols.Any(b => b.Symbol == intent.Symbol && b.Market == intent.Market))
+        // 照合規則は BannedSymbol.Matches が単一情報源（市場は厳密一致・コードは表記差を吸収。IADR-0132 決定6）。
+        if (settings.Guard.BannedSymbols.Any(b => b.Matches(intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.BannedSymbol);
         }
 
-        // 差金決済防止は（銘柄コード, 市場）で照合する。禁止銘柄判定と対称にし、別市場の
+        // FR-19, #332, IADR-0132 決定5: 差金決済防止（同一銘柄の同日再エントリー禁止）は
+        // **日本株の現物取引にのみ**適用する。本ガードは日本の差金決済規制（金商法 161 条の 2・
+        // 06_daytrading-review §2.1）に対応するものであり、**米国株は信用口座（margin account）で運用するため
+        // Good Faith Violation が発生しない**（05_trading-assumptions §5「米国口座の種別・決済」・FR-19 本文）。
+        // 米国株の回転数は日次発注金額上限（equity の 150%/日）と保有建玉数上限（3）で管理する。
+        // 信用（信用買い・空売り）は同一保証金での同日無制限回転が可能なため現物に限る（§5「差金決済防止」）。
+        //
+        // 照合は（銘柄コード, 市場）で行う。禁止銘柄判定と対称にし、別市場の
         // 同一コード（例: 日本株 6902 と同名の米国ティッカー）の誤拒否を防ぐ（Issue #26）。
         if (isEntry
             && settings.Guard.PreventSameDayReentry
+            && intent.Market == Market.Japan
+            && effectiveProductType == ProductType.Cash
             && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);
@@ -133,10 +149,14 @@ public static class RiskEvaluator
         // 既存の統制に**上乗せ**して課す（置き換えではない）。空売りは損失に上限が無く、
         // 「損切りが機能すれば損失は限定される」という既存統制の前提が成り立たないためである。
         // 上限が競合する場合は常に厳しい方が効く（1 注文 25% と 1 銘柄 10% の両方が列挙される＝ AND）。
+        //
+        // #332, IADR-0132 決定2: 空売りの有効・無効は**取引ガードの商品種別**（3 値）が単一情報源である。
+        // 専用フラグ（旧 ShortSellSettings.Enabled）と二重に持つと設定が食い違う。
         if (isEntry && ShortSellEvaluator.IsShortEntry(intent))
         {
-            reasons.AddRange(
-                ShortSellEvaluator.Evaluate(intent, settings.ShortSell, snapshot.Capital, shortSellContext));
+            var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, ProductType.ShortSell);
+            reasons.AddRange(ShortSellEvaluator.Evaluate(
+                intent, shortSellEnabled, settings.ShortSell.Limits, snapshot.Capital, shortSellContext));
         }
 
         return reasons.Count > 0

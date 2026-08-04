@@ -52,14 +52,14 @@ plan_refs:
 | Limits | RiskLimitSettings | ○ | リスク上限（FR-10） |
 | Stage | StageSettings | ○ | 段階ゲート（FR-20） |
 
-### TradingGuardSettings（FR-19, ADR-0007）
+### TradingGuardSettings（FR-19, ADR-0007, ADR-0016 決定1。#332 / IADR-0132）
 
 | 属性 | 型 | 必須 | 既定値 | 説明 |
 | --- | --- | --- | --- | --- |
-| EnabledProductTypes | Set&lt;ProductType&gt; | ○ | { Cash } | 有効な商品種別。信用は無効（初期資金が最低保証金未満） |
+| EnabledProductTypes | Set&lt;ProductType&gt; | ○ | { Cash } | 有効な商品種別。**3 値**（`Cash` / `MarginLong` / `ShortSell`）を独立に制御し、既定は現物のみ。**空売りの有効・無効の単一情報源**（IADR-0132 決定2） |
 | EnabledMarkets | Set&lt;Market&gt; | ○ | { Japan, UnitedStates } | 市場別の有効/無効。米国株が主 |
-| BannedSymbols | Collection&lt;BannedSymbol&gt; | ○ | 利用者登録3件 | 取引禁止銘柄（銘柄+市場で照合） |
-| PreventSameDayReentry | bool | | true | 差金決済防止（同日再エントリー禁止） |
+| BannedSymbols | Collection&lt;BannedSymbol&gt; | ○ | 利用者登録3件 | 取引禁止銘柄（銘柄+市場で照合。コードは表記差を吸収＝ `BannedSymbol.Matches`） |
+| PreventSameDayReentry | bool | | true | 差金決済防止（同日再エントリー禁止）。**適用は日本株 × 現物 × 新規建てのみ**（FR-19・IADR-0132 決定5） |
 | ProhibitManipulativeOrderPatterns | bool | | true | 相場操縦パターン禁止（判定は検出器注入時。IADR-0006） |
 
 ### RiskLimitSettings（FR-10。既定値は計画 05_trading-assumptions §5 の確定単一値。#329 / IADR-0130）

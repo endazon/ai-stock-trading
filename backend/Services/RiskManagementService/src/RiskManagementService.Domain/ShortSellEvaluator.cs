@@ -31,23 +31,27 @@ public static class ShortSellEvaluator
     /// <see cref="IsShortEntry"/> により振り分ける）。
     /// </summary>
     /// <param name="intent">注文意図。株価下限は <c>Price</c>（ローカル通貨＝米国株なので USD）で判定する。</param>
-    /// <param name="settings">空売りの有効・無効と統制値。</param>
+    /// <param name="shortSellEnabled">
+    /// 空売りが有効か。**単一情報源は取引ガードの商品種別**（<c>Guard.EnabledProductTypes</c> が
+    /// <see cref="ProductType.ShortSell"/> を含むか。#332・IADR-0132 決定2）。既定は無効である。
+    /// </param>
+    /// <param name="limits">空売り専用の統制値（ADR-0016 決定2,3,4,7,9）。</param>
     /// <param name="equity">自己資金（前営業日終値時点。IADR-0130 決定2）。1 銘柄あたり上限の基準。</param>
     /// <param name="context">外部由来の入力。**null は照会経路が無いことを意味し、空売りは通さない**。</param>
     public static IReadOnlyList<RejectionReason> Evaluate(
         OrderIntent intent,
-        ShortSellSettings settings,
+        bool shortSellEnabled,
+        ShortSellingLimits limits,
         decimal equity,
         ShortSellOrderContext? context)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(limits);
 
         var reasons = new List<RejectionReason>();
-        var limits = settings.Limits;
 
         // ADR-0016 決定1/8: 空売りが無効（既定）なら他を評価するまでもなく拒否する。
-        if (!settings.Enabled)
+        if (!shortSellEnabled)
         {
             reasons.Add(RejectionReason.ShortSellDisabled);
         }

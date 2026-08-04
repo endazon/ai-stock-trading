@@ -164,10 +164,12 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   6: '再開',
 };
 
-// ProductType（0=Cash,1=Margin）。
+// ProductType（0=Cash,1=MarginLong,2=ShortSell）。FR-19 / ADR-0016 決定1・#332: 商品種別は 3 値であり
+// それぞれ独立に有効・無効を設定できる（既定は現物のみ有効）。序数はバックエンドの enum と一致させる。
 const PRODUCT_TYPE_LABELS: Record<number, string> = {
   0: '現物',
-  1: '信用',
+  1: '信用買い',
+  2: '空売り',
 };
 
 // Market（0=Japan,1=UnitedStates）。
@@ -192,8 +194,15 @@ const optionsOf = (map: Record<number, string>): EnumOption[] =>
   Object.entries(map).map(([v, label]) => ({ value: Number(v), label }));
 export const PRODUCT_TYPE_OPTIONS: EnumOption[] = optionsOf(PRODUCT_TYPE_LABELS);
 export const MARKET_OPTIONS: EnumOption[] = optionsOf(MARKET_LABELS);
-// ProductType の信用（Margin）。新規有効化を「危険な緩和」と判定するための定数（IADR-0086 決定 3）。
-export const PRODUCT_TYPE_MARGIN = 1;
+// ProductType の信用買い・空売り。新規有効化を「危険な緩和」と判定するための定数（IADR-0086 決定 3）。
+// **空売りは損失に上限が無い**ため（ADR-0016）、信用買いと同様に危険な緩和として確認を求める。
+export const PRODUCT_TYPE_MARGIN_LONG = 1;
+export const PRODUCT_TYPE_SHORT_SELL = 2;
+// 有効化が「危険な緩和」にあたる商品種別（現物以外）。
+export const RISKY_PRODUCT_TYPES: readonly { value: number; label: string }[] = [
+  { value: PRODUCT_TYPE_MARGIN_LONG, label: '信用買いを有効化' },
+  { value: PRODUCT_TYPE_SHORT_SELL, label: '空売りを有効化' },
+];
 
 export const stageLabel = (v: number): string => labelOf(STAGE_LABELS, v);
 export const modeLabel = (v: number): string => labelOf(MODE_LABELS, v);
