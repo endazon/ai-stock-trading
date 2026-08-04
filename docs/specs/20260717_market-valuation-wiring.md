@@ -2,7 +2,7 @@
 title: 時価評価の供給アダプタ結線（含み損益・ドローダウンの現在値連携。既定オフ）
 type: spec
 status: review
-related_ids: [FR-10, FR-05, FR-16, FR-03, UC-06, ADR-0002, ADR-0007, ADR-0008]
+related_ids: [FR-10, FR-05, FR-16, FR-03, UC-06, ADR-0002, ADR-0003, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-17
 updated: 2026-07-17
@@ -10,7 +10,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
 ---
 
 # 仕様書: 時価評価の供給アダプタ結線（既定オフ）
@@ -23,7 +23,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-10（リスク統制・日次損失上限・最大DD）、FR-05（発注）、FR-16（報告書の数値定義）、FR-03（市場監視）
 - ユースケース（UC）: UC-06（リスク統制の操作・照会）
-- ADR: ADR-0002（証券会社=moomoo）、ADR-0007（取引ガード・信用）、ADR-0008（段階ゲート）
+- ADR: ADR-0002（証券会社=moomoo）、ADR-0003（リスク統制はリスク管理サービスが強制する）、ADR-0008（段階ゲート）
 - 関連 IADR: [IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失上限の基準）、
   [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（台帳射影・含みは 0 のまま）、
   [IADR-0025](../adr/IADR-0025_pnl-aggregation.md)（報告書の評価損益は現在値入力依存）、
