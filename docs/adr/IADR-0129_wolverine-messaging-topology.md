@@ -17,7 +17,7 @@ related_ids:
   - IADR-0128
 author: claude
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md"
   - "../../planning/projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md"
@@ -130,6 +130,37 @@ MassTransit と Wolverine は **exchange 名もエンベロープ形式も異な
 - 新: ① `ServiceName` 定数がサービス跨ぎで一意 ② サービスが共通ヘルパを迂回していない ③ 1 サービスが MassTransit と Wolverine を両方配線していない
 - 旧規則（クラス名の衝突）は**未移行サービスに対してのみ**適用し、第 3 段階で撤去する。除外リストは作らず、`Program.cs` の内容から移行済み／未移行を自動判定する（除外リストは「一時措置」のまま残るのが常であるため）。
 - 検査器が空振りしていないこと（走査したサービス数の下限）を併せて検査する（[[IADR-0127]] / [[IADR-0128]] 決定 6 と同じ「静かに失効する経路を塞ぐ」思想）。
+
+### 決定 9: ハンドラ型は `public sealed` にする（IADR-0128 決定 4 の限定的な例外）
+
+**第 2 段階で 45 consumer 分をまとめて判断する**としていた保留事項（作業仕様書 §11-3）の結論である。
+
+**Wolverine はハンドラ型が public でなければ受け付けない。**これは「発見の走査対象が公開型に限られる」という
+緩い話ではなく、`opts.Discovery.IncludeType(typeof(内部型))` で**明示的に指定しても**次の例外で拒否される
+（実測・Wolverine 6.24.5）:
+
+> `System.ArgumentOutOfRangeException: Handler types must be public, concrete, and closed (not generic) types (Parameter 'type')`
+
+すなわち `InternalsVisibleTo` による回避（第 1 段階で「未検証」としていた案）は**成立しない**。ハンドラの
+ランタイム生成コードが別アセンブリに出る以上、`internal` を保ったまま扱う道は Wolverine 側に用意されていない。
+
+したがって選べるのは次の 3 つだけであり、(1) を採る。
+
+1. **ハンドラ型だけを `public sealed` にする（採用）**
+2. ハンドラを廃し、`IMessageBus.InvokeAsync` 等を自前の受信ループから呼ぶ（Wolverine を半分しか使わない。棄却）
+3. Wolverine を使わない（計画 ADR-0013 に反する。棄却）
+
+[[IADR-0128]] 決定 4（「実装型は internal のまま据え置き、公開面を増やさない」）との整合は次のとおり:
+
+- 決定 4 の目的は**プロジェクト分割によって新しい公開 API 面が生まれるのを防ぐ**ことであり、
+  「internal であること」自体が目的ではない。本件で公開になるのは**メッセージ基盤が呼ぶための入口（ハンドラ）だけ**である。
+- ハンドラは**薄い受け口に保つ**（メッセージを受け、Application 層のサービスへ委譲するだけ）。
+  ドメイン規則・永続化・アダプタの実装型は `internal` のまま据え置く。よって公開面の増分は
+  「イベント 1 つにつき、引数がメッセージ型 1 つのメソッド 1 つ」に限られ、他アセンブリから意味のある形で
+  再利用できる API は増えない。
+- 既存の `InternalsVisibleTo`（Api / Api.Tests / Infrastructure.Tests）は**そのまま残す**。ハンドラ以外の
+  内部型はテスト・composition root からのみ見えるという状態は変わらない。
+- 該当は実測 45 consumer（＋パイロットで移行済みの 2 件）。**ハンドラ型以外を public へ広げてはならない**。
 
 ## 理由
 
