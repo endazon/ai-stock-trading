@@ -12,7 +12,7 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
     {
         ArgumentNullException.ThrowIfNull(intent);
 
-        // 冪等: 既に承認済みの DecisionId は無視する（MassTransit 再送）。
+        // 冪等: 既に承認済みの DecisionId は無視する（ブローカ再送・IADR-0129 決定 10 の根拠のひとつ）。
         if (db.ApprovedOrders.Find(decisionId) is not null)
             return;
 

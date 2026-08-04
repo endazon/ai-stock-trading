@@ -11,17 +11,17 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.risk-management-service";
 
 // #12 Slice B, IADR-0011/0029: kill switch/設定変更の HTTP エンドポイント（Keycloak 認可）と
-// ヘルスチェックのため WebApplication を用いる。MassTransit コンシューマは IHostedService として稼働する。
+// ヘルスチェックのため WebApplication を用いる。Wolverine のハンドラは常駐のリスナとして稼働する。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL・Keycloak を
 // AiStockTrading.TestSupport.PlatformShim 経由で組む部分）は dev/test/CI でのローカル単体実行のためのもの。
 // 本番（実運用）では ai-stock-trading は platform の可変部分へ組み込まれ、バス設定・可観測性・認証などの共通基盤は
 // platform 本体の Foundation が提供する（本番統合は #22）。取引ドメインの本番実装は Domain/Application と、
@@ -174,33 +174,22 @@ builder.Services.AddScoped<PositionCloseService>();
 builder.Services.AddScoped<IPositionDriftStateStore, EfPositionDriftStateStore>();
 builder.Services.AddScoped<PositionDriftTracker>();
 
-// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
-// StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<TradeDecisionMadeConsumer>();
-    x.AddConsumer<StopLossTriggeredConsumer>();
-    // IADR-0018: 承認・約定を購読して取引台帳へ射影する（IPortfolioStateProvider の実データ源）。
-    x.AddConsumer<OrderApprovedLedgerConsumer>();
-    x.AddConsumer<OrderExecutedLedgerConsumer>();
-    // FR-19, #154, IADR-0067: 承認・約定・訂正・取消を購読して注文アクティビティへ射影する（相場操縦検知の入力源）。
-    x.AddConsumer<OrderApprovedActivityConsumer>();
-    x.AddConsumer<OrderExecutedActivityConsumer>();
-    x.AddConsumer<OrderModifiedActivityConsumer>();
-    x.AddConsumer<OrderCancelledActivityConsumer>();
-    // FR-20, FR-15, #164, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読し段階別実績へ射影する（Stage 0→1 解錠）。
-    x.AddConsumer<BacktestEvaluatedProjectionConsumer>();
-    // FR-05, FR-10, #292, IADR-0118: ブローカ実ポジションの観測を購読し、台帳との乖離を検知して報告する（是正はしない）。
-    x.AddConsumer<BrokerPositionsObservedConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        // 一時的失敗は再試行し、継続失敗はデッドレターへ退避する（回復性）。
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
+// StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。承認・約定・訂正・取消は取引台帳（IADR-0018）と
+// 注文アクティビティ（FR-19 / #154 / IADR-0067）へ射影し、BacktestEvaluated は段階別実績へ（#164 / IADR-0089）、
+// BrokerPositionsObserved は台帳との乖離検知へ（#292 / IADR-0118）回す。
+//
+// **本サービスは OrderApproved を発行しつつ自分でも購読している。**Wolverine の既定では発行が自プロセス内へ
+// 閉じ、OrderExecutionService へ一通も届かない（発注が一件も執行されない）。共通ヘルパが必ず
+// DisableConventionalLocalRouting を適用してこれを止める（IADR-0129 決定 3）。
+//
+// **OrderApproved / OrderExecuted は 1 イベントにつき 2 ハンドラ（台帳・活動射影）が動く。**MassTransit では
+// キューが分かれていたが Wolverine では 1 本のチェーンに統合され、再試行で両方が再実行される。
+// 双方の書き込みが冪等であることが安全性の根拠であり、コード上の根拠は IADR-0129 決定 10 に記載した。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(TradeDecisionMadeHandler).Assembly));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

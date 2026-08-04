@@ -162,6 +162,48 @@ MassTransit と Wolverine は **exchange 名もエンベロープ形式も異な
   内部型はテスト・composition root からのみ見えるという状態は変わらない。
 - 該当は実測 45 consumer（＋パイロットで移行済みの 2 件）。**ハンドラ型以外を public へ広げてはならない**。
 
+### 決定 10: 同一サービス内の複数ハンドラは統合を受け入れる（冪等性で意味を保つ）
+
+**第 2 段階に持ち越していた最大の未決事項**（作業仕様書 §6.2 / §11-1・11-4）の結論である。
+
+RiskManagementService には **1 イベント型を 2 ハンドラが処理する経路が 2 つ**ある。
+
+| イベント | ハンドラ A（取引台帳・IADR-0018） | ハンドラ B（注文アクティビティ射影・IADR-0067） |
+| --- | --- | --- |
+| `OrderApproved` | `OrderApprovedLedgerHandler` → `AppendApproval` | `OrderApprovedActivityHandler` → `RecordPlacement` |
+| `OrderExecuted` | `OrderExecutedLedgerHandler` → `AppendFill` | `OrderExecutedActivityHandler` → `RecordExecution` |
+
+MassTransit ではキューが consumer ごとに分かれていたため、片方の失敗が他方の再試行を引き起こさなかった。
+Wolverine は**同じメッセージ型のハンドラを 1 本のチェーンに統合する**ため、再試行では両方が再実行される。
+
+#### 検討した選択肢
+
+- **(a) 分離実行（sticky handler で別エンドポイントへ分ける）**: Wolverine の sticky handler は
+  `ListenToRabbitQueue` による**明示的なエンドポイント宣言**を要求する。これは決定 4（トポロジは共通ヘルパに閉じ、
+  サービス側に選択肢を残さない）と静的検査 N2（素の `ListenToRabbitQueue` を禁止）に正面から反し、
+  さらに案D（全キュー手書き）で棄却した「宣言漏れが静かな事故になる」性質を 2 経路だけのために導入することになる。
+- **(b) 統合を受け入れ、冪等性で意味を保つ（採用）**。
+
+#### 冪等性のコード上の根拠（実装を読んで確認した）
+
+| 呼び出し | 実装 | 再実行時の振る舞い |
+| --- | --- | --- |
+| `EfPortfolioLedgerStore.AppendApproval` | 先頭で `if (db.ApprovedOrders.Find(decisionId) is not null) return;` | 2 回目以降は**無変更で復帰** |
+| `EfOrderActivityStore.RecordPlacement` | 先頭で `if (db.OrderActivities.Find(decisionId) is not null) return;` | 同上 |
+| `EfPortfolioLedgerStore.AppendFill` | `OrderId` 単位の**単調 upsert**。`if (filledQuantity <= existing.FilledQuantity) return true;` | 同じ数量の再適用は**無変更** |
+| `EfOrderActivityStore.RecordExecution` | `DecisionId` 行への絶対値代入（`row.Status = status; row.FilledQuantity = filledQuantity;`） | 同一メッセージの再適用は**同じ状態**に収束 |
+
+加えて、**両ハンドラは同一の `RiskManagementDbContext`（同一 DB）へ別テーブルを書く**。したがって
+「片方だけが恒久的に失敗する」現実的な故障モードが無い（DB 障害・スキーマ不整合は双方を等しく失敗させる）。
+チェーンが途中で失敗した場合に後続ハンドラが実行されない点は事実だが、その状況では先行ハンドラも
+次の再試行でやり直され、最終的に `<queue>_error` へ退避された封筒を再投入すれば**双方が冪等に適用される**。
+
+#### 併せて記録する既知の非冪等（本移行が作ったものではない）
+
+`EfOrderActivityStore.RecordModification` は `row.AmendmentCount++`（インクリメント）であり、**再配信で二重計上する**。
+ただし `OrderModified` を処理するハンドラは 1 つだけであり、この性質は MassTransit 時代から同一で、
+本移行によって悪化しない（再試行の条件も単一ハンドラのままである）。**別 issue で扱う**。
+
 ## 理由
 
 - **一意性の根拠を「人間の命名」から「既にある一意な識別子」へ移せる。** [[IADR-0106]] の弱点は、キューの一意性がクラス名という「本来は自由なもの」に依存していた点にある。`ServiceName` はサービスの同一性そのものであり、重複させる動機が誰にも無い。

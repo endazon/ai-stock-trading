@@ -1,11 +1,11 @@
 using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
 using Composable = AiStockTrading.RiskManagement.Infrastructure.Composable;
@@ -13,7 +13,8 @@ using Composable = AiStockTrading.RiskManagement.Infrastructure.Composable;
 namespace AiStockTrading.RiskManagement.Api.Tests;
 
 // WebApplicationFactory（platform Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、
-// InMemory DB・MassTransit テストハーネス・TestAuthHandler へ差し替えてエンドポイントを検証する。
+// InMemory DB・Wolverine の外部トランスポート無効化（ADR-0013 / IADR-0129 / #354）・TestAuthHandler へ
+// 差し替えてエンドポイントを検証する。
 public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Program>
 {
     // Factory ごとに一意な InMemory DB 名で他テストと隔離する。
@@ -44,9 +45,8 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
         {
             ReplaceDbContextWithInMemory(services, _dbName);
 
-            // 実 RabbitMQ 接続を避けるため MassTransit をテストハーネスへ差し替える。
-            services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.TradeDecisionMadeConsumer>());
+            // ADR-0013, IADR-0129, #354: 実 RabbitMQ へ接続しない（ハンドラの発見は Program.cs 側の配線が担う）。
+            services.DisableAllExternalWolverineTransports();
 
             // Keycloak/JWT に依存せず TestAuthHandler で認証する（既定スキームを Test に切替）。
             services.AddAuthentication(TestAuthHandler.SchemeName)

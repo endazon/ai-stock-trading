@@ -5,9 +5,10 @@ using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
@@ -21,18 +22,22 @@ public class OrderActivityProjectionConsumersTests
     private static OrderIntent Intent(int qty = 10) =>
         new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, 3_000m);
 
-    private static ServiceProvider BuildProvider(InMemoryOrderActivityStore store) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IOrderActivityStore>(store)
-            .AddMassTransitTestHarness(x =>
+    // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
+    // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
+    // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
+    private static Task<IHost> BuildHostAsync(InMemoryOrderActivityStore store) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
             {
-                x.AddConsumer<OrderApprovedActivityConsumer>();
-                x.AddConsumer<OrderExecutedActivityConsumer>();
-                x.AddConsumer<OrderModifiedActivityConsumer>();
-                x.AddConsumer<OrderCancelledActivityConsumer>();
+                opts.Services.AddSingleton<IOrderActivityStore>(store);
+                opts.Discovery.DisableConventionalDiscovery()
+                    .IncludeType<OrderApprovedActivityHandler>()
+                    .IncludeType<OrderExecutedActivityHandler>()
+                    .IncludeType<OrderModifiedActivityHandler>()
+                    .IncludeType<OrderCancelledActivityHandler>();
+                opts.StubAllExternalTransports();
             })
-            .BuildServiceProvider(true);
+            .StartAsync();
 
     private static OrderActivityWindow Window(InMemoryOrderActivityStore store) =>
         store.GetRecentActivity("AAPL", Market.UnitedStates, Base.AddMinutes(1), TimeSpan.FromMinutes(5));
@@ -41,17 +46,15 @@ public class OrderActivityProjectionConsumersTests
     public async Task 承認から取消までを購読し注文アクティビティへ射影する()
     {
         var store = new InMemoryOrderActivityStore();
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        await harness.Bus.Publish(new OrderApproved(decisionId, Intent(10), 10, Base));
-        (await harness.Consumed.Any<OrderApproved>()).Should().BeTrue();
-        await harness.Bus.Publish(new OrderModified(decisionId, "ORD-1", 10, 3_000m, 6, 2_950m, "縮小", Base.AddSeconds(10)));
-        (await harness.Consumed.Any<OrderModified>()).Should().BeTrue();
-        await harness.Bus.Publish(new OrderCancelled(decisionId, "ORD-1", "pause 強制取消", Base.AddSeconds(20)));
-        (await harness.Consumed.Any<OrderCancelled>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
+        session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderModified(decisionId, "ORD-1", 10, 3_000m, 6, 2_950m, "縮小", Base.AddSeconds(10)));
+        session2.Executed.MessagesOf<OrderModified>().Should().NotBeEmpty();
+        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderCancelled(decisionId, "ORD-1", "pause 強制取消", Base.AddSeconds(20)));
+        session3.Executed.MessagesOf<OrderCancelled>().Should().NotBeEmpty();
 
         var record = Window(store).Records.Should().ContainSingle().Subject;
         record.AmendmentCount.Should().Be(1);
@@ -59,44 +62,40 @@ public class OrderActivityProjectionConsumersTests
         record.Status.Should().Be(OrderStatus.Cancelled);
         record.IsCancelledWithoutFill.Should().BeTrue();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 約定は状態と約定数を射影する()
     {
         var store = new InMemoryOrderActivityStore();
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        await harness.Bus.Publish(new OrderApproved(decisionId, Intent(10), 10, Base));
-        (await harness.Consumed.Any<OrderApproved>()).Should().BeTrue();
-        await harness.Bus.Publish(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1)));
-        (await harness.Consumed.Any<OrderExecuted>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
+        session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1)));
+        session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         var record = Window(store).Records.Should().ContainSingle().Subject;
         record.Status.Should().Be(OrderStatus.Filled);
         record.FilledQuantity.Should().Be(10);
         record.IsFilledOrPartial.Should().BeTrue();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 相関する承認が無い約定は射影されない()
     {
         var store = new InMemoryOrderActivityStore();
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
-        await harness.Bus.Publish(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base));
-        (await harness.Consumed.Any<OrderExecuted>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base));
+        session1.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         Window(store).Records.Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 }

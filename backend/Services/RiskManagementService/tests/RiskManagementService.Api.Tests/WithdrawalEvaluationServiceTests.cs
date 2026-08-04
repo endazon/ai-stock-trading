@@ -5,17 +5,20 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Api.Tests;
 
 // FR-20, FR-11, FR-09, UC-06, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバの結線を検証する。
 // 休場ガード・新規停止時のみ通知（冪等）・fail-safe 非発火・多重実行防止（逐次）を受け入れ基準へ写像する。
-// WebApplicationFactory（InMemory DB・MassTransit ハーネス）上で、ドライバを直接構成して RunOnceAsync を叩く。
+// WebApplicationFactory（InMemory DB・Wolverine の外部トランスポート無効化）上で、ドライバを直接構成して
+// RunOnceAsync を叩く。ADR-0013 / IADR-0129 / #354: 発行の観測は MassTransit の ITestHarness（ホスト寿命の
+// 累積）から Wolverine.Tracking（追跡ブロック内の送信）へ移した。**複数回の巡回にまたがる件数を数えるテストは、
+// 巡回すべてを 1 つの追跡ブロックに入れて累積の意味を保つ**。
 public class WithdrawalEvaluationServiceTests
 {
     // 2026-07-17 金曜（営業日）/ 2026-07-18 土曜（休場）。
@@ -50,8 +53,8 @@ public class WithdrawalEvaluationServiceTests
     // 乖離が説明可能＝撤退非該当（提案は解消）。
     private static StagePerformance PaperDeviationResolved() => new() { PaperDeviationExplained = true };
 
-    private static int NonHaltingCount(ITestHarness harness) =>
-        harness.Published.Select<WithdrawalTriggered>(p => !p.Context.Message.HaltNewEntries).Count();
+    private static int NonHaltingCount(ITrackedSession session) =>
+        session.Sent.MessagesOf<WithdrawalTriggered>().Count(m => !m.HaltNewEntries);
 
     private static WithdrawalEvaluationService BuildDriver(
         RiskWorkerWebApplicationFactory factory, DateTimeOffset now) =>
@@ -76,16 +79,15 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient(); // ホスト（＋ハーネスバス）を起動する。
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+        var session = await factory.Services.ExecuteAndWaitAsync(
+            () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeTrue();
-        (await harness.Published.Any<WithdrawalTriggered>(
-            p => p.Context.Message.HaltNewEntries
-                && p.Context.Message.ProposedStage == (int)TradingStage.Stage0Verification
-                && p.Context.Message.Reason == nameof(WithdrawalReason.DrawdownBreachedMultiple)))
-            .Should().BeTrue();
+        session.Sent.MessagesOf<WithdrawalTriggered>().Should().Contain(m =>
+            m.HaltNewEntries
+                && m.ProposedStage == (int)TradingStage.Stage0Verification
+                && m.Reason == nameof(WithdrawalReason.DrawdownBreachedMultiple));
     }
 
     [Fact]
@@ -96,14 +98,16 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
         var driver = BuildDriver(factory, FridayUtc);
 
-        await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規停止 → 発行
-        await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 起動済み → 非発行
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規停止 → 発行
+            await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 起動済み → 非発行
+        });
 
-        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeTrue();
-        harness.Published.Select<WithdrawalTriggered>()
+        session.Sent.MessagesOf<WithdrawalTriggered>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<WithdrawalTriggered>()
             .Should().ContainSingle("新規に停止した 1 回だけ通知する（撤退継続中の再通知はしない）");
     }
 
@@ -115,12 +119,12 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        await BuildDriver(factory, SaturdayUtc).RunOnceAsync(CancellationToken.None);
+        var session = await factory.Services.ExecuteAndWaitAsync(
+            () => BuildDriver(factory, SaturdayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse();
-        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeFalse();
+        session.Sent.MessagesOf<WithdrawalTriggered>().Should().BeEmpty();
     }
 
     [Fact]
@@ -129,12 +133,12 @@ public class WithdrawalEvaluationServiceTests
         // 受け入れ基準: 実績未供給（既定・起点 Stage 0）は fail-safe で非発火＝停止も通知もしない。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+        var session = await factory.Services.ExecuteAndWaitAsync(
+            () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse();
-        (await harness.Published.Any<WithdrawalTriggered>()).Should().BeFalse();
+        session.Sent.MessagesOf<WithdrawalTriggered>().Should().BeEmpty();
     }
 
     // --- #189/IADR-0085: Stage 1 ペーパー乖離（非停止）の降格提案通知（durable な重複排除） ---
@@ -148,16 +152,15 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Paper);
         SeedPerformance(factory, PaperDeviationUnexplained());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None);
+        var session = await factory.Services.ExecuteAndWaitAsync(
+            () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse("ペーパー乖離は停止させず降格提案に留める");
-        (await harness.Published.Any<WithdrawalTriggered>(
-            p => !p.Context.Message.HaltNewEntries
-                && p.Context.Message.ProposedStage == (int)TradingStage.Stage0Verification
-                && p.Context.Message.Reason == nameof(WithdrawalReason.PaperDeviationUnexplained)))
-            .Should().BeTrue();
+        session.Sent.MessagesOf<WithdrawalTriggered>().Should().Contain(m =>
+            !m.HaltNewEntries
+                && m.ProposedStage == (int)TradingStage.Stage0Verification
+                && m.Reason == nameof(WithdrawalReason.PaperDeviationUnexplained));
     }
 
     [Fact]
@@ -168,13 +171,15 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Paper);
         SeedPerformance(factory, PaperDeviationUnexplained());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
         var driver = BuildDriver(factory, FridayUtc);
 
-        await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規乖離 → 発行
-        await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 同一シグネチャ → 非発行
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規乖離 → 発行
+            await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 同一シグネチャ → 非発行
+        });
 
-        NonHaltingCount(harness).Should().Be(1, "同一乖離継続中は 1 回だけ通知する（スパム回避）");
+        NonHaltingCount(session).Should().Be(1, "同一乖離継続中は 1 回だけ通知する（スパム回避）");
     }
 
     [Fact]
@@ -186,12 +191,14 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Paper);
         SeedPerformance(factory, PaperDeviationUnexplained());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 1
-        await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 2（別構築・同一 DB）
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 1
+            await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 2（別構築・同一 DB）
+        });
 
-        NonHaltingCount(harness).Should().Be(1, "永続シグネチャで別インスタンス・再起動をまたいでも重複通知しない");
+        NonHaltingCount(session).Should().Be(1, "永続シグネチャで別インスタンス・再起動をまたいでも重複通知しない");
     }
 
     [Fact]
@@ -201,17 +208,19 @@ public class WithdrawalEvaluationServiceTests
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Paper);
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
         var driver = BuildDriver(factory, FridayUtc);
 
-        SeedPerformance(factory, PaperDeviationUnexplained());
-        await driver.RunOnceAsync(CancellationToken.None); // 乖離 → 発行（1）
-        SeedPerformance(factory, PaperDeviationResolved());
-        await driver.RunOnceAsync(CancellationToken.None); // 解消 → クリア・非発行
-        SeedPerformance(factory, PaperDeviationUnexplained());
-        await driver.RunOnceAsync(CancellationToken.None); // 再乖離 → 再発行（2）
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            SeedPerformance(factory, PaperDeviationUnexplained());
+            await driver.RunOnceAsync(CancellationToken.None); // 乖離 → 発行（1）
+            SeedPerformance(factory, PaperDeviationResolved());
+            await driver.RunOnceAsync(CancellationToken.None); // 解消 → クリア・非発行
+            SeedPerformance(factory, PaperDeviationUnexplained());
+            await driver.RunOnceAsync(CancellationToken.None); // 再乖離 → 再発行（2）
+        });
 
-        NonHaltingCount(harness).Should().Be(2, "解消を挟めば再乖離で再通知する");
+        NonHaltingCount(session).Should().Be(2, "解消を挟めば再乖離で再通知する");
     }
 
     [Fact]
@@ -223,16 +232,18 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
         var driver = BuildDriver(factory, FridayUtc);
 
-        await driver.RunOnceAsync(CancellationToken.None);
-        await driver.RunOnceAsync(CancellationToken.None);
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            await driver.RunOnceAsync(CancellationToken.None);
+            await driver.RunOnceAsync(CancellationToken.None);
+        });
 
-        harness.Published.Select<WithdrawalTriggered>()
+        session.Sent.MessagesOf<WithdrawalTriggered>()
             .Should().ContainSingle("停止経路は新規停止の 1 回のみ")
-            .Which.Context.Message.HaltNewEntries.Should().BeTrue();
-        NonHaltingCount(harness).Should().Be(0, "停止経路では非停止通知を出さない");
+            .Which.HaltNewEntries.Should().BeTrue();
+        NonHaltingCount(session).Should().Be(0, "停止経路では非停止通知を出さない");
     }
 
     // 休場ガードの当日判定を制御するための固定時計。

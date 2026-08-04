@@ -6,8 +6,8 @@ using AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Api.Tests;
@@ -69,9 +69,13 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
     public async Task 利用者は建玉を全量決済できる()
     {
         SeedPosition("CLOSE1", 100);
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        var res = await OwnerClient().PostAsJsonAsync("/risk-controls/positions/close", Body("CLOSE1"));
+        // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
+        HttpResponseMessage res = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            res = await OwnerClient().PostAsJsonAsync("/risk-controls/positions/close", Body("CLOSE1"));
+        });
 
         res.StatusCode.Should().Be(HttpStatusCode.Accepted, "約定は後から非同期に成立するため 202");
 
@@ -81,13 +85,13 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
         dto.Price.Should().Be(21m);
 
         // 既存経路（発注執行・台帳・通知）へ載せる承認と、監査のための要求イベントの双方を発行する。
-        (await harness.Published.Any<OrderApproved>(
-            c => c.Context.Message.DecisionId == dto.DecisionId
-              && c.Context.Message.Intent.PositionEffect == PositionEffect.Close)).Should().BeTrue();
-        (await harness.Published.Any<PositionCloseRequested>(
-            c => c.Context.Message.DecisionId == dto.DecisionId
-              && c.Context.Message.Actor == "test-owner"
-              && c.Context.Message.Reason == "手仕舞い")).Should().BeTrue();
+        session.Sent.MessagesOf<OrderApproved>().Should().Contain(m =>
+            m.DecisionId == dto.DecisionId
+              && m.Intent.PositionEffect == PositionEffect.Close);
+        session.Sent.MessagesOf<PositionCloseRequested>().Should().Contain(m =>
+            m.DecisionId == dto.DecisionId
+              && m.Actor == "test-owner"
+              && m.Reason == "手仕舞い");
     }
 
     [Fact]

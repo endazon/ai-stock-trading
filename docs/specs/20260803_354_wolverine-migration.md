@@ -623,3 +623,53 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   Wolverine では発見範囲が本番と同一になり、ズレそのものが消えた。
 
 合格数: 6 / 21 / 13（Api / Application / Infrastructure）＝移行前と同数。
+
+#### RiskManagementService
+
+購読 10・発行 8 経路。**自己購読（`OrderApproved`）と 1 イベント 2 ハンドラを含む、本移行で最も危険なサービス**。
+
+##### 未決事項 §11-1 / §11-4（1 イベント 2 ハンドラ）の結論
+
+**(b) 統合を受け入れ、冪等性で意味を保つ**を採った（[[IADR-0129]] 決定 10 に根拠を記載）。要点のみ:
+
+- (a)（sticky handler で分離実行）は `ListenToRabbitQueue` の明示宣言を要求し、[[IADR-0129]] 決定 4 と
+  静的検査 N2（素の `ListenToRabbitQueue` の禁止）に正面から反するため採らなかった。
+- 4 つの書き込みがいずれも冪等であることをコードで確認した（`Find` ガード ×2・単調 upsert・絶対値代入）。
+- 両ハンドラは**同一の `RiskManagementDbContext`（同一 DB）**へ別テーブルを書くため、片方だけが恒久的に
+  失敗する現実的な故障モードが無い。
+- 併せて、`RecordModification` の `AmendmentCount++` が**再配信で二重計上する**（本移行が作ったものではない
+  既存の非冪等）ことを記録した。単一ハンドラであり本移行で悪化しないため、別 issue で扱う。
+
+##### 書き換えたテスト
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `RiskManagementService.Infrastructure.Tests/ConsumerEndpointNameTests.cs` | `取引判断購読のキュー名を固定する` | `DefaultEndpointNameFormatter...Consumer<TradeDecisionMadeConsumer>()` が `"TradeDecisionMade"` | `QueueNameFor(ServiceName, typeof(TradeDecisionMade))` が `"ai-stock-trading.risk-management-service.TradeDecisionMade"` **かつ MarketMonitor のキュー名と不一致** | 1〜4 充足・5（強化）。キュー名規則が変わったため期待文字列は追随するが、衝突相手との不一致を実計算で確かめる分だけ強い |
+| 同上 | `本サービス内の各購読が互いに異なるキュー名を持つ` | 9 consumer クラスのエンドポイント名が一意 | 8 **イベント型**のキュー名が一意（Wolverine は 1 イベント型 = 1 キューであり、ハンドラ数ではなくイベント型数が母数になる） | 1〜4 充足。**母数が 9 → 8 に変わるのは規則の変化そのもの**（`OrderApproved` / `OrderExecuted` の 2 ハンドラが 1 キューを共有する）。この変化の妥当性は決定 10 が担保する |
+| `RiskManagementService.Infrastructure.Tests/TradeDecisionMadeConsumerTests.cs` | `承認された注文は_OrderApproved_を発行する` / `kill_switch_起動中は_OrderRejected_を発行する` | `harness.Consumed` / `harness.Published`（拒否理由まで） | `session.Executed` / `session.Sent`（拒否理由の期待値は不変） | 1〜4 充足 |
+| `RiskManagementService.Infrastructure.Tests/StopLossTriggeredConsumerTests.cs` | `損切りイベントで決済のOrderApprovedを発行する` / `kill_switch_起動中でも損切りは無条件に発行される` | 同上（`PositionEffect.Close` / `TradeSide.Sell`） | 同上（期待値は不変） | 1〜4 充足 |
+| `RiskManagementService.Infrastructure.Tests/PortfolioLedgerConsumersTests.cs` | `承認から約定までを購読し台帳へ射影する` / `約定していない結果は台帳に載せない` / `部分約定は約定時点で台帳に載り全量約定で累積値へ更新される` / `部分約定のまま取消された注文も約定分が台帳に載る` / `同一注文の再送や少ない数量の後追いでは台帳が巻き戻らない` | `harness.Bus.Publish` ×N ＋ `harness.Consumed`（述語つき）＋ 台帳の数量・価格 | `InvokeMessageAndWaitAsync` ×N ＋ `session.Executed`（述語つき）＋ **同じ台帳の期待値** | 1〜4 充足 |
+| `RiskManagementService.Infrastructure.Tests/OrderActivityProjectionConsumersTests.cs` | 3 テスト（承認→訂正→取消 / 承認→約定 / 承認なしの約定） | 同上 | 同上 | 1〜4 充足 |
+| `RiskManagementService.Infrastructure.Tests/BacktestEvaluatedProjectionConsumerTests.cs` | 4 テスト（合格 verdict の射影・運用系フィールド保全 ほか） | 同上 | 同上 | 1〜4 充足 |
+| `RiskManagementService.Infrastructure.Tests/BrokerPositionsObservedConsumerTests.cs` | `一致していれば乖離を発行しない` / `一度きりの乖離では発行しない` / `連続で同一の乖離なら双方の数量つきで発行する` / `台帳が空でもブローカにだけある建玉を検出する` / `建玉ゼロの観測で台帳側の建玉を乖離として検出する` / `是正の発注は行わない` | `harness.Published.Any<T>(述語)`。連続観測は `await harness.Consumed.Any<T>()` で 1 回目の消費完了を待ってから 2 回目を publish | 2 回の `InvokeMessageAndWaitAsync`（同期的に順序づくため明示の待ち合わせが不要）＋ 2 回目の `session.Sent`（述語は不変） | 1〜4 充足。`是正の発注は行わない` は旧がハーネス全体で見ていたため、**1 回目と 2 回目の両セッション**を検査する形にした（表明の範囲は同じ） |
+| `RiskManagementService.Infrastructure.Tests/MoomooFillControlRegressionTests.cs` | 2 テスト（moomoo 経路の統制実効の回帰） | 同上 | 同上 | 1〜4 充足 |
+| `RiskManagementService.Api.Tests/PositionCloseEndpointTests.cs` | `利用者は建玉を全量決済できる` | `ITestHarness` ＋ `OrderApproved` / `PositionCloseRequested` の述語 | `factory.Services.ExecuteAndWaitAsync` ＋ `session.Sent`（述語は不変） | 1〜4 充足 |
+| `RiskManagementService.Api.Tests/StageGateEndpointsTests.cs` | `昇格受理時に_StageTransitioned_をバス発行する` / `拒否遷移では_StageTransitioned_を発行しない` | 同上 | 同上 | 1〜4 充足 |
+| `RiskManagementService.Api.Tests/WithdrawalEvaluationServiceTests.cs` | 8 テスト（自動停止・冪等・休場ガード・ペーパー乖離の durable dedup ほか） | `ITestHarness` の**ホスト寿命にわたる累積**を数える（`NonHaltingCount`） | **複数回の巡回すべてを 1 つの追跡ブロックへ入れ**、`session.Sent` を数える（件数の期待値 1 / 2 / 0 は不変） | 1〜4 充足。累積の意味を保つため巡回をまとめてブロック内へ移した |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `RiskWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => x.AddConsumer<TradeDecisionMadeConsumer>())` → `DisableAllExternalWolverineTransports()` |
+| 各 Infrastructure テストの `BuildProvider` | `AddMassTransitTestHarness(x => AddConsumer<...>)` → `opts.Discovery.DisableConventionalDiscovery().IncludeType<...>()`（**テストの対象範囲を旧テストと同一に保つ**ため、規約発見は止めて対象型だけを含める） |
+
+実装側の特記:
+
+- 7 ファイル・10 クラスを `*Consumer` → `*Handler`（`public sealed`）。
+- `WithdrawalEvaluationService`（scoped スコープから解決）・`RiskControlEndpoints`（手仕舞い・段階遷移）は
+  `IPublishEndpoint` → `IMessageBus`。
+- **自己購読の危険が現実の経路として存在する**ことを `Program.cs` とハンドラのコメントに明記した
+  （`OrderApproved` は本サービスが発行し本サービスが購読する。決定 3 が無ければ発注執行へ 1 通も届かない）。
+
+合格数: 62 / 209 / 109 / 87（Api / Application / Domain / Infrastructure）＝移行前と同数。
