@@ -37,6 +37,11 @@
 
 1. 計画リポジトリ `project-planning` を参照可能にする（submodule か隣接クローン。既定パス `../project-planning`）。
 2. 技術スタックに合わせて `*.example` の CI 系（`ci.example.yml` / `codeql.example.yml`）を有効化する。
+   - **注意: `.github/workflows/` 配下では `.example` を挟んでも無効にならない。** GitHub Actions は
+     同ディレクトリ内の `*.yml` をファイル名に関わらず実行するため、`frontend.example.yml` のような
+     名前でもワークフローとして起動する（前提スクリプトが未定義なら失敗する）。無効のまま置きたい
+     テンプレートは `.github/workflows/` の外へ出すか、拡張子を `.yml` 以外にすること。
+     本リポジトリでは同じ理由で実行されていたフロントエンド用テンプレート 2 件を削除した（#367）。
 3. ブランチ保護で必須ステータスチェックを設定する（手順は `docs/ai-workflow.md`）。
 4. **`.github/CODEOWNERS.example` を `CODEOWNERS` にリネームし、レビュアを設定する。**
    AI が実装し AI がレビューする運用では、必須レビュアが不在だと「AI の実装を AI が承認して
