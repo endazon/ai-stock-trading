@@ -167,6 +167,35 @@ public class ShortSellingControlsTests
         result.Reasons.Should().Contain(RejectionReason.ShortExposureExceeded);
     }
 
+    // FR-10 (6), ADR-0016 決定9, #329 第 3 段階（プロパティベース）: 比率 50% の判定は
+    // **「空売り建玉の合計がロング建玉の総額を超えない」と等価**である。
+    //   (S + N) ≦ (L + S + N) × 0.5  ⇔  2(S + N) ≦ L + (S + N)  ⇔  S + N ≦ L
+    // ロング建玉 L が空売り枠の上限そのものになる（equity ではない）ことを、建玉構成によらず固定する。
+    // この等価形と、そこから導かれる含意（L = 0 では空売りを開始できない・Stage 1 で空売り単独の
+    // 検証ができない）は計画へ環流済みである（feedback/20260804_adr0016-short-ratio-denominator.md）。
+    [Theory]
+    [InlineData(10_000, 0, 9_999, false)]      // L のみ・枠内
+    [InlineData(10_000, 0, 10_000, false)]     // S + N = L（境界・許容）
+    [InlineData(10_000, 0, 10_001, true)]      // S + N > L
+    [InlineData(10_000, 4_000, 6_000, false)]  // 既存ショートがある場合も同じ式
+    [InlineData(10_000, 4_000, 6_001, true)]
+    [InlineData(0, 0, 1, true)]                // L = 0 なら 1 件目から通らない
+    public void 空売り比率の判定は空売り合計がロング建玉総額を超えないことと等価である(
+        decimal longExposure, decimal shortExposure, decimal notional, bool expectedRejected)
+    {
+        Limits.ExposureRatioCap.Should().Be(0.50m, "この等価形は比率上限 50% に固有である");
+        (shortExposure + notional > longExposure).Should().Be(
+            expectedRejected, "等価形 S + N ≦ L で表した期待値");
+
+        var result = Evaluate(
+            ShortEntry(notional),
+            Context(totalShortExposure: shortExposure, totalExposure: longExposure + shortExposure),
+            // 1 銘柄あたり上限（equity の 10%）が先に効かないよう equity を大きく取る。
+            equity: 10_000_000m);
+
+        result.Reasons.Contains(RejectionReason.ShortExposureExceeded).Should().Be(expectedRejected);
+    }
+
     // FR-10 (4), ADR-0016 決定7: 維持率の閾値は「40%」と規制要求 max($5.00 ÷ 株価, 30%) の**厳しい方**。
     // 両者が入れ替わるのは株価 **$12.50**（= $5.00 ÷ 40%）である。
     // **$16.67 と混同しないこと**（$16.67 は規制側の内訳が固定額から時価 30% へ替わる点であり別の境界）。

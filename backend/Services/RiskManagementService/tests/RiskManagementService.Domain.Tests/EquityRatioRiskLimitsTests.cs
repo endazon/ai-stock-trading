@@ -210,6 +210,38 @@ public class EquityRatioRiskLimitsTests
             .Should().Contain(RejectionReason.PerOrderAmountExceeded);
     }
 
+    // FR-10, #329 第 3 段階（否定形）: **1 注文上限の直下に刻んだ分割発注で枠を積み上げられない**。
+    // 1 注文金額上限（equity の 25%）だけを見ると「上限内の注文は何度でも通る」ように見えるが、
+    // 日次枠（equity の 150%/日）が**累計**で効くため、上限いっぱいの注文は 1 日 6 件で尽きる。
+    // 分割の粒度を細かくしても（最後に 1 円の注文を足しても）枠は緩まない。
+    [Fact]
+    public void 分割発注しても日次発注枠は累計で効く()
+    {
+        // 日次枠だけを見るため、段階資金上限は外す（別の上限で先に止まると本テストの検証にならない）。
+        // 保有建玉数上限（3）と段階資金上限も同じ分割経路に並行して効く（別テストで固定済み）。
+        var settings = Settings(stageCapitalCap: decimal.MaxValue);
+        var perOrderCap = Limits.MaxOrderAmountFor(Equity);
+        var dailyCap = Limits.MaxDailyOrderAmountFor(Equity);
+        var slices = (int)(dailyCap / perOrderCap);
+
+        var ordered = 0m;
+        for (var i = 0; i < slices; i++)
+        {
+            var result = RiskEvaluator.Evaluate(
+                Entry(perOrderCap), settings, Snapshot(dailyOrderedAmount: ordered));
+
+            result.IsApproved.Should().BeTrue("{0} 件目は 1 注文上限以内であり枠も残っている", i + 1);
+            ordered += perOrderCap; // 約定するとカウンタ（PortfolioProjection）が新規建てを累計する
+        }
+
+        ordered.Should().Be(dailyCap, "上限いっぱいの分割 {0} 件で日次枠を使い切る", slices);
+        RiskEvaluator.Evaluate(Entry(perOrderCap), settings, Snapshot(dailyOrderedAmount: ordered))
+            .Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
+        RiskEvaluator.Evaluate(Entry(1m), settings, Snapshot(dailyOrderedAmount: ordered))
+            .Reasons.Should().Contain(
+                RejectionReason.DailyOrderAmountExceeded, "刻みを細かくしても累計は同じ枠を消費する");
+    }
+
     // FR-10: equity が 0 以下（口座が枯渇）なら、金額系の上限は 0 以下に解決され新規建ては通らない。
     // 「基準が取れないときに上限が無限になる」という最悪の縮退が起きないことを固定する。
     [Theory]

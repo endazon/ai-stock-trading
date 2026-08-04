@@ -201,6 +201,29 @@ public class PortfolioProjectionTests
         state.DailyRealizedPnl.Should().Be(40_000m);
     }
 
+    // FR-10, #302, #329 第 3 段階（否定形）: **決済に見せかけた新規建てで日次枠を逃れられない**。
+    // 日次枠は新規建て（Open）のみを算入するため、「決済」と称した約定は枠を消費しない。在庫を超えて
+    // 反転した分は**新しい建玉**であるが、それも投入額（段階資金上限の入力）と保有建玉数へ計上されるため、
+    // 露出そのものは統制の視界から消えない。
+    //
+    // なお建玉効果は上流（TradeDecision の PositionEffectResolver・IADR-0119）が**保有建玉から**決めており、
+    // 保有なし・不明の売りは Close にならず見送られる（AI が「決済」と申告して統制を外す経路は無い）。
+    [Fact]
+    public void 決済に見せかけて在庫を超えた約定でも残る建玉は投入額と建玉数に計上される()
+    {
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),    // ロング 10 株
+                Fill(TradeSide.Sell, PositionEffect.Close, 30, 1_000m, TodayAt(10)), // 「決済」30 株＝20 株の反転
+            },
+            Today, InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(10_000m, "決済（Close）は当日発注累計を消費しない");
+        state.OpenPositionCount.Should().Be(1, "反転して残ったショート建玉は保有建玉数に数える");
+        state.InvestedCapital.Should().Be(20_000m, "残ったショート建玉の取得額は段階資金上限の累計に載る");
+    }
+
     [Fact]
     public void 空の台帳は初期資金のみの状態を返す()
     {
