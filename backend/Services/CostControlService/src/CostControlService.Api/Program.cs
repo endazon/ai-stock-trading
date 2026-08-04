@@ -10,15 +10,15 @@ using AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Wolverine;
 using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
 
 const string ServiceName = "ai-stock-trading.cost-control-service";
 
 // #23 Slice A, NFR（費用）, IADR-0027: 費用統制サービス。LLM の月次費用計上と上限に対する間隔延長/停止判定（Keycloak 認可）と
-// ヘルスチェックのため WebApplication を用いる。しきい値の上方遷移時に CostThresholdReached を発行する（MassTransit）。
+// ヘルスチェックのため WebApplication を用いる。しきい値の上方遷移時に CostThresholdReached を発行する（Wolverine）。
 //
 // IADR-0013: 本 Program.cs の standalone 配線は dev/test/CI のローカル単体実行のためのもの。本番は platform 統合（#22）で置換。
 var builder = WebApplication.CreateBuilder(args);
@@ -60,22 +60,18 @@ builder.Services.AddScoped<AppSvc>();
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.AddHostedService<ProcessedMessageRetentionService>();
 
-// IADR-0011/0027: MassTransit（RabbitMQ）。しきい値到達時の CostThresholdReached 発行に用いる。
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。しきい値到達時の CostThresholdReached 発行に用いる。
 // #79, IADR-0055 決定1: さらに LlmCostIncurred を購読し LLM 費用を計上する（HTTP /costs/record は OwnerOnly のため）。
 // #139, IADR-0065 決定4: AssumptionsChanged を購読し、上限キャッシュを無効化して新しい版へ追随する
 // （購読が外れると TTL 既定 5 分まで上限変更が反映されない）。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<LlmCostIncurredConsumer>();
-    x.AddConsumer<AssumptionsChangedConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ハンドラは MassTransit の `AddConsumer<T>()` に代えて**アセンブリ走査**で発見されるため、
+// ハンドラを持つアセンブリ（Infrastructure・ConfigurationService.Client）を明示する。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(LlmCostIncurredHandler).Assembly,
+    typeof(AssumptionsChangedHandler).Assembly));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

@@ -1,5 +1,5 @@
 <!-- #23 Slice A, NFR（費用）, IADR-0027, IADR-0128: 費用統制サービスの技術詳細（EF Core 台帳・Migration・
-     LlmCostIncurred の consumer・保持期間ジョブ・前提条件由来の上限アダプタ）。ホスト（Program.cs・
+     LlmCostIncurred のハンドラ・保持期間ジョブ・前提条件由来の上限アダプタ）。ホスト（Program.cs・
      エンドポイント・DI 構成）は Api に置く。共有フレームワーク型（BackgroundService/IOptions/ILogger 等）を
      使うため FrameworkReference を持つ（TestSupport.PlatformShim と同型）。 -->
 <Project Sdk="Microsoft.NET.Sdk">
@@ -9,7 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（ハンドラ規約・IMessageBus）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

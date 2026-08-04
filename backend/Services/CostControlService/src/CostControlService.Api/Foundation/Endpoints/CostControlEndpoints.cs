@@ -1,10 +1,10 @@
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Wolverine;
 using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
 
 namespace AiStockTrading.CostControl.Api.Foundation.Endpoints;
@@ -41,13 +41,13 @@ internal static class CostControlEndpoints
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         // 費用を計上する。統制状態が上方に遷移したら CostThresholdReached を発行する。
-        owner.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IPublishEndpoint bus, CancellationToken ct) =>
+        owner.MapPost("/record", async (RecordCostRequest req, AppSvc svc, IMessageBus bus, CancellationToken ct) =>
         {
             var result = await svc.RecordAsync(req.Category, req.Amount, ct);
 
             if (result.CrossedTo is { } crossed)
             {
-                await bus.Publish(new CostThresholdReached(
+                await bus.PublishAsync(new CostThresholdReached(
                     result.Month, req.Category.ToString(), result.Percent, crossed.ToString(), DateTimeOffset.UtcNow));
             }
 
