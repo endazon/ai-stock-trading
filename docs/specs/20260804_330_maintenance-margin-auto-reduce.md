@@ -145,7 +145,7 @@ MarginPosition { Symbol; Market; Side; ProductType; Quantity; PriceUsd; Required
 
 | 記録先 | 実装 | 発動が無いとき |
 | --- | --- | --- |
-| 監査ログ | `MaintenanceMarginReductionExecutedAuditHandler` ＋ `AuditEntryFactory.From`（相関は `"margin-reduction:{EventId}"` ではなく `EventId` そのもの） | 記録なし（イベントが無い） |
+| 監査ログ | `MaintenanceMarginReductionExecutedAuditHandler` ＋ `AuditEntryFactory.From`（相関は `"margin-reduction"` の決定的 GUID＝発動どうしを 1 本で辿れる。`BrokerPositionsObserved` と同じ作法） | 記録なし（イベントが無い） |
 | Discord | `MaintenanceMarginReductionExecutedNotificationHandler` ＋ `NotificationFormatter.From`（**決済前後の維持率と閾値・回復目標を本文に出す**） | 通知なし |
 | 日報 | `ReportRenderer`「## 4. リスク統制の記録 → ### 維持率割れによる自動縮小の記録（当日）」（7 列の表） | **「なし」と明記**。照会できなかった場合は「取得できず（要確認）」と区別する |
 | 月報 | `ReportRenderer`「## 4. リスク統制の記録 → 維持率割れによる自動縮小の発動回数」 | **「0 件」と明記**（同上） |
@@ -202,3 +202,22 @@ MarginPosition { Symbol; Market; Side; ProductType; Quantity; PriceUsd; Required
 3. **定期評価の周期**（何秒ごとに維持率を見るか）は計画に無い。供給元と同時に決める（#331）
 4. 日報・月報への**データ供給経路**（監査台帳を読むか、リスク管理に照会 API を置くか）は #331 で決める。
    本 issue は描画とポートまで
+
+## 検証結果（2026-08-04）
+
+| 検査 | 結果 |
+| --- | --- |
+| `dotnet build backend/backend.slnx` | **0 warning / 0 error** |
+| `dotnet test --filter "Category!=Integration"` | **2,513 passed / 0 failed**（着手前 2,477 ＋ 本 issue 36 件） |
+| `scripts/check-coverage.js` | 行カバレッジ **66.31%**（13,324/20,094）／ floor 62% |
+| `scripts/check-test-traceability.js` | OK（テスト 325 ファイル・起点 ID 25 種） |
+| `scripts/check-banned-libraries.js` | OK（不採用ライブラリの混入なし） |
+| `scripts/check-consumer-endpoint-names.js` | OK（11 サービス・キュー名の一意性） |
+| `node --test scripts/scripts.test.js` | OK |
+| `dotnet format --verify-no-changes` | 差分なし |
+| `scripts/check-doc-links.js` | 本 issue で追加した文書の破損リンク **0 件**（既存 20 件は他文書の先行課題） |
+| `PlanConformance.Tests` | green。**既知逸脱レジストリは 6 行のまま**（#333 / #334 / #358 担当。#330 担当の行は無い） |
+| `scripts/check-commit-messages.js` | OK（5 件） |
+
+追加したテスト 36 件の内訳: Domain 21（`MaintenanceMarginAutoReduceTests`）／ Application 6
+（`MaintenanceMarginReductionServiceTests`）／ 監査 2 ／ 通知 1 ／ 報告書 6。
