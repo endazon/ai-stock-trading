@@ -128,6 +128,11 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
     return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
 });
 
+// FR-10, UC-06, #330, IADR-0133 決定7: 日報・月報へ載せる「維持率割れによる自動縮小」の記録。
+// 権威源への結線は発火元（維持率の供給・#331 / #342）と同時に行う。それまでの既定は空列＝「発動なし」であり、
+// **現状は自動縮小があり得ない**ため事実として正しい（照会失敗＝ null とは区別する）。
+builder.Services.AddSingleton<IMarginReductionRecordSource, NoMarginReductionRecordSource>();
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

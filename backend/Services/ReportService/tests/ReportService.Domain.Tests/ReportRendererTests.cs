@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
@@ -106,5 +108,98 @@ public class ReportRendererTests
 
         md.Should().Contain("（散文ドラフトなし）");
         md.Should().Contain("（方針未設定）");
+    }
+
+    // --- 維持率割れによる自動縮小（#330・記録先 3/4: 日報・月報） ---
+
+    private static MaintenanceMarginReductionExecuted Reduction(
+        DateTimeOffset executedAt, decimal? ratioAfter = 0.4504m) => new(
+        Guid.NewGuid(), RatioBefore: 0.40m, Threshold: 0.40m, RecoveryTarget: 0.45m, RatioAfter: ratioAfter,
+        [new MaintenanceMarginReductionItem(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 112, 100m, 3_360m)],
+        executedAt);
+
+    // T-10-201: 日報は**発動の有無・決済した建玉・決済前後の維持率**を表 7 列で載せる
+    //（04_report-templates 日報 §4・FR-10・UC-06）。
+    [Fact]
+    public void 日報は維持率割れの自動縮小を7列の表で記載する()
+    {
+        var view = View(ReportKind.Daily, "2026-08-04") with
+        {
+            MarginReductions =
+            [
+                Reduction(new DateTimeOffset(2026, 8, 4, 14, 30, 0, TimeSpan.Zero)),
+                Reduction(new DateTimeOffset(2026, 8, 4, 12, 5, 0, TimeSpan.Zero)),
+            ],
+        };
+
+        var md = ReportRenderer.RenderMarkdown(view);
+
+        md.Should().Contain("### 維持率割れによる自動縮小（当日）");
+        md.Should().Contain("**発動の有無**: あり — 2 回");
+        md.Should().Contain("| # | 時刻 | 決済前の維持率 | 閾値 | 回復目標（閾値+5pt） | 決済した建玉（銘柄・方向・数量・必要証拠金） | 決済後の維持率 |");
+        md.Should().Contain("| 1 | 12:05 |", "発動は時刻の昇順で並べる");
+        md.Should().Contain("40.0%").And.Contain("45.0%").And.Contain("45.0%");
+        md.Should().Contain("AAPL / ショート / 112 株 / 3,360.00 USD");
+    }
+
+    // T-10-202: 発動が無い日も「なし」と**明記する**（計画: 空欄と「なし」を区別する）。
+    [Fact]
+    public void 日報は発動が無い日もなしと明記する()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Daily, "2026-08-04") with { MarginReductions = [] });
+
+        md.Should().Contain("**発動の有無**: なし");
+    }
+
+    // T-10-203（否定形）: **照会できなかったものを「なし」と書かない**（発動を隠したのと同じ結果になるため）。
+    [Fact]
+    public void 記録を照会できないときはなしと書かず要確認と記す()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Daily, "2026-08-04") with { MarginReductions = null });
+
+        md.Should().Contain("記録を照会できませんでした（要確認）");
+        md.Should().NotContain("**発動の有無**: なし");
+    }
+
+    // T-10-204: 月報は**当月の発動回数**のみを記載する（明細は日報に委ねる。04_report-templates 月報 §6）。
+    // 発動が無い月も「0 件」と明記する。
+    [Fact]
+    public void 月報は当月の発動回数を記載し発動が無い月も0件と明記する()
+    {
+        var withEvents = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly, "2026-08") with
+        {
+            MarginReductions = [Reduction(new DateTimeOffset(2026, 8, 4, 14, 30, 0, TimeSpan.Zero))],
+        });
+        var empty = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Monthly, "2026-08") with { MarginReductions = [] });
+
+        withEvents.Should().Contain("### 維持率割れによる自動縮小（当月）").And.Contain("**発動回数: 1 件**");
+        withEvents.Should().NotContain("| # | 時刻 |", "個々の内容は該当日報を参照する（月報は回数のみ）");
+        empty.Should().Contain("**発動回数: 0 件**");
+    }
+
+    // T-10-205: 全量決済で建玉が無くなった場合、決済後の維持率は「0%」ではなく「建玉なし」と記す。
+    [Fact]
+    public void 全量決済後の維持率は建玉なしと記す()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily, "2026-08-04") with
+        {
+            MarginReductions = [Reduction(new DateTimeOffset(2026, 8, 4, 14, 30, 0, TimeSpan.Zero), ratioAfter: null)],
+        });
+
+        md.Should().Contain("建玉なし");
+    }
+
+    // 週報は計画が記載を求めていないため節を作らない（求められていない節を勝手に増やさない）。
+    [Fact]
+    public void 週報には自動縮小の節を作らない()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Weekly, "2026-W32") with { MarginReductions = [] });
+
+        md.Should().NotContain("維持率割れによる自動縮小");
     }
 }

@@ -12,7 +12,7 @@ namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
 // 冪等キーは `context.MessageId`（`Guid?`・null なら新規採番していた）から `envelope.Id`（`Guid`・非 null）
 // になり、**「MessageId が無ければ重複排除できない」分岐が構造的に不要**になった（Wolverine は送信時に必ず採番する）。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
-// 21 イベントそれぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+// 22 イベントそれぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
 
 public sealed class PriceMovementDetectedAuditHandler(IAuditEventStore store, IClock clock)
 {
@@ -215,6 +215,18 @@ public sealed class BrokerPositionsObservedAuditHandler(IAuditEventStore store, 
 public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore store, IClock clock)
 {
     public void Handle(PositionReconciliationDrift message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小を中央監査台帳へ記録する。
+// 利用者の承認も AI も介在しない自動決済であるため、**記録が無ければ「知らないうちに建玉が減っていた」状態**に
+// なる（04_report-templates の記載理由）。日報・月報の記載もこの同じイベントから作る。
+public sealed class MaintenanceMarginReductionExecutedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(MaintenanceMarginReductionExecuted message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));

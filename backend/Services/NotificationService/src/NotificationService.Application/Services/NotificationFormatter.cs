@@ -1,3 +1,4 @@
+using System.Globalization;
 using AiStockTrading.Notification.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -78,6 +79,27 @@ public static class NotificationFormatter
             + $"{string.Join("、", e.Drifts.Select(Describe))}。"
             + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。",
         NotificationSeverity.Critical);
+
+    // FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小。
+    // 利用者の承認を待たずシステムが決済したため **Critical**。本文には計画が日報へ求めた項目
+    //（決済前後の維持率・閾値・回復目標・決済した建玉）をそのまま出す——「知らないうちに建玉が減っていた」
+    // 状態を防ぐことが記録・通知の目的であり、数値が無ければ規則どおりの作動を利用者が確かめられない。
+    public static NotificationMessage From(MaintenanceMarginReductionExecuted e) => new(
+        "リスク統制: 維持率割れによる建玉の自動縮小",
+        $"維持率 {Ratio(e.RatioBefore)} が閾値 {Ratio(e.Threshold)} に達したため、"
+            + $"回復目標 {Ratio(e.RecoveryTarget)}（閾値+5pt）まで建玉を縮小しました"
+            + $"（決済後 {(e.RatioAfter is { } after ? Ratio(after) : "建玉なし")}）。"
+            + $"決済した建玉: {string.Join("、", e.Items.Select(Describe))}。"
+            + "利用者の承認と AI の判断は介在していません（機械的規則）。",
+        NotificationSeverity.Critical);
+
+    // 04_report-templates の <n%> 表記（小数第 1 位・文化非依存）。"P1" は文化により空白が入るため使わない。
+    private static string Ratio(decimal ratio) =>
+        (ratio * 100m).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+
+    private static string Describe(MaintenanceMarginReductionItem i) =>
+        $"{i.Symbol}/{i.Market} {(i.PositionSide == TradeSide.Buy ? "ロング" : "ショート")} {i.Quantity} 株"
+            + $"（必要証拠金 {i.RequiredMarginUsd.ToString("N2", CultureInfo.InvariantCulture)} USD）";
 
     private static string Describe(PositionDriftItem d) => d.Kind switch
     {

@@ -1,5 +1,6 @@
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 
 namespace AiStockTrading.Report.Application.Services;
 
@@ -18,7 +19,8 @@ public sealed class ReportAutoGenerator(
     IPeriodFillSource fillSource,
     IClock clock,
     ReportAutoGenerationSettings settings,
-    IReportDraftPresentedNotifier? notifier = null)
+    IReportDraftPresentedNotifier? notifier = null,
+    IMarginReductionRecordSource? reductionSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -79,6 +81,7 @@ public sealed class ReportAutoGenerator(
             due.Kind, previous?.Report.PeriodKey, previous?.Report.PolicySummary, parent?.Report.PeriodKey);
 
         var fills = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
+        var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -93,7 +96,8 @@ public sealed class ReportAutoGenerator(
             new DraftRequest(
                 due.Kind, due.PeriodKey, due.PeriodStart, settings.Markets, settings.AssumptionsVersion,
                 parent?.Report.PeriodKey, policy, fills, CurrentPrices: null,
-                ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary)),
+                ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary),
+                MarginReductions: reductions),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -156,6 +160,32 @@ public sealed class ReportAutoGenerator(
 
     // 1 期間の生成結果（内部）。NotificationFailed は「提示はできたが通知の発行に失敗した」ことを表す。
     private sealed record GenerationOutcome(TradingReport Report, bool Presented, bool NotificationFailed);
+
+    // FR-10, UC-06, #330, IADR-0133 決定7: 自動縮小の記録は**空列へ倒さない**。「発動があったのに『なし』と書く」ことは
+    // 発動を隠したのと同じであり、記録の目的（「知らないうちに建玉が減っていた」状態の防止）が壊れる。
+    // 取得できなければ null を返し、報告書に「照会できませんでした（要確認）」と明記させる。
+    // 供給元そのものが未注入（既定構成）のときは空列＝「発動なし」（現状は発動があり得ないため事実として正しい）。
+    private async Task<IReadOnlyList<MaintenanceMarginReductionExecuted>?> SafeReductionsAsync(
+        DueReport due, CancellationToken cancellationToken)
+    {
+        if (reductionSource is null)
+            return [];
+
+        try
+        {
+            return await reductionSource
+                .GetReductionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     // 供給不達は空列へ倒す（IADR-0115 決定5）。報告書は発注判断を行わないため、欠測が過大発注へ繋がる経路が無く、
     // 「数値 0 のドラフトを提示して気付かせる」ほうが「何も出さない」より安全である。

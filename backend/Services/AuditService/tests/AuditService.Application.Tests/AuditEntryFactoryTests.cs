@@ -332,4 +332,37 @@ public class AuditEntryFactoryTests
 
         driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
     }
+    // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 1: 監査ログ**）。
+    // 利用者の承認も AI も介在しない自動決済であるため、この記録が「なぜ建玉が減ったか」の一次証跡になる。
+    [Fact]
+    public void MaintenanceMarginReductionExecuted_は決済前後の維持率と決済建玉を要約に残す()
+    {
+        var e = new MaintenanceMarginReductionExecuted(
+            Guid.NewGuid(), RatioBefore: 0.40m, Threshold: 0.40m, RecoveryTarget: 0.45m, RatioAfter: 0.4504m,
+            [new MaintenanceMarginReductionItem(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 112, 100m, 3_360m)],
+            RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("MaintenanceMarginReductionExecuted");
+        entry.Summary.Should().Contain("AAPL").And.Contain("112").And.Contain("3360");
+        entry.Summary.Should().Contain("40.0%").And.Contain("45.0%");
+        entry.OccurredAt.Should().Be(e.ExecutedAt);
+        // 明細（必要証拠金・数量）を含む全量 JSON が残る＝規則どおりの作動を事後に検証できる。
+        entry.Detail.Should().Contain("RequiredMarginUsd").And.Contain("RecoveryTarget");
+    }
+
+    // 全量決済すると建玉が無くなり維持率の概念が消える。「0%」と書くと破綻したように読めるため区別する。
+    [Fact]
+    public void MaintenanceMarginReductionExecuted_は全量決済後の維持率を建玉なしと記す()
+    {
+        var e = new MaintenanceMarginReductionExecuted(
+            Guid.NewGuid(), 0.20m, 0.40m, 0.45m, RatioAfter: null,
+            [new MaintenanceMarginReductionItem(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 1_000, 100m, 30_000m)],
+            RecordedAt);
+
+        AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("建玉なし");
+    }
 }

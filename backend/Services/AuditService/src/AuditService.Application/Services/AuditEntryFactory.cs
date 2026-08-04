@@ -145,6 +145,25 @@ public static class AuditEntryFactory
             + string.Join(", ", e.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳{d.LedgerQuantity}≠ブローカ{d.BrokerQuantity}({d.Kind})"))),
         AuditSerialization.Serialize(e), e.DetectedAt, recordedAt);
 
+    // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れによる建玉の自動縮小。
+    // **システムが自ら決済した唯一の統制**であり、この記録が「なぜ建玉が減ったか」の一次証跡になる。
+    // 注文相関を持たない（1 回の発動で複数の決済注文を出す）ため "margin-reduction" の決定的 GUID を相関にし、
+    // 発動どうしを 1 本の相関で辿れるようにする（BrokerPositionsObserved と同じ作法）。
+    public static AuditEntry From(MaintenanceMarginReductionExecuted e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(MaintenanceMarginReductionExecuted), AuditCorrelation.From("margin-reduction"), Symbol: null,
+        Truncate($"維持率割れの自動縮小 {Percent(e.RatioBefore)}→{FormatRatio(e.RatioAfter)}"
+            + $"（閾値 {Percent(e.Threshold)}・回復目標 {Percent(e.RecoveryTarget)}）: "
+            + string.Join(", ", e.Items.Select(i =>
+                $"{i.Symbol}/{i.Market} {i.PositionSide} {i.Quantity}株 必要証拠金{i.RequiredMarginUsd}"))),
+        AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
+
+    // 全量決済すると建玉が無くなり維持率の概念が消える（null）。「0%」と書くと破綻したように読めるため区別する。
+    private static string FormatRatio(decimal? ratio) => ratio is { } r ? Percent(r) : "建玉なし";
+
+    // 04_report-templates の <n%> 表記（小数第 1 位・文化非依存）。"P1" は文化により空白が入るため使わない。
+    private static string Percent(decimal ratio) =>
+        (ratio * 100m).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
     private static string Truncate(string s) =>
         s.Length <= SummaryMaxLength ? s : s[..SummaryMaxLength] + "…";
 }
