@@ -50,10 +50,11 @@ public static class ActualDefaults
 
         return new Dictionary<string, string>
         {
-            // 資金・金額系。現行は基準通貨（円）の固定額で保持している。
-            ["Capital.Initial"] = FixedAmount(TradingDefaults.InitialCapital),
-            ["RiskLimits.MaxOrderAmount"] = FixedAmount(limits.MaxOrderAmount),
-            ["RiskLimits.MaxDailyOrderAmount"] = FixedAmount(limits.MaxDailyOrderAmount),
+            // 資金・金額系。#329, IADR-0130: 初期資金は**通貨つきの権威値**（USD）、金額系 2 値は equity 比で保持する。
+            // 通貨を実装側の定数から採るのは、値だけを直して単位を直さない中途半端な追随を素通しさせないため。
+            ["Capital.Initial"] = CurrencyAmount(TradingDefaults.EquityCurrency, TradingDefaults.InitialEquityUsd),
+            ["RiskLimits.MaxOrderAmount"] = EquityRatio(limits.MaxOrderAmountRatio),
+            ["RiskLimits.MaxDailyOrderAmount"] = EquityRatioPerDay(limits.MaxDailyOrderAmountRatio),
             ["RiskLimits.MaxOpenPositions"] = Number(limits.MaxOpenPositions),
 
             // 損失・サイジング系。equity 比の比率で保持している。
@@ -108,6 +109,19 @@ public static class ActualDefaults
 
     /// <summary>equity に対する割合として保持されている値。</summary>
     private static string EquityRatio(decimal ratio) => $"equity ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// equity に対する割合のうち、**1 日あたり**として保持されている値（#329・計画 §5）。
+    /// 期間を表現に含めることで、1 注文あたりの割合との取り違えを検知可能にする。
+    /// </summary>
+    private static string EquityRatioPerDay(decimal ratio) => $"{EquityRatio(ratio)} per day";
+
+    /// <summary>
+    /// 通貨つきの金額（#329・IADR-0130 決定3）。通貨は実装側の定数から採り、
+    /// 「値だけ直して単位が旧のまま」という追随漏れを検知可能にする。
+    /// </summary>
+    private static string CurrencyAmount(Currency currency, decimal amount) =>
+        $"{currency.ToString().ToUpperInvariant()} {Number(amount)}";
 
     /// <summary>基準を持たない純粋な割合（バックテスト結果に対する比率など）。</summary>
     private static string Ratio(decimal ratio) => $"ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";

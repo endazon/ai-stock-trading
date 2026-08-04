@@ -61,7 +61,7 @@ internal sealed class PlaceholderSizingContextProvider(ILogger<PlaceholderSizing
         return Task.FromResult(new SizingContext(
             Capital: TradingDefaults.InitialCapital,
             StageCapitalRemaining: TradingDefaults.InitialCapital,
-            DailyOrderRemaining: limits.MaxDailyOrderAmount,
+            DailyOrderRemaining: limits.MaxDailyOrderAmountFor(TradingDefaults.InitialCapital),
             ConsecutiveLosses: 0,
             DrawdownRatio: 0m,
             Mode: TradeMode.Paper,

@@ -88,16 +88,26 @@ public static class RiskEvaluator
         // フェイルセーフ（新規発注停止・損切り監視は維持）/ ADR-0003（損切りは機械的に執行）により、
         // 手仕舞い（売り）注文には適用しない。値上がりで時価が上限超過したポジションの全量手仕舞いや、
         // 当日の発注累計が上限近い状況での損切り売りがブロックされるのを防ぐ。
-        if (isEntry && intent.NotionalInBase > settings.Limits.MaxOrderAmount)
+        //
+        // FR-10, #329, IADR-0130 決定1/2: 金額上限は equity 比で保持されており、判定時に equity から解決する。
+        // equity は snapshot.Capital（＝前営業日終値時点の評価額・当日中は不変。計画 §5 注記）であり、
+        // 日次損失上限・最大 DD と同一の基準を用いる（基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        if (isEntry && intent.NotionalInBase > settings.Limits.MaxOrderAmountFor(snapshot.Capital))
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }
 
-        if (isEntry && snapshot.DailyOrderedAmount + intent.NotionalInBase > settings.Limits.MaxDailyOrderAmount)
+        // FR-10, #302, IADR-0130 決定4: 日次枠は**新規建ての発注代金の合計**で判定する。isEntry による
+        // ゲート側の除外に加え、カウンタ側（DailyOrderedAmount の集計＝PortfolioProjection）も
+        // 新規建てに限定してある。片側だけでは「拒否されないが枠は減る」状態が残る。
+        if (isEntry
+            && snapshot.DailyOrderedAmount + intent.NotionalInBase
+                > settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital))
         {
             reasons.Add(RejectionReason.DailyOrderAmountExceeded);
         }
 
+        // FR-10, ADR-0016 決定9: 保有**建玉**数の上限（銘柄数では数えない）。
         if (isEntry && snapshot.OpenPositionCount >= settings.Limits.MaxOpenPositions)
         {
             reasons.Add(RejectionReason.MaxPositionsExceeded);

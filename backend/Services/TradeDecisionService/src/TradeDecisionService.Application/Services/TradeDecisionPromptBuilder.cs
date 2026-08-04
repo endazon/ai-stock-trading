@@ -63,7 +63,8 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine();
         sb.AppendLine("# リスク制約");
         sb.AppendLine($"- 運用資金: {context.Capital.ToString(ci)} 円 / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
-        sb.AppendLine($"- 1注文金額上限: {context.Limits.MaxOrderAmount.ToString(ci)} 円 / 段階残枠: {context.StageCapitalRemaining.ToString(ci)} / 当日発注残枠: {context.DailyOrderRemaining.ToString(ci)}");
+        // FR-10, #329, IADR-0130: 上限は equity 比で保持されるため、equity から解決した実額を提示する。
+        sb.AppendLine($"- 1注文金額上限: {context.Limits.MaxOrderAmountFor(context.Capital).ToString(ci)} 円 / 段階残枠: {context.StageCapitalRemaining.ToString(ci)} / 当日発注残枠: {context.DailyOrderRemaining.ToString(ci)}");
         if (priceUnit.Length > 0)
         {
             // #257, IADR-0107: 円建ての上限と外貨建ての価格が混在することを明示し、回答の単位も固定する

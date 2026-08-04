@@ -60,7 +60,16 @@ public static class PortfolioProjection
             var isToday = date == today;
             if (isToday)
             {
-                orderedToday += fill.Quantity * fill.PriceInBase;
+                // FR-10, #302, #329, IADR-0130 決定4: 日次発注枠は「**新規建ての発注代金の合計**で判定し、
+                // 手仕舞い（決済）注文は算入しない」（計画 05_trading-assumptions §5）。
+                // ゲート（RiskEvaluator の isEntry）と同じ区別をカウンタ側にも入れる。片側だけだと
+                // 「拒否はされないが枠は減る」状態が残り、大口決済が当日の新規建て枠を枯渇させて
+                // 手仕舞いをためらわせる（ADR-0009 と逆向きの誘因）。
+                if (fill.PositionEffect == PositionEffect.Open)
+                {
+                    orderedToday += fill.Quantity * fill.PriceInBase;
+                }
+
                 symbolsTradedToday.Add(key);
                 realizedToday += realized;
             }

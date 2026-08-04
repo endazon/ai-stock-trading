@@ -13,27 +13,10 @@ public static class KnownPlanDeviations
 {
     public static IReadOnlyList<KnownDeviation> All { get; } =
     [
-        // --- #329 リスク統制コア: 金額系 3 値の equity 割合化・空売り統制・拒否理由 7 種 ---
-        new(
-            "Capital.Initial",
-            "JPY 100000 (fixed amount)",
-            329,
-            "旧資金 100,000 円のまま。計画は増資後の $3,000（USD 建て）を確定値とする"),
-        new(
-            "RiskLimits.MaxOrderAmount",
-            "JPY 35000 (fixed amount)",
-            329,
-            "固定額で保持している。計画は equity 比 25% での保持を求める（資金増減に比例調整させるため）"),
-        new(
-            "RiskLimits.MaxDailyOrderAmount",
-            "JPY 100000 (fixed amount)",
-            329,
-            "固定額で保持している。計画は equity 比 150%/日（新規建てのみ算入）"),
-        new(
-            "RiskLimits.LosingStreakThreshold",
-            "3",
-            329,
-            "旧レンジ 3〜5 の保守側を採っていた。ADR-0018 が確定単一値 5 へ同期した"),
+        // --- #329 リスク統制コア: 空売り統制・拒否理由 7 種（第 2 段階） ---
+        // 第 1 段階（IADR-0130）で解消済み: Capital.Initial（→ USD 3000）/ RiskLimits.MaxOrderAmount
+        // （→ equity ratio 0.25）/ RiskLimits.MaxDailyOrderAmount（→ equity ratio 1.50 per day）/
+        // RiskLimits.LosingStreakThreshold（→ 5）。
         new(
             "ShortSell.Limits",
             "(type ShortSellingLimits not found)",
