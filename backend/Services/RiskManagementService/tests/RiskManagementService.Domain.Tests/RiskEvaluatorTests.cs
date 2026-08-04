@@ -40,7 +40,7 @@ public class RiskEvaluatorTests
         int quantity = 10,
         decimal price = 2_000m,
         TradeMode mode = TradeMode.Paper) =>
-        new(symbol, market, TradeSide.Sell, ProductType.Margin, mode, quantity, price, PositionEffect.Open);
+        new(symbol, market, TradeSide.Sell, ProductType.ShortSell, mode, quantity, price, PositionEffect.Open);
 
     // FR-10, #329, IADR-0130 決定2: capital は判定に用いる自己資金（equity・前営業日終値時点）。
     // 金額系の上限（1 注文 25% / 1 日 150%）はこの値から解決される。
@@ -73,12 +73,16 @@ public class RiskEvaluatorTests
 
     private static RiskManagementSettings DefaultSettings() => TradingDefaults.CreateSettings();
 
-    // 信用（Margin）を有効化した設定。ショートエントリー（Issue #25）の検証に用いる。
+    // 信用買い・空売りを有効化した設定。ショートエントリー（Issue #25）の検証に用いる。
+    // 商品種別は 3 値（現物 / 信用買い / 空売り）であり独立に制御する（#332・ADR-0016 決定1）。
     private static RiskManagementSettings MarginEnabledSettings() => DefaultSettings() with
     {
         Guard = TradingDefaults.CreateGuardSettings() with
         {
-            EnabledProductTypes = new HashSet<ProductType> { ProductType.Cash, ProductType.Margin },
+            EnabledProductTypes = new HashSet<ProductType>
+            {
+                ProductType.Cash, ProductType.MarginLong, ProductType.ShortSell,
+            },
         },
     };
 
@@ -194,8 +198,9 @@ public class RiskEvaluatorTests
     [Fact]
     public void 無効化された商品種別の注文は拒否する()
     {
-        // FR-19, ADR-0007: 既定は現物のみ有効（信用は無効）
-        var result = RiskEvaluator.Evaluate(Buy(productType: ProductType.Margin), DefaultSettings(), Snapshot());
+        // FR-19, ADR-0007, ADR-0016 決定1: 既定は現物のみ有効（信用買い・空売りは無効）
+        var result = RiskEvaluator.Evaluate(
+            Buy(productType: ProductType.MarginLong), DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.ProductTypeDisabled);
@@ -381,7 +386,7 @@ public class RiskEvaluatorTests
     {
         // FR-11: 監査のため違反理由を網羅的に記録する
         var snapshot = Snapshot(killSwitchEngaged: true, drawdownRatio: 0.10m);
-        var intent = Buy(symbol: "6457", market: Market.Japan, productType: ProductType.Margin);
+        var intent = Buy(symbol: "6457", market: Market.Japan, productType: ProductType.MarginLong);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
@@ -595,7 +600,7 @@ public class RiskEvaluatorTests
             openPositionCount: 3,
             killSwitchEngaged: true,
             symbolsTradedToday: new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) });
-        var shortCover = Close(side: TradeSide.Buy, productType: ProductType.Margin);
+        var shortCover = Close(side: TradeSide.Buy, productType: ProductType.ShortSell);
 
         var result = RiskEvaluator.Evaluate(shortCover, MarginEnabledSettings(), snapshot);
 

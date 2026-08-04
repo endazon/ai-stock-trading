@@ -69,11 +69,11 @@ public static class TradingDefaults
     };
 
     // FR-10, UC-06, ADR-0016 決定2,3,4,5,7,9, #329 第 2 段階: 空売り専用統制の既定値。
-    // 既定は**無効**（計画 §5「商品種別の既定はいずれも現物のみ有効」・決定1/8）。統制値は無効時も保持し、
-    // 段階解禁（Stage 3・自己資金 $5,000 以上）で有効化した瞬間から計画どおりの上限が効くようにする。
+    // 空売りの有効・無効は取引ガードの商品種別が持つ（#332・IADR-0132 決定2。既定は現物のみ有効＝空売りは無効）。
+    // 統制値は無効時も保持し、段階解禁（Stage 3・自己資金 $5,000 以上）で有効化した瞬間から
+    // 計画どおりの上限が効くようにする。
     public static ShortSellSettings CreateShortSellSettings() => new()
     {
-        Enabled = false,
         Limits = new ShortSellingLimits
         {
             // 1 銘柄あたりの空売り建玉: equity の 10%（$3,000 で $300）。決定2(a)
@@ -93,13 +93,16 @@ public static class TradingDefaults
         },
     };
 
+    // FR-19, ADR-0007, ADR-0016 決定1, #332: 取引ガードの既定値（計画 §5・FR-19 本文）。
     public static TradingGuardSettings CreateGuardSettings() => new()
     {
-        // 現物のみ有効。信用は米国株信用の最低保証金 2,500 USD に初期資金が満たないため無効
+        // 商品種別は 3 値（現物 / 信用買い / 空売り）をそれぞれ独立に制御する。
+        // **既定はいずれも「現物のみ有効」**（ADR-0016 決定1）。信用買い・空売りの実弾解禁は Stage 3 であり
+        // （決定8）、空売りはさらに自己資金 $5,000 以上を要する。
         EnabledProductTypes = new HashSet<ProductType> { ProductType.Cash },
         // 米国株: 主ターゲット / 日本株: 当面監視・検証用（有効のまま）
         EnabledMarkets = new HashSet<Market> { Market.Japan, Market.UnitedStates },
-        // 取引禁止銘柄（利用者登録 2026-07-07）
+        // 取引禁止銘柄（利用者登録 2026-07-07。INDEX 決定 20）。理由と登録日を伴って記録する
         BannedSymbols =
         [
             new BannedSymbol("6457", Market.Japan, "利用者登録: グローリー（利益相反回避）", new DateOnly(2026, 7, 7)),

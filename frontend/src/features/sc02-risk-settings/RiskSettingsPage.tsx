@@ -15,7 +15,7 @@ import {
   marketLabel,
   modeLabel,
   MARKET_OPTIONS,
-  PRODUCT_TYPE_MARGIN,
+  RISKY_PRODUCT_TYPES,
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
 } from '../risk/contracts';
@@ -293,8 +293,11 @@ function dangerousChanges(original: TradingGuardSettings, form: GuardFormState):
   if (original.prohibitManipulativeOrderPatterns && !form.prohibitManipulativeOrderPatterns) {
     dangers.push('相場操縦パターン禁止を無効化');
   }
-  if (!original.enabledProductTypes.includes(PRODUCT_TYPE_MARGIN) && form.enabledProductTypes.includes(PRODUCT_TYPE_MARGIN)) {
-    dangers.push('信用取引を有効化');
+  // FR-19, ADR-0016 決定1, #332: 商品種別は 3 値。現物以外（信用買い・空売り）の**新規有効化**を危険な緩和とみなす。
+  for (const risky of RISKY_PRODUCT_TYPES) {
+    if (!original.enabledProductTypes.includes(risky.value) && form.enabledProductTypes.includes(risky.value)) {
+      dangers.push(risky.label);
+    }
   }
   // 禁止銘柄の削除（登録済みが送信予定に無い）を危険とみなす。同一 symbol+market の重複登録も正しく扱うため、
   // 集合ではなく多重集合（件数）で突合する（1 件消しても残り 1 件あれば「削除」とはみなさない）。

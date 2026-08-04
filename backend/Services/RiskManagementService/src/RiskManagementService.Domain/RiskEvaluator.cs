@@ -50,8 +50,14 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
 
-        // FR-19: 取引ガード
-        if (!settings.Guard.EnabledProductTypes.Contains(intent.ProductType))
+        // FR-19, ADR-0016 決定1, #332, IADR-0132: 取引ガード（商品種別は 現物 / 信用買い / 空売り の 3 値を
+        // それぞれ独立に制御する。既定は現物のみ有効）。
+        // 照合は**実効商品種別**で行う（決定3）。新規売り建てを Cash と申告してガードを迂回できないようにする。
+        // 適用は**新規建てのみ**である（決定4）。無効な商品種別の建玉を手仕舞えないと、
+        // FR-10 の不変条件「手仕舞い（Close）と損切りは止めない」（ADR-0009）に反する。
+        // 例: 既定では空売りが無効であり、全注文へ適用すると空売り建玉の買戻し（Buy × Close）が拒否される。
+        var effectiveProductType = ProductTypeResolver.Resolve(intent);
+        if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, effectiveProductType))
         {
             reasons.Add(RejectionReason.ProductTypeDisabled);
         }
@@ -133,10 +139,14 @@ public static class RiskEvaluator
         // 既存の統制に**上乗せ**して課す（置き換えではない）。空売りは損失に上限が無く、
         // 「損切りが機能すれば損失は限定される」という既存統制の前提が成り立たないためである。
         // 上限が競合する場合は常に厳しい方が効く（1 注文 25% と 1 銘柄 10% の両方が列挙される＝ AND）。
+        //
+        // #332, IADR-0132 決定2: 空売りの有効・無効は**取引ガードの商品種別**（3 値）が単一情報源である。
+        // 専用フラグ（旧 ShortSellSettings.Enabled）と二重に持つと設定が食い違う。
         if (isEntry && ShortSellEvaluator.IsShortEntry(intent))
         {
-            reasons.AddRange(
-                ShortSellEvaluator.Evaluate(intent, settings.ShortSell, snapshot.Capital, shortSellContext));
+            var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, ProductType.ShortSell);
+            reasons.AddRange(ShortSellEvaluator.Evaluate(
+                intent, shortSellEnabled, settings.ShortSell.Limits, snapshot.Capital, shortSellContext));
         }
 
         return reasons.Count > 0

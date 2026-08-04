@@ -70,9 +70,10 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
   it('renders current guard into the editable form', async () => {
     const view = await renderReady();
     const form = guardForm(view);
-    // 現物は有効・信用は無効（現在値の反映）。
+    // 現物のみ有効（既定）。信用買い・空売りは無効（現在値の反映。FR-19・ADR-0016 決定1）。
     expect(within(form).getByRole('checkbox', { name: '現物' })).toBeChecked();
-    expect(within(form).getByRole('checkbox', { name: '信用' })).not.toBeChecked();
+    expect(within(form).getByRole('checkbox', { name: '信用買い' })).not.toBeChecked();
+    expect(within(form).getByRole('checkbox', { name: '空売り' })).not.toBeChecked();
     // 市場は日本・米国とも有効。
     expect(within(form).getByRole('checkbox', { name: '日本' })).toBeChecked();
     expect(within(form).getByRole('checkbox', { name: '米国' })).toBeChecked();
@@ -149,15 +150,32 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
     expect(save).toBeDisabled();
   });
 
-  it('treats enabling margin as a dangerous change requiring confirmation', async () => {
+  // FR-19 / ADR-0016 決定1・#332: 商品種別は 3 値。現物以外（信用買い・空売り）の有効化は危険な緩和。
+  it('treats enabling margin-long as a dangerous change requiring confirmation', async () => {
     const user = userEvent.setup();
     const view = await renderReady();
     const form = guardForm(view);
-    await user.type(within(form).getByLabelText('変更理由'), '信用を試す');
-    await user.click(within(form).getByRole('checkbox', { name: '信用' }));
+    await user.type(within(form).getByLabelText('変更理由'), '信用買いを試す');
+    await user.click(within(form).getByRole('checkbox', { name: '信用買い' }));
     const save = within(form).getByRole('button', { name: '保存' });
     expect(save).toBeDisabled();
-    expect(within(form).getByRole('alert')).toHaveTextContent(/信用/);
+    expect(within(form).getByRole('alert')).toHaveTextContent(/信用買い/);
+  });
+
+  // 空売りは**損失に上限が無い**（ADR-0016）。信用買いと同様に確認を求める（既定は無効）。
+  it('treats enabling short-selling as a dangerous change requiring confirmation', async () => {
+    const user = userEvent.setup();
+    const view = await renderReady();
+    const form = guardForm(view);
+    await user.type(within(form).getByLabelText('変更理由'), '空売りを試す');
+    await user.click(within(form).getByRole('checkbox', { name: '空売り' }));
+    const save = within(form).getByRole('button', { name: '保存' });
+    expect(save).toBeDisabled();
+    expect(within(form).getByRole('alert')).toHaveTextContent(/空売り/);
+    // 確認をチェックすれば保存でき、送信内容に空売り(2)が含まれる。
+    await user.click(within(form).getByRole('checkbox', { name: /確認/ }));
+    await user.click(save);
+    expect(lastGuardPut()![1].json.enabledProductTypes).toContain(2);
   });
 
   it('adds and removes banned symbols and reflects them in the payload', async () => {
