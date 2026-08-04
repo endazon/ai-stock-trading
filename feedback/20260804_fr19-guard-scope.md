@@ -12,9 +12,9 @@ created: 2026-08-04
 
 # フィードバック: 取引ガードの適用範囲（Open / Close）が計画に無く、実装側の推論に依存している
 
-> **本書は起草のみである。** 計画リポジトリ（`project-planning`）への送付（`plan-feedback` ラベル付き
-> Issue の起票、または計画リポ `draft/feedback/` へのコピー）は**未実施**（計画リポは読み取り専用参照）。
-> 送付は人間または別セッションに委ねる。
+> **送付済み（2026-08-04）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#179](https://github.com/endazon/project-planning/issues/179)。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
 
 ## 種別
 
