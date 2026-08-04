@@ -268,7 +268,9 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 - [x] **`infra/` を新たに探索範囲へ入れ**、`trading-owner` の OwnerOnly 根拠 2 箇所を併記へ是正した。
 - [x] `IADR-0007` を 1 箇所も変更していない。
 - [x] `node scripts/check-doc-links.js` が破損 0 件。
-- [x] `dotnet build backend/backend.slnx` が警告 0・エラー 0（コメント 1 行の変更を含むため実行）。
+- [ ] `dotnet build backend/backend.slnx` が警告 0・エラー 0。**ローカルでは未実行**（本セッションの
+      実行環境に .NET SDK が無い）。本 PR の backend への変更は `ReportEndpoints.cs` の**コメント 1 行**
+      のみであり、CI の `build-and-test` ジョブの結果をもって確認する。
 - [x] point-in-time 記録を書き換えていない。
 
 ## テスト方針
