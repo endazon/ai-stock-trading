@@ -15,7 +15,7 @@ created: 2026-07-17
 plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-17: 全体前提条件の一元管理)"
   - "../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md (全体前提条件)"
-  - "../../planning/projects/ai-stock-trading/03_usecases/UC-06_settings.md (UC-06: 設定変更)"
+  - "../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06: 設定変更・取引の一時停止・緊急停止)"
 related_specs:
   - "20260710_configuration-assumptions.md（#19 Slice A・設定サービス本体）"
   - "../adr/IADR-0021_trading-assumptions-configuration.md（設定サービスが前提条件を所有する決定）"

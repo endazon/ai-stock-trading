@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # IADR-0089: バックテスト verdict は BacktestEvaluated イベントで発行し Risk が read-modify-write で射影する（s2s 同期照会を退け fail-safe を保つ）

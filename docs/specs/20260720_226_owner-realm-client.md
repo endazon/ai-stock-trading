@@ -2,13 +2,13 @@
 title: dev realm に Discord Bot 制御コマンド用 OwnerAuth 機密クライアントを追加する
 type: work
 status: done
-related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0007, ADR-0009]
+related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-20
 updated: 2026-07-20
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_kill-switch-authz.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
 ---
 
 # 作業仕様書: dev realm の OwnerAuth 機密クライアント追加（Discord 制御コマンド疎通）

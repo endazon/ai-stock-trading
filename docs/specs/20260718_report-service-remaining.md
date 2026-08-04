@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/04_report-templates.md
   - ../../planning/projects/ai-stock-trading/04_workflows/03_reporting-cycle.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_human-in-the-loop.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
 related_specs:
   - ../adr/IADR-0071_report-service-remaining.md
   - ../adr/IADR-0032_report-generation.md

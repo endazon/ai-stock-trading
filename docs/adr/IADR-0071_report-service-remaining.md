@@ -10,7 +10,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/04_report-templates.md
   - ../../planning/projects/ai-stock-trading/04_workflows/03_reporting-cycle.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_human-in-the-loop.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
 ---
 
 # IADR-0071: 報告書サービス残スコープは ReportService に閉じ、実 LLM/実 KB を既定オフ・opt-in、対話的確定は状態機械の薄い HTTP 結線で実装する
