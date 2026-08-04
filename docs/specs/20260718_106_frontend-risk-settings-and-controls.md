@@ -2,7 +2,7 @@
 title: 作業仕様書 — フロントエンド T1 残スライス（FR-13 リスク設定画面・#20 承認/統制状態参照画面）
 type: work
 status: In progress
-related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, SC-02, SC-03, ADR-0007, ADR-0008, ADR-0009]
+related_ids: [FR-10, FR-13, FR-19, FR-20, UC-06, SC-02, SC-03, ADR-0003, ADR-0007, ADR-0008, ADR-0009]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
