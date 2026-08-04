@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 
-// FR-17, ADR-0007: 前提条件変更履歴の EF 実装（追記専用・新しい順）。
+// FR-17: 前提条件変更履歴の EF 実装（追記専用・新しい順）。
 internal sealed class EfAssumptionsChangeLog(ConfigurationDbContext db) : IAssumptionsChangeLog
 {
     public void Record(AssumptionsChangeEntry entry)

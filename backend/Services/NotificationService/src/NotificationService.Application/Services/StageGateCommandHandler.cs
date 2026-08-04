@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Application.Services;
 
-// FR-20, FR-14, UC-06, ADR-0007/0008, IADR-0070/0081: 段階ゲートのコマンド処理。多層認証 → コマンド解析 →
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲートのコマンド処理。多層認証 → コマンド解析 →
 // Risk 呼び出しの順に閂を掛ける。kill switch / pause（KillSwitchCommandHandler / PauseCommandHandler）と同型。
 //
 // 確認（promote/demote の確認ボタン）は Gateway アダプタが担い、本ハンドラは確認済み前提で呼ばれる

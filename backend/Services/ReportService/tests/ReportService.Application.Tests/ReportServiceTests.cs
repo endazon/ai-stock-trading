@@ -8,7 +8,7 @@ using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 namespace AiStockTrading.Report.Application.Tests;
 
-// FR-06/07, UC-03〜05, ADR-0007: 報告書の upsert・版番号付き冪等確定・確定済み日報方針照会を検証する。
+// FR-06/07, UC-03〜05, ADR-0003: 報告書の upsert・版番号付き冪等確定・確定済み日報方針照会を検証する。
 public class ReportServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 10, 6, 0, 0, TimeSpan.Zero);

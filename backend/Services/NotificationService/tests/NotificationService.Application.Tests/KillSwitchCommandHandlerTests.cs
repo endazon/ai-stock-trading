@@ -75,7 +75,7 @@ public class KillSwitchCommandHandlerTests
         result.WasExecuted.Should().BeTrue();
         result.Result!.Engaged.Should().BeTrue();
         controller.EngageCalls.Should().Be(1);
-        // ADR-0007: Risk 側は理由必須。actor（Keycloak 利用者名）を理由に残す。
+        // FR-11・ADR-0003: Risk 側は理由必須。actor（Keycloak 利用者名）を理由に残す。
         controller.LastReason.Should().Contain("endazon");
     }
 

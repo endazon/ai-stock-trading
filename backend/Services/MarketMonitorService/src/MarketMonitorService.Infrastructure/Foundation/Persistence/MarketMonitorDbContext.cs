@@ -39,7 +39,7 @@ internal sealed class MarketMonitorDbContext(DbContextOptions<MarketMonitorDbCon
             e.Property(r => r.Symbol).HasMaxLength(32);
         });
 
-        // FR-11, FR-13, ADR-0007: 監視設定変更履歴（追記専用）。新しい順の照会のため ChangedAt に索引を張る。
+        // FR-11, FR-13: 監視設定変更履歴（追記専用）。新しい順の照会のため ChangedAt に索引を張る。
         mb.Entity<MonitorSettingsChangeRow>(e =>
         {
             e.ToTable("monitor_settings_change");

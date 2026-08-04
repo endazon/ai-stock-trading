@@ -10,7 +10,7 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 // 認可ポリシー／ロールの名称定数。kill switch 操作・リスク設定変更など「利用者のみ」の操作に用いる。
 public static class AiStockTradingAuthPolicies
 {
-    // FR-10/FR-19/FR-20, ADR-0007: kill switch・リスク設定・段階昇格は利用者のみ操作できる。
+    // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: kill switch・リスク設定・段階昇格は利用者のみ操作できる。
     public const string OwnerOnly = "OwnerOnly";
 
     // IADR-0051: 読み取り系の同期照会（sizing-context / open-positions / daily-policy）は利用者またはサービスが呼べる。
@@ -56,7 +56,7 @@ public static class AuthExtensions
         // これがないと RequireRole("trading-owner") が実トークンにマッチしない。
         services.AddTransient<IClaimsTransformation, KeycloakRolesClaimsTransformation>();
 
-        // FR-10/FR-19/FR-20, ADR-0007: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
+        // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
         services.AddAuthorization(options =>
         {
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOnly, policy =>

@@ -75,7 +75,7 @@ public class PauseCommandHandlerTests
         result.WasExecuted.Should().BeTrue();
         result.Result!.Paused.Should().BeTrue();
         controller.PauseCalls.Should().Be(1);
-        // ADR-0007: Risk 側は理由必須。actor（Keycloak 利用者名）を理由に残す。
+        // FR-11・ADR-0009: Risk 側は理由必須。actor（Keycloak 利用者名）を理由に残す。
         controller.LastReason.Should().Contain("endazon");
     }
 

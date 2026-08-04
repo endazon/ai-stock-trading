@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
 
-// FR-20, FR-14, UC-06, ADR-0007/0008, IADR-0070/0081: 段階ゲート（#20）の OwnerOnly エンドポイントを呼ぶだけの
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲート（#20）の OwnerOnly エンドポイントを呼ぶだけの
 // アダプタ。通知サービスは段階ゲートの状態を持たない（権威は Risk 側）。kill switch / pause と同型。
 //
 // 当該エンドポイントは OwnerOnly（trading-owner）であり、s2s トークン（trading-service）では 403 になる。本アダプタが

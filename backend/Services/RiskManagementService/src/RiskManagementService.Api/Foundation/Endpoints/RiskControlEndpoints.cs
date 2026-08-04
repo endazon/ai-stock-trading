@@ -13,7 +13,7 @@ using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
 
-// FR-10, FR-19, FR-20, UC-06, ADR-0007: kill switch 操作・リスク設定変更の HTTP エンドポイント。
+// FR-10, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008: kill switch 操作・リスク設定変更の HTTP エンドポイント。
 // 書き込み系は OwnerOnly（利用者のみ・Keycloak ロール trading-owner）を要求する。actor は認証済みトークンの名前
 // （preferred_username）を用いる。生成AI・自動処理はこのロールを持たないため変更できない。
 // IADR-0051: 読み取り系の同期照会（sizing-context / open-positions）はサービス間 s2s（trading-service）でも呼べる
@@ -64,7 +64,7 @@ internal static class RiskControlEndpoints
             return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger.GetFills(), fromDay, toDay));
         });
 
-        // ---- 利用者のみ（ADR-0007・OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
+        // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         owner.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
@@ -146,7 +146,7 @@ internal static class RiskControlEndpoints
         // 用途が無いため。最小権限（IADR-0051）に従い、必要のない読み取り権限をサービスへ与えない。
         owner.MapGet("/status", (RiskStatusService svc) => Results.Ok(svc.Build()));
 
-        // ---- 設定（FR-10/FR-19/FR-20, ADR-0007） ----
+        // ---- 設定（FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008） ----
         owner.MapGet("/settings", (RiskSettingsService svc) => Results.Ok(svc.GetCurrent()));
 
         owner.MapGet("/settings/history", (ISettingsChangeLog changeLog) => Results.Ok(changeLog.GetHistory()));
@@ -228,10 +228,10 @@ internal static class RiskControlEndpoints
         http.User.Identity?.Name is { Length: > 0 } name ? name : "unknown";
 }
 
-// kill switch 操作の要求（理由必須・ADR-0007）。
+// kill switch 操作の要求（理由必須・FR-11・ADR-0003）。
 internal sealed record KillSwitchRequest(string Reason);
 
-// 一時停止/再開操作の要求（理由必須・ADR-0007/0009）。
+// 一時停止/再開操作の要求（理由必須・FR-11・ADR-0009）。
 internal sealed record PauseRequest(string Reason);
 
 // #292, IADR-0117: 建玉の手仕舞い要求（理由必須）。売買方向は含めない（建玉方向からサーバが決める）。

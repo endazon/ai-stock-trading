@@ -12,12 +12,12 @@ using Wolverine;
 
 namespace AiStockTrading.Configuration.Api.Foundation.Endpoints;
 
-// FR-17, UC-06, ADR-0007: 全体前提条件の照会・変更エンドポイント。actor は認証済みトークンの名前（preferred_username）。
+// FR-17, UC-06: 全体前提条件の照会・変更エンドポイント。actor は認証済みトークンの名前（preferred_username）。
 //
 // 認可（IADR-0063 決定 2・IADR-0051 の最小権限）: **読み取り（GET）のみ OwnerOrService** へ分離し、消費側サービス
 // （費用統制 #139・損益集計・AI 判断）がサービストークン（trading-service）で共通参照できるようにする（IADR-0021 の
 // 「単一の真実源を共通参照する」前提）。**更新（PUT）・履歴（GET /history）は OwnerOnly 据え置き**＝生成AI・自動処理は
-// ロールを持たず変更できない（ADR-0007）。履歴は「誰がなぜ変えたか」の運用情報のためサービスへ開放しない。
+// ロールを持たず変更できない（FR-17）。履歴は「誰がなぜ変えたか」の運用情報のためサービスへ開放しない。
 internal static class AssumptionsEndpoints
 {
     public static IEndpointRouteBuilder MapAssumptionsEndpoints(this IEndpointRouteBuilder app)
@@ -53,7 +53,7 @@ internal static class AssumptionsEndpoints
         // 現在の前提条件とバージョン（報告書は生成時 version を凍結参照でき、消費側は共通参照できる）。
         read.MapGet("", (AssumptionsService svc) => Results.Ok(svc.GetCurrent()));
 
-        // ---- 利用者のみ（ADR-0007・OwnerOnly）: 更新・履歴。サービスには許可しない ----
+        // ---- 利用者のみ（FR-17・OwnerOnly）: 更新・履歴。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         // 変更履歴（新しい順）。

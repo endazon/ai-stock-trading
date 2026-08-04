@@ -7,7 +7,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-10, FR-19, FR-20, UC-06, ADR-0007: 設定変更の検証。利用者のみ・変更履歴（前後値つき）の記録・現行値の更新。
+// FR-10, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008: 設定変更の検証。利用者のみ・変更履歴（前後値つき）の記録・現行値の更新。
 public class RiskSettingsServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 9, 6, 0, 0, TimeSpan.Zero);
@@ -66,7 +66,7 @@ public class RiskSettingsServiceTests
     [Fact]
     public void アクターまたは理由が空なら変更を拒否する()
     {
-        // ADR-0007: アクター・理由のない変更は受け付けない。
+        // FR-11: アクター・理由のない変更は受け付けない。
         var (service, store, _) = Create();
         var limits = store.GetCurrent().Limits;
 

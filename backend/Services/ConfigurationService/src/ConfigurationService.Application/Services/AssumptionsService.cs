@@ -4,7 +4,7 @@ using AiStockTrading.Configuration.Domain;
 
 namespace AiStockTrading.Configuration.Application.Services;
 
-// FR-17, UC-06, ADR-0007: 全体前提条件の照会・変更。変更は利用者のみ（アクター・理由必須）、Version 増分、前後値つき履歴記録。
+// FR-17, UC-06: 全体前提条件の照会・変更。変更は利用者のみ（アクター・理由必須）、Version 増分、前後値つき履歴記録。
 // 生成AI・自動処理は本サービスを呼ばない（呼び出し側の権限はホスト層の Keycloak 認可で担保）。変更通知イベントの発行は
 // ホスト（エンドポイント）が担う（Application を MassTransit から独立させる）。
 public sealed class AssumptionsService(

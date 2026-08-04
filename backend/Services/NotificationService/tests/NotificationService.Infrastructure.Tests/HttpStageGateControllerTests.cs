@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Notification.Infrastructure.Tests;
 
-// FR-20, FR-14, UC-06, ADR-0007/0008, IADR-0070/0081: Risk の stage-gate エンドポイント呼び出しを fake
+// FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: Risk の stage-gate エンドポイント呼び出しを fake
 // HttpMessageHandler で検証する（実ネットワーク不使用）。要点は 200 受理／422 拒否（未充足基準）の整形と、
 // Risk が数値でシリアライズする enum の射影（append-only・未知値フォールバック）。
 public class HttpStageGateControllerTests

@@ -3,7 +3,7 @@ using AiStockTrading.Configuration.Application.State;
 
 namespace AiStockTrading.Configuration.Application.Adapters;
 
-// FR-17, ADR-0007: 前提条件変更履歴のインメモリ実装（テスト・単体実行用）。追記専用・新しい順で返す。
+// FR-17: 前提条件変更履歴のインメモリ実装（テスト・単体実行用）。追記専用・新しい順で返す。
 public sealed class InMemoryAssumptionsChangeLog : IAssumptionsChangeLog
 {
     private readonly Lock _gate = new();

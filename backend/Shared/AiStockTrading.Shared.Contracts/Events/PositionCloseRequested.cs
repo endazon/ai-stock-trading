@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Contracts.Events;
 
-// FR-10, FR-11, UC-06, ADR-0007, #292, IADR-0117: 利用者（owner）が建玉の手仕舞いを要求した。
+// FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 利用者（owner）が建玉の手仕舞いを要求した。
 //
 // 後続の OrderApproved と同一の DecisionId で相関する。OrderApproved は**アクターも理由も持たない**ため、
 // 本イベントが無いと「誰が・なぜ建玉を落としたか」が監査台帳に残らない（FR-11）。
