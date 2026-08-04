@@ -2,7 +2,7 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: draft
-related_ids: [FR-10, FR-11, FR-17, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018]
+related_ids: [FR-10, FR-11, FR-17, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, IADR-0130, IADR-0131]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-04
@@ -11,6 +11,8 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
+  - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
 ---
 
 # 機能仕様書: リスク統制（FR-10）
@@ -20,9 +22,10 @@ plan_refs:
 > Issue #33 で拡充する。ここに未記載の項目は作業仕様書 [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 > と各 IADR（0002/0003/0004/0005/0008）を一次情報とする。
 >
-> **再実装（#329）による更新（2026-08-04・第 1 段階）**: 計画大改定に伴い、**金額系の統制上限 3 値**の節
-> （後述「金額系の統制上限 3 値」）と**既定値の確定単一値**の節を追加した。空売り専用統制 8 規則・
-> 拒否理由 7 種・3 統制の優先順位は #329 第 2 段階で、3 点セットの網羅は第 3 段階で追記する。
+> **再実装（#329）による更新（2026-08-04・第 1〜2 段階）**: 計画大改定に伴い、**金額系の統制上限 3 値**の節
+> （後述「金額系の統制上限 3 値」）と**既定値の確定単一値**の節を第 1 段階で、**空売り専用統制 8 規則**・
+> **拒否理由のクラス分類**・**3 統制の優先順位**の節を第 2 段階で追加した。3 点セットの網羅の最終化は
+> 第 3 段階で行う。
 > 本書内の**旧記述（1 注文 ¥35,000 / 日次 ¥100,000 / SIMULATE の 1,700 倍スケール）は
 > 新節が置き換えた**（当時の記録として節ごと残置し、置き換えたことを各節に明記した）。
 
@@ -102,7 +105,7 @@ ADR-0009「手仕舞い・損切りは止めない」を金額系上限でも壊
 | --- | --- |
 | 1 注文 25% vs 1 取引リスク 1%（ATR 連動サイジング） | `PositionSizer.CalculateCappedQuantity` が**両基準の株数の min** を採る（ストップ幅が 4% より狭いときに 25% 側が効く） |
 | 1 注文 25% vs 段階資金上限 vs 日次枠 vs 保有建玉数 | `RiskEvaluator` が**すべての違反を列挙**する（1 件でも該当すれば拒否＝ AND） |
-| 空売り 1 銘柄 10%（第 2 段階） | 25% より厳しいため空売り注文には 10% が効く |
+| 空売り 1 銘柄 10%（#329 第 2 段階） | 25% より厳しいため空売り注文には 10% が効く（後述「空売り専用統制 8 規則」） |
 
 ## 既定値の確定単一値（ADR-0018 / #329 第 1 段階）
 
@@ -134,7 +137,68 @@ IADR-0107 が定めた JPY 基準のままであり、判定通貨そのもの�
 **統制の実効は比率であり、equity と注文金額を同一通貨で評価する限り判定結果は通貨に依存しない。**
 この不変条件をプロパティベーステストで固定しているため、将来 USD へ移行しても値の書き換えは生じない。
 
-## 機能詳細（日次損失上限）
+## 空売り専用統制 8 規則（#329 第 2 段階 / IADR-0131）
+
+空売り（信用売り）は**損失に上限が無い**（株価は理論上無限に上昇し得る）ため、「損切りが機能すれば
+損失は限定される」という既存統制の前提が成り立たない。したがって既存統制に**上乗せ**して 8 規則を課す
+（ADR-0016・FR-10 本文 (1)〜(8)）。
+
+| # | 規則 | 値 | 拒否理由 |
+| --- | --- | --- | --- |
+| 1 | 1 銘柄あたりの空売り建玉 | **equity の 10%**（$3,000 で $300） | `ShortExposureExceeded` |
+| 2 | 逆指値（ストップ注文）の同時発注 | **必須**（未約定・未受理なら建玉を持たない） | `StopOrderRequired`（※） |
+| 3 | 借株料 | **年率 20%** 上限。**照会不可なら空売りしない** | `BorrowCostExceeded` / `BorrowUnavailable` |
+| 4 | 維持率の閾値 | **40% と規制要求 `max($5.00 ÷ 株価, 30%)` の厳しい方**（境界 **$12.50**） | `MaintenanceMarginBreach` |
+| 5 | 株価の下限 | **USD 5.00 未満は対象外** | `ShortPriceFloorBreach` |
+| 6 | 空売り比率 | **建玉総額の 50%** を超えない | `ShortExposureExceeded` |
+| 7 | 権利確定日 | **前日**の新規空売りを禁止 | `DividendRecordDateNear` |
+| 8 | 強制買戻し（buy-in） | 検知銘柄を **30 日間**禁止 | `BorrowUnavailable` |
+| — | 対象市場・有効化 | **米国株のみ**・既定は**無効**（Stage 3 かつ自己資金 $5,000 以上で解禁） | `ShortSellDisabled` |
+
+（※）ADR-0016 決定10 の 7 種に対応コードが無いため実装側で新設した（IADR-0131 決定3・計画へ環流済み）。
+
+> **$16.67 と $12.50 を混同しない**。$16.67 は規制側の内訳が固定額 $5.00 から時価の 30% へ入れ替わる点、
+> $12.50（＝ $5.00 ÷ 40%）は自前閾値との大小が入れ替わる点である（計画 §5 の 2026-08-01 追補2 で是正）。
+
+### 判定の入力と縮退（フェイルクローズ）
+
+空売りの識別は **`Side == Sell` かつ `PositionEffect == Open`**（新規売り建て）で行い、上流（AI）の
+申告値に依存しない。外部由来の入力（借株可否・料率・維持率・権利確定日・空売り建玉・buy-in 禁止期限）は
+`ShortSellOrderContext` に集約する。
+
+| 状況 | 振る舞い |
+| --- | --- |
+| 借株料を照会できない（`null`） | `BorrowUnavailable` で拒否（ADR-0016 決定3） |
+| 照会経路そのものが無い（文脈が `null`） | 同上。**「照会できないなら通す」に倒さない** |
+| 維持率が取得できず、かつ空売り建玉を保有している | `MaintenanceMarginBreach` で拒否（IADR-0131 決定4） |
+| 対象市場が米国株以外 | `ShortSellDisabled` で拒否（USD 建ての $5.00 下限を円建て株価が素通りするため） |
+
+空売り比率 50% は**建玉総額に対する**比率であるため、**ロング建玉が無ければ 1 件目の空売りで 100% となり
+成立しない**（＝空売りだけの建玉構成は作れない）。ADR-0016 決定9 の趣旨どおりの帰結である。
+
+### 拒否理由のクラス分類（ADR-0016 決定10 / project-planning#58）
+
+| クラス | 内容 | 「統制違反 0 件」への計上 |
+| --- | --- | --- |
+| A | 統制の**正常作動**（金額・件数・損失の上限、差金決済防止、**空売り 8 規則すべて**） | しない |
+| B | 緊急停止中・段階制約・ガード設定による拒否（kill switch / pause / Stage / 商品種別 / 市場） | しない |
+| C | **`BannedSymbol` / `ManipulativeOrderPattern` の限定列挙**（AI が禁止事項を犯そうとした件数） | **する**（1 回の拒否につき 1 件） |
+
+実装の単一情報源は `RejectionReasonClassification`（`Shared.Contracts`）。既定（未分類）はクラス A へ落とし、
+新しい理由が既定でクラス C へ混入しないようにする。集計と段階ゲートへの結線は #333 の担当である。
+
+## 3 統制の優先順位（#329 第 2 段階）
+
+| 統制 | 発動主体 | 期限 | 解除条件 |
+| --- | --- | --- | --- |
+| kill switch | 利用者（手動） | 無期限 | 明示的な解除操作（確認ボタン＋確認フレーズ） |
+| 日次損失ロックアウト | システム（自動） | 翌営業日まで | **機械的解除のみ**（利用者は解除できない） |
+| 一時停止（pause） | 利用者（手動） | 無期限 | 再開（resume） |
+
+- **判定は OR**（いずれか 1 つでも成立していれば新規建てを停止）。優先順位（kill switch ＞ 日次損失
+  ロックアウト ＞ 一時停止）は**表示の見出し**（`RiskStatusView.ActiveControl`）に効く。
+- **いずれも手仕舞い（Close）と損切りは止めない**（`RiskEvaluator` の `isEntry` により構造的に担保）。
+- **再開（resume）は一時停止のみを解除する**。kill switch と日次損失ロックアウトは解除しない。
 
 ## 機能詳細（日次損失上限）
 
@@ -278,13 +342,22 @@ flowchart TD
 - [x] 既定値が計画の確定単一値（初期資金 USD 3,000・日次損失 2%・1 取引リスク 1%・最大 DD 10%・連敗 5）と一致する
 - [x] 同一の注文に複数の上限が掛かる場合、常に厳しい方が効く
 - [x] 金額系上限の適用が手仕舞い（Close）・損切りを止めない（ADR-0009）
-- [ ] 空売り専用統制 8 規則・拒否理由 7 種・3 統制の優先順位（#329 第 2 段階）
+空売り専用統制・拒否理由・3 統制の優先順位（#329 第 2 段階）:
+
+- [x] 空売りが無効な段階では空売り注文が拒否される
+- [x] 逆指値を同時発注できない場合・借株料が年率 20% を超える場合・**借株料を事前照会できない場合**・
+      株価が $5.00 未満の場合・1 銘柄あたり上限または空売り比率 50% を超える場合・権利確定日の前日は、
+      いずれも発注が拒否され理由が記録される
+- [x] 強制買戻しを検知した銘柄が 30 日間空売り禁止となる（禁止期間の判定。検知経路は #342 依存）
+- [x] 維持率の閾値が「40% と規制要求の厳しい方」であり、境界が $12.50 である
+- [x] 空売りの 7 種の拒否理由が「統制違反 0 件」（クラス C 限定）に計上されず、`BannedSymbol` にも混入しない
+- [x] 3 統制の優先順位が成立し、いずれも手仕舞い（Close）と損切りを止めない
 - [ ] 維持率割れによる自動縮小（閾値+5pt 回復・必要証拠金降順）（[#330](https://github.com/endazon/ai-stock-trading/issues/330)）
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
-- 作業仕様書: [20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
+- 実装ADR: [IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
+- 作業仕様書: [20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - テスト仕様書: [FR-10 リスク統制（再実装）](../tests/FR-10_risk-controls-tests.md)、[FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 
@@ -294,4 +367,8 @@ flowchart TD
 - **判定通貨の USD への移行**（計画 §3 の 2026-07-31 改定への追随）。台帳・報告・FX 源に跨るため #329 の
   範囲外とし、[作業仕様書 20260804](../specs/20260804_329_risk-control-core.md) 未決事項 §1 で監査判断を仰ぐ。
 - 比率化に伴う設定の永続化（JSON）の互換性。旧プロパティ名の行は読めなくなるため、切替計画（#346）で扱う。
-- SC-02 / SC-03 は「比率」と「現在 equity での実額」を併記する必要がある（#340）。
+- SC-02 / SC-03 は「比率」と「現在 equity での実額」を併記する必要がある（#340）。SC-03 は空売り比率・
+  維持率・借株料の累計も表示対象である（ADR-0016 決定15。**維持率は最上位**に置く）。
+- 空売り文脈（借株照会・空売り建玉・権利確定日）の供給元が無いため、現状は**すべての新規売り建てが
+  拒否される**（フェイルクローズ）。Stage 1 の検証には供給元が要る（#342 / #332）。
+- 強制買戻し（buy-in）の**検知・通知と禁止リストの永続化**は未実装（[作業仕様書 第 2 段階](../specs/20260804_329_short-selling-controls.md) 未決事項 §2）。
