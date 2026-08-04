@@ -73,10 +73,19 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.BannedSymbol);
         }
 
-        // 差金決済防止は（銘柄コード, 市場）で照合する。禁止銘柄判定と対称にし、別市場の
+        // FR-19, #332, IADR-0132 決定5: 差金決済防止（同一銘柄の同日再エントリー禁止）は
+        // **日本株の現物取引にのみ**適用する。本ガードは日本の差金決済規制（金商法 161 条の 2・
+        // 06_daytrading-review §2.1）に対応するものであり、**米国株は信用口座（margin account）で運用するため
+        // Good Faith Violation が発生しない**（05_trading-assumptions §5「米国口座の種別・決済」・FR-19 本文）。
+        // 米国株の回転数は日次発注金額上限（equity の 150%/日）と保有建玉数上限（3）で管理する。
+        // 信用（信用買い・空売り）は同一保証金での同日無制限回転が可能なため現物に限る（§5「差金決済防止」）。
+        //
+        // 照合は（銘柄コード, 市場）で行う。禁止銘柄判定と対称にし、別市場の
         // 同一コード（例: 日本株 6902 と同名の米国ティッカー）の誤拒否を防ぐ（Issue #26）。
         if (isEntry
             && settings.Guard.PreventSameDayReentry
+            && intent.Market == Market.Japan
+            && effectiveProductType == ProductType.Cash
             && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);

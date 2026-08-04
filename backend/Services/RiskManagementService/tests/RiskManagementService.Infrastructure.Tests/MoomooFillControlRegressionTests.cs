@@ -33,8 +33,11 @@ public class MoomooFillControlRegressionTests
         public DateOnly Today => TradingDay;
     }
 
+    // FR-19, #332, IADR-0132 決定5: 差金決済防止ガードの適用対象は**日本株の現物**である
+    // （米国株は信用口座で運用するため Good Faith Violation が発生しない）。本回帰は同ガードが
+    // 約定到達後に拘束することを見るため、適用対象である日本株現物の注文を用いる。
     private static OrderIntent Entry() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
 
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す

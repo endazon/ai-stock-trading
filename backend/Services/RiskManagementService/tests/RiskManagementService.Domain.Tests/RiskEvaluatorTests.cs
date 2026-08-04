@@ -242,10 +242,11 @@ public class RiskEvaluatorTests
     [Fact]
     public void 同一銘柄の同日再エントリーは拒否する()
     {
-        // FR-19: 差金決済防止（現物の同日回転禁止）
-        var snapshot = Snapshot(symbolsTradedToday: new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) });
+        // FR-19: 差金決済防止（日本株現物の同日回転禁止。金商法 161 条の 2・#332・IADR-0132 決定5）
+        var snapshot = Snapshot(symbolsTradedToday: new HashSet<(string, Market)> { ("7203", Market.Japan) });
 
-        var result = RiskEvaluator.Evaluate(Buy(symbol: "AAPL"), DefaultSettings(), snapshot);
+        var result = RiskEvaluator.Evaluate(
+            Buy(symbol: "7203", market: Market.Japan, price: 2_000m), DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.SameDayReentry);
@@ -255,12 +256,12 @@ public class RiskEvaluatorTests
     public void 同日取引済みでも市場が異なれば再エントリーを拒否しない()
     {
         // Issue #26 / FR-19: 差金決済防止は（銘柄, 市場）で照合する。禁止銘柄判定と対称。
-        // 日本株「6902」を当日取引済みでも、同一コードの米国株は同日再エントリー対象外。
+        // 米国株「6902」を当日取引済みでも、同一コードの日本株（＝本ガードの適用対象）は対象外。
         var snapshot = Snapshot(
-            symbolsTradedToday: new HashSet<(string, Market)> { ("6902", Market.Japan) });
+            symbolsTradedToday: new HashSet<(string, Market)> { ("6902", Market.UnitedStates) });
 
         var result = RiskEvaluator.Evaluate(
-            Buy(symbol: "6902", market: Market.UnitedStates), DefaultSettings(), snapshot);
+            Buy(symbol: "6902", market: Market.Japan, price: 2_000m), DefaultSettings(), snapshot);
 
         result.Reasons.Should().NotContain(RejectionReason.SameDayReentry);
     }
