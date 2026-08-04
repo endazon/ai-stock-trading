@@ -18,5 +18,10 @@
          TradingAssumptionsDefaults と CostCalculator が保持する。 -->
     <ProjectReference Include="..\..\Services\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- ADR-0022, IADR-0135: 為替レート源（Fx:Provider）と鮮度しきい値は FxOptions / FxRateSourceFactory が
+         保持する。実装型は internal のまま（IADR-0128）であるため、参照は**リフレクション経由**であり
+         InternalsVisibleTo は増やさない。抽出経路が無いと計画側に転記した Fx 3 キーが検査2（抽出漏れ）で
+         恒久的に赤になり、既知逸脱としても受容できない（検査2 は登録簿を参照しない）。 -->
+    <ProjectReference Include="..\..\Services\TradeDecisionService\src\TradeDecisionService.Infrastructure\TradeDecisionService.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

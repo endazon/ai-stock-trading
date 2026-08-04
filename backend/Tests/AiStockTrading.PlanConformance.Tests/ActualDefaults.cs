@@ -4,6 +4,7 @@ using AiStockTrading.Backtest.Domain;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
 namespace AiStockTrading.PlanConformance.Tests;
 
@@ -27,6 +28,17 @@ public static class ActualDefaults
 
     /// <summary>発注先（Broker Provider）の 3 値を表す想定の enum 名（FR-20）。#334 が追加する。</summary>
     private const string BrokerProviderTypeName = "BrokerProvider";
+
+    /// <summary>為替レート源の構成型（ADR-0022 / IADR-0107 / IADR-0112）。internal のため完全名で解決する。</summary>
+    private const string FxOptionsTypeName =
+        "AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters.FxOptions";
+
+    /// <summary>為替レート源の選択（provider 識別子の定数を持つ）。internal のため完全名で解決する。</summary>
+    private const string FxRateSourceFactoryTypeName =
+        "AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters.FxRateSourceFactory";
+
+    /// <summary>「未接続（no-op）」を表す provider 名。情報源ではないため集合に数えない。</summary>
+    private const string FxProviderNone = "none";
 
     /// <summary>
     /// ADR-0016 決定10 の空売り拒否理由 9 種（2026-08-04 に 7 種から改訂。#374）。
@@ -95,6 +107,12 @@ public static class ActualDefaults
             ["Stage.Stage2OrderableCapRatio"] =
                 FixedAmount(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap),
             ["Stage.WithdrawalDrawdownMultiple"] = Number(policy.WithdrawalDrawdownMultiple),
+
+            // 為替レート源と鮮度（ADR-0022）。実装型は TradeDecisionService.Infrastructure の internal であり、
+            // 名前で解決してリフレクションで読む（InternalsVisibleTo を増やさない。IADR-0128 / IADR-0135）。
+            ["Fx.RateSourceProviders"] = FxProviderNames(),
+            ["Fx.StaleRateWarningDays"] = FxOptionsDays("DefaultStaleRateWarningDays"),
+            ["Fx.MaxRateAgeDays"] = FxOptionsDays("DefaultMaxRateAgeDays"),
 
             // Stage 0 合格判定の DD 許容値。**運用の DD 停止ライン（RiskLimits.MaxDrawdownRatio）ではない**。
             // ADR-0018 決定2 が問題視するのはこちらであり、別フィールドから抽出すると
@@ -207,6 +225,61 @@ public static class ActualDefaults
             ? $"(none of the {typeof(TEnum).Name} members defined)"
             : Sorted(present);
     }
+
+    /// <summary>
+    /// 実装が選択できる為替レート源（provider 識別子）の集合。<c>FxRateSourceFactory</c> の
+    /// <c>public const string</c> を機械的に読み、「未接続」を表す <see cref="FxProviderNone"/> は除く。
+    /// <para>
+    /// 計画（ADR-0022 決定1・2）は日銀を第一・FRED をフォールバックとする 2 源を求めるが、
+    /// <b>順位そのものは値ではなく振る舞い</b>（切り替え条件・記録・通知）であるため集合として比較する
+    /// （IADR-0127 決定4 / IADR-0135 決定2）。
+    /// </para>
+    /// </summary>
+    private static string FxProviderNames()
+    {
+        var type = FindTradeDecisionType(FxRateSourceFactoryTypeName);
+        if (type is null)
+        {
+            return "(type FxRateSourceFactory not found)";
+        }
+
+        var names = type
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => f.GetRawConstantValue() as string)
+            .Where(v => !string.IsNullOrWhiteSpace(v)
+                && !string.Equals(v, FxProviderNone, StringComparison.Ordinal))
+            .Select(v => v!)
+            .ToArray();
+
+        return names.Length == 0 ? "(no fx provider constants defined)" : Sorted(names);
+    }
+
+    /// <summary>
+    /// <c>FxOptions</c> が持つ日数の定数（<c>public const int</c>）を単位つきで返す。
+    /// 定数が無ければ**不在をそのまま値とする**（担当 issue が追加した時点で値が変わり、
+    /// 既知逸脱の登録が更新されない限りテストが失敗する）。
+    /// </summary>
+    private static string FxOptionsDays(string constantName)
+    {
+        var type = FindTradeDecisionType(FxOptionsTypeName);
+        if (type is null)
+        {
+            return "(type FxOptions not found)";
+        }
+
+        var field = type.GetField(constantName, BindingFlags.Public | BindingFlags.Static);
+        return field?.GetRawConstantValue() is int days
+            ? $"{Number(days)} days"
+            : $"(FxOptions.{constantName} not found)";
+    }
+
+    /// <summary>
+    /// TradeDecisionService.Infrastructure の型を完全名で解決する。同アセンブリの実装型は
+    /// <c>internal</c> のまま据え置かれているため（IADR-0128）、<c>typeof</c> ではなく名前で引く。
+    /// </summary>
+    private static Type? FindTradeDecisionType(string fullName) =>
+        typeof(DecisionOptionsLoader).Assembly.GetType(fullName, throwOnError: false);
 
     /// <summary>参照アセンブリ群から型を名前で探す（名前空間は問わない）。</summary>
     private static Type? FindType(string typeName) =>
