@@ -25,18 +25,23 @@
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(sort:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(echo:*)",
       "Bash(cmp:*)",
       "Bash(diff:*)",
+      "Bash(which:*)",
       "Bash(mkdir:*)",
       "Bash(node:*)",
       "Bash(dotnet build:*)",
       "Bash(dotnet test:*)",
       "Bash(dotnet format:*)",
       "Bash(dotnet restore:*)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --info)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(gh issue create:*)",
@@ -46,13 +51,18 @@
       "Bash(gh run list:*)",
       "mcp__github__get_file_contents",
       "mcp__github__issue_read",
+      "mcp__github__get_issue",
+      "mcp__github__get_pull_request",
+      "mcp__github__list_sub_issues",
       "mcp__github__list_issues",
       "mcp__github__add_issue_comment",
       "mcp__github__pull_request_read",
       "mcp__github__list_pull_requests",
       "mcp__github__pull_request_review_write",
       "mcp__github__add_comment_to_pending_review",
-      "mcp__github__push_files"
+      "mcp__github__push_files",
+      "mcp__github__list_workflow_runs",
+      "mcp__github__actions_list"
     ],
     "ask": [
       "Bash(git merge:*)",
@@ -129,5 +139,5 @@
       }
     ]
   },
-  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する。【重要】許可リストは「本ファイル / claude-coding / claude-code-review」の3系統を手作業で同期する構造であり、実際に乖離した実績がある（レビュー側にビルド/テスト系が無く、AI レビューが検証できず静的読解へ退行した状態が2週間継続）。ビルド/テスト/フォーマットのコマンドを増減したときは必ず3系統すべてを更新すること。とくにレビュー側から実行系を落とすと、レビューは毎回「実行できませんでした」という無価値な指摘を返すようになる。GitHub MCP のツール名は現行サーバ準拠（issue_read / pull_request_read / pull_request_review_write 等。旧 get_issue / get_pull_request / create_*_review は廃止名）。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。"
+  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する。【重要】許可リストは「本ファイル / claude-coding / claude-code-review」の3系統を手作業で同期する構造であり、実際に乖離した実績がある（レビュー側にビルド/テスト系が無く、AI レビューが検証できず静的読解へ退行した状態が2週間継続）。ビルド/テスト/フォーマットのコマンドを増減したときは必ず3系統すべてを更新すること。とくにレビュー側から実行系を落とすと、レビューは毎回「実行できませんでした」という無価値な指摘を返すようになる。読み取り専用の基本コマンド（grep / sort / which 等）も同様に3系統で揃える（issue #163 / #168。rg があるから grep 不要とは言えず、パイプは各コマンドが個別判定されるため後段の欠落で鎖全体が落ちる）。submodule が複数ある構成では git -C の許可を .gitmodules のパスごとに 4 サブコマンド（log / show / diff / ls-tree）で列挙する（前方一致のため親パスの許可は入れ子パスに当たらない。Bash(git -C:*) の一括許可は書き込み系まで通るため不可）。GitHub MCP のツール名はサーバの版に依存する（claude-code-action v1 が pin する github-mcp-server v0.17.1 には get_issue / get_pull_request / list_sub_issues が在り、統合名 issue_read / pull_request_read / pull_request_review_write は無い。統合名は v1.x 系で導入）。新旧を併記して許可しているのでどちらも削らないこと（issue #163）。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。"
 }
