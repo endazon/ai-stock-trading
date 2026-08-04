@@ -68,6 +68,31 @@ public static class TradingDefaults
         LosingStreakSizeFactor = 0.5m,
     };
 
+    // FR-10, UC-06, ADR-0016 決定2,3,4,5,7,9, #329 第 2 段階: 空売り専用統制の既定値。
+    // 既定は**無効**（計画 §5「商品種別の既定はいずれも現物のみ有効」・決定1/8）。統制値は無効時も保持し、
+    // 段階解禁（Stage 3・自己資金 $5,000 以上）で有効化した瞬間から計画どおりの上限が効くようにする。
+    public static ShortSellSettings CreateShortSellSettings() => new()
+    {
+        Enabled = false,
+        Limits = new ShortSellingLimits
+        {
+            // 1 銘柄あたりの空売り建玉: equity の 10%（$3,000 で $300）。決定2(a)
+            PerSymbolCapRatio = 0.10m,
+            // 借株料: 年率 20% 超は拒否。照会不可なら空売りしない。決定3
+            BorrowRateCapAnnual = 0.20m,
+            // 維持率: 自前 40%。実効値は規制要求（max($5.00 ÷ 株価, 30%)）との厳しい方。決定7
+            MaintenanceMarginThreshold = 0.40m,
+            // 維持率割れによる自動縮小の回復目標: 適用される閾値 + 5 ポイント（§5・#90 第 10 回）
+            MaintenanceRecoveryTargetOffset = 0.05m,
+            // 空売り対象の株価下限: USD 5.00（未満は対象外）。決定7
+            PriceFloorUsd = 5.00m,
+            // 空売り比率: 建玉総額の 50% を超えない。決定9
+            ExposureRatioCap = 0.50m,
+            // 強制買戻し検知銘柄の空売り禁止期間: 30 日。決定4
+            BuyInBanDurationDays = 30,
+        },
+    };
+
     public static TradingGuardSettings CreateGuardSettings() => new()
     {
         // 現物のみ有効。信用は米国株信用の最低保証金 2,500 USD に初期資金が満たないため無効
@@ -123,7 +148,10 @@ public static class TradingDefaults
     };
 
     public static RiskManagementSettings CreateSettings() =>
-        new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings());
+        new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings())
+        {
+            ShortSell = CreateShortSellSettings(),
+        };
 
     // FR-19, IADR-0040: 相場操縦検知の既定しきい値。自己資金・低頻度（30 分判断サイクル）のリテール運用を前提に、
     // 正常なデイトレード（値動きに応じた建て直し・数件の取消）を誤検知せず濫用パターンだけを捕捉する保守側の初期値。

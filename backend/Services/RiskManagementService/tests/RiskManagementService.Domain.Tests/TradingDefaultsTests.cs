@@ -70,6 +70,42 @@ public class TradingDefaultsTests
         (equity * limits.MaxDrawdownRatio).Should().Be(300m);    // 最大 DD $300（到達後 equity $2,700）
     }
 
+    // FR-10, UC-06, ADR-0016 決定2,3,4,5,7,9, #329 第 2 段階: 空売り専用統制の既定値（8 規則の値）。
+    // 既定は**無効**（現物のみ）。値は無効時も保持し、Stage 3 での解禁時に計画どおりの上限が即座に効く。
+    [Fact]
+    public void 空売り専用統制の既定値は計画の確定値と一致する()
+    {
+        var shortSell = TradingDefaults.CreateShortSellSettings();
+        var limits = shortSell.Limits;
+
+        shortSell.Enabled.Should().BeFalse();                     // 既定は現物のみ（決定1/8）
+        limits.PerSymbolCapRatio.Should().Be(0.10m);              // 1 銘柄あたり equity の 10%（決定2(a)）
+        limits.BorrowRateCapAnnual.Should().Be(0.20m);            // 借株料 年率 20%（決定3）
+        limits.MaintenanceMarginThreshold.Should().Be(0.40m);     // 維持率 40%（決定7）
+        limits.MaintenanceRecoveryTargetOffset.Should().Be(0.05m); // 回復目標 = 閾値 + 5pt（§5・#90）
+        limits.PriceFloorUsd.Should().Be(5.00m);                  // 株価下限 $5.00（決定7）
+        limits.ExposureRatioCap.Should().Be(0.50m);               // 空売り比率 50%（決定9）
+        limits.BuyInBanDurationDays.Should().Be(30);              // 強制買戻し後 30 日禁止（決定4）
+    }
+
+    // FR-10, ADR-0016 決定2(a)/決定7: 既定値が計画の併記する実額・境界に解決される。
+    [Fact]
+    public void 空売り統制は初期投入資金と株価から計画どおりの実額に解決される()
+    {
+        var limits = TradingDefaults.CreateShortSellSettings().Limits;
+
+        // 計画 §5・決定6 の表: 自己資金 $3,000 で 1 銘柄あたり空売り上限 $300。
+        limits.PerSymbolCapFor(TradingDefaults.InitialEquityUsd).Should().Be(300m);
+        // 決定8: 実弾解禁条件「1 銘柄あたり上限 $500 以上」＝ 自己資金 $5,000 以上と等価。
+        limits.PerSymbolCapFor(5_000m).Should().Be(500m);
+        // 決定7: 自前 40% と規制要求が一致するのは株価 $12.50（$5.00 ÷ 40%）。
+        limits.MaintenanceMarginThresholdFor(12.50m).Should().Be(0.40m);
+        limits.MaintenanceMarginThresholdFor(12.49m).Should().BeGreaterThan(0.40m);
+        limits.MaintenanceMarginThresholdFor(16.67m).Should().Be(0.40m);
+        // 回復目標は閾値に連動する（閾値 40% なら 45%）。
+        limits.MaintenanceRecoveryTargetFor(100m).Should().Be(0.45m);
+    }
+
     [Fact]
     public void 取引ガードの既定値は現物のみ有効かつ日米市場有効である()
     {

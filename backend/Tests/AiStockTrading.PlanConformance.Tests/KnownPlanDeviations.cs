@@ -13,16 +13,12 @@ public static class KnownPlanDeviations
 {
     public static IReadOnlyList<KnownDeviation> All { get; } =
     [
-        // --- #329 リスク統制コア: 空売り統制の専用型（第 2 段階の残り） ---
-        // 第 1 段階（IADR-0130）で解消済み: Capital.Initial（→ USD 3000）/ RiskLimits.MaxOrderAmount
+        // --- #329 リスク統制コア: 担当分の逸脱 6 件はすべて解消済み ---
+        // 第 1 段階（IADR-0130）: Capital.Initial（→ USD 3000）/ RiskLimits.MaxOrderAmount
         // （→ equity ratio 0.25）/ RiskLimits.MaxDailyOrderAmount（→ equity ratio 1.50 per day）/
         // RiskLimits.LosingStreakThreshold（→ 5）。
-        // 第 2 段階（IADR-0131）で解消済み: RejectionReason.ShortSellReasons（→ 拒否理由 7 種。クラス A）。
-        new(
-            "ShortSell.Limits",
-            "(type ShortSellingLimits not found)",
-            329,
-            "空売り専用統制（ADR-0016 決定2,3,4,7,9）が未実装。専用型の追加が必要"),
+        // 第 2 段階（IADR-0131）: ShortSell.Limits（→ 型 ShortSellingLimits・7 メンバ）/
+        // RejectionReason.ShortSellReasons（→ 拒否理由 7 種。いずれもクラス A）。
 
         // --- #332 取引ガード: 商品種別の 3 値化 ---
         new(

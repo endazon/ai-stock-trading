@@ -11,7 +11,8 @@ public static class RiskEvaluator
         OrderIntent intent,
         RiskManagementSettings settings,
         PortfolioSnapshot snapshot,
-        IManipulativeOrderPatternDetector? patternDetector = null)
+        IManipulativeOrderPatternDetector? patternDetector = null,
+        ShortSellOrderContext? shortSellContext = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -126,6 +127,16 @@ public static class RiskEvaluator
         if (isEntry && snapshot.DrawdownRatio >= settings.Limits.MaxDrawdownRatio)
         {
             reasons.Add(RejectionReason.MaxDrawdownReached);
+        }
+
+        // FR-10, UC-06, ADR-0016, #329 第 2 段階: 空売り（新規売り建て）専用の統制 8 規則。
+        // 既存の統制に**上乗せ**して課す（置き換えではない）。空売りは損失に上限が無く、
+        // 「損切りが機能すれば損失は限定される」という既存統制の前提が成り立たないためである。
+        // 上限が競合する場合は常に厳しい方が効く（1 注文 25% と 1 銘柄 10% の両方が列挙される＝ AND）。
+        if (isEntry && ShortSellEvaluator.IsShortEntry(intent))
+        {
+            reasons.AddRange(
+                ShortSellEvaluator.Evaluate(intent, settings.ShortSell, snapshot.Capital, shortSellContext));
         }
 
         return reasons.Count > 0

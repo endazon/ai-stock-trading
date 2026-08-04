@@ -21,7 +21,8 @@ internal static class RiskSettingsSerialization
                 settings.Guard.PreventSameDayReentry,
                 settings.Guard.ProhibitManipulativeOrderPatterns),
             settings.Limits,
-            settings.Stage);
+            settings.Stage,
+            settings.ShortSell);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -38,11 +39,20 @@ internal static class RiskSettingsSerialization
             PreventSameDayReentry = dto.Guard.PreventSameDayReentry,
             ProhibitManipulativeOrderPatterns = dto.Guard.ProhibitManipulativeOrderPatterns,
         };
-        return new RiskManagementSettings(guard, dto.Limits, dto.Stage);
+        return new RiskManagementSettings(guard, dto.Limits, dto.Stage)
+        {
+            // FR-10, ADR-0016, #329 第 2 段階: 空売り統制を持たない旧行は**既定（無効）**として読む。
+            // 「読めない行は空売り有効」に倒れないことが要点である（フェイルクローズ）。
+            ShortSell = dto.ShortSell ?? TradingDefaults.CreateShortSellSettings(),
+        };
     }
 
     // 具象コレクションを持つ永続 DTO（逆直列化可能な形）。
-    private sealed record SettingsDto(GuardDto Guard, RiskLimitSettings Limits, StageSettings Stage);
+    private sealed record SettingsDto(
+        GuardDto Guard,
+        RiskLimitSettings Limits,
+        StageSettings Stage,
+        ShortSellSettings? ShortSell = null);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,
