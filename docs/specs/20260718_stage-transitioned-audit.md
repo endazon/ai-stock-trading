@@ -9,7 +9,7 @@ created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/  # FR-20（段階ゲート）/ FR-11（監査）
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # 作業仕様書: 段階遷移イベント（StageTransitioned）のバス発行と中央監査集約（#167）

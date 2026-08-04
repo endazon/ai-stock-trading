@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # IADR-0082: 段階遷移イベントは Worker 発行点でバス発行し中央監査へ集約する（契約は primitive・Risk 専有台帳を権威に据え置く）

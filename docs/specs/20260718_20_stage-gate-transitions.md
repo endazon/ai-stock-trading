@@ -17,8 +17,8 @@ created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-20: 運用段階の管理と段階ごとのモード・資金上限の強制／FR-15: バックテスト必須ゲート)"
-  - "../../planning/projects/ai-stock-trading/03_usecases/06_settings-and-controls.md (UC-06: 設定・統制の変更と承認)"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0008_backtest-and-staged-rollout.md (段階的実弾投入と撤退基準)"
+  - "../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06: 設定変更・取引の一時停止・緊急停止)"
+  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md (段階的実弾投入と撤退基準)"
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md (変更は利用者のみ・変更履歴を記録)"
   - "../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md §4 (段階ゲート提案)"
 related_specs:

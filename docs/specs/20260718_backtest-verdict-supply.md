@@ -9,7 +9,7 @@ created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/  # FR-20（段階ゲート）/ FR-15（バックテスト）/ FR-11（監査）
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # 作業仕様書: バックテスト verdict／実 DD を Risk の IStagePerformanceStore へイベント射影で供給する（#164）

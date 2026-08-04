@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # IADR-0083: 撤退の定期評価は背景ドライバで駆動し、新規自動停止時のみ通知イベントを発行する（kill switch 状態を durable な冪等鍵にする）

@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-rollout.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # IADR-0085: 撤退の非停止（ペーパー乖離）降格提案は durable な通知済みシグネチャで重複排除し、ドライバ側で 1 回だけ通知する
