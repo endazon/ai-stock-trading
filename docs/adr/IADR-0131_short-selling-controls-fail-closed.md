@@ -175,6 +175,9 @@ FR-10 本文と ADR-0016 決定2(b) は「逆指値（ストップ注文）を�
 - 悪い影響・トレードオフ:
   - 空売りの有効・無効が `ShortSellSettings.Enabled` と（将来の）`ProductType.ShortSell` の 2 箇所で
     表現され得る（#332 で統合を検討する）
+    → **2026-08-04 解消**: [IADR-0132](./IADR-0132_product-type-tri-state-and-guard-scope.md) 決定2 が
+    `ShortSellSettings.Enabled` を削除し、単一情報源を `Guard.EnabledProductTypes` とした（#332）。
+    本 IADR の決定1 のうち**識別規則（`Side` × `PositionEffect`）は不変**であり、有効・無効の所在だけが移った
   - `ShortSellOrderContext` の供給元が無いため、**現状はすべての新規売り建てが拒否される**。
     これは既定（空売り無効）と ADR-0016 決定8（実弾解禁は Stage 3・自己資金 $5,000 以上）に整合するが、
     Stage 1（SIMULATE）で空売りを検証するには供給元の実装が要る（#342 / #332 の後続）
@@ -183,7 +186,7 @@ FR-10 本文と ADR-0016 決定2(b) は「逆指値（ストップ注文）を�
     （`MaintenanceRecoveryTargetOffset` と解決メソッド）だけを確定した
 - フォローアップ:
   - #342: 借株料の事前照会可否（決定3 の成否）。不成立なら空売りフラグを恒久的に無効とする
-  - #332: 商品種別 3 値化と `ShortSellSettings.Enabled` の統合
+  - #332: 商品種別 3 値化と `ShortSellSettings.Enabled` の統合 → **完了**（IADR-0132）
   - #330: 維持率割れによる自動縮小（本 IADR の `MaintenanceRecoveryTargetFor` を用いる）
   - #333: 拒否の集計（クラス C の件数）と段階ゲートへの結線
   - 計画への環流: `StopOrderRequired` のコード名・強制買戻し禁止の理由コード
