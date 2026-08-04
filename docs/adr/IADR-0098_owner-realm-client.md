@@ -2,13 +2,13 @@
 title: IADR-0098 Discord Bot 制御コマンドの OwnerAuth は AST レルムの専用 confidential client `ai-stock-trading-owner`（trading-owner 単独）で認証し、helm では TokenEndpoint を明示して IsEnabled を成立させる
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0007, ADR-0009]
+related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-20
 updated: 2026-07-20
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_kill-switch-authz.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
 ---
 
 # IADR-0098: Discord Bot 制御コマンドの OwnerAuth は AST レルムの専用 confidential client でクロスに認証する
@@ -22,7 +22,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **FR-10**（リスク統制・kill switch）、**FR-14**（双方向 Bot）、UC-06（段階ゲート運用）、
-  UC-07（一時停止/再開）、**ADR-0007**（kill switch 認可＝利用者のみ）、**ADR-0009**（pause/resume）
+  UC-07（一時停止/再開）、**ADR-0003**（統制はリスク管理サービスが決定的なコードで強制し、AI は上書きできない）、**ADR-0009**（pause/resume）
 - 対象 Issue: [#226](https://github.com/endazon/ai-stock-trading/issues/226)（live 検証で判明したギャップ）。`Refs #226`
 - 関連する実装仕様書: [20260720_226_owner-realm-client](../specs/20260720_226_owner-realm-client.md)
 - 関連 IADR:

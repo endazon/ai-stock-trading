@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-07-20
 updated: 2026-07-20
 plan_refs:
-  - ../../planning/projects/ai-stock-trading/03_usecases/UC-01_information-collection-to-decision.md
+  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md # UC-01（定時取引サイクル）
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
 
