@@ -47,7 +47,7 @@ plan_refs:
 
 **その対策は Wolverine ではまったく効かない。**実測（Wolverine 6.24.5 を実際に構成して名前を印字）で次を確認した。
 
-1. Wolverine の RabbitMQ conventional routing は、リスニングキュー名を**メッセージ型名だけ**から導く（`NamingSource.FromMessageType` が既定）。**ハンドラのクラス名は一切関与しない。** `TradeDecisionMadeBaselineHandler` でも `Whatever` でも、キューは `TradeDecisionMade` である。
+1. Wolverine の RabbitMQ conventional routing は、リスニングキュー名を**メッセージ型だけ**から導く（`NamingSource.FromMessageType` が既定。識別子は `messageType.ToMessageTypeName()`＝**namespace 込みの完全名**であり、実測で `typeof(int)` は `System.Int32` を、本ユニットの契約は `AiStockTrading.Shared.Contracts.Events.AssumptionsChanged` を返した）。**ハンドラのクラス名は一切関与しない。** `TradeDecisionMadeBaselineHandler` でも `Whatever` でも、キューは同じである。
    - すなわち [[IADR-0106]] の改名（`TradeDecisionMadeConsumer` → `TradeDecisionMadeBaselineConsumer`）は無効化され、**同じイベントを購読する別サービスは「たまたま」ではなく「必ず」同一キューを共有する**。既定のまま移行すれば #258 が全 fan-out 経路（実測 19 経路）で同時に再発する。
 2. さらに Wolverine の既定（conventional local routing）は、**発行しようとしたメッセージ型に自プロセス内のハンドラがあると、ルートをプロセス内に閉じる**。実測でも `PublishAsync(TradeDecisionMade)` の解決結果が `local://tradedecisionmade/` のみになった。
    - 本ユニットには該当が現に存在する。**RiskManagementService は `OrderApproved` を発行し、同時に `OrderApproved` を購読している**（台帳計上・活動投影）。既定のまま移行すると、承認済みの発注が RiskManagement のプロセス内で処理されるだけで **OrderExecutionService へ一通も届かず、発注が一件も執行されない**。`StopLossTriggered` も同型である。
@@ -63,7 +63,7 @@ plan_refs:
 
 ### 案B: キュー名にサービス名を前置し、exchange は共有する（採用）
 
-`QueueNameForListener(t => $"{ServiceName}.{t.Name}")` でリスニングキューを `<ServiceName>.<メッセージ型名>` にする。exchange は Wolverine 既定のまま「メッセージ型名の fanout」で共有し、各サービスのキューをそこに bind する。
+`QueueNameForListener(t => $"{ServiceName}.{t.Name}")` でリスニングキューを `<ServiceName>.<メッセージ型の短い名前>` にする。exchange は Wolverine 既定のまま「メッセージ型ごとの fanout」で共有し、各サービスのキューをそこに bind する。
 
 ### 案C: `PrefixIdentifiers("<service>")` で全識別子にサービス名を前置する（棄却）
 
@@ -88,12 +88,13 @@ Wolverine の `BrokerExpression.PrefixIdentifiers(string)` は queue も exchang
 リスニングキューの名前を `$"{ServiceName}.{messageType.Name}"` とする。`ServiceName` は各サービスの `Program.cs` に既にある一意な定数（例 `ai-stock-trading.cost-control-service`。OpenTelemetry / Serilog のサービス識別にも使われている）をそのまま用いる。
 
 - 例: `ai-stock-trading.risk-management-service.TradeDecisionMade` / `ai-stock-trading.market-monitor-service.TradeDecisionMade`
+- 型名は**短い名前**（`messageType.Name`）を用いる。既定の完全名を使うとキュー名が 90 文字を超えて可読性を失うためである。短名で足りるのは、本ユニットのイベント契約が `AiStockTrading.Shared.Contracts.Events` の 1 名前空間に 1 型 1 ファイルで置かれており（実測 21 件）、**短名が構成上一意である**ことによる。契約を複数名前空間へ分ける場合は本決定を再検討すること。
 - キュー名の一意性は **`ServiceName` の一意性だけ**に帰着する。新しい命名規約を人間が覚える必要はなく、クラス名の付け方が機能要件になることもない。
-- 導出は純関数 `AiStockTradingQueueNaming.QueueNameFor(serviceName, messageType)` に置き、**キュー名の出所を 1 箇所にする**。
+- 導出は純関数 `WolverineExtensions.QueueNameFor(serviceName, messageType)`（`AiStockTrading.TestSupport.PlatformShim`）に置き、**キュー名の出所を 1 箇所にする**。
 
-### 決定 2: exchange はメッセージ型名の fanout を共有する（Wolverine 既定のまま）
+### 決定 2: exchange はメッセージ型ごとの fanout を共有する（Wolverine 既定のまま＝完全名）
 
-fan-out はここで成立する。1 イベント → 1 fanout exchange → 購読サービス数だけのキュー → 各サービスが全件受け取る。**exchange にサービス名を混ぜない**（案C の否定）。
+exchange 名は Wolverine 既定（メッセージ型の完全名。例 `AiStockTrading.Shared.Contracts.Events.AssumptionsChanged`）のままとし、**キュー名だけを分ける**。fan-out はここで成立する。1 イベント → 1 fanout exchange → 購読サービス数だけのキュー → 各サービスが全件受け取る。**exchange にサービス名を混ぜない**（案C の否定）。exchange 名は `ConfigurationService.Api.Tests` が実際の送信先 URI で固定しており、思い込みではなく実行結果で守られる。
 
 ### 決定 3: `DisableConventionalLocalRouting()` を全サービスで必須とする
 
@@ -117,7 +118,7 @@ Wolverine 6 系はコア本体からランタイムコンパイラ（Roslyn）�
 
 ### 決定 7: 混在期間は「デプロイしない」で回避する
 
-MassTransit と Wolverine は **exchange 名もエンベロープ形式も異なり、無設定では相互運用しない**（MassTransit の exchange 名は `AiStockTrading.Shared.Contracts.Events:X`、Wolverine は `X`）。ビルド時の併存は成立する（別パッケージ・別サービス）が、**混在状態をブローカ上で動かしてはならない**。
+MassTransit と Wolverine は **exchange 名もエンベロープ形式も異なり、無設定では相互運用しない**（MassTransit の exchange 名は URN 形式の `AiStockTrading.Shared.Contracts.Events:X`、Wolverine は完全名の `AiStockTrading.Shared.Contracts.Events.X`。区切り文字が `:` と `.` で異なり、同じ exchange にはならない）。ビルド時の併存は成立する（別パッケージ・別サービス）が、**混在状態をブローカ上で動かしてはならない**。
 
 - 本リポジトリに自動デプロイのワークフローは無い（`ci.yml` / `helm.yml` / `integration.yml` にデプロイ手順は無く、デプロイは `scripts/k8s-local-deploy.sh` の手動実行）。第 2 段階完了までデプロイしないことで回避する。
 - どうしても混在デプロイが必要になった場合の逃げ道は、Wolverine 側の `UseMassTransitInterop()` ＋ exchange 名の合わせ込み（案E）である。**採用する場合は必ず新しい IADR を起こす**（剥がし忘れが恒久的な負債になるため、期限と剥がす条件を明記させる）。

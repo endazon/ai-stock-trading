@@ -121,15 +121,15 @@ nuget.org の実確認（2026-08-03・`api.nuget.org/v3-flatcontainer` の `inde
 
 | 観点 | MassTransit 8.4.1（現行） | Wolverine 6.24.5（既定） | Wolverine（本移行で採る規則） |
 | --- | --- | --- | --- |
-| **キュー名の入力** | **consumer クラス名のみ**（namespace 非包含） | **メッセージ型名のみ**（`NamingSource.FromMessageType`。ハンドラ型名は**一切関与しない**） | **サービス名 ＋ メッセージ型名** |
-| 導出規則 | 末尾 `Consumer` を落としたクラス名 | `messageType.Name` | `$"{ServiceName}.{messageType.Name}"` |
-| 実測例（RiskManagement の取引判断購読） | `TradeDecisionMadeConsumer` → キュー **`TradeDecisionMade`** | ハンドラ名に関わらずキュー **`TradeDecisionMade`** | キュー **`ai-stock-trading.risk-management-service.TradeDecisionMade`** |
-| 実測例（MarketMonitor の基準値更新） | `TradeDecisionMadeBaselineConsumer` → キュー **`TradeDecisionMadeBaseline`**（[[IADR-0106]] の改名による分離） | **`TradeDecisionMade`**（＝ RiskManagement と**同一**。改名による分離が無効化される） | **`ai-stock-trading.market-monitor-service.TradeDecisionMade`** |
-| 交換機（exchange）名 | メッセージ型の URN（namespace 込み）<br>`AiStockTrading.Shared.Contracts.Events:TradeDecisionMade` | メッセージ型名 `TradeDecisionMade`（**fanout**） | 既定のまま `TradeDecisionMade`（fanout） |
-| binding key | （fanout のため実質不問） | メッセージ型名 | 既定のまま |
+| **キュー名の入力** | **consumer クラス名のみ**（namespace 非包含） | **メッセージ型のみ**（`NamingSource.FromMessageType`。既定の識別子は **namespace 込みの完全名**。ハンドラ型名は**一切関与しない**） | **サービス名 ＋ メッセージ型の短い名前** |
+| 導出規則 | 末尾 `Consumer` を落としたクラス名 | `messageType.ToMessageTypeName()`（実測: `typeof(int)` → `System.Int32`） | `$"{ServiceName}.{messageType.Name}"` |
+| 実測例（RiskManagement の取引判断購読） | `TradeDecisionMadeConsumer` → キュー **`TradeDecisionMade`** | ハンドラ名に関わらずキュー **`AiStockTrading.Shared.Contracts.Events.TradeDecisionMade`** | キュー **`ai-stock-trading.risk-management-service.TradeDecisionMade`** |
+| 実測例（MarketMonitor の基準値更新） | `TradeDecisionMadeBaselineConsumer` → キュー **`TradeDecisionMadeBaseline`**（[[IADR-0106]] の改名による分離） | **`AiStockTrading.Shared.Contracts.Events.TradeDecisionMade`**（＝ RiskManagement と**同一**。改名による分離が無効化される） | **`ai-stock-trading.market-monitor-service.TradeDecisionMade`** |
+| 交換機（exchange）名 | メッセージ型の URN（`:` 区切り）<br>`AiStockTrading.Shared.Contracts.Events:TradeDecisionMade` | メッセージ型の完全名（`.` 区切り）<br>`AiStockTrading.Shared.Contracts.Events.TradeDecisionMade`（**fanout**） | 既定のまま（fanout・全サービス共有） |
+| binding key | （fanout のため実質不問） | メッセージ型の完全名 | 既定のまま |
 | 同一サービス内で同じイベントを 2 つの関心事が購読 | **キューが 2 本**（クラス名が違うため）。再試行・DLQ も独立 | **キュー 1 本**を共有し、両ハンドラが同一メッセージに対して実行される | 同左（Wolverine の仕様。§6.2 で影響を評価） |
 | 別サービスが同じイベントを購読 | クラス名が偶然一致すると**同一キュー＝競合**（#258） | **必ず同一キュー＝必ず競合**（構造的に発生する） | サービス名が接頭辞になるため**構造的に衝突不能** |
-| 一意性の担保手段 | 命名規律＋静的検査（`check-consumer-endpoint-names.js`） | （既定では担保されない） | `ServiceName` の一意性のみ（静的検査で担保） |
+| 一意性の担保手段 | 命名規律＋静的検査（`check-consumer-endpoint-names.js`） | （既定では担保されない） | `ServiceName` の一意性のみ（静的検査で担保）。**短い型名を使うため、イベント型の短い名前が一意であることを前提とする**（実測: 契約は `AiStockTrading.Shared.Contracts/Events/` の 1 名前空間・1 型 1 ファイルで 21 件。構成上、重複し得ない） |
 
 > **要点**: MassTransit の既定は「クラス名が同じだと**たまたま**衝突する」だったのに対し、**Wolverine の既定は「同じイベントを購読する別サービスは必ず衝突する」**。すなわち [[IADR-0106]] が施した改名（`TradeDecisionMadeBaselineConsumer`）は Wolverine では**まったく効かない**。既定のまま移行すると #258 が全 fan-out 経路（19 経路・§4）で同時に再発する。これが本移行の最大の事故シナリオである。
 
@@ -138,7 +138,7 @@ nuget.org の実確認（2026-08-03・`api.nuget.org/v3-flatcontainer` の `inde
 ローカルに RabbitMQ が無くても検証できる。`WolverineOptions` を構成したホストを起動し、接続失敗を捕捉してから `RabbitMqTransport` の `Queues` / `Exchanges` / `Bindings()` を印字する。実測ログの要点:
 
 ```
-# 既定（UseConventionalRouting() のみ）
+# 既定（UseConventionalRouting() のみ）※ この実測は検証用の型を root 名前空間に置いたため短名で出ている
 queue=TradeDecisionMade  durable=True autoDelete=False listener=True
 exchange='TradeDecisionMade' type=Fanout durable=True
 binding BindingKey: TradeDecisionMade, Queue: TradeDecisionMade, ExchangeName: TradeDecisionMade
@@ -149,6 +149,14 @@ queue=market-monitor.OrderApproved      listener=True dlq=market-monitor.OrderAp
 exchange='TradeDecisionMade' type=Fanout      # ← exchange は共有されたまま
 binding BindingKey: TradeDecisionMade, Queue: market-monitor.TradeDecisionMade, ExchangeName: TradeDecisionMade
 ```
+
+> **識別子は既定では完全名である。**上の実測は検証用イベント型を root 名前空間に置いたため短名で出ているが、
+> Wolverine の既定識別子は `messageType.ToMessageTypeName()`＝**namespace 込みの完全名**である
+> （同じ実測で `typeof(int)` は `System.Int32` を返した）。実サービスで確認した宛先は
+> `rabbitmq://exchange/AiStockTrading.Shared.Contracts.Events.AssumptionsChanged` であり、
+> `ConfigurationService.Api.Tests` がこの文字列を固定している（思い込みではなく実行結果で固定する）。
+> 本ユニットの契約はすべて `AiStockTrading.Shared.Contracts.Events` の 1 名前空間にあるため、
+> **完全名でも短名でも「サービスを跨いで同一になる」という結論は変わらない**（＝既定のままでは必ず衝突する）。
 
 - 既定の DLQ は全体で 1 本（`wolverine-dead-letter-queue`）。`ConfigureListeners` で `<queue>_error` を指定すると per-queue の DLQ になる（実測で確認）。
 - MassTransit の exchange 名は `MessageUrn.ForType<T>()`（`urn:message:` を除いた部分）である。実測: `urn:message:AiStockTrading.Shared.Contracts.Events:TradeDecisionMade` → exchange `AiStockTrading.Shared.Contracts.Events:TradeDecisionMade`。
@@ -336,16 +344,19 @@ MassTransit ではキューが分かれるため、`OrderApprovedLedgerConsumer`
 
 ## 8. 受け入れ基準（第 1 段階）
 
-- [ ] 作業仕様書（本書）と実装 ADR（[[IADR-0129]]）がある
-- [ ] キュー名の導出規則の新旧対応表がある（§2.2）
-- [ ] fan-out 経路を機械的に列挙し、移行後の構成で維持されることを設計として示した（§3）
-- [ ] `dotnet build backend/backend.slnx` が 0 警告 0 エラー
-- [ ] `dotnet test --filter "Category!=Integration"` の合格数が移行前と同数（2260）
-- [ ] `dotnet format --verify-no-changes` が通る
-- [ ] `node scripts/scripts.test.js` / `check-banned-libraries.js` / `check-consumer-endpoint-names.js`（`--self-test` 含む）が通る
-- [ ] アーキテクチャテスト（Domain 依存規律）が緑
-- [ ] 検査器が「正しく壊れる」ことを自己試験で示した（§4.4）
-- [ ] MassTransit と Wolverine の**ビルド時併存**が成立している（第 2 段階まで混在するため）
+- [x] 作業仕様書（本書）と実装 ADR（[[IADR-0129]]）がある
+- [x] キュー名の導出規則の新旧対応表がある（§2.2）
+- [x] fan-out 経路を機械的に列挙し、移行後の構成で維持されることを設計として示した（§3）
+- [x] `dotnet build backend/backend.slnx` が 0 警告 0 エラー
+- [x] `dotnet test --filter "Category!=Integration"` で**移行したサービスのテスト合格数が移行前と同数**
+      （移行前 2260 / 移行後 2264。差分は共通ヘルパの新規テスト 4 件のみで、既存 51 アセンブリのうち
+      `AiStockTrading.TestSupport.PlatformShim.Tests` 以外は 1 件も増減していない＝実測の差分比較で確認）
+- [x] `dotnet format --verify-no-changes` が通る（差分なし）
+- [x] `node scripts/scripts.test.js`（147 件）/ `check-banned-libraries.js` / `check-consumer-endpoint-names.js`
+      （`--self-test` 23 件・実ツリー 11 サービス）が通る
+- [x] アーキテクチャテスト（Domain 依存規律）が緑（`AiStockTrading.Architecture.Tests` 4 件）
+- [x] 検査器が「正しく壊れる」ことを自己試験**と実ツリーの変異**で示した（§4.4）
+- [x] MassTransit と Wolverine の**ビルド時併存**が成立している（第 2 段階まで混在するため）
 
 ## 9. 計画書との差異
 
@@ -356,12 +367,43 @@ MassTransit ではキューが分かれるため、`OrderApprovedLedgerConsumer`
 
 ## 10. 書き換えたテストの一覧（実装後に記入する）
 
+書き換えは **6 テスト**（＋テスト補助 2 ファイル）である。**1 テスト → 1 テスト、テスト名は 1 文字も変えていない。**
+移行した 2 サービスの合格数は移行前と完全に一致する（Configuration: 8/5/24/10/5、CostControl: 9/18/10/31）。
+
 | ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
 | --- | --- | --- | --- | --- |
-| （実装後に記入） | | | | |
+| `ConfigurationService.Client.Tests/AssumptionsChangedConsumerTests.cs` | `前提条件の変更でキャッシュを無効化する` | `harness.Bus.Publish` ＋ `harness.Consumed.Any<AssumptionsChanged>()` ＋ 無効化 1 回 | `host.TrackActivity().InvokeMessageAndWaitAsync` ＋ `session.Executed.MessagesOf<AssumptionsChanged>()` ＋ 無効化 1 回 | 1〜4 充足（期待値 `Be(1)` 不変） |
+| `ConfigurationService.Api.Tests/AssumptionsEndpointsTests.cs` | `更新で_Version_が上がり_AssumptionsChanged_が発行され履歴に残る` | `harness.Published.Any<AssumptionsChanged>()` | `session.Sent.MessagesOf<AssumptionsChanged>()` **＋ 宛先 exchange の実測固定** | 1〜4 充足・5（強化）。PUT を追跡ブロックへ移したが、応答・版・履歴の表明は不変 |
+| `CostControlService.Api.Tests/CostControlEndpointsTests.cs` | `LLM費用が80パーセント到達で_CostThresholdReached_発行_状態も_Throttled` | `harness.Published.Any<CostThresholdReached>()` | `session.Sent.MessagesOf<CostThresholdReached>()` | 1〜4 充足（`Throttled` / `2m` の表明は不変） |
+| `CostControlService.Api.Tests/CostControlWiringTests.cs` | `費用統制は前提条件の変更を購読する` | DI から `AssumptionsChangedConsumer` が解決できる | `runtime.FindInvoker(typeof(AssumptionsChanged))` が `NoHandlerExecutor` でない | 1〜4 充足・5（強化）。**MassTransit は consumer を DI へ登録したが Wolverine は登録しないため、DI 解決という代理指標が成立しない。**「購読されているか」を直接見る形に置き換えた |
+| `CostControlService.Infrastructure.Tests/LlmCostIncurredConsumerTests.cs` | `LlmCostIncurred_を_Llm_カテゴリで月次台帳へ計上する` / `同一_MessageId_の再配信では二重計上しない` / `別_MessageId_はそれぞれ計上される` / `しきい値の上方遷移で_CostThresholdReached_を発行する` / `計上に失敗したらマークを戻す` | `harness.Bus.Publish(msg, ctx => ctx.MessageId = id)` ＋ `Consumed` / `Published` / `InactivityTask` | `runtime.EnqueueDirectlyAsync([new Envelope(msg){ Id = id }])` を `TrackActivity()` で囲む ＋ `Executed` / `Sent` | 1〜4 充足・5（強化。宛先 exchange まで固定）。§7.2 の注意点は下記 |
+
+**`ctx.MessageId` の写像について（§7.2 で「個別に判定する」としていた点の結論）**:
+Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番し、**API から ID を指定できない**。
+そのため「同一 ID の再到達（＝ブローカの再配信）」を表現するには封筒を明示して実行経路へ流すしかない。
+`IWolverineRuntime.EnqueueDirectlyAsync` は公開 API であり、**実行経路（`HandlerPipeline`）は通常の受信と同じ**である
+（ルーティング段だけを飛ばす）。よって表明の意味は保たれると判断した。ハンドラを直接 `new` して呼ぶ形
+（§7.1 基準 3 が禁じる形）には**していない**。
+なお `計上に失敗したらマークを戻す` だけは、旧テストが素の `AddMassTransitTestHarness`（再試行方針なし）を
+使っていたのと同じ条件にするため、本番の再試行方針（2s/10s/30s）を適用しないホストで実行する。
+本番配線のまま流すと 42 秒の再試行を待つことになり、旧テストと条件も所要時間も変わってしまう。
+
+**テスト補助（テストではないため合格数に影響しない）**:
+
+| ファイル | 変更 |
+| --- | --- |
+| `ConfigurationWorkerWebApplicationFactory` / `CostControlWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness()` → `DisableAllExternalWolverineTransports()`（いずれも「実ブローカへ接続しない」） |
+
+**新規テスト（移行の受け入れ条件そのものを守るために追加。合格数 +4）**:
+
+| ファイル | テスト | 目的 |
+| --- | --- | --- |
+| `AiStockTrading.TestSupport.PlatformShim.Tests/WolverineTopologyTests.cs` | `キュー名はサービス名とメッセージ型名から導かれる` / `同じイベントでもサービスが違えばキュー名は衝突しない` / `デッドレターキュー名はキュー単位で分かれる` / `自分が購読している型の発行もブローカの共有_exchange_へ向かう` | IADR-0129 決定 1・3・5 を実行結果で固定する。とくに 4 つ目は「発行がプロセス内へ閉じない」＝ fan-out が壊れないことの回帰テストである |
 
 ## 11. 未決事項
 
 1. 同一サービス内で同じイベント型を複数ハンドラが処理する箇所（§6.2）の扱い。第 2 段階で決める。
-2. 移行期間中に**実環境へデプロイする**場合の相互運用。MassTransit の exchange 名（`AiStockTrading.Shared.Contracts.Events:X`）と Wolverine の exchange 名（`X`）は異なり、エンベロープ形式も異なるため、**混在状態をそのままデプロイするとサービス間の連携が切れる**。本リポジトリに自動デプロイのワークフローは無く（デプロイは `scripts/k8s-local-deploy.sh` の手動実行）、第 2 段階完了までデプロイしない運用で回避できる。回避できない場合は Wolverine 側の `UseMassTransitInterop()` と exchange 名の合わせ込みが必要であり、その判断は人間に委ねる（[[IADR-0129]] 決定 7）。
-3. Wolverine のハンドラは**public でなければ発見されない**（実測: `internal sealed class ...Consumer` は発見されず `IndeterminateRoutesException`）。現行の consumer は大半が `internal sealed` であり、移行時に `public sealed` へ広げる。可視性を広げること自体の是非は第 2 段階で再確認する（`InternalsVisibleTo` で回避できるかは未検証）。
+2. 移行期間中に**実環境へデプロイする**場合の相互運用。MassTransit の exchange 名（URN 形式 `AiStockTrading.Shared.Contracts.Events:X`）と Wolverine の exchange 名（完全名 `AiStockTrading.Shared.Contracts.Events.X`）は区切り文字が異なり、エンベロープ形式も異なるため、**混在状態をそのままデプロイするとサービス間の連携が切れる**。本リポジトリに自動デプロイのワークフローは無く（デプロイは `scripts/k8s-local-deploy.sh` の手動実行）、第 2 段階完了までデプロイしない運用で回避できる。回避できない場合は Wolverine 側の `UseMassTransitInterop()` と exchange 名の合わせ込みが必要であり、その判断は人間に委ねる（[[IADR-0129]] 決定 7）。
+3. Wolverine のハンドラは**public でなければ発見されない**（実測: `internal sealed class ...Consumer` は発見されず `IndeterminateRoutesException`）。現行の consumer は大半が `internal sealed` であり、移行時に `public sealed` へ広げる。可視性を広げること自体の是非は第 2 段階で再確認する（`InternalsVisibleTo` で回避できるかは未検証）。[[IADR-0128]] 決定 4 は「実装型は internal のまま据え置き公開面を増やさない」としており、本移行はそれを一部崩す。第 2 段階で 45 consumer 分をまとめて判断する。
+4. 同一サービス内で同じイベント型を複数ハンドラが処理する箇所の再試行意味変化（§6.2）。**パイロットには該当が無く、第 1 段階では検証できていない。**RiskManagementService の移行時に必ず扱うこと。
+5. 旧キュー（`TradeDecisionMade` 等 47 本）はブローカ上に consumer 不在で残る。**削除手順は第 3 段階で運用仕様書へ書く**（本段階では未着手）。
