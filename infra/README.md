@@ -9,7 +9,7 @@
 
 ## keycloak/realm-export.json
 
-`--import-realm` で取り込む dev レルム `ai-stock-trading`。OwnerOnly 認可（ADR-0007 / IADR-0011）で
+`--import-realm` で取り込む dev レルム `ai-stock-trading`。OwnerOnly 認可（ADR-0003 / ADR-0007 / ADR-0008 / IADR-0011）で
 参照するレルムロール `trading-owner` と、動作確認用ユーザー `dev-owner` を含む。
 
 クライアントは 3 つ: `ai-stock-trading-dev`（public・利用者ログイン）、`ai-stock-trading-svc`（confidential・

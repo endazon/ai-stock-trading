@@ -21,7 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-06/07（階層方針・確定）、FR-16（テンプレート・集計）、FR-09（確定通知）、ADR-0001/0003/0007
+- 関連する計画書 ID: FR-06/07（階層方針・確定）、FR-16（テンプレート・集計）、FR-09（確定通知）、ADR-0001/0003
 - 対象 Issue: [#14](https://github.com/endazon/ai-stock-trading/issues/14)（Slice A）
 - 関連する実装仕様書: [20260710_report-confirmation](../specs/20260710_report-confirmation.md)
 - 関連 IADR: [IADR-0012](IADR-0012_risk-settings-persistence.md)（版番号楽観排他・踏襲）、[IADR-0020](IADR-0020_notification-safe-outbound.md)（確定通知の購読先）、[IADR-0021](IADR-0021_trading-assumptions-configuration.md)（AssumptionsVersion）

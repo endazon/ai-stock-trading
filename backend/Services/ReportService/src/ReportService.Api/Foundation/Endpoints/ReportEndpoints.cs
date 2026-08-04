@@ -19,7 +19,7 @@ using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 namespace AiStockTrading.Report.Api.Foundation.Endpoints;
 
 // FR-06/07, UC-03〜05, ADR-0003: 報告書のドラフト管理・確定・照会エンドポイント。確定は OwnerOnly（利用者のみ・Keycloak
-// trading-owner）。生成AI・自動処理は確定できない（ADR-0003/0007）。確定の遷移時に ReportConfirmed を発行する。
+// trading-owner）。生成AI・自動処理は確定できない（ADR-0003）。確定の遷移時に ReportConfirmed を発行する。
 internal static class ReportEndpoints
 {
     public static IEndpointRouteBuilder MapReportEndpoints(this IEndpointRouteBuilder app)

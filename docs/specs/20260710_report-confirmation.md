@@ -25,7 +25,7 @@ plan_refs:
 - ユースケース（UC）: UC-03〜05（報告書の確定）
 - 技術検討: `04_report-templates.md`（frontmatter＝report_type/period/based_on/assumptions_version/confirmed_at、確定した日報の
   「翌営業日の目標」が取引方針として有効化）、`04_workflows/03_reporting-cycle.md`（確定で方針有効化）
-- ADR: ADR-0001（新規サービス）、FR-06/FR-07（確定は利用者のみ）、ADR-0003（確定前方針は不適用）
+- ADR: ADR-0001（新規サービス）、ADR-0003（確定は利用者のみ・確定前方針は不適用）
 - 関連 IADR: 本作業で新規 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)。版番号確定は [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md) 踏襲
 - 対象 Issue: #14（Slice A）
 

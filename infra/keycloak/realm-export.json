@@ -6,7 +6,7 @@
     "realm": [
       {
         "name": "trading-owner",
-        "description": "dev: OwnerOnly (ADR-0007 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion."
+        "description": "dev: OwnerOnly (ADR-0003 / ADR-0007 / ADR-0008 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion."
       },
       {
         "name": "trading-service",
