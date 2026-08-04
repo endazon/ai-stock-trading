@@ -1,8 +1,8 @@
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
-using MassTransit;
 using Microsoft.Extensions.Logging;
+using Wolverine;
 using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
@@ -10,19 +10,26 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 // FR-02, UC-01, IADR-0023: 定時系統の合流点。情報収集の完了（InformationCollected）を購読し、監視銘柄（watchlist）を巡回して
 // 市場開場中のもののみ AI 判断を実行する。判断が成立（発注意図あり）した銘柄について TradeDecisionMade を発行する。
 // 休場日（市場カレンダー閉場）の銘柄はサイクルを起動しない。
-internal sealed class InformationCollectedConsumer(
+//
+// ADR-0013, IADR-0129, #354: MassTransit の IConsumer<InformationCollected> から Wolverine のハンドラへ移行した。
+// ConsumeContext<T> は消え、メッセージ本体・IMessageBus・CancellationToken をメソッド引数で受け取る。
+// IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
+public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
     IMarketCalendar calendar,
     IClock clock,
-    ILogger<InformationCollectedConsumer> logger) : IConsumer<InformationCollected>
+    ILogger<InformationCollectedHandler> logger)
 {
-    public async Task Consume(ConsumeContext<InformationCollected> context)
+    public async Task Handle(InformationCollected message, IMessageBus bus, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(bus);
+
         var now = clock.UtcNow;
 
         // FR-02, IADR-0095: 権威源（市場監視 #10）から当該サイクルの監視銘柄を照会する（実装未接続/失敗時は構成ベースへ倒す）。
-        var watchlistSymbols = await watchlist.GetWatchlistAsync(context.CancellationToken).ConfigureAwait(false);
+        var watchlistSymbols = await watchlist.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var watched in watchlistSymbols)
         {
@@ -38,7 +45,7 @@ internal sealed class InformationCollectedConsumer(
             try
             {
                 var decision = await decisionService
-                    .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), context.CancellationToken)
+                    .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), cancellationToken)
                     .ConfigureAwait(false);
 
                 if (decision is null)
@@ -47,9 +54,9 @@ internal sealed class InformationCollectedConsumer(
                 logger.LogInformation(
                     "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity}",
                     decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity);
-                await context.Publish(decision, context.CancellationToken).ConfigureAwait(false);
+                await bus.PublishAsync(decision).ConfigureAwait(false);
             }
-            catch (Exception ex) when (!context.CancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "定時サイクルの銘柄処理でエラー: {Symbol}。この銘柄をスキップし継続します。", watched.Symbol);
             }

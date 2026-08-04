@@ -507,3 +507,31 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   誤解も、名前で分離できるという誤解も生まないため）。
 
 合格数: 18 / 23 / 9 / 17（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+#### TradeDecisionService
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `TradeDecisionService.Infrastructure.Tests/PriceMovementDetectedConsumerTests.cs` | `方針ありでBuy判断ならTradeDecisionMadeを発行する` | `harness.Bus.Publish` ＋ `Consumed` ＋ `Published` ＋ `PositionEffect.Open` | `InvokeMessageAndWaitAsync` ＋ `session.Executed` ＋ `session.Sent` ＋ `PositionEffect.Open` **＋ 宛先 exchange の実測固定** | 1〜4 充足・5（強化） |
+| 同上 | `休場日は判断せず発行しない_祝日ガード` / `確定済み日報が無ければ発行しない` | `Consumed` true ＋ `Published<TradeDecisionMade>` false | `session.Executed` 非空 ＋ `session.Sent` 空 | 1〜4 充足 |
+| `TradeDecisionService.Infrastructure.Tests/InformationCollectedConsumerTests.cs` | `開場中は監視銘柄について判断し_TradeDecisionMade_を発行する` / `休場日は判断せず発行しない` / `一銘柄の失敗は他銘柄の処理を止めない_重複発注防止` / `監視銘柄が空なら発行しない` | `harness.Consumed` / `harness.Published`（件数 `ContainSingle`・銘柄 `7203`） | `session.Executed` / `session.Sent`（件数・銘柄の期待値は不変） | 1〜4 充足 |
+| `TradeDecisionService.Infrastructure.Tests/PublishingLlmUsageReporterTests.cs` | `trade_decision_は_sonnet_5_の単価で計上する` / `報告書の種別ごとのモデルでも実効単価で計上する`（3 ケース）/ `未知のモデルは最大単価で計上する`（2 ケース）/ `単価未設定でも金額_0_で発行する` | `harness.Bus` を注入 ＋ `harness.Published.Select<LlmCostIncurred>().Single()` の金額・時刻 | スコープから解決した `IMessageBus` を注入 ＋ `session.Sent.MessagesOf<LlmCostIncurred>().Single()` の金額・時刻 | 1〜4 充足（金額の期待値は 1 つも変えていない） |
+| `TradeDecisionService.Infrastructure.Tests/PublishingDailyPolicyUnconfirmedNotifierTests.cs` | `初回は営業日つきで発行する` / `同一営業日の再通知は抑止する` / `翌営業日には再通知する` | `harness.Bus` を注入 ＋ `harness.Published...HaveCount(1|2)` | `IWolverineRuntime` を注入 ＋ `session.Sent...HaveCount(1|2)`（通知の呼び出し順・回数・時刻の進め方は不変。追跡ブロックへ入れるため補助メソッドへ括り出した） | 1〜4 充足 |
+| `TradeDecisionService.Api.Tests/LlmPricingWiringTests.cs` | `モデル別単価が計上額に反映される` / `表に無いモデルは最大単価で計上される` / `従来キーだけの構成は従来どおり計上される` / `単価未設定なら_0_円で計上される` | `ITestHarness` ＋ `harness.Published...Single().Amount` | `factory.Services.ExecuteAndWaitAsync` ＋ `session.Sent.MessagesOf<LlmCostIncurred>().Single().Amount` | 1〜4 充足 |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `TradeDecisionService.Api.Tests` の private `Factory` 11 個（`CurrentPriceProviderSelectionTests` ほか） | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => x.AddConsumer<PriceMovementDetectedConsumer>())` → `DisableAllExternalWolverineTransports()` |
+
+実装側の特記:
+
+- `PriceMovementDetectedConsumer` → **`PriceMovementDetectedHandler`**、`InformationCollectedConsumer` → **`InformationCollectedHandler`**（いずれも `public sealed`）。
+- `PublishingLlmUsageReporter` は **scoped** なので `IPublishEndpoint` → `IMessageBus`（そのまま置換できる）。
+- `PublishingDailyPolicyUnconfirmedNotifier` は **singleton** なので Report と同じく `IBus` → `IWolverineRuntime` ＋ `new MessageBus(runtime)`。
+- **落とし穴（実測）**: ルーティングを構成せずに `StubAllExternalTransports()` だけのホストで発行すると、
+  宛先が 1 つも無いため**送信そのものが起きず** `session.Sent` が空になる（例外にもならない）。
+  発行を検証するテストは本番と同じ `UseAiStockTradingRabbitMq(...)` を通したうえで stub へ倒す必要がある。
+
+合格数: 48 / 69 / 49 / 138（Api / Application / Domain / Infrastructure）＝移行前と同数。

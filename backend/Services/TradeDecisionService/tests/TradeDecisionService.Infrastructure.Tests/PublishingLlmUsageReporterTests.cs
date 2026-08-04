@@ -2,11 +2,13 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
@@ -14,8 +16,13 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
 // NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0122: 応答が名乗った実効モデルの単価で計上額を決める。
 // 用途別モデル割当（ADR-0014 / MSP IADR-0112）で trade-decision=claude-sonnet-5 になったため、
 // opus 単価（¥0.819/¥4.093）のままでは約 2.5 倍の過大計上になる（#303）。
+//
+// ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（harness.Bus + harness.Published）から
+// Wolverine.Tracking（IMessageBus + session.Sent）へ移行した。表明の意味は同じ
+//（発行された LlmCostIncurred の金額・時刻を見る）。
 public class PublishingLlmUsageReporterTests
 {
+    private const string ServiceName = "ai-stock-trading.trade-decision-service";
     private static readonly DateTimeOffset Now = new(2026, 7, 31, 1, 0, 0, TimeSpan.Zero);
 
     private sealed class FixedClock : IClock
@@ -35,19 +42,27 @@ public class PublishingLlmUsageReporterTests
 
     private static async Task<decimal> ReportAsync(LlmUsage usage, LlmPriceTable prices)
     {
-        var provider = new ServiceCollection().AddMassTransitTestHarness().BuildServiceProvider(true);
-        await using var _ = provider;
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
+                // ルーティングを入れないと発行先が 1 つも無く、送信そのものが起きない。
+                opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
+        // 本アダプタは scoped。Wolverine の IMessageBus も scoped であり、スコープから解決する。
+        using var scope = host.Services.CreateScope();
         var reporter = new PublishingLlmUsageReporter(
-            harness.Bus, new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
+            scope.ServiceProvider.GetRequiredService<IMessageBus>(),
+            new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
 
-        await reporter.ReportAsync(usage);
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => reporter.ReportAsync(usage));
 
-        var published = harness.Published.Select<LlmCostIncurred>().Single().Context.Message;
+        var published = session.Sent.MessagesOf<LlmCostIncurred>().Single();
         published.At.Should().Be(Now);
-        await harness.Stop();
+        await host.StopAsync();
         return published.Amount;
     }
 

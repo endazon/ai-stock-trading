@@ -4,16 +4,21 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
 
 // FR-02, UC-01, IADR-0023: 定時系統の合流。InformationCollected 購読 → watchlist 巡回 → 開場銘柄のみ判断 → TradeDecisionMade 発行。
+//
+// ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（AddMassTransitTestHarness + harness.Consumed/Published）
+// から Wolverine.Tracking（TrackActivity + session.Executed/Sent）へ移行した。表明の意味は同じ。
 public class InformationCollectedConsumerTests
 {
     private const string BuyJson =
@@ -52,18 +57,27 @@ public class InformationCollectedConsumerTests
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
-    private static ServiceProvider Build(IWatchlistProvider watchlist, IMarketCalendar calendar, ILlmCompletionClient? llm = null) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IClock, SystemClock>()
-            .AddSingleton(calendar)
-            .AddSingleton(watchlist)
-            .AddSingleton(llm ?? new FakeLlm(BuyJson))
-            .AddSingleton<IDailyPolicyProvider, FakePolicy>()
-            .AddSingleton<ISizingContextProvider, FakeSizing>()
-            .AddScoped<AppSvc>()
-            .AddMassTransitTestHarness(x => x.AddConsumer<InformationCollectedConsumer>())
-            .BuildServiceProvider(true);
+    private const string ServiceName = "ai-stock-trading.trade-decision-service";
+
+    private static Task<IHost> BuildAsync(
+        IWatchlistProvider watchlist, IMarketCalendar calendar, ILlmCompletionClient? llm = null) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, SystemClock>();
+                opts.Services.AddSingleton(calendar);
+                opts.Services.AddSingleton(watchlist);
+                opts.Services.AddSingleton(llm ?? new FakeLlm(BuyJson));
+                opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
+                opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
+                opts.Services.AddScoped<AppSvc>();
+
+                opts.UseAiStockTradingRabbitMq(
+                    ServiceName, "amqp://guest:guest@localhost:5672",
+                    typeof(InformationCollectedHandler).Assembly);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
     // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の監視銘柄を用いる
     // （外貨建てはレート未解決だと見送りになる。換算そのものの検証は Application テストと FxWiringTests が担う）。
@@ -71,75 +85,71 @@ public class InformationCollectedConsumerTests
     [Fact]
     public async Task 開場中は監視銘柄について判断し_TradeDecisionMade_を発行する()
     {
-        await using var provider = Build(
+        using var host = await BuildAsync(
             new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: true));
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
 
-        await harness.Bus.Publish(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
-        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
-        var decision = harness.Published.Select<TradeDecisionMade>().First().Context.Message;
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
+        var decision = session.Sent.MessagesOf<TradeDecisionMade>().First();
         decision.Intent.Symbol.Should().Be("7203");
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 休場日は判断せず発行しない()
     {
-        await using var provider = Build(
+        using var host = await BuildAsync(
             new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: false));
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
 
-        await harness.Bus.Publish(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
-        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 一銘柄の失敗は他銘柄の処理を止めない_重複発注防止()
     {
         // IADR-0023: 1 銘柄の判断失敗でサイクル全体を再配送させず、他銘柄は継続して発行する。
-        await using var provider = Build(
+        using var host = await BuildAsync(
             new FakeWatchlist(
                 new WatchedSymbol("BADSYM", Market.Japan),
                 new WatchedSymbol("7203", Market.Japan)),
             new CalendarStub(open: true),
             new ThrowingForSymbolLlm("BADSYM", BuyJson));
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
 
-        await harness.Bus.Publish(new InformationCollected(Guid.NewGuid(), 1, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 1, DateTimeOffset.UtcNow));
 
-        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         // 7203 の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
-        harness.Published.Select<TradeDecisionMade>().Should().ContainSingle();
-        harness.Published.Select<TradeDecisionMade>().First().Context.Message.Intent.Symbol.Should().Be("7203");
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle();
+        session.Sent.MessagesOf<TradeDecisionMade>().First().Intent.Symbol.Should().Be("7203");
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 監視銘柄が空なら発行しない()
     {
-        await using var provider = Build(new FakeWatchlist(), new CalendarStub(open: true));
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildAsync(new FakeWatchlist(), new CalendarStub(open: true));
 
-        await harness.Bus.Publish(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
-        (await harness.Consumed.Any<InformationCollected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 }

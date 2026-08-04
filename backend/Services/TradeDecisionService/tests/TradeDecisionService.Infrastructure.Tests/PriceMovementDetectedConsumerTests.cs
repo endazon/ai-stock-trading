@@ -4,16 +4,22 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
 
 // FR-04, UC-02: PriceMovementDetected 購読 → 判断成立時のみ TradeDecisionMade を発行することを検証する。
+//
+// ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（AddMassTransitTestHarness + harness.Consumed/Published）
+// から Wolverine.Tracking（TrackActivity + session.Executed/Sent）へ移行した。表明の意味は同じ。
+// 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
 public class PriceMovementDetectedConsumerTests
 {
     private sealed class FakeLlm(string output) : ILlmCompletionClient
@@ -37,19 +43,25 @@ public class PriceMovementDetectedConsumerTests
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
-    private static ServiceProvider Build(string llmOutput, DailyPolicy? policy, bool open = true)
-    {
-        return new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IClock, SystemClock>()
-            .AddSingleton<IMarketCalendar>(new CalendarStub(open))
-            .AddSingleton<ILlmCompletionClient>(new FakeLlm(llmOutput))
-            .AddSingleton<IDailyPolicyProvider>(new FakePolicy(policy))
-            .AddSingleton<ISizingContextProvider, FakeSizing>()
-            .AddScoped<AppSvc>()
-            .AddMassTransitTestHarness(x => x.AddConsumer<PriceMovementDetectedConsumer>())
-            .BuildServiceProvider(true);
-    }
+    private const string ServiceName = "ai-stock-trading.trade-decision-service";
+
+    private static Task<IHost> BuildAsync(string llmOutput, DailyPolicy? policy, bool open = true) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, SystemClock>();
+                opts.Services.AddSingleton<IMarketCalendar>(new CalendarStub(open));
+                opts.Services.AddSingleton<ILlmCompletionClient>(new FakeLlm(llmOutput));
+                opts.Services.AddSingleton<IDailyPolicyProvider>(new FakePolicy(policy));
+                opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
+                opts.Services.AddScoped<AppSvc>();
+
+                opts.UseAiStockTradingRabbitMq(
+                    ServiceName, "amqp://guest:guest@localhost:5672",
+                    typeof(PriceMovementDetectedHandler).Assembly);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
     // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株）の銘柄を用いる
     // （外貨建てはレート未解決だと見送りになる。換算そのものの検証は Application テストと FxWiringTests が担う）。
@@ -59,49 +71,49 @@ public class PriceMovementDetectedConsumerTests
     [Fact]
     public async Task 方針ありでBuy判断ならTradeDecisionMadeを発行する()
     {
-        await using var provider = Build(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"));
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"));
 
-        await harness.Bus.Publish(Trigger());
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
 
-        (await harness.Consumed.Any<PriceMovementDetected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeTrue();
-        var decision = harness.Published.Select<TradeDecisionMade>().First().Context.Message;
+        session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
+        var decision = session.Sent.MessagesOf<TradeDecisionMade>().First();
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
 
-        await harness.Stop();
+        // IADR-0129 決定 2: 宛先はメッセージ型ごとの共有 fanout exchange（RiskManagement / MarketMonitor / Audit が bind する）。
+        session.Sent.Envelopes().Should().Contain(e =>
+            e.Message is TradeDecisionMade
+            && e.Destination!.ToString()
+                == "rabbitmq://exchange/AiStockTrading.Shared.Contracts.Events.TradeDecisionMade");
+
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 休場日は判断せず発行しない_祝日ガード()
     {
         // FR-02, IADR-0023: イベント駆動系統も市場カレンダー閉場ならスキップする。
-        await using var provider = Build(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"), open: false);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"), open: false);
 
-        await harness.Bus.Publish(Trigger());
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
 
-        (await harness.Consumed.Any<PriceMovementDetected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
+        session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 確定済み日報が無ければ発行しない()
     {
         // FR-07: 方針なし → 取引しない。
-        await using var provider = Build(BuyJson, policy: null);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildAsync(BuyJson, policy: null);
 
-        await harness.Bus.Publish(Trigger());
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
 
-        (await harness.Consumed.Any<PriceMovementDetected>()).Should().BeTrue();
-        (await harness.Published.Any<TradeDecisionMade>()).Should().BeFalse();
+        session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 }

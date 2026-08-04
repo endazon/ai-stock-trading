@@ -1,8 +1,8 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TradeDecision.Application.Ports;
-using MassTransit;
 using Microsoft.Extensions.Logging;
+using Wolverine;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
@@ -13,7 +13,7 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 // trade-decision=sonnet-5 / report-*=fable-5・opus-5・sonnet-5 と混在するため）。未知モデルの倒し先は
 // LlmPriceTable が持つ（0 ではなく最大単価＝過小計上を作らない）。
 internal sealed class PublishingLlmUsageReporter(
-    IPublishEndpoint publishEndpoint,
+    IMessageBus bus,
     IClock clock,
     LlmPriceTable priceTable,
     ILogger<PublishingLlmUsageReporter> logger) : ILlmUsageReporter
@@ -22,7 +22,8 @@ internal sealed class PublishingLlmUsageReporter(
     {
         var price = priceTable.Resolve(usage.Model);
         var amount = LlmPricing.Compute(usage.InputTokens, usage.OutputTokens, price);
-        await publishEndpoint.Publish(new LlmCostIncurred(amount, clock.UtcNow), cancellationToken).ConfigureAwait(false);
+        // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
+        await bus.PublishAsync(new LlmCostIncurred(amount, clock.UtcNow)).ConfigureAwait(false);
         logger.LogDebug("LLM 費用計上イベントを発行 model={Model} in={InputTokens} out={OutputTokens} amount={Amount}",
             usage.Model, usage.InputTokens, usage.OutputTokens, amount);
     }

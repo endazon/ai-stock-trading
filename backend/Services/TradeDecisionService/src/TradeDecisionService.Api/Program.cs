@@ -15,17 +15,17 @@ using Microsoft.Extensions.Options;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Serilog;
+using Wolverine;
 using System.Globalization;
 
 const string ServiceName = "ai-stock-trading.trade-decision-service";
 
 // #11 Slice A / #21 (FR-02), IADR-0013/0017/0023: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。
-// 価格変動（PriceMovementDetected・イベント駆動）と収集完了（InformationCollected・定時）の両系統を MassTransit
+// 価格変動（PriceMovementDetected・イベント駆動）と収集完了（InformationCollected・定時）の両系統を Wolverine
 // コンシューマとして購読し、市場カレンダー（IMarketCalendar）で休場日をゲートしつつ取引判断で合流する。判断はステートレス（DB なし）。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ を shim 経由で組む部分）は dev/test/CI の
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ を shim 経由で組む部分）は dev/test/CI の
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 // IADR-0017: 実 LLM/実データはプレースホルダ（安全既定＝取引しない）。実 LLM（platform /complete）・実データは後続。
 var builder = WebApplication.CreateBuilder(args);
@@ -77,7 +77,7 @@ builder.Services.AddScoped<ILlmUsageReporter>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     return new PublishingLlmUsageReporter(
-        sp.GetRequiredService<IPublishEndpoint>(),
+        sp.GetRequiredService<IMessageBus>(),
         sp.GetRequiredService<IClock>(),
         BuildLlmPriceTable(cfg),
         sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>());
@@ -269,20 +269,14 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
 
 builder.Services.AddScoped<TradeDecisionService>();
 
-// ADR-0003, IADR-0011, IADR-0023: MassTransit（RabbitMQ）。価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
+// ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<PriceMovementDetectedConsumer>();
-    x.AddConsumer<InformationCollectedConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは明示登録ではなくアセンブリ走査で発見されるため、
+// ハンドラを持つアセンブリ（Infrastructure）を明示する。キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(PriceMovementDetectedHandler).Assembly));
 
 var app = builder.Build();
 
