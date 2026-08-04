@@ -2,7 +2,7 @@
 title: IADR-0010 リスク管理サービスの層構成とホスト化スライス方針
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, ADR-0001, ADR-0003, ADR-0007]
+related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, ADR-0001, ADR-0003, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -22,7 +22,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-10（リスク統制）、FR-11（監査）、FR-19（取引ガード）、FR-20（段階ゲート）、ADR-0001（platform 拡張・Database per Service）、ADR-0003（AI 判断のガードレール）、ADR-0007（利用者のみ変更・変更履歴）
+- 関連する計画書 ID: FR-10（リスク統制）、FR-11（監査）、FR-19（取引ガード）、FR-20（段階ゲート）、ADR-0001（platform 拡張・Database per Service）、ADR-0003（AI 判断のガードレール）、ADR-0007（ガード設定の変更は利用者のみ・変更履歴）、ADR-0008（段階ゲート）
 - 対象 Issue: [#12](https://github.com/endazon/ai-stock-trading/issues/12)
 - 関連する実装仕様書: [20260709_risk-management-application](../specs/20260709_risk-management-application.md)
 - 関連 IADR: [IADR-0001](IADR-0001_repo-structure-and-stack.md)（リポ構成）、[IADR-0008](IADR-0008_daily-loss-limit-basis.md)（ロックアウトはホスト責務）
@@ -62,7 +62,7 @@ Keycloak 認可エンドポイントが必要になる。これらを 1 つの P
   - Slice C: 損切りの機械執行（#10 の損切りイベント契約確定後）。
 - ポートで永続化・メッセージング・認可を抽象化し、Application 層は特定インフラに依存しない。生成AI・自動処理からの
   設定変更を受け付けない不変性は Application 層の API 設計（変更はアクター・理由必須）＋ホスト層の Keycloak 認可の
-  二段で担保する（ADR-0003/0007）。
+  二段で担保する（ガード設定: ADR-0007 / 統制上限・kill switch: ADR-0003 / 段階設定: ADR-0008）。
 
 ## 理由
 

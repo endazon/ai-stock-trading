@@ -2,7 +2,7 @@
 title: リスク管理 Worker ホスト（MassTransit 消費者・PostgreSQL 永続化・Keycloak 認可エンドポイント）
 type: spec
 status: review
-related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0001, ADR-0003, ADR-0007]
+related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0001, ADR-0003, ADR-0007, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -25,7 +25,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-10（リスク統制）、FR-11（監査・変更履歴）、FR-17（設定の一元管理・バージョン）、FR-19（取引ガード）、FR-20（段階ゲート）
 - ユースケース（UC）: UC-01/UC-02（取引サイクルの判定段）、UC-06（設定変更・緊急停止）
-- ADR: ADR-0001（platform 再利用・Database per Service）、ADR-0003（判定は決定的コード・kill switch・損切り機械執行）、ADR-0007（変更は利用者のみ・履歴記録）
+- ADR: ADR-0001（platform 再利用・Database per Service）、ADR-0003（判定は決定的コード・kill switch・損切り機械執行）、ADR-0007（ガード設定の変更は利用者のみ・履歴記録）、ADR-0008（段階ゲート）
 - 関連 IADR: [IADR-0010](../adr/IADR-0010_risk-service-layering-and-slicing.md)（層構成・スライス）、[IADR-0011](../adr/IADR-0011_foundation-min-port.md)（Foundation）、本作業で新規 [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md)（設定永続化＝JSONB＋楽観排他）
 - 対象 Issue: #12（Slice B）
 
@@ -35,7 +35,7 @@ Slice A で `OrderScreeningService` 等の判定・状態管理ロジックを�
 バス再試行・可観測性・認証・ヘルスを用意した。本作業はこれらを配線し、`TradeDecisionMade` を購読して
 `OrderApproved`/`OrderRejected` を発行する稼働サービスにする。設定・kill switch・ロックアウト・変更履歴を
 PostgreSQL に永続化し（ADR-0001 Database per Service）、kill switch 操作・設定変更を利用者のみの HTTP エンドポイントで
-提供する（ADR-0007・Keycloak `OwnerOnly`）。
+提供する（ガード設定: ADR-0007 / 統制上限・kill switch: ADR-0003 / 段階設定: ADR-0008。認可基盤は Keycloak `OwnerOnly`）。
 
 ## 対象範囲
 
@@ -76,7 +76,7 @@ Serilog（`ConfigureAiStockTradingSerilog`）／`AddAiStockTradingObservability`
 
 ### 認可エンドポイント（`Foundation/Endpoints/RiskControlEndpoints.cs`）
 
-`/risk-controls` グループ、すべて `RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)`（利用者のみ・ADR-0007）。
+`/risk-controls` グループ、すべて `RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly)`（利用者のみ。ガード設定: ADR-0007 / 統制上限・kill switch: ADR-0003 / 段階設定: ADR-0008）。
 グループにエンドポイントフィルタを付け、検証失敗（アクター/理由欠如の `ArgumentException`）を **400**、設定の楽観排他競合
 （`DbUpdateConcurrencyException`・IADR-0012）を **409** に写像する（既定の 500 を避ける）:
 - `POST /kill-switch/engage`・`POST /kill-switch/disengage`（body: reason）→ `KillSwitchService`。actor はトークンの名前。
