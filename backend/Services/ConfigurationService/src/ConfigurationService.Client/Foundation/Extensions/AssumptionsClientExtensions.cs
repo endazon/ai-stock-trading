@@ -11,8 +11,8 @@ namespace AiStockTrading.Configuration.Client.Foundation.Extensions;
 // FR-17, IADR-0063 決定 3/6: バージョン付き全体前提条件の解決を消費側サービスへ 1 行で配線する。
 //
 //   builder.Services.AddAiStockTradingAssumptions(builder.Configuration);
-//   // MassTransit 側で版の追随を有効にする（任意・推奨）:
-//   x.AddConsumer<AssumptionsChangedConsumer>();
+//   // メッセージング側で版の追随を有効にする（任意・推奨。ADR-0013 / IADR-0129 / #354 で Wolverine へ移行）:
+//   opts.UseAiStockTradingRabbitMq(ServiceName, ..., typeof(AssumptionsChangedHandler).Assembly);
 //
 // 安全既定（決定 6）: `Configuration:BaseUrl` 未設定/不正 URI なら HTTP を構築せず DefaultAssumptionsProvider
 // （既定値・未解決）を登録する。s2s トークン（ServiceAuth:ClientId/ClientSecret）未設定ならトークンを付けない
@@ -52,8 +52,8 @@ public static class AssumptionsClientExtensions
                 ReadTtl(config));
         });
 
-        // 無効化の受け口は provider と同一インスタンス（BaseUrl 未設定時は no-op 実装）。購読（AssumptionsChangedConsumer）は
-        // 消費側 Program の MassTransit 登録で静的に決まるため、provider の選択に関わらず常に解決できる必要がある。
+        // 無効化の受け口は provider と同一インスタンス（BaseUrl 未設定時は no-op 実装）。購読（AssumptionsChangedHandler）は
+        // 消費側 Program のハンドラ発見範囲で静的に決まるため、provider の選択に関わらず常に解決できる必要がある。
         services.AddSingleton<IAssumptionsCacheInvalidator>(sp =>
             (IAssumptionsCacheInvalidator)sp.GetRequiredService<IAssumptionsProvider>());
 
