@@ -125,7 +125,11 @@ AI の実行中にツールの権限拒否が 7 件発生した（CI には承�
 - [x] `Bash(cd:*)` を**許可リストに追加していない**。
 - [x] `cd` を禁止する記述がレビュー用プロンプトと実装用 `--append-system-prompt` の両方にある。
 - [x] `--allowedTools` / `--append-system-prompt` がそれぞれ**1 行・二重引用符 1 組**を保っている
-      （改行すると後続行が別引数になり指示が壊れる）。
+      （改行すると後続行が別引数になり指示が壊れる）。対象は実フラグ **3 行**である
+      （`claude-code-review.yml` の `--allowedTools` 1 行、`claude-coding.yml` の
+      `--append-system-prompt` と `--allowedTools` の 2 行）。`claude-code-review.yml:190` にも
+      `--allowedTools "…"` を含む行があるが、これは**記法を説明するコメント**であって
+      フラグではない（検査スクリプトが素朴に文字列一致するため 4 件目として数え上げてしまう）。
 - [x] 本リポジトリの `scripts/check-ai-workflow-config.js`、および `genericBashDrift` を持つキット版の
       検査器の**両方**で ERROR 0 件。
 
@@ -139,7 +143,7 @@ AI の実行中にツールの権限拒否が 7 件発生した（CI には承�
 | 両ワークフローの `--allowedTools` 行とキットの同行の比較 | 完全一致 | **両方とも完全一致** |
 | `--allowedTools` のエントリ数（review） | 38 → 48 | **38 → 48** |
 | `--allowedTools` のエントリ数（coding） | 45 → 55 | **45 → 55** |
-| `--allowedTools` / `--append-system-prompt` の引用符ペア | 各行ちょうど 2 個 | **全 4 行 OK**（改行なし） |
+| `--allowedTools` / `--append-system-prompt` の引用符ペア | 実フラグ 3 行が各行ちょうど 2 個 | **3 行とも OK**（改行なし。ほかに検査へ引っ掛かる 1 行はコメント） |
 | `node scripts/check-ai-workflow-config.js` | ERROR 0 件 | **問題なし** |
 | キット版検査器（`genericBashDrift` 込み）を `--dir` 実走 | ERROR 0 件 | **問題なし** |
 
