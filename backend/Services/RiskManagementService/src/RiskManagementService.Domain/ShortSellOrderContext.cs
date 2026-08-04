@@ -26,6 +26,7 @@ public record ShortSellOrderContext
     /// <summary>
     /// 強制買戻し（buy-in）由来の空売り禁止の解除日。null は禁止なし。ADR-0016 決定4（30 日間）。
     /// 解除日の算出は <see cref="ShortSellingLimits.BuyInBanUntil"/>。
+    /// 期間中の拒否理由は <c>BuyInBanned</c> であり、<c>BorrowUnavailable</c> ではない（決定10）。
     /// </summary>
     public DateOnly? BuyInBanUntil { get; init; }
 

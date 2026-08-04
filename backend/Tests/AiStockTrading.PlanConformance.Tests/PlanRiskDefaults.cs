@@ -58,11 +58,14 @@ public static class PlanRiskDefaults
                 + "ExposureRatioCap, MaintenanceMarginThreshold, MaintenanceRecoveryTargetOffset, "
                 + "PerSymbolCapRatio, PriceFloorUsd",
             "ADR-0016 決定2,3,4,7,9 / UC-06"),
+        // 2026-08-04 改訂: 7 種 → 9 種（`StopOrderRequired` の追認・`BuyInBanned` の新設）。
+        // `BuyInBanned` を `BorrowUnavailable` へ写像してはならない（決定10 の 2026-08-04 追記）。
         new(
             "RejectionReason.ShortSellReasons",
-            "BorrowCostExceeded, BorrowUnavailable, DividendRecordDateNear, MaintenanceMarginBreach, "
-                + "ShortExposureExceeded, ShortPriceFloorBreach, ShortSellDisabled",
-            "ADR-0016 決定10（7 種。いずれもクラス A）"),
+            "BorrowCostExceeded, BorrowUnavailable, BuyInBanned, DividendRecordDateNear, "
+                + "MaintenanceMarginBreach, ShortExposureExceeded, ShortPriceFloorBreach, "
+                + "ShortSellDisabled, StopOrderRequired",
+            "ADR-0016 決定10（9 種。いずれもクラス A。2026-08-04 に 7 種から改訂）"),
 
         // --- 段階ゲートと発注先（FR-20。段階と発注先は独立した 2 軸） ---
         new("BrokerProvider.Values", "InternalPaper, MoomooReal, MoomooSimulate", $"{Assumptions5} / FR-20"),

@@ -28,16 +28,26 @@ public static class ActualDefaults
     /// <summary>発注先（Broker Provider）の 3 値を表す想定の enum 名（FR-20）。#334 が追加する。</summary>
     private const string BrokerProviderTypeName = "BrokerProvider";
 
-    /// <summary>ADR-0016 決定10 の空売り拒否理由 7 種。</summary>
+    /// <summary>
+    /// ADR-0016 決定10 の空売り拒否理由 9 種（2026-08-04 に 7 種から改訂。#374）。
+    /// <para>
+    /// 本配列は**計画が名指しする候補名**であり、実装に定義されているものだけが抽出値へ現れる
+    /// （<see cref="PresentEnumNames{TEnum}"/>）。候補を落とすと、実装に有っても計画適合検査からは
+    /// 見えなくなる——`StopOrderRequired` は #329 で実装済みでありながら本配列に無かったため、
+    /// 計画側が 9 種へ改訂されるまで抽出値に現れていなかった（IADR-0134 決定3）。
+    /// </para>
+    /// </summary>
     private static readonly string[] ShortSellRejectionReasons =
     [
         "BorrowCostExceeded",
         "BorrowUnavailable",
+        "BuyInBanned",
         "DividendRecordDateNear",
         "MaintenanceMarginBreach",
         "ShortExposureExceeded",
         "ShortPriceFloorBreach",
         "ShortSellDisabled",
+        "StopOrderRequired",
     ];
 
     public static IReadOnlyDictionary<string, string> Snapshot()

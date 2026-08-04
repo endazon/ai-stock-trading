@@ -13,7 +13,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 //   (5) 株価 $5.00 未満は対象外                    → ShortPriceFloorBreach
 //   (6) 空売り比率 50% 上限                        → ShortExposureExceeded
 //   (7) 権利確定日前日の新規空売り禁止              → DividendRecordDateNear
-//   (8) 強制買戻し検知 → 30 日禁止                  → BorrowUnavailable
+//   (8) 強制買戻し検知 → 30 日禁止                  → BuyInBanned（**BorrowUnavailable へ写像しない**）
 public static class ShortSellEvaluator
 {
     /// <summary>
@@ -95,15 +95,15 @@ public static class ShortSellEvaluator
             reasons.Add(RejectionReason.BorrowCostExceeded);
         }
 
-        // (8) 強制買戻し（buy-in）検知銘柄は 30 日間空売りしない。ADR-0016 決定4。
-        // 借株需給の逼迫が理由であるため借株不可と同じ扱いとし、**禁止銘柄（クラス C）には混ぜない**
-        // （市況由来の事象を「AI が禁止事項を犯そうとした件数」に混入させない。決定10）。
+        // (8) 強制買戻し（buy-in）検知銘柄は 30 日間空売りしない。ADR-0016 決定4/決定10。
+        // 専用の理由 BuyInBanned で記録する。**BorrowUnavailable へ写像しない**（決定10 の 2026-08-04 追記）——
+        // BorrowUnavailable は都度の借株需給による locate 失敗、BuyInBanned は期間の経過で解除される
+        // 禁止状態であり、原因も解除条件も異なる。写像すると監査ログ（FR-11）の理由が実態と食い違う。
+        // **禁止銘柄（BannedSymbol・クラス C）にも混ぜない**（市況由来の事象を「AI が禁止事項を
+        // 犯そうとした件数」に混入させない）。30 日リストは BannedSymbol とは別の空売り専用リストである。
         if (context.BuyInBanUntil is { } banUntil && context.Today < banUntil)
         {
-            if (!reasons.Contains(RejectionReason.BorrowUnavailable))
-            {
-                reasons.Add(RejectionReason.BorrowUnavailable);
-            }
+            reasons.Add(RejectionReason.BuyInBanned);
         }
 
         // (7) 権利確定日の**前日**は新規空売りを禁止する。ADR-0016 決定5。

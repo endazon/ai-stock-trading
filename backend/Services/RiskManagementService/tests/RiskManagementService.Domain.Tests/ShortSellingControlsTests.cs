@@ -254,7 +254,8 @@ public class ShortSellingControlsTests
         result.Reasons.Contains(RejectionReason.DividendRecordDateNear).Should().Be(expectedRejected);
     }
 
-    // FR-10 (8), ADR-0016 決定4: 強制買戻し（buy-in）を検知した銘柄は **30 日間**空売りを禁止する。
+    // FR-10 (8), ADR-0016 決定4/決定10: 強制買戻し（buy-in）を検知した銘柄は **30 日間**空売りを禁止する。
+    // 理由コードは専用の BuyInBanned である（2026-08-04 の計画改訂・#374）。
     [Theory]
     [InlineData(0, true)]   // 検知当日
     [InlineData(29, true)]  // 29 日後（禁止中）
@@ -267,7 +268,7 @@ public class ShortSellingControlsTests
 
         var result = Evaluate(ShortEntry(1_000m), Context(buyInBanUntil: banUntil));
 
-        result.Reasons.Contains(RejectionReason.BorrowUnavailable).Should().Be(expectedRejected);
+        result.Reasons.Contains(RejectionReason.BuyInBanned).Should().Be(expectedRejected);
     }
 
     // ------------------------------------------------------------------
@@ -342,12 +343,14 @@ public class ShortSellingControlsTests
         regulatory.Should().BeGreaterThanOrEqualTo(ShortSellingLimits.RegulatoryMaintenanceMarginFloor);
     }
 
-    // ADR-0016 決定10: 空売りの拒否理由 7 種は**すべてクラス A**であり、
-    // 「統制違反 0 件」（クラス C 限定）の件数に影響しない。
+    // ADR-0016 決定10: 空売りの拒否理由 9 種は**すべてクラス A**であり、
+    // 「統制違反 0 件」（クラス C 限定）の件数に影響しない（2026-08-04 に 7 種から改訂。#374）。
     [Theory]
     [InlineData(RejectionReason.ShortSellDisabled)]
+    [InlineData(RejectionReason.StopOrderRequired)]
     [InlineData(RejectionReason.BorrowUnavailable)]
     [InlineData(RejectionReason.BorrowCostExceeded)]
+    [InlineData(RejectionReason.BuyInBanned)]
     [InlineData(RejectionReason.ShortExposureExceeded)]
     [InlineData(RejectionReason.MaintenanceMarginBreach)]
     [InlineData(RejectionReason.DividendRecordDateNear)]
@@ -418,9 +421,47 @@ public class ShortSellingControlsTests
             ShortEntry(1_000m), Context(buyInBanUntil: Limits.BuyInBanUntil(Today)));
 
         result.IsApproved.Should().BeFalse();
-        result.Reasons.Should().Contain(RejectionReason.BorrowUnavailable);
+        result.Reasons.Should().Contain(RejectionReason.BuyInBanned);
         result.Reasons.Should().NotContain(RejectionReason.BannedSymbol);
         RejectionReasonClassification.CountsAsControlViolation(result.Reasons).Should().BeFalse();
+    }
+
+    // **否定形**: FR-10 (8), ADR-0016 決定10（2026-08-04 追記）
+    //「**BuyInBanned を BorrowUnavailable へ写像してはならない**」。
+    // BorrowUnavailable は**都度の借株需給**による locate 失敗、BuyInBanned は**期間の経過**で解除される
+    // 禁止状態であり、原因も解除条件も異なる。写像すると監査ログ（FR-11）の理由が実態と食い違い、
+    // 日報・月報の「強制買戻しの発生有無・発生回数」（決定15）を拒否記録から復元できなくなる。
+    // **借株が成立している（locate 済み・料率も上限内）状態で禁止期間だけが効く**ケースで見る。
+    [Fact]
+    public void 強制買戻しの禁止期間中の拒否は借株不可へ写像されない()
+    {
+        var result = Evaluate(
+            ShortEntry(1_000m),
+            Context(
+                borrowAvailable: true,
+                borrowRateAnnual: 0.05m,
+                buyInBanUntil: Limits.BuyInBanUntil(Today)));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.BuyInBanned);
+        result.Reasons.Should().NotContain(
+            RejectionReason.BorrowUnavailable,
+            "禁止期間による拒否を借株不可へ写像すると、原因（期間の経過で解除される禁止 vs 都度の需給）も"
+                + "解除条件も異なる 2 事象が監査ログ上で区別できなくなる（ADR-0016 決定10）");
+        result.Reasons.Should().NotContain(RejectionReason.BorrowCostExceeded);
+    }
+
+    // **否定形**（上の裏面）: 借株不可（locate 失敗）を BuyInBanned へ寄せる逆向きの写像も塞ぐ。
+    // 禁止期間が無い（`buyInBanUntil` が null）のに BuyInBanned が立てば、日報・月報の
+    // 「強制買戻しの発生回数」が実際には起きていない事象で水増しされる。
+    [Fact]
+    public void 借株できないだけの拒否は強制買戻し禁止へ写像されない()
+    {
+        var result = Evaluate(ShortEntry(1_000m), Context(borrowAvailable: false));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.BorrowUnavailable);
+        result.Reasons.Should().NotContain(RejectionReason.BuyInBanned);
     }
 
     // FR-10, ADR-0016 決定1/8: 空売りは**既定で無効**（現物のみ）。実弾解禁は Stage 3 かつ自己資金 $5,000 以上。
