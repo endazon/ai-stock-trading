@@ -24,6 +24,15 @@
     <!-- MassTransit.RabbitMQ は本 PR のどの csproj からも未参照。RabbitMQ 依存を持つ Worker ホスト
          （#12 Slice B）向けのバージョン先行宣言（CPM 一元管理）。ブローカ非依存の core は上の MassTransit。 -->
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.4.1" />
+    <!-- NFR, ADR-0013, IADR-0129, #354: メッセージングとローカルディスパッチは Wolverine（MIT）へ移行する。
+         MassTransit は v9 が商用ライセンス・v8 の OSS サポートが 2026 年末で終了するため（platform ADR-0027）。
+         移行は段階制（#354 第 1〜3 段階）であり、**全サービスの移行が終わるまで上の MassTransit と併存する**。
+         WolverineFx.RuntimeCompilation は必須である: Wolverine 6 系はコア本体からランタイムコンパイラ
+         （Roslyn）を分離しており、既定の TypeLoadMode.Dynamic のままでは起動時に例外で停止する
+         （実測。代替は codegen 事前生成＋TypeLoadMode.Static。IADR-0129 決定 6）。 -->
+    <PackageVersion Include="WolverineFx" Version="6.24.5" />
+    <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.24.5" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.24.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
