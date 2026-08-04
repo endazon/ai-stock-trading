@@ -593,3 +593,33 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   列挙のズレという事故の種そのものが構造的に消えた（列挙を減らしたのではなく、列挙を必要としなくなった）。
 
 合格数: 1 / 113 / 69（Api / Application / Infrastructure）＝移行前と同数。
+
+#### AuditService
+
+購読専用（21 ハンドラ・発行 0。本ユニット最大の購読者）。
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `AuditService.Infrastructure.Tests/AuditConsumerCoverageTests.cs` | `全ドメインイベントに対応する監査コンシューマが存在する` | Audit アセンブリで `IConsumer<T>` を実装する型を集め、契約イベント全 21 種が含まれること | **本番と同じ発見範囲で Wolverine ホストを起こし**、各契約イベントの `runtime.FindInvoker(型)` が `NoHandlerExecutor` でないこと | 1〜4 充足・5（**強化**）。旧は「型の形」を見ていたため「クラスはあるが発見されない」（public でない・メソッド名が規約外）を見逃す。新は実行時の発見結果そのものを見る。`void` → `async Task` になったがテスト名は不変 |
+| `AuditService.Infrastructure.Tests/AuditEventConsumersTests.cs` | `注文チェーンのイベントは同一_DecisionId_相関で記録される` / `訂正取消も同一_DecisionId_相関で注文チェーンに記録される` / `拒否イベントは理由つきで記録される` / `設定変更と報告書確定も監査台帳に記録される` / `費用しきい値到達と情報収集完了も監査台帳に記録される` / `段階遷移も監査台帳に記録される` / `撤退基準到達も段階ゲート相関で監査台帳に記録される` / `バックテストverdictも段階ゲート相関で監査台帳に記録される` / `市場イベントは_EventId_相関で記録される` | `harness.Bus.Publish` ×N ＋ `harness.Consumed.Any<T>()` ＋ 台帳の相関・種別 | `InvokeMessageAndWaitAsync` ×N ＋ `session.Executed.MessagesOf<T>()` ＋ **同じ台帳の表明** | 1〜4 充足 |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `AuditWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => 8 件の AddConsumer)` → `DisableAllExternalWolverineTransports()` |
+| `AuditEventConsumersTests` の `BuildProvider` | 16 件の `AddConsumer` 列挙 → `opts.Discovery.IncludeAssembly(...)` |
+
+実装側の特記:
+
+- `AuditEventConsumers.cs` → **`AuditEventHandlers.cs`**、21 クラスを `*AuditConsumer` → `*AuditHandler`（`public sealed`）。
+- **冪等キーの分岐が構造的に消えた**: 旧 `AuditConsumerHelper.MessageId(context)` は
+  `context.MessageId ?? Guid.NewGuid()`（MassTransit の `MessageId` は `Guid?`）だった。
+  すなわち **ID の無いメッセージが来ると毎回新しい ID を採番し、再送を重複記録していた**（冪等が黙って失効する経路）。
+  Wolverine の `Envelope.Id` は `Guid`（非 null・送信時に必ず採番）であるため、この分岐ごと削除できた。
+  補助クラス `AuditConsumerHelper` も不要になり削除した。
+- **テストと本番のズレ**（Notification と同型）: `AuditWorkerWebApplicationFactory` は **8 件**、
+  `AuditEventConsumersTests` は **16 件**しか購読を登録しておらず、本番の 21 件とずれていた。
+  Wolverine では発見範囲が本番と同一になり、ズレそのものが消えた。
+
+合格数: 6 / 21 / 13（Api / Application / Infrastructure）＝移行前と同数。

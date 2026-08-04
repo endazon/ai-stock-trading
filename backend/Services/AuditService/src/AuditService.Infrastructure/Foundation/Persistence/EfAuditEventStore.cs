@@ -11,7 +11,7 @@ internal sealed class EfAuditEventStore(AuditDbContext db) : IAuditEventStore
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // 冪等: 同一 Id（MassTransit 再送）は無視する。
+        // 冪等: 同一 Id（ブローカの再送）は無視する。
         if (db.AuditEvents.Find(entry.Id) is not null)
             return;
 

@@ -1,6 +1,4 @@
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
 using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,11 +6,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 
 namespace AiStockTrading.Audit.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、InMemory DB・
-// MassTransit テストハーネス・TestAuthHandler へ差し替えてイベント記録と照会エンドポイントを検証する。
+// Wolverine の外部トランスポート無効化（ADR-0013 / IADR-0129 / #354）・TestAuthHandler へ差し替えて
+// イベント記録と照会エンドポイントを検証する。
 public sealed class AuditWorkerWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbName = Guid.NewGuid().ToString();
@@ -32,19 +32,10 @@ public sealed class AuditWorkerWebApplicationFactory : WebApplicationFactory<Pro
         {
             ReplaceDbContextWithInMemory(services, _dbName);
 
-            // 実 RabbitMQ 接続を避けるため MassTransit をテストハーネスへ差し替える（全 6 コンシューマを登録）。
-            services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness(x =>
-            {
-                x.AddConsumer<PriceMovementDetectedAuditConsumer>();
-                x.AddConsumer<StopLossTriggeredAuditConsumer>();
-                x.AddConsumer<TradeDecisionMadeAuditConsumer>();
-                x.AddConsumer<OrderApprovedAuditConsumer>();
-                x.AddConsumer<OrderRejectedAuditConsumer>();
-                x.AddConsumer<OrderExecutedAuditConsumer>();
-                x.AddConsumer<AssumptionsChangedAuditConsumer>();
-                x.AddConsumer<ReportConfirmedAuditConsumer>();
-            });
+            // ADR-0013, IADR-0129, #354: 実 RabbitMQ へ接続しない。ハンドラの発見は Program.cs 側の配線
+            // （Infrastructure アセンブリ全体）が担うため、テスト側で購読を列挙し直す必要が無くなった
+            // （MassTransit 時代はここで 8 件だけ登録しており、本番の 21 件とずれていた）。
+            services.DisableAllExternalWolverineTransports();
 
             // Keycloak/JWT に依存せず TestAuthHandler で認証する（既定スキームを Test に切替）。
             services.AddAuthentication(TestAuthHandler.SchemeName)
