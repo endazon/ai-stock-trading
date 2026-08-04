@@ -2,7 +2,7 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
-related_ids: [FR-10, FR-11, FR-17, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, IADR-0130, IADR-0131]
+related_ids: [FR-10, FR-11, FR-17, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, IADR-0130, IADR-0131, IADR-0133]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-04
@@ -21,6 +21,11 @@ plan_refs:
 > リスク統制全体（kill switch・各金額上限・保有数上限・最大DD・連敗縮小・ポジションサイジング等）の網羅は
 > Issue #33 で拡充する。ここに未記載の項目は作業仕様書 [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 > と各 IADR（0002/0003/0004/0005/0008）を一次情報とする。
+>
+> **#330 による追記（2026-08-04）**: **維持率割れによる建玉の自動縮小**の節を追加した（発動条件・回復目標・
+> 対象選択・縮退・記録先 4 つ・未実装の供給元）。`approved` 済みの本書に対する**追記のみ**であり、
+> 既存の節は変更していない（[IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)・
+> [作業仕様書 20260804](../specs/20260804_330_maintenance-margin-auto-reduce.md)）。
 >
 > **再実装（#329）による更新（2026-08-04・第 1〜3 段階）**: 計画大改定に伴い、**金額系の統制上限 3 値**の節
 > （後述「金額系の統制上限 3 値」）と**既定値の確定単一値**の節を第 1 段階で、**空売り専用統制 8 規則**・
@@ -217,6 +222,67 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 - **いずれも手仕舞い（Close）と損切りは止めない**（`RiskEvaluator` の `isEntry` により構造的に担保）。
 - **再開（resume）は一時停止のみを解除する**。kill switch と日次損失ロックアウトは解除しない。
 
+## 維持率割れによる建玉の自動縮小（#330 / IADR-0133）
+
+**3 統制（kill switch / 日次損失ロックアウト / 一時停止）が「止める」統制であるのに対し、本統制は
+「動かす」統制である**——システムが自ら決済注文を発注する（UC-06 の比較表）。マージンコールは口座を
+失う唯一の経路であり、米国市場の開場は日本時間の深夜（22:30〜翌 5:00）であって人の応答を待つ余地が無い。
+
+| 項目 | 規則 | 出典 |
+| --- | --- | --- |
+| 発動条件 | **維持率 ≦ 適用閾値**（閾値ちょうどで発動＝**割り込む前に**動く） | §5・FR-10・UC-06／等号の解釈は IADR-0133 決定3 |
+| 適用閾値 | 保有建玉の閾値（`MaintenanceMarginThresholdFor(株価)`）のうち**最も厳しいもの** | ADR-0016 決定7／複数建玉の扱いは IADR-0133 決定2 |
+| 回復目標 | **適用閾値 + 5 ポイント**（閾値 40% なら 45%、規制側が効いて 50% なら 55%。**連動する**） | §5（2026-08-02 追補） |
+| 縮小量 | 回復目標へ届く**最小限**（株数は切り上げ・**部分決済**する） | §5・UC-06（一律 50% 減・建玉 1 件丸ごとは棄却） |
+| 対象順 | **必要証拠金の降順**（同値は評価額降順→銘柄→市場で決定的に解く） | §5・UC-06（含み損順・建玉時刻順は棄却） |
+| 介在するもの | **無し**（利用者の承認も LLM 呼び出しも介在しない。同じ入力からは常に同じ出力） | UC-06「完全に機械的である」・ADR-0003 |
+| 3 統制との関係 | **いずれかが成立していても動く**（本統制自体が手仕舞いであるため） | UC-06・ADR-0009 |
+
+判定は純関数 `MaintenanceMarginReducer.Plan(snapshot, limits)` に閉じる。閾値・回復目標の算出は
+#329 の `ShortSellingLimits` の 2 メソッドだけを通し、**本統制側で再実装しない**（値の二重定義を作らない）。
+
+```
+維持率 R = 純資産 ÷ 建玉評価額の合計       … IADR-0133 決定1（規制側の実効維持率と分母を揃える）
+必要な削減 X = V − 純資産 ÷ 回復目標        … R ≧ 回復目標 なら X ≦ 0 ＝ 何もしない
+```
+
+**維持率の分子（純資産）は日中の実測値**であり、統制上限の基準 equity（`PortfolioSnapshot.Capital`＝
+前営業日終値時点・当日不変。IADR-0130 決定2）とは**別物**である。1 つにまとめると、日中に維持率が
+落ちても判定が動かない（統制が沈黙する）。
+
+### 縮退と迂回（フェイルクローズの向きは統制ごとに違う）
+
+| 状況 | 振る舞い | 理由 |
+| --- | --- | --- |
+| 維持率・必要証拠金の供給が無い | **決済しない** | 「動かす統制」の安全側は動かないことである（誤作動の害が**不可逆**） |
+| 同じ状況で空売りを積み増そうとする | **拒否する**（`MaintenanceMarginBreach`） | 縮小側で塞げない迂回を**積み増し側（#329・IADR-0131 決定4）が塞ぐ** |
+| 回復目標へ到達できない（純資産が尽きている） | **全量決済する** | 何もしないのは最も危険な状態で統制が沈黙することを意味する |
+| 全量決済した後の維持率 | **「建玉なし」**（0% ではない） | 建玉が無くなれば維持率という概念自体が消える |
+
+### 記録先 4 つ（発動の可視化）
+
+1 回の発動が `MaintenanceMarginReductionExecuted`（日報の表 7 列をすべて持つ）へ集約され、
+**監査ログ・Discord 通知・日報・月報**がそれだけを写像する。記録先ごとに別の情報源を持たない。
+
+| 記録先 | 内容 | 発動が無いとき |
+| --- | --- | --- |
+| 監査ログ | 全量 JSON ＋ 要約（相関 `margin-reduction` で発動どうしを束ねる） | 記録なし |
+| Discord | 決済前後の維持率・閾値・回復目標・決済した建玉（**Critical**） | 通知なし |
+| 日報 §4 | 発動の有無・時刻・決済前の維持率・閾値・回復目標・決済した建玉・決済後の維持率 | **「なし」と明記** |
+| 月報 §4 | 当月の**発動回数**（明細は日報に委ねる） | **「0 件」と明記** |
+
+**「なし」と「照会できなかった」を区別する**（計画が「空欄と『なし』を区別する」と定めたのと同じ理由。
+照会失敗を「なし」と書くと発動を隠したのと同じ結果になる）。
+
+### 未実装の供給元（担当を明記）
+
+| 事項 | 現状 | 担当 |
+| --- | --- | --- |
+| 維持率・純資産・必要証拠金の供給 | ポート `IMaintenanceMarginSnapshotSource`・既定は「供給なし」 | #342 / #331 |
+| 定期評価のドライバ（常駐） | 置かない（供給が無い間は常に何もしないため） | #331 / #342 |
+| 決済注文の実発注 | `OrderApproved` の組み立てまで | #331 |
+| 日報・月報への記録供給 | ポート `IMarginReductionRecordSource`・既定は空列（＝発動なし） | #331 |
+
 ## 機能詳細（日次損失上限）
 
 | 項目 | 内容 |
@@ -369,16 +435,27 @@ flowchart TD
 - [x] 維持率の閾値が「40% と規制要求の厳しい方」であり、境界が $12.50 である
 - [x] 空売りの 7 種の拒否理由が「統制違反 0 件」（クラス C 限定）に計上されず、`BannedSymbol` にも混入しない
 - [x] 3 統制の優先順位が成立し、いずれも手仕舞い（Close）と損切りを止めない
-- [ ] 維持率割れによる自動縮小（閾値+5pt 回復・必要証拠金降順）（[#330](https://github.com/endazon/ai-stock-trading/issues/330)）
+維持率割れによる自動縮小（#330）:
+
+- [x] 維持率が閾値を**割り込む前に**（閾値ちょうどで）発動し、閾値を上回る間は発動しない
+- [x] 縮小量が回復目標（**閾値 + 5pt**）へ届く**最小限**である（過剰・過少の両方向を境界で固定）
+- [x] 閾値が規制側で上がると回復目標も同じだけ上がる（連動する）
+- [x] 対象が**必要証拠金の降順**であり、含み損順・建玉時刻順・入力順に退行しない
+- [x] 利用者の承認・AI・3 統制・発注前スクリーニングを経由しない（依存関係で構造的に担保）
+- [x] 縮小直後の小幅な価格変動（不利方向 2%）で再発動しない（+5pt の余裕が効いている）
+- [x] 1 回の発動が監査ログ・Discord・日報・月報の 4 記録先すべてに残る
+- [x] 発動が無い日は日報に「なし」、無い月は月報に「0 件」と明記され、**照会失敗と区別される**
+- [ ] 維持率・必要証拠金の供給元と定期評価ドライバ（[#331](https://github.com/endazon/ai-stock-trading/issues/331) / [#342](https://github.com/endazon/ai-stock-trading/issues/342)）
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
-- 作業仕様書: [20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
+- 実装ADR: [IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)（維持率割れの自動縮小の決定的規則）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
+- 作業仕様書: [20260804_330_maintenance-margin-auto-reduce](../specs/20260804_330_maintenance-margin-auto-reduce.md)（自動縮小）、[20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - テスト仕様書: [FR-10 リスク統制（再実装）](../tests/FR-10_risk-controls-tests.md)、[FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - 計画への環流（いずれも起草のみ・送付は未実施）: [空売りの拒否理由コードの不足](../../feedback/20260804_adr0016-stop-order-rejection-reason.md)、
-  [空売り比率 50% の構造的含意](../../feedback/20260804_adr0016-short-ratio-denominator.md)
+  [空売り比率 50% の構造的含意](../../feedback/20260804_adr0016-short-ratio-denominator.md)、
+  [維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率](../../feedback/20260804_uc06-maintenance-ratio-formula.md)
 
 ## 未決事項
 
@@ -396,4 +473,9 @@ flowchart TD
   維持率・借株料の累計も表示対象である（ADR-0016 決定15。**維持率は最上位**に置く）。
 - 空売り文脈（借株照会・空売り建玉・権利確定日）の供給元が無いため、現状は**すべての新規売り建てが
   拒否される**（フェイルクローズ）。Stage 1 の検証には供給元が要る（#342 / #332）。
+- **維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率**は計画に記述が無く、実装が安全側で仮置き
+  している（[IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md) 決定1・2、
+  [環流](../../feedback/20260804_uc06-maintenance-ratio-formula.md)）。moomoo が返す維持率の定義が異なる
+  場合は新 IADR で改める（#342）。
+- 自動縮小の**定期評価の周期**（何秒ごとに維持率を見るか）は計画に無く、供給元と同時に決める（#331）。
 - 強制買戻し（buy-in）の**検知・通知と禁止リストの永続化**は未実装（[作業仕様書 第 2 段階](../specs/20260804_329_short-selling-controls.md) 未決事項 §2）。
