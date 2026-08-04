@@ -73,9 +73,34 @@ related_specs:
 
 ## 対象範囲
 
-- **対象**: `docs/` `backend/` `frontend/` の `ADR-0007` 参照 319 箇所（154 ファイル）。
-  `related_ids` フロントマター・`plan_refs`・本文・コード内コメント・テスト名/コメントを含む。
+`ADR-0007` の参照は **319 箇所・154 ファイル**（2026-08-04 実測。`develop` の `1b76ef1` 時点）ある。
+**2 段階に分ける。** 1 つの PR にすると差分が 150 ファイルを超えてレビュー不能になり、かつ本作業は
+1 行ずつ文脈を判定する性質のため、レビュアーが追試できる単位に保つ必要があるからである。
+
+| 段階 | 範囲 | 件数 | 本書での扱い |
+| --- | --- | --- | --- |
+| **第 1 段階（本 PR）** | `backend/` `frontend/` のコード内コメント・テストコメント | 106 → 31 | 完了 |
+| 第 2 段階（後続 PR） | `docs/` の `related_ids` / `plan_refs` / 本文 | 210 | 未着手（分類は本書に記載） |
+
+コード側を先にした理由は、**コメントは実装者が編集中に読む一次情報**であり、誤帰属が新しい実装へ
+伝播する経路がもっとも短いためである。文書側は参照時に読むもので、伝播は間接的である。
+
+- **第 2 段階の分類**（本書の対応表に基づき、文書の主題で群分けした結果）:
+
+  | 群 | 文書の例 | 是正 |
+  | --- | --- | --- |
+  | ガード（FR-19） | IADR-0004 / 0006 / 0038 / 0040 / 0132、`functional/FR-19_trading-guard.md`、相場操縦・注文分解の仕様書 | **維持** |
+  | 設定ストア混在 | IADR-0010 / 0012、`data/risk-management-aggregates.md`、risk-management-application / worker | **併記** |
+  | 前提条件（FR-17） | IADR-0021 / 0063 / 0080、`data/trading-assumptions.md`、SC-01、configuration-assumptions | **ADR 参照を外す** |
+  | 報告書（FR-06/07） | IADR-0024 / 0042 / 0071、`data/reports.md`、report-confirmation | **ADR-0003** |
+  | 監視銘柄（FR-13） | IADR-0088 / 0090 / 0095、market-monitor-worker、watchlist 系 | **ADR 参照を外す** |
+  | 段階ゲート（FR-20） | IADR-0070 / 0081、stage-gate-transitions、stage-gate-discord-bot | **ADR-0008** |
+  | kill switch / pause | IADR-0062 / 0075、152_pause-resume、15_discord-bot | **ADR-0003 / ADR-0009** |
+  | 認証・s2s | IADR-0051、76_s2s-service-token、foundation-min-port | **platform ADR-0004** |
+
 - **対象外**:
+  - **`IADR-0007`**（実装 ADR `IADR-0007_broker-rejection-vs-risk-rejection.md`）。**別名前空間であり
+    本作業とは無関係**。17 箇所あり、`ADR-0007` の grep に巻き込まれるため明示的に保護する。
   - **計画リポジトリ（`planning/`）の内容**。参照する側だけを直す。
   - `docs/specs/20260801_impl-handoff-kit-sync.md` など **PR 単位の point-in-time 記録**の本文。
     当時の状態を正しく記録しているため後から書き換えない（[#371](https://github.com/endazon/ai-stock-trading/pull/371) と同じ扱い）。
@@ -109,13 +134,22 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 `Program.cs` の「`ADR-0004（platform）, ADR-0007`: Keycloak 認証」は、**認証・認可の基盤**についての記述で
 ある。ADR-0007 は認証方式を何も決めていない。platform ADR-0004 のみを残す。
 
-## 受け入れ基準
+## 受け入れ基準（第 1 段階＝コード側）
 
-- [ ] `ADR-0007` の残存参照が、**すべてガード設定（FR-19）の文脈**である。
-- [ ] ガード設定を扱う箇所から `ADR-0007` が失われていない（過剰削除をしていない）。
-- [ ] 計画に関連 ADR が無い要求（FR-09 / FR-12 / FR-13 / FR-14 / FR-17）の箇所に、**ADR を当てはめていない**。
-- [ ] 併記が必要な箇所（設定ストア・変更履歴）で ADR-0003 / ADR-0007 / ADR-0008 が揃っている。
-- [ ] `dotnet build` / `dotnet test` が通る（コメントのみの変更であることの確認）。
+- [x] コード側の `ADR-0007` 残存参照が、**すべてガード設定（FR-19）の文脈か正しい併記**である（106 → 31）。
+- [x] ガード設定を扱う箇所から `ADR-0007` が失われていない（過剰削除をしていない）。
+      `BannedSymbol` / `TradingGuardSettings` / `ProductType` / `PositionEffect` /
+      `ManipulationPatternAnalyzer` / `TradingDefaults` はいずれも維持した。
+- [x] 計画に関連 ADR が無い要求（FR-13 / FR-17）の箇所に、**ADR を当てはめていない**（FR 参照へ寄せた）。
+- [x] 併記が必要な箇所（設定ストア・変更履歴・認可ポリシー）で ADR-0003 / ADR-0007 / ADR-0008 が揃っている。
+- [x] `IADR-0007` を 1 箇所も変更していない。
+- [x] **変更がコメント行のみ**である（コメント以外の追加行が 0 件であることを機械的に確認）。
+- [x] `dotnet build backend/backend.slnx` が警告 0・エラー 0。
+- [ ] `dotnet test` が緑（CI の `build-and-test` ジョブで確認する）。
+
+### 第 2 段階（docs 側）の受け入れ基準
+
+- [ ] `docs/` の `ADR-0007` 残存参照が、すべてガード設定の文脈か正しい併記である。
 - [ ] `node scripts/check-doc-links.js` が破損 0 件。
 - [ ] point-in-time 記録（`20260801_impl-handoff-kit-sync.md` 等）を書き換えていない。
 
