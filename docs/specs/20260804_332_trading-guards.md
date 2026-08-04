@@ -161,7 +161,7 @@ isEntry && PreventSameDayReentry
 | Domain | `ShortSellSettings.cs` | `Enabled` を削除（統制値のみ） |
 | Domain | `ShortSellEvaluator.cs` | 有効・無効を引数で受け取る（設定の単一情報源はガード側） |
 | Domain | `TradingGuardSettings.cs` / `TradingDefaults.cs` | 3 値の説明・既定（現物のみ）の明示 |
-| Infrastructure | `RiskSettingsSerialization.cs` | 空売り設定の往復（`Enabled` 削除に伴う縮退の維持） |
+| Infrastructure | `RiskSettingsSerialization.cs` | **変更なし**（`ShortSellSettings` 全体を往復するため `Enabled` 削除でも成立する。旧行の `enabled` は無視され、可否は `EnabledProductTypes` が決める＝安全側） |
 | Frontend | `features/risk/contracts.ts` / `sc02-risk-settings/RiskSettingsPage.tsx` | 選択肢 3 値・危険な緩和の判定を信用買い/空売りの双方へ |
 | Tests | `TradingGuardProductTypeTests.cs` | **新規**（3 点セット: 組み合わせ表・プロパティ・否定形） |
 | Tests | `KnownPlanDeviations.cs` | **逸脱 1 行の削除**（`ProductType.Values`） |
@@ -228,14 +228,16 @@ isEntry && PreventSameDayReentry
 | 検証 | 結果 |
 | --- | --- |
 | `dotnet build backend/backend.slnx` | 0 Warning / 0 Error |
-| `dotnet test`（`Category!=Integration`） | **2,464 passed / 0 failed**（着手前 2,426 から +38） |
+| `dotnet test`（`Category!=Integration`） | **2,476 passed / 0 failed**（着手前 2,426 から +50） |
 | 計画適合の赤→緑 | 削除前 **Failed: 2, Passed: 4** → 削除後 **Failed: 0, Passed: 6**（実測） |
 | `dotnet format --verify-no-changes` | 差分なし |
-| `node scripts/check-test-traceability.js` | OK |
-| `node scripts/check-coverage.js` | 行カバレッジ 65% 台 / floor 62.00% |
+| `node scripts/check-test-traceability.js` | OK（テスト 323 ファイル・起点 ID 25 種） |
+| `node scripts/check-coverage.js` | 行カバレッジ **65.90%**（12,986/19,706 行）/ floor 62.00% |
 | `node scripts/scripts.test.js` | 143 tests passed |
 | `node scripts/check-banned-libraries.js` | OK |
-| フロントエンド（`npm test`） | 全 green |
+| フロントエンド（`npm test`） | **72 passed / 10 ファイル**（0 failed） |
+| アーキテクチャテスト | 4 passed |
+| `node scripts/check-commit-messages.js` | OK（5 件） |
 
 ## 関連仕様
 
