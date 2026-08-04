@@ -14,7 +14,6 @@ created: 2026-07-13
 updated: 2026-07-16
 plan_refs:
   - "../../planning/projects/microservices-platform/07_adr/ADR-0004_authz-abac.md"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
 ---
 
 # IADR-0051: サービス間同期照会の service-to-service 認証
@@ -27,7 +26,7 @@ plan_refs:
 
 - 起点 issue: #76（`Refs #22`）。IADR-0028/0029/0030（同期 API 方式）の続き。
 - 消費側: #82（IADR-0050）の「s2s トークン伝播つき同期照会 E2E」が本 IADR の成果を前提とする。
-- 関連: [IADR-0011](IADR-0011_foundation-min-port.md)（Keycloak・OwnerOnly）・ADR-0007（利用者のみ操作）・platform ADR-0004（認証認可）。
+- 関連: [IADR-0011](IADR-0011_foundation-min-port.md)（Keycloak・OwnerOnly）・ADR-0003 / ADR-0007 / ADR-0008（利用者のみ操作）・platform ADR-0004（認証認可）。
 
 ## コンテキストと課題
 
@@ -72,7 +71,7 @@ plan_refs:
 
 ### 決定 3: 最小権限の専用ロール `trading-service` を導入し、読み取り系のみ許可する
 
-- ADR-0007 は kill switch・リスク設定・段階昇格を「利用者のみ」に限定し、エンドポイントのコメントも
+- ADR-0003 / ADR-0007 / ADR-0008 は kill switch・ガード設定・段階昇格を「利用者のみ」に限定し、エンドポイントのコメントも
   「**生成AI・自動処理はこのロールを持たない**」と明記している。サービスアカウントへ `trading-owner` を
   与えると kill switch 操作・設定変更まで可能になり、この意図に反する（**過剰権限**）。
 - そこで新ロール `trading-service` を追加し、**読み取り系のエンドポイントのみ** `OwnerOrService`
@@ -124,7 +123,7 @@ plan_refs:
 ## 却下した代替案
 
 - **サービスアカウントに `trading-owner` を付与**: 提供側改修が不要で最短だが、kill switch 操作・設定変更まで
-  可能になり ADR-0007 の「自動処理はこのロールを持たない」に反する（過剰権限）。決定 3 の最小権限を採る。
+  可能になり 「自動処理はこのロールを持たない」（ADR-0003 / ADR-0007 / ADR-0008）に反する（過剰権限）。決定 3 の最小権限を採る。
 - **on-behalf-of / token-exchange**: 自律ワーカーには伝播元のユーザトークンが無く適用不能（決定 1）。
 - **各 Http アダプタを個別にトークン付与へ改修**: 重複が増え将来の同期照会追加ごとに漏れが出る。
   横断 DelegatingHandler（決定 2）の方が単純で一貫。

@@ -6,7 +6,7 @@ related_ids:
   - FR-17
   - FR-13
   - UC-06
-  - ADR-0007
+  - FR-17
   - IADR-0021
   - IADR-0051
   - IADR-0063
@@ -28,7 +28,7 @@ related_specs:
 ## 起点となる計画書（トレーサビリティ）
 
 - 機能要求: **FR-17**（全体前提条件を設定として一元管理し、バージョン管理し、各報告書に適用バージョンを記録する）／FR-13（設定変更）
-- ユースケース: **UC-06**（設定変更）／ADR-0007（変更は利用者のみ）
+- ユースケース: **UC-06**（設定変更）／FR-17（変更は利用者のみ）
 - Issue: [#19](https://github.com/endazon/ai-stock-trading/issues/19)（Slice B）。後続 [#139](https://github.com/endazon/ai-stock-trading/issues/139) の前提。
 
 ## 目的・背景
@@ -54,7 +54,7 @@ related_specs:
 
 1. `ConfigurationService`: `GET /assumptions`（現在値＋Version）を **`OwnerOrService`** へ分離する（IADR-0051 の既存
    パターンと同形）。**`PUT /assumptions`（更新）・`GET /assumptions/history`（履歴）は `OwnerOnly` 据え置き**
-   ＝サービスに変更権限・履歴閲覧権限を与えない（最小権限。ADR-0007「AI・自動処理は変更できない」を維持）。
+   ＝サービスに変更権限・履歴閲覧権限を与えない（最小権限。FR-17「AI・自動処理は変更できない」を維持）。
 2. 共有クライアント **`ConfigurationService.Client`**（新規プロジェクト）: どの消費側サービスからも
    `AddAiStockTradingAssumptions(configuration)` の 1 行で配線できる、バージョン付き前提条件の解決器。
    - `IAssumptionsProvider.GetCurrentAsync()` → `VersionedAssumptions`（前提条件＋Version）
@@ -108,5 +108,5 @@ related_specs:
 
 - `ICostLimitsProvider.GetLimits()` は**同期**のため、#139 は本 provider（async）に合わせて非同期化が必要になる
   （呼び出し元のエンドポイントは既に async）。本 PR では `ICostLimitsProvider` に触れない。
-- 前提条件は機微情報ではない（税率・手数料体系・費用上限）ため、読み取りをサービスへ開放しても ADR-0007 の
+- 前提条件は機微情報ではない（税率・手数料体系・費用上限）ため、読み取りをサービスへ開放しても FR-17 の
   「変更は利用者のみ」に反しない。履歴（アクター・理由）は運用情報のため OwnerOnly を維持する。

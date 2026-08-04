@@ -7,7 +7,7 @@ related_ids:
   - FR-14
   - UC-06
   - ADR-0003
-  - ADR-0007
+  - ADR-0003
   - IADR-0016
   - IADR-0020
   - IADR-0051

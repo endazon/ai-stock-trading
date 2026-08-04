@@ -2,7 +2,7 @@
 title: IADR-0081 段階ゲートの Discord コマンドは Bot 側で Risk の OwnerOnly エンドポイントを呼ぶだけの薄い追加とし、数値 enum 整形を Worker に隔離する
 type: impl-adr
 status: Accepted
-related_ids: [FR-20, FR-14, UC-06, ADR-0007, ADR-0008, IADR-0051, IADR-0062, IADR-0070]
+related_ids: [FR-20, FR-14, UC-06, ADR-0008, IADR-0051, IADR-0062, IADR-0070]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -19,7 +19,7 @@ plan_refs: []
 
 ## 起点・関連
 
-- 関連する計画書 ID: **FR-20**（段階ゲート）、**FR-14**（Discord 操作）、UC-06、ADR-0007 / ADR-0008
+- 関連する計画書 ID: **FR-20**（段階ゲート）、**FR-14**（Discord 操作）、UC-06、ADR-0008
 - 対象 Issue: [#165](https://github.com/endazon/ai-stock-trading/issues/165)（親後続: `#20` / `#15`）
 - 前提 IADR: [IADR-0070](IADR-0070_stage-gate-persistence-and-approval.md)（段階ゲートの永続化・承認・OwnerOnly エンドポイント・**無改修で呼ぶだけ**）、
   [IADR-0062](IADR-0062_discord-bot-gateway-and-authorization.md)（Bot 基盤・多層認証・owner マップ機密クライアント）、

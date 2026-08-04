@@ -2,13 +2,12 @@
 title: サービス間同期照会の service-to-service 認証（呼び出し側トークン伝播）
 type: spec
 status: review
-related_ids: [FR-04, FR-07, FR-10, ADR-0004, ADR-0007, IADR-0011, IADR-0028, IADR-0029, IADR-0030, IADR-0051]
+related_ids: [FR-04, FR-07, FR-10, ADR-0004, IADR-0011, IADR-0028, IADR-0029, IADR-0030, IADR-0051]
 author: endazon (with Claude Code)
 created: 2026-07-13
 updated: 2026-07-13
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
   - ../../planning/projects/microservices-platform/07_adr/ADR-0004_authz-abac.md
 ---
 
@@ -22,7 +21,7 @@ plan_refs:
 ## 起点となる計画書・課題（トレーサビリティ）
 
 - 機能要求（FR）: FR-04（取引判断のサイジング/方針）、FR-07（日報方針）、FR-10（保有・損切り監視の維持）
-- ADR: ADR-0007（利用者のみ操作）、platform ADR-0004（Keycloak OIDC/認可）
+- ADR: platform ADR-0004（Keycloak OIDC/認可）
 - 関連 IADR: IADR-0011（Keycloak・OwnerOnly）、IADR-0028/0029/0030（同期 API 方式）、新規 [IADR-0051](../adr/IADR-0051_service-to-service-auth.md)
 - 消費側: #82（IADR-0050 の s2s トークン伝播つき同期照会 E2E）
 - 対象 Issue: #76

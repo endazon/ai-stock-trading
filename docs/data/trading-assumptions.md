@@ -2,7 +2,7 @@
 title: 全体前提条件（assumptions / assumptions_change_log）データ仕様書
 type: data-spec
 status: review
-related_ids: [FR-17, FR-13, UC-06, ADR-0001, ADR-0007]
+related_ids: [FR-17, FR-13, UC-06, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -22,7 +22,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-17（全体前提条件の一元管理・バージョン管理。Must）、FR-13（設定変更）
 - ユースケース（UC）: UC-06（設定変更・変更履歴・通知）
-- ADR: ADR-0001（Database per Service）、ADR-0007（変更は利用者のみ・変更履歴を記録）
+- ADR: ADR-0001（Database per Service）、FR-17（変更は利用者のみ・変更履歴を記録）
 
 ## ドメイン型（`TradingAssumptions`）
 

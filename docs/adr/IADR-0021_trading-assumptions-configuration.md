@@ -2,7 +2,7 @@
 title: IADR-0021 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する
 type: impl-adr
 status: Accepted
-related_ids: [FR-17, FR-13, ADR-0001, ADR-0007]
+related_ids: [FR-17, FR-13, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -21,7 +21,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: FR-17（全体前提条件の一元管理・バージョン管理）、FR-13（設定変更）、ADR-0001、ADR-0007
+- 関連する計画書 ID: FR-17（全体前提条件の一元管理・バージョン管理）、FR-13（設定変更）、ADR-0001
 - 対象 Issue: [#19](https://github.com/endazon/ai-stock-trading/issues/19)（Slice A）
 - 関連する実装仕様書: [20260710_configuration-assumptions](../specs/20260710_configuration-assumptions.md)
 - 関連 IADR: [IADR-0012](IADR-0012_risk-settings-persistence.md)（単一行 JSON＋Version 楽観排他・踏襲）、[IADR-0020](IADR-0020_notification-safe-outbound.md)（変更通知の購読先）
@@ -49,7 +49,7 @@ plan_refs:
 - **新規サービス `ConfigurationService`**（Domain + Application + Worker）が `TradingAssumptions`（前提条件集約）を所有する。
 - **永続化・バージョニングは [IADR-0012] を踏襲**: 単一行 JSON＋`Version` 列の楽観的排他制御（EF 並行トークン）、未設定は
   既定シード（レース窓は再読で冪等化）、変更履歴は追記専用。専有 DB `configuration_svc`。
-- **変更は利用者のみ**（ADR-0007）: `AssumptionsService.Update` はアクター・理由必須、`Version` 増分、前後値つきで履歴記録。
+- **変更は利用者のみ**（FR-17）: `AssumptionsService.Update` はアクター・理由必須、`Version` 増分、前後値つきで履歴記録。
   ホストのエンドポイントは OwnerOnly（Keycloak `trading-owner`）。AI・自動処理はロールを持たず変更できない。
 - **概算費用関数 `CostCalculator`**（05 §4）は Domain の純関数とする: 手数料（市場別 `CommissionSchedule`＝定率・最低額・上限クランプ）
   ＋為替スプレッド（非 JPY 市場に約定代金比で適用）。為替スプレッドは 05 が「円/USD」とするが、実 FX レート連携が未整備の
@@ -62,7 +62,7 @@ plan_refs:
 ## 理由
 
 - 横断設定を単一の真実源に集約でき、共通参照（API）と変更通知（イベント）を疎結合に実現できる。
-- バージョニング・履歴・利用者変更は既存の実績パターン（IADR-0012・ADR-0007）を踏襲でき、実装・レビューが容易。
+- バージョニング・履歴・利用者変更は既存の実績パターン（IADR-0012・FR-19 のガード設定と同型）を踏襲でき、実装・レビューが容易。
 - 費用関数を純関数の Domain に置くことで、将来 3 サービスが同一ロジックで採算評価・費用込み判定を行える基盤になる。
 
 ## 結果

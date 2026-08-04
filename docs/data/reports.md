@@ -2,7 +2,7 @@
 title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
-related_ids: [FR-06, FR-07, FR-16, FR-17, ADR-0001, ADR-0007]
+related_ids: [FR-06, FR-07, FR-16, FR-17, ADR-0001, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -21,7 +21,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-06（階層方針）、FR-07（確定・確定前は不適用）、FR-16（テンプレート・集計）、FR-17（前提条件バージョン記録）
 - ユースケース（UC）: UC-03〜05（報告書の確定）
-- ADR: ADR-0001（Database per Service）、ADR-0007（確定は利用者のみ）、ADR-0003（確定前方針は不適用）
+- ADR: ADR-0001（Database per Service）、FR-06/FR-07（確定は利用者のみ）、ADR-0003（確定前方針は不適用）
 
 ## ドメイン型（`TradingReport`）
 

@@ -2,7 +2,7 @@
 title: フロント SC-02 監視銘柄（watchlist）変更 UI
 type: work
 status: In Progress
-related_ids: [FR-13, FR-03, FR-11, UC-06, SC-02, ADR-0007, IADR-0084, IADR-0086, IADR-0088, IADR-0090]
+related_ids: [FR-13, FR-03, FR-11, UC-06, SC-02, IADR-0084, IADR-0086, IADR-0088, IADR-0090]
 issue: 196
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -11,7 +11,6 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md  # FR-13（利用者が設定を変更できる）/ FR-03（監視）
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md          # UC-06（設定変更）
   - ../../planning/projects/ai-stock-trading/05_screens/01_screens.md            # SC-01/SC-02（運用パラメータ：監視銘柄）
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 ---
 
 # 作業仕様書: フロント SC-02 監視銘柄（watchlist）変更 UI（#196）

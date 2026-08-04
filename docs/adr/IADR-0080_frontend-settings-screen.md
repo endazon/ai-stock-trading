@@ -2,7 +2,7 @@
 title: IADR-0080 フロントエンドは platform unit-template 規約に準拠し、単独リポの型検査/テストを @foundation スタブ＋ローカル vitest で自己完結させ、設定画面は FR-17 前提条件の閲覧/変更に限定する
 type: impl-adr
 status: Accepted
-related_ids: [FR-13, FR-17, UC-06, ADR-0001, ADR-0007]
+related_ids: [FR-13, FR-17, UC-06, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -27,7 +27,7 @@ plan_refs:
 - 関連する計画書 ID: **FR-13**（監視銘柄・閾値・リスク上限などの設定を利用者が変更できる）、**FR-17**（税・手数料・為替・
   計算方針などの全体前提条件をバージョン管理し、変更は利用者のみ）、**UC-06**（設定変更・一時停止・緊急停止。専用「設定画面」が
   明記された唯一のユースケース）、**ADR-0001**（platform 再利用・`backend/`＋必要に応じ `frontend/`・合成点経由で組み込む）、
-  ADR-0007（Keycloak 認証・変更は利用者のみ）
+  platform ADR-0004（Keycloak 認証）・FR-17（変更は利用者のみ）
 - 対象 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)
 - 関連する実装仕様書: [20260718_frontend-settings-screen](../specs/20260718_frontend-settings-screen.md)、
   画面仕様 [SC-01 設定画面](../screens/20260718_SC-01_settings.md)

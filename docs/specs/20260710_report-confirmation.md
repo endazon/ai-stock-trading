@@ -2,7 +2,7 @@
 title: 報告書サービス Slice A（報告書ドメイン・確定管理・確定済み日報方針の照会・確定通知）
 type: spec
 status: review
-related_ids: [FR-06, FR-07, FR-16, FR-17, FR-09, UC-03, UC-04, UC-05, ADR-0001, ADR-0007]
+related_ids: [FR-06, FR-07, FR-16, FR-17, FR-09, UC-03, UC-04, UC-05, ADR-0001, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
@@ -25,7 +25,7 @@ plan_refs:
 - ユースケース（UC）: UC-03〜05（報告書の確定）
 - 技術検討: `04_report-templates.md`（frontmatter＝report_type/period/based_on/assumptions_version/confirmed_at、確定した日報の
   「翌営業日の目標」が取引方針として有効化）、`04_workflows/03_reporting-cycle.md`（確定で方針有効化）
-- ADR: ADR-0001（新規サービス）、ADR-0007（確定は利用者のみ）、ADR-0003（確定前方針は不適用）
+- ADR: ADR-0001（新規サービス）、FR-06/FR-07（確定は利用者のみ）、ADR-0003（確定前方針は不適用）
 - 関連 IADR: 本作業で新規 [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)。版番号確定は [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md) 踏襲
 - 対象 Issue: #14（Slice A）
 
@@ -63,7 +63,7 @@ KB 保存は後続スライスに切り分ける。
 
 CI で緑にする範囲（ユニット＋MassTransit テストハーネス＋EF InMemory＋WebApplicationFactory）:
 - [ ] ドラフトを upsert でき、確定（Draft→Confirmed）で ConfirmedAt が記録され Version が上がる。
-- [ ] 確定は OwnerOnly（未認証 401・ロール無し 403）。AI・自動処理は確定できない（ADR-0007）。
+- [ ] 確定は OwnerOnly（未認証 401・ロール無し 403）。AI・自動処理は確定できない（ADR-0003）。
 - [ ] 版番号付き冪等確定: 既に確定済みの再確定は冪等（状態変化なし・イベント重複発行なし）。版不一致は 409。
 - [ ] `GET /reports/daily-policy` が最新の確定済み日報方針（Date・Summary・AssumptionsVersion）を返す。未確定なら 404。
 - [ ] 確定（遷移時）に `ReportConfirmed` が発行され、`NotificationService` が通知する。

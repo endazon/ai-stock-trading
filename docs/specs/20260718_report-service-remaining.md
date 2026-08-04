@@ -2,7 +2,7 @@
 title: 作業仕様書 — 報告書サービスの残スコープ（実 LLM ドラフト・無応答既定・KB 保存・月報ブートストラップ・対話的確定結線）
 type: work
 status: In progress
-related_ids: [FR-06, FR-07, FR-16, FR-08, FR-09, UC-03, UC-04, UC-05, ADR-0003, ADR-0007]
+related_ids: [FR-06, FR-07, FR-16, FR-08, FR-09, UC-03, UC-04, UC-05, ADR-0003]
 issue: 14
 author: endazon (with Claude Code)
 created: 2026-07-18

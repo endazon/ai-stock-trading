@@ -2,7 +2,7 @@
 title: 作業仕様書 #165 段階ゲートの Discord Bot コマンドハンドラ
 type: work-spec
 status: In Progress
-related_ids: [FR-20, FR-14, UC-06, ADR-0007, ADR-0008, IADR-0051, IADR-0062, IADR-0070, IADR-0081]
+related_ids: [FR-20, FR-14, UC-06, ADR-0008, IADR-0051, IADR-0062, IADR-0070, IADR-0081]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -14,7 +14,7 @@ issue: 165
 ## 起点・関連
 
 - 対象 Issue: [#165](https://github.com/endazon/ai-stock-trading/issues/165)
-- 計画書 ID: **FR-20**（段階ゲート）、**FR-14**（Discord 操作）、UC-06、ADR-0007（監査・理由）、ADR-0008（段階ゲート）
+- 計画書 ID: **FR-20**（段階ゲート）、**FR-14**（Discord 操作）、UC-06、FR-11（監査・理由）、ADR-0008（段階ゲート）
 - 親後続: `Refs #20`（段階ゲート・PR #163・[IADR-0070](../adr/IADR-0070_stage-gate-persistence-and-approval.md)。呼ぶ先の OwnerOnly エンドポイントを提供）
   ／`Refs #15`（Discord Bot 基盤・FR-14・[IADR-0062](../adr/IADR-0062_discord-bot-gateway-and-authorization.md)）
 - 前提 IADR: [IADR-0062](../adr/IADR-0062_discord-bot-gateway-and-authorization.md)（Bot 基盤・多層認証・owner マップ機密クライアント）、
