@@ -68,7 +68,8 @@ public static class RiskEvaluator
         }
 
         // 禁止銘柄は銘柄コードと市場の両方で照合する（同一コードが別市場に存在し得るため）。
-        if (settings.Guard.BannedSymbols.Any(b => b.Symbol == intent.Symbol && b.Market == intent.Market))
+        // 照合規則は BannedSymbol.Matches が単一情報源（市場は厳密一致・コードは表記差を吸収。IADR-0132 決定6）。
+        if (settings.Guard.BannedSymbols.Any(b => b.Matches(intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.BannedSymbol);
         }
