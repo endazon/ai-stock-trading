@@ -483,3 +483,27 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   （残すとログ抑制が無効化されたまま気づけない。**パイロット 2 サービス分の見落としも別コミットで是正した**）。
 
 合格数: 35 / 100 / 127 / 65（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+#### MarketMonitorService
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `MarketMonitorService.Infrastructure.Tests/ConsumerEndpointNameTests.cs` | `取引判断購読のキュー名がリスク統制のキューと衝突しない` | `DefaultEndpointNameFormatter.Instance.Consumer<TradeDecisionMadeBaselineConsumer>()` が `"TradeDecisionMadeBaseline"` であり `"TradeDecisionMade"` ではない | `WolverineExtensions.QueueNameFor("ai-stock-trading.market-monitor-service", typeof(TradeDecisionMade))` が `"ai-stock-trading.market-monitor-service.TradeDecisionMade"` であり、**RiskManagement の同型キュー名と等しくない** | 1〜4 充足。**不変条件（#258 の衝突が起きない）は同一で、根拠だけがクラス名 → ServiceName へ移った。**期待値の文字列はキュー名規則が変わった以上、規則の新しい値に追随せざるを得ない（表明の弱化ではない: 旧は 1 サービス側の名前だけを固定していたが、新は衝突相手のキュー名を実際に計算して不一致を確かめるため**強くなっている**） |
+| `MarketMonitorService.Infrastructure.Tests/TradeDecisionMadeBaselineConsumerTests.cs` | `判断確定で対象銘柄の基準値を判断時点価格へ更新する` | `harness.Bus.Publish` ＋ `harness.Consumed.Any<TradeDecisionMade>()` ＋ 基準値 1234 | `host.TrackActivity().InvokeMessageAndWaitAsync` ＋ `session.Executed.MessagesOf<TradeDecisionMade>()` ＋ 基準値 1234 | 1〜4 充足 |
+| `MarketMonitorService.Infrastructure.Tests/MonitorPollingServiceTests.cs` | `市場開場時に閾値超過なら価格変動イベントを発行する` / `市場閉場中はイベントを発行しない` / `損切りライン到達時に損切りイベントを発行する` / `同一巡回で損切りと変動が両方成立したとき両方を発行する` | `harness.Published.Any<T>()` が true / false | `session.Sent.MessagesOf<T>()` が非空 / 空 | 1〜4 充足（巡回の呼び出しを追跡ブロックへ移しただけ） |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `MonitorWorkerWebApplicationFactory` / `PositionStoreSelectionTests` の private factory | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => x.AddConsumer<TradeDecisionMadeBaselineConsumer>())` → `DisableAllExternalWolverineTransports()`（ハンドラの発見は `Program.cs` 側の配線が担うため、テスト側で購読を足す必要が無くなった） |
+
+実装側の特記:
+
+- `TradeDecisionMadeBaselineConsumer` → **`TradeDecisionMadeBaselineHandler`**（`public sealed`・[[IADR-0129]] 決定 9）。
+- **[[IADR-0106]] の命名規律がここで機能要件でなくなった。**クラス名の `Baseline` は「MassTransit のキュー名を
+  RiskManagement と分けるための機能要件」だったが、Wolverine ではキュー名にクラス名が関与しないため、
+  **関心事を表す読みやすさのための命名に戻った**。ソースのコメントにその経緯を残した（名前を戻してよいという
+  誤解も、名前で分離できるという誤解も生まないため）。
+
+合格数: 18 / 23 / 9 / 17（Api / Application / Domain / Infrastructure）＝移行前と同数。

@@ -11,16 +11,16 @@ using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.market-monitor-service";
 
 // #10 Slice B, IADR-0013/0014: 監視設定変更の HTTP エンドポイント（Keycloak 認可）とヘルスチェックのため
-// WebApplication を用いる。ポーリングは BackgroundService、TradeDecisionMade 購読は MassTransit コンシューマ。
+// WebApplication を用いる。ポーリングは BackgroundService、TradeDecisionMade 購読は Wolverine のハンドラ。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL・Keycloak を
 // AiStockTrading.TestSupport.PlatformShim 経由で組む部分）は dev/test/CI でのローカル単体実行のためのもの。
 // 本番（実運用）では market-monitor は platform の可変部分へ組み込まれ、共通基盤は platform 本体の Foundation が
 // 提供する（本番統合は #22）。取引ドメインの本番実装は Domain/Application と、本ホストの再利用可能部
@@ -94,18 +94,13 @@ builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(Moni
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 
-// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。基準値更新のため TradeDecisionMade を購読、監視イベントを発行する。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<TradeDecisionMadeBaselineConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。基準値更新のため TradeDecisionMade を購読、監視イベントを発行する。
+// ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(TradeDecisionMadeBaselineHandler).Assembly));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

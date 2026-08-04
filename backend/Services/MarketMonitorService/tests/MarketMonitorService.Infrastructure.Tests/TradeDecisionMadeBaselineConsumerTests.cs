@@ -4,34 +4,43 @@ using AiStockTrading.MarketMonitor.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
 
 // FR-03, UC-02: TradeDecisionMade 購読で基準値が判断時点価格へ更新されることを検証する。
+//
+// ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（AddMassTransitTestHarness + harness.Consumed）から
+// Wolverine.Tracking（TrackActivity + session.Executed）へ移行した。表明の意味は同じ
+// （メッセージを流し、ハンドラが実行され、基準値が判断時点価格になる）。
 public class TradeDecisionMadeBaselineConsumerTests
 {
     [Fact]
     public async Task 判断確定で対象銘柄の基準値を判断時点価格へ更新する()
     {
         var baselines = new InMemoryPriceBaselineStore();
-        await using var provider = new ServiceCollection()
-            .AddSingleton<IPriceBaselineStore>(baselines)
-            .AddMassTransitTestHarness(x => x.AddConsumer<TradeDecisionMadeBaselineConsumer>())
-            .BuildServiceProvider(true);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IPriceBaselineStore>(baselines);
+                opts.Discovery.IncludeAssembly(typeof(TradeDecisionMadeBaselineHandler).Assembly);
+                // 実ブローカへ接続しない（ローカル・CI ともに RabbitMQ を要求しない）。
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
         var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy,
             ProductType.Cash, TradeMode.Paper, 10, 1_234m);
-        await harness.Bus.Publish(new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(
+            new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow));
 
-        (await harness.Consumed.Any<TradeDecisionMade>()).Should().BeTrue();
+        session.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         baselines.GetBaseline("AAPL", Market.UnitedStates).Should().Be(1_234m);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 }
