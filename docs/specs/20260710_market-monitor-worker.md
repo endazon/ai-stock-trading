@@ -34,7 +34,7 @@ plan_refs:
 Slice A で判定ロジックとイベント契約を確定した。本 Slice はそれを配線し、監視間隔ごとに価格をポーリングして
 `PriceMovementDetected` / `StopLossTriggered` を MassTransit で発行する稼働サービスにする。基準値（前回判断時点価格）は
 `TradeDecisionMade` を購読して更新する。設定・基準値・クールダウンを PostgreSQL に永続化し（ADR-0001）、監視設定は
-利用者のみの HTTP エンドポイントで変更できる（FR-13・ADR-0007・Keycloak `OwnerOnly`）。
+利用者のみの HTTP エンドポイントで変更できる（FR-13・Keycloak `OwnerOnly`）。
 
 ## 対象範囲
 
@@ -80,7 +80,7 @@ Serilog/OTel／`AddAiStockTradingObservability`／`AddAiStockTradingAuth`（shim
 
 ### 設定エンドポイント（`Foundation/Endpoints/MonitorSettingsEndpoints.cs`）
 
-`/monitor` グループ、`RequireAuthorization(OwnerOnly)`（利用者のみ・FR-13/ADR-0007）:
+`/monitor` グループ、`RequireAuthorization(OwnerOnly)`（利用者のみ・FR-13）:
 - `GET /monitor/settings`（現行）／`PUT /monitor/settings`（監視銘柄・閾値・クールダウンの更新）。
 検証失敗は 400、楽観排他競合は 409 に写像（#12 Slice B 踏襲）。
 

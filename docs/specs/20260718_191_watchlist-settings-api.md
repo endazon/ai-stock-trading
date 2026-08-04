@@ -2,7 +2,7 @@
 title: 作業仕様書 — 監視銘柄（watchlist）設定ストア API の整備（FR-13 残・#188 の前提）
 type: work
 status: In progress
-related_ids: [FR-03, FR-13, FR-11, UC-06, ADR-0007]
+related_ids: [FR-03, FR-13, FR-11, UC-06]
 issue: 191
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -10,7 +10,6 @@ updated: 2026-07-18
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 related_specs:
   - ../adr/IADR-0088_watchlist-settings-api.md
   - ../adr/IADR-0084_frontend-risk-settings-and-control-status.md

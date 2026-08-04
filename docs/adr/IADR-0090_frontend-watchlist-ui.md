@@ -2,7 +2,7 @@
 title: IADR-0090 SC-02 の監視銘柄（watchlist）変更 UI は MarketMonitor `/monitor/watchlist` を個別操作で消費し、削除は明示確認で fail-safe にする（別サービスとして独立ロード・実 BFF プロキシは MSP 後続）
 type: impl-adr
 status: Accepted
-related_ids: [FR-13, FR-03, FR-11, UC-06, SC-02, ADR-0007, IADR-0080, IADR-0084, IADR-0086, IADR-0088]
+related_ids: [FR-13, FR-03, FR-11, UC-06, SC-02, IADR-0080, IADR-0084, IADR-0086, IADR-0088]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -10,7 +10,6 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
   - ../../planning/projects/ai-stock-trading/05_screens/01_screens.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
 ---
 
 # IADR-0090: SC-02 の監視銘柄（watchlist）変更 UI は MarketMonitor `/monitor/watchlist` を個別操作で消費し、削除は明示確認で fail-safe にする
@@ -23,7 +22,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: **FR-13**（利用者が設定を変更できる）、**FR-03**（監視）、**FR-11**（変更履歴）、**UC-06**（設定変更）、ADR-0007
+- 関連する計画書 ID: **FR-13**（利用者が設定を変更できる）、**FR-03**（監視）、**FR-11**（変更履歴）、**UC-06**（設定変更）
 - 対象 Issue: [#196](https://github.com/endazon/ai-stock-trading/issues/196)（フロント監視銘柄変更 UI・`Refs #191 #188 #106`）
 - 関連する実装仕様書: [作業仕様](../specs/20260718_196_frontend-watchlist-ui.md)、画面 [SC-02 リスク設定](../screens/20260718_SC-02_risk-settings.md)
 - 前段: [IADR-0088](IADR-0088_watchlist-settings-api.md)（監視銘柄設定ストア API＝本 UI が消費する権威データ源）、

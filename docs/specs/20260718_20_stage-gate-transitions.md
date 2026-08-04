@@ -6,7 +6,7 @@ related_ids:
   - FR-20
   - FR-15
   - UC-06
-  - ADR-0007
+  - ADR-0003
   - ADR-0008
   - IADR-0012
   - IADR-0041
@@ -19,7 +19,6 @@ plan_refs:
   - "../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md (FR-20: 運用段階の管理と段階ごとのモード・資金上限の強制／FR-15: バックテスト必須ゲート)"
   - "../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06: 設定変更・取引の一時停止・緊急停止)"
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md (段階的実弾投入と撤退基準)"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md (変更は利用者のみ・変更履歴を記録)"
   - "../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md §4 (段階ゲート提案)"
 related_specs:
   - "../adr/IADR-0070_stage-gate-persistence-and-approval.md（本作業の決定）"
@@ -34,7 +33,7 @@ related_specs:
 
 - 機能要求: **FR-20**（運用段階 Stage 0〜3 を管理し、段階ごとのモードと資金上限を強制する。段階遷移＝昇格・差し戻しは合格・撤退基準に基づき利用者の承認で行う）／**FR-15**（バックテスト必須ゲート＝Stage 0）
 - ユースケース: **UC-06**（設定・統制の変更・承認）
-- 関連 ADR: **ADR-0008**（段階的実弾投入・撤退基準）／**ADR-0007**（変更は利用者のみ・変更履歴を記録）
+- 関連 ADR: **ADR-0008**（段階的実弾投入・撤退基準）／**ADR-0003**（統制はリスク管理サービスが強制し AI は上書きできない）
 - 関連 IADR: **IADR-0041**（純ドメインの段階ゲート状態機械・承認ゲート）／IADR-0012（Risk EF 永続化）／IADR-0051（OwnerOnly/OwnerOrService）／**IADR-0070（本作業の決定）**
 - Issue: #20（本体）／親 #7
 

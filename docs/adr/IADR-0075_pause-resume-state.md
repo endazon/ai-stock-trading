@@ -2,7 +2,7 @@
 title: IADR-0075 取引の一時停止(pause)を kill switch と同経路の別状態として新設し、監査は既存の設定変更履歴で満たす
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0007, ADR-0009, IADR-0008, IADR-0051, IADR-0062]
+related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0009, IADR-0008, IADR-0051, IADR-0062]
 author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
@@ -20,7 +20,7 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: **FR-10**（リスク統制）、**FR-14**（Discord 操作）、UC-06 / UC-07、ADR-0003 / ADR-0007
+- 関連する計画書 ID: **FR-10**（リスク統制）、**FR-14**（Discord 操作）、UC-06 / UC-07、ADR-0003 / ADR-0009
 - **計画裁定**: 計画 ADR-0009「取引の一時停止(pause)を日次損失ロックアウトと別状態とし、3統制の優先順位を定める」
   （Accepted・PR [endazon/project-planning#29](https://github.com/endazon/project-planning/pull/29)）。
   **3 状態の裁定は計画側の決定であり、本 IADR で再決定しない**（実装方法のみを決める）。
@@ -80,7 +80,7 @@ pause/resume は `ISettingsChangeLog` に `SettingsChangeType.TradingPaused` / `
 （アクター・理由・日時・前後値）。**MassTransit の新イベントは発行しない・AuditService は無改修**。
 
 **理由**: kill switch（FR-10・#15 相当）は現状**イベントを発行せず** `ISettingsChangeLog`（`/settings/history`）
-だけで ADR-0007 の監査要件を満たしている。pause/resume を同経路で記録すれば kill switch と**同水準**の監査になり
+だけで FR-11 の監査要件を満たしている。pause/resume を同経路で記録すれば kill switch と**同水準**の監査になり
 （受け入れ基準「アクター・理由・日時」を充足）、スコープを Risk＋Notification に閉じられる。新イベントを足すと
 `Shared.Contracts`・AuditService・`AuditConsumerCoverageTests` へ波及し、監査の担保が二経路に割れる。
 `Shared.Contracts` の変更は `RejectionReason.TradingPaused`（列挙追加1件）に限る。

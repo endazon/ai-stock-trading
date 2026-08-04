@@ -2,7 +2,7 @@
 title: 作業仕様書 — フロントエンド新設（frontend/）と設定画面（FR-17 全体前提条件の閲覧/変更）第1スライス
 type: work
 status: Done（第1スライス。残スライスは #106 に別掲）
-related_ids: [FR-13, FR-17, UC-06, ADR-0001, ADR-0007]
+related_ids: [FR-13, FR-17, UC-06, ADR-0001]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18

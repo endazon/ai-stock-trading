@@ -86,8 +86,22 @@ related_specs:
 
 | 段階 | 範囲 | 件数 | 本書での扱い |
 | --- | --- | --- | --- |
-| **第 1 段階（本 PR）** | `backend/` `frontend/` のコード内コメント・テストコメント | 116 → 31 | 完了 |
-| 第 2 段階（後続 PR） | `docs/` の `related_ids` / `plan_refs` / 本文 | 172 | 未着手（分類は本書に記載） |
+| 第 1 段階 | `backend/` `frontend/` のコード内コメント・テストコメント | 116 → 31 | 完了（[PR #376](https://github.com/endazon/ai-stock-trading/pull/376)・マージ済み） |
+| **第 2 段階の前半（本 PR）** | `docs/` のうち曖昧さのない 5 群 | 172 → 107 | 完了 |
+| 第 2 段階の後半（後続 PR） | `docs/` の残り | 107 | 未着手 |
+
+第 2 段階を前後半に分けたのは、後半に残るのが**1 行ずつ文脈判定を要する群**だからである。前半の 5 群
+（FR-17 / FR-13 / FR-06・07 / FR-20 / pause・kill switch）は**文書の主題で一意に決まる**ため機械的に
+処理でき、レビューも群単位で追試できる。両者を混ぜると、判定の難易度が違うものが同じ差分に並ぶ。
+
+**第 2 段階の後半に残る 107 箇所の内訳**:
+
+| 区分 | 対象 | 目安 |
+| --- | --- | --- |
+| **維持**（ガード文脈 FR-19） | IADR-0004 / 0006 / 0038 / 0040 / 0132、`functional/FR-19_trading-guard.md`、`tests/FR-19_*`、332_trading-guards、risk-eval-core-fixes、order-decomposition、manipulation-detector、risk-guard-core | 約 45 |
+| **併記**（設定ストア混在） | IADR-0010 / 0012、`data/risk-management-aggregates.md`、risk-management-application、risk-management-worker | 約 21 |
+| 個別判定が要る | IADR-0066 / 0067 / 0084 / 0086、market-valuation-wiring、154_order-lifecycle-telemetry、106/188_frontend-*、`screens/SC-02`、`api/events-and-ports` ほか | 約 35 |
+| **対象外**（point-in-time 記録） | `20260801_impl-handoff-kit-sync.md`、`20260804_plan-feedback-sent-issue-links.md` | 4 |
 
 コード側を先にした理由は、**コメントは実装者が編集中に読む一次情報**であり、誤帰属が新しい実装へ
 伝播する経路がもっとも短いためである。文書側は参照時に読むもので、伝播は間接的である。
@@ -136,6 +150,23 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 **kill switch と pause の監査**であってガード設定の監査ではない。前者は ADR-0003、後者は ADR-0009 とし、
 記録先が共通の設定変更履歴であることは FR-11 で説明する。
 
+### 置換は `related_ids` に重複を作る（機械的に検査する）
+
+`ADR-0007` を別の ID へ**置換**すると、置換先が同じリストに既にある場合に**重複**が生まれる。
+第 2 段階の前半で実際に 5 ファイルで起きた（AI レビューが 1 件を指摘し、同型を機械検査して残り 4 件を発見）。
+
+| ファイル | 重複した ID |
+| --- | --- |
+| `adr/IADR-0063_assumptions-versioned-resolution.md` | `FR-17` |
+| `adr/IADR-0062_discord-bot-gateway-and-authorization.md` | `ADR-0003` |
+| `adr/IADR-0070_stage-gate-persistence-and-approval.md` | `ADR-0008` |
+| `specs/20260717_15_discord-bot-authorization-killswitch.md` | `ADR-0003` |
+| `specs/20260717_19_assumptions-versioned-read.md` | `FR-17` |
+
+**置換のたびに `related_ids` / `plan_refs` の重複を全件検査する。** 目視では見つからない
+（リストが長く、置換先は他の行に離れて存在するため）。同様に、`plan_refs` から ADR-0007 の
+エントリを削除するときは、**そのファイルが代替の計画書参照を保持しているか**を削除前に確認する。
+
 ### Keycloak 認証基盤の引用は落とす
 
 `Program.cs` の「`ADR-0004（platform）, ADR-0007`: Keycloak 認証」は、**認証・認可の基盤**についての記述で
@@ -154,11 +185,22 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 - [x] `dotnet build backend/backend.slnx` が警告 0・エラー 0。
 - [x] `dotnet test` が緑（CI の `build-and-test` ジョブが pass・3m10s。ローカルでは未実行）。
 
-### 第 2 段階（docs 側）の受け入れ基準
+### 第 2 段階の前半（本 PR）の受け入れ基準
+
+- [x] FR-17 / FR-13 / FR-06・07 / FR-20 / pause・kill switch の 5 群を是正した（172 → 107）。
+- [x] 関連 ADR が無い FR-13 / FR-17 に**別の ADR を当てはめていない**（FR 本文へ寄せた）。
+- [x] ガード設定でない対象を指す `plan_refs` の ADR-0007 エントリを削除した（**8 本**）。削除した
+      ファイルはいずれも `01_requirements.md` か代替 ADR を既に持ち、参照が失われていない。
+- [x] `node scripts/check-doc-links.js` が破損 0 件。
+- [x] point-in-time 記録（`20260801_impl-handoff-kit-sync.md` 等）を書き換えていない。
+- [x] [IADR-0042](../adr/IADR-0042_report-review-state-machine-and-detail-rendering.md) の
+      **先行是正の記録は残した**（「IADR-0024 は ADR-0007 と誤引用していた」の記述）。末尾の
+      「別タスクへ切り分け」だけを訂正済みへ更新した。
+
+### 第 2 段階の後半（後続 PR）の受け入れ基準
 
 - [ ] `docs/` の `ADR-0007` 残存参照が、すべてガード設定の文脈か正しい併記である。
-- [ ] `node scripts/check-doc-links.js` が破損 0 件。
-- [ ] point-in-time 記録（`20260801_impl-handoff-kit-sync.md` 等）を書き換えていない。
+- [ ] 維持すべき約 45 箇所（ガード文脈）から `ADR-0007` が失われていない。
 
 ## テスト方針
 
