@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.Configuration.Application.Tests;
 
-// FR-17, UC-06, ADR-0007: 前提条件の更新（Version 増分・アクター/理由必須・前後値履歴・楽観排他）を検証する。
+// FR-17, UC-06: 前提条件の更新（Version 増分・アクター/理由必須・前後値履歴・楽観排他）を検証する。
 public class AssumptionsServiceTests
 {
     private static AssumptionsService NewService(out InMemoryAssumptionsChangeLog log)

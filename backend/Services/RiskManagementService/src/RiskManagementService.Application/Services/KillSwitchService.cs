@@ -3,7 +3,7 @@ using AiStockTrading.RiskManagement.Application.State;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-10, UC-06, ADR-0003, ADR-0007: 全停止スイッチ（kill switch）の操作。利用者のみ（アクター・理由必須）。
+// FR-10, UC-06, ADR-0003: 全停止スイッチ（kill switch）の操作。利用者のみ（アクター・理由必須）。
 // 呼び出し側の権限（利用者か否か）はホスト層の Keycloak 認可で担保する（Slice B）。操作は履歴に記録する。
 public sealed class KillSwitchService(
     IKillSwitchStore store,
@@ -36,7 +36,7 @@ public sealed class KillSwitchService(
 
     private static void RequireActorAndReason(string actor, string reason)
     {
-        // 監査性（ADR-0007）: アクターと理由のない変更は受け付けない。
+        // 監査性（FR-11・ADR-0003）: アクターと理由のない変更は受け付けない。
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
     }

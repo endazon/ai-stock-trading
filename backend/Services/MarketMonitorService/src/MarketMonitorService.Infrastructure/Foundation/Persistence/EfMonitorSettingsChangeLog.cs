@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
 
-// FR-11, FR-13, ADR-0007: 監視設定変更履歴の EF 実装（追記専用）。新しい順で照会する。Risk の EfSettingsChangeLog をミラーする。
+// FR-11, FR-13: 監視設定変更履歴の EF 実装（追記専用）。新しい順で照会する。Risk の EfSettingsChangeLog をミラーする。
 internal sealed class EfMonitorSettingsChangeLog(MarketMonitorDbContext db) : IMonitorSettingsChangeLog
 {
     public void Record(MonitorSettingsChangeEntry entry)

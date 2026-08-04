@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.MarketMonitor.Api.Foundation.Endpoints;
 
-// FR-03, FR-13, UC-06, ADR-0007: 監視設定（監視銘柄・変動閾値・クールダウン）の照会・変更。
+// FR-03, FR-13, UC-06: 監視設定（監視銘柄・変動閾値・クールダウン）の照会・変更。
 // 変更（PUT /settings・POST/DELETE /watchlist）と履歴は利用者のみ（OwnerOnly）＝生成AI・自動処理はこのロールを持たず変更できない。
 // FR-02, IADR-0095: 監視銘柄の取得（GET /watchlist）のみサービス（trading-service）にも開放（OwnerOrService）＝定時サイクルが s2s 照会する。
 // IADR-0088: 認可は read/owner サブグループに付与し、親グループには付けない（親は例外→HTTP 写像のみ）。Risk `/risk-controls` と同型。
@@ -42,7 +42,7 @@ internal static class MonitorSettingsEndpoints
         // 未認証は 401、trading-owner/trading-service いずれも持たなければ 403。認可は read サブグループに付与し親には付けない。
         var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
-        // ---- 利用者のみ（ADR-0007・OwnerOnly）: 認可は owner サブグループに付与し親グループには付けない（親は 403）----
+        // ---- 利用者のみ（FR-13・OwnerOnly）: 認可は owner サブグループに付与し親グループには付けない（親は 403）----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         // ---- 監視設定（変動閾値・クールダウン・監視銘柄の一括置換。後方互換で従来どおり） ----
@@ -58,7 +58,7 @@ internal static class MonitorSettingsEndpoints
         // 追加/削除は理由必須（reason 空欄は 400）。actor は認証済みトークン名（preferred_username）から取る。
         // 重複追加・不在削除・空 symbol・未定義 market は 400、設定行の Version 楽観排他競合は 409（親の例外フィルタで写像）。
         // FR-02, IADR-0095: 取得は read（OwnerOrService）に置き、定時サイクル（#11 TradeDecision）が s2s 同期照会できるようにする。
-        // 変更（追加/削除）と履歴は owner（OwnerOnly）据え置き＝変更は利用者のみ・ADR-0007 維持。
+        // 変更（追加/削除）と履歴は owner（OwnerOnly）据え置き＝変更は利用者のみ（FR-13）維持。
         read.MapGet("/watchlist", (MonitorWatchlistService svc) => Results.Ok(svc.GetWatchlist()));
 
         owner.MapPost("/watchlist", (WatchlistChangeRequest req, MonitorWatchlistService svc, HttpContext http) =>
@@ -112,6 +112,6 @@ internal sealed record MonitorSettingsUpdateRequest(
     }
 }
 
-// FR-13, UC-06: 監視銘柄の追加/削除の要求（理由必須・ADR-0007）。actor は要求本文ではなく認証済みトークンから取る。
+// FR-13, UC-06: 監視銘柄の追加/削除の要求（理由必須・FR-11）。actor は要求本文ではなく認証済みトークンから取る。
 // Market は nullable で受け、省略（null）を 400 に弾く（非 nullable だと省略時に既定値 0 へ暗黙バインドされるため）。
 internal sealed record WatchlistChangeRequest(string Symbol, Market? Market, string Reason);

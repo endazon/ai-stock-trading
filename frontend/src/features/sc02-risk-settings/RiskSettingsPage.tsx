@@ -21,7 +21,7 @@ import {
 } from '../risk/contracts';
 import { WatchlistForm } from './WatchlistForm';
 
-// SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
+// SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, ADR-0008, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
 // データ源は BFF `/bff/risk-controls/settings`（RiskManagementService・OwnerOnly）。変更は利用者のみ・理由必須。
 // リスク上限（limits 8 項目・#186）に加え、取引ガード（guard・#188/IADR-0086）を変更できる。段階（stage）は参照表示に留める
 // （段階変更は段階ゲート承認フロー＝#20/#165 Bot 側と重複するため直接は開かない）。検証(400)・競合(409)はメッセージ表示し、
@@ -584,7 +584,7 @@ function StageView({ stage }: { stage: RiskManagementSettings['stage'] }) {
   );
 }
 
-// FR-11, ADR-0007: 変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
+// FR-11: 変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
 function HistoryView({ status, history }: { status: HistoryStatus; history: SettingsChangeEntry[] }) {
   return (
     <Section title={`変更履歴（${status === 'ok' ? history.length : '—'}）`}>

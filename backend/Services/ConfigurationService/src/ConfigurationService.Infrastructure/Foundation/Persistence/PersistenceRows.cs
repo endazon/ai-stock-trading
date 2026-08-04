@@ -18,7 +18,7 @@ internal sealed class AssumptionsRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-// 前提条件の変更履歴（FR-17, ADR-0007）。追記専用。
+// 前提条件の変更履歴（FR-17）。追記専用。
 internal sealed class AssumptionsChangeRow
 {
     public Guid Id { get; set; }

@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Application.Tests;
 
-// FR-03, FR-11, FR-13, UC-06, ADR-0007: 監視銘柄の追加/削除サービスの検証・履歴・理由必須をユニットで確認する。
+// FR-03, FR-11, FR-13, UC-06: 監視銘柄の追加/削除サービスの検証・履歴・理由必須をユニットで確認する。
 public class MonitorWatchlistServiceTests
 {
     private static MonitorWatchlistService NewService(

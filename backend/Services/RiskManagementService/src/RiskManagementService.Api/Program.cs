@@ -33,7 +33,7 @@ builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
 
-// ADR-0004（platform）, ADR-0007: Keycloak 認証（利用者のみの操作を OwnerOnly で守る）。
+// ADR-0004（platform）: Keycloak 認証（利用者のみの操作を OwnerOnly で守る）。
 builder.Services.AddAiStockTradingAuth(builder.Configuration);
 
 // ADR-0001（Database per Service）, IADR-0012: リスク管理専有 DB（risk_management_svc）。
@@ -213,7 +213,7 @@ app.UseAiStockTradingMiddleware();
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
 
-// FR-10, UC-06, ADR-0007: kill switch 操作・設定変更（利用者のみ）。
+// FR-10, FR-19, UC-06, ADR-0003, ADR-0007: kill switch 操作・設定変更（利用者のみ）。
 app.MapRiskControlEndpoints();
 
 app.Run();

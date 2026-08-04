@@ -27,7 +27,7 @@ public class HttpKillSwitchControllerTests
 
         handler.RequestUri.Should().Be("http://risk-management-service/risk-controls/kill-switch/engage");
         handler.Method.Should().Be(HttpMethod.Post);
-        // ADR-0007: 理由必須。
+        // FR-11・ADR-0003: 理由必須。
         using var doc = JsonDocument.Parse(handler.Body);
         doc.RootElement.GetProperty("reason").GetString().Should().Contain("endazon");
 

@@ -31,7 +31,7 @@ builder.Services.AddAiStockTradingHealthChecks();
 // よって Keycloak 認証（AddAiStockTradingAuth）は登録しない。ただし共通ミドルウェア
 // （UseAiStockTradingMiddleware）が UseAuthentication/UseAuthorization を含むため、その依存だけを満たす
 // （スキーム未登録＝認証は素通り。保護対象のエンドポイントが無いため素通りで問題ない）。
-// 認可を要する API を足す際は AddAiStockTradingAuth へ差し替えること（ADR-0007）。
+// 認可を要する API を足す際は AddAiStockTradingAuth へ差し替えること（platform ADR-0004）。
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 

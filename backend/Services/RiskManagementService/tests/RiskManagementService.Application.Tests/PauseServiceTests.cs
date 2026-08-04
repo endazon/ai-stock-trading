@@ -6,7 +6,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-10, FR-14, UC-06, ADR-0007, ADR-0009: 一時停止（pause）/再開（resume）操作の検証。
+// FR-10, FR-14, UC-06, ADR-0009: 一時停止（pause）/再開（resume）操作の検証。
 // 利用者のみ（アクター・理由必須）・変更履歴の記録・冪等性。
 public class PauseServiceTests
 {
@@ -49,7 +49,7 @@ public class PauseServiceTests
     [Fact]
     public void 一時停止と再開は変更履歴に記録される()
     {
-        // ADR-0007, ADR-0009: 監査（アクター・理由・日時）を設定変更履歴へ残す（kill switch と同経路）。
+        // FR-11, ADR-0009: 監査（アクター・理由・日時）を設定変更履歴へ残す（kill switch と同経路）。
         var (service, _, log) = Create();
 
         service.Pause("user", "様子見");
@@ -109,7 +109,7 @@ public class PauseServiceTests
     [InlineData("  ", "reason")]
     public void アクターまたは理由が空なら操作を拒否する(string actor, string reason)
     {
-        // ADR-0007: 監査性のためアクター・理由のない変更は受け付けない。
+        // FR-11: 監査性のためアクター・理由のない変更は受け付けない。
         var (service, _, _) = Create();
 
         var act = () => service.Pause(actor, reason);
