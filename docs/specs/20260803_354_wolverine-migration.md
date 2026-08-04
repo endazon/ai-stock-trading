@@ -964,9 +964,15 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
    本段階の変更（同アセンブリに触れていない）に由来しないが、**負荷時に不安定な可能性**として記録する。
    再現したら `TrackActivity().Timeout(...)` の明示を検討する。
 3. `<Svc>WorkerWebApplicationFactory` / `extern alias …Worker` の改名は据え置き（#353 §12 未決事項 8 を踏襲）。
-4. 計画への環流（`/plan-feedback`）は未実施: (a) Wolverine 6 のランタイムコンパイラ分離、
-   (b) Wolverine の既定が fan-out を壊すこと。いずれも platform ADR-0027 の前提に対する重要な但し書きであり、
-   基盤側の移行にも同じ罠がある（§9・[[IADR-0129]] フォローアップ 3）。
+4. 計画への環流（`/plan-feedback`）は **起草済み・送付待ち**: (a) Wolverine 6 のランタイムコンパイラ分離、
+   (b) Wolverine の既定が fan-out を壊すこと。いずれも platform ADR-0027 の前提（「移行手順を標準化できる」）に
+   対する重要な但し書きであり、基盤側の移行にも同じ罠がある（§9・[[IADR-0129]] フォローアップ 3）。
+   → `feedback/20260804_adr0027-wolverine-migration-caveats.md` に 1 通としてまとめた
+   （反映先候補: platform ADR-0027 への追記＋`12_backend-application-stack.md` のライブラリ表へ
+   `WolverineFx.RuntimeCompilation` の 1 行追加）。**計画リポジトリへの送付（Issue 起票 / `draft/feedback/` への
+   コピー）は未実施**であり、人間または別セッションに委ねる（本セッションで計画リポは読み取り専用参照）。
+   基盤側が別の標準（事前コード生成・別のキュー命名規則など）を採る場合は、ai ADR-0013（基盤へ追随する）に
+   従って本ユニットを合わせる必要があるため、裁定結果の戻しを依頼している。
 
 ## 変更履歴
 
@@ -975,3 +981,4 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
 | 2026-08-03 | 第 1 段階 | 本仕様書と [[IADR-0129]] を作成。Wolverine パッケージ選定・共通ヘルパ新設・パイロット 2 サービス（Configuration / CostControl）移行・検査器の新旧併存対応（§1〜§11） |
 | 2026-08-03 | 第 2 段階 | 残り 8 サービス（実測。当初「9 サービス＋ BFF」は数え違い）の移行。書き換えたテスト 93 件・合格数は移行前と完全一致。MassTransit の意図的な残存 4 箇所を記録（§12） |
 | 2026-08-04 | 第 3 段階 | wire 識別子テストの置き換え・`MassTransitExtensions` 撤去・Integration テストの追随と fan-out の実配線検証・MassTransit の完全除去と BANNED 昇格・検査器の旧規則撤去・[[IADR-0106]] の Superseded 化・旧キュー削除 Runbook・混在デプロイ禁止の解除条件（§13） |
+| 2026-08-04 | 第 3 段階（追補） | 未決事項 4（計画への環流）のフィードバック文書を起草（`feedback/20260804_adr0027-wolverine-migration-caveats.md`）。送付は未実施＝「起草済み・送付待ち」へ更新（§13.12-4） |
