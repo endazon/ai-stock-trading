@@ -4,15 +4,15 @@ using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
 using AiStockTrading.Notification.Infrastructure.Composable.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.notification-service";
 
 // #15 Slice A, FR-09, IADR-0020: 通知サービス。取引実行・リスク統制発動のイベントを購読し Discord へ一方向通知する。
 // ヘルスチェックの HTTP サーフェスのため WebApplication を用いる（DB・認可なし）。実 Discord 送信は既定で無効（安全既定）。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ を shim 経由で組む部分）は dev/test/CI での
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ を shim 経由で組む部分）は dev/test/CI での
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 var builder = WebApplication.CreateBuilder(args);
 
@@ -98,35 +98,17 @@ builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 
-// IADR-0011/0020: MassTransit（RabbitMQ）。取引実行・リスク統制発動のイベントを購読して通知する。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<OrderExecutedNotificationConsumer>();
-    x.AddConsumer<OrderRejectedNotificationConsumer>();
-    x.AddConsumer<StopLossTriggeredNotificationConsumer>();
-    // FR-17: 設定管理（#19）の前提条件変更通知。
-    x.AddConsumer<AssumptionsChangedNotificationConsumer>();
-    // FR-07/FR-09: 報告書（#14）の確定通知。
-    x.AddConsumer<ReportConfirmedNotificationConsumer>();
-    // FR-06/07/09/#280, IADR-0116: 報告書ドラフトの提示（確定依頼）の通知。
-    x.AddConsumer<ReportDraftPresentedNotificationConsumer>();
-    // NFR（費用）/FR-09: 費用統制（#23）のしきい値通知。
-    x.AddConsumer<CostThresholdReachedNotificationConsumer>();
-    // FR-20/FR-09: 撤退基準到達（撤退の定期評価ドライバ #166）の通知。
-    x.AddConsumer<WithdrawalTriggeredNotificationConsumer>();
-    // UC-01/FR-09/FR-07: 日報未確定による取引スキップ（取引判断 #11・#210）の確定を促す通知。
-    x.AddConsumer<DailyPolicyUnconfirmedNotificationConsumer>();
-    // FR-05/FR-10/#292, IADR-0118: 取引台帳とブローカ実ポジションの乖離（是正しないため通知が唯一の出口）。
-    x.AddConsumer<PositionReconciliationDriftNotificationConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        // 送信失敗を含む一時的失敗は再試行し、継続失敗はデッドレターへ退避する（回復性）。
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。取引実行・リスク統制発動のイベントを購読して通知する。
+// ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
+// 購読するのは NotificationHandlers.cs の 10 種（取引実行・拒否・損切り／前提条件変更 FR-17／報告書の確定・提示
+// FR-06/07/09・IADR-0116／費用しきい値 NFR／撤退基準到達 FR-20／日報未確定 #210／建玉乖離 #292・IADR-0118）。
+// **Wolverine ではハンドラの発見漏れ＝静かな未通知**になる（明示登録が無いため「登録し忘れ」は
+// ハンドラのアセンブリを渡し忘れる形で起こる）。10 種が扱われることは Infrastructure のテストが固定する。
+// 送信失敗を含む一時的失敗の再試行と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(OrderExecutedNotificationHandler).Assembly));
 
 var app = builder.Build();
 

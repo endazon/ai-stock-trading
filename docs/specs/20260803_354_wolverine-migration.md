@@ -568,3 +568,28 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   コンパイルできない（CS0121）。デリゲート型を明示するか、`Task` を返す補助メソッドを経由する。
 
 合格数: 1 / 73 / 7 / 123（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+#### NotificationService
+
+購読専用（10 ハンドラ・発行 0）。
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `NotificationService.Infrastructure.Tests/NotificationConsumersTests.cs` | `約定イベントは取引実行通知を送信する` / `拒否イベントは理由つきのリスク統制通知を送信する` / `前提条件変更イベントは設定変更通知を送信する` / `報告書確定イベントは確定通知を送信する` / `費用しきい値到達イベントは費用統制通知を送信する` / `損切りイベントは_Critical_通知を送信する` / `撤退基準到達イベントは自動停止つきで_Critical_通知を送信する` | `harness.Bus.Publish` ＋ `harness.Consumed.Any<T>()` ＋ `sender.Sent.Should().ContainSingle(述語)` | `InvokeMessageAndWaitAsync` ＋ `session.Executed.MessagesOf<T>()` ＋ **同じ `sender.Sent` の述語（1 文字も変えていない）** | 1〜4 充足 |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `NotificationWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => 6 件の AddConsumer)` → `DisableAllExternalWolverineTransports()` |
+| `NotificationConsumersTests` の `Build()` | 7 件の `AddConsumer` 列挙 → `opts.Discovery.IncludeAssembly(...)` |
+
+実装側の特記:
+
+- `NotificationConsumers.cs` → **`NotificationHandlers.cs`**、10 クラスを `*NotificationConsumer` → `*NotificationHandler`（`public sealed`）。
+- **移行によって消えた「テストと本番のズレ」**: MassTransit ではテスト側でも購読を列挙する必要があり、
+  `NotificationWorkerWebApplicationFactory` は **6 件しか登録していなかった**（本番は 10 件）。
+  Wolverine は明示登録を持たずアセンブリ走査で発見するため、テストの発見範囲が本番と同一になる。
+  列挙のズレという事故の種そのものが構造的に消えた（列挙を減らしたのではなく、列挙を必要としなくなった）。
+
+合格数: 1 / 113 / 69（Api / Application / Infrastructure）＝移行前と同数。

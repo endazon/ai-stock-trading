@@ -9,7 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（ハンドラ規約）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <!-- FR-14, IADR-0062 決定1: Gateway 常駐（詳細設計07 の採用方式）。Application へは漏らさずアダプタに隔離する。 -->
     <PackageReference Include="Discord.Net.WebSocket" />
     <ProjectReference Include="..\NotificationService.Application\NotificationService.Application.csproj" />
