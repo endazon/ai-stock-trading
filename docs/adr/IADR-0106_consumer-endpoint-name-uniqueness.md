@@ -1,7 +1,7 @@
 ---
 title: IADR-0106 consumer クラス名はキュー名であり、サービス跨ぎで一意にする
 type: impl-adr
-status: Accepted
+status: Superseded
 related_ids:
   - FR-03
   - FR-10
@@ -12,7 +12,7 @@ related_ids:
   - IADR-0014
 author: claude
 created: 2026-07-27
-updated: 2026-07-27
+updated: 2026-08-04
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md"
   - "../../planning/projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md"
@@ -20,7 +20,7 @@ plan_refs:
 
 # IADR-0106: consumer クラス名＝キュー名（サービス跨ぎの一意性）
 
-- 状態: Accepted
+- 状態: **Superseded**（[[IADR-0129]] が置き換えた・2026-08-04）
 - 日付: 2026-07-27
 - 決定者: claude（実装）
 
@@ -155,3 +155,15 @@ RabbitMQ + Kafka 併用（platform `ADR-0028`）へ追随することが確定�
 本 ADR は AST 内部のキュー名衝突（原因B）を扱う。取引フェーズ2 検証で観測された consumers=4 のうち残り 2 は、
 MSP 側が同じ 3 サービスを `microservices-platform` namespace にも重複デプロイしていたことによる
 （endazon/microservices-platform#407・原因A）。**両方が解消して初めて consumers が各 1 になる。**
+
+## 関連（本 ADR の失効・2026-08-04 追記）
+
+- **Superseded by: [[IADR-0129]]**（Wolverine 移行のトポロジ設計）。
+  本 ADR の決定は MassTransit の `DefaultEndpointNameFormatter`（キュー名＝`Consumer` 接尾辞を落とした
+  consumer クラス名・namespace 非包含）を前提とする。#354（[[ADR-0013]]）の Wolverine 移行により
+  **キュー名の導出にクラス名が一切関与しなくなった**ため、本 ADR の対策（クラス名をサービス跨ぎで
+  一意にする）は現行では効力を持たない。上の「⚠️ Wolverine 移行時の再検証」が求めた再検証は
+  #354 で実施され、キュー名の一意性は `<ServiceName>.<メッセージ型名>` の `ServiceName` へ帰着した
+  （[[IADR-0129]] 決定 1）。`scripts/check-consumer-endpoint-names.js` の旧規則は #354 第 3 段階で撤去した。
+- **本文は当時の記録として原文のまま据え置く**（#258 の原因分析と代替案の検討は、現在の設計を読む上での
+  文脈として価値がある）。本節と状態欄のみを追記・更新した。

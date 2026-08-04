@@ -125,6 +125,15 @@ plan_refs:
 
 <!-- 対象・頻度・保管期間・リストア手順・RPO/RTO -->
 
+## メッセージング（RabbitMQ のキュー）
+
+- キュー名は **`<ServiceName>.<メッセージ型名>`**（例 `ai-stock-trading.risk-management-service.TradeDecisionMade`）。
+  デッドレターは **`<queue>_error`**。いずれもサービス起動時に自動生成される（AutoProvision）。
+  規則の根拠は [IADR-0129](../adr/IADR-0129_wolverine-messaging-topology.md)（ADR-0013・Wolverine 移行）。
+- **キュー名から所有サービスが読める**（接頭辞）。`consumers = 0` のキューは所有サービスが購読できていない印である。
+- 移行前（MassTransit）の旧キュー 47 本はブローカ上に残るため、Wolverine 版の安定稼働後に削除する:
+  [旧キュー削除 Runbook](wolverine-queue-cleanup-runbook.md)。
+
 ## データ保持・パージ（#137 / [IADR-0059](../adr/IADR-0059_dedupe-retention-purge.md)）
 
 冪等化のための**重複排除ストア**は追記専用のため、保持期間ベースでパージする。対象は下表の 2 つに限る。
