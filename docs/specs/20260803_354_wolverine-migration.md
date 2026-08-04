@@ -430,7 +430,7 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
 | サービス | consumer 数 | 発行箇所 | 備考 |
 | --- | --- | --- | --- |
 | InformationCollection | 0 | 1（`InformationCollected`） | 発行専用 |
-| Report | 0 | 3（`ReportConfirmed` ×2 経路・`ReportDraftPresented`） | 発行専用。singleton からの発行あり |
+| Report | 0 | 2（`ReportConfirmed`・`ReportDraftPresented`） | 発行専用。singleton からの発行あり |
 | MarketMonitor | 1（`TradeDecisionMade`） | 2（`StopLossTriggered`・`PriceMovementDetected`） | |
 | TradeDecision | 2（`PriceMovementDetected`・`InformationCollected`） | 4（`TradeDecisionMade` ×2 経路・`LlmCostIncurred`・`DailyPolicyUnconfirmed`） | 購読 → 再発行 |
 | OrderExecution | 1（`OrderApproved`） | 5（`OrderExecuted` ×3 経路・`OrderModified`・`OrderCancelled`・`BrokerPositionsObserved`） | singleton からの発行あり |
@@ -458,3 +458,28 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
 | `InformationCollectionWorkerWebApplicationFactory` / `CostControlGateSelectionTests` / `InformationSourceSelectionTests` / `KnowledgeBaseSinkSelectionTests` の各 private factory | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness()` → `DisableAllExternalWolverineTransports()`（いずれも「実ブローカへ接続しない」） |
 
 合格数: 12 / 4 / 11 / 61（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+#### ReportService
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `ReportService.Api.Tests/ReportEndpointsTests.cs` | `ドラフト作成_確定で_ReportConfirmed_発行_daily_policy_照会` | `harness.Published.Any<ReportConfirmed>()` | `session.Sent.MessagesOf<ReportConfirmed>()` **＋ 宛先 exchange の実測固定** | 1〜4 充足・5（強化）。確定 POST を追跡ブロックへ移したが、応答・日報方針照会の表明は不変 |
+| `ReportService.Api.Tests/ReportAutoGenerationWiringTests.cs` | `既定では提示通知がバスへ発行される経路が選ばれる` | `BeOfType<MassTransitReportDraftPresentedNotifier>()` | `BeOfType<MessageBusReportDraftPresentedNotifier>()` | 1〜4 充足。**実装型の改名に追随しただけ**（同一アダプタ。表明の意味は「既定でバス発行の実装が選ばれる」で不変） |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `ReportWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness()` → `DisableAllExternalWolverineTransports()` |
+
+実装側の特記:
+
+- `MassTransitReportDraftPresentedNotifier` → **`MessageBusReportDraftPresentedNotifier`** に改名した（型名に旧ライブラリ名が残るため）。
+- 本アダプタは **singleton** である。MassTransit の `IBus`（singleton）に対応する singleton の発行口は Wolverine に無い
+  （**`IMessageBus` は scoped**。実測: singleton へ注入すると DI のスコープ検証で起動時に落ちる）。
+  singleton からの発行は **singleton の `IWolverineRuntime` から `new MessageBus(runtime)`** で行う（Wolverine の想定用法）。
+  この写像は OrderExecution / TradeDecision の常駐にも同じく適用する。
+- `appsettings.json` の Serilog Override キー `"MassTransit": "Warning"` を `"Wolverine"` へ改めた
+  （残すとログ抑制が無効化されたまま気づけない。**パイロット 2 サービス分の見落としも別コミットで是正した**）。
+
+合格数: 35 / 100 / 127 / 65（Api / Application / Domain / Infrastructure）＝移行前と同数。

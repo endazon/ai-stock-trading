@@ -63,7 +63,8 @@ public class ReportAutoGenerationWiringTests(ReportWorkerWebApplicationFactory f
     {
         // IADR-0116 決定2: 常駐そのものが既定無効のため、二段目の opt-in にしない（有効化したのに届かない状態を作らない）。
         factory.Services.GetRequiredService<IReportDraftPresentedNotifier>()
-            .Should().BeOfType<MassTransitReportDraftPresentedNotifier>();
+            // ADR-0013, IADR-0129, #354: 実装型は MassTransitReportDraftPresentedNotifier から改名した（実装は同一）。
+            .Should().BeOfType<MessageBusReportDraftPresentedNotifier>();
     }
 
     [Fact]

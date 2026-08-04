@@ -6,7 +6,6 @@ using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -14,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Wolverine;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 namespace AiStockTrading.Report.Api.Foundation.Endpoints;
@@ -144,7 +144,7 @@ internal static class ReportEndpoints
         // 確定（Draft→Confirmed・利用者のみ・版番号付き冪等）。遷移時のみ ReportConfirmed を発行し、確定報告書を KB へ保存する。
         // 対象が無ければ 404。KB 保存は best-effort（既定 no-op・fail-safe＝確定を壊さない・FR-08/IADR-0071 決定3）。
         owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc,
-            IPublishEndpoint bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, HttpContext http) =>
+            IMessageBus bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, HttpContext http) =>
         {
             var actor = ActorOf(http);
             var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);
@@ -154,7 +154,7 @@ internal static class ReportEndpoints
             if (result.Transitioned)
             {
                 var r = result.Report;
-                await bus.Publish(new ReportConfirmed(
+                await bus.PublishAsync(new ReportConfirmed(
                     r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
 
                 // FR-08, IADR-0069/0071 決定3: 確定報告書を KB へ保存（カタログ登録）。既定 no-op。

@@ -13,19 +13,20 @@ using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Wolverine;
+using Wolverine.Runtime;
 using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
 
 const string ServiceName = "ai-stock-trading.report-service";
 
 // #14 Slice A, FR-06/07, IADR-0024: 報告書サービス。確定管理（版番号付き冪等・Keycloak 認可）・確定済み日報方針の照会と
-// ヘルスチェックのため WebApplication を用いる。確定の遷移時に ReportConfirmed を発行する（MassTransit）。
+// ヘルスチェックのため WebApplication を用いる。確定の遷移時に ReportConfirmed を発行する（Wolverine）。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を shim 経由で組む部分）は
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL・Keycloak を shim 経由で組む部分）は
 // dev/test/CI でのローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 var builder = WebApplication.CreateBuilder(args);
 
@@ -137,7 +138,7 @@ builder.Services.AddSingleton(sp =>
 // no-op＝イベントを 1 件も発行しない。実送信は通知サービス側の Discord 設定が入って初めて発火する（IADR-0020/0062）。
 builder.Services.AddSingleton<IReportDraftPresentedNotifier>(sp =>
     sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.NotifyOnDraftPresented
-        ? new MassTransitReportDraftPresentedNotifier(sp.GetRequiredService<IBus>(), sp.GetRequiredService<IClock>())
+        ? new MessageBusReportDraftPresentedNotifier(sp.GetRequiredService<IWolverineRuntime>(), sp.GetRequiredService<IClock>())
         : new NoOpReportDraftPresentedNotifier());
 // EF ストア・ドラフト生成が scoped のため、オーケストレータも scoped（常駐は巡回ごとにスコープを作る）。
 builder.Services.AddScoped<ReportAutoGenerator>();
@@ -145,16 +146,10 @@ if (builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
         .Get<ReportAutoGenerationOptions>()?.Enabled == true)
     builder.Services.AddHostedService<ReportAutoGenerationService>();
 
-// IADR-0011/0024: MassTransit（RabbitMQ）。消費者は持たず、確定遷移時の ReportConfirmed 発行に用いる。
-builder.Services.AddMassTransit(x =>
-{
-    x.UsingRabbitMq((_, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは持たず、確定遷移時の ReportConfirmed 発行に用いる。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts =>
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
