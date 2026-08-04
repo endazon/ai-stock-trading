@@ -59,6 +59,16 @@ const BANNED = [
     replacement: 'Riok.Mapperly',
     reason: 'マッピングは Riok.Mapperly に統一する（platform ADR-0030 / #353）',
   },
+  // #354（Wolverine 移行）の完了に伴い PENDING から昇格した。移行前は「現に使われているため
+  // BANNED にできない」ものだったが、第 3 段階で最後の参照（PlatformShim の共通再試行・
+  // Shared.Contracts.Tests の URN 固定・Integration E2E の IBus）と CPM 宣言が消えた。
+  {
+    name: 'MassTransit',
+    replacement: 'Wolverine（WolverineFx / WolverineFx.RabbitMQ）',
+    reason:
+      'v9 が商用ライセンス・v8 の OSS サポートが 2026 年末で終了するため不採用'
+      + '（ADR-0013 / platform ADR-0027 / ADR-0030 / #354 完了）',
+  },
 ];
 
 /**
@@ -69,12 +79,9 @@ const BANNED = [
  * 使われていないものを PENDING に置くのは、防げる再混入を見送っているだけになる。
  */
 const PENDING = [
-  // Wolverine への移行（#354）は段階制であり、第 1 段階（パイロット 2 サービス）完了時点で
-  // 実測 91 ファイル・113 箇所（PackageReference / using）がまだ MassTransit を参照している。
-  // **全サービスの移行が終わる第 2 段階まで PENDING のままにする**。ここで BANNED へ昇格させると
-  // CI が常時赤になり、本ファイルが冒頭で戒めている「検査ごと無視される」状態を自ら作ることになる。
-  // 昇格の条件: check-consumer-endpoint-names.js の出力で「MassTransit 未移行: 0 件」になること。
-  { name: 'MassTransit', replacement: 'Wolverine', owningIssue: 354 },
+  // 現在 0 件である（#354 の完了で MassTransit が BANNED へ昇格した）。
+  // ここへ足してよいのは「**現に使われていて、剥がすまで BANNED にできない**」ものだけであり、
+  // 足すときは担当 issue（owningIssue）と、BANNED へ移す条件を必ず書くこと。
 ];
 
 const SCAN_EXT = new Set(['.cs', '.csproj', '.props']);
@@ -105,8 +112,12 @@ function findViolations(text, banned) {
   for (const lib of banned) {
     // パッケージ参照（PackageReference / PackageVersion の Include）と using を検出する。
     // 単なる散文中の言及（コメントで「FluentAssertions から移行した」等）は誤検出しない。
+    // パッケージ名は**サブパッケージ（ドット区切り）まで**対象にする（例 MassTransit.RabbitMQ /
+    // AutoMapper.Extensions.Microsoft.DependencyInjection）。本体だけを止めても、サブパッケージ経由で
+    // 同じ依存が戻ってくれば意味が無い。一方で前方一致（FluentAssertionsExtras のような別パッケージ）は
+    // 巻き込まない——直後がドットか行末（引用符）のときだけ一致させる。
     const patterns = [
-      new RegExp(`Include="${lib.name}"`),
+      new RegExp(`Include="${lib.name}(\\.[A-Za-z0-9_.]+)?"`),
       new RegExp(`^\\s*(global\\s+)?using\\s+${lib.name}\\b`),
     ];
     lines.forEach((line, i) => {
@@ -138,10 +149,11 @@ function main() {
   const violations = checkTree();
 
   if (violations.length === 0) {
-    const pending = PENDING.map((p) => `${p.name}（#${p.owningIssue}）`).join(' / ');
+    const pending = PENDING.length === 0
+      ? '\n  移行未完了のため未検査のもの: なし'
+      : `\n  移行未完了のため未検査: ${PENDING.map((p) => `${p.name}（#${p.owningIssue}）`).join(' / ')}`;
     console.log(
-      `[check-banned-libraries] OK: 不採用ライブラリ ${BANNED.length} 件の混入はありません。`
-        + `\n  移行未完了のため未検査: ${pending}`
+      `[check-banned-libraries] OK: 不採用ライブラリ ${BANNED.length} 件の混入はありません。${pending}`
     );
     process.exit(0);
   }

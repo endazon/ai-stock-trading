@@ -342,6 +342,15 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(bl.findViolations('<PackageReference Include="FluentAssertionsExtras" />', bl.BANNED), []);
   });
 
+  ok('check-banned-libraries: サブパッケージ（ドット区切り）も検出する', () => {
+    // #354: 本体だけを止めても MassTransit.RabbitMQ のようなサブパッケージ経由で同じ依存が戻る。
+    assert.strictEqual(
+      bl.findViolations('<PackageVersion Include="MassTransit.RabbitMQ" Version="8.4.1" />', bl.BANNED).length,
+      1
+    );
+    assert.strictEqual(bl.findViolations('using MassTransit.RabbitMQ;', bl.BANNED).length, 1);
+  });
+
   ok('check-banned-libraries: 移行未完了のものは PENDING にあり BANNED には無い', () => {
     const bannedNames = bl.BANNED.map((b) => b.name);
     for (const p of bl.PENDING) {
@@ -361,6 +370,14 @@ module.exports = ({ ok, assert }) => {
         `${p.name} は実ツリーで参照 0 件である。PENDING ではなく BANNED へ移すこと（担当 #${p.owningIssue}）`
       );
     }
+  });
+
+  ok('check-banned-libraries: PENDING は現在 0 件である（#354 の完了で MassTransit が昇格した）', () => {
+    // 上の 2 つは PENDING の**各要素**に対する検査であり、PENDING が空だと無条件に通る（空振り）。
+    // 今の状態を明示的に表明して、検査が静かに空振りしている経路を塞ぐ（IADR-0127 と同じ思想）。
+    // 新たに PENDING を置く場合は本テストを更新し、置く理由と BANNED へ移す条件を書くこと。
+    assert.deepStrictEqual(bl.PENDING, []);
+    assert.ok(bl.BANNED.some((b) => b.name === 'MassTransit'), 'MassTransit は BANNED であること（#354）');
   });
 
   ok('check-banned-libraries: BANNED には未導入のライブラリも含められる（先回り登録の許容）', () => {
