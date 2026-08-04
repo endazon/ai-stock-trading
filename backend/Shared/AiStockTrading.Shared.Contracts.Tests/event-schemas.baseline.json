@@ -37,6 +37,15 @@
     "Amount": "Decimal",
     "At": "DateTimeOffset"
   },
+  "MaintenanceMarginReductionExecuted": {
+    "EventId": "Guid",
+    "ExecutedAt": "DateTimeOffset",
+    "Items": "IReadOnlyList\u003CMaintenanceMarginReductionItem\u003E",
+    "RatioAfter": "Decimal?",
+    "RatioBefore": "Decimal",
+    "RecoveryTarget": "Decimal",
+    "Threshold": "Decimal"
+  },
   "OrderApproved": {
     "ApprovedAt": "DateTimeOffset",
     "ApprovedQuantity": "Int32",
