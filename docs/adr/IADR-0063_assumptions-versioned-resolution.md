@@ -6,7 +6,6 @@ related_ids:
   - FR-17
   - FR-13
   - UC-06
-  - FR-17
   - IADR-0021 # 設定サービスが前提条件を所有・バージョン管理する
   - IADR-0051 # s2s 認証・読み取りは OwnerOrService・書き込みは OwnerOnly
   - IADR-0027 # 費用統制（#139 の消費側）
@@ -14,7 +13,6 @@ author: claude
 created: 2026-07-17
 plan_refs:
   - "../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md"
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
 ---
 
 # IADR-0063: バージョン付き全体前提条件の取得・解決方式

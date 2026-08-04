@@ -150,6 +150,23 @@ RiskManagementService は **ガード設定（FR-19）・統制上限（FR-10）
 **kill switch と pause の監査**であってガード設定の監査ではない。前者は ADR-0003、後者は ADR-0009 とし、
 記録先が共通の設定変更履歴であることは FR-11 で説明する。
 
+### 置換は `related_ids` に重複を作る（機械的に検査する）
+
+`ADR-0007` を別の ID へ**置換**すると、置換先が同じリストに既にある場合に**重複**が生まれる。
+第 2 段階の前半で実際に 5 ファイルで起きた（AI レビューが 1 件を指摘し、同型を機械検査して残り 4 件を発見）。
+
+| ファイル | 重複した ID |
+| --- | --- |
+| `adr/IADR-0063_assumptions-versioned-resolution.md` | `FR-17` |
+| `adr/IADR-0062_discord-bot-gateway-and-authorization.md` | `ADR-0003` |
+| `adr/IADR-0070_stage-gate-persistence-and-approval.md` | `ADR-0008` |
+| `specs/20260717_15_discord-bot-authorization-killswitch.md` | `ADR-0003` |
+| `specs/20260717_19_assumptions-versioned-read.md` | `FR-17` |
+
+**置換のたびに `related_ids` / `plan_refs` の重複を全件検査する。** 目視では見つからない
+（リストが長く、置換先は他の行に離れて存在するため）。同様に、`plan_refs` から ADR-0007 の
+エントリを削除するときは、**そのファイルが代替の計画書参照を保持しているか**を削除前に確認する。
+
 ### Keycloak 認証基盤の引用は落とす
 
 `Program.cs` の「`ADR-0004（platform）, ADR-0007`: Keycloak 認証」は、**認証・認可の基盤**についての記述で

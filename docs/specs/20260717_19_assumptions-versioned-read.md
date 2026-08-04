@@ -6,7 +6,6 @@ related_ids:
   - FR-17
   - FR-13
   - UC-06
-  - FR-17
   - IADR-0021
   - IADR-0051
   - IADR-0063
