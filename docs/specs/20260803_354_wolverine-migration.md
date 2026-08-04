@@ -827,6 +827,11 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
 **ローカルでは実行できない（Docker 無し・§7.3）。** ローカル検証は「コンパイルが通ること」と
 `--filter "Category=Integration" --list-tests` での選択（**8 件**。移行前 7 件＋本 PR の fan-out 1 件）までである。
 **実走は `integration.yml`（nightly / workflow_dispatch）へ委ねる。**
+
+> **追記（§13.13）**: この委任した実走で 3 件が失敗した。原因はメッセージングのトポロジではなく
+> **ハンドラの生成コード**であり、上記①のトポロジ検査は**通過したうえで**②の実配送が成立しなかった。
+> 診断では「Docker が無い＝実基盤を用意できない」という前提自体を崩し（apt で RabbitMQ / PostgreSQL を直接起動）、
+> `E2EInfrastructure` の外部注入経路でローカル再現した。§13.13 を参照。
 `integration.yml` 自体の変更は不要であることを確認した（Testcontainers が Docker で実 RabbitMQ を起動する構成であり、
 ワークフローにブローカのサービス定義は無い。実行コマンド `--filter "Category=Integration"` も不変）。
 
@@ -921,8 +926,8 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
 - [x] **pub/sub の fan-out が competing consumer に退行していないこと**を静的検査で守っている
       （`check-consumer-endpoint-names.js` の N1〜N3。実ツリーの変異で「正しく壊れる」ことを確認済み・§13.6）
 - [x] 同上を**実 broker で検証する**テストがある（§13.4）
-      — **ただし実走は CI へ委任**（ローカルに Docker が無く、本 PR では `--list-tests` の選択までを確認した。
-      `integration.yml` の nightly / workflow_dispatch で実走する）
+      — `integration.yml` の workflow_dispatch で**実走した**（run 30876282124）。3 件失敗 → 根本原因を特定して修正し、
+      ローカルの実 RabbitMQ / 実 PostgreSQL で**3 件合格**を確認した（§13.13）。CI での再実走で最終確認する
 - [x] MassTransit への参照が 0 件（`using` / `PackageReference` / CPM 宣言。§13.9）
 - [x] `check-banned-libraries.js` で MassTransit が **BANNED**（PENDING 0 件）
 - [x] 検査器から旧規則を撤去し、Wolverine 単独の規則になっている（§13.6）
@@ -965,7 +970,9 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
    再現したら `TrackActivity().Timeout(...)` の明示を検討する。
 3. `<Svc>WorkerWebApplicationFactory` / `extern alias …Worker` の改名は据え置き（#353 §12 未決事項 8 を踏襲）。
 4. 計画への環流（`/plan-feedback`）は **起草済み・送付待ち**: (a) Wolverine 6 のランタイムコンパイラ分離、
-   (b) Wolverine の既定が fan-out を壊すこと。いずれも platform ADR-0027 の前提（「移行手順を標準化できる」）に
+   (b) Wolverine の既定が fan-out を壊すこと、(c) Wolverine 6 の既定 `ServiceLocationPolicy.NotAllowed` が
+   internal な実装型に依存するハンドラを 1 通目の受信時に落とすこと（§13.13 で追記）。
+   いずれも platform ADR-0027 の前提（「移行手順を標準化できる」）に
    対する重要な但し書きであり、基盤側の移行にも同じ罠がある（§9・[[IADR-0129]] フォローアップ 3）。
    → `feedback/20260804_adr0027-wolverine-migration-caveats.md` に 1 通としてまとめた
    （反映先候補: platform ADR-0027 への追記＋`12_backend-application-stack.md` のライブラリ表へ
@@ -973,6 +980,114 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
    コピー）は未実施**であり、人間または別セッションに委ねる（本セッションで計画リポは読み取り専用参照）。
    基盤側が別の標準（事前コード生成・別のキュー命名規則など）を採る場合は、ai ADR-0013（基盤へ追随する）に
    従って本ユニットを合わせる必要があるため、裁定結果の戻しを依頼している。
+
+### 13.13 実 RabbitMQ E2E の失敗と根本原因（`integration.yml` 初回実走 → 修正）
+
+§13.4 で「実走は CI へ委任」とした実基盤 E2E を、PR ブランチへ `workflow_dispatch` で手動実行した
+（run 30876282124）。結果は **8 件中 3 失敗・5 合格**であり、**メッセージ配送を伴う 3 件がすべて失敗**した。
+develop の nightly は前日（2026-08-03 19:26 UTC）まで green であり、**本移行が入れた退行**である。
+
+| # | 失敗したテスト | 見えた症状 |
+| --- | --- | --- |
+| 1 | `TradeExecutionPipelineE2ETests.取引判断が承認され発注執行まで複数サービスを跨いで流れる` | 連鎖が成立せず `null`（タイムアウトまで待って例外なし） |
+| 2 | `TradeExecutionPipelineE2ETests.同一イベントは購読する全サービスへ届く_fan_out…` | **①トポロジ検査は通過**し、②実配送で発注執行サービスが受け取らない |
+| 3 | `OrderExecutionPipelineE2ETests.承認注文を実RabbitMQへ発行するとペーパー執行され実Postgresへ永続される` | 同上（購読 → 執行 → 永続が成立しない） |
+
+#### 診断の経路（当初の有力仮説は外れた）
+
+当初の仮説は「**発行側のルーティング未構成**」（§13.4 に自ら罠として記録した「ルーティング未構成のホストは
+送信自体が起きず例外にもならない」）であった。しかし次の順で切り分け、**発行側は正しい**ことを確定した。
+
+1. **planned topology の実物確認（ブローカ不要）**: `StubAllExternalTransports()` は
+   `ExternalTransportsAreStubbed` を立て、**conventional な listener 探索と sender 事前登録を丸ごとスキップする**
+   （Wolverine 6.24.5 の逆コンパイルで確認。`WolverineRuntime.discoverListenersFromConventions`）。
+   よって stub 下の検証は「送信ルートが local へ閉じていないこと」しか見ておらず、キュー・binding は生成すらされない。
+   接続不能なブローカへ向けてホストを起動し、起動失敗後に残るランタイムから planned topology を読むと、
+   キュー `<Svc>.<型名>` が exchange `<完全名>` へ bind され、DLQ が `<queue>_error` になることを確認できた。
+2. **実ブローカでの再現環境をこの作業環境に用意した**: Docker は無いが、**apt で RabbitMQ 3.12 と
+   PostgreSQL 16 を直接インストールして起動**し、`E2EInfrastructure` の外部注入経路
+   （`E2E_POSTGRES_CONNECTION` / `E2E_RABBITMQ_CONNECTION`・§13.4）で **失敗 3 件をローカル再現した**。
+3. **ブローカ上の実配線は正しかった**: `rabbitmqctl list_bindings` で
+   `AiStockTrading.Shared.Contracts.Events.OrderApproved`（fanout）→ `ai-stock-trading.order-execution-service.OrderApproved`
+   の binding が実在。さらに**別ホストから同じ型を発行するとキューにメッセージが 1 通滞留した**
+   （＝発行・exchange・binding・キュー投入まで正常）。サービスを起動するとその 1 通は消費されるが、
+   実行結果は永続されず `<queue>_error` にも現れない。
+4. **サービス単体をログ付きで起動して確定**: `dotnet run` した OrderExecutionService のログに次が出た。
+
+   ```
+   Wolverine.Configuration.InvalidServiceLocationException: Found service locations while generating code
+   for Message Handler for AiStockTrading.Shared.Contracts.Events.OrderApproved,
+   but ServiceLocationPolicy.NotAllowed is in effect (this will become the default in Wolverine 6.0).
+   Service AiStockTrading.OrderExecution.Application.Services.OrderExecutionService:
+     Concrete type ...EfExecutedOrderStore is not public, so requires service location
+     Concrete type ...EfOrderReservationStore is not public, so requires service location
+   ```
+
+#### 根本原因（3 件すべてを単一原因で説明できる）
+
+**Wolverine 6 の既定 `ServiceLocationPolicy.NotAllowed` が、`internal sealed` な永続アダプタに依存する
+ハンドラの生成コードを拒否する。**詳細と選択肢の比較は [[IADR-0129]] 決定 11 に記録した。
+
+失敗するのは**起動時ではなく 1 通目の受信時**（ハンドラ生成が走る時点。`TypeLoadMode.Dynamic`）であるため、
+起動・ready・キュー宣言・consumer 接続・発行・配送がすべて成功したまま、**処理だけが無言で落ちる**。
+`<queue>_error` にも入らない（チェーン組み立て前の失敗であり、再試行・DLQ の対象にならない）。
+3 件はいずれも「発注執行サービスが `OrderApproved` を処理して永続する」ことに依存しており、
+リスク管理側のハンドラも同じ理由で落ちる（同サービスの台帳・活動射影も `internal sealed` に依存する）。
+**該当は移行した 10 サービス全体に及ぶ潜在故障**であり、E2E が触れていない 8 サービスも同じ状態だった。
+
+#### 修正
+
+共通ヘルパ `WolverineExtensions.UseAiStockTradingRabbitMq` に 1 行を追加した（[[IADR-0129]] 決定 4 の集約原則を維持。
+サービス個別の設定は増やしていない）。
+
+```csharp
+options.ServiceLocationPolicy = ServiceLocationPolicy.AlwaysAllowed;
+```
+
+#### なぜユニットテストで捉えられなかったか（検証の盲点）
+
+| 既存の検証 | なぜ見逃したか |
+| --- | --- |
+| 各サービスの `*ConsumerTests`（93 件） | ハンドラを**直接 `new` して**呼ぶ。Wolverine の生成コードを一度も通らない |
+| `WolverineTopologyTests`（送信ルートの固定） | `StubAllExternalTransports()` 下で**ルート解決だけ**を見る。ハンドラは起動しない |
+| `ConsumerEndpointNameTests` / `check-consumer-endpoint-names.js` | **名前**（キュー名・ヘルパ迂回）の検査であり、実行可能性は見ない |
+| 実基盤 E2E のトポロジ検査（§13.4 ①） | キュー実在・consumer 数・DLQ 実在まで**通過する**。本欠陥はその先で起きる |
+
+共通していたのは「**配線を名前で照合し、ハンドラを一度も起動しない**」ことである。
+
+#### 再発防止
+
+`WolverineHandlerCodegenTests`（`AiStockTrading.TestSupport.PlatformShim.Tests`）を追加した。
+**internal な具象型に依存する public ハンドラを、共通ヘルパで配線したホスト上で実際に起動する**
+（`InvokeAsync` が受信時と同じ生成経路を通る。外部トランスポートは stub でブローカ不要・約 2 秒）。
+方針の 1 行を外すと `InvalidServiceLocationException` で赤になることを確認済み（変異確認）。
+
+#### 検証（本修正時点）
+
+| 検証 | 結果 |
+| --- | --- |
+| `dotnet build backend/backend.slnx` | **0 Warning / 0 Error** |
+| `dotnet test --filter "Category!=Integration"` | **2265 passed / 0 failed**（2264 ＋ 新規 `WolverineHandlerCodegenTests` 1 件） |
+| 実基盤 E2E 3 件（ローカル実 RabbitMQ ＋ 実 PostgreSQL・外部注入） | **修正前 3 失敗 → 修正後 3 合格**。ブローカと DB を初期化した状態からも 3 合格 |
+| 変異確認（`ServiceLocationPolicy` の行を外す） | 新規テストが `InvalidServiceLocationException` で失敗 |
+| `dotnet format --verify-no-changes` | 差分なし |
+| `node scripts/check-consumer-endpoint-names.js` | OK（11 サービス走査 / Wolverine 配線 10 件） |
+| `node scripts/scripts.test.js` | **143 件 OK** |
+
+**テストの表明は変更していない**（タイムアウト延長・待ち時間の調整は行っていない。修正後の 3 件は
+いずれも 10 秒未満で合格しており、待ち時間は不足していない）。
+
+#### 残る限界（正直な記録）
+
+- 実基盤 E2E が実際に配送を確かめるのは **2 サービス（リスク管理・発注執行）**だけである。残り 8 サービスの
+  ハンドラが生成コードを通せることは、共通ヘルパが単一の出所であること＋新規ユニットテストで**構造的に**担保しており、
+  サービスごとの実走では担保していない。全サービス分を実走で確かめるには各サービスの DB を伴うハーネスが要る。
+- 上記のローカル実基盤（apt 版 RabbitMQ / PostgreSQL）は**この作業環境限りの一時的な検証手段**であり、
+  リポジトリには何も追加していない（CI は従来どおり `integration.yml` の Testcontainers で実走する）。
+- 外部注入経路で走らせるときは **DB がテスト間で共有される**ことに注意する。Testcontainers 経路では
+  テストメソッドごとにコンテナが新品になるが、外部注入では 1 つの DB を使い回すため、単一行テーブルを
+  前提にする `PositionDriftStateConcurrencyE2ETests`（3 件）は**まとめて走らせると状態汚染で落ちる**
+  （1 件ずつ DB を作り直せば 3 件とも合格する。CI の失敗 3 件には含まれず、本修正とも無関係）。
 
 ## 変更履歴
 
@@ -982,3 +1097,4 @@ Integration の新規 1 件（fan-out）は `Category=Integration` のため既�
 | 2026-08-03 | 第 2 段階 | 残り 8 サービス（実測。当初「9 サービス＋ BFF」は数え違い）の移行。書き換えたテスト 93 件・合格数は移行前と完全一致。MassTransit の意図的な残存 4 箇所を記録（§12） |
 | 2026-08-04 | 第 3 段階 | wire 識別子テストの置き換え・`MassTransitExtensions` 撤去・Integration テストの追随と fan-out の実配線検証・MassTransit の完全除去と BANNED 昇格・検査器の旧規則撤去・[[IADR-0106]] の Superseded 化・旧キュー削除 Runbook・混在デプロイ禁止の解除条件（§13） |
 | 2026-08-04 | 第 3 段階（追補） | 未決事項 4（計画への環流）のフィードバック文書を起草（`feedback/20260804_adr0027-wolverine-migration-caveats.md`）。送付は未実施＝「起草済み・送付待ち」へ更新（§13.12-4） |
+| 2026-08-04 | 第 3 段階（修正） | 実基盤 E2E の初回実走で 3 件失敗。根本原因は Wolverine 6 の `ServiceLocationPolicy.NotAllowed` が internal な永続アダプタに依存するハンドラの生成を 1 通目の受信時に拒否すること。共通ヘルパに `AlwaysAllowed` を設定して修正し、生成コードを実際に通す回帰テストを追加（§13.13・[[IADR-0129]] 決定 11） |

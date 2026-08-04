@@ -204,6 +204,56 @@ Wolverine は**同じメッセージ型のハンドラを 1 本のチェーン�
 ただし `OrderModified` を処理するハンドラは 1 つだけであり、この性質は MassTransit 時代から同一で、
 本移行によって悪化しない（再試行の条件も単一ハンドラのままである）。**別 issue で扱う**。
 
+### 決定 11: 生成コードの service location を許可する（`ServiceLocationPolicy.AlwaysAllowed`）
+
+**第 3 段階の実 RabbitMQ E2E（`integration.yml` 手動実行・run 30876282124）が失敗した原因の決定である。**
+共通ヘルパで `options.ServiceLocationPolicy = ServiceLocationPolicy.AlwaysAllowed` を設定する。
+
+#### 何が起きたか（実測）
+
+Wolverine はハンドラの実行コードを実行時に生成し、依存を「生成コード内で `new` する」か
+「`IServiceProvider` から解決する（service location）」かを、**依存の具象型が public かどうか**で決める。
+本ユニットの永続アダプタは `internal sealed`（実測 25 型。例 `EfExecutedOrderStore` / `EfOrderReservationStore` /
+`EfPortfolioLedgerStore`）であり、生成コードからは `new` できないため**必ず** service location になる。
+**Wolverine 6 の既定は `ServiceLocationPolicy.NotAllowed`（5.x は `AllowedButWarn`）**であり、これを拒否して
+`InvalidServiceLocationException` を投げる。
+
+決定的に厄介なのは**失敗する時点**である。この検査はハンドラの実行コードが組み立てられる
+**1 通目の受信時**に走る（`TypeLoadMode.Dynamic`・決定 6）。したがって次がすべて成功したまま、
+メッセージだけが無言で処理されない。
+
+| 観測できるもの | 実測 |
+| --- | --- |
+| ホスト起動・`/health/ready` | 成功 |
+| キュー・DLQ の宣言（AutoProvision） | 成功（`ai-stock-trading.order-execution-service.OrderApproved` と `_error` が実在） |
+| consumer の接続 | 成功（ブローカ上で consumer 数 ≥ 1） |
+| 発行 → exchange → binding → キュー投入 | 成功（別ホストから投げるとキューに滞留する） |
+| ハンドラの実行 | **失敗（例外はサービスのログにのみ出る）** |
+| `<queue>_error` への退避 | **起きない**（チェーン組み立て前の失敗のため再試行・DLQ の対象にならない） |
+
+E2E から見える姿は「発注が一件も執行されない」であり、トポロジ検査（キュー実在・consumer 数）は
+**通過してしまう**。3 件の失敗（発注執行 E2E・跨ぎパイプライン E2E・fan-out E2E）はすべてこの単一原因で説明できる。
+
+#### 検討した選択肢
+
+- **(a) 永続アダプタを `public` にする（棄却）**: 生成コードが `new` できるようになり service location は消えるが、
+  対象は 25 型に及び、本ユニットの「インフラ実装は `internal sealed`、外に出すのはポート（interface）だけ」という
+  内部実装隠蔽を全面的に壊す。決定 9 は**ハンドラ型に限った**例外として可視性を広げたものであり、
+  「ハンドラの依存の依存」まで芋づるに public 化するのは、その限定の趣旨に反する。
+- **(b) `AlwaysUseServiceLocationFor<T>()` で型ごとに opt-in（棄却）**: 25 型を列挙する必要があり、
+  アダプタを 1 つ足すたびに登録漏れが**同じ静かな失敗**を再発させる。決定 4（サービス側に選択肢を残さない）とも相性が悪い。
+- **(c) 共通ヘルパで方針を `AlwaysAllowed` にする（採用）**: 1 箇所・1 行で全サービスに効く。
+  service location は MassTransit 時代の consumer 解決（常に DI から解決）と実質同じ挙動であり、
+  本ユニットの処理量（イベント駆動・1 秒あたり数件規模）で問題になる差ではない。
+  `AllowedButWarn` ではなく `AlwaysAllowed` を選ぶ理由は、警告文が「Wolverine 6.0 で既定になったら throw する」
+  という**既に 6.x では成立しない案内**であり、全ハンドラ分が毎起動ログに出て他の警告を埋もれさせるためである。
+
+#### 再発防止
+
+`WolverineHandlerCodegenTests`（`AiStockTrading.TestSupport.PlatformShim.Tests`）が、**internal な具象型に依存する
+ハンドラを実際に起動して**生成コードを通す（ブローカ不要・外部トランスポートは stub）。方針の行を外すと赤になる。
+「型名・キュー名の照合」で配線を検証すると生成コードが一度も組み立てられず、本欠陥をすり抜ける（実際にすり抜けた）。
+
 ## 理由
 
 - **一意性の根拠を「人間の命名」から「既にある一意な識別子」へ移せる。** [[IADR-0106]] の弱点は、キューの一意性がクラス名という「本来は自由なもの」に依存していた点にある。`ServiceName` はサービスの同一性そのものであり、重複させる動機が誰にも無い。
@@ -222,11 +272,12 @@ Wolverine は**同じメッセージ型のハンドラを 1 本のチェーン�
   - **キュー名が全部変わる。** 旧キュー（`TradeDecisionMade` 等）はブローカ上に consumer 不在で残り、binding も生きているためメッセージが滞留し得る。**移行完了後に旧キューを手動削除する手順が必要**である（第 3 段階の作業項目とする）。
   - 同一サービス内で同じイベント型を複数ハンドラが処理する箇所は、MassTransit ではキューが分かれていたが Wolverine では 1 本に統合される（片方の失敗が両方の再実行を招く）。該当は RiskManagementService の 2 経路。第 2 段階で扱う。
   - ハンドラは **public でなければ発見されない**（実測）。現行の `internal sealed` な consumer は可視性を広げることになる。
+  - 生成コードの service location を許可する（決定 11）。依存の解決が生成コードのインライン構築ではなく `IServiceProvider` 経由になる（MassTransit 時代と同じ解決経路であり、本ユニットの処理量では実質的な差は無い）。
   - キュー名が長くなる（最長でも約 70 文字。RabbitMQ の上限 255 バイトに対して十分）。
 - フォローアップ:
   1. 第 2 段階: 残り 9 サービス＋ BFF。`MassTransitExtensions` 削除、CPM から MassTransit 削除、`check-banned-libraries.js` の PENDING → BANNED 昇格。
   2. 第 3 段階: 検査器から旧規則を撤去、Integration テスト（実 RabbitMQ）の追随、[[IADR-0106]] を **Superseded by IADR-0129** にする、旧キューの削除手順を運用仕様書へ。
-  3. 計画への環流（`/plan-feedback`）: (a) Wolverine 6 のランタイムコンパイラ分離、(b) Wolverine の既定が fan-out を壊すこと。いずれも platform ADR-0027 の前提に対する重要な但し書きであり、基盤側の移行にも同じ罠がある。
+  3. 計画への環流（`/plan-feedback`）: (a) Wolverine 6 のランタイムコンパイラ分離、(b) Wolverine の既定が fan-out を壊すこと、(c) Wolverine 6 の `ServiceLocationPolicy.NotAllowed` が **internal な実装型に依存するハンドラを 1 通目の受信時に落とす**こと（決定 11）。いずれも platform ADR-0027 の前提に対する重要な但し書きであり、基盤側の移行にも同じ罠がある。
 
   > **実施状況（2026-08-04 追記）**: 1（第 2 段階）と 2（第 3 段階）は完了した。記録は作業仕様書
   > `docs/specs/20260803_354_wolverine-migration.md` の §12・§13。3（計画への環流）は**未実施**である。

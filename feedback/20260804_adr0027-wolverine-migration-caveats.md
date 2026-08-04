@@ -1,5 +1,5 @@
 ---
-title: Wolverine 移行の 2 つの罠（RuntimeCompilation 必須／既定設定が fan-out を壊す）— ADR-0027・ADR-0030・12_backend-application-stack への追記提案
+title: Wolverine 移行の 3 つの罠（RuntimeCompilation 必須／既定設定が fan-out を壊す／既定が internal 実装型に依存するハンドラを落とす）— ADR-0027・ADR-0030・12_backend-application-stack への追記提案
 type: plan-feedback
 status: open
 category: 新たな制約(ADR要)
@@ -12,12 +12,12 @@ related_ids:
   - IADR-0129 # 本リポの実装 ADR（本フィードバックの発生源）
   - IADR-0106 # 同上（#258 の再発防止。本移行で Superseded）
 source_repo: ai-stock-trading
-source_ref: "refactor/NFR-wolverine-migration / #354 / docs/specs/20260803_354_wolverine-migration.md §2.2・§3・§13 / docs/adr/IADR-0129_wolverine-messaging-topology.md"
+source_ref: "refactor/NFR-wolverine-migration / #354 / docs/specs/20260803_354_wolverine-migration.md §2.2・§3・§13・§13.13 / docs/adr/IADR-0129_wolverine-messaging-topology.md"
 author: endazon (with Claude Code)
 created: 2026-08-04
 ---
 
-# フィードバック: Wolverine 移行で実測した 2 つの罠（起動失敗と fan-out の破壊）
+# フィードバック: Wolverine 移行で実測した 3 つの罠（起動失敗・fan-out の破壊・ハンドラの生成失敗）
 
 > **本書は起草のみである。** 計画リポジトリ（`microservices-platform`）への送付（`plan-feedback` ラベル付き
 > Issue の起票、または計画リポ `draft/feedback/` へのコピー）は**未実施**。送付は人間または別セッションに委ねる。
@@ -28,7 +28,7 @@ created: 2026-08-04
 新たな制約（ADR 要）。**ADR-0027 の決定そのものへの異議ではない**（Wolverine 移行は AST 側でも
 [ADR-0013](../planning/projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md) として追随し、
 全 10 サービスの移行を完了した）。報告するのは、**ADR-0027 の理由「移行手順を標準化できる」が前提とする
-「標準手順」に、実測で判明した 2 つの必須事項が含まれていない**ことである。いずれも
+「標準手順」に、実測で判明した 3 つの必須事項が含まれていない**ことである。いずれも
 **ビルドもユニットテストも緑のまま本番だけが壊れる**類の罠であり、基盤リポジトリの移行でも同じ経路を踏む。
 
 ## 起点となる計画書
@@ -61,23 +61,29 @@ ADR-0027 §結果（悪い影響 / トレードオフ）:
 | WolverineFx.RabbitMQ | Infrastructure | ★採用 |
 | WolverineFx.Kafka | Infrastructure | ★採用 |
 
-上記のいずれにも、次の 2 点は記載が無い。
+上記のいずれにも、次の 3 点は記載が無い。
 
 1. `WolverineFx.RuntimeCompilation`（または事前コード生成）が**無いとホストが起動しない**こと。
 2. Wolverine の**既定のルーティング規約が pub/sub（fan-out）を壊す**こと、およびそれを回避する必須設定。
+3. Wolverine 6 の既定 `ServiceLocationPolicy.NotAllowed` が、**`internal` な実装型に依存するハンドラを
+   「1 通目の受信時」に落とす**こと（起動もヘルスチェックもキュー宣言も consumer 接続も成功したまま、
+   メッセージだけが無言で処理されない）。
 
 ## 問題点 / あるべき姿（To-Be）
 
-**問題点**: 「移行手順を標準化できる」という理由は、標準手順に上記 2 点が含まれて初めて成立する。
-1 は起動時に落ちるため**必ず気づく**（時間の損失で済む）。しかし **2 は気づかない**。ビルドは通り、
-ユニットテストも緑で、ブローカにキューも作られる。壊れるのは「どのプロセスがメッセージを受け取るか」だけであり、
-**例外もログも出ないまま業務イベントが消える**。
+**問題点**: 「移行手順を標準化できる」という理由は、標準手順に上記 3 点が含まれて初めて成立する。
+1 は起動時に落ちるため**必ず気づく**（時間の損失で済む）。しかし **2 と 3 は気づかない**。ビルドは通り、
+ユニットテストも緑で、ブローカにキューも作られ、consumer も付く。壊れるのは「どのプロセスがメッセージを
+受け取るか」（2）と「受け取ったメッセージを処理できるか」（3）だけであり、
+**例外もログも出ないまま（3 はサービスのログにだけ出る）業務イベントが消える**。
+とくに 3 は、**トポロジを実ブローカで検査するテストを通過したうえで**壊れるため、
+「キューがあり consumer も付いている」ことを根拠に正常と判断すると見逃す（AST で実際に見逃した）。
 
 AST では同じ形の事故が MassTransit 時代に一度実際に起きている（AST #258 / [IADR-0106](../docs/adr/IADR-0106_consumer-endpoint-name-uniqueness.md)）。
 取引判断イベントが承認・拒否・エラーのいずれにも現れず消失し、原因特定に時間を要した。
 **Wolverine の既定では、その事故が「偶然」ではなく「構造的に必ず」起きる**（後述 2-a）。
 
-**あるべき姿**: ADR-0027 の §結果 または §決定 に、移行の**必須設定**として 2 点を明記する。
+**あるべき姿**: ADR-0027 の §結果 または §決定 に、移行の**必須設定**として 3 点を明記する。
 併せて `12_backend-application-stack.md` のライブラリ表へ `WolverineFx.RuntimeCompilation` を追加する。
 
 ## 実装で判明した経緯
@@ -164,6 +170,49 @@ AST には該当箇所が現に存在した。**リスク統制サービスは `
 | ハンドラ型の可視性 | **public でなければ受け付けない**。`Discovery.IncludeType(typeof(内部型))` で明示指定しても `Handler types must be public, concrete, and closed types` で拒否される（＝`InternalsVisibleTo` による回避は成立しない） | ハンドラ型だけを `public sealed` にする（IADR-0129 決定 9） |
 | キュー名の総入れ替え | 移行でキュー名が**全部変わる**ため、旧キューが consumer 不在でブローカに残る | 削除 Runbook を用意（`docs/operations/wolverine-queue-cleanup-runbook.md`。AST では旧 47 本 → 新 45 本） |
 
+### 3. 既定 `ServiceLocationPolicy.NotAllowed` が internal な実装型に依存するハンドラを 1 通目で落とす
+
+**Wolverine 6 で既定が変わった項目**である（5.x は `AllowedButWarn`、6.x は **`NotAllowed`**）。
+Wolverine はハンドラの実行コードを生成する際、依存を「生成コード内で `new` する」か
+「`IServiceProvider` から解決する（service location）」かを、**依存の具象型が public かどうか**で決める。
+`internal` な実装型は生成コードから `new` できないため**必ず** service location になり、`NotAllowed` は
+これを `InvalidServiceLocationException` で拒否する。
+
+```
+Wolverine.Configuration.InvalidServiceLocationException: Found service locations while generating code
+for Message Handler for <イベント型>, but ServiceLocationPolicy.NotAllowed is in effect.
+  Concrete type <...>EfExecutedOrderStore is not public, so requires service location
+```
+
+**「インフラ実装は internal、外に出すのはポート（interface）だけ」という DI の書き方は広く使われており、
+基盤の標準構成（IADR-0128 相当の層構成）でも自然に採られる。**その構成では移行後に**全ハンドラが**この状態になる。
+
+危険なのは**失敗する時点**である。この検査はハンドラの実行コードが組み立てられる**1 通目の受信時**に走る
+（`TypeLoadMode.Dynamic`）。したがって次がすべて成功したまま、処理だけが落ちる。
+
+| 観測できるもの | 実測 |
+| --- | --- |
+| ホスト起動・ヘルスチェック | 成功 |
+| キュー・DLQ の宣言（AutoProvision） | 成功 |
+| consumer の接続（ブローカ上の consumer 数） | 成功（≥ 1） |
+| 発行 → exchange → binding → キュー投入 | 成功（別ホストから投げるとキューに滞留する） |
+| ハンドラの実行 | **失敗**（例外はサービスのログにのみ出る） |
+| デッドレターキューへの退避 | **起きない**（チェーン組み立て前の失敗のため再試行・DLQ の対象にならない） |
+
+AST では、この 1 点だけで**実基盤 E2E の「メッセージ配送を伴うテスト」が全滅**した
+（8 件中 3 件失敗＝配送を伴う全件。症状は「発注が一件も執行されない」）。
+一方、配送を伴わない 5 件（認可・DB 並行性ほか）は合格し、**トポロジ検査（キュー実在・consumer 数・DLQ 実在）も通過した**。
+
+**AST が採った対策**（[IADR-0129](../docs/adr/IADR-0129_wolverine-messaging-topology.md) 決定 11）:
+共通ヘルパで `options.ServiceLocationPolicy = ServiceLocationPolicy.AlwaysAllowed` を設定する。
+代替（実装型を全部 public にする）は内部実装隠蔽を壊すため採らなかった（AST では該当 25 型）。
+`AlwaysUseServiceLocationFor<T>()` による型ごとの opt-in も、登録漏れが同じ静かな失敗を再発させるため採らなかった。
+
+**再発防止の要点（基盤側でも同じことが要る）**: 「配線を名前で照合するテスト」（キュー名・型名・送信先 URI の固定）は
+**ハンドラを一度も起動しないため本欠陥をすり抜ける**。AST は
+「**internal な具象型に依存する public ハンドラを、共通配線したホスト上で実際に起動する**」テストを追加した
+（ブローカ不要。外部トランスポートを stub にしても生成経路は同じ）。
+
 ## 提案（計画への反映案）
 
 - 反映先候補: **ADR-0027 への追記**（主）／`12_backend-application-stack.md` のライブラリ表への 1 行追加（従）。
@@ -196,9 +245,20 @@ ADR-0027 §決定（または §結果）へ、次の趣旨を追記していた
   **トポロジ生成の意味が読み替えでは吸収されない**（キュー名の導出規則が別物である）ことを注記いただけると、
   基盤側の実装者が「読み替えれば済む」と誤解しない。
 
-**(3)（任意）移行チェックリストの共有**
+**(3) 既定 `ServiceLocationPolicy` の明記**
 
-AST の作業仕様書 §2.2（キュー名導出規則の新旧対応表・すべて実測）・§3（fan-out 経路の機械的列挙と保存設計）は、
+ADR-0027 §結果 の「ランタイムコード生成の挙動理解が必要」へ、次の趣旨を添えていただきたい。
+
+> Wolverine 6 の既定 `ServiceLocationPolicy.NotAllowed` は、**`internal` な実装型に依存するハンドラの
+> 生成コードを拒否する**。層構成として「実装は internal・公開するのはポートだけ」を採る場合は、
+> 共通配線で `ServiceLocationPolicy.AlwaysAllowed` を設定するか、実装型を public にするかを**移行時に決める**こと。
+> 失敗は起動時ではなく**最初のメッセージ受信時**に起き、キュー宣言・consumer 接続・配送がすべて成功したまま
+> 処理だけが落ちるため、トポロジの検査では検出できない。
+
+**(4)（任意）移行チェックリストの共有**
+
+AST の作業仕様書 §2.2（キュー名導出規則の新旧対応表・すべて実測）・§3（fan-out 経路の機械的列挙と保存設計）・
+§13.13（実基盤 E2E の失敗から根本原因までの診断経路）は、
 基盤側の移行でもそのまま使える形になっている。必要であれば計画側の技術文書へ転記いただいて構わない。
 とくに「**移行前に、イベント型 → 購読サービスの対応表を機械的に作り、移行後もそれが保存されることを
 検査可能にする**」という手順は、退行 A・B の両方に効く。
@@ -210,7 +270,8 @@ AST の作業仕様書 §2.2（キュー名導出規則の新旧対応表・す�
   - 実装: 基盤実装リポの移行がまだであれば、**移行前に本件を反映しておくと事故を 1 回分避けられる**。
     既に移行済みであれば、(2-a)(2-b) に該当する経路がないかの**点検**をおすすめする
     （点検の勘所: ① 同一イベントを 2 つ以上のサービスが購読しているか ② 発行元サービス自身が同じ型を
-    購読しているか。①②のいずれかがあり、キュー名にサービス識別子が入っていなければ該当する）。
+    購読しているか。①②のいずれかがあり、キュー名にサービス識別子が入っていなければ該当する。
+    ③ ハンドラの依存に `internal` な実装型があるか。あれば `ServiceLocationPolicy` の決定が要る）。
   - ADR-0028（RabbitMQ 継続）には影響しない。Kafka 併用時のトポロジは本件の範囲外である
     （Kafka はトピックとコンシューマグループの概念が別であり、同じ結論にはならない）。
 - **ai-stock-trading 側**: 追加作業なし。対策は [IADR-0129](../docs/adr/IADR-0129_wolverine-messaging-topology.md) として
@@ -218,6 +279,8 @@ AST の作業仕様書 §2.2（キュー名導出規則の新旧対応表・す�
   基盤側が別の標準（例: 案 B の事前生成、あるいは別のキュー命名規則）を採る場合は、
   ai ADR-0013（基盤へ追随する）に従って AST 側を合わせる必要があるため、**裁定の結果を AST へ戻していただきたい**。
 - **判定基準への影響**: 本件が未反映のあいだ、「ADR-0027 に沿って移行した」という主張は
-  **fan-out が保存されていることの確認を含まない**。AST では
+  **fan-out が保存されていることの確認も、ハンドラが実際に実行できることの確認も含まない**。AST では
   `scripts/check-consumer-endpoint-names.js`（静的検査・N1〜N3）と `Category=Integration` の実 broker E2E
   （1 通の発行が購読する全サービスへ届くことを受動宣言と実配送の 2 段で確認）を判定条件にしている。
+  **さらに罠 3 を受けて、「ハンドラの生成コードを実際に通す」ユニットテストを判定条件に加えた**
+  （名前の照合だけでは、キューも consumer も揃ったまま処理が落ちる状態を緑と判定してしまうため）。
