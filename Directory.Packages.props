@@ -62,5 +62,9 @@
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
     <!-- Slice B（#82 / IADR-0050）: OwnerOnly エンドポイントを実 Keycloak トークンで検証する。 -->
     <PackageVersion Include="Testcontainers.Keycloak" Version="4.13.0" />
+    <!-- NFR, ADR-0013, IADR-0129, #354（第 3 段階）: 実 RabbitMQ 上のトポロジ（キュー・consumer 数・DLQ）を
+         受動宣言で読むために Integration E2E だけが直接参照する。WolverineFx.RabbitMQ が推移的に持ち込む版と
+         同一に固定する（CPM の推移ピン留めが効いており、版がずれると同居できない）。 -->
+    <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
   </ItemGroup>
 </Project>
