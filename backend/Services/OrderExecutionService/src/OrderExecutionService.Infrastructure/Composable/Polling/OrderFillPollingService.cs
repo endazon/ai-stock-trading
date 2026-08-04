@@ -1,9 +1,10 @@
 using AiStockTrading.OrderExecution.Application.Polling;
-using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Runtime;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
 
@@ -21,7 +22,7 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
 // 単調 upsert により結果は冪等である。
 internal sealed class OrderFillPollingService(
     IServiceScopeFactory scopeFactory,
-    IBus bus,
+    IWolverineRuntime runtime,
     IOptions<FillPollingOptions> options,
     ILogger<OrderFillPollingService> logger) : BackgroundService
 {
@@ -79,9 +80,11 @@ internal sealed class OrderFillPollingService(
             .PollOnceAsync(options.Value.MaxTracking, options.Value.EffectiveBatchSize, cancellationToken)
             .ConfigureAwait(false);
 
-        // BackgroundService（singleton）からの発行のため、scoped な IPublishEndpoint ではなく singleton の IBus を用いる。
+        // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
+        // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
+        var bus = new MessageBus(runtime);
         foreach (var executed in result.Executed)
-            await bus.Publish(executed, cancellationToken).ConfigureAwait(false);
+            await bus.PublishAsync(executed).ConfigureAwait(false);
 
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(

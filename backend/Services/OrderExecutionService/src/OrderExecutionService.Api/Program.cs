@@ -13,16 +13,16 @@ using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.order-execution-service";
 
 // #13 Slice A, IADR-0013/0016: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。
-// OrderApproved 購読は MassTransit コンシューマとして稼働する。
+// OrderApproved 購読は Wolverine のハンドラとして稼働する。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL を shim 経由で組む部分）は
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL を shim 経由で組む部分）は
 // dev/test/CI でのローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 // IADR-0016: ブローカ既定はペーパー（実弾を撃たない）。moomoo は PoC まで構成ゲートで停止する。
 var builder = WebApplication.CreateBuilder(args);
@@ -137,18 +137,15 @@ if (brokerSelection.IsMoomoo)
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
 }
 
-// ADR-0003, IADR-0011: MassTransit（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<OrderApprovedConsumer>();
-    x.UsingRabbitMq((ctx, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-        cfg.ConfigureEndpoints(ctx);
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
+// ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+// **IADR-0129 決定 3 が効く経路**: OrderApproved は発行元の RiskManagementService 自身も購読しており、
+// ローカルルーティングを無効化しないと承認済みの発注が本サービスへ一通も届かない。
+builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
+    ServiceName,
+    builder.Configuration["RabbitMq:ConnectionString"],
+    typeof(OrderApprovedHandler).Assembly));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

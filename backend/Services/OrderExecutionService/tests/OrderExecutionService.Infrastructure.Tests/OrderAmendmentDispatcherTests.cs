@@ -6,16 +6,19 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
 
-// #154, FR-05, FR-19, IADR-0067: 訂正・取消の発行を MassTransit テストハーネスで検証する。
+// #154, FR-05, FR-19, IADR-0067: 訂正・取消の発行を Wolverine のテストハーネス（Wolverine.Tracking）で検証する。
+// ADR-0013, IADR-0129, #354: harness.Published → session.Sent への移行。表明の意味は同じ。
 // 本 PR では駆動元（#141/#152・時限取消）を実装しないため、ここが配管の終端（発行）の担保になる。
 public class OrderAmendmentDispatcherTests
 {
@@ -30,19 +33,25 @@ public class OrderAmendmentDispatcherTests
         new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 3000m);
 
     // 非終端の注文を扱うため immediateFill=false のペーパーブローカで組む（IADR-0067）。
-    private static ServiceProvider BuildProvider(PaperBrokerAdapter broker, InMemoryExecutedOrderStore executedOrders) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IClock, FakeClock>()
-            .AddSingleton<IBrokerAdapter>(broker)
-            .AddSingleton<IOrderAmendmentBroker>(broker)
-            .AddSingleton<IExecutedOrderStore>(executedOrders)
-            .AddSingleton<IOrderLifecycleStore, InMemoryOrderLifecycleStore>()
-            // IPublishEndpoint が scoped のため、本番配線（Program.cs）と同じく scoped で登録する。
-            .AddScoped<OrderAmendmentService>()
-            .AddScoped<OrderAmendmentDispatcher>()
-            .AddMassTransitTestHarness()
-            .BuildServiceProvider(true);
+    private const string ServiceName = "ai-stock-trading.order-execution-service";
+
+    private static Task<IHost> BuildHostAsync(PaperBrokerAdapter broker, InMemoryExecutedOrderStore executedOrders) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, FakeClock>();
+                opts.Services.AddSingleton<IBrokerAdapter>(broker);
+                opts.Services.AddSingleton<IOrderAmendmentBroker>(broker);
+                opts.Services.AddSingleton<IExecutedOrderStore>(executedOrders);
+                opts.Services.AddSingleton<IOrderLifecycleStore, InMemoryOrderLifecycleStore>();
+                // IMessageBus が scoped のため、本番配線（Program.cs）と同じく scoped で登録する。
+                opts.Services.AddScoped<OrderAmendmentService>();
+                opts.Services.AddScoped<OrderAmendmentDispatcher>();
+
+                opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
     private static async Task<Guid> PlaceAsync(PaperBrokerAdapter broker, InMemoryExecutedOrderStore store)
     {
@@ -57,17 +66,16 @@ public class OrderAmendmentDispatcherTests
     {
         var broker = new PaperBrokerAdapter(immediateFill: false);
         var executedOrders = new InMemoryExecutedOrderStore();
-        await using var provider = BuildProvider(broker, executedOrders);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(broker, executedOrders);
         var decisionId = await PlaceAsync(broker, executedOrders);
 
-        using var scope = provider.CreateScope();
+        using var scope = host.Services.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<OrderAmendmentDispatcher>();
-        await dispatcher.CancelAsync(decisionId, reason: "pause による強制取消");
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(
+            _ => dispatcher.CancelAsync(decisionId, reason: "pause による強制取消"));
 
-        (await harness.Published.Any<OrderCancelled>()).Should().BeTrue();
-        var published = harness.Published.Select<OrderCancelled>().Single().Context.Message;
+        session.Sent.MessagesOf<OrderCancelled>().Should().NotBeEmpty();
+        var published = session.Sent.MessagesOf<OrderCancelled>().Single();
         published.DecisionId.Should().Be(decisionId);
         published.Reason.Should().Be("pause による強制取消");
         published.CancelledAt.Should().Be(Now);
@@ -78,17 +86,16 @@ public class OrderAmendmentDispatcherTests
     {
         var broker = new PaperBrokerAdapter(immediateFill: false);
         var executedOrders = new InMemoryExecutedOrderStore();
-        await using var provider = BuildProvider(broker, executedOrders);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(broker, executedOrders);
         var decisionId = await PlaceAsync(broker, executedOrders);
 
-        using var scope = provider.CreateScope();
+        using var scope = host.Services.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<OrderAmendmentDispatcher>();
-        await dispatcher.ModifyAsync(decisionId, quantity: 4, price: 2950m, reason: "数量縮小");
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(
+            _ => dispatcher.ModifyAsync(decisionId, quantity: 4, price: 2950m, reason: "数量縮小"));
 
-        (await harness.Published.Any<OrderModified>()).Should().BeTrue();
-        var published = harness.Published.Select<OrderModified>().Single().Context.Message;
+        session.Sent.MessagesOf<OrderModified>().Should().NotBeEmpty();
+        var published = session.Sent.MessagesOf<OrderModified>().Single();
         published.DecisionId.Should().Be(decisionId);
         published.PreviousQuantity.Should().Be(10);
         published.PreviousPrice.Should().Be(3000m);
@@ -102,15 +109,20 @@ public class OrderAmendmentDispatcherTests
         // 不整合（未適用なのに取消イベントだけが流れる）を作らない。
         var broker = new PaperBrokerAdapter(immediateFill: false);
         var executedOrders = new InMemoryExecutedOrderStore();
-        await using var provider = BuildProvider(broker, executedOrders);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(broker, executedOrders);
 
-        using var scope = provider.CreateScope();
+        using var scope = host.Services.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<OrderAmendmentDispatcher>();
         var act = () => dispatcher.CancelAsync(Guid.NewGuid(), reason: "未知の判断ID");
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        (await harness.Published.Any<OrderCancelled>()).Should().BeFalse();
+        // 例外が投げられること自体が前提条件なので、追跡ブロックの中で捕捉して表明する
+        // （発行が起きていないことを同じ追跡セッションで見るため）。
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => ShouldThrowAsync(act));
+
+        session.Sent.MessagesOf<OrderCancelled>().Should().BeEmpty();
     }
+
+    // 追跡ブロック内で「例外が投げられる」ことを表明する補助（元テストの act.Should().ThrowAsync と同じ）。
+    private static async Task ShouldThrowAsync(Func<Task<OrderCancelled>> act) =>
+        await act.Should().ThrowAsync<InvalidOperationException>();
 }

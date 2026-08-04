@@ -1,10 +1,11 @@
 using AiStockTrading.OrderExecution.Application.Reconciliation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
-using MassTransit;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Runtime;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
 
@@ -19,7 +20,7 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation
 //   - 例外 → 警告ログのみ。常駐は落とさず次回巡回で再試行する。
 internal sealed class BrokerPositionSnapshotService(
     IBrokerPositionSource positions,
-    IBus bus,
+    IWolverineRuntime runtime,
     TimeProvider timeProvider,
     IOptions<PositionReconciliationOptions> options,
     ILogger<BrokerPositionSnapshotService> logger) : BackgroundService
@@ -78,7 +79,10 @@ internal sealed class BrokerPositionSnapshotService(
             return false;
         }
 
-        await bus.Publish(new BrokerPositionsObserved(snapshot, timeProvider.GetUtcNow()), cancellationToken)
+        // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
+        // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
+        await new MessageBus(runtime)
+            .PublishAsync(new BrokerPositionsObserved(snapshot, timeProvider.GetUtcNow()))
             .ConfigureAwait(false);
         logger.LogDebug("ブローカ建玉 {Count} 件を観測として発行しました。", snapshot.Count);
         return true;

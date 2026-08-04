@@ -1,13 +1,13 @@
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
-using MassTransit;
 using Microsoft.Extensions.Logging;
+using Wolverine;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
 
 // FR-05, FR-19, FR-11, #154, IADR-0067: 注文の訂正・取消を適用・永続化し、結果を発行する。
-// Application 層（OrderAmendmentService）は MassTransit を参照しない既存のレイヤリングを保つため、
-// 発行は本 Worker 層が担う（OrderApprovedConsumer が OrderExecuted を発行するのと同じ形）。
+// Application 層（OrderAmendmentService）はメッセージ基盤を参照しない既存のレイヤリングを保つため、
+// 発行は本 Worker 層が担う（OrderApprovedHandler が OrderExecuted を発行するのと同じ形）。
 //
 // **本 PR の時点で呼び出し元は存在しない**。訂正・取消を起こす駆動元（実ユースケース）は IADR-0067 の境界により
 // 対象外で、以下の issue が本クラスを呼ぶ:
@@ -16,7 +16,7 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
 // 時限取消も同様に駆動元側で実装する。ここは「発生したら発行・永続化・供給される」までの配管である。
 public sealed class OrderAmendmentDispatcher(
     OrderAmendmentService amendments,
-    IPublishEndpoint publishEndpoint,
+    IMessageBus bus,
     ILogger<OrderAmendmentDispatcher> logger)
 {
     /// <summary>DecisionId の注文を取り消し、<see cref="OrderCancelled"/> を発行する。</summary>
@@ -29,7 +29,8 @@ public sealed class OrderAmendmentDispatcher(
             "注文取消: DecisionId={DecisionId} OrderId={OrderId} 理由={Reason}",
             cancelled.DecisionId, cancelled.OrderId, cancelled.Reason);
 
-        await publishEndpoint.Publish(cancelled, cancellationToken).ConfigureAwait(false);
+        // ADR-0013, IADR-0129, #354: Wolverine の PublishAsync は CancellationToken を取らない。
+        await bus.PublishAsync(cancelled).ConfigureAwait(false);
         return cancelled;
     }
 
@@ -45,7 +46,7 @@ public sealed class OrderAmendmentDispatcher(
             modified.DecisionId, modified.OrderId, modified.PreviousQuantity, modified.Quantity,
             modified.PreviousPrice, modified.Price, modified.Reason);
 
-        await publishEndpoint.Publish(modified, cancellationToken).ConfigureAwait(false);
+        await bus.PublishAsync(modified).ConfigureAwait(false);
         return modified;
     }
 }

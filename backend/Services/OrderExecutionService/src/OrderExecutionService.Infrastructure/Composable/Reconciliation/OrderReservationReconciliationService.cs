@@ -1,11 +1,12 @@
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Reconciliation;
 using AiStockTrading.OrderExecution.Application.Services;
-using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Runtime;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
 
@@ -15,10 +16,10 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation
 // 有効化しても既定の no-op プローブ（IndeterminateReservationBrokerProbe）下では Placed/NotPlaced 経路は
 // 発火せず、phase-4 自己修復（ブローカ非依存）のみが作動する。実 OpenD 照会プローブは opt-in の後続。
 //
-// 終端化した予約の OrderExecuted 発行は本 Worker 層が担う（Application は MassTransit 非依存の既存レイヤリングを維持）。
+// 終端化した予約の OrderExecuted 発行は本 Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 internal sealed class OrderReservationReconciliationService(
     IServiceScopeFactory scopeFactory,
-    IBus bus,
+    IWolverineRuntime runtime,
     IClock clock,
     IOptions<ReconciliationOptions> options,
     ILogger<OrderReservationReconciliationService> logger) : BackgroundService
@@ -80,9 +81,10 @@ internal sealed class OrderReservationReconciliationService(
             .ReconcileAsync(cutoff, options.Value.EffectiveBatchSize, cancellationToken).ConfigureAwait(false);
 
         // 終端化（発注済み確定・phase-4 自己修復）で得た OrderExecuted を発行し、下流（監査・Risk・通知）を追随させる。
-        // BackgroundService（singleton）からの発行のため、scoped な IPublishEndpoint ではなく singleton の IBus を用いる。
+        // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
+        // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         foreach (var executed in result.Executed)
-            await bus.Publish(executed, cancellationToken).ConfigureAwait(false);
+            await new MessageBus(runtime).PublishAsync(executed).ConfigureAwait(false);
 
         if (result.Scanned > 0)
             logger.LogInformation(

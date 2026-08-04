@@ -7,18 +7,22 @@ using AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Runtime;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
 
 // #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングの定期実行。終端化・進捗の OrderExecuted 発行と、
-// 無効時に一切走査しないことを MassTransit テストハーネスで検証する。
+// 無効時に一切走査しないことを Wolverine のテストハーネス（Wolverine.Tracking）で検証する
+// （ADR-0013 / IADR-0129 / #354。harness.Published → session.Sent。表明の意味は同じ）。
 public class OrderFillPollingServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 29, 6, 0, 0, TimeSpan.Zero);
@@ -57,19 +61,27 @@ public class OrderFillPollingServiceTests
         new(decisionId, "ORD-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             PositionEffect.Open, 1_000, 340m, 0, 0m, OrderStatus.Accepted, 0m, Now.AddMinutes(-3));
 
-    private static ServiceProvider BuildProvider(IBrokerAdapter broker, IExecutedOrderStore store) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IClock, FakeClock>()
-            .AddSingleton(broker)
-            .AddSingleton(store)
-            .AddScoped<OrderFillPoller>()
-            .AddMassTransitTestHarness()
-            .BuildServiceProvider(true);
+    private const string ServiceName = "ai-stock-trading.order-execution-service";
 
-    private static OrderFillPollingService BuildService(ServiceProvider provider, FillPollingOptions options) =>
-        new(provider.GetRequiredService<IServiceScopeFactory>(),
-            provider.GetRequiredService<IBus>(),
+    // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
+    private static Task<IHost> BuildHostAsync(IBrokerAdapter broker, IExecutedOrderStore store) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, FakeClock>();
+                opts.Services.AddSingleton(broker);
+                opts.Services.AddSingleton(store);
+                opts.Services.AddScoped<OrderFillPoller>();
+
+                opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+
+    private static OrderFillPollingService BuildService(IHost host, FillPollingOptions options) =>
+        new(host.Services.GetRequiredService<IServiceScopeFactory>(),
+            // 常駐（singleton）であり、Wolverine の IMessageBus（scoped）は注入できない。
+            host.Services.GetRequiredService<IWolverineRuntime>(),
             Options.Create(options),
             NullLogger<OrderFillPollingService>.Instance);
 
@@ -81,20 +93,20 @@ public class OrderFillPollingServiceTests
         store.Save(Dispatched(decisionId));
         var broker = new SequenceBroker(
             new BrokerOrder("ORD-1", Intent(), OrderStatus.Filled, 1_000, 341m, default, Now));
-        await using var provider = BuildProvider(broker, store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-        var service = BuildService(provider, new FillPollingOptions());
+        using var host = await BuildHostAsync(broker, store);
+        var service = BuildService(host, new FillPollingOptions());
 
-        var result = await service.PollOnceAsync(CancellationToken.None);
+        OrderFillPollResult result = null!;
+        Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(poll);
 
         result.Terminalized.Should().Be(1);
-        (await harness.Published.Any<OrderExecuted>(x =>
-            x.Context.Message.DecisionId == decisionId
-            && x.Context.Message.Status == OrderStatus.Filled
-            && x.Context.Message.FilledQuantity == 1_000)).Should().BeTrue();
+        session.Sent.MessagesOf<OrderExecuted>().Should().Contain(m =>
+            m.DecisionId == decisionId
+            && m.Status == OrderStatus.Filled
+            && m.FilledQuantity == 1_000);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
@@ -104,18 +116,18 @@ public class OrderFillPollingServiceTests
         var decisionId = Guid.NewGuid();
         store.Save(Dispatched(decisionId));
         // 照会結果なし（当日一覧に無い・アダプタが例外を握って null に倒した）を 1 回返す。
-        await using var provider = BuildProvider(new SequenceBroker([null]), store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-        var service = BuildService(provider, new FillPollingOptions());
+        using var host = await BuildHostAsync(new SequenceBroker([null]), store);
+        var service = BuildService(host, new FillPollingOptions());
 
-        var result = await service.PollOnceAsync(CancellationToken.None);
+        OrderFillPollResult result = null!;
+        Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(poll);
 
         result.Unknown.Should().Be(1);
-        (await harness.Published.Any<OrderExecuted>()).Should().BeFalse();
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
         store.FindByDecisionId(decisionId)!.Status.Should().Be(OrderStatus.Accepted);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
@@ -125,18 +137,15 @@ public class OrderFillPollingServiceTests
         store.Save(Dispatched(Guid.NewGuid()));
         var broker = new SequenceBroker(
             new BrokerOrder("ORD-1", Intent(), OrderStatus.Filled, 1_000, 341m, default, Now));
-        await using var provider = BuildProvider(broker, store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-        var service = BuildService(provider, new FillPollingOptions { Enabled = false });
+        using var host = await BuildHostAsync(broker, store);
+        var service = BuildService(host, new FillPollingOptions { Enabled = false });
 
-        await service.StartAsync(CancellationToken.None);
-        await service.StopAsync(CancellationToken.None);
+        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
 
         broker.QueryCount.Should().Be(0);
-        (await harness.Published.Any<OrderExecuted>()).Should().BeFalse();
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     // #270: 既定は有効（IADR-0113）。統制の必要条件であり、既定オフでは「統制が効かない状態」を出荷することになる。
@@ -165,10 +174,8 @@ public class OrderFillPollingServiceTests
         store.Save(Dispatched(decisionId));
         var client = new StubMoomooTradeClient();
         var adapter = new MoomooBrokerAdapter(client);
-        await using var provider = BuildProvider(adapter, store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
-        var service = BuildService(provider, new FillPollingOptions());
+        using var host = await BuildHostAsync(adapter, store);
+        var service = BuildService(host, new FillPollingOptions());
 
         client.Next = new MoomooOrderResult("ORD-1", MoomooOrderState.FilledPart, 300, 340.5m);
         var first = await service.PollOnceAsync(CancellationToken.None);
@@ -180,7 +187,14 @@ public class OrderFillPollingServiceTests
 
         store.FindByDecisionId(decisionId)!.Status.Should().Be(OrderStatus.Filled);
 
-        await harness.Stop();
+        await host.StopAsync();
+    }
+
+    // 常駐を起動して止めるだけの補助（元テストと呼び出し順は同じ）。
+    private static async Task StartAndStopAsync(OrderFillPollingService service)
+    {
+        await service.StartAsync(CancellationToken.None);
+        await service.StopAsync(CancellationToken.None);
     }
 
     // 照会だけを返す最小の OpenD スタブ（発注・取消は追跡経路では呼ばれない）。

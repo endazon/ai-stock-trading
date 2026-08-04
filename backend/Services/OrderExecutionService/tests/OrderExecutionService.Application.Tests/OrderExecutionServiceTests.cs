@@ -206,7 +206,7 @@ public class OrderExecutionServiceTests
     [Fact]
     public async Task 同一DecisionIdの再処理では再発注せず既存結果を返す()
     {
-        // 冪等性: MassTransit 再配送で同一 OrderApproved が再処理されても二重発注・二重計上しない。
+        // 冪等性: メッセージングの再配送で同一 OrderApproved が再処理されても二重発注・二重計上しない。
         var store = new InMemoryExecutedOrderStore();
         var intent = Intent();
         var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));

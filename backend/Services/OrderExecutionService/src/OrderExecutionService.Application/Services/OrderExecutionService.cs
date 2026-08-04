@@ -21,7 +21,7 @@ public sealed class OrderExecutionService(
     {
         ArgumentNullException.ThrowIfNull(approved);
 
-        // 相1（完了の権威）: 同一 DecisionId の発注結果が既にあれば、再発注せず既存結果を再発行する。MassTransit の
+        // 相1（完了の権威）: 同一 DecisionId の発注結果が既にあれば、再発注せず既存結果を再発行する。メッセージングの
         // 再配送（UseAiStockTradingRetry）で同一 OrderApproved が再処理されても二重発注・二重計上しない。DecisionId は
         // 取引判断/損切り1件に対応する（stop-loss は EventId 由来で安定・IADR-0015）。
         // 予約表（相2）の導入前に既に存在する行にも効かせるため、この照合を完了判定の権威として残す（IADR-0057）。

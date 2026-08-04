@@ -535,3 +535,36 @@ Wolverine の `PublishAsync` / `InvokeAsync` は封筒 ID を必ず自動採番�
   発行を検証するテストは本番と同じ `UseAiStockTradingRabbitMq(...)` を通したうえで stub へ倒す必要がある。
 
 合格数: 48 / 69 / 49 / 138（Api / Application / Domain / Infrastructure）＝移行前と同数。
+
+#### OrderExecutionService
+
+| ファイル | テスト名 | 旧表明 | 新表明 | 基準充足 |
+| --- | --- | --- | --- | --- |
+| `OrderExecutionService.Infrastructure.Tests/OrderApprovedConsumerTests.cs` | `承認注文を購読しOrderExecutedを発行する` | `harness.Consumed` ＋ `harness.Published` ＋ `DecisionId` / `Filled` / 台帳 1 件 | `session.Executed` ＋ `session.Sent` ＋ 同じ期待値 | 1〜4 充足 |
+| 同上 | `同一OrderApprovedが再配送されても二重発注しない` | 同一メッセージを 2 回 publish ＋ `harness.InactivityTask` ＋ 消費 2 回 / 発注 1 回 / 台帳 1 件 | 同一メッセージを 2 回 `InvokeMessageAndWaitAsync` ＋ 2 セッションの実行数合計 2 回 / 発注 1 回 / 台帳 1 件 | 1〜4 充足（回数の期待値は不変） |
+| `OrderExecutionService.Infrastructure.Tests/OrderAmendmentDispatcherTests.cs` | `取消すると_OrderCancelled_が発行される` / `訂正すると_OrderModified_が訂正前後の値つきで発行される` | `harness.Published...Single().Context.Message` の各フィールド | `session.Sent.MessagesOf<T>().Single()` の各フィールド（期待値不変） | 1〜4 充足 |
+| 同上 | `適用に失敗したら発行しない` | 例外を表明 ＋ `harness.Published` が false | 例外の表明を追跡ブロック内へ移し（補助メソッド）＋ `session.Sent` が空 | 1〜4 充足（例外型・発行なしの両方を保つ） |
+| `OrderExecutionService.Infrastructure.Tests/OrderFillPollingServiceTests.cs` | `終端化した約定はOrderExecutedとして発行される` / `照会不能では何も発行されず記録も変わらない` / `無効時はExecuteAsyncが照会せず即座に戻る` / `moomoo状態遷移が追跡経由で約定として届く` | `harness.Published.Any<OrderExecuted>(述語)` | `session.Sent.MessagesOf<OrderExecuted>()` ＋ 同じ述語 | 1〜4 充足 |
+| `OrderExecutionService.Infrastructure.Tests/OrderReservationReconciliationServiceTests.cs` | `発注済み確定でOrderExecutedが発行される` / `不確定では何も発行されず据え置かれる` / `無効時はExecuteAsyncが走査せず即座に戻る` | 同上 | 同上 | 1〜4 充足 |
+| `OrderExecutionService.Infrastructure.Tests/BrokerPositionSnapshotServiceTests.cs` | `観測した建玉を発行する` / `建玉ゼロでも観測として発行する` / `照会不能なら何も発行しない` / `無効化されていれば一度も照会しない` | 同上（`Positions.Count` / `ObservedAt` の述語つき） | 同上（述語は不変） | 1〜4 充足 |
+
+テスト補助:
+
+| ファイル | 変更 |
+| --- | --- |
+| `ExecutionWorkerWebApplicationFactory` | `RemoveAll<IBusControl>()` ＋ `AddMassTransitTestHarness(x => x.AddConsumer<OrderApprovedConsumer>())` → `DisableAllExternalWolverineTransports()` |
+
+実装側の特記:
+
+- `OrderApprovedConsumer` → **`OrderApprovedHandler`**（`public sealed`）。
+  **[[IADR-0129]] 決定 3（`DisableConventionalLocalRouting`）の直接の受益者**である: `OrderApproved` は発行元の
+  RiskManagementService 自身も購読しているため、既定のままだと発行がそのプロセス内に閉じ、本サービスへ一通も届かない
+  （＝発注が一件も執行されない）。この事情を `Program.cs` とハンドラのコメントへ残した。
+- **singleton の常駐 3 つ**（`OrderFillPollingService` / `OrderReservationReconciliationService` /
+  `BrokerPositionSnapshotService`）は `IBus` → `IWolverineRuntime` ＋ `new MessageBus(runtime)`。
+- `OrderAmendmentDispatcher`（scoped）は `IPublishEndpoint` → `IMessageBus`。
+- **落とし穴（実測）**: `TrackedSessionConfiguration.ExecuteAndWaitAsync` は `Func<IMessageContext, Task>` と
+  `Func<IMessageContext, ValueTask>` の両方を持つため、`async _ => ...` の**匿名 async ラムダは曖昧**になって
+  コンパイルできない（CS0121）。デリゲート型を明示するか、`Task` を返す補助メソッドを経由する。
+
+合格数: 1 / 73 / 7 / 123（Api / Application / Domain / Infrastructure）＝移行前と同数。

@@ -18,7 +18,7 @@ namespace AiStockTrading.OrderExecution.Application.Polling;
 //   - 例外 → 件数のみ集計して据え置き（1 件の失敗でバッチ全体を止めない＝OrderReservationReconciler と同じ流儀）。
 //   - 約定数は巻き戻さない（部分列挙・順序前後で数量が減る応答を採らない）。
 //
-// 発行（OrderExecuted の Publish）は Worker 層が担う（Application は MassTransit 非依存の既存レイヤリングを維持）。
+// 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore store, IClock clock)
 {
     /// <summary>
