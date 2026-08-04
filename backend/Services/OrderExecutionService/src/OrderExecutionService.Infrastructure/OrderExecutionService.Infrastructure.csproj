@@ -10,7 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（ハンドラ規約・IMessageBus）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="moomoo-api" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

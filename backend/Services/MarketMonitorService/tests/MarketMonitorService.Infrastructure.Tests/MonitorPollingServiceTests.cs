@@ -5,22 +5,29 @@ using AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
 
 // FR-03, UC-02, ADR-0003: ポーリング巡回（RunOnceAsync）の検証。市場開場時に評価結果を発行し、閉場時は発行しない。
+//
+// ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（AddMassTransitTestHarness + harness.Published）から
+// Wolverine.Tracking（TrackActivity + session.Sent）へ移行した。表明の意味は同じ（巡回を回し、外へ出た／
+// 出なかったメッセージを見る）。本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
 public class MonitorPollingServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 10, 1, 0, 0, TimeSpan.Zero);
     private static readonly MonitoredSymbol Aapl = new("AAPL", Market.UnitedStates);
+    private const string ServiceName = "ai-stock-trading.market-monitor-service";
 
     private sealed class Harness : IAsyncDisposable
     {
@@ -31,37 +38,43 @@ public class MonitorPollingServiceTests
         public InMemoryPositionStore Positions { get; } = new();
         public InMemoryPriceBaselineStore Baselines { get; } = new();
         public InMemoryCooldownStore Cooldowns { get; } = new();
-        private ServiceProvider? _provider;
+        private IHost? _host;
 
         public Harness(MarketMonitorSettings settings) => Settings = new InMemoryMonitoredSymbolStore(settings);
 
-        public async Task<(MonitorPollingService Service, ITestHarness Harness)> StartAsync()
+        public async Task<(MonitorPollingService Service, IHost Host)> StartAsync()
         {
-            _provider = new ServiceCollection()
-                .AddSingleton<IMonitoredSymbolStore>(Settings)
-                .AddSingleton<IPositionStore>(Positions)
-                .AddSingleton<IPriceBaselineStore>(Baselines)
-                .AddSingleton<ICooldownStore>(Cooldowns)
-                .AddSingleton<IMarketDataSource>(Market)
-                .AddSingleton<IClock>(Clock)
-                .AddScoped<AppSvc>()
-                .AddMassTransitTestHarness()
-                .BuildServiceProvider(true);
+            _host = await Microsoft.Extensions.Hosting.Host.CreateDefaultBuilder()
+                .UseWolverine(opts =>
+                {
+                    opts.Services.AddSingleton<IMonitoredSymbolStore>(Settings);
+                    opts.Services.AddSingleton<IPositionStore>(Positions);
+                    opts.Services.AddSingleton<IPriceBaselineStore>(Baselines);
+                    opts.Services.AddSingleton<ICooldownStore>(Cooldowns);
+                    opts.Services.AddSingleton<IMarketDataSource>(Market);
+                    opts.Services.AddSingleton<IClock>(Clock);
+                    opts.Services.AddScoped<AppSvc>();
 
-            var testHarness = _provider.GetRequiredService<ITestHarness>();
-            await testHarness.Start();
+                    opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+                    opts.StubAllExternalTransports();
+                })
+                .StartAsync();
 
             var service = new MonitorPollingService(
-                _provider.GetRequiredService<IServiceScopeFactory>(),
+                _host.Services.GetRequiredService<IServiceScopeFactory>(),
                 Schedule, Clock, Options.Create(new MonitorOptions()),
                 NullLogger<MonitorPollingService>.Instance);
 
-            return (service, testHarness);
+            return (service, _host);
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (_provider is not null) await _provider.DisposeAsync();
+            if (_host is not null)
+            {
+                await _host.StopAsync();
+                _host.Dispose();
+            }
         }
     }
 
@@ -78,11 +91,12 @@ public class MonitorPollingServiceTests
         await using var h = new Harness(Settings(Aapl));
         h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
         h.Market.Set("AAPL", Market.UnitedStates, 1_040m); // +4%
-        var (service, harness) = await h.StartAsync();
+        var (service, host) = await h.StartAsync();
 
-        await service.RunOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
-        (await harness.Published.Any<PriceMovementDetected>()).Should().BeTrue();
+        session.Sent.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -92,11 +106,12 @@ public class MonitorPollingServiceTests
         h.Schedule.Open = false;
         h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
         h.Market.Set("AAPL", Market.UnitedStates, 1_040m);
-        var (service, harness) = await h.StartAsync();
+        var (service, host) = await h.StartAsync();
 
-        await service.RunOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
-        (await harness.Published.Any<PriceMovementDetected>()).Should().BeFalse();
+        session.Sent.MessagesOf<PriceMovementDetected>().Should().BeEmpty();
     }
 
     [Fact]
@@ -105,11 +120,12 @@ public class MonitorPollingServiceTests
         await using var h = new Harness(Settings()); // 監視銘柄なし・保有のみ
         h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 10, 1_000m, 970m)]);
         h.Market.Set("AAPL", Market.UnitedStates, 960m);
-        var (service, harness) = await h.StartAsync();
+        var (service, host) = await h.StartAsync();
 
-        await service.RunOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
-        (await harness.Published.Any<StopLossTriggered>()).Should().BeTrue();
+        session.Sent.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -123,11 +139,12 @@ public class MonitorPollingServiceTests
         h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
         h.Market.Set("AAPL", Market.UnitedStates, 1_040m); // +4% 変動
         h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // 損切り 1900 割れ
-        var (service, harness) = await h.StartAsync();
+        var (service, host) = await h.StartAsync();
 
-        await service.RunOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivity()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
-        (await harness.Published.Any<StopLossTriggered>()).Should().BeTrue();
-        (await harness.Published.Any<PriceMovementDetected>()).Should().BeTrue();
+        session.Sent.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
     }
 }

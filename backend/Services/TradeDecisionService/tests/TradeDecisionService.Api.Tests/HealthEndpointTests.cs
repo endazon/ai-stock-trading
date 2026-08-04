@@ -1,11 +1,10 @@
 using System.Net;
-using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using AwesomeAssertions;
+using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
 using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
@@ -35,9 +34,9 @@ public class HealthEndpointTests(HealthEndpointTests.Factory factory) : IClassFi
                 }));
             builder.ConfigureServices(services =>
             {
-                // 実 RabbitMQ を避けてテストハーネスへ差し替える。
-                services.RemoveAll<IBusControl>();
-                services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.PriceMovementDetectedConsumer>());
+                // ADR-0013, IADR-0129, #354: 実 RabbitMQ を避けて Wolverine の外部トランスポートを無効化する
+                // （ハンドラの発見は Program.cs 側の配線が担う）。
+                services.DisableAllExternalWolverineTransports();
             });
         }
     }

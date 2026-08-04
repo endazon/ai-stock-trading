@@ -2,14 +2,13 @@ using AiStockTrading.MarketMonitor.Application.Ports;
 using AiStockTrading.MarketMonitor.Infrastructure.Composable.Adapters;
 using AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
 using AwesomeAssertions;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
 using Composable = AiStockTrading.MarketMonitor.Infrastructure.Composable;
@@ -73,8 +72,8 @@ public class PositionStoreSelectionTests
                 foreach (var d in toRemove) services.Remove(d);
                 services.AddDbContext<MarketMonitorDbContext>(opt => opt.UseInMemoryDatabase(_dbName));
 
-                services.RemoveAll<IBusControl>();
-                services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.TradeDecisionMadeBaselineConsumer>());
+                // ADR-0013, IADR-0129, #354: 実 RabbitMQ へ接続しない（ハンドラの発見は Program.cs 側の配線が担う）。
+                services.DisableAllExternalWolverineTransports();
 
                 services.AddAuthentication(TestAuthHandler.SchemeName)
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });

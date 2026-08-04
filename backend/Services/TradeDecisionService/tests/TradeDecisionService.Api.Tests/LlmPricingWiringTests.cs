@@ -1,12 +1,11 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
 using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
@@ -17,16 +16,19 @@ namespace AiStockTrading.TradeDecision.Api.Tests;
 // 配線が外れると「単価を入れたつもりで global 単一ペア（または 0）のまま」になり、症状が金額のズレなので気づきにくい。
 public class LlmPricingWiringTests
 {
+    // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
     private static async Task<decimal> ReportAsync(Factory factory, string? model)
     {
         _ = factory.CreateClient();
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<ILlmUsageReporter>()
-            .ReportAsync(new LlmUsage(1000, 2000, model));
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            using var scope = factory.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<ILlmUsageReporter>()
+                .ReportAsync(new LlmUsage(1000, 2000, model));
+        });
 
-        return harness.Published.Select<LlmCostIncurred>().Single().Context.Message.Amount;
+        return session.Sent.MessagesOf<LlmCostIncurred>().Single().Amount;
     }
 
     // 基準1/2（#303）: 用途別割当で trade-decision=claude-sonnet-5。構成の単価がそのまま計上額になる。
@@ -94,8 +96,9 @@ public class LlmPricingWiringTests
 
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<IBusControl>();
-                services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.PriceMovementDetectedConsumer>());
+                // ADR-0013, IADR-0129, #354: 実 RabbitMQ を避けて Wolverine の外部トランスポートを無効化する
+                // （ハンドラの発見は Program.cs 側の配線が担う）。
+                services.DisableAllExternalWolverineTransports();
             });
         }
     }

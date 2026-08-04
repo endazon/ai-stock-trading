@@ -1,18 +1,17 @@
 using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
-using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
 using Composable = AiStockTrading.OrderExecution.Infrastructure.Composable;
 
 namespace AiStockTrading.OrderExecution.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres に依存せず、InMemory DB・
-// MassTransit テストハーネスへ差し替える。ブローカは既定（paper）で安全。
+// Wolverine の外部トランスポートを無効化する（ADR-0013 / IADR-0129 / #354）。ブローカは既定（paper）で安全。
 public sealed class ExecutionWorkerWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbName = Guid.NewGuid().ToString();
@@ -32,8 +31,8 @@ public sealed class ExecutionWorkerWebApplicationFactory : WebApplicationFactory
         {
             ReplaceDbContextWithInMemory(services, _dbName);
 
-            services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness(x => x.AddConsumer<Composable.Steps.OrderApprovedConsumer>());
+            // 実 RabbitMQ へ接続せず、送信は stub エンドポイントへ記録される（宛先 URI は保たれる）。
+            services.DisableAllExternalWolverineTransports();
         });
     }
 

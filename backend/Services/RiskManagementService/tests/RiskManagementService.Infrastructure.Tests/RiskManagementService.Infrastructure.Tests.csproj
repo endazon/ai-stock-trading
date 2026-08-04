@@ -11,5 +11,8 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\..\src\RiskManagementService.Infrastructure\RiskManagementService.Infrastructure.csproj" />
+    <!-- ADR-0013, IADR-0129, #354: キュー名規則（QueueNameFor）と Wolverine のランタイム生成（RuntimeCompilation）を
+         テストから参照する。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
 </Project>

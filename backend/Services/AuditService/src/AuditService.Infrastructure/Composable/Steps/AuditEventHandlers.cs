@@ -1,0 +1,222 @@
+using AiStockTrading.Audit.Application.Ports;
+using AiStockTrading.Audit.Application.Services;
+using AiStockTrading.Shared.Contracts.Events;
+using Wolverine;
+
+namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
+
+// FR-11, UC-07, IADR-0019: 全ドメインイベントを購読して監査台帳へ記録するハンドラ群。
+// 冪等キーはメッセージ ID（再送で重複記録しない）。記録時刻は IClock。写像は AuditEntryFactory（純関数）。
+//
+// ADR-0013, IADR-0129, #354: MassTransit の IConsumer<T> から Wolverine のハンドラへ移行した。
+// 冪等キーは `context.MessageId`（`Guid?`・null なら新規採番していた）から `envelope.Id`（`Guid`・非 null）
+// になり、**「MessageId が無ければ重複排除できない」分岐が構造的に不要**になった（Wolverine は送信時に必ず採番する）。
+// IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
+// 21 イベントそれぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+
+public sealed class PriceMovementDetectedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PriceMovementDetected message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class StopLossTriggeredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(StopLossTriggered message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class TradeDecisionMadeAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(TradeDecisionMade message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class OrderApprovedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderApproved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class OrderRejectedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderRejected message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class OrderExecutedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderExecuted message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-05, FR-19, #154, IADR-0067: 注文の訂正（注文履歴テレメトリ）を監査台帳へ記録する（FR-11: 全イベントの時系列記録）。
+public sealed class OrderModifiedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderModified message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-05, FR-19, #154, IADR-0067: 注文の取消（注文履歴テレメトリ）を監査台帳へ記録する。
+public sealed class OrderCancelledAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderCancelled message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-17: 全体前提条件の変更（設定管理 #19）を監査台帳へ記録する。
+public sealed class AssumptionsChangedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(AssumptionsChanged message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-07: 報告書の確定（報告書 #14）を監査台帳へ記録する。
+public sealed class ReportConfirmedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ReportConfirmed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-06/07/09, FR-11, IADR-0116, #280: 報告書ドラフトの提示（自動生成スケジューラ）を監査台帳へ記録する。
+// 確定（ReportConfirmed）と同じ相関で束ねられ、提示から確定までのリードタイムを監査照会で辿れる。
+public sealed class ReportDraftPresentedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ReportDraftPresented message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// NFR（費用）: 費用しきい値到達（費用統制 #23）を監査台帳へ記録する。
+public sealed class CostThresholdReachedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(CostThresholdReached message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// NFR（費用）, FR-04, IADR-0055: 実 LLM 費用の発生（#79）も監査台帳へ記録する（FR-11: 全イベントの時系列記録）。
+public sealed class LlmCostIncurredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(LlmCostIncurred message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-01, FR-02: 情報収集の完了（情報収集 #9）を監査台帳へ記録する。
+public sealed class InformationCollectedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(InformationCollected message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-20, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し #20/#167）を中央監査台帳へ記録する。
+public sealed class StageTransitionedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(StageTransitioned message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-20, #166, IADR-0083: 撤退基準到達（自動安全側の発火・撤退の定期評価ドライバ #166）を中央監査台帳へ記録する。
+public sealed class WithdrawalTriggeredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(WithdrawalTriggered message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-20, FR-15, #164, IADR-0089: バックテスト verdict（Stage 0 合格判定 #16・Stage 0→1 解錠）を中央監査台帳へ記録する。
+public sealed class BacktestEvaluatedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BacktestEvaluated message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い要求を中央監査台帳へ記録する。
+// 後続の OrderApproved はアクターも理由も持たないため、本記録が「誰が・なぜ落としたか」の唯一の証跡になる。
+public sealed class PositionCloseRequestedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionCloseRequested message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+public sealed class DailyPolicyUnconfirmedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(DailyPolicyUnconfirmed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+public sealed class BrokerPositionsObservedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BrokerPositionsObserved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知を中央監査台帳へ記録する。
+// 是正は伴わないため、この記録が「いつ・どの銘柄で乖離が生じたか」の唯一の永続証跡になる。
+public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionReconciliationDrift message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

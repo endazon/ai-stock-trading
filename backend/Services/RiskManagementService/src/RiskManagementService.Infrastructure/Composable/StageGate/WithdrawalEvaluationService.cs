@@ -2,12 +2,12 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
-using MassTransit;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
 
@@ -17,7 +17,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
 // WithdrawalTriggered を発行して通知（FR-09）と中央監査（FR-11）へ連携する。
 //
 // 実績パターンは QuoteRefreshService（IADR-0066）に準拠する: PeriodicTimer で定時、巡回ごとに DI スコープを作り
-// scoped な StageGateService/KillSwitchService/IPublishEndpoint を解決する（EF ストアは scoped）。例外は捕捉して
+// scoped な StageGateService/KillSwitchService/IMessageBus を解決する（EF ストアは scoped）。例外は捕捉して
 // 次周期へ縮退する（fail-safe・1 巡回の失敗で常駐を落とさない）。多重起動は逐次 await（オーバーラップなし）で防ぐ。
 // 発注審査の同期ホットパス（OrderScreeningService）には触れず、背景で局所 stores を読むのみ。
 //
@@ -103,14 +103,15 @@ internal sealed class WithdrawalEvaluationService(
     private Task PublishTriggeredAsync(
         IServiceScope scope, WithdrawalAssessment assessment, CancellationToken cancellationToken)
     {
-        var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
-        return bus.Publish(
+        // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。巡回ごとのスコープから解決する
+        // （Wolverine の PublishAsync は CancellationToken を取らない）。
+        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        return bus.PublishAsync(
             new WithdrawalTriggered(
                 (int)assessment.ProposedStage!.Value,
                 assessment.Reason?.ToString() ?? string.Empty,
                 assessment.HaltNewEntries,
-                clock.UtcNow),
-            cancellationToken);
+                clock.UtcNow)).AsTask();
     }
 
     // 撤退提案の識別子。同一乖離が継続する間は不変＝再通知しない。理由と提案段階から算出し、将来 Stage 1 以外の

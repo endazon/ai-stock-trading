@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.CostControl.Api.Tests;
@@ -74,10 +74,15 @@ public class CostControlEndpointsTests
         var client = OwnerClient(factory);
 
         // LLM 上限 15,000 の 80% = 12,000 を計上。
-        (await client.PostAsJsonAsync("/costs/record", Record("Llm", 12_000m))).StatusCode.Should().Be(HttpStatusCode.OK);
+        // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
+        HttpResponseMessage recorded = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            recorded = await client.PostAsJsonAsync("/costs/record", Record("Llm", 12_000m));
+        });
+        recorded.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
-        (await harness.Published.Any<CostThresholdReached>()).Should().BeTrue();
+        session.Sent.MessagesOf<CostThresholdReached>().Should().NotBeEmpty();
 
         var state = await client.GetFromJsonAsync<StateDto>("/costs/state");
         state!.State.Should().Be("Throttled");

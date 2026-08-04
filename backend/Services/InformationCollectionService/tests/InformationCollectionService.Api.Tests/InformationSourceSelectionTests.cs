@@ -2,12 +2,11 @@ using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
-using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 using Xunit;
 
 namespace AiStockTrading.InformationCollection.Api.Tests;
@@ -89,8 +88,8 @@ public class InformationSourceSelectionTests
 
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<IBusControl>();
-                services.AddMassTransitTestHarness();
+                // ADR-0013, IADR-0129, #354: 実 RabbitMQ へ接続しない（Wolverine の外部トランスポートを無効化する）。
+                services.DisableAllExternalWolverineTransports();
             });
         }
     }

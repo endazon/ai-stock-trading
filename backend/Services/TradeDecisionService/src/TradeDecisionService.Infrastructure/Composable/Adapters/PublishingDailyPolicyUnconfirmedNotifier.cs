@@ -1,7 +1,8 @@
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
-using MassTransit;
 using Microsoft.Extensions.Logging;
+using Wolverine;
+using Wolverine.Runtime;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
@@ -13,10 +14,12 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 // 翌営業日で再通知する。抑止状態は in-memory（singleton・スレッドセーフ）で保持する。Worker は意図的にステートレス
 // （DB なし）であり、リマインダ 1 件のための永続化層は過剰。再起動時に当日リマインダが最大 1 回重複し得るが無害。
 //
-// singleton として登録し、scoped な取引判断（TradeDecisionService）から呼ばれても状態を跨いで共有する。発行は singleton の
-// IBus を用いる（scoped な IPublishEndpoint は singleton から解決できないため）。
+// singleton として登録し、scoped な取引判断（TradeDecisionService）から呼ばれても状態を跨いで共有する。
+// ADR-0013, IADR-0129, #354: Wolverine の IMessageBus は scoped であり singleton へ注入できない
+// （MassTransit の IBus に相当する singleton の発行口が無い）。singleton の IWolverineRuntime から
+// MessageBus を作って発行する（Wolverine の想定用法）。
 internal sealed class PublishingDailyPolicyUnconfirmedNotifier(
-    IBus bus,
+    IWolverineRuntime runtime,
     IClock clock,
     ILogger<PublishingDailyPolicyUnconfirmedNotifier> logger) : IDailyPolicyUnconfirmedNotifier
 {
@@ -40,7 +43,7 @@ internal sealed class PublishingDailyPolicyUnconfirmedNotifier(
 
         try
         {
-            await bus.Publish(new DailyPolicyUnconfirmed(businessDay, occurredAt), cancellationToken).ConfigureAwait(false);
+            await new MessageBus(runtime).PublishAsync(new DailyPolicyUnconfirmed(businessDay, occurredAt)).ConfigureAwait(false);
             logger.LogInformation("日報未確定を通知しました（確定を促す）: 営業日 {BusinessDay}", businessDay);
         }
         catch

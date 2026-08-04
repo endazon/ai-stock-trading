@@ -5,16 +5,16 @@ using AiStockTrading.Configuration.Api.Foundation.Endpoints;
 using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.configuration-service";
 
 // #19 Slice A, FR-17, IADR-0021: 設定管理サービス。全体前提条件のバージョン管理・変更履歴・利用者変更（Keycloak 認可）と
-// ヘルスチェックのため WebApplication を用いる。更新時に AssumptionsChanged を発行する（MassTransit）。
+// ヘルスチェックのため WebApplication を用いる。更新時に AssumptionsChanged を発行する（Wolverine）。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ・PostgreSQL・Keycloak を shim 経由で組む部分）は
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL・Keycloak を shim 経由で組む部分）は
 // dev/test/CI でのローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,16 +40,10 @@ builder.Services.AddScoped<IAssumptionsStore, EfAssumptionsStore>();
 builder.Services.AddScoped<IAssumptionsChangeLog, EfAssumptionsChangeLog>();
 builder.Services.AddScoped<AssumptionsService>();
 
-// IADR-0011/0021: MassTransit（RabbitMQ）。消費者は持たず、更新時の AssumptionsChanged 発行に用いる。
-builder.Services.AddMassTransit(x =>
-{
-    x.UsingRabbitMq((_, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは持たず、更新時の AssumptionsChanged 発行に用いる。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts =>
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

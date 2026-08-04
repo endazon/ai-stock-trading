@@ -5,9 +5,10 @@ using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
@@ -35,16 +36,20 @@ public class MoomooFillControlRegressionTests
     private static OrderIntent Entry() =>
         new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
 
-    private static ServiceProvider BuildProvider(InMemoryPortfolioLedgerStore ledger) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IPortfolioLedgerStore>(ledger)
-            .AddMassTransitTestHarness(x =>
+    // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
+    // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
+    // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
+    private static Task<IHost> BuildHostAsync(InMemoryPortfolioLedgerStore ledger) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
             {
-                x.AddConsumer<OrderApprovedLedgerConsumer>();
-                x.AddConsumer<OrderExecutedLedgerConsumer>();
+                opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
+                opts.Discovery.DisableConventionalDiscovery()
+                    .IncludeType<OrderApprovedLedgerHandler>()
+                    .IncludeType<OrderExecutedLedgerHandler>();
+                opts.StubAllExternalTransports();
             })
-            .BuildServiceProvider(true);
+            .StartAsync();
 
     // 台帳 → 射影 → スナップショット → スクリーニング／サイジング文脈（本番と同じ組み立て）。
     private static (OrderScreeningService Screening, SizingContextService Sizing) BuildRiskChain(
@@ -64,23 +69,21 @@ public class MoomooFillControlRegressionTests
     public async Task 約定が台帳へ届くまで統制は拘束せず届いた後は同日再エントリーを拒否する()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
-        await using var provider = BuildProvider(ledger);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(ledger);
         var (screening, sizing) = BuildRiskChain(ledger);
 
         // 1 回目の判断は承認される（保有なし・当日取引なし）。
         var first = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(), "1 回目", Now));
         first.IsApproved.Should().BeTrue();
         var decisionId = first.Approved!.DecisionId;
-        await harness.Bus.Publish(new OrderApproved(decisionId, Entry(), 10, Now));
-        (await harness.Consumed.Any<OrderApproved>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
+        session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 
         var dailyRemainingBefore = sizing.Build().DailyOrderRemaining;
 
         // moomoo の発注応答（Accepted・約定 0）。この時点では台帳に何も載らない＝#270 の事象そのもの。
-        await harness.Bus.Publish(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now));
-        (await harness.Consumed.Any<OrderExecuted>()).Should().BeTrue();
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now));
+        session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         ledger.GetFills().Should().BeEmpty();
         sizing.Build().DailyOrderRemaining.Should().Be(dailyRemainingBefore, "未約定は発注枠を消費しない");
@@ -88,9 +91,9 @@ public class MoomooFillControlRegressionTests
             .IsApproved.Should().BeTrue("約定が無い間は同日再エントリーの統制が拘束しない（追跡が必要な理由）");
 
         // 追跡ポーラーが終端化を観測して再発行した約定。ここで統制の入力が満たされる。
-        await harness.Bus.Publish(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
-        (await harness.Consumed.Any<OrderExecuted>(x => x.Context.Message.Status == OrderStatus.Filled))
-            .Should().BeTrue();
+        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
+        session3.Executed.MessagesOf<OrderExecuted>()
+            .Should().Contain(m => m.Status == OrderStatus.Filled);
 
         ledger.GetFills().Should().ContainSingle().Which.Quantity.Should().Be(10);
 
@@ -104,25 +107,23 @@ public class MoomooFillControlRegressionTests
         context.DailyOrderRemaining.Should().Be(dailyRemainingBefore - 10_000m);
         (dailyRemainingBefore - context.DailyOrderRemaining).Should().Be(10_000m);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 部分約定でも統制の入力は約定分だけ進む()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
-        await using var provider = BuildProvider(ledger);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(ledger);
         var (_, sizing) = BuildRiskChain(ledger);
 
         var decisionId = Guid.NewGuid();
-        await harness.Bus.Publish(new OrderApproved(decisionId, Entry(), 10, Now));
-        (await harness.Consumed.Any<OrderApproved>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
+        session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         var before = sizing.Build();
 
-        await harness.Bus.Publish(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now));
-        (await harness.Consumed.Any<OrderExecuted>()).Should().BeTrue();
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now));
+        session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         // 部分約定（4 株 × 1,000 円）分だけ枠が減る。全量約定を待たない（待つ間は統制が素通しになる）。
         var partial = sizing.Build();
@@ -130,14 +131,14 @@ public class MoomooFillControlRegressionTests
         (before.StageCapitalRemaining - partial.StageCapitalRemaining).Should().Be(4_000m);
 
         // 累積 10 株で終端化 → 差分ではなく累積で置き換わる（二重計上しない）。
-        await harness.Bus.Publish(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
-        (await harness.Consumed.Any<OrderExecuted>(x => x.Context.Message.Status == OrderStatus.Filled))
-            .Should().BeTrue();
+        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
+        session3.Executed.MessagesOf<OrderExecuted>()
+            .Should().Contain(m => m.Status == OrderStatus.Filled);
 
         var full = sizing.Build();
         (before.DailyOrderRemaining - full.DailyOrderRemaining).Should().Be(10_000m);
         (before.StageCapitalRemaining - full.StageCapitalRemaining).Should().Be(10_000m);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 }

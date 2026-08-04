@@ -66,7 +66,8 @@ docs/
 > `operations` はリポ単位で 1 つと定めているため、手順書が複数必要になると置き場が無くなる。
 > **状態の単一情報源は `operations.md` に置き、Runbook は手順に特化して複数存在してよい**。
 > 本リポジトリの Runbook 例: [実弾解禁 Runbook](operations/live-trading-cutover-runbook.md)・
-> [発注経路の区別と識別 Runbook](operations/broker-execution-paths-runbook.md)。
+> [発注経路の区別と識別 Runbook](operations/broker-execution-paths-runbook.md)・
+> [旧キュー削除 Runbook](operations/wolverine-queue-cleanup-runbook.md)。
 >
 > `how-to` は仕様ではなく作業手順の案内であり、起点 ID を持たないことがある。
 > その場合はフロントマターの起点 ID を空にしてよい（他の仕様書と異なり必須としない）。

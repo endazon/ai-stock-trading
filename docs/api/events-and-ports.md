@@ -129,14 +129,21 @@ sequenceDiagram
 `Shared.Contracts.Events` の全イベント record の後方互換（削除・改名・型変更の禁止／追加は許容）を CI 契約テスト
 （`AiStockTrading.Shared.Contracts.Tests`・committed snapshot 比較）で機械化する（[IADR-0079](../adr/IADR-0079_event-backward-compat-contract-test.md)）。
 
-## wire 識別子（MessageUrn）の固定（#253）
+## wire 識別子（メッセージ識別子）の固定（#253 / #354）
 
-MassTransit はメッセージの wire 上の識別を正準 URN `urn:message:AiStockTrading.Shared.Contracts.Events:<Type>`
-で行う。URN は**名前空間と型名の双方**から導出されるため、名前空間の移動は型名が不変でも wire 契約を破壊する。
+メッセージの wire 上の識別子は **Wolverine の `ToMessageTypeName()`**（既定は namespace 込みの完全名
+`AiStockTrading.Shared.Contracts.Events.<Type>`）である。この文字列が **exchange 名・binding key・封筒の
+`message-type` ヘッダ**になる（[IADR-0129](../adr/IADR-0129_wolverine-messaging-topology.md) 決定 2）。
+識別子は**名前空間と型名の双方**から導出されるため、名前空間の移動は型名が不変でも wire 契約を破壊する
+（発行側と購読側が別の exchange／キューで待ち合わせ、滞留中・DLQ 内のメッセージが再消費不能になる）。
 上記の後方互換テストは snapshot キーが `Type.Name` のため名前空間移動を検出できない。この分担は
-`EventMessageUrnTests` が担い、全イベントの正準 URN を固定する（[IADR-0037](../adr/IADR-0037_async-contract-format-reevaluation.md) の決定・
+`EventMessageTypeNameTests` が担い、全 21 イベントの識別子を固定する（[IADR-0037](../adr/IADR-0037_async-contract-format-reevaluation.md) の決定・
 検出範囲の分担表は [IADR-0079](../adr/IADR-0079_event-backward-compat-contract-test.md)「既知の限界」）。
-本テストは MassTransit の URN 導出規約を前提とするため、Wolverine 移行（`ADR-0013`）時は再検証が要る。
+
+> 履歴: 本テストの前身は `EventMessageUrnTests`（#253）で、MassTransit の正準 URN
+> `urn:message:AiStockTrading.Shared.Contracts.Events:<Type>` を固定していた。#354（ADR-0013）の Wolverine 移行で
+> MassTransit の URN は wire 上のどこにも現れなくなったため、第 3 段階で上記の識別子固定テストへ置き換えた
+> （守る不変条件＝「識別子が意図せず変わらないこと」は不変）。
 
 ## 未決事項
 

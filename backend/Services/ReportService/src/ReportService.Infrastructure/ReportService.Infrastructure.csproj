@@ -9,7 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（IMessageBus による発行）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />

@@ -4,11 +4,11 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.Report.Api.Tests;
@@ -61,12 +61,21 @@ public class ReportEndpointsTests
         var put = await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var confirm = await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する
+        // （確定の処理中に外へ出たメッセージが収束するまで待つ）。
+        HttpResponseMessage confirm = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            confirm = await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        });
         confirm.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // ReportConfirmed が発行される。
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
-        (await harness.Published.Any<ReportConfirmed>()).Should().BeTrue();
+        // ReportConfirmed が発行される（IADR-0129 決定 2: 宛先はメッセージ型ごとの共有 fanout exchange）。
+        session.Sent.MessagesOf<ReportConfirmed>().Should().NotBeEmpty();
+        session.Sent.Envelopes().Should().Contain(e =>
+            e.Message is ReportConfirmed
+            && e.Destination!.ToString()
+                == "rabbitmq://exchange/AiStockTrading.Shared.Contracts.Events.ReportConfirmed");
 
         // 確定済み日報方針が照会できる。
         var policy = await client.GetFromJsonAsync<DailyPolicyDto>("/reports/daily-policy");

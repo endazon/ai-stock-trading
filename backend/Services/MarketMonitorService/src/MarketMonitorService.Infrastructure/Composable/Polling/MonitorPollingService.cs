@@ -1,9 +1,9 @@
 using AiStockTrading.MarketMonitor.Application.Ports;
-using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wolverine;
 using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
@@ -52,19 +52,21 @@ internal sealed class MonitorPollingService(
 
         using var scope = scopeFactory.CreateScope();
         var monitor = scope.ServiceProvider.GetRequiredService<AppSvc>();
-        var publish = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+        // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。巡回ごとのスコープから解決する
+        // （Wolverine の PublishAsync は CancellationToken を取らない。巡回の中断は上位のループが見る）。
+        var publish = scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
         var result = await monitor.EvaluateRoundAsync(cancellationToken).ConfigureAwait(false);
 
         // 損切りを先に発行する（フェイルセーフ・損切り優先。IADR-0014）。
         foreach (var stopLoss in result.StopLosses)
         {
-            await publish.Publish(stopLoss, cancellationToken).ConfigureAwait(false);
+            await publish.PublishAsync(stopLoss).ConfigureAwait(false);
         }
 
         foreach (var movement in result.PriceMovements)
         {
-            await publish.Publish(movement, cancellationToken).ConfigureAwait(false);
+            await publish.PublishAsync(movement).ConfigureAwait(false);
         }
     }
 }

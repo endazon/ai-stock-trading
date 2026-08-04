@@ -1,9 +1,10 @@
-using AiStockTrading.Configuration.Client.Composable.Steps;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine.Runtime;
 using Xunit;
 
 namespace AiStockTrading.CostControl.Api.Tests;
@@ -24,13 +25,21 @@ public class CostControlWiringTests
 
     // 版の追随はイベント購読による無効化に依る（IADR-0065 決定 4）。購読の登録が外れると、
     // 利用者が上限を変更しても TTL（既定 5 分）が切れるまで追随しなくなる。
+    //
+    // ADR-0013, IADR-0129, #354: MassTransit は consumer を DI へ登録したため型の解決可否で購読を見られたが、
+    // Wolverine のハンドラは DI に型登録されず、アセンブリ走査で発見される。よって「発見されたか」を直接見る
+    // （AssumptionsChanged を扱う実行器が解決でき、未処理型を表す NoHandlerExecutor でないこと）。
+    // ハンドラのあるアセンブリを Program.cs が発見範囲から外すと、この検査が落ちる。
     [Fact]
     public void 費用統制は前提条件の変更を購読する()
     {
         using var factory = new CostControlWorkerWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
+        var runtime = factory.Services.GetRequiredService<IWolverineRuntime>();
 
-        scope.ServiceProvider.GetService<AssumptionsChangedConsumer>().Should().NotBeNull();
+        var invoker = runtime.FindInvoker(typeof(AssumptionsChanged));
+
+        invoker.Should().NotBeNull();
+        invoker.GetType().Name.Should().NotBe("NoHandlerExecutor");
     }
 
     // 安全既定（IADR-0063 決定 6 / IADR-0065 決定 5）: Configuration:BaseUrl 未設定なら HTTP を構築せず既定値へ倒れる。

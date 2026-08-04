@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
-    <!-- IADR-0051: s2s トークン付与（AddAiStockTradingServiceToken）。MassTransit（IConsumer）も本参照から得る。 -->
+    <!-- IADR-0051: s2s トークン付与（AddAiStockTradingServiceToken）。Wolverine のハンドラ規約（ADR-0013 / IADR-0129 / #354）も本参照から得る。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
   <ItemGroup>

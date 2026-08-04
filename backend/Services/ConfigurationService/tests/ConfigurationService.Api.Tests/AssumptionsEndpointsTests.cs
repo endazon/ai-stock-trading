@@ -3,8 +3,8 @@ using System.Net.Http.Json;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.Configuration.Api.Tests;
@@ -66,16 +66,26 @@ public class AssumptionsEndpointsTests
         var client = OwnerClient(factory);
 
         var modified = TradingAssumptionsDefaults.Create() with { FxSpreadRatio = 0.003m };
-        var put = await client.PutAsJsonAsync("/assumptions", UpdateBody(modified, 1, "為替スプレッド登録"));
+        HttpResponseMessage put = null!;
+        // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する
+        // （PUT の処理中に外へ出たメッセージが収束するまで待つ）。
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            put = await client.PutAsJsonAsync("/assumptions", UpdateBody(modified, 1, "為替スプレッド登録"));
+        });
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var updated = await put.Content.ReadFromJsonAsync<VersionedDto>();
         updated!.Version.Should().Be(2);
         updated.Assumptions.FxSpreadRatio.Should().Be(0.003m);
 
-        // 変更通知イベントが発行される。
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
-        (await harness.Published.Any<AssumptionsChanged>()).Should().BeTrue();
+        // 変更通知イベントが発行される（IADR-0129 決定 2: 宛先はメッセージ型ごとの共有 fanout exchange。
+        // exchange 名は Wolverine 既定＝メッセージ型の完全名であり、購読側サービスもここに bind する）。
+        session.Sent.MessagesOf<AssumptionsChanged>().Should().NotBeEmpty();
+        session.Sent.Envelopes().Should().Contain(e =>
+            e.Message is AssumptionsChanged
+            && e.Destination!.ToString()
+                == "rabbitmq://exchange/AiStockTrading.Shared.Contracts.Events.AssumptionsChanged");
 
         // 履歴に残る。
         var history = await client.GetFromJsonAsync<List<ChangeDto>>("/assumptions/history");

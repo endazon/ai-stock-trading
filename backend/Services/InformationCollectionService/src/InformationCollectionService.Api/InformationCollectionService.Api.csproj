@@ -6,7 +6,9 @@
     <RootNamespace>AiStockTrading.InformationCollection.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <ProjectReference Include="..\InformationCollectionService.Application\InformationCollectionService.Application.csproj" />

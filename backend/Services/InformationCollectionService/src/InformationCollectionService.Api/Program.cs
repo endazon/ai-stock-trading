@@ -8,8 +8,8 @@ using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
-using MassTransit;
 using Serilog;
+using Wolverine;
 using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
 
 const string ServiceName = "ai-stock-trading.information-collection-service";
@@ -17,7 +17,7 @@ const string ServiceName = "ai-stock-trading.information-collection-service";
 // #9 Slice A, FR-01, IADR-0022: 情報収集サービス。定時ポーリングで収集→正規化→サニタイズ→KB 保存→収集完了イベント発行。
 // ヘルスチェックの HTTP サーフェスのため WebApplication を用いる（DB・認可なし）。外部情報源・KB 保存は既定で無効（安全既定）。
 //
-// IADR-0013: 本 Program.cs の standalone 配線（MassTransit/RabbitMQ を shim 経由で組む部分）は dev/test/CI での
+// IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ を shim 経由で組む部分）は dev/test/CI での
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 var builder = WebApplication.CreateBuilder(args);
 
@@ -99,16 +99,10 @@ builder.Services.AddScoped<ICostControlGate>(sp =>
     return new HttpCostControlGate(http, sp.GetRequiredService<ILogger<HttpCostControlGate>>());
 });
 
-// IADR-0011/0022: MassTransit（RabbitMQ）。消費者は持たず、収集完了時の InformationCollected 発行に用いる。
-builder.Services.AddMassTransit(x =>
-{
-    x.UsingRabbitMq((_, cfg) =>
-    {
-        cfg.Host(builder.Configuration["RabbitMq:ConnectionString"]
-            ?? "amqp://guest:guest@rabbitmq:5672");
-        cfg.UseAiStockTradingRetry();
-    });
-});
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは持たず、収集完了時の InformationCollected 発行に用いる。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts =>
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
 
 // 定時ポーリング（収集→保存→イベント発行）。#121: run-once エンドポイントから解決できるよう singleton 登録し、
 // 同一インスタンスを HostedService としても起動する（Trigger=External では ExecuteAsync が巡回せず待機のみ）。

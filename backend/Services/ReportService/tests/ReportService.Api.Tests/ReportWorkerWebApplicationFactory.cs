@@ -1,5 +1,4 @@
 using AiStockTrading.Report.Infrastructure.Foundation.Persistence;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -7,11 +6,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 
 namespace AiStockTrading.Report.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、InMemory DB・
-// MassTransit テストハーネス（ReportConfirmed 発行の検証用）・TestAuthHandler へ差し替える。
+// Wolverine の外部トランスポート無効化（ReportConfirmed の発行は stub で記録され、Wolverine.Tracking で
+// 検証できる。ADR-0013 / IADR-0129 / #354）・TestAuthHandler へ差し替える。
 public sealed class ReportWorkerWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbName = Guid.NewGuid().ToString();
@@ -31,8 +32,8 @@ public sealed class ReportWorkerWebApplicationFactory : WebApplicationFactory<Pr
         {
             ReplaceDbContextWithInMemory(services, _dbName);
 
-            services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness();
+            // 実 RabbitMQ へ接続せず、送信は stub エンドポイントへ記録される（宛先 URI は保たれる）。
+            services.DisableAllExternalWolverineTransports();
 
             services.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });

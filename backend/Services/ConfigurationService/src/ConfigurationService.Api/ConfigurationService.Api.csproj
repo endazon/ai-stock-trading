@@ -1,12 +1,14 @@
 <!-- #19 Slice A, FR-17, IADR-0021, IADR-0128: 設定管理サービスの API ホスト。全体前提条件のバージョン管理・変更履歴・
-     利用者変更（Keycloak 認可）とヘルスチェックのため Web SDK を使用。更新時に AssumptionsChanged を発行する。
+     利用者変更（Keycloak 認可）とヘルスチェックのため Web SDK を使用。更新時に AssumptionsChanged を発行する（Wolverine）。
      実行時基盤は test-support shim（本番非使用・IADR-0013）。技術詳細（EF Core・永続化）は Infrastructure に置く。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <RootNamespace>AiStockTrading.Configuration.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

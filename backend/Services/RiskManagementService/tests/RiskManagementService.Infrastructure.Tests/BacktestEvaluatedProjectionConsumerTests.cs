@@ -5,23 +5,31 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
-using MassTransit;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Wolverine;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 
-// FR-20, FR-15, UC-06, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読して段階別実績へ射影する Consumer を
-// MassTransit テストハーネス + インメモリストアで検証する。運用系フィールド保全と fail-safe（昇格拒否）を担保する。
+// FR-20, FR-15, UC-06, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読して段階別実績へ射影するハンドラを
+// Wolverine のテストハーネス（Wolverine.Tracking）+ インメモリストアで検証する。運用系フィールド保全と fail-safe（昇格拒否）を担保する。
 public class BacktestEvaluatedProjectionConsumerTests
 {
-    private static ServiceProvider BuildProvider(IStagePerformanceStore store) =>
-        new ServiceCollection()
-            .AddLogging()
-            .AddSingleton(store)
-            .AddMassTransitTestHarness(x => x.AddConsumer<BacktestEvaluatedProjectionConsumer>())
-            .BuildServiceProvider(true);
+    // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
+    // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
+    // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
+    private static Task<IHost> BuildHostAsync(IStagePerformanceStore store) =>
+        Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton(store);
+                opts.Discovery.DisableConventionalDiscovery()
+                    .IncludeType<BacktestEvaluatedProjectionHandler>();
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
 
     private static BacktestEvaluated Verdict(bool passed, decimal maxDd) =>
         new(passed, maxDd, DeflatedSharpe: 1.2, ProbabilityOfBacktestOverfitting: 0.1,
@@ -34,18 +42,16 @@ public class BacktestEvaluatedProjectionConsumerTests
         // 供給前は既定（BacktestPassed=false）＝昇格拒否の fail-safe。
         store.GetCurrent().BacktestPassed.Should().BeFalse();
 
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
-        await harness.Bus.Publish(Verdict(passed: true, maxDd: 0.08m));
-        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
+        session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();
         perf.BacktestPassed.Should().BeTrue();
         perf.BacktestMaxDrawdownRatio.Should().Be(0.08m);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
@@ -62,12 +68,10 @@ public class BacktestEvaluatedProjectionConsumerTests
             DailyLossLimitRespected = true,
         });
 
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
-        await harness.Bus.Publish(Verdict(passed: true, maxDd: 0.05m));
-        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.05m));
+        session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();
         // backtest 由来は更新される。
@@ -80,7 +84,7 @@ public class BacktestEvaluatedProjectionConsumerTests
         perf.SlippageAndCostWithinExpected.Should().BeTrue();
         perf.DailyLossLimitRespected.Should().BeTrue();
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
@@ -104,12 +108,10 @@ public class BacktestEvaluatedProjectionConsumerTests
         before.Accepted.Should().BeFalse();
         before.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
 
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
-        await harness.Bus.Publish(Verdict(passed: true, maxDd: 0.08m));
-        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
+        session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         // 供給後: 同じ承認要求が受理され、Stage 1 へ遷移する（昇格ゲートが解錠される）。
         var after = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
@@ -117,25 +119,23 @@ public class BacktestEvaluatedProjectionConsumerTests
         after.Transition!.Kind.Should().Be(StageTransitionKind.Promotion);
         ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Paper);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     [Fact]
     public async Task 不合格verdictは昇格拒否を維持しつつ実DDを更新する()
     {
         var store = new InMemoryStagePerformanceStore();
-        await using var provider = BuildProvider(store);
-        var harness = provider.GetRequiredService<ITestHarness>();
-        await harness.Start();
+        using var host = await BuildHostAsync(store);
 
-        await harness.Bus.Publish(Verdict(passed: false, maxDd: 0.30m));
-        (await harness.Consumed.Any<BacktestEvaluated>()).Should().BeTrue();
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: false, maxDd: 0.30m));
+        session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();
         perf.BacktestPassed.Should().BeFalse();
         perf.BacktestMaxDrawdownRatio.Should().Be(0.30m);
 
-        await harness.Stop();
+        await host.StopAsync();
     }
 
     // 段階ゲートの遷移時刻を固定するための時計（本テストでは時刻自体は検証しない）。

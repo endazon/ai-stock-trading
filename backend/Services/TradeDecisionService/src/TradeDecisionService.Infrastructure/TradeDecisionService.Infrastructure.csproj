@@ -9,7 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（ハンドラ規約・IMessageBus）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <ProjectReference Include="..\TradeDecisionService.Application\TradeDecisionService.Application.csproj" />
     <!-- FR-08, IADR-0069/0072: RAG 取得ポート IKnowledgeBaseSearch（#18 共有クライアント）を判断文脈へ結線するため参照する。 -->

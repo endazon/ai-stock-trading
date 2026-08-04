@@ -4,8 +4,8 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
-using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine.Tracking;
 using Xunit;
 
 namespace AiStockTrading.RiskManagement.Api.Tests;
@@ -101,18 +101,21 @@ public class StageGateEndpointsTests
         using var factory = new RiskWorkerWebApplicationFactory();
         SeedPerformance(factory, new StagePerformance { BacktestPassed = true });
         var client = OwnerClient(factory);
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-            new { targetStage = (int)TradingStage.Stage1Paper });
+        // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
+        HttpResponseMessage res = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+                new { targetStage = (int)TradingStage.Stage1Paper });
+        });
         res.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        (await harness.Published.Any<StageTransitioned>(
-            p => p.Context.Message.FromStage == (int)TradingStage.Stage0Verification
-                && p.Context.Message.ToStage == (int)TradingStage.Stage1Paper
-                && p.Context.Message.Kind == nameof(StageTransitionKind.Promotion)
-                && p.Context.Message.ApprovedBy == "test-owner"))
-            .Should().BeTrue();
+        session.Sent.MessagesOf<StageTransitioned>().Should().Contain(m =>
+            m.FromStage == (int)TradingStage.Stage0Verification
+                && m.ToStage == (int)TradingStage.Stage1Paper
+                && m.Kind == nameof(StageTransitionKind.Promotion)
+                && m.ApprovedBy == "test-owner");
     }
 
     [Fact]
@@ -121,13 +124,16 @@ public class StageGateEndpointsTests
         // fail-safe: 受理不能な遷移（バックテスト未合格の昇格）ではイベントを発行しない（拒否時は非発行）。
         using var factory = new RiskWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        var harness = factory.Services.GetRequiredService<ITestHarness>();
 
-        var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-            new { targetStage = (int)TradingStage.Stage1Paper });
+        HttpResponseMessage res = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+                new { targetStage = (int)TradingStage.Stage1Paper });
+        });
         res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
-        (await harness.Published.Any<StageTransitioned>()).Should().BeFalse();
+        session.Sent.MessagesOf<StageTransitioned>().Should().BeEmpty();
     }
 
     [Fact]

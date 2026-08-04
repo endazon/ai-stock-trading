@@ -1,13 +1,12 @@
-using MassTransit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Wolverine;
 
 namespace AiStockTrading.InformationCollection.Api.Tests;
 
-// WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ に依存せず MassTransit テストハーネスへ差し替える。
+// WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ に依存せず Wolverine の外部トランスポートを無効化する（ADR-0013 / IADR-0129 / #354）。
 // 情報源・KB は既定の安全実装（no-op）で外部接続しない。DB・認可なし。
 public sealed class InformationCollectionWorkerWebApplicationFactory : WebApplicationFactory<Program>
 {
@@ -26,8 +25,8 @@ public sealed class InformationCollectionWorkerWebApplicationFactory : WebApplic
 
         builder.ConfigureServices(services =>
         {
-            services.RemoveAll<IBusControl>();
-            services.AddMassTransitTestHarness();
+            // ADR-0013, IADR-0129, #354: 実 RabbitMQ へ接続しない（Wolverine の外部トランスポートを無効化する）。
+            services.DisableAllExternalWolverineTransports();
         });
     }
 }

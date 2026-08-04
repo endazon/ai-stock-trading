@@ -4,11 +4,11 @@ using AiStockTrading.Configuration.Application.Services;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Wolverine;
 
 namespace AiStockTrading.Configuration.Api.Foundation.Endpoints;
 
@@ -60,11 +60,11 @@ internal static class AssumptionsEndpoints
         owner.MapGet("/history", (AssumptionsService svc) => Results.Ok(svc.GetHistory()));
 
         // 前提条件の更新（利用者のみ・理由必須・楽観排他）。成功時に AssumptionsChanged を発行し通知サービスへ伝える。
-        owner.MapPut("", async (UpdateAssumptionsRequest req, AssumptionsService svc, IPublishEndpoint bus, IClock clock, HttpContext http) =>
+        owner.MapPut("", async (UpdateAssumptionsRequest req, AssumptionsService svc, IMessageBus bus, IClock clock, HttpContext http) =>
         {
             var actor = ActorOf(http);
             var version = svc.Update(req.Assumptions, req.ExpectedVersion, actor, req.Reason);
-            await bus.Publish(new AssumptionsChanged(version, actor, req.Reason, clock.UtcNow));
+            await bus.PublishAsync(new AssumptionsChanged(version, actor, req.Reason, clock.UtcNow));
             return Results.Ok(svc.GetCurrent());
         });
 

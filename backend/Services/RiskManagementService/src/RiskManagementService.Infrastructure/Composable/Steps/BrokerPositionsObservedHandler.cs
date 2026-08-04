@@ -1,8 +1,8 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
-using MassTransit;
 using Microsoft.Extensions.Logging;
+using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 
@@ -11,25 +11,27 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 // 乖離は検知・記録・通知のみで**是正しない**（自動で建玉を合わせにいく発注経路は作らない・IADR-0118）。
 // 一過性の未反映（発注後〜約定が台帳へ届くまで）で鳴らないよう、報告可否は PositionDriftTracker が
 // 連続観測条件とシグネチャ dedup で決める。
-internal sealed class BrokerPositionsObservedConsumer(
+//
+// ADR-0013, IADR-0129, #354: MassTransit の IConsumer<BrokerPositionsObserved> から Wolverine のハンドラへ移行した。
+public sealed class BrokerPositionsObservedHandler(
     IPortfolioLedgerStore ledger,
     PositionDriftTracker tracker,
     IClock clock,
-    ILogger<BrokerPositionsObservedConsumer> logger)
-    : IConsumer<BrokerPositionsObserved>
+    ILogger<BrokerPositionsObservedHandler> logger)
 {
-    public async Task Consume(ConsumeContext<BrokerPositionsObserved> context)
+    public async Task Handle(BrokerPositionsObserved message, IMessageBus bus)
     {
-        var observed = context.Message;
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(bus);
 
         var ledgerPositions = PortfolioProjection.ProjectOpenPositions(ledger.GetFills());
-        var drifts = PositionDriftDetector.Detect(ledgerPositions, observed.Positions);
+        var drifts = PositionDriftDetector.Detect(ledgerPositions, message.Positions);
 
         if (!tracker.ShouldReport(drifts))
         {
             logger.LogDebug(
                 "建玉突合: 乖離 {Count} 件（報告条件を満たさないため発行しません）。台帳 {Ledger} 件 / ブローカ {Broker} 件。",
-                drifts.Count, ledgerPositions.Count, observed.Positions.Count);
+                drifts.Count, ledgerPositions.Count, message.Positions.Count);
             return;
         }
 
@@ -38,6 +40,7 @@ internal sealed class BrokerPositionsObservedConsumer(
             drifts.Count,
             string.Join(", ", drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳{d.LedgerQuantity}≠ブローカ{d.BrokerQuantity}")));
 
-        await context.Publish(new PositionReconciliationDrift(drifts, observed.ObservedAt, clock.UtcNow));
+        await bus.PublishAsync(new PositionReconciliationDrift(drifts, message.ObservedAt, clock.UtcNow))
+            .ConfigureAwait(false);
     }
 }

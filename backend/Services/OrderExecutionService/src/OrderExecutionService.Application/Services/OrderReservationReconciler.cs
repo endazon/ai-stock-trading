@@ -15,7 +15,7 @@ namespace AiStockTrading.OrderExecution.Application.Services;
 //        NotPlaced     → 予約を解放（Release）。ブローカ呼び出しはしない（未発注＝取り消す対象がない）。
 //        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。
 //
-// 発行（OrderExecuted の Publish）は Worker 層が担う（Application は MassTransit 非依存の既存レイヤリングを維持）。
+// 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderReservationReconciler(
     IOrderReservationStore reservations,
     IExecutedOrderStore executedOrders,
@@ -68,7 +68,7 @@ public sealed class OrderReservationReconciler(
                             ?? throw new InvalidOperationException("Placed は BrokerOrder を伴わなければならない。");
 
                         // 照会（ProbeAsync）は実装次第で有意な待ち時間を持つ非同期になり得る。その待機中に通常フロー
-                        // （OrderApprovedConsumer）が同一 DecisionId を確定していないか、Save の直前に再確認する
+                        // （OrderApprovedHandler）が同一 DecisionId を確定していないか、Save の直前に再確認する
                         // （TOCTOU 対策）。確定済みなら二重 Save（executed_orders 主キー競合）を避け自己修復に倒す。
                         var raced = executedOrders.FindByDecisionId(decisionId);
                         if (raced is not null)

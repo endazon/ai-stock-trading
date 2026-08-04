@@ -13,7 +13,7 @@ internal sealed class EfOrderActivityStore(RiskManagementDbContext db) : IOrderA
     {
         ArgumentException.ThrowIfNullOrEmpty(symbol);
 
-        // 冪等: 既に承認済みの DecisionId は無視する（MassTransit 再送）。
+        // 冪等: 既に承認済みの DecisionId は無視する（ブローカ再送・IADR-0129 決定 10 の根拠のひとつ）。
         if (db.OrderActivities.Find(decisionId) is not null)
             return;
 

@@ -3,7 +3,7 @@ namespace AiStockTrading.OrderExecution.Application.Reconciliation;
 // #141, FR-05, IADR-0074: 滞留 Reserved の「滞留」判定境界を決める純関数。
 //
 // 本ポリシーが守る性質:「まだ処理中かもしれない予約を滞留と誤認しない」。滞留閾値は自動再配送
-// （UseAiStockTradingRetry＝2s/10s/30s＝約42秒）と `_error` 滞留の**外側**に置く。設定値を信用せず下限
+// （UseAiStockTradingRabbitMq の共通再試行＝2s/10s/30s＝約42秒）と `_error` 滞留の**外側**に置く。設定値を信用せず下限
 // クランプする（設定ミスで in-flight の予約に触れないため＝IADR-0057 の at-most-once を守る）。
 public static class ReconciliationPolicy
 {

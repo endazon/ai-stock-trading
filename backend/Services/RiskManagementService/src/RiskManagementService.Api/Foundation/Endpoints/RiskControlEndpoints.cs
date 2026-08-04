@@ -5,11 +5,11 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
 
@@ -97,7 +97,7 @@ internal static class RiskControlEndpoints
         // 発注前スクリーニング（OrderScreeningService）を通さない（損切りの機械執行と同型・IADR-0015）。
         // サービストークンには開かない（生成AI・自動処理が建玉を落とせないようにする＝FR-10「生成AIはこれらを上書きできない」・ADR-0003）。
         owner.MapPost("/positions/close",
-            async (PositionCloseRequest req, PositionCloseService svc, IPublishEndpoint bus, HttpContext http) =>
+            async (PositionCloseRequest req, PositionCloseService svc, IMessageBus bus, HttpContext http) =>
         {
             // market は Market?（非 nullable enum は省略時に暗黙 0＝日本市場へ束縛され、誤市場の決済を通してしまう）。
             if (string.IsNullOrWhiteSpace(req.Symbol))
@@ -122,8 +122,8 @@ internal static class RiskControlEndpoints
             // FR-11: 監査（誰が・なぜ）を先に発行する。OrderApproved はアクターも理由も持たないため、これが無いと
             // 手仕舞いの操作者が監査台帳に残らない。順序の根拠は「起きた操作に監査が無い」より「監査があるのに操作が
             // 無い」ほうが安全（後者は同一 DecisionId の後続イベント不在で検知できる）。
-            await bus.Publish(outcome.Requested!);
-            await bus.Publish(outcome.Approval!);
+            await bus.PublishAsync(outcome.Requested!);
+            await bus.PublishAsync(outcome.Approval!);
 
             // 約定は後から非同期に成立するため 202（200 ではない）。以降は既存経路（発注執行 → OrderExecuted → 台帳 → 通知）。
             var intent = outcome.Approval!.Intent;
@@ -178,7 +178,7 @@ internal static class RiskControlEndpoints
         owner.MapGet("/stage-gate/history", (StageGateService svc) => Results.Ok(svc.GetHistory()));
 
         owner.MapPost("/stage-gate/transition",
-            async (StageTransitionRequest req, StageGateService svc, IPublishEndpoint bus, HttpContext http) =>
+            async (StageTransitionRequest req, StageGateService svc, IMessageBus bus, HttpContext http) =>
         {
             // 値域検証: targetStage の省略（null）や範囲外 enum は 400。範囲外（負値・4 以上）の降格方向は
             // StageGate 側の連番検証を素通りし StageGatePolicy.SettingsFor で KeyNotFoundException（500）になり得るため、
@@ -195,7 +195,7 @@ internal static class RiskControlEndpoints
             // 段階/種別は Shared.Contracts が Risk.Domain へ依存しないよう primitive（int/文字列）へ写す。
             if (result is { Accepted: true, Transition: { } t })
             {
-                await bus.Publish(new StageTransitioned(
+                await bus.PublishAsync(new StageTransitioned(
                     t.Sequence, (int)t.FromStage, (int)t.ToStage, t.Kind.ToString(), t.ApprovedBy, t.Reason, t.OccurredAtUtc));
             }
 

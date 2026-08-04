@@ -17,6 +17,9 @@
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
-    <PackageReference Include="MassTransit" />
+    <!-- NFR, ADR-0013, IADR-0129, #354: Wolverine の共通配線（WolverineExtensions）。
+         MassTransit（旧 MassTransitExtensions）は #354 第 3 段階で撤去済み。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
 </Project>

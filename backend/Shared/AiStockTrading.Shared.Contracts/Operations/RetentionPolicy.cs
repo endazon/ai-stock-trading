@@ -9,7 +9,7 @@ namespace AiStockTrading.Shared.Contracts.Operations;
 public static class RetentionPolicy
 {
     /// <summary>
-    /// 既定の保持期間（日）。自動再配送（UseAiStockTradingRetry＝2s/10s/30s の3回＝約42秒）と
+    /// 既定の保持期間（日）。自動再配送（UseAiStockTradingRabbitMq の共通再試行＝2s/10s/30s の3回＝約42秒）と
     /// `_error` キューからの手動再投入（インシデント対応＝時間〜数日）の、桁違いに外側に置く（IADR-0059 決定2）。
     /// </summary>
     public const int DefaultRetentionDays = 90;

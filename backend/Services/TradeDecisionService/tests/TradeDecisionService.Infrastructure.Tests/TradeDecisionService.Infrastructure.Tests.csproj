@@ -10,5 +10,8 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
     <ProjectReference Include="..\..\src\TradeDecisionService.Infrastructure\TradeDecisionService.Infrastructure.csproj" />
+    <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
+         共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
 </Project>

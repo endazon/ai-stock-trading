@@ -152,7 +152,7 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
         var costAnon = _costFactory!.CreateClient();
         var costService = _costFactory.CreateDefaultClient(new ServiceTokenHandler(tokenProvider));
 
-        // 提供側の起動（実 EF Migration・MassTransit 購読）を待つ。
+        // 提供側の起動（実 EF Migration・Wolverine 購読）を待つ。
         await WaitReadyAsync(riskAnon);
         await WaitReadyAsync(reportAnon);
         await WaitReadyAsync(costAnon);

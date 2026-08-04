@@ -20,6 +20,9 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="Testcontainers.Keycloak" />
+    <!-- NFR, ADR-0013, IADR-0129, #354: fan-out の実配線検証（RabbitMqTopologyProbe）が実ブローカへ
+         受動宣言で問い合わせるために用いる。版はルート Directory.Packages.props の CPM で一元管理。 -->
+    <PackageReference Include="RabbitMQ.Client" />
     <!-- 発注執行 Worker は無名（global）参照。`Program` = 発注執行（Slice A・既存テストは無改修）。 -->
     <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Api\OrderExecutionService.Api.csproj" />
     <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。

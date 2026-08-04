@@ -1,10 +1,10 @@
-using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
+using Wolverine;
 using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
 
 namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
@@ -85,16 +85,18 @@ internal sealed class CollectionPollingService(
         }
 
         var collector = scope.ServiceProvider.GetRequiredService<AppSvc>();
-        var publish = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+        // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。巡回ごとのスコープから解決する
+        // （Wolverine の PublishAsync は CancellationToken を取らない。巡回の中断は上位のループが見る）。
+        var publish = scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
         var result = await collector.CollectAsync(cancellationToken).ConfigureAwait(false);
 
         // 収集があった場合のみ取引サイクルの起点イベントを発行する（空巡回では起動しない）。
         if (result.ItemCount > 0)
         {
-            await publish.Publish(
-                new InformationCollected(Guid.NewGuid(), result.ItemCount, DateTimeOffset.UtcNow),
-                cancellationToken).ConfigureAwait(false);
+            await publish.PublishAsync(
+                new InformationCollected(Guid.NewGuid(), result.ItemCount, DateTimeOffset.UtcNow))
+                .ConfigureAwait(false);
         }
 
         return gate;
