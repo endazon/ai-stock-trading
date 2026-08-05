@@ -91,7 +91,7 @@ ADR-0022 決定 1 は次の 2 つを書いている。**両者は日銀の別系
 
 実際に成功したリクエスト:
 
-```
+```text
 https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=csv&lang=jp&db=fm08&code=FXERD04,FXERD05&startDate=202607&endDate=202608
 ```
 
@@ -146,7 +146,7 @@ https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=csv&lang=jp&db=fm08&
    - <https://www.boj.or.jp/statistics/outline/exp/exrateyen.htm> — 中心相場の定義（「最も取引の多かった出来値」）
 
 > **`null` の解釈に注意**: API は該当日にデータが無い場合も、まだ収録されていない場合も同じく `null` を返す。**欠測・休場・未収録を区別しない。** 実装で「最新のレート」を求めるときは、`null` を遡ってスキップしたうえで、得られた日付の古さを別途評価する必要がある。
-
+>
 > **「統計別検索の方が新しい」は成り立たない。** 検索サイトは「お急ぎの方は、統計別検索をご利用ください」と案内しているが、公式 API（＝統計別検索と同じデータ）を実際に叩いた結果は主要時系列統計データ表と**完全に同一**だった。経路を変えても鮮度は改善しない。
 
 **この収録スケジュールから、曜日ごとの「最新データの古さ」は次のように決まる**（平常時・8:50 以降）。
