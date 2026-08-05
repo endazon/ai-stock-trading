@@ -64,7 +64,7 @@ public class OrderApprovedConsumerTests
             .StartAsync();
 
     private static OrderIntent NewIntent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     [Fact]
     public async Task 承認注文を購読しOrderExecutedを発行する()

@@ -17,7 +17,7 @@ public record OrderIntent(
     Market Market,
     TradeSide Side,
     ProductType ProductType,
-    TradeMode Mode,
+    BrokerProvider Mode,
     int Quantity,
     decimal Price,
     PositionEffect PositionEffect = PositionEffect.Open,

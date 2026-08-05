@@ -28,7 +28,7 @@ public class OrderScreeningManipulationTests
     };
 
     private static OrderIntent EntryIntent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     private static TradeDecisionMade Decision(OrderIntent intent) =>
         new(Guid.NewGuid(), intent, "テスト判断", Now);

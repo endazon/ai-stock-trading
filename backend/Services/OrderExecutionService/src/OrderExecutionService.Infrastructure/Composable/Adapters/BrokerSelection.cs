@@ -2,9 +2,17 @@ using Microsoft.Extensions.Configuration;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
 
-// FR-05, ADR-0002, IADR-0111: 発注先の証券会社（プロバイダ）。将来の他証券（ADR-0002 が挙げる立花証券 e支店 API 等）は
+// FR-05, ADR-0002, IADR-0111: 発注先の証券会社（ベンダ）。将来の他証券（ADR-0002 が挙げる立花証券 e支店 API 等）は
 // ここへ 1 値足し、BrokerFactory の switch に 1 腕・Helm の tier 値を 1 つ足すだけで追加できる。
-internal enum BrokerProvider
+//
+// #334, IADR-0140: 本 enum は **BrokerVendor** と名乗る（旧称 BrokerProvider）。計画（FR-20・INDEX 決定 46）が
+// 「発注先（Broker Provider）」の語を **内蔵 paper / moomoo SIMULATE / moomoo REAL の 3 値**へ確定させたため、
+// 同名の型が 2 つ（本 enum は vendor × environment の 2 軸のうち vendor 側）存在すると、
+// **本名前空間の中でだけ `BrokerProvider` が別の意味になる**という最悪の取り違えが起きる。
+// 構成キー（Broker:Provider）と `BrokerSelection.Provider` の名は外部契約のため変えない。
+// 対応関係: (Paper, *) ＝ 内蔵 paper ／ (Moomoo, Simulated) ＝ moomoo SIMULATE ／
+// (Moomoo, Live) ＝ moomoo REAL（LiveTradingGate が未解禁のまま止める）。
+internal enum BrokerVendor
 {
     Paper,
     Moomoo,
@@ -27,7 +35,7 @@ internal enum BrokerEnvironment
 //   - 未設定は paper / sim（最も本番から遠い階層）
 //   - 未知の provider / environment、および paper と live の矛盾指定は**起動時停止**
 //     （黙って安全側へ倒すと誤設定が隠れる。既存 MoomooBrokerOptions.EnsureSimulate と同じ流儀）
-internal sealed record BrokerSelection(BrokerProvider Provider, BrokerEnvironment Environment)
+internal sealed record BrokerSelection(BrokerVendor Provider, BrokerEnvironment Environment)
 {
     public const string ProviderKey = "Broker:Provider";
     public const string EnvironmentKey = "Broker:Environment";
@@ -38,13 +46,13 @@ internal sealed record BrokerSelection(BrokerProvider Provider, BrokerEnvironmen
     public const string SimulatedEnvironment = "sim";
     public const string LiveEnvironment = "live";
 
-    public bool IsMoomoo => Provider == BrokerProvider.Moomoo;
+    public bool IsMoomoo => Provider == BrokerVendor.Moomoo;
 
     // 実弾（実口座）を指す選択か。閂 0（LiveTradingGate）の唯一の判定条件。
     public bool IsLive => Environment == BrokerEnvironment.Live;
 
     // 正準名。本番近接順をそのまま表し、introspection の自己申告（#22 受け入れ基準③）とログに使う。
-    public string Tier => Provider == BrokerProvider.Paper
+    public string Tier => Provider == BrokerVendor.Paper
         ? PaperProvider
         : $"{ProviderName(Provider)}-{EnvironmentName(Environment)}";
 
@@ -58,7 +66,7 @@ internal sealed record BrokerSelection(BrokerProvider Provider, BrokerEnvironmen
 
         // paper は内蔵擬似であり実弾の口を持たない。黙殺すると「実弾のつもりで擬似発注していた」という
         // 最悪の誤認が成立するため、環境非該当は黙殺ではなく明示的拒否で表す。
-        if (parsedProvider == BrokerProvider.Paper && parsedEnvironment == BrokerEnvironment.Live)
+        if (parsedProvider == BrokerVendor.Paper && parsedEnvironment == BrokerEnvironment.Live)
         {
             throw new InvalidOperationException(
                 $"{ProviderKey}='{PaperProvider}' と {EnvironmentKey}='{LiveEnvironment}' は同時に指定できません。"
@@ -70,10 +78,10 @@ internal sealed record BrokerSelection(BrokerProvider Provider, BrokerEnvironmen
         return new BrokerSelection(parsedProvider, parsedEnvironment);
     }
 
-    private static BrokerProvider ParseProvider(string? configured) => Normalize(configured) switch
+    private static BrokerVendor ParseProvider(string? configured) => Normalize(configured) switch
     {
-        "" or PaperProvider => BrokerProvider.Paper,
-        MoomooProvider => BrokerProvider.Moomoo,
+        "" or PaperProvider => BrokerVendor.Paper,
+        MoomooProvider => BrokerVendor.Moomoo,
         _ => throw new InvalidOperationException(
             $"未知の {ProviderKey} '{configured}'。'{PaperProvider}' または '{MoomooProvider}' を使用してください"
             + "（IADR-0016 / IADR-0111）。"),
@@ -92,11 +100,11 @@ internal sealed record BrokerSelection(BrokerProvider Provider, BrokerEnvironmen
     private static string Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
 
-    private static string ProviderName(BrokerProvider provider) => provider switch
+    private static string ProviderName(BrokerVendor provider) => provider switch
     {
-        BrokerProvider.Paper => PaperProvider,
-        BrokerProvider.Moomoo => MoomooProvider,
-        _ => throw new InvalidOperationException($"未対応の {nameof(BrokerProvider)} '{provider}'。"),
+        BrokerVendor.Paper => PaperProvider,
+        BrokerVendor.Moomoo => MoomooProvider,
+        _ => throw new InvalidOperationException($"未対応の {nameof(BrokerVendor)} '{provider}'。"),
     };
 
     private static string EnvironmentName(BrokerEnvironment environment) => environment switch

@@ -22,7 +22,8 @@ internal static class RiskSettingsSerialization
                 settings.Guard.ProhibitManipulativeOrderPatterns),
             settings.Limits,
             settings.Stage,
-            settings.ShortSell);
+            settings.ShortSell,
+            settings.BrokerProvider);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -44,6 +45,9 @@ internal static class RiskSettingsSerialization
             // FR-10, ADR-0016, #329 第 2 段階: 空売り統制を持たない旧行は**既定（無効）**として読む。
             // 「読めない行は空売り有効」に倒れないことが要点である（フェイルクローズ）。
             ShortSell = dto.ShortSell ?? TradingDefaults.CreateShortSellSettings(),
+            // FR-20, #334, IADR-0140 決定4: 発注先を持たない旧行は**内蔵 paper**（外部へ一度も発注しない値）
+            // として読む。「読めない行は実弾」に倒れないことが要点である（フェイルクローズ）。
+            BrokerProvider = dto.BrokerProvider ?? BrokerProvider.InternalPaper,
         };
     }
 
@@ -52,7 +56,9 @@ internal static class RiskSettingsSerialization
         GuardDto Guard,
         RiskLimitSettings Limits,
         StageSettings Stage,
-        ShortSellSettings? ShortSell = null);
+        ShortSellSettings? ShortSell = null,
+        // FR-20, #334: 発注先。nullable＝本プロパティの追加前に書かれた行（読み出し時は安全側の既定へ倒す）。
+        BrokerProvider? BrokerProvider = null);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

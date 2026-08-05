@@ -59,9 +59,9 @@ public class StageGateTests
         result.Transition.Kind.Should().Be(StageTransitionKind.Promotion);
         result.Transition.ApprovedBy.Should().Be("endazon");
         result.Transition.OccurredAtUtc.Should().Be(Now);
-        // Stage 1 はペーパー・資金上限は初期投入資金
+        // FR-20, #334: Stage 1 の既定発注先は moomoo SIMULATE・段階としての金額の絞りは無い
         result.ResultingSettings.Should().Be(
-            new StageSettings(TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
+            new StageSettings(TradingStage.Stage1Simulate, BrokerProvider.MoomooSimulate, TradingDefaults.FullCapitalCapRatio));
     }
 
     // FR-20, FR-15: Stage 0→1 はバックテスト合格が前提。未合格なら承認があっても昇格は拒否される
@@ -198,7 +198,7 @@ public class StageGateTests
             TradingStage.Stage2MinimalLive, nextSequence: 3, approval, Passing(), Policy, Now);
 
         result.Accepted.Should().BeTrue();
-        result.ResultingSettings!.Mode.Should().Be(TradeMode.Live);
+        result.ResultingSettings!.Mode.Should().Be(BrokerProvider.MoomooReal);
         result.ResultingSettings.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);
     }
 

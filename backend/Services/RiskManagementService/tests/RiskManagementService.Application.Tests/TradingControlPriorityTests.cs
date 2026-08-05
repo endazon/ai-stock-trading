@@ -87,7 +87,7 @@ public class TradingControlPriorityTests
                 new FakeClock(Now, Today),
                 new WeekendBusinessCalendar());
             var intent = new OrderIntent(
-                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 1_000m, effect);
             return service.Screen(new TradeDecisionMade(Guid.NewGuid(), intent, "テスト判断", Now));
         }

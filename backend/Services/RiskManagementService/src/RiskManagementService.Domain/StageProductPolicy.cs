@@ -8,7 +8,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 /// 計画（ADR-0016 決定8 の表・05_trading-assumptions §5「取引可能な商品種別」）は段階ごとの可否を定める。
 /// </para>
 /// <list type="table">
-///   <item><term>Stage 0（検証）</term><description>実弾なし（実弾の可否は <c>TradeMode</c> が担う）</description></item>
+///   <item><term>Stage 0（検証）</term><description>実弾なし（実弾の可否は段階の既定発注先 <c>StageSettings.Mode</c> が担う）</description></item>
 ///   <item><term>Stage 1（SIMULATE）</term><description>現物・信用買い・空売りの **3 種すべてを検証する**</description></item>
 ///   <item><term>Stage 2（最小実弾）</term><description>**現物のみ。** 信用買い・空売りは行わない</description></item>
 ///   <item><term>Stage 3（段階増額）</term><description>信用買いを解禁。空売りは**条件付き**（決定8・決定14）</description></item>
@@ -90,7 +90,7 @@ public static class StageProductPolicy
         {
             // Stage 0（検証）・Stage 1（SIMULATE）: 段階としての商品種別の制限は課さない。
             // Stage 1 は現物・信用買い・空売りの **3 種すべてを検証する**（決定8）。
-            // 実弾を撃たないことは TradeMode（StageProhibitsLiveTrading）が別途担保する。
+            // 実弾を撃たないことは段階の既定発注先（StageProhibitsLiveTrading）が別途担保する。
             case TradingStage.Stage0Verification:
             case TradingStage.Stage1Simulate:
                 return null;

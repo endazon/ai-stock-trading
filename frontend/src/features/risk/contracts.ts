@@ -32,7 +32,10 @@ export interface TradingGuardSettings {
 
 export interface StageSettings {
   stage: number; // TradingStage enum（数値）
-  mode: number; // TradeMode enum（数値）
+  // FR-20, #334: 段階が定める**既定の発注先**（BrokerProvider enum・数値）。現在の発注先ではない
+  // （現在値は RiskManagementSettings.brokerProvider）。プロパティ名 mode はバックエンドの
+  // StageSettings.Mode に対応する（序数と JSON キーを動かさないための据え置き。IADR-0140 決定3）。
+  mode: number;
   capitalCap: number;
 }
 
@@ -40,6 +43,9 @@ export interface RiskManagementSettings {
   guard: TradingGuardSettings;
   limits: RiskLimitSettings;
   stage: StageSettings;
+  // FR-20, FR-12, FR-13, INDEX 決定 46, #334: **現在の発注先**（BrokerProvider enum・数値）。
+  // 運用段階とは独立した軸であり、変更操作を持つ画面は SC-02 だけである（SC-03 は参照専用）。
+  brokerProvider: number;
 }
 
 export interface SettingsChangeEntry {
@@ -60,11 +66,14 @@ export interface RiskStatusView {
   activeControl: number; // ActiveTradingControl enum（数値）
   newEntriesBlocked: boolean;
   stage: number; // TradingStage enum（数値）
+  brokerProvider: number; // BrokerProvider enum（数値）。段階とは別の軸（1 行に混ぜない）
   dailyRealizedPnl: number;
   unrealizedPnl: number;
   dailyPnl: number;
   capital: number;
   dailyOrderedAmount: number;
+  // FR-10, FR-20, #334: equity から解決した 1 注文あたりの上限額。実弾切替モーダル③の提示に用いる。
+  maxOrderAmount: number;
   maxDailyOrderAmount: number;
   drawdownRatio: number;
   maxDrawdownRatio: number;
@@ -96,28 +105,51 @@ export interface StageTransition {
   reason: string;
 }
 
+// FR-20, #334, IADR-0142: Stage 1 の進捗（**moomoo SIMULATE の実績のみ**）と、内蔵 paper 稼働により
+// 算入されなかった営業日数。画面は「経過 42 / 60 営業日（paper 稼働により 3 日を除外）」と併記する。
+export interface Stage1Progress {
+  qualifiedTradingDays: number;
+  tradeCount: number;
+  excludedInternalPaperDays: number;
+}
+
+// 06_daytrading-review §4.1〜§4.3: 目標営業日数 60 / 最小取引件数 100 / 打ち切り 120。
+// 画面が閾値を直書きすると計画の改訂に追随しないため、サーバの応答から受け取る。
+export interface Stage1GateCriteria {
+  targetTradingDays: number;
+  minimumTradeCount: number;
+  maximumTradingDays: number;
+}
+
 export interface StageGateStatus {
   currentStage: number; // TradingStage enum（数値）
   currentSettings: StageSettings;
   history: StageTransition[];
   promotion: PromotionAssessment;
   withdrawal: WithdrawalAssessment;
+  stage1Progress: Stage1Progress;
+  stage1Criteria: Stage1GateCriteria;
 }
 
 // ---- 数値 enum → 表示ラベルの写像（未知値は安全側フォールバック） ----
 
 // TradingStage（0..3）。バックエンド enum の連番（StageSettings.cs）に対応。
+// #333 / #334: 段階の呼称は計画（05_screens「表示規約（共通）」・06_daytrading-review §4 表）に従う。
+// **「ペーパー」の語を単独で使わない**（moomoo SIMULATE と内蔵 paper のどちらとも読めるため）。
 const STAGE_LABELS: Record<number, string> = {
   0: 'Stage 0（検証）',
-  1: 'Stage 1（ペーパー）',
-  2: 'Stage 2（少額実弾）',
-  3: 'Stage 3（拡大実弾）',
+  1: 'Stage 1（SIMULATE）',
+  2: 'Stage 2（最小実弾）',
+  3: 'Stage 3（段階増額）',
 };
 
-// TradeMode（0=Paper, 1=Live）。
-const MODE_LABELS: Record<number, string> = {
-  0: 'ペーパー',
-  1: '実弾',
+// BrokerProvider（0=内蔵 paper, 1=moomoo REAL, 2=moomoo SIMULATE）。FR-20 / INDEX 決定 46 / #334。
+// 序数はバックエンド enum と一致させる（旧 TradeMode の Paper=0 / Live=1 を保存し、SIMULATE を末尾へ追加）。
+// 用語: SIMULATE を「ペーパー」と呼ばない。内蔵 paper を「SIMULATE」「デモ取引」と呼ばない。
+const BROKER_PROVIDER_LABELS: Record<number, string> = {
+  0: '内蔵 paper（擬似約定・外部へ発注しない）',
+  1: 'moomoo REAL（実弾）',
+  2: 'moomoo SIMULATE（デモ環境）',
 };
 
 // ActiveTradingControl（0=None,1=KillSwitch,2=DailyLossLockout,3=Pause）。
@@ -153,7 +185,7 @@ const WITHDRAWAL_REASON_LABELS: Record<number, string> = {
   1: 'ペーパー乖離が説明不能',
 };
 
-// SettingsChangeType（SettingsChangeEntry.cs の列挙順）。
+// SettingsChangeType（SettingsChangeEntry.cs の列挙順）。7 は #334 で末尾追加。
 const CHANGE_TYPE_LABELS: Record<number, string> = {
   0: 'ガード',
   1: '上限',
@@ -162,7 +194,11 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   4: '緊急停止 解除',
   5: '一時停止',
   6: '再開',
+  7: '発注先',
 };
+
+// FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。
+export const CHANGE_TYPE_BROKER_PROVIDER = 7;
 
 // ProductType（0=Cash,1=MarginLong,2=ShortSell）。FR-19 / ADR-0016 決定1・#332: 商品種別は 3 値であり
 // それぞれ独立に有効・無効を設定できる（既定は現物のみ有効）。序数はバックエンドの enum と一致させる。
@@ -194,6 +230,25 @@ const optionsOf = (map: Record<number, string>): EnumOption[] =>
   Object.entries(map).map(([v, label]) => ({ value: Number(v), label }));
 export const PRODUCT_TYPE_OPTIONS: EnumOption[] = optionsOf(PRODUCT_TYPE_LABELS);
 export const MARKET_OPTIONS: EnumOption[] = optionsOf(MARKET_LABELS);
+// FR-20, SC-02, #334: 発注先の選択肢（3 値）。変更 UI は SC-02 だけが持つ。
+export const BROKER_PROVIDER_OPTIONS: EnumOption[] = optionsOf(BROKER_PROVIDER_LABELS);
+
+// FR-20, #334: 発注先の序数（バックエンド BrokerProvider と一致）。
+export const BROKER_PROVIDER_INTERNAL_PAPER = 0;
+export const BROKER_PROVIDER_MOOMOO_REAL = 1;
+export const BROKER_PROVIDER_MOOMOO_SIMULATE = 2;
+
+// FR-20, IADR-0141 決定2: 実弾切替の確認に打ち込ませる文字列。**サーバの
+// BrokerProviderChange.LiveAcknowledgementPhrase と同じ値でなければならない**（片方だけ変えると、
+// 画面は通すのにサーバが 400 を返す／その逆になる）。
+export const LIVE_ACKNOWLEDGEMENT_PHRASE = 'REAL';
+
+// 実弾（実資金で執行される発注先）か。「実資金かどうか」の判定は本関数だけを通す。
+export const isLiveProvider = (v: number): boolean => v === BROKER_PROVIDER_MOOMOO_REAL;
+
+// 内蔵 paper（外部へ一度も発注しない擬似約定）か。FR-12 の警告バナー・paper ラベルの判定に用いる。
+export const isInternalPaper = (v: number | null | undefined): boolean =>
+  v === BROKER_PROVIDER_INTERNAL_PAPER;
 // ProductType の信用買い・空売り。新規有効化を「危険な緩和」と判定するための定数（IADR-0086 決定 3）。
 // **空売りは損失に上限が無い**ため（ADR-0016）、信用買いと同様に危険な緩和として確認を求める。
 export const PRODUCT_TYPE_MARGIN_LONG = 1;
@@ -205,7 +260,7 @@ export const RISKY_PRODUCT_TYPES: readonly { value: number; label: string }[] = 
 ];
 
 export const stageLabel = (v: number): string => labelOf(STAGE_LABELS, v);
-export const modeLabel = (v: number): string => labelOf(MODE_LABELS, v);
+export const brokerProviderLabel = (v: number): string => labelOf(BROKER_PROVIDER_LABELS, v);
 export const activeControlLabel = (v: number): string => labelOf(ACTIVE_CONTROL_LABELS, v);
 export const transitionKindLabel = (v: number): string => labelOf(TRANSITION_KIND_LABELS, v);
 export const criterionLabel = (v: number): string => labelOf(CRITERION_LABELS, v);

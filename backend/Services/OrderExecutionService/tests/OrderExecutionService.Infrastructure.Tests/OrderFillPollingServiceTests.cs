@@ -55,7 +55,7 @@ public class OrderFillPollingServiceTests
     }
 
     private static OrderIntent Intent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 1_000, 340m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 1_000, 340m);
 
     private static ExecutionRecord Dispatched(Guid decisionId) =>
         new(decisionId, "ORD-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,

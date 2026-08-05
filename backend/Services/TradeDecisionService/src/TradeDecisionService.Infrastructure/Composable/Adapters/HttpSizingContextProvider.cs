@@ -50,6 +50,6 @@ internal sealed class HttpSizingContextProvider(
         DailyOrderRemaining: 0m,
         ConsecutiveLosses: 0,
         DrawdownRatio: 0m,
-        Mode: TradeMode.Paper,
+        Mode: BrokerProvider.InternalPaper,
         Limits: TradingDefaults.CreateRiskLimits());
 }

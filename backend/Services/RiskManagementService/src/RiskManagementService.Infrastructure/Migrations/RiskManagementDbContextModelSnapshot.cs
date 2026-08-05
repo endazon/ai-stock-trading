@@ -285,6 +285,9 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
                     b.Property<bool>("SlippageAndCostWithinExpected")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("Stage1ExcludedInternalPaperDays")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Stage1QualifiedTradingDays")
                         .HasColumnType("integer");
 

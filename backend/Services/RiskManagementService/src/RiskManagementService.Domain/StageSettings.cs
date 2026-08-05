@@ -19,10 +19,20 @@ public enum TradingStage
     Stage3ScaledLive = 3,
 }
 
-// FR-20: 段階ごとの動作モード（ペーパー/実弾）と発注可能額の上限を強制する。
+// FR-20, #334, IADR-0140: 段階ごとの**既定の発注先**（動作モード）と発注可能額の上限。
+//
+// 計画（FR-20・INDEX 決定 46）は「段階が定める動作モードは**既定の組み合わせを示すにとどまる**」と定める。
+// よって本レコードの <see cref="Mode"/> は「その段階で通常選ぶ発注先」であり、**現在の発注先そのものではない**
+// （現在値は RiskManagementSettings.BrokerProvider が独立の軸として保持する）。
+//
+// **プロパティ名 `Mode` は据え置く**（型のみ TradeMode → BrokerProvider）。本レコードは設定ストアの JSON
+// （単一行）と HTTP 応答の双方で往復しており、名前を変えると旧行の `"mode"` が黙って enum 既定値 0 へ落ちる。
+// 0（InternalPaper）は RiskEvaluator の実弾判定を**通してしまう**側の値であり、フェイルオープンになる
+// （IADR-0140 決定3）。序数 0 / 1 は旧 TradeMode の Paper / Live と同義のため、型の入れ替えだけなら
+// 既存行・既存イベントの意味は変わらない。
 public record StageSettings(
     TradingStage Stage,
-    TradeMode Mode,
+    BrokerProvider Mode,
     decimal CapitalCapRatio)
 {
     /// <summary>

@@ -41,7 +41,7 @@ public class OrderReservationReconciliationServiceTests
 
     private static BrokerOrder Placed(string orderId) =>
         new(orderId,
-            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 100m),
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 100m),
             OrderStatus.Filled, FilledQuantity: 10, AveragePrice: 100m, PlacedAt: StalledAt, CompletedAt: StalledAt);
 
     private const string ServiceName = "ai-stock-trading.order-execution-service";

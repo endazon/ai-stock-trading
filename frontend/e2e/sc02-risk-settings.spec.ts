@@ -24,7 +24,13 @@ test.describe('SC-02 リスク設定（#187）', () => {
     );
     // 取引ガードは変更フォーム（#188）、運用段階は参照表示。
     await expect(page.getByText('取引ガード（変更）')).toBeVisible();
-    await expect(page.getByText('運用段階（参照）')).toBeVisible();
+    // FR-20, SC-02, INDEX 決定 46, #334: 運用段階と発注先は**独立した 2 軸**であり、節見出しは
+    // 「運用段階と発注先（参照）」になった（旧「運用段階（参照）」）。**参照節と変更節は別である** ——
+    // 段階の変更は段階ゲートの承認で行うため画面には無く、発注先の変更だけが SC-02 に置かれる
+    // （05_screens 共通規約。SC-03 は参照専用）。両方の節が出ることを固定し、
+    // 「発注先の変更 UI が SC-02 から消える」退行も検知する。
+    await expect(page.getByText('運用段階と発注先（参照）')).toBeVisible();
+    await expect(page.getByText('発注先（変更）')).toBeVisible();
   });
 
   test('権限外は NotFound（存在秘匿）で BFF を呼ばない', async ({ page }) => {

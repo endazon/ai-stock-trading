@@ -98,7 +98,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
     const rows = within(table).getAllByRole('row');
     // 先頭データ行が新しい順（sequence 2）。
     expect(within(rows[1]).getByText('ペーパー実績良好')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('Stage 1（ペーパー） → Stage 2（少額実弾）')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Stage 1（SIMULATE） → Stage 2（最小実弾）')).toBeInTheDocument();
   });
 
   it('has no destructive control buttons (read-only; #165 Bot owns those)', async () => {

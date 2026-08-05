@@ -46,7 +46,10 @@ export const RISK_SETTINGS = {
     losingStreakThreshold: 3,
     losingStreakSizeFactor: 0.5,
   },
-  stage: { stage: 1, mode: 0, capitalCap: 1000000 },
+  // FR-20, #334: 段階（Stage 1）と発注先（現在は moomoo SIMULATE）は独立した 2 軸。
+  // stage.mode は**段階が定める既定の発注先**（BrokerProvider 数値・2=moomoo SIMULATE）。
+  stage: { stage: 1, mode: 2, capitalCap: 1000000 },
+  brokerProvider: 2,
 };
 
 export const RISK_SETTINGS_HISTORY = [
@@ -61,11 +64,13 @@ export const RISK_STATUS = {
   activeControl: 0,
   newEntriesBlocked: false,
   stage: 1,
+  brokerProvider: 2, // BrokerProvider.MoomooSimulate（段階とは別の軸）
   dailyRealizedPnl: 1000,
   unrealizedPnl: -500,
   dailyPnl: 500,
   capital: 1000000,
   dailyOrderedAmount: 200000,
+  maxOrderAmount: 250000,
   maxDailyOrderAmount: 500000,
   drawdownRatio: 0.05,
   maxDrawdownRatio: 0.2,
@@ -85,7 +90,7 @@ export const WATCHLIST_HISTORY = [
 
 export const STAGE_GATE = {
   currentStage: 1,
-  currentSettings: { stage: 1, mode: 0, capitalCap: 1000000 },
+  currentSettings: { stage: 1, mode: 2, capitalCap: 1000000 },
   history: [
     {
       sequence: 1,
@@ -99,7 +104,14 @@ export const STAGE_GATE = {
   ],
   promotion: { targetStage: 2, eligible: false, unmetCriteria: [0] },
   withdrawal: { triggered: false, reason: null, haltNewEntries: false, proposedStage: null },
+  // FR-20, #334, IADR-0142: Stage 1 の進捗は moomoo SIMULATE の実績のみ。paper 稼働日は除外して別掲する。
+  stage1Progress: { qualifiedTradingDays: 42, tradeCount: 70, excludedInternalPaperDays: 3 },
+  stage1Criteria: { targetTradingDays: 60, minimumTradeCount: 100, maximumTradingDays: 120 },
 };
+
+// FR-20, #334: 内蔵 paper で稼働している状態（警告バナー・paper ラベルの検証用）。
+export const RISK_SETTINGS_PAPER = { ...RISK_SETTINGS, brokerProvider: 0 };
+export const RISK_STATUS_PAPER = { ...RISK_STATUS, brokerProvider: 0 };
 
 // 既定の全ハンドラ（各画面の正常系）。個々のテストは spread で必要なキーだけ上書きする。
 export function defaultBff(): BffConfig {
@@ -110,6 +122,8 @@ export function defaultBff(): BffConfig {
     'GET /risk-controls/settings': { status: 200, body: RISK_SETTINGS },
     'GET /risk-controls/settings/history': { status: 200, body: RISK_SETTINGS_HISTORY },
     'PUT /risk-controls/settings/limits': { status: 200, body: RISK_SETTINGS },
+    // FR-20, #334: 発注先の変更（SC-02 のみが持つ操作）。
+    'PUT /risk-controls/settings/broker-provider': { status: 200, body: { settings: RISK_SETTINGS } },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
     // 監視銘柄（#196・MarketMonitor `/monitor/watchlist`）。POST/DELETE は更新後の一覧を返す（成功時に再取得される）。

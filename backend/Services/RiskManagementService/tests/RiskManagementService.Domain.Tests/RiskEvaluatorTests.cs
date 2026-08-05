@@ -16,7 +16,7 @@ public class RiskEvaluatorTests
         string symbol = "AAPL",
         Market market = Market.UnitedStates,
         ProductType productType = ProductType.Cash,
-        TradeMode mode = TradeMode.Paper,
+        BrokerProvider mode = BrokerProvider.InternalPaper,
         int quantity = 10,
         // #329: 既定の注文額 20,000 円は 1 注文上限（equity 100,000 × 25% ＝ 25,000 円）の内側。
         decimal price = 2_000m,
@@ -31,7 +31,7 @@ public class RiskEvaluatorTests
         TradeSide side = TradeSide.Sell,
         int quantity = 10,
         decimal price = 3000m) =>
-        new(symbol, market, side, productType, TradeMode.Paper, quantity, price, PositionEffect.Close);
+        new(symbol, market, side, productType, BrokerProvider.InternalPaper, quantity, price, PositionEffect.Close);
 
     // ショートエントリー（新規売り建て）。信用有効化後に発生する Side == Sell の Open。
     private static OrderIntent ShortEntry(
@@ -39,7 +39,7 @@ public class RiskEvaluatorTests
         Market market = Market.UnitedStates,
         int quantity = 10,
         decimal price = 2_000m,
-        TradeMode mode = TradeMode.Paper) =>
+        BrokerProvider mode = BrokerProvider.InternalPaper) =>
         new(symbol, market, TradeSide.Sell, ProductType.ShortSell, mode, quantity, price, PositionEffect.Open);
 
     // FR-10, #329, IADR-0130 決定2: capital は判定に用いる自己資金（equity・前営業日終値時点）。
@@ -87,10 +87,10 @@ public class RiskEvaluatorTests
     };
 
     // FR-20, ADR-0016 決定8, #333: 指定した段階の設定へ差し替える（商品種別は 3 種すべて有効・
-    // 発注可能額と TradeMode の影響を受けないよう Paper・実質無制限にする。段階別の商品種別強制だけを見る）。
+    // 発注可能額と BrokerProvider の影響を受けないよう Paper・実質無制限にする。段階別の商品種別強制だけを見る）。
     private static RiskManagementSettings SettingsAtStage(TradingStage stage) => MarginEnabledSettings() with
     {
-        Stage = new StageSettings(stage, TradeMode.Paper, CapitalCapRatio: 1_000_000m),
+        Stage = new StageSettings(stage, BrokerProvider.InternalPaper, CapitalCapRatio: 1_000_000m),
     };
 
     [Fact]
@@ -147,7 +147,7 @@ public class RiskEvaluatorTests
     public void ペーパー段階で実弾モードの注文は拒否する()
     {
         // FR-20: Stage 0/1 はペーパーのみ許可
-        var result = RiskEvaluator.Evaluate(Buy(mode: TradeMode.Live), DefaultSettings(), Snapshot());
+        var result = RiskEvaluator.Evaluate(Buy(mode: BrokerProvider.MoomooReal), DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.StageProhibitsLiveTrading);
@@ -208,7 +208,7 @@ public class RiskEvaluatorTests
         stage2.OrderableCapFor(equity).Should().Be(expectedCap);
 
         // 実効も確認する: 上限ちょうどは承認、1 円超過は拒否（境界値）。
-        var settings = DefaultSettings() with { Stage = stage2 with { Mode = TradeMode.Paper } };
+        var settings = DefaultSettings() with { Stage = stage2 with { Mode = BrokerProvider.InternalPaper } };
         RiskEvaluator.Evaluate(
                 Buy(quantity: 1, price: expectedCap), settings, Snapshot(capital: equity))
             .Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
@@ -581,7 +581,7 @@ public class RiskEvaluatorTests
         // 100 USD × 5 株 = 500 USD。レート 150 なら 75,000 円で 1 注文金額上限（35,000 円）を超える。
         // 換算しなければ 500 が「500 円」として通り、統制が桁で緩む（本 issue の症状）。
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
             5, 100m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
@@ -597,7 +597,7 @@ public class RiskEvaluatorTests
         // 超えないが、当日発注累計 140,000 円との合計 162,500 円は日次上限（150,000）を、
         // 投入中資金（CapitalCap − 10,000）との合計は段階資金上限を超える。
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
             10, 15m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
 
         var result = RiskEvaluator.Evaluate(
@@ -617,7 +617,7 @@ public class RiskEvaluatorTests
     {
         // 基準通貨（日本株）およびレート未記録の既存データ＝現行挙動と等価であることを固定する。
         var intent = new OrderIntent(
-            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 2_000m);
+            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 2_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
@@ -691,7 +691,7 @@ public class RiskEvaluatorTests
     public void 申告した商品種別で段階制約を迂回できない()
     {
         var disguised = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper,
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
             Quantity: 10, Price: 2_000m, PositionEffect.Open);
 
         var result = RiskEvaluator.Evaluate(disguised, SettingsAtStage(TradingStage.Stage2MinimalLive), Snapshot());

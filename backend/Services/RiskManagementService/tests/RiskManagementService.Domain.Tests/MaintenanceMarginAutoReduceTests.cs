@@ -260,7 +260,7 @@ public class MaintenanceMarginAutoReduceTests
 
         // 積み増し側: 維持率が取得できないのに空売り建玉があるなら新規売り建ては通らない（フェイルクローズ）。
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, BrokerProvider.InternalPaper,
             Quantity: 1, Price: 100m, PositionEffect.Open, StopLossPrice: 110m);
         var context = new ShortSellOrderContext
         {

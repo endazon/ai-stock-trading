@@ -26,7 +26,9 @@ public sealed class StageGateService(
             policy.SettingsFor(current),
             ledger.History,
             StageGate.AssessPromotion(current, performance, policy),
-            StageGate.AssessWithdrawal(current, performance, policy));
+            StageGate.AssessWithdrawal(current, performance, policy),
+            performance.Stage1Progress,
+            policy.Stage1Criteria);
     }
 
     // FR-20: 遷移履歴（追記順・監査対象）。

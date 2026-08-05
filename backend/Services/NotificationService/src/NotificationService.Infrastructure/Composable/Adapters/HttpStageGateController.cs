@@ -219,7 +219,7 @@ internal sealed class HttpStageGateController(
         _ => $"Stage {stage}",
     };
 
-    // TradeMode（0=Paper・1=Live）。
+    // BrokerProvider（0=Paper・1=Live）。
     private static string ModeLabel(int mode) => mode switch
     {
         0 => "ペーパー",

@@ -40,9 +40,9 @@ public class TradingGuardProductTypeTests
         int quantity = 1,
         string symbol = "AAPL") =>
         productType == ProductType.ShortSell
-            ? new OrderIntent(symbol, market, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
+            ? new OrderIntent(symbol, market, TradeSide.Sell, ProductType.ShortSell, BrokerProvider.InternalPaper,
                 quantity, price, PositionEffect.Open, StopLossPrice: price * 1.1m)
-            : new OrderIntent(symbol, market, TradeSide.Buy, productType, TradeMode.Paper,
+            : new OrderIntent(symbol, market, TradeSide.Buy, productType, BrokerProvider.InternalPaper,
                 quantity, price, PositionEffect.Open);
 
     // ---------------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ public class TradingGuardProductTypeTests
     public void 新規売り建ての実効商品種別は申告値によらず空売りである(ProductType declared)
     {
         var shortEntry = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, declared,
-            TradeMode.Paper, 1, 100m, PositionEffect.Open, StopLossPrice: 110m);
+            BrokerProvider.InternalPaper, 1, 100m, PositionEffect.Open, StopLossPrice: 110m);
 
         ProductTypeResolver.Resolve(shortEntry).Should().Be(ProductType.ShortSell);
     }
@@ -169,7 +169,7 @@ public class TradingGuardProductTypeTests
         TradeSide side, PositionEffect effect, ProductType declared)
     {
         var intent = new OrderIntent("AAPL", Market.UnitedStates, side, declared,
-            TradeMode.Paper, 1, 100m, effect);
+            BrokerProvider.InternalPaper, 1, 100m, effect);
 
         ProductTypeResolver.Resolve(intent).Should().Be(declared);
     }
@@ -260,7 +260,7 @@ public class TradingGuardProductTypeTests
     public void 空売りを現物と申告してもガードを迂回できない()
     {
         var disguised = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
-            TradeMode.Paper, 1, 100m, PositionEffect.Open, StopLossPrice: 110m);
+            BrokerProvider.InternalPaper, 1, 100m, PositionEffect.Open, StopLossPrice: 110m);
 
         var result = RiskEvaluator.Evaluate(disguised, TradingDefaults.CreateSettings(), Snapshot());
 
@@ -365,7 +365,7 @@ public class TradingGuardProductTypeTests
         // 既定＝現物のみ有効。信用買い・空売りはいずれも無効である。
         var settings = TradingDefaults.CreateSettings();
         var close = new OrderIntent("AAPL", Market.UnitedStates, side, productType,
-            TradeMode.Paper, 1, 100m, PositionEffect.Close);
+            BrokerProvider.InternalPaper, 1, 100m, PositionEffect.Close);
 
         var result = RiskEvaluator.Evaluate(close, settings, Snapshot());
 

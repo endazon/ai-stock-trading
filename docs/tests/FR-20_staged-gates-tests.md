@@ -2,10 +2,10 @@
 title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
-related_ids: [FR-20, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139]
+related_ids: [FR-20, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142]
 author: endazon (with Claude Code)
 created: 2026-08-03
-updated: 2026-08-04
+updated: 2026-08-05
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -23,6 +23,10 @@ related_specs:
   - ../adr/IADR-0137_stage1-trading-day-counting.md
   - ../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md
   - ../adr/IADR-0139_stage-product-type-enforcement.md
+  - ../adr/IADR-0140_broker-provider-axis.md
+  - ../adr/IADR-0141_live-switch-explicit-confirmation.md
+  - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
+  - ../specs/20260805_334_broker-provider-axis.md
 ---
 
 # テスト仕様書: 段階ゲートと発注先の 2 軸分離 — FR-20
@@ -110,6 +114,14 @@ related_specs:
 | T-20 | Stage 1 のまま | 発注先を `REAL` へ切り替える | **段階ゲートを飛ばしている旨**と、現在の equity・それに対する統制値の実額が提示される | FR-20 | 自動 |
 | T-21 | 任意 | 発注先を変更する | 日時・変更前後・理由が変更履歴と監査ログに残る | FR-20, FR-13, FR-11 | 自動 |
 | T-22 | 任意 | 発注先を変更せず段階だけ昇格する | 発注先は自動的に変わらない（**2 軸が独立している**） | FR-20 | 自動（プロパティ） |
+| T-41 | 任意 | 発注先の 3 値と序数を検査する | `InternalPaper`=0 / `MoomooReal`=1 / `MoomooSimulate`=2。**0 / 1 は旧 `TradeMode` の意味を保存する** | FR-20 | 自動（境界値） |
+| T-42 | 実弾への切替 | 同意のみ／文字入力のみ／`real`（小文字）で切り替えを試みる | いずれも**受理されない**（両方が揃うまで。照合は大文字小文字を区別する） | FR-20 | 自動（否定形） |
+| T-43 | 実弾への切替 | 画面を経由せず API を直接叩く | **400 で拒否され設定が変わらない**（画面だけの統制は API 直叩きで消える） | FR-20 | 自動（否定形） |
+| T-44 | 実弾への切替・equity の取得に失敗 | モーダルで確認操作を完了させようとする | **切替できない**（4 点のうち③を提示できない状態で同意を取らない） | FR-20 | 自動（否定形） |
+| T-45 | 任意 | 理由が空（空白のみを含む）で発注先を変更する | **設定も履歴も変わらない**（拒否を履歴へ積まない） | FR-13, FR-11 | 自動（否定形） |
+| T-46 | 任意 | 発注先を変更する | 段階は変わらない／段階を変更する | 発注先は変わらない | FR-20 | 自動（否定形） |
+| T-47 | 内蔵 `paper` で 60 営業日・100 件を積む | Stage 1 の昇格可否を判定する | **昇格可能にならない**（計画が名指しする最悪の失敗の直接検知） | FR-20, FR-12 | 自動（否定形） |
+| T-48 | すべての発注先を走査する | Stage 1 集計に算入されるかを見る | 算入されるのは `MoomooSimulate` **ちょうど 1 値**（許可制。将来値が黙って算入されない） | FR-20 | 自動（プロパティ） |
 
 ## テストデータ
 
@@ -155,20 +167,20 @@ related_specs:
 | T-39 | Stage 2・equity ¥100,000 / ¥491,100 / ¥982,200 | 発注可能額を解決し、上限ちょうど／1 円超過を発注する | 上限＝equity × 0.30。ちょうどは承認・超過は拒否（**equity に比例する**） | FR-20 | 自動（プロパティ） |
 | T-40 | SIMULATE プロファイル有効 | 段階ゲート方針を取得する | 本番既定と同一である（**検証用フラグで段階の上限を差し替える経路が無い**） | FR-20, FR-12 | 自動（否定形） |
 
-## 現状（2026-08-04 時点）と担当
+## 現状（2026-08-05 時点）と担当
 
-計画確定値との乖離のうち **#333 担当の 3 行は解消済み**である
-（`Stage.Values` → `Stage1Simulate` を含む 4 値／`Stage.Stage2OrderableCapRatio` → 総資金比 0.30／
-`Stage0GateCriteria.MaxDrawdownTolerance` → 0.10）。**残る 2 行（`BrokerProvider.Values` /
-`Stage.Stage1BrokerProvider`）は #334 の担当**であり、登録簿に残っている
-（[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
+計画確定値との乖離のうち **#333 担当の 3 行・#334 担当の 2 行はいずれも解消済み**である
+（#333: `Stage.Values` / `Stage.Stage2OrderableCapRatio` / `Stage0GateCriteria.MaxDrawdownTolerance`。
+#334: `BrokerProvider.Values` → 3 値／`Stage.Stage1BrokerProvider` → `MoomooSimulate`）。
+登録簿からの削除は [IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md) の
+検査3（登録簿の陳腐化検知）が強制する。
 
 | ケース | 担当 issue | 状況 |
 | --- | --- | --- |
 | T-01〜T-05 | #333 | 実装済み（`StageGateTests` / `StageGateLedgerTests`） |
 | T-06 / T-07 | #333 | 実装済み（`Stage0GateCriteriaTests` / `Stage0GateEvaluatorTests`）。**ただし実データ源が無く発火しない**（#382） |
 | T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**ただし営業日数・件数の供給元が無く発火しない** |
-| T-11 / T-19〜T-22 | #334 | 未着手（段階×発注先の 2 軸分離・実弾切替の警告） |
+| T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**ただし Stage 1 集計の供給元が無く発火しない**（#386）／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
 | T-12 / T-37 | #329 / #333 | 実装済み（`RejectionReasonClassificationTests` / `StageGateTests`） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
@@ -179,3 +191,4 @@ related_specs:
 | --- | --- |
 | 2026-08-03 | 全面再実装（#344）に合わせて新規作成（#343） |
 | 2026-08-04 | #333 の実装に合わせて T-23〜T-40 を追加し、担当表を実装状況へ更新（期間カウント・120 営業日打ち切り・段階別の商品種別強制・発注可能額の総資金比化） |
+| 2026-08-05 | #334（2 軸分離）の実装に合わせて T-41〜T-48 を追加し、担当表を更新。計画適合レジストリの #334 担当 2 行の解消を反映 |

@@ -23,7 +23,7 @@ namespace AiStockTrading.Notification.Infrastructure.Tests;
 public class NotificationConsumersTests
 {
     private static OrderIntent Intent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     private static async Task<(IHost Host, RecordingNotificationSender Sender)> BuildAsync()
     {

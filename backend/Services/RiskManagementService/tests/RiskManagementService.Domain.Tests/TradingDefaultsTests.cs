@@ -162,37 +162,39 @@ public class TradingDefaultsTests
     }
 
     [Fact]
-    public void 運用段階の既定値はStage0のペーパーモードである()
+    public void 運用段階の既定値はStage0で既定発注先は内蔵paperである()
     {
         var stage = TradingDefaults.CreateStageSettings();
 
         stage.Stage.Should().Be(TradingStage.Stage0Verification);
-        stage.Mode.Should().Be(TradeMode.Paper);
+        stage.Mode.Should().Be(BrokerProvider.InternalPaper);
         stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio); // 段階としての絞りは無い（#333）
     }
 
-    // FR-20, ADR-0008: 段階ゲート方針の既定。Stage 0/1＝ペーパー、Stage 2/3＝実弾。撤退倍率 1.5。
+    // FR-20, ADR-0008, #334, IADR-0140: 段階ゲート方針の既定。段階が定める発注先は**既定の組み合わせ**であり、
+    // Stage 0＝内蔵 paper／Stage 1＝moomoo SIMULATE／Stage 2・3＝moomoo REAL（実弾）。撤退倍率 1.5。
     [Fact]
-    public void 段階ゲート方針の既定は段階別モードと資金上限を定義する()
+    public void 段階ゲート方針の既定は段階別の既定発注先と資金上限を定義する()
     {
         var policy = TradingDefaults.CreateStagePolicy();
 
         policy.WithdrawalDrawdownMultiple.Should().Be(1.5m); // ADR-0008: 実DD ≥ バックテスト最大DD × 1.5
 
-        // Stage 0 / Stage 1: ペーパー（実弾なし）・段階としての金額の絞りは無い
+        // Stage 0: 既定は内蔵 paper（外部へ発注しない）・段階としての金額の絞りは無い
         policy.SettingsFor(TradingStage.Stage0Verification)
             .Should().Be(new StageSettings(
-                TradingStage.Stage0Verification, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
+                TradingStage.Stage0Verification, BrokerProvider.InternalPaper, TradingDefaults.FullCapitalCapRatio));
+        // Stage 1: 既定は **moomoo SIMULATE**（06_daytrading-review §4 表。内蔵 paper は本段階の検証手段としない）
         policy.SettingsFor(TradingStage.Stage1Simulate)
             .Should().Be(new StageSettings(
-                TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
-        // Stage 2 最小実弾: 実弾モード・発注可能額は**総資金の 30%**（計画 §5・#333）
+                TradingStage.Stage1Simulate, BrokerProvider.MoomooSimulate, TradingDefaults.FullCapitalCapRatio));
+        // Stage 2 最小実弾: 既定は実弾（moomoo REAL）・発注可能額は**総資金の 30%**（計画 §5・#333）
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
-            .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 0.30m));
-        // Stage 3 段階増額: 実弾モード・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
+            .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, BrokerProvider.MoomooReal, 0.30m));
+        // Stage 3 段階増額: 既定は実弾（moomoo REAL）・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
         policy.SettingsFor(TradingStage.Stage3ScaledLive)
             .Should().Be(new StageSettings(
-                TradingStage.Stage3ScaledLive, TradeMode.Live, TradingDefaults.FullCapitalCapRatio));
+                TradingStage.Stage3ScaledLive, BrokerProvider.MoomooReal, TradingDefaults.FullCapitalCapRatio));
 
         // 発注可能額は equity から解決される（$3,000 ＝ ¥491,100 で Stage 2 は ¥147,330 ＝ 約 $900）。
         policy.SettingsFor(TradingStage.Stage2MinimalLive)

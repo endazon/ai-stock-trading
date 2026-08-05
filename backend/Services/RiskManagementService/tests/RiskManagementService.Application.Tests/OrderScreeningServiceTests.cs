@@ -28,7 +28,7 @@ public class OrderScreeningServiceTests
 
     // Stage0（Paper）で全統制を通過する新規建て注文。10 株 × 1,000 円 = 10,000 円。
     private static OrderIntent EntryIntent(PositionEffect effect = PositionEffect.Open) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m, effect);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m, effect);
 
     private static TradeDecisionMade Decision(OrderIntent intent) =>
         new(Guid.NewGuid(), intent, "テスト判断", Now);

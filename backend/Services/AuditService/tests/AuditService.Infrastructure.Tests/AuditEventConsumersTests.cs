@@ -22,7 +22,7 @@ namespace AiStockTrading.Audit.Infrastructure.Tests;
 public class AuditEventConsumersTests
 {
     private static OrderIntent Intent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     private static Task<IHost> BuildHostAsync(InMemoryAuditEventStore store) =>
         Host.CreateDefaultBuilder()

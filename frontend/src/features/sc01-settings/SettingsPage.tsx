@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
+import { PaperModeBanner } from '../shared/PaperModeBanner';
+import { useBrokerProvider } from '../shared/paperMode';
 
 // SC-01, FR-17, UC-06, IADR-0080: 設定画面（全体前提条件の閲覧/変更）。
 // データ源は BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。変更は利用者のみ（サーバ側 OwnerOnly）、
@@ -167,6 +169,8 @@ export function SettingsPage() {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // FR-12, #334: 内蔵 paper 警告バナーの判定に用いる現在の発注先（取得不能は null＝バナーを出さない）。
+  const brokerProvider = useBrokerProvider();
 
   async function loadCurrent(): Promise<void> {
     try {
@@ -223,6 +227,9 @@ export function SettingsPage() {
 
   return (
     <section>
+      {/* FR-12, #334: 内蔵 paper 稼働中の警告バナー（画面上部に常時表示）。本画面は発注先の表示・変更を
+          持たないが、paper 稼働中であることをどの画面からでも把握できるようにする（05_screens SC-01）。 */}
+      <PaperModeBanner provider={brokerProvider} />
       <h1>設定</h1>
       <p>全体前提条件（税・手数料・為替・費用上限）の閲覧と変更を行います（FR-17）。変更は利用者のみが行えます。</p>
 

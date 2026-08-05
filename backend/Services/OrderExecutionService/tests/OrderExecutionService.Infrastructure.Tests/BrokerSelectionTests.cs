@@ -32,7 +32,7 @@ public class BrokerSelectionTests
     {
         var selection = BrokerSelection.Parse(provider, environment);
 
-        selection.Provider.Should().Be(BrokerProvider.Paper);
+        selection.Provider.Should().Be(BrokerVendor.Paper);
         selection.Environment.Should().Be(BrokerEnvironment.Simulated);
         selection.IsLive.Should().BeFalse();
         selection.Tier.Should().Be("paper");
@@ -51,7 +51,7 @@ public class BrokerSelectionTests
             ("Broker:Provider", "moomoo"),
             ("Broker:Environment", "sim")));
 
-        selection.Should().Be(new BrokerSelection(BrokerProvider.Moomoo, BrokerEnvironment.Simulated));
+        selection.Should().Be(new BrokerSelection(BrokerVendor.Moomoo, BrokerEnvironment.Simulated));
     }
 
     // ---- provider × environment の行列（3 階層）----
@@ -95,7 +95,7 @@ public class BrokerSelectionTests
     public void 大小文字と前後空白は正規化される(string provider, string environment)
     {
         BrokerSelection.Parse(provider, environment)
-            .Should().Be(new BrokerSelection(BrokerProvider.Moomoo, BrokerEnvironment.Simulated));
+            .Should().Be(new BrokerSelection(BrokerVendor.Moomoo, BrokerEnvironment.Simulated));
     }
 
     [Fact]

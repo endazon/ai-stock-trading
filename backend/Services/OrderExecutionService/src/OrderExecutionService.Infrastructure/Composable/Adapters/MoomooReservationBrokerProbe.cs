@@ -63,7 +63,7 @@ internal sealed class MoomooReservationBrokerProbe(
             Market: MapMarket(s.Market),
             Side: MapSide(s.Side),
             ProductType: ProductType.Cash,
-            Mode: TradeMode.Paper,
+            Mode: BrokerProvider.InternalPaper,
             Quantity: s.Quantity,
             Price: s.Price,
             PositionEffect: PositionEffect.Open);

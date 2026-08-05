@@ -15,7 +15,7 @@ public class EfPortfolioLedgerStoreTests
             .Options);
 
     private static OrderIntent BuyIntent(int qty, decimal price) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     [Fact]
     public void 承認_Intent_の損切り価格を約定に補完して返す()
@@ -23,7 +23,7 @@ public class EfPortfolioLedgerStoreTests
         // IADR-0035: 損切り価格（権威データ）が ApprovedOrderRow に永続化され、LedgerFill に補完される。
         var dbName = Guid.NewGuid().ToString();
         var decisionId = Guid.NewGuid();
-        var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m, PositionEffect.Open, 950m);
+        var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m, PositionEffect.Open, 950m);
 
         using (var db = NewContext(dbName))
         {

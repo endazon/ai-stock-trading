@@ -81,7 +81,7 @@ public class TradeDecisionServiceTests
 
     private static SizingContext Context(decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m,
         int losses = 0, decimal dd = 0m) =>
-        new(100_000m, stageRemaining, dailyRemaining, losses, dd, TradeMode.Paper, TradingDefaults.CreateRiskLimits());
+        new(100_000m, stageRemaining, dailyRemaining, losses, dd, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
 
     private static AppSvc Create(string llmOutput, DailyPolicy? policy, SizingContext? ctx = null) =>
         new(new FakeLlm(llmOutput), new FakePolicy(policy), new FakeSizing(ctx ?? Context()),

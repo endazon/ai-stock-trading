@@ -2,10 +2,10 @@
 title: ペーパートレード（内蔵 paper）テスト仕様書
 type: test-spec
 status: draft
-related_ids: [FR-12, FR-13, FR-20, UC-01, UC-02, UC-06, IADR-0127]
+related_ids: [FR-12, FR-13, FR-20, UC-01, UC-02, UC-06, SC-01, SC-02, SC-03, IADR-0127, IADR-0140, IADR-0142]
 author: endazon (with Claude Code)
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-05
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/05_screens/01_screens.md
@@ -15,6 +15,9 @@ related_specs:
   - ../functional/FR-12_paper-trade.md
   - ./FR-20_staged-gates-tests.md
   - ../specs/20260803_343_regression-test-foundation.md
+  - ../specs/20260805_334_broker-provider-axis.md
+  - ../adr/IADR-0140_broker-provider-axis.md
+  - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
 ---
 
 # テスト仕様書: ペーパートレード（内蔵 `paper`）— FR-12
@@ -66,28 +69,30 @@ related_specs:
 | T-08 | 発注先＝内蔵 `paper` | 任意の画面を表示する | 上部に警告バナーが常時表示され、**「デバッグモードです。外部へ発注していません」**と**「この期間は Stage 1 の実績に算入されません」**の 2 文言を含む | FR-12, SC-01〜03 | 自動 |
 | T-09 | 発注先＝内蔵 `paper` | 統制状態のカード（勝率・取引件数・稼働率）を表示する | 各カードに `paper` である旨のラベルが付く | FR-12 | 自動 |
 | T-10 | 発注先を `paper` → `SIMULATE` へ切替 | 切替の前後で約定を作る | 切替時刻を境に約定の帰属が分かれ、変更履歴に日時・変更前後・理由が残る | FR-13, FR-20 | 自動（境界値） |
+| T-11 | 発注先＝moomoo `SIMULATE` / `REAL` | 各画面を表示する | **警告バナーも `paper` ラベルも表示されない**（実弾稼働をデバッグ稼働と誤認させない） | FR-12 | 自動（否定形） |
+| T-12 | 発注先を取得できない（Risk サービス障害） | 各画面を表示する | **バナーを表示せず**、画面本来の機能は動く（判らないことを断定に変えない・領域独立の縮退） | FR-12 | 自動（否定形） |
+| T-13 | 内蔵 `paper` で稼働率 100% の日を積む | 除外日数を数える | 稼働率の条件を満たしていても算入されず、**除外日数として数えられる**。休場日・稼働不足日は除外日数にも数えない | FR-20, FR-12 | 自動（境界値） |
 
 ## テストデータ
 
 - 擬似約定は決定的であること（乱数を用いる場合はシードを固定する）。再現しない擬似約定は退行検知に使えない。
 - Stage 1 集計のテストは営業日カレンダーを注入可能にし、実時刻に依存させない。
 
-## 現状（2026-08-03 時点）と担当
+## 現状（2026-08-05 時点）と担当
 
-本書が定めるケースのうち、**T-04 以外は実装が未到達**である。`BrokerProvider` の 3 値化（#334）と
-Stage 1 集計規則（#333）が入るまで書けない。計画確定値との乖離は
-`AiStockTrading.PlanConformance.Tests` の既知逸脱として登録済み（`BrokerProvider.Values` / `Stage.Values` /
-`Stage.Stage1BrokerProvider`）であり、担当 issue が解消した時点で登録簿の更新が強制される。
+`BrokerProvider` の 3 値化（#334）により、計画適合レジストリの `BrokerProvider.Values` /
+`Stage.Stage1BrokerProvider` は解消済みである。
 
-| ケース | 担当 issue |
-| --- | --- |
-| T-01〜T-04 | #334（発注先の 3 値化と内蔵 `paper` の分離） |
-| T-05〜T-07 | #333 / #334（Stage 1 集計からの `paper` 除外） |
-| T-08 / T-09 | #340（画面の警告バナー・ラベル） |
-| T-10 | #334 / #339（変更履歴・監査ログ） |
+| ケース | 担当 issue | 状況 |
+| --- | --- | --- |
+| T-01〜T-04 | #334 | 実装済み（`PaperBrokerAdapterTests` / `BrokerProviderTests`）。発注先の**設定値**が実際のアダプタ選択を動かす結線は未実施（構成値が決める。IADR-0111） |
+| T-05〜T-07・T-13 | #334 | 実装済み（`Stage1AggregationTests`）。**ただし集計の供給元が無く発火しない**（[#386](https://github.com/endazon/ai-stock-trading/issues/386)） |
+| T-08 / T-09 / T-11 / T-12 | #334 | 実装済み（`SettingsPage.paperBanner.test.tsx` / `RiskSettingsPage.brokerProvider.test.tsx` / `ControlStatusPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`） |
+| T-10 | #334 | 変更履歴・監査ログは実装済み（`BrokerProviderSettingsTests`）。**「切替時刻を境に約定の帰属が分かれる」部分は集計の供給元（#386）待ち** |
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
 | 2026-08-03 | 全面再実装（#344）に合わせて新規作成（#343） |
+| 2026-08-05 | #334（2 軸分離）の実装に合わせて T-11〜T-13 を追加し、担当表を実装状況へ更新（警告バナーの否定形・縮退・除外日数の境界） |

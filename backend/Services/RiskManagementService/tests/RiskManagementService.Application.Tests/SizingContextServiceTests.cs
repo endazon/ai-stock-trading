@@ -40,7 +40,7 @@ public class SizingContextServiceTests
         view.DailyOrderRemaining.Should().Be(100_000m);
         view.ConsecutiveLosses.Should().Be(2);
         view.DrawdownRatio.Should().Be(0.05m);
-        view.Mode.Should().Be(TradeMode.Paper);          // Stage0 は Paper
+        view.Mode.Should().Be(BrokerProvider.InternalPaper);          // Stage0 は Paper
         view.Limits.MaxOrderAmountRatio.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio);
     }
 

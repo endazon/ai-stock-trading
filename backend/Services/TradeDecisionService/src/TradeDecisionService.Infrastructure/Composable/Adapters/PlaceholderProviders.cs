@@ -64,7 +64,7 @@ internal sealed class PlaceholderSizingContextProvider(ILogger<PlaceholderSizing
             DailyOrderRemaining: limits.MaxDailyOrderAmountFor(TradingDefaults.InitialCapital),
             ConsecutiveLosses: 0,
             DrawdownRatio: 0m,
-            Mode: TradeMode.Paper,
+            Mode: BrokerProvider.InternalPaper,
             Limits: limits));
     }
 }

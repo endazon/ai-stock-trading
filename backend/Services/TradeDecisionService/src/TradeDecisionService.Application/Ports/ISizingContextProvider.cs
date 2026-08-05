@@ -18,5 +18,5 @@ public record SizingContext(
     decimal DailyOrderRemaining,     // MaxDailyOrderAmount − DailyOrderedAmount（当日発注の残枠）
     int ConsecutiveLosses,
     decimal DrawdownRatio,
-    TradeMode Mode,
+    BrokerProvider Mode,
     RiskLimitSettings Limits);

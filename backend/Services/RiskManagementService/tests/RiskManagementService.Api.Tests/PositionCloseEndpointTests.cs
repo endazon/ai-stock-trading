@@ -38,7 +38,7 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
         var at = DateTimeOffset.UtcNow.AddDays(-1);
         ledger.AppendApproval(
             decisionId,
-            new OrderIntent(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            new OrderIntent(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 quantity, 20m, PositionEffect.Open, StopLossPrice: 19m, FxRateToBase: 150m),
             at);
         ledger.AppendFill(decisionId, $"open-{decisionId:N}", quantity, 20m, at);
@@ -215,5 +215,5 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
 
     // 応答 DTO（camelCase・列挙は数値で往復する）。
     private sealed record PositionCloseResponseDto(
-        Guid DecisionId, string Symbol, Market Market, TradeSide Side, int Quantity, decimal Price, TradeMode Mode);
+        Guid DecisionId, string Symbol, Market Market, TradeSide Side, int Quantity, decimal Price, BrokerProvider Mode);
 }

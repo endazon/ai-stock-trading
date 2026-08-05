@@ -23,7 +23,7 @@ public class OrderAmendmentServiceTests
     }
 
     private static OrderIntent Intent(int quantity = 10, decimal price = 3000m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, quantity, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, quantity, price);
 
     // 非終端の注文を1件発注済みにした状態を作る（immediateFill=false・IADR-0067）。
     private sealed class Fixture

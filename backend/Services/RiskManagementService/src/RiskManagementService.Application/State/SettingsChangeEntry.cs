@@ -22,4 +22,10 @@ public enum SettingsChangeType
     // FR-10, ADR-0009: 取引の一時停止（pause）の発動・解除。監査（アクター・理由・日時）を kill switch と同経路で残す。
     TradingPaused,
     TradingResumed,
+
+    // FR-20, FR-13, INDEX 決定 46, #334: 発注先（Broker Provider）の変更。
+    // 計画は「発注先の変更は**日時・変更前後・理由**を変更履歴と監査ログに残す」と定める（FR-20 (2)）。
+    // **末尾へ追加する**（序数 7）。本 enum は HTTP 応答で整数として往来し、画面が数値→ラベルへ写像するため、
+    // 既存メンバの間へ挿入すると過去の履歴行の種別表示が黙って変わる（IADR-0134 決定2 と同じ規律）。
+    BrokerProviderChanged,
 }

@@ -9,7 +9,7 @@ namespace AiStockTrading.Shared.Infrastructure.Tests;
 public class PaperBrokerAdapterTests
 {
     private static OrderIntent Intent(int quantity = 10, decimal price = 3000m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, quantity, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, quantity, price);
 
     [Fact]
     public async Task 発注すると現在値で即時全量約定する()

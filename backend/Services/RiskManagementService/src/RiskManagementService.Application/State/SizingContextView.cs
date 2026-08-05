@@ -11,5 +11,5 @@ public sealed record SizingContextView(
     decimal DailyOrderRemaining,
     int ConsecutiveLosses,
     decimal DrawdownRatio,
-    TradeMode Mode,
+    BrokerProvider Mode,
     RiskLimitSettings Limits);

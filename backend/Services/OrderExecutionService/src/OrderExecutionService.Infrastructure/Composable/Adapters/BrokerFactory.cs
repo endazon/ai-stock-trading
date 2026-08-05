@@ -21,15 +21,15 @@ internal static class BrokerFactory
 
         return selection.Provider switch
         {
-            BrokerProvider.Paper => new PaperBrokerAdapter(),
-            BrokerProvider.Moomoo => moomooClient is not null
+            BrokerVendor.Paper => new PaperBrokerAdapter(),
+            BrokerVendor.Moomoo => moomooClient is not null
                 ? new MoomooBrokerAdapter(moomooClient, logger: moomooLogger)
                 : throw new InvalidOperationException(
                     $"{BrokerSelection.ProviderKey}={BrokerSelection.MoomooProvider} には OpenD 接続"
                     + "（IMoomooTradeClient）が必要です。OpenD の常駐と接続構成（Broker:Moomoo:OpenD:Host/Port）を"
                     + "確認してください。実弾は撃ちません（SIMULATE 限定・IADR-0016）。"),
             _ => throw new InvalidOperationException(
-                $"未対応の {nameof(BrokerProvider)} '{selection.Provider}'（IADR-0111）。"),
+                $"未対応の {nameof(BrokerVendor)} '{selection.Provider}'（IADR-0111）。"),
         };
     }
 }

@@ -85,7 +85,7 @@ public class SimulatorProfileRiskSettingsStoreTests
 
         var current = store.GetCurrent();
 
-        current.Stage.Mode.Should().Be(TradeMode.Live);
+        current.Stage.Mode.Should().Be(BrokerProvider.MoomooReal);
         current.Stage.CapitalCapRatio.Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCapRatio);
     }
 

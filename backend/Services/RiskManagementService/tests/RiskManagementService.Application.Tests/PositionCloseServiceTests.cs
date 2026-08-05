@@ -50,7 +50,7 @@ public class PositionCloseServiceTests
         ledger.AppendApproval(
             decisionId,
             new OrderIntent(
-                "AAPL", Market.UnitedStates, side, ProductType.Cash, TradeMode.Paper,
+                "AAPL", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper,
                 quantity, 20m, PositionEffect.Open, StopLossPrice: 19m, FxRateToBase: fxRateToBase),
             Now.AddDays(-1));
         ledger.AppendFill(decisionId, $"open-{decisionId:N}", quantity, 20m, Now.AddDays(-1));
@@ -65,7 +65,7 @@ public class PositionCloseServiceTests
         ledger.AppendApproval(
             decisionId,
             new OrderIntent(
-                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper,
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
                 quantity, 21m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 150m),
             approvedAt);
         if (filled > 0)
@@ -270,11 +270,11 @@ public class PositionCloseServiceTests
     {
         var settings = TradingDefaults.CreateSettings() with
         {
-            Stage = new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 100_000m),
+            Stage = new StageSettings(TradingStage.Stage2MinimalLive, BrokerProvider.MoomooReal, 100_000m),
         };
 
         Create(LedgerWithLong(), settings: settings).Request(Command(), Actor)
-            .Approval!.Intent.Mode.Should().Be(TradeMode.Live);
+            .Approval!.Intent.Mode.Should().Be(BrokerProvider.MoomooReal);
     }
 
     // --- 監査（FR-11）---
