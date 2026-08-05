@@ -7,8 +7,14 @@ public static class StageGate
 {
     // FR-20, 06_daytrading-review §4: 次段階への昇格が合格基準を満たすか評価する。
     // 昇格先＝現段階の 1 段上（最上段なら null）。段階別に §4 の合格基準を評価する。
+    //
+    // FR-20, #387, IADR-0148: 統制違反件数（条件 1）は StagePerformance に持たせず**必須引数**で受ける。
+    // null＝未供給であり、**条件未充足として扱う**（0 件と同一視しない）。
     public static PromotionAssessment AssessPromotion(
-        TradingStage current, StagePerformance performance, StageGatePolicy policy)
+        TradingStage current,
+        StagePerformance performance,
+        ControlViolationTally? controlViolations,
+        StageGatePolicy policy)
     {
         ArgumentNullException.ThrowIfNull(policy);
 
@@ -19,7 +25,7 @@ public static class StageGate
                 TargetStage: null, Eligible: false, UnmetCriteria: [StageGateCriterion.AlreadyAtTopStage]);
         }
 
-        var unmet = UnmetPromotionCriteria(current, performance, policy);
+        var unmet = UnmetPromotionCriteria(current, performance, controlViolations, policy);
         return new PromotionAssessment(target, Eligible: unmet.Count == 0, UnmetCriteria: unmet);
     }
 
@@ -30,6 +36,7 @@ public static class StageGate
         int nextSequence,
         StageApproval approval,
         StagePerformance performance,
+        ControlViolationTally? controlViolations,
         StageGatePolicy policy,
         DateTimeOffset now)
     {
@@ -55,7 +62,7 @@ public static class StageGate
                 return Reject(StageGateCriterion.PromotionMustBeSequential);
             }
 
-            var unmet = UnmetPromotionCriteria(current, performance, policy);
+            var unmet = UnmetPromotionCriteria(current, performance, controlViolations, policy);
             if (unmet.Count > 0)
             {
                 return new StageTransitionResult(
@@ -124,7 +131,10 @@ public static class StageGate
 
     // 段階別の未充足合格基準（§4）を列挙する。昇格先が無い最上段では呼ばない。
     private static List<StageGateCriterion> UnmetPromotionCriteria(
-        TradingStage current, StagePerformance performance, StageGatePolicy policy)
+        TradingStage current,
+        StagePerformance performance,
+        ControlViolationTally? controlViolations,
+        StageGatePolicy policy)
     {
         var unmet = new List<StageGateCriterion>();
         switch (current)
@@ -146,7 +156,16 @@ public static class StageGate
                 // **条件 2 と条件 3 は両方を満たすまで昇格しない**（§4.3・INDEX 決定 42）。
                 // 条件 4・5（ZDR の有効化・信用取引の必要額）は「作業が完了しているか」の
                 // **昇格時チェックリスト**であり機械判定ではない（§4.1）。ここでは評価しない。
-                if (performance.ControlViolationCount > 0)
+                // FR-20, #387, IADR-0148: 条件 1 は「集計が供給されているか」と「0 件か」の 2 段で判定する。
+                // **未供給を 0 件と同一視しない。** 段階ゲートの他の入力（営業日数・取引件数）の 0 は
+                // 「未充足＝昇格しない」に倒れるが、違反件数の 0 だけは「合格」を意味する。
+                // 供給元が無いまま 0 を合格と読むと、#385 / #386 が期間・件数を供給した瞬間に
+                // 条件 1 が無条件で通る（本判定が塞いだ fail-open）。
+                if (controlViolations is null)
+                {
+                    unmet.Add(StageGateCriterion.ControlViolationCountUnavailable);
+                }
+                else if (controlViolations.BlocksPromotion)
                 {
                     unmet.Add(StageGateCriterion.ControlViolationsPresent);
                 }

@@ -174,7 +174,10 @@ internal sealed class StagePerformanceRow
     /// </summary>
     public int Stage1ExcludedInternalPaperDays { get; set; }
 
-    public int ControlViolationCount { get; set; }
+    // FR-20, #387, IADR-0148: 旧 ControlViolationCount 列は**削除した**。件数の供給元は本行ではなく
+    // 発注審査の観測ログ（order_screening_observations）であり、供給の有無（未供給 / 0 件）を
+    // 非 nullable の int 列では表現できない。死んだ列を残すと「まだ使う値」に見え、次の実装者が
+    // 判定へ結線し直す余地が残る（IADR-0137 決定2 と同じ規律）。
 
     public bool SlippageAndCostWithinExpected { get; set; }
 
@@ -245,4 +248,29 @@ internal sealed class OrderActivityRow
 
     /// <summary>終端時刻（取消/失効/約定などで確定した時刻）。未確定なら null。生存時間の終点。</summary>
     public DateTimeOffset? TerminalAt { get; set; }
+}
+
+// FR-20, FR-11, #387, 06_daytrading-review §4.1 条件1, IADR-0148: 発注審査 1 回ぶんの観測。
+// 段階ゲートの「統制違反 0 件」（**クラス C 限定**）を数える供給元であり、**承認された審査も 1 行として残す**
+// （記録が違反だけだと「違反 0 件」を主張する根拠が無く、未供給と区別できない）。
+//
+// DecisionId が主キーであることが**計上単位（1 回の発注拒否につき 1 件）そのもの**を担保する。
+// 1 回の拒否に複数のクラス C 理由が返っても行は 1 つであり、再送（同一 DecisionId）でも増えない。
+//
+// 算入可否・違反該当は**記録時に純関数（ControlViolationAggregation / RejectionReasonClassification）が
+// 決めた結果**を保持する。クラス分けの規則を SQL 側へ写すと単一情報源が壊れる。
+internal sealed class OrderScreeningObservationRow
+{
+    public Guid DecisionId { get; set; }
+
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    /// <summary>その審査が向いていた発注先（監査のため生値も残す）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.BrokerProvider Provider { get; set; }
+
+    /// <summary>Stage 1 の合格判定へ算入してよい発注先か（moomoo SIMULATE の許可制・IADR-0142 決定2）。</summary>
+    public bool CountsTowardStage1 { get; set; }
+
+    /// <summary>クラス C の理由を含む拒否か（＝統制違反 1 件として数えるか）。</summary>
+    public bool IsControlViolation { get; set; }
 }

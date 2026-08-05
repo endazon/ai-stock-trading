@@ -34,14 +34,14 @@ public record StagePerformance
     /// </summary>
     public int Stage1TradeCount { get; init; }
 
-    /// <summary>
-    /// Stage 1→2 合格ゲート（条件 1）: **クラス C 限定**の統制違反件数（0 件が合格条件）。
-    /// クラス C ＝ <c>BannedSymbol</c> / <c>ManipulativeOrderPattern</c> を含む発注拒否であり、
-    /// 計上単位は 1 回の発注拒否につき 1 件である（06_daytrading-review §4.1・
-    /// <c>RejectionReasonClassification</c> が分類の単一情報源）。
-    /// **空売りの拒否理由 9 種（クラス A）はここに計上しない。**
-    /// </summary>
-    public int ControlViolationCount { get; init; }
+    // FR-20, #387, IADR-0148: Stage 1→2 合格ゲート（条件 1）「クラス C 統制違反 0 件」の件数は
+    // **本レコードが持たない**。件数は発注審査の観測ログから集計され（ControlViolationAggregation）、
+    // 判定へは ControlViolationTally? として StageGate へ直接渡される。
+    //
+    // 理由: 本レコードの他のフィールドは既定（0 / false）が fail-safe だが、**違反件数の 0 は
+    // 「違反が無い＝条件充足」を意味し、唯一 fail-safe でない**。init プロパティとして持つと
+    // 「書かなければ 0 ＝合格」になり、供給元の不在が合格として読まれる（#387 の fail-open）。
+    // 判定関数の**必須引数**にすることで、渡し忘れがコンパイルを通らなくなる。
 
     /// <summary>Stage 2→3 合格ゲート: 実効スリッページ・費用が想定内か。</summary>
     public bool SlippageAndCostWithinExpected { get; init; }

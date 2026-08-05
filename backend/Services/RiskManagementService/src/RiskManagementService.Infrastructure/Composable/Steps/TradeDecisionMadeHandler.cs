@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 // これを止めるのが IADR-0129 決定 3（DisableConventionalLocalRouting・共通ヘルパが強制する）である。
 public sealed class TradeDecisionMadeHandler(
     OrderScreeningService screeningService,
+    IControlViolationObservationStore violationStore,
     ILogger<TradeDecisionMadeHandler> logger)
 {
     public async Task Handle(TradeDecisionMade message, IMessageBus bus)
@@ -22,6 +24,11 @@ public sealed class TradeDecisionMadeHandler(
         ArgumentNullException.ThrowIfNull(bus);
 
         var outcome = screeningService.Screen(message);
+
+        // FR-20, FR-11, #387, IADR-0148: 審査結果を段階ゲートの観測ログへ記録する（承認・拒否のいずれも）。
+        // **イベント発行より先に記録する**——発行が失敗して再送されても DecisionId で冪等であり、
+        // 逆順にすると「発行できたが観測が落ちた」拒否が生まれ、違反件数が過小になる（緩い側）。
+        violationStore.Record(outcome.Observation);
 
         if (outcome.IsApproved)
         {

@@ -37,7 +37,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
             row.Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays;
             row.Stage1TradeCount = performance.Stage1TradeCount;
             row.Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays;
-            row.ControlViolationCount = performance.ControlViolationCount;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -54,7 +53,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         Stage1QualifiedTradingDays = row.Stage1QualifiedTradingDays,
         Stage1TradeCount = row.Stage1TradeCount,
         Stage1ExcludedInternalPaperDays = row.Stage1ExcludedInternalPaperDays,
-        ControlViolationCount = row.ControlViolationCount,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
     };
@@ -68,7 +66,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays,
         Stage1TradeCount = performance.Stage1TradeCount,
         Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays,
-        ControlViolationCount = performance.ControlViolationCount,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,
         UpdatedAt = DateTimeOffset.UtcNow,

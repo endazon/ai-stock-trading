@@ -17,7 +17,6 @@ public class StagePerformanceProjectionTests
         ObservedMaxDrawdownRatio = 0.12m,
         Stage1QualifiedTradingDays = 60,
         Stage1TradeCount = 100,
-        ControlViolationCount = 3,
         SlippageAndCostWithinExpected = true,
         DailyLossLimitRespected = true,
     };
@@ -62,7 +61,6 @@ public class StagePerformanceProjectionTests
         updated.BacktestMaxDrawdownRatio.Should().Be(0.10m);
         updated.Stage1QualifiedTradingDays.Should().Be(60);
         updated.Stage1TradeCount.Should().Be(100);
-        updated.ControlViolationCount.Should().Be(3);
         updated.SlippageAndCostWithinExpected.Should().BeTrue();
         updated.DailyLossLimitRespected.Should().BeTrue();
     }
@@ -78,7 +76,6 @@ public class StagePerformanceProjectionTests
         reset.BacktestMaxDrawdownRatio.Should().Be(0.10m);
         reset.Stage1QualifiedTradingDays.Should().Be(60);
         reset.Stage1TradeCount.Should().Be(100);
-        reset.ControlViolationCount.Should().Be(3);
         reset.SlippageAndCostWithinExpected.Should().BeTrue();
         reset.DailyLossLimitRespected.Should().BeTrue();
     }

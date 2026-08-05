@@ -69,6 +69,10 @@ builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
 builder.Services.AddScoped<IStageGateStore, EfStageGateStore>();
 builder.Services.AddScoped<IStagePerformanceStore, EfStagePerformanceStore>();
+// FR-20, FR-11, #387, IADR-0148: 段階ゲートの「統制違反 0 件」（クラス C 限定）の供給元＝発注審査の観測ログ。
+// **未記録は未供給（null）として返り、条件1 を未充足にする**（0 件と同一視しない＝#387 の fail-open を塞ぐ）。
+// DbContext が scoped のため本ストアも scoped。
+builder.Services.AddScoped<IControlViolationObservationStore, EfControlViolationObservationStore>();
 // FR-20, FR-09, IADR-0085, #189: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（durable な通知済みシグネチャ・単一行）。
 builder.Services.AddScoped<IWithdrawalNotificationStore, EfWithdrawalNotificationStore>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。

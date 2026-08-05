@@ -158,6 +158,7 @@ public class ObservedDrawdownRefreshServiceTests
         var stageGate = new StageGateService(
             new InMemoryStageGateStore(TradingStage.Stage2MinimalLive),
             store,
+            new InMemoryControlViolationObservationStore(),
             TradingDefaults.CreateStagePolicy(),
             killSwitch,
             clock);

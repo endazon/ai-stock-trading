@@ -49,6 +49,17 @@ public enum StageGateCriterion
     /// Stage 1→2: 累計 120 営業日を経ても件数に届かず**打ち切り**（§4.3）。Stage 0 へ差し戻す。
     /// </summary>
     Stage1ExtensionExhausted = 11,
+
+    /// <summary>
+    /// FR-20, #387, §4.1 条件 1, IADR-0148: Stage 1→2: <b>統制違反件数の集計が供給されていない</b>。
+    /// <para>
+    /// <see cref="ControlViolationsPresent"/>（供給済みで 1 件以上）とは別の値である。
+    /// 同じ値に潰すと、監査で「集計が来ていない」と「違反があった」を取り違える——
+    /// 前者は供給経路の欠落（実装・運用の問題）、後者は AI が禁止事項へ抵触した記録であり、
+    /// 打つ手がまったく違う。
+    /// </para>
+    /// </summary>
+    ControlViolationCountUnavailable = 12,
 }
 
 // FR-20, UC-06: 利用者の承認（Discord/チャット UI 由来）。承認者が空なら承認なしとして扱う。
