@@ -45,7 +45,7 @@ public class PortfolioLedgerConsumersTests
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         var fills = ledger.GetFills();
@@ -69,7 +69,7 @@ public class PortfolioLedgerConsumersTests
 
         // 取消（Cancelled）は約定でないため台帳に載らない。
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Cancelled, 0, 0m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Cancelled, 0, 0m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         ledger.GetFills().Should().BeEmpty();
@@ -91,20 +91,20 @@ public class PortfolioLedgerConsumersTests
 
         // 発注直後（未約定）は台帳に載らない ＝ #270 の出発点。
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
         ledger.GetFills().Should().BeEmpty();
 
         // 部分約定: 全量を待たずに載せる（待つと次サイクルの統制が素通しになる）。
         var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.PartiallyFilled, 300, 340.5m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.PartiallyFilled, 300, 340.5m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.FilledQuantity == 300);
         ledger.GetFills().Should().ContainSingle().Which.Quantity.Should().Be(300);
 
         // 全量約定: 累積値（差分ではない）で同一行を更新する＝二重計上しない。
         var session4 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Filled, 1_000, 340.8m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Filled, 1_000, 340.8m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session4.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.FilledQuantity == 1_000);
 
@@ -128,7 +128,7 @@ public class PortfolioLedgerConsumersTests
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Cancelled, 400, 339.9m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Cancelled, 400, 339.9m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         ledger.GetFills().Should().ContainSingle().Which.Quantity.Should().Be(400);
@@ -148,12 +148,12 @@ public class PortfolioLedgerConsumersTests
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.Filled, 1_000, 340.8m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.Filled, 1_000, 340.8m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         // 遅れて届いた古いスナップショット（部分約定）。
         var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(
-            decisionId, "ORD-1", OrderStatus.PartiallyFilled, 300, 340.5m, DateTimeOffset.UtcNow));
+            decisionId, "ORD-1", OrderStatus.PartiallyFilled, 300, 340.5m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.FilledQuantity == 300);
 

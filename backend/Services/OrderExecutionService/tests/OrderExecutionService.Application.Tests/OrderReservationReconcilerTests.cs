@@ -3,6 +3,7 @@ using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -56,7 +57,7 @@ public class OrderReservationReconcilerTests
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var probe = new FakeProbe(probeResult);
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new FakeClock());
+        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
         return (reconciler, reservations, executed, probe);
     }
 
@@ -139,7 +140,7 @@ public class OrderReservationReconcilerTests
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, new IndeterminateReservationBrokerProbe(), new FakeClock());
+            reservations, executed, new IndeterminateReservationBrokerProbe(), new PaperBrokerAdapter(), new FakeClock());
         var ids = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToList();
         foreach (var id in ids)
             reservations.TryReserve(id, StalledAt);
@@ -196,7 +197,7 @@ public class OrderReservationReconcilerTests
                 PositionEffect.Open, 10, 100m, 10, 100m, OrderStatus.Filled, 0m, StalledAt));
             return ReservationProbeResult.Placed(Placed("BRK-PROBE"));
         });
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new FakeClock());
+        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -219,7 +220,7 @@ public class OrderReservationReconcilerTests
         reservations.TryReserve(good, StalledAt.AddSeconds(1));
         var probe = new CallbackProbe(id =>
             id == bad ? throw new InvalidOperationException("照会失敗") : ReservationProbeResult.NotPlaced);
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new FakeClock());
+        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 

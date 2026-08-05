@@ -34,6 +34,9 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     public DbSet<OrderScreeningObservationRow> OrderScreeningObservations =>
         Set<OrderScreeningObservationRow>();
 
+    // FR-20, FR-12, #386, IADR-0149: 約定の観測ログ（段階ゲートの「最小取引件数 100 件」の供給元）。
+    public DbSet<Stage1FillObservationRow> Stage1FillObservations => Set<Stage1FillObservationRow>();
+
     // FR-20, FR-09, IADR-0085: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（最後に通知したシグネチャ・単一行）。
     public DbSet<WithdrawalNotificationRow> WithdrawalNotifications => Set<WithdrawalNotificationRow>();
 
@@ -146,6 +149,16 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.HasKey(r => r.DecisionId);
             e.Property(r => r.DecisionId).ValueGeneratedNever();
             e.HasIndex(r => new { r.CountsTowardStage1, r.IsControlViolation });
+        });
+
+        // FR-20, FR-12, #386, IADR-0149: 約定の観測ログ。DecisionId が主キー＝**計上単位**（約定した注文 1 件）を
+        // 主キー制約で担保し、分割約定の続報・再送でも二重計上しない。集計は「算入対象は何件か」の 1 問だけである。
+        mb.Entity<Stage1FillObservationRow>(e =>
+        {
+            e.ToTable("stage1_fill_observations");
+            e.HasKey(r => r.DecisionId);
+            e.Property(r => r.DecisionId).ValueGeneratedNever();
+            e.HasIndex(r => r.CountsTowardStage1);
         });
 
         // FR-20, FR-09, IADR-0085: 撤退の非停止降格提案の通知重複排除（単一行）。未記録＝未通知（fail-safe）。

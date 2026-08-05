@@ -34,6 +34,9 @@ public class OrderExecutionServiceTests
     // onPlace は「発注が起きたその瞬間」の観測用（予約が発注前にコミットされることの確認に使う）。
     private sealed class FakeBroker(BrokerOrder order, Action? onPlace = null) : IBrokerAdapter
     {
+        // #386, IADR-0149: 既定は moomoo SIMULATE（Stage 1 の発注先）。paper 経路は個別に差し替える。
+        public BrokerProvider Provider { get; init; } = BrokerProvider.MoomooSimulate;
+
         public int PlaceCount { get; private set; }
 
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
@@ -52,6 +55,8 @@ public class OrderExecutionServiceTests
     // #141, IADR-0092: client order id（DecisionId）伝播に対応するブローカ。伝播された DecisionId を記録する。
     private sealed class FakeCorrelatingBroker(BrokerOrder order) : IBrokerAdapter, IClientOrderIdBroker
     {
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
         public Guid? PropagatedDecisionId { get; private set; }
         public int PlainPlaceCount { get; private set; }
 
@@ -161,6 +166,31 @@ public class OrderExecutionServiceTests
         executed.AveragePrice.Should().Be(1_000m);
         executed.DecisionId.Should().Be(approved.DecisionId);
         store.GetAll().Should().ContainSingle(r => r.DecisionId == approved.DecisionId);
+    }
+
+    // FR-20, FR-12, #386, IADR-0149 決定1: OrderExecuted は**実際に発注したアダプタの発注先**を運ぶ。
+    // 承認 Intent の Mode（＝段階が定める既定の発注先。Stage 1 では常に SIMULATE）ではない——
+    // intent.Mode を載せる実装だと、内蔵 paper で稼働していても Stage 1 の合格証跡へ積み上がる。
+    [Fact]
+    public async Task OrderExecutedは実際に発注したアダプタの発注先を運ぶ()
+    {
+        // 承認 Intent の Mode を SIMULATE にしておく。発注先は paper アダプタであり、載るべきは paper 側である。
+        var simulateIntent = Intent() with { Mode = BrokerProvider.MoomooSimulate };
+
+        var paper = await NewService(new PaperBrokerAdapter(), new InMemoryExecutedOrderStore())
+            .ExecuteAsync(Approved(simulateIntent));
+
+        paper.Provider.Should().Be(
+            BrokerProvider.InternalPaper, "発注先は intent.Mode ではなく実際に発注したアダプタが決める");
+
+        // 対照: SIMULATE を名乗るアダプタなら SIMULATE が載る（常に paper を返す実装では緑にならない）。
+        var order = new BrokerOrder("ORD-SIM", simulateIntent, OrderStatus.Filled, 10, 1_000m, Now, Now);
+        var simulate = await NewService(
+                new FakeBroker(order) { Provider = BrokerProvider.MoomooSimulate },
+                new InMemoryExecutedOrderStore())
+            .ExecuteAsync(Approved(simulateIntent));
+
+        simulate.Provider.Should().Be(BrokerProvider.MoomooSimulate);
     }
 
     [Fact]

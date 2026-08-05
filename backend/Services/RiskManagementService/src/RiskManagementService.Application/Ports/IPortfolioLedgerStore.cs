@@ -26,6 +26,18 @@ public interface IPortfolioLedgerStore
     IReadOnlyList<LedgerFill> GetFills();
 
     /// <summary>
+    /// FR-20, #386, IADR-0149 決定2: 承認済み注文の<b>建玉効果</b>を <c>DecisionId</c> で引く。
+    /// 相関する承認が無ければ <c>null</c>（＝不明）。
+    /// <para>
+    /// Stage 1 の取引件数は<b>新規建て</b>だけを数えるが、<c>OrderExecuted</c> は建玉効果を運ばない。
+    /// 承認台帳が既に <c>DecisionId</c> で建玉効果を保持しているため、そこから引く。
+    /// <b>不明（<c>null</c>）は算入しない</b>——不明を数えると、内蔵 <c>paper</c> の擬似約定が
+    /// 合格証跡へ混入し得る（計画が名指しした最悪の結果）。
+    /// </para>
+    /// </summary>
+    PositionEffect? FindApprovedPositionEffect(Guid decisionId);
+
+    /// <summary>
     /// #292, IADR-0117: 指定銘柄について「<paramref name="approvedAtOrAfter"/> 以降に承認された決済（Close）注文のうち
     /// まだ約定していない数量」の合計を返す。
     ///

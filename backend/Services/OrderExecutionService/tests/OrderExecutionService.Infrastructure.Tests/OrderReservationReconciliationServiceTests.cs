@@ -6,6 +6,7 @@ using AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,6 +57,9 @@ public class OrderReservationReconciliationServiceTests
                 opts.Services.AddSingleton<IOrderReservationStore>(reservations);
                 opts.Services.AddSingleton<IExecutedOrderStore, InMemoryExecutedOrderStore>();
                 opts.Services.AddSingleton(probe);
+                // FR-20, #386, IADR-0149 決定1: リコンサイラが再発行する OrderExecuted には
+                // 実際に発注したアダプタの発注先が載る。本テストの構成は paper（実ブローカへ接続しない）。
+                opts.Services.AddSingleton<IBrokerAdapter>(new PaperBrokerAdapter());
                 opts.Services.AddScoped<OrderReservationReconciler>();
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");

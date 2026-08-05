@@ -46,7 +46,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         sender.Sent.Should().ContainSingle(m => m.Title == "取引実行");

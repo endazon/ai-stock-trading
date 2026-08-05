@@ -23,8 +23,10 @@ public class Stage1AggregationTests
     private static Stage1TradingDayObservation Day(BrokerProvider provider, int day = 1, int operational = FullDay) =>
         new(new DateOnly(2026, 8, day), FullDay, operational, provider);
 
-    private static Stage1FillObservation Fill(BrokerProvider provider, int day = 1) =>
-        new(new DateOnly(2026, 8, day), provider);
+    // #386, IADR-0149 決定2: 計上単位は「約定した新規建て注文 1 件」（DecisionId で一意）。
+    private static Stage1FillObservation Fill(
+        BrokerProvider provider, int day = 1, PositionEffect effect = PositionEffect.Open, Guid? decisionId = null) =>
+        new(decisionId ?? Guid.NewGuid(), new DateOnly(2026, 8, day), provider, effect);
 
     // ------------------------------------------------------------------
     // 否定形: 内蔵 paper は 1 件も 1 日も算入されない
@@ -154,8 +156,7 @@ public class Stage1AggregationTests
                 new DateOnly(2026, 1, 1).AddDays(i), FullDay, FullDay, BrokerProvider.InternalPaper))
             .ToArray();
         var fills = Enumerable.Range(0, 100)
-            .Select(i => new Stage1FillObservation(
-                new DateOnly(2026, 1, 1).AddDays(i % 60), BrokerProvider.InternalPaper))
+            .Select(i => Fill(BrokerProvider.InternalPaper, day: (i % 28) + 1))
             .ToArray();
 
         var progress = Stage1Aggregation.Aggregate(days, fills);
@@ -176,8 +177,7 @@ public class Stage1AggregationTests
                 new DateOnly(2026, 1, 1).AddDays(i), FullDay, FullDay, BrokerProvider.MoomooSimulate))
             .ToArray();
         var fills = Enumerable.Range(0, 100)
-            .Select(i => new Stage1FillObservation(
-                new DateOnly(2026, 1, 1).AddDays(i % 60), BrokerProvider.MoomooSimulate))
+            .Select(i => Fill(BrokerProvider.MoomooSimulate, day: (i % 28) + 1))
             .ToArray();
 
         var progress = Stage1Aggregation.Aggregate(days, fills);

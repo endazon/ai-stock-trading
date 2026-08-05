@@ -11,6 +11,10 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
 // 下の Save が Find で「同一スコープの追跡済みエンティティ」を取り、GetCurrent() 時点のオリジナル値との差分だけが
 // Modified になる＝担当外列が UPDATE に載らないためである。**読みと書きは必ず同一スコープ（同一 DbContext）で行うこと。**
 // 別スコープで読んだ値を持ち込むと Find が DB を再読して全列 Modified になり、この保証が静かに崩れる。
+//
+// FR-20, #386, IADR-0149 決定3: **Stage1TradeCount は本行が持たない。** 取引件数の供給元は約定の観測ログ
+// （stage1_fill_observations）であり、判定の直前に StageGateService が重ねる。したがって本ストアが返す
+// StagePerformance の Stage1TradeCount は常に 0 であり、Save も件数を書かない（列が存在しない）。
 internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStagePerformanceStore
 {
     public StagePerformance GetCurrent()
@@ -35,7 +39,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
             row.BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio;
             row.ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio;
             row.Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays;
-            row.Stage1TradeCount = performance.Stage1TradeCount;
             row.Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
@@ -51,7 +54,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestMaxDrawdownRatio = row.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = row.ObservedMaxDrawdownRatio,
         Stage1QualifiedTradingDays = row.Stage1QualifiedTradingDays,
-        Stage1TradeCount = row.Stage1TradeCount,
         Stage1ExcludedInternalPaperDays = row.Stage1ExcludedInternalPaperDays,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
@@ -64,7 +66,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio,
         Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays,
-        Stage1TradeCount = performance.Stage1TradeCount,
         Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,

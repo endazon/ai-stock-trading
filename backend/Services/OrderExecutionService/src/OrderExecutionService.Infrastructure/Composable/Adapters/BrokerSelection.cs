@@ -1,5 +1,9 @@
 using Microsoft.Extensions.Configuration;
 
+// #334, IADR-0140 決定6: 本名前空間の `BrokerVendor`（vendor 軸）と計画の発注先 3 値を取り違えないよう、
+// 後者は `Trading.BrokerProvider` と明示的に修飾して参照する。
+using Trading = AiStockTrading.Shared.Contracts.Trading;
+
 namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
 
 // FR-05, ADR-0002, IADR-0111: 発注先の証券会社（ベンダ）。将来の他証券（ADR-0002 が挙げる立花証券 e支店 API 等）は
@@ -50,6 +54,19 @@ internal sealed record BrokerSelection(BrokerVendor Provider, BrokerEnvironment 
 
     // 実弾（実口座）を指す選択か。閂 0（LiveTradingGate）の唯一の判定条件。
     public bool IsLive => Environment == BrokerEnvironment.Live;
+
+    // FR-20, FR-12, #386, IADR-0149 決定1: 構成（vendor × environment）を計画の発注先 3 値へ写す。
+    // 対応関係は IADR-0140 決定6 が定めたものをそのまま関数にしたものであり、新しい規則を作っていない。
+    // **この写像が「Stage 1 の合格証跡に何が算入されるか」を決める唯一の場所である。**
+    // 未知の組み合わせは黙って安全側へ倒さず例外にする（Parse と同じ流儀。誤設定を隠さない）。
+    public Trading.BrokerProvider ToBrokerProvider() => (Provider, Environment) switch
+    {
+        (BrokerVendor.Paper, _) => Trading.BrokerProvider.InternalPaper,
+        (BrokerVendor.Moomoo, BrokerEnvironment.Simulated) => Trading.BrokerProvider.MoomooSimulate,
+        (BrokerVendor.Moomoo, BrokerEnvironment.Live) => Trading.BrokerProvider.MoomooReal,
+        _ => throw new InvalidOperationException(
+            $"未対応の発注先の組み合わせ（{Provider} × {Environment}）。IADR-0140 決定6 の対応表を更新してください。"),
+    };
 
     // 正準名。本番近接順をそのまま表し、introspection の自己申告（#22 受け入れ基準③）とログに使う。
     public string Tier => Provider == BrokerVendor.Paper

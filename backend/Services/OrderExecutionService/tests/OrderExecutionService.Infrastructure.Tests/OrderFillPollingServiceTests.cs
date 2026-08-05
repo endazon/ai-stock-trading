@@ -37,6 +37,8 @@ public class OrderFillPollingServiceTests
     {
         private int _index;
 
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
         public int QueryCount { get; private set; }
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
@@ -173,7 +175,7 @@ public class OrderFillPollingServiceTests
         var decisionId = Guid.NewGuid();
         store.Save(Dispatched(decisionId));
         var client = new StubMoomooTradeClient();
-        var adapter = new MoomooBrokerAdapter(client);
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
         using var host = await BuildHostAsync(adapter, store);
         var service = BuildService(host, new FillPollingOptions());
 

@@ -56,7 +56,7 @@ public class MoomooBrokerAdapterTests
         var client = new FakeClient();
         var decisionId = Guid.NewGuid();
 
-        await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(), decisionId);
+        await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent(), decisionId);
 
         client.LastRequest!.Remark.Should().Be(decisionId.ToString("N"));
     }
@@ -65,7 +65,7 @@ public class MoomooBrokerAdapterTests
     public async Task 通常発注は_remark_を付けない()
     {
         var client = new FakeClient();
-        await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent());
+        await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent());
         client.LastRequest!.Remark.Should().BeNull();
     }
 
@@ -77,7 +77,7 @@ public class MoomooBrokerAdapterTests
     public async Task 発注を_SIMULATE_リクエストへ写像し結果を_BrokerOrder_へ変換する()
     {
         var client = new FakeClient { Result = new("mo-9", MoomooOrderState.FilledAll, 10, 101m) };
-        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(
+        var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(
             Intent(qty: 10, price: 100m, market: Market.Japan, side: TradeSide.Sell));
 
         client.LastRequest.Should().Be(new MoomooOrderRequest("AAPL", MoomooMarket.Japan, MoomooSide.Sell, 10, 100m));
@@ -92,7 +92,7 @@ public class MoomooBrokerAdapterTests
     {
         // moomoo アダプタは Mode に依らず SIMULATE（client 実装が固定）で発注する。Live でも拒否せず送信する。
         var client = new FakeClient();
-        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(mode: BrokerProvider.MoomooReal));
+        var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent(mode: BrokerProvider.MoomooReal));
         client.LastRequest.Should().NotBeNull();
         order.Status.Should().Be(OrderStatus.Filled);
     }
@@ -103,7 +103,7 @@ public class MoomooBrokerAdapterTests
     public async Task 不正注文_数量や価格が0以下_は送信せず_Rejected(int qty, decimal price)
     {
         var client = new FakeClient();
-        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(qty, price));
+        var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent(qty, price));
         order.Status.Should().Be(OrderStatus.Rejected);
         client.LastRequest.Should().BeNull(); // 送信していない
     }
@@ -112,7 +112,7 @@ public class MoomooBrokerAdapterTests
     public async Task client_例外_OpenD不達_は_Rejected_に倒す_fail_safe()
     {
         var client = new FakeClient { ThrowOnPlace = () => new InvalidOperationException("OpenD 不達") };
-        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent());
+        var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent());
         order.Status.Should().Be(OrderStatus.Rejected);
     }
 
@@ -132,19 +132,19 @@ public class MoomooBrokerAdapterTests
     public async Task 状態照会は_client_結果を返し_未知は_null()
     {
         var client = new FakeClient { QueryResult = new("mo-2", MoomooOrderState.Filling, 3, 99m) };
-        var found = await new MoomooBrokerAdapter(client).GetOrderAsync("mo-2");
+        var found = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetOrderAsync("mo-2");
         found!.Status.Should().Be(OrderStatus.PartiallyFilled);
         found.FilledQuantity.Should().Be(3);
 
         client.QueryResult = null;
-        (await new MoomooBrokerAdapter(client).GetOrderAsync("none")).Should().BeNull();
+        (await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetOrderAsync("none")).Should().BeNull();
     }
 
     [Fact]
     public async Task 取消は_client_へ委譲する()
     {
         var client = new FakeClient();
-        await new MoomooBrokerAdapter(client).CancelOrderAsync("mo-3");
+        await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).CancelOrderAsync("mo-3");
         client.CancelledId.Should().Be("mo-3");
     }
 
@@ -161,7 +161,7 @@ public class MoomooBrokerAdapterTests
                 new MoomooPositionSnapshot("7203", MoomooMarket.Japan, -100, 2500m),
             ],
         };
-        var adapter = new MoomooBrokerAdapter(client);
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
 
         var positions = await adapter.GetPositionsAsync();
 
@@ -175,7 +175,7 @@ public class MoomooBrokerAdapterTests
     public async Task 建玉が無ければ空列を返す()
     {
         // 空列（建玉ゼロ）は観測事実。null（不明）と取り違えない。
-        var positions = await new MoomooBrokerAdapter(new FakeClient()).GetPositionsAsync();
+        var positions = await new MoomooBrokerAdapter(new FakeClient(), BrokerProvider.MoomooSimulate).GetPositionsAsync();
 
         positions.Should().NotBeNull().And.BeEmpty();
     }
@@ -186,7 +186,7 @@ public class MoomooBrokerAdapterTests
         // 空列に倒すと「ブローカは何も持っていない」と誤断定し、台帳の全建玉が乖離として報告される。
         var client = new FakeClient { PositionsThrow = () => new InvalidOperationException("OpenD 不達") };
 
-        var positions = await new MoomooBrokerAdapter(client).GetPositionsAsync();
+        var positions = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetPositionsAsync();
 
         positions.Should().BeNull();
     }

@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,18 +50,34 @@ public class WithdrawalEvaluationServiceTests
 
     // FR-20, #333, §4.3: Stage 1 の打ち切り（累計 120 営業日を経ても 100 件に届かない）＝非停止の降格提案
     // （HaltNewEntries=false）を発火させる実績。旧「ペーパー乖離が説明不能」は計画 §4.1 が機械判定から外した。
-    private static StagePerformance Stage1Exhausted() => new()
+    //
+    // FR-20, #386, IADR-0149 決定3: **取引件数は本レコードでは供給されない。** 供給元は約定の観測ログであり、
+    // SeedFills で積む（実績行の Stage1TradeCount 列は削除済み）。
+    private static StagePerformance Stage1Period() => new()
     {
         Stage1QualifiedTradingDays = 120,
-        Stage1TradeCount = 99,
     };
 
-    // 件数に達した＝打ち切り非該当（提案は解消）。期間の要件は既に満たしている（§4.3）。
-    private static StagePerformance Stage1Resolved() => new()
+    // FR-20, #386: 取引件数の供給（moomoo SIMULATE の新規建て約定）を n 件積む。
+    // 打ち切りは 99 件（未達）、解消は 100 件（到達）で表す。観測は DecisionId で一意＝加算のみ。
+    private static void SeedFills(RiskWorkerWebApplicationFactory factory, int count)
     {
-        Stage1QualifiedTradingDays = 120,
-        Stage1TradeCount = 100,
-    };
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IStage1FillObservationStore>();
+        for (var i = 0; i < count; i++)
+        {
+            store.Record(new Stage1FillObservation(
+                Guid.NewGuid(), new DateOnly(2026, 7, 1).AddDays(i % 28),
+                BrokerProvider.MoomooSimulate, PositionEffect.Open));
+        }
+    }
+
+    // 観測窓を空にする（＝件数 0 へ戻す）。解消 → 再打ち切りの遷移を作るために用いる。
+    private static void ResetFills(RiskWorkerWebApplicationFactory factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStage1FillObservationStore>().ResetWindow();
+    }
 
     private static int NonHaltingCount(ITrackedSession session) =>
         session.Sent.MessagesOf<WithdrawalTriggered>().Count(m => !m.HaltNewEntries);
@@ -160,7 +177,8 @@ public class WithdrawalEvaluationServiceTests
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
-        SeedPerformance(factory, Stage1Exhausted());
+        SeedPerformance(factory, Stage1Period());
+        SeedFills(factory, 99);
 
         var session = await factory.Services.ExecuteAndWaitAsync(
             () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
@@ -179,7 +197,8 @@ public class WithdrawalEvaluationServiceTests
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
-        SeedPerformance(factory, Stage1Exhausted());
+        SeedPerformance(factory, Stage1Period());
+        SeedFills(factory, 99);
         var driver = BuildDriver(factory, FridayUtc);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
@@ -199,7 +218,8 @@ public class WithdrawalEvaluationServiceTests
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
-        SeedPerformance(factory, Stage1Exhausted());
+        SeedPerformance(factory, Stage1Period());
+        SeedFills(factory, 99);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
@@ -219,13 +239,16 @@ public class WithdrawalEvaluationServiceTests
         SeedStage(factory, TradingStage.Stage1Simulate);
         var driver = BuildDriver(factory, FridayUtc);
 
+        SeedPerformance(factory, Stage1Period());
+
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
-            SeedPerformance(factory, Stage1Exhausted());
+            SeedFills(factory, 99);
             await driver.RunOnceAsync(CancellationToken.None); // 打ち切り → 発行（1）
-            SeedPerformance(factory, Stage1Resolved());
+            SeedFills(factory, 1);                             // 累計 100 件＝件数到達
             await driver.RunOnceAsync(CancellationToken.None); // 解消 → クリア・非発行
-            SeedPerformance(factory, Stage1Exhausted());
+            ResetFills(factory);
+            SeedFills(factory, 99);                            // 再び 99 件（未達）
             await driver.RunOnceAsync(CancellationToken.None); // 再打ち切り → 再発行（2）
         });
 

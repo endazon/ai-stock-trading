@@ -74,7 +74,7 @@ public class OrderActivityProjectionConsumersTests
         var decisionId = Guid.NewGuid();
         var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1)));
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1), BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         var record = Window(store).Records.Should().ContainSingle().Subject;
@@ -91,7 +91,7 @@ public class OrderActivityProjectionConsumersTests
         var store = new InMemoryOrderActivityStore();
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base));
+        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base, BrokerProvider.MoomooSimulate));
         session1.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         Window(store).Records.Should().BeEmpty();

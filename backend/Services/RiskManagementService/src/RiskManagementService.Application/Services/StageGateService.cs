@@ -12,6 +12,7 @@ public sealed class StageGateService(
     IStageGateStore ledgerStore,
     IStagePerformanceStore performanceStore,
     IControlViolationObservationStore violationStore,
+    IStage1FillObservationStore fillStore,
     StageGatePolicy policy,
     KillSwitchService killSwitch,
     IClock clock)
@@ -20,11 +21,20 @@ public sealed class StageGateService(
     // **null＝未供給**であり「違反 0 件」ではない。判定関数の必須引数であるため、渡し忘れはコンパイルが止める。
     private ControlViolationTally? CurrentTally() => violationStore.GetTally();
 
+    // FR-20, #386, §4.1 条件3, IADR-0149 決定3: 取引件数（§4.1 条件3）も段階別実績の行ではなく
+    // **約定の観測ログ**から集計し、判定の直前に段階別実績へ重ねる。
+    // 実績行に列として持たせないのは、供給元が 2 つになれば必ず食い違うためである
+    // （観測ログが計上単位を担保する唯一の場所である）。
+    // 統制違反件数（#387）と違い**未供給を 0 と区別しない**——取引件数の 0 は「条件未充足＝昇格しない」に
+    // 倒れる fail-safe であり、区別に意味が無い。
+    private StagePerformance CurrentPerformance() =>
+        performanceStore.GetCurrent() with { Stage1TradeCount = fillStore.GetTradeCount() };
+
     // FR-20, UC-06: 現況＝現段階・その設定・遷移履歴（監査）・昇格評価・撤退評価。
     public StageGateStatus GetStatus()
     {
         var ledger = ledgerStore.Load();
-        var performance = performanceStore.GetCurrent();
+        var performance = CurrentPerformance();
         var current = ledger.CurrentStage;
         return new StageGateStatus(
             current,
@@ -44,7 +54,7 @@ public sealed class StageGateService(
     public StageTransitionResult RequestTransition(TradingStage target, string approver)
     {
         var ledger = ledgerStore.Load();
-        var performance = performanceStore.GetCurrent();
+        var performance = CurrentPerformance();
         var approval = new StageApproval(target, approver);
 
         var result = StageGate.RequestTransition(
@@ -73,6 +83,11 @@ public sealed class StageGateService(
             // 昇格では区切らないが、統制違反は前段階（例: Stage 0）の記録を Stage 1 の合格証跡へ持ち込んでは
             // ならないため昇格でも区切る。区切った直後は未供給＝昇格しない（fail-safe）。
             violationStore.ResetWindow();
+
+            // FR-20, #386, §4.2「起算点＝Stage 1 遷移日」, IADR-0149 決定3: 受理された遷移で約定の観測窓も区切る。
+            // 統制違反の窓（#387）と同条件にするのは、3 指標が同じ「Stage 1 の期間」を指す必要があるためである。
+            // 区切った直後は 0 件＝昇格しない（fail-safe）。
+            fillStore.ResetWindow();
         }
 
         return result;
@@ -86,7 +101,10 @@ public sealed class StageGateService(
     public WithdrawalEvaluationOutcome EvaluateWithdrawal()
     {
         var ledger = ledgerStore.Load();
-        var performance = performanceStore.GetCurrent();
+        // FR-20, #386, §4.3, IADR-0149 決定3: **撤退評価も取引件数を要する**（Stage 1 の打ち切り＝累計 120 営業日を
+        // 経ても 100 件に届かない）。実績行は件数を持たないため、ここでも観測ログの値を重ねる。
+        // 重ね忘れると件数が常に 0 に見え、**件数に達していても打ち切りが提案され続ける**（誤った差し戻し）。
+        var performance = CurrentPerformance();
         var assessment = StageGate.AssessWithdrawal(ledger.CurrentStage, performance, policy);
 
         var newlyEngaged = false;

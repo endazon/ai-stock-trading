@@ -100,6 +100,7 @@ public class BacktestEvaluatedProjectionConsumerTests
             ledger,
             store,
             new InMemoryControlViolationObservationStore(),
+            new InMemoryStage1FillObservationStore(),
             TradingDefaults.CreateStagePolicy(),
             new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
             clock);

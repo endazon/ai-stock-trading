@@ -2,7 +2,7 @@
 title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
-related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148]
+related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-05
@@ -27,6 +27,7 @@ related_specs:
   - ../adr/IADR-0141_live-switch-explicit-confirmation.md
   - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
   - ../adr/IADR-0148_control-violation-supply-and-unavailable-state.md
+  - ../adr/IADR-0149_stage1-trade-count-supply.md
   - ../specs/20260804_333_stage-gate.md
   - ../specs/20260805_334_broker-provider-axis.md
   - ../specs/20260805_387_class-c-violation-count.md
@@ -149,7 +150,7 @@ related_specs:
 | Stage 1 | **クラス C 統制違反 0 件**（供給済みで 0 件） | `ControlViolationsPresent` |
 | Stage 1 | **統制違反件数の集計が供給されていること**（#387・IADR-0148） | `ControlViolationCountUnavailable` |
 | Stage 1 | **実際に取引できた日数 ≥ 60 営業日** | `Stage1TradingDaysInsufficient` |
-| Stage 1 | **取引件数 ≥ 100 件** | `Stage1TradeCountInsufficient` |
+| Stage 1 | **取引件数 ≥ 100 件**（計上単位は約定した新規建て注文 1 件。#386・IADR-0149） | `Stage1TradeCountInsufficient` |
 | Stage 1 | （累計 120 営業日を経て件数不足なら打ち切り） | `Stage1ExtensionExhausted` |
 | Stage 2 | 実効スリッページ・費用が想定内 | `SlippageOrCostExceeded` |
 | Stage 2 | 日次損失上限の運用実績（違反なし） | `DailyLossLimitViolated` |
@@ -179,6 +180,28 @@ related_specs:
   統制違反件数のいずれも `SIMULATE` のみで数えると定める）。
 - 集計は `ControlViolationAggregation.Tally`。**算入対象の観測が 1 件も無ければ `null`（未供給）**を返す。
 - **観測窓は受理された段階遷移で区切る**（計画「集計期間は Stage 1 の全期間」）。区切った直後は未供給＝昇格しない。
+
+### 4-1-2. 取引件数の供給（#386・[IADR-0149](../adr/IADR-0149_stage1-trade-count-supply.md)）
+
+**件数は約定の観測ログから集計する。**
+
+- `OrderExecutedStage1FillHandler` が `OrderExecuted` を購読し、観測ログ（`stage1_fill_observations`）へ
+  記録する（`DecisionId` で冪等）。`StageGateService` が判定の直前に `StagePerformance` へ件数を重ねる。
+- **発注先は「実際に発注したアダプタ」の値**（`OrderExecuted.Provider`）である。取引判断が運ぶ
+  `OrderIntent.Mode` は**段階が定める既定の発注先**であって現在の発注先ではない（IADR-0140 決定3/4）。
+  Stage 1 の `Stage.Mode` は常に `MoomooSimulate` であるため、`intent.Mode` を用いると内蔵 `paper` で
+  稼働していても `SIMULATE` として計上されてしまう。
+- **計上単位は「算入対象の発注先で約定が成立した新規建て（`Open`）注文 1 件」**（`DecisionId` で一意）。
+  分割約定の続報・イベント再送でも 1 件である（`OrderExecuted` の `FilledQuantity` は累積値であり、
+  moomoo は同一注文について複数回発行する。IADR-0113）。手仕舞い（`Close`）は数えない。
+  **計上単位は計画に明記が無く、実装が計画の他の記述から読み取った前提である**
+  （[環流記録](../../feedback/20260805_fr20-stage1-trade-count-unit.md)）。
+- 記録しない条件はいずれも**算入しない側（fail-safe）**へ倒す: 約定していない結果（`FilledQuantity <= 0`）／
+  承認台帳に相関が無い（建玉効果が不明）。
+- 算入する発注先は **moomoo `SIMULATE` の許可制**（IADR-0142 決定2 の再利用）。
+- **観測窓は受理された段階遷移で区切る**（起算点＝Stage 1 遷移日・§4.2）。区切った直後は 0 件＝昇格しない。
+- **「未供給」と「0 件」は区別しない。** 取引件数の 0 は「条件未充足＝昇格しない」に倒れる fail-safe であり、
+  統制違反件数（#387）のような区別に意味が無い。
 
 ### 4-2. Stage 1 集計からの内蔵 `paper` の除外（#334・[IADR-0142](../adr/IADR-0142_stage1-simulate-only-aggregation.md)）
 
@@ -282,13 +305,19 @@ stateDiagram-v2
 - [x] 発注先の変更が日時・変更前後・理由とともに履歴へ残る
 - [x] 内蔵 `paper` の約定・稼働日数が Stage 1 の進捗に算入されず、除外日数として別掲される
 - [x] 内蔵 `paper` で 60 営業日・100 件を積んでも昇格可能にならない
+- [x] **`SIMULATE` の約定件数が Stage 1 の進捗（`Stage1Progress.TradeCount`）へ反映される**（#386）
+- [x] **否定形: 内蔵 `paper` / `MoomooReal` の約定を混ぜても件数が汚染されない**（#386）
+- [x] **否定形: 分割約定・イベント再送で件数が二重計上されない**（計上単位＝約定した新規建て注文 1 件）
+- [x] **否定形: 手仕舞い（`Close`）の約定・約定していない結果・承認台帳に相関の無い約定は計上されない**
+- [x] **否定形: 供給が途絶えても件数が水増しされない**（記録が無ければ 0＝昇格しない）
 
 ## 実装状況（発動しない部分）
 
 | 判定 | 供給元 | 既定の振る舞い |
 | --- | --- | --- |
 | Stage 0 合格 verdict | **未接続**（米国株の日足 OHLC 履歴源が未確定。ADR-0023・[#382](https://github.com/endazon/ai-stock-trading/issues/382)） | `BacktestPassed = false` → 昇格しない |
-| Stage 1 の営業日数・取引件数・除外日数 | **未実装**（稼働監視ドライバ・約定件数の集計が無い。集計の純関数は #334 で用意済み・供給元は [#386](https://github.com/endazon/ai-stock-trading/issues/386)） | 0 → 昇格しない |
+| Stage 1 の取引件数 | **実装済み**（約定の観測ログから集計。#386・IADR-0149） | 記録が無ければ 0 → 昇格しない。`SIMULATE` の新規建て約定が届けば増える |
+| Stage 1 の営業日数・除外日数 | **未実装**（稼働監視ドライバが無い。判定の純関数は #333 / #334 で用意済み・供給元は [#385](https://github.com/endazon/ai-stock-trading/issues/385)） | 0 → 昇格しない |
 | 発注先の設定値 → 実際の発注経路 | **未結線**（発注先は起動時構成 `Broker:Provider` / `Broker:Environment` が決める。[IADR-0111](../adr/IADR-0111_broker-tier-selection.md)） | 設定変更は**記録と表示まで**。実弾は閂 0 が止める |
 | クラス C 統制違反件数 | **実装済み**（発注審査の観測ログから集計。#387・IADR-0148） | 未供給（`null`）→ **昇格しない**。審査が動けば 0 件として供給される |
 | Stage 3 の空売り解禁 verdict | **未実装**（`BacktestEvaluated` に該当属性が無い） | `null` → 空売りは開かない |
@@ -303,8 +332,10 @@ stateDiagram-v2
   [IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（Stage 0 の DD 厳格化）・
   [IADR-0139](../adr/IADR-0139_stage-product-type-enforcement.md)（段階別の商品種別強制）・
   [IADR-0148](../adr/IADR-0148_control-violation-supply-and-unavailable-state.md)（統制違反件数の供給と未供給の判定）・
+  [IADR-0149](../adr/IADR-0149_stage1-trade-count-supply.md)（取引件数の供給と計上単位）・
   [IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)・[IADR-0041](../adr/IADR-0041_stage-gate-transitions.md)
-- 作業仕様書: [20260804_333 段階ゲートの再実装](../specs/20260804_333_stage-gate.md)
+- 作業仕様書: [20260804_333 段階ゲートの再実装](../specs/20260804_333_stage-gate.md)・
+  [20260805_386 取引件数の供給](../specs/20260805_386_stage1-trade-count.md)
 
 ## 未決事項
 

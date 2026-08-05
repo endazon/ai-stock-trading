@@ -85,7 +85,7 @@ public class MoomooFillControlRegressionTests
         var dailyRemainingBefore = sizing.Build().DailyOrderRemaining;
 
         // moomoo の発注応答（Accepted・約定 0）。この時点では台帳に何も載らない＝#270 の事象そのもの。
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now));
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         ledger.GetFills().Should().BeEmpty();
@@ -94,7 +94,7 @@ public class MoomooFillControlRegressionTests
             .IsApproved.Should().BeTrue("約定が無い間は同日再エントリーの統制が拘束しない（追跡が必要な理由）");
 
         // 追跡ポーラーが終端化を観測して再発行した約定。ここで統制の入力が満たされる。
-        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
+        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.Status == OrderStatus.Filled);
 
@@ -125,7 +125,7 @@ public class MoomooFillControlRegressionTests
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         var before = sizing.Build();
 
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now));
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         // 部分約定（4 株 × 1,000 円）分だけ枠が減る。全量約定を待たない（待つ間は統制が素通しになる）。
@@ -134,7 +134,7 @@ public class MoomooFillControlRegressionTests
         (before.StageCapitalRemaining - partial.StageCapitalRemaining).Should().Be(4_000m);
 
         // 累積 10 株で終端化 → 差分ではなく累積で置き換わる（二重計上しない）。
-        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now));
+        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.Status == OrderStatus.Filled);
 

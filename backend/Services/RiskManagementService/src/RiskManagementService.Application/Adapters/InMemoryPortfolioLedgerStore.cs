@@ -34,6 +34,10 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return true;
     }
 
+    // FR-20, #386, IADR-0149 決定2: 承認済み注文の建玉効果を DecisionId で引く（未承認は null＝不明）。
+    public PositionEffect? FindApprovedPositionEffect(Guid decisionId) =>
+        _approvals.TryGetValue(decisionId, out var approval) ? approval.Intent.PositionEffect : null;
+
     public IReadOnlyList<LedgerFill> GetFills()
     {
         var result = new List<LedgerFill>();

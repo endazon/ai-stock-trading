@@ -64,7 +64,7 @@ public class AuditEntryFactoryTests
     public void OrderExecuted_は_銘柄なしで_DecisionId_相関を記録する()
     {
         var decisionId = Guid.NewGuid();
-        var e = new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow);
+        var e = new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate);
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 

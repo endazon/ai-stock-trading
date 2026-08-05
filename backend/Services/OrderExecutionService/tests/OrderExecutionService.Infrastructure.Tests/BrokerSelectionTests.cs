@@ -1,4 +1,5 @@
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -139,5 +140,28 @@ public class BrokerSelectionTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*Broker:Provider*").Which.Message.Should().Contain("Broker:Environment");
+    }
+
+    // FR-20, FR-12, #386, IADR-0149 決定1: 構成（vendor × environment）を計画の発注先 3 値へ写す。
+    // **この写像が「Stage 1 の合格証跡に何が算入されるか」を決める唯一の場所である。**
+    // 対応関係は IADR-0140 決定6 のもの。paper が誤って MoomooSimulate に写ると、
+    // 外部へ一度も発注していない擬似約定が 100 件の合格証跡へ積み上がる。
+    [Theory]
+    [InlineData("paper", null, BrokerProvider.InternalPaper)]
+    [InlineData("paper", "sim", BrokerProvider.InternalPaper)]
+    [InlineData("moomoo", "sim", BrokerProvider.MoomooSimulate)]
+    [InlineData("moomoo", null, BrokerProvider.MoomooSimulate)]
+    [InlineData("moomoo", "live", BrokerProvider.MoomooReal)]
+    public void 構成の発注先が計画の3値へ写る(string provider, string? environment, BrokerProvider expected)
+    {
+        BrokerSelection.Parse(provider, environment).ToBrokerProvider().Should().Be(expected);
+    }
+
+    // **否定形**: 未設定（既定）は内蔵 paper であり、Stage 1 に算入されない側へ倒れる。
+    [Fact]
+    public void 未設定の発注先は内蔵paperであり合格証跡に算入されない()
+    {
+        BrokerSelection.FromConfiguration(Config()).ToBrokerProvider()
+            .Should().Be(BrokerProvider.InternalPaper);
     }
 }

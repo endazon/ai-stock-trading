@@ -2,7 +2,7 @@
 title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
-related_ids: [FR-20, FR-11, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148]
+related_ids: [FR-20, FR-11, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149]
 author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-05
@@ -27,6 +27,7 @@ related_specs:
   - ../adr/IADR-0141_live-switch-explicit-confirmation.md
   - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
   - ../adr/IADR-0148_control-violation-supply-and-unavailable-state.md
+  - ../adr/IADR-0149_stage1-trade-count-supply.md
   - ../specs/20260805_334_broker-provider-axis.md
   - ../specs/20260805_387_class-c-violation-count.md
 ---
@@ -101,6 +102,13 @@ related_specs:
 | T-51 | 1 回の拒否に**複数のクラス C 理由**／同一 `DecisionId` の再送 | 統制違反件数を集計する | いずれも **1 件**（計上単位は 1 回の発注拒否につき 1 件・再送で二重計上しない） | FR-20, #387 | 自動（否定形） |
 | T-52 | 内蔵 `paper` / `MoomooReal` の審査のみ（クラス C の拒否を含む） | 統制違反件数を集計する | **未供給（`null`）**を返す（算入は `SIMULATE` の許可制。`paper` だけでは合格証跡を作れない） | FR-20, FR-12, #387 | 自動（否定形） |
 | T-53 | 段階遷移が受理される／受理されない | 観測窓を確認する | 受理時のみ窓が区切られ未供給へ戻る（集計期間＝Stage 1 の全期間）。**受理されない要求では区切られない** | FR-20, #387 | 自動（否定形） |
+| T-54 | `SIMULATE` の新規建て約定が届く | 取引件数を集計する | `Stage1Progress.TradeCount` が増え、100 件で昇格可能になる（**#334 の集計関数が実際に呼ばれる**） | FR-20, #386 | 自動 |
+| T-55 | 内蔵 `paper` の新規建て約定が 100 件届く（承認 Intent の `Mode` は `SIMULATE`） | 取引件数を集計する | **0 件のまま。昇格しない**（発注先は実際に発注したアダプタの値で判定する。`intent.Mode` を見る実装なら緑になってしまう退行を検知する） | FR-20, FR-12, #386 | 自動（否定形） |
+| T-56 | `MoomooReal` の新規建て約定 | 取引件数を集計する | **算入されない**（許可制・IADR-0142 決定2） | FR-20, #386 | 自動（否定形） |
+| T-57 | 同一注文の分割約定（`Accepted`(0) → 部分約定 → 全量約定）・イベント再送 | 取引件数を集計する | **1 件**（計上単位は約定した注文 1 件。`FilledQuantity` は累積値であり同一注文で複数回発行される） | FR-20, #386 | 自動（否定形） |
+| T-58 | 手仕舞い（`Close`）の約定／約定していない結果（`Accepted`・約定 0 の取消）／承認台帳に相関の無い約定 | 取引件数を集計する | いずれも **計上されない**（計上単位＝新規建て。不明は算入しない） | FR-20, #386 | 自動（否定形） |
+| T-59 | 約定の観測が 1 件も無い | 取引件数を集計する | **0 件**（水増ししない）。期間 60 営業日・統制違反 0 件が揃っていても `Stage1TradeCountInsufficient` で昇格しない | FR-20, #386 | 自動（否定形） |
+| T-60 | 段階遷移が受理される／受理されない | 約定の観測窓を確認する | 受理時のみ窓が区切られ 0 件へ戻る（起算点＝Stage 1 遷移日）。**受理されない要求では区切られない** | FR-20, #386 | 自動（否定形） |
 
 ### 段階別の資金上限と商品種別
 
@@ -186,10 +194,11 @@ related_specs:
 | --- | --- | --- |
 | T-01〜T-05 | #333 | 実装済み（`StageGateTests` / `StageGateLedgerTests`） |
 | T-06 / T-07 | #333 | 実装済み（`Stage0GateCriteriaTests` / `Stage0GateEvaluatorTests`）。**ただし実データ源が無く発火しない**（#382） |
-| T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**ただし営業日数・件数の供給元が無く発火しない** |
-| T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**ただし Stage 1 集計の供給元が無く発火しない**（#386）／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
+| T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**件数の供給元は #386 で実装済み・営業日数の供給元は #385 で未実装** |
+| T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**Stage 1 の件数の供給元は #386 で実装済み・稼働日数は #385 で未実装**／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
 | T-12 / T-37 | #329 / #333 | 実装済み（`RejectionReasonClassificationTests` / `StageGateTests`） |
 | T-49〜T-53 | #387 | 実装済み（`ControlViolationAggregationTests` / `StageGateTests` / `StageGateServiceTests` / `EfControlViolationObservationStoreTests` / `OrderScreeningServiceTests` / `TradeDecisionMadeConsumerTests`）。**供給元は本 issue で実装済み**（発注審査が動けば集計が供給される） |
+| T-54〜T-60 | #386 | 実装済み（`Stage1TradeCountUnitTests` / `Stage1AggregationTests` / `Stage1FillObservationConsumerTests` / `StageGateServiceTests` / `EfStage1FillObservationStoreTests` / `OrderExecutionServiceTests` / `OrderFillPollerTests`）。**供給元は本 issue で実装済み**（`SIMULATE` の約定が届けば件数が増える） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
 
@@ -201,3 +210,4 @@ related_specs:
 | 2026-08-04 | #333 の実装に合わせて T-23〜T-40 を追加し、担当表を実装状況へ更新（期間カウント・120 営業日打ち切り・段階別の商品種別強制・発注可能額の総資金比化） |
 | 2026-08-05 | #334（2 軸分離）の実装に合わせて T-41〜T-48 を追加し、担当表を更新。計画適合レジストリの #334 担当 2 行の解消を反映 |
 | 2026-08-05 | #387（クラス C 統制違反件数の供給）の実装に合わせて T-49〜T-53 を追加。**未供給と 0 件の区別**を否定形で固定した |
+| 2026-08-05 | #386（取引件数の供給）の実装に合わせて T-54〜T-60 を追加。**計上単位**（分割約定・再送・手仕舞い）と**発注先の出どころ**（実発注したアダプタの値）を否定形で固定した |
