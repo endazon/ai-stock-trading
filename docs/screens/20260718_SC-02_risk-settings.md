@@ -2,7 +2,7 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151]
+related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -71,9 +71,12 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
      自己資金＝前営業日終値時点の評価額」）。**新しい取得口を作らない。**
    - **保存前の入力値に対する実額は画面が `capital × 入力比率` で計算する。** サーバの
      `RiskStatusView.maxOrderAmount` は**現在保存されている設定**から解決した実額であり、入力中の値は表せない。
-   - **通貨は基準通貨（円）建てで表示し「$」を付けない。** 計画は USD 表記（`$750`）を求めるが、実装が供給する
-     `capital` は円建てである（[IADR-0130] 決定3・`MarketCurrency.Base = Jpy`）。**円建ての数値に「$」を付けることは
-     単位の取り違えそのもの**であるため行わない。USD 表記への切替は判定通貨の USD 移行と同時に行う（未決事項）。
+   - **通貨は基準通貨（USD）建てで表示し「$」を付ける**（[#364](https://github.com/endazon/ai-stock-trading/issues/364) /
+     [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md) 決定6 で `MarketCurrency.Base = Usd` へ移行した）。
+     これにより計画 SC-02 の表記例「**25%（$750）**」がそのまま正しくなり、
+     [#409](https://github.com/endazon/ai-stock-trading/issues/409) は解消した。
+     [IADR-0151] 決定4 が「$」を付けなかったのは当時の `capital` が円建てだったためであり
+     （**円建ての数値に「$」を付けることは単位の取り違えそのもの**）、通貨が一致した今は記号を付けることが正しい表示である。
    - **equity を取得できないときは実額を「—」とし、その旨を明記する**（併記できないことを黙って隠さない）。
 
    ### 値域バリデーション（[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md) 決定2）

@@ -154,3 +154,9 @@ equity ≥ $5,000  かつ  空売りを含む戦略で Stage 0 の 7 条件を�
   [IADR-0137](IADR-0137_stage1-trading-day-counting.md)
 - 仕様書: [作業仕様書 20260804_333](../specs/20260804_333_stage-gate.md)／
   [FR-19 機能仕様書](../functional/FR-19_trading-guard.md)／[FR-20 テスト仕様書](../tests/FR-20_staged-gates-tests.md)
+- **Superseded by（決定5 のみ）**: [IADR-0152](IADR-0152_usd-base-currency-migration.md) 決定3
+  （2026-08-05・[#364](https://github.com/endazon/ai-stock-trading/issues/364)）。判定の基準通貨が USD になったため、
+  本 IADR 決定5 の「equity 閾値は基準通貨〔円〕建てで判定し参照レートで 1 点換算する」という**近似は不要になった**。
+  `ShortSellLiveReleaseEquityInBase` は削除し、`ShortSellLiveReleaseEquityUsd`（$5,000）を equity と直接比較する。
+  同 IADR が残余リスクとして挙げていた「実勢レートでの評価へ移す際は換算点の見直しが要る」は解消した
+  （計画 ADR-0016 決定6「自己資金の米ドル建て評価額」と実装が厳密に一致する）。決定1〜4・決定6 は不変である。

@@ -158,3 +158,13 @@ ADR-0004（案A+ の無料ソース）と計画 §3（日銀API **または** FR
   既存イベントの意味・スキーマ互換は保たれる（既定 1 は現行の暗黙の前提と同値）。
 - DB は `ApprovedOrders` に 1 列追加（nullable・既存行は `null`＝レート 1 として扱う）。
 - 実弾 triple-latch（IADR-0060）・SIMULATE 固定には一切触れない。
+
+## 関連
+
+- **Superseded by（部分）**: [IADR-0152](IADR-0152_usd-base-currency-migration.md)（2026-08-05・[#364](https://github.com/endazon/ai-stock-trading/issues/364)）。
+  計画 §3 が 2026-07-31 の利用者決定で**判定の基準通貨を USD** へ改めたことに追随し、
+  本 IADR の**決定1 の基準通貨部分**（「基準通貨は JPY」）と**決定5 の換算の向き**（`DEXJPUS` をそのまま用いる）を
+  差し替えた（USD 基準では `DEXJPUS` の**逆数**が要る）。
+  本 IADR の他の決定——決定1 の `OrderIntent.Price` はローカル通貨・決定2 の「換算は判断境界の 1 点」・
+  決定3 の「レートが解決できなければ非基準通貨の新規建てを見送る」・決定4 の含み損益の近似・
+  決定5 の no-op 既定と鮮度上限——は**すべて有効なまま**である。

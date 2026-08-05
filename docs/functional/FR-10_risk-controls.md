@@ -123,7 +123,7 @@ ADR-0009「手仕舞い・損切りは止めない」を金額系上限でも壊
 
 | 項目 | 確定単一値 | 実装 |
 | --- | --- | --- |
-| 初期投入資金 | **USD 3,000**（約 491,000 円・1 USD ≈ 163.7 円） | `InitialEquityUsd` ＋ `EquityCurrency`（権威値）／ `InitialCapital`（基準通貨換算値） |
+| 初期投入資金 | **USD 3,000**（約 491,000 円・1 USD ≈ 163.7 円） | `InitialEquityUsd` ＋ `EquityCurrency`（権威値）／ `InitialCapital`（基準通貨建ての供給値。#364 以降は権威値そのもの） |
 | 日次損失上限 | 資金の **2%**（到達で当日全停止・翌営業日までロックアウト） | `DailyLossLimitRatio = 0.02` |
 | 1 取引あたりリスク | 資金の **1%**（ATR 連動サイジング） | `PerTradeRiskRatio = 0.01` |
 | 最大ドローダウン上限 | **10%**（到達で全停止・再検証） | `MaxDrawdownRatio = 0.10` |
@@ -132,19 +132,25 @@ ADR-0009「手仕舞い・損切りは止めない」を金額系上限でも壊
 > **レンジ表記は用いない**（ADR-0018）。旧実装は「3〜5 連敗」の保守側 3・「10〜15%」の上限側 0.15 を
 > 採っており、前者は本 issue で是正した。後者（Stage 0 合格判定の DD 許容値）は #333 の担当である。
 
-### 通貨の扱い（IADR-0130 決定 3）
+### 通貨の扱い（IADR-0130 決定 3 → #364 / IADR-0152 決定 1・3）
 
-計画 §3 は**判定の基準通貨を USD**（表示は JPY）と定める。実装のパイプライン（注文意図・台帳・損益集計）は
-IADR-0107 が定めた JPY 基準のままであり、判定通貨そのものの移行は #329 の範囲外とした。
+計画 §3 は**判定の基準通貨を USD**（表示は JPY）と定める（利用者決定 2026-07-31）。
+**#364 で実装のパイプライン（注文意図・台帳・損益集計・FX 源・表示）を USD 基準へ移行した**
+（`MarketCurrency.Base = Currency.Usd`）。#329 の段階で置いていた参照レートによる 1 点換算は不要になり、
+`ReferenceUsdToJpyRate` と `StageProductPolicy.ShortSellLiveReleaseEquityInBase` は削除した。
 
 | 値 | 保持 | 用途 |
 | --- | --- | --- |
+| `MarketCurrency.Base = Currency.Usd` | 基準通貨の**単一情報源** | 換算の要否・恒等レート・no-op レート源・表示単位のすべてがここから導かれる |
 | `InitialEquityUsd = 3_000m` ＋ `EquityCurrency = Usd` | 計画の確定値そのもの | 計画適合検査（IADR-0127）の抽出元。単位の取り違えを検知可能にする |
-| `ReferenceUsdToJpyRate = 163.7m` | 計画 §5 が明記した参照レート | 基準通貨パイプラインへの 1 点換算 |
-| `InitialCapital = 491,100`（円） | 上記の積 | 台帳射影の基準資金・段階資金上限の既定 |
+| `InitialCapital = 3_000`（USD） | 権威値そのもの | 台帳射影の基準資金・段階資金上限の既定 |
 
 **統制の実効は比率であり、equity と注文金額を同一通貨で評価する限り判定結果は通貨に依存しない。**
-この不変条件をプロパティベーステストで固定しているため、将来 USD へ移行しても値の書き換えは生じない。
+この不変条件をプロパティベーステストで固定していたため、**移行にあたって統制値は 1 つも書き換わっていない**
+（IADR-0130 決定3 の予告どおり）。
+
+**表示通貨 JPY（円換算で統一・外貨併記・為替差損益の独立表示）は未実装**であり、報告サイクル（#338）の範囲である。
+#364 は表示の**単位**を基準通貨に合わせるところまで（「ドルの数値に円の単位が付く」状態を作らない）に留める。
 
 ## 空売り専用統制 8 規則（#329 第 2 段階 / IADR-0131）
 
@@ -299,27 +305,30 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 | 出力 | 到達時、新規建て（Open）注文を `RejectionReason.DailyLossLimitReached` で拒否。手仕舞い（Close）は対象外 |
 | 業務ルール | 資金の 2% 到達で当日全停止・翌営業日までロックアウト（§5）。判定基準は**実現損益＋含み損益の合算**（A 案。IADR-0008） |
 
-### 金額判定の通貨（#257 / IADR-0107）
+### 金額判定の通貨（#257 / #364 / IADR-0107 / IADR-0152）
 
-統制の金額（1 注文金額上限・日次発注累計・段階資金上限・日次損失・最大DD）は**基準通貨（円）**で判定する
-（計画 06_technical/05_trading-assumptions §3「基準通貨 = JPY」）。
-
-> **更新（#329 / IADR-0130）**: 計画 §3 は 2026-07-31 の利用者決定で**判定の基準通貨を USD** へ改めた
-> （表示は JPY のまま）。実装のパイプラインは本節のとおり JPY 基準のままであり、equity の権威値のみ
-> USD で保持して 1 点換算する（前節「通貨の扱い」）。判定通貨そのものの移行は未実施であり、
-> [作業仕様書 20260804](../specs/20260804_329_risk-control-core.md) 未決事項 §1 で監査判断を仰いでいる。
+統制の金額（1 注文金額上限・日次発注累計・段階資金上限・日次損失・最大DD）は**基準通貨（USD）**で判定する
+（計画 06_technical/05_trading-assumptions §3「基準通貨〔判定〕= USD」・利用者決定 2026-07-31）。
 
 | 項目 | 内容 |
 | --- | --- |
-| 入力 | `OrderIntent.Price`（**ローカル通貨**＝銘柄の市場の通貨）、`OrderIntent.FxRateToBase`（ローカル通貨 1 単位あたりの円。取引判断が意図生成時に確定・既定 1） |
+| 入力 | `OrderIntent.Price`（**ローカル通貨**＝銘柄の市場の通貨）、`OrderIntent.FxRateToBase`（ローカル通貨 1 単位あたりの基準通貨額。取引判断が意図生成時に確定・**既定 1 ＝基準通貨市場〔米国株〕**） |
 | 処理 | 金額の突き合わせは `NotionalInBase = Quantity × Price × FxRateToBase`。台帳（取得額・当日発注累計・実現/含み損益・エクイティ）も同レートで基準通貨に積む |
-| 出力 | 円換算後の金額が上限を超えれば該当の `RejectionReason` で拒否する |
-| 業務ルール | 換算レートは判断境界の 1 点でのみ解決し、下流は同伴レートを使う（評価時点で判定が変わらない）。**非基準通貨でレートが解決できない場合、取引判断は新規建てを作らない**（古い/無いレートで発注しない） |
+| 出力 | 基準通貨換算後の金額が上限を超えれば該当の `RejectionReason` で拒否する |
+| 業務ルール | 換算レートは判断境界の 1 点でのみ解決し、下流は同伴レートを使う（評価時点で判定が変わらない）。**非基準通貨（日本株）でレートが解決できない場合、取引判断は新規建てを作らない**（古い/無いレートで発注しない） |
 
-`Price` を円換算しないのは、発注執行がこの値をブローカーの注文価格として送るため（円換算すると実発注価格が壊れる）。
+`Price` を基準通貨へ換算しないのは、発注執行がこの値をブローカーの注文価格として送るため（換算すると実発注価格が壊れる）。
 建玉の平均取得単価・損切り価格も現在値と同一通貨で比較するためローカル通貨のまま保持する。
 
-### SIMULATE 限定のリスク上限プロファイル（#257 / IADR-0108）
+**FX レート源の向き**（IADR-0152 決定2）: FRED `DEXJPUS` は「1 USD あたりの円」であるため、
+USD 基準では JPY のレートを**逆数**（`1 ÷ DEXJPUS`）で得る。逆数は丸めない（丸めると往復換算の誤差が
+片側へ偏り統制の実効上限が系統的にずれる）。基準通貨（USD）は外部へ問い合わせず必ず 1 を返す。
+
+**移行の安全性**（IADR-0152 決定5）: `approved_orders.FxRateToBase` は基準通貨が変われば意味が変わるため、
+EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後も意味が変わらない行しか無いこと」を検査し、
+そうでなければ移行を止める（fail-closed）。`PriceInBase` は永続化されない計算値である。
+
+### SIMULATE 限定のリスク上限プロファイル（#257 / IADR-0108 / #364・IADR-0152 決定 4）
 
 検証（ペーパー）環境では moomoo シミュレータ口座の残高（USD $1,000,000 / JPY ¥20,000,000）に見合う上限を用いる。
 
@@ -328,13 +337,17 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 > 機構（`SimulatorTradingDefaults.CreateRiskLimits` / `ScaleFactor`）は不要となり削除した。
 > プロファイルが差し替えるのは**基準資金とペーパー段階の資金上限だけ**である。下表は更新後の姿。
 
+> **更新（#364 / IADR-0152 決定 4）**: 基準通貨が USD になったため、プロファイルの基準資金も USD 建てで持つ。
+> `¥20,000,000 ÷ ¥150/USD` は循環小数になるため**切り捨てた整数**（`SimulatorJpyBalanceInUsd = 133,333`）を
+> 定数として明示する（切り捨ては基準資金を小さくする方向＝統制上限を緩めない安全側）。下表は更新後の姿。
+
 | 設定 | 本番既定 | SIMULATE プロファイル |
 | --- | --- | --- |
-| 基準資金（equity） | ¥491,100（＝ $3,000 × 163.7） | ¥170,000,000（`$1M × ¥150 + ¥20M`） |
-| 1 注文金額上限 | equity の 25%（¥122,775） | equity の 25%（¥42,500,000）＝**同じ比率が比例するだけ** |
-| 日次発注累計上限 | equity の 150%/日（¥736,650） | equity の 150%/日（¥255,000,000） |
-| Stage 0/1（ペーパー）資金上限 | ¥491,100 | ¥170,000,000 |
-| **Stage 2/3（実弾）資金上限** | ¥35,000 / ¥491,100 | **不変** |
+| 基準資金（equity） | $3,000（計画 §5 の確定値） | $1,133,333（`$1M + ¥20M ÷ ¥150/USD`） |
+| 1 注文金額上限 | equity の 25%（$750） | equity の 25%（$283,333.25）＝**同じ比率が比例するだけ** |
+| 日次発注累計上限 | equity の 150%/日（$4,500） | equity の 150%/日（$1,699,999.50） |
+| Stage 0/1（ペーパー）資金上限 | $3,000（総資金の 100%） | $1,133,333 |
+| **Stage 2/3（実弾）資金上限** | $900（30%）/ $3,000（100%） | **不変** |
 | 比率系・保有建玉数・取引ガード | — | **不変**（スケール不変量） |
 
 適用は `Risk:SimulatorProfile:Enabled`（既定 false）に限り、上限値は Domain 定数（`SimulatorTradingDefaults`）が
@@ -457,8 +470,8 @@ flowchart TD
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)（維持率割れの自動縮小の決定的規則）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
-- 作業仕様書: [20260804_330_maintenance-margin-auto-reduce](../specs/20260804_330_maintenance-margin-auto-reduce.md)（自動縮小）、[20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
+- 実装ADR: [IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)（維持率割れの自動縮小の決定的規則）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md)（判定の基準通貨 USD への移行）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
+- 作業仕様書: [20260805_364_usd-base-currency](../specs/20260805_364_usd-base-currency.md)（判定の基準通貨 USD 移行）、[20260804_330_maintenance-margin-auto-reduce](../specs/20260804_330_maintenance-margin-auto-reduce.md)（自動縮小）、[20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - テスト仕様書: [FR-10 リスク統制（再実装）](../tests/FR-10_risk-controls-tests.md)、[FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - 計画への環流（いずれも起草のみ・送付は未実施）: [空売りの拒否理由コードの不足](../../feedback/20260804_adr0016-stop-order-rejection-reason.md)、
@@ -468,8 +481,10 @@ flowchart TD
 ## 未決事項
 
 - ロックアウトの具体的な状態保持・解除タイミングはリスク管理ホスト（#12）で確定する。
-- **判定通貨の USD への移行**（計画 §3 の 2026-07-31 改定への追随）。台帳・報告・FX 源に跨るため #329 の
-  範囲外とし、[作業仕様書 20260804](../specs/20260804_329_risk-control-core.md) 未決事項 §1 で監査判断を仰ぐ。
+- ~~**判定通貨の USD への移行**（計画 §3 の 2026-07-31 改定への追随）~~ →
+  **[#364](https://github.com/endazon/ai-stock-trading/issues/364) / [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md) で完了**
+  （[作業仕様書 20260805](../specs/20260805_364_usd-base-currency.md)）。統制値の書き換えは生じなかった。
+  残る未実装は**表示通貨 JPY への換算表示**（#338）である。
 - 比率化に伴う設定の永続化（JSON）の互換性。旧プロパティ名の行は読めなくなるため、切替計画（#346）で扱う。
 - **空売り比率 50% の分母**（建玉 0 件のとき空売りを開始できないこと）は計画側の裁定待ちである
   （[環流](../../feedback/20260804_adr0016-short-ratio-denominator.md)）。裁定に応じて判定式とテスト
