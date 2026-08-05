@@ -4,13 +4,13 @@ import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import type {
   BannedSymbol,
+  LimitFieldKey,
   RiskLimitSettings,
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
   TradingGuardSettings,
 } from '../risk/contracts';
-import type { LimitFieldKey } from '../risk/contracts';
 import {
   brokerProviderLabel,
   BROKER_PROVIDER_OPTIONS,
