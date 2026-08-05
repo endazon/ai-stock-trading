@@ -41,10 +41,15 @@ public static class RejectionReasonClassification
         RejectionReason.BannedSymbol or RejectionReason.ManipulativeOrderPattern => RejectionReasonClass.C,
 
         // クラス B: 緊急停止中・段階制約・ガード設定による拒否。
+        // #333: 段階別の商品種別強制（ADR-0016 決定8・決定14）も**段階制約**であり、クラス B である。
+        // クラス C（AI が禁止事項を犯そうとした件数）へ混ぜてはならない——段階が許さない商品種別の
+        // 発注要求は「段階ゲートが設計どおり止めた」記録であり、禁止事項への抵触ではない。
         RejectionReason.KillSwitchActive
             or RejectionReason.TradingPaused
             or RejectionReason.StageProhibitsLiveTrading
             or RejectionReason.StageCapitalCapExceeded
+            or RejectionReason.StageProductTypeProhibited
+            or RejectionReason.StageShortSellReleaseUnmet
             or RejectionReason.ProductTypeDisabled
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 

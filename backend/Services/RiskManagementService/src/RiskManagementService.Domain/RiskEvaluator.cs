@@ -12,7 +12,8 @@ public static class RiskEvaluator
         RiskManagementSettings settings,
         PortfolioSnapshot snapshot,
         IManipulativeOrderPatternDetector? patternDetector = null,
-        ShortSellOrderContext? shortSellContext = null)
+        ShortSellOrderContext? shortSellContext = null,
+        StageProductPolicy.StageReleaseContext? stageRelease = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -65,6 +66,20 @@ public static class RiskEvaluator
         if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, effectiveProductType))
         {
             reasons.Add(RejectionReason.ProductTypeDisabled);
+        }
+
+        // FR-20, ADR-0016 決定8/決定14, #333, IADR-0139: **段階別の商品種別強制**。
+        // Stage 1 は 3 種すべてを検証・Stage 2 は現物のみ・Stage 3 で信用買いと空売りを解禁する
+        // （空売りはさらに equity $5,000 以上 かつ 空売りを含む戦略での Stage 0 再充足を要する）。
+        // 上の取引ガード（設定値）とは**別の規則**であり、両方を満たす必要がある（常に厳しい方が効く）。
+        // **適用は新規建てのみ**（project-planning#179 の裁定）。手仕舞い・損切りは止めない——
+        // 段階を上げる前に建てた建玉を閉じられないと ADR-0009 の不変条件に反する。
+        // 照合は実効商品種別で行う（申告値で段階制約を迂回できないようにする。IADR-0132 決定3 と同じ規律）。
+        if (isEntry
+            && StageProductPolicy.Evaluate(
+                settings.Stage.Stage, effectiveProductType, snapshot.Capital, stageRelease) is { } stageReason)
+        {
+            reasons.Add(stageReason);
         }
 
         if (!settings.Guard.EnabledMarkets.Contains(intent.Market))
