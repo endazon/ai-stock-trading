@@ -14,15 +14,15 @@ created: 2026-08-05
 
 ## 種別
 
-新たな制約(ADR要)。[ADR-0019](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md) 決定 1 の PoC 6 項目を実施した。**結果として ADR-0016 決定 3 が「実装しても発火しない統制」になることが判明した。**
+新たな制約(ADR要)。[ADR-0019](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md) 決定 1 の PoC 7 項目を実施した。**結果として ADR-0016 決定 3 が「実装しても発火しない統制」になることが判明した。**
 
 ## 起点となる計画書
 
 - 機能要求（FR）: FR-05（発注執行）・FR-12（ペーパートレード）・FR-20（段階ゲート）
-- 関連 ADR: **ADR-0019**（PoC 6 項目）・**ADR-0016**（空売り段階解禁）・ADR-0002（moomoo 採用）
+- 関連 ADR: **ADR-0019**（PoC 7 項目）・**ADR-0016**（空売り段階解禁）・ADR-0002（moomoo 採用）
 - 実装側の記録: `docs/specs/20260805_342_moomoo-poc-plan.md`（probe の出力を全て収録）／`docs/adr/IADR-0144_moomoo-short-selling-poc-outcomes.md`
 
-## PoC 結果（ADR-0019 決定 1 の 6 項目）
+## PoC 結果（ADR-0019 決定 1 の 7 項目）
 
 実 OpenD（常駐中・ログイン済み）に対し、本番コードと同一の SDK（`moomoo-api` 10.8.6808）で probe を実行した。発注と実弾口座への照会は利用者が実行した。**実弾での発注は行っていない。**
 

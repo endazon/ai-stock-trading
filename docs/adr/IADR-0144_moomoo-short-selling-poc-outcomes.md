@@ -23,10 +23,10 @@ plan_refs:
 
 ## 起点・関連
 
-- 計画書 ID: **ADR-0019**（PoC 6 項目・期限 2026-08-31）、**ADR-0016**（空売り段階解禁。決定 3・4・7・8 が PoC 結果に条件付き）、**ADR-0023**（米国株日足 OHLC 履歴源）
+- 計画書 ID: **ADR-0019**（PoC 7 項目・期限 2026-08-31）、**ADR-0016**（空売り段階解禁。決定 3・4・7・8 が PoC 結果に条件付き）、**ADR-0023**（米国株日足 OHLC 履歴源）
 - 対象 Issue: [#342](https://github.com/endazon/ai-stock-trading/issues/342)（PoC 本体）/ [#382](https://github.com/endazon/ai-stock-trading/issues/382)（履歴源）
 - 作業仕様書: [20260805_342_moomoo-poc-plan](../specs/20260805_342_moomoo-poc-plan.md)（probe の出力を全て収録）
-- 関連 IADR: [IADR-0111](IADR-0111_broker-tier-selection.md)（provider × environment の直交 2 軸）・[IADR-0118](IADR-0118_broker-position-reconciliation.md)（ブローカ実ポジション突合）・[IADR-0119](IADR-0119_decision-derived-close.md)（AI の Sell が新規ショート扱いになる問題）・[IADR-0138](IADR-0138_stage0-drawdown-tightening.md)（Stage 0 DD 厳格化・実効が #382 に依存）
+- 関連 IADR: [IADR-0111](IADR-0111_broker-tier-selection.md)（provider × environment の直交 2 軸）・[IADR-0118](IADR-0118_broker-position-reconciliation.md)（ブローカ実ポジション突合）・[IADR-0119](IADR-0119_decision-derived-close.md)（AI の Sell が新規ショート扱いになる問題）・[IADR-0138](IADR-0138_stage0-drawdown-tolerance-tightening.md)（Stage 0 DD 厳格化・実効が #382 に依存）
 
 ## コンテキストと課題
 
@@ -39,6 +39,12 @@ ADR-0019 は「PoC の結果次第で ADR-0016 の決定 3・4・7・8 を見直
 > **SDK の型定義に列挙値が存在することは、ブローカがその値を受理することを意味しない。**
 > 起案時、`TrdSide` に `SellShort` / `BuyBack` があることを根拠に「空売り専用区分が存在する＝項目 2 は到達可能」と判定したが、
 > 実際に発注すると `Order side must be BUY or SELL.` で拒否された。**静的な契約からの推論は実測の代わりにならない。**
+
+**訂正 4 件目（AI レビュー指摘・2026-08-05）**: 起案時、本 IADR と作業仕様書は **ADR-0019 決定 1 を「6 項目」と記録していたが、正しくは 7 項目である**。項目 7（米国株の日足 OHLC 履歴）は 2026-08-04 の追補で正式に追加されており、当初「ADR-0019 に無い補助項目」と扱ったのは誤りであった。
+
+> 原因は、起案時に submodule が**古い pin（`df8bce5`）**で checkout されていたことである。作業中に develop の pin が `d980a01` へ上がって項目 7 が入ったが、記録は起案時の読みのまま据え置かれた。
+> **計画書の引用は「いつの pin で読んだか」とともに記録しないと陳腐化する。**
+> あわせて、項目 7 の不成立時の帰結が当初の記録より重いことも判明した。ADR-0019 は「Stage 0 の合格判定を実施できない。**[ADR-0005](../../planning/projects/ai-stock-trading/07_adr/ADR-0005_paid-datasource-policy.md) の有料枠の検討へ移る**（月次データ費用上限〔現在 0 円配分〕の見直しを伴う）」と定めている。**決定 6 は、この有料枠の検討そのものを回避する意味を持つ。**
 
 ## 決定
 
@@ -95,7 +101,7 @@ moomoo の約束事は「**建玉を持たない `Sell` が新規ショート、
 
 `QotRequestHistoryKL` で AAPL の日足が **2006-07-24 まで**遡れた（前復権・OHLCV・1 リクエスト 1,000 件・`NextReqKey` でページング）。取得枠は `remainQuota: 300`。
 
-[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) は Stooq が取得不能であることと回避実装の禁止を決めたが、**代替源を定めていない**。moomoo がその答えになる。これにより [IADR-0138](IADR-0138_stage0-drawdown-tightening.md) が「実効は #382 の解決に依存する」とした条件が解ける見込みが立つ。
+[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) は Stooq が取得不能であることと回避実装の禁止を決めたが、**代替源を定めていない**。moomoo がその答えになる。これにより [IADR-0138](IADR-0138_stage0-drawdown-tolerance-tightening.md) が「実効は #382 の解決に依存する」とした条件が解ける見込みが立つ。
 
 **ただし本決定は候補の特定までであり、採用は #382 で行う。** 未確定事項が 2 つある。
 
