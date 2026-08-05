@@ -14,6 +14,7 @@
       "Bash(git -C planning show:*)",
       "Bash(git -C planning diff:*)",
       "Bash(git -C planning ls-tree:*)",
+      "Bash(git -C planning rev-parse:*)",
       "Bash(git ls-tree:*)",
       "Bash(git submodule status:*)",
       "Bash(git fetch:*)",
