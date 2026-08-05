@@ -18,55 +18,38 @@ import {
   BROKER_PROVIDER_MOOMOO_REAL,
   BROKER_PROVIDER_MOOMOO_SIMULATE,
 } from '../risk/contracts';
+import type { RiskManagementSettings, RiskStatusView } from '../risk/contracts';
+import {
+  CONTRACT_RISK_SETTINGS,
+  CONTRACT_RISK_STATUS,
+  cloneContract,
+} from '../risk/contractFixtures';
 import {
   PAPER_BANNER_DEBUG_MESSAGE,
   PAPER_BANNER_EXCLUSION_MESSAGE,
 } from '../shared/paperMode';
 
-const LIMITS = {
-  maxOrderAmount: 100000,
-  maxDailyOrderAmount: 300000,
-  maxOpenPositions: 3,
-  dailyLossLimitRatio: 0.02,
-  perTradeRiskRatio: 0.01,
-  maxDrawdownRatio: 0.1,
-  losingStreakThreshold: 5,
-  losingStreakSizeFactor: 0.5,
-};
-
-const GUARD = {
-  enabledProductTypes: [0],
-  enabledMarkets: [0, 1],
-  bannedSymbols: [],
-  preventSameDayReentry: true,
-  prohibitManipulativeOrderPatterns: true,
-};
+// #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台にする。
+// 実弾切替モーダル③は equity と統制値の**実額**を提示するため、フィクスチャの数値をそのまま使う。
+const BASE_SETTINGS = cloneContract(CONTRACT_RISK_SETTINGS);
 
 // Stage 1（SIMULATE）で稼働中・発注先は moomoo SIMULATE、という既定の状況。
-function settings(brokerProvider: number, stageMode = BROKER_PROVIDER_MOOMOO_SIMULATE, stage = 1) {
-  return { guard: GUARD, limits: LIMITS, stage: { stage, mode: stageMode, capitalCap: 1 }, brokerProvider };
+function settings(
+  brokerProvider: number,
+  stageMode = BROKER_PROVIDER_MOOMOO_SIMULATE,
+  stage = 1,
+): RiskManagementSettings {
+  return {
+    ...cloneContract(BASE_SETTINGS),
+    stage: { ...cloneContract(BASE_SETTINGS.stage), stage, mode: stageMode },
+    brokerProvider,
+  };
 }
 
-const STATUS = {
-  killSwitchEngaged: false,
-  dailyLossLockoutActive: false,
-  lockoutReleaseOn: null,
-  tradingPaused: false,
-  activeControl: 0,
-  newEntriesBlocked: false,
+const STATUS: RiskStatusView = {
+  ...cloneContract(CONTRACT_RISK_STATUS),
   stage: 1,
   brokerProvider: BROKER_PROVIDER_MOOMOO_SIMULATE,
-  dailyRealizedPnl: 0,
-  unrealizedPnl: 0,
-  dailyPnl: 0,
-  capital: 3000,
-  dailyOrderedAmount: 0,
-  maxOrderAmount: 750,
-  maxDailyOrderAmount: 4500,
-  drawdownRatio: 0,
-  maxDrawdownRatio: 0.1,
-  openPositionCount: 0,
-  maxOpenPositions: 3,
 };
 
 interface Call {
@@ -197,10 +180,12 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     expect(within(dialog).getByText(/段階ゲート.*を飛ばしています/)).toBeInTheDocument();
     expect(within(dialog).getByText('Stage 1（SIMULATE）')).toBeInTheDocument();
     // ③ 現在の equity と、それに対する統制値の実額
+    // #389: 期待値は契約フィクスチャ（実応答）由来にする。ここは equity から解決済みの**実額**であり、
+    // 設定側の比率（maxOrderAmountRatio）とは別物である。
     const table = within(dialog).getByRole('table', { name: '現在の equity と統制値' });
-    expect(within(table).getByText('3000')).toBeInTheDocument();
-    expect(within(table).getByText('750')).toBeInTheDocument();
-    expect(within(table).getByText('4500')).toBeInTheDocument();
+    expect(within(table).getByText(String(STATUS.capital))).toBeInTheDocument();
+    expect(within(table).getByText(String(STATUS.maxOrderAmount))).toBeInTheDocument();
+    expect(within(table).getByText(String(STATUS.maxDailyOrderAmount))).toBeInTheDocument();
     // ④ 明示的な確認操作（チェックボックス＋文字入力）
     expect(within(dialog).getByRole('checkbox')).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/「REAL」と入力/)).toBeInTheDocument();

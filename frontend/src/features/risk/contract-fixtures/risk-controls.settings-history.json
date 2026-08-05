@@ -1,0 +1,18 @@
+[
+  {
+    "actor": "test-owner",
+    "changeType": 7,
+    "reason": "Stage 1 の検証のため moomoo SIMULATE へ切り替える",
+    "changedAt": "2026-08-05T00:00:00.0000000+00:00",
+    "before": "InternalPaper",
+    "after": "MoomooSimulate"
+  },
+  {
+    "actor": "test-owner",
+    "changeType": 1,
+    "reason": "契約フィクスチャ生成のための既定値の再保存",
+    "changedAt": "2026-08-05T00:00:00.0000000+00:00",
+    "before": "RiskLimitSettings { MaxOrderAmountRatio = 0.25, MaxDailyOrderAmountRatio = 1.50, MaxOpenPositions = 3, DailyLossLimitRatio = 0.02, PerTradeRiskRatio = 0.01, MaxDrawdownRatio = 0.10, LosingStreakThreshold = 5, LosingStreakSizeFactor = 0.5 }",
+    "after": "RiskLimitSettings { MaxOrderAmountRatio = 0.25, MaxDailyOrderAmountRatio = 1.50, MaxOpenPositions = 3, DailyLossLimitRatio = 0.02, PerTradeRiskRatio = 0.01, MaxDrawdownRatio = 0.10, LosingStreakThreshold = 5, LosingStreakSizeFactor = 0.5 }"
+  }
+]

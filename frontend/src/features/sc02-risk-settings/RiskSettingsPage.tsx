@@ -34,8 +34,9 @@ import { WatchlistForm } from './WatchlistForm';
 
 // フォームは文字列で保持し、送信時に数値へ変換する（type=number 制御入力の往復問題を避ける・SC-01 と同方針）。
 interface FormModel {
-  maxOrderAmount: string;
-  maxDailyOrderAmount: string;
+  // FR-10, #329, #389, IADR-0130: **equity 比**（0.25 ＝ 25%）であり金額ではない。
+  maxOrderAmountRatio: string;
+  maxDailyOrderAmountRatio: string;
   maxOpenPositions: string;
   dailyLossLimitRatio: string;
   perTradeRiskRatio: string;
@@ -49,9 +50,11 @@ type HistoryStatus = 'loading' | 'ok' | 'unavailable';
 type SaveState = 'idle' | 'saving' | 'error';
 
 // 各上限フィールドの表示ラベル（順序は表示順）。<label> と入力検証の警告文の対応に用いる。
+// #389: 金額系 2 項目は equity 比である。**「金額上限」というラベルのまま比率を出すと桁が 6 桁ずれて読める**ため、
+// 単位をラベルに明示する（`0.25` と `25%` のどちらの表現を採るかは #362 の裁定事項であり、ここでは決めない）。
 const FIELD_LABELS: Record<keyof FormModel, string> = {
-  maxOrderAmount: '1注文金額上限',
-  maxDailyOrderAmount: '1日発注金額上限',
+  maxOrderAmountRatio: '1注文発注額上限（equity 比・0.25＝25%）',
+  maxDailyOrderAmountRatio: '1日発注額上限（equity 比/日・1.5＝150%）',
   maxOpenPositions: '保有銘柄数上限',
   dailyLossLimitRatio: '日次損失上限（資金比）',
   perTradeRiskRatio: '1取引リスク（資金比）',
@@ -62,8 +65,8 @@ const FIELD_LABELS: Record<keyof FormModel, string> = {
 
 function toForm(l: RiskLimitSettings): FormModel {
   return {
-    maxOrderAmount: String(l.maxOrderAmount),
-    maxDailyOrderAmount: String(l.maxDailyOrderAmount),
+    maxOrderAmountRatio: String(l.maxOrderAmountRatio),
+    maxDailyOrderAmountRatio: String(l.maxDailyOrderAmountRatio),
     maxOpenPositions: String(l.maxOpenPositions),
     dailyLossLimitRatio: String(l.dailyLossLimitRatio),
     perTradeRiskRatio: String(l.perTradeRiskRatio),
@@ -90,10 +93,34 @@ function num(s: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function fromForm(f: FormModel): RiskLimitSettings {
+// FR-10, SC-02, #362, #389: **PUT の本文は旧名（金額）のまま送る。これは意図的な設計判断である。**
+//
+// サーバの `RiskLimitSettings` は `MaxOrderAmountRatio` / `MaxDailyOrderAmountRatio` を `required` で要求するため、
+// 本ペイロードでの保存は **400 で拒否される**（#329 の API 変更以降そうなっている）。
+//
+// 一見すると「キー名を `*Ratio` に直せば保存が通る」ように見えるが、**それは統制を無効化する変更である**。
+// 入力欄の作りが「金額」のまま `maxOrderAmountRatio` を送ると、利用者が従来どおり `35000` と入れたときに
+// **equity の 35,000 倍**が上限として設定され、統制が事実上無効のまま保存が成功してしまう。
+// 「保存できないこと」は不具合ではなく、#362 が明示的に選んだ**安全側の状態**である
+// （#362 本文「拒否される方が安全側と判断した」／IADR-0130 決定）。
+//
+// **したがって、割合入力の UI・バリデーション（#362）と同時にしか、この形は変えてはならない。**
+// 読み取り側（GET・表示）の単位是正は #389 で完了しているが、書き込み側はここで止めてある。
+interface LegacyAmountLimitsPayload {
+  maxOrderAmount: number;
+  maxDailyOrderAmount: number;
+  maxOpenPositions: number;
+  dailyLossLimitRatio: number;
+  perTradeRiskRatio: number;
+  maxDrawdownRatio: number;
+  losingStreakThreshold: number;
+  losingStreakSizeFactor: number;
+}
+
+function fromForm(f: FormModel): LegacyAmountLimitsPayload {
   return {
-    maxOrderAmount: num(f.maxOrderAmount),
-    maxDailyOrderAmount: num(f.maxDailyOrderAmount),
+    maxOrderAmount: num(f.maxOrderAmountRatio),
+    maxDailyOrderAmount: num(f.maxDailyOrderAmountRatio),
     maxOpenPositions: num(f.maxOpenPositions),
     dailyLossLimitRatio: num(f.dailyLossLimitRatio),
     perTradeRiskRatio: num(f.perTradeRiskRatio),
@@ -205,6 +232,13 @@ export function RiskSettingsPage() {
           <form onSubmit={handleSubmit} aria-label="リスク上限の変更">
             <fieldset>
               <legend>リスク上限</legend>
+              {/* FR-10, #362, #389: 保存経路は現在 400 で拒否される（金額 → equity 比の API 変更に入力 UI が
+                  未追随。安全側として意図的にこの状態にしてある）。沈黙の失敗にせず、理由を画面にも書く。 */}
+              <p>
+                発注額の 2 項目は <strong>equity（自己資金）に対する割合</strong>です（0.25 ＝ 25%）。金額ではありません。
+                なお現在、リスク上限の<strong>保存はサーバに拒否されます</strong>（割合入力への作り直しが未完のため、
+                誤って金額を保存できないようにしてある安全側の状態です）。
+              </p>
               {(Object.keys(FIELD_LABELS) as (keyof FormModel)[]).map((k) => (
                 <Field
                   key={k}
@@ -597,6 +631,11 @@ function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']
         <dd>{brokerProviderLabel(provider)}</dd>
         <dt>段階の既定発注先</dt>
         <dd>{brokerProviderLabel(stage.mode)}</dd>
+        {/* FR-20, #333, #389, IADR-0136: 段階の発注可能額は**総資金比**である（Stage 2 は 0.30 ＝ 30%）。
+            #389 まで画面はこの値を一切表示しておらず（型とモックにしか存在しなかった）、キー名のずれが
+            描画結果に現れなかった。表示することで以後のずれは画面に出る。 */}
+        <dt>段階の発注可能額（総資金比）</dt>
+        <dd>{stage.capitalCapRatio}</dd>
       </dl>
       <p>
         運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。

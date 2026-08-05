@@ -10,32 +10,17 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { sc03ControlsFeature } from './index';
+import { CONTRACT_RISK_STATUS, CONTRACT_STAGE_GATE, cloneContract } from '../risk/contractFixtures';
+import type { RiskStatusView, StageGateStatus } from '../risk/contracts';
 
-const STATUS = {
-  killSwitchEngaged: false,
-  dailyLossLockoutActive: false,
-  lockoutReleaseOn: null,
-  tradingPaused: false,
-  activeControl: 0,
-  newEntriesBlocked: false,
-  stage: 1,
-  dailyRealizedPnl: 0,
-  unrealizedPnl: 0,
-  dailyPnl: 0,
-  capital: 1000000,
-  dailyOrderedAmount: 0,
-  maxDailyOrderAmount: 300000,
-  drawdownRatio: 0,
-  maxDrawdownRatio: 0.1,
-  openPositionCount: 0,
-  maxOpenPositions: 5,
-};
-const STAGE_GATE = {
+// #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）から作る。
+const STATUS: RiskStatusView = { ...cloneContract(CONTRACT_RISK_STATUS), stage: 1 };
+const STAGE_GATE: StageGateStatus = {
+  ...cloneContract(CONTRACT_STAGE_GATE),
   currentStage: 1,
-  currentSettings: { stage: 1, mode: 0, capitalCap: 1000000 },
+  currentSettings: { ...cloneContract(CONTRACT_STAGE_GATE.currentSettings), stage: 1, mode: 0 },
   history: [],
   promotion: { targetStage: 2, eligible: false, unmetCriteria: [0] },
-  withdrawal: { triggered: false, reason: null, haltNewEntries: false, proposedStage: null },
 };
 
 function makeJwt(payload: unknown): string {

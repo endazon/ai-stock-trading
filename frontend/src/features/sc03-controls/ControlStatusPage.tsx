@@ -255,6 +255,10 @@ function StageGateView({
         {/* FR-20, #334: 段階が定める**既定の**発注先。現在の発注先（上の「発注先」行）とは別物である。 */}
         <dt>段階の既定発注先</dt>
         <dd>{brokerProviderLabel(gate.currentSettings.mode)}</dd>
+        {/* FR-20, #333, #389, IADR-0136: 段階の発注可能額は**総資金比**（Stage 2 は 0.30 ＝ 30%）。
+            金額ではないため「¥」を付けない。参照専用（変更は SC-02・段階の変更は段階ゲート承認）。 */}
+        <dt>段階の発注可能額（総資金比）</dt>
+        <dd>{gate.currentSettings.capitalCapRatio}</dd>
       </dl>
 
       <Stage1ProgressView gate={gate} />

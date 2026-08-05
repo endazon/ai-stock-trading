@@ -1,0 +1,43 @@
+{
+  "currentStage": 1,
+  "currentSettings": {
+    "stage": 1,
+    "mode": 2,
+    "capitalCapRatio": 1.00
+  },
+  "history": [
+    {
+      "sequence": 1,
+      "fromStage": 0,
+      "toStage": 1,
+      "kind": 0,
+      "approvedBy": "test-owner",
+      "occurredAtUtc": "2026-08-05T00:00:00.0000000+00:00",
+      "reason": "利用者承認による昇格"
+    }
+  ],
+  "promotion": {
+    "targetStage": 2,
+    "eligible": false,
+    "unmetCriteria": [
+      9,
+      10
+    ]
+  },
+  "withdrawal": {
+    "triggered": false,
+    "reason": null,
+    "haltNewEntries": false,
+    "proposedStage": null
+  },
+  "stage1Progress": {
+    "qualifiedTradingDays": 0,
+    "tradeCount": 0,
+    "excludedInternalPaperDays": 0
+  },
+  "stage1Criteria": {
+    "targetTradingDays": 60,
+    "minimumTradeCount": 100,
+    "maximumTradingDays": 120
+  }
+}

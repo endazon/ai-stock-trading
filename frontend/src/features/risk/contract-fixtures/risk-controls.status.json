@@ -1,0 +1,21 @@
+{
+  "killSwitchEngaged": false,
+  "dailyLossLockoutActive": false,
+  "lockoutReleaseOn": null,
+  "tradingPaused": false,
+  "activeControl": 0,
+  "newEntriesBlocked": false,
+  "stage": 0,
+  "brokerProvider": 0,
+  "dailyRealizedPnl": 0,
+  "unrealizedPnl": 0,
+  "dailyPnl": 0,
+  "capital": 491100.0,
+  "dailyOrderedAmount": 0,
+  "maxOrderAmount": 122775.000,
+  "maxDailyOrderAmount": 736650.000,
+  "drawdownRatio": 0,
+  "maxDrawdownRatio": 0.10,
+  "openPositionCount": 0,
+  "maxOpenPositions": 3
+}

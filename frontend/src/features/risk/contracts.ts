@@ -4,9 +4,15 @@
 // フロントは数値→ラベルの写像を持ち、未知値は安全側フォールバック表示にする（画面を壊さない・fail-safe）。
 
 // ---- リスク設定（GET /risk-controls/settings） ----
+// FR-10, #329, #389, IADR-0130 決定1: 金額で表す上限は**固定額ではなく equity（自己資金）比**である。
+// バックエンドのプロパティ名は `MaxOrderAmountRatio` / `MaxDailyOrderAmountRatio`（BFF は素通しのため
+// 変換で吸収されない）。**同名の `RiskStatusView.maxOrderAmount` は equity から解決済みの「実額」であり
+// 別物である**（後述）。単位が違うものに同じ名前を使わない。
 export interface RiskLimitSettings {
-  maxOrderAmount: number;
-  maxDailyOrderAmount: number;
+  /** 1 注文あたりの発注金額上限（**equity 比**。既定 0.25 ＝ equity の 25%）。 */
+  maxOrderAmountRatio: number;
+  /** 1 日あたりの発注金額上限（**equity 比・日次**。既定 1.50 ＝ equity の 150%/日）。 */
+  maxDailyOrderAmountRatio: number;
   maxOpenPositions: number;
   dailyLossLimitRatio: number;
   perTradeRiskRatio: number;
@@ -36,7 +42,9 @@ export interface StageSettings {
   // （現在値は RiskManagementSettings.brokerProvider）。プロパティ名 mode はバックエンドの
   // StageSettings.Mode に対応する（序数と JSON キーを動かさないための据え置き。IADR-0140 決定3）。
   mode: number;
-  capitalCap: number;
+  // FR-20, #333, #389, IADR-0136: 段階の発注可能額は**総資金（equity）比**である（Stage 2 は 0.30 ＝ 30%）。
+  // バックエンドのプロパティ名は `CapitalCapRatio`。固定額ではないため「¥1,000,000」のようには表示しない。
+  capitalCapRatio: number;
 }
 
 export interface RiskManagementSettings {
@@ -72,7 +80,10 @@ export interface RiskStatusView {
   dailyPnl: number;
   capital: number;
   dailyOrderedAmount: number;
-  // FR-10, FR-20, #334: equity から解決した 1 注文あたりの上限額。実弾切替モーダル③の提示に用いる。
+  // FR-10, FR-20, #334, #389: equity から解決した 1 注文あたりの上限**額**（比率ではない）。
+  // 実弾切替モーダル③と SC-03 の上限表示・使用率表示が用いる。
+  // **設定側の `RiskLimitSettings.maxOrderAmountRatio` と同名にしない・改名しない。**
+  // バックエンドの `RiskStatusView.MaxOrderAmount` は解決済みの実額であり、ここは正しい（#389 で触らない）。
   maxOrderAmount: number;
   maxDailyOrderAmount: number;
   drawdownRatio: number;
@@ -167,6 +178,9 @@ const TRANSITION_KIND_LABELS: Record<number, string> = {
 };
 
 // StageGateCriterion（StageTransition.cs の列挙順）。
+// #389: 9〜11 は #333（Stage 1 の合格集計）で追加されたが写像が追随しておらず、SC-03 は
+// 実サーバの応答（既定で `unmetCriteria: [9, 10]` が出る）を「不明(9)」と表示していた。
+// 契約フィクスチャ（IADR-0146）の導入で判明した実測のずれである。
 const CRITERION_LABELS: Record<number, string> = {
   0: 'バックテスト未合格',
   1: 'ペーパー乖離が説明不能',
@@ -177,12 +191,19 @@ const CRITERION_LABELS: Record<number, string> = {
   6: '昇格は 1 段ずつ',
   7: '遷移先が現段階',
   8: '既に最上段',
+  9: 'Stage 1 の営業日数が不足',
+  10: 'Stage 1 の取引件数が不足',
+  11: 'Stage 1 の延長期限切れ（打ち切り）',
 };
 
-// WithdrawalReason（0=DrawdownBreachedMultiple,1=PaperDeviationUnexplained）。
+// WithdrawalReason（0=DrawdownBreachedMultiple, 2=Stage1ExtensionExhausted）。
+// #389: **1 は欠番**である（旧 PaperDeviationUnexplained。#333 で機械判定の撤退事由から外され「再利用しない」と
+// 明記された）。2（Stage 1 の打ち切り）の写像が追随しておらず「不明(2)」表示になっていた。
+// 欠番 1 は写像から外す——存在しない事由のラベルを残すと、将来 1 が再利用されたときに**誤ったラベルを
+// 自信満々に表示する**（未知値のフォールバック「不明(1)」の方が安全側である）。
 const WITHDRAWAL_REASON_LABELS: Record<number, string> = {
   0: '実DD がバックテスト最大DD × 倍率に到達',
-  1: 'ペーパー乖離が説明不能',
+  2: 'Stage 1 の打ち切り（120 営業日で取引件数に未達）',
 };
 
 // SettingsChangeType（SettingsChangeEntry.cs の列挙順）。7 は #334 で末尾追加。

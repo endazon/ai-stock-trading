@@ -8,12 +8,15 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { ControlStatusPage } from './ControlStatusPage';
+import { CONTRACT_RISK_STATUS, CONTRACT_STAGE_GATE, cloneContract } from '../risk/contractFixtures';
+import type { RiskStatusView, StageGateStatus, StageTransition } from '../risk/contracts';
 
-const STATUS = {
+// #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台に作り、この画面の検証に必要な
+// 差分（統制成立・損益・使用率・遷移履歴）だけを上書きする。インライン literal で全体を自作すると、
+// バックエンドの改名（#329 / #333）を緑のまま通す構造へ戻る。
+const STATUS: RiskStatusView = {
+  ...cloneContract(CONTRACT_RISK_STATUS),
   killSwitchEngaged: true,
-  dailyLossLockoutActive: false,
-  lockoutReleaseOn: null,
-  tradingPaused: false,
   activeControl: 1, // KillSwitch
   newEntriesBlocked: true,
   stage: 2,
@@ -22,37 +25,23 @@ const STATUS = {
   dailyPnl: -1000,
   capital: 1000000,
   dailyOrderedAmount: 150000,
+  maxOrderAmount: 250000,
   maxDailyOrderAmount: 300000,
   drawdownRatio: 0.03, // 30.0%（他の使用率 50.0%/40.0% と区別）
-  maxDrawdownRatio: 0.1,
   openPositionCount: 2,
   maxOpenPositions: 5,
 };
-const STAGE_GATE = {
+// 遷移履歴の要素は実応答の 1 件を土台に複製する（形はバックエンド由来・値だけをテスト用に置く）。
+const TRANSITION: StageTransition = cloneContract(CONTRACT_STAGE_GATE.history[0]);
+const STAGE_GATE: StageGateStatus = {
+  ...cloneContract(CONTRACT_STAGE_GATE),
   currentStage: 2,
-  currentSettings: { stage: 2, mode: 1, capitalCap: 1000000 },
+  currentSettings: { ...cloneContract(CONTRACT_STAGE_GATE.currentSettings), stage: 2, mode: 1 },
   history: [
-    {
-      sequence: 1,
-      fromStage: 0,
-      toStage: 1,
-      kind: 0, // Promotion
-      approvedBy: 'owner',
-      occurredAtUtc: '2026-07-10T00:00:00Z',
-      reason: 'バックテスト合格',
-    },
-    {
-      sequence: 2,
-      fromStage: 1,
-      toStage: 2,
-      kind: 0,
-      approvedBy: 'owner',
-      occurredAtUtc: '2026-07-15T00:00:00Z',
-      reason: 'ペーパー実績良好',
-    },
+    { ...TRANSITION, sequence: 1, fromStage: 0, toStage: 1, kind: 0, approvedBy: 'owner', reason: 'バックテスト合格' },
+    { ...TRANSITION, sequence: 2, fromStage: 1, toStage: 2, kind: 0, approvedBy: 'owner', reason: 'ペーパー実績良好' },
   ],
   promotion: { targetStage: 3, eligible: false, unmetCriteria: [3, 4] },
-  withdrawal: { triggered: false, reason: null, haltNewEntries: false, proposedStage: null },
 };
 
 function mockDefault() {

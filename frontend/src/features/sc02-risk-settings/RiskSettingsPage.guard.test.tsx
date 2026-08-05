@@ -10,28 +10,20 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { RiskSettingsPage } from './RiskSettingsPage';
+import { CONTRACT_RISK_SETTINGS, cloneContract } from '../risk/contractFixtures';
+import type { RiskManagementSettings } from '../risk/contracts';
 
-const SETTINGS = {
+// #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台にする（インライン literal で
+// 自作した形を自分で検証しない）。ガードの差分だけを上書きする。
+const SETTINGS: RiskManagementSettings = {
+  ...cloneContract(CONTRACT_RISK_SETTINGS),
   guard: {
+    ...cloneContract(CONTRACT_RISK_SETTINGS.guard),
     enabledProductTypes: [0], // 現物のみ（信用は無効）
-    enabledMarkets: [0, 1],
-    bannedSymbols: [
-      { symbol: '9999', market: 0, reason: '監視対象外', registeredOn: '2026-07-10' },
-    ],
-    preventSameDayReentry: true,
-    prohibitManipulativeOrderPatterns: true,
+    bannedSymbols: [{ symbol: '9999', market: 0, reason: '監視対象外', registeredOn: '2026-07-10' }],
   },
-  limits: {
-    maxOrderAmount: 100000,
-    maxDailyOrderAmount: 300000,
-    maxOpenPositions: 5,
-    dailyLossLimitRatio: 0.02,
-    perTradeRiskRatio: 0.01,
-    maxDrawdownRatio: 0.1,
-    losingStreakThreshold: 3,
-    losingStreakSizeFactor: 0.5,
-  },
-  stage: { stage: 2, mode: 1, capitalCap: 1000000 },
+  limits: { ...cloneContract(CONTRACT_RISK_SETTINGS.limits), maxOpenPositions: 5, losingStreakThreshold: 3 },
+  stage: { ...cloneContract(CONTRACT_RISK_SETTINGS.stage), stage: 2, mode: 1 },
 };
 
 function mockDefault() {

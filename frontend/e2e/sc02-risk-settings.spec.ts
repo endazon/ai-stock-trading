@@ -19,8 +19,10 @@ test.describe('SC-02 リスク設定（#187）', () => {
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
 
     await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
-    await expect(limitsForm(page).getByLabel('1注文金額上限')).toHaveValue(
-      String(RISK_SETTINGS.limits.maxOrderAmount),
+    // FR-10, #329, #389: 発注額の上限は **equity 比**（0.25＝25%）であり金額ではない。
+    // ラベルにも単位を明示してある（比率を「金額上限」と表示すると桁が 6 桁ずれて読める）。
+    await expect(limitsForm(page).getByLabel('1注文発注額上限（equity 比・0.25＝25%）')).toHaveValue(
+      String(RISK_SETTINGS.limits.maxOrderAmountRatio),
     );
     // 取引ガードは変更フォーム（#188）、運用段階は参照表示。
     await expect(page.getByText('取引ガード（変更）')).toBeVisible();
@@ -92,7 +94,7 @@ test.describe('SC-02 リスク設定（#187）', () => {
       ...defaultBff(),
       'PUT /risk-controls/settings/limits': {
         status: 400,
-        body: { errors: { limits: ['1注文金額上限は必須です'] } },
+        body: { errors: { limits: ['1注文発注額上限は必須です'] } },
       },
     });
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
