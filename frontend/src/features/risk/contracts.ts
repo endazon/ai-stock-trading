@@ -376,14 +376,17 @@ export function resolveEquityAmount(
 }
 
 /**
- * 金額の表示用整形。**通貨記号は付けない**——`RiskStatusView.capital` は基準通貨（円）建てであり
- * （IADR-0130 決定3・`MarketCurrency.Base = Jpy`）、計画が求める USD 表記（`$750`）にするには
- * 判定通貨の USD 移行が要る。**円建ての数値に「$」を付けることは単位の取り違えそのもの**であるため、
- * 通貨は呼び出し側のラベルで明示する（IADR-0151 決定4）。
+ * 金額の表示用整形。**基準通貨（USD）の記号を付ける**——`RiskStatusView.capital` は基準通貨建てであり、
+ * #364 / IADR-0152 決定1 で `MarketCurrency.Base = Usd` へ移行した。これにより計画 SC-02 の表記例
+ * 「**25%（$750）**」がそのまま正しくなる（[#409](https://github.com/endazon/ai-stock-trading/issues/409) は本移行で解消）。
+ *
+ * IADR-0151 決定4 が `$` を付けなかったのは、当時の供給値が円建てであり「円建ての数値に `$` を付けることは
+ * 単位の取り違えそのもの」だったためである。**通貨が一致した今、記号を付けることが正しい表示になる。**
+ * 小数はセントまで（`$750` / `$1,234.56`）。equity が不明なら「—」を返し、誤った実額を出さない。
  */
 export function formatAmount(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 }).format(value);
+  return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`;
 }
 
 // ---- FR-10, SC-02, #362, IADR-0151 決定2: リスク上限として設定できる値域 ----

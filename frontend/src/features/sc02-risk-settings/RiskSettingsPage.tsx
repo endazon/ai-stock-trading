@@ -204,15 +204,15 @@ export function RiskSettingsPage() {
           <form onSubmit={handleSubmit} aria-label="リスク上限の変更">
             <fieldset>
               <legend>リスク上限</legend>
-              {/* FR-10, SC-02, #362, IADR-0151 決定1・決定4: 割合は**百分率**で入力する。equity 比の項目には
-                  現在 equity での実額を併記する（割合だけでは実効額を判断できない）。通貨は基準通貨（円）建てで
-                  あり「$」は付けない（計画は USD 表記を求めるが、供給値が円建てのため。IADR-0151 決定4）。 */}
+              {/* FR-10, SC-02, #362, #364, IADR-0151 決定1 / IADR-0152 決定6: 割合は**百分率**で入力する。
+                  equity 比の項目には現在 equity での実額を併記する（割合だけでは実効額を判断できない）。
+                  #364 で判定の基準通貨が USD へ移行したため、実額は**米ドル建て**であり計画 SC-02 の
+                  表記例「25%（$750）」と一致する。 */}
               <p>
                 equity 比の項目は<strong>百分率（%）で入力</strong>します（25 ＝ equity の 25%）。比率（0.25）ではありません。
                 各項目には<strong>現在の equity（
-                {riskStatus === null ? '取得できません' : `${formatAmount(riskStatus.capital)} 円`}
-                ）での実額</strong>を併記します（基準通貨＝円建て。統制の基準は自己資金の USD 建てですが、
-                実装が供給する評価額は円換算値です）。
+                {riskStatus === null ? '取得できません' : formatAmount(riskStatus.capital)}
+                ）での実額</strong>を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。
               </p>
               {LIMIT_FIELD_KEYS.map((k) => (
                 <LimitField
@@ -322,7 +322,7 @@ function LimitField({
         {isEquityRatioField(fieldKey) && (
           // equity 不明・入力が読めないときは「—」。併記できないことを黙って隠さない。
           <>
-            {` / 現在の equity での実額: ${formatAmount(amount)} 円`}
+            {` / 現在の equity での実額: ${formatAmount(amount)}`}
             {spec.kind === 'equityPercentPerDay' && '/日'}
           </>
         )}
@@ -891,15 +891,15 @@ function LiveSwitchWarningModal({
           <tbody>
             <tr>
               <th>現在の equity（自己資金）</th>
-              <td>{formatAmount(status.capital)} 円</td>
+              <td>{formatAmount(status.capital)}</td>
             </tr>
             <tr>
               <th>1 注文あたり発注金額上限</th>
-              <td>{formatAmount(status.maxOrderAmount)} 円</td>
+              <td>{formatAmount(status.maxOrderAmount)}</td>
             </tr>
             <tr>
               <th>1 日あたり発注金額上限</th>
-              <td>{formatAmount(status.maxDailyOrderAmount)} 円</td>
+              <td>{formatAmount(status.maxDailyOrderAmount)}</td>
             </tr>
             <tr>
               <th>保有建玉数上限</th>
