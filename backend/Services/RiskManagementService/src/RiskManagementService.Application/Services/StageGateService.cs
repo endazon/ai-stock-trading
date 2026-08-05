@@ -13,6 +13,7 @@ public sealed class StageGateService(
     IStagePerformanceStore performanceStore,
     IControlViolationObservationStore violationStore,
     IStage1FillObservationStore fillStore,
+    IStage1TradingDayObservationStore tradingDayStore,
     StageGatePolicy policy,
     KillSwitchService killSwitch,
     IClock clock)
@@ -27,8 +28,18 @@ public sealed class StageGateService(
     // （観測ログが計上単位を担保する唯一の場所である）。
     // 統制違反件数（#387）と違い**未供給を 0 と区別しない**——取引件数の 0 は「条件未充足＝昇格しない」に
     // 倒れる fail-safe であり、区別に意味が無い。
+    //
+    // FR-20, #385, §4.2, IADR-0150 決定4: 営業日数（§4.2 の期間カウント）も同じ形で**稼働の観測ログ**から集計する。
+    // 実績行の列は削除済みであり、供給元は 1 つ（stage1_session_uptime）だけである。
+    // paper 稼働で除外された日数（SC-03 の併記）も同じ観測から出る——別の供給に分けると、
+    // 「経過 42 日（paper 稼働により 3 日を除外）」という説明の 2 つの数が食い違い得る。
     private StagePerformance CurrentPerformance() =>
-        performanceStore.GetCurrent() with { Stage1TradeCount = fillStore.GetTradeCount() };
+        performanceStore.GetCurrent() with
+        {
+            Stage1TradeCount = fillStore.GetTradeCount(),
+            Stage1QualifiedTradingDays = tradingDayStore.GetQualifiedTradingDayCount(),
+            Stage1ExcludedInternalPaperDays = tradingDayStore.GetExcludedInternalPaperDayCount(),
+        };
 
     // FR-20, UC-06: 現況＝現段階・その設定・遷移履歴（監査）・昇格評価・撤退評価。
     public StageGateStatus GetStatus()
@@ -88,6 +99,11 @@ public sealed class StageGateService(
             // 統制違反の窓（#387）と同条件にするのは、3 指標が同じ「Stage 1 の期間」を指す必要があるためである。
             // 区切った直後は 0 件＝昇格しない（fail-safe）。
             fillStore.ResetWindow();
+
+            // FR-20, #385, §4.2「起算点＝Stage 1 遷移日」, IADR-0150 決定4: 稼働の観測窓も同条件で区切る。
+            // 3 指標（統制違反・取引件数・営業日数）が同じ「Stage 1 の期間」を指す必要がある。
+            // 区切った直後は 0 日＝昇格しない（fail-safe）。
+            tradingDayStore.ResetWindow();
         }
 
         return result;

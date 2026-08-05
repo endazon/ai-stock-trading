@@ -210,6 +210,18 @@ public sealed class BrokerPositionsObservedAuditHandler(IAuditEventStore store, 
     }
 }
 
+// FR-20, FR-05, FR-11, #385, IADR-0150: ブローカ稼働の観測を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
+// **Stage 1 の営業日数の一次証跡である。** 「その日の稼働分数」の根拠は個々の観測の並びにしか無く、
+// リスク管理側が持つのは集計後の分数だけである（§4.2 が「日次の稼働分数…を記録する」と求める監査可能性）。
+public sealed class BrokerAvailabilityObservedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BrokerAvailabilityObserved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知を中央監査台帳へ記録する。
 // 是正は伴わないため、この記録が「いつ・どの銘柄で乖離が生じたか」の唯一の永続証跡になる。
 public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore store, IClock clock)

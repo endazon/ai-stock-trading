@@ -9,7 +9,7 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 //
 // FR-05, FR-19, IADR-0067: 注文履歴テレメトリ（#154）の訂正・取消を成立させるため IOrderAmendmentBroker も実装する。
 // 実ブローカー（moomoo）は本ポートを実装しない＝実弾経路には訂正・取消の口が型として存在しない（fail-safe）。
-public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker
+public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker, IBrokerAvailabilityProbe
 {
     private readonly ConcurrentDictionary<string, BrokerOrder> _orders = new();
     private readonly TimeProvider _timeProvider;
@@ -72,6 +72,20 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker
     {
         _orders.TryGetValue(orderId, out var order);
         return Task.FromResult(order);
+    }
+
+    /// <summary>
+    /// FR-20, #385, IADR-0150: 内蔵 <c>paper</c> は同一プロセス内で完結するため<b>常に到達できる</b>。
+    /// <para>
+    /// 稼働として記録はされるが、発注先が内蔵 <c>paper</c> である日は Stage 1 の営業日に<b>算入されない</b>
+    /// （許可制・IADR-0142 決定2）。SC-03 で「<c>paper</c> 稼働により N 日を除外」と別掲するために、
+    /// 観測そのものは残す（IADR-0142 決定3）。
+    /// </para>
+    /// </summary>
+    public Task<bool> IsOperationalAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(true);
     }
 
     public Task CancelOrderAsync(string orderId, CancellationToken cancellationToken = default)

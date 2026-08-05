@@ -53,10 +53,36 @@ public class WithdrawalEvaluationServiceTests
     //
     // FR-20, #386, IADR-0149 決定3: **取引件数は本レコードでは供給されない。** 供給元は約定の観測ログであり、
     // SeedFills で積む（実績行の Stage1TradeCount 列は削除済み）。
-    private static StagePerformance Stage1Period() => new()
+    // FR-20, #385, IADR-0150 決定4: **営業日数も本レコードでは供給されない。** 供給元は稼働の観測ログであり、
+    // SeedUptimeDays で積む（実績行の Stage1QualifiedTradingDays 列は削除済み）。
+    // 打ち切り（累計 120 営業日）を作るのは実績行ではなく観測そのものである。
+    private static StagePerformance Stage1Period() => new();
+
+    // FR-20, #385, §4.2: 営業日数の供給（moomoo SIMULATE の稼働）を n 日ぶん積む。
+    // 1 日ぶんは 9:30〜13:00 ET を 30 分刻みで満たす——半日仮説 100%・通常日仮説 53.8% でどちらも
+    // 閾値 50% 以上であり、最小の観測数で算入される日を作れる。
+    private static void SeedUptimeDays(RiskWorkerWebApplicationFactory factory, int days)
     {
-        Stage1QualifiedTradingDays = 120,
-    };
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IStage1TradingDayObservationStore>();
+        var date = new DateOnly(2026, 3, 2); // 月曜
+        for (var d = 0; d < days; d++)
+        {
+            while (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+            {
+                date = date.AddDays(1);
+            }
+
+            for (var minute = Stage1SessionHypotheses.RegularSessionOpenMinuteOfDayEasternTime;
+                 minute <= Stage1SessionHypotheses.EarlyCloseMinuteOfDayEasternTime;
+                 minute += 30)
+            {
+                store.CreditUptime(date, BrokerProvider.MoomooSimulate, minute, 30);
+            }
+
+            date = date.AddDays(1);
+        }
+    }
 
     // FR-20, #386: 取引件数の供給（moomoo SIMULATE の新規建て約定）を n 件積む。
     // 打ち切りは 99 件（未達）、解消は 100 件（到達）で表す。観測は DecisionId で一意＝加算のみ。
@@ -178,6 +204,7 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, Stage1Period());
+        SeedUptimeDays(factory, 120);
         SeedFills(factory, 99);
 
         var session = await factory.Services.ExecuteAndWaitAsync(
@@ -198,6 +225,7 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, Stage1Period());
+        SeedUptimeDays(factory, 120);
         SeedFills(factory, 99);
         var driver = BuildDriver(factory, FridayUtc);
 
@@ -219,6 +247,7 @@ public class WithdrawalEvaluationServiceTests
         factory.CreateClient();
         SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, Stage1Period());
+        SeedUptimeDays(factory, 120);
         SeedFills(factory, 99);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
@@ -240,6 +269,7 @@ public class WithdrawalEvaluationServiceTests
         var driver = BuildDriver(factory, FridayUtc);
 
         SeedPerformance(factory, Stage1Period());
+        SeedUptimeDays(factory, 120);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {

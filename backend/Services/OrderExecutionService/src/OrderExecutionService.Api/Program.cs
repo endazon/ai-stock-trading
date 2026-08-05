@@ -1,9 +1,11 @@
 using AiStockTrading.OrderExecution.Application.Adapters;
+using AiStockTrading.OrderExecution.Application.Availability;
 using AiStockTrading.OrderExecution.Application.Polling;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Application.Reconciliation;
 using AiStockTrading.OrderExecution.Application.Services;
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Retention;
@@ -14,6 +16,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
 using Wolverine;
 
@@ -136,6 +139,20 @@ if (brokerSelection.IsMoomoo)
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
 }
+
+// FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150: ブローカ稼働の定期観測（既定有効）。
+// Stage 1 の「その日の実際の通常取引時間の 50% 以上が稼働していること」を数えるための唯一の供給元であり、
+// 発行された観測をリスク管理が米国東部時間の取引日ごとに積む。副作用は読み取り照会のみで発注を増やさない。
+//
+// **paper 構成でも配線する。** 内蔵 paper で稼働した日は算入されない（許可制・IADR-0142 決定2）が、
+// 「paper 稼働により N 日を除外」と別掲する（SC-03）ための観測はそこでしか得られない。
+builder.Services.Configure<BrokerAvailabilityProbeOptions>(
+    builder.Configuration.GetSection(BrokerAvailabilityProbeOptions.SectionName));
+builder.Services.AddSingleton<IBrokerAvailabilityProbe>(sp =>
+    (IBrokerAvailabilityProbe)sp.GetRequiredService<IBrokerAdapter>());
+// TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。moomoo 構成では上で登録済み。
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<BrokerAvailabilityProbeService>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。OrderApproved を購読し発注、OrderExecuted を発行する。
 // ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。

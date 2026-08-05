@@ -76,6 +76,9 @@ builder.Services.AddScoped<IControlViolationObservationStore, EfControlViolation
 // FR-20, FR-12, #386, IADR-0149: 段階ゲートの「最小取引件数 100 件」（§4.1 条件3）の供給元＝約定の観測ログ。
 // 計上単位は「約定した新規建て注文 1 件」（DecisionId 主キー）。未記録は 0 件＝昇格しない fail-safe。
 builder.Services.AddScoped<IStage1FillObservationStore, EfStage1FillObservationStore>();
+// FR-20, FR-12, #385, IADR-0150: 段階ゲートの「60 営業日」（§4.2 の期間カウント）の供給元＝稼働の観測ログ。
+// 1 取引日 1 発注先 1 行。未記録は 0 日＝期間条件が未充足＝昇格しない fail-safe。
+builder.Services.AddScoped<IStage1TradingDayObservationStore, EfStage1TradingDayObservationStore>();
 // FR-20, FR-09, IADR-0085, #189: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（durable な通知済みシグネチャ・単一行）。
 builder.Services.AddScoped<IWithdrawalNotificationStore, EfWithdrawalNotificationStore>();
 // FR-10, FR-05, IADR-0018: 保有・損益は取引台帳（OrderApproved/OrderExecuted）からの純射影で供給する。

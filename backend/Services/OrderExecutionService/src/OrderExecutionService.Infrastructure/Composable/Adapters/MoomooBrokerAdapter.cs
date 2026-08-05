@@ -19,7 +19,8 @@ internal sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
     BrokerProvider provider,
     TimeProvider? timeProvider = null,
-    ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource
+    ILogger<MoomooBrokerAdapter>? logger = null)
+    : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -102,6 +103,21 @@ internal sealed class MoomooBrokerAdapter(
             return null;
         }
     }
+
+    /// <summary>
+    /// FR-20, #385, 06_daytrading-review §4.2, IADR-0150: OpenD へ到達できるかを確かめる（Stage 1 の稼働監視）。
+    /// <para>
+    /// 建玉照会を流用するのは、それが<b>取引コンテキスト（口座・取引環境）まで通っていること</b>を
+    /// 一度の往復で確かめられる既存の照会だからである。**発注は試さない**——試し発注は統制の外側で
+    /// 注文を出すことであり、取引ガード（FR-19）の意味を壊す。
+    /// </para>
+    /// <para>
+    /// <see cref="GetPositionsAsync"/> は照会不能を null に倒す（部分列挙を返さない）ため、
+    /// 「null でない＝全対応市場を成功裏に列挙できた」がそのまま到達性の判定になる。
+    /// </para>
+    /// </summary>
+    public async Task<bool> IsOperationalAsync(CancellationToken cancellationToken = default) =>
+        await GetPositionsAsync(cancellationToken).ConfigureAwait(false) is not null;
 
     internal static Market MapMarketBack(MoomooMarket market) => market switch
     {

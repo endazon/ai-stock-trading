@@ -138,6 +138,13 @@ public static class AuditEntryFactory
             + (e.Positions.Count == 0 ? string.Empty : $": {string.Join(", ", e.Positions.Select(p => $"{p.Symbol}/{p.Market} {p.Quantity}"))}")),
         AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
 
+    // FR-20, FR-05, FR-11, #385, IADR-0150: ブローカ稼働の観測（Stage 1 の営業日数の一次証跡）。
+    // 注文相関を持たないため "stage1-uptime" の決定的 GUID を相関にする（稼働の観測どうしを 1 本の相関で辿れる）。
+    public static AuditEntry From(BrokerAvailabilityObserved e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BrokerAvailabilityObserved), AuditCorrelation.From("stage1-uptime"), Symbol: null,
+        Truncate($"ブローカ稼働を観測（発注先 {e.Provider}・保証 {(int)e.CoveredInterval.TotalMinutes}分）"),
+        AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
+
     // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知（是正は伴わない）。観測と同一相関で束ねる。
     public static AuditEntry From(PositionReconciliationDrift e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(PositionReconciliationDrift), AuditCorrelation.From("position-reconciliation"), Symbol: null,

@@ -109,6 +109,20 @@ related_specs:
 | T-58 | 手仕舞い（`Close`）の約定／約定していない結果（`Accepted`・約定 0 の取消）／承認台帳に相関の無い約定 | 取引件数を集計する | いずれも **計上されない**（計上単位＝新規建て。不明は算入しない） | FR-20, #386 | 自動（否定形） |
 | T-59 | 約定の観測が 1 件も無い | 取引件数を集計する | **0 件**（水増ししない）。期間 60 営業日・統制違反 0 件が揃っていても `Stage1TradeCountInsufficient` で昇格しない | FR-20, #386 | 自動（否定形） |
 | T-60 | 段階遷移が受理される／受理されない | 約定の観測窓を確認する | 受理時のみ窓が区切られ 0 件へ戻る（起算点＝Stage 1 遷移日）。**受理されない要求では区切られない** | FR-20, #386 | 自動（否定形） |
+| T-61 | 9:30〜16:00 ET を巡回間隔ごとに到達できた平日 | 稼働営業日を集計する | `Stage1Progress.QualifiedTradingDays` が 1 増え、60 日で期間条件を満たす（**#333 の判定が実測から動く**） | FR-20, #385 | 自動 |
+| T-62 | 到達できない巡回（OpenD 停止・ブローカー障害） | 稼働を観測する | **何も発行しない**（沈黙＝非稼働）。稼働分数が増えず営業日にならない | FR-20, #385 | 自動（否定形） |
+| T-63 | probe を 1 回落とす（前回成功からの経過が巡回間隔を超える） | 稼働分数を積む | **その区間を積まない**（落ちた原因が停止かもしれない）。初回の観測も遡らない | FR-20, #385 | 自動（否定形） |
+| T-64 | 同じ観測の再配送・逆行／1 件で 1 日ぶん（600 分）を主張する観測 | 稼働分数を積む | いずれも**積まない**（冪等・1 件の遡りは上限 30 分でクランプ） | FR-20, #385 | 自動（否定形） |
+| T-65 | 9:30 前・16:00 後だけの稼働 | 稼働分数を積む | **0 分**（プレ／アフターマーケットは含めない・§4.2） | FR-20, #385 | 自動（否定形） |
+| T-66 | 午後だけ稼働（12:00〜16:00 の 240 分） | その日を算入するか判定する | **算入しない**（通常日仮説は 61.5% で超えるが、**半日取引日だった可能性**を否定できず半日仮説は 28.6%）。分母を常に 390 分と仮定する実装で緑になる退行を検知する | FR-20, #385 | 自動（否定形） |
+| T-67 | 9:30〜12:45（両仮説をちょうど満たす 195 分）／1 分不足（194 分） | 同上 | 195 は算入、194 は算入しない（**境界値**） | FR-20, #385 | 自動（境界値） |
+| T-68 | 週末に満稼働 | 同上 | **算入しない**（`DayOfWeek` の算術。カレンダーではない） | FR-20, #385 | 自動（否定形） |
+| T-69 | 内蔵 `paper` / `MoomooReal` で満稼働 | 同上 | **算入しない**（許可制）。`paper` は**除外日数として別掲**され、`MoomooReal` は除外日数にも入らない | FR-20, FR-12, #385 | 自動（否定形） |
+| T-70 | **2026 年〜2028 年の全日付**に同一の稼働を与える | 算入可否を走査する | 結果が **`DayOfWeek` だけ**で決まる（**休場日・半日取引日の表が 1 つでもコードにあれば落ちる**＝カレンダー不在の構造的証明） | FR-20, #385 | 自動（構造） |
+| T-71 | DST 切替をまたぐ（2026-03-09 EDT / 2026-11-02 EST）同じ現地時刻の観測 | 稼働分数を積む | いずれも 9:30 ET が同じ分（570）へ写り、1 営業日として算入される（**UTC 固定で数える実装の退行を検知**） | FR-20, #385 | 自動（境界値） |
+| T-72 | 午前だけ記録して別コンテキスト（再起動相当）で午後を足す | 稼働分数を積む | 同じ取引日の行へ積み上がり 1 営業日になる（**分数を永続する理由そのもの**） | FR-20, #385 | 自動 |
+| T-73 | 段階遷移が受理される／受理されない | 稼働の観測窓を確認する | 受理時のみ窓が区切られ 0 日へ戻る（起算点＝Stage 1 遷移日）。**受理されない要求では区切られない** | FR-20, #385 | 自動（否定形） |
+| T-74 | **市場の祝日**（2026-01-01・2026-07-03・2026-11-26）に満稼働 | 同上 | **算入されてしまう**（既知の限界。判定源が計画に無く実装は表を発明しない。[B-4](../blocked-tasks.md) の裁定待ち）。テストはこの穴を**可視化**する | FR-20, #385 | 自動（既知の限界） |
 
 ### 段階別の資金上限と商品種別
 
@@ -194,11 +208,12 @@ related_specs:
 | --- | --- | --- |
 | T-01〜T-05 | #333 | 実装済み（`StageGateTests` / `StageGateLedgerTests`） |
 | T-06 / T-07 | #333 | 実装済み（`Stage0GateCriteriaTests` / `Stage0GateEvaluatorTests`）。**ただし実データ源が無く発火しない**（#382） |
-| T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**件数の供給元は #386 で実装済み・営業日数の供給元は #385 で未実装** |
-| T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**Stage 1 の件数の供給元は #386 で実装済み・稼働日数は #385 で未実装**／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
+| T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**件数の供給元は #386・営業日数の供給元は #385 で実装済み** |
+| T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**Stage 1 の件数の供給元は #386・稼働日数は #385 で実装済み**／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
 | T-12 / T-37 | #329 / #333 | 実装済み（`RejectionReasonClassificationTests` / `StageGateTests`） |
 | T-49〜T-53 | #387 | 実装済み（`ControlViolationAggregationTests` / `StageGateTests` / `StageGateServiceTests` / `EfControlViolationObservationStoreTests` / `OrderScreeningServiceTests` / `TradeDecisionMadeConsumerTests`）。**供給元は本 issue で実装済み**（発注審査が動けば集計が供給される） |
 | T-54〜T-60 | #386 | 実装済み（`Stage1TradeCountUnitTests` / `Stage1AggregationTests` / `Stage1FillObservationConsumerTests` / `StageGateServiceTests` / `EfStage1FillObservationStoreTests` / `OrderExecutionServiceTests` / `OrderFillPollerTests`）。**供給元は本 issue で実装済み**（`SIMULATE` の約定が届けば件数が増える） |
+| T-61〜T-74 | #385 | 実装済み（`Stage1SessionUptimeTests` / `BrokerAvailabilityObservedConsumerTests` / `EfStage1TradingDayObservationStoreTests` / `StageGateServiceTests` / `BrokerAvailabilityProbeServiceTests`）。**供給元は本 issue で実装済み**（OpenD へ到達できる限り営業日が積まれる）。**ただし T-74 のとおり市場の祝日は判別できない**（B-4 の裁定待ち） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
 
@@ -211,3 +226,4 @@ related_specs:
 | 2026-08-05 | #334（2 軸分離）の実装に合わせて T-41〜T-48 を追加し、担当表を更新。計画適合レジストリの #334 担当 2 行の解消を反映 |
 | 2026-08-05 | #387（クラス C 統制違反件数の供給）の実装に合わせて T-49〜T-53 を追加。**未供給と 0 件の区別**を否定形で固定した |
 | 2026-08-05 | #386（取引件数の供給）の実装に合わせて T-54〜T-60 を追加。**計上単位**（分割約定・再送・手仕舞い）と**発注先の出どころ**（実発注したアダプタの値）を否定形で固定した |
+| 2026-08-05 | #385（稼働営業日の供給）の実装に合わせて T-61〜T-74 を追加。**稼働分数の積み方**（落とした区間・冪等・上限）と**カレンダー不在の構造的証明**（T-70）を固定し、**祝日を判別できない既知の限界**（T-74）を可視化した |
