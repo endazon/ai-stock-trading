@@ -2,11 +2,11 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008]
+related_ids: [SC-02, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0140, IADR-0141]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-08-05
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -16,6 +16,9 @@ related_specs:
   - ../adr/IADR-0084_frontend-risk-settings-and-control-status.md
   - ../adr/IADR-0086_frontend-guard-edit-ui.md
   - ../adr/IADR-0090_frontend-watchlist-ui.md
+  - ../adr/IADR-0140_broker-provider-axis.md
+  - ../adr/IADR-0141_live-switch-explicit-confirmation.md
+  - ../specs/20260805_334_broker-provider-axis.md
 ---
 
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
@@ -39,7 +42,15 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
    1取引リスク（比）・最大DD（比）・連敗しきい値・連敗縮小係数。数値入力（文字列保持・送信時に数値化）。
 2. **ガード（変更可・#188/IADR-0086）**: 有効な商品種別・市場（チェックボックス）、禁止銘柄（追加/削除）、同日再エントリ禁止・
    相場操縦パターン禁止（トグル）を編集。危険な緩和（トグル OFF・禁止銘柄削除・信用の新規有効化）は明示確認を要求（fail-safe）。
-3. **段階（参照）**: 現段階・モード（ペーパー/実弾）・資金上限を表示（段階変更は段階ゲート承認フロー＝#165 Bot 側）。
+3. **運用段階と発注先（参照・#334）**: 現段階・**現在の発注先**・段階の既定発注先を**別々の行**として表示する
+   （INDEX 決定 46・05_screens 共通規約:「独立した 2 軸であり 1 行に混ぜて表示しない」）。段階変更は段階ゲート承認フロー
+   （#165 Bot 側）。
+3-2. **発注先の変更（変更可・#334/IADR-0141）**: 3 値（内蔵 `paper` / moomoo `REAL` / moomoo `SIMULATE`）から選ぶ。
+   **変更操作を持つ画面は SC-02 だけである**（SC-03 は参照専用）。理由必須・監査ログ・版の対象。
+   **実弾（moomoo `REAL`）への切替は警告モーダルを必ず経由し、計画の 4 点**（①実資金で執行される旨／②切替先と現在の
+   Stage の組み合わせ〔Stage 1 のままなら段階ゲートを飛ばしている旨〕／③現在の equity と統制値の実額／④チェックボックスの
+   同意と「REAL」の文字入力）**を提示する。「OK」1 押しでは通過できない。** equity を取得できない場合は切替を許さない。
+3-3. **内蔵 `paper` 稼働中の警告バナー（#334）**: 画面上部に常時表示（必須 2 文言。FR-12・共通規約）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 5. **監視銘柄（変更可・#196/IADR-0090）**: `MonitoredSymbol[]`（銘柄コード・市場）の一覧・追加・削除。データ源は
    **別サービス** MarketMonitorService `/monitor/watchlist`（取得は OwnerOrService・変更は OwnerOnly）で、リスク設定の取得可否に
@@ -53,6 +64,8 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 初期表示 | `GET /risk-controls/settings` | `RiskManagementSettings`。404/失敗=縮退表示 |
 | 履歴 | `GET /risk-controls/settings/history` | `SettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`） | 成功=再取得。400=検証、409=競合（DbUpdateConcurrency）＋再取得を促す |
+| 発注先の変更 | `PUT /risk-controls/settings/broker-provider`（`{provider, reason, acknowledgedLiveTrading, acknowledgement}`） | 成功=再取得＋段階ゲート飛ばしの警告。**実弾は同意と「REAL」の入力の両方が無ければ 400**（サーバ側も同じ関門・IADR-0141）。理由が空も 400 |
+| equity・統制値の実額（モーダル③） | `GET /risk-controls/status` | `RiskStatusView`（`capital` / `maxOrderAmount` / `maxDailyOrderAmount` / `maxOpenPositions`）。失敗時は**実弾への切替を許さない** |
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す（#188/IADR-0086） |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
