@@ -159,7 +159,7 @@ internal sealed class HttpStageGateController(
     {
         var lines = new List<string>
         {
-            $"現段階: {StageLabel(v.CurrentStage)}（モード: {ModeLabel(v.CurrentSettings.Mode)} / 資金上限: {v.CurrentSettings.CapitalCap:N0} 円）",
+            $"現段階: {StageLabel(v.CurrentStage)}（モード: {ModeLabel(v.CurrentSettings.Mode)} / 発注可能額: 総資金の {v.CurrentSettings.CapitalCapRatio:P0}）",
             FormatPromotion(v.Promotion),
             FormatWithdrawal(v.Withdrawal),
         };
@@ -268,7 +268,8 @@ internal sealed class HttpStageGateController(
         PromotionAssessmentView Promotion,
         WithdrawalAssessmentView Withdrawal);
 
-    internal sealed record StageSettingsView(int Stage, int Mode, decimal CapitalCap);
+    // FR-20, #333: 発注可能額は**総資金比**で往来する（Stage 2 ＝ 0.30）。固定額ではない。
+    internal sealed record StageSettingsView(int Stage, int Mode, decimal CapitalCapRatio);
 
     internal sealed record StageTransitionView(
         int Sequence,

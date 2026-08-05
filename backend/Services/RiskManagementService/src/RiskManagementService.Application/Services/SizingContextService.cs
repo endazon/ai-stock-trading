@@ -12,9 +12,13 @@ public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilde
         var snapshot = snapshotBuilder.Build();
         var settings = settingsStore.GetCurrent();
 
-        // 段階資金残枠＝CapitalCap − 取得額累計（IADR-0005）。日次発注残枠＝1日上限 − 当日発注累計。いずれも負値は 0。
+        // 段階資金残枠＝段階の発注可能額 − 取得額累計（IADR-0005）。日次発注残枠＝1日上限 − 当日発注累計。
+        // いずれも負値は 0。
         // FR-10, #329, IADR-0130 決定1/2: 日次上限は equity 比のため、equity（snapshot.Capital）から解決する。
-        var stageRemaining = Math.Max(0m, settings.Stage.CapitalCap - snapshot.InvestedCapital);
+        // FR-20, #333, IADR-0136: 段階の発注可能額も総資金比のため、同じ equity から解決する。
+        var stageRemaining = Math.Max(
+            0m,
+            settings.Stage.OrderableCapFor(snapshot.Capital) - snapshot.InvestedCapital);
         var dailyRemaining = Math.Max(
             0m,
             settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital) - snapshot.DailyOrderedAmount);

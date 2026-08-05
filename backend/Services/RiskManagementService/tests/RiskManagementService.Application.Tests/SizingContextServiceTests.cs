@@ -21,8 +21,8 @@ public class SizingContextServiceTests
     [Fact]
     public void 段階_日次残枠は上限から使用分を引いて導出する()
     {
-        // 既定: Stage.CapitalCap=TradingDefaults.InitialCapital（¥491,100＝$3,000）/
-        // 日次上限は equity 比 150%（#329・計画 §5）。
+        // 既定: Stage 0 の発注可能額は総資金の 100%（#333・IADR-0136。段階としての絞りは無い）/
+        // 日次上限は equity 比 150%（#329・計画 §5）。いずれも equity（Capital）から解決される。
         var state = new PortfolioState
         {
             Capital = 100_000m,
@@ -35,7 +35,7 @@ public class SizingContextServiceTests
         var view = Build(state).Build();
 
         view.Capital.Should().Be(100_000m);
-        view.StageCapitalRemaining.Should().Be(TradingDefaults.InitialCapital - 40_000m);
+        view.StageCapitalRemaining.Should().Be(100_000m - 40_000m); // 100,000 × 100% − 40,000
         // FR-10, #329: 日次上限は equity 比 150%。100,000 × 1.5 − 50,000 = 100,000。
         view.DailyOrderRemaining.Should().Be(100_000m);
         view.ConsecutiveLosses.Should().Be(2);
@@ -50,7 +50,7 @@ public class SizingContextServiceTests
         var state = new PortfolioState
         {
             Capital = 100_000m,
-            InvestedCapital = TradingDefaults.InitialCapital + 1m, // CapitalCap 超過
+            InvestedCapital = 100_001m, // 段階の発注可能額（100,000 × 100%）超過
             DailyOrderedAmount = 200_000m, // 日次上限（100,000 × 150% = 150,000）超過
         };
 

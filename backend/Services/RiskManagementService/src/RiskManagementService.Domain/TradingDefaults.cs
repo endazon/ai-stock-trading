@@ -113,8 +113,8 @@ public static class TradingDefaults
     };
 
     public static StageSettings CreateStageSettings() =>
-        // Stage 0（検証）から開始。ペーパーのみ・資金上限は初期投入資金
-        new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital);
+        // Stage 0（検証）から開始。ペーパーのみ・発注可能額は総資金の全額（段階としての絞りは無い）
+        new(TradingStage.Stage0Verification, TradeMode.Paper, FullCapitalCapRatio);
 
     /// <summary>
     /// FR-20, ADR-0008: 撤退基準の DD 倍率 1.5（実DD ≥ バックテスト最大DD × 1.5 で自動停止・再検証）。
@@ -122,32 +122,51 @@ public static class TradingDefaults
     public const decimal WithdrawalDrawdownMultiple = 1.5m;
 
     /// <summary>
-    /// FR-20, 06_daytrading-review §4: Stage 2（最小実弾）の資金上限。最小単元・最小資金の保守的な暫定既定。
-    /// 実運用値は利用者が FR-17 設定で確定・変更する（IADR-0041）。
+    /// FR-20, #333: 段階として絞りを掛けない発注可能額の比率（総資金の 100%）。
+    /// Stage 0 / Stage 1 は実弾を撃たず（<see cref="TradeMode.Paper"/>）、Stage 3 は計画上「最大 100%」まで
+    /// 段階的に増額する（05_trading-assumptions §5）。いずれも段階としての金額の絞りは無く、実効的な上限は
+    /// FR-10 の統制上限（1 注文 25% / 1 日 150%）が担う。
+    /// </summary>
+    public const decimal FullCapitalCapRatio = 1.00m;
+
+    /// <summary>
+    /// FR-20, 05_trading-assumptions §5「運用段階（Stage）」, #333: Stage 2（最小実弾）の発注可能額
+    /// ＝**総資金の 30%**（$3,000 で $900）。
     /// <para>
-    /// **計画との逸脱（#333 担当・KnownPlanDeviations 登録済み）**: 計画 §5 は Stage 2 の発注可能額を
-    /// **総資金比 30%（$900）**と定めており、固定額での保持は計画に追随していない。#329（本 issue）は
-    /// リスク上限（FR-10）の比率化のみを扱い、段階の資金上限（FR-20）は #333 の担当のため触れない。
+    /// 計画は「口座には総資金 $3,000 を入れ、**発注可能額をシステム側の統制で 30% に制限する**
+    /// （口座への入金額は制限しない）」と定める。旧実装は固定額 35,000 円であり、これは旧資金 100,000 円を
+    /// 前提とした値であって増資後の $3,000 とは整合しなかった（KnownPlanDeviations
+    /// `Stage.Stage2OrderableCapRatio`。#333 で解消）。
+    /// </para>
+    /// <para>
+    /// **段階制約と FR-10 の統制上限は両方を満たす必要がある**（計画 §5 注記）。equity $3,000 では
+    /// 1 注文上限 $750（25%）が本段階の発注可能額 $900 の 83% にあたるため、保有建玉数上限 3 を満たすには
+    /// 1 建玉あたり $300 が実効上限になる。常に厳しい方が効く。
     /// </para>
     /// </summary>
-    public const decimal Stage2MinimalLiveCapitalCap = 35_000m;
+    public const decimal Stage2MinimalLiveCapitalCapRatio = 0.30m;
 
-    // FR-20, ADR-0008: 段階ゲート方針（4 段階の Mode/資金上限＋撤退倍率）。Stage 0/1＝ペーパー、Stage 2/3＝実弾。
+    // FR-20, ADR-0008: 段階ゲート方針（4 段階の Mode/発注可能額＋撤退倍率＋Stage 1 の合格条件）。
+    // Stage 0/1＝ペーパー（実弾なし）、Stage 2/3＝実弾。
     // 昇格・差し戻しは合格・撤退基準に基づき利用者が承認する（遷移ロジックは StageGate）。
     public static StageGatePolicy CreateStagePolicy() => new()
     {
         Definitions = new Dictionary<TradingStage, StageSettings>
         {
-            // 検証: ペーパーのみ・資金上限は初期投入資金
-            [TradingStage.Stage0Verification] = new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital),
+            // 検証: ペーパーのみ・段階としての金額の絞りは無い
+            [TradingStage.Stage0Verification] =
+                new(TradingStage.Stage0Verification, TradeMode.Paper, FullCapitalCapRatio),
             // SIMULATE: moomoo `SIMULATE`（OpenD 経由のデモ環境）による 3 か月の検証。実弾なし（#333）。
             // 発注先を段階から分離する 2 軸化（内蔵 paper / moomoo SIMULATE / moomoo REAL）は #334 の担当であり、
             // 本段階の TradeMode は引き続き Paper（＝実弾を撃たない）である。
-            [TradingStage.Stage1Simulate] = new(TradingStage.Stage1Simulate, TradeMode.Paper, InitialCapital),
-            // 最小実弾: 実弾モード・最小資金（保守的暫定既定）
-            [TradingStage.Stage2MinimalLive] = new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCap),
-            // 段階増額: 実弾モード・初期投入資金まで（以降の増額は月報レビュー時に FR-17 設定で確定）
-            [TradingStage.Stage3ScaledLive] = new(TradingStage.Stage3ScaledLive, TradeMode.Live, InitialCapital),
+            [TradingStage.Stage1Simulate] =
+                new(TradingStage.Stage1Simulate, TradeMode.Paper, FullCapitalCapRatio),
+            // 最小実弾: 実弾モード・発注可能額は総資金の 30%（計画 §5・#333）
+            [TradingStage.Stage2MinimalLive] =
+                new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCapRatio),
+            // 段階増額: 実弾モード・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
+            [TradingStage.Stage3ScaledLive] =
+                new(TradingStage.Stage3ScaledLive, TradeMode.Live, FullCapitalCapRatio),
         },
         WithdrawalDrawdownMultiple = WithdrawalDrawdownMultiple,
     };

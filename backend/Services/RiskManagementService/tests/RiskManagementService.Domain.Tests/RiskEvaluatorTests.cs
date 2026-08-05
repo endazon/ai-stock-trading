@@ -146,11 +146,15 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.StageProhibitsLiveTrading);
     }
 
+    // FR-20, #333, IADR-0136: 段階の発注可能額は**総資金比**で保持され、判定時に equity から解決される。
+    // 既定（Stage 0）は総資金の 100%（段階としての絞りは無い）＝ Snapshot の equity 100,000 円。
+    private static decimal StageOrderableCap(decimal equity = 100_000m) =>
+        DefaultSettings().Stage.OrderableCapFor(equity);
+
     [Fact]
-    public void 段階別資金上限を超える注文は拒否する()
+    public void 段階別の発注可能額を超える注文は拒否する()
     {
-        // FR-20: 段階ごとの資金上限を強制（既定 CapitalCap ＝ TradingDefaults.InitialCapital ＝ 491,100 円）
-        var intent = Buy(quantity: 100, price: 6_000m); // 600,000 円 > CapitalCap
+        var intent = Buy(quantity: 100, price: 6_000m); // 600,000 円 > 発注可能額 100,000 円
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
@@ -158,11 +162,11 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
-    public void 保有投入額を含む累計が段階資金上限を超える新規注文は拒否する()
+    public void 保有投入額を含む累計が段階の発注可能額を超える新規注文は拒否する()
     {
         // Issue #27 / FR-20, ADR-0008: 単一注文額は上限内でも、投入中資金＋当該注文で上限超過なら拒否。
-        // 投入中（CapitalCap − 10,000）＋ 20,000 = CapitalCap + 10,000 > CapitalCap。
-        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 10_000m);
+        // 投入中（発注可能額 − 10,000）＋ 20,000 = 発注可能額 + 10,000 > 発注可能額。
+        var snapshot = Snapshot(investedCapital: StageOrderableCap() - 10_000m);
         var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
@@ -172,16 +176,38 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
-    public void 保有投入額を含む累計が段階資金上限ちょうどなら承認する()
+    public void 保有投入額を含む累計が段階の発注可能額ちょうどなら承認する()
     {
-        // Issue #27: 境界値。投入中（CapitalCap − 20,000）＋ 20,000 == CapitalCap（判定は超過のみ拒否）。
-        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 20_000m);
+        // Issue #27: 境界値。投入中（発注可能額 − 20,000）＋ 20,000 == 発注可能額（判定は超過のみ拒否）。
+        var snapshot = Snapshot(investedCapital: StageOrderableCap() - 20_000m);
         var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeTrue();
         result.Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    // FR-20, #333, 05_trading-assumptions §5: Stage 2（最小実弾）の発注可能額は**総資金の 30%**である。
+    // 固定額ではないため、equity を増減すると上限も比例して動く（「資金だけ増えて上限が据え置き」が起きない）。
+    [Theory]
+    [InlineData(100_000, 30_000)]
+    [InlineData(491_100, 147_330)]  // $3,000 ＝ ¥491,100 → ¥147,330（約 $900）
+    [InlineData(982_200, 294_660)]  // 増資すると上限も比例する
+    public void Stage2の発注可能額は総資金の30パーセントに解決される(decimal equity, decimal expectedCap)
+    {
+        var stage2 = TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage2MinimalLive);
+
+        stage2.OrderableCapFor(equity).Should().Be(expectedCap);
+
+        // 実効も確認する: 上限ちょうどは承認、1 円超過は拒否（境界値）。
+        var settings = DefaultSettings() with { Stage = stage2 with { Mode = TradeMode.Paper } };
+        RiskEvaluator.Evaluate(
+                Buy(quantity: 1, price: expectedCap), settings, Snapshot(capital: equity))
+            .Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+        RiskEvaluator.Evaluate(
+                Buy(quantity: 1, price: expectedCap + 1m), settings, Snapshot(capital: equity))
+            .Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
     }
 
     [Fact]

@@ -59,7 +59,7 @@ public class StageGateTests
         result.Transition.OccurredAtUtc.Should().Be(Now);
         // Stage 1 はペーパー・資金上限は初期投入資金
         result.ResultingSettings.Should().Be(
-            new StageSettings(TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.InitialCapital));
+            new StageSettings(TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
     }
 
     // FR-20, FR-15: Stage 0→1 はバックテスト合格が前提。未合格なら承認があっても昇格は拒否される
@@ -142,7 +142,7 @@ public class StageGateTests
 
         result.Accepted.Should().BeTrue();
         result.ResultingSettings!.Mode.Should().Be(TradeMode.Live);
-        result.ResultingSettings.CapitalCap.Should().Be(TradingDefaults.InitialCapital);
+        result.ResultingSettings.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);
     }
 
     // FR-20, ADR-0008: 差し戻し（段階を下げる方向）は安全側。承認があれば合格基準不問で受理される

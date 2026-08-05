@@ -39,32 +39,20 @@ public class SimulatorTradingDefaultsTests
         simulator.Should().Be(production);
     }
 
+    // **否定形**（FR-20, #333, IADR-0136）: 検証用プロファイルが段階の発注可能額を差し替える経路が
+    // **もう存在しない**ことを固定する。比率はスケール不変であり、差し替えは不要になった
+    // （旧 SimulatorTradingDefaults.ApplyToPaperStage / CreateStagePolicy は削除済み）。
+    // 「検証用フラグで実弾段階の上限を動かさない」（IADR-0108 決定4）は構造的に成立する。
     [Fact]
-    public void 実弾段階の資金上限は本番既定から変えない()
+    public void 段階の発注可能額を差し替える経路を持たない()
     {
-        // 検証用プロファイルが実弾のリスク上限を緩められる経路を作らない（IADR-0108 決定4）。
-        var production = TradingDefaults.CreateStagePolicy();
-        var simulator = SimulatorTradingDefaults.CreateStagePolicy();
+        typeof(SimulatorTradingDefaults).GetMethod("ApplyToPaperStage")
+            .Should().BeNull("段階の発注可能額は総資金比であり、プロファイルが差し替える対象は無い");
+        typeof(SimulatorTradingDefaults).GetMethod("CreateStagePolicy")
+            .Should().BeNull("段階ゲート方針は本番既定（TradingDefaults）だけが供給する");
 
-        foreach (var stage in new[] { TradingStage.Stage2MinimalLive, TradingStage.Stage3ScaledLive })
-        {
-            simulator.SettingsFor(stage).Should().Be(production.SettingsFor(stage));
-            simulator.SettingsFor(stage).Mode.Should().Be(TradeMode.Live);
-        }
-
-        simulator.WithdrawalDrawdownMultiple.Should().Be(production.WithdrawalDrawdownMultiple);
-    }
-
-    [Fact]
-    public void ペーパー段階の資金上限だけを引き上げる()
-    {
-        var simulator = SimulatorTradingDefaults.CreateStagePolicy();
-
-        foreach (var stage in new[] { TradingStage.Stage0Verification, TradingStage.Stage1Simulate })
-        {
-            simulator.SettingsFor(stage).Mode.Should().Be(TradeMode.Paper);
-            simulator.SettingsFor(stage).CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);
-        }
+        // 段階設定そのものも本番既定と同一である（基準資金だけがプロファイル値になる）。
+        SimulatorTradingDefaults.CreateStageSettings().Should().Be(TradingDefaults.CreateStageSettings());
     }
 
     [Fact]
@@ -76,8 +64,8 @@ public class SimulatorTradingDefaultsTests
         TradingDefaults.InitialCapital.Should().Be(491_100m);
         TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio.Should().Be(0.25m);
         TradingDefaults.CreateRiskLimits().MaxDailyOrderAmountRatio.Should().Be(1.50m);
-        TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap
-            .Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCap);
+        TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage2MinimalLive).CapitalCapRatio
+            .Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCapRatio);
     }
 
     [Fact]

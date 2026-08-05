@@ -32,15 +32,19 @@ public class SimulatorProfileRiskSettingsStoreTests
             TradingDefaults.CreateRiskLimits(),
             TradingDefaults.CreateStagePolicy().SettingsFor(stage));
 
+    // FR-20, #333, IADR-0136: 段階の発注可能額も**総資金比**になったため、プロファイルは段階設定も書き換えない。
+    // 基準資金がシミュレータ残高になることで、解決後の発注可能額が比例して上がる。
     [Fact]
-    public void 有効時はペーパー段階の資金上限をプロファイル値へ差し替える()
+    public void 有効時も段階の発注可能額の比率は内側の設定のまま_解決額だけが基準資金に比例する()
     {
         var inner = new RecordingStore(Production());
         var store = new SimulatorProfileRiskSettingsStore(inner);
 
         var current = store.GetCurrent();
 
-        current.Stage.CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);
+        current.Stage.Should().Be(TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage0Verification));
+        current.Stage.OrderableCapFor(SimulatorTradingDefaults.InitialCapital)
+            .Should().Be(SimulatorTradingDefaults.InitialCapital);
     }
 
     // FR-10, #329, IADR-0130 決定6: 上限は equity 比のため、プロファイルは上限そのものを書き換えない。
@@ -71,17 +75,18 @@ public class SimulatorProfileRiskSettingsStoreTests
         current.Guard.Should().BeSameAs(inner.Current.Guard);
     }
 
+    // **否定形**: 検証用プロファイルが実弾（Stage 2/3）の発注可能額を緩められないことを固定する
+    // （IADR-0108 決定4）。#333・IADR-0136 以降、差し替える項目そのものが無いため構造的に成立する。
     [Fact]
-    public void 実弾段階の資金上限は上書きしない()
+    public void 実弾段階の発注可能額は上書きしない()
     {
-        // 検証用プロファイルが実弾（Stage 2/3）のリスク上限を緩められないことを固定する（IADR-0108 決定4）。
         var live = Production(TradingStage.Stage2MinimalLive);
         var store = new SimulatorProfileRiskSettingsStore(new RecordingStore(live));
 
         var current = store.GetCurrent();
 
         current.Stage.Mode.Should().Be(TradeMode.Live);
-        current.Stage.CapitalCap.Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCap);
+        current.Stage.CapitalCapRatio.Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCapRatio);
     }
 
     [Fact]
@@ -99,7 +104,7 @@ public class SimulatorProfileRiskSettingsStoreTests
 
         inner.Saves.Should().Be(1);
         inner.Current.Limits.MaxOpenPositions.Should().Be(2);
-        // 保存後も読み取りは上限だけ差し替わる（内側の編集内容＝保有数は保たれる）。
+        // 保存後の読み取りも内側の値をそのまま返す（内側の編集内容＝保有数は保たれる）。
         store.GetCurrent().Limits.MaxOpenPositions.Should().Be(2);
         store.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio);
     }
@@ -111,6 +116,6 @@ public class SimulatorProfileRiskSettingsStoreTests
         IRiskSettingsStore inner = new RecordingStore(Production());
 
         inner.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(0.25m);
-        inner.GetCurrent().Stage.CapitalCap.Should().Be(TradingDefaults.InitialCapital);
+        inner.GetCurrent().Stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);
     }
 }

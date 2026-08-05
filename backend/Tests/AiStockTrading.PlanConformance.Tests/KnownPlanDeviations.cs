@@ -27,9 +27,10 @@ public static class KnownPlanDeviations
         // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離 ---
         // #333 担当の逸脱は解消済み:
         //   Stage.Values（→ Stage0Verification, Stage1Simulate, Stage2MinimalLive, Stage3ScaledLive）
+        //   Stage.Stage2OrderableCapRatio（→ total funds ratio 0.30。計画 §5・IADR-0136）
         //   Stage0GateCriteria.MaxDrawdownTolerance（→ ratio 0.10。ADR-0018 決定2・IADR-0138）
-        // 呼称のみの是正であり、発注先の軸（BrokerProvider）は分離していない——下 2 行（#334 担当）は
-        // そのため残る。
+        // Stage 1 については**呼称のみ**の是正であり、発注先の軸（BrokerProvider）は段階から分離していない
+        // ——下 2 行（#334 担当）はそのため残る。
         new(
             "BrokerProvider.Values",
             "(type BrokerProvider not found)",
@@ -40,11 +41,6 @@ public static class KnownPlanDeviations
             "Paper",
             334,
             "Stage 1 が内蔵ペーパーを指している。計画は moomoo SIMULATE（3 か月）"),
-        new(
-            "Stage.Stage2OrderableCapRatio",
-            "JPY 35000 (fixed amount)",
-            333,
-            "固定額で保持している。計画は総資金比 30%（$900）を発注可能額としてシステム側で制限する"),
         // --- #381 為替レート源と鮮度: ADR-0022（2026-08-04 新設）への追随待ち ---
         // 本 3 件は「実装が先に決めていた値を計画が引き取った」型の逸脱である（#358 と同型だが向きが逆で、
         // 計画側が動いた結果として生じた）。IADR-0134 決定3 の運用規律に従い、planning のピンを

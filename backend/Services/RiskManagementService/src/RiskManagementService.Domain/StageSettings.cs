@@ -19,8 +19,28 @@ public enum TradingStage
     Stage3ScaledLive = 3,
 }
 
-// FR-20: 段階ごとの動作モード（ペーパー/実弾）と資金上限を強制する
+// FR-20: 段階ごとの動作モード（ペーパー/実弾）と発注可能額の上限を強制する。
 public record StageSettings(
     TradingStage Stage,
     TradeMode Mode,
-    decimal CapitalCap);
+    decimal CapitalCapRatio)
+{
+    /// <summary>
+    /// FR-20, #333, 05_trading-assumptions §5「運用段階（Stage）」: 段階の発注可能額を equity（総資金）から解決する。
+    /// <para>
+    /// 計画は Stage 2 の発注可能額を「**総資金の 30%（$900）**。口座には総資金 $3,000 を入れ、**発注可能額を
+    /// システム側の統制で 30% に制限する**（口座への入金額は制限しない）」と定める。固定額で持つと増資のたびに
+    /// 書き換えが要り、書き換え漏れが「資金だけ増えて上限が据え置き」を生む
+    /// （<see cref="RiskLimitSettings"/> と同じ規律。IADR-0130 決定1）。
+    /// </para>
+    /// <para>
+    /// 比率から金額への解決は本メソッドだけを通す（呼び出し側で <c>equity × 比率</c> と書かない。
+    /// equity の定義＝どの時点の値かが呼び出し側ごとにぶれるため）。
+    /// </para>
+    /// </summary>
+    /// <param name="equity">
+    /// 判定に用いる自己資金（equity）＝**前営業日終値時点の評価額**（計画 §5 注記）。
+    /// 実装上は <c>PortfolioSnapshot.Capital</c>（当日中は不変）。
+    /// </param>
+    public decimal OrderableCapFor(decimal equity) => equity * CapitalCapRatio;
+}

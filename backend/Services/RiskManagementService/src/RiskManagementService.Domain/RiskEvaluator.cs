@@ -41,11 +41,16 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.StageProhibitsLiveTrading);
         }
 
-        // FR-20, ADR-0008, IADR-0005: 段階資金上限は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
+        // FR-20, ADR-0008, IADR-0005: 段階の発注可能額は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
         // 判定する。単一注文額のみで比較すると、上限内の注文を複数回通して累計で上限を超過できる（Issue #27）。
         // FR-10, FR-17, #257, IADR-0107: 金額の突き合わせは基準通貨（円）で行う。外貨建て銘柄の Notional
         //（ローカル通貨）を円建ての上限と比較すると、上限が桁で緩む（過大発注を招く向き）。
-        if (isEntry && snapshot.InvestedCapital + intent.NotionalInBase > settings.Stage.CapitalCap)
+        // FR-20, #333, IADR-0136: 段階の発注可能額は**総資金比**で保持されており、判定時に equity から解決する
+        // （Stage 2 ＝ 総資金の 30%。計画 §5）。equity は FR-10 の金額上限と同じ snapshot.Capital を用いる
+        // （基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        if (isEntry
+            && snapshot.InvestedCapital + intent.NotionalInBase
+                > settings.Stage.OrderableCapFor(snapshot.Capital))
         {
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
