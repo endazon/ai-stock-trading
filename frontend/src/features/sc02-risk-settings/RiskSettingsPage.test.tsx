@@ -71,8 +71,8 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     render(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     // 段階（数値 enum）がラベルへ写像される（参照表示。直接変更 UI は無い＝#20/#165 段階ゲート承認へ一元化）。
-    expect(screen.getByText('Stage 2（少額実弾）')).toBeInTheDocument();
-    expect(screen.getByText('実弾')).toBeInTheDocument();
+    // #333/#334: 段階の呼称は計画（06_daytrading-review §4 表）に従う。
+    expect(screen.getByText('Stage 2（最小実弾）')).toBeInTheDocument();
     // 段階の編集 UI は存在しない（段階変更フォームは開かない）。
     expect(screen.queryByRole('form', { name: '運用段階の変更' })).not.toBeInTheDocument();
     // ガードは編集可能（詳細は RiskSettingsPage.guard.test.tsx）。禁止銘柄は編集表として現在値を表示する。

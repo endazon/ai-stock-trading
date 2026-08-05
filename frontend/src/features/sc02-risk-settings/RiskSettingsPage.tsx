@@ -6,19 +6,24 @@ import type {
   BannedSymbol,
   RiskLimitSettings,
   RiskManagementSettings,
+  RiskStatusView,
   SettingsChangeEntry,
   TradingGuardSettings,
 } from '../risk/contracts';
 import {
+  brokerProviderLabel,
+  BROKER_PROVIDER_OPTIONS,
   changeTypeLabel,
   formatAt,
+  isLiveProvider,
+  LIVE_ACKNOWLEDGEMENT_PHRASE,
   marketLabel,
-  modeLabel,
   MARKET_OPTIONS,
   RISKY_PRODUCT_TYPES,
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
 } from '../risk/contracts';
+import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { WatchlistForm } from './WatchlistForm';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, ADR-0008, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
@@ -183,6 +188,8 @@ export function RiskSettingsPage() {
 
   return (
     <section>
+      {/* FR-12, #334: 内蔵 paper 稼働中の警告バナー（画面上部に常時表示。05_screens 共通規約）。 */}
+      <PaperModeBanner provider={current?.brokerProvider} />
       <h1>リスク設定</h1>
       <p>
         リスク統制の上限（発注額・保有数・損失/DD 上限など）と取引ガードの閲覧と変更を行います（FR-13）。変更は利用者のみが行えます。
@@ -238,7 +245,16 @@ export function RiskSettingsPage() {
               await loadHistory();
             }}
           />
-          <StageView stage={current.stage} />
+          <StageView stage={current.stage} provider={current.brokerProvider} />
+          <BrokerProviderForm
+            current={current.brokerProvider}
+            stageMode={current.stage.mode}
+            stage={current.stage.stage}
+            onSaved={async () => {
+              await loadCurrent();
+              await loadHistory();
+            }}
+          />
           <HistoryView status={historyStatus} history={history} />
         </>
       )}
@@ -568,19 +584,324 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
   );
 }
 
-// FR-20: 段階（参照専用）。段階変更は段階ゲート承認フロー（#165 Bot 側）。
-function StageView({ stage }: { stage: RiskManagementSettings['stage'] }) {
+// FR-20, #334, INDEX 決定 46: 段階（参照専用）と発注先（現在値）の並記。
+// **運用段階と発注先は独立した 2 軸であり、1 行に混ぜて表示しない**（05_screens 共通規約）。
+// 段階変更は段階ゲート承認フロー（#165 Bot 側）、発注先の変更は下の「発注先（変更）」で行う。
+function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']; provider: number }) {
   return (
-    <Section title="運用段階（参照）">
+    <Section title="運用段階と発注先（参照）">
       <dl>
-        <dt>現段階</dt>
+        <dt>運用段階</dt>
         <dd>{stageLabel(stage.stage)}</dd>
-        <dt>モード</dt>
-        <dd>{modeLabel(stage.mode)}</dd>
-        <dt>資金上限</dt>
-        <dd>{stage.capitalCap}</dd>
+        <dt>発注先</dt>
+        <dd>{brokerProviderLabel(provider)}</dd>
+        <dt>段階の既定発注先</dt>
+        <dd>{brokerProviderLabel(stage.mode)}</dd>
       </dl>
+      <p>
+        運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。
+      </p>
     </Section>
+  );
+}
+
+// FR-20, FR-13, SC-02, INDEX 決定 46, #334, IADR-0141: 発注先（Broker Provider）の変更フォーム。
+//
+// **変更操作を持つ画面は SC-02 だけである**（SC-03 は参照専用）。他のリスク設定と同様に変更理由必須・
+// 監査ログ記録・版（楽観排他）の対象とする（05_screens 共通規約）。
+//
+// **実弾（moomoo REAL）への切替は警告モーダルを伴い、「OK」1 押しでは通過できない。** モーダルは計画が
+// 定める 4 点を必ず提示する（05_screens SC-02 / FR-20 (1)）:
+//   ① これ以降の注文は実際の資金で執行される旨
+//   ② 切替先と現在の Stage の組み合わせの妥当性（Stage 1 のままなら段階ゲートを飛ばしている旨）
+//   ③ 現在の equity と、それに対する統制値の実額
+//   ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力）
+//
+// 同じ関門はサーバ側にもある（IADR-0141 決定1）。画面だけの統制は API 直叩きで消えるためであり、
+// ここでの二重化は冗長ではない。
+type ProviderSaveState = 'idle' | 'saving' | 'error';
+
+function BrokerProviderForm({
+  current,
+  stageMode,
+  stage,
+  onSaved,
+}: {
+  current: number;
+  stageMode: number;
+  stage: number;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [selected, setSelected] = useState<number>(current);
+  const [reason, setReason] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [phrase, setPhrase] = useState('');
+  const [saveState, setSaveState] = useState<ProviderSaveState>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // ③ の提示に用いる equity と統制値の実額。別サービス障害を本フォームの障害にしないため独立に取得する。
+  const [status, setStatus] = useState<RiskStatusView | null>(null);
+
+  // 現在値に追随して選択を初期化する（自分の保存成功後の再取得・外部変更）。
+  useEffect(() => {
+    setSelected(current);
+    setReason('');
+    setModalOpen(false);
+    setAcknowledged(false);
+    setPhrase('');
+  }, [current]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await apiFetch<RiskStatusView>('/risk-controls/status');
+        if (!cancelled) setStatus(data);
+      } catch {
+        if (!cancelled) setStatus(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const live = isLiveProvider(selected);
+  const unchanged = selected === current;
+  const reasonMissing = reason.trim() === '';
+  // ④ チェックボックスの同意と「REAL」の文字入力の**両方**が揃うまで切替を実行できない。
+  const confirmationComplete = acknowledged && phrase.trim() === LIVE_ACKNOWLEDGEMENT_PHRASE;
+  // ③ を提示できない状態（equity が取れない）では実弾へ切り替えない。提示できない項目がある確認は
+  // 「読ませたうえでの同意」にならないため、安全側に倒す（IADR-0141 残余リスク）。
+  const equityUnavailable = status === null;
+  // ② Stage 1 のまま実弾＝段階ゲートを飛ばしている。**保存は妨げない**（計画）。警告として提示する。
+  const skipsStageGate = live && !isLiveProvider(stageMode);
+
+  async function submit(): Promise<void> {
+    setSaveState('saving');
+    setSaveError(null);
+    setSavedNotice(null);
+    try {
+      await apiFetch('/risk-controls/settings/broker-provider', {
+        method: 'PUT',
+        json: {
+          provider: selected,
+          reason: reason.trim(),
+          acknowledgedLiveTrading: live ? acknowledged : false,
+          acknowledgement: live ? phrase.trim() : null,
+        },
+      });
+      setSaveState('idle');
+      setModalOpen(false);
+      setAcknowledged(false);
+      setPhrase('');
+      setSavedNotice('保存しました。');
+      await onSaved();
+    } catch (err: unknown) {
+      // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
+      setSaveState('error');
+      setSaveError(saveMessageOf(err));
+      setModalOpen(false);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    if (unchanged || reasonMissing || saveState === 'saving') return;
+    if (live) {
+      // 実弾は直接保存しない。**必ず警告モーダルを経由する。**
+      setModalOpen(true);
+      return;
+    }
+    await submit();
+  }
+
+  return (
+    <Section title="発注先（変更）">
+      <form onSubmit={handleSubmit} aria-label="発注先の変更">
+        <p>
+          現在の発注先: <strong>{brokerProviderLabel(current)}</strong>
+        </p>
+        <fieldset>
+          <legend>発注先</legend>
+          {BROKER_PROVIDER_OPTIONS.map((o) => (
+            <div key={`bp-${o.value}`}>
+              <label>
+                <input
+                  type="radio"
+                  name="broker-provider"
+                  value={o.value}
+                  checked={selected === o.value}
+                  onChange={() => setSelected(o.value)}
+                />
+                {o.label}
+              </label>
+            </div>
+          ))}
+        </fieldset>
+
+        <div>
+          <label htmlFor="broker-provider-reason">変更理由</label>
+          <textarea
+            id="broker-provider-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+          />
+        </div>
+
+        {skipsStageGate && (
+          <p role="alert">
+            現在の運用段階（{stageLabel(stage)}）が想定する発注先は
+            {brokerProviderLabel(stageMode)}です。実弾へ切り替えると段階ゲートを飛ばすことになります。
+          </p>
+        )}
+
+        <button type="submit" disabled={unchanged || reasonMissing || saveState === 'saving'}>
+          {live ? '実弾への切替を確認する' : '保存'}
+        </button>
+        {unchanged && <p>発注先は変更されていません。</p>}
+        {saveState === 'saving' && <span role="status">保存中…</span>}
+        {savedNotice && <p role="status">{savedNotice}</p>}
+        {saveError && <p role="alert">{saveError}</p>}
+      </form>
+
+      {modalOpen && (
+        <LiveSwitchWarningModal
+          stage={stage}
+          stageMode={stageMode}
+          skipsStageGate={skipsStageGate}
+          status={status}
+          equityUnavailable={equityUnavailable}
+          acknowledged={acknowledged}
+          phrase={phrase}
+          confirmationComplete={confirmationComplete}
+          saving={saveState === 'saving'}
+          onAcknowledgedChange={setAcknowledged}
+          onPhraseChange={setPhrase}
+          onCancel={() => {
+            setModalOpen(false);
+            setAcknowledged(false);
+            setPhrase('');
+          }}
+          onConfirm={() => void submit()}
+        />
+      )}
+    </Section>
+  );
+}
+
+// FR-20 (1), 05_screens SC-02, #334, IADR-0141: 実弾切替の警告モーダル。計画が定める 4 点を必ず描く。
+// **切替ボタンは「同意」と「REAL の入力」が両方揃うまで無効である**（「OK」1 押しで通過させない）。
+function LiveSwitchWarningModal({
+  stage,
+  stageMode,
+  skipsStageGate,
+  status,
+  equityUnavailable,
+  acknowledged,
+  phrase,
+  confirmationComplete,
+  saving,
+  onAcknowledgedChange,
+  onPhraseChange,
+  onCancel,
+  onConfirm,
+}: {
+  stage: number;
+  stageMode: number;
+  skipsStageGate: boolean;
+  status: RiskStatusView | null;
+  equityUnavailable: boolean;
+  acknowledged: boolean;
+  phrase: string;
+  confirmationComplete: boolean;
+  saving: boolean;
+  onAcknowledgedChange: (v: boolean) => void;
+  onPhraseChange: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div role="dialog" aria-modal="true" aria-label="実弾（moomoo REAL）への切替の確認">
+      {/* ① 実資金で執行される旨 */}
+      <p role="alert">
+        <strong>これ以降の注文は実際の資金で執行されます。</strong>
+      </p>
+
+      {/* ② 切替先と現在の Stage の組み合わせの妥当性 */}
+      <p>
+        現在の運用段階: <strong>{stageLabel(stage)}</strong>／段階が想定する発注先:{' '}
+        <strong>{brokerProviderLabel(stageMode)}</strong>
+      </p>
+      {skipsStageGate && (
+        <p role="alert">
+          この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。
+        </p>
+      )}
+
+      {/* ③ 現在の equity と、それに対する統制値の実額 */}
+      {equityUnavailable || status === null ? (
+        <p role="alert">
+          現在の equity と統制値を取得できないため、実弾へ切り替えられません。時間をおいて再度お試しください。
+        </p>
+      ) : (
+        <table aria-label="現在の equity と統制値">
+          <tbody>
+            <tr>
+              <th>現在の equity（自己資金）</th>
+              <td>{status.capital}</td>
+            </tr>
+            <tr>
+              <th>1 注文あたり発注金額上限</th>
+              <td>{status.maxOrderAmount}</td>
+            </tr>
+            <tr>
+              <th>1 日あたり発注金額上限</th>
+              <td>{status.maxDailyOrderAmount}</td>
+            </tr>
+            <tr>
+              <th>保有建玉数上限</th>
+              <td>{status.maxOpenPositions}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+
+      {/* ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力） */}
+      <div>
+        <label>
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => onAcknowledgedChange(e.target.checked)}
+          />
+          実資金で執行されることを理解しました
+        </label>
+      </div>
+      <div>
+        <label htmlFor="live-switch-phrase">
+          確認のため「{LIVE_ACKNOWLEDGEMENT_PHRASE}」と入力してください
+        </label>
+        <input
+          id="live-switch-phrase"
+          value={phrase}
+          onChange={(e) => onPhraseChange(e.target.value)}
+        />
+      </div>
+
+      <button type="button" onClick={onCancel} disabled={saving}>
+        キャンセル
+      </button>
+      <button
+        type="button"
+        onClick={onConfirm}
+        disabled={!confirmationComplete || equityUnavailable || saving}
+      >
+        実弾へ切り替える
+      </button>
+    </div>
   );
 }
 

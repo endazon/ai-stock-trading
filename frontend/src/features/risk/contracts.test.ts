@@ -4,9 +4,16 @@ import {
   changeTypeLabel,
   criterionLabel,
   formatAt,
+  brokerProviderLabel,
+  BROKER_PROVIDER_INTERNAL_PAPER,
+  BROKER_PROVIDER_MOOMOO_REAL,
+  BROKER_PROVIDER_MOOMOO_SIMULATE,
+  BROKER_PROVIDER_OPTIONS,
+  isInternalPaper,
+  isLiveProvider,
+  LIVE_ACKNOWLEDGEMENT_PHRASE,
   marketLabel,
   MARKET_OPTIONS,
-  modeLabel,
   productTypeLabel,
   PRODUCT_TYPE_MARGIN_LONG,
   PRODUCT_TYPE_SHORT_SELL,
@@ -23,8 +30,11 @@ import {
 describe('risk contracts — enum label mapping (fail-safe fallback)', () => {
   it('maps known enum values to labels', () => {
     expect(stageLabel(0)).toBe('Stage 0（検証）');
-    expect(stageLabel(3)).toBe('Stage 3（拡大実弾）');
-    expect(modeLabel(1)).toBe('実弾');
+    // #333 / #334: 段階の呼称は計画（06_daytrading-review §4 表）に従う。「ペーパー」の語は単独で使わない。
+    expect(stageLabel(1)).toBe('Stage 1（SIMULATE）');
+    expect(stageLabel(2)).toBe('Stage 2（最小実弾）');
+    expect(stageLabel(3)).toBe('Stage 3（段階増額）');
+    expect(brokerProviderLabel(BROKER_PROVIDER_MOOMOO_REAL)).toContain('moomoo REAL');
     expect(activeControlLabel(1)).toBe('緊急停止（kill switch）');
     expect(transitionKindLabel(1)).toBe('差し戻し');
     expect(criterionLabel(0)).toBe('バックテスト未合格');
@@ -85,5 +95,47 @@ describe('risk contracts — formatAt (degrades safely)', () => {
 
   it('returns the raw string for an unparseable value (does not throw)', () => {
     expect(formatAt('not-a-date')).toBe('not-a-date');
+  });
+});
+
+// FR-20, FR-12, INDEX 決定 46, #334: 発注先（Broker Provider）の 3 値と序数、実弾判定・paper 判定。
+describe('risk contracts — broker provider (2 軸分離)', () => {
+  it('序数はバックエンド BrokerProvider と一致する（旧 TradeMode の Paper=0 / Live=1 を保存）', () => {
+    expect(BROKER_PROVIDER_INTERNAL_PAPER).toBe(0);
+    expect(BROKER_PROVIDER_MOOMOO_REAL).toBe(1);
+    expect(BROKER_PROVIDER_MOOMOO_SIMULATE).toBe(2);
+  });
+
+  it('選択肢は計画の 3 値だけを出す', () => {
+    expect(BROKER_PROVIDER_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2]);
+  });
+
+  it('ラベルは用語の分離を守る（SIMULATE を「ペーパー」と呼ばない・paper を「デモ取引」と呼ばない）', () => {
+    expect(brokerProviderLabel(BROKER_PROVIDER_MOOMOO_SIMULATE)).not.toContain('ペーパー');
+    expect(brokerProviderLabel(BROKER_PROVIDER_INTERNAL_PAPER)).not.toContain('デモ');
+    expect(brokerProviderLabel(BROKER_PROVIDER_INTERNAL_PAPER)).not.toContain('SIMULATE');
+  });
+
+  it('実弾判定は moomoo REAL だけを真とする（否定形）', () => {
+    expect(isLiveProvider(BROKER_PROVIDER_MOOMOO_REAL)).toBe(true);
+    expect(isLiveProvider(BROKER_PROVIDER_INTERNAL_PAPER)).toBe(false);
+    expect(isLiveProvider(BROKER_PROVIDER_MOOMOO_SIMULATE)).toBe(false);
+    expect(isLiveProvider(99)).toBe(false);
+  });
+
+  it('内蔵 paper 判定は 0 だけを真とし、未知値・欠損は偽（バナーを誤って出さない）', () => {
+    expect(isInternalPaper(BROKER_PROVIDER_INTERNAL_PAPER)).toBe(true);
+    expect(isInternalPaper(BROKER_PROVIDER_MOOMOO_SIMULATE)).toBe(false);
+    expect(isInternalPaper(null)).toBe(false);
+    expect(isInternalPaper(undefined)).toBe(false);
+    expect(isInternalPaper(99)).toBe(false);
+  });
+
+  it('確認文字列はサーバの BrokerProviderChange.LiveAcknowledgementPhrase と同じ値である', () => {
+    expect(LIVE_ACKNOWLEDGEMENT_PHRASE).toBe('REAL');
+  });
+
+  it('発注先の変更履歴は種別 7 で絞れる（SettingsChangeType.BrokerProviderChanged）', () => {
+    expect(changeTypeLabel(7)).toBe('発注先');
   });
 });
