@@ -171,6 +171,28 @@ function labelOf(name, input) {
 }
 
 /**
+ * 引用符（`'` / `"`）で囲まれた範囲に `|` が含まれるか。
+ *
+ * 素朴に 1 文字ずつ走査する。エスケープ（`\"`）は引用の開閉として数えない。
+ * シェルの完全な字句解析ではないが、**交替を含む grep パターンを拾う**という目的には足りる。
+ * 迷ったら false（＝ A 扱い）へ倒す方針に沿い、判定できない形は拾わない。
+ */
+function hasQuotedPipe(cmd) {
+  let quote = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (ch === '\\') { i++; continue; } // エスケープされた次の 1 文字は読み飛ばす
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (ch === '|') return true;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    }
+  }
+  return false;
+}
+
+/**
  * その拒否が「許可リストを直せば消えるか」を判定する（#391 ②の本体）。
  *
  * 拒否には性質の違う 2 種類がある。
@@ -200,6 +222,13 @@ function unfixableReason(name, input) {
   if (hasRedirect(input)) return 'リダイレクト（レビュー用に書き込み手段は無い）';
   // プロセス置換 `<(…)` / コマンド置換 `$(…)` / バッククォート。中のコマンドが許可済みでも拒否される。
   if (/<\(|\$\(|`/.test(cmd)) return 'プロセス置換・コマンド置換';
+  // 引用符の中の `|`（`grep -E "A|B"` の交替）。許可判定はコマンド文字列を分割してから
+  // 前方一致を見るため、**引用符の中の `|` もパイプとして分割され**、`B"` のような
+  // 存在しないコマンドが未許可と判定される。**正規表現の断片は許可リストに書けない**ので
+  // 原理的に直せない。対処はプロンプト側（交替を使わず grep を分ける）である。
+  // 実測: PR #395 のレビューで 5 件中 3 件がこの形だった
+  // （`Bash(git -C planning show | Grep | 決定 | 決定14\ | …)` のように分割された姿で報告される）。
+  if (hasQuotedPipe(cmd)) return '引用符内の `|`（grep の交替等。許可判定が分割してしまう）';
 
   // 以降はセグメント単位で見る。1 つでも該当すれば鎖全体が実行されないため B とする。
   const segments = cmd
@@ -876,6 +905,10 @@ function selfTest() {
       ['cd によるディレクトリ移動', 'cd planning && git log -1'],
       ['git -C の絶対パス', 'git -C /home/runner/work/x/x log -1'],
       ['鎖の後段が B なら全体が B', 'git diff | cd x'],
+      // 実測（PR #395・5 件中 3 件）: 引用符内の `|` が分割され、正規表現の断片が
+      // 未許可コマンドとして判定される。許可リストには書けないので B。
+      ['引用符内の | （二重引用符）', 'git -C planning show a:b | grep -E "決定|決定14"'],
+      ["引用符内の | （単一引用符）", "ls docs | grep -E 'check-banned|check-coverage'"],
     ];
     for (const [label, cmd] of unfixableCases) {
       const r = collectDenials([mk([cmd])]);
@@ -896,6 +929,10 @@ function selfTest() {
       ['npx playwright', 'npx playwright test'],
       ['引数に = を含むが前置きではない', 'npm run test -- --reporter=dot'],
       ['MCP ツールは常に A', { tool_name: 'mcp__github__search_issues' }],
+      // 引用符があっても `|` を含まなければ A（許可リストで直せる）。
+      ['引用符付き引数でも | が無ければ A', 'grep -n "決定 14" docs/a.md'],
+      ['エスケープされた引用符で誤判定しない', 'echo "say \\"hi\\""'],
+      ['git -C planning rev-parse は A（許可リストに足せる）', 'git -C planning rev-parse HEAD'],
     ];
     for (const [label, cmd] of fixableCases) {
       const r = collectDenials([mk([cmd])]);
@@ -919,6 +956,24 @@ function selfTest() {
       else {
         failed++;
         process.stderr.write(`  NG  ${label}\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // 実測の再現 2（PR #395 の run 31012341385・5 件）。rev-parse を許可すれば A は 1 件になる。
+    {
+      const r = collectDenials([
+        mk([
+          'git -C planning show a:b | grep -E "決定|決定14"',
+          'ls docs | git -C planning ls-tree HEAD | grep -E "ADR-0016|ADR-0019"',
+          'ls scripts | grep -E "check-banned|check-coverage"',
+          'ls scripts | grep foo',
+          'git -C planning rev-parse HEAD',
+        ]),
+      ]);
+      const ok = r.unfixableCount === 3 && r.fixableCount === 2 && isCritical(r, 4) === false;
+      if (ok) process.stdout.write('  ok  PR #395 の 5 件を再現し、分類後は失敗しない\n');
+      else {
+        failed++;
+        process.stderr.write(`  NG  PR #395 の再現\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
       }
     }
     // 実測の再現（run 30998236984・5 件）。すべて A なので従来どおり失敗する。
@@ -963,10 +1018,10 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  // +36 は、上のループに含まれない個別検査の合計。内訳:
+  // +42 は、上のループに含まれない個別検査の合計。内訳:
   //   ポリシー 8 / 実行サマリ 2 / 件数メッセージ 1
-  //   #391 ② の分類: B 判定 9 / A 判定 9 / 失敗判定 5 / 実測 run の再現 1 / B の可視化 1
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 36} 件すべて合格\n`);
+  //   #391 ② の分類: B 判定 11 / A 判定 12 / 失敗判定 5 / 実測 run の再現 2 / B の可視化 1
+  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 42} 件すべて合格\n`);
   return 0;
 }
 
