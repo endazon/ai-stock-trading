@@ -99,6 +99,35 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # EF マイグレーションの検証（`dotnet ef migrations has-pending-model-changes`）用。
+      # 本リポジトリは tool manifest（.config/dotnet-tools.json）を持たないためグローバル導入する。
+      # 導入に失敗してもレビュー自体は続ける（EF の主張だけが「未検証」になる）。
+      - name: Install dotnet-ef
+        continue-on-error: true
+        run: dotnet tool install --global dotnet-ef
+
+      # frontend（typecheck / vitest / Playwright）の検証用。ci.yml の frontend-e2e ジョブと
+      # 同じ手順を複製する。
+      #
+      # 【重要・#391】許可リストへ足すだけでは実行できない。node_modules が無ければ typecheck も
+      # vitest も動かず、レビューは「実行したが失敗した」と報告する。原因が環境不備であることは
+      # 本文からは判らないため、**拒否されるより質が悪い**。許可とセットアップは必ず対で入れる。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        continue-on-error: true
+        run: npm ci
+        working-directory: frontend
+      # Playwright（E2E）は利用者裁定によりレビューでも実走を許可する（2026-08-05・#391 ①）。
+      # ブラウザ取得に 1〜2 分かかるが、E2E の主張を未検証のまま通すほうが害が大きいと判断した。
+      - name: Install Playwright browser (chromium)
+        continue-on-error: true
+        run: npm run e2e:install
+        working-directory: frontend
+
       # レビューは PR オープン/更新で自動起動するため、モデル指定は PR 本文/タイトルの
       # 「@claude opus / sonnet / haiku」で切り替える。未指定時は既定 claude-sonnet-5。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
@@ -196,7 +225,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet --version),Bash(dotnet --info)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning rev-parse:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -236,6 +265,11 @@ jobs:
                 許可リストに無いため、後続が許可済みでも先頭で拒否される。submodule の履歴を見る
                 ときは **`git -C planning log / show / diff / ls-tree`** を使うこと（許可済み）。
                 この形の拒否は実際に発生している（1 回のレビューで `cd | git log` 4 件）。
+              - **`git -C` に絶対パスを渡す形**（`git -C /home/runner/work/… log`）。許可は
+                `Bash(git -C planning log:*)` のように**相対パス `planning` を含む前方一致**で
+                与えてあるため、絶対パスは当たらない。`Bash(git -C:*)` の一括許可は書き込み系まで
+                通るため設計上禁止している。**リポジトリ直下は `git log` 等をそのまま使い、
+                submodule は `git -C planning …` を使うこと**（実測で 2 件の拒否が出た形である）。
             - **パイプは各コマンドが個別に許可判定される。** `git show X | cmp - Y` は `cmp` が
               未許可なら拒否される（前段が許可済みでも通らない）。バイト一致の確認には
               `cmp` / `diff` を許可してあるので、そのまま使ってよい。
@@ -309,6 +343,17 @@ jobs:
             【検証の実行】
             ビルド・テスト・フォーマットの実行は許可されている。PR 本文が「テストが通る」と
             主張している場合は、可能な限り**自分で実走して確認**し、結果を報告に含めること。
+
+            **frontend と EF マイグレーションと E2E も実走できる**（#391 で許可とセットアップを
+            揃えた）。ジョブ側で `npm ci`（`frontend/`）・Playwright の chromium・`dotnet-ef` を
+            導入済みなので、次はそのまま実行してよい。
+            - `npm --prefix frontend run typecheck` / `npm --prefix frontend run test -- --run`
+            - `npm --prefix frontend run e2e`（Playwright。**ブラウザは導入済み**）
+            - `dotnet ef migrations has-pending-model-changes --project <csproj>`
+            PR 本文が frontend のテスト結果や「マイグレーション差分なし」を主張している場合は、
+            **必ず自分で実走して確かめること**（従来これらは検証されないまま通過していた）。
+            セットアップ手順は失敗しても続行する構成のため、実行してエラーになったら
+            「環境の不備で未検証」と書けばよい（**推測で ✅ にしない**）。
             計画書 submodule の**履歴**（pin の進み方・その差分・「変更が無いこと」）についても
             `git -C planning log / show / diff / ls-tree` で検証できる。PR が submodule の pin に
             言及している場合は、その主張を実際に確かめること。
