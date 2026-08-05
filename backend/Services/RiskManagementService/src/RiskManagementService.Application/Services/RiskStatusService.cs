@@ -46,12 +46,15 @@ public sealed class RiskStatusService(
             ActiveControl: activeControl,
             NewEntriesBlocked: newEntriesBlocked,
             Stage: stage,
+            // FR-20, #334: 発注先は段階と独立の軸であり、設定から読む（段階からは導出しない）。
+            BrokerProvider: settings.BrokerProvider,
             DailyRealizedPnl: snapshot.DailyRealizedPnl,
             UnrealizedPnl: snapshot.UnrealizedPnl,
             DailyPnl: snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl,
             Capital: snapshot.Capital,
             DailyOrderedAmount: snapshot.DailyOrderedAmount,
             // FR-10, #329, IADR-0130 決定1: 上限は equity 比のため、表示も equity から解決した実額を載せる。
+            MaxOrderAmount: settings.Limits.MaxOrderAmountFor(snapshot.Capital),
             MaxDailyOrderAmount: settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital),
             DrawdownRatio: snapshot.DrawdownRatio,
             MaxDrawdownRatio: settings.Limits.MaxDrawdownRatio,

@@ -1,4 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.State;
 
@@ -17,6 +18,9 @@ public sealed record RiskStatusView(
     bool NewEntriesBlocked,
     // --- 運用段階 ---
     TradingStage Stage,
+    // FR-20, FR-12, SC-03, #334, IADR-0140: **発注先**（Broker Provider）。運用段階とは独立した軸であり、
+    // 画面は 1 行に混ぜずに並べて表示する（05_screens「表示規約（共通）」）。SC-03 は参照専用。
+    BrokerProvider BrokerProvider,
     // --- 当日損益（実現＋含み） ---
     decimal DailyRealizedPnl,
     decimal UnrealizedPnl,
@@ -24,6 +28,9 @@ public sealed record RiskStatusView(
     // --- 上限使用率の入力（残枠・上限） ---
     decimal Capital,
     decimal DailyOrderedAmount,
+    // FR-10, FR-20, SC-02, #334: 1 注文あたりの発注金額上限（equity から解決した実額）。
+    // 実弾切替の警告モーダル③「現在の equity と、それに対する統制値の実額」の提示に用いる。
+    decimal MaxOrderAmount,
     decimal MaxDailyOrderAmount,
     decimal DrawdownRatio,
     decimal MaxDrawdownRatio,

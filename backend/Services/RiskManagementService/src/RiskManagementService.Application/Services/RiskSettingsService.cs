@@ -38,7 +38,43 @@ public sealed class RiskSettingsService(
         RequireActorAndReason(actor, reason);
 
         var current = store.GetCurrent();
+        // FR-20, #334, IADR-0140: 段階だけを差し替える。**発注先（BrokerProvider）には触れない**——
+        // 2 軸は独立であり、段階の変更が発注先を自動で動かしてはならない（`with` が他プロパティを保つ）。
         Save(current with { Stage = stage }, current.Stage, stage, SettingsChangeType.Stage, actor, reason);
+    }
+
+    /// <summary>
+    /// FR-20, FR-13, SC-02, #334, IADR-0140 / IADR-0141: 発注先（Broker Provider）を変更する。
+    /// <para>
+    /// 受理条件は <see cref="BrokerProviderChange.Evaluate"/> が単独で決める（画面とサーバで規則を二重に
+    /// 書かない）。<b>受理しない場合は設定を一切変更せず、履歴も残さない</b>——拒否された要求を履歴に
+    /// 積むと、実際には起きていない変更が監査上の事実になる。
+    /// </para>
+    /// <para>
+    /// <b>段階には触れない。</b>発注先の変更が段階を自動で動かしてはならない（2 軸の独立）。
+    /// </para>
+    /// </summary>
+    /// <returns>判定結果（受理可否・拒否理由の全件・実弾切替か・段階ゲートを飛ばすか）。</returns>
+    public BrokerProviderChangeAssessment UpdateBrokerProvider(BrokerProviderChangeRequest request, string actor)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        var current = store.GetCurrent();
+        var assessment = BrokerProviderChange.Evaluate(request, current.Stage);
+        if (!assessment.Accepted)
+        {
+            return assessment;
+        }
+
+        Save(
+            current with { BrokerProvider = request.Target },
+            current.BrokerProvider,
+            request.Target,
+            SettingsChangeType.BrokerProviderChanged,
+            actor,
+            request.Reason);
+        return assessment;
     }
 
     private void Save(
