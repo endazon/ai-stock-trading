@@ -46,7 +46,7 @@ public class AuditEventConsumersTests
         var decisionId = Guid.NewGuid();
         var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new TradeDecisionMade(decisionId, Intent(), "買い", DateTimeOffset.UtcNow));
         var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow));
+        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session0.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();

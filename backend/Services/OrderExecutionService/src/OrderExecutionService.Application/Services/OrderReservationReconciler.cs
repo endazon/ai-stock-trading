@@ -1,6 +1,7 @@
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.OrderExecution.Application.Services;
@@ -16,10 +17,14 @@ namespace AiStockTrading.OrderExecution.Application.Services;
 //        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。
 //
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
+//
+// FR-20, #386, IADR-0149 決定1: 発行する OrderExecuted には**実際に発注したアダプタの発注先**を載せる。
+// 本リコンサイラが扱うのは自プロセスが出した（または出しかけた）注文だけであり、broker は発注時と同一である。
 public sealed class OrderReservationReconciler(
     IOrderReservationStore reservations,
     IExecutedOrderStore executedOrders,
     IReservationBrokerProbe probe,
+    IBrokerAdapter broker,
     IClock clock)
 {
     /// <summary>
@@ -137,8 +142,9 @@ public sealed class OrderReservationReconciler(
             executedAt);
     }
 
-    private static OrderExecuted ToOrderExecuted(ExecutionRecord record) =>
-        new(record.DecisionId, record.OrderId, record.Status, record.FilledQuantity, record.AveragePrice, record.ExecutedAt);
+    private OrderExecuted ToOrderExecuted(ExecutionRecord record) =>
+        new(record.DecisionId, record.OrderId, record.Status, record.FilledQuantity, record.AveragePrice,
+            record.ExecutedAt, broker.Provider);
 }
 
 // #141, IADR-0074: 1 巡回のリコンサイル結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。

@@ -83,8 +83,11 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
                     continue;
                 }
 
+                // FR-20, #386, IADR-0149 決定1: 照会したアダプタ＝発注したアダプタであるため、その発注先を載せる
+                // （照会できるのは自分が出した注文だけであり、構成が変われば照会は null に倒れて発行されない）。
                 executed.Add(new OrderExecuted(
-                    record.DecisionId, record.OrderId, snapshot.Status, filledQuantity, averagePrice, executedAt));
+                    record.DecisionId, record.OrderId, snapshot.Status, filledQuantity, averagePrice, executedAt,
+                    broker.Provider));
                 updated++;
                 if (terminal)
                     terminalized++;

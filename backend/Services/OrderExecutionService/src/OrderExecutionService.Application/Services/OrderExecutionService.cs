@@ -28,9 +28,13 @@ public sealed class OrderExecutionService(
         var existing = store.FindByDecisionId(approved.DecisionId);
         if (existing is not null)
         {
+            // FR-20, #386, IADR-0149 決定1: 発注先は**現在のアダプタ**の値である。記録（ExecutionRecord）は
+            // 発注先を保持しないため、再発行の時点で構成が変わっていれば当時と異なる値が載り得る。
+            // 下流（Stage 1 の取引件数）は DecisionId で先着優先に記録するため、既に観測済みの注文は
+            // 上書きされない。残余リスクは IADR-0149 に記録した。
             return new OrderExecuted(
                 existing.DecisionId, existing.OrderId, existing.Status,
-                existing.FilledQuantity, existing.AveragePrice, existing.ExecutedAt);
+                existing.FilledQuantity, existing.AveragePrice, existing.ExecutedAt, broker.Provider);
         }
 
         var intent = approved.Intent;
@@ -76,12 +80,15 @@ public sealed class OrderExecutionService(
 
         reservations.MarkCompleted(approved.DecisionId, brokerOrder.OrderId, now);
 
+        // FR-20, FR-12, #386, IADR-0149 決定1: **実際に発注したアダプタの発注先**を載せる。
+        // 取引判断が運ぶ intent.Mode は「段階が定める既定の発注先」であって現在の発注先ではない（IADR-0140 決定3）。
         return new OrderExecuted(
             approved.DecisionId,
             brokerOrder.OrderId,
             brokerOrder.Status,
             brokerOrder.FilledQuantity,
             brokerOrder.AveragePrice,
-            now);
+            now,
+            broker.Provider);
     }
 }

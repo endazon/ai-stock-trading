@@ -32,6 +32,12 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker
         _immediateFill = immediateFill;
     }
 
+    /// <summary>
+    /// FR-20, FR-12, #386, IADR-0149: 本アダプタの発注先は常に<b>内蔵 <c>paper</c></b>（外部へ一度も発注しない）。
+    /// Stage 1 の合格判定には算入されない（<c>Stage1Aggregation.IsCounted</c> の許可制・IADR-0142 決定2）。
+    /// </summary>
+    public BrokerProvider Provider => BrokerProvider.InternalPaper;
+
     public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(intent);

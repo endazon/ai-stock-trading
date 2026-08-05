@@ -28,6 +28,9 @@ public class OrderApprovedConsumerTests
     {
         private readonly PaperBrokerAdapter _inner = new();
 
+        // #386, IADR-0149: 内蔵 paper をそのまま名乗る（Stage 1 には算入されない側）。
+        public BrokerProvider Provider => BrokerProvider.InternalPaper;
+
         public int PlaceCount { get; private set; }
 
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)

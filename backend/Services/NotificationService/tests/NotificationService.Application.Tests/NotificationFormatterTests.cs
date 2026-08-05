@@ -16,7 +16,7 @@ public class NotificationFormatterTests
     [Fact]
     public void 約定は取引実行として_Info_で整形される()
     {
-        var e = new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow);
+        var e = new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate);
 
         var msg = NotificationFormatter.From(e);
 
@@ -28,7 +28,7 @@ public class NotificationFormatterTests
     [Fact]
     public void 約定以外の終端状態は_Warning_になる()
     {
-        var e = new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Rejected, 0, 0m, DateTimeOffset.UtcNow);
+        var e = new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Rejected, 0, 0m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate);
 
         NotificationFormatter.From(e).Severity.Should().Be(NotificationSeverity.Warning);
     }

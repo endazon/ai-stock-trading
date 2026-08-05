@@ -24,6 +24,9 @@ public class OrderFillPollerTests
     // 注文 ID ごとに「照会したら返す状態」を差し替えられるブローカ。照会回数も数える。
     private sealed class FakeBroker : IBrokerAdapter
     {
+        // #386, IADR-0149: ポーラーが再発行する OrderExecuted に載る発注先。
+        public BrokerProvider Provider { get; init; } = BrokerProvider.MoomooSimulate;
+
         private readonly Dictionary<string, Func<BrokerOrder?>> _responses = [];
 
         public int QueryCount { get; private set; }
@@ -97,6 +100,13 @@ public class OrderFillPollerTests
         record.AveragePrice.Should().Be(341.7m);
         // FR-16: 実効スリッページは約定価格の確定後に算出し直す（発注時点の 0 のままにしない）。
         record.SlippageRatio.Should().Be(SlippageCalculator.Compute(340m, 341.7m, TradeSide.Buy));
+
+        // FR-20, #386, IADR-0149 決定1: 再発行する OrderExecuted にも**照会したアダプタの発注先**が載る。
+        // ここが欠けると、ポーラー経由で届いた約定（moomoo の非同期約定の主経路）が
+        // 既定値 InternalPaper のまま Stage 1 の件数から落ちる。
+        executed.Provider.Should().Be(BrokerProvider.MoomooSimulate);
+        // 記録の Intent.Mode（段階の既定モード＝InternalPaper）ではないことを対照で固定する。
+        executed.Provider.Should().NotBe(Intent().Mode);
     }
 
     [Fact]

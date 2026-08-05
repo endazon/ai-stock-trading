@@ -22,8 +22,10 @@ internal static class BrokerFactory
         return selection.Provider switch
         {
             BrokerVendor.Paper => new PaperBrokerAdapter(),
+            // FR-20, #386, IADR-0149 決定1: 実際に発注する先（構成の解決結果）をアダプタへ渡す。
+            // この値が OrderExecuted に載り、Stage 1 の取引件数に算入されるかを決める。
             BrokerVendor.Moomoo => moomooClient is not null
-                ? new MoomooBrokerAdapter(moomooClient, logger: moomooLogger)
+                ? new MoomooBrokerAdapter(moomooClient, selection.ToBrokerProvider(), logger: moomooLogger)
                 : throw new InvalidOperationException(
                     $"{BrokerSelection.ProviderKey}={BrokerSelection.MoomooProvider} には OpenD 接続"
                     + "（IMoomooTradeClient）が必要です。OpenD の常駐と接続構成（Broker:Moomoo:OpenD:Host/Port）を"

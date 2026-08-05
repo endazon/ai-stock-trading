@@ -17,10 +17,18 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
 // paper（PaperBrokerAdapter）は本ポートを実装しないため、突合の常駐は paper 構成では起動時に自己停止する。
 internal sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
+    BrokerProvider provider,
     TimeProvider? timeProvider = null,
     ILogger<MoomooBrokerAdapter>? logger = null) : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
+    /// <summary>
+    /// FR-20, FR-12, #386, IADR-0149 決定1: 本アダプタの発注先（<c>BrokerSelection.ToBrokerProvider()</c> の解決結果）。
+    /// <b>既定値を与えない</b>——省略できるようにすると、書き忘れが「Stage 1 に算入される側」へ倒れる
+    /// （IADR-0142 決定1 と同じ規律）。
+    /// </summary>
+    public BrokerProvider Provider { get; } = provider;
     // fail-safe で握りつぶす例外も障害切り分けのためログする（既定 NullLogger でテスト時は無害）。
     private readonly ILogger<MoomooBrokerAdapter> _logger = logger ?? NullLogger<MoomooBrokerAdapter>.Instance;
 
