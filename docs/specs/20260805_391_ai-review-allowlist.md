@@ -1,7 +1,7 @@
 ---
 title: AI レビューの許可リストに frontend（npm/Playwright）と dotnet ef を足し、拒否の失敗判定を「許可リストで直せるもの」に限定する
 type: spec
-status: draft
+status: review
 related_ids: [NFR, IADR-0145]
 author: endazon (with Claude Code)
 created: 2026-08-05
@@ -55,12 +55,18 @@ plan_refs: []
 
 | 追加 | 理由 |
 | --- | --- |
-| `Bash(npm ci:*)` / `Bash(npm run:*)` / `Bash(npm --prefix:*)` / `Bash(npx:*)` | frontend の typecheck・vitest・Playwright を実走させる（#391 の本質） |
+| `Bash(npm ci:*)` / `Bash(npm run:*)` / `Bash(npm --prefix:*)` | frontend の typecheck・vitest・Playwright を実走させる（#391 の本質） |
 | `Bash(dotnet ef:*)` | `migrations has-pending-model-changes` / `migrations list` |
 | `Bash(git ls-files:*)` | **実測で拒否された。** 読み取り専用 |
 | `mcp__github__get_issue_comments` / `get_pull_request_reviews` / `search_issues` | **実測で拒否された。** いずれも読み取り専用 |
 
-**`Bash(git -C <絶対パス> …)` は許可リストで解決しない。** `Bash(git -C:*)` の一括許可は書き込み系まで通るため既存の設計が明示的に禁止している。**プロンプト側で「`git -C` は `planning` の相対パスのみ」と指示する**（絶対パスを使うと必ず拒否される）。
+**`Bash(git -C <絶対パス> …)` は許可リストで解決しない。** `Bash(git -C:*)` の一括許可は書き込み系まで通るため既存の設計が明示的に禁止している。**プロンプト側で「`git -C` は `planning` の相対パスのみ」と指示する**（絶対パスを使うと必ず拒否される）。実測で拒否された `Bash(git -C planning rev-parse:*)` は読み取り専用なので追加する。
+
+> **`Bash(npx:*)` は入れない**（AI レビュー指摘により当初案から削除）。`frontend/package.json` の
+> `typecheck` / `test` / `e2e` / `e2e:install` は**すべて `npm run` 経由で完結する**ため、
+> #391 の目的は `npm ci` / `npm run` / `npm --prefix` の 3 つで満たせる。裸の `npx` は
+> **npm レジストリの任意パッケージを実行できる分だけ余分に広い**。必要になった時点で
+> `Bash(npx playwright:*)` のように用途を限って足す。
 
 ### 2. レビュージョブのセットアップ
 
