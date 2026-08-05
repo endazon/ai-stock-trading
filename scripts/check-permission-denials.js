@@ -170,6 +170,91 @@ function labelOf(name, input) {
   return `Bash(${shown.join(' | ')})`;
 }
 
+/**
+ * 引用符（`'` / `"`）で囲まれた範囲に `|` が含まれるか。
+ *
+ * 素朴に 1 文字ずつ走査する。エスケープ（`\"`）は引用の開閉として数えない。
+ * シェルの完全な字句解析ではないが、**交替を含む grep パターンを拾う**という目的には足りる。
+ * 迷ったら false（＝ A 扱い）へ倒す方針に沿い、判定できない形は拾わない。
+ */
+function hasQuotedPipe(cmd) {
+  let quote = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (ch === '\\') { i++; continue; } // エスケープされた次の 1 文字は読み飛ばす
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (ch === '|') return true;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    }
+  }
+  return false;
+}
+
+/**
+ * その拒否が「許可リストを直せば消えるか」を判定する（#391 ②の本体）。
+ *
+ * 拒否には性質の違う 2 種類がある。
+ *   A. 許可漏れ            … `npm ci` / `dotnet ef` / `git ls-files` / MCP ツール等。**直せる**
+ *   B. 構文上ありえない形  … env 前置き・リダイレクト・プロセス置換・ループ・`cd`・
+ *                            `git -C <絶対パス>`。**許可リストでは原理的に直せない**
+ *
+ * B を失敗判定の分母に入れると、**許可リストを完璧にしても偽の赤が出続ける**。
+ * かといって件数しきい値を上げると A の検出が鈍る。#391 が「維持すると偽の赤が出続け、
+ * 緩めると許可漏れに気づけなくなる」と書いたトレードオフは、**2 種類を分けていない**
+ * ことから生じている。よって分類して A だけで失敗を判定する。
+ *
+ * **B も必ず可視化する。** 失敗させないことと、見せないことは別である
+ * （「見えるが緑」と「見えずに緑」はまったく別物、という本検査器の既存方針を維持する）。
+ *
+ * 判定は保守的に行う——**迷ったら A（直せる）とする**。B と誤判定すると、本物の許可漏れが
+ * 分母から抜けて検出できなくなる。逆に A と誤判定しても、出るのは従来どおりの赤である。
+ *
+ * @returns {string|null} B ならその理由、A なら null
+ */
+function unfixableReason(name, input) {
+  // MCP ツール等（Bash 以外）は許可リストに名前を書けば必ず通る＝常に A。
+  if (name !== 'Bash') return null;
+  const cmd = input && typeof input.command === 'string' ? input.command.trim() : '';
+  if (!cmd) return null;
+
+  if (hasRedirect(input)) return 'リダイレクト（レビュー用に書き込み手段は無い）';
+  // プロセス置換 `<(…)` / コマンド置換 `$(…)` / バッククォート。中のコマンドが許可済みでも拒否される。
+  if (/<\(|\$\(|`/.test(cmd)) return 'プロセス置換・コマンド置換';
+  // 引用符の中の `|`（`grep -E "A|B"` の交替）。許可判定はコマンド文字列を分割してから
+  // 前方一致を見るため、**引用符の中の `|` もパイプとして分割され**、`B"` のような
+  // 存在しないコマンドが未許可と判定される。**正規表現の断片は許可リストに書けない**ので
+  // 原理的に直せない。対処はプロンプト側（交替を使わず grep を分ける）である。
+  // 実測: PR #395 のレビューで 5 件中 3 件がこの形だった
+  // （`Bash(git -C planning show | Grep | 決定 | 決定14\ | …)` のように分割された姿で報告される）。
+  if (hasQuotedPipe(cmd)) return '引用符内の `|`（grep の交替等。許可判定が分割してしまう）';
+
+  // 以降はセグメント単位で見る。1 つでも該当すれば鎖全体が実行されないため B とする。
+  const segments = cmd
+    .replace(/(\d?>>?&?\d?)/g, ' ')
+    .split(/[|;&\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const seg of segments) {
+    const tokens = seg.split(/\s+/).filter(Boolean);
+    if (!tokens.length) continue;
+    const head = tokens[0];
+    // 環境変数の前置き（`VAR=1 cmd`）。先頭トークンが `VAR=1` になり前方一致に当たらない。
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(head)) return '環境変数の前置き（前方一致に当たらない）';
+    // シェルの複合形。先頭が予約語になり許可リストで表現できない。
+    if (/^(for|while|until|if|case|function)$/.test(head)) return 'シェルのループ・複合形';
+    // `cd` は許可リストに無く、後続が許可済みでも先頭で拒否される。
+    if (head === 'cd') return 'cd によるディレクトリ移動';
+    // `git -C <絶対パス>` は `Bash(git -C planning …)` に当たらない。`Bash(git -C:*)` の
+    // 一括許可は書き込み系まで通るため設計上禁止されており、許可リストでは直せない。
+    if (head === 'git' && tokens[1] === '-C' && tokens[2] && tokens[2].startsWith('/')) {
+      return 'git -C の絶対パス指定（相対パス `planning` を使うこと）';
+    }
+  }
+  return null;
+}
+
 /** ラベルにパイプライン（複数セグメント）が含まれるか。報告の注記を出す判断に使う。 */
 function hasPipeline(byTool) {
   for (const name of byTool.keys()) if (name.includes(' | ')) return true;
@@ -226,7 +311,14 @@ function collectDenials(events) {
   const result = events.find((e) => e && e.type === 'result') || null;
   const numTurns = result && Number.isFinite(result.num_turns) ? result.num_turns : null;
   const byTool = new Map();
+  // #391 ②: 許可リストで直せない拒否（B）は失敗判定の分母から外す。理由ごとに件数を持つ。
+  const unfixableByReason = new Map();
+  let unfixableCount = 0;
   const bump = (name) => byTool.set(name, (byTool.get(name) || 0) + 1);
+  const bumpUnfixable = (reason) => {
+    unfixableCount++;
+    unfixableByReason.set(reason, (unfixableByReason.get(reason) || 0) + 1);
+  };
   let redirect = false;
 
   // 1. SDK が itemize した配列。
@@ -234,21 +326,37 @@ function collectDenials(events) {
   if (itemizedList && itemizedList.length) {
     for (const d of itemizedList) {
       const input = d && (d.tool_input || d.toolInput);
+      const name = d && (d.tool_name || d.toolName);
       if (hasRedirect(input)) redirect = true;
-      bump(labelOf(d && (d.tool_name || d.toolName), input));
+      bump(labelOf(name, input));
+      const reason = unfixableReason(name, input);
+      if (reason) bumpUnfixable(reason);
     }
-    return { count: itemizedList.length, byTool, itemized: true, source: 'permission_denials', redirect, numTurns };
+    return {
+      count: itemizedList.length,
+      fixableCount: itemizedList.length - unfixableCount,
+      unfixableCount,
+      unfixableByReason,
+      byTool,
+      itemized: true,
+      source: 'permission_denials',
+      redirect,
+      numTurns,
+    };
   }
 
   // 2. tool_use_id → ラベルを作ってから tool_result を走査する。
   const labelById = new Map();
   const redirectById = new Set();
+  const unfixableById = new Map();
   for (const e of events) {
     if (!e || e.type !== 'assistant') continue;
     for (const b of contentOf(e)) {
       if (b && b.type === 'tool_use' && b.id) {
         labelById.set(b.id, labelOf(b.name, b.input));
         if (hasRedirect(b.input)) redirectById.add(b.id);
+        const reason = unfixableReason(b.name, b.input);
+        if (reason) unfixableById.set(b.id, reason);
       }
     }
   }
@@ -260,17 +368,40 @@ function collectDenials(events) {
       if (!looksLikeDenial(resultTextOf(b))) continue;
       if (redirectById.has(b.tool_use_id)) redirect = true;
       bump(labelById.get(b.tool_use_id) || '(不明なツール)');
+      const reason = unfixableById.get(b.tool_use_id);
+      if (reason) bumpUnfixable(reason);
     }
   }
   if (byTool.size) {
     let n = 0;
     for (const v of byTool.values()) n += v;
-    return { count: n, byTool, itemized: true, source: 'tool_result', redirect, numTurns };
+    return {
+      count: n,
+      fixableCount: n - unfixableCount,
+      unfixableCount,
+      unfixableByReason,
+      byTool,
+      itemized: true,
+      source: 'tool_result',
+      redirect,
+      numTurns,
+    };
   }
 
-  // 3. 件数のみ。
+  // 3. 件数のみ。内訳が無いので分類もできない。**全件を A（直せる）として扱う**——
+  // 分類できないことを理由に失敗を免れると、本検査器が塞いでいる「見えずに緑」へ戻る。
   const count = result && Number.isFinite(result.permission_denials_count) ? result.permission_denials_count : 0;
-  return { count, byTool, itemized: false, source: 'permission_denials_count', redirect, numTurns };
+  return {
+    count,
+    fixableCount: count,
+    unfixableCount: 0,
+    unfixableByReason,
+    byTool,
+    itemized: false,
+    source: 'permission_denials_count',
+    redirect,
+    numTurns,
+  };
 }
 
 /**
@@ -282,14 +413,21 @@ function collectDenials(events) {
  *   成果物は成立していない（元障害は 17/21 = 81% だった）。
  * 純粋関数（I/O を持たない。テスト可能にするため）。
  */
-function isCritical({ count, numTurns }, tolerance) {
-  if (count > tolerance) return true;
-  if (Number.isFinite(numTurns) && numTurns > 0 && count / numTurns >= 0.5) return true;
+function isCritical({ count, fixableCount, numTurns }, tolerance) {
+  // #391 ②: 判定に用いるのは**許可リストで直せる拒否（A）だけ**である。B を含めると
+  // 許可リストを完璧にしても偽の赤が出続ける。fixableCount を持たない呼び出し（旧形の
+  // オブジェクト・テスト）では count へ退避する（分類できないなら安全側＝全件 A）。
+  const effective = Number.isFinite(fixableCount) ? fixableCount : count;
+  if (effective > tolerance) return true;
+  // ターン比の判定も A で行う。B ばかりのターンは「成果物が成立していない」形ではない
+  // （レビュー本文は正常に出ており、拒否されたのは探索的な構文だけである）。
+  if (Number.isFinite(numTurns) && numTurns > 0 && effective / numTurns >= 0.5) return true;
   return false;
 }
 
 /** 報告用の 1 行メッセージを組み立てる。 */
-function formatDenials({ count, byTool, itemized, redirect }) {
+function formatDenials(denials) {
+  const { count, byTool, itemized, redirect } = denials;
   const head = `AI の実行中にツールの権限拒否が ${count} 件発生した（CI には承認する人間が居ないため、これらの作業は実行されていない）`;
   if (!itemized) {
     return (
@@ -310,10 +448,33 @@ function formatDenials({ count, byTool, itemized, redirect }) {
       'コマンド名ではなくリダイレクトそのものが拒否の原因かもしれない。出力はファイルへ書かず、そのまま読むこと。'
     : '';
   return (
-    `${head}: ${detail}。${pipeNote}${redirectNote}` +
+    `${head}: ${detail}。${unfixableNote(denials)}${pipeNote}${redirectNote}` +
     '対処は 2 通りである: (a) 必要なツールを claude_args の --allowedTools に加える、' +
     '(b) そのツールを使わせないようプロンプト側で作業手順を狭める。' +
     'どちらも取らずに放置すると、ジョブは success のまま成果物だけが欠けた状態が続く'
+  );
+}
+
+/**
+ * 許可リストで直せない拒否（B）の内訳を 1 文にする（#391 ②）。
+ * **失敗させないからこそ、必ず見せる。** 見せないと「B が何件あるか」が誰にも判らず、
+ * 分類器が壊れて A を B と誤判定しても気付けない。
+ */
+function unfixableNote(denials) {
+  const n = denials && denials.unfixableCount;
+  if (!n) return '';
+  const byReason = denials.unfixableByReason;
+  const detail =
+    byReason && byReason.size
+      ? [...byReason.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([reason, c]) => `${reason}（${c} 件）`)
+          .join(' / ')
+      : '';
+  return (
+    `うち **${n} 件は許可リストでは直せない形**である${detail ? `: ${detail}` : ''}。` +
+    'これらは失敗判定の対象外とし、レビュー本文で「未検証」と報告されていれば問題ない。' +
+    '対処はプロンプト側（この形を使わせない）である。'
   );
 }
 
@@ -329,7 +490,8 @@ function formatDenials({ count, byTool, itemized, redirect }) {
  * アクションが所有しており、このステップからは安全に書き換えられないため、まずここへ出す。
  * 失敗しても本処理は続ける（可視化のために検査を落とすのは本末転倒である）。
  */
-function writeStepSummary({ count, byTool, itemized }) {
+function writeStepSummary(denials) {
+  const { count, byTool, itemized, unfixableCount, unfixableByReason } = denials;
   const file = process.env.GITHUB_STEP_SUMMARY;
   if (!file) return false;
   const lines = [
@@ -346,6 +508,23 @@ function writeStepSummary({ count, byTool, itemized }) {
     }
   } else {
     lines.push('実行ログにツール名が残っていないため内訳を特定できない。');
+  }
+  // #391 ②: 許可リストで直せない形（B）は失敗判定の対象外だが、**必ず見せる**。
+  if (unfixableCount) {
+    lines.push(
+      '',
+      `### うち ${unfixableCount} 件は許可リストでは直せない`,
+      '',
+      'これらは失敗判定の対象外である（許可リストを完璧にしても消えないため）。',
+      'レビュー本文で「未検証」と報告されていれば問題ない。対処はプロンプト側である。',
+      ''
+    );
+    if (unfixableByReason && unfixableByReason.size) {
+      lines.push('| 理由 | 件数 |', '| --- | --- |');
+      for (const [reason, n] of [...unfixableByReason.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+        lines.push(`| ${reason} | ${n} |`);
+      }
+    }
   }
   lines.push(
     '',
@@ -706,6 +885,127 @@ function selfTest() {
     }
   }
 
+  // --- #391 ②: A（許可リストで直せる）/ B（直せない）の分類と、それに基づく失敗判定 ---
+  {
+    const mk = (cmds) => ({
+      type: 'result',
+      num_turns: 40,
+      permission_denials: cmds.map((c) =>
+        typeof c === 'string' ? { tool_name: 'Bash', tool_input: { command: c } } : c
+      ),
+    });
+    // 正の確認: B と分類されるべき形。
+    const unfixableCases = [
+      ['環境変数の前置き', 'STRICT_X=1 node scripts/a.js'],
+      ['リダイレクト', 'git show a:b > /tmp/x'],
+      ['/dev/null へのリダイレクトも B', 'npm ci > /dev/null'],
+      ['プロセス置換', 'diff <(git show a:f) <(git show b:f)'],
+      ['コマンド置換', 'echo $(git log -1)'],
+      ['シェルのループ', 'for f in a b; do cmp $f x; done'],
+      ['cd によるディレクトリ移動', 'cd planning && git log -1'],
+      ['git -C の絶対パス', 'git -C /home/runner/work/x/x log -1'],
+      ['鎖の後段が B なら全体が B', 'git diff | cd x'],
+      // 実測（PR #395・5 件中 3 件）: 引用符内の `|` が分割され、正規表現の断片が
+      // 未許可コマンドとして判定される。許可リストには書けないので B。
+      ['引用符内の | （二重引用符）', 'git -C planning show a:b | grep -E "決定|決定14"'],
+      ["引用符内の | （単一引用符）", "ls docs | grep -E 'check-banned|check-coverage'"],
+    ];
+    for (const [label, cmd] of unfixableCases) {
+      const r = collectDenials([mk([cmd])]);
+      if (r.unfixableCount === 1 && r.fixableCount === 0) process.stdout.write(`  ok  B と分類: ${label}\n`);
+      else {
+        failed++;
+        process.stderr.write(`  NG  B と分類: ${label}\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // 否定形（同数以上）: A と分類されるべき形。**B と誤分類すると本物の許可漏れが検出されなくなる。**
+    const fixableCases = [
+      ['npm ci', 'npm ci'],
+      ['dotnet ef', 'dotnet ef migrations has-pending-model-changes'],
+      ['git ls-files', 'git ls-files'],
+      ['git -C の相対パス（許可リストで表現できる）', 'git -C planning log -1'],
+      ['パイプだけなら A', 'git show a:b | cmp - b'],
+      ['2>&1 は B ではない（ファイル書き込みでない）', 'node x.js 2>&1'],
+      ['npx playwright', 'npx playwright test'],
+      ['引数に = を含むが前置きではない', 'npm run test -- --reporter=dot'],
+      ['MCP ツールは常に A', { tool_name: 'mcp__github__search_issues' }],
+      // 引用符があっても `|` を含まなければ A（許可リストで直せる）。
+      ['引用符付き引数でも | が無ければ A', 'grep -n "決定 14" docs/a.md'],
+      ['エスケープされた引用符で誤判定しない', 'echo "say \\"hi\\""'],
+      ['git -C planning rev-parse は A（許可リストに足せる）', 'git -C planning rev-parse HEAD'],
+    ];
+    for (const [label, cmd] of fixableCases) {
+      const r = collectDenials([mk([cmd])]);
+      if (r.fixableCount === 1 && r.unfixableCount === 0) process.stdout.write(`  ok  A と分類: ${label}\n`);
+      else {
+        failed++;
+        process.stderr.write(`  NG  A と分類: ${label}\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // 失敗判定が A のみで行われること。
+    const verdictCases = [
+      ['B のみ 10 件は失敗させない', Array(10).fill('cd x && ls'), false],
+      ['A が 5 件なら失敗する', Array(5).fill('npm ci'), true],
+      ['A 3 件 + B 10 件は失敗させない（A が許容内）', [...Array(3).fill('npm ci'), ...Array(10).fill('cd x')], false],
+      ['A 4 件 + B 10 件も失敗させない（境界）', [...Array(4).fill('npm ci'), ...Array(10).fill('cd x')], false],
+      ['A 5 件 + B 0 件は失敗する', Array(5).fill('dotnet ef list'), true],
+    ];
+    for (const [label, cmds, expected] of verdictCases) {
+      const r = collectDenials([mk(cmds)]);
+      if (isCritical(r, 4) === expected) process.stdout.write(`  ok  ${label}\n`);
+      else {
+        failed++;
+        process.stderr.write(`  NG  ${label}\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // 実測の再現 2（PR #395 の run 31012341385・5 件）。rev-parse を許可すれば A は 1 件になる。
+    {
+      const r = collectDenials([
+        mk([
+          'git -C planning show a:b | grep -E "決定|決定14"',
+          'ls docs | git -C planning ls-tree HEAD | grep -E "ADR-0016|ADR-0019"',
+          'ls scripts | grep -E "check-banned|check-coverage"',
+          'ls scripts | grep foo',
+          'git -C planning rev-parse HEAD',
+        ]),
+      ]);
+      const ok = r.unfixableCount === 3 && r.fixableCount === 2 && isCritical(r, 4) === false;
+      if (ok) process.stdout.write('  ok  PR #395 の 5 件を再現し、分類後は失敗しない\n');
+      else {
+        failed++;
+        process.stderr.write(`  NG  PR #395 の再現\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // 実測の再現（run 30998236984・5 件）。すべて A なので従来どおり失敗する。
+    {
+      const r = collectDenials([
+        mk([
+          'git -C /home/runner/work/ai-stock-trading/ai-stock-trading log',
+          'git -C /home/runner/work/ai-stock-trading/ai-stock-trading ls-files',
+          { tool_name: 'mcp__github__get_issue_comments' },
+          { tool_name: 'mcp__github__get_pull_request_reviews' },
+          { tool_name: 'mcp__github__search_issues' },
+        ]),
+      ]);
+      // git -C 絶対パス 2 件は B、MCP 3 件は A。A は 3 件なので**許可リスト是正後は失敗しない**。
+      const ok = r.unfixableCount === 2 && r.fixableCount === 3 && isCritical(r, 4) === false;
+      if (ok) process.stdout.write('  ok  実測 run の 5 件を再現し、分類後は失敗しない\n');
+      else {
+        failed++;
+        process.stderr.write(`  NG  実測 run の再現\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+      }
+    }
+    // B の内訳が報告に出ること（失敗させないからこそ見せる）。
+    {
+      const r = collectDenials([mk(['cd x && ls'])]);
+      if (/許可リストでは直せない/.test(formatDenials(r))) process.stdout.write('  ok  B の存在が報告に出る\n');
+      else {
+        failed++;
+        process.stderr.write('  NG  B の存在が報告に出る\n');
+      }
+    }
+  }
+
   // 実運用で起きた形（17 件・内訳不明）がメッセージに載ることを確かめる。
   const msg = formatDenials(collectDenials([{ type: 'result', permission_denials_count: 17 }]));
   if (msg.includes('17 件')) process.stdout.write('  ok  件数がメッセージに載る\n');
@@ -718,8 +1018,10 @@ function selfTest() {
     process.stderr.write(`\n✗ 検証器の自己試験が ${failed} 件失敗した\n`);
     return 1;
   }
-  // +11 は、上のループに含まれない個別検査（ポリシー 8 件・実行サマリ 2 件・件数メッセージ 1 件）。
-  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 11} 件すべて合格\n`);
+  // +42 は、上のループに含まれない個別検査の合計。内訳:
+  //   ポリシー 8 / 実行サマリ 2 / 件数メッセージ 1
+  //   #391 ② の分類: B 判定 11 / A 判定 12 / 失敗判定 5 / 実測 run の再現 2 / B の可視化 1
+  process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 42} 件すべて合格\n`);
   return 0;
 }
 
@@ -777,9 +1079,9 @@ function main(argv) {
 
   if (!isCritical(denials, tolerance)) {
     warn(
-      `${message}（判定: ${denials.count} 件 / ${denials.numTurns ?? '?'} ターン。` +
-        `許容値 ${tolerance} 以下かつ実行の大半は成立しているため、ジョブは失敗させない。` +
-        '拒否 1 件でも失敗させるには STRICT_PERMISSION_DENIALS=1 を設定する）'
+      `${message}（判定: 許可リストで直せる拒否 ${denials.fixableCount} 件 / 全 ${denials.count} 件 / ` +
+        `${denials.numTurns ?? '?'} ターン。許容値 ${tolerance} 以下かつ実行の大半は成立しているため、` +
+        'ジョブは失敗させない。拒否 1 件でも失敗させるには STRICT_PERMISSION_DENIALS=1 を設定する）'
     );
     process.exit(0);
   }
@@ -797,6 +1099,7 @@ module.exports = {
   formatDenials,
   looksLikeDenial,
   labelOf,
+  unfixableReason,
   isCritical,
   writeStepSummary,
   selfTest,
