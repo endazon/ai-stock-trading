@@ -34,7 +34,7 @@ public class TradeDecisionMadeBaselineConsumerTests
             .StartAsync();
 
         var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy,
-            ProductType.Cash, TradeMode.Paper, 10, 1_234m);
+            ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_234m);
         var session = await host.TrackActivity().InvokeMessageAndWaitAsync(
             new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow));
 

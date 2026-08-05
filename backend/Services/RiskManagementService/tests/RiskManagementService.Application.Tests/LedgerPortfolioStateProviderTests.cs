@@ -12,7 +12,7 @@ namespace AiStockTrading.RiskManagement.Application.Tests;
 public class LedgerPortfolioStateProviderTests
 {
     private static OrderIntent BuyIntent(int qty, decimal price) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     [Fact]
     public void 承認を記録した約定は射影に反映される()
@@ -92,7 +92,7 @@ public class LedgerPortfolioStateProviderTests
     }
 
     private static OrderIntent SellIntent(int qty, decimal price) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper, qty, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     [Fact]
     public void 現在値ソース未注入なら含み損益とドローダウンは0のまま()

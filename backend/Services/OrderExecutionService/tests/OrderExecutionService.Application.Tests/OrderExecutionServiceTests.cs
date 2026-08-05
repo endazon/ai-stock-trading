@@ -145,7 +145,7 @@ public class OrderExecutionServiceTests
 
     private static OrderIntent Intent(int qty = 10, decimal price = 1_000m,
         PositionEffect effect = PositionEffect.Open, TradeSide side = TradeSide.Buy) =>
-        new("AAPL", Market.UnitedStates, side, ProductType.Cash, TradeMode.Paper, qty, price, effect);
+        new("AAPL", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper, qty, price, effect);
 
     [Fact]
     public async Task 承認注文はペーパーで約定しOrderExecutedを返す()

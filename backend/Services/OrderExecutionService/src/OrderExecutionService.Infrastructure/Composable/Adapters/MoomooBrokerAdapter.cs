@@ -139,5 +139,5 @@ internal sealed class MoomooBrokerAdapter(
     // GetOrderAsync でブローカ照会結果に Intent が無い場合の最小プレースホルダ（状態照会用途）。
     private static OrderIntent MinimalIntent() =>
         new(Symbol: string.Empty, Market: Market.UnitedStates, Side: TradeSide.Buy,
-            ProductType: ProductType.Cash, Mode: TradeMode.Paper, Quantity: 0, Price: 0m);
+            ProductType: ProductType.Cash, Mode: BrokerProvider.InternalPaper, Quantity: 0, Price: 0m);
 }

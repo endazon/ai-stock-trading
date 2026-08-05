@@ -49,7 +49,7 @@ public class OrderFillPollerTests
     }
 
     private static OrderIntent Intent(int qty = 1_000, decimal price = 340m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     // moomoo 発注直後の記録（Accepted・約定 0）。#270 の出発点。
     private static ExecutionRecord Dispatched(string orderId, Guid decisionId, DateTimeOffset at, int qty = 1_000) =>

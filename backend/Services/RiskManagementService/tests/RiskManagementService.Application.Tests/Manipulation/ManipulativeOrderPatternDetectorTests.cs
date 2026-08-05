@@ -13,7 +13,7 @@ public class ManipulativeOrderPatternDetectorTests
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 35, 0, TimeSpan.Zero);
 
     private static OrderIntent Intent(string symbol = "AAPL", Market market = Market.UnitedStates) =>
-        new(symbol, market, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new(symbol, market, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     private static PortfolioSnapshot Snapshot() => new() { Capital = 100_000m };
 

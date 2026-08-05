@@ -168,7 +168,7 @@ public class MaintenanceMarginReductionServiceTests
         ledger.AppendApproval(
             decisionId,
             new OrderIntent(
-                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, TradeMode.Paper,
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, BrokerProvider.InternalPaper,
                 1_000, 100m, PositionEffect.Open, StopLossPrice: 110m, FxRateToBase: 150m),
             Now.AddDays(-1));
         ledger.AppendFill(decisionId, $"open-{decisionId:N}", 1_000, 100m, Now.AddDays(-1));

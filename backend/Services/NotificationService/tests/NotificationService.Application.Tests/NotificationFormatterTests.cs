@@ -11,7 +11,7 @@ namespace AiStockTrading.Notification.Application.Tests;
 public class NotificationFormatterTests
 {
     private static OrderIntent Intent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
 
     [Fact]
     public void 約定は取引実行として_Info_で整形される()

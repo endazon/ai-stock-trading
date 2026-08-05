@@ -24,23 +24,15 @@ public static class KnownPlanDeviations
         // IADR-0132: ProductType.Values（→ Cash, MarginLong, ShortSell の 3 値・独立制御）。
         // 既定「現物のみ有効」（Guard.EnabledProductTypes）は逸脱していなかったため登録が無い。
 
-        // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離 ---
-        // #333 担当の逸脱は解消済み:
+        // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離: 担当分の逸脱はすべて解消済み ---
+        // #333（IADR-0136 / 0137 / 0138 / 0139）:
         //   Stage.Values（→ Stage0Verification, Stage1Simulate, Stage2MinimalLive, Stage3ScaledLive）
         //   Stage.Stage2OrderableCapRatio（→ total funds ratio 0.30。計画 §5・IADR-0136）
         //   Stage0GateCriteria.MaxDrawdownTolerance（→ ratio 0.10。ADR-0018 決定2・IADR-0138）
-        // Stage 1 については**呼称のみ**の是正であり、発注先の軸（BrokerProvider）は段階から分離していない
-        // ——下 2 行（#334 担当）はそのため残る。
-        new(
-            "BrokerProvider.Values",
-            "(type BrokerProvider not found)",
-            334,
-            "発注先が TradeMode（Paper/Live）に融合している。計画は段階と独立した 3 値の軸を求める"),
-        new(
-            "Stage.Stage1BrokerProvider",
-            "Paper",
-            334,
-            "Stage 1 が内蔵ペーパーを指している。計画は moomoo SIMULATE（3 か月）"),
+        // #334（IADR-0140）:
+        //   BrokerProvider.Values（→ InternalPaper, MoomooReal, MoomooSimulate。TradeMode を置換）
+        //   Stage.Stage1BrokerProvider（→ MoomooSimulate。06_daytrading-review §4 表）
+
         // --- #381 為替レート源と鮮度: ADR-0022（2026-08-04 新設）への追随待ち ---
         // 本 3 件は「実装が先に決めていた値を計画が引き取った」型の逸脱である（#358 と同型だが向きが逆で、
         // 計画側が動いた結果として生じた）。IADR-0134 決定3 の運用規律に従い、planning のピンを

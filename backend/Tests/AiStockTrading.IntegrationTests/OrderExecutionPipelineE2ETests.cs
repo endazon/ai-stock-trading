@@ -149,7 +149,7 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
             Market: Market.UnitedStates,
             Side: TradeSide.Buy,
             ProductType: ProductType.Cash,
-            Mode: TradeMode.Paper,
+            Mode: BrokerProvider.InternalPaper,
             Quantity: 10,
             Price: 150m,
             PositionEffect: PositionEffect.Open);

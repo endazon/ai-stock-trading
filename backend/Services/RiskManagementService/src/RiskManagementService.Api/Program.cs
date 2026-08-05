@@ -52,7 +52,7 @@ builder.Services.AddSingleton<IBusinessCalendar, WeekendBusinessCalendar>();
 // DbContext が scoped のため EF ストアも scoped。
 // FR-10, FR-12, #257, IADR-0108: SIMULATE 限定のリスク上限プロファイル（既定 false＝本番既定＝現行挙動）。
 // 有効時は読み取り時デコレータで金額系の上限とペーパー段階の資金上限だけを差し替える（DB は書き換えない）。
-// 実弾段階（Stage 2/3・TradeMode.Live）の資金上限は有効時も本番既定のまま（IADR-0108 決定4）。
+// 実弾段階（Stage 2/3・BrokerProvider.MoomooReal）の資金上限は有効時も本番既定のまま（IADR-0108 決定4）。
 builder.Services.Configure<SimulatorProfileOptions>(
     builder.Configuration.GetSection(SimulatorProfileOptions.SectionName));
 var simulatorProfileEnabled = builder.Configuration.GetSection(SimulatorProfileOptions.SectionName)

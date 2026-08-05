@@ -14,7 +14,7 @@ public class TradeDecisionPromptBuilderTests
 {
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 7, 10), "米国株の押し目買い方針");
     private static readonly SizingContext Context =
-        new(100_000m, 50_000m, 20_000m, 0, 0m, TradeMode.Paper, TradingDefaults.CreateRiskLimits());
+        new(100_000m, 50_000m, 20_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
 
     [Fact]
     public void 価格変動トリガーは価格変動セクションを出力する()

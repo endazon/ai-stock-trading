@@ -114,7 +114,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // 既定資金（InitialCapital=10万）に対し十分小さい新規建て。リスク管理の決定的スクリーニングを通過する。
         var decisionId = Guid.NewGuid();
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
         var decision = new TradeDecisionMade(decisionId, intent, "E2E", DateTimeOffset.UtcNow);
 
         // 取引判断イベントを実 RabbitMQ へ発行する（リスク管理が購読・承認し、発注執行が執行・永続する）。
@@ -182,7 +182,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // ② 実配送: 1 通の OrderApproved で、購読する 2 サービスが**どちらも**処理する。
         var decisionId = Guid.NewGuid();
         var intent = new OrderIntent(
-            "MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 5, 200m);
+            "MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 5, 200m);
         var approved = new OrderApproved(decisionId, intent, ApprovedQuantity: 5, ApprovedAt: DateTimeOffset.UtcNow);
 
         // 発行元はリスク管理（＝この型を自分でも購読しているプロセス。退行 B の直撃対象）。

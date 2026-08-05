@@ -113,8 +113,9 @@ public static class TradingDefaults
     };
 
     public static StageSettings CreateStageSettings() =>
-        // Stage 0（検証）から開始。ペーパーのみ・発注可能額は総資金の全額（段階としての絞りは無い）
-        new(TradingStage.Stage0Verification, TradeMode.Paper, FullCapitalCapRatio);
+        // Stage 0（検証）から開始。既定の発注先は内蔵 paper（外部へ発注しない）・発注可能額は総資金の全額
+        // （段階としての絞りは無い）
+        new(TradingStage.Stage0Verification, BrokerProvider.InternalPaper, FullCapitalCapRatio);
 
     /// <summary>
     /// FR-20, ADR-0008: 撤退基準の DD 倍率 1.5（実DD ≥ バックテスト最大DD × 1.5 で自動停止・再検証）。
@@ -123,7 +124,8 @@ public static class TradingDefaults
 
     /// <summary>
     /// FR-20, #333: 段階として絞りを掛けない発注可能額の比率（総資金の 100%）。
-    /// Stage 0 / Stage 1 は実弾を撃たず（<see cref="TradeMode.Paper"/>）、Stage 3 は計画上「最大 100%」まで
+    /// Stage 0 / Stage 1 は実弾を撃たず（既定の発注先が <see cref="BrokerProvider.MoomooReal"/> ではない）、
+    /// Stage 3 は計画上「最大 100%」まで
     /// 段階的に増額する（05_trading-assumptions §5）。いずれも段階としての金額の絞りは無く、実効的な上限は
     /// FR-10 の統制上限（1 注文 25% / 1 日 150%）が担う。
     /// </summary>
@@ -146,27 +148,30 @@ public static class TradingDefaults
     /// </summary>
     public const decimal Stage2MinimalLiveCapitalCapRatio = 0.30m;
 
-    // FR-20, ADR-0008: 段階ゲート方針（4 段階の Mode/発注可能額＋撤退倍率＋Stage 1 の合格条件）。
-    // Stage 0/1＝ペーパー（実弾なし）、Stage 2/3＝実弾。
+    // FR-20, ADR-0008, #334, IADR-0140: 段階ゲート方針（4 段階の既定発注先／発注可能額＋撤退倍率）。
+    // **ここに置く発注先は「段階が定める既定の組み合わせ」にすぎない**（FR-20）。現在の発注先は
+    // RiskManagementSettings.BrokerProvider が独立に保持し、段階を変えても自動では追随しない。
+    // Stage 0＝内蔵 paper（外部へ発注しない）、Stage 1＝moomoo SIMULATE、Stage 2/3＝moomoo REAL（実弾）。
     // 昇格・差し戻しは合格・撤退基準に基づき利用者が承認する（遷移ロジックは StageGate）。
     public static StageGatePolicy CreateStagePolicy() => new()
     {
         Definitions = new Dictionary<TradingStage, StageSettings>
         {
-            // 検証: ペーパーのみ・段階としての金額の絞りは無い
+            // 検証: 既定は内蔵 paper（擬似約定・外部へ発注しない）。段階としての金額の絞りは無い
             [TradingStage.Stage0Verification] =
-                new(TradingStage.Stage0Verification, TradeMode.Paper, FullCapitalCapRatio),
-            // SIMULATE: moomoo `SIMULATE`（OpenD 経由のデモ環境）による 3 か月の検証。実弾なし（#333）。
-            // 発注先を段階から分離する 2 軸化（内蔵 paper / moomoo SIMULATE / moomoo REAL）は #334 の担当であり、
-            // 本段階の TradeMode は引き続き Paper（＝実弾を撃たない）である。
+                new(TradingStage.Stage0Verification, BrokerProvider.InternalPaper, FullCapitalCapRatio),
+            // SIMULATE: moomoo `SIMULATE`（OpenD 経由のデモ環境）による 3 か月の検証（06_daytrading-review §4 表）。
+            // #334, IADR-0140: 既定の発注先は **MoomooSimulate**。内蔵 `paper`（擬似約定）はデバッグ用であり
+            // 本段階の検証手段としない——既定を内蔵 paper のままにすると、60 営業日・100 件という合格証跡が
+            // 外部へ一度も発注していない擬似約定で積み上がる（FR-20）。
             [TradingStage.Stage1Simulate] =
-                new(TradingStage.Stage1Simulate, TradeMode.Paper, FullCapitalCapRatio),
-            // 最小実弾: 実弾モード・発注可能額は総資金の 30%（計画 §5・#333）
+                new(TradingStage.Stage1Simulate, BrokerProvider.MoomooSimulate, FullCapitalCapRatio),
+            // 最小実弾: 既定は実弾（moomoo REAL）・発注可能額は総資金の 30%（計画 §5・#333）
             [TradingStage.Stage2MinimalLive] =
-                new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCapRatio),
-            // 段階増額: 実弾モード・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
+                new(TradingStage.Stage2MinimalLive, BrokerProvider.MoomooReal, Stage2MinimalLiveCapitalCapRatio),
+            // 段階増額: 既定は実弾（moomoo REAL）・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
             [TradingStage.Stage3ScaledLive] =
-                new(TradingStage.Stage3ScaledLive, TradeMode.Live, FullCapitalCapRatio),
+                new(TradingStage.Stage3ScaledLive, BrokerProvider.MoomooReal, FullCapitalCapRatio),
         },
         WithdrawalDrawdownMultiple = WithdrawalDrawdownMultiple,
     };

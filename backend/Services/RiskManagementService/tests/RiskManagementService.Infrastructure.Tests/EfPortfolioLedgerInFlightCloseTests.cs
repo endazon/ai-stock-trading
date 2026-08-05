@@ -29,7 +29,7 @@ public class EfPortfolioLedgerInFlightCloseTests
         var decisionId = Guid.NewGuid();
         store.AppendApproval(
             decisionId,
-            new OrderIntent(symbol, market, TradeSide.Sell, ProductType.Cash, TradeMode.Paper,
+            new OrderIntent(symbol, market, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
                 quantity, 21m, effect, StopLossPrice: null, FxRateToBase: 1m),
             approvedAt);
         return decisionId;

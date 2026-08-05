@@ -47,12 +47,12 @@ public class StopLossExecutionServiceTests
         // Stage2（最小実弾・Live）に設定 → 決済も Live。
         var settings = TradingDefaults.CreateSettings() with
         {
-            Stage = new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 100_000m),
+            Stage = new StageSettings(TradingStage.Stage2MinimalLive, BrokerProvider.MoomooReal, 100_000m),
         };
 
         var approval = Create(settings).BuildCloseApproval(Triggered(TradeSide.Buy));
 
-        approval.Intent.Mode.Should().Be(TradeMode.Live);
+        approval.Intent.Mode.Should().Be(BrokerProvider.MoomooReal);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class StopLossExecutionServiceTests
         ledger.AppendApproval(
             decisionId,
             new OrderIntent(
-                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+                "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 20m, PositionEffect.Open, StopLossPrice: 19m, FxRateToBase: fxRateToBase),
             Now.AddHours(-1));
         ledger.AppendFill(decisionId, "order-1", 10, 20m, Now.AddHours(-1));

@@ -96,7 +96,7 @@ internal sealed class ApprovedOrderRow
 
     public AiStockTrading.Shared.Contracts.Trading.PositionEffect PositionEffect { get; set; }
 
-    public AiStockTrading.Shared.Contracts.Trading.TradeMode Mode { get; set; }
+    public AiStockTrading.Shared.Contracts.Trading.BrokerProvider Mode { get; set; }
 
     public int Quantity { get; set; }
 

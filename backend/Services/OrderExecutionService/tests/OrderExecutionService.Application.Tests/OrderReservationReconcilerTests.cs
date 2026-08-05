@@ -44,7 +44,7 @@ public class OrderReservationReconcilerTests
     }
 
     private static OrderIntent Intent(string symbol = "AAPL", int qty = 10, decimal price = 100m) =>
-        new(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
+        new(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     private static BrokerOrder Placed(string orderId, OrderStatus status = OrderStatus.Filled) =>
         new(orderId, Intent(), status, FilledQuantity: 10, AveragePrice: 101m,

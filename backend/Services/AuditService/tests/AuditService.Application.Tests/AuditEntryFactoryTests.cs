@@ -13,7 +13,7 @@ public class AuditEntryFactoryTests
     private static readonly DateTimeOffset RecordedAt = new(2026, 7, 10, 3, 0, 0, TimeSpan.Zero);
 
     private static OrderIntent Intent(PositionEffect effect = PositionEffect.Open) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m, effect);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m, effect);
 
     [Fact]
     public void TradeDecisionMade_は_DecisionId_相関で銘柄と根拠を記録する()

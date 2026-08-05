@@ -22,7 +22,7 @@ public class HttpSizingContextProviderTests
     public async Task 応答を_SizingContext_に写像する()
     {
         // web 既定（camelCase・列挙は数値）で往復させる JSON を用意する。
-        var view = new SizingContext(120_000m, 45_000m, 22_000m, 2, 0.03m, TradeMode.Paper, TradingDefaults.CreateRiskLimits());
+        var view = new SizingContext(120_000m, 45_000m, 22_000m, 2, 0.03m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
         var body = JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var handler = new StubHandler(HttpStatusCode.OK, body);
 
@@ -33,7 +33,7 @@ public class HttpSizingContextProviderTests
         context.DailyOrderRemaining.Should().Be(22_000m);
         context.ConsecutiveLosses.Should().Be(2);
         context.DrawdownRatio.Should().Be(0.03m);
-        context.Mode.Should().Be(TradeMode.Paper);
+        context.Mode.Should().Be(BrokerProvider.InternalPaper);
         handler.LastPath.Should().Be("/risk-controls/sizing-context");
     }
 

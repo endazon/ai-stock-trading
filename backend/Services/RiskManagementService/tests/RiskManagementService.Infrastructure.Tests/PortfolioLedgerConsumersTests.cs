@@ -17,7 +17,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 public class PortfolioLedgerConsumersTests
 {
     private static OrderIntent BuyIntent(int qty, decimal price) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す

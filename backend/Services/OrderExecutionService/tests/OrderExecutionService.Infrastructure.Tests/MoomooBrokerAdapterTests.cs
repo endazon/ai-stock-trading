@@ -70,7 +70,7 @@ public class MoomooBrokerAdapterTests
     }
 
     private static OrderIntent Intent(int qty = 10, decimal price = 100m, Market market = Market.UnitedStates,
-        TradeSide side = TradeSide.Buy, TradeMode mode = TradeMode.Paper) =>
+        TradeSide side = TradeSide.Buy, BrokerProvider mode = BrokerProvider.InternalPaper) =>
         new("AAPL", market, side, ProductType.Cash, mode, qty, price);
 
     [Fact]
@@ -92,7 +92,7 @@ public class MoomooBrokerAdapterTests
     {
         // moomoo アダプタは Mode に依らず SIMULATE（client 実装が固定）で発注する。Live でも拒否せず送信する。
         var client = new FakeClient();
-        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(mode: TradeMode.Live));
+        var order = await new MoomooBrokerAdapter(client).PlaceOrderAsync(Intent(mode: BrokerProvider.MoomooReal));
         client.LastRequest.Should().NotBeNull();
         order.Status.Should().Be(OrderStatus.Filled);
     }

@@ -133,7 +133,7 @@ public class MarketDataWiringTests
         if (withOpenPosition)
         {
             var decisionId = Guid.NewGuid();
-            var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 1_000m);
+            var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
             ledger.AppendApproval(decisionId, intent, Now);
             ledger.AppendFill(decisionId, "ORD-1", 10, 1_000m, Now);
         }

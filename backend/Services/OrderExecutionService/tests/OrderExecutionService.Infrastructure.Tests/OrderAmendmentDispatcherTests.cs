@@ -30,7 +30,7 @@ public class OrderAmendmentDispatcherTests
     }
 
     private static OrderIntent Intent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 3000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 3000m);
 
     // 非終端の注文を扱うため immediateFill=false のペーパーブローカで組む（IADR-0067）。
     private const string ServiceName = "ai-stock-trading.order-execution-service";

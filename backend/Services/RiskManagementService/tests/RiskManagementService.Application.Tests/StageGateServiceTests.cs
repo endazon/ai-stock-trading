@@ -62,7 +62,7 @@ public class StageGateServiceTests
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
         result.Accepted.Should().BeTrue();
-        result.ResultingSettings!.Mode.Should().Be(TradeMode.Paper);
+        result.ResultingSettings!.Mode.Should().Be(BrokerProvider.MoomooSimulate);
         var history = ledger.Load().History;
         history.Should().HaveCount(1);
         history[0].FromStage.Should().Be(TradingStage.Stage0Verification);
@@ -207,7 +207,7 @@ public class StageGateServiceTests
         var status = svc.GetStatus();
 
         status.CurrentStage.Should().Be(TradingStage.Stage0Verification);
-        status.CurrentSettings.Mode.Should().Be(TradeMode.Paper);
+        status.CurrentSettings.Mode.Should().Be(BrokerProvider.InternalPaper);
         status.Promotion.TargetStage.Should().Be(TradingStage.Stage1Simulate);
         status.Promotion.Eligible.Should().BeFalse(); // 既定はバックテスト未合格
         status.History.Should().BeEmpty();

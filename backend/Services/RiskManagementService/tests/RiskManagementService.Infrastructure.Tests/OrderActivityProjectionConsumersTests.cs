@@ -20,7 +20,7 @@ public class OrderActivityProjectionConsumersTests
     private static readonly DateTimeOffset Base = new(2026, 7, 18, 6, 0, 0, TimeSpan.Zero);
 
     private static OrderIntent Intent(int qty = 10) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, qty, 3_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, 3_000m);
 
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す

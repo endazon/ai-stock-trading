@@ -50,11 +50,11 @@ public class EquityRatioRiskLimitsTests
         };
 
     private static OrderIntent Entry(decimal notional, decimal fxRateToBase = 1m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
             1, notional / fxRateToBase, PositionEffect.Open, StopLossPrice: null, fxRateToBase);
 
     private static OrderIntent Exit(decimal notional) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper,
+        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
             1, notional, PositionEffect.Close);
 
     // ------------------------------------------------------------------

@@ -36,8 +36,12 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.TradingPaused);
         }
 
-        // FR-20: 段階ゲート（動作モードと資金上限）
-        if (intent.Mode == TradeMode.Live && settings.Stage.Mode != TradeMode.Live)
+        // FR-20, #334, IADR-0140 決定5: 段階ゲート（既定の発注先と資金上限）。
+        // 発注先の**設定**（RiskManagementSettings.BrokerProvider）は段階と独立に変更でき、Stage 1 のまま
+        // moomoo REAL を選ぶ操作も計画上は保存できる（05_screens「保存を妨げないが警告を表示する」）。
+        // しかし**実弾の注文そのものは段階が実弾を既定としない限り止める**。計画は保存の可否について述べており、
+        // 発注の可否については FR-20 本文の「段階ごとの動作モード…を強制できる」が生きているため、安全側に倒す。
+        if (intent.Mode == BrokerProvider.MoomooReal && settings.Stage.Mode != BrokerProvider.MoomooReal)
         {
             reasons.Add(RejectionReason.StageProhibitsLiveTrading);
         }

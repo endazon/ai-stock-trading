@@ -34,7 +34,7 @@ public class MarketCurrencyTests
 public class OrderIntentCurrencyTests
 {
     private static OrderIntent Intent(decimal price, int quantity, decimal fxRateToBase) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
             quantity, price, PositionEffect.Open, StopLossPrice: null, FxRateToBase: fxRateToBase);
 
     [Fact]
@@ -42,7 +42,7 @@ public class OrderIntentCurrencyTests
     {
         // 既定 1＝JPY 市場・既存データ（レート未記録）の現行等価を保証する。
         var intent = new OrderIntent(
-            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, TradeMode.Paper, 10, 2_500m);
+            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 2_500m);
 
         intent.FxRateToBase.Should().Be(1m);
         intent.Notional.Should().Be(25_000m);

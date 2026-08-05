@@ -61,7 +61,7 @@ public class BrokerPositionsObservedConsumerTests
         var decisionId = Guid.NewGuid();
         ledger.AppendApproval(
             decisionId,
-            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, TradeMode.Paper,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 quantity, 20m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m),
             At.AddDays(-1));
         ledger.AppendFill(decisionId, "open-1", quantity, 20m, At.AddDays(-1));
