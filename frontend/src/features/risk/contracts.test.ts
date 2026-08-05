@@ -19,6 +19,17 @@ import {
   PRODUCT_TYPE_SHORT_SELL,
   PRODUCT_TYPE_OPTIONS,
   ratioPercent,
+  describeLimitRange,
+  formatAmount,
+  isEquityRatioField,
+  LIMIT_FIELDS,
+  LIMIT_FIELD_KEYS,
+  limitInputToWire,
+  percentTextToRatio,
+  ratioToPercentText,
+  resolveEquityAmount,
+  validateLimitInput,
+  wireToLimitInput,
   stageLabel,
   transitionKindLabel,
   withdrawalReasonLabel,
@@ -137,5 +148,180 @@ describe('risk contracts — broker provider (2 軸分離)', () => {
 
   it('発注先の変更履歴は種別 7 で絞れる（SettingsChangeType.BrokerProviderChanged）', () => {
     expect(changeTypeLabel(7)).toBe('発注先');
+  });
+});
+
+// FR-10, SC-02, #362, IADR-0151: 比率 ⇄ 百分率の変換、値域、実額の解決。
+//
+// **画面（百分率）とワイヤ（比率）で単位が違う。** 取り違えは統制で最も危険な誤りであるため
+// （IADR-0130 決定1）、変換は本ファイルが検査する 2 関数だけを通す。値域の実効はサーバ側
+// （`RiskLimitBounds`）であり、ここは利用者への即時提示が正しく効くことを固定する。
+describe('リスク上限の単位変換（#362 / IADR-0151 決定1）', () => {
+  it('比率を百分率の表示文字列にする', () => {
+    expect(ratioToPercentText(0.25)).toBe('25');
+    expect(ratioToPercentText(1.5)).toBe('150');
+    expect(ratioToPercentText(0.02)).toBe('2');
+    expect(ratioToPercentText(0.001)).toBe('0.1');
+    expect(ratioToPercentText(0)).toBe('0');
+  });
+
+  it('百分率の入力文字列を比率にする', () => {
+    expect(percentTextToRatio('25')).toBe(0.25);
+    expect(percentTextToRatio('150')).toBe(1.5);
+    expect(percentTextToRatio('2')).toBe(0.02);
+    expect(percentTextToRatio('0.1')).toBe(0.001);
+    expect(percentTextToRatio(' 33.3 ')).toBe(0.333);
+    expect(percentTextToRatio('-5')).toBe(-0.05);
+  });
+
+  // 否定形: 読めない入力は null（**黙って 0 にしない**）。0 は「発注できない」であって未入力ではない。
+  it('読めない入力は null（0 へ倒さない）', () => {
+    expect(percentTextToRatio('')).toBeNull();
+    expect(percentTextToRatio('   ')).toBeNull();
+    expect(percentTextToRatio('abc')).toBeNull();
+    expect(ratioToPercentText(null)).toBe('');
+    expect(ratioToPercentText(undefined)).toBe('');
+    expect(ratioToPercentText(Number.NaN)).toBe('');
+  });
+
+  // プロパティベース: 比率 → 百分率 → 比率 の往復で値が変わらない。
+  // 変換に丸め誤差が入れば（`/100` 実装なら入り得る）ここが落ちる。
+  it('往復で値が変わらない（丸め誤差を統制値へ紛れ込ませない）', () => {
+    for (const ratio of [0.25, 1.5, 0.02, 0.01, 0.1, 0.5, 0.333, 0.0001, 3, 10]) {
+      expect(percentTextToRatio(ratioToPercentText(ratio))).toBe(ratio);
+    }
+  });
+
+  it('小数点移動は浮動小数点の除算と違い誤差を出さない', () => {
+    // `2.675 / 100` は 0.026749999999999996 になる。文字列の小数点移動なら 0.02675 のままである。
+    expect(percentTextToRatio('2.675')).toBe(0.02675);
+    expect(percentTextToRatio('8.7')).toBe(0.087);
+  });
+});
+
+describe('リスク上限の値域（#362 / IADR-0151 決定2）', () => {
+  // 境界値テーブル: 下限直下・下限・既定・上限一致・上限直上。
+  // **サーバ側 `RiskLimitBoundsTests` の同じ表と一致していなければならない**（片方だけ変えると、
+  // 画面は通すのにサーバが 400 を返す／その逆になる）。
+  it.each([
+    ['maxOrderAmountRatio', '0', false],
+    ['maxOrderAmountRatio', '0.01', true],
+    ['maxOrderAmountRatio', '25', true],
+    ['maxOrderAmountRatio', '100', true],
+    ['maxOrderAmountRatio', '100.1', false],
+    ['maxOrderAmountRatio', '3500000', false],
+    ['maxDailyOrderAmountRatio', '0', false],
+    ['maxDailyOrderAmountRatio', '150', true],
+    ['maxDailyOrderAmountRatio', '1000', true],
+    ['maxDailyOrderAmountRatio', '1000.1', false],
+    ['maxOpenPositions', '0', false],
+    ['maxOpenPositions', '1', true],
+    ['maxOpenPositions', '3', true],
+    ['maxOpenPositions', '20', true],
+    ['maxOpenPositions', '21', false],
+    ['maxOpenPositions', '3.5', false],
+    ['dailyLossLimitRatio', '0', false],
+    ['dailyLossLimitRatio', '2', true],
+    ['dailyLossLimitRatio', '20', true],
+    ['dailyLossLimitRatio', '20.1', false],
+    ['perTradeRiskRatio', '1', true],
+    ['perTradeRiskRatio', '10', true],
+    ['perTradeRiskRatio', '10.1', false],
+    ['maxDrawdownRatio', '10', true],
+    ['maxDrawdownRatio', '50', true],
+    ['maxDrawdownRatio', '50.1', false],
+    ['losingStreakThreshold', '0', false],
+    ['losingStreakThreshold', '5', true],
+    ['losingStreakThreshold', '20', true],
+    ['losingStreakThreshold', '21', false],
+    // 1.0 は「縮小しない」＝連敗時縮小の無効化であるため上限に含めない。
+    ['losingStreakSizeFactor', '0', false],
+    ['losingStreakSizeFactor', '0.5', true],
+    ['losingStreakSizeFactor', '0.99', true],
+    ['losingStreakSizeFactor', '1', false],
+    ['losingStreakSizeFactor', '1.5', false],
+  ] as const)('%s に %s は %s', (key, text, accepted) => {
+    expect(validateLimitInput(key, text) === null).toBe(accepted);
+  });
+
+  // 否定形: 空欄・非数値も無効（黙って 0 送信しない）。
+  it('空欄・非数値は無効', () => {
+    for (const key of LIMIT_FIELD_KEYS) {
+      expect(validateLimitInput(key, '')).not.toBeNull();
+      expect(validateLimitInput(key, 'abc')).not.toBeNull();
+    }
+  });
+
+  // プロパティベース: 8 項目すべてに範囲の説明があり、既定値（計画 §5）は全項目で受理される。
+  it('計画の既定値は全項目で受理される', () => {
+    const defaults: Record<string, string> = {
+      maxOrderAmountRatio: '25',
+      maxDailyOrderAmountRatio: '150',
+      maxOpenPositions: '3',
+      dailyLossLimitRatio: '2',
+      perTradeRiskRatio: '1',
+      maxDrawdownRatio: '10',
+      losingStreakThreshold: '5',
+      losingStreakSizeFactor: '0.5',
+    };
+    for (const key of LIMIT_FIELD_KEYS) {
+      expect(validateLimitInput(key, defaults[key])).toBeNull();
+      expect(describeLimitRange(key)).toContain(LIMIT_FIELDS[key].unit);
+    }
+  });
+
+  it('equity 比の項目だけが実額の併記対象である', () => {
+    expect(LIMIT_FIELD_KEYS.filter(isEquityRatioField)).toEqual([
+      'maxOrderAmountRatio',
+      'maxDailyOrderAmountRatio',
+      'dailyLossLimitRatio',
+      'perTradeRiskRatio',
+      'maxDrawdownRatio',
+    ]);
+  });
+
+  it('ラベルに計画が禁じた語（保有銘柄数上限）を用いない', () => {
+    // ADR-0016 決定9・計画 §5: 同一銘柄で複数の建玉を持ち得るため銘柄数では数えない。
+    for (const key of LIMIT_FIELD_KEYS) {
+      expect(LIMIT_FIELDS[key].label).not.toContain('保有銘柄数');
+    }
+  });
+
+  it('画面単位とワイヤ単位の変換は項目の種別で切り替わる', () => {
+    // equity 比の項目だけが 100 倍の関係にある。件数・倍率はそのまま。
+    expect(limitInputToWire('maxOrderAmountRatio', '25')).toBe(0.25);
+    expect(limitInputToWire('maxOpenPositions', '3')).toBe(3);
+    expect(limitInputToWire('losingStreakSizeFactor', '0.5')).toBe(0.5);
+    expect(wireToLimitInput('maxOrderAmountRatio', 0.25)).toBe('25');
+    expect(wireToLimitInput('maxOpenPositions', 3)).toBe('3');
+    expect(wireToLimitInput('losingStreakSizeFactor', 0.5)).toBe('0.5');
+  });
+});
+
+describe('実額の解決（#362 / IADR-0151 決定4）', () => {
+  it('equity × 比率 を返す', () => {
+    expect(resolveEquityAmount(491100, 0.25)).toBe(122775);
+    expect(resolveEquityAmount(491100, 1.5)).toBe(736650);
+  });
+
+  // 否定形: equity または比率が不明なら null（画面は「—」を出す）。**0 を返さない**——
+  // 0 円という実額を自信満々に表示すると、equity が取れていない事実が隠れる。
+  it('equity・比率が不明なら null（0 を返さない）', () => {
+    expect(resolveEquityAmount(null, 0.25)).toBeNull();
+    expect(resolveEquityAmount(undefined, 0.25)).toBeNull();
+    expect(resolveEquityAmount(Number.NaN, 0.25)).toBeNull();
+    expect(resolveEquityAmount(491100, null)).toBeNull();
+    expect(resolveEquityAmount(491100, Number.NaN)).toBeNull();
+  });
+
+  it('金額の整形は通貨記号を付けない（円建ての値に $ を付けない）', () => {
+    // IADR-0151 決定4: `capital` は基準通貨（円）建てである。計画は USD 表記を求めるが、
+    // 円建ての数値へ「$」を付けることは単位の取り違えそのものである。通貨は呼び出し側のラベルで明示する。
+    const formatted = formatAmount(122775);
+    expect(formatted).not.toContain('$');
+    expect(formatted).not.toContain('¥');
+    expect(formatted).toContain('122,775');
+    expect(formatAmount(null)).toBe('—');
+    expect(formatAmount(Number.NaN)).toBe('—');
   });
 });

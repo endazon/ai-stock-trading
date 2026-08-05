@@ -305,3 +305,260 @@ export function ratioPercent(used: number, limit: number): string {
   if (!Number.isFinite(used) || !Number.isFinite(limit) || limit === 0) return '—';
   return `${((used / limit) * 100).toFixed(1)}%`;
 }
+
+// ---- FR-10, SC-02, #362, IADR-0151: 比率 ⇄ 百分率の変換（**この 2 関数だけを通す**） ----
+//
+// 画面（表示・入力）は**百分率**、ワイヤ（HTTP・永続化・バックエンドのドメイン）は**比率**である
+// （IADR-0151 決定1）。呼び出し側で `× 100` / `÷ 100` と書くことを許さない——分散させると
+// 「その値がどちらの単位か」が呼び出し側ごとにぶれ、比率と百分率の取り違えが型検査を素通りする
+// （IADR-0130 決定1 が解決点を 1 本に閉じたのと同じ規律）。
+//
+// **変換は 10 進文字列の小数点移動で行う。** `Number(s) / 100` は多くの場合に期待どおりだが、
+// 丸めの誤差が**統制値へ紛れ込む経路**を残す（`decimal` で受けるサーバへ 0.020000000000000004 が届く）。
+// 文字列操作なら誤差は原理的に生じない。
+
+/** 10 進表記の文字列の小数点を `shift` 桁だけ右へ動かす（負なら左へ）。数値として解釈できなければ null。 */
+function shiftDecimalPoint(text: string, shift: number): string | null {
+  const trimmed = text.trim();
+  const m = /^([+-]?)(\d*)(?:\.(\d*))?$/.exec(trimmed);
+  // 指数表記（1e-3 等）は正規表現に合わないため、数値経由の縮退へ落とす（誤差より「読めない」ほうが危険）。
+  if (!m || (m[2] === '' && (m[3] ?? '') === '')) {
+    const n = Number(trimmed);
+    if (trimmed === '' || !Number.isFinite(n)) return null;
+    return String(n * 10 ** shift);
+  }
+  const sign = m[1] === '-' ? '-' : '';
+  const digits = `${m[2] ?? ''}${m[3] ?? ''}`;
+  // 小数点の位置（左からの桁数）を移動させる。桁が足りなければ 0 を補う。
+  let point = (m[2] ?? '').length + shift;
+  let body = digits;
+  if (point < 0) {
+    body = '0'.repeat(-point) + body;
+    point = 0;
+  }
+  if (point > body.length) {
+    body += '0'.repeat(point - body.length);
+  }
+  const intPart = body.slice(0, point).replace(/^0+(?=\d)/, '') || '0';
+  const fracPart = body.slice(point).replace(/0+$/, '');
+  const value = fracPart === '' ? intPart : `${intPart}.${fracPart}`;
+  return value === '0' ? '0' : `${sign}${value}`;
+}
+
+/** 比率（0.25）を画面表示用の百分率文字列（"25"）にする。非数・未定義は空文字（入力欄を "undefined" にしない）。 */
+export function ratioToPercentText(ratio: number | null | undefined): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '';
+  return shiftDecimalPoint(String(ratio), 2) ?? '';
+}
+
+/** 画面の百分率文字列（"25"）を比率（0.25）にする。数値として読めなければ null（黙って 0 にしない）。 */
+export function percentTextToRatio(text: string): number | null {
+  const shifted = shiftDecimalPoint(text, -2);
+  if (shifted === null) return null;
+  const value = Number(shifted);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * FR-10, SC-02, #362, IADR-0151 決定4: equity と比率から**実額**を解決する。
+ * <p>
+ * equity は `RiskStatusView.capital`（IADR-0130 決定2 が定めた「判定に用いる自己資金＝前営業日終値時点の
+ * 評価額」）である。**呼び出し側で `equity * ratio` と書かない**（equity の定義が呼び出し側ごとにぶれる）。
+ * equity が不明・非数なら null を返し、画面は「—」を出す（併記できないことを黙って隠さない）。
+ */
+export function resolveEquityAmount(
+  equity: number | null | undefined,
+  ratio: number | null | undefined,
+): number | null {
+  if (equity === null || equity === undefined || !Number.isFinite(equity)) return null;
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return null;
+  return equity * ratio;
+}
+
+/**
+ * 金額の表示用整形。**通貨記号は付けない**——`RiskStatusView.capital` は基準通貨（円）建てであり
+ * （IADR-0130 決定3・`MarketCurrency.Base = Jpy`）、計画が求める USD 表記（`$750`）にするには
+ * 判定通貨の USD 移行が要る。**円建ての数値に「$」を付けることは単位の取り違えそのもの**であるため、
+ * 通貨は呼び出し側のラベルで明示する（IADR-0151 決定4）。
+ */
+export function formatAmount(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 }).format(value);
+}
+
+// ---- FR-10, SC-02, #362, IADR-0151 決定2: リスク上限として設定できる値域 ----
+//
+// **実効はサーバ側（`RiskLimitBounds`・ドメイン）である。** ここに同じ表を持つのは、利用者へ即時に
+// 提示するためであり（サーバだけだと保存を押すまで誤りが分からない）、画面が統制の実効を担うためではない
+// （画面だけの関門は API 直叩きで消える＝IADR-0141 決定1 と同じ判断）。
+// **値はサーバ側の `RiskLimitBounds` と一致していなければならない**（片方だけ変えると、画面は通すのに
+// サーバが 400 を返す／その逆になる）。
+
+/** 上限の入力欄の単位。表示の接尾辞と検証規則を決める。 */
+export type LimitUnit =
+  /** equity に対する百分率（実額を併記する） */
+  | 'equityPercent'
+  /** equity に対する百分率・日次（実額を併記する） */
+  | 'equityPercentPerDay'
+  /** 件数（整数） */
+  | 'count'
+  /** 倍率（比率のまま入力する） */
+  | 'factor';
+
+export interface LimitFieldSpec {
+  /** 画面のラベル（単位を含まない本体）。 */
+  label: string;
+  /** 入力欄に添える単位の表示。 */
+  unit: string;
+  kind: LimitUnit;
+  /** 許容範囲（画面の入力単位＝百分率／件数／倍率で表す）。 */
+  min: number;
+  max: number;
+  /** 下限を含むか（比率系は 0 を含まない）。 */
+  minInclusive: boolean;
+  /** 上限を含むか（連敗時サイズ縮小係数だけ含まない）。 */
+  maxInclusive: boolean;
+  /** 整数のみか。 */
+  integer: boolean;
+}
+
+/** 上限 8 項目の仕様（表示順）。キーはバックエンドの `RiskLimitSettings` のプロパティ名に一致する。 */
+export const LIMIT_FIELDS = {
+  maxOrderAmountRatio: {
+    label: '1注文発注額上限（equity 比）',
+    unit: '%',
+    kind: 'equityPercent',
+    min: 0,
+    max: 100,
+    minInclusive: false,
+    maxInclusive: true,
+    integer: false,
+  },
+  maxDailyOrderAmountRatio: {
+    label: '1日発注額上限（equity 比）',
+    unit: '%/日',
+    kind: 'equityPercentPerDay',
+    min: 0,
+    max: 1000,
+    minInclusive: false,
+    maxInclusive: true,
+    integer: false,
+  },
+  // ADR-0016 決定9・計画 §5: **「保有銘柄数上限」の語は用いない**（同一銘柄で複数の建玉を持ち得る）。
+  maxOpenPositions: {
+    label: '保有建玉数上限',
+    unit: '件',
+    kind: 'count',
+    min: 1,
+    max: 20,
+    minInclusive: true,
+    maxInclusive: true,
+    integer: true,
+  },
+  dailyLossLimitRatio: {
+    label: '日次損失上限（equity 比）',
+    unit: '%',
+    kind: 'equityPercent',
+    min: 0,
+    max: 20,
+    minInclusive: false,
+    maxInclusive: true,
+    integer: false,
+  },
+  perTradeRiskRatio: {
+    label: '1取引あたりリスク（equity 比）',
+    unit: '%',
+    kind: 'equityPercent',
+    min: 0,
+    max: 10,
+    minInclusive: false,
+    maxInclusive: true,
+    integer: false,
+  },
+  maxDrawdownRatio: {
+    label: '最大ドローダウン上限（equity 比）',
+    unit: '%',
+    kind: 'equityPercent',
+    min: 0,
+    max: 50,
+    minInclusive: false,
+    maxInclusive: true,
+    integer: false,
+  },
+  losingStreakThreshold: {
+    label: '連敗しきい値',
+    unit: '連敗',
+    kind: 'count',
+    min: 1,
+    max: 20,
+    minInclusive: true,
+    maxInclusive: true,
+    integer: true,
+  },
+  // 1.0（＝縮小しない）は統制の無効化であるため上限に含めない（IADR-0151 決定2）。
+  losingStreakSizeFactor: {
+    label: '連敗時サイズ縮小係数',
+    unit: '倍',
+    kind: 'factor',
+    min: 0,
+    max: 1,
+    minInclusive: false,
+    maxInclusive: false,
+    integer: false,
+  },
+} as const satisfies Record<keyof RiskLimitSettings, LimitFieldSpec>;
+
+export type LimitFieldKey = keyof typeof LIMIT_FIELDS;
+
+/** 表示順のキー列（`Object.keys` の順序に暗黙依存しないよう明示する）。 */
+export const LIMIT_FIELD_KEYS = Object.keys(LIMIT_FIELDS) as LimitFieldKey[];
+
+/** equity に対する割合の項目か（実額を併記する対象）。 */
+export const isEquityRatioField = (key: LimitFieldKey): boolean =>
+  LIMIT_FIELDS[key].kind === 'equityPercent' || LIMIT_FIELDS[key].kind === 'equityPercentPerDay';
+
+/** 入力欄の値（画面単位）が値域に収まるか。収まらなければ利用者向けの説明を返す（収まれば null）。 */
+export function validateLimitInput(key: LimitFieldKey, text: string): string | null {
+  const spec = LIMIT_FIELDS[key];
+  if (text.trim() === '') return `${spec.label}を入力してください。`;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return `${spec.label}は数値で入力してください。`;
+  if (spec.integer && !Number.isInteger(value)) {
+    return `${spec.label}は整数（${spec.unit}）で入力してください。`;
+  }
+  const belowMin = spec.minInclusive ? value < spec.min : value <= spec.min;
+  const aboveMax = spec.maxInclusive ? value > spec.max : value >= spec.max;
+  if (belowMin || aboveMax) return `${spec.label}は ${describeLimitRange(key)} の範囲で入力してください。`;
+  return null;
+}
+
+/** 値域を利用者向けの文言にする（入力欄のヘルプと警告の双方で使う）。 */
+export function describeLimitRange(key: LimitFieldKey): string {
+  const spec = LIMIT_FIELDS[key];
+  const lower = spec.minInclusive ? `${spec.min} 以上` : `${spec.min} 超`;
+  const upper = spec.maxInclusive ? `${spec.max} 以下` : `${spec.max} 未満`;
+  return `${lower} ${upper}（${spec.unit}）`;
+}
+
+/**
+ * 画面の入力（文字列・百分率/件数/倍率）をワイヤの値（比率/整数/倍率）へ変換する。
+ * 読めない値は null（**黙って 0 を送らない**）。
+ */
+export function limitInputToWire(key: LimitFieldKey, text: string): number | null {
+  const spec = LIMIT_FIELDS[key];
+  if (spec.kind === 'equityPercent' || spec.kind === 'equityPercentPerDay') {
+    return percentTextToRatio(text);
+  }
+  if (text.trim() === '') return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** ワイヤの値（比率/整数/倍率）を画面の入力（文字列）へ変換する。 */
+export function wireToLimitInput(key: LimitFieldKey, value: number): string {
+  const spec = LIMIT_FIELDS[key];
+  if (spec.kind === 'equityPercent' || spec.kind === 'equityPercentPerDay') {
+    return ratioToPercentText(value);
+  }
+  return String(value);
+}

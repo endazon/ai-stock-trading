@@ -19,11 +19,13 @@ test.describe('SC-02 リスク設定（#187）', () => {
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
 
     await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
-    // FR-10, #329, #389: 発注額の上限は **equity 比**（0.25＝25%）であり金額ではない。
-    // ラベルにも単位を明示してある（比率を「金額上限」と表示すると桁が 6 桁ずれて読める）。
-    await expect(limitsForm(page).getByLabel('1注文発注額上限（equity 比・0.25＝25%）')).toHaveValue(
-      String(RISK_SETTINGS.limits.maxOrderAmountRatio),
+    // FR-10, #329, #389, #362: 発注額の上限は **equity 比**であり金額ではない。画面には
+    // **百分率**（25）で出る（IADR-0151 決定1。比率入力で `25` と打つと equity の 25 倍になるため）。
+    await expect(limitsForm(page).getByLabel('1注文発注額上限（equity 比） %')).toHaveValue(
+      String(RISK_SETTINGS.limits.maxOrderAmountRatio * 100),
     );
+    // #362, IADR-0151 決定4: 割合だけでは実効額が読めないため、現在 equity での実額を併記する。
+    await expect(limitsForm(page).getByText(/現在の equity での実額/).first()).toBeVisible();
     // 取引ガードは変更フォーム（#188）、運用段階は参照表示。
     await expect(page.getByText('取引ガード（変更）')).toBeVisible();
     // FR-20, SC-02, INDEX 決定 46, #334: 運用段階と発注先は**独立した 2 軸**であり、節見出しは
@@ -50,10 +52,12 @@ test.describe('SC-02 リスク設定（#187）', () => {
 
   test('上限の保存（PUT /risk-controls/settings/limits 200）で成功通知を表示する', async ({ page }) => {
     let putPath: string | null = null;
+    let putBody: { limits?: Record<string, number> } | null = null;
     await installBff(page, {
       ...defaultBff(),
       'PUT /risk-controls/settings/limits': (route) => {
         putPath = new URL(route.request().url()).pathname;
+        putBody = route.request().postDataJSON();
         return { status: 200, body: RISK_SETTINGS };
       },
     });
@@ -67,6 +71,35 @@ test.describe('SC-02 リスク設定（#187）', () => {
     await expect(form.getByText('保存しました。')).toBeVisible();
     // 画面は /bff/risk-controls/settings/limits を叩く（BFF が Risk へプロキシすべき契約の追認）。
     expect(putPath).toBe('/bff/risk-controls/settings/limits');
+    // #362, IADR-0151 決定3: **本文は `*Ratio`（比率）である**。画面の 25（%）が 0.25 として送られる。
+    // #389 まで旧名（金額キー）で送って 400 に落ちていた形からの是正であり、値域の関門（画面＋サーバ）が
+    // 揃った本 issue で初めてこの形にしてよい。
+    expect(putBody!.limits!.maxOrderAmountRatio).toBe(RISK_SETTINGS.limits.maxOrderAmountRatio);
+    expect(putBody!.limits).not.toHaveProperty('maxOrderAmount');
+  });
+
+  // #362 の否定形: 統制を無効化する値では保存へ進めない（PUT が 1 度も飛ばない）。
+  // 画面は百分率入力のため、「equity の 35,000 倍」は 3500000（%）として現れる。
+  test('1注文上限に equity の 35,000 倍を入れても PUT を飛ばさない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/limits': () => {
+        putCount += 1;
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = limitsForm(page);
+    await expect(form).toBeVisible();
+
+    await form.getByLabel('1注文発注額上限（equity 比） %').fill('3500000');
+    await form.getByLabel('変更理由').fill('統制を無効化する値');
+
+    const save = form.getByRole('button', { name: '保存' });
+    await expect(save).toBeDisabled();
+    await expect(form.getByRole('alert').filter({ hasText: '1注文発注額上限' })).toBeVisible();
+    expect(putCount).toBe(0);
   });
 
   test('上限の競合（PUT 409）でメッセージを表示し破壊的な再試行をしない', async ({ page }) => {
