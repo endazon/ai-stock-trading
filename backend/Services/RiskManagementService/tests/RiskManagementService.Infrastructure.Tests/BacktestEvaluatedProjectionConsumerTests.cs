@@ -62,7 +62,8 @@ public class BacktestEvaluatedProjectionConsumerTests
         store.Save(new StagePerformance
         {
             ObservedMaxDrawdownRatio = 0.12m,
-            PaperDeviationExplained = true,
+            Stage1QualifiedTradingDays = 60,
+            Stage1TradeCount = 100,
             ControlViolationCount = 3,
             SlippageAndCostWithinExpected = true,
             DailyLossLimitRespected = true,
@@ -79,7 +80,8 @@ public class BacktestEvaluatedProjectionConsumerTests
         perf.BacktestMaxDrawdownRatio.Should().Be(0.05m);
         // 運用系は温存（別ドライバの供給源を上書きしない）。
         perf.ObservedMaxDrawdownRatio.Should().Be(0.12m);
-        perf.PaperDeviationExplained.Should().BeTrue();
+        perf.Stage1QualifiedTradingDays.Should().Be(60);
+        perf.Stage1TradeCount.Should().Be(100);
         perf.ControlViolationCount.Should().Be(3);
         perf.SlippageAndCostWithinExpected.Should().BeTrue();
         perf.DailyLossLimitRespected.Should().BeTrue();

@@ -9,13 +9,14 @@ namespace AiStockTrading.RiskManagement.Application.Tests;
 // 単調非減少・負値の無視・フィールド所有権の分離（他フィールド温存）・観測窓リセットを受け入れ基準へ写像する。
 public class StagePerformanceProjectionTests
 {
-    // 実DD 以外の 6 フィールドすべてに非既定値を入れた実績（温存の検証用）。
+    // 実DD 以外の全フィールドに非既定値を入れた実績（温存の検証用）。
     private static StagePerformance Populated() => new()
     {
         BacktestPassed = true,
         BacktestMaxDrawdownRatio = 0.10m,
         ObservedMaxDrawdownRatio = 0.12m,
-        PaperDeviationExplained = true,
+        Stage1QualifiedTradingDays = 60,
+        Stage1TradeCount = 100,
         ControlViolationCount = 3,
         SlippageAndCostWithinExpected = true,
         DailyLossLimitRespected = true,
@@ -59,7 +60,8 @@ public class StagePerformanceProjectionTests
         updated.ObservedMaxDrawdownRatio.Should().Be(0.30m);
         updated.BacktestPassed.Should().BeTrue();
         updated.BacktestMaxDrawdownRatio.Should().Be(0.10m);
-        updated.PaperDeviationExplained.Should().BeTrue();
+        updated.Stage1QualifiedTradingDays.Should().Be(60);
+        updated.Stage1TradeCount.Should().Be(100);
         updated.ControlViolationCount.Should().Be(3);
         updated.SlippageAndCostWithinExpected.Should().BeTrue();
         updated.DailyLossLimitRespected.Should().BeTrue();
@@ -74,7 +76,8 @@ public class StagePerformanceProjectionTests
         reset.ObservedMaxDrawdownRatio.Should().Be(0m);
         reset.BacktestPassed.Should().BeTrue();
         reset.BacktestMaxDrawdownRatio.Should().Be(0.10m);
-        reset.PaperDeviationExplained.Should().BeTrue();
+        reset.Stage1QualifiedTradingDays.Should().Be(60);
+        reset.Stage1TradeCount.Should().Be(100);
         reset.ControlViolationCount.Should().Be(3);
         reset.SlippageAndCostWithinExpected.Should().BeTrue();
         reset.DailyLossLimitRespected.Should().BeTrue();

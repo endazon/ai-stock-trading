@@ -19,7 +19,9 @@ public class StageGateTests
         BacktestPassed = true,
         BacktestMaxDrawdownRatio = 0.10m,
         ObservedMaxDrawdownRatio = 0.05m,
-        PaperDeviationExplained = true,
+        // FR-20, #333: Stage 1 の機械判定 3 条件（クラス C 違反 0 件 / 60 営業日 / 100 件）を満たす実績。
+        Stage1QualifiedTradingDays = 60,
+        Stage1TradeCount = 100,
         ControlViolationCount = 0,
         SlippageAndCostWithinExpected = true,
         DailyLossLimitRespected = true,
@@ -89,17 +91,20 @@ public class StageGateTests
         result.RejectionReasons.Should().Contain(StageGateCriterion.PromotionMustBeSequential);
     }
 
-    // FR-20: Stage 1→2 は乖離が説明可能かつ統制違反 0 件が合格条件
+    // FR-20, #333, 06_daytrading-review §4.1: Stage 1→2 の機械判定 3 条件
+    // （クラス C 統制違反 0 件 / 実際に取引できた日数 60 営業日 / 取引件数 100 件）。
     [Theory]
-    [InlineData(false, 0, StageGateCriterion.PaperDeviationUnexplained)]
-    [InlineData(true, 2, StageGateCriterion.ControlViolationsPresent)]
-    public void Stage1からStage2は乖離説明と統制違反0が要る(
-        bool deviationExplained, int violations, StageGateCriterion expected)
+    [InlineData(2, 60, 100, StageGateCriterion.ControlViolationsPresent)]
+    [InlineData(0, 59, 100, StageGateCriterion.Stage1TradingDaysInsufficient)]
+    [InlineData(0, 60, 99, StageGateCriterion.Stage1TradeCountInsufficient)]
+    public void Stage1からStage2は統制違反0と期間と件数が要る(
+        int violations, int tradingDays, int tradeCount, StageGateCriterion expected)
     {
         var perf = Passing() with
         {
-            PaperDeviationExplained = deviationExplained,
             ControlViolationCount = violations,
+            Stage1QualifiedTradingDays = tradingDays,
+            Stage1TradeCount = tradeCount,
         };
         var approval = new StageApproval(TradingStage.Stage2MinimalLive, ApprovedBy: "endazon");
 
@@ -108,6 +113,58 @@ public class StageGateTests
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(expected);
+    }
+
+    // **否定形**（FR-20, #333, 06_daytrading-review §4.1, ADR-0016 決定10）:
+    // 昇格判定に用いる「統制違反 0 件」は**クラス C 限定**である（`BannedSymbol` / `ManipulativeOrderPattern`）。
+    // 空売りの拒否理由 9 種はすべて**クラス A**（統制が設計どおり作動した記録）であり、
+    // いくら積み上がっても昇格を止めない。クラス A を数えるとゲートが恒久ブロックになる（§4.1 の理由）。
+    [Fact]
+    public void クラスAの拒否がいくら積み上がっても昇格は止まらない()
+    {
+        RejectionReason[] classA =
+        [
+            RejectionReason.ShortSellDisabled,
+            RejectionReason.BorrowUnavailable,
+            RejectionReason.BorrowCostExceeded,
+            RejectionReason.ShortExposureExceeded,
+            RejectionReason.MaintenanceMarginBreach,
+            RejectionReason.DividendRecordDateNear,
+            RejectionReason.ShortPriceFloorBreach,
+            RejectionReason.StopOrderRequired,
+            RejectionReason.BuyInBanned,
+            RejectionReason.PerOrderAmountExceeded,
+            RejectionReason.DailyLossLimitReached,
+        ];
+
+        // 100 回の拒否がすべてクラス A なら、計上される統制違反は 0 件である。
+        var violations = Enumerable.Repeat(classA, 100)
+            .Count(reasons => RejectionReasonClassification.CountsAsControlViolation(reasons));
+        violations.Should().Be(0, "クラス A は「統制違反 0 件」の件数に影響しない");
+
+        var perf = Passing() with { ControlViolationCount = violations };
+
+        StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy)
+            .Eligible.Should().BeTrue("クラス A の拒否は段階昇格ゲートを止めない");
+    }
+
+    // FR-20, §4.1 条件 1: クラス C は 1 件でも昇格を止める。
+    // **計上単位は 1 回の発注拒否につき 1 件**（1 回の拒否で複数理由が返っても 1 件）。
+    [Theory]
+    [InlineData(RejectionReason.BannedSymbol)]
+    [InlineData(RejectionReason.ManipulativeOrderPattern)]
+    public void クラスCの拒否が1件でもあれば昇格は止まる(RejectionReason classC)
+    {
+        // 1 回の拒否に複数理由（クラス A ＋ クラス C）が含まれても 1 件として数える。
+        RejectionReason[] oneRejection = [RejectionReason.ShortSellDisabled, classC, RejectionReason.BorrowUnavailable];
+        RejectionReasonClassification.CountsAsControlViolation(oneRejection).Should().BeTrue();
+
+        var perf = Passing() with { ControlViolationCount = 1 };
+
+        var assessment = StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy);
+
+        assessment.Eligible.Should().BeFalse();
+        assessment.UnmetCriteria.Should().Contain(StageGateCriterion.ControlViolationsPresent);
     }
 
     // FR-20: Stage 2→3 はスリッページ・費用が想定内かつ日次損失上限の運用実績が合格条件
@@ -179,7 +236,7 @@ public class StageGateTests
     [Fact]
     public void 合格基準充足時のAssessPromotionは昇格可能を返す()
     {
-        var assessment = StageGate.AssessPromotion(TradingStage.Stage0Verification, Passing());
+        var assessment = StageGate.AssessPromotion(TradingStage.Stage0Verification, Passing(), Policy);
 
         assessment.Eligible.Should().BeTrue();
         assessment.TargetStage.Should().Be(TradingStage.Stage1Simulate);
@@ -190,7 +247,7 @@ public class StageGateTests
     [Fact]
     public void 最上段のAssessPromotionは昇格先なしを返す()
     {
-        var assessment = StageGate.AssessPromotion(TradingStage.Stage3ScaledLive, Passing());
+        var assessment = StageGate.AssessPromotion(TradingStage.Stage3ScaledLive, Passing(), Policy);
 
         assessment.Eligible.Should().BeFalse();
         assessment.TargetStage.Should().BeNull();
@@ -255,25 +312,52 @@ public class StageGateTests
         assessment.Triggered.Should().BeFalse();
     }
 
-    // FR-20, 06_daytrading-review §4: ペーパー段階で乖離が説明不能 → Stage 0 へ差し戻し提案（停止は不要）
+    // FR-20, #333, 06_daytrading-review §4.3, INDEX 決定 42:
+    // 累計 120 営業日を経ても件数が 100 件に届かなければ**打ち切り** → Stage 0 へ差し戻し提案（停止は不要）。
     [Fact]
-    public void ペーパー段階の乖離説明不能は差し戻し提案に倒れる()
+    public void Stage1は120営業日で打ち切られ差し戻し提案に倒れる()
     {
-        var perf = Passing() with { PaperDeviationExplained = false };
+        var perf = Passing() with { Stage1QualifiedTradingDays = 120, Stage1TradeCount = 99 };
 
         var assessment = StageGate.AssessWithdrawal(TradingStage.Stage1Simulate, perf, Policy);
 
         assessment.Triggered.Should().BeTrue();
-        assessment.Reason.Should().Be(WithdrawalReason.PaperDeviationUnexplained);
-        assessment.HaltNewEntries.Should().BeFalse();                        // ペーパーのため停止は不要
+        assessment.Reason.Should().Be(WithdrawalReason.Stage1ExtensionExhausted);
+        assessment.HaltNewEntries.Should().BeFalse();                        // SIMULATE のため停止は不要
         assessment.ProposedStage.Should().Be(TradingStage.Stage0Verification);
+    }
+
+    // **否定形**（§4.3）: 期間を延長している間（60〜119 営業日）は打ち切らない。
+    // 期間の要件は既に満たしているため再度 60 営業日を要さず、件数に達した時点で昇格判定を行う。
+    [Theory]
+    [InlineData(60)]
+    [InlineData(119)]
+    public void 延長中のStage1は打ち切らない(int tradingDays)
+    {
+        var perf = Passing() with { Stage1QualifiedTradingDays = tradingDays, Stage1TradeCount = 99 };
+
+        StageGate.AssessWithdrawal(TradingStage.Stage1Simulate, perf, Policy)
+            .Triggered.Should().BeFalse("期間の延長は 120 営業日まで許される");
+    }
+
+    // **否定形**（§4.3）: 120 営業日を超えていても**件数を満たしていれば打ち切らない**。
+    // 打ち切り事由は「120 営業日を経ても 100 件に届かない」ことであり、期間の超過そのものではない。
+    [Fact]
+    public void 件数を満たしていれば120営業日を超えても打ち切らない()
+    {
+        var perf = Passing() with { Stage1QualifiedTradingDays = 121, Stage1TradeCount = 100 };
+
+        StageGate.AssessWithdrawal(TradingStage.Stage1Simulate, perf, Policy)
+            .Triggered.Should().BeFalse();
+        StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy)
+            .Eligible.Should().BeTrue("期間・件数の両方を満たしているため昇格できる");
     }
 
     // FR-20: 検証段階（Stage 0）は最下段のため撤退はない
     [Fact]
     public void 検証段階に撤退はない()
     {
-        var perf = Passing() with { PaperDeviationExplained = false, ObservedMaxDrawdownRatio = 1m };
+        var perf = Passing() with { Stage1QualifiedTradingDays = 120, Stage1TradeCount = 0, ObservedMaxDrawdownRatio = 1m };
 
         var assessment = StageGate.AssessWithdrawal(TradingStage.Stage0Verification, perf, Policy);
 
