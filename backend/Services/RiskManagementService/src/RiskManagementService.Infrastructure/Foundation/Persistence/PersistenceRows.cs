@@ -165,8 +165,11 @@ internal sealed class StagePerformanceRow
     /// <summary>FR-20, #333, §4.2: Stage 1 で「実際に取引できた日数」の累計（供給元は未実装・既定 0）。</summary>
     public int Stage1QualifiedTradingDays { get; set; }
 
-    /// <summary>FR-20, #333, §4.1 条件 3: Stage 1（moomoo SIMULATE）の取引件数（供給元は未実装・既定 0）。</summary>
-    public int Stage1TradeCount { get; set; }
+    // FR-20, #386, IADR-0149 決定3: 旧 Stage1TradeCount 列は**削除した**。件数の供給元は本行ではなく
+    // 約定の観測ログ（stage1_fill_observations）であり、そこが計上単位（1 注文 1 行・DecisionId 主キー）を
+    // 担保する。件数を別途この列にも持つと供給元が 2 つになり、必ず食い違う。
+    // 死んだ列を残すと「まだ使う値」に見え、次の実装者が判定へ結線し直す余地が残る
+    // （IADR-0137 決定2 / IADR-0148 決定2 と同じ規律）。
 
     /// <summary>
     /// FR-20, #334, IADR-0142 決定3: 内蔵 paper 稼働により**算入されなかった**営業日数（供給元は未実装・既定 0）。
@@ -273,4 +276,32 @@ internal sealed class OrderScreeningObservationRow
 
     /// <summary>クラス C の理由を含む拒否か（＝統制違反 1 件として数えるか）。</summary>
     public bool IsControlViolation { get; set; }
+}
+
+// FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3, IADR-0149: 約定が成立した注文 1 件ぶんの観測。
+// 段階ゲートの「最小取引件数 100 件」を数える供給元である。
+//
+// DecisionId が主キーであることが**計上単位（約定した注文 1 件）そのもの**を担保する。
+// 分割約定は同一注文について累積約定数を運ぶ複数の OrderExecuted として現れる（IADR-0113）が、行は 1 つである。
+//
+// Provider は**実際に発注したアダプタの発注先**（OrderExecuted.Provider）であって、取引判断が運ぶ
+// intent.Mode（＝段階が定める既定の発注先・IADR-0140 決定3）ではない。算入可否は**記録時に純関数
+// Stage1Aggregation.CountsAsTrade が決めた結果**を持ち、SQL 側へ算入規則を写さない。
+internal sealed class Stage1FillObservationRow
+{
+    public Guid DecisionId { get; set; }
+
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    /// <summary>米国東部時間での取引日（日次の突合・監査のため。件数の判定には用いない）。</summary>
+    public DateOnly SessionDateEasternTime { get; set; }
+
+    /// <summary>実際に発注したアダプタの発注先（監査のため生値も残す）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.BrokerProvider Provider { get; set; }
+
+    /// <summary>その注文の建玉効果（新規建てだけを数えるため・IADR-0149 決定2）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.PositionEffect PositionEffect { get; set; }
+
+    /// <summary>Stage 1 の取引件数へ算入するか（SIMULATE の許可制 ∧ 新規建て）。</summary>
+    public bool CountsTowardStage1 { get; set; }
 }

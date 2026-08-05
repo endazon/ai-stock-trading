@@ -27,10 +27,16 @@ public record StagePerformance
     public int Stage1QualifiedTradingDays { get; init; }
 
     /// <summary>
-    /// FR-20, #333, 06_daytrading-review §4.1 条件 3 / §4.3, INDEX 決定 42: Stage 1→2 合格ゲート（条件 3）。
+    /// FR-20, #333, #386, 06_daytrading-review §4.1 条件 3 / §4.3, INDEX 決定 42: Stage 1→2 合格ゲート（条件 3）。
     /// Stage 1（moomoo <c>SIMULATE</c>）で成立した取引件数。**内蔵 <c>paper</c> の擬似約定は算入しない**
     /// （#334・IADR-0142）。**100 件に届かない限り期間だけでは昇格しない。**
-    /// <para>**供給元は未実装である**。既定 0 ＝ 昇格しない。</para>
+    /// <para>
+    /// **本フィールドは永続化されない**（IADR-0149 決定3）。供給元は約定の観測ログ
+    /// （<c>stage1_fill_observations</c>・計上単位は「約定した新規建て注文 1 件」）であり、
+    /// <c>StageGateService</c> が判定の直前に重ねる。実績行にも列として持たせると供給元が 2 つになり、
+    /// 必ず食い違う。**書き忘れは 0 ＝ 昇格しない（fail-safe）に倒れる**ため、統制違反件数
+    /// （#387・IADR-0148）のように必須引数へ追い出す必要は無い。
+    /// </para>
     /// </summary>
     public int Stage1TradeCount { get; init; }
 

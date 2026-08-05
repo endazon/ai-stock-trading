@@ -14,7 +14,8 @@ public class StageGateServiceTests
     private static readonly DateTimeOffset Now = new(2026, 7, 18, 9, 0, 0, TimeSpan.Zero);
 
     private static (StageGateService svc, InMemoryStageGateStore ledger, InMemoryStagePerformanceStore perf,
-        InMemoryControlViolationObservationStore violations, KillSwitchService kill)
+        InMemoryControlViolationObservationStore violations, KillSwitchService kill,
+        InMemoryStage1FillObservationStore fills)
         Build(TradingStage initial = TradingStage.Stage0Verification)
     {
         var ledger = new InMemoryStageGateStore(initial);
@@ -22,23 +23,43 @@ public class StageGateServiceTests
         // FR-20, #387, IADR-0148: 統制違反件数の供給元（観測ログ）。**未記録＝未供給**であり、
         // Stage 1 → 2 の昇格はこのストアに観測が入るまで通らない。
         var violations = new InMemoryControlViolationObservationStore();
+        // FR-20, #386, IADR-0149: 取引件数の供給元（約定の観測ログ）。**未記録＝0 件**であり、
+        // Stage 1 → 2 の昇格はこのストアに SIMULATE の新規建て約定が 100 件入るまで通らない。
+        var fills = new InMemoryStage1FillObservationStore();
         var killStore = new InMemoryKillSwitchStore();
         var clock = new FakeClock(Now, DateOnly.FromDateTime(Now.DateTime));
         var kill = new KillSwitchService(killStore, new InMemorySettingsChangeLog(), clock);
         var svc = new StageGateService(
-            ledger, perf, violations, TradingDefaults.CreateStagePolicy(), kill, clock);
-        return (svc, ledger, perf, violations, kill);
+            ledger, perf, violations, fills, TradingDefaults.CreateStagePolicy(), kill, clock);
+        return (svc, ledger, perf, violations, kill, fills);
     }
 
     /// <summary>算入対象（moomoo SIMULATE）の審査 1 件＝クラス C 違反 0 件の供給を作る。</summary>
     private static OrderScreeningObservation CleanScreening() =>
         new(Guid.NewGuid(), BrokerProvider.MoomooSimulate, []);
 
+    /// <summary>
+    /// FR-20, #386, §4.1 条件3, IADR-0149: 取引件数の供給を作る。
+    /// **件数は段階別実績の行ではなく約定の観測ログから来る**ため、テストも観測を積む。
+    /// </summary>
+    private static void RecordFills(
+        InMemoryStage1FillObservationStore store,
+        int count,
+        BrokerProvider provider = BrokerProvider.MoomooSimulate,
+        PositionEffect effect = PositionEffect.Open)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            store.Record(new Stage1FillObservation(
+                Guid.NewGuid(), new DateOnly(2026, 7, 1).AddDays(i % 28), provider, effect));
+        }
+    }
+
     [Fact]
     public void 承認者が空の遷移は拒否され台帳へ追記されない()
     {
         // 受け入れ基準: 承認なしに段階が遷移しない。
-        var (svc, ledger, perf, _, _) = Build();
+        var (svc, ledger, perf, _, _, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
 
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "  ");
@@ -52,7 +73,7 @@ public class StageGateServiceTests
     public void バックテスト未合格では_Stage0から1へ昇格できない_fail_safe既定()
     {
         // 受け入れ基準（fail-safe）: 段階別実績未記録（BacktestPassed=false）では昇格を許可しない。
-        var (svc, ledger, _, _, _) = Build();
+        var (svc, ledger, _, _, _, _) = Build();
 
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
@@ -65,7 +86,7 @@ public class StageGateServiceTests
     public void バックテスト合格を記録すれば承認で昇格し履歴に残る()
     {
         // 受け入れ基準: バックテスト合格した戦略のみ Stage 1 へ進める／遷移履歴が監査できる。
-        var (svc, ledger, perf, _, _) = Build();
+        var (svc, ledger, perf, _, _, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
 
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
@@ -85,7 +106,7 @@ public class StageGateServiceTests
     public void 飛び級昇格は拒否される()
     {
         // Stage 0 → Stage 2 の飛び級は不可（1 段ずつ）。
-        var (svc, _, perf, _, _) = Build();
+        var (svc, _, perf, _, _, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
 
         var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
@@ -98,7 +119,7 @@ public class StageGateServiceTests
     public void 差し戻し_降格_は承認のみで受理される()
     {
         // 差し戻し（段階を下げる方向）は安全側のため合格基準不問で承認受理（ADR-0008）。
-        var (svc, ledger, _, _, _) = Build(TradingStage.Stage1Simulate);
+        var (svc, ledger, _, _, _, _) = Build(TradingStage.Stage1Simulate);
 
         var result = svc.RequestTransition(TradingStage.Stage0Verification, approver: "owner");
 
@@ -113,7 +134,7 @@ public class StageGateServiceTests
         // FR-20, ADR-0008, IADR-0103, #164: 実DD は単調非減少で累積するため、差し戻し（再検証のやり直し）で
         // 観測窓を区切らないと「撤退 → 降格 → 再昇格」の直後に過去の実DD で撤退が恒久的に再発火する。
         // 実DD 以外（backtest 由来・他の運用系）は温存する。
-        var (svc, _, perf, _, _) = Build(TradingStage.Stage2MinimalLive);
+        var (svc, _, perf, _, _, _) = Build(TradingStage.Stage2MinimalLive);
         perf.Save(new StagePerformance
         {
             BacktestPassed = true,
@@ -135,7 +156,7 @@ public class StageGateServiceTests
     public void 昇格受理では実DDの観測窓を保持する()
     {
         // IADR-0103: 昇格側でリセットすると撤退の証拠を消して緩む。安全側（厳しい側）に倒し、観測は維持する。
-        var (svc, _, perf, _, _) = Build();
+        var (svc, _, perf, _, _, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true, ObservedMaxDrawdownRatio = 0.20m });
 
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
@@ -148,7 +169,7 @@ public class StageGateServiceTests
     public void 受理されない遷移では実DDの観測窓を変更しない()
     {
         // IADR-0103: リセットは「受理された差し戻し」のみ。承認欠如で拒否された要求で観測が消えてはならない。
-        var (svc, _, perf, _, _) = Build(TradingStage.Stage2MinimalLive);
+        var (svc, _, perf, _, _, _) = Build(TradingStage.Stage2MinimalLive);
         perf.Save(new StagePerformance { ObservedMaxDrawdownRatio = 0.20m });
 
         var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "  ");
@@ -161,7 +182,7 @@ public class StageGateServiceTests
     public void 実DDがバックテスト最大DDの倍率を超えると撤退で自動停止し降格提案する()
     {
         // 受け入れ基準: 差し戻し基準到達時に自動で安全側（停止・降格提案）に倒れる。
-        var (svc, _, perf, _, kill) = Build(TradingStage.Stage2MinimalLive);
+        var (svc, _, perf, _, kill, _) = Build(TradingStage.Stage2MinimalLive);
         perf.Save(new StagePerformance
         {
             BacktestMaxDrawdownRatio = 0.10m,
@@ -182,7 +203,7 @@ public class StageGateServiceTests
     public void 既に停止済みなら撤退評価は新規起動と判定しない_冪等()
     {
         // IADR-0083: 撤退が継続していても、既に起動済みなら NewlyEngaged=false（＝再通知の起点にならない）。
-        var (svc, _, perf, _, _) = Build(TradingStage.Stage2MinimalLive);
+        var (svc, _, perf, _, _, _) = Build(TradingStage.Stage2MinimalLive);
         perf.Save(new StagePerformance
         {
             BacktestMaxDrawdownRatio = 0.10m,
@@ -197,7 +218,7 @@ public class StageGateServiceTests
     public void 撤退基準に達していなければ自動停止しない()
     {
         // fail-safe 既定（実績なし・実DD 0）では Stage 2 の撤退は非発火＝kill switch は起動しない。
-        var (svc, _, _, _, kill) = Build(TradingStage.Stage2MinimalLive);
+        var (svc, _, _, _, kill, _) = Build(TradingStage.Stage2MinimalLive);
 
         var outcome = svc.EvaluateWithdrawal();
 
@@ -209,7 +230,7 @@ public class StageGateServiceTests
     [Fact]
     public void 現況は現段階の設定と昇格_撤退評価を返す()
     {
-        var (svc, _, _, _, _) = Build();
+        var (svc, _, _, _, _, _) = Build();
 
         var status = svc.GetStatus();
 
@@ -226,13 +247,9 @@ public class StageGateServiceTests
     [Fact]
     public void 統制違反の観測が無ければ期間と件数が揃っていても昇格しない()
     {
-        var (svc, ledger, perf, _, _) = Build(TradingStage.Stage1Simulate);
-        perf.Save(new StagePerformance
-        {
-            BacktestPassed = true,
-            Stage1QualifiedTradingDays = 60,
-            Stage1TradeCount = 100,
-        });
+        var (svc, ledger, perf, _, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        RecordFills(fills, 100);
 
         var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
 
@@ -246,13 +263,9 @@ public class StageGateServiceTests
     [Fact]
     public void 審査の観測があれば統制違反0件として昇格できる()
     {
-        var (svc, ledger, perf, violations, _) = Build(TradingStage.Stage1Simulate);
-        perf.Save(new StagePerformance
-        {
-            BacktestPassed = true,
-            Stage1QualifiedTradingDays = 60,
-            Stage1TradeCount = 100,
-        });
+        var (svc, ledger, perf, violations, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        RecordFills(fills, 100);
         violations.Record(CleanScreening());
 
         var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
@@ -265,13 +278,9 @@ public class StageGateServiceTests
     [Fact]
     public void クラスCの拒否が観測されていれば昇格は止まる()
     {
-        var (svc, _, perf, violations, _) = Build(TradingStage.Stage1Simulate);
-        perf.Save(new StagePerformance
-        {
-            BacktestPassed = true,
-            Stage1QualifiedTradingDays = 60,
-            Stage1TradeCount = 100,
-        });
+        var (svc, _, perf, violations, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        RecordFills(fills, 100);
         violations.Record(new OrderScreeningObservation(
             Guid.NewGuid(), BrokerProvider.MoomooSimulate, [RejectionReason.BannedSymbol]));
 
@@ -288,7 +297,7 @@ public class StageGateServiceTests
     [Fact]
     public void 受理された遷移は統制違反の観測窓を区切る()
     {
-        var (svc, _, perf, violations, _) = Build();
+        var (svc, _, perf, violations, _, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
         violations.Record(new OrderScreeningObservation(
             Guid.NewGuid(), BrokerProvider.MoomooSimulate, [RejectionReason.BannedSymbol]));
@@ -304,7 +313,7 @@ public class StageGateServiceTests
     [Fact]
     public void 受理されない遷移要求は観測窓を区切らない()
     {
-        var (svc, _, _, violations, _) = Build(TradingStage.Stage1Simulate);
+        var (svc, _, _, violations, _, _) = Build(TradingStage.Stage1Simulate);
         violations.Record(new OrderScreeningObservation(
             Guid.NewGuid(), BrokerProvider.MoomooSimulate, [RejectionReason.BannedSymbol]));
 
@@ -312,5 +321,95 @@ public class StageGateServiceTests
         svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: " ").Accepted.Should().BeFalse();
 
         violations.GetTally()!.Count.Should().Be(1);
+    }
+
+    // ------------------------------------------------------------------
+    // FR-20, #386, §4.1 条件3 / §4.3, IADR-0149: 取引件数の供給
+    // ------------------------------------------------------------------
+
+    // 正: 約定の観測が段階ゲートの進捗（Stage1Progress.TradeCount）へ届く。
+    // #334 までは集計関数が呼ばれておらず、進捗は恒久的に 0 だった（IADR-0142 残余リスク）。
+    [Fact]
+    public void 約定の観測が段階ゲートの取引件数へ供給される()
+    {
+        var (svc, _, perf, _, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 42 });
+        RecordFills(fills, 7);
+
+        svc.GetStatus().Stage1Progress.TradeCount.Should().Be(7);
+    }
+
+    // **否定形（本 issue の最重要）**: 内蔵 paper の約定を混ぜても件数が汚染されない。
+    // 100 件ぶんの paper 約定を積んでも進捗は 0 のままであり、昇格しない。
+    [Fact]
+    public void 内蔵paperの約定を積んでも取引件数は増えず昇格しない()
+    {
+        var (svc, ledger, perf, violations, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        violations.Record(CleanScreening());
+        RecordFills(fills, 100, BrokerProvider.InternalPaper);
+
+        svc.GetStatus().Stage1Progress.TradeCount.Should().Be(0);
+
+        var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
+
+        result.Accepted.Should().BeFalse();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.Stage1TradeCountInsufficient);
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Simulate);
+    }
+
+    // 対照（肯定形）: 同じ量を SIMULATE で積めば昇格できる。
+    // 否定形だけだと「常に 0 を返す」実装でも緑になるため、対照を置く。
+    [Fact]
+    public void SIMULATEの約定を100件積めば昇格できる()
+    {
+        var (svc, ledger, perf, violations, _, fills) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        violations.Record(CleanScreening());
+        RecordFills(fills, 100);
+
+        svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner").Accepted.Should().BeTrue();
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage2MinimalLive);
+    }
+
+    // 否定形: 供給が無ければ 0 件＝昇格しない（水増しされない）。
+    [Fact]
+    public void 約定の観測が無ければ取引件数は0であり昇格しない()
+    {
+        var (svc, _, perf, violations, _, _) = Build(TradingStage.Stage1Simulate);
+        perf.Save(new StagePerformance { BacktestPassed = true, Stage1QualifiedTradingDays = 60 });
+        violations.Record(CleanScreening());
+
+        var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
+
+        result.Accepted.Should().BeFalse();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.Stage1TradeCountInsufficient);
+    }
+
+    // FR-20, §4.2「起算点＝Stage 1 遷移日」, IADR-0149 決定3: 受理された遷移で約定の観測窓も区切る。
+    // 前段階で積んだ件数を Stage 1 の合格証跡へ持ち込まない。
+    [Fact]
+    public void 受理された遷移は約定の観測窓を区切る()
+    {
+        var (svc, _, perf, _, _, fills) = Build();
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordFills(fills, 3);
+        fills.GetTradeCount().Should().Be(3);
+
+        svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner").Accepted.Should().BeTrue();
+
+        fills.GetTradeCount().Should().Be(0, "段階が変わった時点で件数は仕切り直される（起算点＝遷移日）");
+    }
+
+    // **否定形**: 受理されなかった遷移要求は約定の観測窓を区切らない。
+    [Fact]
+    public void 受理されない遷移要求は約定の観測窓を区切らない()
+    {
+        var (svc, _, _, _, _, fills) = Build(TradingStage.Stage1Simulate);
+        RecordFills(fills, 3);
+
+        svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: " ").Accepted.Should().BeFalse();
+
+        fills.GetTradeCount().Should().Be(3);
     }
 }

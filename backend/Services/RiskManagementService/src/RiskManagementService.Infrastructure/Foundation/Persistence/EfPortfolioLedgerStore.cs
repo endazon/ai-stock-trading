@@ -35,6 +35,10 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
         db.SaveChanges();
     }
 
+    // FR-20, #386, IADR-0149 決定2: 承認済み注文の建玉効果を DecisionId で引く（未承認は null＝不明）。
+    public PositionEffect? FindApprovedPositionEffect(Guid decisionId) =>
+        db.ApprovedOrders.Find(decisionId)?.PositionEffect;
+
     public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt)
     {
         ArgumentException.ThrowIfNullOrEmpty(orderId);

@@ -51,16 +51,37 @@ public sealed record Stage1TradingDayObservation(
     BrokerProvider Provider);
 
 /// <summary>
-/// FR-20, #334, IADR-0142 決定1: Stage 1 の取引件数を数えるための約定 1 件の観測。
+/// FR-20, #334, #386, IADR-0142 決定1, IADR-0149 決定2: Stage 1 の取引件数を数えるための約定 1 件の観測。
 /// <para>
 /// 発注先を<b>必須</b>で伴う。件数（100 件）は Stage 1 の合格条件そのものであり
 /// （06_daytrading-review §4.1 条件 3）、内蔵 <c>paper</c> の擬似約定が 1 件でも混ざると
 /// 合格証跡の正当性が失われる。
 /// </para>
+/// <para>
+/// <b>計上単位は「約定が成立した新規建て注文 1 件」である</b>（IADR-0149 決定2）。計画は 100 件の単位を
+/// 定義していないため、<see cref="DecisionId"/>（1 取引判断＝1 注文）と <see cref="PositionEffect"/> を
+/// 観測に含め、単位を型の上で表現する。分割約定・イベント再送で同じ注文が複数回観測されても
+/// <see cref="Stage1Aggregation.CountTrades"/> が 1 件に畳む。
+/// </para>
 /// </summary>
+/// <param name="DecisionId">
+/// 取引判断の ID。<b>計上単位を担保する鍵</b>であり、観測ログの主キーでもある。
+/// <c>OrderExecuted.FilledQuantity</c> はブローカの<b>累積</b>約定数であり、同一注文について
+/// <c>Accepted</c>(0) → 部分約定 → 全量約定と複数回発行される（IADR-0113）。イベントを数えると
+/// 1 注文が 2〜3 件になるため、鍵で畳む。
+/// </param>
 /// <param name="SessionDateEasternTime">米国東部時間での取引日（日次の突合・監査のため）。</param>
-/// <param name="Provider">その約定の発注先。</param>
-public sealed record Stage1FillObservation(DateOnly SessionDateEasternTime, BrokerProvider Provider);
+/// <param name="Provider">その約定の発注先。<b>実際に発注したアダプタの値</b>である（IADR-0149 決定1）。</param>
+/// <param name="PositionEffect">
+/// その注文の建玉効果。<b>新規建て（<see cref="AiStockTrading.Shared.Contracts.Trading.PositionEffect.Open"/>）だけを数える</b>
+/// （IADR-0149 決定2）。手仕舞いを別件として数えると、計画が比較に用いた「1 日 3〜5 件」（新規建ての件数）と
+/// 単位が食い違い、100 件の意味が変わる。
+/// </param>
+public sealed record Stage1FillObservation(
+    Guid DecisionId,
+    DateOnly SessionDateEasternTime,
+    BrokerProvider Provider,
+    PositionEffect PositionEffect);
 
 /// <summary>
 /// FR-20, #333, 06_daytrading-review §4.2: 1 日を「営業日 1 日」として算入するかの判定（純関数）。
@@ -177,11 +198,34 @@ public static class Stage1Aggregation
     public static bool IsCounted(BrokerProvider provider) =>
         provider == Stage1DayQualification.CountedProvider;
 
-    /// <summary>約定の並びから Stage 1 の取引件数を数える。<c>SIMULATE</c> 以外は 1 件も数えない。</summary>
+    /// <summary>
+    /// FR-20, #386, IADR-0149 決定2: その約定を Stage 1 の取引件数 1 件として数えるか。
+    /// <para>
+    /// 算入対象の発注先（<c>SIMULATE</c> の許可制）であり、<b>かつ新規建て</b>であること。
+    /// 手仕舞い（<c>Close</c>）を数えないのは、計画が 100 件を比較した出典（個人デイトレーダーは 1 日 3〜5 件）と
+    /// 05_trading-assumptions §5 の「1 注文上限いっぱいでも 6 件（＝2 回転）」が、いずれも<b>新規建ての件数</b>を
+    /// 数えているためである（1 日あたりの発注金額上限は手仕舞いを算入しない）。条件 3 の目的
+    /// （勝率・平均損益を推定できる標本数）にとっても、標本は往復 1 回＝新規建て 1 件に対応する。
+    /// </para>
+    /// </summary>
+    public static bool CountsAsTrade(Stage1FillObservation fill)
+    {
+        ArgumentNullException.ThrowIfNull(fill);
+        return IsCounted(fill.Provider) && fill.PositionEffect == PositionEffect.Open;
+    }
+
+    /// <summary>
+    /// 約定の並びから Stage 1 の取引件数を数える。<c>SIMULATE</c> 以外は 1 件も数えない。
+    /// <para>
+    /// <b>同一 <c>DecisionId</c> は 1 件に畳む</b>（IADR-0149 決定2）。分割約定はブローカの累積約定数を
+    /// 運ぶ複数のイベントとして現れるため（IADR-0113）、畳まないと 1 注文が 2〜3 件に膨らむ。
+    /// 膨らむ側は「合格に早く届く」＝緩い側であり、fail-safe に反する。
+    /// </para>
+    /// </summary>
     public static int CountTrades(IEnumerable<Stage1FillObservation> fills)
     {
         ArgumentNullException.ThrowIfNull(fills);
-        return fills.Count(f => IsCounted(f.Provider));
+        return fills.Where(CountsAsTrade).Select(f => f.DecisionId).Distinct().Count();
     }
 
     /// <summary>
