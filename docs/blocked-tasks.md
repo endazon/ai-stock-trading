@@ -60,7 +60,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 > ADR-0019 決定 2 が ①→② の順序を課した根拠は「PoC を実施する環境そのものが Hetzner 上にあるなら」という
 > 条件付きであり、ローカル実施ならその条件は成立しない。**ToS が不成立でも、PoC が確認した
 > 「API に当該機能があるか」という結果は失効しない。失効し得るのは項目 6 の実測値だけである。**
-> （出典: [作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md) §目的・背景。PR #395）
+> （出典: 作業仕様書 `docs/specs/20260805_342_moomoo-poc-plan.md` §目的・背景。[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)・**未マージ**）
 >
 > **私は ADR の条件節を落として無条件の帰結として転記していた。** 期限の切迫を過大に見積もる方向の誤りだった。
 
@@ -88,7 +88,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 - 期限: **項目 1〜6 は 2026-08-31**（**達成**）／**項目 7 は go-live 起算 1 か月以内**（ADR-0019 決定 2 の ② と ⑤・起算点が異なる）
 - 追跡: **#342 は実装への反映が済むまで open のまま維持される**（[クローズ条件](https://github.com/endazon/ai-stock-trading/issues/342#issuecomment-5192686265)）
-- 記録: [IADR-0144](adr/IADR-0144_moomoo-short-selling-poc-outcomes.md)・[作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md)（PR #395。**未マージ**）
+- 記録: `docs/adr/IADR-0144_moomoo-short-selling-poc-outcomes.md`・`docs/specs/20260805_342_moomoo-poc-plan.md`（[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)。**未マージのため相対リンクにできない**）
 
 > **📌 項目 7 の位置づけについての注意（本文書と PR #395 で記述が食い違っている）**
 >
@@ -196,7 +196,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 | 項目 | 内容 |
 | --- | --- |
-| 実測 | OpenD の起動ログが **`JPN Stocks: No permission`** を出している（`US Stocks: LV3` に対して）。出典: [作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md) §実測結果 |
+| 実測 | OpenD の起動ログが **`JPN Stocks: No permission`** を出している（`US Stocks: LV3` に対して）。出典: 作業仕様書 `docs/specs/20260805_342_moomoo-poc-plan.md` §実測結果（[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)・未マージ） |
 | 計画との食い違い | 計画（06_technical/03_moomoo-integration）は**日本株の市況取得・現物発注が 2026-06 から可能**と記載している |
 | なぜ AI にできないか | moomoo アカウント側の権限申請・開設操作が要る |
 | 未了の帰結 | **日本株の市況を要する機能が動かない**（FR-02 の価格変動検知ほか）。日本株は差金決済ガード（#332）・監視銘柄（7203 等）で前提にされており、**影響範囲は市況取得にとどまらない可能性がある** |
