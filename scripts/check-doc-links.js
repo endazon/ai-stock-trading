@@ -5,11 +5,13 @@
  * docs/ 配下の Markdown 仕様書に含まれる相対リンクの実在を検査する（リンク切れ再発防止）。
  * 検査対象:
  *   - フロントマター（先頭 --- ... ---）のリスト項目パス（plan_refs / related_specs / related など）
- *   - 本文の Markdown リンク [text](path)
+ *   - 本文の Markdown リンク [text](path)（`/` を含まない同一ディレクトリ内の裸ファイル名も含む。#399）
  *   - 本文のインラインコード内の相対パス表記 `../path.ext`
  * 対象外（誤検知回避）:
  *   - 外部 URL（http/https/mailto ほかスキーム付き）・アンカー(#...)・ルート絶対パス(/...)
  *   - テンプレ変数（${...} / {{...}} / <...>）
+ *   - 拡張子（LINK_EXT）を持たない裸の語（本文中の README 等をリンク扱いしない）
+ *   - インラインコード内の裸ファイル名（第 3 経路は ./ ../ 始まりのみを拾う）
  *   - planning/ サブモジュール未チェックアウト時の planning/ 配下リンク
  * 外部依存ゼロ（Node 標準モジュールのみ）。破損リンクがあれば終了コード 1。
  *
@@ -119,7 +121,14 @@ function isBrokenRef(ref, baseDir, onSkip) {
   if (t.startsWith('<') || t.includes('${') || t.includes('{{')) return false; // テンプレ変数
   t = t.split('#')[0].split('?')[0].trim();
   if (!t) return false;
-  const looksRelative = t.startsWith('./') || t.startsWith('../') || (t.includes('/') && !t.startsWith('/'));
+  // NFR (#399): `/` を含まない同一ディレクトリ内の裸ファイル名（例: `IADR-0119_xxx.md`）も対象にする。
+  // docs/adr/ の IADR 相互参照はこの形で書くのが通例であり、**最も壊れやすい箇所がまるごと検査対象外**
+  // だった（実在しないファイルへのリンクが CI で `OK` を返し続けた。発見は PR #395 の AI レビュー）。
+  // 拡張子（LINK_EXT）を要求するのは、本文中の普通の語（`README` 等）をリンク扱いしないため。
+  // `!t.includes('/')` を明示して従来の節と互いに素にしてある（何が新たに対象へ入ったかを読めるように）。
+  const bareFileName = !t.includes('/') && LINK_EXT.test(t);
+  const looksRelative =
+    t.startsWith('./') || t.startsWith('../') || (t.includes('/') && !t.startsWith('/')) || bareFileName;
   if (!looksRelative) return false;
   if (!LINK_EXT.test(t)) return false;
   const resolved = path.resolve(baseDir, t);
