@@ -6,7 +6,16 @@ import {
   CONTRACT_STAGE_GATE,
 } from './contractFixtures';
 import type { RiskLimitSettings, StageSettings } from './contracts';
-import { criterionLabel, withdrawalReasonLabel } from './contracts';
+import {
+  criterionLabel,
+  LIMIT_FIELD_KEYS,
+  limitInputToWire,
+  ratioToPercentText,
+  resolveEquityAmount,
+  validateLimitInput,
+  withdrawalReasonLabel,
+  wireToLimitInput,
+} from './contracts';
 
 // FR-10, FR-20, SC-02, SC-03, #389, IADR-0146: **バックエンドの実応答に対する契約テスト。**
 //
@@ -77,6 +86,38 @@ describe('リスク契約フィクスチャ（実応答）', () => {
     for (const criterion of CONTRACT_STAGE_GATE.promotion.unmetCriteria) {
       expect(criterionLabel(criterion)).not.toContain('不明');
     }
+  });
+
+  // ---- FR-10, SC-02, #362, IADR-0151: 実応答に接地した単位変換・値域・実額 ----
+
+  it('実応答の比率が画面では百分率になり、往復してもワイヤの値が変わらない', () => {
+    // IADR-0151 決定1: 画面は百分率、ワイヤは比率。**実応答の値**で往復を確かめる
+    // （フロントが自分で選んだ都合のよい値ではなく、サーバが実際に返す値で確かめる）。
+    expect(ratioToPercentText(CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio)).toBe('25');
+    expect(ratioToPercentText(CONTRACT_RISK_SETTINGS.limits.maxDailyOrderAmountRatio)).toBe('150');
+    for (const key of LIMIT_FIELD_KEYS) {
+      const wire = CONTRACT_RISK_SETTINGS.limits[key];
+      expect(limitInputToWire(key, wireToLimitInput(key, wire))).toBe(wire);
+    }
+  });
+
+  it('実応答の既定値は画面の値域をすべて満たす（保存し直せる）', () => {
+    // 値域が実応答の既定値を弾いてしまうと、初期状態の設定を保存し直すことすらできない。
+    for (const key of LIMIT_FIELD_KEYS) {
+      expect(validateLimitInput(key, wireToLimitInput(key, CONTRACT_RISK_SETTINGS.limits[key]))).toBeNull();
+    }
+  });
+
+  it('画面が計算する実額は、サーバが解決済みの実額と一致する', () => {
+    // IADR-0151 決定4: 保存前の入力値に対する実額は画面が `capital × 比率` で計算する。
+    // **同じ入力（＝現在の設定値）なら、サーバの解決結果と一致していなければならない**——
+    // ずれていれば画面の実額併記が嘘になる（サーバの解決式と別物になっている）。
+    expect(
+      resolveEquityAmount(CONTRACT_RISK_STATUS.capital, CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio),
+    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxOrderAmount, 5);
+    expect(
+      resolveEquityAmount(CONTRACT_RISK_STATUS.capital, CONTRACT_RISK_SETTINGS.limits.maxDailyOrderAmountRatio),
+    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxDailyOrderAmount, 5);
   });
 
   // ---- 否定形（写像・型が「効かない」方向に壊れていないこと） ----

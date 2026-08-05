@@ -4,6 +4,7 @@ import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import type {
   BannedSymbol,
+  LimitFieldKey,
   RiskLimitSettings,
   RiskManagementSettings,
   RiskStatusView,
@@ -14,14 +15,23 @@ import {
   brokerProviderLabel,
   BROKER_PROVIDER_OPTIONS,
   changeTypeLabel,
+  describeLimitRange,
+  formatAmount,
   formatAt,
+  isEquityRatioField,
   isLiveProvider,
+  LIMIT_FIELDS,
+  LIMIT_FIELD_KEYS,
+  limitInputToWire,
   LIVE_ACKNOWLEDGEMENT_PHRASE,
   marketLabel,
   MARKET_OPTIONS,
+  resolveEquityAmount,
   RISKY_PRODUCT_TYPES,
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
+  validateLimitInput,
+  wireToLimitInput,
 } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { WatchlistForm } from './WatchlistForm';
@@ -32,102 +42,48 @@ import { WatchlistForm } from './WatchlistForm';
 // （段階変更は段階ゲート承認フロー＝#20/#165 Bot 側と重複するため直接は開かない）。検証(400)・競合(409)はメッセージ表示し、
 // 破壊的な自動再試行はしない（安全既定）。ガードの危険な緩和は明示確認を要求する（fail-safe）。
 
-// フォームは文字列で保持し、送信時に数値へ変換する（type=number 制御入力の往復問題を避ける・SC-01 と同方針）。
-interface FormModel {
-  // FR-10, #329, #389, IADR-0130: **equity 比**（0.25 ＝ 25%）であり金額ではない。
-  maxOrderAmountRatio: string;
-  maxDailyOrderAmountRatio: string;
-  maxOpenPositions: string;
-  dailyLossLimitRatio: string;
-  perTradeRiskRatio: string;
-  maxDrawdownRatio: string;
-  losingStreakThreshold: string;
-  losingStreakSizeFactor: string;
-}
+// FR-10, SC-02, #362, IADR-0151: フォームは**画面の単位**（百分率／件数／倍率）を文字列で保持し、
+// 送信時にワイヤの単位（比率／整数／倍率）へ変換する（type=number 制御入力の往復問題を避ける・SC-01 と同方針）。
+// 単位の定義・値域・変換は `contracts.ts`（`LIMIT_FIELDS` ほか）が単一情報源であり、ここでは持たない。
+type FormModel = Record<LimitFieldKey, string>;
 
 type Status = 'loading' | 'ok' | 'notFound' | 'error';
 type HistoryStatus = 'loading' | 'ok' | 'unavailable';
 type SaveState = 'idle' | 'saving' | 'error';
 
-// 各上限フィールドの表示ラベル（順序は表示順）。<label> と入力検証の警告文の対応に用いる。
-// #389: 金額系 2 項目は equity 比である。**「金額上限」というラベルのまま比率を出すと桁が 6 桁ずれて読める**ため、
-// 単位をラベルに明示する（`0.25` と `25%` のどちらの表現を採るかは #362 の裁定事項であり、ここでは決めない）。
-const FIELD_LABELS: Record<keyof FormModel, string> = {
-  maxOrderAmountRatio: '1注文発注額上限（equity 比・0.25＝25%）',
-  maxDailyOrderAmountRatio: '1日発注額上限（equity 比/日・1.5＝150%）',
-  maxOpenPositions: '保有銘柄数上限',
-  dailyLossLimitRatio: '日次損失上限（資金比）',
-  perTradeRiskRatio: '1取引リスク（資金比）',
-  maxDrawdownRatio: '最大ドローダウン上限（比）',
-  losingStreakThreshold: '連敗しきい値',
-  losingStreakSizeFactor: '連敗時サイズ縮小係数',
-};
-
 function toForm(l: RiskLimitSettings): FormModel {
-  return {
-    maxOrderAmountRatio: String(l.maxOrderAmountRatio),
-    maxDailyOrderAmountRatio: String(l.maxDailyOrderAmountRatio),
-    maxOpenPositions: String(l.maxOpenPositions),
-    dailyLossLimitRatio: String(l.dailyLossLimitRatio),
-    perTradeRiskRatio: String(l.perTradeRiskRatio),
-    maxDrawdownRatio: String(l.maxDrawdownRatio),
-    losingStreakThreshold: String(l.losingStreakThreshold),
-    losingStreakSizeFactor: String(l.losingStreakSizeFactor),
-  };
+  return Object.fromEntries(
+    LIMIT_FIELD_KEYS.map((k) => [k, wireToLimitInput(k, l[k])]),
+  ) as FormModel;
 }
 
-// 空欄・非数値は「無効」とし、黙って 0 送信しない（安全既定）。実効な範囲検証はサーバ側 400 が担う。
-function isValidNumber(s: string): boolean {
-  if (s.trim() === '') return false;
-  return Number.isFinite(Number(s));
+// FR-10, #362, IADR-0151 決定2: 空欄・非数値**および値域外**を「無効」とし、保存を無効化する。
+// 黙って 0 を送らない（安全既定）。**実効はサーバ側（`RiskLimitBounds`）である**——ここは利用者への
+// 即時提示であり、画面だけの関門は API 直叩きで消える（IADR-0141 決定1 と同じ判断）。
+function invalidFieldMessages(f: FormModel): string[] {
+  return LIMIT_FIELD_KEYS.map((k) => validateLimitInput(k, f[k])).filter((m): m is string => m !== null);
 }
 
-function invalidFieldLabels(f: FormModel): string[] {
-  return (Object.keys(FIELD_LABELS) as (keyof FormModel)[])
-    .filter((k) => !isValidNumber(f[k]))
-    .map((k) => FIELD_LABELS[k]);
-}
-
-function num(s: string): number {
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-// FR-10, SC-02, #362, #389: **PUT の本文は旧名（金額）のまま送る。これは意図的な設計判断である。**
+// FR-10, SC-02, #362, #389, IADR-0130, IADR-0151: **PUT の本文は `*Ratio`（equity 比）である。**
 //
-// サーバの `RiskLimitSettings` は `MaxOrderAmountRatio` / `MaxDailyOrderAmountRatio` を `required` で要求するため、
-// 本ペイロードでの保存は **400 で拒否される**（#329 の API 変更以降そうなっている）。
+// #389 まで本文は旧名（金額キー）のままで、保存は 400 で拒否されていた。これは不具合ではなく、
+// 「入力欄が金額のまま比率キーを送ると、`35000` が **equity の 35,000 倍**として保存され統制が
+// 事実上無効になる」ことを避けるための安全側の状態だった。
 //
-// 一見すると「キー名を `*Ratio` に直せば保存が通る」ように見えるが、**それは統制を無効化する変更である**。
-// 入力欄の作りが「金額」のまま `maxOrderAmountRatio` を送ると、利用者が従来どおり `35000` と入れたときに
-// **equity の 35,000 倍**が上限として設定され、統制が事実上無効のまま保存が成功してしまう。
-// 「保存できないこと」は不具合ではなく、#362 が明示的に選んだ**安全側の状態**である
-// （#362 本文「拒否される方が安全側と判断した」／IADR-0130 決定）。
-//
-// **したがって、割合入力の UI・バリデーション（#362）と同時にしか、この形は変えてはならない。**
-// 読み取り側（GET・表示）の単位是正は #389 で完了しているが、書き込み側はここで止めてある。
-interface LegacyAmountLimitsPayload {
-  maxOrderAmount: number;
-  maxDailyOrderAmount: number;
-  maxOpenPositions: number;
-  dailyLossLimitRatio: number;
-  perTradeRiskRatio: number;
-  maxDrawdownRatio: number;
-  losingStreakThreshold: number;
-  losingStreakSizeFactor: number;
-}
+// #362 でその前提を外した。**外してよい条件は次の 2 つが同時に満たされることである**（IADR-0151 決定3）:
+//   1. 入力が**百分率**になり、単位が画面上に常に見えている（`LIMIT_FIELDS`）
+//   2. **値域の関門がサーバ側に実在する**（`RiskLimitBounds`。本 issue で新設。それまでサーバは
+//      `MaxOrderAmountRatio = 35000` をそのまま受理していた）
+// 画面側の検証（`invalidFieldMessages`）は 1 の即時提示であり、実効は 2 である。
+type RiskLimitsPayload = Record<LimitFieldKey, number>;
 
-function fromForm(f: FormModel): LegacyAmountLimitsPayload {
-  return {
-    maxOrderAmount: num(f.maxOrderAmountRatio),
-    maxDailyOrderAmount: num(f.maxDailyOrderAmountRatio),
-    maxOpenPositions: num(f.maxOpenPositions),
-    dailyLossLimitRatio: num(f.dailyLossLimitRatio),
-    perTradeRiskRatio: num(f.perTradeRiskRatio),
-    maxDrawdownRatio: num(f.maxDrawdownRatio),
-    losingStreakThreshold: num(f.losingStreakThreshold),
-    losingStreakSizeFactor: num(f.losingStreakSizeFactor),
-  };
+/** 画面の入力をワイヤの値へ変換する。**呼び出し前に `invalidFieldMessages` が空であることが前提**である。 */
+function fromForm(f: FormModel): RiskLimitsPayload {
+  return Object.fromEntries(
+    // 事前検証を通過していれば null にはならない。万一 null なら 0 ではなく NaN を送り、
+    // サーバの値域検証（0 以下は拒否）で確実に落とす（黙って 0＝「発注できない」を保存しない）。
+    LIMIT_FIELD_KEYS.map((k) => [k, limitInputToWire(k, f[k]) ?? Number.NaN]),
+  ) as RiskLimitsPayload;
 }
 
 // ApiError の種別を利用者向けメッセージへ写像する（SC-01 と同方針）。
@@ -158,6 +114,10 @@ export function RiskSettingsPage() {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // FR-10, SC-02, #362, IADR-0151 決定4: 実額の併記と実弾切替モーダル③に使う equity・統制状態。
+  // **ページで 1 回だけ取得して配る**（2 か所で別々に取りに行くと、同じ画面が違う equity を見る状態を作れる）。
+  // 別サービスの障害を本ページの障害にしないため、失敗しても null で縮退する（実額は「—」になる）。
+  const [riskStatus, setRiskStatus] = useState<RiskStatusView | null>(null);
 
   async function loadCurrent(): Promise<void> {
     try {
@@ -182,15 +142,25 @@ export function RiskSettingsPage() {
     }
   }
 
+  async function loadRiskStatus(): Promise<void> {
+    try {
+      setRiskStatus(await apiFetch<RiskStatusView>('/risk-controls/status'));
+    } catch {
+      // 取得不能は実額を「—」に縮退させる（実弾切替は別途、equity 不明を理由に禁じる）。
+      setRiskStatus(null);
+    }
+  }
+
   useEffect(() => {
     void loadCurrent();
     void loadHistory();
+    void loadRiskStatus();
   }, []);
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    // 理由必須・全フィールド有効を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
-    if (!current || !form || reason.trim() === '' || invalidFieldLabels(form).length > 0) return;
+    // 理由必須・全フィールド有効（値域内）を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
+    if (!current || !form || reason.trim() === '' || invalidFieldMessages(form).length > 0) return;
     setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
@@ -206,6 +176,8 @@ export function RiskSettingsPage() {
       setSavedNotice('保存しました。');
       await loadCurrent();
       await loadHistory();
+      // 上限が変われば解決済みの実額（統制状態）も変わる。実額の併記を古いままにしない。
+      await loadRiskStatus();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveState('error');
@@ -232,19 +204,22 @@ export function RiskSettingsPage() {
           <form onSubmit={handleSubmit} aria-label="リスク上限の変更">
             <fieldset>
               <legend>リスク上限</legend>
-              {/* FR-10, #362, #389: 保存経路は現在 400 で拒否される（金額 → equity 比の API 変更に入力 UI が
-                  未追随。安全側として意図的にこの状態にしてある）。沈黙の失敗にせず、理由を画面にも書く。 */}
+              {/* FR-10, SC-02, #362, IADR-0151 決定1・決定4: 割合は**百分率**で入力する。equity 比の項目には
+                  現在 equity での実額を併記する（割合だけでは実効額を判断できない）。通貨は基準通貨（円）建てで
+                  あり「$」は付けない（計画は USD 表記を求めるが、供給値が円建てのため。IADR-0151 決定4）。 */}
               <p>
-                発注額の 2 項目は <strong>equity（自己資金）に対する割合</strong>です（0.25 ＝ 25%）。金額ではありません。
-                なお現在、リスク上限の<strong>保存はサーバに拒否されます</strong>（割合入力への作り直しが未完のため、
-                誤って金額を保存できないようにしてある安全側の状態です）。
+                equity 比の項目は<strong>百分率（%）で入力</strong>します（25 ＝ equity の 25%）。比率（0.25）ではありません。
+                各項目には<strong>現在の equity（
+                {riskStatus === null ? '取得できません' : `${formatAmount(riskStatus.capital)} 円`}
+                ）での実額</strong>を併記します（基準通貨＝円建て。統制の基準は自己資金の USD 建てですが、
+                実装が供給する評価額は円換算値です）。
               </p>
-              {(Object.keys(FIELD_LABELS) as (keyof FormModel)[]).map((k) => (
-                <Field
+              {LIMIT_FIELD_KEYS.map((k) => (
+                <LimitField
                   key={k}
-                  id={k}
-                  label={FIELD_LABELS[k]}
+                  fieldKey={k}
                   value={form[k]}
+                  equity={riskStatus?.capital ?? null}
                   onChange={(v) => setForm({ ...form, [k]: v })}
                 />
               ))}
@@ -255,15 +230,15 @@ export function RiskSettingsPage() {
               <textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
             </div>
 
-            {invalidFieldLabels(form).length > 0 && (
+            {invalidFieldMessages(form).length > 0 && (
               <p role="alert">
-                未入力または数値でない項目があります: {invalidFieldLabels(form).join('、')}
+                入力できない値があります: {invalidFieldMessages(form).join('、')}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={reason.trim() === '' || saveState === 'saving' || invalidFieldLabels(form).length > 0}
+              disabled={reason.trim() === '' || saveState === 'saving' || invalidFieldMessages(form).length > 0}
             >
               保存
             </button>
@@ -284,9 +259,11 @@ export function RiskSettingsPage() {
             current={current.brokerProvider}
             stageMode={current.stage.mode}
             stage={current.stage.stage}
+            status={riskStatus}
             onSaved={async () => {
               await loadCurrent();
               await loadHistory();
+              await loadRiskStatus();
             }}
           />
           <HistoryView status={historyStatus} history={history} />
@@ -300,22 +277,56 @@ export function RiskSettingsPage() {
   );
 }
 
-// 数値入力（文字列で保持）。ラベルと入力を id で関連づける（getByLabelText で参照可能）。
-function Field({
-  id,
-  label,
+// FR-10, SC-02, #362, IADR-0151: リスク上限 1 項目の入力欄。
+//
+// **単位を必ず画面に出す**（`%` / `%/日` / `件` / `連敗` / `倍`）。比率・百分率・金額の取り違えは統制で
+// 最も危険な誤りであり（IADR-0130 決定1）、単位が見えていれば目視で検出できる。
+//
+// equity 比の項目には**入力中の値に対する実額**を併記する。サーバの `RiskStatusView.maxOrderAmount` は
+// **現在保存されている設定**から解決した実額であり、保存前の入力値は表せない。よって画面が
+// `resolveEquityAmount(equity, 入力比率)` で計算する（equity の出どころは 1 つに保つ）。
+//
+// ラベルは単位を含む文字列を <label> に置き、`getByLabelText` で参照できるようにする。
+function LimitField({
+  fieldKey,
   value,
+  equity,
   onChange,
 }: {
-  id: string;
-  label: string;
+  fieldKey: LimitFieldKey;
   value: string;
+  equity: number | null;
   onChange: (v: string) => void;
 }) {
+  const spec = LIMIT_FIELDS[fieldKey];
+  const label = `${spec.label} ${spec.unit}`;
+  const error = validateLimitInput(fieldKey, value);
+  const amount = isEquityRatioField(fieldKey)
+    ? resolveEquityAmount(equity, limitInputToWire(fieldKey, value))
+    : null;
+
   return (
     <div>
-      <label htmlFor={id}>{label}</label>
-      <input id={id} type="number" step="any" value={value} onChange={(e) => onChange(e.target.value)} />
+      <label htmlFor={fieldKey}>{label}</label>
+      <input
+        id={fieldKey}
+        type="number"
+        step="any"
+        value={value}
+        aria-invalid={error !== null}
+        aria-describedby={`${fieldKey}-help`}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span id={`${fieldKey}-help`}>
+        {`許容範囲: ${describeLimitRange(fieldKey)}`}
+        {isEquityRatioField(fieldKey) && (
+          // equity 不明・入力が読めないときは「—」。併記できないことを黙って隠さない。
+          <>
+            {` / 現在の equity での実額: ${formatAmount(amount)} 円`}
+            {spec.kind === 'equityPercentPerDay' && '/日'}
+          </>
+        )}
+      </span>
     </div>
   );
 }
@@ -664,11 +675,18 @@ function BrokerProviderForm({
   current,
   stageMode,
   stage,
+  status,
   onSaved,
 }: {
   current: number;
   stageMode: number;
   stage: number;
+  /**
+   * ③ の提示に用いる equity と統制値の実額。**ページが 1 回取得したものを受け取る**（#362）。
+   * 以前は本フォームが独自に `/risk-controls/status` を叩いていたが、リスク上限の実額併記でも同じ値が
+   * 要るため、**同じ画面が 2 つの equity を見る**状態を避けてページへ引き上げた。`null` は取得不能。
+   */
+  status: RiskStatusView | null;
   onSaved: () => Promise<void> | void;
 }) {
   const [selected, setSelected] = useState<number>(current);
@@ -679,8 +697,6 @@ function BrokerProviderForm({
   const [saveState, setSaveState] = useState<ProviderSaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  // ③ の提示に用いる equity と統制値の実額。別サービス障害を本フォームの障害にしないため独立に取得する。
-  const [status, setStatus] = useState<RiskStatusView | null>(null);
 
   // 現在値に追随して選択を初期化する（自分の保存成功後の再取得・外部変更）。
   useEffect(() => {
@@ -690,21 +706,6 @@ function BrokerProviderForm({
     setAcknowledged(false);
     setPhrase('');
   }, [current]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await apiFetch<RiskStatusView>('/risk-controls/status');
-        if (!cancelled) setStatus(data);
-      } catch {
-        if (!cancelled) setStatus(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const live = isLiveProvider(selected);
   const unchanged = selected === current;
@@ -890,15 +891,15 @@ function LiveSwitchWarningModal({
           <tbody>
             <tr>
               <th>現在の equity（自己資金）</th>
-              <td>{status.capital}</td>
+              <td>{formatAmount(status.capital)} 円</td>
             </tr>
             <tr>
               <th>1 注文あたり発注金額上限</th>
-              <td>{status.maxOrderAmount}</td>
+              <td>{formatAmount(status.maxOrderAmount)} 円</td>
             </tr>
             <tr>
               <th>1 日あたり発注金額上限</th>
-              <td>{status.maxDailyOrderAmount}</td>
+              <td>{formatAmount(status.maxDailyOrderAmount)} 円</td>
             </tr>
             <tr>
               <th>保有建玉数上限</th>
