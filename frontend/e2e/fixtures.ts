@@ -1,4 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { Page, Route } from '@playwright/test';
+import type {
+  RiskManagementSettings,
+  RiskStatusView,
+  SettingsChangeEntry,
+  StageGateStatus,
+} from '../src/features/risk/contracts';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -7,6 +15,19 @@ import type { Page, Route } from '@playwright/test';
 export type BffResponse = { status: number; body?: unknown };
 export type BffHandler = BffResponse | ((route: Route) => BffResponse | Promise<BffResponse>);
 export type BffConfig = Record<string, BffHandler>;
+
+// FR-10, FR-20, SC-02, SC-03, #389, IADR-0146: リスク系のモック本文は**バックエンドの実 HTTP 応答**
+// （契約フィクスチャ）を土台にする。手書きの literal で組むと、フロントが「こう返ってくるはずだ」と
+// 思っている形を E2E でも検証することになり、バックエンドの改名（#329 / #333）を素通りさせる。
+// フィクスチャ本体はバックエンドの xUnit（FrontendContractFixtureTests）が生成・突合しており、
+// 型としての突合は src 側（contractFixtures.ts）がコンパイル時に行う。
+const CONTRACT_FIXTURE_DIR = fileURLToPath(
+  new URL('../src/features/risk/contract-fixtures/', import.meta.url),
+);
+
+function loadContract<T>(fileName: string): T {
+  return JSON.parse(readFileSync(CONTRACT_FIXTURE_DIR + fileName, 'utf8')) as T;
+}
 
 // ---- 既定のサンプル応答（受け入れ基準の主要フロー用） ----
 
@@ -28,41 +49,28 @@ export const ASSUMPTIONS_HISTORY = [
   { actor: 'owner', reason: '初期値', changedAt: '2026-07-01T00:00:00Z', version: 1 },
 ];
 
-export const RISK_SETTINGS = {
-  guard: {
-    enabledProductTypes: [0],
-    enabledMarkets: [0, 1],
-    bannedSymbols: [],
-    preventSameDayReentry: true,
-    prohibitManipulativeOrderPatterns: true,
-  },
-  limits: {
-    maxOrderAmount: 300000,
-    maxDailyOrderAmount: 500000,
-    maxOpenPositions: 5,
-    dailyLossLimitRatio: 0.05,
-    perTradeRiskRatio: 0.01,
-    maxDrawdownRatio: 0.2,
-    losingStreakThreshold: 3,
-    losingStreakSizeFactor: 0.5,
-  },
+const CONTRACT_RISK_SETTINGS = loadContract<RiskManagementSettings>('risk-controls.settings.json');
+const CONTRACT_RISK_STATUS = loadContract<RiskStatusView>('risk-controls.status.json');
+const CONTRACT_STAGE_GATE = loadContract<StageGateStatus>('risk-controls.stage-gate.json');
+const CONTRACT_SETTINGS_HISTORY = loadContract<SettingsChangeEntry[]>(
+  'risk-controls.settings-history.json',
+);
+
+export const RISK_SETTINGS: RiskManagementSettings = {
+  ...CONTRACT_RISK_SETTINGS,
+  limits: { ...CONTRACT_RISK_SETTINGS.limits, maxOpenPositions: 5, losingStreakThreshold: 3 },
   // FR-20, #334: 段階（Stage 1）と発注先（現在は moomoo SIMULATE）は独立した 2 軸。
   // stage.mode は**段階が定める既定の発注先**（BrokerProvider 数値・2=moomoo SIMULATE）。
-  stage: { stage: 1, mode: 2, capitalCap: 1000000 },
+  stage: { ...CONTRACT_RISK_SETTINGS.stage, stage: 1, mode: 2 },
   brokerProvider: 2,
 };
 
-export const RISK_SETTINGS_HISTORY = [
-  { actor: 'owner', changeType: 1, reason: '上限調整', changedAt: '2026-07-17T00:00:00Z' },
+export const RISK_SETTINGS_HISTORY: SettingsChangeEntry[] = [
+  { ...CONTRACT_SETTINGS_HISTORY[1], actor: 'owner', changeType: 1, reason: '上限調整' },
 ];
 
-export const RISK_STATUS = {
-  killSwitchEngaged: false,
-  dailyLossLockoutActive: false,
-  lockoutReleaseOn: null,
-  tradingPaused: false,
-  activeControl: 0,
-  newEntriesBlocked: false,
+export const RISK_STATUS: RiskStatusView = {
+  ...CONTRACT_RISK_STATUS,
   stage: 1,
   brokerProvider: 2, // BrokerProvider.MoomooSimulate（段階とは別の軸）
   dailyRealizedPnl: 1000,
@@ -70,6 +78,7 @@ export const RISK_STATUS = {
   dailyPnl: 500,
   capital: 1000000,
   dailyOrderedAmount: 200000,
+  // equity から解決済みの**実額**（設定側の比率とは別物・#389）。
   maxOrderAmount: 250000,
   maxDailyOrderAmount: 500000,
   drawdownRatio: 0.05,
@@ -88,25 +97,14 @@ export const WATCHLIST_HISTORY = [
   { actor: 'owner', changeType: 0, reason: '監視追加', changedAt: '2026-07-17T00:00:00Z' },
 ];
 
-export const STAGE_GATE = {
+export const STAGE_GATE: StageGateStatus = {
+  ...CONTRACT_STAGE_GATE,
   currentStage: 1,
-  currentSettings: { stage: 1, mode: 2, capitalCap: 1000000 },
-  history: [
-    {
-      sequence: 1,
-      fromStage: 0,
-      toStage: 1,
-      kind: 0,
-      approvedBy: 'owner',
-      occurredAtUtc: '2026-07-10T00:00:00Z',
-      reason: '昇格',
-    },
-  ],
+  currentSettings: { ...CONTRACT_STAGE_GATE.currentSettings, stage: 1, mode: 2 },
+  history: [{ ...CONTRACT_STAGE_GATE.history[0], sequence: 1, approvedBy: 'owner', reason: '昇格' }],
   promotion: { targetStage: 2, eligible: false, unmetCriteria: [0] },
-  withdrawal: { triggered: false, reason: null, haltNewEntries: false, proposedStage: null },
   // FR-20, #334, IADR-0142: Stage 1 の進捗は moomoo SIMULATE の実績のみ。paper 稼働日は除外して別掲する。
   stage1Progress: { qualifiedTradingDays: 42, tradeCount: 70, excludedInternalPaperDays: 3 },
-  stage1Criteria: { targetTradingDays: 60, minimumTradeCount: 100, maximumTradingDays: 120 },
 };
 
 // FR-20, #334: 内蔵 paper で稼働している状態（警告バナー・paper ラベルの検証用）。

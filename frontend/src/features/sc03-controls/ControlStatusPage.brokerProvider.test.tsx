@@ -15,57 +15,50 @@ import {
   BROKER_PROVIDER_MOOMOO_SIMULATE,
   CHANGE_TYPE_BROKER_PROVIDER,
 } from '../risk/contracts';
+import type { RiskStatusView, SettingsChangeEntry, StageGateStatus } from '../risk/contracts';
+import {
+  CONTRACT_RISK_STATUS,
+  CONTRACT_SETTINGS_HISTORY,
+  CONTRACT_STAGE_GATE,
+  cloneContract,
+} from '../risk/contractFixtures';
 import {
   PAPER_BANNER_DEBUG_MESSAGE,
   PAPER_BANNER_EXCLUSION_MESSAGE,
   PAPER_REFERENCE_LABEL,
 } from '../shared/paperMode';
 
-function status(brokerProvider: number) {
-  return {
-    killSwitchEngaged: false,
-    dailyLossLockoutActive: false,
-    lockoutReleaseOn: null,
-    tradingPaused: false,
-    activeControl: 0,
-    newEntriesBlocked: false,
-    stage: 1,
-    brokerProvider,
-    dailyRealizedPnl: 0,
-    unrealizedPnl: 0,
-    dailyPnl: 0,
-    capital: 3000,
-    dailyOrderedAmount: 0,
-    maxOrderAmount: 750,
-    maxDailyOrderAmount: 4500,
-    drawdownRatio: 0,
-    maxDrawdownRatio: 0.1,
-    openPositionCount: 0,
-    maxOpenPositions: 3,
-  };
+// #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台に作る。
+function status(brokerProvider: number): RiskStatusView {
+  return { ...cloneContract(CONTRACT_RISK_STATUS), stage: 1, brokerProvider };
 }
 
-const STAGE_GATE = {
+const STAGE_GATE: StageGateStatus = {
+  ...cloneContract(CONTRACT_STAGE_GATE),
   currentStage: 1,
-  currentSettings: { stage: 1, mode: BROKER_PROVIDER_MOOMOO_SIMULATE, capitalCap: 1 },
+  currentSettings: {
+    ...cloneContract(CONTRACT_STAGE_GATE.currentSettings),
+    stage: 1,
+    mode: BROKER_PROVIDER_MOOMOO_SIMULATE,
+  },
   history: [],
   promotion: { targetStage: 2, eligible: false, unmetCriteria: [] },
-  withdrawal: { triggered: false, reason: null, haltNewEntries: false, proposedStage: null },
   stage1Progress: { qualifiedTradingDays: 42, tradeCount: 70, excludedInternalPaperDays: 3 },
-  stage1Criteria: { targetTradingDays: 60, minimumTradeCount: 100, maximumTradingDays: 120 },
 };
 
-const PROVIDER_HISTORY = [
+// 発注先の変更履歴。実応答の 2 件（発注先変更＝changeType 7 と上限変更＝1）を土台に、
+// 本テストが見たい値（変更前後・理由）だけを上書きする。
+const PROVIDER_HISTORY: SettingsChangeEntry[] = [
   {
+    ...cloneContract(CONTRACT_SETTINGS_HISTORY[0]),
     actor: 'owner',
     changeType: CHANGE_TYPE_BROKER_PROVIDER,
     reason: 'デバッグのため内蔵擬似約定へ落とす',
-    changedAt: '2026-08-04T00:00:00Z',
     before: 'MoomooSimulate',
     after: 'InternalPaper',
   },
   // 発注先以外の履歴（上限変更）は本表に出さない。
-  { actor: 'owner', changeType: 1, reason: '上限見直し', changedAt: '2026-08-03T00:00:00Z' },
+  { ...cloneContract(CONTRACT_SETTINGS_HISTORY[1]), actor: 'owner', changeType: 1, reason: '上限見直し' },
 ];
 
 function mockApi(brokerProvider: number, gate: unknown = STAGE_GATE) {

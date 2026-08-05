@@ -11,26 +11,13 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { sc02RiskSettingsFeature } from './index';
+import { CONTRACT_RISK_SETTINGS, cloneContract } from '../risk/contractFixtures';
+import type { RiskManagementSettings } from '../risk/contracts';
 
-const SAMPLE_SETTINGS = {
-  guard: {
-    enabledProductTypes: [0],
-    enabledMarkets: [0, 1],
-    bannedSymbols: [],
-    preventSameDayReentry: true,
-    prohibitManipulativeOrderPatterns: true,
-  },
-  limits: {
-    maxOrderAmount: 100000,
-    maxDailyOrderAmount: 300000,
-    maxOpenPositions: 5,
-    dailyLossLimitRatio: 0.02,
-    perTradeRiskRatio: 0.01,
-    maxDrawdownRatio: 0.1,
-    losingStreakThreshold: 3,
-    losingStreakSizeFactor: 0.5,
-  },
-  stage: { stage: 1, mode: 0, capitalCap: 1000000 },
+// #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）から作る。
+const SAMPLE_SETTINGS: RiskManagementSettings = {
+  ...cloneContract(CONTRACT_RISK_SETTINGS),
+  stage: { ...cloneContract(CONTRACT_RISK_SETTINGS.stage), stage: 1, mode: 0 },
 };
 
 function makeJwt(payload: unknown): string {
