@@ -23,10 +23,21 @@ public sealed class RiskSettingsService(
         Save(current with { Guard = guard }, current.Guard, guard, SettingsChangeType.Guard, actor, reason);
     }
 
+    /// <summary>
+    /// FR-10, SC-02, UC-06, #362, IADR-0151 決定2: リスク上限を変更する。
+    /// <para>
+    /// <b>値域は <see cref="RiskLimitBounds"/> が単独で決める</b>（画面とサーバで規則を二重に書かない）。
+    /// 範囲外なら <see cref="ArgumentException"/> を投げ、<b>設定を一切変更せず履歴も残さない</b>——
+    /// 拒否された要求を履歴に積むと、実際には起きていない変更が監査上の事実になる（IADR-0141 と同じ規律）。
+    /// エンドポイントは事前に <see cref="RiskLimitBounds.Validate"/> を呼んで 400 の details を組み立てるが、
+    /// ここでも検査するのは<b>呼び出し口が将来増えても不変条件を保つため</b>である。
+    /// </para>
+    /// </summary>
     public void UpdateLimits(RiskLimitSettings limits, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(limits);
         RequireActorAndReason(actor, reason);
+        RiskLimitBounds.ThrowIfOutOfRange(limits);
 
         var current = store.GetCurrent();
         Save(current with { Limits = limits }, current.Limits, limits, SettingsChangeType.Limits, actor, reason);
