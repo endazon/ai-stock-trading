@@ -1,0 +1,60 @@
+{
+  "guard": {
+    "enabledProductTypes": [
+      0
+    ],
+    "enabledMarkets": [
+      0,
+      1
+    ],
+    "bannedSymbols": [
+      {
+        "symbol": "6457",
+        "market": 0,
+        "reason": "利用者登録: グローリー（利益相反回避）",
+        "registeredOn": "2026-07-07"
+      },
+      {
+        "symbol": "6902",
+        "market": 0,
+        "reason": "利用者登録: デンソー（利益相反回避）",
+        "registeredOn": "2026-07-07"
+      },
+      {
+        "symbol": "6502",
+        "market": 0,
+        "reason": "利用者登録: 東芝（旧。2023年上場廃止中のため再上場時に適用）",
+        "registeredOn": "2026-07-07"
+      }
+    ],
+    "preventSameDayReentry": true,
+    "prohibitManipulativeOrderPatterns": true
+  },
+  "limits": {
+    "maxOrderAmountRatio": 0.25,
+    "maxDailyOrderAmountRatio": 1.50,
+    "maxOpenPositions": 3,
+    "dailyLossLimitRatio": 0.02,
+    "perTradeRiskRatio": 0.01,
+    "maxDrawdownRatio": 0.10,
+    "losingStreakThreshold": 5,
+    "losingStreakSizeFactor": 0.5
+  },
+  "stage": {
+    "stage": 0,
+    "mode": 0,
+    "capitalCapRatio": 1.00
+  },
+  "brokerProvider": 0,
+  "shortSell": {
+    "limits": {
+      "perSymbolCapRatio": 0.10,
+      "borrowRateCapAnnual": 0.20,
+      "maintenanceMarginThreshold": 0.40,
+      "maintenanceRecoveryTargetOffset": 0.05,
+      "priceFloorUsd": 5.00,
+      "exposureRatioCap": 0.50,
+      "buyInBanDurationDays": 30
+    }
+  }
+}
