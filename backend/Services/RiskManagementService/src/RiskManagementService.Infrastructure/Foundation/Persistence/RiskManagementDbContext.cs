@@ -30,6 +30,10 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
 
     public DbSet<StagePerformanceRow> StagePerformance => Set<StagePerformanceRow>();
 
+    // FR-20, FR-11, #387, IADR-0148: 発注審査の観測ログ（段階ゲートの「統制違反 0 件」の供給元）。
+    public DbSet<OrderScreeningObservationRow> OrderScreeningObservations =>
+        Set<OrderScreeningObservationRow>();
+
     // FR-20, FR-09, IADR-0085: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（最後に通知したシグネチャ・単一行）。
     public DbSet<WithdrawalNotificationRow> WithdrawalNotifications => Set<WithdrawalNotificationRow>();
 
@@ -131,6 +135,17 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.ToTable("stage_performance");
             e.HasKey(r => r.Id);
             e.Property(r => r.Id).ValueGeneratedNever();
+        });
+
+        // FR-20, FR-11, #387, IADR-0148: 発注審査の観測ログ。DecisionId が主キー＝**計上単位**
+        // （1 回の発注拒否につき 1 件）を主キー制約で担保し、再送でも二重計上しない。
+        // 集計は「算入対象があるか」「そのうち違反は何件か」の 2 問だけであり、両方を満たすインデックスを張る。
+        mb.Entity<OrderScreeningObservationRow>(e =>
+        {
+            e.ToTable("order_screening_observations");
+            e.HasKey(r => r.DecisionId);
+            e.Property(r => r.DecisionId).ValueGeneratedNever();
+            e.HasIndex(r => new { r.CountsTowardStage1, r.IsControlViolation });
         });
 
         // FR-20, FR-09, IADR-0085: 撤退の非停止降格提案の通知重複排除（単一行）。未記録＝未通知（fail-safe）。

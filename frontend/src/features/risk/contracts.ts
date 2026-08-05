@@ -194,6 +194,9 @@ const CRITERION_LABELS: Record<number, string> = {
   9: 'Stage 1 の営業日数が不足',
   10: 'Stage 1 の取引件数が不足',
   11: 'Stage 1 の延長期限切れ（打ち切り）',
+  // #387: 12 は「統制違反があった」（2）とは**別の事由**である。集計そのものが供給されていない状態を指し、
+  // 打つ手が違う（前者は AI の抵触の記録、後者は供給経路の欠落）。同じラベルに潰さない。
+  12: '統制違反件数の集計が未供給',
 };
 
 // WithdrawalReason（0=DrawdownBreachedMultiple, 2=Stage1ExtensionExhausted）。

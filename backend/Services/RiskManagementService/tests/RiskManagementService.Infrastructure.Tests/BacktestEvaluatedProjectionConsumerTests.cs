@@ -64,7 +64,6 @@ public class BacktestEvaluatedProjectionConsumerTests
             ObservedMaxDrawdownRatio = 0.12m,
             Stage1QualifiedTradingDays = 60,
             Stage1TradeCount = 100,
-            ControlViolationCount = 3,
             SlippageAndCostWithinExpected = true,
             DailyLossLimitRespected = true,
         });
@@ -82,7 +81,6 @@ public class BacktestEvaluatedProjectionConsumerTests
         perf.ObservedMaxDrawdownRatio.Should().Be(0.12m);
         perf.Stage1QualifiedTradingDays.Should().Be(60);
         perf.Stage1TradeCount.Should().Be(100);
-        perf.ControlViolationCount.Should().Be(3);
         perf.SlippageAndCostWithinExpected.Should().BeTrue();
         perf.DailyLossLimitRespected.Should().BeTrue();
 
@@ -101,6 +99,7 @@ public class BacktestEvaluatedProjectionConsumerTests
         var stageGate = new StageGateService(
             ledger,
             store,
+            new InMemoryControlViolationObservationStore(),
             TradingDefaults.CreateStagePolicy(),
             new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
             clock);

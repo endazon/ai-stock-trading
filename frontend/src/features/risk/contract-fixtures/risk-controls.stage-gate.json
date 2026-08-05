@@ -20,6 +20,7 @@
     "targetStage": 2,
     "eligible": false,
     "unmetCriteria": [
+      12,
       9,
       10
     ]

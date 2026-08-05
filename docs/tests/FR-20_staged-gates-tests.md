@@ -2,7 +2,7 @@
 title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
-related_ids: [FR-20, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142]
+related_ids: [FR-20, FR-11, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148]
 author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-05
@@ -26,7 +26,9 @@ related_specs:
   - ../adr/IADR-0140_broker-provider-axis.md
   - ../adr/IADR-0141_live-switch-explicit-confirmation.md
   - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
+  - ../adr/IADR-0148_control-violation-supply-and-unavailable-state.md
   - ../specs/20260805_334_broker-provider-axis.md
+  - ../specs/20260805_387_class-c-violation-count.md
 ---
 
 # テスト仕様書: 段階ゲートと発注先の 2 軸分離 — FR-20
@@ -94,6 +96,11 @@ related_specs:
 | T-10 | 120 営業日に到達 | 合格条件が未充足のまま | 打ち切りとなり、再検証へ差し戻される | FR-20 | 自動 |
 | T-11 | 内蔵 `paper` の約定・営業日が混在 | Stage 1 進捗を集計する | **`paper` 分は算入されず、除外日数として別計上される** | FR-20, FR-12 | 自動（否定形） |
 | T-12 | クラス A の拒否（空売り統制 **9 種**を含む）が 100 回発生 | 「統制違反 0 件」を判定する | **クラス A は違反件数に算入されず昇格が止まらない**（クラス C 限定＝`BannedSymbol` / `ManipulativeOrderPattern`）。クラス C は 1 件でも止める（1 回の拒否に複数理由が含まれても 1 件） | FR-20, ADR-0016 決定10 | 自動（否定形） |
+| T-49 | **統制違反件数の集計が未供給**（観測が 1 件も無い）・期間 60 営業日・件数 100 件は充足 | 昇格を判定する | **昇格しない**。未充足理由は `ControlViolationCountUnavailable`（`ControlViolationsPresent` ではない）。承認付きの遷移要求でも受理されない | FR-20, #387 | 自動（否定形） |
+| T-50 | 算入対象（`SIMULATE`）の審査が 1 件以上あり、クラス C の拒否は 0 件 | 統制違反件数を集計する | **供給あり・0 件**として条件1 を満たす（未供給を止める判定が正常な合格まで止めない） | FR-20, #387 | 自動 |
+| T-51 | 1 回の拒否に**複数のクラス C 理由**／同一 `DecisionId` の再送 | 統制違反件数を集計する | いずれも **1 件**（計上単位は 1 回の発注拒否につき 1 件・再送で二重計上しない） | FR-20, #387 | 自動（否定形） |
+| T-52 | 内蔵 `paper` / `MoomooReal` の審査のみ（クラス C の拒否を含む） | 統制違反件数を集計する | **未供給（`null`）**を返す（算入は `SIMULATE` の許可制。`paper` だけでは合格証跡を作れない） | FR-20, FR-12, #387 | 自動（否定形） |
+| T-53 | 段階遷移が受理される／受理されない | 観測窓を確認する | 受理時のみ窓が区切られ未供給へ戻る（集計期間＝Stage 1 の全期間）。**受理されない要求では区切られない** | FR-20, #387 | 自動（否定形） |
 
 ### 段階別の資金上限と商品種別
 
@@ -182,6 +189,7 @@ related_specs:
 | T-08〜T-10・T-23〜T-33 | #333 | 実装済み（`Stage1ProgressTests` / `StageGateTests`）。**ただし営業日数・件数の供給元が無く発火しない** |
 | T-11・T-19〜T-22・T-41〜T-48 | #334 | 実装済み（`BrokerProviderTests` / `BrokerProviderChangeTests` / `BrokerProviderSettingsTests` / `BrokerProviderEndpointTests` / `Stage1AggregationTests` / `RiskSettingsPage.brokerProvider.test.tsx` / `e2e/broker-provider.spec.ts`）。**ただし Stage 1 集計の供給元が無く発火しない**（#386）／**発注先の設定値は発注経路へ未結線**（IADR-0140 残余リスク） |
 | T-12 / T-37 | #329 / #333 | 実装済み（`RejectionReasonClassificationTests` / `StageGateTests`） |
+| T-49〜T-53 | #387 | 実装済み（`ControlViolationAggregationTests` / `StageGateTests` / `StageGateServiceTests` / `EfControlViolationObservationStoreTests` / `OrderScreeningServiceTests` / `TradeDecisionMadeConsumerTests`）。**供給元は本 issue で実装済み**（発注審査が動けば集計が供給される） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
 
@@ -192,3 +200,4 @@ related_specs:
 | 2026-08-03 | 全面再実装（#344）に合わせて新規作成（#343） |
 | 2026-08-04 | #333 の実装に合わせて T-23〜T-40 を追加し、担当表を実装状況へ更新（期間カウント・120 営業日打ち切り・段階別の商品種別強制・発注可能額の総資金比化） |
 | 2026-08-05 | #334（2 軸分離）の実装に合わせて T-41〜T-48 を追加し、担当表を更新。計画適合レジストリの #334 担当 2 行の解消を反映 |
+| 2026-08-05 | #387（クラス C 統制違反件数の供給）の実装に合わせて T-49〜T-53 を追加。**未供給と 0 件の区別**を否定形で固定した |

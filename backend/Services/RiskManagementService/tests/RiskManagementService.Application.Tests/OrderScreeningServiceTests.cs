@@ -1,6 +1,7 @@
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Application.State;
+using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -192,5 +193,61 @@ public class OrderScreeningServiceTests
         rejected.Intent.Should().Be(intent);
         rejected.RejectedAt.Should().Be(clock.UtcNow);
         rejected.Reasons.Should().NotBeEmpty();
+    }
+
+    // FR-20, FR-11, #387, IADR-0148 決定3: 審査結果は**承認でも拒否でも**観測を伴う。
+    // 拒否だけを観測すると「違反 0 件」を主張する根拠が無くなり、未供給と区別できない。
+    [Fact]
+    public void 承認された審査も観測を伴う()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var decision = Decision(EntryIntent());
+
+        var outcome = service.Screen(decision);
+
+        outcome.IsApproved.Should().BeTrue();
+        outcome.Observation.DecisionId.Should().Be(decision.DecisionId);
+        outcome.Observation.Provider.Should().Be(BrokerProvider.InternalPaper);
+        outcome.Observation.RejectionReasons.Should().BeEmpty();
+    }
+
+    // FR-20, FR-11, #387: クラス C（禁止銘柄）の拒否が観測から 1 件として集計される。
+    // 発注先は**その注文が向いていた先**であり、算入対象（moomoo SIMULATE）なら件数に入る。
+    [Fact]
+    public void 禁止銘柄の拒否はクラスC統制違反1件として集計される()
+    {
+        var (service, _, _, _, _) = CreateService();
+        // 既定の禁止銘柄「6457」（Market.Japan）。TradingDefaults が単一情報源。
+        var intent = new OrderIntent(
+            "6457", Market.Japan, TradeSide.Buy, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 1, 1_000m);
+
+        var outcome = service.Screen(Decision(intent));
+
+        outcome.IsApproved.Should().BeFalse();
+        outcome.Observation.RejectionReasons.Should().Contain(RejectionReason.BannedSymbol);
+
+        var tally = ControlViolationAggregation.Tally([outcome.Observation]);
+        tally.Should().NotBeNull();
+        tally!.Count.Should().Be(1);
+    }
+
+    // **否定形**（§4.1）: クラス B（緊急停止中）の拒否は件数を増やさない。
+    // ただし審査は動いている＝**集計は供給されている**（0 件を主張できる）。
+    [Fact]
+    public void 緊急停止による拒否は供給を作るが件数は増やさない()
+    {
+        var (service, _, _, killSwitch, _) = CreateService();
+        killSwitch.SetState(new KillSwitchState(true, "user", "緊急停止", Now));
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 10, 1_000m);
+
+        var outcome = service.Screen(Decision(intent));
+
+        outcome.IsApproved.Should().BeFalse();
+        var tally = ControlViolationAggregation.Tally([outcome.Observation]);
+        tally.Should().NotBeNull("審査が動いている＝集計は供給されている");
+        tally!.Count.Should().Be(0, "クラス B は「統制違反 0 件」に計上しない");
     }
 }

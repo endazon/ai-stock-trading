@@ -47,14 +47,21 @@ public sealed class OrderScreeningService(
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }
 
+        // FR-20, FR-11, #387, IADR-0148 決定3: 段階ゲートの「統制違反 0 件」（クラス C 限定）を数えるための観測。
+        // **承認でも拒否でも作る**——算入対象の発注先で審査が動いていること自体が「集計が供給されている」根拠であり、
+        // 拒否だけを観測すると「違反 0 件」と「そもそも数えていない」を区別できない（#387 の fail-open）。
+        // 発注先は**その注文が向いていた先**（intent.Mode）を用いる。クラス分けはここで行わない
+        // （単一情報源は RejectionReasonClassification・集計は ControlViolationAggregation）。
+        var observation = new OrderScreeningObservation(decision.DecisionId, intent.Mode, reasons);
+
         if (reasons.Count > 0)
         {
-            return ScreeningOutcome.Reject(new OrderRejected(
-                decision.DecisionId, intent, reasons, clock.UtcNow));
+            return ScreeningOutcome.Reject(
+                new OrderRejected(decision.DecisionId, intent, reasons, clock.UtcNow), observation);
         }
 
-        return ScreeningOutcome.Approve(new OrderApproved(
-            decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow));
+        return ScreeningOutcome.Approve(
+            new OrderApproved(decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow), observation);
     }
 
     private bool IsLockedOut()

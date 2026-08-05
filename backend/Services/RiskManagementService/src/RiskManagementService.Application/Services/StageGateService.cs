@@ -11,10 +11,15 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 public sealed class StageGateService(
     IStageGateStore ledgerStore,
     IStagePerformanceStore performanceStore,
+    IControlViolationObservationStore violationStore,
     StageGatePolicy policy,
     KillSwitchService killSwitch,
     IClock clock)
 {
+    // FR-20, #387, IADR-0148: 統制違反件数（§4.1 条件1）は段階別実績の行ではなく**発注審査の観測ログ**から集計する。
+    // **null＝未供給**であり「違反 0 件」ではない。判定関数の必須引数であるため、渡し忘れはコンパイルが止める。
+    private ControlViolationTally? CurrentTally() => violationStore.GetTally();
+
     // FR-20, UC-06: 現況＝現段階・その設定・遷移履歴（監査）・昇格評価・撤退評価。
     public StageGateStatus GetStatus()
     {
@@ -25,7 +30,7 @@ public sealed class StageGateService(
             current,
             policy.SettingsFor(current),
             ledger.History,
-            StageGate.AssessPromotion(current, performance, policy),
+            StageGate.AssessPromotion(current, performance, CurrentTally(), policy),
             StageGate.AssessWithdrawal(current, performance, policy),
             performance.Stage1Progress,
             policy.Stage1Criteria);
@@ -43,7 +48,7 @@ public sealed class StageGateService(
         var approval = new StageApproval(target, approver);
 
         var result = StageGate.RequestTransition(
-            ledger.CurrentStage, ledger.NextSequence, approval, performance, policy, clock.UtcNow);
+            ledger.CurrentStage, ledger.NextSequence, approval, performance, CurrentTally(), policy, clock.UtcNow);
 
         if (result is { Accepted: true, Transition: not null })
         {
@@ -60,6 +65,14 @@ public sealed class StageGateService(
             {
                 performanceStore.Save(StagePerformanceProjection.WithoutObservedDrawdown(performance));
             }
+
+            // FR-20, #387, §4.1 条件1, IADR-0148 決定4: 受理された遷移で統制違反の観測窓を区切る。
+            // 計画は「集計期間は **Stage 1 の全期間**」と定める。窓を段階遷移で区切ると、Stage 1 に居る間の窓は
+            // 「Stage 1 へ入った時点から現在まで」＝計画の期間そのものになる。
+            // **実DD のリセット（差し戻しのみ）と条件が違うのは意図的である**——実DD は「撤退の証拠を消さない」ため
+            // 昇格では区切らないが、統制違反は前段階（例: Stage 0）の記録を Stage 1 の合格証跡へ持ち込んでは
+            // ならないため昇格でも区切る。区切った直後は未供給＝昇格しない（fail-safe）。
+            violationStore.ResetWindow();
         }
 
         return result;

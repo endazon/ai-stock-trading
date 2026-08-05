@@ -13,6 +13,10 @@ public class StageGateTests
     private static readonly StageGatePolicy Policy = TradingDefaults.CreateStagePolicy();
     private static readonly DateTimeOffset Now = new(2026, 7, 11, 9, 0, 0, TimeSpan.Zero);
 
+    // FR-20, #387, IADR-0148: **供給された**統制違反件数 0 件（＝条件1 を満たす）。
+    // 未供給（null）とは別物である——未供給は条件未充足として扱われ、昇格しない。
+    private static readonly ControlViolationTally Clean = ControlViolationTally.Observed(0);
+
     // 全合格基準を満たす実績（各テストで必要分を上書きする）
     private static StagePerformance Passing() => new()
     {
@@ -22,7 +26,6 @@ public class StageGateTests
         // FR-20, #333: Stage 1 の機械判定 3 条件（クラス C 違反 0 件 / 60 営業日 / 100 件）を満たす実績。
         Stage1QualifiedTradingDays = 60,
         Stage1TradeCount = 100,
-        ControlViolationCount = 0,
         SlippageAndCostWithinExpected = true,
         DailyLossLimitRespected = true,
     };
@@ -34,7 +37,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Policy, Now);
+            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Clean, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.Transition.Should().BeNull();
@@ -48,7 +51,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Policy, Now);
+            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Clean, Policy, Now);
 
         result.Accepted.Should().BeTrue();
         result.RejectionReasons.Should().BeEmpty();
@@ -72,7 +75,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage0Verification, nextSequence: 1, approval, perf, Policy, Now);
+            TradingStage.Stage0Verification, nextSequence: 1, approval, perf, Clean, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
@@ -85,7 +88,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage2MinimalLive, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Policy, Now);
+            TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Clean, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.PromotionMustBeSequential);
@@ -102,14 +105,14 @@ public class StageGateTests
     {
         var perf = Passing() with
         {
-            ControlViolationCount = violations,
             Stage1QualifiedTradingDays = tradingDays,
             Stage1TradeCount = tradeCount,
         };
         var approval = new StageApproval(TradingStage.Stage2MinimalLive, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage1Simulate, nextSequence: 2, approval, perf, Policy, Now);
+            TradingStage.Stage1Simulate, nextSequence: 2, approval, perf,
+            ControlViolationTally.Observed(violations), Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(expected);
@@ -142,9 +145,8 @@ public class StageGateTests
             .Count(reasons => RejectionReasonClassification.CountsAsControlViolation(reasons));
         violations.Should().Be(0, "クラス A は「統制違反 0 件」の件数に影響しない");
 
-        var perf = Passing() with { ControlViolationCount = violations };
-
-        StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy)
+        StageGate.AssessPromotion(
+                TradingStage.Stage1Simulate, Passing(), ControlViolationTally.Observed(violations), Policy)
             .Eligible.Should().BeTrue("クラス A の拒否は段階昇格ゲートを止めない");
     }
 
@@ -159,12 +161,75 @@ public class StageGateTests
         RejectionReason[] oneRejection = [RejectionReason.ShortSellDisabled, classC, RejectionReason.BorrowUnavailable];
         RejectionReasonClassification.CountsAsControlViolation(oneRejection).Should().BeTrue();
 
-        var perf = Passing() with { ControlViolationCount = 1 };
-
-        var assessment = StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy);
+        var assessment = StageGate.AssessPromotion(
+            TradingStage.Stage1Simulate, Passing(), ControlViolationTally.Observed(1), Policy);
 
         assessment.Eligible.Should().BeFalse();
         assessment.UnmetCriteria.Should().Contain(StageGateCriterion.ControlViolationsPresent);
+    }
+
+    // **否定形・本 issue の核心**（FR-20, #387, §4.1 条件1, IADR-0148）:
+    // **統制違反件数の集計が供給されていなければ昇格しない。**
+    //
+    // 段階ゲートの他の入力（営業日数・取引件数）の 0 は「未充足＝昇格しない」に倒れるが、
+    // 違反件数の 0 だけは「違反が無い＝条件充足」を意味する。#333 の実装では未供給が 0 と同じ形
+    // （非 nullable の int）だったため、**#385 / #386 が期間・件数を供給した瞬間に条件1 が
+    // 無条件で通る**状態だった。本テストはその状態を再現し、昇格しないことを固定する
+    // （`Passing()` は既に 60 営業日・100 件を満たしている＝#385 / #386 の供給が揃った状態そのもの）。
+    [Fact]
+    public void 統制違反件数が未供給なら期間と件数が揃っていても昇格しない()
+    {
+        var perf = Passing();
+        perf.Stage1Progress.QualifiedTradingDays.Should().Be(60, "#385 の供給が揃った状態を前提にする");
+        perf.Stage1Progress.TradeCount.Should().Be(100, "#386 の供給が揃った状態を前提にする");
+
+        var assessment = StageGate.AssessPromotion(
+            TradingStage.Stage1Simulate, perf, controlViolations: null, Policy);
+
+        assessment.Eligible.Should().BeFalse("集計の供給が無い状態を「違反 0 件」と読んではならない");
+        assessment.UnmetCriteria.Should().Contain(StageGateCriterion.ControlViolationCountUnavailable);
+        assessment.UnmetCriteria.Should().NotContain(
+            StageGateCriterion.ControlViolationsPresent,
+            "未供給は『違反があった』とは別の事由である（監査で取り違えない）");
+    }
+
+    // 同上を承認付きの遷移要求でも固定する（AssessPromotion だけを直しても RequestTransition が
+    // 別経路で通るなら塞げていない）。**承認があっても未供給なら昇格しない。**
+    [Fact]
+    public void 承認があっても統制違反件数が未供給なら昇格は受理されない()
+    {
+        var approval = new StageApproval(TradingStage.Stage2MinimalLive, ApprovedBy: "endazon");
+
+        var result = StageGate.RequestTransition(
+            TradingStage.Stage1Simulate, nextSequence: 2, approval, Passing(),
+            controlViolations: null, Policy, Now);
+
+        result.Accepted.Should().BeFalse();
+        result.Transition.Should().BeNull();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.ControlViolationCountUnavailable);
+    }
+
+    // 正の確認: **供給されたうえで 0 件**なら条件1 は満たされる（未供給を止める判定が、
+    // 正常な合格まで止めていないこと＝過剰に厳しくしていないことの確認）。
+    [Fact]
+    public void 供給された0件は条件1を満たす()
+    {
+        var assessment = StageGate.AssessPromotion(
+            TradingStage.Stage1Simulate, Passing(), ControlViolationTally.Observed(0), Policy);
+
+        assessment.Eligible.Should().BeTrue();
+        assessment.UnmetCriteria.Should().BeEmpty();
+    }
+
+    // **否定形**: 未供給は Stage 1 → 2 の条件であり、他段階の昇格を巻き添えで止めない
+    // （§4.1 条件1 は Stage 1 の合格条件である）。
+    [Theory]
+    [InlineData(TradingStage.Stage0Verification)]
+    [InlineData(TradingStage.Stage2MinimalLive)]
+    public void 統制違反件数の未供給はStage1以外の昇格を止めない(TradingStage current)
+    {
+        StageGate.AssessPromotion(current, Passing(), controlViolations: null, Policy)
+            .Eligible.Should().BeTrue();
     }
 
     // FR-20: Stage 2→3 はスリッページ・費用が想定内かつ日次損失上限の運用実績が合格条件
@@ -182,7 +247,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage3ScaledLive, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage2MinimalLive, nextSequence: 3, approval, perf, Policy, Now);
+            TradingStage.Stage2MinimalLive, nextSequence: 3, approval, perf, Clean, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(expected);
@@ -195,7 +260,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage3ScaledLive, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage2MinimalLive, nextSequence: 3, approval, Passing(), Policy, Now);
+            TradingStage.Stage2MinimalLive, nextSequence: 3, approval, Passing(), Clean, Policy, Now);
 
         result.Accepted.Should().BeTrue();
         result.ResultingSettings!.Mode.Should().Be(BrokerProvider.MoomooReal);
@@ -211,7 +276,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage0Verification, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage2MinimalLive, nextSequence: 4, approval, perf, Policy, Now);
+            TradingStage.Stage2MinimalLive, nextSequence: 4, approval, perf, Clean, Policy, Now);
 
         result.Accepted.Should().BeTrue();
         result.Transition!.Kind.Should().Be(StageTransitionKind.Demotion);
@@ -226,7 +291,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage1Simulate, nextSequence: 2, approval, Passing(), Policy, Now);
+            TradingStage.Stage1Simulate, nextSequence: 2, approval, Passing(), Clean, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.TargetIsCurrentStage);
@@ -236,7 +301,7 @@ public class StageGateTests
     [Fact]
     public void 合格基準充足時のAssessPromotionは昇格可能を返す()
     {
-        var assessment = StageGate.AssessPromotion(TradingStage.Stage0Verification, Passing(), Policy);
+        var assessment = StageGate.AssessPromotion(TradingStage.Stage0Verification, Passing(), Clean, Policy);
 
         assessment.Eligible.Should().BeTrue();
         assessment.TargetStage.Should().Be(TradingStage.Stage1Simulate);
@@ -247,7 +312,7 @@ public class StageGateTests
     [Fact]
     public void 最上段のAssessPromotionは昇格先なしを返す()
     {
-        var assessment = StageGate.AssessPromotion(TradingStage.Stage3ScaledLive, Passing(), Policy);
+        var assessment = StageGate.AssessPromotion(TradingStage.Stage3ScaledLive, Passing(), Clean, Policy);
 
         assessment.Eligible.Should().BeFalse();
         assessment.TargetStage.Should().BeNull();
@@ -264,7 +329,7 @@ public class StageGateTests
 
         // 台帳の現在段階・次シーケンスを入力に遷移を要求し、受理された遷移を台帳へ追記する
         var result = StageGate.RequestTransition(
-            ledger.CurrentStage, ledger.NextSequence, approval, Passing(), Policy, Now);
+            ledger.CurrentStage, ledger.NextSequence, approval, Passing(), Clean, Policy, Now);
         result.Accepted.Should().BeTrue();
 
         var appended = ledger.Append(result.Transition!); // 追記整合違反なら例外
@@ -349,7 +414,7 @@ public class StageGateTests
 
         StageGate.AssessWithdrawal(TradingStage.Stage1Simulate, perf, Policy)
             .Triggered.Should().BeFalse();
-        StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Policy)
+        StageGate.AssessPromotion(TradingStage.Stage1Simulate, perf, Clean, Policy)
             .Eligible.Should().BeTrue("期間・件数の両方を満たしているため昇格できる");
     }
 
