@@ -10,7 +10,7 @@ namespace AiStockTrading.Shared.Contracts.Tests;
 // 追加は常に末尾へ行う——本テストはその規律を機械的に固定する退行防止テストである。
 public class RejectionReasonOrdinalStabilityTests
 {
-    // 2026-08-04 時点の序数（#374 で BuyInBanned を末尾へ追加した状態）。
+    // 2026-08-04 時点の序数（#374 で BuyInBanned を、#333 で段階別の商品種別強制 2 種を末尾へ追加した状態）。
     // **既存行の値を書き換えてはならない。** 新しい理由は末尾へ 1 行足すだけである。
     public static TheoryData<RejectionReason, int> FixedOrdinals { get; } = new()
     {
@@ -37,6 +37,8 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.ShortPriceFloorBreach, 20 },
         { RejectionReason.StopOrderRequired, 21 },
         { RejectionReason.BuyInBanned, 22 },
+        { RejectionReason.StageProductTypeProhibited, 23 },
+        { RejectionReason.StageShortSellReleaseUnmet, 24 },
     };
 
     [Theory]

@@ -159,7 +159,7 @@ internal sealed class HttpStageGateController(
     {
         var lines = new List<string>
         {
-            $"現段階: {StageLabel(v.CurrentStage)}（モード: {ModeLabel(v.CurrentSettings.Mode)} / 資金上限: {v.CurrentSettings.CapitalCap:N0} 円）",
+            $"現段階: {StageLabel(v.CurrentStage)}（モード: {ModeLabel(v.CurrentSettings.Mode)} / 発注可能額: 総資金の {v.CurrentSettings.CapitalCapRatio:P0}）",
             FormatPromotion(v.Promotion),
             FormatWithdrawal(v.Withdrawal),
         };
@@ -213,7 +213,7 @@ internal sealed class HttpStageGateController(
     private static string StageLabel(int stage) => stage switch
     {
         0 => "Stage 0（検証）",
-        1 => "Stage 1（ペーパー）",
+        1 => "Stage 1（SIMULATE）",
         2 => "Stage 2（少額実弾）",
         3 => "Stage 3（拡大実弾）",
         _ => $"Stage {stage}",
@@ -235,27 +235,34 @@ internal sealed class HttpStageGateController(
         _ => $"不明({kind})",
     };
 
-    // WithdrawalReason（0=DrawdownBreachedMultiple・1=PaperDeviationUnexplained）。
+    // WithdrawalReason（0=DrawdownBreachedMultiple・2=Stage1ExtensionExhausted）。
+    // **1 は旧 PaperDeviationUnexplained**（計画 §4 が Stage 1 の差し戻しを機械判定から外した。#333）。
+    // 過去の記録が届き得るため文言を残し、廃止された旨を添える。序数は再利用しない。
     private static string WithdrawalReasonLabel(int? reason) => reason switch
     {
         0 => "実DDがバックテスト最大DD×倍率に到達",
-        1 => "バックテストとの乖離が説明不能",
+        1 => "バックテストとの乖離が説明不能（廃止済みの基準）",
+        2 => "Stage 1 の打ち切り（累計 120 営業日を経ても取引件数が 100 件に届かない）",
         null => "理由不明",
         _ => $"不明な理由({reason})",
     };
 
-    // StageGateCriterion（0〜8・append-only）。未知値は fail-safe のフォールバック文言に倒す。
+    // StageGateCriterion（0〜11・append-only）。未知値は fail-safe のフォールバック文言に倒す。
+    // **1 は旧 PaperDeviationUnexplained**（計画 §4.1 が合格基準から削除した。#333）。序数は再利用しない。
     private static string CriterionLabel(int criterion) => criterion switch
     {
         0 => "バックテスト未合格（Stage 0→1）",
-        1 => "バックテストとの乖離が説明不能（Stage 1→2）",
-        2 => "統制違反あり（Stage 1→2）",
+        1 => "バックテストとの乖離が説明不能（廃止済みの基準）",
+        2 => "統制違反あり（Stage 1→2・クラス C 限定）",
         3 => "実効スリッページ・費用が想定超過（Stage 2→3）",
         4 => "日次損失上限の運用違反あり（Stage 2→3）",
         5 => "承認がありません",
         6 => "昇格は 1 段ずつ（飛び級不可）",
         7 => "遷移先が現段階と同じ",
         8 => "既に最上段（昇格先なし）",
+        9 => "実際に取引できた日数が 60 営業日に届かない（Stage 1→2）",
+        10 => "取引件数が 100 件に届かない（Stage 1→2）",
+        11 => "Stage 1 の打ち切り（累計 120 営業日・Stage 0 へ差し戻し）",
         _ => $"不明な基準({criterion})",
     };
 
@@ -268,7 +275,8 @@ internal sealed class HttpStageGateController(
         PromotionAssessmentView Promotion,
         WithdrawalAssessmentView Withdrawal);
 
-    internal sealed record StageSettingsView(int Stage, int Mode, decimal CapitalCap);
+    // FR-20, #333: 発注可能額は**総資金比**で往来する（Stage 2 ＝ 0.30）。固定額ではない。
+    internal sealed record StageSettingsView(int Stage, int Mode, decimal CapitalCapRatio);
 
     internal sealed record StageTransitionView(
         int Sequence,

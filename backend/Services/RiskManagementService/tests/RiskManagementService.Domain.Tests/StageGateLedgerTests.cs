@@ -28,9 +28,9 @@ public class StageGateLedgerTests
     public void 追記で現在段階と次シーケンスが更新され履歴が残る()
     {
         var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification)
-            .Append(Promotion(1, TradingStage.Stage0Verification, TradingStage.Stage1Paper));
+            .Append(Promotion(1, TradingStage.Stage0Verification, TradingStage.Stage1Simulate));
 
-        ledger.CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        ledger.CurrentStage.Should().Be(TradingStage.Stage1Simulate);
         ledger.NextSequence.Should().Be(2);
         ledger.History.Should().HaveCount(1);
         ledger.History[0].ApprovedBy.Should().Be("endazon");
@@ -41,8 +41,8 @@ public class StageGateLedgerTests
     public void 複数遷移の畳み込みで現在段階は最後の遷移先になる()
     {
         var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification)
-            .Append(Promotion(1, TradingStage.Stage0Verification, TradingStage.Stage1Paper))
-            .Append(Promotion(2, TradingStage.Stage1Paper, TradingStage.Stage2MinimalLive));
+            .Append(Promotion(1, TradingStage.Stage0Verification, TradingStage.Stage1Simulate))
+            .Append(Promotion(2, TradingStage.Stage1Simulate, TradingStage.Stage2MinimalLive));
 
         ledger.CurrentStage.Should().Be(TradingStage.Stage2MinimalLive);
         ledger.NextSequence.Should().Be(3);
@@ -55,7 +55,7 @@ public class StageGateLedgerTests
     {
         var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification);
 
-        var act = () => ledger.Append(Promotion(1, TradingStage.Stage1Paper, TradingStage.Stage2MinimalLive));
+        var act = () => ledger.Append(Promotion(1, TradingStage.Stage1Simulate, TradingStage.Stage2MinimalLive));
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -66,7 +66,7 @@ public class StageGateLedgerTests
     {
         var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification);
 
-        var act = () => ledger.Append(Promotion(2, TradingStage.Stage0Verification, TradingStage.Stage1Paper));
+        var act = () => ledger.Append(Promotion(2, TradingStage.Stage0Verification, TradingStage.Stage1Simulate));
 
         act.Should().Throw<InvalidOperationException>();
     }

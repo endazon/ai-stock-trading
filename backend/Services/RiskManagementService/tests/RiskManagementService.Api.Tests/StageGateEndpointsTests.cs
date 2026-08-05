@@ -51,7 +51,7 @@ public class StageGateEndpointsTests
         client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, Service);
 
         var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-            new { targetStage = (int)TradingStage.Stage1Paper });
+            new { targetStage = (int)TradingStage.Stage1Simulate });
 
         res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -64,7 +64,7 @@ public class StageGateEndpointsTests
         var client = OwnerClient(factory);
 
         var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-            new { targetStage = (int)TradingStage.Stage1Paper });
+            new { targetStage = (int)TradingStage.Stage1Simulate });
 
         res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var result = await res.Content.ReadFromJsonAsync<TransitionResultDto>();
@@ -81,7 +81,7 @@ public class StageGateEndpointsTests
         var client = OwnerClient(factory);
 
         var res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-            new { targetStage = (int)TradingStage.Stage1Paper });
+            new { targetStage = (int)TradingStage.Stage1Simulate });
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await res.Content.ReadFromJsonAsync<TransitionResultDto>();
         result!.Accepted.Should().BeTrue();
@@ -90,7 +90,7 @@ public class StageGateEndpointsTests
         var history = await client.GetFromJsonAsync<List<TransitionDto>>("/risk-controls/stage-gate/history");
         history.Should().ContainSingle();
         history![0].FromStage.Should().Be(TradingStage.Stage0Verification);
-        history[0].ToStage.Should().Be(TradingStage.Stage1Paper);
+        history[0].ToStage.Should().Be(TradingStage.Stage1Simulate);
         history[0].ApprovedBy.Should().Be("test-owner");
     }
 
@@ -107,13 +107,13 @@ public class StageGateEndpointsTests
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-                new { targetStage = (int)TradingStage.Stage1Paper });
+                new { targetStage = (int)TradingStage.Stage1Simulate });
         });
         res.StatusCode.Should().Be(HttpStatusCode.OK);
 
         session.Sent.MessagesOf<StageTransitioned>().Should().Contain(m =>
             m.FromStage == (int)TradingStage.Stage0Verification
-                && m.ToStage == (int)TradingStage.Stage1Paper
+                && m.ToStage == (int)TradingStage.Stage1Simulate
                 && m.Kind == nameof(StageTransitionKind.Promotion)
                 && m.ApprovedBy == "test-owner");
     }
@@ -129,7 +129,7 @@ public class StageGateEndpointsTests
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
-                new { targetStage = (int)TradingStage.Stage1Paper });
+                new { targetStage = (int)TradingStage.Stage1Simulate });
         });
         res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
@@ -158,7 +158,7 @@ public class StageGateEndpointsTests
         var status = await client.GetFromJsonAsync<StatusDto>("/risk-controls/stage-gate");
 
         status!.CurrentStage.Should().Be(TradingStage.Stage0Verification);
-        status.Promotion.TargetStage.Should().Be(TradingStage.Stage1Paper);
+        status.Promotion.TargetStage.Should().Be(TradingStage.Stage1Simulate);
         status.Promotion.Eligible.Should().BeFalse(); // 既定はバックテスト未合格
         status.History.Should().BeEmpty();
     }

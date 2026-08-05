@@ -86,6 +86,13 @@ public class RiskEvaluatorTests
         },
     };
 
+    // FR-20, ADR-0016 決定8, #333: 指定した段階の設定へ差し替える（商品種別は 3 種すべて有効・
+    // 発注可能額と TradeMode の影響を受けないよう Paper・実質無制限にする。段階別の商品種別強制だけを見る）。
+    private static RiskManagementSettings SettingsAtStage(TradingStage stage) => MarginEnabledSettings() with
+    {
+        Stage = new StageSettings(stage, TradeMode.Paper, CapitalCapRatio: 1_000_000m),
+    };
+
     [Fact]
     public void 制約のない買い注文は承認され承認数量が返る()
     {
@@ -146,11 +153,15 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.StageProhibitsLiveTrading);
     }
 
+    // FR-20, #333, IADR-0136: 段階の発注可能額は**総資金比**で保持され、判定時に equity から解決される。
+    // 既定（Stage 0）は総資金の 100%（段階としての絞りは無い）＝ Snapshot の equity 100,000 円。
+    private static decimal StageOrderableCap(decimal equity = 100_000m) =>
+        DefaultSettings().Stage.OrderableCapFor(equity);
+
     [Fact]
-    public void 段階別資金上限を超える注文は拒否する()
+    public void 段階別の発注可能額を超える注文は拒否する()
     {
-        // FR-20: 段階ごとの資金上限を強制（既定 CapitalCap ＝ TradingDefaults.InitialCapital ＝ 491,100 円）
-        var intent = Buy(quantity: 100, price: 6_000m); // 600,000 円 > CapitalCap
+        var intent = Buy(quantity: 100, price: 6_000m); // 600,000 円 > 発注可能額 100,000 円
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
@@ -158,11 +169,11 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
-    public void 保有投入額を含む累計が段階資金上限を超える新規注文は拒否する()
+    public void 保有投入額を含む累計が段階の発注可能額を超える新規注文は拒否する()
     {
         // Issue #27 / FR-20, ADR-0008: 単一注文額は上限内でも、投入中資金＋当該注文で上限超過なら拒否。
-        // 投入中（CapitalCap − 10,000）＋ 20,000 = CapitalCap + 10,000 > CapitalCap。
-        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 10_000m);
+        // 投入中（発注可能額 − 10,000）＋ 20,000 = 発注可能額 + 10,000 > 発注可能額。
+        var snapshot = Snapshot(investedCapital: StageOrderableCap() - 10_000m);
         var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
@@ -172,16 +183,38 @@ public class RiskEvaluatorTests
     }
 
     [Fact]
-    public void 保有投入額を含む累計が段階資金上限ちょうどなら承認する()
+    public void 保有投入額を含む累計が段階の発注可能額ちょうどなら承認する()
     {
-        // Issue #27: 境界値。投入中（CapitalCap − 20,000）＋ 20,000 == CapitalCap（判定は超過のみ拒否）。
-        var snapshot = Snapshot(investedCapital: TradingDefaults.InitialCapital - 20_000m);
+        // Issue #27: 境界値。投入中（発注可能額 − 20,000）＋ 20,000 == 発注可能額（判定は超過のみ拒否）。
+        var snapshot = Snapshot(investedCapital: StageOrderableCap() - 20_000m);
         var intent = Buy(quantity: 1, price: 20_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), snapshot);
 
         result.IsApproved.Should().BeTrue();
         result.Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+    }
+
+    // FR-20, #333, 05_trading-assumptions §5: Stage 2（最小実弾）の発注可能額は**総資金の 30%**である。
+    // 固定額ではないため、equity を増減すると上限も比例して動く（「資金だけ増えて上限が据え置き」が起きない）。
+    [Theory]
+    [InlineData(100_000, 30_000)]
+    [InlineData(491_100, 147_330)]  // $3,000 ＝ ¥491,100 → ¥147,330（約 $900）
+    [InlineData(982_200, 294_660)]  // 増資すると上限も比例する
+    public void Stage2の発注可能額は総資金の30パーセントに解決される(decimal equity, decimal expectedCap)
+    {
+        var stage2 = TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage2MinimalLive);
+
+        stage2.OrderableCapFor(equity).Should().Be(expectedCap);
+
+        // 実効も確認する: 上限ちょうどは承認、1 円超過は拒否（境界値）。
+        var settings = DefaultSettings() with { Stage = stage2 with { Mode = TradeMode.Paper } };
+        RiskEvaluator.Evaluate(
+                Buy(quantity: 1, price: expectedCap), settings, Snapshot(capital: equity))
+            .Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+        RiskEvaluator.Evaluate(
+                Buy(quantity: 1, price: expectedCap + 1m), settings, Snapshot(capital: equity))
+            .Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
     }
 
     [Fact]
@@ -606,5 +639,115 @@ public class RiskEvaluatorTests
         var result = RiskEvaluator.Evaluate(shortCover, MarginEnabledSettings(), snapshot);
 
         result.IsApproved.Should().BeTrue();
+    }
+
+    // ------------------------------------------------------------------
+    // FR-20, ADR-0016 決定8・決定14, #333, IADR-0139: 段階別の商品種別強制（発注前判定への結線）
+    // ------------------------------------------------------------------
+
+    // **否定形**: Stage 2（最小実弾）では信用買い・空売りの**新規建て**が拒否される。
+    // 取引ガードで有効化されていても段階が許さない（設定と段階制約の両方を満たす必要がある）。
+    [Fact]
+    public void Stage2では信用買いの新規建てが拒否される()
+    {
+        var intent = Buy(productType: ProductType.MarginLong);
+
+        var result = RiskEvaluator.Evaluate(intent, SettingsAtStage(TradingStage.Stage2MinimalLive), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.StageProductTypeProhibited);
+    }
+
+    [Fact]
+    public void Stage2では空売りの新規建てが拒否される()
+    {
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(), SettingsAtStage(TradingStage.Stage2MinimalLive), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.StageProductTypeProhibited);
+    }
+
+    // **否定形の中心**（project-planning#179 の裁定・ADR-0009）: 段階別の商品種別強制の適用範囲は
+    // **新規建てのみ**である。**手仕舞い・損切りを止めてはならない**——段階を上げる前に建てた建玉
+    // （信用買い・空売り）を閉じられなくなると、損失に上限が無い建玉を抱えたまま閉じられなくなる。
+    [Theory]
+    [InlineData(ProductType.MarginLong, TradeSide.Sell)]   // 信用買いの返済売り
+    [InlineData(ProductType.ShortSell, TradeSide.Buy)]     // 空売りの買い戻し
+    public void Stage2でも手仕舞いは段階制約で止めない(ProductType productType, TradeSide side)
+    {
+        var close = Close(productType: productType, side: side);
+
+        var result = RiskEvaluator.Evaluate(close, SettingsAtStage(TradingStage.Stage2MinimalLive), Snapshot());
+
+        result.Reasons.Should().NotContain(RejectionReason.StageProductTypeProhibited);
+        result.Reasons.Should().NotContain(RejectionReason.StageShortSellReleaseUnmet);
+        result.IsApproved.Should().BeTrue("手仕舞い・損切りは段階制約で止めない（ADR-0009）");
+    }
+
+    // **否定形**: 申告 ProductType で段階制約を迂回できない。新規売り建てを Cash と申告しても、
+    // 実効商品種別（ProductTypeResolver.Resolve）は ShortSell であり Stage 2 では拒否される。
+    [Fact]
+    public void 申告した商品種別で段階制約を迂回できない()
+    {
+        var disguised = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, TradeMode.Paper,
+            Quantity: 10, Price: 2_000m, PositionEffect.Open);
+
+        var result = RiskEvaluator.Evaluate(disguised, SettingsAtStage(TradingStage.Stage2MinimalLive), Snapshot());
+
+        result.Reasons.Should().Contain(RejectionReason.StageProductTypeProhibited);
+    }
+
+    // FR-20, ADR-0016 決定8: Stage 1（SIMULATE）は 3 種すべてを検証する（段階としての制限を課さない）。
+    [Theory]
+    [InlineData(ProductType.Cash)]
+    [InlineData(ProductType.MarginLong)]
+    public void Stage1では3種すべての新規建てが段階制約で止まらない(ProductType productType)
+    {
+        var result = RiskEvaluator.Evaluate(
+            Buy(productType: productType), SettingsAtStage(TradingStage.Stage1Simulate), Snapshot());
+
+        result.Reasons.Should().NotContain(RejectionReason.StageProductTypeProhibited);
+    }
+
+    [Fact]
+    public void Stage1では空売りの新規建てが段階制約で止まらない()
+    {
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(), SettingsAtStage(TradingStage.Stage1Simulate), Snapshot());
+
+        // 空売り専用統制（借株照会が無い＝フェイルクローズ）では拒否されるが、**段階制約では止まらない**。
+        result.Reasons.Should().NotContain(RejectionReason.StageProductTypeProhibited);
+        result.Reasons.Should().NotContain(RejectionReason.StageShortSellReleaseUnmet);
+    }
+
+    // **否定形**（ADR-0016 決定8・決定14）: Stage 3 でも解禁条件（equity $5,000 以上 かつ
+    // 空売りを含む戦略での Stage 0 再充足）を満たさなければ空売りの新規建ては開かない。
+    // 解禁条件の供給元は未実装であり、既定（stageRelease 未指定）は**フェイルクローズ**である。
+    [Fact]
+    public void Stage3でも解禁条件の供給が無ければ空売りは開かない()
+    {
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(),
+            SettingsAtStage(TradingStage.Stage3ScaledLive),
+            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityInBase * 10m));
+
+        result.Reasons.Should().Contain(RejectionReason.StageShortSellReleaseUnmet);
+    }
+
+    // **境界値**: Stage 3 で解禁条件を満たせば段階制約では止まらない（equity ちょうど $5,000）。
+    [Fact]
+    public void Stage3で解禁条件を満たせば段階制約では止まらない()
+    {
+        var result = RiskEvaluator.Evaluate(
+            ShortEntry(),
+            SettingsAtStage(TradingStage.Stage3ScaledLive),
+            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityInBase),
+            patternDetector: null,
+            shortSellContext: null,
+            stageRelease: new StageProductPolicy.StageReleaseContext(ShortSellStrategyBacktestPassed: true));
+
+        result.Reasons.Should().NotContain(RejectionReason.StageShortSellReleaseUnmet);
     }
 }

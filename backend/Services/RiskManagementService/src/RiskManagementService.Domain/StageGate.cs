@@ -8,8 +8,10 @@ public static class StageGate
     // FR-20, 06_daytrading-review §4: 次段階への昇格が合格基準を満たすか評価する。
     // 昇格先＝現段階の 1 段上（最上段なら null）。段階別に §4 の合格基準を評価する。
     public static PromotionAssessment AssessPromotion(
-        TradingStage current, StagePerformance performance)
+        TradingStage current, StagePerformance performance, StageGatePolicy policy)
     {
+        ArgumentNullException.ThrowIfNull(policy);
+
         var target = NextStage(current);
         if (target is null)
         {
@@ -17,7 +19,7 @@ public static class StageGate
                 TargetStage: null, Eligible: false, UnmetCriteria: [StageGateCriterion.AlreadyAtTopStage]);
         }
 
-        var unmet = UnmetPromotionCriteria(current, performance);
+        var unmet = UnmetPromotionCriteria(current, performance, policy);
         return new PromotionAssessment(target, Eligible: unmet.Count == 0, UnmetCriteria: unmet);
     }
 
@@ -53,7 +55,7 @@ public static class StageGate
                 return Reject(StageGateCriterion.PromotionMustBeSequential);
             }
 
-            var unmet = UnmetPromotionCriteria(current, performance);
+            var unmet = UnmetPromotionCriteria(current, performance, policy);
             if (unmet.Count > 0)
             {
                 return new StageTransitionResult(
@@ -87,11 +89,19 @@ public static class StageGate
     {
         switch (current)
         {
-            case TradingStage.Stage1Paper when !performance.PaperDeviationExplained:
-                // ペーパー段階の乖離が説明不能 → Stage 0 へ差し戻し提案（ペーパーのため即時停止は不要）
+            // FR-20, #333, §4.3, INDEX 決定 42: 累計 120 営業日を経ても取引件数が 100 件に届かなければ
+            // **Stage 1 を打ち切り Stage 0 へ差し戻す**。件数不足は「サンプルが足りない」ではなく
+            // 「戦略が想定した頻度で発火していない」ことの兆候であり、延長ではなく設計の見直しが正しい対処である。
+            // SIMULATE のため実弾の即時停止は不要（HaltNewEntries: false）。段階の実降格は提案に留める。
+            //
+            // 旧・機械判定の撤退事由「ペーパー段階の乖離が説明不能」は**計画 §4 が機械判定から外した**
+            // （月報の三者比較を利用者が読んで判断する）。よって Stage 1 の機械判定の撤退はこの 1 事由だけである。
+            case TradingStage.Stage1Simulate
+                when Stage1Gate.Evaluate(performance.Stage1Progress, policy.Stage1Criteria)
+                    == Stage1GateOutcome.Exhausted:
                 return new WithdrawalAssessment(
                     Triggered: true,
-                    Reason: WithdrawalReason.PaperDeviationUnexplained,
+                    Reason: WithdrawalReason.Stage1ExtensionExhausted,
                     HaltNewEntries: false,
                     ProposedStage: TradingStage.Stage0Verification);
 
@@ -114,13 +124,13 @@ public static class StageGate
 
     // 段階別の未充足合格基準（§4）を列挙する。昇格先が無い最上段では呼ばない。
     private static List<StageGateCriterion> UnmetPromotionCriteria(
-        TradingStage current, StagePerformance performance)
+        TradingStage current, StagePerformance performance, StageGatePolicy policy)
     {
         var unmet = new List<StageGateCriterion>();
         switch (current)
         {
             case TradingStage.Stage0Verification:
-                // FR-15: DSR 補正後もエッジが正・最大DDが許容内（バックテスト合格）
+                // FR-15: DSR 補正後もエッジが正・最大DD ≤ 10%（バックテスト合格。ADR-0018 決定2）
                 if (!performance.BacktestPassed)
                 {
                     unmet.Add(StageGateCriterion.BacktestNotPassed);
@@ -128,16 +138,37 @@ public static class StageGate
 
                 break;
 
-            case TradingStage.Stage1Paper:
-                // バックテストとの乖離が説明可能・統制違反 0 件
-                if (!performance.PaperDeviationExplained)
-                {
-                    unmet.Add(StageGateCriterion.PaperDeviationUnexplained);
-                }
-
+            case TradingStage.Stage1Simulate:
+                // FR-20, #333, 06_daytrading-review §4.1: 機械判定の 3 条件。
+                //   条件 1 統制違反 0 件（**クラス C 限定**。RejectionReasonClassification が分類の単一情報源）
+                //   条件 2 実際に取引できた日数が 60 営業日（§4.2 の期間カウント規則）
+                //   条件 3 取引件数 100 件（§4.1）
+                // **条件 2 と条件 3 は両方を満たすまで昇格しない**（§4.3・INDEX 決定 42）。
+                // 条件 4・5（ZDR の有効化・信用取引の必要額）は「作業が完了しているか」の
+                // **昇格時チェックリスト**であり機械判定ではない（§4.1）。ここでは評価しない。
                 if (performance.ControlViolationCount > 0)
                 {
                     unmet.Add(StageGateCriterion.ControlViolationsPresent);
+                }
+
+                var progress = performance.Stage1Progress;
+                var criteria = policy.Stage1Criteria;
+                if (progress.QualifiedTradingDays < criteria.TargetTradingDays)
+                {
+                    unmet.Add(StageGateCriterion.Stage1TradingDaysInsufficient);
+                }
+
+                if (progress.TradeCount < criteria.MinimumTradeCount)
+                {
+                    unmet.Add(StageGateCriterion.Stage1TradeCountInsufficient);
+                }
+
+                // 打ち切り（累計 120 営業日を経ても件数不足）は昇格の否定として明示的に列挙する。
+                // 件数不足の理由（Stage1TradeCountInsufficient）と併記されるが、両者は意味が違う——
+                // 前者は「まだ足りない」、後者は「もう延長しない」である。監査で区別できることに実益がある。
+                if (Stage1Gate.Evaluate(progress, criteria) == Stage1GateOutcome.Exhausted)
+                {
+                    unmet.Add(StageGateCriterion.Stage1ExtensionExhausted);
                 }
 
                 break;

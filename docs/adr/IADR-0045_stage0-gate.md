@@ -2,14 +2,15 @@
 title: IADR-0045 Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
 type: impl-adr
 status: Accepted
-related_ids: [FR-15, FR-20, ADR-0008]
+related_ids: [FR-15, FR-20, ADR-0008, ADR-0018, IADR-0110, IADR-0138]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-08-04
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md
 ---
 
 # IADR-0045: Stage 0 合格判定は 7 条件の合成とし、FR-20 へは昇格推奨・キルスイッチで接続する
@@ -39,7 +40,7 @@ Stage 1 へ進める。段階遷移（昇格・差し戻し）は**利用者承�
    | --- | --- | --- |
    | エッジ有意 | DSR ≥ 閾値 | 0.95 |
    | 過剰適合 | PBO ≤ 閾値 | 0.50 |
-   | 最大 DD | ≤ 許容 | 0.15（前提条件 DD 上限の緩め） |
+   | 最大 DD | ≤ 許容 | 0.15（前提条件 DD 上限の緩め）**→ 現在は 0.10。下記 2026-08-04 追記を参照** |
    | コスト頑健性 | コスト 2 倍リターン > 0 | — |
    | ウォークフォワード | OOS リターン > 0 | — |
    | 試行数 | ≥ 最小試行数 | 1（**較正前の暫定値。現在は 20** → [IADR-0110](IADR-0110_stage0-criteria-calibration.md)） |
@@ -47,6 +48,20 @@ Stage 1 へ進める。段階遷移（昇格・差し戻し）は**利用者承�
    不合格時は `FailedChecks` に該当条件を列挙する（デバッグ・監査可能性）。データ健全性（検証条件①）は
    **「全バーがカットオフ後（`DataCutoffPolicy`）」または「銘柄匿名化済み（`Stage0GateContext.DataAnonymized`）」の OR** で判定する
    （ADR-0008/IADR-0044 の代替 2 経路）。匿名化済みなら LLM は銘柄を同定できないためカットオフ日付は不問。
+> **［2026-08-04 追記・本行の `0.15` は計画裁定により改まった。追随は [IADR-0138](IADR-0138_stage0-drawdown-tolerance-tightening.md)（#333）］**
+> 本 IADR は **0.15 採用の一次記録**である。当時の計画（[ADR-0008](../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md)）は
+> 最大 DD 上限を**レンジ「10〜15%」**で登録しており、§4 の Stage 0 合格基準は「最大 DD が**許容内**」としか
+> 書いていなかった（**閾値そのものが計画のどこにも無かった**）。実装はレンジの上限側を採り、
+> 表の備考に「前提条件 DD 上限の**緩め**」と自ら記した。
+>
+> [ADR-0018 決定2](../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md)（2026-08-01）は
+> この値を **10%（`0.10`）** と定め、運用の DD 停止ラインと**同値**にした。緩めを採ったことにより
+> **Stage 0 が運用停止ラインより 5 ポイント緩い戦略を合格させ得る**——検証で通した戦略が運用開始と同時に
+> 停止条件へ抵触し得るという、ゲートとして倒錯した状態が生じていた。
+>
+> **本 IADR の他の決定（7 条件の合成・昇格推奨への限定・キルスイッチ接続）は有効である。** 改まったのは
+> 上表の最大 DD の既定閾値 1 つだけであり、その根拠は計画側（ADR-0018）へ移った。
+
 2. **FR-20 接続は「昇格推奨」に限定**（`Stage0Promotion`）: 合格なら `Stage0Verification → Stage1Paper` の**推奨**を返す。
    実際の遷移・資金上限変更は FR-20 の**利用者承認フロー（#20）**で行う。本 Issue では判定と推奨まで。
 3. **撤退キルスイッチ**（`KillSwitch`）: `実DD ≥ バックテスト最大DD × 1.5`（既定倍率）で停止判定（ADR-0008）。
@@ -64,7 +79,7 @@ Stage 1 へ進める。段階遷移（昇格・差し戻し）は**利用者承�
 ## 結果
 
 - 良い影響: Stage 0 合格が再現可能な数値判定になり、合格戦略のみ Stage 1 昇格が推奨される。撤退基準も判定可能。
-- 悪い影響・トレードオフ: 既定閾値（DSR 0.95・PBO 0.5・DD 0.15）は初期値であり、実データでの較正は後続。昇格の**実行**は #20。
+- 悪い影響・トレードオフ: 既定閾値（DSR 0.95・PBO 0.5・DD 0.15 → **2026-08-04 に 0.10**）は初期値であり、実データでの較正は後続。昇格の**実行**は #20。
 - フォローアップ: #20 の承認フローへの結線、閾値の前提条件（FR-17）化、実データでの Stage 0 実走（実行基盤の後続）。
 
 ## 関連

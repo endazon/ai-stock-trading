@@ -47,11 +47,20 @@ public class WithdrawalEvaluationServiceTests
         ObservedMaxDrawdownRatio = 0.20m, // 0.10 × 1.5 = 0.15 を超過
     };
 
-    // Stage 1 ペーパー乖離が説明不能＝非停止の降格提案（HaltNewEntries=false）を発火させる実績。
-    private static StagePerformance PaperDeviationUnexplained() => new() { PaperDeviationExplained = false };
+    // FR-20, #333, §4.3: Stage 1 の打ち切り（累計 120 営業日を経ても 100 件に届かない）＝非停止の降格提案
+    // （HaltNewEntries=false）を発火させる実績。旧「ペーパー乖離が説明不能」は計画 §4.1 が機械判定から外した。
+    private static StagePerformance Stage1Exhausted() => new()
+    {
+        Stage1QualifiedTradingDays = 120,
+        Stage1TradeCount = 99,
+    };
 
-    // 乖離が説明可能＝撤退非該当（提案は解消）。
-    private static StagePerformance PaperDeviationResolved() => new() { PaperDeviationExplained = true };
+    // 件数に達した＝打ち切り非該当（提案は解消）。期間の要件は既に満たしている（§4.3）。
+    private static StagePerformance Stage1Resolved() => new()
+    {
+        Stage1QualifiedTradingDays = 120,
+        Stage1TradeCount = 100,
+    };
 
     private static int NonHaltingCount(ITrackedSession session) =>
         session.Sent.MessagesOf<WithdrawalTriggered>().Count(m => !m.HaltNewEntries);
@@ -144,33 +153,33 @@ public class WithdrawalEvaluationServiceTests
     // --- #189/IADR-0085: Stage 1 ペーパー乖離（非停止）の降格提案通知（durable な重複排除） ---
 
     [Fact]
-    public async Task ペーパー乖離で非停止の降格提案を通知する_停止しない()
+    public async Task Stage1打ち切りで非停止の降格提案を通知する_停止しない()
     {
-        // 受け入れ基準（#189）: Stage 1 のバックテスト乖離が説明不能 → WithdrawalTriggered(HaltNewEntries=false,
-        // ProposedStage=Stage0) を発行する。kill switch は起動しない（ペーパーのため即時停止不要・降格提案に留める）。
+        // 受け入れ基準（#189・#333）: Stage 1 が累計 120 営業日で打ち切り → WithdrawalTriggered(HaltNewEntries=false,
+        // ProposedStage=Stage0) を発行する。kill switch は起動しない（SIMULATE のため即時停止不要・降格提案に留める）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
-        SeedPerformance(factory, PaperDeviationUnexplained());
+        SeedStage(factory, TradingStage.Stage1Simulate);
+        SeedPerformance(factory, Stage1Exhausted());
 
         var session = await factory.Services.ExecuteAndWaitAsync(
             () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
-        KillSwitchEngaged(factory).Should().BeFalse("ペーパー乖離は停止させず降格提案に留める");
+        KillSwitchEngaged(factory).Should().BeFalse("Stage 1 の打ち切りは停止させず降格提案に留める");
         session.Sent.MessagesOf<WithdrawalTriggered>().Should().Contain(m =>
             !m.HaltNewEntries
                 && m.ProposedStage == (int)TradingStage.Stage0Verification
-                && m.Reason == nameof(WithdrawalReason.PaperDeviationUnexplained));
+                && m.Reason == nameof(WithdrawalReason.Stage1ExtensionExhausted));
     }
 
     [Fact]
-    public async Task ペーパー乖離が継続しても再通知しない_durable冪等()
+    public async Task Stage1打ち切りが継続しても再通知しない_durable冪等()
     {
-        // 受け入れ基準（#189）: 巡回ごとの重複通知を避ける。同一乖離が継続する間は 1 回だけ通知する。
+        // 受け入れ基準（#189）: 巡回ごとの重複通知を避ける。同一の打ち切りが継続する間は 1 回だけ通知する。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
-        SeedPerformance(factory, PaperDeviationUnexplained());
+        SeedStage(factory, TradingStage.Stage1Simulate);
+        SeedPerformance(factory, Stage1Exhausted());
         var driver = BuildDriver(factory, FridayUtc);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
@@ -179,7 +188,7 @@ public class WithdrawalEvaluationServiceTests
             await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 同一シグネチャ → 非発行
         });
 
-        NonHaltingCount(session).Should().Be(1, "同一乖離継続中は 1 回だけ通知する（スパム回避）");
+        NonHaltingCount(session).Should().Be(1, "同一の打ち切り継続中は 1 回だけ通知する（スパム回避）");
     }
 
     [Fact]
@@ -189,8 +198,8 @@ public class WithdrawalEvaluationServiceTests
         // in-memory だと破綻する経路を、共有 DB のシグネチャで冪等化する（IADR-0085）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
-        SeedPerformance(factory, PaperDeviationUnexplained());
+        SeedStage(factory, TradingStage.Stage1Simulate);
+        SeedPerformance(factory, Stage1Exhausted());
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
@@ -202,25 +211,25 @@ public class WithdrawalEvaluationServiceTests
     }
 
     [Fact]
-    public async Task 乖離が解消後に再発生したら再通知する()
+    public async Task 打ち切りが解消後に再発生したら再通知する()
     {
-        // 受け入れ基準（#189）: 乖離が一旦解消（説明可能）してから再発生したら、再通知できる（シグネチャをクリアする）。
+        // 受け入れ基準（#189）: 打ち切りが一旦解消（件数到達）してから再発生したら、再通知できる（シグネチャをクリアする）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedStage(factory, TradingStage.Stage1Simulate);
         var driver = BuildDriver(factory, FridayUtc);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
-            SeedPerformance(factory, PaperDeviationUnexplained());
-            await driver.RunOnceAsync(CancellationToken.None); // 乖離 → 発行（1）
-            SeedPerformance(factory, PaperDeviationResolved());
+            SeedPerformance(factory, Stage1Exhausted());
+            await driver.RunOnceAsync(CancellationToken.None); // 打ち切り → 発行（1）
+            SeedPerformance(factory, Stage1Resolved());
             await driver.RunOnceAsync(CancellationToken.None); // 解消 → クリア・非発行
-            SeedPerformance(factory, PaperDeviationUnexplained());
-            await driver.RunOnceAsync(CancellationToken.None); // 再乖離 → 再発行（2）
+            SeedPerformance(factory, Stage1Exhausted());
+            await driver.RunOnceAsync(CancellationToken.None); // 再打ち切り → 再発行（2）
         });
 
-        NonHaltingCount(session).Should().Be(2, "解消を挟めば再乖離で再通知する");
+        NonHaltingCount(session).Should().Be(2, "解消を挟めば再度の打ち切りで再通知する");
     }
 
     [Fact]

@@ -53,6 +53,8 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.TradingPaused, RejectionReasonClass.B)]
     [InlineData(RejectionReason.StageProhibitsLiveTrading, RejectionReasonClass.B)]
     [InlineData(RejectionReason.StageCapitalCapExceeded, RejectionReasonClass.B)]
+    [InlineData(RejectionReason.StageProductTypeProhibited, RejectionReasonClass.B)]
+    [InlineData(RejectionReason.StageShortSellReleaseUnmet, RejectionReasonClass.B)]
     [InlineData(RejectionReason.ProductTypeDisabled, RejectionReasonClass.B)]
     [InlineData(RejectionReason.MarketDisabled, RejectionReasonClass.B)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(

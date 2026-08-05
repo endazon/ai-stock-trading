@@ -32,7 +32,7 @@ public class StageGateServiceTests
         var (svc, ledger, perf, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "  ");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "  ");
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.NoUserApproval);
@@ -45,7 +45,7 @@ public class StageGateServiceTests
         // 受け入れ基準（fail-safe）: 段階別実績未記録（BacktestPassed=false）では昇格を許可しない。
         var (svc, ledger, _, _) = Build();
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
@@ -59,14 +59,14 @@ public class StageGateServiceTests
         var (svc, ledger, perf, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true });
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
         result.Accepted.Should().BeTrue();
         result.ResultingSettings!.Mode.Should().Be(TradeMode.Paper);
         var history = ledger.Load().History;
         history.Should().HaveCount(1);
         history[0].FromStage.Should().Be(TradingStage.Stage0Verification);
-        history[0].ToStage.Should().Be(TradingStage.Stage1Paper);
+        history[0].ToStage.Should().Be(TradingStage.Stage1Simulate);
         history[0].Kind.Should().Be(StageTransitionKind.Promotion);
         history[0].ApprovedBy.Should().Be("owner");
         history[0].Sequence.Should().Be(1);
@@ -89,7 +89,7 @@ public class StageGateServiceTests
     public void 差し戻し_降格_は承認のみで受理される()
     {
         // 差し戻し（段階を下げる方向）は安全側のため合格基準不問で承認受理（ADR-0008）。
-        var (svc, ledger, _, _) = Build(TradingStage.Stage1Paper);
+        var (svc, ledger, _, _) = Build(TradingStage.Stage1Simulate);
 
         var result = svc.RequestTransition(TradingStage.Stage0Verification, approver: "owner");
 
@@ -113,7 +113,7 @@ public class StageGateServiceTests
             ControlViolationCount = 2,
         });
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
         result.Accepted.Should().BeTrue();
         result.Transition!.Kind.Should().Be(StageTransitionKind.Demotion);
@@ -131,7 +131,7 @@ public class StageGateServiceTests
         var (svc, _, perf, _) = Build();
         perf.Save(new StagePerformance { BacktestPassed = true, ObservedMaxDrawdownRatio = 0.20m });
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
 
         result.Accepted.Should().BeTrue();
         perf.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.20m);
@@ -144,7 +144,7 @@ public class StageGateServiceTests
         var (svc, _, perf, _) = Build(TradingStage.Stage2MinimalLive);
         perf.Save(new StagePerformance { ObservedMaxDrawdownRatio = 0.20m });
 
-        var result = svc.RequestTransition(TradingStage.Stage1Paper, approver: "  ");
+        var result = svc.RequestTransition(TradingStage.Stage1Simulate, approver: "  ");
 
         result.Accepted.Should().BeFalse();
         perf.GetCurrent().ObservedMaxDrawdownRatio.Should().Be(0.20m);
@@ -208,7 +208,7 @@ public class StageGateServiceTests
 
         status.CurrentStage.Should().Be(TradingStage.Stage0Verification);
         status.CurrentSettings.Mode.Should().Be(TradeMode.Paper);
-        status.Promotion.TargetStage.Should().Be(TradingStage.Stage1Paper);
+        status.Promotion.TargetStage.Should().Be(TradingStage.Stage1Simulate);
         status.Promotion.Eligible.Should().BeFalse(); // 既定はバックテスト未合格
         status.History.Should().BeEmpty();
     }

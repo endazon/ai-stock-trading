@@ -34,7 +34,8 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
             row.BacktestPassed = performance.BacktestPassed;
             row.BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio;
             row.ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio;
-            row.PaperDeviationExplained = performance.PaperDeviationExplained;
+            row.Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays;
+            row.Stage1TradeCount = performance.Stage1TradeCount;
             row.ControlViolationCount = performance.ControlViolationCount;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
@@ -49,7 +50,8 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestPassed = row.BacktestPassed,
         BacktestMaxDrawdownRatio = row.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = row.ObservedMaxDrawdownRatio,
-        PaperDeviationExplained = row.PaperDeviationExplained,
+        Stage1QualifiedTradingDays = row.Stage1QualifiedTradingDays,
+        Stage1TradeCount = row.Stage1TradeCount,
         ControlViolationCount = row.ControlViolationCount,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
@@ -61,7 +63,8 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestPassed = performance.BacktestPassed,
         BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio,
-        PaperDeviationExplained = performance.PaperDeviationExplained,
+        Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays,
+        Stage1TradeCount = performance.Stage1TradeCount,
         ControlViolationCount = performance.ControlViolationCount,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,

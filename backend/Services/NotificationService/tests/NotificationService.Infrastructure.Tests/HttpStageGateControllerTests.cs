@@ -22,7 +22,7 @@ public class HttpStageGateControllerTests
     private const string StatusBody = """
     {
         "currentStage": 1,
-        "currentSettings": { "stage": 1, "mode": 0, "capitalCap": 100000 },
+        "currentSettings": { "stage": 1, "mode": 0, "capitalCapRatio": 1.00 },
         "history": [
             { "sequence": 1, "fromStage": 0, "toStage": 1, "kind": 0, "approvedBy": "endazon", "occurredAtUtc": "2026-07-10T02:00:00+00:00", "reason": "backtest passed" }
         ],
@@ -42,7 +42,7 @@ public class HttpStageGateControllerTests
         handler.Method.Should().Be(HttpMethod.Get);
         result.Succeeded.Should().BeTrue();
         // 現段階・モード・昇格可否（未充足基準）・撤退・履歴が数値 enum から整形される。
-        result.Message.Should().Contain("Stage 1（ペーパー）");
+        result.Message.Should().Contain("Stage 1（SIMULATE）");
         result.Message.Should().Contain("ペーパー");
         result.Message.Should().Contain("昇格");
         result.Message.Should().Contain("統制違反あり"); // criterion 2
@@ -57,7 +57,7 @@ public class HttpStageGateControllerTests
         {
             "accepted": true,
             "transition": { "sequence": 2, "fromStage": 1, "toStage": 2, "kind": 0, "approvedBy": "endazon", "occurredAtUtc": "2026-07-18T00:00:00+00:00", "reason": "approved" },
-            "resultingSettings": { "stage": 2, "mode": 1, "capitalCap": 300000 },
+            "resultingSettings": { "stage": 2, "mode": 1, "capitalCapRatio": 0.30 },
             "rejectionReasons": []
         }
         """;

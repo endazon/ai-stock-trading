@@ -12,7 +12,8 @@ public static class RiskEvaluator
         RiskManagementSettings settings,
         PortfolioSnapshot snapshot,
         IManipulativeOrderPatternDetector? patternDetector = null,
-        ShortSellOrderContext? shortSellContext = null)
+        ShortSellOrderContext? shortSellContext = null,
+        StageProductPolicy.StageReleaseContext? stageRelease = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -41,11 +42,16 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.StageProhibitsLiveTrading);
         }
 
-        // FR-20, ADR-0008, IADR-0005: 段階資金上限は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
+        // FR-20, ADR-0008, IADR-0005: 段階の発注可能額は「投入中資金（保有ポジションの取得額合計）＋当該注文額」で
         // 判定する。単一注文額のみで比較すると、上限内の注文を複数回通して累計で上限を超過できる（Issue #27）。
         // FR-10, FR-17, #257, IADR-0107: 金額の突き合わせは基準通貨（円）で行う。外貨建て銘柄の Notional
         //（ローカル通貨）を円建ての上限と比較すると、上限が桁で緩む（過大発注を招く向き）。
-        if (isEntry && snapshot.InvestedCapital + intent.NotionalInBase > settings.Stage.CapitalCap)
+        // FR-20, #333, IADR-0136: 段階の発注可能額は**総資金比**で保持されており、判定時に equity から解決する
+        // （Stage 2 ＝ 総資金の 30%。計画 §5）。equity は FR-10 の金額上限と同じ snapshot.Capital を用いる
+        // （基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        if (isEntry
+            && snapshot.InvestedCapital + intent.NotionalInBase
+                > settings.Stage.OrderableCapFor(snapshot.Capital))
         {
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
@@ -60,6 +66,20 @@ public static class RiskEvaluator
         if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, effectiveProductType))
         {
             reasons.Add(RejectionReason.ProductTypeDisabled);
+        }
+
+        // FR-20, ADR-0016 決定8/決定14, #333, IADR-0139: **段階別の商品種別強制**。
+        // Stage 1 は 3 種すべてを検証・Stage 2 は現物のみ・Stage 3 で信用買いと空売りを解禁する
+        // （空売りはさらに equity $5,000 以上 かつ 空売りを含む戦略での Stage 0 再充足を要する）。
+        // 上の取引ガード（設定値）とは**別の規則**であり、両方を満たす必要がある（常に厳しい方が効く）。
+        // **適用は新規建てのみ**（project-planning#179 の裁定）。手仕舞い・損切りは止めない——
+        // 段階を上げる前に建てた建玉を閉じられないと ADR-0009 の不変条件に反する。
+        // 照合は実効商品種別で行う（申告値で段階制約を迂回できないようにする。IADR-0132 決定3 と同じ規律）。
+        if (isEntry
+            && StageProductPolicy.Evaluate(
+                settings.Stage.Stage, effectiveProductType, snapshot.Capital, stageRelease) is { } stageReason)
+        {
+            reasons.Add(stageReason);
         }
 
         if (!settings.Guard.EnabledMarkets.Contains(intent.Market))

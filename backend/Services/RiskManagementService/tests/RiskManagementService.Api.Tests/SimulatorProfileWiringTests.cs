@@ -34,7 +34,7 @@ public class SimulatorProfileWiringTests
 
         store.Should().NotBeOfType<SimulatorProfileRiskSettingsStore>();
         store.GetCurrent().Limits.MaxOrderAmountRatio.Should().Be(0.25m);
-        store.GetCurrent().Stage.CapitalCap.Should().Be(TradingDefaults.InitialCapital);
+        store.GetCurrent().Stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class SimulatorProfileWiringTests
     }
 
     [Fact]
-    public void 有効時はペーパー段階の資金上限が上がり解決後の金額上限も比例する()
+    public void 有効時は基準資金だけが上がり解決後の金額上限が比例する()
     {
         using var factory = Factory(enabled: true);
         _ = factory.CreateClient();
@@ -63,24 +63,30 @@ public class SimulatorProfileWiringTests
         current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);
         current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m);
         current.Stage.Mode.Should().Be(TradeMode.Paper);
-        current.Stage.CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);
+        // FR-20, #333, IADR-0136: 段階の発注可能額も総資金比のため、比率は本番既定のまま解決額だけが比例する。
+        current.Stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);
+        current.Stage.OrderableCapFor(SimulatorTradingDefaults.InitialCapital)
+            .Should().Be(SimulatorTradingDefaults.InitialCapital);
     }
 
+    // **否定形**: 検証用フラグで実弾（Stage 2/3）の発注可能額が動かないことを配線レベルでも固定する。
+    // #333・IADR-0136 以降、段階ゲート方針は本番既定（TradingDefaults）だけが供給する。
     [Fact]
-    public void 有効時も実弾段階の資金上限は本番既定のまま()
+    public void 有効時も段階ゲート方針は本番既定のまま()
     {
-        // 検証用フラグで実弾（Stage 2/3）のリスク上限が動かないことを配線レベルでも固定する。
         using var factory = Factory(enabled: true);
         _ = factory.CreateClient();
 
         var policy = factory.Services.GetRequiredService<StageGatePolicy>();
 
-        policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap
-            .Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCap);
-        policy.SettingsFor(TradingStage.Stage3ScaledLive).CapitalCap
-            .Should().Be(TradingDefaults.InitialCapital);
-        policy.SettingsFor(TradingStage.Stage1Paper).CapitalCap
-            .Should().Be(SimulatorTradingDefaults.InitialCapital);
+        // record の等値比較は Definitions（辞書）を参照比較するため、内容で突き合わせる。
+        policy.Should().BeEquivalentTo(TradingDefaults.CreateStagePolicy());
+        policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCapRatio
+            .Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCapRatio);
+        policy.SettingsFor(TradingStage.Stage3ScaledLive).CapitalCapRatio
+            .Should().Be(TradingDefaults.FullCapitalCapRatio);
+        policy.SettingsFor(TradingStage.Stage1Simulate).CapitalCapRatio
+            .Should().Be(TradingDefaults.FullCapitalCapRatio);
     }
 
     [Fact]

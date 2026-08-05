@@ -121,11 +121,12 @@ builder.Services.AddScoped<RiskStatusService>();
 builder.Services.AddScoped<RiskSettingsService>();
 // FR-20, UC-06, ADR-0008, IADR-0041/0070: 段階ゲート遷移サービス。段階ゲート方針は TradingDefaults を参照（変更しない）。
 // 撤退の自動安全側は KillSwitchService を通す（自動＝停止・承認＝段階変更）。
-// #257, IADR-0108 決定4: プロファイル有効時はペーパー段階（Stage 0/1）の資金上限のみ引き上げる。
-// 実弾段階（Stage 2/3）の定義・撤退倍率は本番既定のまま（検証用フラグで実弾の上限を動かさない）。
-builder.Services.AddSingleton(simulatorProfileEnabled
-    ? AiStockTrading.RiskManagement.Domain.SimulatorTradingDefaults.CreateStagePolicy()
-    : AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
+// #333, IADR-0136: 段階の発注可能額は**総資金比**で保持されるため、SIMULATE プロファイル用の差し替え
+// （旧 SimulatorTradingDefaults.CreateStagePolicy）は不要になった。比率はスケール不変であり、基準資金を
+// プロファイル値へ注入すれば上限額は比例して自動的に上がる（IADR-0130 決定6 と同じ論法）。
+// 結果として「検証用フラグで実弾段階の上限を動かさない」という不変条件（IADR-0108 決定4）は
+// 差し替え対象そのものが無いことで構造的に成立する。
+builder.Services.AddSingleton(AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
 builder.Services.AddScoped<StageGateService>();
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の

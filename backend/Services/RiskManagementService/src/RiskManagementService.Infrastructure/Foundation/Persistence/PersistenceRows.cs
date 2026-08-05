@@ -162,7 +162,11 @@ internal sealed class StagePerformanceRow
 
     public decimal ObservedMaxDrawdownRatio { get; set; }
 
-    public bool PaperDeviationExplained { get; set; }
+    /// <summary>FR-20, #333, §4.2: Stage 1 で「実際に取引できた日数」の累計（供給元は未実装・既定 0）。</summary>
+    public int Stage1QualifiedTradingDays { get; set; }
+
+    /// <summary>FR-20, #333, §4.1 条件 3: Stage 1（SIMULATE）の取引件数（供給元は未実装・既定 0）。</summary>
+    public int Stage1TradeCount { get; set; }
 
     public int ControlViolationCount { get; set; }
 

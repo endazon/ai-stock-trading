@@ -2,16 +2,17 @@
 title: IADR-0110 Stage 0 の最小試行数を 1 → 20 へ較正する（決定論モンテカルロ・他 3 閾値は据え置き／実データ水準確認は残置）
 type: impl-adr
 status: Accepted
-related_ids: [FR-15, FR-20, ADR-0004, ADR-0008]
+related_ids: [FR-15, FR-20, ADR-0004, ADR-0008, ADR-0018, IADR-0045, IADR-0138]
 author: endazon (with Claude Code)
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-04
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/02_datasource-candidates.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0004_datasource-selection.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md
 ---
 
 # IADR-0110: Stage 0 の最小試行数を 1 → 20 へ較正する
@@ -136,6 +137,17 @@ PBO 単独の識別力は弱く、閾値を下げることは主として偽陰�
 
 0.15 は計画書（05_trading-assumptions の DD 上限・`TradingDefaults`）由来であり、実装側の自由変数ではない。
 較正で動かすと計画と実装が食い違う。変更が要るなら計画側へ環流する（`/plan-feedback`）。
+
+> **［2026-08-04 追記・値は計画側で 0.10 へ改まった。追随は [IADR-0138](IADR-0138_stage0-drawdown-tolerance-tightening.md)（#333）］**
+> **本決定（較正対象にしない・変更権限は計画側にある）は維持される。改まったのは値そのものである。**
+> 本決定が求めた環流は [project-planning#56](https://github.com/endazon/project-planning/issues/56) として実際に行われ、
+> [ADR-0018 決定2](../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md)（2026-08-01）が
+> **10%（`0.10`）** を確定した（同 ADR は本 IADR を「変更の権限を計画側へ明示的に戻した記録」として名指ししている）。
+>
+> なお本決定の当時の記述「0.15 は計画書の DD 上限由来」は**正確ではなかった**。計画 §5 の DD 上限は当時から
+> **10%** であり、0.15 の出所は [ADR-0008](../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md) の
+> **旧レンジ「10〜15%」の上限側**である（ADR-0018 §コンテキスト）。**陳腐化したレンジからの逆算**という同一原因から
+> `LosingStreakThreshold`（3 vs 確定値 5）にも同型のずれが生じており、そちらは #329 で是正済みである。
 
 ### 5. 較正ハーネスはテスト専用に置き、本番コードへ持ち込まない
 

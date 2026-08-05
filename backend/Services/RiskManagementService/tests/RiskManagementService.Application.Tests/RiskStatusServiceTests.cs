@@ -112,7 +112,7 @@ public class RiskStatusServiceTests
     [Fact]
     public void 段階と当日損益とポジションを反映する()
     {
-        var f = new Fixture(TradingStage.Stage1Paper)
+        var f = new Fixture(TradingStage.Stage1Simulate)
         {
             State = new PortfolioState
             {
@@ -127,7 +127,7 @@ public class RiskStatusServiceTests
 
         var status = f.Build();
 
-        status.Stage.Should().Be(TradingStage.Stage1Paper);
+        status.Stage.Should().Be(TradingStage.Stage1Simulate);
         status.DailyRealizedPnl.Should().Be(-500m);
         status.UnrealizedPnl.Should().Be(-1_200m);
         status.DailyPnl.Should().Be(-1_700m);

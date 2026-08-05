@@ -66,7 +66,7 @@ public class Stage0GateServiceTests
         decision.DataCutoffSatisfied.Should().BeTrue();
         decision.Gate.Passed.Should().BeTrue();
         decision.Promotion.Recommended.Should().BeTrue();
-        decision.Promotion.ToStage.Should().Be(RiskManagement.Domain.TradingStage.Stage1Paper);
+        decision.Promotion.ToStage.Should().Be(RiskManagement.Domain.TradingStage.Stage1Simulate);
     }
 
     [Fact]

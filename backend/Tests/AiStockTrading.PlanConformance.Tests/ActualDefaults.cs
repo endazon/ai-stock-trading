@@ -109,9 +109,9 @@ public static class ActualDefaults
             ["BrokerProvider.Values"] = DescribeEnumValues(BrokerProviderTypeName),
             ["Stage.Values"] = EnumNames<TradingStage>(),
             ["Stage.Initial"] = TradingDefaults.CreateStageSettings().Stage.ToString(),
-            ["Stage.Stage1BrokerProvider"] = policy.SettingsFor(TradingStage.Stage1Paper).Mode.ToString(),
+            ["Stage.Stage1BrokerProvider"] = policy.SettingsFor(TradingStage.Stage1Simulate).Mode.ToString(),
             ["Stage.Stage2OrderableCapRatio"] =
-                FixedAmount(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap),
+                TotalFundsRatio(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCapRatio),
             ["Stage.WithdrawalDrawdownMultiple"] = Number(policy.WithdrawalDrawdownMultiple),
 
             // 為替レート源と鮮度（ADR-0022）。実装型は TradeDecisionService.Infrastructure の internal であり、
@@ -161,11 +161,14 @@ public static class ActualDefaults
     private static string Ratio(decimal ratio) => $"ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
 
     /// <summary>
-    /// 基準通貨（円）建ての固定額として保持されている値。計画は equity 比での保持を求めており、
-    /// 単位・基準を含めて表現することで「割合か固定額か」の取り違えを検知可能にする。
+    /// 総資金（equity）に対する割合として保持されている段階の発注可能額（#333・計画 §5「運用段階（Stage）」）。
+    /// <para>
+    /// 単位・基準を表現に含めることで「割合か固定額か」の取り違えを検知可能にする。旧実装は固定額
+    /// （<c>JPY 35000 (fixed amount)</c>）で保持しており、増資後の $3,000 とは整合していなかった。
+    /// </para>
     /// </summary>
-    private static string FixedAmount(decimal amount) =>
-        $"JPY {amount.ToString("0.############", CultureInfo.InvariantCulture)} (fixed amount)";
+    private static string TotalFundsRatio(decimal ratio) =>
+        $"total funds ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
 
     /// <summary>
     /// 譲渡益（実現益）に対する税率として保持されている値。基準（何に対する率か）を含めることで、

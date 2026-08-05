@@ -146,6 +146,21 @@ public class TradingDefaultsTests
         settings.LayeringOrderCount.Should().Be(3);
     }
 
+    // FR-20, #333, 06_daytrading-review §4: Stage 1 は moomoo `SIMULATE`（OpenD 経由のデモ環境）であり、
+    // 内蔵 `paper`（擬似約定）とは別物である。**呼称を Paper へ戻す退行を検知する**退行防止テスト。
+    // 数値 1 は不変である（永続化された遷移履歴の意味を変えないため）。
+    [Fact]
+    public void 運用段階の呼称と数値は計画の確定値である()
+    {
+        Enum.GetNames<TradingStage>().Should().Equal(
+            "Stage0Verification", "Stage1Simulate", "Stage2MinimalLive", "Stage3ScaledLive");
+
+        ((int)TradingStage.Stage0Verification).Should().Be(0);
+        ((int)TradingStage.Stage1Simulate).Should().Be(1, "旧 Stage1Paper と同値（履歴の意味を変えない）");
+        ((int)TradingStage.Stage2MinimalLive).Should().Be(2);
+        ((int)TradingStage.Stage3ScaledLive).Should().Be(3);
+    }
+
     [Fact]
     public void 運用段階の既定値はStage0のペーパーモードである()
     {
@@ -153,7 +168,7 @@ public class TradingDefaultsTests
 
         stage.Stage.Should().Be(TradingStage.Stage0Verification);
         stage.Mode.Should().Be(TradeMode.Paper);
-        stage.CapitalCap.Should().Be(TradingDefaults.InitialCapital); // 初期投入資金（#329: $3,000 = ¥491,100）
+        stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio); // 段階としての絞りは無い（#333）
     }
 
     // FR-20, ADR-0008: 段階ゲート方針の既定。Stage 0/1＝ペーパー、Stage 2/3＝実弾。撤退倍率 1.5。
@@ -164,18 +179,23 @@ public class TradingDefaultsTests
 
         policy.WithdrawalDrawdownMultiple.Should().Be(1.5m); // ADR-0008: 実DD ≥ バックテスト最大DD × 1.5
 
+        // Stage 0 / Stage 1: ペーパー（実弾なし）・段階としての金額の絞りは無い
         policy.SettingsFor(TradingStage.Stage0Verification)
             .Should().Be(new StageSettings(
-                TradingStage.Stage0Verification, TradeMode.Paper, TradingDefaults.InitialCapital));
-        policy.SettingsFor(TradingStage.Stage1Paper)
+                TradingStage.Stage0Verification, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
+        policy.SettingsFor(TradingStage.Stage1Simulate)
             .Should().Be(new StageSettings(
-                TradingStage.Stage1Paper, TradeMode.Paper, TradingDefaults.InitialCapital));
-        // Stage 2 最小実弾: 実弾モード・保守的暫定既定（計画の総資金比 30% 化は #333 の担当）
+                TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.FullCapitalCapRatio));
+        // Stage 2 最小実弾: 実弾モード・発注可能額は**総資金の 30%**（計画 §5・#333）
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
-            .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 35_000m));
-        // Stage 3 段階増額: 実弾モード・初期投入資金まで
+            .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 0.30m));
+        // Stage 3 段階増額: 実弾モード・最大 100% まで（増額は月報レビュー時に FR-17 設定で確定）
         policy.SettingsFor(TradingStage.Stage3ScaledLive)
             .Should().Be(new StageSettings(
-                TradingStage.Stage3ScaledLive, TradeMode.Live, TradingDefaults.InitialCapital));
+                TradingStage.Stage3ScaledLive, TradeMode.Live, TradingDefaults.FullCapitalCapRatio));
+
+        // 発注可能額は equity から解決される（$3,000 ＝ ¥491,100 で Stage 2 は ¥147,330 ＝ 約 $900）。
+        policy.SettingsFor(TradingStage.Stage2MinimalLive)
+            .OrderableCapFor(TradingDefaults.InitialCapital).Should().Be(147_330m);
     }
 }

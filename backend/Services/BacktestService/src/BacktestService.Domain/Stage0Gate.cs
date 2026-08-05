@@ -19,19 +19,35 @@ public sealed record Stage0GateCriteria(
     decimal MaxDrawdownTolerance,
     int MinTrials)
 {
-    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.15・最小試行数 20）。
+    /// <summary>
+    /// FR-15, FR-20, ADR-0018 決定2, #333, IADR-0138: Stage 0 合格判定の**最大ドローダウン許容値 10%**。
+    /// <para>
+    /// **運用の DD 停止ライン（<c>TradingDefaults.CreateRiskLimits().MaxDrawdownRatio</c> ＝ 10%）と同値である。**
+    /// 検証段階だからといって意図的に緩めない——運用で停止する水準の戦略を検証で合格させれば、
+    /// ゲートは合格の意味を失う（ADR-0018 決定2）。
+    /// </para>
+    /// <para>
+    /// 旧値 <c>0.15</c> は ADR-0008 の旧レンジ「10〜15%」の上限側からの逆算であり、**Stage 0 が運用停止ラインより
+    /// 5 ポイント緩い戦略を合格させ得る**状態にあった（検証を通った戦略が運用開始と同時に停止条件へ抵触し得る）。
+    /// 2026-08-01 の計画裁定（ADR-0018）で 10% が確定したため、これを是正した（旧 issue #306 を吸収）。
+    /// **0.15 への退行は <c>Stage0GateCriteriaTests</c> が検知する。**
+    /// </para>
+    /// </summary>
+    public const decimal MaxDrawdownToleranceDefault = 0.10m;
+
+    // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.10・最小試行数 20）。
     //
     // #208, IADR-0110: MinTrials を暫定値 1 から 20 へ較正した。1 では ExpectedMaxSharpe が 0 を返し
     // （trials<2）多重検定補正が恒等的に消えるため、探索を過少申告した Stage 0 判定を素通しさせていた。
     // 実測（決定論モンテカルロ・真のエッジ 0）: 200 候補を探索して 1 件だけ記録すると偽陽性率 100%、
     // 2 件で 57.20%、20 件で 0.62%。SR0 の推定変動係数も N=2 の 75.9% から N=20 で 16.3% へ収束する。
-    // 他の 3 閾値は据え置き（DSR 0.95 は名目 5% 水準と実測整合・PBO 0.5 の厳格化は既知エッジも同程度に
-    // 落とすため見送り・最大DD 0.15 は計画書 05_trading-assumptions の DD 上限由来）。
-    // 実市場データによる水準確認は #208 に残置（資格情報を要するデータ源が必要）。
+    // 他の 2 閾値は据え置き（DSR 0.95 は名目 5% 水準と実測整合・PBO 0.5 の厳格化は既知エッジも同程度に
+    // 落とすため見送り）。
+    // 実市場データによる水準確認は #382（ADR-0023・米国株の日足 OHLC 履歴源が未確定）に残置する。
     public static Stage0GateCriteria Default => new(
         MinDeflatedSharpe: 0.95,
         MaxProbabilityOfOverfitting: 0.50,
-        MaxDrawdownTolerance: 0.15m,
+        MaxDrawdownTolerance: MaxDrawdownToleranceDefault,
         MinTrials: 20);
 }
 

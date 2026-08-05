@@ -25,7 +25,7 @@ public sealed class StageGateService(
             current,
             policy.SettingsFor(current),
             ledger.History,
-            StageGate.AssessPromotion(current, performance),
+            StageGate.AssessPromotion(current, performance, policy),
             StageGate.AssessWithdrawal(current, performance, policy));
     }
 

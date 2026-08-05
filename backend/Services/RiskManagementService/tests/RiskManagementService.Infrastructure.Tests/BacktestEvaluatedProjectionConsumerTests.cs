@@ -62,7 +62,8 @@ public class BacktestEvaluatedProjectionConsumerTests
         store.Save(new StagePerformance
         {
             ObservedMaxDrawdownRatio = 0.12m,
-            PaperDeviationExplained = true,
+            Stage1QualifiedTradingDays = 60,
+            Stage1TradeCount = 100,
             ControlViolationCount = 3,
             SlippageAndCostWithinExpected = true,
             DailyLossLimitRespected = true,
@@ -79,7 +80,8 @@ public class BacktestEvaluatedProjectionConsumerTests
         perf.BacktestMaxDrawdownRatio.Should().Be(0.05m);
         // 運用系は温存（別ドライバの供給源を上書きしない）。
         perf.ObservedMaxDrawdownRatio.Should().Be(0.12m);
-        perf.PaperDeviationExplained.Should().BeTrue();
+        perf.Stage1QualifiedTradingDays.Should().Be(60);
+        perf.Stage1TradeCount.Should().Be(100);
         perf.ControlViolationCount.Should().Be(3);
         perf.SlippageAndCostWithinExpected.Should().BeTrue();
         perf.DailyLossLimitRespected.Should().BeTrue();
@@ -104,7 +106,7 @@ public class BacktestEvaluatedProjectionConsumerTests
             clock);
 
         // 供給前: fail-safe 既定で昇格は拒否される。
-        var before = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var before = stageGate.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
         before.Accepted.Should().BeFalse();
         before.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
 
@@ -114,10 +116,10 @@ public class BacktestEvaluatedProjectionConsumerTests
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         // 供給後: 同じ承認要求が受理され、Stage 1 へ遷移する（昇格ゲートが解錠される）。
-        var after = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var after = stageGate.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
         after.Accepted.Should().BeTrue();
         after.Transition!.Kind.Should().Be(StageTransitionKind.Promotion);
-        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Simulate);
 
         await host.StopAsync();
     }

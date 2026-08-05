@@ -21,13 +21,20 @@ public class EquityRatioRiskLimitsTests
 
     private static RiskLimitSettings Limits => TradingDefaults.CreateRiskLimits();
 
+    /// <summary>
+    /// FR-20, #333, IADR-0136: 段階の発注可能額も**総資金比**で保持される。テストは「効かせたい絶対額」を
+    /// 渡し、ここで <see cref="Equity"/> に対する比率へ直す（呼び出し側の意図＝金額の大小関係を保つ）。
+    /// </summary>
     private static RiskManagementSettings Settings(decimal? stageCapitalCap = null)
     {
         var settings = TradingDefaults.CreateSettings();
         return stageCapitalCap is null
             ? settings
-            : settings with { Stage = settings.Stage with { CapitalCap = stageCapitalCap.Value } };
+            : settings with { Stage = settings.Stage with { CapitalCapRatio = stageCapitalCap.Value / Equity } };
     }
+
+    /// <summary>段階の発注可能額を実質無制限にする（別の上限で先に止まると検証にならないケース用）。</summary>
+    private const decimal UnlimitedStageCap = 1_000_000_000_000m;
 
     private static PortfolioSnapshot Snapshot(
         decimal equity = Equity,
@@ -131,7 +138,7 @@ public class EquityRatioRiskLimitsTests
     [InlineData(163.7)]
     public void equityと注文金額を同一レートで換算しても判定は変わらない(decimal rate)
     {
-        var settings = Settings(stageCapitalCap: decimal.MaxValue);
+        var settings = Settings(stageCapitalCap: UnlimitedStageCap);
         var cap = Limits.MaxOrderAmountFor(Equity);
 
         foreach (var notionalInEquityCurrency in new[] { cap - 1m, cap, cap + 1m })
@@ -219,7 +226,7 @@ public class EquityRatioRiskLimitsTests
     {
         // 日次枠だけを見るため、段階資金上限は外す（別の上限で先に止まると本テストの検証にならない）。
         // 保有建玉数上限（3）と段階資金上限も同じ分割経路に並行して効く（別テストで固定済み）。
-        var settings = Settings(stageCapitalCap: decimal.MaxValue);
+        var settings = Settings(stageCapitalCap: UnlimitedStageCap);
         var perOrderCap = Limits.MaxOrderAmountFor(Equity);
         var dailyCap = Limits.MaxDailyOrderAmountFor(Equity);
         var slices = (int)(dailyCap / perOrderCap);
