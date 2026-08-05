@@ -891,15 +891,15 @@ function LiveSwitchWarningModal({
           <tbody>
             <tr>
               <th>現在の equity（自己資金）</th>
-              <td>{status.capital}</td>
+              <td>{formatAmount(status.capital)} 円</td>
             </tr>
             <tr>
               <th>1 注文あたり発注金額上限</th>
-              <td>{status.maxOrderAmount}</td>
+              <td>{formatAmount(status.maxOrderAmount)} 円</td>
             </tr>
             <tr>
               <th>1 日あたり発注金額上限</th>
-              <td>{status.maxDailyOrderAmount}</td>
+              <td>{formatAmount(status.maxDailyOrderAmount)} 円</td>
             </tr>
             <tr>
               <th>保有建玉数上限</th>
