@@ -15,7 +15,7 @@ public class Stage0PromotionTests
 
         rec.Recommended.Should().BeTrue();
         rec.FromStage.Should().Be(TradingStage.Stage0Verification);
-        rec.ToStage.Should().Be(TradingStage.Stage1Paper);
+        rec.ToStage.Should().Be(TradingStage.Stage1Simulate);
     }
 
     [Fact]

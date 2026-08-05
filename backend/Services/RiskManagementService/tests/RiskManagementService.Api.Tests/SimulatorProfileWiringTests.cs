@@ -79,7 +79,7 @@ public class SimulatorProfileWiringTests
             .Should().Be(TradingDefaults.Stage2MinimalLiveCapitalCap);
         policy.SettingsFor(TradingStage.Stage3ScaledLive).CapitalCap
             .Should().Be(TradingDefaults.InitialCapital);
-        policy.SettingsFor(TradingStage.Stage1Paper).CapitalCap
+        policy.SettingsFor(TradingStage.Stage1Simulate).CapitalCap
             .Should().Be(SimulatorTradingDefaults.InitialCapital);
     }
 

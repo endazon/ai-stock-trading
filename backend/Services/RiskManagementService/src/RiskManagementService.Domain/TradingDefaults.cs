@@ -140,8 +140,10 @@ public static class TradingDefaults
         {
             // 検証: ペーパーのみ・資金上限は初期投入資金
             [TradingStage.Stage0Verification] = new(TradingStage.Stage0Verification, TradeMode.Paper, InitialCapital),
-            // ペーパー: 検証と同条件（実装・運用・報告サイクルの検証）
-            [TradingStage.Stage1Paper] = new(TradingStage.Stage1Paper, TradeMode.Paper, InitialCapital),
+            // SIMULATE: moomoo `SIMULATE`（OpenD 経由のデモ環境）による 3 か月の検証。実弾なし（#333）。
+            // 発注先を段階から分離する 2 軸化（内蔵 paper / moomoo SIMULATE / moomoo REAL）は #334 の担当であり、
+            // 本段階の TradeMode は引き続き Paper（＝実弾を撃たない）である。
+            [TradingStage.Stage1Simulate] = new(TradingStage.Stage1Simulate, TradeMode.Paper, InitialCapital),
             // 最小実弾: 実弾モード・最小資金（保守的暫定既定）
             [TradingStage.Stage2MinimalLive] = new(TradingStage.Stage2MinimalLive, TradeMode.Live, Stage2MinimalLiveCapitalCap),
             // 段階増額: 実弾モード・初期投入資金まで（以降の増額は月報レビュー時に FR-17 設定で確定）

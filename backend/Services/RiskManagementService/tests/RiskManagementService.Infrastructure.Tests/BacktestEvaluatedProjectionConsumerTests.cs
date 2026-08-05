@@ -104,7 +104,7 @@ public class BacktestEvaluatedProjectionConsumerTests
             clock);
 
         // 供給前: fail-safe 既定で昇格は拒否される。
-        var before = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var before = stageGate.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
         before.Accepted.Should().BeFalse();
         before.RejectionReasons.Should().Contain(StageGateCriterion.BacktestNotPassed);
 
@@ -114,10 +114,10 @@ public class BacktestEvaluatedProjectionConsumerTests
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         // 供給後: 同じ承認要求が受理され、Stage 1 へ遷移する（昇格ゲートが解錠される）。
-        var after = stageGate.RequestTransition(TradingStage.Stage1Paper, approver: "owner");
+        var after = stageGate.RequestTransition(TradingStage.Stage1Simulate, approver: "owner");
         after.Accepted.Should().BeTrue();
         after.Transition!.Kind.Should().Be(StageTransitionKind.Promotion);
-        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage1Simulate);
 
         await host.StopAsync();
     }

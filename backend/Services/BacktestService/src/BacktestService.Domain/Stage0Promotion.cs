@@ -20,9 +20,9 @@ public static class Stage0Promotion
         {
             return new StagePromotionRecommendation(
                 TradingStage.Stage0Verification,
-                TradingStage.Stage1Paper,
+                TradingStage.Stage1Simulate,
                 Recommended: true,
-                Rationale: "Stage 0 合格基準を満たしたため Stage 1（ペーパー）への昇格を推奨（承認は利用者・#20）。");
+                Rationale: "Stage 0 合格基準を満たしたため Stage 1（SIMULATE）への昇格を推奨（承認は利用者・#20）。");
         }
 
         var reasons = gate.FormatFailedChecks();

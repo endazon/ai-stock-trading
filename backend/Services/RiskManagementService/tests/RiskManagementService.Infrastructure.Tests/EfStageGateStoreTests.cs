@@ -33,7 +33,7 @@ public class EfStageGateStoreTests
         // 受け入れ基準: 遷移履歴が監査できる（永続化・別スコープで読める）。
         var dbName = Guid.NewGuid().ToString();
         var transition = new StageTransition(
-            1, TradingStage.Stage0Verification, TradingStage.Stage1Paper,
+            1, TradingStage.Stage0Verification, TradingStage.Stage1Simulate,
             StageTransitionKind.Promotion, "owner", DateTimeOffset.UtcNow, "利用者承認による昇格");
 
         using (var db = NewContext(dbName))
@@ -44,7 +44,7 @@ public class EfStageGateStoreTests
         using var db2 = NewContext(dbName);
         var ledger = new EfStageGateStore(db2).Load();
         ledger.History.Should().HaveCount(1);
-        ledger.CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        ledger.CurrentStage.Should().Be(TradingStage.Stage1Simulate);
         ledger.NextSequence.Should().Be(2);
         ledger.History[0].ApprovedBy.Should().Be("owner");
     }

@@ -213,7 +213,7 @@ internal sealed class HttpStageGateController(
     private static string StageLabel(int stage) => stage switch
     {
         0 => "Stage 0（検証）",
-        1 => "Stage 1（ペーパー）",
+        1 => "Stage 1（SIMULATE）",
         2 => "Stage 2（少額実弾）",
         3 => "Stage 3（拡大実弾）",
         _ => $"Stage {stage}",

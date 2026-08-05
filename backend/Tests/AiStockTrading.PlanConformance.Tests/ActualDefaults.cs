@@ -109,7 +109,7 @@ public static class ActualDefaults
             ["BrokerProvider.Values"] = DescribeEnumValues(BrokerProviderTypeName),
             ["Stage.Values"] = EnumNames<TradingStage>(),
             ["Stage.Initial"] = TradingDefaults.CreateStageSettings().Stage.ToString(),
-            ["Stage.Stage1BrokerProvider"] = policy.SettingsFor(TradingStage.Stage1Paper).Mode.ToString(),
+            ["Stage.Stage1BrokerProvider"] = policy.SettingsFor(TradingStage.Stage1Simulate).Mode.ToString(),
             ["Stage.Stage2OrderableCapRatio"] =
                 FixedAmount(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCap),
             ["Stage.WithdrawalDrawdownMultiple"] = Number(policy.WithdrawalDrawdownMultiple),

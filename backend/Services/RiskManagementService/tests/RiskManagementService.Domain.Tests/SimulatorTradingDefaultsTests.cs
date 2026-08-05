@@ -60,7 +60,7 @@ public class SimulatorTradingDefaultsTests
     {
         var simulator = SimulatorTradingDefaults.CreateStagePolicy();
 
-        foreach (var stage in new[] { TradingStage.Stage0Verification, TradingStage.Stage1Paper })
+        foreach (var stage in new[] { TradingStage.Stage0Verification, TradingStage.Stage1Simulate })
         {
             simulator.SettingsFor(stage).Mode.Should().Be(TradeMode.Paper);
             simulator.SettingsFor(stage).CapitalCap.Should().Be(SimulatorTradingDefaults.InitialCapital);

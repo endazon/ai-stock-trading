@@ -29,7 +29,7 @@ public class StageGateTests
     [Fact]
     public void 承認者が空の昇格要求は拒否される()
     {
-        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "");
+        var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "");
 
         var result = StageGate.RequestTransition(
             TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Policy, Now);
@@ -43,7 +43,7 @@ public class StageGateTests
     [Fact]
     public void 承認と合格基準充足でStage0からStage1へ昇格が受理される()
     {
-        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "endazon");
+        var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
             TradingStage.Stage0Verification, nextSequence: 1, approval, Passing(), Policy, Now);
@@ -53,13 +53,13 @@ public class StageGateTests
         result.Transition.Should().NotBeNull();
         result.Transition!.Sequence.Should().Be(1);
         result.Transition.FromStage.Should().Be(TradingStage.Stage0Verification);
-        result.Transition.ToStage.Should().Be(TradingStage.Stage1Paper);
+        result.Transition.ToStage.Should().Be(TradingStage.Stage1Simulate);
         result.Transition.Kind.Should().Be(StageTransitionKind.Promotion);
         result.Transition.ApprovedBy.Should().Be("endazon");
         result.Transition.OccurredAtUtc.Should().Be(Now);
         // Stage 1 はペーパー・資金上限は初期投入資金
         result.ResultingSettings.Should().Be(
-            new StageSettings(TradingStage.Stage1Paper, TradeMode.Paper, TradingDefaults.InitialCapital));
+            new StageSettings(TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.InitialCapital));
     }
 
     // FR-20, FR-15: Stage 0→1 はバックテスト合格が前提。未合格なら承認があっても昇格は拒否される
@@ -67,7 +67,7 @@ public class StageGateTests
     public void バックテスト未合格ではStage0からStage1へ昇格できない()
     {
         var perf = Passing() with { BacktestPassed = false };
-        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "endazon");
+        var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
             TradingStage.Stage0Verification, nextSequence: 1, approval, perf, Policy, Now);
@@ -104,7 +104,7 @@ public class StageGateTests
         var approval = new StageApproval(TradingStage.Stage2MinimalLive, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage1Paper, nextSequence: 2, approval, perf, Policy, Now);
+            TradingStage.Stage1Simulate, nextSequence: 2, approval, perf, Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(expected);
@@ -166,10 +166,10 @@ public class StageGateTests
     [Fact]
     public void 現段階と同じ遷移先は拒否される()
     {
-        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "endazon");
+        var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         var result = StageGate.RequestTransition(
-            TradingStage.Stage1Paper, nextSequence: 2, approval, Passing(), Policy, Now);
+            TradingStage.Stage1Simulate, nextSequence: 2, approval, Passing(), Policy, Now);
 
         result.Accepted.Should().BeFalse();
         result.RejectionReasons.Should().Contain(StageGateCriterion.TargetIsCurrentStage);
@@ -182,7 +182,7 @@ public class StageGateTests
         var assessment = StageGate.AssessPromotion(TradingStage.Stage0Verification, Passing());
 
         assessment.Eligible.Should().BeTrue();
-        assessment.TargetStage.Should().Be(TradingStage.Stage1Paper);
+        assessment.TargetStage.Should().Be(TradingStage.Stage1Simulate);
         assessment.UnmetCriteria.Should().BeEmpty();
     }
 
@@ -203,7 +203,7 @@ public class StageGateTests
     public void 受理された遷移はそのまま台帳へ追記できる()
     {
         var ledger = StageGateLedger.Empty(TradingStage.Stage0Verification);
-        var approval = new StageApproval(TradingStage.Stage1Paper, ApprovedBy: "endazon");
+        var approval = new StageApproval(TradingStage.Stage1Simulate, ApprovedBy: "endazon");
 
         // 台帳の現在段階・次シーケンスを入力に遷移を要求し、受理された遷移を台帳へ追記する
         var result = StageGate.RequestTransition(
@@ -211,7 +211,7 @@ public class StageGateTests
         result.Accepted.Should().BeTrue();
 
         var appended = ledger.Append(result.Transition!); // 追記整合違反なら例外
-        appended.CurrentStage.Should().Be(TradingStage.Stage1Paper);
+        appended.CurrentStage.Should().Be(TradingStage.Stage1Simulate);
         appended.NextSequence.Should().Be(2);
         appended.History.Should().ContainSingle().Which.Should().Be(result.Transition);
     }
@@ -261,7 +261,7 @@ public class StageGateTests
     {
         var perf = Passing() with { PaperDeviationExplained = false };
 
-        var assessment = StageGate.AssessWithdrawal(TradingStage.Stage1Paper, perf, Policy);
+        var assessment = StageGate.AssessWithdrawal(TradingStage.Stage1Simulate, perf, Policy);
 
         assessment.Triggered.Should().BeTrue();
         assessment.Reason.Should().Be(WithdrawalReason.PaperDeviationUnexplained);

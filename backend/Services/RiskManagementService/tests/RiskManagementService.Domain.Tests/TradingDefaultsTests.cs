@@ -146,6 +146,21 @@ public class TradingDefaultsTests
         settings.LayeringOrderCount.Should().Be(3);
     }
 
+    // FR-20, #333, 06_daytrading-review §4: Stage 1 は moomoo `SIMULATE`（OpenD 経由のデモ環境）であり、
+    // 内蔵 `paper`（擬似約定）とは別物である。**呼称を Paper へ戻す退行を検知する**退行防止テスト。
+    // 数値 1 は不変である（永続化された遷移履歴の意味を変えないため）。
+    [Fact]
+    public void 運用段階の呼称と数値は計画の確定値である()
+    {
+        Enum.GetNames<TradingStage>().Should().Equal(
+            "Stage0Verification", "Stage1Simulate", "Stage2MinimalLive", "Stage3ScaledLive");
+
+        ((int)TradingStage.Stage0Verification).Should().Be(0);
+        ((int)TradingStage.Stage1Simulate).Should().Be(1, "旧 Stage1Paper と同値（履歴の意味を変えない）");
+        ((int)TradingStage.Stage2MinimalLive).Should().Be(2);
+        ((int)TradingStage.Stage3ScaledLive).Should().Be(3);
+    }
+
     [Fact]
     public void 運用段階の既定値はStage0のペーパーモードである()
     {
@@ -167,9 +182,9 @@ public class TradingDefaultsTests
         policy.SettingsFor(TradingStage.Stage0Verification)
             .Should().Be(new StageSettings(
                 TradingStage.Stage0Verification, TradeMode.Paper, TradingDefaults.InitialCapital));
-        policy.SettingsFor(TradingStage.Stage1Paper)
+        policy.SettingsFor(TradingStage.Stage1Simulate)
             .Should().Be(new StageSettings(
-                TradingStage.Stage1Paper, TradeMode.Paper, TradingDefaults.InitialCapital));
+                TradingStage.Stage1Simulate, TradeMode.Paper, TradingDefaults.InitialCapital));
         // Stage 2 最小実弾: 実弾モード・保守的暫定既定（計画の総資金比 30% 化は #333 の担当）
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
             .Should().Be(new StageSettings(TradingStage.Stage2MinimalLive, TradeMode.Live, 35_000m));

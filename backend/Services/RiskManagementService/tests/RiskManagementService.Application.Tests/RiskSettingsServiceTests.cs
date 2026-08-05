@@ -43,11 +43,11 @@ public class RiskSettingsServiceTests
     {
         // FR-20: 段階ゲートの昇格は利用者承認で行う。
         var (service, store, log) = Create();
-        var stage = new StageSettings(TradingStage.Stage1Paper, Shared.Contracts.Trading.TradeMode.Paper, 100_000m);
+        var stage = new StageSettings(TradingStage.Stage1Simulate, Shared.Contracts.Trading.TradeMode.Paper, 100_000m);
 
         service.UpdateStage(stage, "user", "Stage0 の合格基準を満たしたため昇格");
 
-        store.GetCurrent().Stage.Stage.Should().Be(TradingStage.Stage1Paper);
+        store.GetCurrent().Stage.Stage.Should().Be(TradingStage.Stage1Simulate);
         log.GetHistory().Should().ContainSingle(e => e.ChangeType == SettingsChangeType.Stage);
     }
 

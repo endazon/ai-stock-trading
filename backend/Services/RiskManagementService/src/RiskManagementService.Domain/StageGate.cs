@@ -87,7 +87,7 @@ public static class StageGate
     {
         switch (current)
         {
-            case TradingStage.Stage1Paper when !performance.PaperDeviationExplained:
+            case TradingStage.Stage1Simulate when !performance.PaperDeviationExplained:
                 // ペーパー段階の乖離が説明不能 → Stage 0 へ差し戻し提案（ペーパーのため即時停止は不要）
                 return new WithdrawalAssessment(
                     Triggered: true,
@@ -128,7 +128,7 @@ public static class StageGate
 
                 break;
 
-            case TradingStage.Stage1Paper:
+            case TradingStage.Stage1Simulate:
                 // バックテストとの乖離が説明可能・統制違反 0 件
                 if (!performance.PaperDeviationExplained)
                 {

@@ -6,10 +6,15 @@ namespace AiStockTrading.RiskManagement.Domain;
 // 数値は明示的に昇順で固定する。段階ゲートの遷移ロジック（StageGate: 昇格＝現段階の 1 段上、
 // 方向判定＝数値比較）と設定の直列化（既定 JSON は enum を数値で往復）が、この連続昇順の割り当てに
 // 依存するため、値の挿入・並べ替えを行わない（追加は末尾に連番で行う）。
+//
+// FR-20, #333: Stage 1 の呼称は **Simulate**（moomoo `SIMULATE`＝OpenD 経由のデモ環境）である。
+// 内蔵 `paper`（擬似約定）は**デバッグ用**であり本段階の検証手段としない（06_daytrading-review §4 表）。
+// **数値 1 は不変**である（旧 `Stage1Paper` と同値。永続化された遷移履歴の意味を変えない）。
+// 発注先（Broker Provider）を段階から分離する 2 軸化は #334 の担当であり、本 enum は段階の軸のみを表す。
 public enum TradingStage
 {
     Stage0Verification = 0,
-    Stage1Paper = 1,
+    Stage1Simulate = 1,
     Stage2MinimalLive = 2,
     Stage3ScaledLive = 3,
 }

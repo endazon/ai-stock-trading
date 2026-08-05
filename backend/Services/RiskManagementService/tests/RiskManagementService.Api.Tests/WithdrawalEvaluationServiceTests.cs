@@ -150,7 +150,7 @@ public class WithdrawalEvaluationServiceTests
         // ProposedStage=Stage0) を発行する。kill switch は起動しない（ペーパーのため即時停止不要・降格提案に留める）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, PaperDeviationUnexplained());
 
         var session = await factory.Services.ExecuteAndWaitAsync(
@@ -169,7 +169,7 @@ public class WithdrawalEvaluationServiceTests
         // 受け入れ基準（#189）: 巡回ごとの重複通知を避ける。同一乖離が継続する間は 1 回だけ通知する。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, PaperDeviationUnexplained());
         var driver = BuildDriver(factory, FridayUtc);
 
@@ -189,7 +189,7 @@ public class WithdrawalEvaluationServiceTests
         // in-memory だと破綻する経路を、共有 DB のシグネチャで冪等化する（IADR-0085）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedStage(factory, TradingStage.Stage1Simulate);
         SeedPerformance(factory, PaperDeviationUnexplained());
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
@@ -207,7 +207,7 @@ public class WithdrawalEvaluationServiceTests
         // 受け入れ基準（#189）: 乖離が一旦解消（説明可能）してから再発生したら、再通知できる（シグネチャをクリアする）。
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
-        SeedStage(factory, TradingStage.Stage1Paper);
+        SeedStage(factory, TradingStage.Stage1Simulate);
         var driver = BuildDriver(factory, FridayUtc);
 
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>

@@ -25,16 +25,14 @@ public static class KnownPlanDeviations
         // 既定「現物のみ有効」（Guard.EnabledProductTypes）は逸脱していなかったため登録が無い。
 
         // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離 ---
+        // #333 担当の逸脱 1 件目は解消済み: Stage.Values（→ Stage0Verification, Stage1Simulate,
+        // Stage2MinimalLive, Stage3ScaledLive）。呼称のみの是正であり、発注先の軸（BrokerProvider）は
+        // 分離していない——下 2 行（#334 担当）はそのため残る。
         new(
             "BrokerProvider.Values",
             "(type BrokerProvider not found)",
             334,
             "発注先が TradeMode（Paper/Live）に融合している。計画は段階と独立した 3 値の軸を求める"),
-        new(
-            "Stage.Values",
-            "Stage0Verification, Stage1Paper, Stage2MinimalLive, Stage3ScaledLive",
-            333,
-            "Stage 1 の呼称が Paper。計画では Stage 1 は moomoo SIMULATE であり内蔵 paper とは別物"),
         new(
             "Stage.Stage1BrokerProvider",
             "Paper",
