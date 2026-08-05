@@ -22,7 +22,17 @@ public record StagePerformance
     /// **実際に取引できた日数**の累計（経過日数ではない）。1 日として数える条件は
     /// <see cref="Stage1DayQualification.Qualifies"/>（その日の実際の通常取引時間の 50% 以上が稼働し、
     /// **かつ発注先が moomoo <c>SIMULATE</c>** であること。#334・IADR-0142）。
-    /// <para>**供給元は未実装である**（日次の稼働分数を記録するドライバが無い）。既定 0 ＝ 昇格しない。</para>
+    /// <para>
+    /// **本フィールドは永続化されない**（#385・IADR-0150 決定4）。供給元は稼働の観測ログ
+    /// （<c>stage1_session_uptime</c>・1 取引日 1 発注先 1 行）であり、<c>StageGateService</c> が判定の直前に重ねる。
+    /// 実績行にも列として持たせると供給元が 2 つになり、必ず食い違う。
+    /// **書き忘れは 0 ＝ 昇格しない（fail-safe）に倒れる。**
+    /// </para>
+    /// <para>
+    /// **その日の実際の通常取引時間を実装は知らない。** 算入は「取り得る通常取引時間の仮説（半日 210 分／
+    /// 通常日 390 分）すべてで 50% 以上稼働していたとき」に限る（IADR-0150 決定3）。真の規則より厳しい側であり、
+    /// **祝日（市場休場）だけは判別手段が無く算入され得る**（docs/blocked-tasks.md B-4）。
+    /// </para>
     /// </summary>
     public int Stage1QualifiedTradingDays { get; init; }
 
@@ -58,7 +68,10 @@ public record StagePerformance
     /// <summary>
     /// FR-20, SC-03, #334, IADR-0142 決定3: 内蔵 <c>paper</c> 稼働により**算入されなかった**営業日数。
     /// 合格判定には用いず、進捗表示の併記（「経過 42 / 60 営業日〔<c>paper</c> 稼働により 3 日を除外〕」）に用いる。
-    /// <para>**供給元は未実装である**（#386）。既定 0。</para>
+    /// <para>
+    /// **本フィールドも永続化されない**（#385・IADR-0150 決定4）。営業日数と同じ稼働の観測ログから出す——
+    /// 別の供給に分けると、併記する 2 つの数が食い違い得る。既定 0。
+    /// </para>
     /// </summary>
     public int Stage1ExcludedInternalPaperDays { get; init; }
 

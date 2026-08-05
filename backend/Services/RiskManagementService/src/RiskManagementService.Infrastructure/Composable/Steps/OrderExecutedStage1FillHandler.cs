@@ -62,18 +62,3 @@ public sealed class OrderExecutedStage1FillHandler(
             message.DecisionId, message.Provider, positionEffect.Value, Stage1Aggregation.CountsAsTrade(observation));
     }
 }
-
-// FR-20, #386, 06_daytrading-review §4.2: 約定時刻（UTC）を**米国東部時間の取引日**へ写す。
-//
-// 本値は日次の突合・監査のためだけに持ち、**取引件数の判定には用いない**（判定は発注先と建玉効果だけで決まる）。
-// したがってタイムゾーン解決が誤っても件数は汚染されない。変換方式は MarketCalendar（FR-02・IADR-0023）と
-// 同一にして、東部時間の解釈が実装ごとに割れないようにする。
-internal static class EasternTradingDate
-{
-    private static readonly TimeZoneInfo UsEasternZone =
-        TimeZoneInfo.FindSystemTimeZoneById(
-            OperatingSystem.IsWindows() ? "Eastern Standard Time" : "America/New_York");
-
-    public static DateOnly From(DateTimeOffset instant) =>
-        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, UsEasternZone).DateTime);
-}

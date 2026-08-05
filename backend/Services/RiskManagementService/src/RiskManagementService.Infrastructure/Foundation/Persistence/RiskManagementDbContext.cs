@@ -37,6 +37,9 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // FR-20, FR-12, #386, IADR-0149: 約定の観測ログ（段階ゲートの「最小取引件数 100 件」の供給元）。
     public DbSet<Stage1FillObservationRow> Stage1FillObservations => Set<Stage1FillObservationRow>();
 
+    // FR-20, FR-12, #385, IADR-0150: 稼働の観測ログ（段階ゲートの「60 営業日」の供給元）。
+    public DbSet<Stage1SessionUptimeRow> Stage1SessionUptimes => Set<Stage1SessionUptimeRow>();
+
     // FR-20, FR-09, IADR-0085: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除（最後に通知したシグネチャ・単一行）。
     public DbSet<WithdrawalNotificationRow> WithdrawalNotifications => Set<WithdrawalNotificationRow>();
 
@@ -159,6 +162,16 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.HasKey(r => r.DecisionId);
             e.Property(r => r.DecisionId).ValueGeneratedNever();
             e.HasIndex(r => r.CountsTowardStage1);
+        });
+
+        // FR-20, FR-12, #385, IADR-0150: 稼働の観測ログ。(取引日, 発注先) が主キー＝**1 取引日 1 発注先 1 行**を
+        // 主キー制約で担保し、probe の巡回が何度届いても行が増えない。集計は「算入された日は何日か」
+        // 「paper で除外された日は何日か」の 2 問であり、両方を満たすインデックスを張る。
+        mb.Entity<Stage1SessionUptimeRow>(e =>
+        {
+            e.ToTable("stage1_session_uptime");
+            e.HasKey(r => new { r.SessionDateEasternTime, r.Provider });
+            e.HasIndex(r => new { r.QualifiesTowardStage1, r.MeetsUptimeThreshold });
         });
 
         // FR-20, FR-09, IADR-0085: 撤退の非停止降格提案の通知重複排除（単一行）。未記録＝未通知（fail-safe）。

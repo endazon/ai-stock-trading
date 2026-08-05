@@ -101,6 +101,7 @@ public class BacktestEvaluatedProjectionConsumerTests
             store,
             new InMemoryControlViolationObservationStore(),
             new InMemoryStage1FillObservationStore(),
+            new InMemoryStage1TradingDayObservationStore(),
             TradingDefaults.CreateStagePolicy(),
             new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
             clock);

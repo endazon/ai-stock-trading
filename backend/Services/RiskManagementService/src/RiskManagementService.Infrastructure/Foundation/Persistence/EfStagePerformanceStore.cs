@@ -15,6 +15,10 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
 // FR-20, #386, IADR-0149 決定3: **Stage1TradeCount は本行が持たない。** 取引件数の供給元は約定の観測ログ
 // （stage1_fill_observations）であり、判定の直前に StageGateService が重ねる。したがって本ストアが返す
 // StagePerformance の Stage1TradeCount は常に 0 であり、Save も件数を書かない（列が存在しない）。
+//
+// FR-20, #385, IADR-0150 決定4: **Stage1QualifiedTradingDays / Stage1ExcludedInternalPaperDays も同様に持たない。**
+// 営業日数の供給元は稼働の観測ログ（stage1_session_uptime）であり、同じく判定の直前に重ねる。
+// 本ストアが返す StagePerformance のこれら 3 フィールドは常に 0 である（列が存在しない）。
 internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStagePerformanceStore
 {
     public StagePerformance GetCurrent()
@@ -38,8 +42,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
             row.BacktestPassed = performance.BacktestPassed;
             row.BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio;
             row.ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio;
-            row.Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays;
-            row.Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -53,8 +55,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestPassed = row.BacktestPassed,
         BacktestMaxDrawdownRatio = row.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = row.ObservedMaxDrawdownRatio,
-        Stage1QualifiedTradingDays = row.Stage1QualifiedTradingDays,
-        Stage1ExcludedInternalPaperDays = row.Stage1ExcludedInternalPaperDays,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
     };
@@ -65,8 +65,6 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         BacktestPassed = performance.BacktestPassed,
         BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio,
         ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio,
-        Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays,
-        Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,
         UpdatedAt = DateTimeOffset.UtcNow,

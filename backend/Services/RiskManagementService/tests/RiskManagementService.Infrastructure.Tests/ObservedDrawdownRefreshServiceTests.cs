@@ -160,6 +160,7 @@ public class ObservedDrawdownRefreshServiceTests
             store,
             new InMemoryControlViolationObservationStore(),
             new InMemoryStage1FillObservationStore(),
+            new InMemoryStage1TradingDayObservationStore(),
             TradingDefaults.CreateStagePolicy(),
             killSwitch,
             clock);

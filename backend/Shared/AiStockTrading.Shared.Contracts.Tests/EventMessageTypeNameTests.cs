@@ -40,6 +40,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [Theory]
         [InlineData(typeof(AssumptionsChanged), "AiStockTrading.Shared.Contracts.Events.AssumptionsChanged")]
         [InlineData(typeof(BacktestEvaluated), "AiStockTrading.Shared.Contracts.Events.BacktestEvaluated")]
+        [InlineData(typeof(BrokerAvailabilityObserved), "AiStockTrading.Shared.Contracts.Events.BrokerAvailabilityObserved")]
         [InlineData(typeof(BrokerPositionsObserved), "AiStockTrading.Shared.Contracts.Events.BrokerPositionsObserved")]
         [InlineData(typeof(CostThresholdReached), "AiStockTrading.Shared.Contracts.Events.CostThresholdReached")]
         [InlineData(typeof(DailyPolicyUnconfirmed), "AiStockTrading.Shared.Contracts.Events.DailyPolicyUnconfirmed")]

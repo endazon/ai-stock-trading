@@ -162,20 +162,15 @@ internal sealed class StagePerformanceRow
 
     public decimal ObservedMaxDrawdownRatio { get; set; }
 
-    /// <summary>FR-20, #333, §4.2: Stage 1 で「実際に取引できた日数」の累計（供給元は未実装・既定 0）。</summary>
-    public int Stage1QualifiedTradingDays { get; set; }
-
     // FR-20, #386, IADR-0149 決定3: 旧 Stage1TradeCount 列は**削除した**。件数の供給元は本行ではなく
     // 約定の観測ログ（stage1_fill_observations）であり、そこが計上単位（1 注文 1 行・DecisionId 主キー）を
     // 担保する。件数を別途この列にも持つと供給元が 2 つになり、必ず食い違う。
     // 死んだ列を残すと「まだ使う値」に見え、次の実装者が判定へ結線し直す余地が残る
     // （IADR-0137 決定2 / IADR-0148 決定2 と同じ規律）。
-
-    /// <summary>
-    /// FR-20, #334, IADR-0142 決定3: 内蔵 paper 稼働により**算入されなかった**営業日数（供給元は未実装・既定 0）。
-    /// 合格判定には用いず、SC-03 の進捗表示に併記する。
-    /// </summary>
-    public int Stage1ExcludedInternalPaperDays { get; set; }
+    //
+    // FR-20, #385, IADR-0150 決定4: 旧 Stage1QualifiedTradingDays / Stage1ExcludedInternalPaperDays 列も
+    // **同じ理由で削除した**。営業日数の供給元は稼働の観測ログ（stage1_session_uptime）であり、
+    // そこだけが「1 取引日 1 行」と算入規則（両仮説で 50%）を担保する。
 
     // FR-20, #387, IADR-0148: 旧 ControlViolationCount 列は**削除した**。件数の供給元は本行ではなく
     // 発注審査の観測ログ（order_screening_observations）であり、供給の有無（未供給 / 0 件）を
@@ -304,4 +299,39 @@ internal sealed class Stage1FillObservationRow
 
     /// <summary>Stage 1 の取引件数へ算入するか（SIMULATE の許可制 ∧ 新規建て）。</summary>
     public bool CountsTowardStage1 { get; set; }
+}
+
+// FR-20, FR-12, #385, 06_daytrading-review §4.2, IADR-0150: 1 取引日 × 1 発注先ぶんの稼働観測。
+// 段階ゲートの「60 営業日」（期間カウント）を数える供給元である。
+//
+// (SessionDateEasternTime, Provider) が主キーであることが**1 取引日 1 発注先 1 行**を担保し、
+// probe の巡回が何度届いても行は増えない。積み方（初回は遡らない・落とした区間は積まない・逆行は無視）は
+// 純関数 Stage1SessionUptime.Credit が単一情報源であり、SQL 側へ規則を写さない。
+//
+// **稼働分数を 2 つ持つのは、その日の実際の通常取引時間を実装が知らないためである**（IADR-0150 決定3）。
+// 半日取引日（9:30〜13:00）と通常日（9:30〜16:00）の両方の窓で分数を持ち、両仮説で 50% を満たす日だけを算入する。
+internal sealed class Stage1SessionUptimeRow
+{
+    /// <summary>米国東部時間での取引日（§4.2 の判定基準時刻）。</summary>
+    public DateOnly SessionDateEasternTime { get; set; }
+
+    /// <summary>その稼働の発注先（実際に接続していたアダプタの自己申告。監査のため生値も残す）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.BrokerProvider Provider { get; set; }
+
+    /// <summary>直前に成功した観測の分（米国東部時間の 0 時から）。未観測は -1。次の区間の起点になる。</summary>
+    public int LastObservedMinuteOfDayEasternTime { get; set; } = -1;
+
+    /// <summary>9:30〜13:00 ET（半日取引日の窓）のうち稼働していた分数。</summary>
+    public int OperationalMinutesBeforeEarlyClose { get; set; }
+
+    /// <summary>9:30〜16:00 ET（通常日の窓）のうち稼働していた分数。</summary>
+    public int OperationalMinutesBeforeRegularClose { get; set; }
+
+    /// <summary>稼働率の条件（**どの仮説でも 50% 以上**）を満たすか。記録時に純関数が決めた結果。</summary>
+    public bool MeetsUptimeThreshold { get; set; }
+
+    /// <summary>Stage 1 の営業日へ算入するか（稼働率の条件 ∧ SIMULATE の許可制）。記録時に純関数が決めた結果。</summary>
+    public bool QualifiesTowardStage1 { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }
