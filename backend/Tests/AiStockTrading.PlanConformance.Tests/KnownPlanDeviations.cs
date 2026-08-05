@@ -25,9 +25,11 @@ public static class KnownPlanDeviations
         // 既定「現物のみ有効」（Guard.EnabledProductTypes）は逸脱していなかったため登録が無い。
 
         // --- #333 段階ゲート / #334 段階×発注先の 2 軸分離 ---
-        // #333 担当の逸脱 1 件目は解消済み: Stage.Values（→ Stage0Verification, Stage1Simulate,
-        // Stage2MinimalLive, Stage3ScaledLive）。呼称のみの是正であり、発注先の軸（BrokerProvider）は
-        // 分離していない——下 2 行（#334 担当）はそのため残る。
+        // #333 担当の逸脱は解消済み:
+        //   Stage.Values（→ Stage0Verification, Stage1Simulate, Stage2MinimalLive, Stage3ScaledLive）
+        //   Stage0GateCriteria.MaxDrawdownTolerance（→ ratio 0.10。ADR-0018 決定2・IADR-0138）
+        // 呼称のみの是正であり、発注先の軸（BrokerProvider）は分離していない——下 2 行（#334 担当）は
+        // そのため残る。
         new(
             "BrokerProvider.Values",
             "(type BrokerProvider not found)",
@@ -43,15 +45,6 @@ public static class KnownPlanDeviations
             "JPY 35000 (fixed amount)",
             333,
             "固定額で保持している。計画は総資金比 30%（$900）を発注可能額としてシステム側で制限する"),
-        new(
-            "Stage0GateCriteria.MaxDrawdownTolerance",
-            "ratio 0.15",
-            333,
-            "旧レンジ 10〜15% の上限側を採っている。ADR-0018 決定2 が運用の DD 停止ライン（10%）と同値へ"
-                + "厳格化した。現状は Stage 0 が運用停止ラインより 5 ポイント緩い戦略を合格させ得る"
-                + "（検証を通った戦略が運用開始と同時に停止条件へ抵触し得る）。"
-                + "IADR-0045（0.15 採用の一次記録）・IADR-0110（凍結の記録）への追記も要る"),
-
         // --- #381 為替レート源と鮮度: ADR-0022（2026-08-04 新設）への追随待ち ---
         // 本 3 件は「実装が先に決めていた値を計画が引き取った」型の逸脱である（#358 と同型だが向きが逆で、
         // 計画側が動いた結果として生じた）。IADR-0134 決定3 の運用規律に従い、planning のピンを

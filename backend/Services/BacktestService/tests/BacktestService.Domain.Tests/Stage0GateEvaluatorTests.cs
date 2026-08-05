@@ -98,12 +98,14 @@ public class Stage0GateEvaluatorTests
     [Fact]
     public void しきい値ちょうどは合格側に倒れる_境界値()
     {
-        // DSR=0.95（≥）・PBO=0.50（≤）・最大DD=0.15（≤）はいずれも合格（非等号比較の境界固定）。
+        // DSR=0.95（≥）・PBO=0.50（≤）・最大DD=許容値ちょうど（≤）はいずれも合格（非等号比較の境界固定）。
+        // 最大DD は既定値から引く（#333・ADR-0018 決定2 で 0.15 → 0.10 へ厳格化した。値を直書きすると
+        // 閾値の変更時に「境界のつもりが境界でない」テストになる）。
         var eval = Passing() with
         {
             DeflatedSharpe = 0.95,
             ProbabilityOfBacktestOverfitting = 0.50,
-            MaxDrawdown = 0.15m,
+            MaxDrawdown = Criteria.MaxDrawdownTolerance,
         };
         var result = Stage0GateEvaluator.Evaluate(eval, Criteria);
         result.Passed.Should().BeTrue();

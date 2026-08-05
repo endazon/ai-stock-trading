@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Domain;
 using AwesomeAssertions;
 using Xunit;
 
@@ -29,11 +30,70 @@ public class Stage0GateCriteriaTests
     [Fact]
     public void 較正で変更しない閾値は据え置く()
     {
-        // IADR-0110 決定 2/3/4: DSR 0.95 は名目 5% 水準として実測と整合（単一試行の偽陽性率 5.06%）。
+        // IADR-0110 決定 2/3: DSR 0.95 は名目 5% 水準として実測と整合（単一試行の偽陽性率 5.06%）。
         // PBO 0.5 は雑音の中心（平均 0.5055）だが、厳格化しても既知エッジを同程度に落とすため据え置く。
-        // 最大DD 0.15 は計画書（05_trading-assumptions）の DD 上限由来で、実装側の自由変数ではない。
         Stage0GateCriteria.Default.MinDeflatedSharpe.Should().Be(0.95);
         Stage0GateCriteria.Default.MaxProbabilityOfOverfitting.Should().Be(0.50);
-        Stage0GateCriteria.Default.MaxDrawdownTolerance.Should().Be(0.15m);
+    }
+
+    // FR-15, FR-20, ADR-0018 決定2, #333（#306 吸収）, IADR-0138:
+    // **退行防止テスト**。0.15（ADR-0008 の旧レンジ「10〜15%」の上限側）へ戻す変更を検知する。
+    // 0.15 のままだと Stage 0 は運用の DD 停止ライン（10%）より 5 ポイント緩い戦略を合格させ得る——
+    // 検証で通した戦略が運用開始と同時に停止条件へ抵触するという、ゲートとして倒錯した状態になる。
+    [Fact]
+    public void Stage0の最大DD許容値は10パーセントであり運用の停止ラインと同値である()
+    {
+        Stage0GateCriteria.Default.MaxDrawdownTolerance.Should().Be(
+            0.10m,
+            "ADR-0018 決定2: 検証段階だからといって意図的に緩めない。0.15 は旧レンジからの逆算であり退行である");
+
+        // 運用の DD 停止ライン（FR-10・05_trading-assumptions §5）と**同値**であることを固定する。
+        // 片方だけを動かすと「検証で通した戦略が運用開始と同時に止まる」倒錯が再発する。
+        Stage0GateCriteria.Default.MaxDrawdownTolerance.Should().Be(
+            TradingDefaults.CreateRiskLimits().MaxDrawdownRatio,
+            "Stage 0 の許容 DD と運用の DD 停止ラインは同値でなければゲートが合格の意味を失う");
+    }
+
+    // **境界値**（テスト仕様書 T-06）: 閾値ちょうど（10.0%）は合格側である（判定は超過のみ不合格）。
+    [Theory]
+    [InlineData(0.099, false)]
+    [InlineData(0.100, false)]
+    [InlineData(0.101, true)]
+    public void 最大DDは閾値ちょうどまで合格する(decimal maxDrawdown, bool shouldFail)
+    {
+        var evaluation = new Stage0GateEvaluation(
+            DeflatedSharpe: 1.0,
+            ProbabilityOfBacktestOverfitting: 0.1,
+            MaxDrawdown: maxDrawdown,
+            DoubledCostTotalReturn: 1m,
+            WalkForwardOutOfSampleReturn: 1m,
+            TrialCount: 20,
+            DataCutoffSatisfied: true);
+
+        var result = Stage0GateEvaluator.Evaluate(evaluation, Stage0GateCriteria.Default);
+
+        result.FailedChecks.Contains(Stage0GateCheck.MaxDrawdown).Should().Be(shouldFail);
+        result.Passed.Should().Be(!shouldFail);
+    }
+
+    // **否定形**: 旧許容値（0.15）の範囲にある DD を持つ戦略が、規則の緩さで合格に化けないこと。
+    // 0.10 超〜0.15 の帯は ADR-0018 が「不合格へ転じる」と明記した帯である（同 ADR §結果）。
+    [Theory]
+    [InlineData(0.11)]
+    [InlineData(0.13)]
+    [InlineData(0.15)]
+    public void 旧許容値の帯にあるDDはもはや合格しない(decimal maxDrawdown)
+    {
+        var evaluation = new Stage0GateEvaluation(
+            DeflatedSharpe: 1.0,
+            ProbabilityOfBacktestOverfitting: 0.1,
+            MaxDrawdown: maxDrawdown,
+            DoubledCostTotalReturn: 1m,
+            WalkForwardOutOfSampleReturn: 1m,
+            TrialCount: 20,
+            DataCutoffSatisfied: true);
+
+        Stage0GateEvaluator.Evaluate(evaluation, Stage0GateCriteria.Default)
+            .Passed.Should().BeFalse("0.10 超〜0.15 は ADR-0018 により不合格へ転じた帯である");
     }
 }
