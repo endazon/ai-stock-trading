@@ -3,10 +3,28 @@
     "バックエンドの行カバレッジ下限（#343・退行防止テスト基盤）。scripts/check-coverage.js が検査する。",
     "集計は (ファイル, 行番号) の和集合で行う（複数テストプロジェクトの重複計上を避けるため）。",
     "引き上げ（ratchet）は人手の PR で行う。`node scripts/check-coverage.js --suggest` が候補値を出す。",
-    "自動では上げない: 不安定テストの揺れで floor が跳ね上がると、無関係な後続 PR が落ちるため。"
+    "自動では上げない: 不安定テストの揺れで floor が跳ね上がると、無関係な後続 PR が落ちるため。",
+    "exclude は分母から外すファイル（#390 / IADR-0143）。floor と同じファイルに置くのは、床が",
+    "『何を分母に入れて測った値か』と不可分であり、2 ファイルに分けると床を見直す PR の差分に",
+    "除外集合が現れなくなるため。pattern は glob（** = 任意階層 / * は / を跨がない）、reason は必須。",
+    "除外した内容は check-coverage.js が毎回出力する（黙って分母を縮めない）。",
+    "maxExcludedLineShare は除外が効きすぎることへの歯止め（除外行が全体行に占める割合の上限）。",
+    "測定は Release ビルドかつ bin/obj/TestResults を清掃した状態で行うこと（罠の詳細は",
+    "docs/specs/20260805_coverage-exclude-generated.md の『測定手順』を参照）。"
   ],
-  "lineRateFloor": 0.62,
-  "measuredAt": "2026-08-03",
-  "measuredLineRate": 0.6447,
-  "measuredNote": "Category!=Integration・39 レポート・12051/18692 行。全面再実装（#344）の各 issue で引き上げる。"
+  "lineRateFloor": 0.79,
+  "maxExcludedLineShare": 0.35,
+  "exclude": [
+    {
+      "pattern": "**/Migrations/*.Designer.cs",
+      "reason": "dotnet ef migrations add が生成する DbContext スナップショット。人が書かずテストもしない（実測 0/3399 行・24 ファイル）。1 マイグレーションごとに数百行の 0% が分母へ積まれ、テストを減らしていない PR が床を割る（PR #390 の実害）"
+    },
+    {
+      "pattern": "**/Migrations/*ModelSnapshot.cs",
+      "reason": "dotnet ef が生成するモデル全体のスナップショット。理由は同上（実測 0/767 行・7 ファイル）。なお手書きのマイグレーション本体（Up/Down）は人が編集し得るため除外しない（IADR-0143 決定2）"
+    }
+  ],
+  "measuredAt": "2026-08-05",
+  "measuredLineRate": 0.8155,
+  "measuredNote": "Release ビルド・bin/obj/TestResults 清掃済み・Category!=Integration・51 レポート。除外後 10794/13236 行 = 81.55%（除外前 10794/17402 行 = 62.03%）。develop 5df9049 での実測。floor は check-coverage.js の RATCHET_MARGIN=0.02 を引いた値（--suggest の候補と同一）。"
 }

@@ -9,6 +9,13 @@
  *   `lines-valid` / `lines-covered` を単純に足すと二重計上になる。本スクリプトは
  *   **(ファイル, 行番号) の和集合**を取り、いずれかのレポートで hits > 0 なら被覆とみなす。
  *
+ * 分母からの除外（#390 / IADR-0143）:
+ *   `dotnet ef` が生成するファイル（`*.Designer.cs` / `*ModelSnapshot.cs`）は人が書くものでも
+ *   テストするものでもないのに、1 マイグレーションあたり数百行の 0% コードを分母へ積む。
+ *   これを放置すると**テストを 1 行も減らしていない PR が機械的に床を割る**（実害: PR #390）。
+ *   除外は `coverage-floor.json` の `exclude`（パターン＋理由の対）で**宣言的に**持ち、
+ *   何をどれだけ外したかを**必ず出力する**（黙って分母を縮めない）。
+ *
  * floor の運用（ratchet）:
  *   - floor を下回れば失敗する。
  *   - 上回っても**自動では上げない**。`--suggest` で引き上げ候補を表示し、floor の更新は人手の PR で行う。
@@ -16,11 +23,19 @@
  *
  * 外部依存ゼロ（Node 標準モジュールのみ）。floor 未達なら終了コード 1。
  *
+ * 測定手順の罠（作業仕様書 docs/specs/20260805_coverage-exclude-generated.md）:
+ *   1. **CI は Release ビルド**である（ci.yml の build-and-test）。Debug で測ると行数が変わり
+ *      CI と違う値が出る（実測: Debug 63.11% vs Release 61.10%）。
+ *   2. **bin / obj / TestResults の残骸が混入する**（#353）。過去の実行が残っていると分母・分子とも
+ *      水増しされる（実測: 未清掃 64.99%・レポート 255 件 / 清掃後 51 件）。
+ *      → 本スクリプトが出す**レポート件数**が普段の件数と乖離していたら残骸を疑うこと。
+ *
  * 使い方:
  *   node scripts/check-coverage.js                     # coverage-floor.json の floor で検査
  *   node scripts/check-coverage.js --suggest           # 引き上げ候補も表示
  *   node scripts/check-coverage.js --floor 0.70        # floor を明示（設定ファイルより優先）
  *   node scripts/check-coverage.js --root backend      # 探索起点を変える
+ *   node scripts/check-coverage.js --no-exclude        # 除外せず素の値を測る（比較・監査用）
  */
 const fs = require('fs');
 const path = require('path');
@@ -35,11 +50,19 @@ const FLOOR_FILE = 'coverage-floor.json';
 /** ratchet 候補は実測から余裕（ヒステリシス）を引いて提案する。揺れで floor 割れを起こさないため。 */
 const RATCHET_MARGIN = 0.02;
 
+/**
+ * 除外が「効きすぎる」ことへの歯止め（G1）。除外行が全体行のこの割合を超えたら失敗させる。
+ * `**\/*.cs` のようなパターン事故で分母を丸ごと溶かす退行を止めるための上限であり、
+ * 正当な除外の上限ではない。設定側 `maxExcludedLineShare` で上書きできる。
+ */
+const DEFAULT_MAX_EXCLUDED_LINE_SHARE = 0.35;
+
 function parseArgs(argv) {
-  const a = { root: 'backend', suggest: false, floor: null };
+  const a = { root: 'backend', suggest: false, floor: null, exclude: true };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     if (x === '--suggest') a.suggest = true;
+    else if (x === '--no-exclude') a.exclude = false;
     else if (x === '--root') a.root = argv[++i];
     else if (x.startsWith('--root=')) a.root = x.slice(7);
     else if (x === '--floor') a.floor = Number(argv[++i]);
@@ -104,6 +127,153 @@ function summarize(acc) {
   return { total, covered, lineRate: total === 0 ? 0 : covered / total };
 }
 
+// --- 分母からの除外（#390 / IADR-0143） ------------------------------------------------
+
+/**
+ * Cobertura の filename を比較用に正規化する。
+ * 区切りを `/` に揃え、先頭へ `/` を 1 つ置く（絶対パス・相対パスのどちらで出力されても
+ * `**\/` 始まりのパターンが同じように当たるようにするため）。
+ */
+function normalizePath(filename) {
+  return '/' + String(filename).replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+/**
+ * glob を正規表現へ変換する。パターンは**設定ファイルに人が書くもの**であり、レビュアが効果を
+ * 読み取れることを優先して正規表現ではなく glob を採る（IADR-0143 決定1）。
+ *   `**\/`  … 任意階層（0 段も可）
+ *   `**`    … `/` を跨ぐ任意の文字列
+ *   `*`     … `/` を跨がない任意の文字列
+ *   `?`     … `/` 以外の 1 文字
+ * パス末尾までの完全一致（部分一致ではない）。`Migrations` の語を含むだけの通常ファイルを
+ * 巻き込まないための最低限の歯止めである。
+ */
+function globToRegExp(glob) {
+  const g = String(glob).replace(/\\/g, '/');
+  const src = g.startsWith('/') ? g : '/' + g;
+  let re = '';
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '*') {
+      if (src[i + 1] === '*') {
+        if (src[i + 2] === '/') {
+          re += '(?:.*/)?'; // `**/` は 0 段以上のディレクトリ
+          i += 2;
+        } else {
+          re += '.*';
+          i += 1;
+        }
+      } else {
+        re += '[^/]*';
+      }
+    } else if (c === '?') {
+      re += '[^/]';
+    } else if ('.+^${}()|[]\\'.includes(c)) {
+      re += '\\' + c;
+    } else {
+      re += c;
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** coverage-floor.json を読む（無ければ null）。 */
+function readConfig(root) {
+  const fp = path.join(root, FLOOR_FILE);
+  if (!fs.existsSync(fp)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(fp, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** 設定から除外エントリ（`{ pattern, reason }` の配列）を取り出す。 */
+function readExcludes(root) {
+  const cfg = readConfig(root);
+  return cfg && Array.isArray(cfg.exclude) ? cfg.exclude : [];
+}
+
+/** 設定から除外率の上限を取り出す（未指定なら既定）。 */
+function readMaxExcludedLineShare(root) {
+  const cfg = readConfig(root);
+  const v = cfg && cfg.maxExcludedLineShare;
+  return typeof v === 'number' && v > 0 && v <= 1 ? v : DEFAULT_MAX_EXCLUDED_LINE_SHARE;
+}
+
+/**
+ * 除外を適用し、**残した集合と外した内訳**の両方を返す。
+ * 内訳を返すのは呼び出し側が必ず出力するためであり、「黙って分母を縮める」ことを構造的に避ける。
+ */
+function applyExcludes(acc, entries) {
+  const compiled = (entries || []).map((e) => ({
+    pattern: e.pattern,
+    reason: e.reason,
+    re: globToRegExp(e.pattern),
+    files: 0,
+    lines: 0,
+    covered: 0,
+  }));
+  const kept = new Map();
+  for (const [name, lines] of acc) {
+    const norm = normalizePath(name);
+    const hit = compiled.find((c) => c.re.test(norm));
+    if (!hit) {
+      kept.set(name, lines);
+      continue;
+    }
+    hit.files++;
+    for (const h of lines.values()) {
+      hit.lines++;
+      if (h) hit.covered++;
+    }
+  }
+  const byPattern = compiled.map(({ pattern, reason, files, lines, covered }) => ({
+    pattern,
+    reason,
+    files,
+    lines,
+    covered,
+  }));
+  return {
+    kept,
+    byPattern,
+    files: byPattern.reduce((s, p) => s + p.files, 0),
+    lines: byPattern.reduce((s, p) => s + p.lines, 0),
+    covered: byPattern.reduce((s, p) => s + p.covered, 0),
+    /** 1 件も当たらなかったパターン（誤記・対象消滅の検知。G2。失敗はさせない） */
+    unmatched: byPattern.filter((p) => p.files === 0).map((p) => p.pattern),
+  };
+}
+
+/**
+ * 除外設定の健全性を検査する。違反理由の配列を返す（空なら合格）。
+ * G1: 除外率の上限 / G3: 理由の必須。
+ */
+function validateExclusion({ entries, excludedLines, totalLines, maxExcludedLineShare }) {
+  const violations = [];
+  const max =
+    typeof maxExcludedLineShare === 'number' ? maxExcludedLineShare : DEFAULT_MAX_EXCLUDED_LINE_SHARE;
+  for (const [i, e] of (entries || []).entries()) {
+    if (!e || typeof e.pattern !== 'string' || e.pattern.trim() === '') {
+      violations.push(`exclude[${i}]: pattern が文字列でない`);
+      continue;
+    }
+    // G3: 理由の無い除外は「とりあえず外して恒久化」への入口になるため許さない。
+    if (typeof e.reason !== 'string' || e.reason.trim() === '') {
+      violations.push(`exclude[${i}] (${e.pattern}): reason が無い（何をなぜ外したかを書くこと）`);
+    }
+  }
+  // G1: パターンが実コードを飲み込む退行を止める。
+  if (totalLines > 0 && excludedLines / totalLines > max) {
+    violations.push(
+      `除外行が全体の ${pct(excludedLines / totalLines)}（${excludedLines}/${totalLines} 行）で上限 ${pct(max)} を超えた。`
+        + 'パターンがプロダクションコードを巻き込んでいないか確認すること'
+    );
+  }
+  return violations;
+}
+
 function readFloor(root) {
   const fp = path.join(root, FLOOR_FILE);
   if (!fs.existsSync(fp)) return null;
@@ -132,7 +302,50 @@ function main() {
 
   const acc = new Map();
   for (const fp of reports) accumulate(fs.readFileSync(fp, 'utf8'), acc);
-  const { total, covered, lineRate } = summarize(acc);
+  const raw = summarize(acc);
+
+  // 除外（#390 / IADR-0143）。何をどれだけ外したかは**必ず**出力する。
+  const entries = args.exclude ? readExcludes(REPO_ROOT) : [];
+  const ex = applyExcludes(acc, entries);
+  const { total, covered, lineRate } = args.exclude ? summarize(ex.kept) : raw;
+
+  if (!args.exclude) {
+    console.log('[check-coverage] --no-exclude: 除外を適用していない（素の値）。');
+  } else if (entries.length === 0) {
+    console.log(`[check-coverage] 除外なし（${FLOOR_FILE} に exclude の宣言が無い）。`);
+  } else {
+    console.log(
+      `[check-coverage] 除外 ${ex.files} ファイル・${ex.lines} 行（うち被覆 ${ex.covered} 行）。`
+        + `分母 ${raw.total} → ${total} 行`
+    );
+    for (const p of ex.byPattern) {
+      console.log(
+        `[check-coverage]   - ${p.pattern}: ${p.files} ファイル・${p.lines} 行（被覆 ${p.covered}）`
+          + ` … ${p.reason || '(理由未記入)'}`
+      );
+    }
+    // G2: 空振りは誤記か対象消滅。黙って効かなくなるより騒がしい方がよい（失敗はさせない）。
+    if (ex.unmatched.length > 0) {
+      notice(
+        'check-coverage: 1 件も一致しない除外パターンがある（誤記か対象消滅の可能性）: '
+          + ex.unmatched.join(', ')
+      );
+      console.log(
+        `[check-coverage] 注意: 一致 0 件のパターン: ${ex.unmatched.join(', ')}`
+      );
+    }
+    const violations = validateExclusion({
+      entries,
+      excludedLines: ex.lines,
+      totalLines: raw.total,
+      maxExcludedLineShare: readMaxExcludedLineShare(REPO_ROOT),
+    });
+    if (violations.length > 0) {
+      console.error('[check-coverage] 除外設定が不正です:');
+      for (const v of violations) console.error(`  - ${v}`);
+      process.exit(1);
+    }
+  }
 
   const floor = args.floor !== null && !Number.isNaN(args.floor) ? args.floor : readFloor(REPO_ROOT);
   if (floor === null) {
@@ -166,4 +379,19 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseArgs, findReports, accumulate, summarize, readFloor, RATCHET_MARGIN };
+module.exports = {
+  parseArgs,
+  findReports,
+  accumulate,
+  summarize,
+  readFloor,
+  readConfig,
+  readExcludes,
+  readMaxExcludedLineShare,
+  normalizePath,
+  globToRegExp,
+  applyExcludes,
+  validateExclusion,
+  RATCHET_MARGIN,
+  DEFAULT_MAX_EXCLUDED_LINE_SHARE,
+};

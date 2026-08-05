@@ -269,6 +269,158 @@ module.exports = ({ ok, assert }) => {
     assert.ok(typeof floor === 'number' && floor > 0 && floor < 1, `floor=${floor}`);
   });
 
+  // --- check-coverage.js: 分母からの除外（#390 / IADR-0143） ---
+  //
+  // NFR: EF Core の自動生成ファイルが分母に入っていたため、マイグレーションを 1 つ足すだけで
+  // 数百行の 0% が積まれ、テストを 1 行も減らしていない PR が機械的に床を割っていた。
+  // 除外機構で最も危険な退行は「パターンが効きすぎてプロダクションコードまで分母から消える」
+  // ことなので、**否定形**（外れてはいけないものが外れないこと）を正の確認と同数以上置く。
+
+  const REPO_ROOT_COV = pathTt.resolve(__dirname, '..');
+  const GENERATED_PATTERNS = [
+    { pattern: '**/Migrations/*.Designer.cs', reason: 'ef 生成' },
+    { pattern: '**/Migrations/*ModelSnapshot.cs', reason: 'ef 生成' },
+  ];
+  const matchesAny = (p) =>
+    GENERATED_PATTERNS.some((e) => cov.globToRegExp(e.pattern).test(cov.normalizePath(p)));
+  /** filename → 行数 の擬似 acc を作る（hits はすべて 0＝未被覆）。 */
+  const accOf = (spec) => {
+    const acc = new Map();
+    for (const [name, n] of Object.entries(spec)) {
+      const lines = new Map();
+      for (let i = 1; i <= n; i++) lines.set(i, false);
+      acc.set(name, lines);
+    }
+    return acc;
+  };
+
+  ok('check-coverage: 自動生成ファイル（Designer / ModelSnapshot）は除外パターンに一致する', () => {
+    for (const p of [
+      'Services/AuditService/src/AuditService.Infrastructure/Migrations/20260710095747_InitialCreate.Designer.cs',
+      'Services/AuditService/src/AuditService.Infrastructure/Migrations/AuditDbContextModelSnapshot.cs',
+      // 絶対パス出力（環境によって coverlet が絶対パスを吐く）でも同じく一致すること。
+      '/home/runner/work/x/backend/Services/ReportService/src/ReportService.Infrastructure/Migrations/ReportDbContextModelSnapshot.cs',
+      // Windows 区切りでも一致すること。
+      'Services\\ReportService\\src\\ReportService.Infrastructure\\Migrations\\20260729110333_AddReportBody.Designer.cs',
+    ]) {
+      assert.ok(matchesAny(p), `除外されるべき: ${p}`);
+    }
+  });
+
+  // 否定形 1: 手書きのマイグレーション本体（Up/Down を持つ）は分母に残す。
+  // 生成物と同じディレクトリに同居しているため、`**/Migrations/**` のような雑なパターンへ
+  // 退行すると黙って一緒に消える。
+  ok('check-coverage: 手書きのマイグレーション本体は除外されない（否定形）', () => {
+    for (const p of [
+      'Services/RiskManagementService/src/RiskManagementService.Infrastructure/Migrations/20260805044003_AddStage1ExcludedInternalPaperDays.cs',
+      'Services/AuditService/src/AuditService.Infrastructure/Migrations/20260710095747_InitialCreate.cs',
+    ]) {
+      assert.ok(!matchesAny(p), `除外されてはいけない: ${p}`);
+    }
+  });
+
+  // 否定形 2: `Migrations` / `Designer` の語を含むだけの通常のプロダクションコードを飲み込まないこと。
+  // 部分一致や `*` の `/` 跨ぎへ退行すると、これらが静かに分母から消えてカバレッジが水増しされる。
+  ok('check-coverage: Migrations / Designer の語を含む通常コードは除外されない（否定形）', () => {
+    for (const p of [
+      'Services/RiskManagementService/src/RiskManagementService.Infrastructure/MigrationsRunner.cs',
+      'Services/RiskManagementService/src/RiskManagementService.Infrastructure/Migrations.cs',
+      'Services/ReportService/src/ReportService.Application/MigrationsHealthCheck.cs',
+      'Shared/AiStockTrading.Shared.Infrastructure/DesignerLayout.cs',
+      'Shared/AiStockTrading.Shared.Infrastructure/DbContextModelSnapshot.cs', // Migrations/ 配下ではない
+      'Services/AuditService/src/AuditService.Api/Endpoints/MigrationsEndpoints.cs',
+      // ディレクトリ名が Migrations で「始まる」だけのもの（* は / を跨がない）。
+      'Services/AuditService/src/AuditService.Infrastructure/MigrationsSupport/Helper.Designer.cs',
+    ]) {
+      assert.ok(!matchesAny(p), `除外されてはいけない: ${p}`);
+    }
+  });
+
+  ok('check-coverage: applyExcludes は残した集合と外した内訳の両方を返す（黙って縮めない）', () => {
+    const acc = accOf({
+      'Svc/src/Infra/Migrations/20260101_Init.Designer.cs': 100,
+      'Svc/src/Infra/Migrations/SvcDbContextModelSnapshot.cs': 50,
+      'Svc/src/Infra/Migrations/20260101_Init.cs': 20,
+      'Svc/src/App/OrderService.cs': 30,
+    });
+    const ex = cov.applyExcludes(acc, GENERATED_PATTERNS);
+    assert.strictEqual(ex.files, 2);
+    assert.strictEqual(ex.lines, 150);
+    assert.strictEqual(ex.covered, 0);
+    assert.deepStrictEqual(
+      ex.byPattern.map((p) => [p.pattern, p.files, p.lines]),
+      [
+        ['**/Migrations/*.Designer.cs', 1, 100],
+        ['**/Migrations/*ModelSnapshot.cs', 1, 50],
+      ]
+    );
+    // 残った集合には手書き本体と通常コードが含まれる（＝分母から消えていない）。
+    assert.deepStrictEqual(
+      [...ex.kept.keys()].sort(),
+      ['Svc/src/App/OrderService.cs', 'Svc/src/Infra/Migrations/20260101_Init.cs']
+    );
+    assert.strictEqual(cov.summarize(ex.kept).total, 50);
+  });
+
+  ok('check-coverage: 一致 0 件のパターンは unmatched として報告される', () => {
+    const ex = cov.applyExcludes(accOf({ 'Svc/src/App/OrderService.cs': 10 }), GENERATED_PATTERNS);
+    assert.deepStrictEqual(ex.unmatched, [
+      '**/Migrations/*.Designer.cs',
+      '**/Migrations/*ModelSnapshot.cs',
+    ]);
+    assert.strictEqual(ex.lines, 0);
+  });
+
+  // 否定形 3: 除外が効きすぎたとき（パターン事故で分母を溶かしたとき）に失敗すること。
+  ok('check-coverage: 除外率が上限を超えると違反になる（否定形）', () => {
+    const v = cov.validateExclusion({
+      entries: GENERATED_PATTERNS,
+      excludedLines: 9000,
+      totalLines: 10000,
+      maxExcludedLineShare: 0.35,
+    });
+    assert.strictEqual(v.length, 1, `違反が返るべき: ${JSON.stringify(v)}`);
+    assert.match(v[0], /上限/);
+    // 上限内なら違反なし。
+    assert.deepStrictEqual(
+      cov.validateExclusion({
+        entries: GENERATED_PATTERNS,
+        excludedLines: 3000,
+        totalLines: 10000,
+        maxExcludedLineShare: 0.35,
+      }),
+      []
+    );
+  });
+
+  // 否定形 4: 理由の無い除外（「とりあえず外して恒久化」）を通さない。
+  ok('check-coverage: reason の無い除外エントリは違反になる（否定形）', () => {
+    const v = cov.validateExclusion({
+      entries: [{ pattern: '**/Foo.cs' }, { pattern: '**/Bar.cs', reason: '  ' }],
+      excludedLines: 0,
+      totalLines: 100,
+    });
+    assert.strictEqual(v.length, 2, JSON.stringify(v));
+    assert.match(v.join(' '), /reason が無い/);
+  });
+
+  ok('check-coverage: 実ツリーの exclude 宣言は全件 reason を持ち、除外率が上限内である', () => {
+    const entries = cov.readExcludes(REPO_ROOT_COV);
+    assert.ok(entries.length > 0, 'exclude の宣言が消えている（#390 の退行）');
+    assert.deepStrictEqual(
+      cov.validateExclusion({ entries, excludedLines: 0, totalLines: 1 }),
+      [],
+      'reason 欠落がある'
+    );
+    const max = cov.readMaxExcludedLineShare(REPO_ROOT_COV);
+    assert.ok(max > 0 && max <= 1, `maxExcludedLineShare=${max}`);
+  });
+
+  ok('check-coverage: parseArgs は --no-exclude を解釈する（既定は除外あり）', () => {
+    assert.strictEqual(cov.parseArgs([]).exclude, true);
+    assert.strictEqual(cov.parseArgs(['--no-exclude']).exclude, false);
+  });
+
   // --- check-banned-libraries.js: 不採用ライブラリの再混入検査（#345 / #351） ---
   const pathBl = require('path');
   const bl = require('./check-banned-libraries.js');
