@@ -142,27 +142,27 @@ public static class ReportRenderer
         switch (view.Kind)
         {
             case ReportKind.Weekly:
-                yield return ("週間実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
+                yield return ("週間実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
                 yield return ("勝率（勝ち取引/全決済取引）", WinRate(p));
                 yield return ("取引回数（買/売/決済）", counts);
-                yield return ("費用合計（手数料・諸費用・為替）", Yen(p.TotalCost));
+                yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
                 yield return ("週次目標に対する達成", Pending);
                 break;
 
             case ReportKind.Monthly:
-                yield return ("月間実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
+                yield return ("月間実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
                 yield return ("総資産（月初 → 月末）", Pending); // 04_report-templates の表記に一致（矢印前後に半角スペース）
                 yield return ("年初来累計損益", Pending);
-                yield return ("費用合計 / 費用率", $"{Yen(p.TotalCost)} / {Pending}");
+                yield return ("費用合計 / 費用率", $"{Amount(p.TotalCost)} / {Pending}");
                 yield return ("月次目標に対する達成", Pending);
                 break;
 
             default: // Daily
-                yield return ("実現損益（税引後・費用込み）", Yen(p.RealizedPnlNet));
-                yield return ("評価損益（税引前・参考）", Yen(p.UnrealizedPnl));
+                yield return ("実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
+                yield return ("評価損益（税引前・参考）", Amount(p.UnrealizedPnl));
                 yield return ("取引回数（買/売/決済）", counts);
-                yield return ("費用合計（手数料・諸費用・為替）", Yen(p.TotalCost));
-                yield return ("源泉徴収税額", Yen(p.TaxWithheld));
+                yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
+                yield return ("源泉徴収税額", Amount(p.TaxWithheld));
                 yield return ("日次目標に対する達成", Pending);
                 break;
         }
@@ -176,6 +176,7 @@ public static class ReportRenderer
                 (decimal)p.WinningTradeCount / p.RealizingTradeCount * 100m,
                 p.WinningTradeCount, p.RealizingTradeCount);
 
-    // 円建て表記（符号付き・千区切り）。書式は ReportAmountFormat に単一化する（IADR-0116: Discord 要約と同じ表記）。
-    private static string Yen(decimal amount) => ReportAmountFormat.Yen(amount);
+    // 基準通貨建て表記（符号付き・千区切り・単位付き）。書式は ReportAmountFormat に単一化する
+    // （IADR-0116: Discord 要約と同じ表記／#364, IADR-0152 決定6: 単位は MarketCurrency.Base から導く）。
+    private static string Amount(decimal amount) => ReportAmountFormat.Base(amount);
 }

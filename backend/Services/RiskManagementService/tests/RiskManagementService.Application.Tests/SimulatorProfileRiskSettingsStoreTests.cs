@@ -58,8 +58,8 @@ public class SimulatorProfileRiskSettingsStoreTests
         var current = store.GetCurrent();
 
         current.Limits.Should().Be(TradingDefaults.CreateRiskLimits());
-        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);
-        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m);
+        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(283_333.25m);
+        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(1_699_999.50m);
     }
 
     [Fact]

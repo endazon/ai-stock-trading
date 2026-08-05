@@ -86,7 +86,7 @@ public class InformationCollectedConsumerTests
     public async Task 開場中は監視銘柄について判断し_TradeDecisionMade_を発行する()
     {
         using var host = await BuildAsync(
-            new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
             new CalendarStub(open: true));
 
         var session = await host.TrackActivity()
@@ -95,7 +95,7 @@ public class InformationCollectedConsumerTests
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         var decision = session.Sent.MessagesOf<TradeDecisionMade>().First();
-        decision.Intent.Symbol.Should().Be("7203");
+        decision.Intent.Symbol.Should().Be("AAPL");
 
         await host.StopAsync();
     }
@@ -104,7 +104,7 @@ public class InformationCollectedConsumerTests
     public async Task 休場日は判断せず発行しない()
     {
         using var host = await BuildAsync(
-            new FakeWatchlist(new WatchedSymbol("7203", Market.Japan)),
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
             new CalendarStub(open: false));
 
         var session = await host.TrackActivity()
@@ -122,8 +122,8 @@ public class InformationCollectedConsumerTests
         // IADR-0023: 1 銘柄の判断失敗でサイクル全体を再配送させず、他銘柄は継続して発行する。
         using var host = await BuildAsync(
             new FakeWatchlist(
-                new WatchedSymbol("BADSYM", Market.Japan),
-                new WatchedSymbol("7203", Market.Japan)),
+                new WatchedSymbol("BADSYM", Market.UnitedStates),
+                new WatchedSymbol("AAPL", Market.UnitedStates)),
             new CalendarStub(open: true),
             new ThrowingForSymbolLlm("BADSYM", BuyJson));
 
@@ -132,9 +132,9 @@ public class InformationCollectedConsumerTests
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
-        // 7203 の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
+        // AAPL の 1 件のみ発行される（BADSYM は例外で分離・スキップ）。
         session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle();
-        session.Sent.MessagesOf<TradeDecisionMade>().First().Intent.Symbol.Should().Be("7203");
+        session.Sent.MessagesOf<TradeDecisionMade>().First().Intent.Symbol.Should().Be("AAPL");
 
         await host.StopAsync();
     }

@@ -27,7 +27,7 @@ public static class PortfolioProjection
 
         // 銘柄（銘柄コード, 市場）ごとの符号付き在庫（+ ロング / − ショート）と平均取得単価。
         // FR-10, FR-17, #257, IADR-0107 決定1/4: 建玉はローカル通貨のまま畳み込み（市場監視の損切り検知が現在値と
-        // 同一通貨で比較するため）、金額集計・実現損益は同じ畳み込みを基準通貨（円）の単価でもう一度行って積む。
+        // 同一通貨で比較するため）、金額集計・実現損益は同じ畳み込みを基準通貨（USD）の単価でもう一度行って積む。
         // 基準通貨側の平均取得単価は建玉の加重平均約定時レートを内包するため、実現損益には為替の影響も自然に入る。
         var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
         var positionsInBase = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();

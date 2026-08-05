@@ -2,9 +2,9 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-10, FR-12, FR-17, FR-20, #257, IADR-0108: SIMULATE（ペーパー検証）限定のリスク上限プロファイル。
+// FR-10, FR-12, FR-17, FR-20, #257, #364, IADR-0108/0152: SIMULATE（ペーパー検証）限定のリスク上限プロファイル。
 // moomoo シミュレータ口座の残高（USD $1,000,000 / JPY ¥20,000,000）に見合う統制上限を与え、
-// 米国株（AAPL ≒ $335＝約 ¥50,250/株）でも数量算出→発注が成立する状態にする。
+// 米国株（AAPL ≒ $335/株）でも数量算出→発注が成立する状態にする。
 //
 // **本番既定（TradingDefaults）は一切変更しない。** 本クラスは opt-in（Risk:SimulatorProfile:Enabled）で
 // 読み取り時に適用され、フラグを外せば即座に本番既定へ戻る（IADR-0108 決定3）。
@@ -19,7 +19,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 // **本プロファイルが差し替えるのは基準資金だけ**になった。
 // 上限額は基準資金に比例して自動的に上がるため、旧実装の金額スケール（ScaleFactor＝1,700 倍・
 // CreateRiskLimits のオーバーライド）は不要となり削除した。
-// 例: 基準資金 ¥170,000,000 × 25% ＝ ¥42,500,000（AAPL ≒ ¥50,250/株 でも数量が算出される）。
+// 例: 基準資金 $1,133,333 × 25% ＝ $283,333.25（AAPL ≒ $335/株 でも数量が算出される）。
 //
 // #333, IADR-0136: 段階の発注可能額も **総資金比**（StageSettings.CapitalCapRatio）で保持するようになったため、
 // ペーパー段階の資金上限を差し替えていた ApplyToPaperStage / CreateStagePolicy も**不要になり削除した**
@@ -35,16 +35,25 @@ public static class SimulatorTradingDefaults
     public const decimal SimulatorJpyBalance = 20_000_000m;
 
     /// <summary>
-    /// USD 残高の円換算に用いる固定概算レート（¥150/USD）。プロファイルの上限を決めるための目安であり、
-    /// 実勢レート（発注時の換算）は FRED から取得する運用値（IADR-0107）で本定数とは別物。
+    /// JPY 残高の USD 換算に用いる固定概算レート（¥150/USD）。プロファイルの上限を決めるための目安であり、
+    /// 実勢レート（発注時の換算）は FRED から取得する運用値（IADR-0107 / IADR-0152）で本定数とは別物。
     /// </summary>
     public const decimal UsdToJpyRate = 150m;
 
     /// <summary>
-    /// 基準資金（equity・円）＝ USD 残高の円換算 ＋ JPY 残高 = ¥170,000,000。
+    /// JPY 残高の USD 換算額（¥20,000,000 ÷ ¥150/USD ≒ $133,333）。
+    /// <para>
+    /// #364, IADR-0152 決定4: 除算は循環小数になるため**切り捨てた整数**を定数として明示する。切り捨ては
+    /// 基準資金を小さくする方向＝統制上限を緩めない方向であり安全側である。
+    /// </para>
+    /// </summary>
+    public const decimal SimulatorJpyBalanceInUsd = 133_333m;
+
+    /// <summary>
+    /// 基準資金（equity・基準通貨 USD）＝ USD 残高 ＋ JPY 残高の USD 換算 = $1,133,333。
     /// 金額系の上限は本値に比例して解決される（#329・IADR-0130 決定6）。
     /// </summary>
-    public const decimal InitialCapital = SimulatorUsdBalance * UsdToJpyRate + SimulatorJpyBalance;
+    public const decimal InitialCapital = SimulatorUsdBalance + SimulatorJpyBalanceInUsd;
 
     /// <summary>
     /// 現行段階の設定（Stage 0＝検証・ペーパー）。

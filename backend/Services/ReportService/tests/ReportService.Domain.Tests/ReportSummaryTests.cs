@@ -33,8 +33,8 @@ public class ReportSummaryTests
     {
         var summary = ReportSummary.Build(ReportKind.Daily, "2026-07-29", Pnl, "所感");
 
-        summary.Should().Contain("+12,300 円");  // 実現損益（税引後・費用込み）
-        summary.Should().Contain("450 円");      // 費用合計
+        summary.Should().Contain("+12,300.00 USD");  // 実現損益（税引後・費用込み）
+        summary.Should().Contain("450.00 USD");      // 費用合計
         summary.Should().Contain("4");           // 約定件数
         summary.Should().Contain("2");           // 決済件数
     }
@@ -44,7 +44,7 @@ public class ReportSummaryTests
     {
         var loss = Pnl with { RealizedPnlNet = -3_400m };
 
-        ReportSummary.Build(ReportKind.Daily, "2026-07-29", loss, "所感").Should().Contain("-3,400 円");
+        ReportSummary.Build(ReportKind.Daily, "2026-07-29", loss, "所感").Should().Contain("-3,400.00 USD");
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class ReportSummaryTests
         var summary = ReportSummary.Build(ReportKind.Daily, "2026-07-29", Pnl, new string('あ', 5_000));
 
         summary.Length.Should().BeLessThanOrEqualTo(ReportSummary.MaxLength);
-        summary.Should().Contain("+12,300 円"); // 数値は切り落とされない（散文だけを詰める）
+        summary.Should().Contain("+12,300.00 USD"); // 数値は切り落とされない（散文だけを詰める）
     }
 
     [Theory]
@@ -81,7 +81,7 @@ public class ReportSummaryTests
     {
         var summary = ReportSummary.Build(ReportKind.Daily, "2026-07-29", Pnl, narrative);
 
-        summary.Should().Contain("+12,300 円");
+        summary.Should().Contain("+12,300.00 USD");
         summary.Should().NotEndWith("\n");
     }
 }

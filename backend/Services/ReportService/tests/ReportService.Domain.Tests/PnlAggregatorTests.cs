@@ -20,8 +20,10 @@ public class PnlAggregatorTests
         CostLimits = new MonthlyCostLimits(20_000m, 15_000m, 5_000m, 0m),
     };
 
-    private static PeriodTradeFill Fill(TradeSide side, PositionEffect effect, int qty, decimal price, int minute, string sym = "AAPL") =>
-        new(sym, Market.UnitedStates, side, effect, qty, price, new DateTimeOffset(2026, 7, 10, 0, minute, 0, TimeSpan.Zero));
+    private static PeriodTradeFill Fill(
+        TradeSide side, PositionEffect effect, int qty, decimal price, int minute,
+        string sym = "AAPL", Market market = Market.UnitedStates) =>
+        new(sym, market, side, effect, qty, price, new DateTimeOffset(2026, 7, 10, 0, minute, 0, TimeSpan.Zero));
 
     [Fact]
     public void 利益決済は実現損益と源泉徴収税と税引後を定義どおり算出する()
@@ -61,12 +63,15 @@ public class PnlAggregatorTests
     [Fact]
     public void 費用合計は手数料と為替スプレッドを含む()
     {
-        // 手数料 0.1%、為替スプレッド 0.2%（米国市場）。
+        // 手数料 0.1%、為替スプレッド 0.2%。
+        // #364, IADR-0152 決定7: 為替スプレッドは**非基準通貨市場**（基準通貨 USD では日本市場）に掛かる。
         var a = Assumptions(commission: new CommissionSchedule(0.001m, 0m, 0m), fx: 0.002m);
         var fills = new[]
         {
-            Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 0),   // notional 10,000 → 手数料10 + 為替20 = 30
-            Fill(TradeSide.Sell, PositionEffect.Close, 10, 1_200m, 1), // notional 12,000 → 手数料12 + 為替24 = 36
+            // notional 10,000 → 手数料10 + 為替20 = 30
+            Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 0, sym: "7203", market: Market.Japan),
+            // notional 12,000 → 手数料12 + 為替24 = 36
+            Fill(TradeSide.Sell, PositionEffect.Close, 10, 1_200m, 1, sym: "7203", market: Market.Japan),
         };
 
         var s = PnlAggregator.Aggregate(fills, a);

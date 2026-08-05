@@ -573,39 +573,52 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
     }
 
-    // --- FR-10, FR-17, #257, IADR-0107: 金額上限は基準通貨（円）で判定する ---
+    // --- FR-10, FR-17, #257, #364, IADR-0107 / IADR-0152: 金額上限は基準通貨（USD）で判定する ---
+    //
+    // 基準通貨が USD になったため、非基準通貨は**日本株（JPY）**であり、同伴レートは 1 未満（USD per JPY）になる。
+    // ローカル通貨の名目額は基準通貨額より桁で大きく見えるため、換算せずに判定すると
+    // (a) 上限内の正当な注文を拒否し（過剰拘束）、(b) レートを小さく詐称した注文を通す（過小拘束）。
+
+    // テスト用の丸いレート（JPY 1 単位あたりの USD 額）。実勢はおよそ 1/150 〜 1/164。
+    private const decimal JpyToUsd = 0.001m;
+
+    private static OrderIntent JapanEntry(int quantity, decimal priceJpy) =>
+        new("7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
+            quantity, priceJpy, PositionEffect.Open, StopLossPrice: null, FxRateToBase: JpyToUsd);
 
     [Fact]
-    public void 外貨建て注文の金額上限は換算後の金額で判定する()
+    public void 非基準通貨建て注文の金額上限は換算後の金額で判定する()
     {
-        // 100 USD × 5 株 = 500 USD。レート 150 なら 75,000 円で 1 注文金額上限（35,000 円）を超える。
-        // 換算しなければ 500 が「500 円」として通り、統制が桁で緩む（本 issue の症状）。
-        var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
-            5, 100m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
+        // 1 注文金額上限は equity 100,000 × 25% ＝ 25,000（基準通貨 USD）。
+        // 20,000,000 円 × 0.001 ＝ 20,000 USD は上限内。ローカル通貨の名目額（20,000,000）で判定していれば
+        // 正当な注文が拒否される。
+        var within = JapanEntry(quantity: 5, priceJpy: 4_000_000m);
+        within.Notional.Should().Be(20_000_000m);
+        within.NotionalInBase.Should().Be(20_000m);
+        RiskEvaluator.Evaluate(within, DefaultSettings(), Snapshot()).Reasons
+            .Should().NotContain(RejectionReason.PerOrderAmountExceeded);
 
-        var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
+        // 30,000,000 円 × 0.001 ＝ 30,000 USD は上限超過。
+        var exceeding = JapanEntry(quantity: 5, priceJpy: 6_000_000m);
+        var result = RiskEvaluator.Evaluate(exceeding, DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.PerOrderAmountExceeded);
     }
 
     [Fact]
-    public void 外貨建て注文の日次発注累計と段階資金上限も換算後の金額で判定する()
+    public void 非基準通貨建て注文の日次発注累計と段階資金上限も換算後の金額で判定する()
     {
-        // 15 USD × 10 株 = 150 USD ＝ 22,500 円（レート 150）。1 注文上限（equity 100,000 × 25% ＝ 25,000）は
-        // 超えないが、当日発注累計 140,000 円との合計 162,500 円は日次上限（150,000）を、
-        // 投入中資金（CapitalCap − 10,000）との合計は段階資金上限を超える。
-        var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
-            10, 15m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: 150m);
+        // 2,250,000 円 × 10 株 × 0.001 ＝ 22,500 USD。1 注文上限（25,000）は超えないが、
+        // 当日発注累計 140,000 との合計 162,500 は日次上限（100,000 × 150% ＝ 150,000）を、
+        // 投入中資金 90,000 との合計 112,500 は段階資金上限（100,000 × 100%）を超える。
+        var intent = JapanEntry(quantity: 10, priceJpy: 2_250_000m);
+        intent.NotionalInBase.Should().Be(22_500m);
 
         var result = RiskEvaluator.Evaluate(
             intent,
             DefaultSettings(),
-            Snapshot(
-                dailyOrderedAmount: 140_000m,
-                investedCapital: TradingDefaults.InitialCapital - 10_000m));
+            Snapshot(dailyOrderedAmount: 140_000m, investedCapital: 90_000m));
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
@@ -615,14 +628,15 @@ public class RiskEvaluatorTests
     [Fact]
     public void 換算レート既定1の注文は従来どおり判定される()
     {
-        // 基準通貨（日本株）およびレート未記録の既存データ＝現行挙動と等価であることを固定する。
+        // #364, IADR-0152 決定1: 既定 1＝基準通貨市場（米国株）＝換算不要。
         var intent = new OrderIntent(
-            "7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 2_000m);
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 2_000m);
 
         var result = RiskEvaluator.Evaluate(intent, DefaultSettings(), Snapshot());
 
         result.IsApproved.Should().BeTrue();
         intent.FxRateToBase.Should().Be(1m);
+        intent.NotionalInBase.Should().Be(intent.Notional);
     }
 
     [Fact]
@@ -731,7 +745,7 @@ public class RiskEvaluatorTests
         var result = RiskEvaluator.Evaluate(
             ShortEntry(),
             SettingsAtStage(TradingStage.Stage3ScaledLive),
-            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityInBase * 10m));
+            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityUsd * 10m));
 
         result.Reasons.Should().Contain(RejectionReason.StageShortSellReleaseUnmet);
     }
@@ -743,7 +757,7 @@ public class RiskEvaluatorTests
         var result = RiskEvaluator.Evaluate(
             ShortEntry(),
             SettingsAtStage(TradingStage.Stage3ScaledLive),
-            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityInBase),
+            Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityUsd),
             patternDetector: null,
             shortSellContext: null,
             stageRelease: new StageProductPolicy.StageReleaseContext(ShortSellStrategyBacktestPassed: true));

@@ -253,7 +253,7 @@ builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
         sp.GetRequiredService<ILogger<MarketDataCurrentPriceProvider>>());
 });
 
-// FR-10, FR-17, #257, IADR-0107: 基準通貨（円）への換算レート供給。レート源は Fx:Provider で選ぶ
+// FR-10, FR-17, #257, #364, IADR-0107/0152: 基準通貨（USD）への換算レート供給。レート源は Fx:Provider で選ぶ
 //（既定・空・未知・キー無しは no-op＝実接続しない）。基準通貨の市場（日本株）はレート 1 が定義から決まるため
 // レート源に依存せず従来どおり判断でき、非基準通貨（米国株）はレートが解決できなければ新規建てを見送る（安全側）。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));

@@ -12,7 +12,8 @@ namespace AiStockTrading.RiskManagement.Domain.Tests;
 // 解禁条件の供給が無ければ空売りは開かない）。
 public class StageProductPolicyTests
 {
-    private static readonly decimal ReleaseEquity = StageProductPolicy.ShortSellLiveReleaseEquityInBase;
+    // #364, IADR-0152 決定3: 基準通貨が USD になったため、equity と解禁下限は同一通貨であり近似換算が要らない。
+    private static readonly decimal ReleaseEquity = StageProductPolicy.ShortSellLiveReleaseEquityUsd;
 
     private static readonly StageProductPolicy.StageReleaseContext Revalidated = new(true);
 

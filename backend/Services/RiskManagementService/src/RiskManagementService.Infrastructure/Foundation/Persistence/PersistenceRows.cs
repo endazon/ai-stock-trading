@@ -106,7 +106,7 @@ internal sealed class ApprovedOrderRow
     public decimal? StopLossPrice { get; set; }
 
     /// <summary>
-    /// 基準通貨（円）への換算レート（IADR-0107・約定時レートの近似）。nullable＝本列の追加前に記録された行で、
+    /// 基準通貨（USD）への換算レート（IADR-0107 / IADR-0152・約定時レートの近似）。nullable＝本列の追加前に記録された行で、
     /// 読み出し時はレート 1（基準通貨建て＝当時の暗黙の前提）として扱う。
     /// </summary>
     public decimal? FxRateToBase { get; set; }

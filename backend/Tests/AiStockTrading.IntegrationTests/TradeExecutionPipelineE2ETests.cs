@@ -16,7 +16,7 @@ namespace AiStockTrading.IntegrationTests;
 
 // issue #82 Slice C / IADR-0050, FR-10/UC-01: 複数サービスを跨ぐイベント駆動パイプラインの実基盤 E2E。
 // リスク管理＋発注執行の 2 Worker を共有 RabbitMQ／共有 PostgreSQL（テーブル非衝突）へ結線し、
-// TradeDecisionMade を発行 → リスク管理スクリーニング（実台帳・既定資金 InitialCapital）→ OrderApproved →
+// TradeDecisionMade を発行 → リスク管理スクリーニング（実台帳・既定資金 InitialCapital＝$3,000）→ OrderApproved →
 // 発注執行（ペーパー・実弾なし・IADR-0016）→ 実 Postgres の executed_orders へ永続、を通しで検証する。
 // 同期照会を経由しないため #76（s2s 認証）に依存しない。
 //
@@ -111,10 +111,12 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         await WaitReadyAsync(execClient);
         await WaitSubscribedAsync(RiskServiceName, typeof(TradeDecisionMade));
 
-        // 既定資金（InitialCapital=10万）に対し十分小さい新規建て。リスク管理の決定的スクリーニングを通過する。
+        // #364, IADR-0152 決定1/3: 既定資金（InitialCapital ＝ equity $3,000・基準通貨 USD）に対し十分小さい
+        // 新規建て。10 株 × $20 ＝ $200 は 1 注文上限（25% ＝ $750）・日次上限（150% ＝ $4,500）の内側であり、
+        // リスク管理の決定的スクリーニングを通過する。AAPL は基準通貨市場のため換算レートは既定 1 でよい。
         var decisionId = Guid.NewGuid();
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 20m);
         var decision = new TradeDecisionMade(decisionId, intent, "E2E", DateTimeOffset.UtcNow);
 
         // 取引判断イベントを実 RabbitMQ へ発行する（リスク管理が購読・承認し、発注執行が執行・永続する）。

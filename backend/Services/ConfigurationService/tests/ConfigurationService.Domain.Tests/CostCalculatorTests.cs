@@ -41,14 +41,24 @@ public class CostCalculatorTests
         CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(50m); // 100 > 上限50
     }
 
+    // FR-17, #364, IADR-0152 決定7: 為替スプレッドは通貨の交換に伴う費用であり、**非基準通貨市場**に掛かる。
+    // 基準通貨が USD である現在、対象は日本市場である（旧実装は Market.Japan を直書きし JPY 基準に依存していた）。
     [Fact]
-    public void 為替スプレッドは非_JPY_市場に約定代金比で加算される()
+    public void 為替スプレッドは非基準通貨市場に約定代金比で加算される()
+    {
+        var a = Assumptions(jp: new CommissionSchedule(0m, 0m, 0m), fxSpreadRatio: 0.002m);
+        // 手数料0 + 為替スプレッド 100,000*0.002 = 200。
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(200m);
+    }
+
+    // **否定形**: 基準通貨の市場では通貨の交換が起こらないため、為替スプレッドを課さない。
+    [Fact]
+    public void 基準通貨の市場には為替スプレッドを課さない()
     {
         var a = Assumptions(us: new CommissionSchedule(0m, 0m, 0m), fxSpreadRatio: 0.002m);
-        // 手数料0 + 為替スプレッド 100,000*0.002 = 200。
-        CostCalculator.EstimateOneWayCost(a, Market.UnitedStates, 100_000m).Should().Be(200m);
-        // JP 市場には為替スプレッドを加算しない。
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(0m);
+
+        MarketCurrency.IsBaseCurrency(Market.UnitedStates).Should().BeTrue();
+        CostCalculator.EstimateOneWayCost(a, Market.UnitedStates, 100_000m).Should().Be(0m);
     }
 
     [Fact]

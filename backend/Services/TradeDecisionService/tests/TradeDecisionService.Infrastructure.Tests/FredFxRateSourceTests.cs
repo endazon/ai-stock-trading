@@ -9,8 +9,9 @@ using Xunit;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
 
-// FR-10, FR-17, #257, IADR-0107 決定5: FRED（DEXJPUS＝JPY per USD）の FX レート源を fake HttpMessageHandler で検証する。
-// 実 FRED API は叩かない（IADR-0049）。
+// FR-10, FR-17, #257, #364, IADR-0107 決定5 / IADR-0152 決定2: FRED（DEXJPUS＝JPY per USD）の FX レート源を
+// fake HttpMessageHandler で検証する。実 FRED API は叩かない（IADR-0049）。
+// 基準通貨は USD であるため、解決対象は **JPY** であり、レートは観測値の**逆数**（USD per JPY）である。
 public class FredFxRateSourceTests
 {
     private const string OkBody = """
@@ -18,17 +19,34 @@ public class FredFxRateSourceTests
         """;
 
     [Fact]
-    public async Task 最新観測を基準通貨換算レートへ写像する()
+    public async Task 最新観測の逆数を基準通貨換算レートへ写像する()
     {
         var source = Create(new StubHandler(HttpStatusCode.OK, OkBody));
 
-        var rate = await source.GetRateToBaseAsync(Currency.Usd);
+        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
 
         rate.Should().NotBeNull();
-        rate!.Quote.Should().Be(Currency.Usd);
-        rate.Base.Should().Be(Currency.Jpy);
-        rate.Rate.Should().Be(152.35m);
+        rate!.Quote.Should().Be(Currency.Jpy);
+        rate.Base.Should().Be(Currency.Usd);
+        // #364, IADR-0152 決定2: DEXJPUS は「1 USD あたりの円」。契約は「quote 1 単位あたりの基準通貨額」なので逆数。
+        rate.Rate.Should().Be(1m / 152.35m);
         rate.AsOf.Should().Be(new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero));
+    }
+
+    // #364, IADR-0152 決定2: 逆数は**丸めない**。丸めると往復換算の誤差が片側へ偏り、統制の実効上限が系統的にずれる。
+    [Fact]
+    public async Task 逆数は丸めず観測値へ戻せる精度を保つ()
+    {
+        var body = """
+            {"observations":[{"date":"2026-07-24","value":"163.7"}]}
+            """;
+        var source = Create(new StubHandler(HttpStatusCode.OK, body));
+
+        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
+
+        rate!.Rate.Should().Be(1m / 163.7m);
+        // 丸めていれば往復で誤差が残る。decimal の除算精度のまま保持していることを固定する。
+        (1m / rate.Rate).Should().BeApproximately(163.7m, 0.0000000001m);
     }
 
     [Fact]
@@ -40,9 +58,9 @@ public class FredFxRateSourceTests
             """;
         var source = Create(new StubHandler(HttpStatusCode.OK, body));
 
-        var rate = await source.GetRateToBaseAsync(Currency.Usd);
+        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
 
-        rate!.Rate.Should().Be(152.35m);
+        rate!.Rate.Should().Be(1m / 152.35m);
         rate.AsOf.Should().Be(new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero));
     }
 
@@ -52,7 +70,7 @@ public class FredFxRateSourceTests
         var body = """{"observations":[{"date":"2026-07-25","value":"."}]}""";
         var source = Create(new StubHandler(HttpStatusCode.OK, body));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -60,7 +78,7 @@ public class FredFxRateSourceTests
     {
         var source = Create(new StubHandler(HttpStatusCode.TooManyRequests, "rate limited"));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -68,7 +86,7 @@ public class FredFxRateSourceTests
     {
         var source = Create(new StubHandler(HttpStatusCode.OK, "<html>error page</html>"));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -77,7 +95,7 @@ public class FredFxRateSourceTests
         // レート無し＝非基準通貨の新規建て見送り（IADR-0107 決定3）＝安全側。
         var source = Create(new ThrowingHandler());
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -86,7 +104,7 @@ public class FredFxRateSourceTests
         var body = """{"observations":[{"date":"2026-07-24","value":"0"}]}""";
         var source = Create(new StubHandler(HttpStatusCode.OK, body));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -95,9 +113,20 @@ public class FredFxRateSourceTests
         var handler = new StubHandler(HttpStatusCode.OK, OkBody);
         var source = Create(handler);
 
-        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
+        var rate = await source.GetRateToBaseAsync(Currency.Usd);
 
         rate!.Rate.Should().Be(1m);
+        handler.Requests.Should().Be(0);
+    }
+
+    // **否定形**: 系列は USD/JPY 固定であり、対応しない通貨を推測で換算しない（誤ったレートでの発注を作らない）。
+    [Fact]
+    public async Task 系列が対応しない通貨は推測で換算せず外部へも出ない()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, OkBody);
+        var source = Create(handler);
+
+        (await source.GetRateToBaseAsync((Currency)999)).Should().BeNull();
         handler.Requests.Should().Be(0);
     }
 
@@ -110,7 +139,7 @@ public class FredFxRateSourceTests
         // 件数以上を要求する（リクエストは 1 回のままでレート予算・費用は変わらない）。
         var handler = new StubHandler(HttpStatusCode.OK, OkBody);
 
-        await Create(handler).GetRateToBaseAsync(Currency.Usd);
+        await Create(handler).GetRateToBaseAsync(Currency.Jpy);
 
         var required = (int)Math.Ceiling(FxOptions.MaxAllowedRateAgeDays * 5m / 7m);
         RequestedLimit(handler.LastRequestUri!).Should().BeGreaterThanOrEqualTo(required);
@@ -122,7 +151,7 @@ public class FredFxRateSourceTests
         var limiter = new CountingRateLimiter();
         var source = Create(new StubHandler(HttpStatusCode.OK, OkBody), limiter);
 
-        await source.GetRateToBaseAsync(Currency.Usd);
+        await source.GetRateToBaseAsync(Currency.Jpy);
 
         limiter.Waits.Should().Be(1);
     }
@@ -134,7 +163,7 @@ public class FredFxRateSourceTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => source.GetRateToBaseAsync(Currency.Usd, cts.Token);
+        var act = () => source.GetRateToBaseAsync(Currency.Jpy, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

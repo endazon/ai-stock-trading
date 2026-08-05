@@ -6,15 +6,15 @@ namespace AiStockTrading.RiskManagement.Application.State;
 // これに kill switch 状態を合成して判定入力 PortfolioSnapshot（Domain）を組み立てる（PortfolioSnapshotBuilder）。
 public record PortfolioState
 {
-    /// <summary>当日開始時運用資金（固定基準・円）。日次損失上限・1取引リスクの基準。当日中は不変。</summary>
+    /// <summary>当日開始時運用資金（固定基準・基準通貨 USD）。日次損失上限・1取引リスクの基準。当日中は不変。</summary>
     public required decimal Capital { get; init; }
 
     public int OpenPositionCount { get; init; }
 
-    /// <summary>保有ポジションの取得額合計（コストベース・円）。段階資金上限の累計判定に用いる（IADR-0005）。</summary>
+    /// <summary>保有ポジションの取得額合計（コストベース・基準通貨 USD）。段階資金上限の累計判定に用いる（IADR-0005）。</summary>
     public decimal InvestedCapital { get; init; }
 
-    /// <summary>当日の発注金額累計（円）。</summary>
+    /// <summary>当日の発注金額累計（基準通貨 USD）。</summary>
     public decimal DailyOrderedAmount { get; init; }
 
     /// <summary>当日の実現損益（負値 = 損失）。</summary>

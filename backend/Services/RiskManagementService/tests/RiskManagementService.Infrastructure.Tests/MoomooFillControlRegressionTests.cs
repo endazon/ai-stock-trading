@@ -17,7 +17,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 //
 // 事象（#270 実測）: moomoo は発注時に Accepted（約定 0）を返し、約定を追跡する経路が無かったため trade_fills が
 // 0 行のまま＝「まだ何も取引していない」状態となり、5 分ごとの判断サイクルのたびに新規発注が積み上がった
-// （dailyOrderRemaining が ¥170,000,000 のまま減らない）。paper は即時 Filled のため露呈しない。
+// （dailyOrderRemaining が基準資金相当のまま減らない）。paper は即時 Filled のため露呈しない。
 //
 // 本テストは「約定が台帳へ届いた後に統制が拘束する」ことを、実 Consumer ＋ 実台帳 ＋ 実射影 ＋ 実スクリーニングの
 // 通し（合成の要所を実物のまま）で固定する。
@@ -36,8 +36,13 @@ public class MoomooFillControlRegressionTests
     // FR-19, #332, IADR-0132 決定5: 差金決済防止ガードの適用対象は**日本株の現物**である
     // （米国株は信用口座で運用するため Good Faith Violation が発生しない）。本回帰は同ガードが
     // 約定到達後に拘束することを見るため、適用対象である日本株現物の注文を用いる。
+    // #364, IADR-0152 決定1: 基準通貨は USD であり日本株は非基準通貨のため、換算レート（USD per JPY）を
+    // 同伴させる。丸いテスト用レート 0.01 で 1 株 ¥1,000 ＝ $10、10 株で $100（equity $3,000 の統制上限内）。
+    private const decimal JpyToUsd = 0.01m;
+
     private static OrderIntent Entry() =>
-        new("7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
+        new("7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
+            10, 1_000m, PositionEffect.Open, StopLossPrice: null, FxRateToBase: JpyToUsd);
 
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
@@ -105,10 +110,10 @@ public class MoomooFillControlRegressionTests
         reentry.IsApproved.Should().BeFalse();
         reentry.Rejected!.Reasons.Should().Contain(RejectionReason.SameDayReentry);
 
-        // FR-10: 日次発注上限・段階資金上限の残枠も約定額（10 株 × 1,000 円）だけ減る。
+        // FR-10: 日次発注上限・段階資金上限の残枠も約定額（10 株 × ¥1,000 × 0.01 ＝ $100）だけ減る。
         var context = sizing.Build();
-        context.DailyOrderRemaining.Should().Be(dailyRemainingBefore - 10_000m);
-        (dailyRemainingBefore - context.DailyOrderRemaining).Should().Be(10_000m);
+        context.DailyOrderRemaining.Should().Be(dailyRemainingBefore - 100m);
+        (dailyRemainingBefore - context.DailyOrderRemaining).Should().Be(100m);
 
         await host.StopAsync();
     }
@@ -128,10 +133,10 @@ public class MoomooFillControlRegressionTests
         var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
-        // 部分約定（4 株 × 1,000 円）分だけ枠が減る。全量約定を待たない（待つ間は統制が素通しになる）。
+        // 部分約定（4 株 × ¥1,000 × 0.01 ＝ $40）分だけ枠が減る。全量約定を待たない（待つ間は統制が素通しになる）。
         var partial = sizing.Build();
-        (before.DailyOrderRemaining - partial.DailyOrderRemaining).Should().Be(4_000m);
-        (before.StageCapitalRemaining - partial.StageCapitalRemaining).Should().Be(4_000m);
+        (before.DailyOrderRemaining - partial.DailyOrderRemaining).Should().Be(40m);
+        (before.StageCapitalRemaining - partial.StageCapitalRemaining).Should().Be(40m);
 
         // 累積 10 株で終端化 → 差分ではなく累積で置き換わる（二重計上しない）。
         var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
@@ -139,8 +144,8 @@ public class MoomooFillControlRegressionTests
             .Should().Contain(m => m.Status == OrderStatus.Filled);
 
         var full = sizing.Build();
-        (before.DailyOrderRemaining - full.DailyOrderRemaining).Should().Be(10_000m);
-        (before.StageCapitalRemaining - full.StageCapitalRemaining).Should().Be(10_000m);
+        (before.DailyOrderRemaining - full.DailyOrderRemaining).Should().Be(100m);
+        (before.StageCapitalRemaining - full.StageCapitalRemaining).Should().Be(100m);
 
         await host.StopAsync();
     }
