@@ -12,7 +12,7 @@ created: 2026-08-05
 
 # フィードバック: 日銀「外国為替市況（日次）」の系列 ID 確定と鮮度の実測
 
-> **送付済み（2026-08-06）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
 > [endazon/project-planning#209](https://github.com/endazon/project-planning/issues/209)。
 > あわせて計画リポジトリの `draft/feedback/20260805_adr0022-boj-series-id-and-freshness.md` へ記録本体を配置した。
 > 本記録は [endazon/project-planning#59](https://github.com/endazon/project-planning/issues/59)（為替レート源）の**残条件（系列 ID の一次確認）に直接対応する**。

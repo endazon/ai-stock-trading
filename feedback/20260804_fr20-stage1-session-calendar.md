@@ -12,6 +12,12 @@ created: 2026-08-04
 
 # フィードバック: Stage 1 の期間カウント規則に「半日取引日の判定源」が無い
 
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#213](https://github.com/endazon/project-planning/issues/213)。
+> あわせて計画リポジトリの `draft/feedback/20260804_fr20-stage1-session-calendar.md` へ記録本体を配置した。
+> 本記録は 2026-08-04 に作成されながら計画リポジトリへ到達しておらず、2026-08-06 の未到達棚卸しで送付した。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 要求の不足（確定した判定規則が、判定に必要な入力の出どころを述べていない）。
@@ -75,4 +81,5 @@ Stage1TradingDayObservation(DateOnly SessionDateEasternTime, int RegularSessionM
 
 ## 送付
 
-未送付。計画リポジトリ（endazon/project-planning）へ issue として起票する。
+**送付済み（2026-08-06 JST）。** 計画リポジトリ（endazon/project-planning）へ issue として起票した:
+[endazon/project-planning#213](https://github.com/endazon/project-planning/issues/213)。

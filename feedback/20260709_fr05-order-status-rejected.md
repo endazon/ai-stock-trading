@@ -12,6 +12,12 @@ created: 2026-07-09
 
 # フィードバック: FR-05 の注文状態に「証券会社拒否（Rejected）」を追記
 
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#211](https://github.com/endazon/project-planning/issues/211)。
+> あわせて計画リポジトリの `draft/feedback/20260709_fr05-order-status-rejected.md` へ記録本体を配置した。
+> 本記録は 2026-07-09 に作成されながら計画リポジトリへ到達しておらず、2026-08-06 の未到達棚卸しで送付した。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 要求の不足（注文状態モデルの列挙に「拒否」が欠けている）。
