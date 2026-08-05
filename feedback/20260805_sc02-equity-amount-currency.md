@@ -5,7 +5,7 @@ status: open
 category: 計画内部の不整合
 related_ids: [SC-02, FR-10, UC-06, ADR-0021]
 source_repo: endazon/ai-stock-trading
-source_ref: docs/adr/IADR-0151_sc02-percent-input-and-limit-bounds.md / docs/specs/20260805_362_sc02-ratio-input.md / ブランチ fix/SC-02-362-ratio-input
+source_ref: docs/adr/IADR-0151_risk-limit-percent-input-and-bounds.md / docs/specs/20260805_362_sc02-ratio-input.md / ブランチ fix/SC-02-362-ratio-input
 author: endazon (with Claude Code)
 created: 2026-08-05
 ---
