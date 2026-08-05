@@ -165,8 +165,14 @@ internal sealed class StagePerformanceRow
     /// <summary>FR-20, #333, §4.2: Stage 1 で「実際に取引できた日数」の累計（供給元は未実装・既定 0）。</summary>
     public int Stage1QualifiedTradingDays { get; set; }
 
-    /// <summary>FR-20, #333, §4.1 条件 3: Stage 1（SIMULATE）の取引件数（供給元は未実装・既定 0）。</summary>
+    /// <summary>FR-20, #333, §4.1 条件 3: Stage 1（moomoo SIMULATE）の取引件数（供給元は未実装・既定 0）。</summary>
     public int Stage1TradeCount { get; set; }
+
+    /// <summary>
+    /// FR-20, #334, IADR-0142 決定3: 内蔵 paper 稼働により**算入されなかった**営業日数（供給元は未実装・既定 0）。
+    /// 合格判定には用いず、SC-03 の進捗表示に併記する。
+    /// </summary>
+    public int Stage1ExcludedInternalPaperDays { get; set; }
 
     public int ControlViolationCount { get; set; }
 

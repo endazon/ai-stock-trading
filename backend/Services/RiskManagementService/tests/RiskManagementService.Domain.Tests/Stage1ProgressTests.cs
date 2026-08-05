@@ -1,4 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
@@ -17,9 +18,15 @@ public class Stage1ProgressTests
 
     private static readonly Stage1GateCriteria Criteria = Stage1GateCriteria.Default;
 
+    // #334, IADR-0142: 観測は発注先を必須で伴う。本テスト群（#333 の期間カウント規則）は
+    // **算入され得る発注先＝moomoo SIMULATE** を既定に置き、稼働率の規則だけを対象にする。
+    // 発注先による除外そのものは Stage1AggregationTests が扱う。
     private static Stage1TradingDayObservation Day(
-        int regularSessionMinutes, int operationalMinutes, int day = 1) =>
-        new(new DateOnly(2026, 8, day), regularSessionMinutes, operationalMinutes);
+        int regularSessionMinutes,
+        int operationalMinutes,
+        int day = 1,
+        BrokerProvider provider = BrokerProvider.MoomooSimulate) =>
+        new(new DateOnly(2026, 8, day), regularSessionMinutes, operationalMinutes, provider);
 
     // ------------------------------------------------------------------
     // 1. 期間カウント規則（§4.2）: 閾値・分母・除外

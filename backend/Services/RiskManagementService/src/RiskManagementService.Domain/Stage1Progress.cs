@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, #333, 06_daytrading-review §4.1〜§4.3, INDEX 決定 34・42, IADR-0137:
@@ -34,10 +36,31 @@ namespace AiStockTrading.RiskManagement.Domain;
 /// 上記のうち実際に稼働していた分数。**OpenD の停止・ブローカー側の障害はここが減る形で表れる**
 /// （別枠の除外フラグを設けない。§4.2 の「除外」3 事由のうち市場休場は分母 0 で表される）。
 /// </param>
+/// <param name="Provider">
+/// FR-20, #334, IADR-0142 決定1: その日に稼働していた<b>発注先</b>。
+/// <para>
+/// 計画は「Stage 1 の合格判定は <c>SIMULATE</c> の約定のみで集計し、<b>内蔵 <c>paper</c> の約定・稼働日数を
+/// 算入してはならない</b>」と定める（FR-20）。<b>既定値を与えない</b>——省略できるようにすると
+/// 書き忘れが「算入される側」へ倒れ、外部へ一度も発注していない擬似約定で合格証跡が積み上がる。
+/// </para>
+/// </param>
 public sealed record Stage1TradingDayObservation(
     DateOnly SessionDateEasternTime,
     int RegularSessionMinutes,
-    int OperationalMinutes);
+    int OperationalMinutes,
+    BrokerProvider Provider);
+
+/// <summary>
+/// FR-20, #334, IADR-0142 決定1: Stage 1 の取引件数を数えるための約定 1 件の観測。
+/// <para>
+/// 発注先を<b>必須</b>で伴う。件数（100 件）は Stage 1 の合格条件そのものであり
+/// （06_daytrading-review §4.1 条件 3）、内蔵 <c>paper</c> の擬似約定が 1 件でも混ざると
+/// 合格証跡の正当性が失われる。
+/// </para>
+/// </summary>
+/// <param name="SessionDateEasternTime">米国東部時間での取引日（日次の突合・監査のため）。</param>
+/// <param name="Provider">その約定の発注先。</param>
+public sealed record Stage1FillObservation(DateOnly SessionDateEasternTime, BrokerProvider Provider);
 
 /// <summary>
 /// FR-20, #333, 06_daytrading-review §4.2: 1 日を「営業日 1 日」として算入するかの判定（純関数）。
@@ -55,6 +78,16 @@ public static class Stage1DayQualification
 
     /// <summary>半日取引日の通常取引時間（分）＝ 3.5 時間（9:30〜13:00 ET）。</summary>
     public const int RegularSessionMinutesHalfDay = 210;
+
+    /// <summary>
+    /// FR-20, #334, IADR-0142 決定2: Stage 1 の集計に<b>算入してよい発注先</b>。
+    /// <para>
+    /// <b>許可制である</b>（拒否リストではない）。計画は「<c>SIMULATE</c> の約定のみで集計」と定めるだけで
+    /// <c>MoomooReal</c> の扱いを名指ししていない。拒否リスト方式にすると、将来増える発注先が既定で
+    /// 合格証跡へ流れ込む。名指しで許可されるまで算入しない。
+    /// </para>
+    /// </summary>
+    public const BrokerProvider CountedProvider = BrokerProvider.MoomooSimulate;
 
     /// <summary>
     /// その日の稼働率。分母は**その日の実際の通常取引時間**であり、固定の 6.5 時間ではない。
@@ -76,22 +109,97 @@ public static class Stage1DayQualification
     }
 
     /// <summary>
-    /// その日を Stage 1 の営業日 1 日として算入するか。
+    /// FR-20, #333, §4.2: その日が<b>稼働率の条件</b>（実際の通常取引時間の 50% 以上）を満たすか。
     /// <para>
-    /// **市場休場日（<c>RegularSessionMinutes &lt;= 0</c>）は算入しない**（§4.2 の「除外」）。
+    /// **市場休場日（<c>RegularSessionMinutes &lt;= 0</c>）は満たさない**（§4.2 の「除外」）。
     /// OpenD の停止・ブローカー障害は <c>OperationalMinutes</c> の減少として現れ、稼働率が 50% を割れば
-    /// 自動的に算入されない。除外事由ごとの専用フラグは設けない——事由が増えるたびに判定が分岐し、
+    /// 自動的に外れる。除外事由ごとの専用フラグは設けない——事由が増えるたびに判定が分岐し、
     /// 「どの事由なら除外か」の解釈が実装に入り込むためである。
     /// </para>
+    /// <para>
+    /// <b>本判定は発注先を見ない。</b>「稼働はしていたが内蔵 <c>paper</c> だった日」を
+    /// 除外日数として別掲する（FR-20）ために、稼働の条件と発注先の条件を分けて持つ必要がある。
+    /// 算入の可否そのものは <see cref="Qualifies"/> を用いること。
+    /// </para>
     /// </summary>
-    public static bool Qualifies(Stage1TradingDayObservation observation) =>
+    public static bool MeetsUptimeThreshold(Stage1TradingDayObservation observation) =>
         UptimeRatio(observation) >= MinimumUptimeRatio;
 
-    /// <summary>観測の並びから算入日数を数える（純関数）。</summary>
+    /// <summary>
+    /// その日を Stage 1 の営業日 1 日として算入するか。
+    /// <para>
+    /// FR-20, #334, IADR-0142: 稼働率の条件（<see cref="MeetsUptimeThreshold"/>）に加えて、
+    /// <b>発注先が <see cref="CountedProvider"/>（moomoo <c>SIMULATE</c>）であること</b>を要する。
+    /// 内蔵 <c>paper</c> で稼働した日は、稼働率が 100% でも算入しない——外部へ一度も発注していない
+    /// 擬似約定の日を数えると、60 営業日という合格証跡がデバッグ稼働で積み上がる。
+    /// </para>
+    /// </summary>
+    public static bool Qualifies(Stage1TradingDayObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        return observation.Provider == CountedProvider && MeetsUptimeThreshold(observation);
+    }
+
+    /// <summary>観測の並びから算入日数を数える（純関数）。内蔵 <c>paper</c> の日は数えない。</summary>
     public static int CountQualifiedDays(IEnumerable<Stage1TradingDayObservation> observations)
     {
         ArgumentNullException.ThrowIfNull(observations);
         return observations.Count(Qualifies);
+    }
+
+    /// <summary>
+    /// FR-20, SC-03, #334, IADR-0142 決定3: <b>内蔵 <c>paper</c> 稼働により除外された営業日数</b>。
+    /// <para>
+    /// 数えるのは「発注先が内蔵 <c>paper</c> であり、<b>かつ稼働率の条件は満たしていた</b>日」に限る。
+    /// 市場休場日・稼働率不足の日はもともと算入されない日であり、<c>paper</c> を理由に除外されたわけではない。
+    /// 混ぜると画面の「<c>paper</c> 稼働により N 日を除外」という説明が嘘になる。
+    /// </para>
+    /// </summary>
+    public static int CountExcludedInternalPaperDays(IEnumerable<Stage1TradingDayObservation> observations)
+    {
+        ArgumentNullException.ThrowIfNull(observations);
+        return observations.Count(o =>
+            o.Provider == BrokerProvider.InternalPaper && MeetsUptimeThreshold(o));
+    }
+}
+
+/// <summary>
+/// FR-20, #334, IADR-0142: Stage 1 の進捗を観測から組み立てる（純関数）。
+/// <para>
+/// <b>集計の供給元は本 issue の範囲外である</b>（日次の稼働分数を記録するドライバ・約定と発注先を結び付ける
+/// 経路は <see href="https://github.com/endazon/ai-stock-trading/issues/386">#386</see> が担う）。
+/// 本クラスが担保するのは「内蔵 <c>paper</c> が混入し得ない」という構造だけである。
+/// </para>
+/// </summary>
+public static class Stage1Aggregation
+{
+    /// <summary>その発注先の実績を Stage 1 の合格判定へ算入してよいか（許可制・IADR-0142 決定2）。</summary>
+    public static bool IsCounted(BrokerProvider provider) =>
+        provider == Stage1DayQualification.CountedProvider;
+
+    /// <summary>約定の並びから Stage 1 の取引件数を数える。<c>SIMULATE</c> 以外は 1 件も数えない。</summary>
+    public static int CountTrades(IEnumerable<Stage1FillObservation> fills)
+    {
+        ArgumentNullException.ThrowIfNull(fills);
+        return fills.Count(f => IsCounted(f.Provider));
+    }
+
+    /// <summary>
+    /// 稼働日と約定の観測から Stage 1 の進捗を組み立てる。
+    /// 算入されなかった <c>paper</c> 稼働日は<b>除外日数として別掲する</b>（FR-20・SC-03）。
+    /// </summary>
+    public static Stage1Progress Aggregate(
+        IEnumerable<Stage1TradingDayObservation> days,
+        IEnumerable<Stage1FillObservation> fills)
+    {
+        ArgumentNullException.ThrowIfNull(days);
+        ArgumentNullException.ThrowIfNull(fills);
+
+        var materializedDays = days as IReadOnlyCollection<Stage1TradingDayObservation> ?? [.. days];
+        return new Stage1Progress(
+            QualifiedTradingDays: Stage1DayQualification.CountQualifiedDays(materializedDays),
+            TradeCount: CountTrades(fills),
+            ExcludedInternalPaperDays: Stage1DayQualification.CountExcludedInternalPaperDays(materializedDays));
     }
 }
 
@@ -151,9 +259,23 @@ public enum Stage1GateOutcome
 /// </summary>
 /// <param name="QualifiedTradingDays">
 /// <see cref="Stage1DayQualification.Qualifies"/> を満たした日の累計（＝実際に取引できた日数）。
+/// **moomoo <c>SIMULATE</c> で稼働した日だけを数える**（#334）。
 /// </param>
-/// <param name="TradeCount">Stage 1（SIMULATE）で成立した取引件数。</param>
-public sealed record Stage1Progress(int QualifiedTradingDays, int TradeCount);
+/// <param name="TradeCount">
+/// Stage 1（moomoo <c>SIMULATE</c>）で成立した取引件数。**内蔵 <c>paper</c> の擬似約定は含まない**（#334）。
+/// </param>
+/// <param name="ExcludedInternalPaperDays">
+/// FR-20, SC-03, #334, IADR-0142 決定3: 内蔵 <c>paper</c> 稼働により**算入されなかった**営業日数。
+/// <para>
+/// 合格判定には用いない（<see cref="Stage1Gate"/> は参照しない）。画面が「経過 42 / 60 営業日
+/// （<c>paper</c> 稼働により 3 日を除外）」と併記するための値である——**算入されなかった期間があること自体**が
+/// 見えないと、進捗の数字を説明できなくなる。
+/// </para>
+/// </param>
+public sealed record Stage1Progress(
+    int QualifiedTradingDays,
+    int TradeCount,
+    int ExcludedInternalPaperDays = 0);
 
 /// <summary>
 /// FR-20, #333, 06_daytrading-review §4.3, INDEX 決定 42: 期間 × 件数の 2 条件と 120 営業日打ち切りの判定（純関数）。

@@ -36,6 +36,7 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
             row.ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio;
             row.Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays;
             row.Stage1TradeCount = performance.Stage1TradeCount;
+            row.Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays;
             row.ControlViolationCount = performance.ControlViolationCount;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
@@ -52,6 +53,7 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         ObservedMaxDrawdownRatio = row.ObservedMaxDrawdownRatio,
         Stage1QualifiedTradingDays = row.Stage1QualifiedTradingDays,
         Stage1TradeCount = row.Stage1TradeCount,
+        Stage1ExcludedInternalPaperDays = row.Stage1ExcludedInternalPaperDays,
         ControlViolationCount = row.ControlViolationCount,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
@@ -65,6 +67,7 @@ internal sealed class EfStagePerformanceStore(RiskManagementDbContext db) : ISta
         ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio,
         Stage1QualifiedTradingDays = performance.Stage1QualifiedTradingDays,
         Stage1TradeCount = performance.Stage1TradeCount,
+        Stage1ExcludedInternalPaperDays = performance.Stage1ExcludedInternalPaperDays,
         ControlViolationCount = performance.ControlViolationCount,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,
