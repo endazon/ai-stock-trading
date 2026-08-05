@@ -34,7 +34,7 @@ plan_refs:
   [#342](https://github.com/endazon/ai-stock-trading/issues/342)（moomoo PoC・借株照会の可否）
 - 先行 IADR: [IADR-0130](IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持・第 1 段階）・
   [IADR-0004](IADR-0004_position-effect-entry-scoping.md)（建玉効果でエントリーを判定）・
-  [IADR-0119](IADR-0119_decision-derived-position-effect.md)（保有なし・不明の売りは見送る）・
+  [IADR-0119](IADR-0119_decision-derived-close.md)（保有なし・不明の売りは見送る）・
   [IADR-0127](IADR-0127_plan-conformance-known-deviation-registry.md)（既知逸脱レジストリ）
 
 ## コンテキストと課題

@@ -48,6 +48,202 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(planningPopulated(root), false);
   });
 
+  // --- check-doc-links: 同一ディレクトリ内の裸ファイル名リンク（NFR / #399 / IADR-0147） ---
+  //
+  // 判定が `./` `../` 始まりか `/` を含む形しか見ておらず、docs/adr/ の IADR 相互参照が使う
+  // **裸ファイル名**（`IADR-0119_xxx.md`）が実在検査へ到達しないまま素通りしていた。CI は
+  // `OK` を返し続け、develop 上に破損 1 件が現存した（発見は PR #395 の AI レビュー）。
+  //
+  // 検査器は「効きすぎる方向」に壊れれば赤で気付けるが、**「効かない方向」に壊れると CI が
+  // 緑のまま誰も気付けない**。よって否定形（誤検出しないこと）を正の確認と同数以上置く
+  // （IADR-0143 / IADR-0145 と同じ思想）。
+  const { isBrokenRef: dlIsBroken, collectBroken: dlCollect } = require('./check-doc-links.js');
+
+  // フィクスチャ: docs/ に実在ファイルを 1 つ置いた一時ディレクトリを作る。
+  const mkBareFixture = () => {
+    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-bare-'));
+    const docs = pathDl.join(root, 'docs');
+    fsDl.mkdirSync(docs, { recursive: true });
+    fsDl.writeFileSync(pathDl.join(docs, 'IADR-0119_decision-derived-close.md'), '# 実在する参照先\n');
+    fsDl.writeFileSync(pathDl.join(docs, 'diagram.png'), '');
+    return { root, docs };
+  };
+
+  // ---- 正の確認（検査が効くこと）: P1〜P5 ----
+
+  ok('check-doc-links[P1]: 実在しない裸ファイル名リンクを破損と判定する', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('IADR-0119_decision-derived-position-effect.md', docs), true);
+  });
+
+  ok('check-doc-links[P2]: 裸ファイル名は .md 以外の LINK_EXT（.png 等）も対象になる', () => {
+    const { docs } = mkBareFixture();
+    // 判定を .md 限定にすると同一ディレクトリの図・スキーマ参照が対象外に残る（IADR-0147 決定1）。
+    assert.strictEqual(dlIsBroken('no-such-diagram.png', docs), true);
+    assert.strictEqual(dlIsBroken('diagram.png', docs), false, '実在する .png は破損としない');
+  });
+
+  ok('check-doc-links[P3]: collectBroken が本文の裸ファイル名破損リンクを拾う', () => {
+    const { docs } = mkBareFixture();
+    const fp = pathDl.join(docs, 'a.md');
+    fsDl.writeFileSync(
+      fp,
+      '# A\n\n- [IADR-0119](IADR-0119_decision-derived-position-effect.md)（存在しない）\n' +
+        '- [IADR-0119](IADR-0119_decision-derived-close.md)（実在する）\n'
+    );
+    assert.deepStrictEqual(dlCollect(fp), ['IADR-0119_decision-derived-position-effect.md']);
+  });
+
+  ok('check-doc-links[P4]: フロントマターの裸ファイル名も対象になる', () => {
+    const { docs } = mkBareFixture();
+    const fp = pathDl.join(docs, 'b.md');
+    fsDl.writeFileSync(
+      fp,
+      '---\nrelated_specs:\n  - "IADR-0119_decision-derived-close.md"\n' +
+        '  - "IADR-0119_decision-derived-position-effect.md"\n---\n\n# B\n'
+    );
+    assert.deepStrictEqual(dlCollect(fp), ['IADR-0119_decision-derived-position-effect.md']);
+  });
+
+  // 変異検査。「破損リンクは無い」という主張は、検査器が壊れていても緑になる。意図的に壊した
+  // 裸ファイル名リンクを **main が exit 1 で名指しする**ことを常設で固定する（IADR-0147 決定5）。
+  ok('check-doc-links[P5・変異検査]: 破損した裸ファイル名リンクで exit 1 になり名指しされる', () => {
+    const { root, docs } = mkBareFixture();
+    const script = pathDl.join(__dirname, 'check-doc-links.js');
+    const run = () =>
+      execSync(`node ${JSON.stringify(script)} --dir ${JSON.stringify(docs)}`, {
+        env: { ...process.env, DOC_LINKS_ROOT: root },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+    // (1) 健全な状態では緑
+    fsDl.writeFileSync(pathDl.join(docs, 'c.md'), '# C\n\n[IADR-0119](IADR-0119_decision-derived-close.md)\n');
+    assert.match(run(), /OK: /, '健全な裸ファイル名リンクで落ちてはならない');
+
+    // (2) 変異（ファイル名を 1 語欠く）を入れると赤で名指し
+    fsDl.writeFileSync(pathDl.join(docs, 'c.md'), '# C\n\n[IADR-0119](IADR-0119_decision-derived.md)\n');
+    let failed = false;
+    let out = '';
+    try { run(); } catch (e) {
+      failed = true;
+      out = String(e.stdout || '') + String(e.stderr || '');
+    }
+    assert.ok(failed, '破損した裸ファイル名リンクで exit 1 になっていない（検査が効いていない）');
+    assert.match(out, /破損リンク 1 件/, '件数が報告されること');
+    assert.match(out, /IADR-0119_decision-derived\.md/, '破損リンクが名指しされること');
+
+    // (3) 戻せば緑
+    fsDl.writeFileSync(pathDl.join(docs, 'c.md'), '# C\n\n[IADR-0119](IADR-0119_decision-derived-close.md)\n');
+    assert.match(run(), /OK: /, '復元しても緑に戻らない（検査が効きすぎている）');
+  });
+
+  // ---- 否定形の確認（誤検出しないこと）: N1〜N11。正の確認 5 件に対し 11 件 ----
+
+  ok('check-doc-links[N1]: 実在する裸ファイル名リンクは破損としない', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('IADR-0119_decision-derived-close.md', docs), false);
+    // アンカー・クエリ付きでも実体で判定する
+    assert.strictEqual(dlIsBroken('IADR-0119_decision-derived-close.md#決定', docs), false);
+  });
+
+  ok('check-doc-links[N2]: 外部 URL は対象外', () => {
+    const { docs } = mkBareFixture();
+    for (const u of [
+      'https://github.com/endazon/ai-stock-trading/issues/399',
+      'http://example.com/no-such.md',
+      'ftp://example.com/no-such.md',
+    ]) {
+      assert.strictEqual(dlIsBroken(u, docs), false, `外部 URL を破損と判定した: ${u}`);
+    }
+  });
+
+  ok('check-doc-links[N3]: mailto: は対象外', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('mailto:someone@example.com', docs), false);
+  });
+
+  ok('check-doc-links[N4]: アンカーのみのリンクは対象外', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('#決定', docs), false);
+    assert.strictEqual(dlIsBroken('#no-such-section', docs), false);
+  });
+
+  ok('check-doc-links[N5]: ルート絶対パスは対象外', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('/docs/no-such.md', docs), false);
+    assert.strictEqual(dlIsBroken('/no-such.md', docs), false);
+  });
+
+  ok('check-doc-links[N6]: テンプレ変数 <...> は対象外（例示リンクの escape。IADR-0147 決定4）', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('<IADR-0119_xxx>.md', docs), false);
+    assert.strictEqual(dlIsBroken('<file-name>.md', docs), false);
+  });
+
+  ok('check-doc-links[N7]: テンプレ変数 ${...} は対象外', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('${NAME}.md', docs), false);
+  });
+
+  ok('check-doc-links[N8]: テンプレ変数 {{...}} は対象外', () => {
+    const { docs } = mkBareFixture();
+    assert.strictEqual(dlIsBroken('{{ name }}.md', docs), false);
+  });
+
+  ok('check-doc-links[N9]: 拡張子を持たない裸の語はリンク扱いしない', () => {
+    const { docs } = mkBareFixture();
+    // 本文中の普通の語を破損リンクにすると誤検出が常態化し、赤が読まれなくなる（IADR-0147 決定2）。
+    for (const w of ['README', 'IADR-0119', 'develop', 'TradingDefaults']) {
+      assert.strictEqual(dlIsBroken(w, docs), false, `拡張子の無い語を破損と判定した: ${w}`);
+    }
+  });
+
+  ok('check-doc-links[N10]: インラインコード内の裸ファイル名は拾わない（既存の扱いを壊さない）', () => {
+    const { docs } = mkBareFixture();
+    const fp = pathDl.join(docs, 'code.md');
+    // 第 3 経路は `./` `../` 始まりのみを拾う。言及は参照ではない（IADR-0147 決定3）。
+    fsDl.writeFileSync(
+      fp,
+      '# Code\n\n実ファイル名は `IADR-0119_decision-derived-position-effect.md` ではない。\n' +
+        '設定は `no-such-config.yaml` に置く。\n'
+    );
+    assert.deepStrictEqual(dlCollect(fp), []);
+  });
+
+  ok('check-doc-links[N11]: 未 populate な submodule 配下は従来どおり skip される', () => {
+    // 裸ファイル名は必ず「その Markdown 自身のディレクトリ」に解決するため、裸ファイル名が
+    // 未 populate submodule 配下へ落ちることは構造上あり得ない（その Markdown 自身が submodule
+    // 内に必要になるが、未 populate＝空ディレクトリなので存在し得ない）。よってここで固定するのは
+    // 「判定拡張が既存の skip 分岐を壊していないこと」であり、`/` 形と裸ファイル名の破損を
+    // 同一フィクスチャに同居させて確認する。
+    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-sub-'));
+    fsDl.writeFileSync(pathDl.join(root, '.gitmodules'), '[submodule "planning"]\n\tpath = planning\n\turl = x\n');
+    fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true }); // 空＝未 populate
+    const docs = pathDl.join(root, 'docs');
+    fsDl.mkdirSync(docs, { recursive: true });
+    fsDl.writeFileSync(
+      pathDl.join(docs, 'a.md'),
+      '# A\n\n- [plan](../planning/projects/x/07_adr/ADR-0001_a.md)\n' +
+        '- [bare](IADR-9999_no-such.md)\n'
+    );
+    let out = '';
+    try {
+      execSync(`node ${JSON.stringify(pathDl.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(docs)}`, {
+        env: { ...process.env, DOC_LINKS_ROOT: root },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      assert.fail('裸ファイル名の破損で exit 1 になっていない');
+    } catch (e) {
+      if (e && e.code === 'ERR_ASSERTION') throw e;
+      out = String(e.stdout || '') + String(e.stderr || '');
+    }
+    assert.match(out, /IADR-9999_no-such\.md/, '裸ファイル名の破損は検出されること');
+    assert.doesNotMatch(out, /ADR-0001_a\.md/, '未 populate submodule 配下は破損として挙げないこと');
+    assert.match(out, /未 populate の submodule 配下 1 件/, '除外は黙って行わず件数を報告すること');
+  });
+
   // --- validate-pipeline-config: 実 pipeline.json の契約テスト -------------------
   // ADR-0001, IADR-0077, #22: 取引パイプラインの宣言（deploy/helm/ai-stock-trading/files/pipeline.json）が
   // 検証器（V1〜V6）に合格することを回帰テストとして固定する。宣言が壊れた・接続性/循環違反へ退行した場合に
