@@ -3,7 +3,7 @@ title: ADR-0019 PoC 結果報告と、ADR-0016 決定 3（借株料 20% 上限�
 type: plan-feedback
 status: open
 category: 新たな制約(ADR要)
-related_ids: [FR-05, FR-12, FR-20, ADR-0002, ADR-0016, ADR-0019]
+related_ids: [FR-05, FR-12, FR-20, ADR-0002, ADR-0016, ADR-0019, ADR-0023]
 source_repo: ai-stock-trading
 source_ref: chore/ADR-0019-moomoo-poc-plan（作業仕様書 docs/specs/20260805_342_moomoo-poc-plan.md・IADR-0144）
 author: Claude Code（実機確認セッション）／endazon（実機実行）
@@ -34,6 +34,10 @@ created: 2026-08-05
 | 4 | 実弾口座とペーパー口座の切替が API で明示的にできるか | ✅ **成立**（`TrdEnv` は列挙で分離・`TrdHeader` に必須・別 `AccID`） | なし |
 | 5 | 強制買戻し（buy-in）をイベントとして検知できるか | ⏸ **未確認** | 判定保留 |
 | 6 | OpenD の強制アップデート頻度・長期常駐の安定性 | 🟡 **部分**（7 日 20 時間・5 回の再起動を無人で継続） | 判定保留 |
+| 7 | 米国株の日足 OHLC 履歴を API から取得できるか、およびその品質（2026-08-04 追補） | ✅ **成立**（AAPL が 2006-07-24 まで・前復権 OHLCV・1,000 件/req・`NextReqKey` でページング・`remainQuota` 300） | **なし。** 不成立なら「Stage 0 の合格判定を実施できない。[ADR-0005](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0005_paid-datasource-policy.md) の有料枠の検討へ移る（月次データ費用上限〔現在 0 円配分〕の見直しを伴う）」であった。**成立により有料枠の検討そのものを回避できる** |
+
+> **項目 7 の詳細は別記録に分けた**（反映先の ADR が異なるため）: `feedback/20260805_adr0023_us-ohlc-source-moomoo.md`。
+> 未確定事項（取得枠の単位・回復周期／前復権の調整方式がバックテストの費用モデルと整合するか）もそちらに記載している。
 
 ## 問題点 / あるべき姿
 
@@ -103,13 +107,14 @@ ADR-0016 決定 14 は証拠金条件を記載しながら根拠を示してい�
 
 実機確認セッション（2026-08-05）。#342 の PoC として、クラスタ内の使い捨て Pod から実 OpenD へ probe を当てた（`moomoo-rsa` Secret をマウントできるため秘密鍵をクラスタ外へ出さずに済む）。発注を伴う操作と実弾口座への照会は利用者が実行した。
 
-**判定を 3 回訂正している。** 経緯は作業仕様書に残した。とくに「SDK の型定義に列挙値があることは、ブローカがその値を受理することを意味しない」（`TrdSide_SellShort` の件）は方法論上の教訓として IADR-0144 に引いた。
+**判定を 4 回訂正している。** 経緯は作業仕様書に残した（4 件目は「ADR-0019 決定 1 を 6 項目と誤読した」件。起案時の submodule が古い pin `df8bce5` で checkout されており、項目 7 の追補が入っていなかった）。とくに「SDK の型定義に列挙値があることは、ブローカがその値を受理することを意味しない」（`TrdSide_SellShort` の件）は方法論上の教訓として IADR-0144 に引いた。
 
 ## 提案（計画への反映案）
 
 - 反映先候補: **新 ADR**（ADR-0016 の決定 3・決定 14 を部分改定）／ADR-0019 の Accepted 化判断
 - 提案内容:
-  1. **ADR-0019 の PoC 結果を本 ADR へ追記し、Accepted 化を判断する。** 項目 1・2・4 は成立、項目 3 は条件付き、項目 5・6 は判定保留である。
+  1. **ADR-0019 の PoC 結果を本 ADR へ追記し、Accepted 化を判断する。** **項目 1・2・4・7 は成立**、項目 3 は条件付き成立、**項目 6 は部分**（単一ノードでの 7 日 20 時間の観測）、**項目 5 は未確認**（SIMULATE では原理的に発生しない）である。
+     **不成立時の帰結が適用されるのは項目 3 の一部だけ**であり、他の項目は帰結の適用を要しない。**項目 7 の成立により [ADR-0005](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0005_paid-datasource-policy.md) の有料枠の検討は不要になる**（反映先は ADR-0023。別記録を参照）。
   2. **ADR-0016 決定 3 を改める。** 借株料の閾値は発火しない。一次ゲートを `IsShortPermit`（借株可否）へ移す。閾値判定は残置し「発火しない既知の統制」として記録する。
   3. **ADR-0016 決定 14 の表を実測に合わせる。** 決定 3・決定 7 は「値は取れるが閾値に届かない」ではなく「**照会 API が SIMULATE で使えない**」である。
   4. **借株料の照会が実弾口座を要することを計画に明記する。** 発注環境と照会環境が分かれることは統制の設計に影響する。
@@ -121,5 +126,6 @@ ADR-0016 決定 14 は証拠金条件を記載しながら根拠を示してい�
 - **#329・#331・#363**（空売りの再実装）: 本フィードバックが実装の前提になる。とくに決定 3 の改定が確定するまで、借株料の閾値判定の位置づけが定まらない。
 - **#374**（`BuyInBanned`）: 供給元が無いままである（項目 5）。
 - **ADR-0016 決定 3・決定 7・決定 14**: 改定。決定 8（段階解禁）は Stage 1 の空売り検証が成立するため影響を受けない。
-- **ADR-0019**: PoC 結果の追記と Accepted 化判断。
+- **ADR-0019**: PoC 結果の追記と Accepted 化判断（**7 項目すべて**の成否を追記する）。
+- **ADR-0023 / #382**: 項目 7 の成立により米国株日足 OHLC の代替源が定まる。詳細は `feedback/20260805_adr0023_us-ohlc-source-moomoo.md`。
 - 実装側の既存資産: `MMApiMoomooTradeClient` / `IMoomooTradeClient` / `MoomooBrokerAdapter`（`OrderExecutionService.Infrastructure`）。`MoomooSide { Buy, Sell }` の 2 値は**変更不要**である。
