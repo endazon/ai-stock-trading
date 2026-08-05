@@ -28,7 +28,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 | [#342 のコメント](https://github.com/endazon/ai-stock-trading/issues/342#issuecomment-5192650678) | moomoo PoC の実測結果（A-2 のほぼ全体） |
 | [#381 のコメント](https://github.com/endazon/ai-stock-trading/issues/381#issuecomment-5191598064) | 日銀の系列 ID 確定と、収録スケジュールの発見（A-4） |
 | [#382 のコメント](https://github.com/endazon/ai-stock-trading/issues/382#issuecomment-5192654759) | 米国株日足 OHLC の代替源（A-3） |
-| PR [#394](https://github.com/endazon/ai-stock-trading/pull/394)（マージ済）・[#395](https://github.com/endazon/ai-stock-trading/pull/395)（未マージ） | 環流記録・IADR-0144・作業仕様書 |
+| PR [#394](https://github.com/endazon/ai-stock-trading/pull/394)・[#395](https://github.com/endazon/ai-stock-trading/pull/395)（いずれもマージ済） | 環流記録・IADR-0144・作業仕様書 |
 
 ### 参照する計画 ADR の状態について
 
@@ -60,7 +60,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 > ADR-0019 決定 2 が ①→② の順序を課した根拠は「PoC を実施する環境そのものが Hetzner 上にあるなら」という
 > 条件付きであり、ローカル実施ならその条件は成立しない。**ToS が不成立でも、PoC が確認した
 > 「API に当該機能があるか」という結果は失効しない。失効し得るのは項目 6 の実測値だけである。**
-> （出典: 作業仕様書 `docs/specs/20260805_342_moomoo-poc-plan.md` §目的・背景。[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)・**未マージ**）
+> （出典: [作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md) §目的・背景。PR #395・マージ済）
 >
 > **私は ADR の条件節を落として無条件の帰結として転記していた。** 期限の切迫を過大に見積もる方向の誤りだった。
 
@@ -88,7 +88,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 - 期限: **項目 1〜6 は 2026-08-31**（**達成**）／**項目 7 は go-live 起算 1 か月以内**（ADR-0019 決定 2 の ② と ⑤・起算点が異なる）
 - 追跡: **#342 は実装への反映が済むまで open のまま維持される**（[クローズ条件](https://github.com/endazon/ai-stock-trading/issues/342#issuecomment-5192686265)）
-- 記録: `docs/adr/IADR-0144_moomoo-short-selling-poc-outcomes.md`・`docs/specs/20260805_342_moomoo-poc-plan.md`（[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)。**未マージのため相対リンクにできない**）
+- 記録: [IADR-0144](adr/IADR-0144_moomoo-short-selling-poc-outcomes.md)・[作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md)（PR #395・マージ済）
 
 > **📌 項目 7 の位置づけ — ✅ 是正済み（2026-08-05）**
 >
@@ -182,7 +182,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 | 項目 | 内容 |
 | --- | --- |
-| 現況 | サンドボックスで**ブラウザ取得が失敗**する（`Failed to download Chrome for Testing`）。実走は **CI の `frontend-e2e` が唯一の実証経路**。**2026-08-05 の利用者裁定により、AI レビュー側でも Playwright の実走が許可された**（#391 ①・PR #396） |
+| 現況 | サンドボックスで**ブラウザ取得が失敗**する（`Failed to download Chrome for Testing`）。実走は **CI の `frontend-e2e`**。**2026-08-05 の利用者裁定により AI レビュー側でも Playwright の実走が許可され**（#391 ①）、PR #396 のマージで**実証経路が 2 本になった** |
 | 実害 | #390 で既存 spec の期待値ずれを**ローカルで検出できず、CI で初めて落ちた**（38 passed / 1 failed） |
 | 緩和策 | 同じ検証内容を vitest（jsdom）にも二重に置いている。加えてレビュー側の実走が入れば経路が 2 本になる |
 | なぜ AI にできないか | 環境側の制約。CI では動くため、**運用としては「E2E は CI に委ねる」で成立している** |
@@ -199,7 +199,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 | 項目 | 内容 |
 | --- | --- |
-| 実測 | OpenD の起動ログが **`JPN Stocks: No permission`** を出している（`US Stocks: LV3` に対して）。出典: 作業仕様書 `docs/specs/20260805_342_moomoo-poc-plan.md` §実測結果（[PR #395](https://github.com/endazon/ai-stock-trading/pull/395)・未マージ） |
+| 実測 | OpenD の起動ログが **`JPN Stocks: No permission`** を出している（`US Stocks: LV3` に対して）。出典: [作業仕様書 20260805_342](specs/20260805_342_moomoo-poc-plan.md) §実測結果 |
 | 計画との食い違い | 計画（06_technical/03_moomoo-integration）は**日本株の市況取得・現物発注が 2026-06 から可能**と記載している |
 | なぜ AI にできないか | moomoo アカウント側の権限申請・開設操作が要る |
 | 未了の帰結 | **日本株の市況を要する機能が動かない**（FR-02 の価格変動検知ほか）。日本株は差金決済ガード（#332）・監視銘柄（7203 等）で前提にされており、**影響範囲は市況取得にとどまらない可能性がある** |
@@ -253,7 +253,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 | ADR-0016 決定 14 | 空売り実弾解禁の verdict の形式（有効期限・再検証の要否） | **#388** |
 | FR-20 §4.2 | 半日取引日カレンダーの判定源 | **#385**。実装は値を発明せず観測入力として受ける設計にした（IADR-0137 決定 1） |
 
-環流記録は `feedback/20260805_adr0016-0019_moomoo-poc-outcomes.md`・`feedback/20260805_adr0023_us-ohlc-source-moomoo.md`（PR #395・**未マージ**）／`feedback/20260805_adr0022-boj-series-id-and-freshness.md`（PR #394・マージ済）／`feedback/20260805_fr20-broker-provider-open-points.md` ほかにある。**planning リポへの起票は未実施**のものがある。
+環流記録は `feedback/20260805_adr0016-0019_moomoo-poc-outcomes.md`・`feedback/20260805_adr0023_us-ohlc-source-moomoo.md`（PR #395・マージ済）／`feedback/20260805_adr0022-boj-series-id-and-freshness.md`（PR #394・マージ済）／`feedback/20260805_fr20-broker-provider-open-points.md` ほかにある。**planning リポへの起票は未実施**のものがある。
 
 ### B-5. 増資 $3,000 の実行
 
@@ -267,7 +267,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 | 項目 | 内容 |
 | --- | --- |
-| 追跡 | **#391** ／ PR **#396**（**未マージ**） |
+| 追跡 | **#391** ／ PR **#396**（マージ済・develop `209dbc8`） |
 | 裁定 ① | **Playwright を許可する**（レビューでも E2E を実走する）。ブラウザ取得に 1〜2 分かかることを受け入れる |
 | 裁定 ② | 「ベストを選択」→ **拒否を「許可リストで直せるか」で分類し、失敗判定を直せるもの（A）だけで行う**（IADR-0145）。しきい値 4 は据え置き、直せない形（B）は**必ず可視化するが失敗させない** |
 | 起票時の前提の誤り | #391 は「拒否 1 件でジョブが落ちる」と書いていたが、`check-permission-denials.js` は既に段階ポリシー（既定 4 件超 or ターン数の半分）を持っていた。実測の失敗要因は **5 件でしきい値をわずかに超えたこと**であり、内訳も npm / dotnet ef ではなく `git -C <絶対パス>` 2 件と MCP ツール 3 件だった |
