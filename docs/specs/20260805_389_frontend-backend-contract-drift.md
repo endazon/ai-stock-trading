@@ -1,7 +1,7 @@
 ---
 title: 作業仕様書 — フロント↔バックエンドの契約ずれ（equity 比化・比率化の退行）を是正し、実応答の契約フィクスチャで再発を機械検出する
 type: spec
-status: review
+status: done
 related_ids:
   - FR-10
   - FR-20
@@ -161,19 +161,21 @@ backend（実 HTTP 応答）──▶ frontend/src/features/risk/contract-fixtur
 - バックエンド: 比較器 `ContractFixtureComparer` に対し、**キー改名・キー欠落・型変更・ネストしたキーの改名・
   配列要素のキー改名**を与えて「不一致として検出する」ことを固定する（＝改名を見逃さない）。
   併せて「空白・改行の差だけでは不一致にしない」正規化の正の確認も置く。
-- フロント: `contract-drift.type-test.ts` に `@ts-expect-error` を用いた**コンパイル時の否定形**を置く。
+- フロント: `contracts.contract.test.ts` の末尾に `@ts-expect-error` を用いた**コンパイル時の否定形**を置く
+  （当初は `contract-drift.type-test.ts` を別ファイルで作る設計だったが、フィクスチャの正の確認と
+  同じ関心事であり分離する利点が無いため 1 ファイルに集約した）。
   旧キー（`maxOrderAmount` / `capitalCap`）の形は契約型を満たさない——満たしてしまうなら `@ts-expect-error` が
   「エラーが出ていない」として `typecheck` を落とす。
 
 ## 受け入れ基準
 
-- [ ] `maxOrderAmountRatio` / `maxDailyOrderAmountRatio` / `capitalCapRatio` がフロントで正しく読める
-- [ ] 比率と金額の取り違えが無い（表示・入力・PUT の各段。PUT は #362 の裁定により**旧名のまま＝400 を維持**し、
+- [x] `maxOrderAmountRatio` / `maxDailyOrderAmountRatio` / `capitalCapRatio` がフロントで正しく読める
+- [x] 比率と金額の取り違えが無い（表示・入力・PUT の各段。PUT は #362 の裁定により**旧名のまま＝400 を維持**し、
       その理由をコードと本書に明記する）
-- [ ] `contracts.ts` の他のキーについても実型と突合し、結果を報告する（上表 §全キー突合）
-- [ ] 再発防止の機構を IADR で決めて導入し、**バックエンドのプロパティ名を変えると CI が赤になる**ことを
+- [x] `contracts.ts` の他のキーについても実型と突合し、結果を報告する（上表 §全キー突合）
+- [x] 再発防止の機構を IADR で決めて導入し、**バックエンドのプロパティ名を変えると CI が赤になる**ことを
       変異検査の実測（赤→緑）で示す
-- [ ] 否定形: モックを実型に合わせただけでは検出できない、という現状の弱さが解消されている
+- [x] 否定形: モックを実型に合わせただけでは検出できない、という現状の弱さが解消されている
       （＝フロントのテストが自分で作ったモックを検証している構造を断つ）
 
 ## テスト方針
@@ -184,7 +186,7 @@ backend（実 HTTP 応答）──▶ frontend/src/features/risk/contract-fixtur
 | 比率/金額の取り違えが無い | `RiskSettingsPage.test.tsx`（equity 比のラベルと 0.25 の表示）・`ControlStatusPage.test.tsx`（実額表示は不変） |
 | 全キー突合 | `FrontendContractFixtureTests`（実応答＝フィクスチャ）＋ `contractFixtures.ts`（フィクスチャ⊨契約型） |
 | 再発防止機構 | `FrontendContractFixtureTests`（4 エンドポイント）＋変異検査の実測 |
-| 否定形 | `ContractFixtureComparerTests`（改名・欠落・型変更・ネスト・配列）＋ `contract-drift.type-test.ts`（`@ts-expect-error`） |
+| 否定形 | `ContractFixtureComparerTests`（改名・欠落・型変更・ネスト・配列）＋ `contracts.contract.test.ts` 末尾（`@ts-expect-error`） |
 
 ## 計画書との差異
 
