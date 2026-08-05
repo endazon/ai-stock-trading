@@ -32,6 +32,8 @@ public class BffPassThroughTests
         ["GET", "/bff/risk-controls/settings/history"],
         ["PUT", "/bff/risk-controls/settings/limits"],
         ["PUT", "/bff/risk-controls/settings/guard"],
+        // AST #334, FR-20: 発注先の変更（SC-02 だけが持つ操作）。
+        ["PUT", "/bff/risk-controls/settings/broker-provider"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
         ["GET", "/bff/monitor/watchlist"],

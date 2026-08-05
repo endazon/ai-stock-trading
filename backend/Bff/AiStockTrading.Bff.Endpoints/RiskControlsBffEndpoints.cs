@@ -14,8 +14,9 @@ namespace AiStockTrading.Bff.Endpoints;
 // 後段不達は 502 へ縮退する（fail-safe）。フロントの存在秘匿（RequireRole→NotFound）はサーバ 401/403 の
 // 表示側バックストップ（IADR-0009/0035）。#285 の AssumptionsBffEndpoints と同型。
 //
-// 登録経路は SC-02/03 が実消費する 6 本のみ（IADR-0071 決定2。kill-switch・pause・sizing-context 等は
+// 登録経路は SC-02/03 が実消費する 7 本のみ（IADR-0071 決定2。kill-switch・pause・sizing-context 等は
 // フロントが叩かないため登録しない＝起こり得ない経路への防御的追加を避ける）。
+// AST #334 で発注先の変更（PUT /settings/broker-provider）を 1 本追加した（SC-02 が実消費する）。
 public static class RiskControlsBffEndpoints
 {
     // 後段の名前付き HTTP クライアント（BaseAddress は Program.cs で Services:RiskManagementService から設定）。
@@ -46,6 +47,13 @@ public static class RiskControlsBffEndpoints
         g.MapPut("/settings/guard", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/guard", ct))
             .WithName("BffRiskControlsSettingsGuardPut");
+
+        // AST #334, FR-20, FR-13: 発注先（Broker Provider）の変更。SC-02 だけが持つ操作である。
+        // **実弾切替の明示確認（同意＋「REAL」の入力）は後段が検証する**（BFF は素通し）。
+        // 統制を BFF へ持たせない——後段が単独で守れることが要点であり、二重化するなら後段側である（AST IADR-0141）。
+        g.MapPut("/settings/broker-provider", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/broker-provider", ct))
+            .WithName("BffRiskControlsSettingsBrokerProviderPut");
 
         // SC-03 統制状態参照（表示専用）: 稼働状態の集約・段階ゲートの現況。いずれも後段 OwnerOnly。
         g.MapGet("/status", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
