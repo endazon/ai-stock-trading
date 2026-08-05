@@ -39,6 +39,17 @@ function hasWorkSpec() {
   } catch (e) { return true; } // ディレクトリが無い等は判定しない（誤検知回避）
 }
 
+// docs/ 直下に置く「分類外のリポジトリ横断の記録」はフロントマターを持たない。
+// 仕様書ではないためテンプレート（docs/templates/）も `/new-spec` の対象も無い。
+// **docs/README.md「構成」の直下ファイル表と対で維持すること** —— 片方だけ増やすと、
+// 文書は正しいのに編集のたびに的外れな警告が出続け、警告そのものが読まれなくなる。
+const FRONT_MATTER_EXEMPT = new Set([
+  'README.md',
+  'DEFINITION_OF_DONE.md',
+  'ai-workflow.md',
+  'blocked-tasks.md',
+]);
+
 function run(raw) {
   let fp = '';
   try {
@@ -54,7 +65,7 @@ function run(raw) {
   // docs 配下の Markdown はフロントマターを確認
   if (/(^|\/)docs\//.test(norm) && norm.endsWith('.md')) {
     const base = norm.split('/').pop();
-    if (base !== 'README.md' && base !== 'DEFINITION_OF_DONE.md' && base !== 'ai-workflow.md') {
+    if (!FRONT_MATTER_EXEMPT.has(base)) {
       let content = '';
       try { content = fs.readFileSync(fp, 'utf8'); } catch (e) { /* noop */ }
       if (content && !content.startsWith('---')) {
