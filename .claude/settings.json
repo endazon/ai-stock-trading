@@ -14,6 +14,7 @@
       "Bash(git -C planning show:*)",
       "Bash(git -C planning diff:*)",
       "Bash(git -C planning ls-tree:*)",
+      "Bash(git -C planning rev-parse:*)",
       "Bash(git ls-tree:*)",
       "Bash(git submodule status:*)",
       "Bash(git fetch:*)",
@@ -22,6 +23,11 @@
       "Bash(git switch:*)",
       "Bash(git checkout:*)",
       "Bash(git branch:*)",
+      "Bash(dotnet ef:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm run:*)",
+      "Bash(npm --prefix:*)",
+      "Bash(git ls-files:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(rg:*)",
@@ -62,7 +68,10 @@
       "mcp__github__add_comment_to_pending_review",
       "mcp__github__push_files",
       "mcp__github__list_workflow_runs",
-      "mcp__github__actions_list"
+      "mcp__github__actions_list",
+      "mcp__github__get_issue_comments",
+      "mcp__github__get_pull_request_reviews",
+      "mcp__github__search_issues"
     ],
     "ask": [
       "Bash(git merge:*)",
