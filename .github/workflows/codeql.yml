@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.3
+        uses: github/codeql-action/init@v4.37.4
         with:
           languages: ${{ matrix.language }}
       # 【落とし穴】autobuild はリポジトリ全体を走査してビルド対象を推定するため、**ビルド不可の
@@ -53,8 +53,8 @@ jobs:
       #
       # 明示ビルドにする場合は、init と analyze の間に置いて CodeQL のトレーサに載せること。
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.37.3
+        uses: github/codeql-action/autobuild@v4.37.4
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.37.3
+        uses: github/codeql-action/analyze@v4.37.4
         with:
           category: "/language:${{ matrix.language }}"
