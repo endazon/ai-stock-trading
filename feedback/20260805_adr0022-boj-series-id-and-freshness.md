@@ -5,7 +5,7 @@ status: open
 category: 新たな制約(ADR要)
 related_ids: [FR-01, FR-10, ADR-0022]
 source_repo: ai-stock-trading
-source_ref: develop（実機確認セッション 2026-08-05・コード変更なし）
+source_ref: docs/FR-01-boj-fx-series-id（PR #394・実機確認セッション 2026-08-05・コード変更なし）
 author: Claude Code（実機確認セッション）
 created: 2026-08-05
 ---
@@ -113,6 +113,33 @@ https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=csv&lang=jp&db=fm08&
 | 2026/08/05（水） | null | 本体 PDF は本日 17:50 に公表済み |
 
 コールレート（`FM01`）でも収録終了期が同じく 2026/08/03 であり、統計固有ではない。
+
+#### 追試手順（本記録の主張を第三者が再確認するための手順）
+
+**本記録の根拠はいずれも外部サイトの実測であり、記録を読むだけでは真偽を確かめられない。** 追試は次の 3 つで足りる。いずれも認証不要・副作用なしである。
+
+1. **系列 ID と値**（§1・§4 の実測値）
+
+   ```bash
+   curl --compressed "https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=csv&lang=jp&db=fm08&code=FXERD04,FXERD05&startDate=202608&endDate=202608"
+   ```
+
+   応答は CP932。先頭に `STATUS,200` / `MESSAGE,正常に終了しました。` / `DATE,<応答時刻>` が入り、データ行は `系列コード,系列名称,単位,期種,統計名,最終更新日,日付,値` の並びになる。**`FXERD04` の系列名称が「東京市場　ドル・円　スポット　17時時点」であること**と、**実行時点から 2 営業日以内の日付が `null` であること**を見る。
+
+2. **収録スケジュール**（§4 の「翌々営業日 8:50 頃」）
+
+   ```bash
+   curl -sL "https://www.boj.or.jp/statistics/outline/tkohyos.xlsx" -o tkohyos.xlsx
+   ```
+
+   シート 2 の「２．各種マーケット関連統計」に 2 行ある。**外国為替市況＝「17:50頃・毎営業日」**、**外国為替相場状況（インターバンク相場・東京市場、円インデックス：日次）＝「時系列」「翌々営業日 8:50頃・毎営業日」**。前者が本体公表、後者が検索サイトへの収録である。xlsx は zip + XML であり、`xl/sharedStrings.xml` と `xl/worksheets/sheet2.xml` を標準ライブラリだけで読める（追加パッケージ不要）。
+
+3. **仲値の定義**（§2）
+
+   - <https://www.boj.or.jp/statistics/market/forex/fxdaily/index.htm> — 「9:00時点および17:00時点のスポット・レートは、時系列統計データ検索サイトでは、オファーとビッドの中間値を掲載しております」
+   - <https://www.boj.or.jp/statistics/outline/exp/exrateyen.htm> — 中心相場の定義（「最も取引の多かった出来値」）
+
+> **`null` の解釈に注意**: API は該当日にデータが無い場合も、まだ収録されていない場合も同じく `null` を返す。**欠測・休場・未収録を区別しない。** 実装で「最新のレート」を求めるときは、`null` を遡ってスキップしたうえで、得られた日付の古さを別途評価する必要がある。
 
 > **「統計別検索の方が新しい」は成り立たない。** 検索サイトは「お急ぎの方は、統計別検索をご利用ください」と案内しているが、公式 API（＝統計別検索と同じデータ）を実際に叩いた結果は主要時系列統計データ表と**完全に同一**だった。経路を変えても鮮度は改善しない。
 
