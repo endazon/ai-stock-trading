@@ -27,7 +27,6 @@
       "Bash(npm ci:*)",
       "Bash(npm run:*)",
       "Bash(npm --prefix:*)",
-      "Bash(npx:*)",
       "Bash(git ls-files:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
