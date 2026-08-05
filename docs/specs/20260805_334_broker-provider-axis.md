@@ -25,6 +25,7 @@ related_specs:
   - ../tests/README.md
   - ../DEFINITION_OF_DONE.md
   - 20260804_333_stage-gate.md
+  - ../../feedback/20260805_fr20-broker-provider-open-points.md
 ---
 
 # 作業仕様書: 運用段階と発注先の 2 軸分離（#334）
@@ -77,6 +78,10 @@ related_specs:
 | D | 文字入力の照合文字列 | 「『REAL』の文字入力」とだけある（大文字小文字・前後空白の扱いは無し） | **前後空白を除いた上での完全一致（大文字小文字を区別する）**。`real` を受理すると「REAL の文字入力」という計画の字面から外れる | IADR-0141 決定2 |
 | E | Stage 1 集計で `MoomooReal` の約定をどう扱うか | 「`SIMULATE` の約定のみで集計」とあるだけで `REAL` は名指しされていない | **算入しない**（`MoomooSimulate` だけを算入する許可制）。名指しの無い値を算入すると、将来の発注先追加が黙って合格証跡へ流れ込む | IADR-0142 決定2 |
 | F | 実弾の発注先を選んだときに発注が通るか | 「組み合わせは保存を妨げない」（設定について）／FR-20 本文は段階が動作モードを「強制できる」 | **設定は保存できるが、段階が実弾でない限り発注は `StageProhibitsLiveTrading` で止める**（従来動作を維持）。安全側 | IADR-0140 決定5 |
+
+論点 A・E は実装内部の設計判断であり計画へ返す必要がない。**論点 B・D・F は計画側で確定すべき事項**のため、
+[環流記録 20260805_fr20-broker-provider-open-points](../../feedback/20260805_fr20-broker-provider-open-points.md) に
+起票した（送付は未実施）。
 
 ## 実装範囲（本 PR）
 
