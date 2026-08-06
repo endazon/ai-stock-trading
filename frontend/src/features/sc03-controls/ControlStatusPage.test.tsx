@@ -8,7 +8,12 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { ControlStatusPage } from './ControlStatusPage';
-import { CONTRACT_RISK_STATUS, CONTRACT_STAGE_GATE, cloneContract } from '../risk/contractFixtures';
+import {
+  CONTRACT_RISK_STATUS,
+  CONTRACT_SHORT_SELLING,
+  CONTRACT_STAGE_GATE,
+  cloneContract,
+} from '../risk/contractFixtures';
 import type { RiskStatusView, StageGateStatus, StageTransition } from '../risk/contracts';
 
 // #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台に作り、この画面の検証に必要な
@@ -44,9 +49,14 @@ const STAGE_GATE: StageGateStatus = {
   promotion: { targetStage: 3, eligible: false, unmetCriteria: [3, 4] },
 };
 
+// FR-10, SC-03, #340, IADR-0154: 空売りの現況も**実応答**（契約フィクスチャ）を土台にする。
+// 既定では維持率・借株料の累計・自動縮小の発動履歴がいずれも未供給である（それが現在の事実）。
+const SHORT_SELLING = cloneContract(CONTRACT_SHORT_SELLING);
+
 function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string) => {
     if (path === '/risk-controls/stage-gate') return STAGE_GATE;
+    if (path === '/risk-controls/short-selling') return SHORT_SELLING;
     return STATUS;
   });
 }
@@ -61,10 +71,32 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
     render(<ControlStatusPage />);
     expect(await screen.findByRole('heading', { name: '統制状態' })).toBeInTheDocument();
     // 読み込み完了（統制状態の描画）を待ってから内容を検証する（見出しは読み込み中も描画されるため待受にしない）。
-    expect(await screen.findByText('緊急停止（kill switch）')).toBeInTheDocument();
-    expect(screen.getByText('作動中')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
+    expect(within(table).getByText('緊急停止（kill switch）')).toBeInTheDocument();
+    expect(within(table).getByText('作動中')).toBeInTheDocument();
     // 新規建てが停止中である旨を表示する。
     expect(screen.getByText('停止中')).toBeInTheDocument();
+  });
+
+  // FR-10, ADR-0009, SC-03, #340: 3 統制を**優先順位順**（kill switch ＞ 日次損失ロックアウト ＞ 一時停止）で
+  // 表示し、**優先統制を明示**する。順序を画面に書かないと「同時に成立したときどれが効くのか」が読めない。
+  it('3 統制を優先順位順に表示し優先統制を明示する', async () => {
+    render(<ControlStatusPage />);
+    const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
+    const rows = within(table).getAllByRole('row');
+
+    // 見出し行を除いた 3 行が重い順に並ぶ。
+    expect(within(rows[1]).getByText('緊急停止（kill switch）')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('日次損失ロックアウト')).toBeInTheDocument();
+    expect(within(rows[3]).getByText('一時停止')).toBeInTheDocument();
+
+    // STATUS は activeControl=1（kill switch）。優先統制の印は 1 行だけに付く。
+    expect(within(rows[1]).getByText('← 現在の優先統制')).toBeInTheDocument();
+    expect(within(table).getAllByText('← 現在の優先統制')).toHaveLength(1);
+
+    // ADR-0009: 日次損失ロックアウトはシステム自動発動であり利用者は解除できない。
+    expect(within(rows[2]).getByText('システム自動')).toBeInTheDocument();
+    expect(within(rows[2]).getByText(/利用者は解除できない/)).toBeInTheDocument();
   });
 
   it('shows usage ratios computed from current/limit', async () => {
@@ -100,11 +132,13 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   it('degrades the stage-gate area independently when it fails but status succeeds', async () => {
     mocks.apiFetch.mockImplementation(async (path: string) => {
       if (path === '/risk-controls/stage-gate') throw new ApiError('server', 'boom', 500);
+      if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return STATUS;
     });
     render(<ControlStatusPage />);
     // 統制状態は表示され、段階ゲート領域のみ縮退する。
-    expect(await screen.findByText('緊急停止（kill switch）')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
+    expect(within(table).getByText('緊急停止（kill switch）')).toBeInTheDocument();
     expect(screen.getByText('段階ゲートは利用できません。')).toBeInTheDocument();
   });
 
@@ -121,6 +155,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
     // 未知の activeControl(9) はラベル写像テーブルに無く「不明(9)」へ、上限 0 の使用率は「—」へ安全側に倒す。
     mocks.apiFetch.mockImplementation(async (path: string) => {
       if (path === '/risk-controls/stage-gate') return STAGE_GATE;
+      if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return { ...STATUS, activeControl: 9, maxOpenPositions: 0, openPositionCount: 0 };
     });
     render(<ControlStatusPage />);
@@ -140,6 +175,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
           withdrawal: { triggered: true, reason: 0, haltNewEntries: true, proposedStage: 1 },
         };
       }
+      if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return STATUS;
     });
     render(<ControlStatusPage />);

@@ -10,7 +10,12 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { sc03ControlsFeature } from './index';
-import { CONTRACT_RISK_STATUS, CONTRACT_STAGE_GATE, cloneContract } from '../risk/contractFixtures';
+import {
+  CONTRACT_RISK_STATUS,
+  CONTRACT_SHORT_SELLING,
+  CONTRACT_STAGE_GATE,
+  cloneContract,
+} from '../risk/contractFixtures';
 import type { RiskStatusView, StageGateStatus } from '../risk/contracts';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）から作る。
@@ -50,6 +55,7 @@ beforeEach(() => {
   mocks.apiFetch.mockReset();
   mocks.apiFetch.mockImplementation(async (path: string) => {
     if (path === '/risk-controls/stage-gate') return STAGE_GATE;
+    if (path === '/risk-controls/short-selling') return cloneContract(CONTRACT_SHORT_SELLING);
     return STATUS;
   });
 });

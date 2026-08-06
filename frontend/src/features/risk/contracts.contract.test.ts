@@ -3,13 +3,23 @@ import {
   CONTRACT_RISK_SETTINGS,
   CONTRACT_RISK_STATUS,
   CONTRACT_SETTINGS_HISTORY,
+  CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
 } from './contractFixtures';
-import type { RiskLimitSettings, StageSettings } from './contracts';
+import type { RiskLimitSettings, ShortSellingStatusView, StageSettings } from './contracts';
 import {
+  availabilityAmountText,
+  availabilityRatioText,
   criterionLabel,
+  isNotSupplied,
   LIMIT_FIELD_KEYS,
   limitInputToWire,
+  METRIC_AVAILABLE,
+  METRIC_NOT_APPLICABLE,
+  METRIC_NOT_APPLICABLE_TEXT,
+  METRIC_NOT_SUPPLIED,
+  METRIC_NOT_SUPPLIED_TEXT,
+  positionSideLabel,
   ratioToPercentText,
   resolveEquityAmount,
   validateLimitInput,
@@ -120,6 +130,68 @@ describe('リスク契約フィクスチャ（実応答）', () => {
     ).toBeCloseTo(CONTRACT_RISK_STATUS.maxDailyOrderAmount, 5);
   });
 
+  // ---- FR-10, SC-03, #340, IADR-0154: 空売りの現況（供給可否の宣言） ----
+
+  it('実応答は維持率・借株料の累計・自動縮小の発動履歴を「未供給」として宣言している', () => {
+    // **これが本機構の主眼である。** 供給元（ブローカー照会）が未実装であるという事実が、
+    // 0 や空列ではなく `NotSupplied` として応答に現れることを実応答で固定する。
+    // 供給が入って `Available` になれば本テストが落ちる——そのとき画面と blocked-tasks を追随させる。
+    expect(CONTRACT_SHORT_SELLING.maintenanceMarginAvailability).toBe(METRIC_NOT_SUPPLIED);
+    expect(CONTRACT_SHORT_SELLING.maintenanceMarginRatio).toBeNull();
+    expect(CONTRACT_SHORT_SELLING.borrowFeeAvailability).toBe(METRIC_NOT_SUPPLIED);
+    expect(CONTRACT_SHORT_SELLING.totalAccruedBorrowFeeUsd).toBeNull();
+    expect(CONTRACT_SHORT_SELLING.reductionHistoryAvailability).toBe(METRIC_NOT_SUPPLIED);
+  });
+
+  it('実応答は設定値（維持率閾値・回復目標オフセット・空売り比率上限）を必ず載せている', () => {
+    // 画面は閾値を直書きしない（Stage1GateCriteria と同じ方針）。供給が無くても設定値だけは要る。
+    expect(CONTRACT_SHORT_SELLING.configuredMaintenanceMarginThreshold).toBe(0.4);
+    expect(CONTRACT_SHORT_SELLING.maintenanceRecoveryTargetOffset).toBe(0.05);
+    expect(CONTRACT_SHORT_SELLING.shortExposureRatioCap).toBe(0.5);
+  });
+
+  it('実応答の保有ポジションは方向を持ち、借株料は建玉単位でも未供給である', () => {
+    // ADR-0016 決定15: 方向（ロング / ショート）は供給がある。借株料の累計は無い。
+    const position = CONTRACT_SHORT_SELLING.positions[0];
+    expect(position).toBeDefined();
+    expect(positionSideLabel(position.side)).toBe('ショート');
+    expect(position.borrowFeeAvailability).toBe(METRIC_NOT_SUPPLIED);
+    expect(position.accruedBorrowFeeUsd).toBeNull();
+  });
+
+  it('未供給の文言そのものが「取得できていません」と述べている（— や 0 へ弱めない）', () => {
+    // **定数の中身を固定する。** シンボル（`METRIC_NOT_SUPPLIED_TEXT`）越しにしか検証しないと、
+    // 誰かが定数を `'—'` へ書き換えても全テストが緑のまま通る（画面は「値が無い」ではなく
+    // 「値が空」に見えるようになり、#403 と同型の fail-open へ静かに戻る）。
+    expect(METRIC_NOT_SUPPLIED_TEXT).toContain('取得できていません');
+    expect(METRIC_NOT_SUPPLIED_TEXT).not.toBe('—');
+    expect(METRIC_NOT_SUPPLIED_TEXT).not.toBe('0');
+    expect(METRIC_NOT_SUPPLIED_TEXT).not.toBe('');
+    // 「該当なし」（建玉なし）と同じ文言にしない（異常と正常が同じ見た目になる）。
+    expect(METRIC_NOT_SUPPLIED_TEXT).not.toBe(METRIC_NOT_APPLICABLE_TEXT);
+  });
+
+  it('未供給の指標は表示文字列でも「取得できていません」になり、0 や — にならない', () => {
+    // #403 と同型の fail-open を防ぐ核心。**値が無いことを値の不在として描く。**
+    expect(availabilityRatioText(METRIC_NOT_SUPPLIED, null)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(availabilityAmountText(METRIC_NOT_SUPPLIED, null)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    // 供給が無いのに値が入っていても、供給可否が優先される（サーバの宣言に従う）。
+    expect(availabilityRatioText(METRIC_NOT_SUPPLIED, 0)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(availabilityAmountText(METRIC_NOT_SUPPLIED, 0)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    // 「該当なし」（建玉なし）は異常ではないため未供給と同じ文言にしない。
+    expect(availabilityRatioText(METRIC_NOT_APPLICABLE, null)).not.toBe(METRIC_NOT_SUPPLIED_TEXT);
+    // 供給があるときだけ値を出す。
+    expect(availabilityRatioText(METRIC_AVAILABLE, 0.4)).toBe('40.0%');
+  });
+
+  it('未知の供給可否は未供給へ倒れる（値があるように見せない）', () => {
+    // サーバが将来メンバを追加したとき、画面が**値を持っているかのように**描かないことを固定する。
+    expect(availabilityRatioText(99, 0.4)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(isNotSupplied(99)).toBe(true);
+    expect(isNotSupplied(METRIC_AVAILABLE)).toBe(false);
+    expect(isNotSupplied(METRIC_NOT_APPLICABLE)).toBe(false);
+  });
+
   // ---- 否定形（写像・型が「効かない」方向に壊れていないこと） ----
 
   it('未知の enum 値は安全側フォールバックへ倒れる（写像を拡げすぎていない）', () => {
@@ -153,6 +225,19 @@ describe('リスク契約フィクスチャ（実応答）', () => {
     const retypedShape = { ...CONTRACT_RISK_SETTINGS.limits, maxOrderAmountRatio: '0.25' };
     // @ts-expect-error 比率キーに文字列は入らない（型変更も検出する）
     const retypedLimits: RiskLimitSettings = retypedShape;
+
+    // #340, IADR-0154: **供給可否を落とした形は契約型を満たさない。**
+    // 「値だけ運べばよい」に戻すと、未供給と 0 の区別が型の上から消える（#403 と同型の穴が復活する）。
+    const withoutAvailabilityShape = (() => {
+      const clone: Record<string, unknown> = { ...CONTRACT_SHORT_SELLING };
+      delete clone.maintenanceMarginAvailability;
+      return clone as Omit<ShortSellingStatusView, 'maintenanceMarginAvailability'>;
+    })();
+    // @ts-expect-error 供給可否（maintenanceMarginAvailability）を欠いた形は契約型を満たさない
+    const withoutAvailability: ShortSellingStatusView = withoutAvailabilityShape;
+    expect(
+      (withoutAvailability as unknown as Record<string, unknown>).maintenanceMarginAvailability,
+    ).toBeUndefined();
 
     // 実行時には「旧キーでは新しいキーが読めない」ことだけを確かめる（#389 の症状）。
     expect((legacyLimits as unknown as Record<string, unknown>).maxOrderAmountRatio).toBeUndefined();

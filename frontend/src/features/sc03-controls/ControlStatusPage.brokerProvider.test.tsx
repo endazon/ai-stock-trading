@@ -19,6 +19,7 @@ import type { RiskStatusView, SettingsChangeEntry, StageGateStatus } from '../ri
 import {
   CONTRACT_RISK_STATUS,
   CONTRACT_SETTINGS_HISTORY,
+  CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
 } from '../risk/contractFixtures';
@@ -65,6 +66,7 @@ function mockApi(brokerProvider: number, gate: unknown = STAGE_GATE) {
   mocks.apiFetch.mockImplementation(async (path: string) => {
     if (path === '/risk-controls/stage-gate') return gate;
     if (path === '/risk-controls/settings/history') return PROVIDER_HISTORY;
+    if (path === '/risk-controls/short-selling') return cloneContract(CONTRACT_SHORT_SELLING);
     return status(brokerProvider);
   });
 }
