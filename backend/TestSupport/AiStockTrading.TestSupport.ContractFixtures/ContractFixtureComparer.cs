@@ -2,9 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace AiStockTrading.RiskManagement.Api.Tests.Contracts;
+namespace AiStockTrading.TestSupport.ContractFixtures;
 
-// FR-10, FR-20, SC-02, SC-03, #389, IADR-0146: フロントとの契約フィクスチャ（実 HTTP 応答の JSON）の
+// FR-10, FR-20, SC-01, SC-02, SC-03, #389, #340, IADR-0146: フロントとの契約フィクスチャ（実 HTTP 応答の JSON）の
 // 正規化と突合。**バックエンドのプロパティ名を変えたらここが赤くなる**ことが本比較器の唯一の存在理由である。
 //
 // IADR-0146 決定4: 正規化は**値の形**で行い、キー名の登録簿を作らない。`DateTimeOffset` は実行のたびに
@@ -12,10 +12,10 @@ namespace AiStockTrading.RiskManagement.Api.Tests.Contracts;
 // 列挙にすると、新しい日時キーが増えたときに登録漏れでフィクスチャが不安定化し、再生成の常用を招く
 // （＝機構が無効化される）。よって「`T` を含む ISO 日時として解釈できる文字列」という値の形で判定する。
 // `DateOnly`（`T` を含まない）は既定値由来の定数のため正規化しない。
-internal static class ContractFixtureComparer
+public static class ContractFixtureComparer
 {
     /// <summary>正規化後の日時（フィクスチャに固定される値）。</summary>
-    internal const string NormalizedTimestamp = "2026-08-05T00:00:00.0000000+00:00";
+    public const string NormalizedTimestamp = "2026-08-05T00:00:00.0000000+00:00";
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -111,7 +111,7 @@ internal static class ContractFixtureComparer
     /// `T` を含むことを要件にして `DateOnly`（`2026-08-05`）を除外する——日付は既定値由来の定数であり、
     /// 正規化すると契約の情報を無意味に捨てる。
     /// </summary>
-    internal static bool IsIsoTimestamp(string? text) =>
+    public static bool IsIsoTimestamp(string? text) =>
         text is not null
         && text.Contains('T', StringComparison.Ordinal)
         && DateTimeOffset.TryParse(

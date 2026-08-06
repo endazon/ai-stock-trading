@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.ContractFixtures;
 using AwesomeAssertions;
 using Xunit;
 
