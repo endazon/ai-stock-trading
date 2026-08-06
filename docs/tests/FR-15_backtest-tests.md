@@ -2,17 +2,20 @@
 title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
-related_ids: [FR-15, FR-20, FR-17, ADR-0008]
+related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, IADR-0105, IADR-0156]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-07-28
+updated: 2026-08-06
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md
 related_specs:
   - ../functional/FR-15_backtest.md
   - ../specs/20260720_required-spec-coverage-arbitration.md
+  - ../specs/20260806_382_us-ohlc-source-arbitration.md
+  - ../adr/IADR-0156_us-ohlc-history-source-absence.md
 ---
 
 # テスト仕様書: バックテスト基盤（FR-15）
@@ -20,6 +23,23 @@ related_specs:
 > 計画書 FR-15 の検証条件①〜⑤・機能仕様書 [FR-15](../functional/FR-15_backtest.md) の受け入れ基準・
 > ADR-0008 の Stage 0 合格基準を、実装済みの xUnit テストへ写像した対応表。安全・統制の中核 FR に対する
 > 必須テスト仕様（[網羅裁定](../specs/20260720_required-spec-coverage-arbitration.md)）として本書を維持する。
+>
+> **🔴 前提（2026-08-06 追記・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) /
+> [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）**:
+> **以下のテストはすべて合成データ・スタブに対する検証であり、実過去データによる Stage 0 の合格判定は
+> 一度も実施できていない。** 現況は次の 4 点である（1 点でも落として要約すると誤読になる）。
+>
+> 1. **実装済みの履歴源は Stooq のみで、その Stooq は取得不能**（ボット検知チャレンジ。ADR-0023 決定1 が
+>    **回避実装を禁じた**ため実装側で取得可能にする手段は無い。**既存の Stooq テストは削除しない**——
+>    提供側の仕様が戻れば価値を保つ）。
+> 2. **既定は `none`（no-op）であり、バーが 1 本も取れなければ Stage 0 は不合格へ倒れる**（fail-safe は
+>    壊れていない。T-15-50 / T-15-46 が固定している）。
+> 3. **代替源 moomoo が実測されたが、採用には ADR-0023 の改定裁定とアダプタの実装の両方が要り、いずれも未了**
+>    （[blocked-tasks](../blocked-tasks.md) B-4）。
+> 4. したがって **Stage 0 の合格判定は現時点で一度も発火し得ない**（恒久の状態）。
+>
+> **「使える履歴源が無い」と単純化しない**（3 を否定する）。**「moomoo で解決した」とも書かない**（裁定も実装も無い）。
+> T-15-63 はこの「未採用である」という状態自体をテストで固定したものである。
 >
 > **本書の起票経緯**: 実環境構築前監査（2026-07-18）で機能/テスト仕様書の必須網羅乖離が検出された
 > （[#211](https://github.com/endazon/ai-stock-trading/issues/211)）。安全中核 5 FR（FR-10/12/15/19/20）のうち、
@@ -42,13 +62,15 @@ related_specs:
   `BacktestService.Api.Tests`（ホストの配線と実効構成の自己申告。クラス名 `BacktestWorker…` は据え置き＝[IADR-0128](../adr/IADR-0128_standard-project-layout.md)）。
 - 対象外（別スライス）: **実市場データによる閾値の水準確認**（偽陰性の測定。閾値そのものの較正は
   [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md) で実施済・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
-  実 Stooq に対する live 検証（2026-07-28 時点でボット検知チャレンジのため取得不可・回避はしない）、
+  実 Stooq に対する live 検証（ボット検知チャレンジのため取得不可。**回避は ADR-0023 決定1 が禁じた**ため
+  今後も実施しない）、
   Risk への verdict 実 publish / E2E（[#82](https://github.com/endazon/ai-stock-trading/issues/82)）、
   段階遷移の承認オペレーション（[#20](https://github.com/endazon/ai-stock-trading/issues/20)）。
 - 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)（基盤）、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
   [IADR-0089](../adr/IADR-0089_backtest-verdict-supply.md)（verdict 供給）、
   [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
-  [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)（合格基準の閾値較正）。
+  [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)（合格基準の閾値較正）、
+  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（**履歴源の不在＝Stage 0 は一度も発火し得ない**・T-15-63）。
 
 ## テスト観点
 
@@ -143,6 +165,13 @@ related_specs:
 
 外部へは一切送信しない（`HttpMessageHandler` スタブ）。実 Stooq に対する確認は手動 opt-in の live 検証（CI 対象外・IADR-0049）。
 
+> **T-15-63 ③ は「わざと落ちるように置いた関門」である**（IADR-0156 決定4）。moomoo の採用が裁定され
+> アダプタを結線した日、このテストが赤くなる。**そのとき直すのはテストだけではない**——IADR-0156・
+> [機能仕様書 FR-15](../functional/FR-15_backtest.md)「米国株日足 OHLC 履歴の現況」・[blocked-tasks](../blocked-tasks.md)
+> A-3 / B-4 を同じ PR で追随させること。**緑のまま採用が入ることはない。**
+>
+> **残余リスク**: 関門は provider 名 `moomoo` という文字列 1 本に依存する。別名（`futu` 等）で足せば緑のまま通る。
+
 | ID | 受け入れ基準 | テストメソッド | 区分 |
 | --- | --- | --- | --- |
 | T-15-38 | 日足 CSV をバーへ解析（ロケール非依存・日付昇順・CRLF/末尾空行許容・出来高欠損は 0） | `StooqDailyCsvParserTests.日足CSVをバーへ解析する` / `解析結果は日付昇順で返す` / `CRLF改行と末尾空行を許容する` / `出来高が空の行は0として扱う` | 自動 |
@@ -155,6 +184,7 @@ related_specs:
 | T-15-44 | 送信前にレート制御を通す（取得回数＝銘柄数）・銘柄が空なら外部へ要求しない | `StooqHistoricalBarSourceTests.送信前にレート制御を通す` / `銘柄が空なら外部へ要求しない` | 自動 |
 | T-15-45 | 通信例外は握りつぶさず送出（完走しない＝verdict も出ない） | `StooqHistoricalBarSourceTests.通信例外は握りつぶさず送出する` | 自動 |
 | T-15-46 | provider 既定・空・`none`・未知・不正 URL は no-op＝**外部へ接続しない**（`stooq` のみ実データ源） | `HistoricalBarSourceFactoryTests.既定と構成不備は外部へ接続しない_no_op`（Theory 5 ケース） / `provider_stooq_で実データ源を組み立てる` / `ベースURLが不正なら_no_op_へ倒す` / `ベースURL未設定なら既定のURLを使う` | 自動 |
+| T-15-63 | **「差し替え先が無い」状態の固定**（ADR-0023・[IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) 決定4）: ①構成を何も与えなければ実効 provider は `none`（`BarDataOptions` の**既定値そのもの**を使う。既定を `stooq` へ変える変異を止める）／②`ResolveProvider` も既定・構成不備で `none`（`Create` と同じ答え・IADR-0105 決定5.1）／③**未採用の代替源 `moomoo` を指定しても no-op へ倒れる** | `HistoricalBarSourceFactoryTests.構成を何も与えなければ実効providerはnone_既定で外部へ接続しない` / `実効providerの解決は既定と構成不備でnoneを返す`（Theory 5 ケース） / `未採用の代替源moomooを指定してもno_opへ倒れる_ADR0023の改定裁定待ち`（Theory 2 ケース） | 自動 |
 | T-15-47 | スナップショットは期間で絞り・重複を後勝ちで畳み・日付/銘柄で安定ソートする | `MaterializedBarDataSourceTests.期間内のバーだけを返す` / `同一銘柄同一日の重複を排除する_後勝ち` / `日付昇順_同日は銘柄順で安定ソートする` | 自動 |
 | T-15-48 | 取得対象を PIT ユニバースから導出し欠測を保持する（ユニバース空なら取得しない） | `MaterializedBarDataSourceTests.ユニバースから取得してスナップショットを作る` / `欠測は取得結果として保持する` / `ユニバースが空なら取得しない` | 自動 |
 | T-15-49 | 期間内に構成銘柄だった銘柄を取得対象に含める（廃止銘柄・端・再上場の重複排除） | `SecurityUniverseTests.期間内に構成銘柄だった銘柄を返す` / `期間外の銘柄は取得対象に含めない` / `期間の端で構成だった銘柄を含める` / `開始日が終了日より後なら空を返す` / `重複する構成期間があっても銘柄は一度だけ返す` | 自動 |
@@ -199,9 +229,10 @@ related_specs:
 
 | 項目 | 理由 | 追跡 |
 | --- | --- | --- |
-| 実市場データによる閾値の水準確認（偽陰性の測定） | `MinTrials` は決定論モンテカルロで較正済（IADR-0110）。実在の戦略が基準を通せるかは実データが要り、Stooq は取得不可・代替は資格情報が必要 | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
-| 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | CI からは外部へ出さない方針（IADR-0049）。手動 opt-in で確認する | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
-| J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
+| **実過去データによる Stage 0 の合格判定そのもの** | **流せる米国株の日足 OHLC が 1 件も無い。** 実装済みの Stooq は取得不能（ADR-0023 決定1・回避しない）／代替源 moomoo は実測済みだが**採用の裁定も実装も未了**。**恒久の状態であり、「いずれ実施予定」ではない**（IADR-0156） | **[#382](https://github.com/endazon/ai-stock-trading/issues/382)**／裁定は [blocked-tasks](../blocked-tasks.md) B-4 |
+| 実市場データによる閾値の水準確認（偽陰性の測定） | `MinTrials` は決定論モンテカルロで較正済（IADR-0110）。実在の戦略が基準を通せるかは実データが要る（上行と同じ理由で実施できない。**2026-08-06 是正**: 旧記述「代替は資格情報が必要」は moomoo の実測により不正確——追加費用も新規契約も要らず、要るのは**採用の裁定と実装**である） | [#208](https://github.com/endazon/ai-stock-trading/issues/208)／[#382](https://github.com/endazon/ai-stock-trading/issues/382) |
+| 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | **実施しない。** ボット検知チャレンジが返り、**回避は ADR-0023 決定1 が明示的に禁じた**（旧記述の「手動 opt-in で確認する」は、確認しても取得できないため意味を持たない） | [#382](https://github.com/endazon/ai-stock-trading/issues/382) |
+| J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る。**なお J-Quants は日本株のみで米国株を含まない**ため、本件（米国株日足 OHLC）の代替にはならない（ADR-0023 §コンテキスト） | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | Risk への verdict 実 publish / E2E | イベント射影は実装済み・実バス配線は統合基盤側 | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |
 | 段階遷移の承認オペレーション | バックテストは昇格「推奨」まで・実遷移は利用者承認 | [#20](https://github.com/endazon/ai-stock-trading/issues/20) |
 
@@ -210,4 +241,5 @@ related_specs:
 - 機能仕様書: [FR-15 バックテスト基盤](../functional/FR-15_backtest.md)、[FR-20 段階ゲート](../functional/FR-20_staged-gates.md)
 - テスト仕様書: [リスクガードコア（FR-10/12/19/20）](FR-10_risk-guard-core-tests.md)
 - 網羅裁定: [必須仕様書の網羅裁定（作業仕様書 20260720）](../specs/20260720_required-spec-coverage-arbitration.md)
-- 作業仕様書: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、[20260718_backtest-verdict-supply](../specs/20260718_backtest-verdict-supply.md)
+- 作業仕様書: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、[20260718_backtest-verdict-supply](../specs/20260718_backtest-verdict-supply.md)、
+  [20260806_382_us-ohlc-source-arbitration](../specs/20260806_382_us-ohlc-source-arbitration.md)
