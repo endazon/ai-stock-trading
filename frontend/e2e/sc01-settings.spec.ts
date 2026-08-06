@@ -55,7 +55,7 @@ test.describe('SC-01 設定（#187）', () => {
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
     await page.getByLabel('変更理由', { exact: true }).fill('税率調整');
-    await page.getByRole('button', { name: '保存' }).click();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
 
     await expect(page.getByText('保存しました。')).toBeVisible();
   });
@@ -73,7 +73,7 @@ test.describe('SC-01 設定（#187）', () => {
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
     await page.getByLabel('変更理由', { exact: true }).fill('税率調整');
-    await page.getByRole('button', { name: '保存' }).click();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
 
     await expect(page.getByRole('alert').filter({ hasText: '競合' })).toBeVisible();
     expect(putCount).toBe(1); // 自動再試行しない
@@ -91,7 +91,7 @@ test.describe('SC-01 設定（#187）', () => {
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
     await page.getByLabel('変更理由', { exact: true }).fill('不正値');
-    await page.getByRole('button', { name: '保存' }).click();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
 
     await expect(page.getByRole('alert').filter({ hasText: '入力' })).toBeVisible();
   });
