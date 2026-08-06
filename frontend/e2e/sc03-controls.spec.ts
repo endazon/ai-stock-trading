@@ -64,7 +64,9 @@ test.describe('SC-03 空売りの現況と参照専用性（#340）', () => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/controls', ['trading-owner']));
 
-    await expect(page.getByRole('heading', { name: '維持率' })).toBeVisible();
+    // #340: `exact: true` を外さないこと。同一画面に「維持率割れによる自動縮小 —— 「動かす」統制」の
+    // 見出しがあり、部分一致だと 2 要素へ解決して strict mode 違反になる。
+    await expect(page.getByRole('heading', { name: '維持率', exact: true })).toBeVisible();
     await expect(page.getByText('取得できていません（供給元がありません）').first()).toBeVisible();
     await expect(page.getByText(/この統制は現在まったく働いていません/)).toBeVisible();
     // **否定形**: 未供給なのに正常値に見える表示（0.0%）を出さない。
@@ -108,7 +110,7 @@ test.describe('SC-03 空売りの現況と参照専用性（#340）', () => {
     await page.goto(pathWithRoles('/controls', ['trading-owner']));
     // 全領域の描画を待つ（描画前に数えると常に 0 で緑になる＝検査が死ぬ）。
     await expect(page.getByRole('table', { name: '上限使用率' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '維持率' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '維持率', exact: true })).toBeVisible();
 
     await expect(page.locator('input')).toHaveCount(0);
     await expect(page.locator('select')).toHaveCount(0);

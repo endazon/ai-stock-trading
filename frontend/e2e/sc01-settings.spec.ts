@@ -38,7 +38,10 @@ test.describe('SC-01 設定（#187）', () => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
 
-    const table = page.getByRole('table', { name: '変更履歴' });
+    // #340: `exact: true` を外さないこと。§2（収集パラメータ）が「収集パラメータの変更履歴」
+    // 「収集パラメータの変更理由」を同一画面へ足したため、部分一致だと 2 要素へ解決して
+    // strict mode 違反になる。**§1 の要素だけを指していることを名前で保証する。**
+    const table = page.getByRole('table', { name: '変更履歴', exact: true });
     await expect(table).toBeVisible();
     const rows = table.getByRole('row');
     // 先頭はヘッダ行、次にデータ行（新しい順）。
@@ -51,7 +54,7 @@ test.describe('SC-01 設定（#187）', () => {
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
-    await page.getByLabel('変更理由').fill('税率調整');
+    await page.getByLabel('変更理由', { exact: true }).fill('税率調整');
     await page.getByRole('button', { name: '保存' }).click();
 
     await expect(page.getByText('保存しました。')).toBeVisible();
@@ -69,7 +72,7 @@ test.describe('SC-01 設定（#187）', () => {
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
-    await page.getByLabel('変更理由').fill('税率調整');
+    await page.getByLabel('変更理由', { exact: true }).fill('税率調整');
     await page.getByRole('button', { name: '保存' }).click();
 
     await expect(page.getByRole('alert').filter({ hasText: '競合' })).toBeVisible();
@@ -87,7 +90,7 @@ test.describe('SC-01 設定（#187）', () => {
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
-    await page.getByLabel('変更理由').fill('不正値');
+    await page.getByLabel('変更理由', { exact: true }).fill('不正値');
     await page.getByRole('button', { name: '保存' }).click();
 
     await expect(page.getByRole('alert').filter({ hasText: '入力' })).toBeVisible();
