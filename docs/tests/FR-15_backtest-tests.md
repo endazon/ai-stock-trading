@@ -205,6 +205,21 @@ related_specs:
 | T-15-51 | ホストの配線: 既定は no-op／`stooq` 指定で実データ源／**`moomoo` 指定で履歴 K 線アダプタ**／未知 provider でも起動して no-op／単一インスタンス | `BacktestWorkerWiringTests.既定構成では外部へ接続しないno_opが解決される_failsafe` / `provider_stooq_の指定で実データ源が解決される` / `provider_moomoo_の指定で履歴K線アダプタが解決される_ADR0023決定5` / `未知のproviderでもホストは起動しno_opへ倒れる` / `過去データ源は単一インスタンスとして解決される` | 自動 |
 | T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL・OpenD 接続先不正では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` / `moomooのOpenD接続先が不正なら自己申告もno_opを示す` | 自動 |
 | T-15-53 | ヘルスチェックが起動直後に ready（DB もバスも持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` | 自動 |
+| T-15-67 | **構成不備は起動時に落ちる**（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定5・[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定6）: ①`provider=moomoo` で鍵パスが設定済みなのにファイルが無ければ**ホストの起動そのものが失敗する**／②**否定形**: `provider` 未指定の既定構成では鍵パスが不正でも起動する（moomoo を使わない環境を巻き込まない） | `BacktestWorkerStartupPreflightTests.provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する` / `既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない` | 自動 |
+| T-15-68 | **起動時検査の判定内容**（IADR-0157 決定6）: ①正常な構成は通す／②鍵パス設定済み＋ファイル不在は落とす／③**鍵パス未設定は正当な構成として通す**（相場系は暗号化必須ではない）／④OpenD のホストが空なら落とす／⑤ポートが 0 なら落とす | `MoomooBarDataPreflightTests`（5 メソッド・Theory 含む 6 ケース） | 自動 |
+
+> **⚑ T-15-67 が「例外が出ること」ではなく「ホストの起動そのものが失敗すること」を検証する理由**
+> （[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定6）。
+>
+> 検査を `MMApiMoomooHistoryKLineClient` のコンストラクタへ置くだけでは**起動時に発火しない**。
+> `AddSingleton<T>(factory)` は遅延生成であり、BacktestService には発注経路の
+> `BrokerAvailabilityProbeService` にあたる eager な消費者が無いためである（本番戦略が未実装で
+> `IHistoricalBarSource` を解決する実消費者すら無い）。
+> **コンストラクタを直接呼ぶ単体テスト（T-15-68）だけでは緑になる一方で、起動時には落ちない**——
+> T-15-68 は判定内容を、**T-15-67 は発火するタイミングを**固定しており、両方が要る。
+>
+> 実際にこの欠陥を一度作り込んでいる（`8451255` → `6de5b83` で是正）。**「例外の種類と文言が
+> 改善されても、表面化のタイミングが変わらなければ preflight の意味が無い。」**
 
 ### 合格基準の閾値較正（#208・[IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)）
 
