@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.ContractFixtures;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -26,6 +27,9 @@ namespace AiStockTrading.RiskManagement.Api.Tests.Contracts;
 public class FrontendContractFixtureTests
 {
     private const string Owner = "trading-owner";
+
+    // IADR-0146: フィクスチャは frontend 側（`src/features/risk/contract-fixtures/`）に置く。
+    private static readonly ContractFixtureStore Fixtures = new("frontend/src/features/risk/contract-fixtures");
 
     private static HttpClient OwnerClient(RiskWorkerWebApplicationFactory factory)
     {
@@ -87,6 +91,44 @@ public class FrontendContractFixtureTests
         await AssertMatchesFixtureAsync("risk-controls.stage-gate.json", res);
     }
 
+    // FR-10, SC-03, ADR-0016 決定3/7/9/15, #340, IADR-0154: GET /risk-controls/short-selling（空売りの現況）。
+    //
+    // **本フィクスチャが固定するのは値ではなく「供給が無いという宣言」である。**
+    // 既定構成（UnavailableMaintenanceMarginSnapshotSource）では維持率・借株料の累計・自動縮小の発動履歴の
+    // いずれも供給されず、応答は `MetricAvailability.NotSupplied`（＝1）を返す。ここが `0`（Available）や
+    // `2`（NotApplicable）へ黙って変われば本テストが落ちる。
+    //
+    // 供給元が入って `Available` を返すようになった場合も本テストは落ちる。**それが正しい**——
+    // 供給の有無が変わったなら、画面（SC-03）と blocked-tasks の記述を同じ PR で追随させる必要がある。
+    [Fact]
+    public async Task 空売り現況応答がフロントの契約フィクスチャと一致する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+
+        // 空売り建玉を 1 件積んでから採る——`positions` が空のままだと `ShortSellingPositionView` の形が
+        // 契約に現れず、その型のずれを検出できない（フィクスチャが表現しない形は守れない・IADR-0146 残余リスク2）。
+        // 現在値の供給は既定で無いため、この建玉の評価額は `NotSupplied`（＝1）で現れる。
+        using (var scope = factory.Services.CreateScope())
+        {
+            var ledger = scope.ServiceProvider.GetRequiredService<IPortfolioLedgerStore>();
+            var decisionId = Guid.NewGuid();
+            var at = new DateTimeOffset(2026, 8, 5, 0, 0, 0, TimeSpan.Zero);
+            ledger.AppendApproval(
+                decisionId,
+                new OrderIntent("SHRT", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell,
+                    BrokerProvider.MoomooSimulate, 10, 90m, PositionEffect.Open),
+                at);
+            ledger.AppendFill(decisionId, $"short-{decisionId:N}", 10, 90m, at);
+        }
+
+        var client = OwnerClient(factory);
+
+        var res = await client.GetAsync("/risk-controls/short-selling");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await AssertMatchesFixtureAsync("risk-controls.short-selling.json", res);
+    }
+
     // FR-11, FR-20, SC-02, SC-03: GET /risk-controls/settings/history（設定変更履歴）。
     // 上限変更（changeType=1）と発注先変更（changeType=7・before/after つき）の 2 件を実際に起こしてから採る。
     // SC-03 の「発注先の変更履歴」は before/after を描画するため、null のままでは契約が現れない。
@@ -122,11 +164,11 @@ public class FrontendContractFixtureTests
 
         if (ContractFixtureStore.UpdateRequested)
         {
-            ContractFixtureStore.Write(fileName, actual);
+            Fixtures.Write(fileName, actual);
             return;
         }
 
-        var expected = ContractFixtureStore.Read(fileName);
+        var expected = Fixtures.Read(fileName);
         var matched = ContractFixtureComparer.Matches(expected, actual, out var difference);
 
         matched.Should().BeTrue(

@@ -1,0 +1,28 @@
+{
+  "maintenanceMarginAvailability": 1,
+  "maintenanceMarginRatio": null,
+  "appliedMaintenanceMarginThreshold": null,
+  "appliedMaintenanceRecoveryTarget": null,
+  "configuredMaintenanceMarginThreshold": 0.40,
+  "maintenanceRecoveryTargetOffset": 0.05,
+  "shortExposureAvailability": 1,
+  "shortExposureRatio": null,
+  "shortExposureRatioCap": 0.50,
+  "positions": [
+    {
+      "symbol": "SHRT",
+      "market": 1,
+      "side": 1,
+      "quantity": 10,
+      "averageEntryPrice": 90,
+      "marketValueAvailability": 1,
+      "marketValueUsd": null,
+      "borrowFeeAvailability": 1,
+      "accruedBorrowFeeUsd": null
+    }
+  ],
+  "borrowFeeAvailability": 1,
+  "totalAccruedBorrowFeeUsd": null,
+  "reductionHistoryAvailability": 1,
+  "reductionHistory": []
+}
