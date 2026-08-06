@@ -12,6 +12,12 @@ created: 2026-08-05
 
 # フィードバック: 発注先の 2 軸分離に残る 3 つの未定事項
 
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#215](https://github.com/endazon/project-planning/issues/215)。
+> あわせて計画リポジトリの `draft/feedback/20260805_fr20-broker-provider-open-points.md` へ記録本体を配置した。
+> 本記録は 2026-08-05 に作成されながら計画リポジトリへ到達しておらず、2026-08-06 の未到達棚卸しで送付した。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 要求の不足（確定した規則の**帰結**が述べられていない箇所が 3 つある）。いずれも実装が安全側に倒して進めたが、
@@ -113,4 +119,5 @@ FR-20 (1) と SC-02 入力表は「**チェックボックスの同意と「REAL
 
 ## 送付状況
 
-未送付（計画リポジトリ endazon/project-planning への起票は人手で行う）。
+**送付済み（2026-08-06 JST）。** 計画リポジトリ endazon/project-planning へ起票した:
+[endazon/project-planning#215](https://github.com/endazon/project-planning/issues/215)。
