@@ -2,7 +2,7 @@
 title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
-related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, IADR-0105, IADR-0138, IADR-0156]
+related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, ADR-0016, IADR-0105, IADR-0138, IADR-0156, IADR-0157]
 author: endazon (with Claude Code)
 created: 2026-07-11
 updated: 2026-08-06
@@ -47,8 +47,9 @@ plan_refs:
 | 役割 | 実装 | 備考 |
 | --- | --- | --- |
 | 取得（実データ源） | `IHistoricalBarSource`（Application のポート） | 非同期。戻り値 `HistoricalBarLoad(Bars, Gaps)` で欠測を銘柄と理由つきで残す |
-| 実アダプタ | `StooqHistoricalBarSource`（Infrastructure） | ADR-0004 が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。送信前に `IRateLimiter` で自制。**ただし現在は取得不能**（下記「米国株日足 OHLC 履歴の現況」） |
-| 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・不正 URL も警告して no-op |
+| 実アダプタ（採用） | `MoomooHistoricalBarSource`（Infrastructure） | **ADR-0023 決定5 が米国株日足 OHLC の履歴源として採用した moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・`RehabType_Forward`）。1 リクエスト 1,000 件・`NextReqKey` でページング。米国株のみ（日本株は写像せず欠測）。SDK 依存は `MMApiMoomooHistoryKLineClient` に閉じる。送信前に `IRateLimiter` で自制。**ただし決定5 の未確認 2 点が済むまで本番のバックテストへ流さない**（下記「米国株日足 OHLC 履歴の現況」・IADR-0157） |
+| 実アダプタ（候補・取得不能） | `StooqHistoricalBarSource`（Infrastructure） | ADR-0004 が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。**現在は取得不能**（ボット検知チャレンジ。回避実装は ADR-0023 決定1 が禁止）。**削除しない**（決定5 でも決定1 の扱いは不変） |
+| 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・構成不備も警告して no-op（**allow-list**: 既知の provider が構成の妥当性を満たしたときだけ実アダプタを返す） |
 | 合成・自己申告 | `BacktestService.Api`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
 | 評価（テスト用） | `InMemoryBarDataSource` | **テスト・検証専用**（決定的スタブ） |
@@ -59,34 +60,41 @@ plan_refs:
 - **通信例外は送出する**: 取得が失敗すればバックテストは完走せず verdict も出ない＝昇格は起きない（fail-safe）。
 - 取得データは個人利用の範囲に留め、外部へ再配信しない（計画書 `02_datasource-candidates.md` の運用制約）。
 
-### 🔴 米国株日足 OHLC 履歴の現況（2026-08-06・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) / [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）
+### 🟠 米国株日足 OHLC 履歴の現況（2026-08-06 改定・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) **決定5** / [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）
 
-**上記の機構は実装済みだが、流せる米国株の日足 OHLC が 1 件も無い。** 現況は次の 4 点であり、
-**1 点でも落として要約すると誤読になる**（IADR-0156 決定2）。
+**履歴源は裁定され、アダプタも実装した。ただし ADR-0023 決定5 が本決定の前提とした 2 点が未確認であり、
+確認が済むまで本番のバックテストへ流してはならない。** 現況は次の 4 点であり、
+**1 点でも落として要約すると誤読になる**（[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定4。
+2026-08-06 の裁定前は [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) 決定2 の 4 点だった）。
 
-1. **実装済みの履歴源は Stooq のみであり、その Stooq は取得不能である。** プログラムからの取得に対し
-   **JavaScript proof-of-work のボット検知チャレンジ**を返す。**ADR-0023 決定1 はこの回避実装を明示的に禁じた**
-   （提供側が自動取得を排除している以上、回避は規約リスクを負う。ADR-0004 が yfinance を不採用とした判断と一貫しない）
-   ため、**実装側で取得可能にする手段は無い**。候補からは削除せず、実装・テストとも維持する
-   （提供側の仕様が戻れば再び使える可能性がある）。
-2. **既定は `none`（no-op）であり、バーが 1 本も取れなければ Stage 0 は不合格へ倒れる。** 誤ったデータで
-   昇格することはない（IADR-0105 決定2 の安全側の縮退。上表「安全既定」および §例外・エラー処理 の最終行）。
-   **fail-safe は壊れていない。**
-3. **代替源として moomoo OpenAPI（`QotRequestHistoryKL`）が実測された**（2026-08-05・[#342](https://github.com/endazon/ai-stock-trading/issues/342)
-   の PoC 項目 7。AAPL で 2006-07-24 まで・1 リクエスト 1,000 件・**追加費用なし**）。
-   **ただし ADR-0023 は代替源を定めておらず、採用には計画側の改定裁定が要る。アダプタも未実装である。**
-   裁定待ちは [blocked-tasks](../blocked-tasks.md) B-4、実測の詳細は [作業仕様書 20260805_342](../specs/20260805_342_moomoo-poc-plan.md)。
-4. したがって **Stage 0 の合格判定は現時点で一度も発火し得ない。** これは一時的な設定漏れではなく、
-   上記 1〜3 が解けるまで続く**恒久の状態**である（ADR-0023 決定2「本件が解消するまでは Stage 0 の合格判定を
-   実施できない」）。[IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（最大 DD 0.15→0.10 の厳格化）も
-   同じ理由で一度も発火していない。
+1. **Stooq は取得不能である。** プログラムからの取得に対し **JavaScript proof-of-work のボット検知チャレンジ**を返す。
+   **ADR-0023 決定1 はこの回避実装を明示的に禁じた**（提供側が自動取得を排除している以上、回避は規約リスクを負う。
+   ADR-0004 が yfinance を不採用とした判断と一貫しない）ため、**実装側で取得可能にする手段は無い**。
+   **決定5 でもこの扱いは変わらない**（「Stooq の扱い（決定1）は変更しない」）。候補からは削除せず、実装・テストとも維持する。
+2. **ADR-0023 決定5（2026-08-06 の利用者裁定）で moomoo OpenAPI の履歴 K 線（`QotRequestHistoryKL`）が
+   米国株日足 OHLC の履歴源として採用され、本リポジトリにアダプタがある**
+   （`MoomooHistoricalBarSource`。`KLType_Day` / `RehabType_Forward`（前復権）/ 1 リクエスト 1,000 件・`NextReqKey`
+   でページング。AAPL で 2006-07-24 まで遡れることを PoC が実測。**追加費用なし**＝ADR-0005 の有料枠は発動しない）。
+3. **ただし決定5 は「実装側で確認を要する 2 点」を本決定の前提とし、
+   「確認するまで本番のバックテストへ流さない」と明記した。** いずれも**実 OpenD を要して未了**である
+   （[blocked-tasks](../blocked-tasks.md) A-3）。
+   - **取得枠の単位と回復周期**（`remainQuota: 300` が銘柄数かリクエスト数か。**多数銘柄を遡ると枠を使い切る可能性**があり、
+     銘柄数単位ならバックテスト対象銘柄数の上限が制約になる）
+   - **前復権の調整方式が [ADR-0016](../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md)
+     決定14 の費用モデル（借株料・配当相当額）と二重計上・欠落を起こさないか**
+4. したがって **既定は `none`（no-op）のままであり、Stage 0 の合格判定はまだ発火しない。**
+   バーが 1 本も取れなければ Stage 0 は不合格へ倒れる（fail-safe は壊れていない・IADR-0105 決定2）。
+   発火させるには `Backtest:BarData:Provider=moomoo` を**明示的に構成する**必要があり、それは 3 の確認が済んでから行う。
+   [IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（最大 DD 0.15→0.10 の厳格化）も同じ理由で未発火のままである。
 
-> **「使える履歴源が無い」と単純化しないこと**（3 の実測を否定する）。
-> **「moomoo で解決した」とも書かないこと**（裁定も実装も無い）。
+> **「使える履歴源が無い」と書かないこと**（2 の裁定と実装を否定する）。
+> **「moomoo で解決した」とも書かないこと**（3 を落とすと、未確認のまま本番へ流す経路そのものになる）。
+> **「実装したから使える」と読める記述を作らないこと。**
 
-**期限**（ADR-0019 決定2）: 代替源の検証は PoC 項目 7 であり、**期限の起算が他の 6 項目と異なる**。
+**期限**（ADR-0019 決定2）: 履歴源の検証は PoC 項目 7 であり、**期限の起算が他の 6 項目と異なる**。
 項目 1〜6 は 2026-08-31（工程 ②）、**項目 7 は go-live 相当（基盤・可変機能ユニット双方の実装完了）を
-起算日とし 1 か月以内**（工程 ⑤）。⑤ は ①→④ の連鎖に含まれない。超過時は ADR-0005 の有料枠の検討へ自動的に移る。
+起算日とし 1 か月以内**（工程 ⑤）。⑤ は ①→④ の連鎖に含まれない。
+**なお決定5 により、期限超過時に ADR-0005 の有料枠へ移る（決定4）という帰結は発動しない**（追加費用が生じないため）。
 
 ### シミュレーション（Slice A）
 
@@ -124,17 +132,22 @@ plan_refs:
 | 保有中の銘柄が上場廃止（PIT で以降バーが除外） | **Slice A の既知の制約**: シミュレータは最終観測終値で当該建玉を凍結評価し続ける（強制決済しない。下記「既知の制約」参照） |
 | 試行数 0 / 標本長不足 | DSR/PBO は保守側（合格させない方向）に倒す |
 | いずれかの合格基準を満たさない | `Stage0GateResult.Passed=false` と不合格理由を返す |
-| 実過去データ源が未接続（provider 既定 `none`）／取得できた銘柄が無い | バーが 0 本になり `DeflatedSharpe`・`CostRobustness`・`WalkForward` が不成立＝**不合格・昇格拒否**（fail-safe）。なお `DataCutoffPolicy` は空バーを違反と見なさない（空は真空的に真）ため、拒否はこの 3 条件が担う（#208・IADR-0105）。**2026-08-06 現在、実運用は常にこの経路である**（上記「米国株日足 OHLC 履歴の現況」・IADR-0156） |
+| 実過去データ源が未接続（provider 既定 `none`）／取得できた銘柄が無い | バーが 0 本になり `DeflatedSharpe`・`CostRobustness`・`WalkForward` が不成立＝**不合格・昇格拒否**（fail-safe）。なお `DataCutoffPolicy` は空バーを違反と見なさない（空は真空的に真）ため、拒否はこの 3 条件が担う（#208・IADR-0105）。**2026-08-06 現在、既定は `none` のままであり実運用は常にこの経路である**（上記「米国株日足 OHLC 履歴の現況」・IADR-0157 決定2） |
 | Stooq がボット検知チャレンジ（HTTP 200 の HTML）を返す | 解析不能＝**銘柄丸ごと欠測**として記録し、他銘柄の取得は続ける。バーが 0 本なら上行と同じく昇格拒否。**チャレンジを回避する実装は書かない**（ADR-0023 決定1・IADR-0156 決定3） |
+| moomoo が非成功（retType != 0）を返す／ページングの途中で失敗する | **その銘柄を丸ごと欠測**として記録し、他銘柄の取得は続ける。**半端に取れたページのバーは 1 本も採らない**（部分履歴で Stage 0 を合格させない・IADR-0157 決定1） |
+| moomoo に米国株以外（日本株）を渡す | 外部へ要求せず**欠測**として残す。ADR-0023 決定5 が定めたのは米国株の履歴源であり、日本株の写像は計画側の決定を要する |
 
 ## 受け入れ基準
 
 - [x] 検証条件①〜⑤が実装され、テストで固定される（①③④=Slice B、②⑤=Slice A）。
 - [x] Stage 0 合格判定が ADR-0008 基準（DSR/PBO/最大 DD/コスト 2 倍/ウォークフォワード＋データカットオフ＝7 条件）で行われる（Slice C）。
 - [x] 合格戦略のみ Stage 1 昇格推奨が出る（FR-20 接続）。撤退キルスイッチ（実 DD>1.5x）が判定できる（Slice C）。
-- [ ] **実過去データによる Stage 0 の合格判定が実施できる** — **未充足**。流せる米国株の日足 OHLC が
-      1 件も無い（上記「米国株日足 OHLC 履歴の現況」）。**上の 3 項目は「機構が実装され、データを与えれば
-      判定が動く」ことの充足であり、実運用で判定が発火したことを意味しない。**
+- [x] **米国株日足 OHLC の履歴源が実装として存在する** — ADR-0023 決定5 の moomoo アダプタ（IADR-0157 決定1）。
+- [ ] **実過去データによる Stage 0 の合格判定が実施できる** — **未充足**。**履歴源は裁定・実装されたが、
+      決定5 の未確認 2 点（取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）が済むまで
+      本番のバックテストへ流さない**（上記「米国株日足 OHLC 履歴の現況」）。既定は `none` のままである。
+      **上の 3 項目は「機構が実装され、データを与えれば判定が動く」ことの充足であり、実運用で判定が発火したことを
+      意味しない。**
 
 ## 既知の制約（Slice A・#99 レビュー指摘）
 
@@ -154,9 +167,11 @@ plan_refs:
   [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
   [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)（合格基準の閾値較正）、
   [IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（最大 DD 0.15→0.10）、
-  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（**履歴源の不在＝Stage 0 は一度も発火し得ない**）
+  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（履歴源の不在。**2026-08-06 に決定2・4・6 が改訂された**）、
+  [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md)（**moomoo 履歴 K 線アダプタ。既定は `none` のまま・未確認 2 点**）
 - テスト仕様: [FR-15 バックテスト基盤](../tests/FR-15_backtest-tests.md)
 - 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、
   [20260726_backtest-historical-bar-source](../specs/20260726_backtest-historical-bar-source.md)、
-  [20260806_382_us-ohlc-source-arbitration](../specs/20260806_382_us-ohlc-source-arbitration.md)
-- 実機確認・裁定待ちの一覧: [blocked-tasks](../blocked-tasks.md)（A-3・B-4）
+  [20260806_382_us-ohlc-source-arbitration](../specs/20260806_382_us-ohlc-source-arbitration.md)、
+  [20260806_382_moomoo-ohlc-adapter](../specs/20260806_382_moomoo-ohlc-adapter.md)
+- 実機確認・裁定待ちの一覧: [blocked-tasks](../blocked-tasks.md)（A-3〔未確認 2 点〕・B-4）

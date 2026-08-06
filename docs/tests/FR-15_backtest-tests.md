@@ -2,7 +2,7 @@
 title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
-related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, IADR-0105, IADR-0156]
+related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, ADR-0016, IADR-0105, IADR-0156, IADR-0157]
 author: endazon (with Claude Code)
 created: 2026-07-20
 updated: 2026-08-06
@@ -15,7 +15,9 @@ related_specs:
   - ../functional/FR-15_backtest.md
   - ../specs/20260720_required-spec-coverage-arbitration.md
   - ../specs/20260806_382_us-ohlc-source-arbitration.md
+  - ../specs/20260806_382_moomoo-ohlc-adapter.md
   - ../adr/IADR-0156_us-ohlc-history-source-absence.md
+  - ../adr/IADR-0157_moomoo-history-kline-adapter.md
 ---
 
 # テスト仕様書: バックテスト基盤（FR-15）
@@ -24,22 +26,26 @@ related_specs:
 > ADR-0008 の Stage 0 合格基準を、実装済みの xUnit テストへ写像した対応表。安全・統制の中核 FR に対する
 > 必須テスト仕様（[網羅裁定](../specs/20260720_required-spec-coverage-arbitration.md)）として本書を維持する。
 >
-> **🔴 前提（2026-08-06 追記・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) /
-> [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）**:
+> **🟠 前提（2026-08-06 改定・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) **決定5** /
+> [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）**:
 > **以下のテストはすべて合成データ・スタブに対する検証であり、実過去データによる Stage 0 の合格判定は
 > 一度も実施できていない。** 現況は次の 4 点である（1 点でも落として要約すると誤読になる）。
 >
-> 1. **実装済みの履歴源は Stooq のみで、その Stooq は取得不能**（ボット検知チャレンジ。ADR-0023 決定1 が
->    **回避実装を禁じた**ため実装側で取得可能にする手段は無い。**既存の Stooq テストは削除しない**——
->    提供側の仕様が戻れば価値を保つ）。
-> 2. **既定は `none`（no-op）であり、バーが 1 本も取れなければ Stage 0 は不合格へ倒れる**（fail-safe は
->    壊れていない。T-15-50 / T-15-46 が固定している）。
-> 3. **代替源 moomoo が実測されたが、採用には ADR-0023 の改定裁定とアダプタの実装の両方が要り、いずれも未了**
->    （[blocked-tasks](../blocked-tasks.md) B-4）。
-> 4. したがって **Stage 0 の合格判定は現時点で一度も発火し得ない**（恒久の状態）。
+> 1. **Stooq は取得不能**（ボット検知チャレンジ。ADR-0023 決定1 が**回避実装を禁じた**ため実装側で取得可能に
+>    する手段は無い。決定5 でもこの扱いは変わらない。**既存の Stooq テストは削除しない**——提供側の仕様が
+>    戻れば価値を保つ）。
+> 2. **ADR-0023 決定5（2026-08-06 の利用者裁定）で moomoo の履歴 K 線が採用され、アダプタも実装した**
+>    （T-15-64 / T-15-65 が固定する）。
+> 3. **ただし決定5 は「実装側で確認を要する 2 点」（取得枠の単位と回復周期／前復権と ADR-0016 決定14 の
+>    費用モデルの整合）を本決定の前提とし、確認するまで本番のバックテストへ流さないと明記した。**
+>    いずれも**実 OpenD を要して未了**である（[blocked-tasks](../blocked-tasks.md) A-3）。
+>    **本書のテストは実 OpenD に対する疎通を一切検証していない**（protobuf の組み立て・`NextReqKey` の往復・
+>    `KLine.Time` の実書式は live 検証に委ねる）。
+> 4. したがって **既定は `none`（no-op）のままであり、Stage 0 の合格判定はまだ発火しない**
+>    （T-15-50 / T-15-46 / T-15-63 が固定している）。
 >
-> **「使える履歴源が無い」と単純化しない**（3 を否定する）。**「moomoo で解決した」とも書かない**（裁定も実装も無い）。
-> T-15-63 はこの「未採用である」という状態自体をテストで固定したものである。
+> **「使える履歴源が無い」と書かない**（2 を否定する）。**「moomoo で解決した」とも書かない**（3 を落とすと、
+> 未確認のまま本番へ流す経路そのものになる）。
 >
 > **本書の起票経緯**: 実環境構築前監査（2026-07-18）で機能/テスト仕様書の必須網羅乖離が検出された
 > （[#211](https://github.com/endazon/ai-stock-trading/issues/211)）。安全中核 5 FR（FR-10/12/15/19/20）のうち、
@@ -70,7 +76,8 @@ related_specs:
   [IADR-0089](../adr/IADR-0089_backtest-verdict-supply.md)（verdict 供給）、
   [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
   [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)（合格基準の閾値較正）、
-  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（**履歴源の不在＝Stage 0 は一度も発火し得ない**・T-15-63）。
+  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（履歴源の不在。**2026-08-06 に決定2・4・6 が改訂**）、
+  [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md)（**moomoo 履歴 K 線アダプタ。既定は `none` のまま**・T-15-63〜65）。
 
 ## テスト観点
 
@@ -161,16 +168,19 @@ related_specs:
 | T-15-36 | 合格戦略は Stage 0 合格・Stage 1 昇格推奨（サービス結合） | `全条件を満たす戦略はStage0合格しStage1昇格を推奨する` / `匿名化済みならカットオフ以前でもデータ健全性を満たす_OR経路` / `カットオフ以前のデータを含む戦略は不合格_昇格しない` | 自動 |
 | T-15-37 | 合格 verdict と実 DD を契約イベント（`BacktestEvaluated`）へ写像（FR-20 供給） | `合格verdictと実DDを契約イベントへ写す` / `不合格は未達条件を名称で連結して持つ` / `decisionがnullなら例外` | 自動 |
 
-### 実過去データ源（Stooq）と安全既定（#208・[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)）
+### 実過去データ源（Stooq / moomoo）と安全既定（#208・[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)・[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md)）
 
-外部へは一切送信しない（`HttpMessageHandler` スタブ）。実 Stooq に対する確認は手動 opt-in の live 検証（CI 対象外・IADR-0049）。
+外部へは一切送信しない（Stooq は `HttpMessageHandler` スタブ、moomoo は `IMoomooHistoryKLineClient` のフェイク）。
+実 Stooq に対する確認は行わない（取得不能・回避は禁止）。**実 OpenD に対する疎通は live 検証に委ねる**（CI 対象外・IADR-0049）。
 
-> **T-15-63 ③ は「わざと落ちるように置いた関門」である**（IADR-0156 決定4）。moomoo の採用が裁定され
-> アダプタを結線した日、このテストが赤くなる。**そのとき直すのはテストだけではない**——IADR-0156・
-> [機能仕様書 FR-15](../functional/FR-15_backtest.md)「米国株日足 OHLC 履歴の現況」・[blocked-tasks](../blocked-tasks.md)
-> A-3 / B-4 を同じ PR で追随させること。**緑のまま採用が入ることはない。**
+> **⚑ T-15-63 ③ は「わざと落ちるように置いた関門」だった**（[IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) 決定4）。
+> **2026-08-06 に ADR-0023 決定5 で moomoo が採用され、関門は設計どおり発火した。**
+> 同じ PR で IADR-0156 の改訂節・IADR-0157・[機能仕様書 FR-15](../functional/FR-15_backtest.md)「米国株日足 OHLC 履歴の現況」・
+> [blocked-tasks](../blocked-tasks.md) A-3 / B-4・環流記録を追随させたうえで、
+> **③ を「採用後の正しい姿」（T-15-64）へ書き換えた**（削除ではない・IADR-0157 決定5）。
+> **関門が意図どおり働いた記録として残す。**
 >
-> **残余リスク**: 関門は provider 名 `moomoo` という文字列 1 本に依存する。別名（`futu` 等）で足せば緑のまま通る。
+> 関門が守っていた「**既定が安全側であること**」は T-15-63 ① が引き続き固定する（変異検査で確認済み）。
 
 | ID | 受け入れ基準 | テストメソッド | 区分 |
 | --- | --- | --- | --- |
@@ -183,15 +193,33 @@ related_specs:
 | T-15-43 | 欠測（非成功応答・解析不能・写像不能）は理由つきで記録し他銘柄を続行 | `StooqHistoricalBarSourceTests.非成功応答は欠測として記録し他銘柄を続行する` / `解析できない応答は欠測として記録する` / `写像できない銘柄は外部へ要求せず欠測として記録する` | 自動 |
 | T-15-44 | 送信前にレート制御を通す（取得回数＝銘柄数）・銘柄が空なら外部へ要求しない | `StooqHistoricalBarSourceTests.送信前にレート制御を通す` / `銘柄が空なら外部へ要求しない` | 自動 |
 | T-15-45 | 通信例外は握りつぶさず送出（完走しない＝verdict も出ない） | `StooqHistoricalBarSourceTests.通信例外は握りつぶさず送出する` | 自動 |
-| T-15-46 | provider 既定・空・`none`・未知・不正 URL は no-op＝**外部へ接続しない**（`stooq` のみ実データ源） | `HistoricalBarSourceFactoryTests.既定と構成不備は外部へ接続しない_no_op`（Theory 5 ケース） / `provider_stooq_で実データ源を組み立てる` / `ベースURLが不正なら_no_op_へ倒す` / `ベースURL未設定なら既定のURLを使う` | 自動 |
-| T-15-63 | **「差し替え先が無い」状態の固定**（ADR-0023・[IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) 決定4）: ①構成を何も与えなければ実効 provider は `none`（`BarDataOptions` の**既定値そのもの**を使う。既定を `stooq` へ変える変異を止める）／②`ResolveProvider` も既定・構成不備で `none`（`Create` と同じ答え・IADR-0105 決定5.1）／③**未採用の代替源 `moomoo` を指定しても no-op へ倒れる** | `HistoricalBarSourceFactoryTests.構成を何も与えなければ実効providerはnone_既定で外部へ接続しない` / `実効providerの解決は既定と構成不備でnoneを返す`（Theory 5 ケース） / `未採用の代替源moomooを指定してもno_opへ倒れる_ADR0023の改定裁定待ち`（Theory 2 ケース） | 自動 |
+| T-15-46 | provider 既定・空・`none`・未知・不正 URL は no-op＝**外部へ接続しない**（明示指定した既知 provider のみ実データ源） | `HistoricalBarSourceFactoryTests.既定と構成不備は外部へ接続しない_no_op`（Theory 5 ケース） / `provider_stooq_で実データ源を組み立てる` / `ベースURLが不正なら_no_op_へ倒す` / `ベースURL未設定なら既定のURLを使う` | 自動 |
+| T-15-63 | **既定が安全側であることの固定**（[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定2）: ①構成を何も与えなければ実効 provider は `none`（`BarDataOptions` の**既定値そのもの**を使う。**既定を `stooq` / `moomoo` へ変える変異を止める**）／②`ResolveProvider` も既定・構成不備で `none`（`Create` と同じ答え・IADR-0105 決定5.1） | `HistoricalBarSourceFactoryTests.構成を何も与えなければ実効providerはnone_既定で外部へ接続しない` / `実効providerの解決は既定と構成不備でnoneを返す`（Theory 5 ケース） | 自動 |
+| T-15-64 | **moomoo は明示指定したときだけ使われる**（ADR-0023 決定5・IADR-0157 決定2。**T-15-63 ③ の後継**）: ①`moomoo` の明示指定で `MoomooHistoricalBarSource` を返す（大小文字・前後空白を問わない）／②OpenD の接続先が不正なら no-op へ倒す（allow-list）／③実効 provider が moomoo なのに OpenD 接続が未提供なら**停止する**（自己申告と実際の選択がずれない・IADR-0105 決定5.1） | `HistoricalBarSourceFactoryTests.provider_moomoo_の明示指定で履歴K線アダプタを組み立てる_ADR0023決定5`（Theory 3 ケース） / `moomooはOpenDの接続先が不正なら_no_opへ倒す`（Theory 3 ケース） / `moomoo指定でOpenD接続が未提供なら停止する_誤用防止` | 自動 |
+| T-15-65 | **moomoo 履歴 K 線の取得仕様**（ADR-0023 決定5・IADR-0157 決定1・3）: ①**`NextReqKey` が返る限りページングする**（切り詰めない）／②1 リクエストは **1,000 件**を要求／③**前復権（`RehabType_Forward`）**を指定／④銘柄・期間を要求へ載せ OHLCV をバーへ写す／⑤期間外のバーは捨てる／⑥非成功応答は銘柄ごとの欠測とし他銘柄は続行／⑦**ページング途中の失敗ではその銘柄のバーを 1 本も採らない**／⑧米国株以外・空の銘柄は外部へ要求せず欠測／⑨0 件は欠測／⑩空ページで打ち切る／⑪**未確認 2 点を取得のたびに警告する** | `MoomooHistoricalBarSourceTests`（11 メソッド。`NextReqKeyが返る限りページングして全期間のバーを取得する` / `一度に要求する件数は1000件_ADR0023決定5` / `前復権を指定して取得する_ADR0023決定5` / `未確認2点を取得のたびに警告する_本番のバックテストへ流さない` ほか） | 自動 |
+| T-15-66 | **SDK 写像が OpenD の protobuf 定義に一致する**（IADR-0157 決定1）: 前復権＝`RehabType_Forward`(1) / 日足＝`KLType_Day`(2) / 米国株＝`QotMarket_US_Security`(11) / OHLCV のフィールドビット / `KLine.Time` の解釈（解釈できない行は採らない）／期間書式 `yyyy-MM-dd` | `MMApiMoomooHistoryKLineClientMappingTests`（6 メソッド） | 自動（protobuf の実組み立ては live 検証） |
 | T-15-47 | スナップショットは期間で絞り・重複を後勝ちで畳み・日付/銘柄で安定ソートする | `MaterializedBarDataSourceTests.期間内のバーだけを返す` / `同一銘柄同一日の重複を排除する_後勝ち` / `日付昇順_同日は銘柄順で安定ソートする` | 自動 |
 | T-15-48 | 取得対象を PIT ユニバースから導出し欠測を保持する（ユニバース空なら取得しない） | `MaterializedBarDataSourceTests.ユニバースから取得してスナップショットを作る` / `欠測は取得結果として保持する` / `ユニバースが空なら取得しない` | 自動 |
 | T-15-49 | 期間内に構成銘柄だった銘柄を取得対象に含める（廃止銘柄・端・再上場の重複排除） | `SecurityUniverseTests.期間内に構成銘柄だった銘柄を返す` / `期間外の銘柄は取得対象に含めない` / `期間の端で構成だった銘柄を含める` / `開始日が終了日より後なら空を返す` / `重複する構成期間があっても銘柄は一度だけ返す` | 自動 |
 | T-15-50 | **実データ未供給（バー 0 本）では Stage 0 不合格＝昇格拒否**（fail-safe 維持・#208 受け入れ基準③） | `Stage0GateServiceTests.実データ未供給ならStage0は不合格で昇格しない_failsafe` | 自動 |
-| T-15-51 | ホストの配線: 既定は no-op／`stooq` 指定で実データ源／未知 provider でも起動して no-op／単一インスタンス | `BacktestWorkerWiringTests.既定構成では外部へ接続しないno_opが解決される_failsafe` / `provider_stooq_の指定で実データ源が解決される` / `未知のproviderでもホストは起動しno_opへ倒れる` / `過去データ源は単一インスタンスとして解決される` | 自動 |
-| T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` | 自動 |
+| T-15-51 | ホストの配線: 既定は no-op／`stooq` 指定で実データ源／**`moomoo` 指定で履歴 K 線アダプタ**／未知 provider でも起動して no-op／単一インスタンス | `BacktestWorkerWiringTests.既定構成では外部へ接続しないno_opが解決される_failsafe` / `provider_stooq_の指定で実データ源が解決される` / `provider_moomoo_の指定で履歴K線アダプタが解決される_ADR0023決定5` / `未知のproviderでもホストは起動しno_opへ倒れる` / `過去データ源は単一インスタンスとして解決される` | 自動 |
+| T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL・OpenD 接続先不正では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` / `moomooのOpenD接続先が不正なら自己申告もno_opを示す` | 自動 |
 | T-15-53 | ヘルスチェックが起動直後に ready（DB もバスも持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` | 自動 |
+| T-15-67 | **構成不備は起動時に落ちる**（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定5・[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定6）: ①`provider=moomoo` で鍵パスが設定済みなのにファイルが無ければ**ホストの起動そのものが失敗する**／②**否定形**: `provider` 未指定の既定構成では鍵パスが不正でも起動する（moomoo を使わない環境を巻き込まない） | `BacktestWorkerStartupPreflightTests.provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する` / `既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない` | 自動 |
+| T-15-68 | **起動時検査の判定内容**（IADR-0157 決定6）: ①正常な構成は通す／②鍵パス設定済み＋ファイル不在は落とす／③**鍵パス未設定は正当な構成として通す**（相場系は暗号化必須ではない）／④OpenD のホストが空なら落とす／⑤ポートが 0 なら落とす | `MoomooBarDataPreflightTests`（5 メソッド・Theory 含む 6 ケース） | 自動 |
+
+> **⚑ T-15-67 が「例外が出ること」ではなく「ホストの起動そのものが失敗すること」を検証する理由**
+> （[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定6）。
+>
+> 検査を `MMApiMoomooHistoryKLineClient` のコンストラクタへ置くだけでは**起動時に発火しない**。
+> `AddSingleton<T>(factory)` は遅延生成であり、BacktestService には発注経路の
+> `BrokerAvailabilityProbeService` にあたる eager な消費者が無いためである（本番戦略が未実装で
+> `IHistoricalBarSource` を解決する実消費者すら無い）。
+> **コンストラクタを直接呼ぶ単体テスト（T-15-68）だけでは緑になる一方で、起動時には落ちない**——
+> T-15-68 は判定内容を、**T-15-67 は発火するタイミングを**固定しており、両方が要る。
+>
+> 実際にこの欠陥を一度作り込んでいる（`8451255` → `6de5b83` で是正）。**「例外の種類と文言が
+> 改善されても、表面化のタイミングが変わらなければ preflight の意味が無い。」**
 
 ### 合格基準の閾値較正（#208・[IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)）
 
@@ -229,8 +257,9 @@ related_specs:
 
 | 項目 | 理由 | 追跡 |
 | --- | --- | --- |
-| **実過去データによる Stage 0 の合格判定そのもの** | **流せる米国株の日足 OHLC が 1 件も無い。** 実装済みの Stooq は取得不能（ADR-0023 決定1・回避しない）／代替源 moomoo は実測済みだが**採用の裁定も実装も未了**。**恒久の状態であり、「いずれ実施予定」ではない**（IADR-0156） | **[#382](https://github.com/endazon/ai-stock-trading/issues/382)**／裁定は [blocked-tasks](../blocked-tasks.md) B-4 |
-| 実市場データによる閾値の水準確認（偽陰性の測定） | `MinTrials` は決定論モンテカルロで較正済（IADR-0110）。実在の戦略が基準を通せるかは実データが要る（上行と同じ理由で実施できない。**2026-08-06 是正**: 旧記述「代替は資格情報が必要」は moomoo の実測により不正確——追加費用も新規契約も要らず、要るのは**採用の裁定と実装**である） | [#208](https://github.com/endazon/ai-stock-trading/issues/208)／[#382](https://github.com/endazon/ai-stock-trading/issues/382) |
+| **実過去データによる Stage 0 の合格判定そのもの** | **履歴源は ADR-0023 決定5 で moomoo に裁定され、アダプタも実装した**（T-15-64 / T-15-65）。**しかし決定5 の未確認 2 点（取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）が済むまで本番のバックテストへ流さない**——これは決定5 の明文の前提である。**既定は `none` のままであり、判定はまだ発火しない。** **「使える履歴源が無い」とも「moomoo で解決した」とも書かないこと** | **[#382](https://github.com/endazon/ai-stock-trading/issues/382)**（アダプタは実装済み）／未確認 2 点は [blocked-tasks](../blocked-tasks.md) A-3 |
+| 実市場データによる閾値の水準確認（偽陰性の測定） | `MinTrials` は決定論モンテカルロで較正済（IADR-0110）。実在の戦略が基準を通せるかは実データが要る（上行と同じ理由で実施できない。**2026-08-06 是正**: 旧記述「代替は資格情報が必要」は moomoo の実測により不正確——追加費用も新規契約も要らない。**2026-08-06 再是正**: 「要るのは採用の裁定と実装」も古くなった——**裁定も実装も済み、要るのは未確認 2 点の実機確認である**） | [#208](https://github.com/endazon/ai-stock-trading/issues/208)／[#382](https://github.com/endazon/ai-stock-trading/issues/382) |
+| **実 OpenD に対する moomoo 履歴 K 線の疎通** | **一度も検証していない。** protobuf の組み立て（`QotRequestHistoryKL` のビルダ）・`NextReqKey` の往復・`KLine.Time` の実書式・取得枠を使い切ったときの応答（非成功か空応答か）は実 OpenD でしか確認できない。**最初に繋ぐ人が疎通を確認すること**（IADR-0157 残余リスク 1・3） | **[#382](https://github.com/endazon/ai-stock-trading/issues/382)**／[blocked-tasks](../blocked-tasks.md) A-3 |
 | 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | **実施しない。** ボット検知チャレンジが返り、**回避は ADR-0023 決定1 が明示的に禁じた**（旧記述の「手動 opt-in で確認する」は、確認しても取得できないため意味を持たない） | [#382](https://github.com/endazon/ai-stock-trading/issues/382) |
 | J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る。**なお J-Quants は日本株のみで米国株を含まない**ため、本件（米国株日足 OHLC）の代替にはならない（ADR-0023 §コンテキスト） | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
 | Risk への verdict 実 publish / E2E | イベント射影は実装済み・実バス配線は統合基盤側 | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |

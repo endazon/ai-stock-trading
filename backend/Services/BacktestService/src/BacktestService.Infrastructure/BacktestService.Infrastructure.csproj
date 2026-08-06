@@ -1,5 +1,6 @@
-<!-- FR-15, #208, IADR-0105, IADR-0128: バックテストサービスの技術詳細（実過去データ源 IHistoricalBarSource の
-     アダプタ＝Stooq CSV 取得・記号写像・レート制御）。ホスト（Program.cs・DI 構成）は Api に置く。
+<!-- FR-15, #208, IADR-0105, IADR-0157: バックテストサービスの技術詳細（実過去データ源 IHistoricalBarSource の
+     アダプタ＝Stooq CSV 取得・記号写像・レート制御／moomoo 履歴 K 線＝ADR-0023 決定5）。
+     ホスト（Program.cs・DI 構成）は Api に置く。
      共有フレームワーク型（IOptions/ILogger 等）を使うため FrameworkReference を持つ
      （TestSupport.PlatformShim と同型）。 -->
 <Project Sdk="Microsoft.NET.Sdk">
@@ -9,6 +10,9 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- ADR-0023 決定5, IADR-0157: 米国株日足 OHLC の履歴源（moomoo OpenAPI の履歴 K 線）。
+         発注経路（OrderExecutionService.Infrastructure）と同一バージョンの SDK を使う。 -->
+    <PackageReference Include="moomoo-api" />
     <ProjectReference Include="..\BacktestService.Application\BacktestService.Application.csproj" />
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
     <!-- #208, IADR-0105 決定 5: 外部データ源のレート制御（IRateLimiter / TokenBucket・IADR-0064）を再利用する。

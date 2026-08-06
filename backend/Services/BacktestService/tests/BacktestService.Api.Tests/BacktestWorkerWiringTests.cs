@@ -35,6 +35,38 @@ public class BacktestWorkerWiringTests
             .Should().BeOfType<StooqHistoricalBarSource>();
     }
 
+    // FR-15, ADR-0023 決定5, IADR-0157: provider=moomoo の明示指定でだけ履歴 K 線アダプタが解決される。
+    // OpenD への接続は遅延（初回取得時）であり、解決の時点では 1 本も張らない。
+    [Fact]
+    public void provider_moomoo_の指定で履歴K線アダプタが解決される_ADR0023決定5()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>()
+            .Should().BeOfType<MoomooHistoricalBarSource>();
+    }
+
+    // ADR-0023 決定5, IADR-0157 決定2: OpenD の接続先が不正なら moomoo でも no-op へ倒し、自己申告も一致させる。
+    [Fact]
+    public async Task moomooのOpenD接続先が不正なら自己申告もno_opを示す()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+            ["Backtest:BarData:Moomoo:OpenDPort"] = "0",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>().Should().BeOfType<NoOpHistoricalBarSource>();
+
+        var dto = await factory.CreateClient()
+            .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
+
+        dto!.Ports.Should().ContainSingle(p => p.Port == "historical-bar-data" && p.Implementation == "none");
+    }
+
     [Fact]
     public void 未知のproviderでもホストは起動しno_opへ倒れる()
     {
@@ -101,5 +133,46 @@ public class BacktestWorkerWiringTests
         var response = await factory.CreateClient().GetAsync("/health/ready");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}
+
+// FR-15, ADR-0023 決定5, IADR-0060 決定5, IADR-0157, #382: **構成不備が「起動時」に落ちることを固定する。**
+//
+// `MoomooBarDataPreflight` をコンストラクタへ置くだけでは起動時に効かない —— `AddSingleton<T>(factory)` は
+// 遅延生成であり、BacktestService には発注経路の `BrokerAvailabilityProbeService` にあたる eager な
+// 消費者が無いためである。`Program.cs` が `builder.Build()` の直後に強制解決している。
+//
+// **本テストが守るのは「例外が出ること」ではなく「ホストの起動そのものが失敗すること」である。**
+// 起動が通ってしまうと、鍵のマウント漏れは初回のバー取得まで顕在化しない（＝preflight の意味が消える）。
+public class BacktestWorkerStartupPreflightTests
+{
+    [Fact]
+    public void provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+            ["Backtest:BarData:Moomoo:RsaPrivateKeyPath"] = "/secrets/moomoo-rsa/does-not-exist.pem",
+        });
+
+        // Services へ触れた時点でホストが構築される（＝Program.cs の強制解決が走る）。
+        var act = () => _ = factory.Services;
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RsaPrivateKeyPath*");
+    }
+
+    // **否定形**: 既定（provider 未指定）では moomoo の構成を一切見ない。
+    // 見てしまうと、moomoo を使わない環境が moomoo の構成不備で起動できなくなる。
+    [Fact]
+    public void 既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Moomoo:RsaPrivateKeyPath"] = "/secrets/moomoo-rsa/does-not-exist.pem",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>()
+            .Should().BeOfType<NoOpHistoricalBarSource>();
     }
 }

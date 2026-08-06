@@ -35,25 +35,58 @@ builder.Services.AddAiStockTradingHealthChecks();
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
-// FR-15, ADR-0004, #208, IADR-0105: 実過去データ源（Stooq）の構成。
-// 既定・空・"none"・未知 provider・不正なベース URL はすべて no-op＝**外部へ 1 リクエストも出さない**。
+// FR-15, ADR-0004, ADR-0023, #208, IADR-0105, IADR-0157: 実過去データ源（Stooq / moomoo）の構成。
+// 既定・空・"none"・未知 provider・構成不備はすべて no-op＝**外部へ 1 リクエストも出さない**。
+//
+// **既定は none のままである**（ADR-0023 決定5 は moomoo を採用したが、「実装側で確認を要する 2 点」
+// （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）を本決定の前提としており、
+// いずれも実 OpenD を要して未了である）。moomoo は**明示的に構成したときだけ**使う。
 builder.Services.Configure<BarDataOptions>(builder.Configuration.GetSection(BarDataOptions.SectionName));
 builder.Services.AddHttpClient(BarDataHttpClientName);
+
+// ADR-0023 決定5, IADR-0157: OpenD への接続は provider=moomoo のときだけ作る（それ以外では 1 本も張らない）。
+var barDataOptions = builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>();
+var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(barDataOptions);
+if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
+{
+    builder.Services.AddSingleton<IMoomooHistoryKLineClient>(sp => new MMApiMoomooHistoryKLineClient(
+        sp.GetRequiredService<IOptions<BarDataOptions>>().Value.Moomoo,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<MMApiMoomooHistoryKLineClient>()));
+}
+
 builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
 {
     var options = sp.GetRequiredService<IOptions<BarDataOptions>>().Value;
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(BarDataHttpClientName);
     return HistoricalBarSourceFactory.Create(
-        options, httpClient, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>());
+        options,
+        httpClient,
+        TimeProvider.System,
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetService<IMoomooHistoryKLineClient>()); // moomoo 時のみ登録済み
 });
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（選択中ポート実装）の自己申告。
 // 「有効化したつもりで効いていない」を、メッシュ内部から provider 名で確認できるようにする。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
-    .AddPort("historical-bar-data", HistoricalBarSourceFactory.ResolveProvider(
-        builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>())));
+    .AddPort("historical-bar-data", barDataProvider));
 
 var app = builder.Build();
+
+// FR-15, ADR-0023 決定5, IADR-0060 決定5, IADR-0157, #382: **構成不備を起動時に落とすため、ここで強制解決する。**
+//
+// `MMApiMoomooHistoryKLineClient` のコンストラクタが `MoomooBarDataPreflight` を呼ぶが、**それだけでは
+// 起動時に効かない**。`AddSingleton<T>(factory)` で登録したシングルトンは遅延生成であり、組み込み DI は
+// `builder.Build()` では構築しない。BacktestService には発注経路の `BrokerAvailabilityProbeService` に
+// あたる eager な消費者が無く（本番戦略が未実装で `IHistoricalBarSource` を解決する実消費者が無い）、
+// **鍵のマウントを誤ってもプロセスは正常に起動し続け、失敗は初回のバー取得まで顕在化しない。**
+// 例外の種類と文言が改善されても、**表面化のタイミングという核心が変わらなければ preflight の意味が無い。**
+//
+// 接続は張らない（`EnsureConnectedAsync` は初回要求まで遅延する）。ここで走るのは構成の検査だけである。
+if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
+{
+    _ = app.Services.GetRequiredService<IMoomooHistoryKLineClient>();
+}
 
 app.UseAiStockTradingMiddleware();
 app.MapAiStockTradingHealthChecks();

@@ -10,9 +10,10 @@ namespace AiStockTrading.Backtest.Infrastructure.Tests;
 // FR-15, #208, IADR-0105: 構成 Backtest:BarData:Provider による過去データ源の選択。
 // 安全既定は no-op（外部へ 1 リクエストも出さない）。構成不備は起動を落とさず警告して no-op へ倒す（IADR-0068 と同形）。
 //
-// FR-15, ADR-0023, IADR-0156, #382: 既定 none は「設定漏れ」ではなく**差し替え先の不在**である
-// （実装済みの Stooq は取得不能・回避実装は禁止／代替源 moomoo は実測済みだが採用も実装も未了）。
-// 本クラスは「まだ実装していない」ことが黙って変わらないよう、既定値と未採用源の扱いを固定する。
+// FR-15, ADR-0023 決定5, IADR-0156, IADR-0157, #382: 既定 none は「設定漏れ」ではない。
+// Stooq は取得不能（回避実装は禁止）であり、使えるのは決定5 で採用された moomoo だけである。ただし決定5 は
+// 「実装側で確認を要する 2 点」を本決定の前提としており、**確認が済むまで本番のバックテストへ流さない**。
+// 本クラスは **既定が安全側（none）であること**と **allow-list（未知の provider は実アダプタへ落ちない）**を固定する。
 public class HistoricalBarSourceFactoryTests
 {
     private static readonly (string Symbol, Market Market)[] OneSymbol = [("AAPL", Market.UnitedStates)];
@@ -86,24 +87,72 @@ public class HistoricalBarSourceFactoryTests
             .Should().Be(HistoricalBarSourceFactory.None);
     }
 
-    // ADR-0023, IADR-0156 決定4・決定6: **わざと落ちるように置いた関門**。
-    // moomoo は米国株日足 OHLC の代替源として実測済み（#342 の PoC 項目 7）だが、採用には ADR-0023 の
-    // 改定裁定が要り、アダプタも未実装である（docs/blocked-tasks.md B-4）。裁定前に結線すれば本テストが落ちる。
-    // 落ちたときは実装だけでなく IADR-0156・FR-15 の機能/テスト仕様書・blocked-tasks を同じ PR で追随させること。
+    // ADR-0023 決定5, IADR-0157 決定5: **本テストは PR #415 が置いた関門テストの後継である。**
+    //
+    // 旧テスト `未採用の代替源moomooを指定してもno_opへ倒れる_ADR0023の改定裁定待ち` は、
+    // 「裁定が下りた日にわざと赤くなり、記録の追随を強制する」ために置かれていた（IADR-0156 決定4）。
+    // 2026-08-06 に ADR-0023 決定5 で moomoo が採用されたため**関門は設計どおり発火し**、
+    // 本 PR で「採用後の正しい姿」へ書き換えた（削除ではない。経緯は IADR-0157 決定5）。
+    //
+    // 固定するのは「moomoo は**明示的に構成したときだけ**使われる」ことである。既定が none であることは
+    // 上の `構成を何も与えなければ実効providerはnone_既定で外部へ接続しない` が引き続き固定する。
     [Theory]
     [InlineData("moomoo")]
     [InlineData("MOOMOO")]
-    public void 未採用の代替源moomooを指定してもno_opへ倒れる_ADR0023の改定裁定待ち(string provider)
+    [InlineData(" Moomoo ")]
+    public void provider_moomoo_の明示指定で履歴K線アダプタを組み立てる_ADR0023決定5(string provider)
     {
         var options = new BarDataOptions { Provider = provider };
 
-        HistoricalBarSourceFactory.ResolveProvider(options).Should().Be(HistoricalBarSourceFactory.None);
-        Create(options, new FailIfCalledHandler()).Should().BeOfType<NoOpHistoricalBarSource>();
+        HistoricalBarSourceFactory.ResolveProvider(options).Should().Be(HistoricalBarSourceFactory.Moomoo);
+        Create(options, new FailIfCalledHandler(), new StubMoomooHistoryKLineClient())
+            .Should().BeOfType<MoomooHistoricalBarSource>();
     }
 
-    private static IHistoricalBarSource Create(BarDataOptions options, HttpMessageHandler handler) =>
+    // IADR-0157 決定2: 実効 provider が moomoo なのに OpenD 接続が未提供なのは**配線の誤り**である。
+    // 黙って no-op へ倒すと、実効構成の自己申告が moomoo を示したまま 1 本もバーを取らない
+    // （IADR-0105 決定5.1「自己申告と実際の選択は一致する」が破れる）。BrokerFactory の moomoo 未提供と同じ扱い。
+    [Fact]
+    public void moomoo指定でOpenD接続が未提供なら停止する_誤用防止()
+    {
+        var act = () => Create(new BarDataOptions { Provider = "moomoo" }, new FailIfCalledHandler());
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*OpenD*");
+    }
+
+    // IADR-0157 決定2: allow-list は「既知の provider が構成の妥当性を満たしたときだけ」実アダプタを返す。
+    // 接続先が不正なら moomoo でも no-op へ倒す（Stooq のベース URL 不正と同形）。
+    [Theory]
+    [InlineData("", (ushort)11111)]
+    [InlineData("  ", (ushort)11111)]
+    [InlineData("opend", (ushort)0)]
+    public void moomooはOpenDの接続先が不正なら_no_opへ倒す(string host, ushort port)
+    {
+        var options = new BarDataOptions
+        {
+            Provider = "moomoo",
+            Moomoo = { OpenDHost = host, OpenDPort = port },
+        };
+
+        HistoricalBarSourceFactory.ResolveProvider(options).Should().Be(HistoricalBarSourceFactory.None);
+        Create(options, new FailIfCalledHandler(), new StubMoomooHistoryKLineClient())
+            .Should().BeOfType<NoOpHistoricalBarSource>();
+    }
+
+    private static IHistoricalBarSource Create(
+        BarDataOptions options,
+        HttpMessageHandler handler,
+        IMoomooHistoryKLineClient? moomooClient = null) =>
         HistoricalBarSourceFactory.Create(
-            options, new HttpClient(handler), TimeProvider.System, NullLoggerFactory.Instance);
+            options, new HttpClient(handler), TimeProvider.System, NullLoggerFactory.Instance, moomooClient);
+
+    // OpenD へは接続しない（本テストは選択規則だけを見る）。呼ばれたら安全既定が壊れている。
+    private sealed class StubMoomooHistoryKLineClient : IMoomooHistoryKLineClient
+    {
+        public Task<MoomooHistoryKLinePage> RequestUsDailyKLinesAsync(
+            MoomooHistoryKLineRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("選択規則のテストで OpenD を叩いてはならない");
+    }
 
     private sealed class FailIfCalledHandler : HttpMessageHandler
     {
