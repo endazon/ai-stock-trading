@@ -406,12 +406,36 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         _ => null,
     };
 
-    // #375, ADR-0021 決定3: 接続済みなら確定している口座種別を返す（未接続なら接続してから）。
+    // #375, ADR-0021 決定3, IADR-0153 決定3: **呼ばれるたびにブローカーへ照会し直す。**
     // 種別が不明なら null（呼び出し側＝アダプタが「照会できなかった」として扱う）。
+    //
+    // **接続時のスナップショットを返してはならない。** そうすると観測の鮮度（有効期間 30 分）が
+    // 「最後にブローカーへ聞いた時刻」ではなく「最後に自分のキャッシュを読んだ時刻」を測ることになる。
+    // プロセスが起動しっぱなしで OpenD 接続が切れない限り、接続時に掴んだ種別が「30 分以内に確認済み」の
+    // 体裁で更新され続け、**決定3 が意図する「照会結果と設定値の食い違いを都度検知する」効果が働かない**。
+    // 現金口座なのに古い信用口座の観測が生き続けると、現金口座統制（GFV 回避・差金決済の米国株拡張）が
+    // 発火しないまま新規建てが通り得る。可用性の判定（IsOperationalAsync）が毎回ライブで問い合わせているのと
+    // 揃える。呼び出しは可用性 probe の巡回（既定 5 分）のみであり、**発注経路には乗らない**。
     public async Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default)
     {
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
-        return _simAccType;
+        var (accId, accType) = await FetchSimulateAccountAsync(cancellationToken).ConfigureAwait(false);
+
+        // 照会で得た口座が**発注に用いる口座**（接続時に確定した _simAccId・BuildHeader が使う）と異なる場合、
+        // 返す種別は発注先とは別の口座を説明していることになる。種別を偽るより不明（null）へ倒す。
+        // _simAccId 自体はここで書き換えない——発注中のヘッダ構築と競合させないためであり、
+        // 口座が入れ替わったのなら再接続で確定させるのが筋である。
+        if (accId != _simAccId)
+        {
+            _logger.LogWarning(
+                "照会した SIMULATE 口座 accId={FetchedAccId} が発注先 accId={OrderAccId} と異なるため口座種別を不明として扱います。",
+                accId,
+                _simAccId);
+            return null;
+        }
+
+        _simAccType = accType;
+        return accType;
     }
 
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>
