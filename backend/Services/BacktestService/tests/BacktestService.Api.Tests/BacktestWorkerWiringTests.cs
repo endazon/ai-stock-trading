@@ -135,3 +135,44 @@ public class BacktestWorkerWiringTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
+
+// FR-15, ADR-0023 決定5, IADR-0060 決定5, IADR-0157, #382: **構成不備が「起動時」に落ちることを固定する。**
+//
+// `MoomooBarDataPreflight` をコンストラクタへ置くだけでは起動時に効かない —— `AddSingleton<T>(factory)` は
+// 遅延生成であり、BacktestService には発注経路の `BrokerAvailabilityProbeService` にあたる eager な
+// 消費者が無いためである。`Program.cs` が `builder.Build()` の直後に強制解決している。
+//
+// **本テストが守るのは「例外が出ること」ではなく「ホストの起動そのものが失敗すること」である。**
+// 起動が通ってしまうと、鍵のマウント漏れは初回のバー取得まで顕在化しない（＝preflight の意味が消える）。
+public class BacktestWorkerStartupPreflightTests
+{
+    [Fact]
+    public void provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+            ["Backtest:BarData:Moomoo:RsaPrivateKeyPath"] = "/secrets/moomoo-rsa/does-not-exist.pem",
+        });
+
+        // Services へ触れた時点でホストが構築される（＝Program.cs の強制解決が走る）。
+        var act = () => _ = factory.Services;
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RsaPrivateKeyPath*");
+    }
+
+    // **否定形**: 既定（provider 未指定）では moomoo の構成を一切見ない。
+    // 見てしまうと、moomoo を使わない環境が moomoo の構成不備で起動できなくなる。
+    [Fact]
+    public void 既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Moomoo:RsaPrivateKeyPath"] = "/secrets/moomoo-rsa/does-not-exist.pem",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>()
+            .Should().BeOfType<NoOpHistoricalBarSource>();
+    }
+}

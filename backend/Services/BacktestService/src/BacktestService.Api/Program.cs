@@ -73,6 +73,21 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
 
 var app = builder.Build();
 
+// FR-15, ADR-0023 決定5, IADR-0060 決定5, IADR-0157, #382: **構成不備を起動時に落とすため、ここで強制解決する。**
+//
+// `MMApiMoomooHistoryKLineClient` のコンストラクタが `MoomooBarDataPreflight` を呼ぶが、**それだけでは
+// 起動時に効かない**。`AddSingleton<T>(factory)` で登録したシングルトンは遅延生成であり、組み込み DI は
+// `builder.Build()` では構築しない。BacktestService には発注経路の `BrokerAvailabilityProbeService` に
+// あたる eager な消費者が無く（本番戦略が未実装で `IHistoricalBarSource` を解決する実消費者が無い）、
+// **鍵のマウントを誤ってもプロセスは正常に起動し続け、失敗は初回のバー取得まで顕在化しない。**
+// 例外の種類と文言が改善されても、**表面化のタイミングという核心が変わらなければ preflight の意味が無い。**
+//
+// 接続は張らない（`EnsureConnectedAsync` は初回要求まで遅延する）。ここで走るのは構成の検査だけである。
+if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
+{
+    _ = app.Services.GetRequiredService<IMoomooHistoryKLineClient>();
+}
+
 app.UseAiStockTradingMiddleware();
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
