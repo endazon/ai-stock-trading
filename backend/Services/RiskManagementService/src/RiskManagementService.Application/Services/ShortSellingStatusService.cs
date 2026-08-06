@@ -56,11 +56,16 @@ public sealed class ShortSellingStatusService(
             // 借株料の累計は**供給元がコードに存在しない**。0 を返すと「費用が発生していない」と読める。
             BorrowFeeAvailability: MetricAvailability.NotSupplied,
             TotalAccruedBorrowFeeUsd: null,
-            // 発動履歴は**発火元（維持率）が無い間、そもそも記録され得ない**。空列＝「発動なし」と区別する
-            // （区別しないと「統制が働いていて発動が無かった」と読めてしまう。IADR-0133 決定8 と同じ規律）。
-            ReductionHistoryAvailability: snapshot is null
-                ? MetricAvailability.NotSupplied
-                : MetricAvailability.NotApplicable,
+            // 発動履歴は**記録する経路がコードに存在しない**（履歴ストアも照会 API も無い）。空列＝「発動なし」と
+            // 区別する（区別しないと「統制が働いていて発動が無かった」と読めてしまう。IADR-0133 決定8 と同じ規律）。
+            //
+            // **供給可否を `snapshot` に結び付けてはならない。** `snapshot` は維持率の供給有無であって、
+            // 発動が記録されるか否かとは別の事実である。結び付けると、維持率の供給が入った瞬間
+            // （#330 / #331 が実装された日）に本項が `NotApplicable`＝「概念が成立しない・正常」へ化け、
+            // **記録経路が無いままの空列が「統制が働いていて発動が無かった」と読める**。
+            // 供給が入った日は誰も画面を見直さないため、最も気づかれにくい向きの fail-open である。
+            // **記録経路を実装するまでは無条件に未供給である。**
+            ReductionHistoryAvailability: MetricAvailability.NotSupplied,
             ReductionHistory: []);
     }
 

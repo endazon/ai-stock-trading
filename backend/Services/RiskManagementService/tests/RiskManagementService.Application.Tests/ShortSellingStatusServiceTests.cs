@@ -234,12 +234,38 @@ public class ShortSellingStatusServiceTests
 
     // ---- 維持率割れによる自動縮小の発動履歴 ----
 
-    // T-340-13: 発火元（維持率）が無い間、発動履歴は**そもそも記録され得ない**。
+    // T-340-13: 発動履歴を**記録する経路がコードに存在しない**（履歴ストアも照会 API も無い）。
     // 空列＝「発動なし」と区別する（区別しないと「統制が働いていて発動が無かった」と読める）。
     [Fact]
     public void 発動履歴は維持率の供給が無い間は未供給として宣言する()
     {
         var view = Create(snapshot: null).Build();
+
+        view.ReductionHistoryAvailability.Should().Be(MetricAvailability.NotSupplied);
+        view.ReductionHistory.Should().BeEmpty();
+    }
+
+    // T-340-13b（**潜在的な fail-open の固定**）: 維持率の供給が入っても、発動履歴は未供給のままである。
+    //
+    // 当初の実装は供給可否を `snapshot is null` に結び付けており、**維持率の供給が入った瞬間
+    // （#330 / #331 が実装された日）に `NotApplicable`＝「概念が成立しない・正常」へ化けた**。
+    // 記録経路が無いままの空列が「統制が働いていて発動が無かった」と読める向きであり、
+    // しかも供給が入った日は誰も画面を見直さないため最も気づかれにくい。
+    // **本テストは「維持率が供給されている」側を固定する**——落ちるのは記録経路が実装されたときであり、
+    // そのとき本テストごと見直せばよい。
+    [Fact]
+    public void 発動履歴は維持率が供給されていても記録経路が無い限り未供給のままである()
+    {
+        var snapshot = new MaintenanceMarginSnapshot
+        {
+            NetEquityUsd = 40_000m,
+            Positions = [Short("AAPL", 100m, 1_000, 30_000m)],
+        };
+
+        var view = Create(snapshot).Build();
+
+        // 前提: 維持率そのものは供給されている（この分岐が実際に通っていることの確認）。
+        view.MaintenanceMarginAvailability.Should().Be(MetricAvailability.Available);
 
         view.ReductionHistoryAvailability.Should().Be(MetricAvailability.NotSupplied);
         view.ReductionHistory.Should().BeEmpty();
