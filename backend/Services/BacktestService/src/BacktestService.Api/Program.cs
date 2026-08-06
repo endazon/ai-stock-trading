@@ -35,23 +35,41 @@ builder.Services.AddAiStockTradingHealthChecks();
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
-// FR-15, ADR-0004, #208, IADR-0105: 実過去データ源（Stooq）の構成。
-// 既定・空・"none"・未知 provider・不正なベース URL はすべて no-op＝**外部へ 1 リクエストも出さない**。
+// FR-15, ADR-0004, ADR-0023, #208, IADR-0105, IADR-0157: 実過去データ源（Stooq / moomoo）の構成。
+// 既定・空・"none"・未知 provider・構成不備はすべて no-op＝**外部へ 1 リクエストも出さない**。
+//
+// **既定は none のままである**（ADR-0023 決定5 は moomoo を採用したが、「実装側で確認を要する 2 点」
+// （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）を本決定の前提としており、
+// いずれも実 OpenD を要して未了である）。moomoo は**明示的に構成したときだけ**使う。
 builder.Services.Configure<BarDataOptions>(builder.Configuration.GetSection(BarDataOptions.SectionName));
 builder.Services.AddHttpClient(BarDataHttpClientName);
+
+// ADR-0023 決定5, IADR-0157: OpenD への接続は provider=moomoo のときだけ作る（それ以外では 1 本も張らない）。
+var barDataOptions = builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>();
+var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(barDataOptions);
+if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
+{
+    builder.Services.AddSingleton<IMoomooHistoryKLineClient>(sp => new MMApiMoomooHistoryKLineClient(
+        sp.GetRequiredService<IOptions<BarDataOptions>>().Value.Moomoo,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<MMApiMoomooHistoryKLineClient>()));
+}
+
 builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
 {
     var options = sp.GetRequiredService<IOptions<BarDataOptions>>().Value;
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(BarDataHttpClientName);
     return HistoricalBarSourceFactory.Create(
-        options, httpClient, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>());
+        options,
+        httpClient,
+        TimeProvider.System,
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetService<IMoomooHistoryKLineClient>()); // moomoo 時のみ登録済み
 });
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（選択中ポート実装）の自己申告。
 // 「有効化したつもりで効いていない」を、メッシュ内部から provider 名で確認できるようにする。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
-    .AddPort("historical-bar-data", HistoricalBarSourceFactory.ResolveProvider(
-        builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>())));
+    .AddPort("historical-bar-data", barDataProvider));
 
 var app = builder.Build();
 

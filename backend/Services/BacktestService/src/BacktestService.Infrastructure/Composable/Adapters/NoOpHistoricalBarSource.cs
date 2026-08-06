@@ -7,10 +7,11 @@ namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 // FR-15, #208, IADR-0105: IHistoricalBarSource の安全既定＝外部へ一切接続せず常に空を返す。
 // 実過去データ源は provider の明示指定（Backtest:BarData:Provider）でのみ有効化する（opt-in）。
 // バーが 0 本なら Stage 0 は DSR・コスト2倍・ウォークフォワードで落ちるため、昇格は従来どおり拒否される（fail-safe）。
-// ADR-0023, IADR-0156, #382: 警告の意味は「差し替え漏れ（設定すれば使える）」ではなく **差し替え先が無い**
-// である。実装済みの履歴源は Stooq のみでそれは取得不能（回避実装は禁止・ADR-0023 決定1）、代替源 moomoo は
-// 実測されたが採用も実装も未了。よって本 no-op は恒久の状態であり、Stage 0 の合格判定は一度も発火し得ない。
-// それでも警告は残す（「有効化したつもりで効いていない」構成不備は依然として起こり得るため）。
+// ADR-0023 決定5, IADR-0156, IADR-0157, #382: 警告の意味は「差し替え漏れ（設定すれば Stooq が使える）」ではない。
+// Stooq は取得不能（回避実装は禁止・ADR-0023 決定1）であり、**使えるのは決定5 で採用された moomoo だけ**である。
+// ただし決定5 は「実装側で確認を要する 2 点」（取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの
+// 整合）を本決定の前提としており、**確認が済むまで本番のバックテストへ流さない**。よって既定 none は今も有効な
+// 状態であり、その間 Stage 0 の合格判定は発火しない。
 // 抑止の単位は**インスタンス**であり、取得のたびのログ氾濫を防ぐ
 // （NoOpMarketDataSource・IADR-0066 と同型）。ホスト（BacktestService.Worker/Program.cs）は
 // IHistoricalBarSource を singleton で登録するため、実プロセスでは起動後 1 回に収まる
@@ -32,9 +33,10 @@ public sealed class NoOpHistoricalBarSource(ILogger<NoOpHistoricalBarSource> log
             logger.LogWarning(
                 "NoOpHistoricalBarSource を使用中: 実過去データ源が未接続のためバックテストのバーを取得できません。" +
                 "Stage 0 は不合格となり Stage 1 への昇格は行われません（IADR-0105）。" +
-                "これは設定漏れではなく**差し替え先が無い**状態です: 実装済みの履歴源は Stooq のみで現在取得不能" +
-                "（ADR-0023 決定1・回避実装は行いません）、代替源 moomoo は実測済みですが採用（計画側の裁定）も" +
-                "実装も未了です（IADR-0156・docs/blocked-tasks.md）。");
+                "米国株日足 OHLC の履歴源は ADR-0023 決定5 で moomoo に決まり実装もありますが" +
+                "（Backtest:BarData:Provider=moomoo）、**取得枠の単位と回復周期／前復権と ADR-0016 決定14 の" +
+                "費用モデルの整合という未確認の 2 点が済むまで本番のバックテストへ流さないこと**が同決定の前提です" +
+                "（IADR-0157・docs/blocked-tasks.md A-3）。Stooq は取得不能のままです（ADR-0023 決定1・回避実装は行いません）。");
         }
 
         // 未取得も無音にしない（provider 未設定と「データ源にデータが無い」を呼び出し元が区別できる必要はないが、

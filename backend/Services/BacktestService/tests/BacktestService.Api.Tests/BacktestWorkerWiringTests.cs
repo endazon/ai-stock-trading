@@ -35,6 +35,38 @@ public class BacktestWorkerWiringTests
             .Should().BeOfType<StooqHistoricalBarSource>();
     }
 
+    // FR-15, ADR-0023 決定5, IADR-0157: provider=moomoo の明示指定でだけ履歴 K 線アダプタが解決される。
+    // OpenD への接続は遅延（初回取得時）であり、解決の時点では 1 本も張らない。
+    [Fact]
+    public void provider_moomoo_の指定で履歴K線アダプタが解決される_ADR0023決定5()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>()
+            .Should().BeOfType<MoomooHistoricalBarSource>();
+    }
+
+    // ADR-0023 決定5, IADR-0157 決定2: OpenD の接続先が不正なら moomoo でも no-op へ倒し、自己申告も一致させる。
+    [Fact]
+    public async Task moomooのOpenD接続先が不正なら自己申告もno_opを示す()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "moomoo",
+            ["Backtest:BarData:Moomoo:OpenDPort"] = "0",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>().Should().BeOfType<NoOpHistoricalBarSource>();
+
+        var dto = await factory.CreateClient()
+            .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
+
+        dto!.Ports.Should().ContainSingle(p => p.Port == "historical-bar-data" && p.Implementation == "none");
+    }
+
     [Fact]
     public void 未知のproviderでもホストは起動しno_opへ倒れる()
     {

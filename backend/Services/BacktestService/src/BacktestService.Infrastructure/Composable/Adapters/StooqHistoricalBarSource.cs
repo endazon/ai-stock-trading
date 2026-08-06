@@ -28,10 +28,10 @@ namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 // **本クラスと関連テストは削除しない。** ADR-0023 決定1 は「区分としては検証用途のまま残す」と定めており、
 // 提供側の仕様が戻れば再び使える可能性がある（#382 の受け入れ基準にも明記）。
 //
-// **結果として、実装済みの履歴源はこの Stooq のみであり、それが取得不能である。** 代替源として moomoo
-// OpenAPI が実測されたが、採用には ADR-0023 の改定裁定とアダプタの実装の両方が要り、いずれも未了である。
-// したがって **Stage 0 の合格判定は現時点で一度も発火し得ない**（現況 4 点の全文は
-// HistoricalBarSourceFactory のヘッダおよび IADR-0156 決定2）。
+// **本クラスは取得不能のまま候補として残る。** ADR-0023 決定5（2026-08-06 の利用者裁定）は米国株日足 OHLC の
+// 履歴源として **moomoo**（MoomooHistoricalBarSource）を採用したが、**決定1 の Stooq の扱いは変更していない**。
+// なお決定5 は「実装側で確認を要する 2 点」を本決定の前提としており、既定 provider は none のままである
+// （現況 4 点の全文は HistoricalBarSourceFactory のヘッダおよび IADR-0157 決定4）。
 public sealed class StooqHistoricalBarSource(
     HttpClient httpClient,
     IRateLimiter rateLimiter,
