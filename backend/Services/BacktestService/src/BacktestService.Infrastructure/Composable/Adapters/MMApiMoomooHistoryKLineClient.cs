@@ -18,7 +18,7 @@ namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 // OnReply_RequestHistoryKL の 1 つだけであり、残りは no-op として並べる（SDK の要求であって選択ではない）。
 // **取得枠の照会（RequestHistoryKLQuota）は実装していない。** 枠の単位・回復周期の確認は実 OpenD を要する
 // 未了の作業であり（ADR-0023 決定5 の確認事項 1・docs/blocked-tasks.md A-3）、推測で機構を足さない。
-public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoomooHistoryKLineClient, IDisposable
+internal sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoomooHistoryKLineClient, IDisposable
 {
     private static readonly object InitGate = new();
     private static bool _apiInitialized;
@@ -51,6 +51,10 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
     public MMApiMoomooHistoryKLineClient(MoomooBarDataOptions options, ILogger<MMApiMoomooHistoryKLineClient> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
+        // IADR-0060 決定5: **Secret のマウント漏れは起動時に落とす。** 発注経路（MMApiMoomooTradeClient）が
+        // MoomooPreflight で同じことをしている。ここで検査しないと、鍵が無いことは初回の履歴取得まで
+        // 表面化せず、しかも素の FileNotFoundException として出るため原因が読み取れない。
+        MoomooBarDataPreflight.Validate(options, File.Exists);
         _options = options;
         _replyTimeout = TimeSpan.FromSeconds(options.ReplyTimeoutSeconds);
         _logger = logger;

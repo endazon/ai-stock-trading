@@ -63,3 +63,69 @@ public class MMApiMoomooHistoryKLineClientMappingTests
         MMApiMoomooHistoryKLineClient.FormatDate(new DateOnly(2006, 7, 24)).Should().Be("2006-07-24");
     }
 }
+
+// FR-15, IADR-0060 決定5, IADR-0157, #382: moomoo 履歴経路の起動時検査（MoomooBarDataPreflight）。
+//
+// **構成不備は起動時に落とす。** 発注経路（MoomooPreflight）と同じ規律である。検査が無いと、鍵の
+// マウント漏れは**初回の履歴取得まで表面化せず**、素の FileNotFoundException として出るため
+// 「なぜ落ちたか」が読み取れない。
+public class MoomooBarDataPreflightTests
+{
+    private static MoomooBarDataOptions Valid() => new() { OpenDHost = "opend", OpenDPort = 11111 };
+
+    [Fact]
+    public void 正しい構成では例外を投げない()
+    {
+        var act = () => MoomooBarDataPreflight.Validate(Valid(), _ => true);
+
+        act.Should().NotThrow();
+    }
+
+    // **否定形**: 鍵パスが設定されているのにファイルが無いなら落とす。
+    // 黙って非暗号へ倒すと「接続はできるのに取得だけが失敗する」形になり、原因が読み取れない。
+    [Fact]
+    public void 鍵パスが設定済みでファイルが無ければ起動時に落とす()
+    {
+        var options = Valid();
+        options.RsaPrivateKeyPath = "/secrets/moomoo-rsa/key.pem";
+
+        var act = () => MoomooBarDataPreflight.Validate(options, _ => false);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RsaPrivateKeyPath*");
+    }
+
+    // 鍵パス**未設定**は構成として正当である（相場系は暗号化必須ではない）。
+    // ここを落とすと非暗号構成が起動できなくなる。
+    [Fact]
+    public void 鍵パス未設定は正当な構成として通す()
+    {
+        var act = () => MoomooBarDataPreflight.Validate(Valid(), _ => false);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void OpenDのホストが空なら落とす(string host)
+    {
+        var options = Valid();
+        options.OpenDHost = host;
+
+        var act = () => MoomooBarDataPreflight.Validate(options, _ => true);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*OpenDHost*");
+    }
+
+    [Fact]
+    public void OpenDのポートが0なら落とす()
+    {
+        var options = Valid();
+        options.OpenDPort = 0;
+
+        var act = () => MoomooBarDataPreflight.Validate(options, _ => true);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*OpenDPort*");
+    }
+}

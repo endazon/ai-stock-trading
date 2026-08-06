@@ -75,3 +75,44 @@ public sealed class MoomooBarDataOptions
     /// </summary>
     public int RequestsPerMinute { get; set; } = 30;
 }
+
+// FR-15, ADR-0023 決定5, IADR-0060 決定5, IADR-0157, #382: moomoo 履歴経路の起動時検査。
+//
+// **構成不備は起動時に落とす。** 発注経路の `MoomooPreflight`（OrderExecutionService.Infrastructure）と
+// 同じ規律であり、実体を共有しないのはサービス境界を跨ぐためである（横断参照はしない）。
+// ここで検査しないと、鍵のマウント漏れは**初回の履歴取得まで表面化せず**、しかも素の
+// `FileNotFoundException` として出るため「なぜ落ちたか」が読み取れない。
+//
+// **暗号化なしへ黙ってフォールバックしない**ことが要点である（IADR-0060）。相場（Qot）系は暗号化必須では
+// ないが、鍵パスが**設定されているのにファイルが無い**のは構成の誤りであり、黙って非暗号で接続すると
+// 「接続はできるのに OpenD 側が要求する構成では取得だけが失敗する」形になる。
+// 鍵パスが**未設定**であることは正当な構成なので落とさない。
+internal static class MoomooBarDataPreflight
+{
+    public static void Validate(MoomooBarDataOptions options, Func<string, bool> fileExists)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(fileExists);
+
+        if (string.IsNullOrWhiteSpace(options.OpenDHost))
+        {
+            throw new InvalidOperationException(
+                "Backtest:BarData:Moomoo:OpenDHost が空です。常駐 OpenD のホスト"
+                + "（in-cluster では Service 名 'opend'）を指定してください。");
+        }
+
+        if (options.OpenDPort == 0)
+        {
+            throw new InvalidOperationException(
+                "Backtest:BarData:Moomoo:OpenDPort が 0 です。OpenD の API ポート（既定 11111）を指定してください。");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath) && !fileExists(options.RsaPrivateKeyPath))
+        {
+            throw new InvalidOperationException(
+                $"Backtest:BarData:Moomoo:RsaPrivateKeyPath '{options.RsaPrivateKeyPath}' にファイルがありません。"
+                + "OpenD と同一の RSA 秘密鍵（Secret moomoo-rsa）がマウントされているか確認してください。"
+                + "**鍵パスが設定されている以上、黙って非暗号へ倒さない**（IADR-0060 決定5）。");
+        }
+    }
+}
