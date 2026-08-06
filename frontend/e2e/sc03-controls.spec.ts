@@ -54,3 +54,66 @@ test.describe('SC-03 統制状態参照（#187）', () => {
     await expect(page.getByRole('heading', { name: '昇格評価' })).toBeVisible();
   });
 });
+
+// SC-03, FR-10, UC-06, ADR-0016 決定15, #340, IADR-0154: 空売り関連の表示と**参照専用性**。
+//
+// 計画は SC-03 を「表示のみで設定変更・統制操作は行わない」と定める。「置いていない」ことは
+// 書かないだけでは守れないため、入力要素・保存系ボタンが 1 つも無いことを実ブラウザでも固定する。
+test.describe('SC-03 空売りの現況と参照専用性（#340）', () => {
+  test('維持率を画面最上位に置き、未供給を「取得できていません」と明示する', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(page.getByRole('heading', { name: '維持率' })).toBeVisible();
+    await expect(page.getByText('取得できていません（供給元がありません）').first()).toBeVisible();
+    await expect(page.getByText(/この統制は現在まったく働いていません/)).toBeVisible();
+    // **否定形**: 未供給なのに正常値に見える表示（0.0%）を出さない。
+    await expect(page.getByText('現在の維持率: 0.0%')).toHaveCount(0);
+  });
+
+  test('借株料の累計と自動縮小の発動履歴を「0 件」に見せない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(page.getByText(/0 ではなく「不明」です/)).toBeVisible();
+    const reduction = page.getByRole('region', { name: '維持率割れによる自動縮小（動かす統制）' });
+    await expect(reduction.getByText(/記録する経路がない/)).toBeVisible();
+    await expect(reduction.getByText('発動履歴はありません。')).toHaveCount(0);
+  });
+
+  test('維持率割れ自動縮小は 3 統制と別枠で「動かす」統制として描かれる', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    const reduction = page.getByRole('region', { name: '維持率割れによる自動縮小（動かす統制）' });
+    await expect(reduction.getByText(/すでに建てた玉を決済します/)).toBeVisible();
+    await expect(reduction.getByText(/必要証拠金が最も大きい建玉から/)).toBeVisible();
+    // 3 統制の表には含めない（別枠であることの否定形）。
+    const controls = page.getByRole('table', { name: '取引統制（優先順位順）' });
+    await expect(controls.getByText(/自動縮小/)).toHaveCount(0);
+  });
+
+  test('3 統制を優先順位順に表示し優先統制を明示する', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    const rows = page.getByRole('table', { name: '取引統制（優先順位順）' }).getByRole('row');
+    await expect(rows.nth(1)).toContainText('緊急停止（kill switch）');
+    await expect(rows.nth(2)).toContainText('日次損失ロックアウト');
+    await expect(rows.nth(3)).toContainText('一時停止');
+  });
+
+  test('変更操作が 1 つも存在しない（参照専用）', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+    // 全領域の描画を待つ（描画前に数えると常に 0 で緑になる＝検査が死ぬ）。
+    await expect(page.getByRole('table', { name: '上限使用率' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '維持率' })).toBeVisible();
+
+    await expect(page.locator('input')).toHaveCount(0);
+    await expect(page.locator('select')).toHaveCount(0);
+    await expect(page.locator('textarea')).toHaveCount(0);
+    await expect(page.locator('form')).toHaveCount(0);
+    await expect(page.getByRole('button')).toHaveCount(0);
+  });
+});
