@@ -10,6 +10,19 @@ namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 // 構成不備（未知の provider・不正なベース URL）は**起動を失敗させず** no-op へ倒す。バーが取れなければ
 // Stage 0 は不合格になり昇格が止まる（＝安全側）ため、落とすより縮退が適切である。ただし
 // 「有効化したつもりで効いていない」に気づけるよう必ず警告を出す。
+//
+// FR-15, ADR-0023, IADR-0156, #382【米国株日足 OHLC 履歴の現況・2026-08-06】
+// 既定 none は「provider の設定漏れ」ではなく **設定できる先が無い** ことを意味する。次の 4 点が現況であり、
+// 1 点でも落として要約すると誤読になる（IADR-0156 決定2）。
+//   1. 実装済みの履歴源は Stooq のみであり、その Stooq は取得不能である（JavaScript proof-of-work の
+//      ボット検知チャレンジ）。ADR-0023 決定1 は**回避実装を明示的に禁じた**ため、実装側で取得可能に
+//      する手段は無い。候補からは削除しない（提供側の仕様が戻れば再び使える可能性がある）。
+//   2. 既定は none（no-op）であり、バーが 1 本も取れなければ Stage 0 は不合格へ倒れる（fail-safe は壊れていない）。
+//   3. 代替源として moomoo OpenAPI（QotRequestHistoryKL）が 2026-08-05 に実測されたが、**採用には
+//      ADR-0023 の改定裁定とアダプタの実装の両方が要り、いずれも未了**である（docs/blocked-tasks.md B-4）。
+//   4. したがって **Stage 0 の合格判定は現時点で一度も発火し得ない**。一時的な設定漏れではなく恒久の状態である。
+// 「使える履歴源が無い」と単純化すると 3 を否定し、「moomoo で解決した」と書けば裁定も実装も無いのに
+// 解決したように読める。どちらの誤読も作らないこと。
 public static class HistoricalBarSourceFactory
 {
     public const string None = "none";
@@ -47,8 +60,9 @@ public static class HistoricalBarSourceFactory
                 NormalizeBaseUrl(options.Stooq.BaseUrl)!);
         }
 
-        // 以降は no-op。既定（空・none）は差し替え漏れの警告を NoOpHistoricalBarSource 自身が出すため、
+        // 以降は no-op。既定（空・none）の警告は NoOpHistoricalBarSource 自身が出すため、
         // ここでは「有効化したつもりで効いていない」構成不備だけを切り分けて警告する。
+        // 未採用の代替源（例: moomoo・ADR-0023 の改定裁定待ち）はこの「未知の provider」経路に落ちる。
         if (configured == Stooq)
         {
             logger.LogWarning(

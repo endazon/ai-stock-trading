@@ -17,6 +17,21 @@ namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 // verdict も出ない＝昇格は起きない（fail-safe）。
 //
 // 取得したデータは個人利用の範囲に留め、外部へ再配信しない（計画書 02_datasource-candidates.md の運用制約）。
+//
+// ADR-0023, IADR-0156, #382【現状は取得不能である・回避実装は書かない】
+// Stooq はプログラムからの取得に対し **JavaScript proof-of-work のボット検知チャレンジ**を返す（HTTP 200 で
+// HTML を返すため、本クラスから見ると「解析不能＝欠測」になる。StooqDailyCsvParserTests のボット検知応答の
+// テストがこの挙動を固定している）。**ADR-0023 決定1 はこのチャレンジを回避する実装を明示的に禁じた** ——
+// 提供側が自動取得を排除している以上、回避は規約リスクを負う行為であり、ADR-0004 が yfinance を不採用と
+// した判断（規約グレーを避ける）と一貫しないためである。**本クラスに proof-of-work を解く実装を足さないこと。**
+//
+// **本クラスと関連テストは削除しない。** ADR-0023 決定1 は「区分としては検証用途のまま残す」と定めており、
+// 提供側の仕様が戻れば再び使える可能性がある（#382 の受け入れ基準にも明記）。
+//
+// **結果として、実装済みの履歴源はこの Stooq のみであり、それが取得不能である。** 代替源として moomoo
+// OpenAPI が実測されたが、採用には ADR-0023 の改定裁定とアダプタの実装の両方が要り、いずれも未了である。
+// したがって **Stage 0 の合格判定は現時点で一度も発火し得ない**（現況 4 点の全文は
+// HistoricalBarSourceFactory のヘッダおよび IADR-0156 決定2）。
 public sealed class StooqHistoricalBarSource(
     HttpClient httpClient,
     IRateLimiter rateLimiter,

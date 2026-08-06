@@ -8,6 +8,12 @@ public sealed class BarDataOptions
     /// <summary>
     /// 過去データ源の選択。既定・空・"none" は no-op＝**外部へ 1 リクエストも出さない**。
     /// 現在の実装は "stooq" のみ（未知の値も安全既定の no-op へ倒す・IADR-0068 と同形）。
+    /// <para>
+    /// ADR-0023 / IADR-0156（#382）: **唯一の実装である "stooq" は現在取得不能**（ボット検知チャレンジ。
+    /// 回避実装は計画が禁止）であり、代替源 moomoo は実測済みだが**採用も実装も未了**である。
+    /// したがって本設定に指定できる有効な値は事実上存在せず、既定 none は恒久の状態である。
+    /// **既定値をここで変更しないこと**（既定が none であることは HistoricalBarSourceFactoryTests が固定する）。
+    /// </para>
     /// </summary>
     public string? Provider { get; set; }
 
