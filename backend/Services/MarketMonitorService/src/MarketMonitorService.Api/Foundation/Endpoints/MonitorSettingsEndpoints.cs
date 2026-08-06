@@ -54,6 +54,39 @@ internal static class MonitorSettingsEndpoints
             return Results.Ok(store.GetSettings());
         });
 
+        // ---- 収集パラメータの部分更新（FR-03/FR-11/FR-13, UC-06, SC-01 §2, #340, IADR-0155）----
+        // 上の `PUT /settings` は**全置換**であり、画面から使うと変動閾値だけを変えたい場面でも監視銘柄を
+        // 送り直す必要がある（**送り漏らした瞬間に監視銘柄が消える**）。SC-01 §2 が使う経路は項目単位の
+        // 部分更新とし、他の項目を巻き込まない。理由必須・値域検証（MonitorSettingsBounds）・履歴記録を伴う。
+        owner.MapPut("/settings/movement-threshold",
+            (MovementThresholdUpdateRequest req, MonitorSettingsService svc, HttpContext http) =>
+        {
+            // 非 nullable decimal で受けると本文省略時に既定値 0 へ暗黙束縛され、「送っていない値へ黙って
+            // 切り替わる」経路になる（BrokerProviderUpdateRequest.Provider と同じ規律）。0 は値域外のため
+            // 実害は無いが、400 の文言を「省略」と「値域外」で分けられるようにする。
+            if (req.MovementThresholdRatio is not { } ratio)
+            {
+                return Results.BadRequest(new { error = "movementThresholdRatio（比率。0.03 ＝ ±3%）は必須です。" });
+            }
+
+            return Results.Ok(svc.UpdateMovementThreshold(ratio, ActorOf(http), req.Reason ?? string.Empty));
+        });
+
+        owner.MapPut("/settings/cooldown",
+            (CooldownUpdateRequest req, MonitorSettingsService svc, HttpContext http) =>
+        {
+            if (req.Cooldown is not { } cooldown)
+            {
+                return Results.BadRequest(new { error = "cooldown（HH:mm:ss）は必須です。" });
+            }
+
+            return Results.Ok(svc.UpdateCooldown(cooldown, ActorOf(http), req.Reason ?? string.Empty));
+        });
+
+        // 監視設定の変更履歴（監視銘柄・収集パラメータを 1 本の台帳で返す）。`/watchlist/history` は同じ台帳の
+        // 別名であり、監視銘柄の文脈から辿るために残す（既存の消費者を壊さない）。
+        owner.MapGet("/settings/history", (MonitorSettingsService svc) => Results.Ok(svc.GetHistory()));
+
         // ---- 監視銘柄（watchlist）の取得/追加/削除（FR-03/FR-13, UC-06, IADR-0088/0095）----
         // 追加/削除は理由必須（reason 空欄は 400）。actor は認証済みトークン名（preferred_username）から取る。
         // 重複追加・不在削除・空 symbol・未定義 market は 400、設定行の Version 楽観排他競合は 409（親の例外フィルタで写像）。
@@ -111,6 +144,13 @@ internal sealed record MonitorSettingsUpdateRequest(
         };
     }
 }
+
+// FR-03, FR-13, SC-01 §2, #340: 変動閾値の部分更新の要求（理由必須・FR-11）。
+// 値は nullable で受け、省略を 400 に弾く（非 nullable だと省略時に既定値 0 へ暗黙束縛される）。
+internal sealed record MovementThresholdUpdateRequest(decimal? MovementThresholdRatio, string? Reason);
+
+// FR-03, FR-13, SC-01 §2, #340: クールダウンの部分更新の要求（理由必須・FR-11）。
+internal sealed record CooldownUpdateRequest(TimeSpan? Cooldown, string? Reason);
 
 // FR-13, UC-06: 監視銘柄の追加/削除の要求（理由必須・FR-11）。actor は要求本文ではなく認証済みトークンから取る。
 // Market は nullable で受け、省略（null）を 400 に弾く（非 nullable だと省略時に既定値 0 へ暗黙バインドされるため）。
