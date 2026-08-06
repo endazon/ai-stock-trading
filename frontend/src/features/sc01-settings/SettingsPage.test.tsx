@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { SettingsPage } from './SettingsPage';
+import {
+  CONTRACT_MONITOR_SETTINGS,
+  CONTRACT_MONITOR_SETTINGS_HISTORY,
+} from '../monitor/contractFixtures';
 
 const SAMPLE = {
   assumptions: {
@@ -30,6 +34,9 @@ const HISTORY = [
 function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
     if (path === '/assumptions/history') return HISTORY;
+    // SC-01 §2, #340, IADR-0146: 収集パラメータのモックは**バックエンドの実応答**（契約フィクスチャ）を使う。
+    if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
+    if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
     if (path === '/assumptions' && req?.method === 'PUT') return SAMPLE;
     return SAMPLE;
   });
@@ -126,6 +133,8 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/assumptions/history') return HISTORY;
+      if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
+      if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
       if (path === '/assumptions' && req?.method === 'PUT') throw new ApiError('conflict', '競合', 409);
       return SAMPLE;
     });
@@ -144,6 +153,8 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/assumptions/history') return HISTORY;
+      if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
+      if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
       if (path === '/assumptions' && req?.method === 'PUT')
         throw new ApiError('validation', '入力エラー', 400, ['理由は必須です']);
       return SAMPLE;
