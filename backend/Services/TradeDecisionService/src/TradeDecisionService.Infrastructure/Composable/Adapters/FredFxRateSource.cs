@@ -9,9 +9,12 @@ using OpenTelemetry;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
-// FR-10, FR-17, #257, ADR-0004, IADR-0064/0106: FRED の為替系列（既定 DEXJPUS＝円/ドル・営業日次）から
+// FR-10, FR-17, #257, #364, ADR-0004, IADR-0064/0106/0152: FRED の為替系列（既定 DEXJPUS＝円/ドル・営業日次）から
 // 直近の観測を取得する。取得できない場合はすべて null（＝レート無し）へ縮退し、呼び出し側が
 // 非基準通貨の新規建てを見送る（IADR-0107 決定3）。実 FRED API 前提の検証は手動 opt-in の live 検証（IADR-0049）。
+//
+// #364, IADR-0152 決定2: 基準通貨は USD であり、ポート契約は「quote 通貨 1 単位あたりの基準通貨額」である。
+// DEXJPUS は「1 USD あたりの円」＝ USD/JPY のため、JPY → USD の換算には**逆数**が要る。
 internal sealed class FredFxRateSource(
     HttpClient httpClient,
     string apiKey,
@@ -23,7 +26,9 @@ internal sealed class FredFxRateSource(
 {
     public const string DefaultBaseUrl = "https://api.stlouisfed.org/fred";
 
-    /// <summary>円/ドル（1 USD あたりの円）の日次系列。</summary>
+    /// <summary>
+    /// 円/ドル（1 USD あたりの円）の日次系列。基準通貨が USD であるため、JPY のレートは本系列の**逆数**で得る。
+    /// </summary>
     public const string DefaultSeriesId = "DEXJPUS";
 
     // 直近の観測は休日・未公表で "." になり得るため、降順で取って最初の数値を採る。
@@ -41,9 +46,10 @@ internal sealed class FredFxRateSource(
         if (quote == MarketCurrency.Base)
             return FxRate.Identity(quote);
 
-        if (quote != Currency.Usd)
+        // 系列は USD/JPY 固定であり、基準通貨（USD）以外に解決できるのは JPY だけである。
+        // 対応しない通貨を推測で換算しない（誤ったレートでの発注を作らない）。
+        if (quote != Currency.Jpy)
         {
-            // 系列は USD/JPY 固定。対応しない通貨を推測で換算しない（誤ったレートでの発注を作らない）。
             logger.LogWarning("FRED の FX 系列は USD/JPY のみです（要求通貨 {Quote} は解決しません）。", quote);
             return null;
         }
@@ -85,6 +91,9 @@ internal sealed class FredFxRateSource(
     }
 
     // 降順の観測列から最初の有効な数値を採る。欠測（"."）・0 以下・日付不正は採らない。
+    // #364, IADR-0152 決定2: 観測値（DEXJPUS ＝ 1 USD あたりの円）の**逆数**が「JPY 1 単位あたりの USD 額」である。
+    // 逆数は丸めない——丸めると往復換算の誤差が片側へ偏り、統制の実効上限が系統的にずれる。
+    // 0 以下の観測を先に弾いているため、ゼロ除算は構造的に起こり得ない。
     private FxRate? Map(Currency quote, Observations? payload)
     {
         if (payload?.ObservationList is not { Count: > 0 } observations)
@@ -95,8 +104,8 @@ internal sealed class FredFxRateSource(
 
         foreach (var observation in observations)
         {
-            if (!decimal.TryParse(observation.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var rate)
-                || rate <= 0m)
+            if (!decimal.TryParse(observation.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var jpyPerUsd)
+                || jpyPerUsd <= 0m)
             {
                 continue;
             }
@@ -107,7 +116,7 @@ internal sealed class FredFxRateSource(
                 continue;
             }
 
-            return new FxRate(quote, MarketCurrency.Base, rate, new DateTimeOffset(date, TimeSpan.Zero));
+            return new FxRate(quote, MarketCurrency.Base, 1m / jpyPerUsd, new DateTimeOffset(date, TimeSpan.Zero));
         }
 
         logger.LogWarning("FRED FX に有効な観測がありません（系列 {SeriesId}）。レート無しとして扱います。", seriesId);

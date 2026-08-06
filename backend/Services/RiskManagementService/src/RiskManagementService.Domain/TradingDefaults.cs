@@ -17,26 +17,25 @@ public static class TradingDefaults
     public const decimal InitialEquityUsd = 3_000m;
 
     /// <summary>
-    /// FR-10, #329: 統制判定に用いる自己資金（equity）の通貨。計画 §3 は判定の基準通貨を **USD**
+    /// FR-10, #329, #364: 統制判定に用いる自己資金（equity）の通貨。計画 §3 は判定の基準通貨を **USD**
     /// （表示は JPY）と定める（利用者決定 2026-07-31）。単位の取り違え（USD / JPY）を検知可能にするため、
-    /// 金額そのものと通貨を対にして保持する。
+    /// 金額そのものと通貨を対にして保持する。IADR-0152 決定1 により <c>MarketCurrency.Base</c> と一致する。
     /// </summary>
     public const Currency EquityCurrency = Currency.Usd;
 
     /// <summary>
-    /// FR-10, #329, IADR-0130 決定3: 参照為替レート（1 USD あたりの円）。計画 §5 が初期投入資金を
-    /// 「**$3,000（約 491,000 円。1 USD ≈ 163.7 円）**」と明記した値であり、実装が定めた値ではない。
-    /// 基準通貨（円）建てのパイプライン（IADR-0107）へ equity を供給する 1 点換算にのみ用いる。
-    /// </summary>
-    public const decimal ReferenceUsdToJpyRate = 163.7m;
-
-    /// <summary>
-    /// 基準通貨（円）建ての初期投入資金 ＝ <see cref="InitialEquityUsd"/> × <see cref="ReferenceUsdToJpyRate"/>。
-    /// **判定の正は USD 値**であり（計画 §3「円換算は参考表示」）、本値は JPY 基準のパイプラインへの供給用である。
+    /// 基準通貨建ての初期投入資金。
+    /// <para>
+    /// #364, IADR-0152 決定3: 基準通貨が USD になったため、**<see cref="InitialEquityUsd"/> そのもの**である。
+    /// 旧実装は計画 §5 記載の参照レート（1 USD ≈ 163.7 円）で JPY 基準のパイプラインへ 1 点換算していたが
+    /// （IADR-0130 決定3）、供給先が USD になった以上その換算は不要であり、参照レート定数ごと削除した。
+    /// </para>
+    /// <para>
     /// 統制の実効は equity に対する比率であるため、equity と注文金額を同一通貨で評価する限り判定結果は
-    /// 通貨に依存しない（IADR-0130 決定3。プロパティベーステストで固定）。
+    /// 通貨に依存しない（IADR-0130 決定3。プロパティベーステストで固定）。本移行で比率は 1 つも変わっていない。
+    /// </para>
     /// </summary>
-    public const decimal InitialCapital = InitialEquityUsd * ReferenceUsdToJpyRate;
+    public const decimal InitialCapital = InitialEquityUsd;
 
     /// <summary>
     /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。

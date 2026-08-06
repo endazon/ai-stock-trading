@@ -43,8 +43,9 @@ kubectl -n ai-stock-trading get pods
 - **Discord 通知**: notification `Notifications__Provider=discord-webhook` / `Bot__Enabled=true`（FR-09/14・IADR-0062）。
 - **価格文脈（#236 / IADR-0099）**: trade-decision へ現在値を供給し権威価格でサイジング
   （`MarketData__Provider=finnhub`＋鍵で `ICurrentPriceProvider.IsEnabled` が真・鮮度 `MaxQuoteStalenessSeconds=300`）。
-- **為替換算（#257 / IADR-0107）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
-  **US 株を取引するための必須前提**（下記「為替換算」参照）。未設定だと USD 建て銘柄は LLM 呼び出し前に全件見送りになる。
+- **為替換算（#257 / #364 / IADR-0107 / IADR-0152）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
+  **日本株を取引するための必須前提**（下記「為替換算」参照）。未設定だと JPY 建て銘柄は LLM 呼び出し前に全件見送りになる。
+  **#364 で基準通貨が USD へ移行したため、必須となる市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株は本キー無しで回る）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
@@ -72,7 +73,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
 | `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない） | 空=NoOp |
-| `FRED_API_KEY` | `fred-api-key` | **US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・IADR-0107）。収集ソース（FRED）にも同じ鍵を使う | **空=USD 建て銘柄が全件見送り**（日本株は無影響）。下記「為替換算」参照 |
+| `FRED_API_KEY` | `fred-api-key` | **日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・IADR-0107 / IADR-0152）。収集ソース（FRED）にも同じ鍵を使う | **空=JPY 建て銘柄が全件見送り**（米国株は無影響）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
@@ -136,27 +137,33 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 > [Vault 秘匿 runbook](../../../docs/operations/vault-secrets-runbook.md) 側で行い、本スクリプトの env は使わない
 > （両方から書くと所有が割れる）。既定はオフ＝手動 Secret 直運用。
 
-### 為替換算（`FRED_API_KEY`）— **US 株取引の必須前提**
+### 為替換算（`FRED_API_KEY`）— **日本株取引の必須前提**
 
 > 起点: [#262](https://github.com/endazon/ai-stock-trading/issues/262) / [#257](https://github.com/endazon/ai-stock-trading/issues/257) /
+> [#364](https://github.com/endazon/ai-stock-trading/issues/364) /
 > [IADR-0107](../../../docs/adr/IADR-0107_base-currency-conversion.md) /
-> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md)
+> [IADR-0152](../../../docs/adr/IADR-0152_usd-base-currency-migration.md) /
+> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
+> [`docs/specs/20260805_364_usd-base-currency.md`](../../../docs/specs/20260805_364_usd-base-currency.md)
 
-統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝日本円**で行う（IADR-0107）。
-非基準通貨（USD 建て）の銘柄は、円への換算レートが解決できない限り**新規建てを見送る**（決定3 の fail-safe＝
-「古い/無いレートで発注しない」）。したがって **`FRED_API_KEY` は US 株を取引するための必須前提**であり、
+統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝米ドル**で行う（計画 §3・IADR-0152 決定1）。
+非基準通貨（JPY 建て）の銘柄は、USD への換算レートが解決できない限り**新規建てを見送る**（IADR-0107 決定3 の
+fail-safe＝「古い/無いレートで発注しない」）。したがって **`FRED_API_KEY` は日本株を取引するための必須前提**であり、
 「任意の収集ソース鍵」ではない。
+
+> **#364 で必須となる市場が入れ替わった。** 旧（基準通貨＝JPY）では US 株が本キーを要したが、
+> 現在は**主ターゲットの US 株が本キー無しで回り**、日本株が本キーを要する。
 
 | 項目 | 値 | 実装上の根拠 |
 | --- | --- | --- |
 | 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
-| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載） | `FredFxOptions.SeriesId` 既定 |
+| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載）。基準通貨が USD のため **JPY のレートは本系列の逆数**（IADR-0152 決定2・丸めない） | `FredFxOptions.SeriesId` 既定 |
 | 鮮度上限 | **14 日**（超過した観測は採らない＝レート無し扱い）。公表周期から導いた値（#271 / IADR-0112）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**31 日超は 31 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
 
-**日本株（基準通貨）は本キー無しでも従来どおり取引できる。** 円建て市場はレート 1 が定義から決まるため
-FX 源へ問い合わせない。すなわち症状は「**米国株だけ何も起きない**」という形（沈黙）で出る。
+**米国株（基準通貨）は本キー無しでも従来どおり取引できる。** ドル建て市場はレート 1 が定義から決まるため
+FX 源へ問い合わせない。すなわち症状は「**日本株だけ何も起きない**」という形（沈黙）で出る。
 
 **未設定時の観測ログ**（症状 → 原因の辿り方）:
 

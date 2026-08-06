@@ -31,15 +31,18 @@ public class TradingDefaultsTests
         limits.LosingStreakSizeFactor.Should().Be(0.5m);
     }
 
-    // FR-10, FR-17, #329, IADR-0130 決定3: 初期投入資金は USD 3,000（計画 §5・利用者決定 2026-07-31）。
-    // 判定の権威値は USD 建てであり、基準通貨（円）建ての値は計画記載の参照レートによる換算値である。
+    // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000
+    // （計画 §5・利用者決定 2026-07-31）。基準通貨が USD になったため、基準通貨建ての供給値は権威値そのものであり、
+    // 参照レートによる 1 点換算は消えた（`ReferenceUsdToJpyRate` は削除済み）。
     [Fact]
     public void 初期投入資金の既定値は米ドル建ての確定値である()
     {
         TradingDefaults.InitialEquityUsd.Should().Be(3_000m);
         TradingDefaults.EquityCurrency.Should().Be(Currency.Usd);
-        TradingDefaults.ReferenceUsdToJpyRate.Should().Be(163.7m); // 計画 §5「1 USD ≈ 163.7 円」
-        TradingDefaults.InitialCapital.Should().Be(491_100m);      // 3,000 × 163.7（計画の「約 491,000 円」）
+        // 判定の基準通貨と equity の通貨は同一でなければならない（比率判定が通貨に依存しない前提そのもの）。
+        TradingDefaults.EquityCurrency.Should().Be(MarketCurrency.Base);
+        TradingDefaults.InitialCapital.Should().Be(TradingDefaults.InitialEquityUsd);
+        TradingDefaults.InitialCapital.Should().Be(3_000m);
     }
 
     // FR-10, #329: 金額系の上限は equity から解決され、資金を増減すると比例調整される
@@ -53,9 +56,9 @@ public class TradingDefaultsTests
         limits.MaxOrderAmountFor(TradingDefaults.InitialEquityUsd).Should().Be(750m);
         limits.MaxDailyOrderAmountFor(TradingDefaults.InitialEquityUsd).Should().Be(4_500m);
 
-        // 基準通貨（円）建てのパイプラインでも同じ比率が効く（IADR-0130 決定3）。
-        limits.MaxOrderAmountFor(TradingDefaults.InitialCapital).Should().Be(122_775m);
-        limits.MaxDailyOrderAmountFor(TradingDefaults.InitialCapital).Should().Be(736_650m);
+        // #364, IADR-0152 決定3: 基準通貨建てのパイプラインへ供給される値は権威値と同一である。
+        limits.MaxOrderAmountFor(TradingDefaults.InitialCapital).Should().Be(750m);
+        limits.MaxDailyOrderAmountFor(TradingDefaults.InitialCapital).Should().Be(4_500m);
     }
 
     // FR-10, #329: 損失系の比率も計画 §5 の実額（$3,000 基準）と一致する。
@@ -196,8 +199,8 @@ public class TradingDefaultsTests
             .Should().Be(new StageSettings(
                 TradingStage.Stage3ScaledLive, BrokerProvider.MoomooReal, TradingDefaults.FullCapitalCapRatio));
 
-        // 発注可能額は equity から解決される（$3,000 ＝ ¥491,100 で Stage 2 は ¥147,330 ＝ 約 $900）。
+        // 発注可能額は equity から解決される（equity $3,000 で Stage 2 は $900 ＝ 30%）。
         policy.SettingsFor(TradingStage.Stage2MinimalLive)
-            .OrderableCapFor(TradingDefaults.InitialCapital).Should().Be(147_330m);
+            .OrderableCapFor(TradingDefaults.InitialCapital).Should().Be(900m);
     }
 }

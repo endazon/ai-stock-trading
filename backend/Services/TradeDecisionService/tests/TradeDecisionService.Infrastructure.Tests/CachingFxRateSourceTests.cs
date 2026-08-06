@@ -20,8 +20,8 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(Rate(asOf: Now.AddDays(-1)));
         var (source, _) = Create(inner);
 
-        var first = await source.GetRateToBaseAsync(Currency.Usd);
-        var second = await source.GetRateToBaseAsync(Currency.Usd);
+        var first = await source.GetRateToBaseAsync(Currency.Jpy);
+        var second = await source.GetRateToBaseAsync(Currency.Jpy);
 
         first!.Rate.Should().Be(second!.Rate);
         inner.Calls.Should().Be(1);
@@ -33,9 +33,9 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(Rate(asOf: Now.AddDays(-1)));
         var (source, time) = Create(inner, ttl: TimeSpan.FromHours(6));
 
-        await source.GetRateToBaseAsync(Currency.Usd);
+        await source.GetRateToBaseAsync(Currency.Jpy);
         time.Advance(TimeSpan.FromHours(6.5));
-        await source.GetRateToBaseAsync(Currency.Usd);
+        await source.GetRateToBaseAsync(Currency.Jpy);
 
         inner.Calls.Should().Be(2);
     }
@@ -47,7 +47,7 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(Rate(asOf: Now.AddDays(-8)));
         var (source, _) = Create(inner, maxAge: TimeSpan.FromDays(7));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().BeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
     [Fact]
@@ -56,13 +56,13 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(Rate(asOf: Now.AddDays(-3)));
         var (source, _) = Create(inner, maxAge: TimeSpan.FromDays(7));
 
-        (await source.GetRateToBaseAsync(Currency.Usd)).Should().NotBeNull();
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().NotBeNull();
     }
 
     // FR-10, #271, IADR-0112 決定1: 既定の鮮度上限は FRED DEXJPUS の公表周期を賄う。系列は営業日次だが公表は
     // H.10 週次リリース（月曜 16:15 ET ≒ 20:15 UTC・前週金曜まで一括収載／月曜が祝日なら火曜）であり、最新観測の齢は
     // 「公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 最大 2 日 ＋ 公表時刻」として積み上がる。
-    // 既定 7 日では予定どおりの公表でも毎週必ず超過し、米国株が週明け・連休明けに全件見送りになっていた。
+    // 既定 7 日では予定どおりの公表でも毎週必ず超過し、非基準通貨建て銘柄が週明け・連休明けに全件見送りになっていた。
     [Theory]
     [InlineData("2026-07-17", "2026-07-27T20:00:00Z", true, "通常＝次の月曜公表の直前（10.84 日・#271 の実測）")]
     [InlineData("2026-07-17", "2026-07-28T20:00:00Z", true, "月曜が祝日で火曜公表（11.84 日）")]
@@ -77,7 +77,7 @@ public class CachingFxRateSourceTests
             maxAge: FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()),
             now: Instant(evaluatedAt));
 
-        var rate = await source.GetRateToBaseAsync(Currency.Usd);
+        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
 
         (rate is not null).Should().Be(accepted, scenario);
     }
@@ -89,8 +89,8 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(null);
         var (source, _) = Create(inner);
 
-        await source.GetRateToBaseAsync(Currency.Usd);
-        await source.GetRateToBaseAsync(Currency.Usd);
+        await source.GetRateToBaseAsync(Currency.Jpy);
+        await source.GetRateToBaseAsync(Currency.Jpy);
 
         inner.Calls.Should().Be(2);
     }
@@ -101,13 +101,14 @@ public class CachingFxRateSourceTests
         var inner = new CountingSource(Rate(asOf: Now.AddDays(-30)));
         var (source, _) = Create(inner, maxAge: TimeSpan.FromDays(7));
 
-        await source.GetRateToBaseAsync(Currency.Usd);
-        await source.GetRateToBaseAsync(Currency.Usd);
+        await source.GetRateToBaseAsync(Currency.Jpy);
+        await source.GetRateToBaseAsync(Currency.Jpy);
 
         inner.Calls.Should().Be(2);
     }
 
-    private static FxRate Rate(DateTimeOffset asOf) => new(Currency.Usd, Currency.Jpy, 152.35m, asOf);
+    // #364, IADR-0152 決定1/2: 基準通貨は USD であり、解決対象は JPY（レートは USD per JPY）。
+    private static FxRate Rate(DateTimeOffset asOf) => new(Currency.Jpy, Currency.Usd, 1m / 152.35m, asOf);
 
     private static DateTimeOffset Instant(string iso8601) =>
         DateTimeOffset.Parse(iso8601, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);

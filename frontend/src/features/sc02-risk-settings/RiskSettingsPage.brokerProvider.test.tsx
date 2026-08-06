@@ -184,12 +184,12 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     // #389: 期待値は契約フィクスチャ（実応答）由来にする。ここは equity から解決済みの**実額**であり、
     // 設定側の比率（maxOrderAmountRatio）とは別物である。
     const table = within(dialog).getByRole('table', { name: '現在の equity と統制値' });
-    // SC-02, FR-10, #362, IADR-0151 決定4: 実弾切替は**取り消しが困難な操作**であり、その直前に提示する
-    // 4 点は画面の他の実額と同じ表記規約（桁区切り ＋ 基準通貨「円」）に従う。生の数値のままだと
-    // 3000000 のような桁を読み違える余地が残り、「単位を取り違えさせない」という決定4 の目的に反する。
-    expect(within(table).getByText(`${formatAmount(STATUS.capital)} 円`)).toBeInTheDocument();
-    expect(within(table).getByText(`${formatAmount(STATUS.maxOrderAmount)} 円`)).toBeInTheDocument();
-    expect(within(table).getByText(`${formatAmount(STATUS.maxDailyOrderAmount)} 円`)).toBeInTheDocument();
+    // SC-02, FR-10, #362, #364, IADR-0151 決定4 / IADR-0152 決定6: 実弾切替は**取り消しが困難な操作**であり、
+    // その直前に提示する 4 点は画面の他の実額と同じ表記規約（桁区切り ＋ 基準通貨 USD の記号）に従う。
+    // 生の数値のままだと桁を読み違える余地が残り、「単位を取り違えさせない」という決定4 の目的に反する。
+    expect(within(table).getByText(formatAmount(STATUS.capital))).toBeInTheDocument();
+    expect(within(table).getByText(formatAmount(STATUS.maxOrderAmount))).toBeInTheDocument();
+    expect(within(table).getByText(formatAmount(STATUS.maxDailyOrderAmount))).toBeInTheDocument();
     // ④ 明示的な確認操作（チェックボックス＋文字入力）
     expect(within(dialog).getByRole('checkbox')).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/「REAL」と入力/)).toBeInTheDocument();

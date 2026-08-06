@@ -110,7 +110,7 @@ related_specs:
 
 ## テストデータ
 
-- equity: `TradingDefaults.InitialCapital`（＝ $3,000 × 163.7 の円建て換算値。IADR-0130 決定3）
+- equity: `TradingDefaults.InitialCapital`（＝ $3,000。#364 / IADR-0152 決定3 で基準通貨が USD になり、参照レートによる 1 点換算は廃止した）
 - 銘柄: `AAPL`（米国株）／ `7203`（日本株・禁止リスト外）／ `6457`・`6902`・`6502`（計画登録の禁止銘柄）
 - 空売りの成立条件は米国株・株価 $5.00 以上・逆指値つき（ADR-0016 決定7・決定2(b)）
 

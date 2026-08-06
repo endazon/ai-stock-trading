@@ -9,7 +9,7 @@ public static class PortfolioValuation
 {
     // 含み損益＝Σ 建玉 (現在値 − 平均取得単価) × 符号付き数量 × 換算レート。現在値の無い建玉は 0（フォールバック）。
     // FR-10, #257, IADR-0107 決定4: 現在値・平均取得単価はローカル通貨のため、建玉の加重平均約定時レートで
-    // 基準通貨（円）へ換算してから合算する（日次損失上限・最大DD は基準通貨で判定される）。
+    // 基準通貨（USD）へ換算してから合算する（日次損失上限・最大DD は基準通貨で判定される）。
     // 計画 05_trading-assumptions §3 の「評価損益＝日次終値レート」に対する近似であり、残差は FX 変動分に限られる。
     public static decimal UnrealizedPnl(
         IReadOnlyList<OpenPosition> positions,
@@ -55,7 +55,7 @@ public static class PortfolioValuation
             positions.TryGetValue(key, out var pos);
 
             // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
-            // IADR-0107: エクイティは基準通貨（円）で追跡するため、基準通貨の約定単価で畳み込む。
+            // IADR-0107: エクイティは基準通貨（USD）で追跡するため、基準通貨の約定単価で畳み込む。
             var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.PriceInBase);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 

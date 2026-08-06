@@ -28,9 +28,9 @@ public static class PositionSizer
     /// <see cref="RiskEvaluator"/> で必ず拒否される（サイジング→拒否のループ。Issue #29）。呼び出し元は
     /// 発注意図の数量確定にこのメソッドを用い、リスク予算基準と金額上限基準の小さい方を採る。
     /// </summary>
-    /// <param name="referencePrice">1 株あたり参照価格（基準通貨・円）。0 以下は見送り（0 株）。</param>
-    /// <param name="maxOrderAmount">1 注文あたり金額上限（基準通貨・円）。</param>
-    /// <param name="availableCapital">この注文に投入可能な資金（基準通貨・円）。段階資金上限の残枠など。</param>
+    /// <param name="referencePrice">1 株あたり参照価格（基準通貨・USD）。0 以下は見送り（0 株）。</param>
+    /// <param name="maxOrderAmount">1 注文あたり金額上限（基準通貨・USD）。</param>
+    /// <param name="availableCapital">この注文に投入可能な資金（基準通貨・USD）。段階資金上限の残枠など。</param>
     public static int CalculateCappedQuantity(
         decimal capital,
         decimal perTradeRiskRatio,

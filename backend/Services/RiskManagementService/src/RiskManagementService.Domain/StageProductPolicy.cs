@@ -39,20 +39,14 @@ public static class StageProductPolicy
     /// **これは利用者設定ではなく計画が定めた解禁条件である**ため、<c>ShortSellingLimits</c>（統制値の集合）
     /// ではなく本ポリシーが持つ。
     /// </para>
-    /// </summary>
-    public const decimal ShortSellLiveReleaseEquityUsd = 5_000m;
-
-    /// <summary>
-    /// 基準通貨（円）建てに換算した解禁下限。
     /// <para>
-    /// 計画（ADR-0016 決定6）は判定の基準を**自己資金の米ドル建て評価額**と定めるが、実装の判定
-    /// パイプラインは基準通貨（円）建てである（IADR-0107 / IADR-0130 決定3）。初期投入資金と同じ
-    /// **計画記載の参照レート**（<see cref="TradingDefaults.ReferenceUsdToJpyRate"/>＝§5「1 USD ≈ 163.7 円」）
-    /// による 1 点換算を用いる。実勢レートでの equity 評価は #333 の範囲外である（IADR-0139 §結果）。
+    /// #364, IADR-0152 決定3: 基準通貨が USD になったため、equity（<c>PortfolioSnapshot.Capital</c>）と本値は
+    /// **同一通貨**であり、そのまま比較できる。旧実装は参照レート（1 USD ≈ 163.7 円）で円建てへ 1 点換算した
+    /// <c>ShortSellLiveReleaseEquityInBase</c> を持っていたが、その近似は本移行で不要になったため削除した
+    /// （計画 ADR-0016 決定6 が定める「自己資金の米ドル建て評価額」と実装が厳密に一致する）。
     /// </para>
     /// </summary>
-    public const decimal ShortSellLiveReleaseEquityInBase =
-        ShortSellLiveReleaseEquityUsd * TradingDefaults.ReferenceUsdToJpyRate;
+    public const decimal ShortSellLiveReleaseEquityUsd = 5_000m;
 
     /// <summary>
     /// FR-20, ADR-0016 決定14: 段階解禁の可否に必要な外部由来の入力。
@@ -109,7 +103,7 @@ public static class StageProductPolicy
                     return null;
                 }
 
-                var equitySufficient = equity >= ShortSellLiveReleaseEquityInBase;
+                var equitySufficient = equity >= ShortSellLiveReleaseEquityUsd;
                 var revalidated = release?.ShortSellStrategyBacktestPassed ?? false;
                 return equitySufficient && revalidated
                     ? null

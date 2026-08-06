@@ -60,8 +60,8 @@ public class SimulatorProfileWiringTests
         store.Should().BeOfType<SimulatorProfileRiskSettingsStore>();
         var current = store.GetCurrent();
         // FR-10, #329, IADR-0130 決定6: 上限は equity 比のまま。解決額が基準資金に比例して上がる。
-        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);
-        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m);
+        current.Limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(283_333.25m);
+        current.Limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(1_699_999.50m);
         current.Stage.Mode.Should().Be(BrokerProvider.InternalPaper);
         // FR-20, #333, IADR-0136: 段階の発注可能額も総資金比のため、比率は本番既定のまま解決額だけが比例する。
         current.Stage.CapitalCapRatio.Should().Be(TradingDefaults.FullCapitalCapRatio);

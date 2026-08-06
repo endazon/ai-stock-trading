@@ -14,8 +14,9 @@ public class SimulatorTradingDefaultsTests
     [Fact]
     public void 基準資金はシミュレータ残高に基づく()
     {
-        // $1,000,000 × ¥150 ＋ ¥20,000,000 = ¥170,000,000。
-        SimulatorTradingDefaults.InitialCapital.Should().Be(170_000_000m);
+        // #364, IADR-0152 決定4: 基準通貨は USD。$1,000,000 ＋ ¥20,000,000 ÷ ¥150/USD ≒ $1,133,333（切り捨て）。
+        SimulatorTradingDefaults.SimulatorJpyBalanceInUsd.Should().Be(133_333m);
+        SimulatorTradingDefaults.InitialCapital.Should().Be(1_133_333m);
     }
 
     // FR-10, #329, IADR-0130 決定6: 金額系の上限は基準資金に比例して解決される（プロファイル固有の
@@ -25,8 +26,8 @@ public class SimulatorTradingDefaultsTests
     {
         var limits = SimulatorTradingDefaults.CreateSettings().Limits;
 
-        limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(42_500_000m);      // 170,000,000 × 25%
-        limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(255_000_000m); // × 150%
+        limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(283_333.25m);       // 1,133,333 × 25%
+        limits.MaxDailyOrderAmountFor(SimulatorTradingDefaults.InitialCapital).Should().Be(1_699_999.50m); // × 150%
     }
 
     [Fact]
@@ -59,9 +60,9 @@ public class SimulatorTradingDefaultsTests
     public void 本番既定は変更しない()
     {
         // プロファイルの存在で本番既定が動いていないことを明示的に固定する。
-        // FR-10, #329, ADR-0018: 初期資金は $3,000（基準通貨換算 ¥491,100）、金額系は equity 比。
+        // FR-10, #329, #364, ADR-0018: 初期資金は $3,000（基準通貨 USD そのもの）、金額系は equity 比。
         TradingDefaults.InitialEquityUsd.Should().Be(3_000m);
-        TradingDefaults.InitialCapital.Should().Be(491_100m);
+        TradingDefaults.InitialCapital.Should().Be(3_000m);
         TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio.Should().Be(0.25m);
         TradingDefaults.CreateRiskLimits().MaxDailyOrderAmountRatio.Should().Be(1.50m);
         TradingDefaults.CreateStagePolicy().SettingsFor(TradingStage.Stage2MinimalLive).CapitalCapRatio
@@ -81,8 +82,8 @@ public class SimulatorTradingDefaultsTests
     [Fact]
     public void 米国株の代表銘柄でも数量が算出される()
     {
-        // #257: AAPL $335 × ¥150 = ¥50,250/株（IADR-0107 で基準通貨へ換算済みの 1 株あたり金額）。
-        const decimal referencePriceInBase = 50_250m;
+        // #257, #364: AAPL $335/株。基準通貨が USD になったため、米国株は換算せずそのまま基準通貨額である。
+        const decimal referencePriceInBase = 335m;
         var stopLossDistanceInBase = referencePriceInBase * TradingDefaults.DefaultStopLossRatio; // 3%
 
         var limits = SimulatorTradingDefaults.CreateSettings().Limits;
@@ -94,12 +95,13 @@ public class SimulatorTradingDefaultsTests
             limits.MaxOrderAmountFor(SimulatorTradingDefaults.InitialCapital),
             availableCapital: SimulatorTradingDefaults.InitialCapital);
 
-        // FR-10: 「厳しい方が効く」。リスク予算基準 = 170,000,000 × 1% ÷ 1,507.5 = 1,127 株、
-        // 金額基準 = 42,500,000 ÷ 50,250 = 845 株。損切り幅 3% は 4%（＝1% ÷ 25%）より狭いため金額側が効く。
+        // FR-10: 「厳しい方が効く」。リスク予算基準 = 1,133,333 × 1% ÷ 10.05 = 1,127 株、
+        // 金額基準 = 283,333.25 ÷ 335 = 845 株。損切り幅 3% は 4%（＝1% ÷ 25%）より狭いため金額側が効く。
+        // **比率はスケール不変**であるため、基準通貨を JPY から USD へ移しても株数は変わらない（IADR-0152 決定8）。
         simulatorQuantity.Should().Be(845);
 
-        // #329: 本番既定（equity ¥491,100）でも米国株が建てられる（増資 $3,000 の目的）。
-        // リスク予算基準 3 株・金額基準 122,775 ÷ 50,250 = 2 株 → 厳しい方の 2 株。
+        // #329: 本番既定（equity $3,000）でも米国株が建てられる（増資 $3,000 の目的）。
+        // リスク予算基準 2 株・金額基準 750 ÷ 335 = 2 株 → 厳しい方の 2 株（移行前と同じ株数）。
         var production = TradingDefaults.CreateRiskLimits();
         PositionSizer.CalculateCappedQuantity(
             TradingDefaults.InitialCapital,

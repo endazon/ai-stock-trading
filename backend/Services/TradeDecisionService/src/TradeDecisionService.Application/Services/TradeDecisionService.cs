@@ -53,8 +53,8 @@ public sealed class TradeDecisionService(
     // 実供給（MarketDataCurrentPriceProvider）は Worker が MarketData:Provider 設定時に opt-in で差し替える。
     private readonly ICurrentPriceProvider _currentPrice = currentPrice ?? new NoOpCurrentPriceProvider();
 
-    // FR-10, FR-17, #257, IADR-0107: 基準通貨（円）への換算レートの供給口。未指定＝基準通貨の市場だけレート 1
-    // （日本株は現行どおり／米国株は解決不能＝新規建て見送り）。実供給は Worker が Fx:Provider 設定時に差し替える。
+    // FR-10, FR-17, #257, #364, IADR-0107/0152: 基準通貨（USD）への換算レートの供給口。未指定＝基準通貨の市場だけ
+    // レート 1（米国株は現行どおり／日本株は解決不能＝新規建て見送り）。実供給は Worker が Fx:Provider 設定時に差し替える。
     private readonly IFxRateProvider _fxRate = fxRate ?? new BaseCurrencyOnlyFxRateProvider();
 
     // FR-04, FR-05, FR-10, #292, IADR-0119: 判断由来の決済（AI の出口）に用いる保有建玉の照会口。
@@ -102,9 +102,9 @@ public sealed class TradeDecisionService(
             return null;
         }
 
-        // FR-10, FR-17, #257, IADR-0107 決定2/3: 発注意図を作る前に基準通貨（円）への換算レートを確定させる。
+        // FR-10, FR-17, #257, #364, IADR-0107 決定2/3: 発注意図を作る前に基準通貨（USD）への換算レートを確定させる。
         // 解決できない（レート源未設定・取得失敗・鮮度切れ）非基準通貨の銘柄は、誤った実効上限で発注せず見送る。
-        // 基準通貨の市場（日本株）は常に 1 が返るため現行挙動と等価。LLM 呼び出しより前に倒すことで無駄な費用も避ける。
+        // 基準通貨の市場（米国株）は常に 1 が返る。LLM 呼び出しより前に倒すことで無駄な費用も避ける。
         var fxRateToBase = await GetFxRateToBaseSafeAsync(trigger.Market, cancellationToken).ConfigureAwait(false);
         if (fxRateToBase is not { } rateToBase || rateToBase <= 0m)
         {
@@ -208,7 +208,7 @@ public sealed class TradeDecisionService(
             return null;
         }
 
-        // FR-10, FR-17, #257, IADR-0107 決定1/2: サイジングの入力を基準通貨（円）へ揃える。資金・上限・残枠は基準通貨、
+        // FR-10, FR-17, #257, #364, IADR-0107 決定1/2: サイジングの入力を基準通貨（USD）へ揃える。資金・上限・残枠は基準通貨、
         // 参照価格・損切り幅は銘柄のローカル通貨のため、1 株あたり金額にレートを掛けてから PositionSizer へ渡す
         // （混在させると金額上限が桁で誤り、過大発注を招く）。基準通貨の市場はレート 1 で現行と同値。
         var referencePriceBase = referencePrice * rateToBase;

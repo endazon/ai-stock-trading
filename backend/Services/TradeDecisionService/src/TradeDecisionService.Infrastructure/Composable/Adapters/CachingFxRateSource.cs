@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
-// FR-10, #257, IADR-0107 決定5: 「そのレートを取りに行くか」「そのレートを使ってよいか」を決める装飾。
+// FR-10, #257, #364, IADR-0107 決定5: 「そのレートを取りに行くか」「そのレートを使ってよいか」を決める装飾。
 //   - TTL: 取得済みレートの再利用時間。日次系列（DEXJPUS）を判断サイクルごとに叩かない。
 //   - 鮮度上限: 観測日が古すぎるレートは採らない（null＝レート無し＝非基準通貨の新規建て見送り）。
 // 失敗（null）・鮮度切れはキャッシュしない。一時障害を TTL のあいだ引きずると、回復後も見送りが続くため。

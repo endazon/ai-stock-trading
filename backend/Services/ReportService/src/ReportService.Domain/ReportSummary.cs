@@ -21,8 +21,8 @@ public static class ReportSummary
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture, $"{KindLabel(kind)} {periodLabel}（承認待ち）\n");
         sb.Append(CultureInfo.InvariantCulture,
-            $"実現損益（税引後・費用込み）: {ReportAmountFormat.Yen(pnl.RealizedPnlNet)}"
-            + $" ／ 費用: {ReportAmountFormat.Yen(pnl.TotalCost)}"
+            $"実現損益（税引後・費用込み）: {ReportAmountFormat.Base(pnl.RealizedPnlNet)}"
+            + $" ／ 費用: {ReportAmountFormat.Base(pnl.TotalCost)}"
             + $" ／ 取引: {pnl.TradeCount} 件（決済 {pnl.RealizingTradeCount}・勝ち {pnl.WinningTradeCount}）");
 
         // 散文は残り枠に収める（数値行が切り落とされないよう、上限は散文側に配分する）。

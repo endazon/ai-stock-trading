@@ -49,8 +49,12 @@ public class EquityRatioRiskLimitsTests
             InvestedCapital = investedCapital,
         };
 
-    private static OrderIntent Entry(decimal notional, decimal fxRateToBase = 1m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
+    // notional は**基準通貨換算後**の金額。レートを与えると、その金額になるローカル通貨価格を逆算して積む。
+    // #364, IADR-0152 決定1: 基準通貨は USD であり、非基準通貨（JPY）の市場は日本である。
+    private static OrderIntent Entry(
+        decimal notional, decimal fxRateToBase = 1m, Market market = Market.UnitedStates) =>
+        new(market == Market.Japan ? "7203" : "AAPL", market,
+            TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
             1, notional / fxRateToBase, PositionEffect.Open, StopLossPrice: null, fxRateToBase);
 
     private static OrderIntent Exit(decimal notional) =>
@@ -204,16 +208,25 @@ public class EquityRatioRiskLimitsTests
 
     // FR-10「生成AIはこれらを上書きできない」: 上限は**統制設定**から解決される。注文意図側の値
     //（数量・価格・同伴レート）をどう作っても、equity 比から導いた上限そのものは動かない。
-    // 迂回経路として最も現実的なのは「外貨建てにして名目額を小さく見せる」であるため、それを固定する。
-    [Fact]
-    public void 注文側の換算レートを操作しても上限は緩まない()
+    // 迂回経路は「非基準通貨建てにして名目額を上限と食い違わせる」であるため、判定が常に基準通貨換算額
+    //（NotionalInBase）の側で切り替わることを固定する。
+    // #364, IADR-0152 決定1: 基準通貨が USD になり、非基準通貨（JPY）の名目額は基準通貨額より桁で大きく見える。
+    // ローカル通貨の名目額で判定していれば、上限内の注文が拒否され（過剰拘束）、境界が注文側の数字で動いてしまう。
+    [Theory]
+    [InlineData(0.001)]     // JPY 1 単位あたりの USD 額（テスト用の丸い値）
+    [InlineData(0.0061)]    // 実勢に近い値（1 USD ≈ 163.9 円）
+    public void 注文側の換算レートを操作しても上限は緩まない(decimal fxRateToBase)
     {
         var cap = Limits.MaxOrderAmountFor(Equity);
-        // ローカル通貨では 1/150 の数字に見えるが、基準通貨換算では上限を 1 円超える。
-        var evasive = Entry(cap + 1m, fxRateToBase: 150m);
 
-        evasive.Notional.Should().BeLessThan(cap, "ローカル通貨の名目額は上限より小さく見える");
-        RiskEvaluator.Evaluate(evasive, Settings(), Snapshot()).Reasons
+        // 上限ちょうどの実額は、ローカル通貨の名目額が桁で大きく見えても通る。
+        var atCap = Entry(cap, fxRateToBase, Market.Japan);
+        atCap.Notional.Should().BeGreaterThan(cap, "ローカル通貨の名目額は基準通貨額より大きく見える");
+        RiskEvaluator.Evaluate(atCap, Settings(), Snapshot()).Reasons
+            .Should().NotContain(RejectionReason.PerOrderAmountExceeded);
+
+        // 基準通貨換算で上限を 1 単位超えれば、レートによらず拒否される。
+        RiskEvaluator.Evaluate(Entry(cap + 1m, fxRateToBase, Market.Japan), Settings(), Snapshot()).Reasons
             .Should().Contain(RejectionReason.PerOrderAmountExceeded);
     }
 

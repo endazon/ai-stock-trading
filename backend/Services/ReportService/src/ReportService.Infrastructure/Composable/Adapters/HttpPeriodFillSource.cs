@@ -59,7 +59,7 @@ internal sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPe
         }
     }
 
-    // 台帳の約定単価はローカル通貨（IADR-0107 決定1）。報告書の集計は基準通貨（円）建てのため、
+    // 台帳の約定単価はローカル通貨（IADR-0107 決定1）。報告書の集計は基準通貨（USD）建てのため、
     // 同伴レート（承認時に固定された FxRateToBase）で換算する。LedgerFill.PriceInBase と同じ規則だが、
     // 別サービスの型は参照しないため、ここで一次フィールドから導出する。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(

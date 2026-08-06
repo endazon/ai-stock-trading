@@ -93,11 +93,11 @@ public class TradeDecisionServiceTests
         new(new FakeLlm(llmOutput), new FakePolicy(Policy), new FakeSizing(ctx ?? Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance, heldPosition: held);
 
-    // #257, IADR-0107: 本スイートは通貨換算の影響を分離するため基準通貨（日本株・円建て）の銘柄を用いる
-    // （価格 1,000 円・損切り幅 30 円として読む）。非基準通貨（米国株）の換算・レート未解決時の見送りは
-    // 後段の「通貨換算」節で明示的に検証する。
+    // #257, #364, IADR-0107/0152: 本スイートは通貨換算の影響を分離するため**基準通貨（米国株・USD 建て）**の
+    // 銘柄を用いる（価格 1,000 USD・損切り幅 30 USD として読む）。非基準通貨（日本株）の換算・レート未解決時の
+    // 見送りは後段の「通貨換算」節で明示的に検証する。
     private static PriceMovementDetected Trigger() =>
-        new(Guid.NewGuid(), "7203", Market.Japan, 1_040m, 1_000m, 0.04m, Now);
+        new(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_040m, 1_000m, 0.04m, Now);
 
     private const string BuyJson =
         """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
@@ -190,7 +190,7 @@ public class TradeDecisionServiceTests
         decision.Should().NotBeNull();
         decision!.Intent.Side.Should().Be(TradeSide.Buy);
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open); // IADR-0004
-        decision.Intent.Symbol.Should().Be("7203");
+        decision.Intent.Symbol.Should().Be("AAPL");
         decision.Rationale.Should().Be("押し目");
         decision.DecidedAt.Should().Be(Now);
         // IADR-0035: ロングの損切り価格＝参照価格 − 損切り幅（1,000 − 30 = 970）。
@@ -257,12 +257,12 @@ public class TradeDecisionServiceTests
     public async Task 定時トリガーでも同一ロジックで判断する_合流()
     {
         // FR-02, IADR-0023: 価格変動なしの定時（Scheduled）トリガーでも DecideAsync が判断を行う。
-        var scheduled = DecisionTrigger.Scheduled("7203", Market.Japan);
+        var scheduled = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
 
         var decision = await Create(BuyJson, Policy).DecideAsync(scheduled);
 
         decision.Should().NotBeNull();
-        decision!.Intent.Symbol.Should().Be("7203");
+        decision!.Intent.Symbol.Should().Be("AAPL");
         decision.Intent.PositionEffect.Should().Be(PositionEffect.Open);
     }
 
@@ -527,7 +527,7 @@ public class TradeDecisionServiceTests
         var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance, currentPrice: new FakeCurrentPrice(1_200m));
 
-        var decision = await service.DecideAsync(DecisionTrigger.Scheduled("7203", Market.Japan));
+        var decision = await service.DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
 
         decision.Should().NotBeNull();
         llm.LastPrompt.Should().Contain("定時サイクル（価格変動トリガーなし）");
@@ -542,7 +542,7 @@ public class TradeDecisionServiceTests
         var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance);
 
-        await service.DecideAsync(DecisionTrigger.Scheduled("7203", Market.Japan));
+        await service.DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
 
         llm.LastPrompt.Should().Contain("定時サイクル（価格変動トリガーなし）");
         llm.LastPrompt.Should().NotContain("現在値");
@@ -601,52 +601,56 @@ public class TradeDecisionServiceTests
             throw new InvalidOperationException("為替レート取得の擬似障害");
     }
 
-    // AAPL 336.77 USD 相当。現在値は権威価格として供給し、LLM の referencePrice は使わない。
-    // 損切り幅・想定利益はローカル通貨（USD）建てで返る前提（プロンプトでもその旨を明示している）。
-    private const string UsdBuyJson =
-        """{"action":"Buy","rationale":"押し目","referencePrice":336.77,"stopLossDistancePerShare":0.5,"expectedProfitPerShare":20}""";
+    // #364, IADR-0152 決定1: 基準通貨は USD であるため、**非基準通貨は日本株（JPY）**である。
+    // 現在値は権威価格として供給し、LLM の referencePrice は使わない。
+    // 損切り幅・想定利益はローカル通貨（JPY）建てで返る前提（プロンプトでもその旨を明示している）。
+    private const string NonBaseBuyJson =
+        """{"action":"Buy","rationale":"押し目","referencePrice":300000,"stopLossDistancePerShare":7500,"expectedProfitPerShare":7500}""";
 
-    private static PriceMovementDetected UsdTrigger() =>
-        new(Guid.NewGuid(), "AAPL", Market.UnitedStates, 336.77m, 320m, 0.05m, Now);
+    private static PriceMovementDetected NonBaseTrigger() =>
+        new(Guid.NewGuid(), "7203", Market.Japan, 315_000m, 300_000m, 0.05m, Now);
+
+    /// <summary>テスト用の丸い換算レート（JPY 1 単位あたりの USD 額）。実勢はおよそ 1/150 〜 1/164。</summary>
+    private const decimal JpyToUsd = 0.01m;
 
     private static AppSvc CreateForCurrency(
         IFxRateProvider fx, ICurrentPriceProvider? price = null, ILogger<AppSvc>? logger = null,
         IProfitabilityAssumptionsProvider? prof = null, ProfitabilityGateOptions? profOpts = null) =>
-        new(new FakeLlm(UsdBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+        new(new FakeLlm(NonBaseBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), logger ?? NullLogger<AppSvc>.Instance,
             retrieval: null, options: null, profitability: prof, profitabilityOptions: profOpts,
             unconfirmedNotifier: null, currentPrice: price, fxRate: fx);
 
     // 基準4: 非基準通貨でレートが解決できなければ新規建てを見送る（過大発注を招かない安全側）。
     [Fact]
-    public async Task 外貨建て銘柄で換算レートが無ければ見送る()
+    public async Task 非基準通貨建て銘柄で換算レートが無ければ見送る()
     {
         var logger = new RecordingLogger();
 
-        var decision = await CreateForCurrency(new FakeFxRate(null), logger: logger).DecideAsync(UsdTrigger());
+        var decision = await CreateForCurrency(new FakeFxRate(null), logger: logger).DecideAsync(NonBaseTrigger());
 
         decision.Should().BeNull();
         string.Join("\n", logger.Messages).Should().Contain("基準通貨への換算レートが解決できないため見送り");
     }
 
-    // 既定（実 FX 未結線）でも外貨建て銘柄は見送りになる＝統制が効かない状態で発注しない。
+    // 既定（実 FX 未結線）でも非基準通貨建て銘柄は見送りになる＝統制が効かない状態で発注しない。
     [Fact]
-    public async Task FX未結線の既定では外貨建て銘柄を見送る()
+    public async Task FX未結線の既定では非基準通貨建て銘柄を見送る()
     {
-        var service = new AppSvc(new FakeLlm(UsdBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+        var service = new AppSvc(new FakeLlm(NonBaseBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance);
 
-        (await service.DecideAsync(UsdTrigger())).Should().BeNull();
+        (await service.DecideAsync(NonBaseTrigger())).Should().BeNull();
     }
 
     // fail-safe: レート取得の例外はレート無しへ縮退し、見送りになる（例外は安全側に働く）。
     [Fact]
     public async Task 換算レート取得が例外なら見送る()
     {
-        (await CreateForCurrency(new ThrowingFxRate()).DecideAsync(UsdTrigger())).Should().BeNull();
+        (await CreateForCurrency(new ThrowingFxRate()).DecideAsync(NonBaseTrigger())).Should().BeNull();
     }
 
-    // 基準7: 基準通貨（日本株）は実 FX 源を結線しなくても従来どおり発注意図を作る（影響を非基準通貨に限定する）。
+    // 基準7: 基準通貨（米国株）は実 FX 源を結線しなくても従来どおり発注意図を作る（影響を非基準通貨に限定する）。
     // 「基準通貨では外部レート源へ問い合わせない」ことは源側で検証する
     //（FredFxRateSourceTests.基準通貨は外部へ問い合わせずレート1を返す＝送信 0 件）。
     [Fact]
@@ -666,35 +670,33 @@ public class TradeDecisionServiceTests
 
     // 基準5/6: レートありなら換算後の金額でサイジングし、発注意図の価格はローカル通貨のまま載せる。
     [Fact]
-    public async Task 外貨建て銘柄は換算後の金額でサイジングし価格はローカル通貨のまま載せる()
+    public async Task 非基準通貨建て銘柄は換算後の金額でサイジングし価格はローカル通貨のまま載せる()
     {
-        // 336.77 USD × 150 円 = 50,515.5 円/株。1 注文金額上限 35,000 円では 0 株となるため、
-        // ここでは上限に収まる低位株（20 USD = 3,000 円）で「換算後の金額でキャップされる」ことを確認する。
-        var decision = await CreateForCurrency(new FakeFxRate(150m), new FakeCurrentPrice(20m))
-            .DecideAsync(UsdTrigger());
+        // ¥300,000/株 × 0.01 ＝ $3,000/株。ローカル通貨の名目額（300,000）で判定すると桁で誤る。
+        var decision = await CreateForCurrency(new FakeFxRate(JpyToUsd), new FakeCurrentPrice(300_000m))
+            .DecideAsync(NonBaseTrigger());
 
         decision.Should().NotBeNull();
-        // 金額基準（円換算）: min(35,000, min(50,000, 20,000)) ÷ (20 USD × 150) = 6 株。
-        // リスク予算基準: 100,000 × 1% ÷ (0.5 USD × 150) = 13 株。小さい方の 6 株を採る。
-        // 換算しなければ金額基準は 20,000 ÷ 20 = 1,000 株（＝約 300 万円相当）と桁で誤る。
+        // 金額基準（基準通貨換算）: min(25,000, min(50,000, 20,000)) ÷ $3,000 = 6 株。
+        // リスク予算基準: 100,000 × 1% ÷ (¥7,500 × 0.01 ＝ $75) = 13 株。小さい方の 6 株を採る。
         decision!.Intent.Quantity.Should().Be(6);
-        decision.Intent.Price.Should().Be(20m, "発注執行へ渡す価格はローカル通貨（USD）のまま");
-        decision.Intent.StopLossPrice.Should().Be(19.5m, "損切り価格もローカル通貨（20 USD − 0.5 USD）");
-        decision.Intent.FxRateToBase.Should().Be(150m);
-        decision.Intent.NotionalInBase.Should().Be(18_000m); // 6 × 20 USD × 150
+        decision.Intent.Price.Should().Be(300_000m, "発注執行へ渡す価格はローカル通貨（JPY）のまま");
+        decision.Intent.StopLossPrice.Should().Be(292_500m, "損切り価格もローカル通貨（¥300,000 − ¥7,500）");
+        decision.Intent.FxRateToBase.Should().Be(JpyToUsd);
+        decision.Intent.NotionalInBase.Should().Be(18_000m); // 6 × ¥300,000 × 0.01
     }
 
     // 基準3 の判断側の対: 換算後の金額が 1 注文金額上限を超える高価格株は数量 0＝見送りになる（正しい帰結）。
     [Fact]
     public async Task 換算後に1注文金額上限を超える高価格株は見送る()
     {
-        var decision = await CreateForCurrency(new FakeFxRate(150m), new FakeCurrentPrice(336.77m))
-            .DecideAsync(UsdTrigger());
+        var decision = await CreateForCurrency(new FakeFxRate(JpyToUsd), new FakeCurrentPrice(3_000_000m))
+            .DecideAsync(NonBaseTrigger());
 
-        decision.Should().BeNull("336.77 USD × 150 円 ≒ 50,516 円/株 は 1 注文金額上限 35,000 円を超える");
+        decision.Should().BeNull("¥3,000,000 × 0.01 ＝ $30,000/株 は 1 注文金額上限（equity の 25% ＝ $25,000）を超える");
     }
 
-    // 基準8: 採算評価の notional・想定利益は基準通貨（円）で突き合わせる（費用見積りの単位と揃える）。
+    // 基準8: 採算評価の notional・想定利益は基準通貨（USD）で突き合わせる（費用見積りの単位と揃える）。
     [Fact]
     public async Task 採算評価のnotionalは基準通貨で突き合わせる()
     {
@@ -702,12 +704,12 @@ public class TradeDecisionServiceTests
         var opts = ProfitabilityGateOptions.Default with { Enabled = true };
 
         var decision = await CreateForCurrency(
-                new FakeFxRate(150m), new FakeCurrentPrice(20m), prof: prof, profOpts: opts)
-            .DecideAsync(UsdTrigger());
+                new FakeFxRate(JpyToUsd), new FakeCurrentPrice(300_000m), prof: prof, profOpts: opts)
+            .DecideAsync(NonBaseTrigger());
 
         decision.Should().NotBeNull();
         prof.Calls.Should().Be(1);
-        // 6 株 × 20 USD × 150 円 = 18,000 円（USD のまま渡すと 120 円相当で費用と桁が合わない）。
+        // 6 株 × ¥300,000 × 0.01 = $18,000（JPY のまま渡すと 1,800,000 で費用と桁が合わない）。
         prof.LastNotional.Should().Be(18_000m);
     }
 

@@ -1,7 +1,7 @@
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
-// FR-10, FR-17, #257, IADR-0107: 為替レート源の構成（セクション "Fx"）。既定は no-op＝外部へ接続しない。
-// レートが解決できない間、非基準通貨（米国株）の新規建ては見送られる（基準通貨の日本株は影響を受けない）。
+// FR-10, FR-17, #257, #364, IADR-0107/0152: 為替レート源の構成（セクション "Fx"）。既定は no-op＝外部へ接続しない。
+// レートが解決できない間、非基準通貨（日本株）の新規建ては見送られる（基準通貨の米国株は影響を受けない）。
 internal sealed class FxOptions
 {
     public const string SectionName = "Fx";
@@ -51,7 +51,7 @@ internal sealed class FredFxOptions
     /// <summary>API キー（既定は空＝no-op へフォールバック）。環境変数から与え、appsettings に実値を置かない。</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>USD/JPY の系列 ID。既定 DEXJPUS（円/ドル・営業日次）。</summary>
+    /// <summary>USD/JPY の系列 ID。既定 DEXJPUS（円/ドル・営業日次）。JPY のレートは逆数で得る（IADR-0152 決定2）。</summary>
     public string SeriesId { get; set; } = FredFxRateSource.DefaultSeriesId;
 
     /// <summary>API のベース URL。既定で足りるため通常は設定不要（テスト・将来の移行用）。</summary>

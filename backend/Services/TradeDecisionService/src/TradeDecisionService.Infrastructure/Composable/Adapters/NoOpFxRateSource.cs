@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 
-// FR-10, #257, IADR-0107: IFxRateSource の既定実装＝外貨のレートを解決しない（null）。
+// FR-10, #257, #364, IADR-0107/0152: IFxRateSource の既定実装＝非基準通貨のレートを解決しない（null）。
 // 実接続は Fx:Provider の明示指定でのみ有効化する（既定では外部へ 1 リクエストも出さない）。
-// 基準通貨は定義上レート 1 のため、FX を有効化していない環境でも基準通貨の市場（日本株）は従来どおり取引できる。
-// 外貨は「レート無し＝非基準通貨の新規建て見送り」（IADR-0107 決定3）に倒れるため、差し替え漏れに気づけるよう
+// 基準通貨は定義上レート 1 のため、FX を有効化していない環境でも基準通貨の市場（米国株）は従来どおり取引できる。
+// 非基準通貨は「レート無し＝新規建て見送り」（IADR-0107 決定3）に倒れるため、差し替え漏れに気づけるよう
 // 初回に 1 回だけ警告する（判断サイクルごとのログ氾濫を避ける）。
 internal sealed class NoOpFxRateSource(ILogger<NoOpFxRateSource> logger) : IFxRateSource
 {

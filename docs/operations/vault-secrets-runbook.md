@@ -44,9 +44,11 @@ plan_refs:
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
 `discord-owner-auth-client-id` / `discord-owner-auth-client-secret`。
 
-> **`fred-api-key` は US 株取引の必須前提**（基準通貨・円への換算レート源＝FRED `DEXJPUS`・#262 /
-> [IADR-0107](../adr/IADR-0107_base-currency-conversion.md)）。欠けると USD 建て銘柄は判断前に全件見送りになる
-> （日本株は無影響）。他の API 鍵と違い「無ければ当該ソースが無効」で済まないため、US 株を回す環境では
+> **`fred-api-key` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 /
+> #364 / [IADR-0107](../adr/IADR-0107_base-currency-conversion.md) /
+> [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md)）。欠けると JPY 建て銘柄は判断前に全件見送りになる
+> （米国株は無影響）。**#364 で基準通貨が USD へ移行し、必須となる市場が US 株から日本株へ入れ替わった。**
+> 他の API 鍵と違い「無ければ当該ソースが無効」で済まないため、日本株を回す環境では
 > 投入必須として扱う。詳細は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)。
 >
 > **既定（Vault 非依存）の手動 Secret では `scripts/k8s-local-deploy.sh` が env 未設定のキーに触れない**

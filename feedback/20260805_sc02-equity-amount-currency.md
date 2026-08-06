@@ -76,7 +76,24 @@ equity が取得できない場合は 5 項目すべて「—」へ縮退させ�
   計画書（USD 表記）とコード（円建て）の食い違いに気づかず両者を揃えようとする事故が起こり得る
 - 報告書（FR-06/07/16）の金額表記も同じ問題を持つ可能性がある（未確認）
 
+## 実装側の帰結（2026-08-05 追記・案 C で解消）
+
+**[#364](https://github.com/endazon/ai-stock-trading/issues/364)（判定の基準通貨を JPY から USD へ移行）を実施し、
+本件は解消した。** 本記録が問うていた「#364 が `capital` そのものを USD にするのか、判定は USD・表示は換算とするのか」
+への答えは**前者**である。
+
+- `MarketCurrency.Base = Currency.Usd`（[IADR-0152](../docs/adr/IADR-0152_usd-base-currency-migration.md) 決定1）となり、
+  `RiskStatusView.capital` は**基準通貨 USD 建て**になった（既定値で `$3,000`）
+- したがって SC-02 の実額併記は `$` を付けることが正しい表示になり、計画 SC-02 の表記例「**25%（$750）**」と一致する
+  （[IADR-0152](../docs/adr/IADR-0152_usd-base-currency-migration.md) 決定6）
+- [IADR-0151](../docs/adr/IADR-0151_risk-limit-percent-input-and-bounds.md) 決定4 を覆したのではない。
+  同決定が置いた前提（供給値の通貨が円である）が変わったため、同じ規律（**単位を偽らない**）から結論が反転した
+
+**残る論点**: 計画 §3 が定める**表示通貨 JPY**（円換算で統一・外貨併記・為替差損益の独立表示）は未実装であり、
+報告サイクル（[#338](https://github.com/endazon/ai-stock-trading/issues/338)）の範囲である。
+画面（SC-01 / SC-02 / SC-03）に円換算の併記を求めるかは計画側の裁定が要る。
+
 ## 送付状況
 
 **未送付。** 計画リポジトリ（endazon/project-planning）へ issue として起票する。
-実装側の追跡は [#409](https://github.com/endazon/ai-stock-trading/issues/409)。
+実装側の追跡は [#409](https://github.com/endazon/ai-stock-trading/issues/409)（**#364 の完了により解消済み**）。

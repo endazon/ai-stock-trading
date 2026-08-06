@@ -298,29 +298,30 @@ describe('リスク上限の値域（#362 / IADR-0151 決定2）', () => {
   });
 });
 
-describe('実額の解決（#362 / IADR-0151 決定4）', () => {
+describe('実額の解決（#362 / IADR-0151 決定4 / #364・IADR-0152 決定6）', () => {
   it('equity × 比率 を返す', () => {
-    expect(resolveEquityAmount(491100, 0.25)).toBe(122775);
-    expect(resolveEquityAmount(491100, 1.5)).toBe(736650);
+    // #364: equity は基準通貨（USD）建てである（計画 §5 の確定値 $3,000）。
+    expect(resolveEquityAmount(3000, 0.25)).toBe(750);
+    expect(resolveEquityAmount(3000, 1.5)).toBe(4500);
   });
 
   // 否定形: equity または比率が不明なら null（画面は「—」を出す）。**0 を返さない**——
-  // 0 円という実額を自信満々に表示すると、equity が取れていない事実が隠れる。
+  // $0 という実額を自信満々に表示すると、equity が取れていない事実が隠れる。
   it('equity・比率が不明なら null（0 を返さない）', () => {
     expect(resolveEquityAmount(null, 0.25)).toBeNull();
     expect(resolveEquityAmount(undefined, 0.25)).toBeNull();
     expect(resolveEquityAmount(Number.NaN, 0.25)).toBeNull();
-    expect(resolveEquityAmount(491100, null)).toBeNull();
-    expect(resolveEquityAmount(491100, Number.NaN)).toBeNull();
+    expect(resolveEquityAmount(3000, null)).toBeNull();
+    expect(resolveEquityAmount(3000, Number.NaN)).toBeNull();
   });
 
-  it('金額の整形は通貨記号を付けない（円建ての値に $ を付けない）', () => {
-    // IADR-0151 決定4: `capital` は基準通貨（円）建てである。計画は USD 表記を求めるが、
-    // 円建ての数値へ「$」を付けることは単位の取り違えそのものである。通貨は呼び出し側のラベルで明示する。
-    const formatted = formatAmount(122775);
-    expect(formatted).not.toContain('$');
-    expect(formatted).not.toContain('¥');
-    expect(formatted).toContain('122,775');
+  it('金額の整形は基準通貨（USD）の記号を付ける', () => {
+    // #364, IADR-0152 決定6: `capital` は基準通貨（USD）建てになったため、`$` を付けることが正しい表示である
+    // （計画 SC-02 の表記例「25%（$750）」と一致する。#409 は本移行で解消）。
+    expect(formatAmount(750)).toBe('$750');
+    expect(formatAmount(4500)).toBe('$4,500');
+    // セントまで表示する（USD は補助単位を持つ）。
+    expect(formatAmount(1234.56)).toBe('$1,234.56');
     expect(formatAmount(null)).toBe('—');
     expect(formatAmount(Number.NaN)).toBe('—');
   });
