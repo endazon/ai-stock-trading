@@ -2,10 +2,10 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
-related_ids: [FR-10, FR-11, FR-17, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, IADR-0130, IADR-0131, IADR-0133]
+related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0153]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-08-04
+updated: 2026-08-06
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -214,12 +214,27 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 
 | クラス | 内容 | 「統制違反 0 件」への計上 |
 | --- | --- | --- |
-| A | 統制の**正常作動**（金額・件数・損失の上限、差金決済防止、**空売り 8 規則すべて**） | しない |
-| B | 緊急停止中・段階制約・ガード設定による拒否（kill switch / pause / Stage / 商品種別 / 市場） | しない |
+| A | 統制の**正常作動**（金額・件数・損失の上限、差金決済防止、**空売り 8 規則すべて**、**現金口座の決済・GFV 統制 2 種**） | しない |
+| B | 緊急停止中・段階制約・ガード設定・**口座種別の未確認**による拒否（kill switch / pause / Stage / 商品種別 / 市場 / 口座種別） | しない |
 | C | **`BannedSymbol` / `ManipulativeOrderPattern` の限定列挙**（AI が禁止事項を犯そうとした件数） | **する**（1 回の拒否につき 1 件） |
 
 実装の単一情報源は `RejectionReasonClassification`（`Shared.Contracts`）。既定（未分類）はクラス A へ落とし、
 新しい理由が既定でクラス C へ混入しないようにする。集計と段階ゲートへの結線は #333 の担当である。
+
+**現金口座対応（#375・ADR-0021 決定4-5・[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md) 決定5）で 3 種を追加した**（序数は末尾 25/26/27）。
+
+| 拒否理由 | クラス | 解除条件 | 根拠 |
+| --- | --- | --- | --- |
+| `CashAccountSettlementHold` | **A** | T+1 の決済 | ADR-0021 決定4-5 が明示。制度・決済由来の事象であり `BannedSymbol`（クラス C）へ混ぜない |
+| `GoodFaithViolationLimitReached` | **A** | 違反記録の失効 | 統制が設計どおり作動した記録 |
+| `BrokerAccountTypeUnverified` | **B** | 照会の成功（と設定値の一致） | 「取引を止めている状態そのものの記録」。kill switch / pause / 段階制約と同じ区分 |
+
+**3 種を 1 つに畳まないのは ADR-0016 決定10 の規律による**——解除条件が互いに異なり、畳むと監査ログ（FR-11）と
+日報・月報が実態と食い違う（「決済待ちで止まっている」「口座が使えなくなりかけている」「OpenD が落ちている」は
+運用者が採るべき行動がまったく違う）。計画が新設を明示したのは 1 種のみであり、残る 2 種は環流済み
+（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。
+
+`SameDayReentry` は現金口座で**適用範囲が米国株へ広がる**が、分類は理由コードごとであり**クラス A のまま**である。
 
 ## 3 統制の優先順位（#329 第 2 段階）
 

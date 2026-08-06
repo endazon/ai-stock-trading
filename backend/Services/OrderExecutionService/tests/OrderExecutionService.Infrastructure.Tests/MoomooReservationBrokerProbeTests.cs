@@ -32,6 +32,10 @@ public class MoomooReservationBrokerProbeTests
         public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("予約照合は建玉照会を用いない。");
 
+        // #375, ADR-0021: 予約照合は口座種別を用いない。
+        public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("予約照合は口座種別照会を用いない。");
+
         // 本テストで未使用（発注/取消/単純照会）。
         public Task<MoomooOrderResult> PlaceOrderAsync(MoomooOrderRequest request, CancellationToken ct = default) =>
             throw new NotSupportedException();

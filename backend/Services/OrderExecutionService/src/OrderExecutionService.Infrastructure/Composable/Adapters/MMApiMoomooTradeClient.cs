@@ -32,6 +32,9 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
     private volatile bool _connected;
     private readonly bool _encrypt;
     private ulong _simAccId;
+    // #375, ADR-0021 決定3: 接続時に確定する SIMULATE 口座の種別（TrdAcc.AccType の写像）。
+    // **不明（TrdAccType_Unknown・未対応値）は null のまま**であり、「信用口座とみなす」に倒さない。
+    private MoomooAccountType? _simAccType;
     private bool _disposed;
 
     public MMApiMoomooTradeClient(MoomooBrokerOptions options, ILogger<MMApiMoomooTradeClient> logger)
@@ -358,9 +361,12 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
                 throw new InvalidOperationException($"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
             }
             await _connectTcs.Task.WaitAsync(_replyTimeout, cancellationToken).ConfigureAwait(false);
-            _simAccId = await FetchSimulateAccIdAsync(cancellationToken).ConfigureAwait(false);
+            (_simAccId, _simAccType) = await FetchSimulateAccountAsync(cancellationToken).ConfigureAwait(false);
             _connected = true;
-            _logger.LogInformation("OpenD 接続完了・SIMULATE 口座 accId={AccId}", _simAccId);
+            _logger.LogInformation(
+                "OpenD 接続完了・SIMULATE 口座 accId={AccId} 種別={AccType}",
+                _simAccId,
+                _simAccType?.ToString() ?? "不明");
         }
         finally
         {
@@ -368,7 +374,8 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         }
     }
 
-    private async Task<ulong> FetchSimulateAccIdAsync(CancellationToken cancellationToken)
+    private async Task<(ulong AccId, MoomooAccountType? AccType)> FetchSimulateAccountAsync(
+        CancellationToken cancellationToken)
     {
         // userID は protobuf required。0 = 現在ログイン中のユーザー（全口座）。
         var c2s = TrdGetAccList.C2S.CreateBuilder().SetUserID(0).Build();
@@ -380,10 +387,55 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         {
             if (acc.TrdEnv == (int)TrdCommon.TrdEnv.TrdEnv_Simulate)
             {
-                return acc.AccID;
+                return (acc.AccID, MapAccountType(acc.AccType));
             }
         }
         throw new InvalidOperationException("OpenD に SIMULATE 口座が見つかりません（moomoo の模擬取引口座を有効化してください）。");
+    }
+
+    // #375, ADR-0021 決定3: TrdAccType（Unknown=0 / Cash=1 / Margin=2 / TFSA / RRSP / SRRSP / Derivatives）を
+    // 本システムが扱う 2 値へ写像する。
+    //
+    // **未知の値・Unknown は null（＝不明）へ倒す。** ADR-0021 が想定するのは信用口座と現金口座の 2 種であり
+    // （決定2「同時に有効なのは 1 種別」）、TFSA / RRSP 等の口座で回すことは計画に無い。**既定値へ丸めない**——
+    // 「不明なら信用口座」に倒すことが、現金口座で GFV 回避ガードが無効のまま回る事故そのものである。
+    internal static MoomooAccountType? MapAccountType(int accType) => accType switch
+    {
+        (int)TrdCommon.TrdAccType.TrdAccType_Cash => MoomooAccountType.Cash,
+        (int)TrdCommon.TrdAccType.TrdAccType_Margin => MoomooAccountType.Margin,
+        _ => null,
+    };
+
+    // #375, ADR-0021 決定3, IADR-0153 決定3: **呼ばれるたびにブローカーへ照会し直す。**
+    // 種別が不明なら null（呼び出し側＝アダプタが「照会できなかった」として扱う）。
+    //
+    // **接続時のスナップショットを返してはならない。** そうすると観測の鮮度（有効期間 30 分）が
+    // 「最後にブローカーへ聞いた時刻」ではなく「最後に自分のキャッシュを読んだ時刻」を測ることになる。
+    // プロセスが起動しっぱなしで OpenD 接続が切れない限り、接続時に掴んだ種別が「30 分以内に確認済み」の
+    // 体裁で更新され続け、**決定3 が意図する「照会結果と設定値の食い違いを都度検知する」効果が働かない**。
+    // 現金口座なのに古い信用口座の観測が生き続けると、現金口座統制（GFV 回避・差金決済の米国株拡張）が
+    // 発火しないまま新規建てが通り得る。可用性の判定（IsOperationalAsync）が毎回ライブで問い合わせているのと
+    // 揃える。呼び出しは可用性 probe の巡回（既定 5 分）のみであり、**発注経路には乗らない**。
+    public async Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+        var (accId, accType) = await FetchSimulateAccountAsync(cancellationToken).ConfigureAwait(false);
+
+        // 照会で得た口座が**発注に用いる口座**（接続時に確定した _simAccId・BuildHeader が使う）と異なる場合、
+        // 返す種別は発注先とは別の口座を説明していることになる。種別を偽るより不明（null）へ倒す。
+        // _simAccId 自体はここで書き換えない——発注中のヘッダ構築と競合させないためであり、
+        // 口座が入れ替わったのなら再接続で確定させるのが筋である。
+        if (accId != _simAccId)
+        {
+            _logger.LogWarning(
+                "照会した SIMULATE 口座 accId={FetchedAccId} が発注先 accId={OrderAccId} と異なるため口座種別を不明として扱います。",
+                accId,
+                _simAccId);
+            return null;
+        }
+
+        _simAccType = accType;
+        return accType;
     }
 
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>

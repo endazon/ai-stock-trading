@@ -18,7 +18,9 @@ public class RiskSettingsServiceTests
         var store = new InMemoryRiskSettingsStore();
         var log = new InMemorySettingsChangeLog();
         var clock = new FakeClock(Now, new DateOnly(2026, 7, 9));
-        return (new RiskSettingsService(store, log, clock), store, log);
+        // #375, ADR-0021 決定4-4: 口座種別の観測が無い状態（＝設定側の制限は掛からない）。
+        // 制限そのものの検証は CashAccountSettingsGuardTests で行う。
+        return (new RiskSettingsService(store, log, clock, FakeBrokerAccountObservations.NotObserved()), store, log);
     }
 
     [Fact]

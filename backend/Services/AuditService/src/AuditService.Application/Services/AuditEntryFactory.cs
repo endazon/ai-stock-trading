@@ -145,6 +145,20 @@ public static class AuditEntryFactory
         Truncate($"ブローカ稼働を観測（発注先 {e.Provider}・保証 {(int)e.CoveredInterval.TotalMinutes}分）"),
         AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
 
+    // FR-19, FR-10, FR-11, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測。
+    // 注文相関を持たないため "broker-account-type" の決定的 GUID を相関にする（観測どうしを 1 本の相関で辿れる）。
+    // **要約に決済済み資金・GFV 回数の「未供給」を明示する**——供給が無いことが現金口座の買付を止める理由であり、
+    // 事後に「なぜ止まっていたのか」を要約だけで辿れる必要がある。
+    public static AuditEntry From(BrokerAccountObserved e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BrokerAccountObserved), AuditCorrelation.From("broker-account-type"), Symbol: null,
+        Truncate($"口座種別を観測（発注先 {e.Provider}・種別 {e.Account.AccountType}"
+            + $"・決済済み資金 {Describe(e.Account.SettledCashInBase)}"
+            + $"・GFV回数 {Describe(e.Account.GoodFaithViolationCount)}）"),
+        AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
+
+    private static string Describe<T>(T? value) where T : struct =>
+        value?.ToString() ?? "未供給";
+
     // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知（是正は伴わない）。観測と同一相関で束ねる。
     public static AuditEntry From(PositionReconciliationDrift e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(PositionReconciliationDrift), AuditCorrelation.From("position-reconciliation"), Symbol: null,

@@ -57,6 +57,13 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.StageShortSellReleaseUnmet, RejectionReasonClass.B)]
     [InlineData(RejectionReason.ProductTypeDisabled, RejectionReasonClass.B)]
     [InlineData(RejectionReason.MarketDisabled, RejectionReasonClass.B)]
+    // FR-19, #375, ADR-0021, IADR-0153 決定5: 現金口座対応の 3 種。
+    // 決定4-5 が **CashAccountSettlementHold をクラス A** と明示している（制度・決済に由来する事象であり、
+    // 「AI が禁止事項を犯そうとした」ものではない）。GoodFaithViolationLimitReached も統制の正常作動で A。
+    // BrokerAccountTypeUnverified は**取引を止めている状態そのものの記録**であり、KillSwitch / Paused と同じ B。
+    [InlineData(RejectionReason.CashAccountSettlementHold, RejectionReasonClass.A)]
+    [InlineData(RejectionReason.GoodFaithViolationLimitReached, RejectionReasonClass.A)]
+    [InlineData(RejectionReason.BrokerAccountTypeUnverified, RejectionReasonClass.B)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)
     {
@@ -102,6 +109,46 @@ public class RejectionReasonClassificationTests
         RejectionReasonClassification.CountsAsControlViolation(allShortSellReasons).Should().BeFalse();
         allShortSellReasons.Should().OnlyContain(
             r => RejectionReasonClassification.ClassOf(r) == RejectionReasonClass.A);
+    }
+
+    // **否定形**（FR-19, #375, ADR-0021 決定4-5, IADR-0153 決定5）: 現金口座の統制群も同じ迂回が塞がれている。
+    // 決済済み資金の不足・GFV 回数の到達・口座種別の未確認はいずれも**制度・決済・接続に由来する事象**であり、
+    // 「AI が禁止事項を犯そうとした件数」（クラス C）へ混入させると段階昇格ゲートの「統制違反 0 件」が壊れる。
+    // 現金口座は差金決済ガードの適用範囲が広い（米国株にも及ぶ）ため、混入したときの影響も大きい。
+    [Fact]
+    public void 現金口座の拒否理由だけの拒否はいくつ重なっても統制違反にならない()
+    {
+        RejectionReason[] cashAccountReasons =
+        [
+            RejectionReason.CashAccountSettlementHold,
+            RejectionReason.GoodFaithViolationLimitReached,
+            RejectionReason.BrokerAccountTypeUnverified,
+            // 現金口座では差金決済ガードが米国株にも及ぶ（ADR-0021 決定4-1）。理由コードは従来どおりクラス A。
+            RejectionReason.SameDayReentry,
+        ];
+
+        RejectionReasonClassification.CountsAsControlViolation(cashAccountReasons).Should().BeFalse();
+        cashAccountReasons.Should().OnlyContain(
+            r => RejectionReasonClassification.ClassOf(r) != RejectionReasonClass.C);
+    }
+
+    // **否定形**: 3 種は互いに別のコードである（一方を他方の別名にしてはならない）。
+    // 解除条件が異なる——`CashAccountSettlementHold` は T+1 の決済で、`GoodFaithViolationLimitReached` は
+    // 違反記録の失効で、`BrokerAccountTypeUnverified` は照会の成功で解ける（ADR-0016 決定10 と同じ規律）。
+    [Fact]
+    public void 現金口座の3種の拒否理由は互いに別のコードである()
+    {
+        var names = Enum.GetNames<RejectionReason>();
+        names.Should().Contain("CashAccountSettlementHold");
+        names.Should().Contain("GoodFaithViolationLimitReached");
+        names.Should().Contain("BrokerAccountTypeUnverified");
+
+        new[]
+        {
+            RejectionReason.CashAccountSettlementHold,
+            RejectionReason.GoodFaithViolationLimitReached,
+            RejectionReason.BrokerAccountTypeUnverified,
+        }.Should().OnlyHaveUniqueItems();
     }
 
     // **否定形**（ADR-0016 決定10 の 2026-08-04 追記）: 強制買戻しの禁止（BuyInBanned）と借株不可

@@ -65,8 +65,11 @@ public class MoomooFillControlRegressionTests
     {
         var clock = new FixedClock();
         var provider = new LedgerPortfolioStateProvider(ledger, clock);
+        // #375, IADR-0153 決定2: 本テストの注文意図は内蔵 paper であり口座種別を要求しない。
+        // 観測ストアは空のまま（＝口座種別を確認できていない）を明示的に渡す。
         var snapshotBuilder = new PortfolioSnapshotBuilder(
-            provider, new InMemoryKillSwitchStore(), new InMemoryPauseStore());
+            provider, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            new InMemoryBrokerAccountObservationStore(TimeProvider.System));
         var settings = new InMemoryRiskSettingsStore();
         return (new OrderScreeningService(settings, snapshotBuilder, new InMemoryLockoutStore(), clock,
                 new WeekendBusinessCalendar()),

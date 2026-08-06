@@ -27,6 +27,7 @@
         "registeredOn": "2026-07-07"
       }
     ],
+    "configuredAccountType": 0,
     "preventSameDayReentry": true,
     "prohibitManipulativeOrderPatterns": true
   },

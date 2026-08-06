@@ -150,6 +150,14 @@ builder.Services.Configure<BrokerAvailabilityProbeOptions>(
     builder.Configuration.GetSection(BrokerAvailabilityProbeOptions.SectionName));
 builder.Services.AddSingleton<IBrokerAvailabilityProbe>(sp =>
     (IBrokerAvailabilityProbe)sp.GetRequiredService<IBrokerAdapter>());
+// FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の供給元。**実装しているアダプタのときだけ登録する**——
+// 内蔵 paper は外部へ一度も発注せず、ブローカー口座そのものが存在しない（口座種別を観測しようがない）。
+// 未登録なら probe は口座種別を発行せず、リスク管理側は moomoo 発注先の新規建てを止める（フェイルクローズ）。
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddSingleton<IBrokerAccountSource>(sp =>
+        (IBrokerAccountSource)sp.GetRequiredService<IBrokerAdapter>());
+}
 // TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。moomoo 構成では上で登録済み。
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<BrokerAvailabilityProbeService>();

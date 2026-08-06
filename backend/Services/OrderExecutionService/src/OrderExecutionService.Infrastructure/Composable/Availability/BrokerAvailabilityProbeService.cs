@@ -20,13 +20,20 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
 // fail-safe:
 //   - probe が false（到達不能）→ **何も発行しない**（受け手はその区間を稼働として積まない）
 //   - 例外 → 警告ログのみ。常駐は落とさず次回巡回で再試行する（発行はしない）
+//
+// FR-19, #375, ADR-0021 決定3, IADR-0153: 同じ巡回で**口座種別**も観測して発行する（BrokerAccountObserved）。
+// 新しい常駐を増やさないのは、口座種別の照会が接続時に既に行われている（TrdGetAccList）ためであり、
+// 「稼働している ＝ 口座へ照会できる」という 1 つの事実から 2 つの観測が同時に得られるためである。
+// 口座種別の供給元（IBrokerAccountSource）を実装しないアダプタ（内蔵 paper）では**発行しない**——
+// 外部へ一度も発注しない擬似約定にはブローカー口座が存在しない。
 internal sealed class BrokerAvailabilityProbeService(
     IBrokerAvailabilityProbe probe,
     IBrokerAdapter broker,
     IWolverineRuntime runtime,
     TimeProvider timeProvider,
     IOptions<BrokerAvailabilityProbeOptions> options,
-    ILogger<BrokerAvailabilityProbeService> logger) : BackgroundService
+    ILogger<BrokerAvailabilityProbeService> logger,
+    IBrokerAccountSource? accountSource = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -88,10 +95,39 @@ internal sealed class BrokerAvailabilityProbeService(
         //
         // 発注先は**実際に接続しているアダプタの自己申告**（IADR-0149 決定1 と同じ出どころ）。段階が定める
         // 既定の発注先（Stage.Mode）ではない——内蔵 paper で稼働していても SIMULATE として計上されてしまう。
-        await new MessageBus(runtime)
+        var bus = new MessageBus(runtime);
+        var observedAt = timeProvider.GetUtcNow();
+        await bus
             .PublishAsync(new BrokerAvailabilityObserved(
-                broker.Provider, timeProvider.GetUtcNow(), options.Value.Interval))
+                broker.Provider, observedAt, options.Value.Interval))
             .ConfigureAwait(false);
+
+        // FR-19, #375, ADR-0021 決定3: 口座種別の観測。**判明したときだけ発行する。**
+        // 到達不能・照会失敗・種別不明はいずれも「発行しない」であり、受け手は沈黙を
+        // 「口座種別を確認できていない」として新規建てを止める（フェイルクローズ）。
+        await PublishAccountObservationAsync(bus, observedAt, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    private async Task PublishAccountObservationAsync(
+        MessageBus bus, DateTimeOffset observedAt, CancellationToken cancellationToken)
+    {
+        if (accountSource is null)
+        {
+            return;
+        }
+
+        var account = await accountSource.GetAccountStateAsync(cancellationToken).ConfigureAwait(false);
+        if (account is null)
+        {
+            logger.LogWarning(
+                "口座種別を確認できませんでした（照会失敗または種別不明）。今回は発行しません。"
+                    + " 新規建ては口座種別が確認できるまで止まります（ADR-0021 決定3・FR-19）。");
+            return;
+        }
+
+        await bus
+            .PublishAsync(new BrokerAccountObserved(broker.Provider, account, observedAt))
+            .ConfigureAwait(false);
     }
 }

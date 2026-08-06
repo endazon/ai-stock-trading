@@ -58,7 +58,9 @@ public class OrderScreeningManipulationTests
         var portfolio = new FakePortfolioStateProvider(HealthyState);
         var killSwitch = new InMemoryKillSwitchStore();
         var lockout = new InMemoryLockoutStore();
-        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch, new InMemoryPauseStore());
+        // 本テストの注文は内蔵 paper であり口座種別を要求しない（IADR-0153 決定2）。
+        var builder = new PortfolioSnapshotBuilder(
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
         var detector = new ManipulativeOrderPatternDetector(
             source, clock, TradingDefaults.CreateManipulationDetectionSettings());
         return new OrderScreeningService(

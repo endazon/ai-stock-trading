@@ -32,7 +32,20 @@ internal interface IMoomooTradeClient
     // 呼び出し側（MoomooBrokerAdapter）は例外を null（＝不明）へ倒す。部分列挙を「全部」と誤ると、
     // 列挙できなかった市場の建玉がすべて乖離として報告される。
     Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default);
+
+    // #375, ADR-0021 決定3: 接続している口座の種別（TrdAcc.AccType）。
+    //
+    // 契約（fail-safe の要）:
+    //   - 種別が判明した → Cash / Margin
+    //   - **種別が不明**（TrdAccType_Unknown・TFSA 等の未対応値）→ null
+    //   - 照会失敗（不達・応答異常）→ **例外を送出**する（null を返してはならない）
+    // 呼び出し側（MoomooBrokerAdapter）は例外も null も「口座種別を確認できていない」へ倒す。
+    // **「不明なら信用口座」を返してはならない**——現金口座で GFV 回避ガードが無効のまま回る事故になる。
+    Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default);
 }
+
+// #375, ADR-0021: SDK 非依存の口座種別（TrdAccType の写像）。本システムが扱うのは 2 種のみである（決定2）。
+internal enum MoomooAccountType { Margin, Cash }
 
 // #292, IADR-0118: SDK 非依存の建玉スナップショット。Quantity は符号付き（+ ロング / − ショート）。
 internal sealed record MoomooPositionSnapshot(
