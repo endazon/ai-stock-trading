@@ -13,6 +13,12 @@ created: 2026-07-15
 
 # フィードバック: moomoo OpenD の無人運用は条件付き成立（安定 egress IP で無人再起動可）
 
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#212](https://github.com/endazon/project-planning/issues/212)。
+> あわせて計画リポジトリの `draft/feedback/20260715_adr0002-opend-unattended-limited.md` へ記録本体を配置した。
+> 本記録は 2026-07-15 に作成されながら計画リポジトリへ到達しておらず、2026-08-06 の未到達棚卸しで送付した。**初回 PoC の結論を覆した追検証（本文「追検証」節）を含めて起票している。**
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 新たな制約(ADR要)。ADR-0002 の未決事項「**OpenD 無人運用の成立性**」に、実バイナリ PoC で得た回答を環流する。
