@@ -127,7 +127,7 @@ internal sealed class MoomooBrokerAdapter(
     /// </para>
     /// <para>
     /// <b>決済済み資金と GFV 発生回数は供給しない（null のまま）。</b> moomoo API に該当するフィールドが
-    /// 存在しないことを実測済みである（<c>TrdCommon.Funds</c> の全 40 フィールド・アセンブリ全体の走査。
+    /// 存在しないことを実測済みである（<c>TrdCommon.Funds</c> の全 42 プロパティ・アセンブリ全体の走査。
     /// IADR-0153 決定4）。供給が無い以上、現金口座では買付が止まる（安全側）。
     /// </para>
     /// </summary>

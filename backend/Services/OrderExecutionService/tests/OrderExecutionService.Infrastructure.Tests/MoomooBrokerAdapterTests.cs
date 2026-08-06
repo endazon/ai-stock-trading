@@ -245,7 +245,7 @@ public class MoomooBrokerAdapterTests
     }
 
     // **実測に基づく否定形（IADR-0153 決定4）**: moomoo API には決済済み資金・GFV 発生回数の
-    // フィールドが存在しない（`TrdCommon.Funds` の全 40 余フィールドとアセンブリ全体を走査して確認済み）。
+    // フィールドが存在しない（`TrdCommon.Funds` の全 42 プロパティとアセンブリ全体を走査して確認済み）。
     // したがってアダプタはこれらを**供給しない**。推定値・代替値（`AvlWithdrawalCash` / `MaxCashBuy` 等）で
     // 埋めてはならない——現金口座の買付が「分からないのに通る」ようになり、統制が消える。
     [Fact]
