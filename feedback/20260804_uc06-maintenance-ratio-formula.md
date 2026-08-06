@@ -12,6 +12,12 @@ created: 2026-08-04
 
 # フィードバック: 維持率割れの自動縮小に必要な 3 つの未定義事項
 
+> **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#214](https://github.com/endazon/project-planning/issues/214)。
+> あわせて計画リポジトリの `draft/feedback/20260804_uc06-maintenance-ratio-formula.md` へ記録本体を配置した。
+> 本記録は 2026-08-04 に作成されながら計画リポジトリへ到達しておらず、2026-08-06 の未到達棚卸しで送付した。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 要求の不足（実装可能だが、実装側が決めた前提の追認が要る）
