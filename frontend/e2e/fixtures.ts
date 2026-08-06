@@ -5,8 +5,13 @@ import type {
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
+  ShortSellingStatusView,
   StageGateStatus,
 } from '../src/features/risk/contracts';
+import type {
+  MarketMonitorSettings,
+  MonitorSettingsChangeEntry,
+} from '../src/features/monitor/contracts';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -24,9 +29,17 @@ export type BffConfig = Record<string, BffHandler>;
 const CONTRACT_FIXTURE_DIR = fileURLToPath(
   new URL('../src/features/risk/contract-fixtures/', import.meta.url),
 );
+// SC-01 §2, #340: 監視設定（MarketMonitorService）の契約フィクスチャ。置き場は領域ごとに分かれる。
+const MONITOR_CONTRACT_FIXTURE_DIR = fileURLToPath(
+  new URL('../src/features/monitor/contract-fixtures/', import.meta.url),
+);
 
 function loadContract<T>(fileName: string): T {
   return JSON.parse(readFileSync(CONTRACT_FIXTURE_DIR + fileName, 'utf8')) as T;
+}
+
+function loadMonitorContract<T>(fileName: string): T {
+  return JSON.parse(readFileSync(MONITOR_CONTRACT_FIXTURE_DIR + fileName, 'utf8')) as T;
 }
 
 // ---- 既定のサンプル応答（受け入れ基準の主要フロー用） ----
@@ -55,6 +68,17 @@ const CONTRACT_STAGE_GATE = loadContract<StageGateStatus>('risk-controls.stage-g
 const CONTRACT_SETTINGS_HISTORY = loadContract<SettingsChangeEntry[]>(
   'risk-controls.settings-history.json',
 );
+// FR-10, SC-03, #340, IADR-0154: 空売りの現況。**既定では維持率・借株料の累計・自動縮小の発動履歴が
+// いずれも未供給（MetricAvailability.NotSupplied = 1）である**——これが現在の事実であり、
+// E2E は「未供給を未供給として描く」ことを実応答の形で検証する。
+export const SHORT_SELLING: ShortSellingStatusView = loadContract<ShortSellingStatusView>(
+  'risk-controls.short-selling.json',
+);
+// SC-01 §2, FR-13, #340: 収集パラメータ（変動閾値・クールダウン）と監視設定の変更履歴。
+export const MONITOR_SETTINGS: MarketMonitorSettings =
+  loadMonitorContract<MarketMonitorSettings>('monitor.settings.json');
+export const MONITOR_SETTINGS_HISTORY: MonitorSettingsChangeEntry[] =
+  loadMonitorContract<MonitorSettingsChangeEntry[]>('monitor.settings-history.json');
 
 export const RISK_SETTINGS: RiskManagementSettings = {
   ...CONTRACT_RISK_SETTINGS,
@@ -124,11 +148,17 @@ export function defaultBff(): BffConfig {
     'PUT /risk-controls/settings/broker-provider': { status: 200, body: { settings: RISK_SETTINGS } },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
+    // FR-10, SC-03, #340: 空売りの現況（維持率・空売り比率・建玉方向・借株料累計）。
+    'GET /risk-controls/short-selling': { status: 200, body: SHORT_SELLING },
     // 監視銘柄（#196・MarketMonitor `/monitor/watchlist`）。POST/DELETE は更新後の一覧を返す（成功時に再取得される）。
     'GET /monitor/watchlist': { status: 200, body: WATCHLIST },
     'GET /monitor/watchlist/history': { status: 200, body: WATCHLIST_HISTORY },
     'POST /monitor/watchlist': { status: 200, body: WATCHLIST },
     'DELETE /monitor/watchlist': { status: 200, body: WATCHLIST },
+    // SC-01 §2, FR-13, #340: 収集パラメータ（変動閾値）。PUT は更新後の設定を返す（成功時に再取得される）。
+    'GET /monitor/settings': { status: 200, body: MONITOR_SETTINGS },
+    'GET /monitor/settings/history': { status: 200, body: MONITOR_SETTINGS_HISTORY },
+    'PUT /monitor/settings/movement-threshold': { status: 200, body: MONITOR_SETTINGS },
   };
 }
 

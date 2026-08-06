@@ -88,6 +88,9 @@ builder.Services.AddScoped<MarketMonitorService>();
 // IClock は上で singleton 登録済み。変更履歴は DbContext 依存のため scoped。
 builder.Services.AddScoped<IMonitorSettingsChangeLog, EfMonitorSettingsChangeLog>();
 builder.Services.AddScoped<MonitorWatchlistService>();
+// FR-03/FR-11/FR-13, UC-06, SC-01 §2, #340, IADR-0155: 収集パラメータ（変動閾値・クールダウン）の部分更新。
+// 全置換 PUT（/settings）と違い、他の項目（監視銘柄）を巻き込まない。
+builder.Services.AddScoped<MonitorSettingsService>();
 
 // FR-03: ポーリング構成（監視間隔）。
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(MonitorOptions.SectionName));

@@ -6,7 +6,7 @@ related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-000
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-08-05
+updated: 2026-08-06
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -24,6 +24,7 @@ related_specs:
   - ../adr/IADR-0151_risk-limit-percent-input-and-bounds.md
   - ../specs/20260805_334_broker-provider-axis.md
   - ../specs/20260805_362_sc02-ratio-input.md
+  - ../specs/20260806_340_screens-reimplementation.md
 ---
 
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
@@ -140,7 +141,8 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 
 ## スコープ外（後続）
 
-段階の直接変更 UI（段階ゲート承認へ一元化）、監視の変動閾値・収集間隔の変更 UI（`PUT /monitor/settings`・#196 対象外）、
+段階の直接変更 UI（段階ゲート承認へ一元化）、
+**監視の変動閾値・クールダウンの変更 UI（#340 で SC-01 §2 へ実装した。本画面には置かない）**、
 実 BFF の `/monitor/*` プロキシ結線（MSP 側合成点・risk-controls の MSP #287 と同様に別リポ後続）。
 
 > 監視銘柄（watchlist）変更 UI は **#196（IADR-0090）で実装済み**（上表「監視銘柄」）。計画 `05_screens/01_screens.md` は監視銘柄を
@@ -159,3 +161,19 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 > #362 で**割合（%）入力・実額併記・値域バリデーション（画面とサーバの双方）**を同時に入れ、保存を復旧した。
 > **サーバ側にはそれまでリスク上限の値域検証が一切存在しなかった**（400 は値の危険ではなくキー名の不一致で起きていた）。
 > 詳細は [作業仕様書 20260805_362](../specs/20260805_362_sc02-ratio-input.md)・[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md)。
+
+> **#340（画面の再実装）における本画面の扱い（2026-08-06）**: 計画 05_screens（fixed 2026-08-02）が SC-02 へ求める項目
+> —— 発注先の 3 値変更・**変更理由必須**・監査ログ・版（楽観排他）・**実弾切替の警告モーダル 4 点**・
+> **チェックボックスと「REAL」入力の両方**による二重確認・発注先の変更履歴・`paper` 警告バナー・段階と発注先を
+> 1 行に混ぜない表示・百分率入力と実額併記（`$` 表記）—— は **#334 / #362 / #408 / #410 で実装済み**である。
+> #340 では**重複実装せず**、退行防止として既存テスト（`RiskSettingsPage.brokerProvider.test.tsx` 14 件ほか）を維持し、
+> **変異検査で二重確認が効いていることを実測**した（`acknowledged && phrase === 'REAL'` を `||` に反転すると
+> 「チェックボックスだけでは無効」「文字入力だけでは無効」「小文字の real では無効」の 3 件が赤くなる）。
+> 本画面に対する #340 の変更は無い。
+>
+> **収集パラメータ（変動閾値・クールダウン）は SC-01 §2 へ置いた**（[IADR-0155]）。監視銘柄と同じ MarketMonitorService 由来
+> であるため SC-02 に置く選択肢もあったが、計画 05_screens が §2 を SC-01 に置いていることを優先した。
+> 由来サービスによる責務分界（planning#33 / [IADR-0084](../adr/IADR-0084_frontend-risk-settings-and-control-status.md)）
+> との整合は環流記録で計画へ返した（[feedback/20260806](../../feedback/20260806_sc01-sc03-unsupplied-screen-items.md) 問題 2）。
+
+[IADR-0155]: ../adr/IADR-0155_sc01-collection-parameters-supply.md

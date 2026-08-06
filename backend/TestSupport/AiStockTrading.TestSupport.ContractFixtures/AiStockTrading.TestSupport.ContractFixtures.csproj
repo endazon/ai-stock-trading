@@ -1,0 +1,12 @@
+<!-- #389 / #340, IADR-0146: バックエンドの実 HTTP 応答をフロントの契約フィクスチャとして固定するための
+     共有テスト支援。**テスト専用**であり本番アセンブリからは参照しない（IO とリポジトリ探索を含むため）。
+     #389 では RiskManagementService.Api.Tests の内部型だったが、#340 で MarketMonitorService の
+     `/monitor/settings` にも同じ関門を張るため共有化した（IADR-0146 のフォローアップ「他サービスの契約への横展開」）。
+     サービスごとに写経すると、比較器の否定形テストが 1 か所にしか無いのに規則は増える状態になる。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.TestSupport.ContractFixtures</RootNamespace>
+  </PropertyGroup>
+</Project>

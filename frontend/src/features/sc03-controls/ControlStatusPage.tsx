@@ -5,6 +5,7 @@ import { ApiError } from '@foundation/api/ApiError';
 import type {
   RiskStatusView,
   SettingsChangeEntry,
+  ShortSellingStatusView,
   StageGateStatus,
   StageTransition,
 } from '../risk/contracts';
@@ -22,6 +23,8 @@ import {
 } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { PAPER_REFERENCE_LABEL } from '../shared/paperMode';
+import type { ShortSellingState } from './ShortSellingStatusSection';
+import { ShortSellingStatusSection } from './ShortSellingStatusSection';
 
 // SC-03, FR-10, FR-20, UC-06, ADR-0008, ADR-0009, IADR-0084: 承認・統制状態参照画面（参照専用）。
 // データ源は BFF `/bff/risk-controls/status`・`/bff/risk-controls/stage-gate`（RiskManagementService・OwnerOnly）。
@@ -40,6 +43,9 @@ export function ControlStatusPage() {
   // FR-20 (2), SC-03, #334: 発注先の変更履歴（日時・変更前後・理由）。設定変更履歴から発注先だけを絞る。
   const [historyState, setHistoryState] = useState<HistoryState>('loading');
   const [providerHistory, setProviderHistory] = useState<SettingsChangeEntry[]>([]);
+  // FR-10, SC-03, ADR-0016 決定15, #340: 維持率・空売りの現況（本画面の最上位）。
+  const [shortSellingState, setShortSellingState] = useState<ShortSellingState>('loading');
+  const [shortSelling, setShortSelling] = useState<ShortSellingStatusView | null>(null);
 
   async function loadStatus(): Promise<void> {
     try {
@@ -74,10 +80,22 @@ export function ControlStatusPage() {
     }
   }
 
+  async function loadShortSelling(): Promise<void> {
+    try {
+      const data = await apiFetch<ShortSellingStatusView>('/risk-controls/short-selling');
+      setShortSelling(data);
+      setShortSellingState('ok');
+    } catch {
+      // 取得不能はその領域のみ縮退（統制状態・段階ゲートと疎結合）。**「問題なし」に見せない。**
+      setShortSellingState('unavailable');
+    }
+  }
+
   useEffect(() => {
     void loadStatus();
     void loadStageGate();
     void loadProviderHistory();
+    void loadShortSelling();
   }, []);
 
   return (
@@ -89,6 +107,11 @@ export function ControlStatusPage() {
         取引統制（緊急停止・日次損失ロックアウト・一時停止）と運用段階の現況を参照します（UC-06 の統制状態の閲覧面）。統制の変更・段階の承認は
         Discord からのみ行えます（本画面は参照専用）。
       </p>
+
+      {/* FR-10, SC-03, ADR-0016 決定7/9/15, #340: **維持率・空売りの現況は本画面の最上位に置く。**
+          マージンコールは口座を失う唯一の経路であり、現物取引には存在しなかった指標である（05_screens）。
+          統制状態の取得可否に連動させず独立して縮退する（片方の障害を巻き込まない・fail-safe）。 */}
+      <ShortSellingStatusSection state={shortSellingState} view={shortSelling} />
 
       {status === 'loading' && <p role="status">読み込み中…</p>}
       {status === 'notFound' && <p>統制状態は利用できません。</p>}
@@ -144,6 +167,44 @@ function ProviderHistoryView({
   );
 }
 
+// FR-10, ADR-0009, SC-03: 3 統制を**優先順位順**（重い順）に並べた行。
+// 順序は `ActiveTradingControl`（サーバ側の優先判定）と同じであり、ここで別の順序を作らない。
+// 発動主体・解除条件は ADR-0009 の規定（日次損失ロックアウトはシステム自動発動で利用者は解除できない）。
+const CONTROL_KILL_SWITCH = 1;
+const CONTROL_DAILY_LOSS_LOCKOUT = 2;
+const CONTROL_PAUSE = 3;
+
+function controlRows(view: RiskStatusView) {
+  return [
+    {
+      priority: 1,
+      name: '緊急停止（kill switch）',
+      state: view.killSwitchEngaged ? '作動中' : '解除',
+      actor: '利用者（Discord）',
+      release: '利用者による解除（Discord）',
+      isActive: view.activeControl === CONTROL_KILL_SWITCH,
+    },
+    {
+      priority: 2,
+      name: '日次損失ロックアウト',
+      state: view.dailyLossLockoutActive ? '有効' : '無効',
+      actor: 'システム自動',
+      release: view.dailyLossLockoutActive
+        ? `翌営業日に自動解除（${formatAt(view.lockoutReleaseOn)}）`
+        : '翌営業日に自動解除（利用者は解除できない）',
+      isActive: view.activeControl === CONTROL_DAILY_LOSS_LOCKOUT,
+    },
+    {
+      priority: 3,
+      name: '一時停止',
+      state: view.tradingPaused ? '停止中' : '稼働',
+      actor: '利用者（Discord）',
+      release: '利用者による再開（Discord）',
+      isActive: view.activeControl === CONTROL_PAUSE,
+    },
+  ];
+}
+
 // FR-10, ADR-0009: 3 統制・段階・当日損益・上限使用率・ポジションの集約表示（参照専用）。
 function StatusView({ view }: { view: RiskStatusView }) {
   // FR-12, 05_screens 共通規約: 内蔵 paper 稼働中は統制状態のカード類にも `paper` である旨のラベルを付す
@@ -151,22 +212,43 @@ function StatusView({ view }: { view: RiskStatusView }) {
   const paper = isInternalPaper(view.brokerProvider);
   return (
     <>
-      <Section title="取引統制">
+      <Section title="取引統制（新規建てを「止める」3 統制）">
         <p>
           成立中で最優先の統制: <strong>{activeControlLabel(view.activeControl)}</strong>／新規建て:{' '}
           <strong>{view.newEntriesBlocked ? '停止中' : '可'}</strong>
         </p>
+        {/* FR-10, ADR-0009, 05_screens SC-03: 3 統制を**優先順位順**（kill switch ＞ 日次損失ロックアウト ＞
+            一時停止）で表示し、**優先統制を明示**する。各統制の発動主体・解除条件を併記する。
+            優先順位を画面に書かないと「同時に成立したときどれが効くのか」が読み取れない。 */}
+        <table aria-label="取引統制（優先順位順）">
+          <thead>
+            <tr>
+              <th>優先順位</th>
+              <th>統制</th>
+              <th>状態</th>
+              <th>発動主体</th>
+              <th>解除条件</th>
+              <th>優先統制</th>
+            </tr>
+          </thead>
+          <tbody>
+            {controlRows(view).map((row) => (
+              <tr key={row.priority}>
+                <td>{row.priority}</td>
+                <td>{row.name}</td>
+                <td>{row.state}</td>
+                <td>{row.actor}</td>
+                <td>{row.release}</td>
+                <td>{row.isActive ? '← 現在の優先統制' : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p>
+          3 統制はいずれも<strong>新規建てのみ</strong>を止めます（手仕舞い・損切りは止めません）。
+          同時に成立した場合は上の優先順位で表示され、新規建ての停止判定はいずれか 1 つでも成立すれば有効です。
+        </p>
         <dl>
-          <dt>緊急停止</dt>
-          <dd>{view.killSwitchEngaged ? '作動中' : '解除'}</dd>
-          <dt>日次損失ロックアウト</dt>
-          <dd>
-            {view.dailyLossLockoutActive
-              ? `有効（解除予定 ${formatAt(view.lockoutReleaseOn)}）`
-              : '無効'}
-          </dd>
-          <dt>一時停止</dt>
-          <dd>{view.tradingPaused ? '停止中' : '稼働'}</dd>
           {/* INDEX 決定 46 / 05_screens: 運用段階と発注先は**独立した 2 軸**であり、1 行に混ぜて表示しない。 */}
           <dt>運用段階</dt>
           <dd>{stageLabel(view.stage)}</dd>

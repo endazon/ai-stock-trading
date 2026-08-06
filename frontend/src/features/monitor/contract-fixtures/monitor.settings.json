@@ -1,0 +1,10 @@
+{
+  "movementThresholdRatio": 0.03,
+  "cooldown": "00:15:00",
+  "monitoredSymbols": [
+    {
+      "symbol": "CONTRACT",
+      "market": 1
+    }
+  ]
+}

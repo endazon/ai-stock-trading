@@ -18,10 +18,12 @@ import settingsJson from './contract-fixtures/risk-controls.settings.json';
 import statusJson from './contract-fixtures/risk-controls.status.json';
 import stageGateJson from './contract-fixtures/risk-controls.stage-gate.json';
 import settingsHistoryJson from './contract-fixtures/risk-controls.settings-history.json';
+import shortSellingJson from './contract-fixtures/risk-controls.short-selling.json';
 import type {
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
+  ShortSellingStatusView,
   StageGateStatus,
 } from './contracts';
 
@@ -38,6 +40,15 @@ export const CONTRACT_STAGE_GATE: StageGateStatus = stageGateJson;
 
 /** `GET /risk-controls/settings/history` の実応答（上限変更と発注先変更の 2 件）。 */
 export const CONTRACT_SETTINGS_HISTORY: SettingsChangeEntry[] = settingsHistoryJson;
+
+/**
+ * `GET /risk-controls/short-selling` の実応答（SC-03 の維持率・空売りの現況。#340・IADR-0154）。
+ *
+ * **既定構成では維持率・借株料の累計・自動縮小の発動履歴がいずれも `NotSupplied`（＝1）である。**
+ * これは不具合ではなく、供給元（ブローカー照会）が未実装であるという事実そのものである。
+ * 画面テストはこの形を土台にし、「未供給を未供給として描く」ことを検証する。
+ */
+export const CONTRACT_SHORT_SELLING: ShortSellingStatusView = shortSellingJson;
 
 // ---- テスト用のヘルパ ----
 

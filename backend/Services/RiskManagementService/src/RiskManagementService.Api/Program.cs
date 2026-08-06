@@ -190,6 +190,10 @@ builder.Services.AddScoped<PositionCloseService>();
 // 維持率の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。
 builder.Services.AddSingleton<IMaintenanceMarginSnapshotSource, UnavailableMaintenanceMarginSnapshotSource>();
 builder.Services.AddScoped<MaintenanceMarginReductionService>();
+// FR-10, UC-06, SC-03, ADR-0016 決定15, #340, IADR-0154: SC-03「維持率・空売りの現況」の集約（表示専用）。
+// 上の IMaintenanceMarginSnapshotSource が「供給なし」を返す限り、画面は維持率を**未供給として明示**する
+// （0 や「—」で正常値のように見せない）。
+builder.Services.AddScoped<ShortSellingStatusService>();
 // FR-05, FR-10, #292, #305, IADR-0118, IADR-0124: 建玉突合の報告可否（連続観測条件・シグネチャ dedup）。
 // 追跡状態は DB 単一行＋並行トークンで持ちレプリカ間で一貫させる（インメモリでは replicas>1 で観測が Pod へ
 // 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。

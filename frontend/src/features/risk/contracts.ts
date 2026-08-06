@@ -100,6 +100,76 @@ export interface RiskStatusView {
   maxOpenPositions: number;
 }
 
+// ---- 空売りの現況（GET /risk-controls/short-selling） ----
+// FR-10, UC-06, SC-03, ADR-0016（決定3・決定7・決定9・決定15）, #340, IADR-0154。
+//
+// **本契約が運ぶ主役は値ではなく「値が供給されているか」である。** 維持率・借株料の累計・自動縮小の
+// 発動履歴は供給元が無く、0 や空列で受けると画面は正常な統制として描いてしまう（#403 の
+// `ControlViolationCount` 既定 0 が「違反なし」に見えた fail-open と同型）。
+//
+// **供給可否をフロントに書き込まない。** 「維持率は未供給」と画面へ直書きすると、供給元が入った日に
+// 画面が嘘をつき続ける（誰も気づかない・逆向きの同型事故）。判定はサーバの `MetricAvailability` に従う。
+
+/** 指標 1 つの供給可否（バックエンド `MetricAvailability` の序数）。 */
+export const METRIC_AVAILABLE = 0;
+/** 供給元が無い／取得できない。画面は「取得できていません」と明示する。 */
+export const METRIC_NOT_SUPPLIED = 1;
+/** 概念が成立しない（建玉が 1 件も無い等）。異常ではない。 */
+export const METRIC_NOT_APPLICABLE = 2;
+
+export interface ShortSellingPositionView {
+  symbol: string;
+  market: number; // Market enum（数値）
+  /** 建玉の方向。0=Buy＝ロング / 1=Sell＝ショート（TradeSide enum・数値）。 */
+  side: number;
+  quantity: number;
+  /** 平均取得単価（**ローカル通貨**）。 */
+  averageEntryPrice: number;
+  marketValueAvailability: number; // MetricAvailability
+  marketValueUsd: number | null;
+  borrowFeeAvailability: number; // MetricAvailability
+  accruedBorrowFeeUsd: number | null;
+}
+
+export interface MaintenanceMarginReductionLegView {
+  symbol: string;
+  market: number;
+  positionSide: number; // TradeSide enum（数値）
+  quantity: number;
+  requiredMarginUsd: number;
+}
+
+export interface MaintenanceMarginReductionRecordView {
+  executedAt: string; // DateTimeOffset（ISO 文字列）
+  ratioBefore: number;
+  threshold: number;
+  recoveryTarget: number;
+  ratioAfter: number | null;
+  /** 決済した建玉（**必要証拠金の降順**。UC-06。含み損の大きい順ではない）。 */
+  legs: MaintenanceMarginReductionLegView[];
+}
+
+export interface ShortSellingStatusView {
+  maintenanceMarginAvailability: number; // MetricAvailability
+  maintenanceMarginRatio: number | null;
+  /** 実際に適用される閾値（自前 40% と規制要求の厳しい方）。株価に依存するため未供給時は null。 */
+  appliedMaintenanceMarginThreshold: number | null;
+  /** 適用される回復目標（＝適用閾値 + オフセット）。 */
+  appliedMaintenanceRecoveryTarget: number | null;
+  /** 設定上の維持率閾値（既定 0.40）。**設定値であり実測ではない。** */
+  configuredMaintenanceMarginThreshold: number;
+  /** 回復目標のオフセット（既定 0.05 ＝ +5 ポイント）。 */
+  maintenanceRecoveryTargetOffset: number;
+  shortExposureAvailability: number; // MetricAvailability
+  shortExposureRatio: number | null;
+  shortExposureRatioCap: number;
+  positions: ShortSellingPositionView[];
+  borrowFeeAvailability: number; // MetricAvailability
+  totalAccruedBorrowFeeUsd: number | null;
+  reductionHistoryAvailability: number; // MetricAvailability
+  reductionHistory: MaintenanceMarginReductionRecordView[];
+}
+
 // ---- 段階ゲート（GET /risk-controls/stage-gate） ----
 export interface PromotionAssessment {
   targetStage: number | null; // TradingStage?（最上段なら null）
@@ -290,6 +360,56 @@ export const RISKY_PRODUCT_TYPES: readonly { value: number; label: string }[] = 
   { value: PRODUCT_TYPE_MARGIN_LONG, label: '信用買いを有効化' },
   { value: PRODUCT_TYPE_SHORT_SELL, label: '空売りを有効化' },
 ];
+
+// TradeSide（0=Buy, 1=Sell）。SC-03 の保有ポジション表の「方向」列（ADR-0016 決定15）。
+// **建玉の方向であり注文の売買方向ではない**（空売り建玉は Buy で手仕舞う）。
+const POSITION_SIDE_LABELS: Record<number, string> = {
+  0: 'ロング',
+  1: 'ショート',
+};
+
+export const positionSideLabel = (v: number): string => labelOf(POSITION_SIDE_LABELS, v);
+
+// FR-10, SC-03, #340, IADR-0154: 供給が無い指標の**表示文言**。
+//
+// **0 や「—」だけを出さない。** 維持率は計画が「本画面の最上位に置く。マージンコールは口座を失う唯一の
+// 経路である」と定めた指標であり、未供給を正常のように見せることが最悪の失敗である（#403 と同型）。
+// 定数として 1 か所に置くのは、テストから直接参照して「文言が消えたら赤くなる」ようにするためである。
+export const METRIC_NOT_SUPPLIED_TEXT = '取得できていません（供給元がありません）';
+export const METRIC_NOT_APPLICABLE_TEXT = '該当なし（対象の建玉がありません）';
+
+/**
+ * 供給可否つきの比率を表示文字列にする。
+ * - `Available` … 百分率（`40.0%`）
+ * - `NotSupplied` … **「取得できていません」**（値を出さない）
+ * - `NotApplicable` … 「該当なし」
+ * - 未知の供給可否 … 安全側フォールバックとして未供給扱い（**値があるように見せない**）
+ */
+export function availabilityRatioText(availability: number, ratio: number | null): string {
+  if (availability === METRIC_AVAILABLE && ratio !== null && Number.isFinite(ratio)) {
+    return `${(ratio * 100).toFixed(1)}%`;
+  }
+  if (availability === METRIC_NOT_APPLICABLE) return METRIC_NOT_APPLICABLE_TEXT;
+  return METRIC_NOT_SUPPLIED_TEXT;
+}
+
+/** 供給可否つきの金額（USD）を表示文字列にする。未供給は「取得できていません」（`$0` にしない）。 */
+export function availabilityAmountText(availability: number, value: number | null): string {
+  if (availability === METRIC_AVAILABLE && value !== null && Number.isFinite(value)) {
+    return formatAmount(value);
+  }
+  if (availability === METRIC_NOT_APPLICABLE) return METRIC_NOT_APPLICABLE_TEXT;
+  return METRIC_NOT_SUPPLIED_TEXT;
+}
+
+/** 供給されていない（＝利用者へ警告として見せるべき）状態か。`NotApplicable` は異常ではないので含めない。 */
+export const isNotSupplied = (availability: number): boolean => availability !== METRIC_AVAILABLE
+  && availability !== METRIC_NOT_APPLICABLE;
+
+/** 比率（0.40）を百分率表示（`40.0%`）にする。設定値の表示に用いる（供給可否を持たない値）。 */
+export function ratioToPercentDisplay(ratio: number): string {
+  return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : '—';
+}
 
 export const stageLabel = (v: number): string => labelOf(STAGE_LABELS, v);
 export const brokerProviderLabel = (v: number): string => labelOf(BROKER_PROVIDER_LABELS, v);

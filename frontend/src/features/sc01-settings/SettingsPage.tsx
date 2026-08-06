@@ -4,11 +4,18 @@ import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { useBrokerProvider } from '../shared/paperMode';
+import { CollectionSettingsForm } from './CollectionSettingsForm';
 
-// SC-01, FR-17, UC-06, IADR-0080: 設定画面（全体前提条件の閲覧/変更）。
-// データ源は BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。変更は利用者のみ（サーバ側 OwnerOnly）、
-// 楽観排他（expectedVersion）＋理由必須。検証(400)・競合(409)はメッセージ表示し、破壊的な自動再試行はしない（安全既定）。
-// 第1スライスは FR-17 のみ。FR-13（監視銘柄/閾値/リスク上限）は後続スライスで同画面へ節を追加する。
+// SC-01, FR-17, FR-13, UC-06, IADR-0080, IADR-0155: 設定画面。
+//
+// §1 全体前提条件（FR-17）: BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。
+// §2 収集パラメータ（FR-13・#340）: BFF `/bff/monitor/settings`（MarketMonitorService）。**別サービス由来**の
+//    ため独立してロード・縮退する（`CollectionSettingsForm`）。計画は「ConfigurationService 由来」と
+//    書いているが実装は MarketMonitorService である（差異は環流済み）。
+//
+// 変更は利用者のみ（サーバ側 OwnerOnly）、楽観排他（expectedVersion）＋理由必須。
+// 検証(400)・競合(409)はメッセージ表示し、破壊的な自動再試行はしない（安全既定）。
+// リスク上限・監視銘柄は本画面の範囲外である（RiskManagementService 由来のため SC-02。planning#33 の責務分界）。
 
 interface CommissionSchedule {
   rate: number;
@@ -231,7 +238,10 @@ export function SettingsPage() {
           持たないが、paper 稼働中であることをどの画面からでも把握できるようにする（05_screens SC-01）。 */}
       <PaperModeBanner provider={brokerProvider} />
       <h1>設定</h1>
-      <p>全体前提条件（税・手数料・為替・費用上限）の閲覧と変更を行います（FR-17）。変更は利用者のみが行えます。</p>
+      <p>
+        全体前提条件（税・手数料・為替・費用上限。FR-17）と収集パラメータ（変動閾値・収集間隔。FR-13）の閲覧と変更を行います。
+        変更は利用者のみが行えます。リスク上限・監視銘柄は「リスク設定」画面（SC-02）で扱います。
+      </p>
 
       {status === 'loading' && <p role="status">読み込み中…</p>}
       {status === 'notFound' && <p>設定情報は利用できません。</p>}
@@ -309,6 +319,11 @@ export function SettingsPage() {
           <HistoryView status={historyStatus} history={history} />
         </>
       )}
+
+      {/* SC-01 §2, FR-13, #340, IADR-0155: 収集パラメータ（変動閾値・収集間隔）。
+          由来サービスが異なる（MarketMonitorService）ため、§1（ConfigurationService）の取得可否に
+          連動させず独立してロード・縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
+      <CollectionSettingsForm />
     </section>
   );
 }

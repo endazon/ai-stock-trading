@@ -11,6 +11,8 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <!-- #389 / #340, IADR-0146: バックエンド応答↔フロント契約フィクスチャの突合（テスト専用の共有支援）。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
     <ProjectReference Include="..\..\src\MarketMonitorService.Api\MarketMonitorService.Api.csproj" />
   </ItemGroup>
 </Project>
