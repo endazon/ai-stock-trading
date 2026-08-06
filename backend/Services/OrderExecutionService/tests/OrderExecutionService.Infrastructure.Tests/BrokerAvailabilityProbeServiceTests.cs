@@ -60,6 +60,21 @@ public class BrokerAvailabilityProbeServiceTests
             throw new NotSupportedException();
     }
 
+    // FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の供給元。
+    // **null を返す**ことが「照会失敗・種別不明」であり、発行しない側へ倒す（例外を投げない契約）。
+    private sealed class FakeAccountSource : IBrokerAccountSource
+    {
+        public BrokerAccountState? State { get; set; } = new(AccountType.Margin);
+
+        public int Calls { get; private set; }
+
+        public Task<BrokerAccountState?> GetAccountStateAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(State);
+        }
+    }
+
     private static Task<IHost> NewHostAsync() =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
@@ -73,19 +88,25 @@ public class BrokerAvailabilityProbeServiceTests
         IHost host,
         FakeProbe probe,
         bool enabled = true,
-        BrokerProvider provider = BrokerProvider.MoomooSimulate) =>
+        BrokerProvider provider = BrokerProvider.MoomooSimulate,
+        // #375: 口座種別の供給元。**未登録（null）が既定**である——内蔵 paper 構成では登録されない。
+        IBrokerAccountSource? accountSource = null) =>
         new(probe,
             new FakeBroker(provider),
             host.Services.GetRequiredService<IWolverineRuntime>(),
             new FixedTimeProvider(Now),
             Options.Create(new BrokerAvailabilityProbeOptions { Enabled = enabled }),
-            NullLogger<BrokerAvailabilityProbeService>.Instance);
+            NullLogger<BrokerAvailabilityProbeService>.Instance,
+            accountSource);
 
     private static async Task<(bool Published, ITrackedSession Session)> RunOnceAsync(
-        bool operational, BrokerProvider provider = BrokerProvider.MoomooSimulate)
+        bool operational,
+        BrokerProvider provider = BrokerProvider.MoomooSimulate,
+        IBrokerAccountSource? accountSource = null)
     {
         using var host = await NewHostAsync();
-        var service = NewService(host, new FakeProbe { Operational = operational }, provider: provider);
+        var service = NewService(
+            host, new FakeProbe { Operational = operational }, provider: provider, accountSource: accountSource);
 
         var published = false;
         Func<IMessageContext, Task> probeOnce = async _ =>
@@ -131,6 +152,71 @@ public class BrokerAvailabilityProbeServiceTests
         published.Should().BeTrue();
         session.Sent.MessagesOf<BrokerAvailabilityObserved>()
             .Should().Contain(m => m.Provider == BrokerProvider.InternalPaper);
+    }
+
+    // =====================================================================================
+    // FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測（同じ巡回に相乗りする）
+    //
+    // 契約は稼働観測と同じで「**判明したときだけ発行する**」。到達不能・照会失敗・種別不明はいずれも
+    // 「発行しない」であり、受け手は沈黙を「口座種別を確認できていない」として新規建てを止める。
+    // =====================================================================================
+
+    [Fact]
+    public async Task 口座種別が判明した巡回は口座観測も発行する()
+    {
+        var source = new FakeAccountSource { State = new BrokerAccountState(AccountType.Cash, 1_000m, 1) };
+
+        var (published, session) = await RunOnceAsync(operational: true, accountSource: source);
+
+        published.Should().BeTrue();
+        session.Sent.MessagesOf<BrokerAccountObserved>().Should().Contain(m =>
+            m.Provider == BrokerProvider.MoomooSimulate
+            && m.Account.AccountType == AccountType.Cash
+            && m.Account.SettledCashInBase == 1_000m
+            && m.Account.GoodFaithViolationCount == 1
+            && m.ObservedAt == Now);
+    }
+
+    // **否定形（本 issue の核心）**: 口座種別が不明なら**発行しない**。
+    // 「不明である」をイベントで表すと、その通知が失われたとき（プロセス断・ネットワーク断）に
+    // 古い観測が生き残り、現金口座なのに信用口座の緩い統制で回る。沈黙が安全側に倒れる向きを選ぶ。
+    [Fact]
+    public async Task 口座種別が不明なら口座観測を発行しない()
+    {
+        var source = new FakeAccountSource { State = null };
+
+        var (published, session) = await RunOnceAsync(operational: true, accountSource: source);
+
+        // 稼働観測そのものは発行される（到達はできているため）。口座観測だけが落ちる。
+        published.Should().BeTrue();
+        session.Sent.MessagesOf<BrokerAvailabilityObserved>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<BrokerAccountObserved>().Should().BeEmpty();
+    }
+
+    // **否定形**: 到達できなければ口座種別を照会すらしない（稼働観測と同時に落ちる）。
+    [Fact]
+    public async Task 到達できなければ口座種別を照会しない()
+    {
+        var source = new FakeAccountSource();
+
+        var (published, session) = await RunOnceAsync(operational: false, accountSource: source);
+
+        published.Should().BeFalse();
+        source.Calls.Should().Be(0);
+        session.Sent.MessagesOf<BrokerAccountObserved>().Should().BeEmpty();
+    }
+
+    // **否定形（IADR-0153 決定2）**: 供給元が未登録（内蔵 paper 構成）なら口座観測は発行されない。
+    // 外部へ一度も発注しない擬似約定にはブローカー口座が存在せず、判定側も口座種別を要求しない。
+    [Fact]
+    public async Task 供給元が未登録なら口座観測を発行しない()
+    {
+        var (published, session) = await RunOnceAsync(
+            operational: true, provider: BrokerProvider.InternalPaper, accountSource: null);
+
+        published.Should().BeTrue();
+        session.Sent.MessagesOf<BrokerAvailabilityObserved>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<BrokerAccountObserved>().Should().BeEmpty();
     }
 
     // 照会例外は呼び出し側（常駐）が捕捉して次回巡回で再試行する。推測で発行しない。

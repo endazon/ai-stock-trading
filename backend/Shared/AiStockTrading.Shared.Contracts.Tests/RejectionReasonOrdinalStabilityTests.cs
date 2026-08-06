@@ -39,6 +39,10 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.BuyInBanned, 22 },
         { RejectionReason.StageProductTypeProhibited, 23 },
         { RejectionReason.StageShortSellReleaseUnmet, 24 },
+        // FR-19, #375, ADR-0021 決定3/決定4, IADR-0153: 現金口座対応で追加した 3 種。**末尾へ追加**している。
+        { RejectionReason.CashAccountSettlementHold, 25 },
+        { RejectionReason.BrokerAccountTypeUnverified, 26 },
+        { RejectionReason.GoodFaithViolationLimitReached, 27 },
     };
 
     [Theory]

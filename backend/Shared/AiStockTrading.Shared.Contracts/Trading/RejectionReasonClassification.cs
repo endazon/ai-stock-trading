@@ -44,6 +44,8 @@ public static class RejectionReasonClassification
         // #333: 段階別の商品種別強制（ADR-0016 決定8・決定14）も**段階制約**であり、クラス B である。
         // クラス C（AI が禁止事項を犯そうとした件数）へ混ぜてはならない——段階が許さない商品種別の
         // 発注要求は「段階ゲートが設計どおり止めた」記録であり、禁止事項への抵触ではない。
+        // #375, ADR-0021 決定3: 口座種別を確認できていない状態も**取引を止めている状態そのものの記録**であり
+        // クラス B である。照会の失敗・設定値との食い違いは「AI が禁止事項を犯そうとした」ものではない。
         RejectionReason.KillSwitchActive
             or RejectionReason.TradingPaused
             or RejectionReason.StageProhibitsLiveTrading
@@ -51,9 +53,12 @@ public static class RejectionReasonClassification
             or RejectionReason.StageProductTypeProhibited
             or RejectionReason.StageShortSellReleaseUnmet
             or RejectionReason.ProductTypeDisabled
+            or RejectionReason.BrokerAccountTypeUnverified
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 
-        // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種）。
+        // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種、
+        // #375 の現金口座統制 2 種＝CashAccountSettlementHold / GoodFaithViolationLimitReached）。
+        // 後 2 者は制度・決済に由来する事象であり、ADR-0021 決定4-5 が**クラス A** と明示している。
         _ => RejectionReasonClass.A,
     };
 

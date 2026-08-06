@@ -59,6 +59,25 @@ public record PortfolioSnapshot
     public IReadOnlySet<(string Symbol, Market Market)> SymbolsTradedToday { get; init; }
         = new HashSet<(string, Market)>();
 
+    /// <summary>
+    /// FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: <b>ブローカーへ照会して得た</b>口座の状態
+    /// （種別・決済済み資金・GFV 発生回数）。口座種別に依存する統制（決定4 の 5 統制）の入力である。
+    /// <para>
+    /// <b><c>null</c> は「口座種別を確認できていない」を意味し、新規建てを止める</b>（fail-closed。
+    /// 拒否理由 <c>BrokerAccountTypeUnverified</c>）。**「不明なら信用口座」に倒してはならない**——
+    /// 現金口座なのに GFV 回避ガードが無効のまま回転させることが、決定3 が防ごうとしている事故である。
+    /// </para>
+    /// <para>
+    /// 位置指定の引数にせず既定 <c>null</c> のプロパティに置くのは <see cref="KillSwitchEngaged"/> と同じ理由である——
+    /// <b>明示しない組み立てが安全側（統制が掛かる側）へ倒れる</b>ようにするため。
+    /// </para>
+    /// <para>
+    /// 観測の新しさ（失効）は供給側（<c>IBrokerAccountObservationStore</c>）が担保する。判定コアは
+    /// 「供給されたものは有効である」として扱い、時刻を持たない（判定コアをステートレス・純関数に保つ）。
+    /// </para>
+    /// </summary>
+    public BrokerAccountState? Account { get; init; }
+
     /// <summary>全停止スイッチ（kill switch）。利用者のみ操作できる。</summary>
     public bool KillSwitchEngaged { get; init; }
 

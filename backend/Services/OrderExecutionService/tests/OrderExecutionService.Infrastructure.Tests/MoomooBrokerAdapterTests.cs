@@ -47,6 +47,18 @@ public class MoomooBrokerAdapterTests
             if (PositionsThrow is not null) throw PositionsThrow();
             return Task.FromResult(Positions);
         }
+
+        // #375, ADR-0021 決定3: 口座種別の照会。既定は信用口座（SIMULATE 口座の実測値）。
+        // null＝種別不明、Throw＝照会失敗をそれぞれ差し替えて検証する。
+        public Func<Exception>? AccountTypeThrow { get; set; }
+
+        public MoomooAccountType? AccountType { get; set; } = MoomooAccountType.Margin;
+
+        public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken ct = default)
+        {
+            if (AccountTypeThrow is not null) throw AccountTypeThrow();
+            return Task.FromResult(AccountType);
+        }
     }
 
     // #141, IADR-0092: DecisionId を remark（client order id相当）として発注リクエストに載せることを検証する。
@@ -190,4 +202,75 @@ public class MoomooBrokerAdapterTests
 
         positions.Should().BeNull();
     }
+
+    // =====================================================================================
+    // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 口座種別の照会（IBrokerAccountSource）
+    // =====================================================================================
+
+    // 引数は SDK の生値（int）で受ける。`MoomooAccountType` は internal であり、public なテストメソッドの
+    // シグネチャに置けないためである（テスト対象の可視性を緩めない）。
+    [Theory]
+    [InlineData(2, AccountType.Margin)] // TrdAccType_Margin
+    [InlineData(1, AccountType.Cash)]   // TrdAccType_Cash
+    public async Task 口座種別を契約の_AccountType_へ写像する(int sdkAccType, AccountType expected)
+    {
+        var client = new FakeClient { AccountType = MMApiMoomooTradeClient.MapAccountType(sdkAccType) };
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        state!.AccountType.Should().Be(expected);
+    }
+
+    // **否定形（fail-closed の要）**: 種別不明は `null`（＝口座種別を確認できていない）へ倒す。
+    // **「不明なら信用口座」へ倒してはならない**——現金口座で GFV 回避ガードが無効のまま回る事故になる。
+    [Fact]
+    public async Task 口座種別が不明なら_null_を返す()
+    {
+        var client = new FakeClient { AccountType = null };
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        state.Should().BeNull();
+    }
+
+    // **否定形**: 照会に失敗（例外）しても不明（null）へ倒す。例外を素通ししない（定期 probe を落とさない）。
+    [Fact]
+    public async Task 口座種別の照会に失敗したら不明として_null_を返す()
+    {
+        var client = new FakeClient { AccountTypeThrow = () => new InvalidOperationException("OpenD 不達") };
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        state.Should().BeNull();
+    }
+
+    // **実測に基づく否定形（IADR-0153 決定4）**: moomoo API には決済済み資金・GFV 発生回数の
+    // フィールドが存在しない（`TrdCommon.Funds` の全 40 余フィールドとアセンブリ全体を走査して確認済み）。
+    // したがってアダプタはこれらを**供給しない**。推定値・代替値（`AvlWithdrawalCash` / `MaxCashBuy` 等）で
+    // 埋めてはならない——現金口座の買付が「分からないのに通る」ようになり、統制が消える。
+    [Fact]
+    public async Task 決済済み資金とGFV回数は供給しない()
+    {
+        var client = new FakeClient { AccountType = MoomooAccountType.Cash };
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        state!.SettledCashInBase.Should().BeNull();
+        state.GoodFaithViolationCount.Should().BeNull();
+    }
+
+    // SDK の `TrdAccType` から本システムの 2 値への写像。**未知の値は null（不明）へ倒す。**
+    // 実測した列挙は Unknown=0 / Cash=1 / Margin=2 / TFSA=3 / RRSP=4 / SRRSP=5 / Derivatives=6 であり、
+    // ADR-0021 決定2 が想定するのは信用・現金の 2 種だけである（TFSA 等で回すことは計画に無い）。
+    [Theory]
+    [InlineData(0, null)] // TrdAccType_Unknown —— SDK 自身が「不明が起こり得る」ことを認めている
+    [InlineData(1, "Cash")]
+    [InlineData(2, "Margin")]
+    [InlineData(3, null)] // TFSA
+    [InlineData(4, null)] // RRSP
+    [InlineData(5, null)] // SRRSP
+    [InlineData(6, null)] // Derivatives
+    [InlineData(99, null)] // 将来 SDK が増やす未知の値
+    public void SDKの口座種別を未知は不明へ倒して写像する(int accType, string? expectedName) =>
+        MMApiMoomooTradeClient.MapAccountType(accType)?.ToString().Should().Be(expectedName);
 }

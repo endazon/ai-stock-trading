@@ -29,7 +29,8 @@ public class PortfolioSnapshotBuilderTests
             SymbolsTradedToday = new HashSet<(string, Market)> { ("AAPL", Market.UnitedStates) },
         };
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore());
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            FakeBrokerAccountObservations.NotObserved());
 
         var snapshot = builder.Build();
 
@@ -53,7 +54,8 @@ public class PortfolioSnapshotBuilderTests
         var killSwitch = new InMemoryKillSwitchStore();
         killSwitch.SetState(new KillSwitchState(true, "user", "停止", Now));
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(state), killSwitch, new InMemoryPauseStore());
+            new FakePortfolioStateProvider(state), killSwitch, new InMemoryPauseStore(),
+            FakeBrokerAccountObservations.NotObserved());
 
         builder.Build().KillSwitchEngaged.Should().BeTrue();
     }
@@ -66,7 +68,8 @@ public class PortfolioSnapshotBuilderTests
         var pause = new InMemoryPauseStore();
         pause.SetState(new PauseState(true, "user", "様子見", Now));
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), pause);
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), pause,
+            FakeBrokerAccountObservations.NotObserved());
 
         builder.Build().TradingPaused.Should().BeTrue();
     }

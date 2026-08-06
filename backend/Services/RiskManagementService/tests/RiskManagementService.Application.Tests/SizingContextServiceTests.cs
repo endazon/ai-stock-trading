@@ -14,7 +14,9 @@ public class SizingContextServiceTests
     private static SizingContextService Build(PortfolioState state)
     {
         var snapshotBuilder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore());
+            new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            // サイジング文脈は口座種別に依存しない（#375 は発注審査側の統制である）。
+            FakeBrokerAccountObservations.NotObserved());
         return new SizingContextService(snapshotBuilder, new InMemoryRiskSettingsStore());
     }
 

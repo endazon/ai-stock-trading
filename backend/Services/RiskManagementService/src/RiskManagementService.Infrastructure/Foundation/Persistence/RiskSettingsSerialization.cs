@@ -19,7 +19,8 @@ internal static class RiskSettingsSerialization
                 [.. settings.Guard.EnabledMarkets],
                 [.. settings.Guard.BannedSymbols],
                 settings.Guard.PreventSameDayReentry,
-                settings.Guard.ProhibitManipulativeOrderPatterns),
+                settings.Guard.ProhibitManipulativeOrderPatterns,
+                settings.Guard.ConfiguredAccountType),
             settings.Limits,
             settings.Stage,
             settings.ShortSell,
@@ -39,6 +40,10 @@ internal static class RiskSettingsSerialization
             BannedSymbols = dto.Guard.BannedSymbols,
             PreventSameDayReentry = dto.Guard.PreventSameDayReentry,
             ProhibitManipulativeOrderPatterns = dto.Guard.ProhibitManipulativeOrderPatterns,
+            // FR-19, #375, ADR-0021 決定1: 口座種別を持たない旧行は**信用口座**（既定）として読む。
+            // 本値は統制の切り替えには使わず、照会結果との**食い違いの検知**にのみ使う（決定3）。
+            // したがって「旧行を既定で読む」ことは統制を緩めない——照会結果が無ければ新規建ては止まる。
+            ConfiguredAccountType = dto.Guard.ConfiguredAccountType ?? AccountType.Margin,
         };
         return new RiskManagementSettings(guard, dto.Limits, dto.Stage)
         {
@@ -65,5 +70,7 @@ internal static class RiskSettingsSerialization
         List<Market> EnabledMarkets,
         List<BannedSymbol> BannedSymbols,
         bool PreventSameDayReentry,
-        bool ProhibitManipulativeOrderPatterns);
+        bool ProhibitManipulativeOrderPatterns,
+        // FR-19, #375: 利用者が設定した口座種別。nullable＝本プロパティの追加前に書かれた行。
+        AccountType? ConfiguredAccountType = null);
 }

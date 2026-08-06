@@ -222,6 +222,19 @@ public sealed class BrokerAvailabilityObservedAuditHandler(IAuditEventStore stor
     }
 }
 
+// FR-19, FR-10, FR-11, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測を中央監査台帳へ記録する。
+// **口座種別は統制の適用可否を決める最上位の条件**であり、「いつ・どの口座種別が観測されたか」の並びが無いと、
+// 事後に「なぜその時刻の注文で GFV 回避ガードが効かなかったのか」を再構成できない。
+// 判定側（リスク管理）が持つのは最新 1 件だけである（履歴を持たない・IADR-0153 決定3）。
+public sealed class BrokerAccountObservedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BrokerAccountObserved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知を中央監査台帳へ記録する。
 // 是正は伴わないため、この記録が「いつ・どの銘柄で乖離が生じたか」の唯一の永続証跡になる。
 public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore store, IClock clock)

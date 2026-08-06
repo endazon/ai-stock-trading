@@ -119,6 +119,12 @@ builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
 // 無効（既定）なら補充自体を起動しない＝台帳への巡回アクセスも発生させない。
 if (builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>()?.EnableMarkToMarket == true)
     builder.Services.AddHostedService<QuoteRefreshService>();
+// FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測（BrokerAccountObserved）の保持。
+// **singleton・非永続**である——口座種別は「いまブローカーへ照会して得られる値」であり、プロセスをまたいで
+// 引き継ぐべき事実ではない。再起動で観測が消えれば新規建ては止まり（フェイルクローズ）、次の probe で復帰する。
+// 観測が無い（または 30 分で失効した）状態では新規建てが `BrokerAccountTypeUnverified` で止まる。
+builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
+    new InMemoryBrokerAccountObservationStore(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。
 builder.Services.AddScoped<SizingContextService>();

@@ -43,6 +43,11 @@ public class TradeDecisionMadeConsumerTests
                 // FR-20, #387, IADR-0148: 審査結果は段階ゲートの観測ログへ記録される（ハンドラの依存）。
                 opts.Services.AddSingleton<IControlViolationObservationStore,
                     InMemoryControlViolationObservationStore>();
+                // FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測ストア（スナップショット組み立ての依存）。
+                // 本テストの注文意図は内蔵 paper であり口座種別を要求しないため、観測は投入しない
+                // （＝口座種別を確認できていない状態のまま検証する）。
+                opts.Services.AddSingleton<IBrokerAccountObservationStore>(
+                    new InMemoryBrokerAccountObservationStore(TimeProvider.System));
                 opts.Services.AddSingleton<PortfolioSnapshotBuilder>();
                 opts.Services.AddSingleton(sp => new OrderScreeningService(
                     sp.GetRequiredService<IRiskSettingsStore>(),

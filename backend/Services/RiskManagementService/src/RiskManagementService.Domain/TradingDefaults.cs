@@ -99,6 +99,9 @@ public static class TradingDefaults
         // **既定はいずれも「現物のみ有効」**（ADR-0016 決定1）。信用買い・空売りの実弾解禁は Stage 3 であり
         // （決定8）、空売りはさらに自己資金 $5,000 以上を要する。
         EnabledProductTypes = new HashSet<ProductType> { ProductType.Cash },
+        // #375, ADR-0021 決定1: 口座種別の既定は**信用口座**（現金口座は拡張として対応する）。
+        // これは「照会できなければ信用口座として扱う」ことを意味しない——照会結果が無ければ新規建てを止める。
+        ConfiguredAccountType = AccountType.Margin,
         // 米国株: 主ターゲット / 日本株: 当面監視・検証用（有効のまま）
         EnabledMarkets = new HashSet<Market> { Market.Japan, Market.UnitedStates },
         // 取引禁止銘柄（利用者登録 2026-07-07。INDEX 決定 20）。理由と登録日を伴って記録する

@@ -42,7 +42,11 @@ public class OrderScreeningServiceTests
         var portfolio = new FakePortfolioStateProvider(state ?? HealthyState);
         var killSwitch = new InMemoryKillSwitchStore();
         var lockout = new InMemoryLockoutStore();
-        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch, new InMemoryPauseStore());
+        // #375, IADR-0153 決定2: 本テストの注文は内蔵 paper（EntryIntent の Mode）であり口座種別を要求しない。
+        // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
+        // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
+        var builder = new PortfolioSnapshotBuilder(
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar());
         return (service, clock, portfolio, killSwitch, lockout);
@@ -160,7 +164,11 @@ public class OrderScreeningServiceTests
         var portfolio = new FakePortfolioStateProvider(HealthyState with { DailyRealizedPnl = -2_000m });
         var killSwitch = new InMemoryKillSwitchStore();
         var lockout = new InMemoryLockoutStore();
-        var builder = new PortfolioSnapshotBuilder(portfolio, killSwitch, new InMemoryPauseStore());
+        // #375, IADR-0153 決定2: 本テストの注文は内蔵 paper（EntryIntent の Mode）であり口座種別を要求しない。
+        // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
+        // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
+        var builder = new PortfolioSnapshotBuilder(
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar());
 

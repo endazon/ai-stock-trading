@@ -220,5 +220,9 @@ public class OrderFillPollingServiceTests
 
         public Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("約定追跡は建玉照会を用いない。");
+
+        // #375, ADR-0021: 約定追跡は口座種別を用いない。
+        public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("約定追跡は口座種別照会を用いない。");
     }
 }

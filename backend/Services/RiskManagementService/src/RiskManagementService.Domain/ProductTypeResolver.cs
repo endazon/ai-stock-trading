@@ -30,4 +30,28 @@ public static class ProductTypeResolver
         ArgumentNullException.ThrowIfNull(guard);
         return guard.EnabledProductTypes.Contains(productType);
     }
+
+    /// <summary>
+    /// FR-19, #375, ADR-0021 決定4-4/決定5: <b>口座種別を加味した</b>実効的な有効・無効。
+    /// <para>
+    /// 実効値は「**利用者設定 ∩ 口座が対応する種別**」である。現金口座では信用買い・空売りが
+    /// <b>口座の能力として成立しない</b>ため、設定で有効になっていても実効的には無効である
+    /// （決定4-4「信用買い・空売りを選べなくする」）。
+    /// </para>
+    /// <para>
+    /// <b>口座種別が不明（<c>null</c>）なら設定値のみで判定する。</b> 不明そのものは
+    /// <c>BrokerAccountTypeUnverified</c> が新規建てを止めており、ここで重ねて止める必要はない
+    /// （止めると「不明」の拒否理由が商品種別の問題として二重に見える）。
+    /// </para>
+    /// </summary>
+    public static bool IsEnabled(TradingGuardSettings guard, AccountType? accountType, ProductType productType)
+    {
+        ArgumentNullException.ThrowIfNull(guard);
+        if (accountType is { } account && !AccountTypePolicy.Supports(account, productType))
+        {
+            return false;
+        }
+
+        return IsEnabled(guard, productType);
+    }
 }

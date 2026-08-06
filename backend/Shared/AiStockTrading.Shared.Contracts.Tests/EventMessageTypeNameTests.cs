@@ -40,6 +40,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [Theory]
         [InlineData(typeof(AssumptionsChanged), "AiStockTrading.Shared.Contracts.Events.AssumptionsChanged")]
         [InlineData(typeof(BacktestEvaluated), "AiStockTrading.Shared.Contracts.Events.BacktestEvaluated")]
+        // FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測。
+        [InlineData(typeof(BrokerAccountObserved), "AiStockTrading.Shared.Contracts.Events.BrokerAccountObserved")]
         [InlineData(typeof(BrokerAvailabilityObserved), "AiStockTrading.Shared.Contracts.Events.BrokerAvailabilityObserved")]
         [InlineData(typeof(BrokerPositionsObserved), "AiStockTrading.Shared.Contracts.Events.BrokerPositionsObserved")]
         [InlineData(typeof(CostThresholdReached), "AiStockTrading.Shared.Contracts.Events.CostThresholdReached")]

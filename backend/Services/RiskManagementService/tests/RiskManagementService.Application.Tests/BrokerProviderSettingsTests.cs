@@ -26,7 +26,8 @@ public class BrokerProviderSettingsTests
         var store = new InMemoryRiskSettingsStore();
         var log = new InMemorySettingsChangeLog();
         var clock = new FakeClock(Now, new DateOnly(2026, 8, 5));
-        return (new RiskSettingsService(store, log, clock), store, log);
+        // #375, ADR-0021 決定4-4: 発注先の設定は口座種別に依存しない。観測は供給しない。
+        return (new RiskSettingsService(store, log, clock, FakeBrokerAccountObservations.NotObserved()), store, log);
     }
 
     // IADR-0140 決定4: 計画は初期値を述べていない。実装は**外部へ一度も発注しない値**を選ぶ。

@@ -68,7 +68,9 @@ public class TradingControlPriorityTests
         private PortfolioSnapshotBuilder Builder() => new(
             new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
             KillSwitch,
-            Pause);
+            Pause,
+            // 本テストの注文は内蔵 paper であり口座種別を要求しない（IADR-0153 決定2）。
+            FakeBrokerAccountObservations.NotObserved());
 
         public RiskStatusView Status() => new RiskStatusService(
             Builder(),

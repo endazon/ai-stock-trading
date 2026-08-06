@@ -32,6 +32,14 @@ export interface TradingGuardSettings {
   enabledProductTypes: number[]; // ProductType enum（数値）
   enabledMarkets: number[]; // Market enum（数値）
   bannedSymbols: BannedSymbol[];
+  // FR-19, #375, ADR-0021 決定3: 利用者が設定した口座種別（AccountType enum・0=信用口座 / 1=現金口座）。
+  //
+  // **統制の切り替えには使われない。** 統制はバックエンドがブローカーへ照会した結果で切り替わり、
+  // 本値の役割は**照会結果との食い違いの検知**だけである（食い違えば新規建てが止まる）。
+  //
+  // SC-02 の取引ガードフォームは本値を**編集も送信もしない**。`PUT /risk-controls/settings/guard` は
+  // 全置換だが、本キーの省略は「変更しない」として扱われる（送り漏らしで信用口座へ戻らないため）。
+  configuredAccountType: number;
   preventSameDayReentry: boolean;
   prohibitManipulativeOrderPatterns: boolean;
 }

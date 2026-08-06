@@ -30,7 +30,8 @@ public class RiskStatusServiceTests
         public RiskStatusView Build()
         {
             var builder = new PortfolioSnapshotBuilder(
-                new FakePortfolioStateProvider(State), KillSwitch, Pause);
+                new FakePortfolioStateProvider(State), KillSwitch, Pause,
+                FakeBrokerAccountObservations.NotObserved());
             var svc = new RiskStatusService(
                 builder,
                 new InMemoryRiskSettingsStore(),

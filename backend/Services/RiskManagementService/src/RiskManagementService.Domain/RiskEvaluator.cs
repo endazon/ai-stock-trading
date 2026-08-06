@@ -21,6 +21,30 @@ public static class RiskEvaluator
         // エントリーを近似すると kill switch 含むエントリー専用制約をすり抜ける（Issue #25）。
         var isEntry = intent.PositionEffect == PositionEffect.Open;
 
+        // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: **口座種別はブローカーへ照会した結果を正とする。**
+        // 利用者の設定値（Guard.ConfiguredAccountType）は食い違いの検知にのみ使う。
+        //
+        // **供給が無い（照会失敗・種別不明）ときは新規建てを止める（フェイルクローズ）。**
+        // 「不明なら信用口座とみなす」に倒してはならない——現金口座なのに GFV 回避ガードが無効のまま回転させると
+        // 3 回の Good Faith Violation で **90 日の口座制限**に至り、しかもそれは事後にしか分からない
+        // （ADR-0021 79 行。決定3 が防ごうとしている当の事故である）。
+        //
+        // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡）。ADR-0009 の不変条件であり、
+        // 口座種別が分からないことを理由に建玉を閉じられなくするのは統制ではなく事故である。
+        var observedAccount = snapshot.Account;
+        var accountVerified = observedAccount is not null
+            && observedAccount.AccountType == settings.Guard.ConfiguredAccountType;
+        if (isEntry
+            && AccountTypePolicy.RequiresVerifiedAccount(intent.Mode)
+            && !accountVerified)
+        {
+            reasons.Add(RejectionReason.BrokerAccountTypeUnverified);
+        }
+
+        // 以降の口座種別依存の統制は**照会結果**（設定値ではない）で切り替える。照会結果が無ければ null であり、
+        // 各統制は「口座種別が確定していない」側の扱いをする（上の BrokerAccountTypeUnverified が新規建てを止めている）。
+        var accountType = observedAccount?.AccountType;
+
         // 全停止スイッチ（kill switch）: 新規建て（エントリー）のみ停止する。
         // NFR フェイルセーフ（02_requirements: 新規発注停止。保有ポジションの損切り監視は最後まで維持）
         // および ADR-0003（損切りは機械的に執行）により、手仕舞い（Close）は止めない。
@@ -70,8 +94,13 @@ public static class RiskEvaluator
         // 適用は**新規建てのみ**である（決定4）。無効な商品種別の建玉を手仕舞えないと、
         // FR-10 の不変条件「手仕舞い（Close）と損切りは止めない」（ADR-0009）に反する。
         // 例: 既定では空売りが無効であり、全注文へ適用すると空売り建玉の買戻し（Buy × Close）が拒否される。
+        //
+        // #375, ADR-0021 決定4-4/決定5: 照合する有効・無効は**口座種別を加味した実効値**である
+        // （利用者設定 ∩ 口座が対応する種別）。現金口座では信用買い・空売りが**口座の能力として成立しない**ため、
+        // 設定で有効になっていても通さない。設定側の遮断（RiskSettingsService.UpdateGuard）と二重に置くのは、
+        // 口座種別を切り替えた後に古い設定が残る経路・API を直に叩く経路を塞ぐためである（多層防御）。
         var effectiveProductType = ProductTypeResolver.Resolve(intent);
-        if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, effectiveProductType))
+        if (isEntry && !ProductTypeResolver.IsEnabled(settings.Guard, accountType, effectiveProductType))
         {
             reasons.Add(RejectionReason.ProductTypeDisabled);
         }
@@ -102,22 +131,58 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.BannedSymbol);
         }
 
-        // FR-19, #332, IADR-0132 決定5: 差金決済防止（同一銘柄の同日再エントリー禁止）は
-        // **日本株の現物取引にのみ**適用する。本ガードは日本の差金決済規制（金商法 161 条の 2・
-        // 06_daytrading-review §2.1）に対応するものであり、**米国株は信用口座（margin account）で運用するため
-        // Good Faith Violation が発生しない**（05_trading-assumptions §5「米国口座の種別・決済」・FR-19 本文）。
-        // 米国株の回転数は日次発注金額上限（equity の 150%/日）と保有建玉数上限（3）で管理する。
+        // FR-19, #332, #375, IADR-0132 決定5, ADR-0021 決定4-1: 差金決済防止（同一銘柄の同日再エントリー禁止）は
+        // **現物**に限り、かつ**適用範囲が口座種別に依存する**。
+        //
+        //   - 日本株の現物: 日本の差金決済規制（金商法 161 条の 2・06_daytrading-review §2.1）。**口座種別に依存しない**
+        //   - 米国株の現物: **現金口座でのみ**適用する。Good Faith Violation は現金口座で発生する（ADR-0021 決定4-1）。
+        //     信用口座（既定）では売却代金を決済前に再利用できるため発生せず、回転数は日次発注金額上限
+        //     （equity の 150%/日）と保有建玉数上限（3）で管理する
+        //
+        // **#332 の是正（日本株現物への限定）は巻き戻していない。** 本 issue が足したのは口座種別による分岐だけである。
         // 信用（信用買い・空売り）は同一保証金での同日無制限回転が可能なため現物に限る（§5「差金決済防止」）。
+        // 判定の単一情報源は AccountTypePolicy.AppliesSameDayReentry である。
         //
         // 照合は（銘柄コード, 市場）で行う。禁止銘柄判定と対称にし、別市場の
         // 同一コード（例: 日本株 6902 と同名の米国ティッカー）の誤拒否を防ぐ（Issue #26）。
         if (isEntry
             && settings.Guard.PreventSameDayReentry
-            && intent.Market == Market.Japan
-            && effectiveProductType == ProductType.Cash
+            && AccountTypePolicy.AppliesSameDayReentry(intent.Market, effectiveProductType, accountType)
             && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);
+        }
+
+        // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。
+        // 判定は照会結果（accountType）で行う。信用口座・口座種別不明では評価しない
+        // （不明は BrokerAccountTypeUnverified が既に新規建てを止めている）。
+        if (isEntry && accountType == AccountType.Cash)
+        {
+            // 決定4-2（最重要）: **未決済資金による買付を発注前に拒否する。**
+            // GFV は違反しても即座には拒否されず（ブローカーが後から判定する）、3 回目で口座が 90 日間制限される。
+            // **不可逆な結果に対して事後の検知は統制にならない**（ADR-0021 107 行）ため、発注前に自前で防ぐ以外に手段がない。
+            //
+            // 判定は**当日の新規建て累計 ＋ 本注文**で行う。1 件ずつの比較では、決済済み資金の範囲内の注文を
+            // 複数回通して累計で超過できる（Issue #27 と同じ穴）。DailyOrderedAmount は新規建てのみを積んでおり
+            // （IADR-0130 決定4）、現金口座では新規建て＝現物買付であるため、そのまま「当日の現金の払い出し」になる。
+            // ブローカーが約定時点で現金を引き落としていれば二重計上になり得るが、**過剰拘束（発注が止まる）側**である。
+            //
+            // **決済済み資金が供給されない（null）ときも拒否する。** 「残高が分からないから通す」は統制にならない。
+            // moomoo API には決済済み資金の専用フィールドが存在しない（IADR-0153 決定4 の実測）ため、
+            // 現時点で本値の供給元は無く、現金口座の買付は常に止まる（安全側）。
+            if (intent.Side == TradeSide.Buy
+                && (observedAccount!.SettledCashInBase is not { } settledCash
+                    || snapshot.DailyOrderedAmount + intent.NotionalInBase > settledCash))
+            {
+                reasons.Add(RejectionReason.CashAccountSettlementHold);
+            }
+
+            // 決定4-3: GFV 発生回数が停止基準（2 件）に達していれば新規建てを止める（3 回目の手前で止める）。
+            // **未供給（null）でも止める**——2 件に達していないことを確認できないためである。
+            if (AccountTypePolicy.BlocksForGoodFaithViolations(observedAccount!.GoodFaithViolationCount))
+            {
+                reasons.Add(RejectionReason.GoodFaithViolationLimitReached);
+            }
         }
 
         // FR-19, IADR-0006: 相場操縦とみなされ得る発注パターンの禁止。ガード有効かつ検出器が注入された
@@ -180,9 +245,17 @@ public static class RiskEvaluator
         //
         // #332, IADR-0132 決定2: 空売りの有効・無効は**取引ガードの商品種別**（3 値）が単一情報源である。
         // 専用フラグ（旧 ShortSellSettings.Enabled）と二重に持つと設定が食い違う。
-        if (isEntry && ShortSellEvaluator.IsShortEntry(intent))
+        //
+        // #375, ADR-0021 決定5: **現金口座では ADR-0016 の全決定が適用対象外**である。株を借りられないため
+        // 空売り自体が成立せず、借株料・維持率・権利確定日といった空売り専用の拒否理由を返しても実態と食い違う。
+        // これは「空売りが無効に設定されている」（ShortSellDisabled）とは**別の状態**であり、設定ではなく
+        // **口座の能力**の問題である（同 ADR 99 行）。現金口座での空売り新規建ては ProductTypeDisabled で止まる。
+        // **口座種別が不明なら評価する**——空売り統制はそれ自体がフェイルクローズであり、省く方が緩む側になる。
+        if (isEntry
+            && ShortSellEvaluator.IsShortEntry(intent)
+            && AccountTypePolicy.AppliesShortSellControls(accountType))
         {
-            var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, ProductType.ShortSell);
+            var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, accountType, ProductType.ShortSell);
             reasons.AddRange(ShortSellEvaluator.Evaluate(
                 intent, shortSellEnabled, settings.ShortSell.Limits, snapshot.Capital, shortSellContext));
         }

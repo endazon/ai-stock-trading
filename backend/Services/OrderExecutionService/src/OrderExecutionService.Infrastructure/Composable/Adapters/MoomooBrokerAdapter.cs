@@ -20,7 +20,7 @@ internal sealed class MoomooBrokerAdapter(
     BrokerProvider provider,
     TimeProvider? timeProvider = null,
     ILogger<MoomooBrokerAdapter>? logger = null)
-    : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe
+    : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe, IBrokerAccountSource
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -118,6 +118,38 @@ internal sealed class MoomooBrokerAdapter(
     /// </summary>
     public async Task<bool> IsOperationalAsync(CancellationToken cancellationToken = default) =>
         await GetPositionsAsync(cancellationToken).ConfigureAwait(false) is not null;
+
+    /// <summary>
+    /// FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 接続している口座の状態を照会する。
+    /// <para>
+    /// 照会失敗・種別不明はいずれも <c>null</c>（＝口座種別を確認できていない）へ倒す。受け手は新規建てを止める。
+    /// <b>「不明なら信用口座」へは絶対に倒さない。</b>
+    /// </para>
+    /// <para>
+    /// <b>決済済み資金と GFV 発生回数は供給しない（null のまま）。</b> moomoo API に該当するフィールドが
+    /// 存在しないことを実測済みである（<c>TrdCommon.Funds</c> の全 40 フィールド・アセンブリ全体の走査。
+    /// IADR-0153 決定4）。供給が無い以上、現金口座では買付が止まる（安全側）。
+    /// </para>
+    /// </summary>
+    public async Task<BrokerAccountState?> GetAccountStateAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var accountType = await client.GetAccountTypeAsync(cancellationToken).ConfigureAwait(false);
+            return accountType switch
+            {
+                MoomooAccountType.Cash => new BrokerAccountState(AccountType.Cash),
+                MoomooAccountType.Margin => new BrokerAccountState(AccountType.Margin),
+                // 種別不明（TrdAccType_Unknown・未対応の口座種別）。既定へ丸めない。
+                _ => null,
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "moomoo 口座種別の照会に失敗したため不明（null）を返します。");
+            return null;
+        }
+    }
 
     internal static Market MapMarketBack(MoomooMarket market) => market switch
     {

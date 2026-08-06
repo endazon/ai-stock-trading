@@ -10,17 +10,55 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 public sealed class RiskSettingsService(
     IRiskSettingsStore store,
     ISettingsChangeLog changeLog,
-    IClock clock)
+    IClock clock,
+    IBrokerAccountObservationStore accountObservations)
 {
     public RiskManagementSettings GetCurrent() => store.GetCurrent();
 
+    /// <summary>
+    /// FR-19, UC-06, ADR-0007: 取引ガードを変更する。
+    /// <para>
+    /// #375, ADR-0021 決定4-4: <b>現金口座では信用買い・空売りを選べない。</b> 口座が対応しない商品種別を
+    /// 有効化しようとする要求は <see cref="ArgumentException"/>（HTTP 400）で拒否し、
+    /// <b>設定を一切変更せず履歴も残さない</b>——拒否された要求を履歴に積むと、実際には起きていない変更が
+    /// 監査上の事実になる（IADR-0141 / IADR-0151 決定2 と同じ規律）。
+    /// </para>
+    /// <para>
+    /// 判定は<b>ブローカーへ照会した口座種別</b>で行う（決定3）。観測が無ければ<b>制限しない</b>——
+    /// 設定の保存は発注そのものではなく、観測が無い状態で設定変更まで止めると
+    /// 「統制を厳しくする方向の変更」も道連れに止まる。**発注側は同じ状態で新規建てを止めており**
+    /// （<c>BrokerAccountTypeUnverified</c>）、安全性は発注側が担保する。
+    /// </para>
+    /// </summary>
     public void UpdateGuard(TradingGuardSettings guard, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(guard);
         RequireActorAndReason(actor, reason);
+        ThrowIfUnsupportedByAccount(guard);
 
         var current = store.GetCurrent();
         Save(current with { Guard = guard }, current.Guard, guard, SettingsChangeType.Guard, actor, reason);
+    }
+
+    // #375, ADR-0021 決定4-4/決定5: 口座が対応しない商品種別（現金口座での信用買い・空売り）の有効化を弾く。
+    // 「設定できてしまうが発注はできない」状態を作らない——計画は「**選べなくする**」と定めている。
+    private void ThrowIfUnsupportedByAccount(TradingGuardSettings guard)
+    {
+        if (accountObservations.GetCurrent() is not { } account)
+        {
+            return;
+        }
+
+        var unsupported = guard.EnabledProductTypes
+            .Where(p => !AccountTypePolicy.Supports(account.AccountType, p))
+            .ToList();
+        if (unsupported.Count > 0)
+        {
+            throw new ArgumentException(
+                $"口座種別 {account.AccountType} では商品種別 {string.Join(" / ", unsupported)} を有効にできません"
+                    + "（現金口座では株を借りられないため信用買い・空売りが成立しません。ADR-0021 決定4-4）。",
+                nameof(guard));
+        }
     }
 
     /// <summary>
