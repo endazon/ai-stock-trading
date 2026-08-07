@@ -10,7 +10,12 @@ import {
   MOVEMENT_THRESHOLD_RANGE_TEXT,
   validateMovementThresholdPercent,
 } from '../monitor/contracts';
-import { formatAt, percentTextToRatio, ratioToPercentText } from '../risk/contracts';
+import {
+  formatAt,
+  METRIC_NOT_SUPPLIED_TEXT,
+  percentTextToRatio,
+  ratioToPercentText,
+} from '../risk/contracts';
 
 // SC-01 §2, FR-13, FR-03, UC-06, #340, IADR-0155: 収集パラメータ（変動閾値）の閲覧・変更。
 //
@@ -128,7 +133,13 @@ export function CollectionSettingsForm() {
   return (
     <Section title="収集パラメータ（変動閾値・収集間隔）">
       {state === 'loading' && <p role="status">収集パラメータを確認中…</p>}
-      {state === 'unavailable' && <p role="alert">収集パラメータを取得できませんでした。</p>}
+      {/* SC-01 §2, #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つである（05_screens 共通規約）。
+          「値が無い」のではなく「確認できていない」ことを規約の文言で明示する。 */}
+      {state === 'unavailable' && (
+        <p role="alert">
+          収集パラメータを<strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>。値が無いのではなく、確認できていません。
+        </p>
+      )}
 
       {state === 'ok' && current && (
         <form onSubmit={handleSubmit} aria-label="収集パラメータの変更">
@@ -181,7 +192,8 @@ export function CollectionSettingsForm() {
         {/* `role="note"` とし `alert` にはしない。**常時表示される静的な注記**であり、
             画面の他の警告（取得失敗・入力エラー）と同じ緊急度で読ませると警告全体が軽くなる。 */}
         <p role="note">
-          <strong>収集間隔は本画面から閲覧・変更できません。</strong>
+          現在の収集間隔: <strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>。
+          <strong>本画面から閲覧・変更できません。</strong>
           現在の実装では起動時の構成値（情報収集サービス・市場監視サービスのポーリング間隔）であり、
           値を読み書きする経路がありません。変更には運用側での再構成が必要です。
         </p>

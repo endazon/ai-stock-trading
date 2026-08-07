@@ -16,6 +16,7 @@ import {
   BROKER_PROVIDER_OPTIONS,
   changeTypeLabel,
   describeLimitRange,
+  equityAmountText,
   formatAmount,
   formatAt,
   isEquityRatioField,
@@ -26,7 +27,7 @@ import {
   LIVE_ACKNOWLEDGEMENT_PHRASE,
   marketLabel,
   MARKET_OPTIONS,
-  resolveEquityAmount,
+  METRIC_NOT_SUPPLIED_TEXT,
   RISKY_PRODUCT_TYPES,
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
@@ -208,12 +209,21 @@ export function RiskSettingsPage() {
                   equity 比の項目には現在 equity での実額を併記する（割合だけでは実効額を判断できない）。
                   #364 で判定の基準通貨が USD へ移行したため、実額は**米ドル建て**であり計画 SC-02 の
                   表記例「25%（$750）」と一致する。 */}
+              {/* SC-02, #424, IADR-0162: equity が供給されていないときは規約の文言で明示する
+                  （「—」「取得できません」といった弱い表現に落とさない。05_screens 共通規約）。 */}
               <p>
                 equity 比の項目は<strong>百分率（%）で入力</strong>します（25 ＝ equity の 25%）。比率（0.25）ではありません。
                 各項目には<strong>現在の equity（
-                {riskStatus === null ? '取得できません' : formatAmount(riskStatus.capital)}
+                {riskStatus === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(riskStatus.capital)}
                 ）での実額</strong>を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。
               </p>
+              {riskStatus === null && (
+                <p role="alert">
+                  現在の equity を取得できていないため、<strong>実額を併記できません</strong>。
+                  実額が「{METRIC_NOT_SUPPLIED_TEXT}」と表示されている項目は、
+                  <strong>0 でも「該当なし」でもなく、判断材料が無い状態</strong>です。
+                </p>
+              )}
               {LIMIT_FIELD_KEYS.map((k) => (
                 <LimitField
                   key={k}
@@ -301,9 +311,11 @@ function LimitField({
   const spec = LIMIT_FIELDS[fieldKey];
   const label = `${spec.label} ${spec.unit}`;
   const error = validateLimitInput(fieldKey, value);
-  const amount = isEquityRatioField(fieldKey)
-    ? resolveEquityAmount(equity, limitInputToWire(fieldKey, value))
-    : null;
+  // SC-02, #424, IADR-0162 決定3: equity が供給されていないことを「—」で描かない（05_screens の共通規約）。
+  // 「—」は**対象なし**（入力が読めず実額が定義できない）にだけ用いる。
+  const amountText = isEquityRatioField(fieldKey)
+    ? equityAmountText(equity, limitInputToWire(fieldKey, value))
+    : '';
 
   return (
     <div>
@@ -320,10 +332,11 @@ function LimitField({
       <span id={`${fieldKey}-help`}>
         {`許容範囲: ${describeLimitRange(fieldKey)}`}
         {isEquityRatioField(fieldKey) && (
-          // equity 不明・入力が読めないときは「—」。併記できないことを黙って隠さない。
+          // equity が未供給なら「取得できていません（供給元がありません）」、入力が読めないだけなら「—」。
+          // 併記できないことを黙って隠さない。
           <>
-            {` / 現在の equity での実額: ${formatAmount(amount)}`}
-            {spec.kind === 'equityPercentPerDay' && '/日'}
+            {` / 現在の equity での実額: ${amountText}`}
+            {spec.kind === 'equityPercentPerDay' && amountText !== METRIC_NOT_SUPPLIED_TEXT && '/日'}
           </>
         )}
       </span>
