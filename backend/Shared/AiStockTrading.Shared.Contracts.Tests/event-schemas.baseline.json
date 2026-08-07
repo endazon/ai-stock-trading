@@ -52,6 +52,18 @@
     "BusinessDay": "DateOnly",
     "OccurredAt": "DateTimeOffset"
   },
+  "GoodFaithViolationRecorded": {
+    "DecisionId": "Guid",
+    "EventId": "Guid",
+    "ExecutedAt": "DateTimeOffset",
+    "Market": "Market",
+    "OccurredOn": "DateOnly",
+    "OrderId": "String",
+    "PurchaseAmountInBase": "Decimal",
+    "RecordedAt": "DateTimeOffset",
+    "SettledCashInBase": "Decimal?",
+    "Symbol": "String"
+  },
   "InformationCollected": {
     "CollectedAt": "DateTimeOffset",
     "EventId": "Guid",

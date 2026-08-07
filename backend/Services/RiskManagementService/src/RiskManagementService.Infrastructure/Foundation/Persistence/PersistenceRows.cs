@@ -377,3 +377,41 @@ internal sealed class BuyInInferenceRow
 
     public DateTimeOffset InferredAtUtc { get; set; }
 }
+
+// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166:
+// GFV 発生 1 件（自前計数）の**追記専用**の行。
+//
+// **主キーは OrderId である**（1 注文 1 件が計上単位）。部分約定の進行・メッセージ再送で二重計上しない。
+//
+// ★ 本行が数えているのは「**自らのガードをすり抜けた買付**」であり、**ブローカーが GFV と判定した件数ではない**
+//   （ADR-0025 §理由。両者が一致する保証はない）。**ガードが正しく働けば 1 行も増えない。**
+//
+// **`RejectionReason.CashAccountSettlementHold` の拒否件数を集計元にしてはならない**——同理由は
+// ガードが**働いた**記録（買付を止めた回数）であり、本行はガードが**すり抜けられた**記録である。向きが逆である。
+internal sealed class GoodFaithViolationRow
+{
+    /// <summary>ブローカの注文 ID（主キー＝計上単位）。</summary>
+    public string OrderId { get; set; } = string.Empty;
+
+    public Guid Id { get; set; }
+
+    /// <summary>相関する取引判断（発注審査の記録と突き合わせるための鍵）。</summary>
+    public Guid DecisionId { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    /// <summary>その約定の基準通貨（USD）建て金額。</summary>
+    public decimal PurchaseAmountInBase { get; set; }
+
+    /// <summary>判定に用いた決済済み資金。**null は「供給されていなかった」**（0 ではない）。</summary>
+    public decimal? SettledCashInBase { get; set; }
+
+    /// <summary>計上した取引日（米国東部時間・期間集計の単位）。</summary>
+    public DateOnly OccurredOn { get; set; }
+
+    public DateTimeOffset ExecutedAtUtc { get; set; }
+
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}

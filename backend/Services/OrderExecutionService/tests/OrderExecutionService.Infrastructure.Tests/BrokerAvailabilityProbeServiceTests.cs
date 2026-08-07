@@ -164,7 +164,7 @@ public class BrokerAvailabilityProbeServiceTests
     [Fact]
     public async Task 口座種別が判明した巡回は口座観測も発行する()
     {
-        var source = new FakeAccountSource { State = new BrokerAccountState(AccountType.Cash, 1_000m, 1) };
+        var source = new FakeAccountSource { State = new BrokerAccountState(AccountType.Cash, 1_000m) };
 
         var (published, session) = await RunOnceAsync(operational: true, accountSource: source);
 
@@ -173,7 +173,6 @@ public class BrokerAvailabilityProbeServiceTests
             m.Provider == BrokerProvider.MoomooSimulate
             && m.Account.AccountType == AccountType.Cash
             && m.Account.SettledCashInBase == 1_000m
-            && m.Account.GoodFaithViolationCount == 1
             && m.ObservedAt == Now);
     }
 

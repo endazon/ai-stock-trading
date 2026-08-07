@@ -259,6 +259,23 @@ public sealed class BuyInInferredAuditHandler(IAuditEventStore store, IClock clo
     }
 }
 
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// **未決済資金による買付（GFV 発生）の自前計数**を中央監査台帳へ記録する。
+//
+// ★ 記録しているのは「**自らのガードをすり抜けた買付**」であり、**ブローカーが GFV と判定した件数ではない**
+//   （ADR-0025 §理由。両者が一致する保証はない）。**ガードが正しく働けば 1 件も記録されない。**
+//
+// ADR-0025 が手入力を採らなかった理由の 1 つが「moomoo のアプリ表示を人が転記する経路は監査証跡（FR-11）に
+// 乗らない」ことであった。本ハンドラがその要求に応える。
+public sealed class GoodFaithViolationRecordedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(GoodFaithViolationRecorded message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小を中央監査台帳へ記録する。
 // 利用者の承認も AI も介在しない自動決済であるため、**記録が無ければ「知らないうちに建玉が減っていた」状態**に
 // なる（04_report-templates の記載理由）。日報・月報の記載もこの同じイベントから作る。

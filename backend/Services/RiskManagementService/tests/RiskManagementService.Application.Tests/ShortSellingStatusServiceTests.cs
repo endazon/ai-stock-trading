@@ -26,6 +26,7 @@ public class ShortSellingStatusServiceTests
         public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt) => true;
         public IReadOnlyList<LedgerFill> GetFills() => fills;
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;
+        public OrderIntent? FindApprovedIntent(Guid decisionId) => null;
         public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
     }
 

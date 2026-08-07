@@ -21,12 +21,13 @@ public sealed class BrokerAccountObservedHandler(
 
         observations.Record(message.Account, message.ObservedAt);
 
+        // #425, ADR-0025 決定2: GFV 発生回数は本観測に**含まれない**（ブローカーが供給できない）。
+        // 自前計数（IGoodFaithViolationStore）が別経路で供給する。
         logger.LogInformation(
-            "口座種別を観測しました: 発注先={Provider} 種別={AccountType} 決済済み資金={SettledCash} GFV回数={Gfv} 観測時刻={ObservedAt}",
+            "口座種別を観測しました: 発注先={Provider} 種別={AccountType} 決済済み資金={SettledCash} 観測時刻={ObservedAt}",
             message.Provider,
             message.Account.AccountType,
             message.Account.SettledCashInBase,
-            message.Account.GoodFaithViolationCount,
             message.ObservedAt);
     }
 }

@@ -40,9 +40,9 @@ public class BrokerAccountObservationStoreTests
         var time = new StubTimeProvider(Origin);
         var store = new InMemoryBrokerAccountObservationStore(time);
 
-        store.Record(new BrokerAccountState(AccountType.Cash, 1_000m, 1), Origin);
+        store.Record(new BrokerAccountState(AccountType.Cash, 1_000m), Origin);
 
-        store.GetCurrent().Should().Be(new BrokerAccountState(AccountType.Cash, 1_000m, 1));
+        store.GetCurrent().Should().Be(new BrokerAccountState(AccountType.Cash, 1_000m));
     }
 
     // **鮮度（IADR-0153 決定3）**: 有効期間の境界。ちょうど 30 分は有効、超えたら失効する。
@@ -88,7 +88,7 @@ public class BrokerAccountObservationStoreTests
         store.Record(new BrokerAccountState(AccountType.Margin), Origin);
 
         time.Now = Origin.AddMinutes(5);
-        store.Record(new BrokerAccountState(AccountType.Cash, 500m, 0), Origin.AddMinutes(5));
+        store.Record(new BrokerAccountState(AccountType.Cash, 500m), Origin.AddMinutes(5));
 
         store.GetCurrent()!.AccountType.Should().Be(AccountType.Cash);
     }
@@ -113,7 +113,7 @@ public class BrokerAccountObservationStoreTests
     {
         var time = new StubTimeProvider(Origin);
         var store = new InMemoryBrokerAccountObservationStore(time);
-        var observed = new BrokerAccountState(AccountType.Cash, 1_234m, 1);
+        var observed = new BrokerAccountState(AccountType.Cash, 1_234m);
         store.Record(observed, Origin);
         var builder = new PortfolioSnapshotBuilder(
             new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),

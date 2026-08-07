@@ -38,6 +38,17 @@ public interface IPortfolioLedgerStore
     PositionEffect? FindApprovedPositionEffect(Guid decisionId);
 
     /// <summary>
+    /// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: 承認済み注文の <c>Intent</c> を <c>DecisionId</c> で引く。
+    /// 相関する承認が無ければ <c>null</c>（＝不明）。
+    /// <para>
+    /// GFV の自前計数（未決済資金による買付の事後検出）は、約定イベント（<c>OrderExecuted</c>）が運ばない
+    /// **売買方向・建玉効果・銘柄・換算レート**を必要とする。承認台帳がそれらを保持しているため、ここから引く。
+    /// <b>不明（<c>null</c>）なら記録しない</b>——金額も方向も分からない約定を推測で違反として記録しない。
+    /// </para>
+    /// </summary>
+    OrderIntent? FindApprovedIntent(Guid decisionId);
+
+    /// <summary>
     /// #292, IADR-0117: 指定銘柄について「<paramref name="approvedAtOrAfter"/> 以降に承認された決済（Close）注文のうち
     /// まだ約定していない数量」の合計を返す。
     ///

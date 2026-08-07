@@ -126,9 +126,21 @@ internal sealed class MoomooBrokerAdapter(
     /// <b>「不明なら信用口座」へは絶対に倒さない。</b>
     /// </para>
     /// <para>
-    /// <b>決済済み資金と GFV 発生回数は供給しない（null のまま）。</b> moomoo API に該当するフィールドが
-    /// 存在しないことを実測済みである（<c>TrdCommon.Funds</c> の全 42 プロパティ・アセンブリ全体の走査。
-    /// IADR-0153 決定4）。供給が無い以上、現金口座では買付が止まる（安全側）。
+    /// <b>決済済み資金は供給しない（null のまま）。</b> moomoo API に該当するフィールドが存在しないことを
+    /// 実測済みである（<c>TrdCommon.Funds</c> の全 42 プロパティ・アセンブリ全体の走査。IADR-0153 決定4）。
+    /// 供給が無い以上、現金口座では買付が止まる（安全側）。
+    /// </para>
+    /// <para>
+    /// <b>推定値・代替値で埋めてはならない</b>（#425 / ADR-0025）。とりわけ「現金買付余力」は現金口座では
+    /// <b>未決済の売却代金を含む</b>のが通例であり、<b>それこそが GFV を引き起こす当の資金である。
+    /// これを分母に据えると GFV 回避ガードが GFV を許可する。</b> 出金可能額も別概念である。
+    /// 再混入は <c>scripts/check-banned-settled-cash-sources.js</c> が機械的に止める。
+    /// 導出経路（<c>TrdFlowSummary</c>）の検証は ADR-0019 の <b>PoC 項目 8</b>（期限 2026-08-31）である。
+    /// </para>
+    /// <para>
+    /// <b>GFV 発生回数は本型に載らない</b>（#425 / ADR-0025 決定2 / IADR-0166 決定2）。ブローカーが供給できず、
+    /// 計画は<b>自前で計数する</b>ことを決めた。自前計数をブローカー照会の欄へ入れると
+    /// 「ブローカーの GFV カウンタの写し」と読まれるが、<b>両者が一致する保証はない</b>。
     /// </para>
     /// </summary>
     public async Task<BrokerAccountState?> GetAccountStateAsync(CancellationToken cancellationToken = default)
