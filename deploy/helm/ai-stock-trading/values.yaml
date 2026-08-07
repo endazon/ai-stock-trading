@@ -85,8 +85,11 @@ moomoo:
 # ⚠️ 常駐モデル（IADR-0053）: OpenD は初回に**有人**のデバイス検証（画像/SMS）が要る
 #    （`kubectl -n ai-stock-trading attach -it deploy/opend` → input_pic_verify_code / input_phone_verify_code）。
 #    以降は「デバイス信頼の永続化（PVC）＋ egress IP の安定」が保てれば無人再ログインが成立する（追検証済み）。
-#    → **nodeSelector 等でノードを固定すること**（egress IP はノードの NAT 後 IP。ノードが変わると再検証が要る）。
-#    liveness を付けない・単一レプリカ・Recreate なのは、再起動を誘発しないため（自動再起動＝有人検証待ちの停止）。
+#    → **nodeSelector 等でノードを固定すること**（egress IP はノードの NAT 後 IP。ノードが変わったときに
+#      再検証が要るかは **ADR-0024 決定5-1 で未検証**であり、安全側に「要る」と想定する）。
+#    liveness を付けない・単一レプリカ・Recreate なのは、**再起動の最小化を維持する**ため（ADR-0024 決定3）と、
+#    **SPOF であることが変わらない**ため（決定4。自動再起動は復旧までの発注不可時間を無人で繰り返し得る）。
+#    ※ 旧理由「自動再起動＝有人検証待ちの停止」は ADR-0024 決定2 で否定された（IADR-0167 決定2）。
 opend:
   enabled: false
   image:

@@ -21,7 +21,8 @@ moomoo OpenAPI は **OpenD ゲートウェイの常駐が必須**（既定 `:111
 - ✅ **ビルド成功**（ベース `mcr.microsoft.com/dotnet/runtime-deps:8.0-jammy`。docker.io 認証を避けるため mcr を使用）。
 - ✅ **共有ライブラリ充足**（ダミー資格情報で起動しても `error while loading shared libraries` は出ず、OpenD が起動）。
 - 🔑 **OpenD はログイン時に検証（画像 CAPTCHA / SMS）を対話コンソール（`>>>`）で要求する**。
-  → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。これが「無人運用の成立性」の要点（ADR-0002 未決）。
+  → **k8s Deployment（TTY/stdin なし）では初回認証を完了できない**。これが「無人運用の成立性」の要点であった
+  （ADR-0002。**2026-08-07 に ADR-0024 決定1 で決着＝条件付き成立。初回のみ有人**）。
 - ✅ **実口座で認証→ログイン成功を確認**（画像 CAPTCHA `input_pic_verify_code` ＋ SMS `input_phone_verify_code`。
   権限: HK/US 株等を取得）。**コンテナ内 OpenD が moomoo に認証できることは実証済み**。
 - ✅ **規制アンケート**（`https://api.moomoo.com/v2/...`・口座で一度きり）完了後は、ログイン成功後も OpenD が
@@ -142,8 +143,9 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 - ➕ **自動再ログインの緩和例（要注意・限定条件）**: 本セッションで Deployment を再作成した際、
   永続化済みデバイス状態（PVC `/root/.com.moomoo.OpenD`）で**対話検証なしに再ログインが成立**した。
   単一ノード（Rancher Desktop）で egress IP が安定なためと考えられる。IADR-0053 の「再起動＝毎回再検証」は
-  **ノード/IP が変わらない限りにおいて緩和され得る**が、IP/セッション変化時は再検証が要る前提は維持する
-  （マルチノード/クラウドでは従来どおり有人検証を想定）。
+  **撤回された**（2026-08-07・ADR-0024 決定2。**誤りは Pod IP と egress IP の混同**）。
+  **egress IP 変更時に再検証が要るかは未検証である**（ADR-0024 決定5-1）。**安全側に有人検証を想定する**
+  （マルチノード/クラウドでは従来どおり）が、これは**実測ではなく安全側の仮定**である。
 
 ## PoC 結論（→ ADR-0002 へ plan-feedback）
 - ✅ ビルド・共有ライブラリ充足・OpenD 起動・**実口座ログイン成功**（2026-07-15）。
@@ -171,10 +173,15 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 - **資格情報の露出面**: `entrypoint.sh` は env の資格情報から `OpenD.xml` を生成する（コマンドライン引数には載せない
   ＝`ps` 露出は回避）。#132 で `umask 077` ＋ `chmod 600` を掛けた（RSA 鍵は Secret の `defaultMode: 0400`）が、
   **`OpenD.xml` はコンテナ内に平文（MD5）で存在する**ことに変わりはない。
-- **livenessProbe を意図的に付けない**: OpenD は**再起動＝対話再検証**（常駐モデル）。liveness による自動再起動は
-  再検証待ちで停止する状態を招くため付けない（ハング検知は監視＋有人対応とする）。readiness(TCP) も
-  「検証前から listen」する点に注意（probe 通過≠ログイン完了）。
+- **livenessProbe を意図的に付けない**: ~~OpenD は**再起動＝対話再検証**（常駐モデル）。liveness による自動再起動は
+  再検証待ちで停止する状態を招くため付けない~~ **【⚠️ 理由を差し替え 2026-08-07・ADR-0024】**
+  旧理由（再起動＝対話再検証）は **ADR-0024 決定2 で否定された**。**付けない結論は変えないが、根拠は次の 2 点である。**
+  (a) **再起動の最小化は維持する**（決定3。本 ADR は「再起動しても復旧できる」ことを認めるものであって
+  「再起動してよい」と言うものではない）。(b) **SPOF であること自体は変わらない**（決定4。単一インスタンスであり、
+  復旧までの発注不可時間が生じる）——liveness による自動再起動は、その不可時間を**無人で繰り返し発生させ得る**。
+  ハング検知は監視＋有人対応とする。readiness(TCP) も「検証前から listen」する点に注意（probe 通過≠ログイン完了）。
 
 ## 実験（否定結果・参考）
 `k8s/experiment-appdata.yaml` は install 側（AppData.dat）永続化でも再検証が要ることを確認した検証用（採用しない）。
+**この否定結果自体が 2026-08-07 に撤回された**（ADR-0024 決定2。Pod IP と egress IP の混同）。経緯の記録として残す。
 不要になったら `kubectl -n ai-stock-trading delete pod opend-appdata; kubectl -n ai-stock-trading delete pvc opend-state`。

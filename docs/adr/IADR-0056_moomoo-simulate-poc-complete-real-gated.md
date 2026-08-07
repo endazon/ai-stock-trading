@@ -58,6 +58,10 @@ plan_refs:
 4. **上流への環流**: ADR-0002 の Accepted 化は上流（`project-planning`）の triage に委ねる。PoC 結果・無人運用の追検証は
    plan-feedback 記録（[`feedback/20260715_adr0002-opend-unattended-limited.md`](../../feedback/20260715_adr0002-opend-unattended-limited.md)）で
    AST 側に起票済み。上流計画リポ（`project-planning`）への Issue 化は本 PR 群のマージ後に人手で行う（未完＝「環流予定」）。
+   - **【✅ 完了 2026-08-07・#426】ADR-0002 は 2026-08-01 に `Accepted` へ遷移した。** 無人運用の追検証も
+     project-planning#212 として起票され、**ADR-0024（`Accepted`）で「条件付き成立」として決着した**（質問票 第 13 回 Q2）。
+     **ただし到達までに 3 週間かかっており、その間 `Accepted` の計画 ADR に反証済みの記述が残り続けた。**
+     「マージ後に人手で行う（未完）」を放置しないことが、この遅延の再発防止である（[IADR-0167](IADR-0167_opend-unattended-restart-followup.md) §結果）。
    ADR-0002 が Accepted 化されるまでの間も、本 IADR を根拠に **SIMULATE 限定での実装・利用**を可能とする。
 
 ## 影響

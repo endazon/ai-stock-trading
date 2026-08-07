@@ -111,7 +111,8 @@ spec:
           {{- /* OpenD は TCP API（HTTP ではない）。TCP 疎通で readiness を判定する。
                  注意: OpenD は**検証前から** listen するため、probe 通過≠ログイン完了。
                  「使える」判定は attach でのログイン成功確認（常駐モデル・IADR-0053）。
-                 livenessProbe は意図的に付けない: 自動再起動は有人再検証待ちの停止を招き得る。 */}}
+                 livenessProbe は意図的に付けない: 再起動の最小化を維持し（ADR-0024 決定3）、
+                 SPOF ゆえの発注不可時間を無人で繰り返さないため（決定4）。IADR-0167 決定2。 */}}
           readinessProbe:
             tcpSocket: { port: {{ $o.apiPort }} }
             initialDelaySeconds: 20

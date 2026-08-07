@@ -192,6 +192,9 @@ BrokerAvailabilityProbeService（定期 probe）   PortfolioSnapshotBuilder
 
 `SameDayReentry` の米国株への適用拡大も**クラス A のまま**である（分類は理由コードごとであり、適用範囲の拡大では変わらない）。
 
+> **【追記 2026-08-07・#426】この差異は解消した。** 環流を計画が受理し、**ADR-0021 決定4-5 が 3 種を同名・同クラスで追認した**
+> （質問票 第 13 回 Q8-1）。以下は**本 PR 時点（2026-08-06）の記録**であり、point-in-time の記述として残す。
+>
 > **計画との差異**: ADR-0021 決定4-5 が新設を求めたのは `CashAccountSettlementHold` の **1 種のみ**である。残る 2 種は、決定3（照会失敗・食い違いで発注を止める）と決定4-3（3 回目の手前で停止）が**統制としては要求しているが拒否理由コードを与えていない**ために追加した。ADR-0016 決定10 の規律（**原因も解除条件も異なるものを畳むと監査ログが実態と食い違う**）に従う。`CashAccountSettlementHold` は T+1 の決済で解け、`GoodFaithViolationLimitReached` は違反記録の失効で解け、`BrokerAccountTypeUnverified` は照会の成功で解ける。先例は `StopOrderRequired`（#329 で実装が先行し 2026-08-04 に計画が同名で追認）である。**計画へ環流済み**（[feedback/20260806](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。
 
 ## 受け入れ基準

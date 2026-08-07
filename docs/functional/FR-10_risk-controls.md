@@ -408,8 +408,9 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 
 **3 種を 1 つに畳まないのは ADR-0016 決定10 の規律による**——解除条件が互いに異なり、畳むと監査ログ（FR-11）と
 日報・月報が実態と食い違う（「決済待ちで止まっている」「口座が使えなくなりかけている」「OpenD が落ちている」は
-運用者が採るべき行動がまったく違う）。計画が新設を明示したのは 1 種のみであり、残る 2 種は環流済み
-（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。
+運用者が採るべき行動がまったく違う）。**計画も同じ理由で 3 種を分けている**——起案時に計画が明示したのは
+1 種のみだったが、環流（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）を
+受けて **ADR-0021 決定4-5 が 2026-08-07 に 3 種を同名・同クラスで追認した**。**計画との差異は解消している。**
 
 `SameDayReentry` は現金口座で**適用範囲が米国株へ広がる**が、分類は理由コードごとであり**クラス A のまま**である。
 
