@@ -8,7 +8,8 @@ namespace AiStockTrading.RiskManagement.Domain;
 // 8 規則（ADR-0016 決定2,3,4,5,7,9・02_requirements FR-10 (1)〜(8)）:
 //   (1) 1 銘柄あたり equity の 10% 上限            → ShortExposureExceeded
 //   (2) 逆指値（ストップ注文）の同時発注必須        → StopOrderRequired
-//   (3) 借株料 年率 20% 上限／照会不可なら空売りしない → BorrowCostExceeded / BorrowUnavailable
+//   (3) **借株可否（一次ゲート）**／借株料 年率 20% 上限（残置・発火しない既知の統制）／
+//       照会不可なら空売りしない                    → BorrowUnavailable / BorrowCostExceeded
 //   (4) 維持率は 40% と規制要求の厳しい方          → MaintenanceMarginBreach
 //   (5) 株価 $5.00 未満は対象外                    → ShortPriceFloorBreach
 //   (6) 空売り比率 50% 上限                        → ShortExposureExceeded
@@ -80,18 +81,38 @@ public static class ShortSellEvaluator
 
         if (context is null)
         {
-            // ADR-0016 決定3: 借株料を事前照会できない場合は空売り自体を行わない（フェイルクローズ）。
+            // ADR-0016 決定3: 借株の可否・料率を事前照会できない場合は空売り自体を行わない（フェイルクローズ）。
             reasons.Add(RejectionReason.BorrowUnavailable);
             return reasons;
         }
 
-        // (3) 借株の可否と料率。照会不能（null）は「借りられない」として扱う。
-        if (!context.BorrowAvailable || context.BorrowRateAnnual is null)
+        // (3) 借株の可否と料率。**一次ゲートは可否（IsShortPermit）であり、料率の閾値ではない。**
+        // ADR-0016 決定3（2026-08-06 改訂）・IADR-0158・#417。
+        //
+        // 決定3 が当初前提とした「借りにくい銘柄ほど借株料が高い」は実測で成り立たなかった——借株在庫
+        // （ShortPoolRemain）が 20 倍以上開いても ShortFeeRate は一律 1.5 である。**一律料率であれば
+        // 20% の閾値は永久に超えず、その統制は何も弾かない。** 実際に危険な銘柄を弾いているのは
+        // IsShortPermit（AMC・SPCE は False / 在庫 0 / 初期証拠金率 100）である。
+        if (!context.ShortPermit)
         {
+            // **一次ゲート**: 借株が許可されていない（または照会できていない）銘柄は空売りしない。
+            // 拒否理由は既存の BorrowUnavailable（クラス A）へ写像し、**新しいコードを追加しない**
+            // ——同コードは「都度の借株需給による locate 失敗」を表し、IsShortPermit=False
+            // （借株在庫 0・Reg SHO 由来の制限）はまさにその事象である（決定3 改訂が明示）。
+            reasons.Add(RejectionReason.BorrowUnavailable);
+        }
+        else if (context.BorrowRateAnnual is null)
+        {
+            // 決定3 の**未改訂部分**: 発注前に借株料を照会できない場合、空売り自体を行わない
+            //（フェイルクローズ。改訂は一次ゲートを移しただけで、この縮退は残る）。
             reasons.Add(RejectionReason.BorrowUnavailable);
         }
         else if (context.BorrowRateAnnual > limits.BorrowRateCapAnnual)
         {
+            // **二次**: 借株料 年率 20% 上限（決定3・決定10 の BorrowCostExceeded）。
+            // **実測の情報源（moomoo の一律料率）では発火しない見込みの、既知の統制である。**
+            // それでも落とさない——料率が銘柄別になった日に無防備になるためであり、
+            // 「発火しない」ことと「無い」ことは別である（残置は決定3 改訂が明示的に指示している）。
             reasons.Add(RejectionReason.BorrowCostExceeded);
         }
 

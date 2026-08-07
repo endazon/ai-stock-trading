@@ -1,7 +1,7 @@
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-10, UC-06, ADR-0016: 空売り 1 件を判定するために、注文意図・統制設定・ポートフォリオ状態の
-// **いずれからも導けない**外部由来の入力。借株の可否と料率（ブローカー照会）・現在の維持率・
+// **いずれからも導けない**外部由来の入力。借株の可否（一次ゲート）と料率（ブローカー照会）・現在の維持率・
 // 権利確定日（コーポレートアクション）・空売り建玉のエクスポージャ・強制買戻し由来の禁止期限。
 //
 // #329 第 2 段階, IADR-0131: 本文脈が **null**（供給経路が無い）ときは空売りを**通さない**。
@@ -15,13 +15,29 @@ public record ShortSellOrderContext
     public required DateOnly Today { get; init; }
 
     /// <summary>
-    /// 借株料（年率）。**null は「事前照会できなかった」**を意味し、拒否理由 <c>BorrowUnavailable</c> となる
-    /// （ADR-0016 決定3。約定後に取得して手仕舞う案は、約定した時点で既にリスクを取っており統制にならない）。
+    /// 借株料（**年率・比率**。0.20 ＝ 年率 20%）。**null は「事前照会できなかった」**を意味し、
+    /// 拒否理由 <c>BorrowUnavailable</c> となる（ADR-0016 決定3。約定後に取得して手仕舞う案は、
+    /// 約定した時点で既にリスクを取っており統制にならない）。
+    /// <para>
+    /// FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3: **単位が確定した年率だけを与える。**
+    /// moomoo `TrdGetMarginRatio.ShortFeeRate`（実測 `1.5`）は**単位が未確定**であり、そのまま写像しては
+    /// ならない——`1.5` を年率（＝150%）と読めば上限 20% を 7.5 倍超過して**全銘柄が拒否**され、
+    /// `1.5%`（＝0.015）と読めば**何も弾かない**。同じ値が単位の読み方ひとつで正反対に振れる。
+    /// </para>
     /// </summary>
     public decimal? BorrowRateAnnual { get; init; }
 
-    /// <summary>借株の locate が成立したか（Reg SHO）。既定 false ＝ 借りられない（安全側）。</summary>
-    public bool BorrowAvailable { get; init; }
+    /// <summary>
+    /// FR-10, UC-06, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定1: **空売りの一次ゲート**——
+    /// 当該銘柄の借株が許可されているか。供給元は moomoo `TrdGetMarginRatio.IsShortPermit`
+    /// （実弾口座のヘッダでのみ取得できる。IADR-0144 決定3）である。
+    /// <para>
+    /// 既定 <c>false</c> ＝ 借りられない（安全側）。**<c>false</c> は「借株不可」と「照会できていない」の
+    /// 両方を含み、いずれも拒否理由 <c>BorrowUnavailable</c> へ写像する**（都度の借株需給による locate 失敗＝
+    /// Reg SHO 由来の制限そのものであるため。決定3 改訂が「新しいコードは追加しない」と明示した）。
+    /// </para>
+    /// </summary>
+    public bool ShortPermit { get; init; }
 
     /// <summary>
     /// 強制買戻し（buy-in）由来の空売り禁止の解除日。null は禁止なし。ADR-0016 決定4（30 日間）。

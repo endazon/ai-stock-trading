@@ -1,3 +1,4 @@
+using System.Reflection;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -75,4 +76,30 @@ public class CostCalculatorTests
         // 往復200 × 1.5 = 300。
         CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().Be(300m);
     }
+
+    // T-10-214（**否定形**）: FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——
+    // **借株料を費用計算へ流し込まない。** moomoo の `ShortFeeRate`（実測 `1.5`）は**単位が未確定**であり
+    //（年率 1.5% か比率 1.5 か）、取り違えると費用モデルが 100 倍ずれて採算判定（最小期待利益）が丸ごと狂う。
+    // 値ではなく**構造**で固定する——借株料の入口が公開面に生えた時点で赤くなり、単位が確定しないまま
+    // 接続することを「気づかないうちに」許さない（接続してよいのは単位の裁定が下りた後である）。
+    [Fact]
+    public void 借株料は費用計算の入口に存在しない()
+    {
+        var surface = PublicSurfaceNames(typeof(CostCalculator))
+            .Concat(PublicSurfaceNames(typeof(TradingAssumptions)))
+            .ToList();
+
+        surface.Should().NotContain(
+            name => name.Contains("Borrow", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("ShortFee", StringComparison.OrdinalIgnoreCase),
+            "借株料の単位が未確定である間は FR-17 の費用計算へ接続してはならない（ADR-0016 決定3 の 2026-08-06 改訂）");
+    }
+
+    // 型の公開面（メンバ名 ＋ メソッド・コンストラクタの引数名）を列挙する。
+    private static IEnumerable<string> PublicSurfaceNames(Type type) =>
+        type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .SelectMany(member => new[] { member.Name }.Concat(
+                member is MethodBase method
+                    ? method.GetParameters().Select(p => p.Name ?? string.Empty)
+                    : Enumerable.Empty<string>()));
 }

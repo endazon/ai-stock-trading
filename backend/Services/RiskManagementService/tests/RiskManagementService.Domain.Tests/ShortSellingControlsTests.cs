@@ -60,7 +60,7 @@ public class ShortSellingControlsTests
 
     private static ShortSellOrderContext Context(
         decimal? borrowRateAnnual = 0.10m,
-        bool borrowAvailable = true,
+        bool shortPermit = true,
         DateOnly? buyInBanUntil = null,
         DateOnly? dividendRecordDate = null,
         decimal? maintenanceMarginRatio = 1.00m,
@@ -74,7 +74,7 @@ public class ShortSellingControlsTests
         {
             Today = Today,
             BorrowRateAnnual = borrowRateAnnual,
-            BorrowAvailable = borrowAvailable,
+            ShortPermit = shortPermit,
             BuyInBanUntil = buyInBanUntil,
             DividendRecordDate = dividendRecordDate,
             MaintenanceMarginRatio = maintenanceMarginRatio,
@@ -365,8 +365,87 @@ public class ShortSellingControlsTests
     // 3. 否定形（統制を迂回できないこと）
     // ------------------------------------------------------------------
 
+    // T-10-210（**最重要**）: FR-10 (3), ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定1, #417
+    // ——**一次ゲートは借株可否（IsShortPermit）である。**
+    // 借株が許可されない銘柄は、**借株料が上限内であっても**空売りできない。
+    // 実測では料率が一律（在庫が 20 倍以上開いても 1.5）であり、料率の閾値では危険な銘柄を弾けない。
+    // 弾いているのは可否の側である（AMC・SPCE が IsShortPermit=False / 在庫 0）。
+    // **本判定を外すと、借株できない銘柄の空売りが素通りする。**
+    [Theory]
+    [InlineData(0.01)]  // 上限（20%）を大きく下回る料率でも通さない
+    [InlineData(0.10)]  // 既定の文脈と同じ料率
+    public void 借株が許可されない銘柄は借株料が上限内でも空売りできない(decimal borrowRateAnnual)
+    {
+        borrowRateAnnual.Should().BeLessThan(
+            Limits.BorrowRateCapAnnual,
+            "料率側の統制（BorrowCostExceeded）が働いて緑になっては、一次ゲートを検証したことにならない");
+
+        var result = Evaluate(ShortEntry(1_000m), Context(shortPermit: false, borrowRateAnnual: borrowRateAnnual));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(
+            RejectionReason.BorrowUnavailable,
+            "IsShortPermit=False（借株在庫 0・Reg SHO 由来の制限）は「都度の借株需給による locate 失敗」"
+                + "そのものであり、既存の BorrowUnavailable へ写像する（新しいコードは追加しない）");
+        // 一次ゲートの拒否は**クラス A**（統制の正常作動）であり、「統制違反 0 件」（クラス C 限定）へ
+        // 混入させない。混入させると段階昇格ゲート（FR-20）が市況由来の事象で不合格になる。
+        RejectionReasonClassification.CountsAsControlViolation(result.Reasons).Should().BeFalse();
+    }
+
+    // T-10-211: 同上の裏面——**可否と料率を混ぜない**。借株できない銘柄に「料率が高い」も併記すると、
+    // 監査ログ（FR-11）の理由が実態より多弁になり、原因（可否 or 料率）の切り分けが濁る。
+    [Fact]
+    public void 借株が許可されない銘柄の拒否理由に借株料超過は混ざらない()
+    {
+        var rate = Limits.BorrowRateCapAnnual + 0.10m; // 可否・料率のいずれもが拒否側の入力
+
+        var result = Evaluate(ShortEntry(1_000m), Context(shortPermit: false, borrowRateAnnual: rate));
+
+        result.Reasons.Should().Contain(RejectionReason.BorrowUnavailable);
+        result.Reasons.Should().NotContain(RejectionReason.BorrowCostExceeded);
+    }
+
+    // T-10-212: FR-10 (3), ADR-0016 決定3 改訂・IADR-0158 決定2 ——
+    // **20% の閾値判定は「発火しない既知の統制」として残置する。**
+    // 実測の情報源（moomoo の一律料率）では発火しない見込みだが、**「発火しない」ことと「無い」ことは別**であり、
+    // 落とすと料率が銘柄別になった日に無防備になる。**残置していることを本テストが固定する**
+    //（境界の切り替わりは「借株料上限は境界で切り替わる」が別に固定している）。
+    [Fact]
+    public void 借株料の閾値判定は発火しない既知の統制として残置される()
+    {
+        var permitted = Context(shortPermit: true, borrowRateAnnual: Limits.BorrowRateCapAnnual + 0.01m);
+
+        var result = Evaluate(ShortEntry(1_000m), permitted);
+
+        result.Reasons.Should().Contain(
+            RejectionReason.BorrowCostExceeded,
+            "一次ゲートを可否へ移した後も、上限超の料率が供給されれば閾値判定は働かなければならない");
+        RejectionReasonClassification.ClassOf(RejectionReason.BorrowCostExceeded)
+            .Should().Be(RejectionReasonClass.A);
+    }
+
+    // T-10-213: **否定形（単位の未確定）**: 実測の `ShortFeeRate = 1.5` を**そのまま年率として**写像すると、
+    // 上限 0.20 を 7.5 倍超過して**全銘柄が拒否される**——「一律料率だから閾値は発火しない」という
+    // 決定3 改訂の記述と正反対の結果になる。**同じ値が単位の読み方ひとつで「何も弾かない」から
+    // 「全部弾く」へ反転する**ため、単位が確定するまで `BorrowRateAnnual` へ写像してはならない
+    //（IADR-0158 決定3。現状は写像そのものを実装していない）。
+    [Fact]
+    public void 実測の借株料をそのまま年率として写像すると全件拒否になる()
+    {
+        const decimal observedShortFeeRate = 1.5m; // moomoo TrdGetMarginRatio.ShortFeeRate（単位未確定）
+
+        var result = Evaluate(ShortEntry(1_000m), Context(borrowRateAnnual: observedShortFeeRate));
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.BorrowCostExceeded);
+        // 1.5% の意味（0.015）なら発火しない。**読み方の違いで結論が反転する**ことを併せて固定する。
+        Evaluate(ShortEntry(1_000m), Context(borrowRateAnnual: observedShortFeeRate / 100m))
+            .Reasons.Should().NotContain(RejectionReason.BorrowCostExceeded);
+    }
+
     // FR-10 (3), ADR-0016 決定3:「発注前に借株料を照会できない場合、空売り自体を行わない」。
     // **照会できないなら通す**に倒すと、年率 100% の銘柄でも発注が通る穴が残る（フェイルクローズ）。
+    // 決定3 の 2026-08-06 改訂は**一次ゲートを可否へ移しただけ**であり、本縮退は残る。
     [Fact]
     public void 借株料を照会できないなら空売りは通らない()
     {
@@ -438,7 +517,7 @@ public class ShortSellingControlsTests
         var result = Evaluate(
             ShortEntry(1_000m),
             Context(
-                borrowAvailable: true,
+                shortPermit: true,
                 borrowRateAnnual: 0.05m,
                 buyInBanUntil: Limits.BuyInBanUntil(Today)));
 
@@ -457,7 +536,7 @@ public class ShortSellingControlsTests
     [Fact]
     public void 借株できないだけの拒否は強制買戻し禁止へ写像されない()
     {
-        var result = Evaluate(ShortEntry(1_000m), Context(borrowAvailable: false));
+        var result = Evaluate(ShortEntry(1_000m), Context(shortPermit: false));
 
         result.IsApproved.Should().BeFalse();
         result.Reasons.Should().Contain(RejectionReason.BorrowUnavailable);
