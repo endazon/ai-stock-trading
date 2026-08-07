@@ -4,6 +4,7 @@
        run-once 側の市場カレンダー（IADR-0023）で担保する（CronJob は寄り〜引け相当のみ起動）。 */ -}}
 {{- if .Values.tradingCycle.cronjob.enabled }}
 {{- $c := .Values.tradingCycle.cronjob }}
+{{- $g := .Values.global }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -28,8 +29,56 @@ spec:
           containers:
             - name: trigger
               image: {{ $c.image | quote }}
-              # run-once を叩く。休場日・費用停止は収集側でゲートされ no-op で返る（fail-safe）。
-              args: ["-fsS", "-m", "20", "-X", "POST", {{ $c.target | quote }}]
+              # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する（無認証では 401）。
+              # そこで **client_credentials でトークンを取り、Bearer を付けて叩く** 2 段にする。
+              #
+              # ⚠️ **fail-closed**: `set -eu` ＋ `curl -f` ＋ トークン空判定により、
+              #    資格情報が無い・token エンドポイントが落ちている・応答が想定外、のいずれでも
+              #    **Job が赤くなる**。**黙って無認証で通る経路は無い。**
+              # ⚠️ curlimages/curl に jq は無いため `access_token` は sed で抜く。
+              #    抜けなければ空文字列になり、直後の判定で落とす（無言で続行しない）。
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ -z "${SERVICE_AUTH_CLIENT_ID:-}" ] || [ -z "${SERVICE_AUTH_CLIENT_SECRET:-}" ]; then
+                    echo "ServiceAuth の資格情報が未設定です（ast-secrets の service-auth-client-id / -secret）。" >&2
+                    echo "run-once は認可を要するため、資格情報なしでは起動できません（#456）。" >&2
+                    exit 1
+                  fi
+                  TOKEN=$(curl -fsS -m 20 -X POST "$TOKEN_ENDPOINT" \
+                    -d grant_type=client_credentials \
+                    --data-urlencode "client_id=$SERVICE_AUTH_CLIENT_ID" \
+                    --data-urlencode "client_secret=$SERVICE_AUTH_CLIENT_SECRET" \
+                    | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+                  if [ -z "$TOKEN" ]; then
+                    echo "access_token を取得できませんでした（token エンドポイント: $TOKEN_ENDPOINT）。" >&2
+                    exit 1
+                  fi
+                  # 休場日・費用停止は収集側でゲートされ no-op で返る（fail-safe）。
+                  exec curl -fsS -m 20 -X POST -H "Authorization: Bearer $TOKEN" "$TARGET"
+              env:
+                - name: TARGET
+                  value: {{ $c.target | quote }}
+                {{- /* #456: token エンドポイントは **global.authAuthority から導出する**。
+                       values にリテラルを置くと authAuthority を --set で変えても追随せず、
+                       **他サービスだけレルムを移り、CronJob だけ古い Keycloak を叩き続ける**。
+                       その状態では token 取得が必ず失敗し、fail-closed により Job は赤くなる——
+                       止まるので危険側ではないが、**「認可を掛けた」という前提は静かに空振りする**。
+                       deployment.yaml の Notifications__Discord__OwnerAuth__TokenEndpoint（#226 /
+                       IADR-0098）と**同じ導出**に揃える。 */}}
+                - name: TOKEN_ENDPOINT
+                  value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
+                - name: SERVICE_AUTH_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $c.serviceAuthSecretName | quote }}
+                      key: service-auth-client-id
+                - name: SERVICE_AUTH_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $c.serviceAuthSecretName | quote }}
+                      key: service-auth-client-secret
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }

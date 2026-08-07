@@ -45,6 +45,13 @@ tradingCycle:
     # 収集の run-once を叩く軽量イメージ（#121 実装後に有効化）。
     image: curlimages/curl:8.11.1
     target: http://information-collection-service:8080/internal/collection/run-once
+    # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する。CronJob は
+    # client_credentials でトークンを取ってから叩く。**資格情報が無ければ Job は赤くなる**
+    # （無認証で通る経路は無い＝fail-closed）。
+    # tokenEndpoint はここに置かない。global.authAuthority から cronjob.yaml が導出する
+    # （リテラルを置くと --set global.authAuthority=... に追随せず、CronJob だけ別レルムを叩く）。
+    # service-auth-client-id / service-auth-client-secret を持つ Secret（他サービスの s2s と同じもの）。
+    serviceAuthSecretName: ast-secrets
 
 # FR-05, #267, IADR-0111: ブローカ階層の**単一スイッチ**。運用の本番近接順は
 #   paper（内蔵擬似・実発注しない） ＜ moomoo-sim（OpenD 経由 SIMULATE） ＜ moomoo-live（実弾）。

@@ -34,7 +34,7 @@ plan_refs:
 >
 > ⚠️ **「対象外」は「担保されている」を意味しない。** 誰が担保するのかを同じ行に書いてある。
 
-**本書は 2026-08-07（`677f2d6`）時点の実測である。** 実装が動けば陳腐化するが、**それを検知する機械検査は無い**（IADR-0175 §悪い影響）。
+**本書は 2026-08-07 時点の実測である**（初版 `677f2d6`／T-2 は #456 で解消したため更新済み）。 実装が動けば陳腐化するが、**それを検知する機械検査は無い**（IADR-0175 §悪い影響）。
 
 ## MCP（外部 AI エージェント）への公開
 
@@ -136,7 +136,7 @@ plan_refs:
 | **保存時暗号化** | PostgreSQL（監査証跡・業務台帳・設定） | **未確認** —— 本リポジトリのコードにも Helm チャートにも記述が無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。ディスク暗号化の有無は Hetzner k3s の構築時に決まる |
 | **通信時暗号化（クラスタ内）** | サービス間 HTTP・PostgreSQL・RabbitMQ | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。`UseHttpsRedirection` は無く、接続文字列に `sslmode` 指定も無い。Service はすべて **ClusterIP** であり、**クラスタ内は平文**である |
 | **通信時暗号化（外部公開）** | — | **対象外**。**本チャートは Ingress を持たない**（`deploy/helm/ai-stock-trading/templates/` に Ingress テンプレートが存在しない）。TLS 終端は基盤側の管掌（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
-| **ネットワーク分離** | Pod 間通信 | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。**NetworkPolicy テンプレートが無い**。名前空間内からは全 Pod が相互に到達できる。**これが T-2（無認証の内部エンドポイント）の唯一の緩和を無効にしている** |
+| **ネットワーク分離** | Pod 間通信 | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。**NetworkPolicy テンプレートが無い**。名前空間内からは全 Pod が相互に到達できる。**#456 以前は、これが T-2 の唯一の緩和を無効にしていた** —— 現在は T-2 側がアプリの認可で閉じたため、本項が単独で危険を作ることは無くなった（他の平文経路の露出は残る） |
 | **通信時暗号化（外部 API）** | FRED / Finnhub / SEC EDGAR / EDINET / Stooq / 日銀 / Discord | ✅ **すべて HTTPS**（実測: `api.stlouisfed.org`・`fred.stlouisfed.org`・`finnhub.io`・`data.sec.gov`・`www.sec.gov`・`api.edinet-fsa.go.jp`・`stooq.com`・`www.stat-search.boj.or.jp`・`discord.com`） |
 | **通信時暗号化（LLM ゲートウェイ）** | 基盤の LLM ゲートウェイ | **本番は未結線**（`values.yaml:338,381` の `LlmGateway__BaseUrl` は**空文字列**＝Placeholder LLM・**呼ばない**ため、現状プロンプトは流れていない）。🔴 **ローカル（経路B）では平文 HTTP** —— `values-local.yaml:120,151` が `http://llmgateway-service.microservices-platform:8080` を実値で設定している。**本番結線時に同じ書式を使えば平文になる**（`values.yaml:380` のコメント例がその書式である）。流れる中身は**プロンプトと LLM 応答＝判断根拠・保有銘柄**であり、**基盤の名前空間を跨ぐ**ため露出面は上記「クラスタ内」より広い。**結線時の TLS はインフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
 | **個人情報** | — | **本システムは単独利用者運用であり、第三者の個人情報を扱わない**（[IADR-0011](../adr/IADR-0011_foundation-min-port.md)：認可は単層） |
@@ -187,8 +187,8 @@ plan_refs:
 | ID | 脅威 | 影響 | 対策 |
 | --- | --- | --- | --- |
 | T-1 | **取引データが外部 AI エージェントへ流出する** | 建玉・発注履歴・判断根拠の第三者流出 | ✅ **MCP へ公開しない**（ADR-0012）。`McpExposureNotDeclaredTests` が `backend/` と `deploy/` を走査し、**宣言が入り込むとテストが落ちる**（[IADR-0171](../adr/IADR-0171_mcp-non-exposure-structural-guard.md)）。上記「MCP への公開」節を参照 |
-| T-2 | **無認証の内部エンドポイントを踏まれ、収集サイクルを任意に起動される** | LLM 費用の消費・レート制限の枯渇（**発注はしない**。判断は下流の統制を通る） | 🔴 **未対策**。`POST /internal/collection/run-once` は認証を要求しない。**緩和は「Ingress が無く Service が ClusterIP であること」のみ**であり、**NetworkPolicy が無いため名前空間内からは誰でも到達できる**。起票: [#456](https://github.com/endazon/ai-stock-trading/issues/456) |
-| T-3 | **JWT の検証が緩く、別クライアント向けトークンが通る** | 認可の迂回 | 🔴 **既知の緩さ**。`RequireHttpsMetadata = false`（メタデータ取得が平文 HTTP を許す）・`ValidateAudience = false`（**aud を検証しない**）。単独利用者・クラスタ内前提の設定であり、**外部公開時には成立しない**。起票: [#456](https://github.com/endazon/ai-stock-trading/issues/456) |
+| T-2 | **無認証の内部エンドポイントを踏まれ、収集サイクルを任意に起動される** | LLM 費用の消費・レート制限の枯渇（**発注はしない**。判断は下流の統制を通る） | ✅ **対策済み**（[#456](https://github.com/endazon/ai-stock-trading/issues/456) / [IADR-0176](../adr/IADR-0176_run-once-authorization-and-cronjob-token.md)）。`POST /internal/collection/run-once` は **`OwnerOrService`** を要求する。**渡しているのは「サイクルを起こす権限」であって「発注する権限」ではない**（決定1）。CronJob は **client_credentials でトークンを取ってから**叩き、**資格情報が無い・token 取得に失敗した場合は Job が赤くなる**（fail-closed・決定2）。**退行は構造テストが止める** —— `UnauthenticatedEndpointsNotAllowedTests` が**認可メタデータを持たないエンドポイントを許可リスト以外に許さない**（決定4） |
+| T-3 | **JWT の検証が緩く、別クライアント向けトークンが通る** | 認可の迂回 | 🔴 **未対策（判断済み・値は据え置き）**。`RequireHttpsMetadata = false`（メタデータ取得が平文 HTTP を許す）・`ValidateAudience = false`（**aud を検証しない**）。**基盤（microservices-platform）の Keycloak クライアント構成と揃っている必要があり、片側だけ厳しくすると全サービスが 401 になる**ため据え置いた（[IADR-0176](../adr/IADR-0176_run-once-authorization-and-cronjob-token.md) 決定3）。**再判断する条件**: ①Ingress が入り外部から到達可能になる ②マルチテナント化する ③基盤側の構成が確認できるようになる。担当: [#24](https://github.com/endazon/ai-stock-trading/issues/24) |
 | T-4 | **収集した外部テキストが LLM への指示として作用する**（プロンプトインジェクション） | AI が意図しない判断・発注を行う | ✅ **RAG 取得文脈を「データ」として構造分離し、出典で限定する**（[IADR-0169](../adr/IADR-0169_rag-context-injection-defense.md)）。文脈は**参考情報として本判断プロンプトのみ**に注入し、**既定 no-op・取得失敗は文脈なしへ縮退**する（[IADR-0072](../adr/IADR-0072_rag-trade-decision-context.md)） |
 | T-5 | **AI の暴走・誤判断が実弾の発注になる** | 実損 | ✅ **多重。** 実弾 triple-latch（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md)）／ブローカー階層の閂 0〜4（[IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）／**アダプタは `TrdEnv_Simulate` 固定**（`Mode=Live` でも SIMULATE を用いる）／`BrokerFactory` の安全既定はペーパー／kill switch は `OwnerOnly` |
 | T-6 | **設定で統制を実質無効化される** | ガードの空洞化 | ✅ **構造クランプ。** 保持期間は**下限** 7 日（[IADR-0059](../adr/IADR-0059_dedupe-retention-purge.md)）、為替の鮮度上限は**上限** 30 日（[IADR-0174](../adr/IADR-0174_fx-freshness-warning-and-hard-limit.md)）。**設定値ではなく構造で担保する** |
@@ -206,13 +206,13 @@ plan_refs:
 | 2 | **TLS 終端位置・Ingress・NetworkPolicy**（**未実装**） | [#24](https://github.com/endazon/ai-stock-trading/issues/24) |
 | 3 | **Vault 化**（受け口のみ。**実弾解禁の前提が未充足**） | [#24](https://github.com/endazon/ai-stock-trading/issues/24) |
 | 4 | **監査証跡の 7 年保持の担保**（**未実装**） | [#346](https://github.com/endazon/ai-stock-trading/issues/346) |
-| 5 | **`/internal/collection/run-once` の無認証**・**JWT の `ValidateAudience=false` / `RequireHttpsMetadata=false`** | [#456](https://github.com/endazon/ai-stock-trading/issues/456) |
+| 5 | **JWT の `ValidateAudience=false` / `RequireHttpsMetadata=false`**（**判断済み・値は据え置き**。再判断の条件は T-3 と [IADR-0176](../adr/IADR-0176_run-once-authorization-and-cronjob-token.md) 決定3）。**`/internal/collection/run-once` の無認証は #456 で解消した** | [#24](https://github.com/endazon/ai-stock-trading/issues/24) |
 | 6 | **秘密情報のローテーション手順**（**未実装**。同期間隔とは別物） | [#24](https://github.com/endazon/ai-stock-trading/issues/24) |
 | 7 | **基盤 MCP 再実装後の結合確認**（本リポジトリのテストは基盤側の許可リストを見ない） | [`blocked-tasks.md`](../blocked-tasks.md) A-10 |
 
 ## 関連
 
-- 実装 ADR: [IADR-0175](../adr/IADR-0175_security-spec-absence-notation.md)（**本書の書き分けの規約**）／[IADR-0171](../adr/IADR-0171_mcp-non-exposure-structural-guard.md)（MCP 非公開）／[IADR-0011](../adr/IADR-0011_foundation-min-port.md)・[IADR-0051](../adr/IADR-0051_service-to-service-auth.md)（認証・認可）／[IADR-0062](../adr/IADR-0062_discord-bot-gateway-and-authorization.md)（Discord 多層認可）／[IADR-0169](../adr/IADR-0169_rag-context-injection-defense.md)（プロンプトインジェクション）
+- 実装 ADR: [IADR-0176](../adr/IADR-0176_run-once-authorization-and-cronjob-token.md)（**run-once の認可・CronJob のトークン・無認証経路の構造固定**）／[IADR-0175](../adr/IADR-0175_security-spec-absence-notation.md)（**本書の書き分けの規約**）／[IADR-0171](../adr/IADR-0171_mcp-non-exposure-structural-guard.md)（MCP 非公開）／[IADR-0011](../adr/IADR-0011_foundation-min-port.md)・[IADR-0051](../adr/IADR-0051_service-to-service-auth.md)（認証・認可）／[IADR-0062](../adr/IADR-0062_discord-bot-gateway-and-authorization.md)（Discord 多層認可）／[IADR-0169](../adr/IADR-0169_rag-context-injection-defense.md)（プロンプトインジェクション）
 - 運用仕様書: [operations.md](../operations/operations.md)（データ保持・パージ／トラブルシュート）
 - 運用 Runbook: [banned-symbol-unlock-runbook.md](../operations/banned-symbol-unlock-runbook.md)（統制の一時解除と監査への記録）
 - 作業仕様書: [20260807_450_security-spec-from-measurement](../specs/20260807_450_security-spec-from-measurement.md)
