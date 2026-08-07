@@ -319,6 +319,22 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 
 **未了の帰結**: **本番相当環境（Hetzner）での無人運用は保証されない。** ローカル単一ノードでの成立（実測済み）を本番へ外挿しない。[IADR-0053](adr/IADR-0053_moomoo-opend-dockerization.md) を `Proposed` に据え置く唯一の理由が 2 である（[IADR-0167](adr/IADR-0167_opend-unattended-restart-followup.md) 決定1）。
 
+### A-10. 🆕 MCP 非公開の**結合確認**（基盤 MCP の再実装待ち・2026-08-07 登録）
+
+計画 [ADR-0012](../planning/projects/ai-stock-trading/07_adr/ADR-0012_mcp-exposure-policy.md)（`Accepted`）は取引報告書・判断根拠・収集情報を MCP 公開許可リストに**含めない**と定めた。[#348](https://github.com/endazon/ai-stock-trading/issues/348) はこれを「構成とテストの両方で担保する」ことを求めている。
+
+**AST 側でできることは実施した**（[IADR-0171](adr/IADR-0171_mcp-non-exposure-structural-guard.md)）。**残るのは結合確認だけであり、これは基盤 MCP が存在しないと書けない。**
+
+| 項目 | 内容 |
+| --- | --- |
+| 何を待っているか | 基盤 MCP サーバーの再実装（**microservices-platform#445**）。宣言的公開構成が作り直される |
+| なぜ AI にできないか | **相手が存在しない。** 基盤リポジトリの実装と、実際に起動した MCP サーバーの両方が要る |
+| 実施済み（本リポジトリ内） | `McpExposureNotDeclaredTests` が `backend/` `deploy/` を走査し、**MCP 公開の宣言が入ると落ちる**（着手時点の実測: 0 件） |
+| **未了で残るもの** | **MCP ツール一覧・検索・文書取得のいずれの経路でも AST の報告書・判断根拠が返らないこと**の結合テスト（サービスアカウント・有人クライアントの双方から） |
+| 追跡 | #348（本項の実施後にクローズ）／ platform#445 |
+
+**未了の帰結**: **本リポジトリのテストは基盤側の許可リストを見ていない。** 基盤側の PR で AST の文書コレクションが公開対象へ追加された場合、**AST の CI は緑のまま統制が破れる**。ADR-0012 §結果 のフォローアップ（構成情報 API / SC-11 のドリフト検出で監視）は**まだ実装されていない**。
+
 ---
 
 ## B. 権限・人間の判断が要るもの
