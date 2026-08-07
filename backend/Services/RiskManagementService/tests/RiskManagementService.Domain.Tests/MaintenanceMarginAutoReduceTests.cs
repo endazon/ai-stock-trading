@@ -266,7 +266,7 @@ public class MaintenanceMarginAutoReduceTests
         {
             Today = new DateOnly(2026, 8, 4),
             BorrowRateAnnual = 0.05m,
-            BorrowAvailable = true,
+            ShortPermit = true,
             MaintenanceMarginRatio = null, // 報告しない
             TotalShortExposure = 10_000m,
             TotalExposure = 100_000m,

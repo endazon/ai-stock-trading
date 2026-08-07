@@ -1,3 +1,4 @@
+using System.Reflection;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -49,5 +50,27 @@ public class BacktestCostModelTests
     {
         // 手数料 10000*0.001=10 ＋ スリッページ 5 = 15（為替スプレッドなし）。
         Model.OneWayCost(Market.UnitedStates, 10_000m, CostSensitivity.Baseline).Should().Be(15m);
+    }
+
+    // T-15-69（**否定形**）: FR-15, FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——
+    // **借株料をバックテストの費用モデルへ流し込まない。** moomoo の `ShortFeeRate`（実測 `1.5`）は
+    // **単位が未確定**であり、取り違えると費用が 100 倍ずれて Stage 0 の合格判定（コスト 2 倍でも期待値が正）が
+    // 意味を失う。ADR-0016 決定14 はバックテストへ借株料を織り込むと定めているが、**織り込む値の単位が
+    // 決まっていない**ため、単位の裁定が下りるまで接続しない（本テストが接続を検知して赤くする）。
+    [Fact]
+    public void 借株料は費用モデルの入口に存在しない()
+    {
+        var surface = typeof(BacktestCostModel)
+            .GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .SelectMany(member => new[] { member.Name }.Concat(
+                member is MethodBase method
+                    ? method.GetParameters().Select(p => p.Name ?? string.Empty)
+                    : Enumerable.Empty<string>()))
+            .ToList();
+
+        surface.Should().NotContain(
+            name => name.Contains("Borrow", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("ShortFee", StringComparison.OrdinalIgnoreCase),
+            "借株料の単位が未確定である間は費用モデルへ接続してはならない（ADR-0016 決定3 の 2026-08-06 改訂）");
     }
 }
