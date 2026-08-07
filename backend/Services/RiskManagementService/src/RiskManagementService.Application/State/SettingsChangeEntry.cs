@@ -28,4 +28,9 @@ public enum SettingsChangeType
     // **末尾へ追加する**（序数 7）。本 enum は HTTP 応答で整数として往来し、画面が数値→ラベルへ写像するため、
     // 既存メンバの間へ挿入すると過去の履歴行の種別表示が黙って変わる（IADR-0134 決定2 と同じ規律）。
     BrokerProviderChanged,
+
+    // FR-20, FR-13, SC-02, #423, IADR-0165 決定4: Stage 1 の最小取引件数（§4.1 条件 3）の変更。
+    // 裁定は「下げた事実が記録に残ることを担保する」と定めており、**履歴に残ること自体が要求である**。
+    // **末尾へ追加する**（序数 8）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
+    Stage1MinimumTradeCountChanged,
 }

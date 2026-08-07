@@ -164,6 +164,23 @@ internal sealed class HttpStageGateController(
             FormatWithdrawal(v.Withdrawal),
         };
 
+        // AST #423, FR-20, SC-02, 06_daytrading-review §4.1 条件 3・§4.3, IADR-0165 決定6:
+        // Stage 1 の最小取引件数が**統計的根拠（100 件）を下回る設定**なら警告を出す。
+        //
+        // 計画は「**画面と昇格承認の双方**に警告を常時表示する」と定める。Discord は昇格承認の窓口であり
+        // （`/stage promote`）、承認者が読むのは本 `/stage status` である。
+        //
+        // **判定はサーバ（Risk）が `belowStatisticalBasis` で宣言したものに従う**——閾値 100 をここに
+        // 写経すると、計画が値を変えたときにこの 1 か所だけが古いままになる。
+        // 応答が本項目を持たない（旧版サーバ）場合は警告を出さない（null＝宣言が無い）。
+        if (v.Stage1Criteria is { BelowStatisticalBasis: true } criteria)
+        {
+            lines.Add(
+                $"⚠ Stage 1 の最小取引件数が {criteria.MinimumTradeCount} 件に設定されています"
+                + "（既定 100 件）。**統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。**"
+                + "100 件未満では勝率・平均損益の推定分散が大きく、条件 3 の目的を満たしません。");
+        }
+
         var history = v.History ?? [];
         if (history.Count > 0)
         {
@@ -273,7 +290,18 @@ internal sealed class HttpStageGateController(
         StageSettingsView CurrentSettings,
         IReadOnlyList<StageTransitionView>? History,
         PromotionAssessmentView Promotion,
-        WithdrawalAssessmentView Withdrawal);
+        WithdrawalAssessmentView Withdrawal,
+        // AST #423: Stage 1 の合格条件の閾値（実効値）。nullable＝本項目を返さない旧版 Risk への耐性。
+        Stage1GateCriteriaView? Stage1Criteria = null);
+
+    // AST #423, FR-20, SC-02, IADR-0165 決定6: Stage 1 の合格条件の閾値。
+    // `BelowStatisticalBasis` は**サーバ（Risk）が宣言する**「100 件未満の設定であるか」であり、
+    // 本アダプタは判定せず表示するだけである（閾値を写経しない）。
+    internal sealed record Stage1GateCriteriaView(
+        int TargetTradingDays,
+        int MinimumTradeCount,
+        int MaximumTradingDays,
+        bool BelowStatisticalBasis);
 
     // FR-20, #333: 発注可能額は**総資金比**で往来する（Stage 2 ＝ 0.30）。固定額ではない。
     internal sealed record StageSettingsView(int Stage, int Mode, decimal CapitalCapRatio);
