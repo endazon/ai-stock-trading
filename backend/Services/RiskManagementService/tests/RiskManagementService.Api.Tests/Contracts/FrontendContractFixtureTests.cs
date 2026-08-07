@@ -94,9 +94,14 @@ public class FrontendContractFixtureTests
     // FR-10, SC-03, ADR-0016 決定3/7/9/15, #340, IADR-0154: GET /risk-controls/short-selling（空売りの現況）。
     //
     // **本フィクスチャが固定するのは値ではなく「供給が無いという宣言」である。**
-    // 既定構成（UnavailableMaintenanceMarginSnapshotSource）では維持率・借株料の累計・自動縮小の発動履歴の
-    // いずれも供給されず、応答は `MetricAvailability.NotSupplied`（＝1）を返す。ここが `0`（Available）や
-    // `2`（NotApplicable）へ黙って変われば本テストが落ちる。
+    // 既定構成（UnavailableMaintenanceMarginSnapshotSource）では維持率・借株料の累計・自動縮小の発動履歴・
+    // **強制買戻しの発生回数**（#424・IADR-0162）のいずれも供給されず、応答は
+    // `MetricAvailability.NotSupplied`（＝1）を返す。ここが `0`（Available）や `2`（NotApplicable）へ
+    // 黙って変われば本テストが落ちる。
+    //
+    // **「供給可否はサーバ側が宣言する」ことそのものを本フィクスチャが担保する**（05_screens 2026-08-07）。
+    // 応答から `*Availability` が消える・フロントが値の中身（0 かどうか）から推測する形へ戻る、のいずれも
+    // 本テストとフロントの `npm run typecheck` の**両方**を通らないと成立しない。
     //
     // 供給元が入って `Available` を返すようになった場合も本テストは落ちる。**それが正しい**——
     // 供給の有無が変わったなら、画面（SC-03）と blocked-tasks の記述を同じ PR で追随させる必要がある。

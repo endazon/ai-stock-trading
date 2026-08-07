@@ -10,14 +10,22 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 // OrderApproved / OrderRejected を生成する。判定コア RiskEvaluator（ステートレス）に、ホストが保持する
 // ロックアウト状態（IADR-0008）を合成する。日次損失上限の新規到達でロックアウトを設定し、含み損が回復しても
 // 当日中（翌営業日の解除まで）は新規建てを止め続ける。手仕舞い（Close）はフェイルセーフで常に通す。
+//
+// FR-10, #428, IADR-0163 決定2: **推定台帳（buyInInferences）は必須依存である。**
+// 省略可能引数（既定 `null`）で受けていると、`Program.cs` から引数を削っても**コンパイルが通りテストは
+// 全緑のまま強制買戻し由来の 30 日禁止だけが静かに効かなくなる**（既存テストは本サービスを直接構築するため
+// 配線の消失を検知しない）。**不在が統制の無効を意味する依存は必須にする**——同じ規律で
+// `BrokerPositionsObservedHandler` は既に依存を必須にしている（IADR-0159）。
+// **`patternDetector` は省略可能のままである**——「検出器を構成していない」は正当な状態であり、
+// `null` の意味が違う（推定台帳の `null` は「30 日禁止が効かない」を意味する）。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
     ILockoutStore lockoutStore,
     IClock clock,
     IBusinessCalendar businessCalendar,
-    IManipulativeOrderPatternDetector? patternDetector = null,
-    IBuyInInferenceStore? buyInInferences = null)
+    IBuyInInferenceStore buyInInferences,
+    IManipulativeOrderPatternDetector? patternDetector = null)
 {
     public ScreeningOutcome Screen(TradeDecisionMade decision)
     {
@@ -32,9 +40,8 @@ public sealed class OrderScreeningService(
         // 強制買戻し由来の 30 日禁止を判定コアへ供給する。**借株照会の供給元が無いため空売り文脈
         // （ShortSellOrderContext）は今も組めない**が、禁止期限だけは推定台帳から供給できる。
         // 供給できない値（維持率・エクスポージャ）を 0 で埋めた偽の文脈は作らない（値を発明しない）。
-        var buyInBan = buyInInferences is null
-            ? null
-            : new BuyInBanSupply(clock.Today, buyInInferences.GetBanUntil(intent.Symbol, intent.Market));
+        // #428, IADR-0163 決定2: 台帳は必須依存であり、供給は**常に**組む（禁止が無ければ BanUntil が null）。
+        var buyInBan = new BuyInBanSupply(clock.Today, buyInInferences.GetBanUntil(intent.Symbol, intent.Market));
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
         var result = RiskEvaluator.Evaluate(intent, settings, snapshot, patternDetector, buyInBan: buyInBan);

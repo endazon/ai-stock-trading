@@ -257,7 +257,18 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
     mockBff({ settings: 'fail', history: 'fail' });
     render(<RiskSettingsPage />);
 
-    expect(await screen.findByText('市場監視パラメータを取得できませんでした。')).toBeInTheDocument();
+    // #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で示す。
+    // 文言は `<strong>` を挟んで複数のテキストノードへ分かれるため、要素の textContent で検証する。
+    // **リテラルで固定する**（定数を参照すると定数を書き換えたときにテストが追随し退行を検知できない）。
+    // `role="alert"` のうち本節のものを取る。素の文字列一致では `確認中…`（`role="status"`）を、
+    // 素の `findByRole('alert')` では `paper` 稼働中の警告バナーを拾ってしまう。
+    const alerts = await screen.findAllByRole('alert');
+    const unavailable = alerts.find((el) => el.textContent?.startsWith('市場監視パラメータを'));
+    expect(unavailable).toBeDefined();
+    expect(unavailable).toHaveTextContent('取得できていません（供給元がありません）');
+    expect(unavailable).toHaveTextContent('値が無いのではなく、確認できていません。');
+    // **否定形**: 「—」や「0」で「値が無い」ように弱めない。
+    expect(unavailable).not.toHaveTextContent('市場監視パラメータを—');
     // リスク上限（RiskManagementService 由来）は独立して表示される。
     expect(screen.getByRole('form', { name: 'リスク上限の変更' })).toBeInTheDocument();
   });

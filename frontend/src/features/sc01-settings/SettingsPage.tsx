@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
+import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { useBrokerProvider } from '../shared/paperMode';
 
@@ -267,8 +268,17 @@ export function SettingsPage() {
       {status === 'ok' && current && form && (
         <>
           <p>{`現在のバージョン: ${current.version}`}</p>
+          {/* SC-01 §1, #424, IADR-0162 決定4: **供給可否はサーバが宣言する。**
+              `isResolved`（＝`Version > 0`）は ConfigurationService 由来の値を一度でも解決できたかを
+              サーバが宣言したものであり、画面はそれに従う（値の中身から推測しない）。
+              未解決のとき表示しているのは**組み込みの既定値であって権威値ではない**——「取得できている値」と
+              同じ見た目で出すと、利用者は画面の数字が実際の運用値だと信じてしまう（05_screens 共通規約）。 */}
           {!current.isResolved && (
-            <p role="alert">設定サービスの値を解決できていません（既定値を表示しています）。</p>
+            <p role="alert">
+              全体前提条件を<strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>。
+              以下に表示しているのは<strong>組み込みの既定値であり、実際に適用されている値ではありません</strong>
+              （設定サービスの値を一度も解決できていません）。
+            </p>
           )}
 
           <form onSubmit={handleSubmit} aria-label="全体前提条件の変更">

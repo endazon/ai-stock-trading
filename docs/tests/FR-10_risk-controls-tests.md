@@ -2,7 +2,7 @@
 title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
-related_ids: [FR-10, FR-15, FR-17, FR-19, FR-20, UC-06, ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0158, IADR-0159, IADR-0160]
+related_ids: [FR-10, FR-15, FR-17, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06, ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163]
 author: endazon (with Claude Code)
 created: 2026-08-04
 updated: 2026-08-07
@@ -23,6 +23,8 @@ related_specs:
   - ../specs/20260807_420_maintenance-margin-threshold-account-wide.md
   - ../specs/20260807_417_short-sell-borrow-permit-gate.md
   - ../specs/20260807_419_buy-in-post-hoc-inference.md
+  - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
+  - ../specs/20260807_424_unsupplied-metric-display-convention.md
   - ./README.md
   - ./FR-10_risk-guard-core-tests.md
 ---
@@ -56,6 +58,17 @@ related_specs:
 > **T-10-148 / T-10-165（30 日禁止の判定）は変更していない**——決定4 改訂は禁止期間と `BuyInBanned` を
 > 「変更しない」と明示している（[IADR-0159](../adr/IADR-0159_buy-in-post-hoc-inference.md)）。
 >
+> **#424 による追記（2026-08-07）**: 計画 05_screens「供給が無い値の表示規約（共通・2026-08-07 追加）」を
+> 全画面（SC-01 / SC-02 / SC-03）へ適用したことに伴い、**T-10-257〜266 を追加**した（供給が無い値の宣言・
+> 正当な 0 の描画・「—」と未供給の分離・サーバ宣言の固定）。**既存の写像は変更していない**
+> （[IADR-0162](../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md)）。
+>
+> **#428 による追記（2026-08-07）**: 推定台帳（`IBuyInInferenceStore`）の `OrderScreeningService` への配線を
+> **必須引数**にしたことに伴い、**T-10-267 を追加**した（配線を削るとビルドが落ちる／省略可能へ逆戻りしない）。
+> **既存の写像は変更していない**（[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定2）。
+> 本項は当初 `T-10-257` を採番していたが、**先にマージされた #424 が同番号を使用していた**ため
+> **先着尊重で `T-10-267` へ改番した**。
+
 > **#374 による追記（2026-08-04）**: 計画 ADR-0016 決定10 が拒否理由を **7 種 → 9 種**へ改訂した
 > （`StopOrderRequired` の追認・`BuyInBanned` の新設）ことに伴い、T-10-148 / T-10-155 の写像先を
 > 更新し、**写像の再統合を塞ぐ否定形 T-10-172〜175 を追加**した。以降、本書で「拒否理由 7 種」と
@@ -434,6 +447,52 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-244 | 推定した禁止が**発注審査に効く**（#374 の `BuyInBanned` が初めて発動し得る状態になった） | `推定した銘柄の新規空売りは発注審査で拒否される`（`BuyInInferenceTests`） |
 | T-10-245 | 推定が無い銘柄には立たない（対照） | `推定が無い銘柄には強制買戻しの拒否理由が立たない` |
 | T-10-246 | 観測から**イベントが発行され禁止が永続化される**（結線） | `説明できない空売り建玉の消失から強制買戻しを推定して発行する`（`BrokerPositionsObservedConsumerTests`） |
+
+### 5. 推定台帳の配線の退行検知（#428・[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定2）
+
+> `OrderScreeningService` は推定台帳を**省略可能引数（既定 `null`）**で受けていた。本番配線
+> （`Program.cs`）は正しいが、**その引数を削ってもコンパイルが通り、テストは全緑のまま、
+> 強制買戻し由来の 30 日禁止だけが静かに効かなくなる**（T-10-244 を含め既存テストは本サービスを
+> テスト内で直接構築するため配線の消失を検知しない）。**必須引数化それ自体が退行検知**であり、
+> 下表はその規律が省略可能へ逆戻りしないことを固定する。
+
+| ID | 何を固定するか | テストメソッド（クラス） |
+| --- | --- | --- |
+| T-10-267 | 推定台帳は `OrderScreeningService` の**必須依存**である（省略可能引数・null 許容へ戻すと赤くなる）。**`patternDetector` は省略可能のまま**であることも同時に固定する（「検出器を構成していない」は正当な状態であり `null` の意味が違う） | `推定台帳は発注審査サービスの必須依存であり検出器は省略可能である`（`BuyInInferenceTests`） |
+
+**ミューテーション（実施済み）**: (c) `Program.cs` から推定台帳の引数を削る → **ビルドが失敗する**
+（`error CS1503: Argument 6`。必須引数化の目的そのもの）。(d) `buyInInferences` を
+`IBuyInInferenceStore? buyInInferences = null` へ戻す → T-10-267 が赤。
+
+## 供給が無い値の表示規約（SC-01 / SC-02 / SC-03・#424・IADR-0162）
+
+計画 05_screens「供給が無い値の表示規約（共通・2026-08-07 追加）」の写像である。
+**3 状態（未供給 / 対象なし / 値が 0）を両方向に守る**ことが主眼であり、
+「未供給を 0 に見せない」と同じ強さで「**正当な 0 を未供給へ倒さない**」を固定する。
+
+### 1. サーバ側の宣言（`ShortSellingStatusServiceTests`）
+
+| ID | 何を固定するか | テストメソッド |
+| --- | --- | --- |
+| **T-10-257** | **強制買戻しの発生回数は未供給として宣言し 0 件を返さない**（ADR-0016 決定15。計画が「0 件と表示してはならない」と名指し） | `強制買戻しの発生回数は未供給として宣言し0件を返さない` |
+| **T-10-258** | **他の指標の供給状態を条件に混ぜない**（維持率・空売り比率が供給されても発生回数は未供給のまま。IADR-0154 残余リスク4 と同型の fail-open を塞ぐ） | `強制買戻しの発生回数は他の指標が供給されても未供給のままである` |
+| T-10-259 | 建玉が 1 件も無いときの空売り比率は **`NotApplicable`（対象なし）**であり `NotSupplied` ではない（同じ「建玉なし」でも供給元が無い項目は未供給のまま） | `建玉が無いときの空売り比率は対象なしであり未供給ではない` |
+| **T-10-260** | **正当な 0 を未供給へ倒さない**（現物だけの口座の空売り比率は `Available` かつ 0） | `空売り建玉が無い口座の空売り比率は供給ありの0である` |
+
+### 2. 画面（フロント・vitest / Playwright）
+
+| ID | 何を固定するか | テスト |
+| --- | --- | --- |
+| **T-10-261** | **`NotSupplied` を「0」として描かない**（最重要の否定形） | `ControlStatusPage.shortSelling.test.tsx`「強制買戻しの発生回数は未供給として明示され、0 件と表示しない」「維持率が未供給のとき 0% や — を…」／`contracts.contract.test.ts`「件数の未供給は…」 |
+| **T-10-262** | **`NotSupplied` を「—」として描かない**（`NotApplicable` と混ぜない） | 同上／`RiskSettingsPage.test.tsx`「declares the resolved amount as not supplied (never a dash)…」／`SettingsPage.collection.test.tsx`（収集間隔・取得失敗） |
+| **T-10-263** | **正当な 0 は「0」として描く**（発生回数 0 件・空売り比率 0.0%・借株料 $0・実額 $0） | `ControlStatusPage.shortSelling.test.tsx`「強制買戻しが供給されていれば 0 件を「0」として表示する」「供給されている 0（…）を未供給として描かない」／`contracts.contract.test.ts`「**正当な 0 は「0」として描かれる**」 |
+| **T-10-264** | **サーバが供給可否を宣言していること**（クライアントが推測していない） | xUnit `FrontendContractFixtureTests`「空売り現況応答が…」（`buyInCountAvailability: 1`）／`contracts.contract.test.ts`「実応答は強制買戻しの発生回数を「未供給」として宣言している」 |
+| T-10-265 | 維持率が **Stage 1 の全期間表示できない**事実を「不具合ではない」と明示し、**供給されれば消える** | `ControlStatusPage.shortSelling.test.tsx`「維持率が未供給のとき Stage 1 の全期間表示できない事実を…」「維持率が供給されているとき…」 |
+| T-10-266 | SC-01 §1 は**サーバの宣言（`isResolved`）**に従って未供給と述べ、供給があるときは警告を出さない（両方向） | `SettingsPage.test.tsx`（2 件） |
+
+**変異検査（実測）**: (a) 未供給を「0」で描く／(b) 未供給を「—」で描く／(c) 正当な 0 を未供給扱いにする／
+(d) クライアントが 0 から供給有無を推測する／(e) サーバが発生回数を `Available` かつ 0 で宣言する、
+のいずれもテストが赤くなることを確認した（#424 の PR 本文に内訳）。
 
 ## 未カバー・実施予定
 

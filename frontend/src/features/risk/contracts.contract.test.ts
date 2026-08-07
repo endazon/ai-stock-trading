@@ -9,8 +9,11 @@ import {
 import type { RiskLimitSettings, ShortSellingStatusView, StageSettings } from './contracts';
 import {
   availabilityAmountText,
+  availabilityCountText,
   availabilityRatioText,
   criterionLabel,
+  equityAmountText,
+  formatAmount,
   isNotSupplied,
   LIMIT_FIELD_KEYS,
   limitInputToWire,
@@ -182,6 +185,64 @@ describe('リスク契約フィクスチャ（実応答）', () => {
     expect(availabilityRatioText(METRIC_NOT_APPLICABLE, null)).not.toBe(METRIC_NOT_SUPPLIED_TEXT);
     // 供給があるときだけ値を出す。
     expect(availabilityRatioText(METRIC_AVAILABLE, 0.4)).toBe('40.0%');
+  });
+
+  // ---- SC-01 / SC-02 / SC-03, #424, IADR-0162: 3 状態（未供給／対象なし／値が 0）の区別 ----
+
+  it('実応答は強制買戻しの発生回数を「未供給」として宣言している（0 件と言わない）', () => {
+    // ADR-0016 決定15・05_screens SC-03 の供給元の表: **「0 件と表示してはならない」**。
+    // #419 で推定台帳は入ったが、台帳は推定が起きたときにしか行を書かないため、行数 0 は
+    // 「観測が一度も届いていない」と「観測して 0 件だった」を区別できない。
+    expect(CONTRACT_SHORT_SELLING.buyInCountAvailability).toBe(METRIC_NOT_SUPPLIED);
+    expect(CONTRACT_SHORT_SELLING.buyInCount).toBeNull();
+    expect(CONTRACT_SHORT_SELLING.buyInCount).not.toBe(0);
+  });
+
+  it('**正当な 0 は「0」として描かれる**（未供給へ倒さない・逆方向の否定形）', () => {
+    // 05_screens「供給が無い値の表示規約」の 3 状態のうち **「値が 0」は正当な測定結果**である
+    // （例: 当日の統制違反 0 件）。ここを未供給へ倒すと、供給されているのに「取得できていません」と
+    // 嘘をつく——**「0 かどうかから供給有無を推測しない」は両方向に効く規律である。**
+    expect(availabilityCountText(METRIC_AVAILABLE, 0)).toBe('0');
+    expect(availabilityCountText(METRIC_AVAILABLE, 3)).toBe('3');
+    expect(availabilityRatioText(METRIC_AVAILABLE, 0)).toBe('0.0%');
+    expect(availabilityAmountText(METRIC_AVAILABLE, 0)).toBe('$0');
+    // 0 が未供給・対象なしの文言へ化けないことを明示的に否定形で押さえる。
+    for (const text of [
+      availabilityCountText(METRIC_AVAILABLE, 0),
+      availabilityRatioText(METRIC_AVAILABLE, 0),
+      availabilityAmountText(METRIC_AVAILABLE, 0),
+    ]) {
+      expect(text).not.toBe(METRIC_NOT_SUPPLIED_TEXT);
+      expect(text).not.toBe(METRIC_NOT_APPLICABLE_TEXT);
+      expect(text).not.toBe('—');
+    }
+  });
+
+  it('件数の未供給は「取得できていません」であり 0 でも — でもない', () => {
+    expect(availabilityCountText(METRIC_NOT_SUPPLIED, null)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    // 供給が無いのに値が入っていてもサーバの宣言が優先される（クライアントが推測しない）。
+    expect(availabilityCountText(METRIC_NOT_SUPPLIED, 0)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(availabilityCountText(METRIC_NOT_SUPPLIED, 7)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(availabilityCountText(METRIC_NOT_SUPPLIED, null)).not.toBe('0');
+    expect(availabilityCountText(METRIC_NOT_SUPPLIED, null)).not.toBe('—');
+    // 対象なしは異常ではないため未供給と同じ文言にしない。
+    expect(availabilityCountText(METRIC_NOT_APPLICABLE, null)).toBe(METRIC_NOT_APPLICABLE_TEXT);
+    // 未知の供給可否は未供給へ倒す（値があるように見せない）。
+    expect(availabilityCountText(99, 5)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+  });
+
+  it('SC-02 の実額は equity が未供給なら「取得できていません」、入力が読めないだけなら「—」', () => {
+    // #424, IADR-0162 決定3: **未供給を「—」で描かない。** 「—」は対象なし（実額が定義できない入力）専用。
+    expect(equityAmountText(null, 0.25)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(equityAmountText(undefined, 0.25)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(equityAmountText(Number.NaN, 0.25)).toBe(METRIC_NOT_SUPPLIED_TEXT);
+    expect(equityAmountText(null, 0.25)).not.toBe('—');
+    expect(equityAmountText(CONTRACT_RISK_STATUS.capital, null)).toBe('—');
+    // 供給があるなら実額を出す（実応答の equity と設定値で確かめる）。
+    expect(equityAmountText(CONTRACT_RISK_STATUS.capital, CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio))
+      .toBe(formatAmount(CONTRACT_RISK_STATUS.maxOrderAmount));
+    // **equity が 0 でも「未供給」ではない**（正当な 0 ＝ 実額も 0）。
+    expect(equityAmountText(0, 0.25)).toBe('$0');
   });
 
   it('未知の供給可否は未供給へ倒れる（値があるように見せない）', () => {

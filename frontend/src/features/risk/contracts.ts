@@ -171,6 +171,13 @@ export interface ShortSellingStatusView {
   totalAccruedBorrowFeeUsd: number | null;
   reductionHistoryAvailability: number; // MetricAvailability
   reductionHistory: MaintenanceMarginReductionRecordView[];
+  /**
+   * ADR-0016 決定15, #424, IADR-0162: **強制買戻しの発生回数**の供給可否。
+   * 現状は常に `NotSupplied`（推定台帳は「観測が届いていない」と「観測して 0 件」を区別できない）。
+   * **0 件と表示してはならない**（計画 05_screens SC-03 の供給元の表が名指しで禁じている）。
+   */
+  buyInCountAvailability: number; // MetricAvailability
+  buyInCount: number | null;
 }
 
 // ---- 段階ゲート（GET /risk-controls/stage-gate） ----
@@ -416,6 +423,22 @@ export function availabilityAmountText(availability: number, value: number | nul
   return METRIC_NOT_SUPPLIED_TEXT;
 }
 
+/**
+ * 供給可否つきの**件数**を表示文字列にする（SC-03 の強制買戻しの発生回数など）。
+ *
+ * **`Available` かつ 0 は「0」と描く。** 05_screens「供給が無い値の表示規約」の 3 状態のうち
+ * **「値が 0」は正当な測定結果**であり、正常値として表示しなければならない（例: 当日の統制違反 0 件）。
+ * ここで 0 を未供給へ倒すと、**供給されているのに「取得できていません」と嘘をつく**——未供給を 0 に
+ * 見せるのと逆向きだが、どちらも「サーバの宣言に従う」という規約への違反である。
+ */
+export function availabilityCountText(availability: number, count: number | null): string {
+  if (availability === METRIC_AVAILABLE && count !== null && Number.isFinite(count)) {
+    return `${count}`;
+  }
+  if (availability === METRIC_NOT_APPLICABLE) return METRIC_NOT_APPLICABLE_TEXT;
+  return METRIC_NOT_SUPPLIED_TEXT;
+}
+
 /** 供給されていない（＝利用者へ警告として見せるべき）状態か。`NotApplicable` は異常ではないので含めない。 */
 export const isNotSupplied = (availability: number): boolean => availability !== METRIC_AVAILABLE
   && availability !== METRIC_NOT_APPLICABLE;
@@ -529,6 +552,30 @@ export function resolveEquityAmount(
 export function formatAmount(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
   return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`;
+}
+
+/**
+ * FR-10, SC-02, #424, IADR-0162 決定3: equity 比の項目に併記する**実額**の表示。
+ *
+ * **equity が供給されていないことを「—」で描かない。** 05_screens「供給が無い値の表示規約」は
+ * 供給が無い値を「0」「—」で表示することを禁じている。SC-02 の実額併記は「25%（$750）」のように
+ * **発注規模を判断させる**ための表示であり、equity が取れていないのか「該当が無い」のかで
+ * 利用者が採るべき手はまったく違う（前者は統制の判断材料が無い状態＝画面を信用してはいけない）。
+ *
+ * 2 つの理由を分ける。
+ * - **equity が供給されていない**（`/risk-controls/status` の取得失敗）… **未供給**として明示する
+ * - **入力値が読めない**（入力欄が空・非数値）… 「—」。値域の警告が同じ画面に出ており、
+ *   これは供給の問題ではなく**その入力に対して実額が定義できない**（＝対象なし）状態である
+ */
+export function equityAmountText(
+  equity: number | null | undefined,
+  ratio: number | null | undefined,
+): string {
+  if (equity === null || equity === undefined || !Number.isFinite(equity)) {
+    return METRIC_NOT_SUPPLIED_TEXT;
+  }
+  const amount = resolveEquityAmount(equity, ratio);
+  return amount === null ? '—' : formatAmount(amount);
 }
 
 // ---- FR-10, SC-02, #362, IADR-0151 決定2: リスク上限として設定できる値域 ----

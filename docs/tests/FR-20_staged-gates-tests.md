@@ -2,7 +2,7 @@
 title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
-related_ids: [FR-20, FR-11, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149]
+related_ids: [FR-20, FR-11, FR-12, FR-13, FR-15, FR-10, FR-19, UC-06, SC-02, SC-03, ADR-0016, ADR-0018, IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163]
 author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-05
@@ -162,6 +162,26 @@ related_specs:
 | T-78 | Stage 1（既定 `SIMULATE`） | `moomoo REAL` へ切り替え、その発注先で注文を出す | **保存は受理され**（`Accepted`・`SkipsStageGate`）、**発注は `StageProhibitsLiveTrading`〔クラス B〕で拒否される**。全段階 × 全既定発注先の走査で、通るのは**段階の既定が実弾のときに限る** | FR-20 (1) | 自動（プロパティ） |
 | T-79 | 実弾への切替 | 確認文字列に `real` / `Real` / `REAl` / `rEaL` / `ＲＥＡＬ`（全角）/ `ＲeＡl` / `R E A L` / 内部改行を打つ | いずれも**受理されない**。` REAL ` / `\tREAL\n`（前後空白のみ）は受理される | FR-20 (2) | 自動（否定形・境界値） |
 | T-80 | Stage 1 のまま実弾へ切り替える | 警告モーダルを開く | **「段階が実弾を既定とするまで発注は行われません」旨が提示される**（一覧の警告にも同じ旨）。**文言を消すとテストが赤くなる**。段階が既に実弾（Stage 2）なら**表示しない**（嘘にならないよう条件は `skipsStageGate` と一致） | FR-20 (1), SC-02 | 自動（否定形・画面/E2E） |
+
+### 段階の既定発注先（`StageSettings.Mode`）の allow-list（#431・[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定1）
+
+> #422 の allow-list は `SettingsDto.BrokerProvider` にだけ効いており、**同じ設定行の隣の項目**
+> `Stage.Mode`（同じ `BrokerProvider` 型）には効いていなかった。到達経路（手編集された行・外部ツールが
+> 書いた行）は同一であり、**同じ経路の片方だけを塞いだ状態**だった。未知の**序数**は
+> `Stage.Mode != MoomooReal` により実弾が止まる（安全側）が、**未知の文字列・別の型は `JsonException` で
+> 設定行全体が読めなくなる**（統制値・ガード・段階もろとも失われる）。**後者が本節の主眼である。**
+>
+> テストクラス: `RiskSettingsSerializationStageModeTests`（直列化）／`EfStoreTests`（ストア経由）。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| T-81 | 任意 | `stage.mode` に未知の序数（`3`/`7`/`-1`/`int` 超過）・未知の文字列（`"MOOMOO REAL"`/`"Live"`/`"moomooReal"`/`"REAL"`）・空文字・`null`・別の型（真偽値/オブジェクト/配列）を積んだ行を読む | **すべて内蔵 `paper`**（allow-list）。**例外を投げず**、設定行の他の値（統制値・ガード・段階・現在の発注先・空売り統制）が**すべて読める** | FR-20 (3) | 自動（否定形・境界値） |
+| T-82 | 任意 | `stage.mode` に正準名（`"MoomooReal"` 等）・序数の 10 進表記（`"1"`）・既知の序数（`0`/`1`/`2`）を積んだ行を読む／段階設定を書き出す | 明示一致で読まれる。旧 `TradeMode` の序数 `0` / `1` も同じ意味（回帰）。書き込みは**数値の序数**のまま。全段階 × 全発注先で往復する | FR-20 (3) | 自動（プロパティ） |
+| T-83 | 設定ストアに `stage.mode` が壊れた行（`"MOOMOO REAL"` / `true` / `7`）がある | `EfRiskSettingsStore.GetCurrent` で読み出す | **例外にならず**内蔵 `paper` として読まれ、統制値・ガード・現在の発注先が失われない。**直列化単体では配線の穴（DTO の挟み忘れ・属性の付け忘れ）を検知できない** | FR-20 (3) | 自動（否定形） |
+| T-84 | `stage.mode` が解決できず、現在の発注先が実弾（`1`）の行 | その設定で実弾の新規建てを出す | **`StageProhibitsLiveTrading` で拒否される**（内蔵 `paper` へ倒れる＝`!= MoomooReal`。安全側の挙動が保たれる） | FR-20 (1)(3) | 自動（否定形） |
+
+**ミューテーション（実施済み）**: (a) `StageDto.Mode` から converter 属性を外す → T-81 / T-82 / T-83 / T-84 が赤（24 件）。
+(b) `Stage.Mode` の解決先を `Default` から `MoomooReal` にする → T-81 / T-82 / T-83 / T-84 が赤（21 件）。
 
 ### Stage 1 の最小取引件数の設定化（06_daytrading-review §4.1 条件 3・§4.3・#423・[IADR-0165](../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md)）
 

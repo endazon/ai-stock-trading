@@ -14,7 +14,12 @@ import {
   validateCooldownHours,
   validateMovementThresholdPercent,
 } from '../monitor/contracts';
-import { formatAt, percentTextToRatio, ratioToPercentText } from '../risk/contracts';
+import {
+  formatAt,
+  METRIC_NOT_SUPPLIED_TEXT,
+  percentTextToRatio,
+  ratioToPercentText,
+} from '../risk/contracts';
 
 // SC-02, FR-03, FR-13, FR-11, UC-06, #423, IADR-0155 / IADR-0165 決定2:
 // **市場監視パラメータ（変動閾値・クールダウン）の閲覧・変更。**
@@ -110,8 +115,13 @@ export function MonitorParametersForm() {
       </p>
 
       {state === 'loading' && <p role="status">市場監視パラメータを確認中…</p>}
+      {/* SC-02, #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つである（05_screens 共通規約）。
+          「値が無い」のではなく「確認できていない」ことを規約の文言で明示する。
+          **本節が SC-01 §2 から移ってきたときに、#424 で入れた規約の文言を落とさないこと。** */}
       {state === 'unavailable' && (
-        <p role="alert">市場監視パラメータを取得できませんでした。</p>
+        <p role="alert">
+          市場監視パラメータを<strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>。値が無いのではなく、確認できていません。
+        </p>
       )}
 
       {state === 'ok' && current && (
