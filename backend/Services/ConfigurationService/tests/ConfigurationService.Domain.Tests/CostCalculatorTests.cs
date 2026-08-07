@@ -69,12 +69,47 @@ public class CostCalculatorTests
         CostCalculator.EstimateRoundTripCost(a, Market.Japan, 100_000m).Should().Be(200m);
     }
 
+    // FR-17, §4, #358, IADR-0173: しきい値の基準は **往復費用＋税** である（往復費用のみではない）。
+    // 税は譲渡益（= 利益 − 費用）に掛かるため不動点で解く: T = m × C × (1 − r) / (1 − m × r)。
     [Fact]
-    public void 最小期待利益は往復費用の倍率倍()
+    public void 最小期待利益は往復費用と税の合計の倍率倍()
     {
-        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 1.5m);
-        // 往復200 × 1.5 = 300。
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 2m);
+
+        // 往復 200・m=2・r=0.20315 → T = 2 × 200 × 0.79685 / 0.5937 = 536.87…
+        // **旧実装（往復費用のみ × 1.5 = 300）の約 1.79 倍**である。
+        var expected = 2m * 200m * (1m - TradingAssumptionsDefaults.CapitalGainsTaxRate)
+            / (1m - 2m * TradingAssumptionsDefaults.CapitalGainsTaxRate);
+
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().Be(expected);
+        // 期待値そのものが式の写しにならないよう、桁の水準も併せて固定する（下 2 桁は decimal の除算に依存）。
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeApproximately(536.87m, 0.01m);
+    }
+
+    // 対照（退化）: 税率 0 なら従来式 m × C に一致する。式の書き換えが値を壊していないことを示す。
+    [Fact]
+    public void 税率0では従来式の往復費用の倍率倍へ退化する()
+    {
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 1.5m) with
+        {
+            CapitalGainsTaxRate = 0m,
+        };
+
         CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().Be(300m);
+    }
+
+    // **fail-closed**: 倍率 × 税率 >= 1 では解が無い（利益を増やすと税も同じ速さで増える）。
+    // 負のしきい値を返して全通過させないことを固定する。
+    [Fact]
+    public void 倍率と税率の積が1以上なら解が無く例外になる()
+    {
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 5m) with
+        {
+            CapitalGainsTaxRate = 0.20315m,   // 5 × 0.20315 = 1.01575 >= 1
+        };
+
+        var act = () => CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m);
+        act.Should().Throw<InvalidOperationException>();
     }
 
     // T-10-214（**否定形**）: FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——

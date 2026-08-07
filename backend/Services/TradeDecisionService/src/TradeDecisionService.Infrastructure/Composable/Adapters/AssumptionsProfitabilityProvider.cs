@@ -27,6 +27,7 @@ internal sealed class AssumptionsProfitabilityProvider(IAssumptionsProvider assu
 
         var roundTripCost = CostCalculator.EstimateRoundTripCost(current.Assumptions, market, notional);
         return new TradeCostAssessment(
-            roundTripCost, current.Assumptions.MinimumExpectedProfitMultiple, current.Version);
+            roundTripCost, current.Assumptions.MinimumExpectedProfitMultiple, current.Version,
+            current.Assumptions.CapitalGainsTaxRate);
     }
 }

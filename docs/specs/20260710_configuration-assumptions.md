@@ -46,6 +46,8 @@ plan_refs:
     手数料・為替スプレッドは**要確認のため既定 0（未登録）**（05 §2・§3 の「数値は固定せず設定値として保持」）。
   - `CostCalculator`（純関数・概算費用関数 05 §4）: `EstimateOneWayCost`＝手数料＋為替スプレッド相当、`EstimateRoundTripCost`＝往復、
     `MinimumViableProfit`＝往復費用×倍率（この額を下回る期待利益の取引は見送りの判定に用いる。税の精緻化は後続）。
+
+> **【❌ 訂正 2026-08-07・#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)】** 上記の `MinimumViableProfit`＝**往復費用×倍率**・「税の精緻化は後続」は**現行ではない**。計画 §4（利用者決定 2026-07-23）は基準を「**往復費用＋税**」と定めており、税は譲渡益（＝利益−費用）に掛かるため、しきい値は**不動点** `T = m × C × (1 − r) / (1 − m × r)` で解く（m=2 / r=0.20315 で **T ≈ 2.684 × C**）。倍率も 1.5 → **2** である。**本仕様書は 2026-07-10 時点の記録として残す**（point-in-time 記録）。現行は [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md) を正とする。
 - **Application**: `IAssumptionsStore`（単一行＋Version 楽観排他・未設定は既定シード）、`IAssumptionsChangeLog`（追記・新しい順照会）、
   `IClock`、`AssumptionsService`（利用者のみ更新＝アクター・理由必須、Version 増分、前後値つき履歴記録）、`AssumptionsChangeEntry`、InMemory 実装。
 - **Worker**: EF 永続化（`AssumptionsDbContext`・単一行 JSON＋Version＝IADR-0012 踏襲・変更履歴追記・専有 DB `configuration_svc`・Migration）、

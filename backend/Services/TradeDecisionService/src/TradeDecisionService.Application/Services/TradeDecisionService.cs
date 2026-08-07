@@ -323,7 +323,8 @@ public sealed class TradeDecisionService(
             expectedGrossProfit,
             assessment?.RoundTripCost,
             _profitabilityOptions.DecisionCostJpy,
-            assessment?.MinimumProfitMultiple ?? 0m);
+            assessment?.MinimumProfitMultiple ?? 0m,
+            assessment?.CapitalGainsTaxRate ?? 0m);
 
         if (verdict == ProfitabilityVerdict.Viable)
         {

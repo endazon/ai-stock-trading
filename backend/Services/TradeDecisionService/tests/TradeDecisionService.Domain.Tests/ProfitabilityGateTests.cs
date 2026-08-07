@@ -99,4 +99,54 @@ public class ProfitabilityGateTests
     {
         ProfitabilityGate.Evaluate(0m, 100m, 0m, 1.5m).Should().Be(ProfitabilityVerdict.NotViable);
     }
+
+    // --- FR-17, §4, #358, IADR-0173: しきい値の基準は「往復費用＋**税**」である ---
+
+    // **本ゲートは緩む方向に壊れても何も赤くならない**（発注が増えるだけである）。
+    // したがって税込みしきい値の**境界を両側で**固定する。
+    // 往復1000 + 判断0・m=2・r=0.20315 → T = 2 × 1000 × 0.79685 / 0.5937 = 2684.35…
+    [Fact]
+    public void 税込みしきい値の境界は両側で効く()
+    {
+        const decimal rate = 0.20315m;
+        var threshold = 2m * 1000m * (1m - rate) / (1m - 2m * rate);
+
+        ProfitabilityGate.Evaluate(threshold, 1000m, 0m, 2m, rate).Should().Be(ProfitabilityVerdict.Viable);
+        ProfitabilityGate.Evaluate(threshold - 0.01m, 1000m, 0m, 2m, rate)
+            .Should().Be(ProfitabilityVerdict.NotViable);
+    }
+
+    // **旧実装との差そのものを固定する。** 旧: 往復費用のみ × 1.5 = 1500。
+    // 新: 往復費用＋税 × 2 ≒ 2684.35。**1500〜2684 の想定利益は、旧実装では通り新実装では通らない。**
+    // この帯が消えると「税を無視する実装へ戻った」ことを意味する。
+    [Fact]
+    public void 旧実装なら通っていた想定利益が税込み基準では通らない()
+    {
+        ProfitabilityGate.Evaluate(1500m, 1000m, 0m, 2m, 0.20315m).Should().Be(ProfitabilityVerdict.NotViable);
+        ProfitabilityGate.Evaluate(2000m, 1000m, 0m, 2m, 0.20315m).Should().Be(ProfitabilityVerdict.NotViable);
+        ProfitabilityGate.Evaluate(2685m, 1000m, 0m, 2m, 0.20315m).Should().Be(ProfitabilityVerdict.Viable);
+    }
+
+    // 対照（退化）: 税率 0 なら従来式（費用 × 倍率）に一致する。
+    [Fact]
+    public void 税率0では従来のしきい値へ退化する()
+    {
+        ProfitabilityGate.Evaluate(150m, 100m, 0m, 1.5m, 0m).Should().Be(ProfitabilityVerdict.Viable);
+        ProfitabilityGate.Evaluate(149m, 100m, 0m, 1.5m, 0m).Should().Be(ProfitabilityVerdict.NotViable);
+    }
+
+    // **fail-closed（本変更で最も重要）**: 倍率 × 税率 >= 1 では解が無い
+    //（利益を増やすと税も同じ速さで増え、要求が伸び続ける）。
+    // **負のしきい値を返して全通過させてはならない。** 構成異常として Indeterminate（見送り）へ倒す。
+    // 属性引数に decimal は置けない（CS0182）ため double で受けて decimal へ変換する。
+    [Theory]
+    [InlineData(5.0, 0.20315)]    // 1.01575
+    [InlineData(2.0, 0.5)]        // 1.0（ちょうど。境界も解なしとして扱う）
+    [InlineData(10.0, 0.9)]       // 9.0
+    public void 倍率と税率の積が1以上なら採算不能へ倒す(double multiple, double taxRate)
+    {
+        // 極端に大きい想定利益でも通さない（負のしきい値なら Viable になってしまう）。
+        ProfitabilityGate.Evaluate(1_000_000_000m, 1000m, 0m, (decimal)multiple, (decimal)taxRate)
+            .Should().Be(ProfitabilityVerdict.Indeterminate);
+    }
 }
