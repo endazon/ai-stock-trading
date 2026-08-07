@@ -12,6 +12,12 @@ created: 2026-08-07
 
 # フィードバック: SC-03「表示項目の供給元」の記述更新 2 点
 
+> **送付済み（2026-08-07 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
+> [endazon/project-planning#248](https://github.com/endazon/project-planning/issues/248)。
+> 本記録は 2026-08-07 に作成されながら計画リポジトリへ到達しておらず、計画側の定期突合
+> （`tools/impl-sync/sync-impl-adr.js --check`）が**未到達**として検出したため送付した。
+> 以降のトリアージ・裁定は当該 Issue で行う。本書は実装リポジトリ側の控えである。
+
 ## 種別
 
 **記述の陳腐化**（1 件）と**規約の片方向性**（1 件）。いずれも 05_screens「供給が無い値の表示規約
