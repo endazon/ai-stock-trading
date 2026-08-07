@@ -25,13 +25,13 @@ plan_refs:
 - 計画書 §: [05_trading-assumptions](../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md) **§4「計算・判断の方針」**
   - 最小期待利益: 「往復費用＋税の <1.5 倍> を下回る取引は見送り」（AI 判断のガードレール・値は運用調整）
 
-> **【❌ 訂正 2026-08-07・#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)】** 本仕様書が引いた「&lt;1.5 倍&gt;」は**計画の未確定の暫定表記**であった。**計画は 2026-07-23 の利用者決定で「往復費用＋税の 2 倍」へ確定している。** 以下の本文中の 1.5・および「しきい値 = (往復費用 + 判断費用) × 倍率」という式は、**いずれも現行ではない**。現行は倍率 **2**・基準 **往復費用＋税**であり、税が結果に依存するためしきい値は不動点 `T = m × C × (1 − r) / (1 − m × r)` で解く（m=2 / r=0.20315 で **T ≈ 2.684 × C**）。**本仕様書は 2026-07-18 時点の記録として残す**（point-in-time 記録）。現行は [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md) を正とする。
+> **【❌ 訂正 2026-08-07・#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)】** 本仕様書が引いた「&lt;1.5 倍&gt;」は**計画の未確定の暫定表記**であった。**計画は 2026-07-23 の利用者決定で「往復費用＋税の 2 倍」へ確定している。** 以下の本文中の 1.5・「しきい値 = (往復費用 + 判断費用) × 倍率」という式・および**「税の精緻化は後続」とする記述（§前提・§設計・§受け入れ基準・§まとめ）は、いずれも現行ではない**。現行は倍率 **2**・基準 **往復費用＋税**であり、税が結果に依存するためしきい値は不動点 `T = m × C × (1 − r) / (1 − m × r)` で解く（m=2 / r=0.20315 で **T ≈ 2.684 × C**）。**本仕様書は 2026-07-18 時点の記録として残す**（point-in-time 記録）。現行は [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md) を正とする。
   - 概算費用関数: `費用(市場, 売買, 約定代金) = 手数料 + 諸費用 + 為替スプレッド相当`（事前見積り・リスク判定・事後集計で共通利用）
   - 数値計算はコードで行い LLM には計算させない（採用方針）
 - ユースケース（UC）: UC-01/02（取引判断のフロー）
 - ADR: **ADR-0003**（方針階層＋独立リスク管理。採算ゲートは方針・リスクを上書きしない安全側の追加）、ADR-0001（platform 再利用）
 - 関連 IADR:
-  - [IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)（`TradingAssumptions`/`CostCalculator` の所有者＝設定サービス。税の精緻化は後続と明記）
+  - [IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)（`TradingAssumptions`/`CostCalculator` の所有者＝設定サービス。~~税の精緻化は後続と明記~~ **【❌ 2026-08-07・[IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)】 IADR-0021 側の当該記述は訂正済みである**）
   - [IADR-0063](../adr/IADR-0063_assumptions-versioned-resolution.md)（`IAssumptionsProvider`＝版付き前提条件の消費口・fail-safe・`Configuration:BaseUrl` 未設定で既定/未解決）
   - [IADR-0065](../adr/IADR-0065_versioned-cost-limits-resolution.md)（#139：設定サービスの前提条件を消費側に薄いアダプタで結線する先例＝二重キャッシュを作らない）
   - [IADR-0055](../adr/IADR-0055_llm-cost-metering-event.md)（LLM 費用計測＝月次予算計上。本ゲートの per-trade 見積りとは**別目的**＝二重計上しない）
@@ -80,7 +80,7 @@ plan_refs:
 
 ## スコープ外（後続 Issue の境界＝本 PR に含めない）
 
-- **税の精緻化（往復費用＋税ベース）**: `CostCalculator.MinimumViableProfit` と同様、実損益連携時の後続（IADR-0021 の申し送りを踏襲）。本ゲートは往復取引費用（＋任意の判断費用）まで。
+- ~~**税の精緻化（往復費用＋税ベース）**: `CostCalculator.MinimumViableProfit` と同様、実損益連携時の後続（IADR-0021 の申し送りを踏襲）。本ゲートは往復取引費用（＋任意の判断費用）まで。~~ **【❌ 撤回 2026-08-07・#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)】 税は現行では反映済みである。** しきい値は不動点 `T = m × C × (1 − r) / (1 − m × r)` で解き、`m × r ≥ 1` は `Indeterminate` へ fail-closed する。
 - **実クラスタでの実 LLM＋実前提条件による採算ゲートの実証**（要 `Configuration:BaseUrl`・実額登録・#22 デプロイ配線）→ E2E/後続。
 - **リスク管理側の費用込み上限判定（§4 の 3 番目の適用先）**: #152（Risk/Notification）が触るため本 PR 対象外。
 - LLM 実トークンからの per-trade 判断費用の実測供給（`DecisionCostJpy` は構成の固定見積りに留める。既定 0＝中立）。
@@ -108,4 +108,4 @@ plan_refs:
 - 新イベント追加なし・`Shared.Contracts` 変更なし・他サービス無改修（TradeDecisionService に閉じる）。
 - ゲート既定 OFF ＝ 既存の判断挙動を一切変えない（現行テスト不変）。
 - 二重計上なし（LLM 月次費用計測 IADR-0055 とは別目的の per-trade 見積り）。
-- IADR-0076 に設計判断（既存費用関数の再利用・fail-safe の向き・想定利益の出所・税の後続化・opt-in）を明記。
+- IADR-0076 に設計判断（既存費用関数の再利用・fail-safe の向き・想定利益の出所・~~税の後続化~~【❌ 撤回 2026-08-07・[IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)。IADR-0076 決定 7 を撤回した】・opt-in）を明記。
