@@ -93,12 +93,40 @@ public class FxRateSourceFactoryTests
         Create(outsideTheSet).Should().BeOfType<NoOpFxRateSource>();
     }
 
-    // FR-10, #271, IADR-0112 決定1: 既定の鮮度上限はデータ源の公表周期（DEXJPUS＝H.10 週次リリース）から導く。
-    // 内訳: 公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 2 日 ＋ 公表時刻 ≒ 12.84 日 に約 1.2 日の余裕。
+    // FR-10, FR-17, ADR-0022 決定5, #381, IADR-0174: 既定の鮮度上限は**計画の絶対上限 30 日**である。
+    //
+    // **根拠が実装から計画へ移った。** 旧値 14 は DEXJPUS の公表周期（≒12.84 日）から逆算した
+    // **情報源の都合**であり（IADR-0112 決定1）、計画に根拠が無かった。2026-08-04 に計画が 30 日を確定した。
     [Fact]
-    public void 既定の鮮度上限は公表周期から導いた14日()
+    public void 既定の鮮度上限は計画の絶対上限30日()
     {
-        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()).Should().Be(TimeSpan.FromDays(14));
+        FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()).Should().Be(TimeSpan.FromDays(30));
+    }
+
+    // #381, IADR-0174 決定1: 既定の**警告**しきい値は 5 日（ADR-0022 決定4・2026-08-07 改訂）。
+    [Fact]
+    public void 既定の警告しきい値は5日()
+    {
+        FxRateSourceFactory.ResolveStaleRateWarning(new FxOptions()).Should().Be(TimeSpan.FromDays(5));
+    }
+
+    // #381, IADR-0174 決定3: **警告が上限を超えると、警告が一度も出ないまま停止する**（気づく機会が消える）。
+    // 上限でクランプすることを固定する。
+    [Fact]
+    public void 警告しきい値は鮮度上限でクランプする()
+    {
+        var options = new FxOptions { MaxRateAgeDays = 3, StaleRateWarningDays = 10 };
+
+        FxRateSourceFactory.ResolveStaleRateWarning(options).Should().Be(TimeSpan.FromDays(3));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void ゼロ以下の警告しきい値は既定へ倒す(int days)
+    {
+        FxRateSourceFactory.ResolveStaleRateWarning(new FxOptions { StaleRateWarningDays = days })
+            .Should().Be(TimeSpan.FromDays(FxOptions.DefaultStaleRateWarningDays));
     }
 
     [Theory]
@@ -125,7 +153,8 @@ public class FxRateSourceFactoryTests
     [Theory]
     [InlineData(1)]
     [InlineData(7)]
-    [InlineData(31)]
+    // #381, IADR-0174 決定2: クランプが 31 → 30 へ下がったため、境界の実例も 30 へ。
+    [InlineData(30)]
     public void 範囲内の鮮度指定はそのまま尊重する(int days)
     {
         FxRateSourceFactory.ResolveMaxRateAge(new FxOptions { MaxRateAgeDays = days })

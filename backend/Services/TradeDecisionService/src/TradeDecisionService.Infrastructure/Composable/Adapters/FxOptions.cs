@@ -24,14 +24,38 @@ internal sealed class FxOptions
     /// 月曜が祝日なら火曜）であり、最新観測の齢は「公表間隔 7 日 ＋ 公表ラグ（金→月）3 日 ＋ 祝日ずれ 2 日
     /// ＋ 公表時刻」＝最大 12.84 日まで積み上がる。旧既定 7 日は予定どおりの公表でも毎週必ず超過していた。
     /// </summary>
-    public const int DefaultMaxRateAgeDays = 14;
+    public const int DefaultMaxRateAgeDays = 30;
+
+    /// <summary>
+    /// **警告**を出す観測の古さのしきい値（日）の既定値。**5 日**（ADR-0022 決定4・2026-08-07 改訂。起案時は 3 日）。
+    /// <para>
+    /// FR-10, FR-17, #381, IADR-0174: 計画 §5 の縮退は 3 段である —— <b>5 日以下＝通常運用 ／ 5 日超〜30 日以下＝
+    /// 直近レートで続行し警告 ／ 30 日超＝新規建てを停止</b>（手仕舞い・損切りは止めない）。
+    /// </para>
+    /// <para>
+    /// <b>警告と停止は役割が違う</b> —— 前者は<b>気づくため</b>、後者は<b>統制が意味を失った状態で発注しないため</b>である。
+    /// 旧実装は上限だけを持っており、この 2 つが同じ値に潰れていた（超えたらいきなり停止）。
+    /// </para>
+    /// <para>
+    /// 3 日から 5 日へ改まった理由: 日銀の検索サイトへの収録は<b>翌々営業日 8:50 頃</b>であり、
+    /// <b>平常時でも月曜・火曜は最新データが 4 日前</b>になって 3 日を必ず超える（ADR-0022 決定4 の 2026-08-06 追補）。
+    /// 5 日なら月・火の 4 日を平常として吸収し、3 連休明けの火曜（5 日）まで収まる。
+    /// </para>
+    /// </summary>
+    public const int DefaultStaleRateWarningDays = 5;
 
     /// <summary>
     /// 構成で指定できる鮮度上限の上限（日）。#271, IADR-0112 決定2: 週次公表が 4 回以上連続で落ちる事態は
     /// 公表周期では説明できない。「動かないので 365 にする」といった運用で鮮度 guard を実質無効化させないため、
     /// 設定値ではなく構造で担保する（IADR-0059 の保持期間**下限**クランプと対称）。
+    /// <para>
+    /// **#381, IADR-0174 決定2: 31 → 30 へ下げた。** 旧値 31 は<b>計画が「絶対上限」と呼ぶ 30 日を上回っており</b>、
+    /// <c>Fx:MaxRateAgeDays: 31</c> と構成すれば<b>計画が新規建てを停止すると定めた 30 日超の観測で発注できた</b>。
+    /// クランプは「設定で guard を無効化させない」ための仕組みなのに、<b>その上限自体が計画より緩かった</b>。
+    /// 31 は FRED の週次公表から逆算した実装都合の値であり、根拠が計画へ移った今は 30 が正しい。
+    /// </para>
     /// </summary>
-    public const int MaxAllowedRateAgeDays = 31;
+    public const int MaxAllowedRateAgeDays = 30;
 
     /// <summary>
     /// 採用してよい観測の古さの上限（日）。既定 14 日（<see cref="DefaultMaxRateAgeDays"/>）。週末・連休・週次公表の
@@ -39,6 +63,14 @@ internal sealed class FxOptions
     /// （IADR-0107 決定5）。0 以下は既定へ、<see cref="MaxAllowedRateAgeDays"/> 超はその値へ丸める。
     /// </summary>
     public int MaxRateAgeDays { get; set; } = DefaultMaxRateAgeDays;
+
+    /// <summary>
+    /// 警告を出す観測の古さのしきい値（日）。既定 5 日（<see cref="DefaultStaleRateWarningDays"/>）。
+    /// 0 以下は既定へ、<see cref="MaxRateAgeDays"/> 超はその値へ丸める（#381・IADR-0174 決定3）。
+    /// <b>警告が上限を超えると、警告が一度も出ないまま停止する</b>——気づく機会そのものが消えるため、
+    /// 上限でクランプする。
+    /// </summary>
+    public int StaleRateWarningDays { get; set; } = DefaultStaleRateWarningDays;
 
     /// <summary>FRED（Provider="fred"）の構成。API キーが空なら no-op へ倒す（実接続しない）。</summary>
     public FredFxOptions Fred { get; set; } = new();

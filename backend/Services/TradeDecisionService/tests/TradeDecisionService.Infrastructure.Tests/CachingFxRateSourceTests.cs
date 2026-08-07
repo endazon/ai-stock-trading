@@ -3,6 +3,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -67,7 +68,11 @@ public class CachingFxRateSourceTests
     [InlineData("2026-07-17", "2026-07-27T20:00:00Z", true, "通常＝次の月曜公表の直前（10.84 日・#271 の実測）")]
     [InlineData("2026-07-17", "2026-07-28T20:00:00Z", true, "月曜が祝日で火曜公表（11.84 日）")]
     [InlineData("2026-07-16", "2026-07-28T20:00:00Z", true, "対象週の金曜が休場で直近観測が木曜＋翌月曜が祝日（12.84 日）")]
-    [InlineData("2026-07-17", "2026-08-03T20:00:00Z", false, "週次リリースが 1 回丸ごと欠落（17.84 日）＝系列側の異常")]
+    // **【⚠️ 2026-08-07・#381 / IADR-0174 で判定が変わった】** 旧既定 14 日ではこの 17.84 日を**棄却**していたが、
+    // 計画が絶対上限を 30 日と確定したため**採用（警告つき続行）**になる。**これは計画が選んだ緩和である**——
+    // 計画 §5 は「5 日超〜30 日以下＝直近レートで続行し警告」と定めており、週次リリース 1 回の欠落は
+    // その範囲に入る。**14 日で止まっていた保護は失われた**（IADR-0174 §悪い影響に記録）。
+    [InlineData("2026-07-17", "2026-08-03T20:00:00Z", true, "週次リリースが 1 回丸ごと欠落（17.84 日）＝計画の警告域（30 日以下）")]
     public async Task 既定の鮮度上限は公表周期の遅延を吸収し系列の異常は見送る(
         string observedOn, string evaluatedAt, bool accepted, string scenario)
     {
@@ -107,23 +112,91 @@ public class CachingFxRateSourceTests
         inner.Calls.Should().Be(2);
     }
 
+    // --- FR-10, FR-17, ADR-0022 決定4・5, #381, IADR-0174: 警告と停止の分離 ---
+    //
+    // **このガードは「緩む方向」に壊れても静かである** —— 古いレートで発注が通るだけで何も赤くならない。
+    // したがって境界を**両側**で固定する。
+
+    // 警告域（警告しきい値超〜上限以下）: **値は返す**（新規建ては止めない）。気づくために警告だけ出す。
+    [Fact]
+    public async Task 警告域では値を返しつつ警告を出す()
+    {
+        var log = new RecordingFxLogger();
+        var inner = new CountingSource(Rate(Now.AddDays(-7)));   // 7 日前 = 警告 5 日超・上限 30 日以下
+        var source = new CachingFxRateSource(
+            inner, TimeSpan.FromHours(6), TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            new TestTimeProvider(Now), log);
+
+        var rate = await source.GetRateToBaseAsync(Currency.Jpy);
+
+        rate.Should().NotBeNull("警告域では新規建てを止めない（ADR-0022 決定4）");
+        log.Warnings.Should().ContainSingle().Which.Should().Contain("古くなっています");
+    }
+
+    // 境界の直下: 警告しきい値ちょうどは**警告を出さない**（`>` 比較）。
+    [Fact]
+    public async Task 警告しきい値ちょうどでは警告を出さない()
+    {
+        var log = new RecordingFxLogger();
+        var inner = new CountingSource(Rate(Now.AddDays(-5)));
+        var source = new CachingFxRateSource(
+            inner, TimeSpan.FromHours(6), TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            new TestTimeProvider(Now), log);
+
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().NotBeNull();
+        log.Warnings.Should().BeEmpty();
+    }
+
+    // 上限超: **値を返さない**（従来どおり）。警告域との違いを固定する。
+    [Fact]
+    public async Task 上限を超えると値を返さない()
+    {
+        var log = new RecordingFxLogger();
+        var inner = new CountingSource(Rate(Now.AddDays(-31)));
+        var source = new CachingFxRateSource(
+            inner, TimeSpan.FromHours(6), TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            new TestTimeProvider(Now), log);
+
+        (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
+    }
+
     // #364, IADR-0152 決定1/2: 基準通貨は USD であり、解決対象は JPY（レートは USD per JPY）。
     private static FxRate Rate(DateTimeOffset asOf) => new(Currency.Jpy, Currency.Usd, 1m / 152.35m, asOf);
 
     private static DateTimeOffset Instant(string iso8601) =>
         DateTimeOffset.Parse(iso8601, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
 
+    // #381, IADR-0174: 警告しきい値は既定で上限と同値にする（既存テストの挙動を変えないため）。
+    // 警告域そのものを検査するテストは warning を明示的に渡す。
     private static (CachingFxRateSource Source, TestTimeProvider Time) Create(
-        IFxRateSource inner, TimeSpan? ttl = null, TimeSpan? maxAge = null, DateTimeOffset? now = null)
+        IFxRateSource inner, TimeSpan? ttl = null, TimeSpan? maxAge = null, DateTimeOffset? now = null,
+        TimeSpan? warning = null)
     {
         var time = new TestTimeProvider(now ?? Now);
+        var effectiveMaxAge = maxAge ?? TimeSpan.FromDays(7);
         var source = new CachingFxRateSource(
             inner,
             ttl ?? TimeSpan.FromHours(6),
-            maxAge ?? TimeSpan.FromDays(7),
+            effectiveMaxAge,
+            warning ?? effectiveMaxAge,
             time,
             NullLogger<CachingFxRateSource>.Instance);
         return (source, time);
+    }
+
+    private sealed class RecordingFxLogger : ILogger<CachingFxRateSource>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning) Warnings.Add(formatter(state, exception));
+        }
     }
 
     // IADR-0064/0066 と同じ理由（FakeTimeProvider は中央パッケージ管理に未登録）で最小の偽装を置く。
