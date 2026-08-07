@@ -61,8 +61,13 @@ interface Call {
 
 let calls: Call[] = [];
 
-function mockApi(current: number, options?: { statusFails?: boolean }) {
+function mockApi(
+  current: number,
+  options?: { statusFails?: boolean; stageMode?: number; stage?: number },
+) {
   calls = [];
+  const stageMode = options?.stageMode ?? BROKER_PROVIDER_MOOMOO_SIMULATE;
+  const stage = options?.stage ?? 1;
   mocks.apiFetch.mockImplementation(
     async (path: string, req?: { method?: string; json?: unknown }) => {
       calls.push({ path, method: req?.method, json: req?.json });
@@ -72,8 +77,10 @@ function mockApi(current: number, options?: { statusFails?: boolean }) {
         if (options?.statusFails) throw new Error('status unavailable');
         return STATUS;
       }
-      if (path === '/risk-controls/settings/broker-provider') return { settings: settings(current) };
-      return settings(current);
+      if (path === '/risk-controls/settings/broker-provider') {
+        return { settings: settings(current, stageMode, stage) };
+      }
+      return settings(current, stageMode, stage);
     },
   );
 }
@@ -231,6 +238,34 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     expect(within(dialog).getByRole('button', { name: '実弾へ切り替える' })).toBeDisabled();
   });
 
+  // FR-20 (2), #422: 照合規則は計画が 2026-08-07 に確定させた
+  //（前後空白のみを除いた完全一致・大文字小文字を区別する）。**緩める変更を止めるのが本テストの目的である。**
+  it.each(['Real', 'REAl', 'rEaL', 'ＲＥＡＬ', 'ＲeＡl', 'R E A L', 'REALLY', 'REA'])(
+    '確認文字列が「%s」では切替ボタンが有効にならない',
+    async (phrase) => {
+      const dialog = await openModal();
+
+      await userEvent.click(within(dialog).getByRole('checkbox'));
+      await userEvent.type(within(dialog).getByLabelText(/「REAL」と入力/), phrase);
+
+      expect(within(dialog).getByRole('button', { name: '実弾へ切り替える' })).toBeDisabled();
+      expect(providerPuts().filter((c) => c.method === 'PUT')).toHaveLength(0);
+    },
+  );
+
+  // 境界値の裏面: **前後空白のみ**は除く（貼り付けで混じる空白は利用者の意図と無関係）。
+  it.each([' REAL', 'REAL ', '  REAL  '])(
+    '前後空白を除いて REAL と一致する「%s」では切替できる',
+    async (phrase) => {
+      const dialog = await openModal();
+
+      await userEvent.click(within(dialog).getByRole('checkbox'));
+      await userEvent.type(within(dialog).getByLabelText(/「REAL」と入力/), phrase);
+
+      expect(within(dialog).getByRole('button', { name: '実弾へ切り替える' })).toBeEnabled();
+    },
+  );
+
   it('同意と REAL の入力が揃うと切替でき、確認内容とともに PUT する', async () => {
     const dialog = await openModal();
 
@@ -267,6 +302,50 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
     expect(within(dialog).getByText(/equity と統制値を取得できないため/)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '実弾へ切り替える' })).toBeDisabled();
     expect(providerPuts().filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+
+  // **FR-20 (1) の中核（#422）**: 「同意したのに 1 件も発注されない」理由を画面に出す。
+  // 計画は「この旨を SC-02 の警告モーダルにも含める」と名指ししており、**文言を消せばここが赤くなる**。
+  it('警告モーダルに「段階が実弾を既定とするまで発注は行われない」旨を含む', async () => {
+    const dialog = await openModal();
+
+    expect(
+      within(dialog).getByText(/段階が実弾を既定とするまで発注は行われません/),
+    ).toBeInTheDocument();
+    // 「保存できる」ことと「発注できる」ことが別だと読めること（計画が名指しした誤読の否定）。
+    expect(within(dialog).getByText(/保存できますが、実弾の注文は段階ゲートが拒否します/)).toBeInTheDocument();
+  });
+
+  // 一覧側（モーダルを開く前）にも同じ旨を出す。モーダルへ進まない利用者にも届かせるため。
+  it('フォームの段階ゲート警告にも発注が行われない旨を含む', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
+    render(<RiskSettingsPage />);
+    const form = await screen.findByRole('form', { name: '発注先の変更' });
+
+    await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));
+
+    expect(within(form).getByText(/段階が実弾を既定とするまで発注は行われません/)).toBeInTheDocument();
+  });
+
+  // **否定形**: 段階が既に実弾（Stage 2）なら注文は実際に発注される。同じ文言を出すと**嘘になる**
+  // （狼少年にもなる）。条件が `skipsStageGate` と一致していることを固定する。
+  it('段階が既に実弾なら発注が行われない旨は表示しない', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE, {
+      stageMode: BROKER_PROVIDER_MOOMOO_REAL,
+      stage: 2,
+    });
+    render(<RiskSettingsPage />);
+    const form = await screen.findByRole('form', { name: '発注先の変更' });
+
+    await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));
+    await userEvent.type(within(form).getByLabelText('変更理由'), '実弾へ移行する');
+    await userEvent.click(within(form).getByRole('button', { name: '実弾への切替を確認する' }));
+
+    const dialog = screen.getByRole('dialog', { name: '実弾（moomoo REAL）への切替の確認' });
+    expect(
+      within(dialog).queryByText(/段階が実弾を既定とするまで発注は行われません/),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/段階ゲート.*を飛ばしています/)).not.toBeInTheDocument();
   });
 
   it('キャンセルすると確認状態が破棄され PUT も飛ばない', async () => {

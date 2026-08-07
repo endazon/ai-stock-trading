@@ -89,6 +89,9 @@ test.describe('SC-02 実弾（moomoo REAL）切替の警告モーダル（#334�
     await expect(dialog.getByText('これ以降の注文は実際の資金で執行されます。')).toBeVisible();
     // ② 切替先と現在の Stage の組み合わせ（Stage 1 のまま実弾＝段階ゲートを飛ばしている旨）
     await expect(dialog.getByText(/段階ゲート.*を飛ばしています/)).toBeVisible();
+    // FR-20 (1), #422: **同意しても 1 件も発注されない**旨。計画が「警告モーダルにも含める」と名指しした。
+    // これが無いと「同意したのに発注されない＝壊れている」と読まれる。
+    await expect(dialog.getByText(/段階が実弾を既定とするまで発注は行われません/)).toBeVisible();
     // ③ 現在の equity と統制値の実額
     await expect(dialog.getByRole('table', { name: '現在の equity と統制値' })).toBeVisible();
     // ④ 明示的な確認操作（チェックボックス＋文字入力）
