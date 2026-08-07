@@ -2,7 +2,7 @@
 title: 無認証の /internal/collection/run-once に認可を掛け、CronJob 側にトークン取得を足す
 type: spec
 status: review
-related_ids: [NFR, FR-02, UC-06, ADR-0004, IADR-0011, IADR-0023, IADR-0051, IADR-0164, IADR-0175, IADR-0176]
+related_ids: [NFR, FR-02, UC-01, ADR-0004, IADR-0011, IADR-0023, IADR-0051, IADR-0164, IADR-0175, IADR-0176]
 author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
@@ -15,7 +15,7 @@ updated: 2026-08-07
 ## 起点となる計画書（トレーサビリティ）
 
 - 非機能要件: **NFR（セキュリティ）** —— 発注機能へのアクセスは本人のみ・外部公開しない
-- 機能要求: **FR-02**（取引サイクル）／ユースケース **UC-06**（統制操作）
+- 機能要求: **FR-02**（取引サイクル）／ユースケース **UC-01**（定時取引サイクル）—— 計画の対応表が `FR-02 → UC-01` と定めている（`02_requirements/01_requirements.md`）。**run-once は UC-01 基本フロー1「スケジューラが起動する」の実装そのもの**である
 - 起点 issue: [#456](https://github.com/endazon/ai-stock-trading/issues/456)（由来: [#450](https://github.com/endazon/ai-stock-trading/issues/450) / [IADR-0175](../adr/IADR-0175_security-spec-absence-notation.md)）
 
 ## 着手前の実測（2026-08-07・`789afd4`）

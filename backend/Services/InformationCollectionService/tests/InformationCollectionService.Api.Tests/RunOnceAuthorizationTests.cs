@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Api.Tests;
 
-// NFR（セキュリティ）, FR-02, UC-06, #456, IADR-0176:
+// NFR（セキュリティ）, FR-02, UC-01, #456, IADR-0176:
 // **run-once（収集サイクルの起動）は業務操作であり、無認証で公開しない。**
 //
 // **この統制は「緩む方向」に壊れても静かである** —— 認可を外しても収集は動き続け、何も赤くならない。

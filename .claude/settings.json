@@ -36,6 +36,7 @@
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
+      "Bash(sed:*)",
       "Bash(echo:*)",
       "Bash(cmp:*)",
       "Bash(diff:*)",

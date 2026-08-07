@@ -2,7 +2,7 @@
 title: IADR-0176 run-once は OwnerOrService で守り、CronJob 側に client_credentials を足す。無認証の経路は許可リストで構造固定する
 type: impl-adr
 status: Accepted
-related_ids: [NFR, FR-02, UC-06, ADR-0004, IADR-0011, IADR-0023, IADR-0051, IADR-0164, IADR-0175]
+related_ids: [NFR, FR-02, UC-01, ADR-0004, IADR-0011, IADR-0023, IADR-0051, IADR-0164, IADR-0175]
 author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
