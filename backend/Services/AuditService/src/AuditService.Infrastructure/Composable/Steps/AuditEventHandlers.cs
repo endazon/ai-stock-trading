@@ -246,6 +246,19 @@ public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore sto
     }
 }
 
+// FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
+// 強制買戻しの**推定**を中央監査台帳へ記録する。**これは検知ではなく推定であり、取り違えがあり得る**。
+// だからこそ根拠（消失した建玉・突合した自らの決済約定・処理中の決済・推定日時）を残し、
+// 人が後から「その推定は妥当だったか」を検証できるようにする（#419 の設計上の注意）。
+public sealed class BuyInInferredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BuyInInferred message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小を中央監査台帳へ記録する。
 // 利用者の承認も AI も介在しない自動決済であるため、**記録が無ければ「知らないうちに建玉が減っていた」状態**に
 // なる（04_report-templates の記載理由）。日報・月報の記載もこの同じイベントから作る。

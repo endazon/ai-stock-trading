@@ -46,6 +46,10 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態（連続観測回数・報告済みシグネチャ・単一行）。
     public DbSet<PositionDriftStateRow> PositionDriftStates => Set<PositionDriftStateRow>();
 
+    // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの事後推定の追記専用台帳
+    // （30 日禁止の供給元・ADR-0016 決定15 の「発生回数」の集計元）。
+    public DbSet<BuyInInferenceRow> BuyInInferences => Set<BuyInInferenceRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -194,6 +198,18 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.ObservedSignature).IsRequired();
             e.Property(r => r.ReportedSignature).IsRequired();
             e.Property(r => r.Version).IsConcurrencyToken();
+        });
+
+        // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの推定台帳（追記専用）。
+        // 集計は「銘柄ごとの最新行」「銘柄ごとの禁止期限の最大値」「期間内の推定件数」の 3 問である。
+        mb.Entity<BuyInInferenceRow>(e =>
+        {
+            e.ToTable("buy_in_inferences");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.HasIndex(r => new { r.Symbol, r.Market });
+            e.HasIndex(r => r.InferredOn);
         });
     }
 }

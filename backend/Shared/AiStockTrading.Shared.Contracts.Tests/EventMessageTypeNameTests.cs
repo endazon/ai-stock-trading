@@ -44,6 +44,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(BrokerAccountObserved), "AiStockTrading.Shared.Contracts.Events.BrokerAccountObserved")]
         [InlineData(typeof(BrokerAvailabilityObserved), "AiStockTrading.Shared.Contracts.Events.BrokerAvailabilityObserved")]
         [InlineData(typeof(BrokerPositionsObserved), "AiStockTrading.Shared.Contracts.Events.BrokerPositionsObserved")]
+        // FR-10, FR-11, #419, ADR-0016 決定4（2026-08-06 改訂）, IADR-0159: 強制買戻しの事後推定。
+        [InlineData(typeof(BuyInInferred), "AiStockTrading.Shared.Contracts.Events.BuyInInferred")]
         [InlineData(typeof(CostThresholdReached), "AiStockTrading.Shared.Contracts.Events.CostThresholdReached")]
         [InlineData(typeof(DailyPolicyUnconfirmed), "AiStockTrading.Shared.Contracts.Events.DailyPolicyUnconfirmed")]
         [InlineData(typeof(InformationCollected), "AiStockTrading.Shared.Contracts.Events.InformationCollected")]

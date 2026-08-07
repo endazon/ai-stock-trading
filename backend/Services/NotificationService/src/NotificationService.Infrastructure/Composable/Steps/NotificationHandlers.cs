@@ -83,6 +83,15 @@ public sealed class PositionReconciliationDriftNotificationHandler(INotification
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-09, FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
+// 強制買戻しの**推定**を購読して利用者へ通知する。推定である以上、運用者が事後に検証できることが要件であり、
+// 通知はその第一の出口である（文言で「推定」と明示する責務は NotificationFormatter が持つ）。
+public sealed class BuyInInferredNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(BuyInInferred message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小を購読して利用者へ通知する。
 // 利用者の承認を待たずに決済するため、通知が「建玉が減ったこと」を利用者が知る最初の経路になる。
 public sealed class MaintenanceMarginReductionExecutedNotificationHandler(INotificationSender sender)

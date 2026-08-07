@@ -70,6 +70,9 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             Narrative = narrative,
             // FR-10, UC-06, #330: 自動縮小の記録はコード集計値であり LLM に語らせない（散文と分ける）。
             MarginReductions = request.MarginReductions,
+            // FR-10, UC-06, ADR-0016 決定4/決定15, #419: 強制買戻し（推定）も同様にコード集計値である。
+            // **null（未供給）を空列（推定 0 件）へ潰さない**（決定15: 供給が無い間は 0 件と表示しない）。
+            BuyInInferences = request.BuyInInferences,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
@@ -136,7 +139,11 @@ public sealed record DraftRequest(
     string? ParentPolicySummary = null,
     // FR-10, UC-06, #330: 当期間の「維持率割れによる自動縮小」。空列＝発動なし／null＝照会できていない
     // （04_report-templates は「空欄と『なし』を区別する」ことを求める）。既定 null により既存の呼び出しは非破壊。
-    IReadOnlyList<MaintenanceMarginReductionExecuted>? MarginReductions = null);
+    IReadOnlyList<MaintenanceMarginReductionExecuted>? MarginReductions = null,
+    // FR-10, UC-06, ADR-0016 決定4/決定15, #419: 当期間に強制買戻しと**推定**した件。
+    // **空列＝推定 0 件／null＝供給が無い**（決定15: 供給が無い間は 0 件と表示してはならない）。
+    // 既定 null は「未供給」であり、既存の呼び出しは非破壊で通る。
+    IReadOnlyList<BuyInInferred>? BuyInInferences = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

@@ -179,7 +179,8 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<ILockoutStore>(),
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IBusinessCalendar>(),
-    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
+    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>(),
+    sp.GetRequiredService<IBuyInInferenceStore>()));
 // FR-10, ADR-0003, IADR-0015: 損切りの機械執行（StopLossTriggered → Close の OrderApproved・無条件）。
 builder.Services.AddScoped<StopLossExecutionService>();
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
@@ -199,6 +200,13 @@ builder.Services.AddScoped<ShortSellingStatusService>();
 // 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。
 builder.Services.AddScoped<IPositionDriftStateStore, EfPositionDriftStateStore>();
 builder.Services.AddScoped<PositionDriftTracker>();
+// FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 強制買戻しの事後推定。
+// **イベント検知の供給元が無い**（SIMULATE では原理的に発生せず専用の通知 API も無い）ため、同じ建玉観測から
+// 「自らの決済指示（約定履歴・処理中の決済承認）で説明できない消失」を突合し、強制買戻しを**推定**する。
+// 推定した銘柄は 30 日間の新規空売り禁止（RejectionReason.BuyInBanned）になる。
+// **推定台帳は永続でなければならない**——プロセス内に持つと再起動で 30 日の禁止が消える（fail-open）。
+builder.Services.AddScoped<IBuyInInferenceStore, EfBuyInInferenceStore>();
+builder.Services.AddScoped<BuyInInferenceService>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
 // StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。承認・約定・訂正・取消は取引台帳（IADR-0018）と

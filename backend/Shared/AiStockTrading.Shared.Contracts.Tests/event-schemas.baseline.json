@@ -13,9 +13,33 @@
     "Passed": "Boolean",
     "ProbabilityOfBacktestOverfitting": "Double"
   },
+  "BrokerAccountObserved": {
+    "Account": "BrokerAccountState",
+    "ObservedAt": "DateTimeOffset",
+    "Provider": "BrokerProvider"
+  },
+  "BrokerAvailabilityObserved": {
+    "CoveredInterval": "TimeSpan",
+    "ObservedAt": "DateTimeOffset",
+    "Provider": "BrokerProvider"
+  },
   "BrokerPositionsObserved": {
     "ObservedAt": "DateTimeOffset",
     "Positions": "IReadOnlyList\u003CBrokerPositionSnapshot\u003E"
+  },
+  "BuyInInferred": {
+    "BanUntil": "DateOnly",
+    "BrokerShortQuantity": "Int32",
+    "CoveringFills": "IReadOnlyList\u003CBuyInCoveringFill\u003E",
+    "EventId": "Guid",
+    "InFlightCloseQuantity": "Int32",
+    "InferredAt": "DateTimeOffset",
+    "LedgerShortQuantity": "Int32",
+    "Market": "Market",
+    "NewlyInferredQuantity": "Int32",
+    "ObservedAt": "DateTimeOffset",
+    "Symbol": "String",
+    "UnexplainedQuantity": "Int32"
   },
   "CostThresholdReached": {
     "Category": "String",
@@ -64,6 +88,7 @@
     "ExecutedAt": "DateTimeOffset",
     "FilledQuantity": "Int32",
     "OrderId": "String",
+    "Provider": "BrokerProvider",
     "Status": "OrderStatus"
   },
   "OrderModified": {

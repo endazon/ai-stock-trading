@@ -617,4 +617,82 @@ public class ShortSellingControlsTests
         result.IsApproved.Should().BeTrue();
         result.Reasons.Should().BeEmpty();
     }
+
+    // ------------------------------------------------------------------
+    // 4. 強制買戻し由来の 30 日禁止の**供給経路**（#419 / ADR-0016 決定4 の 2026-08-06 改訂 / IADR-0159 決定5）
+    // ------------------------------------------------------------------
+
+    private static OrderScreeningResult EvaluateWithBan(
+        OrderIntent intent, ShortSellOrderContext? context, DateOnly? banUntil) =>
+        RiskEvaluator.Evaluate(
+            intent, Settings(), Snapshot(), null, context, null, new BuyInBanSupply(Today, banUntil));
+
+    // T-10-230: FR-10, ADR-0016 決定4（2026-08-06 改訂）, IADR-0159 決定5 ——
+    // **借株照会の供給元が無く空売り文脈が組めなくても**、推定台帳から供給された禁止期限だけで
+    // `BuyInBanned` を記録できる。文脈が null のとき ShortSellEvaluator は BorrowUnavailable で
+    // **打ち切る**ため、この経路が無いと「禁止期間中であること」が監査ログ（FR-11）に一切残らない。
+    [Theory]
+    [InlineData(0, true)]   // 推定当日
+    [InlineData(29, true)]  // 29 日後（禁止中）
+    [InlineData(30, false)] // 30 日後（解除）
+    public void 空売り文脈が組めなくても禁止期限の単独供給で拒否理由を記録できる(int daysSince, bool expectedRejected)
+    {
+        var banUntil = Limits.BuyInBanUntil(Today.AddDays(-daysSince));
+
+        var result = EvaluateWithBan(ShortEntry(1_000m), context: null, banUntil);
+
+        result.IsApproved.Should().BeFalse("文脈が無い間はいずれにせよ借株不可で止まる（フェイルクローズ）");
+        result.Reasons.Contains(RejectionReason.BuyInBanned).Should().Be(expectedRejected);
+        result.Reasons.Should().Contain(RejectionReason.BorrowUnavailable);
+    }
+
+    // T-10-231（**否定形**）: 供給された禁止が**無い**のに BuyInBanned が立ってはならない。
+    // 立てば、日報・月報の「強制買戻しの発生有無」（決定15）が起きていない事象で水増しされる。
+    [Fact]
+    public void 禁止期限が供給されていなければ強制買戻しの拒否理由は立たない()
+    {
+        EvaluateWithBan(ShortEntry(1_000m), context: null, banUntil: null)
+            .Reasons.Should().NotContain(RejectionReason.BuyInBanned);
+    }
+
+    // T-10-232: 文脈経由（ShortSellEvaluator）と単独供給（BuyInBanSupply）の**両方**から立っても
+    // 拒否理由は 1 件である（借株照会が実装された日に理由が二重計上されない）。
+    [Fact]
+    public void 文脈と単独供給の両方から禁止が立っても拒否理由は二重計上されない()
+    {
+        var banUntil = Limits.BuyInBanUntil(Today);
+
+        var result = EvaluateWithBan(
+            ShortEntry(1_000m), Context(shortPermit: true, buyInBanUntil: banUntil), banUntil);
+
+        result.Reasons.Count(r => r == RejectionReason.BuyInBanned).Should().Be(1);
+    }
+
+    // T-10-233（**否定形**）: 単独供給の経路でも、`BuyInBanned` は**クラス A のまま**である。
+    // クラス C（`BannedSymbol` / `ManipulativeOrderPattern` ＝段階昇格ゲートの「統制違反 0 件」の計上対象）へ
+    // 混ぜると、市況由来の事象が「AI が禁止事項を犯そうとした件数」に混入し、ゲートが機能しなくなる。
+    [Fact]
+    public void 単独供給による強制買戻しの拒否もクラスCに計上されない()
+    {
+        var result = EvaluateWithBan(ShortEntry(1_000m), context: null, Limits.BuyInBanUntil(Today));
+
+        result.Reasons.Should().Contain(RejectionReason.BuyInBanned);
+        result.Reasons.Should().NotContain(RejectionReason.BannedSymbol);
+        RejectionReasonClassification.CountsAsControlViolation(result.Reasons).Should().BeFalse();
+    }
+
+    // T-10-234: 手仕舞い（買い戻し）は禁止期間中でも止まらない（ADR-0009 の不変条件）。
+    // 禁止は**新規建て**にのみ効く。止めれば損失に上限の無い建玉を閉じられなくなる。
+    [Fact]
+    public void 禁止期間中でも空売りの買い戻しは止まらない()
+    {
+        var buyToCover = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.ShortSell, BrokerProvider.InternalPaper,
+            Quantity: 1_000, Price: 1.00m, PositionEffect.Close);
+
+        var result = EvaluateWithBan(buyToCover, context: null, Limits.BuyInBanUntil(Today));
+
+        result.IsApproved.Should().BeTrue();
+        result.Reasons.Should().BeEmpty();
+    }
 }
