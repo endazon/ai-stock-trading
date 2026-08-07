@@ -164,7 +164,7 @@ internal sealed class HttpStageGateController(
             FormatWithdrawal(v.Withdrawal),
         };
 
-        // AST #423, FR-20, SC-02, 06_daytrading-review §4.1 条件 3・§4.3, IADR-0165 決定6:
+        // AST #423, FR-20, SC-02, 06_daytrading-review §4.1 条件 3・§4.3, IADR-0164 決定6:
         // Stage 1 の最小取引件数が**統計的根拠（100 件）を下回る設定**なら警告を出す。
         //
         // 計画は「**画面と昇格承認の双方**に警告を常時表示する」と定める。Discord は昇格承認の窓口であり
@@ -294,7 +294,7 @@ internal sealed class HttpStageGateController(
         // AST #423: Stage 1 の合格条件の閾値（実効値）。nullable＝本項目を返さない旧版 Risk への耐性。
         Stage1GateCriteriaView? Stage1Criteria = null);
 
-    // AST #423, FR-20, SC-02, IADR-0165 決定6: Stage 1 の合格条件の閾値。
+    // AST #423, FR-20, SC-02, IADR-0164 決定6: Stage 1 の合格条件の閾値。
     // `BelowStatisticalBasis` は**サーバ（Risk）が宣言する**「100 件未満の設定であるか」であり、
     // 本アダプタは判定せず表示するだけである（閾値を写経しない）。
     internal sealed record Stage1GateCriteriaView(

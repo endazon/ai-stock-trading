@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Domain.Tests;
 
-// FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0165 決定5・決定6:
+// FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定5・決定6:
 // **Stage 1 の最小取引件数を設定値にしたことの退行防止。**
 //
 // 裁定（質問票 第 13 回 Q6 の追加指示）が定めたのは次の 3 点であり、いずれも**取り違えると統制が緩む**。

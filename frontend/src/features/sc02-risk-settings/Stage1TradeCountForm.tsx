@@ -10,7 +10,7 @@ import {
   validateStage1TradeCountInput,
 } from '../risk/contracts';
 
-// SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0165 決定4〜決定6:
+// SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定4〜決定6:
 // **Stage 1 の最小取引件数の変更。**
 //
 // 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）により、§4.1 条件 3 の件数は
@@ -27,7 +27,7 @@ import {
 //   保存済みの値 … サーバが宣言する `Stage1GateCriteria.belowStatisticalBasis`（SC-03 が表示する）。
 //   入力中の値   … `inputBelowStatisticalBasis`（まだ保存されておらず、問い合わせる相手が存在しない）。
 // 本フォームは**入力中の値**に対する即時提示を担う。閾値 100 の単一情報源は
-// サーバ側 `Stage1TradeCountBounds` である（IADR-0165 決定6）。
+// サーバ側 `Stage1TradeCountBounds` である（IADR-0164 決定6）。
 
 type SaveState = 'idle' | 'saving' | 'error';
 

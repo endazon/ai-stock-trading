@@ -32,7 +32,7 @@ public record RiskManagementSettings(
     public BrokerProvider BrokerProvider { get; init; } = BrokerProviderResolution.Default;
 
     /// <summary>
-    /// FR-20, FR-13, SC-02, #423, IADR-0165 決定4: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
+    /// FR-20, FR-13, SC-02, #423, IADR-0164 決定4: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
     /// <para>
     /// 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）により、条件 3 の件数は
     /// **SC-02 から変更できる設定値**になった。既定 100 件・値域 1〜1000

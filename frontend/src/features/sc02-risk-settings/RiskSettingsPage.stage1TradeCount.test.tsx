@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
-// SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0165 決定4〜決定6:
+// SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定4〜決定6:
 // **Stage 1 の最小取引件数が SC-02 の設定項目になったことの退行防止。**
 //
 // 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）:

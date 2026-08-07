@@ -45,7 +45,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
             MovementThresholdRatio = 0.05m,
             Cooldown = TimeSpan.FromMinutes(10),
             MonitoredSymbols = new[] { new MonitoredSymbol("AAPL", Market.UnitedStates) },
-            // FR-11, #423, IADR-0165 決定3: 全置換も**理由必須**である（部分更新と同じ規律）。
+            // FR-11, #423, IADR-0164 決定3: 全置換も**理由必須**である（部分更新と同じ規律）。
             Reason = "全置換の検証",
         };
 
@@ -74,7 +74,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // ---- #423, IADR-0165 決定3: 全置換も部分更新と同じ規律（値域・理由・履歴）である ----
+    // ---- #423, IADR-0164 決定3: 全置換も部分更新と同じ規律（値域・理由・履歴）である ----
     //
     // **本節は「画面から使わない経路」の否定形である。** 導入前、全置換 PUT は理由も履歴も持たず、
     // 値域も「正・非負」だけを見ていた。その状態では、SC-02 が 0.6（60%）を弾いても

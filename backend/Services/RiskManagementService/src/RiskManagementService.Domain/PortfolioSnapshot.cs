@@ -79,7 +79,7 @@ public record PortfolioSnapshot
     public BrokerAccountState? Account { get; init; }
 
     /// <summary>
-    /// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: <b>自前で計数した</b>GFV 発生回数。
+    /// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0165: <b>自前で計数した</b>GFV 発生回数。
     /// <para>
     /// <b>ブローカーが報告した件数ではない</b>（moomoo API に該当フィールドは存在しない。IADR-0153 決定4 の実測）。
     /// 自前で数えられるのは**自らのガードをすり抜けた買付**だけであり、

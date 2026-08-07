@@ -259,7 +259,7 @@ public sealed class BuyInInferredAuditHandler(IAuditEventStore store, IClock clo
     }
 }
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // **未決済資金による買付（GFV 発生）の自前計数**を中央監査台帳へ記録する。
 //
 // ★ 記録しているのは「**自らのガードをすり抜けた買付**」であり、**ブローカーが GFV と判定した件数ではない**

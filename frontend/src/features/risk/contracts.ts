@@ -62,7 +62,7 @@ export interface RiskManagementSettings {
   // FR-20, FR-12, FR-13, INDEX 決定 46, #334: **現在の発注先**（BrokerProvider enum・数値）。
   // 運用段階とは独立した軸であり、変更操作を持つ画面は SC-02 だけである（SC-03 は参照専用）。
   brokerProvider: number;
-  // FR-20, FR-13, SC-02, #423, IADR-0165: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
+  // FR-20, FR-13, SC-02, #423, IADR-0164: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
   // 2026-08-07 の裁定で設定値になった（既定 100・値域 1〜1000）。変更操作を持つ画面は SC-02 だけである。
   stage1MinimumTradeCount: number;
 }
@@ -219,7 +219,7 @@ export interface Stage1GateCriteria {
   /** #423: **SC-02 から変更できる設定値**（既定 100・値域 1〜1000）。他の 2 項目は設定で変わらない。 */
   minimumTradeCount: number;
   maximumTradingDays: number;
-  // FR-20, SC-02, SC-03, §4.3, #423, IADR-0165 決定6:
+  // FR-20, SC-02, SC-03, §4.3, #423, IADR-0164 決定6:
   // **最小取引件数が統計的根拠（100 件）を下回っているかをサーバが宣言する。**
   // 画面は `minimumTradeCount < 100` を自分で判定しない——判定を画面へ書き込むと、
   // 警告を出す場所（SC-02・SC-03・Discord）が増えるたびに同じ条件が写経され、
@@ -755,7 +755,7 @@ export function wireToLimitInput(key: LimitFieldKey, value: number): string {
   return String(value);
 }
 
-// ---- FR-20, FR-13, SC-02, #423, IADR-0165 決定5/決定6: Stage 1 の最小取引件数の値域（画面側の即時提示） ----
+// ---- FR-20, FR-13, SC-02, #423, IADR-0164 決定5/決定6: Stage 1 の最小取引件数の値域（画面側の即時提示） ----
 //
 // **実効はサーバ側（`Stage1TradeCountBounds`）である。** ここに同じ表を持つのは利用者へ即時に提示する
 // ためであり（サーバだけだと保存を押すまで誤りが分からない）、画面が統制の実効を担うためではない
@@ -807,7 +807,7 @@ export function validateStage1TradeCountInput(text: string): string | null {
  * 入力中の件数が統計的根拠を下回るか（**入力に対する即時提示のためだけに用いる**）。
  *
  * **保存済みの値については本関数を使わない。** サーバが宣言する
- * `Stage1GateCriteria.belowStatisticalBasis` に従う（IADR-0165 決定6）。
+ * `Stage1GateCriteria.belowStatisticalBasis` に従う（IADR-0164 決定6）。
  * ここで判定するのは「まだ保存されていない入力値」であり、問い合わせる相手が存在しない。
  */
 export function inputBelowStatisticalBasis(text: string): boolean {

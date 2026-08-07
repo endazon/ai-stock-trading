@@ -50,7 +50,7 @@ public class HttpStageGateControllerTests
         result.Message.Should().Contain("endazon");
     }
 
-    // ---- AST #423, FR-20, SC-02, §4.1 条件 3 / §4.3, IADR-0165 決定6 ----
+    // ---- AST #423, FR-20, SC-02, §4.1 条件 3 / §4.3, IADR-0164 決定6 ----
     //
     // 計画は「100 件未満を設定した場合、**画面と昇格承認の双方**に『統計的な根拠（§4.3）を満たさない
     // 設定である』旨の警告を常時表示する」と定める。Discord は昇格承認の窓口であり、承認者が読むのは

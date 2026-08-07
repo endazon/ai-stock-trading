@@ -162,7 +162,7 @@ public class ObservedDrawdownRefreshServiceTests
             new InMemoryStage1FillObservationStore(),
             new InMemoryStage1TradingDayObservationStore(),
             TradingDefaults.CreateStagePolicy(),
-            // #423, IADR-0165 決定4: 最小取引件数は設定値であり、段階ゲートは設定ストアから実効値を読む。
+            // #423, IADR-0164 決定4: 最小取引件数は設定値であり、段階ゲートは設定ストアから実効値を読む。
             new InMemoryRiskSettingsStore(),
             killSwitch,
             clock);

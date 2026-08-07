@@ -21,7 +21,7 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 /// </para>
 /// </param>
 /// <remarks>
-/// <b>#425, ADR-0025 決定2, IADR-0166 決定2: GFV 発生回数の欄は本型に持たない。</b>
+/// <b>#425, ADR-0025 決定2, IADR-0165 決定2: GFV 発生回数の欄は本型に持たない。</b>
 /// moomoo API には該当フィールドが存在せず（`GoodFaith` / `Violation` / `Gfv` はアセンブリ全体で 0 件。
 /// IADR-0153 決定4 の実測）、計画は**自前で計数する**ことを決めた。自前計数の値をブローカー照会の欄へ
 /// 入れると「**ブローカーの GFV カウンタの写し**」と読まれるが、

@@ -12,7 +12,7 @@ export interface MonitoredSymbol {
 }
 
 // ---- 監視設定（GET /monitor/settings） ----
-// FR-03, FR-13, SC-02, #423, IADR-0155 / IADR-0165 決定2: 市場監視パラメータ（変動閾値・クールダウン）と監視銘柄。
+// FR-03, FR-13, SC-02, #423, IADR-0155 / IADR-0164 決定2: 市場監視パラメータ（変動閾値・クールダウン）と監視銘柄。
 //
 // **2026-08-07 の裁定で SC-01 §2 は廃止され、変動閾値・クールダウンは SC-02 が扱う。**
 // 権威は MarketMonitorService であり、監視銘柄（`/monitor/watchlist`）と同じ由来サービスである
@@ -59,7 +59,7 @@ function labelOf(map: Record<number, string>, value: number): string {
 
 export const monitorChangeTypeLabel = (v: number): string => labelOf(MONITOR_CHANGE_TYPE_LABELS, v);
 
-// ---- FR-03, FR-13, SC-02, #340, #423, IADR-0155 / IADR-0165: 変動閾値の値域（画面側の即時提示） ----
+// ---- FR-03, FR-13, SC-02, #340, #423, IADR-0155 / IADR-0164: 変動閾値の値域（画面側の即時提示） ----
 //
 // **実効はサーバ側（`MonitorSettingsBounds`）である。** ここに同じ表を持つのは利用者へ即時に提示する
 // ためであり（サーバだけだと保存を押すまで誤りが分からない）、画面が統制の実効を担うためではない
@@ -94,7 +94,7 @@ export function validateMovementThresholdPercent(text: string): string | null {
   return null;
 }
 
-// ---- FR-03, FR-13, SC-02, #423, IADR-0165 決定2: クールダウンの値域（画面側の即時提示） ----
+// ---- FR-03, FR-13, SC-02, #423, IADR-0164 決定2: クールダウンの値域（画面側の即時提示） ----
 //
 // **実効はサーバ側（`MonitorSettingsBounds.MaxCooldown`）である。** 変動閾値と同じく、ここに同じ表を
 // 持つのは利用者へ即時に提示するためであり、画面が統制の実効を担うためではない。

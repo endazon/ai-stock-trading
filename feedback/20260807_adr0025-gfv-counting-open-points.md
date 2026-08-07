@@ -5,7 +5,7 @@ status: open
 category: 要求の不足
 related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0025, ADR-0021, ADR-0019]
 source_repo: ai-stock-trading
-source_ref: feat/FR-19-425-gfv-self-counting（作業仕様書 docs/specs/20260807_425_gfv-self-counting.md・IADR-0166）
+source_ref: feat/FR-19-425-gfv-self-counting（作業仕様書 docs/specs/20260807_425_gfv-self-counting.md・IADR-0165）
 author: Claude Code
 created: 2026-08-07
 ---
@@ -25,7 +25,7 @@ created: 2026-08-07
 - 機能要求（FR）: **FR-19**（取引ガード）・**FR-10**（リスク統制）・**FR-11**（監査ログ）
 - ユースケース（UC）: UC-06
 - 関連 ADR: **ADR-0025 決定2**（本件の起点）・[ADR-0021](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0021_us-account-type-dual-support.md) 決定4-3・4-5・[ADR-0019](https://github.com/endazon/project-planning/blob/main/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md) PoC 項目 8
-- 実装側の記録: `docs/adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md`／`docs/specs/20260807_425_gfv-self-counting.md`
+- 実装側の記録: `docs/adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md`／`docs/specs/20260807_425_gfv-self-counting.md`
 
 ---
 
@@ -48,7 +48,7 @@ created: 2026-08-07
 | 実装が期間を決めて自動失効させる | **実装だけが知っている統制の緩み**が生まれる。計画に無い値を発明することになる |
 | **失効を設けない（累計のまま）** ← **採用** | 安全側（止まる側）。ただし**1 件でも記録されれば 2 件目で恒久的に現金口座の新規建てが止まる** |
 
-**後者を採った**（IADR-0166 決定4）。自動失効は fail-open であり、計画未定義の値を実装が決めるべきではないためである。
+**後者を採った**（IADR-0165 決定4）。自動失効は fail-open であり、計画未定義の値を実装が決めるべきではないためである。
 
 **ただし本計数は「ブローカーの GFV 件数」ではなく「自らのガードの失敗回数」である**（ADR-0025 §理由）。
 ガードが正しく働けば 0 のままであり、1 件出た時点で**人が原因を調べるべき事象**である。

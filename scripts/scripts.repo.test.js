@@ -793,7 +793,7 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: 不採用ライブラリの混入が無い（#351 の回帰）', () => {
     assert.deepStrictEqual(bl.checkTree(pathBl.resolve(__dirname, '..')), []);
   });
-  // --- check-banned-settled-cash-sources.js: 決済済み資金の代替値の遮断（FR-19 / #425 / ADR-0025 / IADR-0166） ---
+  // --- check-banned-settled-cash-sources.js: 決済済み資金の代替値の遮断（FR-19 / #425 / ADR-0025 / IADR-0165） ---
   //
   // ADR-0025 は `MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal` を
   // 決済済み資金の代替に使うことを名指しで禁じた。とりわけ現金買付余力は**未決済の売却代金を含む**のが

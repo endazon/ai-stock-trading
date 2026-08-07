@@ -160,7 +160,7 @@ public static class AuditEntryFactory
     private static string Describe<T>(T? value) where T : struct =>
         value?.ToString() ?? "未供給";
 
-    // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166: 未決済資金による買付（GFV 発生）の**自前計数**。
+    // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165: 未決済資金による買付（GFV 発生）の**自前計数**。
     //
     // ★ 要約に「自前計数」「ガードの失敗」であることを明記する。**ブローカーが GFV と判定した件数の写しではなく、
     //   両者が一致する保証はない**（ADR-0025 §理由）。取り違えると、口座制限（3 回で 90 日）の予防という

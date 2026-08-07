@@ -1,5 +1,5 @@
 ---
-title: IADR-0165 Stage 1 最小取引件数を設定値にし、市場監視パラメータを SC-02 へ移し、収集間隔の変更経路が無いことを構造で担保する
+title: IADR-0164 Stage 1 最小取引件数を設定値にし、市場監視パラメータを SC-02 へ移し、収集間隔の変更経路が無いことを構造で担保する
 type: impl-adr
 status: Accepted
 related_ids: [SC-01, SC-02, SC-03, FR-03, FR-11, FR-13, FR-20, UC-06, ADR-0008, IADR-0142, IADR-0149, IADR-0151, IADR-0155, IADR-0161]
@@ -8,7 +8,7 @@ created: 2026-08-07
 updated: 2026-08-07
 ---
 
-# IADR-0165: Stage 1 最小取引件数の設定化と市場監視パラメータの SC-02 移管
+# IADR-0164: Stage 1 最小取引件数の設定化と市場監視パラメータの SC-02 移管
 
 - 状態: Accepted
 - 日付: 2026-08-07

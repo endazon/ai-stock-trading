@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-20, FR-13, SC-02, UC-06, #423, IADR-0165 決定5: Stage 1 の最小取引件数（§4.1 条件 3）として
+// FR-20, FR-13, SC-02, UC-06, #423, IADR-0164 決定5: Stage 1 の最小取引件数（§4.1 条件 3）として
 // **設定できる値域**と、統計的根拠（§4.3）を満たすかの判定。
 //
 // 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）で、条件 3 の件数は **SC-02 から変更できる
@@ -43,7 +43,7 @@ public static class Stage1TradeCountBounds
 
     /// <summary>
     /// FR-20, §4.3: その件数が統計的根拠を満たさない（100 件未満である）か。
-    /// <b>判定はサーバ側のここに 1 つだけ置く</b>（IADR-0165 決定6）——画面 2 か所と Discord の
+    /// <b>判定はサーバ側のここに 1 つだけ置く</b>（IADR-0164 決定6）——画面 2 か所と Discord の
     /// 3 か所へ閾値を写経すると、1 か所の写し間違いで「下げたのに警告が出ない」状態になる。
     /// </summary>
     public static bool BelowStatisticalBasis(int minimumTradeCount) =>
@@ -70,7 +70,7 @@ public static class Stage1TradeCountBounds
     }
 
     /// <summary>
-    /// FR-20, #423, IADR-0165 決定5: 永続行から読んだ値を**設定値として解決する**。
+    /// FR-20, #423, IADR-0164 決定5: 永続行から読んだ値を**設定値として解決する**。
     /// <para>
     /// 本項目を持たない旧行（<c>null</c>）・値域外の値は<b>既定 100 へ落とす</b>。
     /// 発注先の allow-list（IADR-0161）と同じ考え方だが、<b>倒す先は「厳しい側」＝合格に遠い値</b>である。

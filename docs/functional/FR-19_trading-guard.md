@@ -2,7 +2,7 @@
 title: 取引ガード（FR-19）機能仕様書
 type: functional-spec
 status: draft
-related_ids: [FR-19, FR-10, FR-11, FR-20, UC-01, UC-02, UC-06, ADR-0007, ADR-0003, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0132, IADR-0153, IADR-0166]
+related_ids: [FR-19, FR-10, FR-11, FR-20, UC-01, UC-02, UC-06, ADR-0007, ADR-0003, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0132, IADR-0153, IADR-0165]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-07
@@ -31,7 +31,7 @@ plan_refs:
 > 適用範囲を口座種別で分岐させ（**#332 の日本株現物限定は巻き戻していない**）、GFV 回避ガード・GFV 回数の停止・
 > 信用系の設定不能化を加え、**照会できない／設定値と食い違うときは新規建てを止める**（fail-closed）。
 >
-> **2026-08-07 改訂（#425・[ADR-0025](../../planning/projects/ai-stock-trading/07_adr/ADR-0025_settled-cash-poc-and-gfv-counting.md) 決定2・[IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)）**:
+> **2026-08-07 改訂（#425・[ADR-0025](../../planning/projects/ai-stock-trading/07_adr/ADR-0025_settled-cash-poc-and-gfv-counting.md) 決定2・[IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)）**:
 > **GFV 発生回数を自前で計数する**ようにした（moomoo API に該当フィールドが存在しないため。手入力は計画が却下）。
 > **★ 数えているのは「自らのガードをすり抜けた買付」であり、ブローカーが GFV と判定した件数ではない。両者が一致する保証はない。**
 > 供給元はブローカー照会（`BrokerAccountState`）ではなく**自前の追記台帳**であり、未供給は従来どおり新規建てを止める。
@@ -126,7 +126,7 @@ plan_refs:
   （安全性は発注側が担保する）。
 - **適用は新規建てのみ**。口座種別を切り替えた瞬間に既存の信用建玉が閉じられなくなることを防ぐ。
 
-### GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0166）
+### GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0165）
 
 **GFV 発生回数は moomoo API から取得できない**（`GoodFaith` / `Violation` / `Gfv` はアセンブリ全体で 0 件。
 IADR-0153 決定4 の実測）。計画は 2026-08-07 に**自前で計数する**ことを決めた（手入力は却下——自動売買の
@@ -148,7 +148,7 @@ IADR-0153 決定4 の実測）。計画は 2026-08-07 に**自前で計数する
 | 記録先 | 追記専用台帳 `good_faith_violations`（**永続**。プロセス内だと再起動 1 回で統制が解ける）＋ 中央監査台帳（FR-11・`GoodFaithViolationRecorded`） |
 | 供給 | `PortfolioSnapshot.GoodFaithViolations`（`GoodFaithViolationTally?`）。**ブローカー照会（`BrokerAccountState`）には載せない**——同じ欄に載せると「ブローカーが報告した件数」と読まれる |
 | 未供給の扱い | **新規建てを拒否**（`GoodFaithViolationLimitReached`・fail-closed）。**`Observed(0)`（数えた結果 0 件）とは別物である** |
-| 失効 | **設けていない**（累計）。計画が失効の期間も手段も定めておらず、自動失効は fail-open であるため実装で値を発明しない（IADR-0166 決定4・計画へ環流済み） |
+| 失効 | **設けていない**（累計）。計画が失効の期間も手段も定めておらず、自動失効は fail-open であるため実装で値を発明しない（IADR-0165 決定4・計画へ環流済み） |
 
 **ガードが正しく働けば計数は 0 のままである。** 1 件でも記録された時点で、発注前の GFV 回避ガードを
 すり抜けた買付が現に約定したということであり、**ガードの不具合または口座観測の欠落を示す**。
@@ -263,7 +263,7 @@ flowchart TD
 - 機能仕様書: [FR-10 リスク統制](FR-10_risk-controls.md)、[FR-20 段階ゲート](FR-20_staged-gates.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - テスト仕様書: [FR-19 取引ガード（再実装）](../tests/FR-19_trading-guards-tests.md)、[FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)、[FR-19 相場操縦パターン検知](../tests/FR-19_manipulation-detection-tests.md)
-- 実装ADR: [IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)（**GFV の自前計数と決済済み資金の代替値の遮断**・#425）、[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)（**口座種別の供給と fail-closed**・#375）、[IADR-0132](../adr/IADR-0132_product-type-tri-state-and-guard-scope.md)（商品種別 3 値化・ガードの適用範囲）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（相場操縦拡張点）、[IADR-0038](../adr/IADR-0038_order-decomposition-position-effect.md)（ドテン/部分決済の注文分解）、[IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)（相場操縦検知アルゴリズム）
+- 実装ADR: [IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)（**GFV の自前計数と決済済み資金の代替値の遮断**・#425）、[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)（**口座種別の供給と fail-closed**・#375）、[IADR-0132](../adr/IADR-0132_product-type-tri-state-and-guard-scope.md)（商品種別 3 値化・ガードの適用範囲）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0006](../adr/IADR-0006_manipulation-guard-extension-point.md)（相場操縦拡張点）、[IADR-0038](../adr/IADR-0038_order-decomposition-position-effect.md)（ドテン/部分決済の注文分解）、[IADR-0040](../adr/IADR-0040_manipulation-detection-algorithm.md)（相場操縦検知アルゴリズム）
 - 作業仕様書: [20260807_425_gfv-self-counting](../specs/20260807_425_gfv-self-counting.md)（#425）、[20260806_375_cash-account-support](../specs/20260806_375_cash-account-support.md)（#375）、[20260804_332_trading-guards](../specs/20260804_332_trading-guards.md)（#332）、[20260711_manipulation-detector](../specs/20260711_manipulation-detector.md)（#49）
 
 ## 未決事項
@@ -273,7 +273,7 @@ flowchart TD
   「登録されたものを確実に強制する」と定めているため実装判断では緩めない。計画側の裁定を要する。
 - **信用買い（`MarginLong`）の建玉表現**: 3 値化は有効・無効の制御までであり、信用金利・必要証拠金・
   建玉の区別は未実装（実弾解禁は Stage 3。#332 未決事項 3）。
-- **GFV 違反記録の失効が計画に無い**（#425 / IADR-0166 決定4）: `GoodFaithViolationLimitReached` の解除条件は
+- **GFV 違反記録の失効が計画に無い**（#425 / IADR-0165 決定4）: `GoodFaithViolationLimitReached` の解除条件は
   「違反記録の失効」だが、**期間も手段も定義されていない**。自動失効は fail-open であるため実装では累計のままとし、
   **1 件でも記録されれば 2 件目で恒久的に現金口座の新規建てが止まる**。計画へ環流済み
   （[feedback/20260807_adr0025-gfv-counting-open-points.md](../../feedback/20260807_adr0025-gfv-counting-open-points.md)）。

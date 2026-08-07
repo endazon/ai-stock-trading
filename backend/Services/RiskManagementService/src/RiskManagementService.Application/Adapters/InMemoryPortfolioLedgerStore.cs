@@ -38,7 +38,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     public PositionEffect? FindApprovedPositionEffect(Guid decisionId) =>
         _approvals.TryGetValue(decisionId, out var approval) ? approval.Intent.PositionEffect : null;
 
-    // FR-19, #425, IADR-0166: 承認 Intent を DecisionId で引く（未承認は null＝不明）。
+    // FR-19, #425, IADR-0165: 承認 Intent を DecisionId で引く（未承認は null＝不明）。
     public OrderIntent? FindApprovedIntent(Guid decisionId) =>
         _approvals.TryGetValue(decisionId, out var approval) ? approval.Intent : null;
 

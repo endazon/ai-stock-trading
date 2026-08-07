@@ -1,5 +1,5 @@
 ---
-title: IADR-0166 GFV 発生回数は約定の事後検出で自前計数し、決済済み資金の代替値は構造で遮断する
+title: IADR-0165 GFV 発生回数は約定の事後検出で自前計数し、決済済み資金の代替値は構造で遮断する
 type: impl-adr
 status: Accepted
 related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0025, ADR-0021, ADR-0019, IADR-0153, IADR-0148, IADR-0159, IADR-0134]
@@ -13,7 +13,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
 
-# IADR-0166: GFV 発生回数は約定の事後検出で自前計数し、決済済み資金の代替値は構造で遮断する
+# IADR-0165: GFV 発生回数は約定の事後検出で自前計数し、決済済み資金の代替値は構造で遮断する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

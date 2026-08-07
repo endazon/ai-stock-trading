@@ -125,7 +125,7 @@ if (builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDa
 // 観測が無い（または 30 分で失効した）状態では新規建てが `BrokerAccountTypeUnverified` で止まる。
 builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
     new InMemoryBrokerAccountObservationStore(sp.GetRequiredService<TimeProvider>()));
-// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 発生回数の**自前計数**の台帳。
+// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の**自前計数**の台帳。
 // **永続（EF）でなければならない**——違反記録をプロセス内に持つと再起動で消え、「2 件で新規建てを止める」
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の
 // 違いである。**数えているのは「自らのガードをすり抜けた買付」であり、ブローカーの GFV カウンタの写しではない。**

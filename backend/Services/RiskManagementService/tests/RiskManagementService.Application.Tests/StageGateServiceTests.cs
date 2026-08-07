@@ -19,7 +19,7 @@ public class StageGateServiceTests
         Build(TradingStage initial = TradingStage.Stage0Verification) =>
         BuildWith(initial, Stage1TradeCountBounds.Default);
 
-    // FR-20, FR-13, SC-02, #423, IADR-0165 決定4: 最小取引件数は**設定値**であり、段階ゲートは
+    // FR-20, FR-13, SC-02, #423, IADR-0164 決定4: 最小取引件数は**設定値**であり、段階ゲートは
     // 判定の直前に設定ストアから読んで重ねる。テストも設定ストア経由で件数を与える
     // （`StageGatePolicy` を差し替えて件数を変えると、実運用に存在しない経路を検証してしまう）。
     private static (StageGateService svc, InMemoryStageGateStore ledger, InMemoryStagePerformanceStore perf,
@@ -423,7 +423,7 @@ public class StageGateServiceTests
     }
 
     // ------------------------------------------------------------------
-    // #423, IADR-0165 決定4: 最小取引件数は**設定値**であり、段階ゲートの判定へ実効する
+    // #423, IADR-0164 決定4: 最小取引件数は**設定値**であり、段階ゲートの判定へ実効する
     // ------------------------------------------------------------------
 
     // 設定を下げれば、その件数で昇格できる（裁定「値は SC-02 から変更できる」）。
@@ -506,7 +506,7 @@ public class StageGateServiceTests
         svc.GetStatus().Stage1Criteria.TargetTradingDays.Should().Be(60);
     }
 
-    // 100 件未満の設定は、段階ゲートの現況で**サーバが警告を宣言する**（IADR-0165 決定6）。
+    // 100 件未満の設定は、段階ゲートの現況で**サーバが警告を宣言する**（IADR-0164 決定6）。
     // **宣言は昇格を妨げない**——裁定は「警告は設定を妨げない」と定めている。
     [Fact]
     public void 統計的根拠を下回る設定は警告を宣言するが昇格を妨げない()

@@ -46,7 +46,7 @@ internal sealed class FakeBrokerAccountObservations : IBrokerAccountObservationS
     /// <summary>
     /// 現金口座を照会できている状態。決済済み資金は既定で<b>未供給</b>（＝買付が止まる側）。
     /// <para>
-    /// #425, ADR-0025 決定2, IADR-0166: <b>GFV 発生回数は本型に載らない</b>——ブローカーが供給できず、
+    /// #425, ADR-0025 決定2, IADR-0165: <b>GFV 発生回数は本型に載らない</b>——ブローカーが供給できず、
     /// 自前計数（<c>IGoodFaithViolationStore</c>）が別経路で供給する。
     /// </para>
     /// </summary>

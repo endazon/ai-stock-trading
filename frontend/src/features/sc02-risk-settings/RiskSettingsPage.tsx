@@ -267,7 +267,7 @@ export function RiskSettingsPage() {
             }}
           />
           <StageView stage={current.stage} provider={current.brokerProvider} />
-          {/* SC-02, FR-20, FR-13, #423, IADR-0165 決定4: Stage 1 の最小取引件数。
+          {/* SC-02, FR-20, FR-13, #423, IADR-0164 決定4: Stage 1 の最小取引件数。
               計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に
               属する値であるため）。したがって StageView の直後に置く。 */}
           <Stage1TradeCountForm
@@ -296,7 +296,7 @@ export function RiskSettingsPage() {
           消費するため、リスク設定の取得可否に連動させず独立してロード/縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
       <WatchlistForm />
 
-      {/* SC-02, FR-03, FR-13, #423, IADR-0165 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
+      {/* SC-02, FR-03, FR-13, #423, IADR-0164 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
           **2026-08-07 の裁定で SC-01 §2 から移管された。** 計画は「**監視銘柄の近くに置く**」と定める
           ——「どの銘柄を、どれだけ動いたら」は 1 つの設定だからである。したがって WatchlistForm の直後に置く。
           監視銘柄と同じ MarketMonitorService 由来のため、同じく独立してロード/縮退する。 */}

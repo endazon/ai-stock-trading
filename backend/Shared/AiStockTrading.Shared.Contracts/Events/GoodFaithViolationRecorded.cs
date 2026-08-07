@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Contracts.Events;
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, ADR-0021 決定4-2/4-3, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, ADR-0021 決定4-2/4-3, IADR-0165:
 // **未決済資金による買付を約定として観測し、GFV 発生 1 件として記録した。**
 //
 // ★★ この件数が何であるかを取り違えないこと（ADR-0025 §理由 が明記した限界） ★★

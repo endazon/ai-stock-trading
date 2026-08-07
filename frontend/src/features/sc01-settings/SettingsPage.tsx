@@ -6,7 +6,7 @@ import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { useBrokerProvider } from '../shared/paperMode';
 
-// SC-01, FR-17, UC-06, IADR-0080, IADR-0165: 設定画面。
+// SC-01, FR-17, UC-06, IADR-0080, IADR-0164: 設定画面。
 //
 // **本画面は §1 全体前提条件（FR-17）のみの画面である。**
 // データ源は BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。
@@ -252,7 +252,7 @@ export function SettingsPage() {
         リスク上限・監視銘柄・<strong>市場監視パラメータ（変動閾値・クールダウン）</strong>は
         「リスク設定」画面（SC-02）で扱います。
       </p>
-      {/* SC-01, FR-13, #423, IADR-0165 決定1: 収集間隔は**起動時構成**である。
+      {/* SC-01, FR-13, #423, IADR-0164 決定1: 収集間隔は**起動時構成**である。
           入力欄を作らないだけでは「未実装の項目」に見え、次に画面を触る者が善意で実装してしまう。
           **変更しないことが裁定である**ことを画面に明記する（`role="note"` とし `alert` にはしない。
           常時表示される静的な注記であり、他の警告と同じ緊急度で読ませると警告全体が軽くなる）。 */}

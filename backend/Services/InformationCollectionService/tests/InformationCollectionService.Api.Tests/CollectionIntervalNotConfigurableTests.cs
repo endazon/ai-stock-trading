@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Api.Tests;
 
-// SC-01, FR-13, UC-06, #423, IADR-0165 決定1:
+// SC-01, FR-13, UC-06, #423, IADR-0164 決定1:
 // **情報収集の巡回間隔（`Collection:PollIntervalSeconds`）を実行時に変更する経路が存在しないこと**を
 // 構造で固定する。MarketMonitorService 側の同名テストと対をなす。
 //

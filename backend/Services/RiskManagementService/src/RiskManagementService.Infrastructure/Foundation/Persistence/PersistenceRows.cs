@@ -378,7 +378,7 @@ internal sealed class BuyInInferenceRow
     public DateTimeOffset InferredAtUtc { get; set; }
 }
 
-// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165:
 // GFV 発生 1 件（自前計数）の**追記専用**の行。
 //
 // **主キーは OrderId である**（1 注文 1 件が計上単位）。部分約定の進行・メッセージ再送で二重計上しない。

@@ -49,7 +49,7 @@ public static class MonitorBffEndpoints
             ProxyAsync(httpFactory, http, HttpMethod.Get, "/monitor/watchlist/history", ct))
             .WithName("BffMonitorWatchlistHistory");
 
-        // AST #423, FR-03, FR-13, SC-02, IADR-0165 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
+        // AST #423, FR-03, FR-13, SC-02, IADR-0164 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
         //
         // 2026-08-07 の裁定で SC-01 §2 が廃止され、変動閾値・クールダウンは **SC-02 が扱う**ことになった
         // （権威は MarketMonitorService であり、監視銘柄と同じ由来サービスである）。

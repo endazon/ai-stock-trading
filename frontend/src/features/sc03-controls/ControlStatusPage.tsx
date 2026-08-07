@@ -394,7 +394,7 @@ function Stage1ProgressView({ gate }: { gate: StageGateStatus }) {
         {excluded > 0 ? `（paper 稼働により ${excluded} 日を除外）` : ''}／ 取引 {progress.tradeCount} /{' '}
         {criteria.minimumTradeCount} 件（設定値）
       </p>
-      {/* FR-20, SC-03, #423, IADR-0165 決定6: **100 件未満の設定は警告を常時表示する。**
+      {/* FR-20, SC-03, #423, IADR-0164 決定6: **100 件未満の設定は警告を常時表示する。**
           計画は「画面と昇格承認の双方に警告を常時表示する」と定める（06_daytrading-review §4.1 の追記）。
           **判定はサーバが宣言した `belowStatisticalBasis` に従う**——画面が `< 100` を自分で判定すると、
           警告を出す場所（SC-02・SC-03・Discord）が増えるたびに条件が写経され、

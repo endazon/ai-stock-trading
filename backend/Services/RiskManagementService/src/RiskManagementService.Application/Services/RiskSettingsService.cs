@@ -127,7 +127,7 @@ public sealed class RiskSettingsService(
     }
 
     /// <summary>
-    /// FR-20, FR-13, SC-02, UC-06, #423, IADR-0165 決定4/決定5: **Stage 1 の最小取引件数**（§4.1 条件 3）を変更する。
+    /// FR-20, FR-13, SC-02, UC-06, #423, IADR-0164 決定4/決定5: **Stage 1 の最小取引件数**（§4.1 条件 3）を変更する。
     /// <para>
     /// 値域は <see cref="Stage1TradeCountBounds"/> が単独で決める（1〜1000）。範囲外なら
     /// <see cref="ArgumentOutOfRangeException"/> を投げ、<b>設定を一切変更せず履歴も残さない</b>
