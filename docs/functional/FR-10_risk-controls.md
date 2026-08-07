@@ -2,7 +2,7 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
-related_ids: [FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0153, IADR-0158, IADR-0159]
+related_ids: [FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0153, IADR-0158, IADR-0159, IADR-0160]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-07
@@ -42,6 +42,16 @@ plan_refs:
 > （[IADR-0159](../adr/IADR-0159_buy-in-post-hoc-inference.md)・
 > [作業仕様書 20260807](../specs/20260807_419_buy-in-post-hoc-inference.md)）。
 > **30 日の禁止期間・`BuyInBanned`（クラス A）の扱いは変更していない**（決定4 改訂が「変更しない」と明示）。
+>
+> **#420 による更新（2026-08-07）**: 計画側で **ADR-0016 決定7 に追記**が入り（2026-08-07 の利用者裁定・
+> 環流 endazon/project-planning#214）、**維持率の算式（純資産 ÷ 建玉評価額の合計）・複数建玉時の適用閾値
+> （建玉ごとの閾値の最大値）・信用買いの規制維持率（時価の 25%・FINRA Rule 4210(c)(1)）**が確定した。
+> あわせて**実装側の欠陥**——適用閾値を自動縮小と新規建ての評価が**別々に書いており、発注側が緩かった**
+> ——を是正した。節「維持率の適用閾値は口座単位である」を追加し、「空売り専用統制 8 規則」の規則 4 と
+> 「判定の入力と縮退」「維持率割れによる建玉の自動縮小」を更新した
+> （[IADR-0160](../adr/IADR-0160_maintenance-margin-applied-threshold-account-wide.md)・
+> [作業仕様書 20260807](../specs/20260807_420_maintenance-margin-threshold-account-wide.md)）。
+> **自前閾値 40%・回復目標 +5pt・株価下限 $5.00 の値は変更していない。**
 >
 > **#417 による更新（2026-08-07）**: 計画側で **ADR-0016 決定3 が改訂され**（2026-08-06 の利用者裁定・
 > 環流 endazon/project-planning#204）、**空売りの一次ゲートが借株料 20% から借株可否（`IsShortPermit`）へ
@@ -179,7 +189,7 @@ ADR-0009「手仕舞い・損切りは止めない」を金額系上限でも壊
 | 1 | 1 銘柄あたりの空売り建玉 | **equity の 10%**（$3,000 で $300） | `ShortExposureExceeded` |
 | 2 | 逆指値（ストップ注文）の同時発注 | **必須**（未約定・未受理なら建玉を持たない） | `StopOrderRequired`（※） |
 | 3 | **借株可否（一次ゲート）**／借株料 | **借株不可なら空売りしない**（`IsShortPermit=False`）。料率は**年率 20%** 上限（**残置・発火しない既知の統制**）。**照会不可なら空売りしない** | `BorrowUnavailable`（一次）／`BorrowCostExceeded`（二次） |
-| 4 | 維持率の閾値 | **40% と規制要求 `max($5.00 ÷ 株価, 30%)` の厳しい方**（境界 **$12.50**） | `MaintenanceMarginBreach` |
+| 4 | 維持率の閾値 | **40% と規制要求の厳しい方**（空売り＝`max($5.00 ÷ 株価, 30%)`・境界 **$12.50**）。**適用は口座単位**＝保有建玉と当該注文の閾値の**最大値**（#420） | `MaintenanceMarginBreach` |
 | 5 | 株価の下限 | **USD 5.00 未満は対象外** | `ShortPriceFloorBreach` |
 | 6 | 空売り比率 | **建玉総額の 50%** を超えない | `ShortExposureExceeded` |
 | 7 | 権利確定日 | **前日**の新規空売りを禁止 | `DividendRecordDateNear` |
@@ -312,6 +322,33 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 これは自動縮小の既定（空列＝発動なし）と**向きが違う**——あちらは発火元が存在せず「発動なし」が事実として
 正しいが、**推定経路は実在し発火し得る**ためである。
 
+### 規則 4 の適用は**口座単位**である（#420 / ADR-0016 決定7 の 2026-08-07 追記 / IADR-0160）
+
+規制側の実効維持率は**商品種別で条文が異なり**、空売りでは**低位株ほど厳しくなる**。
+
+| 商品種別 | 条文 | 規制側の実効維持率 |
+| --- | --- | --- |
+| 空売り（`ShortSell`） | **4210(c)(3)** | `max($5.00 ÷ 株価, 30%)` |
+| 信用買い（`MarginLong`） | **4210(c)(1)** | **25%**（時価に対する比率なので株価に依存しない） |
+| 空売り・株価 $5.00 未満 | 4210(c)(2) | **実装しない**（決定7 が対象から外しており発火しない） |
+
+したがって建玉ごとに異なる閾値が出る。**口座へ適用するのはその最大値**（最も厳しいもの）であり、
+**当該注文が成立した場合の建玉もその候補に含める**（FR-10「常に厳しい方が効く」の延長）。
+
+```
+適用閾値 = max( 保有建玉ごとの閾値 ∪ { 当該注文の閾値 } )
+建玉 1 件の閾値 = max( 自前 40%, 規制要求（商品種別で決まる） )
+維持率 R = 純資産 ÷ 建玉評価額の合計
+```
+
+> **是正した欠陥**: 従前、新規建ての評価は**これから出す注文の株価だけ**で閾値を求めていた。$6.00 の
+> 空売り建玉（要求 83.3%）を抱えたまま $50.00 の新規空売りを出すと閾値が 40% へ落ち、**口座の実維持率
+> 50% でも通った**。自動縮小は 83.3% で発動しているため、**縮小の最中に積み増しを許す**状態だった。
+
+**算式・条文選択・建玉 1 件の閾値・口座の適用閾値・回復目標は `MaintenanceMarginPolicy` だけが定義する。**
+自動縮小と新規建ての評価はそこだけを通す（同じ規則を 2 か所に書かない＝今回の欠陥の再発を止める）。
+評価器へ渡す入力も自動縮小と**同じ型**（`MaintenanceMarginSnapshot`）であり、維持率もその束から導出される。
+
 ### 判定の入力と縮退（フェイルクローズ）
 
 空売りの識別は **`Side == Sell` かつ `PositionEffect == Open`**（新規売り建て）で行い、上流（AI）の
@@ -324,7 +361,8 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 | 借株料を照会できない（`null`） | `BorrowUnavailable` で拒否（ADR-0016 決定3。**改訂は一次ゲートを移しただけで本縮退は残る**） |
 | 強制買戻しの 30 日禁止期間中 | **`BuyInBanned`** で拒否。借株が成立していても立つ（`BorrowUnavailable` とは独立） |
 | 照会経路そのものが無い（文脈が `null`） | 同上。**「照会できないなら通す」に倒さない** |
-| 維持率が取得できず、かつ空売り建玉を保有している | `MaintenanceMarginBreach` で拒否（IADR-0131 決定4） |
+| 維持率の束（`MarginSnapshot`）が供給されず、かつ空売り建玉を保有している | `MaintenanceMarginBreach` で拒否（IADR-0131 決定4） |
+| 束はあるが**信頼できない**（株価・数量が 0 以下／必要証拠金が負）、または建玉 0 件で維持率を導出できない | 同上で拒否（#420・IADR-0160 決定4）。**壊れた分母は維持率を実際より良く見せる**ため「導出できたか」で代用しない |
 | 対象市場が米国株以外 | `ShortSellDisabled` で拒否（USD 建ての $5.00 下限を円建て株価が素通りするため） |
 
 空売り比率 50% は**建玉総額に対する**比率であるため、**ロング建玉が無ければ 1 件目の空売りで 100% となり
@@ -391,7 +429,7 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 | 項目 | 規則 | 出典 |
 | --- | --- | --- |
 | 発動条件 | **維持率 ≦ 適用閾値**（閾値ちょうどで発動＝**割り込む前に**動く） | §5・FR-10・UC-06／等号の解釈は IADR-0133 決定3 |
-| 適用閾値 | 保有建玉の閾値（`MaintenanceMarginThresholdFor(株価)`）のうち**最も厳しいもの** | ADR-0016 決定7／複数建玉の扱いは IADR-0133 決定2 |
+| 適用閾値 | 保有建玉の閾値のうち**最も厳しいもの**（`MaintenanceMarginPolicy.AppliedThreshold`） | ADR-0016 決定7（**2026-08-07 追記が確定**）／IADR-0133 決定2・**IADR-0160 決定1** |
 | 回復目標 | **適用閾値 + 5 ポイント**（閾値 40% なら 45%、規制側が効いて 50% なら 55%。**連動する**） | §5（2026-08-02 追補） |
 | 縮小量 | 回復目標へ届く**最小限**（株数は切り上げ・**部分決済**する） | §5・UC-06（一律 50% 減・建玉 1 件丸ごとは棄却） |
 | 対象順 | **必要証拠金の降順**（同値は評価額降順→銘柄→市場で決定的に解く） | §5・UC-06（含み損順・建玉時刻順は棄却） |
@@ -399,10 +437,11 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 | 3 統制との関係 | **いずれかが成立していても動く**（本統制自体が手仕舞いであるため） | UC-06・ADR-0009 |
 
 判定は純関数 `MaintenanceMarginReducer.Plan(snapshot, limits)` に閉じる。閾値・回復目標の算出は
-#329 の `ShortSellingLimits` の 2 メソッドだけを通し、**本統制側で再実装しない**（値の二重定義を作らない）。
+**`MaintenanceMarginPolicy` だけ**を通し、**本統制側で再実装しない**（値の二重定義を作らない。
+#420・IADR-0160 決定1。**新規建ての評価側と同じ算出点である**）。
 
 ```
-維持率 R = 純資産 ÷ 建玉評価額の合計       … IADR-0133 決定1（規制側の実効維持率と分母を揃える）
+維持率 R = 純資産 ÷ 建玉評価額の合計       … ADR-0016 決定7 の 2026-08-07 追記が確定（規制側の実効維持率と分母を揃える）
 必要な削減 X = V − 純資産 ÷ 回復目標        … R ≧ 回復目標 なら X ≦ 0 ＝ 何もしない
 ```
 
@@ -601,6 +640,11 @@ flowchart TD
       いずれも発注が拒否され理由が記録される
 - [x] 強制買戻しを検知した銘柄が 30 日間空売り禁止となる（禁止期間の判定。検知経路は #342 依存）
 - [x] 維持率の閾値が「40% と規制要求の厳しい方」であり、境界が $12.50 である
+- [x] **適用閾値が口座単位**（保有建玉と当該注文の閾値の最大値）であり、自動縮小と新規建ての評価が
+      **同じ入力から同じ値**を出す（#420。最小値・平均への退行、注文自身の候補からの脱落を否定形で固定）
+- [x] **信用買いの規制維持率が時価の 25%**（4210(c)(1)）であり、空売り側の式（4210(c)(3)）を代用しない
+- [x] **維持率の算式が「純資産 ÷ 建玉評価額の合計」**であり、定義が 1 か所にしかない
+- [x] 維持率の束が供給されない／信頼できない／建玉 0 件で導出できないとき、空売り建玉があるなら通さない
 - [x] 空売りの **9 種**の拒否理由が「統制違反 0 件」（クラス C 限定）に計上されず、`BannedSymbol` にも混入しない
       （2026-08-04 に 7 種から改訂。`StopOrderRequired` の追認・`BuyInBanned` の新設。#374）
 - [x] 3 統制の優先順位が成立し、いずれも手仕舞い（Close）と損切りを止めない
@@ -618,13 +662,15 @@ flowchart TD
 
 ## 関連仕様
 
-- 実装ADR: [IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)（維持率割れの自動縮小の決定的規則）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md)（判定の基準通貨 USD への移行）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
-- 作業仕様書: [20260805_364_usd-base-currency](../specs/20260805_364_usd-base-currency.md)（判定の基準通貨 USD 移行）、[20260804_330_maintenance-margin-auto-reduce](../specs/20260804_330_maintenance-margin-auto-reduce.md)（自動縮小）、[20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
+- 実装ADR: [IADR-0160](../adr/IADR-0160_maintenance-margin-applied-threshold-account-wide.md)（維持率の適用閾値は口座単位・算式と条文選択の単一情報源）、[IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md)（維持率割れの自動縮小の決定的規則）、[IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)（空売り統制のフェイルクローズと拒否理由の分類）、[IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md)（equity 比の保持と解決点の集約）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失の判定基準）、[IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（エントリー判定）、[IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md)（判定の基準通貨 USD への移行）、[IADR-0107](../adr/IADR-0107_base-currency-conversion.md)（基準通貨換算）、[IADR-0108](../adr/IADR-0108_simulator-risk-profile.md)（SIMULATE プロファイル）、[IADR-0113](../adr/IADR-0113_moomoo-fill-polling.md)（約定の台帳到達＝統制の前提）、[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合の既知逸脱レジストリ）
+- 作業仕様書: [20260807_420_maintenance-margin-threshold-account-wide](../specs/20260807_420_maintenance-margin-threshold-account-wide.md)（適用閾値の口座単位化）、[20260805_364_usd-base-currency](../specs/20260805_364_usd-base-currency.md)（判定の基準通貨 USD 移行）、[20260804_330_maintenance-margin-auto-reduce](../specs/20260804_330_maintenance-margin-auto-reduce.md)（自動縮小）、[20260804_329_short-selling-controls](../specs/20260804_329_short-selling-controls.md)（再実装・第 2 段階）、[20260804_329_risk-control-core](../specs/20260804_329_risk-control-core.md)（再実装・第 1 段階）、[20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - テスト仕様書: [FR-10 リスク統制（再実装）](../tests/FR-10_risk-controls-tests.md)、[FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - 計画への環流（いずれも起草のみ・送付は未実施）: [空売りの拒否理由コードの不足](../../feedback/20260804_adr0016-stop-order-rejection-reason.md)、
   [空売り比率 50% の構造的含意](../../feedback/20260804_adr0016-short-ratio-denominator.md)、
   [維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率](../../feedback/20260804_uc06-maintenance-ratio-formula.md)
+  （**送付済み・裁定済み**。ADR-0016 決定7 の 2026-08-07 追記）、
+  [追記の取り込みで残った 3 点](../../feedback/20260807_adr0016-margin-long-maintenance-threshold.md)
 
 ## 未決事項
 
@@ -644,9 +690,13 @@ flowchart TD
   維持率・借株料の累計も表示対象である（ADR-0016 決定15。**維持率は最上位**に置く）。
 - 空売り文脈（借株照会・空売り建玉・権利確定日）の供給元が無いため、現状は**すべての新規売り建てが
   拒否される**（フェイルクローズ）。Stage 1 の検証には供給元が要る（#342 / #332）。
-- **維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率**は計画に記述が無く、実装が安全側で仮置き
-  している（[IADR-0133](../adr/IADR-0133_maintenance-margin-auto-reduce.md) 決定1・2、
-  [環流](../../feedback/20260804_uc06-maintenance-ratio-formula.md)）。moomoo が返す維持率の定義が異なる
-  場合は新 IADR で改める（#342）。
+- ~~**維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率**は計画に記述が無く、実装が安全側で仮置き
+  している~~ → **計画側の裁定（ADR-0016 決定7 の 2026-08-07 追記・環流 project-planning#214）で確定し、
+  [#420](https://github.com/endazon/ai-stock-trading/issues/420) /
+  [IADR-0160](../adr/IADR-0160_maintenance-margin-applied-threshold-account-wide.md) で取り込んだ**
+  （算式＝純資産 ÷ 建玉評価額の合計／適用閾値＝建玉ごとの閾値の最大値／信用買い＝時価の 25%）。
+  取り込みに伴い**信用買いの適用閾値は緩む方向へ動いた**（$12.50 未満の信用買いで 83.3% → 40%）ため、
+  意図の追認を[環流](../../feedback/20260807_adr0016-margin-long-maintenance-threshold.md)している。
+  moomoo が返す維持率の定義が本算式と異なる場合は新 IADR で改める（#342）。
 - 自動縮小の**定期評価の周期**（何秒ごとに維持率を見るか）は計画に無く、供給元と同時に決める（#331）。
 - 強制買戻し（buy-in）の**検知・通知と禁止リストの永続化**は未実装（[作業仕様書 第 2 段階](../specs/20260804_329_short-selling-controls.md) 未決事項 §2）。
