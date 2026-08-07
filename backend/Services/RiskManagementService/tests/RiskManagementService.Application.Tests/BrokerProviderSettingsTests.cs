@@ -189,4 +189,77 @@ public class BrokerProviderSettingsTests
 
         act.Should().Throw<ArgumentException>();
     }
+
+    // ---- 段階の既定発注先（Stage.Mode）の書き込み経路 allow-list（#434・IADR-0161 決定3 / IADR-0163） ----
+    //
+    // IADR-0161 は読み書きを**意図的に非対称**に設計した。読み取りは黙って内蔵 paper へ倒すが（例外に
+    // すると設定行全体が失われる）、書き込みは拒否する（黙って倒すと「実弾を選んだのに paper になった」
+    // という説明のつかない状態遷移が生まれる）。`Stage.Mode` はこの非対称が破れていた。
+
+    // T-105（**最重要**）: 未知の序数を書き込もうとしたら拒否し、**設定も履歴も変えない**。
+    // 補正して受理してはならない——「保存できた」と思っているのに読み戻すと別の値、が本 issue の主題である。
+    [Theory]
+    [InlineData(7)]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue)]
+    public void 段階の既定発注先が未知の値なら拒否し設定も履歴も変えない(int unknownMode)
+    {
+        var (service, store, log) = Create();
+        var before = store.GetCurrent();
+
+        var act = () => service.UpdateStage(
+            new StageSettings(
+                TradingStage.Stage1Simulate,
+                (BrokerProvider)unknownMode,
+                TradingDefaults.FullCapitalCapRatio),
+            "owner",
+            "未知の発注先を送る");
+
+        act.Should().Throw<ArgumentException>();
+        store.GetCurrent().Should().BeEquivalentTo(
+            before,
+            "拒否時は部分適用しない（設定が一切変わらない）");
+        log.GetHistory().Should().BeEmpty(
+            "拒否された要求を履歴に積むと、実際には起きていない変更が監査上の事実になる");
+    }
+
+    // T-106（回帰）: 既知の 3 値は従来どおり受理される。allow-list を足したことで正当な変更まで
+    // 止まっていないことを固定する（**塞ぎすぎ**は塞ぎ漏れと同じくらい危険である）。
+    [Theory]
+    [InlineData(BrokerProvider.InternalPaper)]
+    [InlineData(BrokerProvider.MoomooReal)]
+    [InlineData(BrokerProvider.MoomooSimulate)]
+    public void 段階の既定発注先が既知の3値なら受理される(BrokerProvider mode)
+    {
+        var (service, store, log) = Create();
+
+        service.UpdateStage(
+            new StageSettings(TradingStage.Stage1Simulate, mode, TradingDefaults.FullCapitalCapRatio),
+            "owner",
+            "段階を設定する");
+
+        store.GetCurrent().Stage.Mode.Should().Be(mode);
+        log.GetHistory().Should().ContainSingle(e => e.ChangeType == SettingsChangeType.Stage);
+    }
+
+    // T-107（**否定形**・IADR-0161 決定3 の非対称を守る）: 書き込みを塞いだことで
+    // **読み取り側まで例外へ倒していない**こと。読み取りを例外にすると設定行全体が失われ、
+    // `GetCurrent` が 500 になってリスク判定そのものが止まる（#430 が採らないと明記した挙動）。
+    [Fact]
+    public void 書き込みを塞いでも読み取りは内蔵paperへ倒れたままである()
+    {
+        BrokerProviderResolution.Resolve((BrokerProvider?)(BrokerProvider)7).Should().Be(BrokerProvider.InternalPaper);
+        BrokerProviderResolution.Resolve((BrokerProvider?)null).Should().Be(BrokerProvider.InternalPaper);
+        BrokerProviderResolution.IsKnown((BrokerProvider)7).Should().BeFalse();
+    }
+
+    // T-108（**否定形**）: 新しい拒否コードを作っていないこと。#434 は「既存の `UnknownProvider` の
+    // 意味に揃える／新しい拒否コードを追加しない」と定めており、列挙子が増えると拒否理由の分類が
+    // 二重化する（画面・Discord・監査の写像先がすべてずれる）。
+    [Fact]
+    public void 拒否理由の列挙子を増やしていない()
+    {
+        Enum.GetNames<BrokerProviderChangeRejection>().Should().BeEquivalentTo(
+            ["ReasonRequired", "LiveAcknowledgementMissing", "LivePhraseMismatch", "UnknownProvider"]);
+    }
 }
