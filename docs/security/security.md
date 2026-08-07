@@ -2,7 +2,7 @@
 title: セキュリティ仕様書
 type: security-spec
 status: review
-related_ids: [NFR, FR-08, FR-11, FR-14, FR-19, UC-06, UC-07, ADR-0003, ADR-0012, IADR-0011, IADR-0051, IADR-0060, IADR-0062, IADR-0169, IADR-0171, IADR-0175]
+related_ids: [NFR, FR-02, FR-08, FR-11, FR-14, FR-19, UC-06, UC-07, ADR-0003, ADR-0004, ADR-0012, IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175]
 author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
@@ -138,7 +138,7 @@ plan_refs:
 | **通信時暗号化（外部公開）** | — | **対象外**。**本チャートは Ingress を持たない**（`deploy/helm/ai-stock-trading/templates/` に Ingress テンプレートが存在しない）。TLS 終端は基盤側の管掌（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
 | **ネットワーク分離** | Pod 間通信 | **未実装**。**NetworkPolicy テンプレートが無い**。名前空間内からは全 Pod が相互に到達できる |
 | **通信時暗号化（外部 API）** | FRED / Finnhub / SEC EDGAR / EDINET / Stooq / 日銀 / Discord | ✅ **すべて HTTPS**（実測: `api.stlouisfed.org`・`fred.stlouisfed.org`・`finnhub.io`・`data.sec.gov`・`www.sec.gov`・`api.edinet-fsa.go.jp`・`stooq.com`・`www.stat-search.boj.or.jp`・`discord.com`） |
-| **通信時暗号化（LLM ゲートウェイ）** | 基盤の LLM ゲートウェイ | 🔴 **平文 HTTP**。`http://llmgateway-service.microservices-platform:8080`（`deploy/helm/ai-stock-trading/values*.yaml`）。**プロンプトと LLM 応答（＝判断根拠・保有銘柄）がクラスタ内を平文で流れる**。基盤の名前空間を跨ぐため、上記「クラスタ内」より露出面が広い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
+| **通信時暗号化（LLM ゲートウェイ）** | 基盤の LLM ゲートウェイ | **本番は未結線**（`values.yaml:338,381` の `LlmGateway__BaseUrl` は**空文字列**＝Placeholder LLM・**呼ばない**ため、現状プロンプトは流れていない）。🔴 **ローカル（経路B）では平文 HTTP** —— `values-local.yaml:120,151` が `http://llmgateway-service.microservices-platform:8080` を実値で設定している。**本番結線時に同じ書式を使えば平文になる**（`values.yaml:380` のコメント例がその書式である）。流れる中身は**プロンプトと LLM 応答＝判断根拠・保有銘柄**であり、**基盤の名前空間を跨ぐ**ため露出面は上記「クラスタ内」より広い。**結線時の TLS はインフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
 | **個人情報** | — | **本システムは単独利用者運用であり、第三者の個人情報を扱わない**（[IADR-0011](../adr/IADR-0011_foundation-min-port.md)：認可は単層） |
 | **機微情報** | ブローカー資格情報・建玉・発注履歴・API キー | 下記「秘密情報管理」および「監査ログ」を参照 |
 
@@ -195,7 +195,7 @@ plan_refs:
 | T-7 | **Discord から第三者が統制操作を行う** | kill switch・段階昇格の乗っ取り | ✅ **6 層すべて既定拒否**（上記「Discord からの操作」）。**設定が空＝全許可にしない** |
 | T-8 | **秘密情報がリポジトリへ混入する** | 資格情報の流出 | ✅ **2 段**（`guard-secrets.js` ＋ gitleaks。上記「秘密情報管理」） |
 | T-9 | **依存パッケージの脆弱性** | 任意コード実行等 | ✅ **3 種**（`.github/workflows/`）。**CodeQL**（`codeql.yml`）／**Dependency Review**（PR 差分）／**`dotnet list package --vulnerable`**（推移的依存を含む） |
-| T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**とくに LLM ゲートウェイ経路はプロンプトと応答（＝判断根拠・保有銘柄）が平文で名前空間を跨ぐ** | 🔴 **未対策**（上記「データ保護」）。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
+| T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**LLM ゲートウェイ経路はプロンプトと応答（＝判断根拠・保有銘柄）が名前空間を跨ぐため露出面が広いが、本番は未結線であり現状は流れていない**（ローカル経路B のみ平文） | 🔴 **未対策**（上記「データ保護」）。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。**LLM ゲートウェイの結線時に TLS を前提にすること**（未結線の今が是正の好機である） |
 | T-11 | **監査証跡が失われる** | 事後追跡の不能 | 🔴 **保管期間・バックアップは未実装**（上記「監査ログ」）。記録項目とパージ除外は実装済み。担当 [#346](https://github.com/endazon/ai-stock-trading/issues/346) |
 
 ## 未決事項
