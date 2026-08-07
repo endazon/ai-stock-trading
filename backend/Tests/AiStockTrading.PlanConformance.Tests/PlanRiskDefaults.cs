@@ -82,15 +82,15 @@ public static class PlanRiskDefaults
 
         // --- 為替レート源と鮮度（FR-10, FR-17。ADR-0022。§3 の確定行 ＋ §5「為替レートの鮮度による縮退」） ---
         // 計画は 2026-08-04 に、実装が独自に持っていた FxOptions.DefaultMaxRateAgeDays = 14 を
-        // 「警告 3 日／絶対上限 30 日」へ置き換えた（ADR-0022 決定4・5）。値の**根拠が計画側へ移った**ため、
+        // 「警告 5 日（2026-08-07 改訂。起案時は 3 日）／絶対上限 30 日」へ置き換えた（ADR-0022 決定4・5）。値の**根拠が計画側へ移った**ため、
         // 情報源の都合（FRED の週次公表）から逆算された 14 は計画からの逸脱になる。
         //
         // 収録するのは値だけである。優先順位そのもの（第一＝日銀／フォールバック＝FRED）・切り替えの通知・
-        // 縮退の段階（3 日超は続行して警告／30 日超で新規建て停止・手仕舞いは止めない）は**振る舞いの規則**で
+        // 縮退の段階（5 日超は続行して警告／30 日超で新規建て停止・手仕舞いは止めない）は**振る舞いの規則**で
         // あり、テスト仕様書の 3 点セットで担当 issue（#381）が検証する（IADR-0127 決定4）。
         // 日数は単位つきで正規化する。無次元の件数（RiskLimits.MaxOpenPositions の "3"）との取り違えを防ぐ。
         new("Fx.RateSourceProviders", "boj, fred", $"{Assumptions3} / ADR-0022 決定1・2"),
-        new("Fx.StaleRateWarningDays", "3 days", $"{Assumptions3} / {Assumptions5} / ADR-0022 決定4"),
+        new("Fx.StaleRateWarningDays", "5 days", $"{Assumptions3} / {Assumptions5} / ADR-0022 決定4"),
         new("Fx.MaxRateAgeDays", "30 days", $"{Assumptions3} / {Assumptions5} / ADR-0022 決定5"),
 
         // --- 全体前提条件の確定値（FR-17）。§5 と同じく利用者決定であり、実装は

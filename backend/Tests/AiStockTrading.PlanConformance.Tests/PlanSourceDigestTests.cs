@@ -13,10 +13,6 @@ namespace AiStockTrading.PlanConformance.Tests;
 /// </summary>
 public class PlanSourceDigestTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public PlanSourceDigestTests(ITestOutputHelper output) => _output = output;
-
     // 計画書の節が最後の転記時点から変わっていないこと。
     //
     // **赤の意味**: 「値が間違っている」ではなく「計画側が変わった。PlanRiskDefaults を読み直して
@@ -31,8 +27,13 @@ public class PlanSourceDigestTests
         var root = PlanSourceReader.TryFindPlanningRoot();
         if (root is null)
         {
-            _output.WriteLine(
-                "notice: planning submodule が未 populate のため計画書ダイジェスト検査を skip した。"
+            // **`Assert.Skip` を使う**（`ITestOutputHelper` へ書くだけにしない）。合格したテストの
+            // `ITestOutputHelper` 出力は VSTest 経路の既定では表示されず、`--verbosity normal`
+            // （MSBuild 側の verbosity）でも出ない。それでは決定4 の「緑だが検査されていないことを
+            // 隠さない」という規律が実効しない。`Assert.Skip` なら**実行サマリの Skipped 件数**として
+            // 必ず現れる。
+            Assert.Skip(
+                "planning submodule が未 populate のため計画書ダイジェスト検査を skip した。"
                     + "この範囲は本実行では検査されていない（IADR-0166 決定4）。");
             return;
         }
@@ -132,5 +133,28 @@ public class PlanSourceDigestTests
         section.Should().NotContain("履歴", "上位（##）の見出しでも打ち切る＝変更履歴は含めない（IADR-0166 決定2）");
 
         PlanSourceReader.TryExtractSection(Md, "### 9.").Should().BeNull("無い節は null（テスト側が理由を出す）");
+    }
+
+    // **前方一致の曖昧性**（#444 のレビュー指摘）: `"### 6."` は `"### 6.1 …"` の前方一致でもある。
+    // 直後が区切り（空白）か行末であることまで要求しないと、**ファイル内の見出し出現順に依存した
+    // 暗黙の前提**になる。出現順を逆にしても正しい節を選ぶことを固定する。
+    [Fact]
+    public void 見出しの前方一致は直後が区切りであることまで要求する()
+    {
+        // `### 6.1` を**先に**置く（実ファイルとは逆順）。前方一致だけだと `### 6.` がこちらに当たる。
+        const string Md = """
+            ### 6.1 LLM 費用の対象範囲
+            細目の本文
+
+            ### 6. 運用費用の上限
+            本体の本文
+            """;
+
+        PlanSourceReader.TryExtractSection(Md, "### 6.")
+            .Should().Contain("本体の本文").And.NotContain("細目の本文",
+                "`### 6.` は `### 6.1` に一致してはならない（直後が区切りでない）");
+
+        PlanSourceReader.TryExtractSection(Md, "### 6.1")
+            .Should().Contain("細目の本文").And.NotContain("本体の本文");
     }
 }

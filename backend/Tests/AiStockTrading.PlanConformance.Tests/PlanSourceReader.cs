@@ -56,7 +56,12 @@ public static class PlanSourceReader
             throw new ArgumentException("見出しの前方一致は '#' で始めること。", nameof(headingPrefix));
         }
 
-        var start = Array.FindIndex(lines, l => l.StartsWith(headingPrefix, StringComparison.Ordinal));
+        // 前方一致の直後は**区切り（空白）か行末**でなければならない。これが無いと `"### 6."` が
+        // `"### 6.1 …"` にも一致し、**ファイル内の見出し出現順に依存した暗黙の前提**が生まれる
+        // （現状は `### 6.` が先に出るため偶然正しいだけである）。
+        var start = Array.FindIndex(lines, l =>
+            l.StartsWith(headingPrefix, StringComparison.Ordinal)
+                && (l.Length == headingPrefix.Length || l[headingPrefix.Length] == ' '));
         if (start < 0)
         {
             return null;
