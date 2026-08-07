@@ -53,6 +53,12 @@ jobs:
         run: node scripts/check-feedback-reflux.js
 
       - name: Run backlog audit
+        # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
+        # 参照する（claude-coding.yml / claude-code-review.yml と同じ配線）。実行ログのパスを
+        # ハードコードすると、アクション側が出力先を変えたときに**検査が黙って no-op になる**
+        # （`check-permission-denials.js` は読めないと warn を出して exit 0 する fail-open である）。
+        # 週次のスケジュール実行は誰も見ていないため、その warn は長期間気付かれない。
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           # 認証はどちらか一方を登録する（サブスク = OAuth トークン / API = API キー）。
@@ -60,7 +66,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),mcp__github__issue_read,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
+            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),mcp__github__issue_read,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
           prompt: |
             このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
 
@@ -112,5 +118,5 @@ jobs:
       - name: Check permission denials
         if: always()
         env:
-          EXECUTION_FILE: ${{ runner.temp }}/claude-execution-output.json
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
