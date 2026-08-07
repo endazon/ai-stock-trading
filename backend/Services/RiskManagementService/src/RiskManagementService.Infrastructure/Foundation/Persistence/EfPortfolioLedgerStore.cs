@@ -39,6 +39,15 @@ internal sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPort
     public PositionEffect? FindApprovedPositionEffect(Guid decisionId) =>
         db.ApprovedOrders.Find(decisionId)?.PositionEffect;
 
+    // FR-19, #425, IADR-0166: 承認 Intent を DecisionId で引く（未承認は null＝不明）。
+    // IADR-0107: 列追加前の既存行（FxRateToBase が null）はレート 1＝基準通貨建てとして扱う（GetFills と同じ）。
+    public OrderIntent? FindApprovedIntent(Guid decisionId) =>
+        db.ApprovedOrders.Find(decisionId) is { } a
+            ? new OrderIntent(
+                a.Symbol, a.Market, a.Side, a.ProductType, a.Mode, a.Quantity, a.Price,
+                a.PositionEffect, a.StopLossPrice, a.FxRateToBase ?? 1m)
+            : null;
+
     public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt)
     {
         ArgumentException.ThrowIfNullOrEmpty(orderId);

@@ -43,24 +43,31 @@ public class CashAccountControlsTests
         decimal price = 1_000m) =>
         new(symbol, market, side, productType, mode, quantity, price, PositionEffect.Close);
 
+    // #425, ADR-0025 決定2, IADR-0166: GFV 発生回数は**自前計数**であり、ブローカー照会
+    // （BrokerAccountState）ではなくスナップショットの別欄（GoodFaithViolations）から供給される。
+    // 既定は「数えた結果 0 件」（＝供給あり）とし、未供給は goodFaithViolations: null で明示する。
     private static PortfolioSnapshot Snapshot(
         BrokerAccountState? account,
         decimal dailyOrderedAmount = 0m,
-        IReadOnlySet<(string Symbol, Market Market)>? symbolsTradedToday = null) =>
+        IReadOnlySet<(string Symbol, Market Market)>? symbolsTradedToday = null,
+        int? goodFaithViolations = 0) =>
         new()
         {
             Capital = 100_000m,
             DailyOrderedAmount = dailyOrderedAmount,
             SymbolsTradedToday = symbolsTradedToday ?? new HashSet<(string, Market)>(),
             Account = account,
+            GoodFaithViolations = goodFaithViolations is { } count
+                ? GoodFaithViolationTally.Observed(count)
+                : null,
         };
 
     private static readonly BrokerAccountState MarginAccount = new(AccountType.Margin);
 
-    // 現金口座で、GFV 回避ガードの入力（決済済み資金・GFV 回数）が**そろっている**状態。
-    // これらが無いと現金口座の新規建ては常に止まるため、他の統制を単独で観察できない。
-    private static BrokerAccountState CashAccount(decimal settledCash = 1_000_000m, int violations = 0) =>
-        new(AccountType.Cash, settledCash, violations);
+    // 現金口座で、GFV 回避ガードの入力（決済済み資金）が**そろっている**状態。
+    // これが無いと現金口座の買付は常に止まるため、他の統制を単独で観察できない。
+    private static BrokerAccountState CashAccount(decimal settledCash = 1_000_000m) =>
+        new(AccountType.Cash, settledCash);
 
     // 商品種別 3 種をすべて有効にした設定。口座種別による**実効値**（口座 ∩ 設定）だけを観察するため、
     // 設定側で絞ってしまわない。
@@ -290,7 +297,7 @@ public class CashAccountControlsTests
     [Fact]
     public void 決済済み資金が未供給なら現金口座の買付を拒否する()
     {
-        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null, 0));
+        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null));
 
         var result = RiskEvaluator.Evaluate(Entry(), SettingsFor(AccountType.Cash), snapshot);
 
@@ -303,7 +310,7 @@ public class CashAccountControlsTests
     [Fact]
     public void 決済済み資金が未供給でも現金口座の売却は本ガードで止めない()
     {
-        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null, 0));
+        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null));
 
         var result = RiskEvaluator.Evaluate(
             Entry(side: TradeSide.Sell), SettingsFor(AccountType.Cash), snapshot);
@@ -326,7 +333,7 @@ public class CashAccountControlsTests
     [Fact]
     public void 決済済み資金が未供給でも手仕舞いの買戻しは止めない()
     {
-        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null, 0));
+        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, SettledCashInBase: null));
 
         var result = RiskEvaluator.Evaluate(
             Close(side: TradeSide.Buy), SettingsFor(AccountType.Cash), snapshot);
@@ -350,8 +357,12 @@ public class CashAccountControlsTests
     public void GFV発生回数の停止と警告のしきい値を境界値で固定する(
         int? violationCount, bool expectedBlocked, bool expectedWarned)
     {
-        AccountTypePolicy.BlocksForGoodFaithViolations(violationCount).Should().Be(expectedBlocked);
-        AccountTypePolicy.WarnsForGoodFaithViolations(violationCount).Should().Be(expectedWarned);
+        // #425, IADR-0166 決定2: 件数は第一級の値（GoodFaithViolationTally）で渡す。**null は未供給**であり、
+        // Observed(0)（＝数えた結果 0 件）とは別物である。
+        var tally = violationCount is { } count ? GoodFaithViolationTally.Observed(count) : null;
+
+        AccountTypePolicy.BlocksForGoodFaithViolations(tally).Should().Be(expectedBlocked);
+        AccountTypePolicy.WarnsForGoodFaithViolations(tally).Should().Be(expectedWarned);
     }
 
     [Theory]
@@ -360,7 +371,7 @@ public class CashAccountControlsTests
     [InlineData(3)]
     public void GFV発生回数が停止基準に達していれば現金口座の新規建てを拒否する(int? violationCount)
     {
-        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, 1_000_000m, violationCount));
+        var snapshot = Snapshot(CashAccount(), goodFaithViolations: violationCount);
 
         var result = RiskEvaluator.Evaluate(Entry(), SettingsFor(AccountType.Cash), snapshot);
 
@@ -372,7 +383,7 @@ public class CashAccountControlsTests
     public void GFV発生回数が1回までなら現金口座の新規建てを止めない()
     {
         var result = RiskEvaluator.Evaluate(
-            Entry(), SettingsFor(AccountType.Cash), Snapshot(CashAccount(violations: 1)));
+            Entry(), SettingsFor(AccountType.Cash), Snapshot(CashAccount(), goodFaithViolations: 1));
 
         result.Reasons.Should().NotContain(RejectionReason.GoodFaithViolationLimitReached);
         result.IsApproved.Should().BeTrue();
@@ -381,7 +392,7 @@ public class CashAccountControlsTests
     [Fact]
     public void GFV発生回数が未供給でも手仕舞いは止めない()
     {
-        var snapshot = Snapshot(new BrokerAccountState(AccountType.Cash, 1_000_000m, null));
+        var snapshot = Snapshot(CashAccount(), goodFaithViolations: null);
 
         var result = RiskEvaluator.Evaluate(Close(), SettingsFor(AccountType.Cash), snapshot);
 

@@ -26,6 +26,7 @@
 | --- | --- | --- |
 | `check-consumer-endpoint-names.js` | サービスを跨ぐ MassTransit エンドポイント名（＝RabbitMQ キュー名）の衝突を検査（`--self-test` あり） | 標準出力（レポート） |
 | `validate-runtime-scaffold.js` | 実行環境スキャフォールド（docker-compose / appsettings / `.env.example`）の静的検査 | 標準出力（レポート） |
+| `check-banned-settled-cash-sources.js` | **決済済み資金（settled cash）の代替に使ってはならないブローカー値**（`MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal`）の**コードとしての参照**を検出。コメント・XML ドキュメント中の言及は誤検出しない（禁止の理由を書けなくしないため）。とりわけ現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**（#425 / ADR-0025 / IADR-0166） | 標準出力（レポート） |
 | `k8s-local-deploy.sh` / `k8s-local-deploy.test.sh` | ローカル k8s へのデプロイと、その `ast-secrets` 同期の Bash テスト（kubectl スタブ・実クラスタ不要） | — |
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
@@ -53,6 +54,7 @@ node scripts/check-action-versions.js              # Actions のバージョン�
 node scripts/check-action-versions.js --compare-with-ref origin/develop  # 同期による巻き戻りを検査
 node scripts/check-action-versions.js --check-latest  # 新しいメジャーが出ていないか確認
 node scripts/check-permission-denials.js <log>     # 実行ログの権限拒否を検査（CI では自動実行）
+node scripts/check-banned-settled-cash-sources.js  # 決済済み資金の代替値のコード参照を検査（#425）
 node scripts/scripts.test.js                       # 上記スクリプト群の単体テスト
 ```
 
@@ -89,6 +91,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `pipeline-config` | `validate-pipeline-config.js --self-test` ＋ 実ファイル（`PIPELINE_CONFIG`。本リポは採用する） |
 | `consumer-endpoint-names` | `check-consumer-endpoint-names.js --self-test` と本検査（本リポ固有） |
 | `runtime-scaffold` | `validate-runtime-scaffold.js`（本リポ固有） |
+| `banned-settled-cash-sources` | `check-banned-settled-cash-sources.js`（本リポ固有・#425） |
 | `shell-scripts` | `k8s-local-deploy.test.sh` / `deploy/opend/entrypoint.test.sh`（本リポ固有） |
 
 > `scripts.test.js` を CI に載せないと「誰かが手で叩いたときだけ走るテスト」になる。

@@ -78,6 +78,23 @@ public record PortfolioSnapshot
     /// </summary>
     public BrokerAccountState? Account { get; init; }
 
+    /// <summary>
+    /// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: <b>自前で計数した</b>GFV 発生回数。
+    /// <para>
+    /// <b>ブローカーが報告した件数ではない</b>（moomoo API に該当フィールドは存在しない。IADR-0153 決定4 の実測）。
+    /// 自前で数えられるのは**自らのガードをすり抜けた買付**だけであり、
+    /// <b>ブローカー側が独自に GFV と判定した事象は捕捉できない。両者が一致する保証はない。</b>
+    /// 詳細は <see cref="GoodFaithViolationTally"/> の冒頭コメントを参照。
+    /// </para>
+    /// <para>
+    /// <b><c>null</c> は「計数が供給されていない」を意味し、現金口座の新規建てを止める</b>
+    /// （fail-closed・<c>GoodFaithViolationLimitReached</c>。ADR-0025 決定2）。
+    /// <see cref="Account"/> と同じく既定 <c>null</c> のプロパティに置き、
+    /// <b>明示しない組み立てが統制の掛かる側へ倒れる</b>ようにする。
+    /// </para>
+    /// </summary>
+    public GoodFaithViolationTally? GoodFaithViolations { get; init; }
+
     /// <summary>全停止スイッチ（kill switch）。利用者のみ操作できる。</summary>
     public bool KillSwitchEngaged { get; init; }
 

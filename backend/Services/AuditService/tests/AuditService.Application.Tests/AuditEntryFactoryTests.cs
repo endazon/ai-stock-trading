@@ -391,4 +391,33 @@ public class AuditEntryFactoryTests
         // 根拠の全量（突合した自らの決済約定）が本文に残る＝推定の妥当性を事後に検証できる。
         entry.Detail.Should().Contain("CoveringFills").And.Contain("InFlightCloseQuantity");
     }
+    // T-19-317: FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166 ——
+    // **GFV 発生回数の自前計数**を監査台帳へ残す（ADR-0025 が手入力を採らなかった理由の 1 つが
+    // 「監査証跡に乗らない」ことであった）。
+    //
+    // **要約は「自前計数」「ガードの失敗」であることを明記しなければならない。** ブローカーの GFV 判定と
+    // 一致する保証は無く、取り違えると「監査ログが 0 件だからブローカー側も 0 件だ」と読まれる。
+    [Fact]
+    public void GoodFaithViolationRecorded_は自前計数でありブローカー判定と一致しないことを明記する()
+    {
+        var decisionId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var e = new GoodFaithViolationRecorded(
+            Id, decisionId, "ORD-9", "AAPL", Market.UnitedStates,
+            PurchaseAmountInBase: 1_234m, SettledCashInBase: null,
+            OccurredOn: new DateOnly(2026, 8, 7), ExecutedAt: RecordedAt, RecordedAt: RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("GoodFaithViolationRecorded");
+        entry.Symbol.Should().Be("AAPL");
+        // 注文相関で束ねる（発注審査の記録と突き合わせて「なぜ拒否しなかったのか」を再構成できる）。
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Summary.Should().Contain("自前計数").And.Contain("ガードの失敗");
+        entry.Summary.Should().Contain("ブローカーの GFV 判定とは一致しない");
+        entry.Summary.Should().Contain("ORD-9").And.Contain("1234");
+        // **決済済み資金は「未供給」と書く。** 0 と書くと「残高が 0 だった」と読まれる（#424 の表示規約）。
+        entry.Summary.Should().Contain("未供給");
+        entry.OccurredAt.Should().Be(e.RecordedAt);
+        entry.Detail.Should().Contain("PurchaseAmountInBase").And.Contain("OccurredOn");
+    }
 }

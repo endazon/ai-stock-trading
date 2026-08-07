@@ -9,11 +9,20 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 //
 // FR-19, #375, ADR-0021 決定3, IADR-0153: あわせてブローカーへ照会した口座種別の観測を合成する。
 // **未供給・失効は null のまま渡す**（判定コアが新規建てを止める）。ここで既定値を補ってはならない。
+//
+// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 発生回数（**自前計数**）も合成する。
+// **ブローカー照会（BrokerAccountState）とは別経路である**——moomoo API に該当フィールドは存在せず、
+// 自前で数えられるのは「自らのガードをすり抜けた買付」だけであり、両者が一致する保証はない。
+//
+// **台帳が結線されていなければ null（未供給）のまま渡す。** 判定コアは未供給を「止める」へ倒すため
+// （ADR-0025 決定2 の fail-closed）、結線し忘れは**安全側**に落ちる。IADR-0148 決定2 が「必須引数にせよ」と
+// したのは既定が fail-open（0 件＝合格）だったからであり、向きが逆の本件では省略可能でよい。
 public sealed class PortfolioSnapshotBuilder(
     IPortfolioStateProvider stateProvider,
     IKillSwitchStore killSwitchStore,
     IPauseStore pauseStore,
-    IBrokerAccountObservationStore accountObservations)
+    IBrokerAccountObservationStore accountObservations,
+    IGoodFaithViolationStore? goodFaithViolations = null)
 {
     public PortfolioSnapshot Build()
     {
@@ -33,6 +42,7 @@ public sealed class PortfolioSnapshotBuilder(
             ConsecutiveLosses = state.ConsecutiveLosses,
             SymbolsTradedToday = state.SymbolsTradedToday,
             Account = accountObservations.GetCurrent(),
+            GoodFaithViolations = goodFaithViolations?.GetTally(),
             KillSwitchEngaged = killSwitch.Engaged,
             TradingPaused = pause.Paused,
         };

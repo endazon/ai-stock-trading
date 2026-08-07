@@ -20,15 +20,15 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 /// （<c>TrdCommon.Funds</c> の全フィールドを走査。IADR-0153 決定4）、現時点で本値の供給元は無い。
 /// </para>
 /// </param>
-/// <param name="GoodFaithViolationCount">
-/// Good Faith Violation の発生回数。**2 回で警告し、3 回目の手前で新規建てを停止する**（ADR-0021 決定4-3）。
-/// <para>
-/// <b><c>null</c> は「供給されていない」を意味し、現金口座では新規建てを止める</b>——2 回に達していないことを
-/// 確認できないためである。**3 回で 90 日の口座制限**という不可逆な結果に対して、
-/// 「分からないから通す」は統制にならない。
-/// </para>
-/// </param>
+/// <remarks>
+/// <b>#425, ADR-0025 決定2, IADR-0166 決定2: GFV 発生回数の欄は本型に持たない。</b>
+/// moomoo API には該当フィールドが存在せず（`GoodFaith` / `Violation` / `Gfv` はアセンブリ全体で 0 件。
+/// IADR-0153 決定4 の実測）、計画は**自前で計数する**ことを決めた。自前計数の値をブローカー照会の欄へ
+/// 入れると「**ブローカーの GFV カウンタの写し**」と読まれるが、
+/// <b>自前で数えられるのは自らのガードをすり抜けた買付だけであり、両者が一致する保証はない</b>
+/// （ADR-0025 §理由）。供給は <c>PortfolioSnapshot.GoodFaithViolations</c>
+/// （<c>GoodFaithViolationTally</c>・自前の追記台帳が権威）が担う。
+/// </remarks>
 public sealed record BrokerAccountState(
     AccountType AccountType,
-    decimal? SettledCashInBase = null,
-    int? GoodFaithViolationCount = null);
+    decimal? SettledCashInBase = null);

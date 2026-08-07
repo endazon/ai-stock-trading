@@ -47,9 +47,9 @@ public class BrokerAccountObservedConsumerTests
         using var host = await BuildHostAsync(store);
 
         await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
-            BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1_000m, 1), Observed));
+            BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1_000m), Observed));
 
-        store.GetCurrent().Should().Be(new BrokerAccountState(AccountType.Cash, 1_000m, 1));
+        store.GetCurrent().Should().Be(new BrokerAccountState(AccountType.Cash, 1_000m));
     }
 
     // **否定形**: イベントが 1 件も届かなければ未確定のままである（既定値へ落ちない）。
@@ -87,7 +87,7 @@ public class BrokerAccountObservedConsumerTests
         using var host = await BuildHostAsync(store);
 
         await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
-            BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1m, 0), Observed));
+            BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1m), Observed));
         await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
             BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Margin), Observed.AddMinutes(-10)));
 

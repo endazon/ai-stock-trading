@@ -151,13 +151,30 @@ public static class AuditEntryFactory
     // 事後に「なぜ止まっていたのか」を要約だけで辿れる必要がある。
     public static AuditEntry From(BrokerAccountObserved e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(BrokerAccountObserved), AuditCorrelation.From("broker-account-type"), Symbol: null,
+        // #425, ADR-0025 決定2: GFV 発生回数は本観測に含まれない（ブローカーが供給できない）。
+        // 自前計数は GoodFaithViolationRecorded として別に記録される。
         Truncate($"口座種別を観測（発注先 {e.Provider}・種別 {e.Account.AccountType}"
-            + $"・決済済み資金 {Describe(e.Account.SettledCashInBase)}"
-            + $"・GFV回数 {Describe(e.Account.GoodFaithViolationCount)}）"),
+            + $"・決済済み資金 {Describe(e.Account.SettledCashInBase)}）"),
         AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
 
     private static string Describe<T>(T? value) where T : struct =>
         value?.ToString() ?? "未供給";
+
+    // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166: 未決済資金による買付（GFV 発生）の**自前計数**。
+    //
+    // ★ 要約に「自前計数」「ガードの失敗」であることを明記する。**ブローカーが GFV と判定した件数の写しではなく、
+    //   両者が一致する保証はない**（ADR-0025 §理由）。取り違えると、口座制限（3 回で 90 日）の予防という
+    //   目的が崩れる——「監査ログに 0 件だからブローカー側も 0 件だ」とは読めない。
+    //
+    // 注文相関（DecisionId）を相関に用いる。発注審査の記録（OrderApproved / OrderRejected）と同じ相関で束ね、
+    // 「なぜ発注前のガードが拒否しなかったのか」を事後に再構成できるようにする。
+    public static AuditEntry From(GoodFaithViolationRecorded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(GoodFaithViolationRecorded), e.DecisionId, e.Symbol,
+        Truncate($"未決済資金による買付を GFV 発生として自前計数（自らのガードの失敗であり、"
+            + $"ブローカーの GFV 判定とは一致しない）: {e.Symbol}/{e.Market} 注文 {e.OrderId}"
+            + $"・買付額 {e.PurchaseAmountInBase}・決済済み資金 {Describe(e.SettledCashInBase)}"
+            + $"・計上日 {e.OccurredOn:yyyy-MM-dd}"),
+        AuditSerialization.Serialize(e), e.RecordedAt, recordedAt);
 
     // FR-05, FR-10, FR-11, #292, IADR-0118: 台帳とブローカの乖離検知（是正は伴わない）。観測と同一相関で束ねる。
     public static AuditEntry From(PositionReconciliationDrift e, Guid id, DateTimeOffset recordedAt) => new(

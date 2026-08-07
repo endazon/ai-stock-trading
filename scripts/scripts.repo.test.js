@@ -793,4 +793,89 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: 不採用ライブラリの混入が無い（#351 の回帰）', () => {
     assert.deepStrictEqual(bl.checkTree(pathBl.resolve(__dirname, '..')), []);
   });
+  // --- check-banned-settled-cash-sources.js: 決済済み資金の代替値の遮断（FR-19 / #425 / ADR-0025 / IADR-0166） ---
+  //
+  // ADR-0025 は `MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal` を
+  // 決済済み資金の代替に使うことを名指しで禁じた。とりわけ現金買付余力は**未決済の売却代金を含む**のが
+  // 通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**。
+  //
+  // **本検査は「効かない方向」に壊れると CI が緑のまま誰も気付けない。** よって
+  //   (1) コードとしての参照を実際に検出できること（正）
+  //   (2) コメント中の言及を誤検出しないこと（否定形。既存の IADR・アダプタの注意書きが壊れない）
+  // の両方を置く（check-banned-libraries と同じ思想）。
+  const pathBscs = require('path');
+  const bscs = require('./check-banned-settled-cash-sources.js');
+
+  ok('check-banned-settled-cash-sources: ADR-0025 が名指しした 3 件を対象にする', () => {
+    const names = bscs.BANNED.map((b) => b.name).sort();
+    assert.deepStrictEqual(names, ['AvlWithdrawalCash', 'MaxCashBuy', 'MaxWithdrawal']);
+  });
+
+  ok('check-banned-settled-cash-sources: コードとしての参照を検出する', () => {
+    const src = 'var settled = funds.AvlWithdrawalCash;\n';
+    const hits = bscs.findViolations(src);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].item.name, 'AvlWithdrawalCash');
+    assert.strictEqual(hits[0].line, 1);
+  });
+
+  ok('check-banned-settled-cash-sources: MaxCashBuy を分母に据える形を検出する', () => {
+    const src = 'return new BrokerAccountState(AccountType.Cash, qtys.MaxCashBuy * price);\n';
+    assert.strictEqual(bscs.findViolations(src).length, 1);
+  });
+
+  ok('check-banned-settled-cash-sources: MaxWithdrawal のコード参照を検出する', () => {
+    assert.strictEqual(bscs.findViolations('x = f.MaxWithdrawal;').length, 1);
+  });
+
+  // --- 否定形（誤検出しないこと） ---
+
+  ok('check-banned-settled-cash-sources: 行コメント中の言及は検出しない', () => {
+    const src = '// MaxCashBuy は未決済の売却代金を含むため使わない（ADR-0025）\nvar x = 1;\n';
+    assert.deepStrictEqual(bscs.findViolations(src), []);
+  });
+
+  ok('check-banned-settled-cash-sources: XML ドキュメント中の言及は検出しない', () => {
+    const src = '/// <summary><c>MaxTrdQtys.MaxCashBuy</c> を代替に使ってはならない。</summary>\nint a;\n';
+    assert.deepStrictEqual(bscs.findViolations(src), []);
+  });
+
+  ok('check-banned-settled-cash-sources: ブロックコメント中の言及は検出しない', () => {
+    const src = '/*\n AvlWithdrawalCash / MaxWithdrawal は出金可能額である。\n*/\nint a;\n';
+    assert.deepStrictEqual(bscs.findViolations(src), []);
+  });
+
+  ok('check-banned-settled-cash-sources: 文字列リテラル中の名前は検出しない', () => {
+    // **禁止を表明するテスト自身を落とさない。** 文字列からプロパティは読めないため、
+    // 「その値を読んで決済済み資金に据える」という本検査の目的に当たらない
+    // （実際、BrokerAccountState の否定形テストは names.Should().NotContain("MaxCashBuy") と書く）。
+    assert.deepStrictEqual(
+      bscs.findViolations('names.Should().NotContain("MaxCashBuy", "理由");'), []);
+  });
+
+  ok('check-banned-settled-cash-sources: 逐語的文字列（@"..."）中の名前も検出しない', () => {
+    assert.deepStrictEqual(bscs.findViolations('var s = @"AvlWithdrawalCash";'), []);
+  });
+
+  ok('check-banned-settled-cash-sources: 文字列を跨いだ直後のコード参照は検出する', () => {
+    // 文字列を潰す実装が「以降ずっと文字列扱い」へ壊れると、**検査が効かない方向**に静かに死ぬ。
+    const hits = bscs.findViolations('Log("MaxCashBuy"); var x = funds.MaxCashBuy;');
+    assert.strictEqual(hits.length, 1);
+  });
+
+  ok('check-banned-settled-cash-sources: 前方一致の別名（撤退ドメイン）は巻き込まない', () => {
+    // WithdrawalTriggered 系（段階ゲートの「撤退」）は現金の出金とは別概念であり、巻き込むと
+    // 無関係な実装が止まる。語境界で照合していることの表明。
+    assert.deepStrictEqual(bscs.findViolations('var r = policy.MaxWithdrawalRatio;'), []);
+  });
+
+  ok('check-banned-settled-cash-sources: stripComments は行番号を保つ', () => {
+    const stripped = bscs.stripComments('// a\n// b\nvar x = funds.MaxCashBuy;\n');
+    assert.strictEqual(stripped.split('\n').length, 4);
+    assert.strictEqual(bscs.findViolations('// a\n// b\nvar x = funds.MaxCashBuy;\n')[0].line, 3);
+  });
+
+  ok('実ツリー: 決済済み資金の代替値のコード参照が無い（#425 の回帰）', () => {
+    assert.deepStrictEqual(bscs.checkTree(pathBscs.resolve(__dirname, '..')), []);
+  });
 };

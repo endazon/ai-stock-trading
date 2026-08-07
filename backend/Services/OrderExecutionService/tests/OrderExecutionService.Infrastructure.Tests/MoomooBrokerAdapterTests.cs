@@ -256,7 +256,6 @@ public class MoomooBrokerAdapterTests
         var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
 
         state!.SettledCashInBase.Should().BeNull();
-        state.GoodFaithViolationCount.Should().BeNull();
     }
 
     // SDK の `TrdAccType` から本システムの 2 値への写像。**未知の値は null（不明）へ倒す。**

@@ -50,6 +50,10 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // （30 日禁止の供給元・ADR-0016 決定15 の「発生回数」の集計元）。
     public DbSet<BuyInInferenceRow> BuyInInferences => Set<BuyInInferenceRow>();
 
+    // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 発生回数の**自前計数**の追記専用台帳。
+    // **数えているのは「自らのガードをすり抜けた買付」であり、ブローカーの GFV カウンタの写しではない。**
+    public DbSet<GoodFaithViolationRow> GoodFaithViolations => Set<GoodFaithViolationRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -210,6 +214,18 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
             e.HasIndex(r => new { r.Symbol, r.Market });
             e.HasIndex(r => r.InferredOn);
+        });
+
+        // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 自前計数の台帳（追記専用）。
+        // **主キーは OrderId**——計上単位（1 注文 1 件）そのものを主キーにすることで、部分約定の進行・
+        // メッセージ再送で二重計上しないことを DB 側で担保する（IADR-0148 決定3 の DecisionId 主キーと同じ規律）。
+        mb.Entity<GoodFaithViolationRow>(e =>
+        {
+            e.ToTable("good_faith_violations");
+            e.HasKey(r => r.OrderId);
+            e.Property(r => r.OrderId).HasMaxLength(64).ValueGeneratedNever();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.HasIndex(r => r.OccurredOn);
         });
     }
 }

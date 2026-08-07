@@ -171,16 +171,24 @@ public static class RiskEvaluator
             // **決済済み資金が供給されない（null）ときも拒否する。** 「残高が分からないから通す」は統制にならない。
             // moomoo API には決済済み資金の専用フィールドが存在しない（IADR-0153 決定4 の実測）ため、
             // 現時点で本値の供給元は無く、現金口座の買付は常に止まる（安全側）。
+            //
+            // **判定式は AccountTypePolicy.ExceedsSettledCash が単一情報源である**（#425 / ADR-0025 決定2 /
+            // IADR-0166 決定1）。同じ述語を事後の計数（GoodFaithViolationDetection）も呼ぶ——
+            // 計数の対象は「本ガードが拒否しようとする事象」と同じでなければならない。
             if (intent.Side == TradeSide.Buy
-                && (observedAccount!.SettledCashInBase is not { } settledCash
-                    || snapshot.DailyOrderedAmount + intent.NotionalInBase > settledCash))
+                && AccountTypePolicy.ExceedsSettledCash(
+                    observedAccount!.SettledCashInBase, snapshot.DailyOrderedAmount + intent.NotionalInBase))
             {
                 reasons.Add(RejectionReason.CashAccountSettlementHold);
             }
 
-            // 決定4-3: GFV 発生回数が停止基準（2 件）に達していれば新規建てを止める（3 回目の手前で止める）。
-            // **未供給（null）でも止める**——2 件に達していないことを確認できないためである。
-            if (AccountTypePolicy.BlocksForGoodFaithViolations(observedAccount!.GoodFaithViolationCount))
+            // 決定4-3, #425, ADR-0025 決定2: GFV 発生回数が停止基準（2 件）に達していれば新規建てを止める
+            // （3 回目の手前で止める）。**未供給（null）でも止める**——2 件に達していないことを確認できないためである。
+            //
+            // 件数は**自前計数**である（snapshot.GoodFaithViolations）。ブローカー照会（Account）には載せない——
+            // 同じ欄に載せると「ブローカーの GFV カウンタの写し」と読まれるが、**自前で数えられるのは
+            // 自らのガードをすり抜けた買付だけであり、両者が一致する保証はない**（ADR-0025 §理由）。
+            if (AccountTypePolicy.BlocksForGoodFaithViolations(snapshot.GoodFaithViolations))
             {
                 reasons.Add(RejectionReason.GoodFaithViolationLimitReached);
             }

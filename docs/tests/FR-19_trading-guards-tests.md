@@ -2,22 +2,26 @@
 title: 取引ガード（FR-19・再実装）テスト仕様書
 type: test-spec
 status: approved
-related_ids: [FR-19, FR-10, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016, ADR-0021, IADR-0131, IADR-0132, IADR-0153]
+related_ids: [FR-19, FR-10, FR-11, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0131, IADR-0132, IADR-0153, IADR-0166]
 author: endazon (with Claude Code)
 created: 2026-08-04
-updated: 2026-08-06
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0021_us-account-type-dual-support.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0025_settled-cash-poc-and-gfv-counting.md
 related_specs:
   - ../functional/FR-19_trading-guard.md
   - ../specs/20260804_332_trading-guards.md
   - ../adr/IADR-0132_product-type-tri-state-and-guard-scope.md
   - ../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md
   - ../specs/20260806_375_cash-account-support.md
+  - ../specs/20260807_425_gfv-self-counting.md
+  - ../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md
   - ./README.md
   - ./FR-19_manipulation-detection-tests.md
   - ./FR-10_risk-controls-tests.md
@@ -35,6 +39,11 @@ related_specs:
 > **米国口座の現金口座対応**（口座種別の照会・差金決済ガードの条件付き適用・GFV 回避ガード・GFV 回数の停止・
 > 信用系の設定不能化）の写像表を §5〜§7 として追加した。**#332 の日本株現物限定は巻き戻していない**ことを
 > 両方向で固定する（T-19-241 / T-19-251）。
+>
+> **2026-08-07 追補（[#425](https://github.com/endazon/ai-stock-trading/issues/425) / ADR-0025 決定2 / [IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)）**:
+> **GFV 発生回数の自前計数**の写像表を §8 として追加した。**数えているのは「自らのガードをすり抜けた買付」であり、
+> ブローカーが GFV と判定した件数ではない**（両者が一致する保証はない・ADR-0025 §理由）。
+> **`IADR-0153` の fail-closed は覆していない**ことを T-19-296 が固定する。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -182,6 +191,93 @@ related_specs:
 | T-19-283 | 3 種を互いの別名にする | 3 種のコード | 互いに異なるコードとして存在する | `RejectionReasonClassificationTests.現金口座の3種の拒否理由は互いに別のコードである` |
 | T-19-284 | 観測が無いのに既定値が入る | イベント 0 件 | ストアは `null` を返す | `BrokerAccountObservedConsumerTests.観測が届かなければ口座種別は未確定のままである` |
 | T-19-285 | 旧行（口座種別なし）の読み方 | `configuredAccountType` キーの無い設定 JSON | 信用口座として読む（統制は照会結果で切り替わるため緩まない） | `RiskSettingsSerializationAccountTypeTests.口座種別を持たない旧行は信用口座として読まれる` |
+
+## 8. GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0166）
+
+> **★ 何を数えているのかを取り違えないこと。** 自前で数えられるのは**自らのガードをすり抜けた買付**だけであり、
+> **ブローカー側が独自に GFV と判定した事象は捕捉できない**。本計数は「ブローカーの GFV カウンタの写し」ではなく
+> 「**自らのガードの失敗回数**」であり、**両者が一致する保証はない**（ADR-0025 §理由）。
+
+### 8.1 しきい値・「0 件」と「未供給」の区別（境界値）
+
+すべて `RiskManagementService.Domain.Tests/GoodFaithViolationCountingTests.cs`。
+
+| ID | 観点 | 入力 | 期待 | テスト |
+| --- | --- | --- | --- | --- |
+| T-19-290 | **停止基準は 2 件のまま**（計画確定値・#425 は変えない） | `GoodFaithViolationStopThreshold` | 2 | `GFVの停止基準は2件のままである` |
+| T-19-291 | **停止の境界**（1 件では止まらない・2 件で止まる） | 計数 {0, 1, 2, 3} | 停止＝{2, 3} | `自前計数は2件目から新規建てを止める` |
+| T-19-292 | **警告の境界**（停止と同じ回数で立つ） | 計数 {0, 1, 2, 3} | 警告＝{2, 3} | `自前計数は2件目から警告する` |
+| T-19-293 | **「未供給」と「0 件」の区別**（#424 の表示規約と同じ） | {null, Observed(0)} | 未供給は止め・0 件は止めない | `未供給は止め_0件は止めない` / `数えた結果の0件は未供給と別物である` |
+| T-19-294 | 未供給は**警告しない**（供給の不在は停止側で表す） | null | 警告しない | `未供給は警告しない` |
+| T-19-295 | 負の件数は計数結果として成立しない | -1 | `ArgumentOutOfRangeException` | `負の件数は受け付けない` |
+
+### 8.2 fail-closed と「現金口座はなお使えない」ことの維持（**本 issue の主眼**）
+
+| ID | 塞ぐ迂回／守る不変条件 | 状況 | 期待 | テスト |
+| --- | --- | --- | --- | --- |
+| T-19-296 | **`IADR-0153` の fail-closed を解除してしまう** | 現金口座 × 計数 0 件（供給あり）× 決済済み資金 **null** | 拒否され `CashAccountSettlementHold`。**現金口座はなお使えない**（ADR-0025 決定3） | `自前計数を供給しても決済済み資金が無い限り現金口座の買付は止まる` |
+| T-19-297 | **計数が分からないのに通す**（fail-open） | 現金口座 × 計数 **未供給** | 拒否され `GoodFaithViolationLimitReached` | `計数が未供給なら現金口座の新規建てを拒否する` |
+| T-19-298 | **未供給を `CashAccountSettlementHold` へ写像する**（解除条件の取り違え） | 同上（決済済み資金は供給あり） | `GoodFaithViolationLimitReached` を含み `CashAccountSettlementHold` を**含まない** | `計数の未供給を決済保留へ写像しない` |
+| T-19-299 | 上記が「常に拒否」ではない（トートロジー防止） | 現金口座 × 計数 0 件 × 決済済み資金あり | 承認 | `計数が0件なら本統制では新規建てを止めない` |
+| T-19-300 | 手仕舞いを止めてしまう（ADR-0009 の不変条件） | 現金口座 × 計数 未供給 × Close | **承認**される | `計数が未供給でも手仕舞いは止めない` |
+| T-19-301 | **信用口座が本統制の影響を受ける**（否定形） | 信用口座 × 計数 {未供給, 3} | いずれも承認 | `信用口座では計数が未供給でも新規建てを止めない` / `信用口座では計数が停止基準に達していても新規建てを止めない` |
+
+### 8.3 計数の対象事象（＝ガードが拒否しようとする事象と同一であること）
+
+| ID | 観点 | 入力 | 期待 | テスト |
+| --- | --- | --- | --- | --- |
+| T-19-302 | **判定式が単一情報源である**（2 か所に書かない） | 決済済み資金 {null, 1000} × 金額 {999, 1000, 1001} | 「未供給 ‖ 超過」でのみ真。**ちょうどは真でない** | `決済済み資金を超える買付の判定は単一の述語である` |
+| T-19-303 | **拒否する事象と数える事象が一致する** | 同じ入力を `RiskEvaluator` と検出器へ与える | 常に同じ判定 | `ガードが拒否する事象と計数が数える事象は一致する` |
+| T-19-304 | 検出の条件表（口座種別 × 方向 × 建玉効果 × 資金） | 6 通り | 現金 × Buy × Open × 説明不能 のときだけ true | `未決済資金による買付だけをGFV発生として数える` |
+| T-19-305 | **口座種別が不明なのに数える**（否定形） | 観測 null × Buy × Open | 数えない（信用口座の通常の売買が違反として積み上がるのを防ぐ） | `口座種別を確認できていなければGFV発生として数えない` |
+
+### 8.4 供給経路・計上単位・監査（FR-11）
+
+`RiskManagementService.Application.Tests/GoodFaithViolationCountingServiceTests.cs` および
+`RiskManagementService.Infrastructure.Tests/GoodFaithViolationCountingConsumerTests.cs`。
+
+| ID | 観点 | 状況 | 期待 | テスト |
+| --- | --- | --- | --- | --- |
+| T-19-306 | 記録される場合 | 現金口座 × 決済済み資金 未供給 × 買付の約定 | 台帳へ 1 件・イベントを返す・**決済済み資金は `null` のまま記録** | `未決済資金による買付の約定をGFV発生として記録する` |
+| T-19-307 | 金額は基準通貨で積む | 日本株（`FxRateToBase` 0.0064） | `数量 × 単価 × レート` | `買付金額は承認Intentの換算レートで基準通貨へ揃える` |
+| T-19-308 | **記録されない場合**（否定形 6 通り） | 信用口座／観測なし／資金の範囲内／売却／手仕舞い／約定 0 | いずれも記録しない | `信用口座の買付は記録しない` ほか 5 件 |
+| T-19-309 | **承認台帳に相関が無い約定**（推測で記録しない） | 承認なし | 記録しない | `承認台帳に相関が無ければ記録しない` |
+| T-19-310 | **計上単位は 1 注文 1 件**（再送・部分約定） | 同一 `OrderId` を 2 度／累積数量の進行 | 1 件のまま | `同一注文の再配送は二重計上しない` / `部分約定の進行は1件として数える` |
+| T-19-311 | 別注文は別件（正の対照） | `OrderId` 2 種 | 2 件 | `別注文は別件として数える` |
+| T-19-312 | 2 件で停止基準に達する | 記録を 0 → 1 → 2 件 | 2 件目で `BlocksNewEntry` | `記録が2件に達したら新規建ての停止基準に達する` |
+| T-19-313 | **台帳が未結線なら未供給**（fail-closed。0 件で埋めない） | ストア注入なし | `GoodFaithViolations` が `null` | `台帳が結線されていなければ未供給のまま渡す` |
+| T-19-314 | 台帳が結線されていれば **0 行でも「0 件」** | ストア注入・行なし | `Observed(0)` | `台帳が結線されていれば0件でも供給する` |
+| T-19-315 | **監査（FR-11）へ運ばれる** | 現金口座の買付が約定 | `GoodFaithViolationRecorded` を発行・取引日は**米国東部時間** | `未決済資金による買付は記録され監査イベントが発行される` |
+| T-19-316 | 監査を無関係な事象で汚さない（否定形） | 信用口座／観測なし | 発行しない | `信用口座の約定では記録も発行もしない` / `口座種別を確認できていなければ記録も発行もしない` |
+| T-19-317 | **監査の要約が限界を明記する** | `GoodFaithViolationRecorded` | 「自前計数」「ガードの失敗」「ブローカーの GFV 判定とは一致しない」「未供給」を含む | `AuditEntryFactoryTests.GoodFaithViolationRecorded_は自前計数でありブローカー判定と一致しないことを明記する` |
+
+### 8.5 決済済み資金の代替値の遮断（**構造で止める**）
+
+| ID | 塞ぐ迂回 | 手口 | 期待 | テスト |
+| --- | --- | --- | --- | --- |
+| T-19-318 | **`MaxCashBuy` を決済済み資金の供給元にする** | `.cs` に `qtys.MaxCashBuy` を書く | 検査が落ちる | `scripts.repo.test.js: check-banned-settled-cash-sources: MaxCashBuy を分母に据える形を検出する` |
+| T-19-319 | `AvlWithdrawalCash` / `MaxWithdrawal` を使う | `.cs` に `funds.AvlWithdrawalCash` / `f.MaxWithdrawal` | 検査が落ちる | 同ファイル 2 件 |
+| T-19-320 | **検査が効きすぎて禁止の理由を書けなくなる**（否定形） | コメント・XML ドキュメントでの言及 | 検出しない | `行コメント中の言及は検出しない` / `XML ドキュメント中の言及は検出しない` / `ブロックコメント中の言及は検出しない` |
+| T-19-321 | 前方一致の別名を巻き込む（否定形） | 撤退ドメインの `MaxWithdrawalRatio` | 検出しない | `前方一致の別名（撤退ドメイン）は巻き込まない` |
+| T-19-322 | 実ツリーの回帰 | リポジトリ全体 | 参照 0 件 | `実ツリー: 決済済み資金の代替値のコード参照が無い（#425 の回帰）` |
+| T-19-323 | **ブローカー照会の型に欄を生やす**（型レベル） | `BrokerAccountState` のプロパティ | `GoodFaithViolationCount` / `MaxCashBuy` / `AvlWithdrawalCash` / `MaxWithdrawal` を持たない | `ブローカー照会の型はGFV発生回数の欄を持たない` / `ブローカー照会の型は決済済み資金の代替値の欄を持たない` |
+
+### 変異検査（実測・2026-08-07・#425）
+
+「実装したが効いていない」を排除するため、実装を意図的に壊して**テストが赤くなること**を実測した。
+壊した各ファイルは事前に退避し、実行後に `cp` で復元して全テスト緑を確認している。
+
+| # | 壊した箇所 | 変異内容 | 落ちたテスト |
+| --- | --- | --- | --- |
+| **a** | `MoomooBrokerAdapter` ＋ `BrokerAccountState` | **`MaxCashBuy` / `AvlWithdrawalCash` / `MaxWithdrawal` を決済済み資金として使えるようにする**（最重要・否定形）。アダプタで `funds.MaxCashBuy ?? funds.AvlWithdrawalCash ?? funds.MaxWithdrawal` を分母に据え、`BrokerAccountState` に `MaxCashBuy` / `GoodFaithViolationCount` の欄を復活させた | **構造テストが赤**: `check-banned-settled-cash-sources.js` が **7 件**検出して exit 1（T-19-318 / T-19-319）／`scripts.test.js` の「実ツリー」テストが赤（T-19-322）／xUnit 2 件（T-19-323: `ブローカー照会の型はGFV発生回数の欄を持たない` / `…決済済み資金の代替値の欄を持たない`） |
+| **b** | `AccountTypePolicy.BlocksForGoodFaithViolations` | `tally is null \|\|` を `tally is not null &&` へ（**未供給を通す＝fail-open へ倒す**） | **6 件**（T-19-293 `未供給は止め_0件は止めない` / T-19-297 `計数が未供給なら現金口座の新規建てを拒否する` / T-19-298 `計数の未供給を決済保留へ写像しない` / T-19-313 `台帳が結線されていなければ未供給のまま渡す` / 既存 T-19-253・T-19-254 の `violationCount: null` ケース） |
+| **c** | `GoodFaithViolationTally.BlocksNewEntry` | しきい値 `>= 2` → `>= 3`（**境界を 1 件ずらす**） | **5 件**（T-19-291 `自前計数は2件目から新規建てを止める(count: 2)` / T-19-312 `記録が2件に達したら新規建ての停止基準に達する` / `記録した件数がスナップショットへ反映される` / 既存 T-19-253・T-19-254 の `violationCount: 2` ケース） |
+| **d** | `PortfolioSnapshotBuilder` | 台帳が未結線のとき `Observed(0)` を渡す（**未供給を 0 件と同一視**） | **1 件**（T-19-313 `台帳が結線されていなければ未供給のまま渡す`） |
+| **d2** | `PortfolioSnapshotBuilder` | 逆向き: 数えた結果 0 件を `null` へ倒す（**0 件を未供給と同一視**） | **1 件**（T-19-314 `台帳が結線されていれば0件でも供給する`） |
+
+- 壊した 5 ファイルは事前にスクラッチパッドへ退避し、実行後に `cp` で復元して **md5 のバイト一致**を確認した。
+- **d / d2 を両方向で試したのは、片方向だけでは「0 と未供給の区別」が守られている証明にならないため**である
+  （#424 の表示規約と同じ区別）。
 
 ### 変異検査（実測・2026-08-06）
 

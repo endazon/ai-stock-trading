@@ -91,14 +91,19 @@ public static class AccountTypePolicy
     public static bool RequiresVerifiedAccount(BrokerProvider provider) => provider != BrokerProvider.InternalPaper;
 
     /// <summary>
-    /// FR-19, ADR-0021 決定4-3: GFV の発生回数が**新規建ての停止基準に達しているか**。
+    /// FR-19, ADR-0021 決定4-3, ADR-0025 決定2, IADR-0166: GFV の発生回数が**新規建ての停止基準に達しているか**。
     /// <para>
     /// <b><c>null</c>（未供給）でも停止する。</b> 2 回に達していないことを確認できないためであり、
-    /// 「分からないから通す」は 3 回で 90 日という不可逆な結果に対する統制にならない。
+    /// 「分からないから通す」は 3 回で 90 日という不可逆な結果に対する統制にならない
+    /// （ADR-0025 決定2 が「計数値が供給されない状態では新規建てを拒否する。fail-closed を維持する」と明記）。
+    /// </para>
+    /// <para>
+    /// 引数は <see cref="GoodFaithViolationTally"/>（第一級の値）である。<c>int?</c> で受けると
+    /// <c>count &gt;= 2</c> という**持ち上げ比較が未供給を黙って「違反なし」へ倒す**（IADR-0148 決定1 の罠）。
     /// </para>
     /// </summary>
-    public static bool BlocksForGoodFaithViolations(int? violationCount) =>
-        violationCount is null || violationCount >= GoodFaithViolationStopThreshold;
+    public static bool BlocksForGoodFaithViolations(GoodFaithViolationTally? tally) =>
+        tally is null || tally.BlocksNewEntry;
 
     /// <summary>
     /// FR-19, ADR-0021 決定4-3: GFV の発生回数が**警告基準に達しているか**（2 回目で警告）。
@@ -108,6 +113,33 @@ public static class AccountTypePolicy
     /// <c>BrokerAccountTypeUnverified</c> / 停止の側で表す。
     /// </para>
     /// </summary>
-    public static bool WarnsForGoodFaithViolations(int? violationCount) =>
-        violationCount >= GoodFaithViolationStopThreshold;
+    public static bool WarnsForGoodFaithViolations(GoodFaithViolationTally? tally) =>
+        tally is not null && tally.Warns;
+
+    /// <summary>
+    /// FR-19, ADR-0021 決定4-2, ADR-0025, IADR-0153 決定4, IADR-0166 決定1:
+    /// その買付が**決済済み資金で説明できないか**（＝未決済資金による買付か）。**判定の単一情報源である。**
+    /// <para>
+    /// 本述語は 2 か所から呼ばれ、**同じ事象を指すことが設計の要点**である（ADR-0025 決定2:
+    /// 「計数の対象は ADR-0021 決定4 の統制2 が拒否しようとする事象と同じである」）。
+    /// <list type="number">
+    /// <item>発注前のガード（<c>RiskEvaluator</c>）——真なら <c>CashAccountSettlementHold</c> で拒否する</item>
+    /// <item>事後の計数（<see cref="GoodFaithViolationDetection"/>）——ガードをすり抜けて約定した買付を 1 件記録する</item>
+    /// </list>
+    /// 2 か所に式を書くと、片方だけ直したときに「拒否はするが数えない」「数えるが拒否しない」がすり抜ける。
+    /// </para>
+    /// <para>
+    /// <b>決済済み資金が未供給（<c>null</c>）なら真である</b>——「残高が分からないから通す」は統制にならない。
+    /// </para>
+    /// <para>
+    /// <b>入力は <c>BrokerAccountState.SettledCashInBase</c> だけである。</b>
+    /// <c>MaxTrdQtys.MaxCashBuy</c>（現金買付余力）・<c>Funds.AvlWithdrawalCash</c> / <c>MaxWithdrawal</c>
+    /// （出金可能額）を代替に用いてはならない（ADR-0025）。とくに現金買付余力は現金口座では
+    /// **未決済の売却代金を含む**のが通例であり、**それこそが GFV を引き起こす当の資金である。
+    /// これを分母に据えると GFV 回避ガードが GFV を許可する。** 再混入は
+    /// <c>scripts/check-banned-settled-cash-sources.js</c> が機械的に止める。
+    /// </para>
+    /// </summary>
+    public static bool ExceedsSettledCash(decimal? settledCashInBase, decimal purchaseAmountInBase) =>
+        settledCashInBase is not { } settled || purchaseAmountInBase > settled;
 }
