@@ -963,4 +963,92 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: 素の TrackActivity() の使用が無い（#357 の回帰）', () => {
     assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
   });
+
+  // --- check-feedback-reflux.js: 環流の未起票の滞留（NFR / #439 / IADR-0170） ---
+  //
+  // **本検査も「効かない方向」に壊れると、CI は緑のまま滞留だけが戻る。**
+  // とくに**日数のしきい値**が要である——0 日で報告すると正常な運用（起票までのタイムラグ）が
+  // 騒音になり、長すぎると検出しない。よって**境界を両方向で固定する**。
+  const pathFr = require('path');
+  const fr = require('./check-feedback-reflux.js');
+
+  const FR_NOW = Date.parse('2026-08-07T00:00:00Z');
+  const frRecord = ({ status = 'open', created = '2026-08-01', body = '本文' } = {}) =>
+    `---\ntitle: t\ntype: plan-feedback\nstatus: ${status}\ncreated: ${created}\n---\n\n${body}\n`;
+
+  ok('check-feedback-reflux: status 欠落を検出する', () => {
+    const hit = fr.inspect({
+      file: 'x.md', now: FR_NOW, days: 3,
+      text: '---\ntitle: t\ntype: plan-feedback\ncreated: 2026-08-01\n---\n\n本文\n',
+    });
+    assert.strictEqual(hit && hit.kind, 'missing-status');
+  });
+
+  ok('check-feedback-reflux: open かつ未起票かつ猶予超で検出する', () => {
+    const hit = fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-01' }), now: FR_NOW, days: 3 });
+    assert.strictEqual(hit && hit.kind, 'unfiled');
+    assert.strictEqual(hit.age, 6);
+  });
+
+  // **境界（正）**: 猶予日数ちょうどは「まだ猶予の内」であり検出しない。
+  ok('check-feedback-reflux: 猶予ちょうど（境界）は検出しない', () => {
+    assert.strictEqual(
+      fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-04' }), now: FR_NOW, days: 3 }), null);
+  });
+
+  // **境界（負）**: 猶予を 1 日でも超えたら検出する。
+  ok('check-feedback-reflux: 猶予 +1 日（境界）は検出する', () => {
+    const hit = fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-03' }), now: FR_NOW, days: 3 });
+    assert.strictEqual(hit && hit.kind, 'unfiled');
+    assert.strictEqual(hit.age, 4);
+  });
+
+  ok('check-feedback-reflux: 計画側 issue の参照 2 形はいずれも起票済みとみなす', () => {
+    for (const ref of ['環流: project-planning#212', 'https://github.com/endazon/project-planning/issues/212']) {
+      assert.strictEqual(
+        fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-07-01', body: ref }), now: FR_NOW, days: 3 }),
+        null, `参照形式が認識されていない: ${ref}`);
+    }
+  });
+
+  // **番号なしのリポジトリリンクは起票の証拠ではない**（これを参照とみなすと検査が骨抜きになる）。
+  ok('check-feedback-reflux: 番号なしの project-planning/ は起票とみなさない', () => {
+    const hit = fr.inspect({
+      file: 'x.md', now: FR_NOW, days: 3,
+      text: frRecord({ created: '2026-07-01', body: 'https://github.com/endazon/project-planning/blob/main/x.md' }),
+    });
+    assert.strictEqual(hit && hit.kind, 'unfiled');
+  });
+
+  ok('check-feedback-reflux: resolved は対象外（逆向きの乖離は週次 AI 監査の担当）', () => {
+    assert.strictEqual(
+      fr.inspect({ file: 'x.md', text: frRecord({ status: 'resolved', created: '2026-07-01' }), now: FR_NOW, days: 3 }),
+      null);
+  });
+
+  ok('check-feedback-reflux: created が読めなければ日数で判定しない', () => {
+    assert.strictEqual(fr.ageInDays('not-a-date', FR_NOW), null);
+    assert.strictEqual(
+      fr.inspect({ file: 'x.md', text: frRecord({ created: 'not-a-date' }), now: FR_NOW, days: 3 }), null);
+  });
+
+  ok('check-feedback-reflux: 猶予日数は環境変数で上書きでき、読めない値は既定へ倒す', () => {
+    assert.strictEqual(fr.graceDays('7'), 7);
+    assert.strictEqual(fr.graceDays('0'), 0, '0 は「猶予なし」の有効な指定である');
+    assert.strictEqual(fr.graceDays('-1'), fr.DEFAULT_GRACE_DAYS);
+    assert.strictEqual(fr.graceDays('abc'), fr.DEFAULT_GRACE_DAYS);
+    assert.strictEqual(fr.graceDays(undefined), fr.DEFAULT_GRACE_DAYS);
+  });
+
+  ok('check-feedback-reflux: README/TEMPLATE は記録として走査しない', () => {
+    const files = fr.listRecords(pathFr.resolve(__dirname, '..')).map((f) => pathFr.basename(f));
+    assert.ok(files.length > 0, '環流記録を 1 件も読めていないなら本検査は無意味である');
+    assert.ok(!files.includes('README.md') && !files.includes('TEMPLATE.md'));
+  });
+
+  ok('実ツリー: 環流記録の走査が例外を投げない（#439 の回帰）', () => {
+    const findings = fr.checkTree(pathFr.resolve(__dirname, '..'), Date.now(), fr.DEFAULT_GRACE_DAYS);
+    assert.ok(Array.isArray(findings));
+    for (const f of findings) assert.ok(['missing-status', 'unfiled'].includes(f.kind));
+  });
 };
