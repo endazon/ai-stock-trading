@@ -80,7 +80,10 @@ T = m × (C + (T − C) × r)          m = 倍率 / C = 費用 / r = 譲渡益�
 
 - **実効しきい値が `1.5 × C` から `≈ 2.684 × C` へ上がる**（約 1.79 倍）。通過する取引は減る。
 - `KnownPlanDeviations` から #358 の行が消え、**計画適合が登録行なしで成立する**。
-- [IADR-0021](./IADR-0021_trading-assumptions-configuration.md)・`docs/specs/20260718_trade-decision-profitability-gate.md`・`docs/data/trading-assumptions.md` の誤った記述に**日付付きの訂正**を入れた。
+- **[IADR-0076](./IADR-0076_trade-decision-profitability-gate.md) 決定 7 を撤回した。** 同決定は「計画 05 §4 は『往復費用＋税』を挙げるが……税は後続に委ねる」と述べていたが、**その計画 §4 は 2026-07-23 の利用者決定で既に確定していた** —— つまり「後続に委ねる」は**計画からの逸脱**であった。本 ADR がこれを正す。
+- 次の 4 文書の誤った記述に**日付付きの訂正**を入れた（本文は書き換えず point-in-time 記録として残す）: [IADR-0021](./IADR-0021_trading-assumptions-configuration.md)／[IADR-0076](./IADR-0076_trade-decision-profitability-gate.md)（決定 7 と §影響の「税の非対応」）／`docs/specs/20260718_trade-decision-profitability-gate.md`／`docs/specs/20260710_configuration-assumptions.md`／`docs/data/trading-assumptions.md`。
+
+  **「税は後続」という記述は 5 か所に散っていた。** 1 か所でも残すと、次に読んだ者が**現行と矛盾する記述を根拠に判断する**——本リポジトリが [[IADR-0166]] で繰り返し戒めてきた「古い記述が確かめた気にさせる」形そのものである（**本 PR のレビュー指摘で 2 か所の漏れが判明した**）。
 
 ### 悪い影響（記録する）
 
