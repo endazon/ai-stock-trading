@@ -24,5 +24,7 @@
   "borrowFeeAvailability": 1,
   "totalAccruedBorrowFeeUsd": null,
   "reductionHistoryAvailability": 1,
-  "reductionHistory": []
+  "reductionHistory": [],
+  "buyInCountAvailability": 1,
+  "buyInCount": null
 }

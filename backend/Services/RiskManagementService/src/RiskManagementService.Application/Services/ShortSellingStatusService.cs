@@ -66,10 +66,33 @@ public sealed class ShortSellingStatusService(
             // 供給が入った日は誰も画面を見直さないため、最も気づかれにくい向きの fail-open である。
             // **記録経路を実装するまでは無条件に未供給である。**
             ReductionHistoryAvailability: MetricAvailability.NotSupplied,
-            ReductionHistory: []);
+            ReductionHistory: [],
+            // ADR-0016 決定15, #424, IADR-0162 決定2: **強制買戻しの発生回数は供給が無い。**
+            //
+            // #419（IADR-0159）で推定台帳（`buy_in_inferences`）は入った。しかし台帳は**推定が起きたときにしか
+            // 行を書かない**——観測が届かなければ 1 行も書かれず、観測が届いて何も推定しなくても 1 行も書かれない。
+            // したがって**行数 0 は 2 つの別事実を区別できない**。
+            //   1. ブローカ建玉の観測が一度も届いていない（＝**この統制はまったく働いていない**）
+            //   2. 観測した結果、強制買戻しは 1 件も無かった（＝正常）
+            // 前者を 0 件と描けば「強制買戻しは起きていない」と読める。計画（05_screens SC-03 の供給元の表）は
+            // **「0 件と表示してはならない」**と名指しで禁じており、ADR-0016 決定15 も同じ向きである。
+            //
+            // **`IBuyInInferenceStore.CountInferredBetween` をここへ結線しないのは意図的である。**
+            // 結線すれば「観測が一度も無い」状態が `Available` かつ 0 として応答に載り、上記 1 が 2 に化ける。
+            // 供給できる形にするには「観測が届いた事実」を記録する経路が要る（`blocked-tasks` へ登録済み）。
+            //
+            // **他の指標の供給状態を条件に混ぜない**（IADR-0154 残余リスク4 の規律）。維持率や現在値の供給が
+            // 入った日に本項が黙って `Available` / `NotApplicable` へ化けてはならない。
+            BuyInCountAvailability: MetricAvailability.NotSupplied,
+            BuyInCount: null);
     }
 
-    // ADR-0016 決定7, IADR-0133 決定2: 維持率と、適用される閾値・回復目標。
+    // ADR-0016 決定7（2026-08-07 追記）, IADR-0133 決定2: 維持率と、適用される閾値・回復目標。
+    //
+    // **維持率は Stage 1 の全期間にわたって供給されない**——実弾口座のヘッダを要し、moomoo SIMULATE では
+    // 照会 API 自体が失敗する（ADR-0019 PoC 項目 3 の実測）。**これは直すべきバグではない。**
+    // 本メソッドが常に NotSupplied を返すことは、供給が無いという事実の正しい表現である
+    // （供給元が入れば同じコードのまま Available へ切り替わる。画面へ「未供給」と書き込まないのはこのため）。
     // 適用閾値は**建玉の株価に依存する**（自前 40% と規制要求の厳しい方を建玉ごとに出し、最も厳しいものを採る）。
     // スナップショットが無ければ株価が分からないため、閾値も回復目標も決められない（null）。
     private static (MetricAvailability Availability, decimal? Ratio, decimal? Threshold, decimal? RecoveryTarget)

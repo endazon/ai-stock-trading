@@ -144,7 +144,14 @@ test.describe('SC-01 §2 収集パラメータ（#340）', () => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
 
-    await expect(page.getByText('収集間隔は本画面から閲覧・変更できません。')).toBeVisible();
+    // #424, IADR-0162: 収集間隔は**供給が無い**状態として規約の文言で示す。
+    // 文言は `<strong>` を挟んで複数のテキストノードへ分かれるため、
+    // **注記要素の textContent** に対して検証する（`getByText` の完全一致では拾えない）。
+    const intervalNote = page.getByRole('note').filter({ hasText: '現在の収集間隔:' });
+    // 定数を import せず**リテラルで固定する**。規約文言そのものが計画の裁定内容であり、
+    // 定数を参照すると定数を書き換えたときにテストが追随してしまい退行を検知できない。
+    await expect(intervalNote).toContainText('取得できていません（供給元がありません）');
+    await expect(intervalNote).toContainText('本画面から閲覧・変更できません。');
     // **否定形**: 収集間隔の入力欄は 1 つも無い。
     await expect(page.getByLabel(/収集間隔/)).toHaveCount(0);
   });
@@ -195,7 +202,11 @@ test.describe('SC-01 §2 収集パラメータ（#340）', () => {
     });
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
 
-    await expect(page.getByText('収集パラメータを取得できませんでした。')).toBeVisible();
+    // #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で示す。
+    // 「値が 0/空である」ことと区別できるよう、**「確認できていません」まで含めて**固定する。
+    const unavailable = page.getByRole('alert').filter({ hasText: '収集パラメータを' });
+    await expect(unavailable).toContainText('取得できていません（供給元がありません）');
+    await expect(unavailable).toContainText('値が無いのではなく、確認できていません。');
     // §1（ConfigurationService 由来）は独立して表示される。
     await expect(page.getByText(/現在のバージョン:\s*3/)).toBeVisible();
   });

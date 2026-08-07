@@ -271,4 +271,84 @@ public class ShortSellingStatusServiceTests
         view.ReductionHistoryAvailability.Should().Be(MetricAvailability.NotSupplied);
         view.ReductionHistory.Should().BeEmpty();
     }
+
+    // ---- 強制買戻しの発生回数（ADR-0016 決定15・#424・IADR-0162 決定2） ----
+
+    // T-10-257: **供給元が無いことを「未供給」として宣言する。**
+    // 計画（05_screens SC-03 の供給元の表）は本項目へ **「0 件と表示してはならない」**と名指しで注記した。
+    // #419 で推定台帳は入ったが、台帳は**推定が起きたときにしか行を書かない**ため、行数 0 は
+    // 「観測が一度も届いていない」と「観測して 0 件だった」を区別できない。
+    [Fact]
+    public void 強制買戻しの発生回数は未供給として宣言し0件を返さない()
+    {
+        var view = Create(fills: [Fill(TradeSide.Sell, 10, 90m, "SHRT")]).Build();
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+        // **0 を返さない**（0 は「強制買戻しは起きていない」と読める）。
+        view.BuyInCount.Should().BeNull();
+        view.BuyInCount.Should().NotBe(0);
+    }
+
+    // T-10-258（**潜在的な fail-open の固定**・IADR-0154 残余リスク4 と同型）:
+    // **他の指標の供給状態に本項目を結び付けない。** 維持率・現在値・建玉の有無がどう変わっても、
+    // 発生回数の供給可否は変わらない。結び付けると、維持率の供給が入った日（#331 / #342）に本項が
+    // 黙って `Available` / `NotApplicable` へ化け、**観測経路が無いままの 0 件が「起きていない」と読める**。
+    [Fact]
+    public void 強制買戻しの発生回数は他の指標が供給されても未供給のままである()
+    {
+        var snapshot = new MaintenanceMarginSnapshot
+        {
+            NetEquityUsd = 40_000m,
+            Positions = [Short("AAPL", 100m, 1_000, 30_000m)],
+        };
+
+        var view = Create(
+            snapshot,
+            fills: [Fill(TradeSide.Sell, 10, 90m, "SHRT")],
+            prices: new Dictionary<(string Symbol, Market Market), decimal>
+            {
+                [("SHRT", Market.UnitedStates)] = 80m,
+            }).Build();
+
+        // 前提: 維持率・空売り比率はいずれも供給されている（この分岐が実際に通っていることの確認）。
+        view.MaintenanceMarginAvailability.Should().Be(MetricAvailability.Available);
+        view.ShortExposureAvailability.Should().Be(MetricAvailability.Available);
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+        view.BuyInCount.Should().BeNull();
+    }
+
+    // T-10-259: **建玉が 1 件も無いことは「対象なし」であって「未供給」ではない。**
+    // 空売り比率は概念が成立しないだけであり運用上の異常ではない（打つ手が違う）。
+    // 一方で維持率・借株料・発生回数は**建玉の有無と無関係に**供給元そのものが無い。
+    [Fact]
+    public void 建玉が無いときの空売り比率は対象なしであり未供給ではない()
+    {
+        var view = Create().Build();
+
+        view.ShortExposureAvailability.Should().Be(MetricAvailability.NotApplicable);
+        view.ShortExposureAvailability.Should().NotBe(MetricAvailability.NotSupplied);
+        view.ShortExposureRatio.Should().BeNull();
+        // 同じ「建玉なし」でも、供給元が無い項目は未供給のままである（1 つの状態へ潰さない）。
+        view.BorrowFeeAvailability.Should().Be(MetricAvailability.NotSupplied);
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+    }
+
+    // T-10-260: **正当な 0 を未供給へ倒さない**（逆方向の否定形）。
+    // 空売り建玉が 1 件も無く現物だけを持つ口座では、空売り比率は**測定できて 0** である。
+    // これを「未供給」と宣言すると、供給されているのに「取得できていません」と嘘をつく——
+    // 3 状態の区別は**両方向**に守らなければ意味を持たない。
+    [Fact]
+    public void 空売り建玉が無い口座の空売り比率は供給ありの0である()
+    {
+        var view = Create(
+            fills: [Fill(TradeSide.Buy, 5, 100m, "LONG")],
+            prices: new Dictionary<(string Symbol, Market Market), decimal>
+            {
+                [("LONG", Market.UnitedStates)] = 100m,
+            }).Build();
+
+        view.ShortExposureAvailability.Should().Be(MetricAvailability.Available);
+        view.ShortExposureRatio.Should().Be(0m);
+    }
 }

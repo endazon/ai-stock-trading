@@ -20,6 +20,7 @@ import type {
   RiskStatusView,
   SettingsChangeEntry,
 } from '../risk/contracts';
+import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 
 // #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台に作り、テストが要る差分だけ
 // 上書きする。インラインの literal で書くと「フロントが思っている形をフロント自身が検証する」構造へ戻り、
@@ -117,8 +118,10 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     expect(within(form).getByText(new RegExp(expected.format(EQUITY * 0.4)))).toBeInTheDocument();
   });
 
-  it('degrades the resolved amount to a dash when equity is unavailable', async () => {
-    // 併記できないことを黙って隠さない（equity 取得失敗は実額のみ縮退させ、設定表示は保つ）。
+  it('declares the resolved amount as not supplied (never a dash) when equity is unavailable', async () => {
+    // SC-02, #424, IADR-0162 決定3: **未供給を「—」で描かない**（05_screens「供給が無い値の表示規約」）。
+    // 併記できないことを黙って隠さないのは従来どおりだが、**「—」は「対象なし」の記号**であり、
+    // equity が取れていない（＝判断材料が無い）ことを同じ見た目にすると 3 状態の区別が消える。
     mocks.apiFetch.mockImplementation(async (path: string) => {
       if (path === '/risk-controls/status') throw new ApiError('server', 'boom', 500);
       if (path === '/risk-controls/settings/history') return HISTORY;
@@ -128,9 +131,17 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     });
     render(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'リスク上限の変更' });
-    // equity 比の 5 項目すべてが「—」へ縮退する（一部だけ数字が残る中途半端な状態にしない）。
-    expect(within(form).getAllByText(/現在の equity での実額: —/)).toHaveLength(5);
-    expect(within(form).getByText(/現在の equity（取得できません）/)).toBeInTheDocument();
+    // equity 比の 5 項目すべてが未供給として明示される（一部だけ数字が残る中途半端な状態にしない）。
+    expect(
+      within(form).getAllByText(new RegExp(`現在の equity での実額: ${METRIC_NOT_SUPPLIED_TEXT}`)),
+    ).toHaveLength(5);
+    // **否定形**: 「—」へ落とさない（未供給と対象なしを混ぜない）。
+    expect(within(form).queryByText(/現在の equity での実額: —/)).not.toBeInTheDocument();
+    // 0 へも落とさない（供給が無いことを「上限 0」に見せない）。
+    expect(within(form).queryByText(/現在の equity での実額: \$0/)).not.toBeInTheDocument();
+    expect(within(form).getByText(new RegExp(`現在の equity（${METRIC_NOT_SUPPLIED_TEXT}）`))).toBeInTheDocument();
+    // 供給が無い旨は警告として出す（統制の判断材料が無い状態である）。
+    expect(within(form).getByText(/判断材料が無い状態/)).toBeInTheDocument();
   });
 
   it('shows the stage orderable cap as a ratio of total capital', async () => {

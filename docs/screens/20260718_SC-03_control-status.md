@@ -2,11 +2,11 @@
 title: 画面仕様書（素案） — SC-03 承認・統制状態参照画面
 type: screen
 status: Draft
-related_ids: [SC-03, FR-10, FR-20, FR-12, FR-13, UC-06, ADR-0008, ADR-0009, ADR-0016, IADR-0140, IADR-0142, IADR-0154]
+related_ids: [SC-03, FR-10, FR-20, FR-12, FR-13, UC-06, ADR-0008, ADR-0009, ADR-0016, ADR-0019, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-08-06
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -16,6 +16,8 @@ related_specs:
   - ../adr/IADR-0140_broker-provider-axis.md
   - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
   - ../adr/IADR-0154_supply-availability-declared-by-server.md
+  - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
+  - ../specs/20260807_424_unsupplied-metric-display-convention.md
   - ../specs/20260806_340_screens-reimplementation.md
   - ../adr/IADR-0084_frontend-risk-settings-and-control-status.md
 ---
@@ -58,10 +60,23 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 
      | 項目 | 供給が無い理由 |
      | --- | --- |
-     | 維持率 | `UnavailableMaintenanceMarginSnapshotSource` が常に `null`。PoC 項目 3 で「実弾口座でのみ照会でき SIMULATE では照会 API 自体が失敗」と実測 |
+     | 維持率 | `UnavailableMaintenanceMarginSnapshotSource` が常に `null`。PoC 項目 3 で「実弾口座でのみ照会でき SIMULATE では照会 API 自体が失敗」と実測。**Stage 1 の全期間にわたって表示できない**（[ADR-0016] 決定7 の 2026-08-07 追記）。**これは不具合ではなく、供給が無いという事実の正しい表現である** |
      | 借株料の累計 | 累計を保持する型・ストア・イベントがコード全体に存在しない |
      | 自動縮小の発動履歴 | 発火元（維持率）が無く、履歴ストアも照会 API も無い |
      | 空売り比率 | 分母（建玉総額）は時価であり、現在値（`MarketData:EnableMarkToMarket`）は既定 false |
+     | **強制買戻しの発生回数**（[ADR-0016] 決定15・#424） | 推定台帳（[IADR-0159]・#419）は入ったが、**推定が起きたときにしか行を書かない**ため、行数 0 は「観測が一度も届いていない」と「観測して 0 件だった」を区別できない。計画は本項目へ**「0 件と表示してはならない」**と名指ししている（[IADR-0162] 決定2） |
+
+0-2. **供給が無い値の表示規約（全画面共通・2026-08-07 追加／[IADR-0162]）** —— 3 状態を**両方向**に守る。
+
+   | 状態 | 表示 | SC-03 の例 |
+   | --- | --- | --- |
+   | **供給が無い**（`NotSupplied`） | **「取得できていません（供給元がありません）」** | 維持率・借株料の累計・自動縮小の発動履歴・強制買戻しの発生回数 |
+   | **対象なし**（`NotApplicable`） | 「該当なし（対象の建玉がありません）」 | 建玉が 1 件も無いときの空売り比率 |
+   | **値が 0**（`Available` かつ 0） | **「0」**（正常値として表示する） | 空売り建玉が無い口座の空売り比率 0.0%・借株料 $0・発生回数 0 件（供給されている場合） |
+
+   - **「—」は対象なし専用の記号である。** 未供給を「—」で描かない（[IADR-0162] 決定3）。
+   - **正当な 0 を未供給へ倒さない**（逆方向の否定形）。「0 かどうかから供給有無を推測しない」は
+     **両方向**に効く規律であり、片方向だけでは「供給されているのに取得できていませんと嘘をつく」向きが残る。
 
 1. **統制状態（`RiskStatusView`）**: 3 統制（kill switch・日次損失ロックアウト・一時停止）の on/off、成立中で最優先の統制
    （`activeControl`）、新規建て停止（`newEntriesBlocked`）、ロックアウト解除日、運用段階、当日損益（実現＋含み＋合計）、
@@ -108,6 +123,10 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 | 空売り比率の「該当なし」と「取得できていません」を出し分ける | 同「空売り比率は建玉が無ければ…」 |
 | 保有ポジションの建玉方向（ロング / ショート） | 同「保有ポジションに建玉の方向…」 |
 | 借株料の累計を未供給として明示し 0 を表示しない | 同「借株料の累計は未供給として明示され、0 を表示しない」 |
+| **強制買戻しの発生回数**を未供給として明示し「0 件」と表示しない（#424） | 同「強制買戻しの発生回数は未供給として明示され、0 件と表示しない」／ E2E `sc03-controls.spec.ts`「強制買戻しの発生回数を「0 件」に見せない」 |
+| **正当な 0 を未供給へ倒さない**（発生回数 0 件・空売り比率 0.0%・借株料 $0） | 同「強制買戻しが供給されていれば 0 件を「0」として表示する」「供給されている 0（空売り比率 0.0% ・借株料 $0）を未供給として描かない」 |
+| 維持率が **Stage 1 の全期間表示できない**事実を「不具合ではない」と明示する（#424） | 同「維持率が未供給のとき Stage 1 の全期間表示できない事実を「不具合ではない」と明示する」 |
+| 供給が始まれば表示が追随する（画面に「未供給」を書き込んでいない） | 同「維持率が供給されているとき、値・適用閾値・回復目標（閾値 + 5pt）を表示する」（Stage 1 の注記も消える） |
 | 自動縮小を 3 統制と別枠で「動かす」統制として描き、必要証拠金の降順を明記する | 同「維持率割れ自動縮小は 3 統制と別枠で…」 |
 | 発動履歴が未供給のとき「発動なし」と表示しない | 同「発動履歴が未供給のとき…」 |
 | 3 統制を優先順位順に表示し優先統制を明示する | `ControlStatusPage.test.tsx`「3 統制を優先順位順に表示し優先統制を明示する」 |
@@ -118,8 +137,12 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 ## スコープ外（後続）
 
 承認・差し戻し操作 UI（#165 Bot 側）、platform 合成点（features/BFF）登録、
-**維持率・借株料の累計・自動縮小の発動履歴の供給元の実装**（実口座への接続が要る。#331 / #342）。
+**維持率・借株料の累計・自動縮小の発動履歴の供給元の実装**（実口座への接続が要る。#331 / #342）、
+**強制買戻しの発生回数の供給**（推定台帳への照会 API と「観測が届いた事実」の記録経路が要る。#424 で
+`NotSupplied` の宣言のみを行った。`docs/blocked-tasks.md` 参照）。
 
 [ADR-0009]: ../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
 [ADR-0016]: ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
 [IADR-0154]: ../adr/IADR-0154_supply-availability-declared-by-server.md
+[IADR-0159]: ../adr/IADR-0159_buy-in-post-hoc-inference.md
+[IADR-0162]: ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md

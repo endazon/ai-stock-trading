@@ -2,7 +2,7 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0161]
+related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0161, IADR-0162]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -27,6 +27,8 @@ related_specs:
   - ../specs/20260805_362_sc02-ratio-input.md
   - ../specs/20260806_340_screens-reimplementation.md
   - ../specs/20260807_422_broker-provider-default-paper.md
+  - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
+  - ../specs/20260807_424_unsupplied-metric-display-convention.md
 ---
 
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
@@ -78,6 +80,23 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
      [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md) 決定6 で `MarketCurrency.Base = Usd` へ移行した）。
      これにより計画 SC-02 の表記例「**25%（$750）**」がそのまま正しくなり、
      [#409](https://github.com/endazon/ai-stock-trading/issues/409) は解消した。
+   - **equity が供給されていないときは「取得できていません（供給元がありません）」と述べる**
+     （#424・[IADR-0162] 決定3）。**「—」で描かない**——「—」は**対象なし**の記号であり、
+     equity が取れていない（＝発注規模を判断する材料が無い）状態と同じ見た目にすると 3 状態の区別が消える。
+     **「—」は入力が読めず実額が定義できない場合にだけ**用いる。
+     **equity が 0 でも未供給ではない**（実額 $0 は正当な値。正当な 0 を未供給へ倒さない・[IADR-0162] 決定1）。
+
+   ### 供給が無い値の表示規約（全画面共通・2026-08-07 追加／[IADR-0162]）
+
+   | 状態 | 表示 | SC-02 の例 |
+   | --- | --- | --- |
+   | **供給が無い** | **「取得できていません（供給元がありません）」** | `/risk-controls/status` を取得できず equity 実額を併記できない |
+   | **対象なし** | 「—」 | 入力が空・非数値で実額が定義できない |
+   | **値が 0** | **「0」**（正常値として表示する） | equity 0 に対する実額 $0 |
+
+   - **供給可否はサーバの応答（取得可否）で決める。** クライアントが「0 かどうか」から推測しない。
+   - equity 未供給のときは**実弾（moomoo REAL）への切替を禁じる**（既存の fail-closed。[IADR-0141] 決定・モーダル③）。
+     表示規約はこの関門を弱めない——「取得できていません」と述べたうえで切替ボタンは無効のままである。
      [IADR-0151] 決定4 が「$」を付けなかったのは当時の `capital` が円建てだったためであり
      （**円建ての数値に「$」を付けることは単位の取り違えそのもの**）、通貨が一致した今は記号を付けることが正しい表示である。
    - **equity を取得できないときは実額を「—」とし、その旨を明記する**（併記できないことを黙って隠さない）。
@@ -206,3 +225,6 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 > との整合は環流記録で計画へ返した（[feedback/20260806](../../feedback/20260806_sc01-sc03-unsupplied-screen-items.md) 問題 2）。
 
 [IADR-0155]: ../adr/IADR-0155_sc01-collection-parameters-supply.md
+
+[IADR-0141]: ../adr/IADR-0141_live-switch-explicit-confirmation.md
+[IADR-0162]: ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md

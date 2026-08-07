@@ -55,6 +55,8 @@ public class TradeDecisionMadeConsumerTests
                     sp.GetRequiredService<ILockoutStore>(),
                     sp.GetRequiredService<IClock>(),
                     sp.GetRequiredService<IBusinessCalendar>(),
+                    // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
+                    new InMemoryBuyInInferenceStore(),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。

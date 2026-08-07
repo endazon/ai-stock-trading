@@ -44,8 +44,9 @@ export const CONTRACT_SETTINGS_HISTORY: SettingsChangeEntry[] = settingsHistoryJ
 /**
  * `GET /risk-controls/short-selling` の実応答（SC-03 の維持率・空売りの現況。#340・IADR-0154）。
  *
- * **既定構成では維持率・借株料の累計・自動縮小の発動履歴がいずれも `NotSupplied`（＝1）である。**
- * これは不具合ではなく、供給元（ブローカー照会）が未実装であるという事実そのものである。
+ * **既定構成では維持率・借株料の累計・自動縮小の発動履歴・強制買戻しの発生回数がいずれも
+ * `NotSupplied`（＝1）である。** これは不具合ではなく、供給元（ブローカー照会）が未実装であるという
+ * 事実そのものである（維持率は **Stage 1 の全期間にわたって表示できない**。ADR-0016 決定7 の 2026-08-07 追記）。
  * 画面テストはこの形を土台にし、「未供給を未供給として描く」ことを検証する。
  */
 export const CONTRACT_SHORT_SELLING: ShortSellingStatusView = shortSellingJson;
