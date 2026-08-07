@@ -2,7 +2,7 @@
 title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
-related_ids: [FR-10, FR-15, FR-17, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06, ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162]
+related_ids: [FR-10, FR-15, FR-17, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06, ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163]
 author: endazon (with Claude Code)
 created: 2026-08-04
 updated: 2026-08-07
@@ -62,6 +62,12 @@ related_specs:
 > 全画面（SC-01 / SC-02 / SC-03）へ適用したことに伴い、**T-10-257〜266 を追加**した（供給が無い値の宣言・
 > 正当な 0 の描画・「—」と未供給の分離・サーバ宣言の固定）。**既存の写像は変更していない**
 > （[IADR-0162](../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md)）。
+>
+> **#428 による追記（2026-08-07）**: 推定台帳（`IBuyInInferenceStore`）の `OrderScreeningService` への配線を
+> **必須引数**にしたことに伴い、**T-10-267 を追加**した（配線を削るとビルドが落ちる／省略可能へ逆戻りしない）。
+> **既存の写像は変更していない**（[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定2）。
+> 本項は当初 `T-10-257` を採番していたが、**先にマージされた #424 が同番号を使用していた**ため
+> **先着尊重で `T-10-267` へ改番した**。
 
 > **#374 による追記（2026-08-04）**: 計画 ADR-0016 決定10 が拒否理由を **7 種 → 9 種**へ改訂した
 > （`StopOrderRequired` の追認・`BuyInBanned` の新設）ことに伴い、T-10-148 / T-10-155 の写像先を
@@ -441,6 +447,22 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-244 | 推定した禁止が**発注審査に効く**（#374 の `BuyInBanned` が初めて発動し得る状態になった） | `推定した銘柄の新規空売りは発注審査で拒否される`（`BuyInInferenceTests`） |
 | T-10-245 | 推定が無い銘柄には立たない（対照） | `推定が無い銘柄には強制買戻しの拒否理由が立たない` |
 | T-10-246 | 観測から**イベントが発行され禁止が永続化される**（結線） | `説明できない空売り建玉の消失から強制買戻しを推定して発行する`（`BrokerPositionsObservedConsumerTests`） |
+
+### 5. 推定台帳の配線の退行検知（#428・[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定2）
+
+> `OrderScreeningService` は推定台帳を**省略可能引数（既定 `null`）**で受けていた。本番配線
+> （`Program.cs`）は正しいが、**その引数を削ってもコンパイルが通り、テストは全緑のまま、
+> 強制買戻し由来の 30 日禁止だけが静かに効かなくなる**（T-10-244 を含め既存テストは本サービスを
+> テスト内で直接構築するため配線の消失を検知しない）。**必須引数化それ自体が退行検知**であり、
+> 下表はその規律が省略可能へ逆戻りしないことを固定する。
+
+| ID | 何を固定するか | テストメソッド（クラス） |
+| --- | --- | --- |
+| T-10-267 | 推定台帳は `OrderScreeningService` の**必須依存**である（省略可能引数・null 許容へ戻すと赤くなる）。**`patternDetector` は省略可能のまま**であることも同時に固定する（「検出器を構成していない」は正当な状態であり `null` の意味が違う） | `推定台帳は発注審査サービスの必須依存であり検出器は省略可能である`（`BuyInInferenceTests`） |
+
+**ミューテーション（実施済み）**: (c) `Program.cs` から推定台帳の引数を削る → **ビルドが失敗する**
+（`error CS1503: Argument 6`。必須引数化の目的そのもの）。(d) `buyInInferences` を
+`IBuyInInferenceStore? buyInInferences = null` へ戻す → T-10-267 が赤。
 
 ## 供給が無い値の表示規約（SC-01 / SC-02 / SC-03・#424・IADR-0162）
 

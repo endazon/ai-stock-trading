@@ -63,8 +63,11 @@ public class OrderScreeningManipulationTests
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
         var detector = new ManipulativeOrderPatternDetector(
             source, clock, TradingDefaults.CreateManipulationDetectionSettings());
+        // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため**空の台帳**を渡す
+        // （`null!` を渡すと必須化の意味が消える）。
         return new OrderScreeningService(
-            settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(), detector);
+            settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(),
+            new InMemoryBuyInInferenceStore(), detector);
     }
 
     [Fact]

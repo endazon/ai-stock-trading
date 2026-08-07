@@ -83,6 +83,48 @@ public class EfStoreTests
         }
     }
 
+    // FR-20 (3), #431, IADR-0163 決定1: **段階の既定発注先（stage.mode）が壊れた行**をストア経由で読む。
+    // 直列化単体だけでは**配線の穴**（DTO を挟み忘れる・属性を付け忘れる）を検知できない——実際に
+    // #422 は `brokerProvider` にだけ属性を付け、隣の `stage.mode` を素通りさせていた。
+    [Theory]
+    [InlineData("\"MOOMOO REAL\"")]
+    [InlineData("true")]
+    [InlineData("7")]
+    public void 段階の既定発注先が壊れた行もストア経由で読めて統制値が失われない(string rawJsonValue)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var brokenJson = System.Text.RegularExpressions.Regex.Replace(
+            RiskSettingsSerialization.Serialize(TradingDefaults.CreateSettings()),
+            "\"mode\":\\d+",
+            $"\"mode\":{rawJsonValue}");
+        brokenJson.Should().Contain("\"mode\":" + rawJsonValue, "壊れた行の再現に失敗している");
+
+        using (var db = NewContext(dbName))
+        {
+            db.RiskSettings.Add(new RiskSettingsRow
+            {
+                Id = SingletonKeys.Id,
+                Json = brokenJson,
+                Version = 1,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            db.SaveChanges();
+        }
+
+        using var db2 = NewContext(dbName);
+        // 例外（＝GetCurrent が 500）へ倒さないこと自体が要件である。
+        var settings = new EfRiskSettingsStore(db2).GetCurrent();
+
+        settings.Stage.Mode.Should().Be(
+            Shared.Contracts.Trading.BrokerProvider.InternalPaper,
+            "解決できない段階の既定発注先は内蔵 paper へ落とす（FR-20 (3)）");
+        settings.Stage.Mode.Should().NotBe(Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+        // 統制値・ガード・発注先が巻き添えで失われていないこと。
+        settings.Limits.MaxOpenPositions.Should().Be(TradingDefaults.CreateRiskLimits().MaxOpenPositions);
+        settings.Guard.EnabledProductTypes.Should().Contain(Shared.Contracts.Trading.ProductType.Cash);
+        settings.BrokerProvider.Should().Be(Shared.Contracts.Trading.BrokerProvider.InternalPaper);
+    }
+
     [Fact]
     public void 設定の保存はラウンドトリップし別コンテキストからも読める()
     {

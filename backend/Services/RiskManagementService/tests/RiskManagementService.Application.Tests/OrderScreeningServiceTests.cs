@@ -47,8 +47,10 @@ public class OrderScreeningServiceTests
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+        // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
-            new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar());
+            new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
+            new InMemoryBuyInInferenceStore());
         return (service, clock, portfolio, killSwitch, lockout);
     }
 
@@ -169,8 +171,10 @@ public class OrderScreeningServiceTests
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+        // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
-            new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar());
+            new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
+            new InMemoryBuyInInferenceStore());
 
         service.Screen(Decision(EntryIntent())); // 金曜に到達
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 13)); // 月曜

@@ -1,3 +1,4 @@
+using System.Reflection;
 using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
@@ -323,6 +324,37 @@ public class BuyInInferenceTests
             RejectionReason.BorrowUnavailable, "借株照会の供給元が無い間はいずれにせよ通らない（フェイルクローズ）");
     }
 
+    // T-10-267（**構造テスト**）: 推定台帳は `OrderScreeningService` の**必須依存**である。
+    //
+    // #428: 省略可能引数（既定 `null`）で受けていると、`Program.cs` から引数を削っても**コンパイルが通り、
+    // テストは全緑のまま、強制買戻し由来の 30 日禁止だけが静かに効かなくなる**（上の T-10-244 を含め、
+    // 既存テストは本サービスをテスト内で直接構築するため配線の消失を検知しない）。**必須引数化それ自体が
+    // 退行検知**であり、本テストは「必須へ戻す」規律が省略可能へ逆戻りしないことを固定する。
+    //
+    // **`patternDetector` は省略可能のままである**ことも同時に固定する——「検出器を構成していない」は
+    // 正当な状態であり、`null` の意味が違う（推定台帳の `null` は「30 日禁止が効かない」を意味する）。
+    // 両者をまとめて必須／省略可能へ倒すと、この区別が失われる。
+    [Fact]
+    public void 推定台帳は発注審査サービスの必須依存であり検出器は省略可能である()
+    {
+        var parameters = typeof(OrderScreeningService)
+            .GetConstructors()
+            .Should().ContainSingle("依存の宣言箇所は 1 か所であること").Subject
+            .GetParameters();
+
+        var buyInInferences = parameters.Should()
+            .ContainSingle(p => p.ParameterType == typeof(IBuyInInferenceStore)).Subject;
+        buyInInferences.IsOptional.Should().BeFalse(
+            "推定台帳の不在は「強制買戻しが起きていない」ことを意味しない（#428・IADR-0163 決定2）");
+        new NullabilityInfoContext().Create(buyInInferences).WriteState.Should().Be(
+            NullabilityState.NotNull, "null 許容へ戻すと必須引数化の意味が消える（null を渡せてしまう）");
+
+        var detector = parameters.Should()
+            .ContainSingle(p => p.ParameterType == typeof(IManipulativeOrderPatternDetector)).Subject;
+        detector.IsOptional.Should().BeTrue(
+            "「検出器を構成していない」は正当な状態であり null の意味が違う（#428）");
+    }
+
     private static OrderScreeningService NewScreeningService(IBuyInInferenceStore store)
     {
         var settings = TradingDefaults.CreateSettings();
@@ -336,7 +368,7 @@ public class BuyInInferenceTests
 
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),
-            new WeekendBusinessCalendar(), patternDetector: null, buyInInferences: store);
+            new WeekendBusinessCalendar(), buyInInferences: store, patternDetector: null);
     }
 
     private static OrderIntent ShortEntryIntent() =>

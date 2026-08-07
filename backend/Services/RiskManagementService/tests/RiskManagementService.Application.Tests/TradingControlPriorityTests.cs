@@ -82,12 +82,14 @@ public class TradingControlPriorityTests
 
         public ScreeningOutcome Screen(PositionEffect effect)
         {
+            // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
             var service = new OrderScreeningService(
                 new InMemoryRiskSettingsStore(),
                 Builder(),
                 Lockout,
                 new FakeClock(Now, Today),
-                new WeekendBusinessCalendar());
+                new WeekendBusinessCalendar(),
+                new InMemoryBuyInInferenceStore());
             var intent = new OrderIntent(
                 "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 1_000m, effect);
