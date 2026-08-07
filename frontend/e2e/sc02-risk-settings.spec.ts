@@ -387,7 +387,15 @@ test.describe('SC-02 市場監視パラメータ（#423）', () => {
     });
     await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
 
-    await expect(page.getByText('市場監視パラメータを取得できませんでした。')).toBeVisible();
+    // #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で示す。
+    // 文言は `<strong>` を挟んで複数のテキストノードへ分かれるため、**要素の textContent** に対して
+    // 検証する（`getByText` の完全一致では拾えない）。SC-01 §2 から本節が移ってきたときに
+    // #424 の規約が落ちていたため、ここで固定する。
+    // 定数を import せず**リテラルで固定する**——規約文言そのものが計画の裁定内容であり、
+    // 定数を参照すると定数を書き換えたときにテストが追随して退行を検知できない。
+    const unavailable = page.getByRole('alert').filter({ hasText: '市場監視パラメータを' });
+    await expect(unavailable).toContainText('取得できていません（供給元がありません）');
+    await expect(unavailable).toContainText('値が無いのではなく、確認できていません。');
     // リスク上限（RiskManagementService 由来）は独立して表示される。
     await expect(limitsForm(page)).toBeVisible();
   });

@@ -216,7 +216,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す（#196/IADR-0090） |
 | 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す（#196/IADR-0090） |
-| 市場監視パラメータ 取得（#423） | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退（「市場監視パラメータを取得できませんでした。」） |
+| 市場監視パラメータ 取得（#423） | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424・[IADR-0162]） |
 | 市場監視パラメータ 履歴（#423） | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |
 | 変動閾値 保存（#423） | `PUT /monitor/settings/movement-threshold`（`{movementThresholdRatio, reason}`） | 成功=再取得。**400=値域（サーバの `MonitorSettingsBounds` が実効）／理由欠如**、409=競合＋再取得を促す |
 | クールダウン 保存（#423） | `PUT /monitor/settings/cooldown`（`{cooldown, reason}`。`cooldown` は `"HH:mm:ss"`） | 同上 |
