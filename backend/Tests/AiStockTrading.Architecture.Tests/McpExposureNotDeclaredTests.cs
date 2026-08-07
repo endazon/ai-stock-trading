@@ -31,9 +31,23 @@ namespace AiStockTrading.Architecture.Tests;
 /// </summary>
 public class McpExposureNotDeclaredTests
 {
-    /// <summary>走査対象の拡張子。<b>宣言が入るのは構成とコードである</b>（`docs/` は対象外）。</summary>
-    private static readonly string[] ScannedExtensions =
-        [".cs", ".json", ".yaml", ".yml", ".csproj", ".props", ".sh"];
+    /// <summary>
+    /// 走査<b>しない</b>拡張子。<b>許可リストではなく拒否リストで書く。</b>
+    /// <para>
+    /// 当初は走査する拡張子の許可リスト（`.cs` `.json` `.yaml` …）で書いていたが、
+    /// <b>許可リストそのものが「暗黙の除外」として働いていた</b>——`Dockerfile` は
+    /// <c>Path.GetExtension</c> が空文字列を返すため、<b>2 件が黙って走査から漏れていた</b>
+    /// （`backend/Dockerfile` / `deploy/opend/Dockerfile`。PR #451 のレビュー指摘）。
+    /// Dockerfile は <c>RUN</c> / <c>ENV</c> で MCP サイドカーやクライアントの導入を書き得る場所であり、
+    /// <b>粗い照合の強さ（決定2）を部分的に無効化していた</b>。
+    /// </para>
+    /// <para>
+    /// 拒否リストにすれば、<b>新しい種類のファイルは既定で走査対象になる</b>。
+    /// 除外は<b>意図的に 1 種類だけ</b>——Markdown は設計文書であり、
+    /// 「MCP へは公開しない」と<b>書くこと自体が正しい</b>場所である（本 ADR・仕様書がそうである）。
+    /// </para>
+    /// </summary>
+    private static readonly string[] NotScannedExtensions = [".md"];
 
     /// <summary>
     /// 走査対象から外すファイル。<b>本テスト自身のみ</b>（説明のために <c>mcp</c> を含む）。
@@ -76,7 +90,33 @@ public class McpExposureNotDeclaredTests
             "走査対象が痩せると「違反 0 件」が「1 件も読んでいない」と区別できなくなる");
     }
 
-    // 対照（肯定形）その 2: 照合器そのものが効くこと。
+    // 対照（肯定形）その 2: **拡張子を持たない構成ファイルが走査対象に入っていること。**
+    // `Dockerfile` は `Path.GetExtension` が空文字列を返すため、拡張子の許可リストで書くと
+    // **黙って漏れる**（PR #451 のレビューで実際に漏れていた）。RUN / ENV で MCP サイドカーや
+    // クライアントの導入を書き得る場所であり、**漏れていることは失敗メッセージにも現れない**。
+    [Fact]
+    public void 拡張子を持たない構成ファイルも走査対象に入っている()
+    {
+        var scanned = ScannedFiles()
+            .Select(p => Path.GetRelativePath(RepositoryLayout.Root, p).Replace('\\', '/'))
+            .ToHashSet(StringComparer.Ordinal);
+
+        scanned.Should().Contain("backend/Dockerfile");
+        scanned.Should().Contain("deploy/opend/Dockerfile");
+    }
+
+    // 対照（肯定形）その 3: **Markdown は意図的に走査しない。**
+    // これは唯一の意図的な除外であり、「うっかり外れている」のか「外してある」のかを
+    // テストで区別できるようにしておく（本 ADR・仕様書が `mcp` を多数含むため必要な除外である）。
+    [Fact]
+    public void Markdownは意図的に走査対象から外れている()
+    {
+        ScannedFiles().Should().NotContain(
+            p => p.EndsWith(".md", StringComparison.OrdinalIgnoreCase),
+            "設計文書は「MCP へは公開しない」と書くこと自体が正しい場所である");
+    }
+
+    // 対照（肯定形）その 4: 照合器そのものが効くこと。
     // 実ツリーが 0 件であるため、照合器が常に false を返すよう壊れても上のテストは緑のままである。
     [Theory]
     [InlineData("mcp")]
@@ -128,6 +168,6 @@ public class McpExposureNotDeclaredTests
 
         if (AllowedFiles.Contains(Path.GetFileName(path), StringComparer.Ordinal)) return false;
 
-        return ScannedExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+        return !NotScannedExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
     }
 }
