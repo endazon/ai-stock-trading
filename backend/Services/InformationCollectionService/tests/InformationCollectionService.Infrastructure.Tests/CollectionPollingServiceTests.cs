@@ -4,6 +4,7 @@ using AiStockTrading.InformationCollection.Application.State;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,7 +66,7 @@ public class CollectionPollingServiceTests
         var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "好決算", DateTimeOffset.UtcNow);
         using var host = await BuildAsync(new StubSource([raw]));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<InformationCollected>().Should().NotBeEmpty();
@@ -86,7 +87,7 @@ public class CollectionPollingServiceTests
     {
         using var host = await BuildAsync(new NoOpInformationSource());
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<InformationCollected>().Should().BeEmpty();
@@ -101,7 +102,7 @@ public class CollectionPollingServiceTests
         var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "好決算", DateTimeOffset.UtcNow);
         using var host = await BuildAsync(new StubSource([raw]), new CostControlGate(Halted: true, IntervalMultiplier: 0m));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<InformationCollected>().Should().BeEmpty();
@@ -129,7 +130,7 @@ public class CollectionPollingServiceTests
             Options.Create(new CollectionOptions { Trigger = CollectionTrigger.External, PollIntervalSeconds = 1 }),
             NullLogger<CollectionPollingService>.Instance);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => RunBrieflyAsync(svc));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => RunBrieflyAsync(svc));
 
         session.Sent.MessagesOf<InformationCollected>().Should().BeEmpty();
 

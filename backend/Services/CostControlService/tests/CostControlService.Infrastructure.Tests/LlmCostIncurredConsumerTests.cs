@@ -4,6 +4,7 @@ using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.CostControl.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,7 +72,7 @@ public class LlmCostIncurredConsumerTests
     private static Task<ITrackedSession> DeliverAsync(
         IHost host, object message, Guid messageId, bool expectHandlerFailure = false)
     {
-        var tracking = host.TrackActivity();
+        var tracking = host.TrackActivityForTest();
         // 失敗経路の検証では、ハンドラが投げた例外で追跡自体を失敗させない（例外の発生こそが前提条件）。
         if (expectHandlerFailure) tracking = tracking.DoNotAssertOnExceptionsDetected();
 

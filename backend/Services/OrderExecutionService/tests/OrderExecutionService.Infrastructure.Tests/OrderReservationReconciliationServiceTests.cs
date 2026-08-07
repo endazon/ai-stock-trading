@@ -7,6 +7,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -88,7 +89,7 @@ public class OrderReservationReconciliationServiceTests
         ReservationReconciliationResult result = null!;
         Func<IMessageContext, Task> reconcile = async _ =>
             result = await service.ReconcileOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(reconcile);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
 
         result.Terminalized.Should().Be(1);
         session.Sent.MessagesOf<OrderExecuted>().Should().Contain(m => m.DecisionId == decisionId);
@@ -109,7 +110,7 @@ public class OrderReservationReconciliationServiceTests
         ReservationReconciliationResult result = null!;
         Func<IMessageContext, Task> reconcile = async _ =>
             result = await service.ReconcileOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(reconcile);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
 
         result.Indeterminate.Should().Be(1);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
@@ -128,7 +129,7 @@ public class OrderReservationReconciliationServiceTests
         using var host = await BuildHostAsync(new StubProbe(ReservationProbeResult.NotPlaced), reservations);
         var service = BuildService(host, new ReconciliationOptions { Enabled = false });
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
 
         reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved, "無効時は解放しない");
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();

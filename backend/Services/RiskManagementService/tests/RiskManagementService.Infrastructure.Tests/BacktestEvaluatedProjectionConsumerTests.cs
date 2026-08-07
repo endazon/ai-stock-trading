@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -44,7 +45,7 @@ public class BacktestEvaluatedProjectionConsumerTests
 
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();
@@ -70,7 +71,7 @@ public class BacktestEvaluatedProjectionConsumerTests
 
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.05m));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.05m));
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();
@@ -115,7 +116,7 @@ public class BacktestEvaluatedProjectionConsumerTests
 
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Verdict(passed: true, maxDd: 0.08m));
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         // 供給後: 同じ承認要求が受理され、Stage 1 へ遷移する（昇格ゲートが解錠される）。
@@ -133,7 +134,7 @@ public class BacktestEvaluatedProjectionConsumerTests
         var store = new InMemoryStagePerformanceStore();
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Verdict(passed: false, maxDd: 0.30m));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Verdict(passed: false, maxDd: 0.30m));
         session1.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var perf = store.GetCurrent();

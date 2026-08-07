@@ -878,4 +878,89 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: 決済済み資金の代替値のコード参照が無い（#425 の回帰）', () => {
     assert.deepStrictEqual(bscs.checkTree(pathBscs.resolve(__dirname, '..')), []);
   });
+
+  // --- check-tracked-session-timeout.js: 素の TrackActivity() の遮断（NFR / #357 / IADR-0168） ---
+  //
+  // #357 の flaky は `Wolverine.Tracking.TrackedSession` の**既定 5 秒**を、並列実行時の
+  // スケジューリング遅延が超えたものである（実測 6 秒）。131 か所を予算つきの入口へ替えたが、
+  // **次に書かれるテストは素の標準 API を素直に呼ぶ**——だから機械的に止める。
+  //
+  // **本検査も「効かない方向」に壊れると CI が緑のまま flake だけが戻る。** よって
+  //   (1) 素の入口を実際に検出できること（正）
+  //   (2) 予算つきの入口・コメント中の言及を誤検出しないこと（否定形）
+  // の両方を置く。
+  const pathTst = require('path');
+  const tst = require('./check-tracked-session-timeout.js');
+
+  ok('check-tracked-session-timeout: 素の TrackActivity() を検出する', () => {
+    const hits = tst.findViolations('var s = host.TrackActivity();\n');
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 1);
+  });
+
+  ok('check-tracked-session-timeout: 予算つきの TrackActivityForTest() は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var s = host.TrackActivityForTest();\n'), []);
+  });
+
+  ok('check-tracked-session-timeout: コメント中の言及は誤検出しない（禁止の理由を書けること）', () => {
+    assert.deepStrictEqual(tst.findViolations('// 素の TrackActivity() は使わない\n'), []);
+    assert.deepStrictEqual(tst.findViolations('/// <summary>TrackActivity の代替</summary>\n'), []);
+  });
+
+  ok('check-tracked-session-timeout: 文字列リテラル中の言及は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var name = "TrackActivity";\n'), []);
+  });
+
+  // #447 のレビュー指摘: 補間文字列の**穴**（`$"…{ ここはコード }…"`）はコードである。
+  // 穴まで非コード扱いにすると `$"…{host.TrackActivity()}…"` が**検出漏れ**になる——
+  // 検査が効かない方向に壊れると CI は緑のまま flake だけが戻る。
+  ok('check-tracked-session-timeout: 補間文字列の穴の中の呼び出しを検出する', () => {
+    assert.strictEqual(tst.findViolations('var s = $"x{host.TrackActivity()}y";\n').length, 1);
+    assert.strictEqual(tst.findViolations('var s = $@"x{host.TrackActivity()}y";\n').length, 1);
+    assert.strictEqual(tst.findViolations('var s = @$"x{host.TrackActivity()}y";\n').length, 1);
+  });
+
+  ok('check-tracked-session-timeout: 補間文字列の literal 部分・二重波括弧は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var s = $"TrackActivity は使わない";\n'), []);
+    assert.deepStrictEqual(tst.findViolations('var s = $"{{TrackActivity}}";\n'), []);
+  });
+
+  // #447 の 2 度目のレビュー指摘: **文字列は入れ子になり得る**。
+  // 補間の穴の中にはさらに文字列リテラルを書ける（`$@"a{b + "c"}d"`）。
+  // 単一のフラグで「いま逐語か」を持つと**内側の文字列が外側の種別を上書きし、穴を抜けた後の解析が壊れる**。
+  // 実測（修正前 → 修正後）: 下の 1 件目は 0 → 1 件（**検出漏れだった**）。
+  ok('check-tracked-session-timeout: 入れ子の文字列を挟んでも穴の中の呼び出しを見失わない', () => {
+    assert.strictEqual(
+      tst.findViolations('var y = $@"a{1 + "z"}b{host.TrackActivity()}c";\n').length, 1);
+    assert.strictEqual(
+      tst.findViolations('var y = $"a{1 + "z"}b{host.TrackActivity()}c";\n').length, 1);
+  });
+
+  ok('check-tracked-session-timeout: 逐語文字列の作法（"" と \\）を取り違えない', () => {
+    // 逐語では `""` が literal の引用符であり、`\` はエスケープではない。
+    assert.deepStrictEqual(tst.findViolations('var s = @"he said ""TrackActivity"" ok";\n'), []);
+    assert.deepStrictEqual(tst.findViolations('var s = @"path\\TrackActivity";\n'), []);
+    // 入れ子の文字列を挟んでも、外側が逐語であることを保つ（種別の取り違えで文字列の終端がずれない）。
+    assert.strictEqual(
+      tst.findViolations('var y = $@"a{1 + "z"}b"; host.TrackActivity();\n').length, 1);
+  });
+
+  ok('check-tracked-session-timeout: 許可ファイルは 1 件だけ（予算を適用する当の実装）', () => {
+    assert.deepStrictEqual([...tst.ALLOWED_FILES], [
+      'backend/TestSupport/AiStockTrading.TestSupport.Messaging/WolverineTrackingExtensions.cs',
+    ]);
+  });
+
+  ok('check-tracked-session-timeout: 許可ファイルを外すと実ツリーで検出される（検査が効いていることの証明）', () => {
+    const root = pathTst.resolve(__dirname, '..');
+    const hits = tst.checkTree(root, new Set());
+    assert.ok(
+      hits.some((h) => h.file.endsWith('WolverineTrackingExtensions.cs')),
+      '許可を外しても検出されないなら、検査は素の入口を見ていない'
+    );
+  });
+
+  ok('実ツリー: 素の TrackActivity() の使用が無い（#357 の回帰）', () => {
+    assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
+  });
 };

@@ -11,5 +11,6 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\..\src\CostControlService.Infrastructure\CostControlService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
   </ItemGroup>
 </Project>

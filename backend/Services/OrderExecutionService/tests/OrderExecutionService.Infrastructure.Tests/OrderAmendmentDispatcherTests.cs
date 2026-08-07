@@ -6,6 +6,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,7 +72,7 @@ public class OrderAmendmentDispatcherTests
 
         using var scope = host.Services.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<OrderAmendmentDispatcher>();
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
             _ => dispatcher.CancelAsync(decisionId, reason: "pause による強制取消"));
 
         session.Sent.MessagesOf<OrderCancelled>().Should().NotBeEmpty();
@@ -91,7 +92,7 @@ public class OrderAmendmentDispatcherTests
 
         using var scope = host.Services.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<OrderAmendmentDispatcher>();
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
             _ => dispatcher.ModifyAsync(decisionId, quantity: 4, price: 2950m, reason: "数量縮小"));
 
         session.Sent.MessagesOf<OrderModified>().Should().NotBeEmpty();
@@ -117,7 +118,7 @@ public class OrderAmendmentDispatcherTests
 
         // 例外が投げられること自体が前提条件なので、追跡ブロックの中で捕捉して表明する
         // （発行が起きていないことを同じ追跡セッションで見るため）。
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => ShouldThrowAsync(act));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => ShouldThrowAsync(act));
 
         session.Sent.MessagesOf<OrderCancelled>().Should().BeEmpty();
     }
