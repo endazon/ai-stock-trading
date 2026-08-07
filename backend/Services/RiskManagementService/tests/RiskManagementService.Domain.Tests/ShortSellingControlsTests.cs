@@ -77,11 +77,39 @@ public class ShortSellingControlsTests
             ShortPermit = shortPermit,
             BuyInBanUntil = buyInBanUntil,
             DividendRecordDate = dividendRecordDate,
-            MaintenanceMarginRatio = maintenanceMarginRatio,
+            MarginSnapshot = MarginSnapshot(maintenanceMarginRatio),
             SymbolShortExposure = symbolShortExposure,
             TotalShortExposure = totalShortExposure,
             TotalExposure = totalExposure,
         };
+
+    // FR-10, ADR-0016 決定7（2026-08-07 追記）, #420, IADR-0160: 維持率は**束**（純資産と信用建玉）として
+    // 供給される。指定された維持率をちょうど生む最小の束を組み立てる（$100 の空売り建玉 1 件＝閾値 40%
+    // であり、株価 $12.50 以上の注文に対して口座側が余分に厳しくならない）。
+    // **null は「供給が無い」**を意味し、0 件の束（＝観測した結果 0 だった、と読める値）を作らない。
+    private const decimal SnapshotPositionPriceUsd = 100m;
+    private const int SnapshotPositionQuantity = 100;
+
+    private static MaintenanceMarginSnapshot? MarginSnapshot(decimal? ratio) =>
+        ratio is { } r
+            ? new MaintenanceMarginSnapshot
+            {
+                NetEquityUsd = r * SnapshotPositionPriceUsd * SnapshotPositionQuantity,
+                Positions =
+                [
+                    new MarginPosition
+                    {
+                        Symbol = "AAPL",
+                        Market = Market.UnitedStates,
+                        Side = TradeSide.Sell,
+                        ProductType = ProductType.ShortSell,
+                        Quantity = SnapshotPositionQuantity,
+                        PriceUsd = SnapshotPositionPriceUsd,
+                        RequiredMarginUsd = 4_000m,
+                    },
+                ],
+            }
+            : null;
 
     private static OrderScreeningResult Evaluate(
         OrderIntent intent,

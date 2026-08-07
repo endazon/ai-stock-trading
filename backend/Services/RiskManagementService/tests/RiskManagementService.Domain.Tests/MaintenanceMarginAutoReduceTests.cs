@@ -267,7 +267,7 @@ public class MaintenanceMarginAutoReduceTests
             Today = new DateOnly(2026, 8, 4),
             BorrowRateAnnual = 0.05m,
             ShortPermit = true,
-            MaintenanceMarginRatio = null, // 報告しない
+            MarginSnapshot = null, // 報告しない（#420・IADR-0160 で維持率は束として供給される）
             TotalShortExposure = 10_000m,
             TotalExposure = 100_000m,
         };

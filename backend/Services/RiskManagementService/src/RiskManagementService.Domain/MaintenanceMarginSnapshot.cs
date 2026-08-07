@@ -27,10 +27,13 @@ public sealed record MaintenanceMarginSnapshot
     public decimal TotalMarketValueUsd => Positions.Sum(p => p.MarketValueUsd);
 
     /// <summary>
-    /// 現在の維持率。建玉が無ければ **null**（維持率という概念が成立しない。ShortSellOrderContext と同じ扱い）。
+    /// 現在の維持率。建玉が無ければ **null**（維持率という概念が成立しない）。
+    /// <para>
+    /// #420, IADR-0160: 算式（純資産 ÷ 建玉評価額の合計。ADR-0016 決定7 の 2026-08-07 追記）は
+    /// <see cref="MaintenanceMarginPolicy.Ratio"/> だけが定義する。本型は割り算を再実装しない。
+    /// </para>
     /// </summary>
-    public decimal? MaintenanceMarginRatio =>
-        TotalMarketValueUsd > 0m ? NetEquityUsd / TotalMarketValueUsd : null;
+    public decimal? MaintenanceMarginRatio => MaintenanceMarginPolicy.Ratio(NetEquityUsd, TotalMarketValueUsd);
 
     /// <summary>
     /// 値として成立しない建玉（IADR-0133 決定8）。**株価・数量が 0 以下**、または**必要証拠金が負**のもの。

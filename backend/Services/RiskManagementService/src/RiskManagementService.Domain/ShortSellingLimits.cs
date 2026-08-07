@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-10, UC-06, ADR-0016（決定2,3,4,7,9）: 空売り（信用売り）専用の統制値。
@@ -62,11 +64,24 @@ public record ShortSellingLimits
     public required int BuyInBanDurationDays { get; init; }
 
     /// <summary>
-    /// 規制上の実効維持率の下限（30%。FINRA Rule 4210(c)）。ADR-0016 決定7 が
-    /// <c>max($5.00 ÷ 株価, 30%)</c> と明記した式の右辺である。設定ではなく**規制の定数**のため
+    /// 規制上の実効維持率の下限（30%。**FINRA Rule 4210(c)(3)** ＝ 空売り・株価 $5.00 以上）。
+    /// ADR-0016 決定7 が <c>max($5.00 ÷ 株価, 30%)</c> と明記した式の右辺である。設定ではなく**規制の定数**のため
     /// 利用者が変更できる設定値（上のプロパティ群）とは分けて保持する。
     /// </summary>
     public const decimal RegulatoryMaintenanceMarginFloor = 0.30m;
+
+    /// <summary>
+    /// FR-10, ADR-0016 決定7（2026-08-07 追記）, #420: **信用買い（マージンロング）の規制維持率＝時価の 25%**
+    /// （**FINRA Rule 4210(c)(1)**）。時価に対する比率であるため、実効維持率もそのまま 25% である
+    /// （空売り側のように株価に依存しない）。
+    /// <para>
+    /// **実効値は自前の 40% が常に上回るため、本定数だけで判定が変わることは無い。** それでも定数として持つのは、
+    /// 決定7 が当初**空売り（4210(c)(3)）だけ**を定めており、実装が信用買いにも空売り側の式を代用していた
+    /// （[IADR-0133] 決定2 が明記のうえ環流した）ためである。代用のままでは**自前の 40% を将来見直したときに
+    /// 誤った規制下限が残る**（例: 自前 20% へ下げると、$6.00 の信用買いに 83.3% という条文に無い下限が効く）。
+    /// </para>
+    /// </summary>
+    public const decimal RegulatoryMarginLongMaintenanceMargin = 0.25m;
 
     /// <summary>
     /// 規制上の 1 株あたり固定維持証拠金（$5.00。FINRA Rule 4210(c)）。上式の左辺の分子である。
@@ -86,7 +101,9 @@ public record ShortSellingLimits
     public decimal PerSymbolCapFor(decimal equity) => equity * PerSymbolCapRatio;
 
     /// <summary>
-    /// ADR-0016 決定7: 規制側の実効維持率 <c>max($5.00 ÷ 株価, 30%)</c>。
+    /// ADR-0016 決定7: **空売り**の規制側の実効維持率 <c>max($5.00 ÷ 株価, 30%)</c>（FINRA Rule 4210(c)(3)）。
+    /// 信用買い（4210(c)(1)＝25%）を含む商品種別ごとの選び分けは
+    /// <see cref="MaintenanceMarginPolicy.RegulatoryFor"/> が行う。
     /// </summary>
     /// <param name="priceUsd">株価（USD）。空売り対象は $5.00 以上に限られる（<see cref="PriceFloorUsd"/>）。</param>
     public static decimal RegulatoryMaintenanceMarginFor(decimal priceUsd)
@@ -104,8 +121,13 @@ public record ShortSellingLimits
     /// （計画 §5 の 2026-08-01 追補2 で是正された）。
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// #420, IADR-0160: 本メソッドは**空売り建玉 1 件**の閾値である。**口座へ適用する閾値**（建玉ごとの
+    /// 閾値の最大値）は <see cref="MaintenanceMarginPolicy.AppliedThreshold"/> が唯一の算出点である。
+    /// 「厳しい方を採る」演算そのものは <see cref="MaintenanceMarginPolicy.ThresholdFor"/> に 1 つだけ置く。
+    /// </remarks>
     public decimal MaintenanceMarginThresholdFor(decimal priceUsd) =>
-        Math.Max(MaintenanceMarginThreshold, RegulatoryMaintenanceMarginFor(priceUsd));
+        MaintenanceMarginPolicy.ThresholdFor(this, priceUsd, ProductType.ShortSell);
 
     /// <summary>
     /// FR-10, UC-06, §5: 維持率割れによる自動縮小の回復目標 ＝ 適用される閾値 ＋ 5 ポイント。

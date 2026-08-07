@@ -40,11 +40,14 @@ public static class MaintenanceMarginReducer
         if (snapshot.MaintenanceMarginRatio is not { } ratio)
             return null;
 
-        // IADR-0133 決定2: 株価に依存する閾値が建玉ごとに出るため、**最も厳しいもの**を口座へ適用する
-        // （FR-10「同一の注文に複数の上限が掛かる場合は常に厳しい方が効く」の延長）。
-        // 閾値・回復目標の算出は ShortSellingLimits（#329・IADR-0131）だけを通す＝値の二重定義を作らない。
-        var threshold = snapshot.Positions.Max(p => limits.MaintenanceMarginThresholdFor(p.PriceUsd));
-        var recoveryTarget = snapshot.Positions.Max(p => limits.MaintenanceRecoveryTargetFor(p.PriceUsd));
+        // IADR-0133 決定2 / ADR-0016 決定7（2026-08-07 追記）: 株価に依存する閾値が建玉ごとに出るため、
+        // **最も厳しいもの**を口座へ適用する（FR-10「同一の注文に複数の上限が掛かる場合は常に厳しい方が効く」の延長）。
+        //
+        // #420, IADR-0160: 最大を採る演算は **MaintenanceMarginPolicy だけ**に置く。従前は本型が
+        // `Positions.Max(...)` を自前で書き、ShortSellEvaluator は「これから出す注文の株価だけ」を見ていたため、
+        // **同じ口座に対して 2 つの異なる閾値**が存在した（縮小が発動している最中に評価器が積み増しを許した）。
+        var threshold = MaintenanceMarginPolicy.AppliedThreshold(limits, snapshot.Positions);
+        var recoveryTarget = MaintenanceMarginPolicy.AppliedRecoveryTarget(limits, snapshot.Positions);
 
         // IADR-0133 決定3: 閾値ちょうどで発動する（まだ割り込んでいない時点で動く＝「割り込む前に発動」）。
         if (ratio > threshold)
