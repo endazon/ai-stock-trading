@@ -911,6 +911,20 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(tst.findViolations('var name = "TrackActivity";\n'), []);
   });
 
+  // #447 のレビュー指摘: 補間文字列の**穴**（`$"…{ ここはコード }…"`）はコードである。
+  // 穴まで非コード扱いにすると `$"…{host.TrackActivity()}…"` が**検出漏れ**になる——
+  // 検査が効かない方向に壊れると CI は緑のまま flake だけが戻る。
+  ok('check-tracked-session-timeout: 補間文字列の穴の中の呼び出しを検出する', () => {
+    assert.strictEqual(tst.findViolations('var s = $"x{host.TrackActivity()}y";\n').length, 1);
+    assert.strictEqual(tst.findViolations('var s = $@"x{host.TrackActivity()}y";\n').length, 1);
+    assert.strictEqual(tst.findViolations('var s = @$"x{host.TrackActivity()}y";\n').length, 1);
+  });
+
+  ok('check-tracked-session-timeout: 補間文字列の literal 部分・二重波括弧は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var s = $"TrackActivity は使わない";\n'), []);
+    assert.deepStrictEqual(tst.findViolations('var s = $"{{TrackActivity}}";\n'), []);
+  });
+
   ok('check-tracked-session-timeout: 許可ファイルは 1 件だけ（予算を適用する当の実装）', () => {
     assert.deepStrictEqual([...tst.ALLOWED_FILES], [
       'backend/TestSupport/AiStockTrading.TestSupport.Messaging/WolverineTrackingExtensions.cs',
