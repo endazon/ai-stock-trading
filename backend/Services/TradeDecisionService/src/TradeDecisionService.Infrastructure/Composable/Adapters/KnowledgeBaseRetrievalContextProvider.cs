@@ -29,7 +29,10 @@ internal sealed class KnowledgeBaseRetrievalContextProvider(
 
         logger.LogDebug("RAG 取得: {Symbol} に対し {Count} 件の参考情報を判断文脈へ注入する。", trigger.Symbol, hits.Count);
         return hits
-            .Select(h => new RetrievedContext(h.DocumentTitle, h.Text, h.SourceUri, h.Score))
+            // FR-04, #252, IADR-0169 決定2: **出所タグをそのまま運ぶ**（出典限定の判定に使う）。
+            // ここで絞り込まないのは、守る対象が「注入点」であって特定の provider ではないためである
+            // （絞り込みは TradeDecisionService 側で行う）。
+            .Select(h => new RetrievedContext(h.DocumentTitle, h.Text, h.SourceUri, h.Score, h.Tags))
             .ToList();
     }
 
