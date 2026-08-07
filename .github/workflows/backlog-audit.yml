@@ -1,0 +1,116 @@
+# NFR / #439 / IADR-0170: バックログの週次監査。
+#
+# 背景（2026-08-07 のバックログ監査の実測）:
+#   issue が増える主因は実装速度ではなく「閉じるより速く増えること」であった
+#   （14 日で 起票 111 / クローズ 86 / 純増 +25）。その一部は**定期的に見れば分かる無駄**である
+#   ——クローズ漏れ（当時の open 37 件のうち 3 件＝8%）・重複起票・環流の未起票・blocked の滞留。
+#   **いずれも誰も定期的に見ていなかった。**
+#
+# 【最重要】本監査は issue を自動でクローズしない（IADR-0170 決定5）。
+#   提案の一覧を単一の追跡 issue へ upsert し、判断は人間に残す。
+#   誤クローズは「調べ直す」という別の無駄を生み、放置のコストを上回る。
+#
+# 認証・許可リストの流儀は claude-code-review.yml に揃える（3 系統の同期対象。
+# .claude/settings.json / claude-coding.yml / claude-code-review.yml ＋ 本ファイル）。
+name: Backlog Audit
+
+on:
+  schedule:
+    # 毎週月曜 00:00 UTC（JST 月曜 09:00）。週明けに前週ぶんを棚卸しする。
+    - cron: "0 0 * * 1"
+  # 手動実行を許す（監査の内容を変えた直後に 1 週間待たないで済むようにする）。
+  workflow_dispatch:
+
+concurrency:
+  group: backlog-audit
+  cancel-in-progress: false
+
+jobs:
+  backlog-audit:
+    runs-on: ubuntu-latest
+    # ハングした実行が上限まで回り続けるのを防ぐ（レビューより広く読むため長めに取る）。
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      id-token: write
+      # CI の状態・ログを参照するために必要（claude-code-review.yml と同じ理由）。
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 環流記録の機械的検査。**warn のみで exit 0** であり、ここで落ちることはない
+      # （落とすと監査そのものが走らなくなる）。出力は下の AI 監査が読む前提ではなく、
+      # ジョブログとアノテーションとして人間に見せるためである。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Check feedback reflux
+        run: node scripts/check-feedback-reflux.js
+
+      - name: Run backlog audit
+        uses: anthropics/claude-code-action@v1
+        with:
+          # 認証はどちらか一方を登録する（サブスク = OAuth トークン / API = API キー）。
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),mcp__github__issue_read,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
+          prompt: |
+            このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
+
+            ## 最重要の制約
+
+            - **issue を自動でクローズしてはいけません。** 提案の一覧を出すだけです。
+              誤クローズは「調べ直す」という別の無駄を生み、放置のコストを上回ります。
+            - **タイトルからの推測で「実装済み」と判定してはいけません。**
+              実コード・実ワークフローを読んで確認し、**根拠（ファイルパス・行・ジョブ名）を添えて**ください。
+              根拠を示せないものは「要確認」に留めます。
+            - 断定できないものは断定しないでください。**「分からない」と書くほうが有用です。**
+
+            ## 監査する 4 点
+
+            1. **クローズ漏れ** — open な issue のうち、「やること」が既に実装・CI 化されているもの。
+               2026-08-07 の監査では #319 / #391 / #356 の 3 件がこれに該当しました
+               （#319 は CI で実効していることを実測して初めて判明しました）。
+
+            2. **重複起票** — 主題が重なる issue の組。**先着（番号の小さい方）を正**とします。
+               2026-08-07 には計画リポジトリ側で同一主題が 3 件ずつ、16 分間に 14 件起票され、
+               3 つの命名規約が混在していました（並行エージェントが互いの起票を見ずに書いたためです）。
+
+            3. **blocked の棚卸し** — `docs/blocked-tasks.md` の A 群（実機・実環境）・B 群（権限・人間の判断）と
+               open issue を突き合わせ、**解消済みなのに残っている行**と **issue が無い項目**を出してください。
+               あわせて `blocked:env` / `blocked:decision` / `blocked:human` ラベルの付け漏れも挙げてください
+               （これらを分母から外すと「AI が今日着手できる issue」が見えます）。
+
+            4. **エピックの進捗** — #344 の子 issue の状態を集計してください。
+
+            ## 環流の未起票
+
+            `node scripts/check-feedback-reflux.js` の出力（本ジョブの前段で実行済み）を確認してください。
+            あわせて、**`status: resolved` なのに計画側 issue が open のまま**という逆向きの乖離も見てください
+            ——**これは機械的検査に入れていない観点であり、本監査の担当です**（IADR-0170 決定3）。
+            計画リポジトリの issue は `github_token` のスコープ外のため参照できません。
+            **参照できない場合は「未確認」と明記してください**（確認したふりをしないこと）。
+
+            ## 出力
+
+            タイトル `chore(NFR): バックログ定期監査の結果` の issue を検索し、
+            - 在れば**本文を全面的に置き換え**（upsert。コメントを積み上げない）
+            - 無ければ新規作成
+
+            してください。本文には**実施日**と**各項目の根拠**を必ず含めてください。
+            該当が 0 件の項目は「該当なし」と明記してください（黙って省略しないこと）。
+
+      # AI がツール権限拒否に当たっていないかを検査する。
+      # 拒否が起きると監査は静かに劣化する（「調べていない」ことが本文からは判らない）。
+      - name: Check permission denials
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ runner.temp }}/claude-execution-output.json
+        run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
