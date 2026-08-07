@@ -8,7 +8,7 @@ using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Api.Tests;
 
-// SC-01, FR-13, UC-06, #423, IADR-0165 決定1:
+// SC-01, FR-13, UC-06, #423, IADR-0164 決定1:
 // **収集間隔（巡回間隔）を画面・API から変更する経路が存在しないことを構造で固定する。**
 //
 // 2026-08-07 の利用者裁定（質問票 第 13 回 Q11・案 A）は、SC-01 §2 を廃止したうえで

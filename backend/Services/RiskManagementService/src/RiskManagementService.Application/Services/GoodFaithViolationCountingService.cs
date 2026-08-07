@@ -6,7 +6,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // **GFV 発生回数の自前計数。** 約定 1 件について「未決済資金による買付だったか」を事後に判定し、
 // 該当すれば追記台帳へ 1 件記録して監査イベントを返す。
 //
@@ -57,7 +57,7 @@ public sealed class GoodFaithViolationCountingService(
         // 金額は**本約定 1 件ぶん**（基準通貨建て）。発注前のガードが「当日の新規建て累計 ＋ 本注文」で
         // 判定する（IADR-0153 決定4）のとは粒度が違う。**決済済み資金が供給されていない現状では、
         // 述語の第 1 項（未供給）で真になるため差は生じない。** PoC 項目 8（ADR-0019・ADR-0025 決定1）が
-        // 成立して決済済み資金が供給された時点で、累計での比較へ揃えること（IADR-0166 §フォローアップ）。
+        // 成立して決済済み資金が供給された時点で、累計での比較へ揃えること（IADR-0165 §フォローアップ）。
         var purchaseAmountInBase = execution.FilledQuantity * execution.AveragePrice * intent.FxRateToBase;
 
         if (!GoodFaithViolationDetection.CountsAsViolation(

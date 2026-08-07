@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Application.Tests;
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // **GFV 発生回数の自前計数**の供給経路（約定の事後検出 → 追記台帳 → 判定コアへの供給）。
 //
 // ★ 数えているのは「**自らのガードをすり抜けた買付**」であり、ブローカーが GFV と判定した件数ではない。

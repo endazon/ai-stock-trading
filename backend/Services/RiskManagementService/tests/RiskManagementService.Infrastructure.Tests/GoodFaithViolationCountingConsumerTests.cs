@@ -14,7 +14,7 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // **GFV 自前計数の供給経路**（約定 → 事後検出 → 追記台帳 → 監査イベントの発行）の検証。
 //
 // 判定そのものは純関数（GoodFaithViolationDetection・Domain.Tests）で固定してある。ここで確かめるのは

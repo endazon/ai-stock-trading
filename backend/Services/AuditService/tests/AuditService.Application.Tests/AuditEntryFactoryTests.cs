@@ -391,7 +391,7 @@ public class AuditEntryFactoryTests
         // 根拠の全量（突合した自らの決済約定）が本文に残る＝推定の妥当性を事後に検証できる。
         entry.Detail.Should().Contain("CoveringFills").And.Contain("InFlightCloseQuantity");
     }
-    // T-19-317: FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166 ——
+    // T-19-317: FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165 ——
     // **GFV 発生回数の自前計数**を監査台帳へ残す（ADR-0025 が手入力を採らなかった理由の 1 つが
     // 「監査証跡に乗らない」ことであった）。
     //

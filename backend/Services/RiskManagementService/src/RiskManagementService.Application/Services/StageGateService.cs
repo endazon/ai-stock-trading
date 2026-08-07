@@ -19,7 +19,7 @@ public sealed class StageGateService(
     KillSwitchService killSwitch,
     IClock clock)
 {
-    // FR-20, FR-13, SC-02, #423, §4.1 条件 3, IADR-0165 決定4: **最小取引件数だけが設定値である。**
+    // FR-20, FR-13, SC-02, #423, §4.1 条件 3, IADR-0164 決定4: **最小取引件数だけが設定値である。**
     //
     // `StageGatePolicy` は DI の singleton であり、段階別の資金上限・撤退倍率という「運用中に変わらない
     // 方針」を表す。設定値（監査・楽観排他の対象）をそこへ混ぜず、**判定の直前に重ねる**。

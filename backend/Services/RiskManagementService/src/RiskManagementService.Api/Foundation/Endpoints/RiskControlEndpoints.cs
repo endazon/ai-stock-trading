@@ -243,7 +243,7 @@ internal static class RiskControlEndpoints
             return Results.Ok(new { settings = svc.GetCurrent(), skipsStageGate = assessment.SkipsStageGate });
         });
 
-        // ---- Stage 1 の最小取引件数（FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3, IADR-0165）----
+        // ---- Stage 1 の最小取引件数（FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3, IADR-0164）----
         // 2026-08-07 の裁定により、条件 3 の件数は SC-02 から変更できる設定値になった（既定 100・値域 1〜1000）。
         // **100 件未満でも受理する**——裁定は「警告は設定を妨げない。下げた事実が記録に残ることを担保する」
         // と定めている。警告は `Stage1GateCriteria.BelowStatisticalBasis`（GET /stage-gate）が宣言する。

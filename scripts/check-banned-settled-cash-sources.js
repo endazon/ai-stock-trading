@@ -3,7 +3,7 @@
 /*
  * check-banned-settled-cash-sources.js
  *
- * FR-19 / FR-10 / #425 / ADR-0025 / IADR-0166:
+ * FR-19 / FR-10 / #425 / ADR-0025 / IADR-0165:
  * **決済済み資金（settled cash）の代替に使ってはならないブローカー値**が、C# の**コードとして**
  * 参照されることを機械的に止める。
  *
@@ -48,7 +48,7 @@ const BANNED = [
     reason:
       '現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、'
       + 'それこそが GFV を引き起こす当の資金である。分母に据えると GFV 回避ガードが GFV を許可する'
-      + '（ADR-0025 / IADR-0153 決定4 / IADR-0166 決定1）',
+      + '（ADR-0025 / IADR-0153 決定4 / IADR-0165 決定1）',
   },
   {
     name: 'AvlWithdrawalCash',

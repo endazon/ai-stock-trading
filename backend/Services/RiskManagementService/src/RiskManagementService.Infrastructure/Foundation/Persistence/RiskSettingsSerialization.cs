@@ -67,7 +67,7 @@ internal static class RiskSettingsSerialization
             // 計画（FR-20 の 2026-08-07 追記 (3)）が名指しする「読めない行は実弾」に倒れないための構造であり、
             // `?? 既定` という deny-list では未知の値が素通りする（本 issue が是正した欠陥）。
             BrokerProvider = BrokerProviderResolution.Resolve(dto.BrokerProvider),
-            // FR-20, FR-13, SC-02, #423, IADR-0165 決定5: Stage 1 の最小取引件数は**既定 100 へ落として読む**。
+            // FR-20, FR-13, SC-02, #423, IADR-0164 決定5: Stage 1 の最小取引件数は**既定 100 へ落として読む**。
             // 本項目を持たない旧行（null）も、手編集などで入り込んだ値域外の値も同じ扱いである。
             // **倒す先は「厳しい側」＝合格に遠い値**である（発注先の allow-list＝IADR-0161 と同型だが、
             // そちらは「外部へ発注しない値」へ倒す）。読めない行が「少ない件数」へ倒れると、

@@ -2,7 +2,7 @@
 title: GFV 発生回数の自前計数と、決済済み資金の代替値（MaxCashBuy 等）を構造で禁じる
 type: spec
 status: approved
-related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0025, ADR-0021, ADR-0019, IADR-0153, IADR-0148, IADR-0159, IADR-0166]
+related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0025, ADR-0021, ADR-0019, IADR-0153, IADR-0148, IADR-0159, IADR-0165]
 author: Claude Code
 created: 2026-08-07
 updated: 2026-08-07
@@ -27,7 +27,7 @@ plan_refs:
 - 関連 IADR: **[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)**（前提として扱い覆さない。ADR-0025 が明記）／
   [IADR-0148](../adr/IADR-0148_control-violation-supply-and-unavailable-state.md)（「未供給」と「0 件」の区別）／
   [IADR-0159](../adr/IADR-0159_buy-in-post-hoc-inference.md)（事後推定・追記専用台帳・集計元の固定）／
-  **[IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)**（本作業で新規作成）
+  **[IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)**（本作業で新規作成）
 - 対象 Issue: [#425](https://github.com/endazon/ai-stock-trading/issues/425)（由来: #375・環流 [feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）
 
 ## 目的・背景
@@ -100,7 +100,7 @@ ExceedsSettledCash(settledCashInBase, purchaseAmountInBase)
 - **金額は本約定 1 件ぶん**（`FilledQuantity × AveragePrice × 承認 Intent の FxRateToBase`）である。
   発注前のガードが「**当日の新規建て累計 ＋ 本注文**」で判定する（IADR-0153 決定4）のと粒度が違う。
   現状は決済済み資金が常に未供給であり、述語は第 1 項で真になるため差は生じない。
-  **PoC 項目 8 が成立して決済済み資金が供給された時点で、累計での比較へ揃える必要がある**（IADR-0166 §フォローアップ）。
+  **PoC 項目 8 が成立して決済済み資金が供給された時点で、累計での比較へ揃える必要がある**（IADR-0165 §フォローアップ）。
 - **計上単位は 1 注文 1 件**（主キー = `OrderId`）。部分約定の進行・メッセージ再送で二重計上しない。
 
 ### 3. 記録と供給
@@ -184,7 +184,7 @@ ADR-0025 が採ってはならない候補として 2 つを名指しした。
 ## 計画書との差異
 
 - **無し（計画に忠実）。** ただし計画が定めていない点を実装判断で埋めた箇所が 3 つあり、
-  いずれも [IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md) に根拠を残す。
+  いずれも [IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md) に根拠を残す。
   1. 検出点を約定（事後）に置いたこと
   2. 計上単位を 1 注文 1 件（`OrderId` 主キー）としたこと
   3. **違反記録の失効期間を設けなかったこと**（計画に規定が無く、自動失効は fail-open のため）
@@ -203,5 +203,5 @@ ADR-0025 が採ってはならない候補として 2 つを名指しした。
 
 - 機能仕様書: [FR-19 取引ガード](../functional/FR-19_trading-guard.md)
 - テスト仕様書: [FR-19 取引ガード](../tests/FR-19_trading-guards-tests.md)
-- 実装 ADR: [IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)・[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)
+- 実装 ADR: [IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)・[IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)
 - 先行作業仕様書: [20260806_375_cash-account-support](20260806_375_cash-account-support.md)

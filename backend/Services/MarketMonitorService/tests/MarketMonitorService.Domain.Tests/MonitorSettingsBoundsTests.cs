@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.MarketMonitor.Domain.Tests;
 
-// FR-03, FR-13, SC-02, #423, IADR-0155 決定3 / IADR-0165 決定2:
+// FR-03, FR-13, SC-02, #423, IADR-0155 決定3 / IADR-0164 決定2:
 // 市場監視パラメータ（変動閾値・クールダウン）の値域の**境界**を固定する。
 //
 // 2026-08-07 の裁定（質問票 第 13 回 Q13）が値域とその理由を明記した。

@@ -91,7 +91,7 @@ public static class AccountTypePolicy
     public static bool RequiresVerifiedAccount(BrokerProvider provider) => provider != BrokerProvider.InternalPaper;
 
     /// <summary>
-    /// FR-19, ADR-0021 決定4-3, ADR-0025 決定2, IADR-0166: GFV の発生回数が**新規建ての停止基準に達しているか**。
+    /// FR-19, ADR-0021 決定4-3, ADR-0025 決定2, IADR-0165: GFV の発生回数が**新規建ての停止基準に達しているか**。
     /// <para>
     /// <b><c>null</c>（未供給）でも停止する。</b> 2 回に達していないことを確認できないためであり、
     /// 「分からないから通す」は 3 回で 90 日という不可逆な結果に対する統制にならない
@@ -117,7 +117,7 @@ public static class AccountTypePolicy
         tally is not null && tally.Warns;
 
     /// <summary>
-    /// FR-19, ADR-0021 決定4-2, ADR-0025, IADR-0153 決定4, IADR-0166 決定1:
+    /// FR-19, ADR-0021 決定4-2, ADR-0025, IADR-0153 決定4, IADR-0165 決定1:
     /// その買付が**決済済み資金で説明できないか**（＝未決済資金による買付か）。**判定の単一情報源である。**
     /// <para>
     /// 本述語は 2 か所から呼ばれ、**同じ事象を指すことが設計の要点**である（ADR-0025 決定2:

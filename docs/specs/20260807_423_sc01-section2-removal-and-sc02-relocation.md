@@ -2,7 +2,7 @@
 title: 作業仕様書 — SC-01 §2 を廃止し、変動閾値・クールダウンを SC-02 へ移し、Stage 1 の最小取引件数を設定化し、条件 3 の計上単位を固定する
 type: work
 status: review
-related_ids: [SC-01, SC-02, SC-03, FR-13, FR-03, FR-20, FR-11, UC-06, ADR-0008, IADR-0155, IADR-0149, IADR-0142, IADR-0151, IADR-0165]
+related_ids: [SC-01, SC-02, SC-03, FR-13, FR-03, FR-20, FR-11, UC-06, ADR-0008, IADR-0155, IADR-0149, IADR-0142, IADR-0151, IADR-0164]
 author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
@@ -11,7 +11,7 @@ plan_refs:
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
 related_specs:
-  - ../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md
+  - ../adr/IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md
   - ../adr/IADR-0155_sc01-collection-parameters-supply.md
   - ../adr/IADR-0149_stage1-trade-count-supply.md
   - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
@@ -33,7 +33,7 @@ related_specs:
 - ユースケース（UC）: **UC-06**
 - 技術検討: **06_daytrading-review §4.1 条件 3・§4.3**
 - 関連 ADR: **ADR-0008**（段階ゲートとバックテスト）
-- 実装 ADR: **[IADR-0165](../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md)（本作業）**
+- 実装 ADR: **[IADR-0164](../adr/IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md)（本作業）**
 - 起点 issue: [#423](https://github.com/endazon/ai-stock-trading/issues/423)
 - 計画 submodule: **`06fa163`**（`a4616a8` で pin 済みの内容を含む。本作業では submodule を進めない）
 
@@ -76,7 +76,7 @@ related_specs:
 - 収集間隔の変更経路が存在しないことの構造テスト（MarketMonitor / InformationCollection の両サービス）
 - 全置換 `PUT /monitor/settings` の値域・理由・履歴の是正
 - BFF への `/monitor/settings*` 4 本の登録
-- 文書更新（画面仕様書 SC-01 / SC-02・機能仕様書 FR-20・テスト仕様書 FR-20・IADR-0165・blocked-tasks・環流）
+- 文書更新（画面仕様書 SC-01 / SC-02・機能仕様書 FR-20・テスト仕様書 FR-20・IADR-0164・blocked-tasks・環流）
 
 ### やらないこと（裁定が明示的に却下したもの）
 
@@ -164,7 +164,7 @@ related_specs:
   NotificationService（Discord 表示）・InformationCollectionService（構造テストのみ）・Bff
 - frontend: `sc01-settings`（節削除）・`sc02-risk-settings`（節追加）・`sc03-controls`（警告）・
   `risk/contracts.ts`・`monitor/contracts.ts`・契約フィクスチャ・e2e
-- docs: 画面仕様書 SC-01 / SC-02・機能仕様書 FR-20・テスト仕様書 FR-20・IADR-0165・blocked-tasks・feedback
+- docs: 画面仕様書 SC-01 / SC-02・機能仕様書 FR-20・テスト仕様書 FR-20・IADR-0164・blocked-tasks・feedback
 
 ## 未解決・残件
 

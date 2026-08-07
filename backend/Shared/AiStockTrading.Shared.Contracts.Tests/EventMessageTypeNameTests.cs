@@ -48,7 +48,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(BuyInInferred), "AiStockTrading.Shared.Contracts.Events.BuyInInferred")]
         [InlineData(typeof(CostThresholdReached), "AiStockTrading.Shared.Contracts.Events.CostThresholdReached")]
         [InlineData(typeof(DailyPolicyUnconfirmed), "AiStockTrading.Shared.Contracts.Events.DailyPolicyUnconfirmed")]
-        // FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 発生回数の自前計数。
+        // FR-19, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の自前計数。
         [InlineData(typeof(GoodFaithViolationRecorded), "AiStockTrading.Shared.Contracts.Events.GoodFaithViolationRecorded")]
         [InlineData(typeof(InformationCollected), "AiStockTrading.Shared.Contracts.Events.InformationCollected")]
         [InlineData(typeof(LlmCostIncurred), "AiStockTrading.Shared.Contracts.Events.LlmCostIncurred")]

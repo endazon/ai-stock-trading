@@ -44,7 +44,7 @@ public class BffPassThroughTests
         ["GET", "/bff/monitor/watchlist/history"],
         // AST #423, FR-03, FR-13, SC-02: 市場監視パラメータ（変動閾値・クールダウン）。
         // **SC-01 §2 の廃止に伴い SC-02 が消費する。** 登録漏れのままだと画面から到達できない
-        // （#340 で SC-01 §2 が `/monitor/settings` を叩き始めたのに BFF が未結線だった＝AST IADR-0165）。
+        // （#340 で SC-01 §2 が `/monitor/settings` を叩き始めたのに BFF が未結線だった＝AST IADR-0164）。
         ["GET", "/bff/monitor/settings"],
         ["PUT", "/bff/monitor/settings/movement-threshold"],
         ["PUT", "/bff/monitor/settings/cooldown"],

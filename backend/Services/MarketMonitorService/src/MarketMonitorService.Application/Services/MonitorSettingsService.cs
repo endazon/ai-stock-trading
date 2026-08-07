@@ -71,7 +71,7 @@ public sealed class MonitorSettingsService(
     }
 
     /// <summary>
-    /// FR-03, FR-11, FR-13, SC-02, #423, IADR-0165 決定3: 監視設定を**全置換**する
+    /// FR-03, FR-11, FR-13, SC-02, #423, IADR-0164 決定3: 監視設定を**全置換**する
     /// （<c>PUT /monitor/settings</c> の実体）。
     /// <para>
     /// 部分更新（<see cref="UpdateMovementThreshold"/> / <see cref="UpdateCooldown"/>）と<b>同じ規律</b>

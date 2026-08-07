@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
-// SC-02, FR-03, FR-13, FR-11, UC-06, #423, IADR-0165 決定2:
+// SC-02, FR-03, FR-13, FR-11, UC-06, #423, IADR-0164 決定2:
 // **市場監視パラメータ（変動閾値・クールダウン）が SC-02 へ移ったことの退行防止。**
 //
 // 2026-08-07 の利用者裁定（質問票 第 13 回 Q11・Q12）:

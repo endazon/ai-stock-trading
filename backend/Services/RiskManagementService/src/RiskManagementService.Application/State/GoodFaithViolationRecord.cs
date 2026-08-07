@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.State;
 
-// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0166 決定3:
+// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165 決定3:
 // 自前計数した GFV 発生 1 件（**追記専用**の 1 行）。
 //
 // **1 行 = 1 注文**である（主キー `OrderId`）。部分約定は同一注文の進行であり 1 件、

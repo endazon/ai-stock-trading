@@ -4,7 +4,7 @@ using AiStockTrading.RiskManagement.Domain;
 
 namespace AiStockTrading.RiskManagement.Application.Adapters;
 
-// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166: GFV 自前計数台帳のインメモリ実装（ユニット試験・非 relational 用）。
+// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 自前計数台帳のインメモリ実装（ユニット試験・非 relational 用）。
 //
 // **本番は EF 実装（EfGoodFaithViolationStore）である。** 違反記録をプロセス内に持つと再起動で消え、
 // 「2 件で新規建てを止める」統制が再起動 1 回で解ける（fail-open）ため、本実装を本番の既定にしてはならない。
@@ -31,7 +31,7 @@ public sealed class InMemoryGoodFaithViolationStore : IGoodFaithViolationStore
         lock (_gate)
         {
             // **0 行でも「0 件を数えた」と返す。** 台帳が権威であり、未供給（null）は
-            // 「本ストアが結線されていない」ことだけを意味する（IADR-0166 決定2）。
+            // 「本ストアが結線されていない」ことだけを意味する（IADR-0165 決定2）。
             return GoodFaithViolationTally.Observed(_records.Count);
         }
     }

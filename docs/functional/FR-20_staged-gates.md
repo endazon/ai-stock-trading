@@ -2,7 +2,7 @@
 title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
-related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-01, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0165]
+related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-01, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-07
@@ -208,7 +208,7 @@ SC-02 の警告モーダルと一覧警告には**「段階が実弾を既定と
 | Stage 1 | **クラス C 統制違反 0 件**（供給済みで 0 件） | `ControlViolationsPresent` |
 | Stage 1 | **統制違反件数の集計が供給されていること**（#387・IADR-0148） | `ControlViolationCountUnavailable` |
 | Stage 1 | **実際に取引できた日数 ≥ 60 営業日** | `Stage1TradingDaysInsufficient` |
-| Stage 1 | **取引件数 ≥ 設定値（既定 100 件・値域 1〜1000）**（計上単位は約定した新規建て注文 1 件。#386・IADR-0149／設定化は #423・IADR-0165） | `Stage1TradeCountInsufficient` |
+| Stage 1 | **取引件数 ≥ 設定値（既定 100 件・値域 1〜1000）**（計上単位は約定した新規建て注文 1 件。#386・IADR-0149／設定化は #423・IADR-0164） | `Stage1TradeCountInsufficient` |
 | Stage 1 | （累計 120 営業日を経て件数不足なら打ち切り） | `Stage1ExtensionExhausted` |
 | Stage 2 | 実効スリッページ・費用が想定内 | `SlippageOrCostExceeded` |
 | Stage 2 | 日次損失上限の運用実績（違反なし） | `DailyLossLimitViolated` |
@@ -261,7 +261,7 @@ SC-02 の警告モーダルと一覧警告には**「段階が実弾を既定と
 - **「未供給」と「0 件」は区別しない。** 取引件数の 0 は「条件未充足＝昇格しない」に倒れる fail-safe であり、
   統制違反件数（#387）のような区別に意味が無い。
 
-### 4-1-3. 最小取引件数は**設定値**である（#423・[IADR-0165](../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md)）
+### 4-1-3. 最小取引件数は**設定値**である（#423・[IADR-0164](../adr/IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md)）
 
 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）により、§4.1 条件 3 の件数は
 **[SC-02](../screens/20260718_SC-02_risk-settings.md) から変更できる設定値**になった。

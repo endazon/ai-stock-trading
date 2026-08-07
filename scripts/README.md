@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | `check-consumer-endpoint-names.js` | サービスを跨ぐ MassTransit エンドポイント名（＝RabbitMQ キュー名）の衝突を検査（`--self-test` あり） | 標準出力（レポート） |
 | `validate-runtime-scaffold.js` | 実行環境スキャフォールド（docker-compose / appsettings / `.env.example`）の静的検査 | 標準出力（レポート） |
-| `check-banned-settled-cash-sources.js` | **決済済み資金（settled cash）の代替に使ってはならないブローカー値**（`MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal`）の**コードとしての参照**を検出。コメント・XML ドキュメント中の言及は誤検出しない（禁止の理由を書けなくしないため）。とりわけ現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**（#425 / ADR-0025 / IADR-0166） | 標準出力（レポート） |
+| `check-banned-settled-cash-sources.js` | **決済済み資金（settled cash）の代替に使ってはならないブローカー値**（`MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal`）の**コードとしての参照**を検出。コメント・XML ドキュメント中の言及は誤検出しない（禁止の理由を書けなくしないため）。とりわけ現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**（#425 / ADR-0025 / IADR-0165） | 標準出力（レポート） |
 | `k8s-local-deploy.sh` / `k8s-local-deploy.test.sh` | ローカル k8s へのデプロイと、その `ast-secrets` 同期の Bash テスト（kubectl スタブ・実クラスタ不要） | — |
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |

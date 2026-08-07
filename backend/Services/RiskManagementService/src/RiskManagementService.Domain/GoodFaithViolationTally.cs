@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
 
-// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, ADR-0021 決定4-3, IADR-0166:
+// FR-19, FR-10, FR-11, #425, ADR-0025 決定2, ADR-0021 決定4-3, IADR-0165:
 // Good Faith Violation（GFV）の発生回数の**自前計数**。
 //
 // ★★ この計数が何であるかを取り違えないこと（ADR-0025 §理由 が明記した限界） ★★
@@ -19,7 +19,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 // 「ブローカーが報告した GFV 件数」と読まれ、上の限界が消える。
 
 /// <summary>
-/// FR-19, #425, ADR-0025 決定2, IADR-0166 決定2: <b>供給された</b>GFV 発生回数（自前計数）。
+/// FR-19, #425, ADR-0025 決定2, IADR-0165 決定2: <b>供給された</b>GFV 発生回数（自前計数）。
 /// <para>
 /// <b>この型の値が存在すること自体が「計数が供給された」ことを意味する。</b>
 /// 未供給は <c>null</c> であり、<see cref="Observed"/> の 0（＝数えた結果 0 件だった）とは別物である
@@ -67,7 +67,7 @@ public sealed record GoodFaithViolationTally
 }
 
 /// <summary>
-/// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0166 決定1: 約定 1 件が
+/// FR-19, FR-11, #425, ADR-0025 決定2, IADR-0165 決定1: 約定 1 件が
 /// 「**未決済資金による買付**」に当たるかを判定する（純関数）。
 /// <para>
 /// <b>発注前のガードをすり抜けた買付だけが該当する。</b> ガードが正しく働けば、該当する約定は生じない。

@@ -43,7 +43,7 @@ public class CashAccountControlsTests
         decimal price = 1_000m) =>
         new(symbol, market, side, productType, mode, quantity, price, PositionEffect.Close);
 
-    // #425, ADR-0025 決定2, IADR-0166: GFV 発生回数は**自前計数**であり、ブローカー照会
+    // #425, ADR-0025 決定2, IADR-0165: GFV 発生回数は**自前計数**であり、ブローカー照会
     // （BrokerAccountState）ではなくスナップショットの別欄（GoodFaithViolations）から供給される。
     // 既定は「数えた結果 0 件」（＝供給あり）とし、未供給は goodFaithViolations: null で明示する。
     private static PortfolioSnapshot Snapshot(
@@ -357,7 +357,7 @@ public class CashAccountControlsTests
     public void GFV発生回数の停止と警告のしきい値を境界値で固定する(
         int? violationCount, bool expectedBlocked, bool expectedWarned)
     {
-        // #425, IADR-0166 決定2: 件数は第一級の値（GoodFaithViolationTally）で渡す。**null は未供給**であり、
+        // #425, IADR-0165 決定2: 件数は第一級の値（GoodFaithViolationTally）で渡す。**null は未供給**であり、
         // Observed(0)（＝数えた結果 0 件）とは別物である。
         var tally = violationCount is { } count ? GoodFaithViolationTally.Observed(count) : null;
 

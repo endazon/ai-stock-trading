@@ -5,7 +5,7 @@ using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 
-// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0166:
+// FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // 約定（OrderExecuted）を購読し、**未決済資金による買付＝GFV 発生**を事後に計数する。
 //
 // ★★ 何を数えているのかを取り違えないこと（ADR-0025 §理由 が明記した限界） ★★

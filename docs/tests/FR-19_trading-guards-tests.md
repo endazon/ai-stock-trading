@@ -2,7 +2,7 @@
 title: 取引ガード（FR-19・再実装）テスト仕様書
 type: test-spec
 status: approved
-related_ids: [FR-19, FR-10, FR-11, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0131, IADR-0132, IADR-0153, IADR-0166]
+related_ids: [FR-19, FR-10, FR-11, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0131, IADR-0132, IADR-0153, IADR-0165]
 author: endazon (with Claude Code)
 created: 2026-08-04
 updated: 2026-08-07
@@ -21,7 +21,7 @@ related_specs:
   - ../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md
   - ../specs/20260806_375_cash-account-support.md
   - ../specs/20260807_425_gfv-self-counting.md
-  - ../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md
+  - ../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md
   - ./README.md
   - ./FR-19_manipulation-detection-tests.md
   - ./FR-10_risk-controls-tests.md
@@ -40,7 +40,7 @@ related_specs:
 > 信用系の設定不能化）の写像表を §5〜§7 として追加した。**#332 の日本株現物限定は巻き戻していない**ことを
 > 両方向で固定する（T-19-241 / T-19-251）。
 >
-> **2026-08-07 追補（[#425](https://github.com/endazon/ai-stock-trading/issues/425) / ADR-0025 決定2 / [IADR-0166](../adr/IADR-0166_gfv-self-counting-and-settled-cash-source-ban.md)）**:
+> **2026-08-07 追補（[#425](https://github.com/endazon/ai-stock-trading/issues/425) / ADR-0025 決定2 / [IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)）**:
 > **GFV 発生回数の自前計数**の写像表を §8 として追加した。**数えているのは「自らのガードをすり抜けた買付」であり、
 > ブローカーが GFV と判定した件数ではない**（両者が一致する保証はない・ADR-0025 §理由）。
 > **`IADR-0153` の fail-closed は覆していない**ことを T-19-296 が固定する。
@@ -192,7 +192,7 @@ related_specs:
 | T-19-284 | 観測が無いのに既定値が入る | イベント 0 件 | ストアは `null` を返す | `BrokerAccountObservedConsumerTests.観測が届かなければ口座種別は未確定のままである` |
 | T-19-285 | 旧行（口座種別なし）の読み方 | `configuredAccountType` キーの無い設定 JSON | 信用口座として読む（統制は照会結果で切り替わるため緩まない） | `RiskSettingsSerializationAccountTypeTests.口座種別を持たない旧行は信用口座として読まれる` |
 
-## 8. GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0166）
+## 8. GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0165）
 
 > **★ 何を数えているのかを取り違えないこと。** 自前で数えられるのは**自らのガードをすり抜けた買付**だけであり、
 > **ブローカー側が独自に GFV と判定した事象は捕捉できない**。本計数は「ブローカーの GFV カウンタの写し」ではなく

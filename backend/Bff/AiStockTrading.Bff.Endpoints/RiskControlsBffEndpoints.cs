@@ -56,7 +56,7 @@ public static class RiskControlsBffEndpoints
             .WithName("BffRiskControlsSettingsBrokerProviderPut");
 
         // AST #423, FR-20, FR-13, SC-02: Stage 1 の最小取引件数（06_daytrading-review §4.1 条件 3）。
-        // 既定 100・値域 1〜1000。**100 件未満でも後段は受理する**（警告は設定を妨げない・AST IADR-0165 決定6）。
+        // 既定 100・値域 1〜1000。**100 件未満でも後段は受理する**（警告は設定を妨げない・AST IADR-0164 決定6）。
         // BFF は素通し（値域・理由の検証は後段が実効。統制を BFF へ持たせない）。
         g.MapPut("/settings/stage1-minimum-trade-count", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/stage1-minimum-trade-count", ct))

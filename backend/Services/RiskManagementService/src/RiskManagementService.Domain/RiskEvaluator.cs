@@ -173,7 +173,7 @@ public static class RiskEvaluator
             // 現時点で本値の供給元は無く、現金口座の買付は常に止まる（安全側）。
             //
             // **判定式は AccountTypePolicy.ExceedsSettledCash が単一情報源である**（#425 / ADR-0025 決定2 /
-            // IADR-0166 決定1）。同じ述語を事後の計数（GoodFaithViolationDetection）も呼ぶ——
+            // IADR-0165 決定1）。同じ述語を事後の計数（GoodFaithViolationDetection）も呼ぶ——
             // 計数の対象は「本ガードが拒否しようとする事象」と同じでなければならない。
             if (intent.Side == TradeSide.Buy
                 && AccountTypePolicy.ExceedsSettledCash(

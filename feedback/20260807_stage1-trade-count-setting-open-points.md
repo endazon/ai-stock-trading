@@ -5,7 +5,7 @@ status: open
 category: 要求の不足
 related_ids: [FR-03, FR-11, FR-13, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0008]
 source_repo: ai-stock-trading
-source_ref: feat/SC-01-423-collection-params-relocation / docs/specs/20260807_423_sc01-section2-removal-and-sc02-relocation.md / IADR-0165
+source_ref: feat/SC-01-423-collection-params-relocation / docs/specs/20260807_423_sc01-section2-removal-and-sc02-relocation.md / IADR-0164
 author: endazon (with Claude Code)
 created: 2026-08-07
 ---
@@ -106,7 +106,7 @@ Discord の段階ゲートには **2 つのコマンド**がある。
 
 ### 実装での扱い
 
-**全置換 PUT を部分更新と同じ規律（値域・理由必須・履歴記録）へ揃えた**（IADR-0165 決定3）。
+**全置換 PUT を部分更新と同じ規律（値域・理由必須・履歴記録）へ揃えた**（IADR-0164 決定3）。
 これは以前から [IADR-0155] 残余リスク 4 として記録していた欠陥であり、本裁定を機に解消した。
 
 ### 提案

@@ -259,7 +259,7 @@ public static class Stage1Aggregation
 /// </summary>
 /// <param name="TargetTradingDays">
 /// 目標営業日数 **60**（3 か月相当。§4.2）。**設定では変えられない**——裁定は
-/// 「この設定は条件 1（統制違反 0 件）・条件 2（60 営業日）には及ばない」と明示している（IADR-0165 決定4）。
+/// 「この設定は条件 1（統制違反 0 件）・条件 2（60 営業日）には及ばない」と明示している（IADR-0164 決定4）。
 /// </param>
 /// <param name="MinimumTradeCount">
 /// 最小取引件数（§4.1 条件 3）。**既定 100・値域 1〜1000 の設定値**である（2026-08-07 改訂）。
@@ -268,7 +268,7 @@ public static class Stage1Aggregation
 /// <param name="MaximumTradingDays">
 /// 打ち切りとなる累計営業日数 **120**（60 ＋ 延長 60。§4.3）。
 /// これを経ても件数に届かなければ **Stage 1 を打ち切り Stage 0 へ差し戻す**。
-/// **設定を変更しても本規則は変わらない**（裁定が明示。IADR-0165 決定4）。
+/// **設定を変更しても本規則は変わらない**（裁定が明示。IADR-0164 決定4）。
 /// </param>
 public sealed record Stage1GateCriteria(
     int TargetTradingDays,
@@ -282,7 +282,7 @@ public sealed record Stage1GateCriteria(
         MaximumTradingDays: 120);
 
     /// <summary>
-    /// FR-20, SC-02, SC-03, §4.3, #423, IADR-0165 決定6:
+    /// FR-20, SC-02, SC-03, §4.3, #423, IADR-0164 決定6:
     /// **最小取引件数が統計的根拠（100 件）を下回っているか**を<b>サーバが宣言する</b>。
     /// <para>
     /// 画面（SC-02・SC-03）と Discord の <c>/stage status</c> は本値に従い、閾値 100 を写経しない。
