@@ -18,4 +18,15 @@ public interface IRetrievalContextProvider
 //   Text      — 検索ヒットの本文抜粋（プロンプト側で長さを切り詰める）。
 //   SourceUri — 出典参照（あれば）。
 //   Score     — 関連度スコア（並び順の参考。プロンプトには出さない）。
-public sealed record RetrievedContext(string Title, string Text, string? SourceUri = null, double Score = 0d);
+//   Tags      — 出所タグ（FR-04, ADR-0003, #252, IADR-0169）。**出典限定の判定に使う**。
+//               収集側は KB へ書くとき収集ソース名を載せる（KnowledgeBaseWriterSink）。空＝出所不明＝注入しない。
+public sealed record RetrievedContext(
+    string Title,
+    string Text,
+    string? SourceUri = null,
+    double Score = 0d,
+    IReadOnlyList<string>? Tags = null)
+{
+    /// <summary>出所タグ（null は空として扱う。<b>空は「出所不明」であり注入しない</b>）。</summary>
+    public IReadOnlyList<string> Tags { get; init; } = Tags ?? [];
+}

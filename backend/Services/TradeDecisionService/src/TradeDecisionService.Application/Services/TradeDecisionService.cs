@@ -27,8 +27,14 @@ public sealed class TradeDecisionService(
     IDailyPolicyUnconfirmedNotifier? unconfirmedNotifier = null,
     ICurrentPriceProvider? currentPrice = null,
     IFxRateProvider? fxRate = null,
-    IHeldPositionProvider? heldPosition = null)
+    IHeldPositionProvider? heldPosition = null,
+    RetrievalSourcePolicy? retrievalSourcePolicy = null)
 {
+    // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
+    // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
+    // 不在が統制の無効を意味する形にはしない（IADR-0163 決定2 の規律）。
+    private readonly RetrievalSourcePolicy _retrievalSourcePolicy = retrievalSourcePolicy ?? RetrievalSourcePolicy.Default;
+
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
         new(llm, options ?? DecisionOrchestrationOptions.Default, logger);
@@ -381,17 +387,64 @@ public sealed class TradeDecisionService(
 
     // FR-08, IADR-0072 決定4: RAG 取得の fail-safe ラッパ。取得失敗（例外・遅延）は「文脈なし」に縮退し判断を継続する。
     // キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
+    //
+    // FR-04, ADR-0003, #252, IADR-0169 決定2: 取得結果は**出典で限定してから**プロンプトへ渡す。
+    // **絞り込みは取得側（アダプタ）ではなくここで行う** —— 守るのは「注入点」であって特定の provider 実装ではない。
+    // 別の provider を挿しても統制が抜けない位置に置く（IADR-0163 決定2 と同じ考え方）。
     private async Task<IReadOnlyList<RetrievedContext>> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {
+        IReadOnlyList<RetrievedContext> retrieved;
         try
         {
-            return await _retrieval.GetContextAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+            retrieved = await _retrieval.GetContextAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "RAG 文脈の取得に失敗しました（文脈なしで判断を継続）: {Symbol}", trigger.Symbol);
             return [];
         }
+
+        return FilterBySource(retrieved, trigger);
+    }
+
+    // FR-04, ADR-0003, #252, IADR-0169 決定2/決定3: 出典限定と、その**可視化**。
+    //
+    // **黙って無効化しないことが本メソッドの主眼である。** 出典限定には「RAG を丸ごと黙って無効化する」失敗モードが
+    // ある —— KB 側がタグを返さない構成では全件が除外され、**「文脈なし」で正常動作しているように見える**。
+    // ヒットがあったのに全件落ちたときは Warning を出し、観測されたタグを添える（原因を追える形で残す）。
+    private IReadOnlyList<RetrievedContext> FilterBySource(
+        IReadOnlyList<RetrievedContext> retrieved, DecisionTrigger trigger)
+    {
+        if (retrieved.Count == 0)
+            return retrieved;
+
+        var allowed = _retrievalSourcePolicy.Filter(retrieved);
+        if (allowed.Count == retrieved.Count)
+            return allowed;
+
+        var observedTags = string.Join(
+            ", ",
+            retrieved.SelectMany(r => r.Tags).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct());
+
+        if (allowed.Count == 0)
+        {
+            logger.LogWarning(
+                "RAG 文脈が出典限定で全件除外されました（文脈なしで判断を継続）: {Symbol} / 取得 {Total} 件 / "
+                    + "観測されたタグ: [{ObservedTags}] / 許可: [{AllowedTags}]。"
+                    + "KB がタグを返していない可能性があります（この場合 RAG は実質無効です）。",
+                trigger.Symbol,
+                retrieved.Count,
+                observedTags,
+                string.Join(", ", _retrievalSourcePolicy.AllowedTags));
+        }
+        else
+        {
+            logger.LogDebug(
+                "RAG 文脈を出典限定で絞り込みました: {Symbol} / {Allowed}/{Total} 件 / 観測されたタグ: [{ObservedTags}]",
+                trigger.Symbol, allowed.Count, retrieved.Count, observedTags);
+        }
+
+        return allowed;
     }
 }
