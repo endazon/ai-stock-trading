@@ -9,10 +9,6 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { SettingsPage } from './SettingsPage';
-import {
-  CONTRACT_MONITOR_SETTINGS,
-  CONTRACT_MONITOR_SETTINGS_HISTORY,
-} from '../monitor/contractFixtures';
 
 const SAMPLE = {
   assumptions: {
@@ -34,9 +30,6 @@ const HISTORY = [
 function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
     if (path === '/assumptions/history') return HISTORY;
-    // SC-01 §2, #340, IADR-0146: 収集パラメータのモックは**バックエンドの実応答**（契約フィクスチャ）を使う。
-    if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
-    if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
     if (path === '/assumptions' && req?.method === 'PUT') return SAMPLE;
     return SAMPLE;
   });
@@ -133,8 +126,6 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/assumptions/history') return HISTORY;
-      if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
-      if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
       if (path === '/assumptions' && req?.method === 'PUT') throw new ApiError('conflict', '競合', 409);
       return SAMPLE;
     });
@@ -153,8 +144,6 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
       if (path === '/assumptions/history') return HISTORY;
-      if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
-      if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
       if (path === '/assumptions' && req?.method === 'PUT')
         throw new ApiError('validation', '入力エラー', 400, ['理由は必須です']);
       return SAMPLE;
@@ -165,5 +154,72 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/入力/);
+  });
+});
+
+// SC-01, FR-13, #423, IADR-0165 決定1: **§2「収集パラメータ」の廃止**（2026-08-07 の利用者裁定）。
+//
+//   収集間隔 … **画面から変更しない。起動時構成とする**（質問票 第 13 回 Q11・案 A）
+//   変動閾値 … **SC-02 へ移す**（同 Q12・案 B。権威は MarketMonitorService であり監視銘柄と同じ由来である）
+//
+// **本節はすべて否定形である。** 「実装していない」と「実装してはならない」は別であり、
+// 前者のままにすると次に画面を触る者が「未実装の項目」として素直に実装してしまう。
+// 裁定に反する実装が「機能追加」の顔をして入り込む経路を、ここで赤くする。
+describe('SC-01 §2 の廃止（#423）', () => {
+  it('収集パラメータの節そのものが存在しない', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    expect(screen.queryByText(/収集パラメータ/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: /収集パラメータ/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: /変動閾値/ })).not.toBeInTheDocument();
+  });
+
+  it('変動閾値の入力欄・保存操作が存在しない（SC-02 へ移管済み）', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    expect(screen.queryByLabelText(/変動閾値/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /変動閾値/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/クールダウン/)).not.toBeInTheDocument();
+  });
+
+  it('収集間隔の入力欄が存在しない', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    expect(screen.queryByLabelText(/収集間隔/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/ポーリング/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /収集間隔/ })).not.toBeInTheDocument();
+  });
+
+  // **MarketMonitorService を一切呼ばない。** 呼んでいれば、節を隠しただけで実体が残っている。
+  it('MarketMonitorService（/monitor/*）を 1 度も呼ばない', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    const monitorCalls = mocks.apiFetch.mock.calls.filter(
+      ([path]) => typeof path === 'string' && path.startsWith('/monitor'),
+    );
+    expect(monitorCalls).toHaveLength(0);
+  });
+
+  // 「変更しないことが裁定である」ことを画面に書く。入力欄を消すだけでは
+  // 「未実装なので実装しよう」と読まれる余地が残る。
+  it('収集間隔は起動時構成である旨を画面に明記する', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    const note = screen.getByText(/収集間隔/);
+    expect(note).toHaveTextContent('本画面からも API からも変更しません');
+    expect(note).toHaveTextContent('起動時の構成値');
+  });
+
+  // 移管先（SC-02）への導線を示す。「無くなった」だけでは利用者が探せない。
+  it('市場監視パラメータが SC-02 にある旨を案内する', async () => {
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    expect(screen.getByText(/市場監視パラメータ（変動閾値・クールダウン）/)).toBeInTheDocument();
   });
 });

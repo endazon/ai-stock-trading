@@ -392,9 +392,25 @@ function Stage1ProgressView({ gate }: { gate: StageGateStatus }) {
       <p>
         経過 {progress.qualifiedTradingDays} / {criteria.targetTradingDays} 営業日
         {excluded > 0 ? `（paper 稼働により ${excluded} 日を除外）` : ''}／ 取引 {progress.tradeCount} /{' '}
-        {criteria.minimumTradeCount} 件
+        {criteria.minimumTradeCount} 件（設定値）
       </p>
+      {/* FR-20, SC-03, #423, IADR-0165 決定6: **100 件未満の設定は警告を常時表示する。**
+          計画は「画面と昇格承認の双方に警告を常時表示する」と定める（06_daytrading-review §4.1 の追記）。
+          **判定はサーバが宣言した `belowStatisticalBasis` に従う**——画面が `< 100` を自分で判定すると、
+          警告を出す場所（SC-02・SC-03・Discord）が増えるたびに条件が写経され、
+          1 か所の写し間違いで「下げたのに警告が出ない」状態になる。 */}
+      {criteria.belowStatisticalBasis && (
+        <p role="alert">
+          Stage 1 の最小取引件数が <strong>{criteria.minimumTradeCount} 件</strong>（既定 100 件）に
+          設定されています。
+          <strong>統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。</strong>
+          100 件未満では勝率・平均損益の推定分散が大きく、条件 3 の目的（運用に足るかを統計的に判断できる）を
+          満たしません。変更は「リスク設定」画面（SC-02）で行います。
+        </p>
+      )}
       <p>
+        取引件数の計上単位は<strong>「約定が成立した新規建て注文 1 件」</strong>です
+        （1 注文が分割約定しても 1 件・手仕舞いは計上しません）。
         moomoo SIMULATE（moomoo のデモ環境）の約定のみを集計しています。内蔵 paper
         の約定・稼働日数は算入されません。累計 {criteria.maximumTradingDays}{' '}
         営業日を経ても取引件数に届かない場合は Stage 0 へ差し戻します。

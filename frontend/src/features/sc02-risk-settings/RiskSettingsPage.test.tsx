@@ -15,6 +15,7 @@ import {
   CONTRACT_SETTINGS_HISTORY,
   cloneContract,
 } from '../risk/contractFixtures';
+import { CONTRACT_MONITOR_SETTINGS } from '../monitor/contractFixtures';
 import type {
   RiskManagementSettings,
   RiskStatusView,
@@ -55,6 +56,9 @@ function mockDefault() {
     // 監視銘柄セクション（#196・別サービス）は独立ロードするため、本ページのテストでは空応答で満たす。
     if (path === '/monitor/watchlist') return [];
     if (path === '/monitor/watchlist/history') return [];
+    // #423: 市場監視パラメータ（変動閾値・クールダウン）も別サービス由来で独立ロードする。
+    if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
+    if (path === '/monitor/settings/history') return [];
     return SETTINGS;
   });
 }

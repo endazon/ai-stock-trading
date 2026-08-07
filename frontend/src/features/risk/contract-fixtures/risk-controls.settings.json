@@ -47,6 +47,7 @@
     "capitalCapRatio": 1.00
   },
   "brokerProvider": 0,
+  "stage1MinimumTradeCount": 100,
   "shortSell": {
     "limits": {
       "perSymbolCapRatio": 0.10,

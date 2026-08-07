@@ -62,6 +62,9 @@ export interface RiskManagementSettings {
   // FR-20, FR-12, FR-13, INDEX 決定 46, #334: **現在の発注先**（BrokerProvider enum・数値）。
   // 運用段階とは独立した軸であり、変更操作を持つ画面は SC-02 だけである（SC-03 は参照専用）。
   brokerProvider: number;
+  // FR-20, FR-13, SC-02, #423, IADR-0165: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
+  // 2026-08-07 の裁定で設定値になった（既定 100・値域 1〜1000）。変更操作を持つ画面は SC-02 だけである。
+  stage1MinimumTradeCount: number;
 }
 
 export interface SettingsChangeEntry {
@@ -202,12 +205,19 @@ export interface Stage1Progress {
   excludedInternalPaperDays: number;
 }
 
-// 06_daytrading-review §4.1〜§4.3: 目標営業日数 60 / 最小取引件数 100 / 打ち切り 120。
+// 06_daytrading-review §4.1〜§4.3: 目標営業日数 60 / 最小取引件数（既定 100・設定値） / 打ち切り 120。
 // 画面が閾値を直書きすると計画の改訂に追随しないため、サーバの応答から受け取る。
 export interface Stage1GateCriteria {
   targetTradingDays: number;
+  /** #423: **SC-02 から変更できる設定値**（既定 100・値域 1〜1000）。他の 2 項目は設定で変わらない。 */
   minimumTradeCount: number;
   maximumTradingDays: number;
+  // FR-20, SC-02, SC-03, §4.3, #423, IADR-0165 決定6:
+  // **最小取引件数が統計的根拠（100 件）を下回っているかをサーバが宣言する。**
+  // 画面は `minimumTradeCount < 100` を自分で判定しない——判定を画面へ書き込むと、
+  // 警告を出す場所（SC-02・SC-03・Discord）が増えるたびに同じ条件が写経され、
+  // 1 か所の写し間違いで「下げたのに警告が出ない」状態になる（IADR-0154 と同じ論法）。
+  belowStatisticalBasis: boolean;
 }
 
 export interface StageGateStatus {
@@ -287,7 +297,7 @@ const WITHDRAWAL_REASON_LABELS: Record<number, string> = {
   2: 'Stage 1 の打ち切り（120 営業日で取引件数に未達）',
 };
 
-// SettingsChangeType（SettingsChangeEntry.cs の列挙順）。7 は #334 で末尾追加。
+// SettingsChangeType（SettingsChangeEntry.cs の列挙順）。7 は #334、8 は #423 で末尾追加。
 const CHANGE_TYPE_LABELS: Record<number, string> = {
   0: 'ガード',
   1: '上限',
@@ -297,10 +307,14 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   5: '一時停止',
   6: '再開',
   7: '発注先',
+  8: 'Stage 1 最小取引件数',
 };
 
 // FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。
 export const CHANGE_TYPE_BROKER_PROVIDER = 7;
+
+// FR-13, FR-20, SC-02, #423: Stage 1 最小取引件数の変更（SettingsChangeType.Stage1MinimumTradeCountChanged）。
+export const CHANGE_TYPE_STAGE1_MINIMUM_TRADE_COUNT = 8;
 
 // ProductType（0=Cash,1=MarginLong,2=ShortSell）。FR-19 / ADR-0016 決定1・#332: 商品種別は 3 値であり
 // それぞれ独立に有効・無効を設定できる（既定は現物のみ有効）。序数はバックエンドの enum と一致させる。
@@ -692,4 +706,64 @@ export function wireToLimitInput(key: LimitFieldKey, value: number): string {
     return ratioToPercentText(value);
   }
   return String(value);
+}
+
+// ---- FR-20, FR-13, SC-02, #423, IADR-0165 決定5/決定6: Stage 1 の最小取引件数の値域（画面側の即時提示） ----
+//
+// **実効はサーバ側（`Stage1TradeCountBounds`）である。** ここに同じ表を持つのは利用者へ即時に提示する
+// ためであり（サーバだけだと保存を押すまで誤りが分からない）、画面が統制の実効を担うためではない
+// （画面だけの関門は API 直叩きで消える＝IADR-0141 決定1 と同じ判断）。
+// **値はサーバ側の `Stage1TradeCountBounds` と一致していなければならない。**
+
+/** 既定 100 件（06_daytrading-review §4.1 条件 3）。 */
+export const STAGE1_TRADE_COUNT_DEFAULT = 100;
+
+/** 下限 1 件（**含む**）。0 以下では条件 3 が無条件に成立し、期間だけで昇格できてしまう。 */
+export const STAGE1_TRADE_COUNT_MIN = 1;
+
+/** 上限 1000 件（**含む**。計画が定めた値）。 */
+export const STAGE1_TRADE_COUNT_MAX = 1000;
+
+/** 値域を利用者向けの文言にする。 */
+export const STAGE1_TRADE_COUNT_RANGE_TEXT =
+  `${STAGE1_TRADE_COUNT_MIN} 以上 ${STAGE1_TRADE_COUNT_MAX} 以下（件）`;
+
+/**
+ * FR-20, §4.3, #423: 100 件未満を設定したときに**常時表示する**警告の文言。
+ *
+ * 裁定（質問票 第 13 回 Q6 の追加指示）は「**統計的な根拠（§4.3）を満たさない設定である**旨の警告を
+ * 常時表示する。**警告は設定を妨げない。下げた事実が記録に残ることを担保する**」と定めている。
+ */
+export const STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING =
+  '統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。'
+  + '100 件は「30 件が床・100 件が実用最低限」という実務上の一致点の下限であり、'
+  + 'これを下回ると勝率・平均損益の推定分散が大きく、'
+  + '条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。'
+  + 'この警告は設定を妨げません（変更は理由とともに履歴へ残ります）。';
+
+/**
+ * 入力欄の値（件数の文字列）が値域に収まるか。収まらなければ利用者向けの説明を返す（収まれば null）。
+ * **空欄・非数値・小数を黙って通さない**（件数は整数である）。
+ */
+export function validateStage1TradeCountInput(text: string): string | null {
+  if (text.trim() === '') return 'Stage 1 の最小取引件数を入力してください。';
+  const value = Number(text);
+  if (!Number.isFinite(value)) return 'Stage 1 の最小取引件数は数値（件）で入力してください。';
+  if (!Number.isInteger(value)) return 'Stage 1 の最小取引件数は整数（件）で入力してください。';
+  if (value < STAGE1_TRADE_COUNT_MIN || value > STAGE1_TRADE_COUNT_MAX) {
+    return `Stage 1 の最小取引件数は ${STAGE1_TRADE_COUNT_RANGE_TEXT} の範囲で入力してください。`;
+  }
+  return null;
+}
+
+/**
+ * 入力中の件数が統計的根拠を下回るか（**入力に対する即時提示のためだけに用いる**）。
+ *
+ * **保存済みの値については本関数を使わない。** サーバが宣言する
+ * `Stage1GateCriteria.belowStatisticalBasis` に従う（IADR-0165 決定6）。
+ * ここで判定するのは「まだ保存されていない入力値」であり、問い合わせる相手が存在しない。
+ */
+export function inputBelowStatisticalBasis(text: string): boolean {
+  if (validateStage1TradeCountInput(text) !== null) return false;
+  return Number(text) < STAGE1_TRADE_COUNT_DEFAULT;
 }

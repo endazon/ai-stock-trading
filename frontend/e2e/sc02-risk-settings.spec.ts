@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { defaultBff, installBff, pathWithRoles, RISK_SETTINGS, WATCHLIST } from './fixtures';
+import {
+  defaultBff,
+  installBff,
+  pathWithRoles,
+  MONITOR_SETTINGS,
+  RISK_SETTINGS,
+  WATCHLIST,
+} from './fixtures';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, IADR-0087: リスク設定画面（リスク上限の閲覧/変更）の実ブラウザ E2E。
 // BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP #284）。
@@ -258,5 +265,228 @@ test.describe('SC-02 監視銘柄（#196）', () => {
     // リスク設定本体は表示され、監視銘柄セクションのみ縮退する（別サービスの独立縮退）。
     await expect(page.getByRole('heading', { name: 'リスク設定' })).toBeVisible();
     await expect(page.getByText('監視銘柄設定は利用できません。')).toBeVisible();
+  });
+});
+
+// SC-02, FR-03, FR-13, UC-06, #423, IADR-0165 決定2:
+// **市場監視パラメータ（変動閾値・クールダウン）が SC-01 §2 から SC-02 へ移管された。**
+//
+// アクセシブル名は**節ごとに完全に分けてある**（本画面には既に「保存」ボタンが 3 つあり、
+// 部分一致のロケータは strict mode 違反を起こす）。したがって本節では
+// 「変動閾値を保存」「クールダウンを保存」というフォーム固有の名前で参照する。
+test.describe('SC-02 市場監視パラメータ（#423）', () => {
+  function thresholdForm(page: Page) {
+    return page.getByRole('form', { name: '変動閾値の変更' });
+  }
+
+  function cooldownForm(page: Page) {
+    return page.getByRole('form', { name: 'クールダウンの変更' });
+  }
+
+  test('変動閾値とクールダウンを表示し、監視銘柄の近くに置く', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    await expect(page.getByText('市場監視パラメータ（変動閾値・クールダウン）')).toBeVisible();
+    // 比率 0.03 → 3%／TimeSpan "00:15:00" → 0.25 時間。
+    await expect(thresholdForm(page).getByLabel('変動閾値 %')).toHaveValue('3');
+    await expect(cooldownForm(page).getByLabel('クールダウン 時間')).toHaveValue('0.25');
+  });
+
+  // **否定形（裁定の中核）**: 移管先にも収集間隔を作らない（質問票 第 13 回 Q11）。
+  test('収集間隔の入力欄は SC-02 にも存在しない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    await expect(page.getByText('市場監視パラメータ（変動閾値・クールダウン）')).toBeVisible();
+
+    await expect(page.getByLabel(/収集間隔/)).toHaveCount(0);
+    await expect(page.getByLabel(/ポーリング/)).toHaveCount(0);
+  });
+
+  test('変動閾値は理由必須で保存でき、ワイヤは比率である', async ({ page }) => {
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /monitor/settings/movement-threshold': (route) => {
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: MONITOR_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = thresholdForm(page);
+
+    // 理由が空欄のうちは保存できない（監査のため理由必須）。
+    await expect(form.getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
+
+    await form.getByLabel('変動閾値 %').fill('5');
+    await form.getByLabel('変動閾値の変更理由').fill('ボラティリティ上昇');
+    await form.getByRole('button', { name: '変動閾値を保存' }).click();
+
+    await expect(form.getByText('変動閾値を保存しました。')).toBeVisible();
+    // **ワイヤは比率**（5% → 0.05）。百分率のまま送ると閾値が 100 倍になる。
+    expect(putBody).toEqual({ movementThresholdRatio: 0.05, reason: 'ボラティリティ上昇' });
+  });
+
+  test('クールダウンは理由必須で保存でき、ワイヤは TimeSpan 文字列である', async ({ page }) => {
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /monitor/settings/cooldown': (route) => {
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: MONITOR_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = cooldownForm(page);
+
+    await expect(form.getByRole('button', { name: 'クールダウンを保存' })).toBeDisabled();
+
+    await form.getByLabel('クールダウン 時間').fill('2');
+    await form.getByLabel('クールダウンの変更理由').fill('再トリガー抑制を延ばす');
+    await form.getByRole('button', { name: 'クールダウンを保存' }).click();
+
+    await expect(form.getByText('クールダウンを保存しました。')).toBeVisible();
+    expect(putBody).toEqual({ cooldown: '02:00:00', reason: '再トリガー抑制を延ばす' });
+  });
+
+  // **0 を許してはならない。** 0 ではあらゆる変動が閾値超過となり LLM 費用が暴走する。
+  test('値域外の変動閾値・クールダウンは保存できずサーバへ送らない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /monitor/settings/movement-threshold': () => {
+        putCount += 1;
+        return { status: 200, body: MONITOR_SETTINGS };
+      },
+      'PUT /monitor/settings/cooldown': () => {
+        putCount += 1;
+        return { status: 200, body: MONITOR_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    const threshold = thresholdForm(page);
+    await threshold.getByLabel('変動閾値の変更理由').fill('検証');
+    await threshold.getByLabel('変動閾値 %').fill('0');
+    await expect(threshold.getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
+    await threshold.getByLabel('変動閾値 %').fill('51');
+    await expect(threshold.getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
+
+    const cooldown = cooldownForm(page);
+    await cooldown.getByLabel('クールダウンの変更理由').fill('検証');
+    await cooldown.getByLabel('クールダウン 時間').fill('25');
+    await expect(cooldown.getByRole('button', { name: 'クールダウンを保存' })).toBeDisabled();
+
+    expect(putCount).toBe(0);
+  });
+
+  test('市場監視パラメータの取得失敗（500）は当該領域のみ縮退する', async ({ page }) => {
+    await installBff(page, {
+      ...defaultBff(),
+      'GET /monitor/settings': { status: 500 },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    await expect(page.getByText('市場監視パラメータを取得できませんでした。')).toBeVisible();
+    // リスク上限（RiskManagementService 由来）は独立して表示される。
+    await expect(limitsForm(page)).toBeVisible();
+  });
+});
+
+// SC-02, FR-20, FR-13, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0165 決定4〜決定6:
+// **Stage 1 の最小取引件数（既定 100・値域 1〜1000）。**
+//
+// **100 件未満は警告を常時表示するが、設定を妨げない**（裁定が明示）。
+// 両方を固定しないと、「警告を足したついでに拒否する」実装が緑のまま通る。
+test.describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
+  function tradeCountForm(page: Page) {
+    return page.getByRole('form', { name: 'Stage 1 の最小取引件数の変更' });
+  }
+
+  test('運用段階の参照表示の近くに現在の設定値を表示する', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+
+    await expect(page.getByText('Stage 1 の最小取引件数（変更）')).toBeVisible();
+    await expect(tradeCountForm(page).getByLabel('Stage 1 の最小取引件数 件')).toHaveValue(
+      String(RISK_SETTINGS.stage1MinimumTradeCount),
+    );
+  });
+
+  test('件数と理由を入れると PUT する', async ({ page }) => {
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/stage1-minimum-trade-count': (route) => {
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = tradeCountForm(page);
+
+    await expect(form.getByRole('button', { name: '最小取引件数を保存' })).toBeDisabled();
+
+    await form.getByLabel('Stage 1 の最小取引件数 件').fill('150');
+    await form.getByLabel('最小取引件数の変更理由').fill('標本を増やす');
+    await form.getByRole('button', { name: '最小取引件数を保存' }).click();
+
+    await expect(form.getByText('Stage 1 の最小取引件数を保存しました。')).toBeVisible();
+    expect(putBody).toEqual({ minimumTradeCount: 150, reason: '標本を増やす' });
+  });
+
+  test('値域外（0・1001）は保存できずサーバへ送らない', async ({ page }) => {
+    let putCount = 0;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/stage1-minimum-trade-count': () => {
+        putCount += 1;
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = tradeCountForm(page);
+
+    await form.getByLabel('最小取引件数の変更理由').fill('値域外');
+    await form.getByLabel('Stage 1 の最小取引件数 件').fill('0');
+    await expect(form.getByRole('button', { name: '最小取引件数を保存' })).toBeDisabled();
+    await form.getByLabel('Stage 1 の最小取引件数 件').fill('1001');
+    await expect(form.getByRole('button', { name: '最小取引件数を保存' })).toBeDisabled();
+
+    expect(putCount).toBe(0);
+  });
+
+  // **裁定の核心。** 警告を出したうえで保存できる。
+  test('100 件未満は警告を出すが保存を妨げない', async ({ page }) => {
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/stage1-minimum-trade-count': (route) => {
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = tradeCountForm(page);
+
+    await form.getByLabel('Stage 1 の最小取引件数 件').fill('30');
+    await expect(form.getByText(/統計的な根拠/)).toBeVisible();
+
+    await form.getByLabel('最小取引件数の変更理由').fill('検証期間を短縮したい');
+    const save = form.getByRole('button', { name: '最小取引件数を保存' });
+    await expect(save).toBeEnabled();
+    await save.click();
+
+    expect(putBody).toEqual({ minimumTradeCount: 30, reason: '検証期間を短縮したい' });
+  });
+
+  // 逆方向の否定形。満たしているのに警告を出すと、警告が常時出て誰も読まなくなる。
+  test('100 件以上では警告を出さない', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = tradeCountForm(page);
+
+    await form.getByLabel('Stage 1 の最小取引件数 件').fill('100');
+    await expect(form.getByText(/統計的な根拠/)).toHaveCount(0);
   });
 });
