@@ -50,7 +50,8 @@ public static class KnownPlanDeviations
             "Fx.StaleRateWarningDays",
             "(FxOptions.DefaultStaleRateWarningDays not found)",
             381,
-            "警告しきい値が実装に無い。計画は 3 日超で警告を出す（発注は止めない。ADR-0022 決定4）。"
+            "警告しきい値が実装に無い。計画は **5 日**超で警告を出す（発注は止めない。ADR-0022 決定4 の "
+                + "2026-08-07 改訂。起案時は 3 日）。"
                 + "実装は鮮度上限（MaxRateAgeDays）だけを持ち、**気づくための警告と止めるための上限が"
                 + "分離されていない**。定数が無いこと自体を実際値として登録する——#381 が定数を追加した時点で"
                 + "抽出値が変わり、登録簿の更新が強制される"),
