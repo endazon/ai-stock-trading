@@ -31,9 +31,11 @@ public class TradingAssumptionsDefaultsTests
         a.FxSpreadRatio.Should().Be(0m);
     }
 
+    // FR-17, §4, #358, IADR-0173: 計画確定値は **2**（利用者決定 2026-07-23・「往復費用＋税の 2 倍」）。
+    // 旧値 1.5 は計画確定前の暫定値（当時の計画は未確定の <1.5 倍>）であり、実装が追随していなかった。
     [Fact]
-    public void 最小期待利益倍率は_1_5()
+    public void 最小期待利益倍率は計画確定値の2()
     {
-        TradingAssumptionsDefaults.Create().MinimumExpectedProfitMultiple.Should().Be(1.5m);
+        TradingAssumptionsDefaults.Create().MinimumExpectedProfitMultiple.Should().Be(2m);
     }
 }

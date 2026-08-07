@@ -34,11 +34,11 @@ plan_refs:
 | JapanCommission | CommissionSchedule | (0,0,0) 未登録 | 日本株手数料（Rate/Minimum/Cap。要確認・口座開設後に登録） |
 | UnitedStatesCommission | CommissionSchedule | (0,0,0) 未登録 | 米国株手数料（同上） |
 | FxSpreadRatio | decimal | 0 未登録 | 非 JPY 市場の為替スプレッド率（約定代金比・片道。実 FX レート連携までの近似） |
-| MinimumExpectedProfitMultiple | decimal | 1.5 | 最小期待利益倍率（往復費用の倍） |
+| MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
 | CostLimits | MonthlyCostLimits | (20000,15000,5000,0) | 月次費用上限（総額/LLM/インフラ/データ・円） |
 
 - `CommissionSchedule(Rate, Minimum, Cap)`: 手数料 = clamp(約定代金×Rate, Minimum, Cap)。Cap≤0 は上限なし。
-- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝往復×倍率。
+- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。**税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**（#358 / IADR-0173）。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。**m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
 
 ## エンティティ定義（永続）
 

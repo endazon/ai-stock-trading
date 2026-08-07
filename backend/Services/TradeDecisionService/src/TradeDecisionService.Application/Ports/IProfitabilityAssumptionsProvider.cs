@@ -13,7 +13,10 @@ public interface IProfitabilityAssumptionsProvider
 
 // FR-17, IADR-0076: 採算評価の費用見積り。RoundTripCost は往復の概算取引費用（円）、MinimumProfitMultiple は最小期待利益倍率、
 // AssumptionsVersion は適用した前提条件のバージョン（FR-17 の版記録・FR-11 監査ログ用）。
+// #358, IADR-0173: CapitalGainsTaxRate を運ぶ。しきい値の基準が「往復費用＋**税**」になったが、
+// 採算ゲートは TradeDecision.Domain にあり設定サービスへ依存できないため、税率は本 DTO で渡す。
 public sealed record TradeCostAssessment(
     decimal RoundTripCost,
     decimal MinimumProfitMultiple,
-    int AssumptionsVersion);
+    int AssumptionsVersion,
+    decimal CapitalGainsTaxRate = 0m);

@@ -65,15 +65,6 @@ public static class KnownPlanDeviations
                 + "FxOptions.DefaultMaxRateAgeDays の 30 への変更、および構成クランプ MaxAllowedRateAgeDays "
                 + "= 31（計画の「絶対上限」30 を上回る）の見直しは #381 の担当"),
 
-        // --- #358 全体前提条件: §4 最小期待利益の計画追随漏れ ---
-        new(
-            "Assumptions.MinimumExpectedProfitMultiple",
-            "1.5x of (round-trip cost)",
-            358,
-            "値 1.5 vs 2・基準に税を含まない、の 2 点乖離。計画は 2026-07-23 に「往復費用＋税の 2 倍」へ"
-                + "確定したが（それ以前は未確定の <1.5 倍>）、2026-07-18 の実装が追随していない。"
-                + "IADR-0021・docs/specs/20260718_trade-decision-profitability-gate.md・"
-                + "docs/data/trading-assumptions.md の是正も #358 の範囲"),
     ];
 
     public static IReadOnlyDictionary<string, KnownDeviation> ByKey { get; } =
