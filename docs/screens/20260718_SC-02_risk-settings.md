@@ -2,11 +2,11 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152]
+related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0161]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-08-06
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -22,9 +22,11 @@ related_specs:
   - ../adr/IADR-0140_broker-provider-axis.md
   - ../adr/IADR-0141_live-switch-explicit-confirmation.md
   - ../adr/IADR-0151_risk-limit-percent-input-and-bounds.md
+  - ../adr/IADR-0161_broker-provider-allow-list-resolution.md
   - ../specs/20260805_334_broker-provider-axis.md
   - ../specs/20260805_362_sc02-ratio-input.md
   - ../specs/20260806_340_screens-reimplementation.md
+  - ../specs/20260807_422_broker-provider-default-paper.md
 ---
 
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
@@ -102,11 +104,38 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 3. **運用段階と発注先（参照・#334）**: 現段階・**現在の発注先**・段階の既定発注先を**別々の行**として表示する
    （INDEX 決定 46・05_screens 共通規約:「独立した 2 軸であり 1 行に混ぜて表示しない」）。段階変更は段階ゲート承認フロー
    （#165 Bot 側）。
-3-2. **発注先の変更（変更可・#334/IADR-0141）**: 3 値（内蔵 `paper` / moomoo `REAL` / moomoo `SIMULATE`）から選ぶ。
+3-2. **発注先の変更（変更可・#334/IADR-0141・#422/IADR-0161）**: 3 値（内蔵 `paper` / moomoo `REAL` / moomoo `SIMULATE`）から選ぶ。
    **変更操作を持つ画面は SC-02 だけである**（SC-03 は参照専用）。理由必須・監査ログ・版の対象。
    **実弾（moomoo `REAL`）への切替は警告モーダルを必ず経由し、計画の 4 点**（①実資金で執行される旨／②切替先と現在の
    Stage の組み合わせ〔Stage 1 のままなら段階ゲートを飛ばしている旨〕／③現在の equity と統制値の実額／④チェックボックスの
    同意と「REAL」の文字入力）**を提示する。「OK」1 押しでは通過できない。** equity を取得できない場合は切替を許さない。
+
+   ### ②に**「段階が実弾を既定とするまで発注は行われない」旨**を必ず含める（FR-20 追記 (1)・#422）
+
+   計画（FR-20 の 2026-08-07 追記 (1)）は「**設定は保存できるが、発注は段階が実弾を既定とするまで拒否する**……
+   **この旨を SC-02 の警告モーダルにも含める**（利用者が警告に同意したうえで 1 件も発注されない理由が画面に出ないと
+   『壊れている』と判断されるため）」と定める。
+
+   - 改定前の②は「この組み合わせは段階ゲート……を飛ばしています」だけであり、**裁定と逆に読める**
+     （飛ばせる＝実弾で発注が始まる）。実際には `RiskEvaluator` が `StageProhibitsLiveTrading` で 1 件も通さない。
+   - 文言: 「**ただし、段階が実弾を既定とするまで発注は行われません。** 発注先の設定は保存できますが、
+     実弾の注文は段階ゲートが拒否します（1 件も発注されません）。実弾で発注するには運用段階の昇格が必要です。」
+   - **モーダルと一覧（フォーム内の警告）の両方**に出す。モーダルは裁定の名指し、一覧はモーダルへ進まない利用者にも届かせるため。
+   - **段階が既に実弾（Stage 2 / 3）のときは出さない。** その場合は実際に発注されるため嘘になる（狼少年にもなる）。
+     条件は②の「段階ゲートを飛ばしている」警告と**同一**（`skipsStageGate`）である。
+
+   ### ④「REAL」の照合規則（FR-20 追記 (2)・#422）
+
+   **前後空白のみを除いた完全一致・大文字小文字を区別する**（`real` / `Real` / `ＲＥＡＬ`〔全角〕は受理しない。
+   ` REAL ` は受理する）。**チェックボックスの同意と文字入力の両方**が揃うまで切替ボタンを無効にする。
+   計画が確定させた規則であり、**「利便性の改善」として緩めてはならない**（この入力は「打つ手間」自体が統制）。
+   画面とサーバは同じ規則を持つ（`LIVE_ACKNOWLEDGEMENT_PHRASE` ⇄ `BrokerProviderChange.LiveAcknowledgementPhrase`）。
+
+   ### 現在の発注先の表示（FR-20 追記 (3)・#422/IADR-0161）
+
+   サーバは発注先を **allow-list** で解決して返す（3 値の明示一致のみ。旧行・`null`・未知の序数・未知の文字列・
+   別の型は**すべて内蔵 `paper`**）。したがって画面が受け取る `brokerProvider` は常に 3 値のいずれかであり、
+   **未知値のフォールバック表示に依存しない**。
 3-3. **内蔵 `paper` 稼働中の警告バナー（#334）**: 画面上部に常時表示（必須 2 文言。FR-12・共通規約）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 5. **監視銘柄（変更可・#196/IADR-0090）**: `MonitoredSymbol[]`（銘柄コード・市場）の一覧・追加・削除。データ源は

@@ -49,15 +49,24 @@ public class BrokerProviderChangeTests
         BrokerProviderChange.Evaluate(request, Stage2).Accepted.Should().BeFalse();
     }
 
-    // 否定形・境界値: 照合は前後空白を除いた完全一致であり、**大文字小文字を区別する**（IADR-0141 決定2）。
-    // 計画は照合規則を述べていないため、実装が決めた規則をここで固定する。
+    // 否定形・境界値: 照合は前後空白を除いた完全一致であり、**大文字小文字を区別する**。
+    // **FR-20 の 2026-08-07 追記 (2) が確定させた規則である**（#422。「前後空白のみを除いた完全一致とし
+    // 大文字小文字を区別する。`real` は受理しない。明記しないと後から緩める変更が『利便性の改善』として
+    // 入り込む」）。IADR-0141 決定2 が先に同じ規則へ到達しており、裁定はそれを追認した。
     [Theory]
     [InlineData("real")]
     [InlineData("Real")]
+    [InlineData("REAl")]
+    [InlineData("rEaL")]
     [InlineData("REALLY")]
     [InlineData("RE AL")]
     [InlineData("REA")]
     [InlineData("実弾")]
+    [InlineData("ＲＥＡＬ")]  // 全角。見た目は同じでも別の符号位置であり受理しない
+    [InlineData("ＲeＡl")]
+    [InlineData("R E A L")]
+    [InlineData("REAL REAL")]
+    [InlineData("REA\nL")]   // 内部の改行は「前後空白」ではない
     public void 確認文字列がREALと完全一致しなければ受理されない(string phrase)
     {
         var request = new BrokerProviderChangeRequest(BrokerProvider.MoomooReal, "移行", true, phrase);
@@ -74,6 +83,7 @@ public class BrokerProviderChangeTests
     [InlineData(" REAL")]
     [InlineData("REAL ")]
     [InlineData("  REAL  ")]
+    [InlineData("\tREAL\n")] // Trim は Unicode 空白全般を除く（貼り付けで混じる改行・タブも同じ扱い）
     public void 前後空白を除いてREALと一致すれば受理される(string phrase)
     {
         var request = new BrokerProviderChangeRequest(BrokerProvider.MoomooReal, "移行", true, phrase);

@@ -671,6 +671,21 @@ function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']
 // ここでの二重化は冗長ではない。
 type ProviderSaveState = 'idle' | 'saving' | 'error';
 
+// FR-20 (1), SC-02, #422, IADR-0161 決定4: 計画（FR-20 の 2026-08-07 追記 (1)）が画面へ出すことを
+// 明示的に義務づけた文言。
+//
+//   「**設定は保存できるが、発注は段階が実弾を既定とするまで拒否する**——『発注先の変更が保存できる』ことは
+//     『発注できる』ことを意味しない。**Stage 1 のまま実弾を選んでも発注は行われない**。
+//     **この旨を SC-02 の警告モーダルにも含める**（利用者が警告に同意したうえで 1 件も発注されない理由が
+//     画面に出ないと「壊れている」と判断されるため）」
+//
+// **出すのは段階が実弾を既定としないときだけである。** 段階が既に実弾（Stage 2 / 3）なら注文は実際に
+// 発注されるため、同じ文言を出すと嘘になる（狼少年にもなる）。条件は `skipsStageGate` と同一。
+const STAGE_GATE_BLOCKS_LIVE_ORDERS =
+  'ただし、段階が実弾を既定とするまで発注は行われません。' +
+  '発注先の設定は保存できますが、実弾の注文は段階ゲートが拒否します（1 件も発注されません）。' +
+  '実弾で発注するには運用段階の昇格が必要です。';
+
 function BrokerProviderForm({
   current,
   stageMode,
@@ -795,6 +810,8 @@ function BrokerProviderForm({
           <p role="alert">
             現在の運用段階（{stageLabel(stage)}）が想定する発注先は
             {brokerProviderLabel(stageMode)}です。実弾へ切り替えると段階ゲートを飛ばすことになります。
+            {/* FR-20 (1), #422: 保存できることは発注できることを意味しない。 */}
+            <strong>{STAGE_GATE_BLOCKS_LIVE_ORDERS}</strong>
           </p>
         )}
 
@@ -876,9 +893,18 @@ function LiveSwitchWarningModal({
         <strong>{brokerProviderLabel(stageMode)}</strong>
       </p>
       {skipsStageGate && (
-        <p role="alert">
-          この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。
-        </p>
+        <>
+          <p role="alert">
+            この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。
+          </p>
+          {/*
+            FR-20 (1), #422: **同意しても 1 件も発注されない**旨を必ず出す。これが無いと
+            「警告に同意したのに発注されない＝壊れている」と読まれる（計画が名指しした誤読）。
+          */}
+          <p role="alert">
+            <strong>{STAGE_GATE_BLOCKS_LIVE_ORDERS}</strong>
+          </p>
+        </>
       )}
 
       {/* ③ 現在の equity と、それに対する統制値の実額 */}

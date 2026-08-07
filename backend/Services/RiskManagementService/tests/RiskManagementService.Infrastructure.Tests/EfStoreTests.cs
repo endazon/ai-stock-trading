@@ -28,6 +28,61 @@ public class EfStoreTests
         settings.Guard.EnabledProductTypes.Should().Contain(Shared.Contracts.Trading.ProductType.Cash);
     }
 
+    // FR-20 (3), #422, IADR-0161: **新規インストールの発注先は内蔵 paper**（外部へ一度も発注しない唯一の値）。
+    // シード経路（設定行がまだ無い状態）を通した結果を固定する——既定の定義（RiskManagementSettings）が
+    // 正しくても、シードが別の値を書けば意味が無い。
+    [Fact]
+    public void 新規インストールの発注先は内蔵paperである()
+    {
+        var dbName = Guid.NewGuid().ToString();
+
+        using (var db = NewContext(dbName))
+        {
+            new EfRiskSettingsStore(db).GetCurrent()
+                .BrokerProvider.Should().Be(Shared.Contracts.Trading.BrokerProvider.InternalPaper);
+        }
+
+        // シードされた行を読み直しても同じであること（書いた値が実弾でない）。
+        using (var db2 = NewContext(dbName))
+        {
+            new EfRiskSettingsStore(db2).GetCurrent()
+                .BrokerProvider.Should().NotBe(Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+        }
+    }
+
+    // FR-20 (3), #422: **発注先の項目を持たない旧行**（#334 以前に書かれた行）を DB に置いた状態で読む。
+    // 直列化単体ではなくストア経由で固定するのは、旧行の読み出しが実際に通る経路だからである。
+    [Fact]
+    public void 発注先を持たない旧行はストア経由でも内蔵paperとして読まれる()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var legacyJson = System.Text.RegularExpressions.Regex.Replace(
+            RiskSettingsSerialization.Serialize(TradingDefaults.CreateSettings()),
+            ",\"brokerProvider\":\\d+",
+            string.Empty);
+        legacyJson.Should().NotContain("brokerProvider", "旧行の再現に失敗している");
+
+        using (var db = NewContext(dbName))
+        {
+            db.RiskSettings.Add(new RiskSettingsRow
+            {
+                Id = SingletonKeys.Id,
+                Json = legacyJson,
+                Version = 1,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            db.SaveChanges();
+        }
+
+        using (var db2 = NewContext(dbName))
+        {
+            new EfRiskSettingsStore(db2).GetCurrent()
+                .BrokerProvider.Should().Be(
+                    Shared.Contracts.Trading.BrokerProvider.InternalPaper,
+                    "「読めない行は実弾」に倒れる移行は取り返しがつかない（FR-20 (3)）");
+        }
+    }
+
     [Fact]
     public void 設定の保存はラウンドトリップし別コンテキストからも読める()
     {

@@ -19,10 +19,17 @@ public record RiskManagementSettings(
     /// 位置指定の引数にせず本体のプロパティに置くのは <see cref="ShortSell"/> と同じ理由である——
     /// <b>既定が安全側（外部へ一度も発注しない内蔵 <c>paper</c>）に固定され</b>、明示しない呼び出しや
     /// 本プロパティを持たない旧い永続行が実弾を指してしまわないようにするため。
-    /// <b>計画は初期値を述べていない</b>（IADR-0140 決定4）。
+    /// </para>
+    /// <para>
+    /// FR-20 (3), #422: <b>初期値が内蔵 <c>paper</c> であることは計画が 2026-08-07 に確定させた</b>
+    /// （「発注先の初期値は内蔵 <c>paper</c> とする——外部へ一度も発注しない唯一の値であり、
+    /// 初期段階が Stage 0 であることとも整合する。設定ストアの旧行〔本項目を持たない場合〕も
+    /// 同じ既定へ落とす」）。IADR-0140 決定4 が「計画は初期値を述べていない」として選んだ既定を
+    /// 裁定が追認したものである。永続行からの解決は <see cref="BrokerProviderResolution"/>（allow-list）
+    /// を通す（IADR-0161）。
     /// </para>
     /// </summary>
-    public BrokerProvider BrokerProvider { get; init; } = BrokerProvider.InternalPaper;
+    public BrokerProvider BrokerProvider { get; init; } = BrokerProviderResolution.Default;
 
     /// <summary>
     /// FR-10, ADR-0016, #329 第 2 段階: 空売りの有効・無効と専用統制値。既定は**無効**（現物のみ）。

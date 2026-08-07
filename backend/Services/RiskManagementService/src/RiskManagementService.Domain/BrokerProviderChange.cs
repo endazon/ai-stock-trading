@@ -18,11 +18,14 @@ namespace AiStockTrading.RiskManagement.Domain;
 public static class BrokerProviderChange
 {
     /// <summary>
-    /// FR-20, IADR-0141 決定2: 実弾切替の確認に打ち込ませる文字列。
+    /// FR-20 (2), IADR-0141 決定2, #422: 実弾切替の確認に打ち込ませる文字列。
     /// <para>
-    /// <b>計画は照合規則を述べていない</b>（「『REAL』の文字入力」とだけある）。実装は前後空白のみを除いた
-    /// <b>完全一致（大文字小文字を区別する）</b>を採る——<c>real</c> を受理すると計画の字面から外れるうえ、
-    /// この入力は「打つ手間」自体が統制であり、区別を捨てると手間が減る方向にしか働かない。
+    /// 照合は前後空白のみを除いた<b>完全一致（大文字小文字を区別する）</b>である。
+    /// <b>これは計画が 2026-08-07 に確定させた規則である</b>（FR-20 追記 (2)。
+    /// 「確認文字列「REAL」の照合は、前後空白のみを除いた完全一致とし大文字小文字を区別する。
+    /// <c>real</c> は受理しない。明記しないと後から緩める変更が『利便性の改善』として入り込む」）。
+    /// 実装が先に同じ規則へ到達しており（IADR-0141 決定2）、裁定はそれを追認したものである。
+    /// <b>「利便性の改善」を理由に緩めてはならない</b>——この入力は「打つ手間」自体が統制である。
     /// </para>
     /// </summary>
     public const string LiveAcknowledgementPhrase = "REAL";
@@ -66,7 +69,12 @@ public static class BrokerProviderChange
 
         // 未定義の enum 値（範囲外の整数を直接投げられた場合）は受理しない。既定値 0 へ暗黙に倒すと
         // 「不正な値を送ったら内蔵 paper になった」という説明のつかない状態遷移が生まれる。
-        if (!Enum.IsDefined(request.Target))
+        //
+        // FR-20 (3), #422, IADR-0161 決定3: 既知の 3 値の定義は BrokerProviderResolution が単一情報源である。
+        // **読み取り（既に書かれた行）と書き込み（これから書く値）で扱いが違うのは意図的である**——
+        // 読み取りは黙って内蔵 paper へ落とし（読めない行を実弾にしないため）、書き込みは拒否する
+        // （利用者が選んだ値と保存された値が食い違う状態を作らないため）。
+        if (!BrokerProviderResolution.IsKnown(request.Target))
         {
             rejections.Add(BrokerProviderChangeRejection.UnknownProvider);
         }
