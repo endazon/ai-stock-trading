@@ -15,9 +15,10 @@ related_ids:
   - IADR-0107
   - IADR-0109
   - IADR-0111
+  - IADR-0175
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-07-29
+updated: 2026-08-07
 plan_refs:
   - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
 ---
@@ -265,5 +266,13 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 >
 > **保持期間パージとの関係（#137 / IADR-0059）**: パージジョブは `State=Reserved` に一切触れないため、
 > 滞留行が自動で消えることはない。滞留の解消は本 Runbook の手順（または #141）だけが行う。
+
+## 関連文書
+
+| 文書 | 本書との関係 |
+| --- | --- |
+| [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（[IADR-0175](../adr/IADR-0175_security-spec-absence-notation.md) 決定3） |
+| [禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) | **建玉を手仕舞えないとき**の手順（一時解除 → 手仕舞い → 再登録）。解除・再登録が監査に残る根拠つき |
+| [ブロック中のタスク](../blocked-tasks.md) | 基盤・実機待ちで本リポジトリだけでは進められない項目 |
 
 ## 未決事項

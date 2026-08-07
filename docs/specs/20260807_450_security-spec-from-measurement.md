@@ -2,7 +2,7 @@
 title: セキュリティ仕様書を実態の横断調査に基づいて記入する（空欄・未実装・未確認を書き分ける）
 type: spec
 status: review
-related_ids: [NFR, FR-08, FR-11, FR-14, FR-19, UC-06, UC-07, ADR-0012, IADR-0011, IADR-0051, IADR-0060, IADR-0062, IADR-0169, IADR-0171, IADR-0175]
+related_ids: [NFR, FR-02, FR-08, FR-11, FR-14, FR-19, UC-06, UC-07, ADR-0003, ADR-0004, ADR-0012, IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175]
 author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
