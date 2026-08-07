@@ -154,6 +154,22 @@ jobs:
       - name: Check banned settled-cash sources
         run: node scripts/check-banned-settled-cash-sources.js
 
+  # NFR / #357 / IADR-0168: Wolverine のテストハーネスの**素の入口** `host.TrackActivity()` を止める。
+  # 素の入口は**既定 5 秒の壁時計**で打ち切るため、ソリューション全体の並列実行では
+  # スケジューリング遅延だけで超え、flaky failure になる（実測 6 秒・#357）。
+  # 131 か所を予算つきの入口へ替えても、**次に書かれるテストは標準 API を素直に呼ぶ**。
+  # flake は CI ゲートを構造的に無効化する（確率的な赤が「再実行すればよい」を習慣化し、
+  # 本物の退行も同じ反応で流される）ため、コメントではなく機械で止める。
+  tracked-session-timeout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Check tracked session timeout
+        run: node scripts/check-tracked-session-timeout.js
+
   # 実行環境スキャフォールド（docker-compose / appsettings / .env.example）の静的検査（issue #107 / IADR-0048）。
   # fail-safe 既定（base appsettings が挙動中立・機密は空既定）と構成の存在・整合を Docker 起動なしで検証する。
   # 実コンテナ/実 API 疎通は #82 に分離するため、本ジョブは Node 標準のみ（依存・Docker 不要）で完結する。

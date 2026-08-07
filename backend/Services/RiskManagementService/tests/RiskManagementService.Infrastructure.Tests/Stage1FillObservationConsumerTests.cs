@@ -3,6 +3,7 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -42,7 +43,7 @@ public class Stage1FillObservationConsumerTests
     private static async Task<Guid> ApproveAsync(IHost host, PositionEffect effect = PositionEffect.Open)
     {
         var decisionId = Guid.NewGuid();
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new OrderApproved(decisionId, Intent(effect), 10, Now));
         return decisionId;
     }
@@ -64,7 +65,7 @@ public class Stage1FillObservationConsumerTests
         using var host = await BuildHostAsync(ledger, fills);
 
         var decisionId = await ApproveAsync(host);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(decisionId, BrokerProvider.MoomooSimulate));
 
         fills.GetTradeCount().Should().Be(1);
@@ -86,7 +87,7 @@ public class Stage1FillObservationConsumerTests
         for (var i = 0; i < 5; i++)
         {
             var decisionId = await ApproveAsync(host);
-            await host.TrackActivity().InvokeMessageAndWaitAsync(
+            await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
                 Executed(decisionId, BrokerProvider.InternalPaper, orderId: $"ORD-P{i}"));
         }
 
@@ -105,7 +106,7 @@ public class Stage1FillObservationConsumerTests
         using var host = await BuildHostAsync(ledger, fills);
 
         var decisionId = await ApproveAsync(host);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(Executed(decisionId, BrokerProvider.MoomooReal));
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Executed(decisionId, BrokerProvider.MoomooReal));
 
         fills.GetTradeCount().Should().Be(0);
 
@@ -123,12 +124,12 @@ public class Stage1FillObservationConsumerTests
         var decisionId = await ApproveAsync(host);
 
         // moomoo は Accepted(0) → 部分約定 → 全量約定と同一注文について複数回発行する（IADR-0113）。
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(decisionId, BrokerProvider.MoomooSimulate, filledQuantity: 0, status: OrderStatus.Accepted));
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(decisionId, BrokerProvider.MoomooSimulate, filledQuantity: 4,
                 status: OrderStatus.PartiallyFilled));
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(decisionId, BrokerProvider.MoomooSimulate, filledQuantity: 10));
 
         fills.GetTradeCount().Should().Be(1, "1 注文は何度約定進捗が届いても 1 件である");
@@ -145,11 +146,11 @@ public class Stage1FillObservationConsumerTests
         using var host = await BuildHostAsync(ledger, fills);
 
         var accepted = await ApproveAsync(host);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(accepted, BrokerProvider.MoomooSimulate, filledQuantity: 0, status: OrderStatus.Accepted));
 
         var cancelled = await ApproveAsync(host);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(cancelled, BrokerProvider.MoomooSimulate, filledQuantity: 0, orderId: "ORD-2",
                 status: OrderStatus.Cancelled));
 
@@ -167,7 +168,7 @@ public class Stage1FillObservationConsumerTests
         using var host = await BuildHostAsync(ledger, fills);
 
         var close = await ApproveAsync(host, PositionEffect.Close);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(Executed(close, BrokerProvider.MoomooSimulate));
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Executed(close, BrokerProvider.MoomooSimulate));
 
         fills.GetTradeCount().Should().Be(0);
 
@@ -184,7 +185,7 @@ public class Stage1FillObservationConsumerTests
         using var host = await BuildHostAsync(ledger, fills);
 
         // 承認を経ずに約定だけが届く（通常は起こらないが、不明を安全側へ倒すことを固定する）。
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             Executed(Guid.NewGuid(), BrokerProvider.MoomooSimulate));
 
         fills.GetTradeCount().Should().Be(0);

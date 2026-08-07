@@ -5,6 +5,7 @@ using AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,7 +94,7 @@ public class MonitorPollingServiceTests
         h.Market.Set("AAPL", Market.UnitedStates, 1_040m); // +4%
         var (service, host) = await h.StartAsync();
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
@@ -108,7 +109,7 @@ public class MonitorPollingServiceTests
         h.Market.Set("AAPL", Market.UnitedStates, 1_040m);
         var (service, host) = await h.StartAsync();
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<PriceMovementDetected>().Should().BeEmpty();
@@ -122,7 +123,7 @@ public class MonitorPollingServiceTests
         h.Market.Set("AAPL", Market.UnitedStates, 960m);
         var (service, host) = await h.StartAsync();
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
@@ -141,7 +142,7 @@ public class MonitorPollingServiceTests
         h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // 損切り 1900 割れ
         var (service, host) = await h.StartAsync();
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();

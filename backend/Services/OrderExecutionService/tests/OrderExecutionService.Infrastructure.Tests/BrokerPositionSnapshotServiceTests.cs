@@ -3,6 +3,7 @@ using AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,7 +80,7 @@ public class BrokerPositionSnapshotServiceTests
         var published = false;
         Func<IMessageContext, Task> publishOnce = async _ =>
             published = await service.PublishOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(publishOnce);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(publishOnce);
 
         await host.StopAsync();
         return (published, session, source);
@@ -133,7 +134,7 @@ public class BrokerPositionSnapshotServiceTests
         var source = new FakePositionSource();
         var service = NewService(host, source, enabled: false);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
 
         source.Calls.Should().Be(0);
         session.Sent.MessagesOf<BrokerPositionsObserved>().Should().BeEmpty();

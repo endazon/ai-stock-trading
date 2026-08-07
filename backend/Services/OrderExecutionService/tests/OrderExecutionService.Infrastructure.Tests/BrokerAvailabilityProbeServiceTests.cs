@@ -3,6 +3,7 @@ using AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,7 +112,7 @@ public class BrokerAvailabilityProbeServiceTests
         var published = false;
         Func<IMessageContext, Task> probeOnce = async _ =>
             published = await service.ProbeOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(probeOnce);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(probeOnce);
 
         await host.StopAsync();
         return (published, session);
@@ -245,7 +246,7 @@ public class BrokerAvailabilityProbeServiceTests
             await service.StartAsync(CancellationToken.None);
             await service.StopAsync(CancellationToken.None);
         };
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(startAndStop);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(startAndStop);
 
         probe.Calls.Should().Be(0);
         session.Sent.MessagesOf<BrokerAvailabilityObserved>().Should().BeEmpty();

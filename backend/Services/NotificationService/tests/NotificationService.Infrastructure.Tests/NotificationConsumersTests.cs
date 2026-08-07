@@ -3,6 +3,7 @@ using AiStockTrading.Notification.Application.State;
 using AiStockTrading.Notification.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,7 +47,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         sender.Sent.Should().ContainSingle(m => m.Title == "取引実行");
@@ -60,7 +61,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderRejected(
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderRejected(
             Guid.NewGuid(), Intent(), new[] { RejectionReason.KillSwitchActive }, DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<OrderRejected>().Should().NotBeEmpty();
 
@@ -75,7 +76,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<AssumptionsChanged>().Should().NotBeEmpty();
 
         sender.Sent.Should().ContainSingle(m => m.Title.Contains("設定変更"));
@@ -89,7 +90,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 1, DateTimeOffset.UtcNow));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 1, DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<ReportConfirmed>().Should().NotBeEmpty();
 
         sender.Sent.Should().ContainSingle(m => m.Title.Contains("報告書確定") && m.Content.Contains("owner"));
@@ -103,7 +104,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new CostThresholdReached("2026-07", "Llm", 100m, "Halted", DateTimeOffset.UtcNow));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new CostThresholdReached("2026-07", "Llm", 100m, "Halted", DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<CostThresholdReached>().Should().NotBeEmpty();
 
         sender.Sent.Should().ContainSingle(m => m.Title.Contains("費用統制") && m.Severity == NotificationSeverity.Critical);
@@ -117,7 +118,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new StopLossTriggered(
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new StopLossTriggered(
             Guid.NewGuid(), "7203", Market.Japan, TradeSide.Buy, 5, 950m, 940m, DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
 
@@ -133,7 +134,7 @@ public class NotificationConsumersTests
         var (host, sender) = await BuildAsync();
         using var _ = host;
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new WithdrawalTriggered(
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new WithdrawalTriggered(
             ProposedStage: 0, "DrawdownBreachedMultiple", HaltNewEntries: true, DateTimeOffset.UtcNow));
         session.Executed.MessagesOf<WithdrawalTriggered>().Should().NotBeEmpty();
 

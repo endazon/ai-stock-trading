@@ -7,6 +7,7 @@ using AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -100,7 +101,7 @@ public class OrderFillPollingServiceTests
 
         OrderFillPollResult result = null!;
         Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(poll);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
 
         result.Terminalized.Should().Be(1);
         session.Sent.MessagesOf<OrderExecuted>().Should().Contain(m =>
@@ -123,7 +124,7 @@ public class OrderFillPollingServiceTests
 
         OrderFillPollResult result = null!;
         Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(poll);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
 
         result.Unknown.Should().Be(1);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
@@ -142,7 +143,7 @@ public class OrderFillPollingServiceTests
         using var host = await BuildHostAsync(broker, store);
         var service = BuildService(host, new FillPollingOptions { Enabled = false });
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
 
         broker.QueryCount.Should().Be(0);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();

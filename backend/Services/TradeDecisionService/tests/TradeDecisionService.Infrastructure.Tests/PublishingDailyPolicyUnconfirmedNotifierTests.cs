@@ -1,3 +1,4 @@
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
@@ -52,7 +53,7 @@ public class PublishingDailyPolicyUnconfirmedNotifierTests
         var clock = new MutableClock(Day1);
         var notifier = NewNotifier(host, clock);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => notifier.NotifyAsync());
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => notifier.NotifyAsync());
 
         session.Sent.MessagesOf<DailyPolicyUnconfirmed>().Should().NotBeEmpty();
         var e = session.Sent.MessagesOf<DailyPolicyUnconfirmed>().First();
@@ -70,7 +71,7 @@ public class PublishingDailyPolicyUnconfirmedNotifierTests
         var clock = new MutableClock(Day1);
         var notifier = NewNotifier(host, clock);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => NotifyTwiceAsync(notifier, clock, Day1.AddHours(3)));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => NotifyTwiceAsync(notifier, clock, Day1.AddHours(3)));
 
         session.Sent.MessagesOf<DailyPolicyUnconfirmed>().Should().NotBeEmpty();
         session.Sent.MessagesOf<DailyPolicyUnconfirmed>().Should().HaveCount(1);
@@ -86,7 +87,7 @@ public class PublishingDailyPolicyUnconfirmedNotifierTests
         var clock = new MutableClock(Day1);
         var notifier = NewNotifier(host, clock);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => NotifyTwiceAsync(notifier, clock, Day1.AddDays(1)));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => NotifyTwiceAsync(notifier, clock, Day1.AddDays(1)));
 
         session.Sent.MessagesOf<DailyPolicyUnconfirmed>().Should().NotBeEmpty();
         session.Sent.MessagesOf<DailyPolicyUnconfirmed>().Should().HaveCount(2);

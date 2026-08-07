@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Domain.Manipulation;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -49,11 +50,11 @@ public class OrderActivityProjectionConsumersTests
         using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderModified(decisionId, "ORD-1", 10, 3_000m, 6, 2_950m, "縮小", Base.AddSeconds(10)));
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderModified(decisionId, "ORD-1", 10, 3_000m, 6, 2_950m, "縮小", Base.AddSeconds(10)));
         session2.Executed.MessagesOf<OrderModified>().Should().NotBeEmpty();
-        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderCancelled(decisionId, "ORD-1", "pause 強制取消", Base.AddSeconds(20)));
+        var session3 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderCancelled(decisionId, "ORD-1", "pause 強制取消", Base.AddSeconds(20)));
         session3.Executed.MessagesOf<OrderCancelled>().Should().NotBeEmpty();
 
         var record = Window(store).Records.Should().ContainSingle().Subject;
@@ -72,9 +73,9 @@ public class OrderActivityProjectionConsumersTests
         using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(10), 10, Base));
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1), BrokerProvider.MoomooSimulate));
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 3_010m, Base.AddSeconds(1), BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         var record = Window(store).Records.Should().ContainSingle().Subject;
@@ -91,7 +92,7 @@ public class OrderActivityProjectionConsumersTests
         var store = new InMemoryOrderActivityStore();
         using var host = await BuildHostAsync(store);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base, BrokerProvider.MoomooSimulate));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(Guid.NewGuid(), "ORD-1", OrderStatus.Filled, 10, 3_010m, Base, BrokerProvider.MoomooSimulate));
         session1.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         Window(store).Records.Should().BeEmpty();

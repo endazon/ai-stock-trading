@@ -14,5 +14,6 @@
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）とキュー名規則
          （QueueNameFor）をテストから参照する。ハンドラのランタイム生成（RuntimeCompilation）も同経路で入る。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
   </ItemGroup>
 </Project>

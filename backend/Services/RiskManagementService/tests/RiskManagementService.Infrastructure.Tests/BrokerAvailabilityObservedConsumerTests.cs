@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -42,7 +43,7 @@ public class BrokerAvailabilityObservedConsumerTests
     {
         for (var i = 0; i < count; i++)
         {
-            await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAvailabilityObserved(
+            await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BrokerAvailabilityObserved(
                 provider, firstObservationUtc.AddMinutes(30 * i), Interval));
         }
     }
@@ -102,7 +103,7 @@ public class BrokerAvailabilityObservedConsumerTests
         var second = first.AddMinutes(30);
         foreach (var instant in new[] { first, second, second, first })
         {
-            await host.TrackActivity().InvokeMessageAndWaitAsync(
+            await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
                 new BrokerAvailabilityObserved(BrokerProvider.MoomooSimulate, instant, Interval));
         }
 

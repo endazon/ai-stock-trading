@@ -5,6 +5,7 @@ using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,7 +54,7 @@ public class StopLossTriggeredConsumerTests
     {
         using var host = await BuildHostAsync();
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Triggered());
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Triggered());
 
         session1.Executed.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
         session1.Sent.MessagesOf<OrderApproved>().Should().NotBeEmpty();
@@ -72,7 +73,7 @@ public class StopLossTriggeredConsumerTests
         killSwitch.SetState(new KillSwitchState(true, "user", "緊急停止", DateTimeOffset.UtcNow));
         using var host = await BuildHostAsync(killSwitch);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(Triggered());
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Triggered());
 
         session1.Sent.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 

@@ -3,6 +3,7 @@ using AiStockTrading.MarketMonitor.Application.Ports;
 using AiStockTrading.MarketMonitor.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,7 +36,7 @@ public class TradeDecisionMadeBaselineConsumerTests
 
         var intent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy,
             ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_234m);
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
