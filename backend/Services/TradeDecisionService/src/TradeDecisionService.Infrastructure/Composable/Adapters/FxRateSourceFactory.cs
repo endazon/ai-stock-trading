@@ -86,6 +86,7 @@ internal static class FxRateSourceFactory
                             : options.Fred.BaseUrl),
                     Ttl(options),
                     ResolveMaxRateAge(options),
+                    ResolveStaleRateWarning(options),
                     timeProvider,
                     loggerFactory.CreateLogger<CachingFxRateSource>());
 
@@ -124,6 +125,23 @@ internal static class FxRateSourceFactory
 
         var days = options.MaxRateAgeDays > 0 ? options.MaxRateAgeDays : FxOptions.DefaultMaxRateAgeDays;
         return TimeSpan.FromDays(Math.Min(days, FxOptions.MaxAllowedRateAgeDays));
+    }
+
+    /// <summary>
+    /// 実際に適用される<b>警告</b>しきい値（#381, IADR-0174 決定3）。上限と同じ規律で両側クランプする。
+    /// 下側: 0 以下は既定（5 日）へ倒す。
+    /// 上側: <b>実効の鮮度上限を超えない</b>——超えると<b>警告が一度も出ないまま停止する</b>ことになり、
+    /// 「気づくための警告」という役割そのものが消える（統制は残るが、劣化に気づけなくなる）。
+    /// </summary>
+    internal static TimeSpan ResolveStaleRateWarning(FxOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var days = options.StaleRateWarningDays > 0
+            ? options.StaleRateWarningDays
+            : FxOptions.DefaultStaleRateWarningDays;
+        var max = ResolveMaxRateAge(options);
+        return TimeSpan.FromDays(days) < max ? TimeSpan.FromDays(days) : max;
     }
 
     /// <summary>構成が指定した provider 名（正規化のみ。未知の名前も**そのまま**返す＝警告文の材料）。</summary>

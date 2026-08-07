@@ -320,6 +320,11 @@ private static string SelectProvider(FxOptions options)
     フォールバック切り替えの記録／通知・30 日超の新規建て停止と
     [ADR-0009](../../planning/projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md)
     の停止状態への対応づけ。あわせて `MaxAllowedRateAgeDays = 31`（計画の絶対上限 30 を上回る）の見直し。
+    - **【2026-08-07 追記・[IADR-0174](IADR-0174_fx-freshness-warning-and-hard-limit.md)】このうち
+      `DefaultMaxRateAgeDays` の 30 化・警告しきい値の実装・`MaxAllowedRateAgeDays` の見直し（31 → 30）は完了し、
+      登録簿から `Fx.StaleRateWarningDays` と `Fx.MaxRateAgeDays` の 2 行が消えた。** 警告しきい値は
+      **3 日ではなく 5 日**である（計画 ADR-0022 決定4 が 2026-08-07 に改訂・本 IADR 執筆時点の 3 日は旧値）。
+      **日銀アダプタ・フォールバック・切替の通知／監査ログ（`Fx.RateSourceProviders`）は #381 に残る。**
   - **#382**: 米国株の日足 OHLC 履歴源（ADR-0023）。**Stage 0 の合格判定が実施できない状態**が続いている。
   - 計画側の未決: 日銀の系列 ID（ADR-0022 フォローアップ）。確定するまで
     `Fx.RateSourceProviders` は provider 識別子の粒度に留める。
