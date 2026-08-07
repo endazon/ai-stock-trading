@@ -60,7 +60,8 @@ plan_refs:
 対象銘柄を禁止銘柄リストから外す。
 
 - 画面: **SC-02**（リスク統制設定）のガード設定
-- API: `PUT /risk/guard`（`RiskControlEndpoints`）
+- API: **`PUT /risk-controls/settings/guard`**（`RiskControlEndpoints.cs` の `MapGroup("/risk-controls")` ＋ `MapPut("/settings/guard")`）
+- BFF 経由: **`PUT /bff/risk-controls/settings/guard`**（`RiskControlsBffEndpoints.cs`）
 
 **アクターと理由は必須である**（`RiskSettingsService.RequireActorAndReason`）。理由には**手仕舞いのための一時解除であること**と**再登録の予定**を書く。
 
