@@ -32,6 +32,27 @@ public record RiskManagementSettings(
     public BrokerProvider BrokerProvider { get; init; } = BrokerProviderResolution.Default;
 
     /// <summary>
+    /// FR-20, FR-13, SC-02, #423, IADR-0165 決定4: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
+    /// <para>
+    /// 2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）により、条件 3 の件数は
+    /// **SC-02 から変更できる設定値**になった。既定 100 件・値域 1〜1000
+    /// （<see cref="Stage1TradeCountBounds"/>）。他のリスク設定と同様に変更理由必須・監査ログ記録・
+    /// 版（楽観排他）の対象である。
+    /// </para>
+    /// <para>
+    /// <b>変えられるのは条件 3 の件数だけである。</b> 条件 1（統制違反 0 件）・条件 2（60 営業日）・
+    /// §4.3 の打ち切り規則（累計 120 営業日）には及ばない（裁定が明示）。本プロパティは
+    /// <see cref="Stage1GateCriteria.MinimumTradeCount"/> にだけ重なる。
+    /// </para>
+    /// <para>
+    /// 位置指定の引数にせず本体のプロパティに置くのは <see cref="BrokerProvider"/> と同じ理由である——
+    /// **既定が計画の確定値（100）に固定され**、明示しない呼び出しや本項目を持たない旧い永続行が
+    /// 「合格に近い小さな件数」を指してしまわないようにするため。
+    /// </para>
+    /// </summary>
+    public int Stage1MinimumTradeCount { get; init; } = Stage1TradeCountBounds.Default;
+
+    /// <summary>
     /// FR-10, ADR-0016, #329 第 2 段階: 空売りの有効・無効と専用統制値。既定は**無効**（現物のみ）。
     /// 位置指定の引数にせず本体のプロパティに置くのは、既定が安全側（無効）に固定されており、
     /// 明示しない呼び出し（既存の設定生成・テスト）が空売りを有効化してしまわないようにするためである。

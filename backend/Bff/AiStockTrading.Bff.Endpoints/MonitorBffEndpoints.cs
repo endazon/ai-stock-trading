@@ -49,6 +49,32 @@ public static class MonitorBffEndpoints
             ProxyAsync(httpFactory, http, HttpMethod.Get, "/monitor/watchlist/history", ct))
             .WithName("BffMonitorWatchlistHistory");
 
+        // AST #423, FR-03, FR-13, SC-02, IADR-0165 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
+        //
+        // 2026-08-07 の裁定で SC-01 §2 が廃止され、変動閾値・クールダウンは **SC-02 が扱う**ことになった
+        // （権威は MarketMonitorService であり、監視銘柄と同じ由来サービスである）。
+        // 「フロントが叩かないため登録しない」という従来の前提は #340 で SC-01 §2 が
+        // `/monitor/settings` を叩き始めた時点で崩れており、**BFF 未結線のまま画面だけが存在していた**。
+        // ここで実消費する 4 本を登録する（全置換 PUT は登録しない＝画面が使わない経路を BFF へ出さない）。
+        g.MapGet("/settings", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/monitor/settings", ct))
+            .WithName("BffMonitorSettingsGet");
+
+        // 変動閾値の部分更新（理由必須・値域は後段 `MonitorSettingsBounds` が実効。400/409 は透過）。
+        g.MapPut("/settings/movement-threshold", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/monitor/settings/movement-threshold", ct))
+            .WithName("BffMonitorSettingsMovementThresholdPut");
+
+        // クールダウンの部分更新（同上）。
+        g.MapPut("/settings/cooldown", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/monitor/settings/cooldown", ct))
+            .WithName("BffMonitorSettingsCooldownPut");
+
+        // 監視設定の変更履歴（監視銘柄・収集パラメータを 1 本の台帳で返す。表示専用）。
+        g.MapGet("/settings/history", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/monitor/settings/history", ct))
+            .WithName("BffMonitorSettingsHistory");
+
         return app;
     }
 

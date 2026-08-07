@@ -2,7 +2,7 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-10, FR-13, FR-19, FR-20, FR-12, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0161, IADR-0162]
+related_ids: [SC-02, FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0165]
 issue: 106
 author: endazon (with Claude Code)
 created: 2026-07-18
@@ -27,8 +27,12 @@ related_specs:
   - ../specs/20260805_362_sc02-ratio-input.md
   - ../specs/20260806_340_screens-reimplementation.md
   - ../specs/20260807_422_broker-provider-default-paper.md
+  - ../specs/20260807_423_sc01-section2-removal-and-sc02-relocation.md
+  - ../adr/IADR-0155_sc01-collection-parameters-supply.md
   - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
+  - ../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md
   - ../specs/20260807_424_unsupplied-metric-display-convention.md
+  - 20260718_SC-01_settings.md
 ---
 
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
@@ -162,6 +166,42 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
    連動せず**独立ロード/縮退**する。追加は理由必須（1 段）。削除は破壊的なため**明示確認**（削除理由必須＋確認ボタン）を要求
    （fail-safe）。市場は数値 enum を写像。監視銘柄の変更履歴（`MonitorSettingsChangeEntry[]`・changeType=追加/削除）を別表で一覧。
 
+6. **市場監視パラメータ（変更可・2026-08-07 追加・#423／[IADR-0165](../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md) 決定2）**:
+   **変動閾値・クールダウン。SC-01 §2 から移管された**（利用者裁定 質問票 第 13 回 Q12・案 B）。
+
+   - **権威は MarketMonitorService である**（`GET /monitor/settings`・`PUT /monitor/settings/{項目}`）。
+     旧記述の「ConfigurationService 由来」は誤りであった。planning#33 は責務分界を
+     「**由来サービスが異なるなら別画面**」と裁定しており、同じ基準を当てれば変動閾値は
+     **監視銘柄と同じ SC-02** に属する。**監視銘柄の直後に置く** ——
+     「どの銘柄を、どれだけ動いたら」は 1 つの設定だからである。
+   - **変動閾値**: 画面は**百分率**（`3 %`）、ワイヤは**比率**（`0.03`）。値域 **0 超 0.50 以下**。
+     0 以下では**あらゆる変動が閾値超過**となりイベント駆動サイクルが常時発火して **LLM 費用が暴走する**。
+     50% 超では 1 日で半値になる変動でしか発火せず FR-03 が事実上無効になる。
+   - **クールダウン**: 画面は**時間**（`0.25`）、ワイヤは **`TimeSpan` 文字列**（`"00:15:00"`）。値域 **0 以上 24 時間以下**。
+     24 時間超では同一銘柄が**1 営業日に 1 度も再判定されない**。**0（抑制なし）は正当な設定である**
+     （変動閾値の 0 とは非対称であり、これは意図的である）。
+   - いずれも**変更理由必須**・**監査ログ（監視設定の変更履歴）へ記録**・**版（楽観排他）の対象**。
+   - **変動閾値とクールダウンは別々のフォームである**（サーバ側が項目単位の部分更新を 2 本持つため。
+     1 フォームで両方を送ると「片方だけ成功した」状態を作れる）。アクセシブル名も完全に分ける
+     （`変動閾値を保存` / `クールダウンを保存`。本画面には既に「保存」ボタンが 3 つある）。
+   - **収集間隔は本画面にも置かない。** 裁定（Q11）は「画面から変更しない。起動時構成とする」である。
+
+7. **Stage 1 の最小取引件数（変更可・2026-08-07 追加・#423／[IADR-0165] 決定4〜決定6）**:
+   06_daytrading-review §4.1 条件 3 の件数。**利用者裁定（質問票 第 13 回 Q6 の追加指示）で設定値になった。**
+
+   - **既定 100 件・値域 1〜1000。** 変更理由必須・監査ログ記録・版（楽観排他）の対象（FR-13）。
+   - **運用段階（FR-20）の参照表示の近くに置く**（段階ゲートの合格条件に属する値であるため）。
+     実装は「運用段階と発注先（参照）」節の直後である。
+   - **100 件未満を設定した場合は「統計的な根拠（§4.3）を満たさない設定である」旨の警告を常時表示する。**
+     **警告は設定を妨げない**（保存ボタンを無効化しない）。下げた事実が理由つきで履歴に残ることを担保する。
+   - **保存済みの値の警告はサーバの宣言（`Stage1GateCriteria.belowStatisticalBasis`）に従う**（[IADR-0165] 決定6）。
+     画面が `< 100` を自分で判定すると、警告を出す場所（SC-02・SC-03・Discord）が増えるたびに条件が写経され、
+     1 か所の写し間違いで「下げたのに警告が出ない」状態になる。**入力中の値のみ画面側で即時判定する。**
+   - **変更できるのは条件 3 の件数だけである。** 条件 1（統制違反 0 件）・条件 2（60 営業日）・
+     §4.3 の打ち切り規則（累計 120 営業日で Stage 0 へ差し戻す）には及ばない。**この旨を画面に明記する。**
+   - **計上単位（「約定が成立した新規建て注文 1 件」・分割約定は 1 件・手仕舞いは計上しない）も画面に明記する。**
+     「件」の意味が読み手によって変わると、件数の設定そのものが意味を失う。
+
 ## データ取得・更新（BFF `/bff/*` 経由・`apiFetch`）
 
 | 操作 | 呼び出し | 応答/エラー |
@@ -176,6 +216,11 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す（#196/IADR-0090） |
 | 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す（#196/IADR-0090） |
+| 市場監視パラメータ 取得（#423） | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424・[IADR-0162]） |
+| 市場監視パラメータ 履歴（#423） | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |
+| 変動閾値 保存（#423） | `PUT /monitor/settings/movement-threshold`（`{movementThresholdRatio, reason}`） | 成功=再取得。**400=値域（サーバの `MonitorSettingsBounds` が実効）／理由欠如**、409=競合＋再取得を促す |
+| クールダウン 保存（#423） | `PUT /monitor/settings/cooldown`（`{cooldown, reason}`。`cooldown` は `"HH:mm:ss"`） | 同上 |
+| Stage 1 最小取引件数 保存（#423） | `PUT /risk-controls/settings/stage1-minimum-trade-count`（`{minimumTradeCount, reason}`） | 成功=再取得。**400=値域外（1〜1000）／省略／理由欠如**。**100 件未満は 400 にしない**（警告は設定を妨げない）、409=競合＋再取得を促す |
 
 ## 振る舞い（安全既定）
 
@@ -190,8 +235,12 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 ## スコープ外（後続）
 
 段階の直接変更 UI（段階ゲート承認へ一元化）、
-**監視の変動閾値・クールダウンの変更 UI（#340 で SC-01 §2 へ実装した。本画面には置かない）**、
-実 BFF の `/monitor/*` プロキシ結線（MSP 側合成点・risk-controls の MSP #287 と同様に別リポ後続）。
+**収集間隔の変更 UI**（2026-08-07 の裁定により**実装しない**。起動時構成とする。#423／[IADR-0165] 決定1）。
+
+> **［2026-08-07 改定・#423］** 旧「スコープ外」に挙げていた**変動閾値・クールダウンの変更 UI は本画面へ移管し実装した**
+> （構成要素 6）。#340 は SC-01 §2 へ実装していたが、利用者裁定（質問票 第 13 回 Q12）で SC-01 §2 が廃止されたためである。
+> あわせて **BFF へ `/bff/monitor/settings*` の 4 本を登録した**（[IADR-0165] 決定2）——
+> 「フロントが叩かないため登録しない」という前提は #340 の時点で崩れており、**SC-01 §2 は BFF 未結線のまま存在していた**。
 
 > 監視銘柄（watchlist）変更 UI は **#196（IADR-0090）で実装済み**（上表「監視銘柄」）。計画 `05_screens/01_screens.md` は監視銘柄を
 > SC-01 の運用パラメータ節に置くが、所有サービス単位に画面を分ける方針（IADR-0084）と #196 の指定に従い SC-02 に載せた（環流対象）。

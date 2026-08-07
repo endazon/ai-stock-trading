@@ -5,18 +5,26 @@ import { ApiError } from '@foundation/api/ApiError';
 import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { useBrokerProvider } from '../shared/paperMode';
-import { CollectionSettingsForm } from './CollectionSettingsForm';
 
-// SC-01, FR-17, FR-13, UC-06, IADR-0080, IADR-0155: 設定画面。
+// SC-01, FR-17, UC-06, IADR-0080, IADR-0165: 設定画面。
 //
-// §1 全体前提条件（FR-17）: BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。
-// §2 収集パラメータ（FR-13・#340）: BFF `/bff/monitor/settings`（MarketMonitorService）。**別サービス由来**の
-//    ため独立してロード・縮退する（`CollectionSettingsForm`）。計画は「ConfigurationService 由来」と
-//    書いているが実装は MarketMonitorService である（差異は環流済み）。
+// **本画面は §1 全体前提条件（FR-17）のみの画面である。**
+// データ源は BFF `/bff/assumptions`（ConfigurationService・#19/IADR-0021/0063）。
+//
+// **§2「収集パラメータ」は 2026-08-07 の利用者裁定（質問票 第 13 回 Q11・Q12）で廃止された**（#423）。
+//   収集間隔 … **画面から変更しない。起動時構成とする**（Q11・案 A）。
+//               費用・負荷のパラメータであり、月報レビュー時に構成で変える頻度で足りる。
+//               画面から変えるには稼働中の `BackgroundService` が値を読み直す機構が要り、
+//               その重さに見合う運用上の必要が示されていない。
+//   変動閾値 … **SC-02 へ移した**（Q12・案 B）。権威は MarketMonitorService であり、
+//               監視銘柄と同じ由来サービスである（旧記述の「ConfigurationService 由来」は誤りであった）。
+//
+// **本画面に収集パラメータの入力欄を戻してはならない。** 戻すこと自体が裁定に反する。
 //
 // 変更は利用者のみ（サーバ側 OwnerOnly）、楽観排他（expectedVersion）＋理由必須。
 // 検証(400)・競合(409)はメッセージ表示し、破壊的な自動再試行はしない（安全既定）。
-// リスク上限・監視銘柄は本画面の範囲外である（RiskManagementService 由来のため SC-02。planning#33 の責務分界）。
+// リスク上限・監視銘柄・市場監視パラメータは本画面の範囲外である
+// （RiskManagementService / MarketMonitorService 由来のため SC-02。planning#33 の責務分界）。
 
 interface CommissionSchedule {
   rate: number;
@@ -240,8 +248,17 @@ export function SettingsPage() {
       <PaperModeBanner provider={brokerProvider} />
       <h1>設定</h1>
       <p>
-        全体前提条件（税・手数料・為替・費用上限。FR-17）と収集パラメータ（変動閾値・収集間隔。FR-13）の閲覧と変更を行います。
-        変更は利用者のみが行えます。リスク上限・監視銘柄は「リスク設定」画面（SC-02）で扱います。
+        全体前提条件（税・手数料・為替・費用上限。FR-17）の閲覧と変更を行います。変更は利用者のみが行えます。
+        リスク上限・監視銘柄・<strong>市場監視パラメータ（変動閾値・クールダウン）</strong>は
+        「リスク設定」画面（SC-02）で扱います。
+      </p>
+      {/* SC-01, FR-13, #423, IADR-0165 決定1: 収集間隔は**起動時構成**である。
+          入力欄を作らないだけでは「未実装の項目」に見え、次に画面を触る者が善意で実装してしまう。
+          **変更しないことが裁定である**ことを画面に明記する（`role="note"` とし `alert` にはしない。
+          常時表示される静的な注記であり、他の警告と同じ緊急度で読ませると警告全体が軽くなる）。 */}
+      <p role="note">
+        収集間隔（情報収集・市場監視のポーリング間隔）は<strong>本画面からも API からも変更しません</strong>。
+        起動時の構成値として運用します（費用・負荷のパラメータであり、月報レビュー時に構成で見直します）。
       </p>
 
       {status === 'loading' && <p role="status">読み込み中…</p>}
@@ -329,11 +346,6 @@ export function SettingsPage() {
           <HistoryView status={historyStatus} history={history} />
         </>
       )}
-
-      {/* SC-01 §2, FR-13, #340, IADR-0155: 収集パラメータ（変動閾値・収集間隔）。
-          由来サービスが異なる（MarketMonitorService）ため、§1（ConfigurationService）の取得可否に
-          連動させず独立してロード・縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
-      <CollectionSettingsForm />
     </section>
   );
 }

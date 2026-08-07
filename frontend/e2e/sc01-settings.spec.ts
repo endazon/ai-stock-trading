@@ -5,7 +5,6 @@ import {
   pathWithRoles,
   ASSUMPTIONS,
   ASSUMPTIONS_HISTORY,
-  MONITOR_SETTINGS,
 } from './fixtures';
 
 // SC-01, FR-17, UC-06, IADR-0087: 設定画面（全体前提条件の閲覧/変更）の実ブラウザ E2E。
@@ -38,8 +37,8 @@ test.describe('SC-01 設定（#187）', () => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
 
-    // #340: `exact: true` を外さないこと。§2（収集パラメータ）が「収集パラメータの変更履歴」
-    // 「収集パラメータの変更理由」を同一画面へ足したため、部分一致だと 2 要素へ解決して
+    // #423 で §2 が廃止され同名衝突は解消したが、`exact: true` は**外さない**。
+    // 本画面へ新しい節（履歴を伴うもの）が足されたときに、部分一致だと 2 要素へ解決して
     // strict mode 違反になる。**§1 の要素だけを指していることを名前で保証する。**
     const table = page.getByRole('table', { name: '変更履歴', exact: true });
     await expect(table).toBeVisible();
@@ -109,105 +108,43 @@ test.describe('SC-01 設定（#187）', () => {
   });
 });
 
-// SC-01 §2, FR-13, FR-03, UC-06, #340, IADR-0155: 収集パラメータ（変動閾値・収集間隔）。
+// SC-01, FR-13, UC-06, #423, IADR-0165 決定1: **§2「収集パラメータ」の廃止**（2026-08-07 の利用者裁定）。
 //
-// 計画は変動閾値と収集間隔の閲覧・変更を求めるが、**収集間隔には供給が無い**（起動時構成のみ）。
-// 動かない入力欄を置くと「変更できたつもり」を生むため、入力欄を作らず変更できない事実を明示する。
-test.describe('SC-01 §2 収集パラメータ（#340）', () => {
-  test('変動閾値を百分率で表示し、理由必須で保存できる', async ({ page }) => {
-    let putBody: unknown = null;
-    await installBff(page, {
-      ...defaultBff(),
-      'PUT /monitor/settings/movement-threshold': (route) => {
-        putBody = route.request().postDataJSON();
-        return { status: 200, body: MONITOR_SETTINGS };
-      },
-    });
+//   収集間隔 … **画面から変更しない。起動時構成とする**（質問票 第 13 回 Q11・案 A）
+//   変動閾値 … **SC-02 へ移す**（同 Q12・案 B。権威は MarketMonitorService であり監視銘柄と同じ由来である）
+//
+// **本節はすべて否定形である。**「実装していない」と「実装してはならない」は別であり、
+// 前者のままにすると次に画面を触る者が「未実装の項目」として素直に実装してしまう。
+test.describe('SC-01 §2 の廃止（#423）', () => {
+  test('収集パラメータの節・入力欄・保存操作が存在しない', async ({ page }) => {
+    await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
+    await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
 
-    const threshold = page.getByLabel('変動閾値 %');
-    await expect(threshold).toHaveValue('3');
-
-    // 理由が空欄のうちは保存できない（監査のため理由必須）。
-    await expect(page.getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
-
-    await threshold.fill('5');
-    await page.getByLabel('収集パラメータの変更理由').fill('ボラティリティ上昇');
-    await page.getByRole('button', { name: '変動閾値を保存' }).click();
-
-    await expect(page.getByText('保存しました。')).toBeVisible();
-    // **ワイヤは比率**（5% → 0.05）。百分率のまま送ると閾値が 100 倍になる。
-    expect(putBody).toEqual({ movementThresholdRatio: 0.05, reason: 'ボラティリティ上昇' });
+    await expect(page.getByText('収集パラメータ')).toHaveCount(0);
+    await expect(page.getByLabel(/変動閾値/)).toHaveCount(0);
+    await expect(page.getByLabel(/クールダウン/)).toHaveCount(0);
+    await expect(page.getByLabel(/収集間隔/)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /変動閾値/ })).toHaveCount(0);
   });
 
-  test('収集間隔の入力欄が存在せず、変更できないことを明示する', async ({ page }) => {
+  test('MarketMonitorService（/bff/monitor/*）を 1 度も呼ばない', async ({ page }) => {
+    const monitorCalls: string[] = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/bff/monitor')) monitorCalls.push(req.url());
+    });
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/settings', ['trading-owner']));
+    await expect(page.getByRole('form', { name: '全体前提条件の変更' })).toBeVisible();
+
+    expect(monitorCalls).toEqual([]);
+  });
+
+  test('収集間隔は起動時構成である旨と SC-02 への導線を明示する', async ({ page }) => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/settings', ['trading-owner']));
 
-    // #424, IADR-0162: 収集間隔は**供給が無い**状態として規約の文言で示す。
-    // 文言は `<strong>` を挟んで複数のテキストノードへ分かれるため、
-    // **注記要素の textContent** に対して検証する（`getByText` の完全一致では拾えない）。
-    const intervalNote = page.getByRole('note').filter({ hasText: '現在の収集間隔:' });
-    // 定数を import せず**リテラルで固定する**。規約文言そのものが計画の裁定内容であり、
-    // 定数を参照すると定数を書き換えたときにテストが追随してしまい退行を検知できない。
-    await expect(intervalNote).toContainText('取得できていません（供給元がありません）');
-    await expect(intervalNote).toContainText('本画面から閲覧・変更できません。');
-    // **否定形**: 収集間隔の入力欄は 1 つも無い。
-    await expect(page.getByLabel(/収集間隔/)).toHaveCount(0);
-  });
-
-  test('値域外の変動閾値は保存できない（サーバへ送らない）', async ({ page }) => {
-    let putCount = 0;
-    await installBff(page, {
-      ...defaultBff(),
-      'PUT /monitor/settings/movement-threshold': () => {
-        putCount += 1;
-        return { status: 200, body: MONITOR_SETTINGS };
-      },
-    });
-    await page.goto(pathWithRoles('/settings', ['trading-owner']));
-
-    await page.getByLabel('収集パラメータの変更理由').fill('検証');
-    await page.getByLabel('変動閾値 %').fill('51');
-
-    await expect(page.getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
-    expect(putCount).toBe(0);
-  });
-
-  test('楽観排他の競合（409）は自動再試行せず再読込を促す', async ({ page }) => {
-    let putCount = 0;
-    await installBff(page, {
-      ...defaultBff(),
-      'PUT /monitor/settings/movement-threshold': () => {
-        putCount += 1;
-        return { status: 409, body: { title: '競合', detail: '設定が他の更新と競合しました。' } };
-      },
-    });
-    await page.goto(pathWithRoles('/settings', ['trading-owner']));
-
-    await page.getByLabel('変動閾値 %').fill('5');
-    await page.getByLabel('収集パラメータの変更理由').fill('競合検証');
-    await page.getByRole('button', { name: '変動閾値を保存' }).click();
-
-    await expect(
-      page.getByText('競合が発生しました。最新を取得して再試行してください。'),
-    ).toBeVisible();
-    expect(putCount).toBe(1); // 自動再試行しない
-  });
-
-  test('収集パラメータの取得失敗（500）は当該領域のみ縮退する', async ({ page }) => {
-    await installBff(page, {
-      ...defaultBff(),
-      'GET /monitor/settings': { status: 500 },
-    });
-    await page.goto(pathWithRoles('/settings', ['trading-owner']));
-
-    // #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で示す。
-    // 「値が 0/空である」ことと区別できるよう、**「確認できていません」まで含めて**固定する。
-    const unavailable = page.getByRole('alert').filter({ hasText: '収集パラメータを' });
-    await expect(unavailable).toContainText('取得できていません（供給元がありません）');
-    await expect(unavailable).toContainText('値が無いのではなく、確認できていません。');
-    // §1（ConfigurationService 由来）は独立して表示される。
-    await expect(page.getByText(/現在のバージョン:\s*3/)).toBeVisible();
+    await expect(page.getByText(/本画面からも API からも変更しません/)).toBeVisible();
+    await expect(page.getByText(/市場監視パラメータ（変動閾値・クールダウン）/)).toBeVisible();
   });
 });

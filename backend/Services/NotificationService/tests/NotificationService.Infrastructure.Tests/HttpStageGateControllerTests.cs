@@ -50,6 +50,73 @@ public class HttpStageGateControllerTests
         result.Message.Should().Contain("endazon");
     }
 
+    // ---- AST #423, FR-20, SC-02, §4.1 条件 3 / §4.3, IADR-0165 決定6 ----
+    //
+    // 計画は「100 件未満を設定した場合、**画面と昇格承認の双方**に『統計的な根拠（§4.3）を満たさない
+    // 設定である』旨の警告を常時表示する」と定める。Discord は昇格承認の窓口であり、承認者が読むのは
+    // 本 `/stage status` の応答である。
+    //
+    // **判定は Risk が `belowStatisticalBasis` で宣言したものに従う**（閾値 100 をここに写経しない）。
+
+    private const string StatusBodyWithLoweredTradeCount = """
+    {
+        "currentStage": 1,
+        "currentSettings": { "stage": 1, "mode": 0, "capitalCapRatio": 1.00 },
+        "history": [],
+        "promotion": { "targetStage": 2, "eligible": false, "unmetCriteria": [10] },
+        "withdrawal": { "triggered": false, "reason": null, "haltNewEntries": false, "proposedStage": null },
+        "stage1Criteria": { "targetTradingDays": 60, "minimumTradeCount": 30, "maximumTradingDays": 120, "belowStatisticalBasis": true }
+    }
+    """;
+
+    private const string StatusBodyWithDefaultTradeCount = """
+    {
+        "currentStage": 1,
+        "currentSettings": { "stage": 1, "mode": 0, "capitalCapRatio": 1.00 },
+        "history": [],
+        "promotion": { "targetStage": 2, "eligible": false, "unmetCriteria": [10] },
+        "withdrawal": { "triggered": false, "reason": null, "haltNewEntries": false, "proposedStage": null },
+        "stage1Criteria": { "targetTradingDays": 60, "minimumTradeCount": 100, "maximumTradingDays": 120, "belowStatisticalBasis": false }
+    }
+    """;
+
+    [Fact]
+    public async Task 最小取引件数が100未満なら昇格承認の窓口に警告を出す()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, StatusBodyWithLoweredTradeCount);
+
+        var result = await Controller(handler).GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Message.Should().Contain("最小取引件数");
+        result.Message.Should().Contain("30 件");
+        result.Message.Should().Contain("統計的な根拠");
+    }
+
+    // 逆方向の否定形。**満たしているのに警告を出すと、警告が常時出て誰も読まなくなる。**
+    [Fact]
+    public async Task 最小取引件数が既定なら警告を出さない()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, StatusBodyWithDefaultTradeCount);
+
+        var result = await Controller(handler).GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Message.Should().NotContain("統計的な根拠");
+    }
+
+    // 旧版 Risk（本項目を返さない）でも壊れない・警告も出さない（宣言が無いものを推測しない）。
+    [Fact]
+    public async Task 合格条件を返さない応答では警告を出さず整形も壊れない()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, StatusBody);
+
+        var result = await Controller(handler).GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Message.Should().NotContain("統計的な根拠");
+    }
+
     [Fact]
     public async Task 昇格は_transition_へ_targetStage_つきで_POST_し受理を返す()
     {

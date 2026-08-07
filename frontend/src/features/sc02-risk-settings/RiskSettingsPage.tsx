@@ -35,6 +35,8 @@ import {
   wireToLimitInput,
 } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
+import { MonitorParametersForm } from './MonitorParametersForm';
+import { Stage1TradeCountForm } from './Stage1TradeCountForm';
 import { WatchlistForm } from './WatchlistForm';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, ADR-0008, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
@@ -265,6 +267,16 @@ export function RiskSettingsPage() {
             }}
           />
           <StageView stage={current.stage} provider={current.brokerProvider} />
+          {/* SC-02, FR-20, FR-13, #423, IADR-0165 決定4: Stage 1 の最小取引件数。
+              計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に
+              属する値であるため）。したがって StageView の直後に置く。 */}
+          <Stage1TradeCountForm
+            current={current.stage1MinimumTradeCount}
+            onSaved={async () => {
+              await loadCurrent();
+              await loadHistory();
+            }}
+          />
           <BrokerProviderForm
             current={current.brokerProvider}
             stageMode={current.stage.mode}
@@ -283,6 +295,12 @@ export function RiskSettingsPage() {
       {/* SC-02, FR-03, FR-13, IADR-0090: 監視銘柄（watchlist）セクション。別サービス（MarketMonitorService `/monitor/watchlist`）を
           消費するため、リスク設定の取得可否に連動させず独立してロード/縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
       <WatchlistForm />
+
+      {/* SC-02, FR-03, FR-13, #423, IADR-0165 決定2: 市場監視パラメータ（変動閾値・クールダウン）。
+          **2026-08-07 の裁定で SC-01 §2 から移管された。** 計画は「**監視銘柄の近くに置く**」と定める
+          ——「どの銘柄を、どれだけ動いたら」は 1 つの設定だからである。したがって WatchlistForm の直後に置く。
+          監視銘柄と同じ MarketMonitorService 由来のため、同じく独立してロード/縮退する。 */}
+      <MonitorParametersForm />
     </section>
   );
 }

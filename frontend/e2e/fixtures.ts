@@ -155,10 +155,15 @@ export function defaultBff(): BffConfig {
     'GET /monitor/watchlist/history': { status: 200, body: WATCHLIST_HISTORY },
     'POST /monitor/watchlist': { status: 200, body: WATCHLIST },
     'DELETE /monitor/watchlist': { status: 200, body: WATCHLIST },
-    // SC-01 §2, FR-13, #340: 収集パラメータ（変動閾値）。PUT は更新後の設定を返す（成功時に再取得される）。
+    // SC-02, FR-03, FR-13, #340, #423: 市場監視パラメータ（変動閾値・クールダウン）。
+    // **2026-08-07 の裁定で SC-01 §2 から SC-02 へ移管された**（権威は MarketMonitorService）。
+    // PUT は更新後の設定を返す（成功時に再取得される）。
     'GET /monitor/settings': { status: 200, body: MONITOR_SETTINGS },
     'GET /monitor/settings/history': { status: 200, body: MONITOR_SETTINGS_HISTORY },
     'PUT /monitor/settings/movement-threshold': { status: 200, body: MONITOR_SETTINGS },
+    'PUT /monitor/settings/cooldown': { status: 200, body: MONITOR_SETTINGS },
+    // FR-20, SC-02, #423: Stage 1 の最小取引件数（既定 100・値域 1〜1000）。
+    'PUT /risk-controls/settings/stage1-minimum-trade-count': { status: 200, body: RISK_SETTINGS },
   };
 }
 

@@ -30,7 +30,8 @@ internal static class RiskSettingsSerialization
             settings.Limits,
             new StageDto(settings.Stage.Stage, settings.Stage.Mode, settings.Stage.CapitalCapRatio),
             settings.ShortSell,
-            settings.BrokerProvider);
+            settings.BrokerProvider,
+            settings.Stage1MinimumTradeCount);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -66,6 +67,12 @@ internal static class RiskSettingsSerialization
             // 計画（FR-20 の 2026-08-07 追記 (3)）が名指しする「読めない行は実弾」に倒れないための構造であり、
             // `?? 既定` という deny-list では未知の値が素通りする（本 issue が是正した欠陥）。
             BrokerProvider = BrokerProviderResolution.Resolve(dto.BrokerProvider),
+            // FR-20, FR-13, SC-02, #423, IADR-0165 決定5: Stage 1 の最小取引件数は**既定 100 へ落として読む**。
+            // 本項目を持たない旧行（null）も、手編集などで入り込んだ値域外の値も同じ扱いである。
+            // **倒す先は「厳しい側」＝合格に遠い値**である（発注先の allow-list＝IADR-0161 と同型だが、
+            // そちらは「外部へ発注しない値」へ倒す）。読めない行が「少ない件数」へ倒れると、
+            // 擬似的に合格へ近づく＝統制が緩む側であり、しかも画面には正常な設定として現れる。
+            Stage1MinimumTradeCount = Stage1TradeCountBounds.Resolve(dto.Stage1MinimumTradeCount),
         };
     }
 
@@ -80,7 +87,11 @@ internal static class RiskSettingsSerialization
         // 設定は単一行 JSON であり、「列を足す」に相当するのはキーを足すことである。旧行の中身は変えず、
         // 既定値は読み取り時に allow-list が与える（IADR-0161 決定2）。
         [property: JsonConverter(typeof(BrokerProviderJsonConverter))]
-        BrokerProvider? BrokerProvider = null);
+        BrokerProvider? BrokerProvider = null,
+        // FR-20, FR-13, SC-02, #423: Stage 1 の最小取引件数。nullable＝本プロパティの追加前に書かれた行
+        // （旧行はキーを持たないため null のまま入り、`Stage1TradeCountBounds.Resolve` が既定 100 を与える）。
+        // **マイグレーションで既存行を書き換えない**（BrokerProvider と同じ規律・IADR-0161 決定2）。
+        int? Stage1MinimumTradeCount = null);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

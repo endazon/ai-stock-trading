@@ -250,26 +250,47 @@ public static class Stage1Aggregation
 /// <summary>
 /// FR-20, #333, 06_daytrading-review §4.1〜§4.3, INDEX 決定 34・42: Stage 1 → Stage 2 の合格条件の閾値。
 /// <para>
-/// **件数の引き下げは行わない**（§4.3）。100 件は「30 件が床・100 件が実用最低限」という実務上の一致点の
-/// 下限であり、下げると条件 3 の目的（運用に足るかを統計的に判断できる）そのものが消える。
+/// **§4.3 の打ち切り・延長の規則の中で件数を自動的に引き下げることはしない。** 一方で
+/// **利用者が設定として引き下げること自体は妨げない**（2026-08-07 の裁定・質問票 第 13 回 Q6 の追加指示）。
+/// 100 件は「30 件が床・100 件が実用最低限」という実務上の一致点の下限であり、下げると条件 3 の目的
+/// （運用に足るかを統計的に判断できる）そのものが消えるため、**100 件未満の設定は警告の対象**である
+/// （<see cref="BelowStatisticalBasis"/>）。
 /// </para>
 /// </summary>
-/// <param name="TargetTradingDays">目標営業日数 **60**（3 か月相当。§4.2）。</param>
-/// <param name="MinimumTradeCount">最小取引件数 **100**（§4.1 条件 3）。</param>
+/// <param name="TargetTradingDays">
+/// 目標営業日数 **60**（3 か月相当。§4.2）。**設定では変えられない**——裁定は
+/// 「この設定は条件 1（統制違反 0 件）・条件 2（60 営業日）には及ばない」と明示している（IADR-0165 決定4）。
+/// </param>
+/// <param name="MinimumTradeCount">
+/// 最小取引件数（§4.1 条件 3）。**既定 100・値域 1〜1000 の設定値**である（2026-08-07 改訂）。
+/// 値域は <see cref="Stage1TradeCountBounds"/> が単独で決める。
+/// </param>
 /// <param name="MaximumTradingDays">
 /// 打ち切りとなる累計営業日数 **120**（60 ＋ 延長 60。§4.3）。
 /// これを経ても件数に届かなければ **Stage 1 を打ち切り Stage 0 へ差し戻す**。
+/// **設定を変更しても本規則は変わらない**（裁定が明示。IADR-0165 決定4）。
 /// </param>
 public sealed record Stage1GateCriteria(
     int TargetTradingDays,
     int MinimumTradeCount,
     int MaximumTradingDays)
 {
-    /// <summary>計画の確定値（60 営業日 / 100 件 / 累計 120 営業日で打ち切り）。</summary>
+    /// <summary>計画の確定値（60 営業日 / 既定 100 件 / 累計 120 営業日で打ち切り）。</summary>
     public static Stage1GateCriteria Default => new(
         TargetTradingDays: 60,
-        MinimumTradeCount: 100,
+        MinimumTradeCount: Stage1TradeCountBounds.Default,
         MaximumTradingDays: 120);
+
+    /// <summary>
+    /// FR-20, SC-02, SC-03, §4.3, #423, IADR-0165 決定6:
+    /// **最小取引件数が統計的根拠（100 件）を下回っているか**を<b>サーバが宣言する</b>。
+    /// <para>
+    /// 画面（SC-02・SC-03）と Discord の <c>/stage status</c> は本値に従い、閾値 100 を写経しない。
+    /// <b>この宣言は昇格を妨げない</b>——裁定は「警告は設定を妨げない。下げた事実が記録に残ることを
+    /// 担保する」と定めており、<see cref="Stage1Gate.Evaluate"/> は本値を参照しない。
+    /// </para>
+    /// </summary>
+    public bool BelowStatisticalBasis => Stage1TradeCountBounds.BelowStatisticalBasis(MinimumTradeCount);
 }
 
 /// <summary>Stage 1 の進捗判定の結果（§4.3 の 3 行 ＋ 期間未達）。</summary>
