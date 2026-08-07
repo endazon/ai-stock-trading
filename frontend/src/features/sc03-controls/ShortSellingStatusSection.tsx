@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { ShortSellingStatusView } from '../risk/contracts';
 import {
   availabilityAmountText,
+  availabilityCountText,
   availabilityRatioText,
   formatAmount,
   formatAt,
@@ -53,6 +54,7 @@ export function ShortSellingStatusSection({
       <MaintenanceMarginView view={view} />
       <ShortExposureView view={view} />
       <PositionsView view={view} />
+      <BuyInCountView view={view} />
       <AutoReductionView view={view} />
     </Section>
   );
@@ -77,6 +79,12 @@ function MaintenanceMarginView({ view }: { view: ShortSellingStatusView }) {
           維持率はブローカーの口座照会に由来しますが、供給元がまだ実装されていません（moomoo SIMULATE
           では照会 API 自体が利用できず、実弾口座での読み取りが要ります）。
           <strong>この統制は現在まったく働いていません。</strong>
+          {/* ADR-0016 決定7（2026-08-07 追記）・05_screens SC-03: **Stage 1 の全期間にわたって表示できない。**
+              「いつか直るバグ」と読まれると、利用者は待ってしまい、統制が無いまま運用が進む。 */}
+          <strong>
+            この値は Stage 1（moomoo SIMULATE）の全期間にわたって表示できません。
+            これは不具合ではなく、供給が無いという事実の表示です。
+          </strong>
         </p>
       )}
       <dl>
@@ -175,6 +183,35 @@ function PositionsView({ view }: { view: ShortSellingStatusView }) {
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+// FR-10, SC-03, ADR-0016 決定15, #424, IADR-0162: 強制買戻しの発生回数。
+//
+// 計画（05_screens SC-03 の供給元の表・2026-08-07 追加）は本項目に **「0 件と表示してはならない」**と
+// 名指しで注記した。**供給が無いことは「強制買戻しが起きていない」ことを意味しない。**
+//
+// 供給されている場合の 0 は**正当な測定結果**であり、そのまま「0」と描く（`availabilityCountText`）。
+// 「0 なら未供給だろう」と画面が推測すると、正当な 0 と未供給が区別できなくなる——**供給可否は
+// サーバの宣言（`buyInCountAvailability`）だけで決める。**
+function BuyInCountView({ view }: { view: ShortSellingStatusView }) {
+  const unsupplied = isNotSupplied(view.buyInCountAvailability);
+  return (
+    <div>
+      <h3>強制買戻しの発生回数</h3>
+      <p role={unsupplied ? 'alert' : undefined}>
+        強制買戻しの発生回数:{' '}
+        <strong>{availabilityCountText(view.buyInCountAvailability, view.buyInCount)}</strong>
+      </p>
+      {unsupplied && (
+        <p role="alert">
+          強制買戻しの発生回数を取得できません。事後推定の台帳はありますが、
+          <strong>推定が起きたときにしか行が書かれない</strong>ため、件数 0 は
+          「ブローカー建玉の観測が一度も届いていない」状態と区別できません。
+          <strong>0 件ではなく「不明」です</strong>——強制買戻しが起きていないことを意味しません。
+        </p>
       )}
     </div>
   );

@@ -183,7 +183,7 @@ public sealed class OrderScreeningService(
 | T-82 | FR-20 | `Stage.Mode` の正準名（`"MoomooReal"` 等）・序数の 10 進表記（`"1"`）は明示一致で読まれる。旧 `TradeMode` の序数 `0` / `1` も同じ意味（回帰）。書き込みは数値の序数 |
 | T-83 | FR-20 | **ストア経由**（`EfRiskSettingsStore.GetCurrent`）でも同じ。`Stage.Mode` が壊れた行でも統制値・ガード・発注先が読める |
 | T-84 | FR-20 | `Stage.Mode` が解決できない行を読んだ設定で実弾の注文を出すと **`StageProhibitsLiveTrading` で拒否される**（安全側の挙動が保たれる） |
-| T-10-257 | FR-10 | `OrderScreeningService` の推定台帳は**必須依存**である（省略可能引数へ戻すと赤くなる構造テスト）。`patternDetector` は**省略可能のまま**であることも同時に固定する（`null` の意味が違う） |
+| T-10-267 | FR-10 | `OrderScreeningService` の推定台帳は**必須依存**である（省略可能引数へ戻すと赤くなる構造テスト）。`patternDetector` は**省略可能のまま**であることも同時に固定する（`null` の意味が違う） |
 
 **ミューテーション（実施必須）**:
 

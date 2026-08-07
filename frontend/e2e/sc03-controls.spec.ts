@@ -83,6 +83,24 @@ test.describe('SC-03 空売りの現況と参照専用性（#340）', () => {
     await expect(reduction.getByText('発動履歴はありません。')).toHaveCount(0);
   });
 
+  // SC-03, ADR-0016 決定15, #424, IADR-0162: 強制買戻しの発生回数。
+  // 計画（05_screens SC-03 の供給元の表）は本項目へ **「0 件と表示してはならない」**と名指しで注記した。
+  // ロケータは**テキスト起点で `.first()` を付ける**——同一画面に「取得できていません（供給元がありません）」を
+  // 出す項目が複数あり、素の getByText は strict mode 違反になる（既存の維持率のテストと同じ理由）。
+  test('強制買戻しの発生回数を「0 件」に見せない（ADR-0016 決定15）', async ({ page }) => {
+    await installBff(page, defaultBff());
+    await page.goto(pathWithRoles('/controls', ['trading-owner']));
+
+    await expect(page.getByRole('heading', { name: '強制買戻しの発生回数', exact: true })).toBeVisible();
+    await expect(page.getByText(/強制買戻しの発生回数:/).first()).toContainText(
+      '取得できていません（供給元がありません）',
+    );
+    // **否定形**: 0 件・「—」に見せない。
+    await expect(page.getByText('強制買戻しの発生回数: 0')).toHaveCount(0);
+    await expect(page.getByText('強制買戻しの発生回数: —')).toHaveCount(0);
+    await expect(page.getByText(/0 件ではなく「不明」です/)).toBeVisible();
+  });
+
   test('維持率割れ自動縮小は 3 統制と別枠で「動かす」統制として描かれる', async ({ page }) => {
     await installBff(page, defaultBff());
     await page.goto(pathWithRoles('/controls', ['trading-owner']));

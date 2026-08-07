@@ -324,7 +324,7 @@ public class BuyInInferenceTests
             RejectionReason.BorrowUnavailable, "借株照会の供給元が無い間はいずれにせよ通らない（フェイルクローズ）");
     }
 
-    // T-10-257（**構造テスト**）: 推定台帳は `OrderScreeningService` の**必須依存**である。
+    // T-10-267（**構造テスト**）: 推定台帳は `OrderScreeningService` の**必須依存**である。
     //
     // #428: 省略可能引数（既定 `null`）で受けていると、`Program.cs` から引数を削っても**コンパイルが通り、
     // テストは全緑のまま、強制買戻し由来の 30 日禁止だけが静かに効かなくなる**（上の T-10-244 を含め、
