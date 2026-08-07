@@ -104,6 +104,15 @@ ADR-0016 決定3 の「照会できない場合は空売り自体を行わない
 適用する。借株料が `null`（照会不能）・`BorrowAvailable == false`（locate 失敗）・文脈そのものが
 `null`（供給経路なし）は、いずれも `BorrowUnavailable` で拒否する。
 
+> **［2026-08-07 追記・本決定の一次ゲートは [IADR-0158](IADR-0158_short-sell-borrow-permit-primary-gate.md) が改めた］**
+> 計画側の裁定（ADR-0016 決定3 の 2026-08-06 改訂・endazon/project-planning#204）により、**空売りの一次ゲートは
+> 借株可否（moomoo `TrdGetMarginRatio.IsShortPermit`）である**ことが確定した（実測では借株在庫が 20 倍以上
+> 開いても `ShortFeeRate` は一律 1.5 であり、**20% 閾値は永久に超えず何も弾かない**）。
+> **本決定のフェイルクローズの構造（3 つの欠落はいずれも `BorrowUnavailable`）は不変**であり、改まったのは
+> 一次ゲートの**位置づけ**と、その入力の**名前と供給元**である——`BorrowAvailable`（一般名「locate が
+> 成立したか」）は **`ShortPermit`** へ改称し、供給元を `IsShortPermit` 一本に名指しした（[#417](https://github.com/endazon/ai-stock-trading/issues/417)）。
+> 拒否理由は既存の `BorrowUnavailable` のままであり、**新しいコードは追加していない**。
+
 **供給元（moomoo の借株照会・建玉射影・コーポレートアクション）は本 issue の範囲外**である。
 決定3 の成否は #342 の PoC 項目3 が確認し、不成立なら空売りフラグを恒久的に無効とする。
 判定コアだけを先に確定しても、既定の縮退が「空売りしない」である限り危険は生じない。
