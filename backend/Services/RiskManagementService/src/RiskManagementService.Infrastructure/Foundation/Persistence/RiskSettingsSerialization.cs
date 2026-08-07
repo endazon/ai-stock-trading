@@ -7,7 +7,12 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
 
 // IADR-0012: RiskManagementSettings の JSON 直列化。ドメイン型の Guard は IReadOnlySet/IReadOnlyCollection を
 // 用いており System.Text.Json が逆直列化時に具象化できないため、具象コレクションの永続 DTO を介して双方向変換する。
-// Limits/Stage/BannedSymbol は位置/必須プロパティのレコードで、標準の直列化が往復可能。
+// Limits/BannedSymbol は位置/必須プロパティのレコードで、標準の直列化が往復可能。
+//
+// FR-20 (3), #431, IADR-0163 決定1: Stage も **DTO（StageDto）を介す**。段階の既定発注先（StageSettings.Mode）は
+// 現在の発注先（SettingsDto.BrokerProvider）と**同じ BrokerProvider 型**であり、同じ allow-list を通す必要がある。
+// ドメイン型 StageSettings へ [JsonConverter] を直付けすると永続化の関心がドメインへ漏れるため、GuardDto と
+// 同じ形で DTO を挟む。
 internal static class RiskSettingsSerialization
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
@@ -23,7 +28,7 @@ internal static class RiskSettingsSerialization
                 settings.Guard.ProhibitManipulativeOrderPatterns,
                 settings.Guard.ConfiguredAccountType),
             settings.Limits,
-            settings.Stage,
+            new StageDto(settings.Stage.Stage, settings.Stage.Mode, settings.Stage.CapitalCapRatio),
             settings.ShortSell,
             settings.BrokerProvider);
         return JsonSerializer.Serialize(dto, Options);
@@ -46,7 +51,11 @@ internal static class RiskSettingsSerialization
             // したがって「旧行を既定で読む」ことは統制を緩めない——照会結果が無ければ新規建ては止まる。
             ConfiguredAccountType = dto.Guard.ConfiguredAccountType ?? AccountType.Margin,
         };
-        return new RiskManagementSettings(guard, dto.Limits, dto.Stage)
+        // FR-20 (3), #431, IADR-0163 決定1: 段階の既定発注先は StageDto.Mode の converter が **allow-list** で
+        // 解決済みである（解決できない値は内蔵 paper）。ここで再度 Resolve を挟まない——解決の単一情報源を
+        // converter に保ち、属性を外す変異がテストで検知できる状態にしておくためである。
+        var stage = new StageSettings(dto.Stage.Stage, dto.Stage.Mode, dto.Stage.CapitalCapRatio);
+        return new RiskManagementSettings(guard, dto.Limits, stage)
         {
             // FR-10, ADR-0016, #329 第 2 段階: 空売り統制を持たない旧行は**既定（無効）**として読む。
             // 「読めない行は空売り有効」に倒れないことが要点である（フェイルクローズ）。
@@ -64,7 +73,7 @@ internal static class RiskSettingsSerialization
     private sealed record SettingsDto(
         GuardDto Guard,
         RiskLimitSettings Limits,
-        StageSettings Stage,
+        StageDto Stage,
         ShortSellSettings? ShortSell = null,
         // FR-20 (3), #334, #422: 発注先。nullable＝本プロパティの追加前に書かれた行（旧行はキーを持たないため
         // null のまま allow-list へ入り内蔵 paper になる）。**マイグレーションで既存行を書き換えない**——
@@ -81,10 +90,30 @@ internal static class RiskSettingsSerialization
         bool ProhibitManipulativeOrderPatterns,
         // FR-19, #375: 利用者が設定した口座種別。nullable＝本プロパティの追加前に書かれた行。
         AccountType? ConfiguredAccountType = null);
+
+    // FR-20 (3), #431, IADR-0161 / IADR-0163 決定1: 段階設定の永続 DTO。
+    //
+    // **`Mode` は現在の発注先と同じ `BrokerProvider` 型であり、同じ allow-list を通す。** 属性を持たない
+    // 標準の直列化では、未知の**序数**は素通りし（`!= MoomooReal` により実弾は止まるが構造の担保ではない）、
+    // 未知の**文字列**・真偽値・オブジェクト・配列は `JsonException` になって**設定行全体が読めなくなる**
+    // ——統制値・ガード・段階もろとも失われ、`GetCurrent` が 500 を返しリスク判定そのものが動かない。
+    // IADR-0161 が「採らない」と明記した挙動そのものであり、その適用範囲を本 DTO へ広げる。
+    //
+    // **プロパティ名・順序・ワイヤ形式は `StageSettings` と同一に保つ**（`stage` / `mode` / `capitalCapRatio`、
+    // 書き込みは数値の序数）。変えると旧行・旧版が読めなくなる。旧行を書き換える移行は行わない
+    // （既定は読み取り時に allow-list が与える。IADR-0161 決定2）。
+    private sealed record StageDto(
+        TradingStage Stage,
+        [property: JsonConverter(typeof(BrokerProviderJsonConverter))]
+        BrokerProvider Mode,
+        decimal CapitalCapRatio);
 }
 
 /// <summary>
-/// FR-20 (3), #422, IADR-0161 決定2: 設定ストア（単一行 JSON）の発注先を <b>allow-list</b> で読む変換器。
+/// FR-20 (3), #422, #431, IADR-0161 決定2 / IADR-0163 決定1: 設定ストア（単一行 JSON）の発注先を
+/// <b>allow-list</b> で読む変換器。<b>現在の発注先（<c>SettingsDto.BrokerProvider</c>）と段階の既定発注先
+/// （<c>StageDto.Mode</c>）の両方に適用する</b>——同じ設定行の隣り合う 2 項目は同じ型であり、
+/// 片方だけを塞いでも同じ到達経路（手編集された行・外部ツールが書いた行）が残る。
 /// <para>
 /// <b>どのトークンが来ても例外を投げない。</b>標準の enum 変換は、数値なら範囲外の序数をそのまま通し、
 /// 文字列・真偽値・オブジェクトなら <c>JsonException</c> を投げる。後者は一見フェイルクローズだが、

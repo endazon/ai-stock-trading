@@ -2,7 +2,7 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
-related_ids: [FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0153, IADR-0158, IADR-0159, IADR-0160]
+related_ids: [FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-07
@@ -302,6 +302,12 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
   単独供給（`BuyInBanSupply`）で共有する。
 - **文脈は借株照会が無いため今も組めない。** そこで**禁止期限だけを単独で供給**する（IADR-0159 決定5）。
   維持率・エクスポージャを 0 で埋めた偽の文脈は作らない（**値を発明しない**）。両方から立っても理由は 1 件である。
+- **推定台帳は `OrderScreeningService` の必須依存である**（#428・
+  [IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定2）。省略可能引数で受けていると、
+  **配線を削ってもコンパイルが通りテストは全緑のまま 30 日禁止だけが静かに効かなくなる**——
+  **推定の不在は「強制買戻しが起きていない」ことを意味しない**（`BrokerPositionsObservedHandler` と同じ規律）。
+  一方 `patternDetector`（相場操縦検出器）は**省略可能のまま**である——「検出器を構成していない」は正当な状態であり
+  `null` の意味が違う。供給（`BuyInBanSupply`）は常に組むが、禁止が無ければ `BanUntil` は `null` である。
 
 #### 記録先と「推定」の明示（ADR-0016 決定4・決定15）
 

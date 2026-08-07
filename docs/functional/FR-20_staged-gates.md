@@ -2,7 +2,7 @@
 title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
-related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149]
+related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163]
 author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-05
@@ -151,6 +151,25 @@ SC-02 の警告モーダルと一覧警告には**「段階が実弾を既定と
 - **`Enum.IsDefined` に置き換えない。** 4 値目を末尾へ足した瞬間に未検討の値が黙って通る。
 - **旧行はマイグレーションで書き換えない。** 設定は単一行 JSON であり、既定値は**読み取り時**に与える。
 - **読み取りは黙って倒し、書き込み（変更要求）は `UnknownProvider` で拒否する**（非対称は意図的）。
+
+#### 適用範囲 — **設定行の同じ型の項目すべて**（#431・[IADR-0163](../adr/IADR-0163_allow-list-and-required-dependency-scope.md) 決定1）
+
+設定ストア（単一行 JSON）には `BrokerProvider` 型の項目が **2 つ**ある。**両方**が上表の allow-list を通る。
+
+| 項目 | 意味 | 経路 |
+| --- | --- | --- |
+| `brokerProvider` | **現在の**発注先（独立した軸） | `SettingsDto.BrokerProvider` |
+| `stage.mode` | **段階の既定**発注先（「その段階で通常選ぶ発注先」であり現在値ではない） | `StageDto.Mode` |
+
+- `stage.mode` はドメイン型 `StageSettings` の一部だが、**`StageSettings` へ `[JsonConverter]` を直付けしない**
+  （永続化の関心がドメインへ漏れる。同型は HTTP 応答・イベントでも往復する）。`GuardDto` と同じ形で
+  **`StageDto` を挟む**。
+- 解決できない `stage.mode` は内蔵 `paper` へ倒れ、`Stage.Mode != MoomooReal` により**実弾は止まる**
+  （§2 の `StageProhibitsLiveTrading`）。**新しい既定を発明しない**。
+- **DTO → ドメインの写像で二重に `Resolve` を呼ばない。** 解決の単一情報源は converter であり、
+  二重化すると「属性を外す」変異がテストで検知できなくなる。
+- 片方だけを塞いだ状態では、**未知の文字列・別の型が `JsonException` になって設定行全体が読めなくなる**
+  （統制値・ガード・段階もろとも失われ `GetCurrent` が 500 を返す）。到達経路は現在の発注先と同一である。
 
 ### 2. 発注前の強制（`RiskEvaluator`）
 

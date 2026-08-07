@@ -173,14 +173,16 @@ builder.Services.AddSingleton(
 builder.Services.AddScoped<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector,
     ManipulativeOrderPatternDetector>();
 // OrderScreeningService は検出器を GetService（null 許容）で受けるため、上の登録により相場操縦判定が有効になる。
+// FR-10, #428, IADR-0163 決定2: 推定台帳は**必須引数**であり、下の行を削るとコンパイルが通らない
+// （省略可能引数のままだと、削っても全緑のまま 30 日禁止だけが静かに効かなくなる）。
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
     sp.GetRequiredService<ILockoutStore>(),
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IBusinessCalendar>(),
-    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>(),
-    sp.GetRequiredService<IBuyInInferenceStore>()));
+    sp.GetRequiredService<IBuyInInferenceStore>(),
+    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, ADR-0003, IADR-0015: 損切りの機械執行（StopLossTriggered → Close の OrderApproved・無条件）。
 builder.Services.AddScoped<StopLossExecutionService>();
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
