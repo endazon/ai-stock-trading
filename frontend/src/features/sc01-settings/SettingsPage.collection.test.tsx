@@ -18,6 +18,7 @@ import {
   CONTRACT_MONITOR_SETTINGS,
   CONTRACT_MONITOR_SETTINGS_HISTORY,
 } from '../monitor/contractFixtures';
+import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 
 const ASSUMPTIONS = {
   assumptions: {
@@ -79,9 +80,13 @@ describe('SC-01 §2 収集パラメータ（#340）', () => {
 
     // **否定形**: 収集間隔の入力欄は存在しない（動かない入力欄を置かない）。
     expect(screen.queryByLabelText(/収集間隔/)).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/収集間隔は本画面から閲覧・変更できません。/),
-    ).toBeInTheDocument();
+    // SC-01 §2, #424, IADR-0162: 供給が無い値は**規約の文言**で明示する（05_screens 共通規約）。
+    const note = screen.getByText(/現在の収集間隔:/);
+    expect(note).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // **否定形**: 0 や「—」で「値がある」ように見せない。
+    expect(note).not.toHaveTextContent('現在の収集間隔: 0');
+    expect(note).not.toHaveTextContent('現在の収集間隔: —');
+    expect(screen.getByText(/本画面から閲覧・変更できません。/)).toBeInTheDocument();
     expect(screen.getByText(/値を読み書きする経路がありません/)).toBeInTheDocument();
   });
 
@@ -179,7 +184,11 @@ describe('SC-01 §2 収集パラメータ（#340）', () => {
     mockBff({ settings: 'fail', history: 'fail' });
     render(<SettingsPage />);
 
-    expect(await screen.findByText('収集パラメータを取得できませんでした。')).toBeInTheDocument();
+    // #424: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で明示する。
+    const notice = await screen.findByText(/値が無いのではなく、確認できていません/);
+    expect(notice).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // **否定形**: 「収集パラメータはありません」のように「値が無い」とは書かない。
+    expect(notice).not.toHaveTextContent('—');
     // §1（ConfigurationService 由来）は独立して表示される。
     expect(screen.getByRole('form', { name: '全体前提条件の変更' })).toBeInTheDocument();
   });

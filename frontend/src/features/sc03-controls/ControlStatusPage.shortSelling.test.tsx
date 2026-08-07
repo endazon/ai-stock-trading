@@ -69,8 +69,27 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
     await screen.findByRole('heading', { name: '維持率' });
 
     // 「現在の維持率: 0.0%」のような**正常に見える表示**が無いことを否定形で固定する。
+    // **行の textContent で見る**——値は <strong> の中にあり、`queryByText` の既定は要素の直下テキストしか
+    // 見ないため、`queryByText(/現在の維持率: 0\.0%/)` だけでは何も守れない（#424 で是正）。
+    const line = screen.getByText(/現在の維持率:/);
+    expect(line).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    expect(line).not.toHaveTextContent('0.0%');
+    expect(line).not.toHaveTextContent('—');
+    expect(line).not.toHaveTextContent('$0');
     expect(screen.queryByText(/現在の維持率: 0\.0%/)).not.toBeInTheDocument();
     expect(screen.queryByText(/現在の維持率: —/)).not.toBeInTheDocument();
+  });
+
+  it('維持率が未供給のとき Stage 1 の全期間表示できない事実を「不具合ではない」と明示する', async () => {
+    // ADR-0016 決定7（2026-08-07 追記）・05_screens SC-03: 維持率は実弾口座のヘッダを要し、
+    // moomoo SIMULATE では照会 API 自体が失敗する。**「そのうち直るバグ」と読まれると、利用者は
+    // 統制が無いまま待ってしまう。**
+    mockBff(BASE());
+    render(<ControlStatusPage />);
+    await screen.findByRole('heading', { name: '維持率' });
+
+    expect(screen.getByText(/Stage 1（moomoo SIMULATE）の全期間にわたって表示できません/)).toBeInTheDocument();
+    expect(screen.getByText(/これは不具合ではなく、供給が無いという事実の表示です/)).toBeInTheDocument();
   });
 
   it('維持率が供給されているとき、値・適用閾値・回復目標（閾値 + 5pt）を表示する', async () => {
@@ -89,6 +108,12 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
     expect(screen.getByText('45.0%')).toBeInTheDocument();
     // 供給があるときは「働いていません」の警告を出さない（警告が常時出ると誰も読まなくなる）。
     expect(screen.queryByText(/この統制は現在まったく働いていません/)).not.toBeInTheDocument();
+    // #424: 供給が始まれば「Stage 1 の全期間にわたって表示できません」も消える
+    // （画面はサーバの宣言に追随する。フロントへ「未供給」と書き込んでいない証拠でもある）。
+    expect(screen.queryByText(/全期間にわたって表示できません/)).not.toBeInTheDocument();
+    // 値の位置（維持率の行そのもの）に未供給の文言が残っていないことを、行の textContent で確かめる。
+    expect(screen.getByText(/現在の維持率:/)).toHaveTextContent('38.0%');
+    expect(screen.getByText(/現在の維持率:/)).not.toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
   });
 
   it('回復目標のオフセット（+5 ポイント）を応答から取り、画面に直書きしない', async () => {
@@ -159,6 +184,65 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
     // 「0 ではなく不明」であることを利用者に伝える（費用が発生していないと読ませない）。
     expect(screen.getByText(/0 ではなく「不明」です/)).toBeInTheDocument();
     expect(screen.queryByText(/借株料の累計: \$0/)).not.toBeInTheDocument();
+  });
+
+  // ---- 強制買戻しの発生回数（ADR-0016 決定15・#424・IADR-0162） ----
+
+  it('強制買戻しの発生回数は未供給として明示され、0 件と表示しない', async () => {
+    // 計画（05_screens SC-03 の供給元の表）は本項目へ **「0 件と表示してはならない」**と名指しで注記した。
+    mockBff(BASE());
+    render(<ControlStatusPage />);
+
+    const line = await screen.findByText(/強制買戻しの発生回数:/);
+    expect(line).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // **否定形（最重要）**: 0 にも「—」にもしない。
+    expect(line).not.toHaveTextContent('強制買戻しの発生回数: 0');
+    expect(line).not.toHaveTextContent('強制買戻しの発生回数: —');
+    expect(screen.getByText(/0 件ではなく「不明」です/)).toBeInTheDocument();
+  });
+
+  it('強制買戻しが供給されていれば 0 件を「0」として表示する（正当な 0 を未供給へ倒さない）', async () => {
+    // **逆方向の否定形。** 「0 なら未供給だろう」と画面が推測すると、正当な 0（本当に 1 件も
+    // 起きていない）と未供給が区別できなくなる——供給可否は**サーバの宣言だけ**で決める。
+    mockBff({ ...BASE(), buyInCountAvailability: METRIC_AVAILABLE, buyInCount: 0 });
+    render(<ControlStatusPage />);
+
+    const line = await screen.findByText(/強制買戻しの発生回数:/);
+    expect(line).toHaveTextContent('強制買戻しの発生回数: 0');
+    expect(line).not.toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // 供給されている 0 に「不明です」の警告を出さない（正常値として描く）。
+    expect(screen.queryByText(/0 件ではなく「不明」です/)).not.toBeInTheDocument();
+  });
+
+  it('強制買戻しが供給されていれば件数をそのまま表示する', async () => {
+    mockBff({ ...BASE(), buyInCountAvailability: METRIC_AVAILABLE, buyInCount: 2 });
+    render(<ControlStatusPage />);
+
+    expect(await screen.findByText(/強制買戻しの発生回数:/)).toHaveTextContent('強制買戻しの発生回数: 2');
+  });
+
+  // ---- 正当な 0 の描画（3 状態のうち「値が 0」を未供給へ倒さない） ----
+
+  it('供給されている 0（空売り比率 0.0% ・借株料 $0）を未供給として描かない', async () => {
+    // 05_screens「供給が無い値の表示規約」: **「値が 0」は正当な測定結果**であり正常値として表示する。
+    // 画面が「0 かどうか」から供給有無を推測していないことを、ここで両方向に固定する。
+    mockBff({
+      ...BASE(),
+      shortExposureAvailability: METRIC_AVAILABLE,
+      shortExposureRatio: 0,
+      borrowFeeAvailability: METRIC_AVAILABLE,
+      totalAccruedBorrowFeeUsd: 0,
+    });
+    render(<ControlStatusPage />);
+
+    const exposure = await screen.findByText(/現在の空売り比率:/);
+    expect(exposure).toHaveTextContent('0.0%');
+    expect(exposure).not.toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    const borrow = screen.getByText(/借株料の累計:/);
+    expect(borrow).toHaveTextContent('$0');
+    expect(borrow).not.toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // 供給されているのに「0 ではなく不明です」と警告しない。
+    expect(screen.queryByText(/0 ではなく「不明」です/)).not.toBeInTheDocument();
   });
 
   // ---- 維持率割れによる自動縮小（05_screens 2026-08-02 追加） ----

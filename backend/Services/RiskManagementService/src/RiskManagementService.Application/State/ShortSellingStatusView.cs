@@ -16,6 +16,9 @@ namespace AiStockTrading.RiskManagement.Application.State;
 // 画面が嘘をつき続ける（誰も気づかない・逆向きの同型事故）。
 public sealed record ShortSellingStatusView(
     // ---- 維持率（ADR-0016 決定7・画面最上位） ----
+    // **Stage 1 の全期間にわたって表示できない**（ADR-0016 決定7 の 2026-08-07 追記・ADR-0019 PoC 項目 3）。
+    // moomoo SIMULATE では照会 API 自体が失敗し、実弾口座のヘッダを要するためである。
+    // **これは実装の不具合ではなく、供給が無いという事実の正しい表現である**（05_screens 2026-08-07）。
     MetricAvailability MaintenanceMarginAvailability,
     // 現在の維持率（純資産 ÷ 建玉評価額）。Available のときのみ値を持つ。
     decimal? MaintenanceMarginRatio,
@@ -46,7 +49,14 @@ public sealed record ShortSellingStatusView(
     // 発動履歴の供給可否。**発火元（維持率）が無い間は NotSupplied** であり、空列＝「発動なし」と
     // 区別する。区別しないと「統制が働いていて発動が無かった」と読めてしまう。
     MetricAvailability ReductionHistoryAvailability,
-    IReadOnlyList<MaintenanceMarginReductionRecordView> ReductionHistory);
+    IReadOnlyList<MaintenanceMarginReductionRecordView> ReductionHistory,
+
+    // ---- 強制買戻しの発生回数（ADR-0016 決定15・05_screens SC-03 の供給元の表・#424・IADR-0162 決定2） ----
+    // **供給元が無いため現状は常に NotSupplied。0 件と表示してはならない**（計画が名指しで禁じた向き）。
+    // 推定台帳（#419・IADR-0159）は入ったが、台帳は**推定が起きたときにしか行を書かない**ため、
+    // 行数 0 は「観測した結果 0 件だった」と「ブローカ建玉の観測が一度も届いていない」を区別できない。
+    MetricAvailability BuyInCountAvailability,
+    int? BuyInCount);
 
 // FR-10, SC-03, ADR-0016 決定15, #340: 保有ポジション 1 件の参照表示。
 // **方向（ロング / ショート）**と**借株料の累計**を持つ（計画 SC-03 の表の列）。

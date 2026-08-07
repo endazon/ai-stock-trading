@@ -13,6 +13,7 @@ import {
   CONTRACT_MONITOR_SETTINGS,
   CONTRACT_MONITOR_SETTINGS_HISTORY,
 } from '../monitor/contractFixtures';
+import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 
 const SAMPLE = {
   assumptions: {
@@ -165,5 +166,35 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/入力/);
+  });
+
+  // ---- SC-01 §1, #424, IADR-0162 決定4: 供給が無い値の表示規約（全画面共通） ----
+
+  it('declares the assumptions as not supplied when the server says they are unresolved', async () => {
+    // **供給可否はサーバが宣言する。** `isResolved`（＝`Version > 0`）は ConfigurationService 由来の値を
+    // 一度でも解決できたかをサーバが宣言したものであり、画面は値の中身から推測しない。
+    // 未解決のとき表示しているのは**組み込みの既定値であって権威値ではない**。
+    mocks.apiFetch.mockImplementation(async (path: string) => {
+      if (path === '/assumptions/history') return HISTORY;
+      if (path === '/monitor/settings/history') return CONTRACT_MONITOR_SETTINGS_HISTORY;
+      if (path === '/monitor/settings') return CONTRACT_MONITOR_SETTINGS;
+      return { ...SAMPLE, version: 0, isResolved: false };
+    });
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    const notice = screen.getByText(/全体前提条件を/);
+    expect(notice).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
+    // **否定形**: 「—」や「0」で「値が無い」ように弱めない。表示中の値が既定値であることを明示する。
+    expect(notice).not.toHaveTextContent('全体前提条件を—');
+    expect(notice).toHaveTextContent(/組み込みの既定値であり、実際に適用されている値ではありません/);
+  });
+
+  it('does not warn about supply when the server declares the assumptions resolved', async () => {
+    // 逆方向の否定形。供給があるのに未供給の警告を出すと、警告が常時出て誰も読まなくなる。
+    render(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+
+    expect(screen.queryByText(/全体前提条件を/)).not.toBeInTheDocument();
   });
 });
