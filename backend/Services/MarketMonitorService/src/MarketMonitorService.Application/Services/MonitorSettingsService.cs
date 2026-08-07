@@ -70,6 +70,96 @@ public sealed class MonitorSettingsService(
         return store.GetSettings();
     }
 
+    /// <summary>
+    /// FR-03, FR-11, FR-13, SC-02, #423, IADR-0165 決定3: 監視設定を**全置換**する
+    /// （<c>PUT /monitor/settings</c> の実体）。
+    /// <para>
+    /// 部分更新（<see cref="UpdateMovementThreshold"/> / <see cref="UpdateCooldown"/>）と<b>同じ規律</b>
+    /// —— 理由必須・<see cref="MonitorSettingsBounds"/> による値域検証・変更履歴への記録 —— を課す。
+    /// </para>
+    /// <para>
+    /// <b>画面から使わない経路だからこそ塞ぐ。</b> 本メソッドの導入前、全置換 PUT は理由も履歴も持たず、
+    /// 値域も「比率が正・クールダウンが非負」だけを見ていた（上限が無かった）。その状態では
+    /// 「画面は 0.6 を弾くが API を直接叩けば保存できる」——**統制を画面の親切心に依存させることになる**
+    /// （IADR-0141 決定1 / IADR-0155 残余リスク4）。
+    /// </para>
+    /// <para>
+    /// 履歴は<b>実際に変わった項目だけ</b>を記録する（変わっていない項目の行を積むと、監査で
+    /// 「いつ変わったのか」が読めなくなる）。
+    /// </para>
+    /// </summary>
+    public MarketMonitorSettings Replace(MarketMonitorSettings settings, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        RequireActorAndReason(actor, reason);
+        if (MonitorSettingsBounds.ValidateMovementThresholdRatio(settings.MovementThresholdRatio) is { } thresholdError)
+        {
+            throw new ArgumentException(thresholdError, nameof(settings));
+        }
+
+        if (MonitorSettingsBounds.ValidateCooldown(settings.Cooldown) is { } cooldownError)
+        {
+            throw new ArgumentException(cooldownError, nameof(settings));
+        }
+
+        var current = store.GetSettings();
+        // 永続化を先に確定させる（fail-safe）。競合はここで送出され、履歴は 1 件も残らない。
+        store.Save(settings);
+
+        var now = clock.UtcNow;
+        if (current.MovementThresholdRatio != settings.MovementThresholdRatio)
+        {
+            changeLog.Record(new MonitorSettingsChangeEntry(
+                actor, MonitorSettingsChangeType.MovementThresholdChanged, reason, now,
+                Render(current.MovementThresholdRatio), Render(settings.MovementThresholdRatio)));
+        }
+
+        if (current.Cooldown != settings.Cooldown)
+        {
+            changeLog.Record(new MonitorSettingsChangeEntry(
+                actor, MonitorSettingsChangeType.CooldownChanged, reason, now,
+                current.Cooldown.ToString(), settings.Cooldown.ToString()));
+        }
+
+        RecordWatchlistDelta(current, settings, actor, reason, now);
+        return store.GetSettings();
+    }
+
+    // 全置換で監視銘柄が増減した場合の履歴。増分・減分をそれぞれ 1 件で記録する
+    // （前後値は監視銘柄サービス（MonitorWatchlistService）と同じ「一覧の前後」表現に揃える）。
+    private void RecordWatchlistDelta(
+        MarketMonitorSettings current,
+        MarketMonitorSettings updated,
+        string actor,
+        string reason,
+        DateTimeOffset now)
+    {
+        var before = current.MonitoredSymbols;
+        var after = updated.MonitoredSymbols;
+        var added = after.Any(s => !before.Any(b => Same(b, s)));
+        var removed = before.Any(s => !after.Any(a => Same(a, s)));
+        if (added)
+        {
+            changeLog.Record(new MonitorSettingsChangeEntry(
+                actor, MonitorSettingsChangeType.WatchlistSymbolAdded, reason, now,
+                RenderSymbols(before), RenderSymbols(after)));
+        }
+
+        if (removed)
+        {
+            changeLog.Record(new MonitorSettingsChangeEntry(
+                actor, MonitorSettingsChangeType.WatchlistSymbolRemoved, reason, now,
+                RenderSymbols(before), RenderSymbols(after)));
+        }
+    }
+
+    // (Symbol, Market) の一致判定（MonitorWatchlistService と同じ規則。大文字小文字を無視する）。
+    private static bool Same(MonitoredSymbol a, MonitoredSymbol b) =>
+        a.Market == b.Market && string.Equals(a.Symbol, b.Symbol, StringComparison.OrdinalIgnoreCase);
+
+    private static string RenderSymbols(IReadOnlyCollection<MonitoredSymbol> symbols) =>
+        symbols.Count == 0 ? "(なし)" : string.Join(", ", symbols.Select(s => $"{s.Symbol}@{s.Market}"));
+
     private void Save(
         MarketMonitorSettings updated,
         MonitorSettingsChangeType changeType,

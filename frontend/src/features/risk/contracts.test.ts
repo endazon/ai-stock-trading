@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   activeControlLabel,
   changeTypeLabel,
+  CHANGE_TYPE_STAGE1_MINIMUM_TRADE_COUNT,
   criterionLabel,
+  inputBelowStatisticalBasis,
+  STAGE1_TRADE_COUNT_DEFAULT,
+  STAGE1_TRADE_COUNT_MAX,
+  STAGE1_TRADE_COUNT_MIN,
+  validateStage1TradeCountInput,
   formatAt,
   brokerProviderLabel,
   BROKER_PROVIDER_INTERNAL_PAPER,
@@ -313,6 +319,58 @@ describe('実額の解決（#362 / IADR-0151 決定4 / #364・IADR-0152 決定6�
     expect(resolveEquityAmount(Number.NaN, 0.25)).toBeNull();
     expect(resolveEquityAmount(3000, null)).toBeNull();
     expect(resolveEquityAmount(3000, Number.NaN)).toBeNull();
+  });
+
+  // ---- FR-20, SC-02, #423, IADR-0165 決定5/決定6: Stage 1 の最小取引件数の値域と警告 ----
+  //
+  // **実効はサーバ側（`Stage1TradeCountBounds`）である。** ここは利用者への即時提示だが、
+  // **サーバと値が一致していなければならない**（片方だけ変えると、画面は通すのにサーバが 400 を返す／その逆）。
+
+  it('Stage 1 最小取引件数の値域はサーバ側 Stage1TradeCountBounds と一致する', () => {
+    expect(STAGE1_TRADE_COUNT_DEFAULT).toBe(100);
+    expect(STAGE1_TRADE_COUNT_MIN).toBe(1);
+    expect(STAGE1_TRADE_COUNT_MAX).toBe(1000);
+  });
+
+  it.each(['1', '2', '99', '100', '999', '1000'])(
+    'Stage 1 最小取引件数の値域内（%s）は受理する', (text) => {
+      expect(validateStage1TradeCountInput(text)).toBeNull();
+    });
+
+  // 0 以下では条件 3 が無条件に成立し、**期間だけで昇格できてしまう**。
+  it.each(['0', '-1'])('Stage 1 最小取引件数の 0 以下（%s）は受理しない', (text) => {
+    expect(validateStage1TradeCountInput(text)).not.toBeNull();
+  });
+
+  it.each(['1001', '10000'])('Stage 1 最小取引件数の 1000 超（%s）は受理しない', (text) => {
+    expect(validateStage1TradeCountInput(text)).not.toBeNull();
+  });
+
+  // 空欄・非数値・小数を黙って通さない（件数は整数である）。
+  it.each(['', '   ', 'abc', '10.5'])(
+    'Stage 1 最小取引件数の空欄・非数値・小数（%s）は受理しない', (text) => {
+      expect(validateStage1TradeCountInput(text)).not.toBeNull();
+    });
+
+  // **警告の対象（100 未満）であっても受理する。** 裁定は「警告は設定を妨げない」と定めている。
+  it.each(['1', '30', '99'])('統計的根拠を下回る件数（%s）でも入力としては受理する', (text) => {
+    expect(inputBelowStatisticalBasis(text)).toBe(true);
+    expect(validateStage1TradeCountInput(text)).toBeNull();
+  });
+
+  // 逆方向の否定形。満たしているのに警告を出すと、警告が常時出て誰も読まなくなる。
+  it.each(['100', '101', '1000'])('統計的根拠を満たす件数（%s）では警告しない', (text) => {
+    expect(inputBelowStatisticalBasis(text)).toBe(false);
+  });
+
+  // 読めない入力を「警告あり」に倒さない（値域エラーの方が先に出る）。
+  it.each(['', 'abc', '0', '-5'])('読めない入力（%s）は統計的根拠の警告に倒さない', (text) => {
+    expect(inputBelowStatisticalBasis(text)).toBe(false);
+  });
+
+  it('Stage 1 最小取引件数の変更履歴ラベルが写像されている（序数 8・末尾追加）', () => {
+    expect(CHANGE_TYPE_STAGE1_MINIMUM_TRADE_COUNT).toBe(8);
+    expect(changeTypeLabel(CHANGE_TYPE_STAGE1_MINIMUM_TRADE_COUNT)).toBe('Stage 1 最小取引件数');
   });
 
   it('金額の整形は基準通貨（USD）の記号を付ける', () => {

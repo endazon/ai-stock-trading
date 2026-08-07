@@ -166,6 +166,74 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
     expect(line).not.toHaveTextContent('除外');
   });
 
+  // ------------------------------------------------------------------
+  // #423, IADR-0165 決定6: Stage 1 の最小取引件数が**設定値**になったことの表示
+  // ------------------------------------------------------------------
+
+  // 計画は「100 件未満を設定した場合、**画面と昇格承認の双方**に『統計的な根拠（§4.3）を満たさない
+  // 設定である』旨の警告を常時表示する」と定める。SC-03 は段階ゲートの現況を読む画面である。
+  //
+  // **判定はサーバが宣言した `belowStatisticalBasis` に従う**——画面が `< 100` を自分で判定すると、
+  // 警告を出す場所（SC-02・SC-03・Discord）が増えるたびに条件が写経される。
+  it('最小取引件数が統計的根拠を下回るときサーバの宣言に従って警告を出す', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE, {
+      ...STAGE_GATE,
+      stage1Criteria: {
+        ...cloneContract(CONTRACT_STAGE_GATE.stage1Criteria),
+        minimumTradeCount: 30,
+        belowStatisticalBasis: true,
+      },
+    });
+    render(<ControlStatusPage />);
+
+    // 警告の段落そのものを取る（`統計的な根拠` は `<strong>` の中にあり、直接の子テキストではない）。
+    const warning = await screen.findByText(/Stage 1 の最小取引件数が/);
+    expect(warning).toHaveTextContent('30 件');
+    expect(warning).toHaveTextContent('統計的な根拠');
+    expect(warning).toHaveTextContent('§4.3');
+    // 変更先（SC-02）を案内する（SC-03 は参照専用である）。
+    expect(warning).toHaveTextContent('リスク設定');
+  });
+
+  // 逆方向の否定形。**満たしているのに警告を出すと、警告が常時出て誰も読まなくなる。**
+  it('最小取引件数が既定なら警告を出さない', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
+    render(<ControlStatusPage />);
+    await screen.findByText(/経過 42 \/ 60 営業日/);
+
+    expect(screen.queryByText(/Stage 1 の最小取引件数が/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/統計的な根拠/)).not.toBeInTheDocument();
+  });
+
+  // **サーバの宣言に従う**ことの否定形。件数が 100 未満でも、サーバが警告を宣言していなければ出さない
+  // （画面が独自に `< 100` を判定していれば、ここが赤くなる）。
+  it('件数が100未満でもサーバが宣言しなければ警告を出さない', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE, {
+      ...STAGE_GATE,
+      stage1Criteria: {
+        ...cloneContract(CONTRACT_STAGE_GATE.stage1Criteria),
+        minimumTradeCount: 30,
+        belowStatisticalBasis: false,
+      },
+    });
+    render(<ControlStatusPage />);
+    await screen.findByText(/経過 42 \/ 60 営業日/);
+
+    expect(screen.queryByText(/Stage 1 の最小取引件数が/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/統計的な根拠/)).not.toBeInTheDocument();
+  });
+
+  // 件数が設定値であることを画面に出す（100 という定数だと思わせない）。
+  it('取引件数の閾値が設定値である旨と計上単位を明記する', async () => {
+    mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
+    render(<ControlStatusPage />);
+
+    expect(await screen.findByText(/取引 70 \/ 100 件（設定値）/)).toBeInTheDocument();
+    const note = screen.getByText(/計上単位は/);
+    expect(note).toHaveTextContent('約定が成立した新規建て注文 1 件');
+    expect(note).toHaveTextContent('手仕舞いは計上しません');
+  });
+
   // 縮退: 進捗を含まない応答（BFF 未追随・旧版サーバ）でも画面を壊さない。
   it('進捗を含まない応答では進捗領域のみ縮退する', async () => {
     const withoutProgress = { ...STAGE_GATE } as Record<string, unknown>;

@@ -39,6 +39,7 @@
   "stage1Criteria": {
     "targetTradingDays": 60,
     "minimumTradeCount": 100,
-    "maximumTradingDays": 120
+    "maximumTradingDays": 120,
+    "belowStatisticalBasis": false
   }
 }

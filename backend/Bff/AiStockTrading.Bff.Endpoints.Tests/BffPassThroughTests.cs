@@ -21,7 +21,7 @@ namespace AiStockTrading.Bff.Endpoints.Tests;
 // 後段は StubHandler で差し替え、実サービスに依存しない。
 public class BffPassThroughTests
 {
-    // すべての BFF ルート（3 モジュール・計 13 ルート）が期待どおり登録され、グループが認証必須であることの
+    // すべての BFF ルート（3 モジュール・計 18 ルート）が期待どおり登録され、グループが認証必須であることの
     // 最小固定（ルート脱落・改名・メソッド変更・RequireAuthorization 抜けを検知）。
     public static IEnumerable<object[]> AllRoutes =>
     [
@@ -34,12 +34,21 @@ public class BffPassThroughTests
         ["PUT", "/bff/risk-controls/settings/guard"],
         // AST #334, FR-20: 発注先の変更（SC-02 だけが持つ操作）。
         ["PUT", "/bff/risk-controls/settings/broker-provider"],
+        // AST #423, FR-20, SC-02: Stage 1 の最小取引件数（既定 100・値域 1〜1000）。
+        ["PUT", "/bff/risk-controls/settings/stage1-minimum-trade-count"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
         ["GET", "/bff/monitor/watchlist"],
         ["POST", "/bff/monitor/watchlist"],
         ["DELETE", "/bff/monitor/watchlist"],
         ["GET", "/bff/monitor/watchlist/history"],
+        // AST #423, FR-03, FR-13, SC-02: 市場監視パラメータ（変動閾値・クールダウン）。
+        // **SC-01 §2 の廃止に伴い SC-02 が消費する。** 登録漏れのままだと画面から到達できない
+        // （#340 で SC-01 §2 が `/monitor/settings` を叩き始めたのに BFF が未結線だった＝AST IADR-0165）。
+        ["GET", "/bff/monitor/settings"],
+        ["PUT", "/bff/monitor/settings/movement-threshold"],
+        ["PUT", "/bff/monitor/settings/cooldown"],
+        ["GET", "/bff/monitor/settings/history"],
     ];
 
     [Theory]

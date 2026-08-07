@@ -16,7 +16,16 @@ public class StageGateServiceTests
     private static (StageGateService svc, InMemoryStageGateStore ledger, InMemoryStagePerformanceStore perf,
         InMemoryControlViolationObservationStore violations, KillSwitchService kill,
         InMemoryStage1FillObservationStore fills, InMemoryStage1TradingDayObservationStore uptime)
-        Build(TradingStage initial = TradingStage.Stage0Verification)
+        Build(TradingStage initial = TradingStage.Stage0Verification) =>
+        BuildWith(initial, Stage1TradeCountBounds.Default);
+
+    // FR-20, FR-13, SC-02, #423, IADR-0165 決定4: 最小取引件数は**設定値**であり、段階ゲートは
+    // 判定の直前に設定ストアから読んで重ねる。テストも設定ストア経由で件数を与える
+    // （`StageGatePolicy` を差し替えて件数を変えると、実運用に存在しない経路を検証してしまう）。
+    private static (StageGateService svc, InMemoryStageGateStore ledger, InMemoryStagePerformanceStore perf,
+        InMemoryControlViolationObservationStore violations, KillSwitchService kill,
+        InMemoryStage1FillObservationStore fills, InMemoryStage1TradingDayObservationStore uptime)
+        BuildWith(TradingStage initial, int minimumTradeCount)
     {
         var ledger = new InMemoryStageGateStore(initial);
         var perf = new InMemoryStagePerformanceStore();
@@ -32,8 +41,10 @@ public class StageGateServiceTests
         var killStore = new InMemoryKillSwitchStore();
         var clock = new FakeClock(Now, DateOnly.FromDateTime(Now.DateTime));
         var kill = new KillSwitchService(killStore, new InMemorySettingsChangeLog(), clock);
+        var settings = new InMemoryRiskSettingsStore(
+            TradingDefaults.CreateSettings() with { Stage1MinimumTradeCount = minimumTradeCount });
         var svc = new StageGateService(
-            ledger, perf, violations, fills, uptime, TradingDefaults.CreateStagePolicy(), kill, clock);
+            ledger, perf, violations, fills, uptime, TradingDefaults.CreateStagePolicy(), settings, kill, clock);
         return (svc, ledger, perf, violations, kill, fills, uptime);
     }
 
@@ -407,6 +418,107 @@ public class StageGateServiceTests
         violations.Record(CleanScreening());
         RecordFills(fills, 100);
 
+        svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner").Accepted.Should().BeTrue();
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage2MinimalLive);
+    }
+
+    // ------------------------------------------------------------------
+    // #423, IADR-0165 決定4: 最小取引件数は**設定値**であり、段階ゲートの判定へ実効する
+    // ------------------------------------------------------------------
+
+    // 設定を下げれば、その件数で昇格できる（裁定「値は SC-02 から変更できる」）。
+    // **「保存はできたが判定には効かない」状態を作らない。**
+    [Fact]
+    public void 設定した最小取引件数で昇格判定が行われる()
+    {
+        var (svc, ledger, perf, violations, _, fills, uptime) =
+            BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 20);
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordUptimeDays(uptime, 60);
+        violations.Record(CleanScreening());
+        RecordFills(fills, 20);
+
+        svc.GetStatus().Stage1Criteria.MinimumTradeCount.Should().Be(20);
+        svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner").Accepted.Should().BeTrue();
+        ledger.Load().CurrentStage.Should().Be(TradingStage.Stage2MinimalLive);
+    }
+
+    // 否定形（境界）: 設定値に 1 件足りなければ昇格しない。
+    [Fact]
+    public void 設定した最小取引件数に1件足りなければ昇格しない()
+    {
+        var (svc, _, perf, violations, _, fills, uptime) =
+            BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 20);
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordUptimeDays(uptime, 60);
+        violations.Record(CleanScreening());
+        RecordFills(fills, 19);
+
+        var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
+
+        result.Accepted.Should().BeFalse();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.Stage1TradeCountInsufficient);
+    }
+
+    // 否定形（設定の及ぶ範囲）: **件数を下げても条件 2（60 営業日）は緩まない。**
+    // 裁定は「この設定は条件 1・条件 2 には及ばない」と明示している。
+    // ここが緑のままなら、件数の設定化が期間条件まで巻き込んで緩めたことを意味する。
+    [Fact]
+    public void 件数を下げても営業日数の条件は緩まない()
+    {
+        var (svc, _, perf, violations, _, fills, uptime) =
+            BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 1);
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordUptimeDays(uptime, 59); // 1 日足りない
+        violations.Record(CleanScreening());
+        RecordFills(fills, 1);
+
+        var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
+
+        result.Accepted.Should().BeFalse();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.Stage1TradingDaysInsufficient);
+    }
+
+    // 否定形（設定の及ぶ範囲）: **件数を下げても条件 1（統制違反 0 件）は緩まない。**
+    [Fact]
+    public void 件数を下げても統制違反の条件は緩まない()
+    {
+        var (svc, _, perf, _, _, fills, uptime) =
+            BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 1);
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordUptimeDays(uptime, 60);
+        RecordFills(fills, 1);
+        // 統制違反件数の供給を積まない＝未供給。条件 1 は未充足のままである。
+
+        var result = svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner");
+
+        result.Accepted.Should().BeFalse();
+        result.RejectionReasons.Should().Contain(StageGateCriterion.ControlViolationCountUnavailable);
+    }
+
+    // 設定を変えても**打ち切り規則（累計 120 営業日）は変わらない**（裁定が明示）。
+    [Fact]
+    public void 件数を変えても打ち切りの累計営業日数は変わらない()
+    {
+        var (svc, _, _, _, _, _, _) = BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 1);
+
+        svc.GetStatus().Stage1Criteria.MaximumTradingDays.Should().Be(120);
+        svc.GetStatus().Stage1Criteria.TargetTradingDays.Should().Be(60);
+    }
+
+    // 100 件未満の設定は、段階ゲートの現況で**サーバが警告を宣言する**（IADR-0165 決定6）。
+    // **宣言は昇格を妨げない**——裁定は「警告は設定を妨げない」と定めている。
+    [Fact]
+    public void 統計的根拠を下回る設定は警告を宣言するが昇格を妨げない()
+    {
+        var (svc, ledger, perf, violations, _, fills, uptime) =
+            BuildWith(TradingStage.Stage1Simulate, minimumTradeCount: 30);
+        perf.Save(new StagePerformance { BacktestPassed = true });
+        RecordUptimeDays(uptime, 60);
+        violations.Record(CleanScreening());
+        RecordFills(fills, 30);
+
+        svc.GetStatus().Stage1Criteria.BelowStatisticalBasis.Should().BeTrue();
         svc.RequestTransition(TradingStage.Stage2MinimalLive, approver: "owner").Accepted.Should().BeTrue();
         ledger.Load().CurrentStage.Should().Be(TradingStage.Stage2MinimalLive);
     }

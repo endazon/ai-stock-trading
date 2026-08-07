@@ -126,6 +126,38 @@ public sealed class RiskSettingsService(
         return assessment;
     }
 
+    /// <summary>
+    /// FR-20, FR-13, SC-02, UC-06, #423, IADR-0165 決定4/決定5: **Stage 1 の最小取引件数**（§4.1 条件 3）を変更する。
+    /// <para>
+    /// 値域は <see cref="Stage1TradeCountBounds"/> が単独で決める（1〜1000）。範囲外なら
+    /// <see cref="ArgumentOutOfRangeException"/> を投げ、<b>設定を一切変更せず履歴も残さない</b>
+    /// （<see cref="UpdateLimits"/> と同じ規律）。
+    /// </para>
+    /// <para>
+    /// <b>100 件未満でも受理する。</b> 裁定は「警告は設定を妨げない。下げた事実が記録に残ることを
+    /// 担保する」と定めている。警告は <see cref="Stage1GateCriteria.BelowStatisticalBasis"/> が宣言し、
+    /// 画面と昇格承認（Discord）がそれに従う。**ここで拒否してはならない。**
+    /// </para>
+    /// <para>
+    /// <b>段階・発注先には触れない。</b> 変えられるのは条件 3 の件数だけであり、条件 1・条件 2・
+    /// §4.3 の打ち切り規則には及ばない（`with` が他プロパティを保つ）。
+    /// </para>
+    /// </summary>
+    public void UpdateStage1MinimumTradeCount(int minimumTradeCount, string actor, string reason)
+    {
+        RequireActorAndReason(actor, reason);
+        Stage1TradeCountBounds.ThrowIfOutOfRange(minimumTradeCount);
+
+        var current = store.GetCurrent();
+        Save(
+            current with { Stage1MinimumTradeCount = minimumTradeCount },
+            current.Stage1MinimumTradeCount,
+            minimumTradeCount,
+            SettingsChangeType.Stage1MinimumTradeCountChanged,
+            actor,
+            reason);
+    }
+
     private void Save(
         RiskManagementSettings updated,
         object before,

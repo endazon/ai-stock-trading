@@ -2,10 +2,10 @@
 title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
-related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163]
+related_ids: [FR-20, FR-15, FR-10, FR-19, FR-13, FR-11, FR-12, UC-06, SC-01, SC-02, SC-03, ADR-0008, ADR-0016, ADR-0018, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0165]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-08-05
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/INDEX.md
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
@@ -208,7 +208,7 @@ SC-02 の警告モーダルと一覧警告には**「段階が実弾を既定と
 | Stage 1 | **クラス C 統制違反 0 件**（供給済みで 0 件） | `ControlViolationsPresent` |
 | Stage 1 | **統制違反件数の集計が供給されていること**（#387・IADR-0148） | `ControlViolationCountUnavailable` |
 | Stage 1 | **実際に取引できた日数 ≥ 60 営業日** | `Stage1TradingDaysInsufficient` |
-| Stage 1 | **取引件数 ≥ 100 件**（計上単位は約定した新規建て注文 1 件。#386・IADR-0149） | `Stage1TradeCountInsufficient` |
+| Stage 1 | **取引件数 ≥ 設定値（既定 100 件・値域 1〜1000）**（計上単位は約定した新規建て注文 1 件。#386・IADR-0149／設定化は #423・IADR-0165） | `Stage1TradeCountInsufficient` |
 | Stage 1 | （累計 120 営業日を経て件数不足なら打ち切り） | `Stage1ExtensionExhausted` |
 | Stage 2 | 実効スリッページ・費用が想定内 | `SlippageOrCostExceeded` |
 | Stage 2 | 日次損失上限の運用実績（違反なし） | `DailyLossLimitViolated` |
@@ -260,6 +260,36 @@ SC-02 の警告モーダルと一覧警告には**「段階が実弾を既定と
 - **観測窓は受理された段階遷移で区切る**（起算点＝Stage 1 遷移日・§4.2）。区切った直後は 0 件＝昇格しない。
 - **「未供給」と「0 件」は区別しない。** 取引件数の 0 は「条件未充足＝昇格しない」に倒れる fail-safe であり、
   統制違反件数（#387）のような区別に意味が無い。
+
+### 4-1-3. 最小取引件数は**設定値**である（#423・[IADR-0165](../adr/IADR-0165_stage1-trade-count-setting-and-monitor-parameter-relocation.md)）
+
+2026-08-07 の利用者裁定（質問票 第 13 回 Q6 の追加指示）により、§4.1 条件 3 の件数は
+**[SC-02](../screens/20260718_SC-02_risk-settings.md) から変更できる設定値**になった。
+
+| 項目 | 値 | 備考 |
+| --- | --- | --- |
+| 既定 | **100 件** | §4.1 条件 3。「既定値は 100 件のまま維持する」（裁定） |
+| 値域 | **1〜1000**（いずれも含む） | 0 以下では条件 3 が無条件に成立し**期間だけで昇格できてしまう** |
+| 統計的根拠の下限 | **100 件** | §4.3。**下回る設定は警告の対象であり、拒否の対象ではない** |
+
+- **置き場所は `RiskManagementSettings.Stage1MinimumTradeCount`** であり、他のリスク設定と同じ経路
+  （単一行 JSON ＋ `Version` 楽観排他、`ISettingsChangeLog` への理由つき記録）に載る。
+  `StageGateService` が**判定の直前**に `Stage1GateCriteria` へ重ねる（`StageGatePolicy` は DI singleton であり
+  監査・楽観排他を持たないため、そこへ可変値を混ぜない）。
+- **変更経路**: `PUT /risk-controls/settings/stage1-minimum-trade-count`（OwnerOnly・`{minimumTradeCount, reason}`）。
+  理由必須・値域外は 400（設定も履歴も変えない）・変更履歴の種別は `Stage1MinimumTradeCountChanged`（序数 8・末尾追加）。
+- **100 件未満でも受理する。** 裁定は「**警告は設定を妨げない。下げた事実が記録に残ることを担保する**」と定める。
+  **警告の判定はサーバが宣言する**（`Stage1GateCriteria.BelowStatisticalBasis`）——
+  画面（SC-02・SC-03）と Discord `/stage status` はこの宣言に従い、閾値 100 を写経しない。
+  写経すると 1 か所の写し間違いで「下げたのに警告が出ない」状態になる（[IADR-0154] と同じ論法）。
+- **変えられるのは条件 3 の件数だけである。** 条件 1（統制違反 0 件）・条件 2（60 営業日）・
+  §4.3 の打ち切り規則（累計 120 営業日）には**及ばない**（裁定が明示）。
+  `Stage1GateCriteria` の他 2 項目は `Stage1GateCriteria.Default` のままであり、設定から書き換える経路を作らない。
+- **旧行・値域外の永続値は既定 100 へ落とす。** 発注先の allow-list（[IADR-0161]）と同型だが、
+  **倒す先は「厳しい側」＝合格に遠い値**である。読めない行が「少ない件数」へ倒れると擬似的に合格へ近づき、
+  しかも画面には正常な設定として現れる。
+- **設定化しても計上単位は変わらない**（前項 4-1-2）。**単位が 2〜3 倍に膨らむ欠陥は、設定を下げたのと同じ効果を
+  持ちながら画面にも履歴にも現れない**ため、設定値を 1〜1000 のどこに置いても単位が不変であることをテストで固定する。
 
 ### 4-2. Stage 1 集計からの内蔵 `paper` の除外（#334・[IADR-0142](../adr/IADR-0142_stage1-simulate-only-aggregation.md)）
 
@@ -348,7 +378,7 @@ Stage 1 の「月報の三者比較を読んだ利用者による差し戻し」
 stateDiagram-v2
   [*] --> Stage0Verification
   Stage0Verification --> Stage1Simulate: 利用者承認（バックテスト合格・最大DD ≤ 10%）
-  Stage1Simulate --> Stage2MinimalLive: 利用者承認（クラスC違反0件＋60営業日＋100件）
+  Stage1Simulate --> Stage2MinimalLive: 利用者承認（クラスC違反0件＋60営業日＋設定件数〔既定100件〕）
   Stage2MinimalLive --> Stage3ScaledLive: 利用者承認（スリッページ・費用・日次損失実績）
   Stage1Simulate --> Stage0Verification: 差し戻し（120営業日打ち切り／月報レビュー）
   Stage2MinimalLive --> Stage0Verification: 差し戻し（実DD ≥ バックテスト最大DD × 1.5）
@@ -382,7 +412,7 @@ stateDiagram-v2
 - [x] **probe を落とした区間・供給が途絶えた期間で営業日数が水増しされない**（#385）
 - [x] **カレンダーを内蔵していないことが構造で確認できる**（3 年ぶんの全日付で結果が曜日だけで決まる・#385）
 - [ ] **市場休場のうち祝日が除外される** — **未達**。判定源が無く、実装は表を発明しない（B-4 の裁定待ち）
-- [x] 期間 60 営業日を満たしても件数 100 件に届かなければ昇格しない
+- [x] 期間 60 営業日を満たしても件数（設定値・既定 100 件）に届かなければ昇格しない
 - [x] 累計 120 営業日で打ち切られ、Stage 0 差し戻しが提案される
 - [x] クラス A / クラス B の拒否は「統制違反 0 件」に計上されない
 - [x] クラス C の拒否を含む発注拒否が 1 件として計上される（1 回の拒否に複数のクラス C 理由が返っても 1 件）
@@ -399,6 +429,14 @@ stateDiagram-v2
 - [x] 内蔵 `paper` で 60 営業日・100 件を積んでも昇格可能にならない
 - [x] **`SIMULATE` の約定件数が Stage 1 の進捗（`Stage1Progress.TradeCount`）へ反映される**（#386）
 - [x] **否定形: 内蔵 `paper` / `MoomooReal` の約定を混ぜても件数が汚染されない**（#386）
+- [x] **最小取引件数が SC-02 から変更でき、設定した件数で昇格判定が行われる**（#423・既定 100・値域 1〜1000）
+- [x] **値域外（0 以下・1001 以上）・理由欠如の変更が 400 となり、設定も履歴も変わらない**（#423）
+- [x] **100 件未満でも保存でき（警告は設定を妨げない）、変更が理由・前後値つきで履歴に残る**（#423）
+- [x] **100 件未満はサーバが `belowStatisticalBasis` として宣言し、SC-02 / SC-03 / Discord が警告を出す**（#423）
+- [x] **否定形: 件数を下げても条件 1（統制違反 0 件）・条件 2（60 営業日）・打ち切り 120 営業日は緩まない**（#423）
+- [x] **否定形: 旧行・値域外の永続値が「少ない件数」ではなく既定 100 へ落ちる**（#423）
+- [x] **否定形: 設定値を 1〜1000 のどこに置いても計上単位（分割約定 1 件・手仕舞い不算入）が変わらない**（#423）
+- [x] **否定形: 収集間隔を変更する API/UI が存在しない**（ルート表・型・画面の 3 面で構造的に固定・#423）
 - [x] **否定形: 分割約定・イベント再送で件数が二重計上されない**（計上単位＝約定した新規建て注文 1 件）
 - [x] **否定形: 手仕舞い（`Close`）の約定・約定していない結果・承認台帳に相関の無い約定は計上されない**
 - [x] **否定形: 供給が途絶えても件数が水増しされない**（記録が無ければ 0＝昇格しない）

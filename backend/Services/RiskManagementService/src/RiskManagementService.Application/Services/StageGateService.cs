@@ -15,9 +15,25 @@ public sealed class StageGateService(
     IStage1FillObservationStore fillStore,
     IStage1TradingDayObservationStore tradingDayStore,
     StageGatePolicy policy,
+    IRiskSettingsStore settingsStore,
     KillSwitchService killSwitch,
     IClock clock)
 {
+    // FR-20, FR-13, SC-02, #423, §4.1 条件 3, IADR-0165 決定4: **最小取引件数だけが設定値である。**
+    //
+    // `StageGatePolicy` は DI の singleton であり、段階別の資金上限・撤退倍率という「運用中に変わらない
+    // 方針」を表す。設定値（監査・楽観排他の対象）をそこへ混ぜず、**判定の直前に重ねる**。
+    //
+    // **重ねるのは MinimumTradeCount だけである。** 目標営業日数（60）と打ち切り（120）は
+    // 裁定が「及ばない」「変わらない」と明示した項目であり、設定から書き換える経路を作らない。
+    private StageGatePolicy EffectivePolicy() => policy with
+    {
+        Stage1Criteria = policy.Stage1Criteria with
+        {
+            MinimumTradeCount = settingsStore.GetCurrent().Stage1MinimumTradeCount,
+        },
+    };
+
     // FR-20, #387, IADR-0148: 統制違反件数（§4.1 条件1）は段階別実績の行ではなく**発注審査の観測ログ**から集計する。
     // **null＝未供給**であり「違反 0 件」ではない。判定関数の必須引数であるため、渡し忘れはコンパイルが止める。
     private ControlViolationTally? CurrentTally() => violationStore.GetTally();
@@ -47,14 +63,17 @@ public sealed class StageGateService(
         var ledger = ledgerStore.Load();
         var performance = CurrentPerformance();
         var current = ledger.CurrentStage;
+        var effective = EffectivePolicy();
         return new StageGateStatus(
             current,
-            policy.SettingsFor(current),
+            effective.SettingsFor(current),
             ledger.History,
-            StageGate.AssessPromotion(current, performance, CurrentTally(), policy),
-            StageGate.AssessWithdrawal(current, performance, policy),
+            StageGate.AssessPromotion(current, performance, CurrentTally(), effective),
+            StageGate.AssessWithdrawal(current, performance, effective),
             performance.Stage1Progress,
-            policy.Stage1Criteria);
+            // SC-02, SC-03, #423: **実効の合格条件**を返す（設定で変わった件数を含む）。
+            // `BelowStatisticalBasis`（100 件未満か）もここに載り、画面と Discord はこの宣言に従う。
+            effective.Stage1Criteria);
     }
 
     // FR-20: 遷移履歴（追記順・監査対象）。
@@ -69,7 +88,8 @@ public sealed class StageGateService(
         var approval = new StageApproval(target, approver);
 
         var result = StageGate.RequestTransition(
-            ledger.CurrentStage, ledger.NextSequence, approval, performance, CurrentTally(), policy, clock.UtcNow);
+            ledger.CurrentStage, ledger.NextSequence, approval, performance, CurrentTally(),
+            EffectivePolicy(), clock.UtcNow);
 
         if (result is { Accepted: true, Transition: not null })
         {
@@ -121,7 +141,10 @@ public sealed class StageGateService(
         // 経ても 100 件に届かない）。実績行は件数を持たないため、ここでも観測ログの値を重ねる。
         // 重ね忘れると件数が常に 0 に見え、**件数に達していても打ち切りが提案され続ける**（誤った差し戻し）。
         var performance = CurrentPerformance();
-        var assessment = StageGate.AssessWithdrawal(ledger.CurrentStage, performance, policy);
+        // #423: 撤退（§4.3 の打ち切り）も**実効の件数**で評価する。打ち切りの規則（累計 120 営業日）は
+        // 変えないが、「120 営業日を経ても**設定した件数**に届かない」という判定でなければ、
+        // 件数を上げた直後に打ち切りが出ない／下げた直後に出続けるという食い違いが生じる。
+        var assessment = StageGate.AssessWithdrawal(ledger.CurrentStage, performance, EffectivePolicy());
 
         var newlyEngaged = false;
         if (assessment is { Triggered: true, HaltNewEntries: true } && !killSwitch.GetState().Engaged)
