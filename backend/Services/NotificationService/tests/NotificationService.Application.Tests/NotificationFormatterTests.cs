@@ -141,4 +141,30 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("AAPL").And.Contain("ショート").And.Contain("112").And.Contain("3,360.00");
         msg.Content.Should().Contain("承認と AI の判断は介在していません");
     }
+
+    // T-10-242: FR-09, FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 ——
+    // 強制買戻しの通知は**必ず「推定」と明示する**。決定4 の改訂は「イベントとしての検知は供給元が無い」ため
+    // 事後の突合による推定へ切り替え、「**推定であることを運用者へ示す**（『強制買戻しと推定』と明示し、
+    // **確定事実として扱わない**）」と定めた。断定した通知は運用者に誤った確信を与える。
+    [Fact]
+    public void 強制買戻しの通知は推定であることを明示する()
+    {
+        var e = new BuyInInferred(
+            Guid.NewGuid(), "GME", Market.UnitedStates,
+            LedgerShortQuantity: 100, BrokerShortQuantity: 0, InFlightCloseQuantity: 0,
+            UnexplainedQuantity: 100, NewlyInferredQuantity: 100,
+            CoveringFills: [new BuyInCoveringFill(TradeSide.Buy, 40, 30m, new DateTimeOffset(2026, 8, 6, 1, 0, 0, TimeSpan.Zero))],
+            BanUntil: new DateOnly(2026, 9, 6),
+            ObservedAt: new DateTimeOffset(2026, 8, 7, 6, 0, 0, TimeSpan.Zero),
+            InferredAt: new DateTimeOffset(2026, 8, 7, 6, 0, 1, TimeSpan.Zero));
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("推定");
+        msg.Content.Should().Contain("推定");
+        msg.Content.Should().Contain("確定した事実として扱わないでください");
+        msg.Content.Should().Contain("GME").And.Contain("2026-09-06");
+        msg.Content.Should().Contain("100").And.Contain("説明できない消失");
+    }
 }

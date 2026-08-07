@@ -178,6 +178,19 @@ public static class AuditEntryFactory
                 $"{i.Symbol}/{i.Market} {i.PositionSide} {i.Quantity}株 必要証拠金{i.RequiredMarginUsd}"))),
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
+    // FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
+    // 強制買戻し（buy-in）の**事後推定**。**推定である以上、後から人が検証できなければならない**（#419 の設計上の注意）——
+    // 要約に「推定」であることと突合に用いた 3 つの数量（台帳・ブローカ・処理中の決済）を明記し、
+    // 根拠の全体（突合した自らの決済約定）は本文（シリアライズしたイベント）に残す。
+    // 注文相関を持たないため "buy-in-inference" の決定的 GUID を相関にし、推定どうしを 1 本の相関で辿れるようにする。
+    public static AuditEntry From(BuyInInferred e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BuyInInferred), AuditCorrelation.From("buy-in-inference"), e.Symbol,
+        Truncate($"強制買戻しと推定（検知ではない）: {e.Symbol}/{e.Market} 台帳{e.LedgerShortQuantity}株"
+            + $"・ブローカ{e.BrokerShortQuantity}株・処理中の決済{e.InFlightCloseQuantity}株"
+            + $"→ 説明できない消失{e.NewlyInferredQuantity}株（累計{e.UnexplainedQuantity}株）。"
+            + $"{e.BanUntil:yyyy-MM-dd} まで空売り禁止。突合した決済約定 {e.CoveringFills.Count}件"),
+        AuditSerialization.Serialize(e), e.InferredAt, recordedAt);
+
     // 全量決済すると建玉が無くなり維持率の概念が消える（null）。「0%」と書くと破綻したように読めるため区別する。
     private static string FormatRatio(decimal? ratio) => ratio is { } r ? Percent(r) : "建玉なし";
 

@@ -52,10 +52,70 @@ public static class ReportRenderer
         sb.Append(string.IsNullOrWhiteSpace(view.PolicySummary) ? "（方針未設定）" : view.PolicySummary.Trim());
         sb.Append('\n');
 
-        // 4. リスク統制の記録（維持率割れによる自動縮小）。日報＝明細・月報＝発動回数（04_report-templates）。
+        // 4. リスク統制の記録（維持率割れによる自動縮小／強制買戻しの推定）。
+        // 日報＝明細・月報＝回数（04_report-templates・ADR-0016 決定15）。
         AppendMarginReductions(sb, view);
+        AppendBuyInInferences(sb, view);
 
         return sb.ToString();
+    }
+
+    // FR-10, FR-06, UC-06, ADR-0016 決定4（2026-08-06 改訂）・決定15（2026-08-06 追記）, #419, IADR-0159 決定3:
+    // 「強制買戻し（推定）」の記録。日報は**当日の発生有無**、月報は**当月の発生回数**（決定15）。
+    //
+    // **必ず「推定」と明示する。** 決定4 の改訂はイベント検知の供給元が無いことを受けて事後の突合による推定へ
+    // 切り替え、「**推定であることを運用者へ示す**（日報・通知の文言で『強制買戻しと推定』と明示し、確定事実として
+    // 扱わない）」と定めた。決定15 はこの扱いが**月報の発生回数にも同じく及ぶ**と明記している。
+    //
+    // **供給が無い間は 0 件と書かない**（決定15）——「強制買戻しは起きていない」と読めるためである。
+    // 空列（推定 0 件）と null（供給なし）を区別する。
+    private static void AppendBuyInInferences(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind == ReportKind.Weekly)
+            return; // 計画が週報への記載を求めていない（求められていない節を勝手に増やさない）。
+
+        sb.Append("\n### 強制買戻し（推定）");
+        sb.Append(view.Kind == ReportKind.Monthly ? "（当月）\n\n" : "（当日）\n\n");
+
+        if (view.BuyInInferences is not { } inferences)
+        {
+            // 決定15: 供給が無いことを 0 件・「なし」と書かない。
+            sb.Append("- **記録を照会できませんでした（供給元がありません）**: "
+                + "「発生なし」とは区別しています。**0 件ではありません。**\n");
+            return;
+        }
+
+        if (view.Kind == ReportKind.Monthly)
+        {
+            // 月報は回数のみ。**集計元は推定の件数**であり、`BuyInBanned`（拒否理由）の件数ではない（決定15）。
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **強制買戻し（推定）{inferences.Count} 件**（**推定**であり確定した事実ではありません。"
+                    + $"個々の内容は該当日報を参照）\n");
+            return;
+        }
+
+        if (inferences.Count == 0)
+        {
+            sb.Append("- **発生の有無（推定）**: なし（当日の推定は 0 件）\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **発生の有無（推定）**: **あり — 強制買戻しと推定 {inferences.Count} 件**"
+                + $"（イベントとしての検知ではなく、建玉の消失を自らの決済指示と突合した**推定**です。"
+                + $"確定した事実として扱わないでください）\n\n");
+        sb.Append("| # | 銘柄 | 台帳の空売り | ブローカの空売り | 処理中の決済 | 説明できない消失 | 空売り禁止（〜） | 推定日時 |\n");
+        sb.Append("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
+
+        var index = 0;
+        foreach (var e in inferences.OrderBy(e => e.InferredAt))
+        {
+            index++;
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {index} | {e.Symbol}/{e.Market} | {e.LedgerShortQuantity} 株 | {e.BrokerShortQuantity} 株 | "
+                + $"{e.InFlightCloseQuantity} 株 | {e.NewlyInferredQuantity} 株 | {e.BanUntil:yyyy-MM-dd} | "
+                + $"{e.InferredAt:yyyy-MM-dd HH:mm}Z |\n");
+        }
     }
 
     // FR-10, FR-06, UC-06, #330, IADR-0133 決定7, 04_report-templates（日報 §4・月報 §6）:

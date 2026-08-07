@@ -365,4 +365,30 @@ public class AuditEntryFactoryTests
 
         AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("建玉なし");
     }
+
+
+    // T-10-243: FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 ——
+    // 強制買戻しの**推定**（記録先 1: 監査ログ）。**推定である以上、後から人が検証できなければならない**。
+    // 要約に「推定」であることと突合に用いた 3 つの数量を、本文に根拠の全量（突合した自らの決済約定）を残す。
+    [Fact]
+    public void BuyInInferred_は推定であることと突合の根拠を残す()
+    {
+        var e = new BuyInInferred(
+            Id, "GME", Market.UnitedStates,
+            LedgerShortQuantity: 100, BrokerShortQuantity: 20, InFlightCloseQuantity: 10,
+            UnexplainedQuantity: 70, NewlyInferredQuantity: 70,
+            CoveringFills: [new BuyInCoveringFill(TradeSide.Buy, 40, 30m, RecordedAt)],
+            BanUntil: new DateOnly(2026, 9, 6), ObservedAt: RecordedAt, InferredAt: RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BuyInInferred");
+        entry.Symbol.Should().Be("GME");
+        entry.Summary.Should().Contain("推定").And.Contain("検知ではない");
+        entry.Summary.Should().Contain("100").And.Contain("20").And.Contain("10").And.Contain("70");
+        entry.Summary.Should().Contain("2026-09-06");
+        entry.OccurredAt.Should().Be(e.InferredAt);
+        // 根拠の全量（突合した自らの決済約定）が本文に残る＝推定の妥当性を事後に検証できる。
+        entry.Detail.Should().Contain("CoveringFills").And.Contain("InFlightCloseQuantity");
+    }
 }

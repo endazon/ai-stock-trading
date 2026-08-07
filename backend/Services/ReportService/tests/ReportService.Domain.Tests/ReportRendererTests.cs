@@ -202,4 +202,108 @@ public class ReportRendererTests
 
         md.Should().NotContain("維持率割れによる自動縮小");
     }
+
+    // --- 強制買戻し（推定）（#419 / ADR-0016 決定4 の 2026-08-06 改訂・決定15 の 2026-08-06 追記） ---
+
+    private static BuyInInferred Inference(DateTimeOffset inferredAt) => new(
+        Guid.NewGuid(), "GME", Market.UnitedStates,
+        LedgerShortQuantity: 100, BrokerShortQuantity: 0, InFlightCloseQuantity: 0,
+        UnexplainedQuantity: 100, NewlyInferredQuantity: 100,
+        CoveringFills: [], BanUntil: new DateOnly(2026, 9, 6),
+        ObservedAt: inferredAt, InferredAt: inferredAt);
+
+    // T-10-235: FR-10, FR-06, ADR-0016 決定4/決定15 —— 日報は当日の**発生有無**を載せ、
+    // **必ず「推定」と明示する**（イベント検知ではないため、確定した事実として扱わせない）。
+    [Fact]
+    public void 日報は強制買戻しを推定と明示して発生有無を記載する()
+    {
+        var view = View(ReportKind.Daily, "2026-08-07") with
+        {
+            BuyInInferences = [Inference(new DateTimeOffset(2026, 8, 7, 14, 30, 0, TimeSpan.Zero))],
+        };
+
+        var md = ReportRenderer.RenderMarkdown(view);
+
+        md.Should().Contain("### 強制買戻し（推定）（当日）");
+        md.Should().Contain("**発生の有無（推定）**: **あり — 強制買戻しと推定 1 件**");
+        md.Should().Contain("推定", "決定4 の改訂は『強制買戻しと推定』と明示することを求めている");
+        md.Should().Contain("確定した事実として扱わないでください");
+        md.Should().Contain("GME/UnitedStates").And.Contain("2026-09-06");
+    }
+
+    // T-10-236: 推定が無い日は「なし（当日の推定は 0 件）」と明記する（空欄と区別する）。
+    [Fact]
+    public void 日報は推定が無い日もなしと明記する()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Daily, "2026-08-07") with { BuyInInferences = [] });
+
+        md.Should().Contain("**発生の有無（推定）**: なし");
+    }
+
+    // T-10-237（**否定形・決定15**）: **供給が無い間は 0 件・「なし」と書かない。**
+    // 「強制買戻しは起きていない」と読めるためである（決定15 が名指しで禁じた向き）。
+    [Fact]
+    public void 供給が無いときは0件ともなしとも書かず未供給と明記する()
+    {
+        var daily = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Daily, "2026-08-07") with { BuyInInferences = null });
+        var monthly = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Monthly, "2026-08") with { BuyInInferences = null });
+
+        daily.Should().Contain("記録を照会できませんでした（供給元がありません）");
+        daily.Should().Contain("**0 件ではありません。**");
+        daily.Should().NotContain("**発生の有無（推定）**: なし");
+        monthly.Should().Contain("記録を照会できませんでした（供給元がありません）");
+        monthly.Should().NotContain("強制買戻し（推定）0 件");
+    }
+
+    // T-10-238（**決定15**）: 月報は当月の**発生回数**を「強制買戻し（推定）N 件」と明示する。
+    // **集計元は推定の件数**であり、`BuyInBanned`（拒否理由）の件数ではない——
+    // 1 回の強制買戻しに対し禁止期間 30 日のあいだ拒否は何度でも起こり得るため、実際より大きな数字が載る。
+    [Fact]
+    public void 月報は強制買戻しの発生回数を推定と明示して記載する()
+    {
+        var withEvents = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly, "2026-08") with
+        {
+            BuyInInferences = [Inference(new DateTimeOffset(2026, 8, 7, 14, 30, 0, TimeSpan.Zero))],
+        });
+        var empty = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Monthly, "2026-08") with { BuyInInferences = [] });
+
+        withEvents.Should().Contain("### 強制買戻し（推定）（当月）");
+        withEvents.Should().Contain("**強制買戻し（推定）1 件**");
+        withEvents.Should().Contain("**推定**であり確定した事実ではありません");
+        withEvents.Should().NotContain("| # | 銘柄 |", "個々の内容は該当日報を参照する（月報は回数のみ）");
+        empty.Should().Contain("**強制買戻し（推定）0 件**", "供給がある上での 0 件は事実として書いてよい");
+    }
+
+    // T-10-239（**構造・決定15**）: 報告書の描画入力（ReportView）は**拒否理由に関する情報を一切持たない**。
+    // これにより「`BuyInBanned` の拒否件数を発生回数として報告する」取り違えが構造的に起こり得ない
+    //（決定15 が明示的に禁じた誤り）。入口が生えたら本テストが赤くなる。
+    [Fact]
+    public void 報告書の入力は拒否理由由来の件数を持たない()
+    {
+        var propertyTypes = typeof(ReportView).GetProperties()
+            .Select(p => p.PropertyType.FullName ?? p.PropertyType.Name)
+            .ToList();
+
+        propertyTypes.Should().NotContain(
+            t => t.Contains("RejectionReason", StringComparison.Ordinal),
+            "強制買戻しの発生回数の集計元は推定の件数である（BuyInBanned の拒否件数ではない・ADR-0016 決定15）");
+
+        typeof(ReportView).GetProperties().Select(p => p.Name).Should().NotContain(
+            n => n.Contains("Rejection", StringComparison.OrdinalIgnoreCase)
+                || n.Contains("BuyInBanned", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // 週報は計画が記載を求めていないため節を作らない。
+    [Fact]
+    public void 週報には強制買戻しの節を作らない()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(ReportKind.Weekly, "2026-W32") with { BuyInInferences = [] });
+
+        md.Should().NotContain("強制買戻し");
+    }
 }

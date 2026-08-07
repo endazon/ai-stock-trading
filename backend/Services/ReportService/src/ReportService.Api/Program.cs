@@ -133,6 +133,13 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
 // **現状は自動縮小があり得ない**ため事実として正しい（照会失敗＝ null とは区別する）。
 builder.Services.AddSingleton<IMarginReductionRecordSource, NoMarginReductionRecordSource>();
 
+// FR-10, UC-06, ADR-0016 決定4/決定15, #419, IADR-0159 決定3: 日報の「強制買戻しの発生有無」・
+// 月報の「発生回数」。**集計元は事後突合が推定した件数であり、`BuyInBanned`（拒否理由）の件数ではない。**
+// 権威源（リスク管理サービスの推定台帳）への照会 API は未実装のため、既定は**未供給（null）**である。
+// **空列（＝推定 0 件）へ倒さない**——決定15 は「供給が無い間は 0 件と表示してはならない
+//（『強制買戻しは起きていない』に見えるため）」と明記している（自動縮小の既定と向きが違う）。
+builder.Services.AddSingleton<IBuyInInferenceRecordSource, UnsuppliedBuyInInferenceRecordSource>();
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

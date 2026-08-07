@@ -335,3 +335,45 @@ internal sealed class Stage1SessionUptimeRow
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
+
+// FR-10, FR-11, FR-06, UC-06, ADR-0016 決定4（2026-08-06 改訂）・決定15, #419, IADR-0159:
+// 強制買戻しの事後推定 1 件ぶんの**追記専用**の行。
+//
+// 行は 2 種類ある。NewlyInferredQuantity > 0 が**推定行**（＝ADR-0016 決定15 の「発生回数」の集計元）、
+// 0 が**リセット行**（乖離が解消し帰属数量を戻した記録。禁止期限は戻らないため BanUntil は null）。
+//
+// **`RejectionReason.BuyInBanned` の拒否件数を発生回数の集計元にしてはならない**——1 回の強制買戻しに対して
+// 禁止期間 30 日のあいだ何度でも拒否は起こり得るため、実際より大きな数字が月報に載る（決定15 の明文）。
+internal sealed class BuyInInferenceRow
+{
+    public Guid Id { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    /// <summary>台帳（＝自らの約定履歴の射影）が示す空売り建玉の数量。</summary>
+    public int LedgerShortQuantity { get; set; }
+
+    /// <summary>ブローカが示す空売り建玉の数量（応答に現れない銘柄は 0＝全量消失）。</summary>
+    public int BrokerShortQuantity { get; set; }
+
+    /// <summary>承認済みだが約定が台帳へ届いていない決済数量（＝処理中の自らの決済指示）。</summary>
+    public int InFlightCloseQuantity { get; set; }
+
+    /// <summary>自らの決済指示で説明できない消失の累計（＝強制買戻しへ帰属させている数量）。</summary>
+    public int UnexplainedQuantity { get; set; }
+
+    /// <summary>今回新たに推定した数量（0 はリセット行）。</summary>
+    public int NewlyInferredQuantity { get; set; }
+
+    /// <summary>30 日の空売り禁止の解除日（リセット行は null）。</summary>
+    public DateOnly? BanUntil { get; set; }
+
+    /// <summary>推定した取引日（期間集計の単位）。</summary>
+    public DateOnly InferredOn { get; set; }
+
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    public DateTimeOffset InferredAtUtc { get; set; }
+}

@@ -13,7 +13,8 @@ public static class RiskEvaluator
         PortfolioSnapshot snapshot,
         IManipulativeOrderPatternDetector? patternDetector = null,
         ShortSellOrderContext? shortSellContext = null,
-        StageProductPolicy.StageReleaseContext? stageRelease = null)
+        StageProductPolicy.StageReleaseContext? stageRelease = null,
+        BuyInBanSupply? buyInBan = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -258,6 +259,19 @@ public static class RiskEvaluator
             var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, accountType, ProductType.ShortSell);
             reasons.AddRange(ShortSellEvaluator.Evaluate(
                 intent, shortSellEnabled, settings.ShortSell.Limits, snapshot.Capital, shortSellContext));
+
+            // FR-10, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5: 強制買戻し由来の 30 日禁止は
+            // **文脈が組めなくても単独で判定できる唯一の統制**である（供給されるのは期限という 1 つの日付だけであり、
+            // 借株可否・維持率・エクスポージャのような未供給の値を発明する必要が無い）。
+            // 借株照会の供給元が無い現況では shortSellContext が null であり、上の Evaluate は
+            // BorrowUnavailable を立てて**そこで打ち切る**ため、禁止期間中であることが監査ログに残らない。
+            // **二重計上しない**——文脈が組める日が来て両方から立っても理由は 1 件である。
+            if (buyInBan is { } ban
+                && BuyInBanPolicy.IsBanned(ban.Today, ban.BanUntil)
+                && !reasons.Contains(RejectionReason.BuyInBanned))
+            {
+                reasons.Add(RejectionReason.BuyInBanned);
+            }
         }
 
         return reasons.Count > 0

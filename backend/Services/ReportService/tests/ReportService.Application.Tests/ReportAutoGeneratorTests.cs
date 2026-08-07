@@ -3,6 +3,7 @@ using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Application.State;
 using AiStockTrading.Report.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -114,13 +115,24 @@ public class ReportAutoGeneratorTests
         IPeriodFillSource? fills = null,
         IReportNarrativeDrafter? drafter = null,
         ReportAutoGenerationSettings? settings = null,
-        IReportDraftPresentedNotifier? notifier = null) =>
+        IReportDraftPresentedNotifier? notifier = null,
+        IBuyInInferenceRecordSource? buyInSource = null) =>
         new(store,
             new ReportDraftService(drafter ?? new StubDrafter()),
             fills ?? new NoOpPeriodFillSource(),
             new FixedClock(now),
             settings ?? new ReportAutoGenerationSettings(),
-            notifier);
+            notifier,
+            reductionSource: null,
+            buyInSource: buyInSource);
+
+    // #419: 照会そのものが失敗する記録源（未供給と区別せず null へ倒すことを確かめる）。
+    private sealed class ThrowingBuyInSource : IBuyInInferenceRecordSource
+    {
+        public Task<IReadOnlyList<BuyInInferred>?> GetInferencesAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            throw new HttpRequestException("推定台帳へ到達できません");
+    }
 
     private static void SeedConfirmed(IReportStore store, string periodKey, ReportKind kind, DateOnly start, string policy)
     {
@@ -646,5 +658,35 @@ public class ReportAutoGeneratorTests
         policy!.Summary.Should().Be("押し目買い・上限 3 銘柄");
         policy.Summary.Should().NotContain("未確定");
         policy.Summary.Should().NotContain("見直してください");
+    }
+
+    // T-10-240（**決定15**）: FR-10, FR-06, ADR-0016 決定15（2026-08-06 追記）, #419, IADR-0159 決定3 ——
+    // 強制買戻し（推定）の記録源が**未注入**（既定構成）のとき、報告書は **0 件と書かない**。
+    // 自動縮小（供給元が無ければ空列＝「発動なし」が事実として正しい）と**向きが違う**——
+    // 推定経路は実在し発火し得るため、報告書は「起きていない」ことを知らないからである。
+    [Fact]
+    public async Task 強制買戻しの記録源が未注入なら0件と書かず未供給と記す()
+    {
+        var store = new InMemoryReportStore();
+
+        await NewGenerator(store, WedAfterClose).RunOnceAsync();
+
+        var body = store.Get("daily-2026-07-08")!.Report.Body;
+        body.Should().Contain("### 強制買戻し（推定）（当日）");
+        body.Should().Contain("記録を照会できませんでした（供給元がありません）");
+        body.Should().NotContain("**発生の有無（推定）**: なし");
+    }
+
+    // T-10-241: 照会そのものが失敗した場合も **null（未供給）へ倒す**。空列（＝推定 0 件）へ倒すと
+    // 「強制買戻しは起きていない」と読める（決定15 が名指しで禁じた向き）。
+    [Fact]
+    public async Task 強制買戻しの記録を照会できないときも0件と書かない()
+    {
+        var store = new InMemoryReportStore();
+
+        await NewGenerator(store, WedAfterClose, buyInSource: new ThrowingBuyInSource()).RunOnceAsync();
+
+        store.Get("daily-2026-07-08")!.Report.Body
+            .Should().Contain("記録を照会できませんでした（供給元がありません）");
     }
 }

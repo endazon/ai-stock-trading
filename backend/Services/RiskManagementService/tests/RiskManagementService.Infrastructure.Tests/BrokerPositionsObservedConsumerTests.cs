@@ -38,13 +38,24 @@ public class BrokerPositionsObservedConsumerTests
     private static PositionDriftTracker NewTracker() =>
         new(new InMemoryPositionDriftStateStore(), NullLogger<PositionDriftTracker>.Instance);
 
-    private static Task<IHost> BuildHostAsync(InMemoryPortfolioLedgerStore ledger, PositionDriftTracker tracker) =>
+    private static Task<IHost> BuildHostAsync(
+        InMemoryPortfolioLedgerStore ledger,
+        PositionDriftTracker tracker,
+        IBuyInInferenceStore? buyInStore = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton(tracker);
                 opts.Services.AddSingleton<IClock, FixedClock>();
+                // #419, IADR-0159: 同じ観測から強制買戻しを事後推定する（ハンドラの必須依存）。
+                opts.Services.AddSingleton<IRiskSettingsStore>(new InMemoryRiskSettingsStore());
+                opts.Services.AddSingleton(buyInStore ?? new InMemoryBuyInInferenceStore());
+                opts.Services.AddSingleton(sp => new BuyInInferenceService(
+                    sp.GetRequiredService<IPortfolioLedgerStore>(),
+                    sp.GetRequiredService<IBuyInInferenceStore>(),
+                    sp.GetRequiredService<IRiskSettingsStore>(),
+                    sp.GetRequiredService<IClock>()));
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
                 // ルーティングを入れないと発行先が 1 つも無く、送信そのものが起きない。
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
@@ -171,5 +182,70 @@ public class BrokerPositionsObservedConsumerTests
         second.Sent.MessagesOf<PositionCloseRequested>().Should().BeEmpty();
 
         await host.StopAsync();
+    }
+
+    // T-10-246: FR-10, FR-11, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 ——
+    // **同じ観測から強制買戻しを事後推定し、イベントとして発行する。**
+    // 推定は乖離報告の連続観測条件に従わない（処理中の決済承認を差し引いて未反映そのものを説明に使うため、
+    // 待つ必要が無い。推定が遅れることは決定4 の目的を損なう側の誤りである）。
+    [Fact]
+    public async Task 説明できない空売り建玉の消失から強制買戻しを推定して発行する()
+    {
+        var store = new InMemoryBuyInInferenceStore();
+        using var host = await BuildHostAsync(LedgerWithShortGme(100), NewTracker(), store);
+
+        // ブローカ側に当該建玉が無い＝自らの決済指示で説明できない消失。
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
+
+        session.Sent.MessagesOf<BuyInInferred>().Should().Contain(m =>
+            m.Symbol == "GME"
+            && m.LedgerShortQuantity == 100
+            && m.BrokerShortQuantity == 0
+            && m.NewlyInferredQuantity == 100);
+        store.GetBanUntil("GME", Market.UnitedStates).Should().NotBeNull();
+
+        await host.StopAsync();
+    }
+
+    // T-10-247（**否定形**）: 自らの決済約定で説明できる消失からは推定を発行しない。
+    [Fact]
+    public async Task 自らの決済で説明できる消失からは推定を発行しない()
+    {
+        var store = new InMemoryBuyInInferenceStore();
+        // 100 株の空売りを自分で全量買い戻した台帳（建玉なし）。
+        using var host = await BuildHostAsync(LedgerWithShortGme(100, closedQuantity: 100), NewTracker(), store);
+
+        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
+
+        session.Sent.MessagesOf<BuyInInferred>().Should().BeEmpty();
+        store.GetBanUntil("GME", Market.UnitedStates).Should().BeNull();
+
+        await host.StopAsync();
+    }
+
+    // GME を quantity 株だけ空売りし、そのうち closedQuantity 株を自分で買い戻した台帳。
+    private static InMemoryPortfolioLedgerStore LedgerWithShortGme(int quantity, int closedQuantity = 0)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var openId = Guid.NewGuid();
+        ledger.AppendApproval(
+            openId,
+            new OrderIntent("GME", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell,
+                BrokerProvider.MoomooSimulate, quantity, 30m, PositionEffect.Open, StopLossPrice: 33m),
+            At.AddDays(-2));
+        ledger.AppendFill(openId, "short-open-1", quantity, 30m, At.AddDays(-2));
+
+        if (closedQuantity > 0)
+        {
+            var closeId = Guid.NewGuid();
+            ledger.AppendApproval(
+                closeId,
+                new OrderIntent("GME", Market.UnitedStates, TradeSide.Buy, ProductType.ShortSell,
+                    BrokerProvider.MoomooSimulate, closedQuantity, 30m, PositionEffect.Close),
+                At.AddDays(-1));
+            ledger.AppendFill(closeId, "short-close-1", closedQuantity, 30m, At.AddDays(-1));
+        }
+
+        return ledger;
     }
 }

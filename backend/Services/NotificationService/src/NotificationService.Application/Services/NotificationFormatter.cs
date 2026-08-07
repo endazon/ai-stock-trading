@@ -93,6 +93,26 @@ public static class NotificationFormatter
             + "利用者の承認と AI の判断は介在していません（機械的規則）。",
         NotificationSeverity.Critical);
 
+    // FR-09, FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
+    // 強制買戻し（buy-in）の**事後推定**。イベント検知の供給元が無いため、建玉の消失を自らの決済指示
+    //（約定履歴・処理中の決済承認）と突合して推定したものである。
+    //
+    // **必ず「推定」と明示する。** 決定4 の改訂は「**推定であることを運用者へ示す**（日報・通知の文言で
+    //『強制買戻しと推定』と明示し、**確定事実として扱わない**）」と定めた。取り違えがあり得る以上、
+    // 断定した通知は運用者に誤った確信を与える。突合に用いた数量を本文へ並べ、人が事後に検証できるようにする。
+    //
+    // 30 日の新規空売り禁止を伴う（利用者の承認を待たない統制の発動である）ため **Critical** とする。
+    public static NotificationMessage From(BuyInInferred e) => new(
+        "リスク統制: 強制買戻しと推定（空売り 30 日禁止）",
+        $"{e.Symbol}/{e.Market} で**強制買戻し（buy-in）と推定**しました。"
+            + $"台帳（自らの約定履歴）の空売り {e.LedgerShortQuantity} 株に対し、ブローカの空売りは "
+            + $"{e.BrokerShortQuantity} 株（処理中の決済 {e.InFlightCloseQuantity} 株）であり、"
+            + $"自らの決済指示で説明できない消失 {e.NewlyInferredQuantity} 株を検出しました。"
+            + $"{e.BanUntil:yyyy-MM-dd} まで当該銘柄の新規空売りを禁止します。"
+            + "これは**イベントとしての検知ではなく推定**です（確定した事実として扱わないでください）。"
+            + "手動売買・外部要因による建玉の消失を取り違えている可能性があります。",
+        NotificationSeverity.Critical);
+
     // 04_report-templates の <n%> 表記（小数第 1 位・文化非依存）。"P1" は文化により空白が入るため使わない。
     private static string Ratio(decimal ratio) =>
         (ratio * 100m).ToString("0.0", CultureInfo.InvariantCulture) + "%";

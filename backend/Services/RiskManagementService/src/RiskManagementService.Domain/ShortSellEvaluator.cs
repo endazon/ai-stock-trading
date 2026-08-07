@@ -122,7 +122,9 @@ public static class ShortSellEvaluator
         // 禁止状態であり、原因も解除条件も異なる。写像すると監査ログ（FR-11）の理由が実態と食い違う。
         // **禁止銘柄（BannedSymbol・クラス C）にも混ぜない**（市況由来の事象を「AI が禁止事項を
         // 犯そうとした件数」に混入させない）。30 日リストは BannedSymbol とは別の空売り専用リストである。
-        if (context.BuyInBanUntil is { } banUntil && context.Today < banUntil)
+        // #419, IADR-0159 決定5: 判定式は BuyInBanPolicy を単一情報源とする（文脈が組めないときの供給経路
+        // BuyInBanSupply と規則を共有する。同じ規則を 2 か所に書かない）。
+        if (BuyInBanPolicy.IsBanned(context.Today, context.BuyInBanUntil))
         {
             reasons.Add(RejectionReason.BuyInBanned);
         }

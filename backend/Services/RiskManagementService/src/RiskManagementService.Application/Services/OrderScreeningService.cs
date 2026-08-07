@@ -16,7 +16,8 @@ public sealed class OrderScreeningService(
     ILockoutStore lockoutStore,
     IClock clock,
     IBusinessCalendar businessCalendar,
-    IManipulativeOrderPatternDetector? patternDetector = null)
+    IManipulativeOrderPatternDetector? patternDetector = null,
+    IBuyInInferenceStore? buyInInferences = null)
 {
     public ScreeningOutcome Screen(TradeDecisionMade decision)
     {
@@ -27,8 +28,16 @@ public sealed class OrderScreeningService(
         var snapshot = snapshotBuilder.Build();
         var isEntry = intent.PositionEffect == PositionEffect.Open;
 
+        // FR-10, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5:
+        // 強制買戻し由来の 30 日禁止を判定コアへ供給する。**借株照会の供給元が無いため空売り文脈
+        // （ShortSellOrderContext）は今も組めない**が、禁止期限だけは推定台帳から供給できる。
+        // 供給できない値（維持率・エクスポージャ）を 0 で埋めた偽の文脈は作らない（値を発明しない）。
+        var buyInBan = buyInInferences is null
+            ? null
+            : new BuyInBanSupply(clock.Today, buyInInferences.GetBanUntil(intent.Symbol, intent.Market));
+
         // 判定コア（決定的）を実行し、違反理由を集約する。
-        var result = RiskEvaluator.Evaluate(intent, settings, snapshot, patternDetector);
+        var result = RiskEvaluator.Evaluate(intent, settings, snapshot, patternDetector, buyInBan: buyInBan);
         var reasons = new List<RejectionReason>(result.Reasons);
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。
