@@ -73,6 +73,8 @@ public static class ActualDefaults
         var limits = TradingDefaults.CreateRiskLimits();
         var guard = TradingDefaults.CreateGuardSettings();
         var policy = TradingDefaults.CreateStagePolicy();
+        // ADR-0016 / #445: 空売り統制の**値**の抽出元。型の形（メンバ名）だけでは値の逸脱を捕まえられない。
+        var shortSell = TradingDefaults.CreateShortSellSettings().Limits;
         // FR-17: 全体前提条件（§1 税制・§6 運用費用上限）の既定は本ファクトリが単一の出所である。
         var assumptions = TradingAssumptionsDefaults.Create();
 
@@ -102,8 +104,28 @@ public static class ActualDefaults
             ["Guard.ProhibitManipulativeOrderPatterns"] = guard.ProhibitManipulativeOrderPatterns.ToString(),
 
             // 空売り統制。専用型が未追加なら型の不在をそのまま値とする。
+            // **本行は型の形（メンバ名）だけを見る。値は下の 7 行が見る**（#445・IADR-0172 決定1）。
             ["ShortSell.Limits"] = DescribeTypeWithMembers(ShortSellingLimitsTypeName),
             ["RejectionReason.ShortSellReasons"] = PresentEnumNames<RejectionReason>(ShortSellRejectionReasons),
+
+            // 空売り統制の**値**（#445 で追加）。2026-08-07 まで、上の型の形の行しか無かったため
+            // **7 値はいずれも一度も比較されていなかった**（`PerSymbolCapRatio` を 0.10 → 0.50 へ
+            // 変えても全テストが緑であることを実測した）。抽出元は既定値ファクトリの実値である。
+            ["ShortSell.PerSymbolCapRatio"] = EquityRatio(shortSell.PerSymbolCapRatio),
+            ["ShortSell.BorrowRateCapAnnual"] = AnnualRate(shortSell.BorrowRateCapAnnual),
+            ["ShortSell.MaintenanceMarginThreshold"] = Ratio(shortSell.MaintenanceMarginThreshold),
+            ["ShortSell.MaintenanceRecoveryTargetOffset"] = Ratio(shortSell.MaintenanceRecoveryTargetOffset),
+            ["ShortSell.PriceFloorUsd"] = UsdAmount(shortSell.PriceFloorUsd),
+            ["ShortSell.ExposureRatioCap"] = GrossPositionRatio(shortSell.ExposureRatioCap),
+            ["ShortSell.BuyInBanDurationDays"] = Days(shortSell.BuyInBanDurationDays),
+
+            // 規制側の維持率（FINRA Rule 4210(c)）。自前の閾値とは別の情報源であり、
+            // 「厳しい方を採る」の一方の入力である。自前だけを検査すると規制側の緩みに気付けない。
+            ["Regulatory.MaintenanceMarginFloor"] = Ratio(ShortSellingLimits.RegulatoryMaintenanceMarginFloor),
+            ["Regulatory.FixedMaintenancePerShare"] =
+                UsdAmount(ShortSellingLimits.RegulatoryFixedMaintenancePerShareUsd),
+            ["Regulatory.MarginLongMaintenanceMargin"] =
+                Ratio(ShortSellingLimits.RegulatoryMarginLongMaintenanceMargin),
 
             // 段階ゲートと発注先。
             ["BrokerProvider.Values"] = DescribeEnumValues(BrokerProviderTypeName),
@@ -113,6 +135,8 @@ public static class ActualDefaults
             ["Stage.Stage2OrderableCapRatio"] =
                 TotalFundsRatio(policy.SettingsFor(TradingStage.Stage2MinimalLive).CapitalCapRatio),
             ["Stage.WithdrawalDrawdownMultiple"] = Number(policy.WithdrawalDrawdownMultiple),
+            ["Stage.ShortSellLiveReleaseEquity"] =
+                UsdAmount(StageProductPolicy.ShortSellLiveReleaseEquityUsd),
 
             // 為替レート源と鮮度（ADR-0022）。実装型は TradeDecisionService.Infrastructure の internal であり、
             // 名前で解決してリフレクションで読む（InternalsVisibleTo を増やさない。IADR-0128 / IADR-0135）。
@@ -159,6 +183,34 @@ public static class ActualDefaults
 
     /// <summary>基準を持たない純粋な割合（バックテスト結果に対する比率など）。</summary>
     private static string Ratio(decimal ratio) => $"ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// **年率**として保持されている割合（借株料の上限）。期間を表現に含めることで、
+    /// equity 比・維持率といった無期間の割合との取り違えを検知可能にする（#445）。
+    /// </summary>
+    private static string AnnualRate(decimal ratio) =>
+        $"annual rate {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// **建玉総額**に対する割合（空売り比率の上限）。基準を表現に含める —— equity 比と混同すると、
+    /// 同じ 0.50 でも意味する上限額がまったく違う（#445）。
+    /// </summary>
+    private static string GrossPositionRatio(decimal ratio) =>
+        $"gross position ratio {ratio.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// USD 建ての絶対額。<see cref="CurrencyAmount"/> と違い通貨は実装側の型ではなく概念で固定される
+    /// （計画が「USD 建ての閾値である」と明記している値に用いる。§5・ADR-0016 決定7）。
+    /// </summary>
+    /// <para>
+    /// 小数 2 桁で固定する。<see cref="Number"/> は末尾の 0 を落とすため <c>$5.00</c> が <c>5</c> になり、
+    /// 計画の表記（<c>$5.00</c>）と機械的に突き合わせられなくなる。
+    /// </para>
+    private static string UsdAmount(decimal amount) =>
+        $"USD {amount.ToString("0.00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>日数。単位つきで正規化し、無次元の件数（保有建玉数など）との取り違えを防ぐ。</summary>
+    private static string Days(int days) => $"{Number(days)} days";
 
     /// <summary>
     /// 総資金（equity）に対する割合として保持されている段階の発注可能額（#333・計画 §5「運用段階（Stage）」）。
