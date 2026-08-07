@@ -2,10 +2,10 @@
 title: セキュリティ仕様書
 type: security-spec
 status: draft
-related_ids: []
-author: <作成者>
-created: <YYYY-MM-DD>
-updated: <YYYY-MM-DD>
+related_ids: [NFR, FR-08, FR-14, ADR-0012, IADR-0171]
+author: endazon (with Claude Code)
+created: 2026-08-07
+updated: 2026-08-07
 plan_refs: []
 ---
 
@@ -16,8 +16,60 @@ plan_refs: []
 
 ## 起点となる計画書（トレーサビリティ）
 
-- 非機能要件（NFR・セキュリティ）:
-- 関連 ADR:
+- 非機能要件（NFR・セキュリティ）: 発注機能へのアクセスは本人のみ・外部公開しない
+- 関連 ADR: **ADR-0012**（取引データの MCP 非公開）／ADR-0003（AI 判断のガードレール）／ADR-0004（収集ソースの受理）
+
+> **注意: 本書は「MCP への公開」節を除き、まだ雛形のままである。** 認証・認可・データ保護・秘密情報管理・
+> 監査ログ・脅威と対策は未記入であり、**「書かれていない ＝ 対策が無い」ことを意味しない**（実装には
+> Keycloak / ABAC・TLS・シークレット管理が入っている）。実態の横断調査を経て記入すること
+> （[#450](https://github.com/endazon/ai-stock-trading/issues/450)）。**推測で埋めると、
+> セキュリティ仕様書が「書いてあるが実態と違う」という最も悪い状態になる。**
+
+## MCP（外部 AI エージェント）への公開
+
+**本ユニットのデータは MCP（Model Context Protocol）経由で外部 AI エージェントへ公開しない。**
+根拠は計画 ADR-0012（Accepted・2026-07-23）である。実装側の担保は
+[IADR-0171](../adr/IADR-0171_mcp-non-exposure-structural-guard.md) に記録した。
+
+### 現状（2026-08-07 実測）
+
+**本リポジトリには MCP 関連の構成・コードが 1 件も存在しない。** `backend/` と `deploy/` を
+大文字小文字を問わず部分一致で走査して 0 件であった。基盤の MCP サーバー（platform ADR-0024）は
+**既定非公開＝許可リスト方式**であるため、**本ユニットが自分を登録しない限り公開されない**。
+
+### 閉じているのは MCP という経路だけである
+
+**この統制を「AST のデータは誰も検索・参照できない」と読み違えないこと。** ADR-0012 が閉じているのは
+**外部 AI エージェント向けの MCP 経路のみ**である。
+
+| 経路 | 可否 |
+| --- | --- |
+| 利用者本人による基盤チャット UI・RAG 検索（**FR-08**） | **従来どおり可能**（本人権限・Keycloak / ABAC） |
+| Discord からの参照（**FR-14**） | **従来どおり可能** |
+| ナレッジベースへの保存そのもの（**FR-08**） | **行う**（保存はする。MCP へ出さないだけである） |
+| MCP ツール（`retrieval.*` / `document.*`）経由の外部エージェント | **公開しない** |
+
+### 将来公開する場合の手続き — **新 ADR が必須**
+
+公開が必要になった場合、**構成を足すだけで実施してはならない。** ADR-0012 を Superseded する
+新 ADR で、次の 4 点を**個別に**定めてから行う（ADR-0012 §決定）。
+
+1. 対象文書（どのコレクション・どの retrieval スコープまでか）
+2. ABAC 属性（platform ADR-0004）
+3. データ越境ティア判定（platform 06_technical/08_data-egress-policy）
+4. **無人エージェント（Client Credentials）の権限スコープ**
+
+### 退行の防止
+
+`backend/Tests/AiStockTrading.Architecture.Tests/McpExposureNotDeclaredTests.cs` が
+`backend/` と `deploy/` を走査し、**MCP 公開の宣言が入り込むとテストが落ちる**。
+「実装していない」と「実装してはならない」は別であり、**後者はコードに書かれない限り誰も守れない**
+（IADR-0164 決定1 と同じ論法）。
+
+**このテストは本リポジトリ内しか見ない。** 基盤側の許可リストへ基盤側の PR で追加された場合は
+検出できない —— **基盤 MCP 再実装後の結合確認**が別途必要であり、
+[`docs/blocked-tasks.md`](../blocked-tasks.md) の A-10 に登録してある
+（microservices-platform#445 待ち）。
 
 ## 認証・認可
 
