@@ -487,3 +487,7 @@ coverage/
 # .venv/
 # .pytest_cache/
 # .coverage
+
+# Claude Code の並列エージェント用 git worktree（セッション限りの作業領域・数 GB になる）。
+# リポジトリの成果物ではないため追跡しない。
+.claude/worktrees/
