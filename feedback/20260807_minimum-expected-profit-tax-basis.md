@@ -12,6 +12,8 @@ created: 2026-08-07
 
 # フィードバック: 最小期待利益の「税」の算入方法
 
+> **起票済み: [project-planning#289](https://github.com/endazon/project-planning/issues/289)**（2026-08-07）。裁定を待つ。
+
 ## 対象の計画書
 
 `projects/ai-stock-trading/06_technical/05_trading-assumptions.md` **§4「計算・判断の方針」**
