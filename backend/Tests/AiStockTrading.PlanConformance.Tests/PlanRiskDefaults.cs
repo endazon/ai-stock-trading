@@ -49,16 +49,66 @@ public static class PlanRiskDefaults
         new("Guard.EnabledMarkets", "Japan, UnitedStates", Assumptions5),
         // 比較は序数順に正規化するため、登録順ではなく昇順で記す。
         new("Guard.BannedSymbols", "6457/Japan, 6502/Japan, 6902/Japan", Assumptions5),
-        new("Guard.PreventSameDayReentry", "True", $"{Assumptions5}（適用範囲は日本株現物。FR-19）"),
+        // 適用範囲は 2026-08-06 に条件付きへ改められた（ADR-0021 決定4-1・環流 project-planning#220）。
+        // 旧注記は「日本株現物」のみとしており、**現金口座の米国株にも適用される**ことが落ちていた。
+        // 注記は飾りではなく、読み手が「この値は本当に計画どおりか」を確かめる唯一の手掛かりである。
+        // **実装側の適用範囲が計画に追随しているかは #380 の担当**であり、ここでは注記のみを正す（#445）。
+        new(
+            "Guard.PreventSameDayReentry",
+            "True",
+            $"{Assumptions5}（適用範囲は `現物 && （日本市場 ‖ 現金口座）`。FR-19 / ADR-0021 決定4-1）"),
         new("Guard.ProhibitManipulativeOrderPatterns", "True", Assumptions5),
 
         // --- 空売り専用統制（ADR-0016）。値の集合は専用型 ShortSellingLimits が保持する想定 ---
+        // **本行は「型の形」だけを見る。値は下の 7 行が見る**（#445・IADR-0172 決定1）。
+        // 役割が違うため併存させる —— 本行はメンバの**増減**を、下の 7 行は**値の逸脱**を捕まえる。
         new(
             "ShortSell.Limits",
             "type ShortSellingLimits with members: BorrowRateCapAnnual, BuyInBanDurationDays, "
                 + "ExposureRatioCap, MaintenanceMarginThreshold, MaintenanceRecoveryTargetOffset, "
                 + "PerSymbolCapRatio, PriceFloorUsd",
             "ADR-0016 決定2,3,4,7,9 / UC-06"),
+
+        // --- 空売り統制の**値**（#445 で追加）。
+        //
+        //     【本作業が見つけた穴】 2026-08-07 まで、上の `ShortSell.Limits` 行は
+        //     `DescribeTypeWithMembers`（= プロパティ名の一覧）で抽出されており、**値は一度も
+        //     比較されていなかった**。実測: `PerSymbolCapRatio` を 0.10 → 0.50（equity の 5 割）へ
+        //     変えても PlanConformance / PlanSourceDigest はいずれも緑のままであった。
+        //     「間違っていた」のではなく**「間違っても気付けなかった」**——[[IADR-0166]] が名付けた
+        //     「緑だが検査されていない」そのものである。
+        //
+        //     値はいずれも単位つきで正規化する（無次元の数値どうしの取り違えを防ぐ。Fx.* と同じ作法）。 ---
+        new("ShortSell.PerSymbolCapRatio", "equity ratio 0.10", $"{Assumptions5} / ADR-0016 決定2(a)"),
+        new("ShortSell.BorrowRateCapAnnual", "annual rate 0.20", $"{Assumptions5} / ADR-0016 決定3"),
+        // 自前の閾値である。実効値は規制要求（max($5.00 ÷ 株価, 30%)）との**厳しい方**であり、
+        // その選択は振る舞いの規則のため 3 点セットのテストが担当する（IADR-0127 決定4）。
+        new("ShortSell.MaintenanceMarginThreshold", "ratio 0.40", $"{Assumptions5} / ADR-0016 決定7"),
+        new(
+            "ShortSell.MaintenanceRecoveryTargetOffset",
+            "ratio 0.05",
+            $"{Assumptions5}（適用される閾値 + 5 ポイント。利用者裁定 2026-08-02）"),
+        // **下の Regulatory.FixedMaintenancePerShare と同額（$5.00）だが別の概念である。**
+        // 本行は「空売り対象の株価下限」、あちらは「規制の固定維持証拠金」。1 行にまとめると、
+        // 片方が変わったときにもう片方の検査が黙って消える（IADR-0172 決定2）。
+        new("ShortSell.PriceFloorUsd", "USD 5.00", $"{Assumptions5} / ADR-0016 決定7"),
+        new("ShortSell.ExposureRatioCap", "gross position ratio 0.50", $"{Assumptions5} / ADR-0016 決定9"),
+        new("ShortSell.BuyInBanDurationDays", "30 days", "ADR-0016 決定4"),
+
+        // --- 規制側の維持率（FINRA Rule 4210(c)）。自前の閾値とは**別の情報源**であり、
+        //     「厳しい方を採る」の一方の入力である。自前だけを検査すると、規制側を緩めても気付けない。 ---
+        new("Regulatory.MaintenanceMarginFloor", "ratio 0.30", $"{Assumptions5}（規制側の下限。ADR-0016 決定7）"),
+        new(
+            "Regulatory.FixedMaintenancePerShare",
+            "USD 5.00",
+            $"{Assumptions5}（規制側の実効維持率 max($5.00 ÷ 株価, 30%) の固定額）"),
+        // **2026-08-07 確定（利用者裁定 質問票 第 13 回 Q4-3）。確定から本作業まで一度も検査されていなかった。**
+        // 自前の 40% と厳しい方を採るため実効的には常に 40% が効くが、それでも持つ理由は計画に明記が
+        // ある —— 空売り側の式で代用している状態を解消し、将来 40% を見直す際に正しい規制下限を残すため。
+        new(
+            "Regulatory.MarginLongMaintenanceMargin",
+            "ratio 0.25",
+            $"{Assumptions5}（信用買いの規制維持率。FINRA Rule 4210(c)(1)。2026-08-07 確定）"),
         // 2026-08-04 改訂: 7 種 → 9 種（`StopOrderRequired` の追認・`BuyInBanned` の新設）。
         // `BuyInBanned` を `BorrowUnavailable` へ写像してはならない（決定10 の 2026-08-04 追記）。
         new(
@@ -75,6 +125,12 @@ public static class PlanRiskDefaults
         new("Stage.Stage1BrokerProvider", "MoomooSimulate", $"{Assumptions5} / FR-20"),
         new("Stage.Stage2OrderableCapRatio", "total funds ratio 0.30", Assumptions5),
         new("Stage.WithdrawalDrawdownMultiple", "1.5", "ADR-0008"),
+        // 空売りの実弾解禁は Stage 3 **かつ** 自己資金 $5,000 以上の 2 条件である。
+        // 段階のほうは Stage.Values / StageProductPolicy が持つため、ここでは金額条件だけを収録する（#445）。
+        new(
+            "Stage.ShortSellLiveReleaseEquity",
+            "USD 5000.00",
+            $"{Assumptions5} / ADR-0016 決定8（1 銘柄あたり上限 equity の 10% が $500 以上であることと等価）"),
         // ADR-0018 決定2 が名指しするのは Stage 0 合格判定の許容値（Stage0GateCriteria）であり、
         // 運用の DD 停止ライン（RiskLimits.MaxDrawdownRatio）とは**別のフィールド**である。
         // 両者を取り違えると「たまたま計画と一致している別の値」を見て逸脱を見逃す。
