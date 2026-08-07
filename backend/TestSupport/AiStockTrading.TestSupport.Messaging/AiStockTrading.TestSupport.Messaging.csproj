@@ -1,0 +1,14 @@
+<!-- NFR, #357, IADR-0168: Wolverine のテストハーネス（Wolverine.Tracking）の共通設定。
+     **テスト専用**であり、src からは参照しない（`scripts/check-tracked-session-timeout.js` が
+     素の `TrackActivity()` を禁止し、本プロジェクトの入口を通ることを機械的に担保する）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.TestSupport.Messaging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- `Wolverine.Tracking` は WolverineFx 本体に含まれる（追加パッケージは要らない）。 -->
+    <PackageReference Include="WolverineFx" />
+  </ItemGroup>
+</Project>

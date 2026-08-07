@@ -5,6 +5,7 @@ using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,7 +74,7 @@ public class TradeDecisionMadeConsumerTests
     {
         using var host = await BuildHostAsync(new InMemoryKillSwitchStore());
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
 
         session1.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         session1.Sent.MessagesOf<OrderApproved>().Should().NotBeEmpty();
@@ -89,7 +90,7 @@ public class TradeDecisionMadeConsumerTests
         killSwitch.SetState(new KillSwitchState(true, "user", "停止", DateTimeOffset.UtcNow));
         using var host = await BuildHostAsync(killSwitch);
 
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
 
         session1.Sent.MessagesOf<OrderRejected>().Should().NotBeEmpty();
         var rejected = session1.Sent.MessagesOf<OrderRejected>().First();
@@ -113,7 +114,7 @@ public class TradeDecisionMadeConsumerTests
         var intent = new OrderIntent(
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             BrokerProvider.MoomooSimulate, 10, 1_000m);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow));
 
         var tally = violations.GetTally();

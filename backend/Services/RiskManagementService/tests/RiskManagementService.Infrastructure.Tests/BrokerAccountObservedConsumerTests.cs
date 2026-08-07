@@ -3,6 +3,7 @@ using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,7 +47,7 @@ public class BrokerAccountObservedConsumerTests
         var store = new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Observed));
         using var host = await BuildHostAsync(store);
 
-        await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
             BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1_000m), Observed));
 
         store.GetCurrent().Should().Be(new BrokerAccountState(AccountType.Cash, 1_000m));
@@ -59,7 +60,7 @@ public class BrokerAccountObservedConsumerTests
         var store = new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Observed));
         using var host = await BuildHostAsync(store);
 
-        await host.TrackActivity().ExecuteAndWaitAsync(_ => Task.CompletedTask);
+        await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => Task.CompletedTask);
 
         store.GetCurrent().Should().BeNull();
     }
@@ -73,8 +74,8 @@ public class BrokerAccountObservedConsumerTests
         var message = new BrokerAccountObserved(
             BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Margin), Observed);
 
-        await host.TrackActivity().InvokeMessageAndWaitAsync(message);
-        await host.TrackActivity().InvokeMessageAndWaitAsync(message);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(message);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(message);
 
         store.GetCurrent()!.AccountType.Should().Be(AccountType.Margin);
     }
@@ -86,9 +87,9 @@ public class BrokerAccountObservedConsumerTests
         var store = new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Observed));
         using var host = await BuildHostAsync(store);
 
-        await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
             BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Cash, 1m), Observed));
-        await host.TrackActivity().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BrokerAccountObserved(
             BrokerProvider.MoomooSimulate, new BrokerAccountState(AccountType.Margin), Observed.AddMinutes(-10)));
 
         store.GetCurrent()!.AccountType.Should().Be(AccountType.Cash);

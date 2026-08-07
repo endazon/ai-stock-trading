@@ -1,6 +1,7 @@
 using AiStockTrading.Configuration.Client.Composable.Steps;
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -39,7 +40,7 @@ public class AssumptionsChangedConsumerTests
             })
             .StartAsync();
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(new AssumptionsChanged(
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new AssumptionsChanged(
             Version: 4, Actor: "owner", Reason: "月次費用上限の引き下げ", ChangedAt: DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<AssumptionsChanged>().Should().NotBeEmpty();

@@ -3,6 +3,7 @@ using AiStockTrading.Audit.Application.Ports;
 using AiStockTrading.Audit.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -44,9 +45,9 @@ public class AuditEventConsumersTests
         using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new TradeDecisionMade(decisionId, Intent(), "買い", DateTimeOffset.UtcNow));
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new TradeDecisionMade(decisionId, Intent(), "買い", DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
         session0.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
@@ -66,10 +67,10 @@ public class AuditEventConsumersTests
         using var host = await BuildHostAsync(store);
 
         var decisionId = Guid.NewGuid();
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new OrderModified(decisionId, "ORD-1", 10, 1_000m, 4, 990m, "数量縮小", DateTimeOffset.UtcNow));
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new OrderCancelled(decisionId, "ORD-1", "pause による強制取消", DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<OrderModified>().Should().NotBeEmpty();
@@ -90,7 +91,7 @@ public class AuditEventConsumersTests
 
         var decisionId = Guid.NewGuid();
         var reasons = new[] { RejectionReason.KillSwitchActive };
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderRejected(decisionId, Intent(), reasons, DateTimeOffset.UtcNow));
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderRejected(decisionId, Intent(), reasons, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<OrderRejected>().Should().NotBeEmpty();
 
         var trail = store.GetByCorrelation(decisionId);
@@ -106,8 +107,8 @@ public class AuditEventConsumersTests
         var store = new InMemoryAuditEventStore();
         using var host = await BuildHostAsync(store);
 
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 2, DateTimeOffset.UtcNow));
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new AssumptionsChanged(2, "owner", "税率見直し", DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 2, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<AssumptionsChanged>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<ReportConfirmed>().Should().NotBeEmpty();
 
@@ -127,8 +128,8 @@ public class AuditEventConsumersTests
         using var host = await BuildHostAsync(store);
 
         var collectId = Guid.NewGuid();
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new CostThresholdReached("2026-07", "Llm", 1.00m, "Halted", DateTimeOffset.UtcNow));
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new InformationCollected(collectId, 3, DateTimeOffset.UtcNow));
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new CostThresholdReached("2026-07", "Llm", 1.00m, "Halted", DateTimeOffset.UtcNow));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new InformationCollected(collectId, 3, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<CostThresholdReached>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
 
@@ -149,7 +150,7 @@ public class AuditEventConsumersTests
         var store = new InMemoryAuditEventStore();
         using var host = await BuildHostAsync(store);
 
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new StageTransitioned(1, 0, 1, "Promotion", "owner", "利用者承認による昇格", DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<StageTransitioned>().Should().NotBeEmpty();
 
@@ -169,7 +170,7 @@ public class AuditEventConsumersTests
         var store = new InMemoryAuditEventStore();
         using var host = await BuildHostAsync(store);
 
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new WithdrawalTriggered(
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new WithdrawalTriggered(
             0, "DrawdownBreachedMultiple", HaltNewEntries: true, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<WithdrawalTriggered>().Should().NotBeEmpty();
 
@@ -189,7 +190,7 @@ public class AuditEventConsumersTests
         var store = new InMemoryAuditEventStore();
         using var host = await BuildHostAsync(store);
 
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new BacktestEvaluated(
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BacktestEvaluated(
             Passed: true, MaxDrawdownRatio: 0.08m, DeflatedSharpe: 1.2,
             ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
@@ -209,7 +210,7 @@ public class AuditEventConsumersTests
         using var host = await BuildHostAsync(store);
 
         var eventId = Guid.NewGuid();
-        var session0 = await host.TrackActivity().InvokeMessageAndWaitAsync(new StopLossTriggered(eventId, "7203", Market.Japan, TradeSide.Buy, 5, 950m, 940m, DateTimeOffset.UtcNow));
+        var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new StopLossTriggered(eventId, "7203", Market.Japan, TradeSide.Buy, 5, 950m, 940m, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
 
         store.GetByCorrelation(eventId).Should().ContainSingle(e => e.EventType == "StopLossTriggered");

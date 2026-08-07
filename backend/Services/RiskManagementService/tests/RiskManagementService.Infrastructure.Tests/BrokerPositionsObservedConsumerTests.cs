@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -87,7 +88,7 @@ public class BrokerPositionsObservedConsumerTests
     {
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker());
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 100, 20m)));
         session.Executed.MessagesOf<BrokerPositionsObserved>().Should().NotBeEmpty();
 
@@ -102,7 +103,7 @@ public class BrokerPositionsObservedConsumerTests
         // 発注直後〜約定が台帳へ届くまでの一過性のズレで鳴らせない。
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker());
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 80, 20m)));
         session.Executed.MessagesOf<BrokerPositionsObserved>().Should().NotBeEmpty();
 
@@ -117,8 +118,8 @@ public class BrokerPositionsObservedConsumerTests
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker());
 
         var observed = Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 80, 20m));
-        await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
 
         session.Sent.MessagesOf<PositionReconciliationDrift>().Should().Contain(m =>
             m.Drifts.Count == 1
@@ -139,8 +140,8 @@ public class BrokerPositionsObservedConsumerTests
         using var host = await BuildHostAsync(new InMemoryPortfolioLedgerStore(), NewTracker());
 
         var observed = Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 4072, 20.5m));
-        await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
 
         session.Sent.MessagesOf<PositionReconciliationDrift>().Should().Contain(m =>
             m.Drifts[0].Kind == PositionDriftKind.BrokerOnly
@@ -154,8 +155,8 @@ public class BrokerPositionsObservedConsumerTests
     {
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker());
 
-        await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Observed());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Observed());
 
         session.Sent.MessagesOf<PositionReconciliationDrift>().Should().Contain(m =>
             m.Drifts[0].Kind == PositionDriftKind.LedgerOnly
@@ -171,8 +172,8 @@ public class BrokerPositionsObservedConsumerTests
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker());
 
         var observed = Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 80, 20m));
-        var first = await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
-        var second = await host.TrackActivity().InvokeMessageAndWaitAsync(observed);
+        var first = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        var second = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
         second.Sent.MessagesOf<PositionReconciliationDrift>().Should().NotBeEmpty();
 
         // 1 回目・2 回目のどちらでも是正の発注は出ない（旧テストはハーネス全体で見ていたため両方を見る）。
@@ -195,7 +196,7 @@ public class BrokerPositionsObservedConsumerTests
         using var host = await BuildHostAsync(LedgerWithShortGme(100), NewTracker(), store);
 
         // ブローカ側に当該建玉が無い＝自らの決済指示で説明できない消失。
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Observed());
 
         session.Sent.MessagesOf<BuyInInferred>().Should().Contain(m =>
             m.Symbol == "GME"
@@ -215,7 +216,7 @@ public class BrokerPositionsObservedConsumerTests
         // 100 株の空売りを自分で全量買い戻した台帳（建玉なし）。
         using var host = await BuildHostAsync(LedgerWithShortGme(100, closedQuantity: 100), NewTracker(), store);
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Observed());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Observed());
 
         session.Sent.MessagesOf<BuyInInferred>().Should().BeEmpty();
         store.GetBanUntil("GME", Market.UnitedStates).Should().BeNull();

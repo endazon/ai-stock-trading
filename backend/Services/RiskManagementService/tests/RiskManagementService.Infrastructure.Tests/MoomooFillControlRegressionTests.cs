@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -88,13 +89,13 @@ public class MoomooFillControlRegressionTests
         var first = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(), "1 回目", Now));
         first.IsApproved.Should().BeTrue();
         var decisionId = first.Approved!.DecisionId;
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
 
         var dailyRemainingBefore = sizing.Build().DailyOrderRemaining;
 
         // moomoo の発注応答（Accepted・約定 0）。この時点では台帳に何も載らない＝#270 の事象そのもの。
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now, BrokerProvider.MoomooSimulate));
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Accepted, 0, 0m, Now, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         ledger.GetFills().Should().BeEmpty();
@@ -103,7 +104,7 @@ public class MoomooFillControlRegressionTests
             .IsApproved.Should().BeTrue("約定が無い間は同日再エントリーの統制が拘束しない（追跡が必要な理由）");
 
         // 追跡ポーラーが終端化を観測して再発行した約定。ここで統制の入力が満たされる。
-        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
+        var session3 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.Status == OrderStatus.Filled);
 
@@ -130,11 +131,11 @@ public class MoomooFillControlRegressionTests
         var (_, sizing) = BuildRiskChain(ledger);
 
         var decisionId = Guid.NewGuid();
-        var session1 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
+        var session1 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Entry(), 10, Now));
         session1.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
         var before = sizing.Build();
 
-        var session2 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now, BrokerProvider.MoomooSimulate));
+        var session2 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.PartiallyFilled, 4, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session2.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
 
         // 部分約定（4 株 × ¥1,000 × 0.01 ＝ $40）分だけ枠が減る。全量約定を待たない（待つ間は統制が素通しになる）。
@@ -143,7 +144,7 @@ public class MoomooFillControlRegressionTests
         (before.StageCapitalRemaining - partial.StageCapitalRemaining).Should().Be(40m);
 
         // 累積 10 株で終端化 → 差分ではなく累積で置き換わる（二重計上しない）。
-        var session3 = await host.TrackActivity().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
+        var session3 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_000m, Now, BrokerProvider.MoomooSimulate));
         session3.Executed.MessagesOf<OrderExecuted>()
             .Should().Contain(m => m.Status == OrderStatus.Filled);
 

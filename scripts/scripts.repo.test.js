@@ -878,4 +878,55 @@ module.exports = ({ ok, assert }) => {
   ok('実ツリー: 決済済み資金の代替値のコード参照が無い（#425 の回帰）', () => {
     assert.deepStrictEqual(bscs.checkTree(pathBscs.resolve(__dirname, '..')), []);
   });
+
+  // --- check-tracked-session-timeout.js: 素の TrackActivity() の遮断（NFR / #357 / IADR-0168） ---
+  //
+  // #357 の flaky は `Wolverine.Tracking.TrackedSession` の**既定 5 秒**を、並列実行時の
+  // スケジューリング遅延が超えたものである（実測 6 秒）。131 か所を予算つきの入口へ替えたが、
+  // **次に書かれるテストは素の標準 API を素直に呼ぶ**——だから機械的に止める。
+  //
+  // **本検査も「効かない方向」に壊れると CI が緑のまま flake だけが戻る。** よって
+  //   (1) 素の入口を実際に検出できること（正）
+  //   (2) 予算つきの入口・コメント中の言及を誤検出しないこと（否定形）
+  // の両方を置く。
+  const pathTst = require('path');
+  const tst = require('./check-tracked-session-timeout.js');
+
+  ok('check-tracked-session-timeout: 素の TrackActivity() を検出する', () => {
+    const hits = tst.findViolations('var s = host.TrackActivity();\n');
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 1);
+  });
+
+  ok('check-tracked-session-timeout: 予算つきの TrackActivityForTest() は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var s = host.TrackActivityForTest();\n'), []);
+  });
+
+  ok('check-tracked-session-timeout: コメント中の言及は誤検出しない（禁止の理由を書けること）', () => {
+    assert.deepStrictEqual(tst.findViolations('// 素の TrackActivity() は使わない\n'), []);
+    assert.deepStrictEqual(tst.findViolations('/// <summary>TrackActivity の代替</summary>\n'), []);
+  });
+
+  ok('check-tracked-session-timeout: 文字列リテラル中の言及は誤検出しない', () => {
+    assert.deepStrictEqual(tst.findViolations('var name = "TrackActivity";\n'), []);
+  });
+
+  ok('check-tracked-session-timeout: 許可ファイルは 1 件だけ（予算を適用する当の実装）', () => {
+    assert.deepStrictEqual([...tst.ALLOWED_FILES], [
+      'backend/TestSupport/AiStockTrading.TestSupport.Messaging/WolverineTrackingExtensions.cs',
+    ]);
+  });
+
+  ok('check-tracked-session-timeout: 許可ファイルを外すと実ツリーで検出される（検査が効いていることの証明）', () => {
+    const root = pathTst.resolve(__dirname, '..');
+    const hits = tst.checkTree(root, new Set());
+    assert.ok(
+      hits.some((h) => h.file.endsWith('WolverineTrackingExtensions.cs')),
+      '許可を外しても検出されないなら、検査は素の入口を見ていない'
+    );
+  });
+
+  ok('実ツリー: 素の TrackActivity() の使用が無い（#357 の回帰）', () => {
+    assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
+  });
 };

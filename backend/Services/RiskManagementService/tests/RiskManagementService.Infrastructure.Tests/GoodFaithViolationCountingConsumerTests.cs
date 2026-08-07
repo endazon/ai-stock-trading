@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,7 +86,7 @@ public class GoodFaithViolationCountingConsumerTests
         using var host = await BuildHostAsync(
             store, new BrokerAccountState(AccountType.Cash), BuyEntry());
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Fill());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Fill());
 
         store.GetTally().Count.Should().Be(1);
         var published = session.Sent.MessagesOf<GoodFaithViolationRecorded>().ToList();
@@ -105,7 +106,7 @@ public class GoodFaithViolationCountingConsumerTests
         using var host = await BuildHostAsync(
             store, new BrokerAccountState(AccountType.Margin), BuyEntry());
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Fill());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Fill());
 
         store.GetTally().Count.Should().Be(0);
         session.Sent.MessagesOf<GoodFaithViolationRecorded>().Should().BeEmpty();
@@ -118,7 +119,7 @@ public class GoodFaithViolationCountingConsumerTests
         var store = new InMemoryGoodFaithViolationStore();
         using var host = await BuildHostAsync(store, account: null, approved: BuyEntry());
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Fill());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Fill());
 
         store.GetTally().Count.Should().Be(0);
         session.Sent.MessagesOf<GoodFaithViolationRecorded>().Should().BeEmpty();
@@ -132,8 +133,8 @@ public class GoodFaithViolationCountingConsumerTests
         using var host = await BuildHostAsync(
             store, new BrokerAccountState(AccountType.Cash), BuyEntry());
 
-        await host.TrackActivity().InvokeMessageAndWaitAsync(Fill());
-        await host.TrackActivity().InvokeMessageAndWaitAsync(Fill());
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Fill());
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Fill());
 
         store.GetTally().Count.Should().Be(1);
     }

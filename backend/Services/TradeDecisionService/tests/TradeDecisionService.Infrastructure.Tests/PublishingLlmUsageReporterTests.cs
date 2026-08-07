@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -58,7 +59,7 @@ public class PublishingLlmUsageReporterTests
             scope.ServiceProvider.GetRequiredService<IMessageBus>(),
             new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
 
-        var session = await host.TrackActivity().ExecuteAndWaitAsync(_ => reporter.ReportAsync(usage));
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => reporter.ReportAsync(usage));
 
         var published = session.Sent.MessagesOf<LlmCostIncurred>().Single();
         published.At.Should().Be(Now);

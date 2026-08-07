@@ -1,4 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
@@ -89,7 +90,7 @@ public class InformationCollectedConsumerTests
             new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
             new CalendarStub(open: true));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
@@ -107,7 +108,7 @@ public class InformationCollectedConsumerTests
             new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
             new CalendarStub(open: false));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
@@ -127,7 +128,7 @@ public class InformationCollectedConsumerTests
             new CalendarStub(open: true),
             new ThrowingForSymbolLlm("BADSYM", BuyJson));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 1, DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
@@ -144,7 +145,7 @@ public class InformationCollectedConsumerTests
     {
         using var host = await BuildAsync(new FakeWatchlist(), new CalendarStub(open: true));
 
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();

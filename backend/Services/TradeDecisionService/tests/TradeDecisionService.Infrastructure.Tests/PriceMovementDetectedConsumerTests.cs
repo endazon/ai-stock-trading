@@ -1,4 +1,5 @@
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
@@ -75,7 +76,7 @@ public class PriceMovementDetectedConsumerTests
     {
         using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"));
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Trigger());
 
         session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
@@ -97,7 +98,7 @@ public class PriceMovementDetectedConsumerTests
         // FR-02, IADR-0023: イベント駆動系統も市場カレンダー閉場ならスキップする。
         using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"), open: false);
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Trigger());
 
         session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
@@ -111,7 +112,7 @@ public class PriceMovementDetectedConsumerTests
         // FR-07: 方針なし → 取引しない。
         using var host = await BuildAsync(BuyJson, policy: null);
 
-        var session = await host.TrackActivity().InvokeMessageAndWaitAsync(Trigger());
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Trigger());
 
         session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();

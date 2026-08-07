@@ -5,6 +5,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
+using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,7 +78,7 @@ public class OrderApprovedConsumerTests
 
         var intent = NewIntent();
         var decisionId = Guid.NewGuid();
-        var session = await host.TrackActivity()
+        var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new OrderApproved(decisionId, intent, 10, DateTimeOffset.UtcNow));
 
         session.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
@@ -100,9 +101,9 @@ public class OrderApprovedConsumerTests
         using var host = await NewHostAsync(store, broker);
 
         var approved = new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow);
-        var first = await host.TrackActivity().InvokeMessageAndWaitAsync(approved);
+        var first = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved);
         first.Executed.MessagesOf<OrderApproved>().Should().NotBeEmpty();
-        var second = await host.TrackActivity().InvokeMessageAndWaitAsync(approved); // 再配送
+        var second = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved); // 再配送
 
         first.Executed.MessagesOf<OrderApproved>().Concat(second.Executed.MessagesOf<OrderApproved>())
             .Should().HaveCount(2, "同じメッセージが2回処理されること");
