@@ -561,6 +561,41 @@ public class RiskEvaluatorTests
         result.Reasons.Should().NotContain(RejectionReason.ManipulativeOrderPattern);
     }
 
+    // FR-19, ADR-0007（2026-08-04 追補・利用者裁定 質問票 第 1 回 Q4）, #380:
+    // **禁止銘柄ガードは手仕舞い（Close）にも適用する。**
+    //
+    // 裁定の理由は「**インサイダー取引は売付けも対象**であり、AI が利用者の関知しないタイミングで
+    // 規制対象銘柄を自動売却する経路を残さない」ことである。**保有建玉がロックインされるのは受容された代償**
+    // であり、手仕舞いが必要になったときは利用者が禁止登録を一時解除する
+    //（手順: docs/operations/banned-symbol-unlock-runbook.md）。
+    //
+    // **本テストは #380 のレビューで「固定されていない」と判明したため追加した。** それまで BannedSymbol の
+    // テストは Buy（Open）しか使っておらず、判定へ誤って `isEntry &&` を足しても誰も気付けなかった
+    //（商品種別ガードは Open 限定であり、取り違えは実際に起こり得る形である）。
+    [Fact]
+    public void 禁止銘柄ガードは手仕舞いの注文も拒否する()
+    {
+        var result = RiskEvaluator.Evaluate(
+            Close(symbol: "6457", market: Market.Japan), DefaultSettings(), Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.BannedSymbol);
+    }
+
+    // FR-19, ADR-0007（2026-08-04 追補）, #380: 市場ガードも「全注文」適用である（同上の理由で固定する）。
+    [Fact]
+    public void 市場ガードは手仕舞いの注文も拒否する()
+    {
+        var settings = DefaultSettings();
+        var guard = settings.Guard with { EnabledMarkets = new HashSet<Market> { Market.Japan } };
+
+        var result = RiskEvaluator.Evaluate(
+            Close(market: Market.UnitedStates), settings with { Guard = guard }, Snapshot());
+
+        result.IsApproved.Should().BeFalse();
+        result.Reasons.Should().Contain(RejectionReason.MarketDisabled);
+    }
+
     [Fact]
     public void 相場操縦パターンは手仕舞いの注文にも適用する()
     {
