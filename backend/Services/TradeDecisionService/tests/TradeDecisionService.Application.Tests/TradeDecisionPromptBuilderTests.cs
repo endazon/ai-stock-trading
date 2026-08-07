@@ -130,6 +130,50 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().Contain("前 中 後");
     }
 
+    // FR-04, #448 のレビュー指摘: 切り詰めが**サロゲートペアの途中で切らない**こと。
+    // 途中で切ると単独サロゲートが残り、JSON 符号化で U+FFFD へ潰れる（絵文字が化ける）。
+    [Fact]
+    public void 取得文脈の切り詰めはサロゲートペアを割らない()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        // 上限 400 の直前（399 文字目）から絵文字（サロゲートペア＝2 char）が始まるように詰める。
+        var text = new string('あ', 399) + "\U0001F600" + new string('い', 50);
+        var retrieved = new[] { new RetrievedContext("絵文字メモ", text, null, 0.5d, ["finnhub"]) };
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+
+        // **実測で決めた表明である。** 単独サロゲートを `JsonSerializer` に渡すと、出力には
+        // **6 文字の literal `\uFFFD`**（`\`,`u`,`F`,`F`,`F`,`D`）が現れる——生の置換文字でも
+        // 単独サロゲートでもない。したがって「生の U+FFFD が無い」「単独サロゲートが無い」の
+        // どちらで表明しても**境界保護を外す変異を検知できない**（両方とも実際に素通りした）。
+        prompt.Should().NotContain(@"\uFFFD", "サロゲートペアの途中で切ると置換文字のエスケープが現れる");
+        // 出力そのものに単独サロゲートが残らないことも併せて見る（符号化を将来変えたときの保険）。
+        UnpairedSurrogates(prompt).Should().Be(0);
+        // 割らずに 1 文字戻したので、絵文字そのものは出力に含まれない。
+        prompt.Should().Contain(new string('あ', 399));
+    }
+
+    // 対になっていないサロゲートの数。
+    private static int UnpairedSurrogates(string text)
+    {
+        var count = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) { i++; continue; }
+                count++;
+            }
+            else if (char.IsLowSurrogate(c))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     // FR-04, #252, IADR-0169 決定1: 日本語が \uXXXX へ逃がされない（読めなくなると LLM の理解を損なう）。
     [Fact]
     public void 取得文脈の日本語はエスケープされずそのまま出る()

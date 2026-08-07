@@ -218,6 +218,15 @@ public static class TradeDecisionPromptBuilder
         }
 
         var sanitized = sb.ToString();
-        return sanitized.Length <= maxChars ? sanitized : string.Concat(sanitized.AsSpan(0, maxChars), "…");
+        if (sanitized.Length <= maxChars)
+            return sanitized;
+
+        // #448 のレビュー指摘: 切り詰めは UTF-16 の `char` 単位である。**サロゲートペアの途中で切ると
+        // 単独サロゲートが残り**、JSON 符号化で U+FFFD へ潰れる（絵文字が化ける）。1 文字戻して境界を守る。
+        var cut = maxChars;
+        if (char.IsHighSurrogate(sanitized[cut - 1]))
+            cut -= 1;
+
+        return string.Concat(sanitized.AsSpan(0, cut), "…");
     }
 }
