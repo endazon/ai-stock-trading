@@ -80,6 +80,28 @@ args: ["-fsS", "-m", "20", "-X", "POST", "http://information-collection-service:
 
 **「黙って無認証で通る」経路は無い。** `set -eu` ＋ `curl -f` ＋ 空トークン判定の 3 つで塞いである。
 
+#### token エンドポイントは **`global.authAuthority` から導出する**（values にリテラルを置かない）
+
+> **⚠️ 本 ADR の初版は、リポジトリが 2 度書き留めていた教訓をそのまま踏んだ**（PR #458 のレビュー指摘で判明・是正済み）。
+>
+> 初版は `values.yaml` に `tokenEndpoint:` のリテラルを置いた。**`deployment.yaml`（#226 / IADR-0098）には
+> まったく同じ状況——`auth: true` を持たないコンポーネントが s2s の token エンドポイントを要する——に対する
+> 確立済みの型があり、そこには次のコメントが付いていた。**
+>
+> > `values` にリテラルを置くと `authAuthority` を `--set` で変えても追随しないため、テンプレート側で
+> > `Auth__Authority` と同一ソース（`$g.authAuthority`）から導出する。
+>
+> **`values.yaml` にも同趣旨の警告が別途書かれていた。** つまり**同じ落とし穴が 2 箇所に明記されていたのに、
+> 3 度目を作った**。「既存パターンを探す」より先に「動く形」を書いたのが原因である。
+>
+> **壊れ方**: `--set global.authAuthority=...` でレルムやホストを移すと、**他サービスは追随するのに CronJob だけ
+> 古い Keycloak を叩き続ける**。token 取得は必ず失敗し、fail-closed により Job は赤くなる——**止まるので
+> 危険側ではない**が、**「認可を掛けた」という前提は静かに空振りする**（統制が効いているのではなく、
+> 呼び出しが届いていないだけの状態になる）。
+>
+> 現在は `printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority)` で導出し、
+> `deployment.yaml` と**同一ソース**にしてある。
+
 ### 決定3: **`ValidateAudience` / `RequireHttpsMetadata` は変えない。判断と前提を書く**
 
 `AuthExtensions.cs` の 2 設定は**値を変えない**。

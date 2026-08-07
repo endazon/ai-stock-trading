@@ -87,15 +87,15 @@ args: ["-fsS", "-m", "20", "-X", "POST", "http://information-collection-service:
 
 ## 受け入れ基準
 
-- [ ] `run-once` が**認可を要求する**（`OwnerOrService`）
-- [ ] **否定形**: トークン無し → **401**／`trading-owner`・`trading-service` いずれも持たないトークン → **403**
-- [ ] **構造テスト**: 認可メタデータを持たないエンドポイントが `/health/*`・`/internal/introspection` 以外に無い
-- [ ] **対照（肯定形）**: 検査器が空振りしていない（ルートが 1 本も取れなければ落ちる）
-- [ ] CronJob が**トークンを取得してから**叩き、**取得に失敗したら Job が赤くなる**（黙って無認証で通らない）
-- [ ] `ValidateAudience` / `RequireHttpsMetadata` の**結論と前提が崩れる条件**が IADR とコードコメントに残る
-- [ ] `docs/security/security.md` の **T-2 / T-3 が更新**されている
-- [ ] **ミューテーション**: `RequireAuthorization` を外すと構造テストと否定形テストが**赤**になる
-- [ ] `dotnet build` / `dotnet test` / `check-doc-links.js` / `helm lint`
+- [x] `run-once` が**認可を要求する**（`OwnerOrService`）
+- [x] **否定形**: トークン無し → **401**／`trading-owner`・`trading-service` いずれも持たないトークン → **403**
+- [x] **構造テスト**: 認可メタデータを持たないエンドポイントが `/health/*`・`/internal/introspection` 以外に無い
+- [x] **対照（肯定形）**: 検査器が空振りしていない（ルートが 1 本も取れなければ落ちる）
+- [x] CronJob が**トークンを取得してから**叩き、**取得に失敗したら Job が赤くなる**（黙って無認証で通らない）
+- [x] `ValidateAudience` / `RequireHttpsMetadata` の**結論と前提が崩れる条件**が IADR とコードコメントに残る
+- [x] `docs/security/security.md` の **T-2 / T-3 が更新**されている
+- [x] **ミューテーション**: `RequireAuthorization` を外すと構造テストと否定形テストが**赤**になる（**実測**: 変更前 25 件緑 → 削除後 6 件 Failed。振る舞い側 4・**構造側 2**）
+- [x] `dotnet build` / `dotnet test` / `check-doc-links.js` / `helm lint`（**helm はローカルに導入できず**〔DL が 403〕、CI の `Lint and render chart` が `--set tradingCycle.cronjob.enabled=true` で描画するのを正とした —— **実測で緑**）
 
 ## テスト方針
 

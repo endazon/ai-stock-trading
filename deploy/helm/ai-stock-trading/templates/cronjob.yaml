@@ -4,6 +4,7 @@
        run-once 側の市場カレンダー（IADR-0023）で担保する（CronJob は寄り〜引け相当のみ起動）。 */ -}}
 {{- if .Values.tradingCycle.cronjob.enabled }}
 {{- $c := .Values.tradingCycle.cronjob }}
+{{- $g := .Values.global }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -59,9 +60,15 @@ spec:
               env:
                 - name: TARGET
                   value: {{ $c.target | quote }}
-                # 既定は Auth:Authority と同じレルムの token エンドポイント。
+                {{- /* #456: token エンドポイントは **global.authAuthority から導出する**。
+                       values にリテラルを置くと authAuthority を --set で変えても追随せず、
+                       **他サービスだけレルムを移り、CronJob だけ古い Keycloak を叩き続ける**。
+                       その状態では token 取得が必ず失敗し、fail-closed により Job は赤くなる——
+                       止まるので危険側ではないが、**「認可を掛けた」という前提は静かに空振りする**。
+                       deployment.yaml の Notifications__Discord__OwnerAuth__TokenEndpoint（#226 /
+                       IADR-0098）と**同じ導出**に揃える。 */}}
                 - name: TOKEN_ENDPOINT
-                  value: {{ $c.tokenEndpoint | quote }}
+                  value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
                 - name: SERVICE_AUTH_CLIENT_ID
                   valueFrom:
                     secretKeyRef:

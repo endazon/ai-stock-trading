@@ -48,7 +48,8 @@ tradingCycle:
     # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する。CronJob は
     # client_credentials でトークンを取ってから叩く。**資格情報が無ければ Job は赤くなる**
     # （無認証で通る経路は無い＝fail-closed）。
-    tokenEndpoint: http://keycloak:8080/realms/ai-stock-trading/protocol/openid-connect/token
+    # tokenEndpoint はここに置かない。global.authAuthority から cronjob.yaml が導出する
+    # （リテラルを置くと --set global.authAuthority=... に追随せず、CronJob だけ別レルムを叩く）。
     # service-auth-client-id / service-auth-client-secret を持つ Secret（他サービスの s2s と同じもの）。
     serviceAuthSecretName: ast-secrets
 
