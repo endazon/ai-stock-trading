@@ -114,7 +114,7 @@ updated: 2026-08-07
 
 ## フォローアップ
 
-- **`PlanRiskDefaults` 全項目を計画書の現行値と再照合する。** 導入時に是正したのは 1 件（`Fx.StaleRateWarningDays`）だけであり、**他に未転記が残っている可能性がある**。本機構はそれを検知できない（上記「悪い影響」の最重要項）。
+- **`PlanRiskDefaults` 全項目を計画書の現行値と再照合する（[#445](https://github.com/endazon/ai-stock-trading/issues/445)）。** 導入時に是正したのは 1 件（`Fx.StaleRateWarningDays`）だけであり、**他に未転記が残っている可能性がある**。本機構はそれを検知できない（上記「悪い影響」の最重要項）。
 - 「ダイジェストだけ更新して緑に戻す」を検知する手段は無い。**レビューで見る**しかない。バックログ定期監査（[#439](https://github.com/endazon/ai-stock-trading/issues/439)）の対象に含めるかは別途判断する。
 
 ## 関連
