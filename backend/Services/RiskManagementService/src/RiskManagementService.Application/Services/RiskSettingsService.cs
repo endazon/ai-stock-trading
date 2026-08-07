@@ -1,6 +1,7 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
@@ -85,6 +86,26 @@ public sealed class RiskSettingsService(
     {
         ArgumentNullException.ThrowIfNull(stage);
         RequireActorAndReason(actor, reason);
+
+        // FR-20, UC-06, #434, IADR-0161 決定3 / IADR-0163: 書き込み経路は allow-list を通す。
+        //
+        // IADR-0161 は発注先の読み書きを**意図的に非対称**に設計した——読み取りは黙って内蔵 paper へ
+        // 倒し（例外にすると設定行全体が失われ、リスク判定そのものが止まる）、書き込みは拒否する
+        // （黙って倒すと「実弾を選んだのに paper になった」という**説明のつかない状態遷移**が生まれる）。
+        // `PUT /settings/broker-provider` は `BrokerProviderChange.Evaluate` がこれを担うが、
+        // **段階の既定発注先（`Stage.Mode`）は同じ `BrokerProvider` 型でありながら素通りしていた**。
+        //
+        // 検証は **`BrokerProviderResolution.IsKnown`**（どの値が既知かの単一情報源）を通す。
+        // ここに独自の判定を書くと allow-list が 2 か所になり、#434 と同型の穴が再発する。
+        //
+        // **エンドポイントではなくサービスに置く。** 本件はまさに「一方の経路にだけ関門があった」ことが
+        // 問題であり、関門は全経路の下流に置かなければ意味がない（`UpdateGuard` と同じ形）。
+        if (!BrokerProviderResolution.IsKnown(stage.Mode))
+        {
+            throw new ArgumentException(
+                "段階の既定発注先は 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE のいずれかを指定してください。",
+                nameof(stage));
+        }
 
         var current = store.GetCurrent();
         // FR-20, #334, IADR-0140: 段階だけを差し替える。**発注先（BrokerProvider）には触れない**——
