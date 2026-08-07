@@ -2,6 +2,10 @@
 # デバイストークンが install 側にあるかを検証する（再認証を回避できるか）。
 # initContainer でイメージの /opt/opend を PVC へ一度シードし、以降は PVC の install/home を使う。
 # ※ 再認証が IP 依存なら本実験でも回避できない（その場合は常駐モデルが結論）。
+# 【⚠️ 2026-08-07・ADR-0024 決定2】本実験の否定結果そのものが撤回された。
+#   「新 Pod ＝新 IP だから再検証」の推論は Pod IP と egress IP の混同であり、
+#   検証の対象は egress IP である。安定 egress IP ＋ home 側（/root/.com.moomoo.OpenD）の
+#   永続化で無人再ログインは成立する。本ファイルは経緯の記録として残す（採用しない点は変わらない）。
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

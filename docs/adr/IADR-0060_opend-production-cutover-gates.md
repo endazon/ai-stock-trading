@@ -21,7 +21,9 @@ plan_refs:
 
 ## 起点・関連
 
-- 関連する計画書 ID: **FR-05**（発注執行）、**ADR-0002**（moomoo OpenAPI・Proposed。未決＝無人運用の成立性 / Hetzner 接続・ToS）
+- 関連する計画書 ID: **FR-05**（発注執行）、**ADR-0002**（moomoo OpenAPI。**2026-08-01 に `Accepted`**。
+  「無人運用の成立性」は **ADR-0024 で決着＝条件付き成立**。**Hetzner 接続・ToS は未決のまま**）、
+  **ADR-0024**（無人再起動は安定 egress IP を条件に成立）
 - 対象 Issue: [#132](https://github.com/endazon/ai-stock-trading/issues/132)（OpenD 常駐の本番化・残検証）／
   [#124](https://github.com/endazon/ai-stock-trading/issues/124)（OpenD Docker 化・常駐モデル）
 - 関連 IADR: [IADR-0016](IADR-0016_safe-broker-execution.md)（安全既定 paper・実弾防止の二重ゲート）、
@@ -60,7 +62,14 @@ plan_refs:
 これは矛盾ではない。本 IADR が決めているのは「**本番化の整備をどう置くか**」であって、「常駐モデルで本番運用してよいか」
 ではない。むしろ IADR-0053 が Proposed である（＝本番運用の可否が未確定である）ことこそが、本 IADR が
 「整備は進めるが**有効化はしない**」を選ぶ理由そのものである。IADR-0053 の昇格は、Hetzner 接続・長期常駐の
-実測（#132 の実測フェーズ）が済んでから行う。同様に上流の **ADR-0002 も Proposed** のままである（IADR-0056 §4）。
+実測（#132 の実測フェーズ）が済んでから行う。~~同様に上流の **ADR-0002 も Proposed** のままである（IADR-0056 §4）。~~
+
+**【⚠️ 訂正 2026-08-07・#426】上流の ADR-0002 は 2026-08-01 に `Accepted` へ遷移している。**
+さらに **ADR-0024**（2026-08-07・`Accepted`）が「無人再起動は**条件付きで成立する**」と定め、
+**IADR-0053 が昇格条件に挙げていた 2 つのうち「無人運用の一次確認」は満たされた。**
+**それでも IADR-0053 は `Proposed` のまま据え置く** —— もう一方の「**Hetzner 接続の一次確認**」が
+ADR-0024 決定5-2 で**依然未検証**だからである（[IADR-0167](IADR-0167_opend-unattended-restart-followup.md) 決定1）。
+**したがって上の段落の結論は変わらない。変わったのは理由の内訳である**（2 つのうち 1 つが解消した）。
 
 ## 決定
 

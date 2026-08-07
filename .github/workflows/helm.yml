@@ -366,7 +366,9 @@ jobs:
           # 初回の有人デバイス検証（kubectl attach）に要る。
           printf '%s' "$out" | grep -q 'stdin: true' || fail "stdin: true でない"
           printf '%s' "$out" | grep -q 'tty: true' || fail "tty: true でない"
-          # liveness による自動再起動は、有人再検証待ちの停止を招くため付けない（IADR-0053）。
+          # liveness は付けない。理由は「再起動＝有人再検証」ではない（ADR-0024 決定2 で否定された）。
+          # (a) 再起動の最小化を維持する（決定3）(b) SPOF であることは変わらず、自動再起動は
+          # 復旧までの発注不可時間を無人で繰り返し発生させ得る（決定4）。IADR-0053 改訂 / IADR-0167 決定2。
           if printf '%s' "$out" | grep -q 'livenessProbe'; then fail "livenessProbe が付いている"; fi
           # 既定は root 実行のまま（非 root 化は未検証のオプトイン・IADR-0060 決定 2）。
           if printf '%s' "$out" | grep -q 'runAsNonRoot'; then fail "既定で非 root になっている（未検証の設定を既定にしない）"; fi

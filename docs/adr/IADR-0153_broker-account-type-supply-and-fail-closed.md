@@ -55,7 +55,8 @@ ADR-0021 は「照会して判定する」「食い違えば止める」まで�
 2. **観測を永続化するか**（同じユニットの #385 / #386 / #387 は EF ストア＋マイグレーションまで作っている）
 3. **決済済み資金を moomoo API から取得できるか**（ADR-0021 120 行が「確認する」を実装へ委ねた）
 4. **内蔵 `paper` をどう扱うか**（ADR-0021 はブローカー口座の存在を前提としており、この形を想定していない）
-5. **拒否理由を何種新設し、どう分類するか**（決定4-5 が明示したのは 1 種のみ）
+5. **拒否理由を何種新設し、どう分類するか**（決定4-5 が明示したのは 1 種のみ。**起案時点の状態である**——
+   本 IADR の環流を受けて **2026-08-07 に計画が 3 種を追認した**。下記 決定5 の追記を参照）
 
 ## 検討した選択肢
 
@@ -205,7 +206,11 @@ BrokerAvailabilityProbeService（既存の 5 分巡回）     ↓
   （06_daytrading-review §4.1）。制度・決済・接続に由来する事象を混入させるとゲートが機能しなくなる。
 - `SameDayReentry` の米国株への適用拡大は**クラス A のまま**である（分類は理由コードごとであり、
   適用範囲の拡大では変わらない）。
-- **計画との差異**: 計画が新設を求めたのは 1 種のみである。**環流済み**（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。
+- ~~**計画との差異**: 計画が新設を求めたのは 1 種のみである。**環流済み**（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。~~
+  **【✅ 差異は解消 2026-08-07】環流を計画が受理し、ADR-0021 決定4-5 が 3 種を同名・同クラス（A / B / A）で追認した**
+  （環流 [feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)
+  → project-planning#220 → 質問票 第 13 回 Q8-1）。**実装は一切変えていない**（序数 25 / 26 / 27・分類とも起案時のまま）。
+  先例の `StopOrderRequired`（#329）と同じ形である。
 
 ### 決定 6: 口座種別依存の統制は `AccountTypePolicy`（純関数）に集約する
 
