@@ -58,9 +58,16 @@ internal sealed class FxOptions
     public const int MaxAllowedRateAgeDays = 30;
 
     /// <summary>
-    /// 採用してよい観測の古さの上限（日）。既定 14 日（<see cref="DefaultMaxRateAgeDays"/>）。週末・連休・週次公表の
-    /// 間隔で 10 日以上空くのは正常だが、これを超えた観測は「レート無し」として扱い、古いレートでの発注を止める
-    /// （IADR-0107 決定5）。0 以下は既定へ、<see cref="MaxAllowedRateAgeDays"/> 超はその値へ丸める。
+    /// 採用してよい観測の古さの上限（日）。既定 30 日（<see cref="DefaultMaxRateAgeDays"/>＝計画 ADR-0022 決定5 の
+    /// <b>絶対上限</b>）。これを超えた観測は「レート無し」として扱い、古いレートでの発注を止める（IADR-0107 決定5）。
+    /// 0 以下は既定へ、<see cref="MaxAllowedRateAgeDays"/> 超はその値へ丸める。
+    /// <para>
+    /// **#381, IADR-0174: 14 → 30 へ引き上げた。** 旧値 14 は FRED の週次公表から逆算した実装都合であり
+    /// （IADR-0112 決定1）、計画 ADR-0022 が情報源と鮮度を確定したことで根拠が計画側へ移った。
+    /// <b>結果として「週次リリース 1 回の丸ごと欠落（17.84 日）を系列側の異常として止める」保護は失われる</b>——
+    /// 計画 §5 が「5 日超〜30 日以下＝直近レートで続行し警告」と定めた**計画が選んだ緩和**であり、
+    /// 気づくための段は <see cref="StaleRateWarningDays"/> が受け持つ。
+    /// </para>
     /// </summary>
     public int MaxRateAgeDays { get; set; } = DefaultMaxRateAgeDays;
 

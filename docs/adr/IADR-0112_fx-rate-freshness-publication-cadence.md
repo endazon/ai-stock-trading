@@ -1,11 +1,11 @@
 ---
-title: IADR-0112 為替レートの鮮度上限はデータ源の公表周期から導く（既定 14 日・上限 31 日クランプ・取得窓 ≥ 受容窓）
+title: IADR-0112 為替レートの鮮度上限はデータ源の公表周期から導く（既定 14 日・上限 31 日クランプ・取得窓 ≥ 受容窓 — 数値は 2026-08-07 に IADR-0174 が 30 日へ差し替え）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-17, ADR-0004]
+related_ids: [FR-10, FR-17, ADR-0004, ADR-0022, IADR-0174]
 author: endazon (with Claude Code)
 created: 2026-07-29
-updated: 2026-07-29
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -16,9 +16,32 @@ plan_refs:
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
-- 状態: Accepted
+- 状態: Accepted（**決定1・決定2 の数値は 2026-08-07 に [IADR-0174](./IADR-0174_fx-freshness-warning-and-hard-limit.md) が差し替えた**。下記「改訂」を参照）
 - 日付: 2026-07-29
 - 決定者: endazon（利用者・マージ判断）/ Claude Code（起案）
+
+## 改訂 — **Superseded by（部分）: [IADR-0174](./IADR-0174_fx-freshness-warning-and-hard-limit.md)（2026-08-07・[#381](https://github.com/endazon/ai-stock-trading/issues/381)）**
+
+**本 IADR の数値は「FRED 単独」を前提に実装側で逆算したものであり、計画 ADR-0022（2026-08-04 新設）が
+情報源と鮮度を確定したことで根拠が計画側へ移った。** 以下の値は**現在の実装では有効でない**。
+本文はそのままの経緯記録として残す（読み替えの取りこぼしを防ぐため、置き換わった値をここに全て列挙する）。
+
+| 本 IADR の記述 | 現在（IADR-0174） | 置き換えた理由 |
+| --- | --- | --- |
+| **決定1: 既定 `MaxRateAgeDays` = 14 日**（本文・タイトル・§影響の「最大 14 日前」「7 → 14 日」を含む） | **30 日** | 計画 ADR-0022 決定5 が **30 日を絶対上限**と確定した。**「週次リリース 1 回の丸ごと欠落（17.84 日）は見送る」という本 IADR の保護は失われる**（警告は出るが発注は続く）。**これは計画が選んだ緩和である** |
+| **決定2: 設定値の上限クランプ = 31 日**（本文・タイトル・「31 日超 → 31 日へ丸め」を含む） | **30 日** | **31 は計画の絶対上限 30 を上回っており、クランプ自体が計画より緩かった**（`Fx:MaxRateAgeDays: 31` で計画が停止と定めた領域に発注できた）。クランプの**趣旨**（構造で guard を無効化させない・IADR-0059 と対称）は**有効なまま** |
+| **決定3: `ObservationLimit` = 23**（`ceil(31 × 5/7)`） | **22**（`ceil(30 × 5/7)`） | **導出（取得窓 ≥ 受容窓を `MaxAllowedRateAgeDays` から自動で保つ）は有効**。値はクランプ変更に自動追随する（`FredFxRateSource` が定数式で計算するため手当ては不要） |
+
+**あわせて IADR-0174 は本 IADR に無かった段を足した** —— **警告しきい値 5 日**（`DefaultStaleRateWarningDays`）。
+本 IADR は「上限を超えたら見送る」の 1 段しか持たず、**その手前で気づくための警告が存在しなかった**。
+
+**本 IADR の以下は有効なまま**である。
+
+- **決定1 の導出方法そのもの**（鮮度上限は「データ源の公表周期」から導く。§背景の H.10 週次リリースの積み上げ表を含む）。
+  FRED 単独という**前提ごと**計画が置き換えたのであって、逆算が誤っていたのではない。
+- **決定2 の趣旨**（設定で鮮度 guard を無効化させない構造クランプ）。上限値だけが 31 → 30 になった。
+- **決定3**（取得窓 ≥ 受容窓）・**決定4**（IADR-0107 決定3 の fail-safe は緩めない）。
+- §検討した代替案（営業日ベース判定・公表カレンダー内蔵・鮮度上限の撤廃の棄却理由）。
 
 ## 起点・関連
 
@@ -32,6 +55,10 @@ plan_refs:
   [IADR-0064](IADR-0064_official-source-connectors.md)（FRED アダプタの型）、
   [IADR-0059](IADR-0059_dedupe-retention-purge.md)（設定値ではなく構造で安全性を担保するクランプの型）、
   [IADR-0068](IADR-0068_live-quote-feed-finnhub-extraction.md)（市況フィードの鮮度上限＝秒単位・対比）
+- **Superseded by（部分）**: [IADR-0174](IADR-0174_fx-freshness-warning-and-hard-limit.md)
+  （2026-08-07・[#381](https://github.com/endazon/ai-stock-trading/issues/381)）。**決定1 の既定 14 日**と
+  **決定2 のクランプ 31 日**を、計画 [ADR-0022](../../planning/projects/ai-stock-trading/07_adr/ADR-0022_fx-rate-source-and-freshness.md)
+  決定5 の絶対上限に合わせて**いずれも 30 日**へ差し替えた。詳細は冒頭の「改訂」節を参照。
 
 ## 背景・課題
 

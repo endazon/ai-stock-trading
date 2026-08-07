@@ -158,7 +158,8 @@ fail-safe＝「古い/無いレートで発注しない」）。したがって 
 | --- | --- | --- |
 | 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
 | 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載）。基準通貨が USD のため **JPY のレートは本系列の逆数**（IADR-0152 決定2・丸めない） | `FredFxOptions.SeriesId` 既定 |
-| 鮮度上限 | **14 日**（超過した観測は採らない＝レート無し扱い）。公表周期から導いた値（#271 / IADR-0112）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**31 日超は 31 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
+| 鮮度上限（**停止**） | **30 日**（超過した観測は採らない＝レート無し扱い＝新規建てを見送る）。計画 ADR-0022 決定5 の**絶対上限**（#381 / IADR-0174 決定2。旧値 14 日＝#271 / IADR-0112 は FRED の週次公表からの逆算であり、根拠が計画へ移った）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**30 日超は 30 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
+| 鮮度警告（**続行**） | **5 日**（超過すると WRN を出すが、**新規建ては止めず直近レートで続行する**）。計画 ADR-0022 決定4 / §5 の 3 段縮退の中段（#381 / IADR-0174 決定1）。`Fx__StaleRateWarningDays` で変更可・0 以下は既定へ・**鮮度上限超は上限へ丸める**（警告が上限を超えると警告が一度も出ないまま停止するため）。<br>⚠️ **FRED 単独では最新観測の齢が最大 12.84 日まで積み上がるため、警告域に常駐しうる**（日銀アダプタ＝#381 の残りが入るまでの既知の状態） | `FxOptions.StaleRateWarningDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
 | 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
 

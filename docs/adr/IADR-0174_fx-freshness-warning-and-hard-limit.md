@@ -85,6 +85,13 @@ updated: 2026-08-07
 
 - 起点 issue: [#381](https://github.com/endazon/ai-stock-trading/issues/381)（**本 ADR ではクローズしない**。日銀アダプタが残る）
 - 計画: [ADR-0022](../../planning/projects/ai-stock-trading/07_adr/ADR-0022_fx-rate-source-and-freshness.md) 決定4（警告 5 日・2026-08-07 改訂）・決定5（絶対上限 30 日）／`05_trading-assumptions.md` §3・§5
-- [IADR-0107](./IADR-0107_base-currency-conversion.md)（為替レート源の構成）／[IADR-0112](./IADR-0112_fx-rate-freshness-publication-cadence.md)（**本 ADR が決定1 の 14 日と決定2 の 31 を置き換える**）
+- [IADR-0107](./IADR-0107_base-currency-conversion.md)（為替レート源の構成）
+- [IADR-0112](./IADR-0112_fx-rate-freshness-publication-cadence.md)（**本 ADR が決定1 の 14 日と決定2 の 31 を置き換える**。
+  同 IADR 側にも `Superseded by（部分）` として**置き換えた値を全て列挙した改訂節**を追記した —— `docs/adr/README.md` の
+  運用ルール「既存決定を覆す場合は旧 IADR に追記する」に従う。**置き換えを新しい側にだけ書くと、旧 IADR を単体で読んだ
+  担当者が 14 日／31 日を現行値として読む**）
+- [IADR-0135](./IADR-0135_fx-freshness-plan-transcription-and-section3-scope.md)（本作業を #381 へ引き渡した登録。
+  完了分を日付つきで追記した）
 - [IADR-0127](./IADR-0127_plan-conformance-known-deviation-registry.md)（既知逸脱の登録簿。本作業で 2 行を削除した）
+- テスト仕様: [FR-10 リスク統制](../tests/FR-10_risk-controls-tests.md) §為替レートの鮮度による縮退（T-10-197〜199）
 - 作業仕様書: [20260807_381_fx-freshness-degradation](../specs/20260807_381_fx-freshness-degradation.md)

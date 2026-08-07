@@ -40,7 +40,10 @@ internal sealed class CachingFxRateSource(
         if (rate is null)
             return null;
 
-        if (now - rate.AsOf > maxRateAge)
+        // 齢は停止（maxRateAge）と警告（staleRateWarning）の両方が同じ観測を見て判断する。
+        var age = now - rate.AsOf;
+
+        if (age > maxRateAge)
         {
             logger.LogWarning(
                 "為替レートの観測が古いため採用しません（{Quote}: 観測日 {AsOf} / 上限 {MaxAgeDays} 日）。" +
@@ -50,7 +53,6 @@ internal sealed class CachingFxRateSource(
         }
 
         // 警告域（警告しきい値超〜上限以下）: **値は返す**（新規建ては止めない）。気づくために警告だけ出す。
-        var age = now - rate.AsOf;
         if (age > staleRateWarning)
         {
             logger.LogWarning(
