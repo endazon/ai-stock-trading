@@ -91,15 +91,15 @@ updated: 2026-08-07
 
 ## 受け入れ基準
 
-- [ ] 5 節が**実測に基づいて**記入されている（推測で埋めていない）
-- [ ] 記入できない項目が「**未実装**」「**未確認**」「**対象外**」で書き分けられ、**空欄が 1 つも無い**
-- [ ] **見つかった不備が本書に書かれている**（`RequireHttpsMetadata=false` / `ValidateAudience=false`・無認証の `run-once`・監査の保持期間未実装・Vault 化未充足）
-- [ ] 各項目に**コードの所在または IADR** が添えられている
-- [ ] 冒頭の暫定注意書きが**外れている**
-- [ ] `status: draft` → `review`
-- [ ] 関連仕様書（`docs/operations/operations.md`）と相互リンクしている
-- [ ] **不備は別 issue として起票**され、本書からリンクされている
-- [ ] `check-doc-links.js` / `dotnet build` / `dotnet test` が通る
+- [x] 5 節が**実測に基づいて**記入されている（推測で埋めていない）
+- [x] 記入できない項目が「**未実装**」「**未確認**」「**対象外**」で書き分けられ、**空欄が 1 つも無い**
+- [x] **見つかった不備が本書に書かれている**（`RequireHttpsMetadata=false` / `ValidateAudience=false`・無認証の `run-once`・監査の保持期間未実装・Vault 化未充足）
+- [x] 各項目に**コードの所在または IADR** が添えられている（**実測**: 「未実装／未確認／対象外」を含む全 22 箇所を `grep` で洗い、担当 issue・コードの所在・IADR のいずれも無い行が 0 件であることを確認した）
+- [x] 冒頭の暫定注意書きが**外れている**
+- [x] `status: draft` → `review`
+- [x] 関連仕様書（`docs/operations/operations.md`）と相互リンクしている（**実測**: `security.md` → `operations.md` と `operations.md` → `security.md` が**双方向 1 件ずつ**。当初は片方向で、`operations.md` 側に「関連文書」節を新設して成立させた）
+- [x] **不備は別 issue として起票**され、本書からリンクされている
+- [x] `check-doc-links.js` / `dotnet build` / `dotnet test` が通る
 
 ## テスト方針
 

@@ -134,9 +134,9 @@ plan_refs:
 | 区分 | 対象 | 方式 |
 | --- | --- | --- |
 | **保存時暗号化** | PostgreSQL（監査証跡・業務台帳・設定） | **未確認** —— 本リポジトリのコードにも Helm チャートにも記述が無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。ディスク暗号化の有無は Hetzner k3s の構築時に決まる |
-| **通信時暗号化（クラスタ内）** | サービス間 HTTP・PostgreSQL・RabbitMQ | **未実装**。`UseHttpsRedirection` は無く、接続文字列に `sslmode` 指定も無い。Service はすべて **ClusterIP** であり、**クラスタ内は平文**である |
+| **通信時暗号化（クラスタ内）** | サービス間 HTTP・PostgreSQL・RabbitMQ | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。`UseHttpsRedirection` は無く、接続文字列に `sslmode` 指定も無い。Service はすべて **ClusterIP** であり、**クラスタ内は平文**である |
 | **通信時暗号化（外部公開）** | — | **対象外**。**本チャートは Ingress を持たない**（`deploy/helm/ai-stock-trading/templates/` に Ingress テンプレートが存在しない）。TLS 終端は基盤側の管掌（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
-| **ネットワーク分離** | Pod 間通信 | **未実装**。**NetworkPolicy テンプレートが無い**。名前空間内からは全 Pod が相互に到達できる |
+| **ネットワーク分離** | Pod 間通信 | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。**NetworkPolicy テンプレートが無い**。名前空間内からは全 Pod が相互に到達できる。**これが T-2（無認証の内部エンドポイント）の唯一の緩和を無効にしている** |
 | **通信時暗号化（外部 API）** | FRED / Finnhub / SEC EDGAR / EDINET / Stooq / 日銀 / Discord | ✅ **すべて HTTPS**（実測: `api.stlouisfed.org`・`fred.stlouisfed.org`・`finnhub.io`・`data.sec.gov`・`www.sec.gov`・`api.edinet-fsa.go.jp`・`stooq.com`・`www.stat-search.boj.or.jp`・`discord.com`） |
 | **通信時暗号化（LLM ゲートウェイ）** | 基盤の LLM ゲートウェイ | **本番は未結線**（`values.yaml:338,381` の `LlmGateway__BaseUrl` は**空文字列**＝Placeholder LLM・**呼ばない**ため、現状プロンプトは流れていない）。🔴 **ローカル（経路B）では平文 HTTP** —— `values-local.yaml:120,151` が `http://llmgateway-service.microservices-platform:8080` を実値で設定している。**本番結線時に同じ書式を使えば平文になる**（`values.yaml:380` のコメント例がその書式である）。流れる中身は**プロンプトと LLM 応答＝判断根拠・保有銘柄**であり、**基盤の名前空間を跨ぐ**ため露出面は上記「クラスタ内」より広い。**結線時の TLS はインフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)） |
 | **個人情報** | — | **本システムは単独利用者運用であり、第三者の個人情報を扱わない**（[IADR-0011](../adr/IADR-0011_foundation-min-port.md)：認可は単層） |
@@ -152,7 +152,7 @@ plan_refs:
 | Vault（External Secrets Operator） | 🔴 **受け口のテンプレートはあるが既定 `externalSecrets.enabled: false`。ストア（Vault / ESO）は本リポジトリに無く [#24](https://github.com/endazon/ai-stock-trading/issues/24) の管掌である。** テンプレート自身が「**受け口の用意は Vault 化の充足ではない**」と明記している |
 | 実弾解禁との関係 | [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 が実弾解禁の前提に挙げる「**秘匿情報の Vault 化**」は**未充足のまま**である |
 | moomoo のパスワード | **平文を置かない。MD5（小文字 hex）を格納**し、entrypoint が `OpenD.xml` へ書く |
-| ローテーション | **未実装**。`refreshInterval: 1h` は Vault → Secret の**同期間隔**であって、**鍵そのものの更新ではない**。鍵の再発行手順は文書化されていない |
+| ローテーション | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。`refreshInterval: 1h` は Vault → Secret の**同期間隔**であって、**鍵そのものの更新ではない**。鍵の再発行手順は文書化されていない |
 
 ### コミット防止 — **2 段**
 
@@ -174,7 +174,7 @@ plan_refs:
 
 **照会経路**: `GET /audit`（`OwnerOnly`・`AuditService.Api/Foundation/Endpoints/AuditQueryEndpoints.cs`）／設定変更履歴は UC-06 / UC-07 の画面。
 
-### 保管期間 — 🔴 **未実装**
+### 保管期間 — 🔴 **未実装**（担当 [#346](https://github.com/endazon/ai-stock-trading/issues/346)）
 
 **計画は監査証跡・業務台帳の 7 年保持を求めるが、それを担保する仕組みは実装されていない。**
 
