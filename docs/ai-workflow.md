@@ -87,6 +87,14 @@ bash scripts/apply-profile.sh copilot
 
 - `changelog.yml` が `CHANGELOG.md` を、`openapi.yml` が `docs/api/openapi.yaml` を自動更新する。
 
+### 5. 週次（マージとは独立）
+
+- **`backlog-audit.yml` が週 1 回（月曜 00:00 UTC）バックログを監査する**（#439 / [IADR-0170](adr/IADR-0170_backlog-audit-automation.md)）。
+  クローズ漏れ・重複起票・`docs/blocked-tasks.md` との突き合わせ・エピック進捗を見て、
+  **単一の追跡 issue へ upsert** する。**issue を自動クローズしない**（提案のみ・判断は人間）。
+  前段で `check-feedback-reflux.js` が**環流記録の未起票の滞留**を warn として出す。
+  **監査が増える主因は実装速度ではなく「閉じるより速く増えること」だった**という実測が起点である。
+
 ## 全自動化のための推奨ツール・設定
 
 | 目的 | ツール / 設定 | 備考 |
