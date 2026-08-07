@@ -83,41 +83,59 @@ function stripComments(text) {
   let out = '';
   let i = 0;
   const n = text.length;
-  let state = 'code'; // code | line | block | string | verbatim | char
-  // **補間文字列の穴（`$"…{ ここはコード }…"`）はコードとして残す。**
-  // 穴を潰すと `$"…{host.TrackActivity()}…"` が検出漏れになる（#447 のレビュー指摘）。
-  // interpDepth > 0 のあいだは文字列状態でも中身を素通しし、`}` で文字列へ戻る。
-  let interp = false;      // 現在の文字列が補間文字列か
-  let interpDepth = 0;     // 穴の入れ子深さ
+  let state = 'code'; // code | line | block | char | str
+
+  // **文字列は入れ子になり得る。** 補間の穴（`$"…{ ここはコード }…"`）の中には、さらに文字列リテラルを
+  // 書ける（`$@"a{b + "c"}d"`）。単一のフラグで「いま逐語か」を持つと、**内側の文字列が外側の種別を
+  // 上書きし、穴を抜けた後の解析が壊れる**（#447 の 2 度目のレビュー指摘。外側 `$@"` が非逐語として
+  // 扱われ、以降の `\` がエスケープとして飲み込まれて素の呼び出しを見落とした）。
+  // したがって**スタックで持つ**。frame: { verbatim, interp, depth }
+  const frames = [];
+  const top = () => frames[frames.length - 1];
 
   while (i < n) {
     const c = text[i];
     const c2 = i + 1 < n ? text[i + 1] : '';
+    const c3 = i + 2 < n ? text[i + 2] : '';
 
     if (state === 'code') {
-      // 補間の穴の中では `{`/`}` で深さを追い、閉じたら文字列状態へ戻す。
-      if (interpDepth > 0) {
-        if (c === '{') { interpDepth += 1; out += c; i += 1; continue; }
+      // 補間の穴の中では `{`/`}` で深さを追い、閉じたら**その穴を開いた文字列**へ戻す。
+      const f = top();
+      if (f && f.depth > 0) {
+        if (c === '{') { f.depth += 1; out += c; i += 1; continue; }
         if (c === '}') {
-          interpDepth -= 1;
+          f.depth -= 1;
           out += c; i += 1;
-          if (interpDepth === 0) state = interp === 'verbatim' ? 'verbatim' : 'string';
+          if (f.depth === 0) state = 'str';
           continue;
         }
       }
+
       if (c === '/' && c2 === '/') { state = 'line'; out += '  '; i += 2; continue; }
       if (c === '/' && c2 === '*') { state = 'block'; out += '  '; i += 2; continue; }
-      // 補間つき（`$"` / `$@"` / `@$"`）と素の逐語（`@"`）を区別する。
-      if (c === '$' && c2 === '"') { state = 'string'; interp = 'string'; out += '  '; i += 2; continue; }
-      if (c === '$' && c2 === '@' && text[i + 2] === '"') { state = 'verbatim'; interp = 'verbatim'; out += '   '; i += 3; continue; }
-      if (c === '@' && c2 === '$' && text[i + 2] === '"') { state = 'verbatim'; interp = 'verbatim'; out += '   '; i += 3; continue; }
-      if (c === '@' && c2 === '"') { state = 'verbatim'; interp = false; out += '@"'; i += 2; continue; }
-      if (c === '"') { state = 'string'; interp = false; out += c; i += 1; continue; }
-      if (c === '\'') { state = 'char'; out += c; i += 1; continue; }
+      // 逐語つき補間（`$@"` / `@$"`）→ 補間つき逐語文字列。
+      if ((c === '$' && c2 === '@' && c3 === '"') || (c === '@' && c2 === '$' && c3 === '"')) {
+        frames.push({ verbatim: true, interp: true, depth: 0 });
+        state = 'str'; out += '   '; i += 3; continue;
+      }
+      if (c === '$' && c2 === '"') {
+        frames.push({ verbatim: false, interp: true, depth: 0 });
+        state = 'str'; out += '  '; i += 2; continue;
+      }
+      if (c === '@' && c2 === '"') {
+        frames.push({ verbatim: true, interp: false, depth: 0 });
+        state = 'str'; out += '@"'; i += 2; continue;
+      }
+      if (c === '"') {
+        frames.push({ verbatim: false, interp: false, depth: 0 });
+        state = 'str'; out += c; i += 1; continue;
+      }
+      if (c === "'") { state = 'char'; out += c; i += 1; continue; }
       out += c; i += 1; continue;
     }
 
     if (state === 'line') {
+      // 改行は保つ（行番号を狂わせない）。
       if (c === '\n') { state = 'code'; out += c; i += 1; continue; }
       out += ' '; i += 1; continue;
     }
@@ -127,24 +145,24 @@ function stripComments(text) {
       out += c === '\n' ? '\n' : ' '; i += 1; continue;
     }
 
-    if (state === 'string') {
-      if (interp && c === '{' && c2 === '{') { out += '  '; i += 2; continue; } // `{{` は literal `{`
-      if (interp && c === '{') { state = 'code'; interpDepth = 1; out += c; i += 1; continue; }
-      if (c === '\\') { out += '  '; i += 2; continue; }
-      if (c === '"' || c === '\n') { state = 'code'; interp = false; }
+    if (state === 'str') {
+      const f = top();
+      if (f.interp && c === '{' && c2 === '{') { out += '  '; i += 2; continue; } // `{{` は literal `{`
+      if (f.interp && c === '}' && c2 === '}') { out += '  '; i += 2; continue; } // `}}` は literal `}`
+      if (f.interp && c === '{') { f.depth = 1; state = 'code'; out += c; i += 1; continue; }
+      if (f.verbatim && c === '"' && c2 === '"') { out += '  '; i += 2; continue; } // `""` は literal `"`
+      if (!f.verbatim && c === '\\') { out += '  '; i += 2; continue; }
+      // 未終端（非逐語で改行）でも閉じる（壊れた入力で走査全体が巻き込まれないようにする）。
+      if (c === '"' || (!f.verbatim && c === '\n')) {
+        frames.pop();
+        state = 'code';
+      }
       out += c === '\n' ? '\n' : ' '; i += 1; continue;
     }
 
-    if (state === 'verbatim') {
-      if (interp && c === '{' && c2 === '{') { out += '  '; i += 2; continue; }
-      if (interp && c === '{') { state = 'code'; interpDepth = 1; out += c; i += 1; continue; }
-      if (c === '"' && c2 === '"') { out += '  '; i += 2; continue; }
-      if (c === '"') { state = 'code'; interp = false; }
-      out += c === '\n' ? '\n' : ' '; i += 1; continue;
-    }
-
+    // char リテラル
     if (c === '\\') { out += '  '; i += 2; continue; }
-    if (c === '\'') { state = 'code'; }
+    if (c === "'") { state = 'code'; }
     out += c === '\n' ? '\n' : ' '; i += 1;
   }
 

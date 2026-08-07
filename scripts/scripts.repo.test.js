@@ -925,6 +925,26 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(tst.findViolations('var s = $"{{TrackActivity}}";\n'), []);
   });
 
+  // #447 の 2 度目のレビュー指摘: **文字列は入れ子になり得る**。
+  // 補間の穴の中にはさらに文字列リテラルを書ける（`$@"a{b + "c"}d"`）。
+  // 単一のフラグで「いま逐語か」を持つと**内側の文字列が外側の種別を上書きし、穴を抜けた後の解析が壊れる**。
+  // 実測（修正前 → 修正後）: 下の 1 件目は 0 → 1 件（**検出漏れだった**）。
+  ok('check-tracked-session-timeout: 入れ子の文字列を挟んでも穴の中の呼び出しを見失わない', () => {
+    assert.strictEqual(
+      tst.findViolations('var y = $@"a{1 + "z"}b{host.TrackActivity()}c";\n').length, 1);
+    assert.strictEqual(
+      tst.findViolations('var y = $"a{1 + "z"}b{host.TrackActivity()}c";\n').length, 1);
+  });
+
+  ok('check-tracked-session-timeout: 逐語文字列の作法（"" と \\）を取り違えない', () => {
+    // 逐語では `""` が literal の引用符であり、`\` はエスケープではない。
+    assert.deepStrictEqual(tst.findViolations('var s = @"he said ""TrackActivity"" ok";\n'), []);
+    assert.deepStrictEqual(tst.findViolations('var s = @"path\\TrackActivity";\n'), []);
+    // 入れ子の文字列を挟んでも、外側が逐語であることを保つ（種別の取り違えで文字列の終端がずれない）。
+    assert.strictEqual(
+      tst.findViolations('var y = $@"a{1 + "z"}b"; host.TrackActivity();\n').length, 1);
+  });
+
   ok('check-tracked-session-timeout: 許可ファイルは 1 件だけ（予算を適用する当の実装）', () => {
     assert.deepStrictEqual([...tst.ALLOWED_FILES], [
       'backend/TestSupport/AiStockTrading.TestSupport.Messaging/WolverineTrackingExtensions.cs',
