@@ -15,7 +15,8 @@ using AppSvc = AiStockTrading.InformationCollection.Application.Services.Informa
 const string ServiceName = "ai-stock-trading.information-collection-service";
 
 // #9 Slice A, FR-01, IADR-0022: 情報収集サービス。定時ポーリングで収集→正規化→サニタイズ→KB 保存→収集完了イベント発行。
-// ヘルスチェックの HTTP サーフェスのため WebApplication を用いる（DB・認可なし）。外部情報源・KB 保存は既定で無効（安全既定）。
+// ヘルスチェックと run-once トリガの HTTP サーフェスのため WebApplication を用いる（DB なし）。
+// 外部情報源・KB 保存は既定で無効（安全既定）。
 //
 // IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ を shim 経由で組む部分）は dev/test/CI での
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
@@ -25,6 +26,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
+
+// NFR（セキュリティ）, #456, IADR-0176 決定1: Keycloak OIDC/JWT 認証。**run-once は業務操作であり無認証で公開しない。**
+// 本サービスは長らく `/health/*` と introspection しか持たない前提で認証を登録していなかったが、#121 で
+// run-once トリガ（収集サイクルの起動）を足した際に認可が付かないまま残っていた（#450 の横断調査で発覚）。
+builder.Services.AddAiStockTradingAuth(builder.Configuration);
 
 // liveness ヘルスチェック（DB を持たない）。
 builder.Services.AddAiStockTradingHealthChecks();
@@ -118,12 +124,19 @@ app.MapAiStockTradingIntrospection();
 // #121, FR-02, IADR-0023: 本番スケジューラ（K8s CronJob）からの run-once トリガ。1 巡回（RunOnceAsync）を起動する。
 // in-process ポーリングと同じ処理で、休場日ガードは下流 TradeDecision（IADR-0023 の市場カレンダー）が担保する。
 // 費用統制 Halted・収集ゼロは RunOnceAsync 内で no-op に倒れる（fail-safe）。
+//
+// NFR（セキュリティ）, #456, IADR-0176 決定1: **OwnerOrService**（`trading-owner` または `trading-service`）。
+// 呼ぶ主体が CronJob（無人サービス）であるため OwnerOnly では成立しない。**渡しているのは「サイクルを起こす
+// 権限」であって「発注する権限」ではない** —— 発注は下流の統制（費用停止・市場カレンダー・リスク評価・
+// ブローカ階層の閂）を通る。IADR-0051 の「書き込みは OwnerOnly」に対する意図した例外であり、
+// その非対称の理由は IADR-0176 決定1 に記録した。
 app.MapPost("/internal/collection/run-once",
     async (CollectionPollingService poller, CancellationToken ct) =>
     {
         await poller.RunOnceAsync(ct);
         return Results.Ok();
-    });
+    })
+    .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
 app.Run();
 

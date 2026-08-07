@@ -28,8 +28,50 @@ spec:
           containers:
             - name: trigger
               image: {{ $c.image | quote }}
-              # run-once を叩く。休場日・費用停止は収集側でゲートされ no-op で返る（fail-safe）。
-              args: ["-fsS", "-m", "20", "-X", "POST", {{ $c.target | quote }}]
+              # NFR, #456, IADR-0176 決定2: run-once は OwnerOrService の認可を要する（無認証では 401）。
+              # そこで **client_credentials でトークンを取り、Bearer を付けて叩く** 2 段にする。
+              #
+              # ⚠️ **fail-closed**: `set -eu` ＋ `curl -f` ＋ トークン空判定により、
+              #    資格情報が無い・token エンドポイントが落ちている・応答が想定外、のいずれでも
+              #    **Job が赤くなる**。**黙って無認証で通る経路は無い。**
+              # ⚠️ curlimages/curl に jq は無いため `access_token` は sed で抜く。
+              #    抜けなければ空文字列になり、直後の判定で落とす（無言で続行しない）。
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ -z "${SERVICE_AUTH_CLIENT_ID:-}" ] || [ -z "${SERVICE_AUTH_CLIENT_SECRET:-}" ]; then
+                    echo "ServiceAuth の資格情報が未設定です（ast-secrets の service-auth-client-id / -secret）。" >&2
+                    echo "run-once は認可を要するため、資格情報なしでは起動できません（#456）。" >&2
+                    exit 1
+                  fi
+                  TOKEN=$(curl -fsS -m 20 -X POST "$TOKEN_ENDPOINT" \
+                    -d grant_type=client_credentials \
+                    --data-urlencode "client_id=$SERVICE_AUTH_CLIENT_ID" \
+                    --data-urlencode "client_secret=$SERVICE_AUTH_CLIENT_SECRET" \
+                    | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+                  if [ -z "$TOKEN" ]; then
+                    echo "access_token を取得できませんでした（token エンドポイント: $TOKEN_ENDPOINT）。" >&2
+                    exit 1
+                  fi
+                  # 休場日・費用停止は収集側でゲートされ no-op で返る（fail-safe）。
+                  exec curl -fsS -m 20 -X POST -H "Authorization: Bearer $TOKEN" "$TARGET"
+              env:
+                - name: TARGET
+                  value: {{ $c.target | quote }}
+                # 既定は Auth:Authority と同じレルムの token エンドポイント。
+                - name: TOKEN_ENDPOINT
+                  value: {{ $c.tokenEndpoint | quote }}
+                - name: SERVICE_AUTH_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $c.serviceAuthSecretName | quote }}
+                      key: service-auth-client-id
+                - name: SERVICE_AUTH_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $c.serviceAuthSecretName | quote }}
+                      key: service-auth-client-secret
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
