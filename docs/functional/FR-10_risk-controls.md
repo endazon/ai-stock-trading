@@ -2,16 +2,17 @@
 title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
-related_ids: [FR-10, FR-11, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0153]
+related_ids: [FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06, ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0153, IADR-0158]
 author: endazon (with Claude Code)
 created: 2026-07-09
-updated: 2026-08-06
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md
   - ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
 ---
 
@@ -33,6 +34,13 @@ plan_refs:
 > 網羅を完成させ（本番コードの変更なし・テスト 3 件の追加）、本書を `approved` へ移した。**
 > 本書内の**旧記述（1 注文 ¥35,000 / 日次 ¥100,000 / SIMULATE の 1,700 倍スケール）は
 > 新節が置き換えた**（当時の記録として節ごと残置し、置き換えたことを各節に明記した）。
+>
+> **#417 による更新（2026-08-07）**: 計画側で **ADR-0016 決定3 が改訂され**（2026-08-06 の利用者裁定・
+> 環流 endazon/project-planning#204）、**空売りの一次ゲートが借株料 20% から借株可否（`IsShortPermit`）へ
+> 移った**。「空売り専用統制 8 規則」の規則 3 と「判定の入力と縮退」に反映し、節
+> 「規則 3 の一次ゲート — 借株可否」を追加した（[IADR-0158](../adr/IADR-0158_short-sell-borrow-permit-primary-gate.md)・
+> [作業仕様書 20260807](../specs/20260807_417_short-sell-borrow-permit-gate.md)）。**20% 閾値は削除せず
+> 「発火しない既知の統制」として残置している。**
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -162,7 +170,7 @@ ADR-0009「手仕舞い・損切りは止めない」を金額系上限でも壊
 | --- | --- | --- | --- |
 | 1 | 1 銘柄あたりの空売り建玉 | **equity の 10%**（$3,000 で $300） | `ShortExposureExceeded` |
 | 2 | 逆指値（ストップ注文）の同時発注 | **必須**（未約定・未受理なら建玉を持たない） | `StopOrderRequired`（※） |
-| 3 | 借株料 | **年率 20%** 上限。**照会不可なら空売りしない** | `BorrowCostExceeded` / `BorrowUnavailable` |
+| 3 | **借株可否（一次ゲート）**／借株料 | **借株不可なら空売りしない**（`IsShortPermit=False`）。料率は**年率 20%** 上限（**残置・発火しない既知の統制**）。**照会不可なら空売りしない** | `BorrowUnavailable`（一次）／`BorrowCostExceeded`（二次） |
 | 4 | 維持率の閾値 | **40% と規制要求 `max($5.00 ÷ 株価, 30%)` の厳しい方**（境界 **$12.50**） | `MaintenanceMarginBreach` |
 | 5 | 株価の下限 | **USD 5.00 未満は対象外** | `ShortPriceFloorBreach` |
 | 6 | 空売り比率 | **建玉総額の 50%** を超えない | `ShortExposureExceeded` |
@@ -180,6 +188,39 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 > **$16.67 と $12.50 を混同しない**。$16.67 は規制側の内訳が固定額 $5.00 から時価の 30% へ入れ替わる点、
 > $12.50（＝ $5.00 ÷ 40%）は自前閾値との大小が入れ替わる点である（計画 §5 の 2026-08-01 追補2 で是正）。
 
+### 規則 3 の一次ゲート — 借株可否（#417 / ADR-0016 決定3 の 2026-08-06 改訂 / IADR-0158）
+
+**規則 3 の一次ゲートは借株可否であり、借株料の閾値ではない。**
+
+| 決定3 が当初前提としたこと | 実測（ADR-0019 PoC 項目3・実弾の信用口座・8 銘柄・1 時点） |
+| --- | --- |
+| 借りにくい銘柄ほど借株料が高く、**コストと危険度を同じ閾値（年率 20%）で弾ける** | **成り立たなかった。** 借株在庫（`ShortPoolRemain`）が 20 倍以上開いても `ShortFeeRate` は**一律 1.5**（AAPL 26,452,338 / GME 1,898,200 / RIOT 1,201,180 のいずれも 1.5） |
+| — | 実際に危険な銘柄を弾いているのは **`IsShortPermit`**。AMC・SPCE が `IsShortPermit=False` / `ShortPoolRemain=0` / `ImShortRatio=100` を返し、**API は銘柄を明確に区別している** |
+
+**一律料率であれば 20% の閾値は永久に超えず、その統制は何も弾かない。** 判定の順序は次のとおり。
+
+| 順 | 条件 | 拒否理由 | 根拠 |
+| --- | --- | --- | --- |
+| 0 | 文脈そのものが `null`（照会経路が無い） | `BorrowUnavailable` | 決定3・IADR-0131 決定2 |
+| **1（一次ゲート）** | **`ShortPermit == false`**（供給元は moomoo `TrdGetMarginRatio.IsShortPermit`） | **`BorrowUnavailable`** | **決定3 改訂・IADR-0158 決定1** |
+| 2 | 料率が `null`（照会不能） | `BorrowUnavailable` | 決定3 の未改訂部分 |
+| 3（二次） | 料率 > 年率 20% | `BorrowCostExceeded` | 決定3・決定10（**残置**） |
+
+- **新しい拒否理由コードは追加しない**（決定3 改訂が明示）。`BorrowUnavailable` は「都度の借株需給に
+  よる locate 失敗」を表し、`IsShortPermit=False`（借株在庫 0・Reg SHO 由来の制限）は**まさにその事象**である。
+  `BannedSymbol`（クラス C）にも混ぜない。
+- **一次ゲートが立てば二次（料率）は評価しない。** 借株できない銘柄に「料率が高い」も併記すると、
+  監査ログ（FR-11）の理由が実態より多弁になり、原因（可否 or 料率）の切り分けが濁る。
+- **20% の閾値判定は残置する。** 落とすと料率が銘柄別になった日に無防備になる。
+  **「発火しない」ことと「無い」ことは別**であり、残置はコード（コメント）・テスト（T-10-212 / T-10-213 と
+  既存の境界テーブル）・計画適合検査（`PlanRiskDefaults` が `BorrowRateCapAnnual` を写経）の 3 経路で担保する。
+- **`ShortFeeRate` の値 `1.5` は単位が未確定**（年率 1.5% か比率 1.5 か）であり、**確定するまで
+  `BorrowRateAnnual` へ写像せず、FR-17 の費用計算・FR-15 のバックテスト費用モデルへも接続しない**。
+  **同じ値が単位の読み方ひとつで「何も弾かない」から「全部弾く」へ反転する**（1.5 を年率と読めば上限 0.20 を
+  7.5 倍超過し全銘柄が拒否される）。接続は構造テスト（公開面に `Borrow` / `ShortFee` が生えたら赤くなる）で塞ぐ。
+- **借株照会の供給元は未実装**（実弾ヘッダでの `TrdGetMarginRatio`・レート制限 30 秒 10 回・失敗した照会も
+  枠を消費する）。したがって**現状は空売りが 1 件も通らない**——`blocked-tasks.md`「実装済みだが発動しない機能」を参照。
+
 ### 判定の入力と縮退（フェイルクローズ）
 
 空売りの識別は **`Side == Sell` かつ `PositionEffect == Open`**（新規売り建て）で行い、上流（AI）の
@@ -188,7 +229,8 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 
 | 状況 | 振る舞い |
 | --- | --- |
-| 借株料を照会できない（`null`） | `BorrowUnavailable` で拒否（ADR-0016 決定3） |
+| **借株が許可されない（`ShortPermit == false` ＝ `IsShortPermit=False`）** | **`BorrowUnavailable` で拒否（一次ゲート。ADR-0016 決定3 の 2026-08-06 改訂・IADR-0158 決定1）。料率が上限内でも通さない** |
+| 借株料を照会できない（`null`） | `BorrowUnavailable` で拒否（ADR-0016 決定3。**改訂は一次ゲートを移しただけで本縮退は残る**） |
 | 強制買戻しの 30 日禁止期間中 | **`BuyInBanned`** で拒否。借株が成立していても立つ（`BorrowUnavailable` とは独立） |
 | 照会経路そのものが無い（文脈が `null`） | 同上。**「照会できないなら通す」に倒さない** |
 | 維持率が取得できず、かつ空売り建玉を保有している | `MaintenanceMarginBreach` で拒否（IADR-0131 決定4） |

@@ -2,10 +2,10 @@
 title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
-related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, ADR-0016, IADR-0105, IADR-0156, IADR-0157]
+related_ids: [FR-15, FR-20, FR-17, FR-10, ADR-0008, ADR-0023, ADR-0019, ADR-0016, IADR-0105, IADR-0156, IADR-0157, IADR-0158]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-08-06
+updated: 2026-08-07
 plan_refs:
   - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
   - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
@@ -18,6 +18,7 @@ related_specs:
   - ../specs/20260806_382_moomoo-ohlc-adapter.md
   - ../adr/IADR-0156_us-ohlc-history-source-absence.md
   - ../adr/IADR-0157_moomoo-history-kline-adapter.md
+  - ../adr/IADR-0158_short-sell-borrow-permit-primary-gate.md
 ---
 
 # テスト仕様書: バックテスト基盤（FR-15）
@@ -102,6 +103,7 @@ related_specs:
 | T-15-05 | 片道費用＝手数料＋為替スプレッド＋スリッページ・往復は片道の 2 倍 | `片道費用は手数料と為替スプレッドとスリッページの合算` / `往復費用は片道の2倍` | 自動 |
 | T-15-06 | コスト 2 倍感度は片道費用を 2 倍にする | `コスト2倍感度は片道費用を2倍にする` | 自動 |
 | T-15-07 | 日本株は為替スプレッドを課さない（前提条件 FR-17 準拠） | `日本株は為替スプレッドを課さない` | 自動 |
+| **T-15-69** | **否定形**: 借株料を費用モデルへ接続しない（**`ShortFeeRate = 1.5` の単位が未確定**であり、取り違えると費用が 100 倍ずれて「コスト 2 倍でも期待値が正」の判定が意味を失う）。**値ではなく構造で塞ぐ**——公開面に `Borrow` / `ShortFee` を含む名前が生えたら赤くなる。ADR-0016 決定3 の 2026-08-06 改訂・[IADR-0158](../adr/IADR-0158_short-sell-borrow-permit-primary-gate.md) 決定3・[#417](https://github.com/endazon/ai-stock-trading/issues/417) | `借株料は費用モデルの入口に存在しない` | 自動 |
 
 ### 検証条件③: ウォークフォワード検証（WalkForwardSplitterTests）
 
