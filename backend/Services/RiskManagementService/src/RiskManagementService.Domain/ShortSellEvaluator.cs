@@ -11,6 +11,7 @@ namespace AiStockTrading.RiskManagement.Domain;
 //   (3) **借株可否（一次ゲート）**／借株料 年率 20% 上限（残置・発火しない既知の統制）／
 //       照会不可なら空売りしない                    → BorrowUnavailable / BorrowCostExceeded
 //   (4) 維持率は 40% と規制要求の厳しい方          → MaintenanceMarginBreach
+//       （適用閾値は**口座単位**＝保有建玉と新規注文の閾値の最大値。#420・IADR-0160）
 //   (5) 株価 $5.00 未満は対象外                    → ShortPriceFloorBreach
 //   (6) 空売り比率 50% 上限                        → ShortExposureExceeded
 //   (7) 権利確定日前日の新規空売り禁止              → DividendRecordDateNear
@@ -148,15 +149,36 @@ public static class ShortSellEvaluator
 
         // (4) 維持率は「40%」と規制要求のうち厳しい方（株価に依存する）。ADR-0016 決定7。
         // 株価下限を割っている銘柄は規制式の分母として意味を持たないため、(5) で既に拒否済みの場合は評価しない。
+        //
+        // **#420, ADR-0016 決定7（2026-08-07 追記）, IADR-0160: 適用閾値は口座単位である。**
+        // 従前は `MaintenanceMarginThresholdFor(intent.Price)` ＝ これから出す注文の株価だけを見ていた。
+        // 閾値は低位株ほど厳しくなる（max($5.00, 0.30×株価) ÷ 株価）ため、$6.00 の空売り建玉（要求 83.3%）を
+        // 抱えたまま $50.00 の新規空売りを出すと閾値が 40% へ緩み、**口座の実維持率 50% でも通っていた**。
+        // 自動縮小は 83.3% で発動しているため、縮小の最中に積み増しを許す自己矛盾になる。
+        // 閾値は保有建玉と**新規注文自身**（これも建玉になる）の最大値を採る＝MaintenanceMarginPolicy に一本化する。
         if (intent.Price >= limits.PriceFloorUsd)
         {
-            var threshold = limits.MaintenanceMarginThresholdFor(intent.Price);
-            var breached = context.MaintenanceMarginRatio is { } ratio
-                ? ratio < threshold
-                // 維持率が取得できないとき、空売り建玉を保有していれば「割れていないこと」を確認できない。
-                // 確認できないまま積み増さない（IADR-0131 決定4・フェイルクローズ）。建玉が無ければ
-                // 維持率という概念自体が成立しないため対象外とする。
-                : context.TotalShortExposure > 0m;
+            bool breached;
+            if (context.MarginSnapshot is not { } marginSnapshot
+                || !marginSnapshot.IsTrustworthy
+                || marginSnapshot.MaintenanceMarginRatio is not { } ratio)
+            {
+                // 供給が無い／束が信頼できない（株価・数量が 0 以下等）／束から維持率を導出できない。
+                // いずれも空売り建玉を保有していれば「割れていないこと」を確認できない。確認できないまま
+                // 積み増さない（IADR-0131 決定4・フェイルクローズ）。建玉が無ければ維持率という概念自体が
+                // 成立しないため対象外とする。
+                //
+                // **縮小側とは安全側の向きが逆である**（あちらは「動かさない」＝決済しない。IADR-0133 決定5）。
+                // 動かす統制の誤作動は不可逆だが、積み増しを止めることは可逆であるため。
+                breached = context.TotalShortExposure > 0m;
+            }
+            else
+            {
+                var threshold = MaintenanceMarginPolicy.AppliedThreshold(
+                    limits, marginSnapshot.Positions, intent.Price, ProductType.ShortSell);
+                breached = ratio < threshold;
+            }
+
             if (breached)
             {
                 reasons.Add(RejectionReason.MaintenanceMarginBreach);

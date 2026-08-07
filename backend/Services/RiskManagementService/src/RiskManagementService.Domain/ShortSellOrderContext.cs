@@ -53,10 +53,24 @@ public record ShortSellOrderContext
     public DateOnly? DividendRecordDate { get; init; }
 
     /// <summary>
-    /// 現在の維持率。**null は「取得できなかった」**を意味する。空売り建玉を既に保有している場合は
-    /// 維持率を確認できないまま積み増さない（<c>MaintenanceMarginBreach</c>。IADR-0131 決定4）。
+    /// 維持率判定の入力（純資産と信用建玉の束）。**null は「供給経路が無い／取得できなかった」**を意味する。
+    /// 空売り建玉を既に保有している場合は、維持率を確認できないまま積み増さない
+    /// （<c>MaintenanceMarginBreach</c>。IADR-0131 決定4）。
+    /// <para>
+    /// FR-10, ADR-0016 決定7（2026-08-07 追記）, #420, IADR-0160: **維持率（<c>decimal?</c>）ではなく
+    /// スナップショットを受ける。** 口座へ適用する閾値は**建玉ごとの閾値の最大値**であり、算出には保有建玉の
+    /// 株価と商品種別が要る。従前は維持率だけを受け取っていたため、評価器は「これから出す注文の株価」しか
+    /// 閾値の材料を持たず、**自動縮小（<see cref="MaintenanceMarginReducer"/>）より緩い閾値**で判定していた。
+    /// </para>
+    /// <para>
+    /// **縮小側と同じ型を受ける**ことで、同じ入力に対して同じ適用閾値が出ることが構造的に保証される。
+    /// 維持率も同じ束から導出されるため（<see cref="MaintenanceMarginSnapshot.MaintenanceMarginRatio"/>）、
+    /// 算式（純資産 ÷ 建玉評価額の合計）が判定の 2 か所で食い違うことがない。
+    /// **供給されない建玉を 0 件や株価 0 で埋めた偽の束を作らないこと**——「観測した結果ゼロだった」と
+    /// 読める値を発明することになる（IADR-0154 / IADR-0159 と同じ規律）。供給が無いなら <c>null</c> にする。
+    /// </para>
     /// </summary>
-    public decimal? MaintenanceMarginRatio { get; init; }
+    public MaintenanceMarginSnapshot? MarginSnapshot { get; init; }
 
     /// <summary>当該銘柄の既存空売り建玉の評価額（基準通貨）。1 銘柄あたり上限（equity の 10%）の累計判定に用いる。</summary>
     public decimal SymbolShortExposure { get; init; }
