@@ -336,6 +336,10 @@ services:
     db: report_svc
     auth: true
     extraEnv:
+      # FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181: 強制買戻しの推定の照会先（権威源＝リスク管理）。
+      # **空＝未供給（null）**。空列（＝推定 0 件）へ倒さない——0 件と表示すると「強制買戻しは
+      # 起きていない」と読める（計画が名指しで禁じた向き）。期間約定（/fills）と同じ BaseUrl を使う。
+      - { name: RiskManagement__BaseUrl, value: "" }
       # FR-16, #158, IADR-0068: 評価損益の現在値。fail-safe: 空=no-op（評価損益 0）。報告書はゲート無し＝
       # 差し替えがそのまま有効化。finnhub＋鍵で opt-in（手動 live 検証）。鍵は情報収集とは別枠。
       - { name: MarketData__Provider, value: "" }

@@ -151,11 +151,11 @@ public class AuditEventConsumersTests
         using var host = await BuildHostAsync(store);
 
         var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
-            new StageTransitioned(1, 0, 1, "Promotion", "owner", "利用者承認による昇格", DateTimeOffset.UtcNow));
+            new StageTransitioned(1, 0, 1, "Promotion", "owner", "利用者承認による昇格", DateTimeOffset.UtcNow, 100, false));
         session0.Executed.MessagesOf<StageTransitioned>().Should().NotBeEmpty();
 
         var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
-            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "StageTransitioned");
 
@@ -175,7 +175,7 @@ public class AuditEventConsumersTests
         session0.Executed.MessagesOf<WithdrawalTriggered>().Should().NotBeEmpty();
 
         var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
-            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "WithdrawalTriggered");
 
@@ -196,7 +196,7 @@ public class AuditEventConsumersTests
         session0.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
-            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
+            .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "BacktestEvaluated");
 

@@ -416,6 +416,21 @@ internal sealed class GoodFaithViolationRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+// FR-21, FR-10, FR-06, #463, IADR-0181: **観測が届いた取引日**の 1 行（取引日ごとに 1 行・冪等）。
+//
+// **［2026-08-08 改定］粒度は取引日の集合である**（計画 FR-21・裁定 project-planning#292）。
+// 従前の単一行「最終観測時刻」は**報告期間を観測が覆っていたかを判定できず**、初回観測より前の期間や
+// 観測が途中で止まった期間が「正当な 0」として報告されてしまった。
+internal sealed class PositionObservationDayRow
+{
+    /// <summary>観測が属する取引日（基準タイムゾーン＝JST。主キー＝1 取引日 1 行）。</summary>
+    public DateOnly TradingDay { get; set; }
+
+    /// <summary>その取引日で最後に観測した時刻（同一日の複数観測では最新を保つ）。</summary>
+    public DateTimeOffset LastObservedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の 1 行（追記専用）。
 //
 // 🔴 **違反記録（GoodFaithViolationRow）は消さない・更新しない。** ADR-0028 決定1 が「失効させない」と

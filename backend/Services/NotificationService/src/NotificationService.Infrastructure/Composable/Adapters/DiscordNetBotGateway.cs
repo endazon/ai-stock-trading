@@ -347,10 +347,26 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                         // 昇格は実弾方向のため危険色、差し戻しは安全方向のため Primary。
                         isPromote ? ButtonStyle.Danger : ButtonStyle.Primary);
 
+                    // #466, FR-20, SC-02, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180 決定5:
+                    // **確認を出す前に**最小取引件数の引き下げ警告を届ける。
+                    //
+                    // 裁定は「『承認前に status を読む』は**人の運用に依存する前提**であり、読まなければ
+                    // 警告が届かない」と述べている。**ボタンを押した後にだけ警告が出る形は、この批判が
+                    // そのまま当てはまる**——押した時点で遷移は既に受理・台帳追記・イベント発行まで済んでいる。
+                    // 昇格のときだけ引く（差し戻しは安全側の操作・決定2）。照会失敗は null＝警告なしで、
+                    // 確認そのものは止めない（警告は昇格を妨げない）。
+                    var promoteWarning = isPromote
+                        ? await _stageGateHandler
+                            .GetPromotionWarningAsync(ContextOf(command, $"/stage promote {target}"))
+                            .ConfigureAwait(false)
+                        : null;
+
+                    var prompt = isPromote
+                        ? $"本当に Stage {target} へ昇格しますか？（実弾方向の段階前進です）"
+                        : $"Stage {target} へ差し戻しますか？";
+
                     await command.RespondAsync(
-                        isPromote
-                            ? $"本当に Stage {target} へ昇格しますか？（実弾方向の段階前進です）"
-                            : $"Stage {target} へ差し戻しますか？",
+                        promoteWarning is null ? prompt : $"{promoteWarning}\n{prompt}",
                         components: builder.Build(),
                         ephemeral: true).ConfigureAwait(false);
                     return;

@@ -54,6 +54,15 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // **数えているのは「自らのガードをすり抜けた買付」であり、ブローカーの GFV カウンタの写しではない。**
     public DbSet<GoodFaithViolationRow> GoodFaithViolations => Set<GoodFaithViolationRow>();
 
+    // FR-21, FR-10, FR-06, #463, IADR-0181: ブローカ建玉の観測が到達した事実
+    // （**観測が届いた取引日ごとに 1 行**。2026-08-08 改定・裁定 project-planning#292）。
+    // **推定台帳とは別の事実である**——台帳は推定が起きたときにしか行を書かないため、
+    // 台帳だけでは「観測が届いていない」と「0 件だった」を区別できない。
+    // 判定は**期間の被覆**で行う（単一の最終観測時刻では、初回観測より前の期間や観測が
+    // 途中で止まった期間が「正当な 0」として報告されてしまう）。
+    public DbSet<PositionObservationDayRow> PositionObservationDays =>
+        Set<PositionObservationDayRow>();
+
     // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の追記専用台帳。
     // **違反記録とは別テーブルである**——決定1 が「失効させない」と定めるため、解除で行を消さない。
     public DbSet<GoodFaithViolationClearanceRow> GoodFaithViolationClearances =>
@@ -208,6 +217,17 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.ReportedSignature).IsRequired();
             e.Property(r => r.Version).IsConcurrencyToken();
         });
+
+        // FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた取引日（**取引日ごとに 1 行**）。
+        //
+        // **並行トークンを置かない。** 更新は「その日の最新時刻へ前進させる」だけであり、競合で 1 回の
+        // 更新を取りこぼしても**その日が観測済みである事実は変わらない**（判定に使うのは行の存在である）。
+        // 主キー＝取引日により、同じ日に何度観測が届いても行は増えない。
+        mb.Entity<PositionObservationDayRow>(e =>
+        {
+            e.ToTable("position_observation_days");
+            e.HasKey(r => r.TradingDay);
+            e.Property(r => r.TradingDay).ValueGeneratedNever();
 
         // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**（追記専用）。
         //

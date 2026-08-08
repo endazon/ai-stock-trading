@@ -133,12 +133,29 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
 // **現状は自動縮小があり得ない**ため事実として正しい（照会失敗＝ null とは区別する）。
 builder.Services.AddSingleton<IMarginReductionRecordSource, NoMarginReductionRecordSource>();
 
-// FR-10, UC-06, ADR-0016 決定4/決定15, #419, IADR-0159 決定3: 日報の「強制買戻しの発生有無」・
-// 月報の「発生回数」。**集計元は事後突合が推定した件数であり、`BuyInBanned`（拒否理由）の件数ではない。**
-// 権威源（リスク管理サービスの推定台帳）への照会 API は未実装のため、既定は**未供給（null）**である。
-// **空列（＝推定 0 件）へ倒さない**——決定15 は「供給が無い間は 0 件と表示してはならない
-//（『強制買戻しは起きていない』に見えるため）」と明記している（自動縮小の既定と向きが違う）。
-builder.Services.AddSingleton<IBuyInInferenceRecordSource, UnsuppliedBuyInInferenceRecordSource>();
+// FR-10, FR-06, FR-21, UC-06, ADR-0016 決定4/決定15, #419/#463, IADR-0159 決定3, IADR-0181:
+// 日報の「強制買戻しの発生有無」・月報の「発生回数」。
+// **集計元は事後突合が推定した件数であり、`BuyInBanned`（拒否理由）の件数ではない。**
+//
+// 権威源（リスク管理サービスの推定台帳）へ GET /risk-controls/buy-in-inferences（OwnerOrService）で
+// s2s 同期照会する。**RiskManagement:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝現行挙動**——
+// ここで空列（＝推定 0 件）へ倒さない。決定15 は「供給が無い間は 0 件と表示してはならない
+//（『強制買戻しは起きていない』に見えるため）」と明記している。
+//
+// 🔴 **上の period-fills（照会失敗＝空列）とは向きが逆である。** 報告書は発注判断を行わないため
+// 約定の欠測は過大発注へ繋がらないが、こちらは**推定経路が実在し発火し得る**ため、
+// 欠測を 0 件と描くと統制が働いていない状態が正常に見える。**揃えてはならない。**
+builder.Services.AddSingleton<IBuyInInferenceRecordSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedBuyInInferenceRecordSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpBuyInInferenceRecordSource(
+        http, sp.GetRequiredService<ILogger<HttpBuyInInferenceRecordSource>>());
+});
 
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
@@ -171,6 +188,9 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop")
     // IADR-0115: 期間約定の供給（権威源へ s2s 照会 or no-op）と、自動生成スケジューラの有効/無効を自己申告する。
     .AddPortFromBaseUrl("period-fills", builder.Configuration["RiskManagement:BaseUrl"], "http", "noop")
+    // #463, IADR-0181: 強制買戻しの推定の供給（権威源へ s2s 照会 or 未供給）。
+    // **noop ではなく unsupplied** と自己申告する——空列を返す no-op と違い、こちらは null（未供給）を返す。
+    .AddPortFromBaseUrl("buy-in-inferences", builder.Configuration["RiskManagement:BaseUrl"], "http", "unsupplied")
     .AddPort("report-auto-generation",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
             .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled")

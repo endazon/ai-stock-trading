@@ -118,6 +118,59 @@ public class StageGateEndpointsTests
                 && m.ApprovedBy == "test-owner");
     }
 
+    // ---- #466, FR-20, FR-11, SC-02, §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180 ----
+    //
+    // **「警告を無視して昇格した事実」を実際に監査へ供給する唯一の箇所が本エンドポイントである。**
+    // `AuditEntryFactoryTests` はイベントを直接 new する層であり、**ここで定数を書いても緑のまま**になる
+    // （＝「その設定で昇格した」記録が既定値 100 として残る欠陥を検知できない）。本 2 本がその経路を塞ぐ。
+
+    [Fact]
+    public async Task 昇格受理時の_StageTransitioned_が引き下げられた実効設定値と警告有無を運ぶ()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        SeedPerformance(factory, new StagePerformance { BacktestPassed = true });
+        var client = OwnerClient(factory);
+
+        // 最小取引件数を既定 100 から 5 件へ引き下げる（SC-02 と同じ経路＝設定値の権威源）。
+        var put = await client.PutAsJsonAsync("/risk-controls/settings/stage1-minimum-trade-count",
+            new { minimumTradeCount = 5, reason = "#466 の検証" });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage res = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+                new { targetStage = (int)TradingStage.Stage1Simulate });
+        });
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var published = session.Sent.MessagesOf<StageTransitioned>().Should().ContainSingle().Subject;
+        // **設定した 5 件がそのまま載る**（既定 100 が載っていたら「なぜ 5 件で上がったのか」を追えない）。
+        published.Stage1MinimumTradeCount.Should().Be(5);
+        published.Stage1BelowStatisticalBasis.Should().BeTrue();
+    }
+
+    // **否定形**: 既定値のままなら警告は出ていなかったと記録される（設定値そのものは常に載る）。
+    [Fact]
+    public async Task 既定の設定値のままなら_StageTransitioned_は警告なしとして記録する()
+    {
+        using var factory = new RiskWorkerWebApplicationFactory();
+        SeedPerformance(factory, new StagePerformance { BacktestPassed = true });
+        var client = OwnerClient(factory);
+
+        HttpResponseMessage res = null!;
+        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        {
+            res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
+                new { targetStage = (int)TradingStage.Stage1Simulate });
+        });
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var published = session.Sent.MessagesOf<StageTransitioned>().Should().ContainSingle().Subject;
+        published.Stage1MinimumTradeCount.Should().Be(Stage1TradeCountBounds.Default);
+        published.Stage1BelowStatisticalBasis.Should().BeFalse();
+    }
+
     [Fact]
     public async Task 拒否遷移では_StageTransitioned_を発行しない()
     {

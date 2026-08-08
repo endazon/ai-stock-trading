@@ -40,16 +40,26 @@ public static class StageGate
         StageGatePolicy policy,
         DateTimeOffset now)
     {
+        // #466, IADR-0180 決定1: 以降のすべての return が `policy.Stage1Criteria` を載せるため、
+        // policy は**全経路で必須**になった（従来は拒否経路が policy に触れずに戻れた）。
+        // AssessPromotion と同じ形で入口に置き、null は NullReferenceException ではなく引数名つきで落とす。
+        ArgumentNullException.ThrowIfNull(policy);
+
+        // FR-20, FR-11, SC-02, #466, §4.1 追補3, IADR-0180: 応答が運ぶ**実効の**合格条件。
+        // `StageGateService.EffectivePolicy()` が設定値（Stage1MinimumTradeCount）を重ねた後の値であり、
+        // ここで新たに供給元を作らない（供給元が 2 つになれば必ず食い違う）。
+        var criteria = policy.Stage1Criteria;
+
         // 承認なしに段階が遷移しない（受け入れ基準）。承認者が空なら拒否する。
         if (string.IsNullOrWhiteSpace(approval.ApprovedBy))
         {
-            return Reject(StageGateCriterion.NoUserApproval);
+            return Reject(criteria, StageGateCriterion.NoUserApproval);
         }
 
         var target = approval.TargetStage;
         if (target == current)
         {
-            return Reject(StageGateCriterion.TargetIsCurrentStage);
+            return Reject(criteria, StageGateCriterion.TargetIsCurrentStage);
         }
 
         StageTransitionKind kind;
@@ -59,14 +69,15 @@ public static class StageGate
             // 昇格: 1 段ずつ（飛び級不可）かつ合格基準充足が必要
             if ((int)target != (int)current + 1)
             {
-                return Reject(StageGateCriterion.PromotionMustBeSequential);
+                return Reject(criteria, StageGateCriterion.PromotionMustBeSequential);
             }
 
             var unmet = UnmetPromotionCriteria(current, performance, controlViolations, policy);
             if (unmet.Count > 0)
             {
                 return new StageTransitionResult(
-                    Accepted: false, Transition: null, ResultingSettings: null, RejectionReasons: unmet);
+                    Accepted: false, Transition: null, ResultingSettings: null, RejectionReasons: unmet,
+                    Stage1Criteria: criteria);
             }
 
             kind = StageTransitionKind.Promotion;
@@ -85,7 +96,8 @@ public static class StageGate
             Accepted: true,
             Transition: transition,
             ResultingSettings: policy.SettingsFor(target),
-            RejectionReasons: []);
+            RejectionReasons: [],
+            Stage1Criteria: criteria);
     }
 
     // FR-20, ADR-0008: 撤退（差し戻し）基準の評価。到達時は自動停止（HaltNewEntries）と降格提案（ProposedStage）を返す。
@@ -215,6 +227,10 @@ public static class StageGate
     private static TradingStage? NextStage(TradingStage stage) =>
         stage == TradingStage.Stage3ScaledLive ? null : (TradingStage)((int)stage + 1);
 
-    private static StageTransitionResult Reject(params StageGateCriterion[] reasons) =>
-        new(Accepted: false, Transition: null, ResultingSettings: null, RejectionReasons: reasons);
+    // #466, IADR-0180: 拒否時も**実効の合格条件を必ず載せる**。引数で強制することで、
+    // 新しい拒否経路を足したときに載せ忘れをコンパイルが止める（`params` は最後に置く必要がある）。
+    private static StageTransitionResult Reject(
+        Stage1GateCriteria criteria, params StageGateCriterion[] reasons) =>
+        new(Accepted: false, Transition: null, ResultingSettings: null, RejectionReasons: reasons,
+            Stage1Criteria: criteria);
 }

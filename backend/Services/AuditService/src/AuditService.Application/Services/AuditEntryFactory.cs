@@ -96,9 +96,17 @@ public static class AuditEntryFactory
 
     // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し）。注文/市場相関を持たないため
     // "stage-gate" の決定的 GUID を相関にする（すべての段階遷移が同一相関で束ねられ、監査照会でまとめて辿れる）。
+    //
+    // FR-11, #466, §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180: **警告を無視して昇格した事実**を要約にも出す。
+    // payload（`AuditSerialization.Serialize`）には 2 項目が自動で載るが、**要約を走査する監査**では
+    // 「なぜ 60 営業日・5 件で Stage 2 へ上がったのか」が目に入らない。警告が出ていた遷移にだけ添える
+    // （常時添えると要約が長くなり、警告そのものが埋もれる）。
     public static AuditEntry From(StageTransitioned e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(StageTransitioned), AuditCorrelation.From("stage-gate"), Symbol: null,
-        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"),
+        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"
+            + (e.Stage1BelowStatisticalBasis
+                ? $"（⚠ 最小取引件数 {e.Stage1MinimumTradeCount} 件・統計的根拠を満たさない設定のまま遷移）"
+                : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-19, FR-10, FR-11, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の**解除**。
