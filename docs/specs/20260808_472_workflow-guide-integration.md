@@ -16,7 +16,7 @@ updated: 2026-08-08
 
 - 起点 issue: [#472](https://github.com/endazon/ai-stock-trading/issues/472)
 - 起点 ID: **NFR**（運用保守）
-- 計画リポの正本: `planning/docs/ai-implementation-workflow-guide.md`（project-planning PR #294 で 2026-08-08 に確定・fixed）
+- 計画リポの正本: `planning/docs/ai-implementation-workflow-guide.md`（project-planning PR #294 で新設、PR #298 で 2026-08-08 に fixed へ確定）
 - 先例: [#459](https://github.com/endazon/ai-stock-trading/issues/459)（計画 pin の前進 / [作業仕様書 20260808_459](20260808_459_planning-pin-advance.md)）
 
 ## 背景
@@ -36,7 +36,7 @@ updated: 2026-08-08
 | 変更前 | `d9c2014` |
 | 変更後 | **`356e8c7`** |
 
-差分は 1 コミット（project-planning #294）のみであり、`projects/ai-stock-trading/` 配下（計画書本体）に変更は無い。追加は `docs/ai-implementation-workflow-guide.md`（新規・fixed）と `draft/cross-project/` の分析記録である。したがって **`PlanRiskDefaults` / `PlanSourceDigests` / `KnownPlanDeviations` の再照合は不要**（出典文書が 1 バイトも動いていない。#459 検査2 と同じ論法）。
+差分は 2 コミット（project-planning #294 で新設、#298 で fixed 化）であり、`projects/ai-stock-trading/` 配下（計画書本体）に変更は無い。追加は `docs/ai-implementation-workflow-guide.md`（#294 で新規・#298 で fixed）と `draft/cross-project/` の分析記録である。したがって **`PlanRiskDefaults` / `PlanSourceDigests` / `KnownPlanDeviations` の再照合は不要**（出典文書が 1 バイトも動いていない。#459 検査2 と同じ論法）。
 
 ## 受け入れ基準
 
