@@ -45,6 +45,16 @@ public static class ProfitabilityGate
         decimal capitalGainsTaxRate = 0m)
     {
         // 費用見積り不能・構成異常は安全側（Indeterminate）に倒す。
+        //
+        // #461, IADR-0177: **この条件式は「まとめて冗長」ではない。整理するなら節ごとに見ること。**
+        // - `roundTrip is null` / `roundTrip <= 0m` は**依然として効いている**。Threshold は負の費用を 0 へ
+        //   正規化して**しきい値 0 を返す**ため、ここで止めないと **0 以上の期待利益がすべて Viable** になる
+        //  （＝全通過）。これを固定しているのが `往復費用0はIndeterminate` のテストである。
+        // - `minimumProfitMultiple <= 0m` は 2026-08-08 に Threshold 側へ同じ判定が入り、**結果としては
+        //   重なった**。それでも残すのは、**二重の fail-closed を減らす利得より、片方を消したときに
+        //   気付けない損失のほうが大きい**ためである（#461 の欠陥そのものが「呼び出し側だけが守っていた」
+        //   形で生まれた）。**規則の正は式の側（Threshold）にある** —— ここはその写しであって、
+        //   ここを直しても他の呼び出し側は守られない。
         if (estimatedRoundTripCost is not { } roundTrip || roundTrip <= 0m || minimumProfitMultiple <= 0m)
         {
             return ProfitabilityVerdict.Indeterminate;
