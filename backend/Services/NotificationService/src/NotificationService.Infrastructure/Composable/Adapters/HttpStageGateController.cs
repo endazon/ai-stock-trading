@@ -30,6 +30,31 @@ internal sealed class HttpStageGateController(
     // 表示に載せる直近履歴の件数（多すぎると Discord の表示が冗長になるため直近のみ）。
     private const int RecentHistoryCount = 5;
 
+    // AST #466, FR-20, SC-02, §4.1 追補3, IADR-0180: **Stage 1 の最小取引件数の引き下げ警告の文言（単一情報源）。**
+    //
+    // `/stage status`（現況照会）と `/stage promote`（承認操作）の**両方**が本定数を使う。issue #466 が
+    // 「画面側（SC-02）の警告と**文言・条件を揃える**」ことを求めており、経路ごとに書き下ろすと必ず割れる。
+    //
+    // **本文は SC-02 の `STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING`
+    // （`frontend/src/features/risk/contracts.ts`）と一致させる。**
+    // クロス言語（C# / TypeScript）のため一致を機械的に強制する手段が無い——片方を変えたら
+    // もう片方も変えること（IADR-0180 の残余リスク）。
+    internal const string BelowStatisticalBasisWarning =
+        "統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。"
+        + "100 件は「30 件が床・100 件が実用最低限」という実務上の一致点の下限であり、"
+        + "これを下回ると勝率・平均損益の推定分散が大きく、"
+        + "条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。"
+        + "この警告は設定を妨げません（変更は理由とともに履歴へ残ります）。";
+
+    // AST #466: 上の文言に、その場の実効値（何件に設定されているか）を添えた 1 行。
+    //
+    // **本メソッドは判定しない**——`BelowStatisticalBasis` が true のときだけ呼ぶ。
+    // 文中の「100 件」は**説明文の一部**であり（SC-02 の文言も同じ数を散文で含む）、
+    // **判定に使う閾値ではない**。判定を写経すると、計画が値を変えたときにこの 1 か所だけが古くなる。
+    internal static string FormatBelowBasisWarning(int minimumTradeCount) =>
+        $"⚠ Stage 1 の最小取引件数が {minimumTradeCount} 件に設定されています（既定 100 件）。"
+        + BelowStatisticalBasisWarning;
+
     public async Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -88,10 +113,19 @@ internal sealed class HttpStageGateController(
                     return new StageTransitionCommandResult(false, false, "段階遷移の応答を解釈できませんでした");
                 }
 
+                // AST #466, FR-20, SC-02, §4.1 追補3（Q13-a）, IADR-0180: 承認操作にも警告を届ける。
+                //
+                // **判定はサーバ（Risk）の `belowStatisticalBasis` の宣言に従う**（閾値 100 を写経しない）。
+                // 応答が本項目を持たない（旧版 Risk）場合は警告を出さない（null＝宣言が無い。`/stage status` と同型）。
+                // **受理・拒否の両方で載せる**——拒否されたときだけ警告が消える経路を作らない。
+                var warning = result.Stage1Criteria is { BelowStatisticalBasis: true } c
+                    ? FormatBelowBasisWarning(c.MinimumTradeCount)
+                    : null;
+
                 return result.Accepted
                     ? new StageTransitionCommandResult(true, true,
-                        $"段階を {StageLabel(result.Transition?.ToStage ?? targetStage)} へ遷移しました。")
-                    : new StageTransitionCommandResult(true, false, FormatRejection(result.RejectionReasons));
+                        $"段階を {StageLabel(result.Transition?.ToStage ?? targetStage)} へ遷移しました。", warning)
+                    : new StageTransitionCommandResult(true, false, FormatRejection(result.RejectionReasons), warning);
             }
 
             // 400（不正な targetStage）・401/403（owner 設定不備）・その他は失敗として返す。
@@ -173,12 +207,12 @@ internal sealed class HttpStageGateController(
         // **判定はサーバ（Risk）が `belowStatisticalBasis` で宣言したものに従う**——閾値 100 をここに
         // 写経すると、計画が値を変えたときにこの 1 か所だけが古いままになる。
         // 応答が本項目を持たない（旧版サーバ）場合は警告を出さない（null＝宣言が無い）。
+        //
+        // AST #466: 文言は `/stage promote` と共通の定数 `FormatBelowBasisWarning` に集約した
+        // （経路ごとに書き下ろすと必ず割れる。issue #466 が SC-02 との一致を求めている）。
         if (v.Stage1Criteria is { BelowStatisticalBasis: true } criteria)
         {
-            lines.Add(
-                $"⚠ Stage 1 の最小取引件数が {criteria.MinimumTradeCount} 件に設定されています"
-                + "（既定 100 件）。**統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。**"
-                + "100 件未満では勝率・平均損益の推定分散が大きく、条件 3 の目的を満たしません。");
+            lines.Add(FormatBelowBasisWarning(criteria.MinimumTradeCount));
         }
 
         var history = v.History ?? [];
@@ -319,9 +353,12 @@ internal sealed class HttpStageGateController(
 
     internal sealed record WithdrawalAssessmentView(bool Triggered, int? Reason, bool HaltNewEntries, int? ProposedStage);
 
+    // AST #466: 遷移応答も合格条件を運ぶ（Risk 側の契約変更・IADR-0180）。
+    // nullable＝本項目を返さない旧版 Risk への耐性（`StageGateStatusView.Stage1Criteria` と同型）。
     internal sealed record StageTransitionResultView(
         bool Accepted,
         StageTransitionView? Transition,
         StageSettingsView? ResultingSettings,
-        IReadOnlyList<int>? RejectionReasons);
+        IReadOnlyList<int>? RejectionReasons,
+        Stage1GateCriteriaView? Stage1Criteria = null);
 }

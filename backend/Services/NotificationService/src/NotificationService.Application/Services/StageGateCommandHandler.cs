@@ -57,10 +57,23 @@ public sealed class StageGateCommandHandler(
                 {
                     // 承認者は Risk 側が認証済みトークン（owner マップ）から取る（要求本文は targetStage のみ）。
                     var result = await controller.RequestTransitionAsync(target, cancellationToken).ConfigureAwait(false);
+
+                    // FR-20, FR-11, SC-02, #466, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180:
+                    // **昇格承認（`/stage promote`）にだけ**最小取引件数の引き下げ警告を足す。
+                    //
+                    // 裁定は「昇格承認」を名指ししている。差し戻し（`/stage demote`）は安全側の操作であり、
+                    // そこへ同じ警告を出すと「読まれない警告」化を招く——裁定が「`/stage status` だけでは
+                    // 足りない」とした理由（人の運用に依存する前提を置かない）の裏返しである。
+                    var isPromotion = command.Kind == BotCommandKind.StagePromote;
+                    var warned = isPromotion && result.Stage1Warning is not null;
+
                     logger.LogInformation(
-                        "段階遷移を要求しました（Actor={Actor}・Kind={Kind}・Target={Target}・Succeeded={Succeeded}・Accepted={Accepted}）。",
-                        auth.Actor, command.Kind, target, result.Succeeded, result.Accepted);
-                    return StageGateCommandResult.Transition(result);
+                        "段階遷移を要求しました（Actor={Actor}・Kind={Kind}・Target={Target}・Succeeded={Succeeded}・Accepted={Accepted}・Warned={Warned}）。",
+                        auth.Actor, command.Kind, target, result.Succeeded, result.Accepted, warned);
+
+                    return warned
+                        ? StageGateCommandResult.Transition(result, result.Stage1Warning)
+                        : StageGateCommandResult.Transition(result);
                 }
 
             default:
@@ -82,6 +95,12 @@ public sealed record StageGateCommandResult(bool WasExecuted, string Message, bo
     // 照会・撤退評価は「実行された（＝認証通過・Risk 照会済み）」が遷移結果は持たない。
     public static StageGateCommandResult StatusView(StageGateStatusResult status) => new(true, status.Message);
 
+    // #466: 警告なし（既定値のまま・差し戻し・旧版 Risk）の遷移応答。
     public static StageGateCommandResult Transition(StageTransitionCommandResult result) =>
         new(true, result.Message, result.Accepted);
+
+    // #466, IADR-0180: 昇格承認に警告を添えた応答。**警告は遷移の可否を変えない**——
+    // `Accepted` は Risk の判定をそのまま運ぶ（警告を理由に昇格を拒否しない。裁定が明示）。
+    public static StageGateCommandResult Transition(StageTransitionCommandResult result, string? warning) =>
+        new(true, warning is null ? result.Message : $"{result.Message}\n{warning}", result.Accepted);
 }

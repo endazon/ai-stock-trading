@@ -255,6 +255,127 @@ public class HttpStageGateControllerTests
         result.Accepted.Should().BeFalse();
     }
 
+    // ---- AST #466, FR-20, SC-02, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180 ----
+    // **遷移応答（`/stage promote` が叩く POST）も合格条件を運ぶ**。判定はサーバ（Risk）が
+    // `belowStatisticalBasis` で宣言し、アダプタは閾値 100 を写経せず表示するだけである。
+
+    private const string TransitionBodyBelowBasis = """
+    {
+        "accepted": true,
+        "transition": { "sequence": 2, "fromStage": 1, "toStage": 2, "kind": 0, "approvedBy": "endazon", "occurredAtUtc": "2026-08-08T00:00:00+00:00", "reason": "approved" },
+        "resultingSettings": { "stage": 2, "mode": 1, "capitalCapRatio": 0.30 },
+        "rejectionReasons": [],
+        "stage1Criteria": { "targetTradingDays": 60, "minimumTradeCount": 5, "maximumTradingDays": 120, "belowStatisticalBasis": true }
+    }
+    """;
+
+    [Fact]
+    public async Task 遷移応答が引き下げを宣言していれば警告文言を別項目で返す()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, TransitionBodyBelowBasis);
+
+        var result = await Controller(handler).RequestTransitionAsync(2);
+
+        result.Accepted.Should().BeTrue();
+        // **Message へ混ぜない**——昇格か差し戻しかを知るのはハンドラであり、付加の可否はそちらが決める。
+        result.Message.Should().NotContain("⚠");
+        result.Stage1Warning.Should().NotBeNull();
+        result.Stage1Warning.Should().Contain("5 件");
+        result.Stage1Warning.Should().Contain("統計的な根拠");
+    }
+
+    // **否定形**: 宣言が false なら警告は返らない（既定値のままなら警告は出ない）。
+    [Fact]
+    public async Task 遷移応答の宣言が_false_なら警告を返さない()
+    {
+        var body = TransitionBodyBelowBasis
+            .Replace("\"minimumTradeCount\": 5", "\"minimumTradeCount\": 100", StringComparison.Ordinal)
+            .Replace("\"belowStatisticalBasis\": true", "\"belowStatisticalBasis\": false", StringComparison.Ordinal);
+        var handler = new FakeHandler(HttpStatusCode.OK, body);
+
+        var result = await Controller(handler).RequestTransitionAsync(2);
+
+        result.Stage1Warning.Should().BeNull();
+    }
+
+    // **否定形**: 本項目を返さない旧版 Risk では警告を出さない（null＝宣言が無い。`/stage status` と同型）。
+    [Fact]
+    public async Task 合格条件を返さない旧版応答では警告を返さない()
+    {
+        var body = """
+        {
+            "accepted": true,
+            "transition": { "sequence": 2, "fromStage": 1, "toStage": 2, "kind": 0, "approvedBy": "endazon", "occurredAtUtc": "2026-08-08T00:00:00+00:00", "reason": "approved" },
+            "resultingSettings": { "stage": 2, "mode": 1, "capitalCapRatio": 0.30 },
+            "rejectionReasons": []
+        }
+        """;
+        var handler = new FakeHandler(HttpStatusCode.OK, body);
+
+        var result = await Controller(handler).RequestTransitionAsync(2);
+
+        result.Stage1Warning.Should().BeNull();
+    }
+
+    // 決定1: **422（拒否）でも警告を返す。** 承認操作は行われており、設定が下がっている事実は変わらない。
+    [Fact]
+    public async Task 受理されなかった遷移でも警告を返す()
+    {
+        var body = """
+        {
+            "accepted": false,
+            "transition": null,
+            "resultingSettings": null,
+            "rejectionReasons": [10],
+            "stage1Criteria": { "targetTradingDays": 60, "minimumTradeCount": 5, "maximumTradingDays": 120, "belowStatisticalBasis": true }
+        }
+        """;
+        var handler = new FakeHandler(HttpStatusCode.UnprocessableEntity, body);
+
+        var result = await Controller(handler).RequestTransitionAsync(2);
+
+        result.Succeeded.Should().BeTrue();
+        result.Accepted.Should().BeFalse();
+        result.Stage1Warning.Should().NotBeNull();
+    }
+
+    // 決定3: `/stage status` と `/stage promote` の文言が**同一の定数**から出ることを固定する。
+    // 経路ごとに書き下ろすと必ず割れる（issue #466 が SC-02 との一致を求めている）。
+    [Fact]
+    public async Task 現況照会と遷移応答の警告文言が一致する()
+    {
+        var statusBody = """
+        {
+            "currentStage": 1,
+            "currentSettings": { "stage": 1, "mode": 0, "capitalCapRatio": 1.00 },
+            "history": [],
+            "promotion": { "targetStage": 2, "eligible": false, "unmetCriteria": [10] },
+            "withdrawal": { "triggered": false, "reason": null, "haltNewEntries": false, "proposedStage": null },
+            "stage1Criteria": { "targetTradingDays": 60, "minimumTradeCount": 5, "maximumTradingDays": 120, "belowStatisticalBasis": true }
+        }
+        """;
+        var status = await Controller(new FakeHandler(HttpStatusCode.OK, statusBody)).GetStatusAsync();
+        var transition = await Controller(new FakeHandler(HttpStatusCode.OK, TransitionBodyBelowBasis))
+            .RequestTransitionAsync(2);
+
+        transition.Stage1Warning.Should().NotBeNull();
+        status.Message.Should().Contain(transition.Stage1Warning!);
+    }
+
+    // 決定3 の残余リスクの明示: C# 側の文言を**リテラルで**固定する。
+    // SC-02（`frontend/src/features/risk/contracts.ts` の `STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING`）と
+    // 同一であること自体はクロス言語のため機械的に強制できない——**片方を変えたら両方を直すこと**。
+    [Fact]
+    public void 警告文言が_SC02_の文言と同一である()
+    {
+        HttpStageGateController.BelowStatisticalBasisWarning.Should().Be(
+            "統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。"
+            + "100 件は「30 件が床・100 件が実用最低限」という実務上の一致点の下限であり、"
+            + "これを下回ると勝率・平均損益の推定分散が大きく、"
+            + "条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。"
+            + "この警告は設定を妨げません（変更は理由とともに履歴へ残ります）。");
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;
