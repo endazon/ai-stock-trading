@@ -102,7 +102,7 @@ GET /risk-controls/buy-in-inferences?from=YYYY-MM-DD&to=YYYY-MM-DD
 含めると SC-03 側の表示規約（[IADR-0162](IADR-0162_unsupplied-metric-display-convention-all-screens.md)）の
 再確認まで巻き込み、本 PR の検査対象が広がる。
 
-**別 issue として起票する**（`docs/blocked-tasks.md` の当該行にも「FR-21 の記録側は入った」ことを反映した）。
+**別 issue として起票した**（[#470](https://github.com/endazon/ai-stock-trading/issues/470)。`docs/blocked-tasks.md` の当該行にも「FR-21 の**記録側**は入った（表示側の SC-03 は未了）」ことを反映した）。
 **現状のまま「取得できていません」と表示し続けることは安全側であり、誤りではない。**
 
 ## 検討したが採らなかった案
@@ -146,7 +146,9 @@ GET /risk-controls/buy-in-inferences?from=YYYY-MM-DD&to=YYYY-MM-DD
   裁定が下りたら差分を追随させる。
 - **観測そのものは OpenD 常駐に依存する**（`docs/blocked-tasks.md` の A-1 / A-2）。
   本 ADR が入れたのは「届いたら記録する」経路であり、**届く経路そのものは別問題**である。
-- **SC-03 は引き続き「取得できていません」を表示する**（決定4）。FR-21 の記録側は入ったため、
-  結線は別 issue で行える。
+- **SC-03 は引き続き「取得できていません」を表示する**（決定4）。FR-21 の記録側は入ったため結線できる状態であり、
+  [#470](https://github.com/endazon/ai-stock-trading/issues/470) で行う。**観測が流れ始めた日に、SC-03 は
+  「正当な 0 を未供給に見せる」側の規約違反（FR-21 受け入れ基準の逆方向）へ黙って転じる**——
+  現時点では観測が 1 件も到達していないため表示は事実として正しいが、期限のある残件である。
 - **推定の根拠（`CoveringFills`）は本経路では運ばれない。** 台帳が持っていないためであり、
   根拠が無いという主張ではない（明細が要るなら監査台帳を辿る）。
