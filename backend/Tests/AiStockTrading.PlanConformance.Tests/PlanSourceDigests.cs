@@ -30,6 +30,8 @@ public sealed record PlanSourceDigest(string RelativePath, string HeadingPrefix,
 public static class PlanSourceDigests
 {
     private const string Assumptions = "projects/ai-stock-trading/06_technical/05_trading-assumptions.md";
+    private const string Requirements = "projects/ai-stock-trading/02_requirements/01_requirements.md";
+    private const string UseCases = "projects/ai-stock-trading/03_usecases/01_usecases.md";
     private const string Adr = "projects/ai-stock-trading/07_adr";
 
     // **2026-08-08（#459・pin `a4616a8` → `c2998a6`）に 4 件を更新した。**
@@ -62,6 +64,24 @@ public static class PlanSourceDigests
         new($"{Adr}/ADR-0016_short-selling-staged-release.md", "## 決定", "eaebe75e8df47a8817548a8b8d3bac2b9c4a6e913f4a7108e892976cd641d422", "ADR-0016 決定"),
         new($"{Adr}/ADR-0018_risk-defaults-sync-and-stage0-dd.md", "## 決定", "4820ff53ae1dff2d5932eb6df2c55be8a1e57954d4a9043329edb764d3598f5e", "ADR-0018 決定"),
         new($"{Adr}/ADR-0022_fx-rate-source-and-freshness.md", "## 決定", "907495fea4d0d225750e860d5ec4b489e49ee2ff9d23353a09c765762f88891c", "ADR-0022 決定"),
+
+        // --- 🔴 2026-08-08（#459）に追加した 3 節。**本表が PlanRiskDefaults の出典を網羅していなかった。**
+        //
+        //     【本作業が見つけた穴】 PlanRiskDefaults の 45 行が挙げる出典を機械的に数えたところ、
+        //     **3 文書が本表に無かった**（`02_requirements`・`03_usecases`・ADR-0021）。とくに
+        //     **`Stage.Values` の出典は「FR-20」だけであり、本表のどの節にも掛かっていなかった。**
+        //     しかも**その 3 文書はいずれも本 pin 前進（a4616a8 → c2998a6）で変更されている** ——
+        //     `02_requirements` は +21 行（FR-10 の維持率・FR-21 の新設）、`03_usecases` は +5 行
+        //     （UC-06 の等号）、ADR-0021 は +21 行（決定4-5 の GFV 解除条件）。
+        //     **本表は 1 件も赤くならなかった。** 今回は人手で 3 文書を読んで値が動いていないことを
+        //     確かめたが、**「人が見たから大丈夫」は本機構が置き換えようとしているもの**である。
+        //
+        //     出典が本表に無ければ、[[IADR-0166]] の 1 ホップはその行に**掛からない**。
+        //     `PlanConformanceTests`（表 ⇄ 実装）は緑のままなので、**穴は「赤くならないこと」として現れる**。
+        new(Requirements, "## 機能要求", "fa973f38b9a279ac7784195f34e5a8ec6de007ba35ca4089d1e8c85b942f8e94", "02_requirements §機能要求（FR-10 / FR-19 / FR-20 の表）"),
+        // 見出しは `### UC-06: …` のためコロンまで含める（直後が区切りである必要がある。#444 の指摘）。
+        new(UseCases, "### UC-06:", "93f676311991a30757b085c6d83bfe82c6878f4e2db6d18b99f15c338b3dd704", "UC-06（設定変更・一時停止・緊急停止）"),
+        new($"{Adr}/ADR-0021_us-account-type-dual-support.md", "## 決定", "107a5118a06b29818625462a224b988717286385f94d9074cac04a842c3be94a", "ADR-0021 決定"),
     ];
 
     /// <summary>まだ実測値を埋めていない項目のプレースホルダ。</summary>

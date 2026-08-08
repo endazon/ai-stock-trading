@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Xunit;
 
@@ -88,6 +89,84 @@ public class PlanSourceDigestTests
         PlanSourceDigests.All
             .Select(d => (d.RelativePath, d.HeadingPrefix))
             .Should().OnlyHaveUniqueItems("同じ節を二重に登録すると更新漏れが片方に残る");
+    }
+
+    // 🔴 **本表が `PlanRiskDefaults` の出典を網羅していること**（#459 で新設）。
+    //
+    // **【本テストが生まれた経緯】** 2026-08-08 の pin 前進（`a4616a8` → `c2998a6`）で、本表の 10 節が
+    // `PlanRiskDefaults` の出典を**網羅していなかった**ことが分かった。**`Stage.Values` の出典は「FR-20」
+    // だけであり、本表のどの節にも掛かっていなかった。** ほかに ADR-0021 決定4-1（`Guard.PreventSameDayReentry`）
+    // と UC-06（`ShortSell.Limits`）も掛かっていなかった。
+    //
+    // **しかもその 3 文書は、いずれもその pin 前進で実際に変更されていた** —— それでも本表は
+    // **1 件も赤くならなかった**。出典が本表に無ければ [[IADR-0166]] の 1 ホップはその行に掛からず、
+    // `PlanConformanceTests`（表 ⇄ 実装）は緑のままなので、**穴は「赤くならないこと」として現れる。**
+    // これは [[IADR-0166]] 自身が名付けた「緑だが検査されていない」そのものである。
+    //
+    // **本テストは、同じ穴が新しい行の追加で再発することを塞ぐ。** `PlanRiskDefaults` へ新しい出典の行を
+    // 足したら、その出典の節を本表へ登録するまで赤くなる。
+    [Fact]
+    public void ダイジェスト表は計画確定値の出典を網羅している()
+    {
+        // 出典トークン（`ADR-xxxx` / `FR-xx` / `UC-xx` / `05_trading-assumptions §x`）→ 本表の Citation の前方一致。
+        // **本表に無い出典を「覚えておく」場所ではなく、対応が取れることを機械的に主張する場所である。**
+        (string Pattern, string CitationPrefix)[] coverage =
+        [
+            (@"05_trading-assumptions §1", "05_trading-assumptions §1"),
+            (@"05_trading-assumptions §3", "05_trading-assumptions §3"),
+            (@"05_trading-assumptions §4", "05_trading-assumptions §4"),
+            (@"05_trading-assumptions §5", "05_trading-assumptions §5"),
+            (@"05_trading-assumptions §6", "05_trading-assumptions §6"),
+            (@"ADR-0008", "ADR-0008 決定"),
+            (@"ADR-0016", "ADR-0016 決定"),
+            (@"ADR-0018", "ADR-0018 決定"),
+            (@"ADR-0021", "ADR-0021 決定"),
+            (@"ADR-0022", "ADR-0022 決定"),
+            (@"FR-\d+", "02_requirements §機能要求"),
+            (@"UC-06", "UC-06"),
+        ];
+
+        // **免除は理由つきで明示する。** 出典として値を与えているのではなく、状態の注記として現れる ID。
+        (string Token, string Reason)[] exemptions =
+        [
+            ("ADR-0026", "値の出典ではない。`ShortSell.BorrowRateCapAnnual` の注記が「単位が PoC 項目 9 待ちである」と述べているだけであり、20% という値は ADR-0016 決定3 由来である"),
+        ];
+
+        // 対応先の Citation が実在すること（対応表の側が腐るのを防ぐ）。
+        foreach (var (pattern, citationPrefix) in coverage)
+        {
+            PlanSourceDigests.All
+                .Should().Contain(
+                    d => d.Citation.StartsWith(citationPrefix, StringComparison.Ordinal),
+                    "出典パターン `{0}` の対応先「{1}」がダイジェスト表に無い", pattern, citationPrefix);
+        }
+
+        // `PlanRiskDefaults` の全行の出典（Citation）に現れる計画 ID が、いずれかのパターンで拾えること。
+        var tokenPattern = new Regex(@"ADR-\d{4}|FR-\d+|UC-\d+|05_trading-assumptions §[\d.]+");
+        var uncovered = new List<string>();
+
+        foreach (var plan in PlanRiskDefaults.All)
+        {
+            foreach (var token in tokenPattern.Matches(plan.Citation).Select(m => m.Value).Distinct())
+            {
+                if (exemptions.Any(e => token.StartsWith(e.Token, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (!coverage.Any(c => Regex.IsMatch(token, $"^(?:{c.Pattern})$")))
+                {
+                    uncovered.Add($"{plan.Key} の出典「{token}」");
+                }
+            }
+        }
+
+        uncovered.Should().BeEmpty(
+            "**計画確定値の出典がダイジェスト表に掛かっていない。** その行は「計画側が変わったのに赤くならない」"
+                + "状態にある（#459 で `Stage.Values` / `Guard.PreventSameDayReentry` / `ShortSell.Limits` に"
+                + "実在した）。(1) 出典の節を PlanSourceDigests へ登録する か "
+                + "(2) 値の出典ではないなら exemptions へ**理由つきで**足すこと。掛かっていない出典: {0}",
+            string.Join(" / ", uncovered));
     }
 
     // 正規化の否定形（IADR-0166 決定3）: 行末空白・改行コードは吸収するが、**内容の差は吸収しない**。
