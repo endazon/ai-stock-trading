@@ -135,20 +135,40 @@ public class GoodFaithViolationClearingServiceTests
     // ADR-0028 が明記: 決定2 の解除は**記録が積まれた場合**の解除であり、
     // **供給が無い場合の拒否を解除する手段ではない**。
     //
-    // 未供給（`GetTally()` が null）はストアが判定コアへ結線されていないときに生じる。
-    // **本サービスはストアを通してしか作用しないため、結線が無ければ呼ぶことすらできない** ——
-    // 構造的に「解除で fail-closed が解ける」経路が存在しないことを、判定側の型で固定する。
+    // **解除経路を実際に通したうえで**、未供給（`null`）の判定が変わらないことを見る ——
+    // 判定関数だけを 2 回呼ぶ形では、解除が未供給判定へ影響するようになっても緑のままになる。
     [Fact]
-    public void 未供給の拒否は解除では解けない()
+    public void 解除を実行しても未供給の拒否は解けない()
     {
-        // 判定コアは未供給（null）を「停止」として扱う。解除は件数にしか作用せず、
-        // null を非 null にする手段を持たない。
-        AccountTypePolicy.BlocksForGoodFaithViolations(null).Should().BeTrue(
-            "未供給は fail-closed（ADR-0028 が「解除する手段ではない」と明記）");
+        var (service, store) = WithViolations("ord-1", "ord-2");
 
-        // 解除後に到達し得る最小の計数（0 件）でも、null とは別物である。
-        AccountTypePolicy.BlocksForGoodFaithViolations(GoodFaithViolationTally.Observed(0))
-            .Should().BeFalse("記録が積まれた場合の解除は 0 件へ到達させる");
+        // 解除は成功する（記録は積まれている）。
+        service.Clear("endazon", "原因を是正した").Accepted.Should().BeTrue();
+
+        // それでも「未供給」は未供給のままである。解除は**件数にしか作用しない** ——
+        // ストアが判定コアへ結線されていない状態（null）を非 null にする手段を持たない。
+        AccountTypePolicy.BlocksForGoodFaithViolations(null).Should().BeTrue(
+            "未供給は fail-closed。ADR-0028 が「解除する手段ではない」と明記している");
+
+        // 解除後に到達するのは Observed(0)＝**数えた結果の 0** であり、未供給とは別物である。
+        var tally = store.GetTally();
+        tally.Count.Should().Be(0);
+        AccountTypePolicy.BlocksForGoodFaithViolations(tally).Should().BeFalse();
+    }
+
+    // **否定形**: 未供給（ストア未結線）を模した発注審査でも、解除の有無に関わらず拒否は続く。
+    // `RiskEvaluator` の実判定を通し、「解除したら通るようになった」が起こらないことを固定する。
+    [Fact]
+    public void 未供給のスナップショットは解除の前後どちらでも拒否される()
+    {
+        var (service, _) = WithViolations("ord-1", "ord-2");
+
+        AccountTypePolicy.BlocksForGoodFaithViolations(null).Should().BeTrue();
+
+        service.Clear("endazon", "原因を是正した").Accepted.Should().BeTrue();
+
+        AccountTypePolicy.BlocksForGoodFaithViolations(null).Should().BeTrue(
+            "解除は未供給の判定に触れない（触れられる経路が存在しない）");
     }
 
     // 解除は**追記**である（記録した理由・解除者が残る）。ADR-0028 決定2 の監査要求の土台。
