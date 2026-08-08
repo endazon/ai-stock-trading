@@ -66,6 +66,35 @@ public class EfPositionObservationArrivalStoreTests
         store.GetObservedDaysBetween(Day, Day).Should().ContainSingle();
     }
 
+    // **否定形**: 同一取引日で後着の古い（または同じ）観測時刻では `LastObservedAtUtc` を巻き戻さない。
+    //
+    // `LastObservedAtUtc` は `periodCovered` の判定には使わない**診断用**の値だが、
+    // 「その日に最後に観測できたのはいつか」を運用者が読む値であり、**後着の再送で過去へ戻ると
+    // 障害の切り分けを誤らせる**。判定に使わないことは、検査しない理由にはならない。
+    //
+    // 本テストは改定（単一行 → 取引日ごと）で一度失われ、AI レビューの指摘で復元した
+    // ——**分岐がどのテストからも到達しなくなっていた**（IADR-0166 が名付けた「緑だが検査されていない」）。
+    [Theory]
+    [InlineData(-60)]  // 1 時間前の観測が後から届く
+    [InlineData(-1)]   // 1 分前
+    [InlineData(0)]    // 同時刻（再送）
+    public void 同一取引日で古い_または同じ観測時刻では巻き戻さない(int offsetMinutes)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPositionObservationArrivalStore(db);
+            store.Record(Day, At);
+            store.Record(Day, At.AddMinutes(offsetMinutes));
+        }
+
+        using (var db = NewContext(dbName))
+        {
+            db.PositionObservationDays.Single(r => r.TradingDay == Day)
+                .LastObservedAtUtc.Should().Be(At);
+        }
+    }
+
     // 期間の切り出し（範囲外の日は返さない）。
     [Fact]
     public void 期間外の取引日は返さない()
