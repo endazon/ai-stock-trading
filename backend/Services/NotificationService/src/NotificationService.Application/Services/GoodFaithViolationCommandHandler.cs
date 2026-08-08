@@ -18,9 +18,15 @@ public sealed class GoodFaithViolationCommandHandler(
     DiscordBotOptions options,
     ILogger<GoodFaithViolationCommandHandler> logger)
 {
+    /// <param name="clearanceReason">
+    /// 利用者が入力した**何を是正したか**。ADR-0028 §理由「解除の記録が監査ログに残ることで、
+    /// <b>後から「なぜ解除したか」を追える</b>」の実体である。
+    /// <b>決定3 により Discord が唯一の窓口であるため、ここが空なら「なぜ」は監査から復元できない。</b>
+    /// </param>
     public async Task<GoodFaithViolationCommandResult> HandleAsync(
         DiscordCommandContext context,
         string? confirmationPhrase,
+        string? clearanceReason = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -57,9 +63,20 @@ public sealed class GoodFaithViolationCommandHandler(
             return GoodFaithViolationCommandResult.Denied(confirmation.Reason);
         }
 
-        // ADR-0028 決定2: 解除は「**原因の是正が済んでいることの確認を伴う**」ものであり、
-        // 理由が監査ログへ残る。操作者と経路を理由に残す（Risk 側は理由必須）。
-        var reason = $"Discord Bot 経由の GFV 解除（actor={auth.Actor}・原因の是正を確認済みとして解除）";
+        // 閂4: 理由必須。ADR-0028 決定2 は「**原因の是正が済んでいることの確認を伴う**」解除を求める。
+        //
+        // **定型文で埋めない。** 決定3 により Discord が唯一の窓口であるため、定型文にすると
+        // **全解除の理由が同一文字列になり「なぜ解除したか」が監査から復元できない**
+        // （残るのは「解除者が確認済みと自称した」ことだけ）。Risk 側の理由必須チェックも
+        // 常に非空の定型文では発火せず、実質的に無効化される。
+        if (string.IsNullOrWhiteSpace(clearanceReason))
+        {
+            logger.LogWarning("GFV 解除を理由欠如で拒否しました（Actor={Actor}）。", auth.Actor);
+            return GoodFaithViolationCommandResult.Denied("解除の理由が入力されていない");
+        }
+
+        // 操作者と経路は理由へ添える（監査の「誰が」を理由文からも辿れるようにする）。
+        var reason = $"{clearanceReason.Trim()}（Discord Bot 経由・actor={auth.Actor}）";
 
         var result = await controller.ClearAsync(reason, cancellationToken).ConfigureAwait(false);
 

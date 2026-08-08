@@ -21,6 +21,7 @@ public class GoodFaithViolationCommandHandlerTests
     private const string Channel = "channel-1";
     private const string OwnerUser = "discord-owner-1";
     private const string Phrase = "解除します";
+    private const string Reason = "決済済み資金の判定を修正した";
 
     private sealed class FakeController : IGoodFaithViolationController
     {
@@ -67,7 +68,7 @@ public class GoodFaithViolationCommandHandlerTests
     {
         var controller = new FakeController();
 
-        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(), Phrase);
+        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(), Phrase, Reason);
 
         result.WasExecuted.Should().BeTrue();
         result.Cleared.Should().BeTrue();
@@ -85,7 +86,7 @@ public class GoodFaithViolationCommandHandlerTests
     {
         var controller = new FakeController();
 
-        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(), phrase);
+        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(), phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0, "拒否は Risk を呼ぶ前に起きなければならない");
@@ -98,7 +99,7 @@ public class GoodFaithViolationCommandHandlerTests
     {
         var controller = new FakeController();
 
-        var result = await Handler(controller, FullyConfigured(phrase: "")).HandleAsync(Context(), Phrase);
+        var result = await Handler(controller, FullyConfigured(phrase: "")).HandleAsync(Context(), Phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0);
@@ -111,7 +112,7 @@ public class GoodFaithViolationCommandHandlerTests
         var controller = new FakeController();
 
         var result = await Handler(controller, FullyConfigured())
-            .HandleAsync(Context(isDm: true), Phrase);
+            .HandleAsync(Context(isDm: true), Phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0);
@@ -123,7 +124,7 @@ public class GoodFaithViolationCommandHandlerTests
         var controller = new FakeController();
 
         var result = await Handler(controller, FullyConfigured())
-            .HandleAsync(Context(user: "discord-stranger"), Phrase);
+            .HandleAsync(Context(user: "discord-stranger"), Phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0);
@@ -135,7 +136,7 @@ public class GoodFaithViolationCommandHandlerTests
     {
         var controller = new FakeController();
 
-        var result = await Handler(controller, new DiscordBotOptions()).HandleAsync(Context(), Phrase);
+        var result = await Handler(controller, new DiscordBotOptions()).HandleAsync(Context(), Phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0);
@@ -155,9 +156,40 @@ public class GoodFaithViolationCommandHandlerTests
     {
         var controller = new FakeController();
 
-        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(raw), Phrase);
+        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(raw), Phrase, Reason);
 
         result.WasExecuted.Should().BeFalse();
         controller.Calls.Should().Be(0);
+    }
+
+    // 🔴 **否定形**: 解除の理由が空なら **Risk を呼ばない**。
+    //
+    // ADR-0028 §理由 は「解除の記録が監査ログに残ることで、**後から「なぜ解除したか」を追える**」
+    // ことを決定2 の根拠に挙げている。**決定3 により Discord が唯一の窓口である**ため、
+    // ここを定型文で埋めると**全解除の理由が同一文字列になり「なぜ」が監査から復元できない**。
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task 解除の理由が空なら_Risk_を呼ばない(string? reason)
+    {
+        var controller = new FakeController();
+
+        var result = await Handler(controller, FullyConfigured()).HandleAsync(Context(), Phrase, reason);
+
+        result.WasExecuted.Should().BeFalse();
+        controller.Calls.Should().Be(0);
+    }
+
+    // 利用者が入力した理由が**そのまま** Risk へ渡る（監査に残るのは定型文ではなく「何を是正したか」）。
+    [Fact]
+    public async Task 利用者が入力した理由が監査へ渡る()
+    {
+        var controller = new FakeController();
+
+        await Handler(controller, FullyConfigured()).HandleAsync(Context(), Phrase, Reason);
+
+        controller.LastReason.Should().Contain(Reason, "定型文ではなく利用者の記述が残る");
+        controller.LastReason.Should().Contain("endazon", "誰が解除したかも辿れる");
     }
 }
