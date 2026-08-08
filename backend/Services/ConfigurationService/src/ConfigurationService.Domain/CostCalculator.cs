@@ -37,7 +37,22 @@ public static class CostCalculator
     //
     // 本式は「税引後で費用の m 倍が残る」ことを意味しない。計画が書いているのは
     // 「利益が**費用と税の合計**の m 倍以上であること」であり、本式はそれをそのまま解いたものである。
-    public static decimal MinimumViableProfit(TradingAssumptions assumptions, Market market, decimal notional)
+    /// <summary>
+    /// 最小期待利益のしきい値。<b>解が無いときは <c>null</c> を返す（＝算出不能・当該取引は見送り）。</b>
+    /// <para>
+    /// <b><c>null</c> は「未設定」ではなく「見送り」を意味する。</b> 分母 <c>1 − 倍率 × 税率</c> が 0 以下になると、
+    /// どれだけ利益が大きくても条件を満たせない（利益を増やすと税も同じ速さで増える）。
+    /// 呼び出し側は<b>採算不能とみなして見送る</b>こと——<b>既定値で埋めたり 0 とみなしたりしてはならない</b>
+    /// （どちらも「全通過」と同じ結果になる）。
+    /// </para>
+    /// <para>
+    /// FR-17, 05_trading-assumptions §4「解が無い領域では見送る」（利用者裁定 2026-08-08・
+    /// project-planning#289）, #461, IADR-0177: <b>3 経路（共有契約・採算ゲート・本関数）が
+    /// 同じ意味を返す。</b> 本関数は 2026-08-08 まで <c>InvalidOperationException</c> を送出しており、
+    /// 通過させない向きは合っていたが<b>「見送り」とは壊れ方が違った</b>（処理ごと落ちる）。
+    /// </para>
+    /// </summary>
+    public static decimal? MinimumViableProfit(TradingAssumptions assumptions, Market market, decimal notional)
     {
         ArgumentNullException.ThrowIfNull(assumptions);
 
@@ -46,10 +61,10 @@ public static class CostCalculator
         // 式の単一情報源は Shared.Contracts の MinimumExpectedProfit（#358・IADR-0173 決定3）。
         // 採算ゲート（TradeDecision.Domain）も同じ関数を使う——別ユニットの Domain どうしは互いを
         // 参照できないため、式を 2 か所に書くと片方だけ直したときに気付けない。
+        //
+        // #461, IADR-0177: 解無し（倍率 × 税率 >= 1）は共有契約と同じく null で返す。番兵値は採らない
+        //——数値として扱えてしまうことが「負のしきい値で全通過」の再発経路になる。
         return MinimumExpectedProfit.Threshold(
-            roundTrip, assumptions.MinimumExpectedProfitMultiple, assumptions.CapitalGainsTaxRate)
-            ?? throw new InvalidOperationException(
-                "最小期待利益のしきい値に解が無い（倍率 × 税率 >= 1）。"
-                    + $" 倍率={assumptions.MinimumExpectedProfitMultiple} 税率={assumptions.CapitalGainsTaxRate}");
+            roundTrip, assumptions.MinimumExpectedProfitMultiple, assumptions.CapitalGainsTaxRate);
     }
 }

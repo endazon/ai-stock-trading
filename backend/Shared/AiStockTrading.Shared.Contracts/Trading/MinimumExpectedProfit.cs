@@ -40,13 +40,22 @@ public static class MinimumExpectedProfit
     /// </para>
     /// </summary>
     /// <param name="cost">費用（往復の概算取引費用 ＋ 判断費用）。負値は 0 に正規化する。</param>
-    /// <param name="multiple">最小期待利益倍率 <c>m</c>（計画確定値 2）。</param>
+    /// <param name="multiple">
+    /// 最小期待利益倍率 <c>m</c>（計画確定値 2）。<b>非正の値は構成異常として解無し（<c>null</c>）に倒す</b>（#461）。
+    /// </param>
     /// <param name="taxRate">譲渡益税率 <c>r</c>（計画確定値 0.20315）。負値は 0 に正規化する。</param>
     /// <returns>最小期待利益（<b>費用控除前</b>の期待利益と比較する）。解が無ければ <c>null</c>。</returns>
     public static decimal? Threshold(decimal cost, decimal multiple, decimal taxRate)
     {
         var normalizedCost = cost > 0m ? cost : 0m;
         var rate = taxRate > 0m ? taxRate : 0m;
+
+        // #461, IADR-0177: **倍率が非正なら解無しとして扱う。** 費用も税率も正規化されるため
+        // 負のしきい値を生み得るのは倍率だけであり、負の倍率では分母 1 − m × r が **1 より大きくなって
+        // 下の解無し判定をすり抜ける**（例: m = −2 / r = 0.20315 → 分母 1.406 > 0）。結果は負のしきい値、
+        // すなわち**全通過**である。採算ゲートは呼び出し前に m <= 0 を弾いていたが、費用算出は
+        // 素通ししていた —— **同じ式を守る規則は式の側に置く**（呼び出し側ごとの防御は片方だけ抜ける）。
+        if (multiple <= 0m) return null;
 
         var denominator = 1m - multiple * rate;
         if (denominator <= 0m) return null;

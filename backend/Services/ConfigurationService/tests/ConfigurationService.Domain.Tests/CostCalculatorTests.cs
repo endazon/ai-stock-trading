@@ -100,16 +100,87 @@ public class CostCalculatorTests
 
     // **fail-closed**: 倍率 × 税率 >= 1 では解が無い（利益を増やすと税も同じ速さで増える）。
     // 負のしきい値を返して全通過させないことを固定する。
+    //
+    // ⚠️ **期待を変更した（2026-08-08・#461・IADR-0177）。** 本テストは 2026-08-08 まで
+    // 「`InvalidOperationException` を送出する」を固定していた。計画の裁定（planning#289・
+    // 「解が無い領域では見送る」）が **3 経路の振る舞いを揃える**ことを定め、**例外は通過させない
+    // 向きは合っていたが「見送り」とは壊れ方が違う**（処理ごと落ちる）ため、`null` へ変更した。
+    // **最初からこうだったのではない。**
     [Fact]
-    public void 倍率と税率の積が1以上なら解が無く例外になる()
+    public void 倍率と税率の積が1以上なら解が無く見送りになる()
     {
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 5m) with
         {
             CapitalGainsTaxRate = 0.20315m,   // 5 × 0.20315 = 1.01575 >= 1
         };
 
-        var act = () => CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m);
-        act.Should().Throw<InvalidOperationException>();
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeNull();
+    }
+
+    // T-17-01/02/03（#461, IADR-0177）: **境界そのもの**を固定する。上のテストは境界の「かなり内側」を
+    // 突いているだけで、**不等号の向き（`>` か `>=` か）を取り違えても通ってしまう**。
+    //
+    // 境界は `倍率 × 税率 = 1`、すなわち `倍率 = 1 ÷ 税率`。税率 20.315% では ≈ 4.92247…。
+    [Fact]
+    public void 倍率と税率の積がちょうど1なら解が無く見送りになる()
+    {
+        const decimal Rate = 0.20315m;
+        // 1 ÷ 0.20315 を decimal で丸めると積が 1 をわずかに割ることがあるため、
+        // **積が 1 以上になる最小側**へ寄せた値を使う（丸めで検査が緩まないようにする）。
+        var multiple = decimal.Ceiling(1m / Rate * 1_000_000m) / 1_000_000m;
+        (multiple * Rate).Should().BeGreaterThanOrEqualTo(1m);   // 前提そのものを検査する
+
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: multiple) with
+        {
+            CapitalGainsTaxRate = Rate,
+        };
+
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeNull();
+    }
+
+    [Fact]
+    public void 境界の直前では正のしきい値が返る()
+    {
+        const decimal Rate = 0.20315m;
+        // 積が 1 を下回る最大側へ寄せる。
+        var multiple = decimal.Floor(1m / Rate * 1_000_000m) / 1_000_000m;
+        (multiple * Rate).Should().BeLessThan(1m);               // 前提そのものを検査する
+
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: multiple) with
+        {
+            CapitalGainsTaxRate = Rate,
+        };
+
+        // **境界の直前でも「解がある」＝ null にならない。** 安全側へ倒しすぎて
+        // 正常な構成まで見送るようになっていないことを固定する（fail-closed の行き過ぎ検知）。
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m)
+            .Should().NotBeNull().And.BeGreaterThan(0m);
+    }
+
+    // T-17-04（#461, IADR-0177）: **負のしきい値は、いかなる入力でも返らない。**
+    // 裁定の核心は「負のしきい値を返して全通過させることは、いかなる経路でも行わない」であり、
+    // **値の一点ではなく全域**で固定する。
+    [Theory]
+    [InlineData(2, 0.20315)]      // 現行値
+    [InlineData(4.9, 0.20315)]    // 境界の手前
+    [InlineData(5, 0.20315)]      // 境界の先（解無し）
+    [InlineData(100, 0.5)]        // 大きく踏み越えた構成異常
+    [InlineData(2, 0)]            // 税率 0（従来式へ退化）
+    [InlineData(1, 0.99)]         // 税率が極端
+    public void しきい値は負にならない(double multiple, double taxRate)
+    {
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: (decimal)multiple) with
+        {
+            CapitalGainsTaxRate = (decimal)taxRate,
+        };
+
+        var threshold = CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m);
+
+        // null（見送り）であるか、非負であるかのいずれか。**負の値は許さない。**
+        if (threshold is { } value)
+        {
+            value.Should().BeGreaterThanOrEqualTo(0m);
+        }
     }
 
     // T-10-214（**否定形**）: FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——
