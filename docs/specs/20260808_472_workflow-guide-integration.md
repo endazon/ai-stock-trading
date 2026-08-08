@@ -25,7 +25,7 @@ updated: 2026-08-08
 
 ## やること
 
-1. planning submodule の pin を `d9c2014` → **`356e8c7`**（ガイドを新設した project-planning main）へ進める
+1. planning submodule の pin を `d9c2014` → **`90f5251`**（ガイドを新設した #294 と fixed 化した #298 を含む project-planning main）へ進める
 2. CLAUDE.md に「実装作業の進め方（計画リポの運用ガイド）」節を **15 行以内**で追加する（正本への参照＋拘束点の要約）
 3. AGENTS.md に同内容の **3〜5 行**要約を追加する
 
@@ -34,7 +34,7 @@ updated: 2026-08-08
 | | 値 |
 | --- | --- |
 | 変更前 | `d9c2014` |
-| 変更後 | **`356e8c7`** |
+| 変更後 | **`90f5251`**（当初 `356e8c7`、レビュー対応で fixed 化コミットまで前進） |
 
 差分は 2 コミット（project-planning #294 で新設、#298 で fixed 化）であり、`projects/ai-stock-trading/` 配下（計画書本体）に変更は無い。追加は `docs/ai-implementation-workflow-guide.md`（#294 で新規・#298 で fixed）と `draft/cross-project/` の分析記録である。したがって **`PlanRiskDefaults` / `PlanSourceDigests` / `KnownPlanDeviations` の再照合は不要**（出典文書が 1 バイトも動いていない。#459 検査2 と同じ論法）。
 
