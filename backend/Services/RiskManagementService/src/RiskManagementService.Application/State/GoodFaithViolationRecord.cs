@@ -28,3 +28,22 @@ public sealed record GoodFaithViolationRecord(
     DateOnly OccurredOn,
     DateTimeOffset ExecutedAt,
     DateTimeOffset RecordedAt);
+
+// FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182:
+// GFV 違反記録の**解除**を表す 1 行（**追記専用**）。
+//
+// 🔴 **解除は「記録を消すこと」ではない。** ADR-0028 決定1 が「GFV 違反記録は失効させない」と定めている。
+// 違反記録（`GoodFaithViolationRecord`）は台帳に残り続け、本行はそれとは別に「その記録による**停止**を
+// 利用者が解いた」という事実を追記する。監査は**発生と解除の双方**を辿れる。
+//
+// **主キーは解除対象の `OrderId`**（＝違反記録の計上単位）。これにより
+//   - ADR-0028 決定2 が求める「**どの記録に対して**解除したか」が構造的に表現され、
+//   - 同じ記録を二重に解除しても件数が狂わない（冪等）。
+public sealed record GoodFaithViolationClearance(
+    // 解除対象の違反記録（計上単位＝ブローカの注文 ID）。
+    string OrderId,
+    // 解除した利用者（認証済みトークンの名前）。**空は許さない**（誰が解いたか不明な解除を作らない）。
+    string ClearedBy,
+    // 解除の理由。ADR-0028 決定2 の「原因の是正が済んでいることの確認を伴う」の記録。**空は許さない**。
+    string Reason,
+    DateTimeOffset ClearedAt);

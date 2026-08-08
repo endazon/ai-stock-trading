@@ -22,6 +22,11 @@ public enum BotCommandKind
     // /status: 稼働状態の参照（表示専用・副作用なし）。
     Status,
 
+    // FR-19, FR-11, UC-06, #464, ADR-0028 決定2/決定3: /gfv clear。
+    // GFV 違反による**停止の解除**（破壊的・確認ボタン＋確認フレーズを要する）。
+    // **解除の窓口は Discord Bot に一元化される**（決定3。画面からは解除できない）。
+    GoodFaithViolationClear,
+
     // FR-20, UC-06: /stage status。段階ゲートの現況（現段階・設定・昇格可否・撤退評価・直近履歴）の参照（表示専用）。
     StageStatus,
 

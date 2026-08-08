@@ -23,6 +23,8 @@ internal static class DiscordBotGatewayFactory
         KillSwitchCommandHandler handler,
         PauseCommandHandler pauseHandler,
         StageGateCommandHandler stageGateHandler,
+        // FR-19, #464, ADR-0028 決定3: GFV 違反による停止の解除（Discord Bot が唯一の窓口）。
+        GoodFaithViolationCommandHandler goodFaithViolationHandler,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
@@ -49,7 +51,8 @@ internal static class DiscordBotGatewayFactory
         }
 
         return new DiscordNetBotGateway(
-            handler, pauseHandler, stageGateHandler, options, loggerFactory.CreateLogger<DiscordNetBotGateway>());
+            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, options,
+            loggerFactory.CreateLogger<DiscordNetBotGateway>());
     }
 
     // 不足している認証設定の一覧（運用者が起動時ログで欠落を特定できるようにする）。

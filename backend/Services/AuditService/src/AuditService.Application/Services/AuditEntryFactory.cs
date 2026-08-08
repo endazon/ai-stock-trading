@@ -101,6 +101,20 @@ public static class AuditEntryFactory
         Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-19, FR-10, FR-11, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の**解除**。
+    //
+    // ADR-0028 決定2 は「**誰が・いつ・どの記録に対して**解除したか」を求める。要約に解除者・件数・
+    // 残件数を出し、payload に解除した記録の一覧を残す。
+    //
+    // 🔴 **要約に「解除しました」だけを書かない。** 決定1 が「違反記録は失効させない」と定めており、
+    // 解けたのは**停止**であって記録ではない。監査を読む者が「記録が消えた」と誤読しないよう明示する。
+    // GFV 系は注文相関を持たない統制操作のため "good-faith-violation" の決定的 GUID で束ねる。
+    public static AuditEntry From(GoodFaithViolationsCleared e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(GoodFaithViolationsCleared), AuditCorrelation.From("good-faith-violation"), Symbol: null,
+        Truncate($"GFV 違反による停止を解除 {e.ClearedOrderIds.Count} 件（{e.ClearedBy}・残 {e.RemainingCount} 件）"
+            + $"—— **違反記録そのものは失効しません**: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.ClearedAt, recordedAt);
+
     // FR-20, FR-11, #166, IADR-0083: 撤退基準到達（自動安全側の発火）。段階遷移と同じ "stage-gate" 相関で束ね、
     // 監査照会で撤退と遷移をまとめて辿れるようにする（段階の実降格は提案に留まるため StageTransitioned は伴わない）。
     public static AuditEntry From(WithdrawalTriggered e, Guid id, DateTimeOffset recordedAt) => new(

@@ -130,6 +130,9 @@ builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の
 // 違いである。**数えているのは「自らのガードをすり抜けた買付」であり、ブローカーの GFV カウンタの写しではない。**
 builder.Services.AddScoped<IGoodFaithViolationStore, EfGoodFaithViolationStore>();
+// FR-19, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の解除（利用者の明示的な操作）。
+// **解除は記録を消さず追記する**（決定1「違反記録は失効させない」）。DbContext が scoped のため本サービスも scoped。
+builder.Services.AddScoped<GoodFaithViolationClearingService>();
 builder.Services.AddScoped<GoodFaithViolationCountingService>();
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。

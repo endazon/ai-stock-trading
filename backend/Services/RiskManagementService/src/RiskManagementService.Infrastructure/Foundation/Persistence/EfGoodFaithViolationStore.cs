@@ -43,8 +43,11 @@ internal sealed class EfGoodFaithViolationStore(RiskManagementDbContext db) : IG
     //
     // **失効期間は設けない**（累計）。計画は「違反記録の失効」の期間も手段も定義しておらず、
     // 自動失効は fail-open であるため実装で値を発明しない（IADR-0165 決定4）。
+    //
+    // #464, ADR-0028 決定2, IADR-0182: **解除された記録は数えない。** ただし**行は消さない**——
+    // 数えないことと消すことは別である（決定1「違反記録は失効させない」）。
     public GoodFaithViolationTally GetTally() =>
-        GoodFaithViolationTally.Observed(db.GoodFaithViolations.AsNoTracking().Count());
+        GoodFaithViolationTally.Observed(UnclearedRows().Count());
 
     public IReadOnlyList<GoodFaithViolationRecord> GetRecordedBetween(DateOnly fromInclusive, DateOnly toInclusive) =>
         db.GoodFaithViolations
@@ -54,6 +57,43 @@ internal sealed class EfGoodFaithViolationStore(RiskManagementDbContext db) : IG
             .ToList()
             .Select(Map)
             .ToList();
+
+    // #464, ADR-0028 決定2, IADR-0182: まだ解除されていない違反記録（＝現在の計数の内訳）。
+    public IReadOnlyList<GoodFaithViolationRecord> GetUncleared() =>
+        UnclearedRows()
+            .OrderBy(r => r.RecordedAtUtc)
+            .ToList()
+            .Select(Map)
+            .ToList();
+
+    // #464, ADR-0028 決定1/決定2, IADR-0182: 解除を**追記する**。
+    //
+    // 🔴 **違反記録の行を削除・更新しない。** 解除は別テーブルへの追記で表す。
+    // 冪等: 同じ記録の 2 度目以降は無視する（**件数が増えも減りもしない側**）。
+    public void AppendClearance(GoodFaithViolationClearance clearance)
+    {
+        ArgumentNullException.ThrowIfNull(clearance);
+
+        if (db.GoodFaithViolationClearances.Find(clearance.OrderId) is not null)
+        {
+            return;
+        }
+
+        db.GoodFaithViolationClearances.Add(new GoodFaithViolationClearanceRow
+        {
+            OrderId = clearance.OrderId,
+            ClearedBy = clearance.ClearedBy,
+            Reason = clearance.Reason,
+            ClearedAtUtc = clearance.ClearedAt,
+        });
+        db.SaveChanges();
+    }
+
+    // 解除済みを除いた違反記録の行。**解除は件数にしか作用しない**（GetRecordedBetween は全件を返す）。
+    private IQueryable<GoodFaithViolationRow> UnclearedRows() =>
+        db.GoodFaithViolations
+            .AsNoTracking()
+            .Where(v => !db.GoodFaithViolationClearances.Any(c => c.OrderId == v.OrderId));
 
     private static GoodFaithViolationRecord Map(GoodFaithViolationRow r) => new(
         r.Id, r.OrderId, r.DecisionId, r.Symbol, r.Market, r.PurchaseAmountInBase, r.SettledCashInBase,

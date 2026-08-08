@@ -15,6 +15,10 @@ public sealed class InMemoryGoodFaithViolationStore : IGoodFaithViolationStore
     // **主キーは OrderId**（計上単位＝1 注文 1 件）。部分約定の進行・再送で二重計上しない。
     private readonly Dictionary<string, GoodFaithViolationRecord> _records = [];
 
+    // #464, ADR-0028 決定1/決定2, IADR-0182: 解除の追記（**違反記録とは別の辞書である**——決定1 が
+    // 「失効させない」と定めるため、解除で `_records` から消さない）。
+    private readonly Dictionary<string, GoodFaithViolationClearance> _clearances = [];
+
     public void Append(GoodFaithViolationRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -32,7 +36,9 @@ public sealed class InMemoryGoodFaithViolationStore : IGoodFaithViolationStore
         {
             // **0 行でも「0 件を数えた」と返す。** 台帳が権威であり、未供給（null）は
             // 「本ストアが結線されていない」ことだけを意味する（IADR-0165 決定2）。
-            return GoodFaithViolationTally.Observed(_records.Count);
+            // #464: **解除された記録は数えない。ただし行は消さない**（数えないことと消すことは別である）。
+            return GoodFaithViolationTally.Observed(
+                _records.Keys.Count(orderId => !_clearances.ContainsKey(orderId)));
         }
     }
 
@@ -40,10 +46,33 @@ public sealed class InMemoryGoodFaithViolationStore : IGoodFaithViolationStore
     {
         lock (_gate)
         {
+            // **解除済みも含めて返す**（ADR-0028 決定1。証跡は消えない）。
             return _records.Values
                 .Where(r => r.OccurredOn >= fromInclusive && r.OccurredOn <= toInclusive)
                 .OrderBy(r => r.RecordedAt)
                 .ToList();
+        }
+    }
+
+    public IReadOnlyList<GoodFaithViolationRecord> GetUncleared()
+    {
+        lock (_gate)
+        {
+            return _records.Values
+                .Where(r => !_clearances.ContainsKey(r.OrderId))
+                .OrderBy(r => r.RecordedAt)
+                .ToList();
+        }
+    }
+
+    public void AppendClearance(GoodFaithViolationClearance clearance)
+    {
+        ArgumentNullException.ThrowIfNull(clearance);
+
+        lock (_gate)
+        {
+            // 冪等（同じ記録の 2 度目以降は無視する）。EF 実装と同じ規律。
+            _clearances.TryAdd(clearance.OrderId, clearance);
         }
     }
 }
