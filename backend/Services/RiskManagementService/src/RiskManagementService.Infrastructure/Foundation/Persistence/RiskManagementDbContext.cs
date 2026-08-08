@@ -228,6 +228,7 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.ToTable("position_observation_days");
             e.HasKey(r => r.TradingDay);
             e.Property(r => r.TradingDay).ValueGeneratedNever();
+        });
 
         // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**（追記専用）。
         //

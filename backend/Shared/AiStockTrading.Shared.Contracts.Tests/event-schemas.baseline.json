@@ -64,6 +64,13 @@
     "SettledCashInBase": "Decimal?",
     "Symbol": "String"
   },
+  "GoodFaithViolationsCleared": {
+    "ClearedAt": "DateTimeOffset",
+    "ClearedBy": "String",
+    "ClearedOrderIds": "IReadOnlyList\u003CString\u003E",
+    "Reason": "String",
+    "RemainingCount": "Int32"
+  },
   "InformationCollected": {
     "CollectedAt": "DateTimeOffset",
     "EventId": "Guid",

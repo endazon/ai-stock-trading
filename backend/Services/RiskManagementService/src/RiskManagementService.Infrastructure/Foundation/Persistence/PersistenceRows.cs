@@ -430,6 +430,7 @@ internal sealed class PositionObservationDayRow
     public DateTimeOffset LastObservedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+}
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の 1 行（追記専用）。
 //
