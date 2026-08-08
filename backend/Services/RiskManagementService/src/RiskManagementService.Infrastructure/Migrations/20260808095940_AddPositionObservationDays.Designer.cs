@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
 {
     [DbContext(typeof(RiskManagementDbContext))]
-    [Migration("20260808050545_AddPositionObservationArrival")]
-    partial class AddPositionObservationArrival
+    [Migration("20260808095940_AddPositionObservationDays")]
+    partial class AddPositionObservationDays
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -323,10 +323,10 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
                     b.ToTable("position_drift_state", (string)null);
                 });
 
-            modelBuilder.Entity("AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.PositionObservationArrivalRow", b =>
+            modelBuilder.Entity("AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.PositionObservationDayRow", b =>
                 {
-                    b.Property<int>("Id")
-                        .HasColumnType("integer");
+                    b.Property<DateOnly>("TradingDay")
+                        .HasColumnType("date");
 
                     b.Property<DateTimeOffset>("LastObservedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -334,9 +334,9 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("Id");
+                    b.HasKey("TradingDay");
 
-                    b.ToTable("position_observation_arrival", (string)null);
+                    b.ToTable("position_observation_days", (string)null);
                 });
 
             modelBuilder.Entity("AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.RiskSettingsRow", b =>

@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
@@ -40,7 +41,11 @@ public sealed class BrokerPositionsObservedHandler(
         // FR-21 が別要求として立てられた理由そのものである。
         //
         // **推定より先に記録する。** 推定が例外で落ちても「観測は届いた」という事実は変わらない。
-        observationArrivals.Record(message.ObservedAt);
+        // **［2026-08-08 改定］取引日ごとに記録する**（計画 FR-21・裁定 project-planning#292）。
+        // 単一の「最終観測時刻」では報告期間を観測が覆っていたかを判定できず、初回観測より前の期間や
+        // 観測が途中で止まった期間が「正当な 0」として報告されてしまった。
+        // 取引日は観測**時刻**から導出する（処理時刻ではない——遅延・再送で別の日に付け替わらない）。
+        observationArrivals.Record(TradingDay.Of(message.ObservedAt), message.ObservedAt);
 
         // FR-10, FR-11, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 同じ観測から強制買戻しを事後推定する。
         // **イベント検知の供給元が無い**ため、建玉の消失を自らの決済指示（約定履歴・処理中の決済承認）と突合して

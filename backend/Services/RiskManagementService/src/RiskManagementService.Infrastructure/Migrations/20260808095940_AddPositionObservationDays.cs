@@ -6,22 +6,22 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class AddPositionObservationArrival : Migration
+    public partial class AddPositionObservationDays : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "position_observation_arrival",
+                name: "position_observation_days",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "integer", nullable: false),
+                    TradingDay = table.Column<DateOnly>(type: "date", nullable: false),
                     LastObservedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_position_observation_arrival", x => x.Id);
+                    table.PrimaryKey("PK_position_observation_days", x => x.TradingDay);
                 });
         }
 
@@ -29,7 +29,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "position_observation_arrival");
+                name: "position_observation_days");
         }
     }
 }

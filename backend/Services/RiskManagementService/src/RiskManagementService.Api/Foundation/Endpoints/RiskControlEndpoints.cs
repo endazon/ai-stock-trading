@@ -78,7 +78,8 @@ internal static class RiskControlEndpoints
         read.MapGet("/buy-in-inferences",
             (DateOnly? from, DateOnly? to,
              IBuyInInferenceStore inferences,
-             IPositionObservationArrivalStore arrivals) =>
+             IPositionObservationArrivalStore arrivals,
+             IBusinessCalendar calendar) =>
         {
             if (from is not { } fromDay || to is not { } toDay)
                 return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
@@ -86,10 +87,17 @@ internal static class RiskControlEndpoints
             if (fromDay > toDay)
                 return Results.BadRequest(new { error = "from は to 以前の日付を指定してください。" });
 
+            // **［2026-08-08 改定］期間が観測の届いた取引日で覆われているかを返す**
+            //（計画 FR-21・裁定 project-planning#292）。従前は「最終観測時刻が非 null か」であり、
+            // **初回観測より前の期間や観測が途中で止まった期間が「正当な 0」として報告されていた**。
+            var observedDays = arrivals.GetObservedDaysBetween(fromDay, toDay);
+
             return Results.Ok(new
             {
-                // null＝観測が一度も届いていない。**呼び出し側はこのとき件数を 0 と読んではならない。**
-                observationArrivedAt = arrivals.GetLastObservedAt(),
+                // false＝この期間は観測に覆われていない。**呼び出し側はこのとき件数を 0 と読んではならない。**
+                periodCovered = ObservationCoverage.Covers(observedDays, fromDay, toDay, calendar),
+                // 診断用（どの日が欠けているかを運用者が特定できるようにする）。判定には使わせない。
+                observedTradingDays = observedDays,
                 inferences = inferences.GetInferredBetween(fromDay, toDay),
             });
         });

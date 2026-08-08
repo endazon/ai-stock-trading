@@ -51,20 +51,27 @@ internal sealed class HttpBuyInInferenceRecordSource(
                 return null;
             }
 
-            // FR-21: **観測の到達が記録されていなければ、台帳が空でも未供給である。**
-            // 台帳は推定が起きたときにしか行を書かない——行数 0 は「観測が一度も届いていない
-            // （＝この統制がまったく働いていない）」と「観測して 0 件だった（正常）」を区別できない。
-            // 前者を 0 件と描けば「強制買戻しは起きていない」と読める。
-            if (body.ObservationArrivedAt is null)
+            // FR-21: **報告期間が観測の届いた取引日で覆われていなければ、台帳が空でも未供給である。**
+            //
+            // **［2026-08-08 改定］判定は期間ごとである**（計画 FR-21・裁定 project-planning#292）。
+            // 従前は「最終観測時刻が非 null か」だったため、**初回観測より前の期間**（初回観測が 8/20 で
+            // 7 月分の月報を作る場合）や**観測が途中で止まった期間**が「正当な 0」として報告されていた。
+            //
+            // 台帳は推定が起きたときにしか行を書かない——行数 0 は「観測が届いていない（＝この統制が
+            // 働いていない）」と「観測して 0 件だった（正常）」を区別できない。前者を 0 件と描けば
+            // 「強制買戻しは起きていない」と読める。
+            //
+            // **`periodCovered` を欠く応答（旧版 Risk）は未供給に倒す**——項目の欠落を「覆っている」と読まない。
+            if (body.PeriodCovered is not true)
             {
                 logger.LogWarning(
-                    "ブローカ建玉の観測が一度も到達していません（{From}〜{To}）。"
+                    "報告期間がブローカ建玉の観測に覆われていません（{From}〜{To}・観測日 {Days} 日）。"
                         + "**推定台帳が空でも 0 件とは表示しません**（FR-21）。",
-                    fromInclusive, toInclusive);
+                    fromInclusive, toInclusive, body.ObservedTradingDays?.Count ?? 0);
                 return null;
             }
 
-            // ここから先は**正当な 0** を返し得る（観測は届いており、推定が無かったという事実である）。
+            // ここから先は**正当な 0** を返し得る（期間は観測に覆われており、推定が無かったという事実である）。
             return [.. (body.Inferences ?? []).Select(ToEvent)];
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -95,8 +102,13 @@ internal sealed class HttpBuyInInferenceRecordSource(
 
     // 応答の受け皿（camelCase・列挙は数値で往復する）。
     private sealed record BuyInInferenceQueryDto(
-        // null＝観測が一度も届いていない（FR-21）。**この項目の欠落を「観測済み」と読まない。**
-        DateTimeOffset? ObservationArrivedAt,
+        // false / 欠落＝報告期間が観測に覆われていない（FR-21・2026-08-08 改定）。
+        // **`bool?` で受ける**——非 nullable にすると旧版応答の欠落が `false` と区別できず、
+        // 「覆われていない」と「そもそも判定していない版」を同じに扱ってしまう
+        //（どちらも未供給へ倒すが、ログで区別できるほうが運用で効く）。
+        bool? PeriodCovered,
+        // 診断用（どの日が欠けているかを運用者が特定できるようにする）。**判定には使わない。**
+        IReadOnlyList<DateOnly>? ObservedTradingDays,
         IReadOnlyList<BuyInInferenceRecordDto>? Inferences);
 
     private sealed record BuyInInferenceRecordDto(

@@ -107,19 +107,22 @@ public class BrokerPositionsObservedConsumerTests
         session.Sent.MessagesOf<BuyInInferred>().Should().BeEmpty();
         session.Sent.MessagesOf<PositionReconciliationDrift>().Should().BeEmpty();
         // ……観測の到達だけは記録されている。
-        arrivals.GetLastObservedAt().Should().Be(At);
+        // **取引日ごとに記録される**（[2026-08-08 改定] 計画 FR-21・裁定 project-planning#292）。
+        arrivals.GetObservedDaysBetween(TradingDay.Of(At), TradingDay.Of(At))
+            .Should().ContainSingle().Which.Should().Be(TradingDay.Of(At));
 
         await host.StopAsync();
     }
 
     // **否定形**: 観測が届かなければ記録されない（ハンドラが呼ばれた事実だけが記録の根拠である）。
     [Fact]
-    public async Task 観測が届かなければ最終観測時刻は_null_のままである()
+    public async Task 観測が届かなければ観測された取引日は無い()
     {
         var arrivals = new InMemoryPositionObservationArrivalStore();
         using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker(), arrivalStore: arrivals);
 
-        arrivals.GetLastObservedAt().Should().BeNull();
+        arrivals.GetObservedDaysBetween(TradingDay.Of(At).AddDays(-30), TradingDay.Of(At).AddDays(30))
+            .Should().BeEmpty();
 
         await host.StopAsync();
     }

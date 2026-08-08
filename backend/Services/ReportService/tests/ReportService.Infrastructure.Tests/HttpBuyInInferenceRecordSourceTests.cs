@@ -20,10 +20,11 @@ public class HttpBuyInInferenceRecordSourceTests
     private static readonly DateOnly From = new(2026, 8, 1);
     private static readonly DateOnly To = new(2026, 8, 8);
 
-    // 観測は届いており、推定が 1 件ある応答。
+    // 期間は観測に覆われており、推定が 1 件ある応答。
     private const string SuppliedWithOneInference = """
     {
-        "observationArrivedAt": "2026-08-08T06:00:00+00:00",
+        "periodCovered": true,
+        "observedTradingDays": ["2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07"],
         "inferences": [{
             "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
             "symbol": "AAPL",
@@ -41,14 +42,19 @@ public class HttpBuyInInferenceRecordSourceTests
     }
     """;
 
-    // 観測は届いており、推定は 0 件（＝**正当な 0**）。
+    // 期間は観測に覆われており、推定は 0 件（＝**正当な 0**）。
     private const string SuppliedWithNoInference = """
-    { "observationArrivedAt": "2026-08-08T06:00:00+00:00", "inferences": [] }
+    { "periodCovered": true, "observedTradingDays": ["2026-08-03"], "inferences": [] }
     """;
 
-    // 観測が一度も届いていない（台帳も空）。**これは 0 件ではない。**
-    private const string NeverObserved = """
-    { "observationArrivedAt": null, "inferences": [] }
+    // 期間が観測に覆われていない（観測が一度も無い／途中で止まった）。**これは 0 件ではない。**
+    private const string NotCovered = """
+    { "periodCovered": false, "observedTradingDays": [], "inferences": [] }
+    """;
+
+    // 観測は一部の日にだけ届いた（途中で止まった期間）。**サーバが false を宣言する。**
+    private const string PartiallyObserved = """
+    { "periodCovered": false, "observedTradingDays": ["2026-08-03","2026-08-04"], "inferences": [] }
     """;
 
     private static HttpBuyInInferenceRecordSource Source(HttpMessageHandler handler) =>
@@ -68,7 +74,7 @@ public class HttpBuyInInferenceRecordSourceTests
 
     // 受け入れ基準1: 推定件数を照会でき、通常表示になる。
     [Fact]
-    public async Task 観測が届いていて推定があれば推定行を返す()
+    public async Task 期間が観測に覆われていて推定があれば推定行を返す()
     {
         var handler = new StubHandler(HttpStatusCode.OK, SuppliedWithOneInference);
 
@@ -84,21 +90,21 @@ public class HttpBuyInInferenceRecordSourceTests
     // **ここを null にすると、正常に統制が働いている状態が永久に「取得できていません」になる**
     // （FR-21 の規約は両方向に効く）。
     [Fact]
-    public async Task 観測が届いていて推定が無ければ空列を返す_正当な0()
+    public async Task 期間が観測に覆われていて推定が無ければ空列を返す_正当な0()
     {
         var handler = new StubHandler(HttpStatusCode.OK, SuppliedWithNoInference);
 
         var result = await Source(handler).GetInferencesAsync(From, To);
 
-        result.Should().NotBeNull("観測は届いており、0 件であることは事実として正しい");
+        result.Should().NotBeNull("期間は観測に覆われており、0 件であることは事実として正しい");
         result.Should().BeEmpty();
     }
 
-    // 受け入れ基準3（**否定形**・FR-21）: 観測が一度も届いていなければ、台帳が空でも未供給。
+    // 受け入れ基準3（**否定形**・FR-21）: 期間が観測に覆われていなければ、台帳が空でも未供給。
     [Fact]
-    public async Task 観測が一度も届いていなければ台帳が空でも_null_を返す()
+    public async Task 期間が観測に覆われていなければ台帳が空でも_null_を返す()
     {
-        var handler = new StubHandler(HttpStatusCode.OK, NeverObserved);
+        var handler = new StubHandler(HttpStatusCode.OK, NotCovered);
 
         var result = await Source(handler).GetInferencesAsync(From, To);
 
@@ -106,9 +112,22 @@ public class HttpBuyInInferenceRecordSourceTests
             "行数 0 は「観測が届いていない（異常）」と「観測して 0 件（正常）」を区別できない");
     }
 
-    // 旧版 Risk（本項目を返さない）への耐性。**項目の欠落を「観測済み」と読まない。**
+    // **否定形・[2026-08-08 改定] の核心**: 観測が**途中で止まった**期間も未供給である。
+    // 従前の「最終観測時刻が非 null か」では、この形が「正当な 0」として素通りしていた
+    // （計画 FR-21 が名指しした失敗モード 2）。
     [Fact]
-    public async Task 観測の到達を返さない旧版応答では_null_を返す()
+    public async Task 観測が途中で止まった期間は_null_を返す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, PartiallyObserved);
+
+        var result = await Source(handler).GetInferencesAsync(From, To);
+
+        result.Should().BeNull("一部の日だけ観測されていても、期間は覆われていない");
+    }
+
+    // 旧版 Risk（本項目を返さない）への耐性。**項目の欠落を「覆っている」と読まない。**
+    [Fact]
+    public async Task 期間判定を返さない旧版応答では_null_を返す()
     {
         var handler = new StubHandler(HttpStatusCode.OK, """{ "inferences": [] }""");
 
@@ -198,7 +217,7 @@ public class HttpBuyInInferenceRecordSourceTests
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(NeverObserved, Encoding.UTF8, "application/json"),
+                Content = new StringContent(NotCovered, Encoding.UTF8, "application/json"),
             };
         }
     }

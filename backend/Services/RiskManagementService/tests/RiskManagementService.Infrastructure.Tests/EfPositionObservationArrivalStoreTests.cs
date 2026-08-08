@@ -5,77 +5,92 @@ using Xunit;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 
-// FR-21, FR-10, FR-06, #463, IADR-0181: 観測の到達（最終観測時刻・単一行）の EF 永続化を InMemory DB で検証する。
+// FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた**取引日**の EF 永続化を InMemory DB で検証する。
 //
-// **本ストアの存在理由は「推定台帳では区別できない 2 つの事実を分ける」ことである。**
-// 台帳は推定が起きたときにしか行を書かないため、行数 0 は
-//   1. 観測が一度も届いていない（＝この統制がまったく働いていない・異常）
-//   2. 観測した結果、強制買戻しは 1 件も無かった（＝正常）
-// を区別できない。本ストアが 1 と 2 を分ける唯一の手段である。
+// **［2026-08-08 改定］粒度は取引日の集合である**（計画 FR-21・裁定 project-planning#292）。
+// 従前の単一の「最終観測時刻」は報告期間を観測が覆っていたかを判定できず、
+// **初回観測より前の期間や観測が途中で止まった期間が「正当な 0」として報告されていた**。
 public class EfPositionObservationArrivalStoreTests
 {
-    private static readonly DateTimeOffset T0 = new(2026, 8, 8, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly Day = new(2026, 8, 6);
+    private static readonly DateTimeOffset At = new(2026, 8, 6, 3, 0, 0, TimeSpan.Zero);
 
     private static RiskManagementDbContext NewContext(string dbName) =>
         new(new DbContextOptionsBuilder<RiskManagementDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options);
 
-    // **既定は未供給。** ここを既定「観測済み」に倒すと fail-open になる
-    //（観測が一度も無い状態で、推定 0 件が「正当な 0」として報告される）。
+    // **既定は未観測。** ここを「観測済み」に倒すと fail-open になる。
     [Fact]
-    public void 未記録なら最終観測時刻は_null_である()
+    public void 未記録なら観測された取引日は無い()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
 
-        new EfPositionObservationArrivalStore(db).GetLastObservedAt().Should().BeNull();
+        new EfPositionObservationArrivalStore(db)
+            .GetObservedDaysBetween(Day.AddDays(-30), Day.AddDays(30))
+            .Should().BeEmpty();
     }
 
-    // 永続でなければならない（プロセス内に持つと再起動で「観測が届いていない」へ戻る）。
+    // 永続でなければならない（再起動で「観測が届いていない」へ戻ると供給が未供給へ化ける）。
     // 別コンテキストは「別レプリカ／再起動」の代理。
     [Fact]
-    public void 記録した最終観測時刻は別コンテキストからも読める_durable()
+    public void 記録した取引日は別コンテキストからも読める_durable()
     {
         var dbName = Guid.NewGuid().ToString();
 
         using (var db = NewContext(dbName))
         {
-            new EfPositionObservationArrivalStore(db).Record(T0);
+            new EfPositionObservationArrivalStore(db).Record(Day, At);
         }
 
         using (var db = NewContext(dbName))
         {
-            new EfPositionObservationArrivalStore(db).GetLastObservedAt().Should().Be(T0);
+            new EfPositionObservationArrivalStore(db)
+                .GetObservedDaysBetween(Day, Day)
+                .Should().ContainSingle().Which.Should().Be(Day);
         }
     }
 
+    // **同一取引日に何度観測が届いても行は増えない**（主キー＝取引日）。
+    // 判定に使うのは行の存在であり、件数ではない。
     [Fact]
-    public void 新しい観測は最終観測時刻を前進させる()
+    public void 同じ取引日の複数観測でも行は増えない()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
         var store = new EfPositionObservationArrivalStore(db);
 
-        store.Record(T0);
-        store.Record(T0.AddMinutes(30));
+        store.Record(Day, At);
+        store.Record(Day, At.AddMinutes(30));
+        store.Record(Day, At.AddHours(2));
 
-        store.GetLastObservedAt().Should().Be(T0.AddMinutes(30));
+        store.GetObservedDaysBetween(Day, Day).Should().ContainSingle();
     }
 
-    // **否定形（最重要）**: 後着の古い観測で巻き戻さない。
-    // 順序保証の無いバスでは古い観測が後から届き得る。巻き戻すと「供給されていた」状態が
-    // 後から未供給寄りへ落ち、報告済みの正当な 0 の根拠が消える。
-    [Theory]
-    [InlineData(-60)]  // 1 時間前の観測が後から届く
-    [InlineData(-1)]   // 1 分前
-    [InlineData(0)]    // 同時刻（再送）
-    public void 記録済みより古い_または同じ観測では巻き戻さない(int offsetMinutes)
+    // 期間の切り出し（範囲外の日は返さない）。
+    [Fact]
+    public void 期間外の取引日は返さない()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
         var store = new EfPositionObservationArrivalStore(db);
-        store.Record(T0);
+        store.Record(Day.AddDays(-1), At.AddDays(-1));
+        store.Record(Day, At);
+        store.Record(Day.AddDays(1), At.AddDays(1));
 
-        store.Record(T0.AddMinutes(offsetMinutes));
+        store.GetObservedDaysBetween(Day, Day).Should().ContainSingle().Which.Should().Be(Day);
+    }
 
-        store.GetLastObservedAt().Should().Be(T0);
+    // **否定形**: 観測が届かなかった日は集合に現れない —— これが「途中で止まった期間」を
+    // 未供給へ倒す唯一の根拠である（従前の単一値ではこの区別ができなかった）。
+    [Fact]
+    public void 観測が届かなかった日は集合に現れない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPositionObservationArrivalStore(db);
+        store.Record(Day, At);
+        // 翌日は観測が届かなかった（ブローカ接続の障害等）。
+        store.Record(Day.AddDays(2), At.AddDays(2));
+
+        store.GetObservedDaysBetween(Day, Day.AddDays(2))
+            .Should().BeEquivalentTo([Day, Day.AddDays(2)]);
     }
 }

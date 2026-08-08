@@ -416,16 +416,17 @@ internal sealed class GoodFaithViolationRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
-// FR-21, FR-10, FR-06, #463, IADR-0181: **ブローカ建玉の観測が到達した事実**（最終観測時刻）の単一行。
+// FR-21, FR-10, FR-06, #463, IADR-0181: **観測が届いた取引日**の 1 行（取引日ごとに 1 行・冪等）。
 //
-// 推定台帳（BuyInInferenceRow）は**推定が起きたときにしか行を書かない**ため、行数 0 は
-// 「観測が一度も届いていない（異常）」と「観測して 0 件だった（正常）」を区別できない。
-// **本行があって初めて件数を正当な 0 として供給できる**（FR-21・Must）。
-internal sealed class PositionObservationArrivalRow
+// **［2026-08-08 改定］粒度は取引日の集合である**（計画 FR-21・裁定 project-planning#292）。
+// 従前の単一行「最終観測時刻」は**報告期間を観測が覆っていたかを判定できず**、初回観測より前の期間や
+// 観測が途中で止まった期間が「正当な 0」として報告されてしまった。
+internal sealed class PositionObservationDayRow
 {
-    public int Id { get; set; } = SingletonKeys.Id;
+    /// <summary>観測が属する取引日（基準タイムゾーン＝JST。主キー＝1 取引日 1 行）。</summary>
+    public DateOnly TradingDay { get; set; }
 
-    /// <summary>記録されている最終観測時刻。**単調前進のみ**（古い観測で巻き戻さない）。</summary>
+    /// <summary>その取引日で最後に観測した時刻（同一日の複数観測では最新を保つ）。</summary>
     public DateTimeOffset LastObservedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }

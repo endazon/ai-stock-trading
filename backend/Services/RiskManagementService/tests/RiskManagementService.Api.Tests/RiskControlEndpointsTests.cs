@@ -236,8 +236,8 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     public async Task サービスロールは_buy_in_inferences_を取得できる()
     {
         // 報告書サービスが s2s（trading-service）で照会する。
-        // **観測が一度も届いていなければ observationArrivedAt は null**——推定台帳が空でも
-        // 呼び出し側は 0 件と読んではならない（FR-21）。
+        // **期間が観測に覆われていなければ periodCovered は false**——推定台帳が空でも
+        // 呼び出し側は 0 件と読んではならない（FR-21・2026-08-08 改定）。
         var client = ClientWithRoles(Service);
 
         var res = await client.GetAsync("/risk-controls/buy-in-inferences?from=2026-08-01&to=2026-08-08");
@@ -245,7 +245,9 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
 
         var body = await res.Content.ReadFromJsonAsync<BuyInInferenceQueryDto>();
         body.Should().NotBeNull();
-        body!.ObservationArrivedAt.Should().BeNull("観測はまだ一度も届いていない");
+        // **[2026-08-08 改定] 期間判定である**（計画 FR-21・裁定 project-planning#292）。
+        body!.PeriodCovered.Should().BeFalse("観測はまだ一度も届いていない");
+        body.ObservedTradingDays.Should().NotBeNull().And.BeEmpty();
         body.Inferences.Should().NotBeNull().And.BeEmpty();
     }
 
@@ -266,7 +268,8 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
     }
 
     private sealed record BuyInInferenceQueryDto(
-        DateTimeOffset? ObservationArrivedAt,
+        bool PeriodCovered,
+        List<DateOnly>? ObservedTradingDays,
         List<object>? Inferences);
 
     [Fact]
