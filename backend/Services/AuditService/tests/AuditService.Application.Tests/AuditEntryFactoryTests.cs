@@ -225,7 +225,7 @@ public class AuditEntryFactoryTests
     public void StageTransitioned_は共通相関でfrom_to_承認者_種別を記録する()
     {
         // FR-20, FR-11, #167, IADR-0082: 段階遷移は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
-        var e = new StageTransitioned(3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt);
+        var e = new StageTransitioned(3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt, 100, false);
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 
@@ -239,8 +239,59 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("ApprovedBy").And.Contain("Kind");
         // 段階遷移はすべて同一「stage-gate」相関で束ねられる（別遷移でも同一相関）。
         var other = AuditEntryFactory.From(
-            new StageTransitioned(4, 1, 0, "Demotion", "owner", "利用者承認による差し戻し", RecordedAt), Guid.NewGuid(), RecordedAt);
+            new StageTransitioned(4, 1, 0, "Demotion", "owner", "利用者承認による差し戻し", RecordedAt, 100, false), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(other.CorrelationId);
+    }
+
+    // FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180:
+    // **警告を無視して昇格した事実を記録に残す。** 設定変更の履歴には「下げた事実」が残るが、
+    // **その設定で昇格した事実**は本イベント以外に残らない。
+    [Fact]
+    public void StageTransitioned_は警告を無視した昇格を要約とペイロードの両方へ残す()
+    {
+        var e = new StageTransitioned(
+            5, 1, 2, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 5, Stage1BelowStatisticalBasis: true);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        // 要約を走査する監査で「なぜ 5 件で Stage 2 へ上がったのか」が目に入る。
+        entry.Summary.Should().Contain("5 件").And.Contain("統計的根拠");
+        // ペイロードにも 2 項目が残る（後から機械的に集計できる）。
+        entry.Detail.Should().Contain("Stage1MinimumTradeCount").And.Contain("Stage1BelowStatisticalBasis");
+    }
+
+    // **否定形**: 既定値のままの遷移では要約に警告を足さない。
+    // 常時添えると要約が長くなり、**警告そのものが埋もれる**。
+    [Fact]
+    public void StageTransitioned_は既定値のままなら要約に警告を足さない()
+    {
+        var e = new StageTransitioned(
+            6, 0, 1, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 100, Stage1BelowStatisticalBasis: false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().NotContain("⚠").And.NotContain("統計的根拠");
+        // 設定値そのものはペイロードに残る（警告が無くても「100 件だった」ことは追える）。
+        entry.Detail.Should().Contain("Stage1MinimumTradeCount");
+    }
+
+    // 決定4: **設定値と警告有無を両方持つ。** 警告有無を設定値から後で導出しない——
+    // 統計的根拠（100）が将来改訂されると、導出では**過去の記録の解釈が黙って書き換わる**。
+    // 本テストは「同じ設定値でも警告有無が独立に記録され得る」ことで、両者が別の事実であることを固定する。
+    [Fact]
+    public void StageTransitioned_の警告有無は設定値から導出されていない()
+    {
+        var e = new StageTransitioned(
+            7, 1, 2, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 100, Stage1BelowStatisticalBasis: true);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        // 件数 100 でも「当時警告が出ていた」と記録されていれば、そちらが記録として通る
+        // （＝要約は設定値ではなく警告有無の項目を見ている）。
+        entry.Summary.Should().Contain("統計的根拠");
     }
 
     [Fact]
@@ -262,7 +313,7 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("Passed").And.Contain("MaxDrawdownRatio");
         // 段階ゲート系（遷移・撤退・バックテスト）は同一「stage-gate」相関で束ねられる。
         var stage = AuditEntryFactory.From(
-            new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt), Guid.NewGuid(), RecordedAt);
+            new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt, 100, false), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(stage.CorrelationId);
     }
 

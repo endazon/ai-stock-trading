@@ -82,11 +82,21 @@ public record PromotionAssessment(
     IReadOnlyList<StageGateCriterion> UnmetCriteria);
 
 // RequestTransition の結果。受理時は Transition と ResultingSettings、拒否時は RejectionReasons を返す。
+//
+// FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（2026-08-07・質問票 第15回 Q13-a）, IADR-0180:
+// <b>Stage1Criteria は遷移応答が運ぶ実効の合格条件である。</b>
+// 裁定は「`/stage promote`（承認操作）に警告を出す」と定めたが、本応答が合格条件を運んでいなかったため
+// 承認の窓口（Discord）は警告を出す材料を持てなかった。**受理・拒否の両方に載せる**——拒否時も承認操作は
+// 行われており、設定が下がっている事実は変わらない（「拒否されたときだけ警告が消える」経路を作らない）。
+//
+// 表示側は本値の <see cref="Stage1GateCriteria.BelowStatisticalBasis"/> の**宣言に従い**、閾値 100 を
+// 写経しない（IADR-0164 決定6 の規律）。
 public record StageTransitionResult(
     bool Accepted,
     StageTransition? Transition,
     StageSettings? ResultingSettings,
-    IReadOnlyList<StageGateCriterion> RejectionReasons);
+    IReadOnlyList<StageGateCriterion> RejectionReasons,
+    Stage1GateCriteria Stage1Criteria);
 
 /// <summary>
 /// 撤退（差し戻し）判定の理由。**序数は HTTP 経路で整数として往来する**（値を明示し、追加は末尾へ）。

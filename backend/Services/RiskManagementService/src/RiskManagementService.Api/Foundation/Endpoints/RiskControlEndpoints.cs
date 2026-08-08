@@ -299,8 +299,12 @@ internal static class RiskControlEndpoints
             // 段階/種別は Shared.Contracts が Risk.Domain へ依存しないよう primitive（int/文字列）へ写す。
             if (result is { Accepted: true, Transition: { } t })
             {
+                // FR-11, #466, §4.1 追補3（Q13-b）, IADR-0180: **警告を無視して昇格した事実**を監査へ残す。
+                // 昇格に絞らず**受理された遷移すべて**に載せる——絞ると降格の記録が「設定不明」になり、
+                // null が「昇格ではなかった」と「供給されなかった」の両方を意味してしまう。
                 await bus.PublishAsync(new StageTransitioned(
-                    t.Sequence, (int)t.FromStage, (int)t.ToStage, t.Kind.ToString(), t.ApprovedBy, t.Reason, t.OccurredAtUtc));
+                    t.Sequence, (int)t.FromStage, (int)t.ToStage, t.Kind.ToString(), t.ApprovedBy, t.Reason, t.OccurredAtUtc,
+                    result.Stage1Criteria.MinimumTradeCount, result.Stage1Criteria.BelowStatisticalBasis));
             }
 
             // 受理は 200、受理不能な遷移（未充足基準・飛び級・現段階指定）は 422 に写像する。
