@@ -76,7 +76,12 @@ public class MaintenanceMarginAppliedThresholdTests
 
     // T-10-248: **建玉が 1 件（＝注文と同じ株価）のときは従前と同じ結果になる**（回帰）。
     // 口座単位化は「建玉が複数ある場合」を直すものであり、単一建玉の判定を動かしてはならない。
-    // 閾値がちょうどの維持率は**通す**（規則 (4) は「割り込む」ことを拒否の条件とする。既存の境界）。
+    //
+    // ⚠️ **閾値ちょうどの期待は 2026-08-08（#459・IADR-0178）に反転した。最初からこうだったのではない。**
+    // 従前は「閾値ちょうどは割り込みではない」として**通して**いた（規則 (4) を「割り込む」＝ `<` と読んだ）。
+    // 計画の裁定（ADR-0016 決定7・質問票 第 14 回 Q6・2026-08-07 確定）が **`≦` へ揃える**と定めたため、
+    // **閾値ちょうどは拒否**へ変えた。自動縮小は従前から `≦` で発動しており、**非対称のままだと
+    // 縮小が決済を出している最中の口座へ新規空売りが承認される**。
     [Theory]
     [InlineData(6.25)]  // 規制側が効く（$5.00 ÷ $6.25 ＝ 80%）
     [InlineData(10.0)]  // 規制側が効く（50%）
@@ -94,7 +99,43 @@ public class MaintenanceMarginAppliedThresholdTests
         Breaches(ShortEntryAt(price), Context(Snapshot(threshold - 0.01m, Position(price, 100))))
             .Should().BeTrue("閾値を割り込んでいる");
         Breaches(ShortEntryAt(price), Context(Snapshot(threshold, Position(price, 100))))
-            .Should().BeFalse("閾値ちょうどは割り込みではない（既存の境界）");
+            .Should().BeTrue("閾値ちょうども拒否する（`≦`。ADR-0016 決定7 の 2026-08-07 確定）");
+        Breaches(ShortEntryAt(price), Context(Snapshot(threshold + 0.01m, Position(price, 100))))
+            .Should().BeFalse("閾値を上回っていれば通す（`≦` を `≤ 閾値 + α` へ広げていないこと）");
+    }
+
+    // T-10-268: 🔴 **拒否と自動縮小は同じ等号で切り替わる**（#459・IADR-0178。ADR-0016 決定7 /
+    // UC-06 の 2026-08-07 確定・質問票 第 14 回 Q6）。
+    //
+    // **これが本来固定すべき性質であり、上のテストの 1 行はその系にすぎない。** 片方だけを見ていると、
+    // **どちらか一方の等号を動かしても気付けない** —— 実際 IADR-0160 の時点では拒否が `<`・縮小が `≦` で
+    // あり、**両者を並べて比べるテストが無かったために非対称が残余リスクの文章としてしか存在しなかった**。
+    //
+    // 裁定が禁じた状態: 維持率がちょうど閾値のとき、**縮小が決済を出している最中の口座へ
+    // 新規空売りが承認される**（統制が自ら作った状態の上で別の統制が反対向きに働く）。
+    [Fact]
+    public void 閾値ちょうどでは拒否と自動縮小がともに成立する()
+    {
+        // $6.25（閾値 80%）と $50.00（閾値 40%）の混在。口座に効くのは厳しい方の 80%。
+        var positions = new[] { Position(6.25m, 800, symbol: "AAA"), Position(50m, 100, symbol: "CCC") };
+        var applied = MaintenanceMarginPolicy.AppliedThreshold(Limits, positions);
+
+        foreach (var (ratio, expected) in new[]
+                 {
+                     (applied - 0.01m, true),   // 割り込み
+                     (applied, true),           // **ちょうど** —— ここが 2026-08-08 に反転した点
+                     (applied + 0.01m, false),  // 上回り
+                 })
+        {
+            var breaches = Breaches(ShortEntryAt(50m), Context(Snapshot(ratio, positions)));
+            var reduces = MaintenanceMarginReducer.Plan(Snapshot(ratio, positions), Limits) is not null;
+
+            breaches.Should().Be(expected, "維持率 {0} における新規建ての拒否", ratio);
+            reduces.Should().Be(expected, "維持率 {0} における自動縮小の発動", ratio);
+
+            // **一致そのものを直接主張する。** 上の 2 行が両方とも同じ向きへ間違った場合に備える。
+            breaches.Should().Be(reduces, "拒否と縮小は同じ等号で切り替わる（維持率 {0}）", ratio);
+        }
     }
 
     // ---- 2. プロパティベース -------------------------------------------------------------------

@@ -176,7 +176,15 @@ public static class ShortSellEvaluator
             {
                 var threshold = MaintenanceMarginPolicy.AppliedThreshold(
                     limits, marginSnapshot.Positions, intent.Price, ProductType.ShortSell);
-                breached = ratio < threshold;
+
+                // #459, IADR-0178, ADR-0016 決定7（2026-08-07 確定・質問票 第 14 回 Q6）:
+                // **等号は `<=` である。** 自動縮小（MaintenanceMarginReducer・IADR-0133 決定3）が
+                // `維持率 ≦ 閾値` で発動するのに対し、ここは長らく `<`（「割り込む」）であった。
+                // **揃えないと、維持率がちょうど閾値のとき、縮小が決済を出している最中の口座へ
+                // 新規空売りが承認される** —— 統制が自ら作った状態の上で別の統制が反対向きに働く。
+                // 幅は等号の 1 ケースだが、非対称そのものが説明のつかない状態であった
+                // （IADR-0160 が残余リスクとして残し、環流して裁定を仰いだ論点である）。
+                breached = ratio <= threshold;
             }
 
             if (breached)

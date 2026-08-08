@@ -250,10 +250,15 @@ public class ShortSellingControlsTests
             expectedRegulatoryStricter ? regulatory : limits.MaintenanceMarginThreshold);
     }
 
-    // FR-10 (4), ADR-0016 決定7: 維持率が適用閾値を**割り込む**なら新規空売りを拒否する。
+    // FR-10 (4), ADR-0016 決定7: 維持率が適用閾値**以下**なら新規空売りを拒否する。
+    //
+    // ⚠️ **`delta: 0` の期待は 2026-08-08（#459・IADR-0178）に false → true へ反転した。**
+    // 従前は「割り込む」＝ `<` と読んで**閾値ちょうどを通して**いた。計画の裁定（質問票 第 14 回 Q6・
+    // 2026-08-07 確定）が自動縮小（`≦`）と**同じ等号へ揃える**と定めたためである。
+    // 拒否と縮小が同じ位置で切り替わることは `MaintenanceMarginAppliedThresholdTests` が直接固定する。
     [Theory]
     [InlineData(-0.0001, true)]
-    [InlineData(0, false)]
+    [InlineData(0, true)]
     [InlineData(+0.0001, false)]
     public void 維持率は適用閾値の境界で切り替わる(decimal delta, bool expectedRejected)
     {
