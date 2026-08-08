@@ -22,12 +22,25 @@ public sealed class BrokerPositionsObservedHandler(
     // 解決できない（実行時に UnResolvableVariableException で落ちる）。加えて、既定で null に倒せると
     // 「配線を忘れても静かに推定されない」状態が作れてしまう——推定の不在は「強制買戻しが起きていない」
     // ことを意味しないため、黙って落ちる経路を作らない。
-    BuyInInferenceService buyInInference)
+    BuyInInferenceService buyInInference,
+    // FR-21, #463, IADR-0181: 観測の到達（最終観測時刻）の記録。**必須依存**（上と同じ理由）。
+    IPositionObservationArrivalStore observationArrivals)
 {
     public async Task Handle(BrokerPositionsObserved message, IMessageBus bus)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(bus);
+
+        // FR-21, FR-10, FR-06, ADR-0016 決定15, #463, IADR-0181:
+        // **観測が到達した事実そのものを記録する。**
+        //
+        // 推定台帳（buy_in_inferences）は**推定が起きたときにしか行を書かない**ため、行数 0 は
+        // 「観測が一度も届いていない（統制がまったく働いていない）」と「観測して 0 件だった（正常）」を
+        // 区別できない。**推定の有無に関わらずここで記録する**——これが台帳との唯一かつ本質的な違いであり、
+        // FR-21 が別要求として立てられた理由そのものである。
+        //
+        // **推定より先に記録する。** 推定が例外で落ちても「観測は届いた」という事実は変わらない。
+        observationArrivals.Record(message.ObservedAt);
 
         // FR-10, FR-11, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 同じ観測から強制買戻しを事後推定する。
         // **イベント検知の供給元が無い**ため、建玉の消失を自らの決済指示（約定履歴・処理中の決済承認）と突合して

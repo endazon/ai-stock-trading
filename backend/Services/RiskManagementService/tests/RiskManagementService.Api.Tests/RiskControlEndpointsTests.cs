@@ -206,6 +206,69 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // ---- FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181: 強制買戻しの推定の照会 ----
+    //
+    // **観測の到達（FR-21）と推定行を同じ応答で返す。** 2 つに分けると、呼び出し側が推定行だけを見て
+    // 0 件と判断する経路が作れてしまう。
+
+    [Fact]
+    public async Task 未認証の_buy_in_inferences_取得は401()
+    {
+        // 🔴 受け入れ基準: **無認証の内部エンドポイントを増やさない**（IADR-0176 と同型）。
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync("/risk-controls/buy-in-inferences?from=2026-08-01&to=2026-08-08");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task 読み取りロールを持たない_buy_in_inferences_取得は403()
+    {
+        var client = ClientWithRoles("viewer");
+
+        var res = await client.GetAsync("/risk-controls/buy-in-inferences?from=2026-08-01&to=2026-08-08");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task サービスロールは_buy_in_inferences_を取得できる()
+    {
+        // 報告書サービスが s2s（trading-service）で照会する。
+        // **観測が一度も届いていなければ observationArrivedAt は null**——推定台帳が空でも
+        // 呼び出し側は 0 件と読んではならない（FR-21）。
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync("/risk-controls/buy-in-inferences?from=2026-08-01&to=2026-08-08");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await res.Content.ReadFromJsonAsync<BuyInInferenceQueryDto>();
+        body.Should().NotBeNull();
+        body!.ObservationArrivedAt.Should().BeNull("観測はまだ一度も届いていない");
+        body.Inferences.Should().NotBeNull().And.BeEmpty();
+    }
+
+    // **否定形**: 期間の省略・逆順は 400。`/fills` は 200 空列だが**こちらは向きが違う** ——
+    // 黙って空列を返すと、それが「推定 0 件」として報告書に載り得る。
+    [Theory]
+    [InlineData("/risk-controls/buy-in-inferences")]
+    [InlineData("/risk-controls/buy-in-inferences?from=2026-08-01")]
+    [InlineData("/risk-controls/buy-in-inferences?to=2026-08-08")]
+    [InlineData("/risk-controls/buy-in-inferences?from=2026-08-08&to=2026-08-01")]
+    public async Task 期間が不正な_buy_in_inferences_取得は400(string path)
+    {
+        var client = ClientWithRoles(Service);
+
+        var res = await client.GetAsync(path);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private sealed record BuyInInferenceQueryDto(
+        DateTimeOffset? ObservationArrivedAt,
+        List<object>? Inferences);
+
     [Fact]
     public async Task サービスロールは_kill_switch_を操作できない_403()
     {

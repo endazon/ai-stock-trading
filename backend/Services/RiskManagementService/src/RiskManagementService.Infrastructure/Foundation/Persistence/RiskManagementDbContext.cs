@@ -54,6 +54,12 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     // **数えているのは「自らのガードをすり抜けた買付」であり、ブローカーの GFV カウンタの写しではない。**
     public DbSet<GoodFaithViolationRow> GoodFaithViolations => Set<GoodFaithViolationRow>();
 
+    // FR-21, FR-10, FR-06, #463, IADR-0181: ブローカ建玉の観測が到達した事実（最終観測時刻・単一行）。
+    // **推定台帳とは別の事実である**——台帳は推定が起きたときにしか行を書かないため、
+    // 台帳だけでは「観測が届いていない」と「0 件だった」を区別できない。
+    public DbSet<PositionObservationArrivalRow> PositionObservationArrivals =>
+        Set<PositionObservationArrivalRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -202,6 +208,18 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.ObservedSignature).IsRequired();
             e.Property(r => r.ReportedSignature).IsRequired();
             e.Property(r => r.Version).IsConcurrencyToken();
+        });
+
+        // FR-21, FR-10, FR-06, #463, IADR-0181: 観測の到達（最終観測時刻・単一行）。
+        //
+        // **並行トークンを置かない**（PositionDriftStateRow とは意図的に異なる）。本行の更新は
+        // 「より新しい時刻へ前進させる」だけの単調操作であり、競合で 1 回の前進を取りこぼしても
+        // 次の観測が同じ前進を行う。負けた側が何もしないことが正しく、版番号で守る対象が無い。
+        mb.Entity<PositionObservationArrivalRow>(e =>
+        {
+            e.ToTable("position_observation_arrival");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
         });
 
         // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの推定台帳（追記専用）。

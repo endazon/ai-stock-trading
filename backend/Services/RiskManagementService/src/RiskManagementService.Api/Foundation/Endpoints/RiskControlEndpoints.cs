@@ -64,6 +64,36 @@ internal static class RiskControlEndpoints
             return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger.GetFills(), fromDay, toDay));
         });
 
+        // 強制買戻しの推定（FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181）:
+        // 報告書サービス（#14）が日報の「発生有無」・月報の「発生回数」のため同期照会する。
+        //
+        // **観測の到達（FR-21）と推定行を同じ応答で返す。** 2 つのエンドポイントに分けると、
+        // 呼び出し側が推定行だけを見て 0 件と判断する経路が作れてしまう——台帳は推定が起きたときにしか
+        // 行を書かないため、**行数 0 は「観測が一度も届いていない（異常）」と「観測して 0 件だった（正常）」を
+        // 区別できない**。1 回の応答で両方を運び、判断を分離できないようにする。
+        //
+        // **`from`・`to` の省略・逆順は 400 とする**（`/fills` は 200 空列だが、こちらは向きが違う）——
+        // 黙って空列を返すと、それが「推定 0 件」として報告書に載り得る。**照会できなかったことは
+        // 空の結果ではない。**
+        read.MapGet("/buy-in-inferences",
+            (DateOnly? from, DateOnly? to,
+             IBuyInInferenceStore inferences,
+             IPositionObservationArrivalStore arrivals) =>
+        {
+            if (from is not { } fromDay || to is not { } toDay)
+                return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
+
+            if (fromDay > toDay)
+                return Results.BadRequest(new { error = "from は to 以前の日付を指定してください。" });
+
+            return Results.Ok(new
+            {
+                // null＝観測が一度も届いていない。**呼び出し側はこのとき件数を 0 と読んではならない。**
+                observationArrivedAt = arrivals.GetLastObservedAt(),
+                inferences = inferences.GetInferredBetween(fromDay, toDay),
+            });
+        });
+
         // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 

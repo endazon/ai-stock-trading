@@ -415,3 +415,18 @@ internal sealed class GoodFaithViolationRow
 
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
+
+// FR-21, FR-10, FR-06, #463, IADR-0181: **ブローカ建玉の観測が到達した事実**（最終観測時刻）の単一行。
+//
+// 推定台帳（BuyInInferenceRow）は**推定が起きたときにしか行を書かない**ため、行数 0 は
+// 「観測が一度も届いていない（異常）」と「観測して 0 件だった（正常）」を区別できない。
+// **本行があって初めて件数を正当な 0 として供給できる**（FR-21・Must）。
+internal sealed class PositionObservationArrivalRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    /// <summary>記録されている最終観測時刻。**単調前進のみ**（古い観測で巻き戻さない）。</summary>
+    public DateTimeOffset LastObservedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}

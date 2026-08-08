@@ -215,6 +215,11 @@ builder.Services.AddScoped<PositionDriftTracker>();
 // **推定台帳は永続でなければならない**——プロセス内に持つと再起動で 30 日の禁止が消える（fail-open）。
 builder.Services.AddScoped<IBuyInInferenceStore, EfBuyInInferenceStore>();
 builder.Services.AddScoped<BuyInInferenceService>();
+// FR-21, FR-10, FR-06, ADR-0016 決定15, #463, IADR-0181: **観測の到達**（最終観測時刻）の記録。
+// 推定台帳は**推定が起きたときにしか行を書かない**ため、行数 0 は「観測が一度も届いていない（異常）」と
+// 「観測して 0 件だった（正常）」を区別できない。**本ストアがあって初めて件数を正当な 0 として供給できる。**
+// 永続でなければならない（プロセス内に持つと再起動で「観測が届いていない」へ戻り、供給が未供給へ化ける）。
+builder.Services.AddScoped<IPositionObservationArrivalStore, EfPositionObservationArrivalStore>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
 // StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。承認・約定・訂正・取消は取引台帳（IADR-0018）と

@@ -42,7 +42,9 @@ public class BrokerPositionsObservedConsumerTests
     private static Task<IHost> BuildHostAsync(
         InMemoryPortfolioLedgerStore ledger,
         PositionDriftTracker tracker,
-        IBuyInInferenceStore? buyInStore = null) =>
+        IBuyInInferenceStore? buyInStore = null,
+        // FR-21, #463, IADR-0181: 観測の到達の記録（ハンドラの必須依存）。
+        IPositionObservationArrivalStore? arrivalStore = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -52,6 +54,8 @@ public class BrokerPositionsObservedConsumerTests
                 // #419, IADR-0159: 同じ観測から強制買戻しを事後推定する（ハンドラの必須依存）。
                 opts.Services.AddSingleton<IRiskSettingsStore>(new InMemoryRiskSettingsStore());
                 opts.Services.AddSingleton(buyInStore ?? new InMemoryBuyInInferenceStore());
+                opts.Services.AddSingleton(
+                    arrivalStore ?? new InMemoryPositionObservationArrivalStore());
                 opts.Services.AddSingleton(sp => new BuyInInferenceService(
                     sp.GetRequiredService<IPortfolioLedgerStore>(),
                     sp.GetRequiredService<IBuyInInferenceStore>(),
@@ -82,6 +86,43 @@ public class BrokerPositionsObservedConsumerTests
 
     private static BrokerPositionsObserved Observed(params BrokerPositionSnapshot[] positions) =>
         new(positions, At);
+
+    // ---- FR-21, FR-10, FR-06, ADR-0016 決定15, #463, IADR-0181: 観測の到達の記録 ----
+    //
+    // **推定台帳との唯一かつ本質的な違いは「推定が無くても記録する」ことである。**
+    // 台帳は推定が起きたときにしか行を書かないため、行数 0 は「観測が一度も届いていない（異常）」と
+    // 「観測して 0 件だった（正常）」を区別できない。ここが記録されて初めて後者を正当な 0 として供給できる。
+
+    [Fact]
+    public async Task 推定が起きなくても観測の到達を記録する()
+    {
+        // 台帳とブローカが一致＝乖離も推定も無い。**それでも観測は届いている。**
+        var arrivals = new InMemoryPositionObservationArrivalStore();
+        using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker(), arrivalStore: arrivals);
+
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(Observed(new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 100, 20m)));
+
+        // 推定も乖離も発行されていないことを確かめたうえで……
+        session.Sent.MessagesOf<BuyInInferred>().Should().BeEmpty();
+        session.Sent.MessagesOf<PositionReconciliationDrift>().Should().BeEmpty();
+        // ……観測の到達だけは記録されている。
+        arrivals.GetLastObservedAt().Should().Be(At);
+
+        await host.StopAsync();
+    }
+
+    // **否定形**: 観測が届かなければ記録されない（ハンドラが呼ばれた事実だけが記録の根拠である）。
+    [Fact]
+    public async Task 観測が届かなければ最終観測時刻は_null_のままである()
+    {
+        var arrivals = new InMemoryPositionObservationArrivalStore();
+        using var host = await BuildHostAsync(LedgerWithAapl(100), NewTracker(), arrivalStore: arrivals);
+
+        arrivals.GetLastObservedAt().Should().BeNull();
+
+        await host.StopAsync();
+    }
 
     [Fact]
     public async Task 一致していれば乖離を発行しない()
