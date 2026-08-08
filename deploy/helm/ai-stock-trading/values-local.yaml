@@ -114,6 +114,10 @@ services:
   # プロンプトレベル検証時のみ "true" へ opt-in（README 参照）。
   report:
     extraEnv:
+      # FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181: 強制買戻しの推定の照会先（権威源＝リスク管理）。
+      # **空＝未供給（null）**。空列（＝推定 0 件）へ倒さない——0 件と表示すると「強制買戻しは
+      # 起きていない」と読める（計画が名指しで禁じた向き）。期間約定（/fills）と同じ BaseUrl を使う。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（報告書の評価損益）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }

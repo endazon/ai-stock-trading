@@ -78,7 +78,7 @@ public static class PlanSourceDigests
         //
         //     出典が本表に無ければ、[[IADR-0166]] の 1 ホップはその行に**掛からない**。
         //     `PlanConformanceTests`（表 ⇄ 実装）は緑のままなので、**穴は「赤くならないこと」として現れる**。
-        new(Requirements, "## 機能要求", "fa973f38b9a279ac7784195f34e5a8ec6de007ba35ca4089d1e8c85b942f8e94", "02_requirements §機能要求（FR-10 / FR-19 / FR-20 の表）"),
+        new(Requirements, "## 機能要求", "ba9000714c2105e41a42fef46a4bf8bb8ff3e930d852e84099e13953f8e2b73d", "02_requirements §機能要求（FR-10 / FR-19 / FR-20 の表）"),
         // 見出しは `### UC-06: …` のためコロンまで含める（直後が区切りである必要がある。#444 の指摘）。
         new(UseCases, "### UC-06:", "93f676311991a30757b085c6d83bfe82c6878f4e2db6d18b99f15c338b3dd704", "UC-06（設定変更・一時停止・緊急停止）"),
         new($"{Adr}/ADR-0021_us-account-type-dual-support.md", "## 決定", "107a5118a06b29818625462a224b988717286385f94d9074cac04a842c3be94a", "ADR-0021 決定"),
