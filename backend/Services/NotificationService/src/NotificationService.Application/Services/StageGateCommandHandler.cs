@@ -18,6 +18,35 @@ public sealed class StageGateCommandHandler(
     DiscordBotOptions options,
     ILogger<StageGateCommandHandler> logger)
 {
+    /// <summary>
+    /// FR-20, FR-11, SC-02, #466, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180 決定5:
+    /// **昇格の確認プロンプトへ添える引き下げ警告**（出ていなければ <c>null</c>）。
+    /// <para>
+    /// 裁定は「`/stage status` だけでは足りない ——『承認前に status を読む』は<b>人の運用に依存する前提</b>で
+    /// あり、読まなければ警告が届かない」と述べている。**確認ボタンを押した後にだけ警告が出る形は、
+    /// この批判がそのまま当てはまる**（押してからでは遷移は既に受理・記録されている）。
+    /// よって<b>確認を出す前</b>にも同じ警告を届ける。
+    /// </para>
+    /// <para>
+    /// 多層認証は本メソッドでも掛ける（許可外の着信へ現況を漏らさない）。**照会に失敗したら
+    /// <c>null</c>＝警告なし**——確認そのものを止めない（警告は昇格を妨げないという裁定に従う）。
+    /// </para>
+    /// </summary>
+    public async Task<string?> GetPromotionWarningAsync(
+        DiscordCommandContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (!DiscordCommandAuthorizer.Authorize(context, options).IsAllowed)
+        {
+            return null;
+        }
+
+        var status = await controller.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        return status.Succeeded ? status.Stage1Warning : null;
+    }
+
     public async Task<StageGateCommandResult> HandleAsync(
         DiscordCommandContext context,
         CancellationToken cancellationToken = default)

@@ -1,11 +1,14 @@
 ---
 title: 遷移応答へ実効の合格条件を載せ、昇格承認に引き下げ警告を出し、警告有無を監査へ凍結する
-type: adr
-status: accepted
-related_ids: [FR-20, FR-11, SC-02, UC-06, ADR-0008, IADR-0164, IADR-0081, IADR-0082]
+status: Accepted
+related_ids: [FR-20, FR-11, SC-02, UC-06, ADR-0008, IADR-0079, IADR-0081, IADR-0082, IADR-0164, IADR-0180]
 author: endazon (with Claude Code)
 created: 2026-08-08
 updated: 2026-08-08
+plan_refs:
+  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
+  - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
+  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
 ---
 
 # IADR-0180: `/stage promote` の引き下げ警告と昇格記録
@@ -20,6 +23,10 @@ updated: 2026-08-08
   計画は同時に「**現在の `/stage promote` の応答（`StageTransitionResult`）は合格条件を運ばないため、
   遷移応答へ合格条件を載せる契約変更が要る**」と、実装側の残件を名指しした。
 - **警告を無視して昇格した事実を記録に残す**（Q13-b）。**昇格時点の設定値と警告の有無**を監査ログ（FR-11）へ。
+
+段階遷移の承認そのものは計画 [ADR-0008](../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md)
+が定める統制であり（承認なしに段階は動かない）、**本 ADR はその承認操作へ「判断材料」と「記録」を足す**。
+ADR-0008 の合格・撤退基準そのものには触れていない。
 
 [IADR-0164](IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md) が最小取引件数を設定値化し、
 SC-02（画面）と `/stage status` には警告を出していた。**承認操作と監査だけが空白だった。**
@@ -58,6 +65,12 @@ SC-02（画面）と `/stage status` には警告を出していた。**承認�
 整形（数値 enum → 表示テキスト）をアダプタ 1 か所に閉じる [IADR-0081](IADR-0081_stage-gate-discord-bot-commands.md)
 決定1 の規律は保たれる（Application 層は整形済み文字列だけを扱い、付加の可否だけを決める）。
 
+**昇格先では絞らない**（`/stage promote 1`＝Stage 0→1 でも出す）。最小取引件数は Stage 1→2 の
+条件 3 であるため「Stage 2 への昇格だけに出す」余地はあるが、§4.3 は
+「100 件未満を設定した場合は画面と昇格承認に警告を**常時表示する**」と定めており、
+**Stage 0→1 の昇格は「出口の合格条件を弱めた状態で Stage 1 へ入る」ことそのもの**である。
+差し戻しを除いたのは方向（安全側か否か）による区別であり、昇格の中で段階を選り分ける根拠は計画に無い。
+
 ### 決定3: 警告文言を Discord 側で 1 か所に集約し、SC-02 の文言に揃える
 
 issue [#466](https://github.com/endazon/ai-stock-trading/issues/466) が「画面側（SC-02）の警告と
@@ -87,6 +100,27 @@ issue [#466](https://github.com/endazon/ai-stock-trading/issues/466) が「画�
 「なぜ 60 営業日・5 件で Stage 2 へ上がったのか」が目に入らない。常時添えないのは、
 添えると要約が長くなり**警告そのものが埋もれる**ためである。
 
+### 決定5: 警告は**確認ボタンを出す前**にも届ける（事後表示だけでは足りない）
+
+`/stage promote N` は 2 段階確認である（IADR-0081 決定3。確認ボタン → 押下で実行）。**遷移応答にだけ
+警告を載せると、警告が届くのはボタンを押した後**になる —— そのとき遷移は既に Risk 側で受理され、
+台帳へ追記され、`StageTransitioned` まで発行されている。
+
+**これは裁定が名指しで否定した構図と実効的に同じである。** 追補3 は
+「`/stage status` だけでは足りない ——『承認前に status を読む』は**人の運用に依存する前提**であり、
+読まなければ警告が届かない」と述べている。「押した後の結果画面で気づく」形も、
+**承認判断の時点では警告が存在しない**という点で同じ欠陥を持つ。
+
+よって確認プロンプトの生成時にも警告を引く。
+
+- `StageGateStatusResult` へ `Stage1Warning` を併記し（`Message` にも含まれるが単独で取り出せる形）、
+  `StageGateCommandHandler.GetPromotionWarningAsync` が**多層認証を掛けたうえで**返す。
+  現況の全文を確認プロンプトへ貼らないのは、長すぎて**警告そのものが埋もれる**ためである。
+- **確認前の照会は読み取りのみ**（遷移を起こさない）。
+- **照会に失敗したら警告なし＝確認は止めない。** 警告は昇格を妨げないという裁定に従う
+  （ここで確認を止めると、照会障害が実質的な昇格拒否になる）。
+- **前後の両方に出す。** 前だけにすると、拒否された場合に「設定が下がったままである」事実が応答から消える。
+
 ## 検討したが採らなかった案
 
 | 案 | 却下の理由 |
@@ -97,6 +131,9 @@ issue [#466](https://github.com/endazon/ai-stock-trading/issues/466) が「画�
 | アダプタが `Message` へ警告を混ぜる | アダプタは現段階を知らず昇格／差し戻しを区別できない。差し戻しにも出てしまう（決定2） |
 | 警告有無を設定値から導出する | 統計的根拠の改訂で**過去の記録の解釈が黙って書き換わる**（決定4） |
 | `StageTransitioned` を昇格時だけ拡張する | `null` が「昇格ではなかった」と「供給されなかった」の両方を意味する（決定4） |
+| 警告を遷移応答にだけ載せる（確認前には出さない） | **押した後にしか届かない。** 裁定が否定した「読まなければ届かない」構図と実効的に同じであり、押下時点で遷移は既に受理・記録されている（決定5） |
+| 確認プロンプトへ `/stage status` の全文を貼る | 長すぎて**警告そのものが埋もれる**。警告だけを単独で取り出せる形にした（決定5） |
+| Stage 2 への昇格にだけ警告を出す | §4.3 は「常時表示する」と定めている。Stage 0→1 は**出口の合格条件を弱めた状態で Stage 1 へ入る**ことそのものである（決定2） |
 
 ## 対照実験（実走した実測）
 
@@ -107,6 +144,13 @@ issue [#466](https://github.com/endazon/ai-stock-trading/issues/466) が「画�
 | `isPromotion` を常に `true` にする | **1 件**（`差し戻しには警告を出さない`） | 決定2 のガードは load-bearing。かつ**その 1 件だけが**この条件を覆っている |
 | アダプタの `BelowStatisticalBasis: true` を `false` へ反転 | **4 件**（宣言あり／宣言 false／422／文言一致） | 宣言に従う経路が実際に通っている。文言一致テストが 2 経路を束ねている |
 | 監査要約の `e.Stage1BelowStatisticalBasis` を `false` に固定 | **2 件** | 要約は設定値ではなく**警告有無の項目**を見ている（決定4 の導出禁止が実装に反映されている） |
+
+**発行経路の検査を後から足した。** 初版は「監査へ残る」の検査が `AuditEntryFactoryTests`（イベントを直接
+`new` する層）だけで、**実効設定値を実際に載せる `RiskControlEndpoints` の経路が無検査**だった ——
+そこへ定数 `100, false` を書いても全テストが緑のままであり、「5 件に下げて昇格した」記録が既定値として
+残る欠陥を CI が検知できない。**本 repo が繰り返し踏んでいる「緑だが検査されていない」そのもの**であり、
+監査（`traceability-auditor`）の指摘で判明した。`StageGateEndpointsTests` に設定を実際に下げてから
+昇格させ、発行された `StageTransitioned` の 2 項目を検査する 2 本を追加した。
 
 ## 影響
 
@@ -126,3 +170,9 @@ issue [#466](https://github.com/endazon/ai-stock-trading/issues/466) が「画�
   「当時の設定値・警告の有無」は遡って復元できない（設定変更の履歴から推測はできるが、記録ではない）。
 - **警告の到達そのものは記録していない。** 記録するのは「警告が出る状態だったか」であり、
   利用者が Discord の応答を読んだかどうかは（本 repo の他の通知と同じく）観測していない。
+- **デプロイを跨いで滞留した旧形式メッセージは `Stage1MinimumTradeCount = 0` / `Stage1BelowStatisticalBasis = false`
+  としてデシリアライズされる。** 非 nullable の位置パラメータで追加したためである。
+  **0 は値域（1〜1000）の外**であり、監査台帳では「実在しない設定値」として識別できる ——
+  `null` 許容にして「昇格ではなかった」との二義を作るより、値域外の値が残るほうが読み解ける。
+- **確認前の警告は Risk へもう 1 往復する。** 人が起動する操作であり頻度は問題にならないが、
+  Risk が応答しないときは警告なしで確認が出る（確認を止めないほうを選んだ・決定5）。

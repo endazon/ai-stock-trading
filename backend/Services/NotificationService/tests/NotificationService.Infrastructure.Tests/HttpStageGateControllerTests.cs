@@ -255,7 +255,7 @@ public class HttpStageGateControllerTests
         result.Accepted.Should().BeFalse();
     }
 
-    // ---- AST #466, FR-20, SC-02, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180 ----
+    // ---- #466, FR-20, SC-02, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180 ----
     // **遷移応答（`/stage promote` が叩く POST）も合格条件を運ぶ**。判定はサーバ（Risk）が
     // `belowStatisticalBasis` で宣言し、アダプタは閾値 100 を写経せず表示するだけである。
 

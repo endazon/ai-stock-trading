@@ -40,6 +40,9 @@ public static class StageGate
         StageGatePolicy policy,
         DateTimeOffset now)
     {
+        // #466, IADR-0180 決定1: 以降のすべての return が `policy.Stage1Criteria` を載せるため、
+        // policy は**全経路で必須**になった（従来は拒否経路が policy に触れずに戻れた）。
+        // AssessPromotion と同じ形で入口に置き、null は NullReferenceException ではなく引数名つきで落とす。
         ArgumentNullException.ThrowIfNull(policy);
 
         // FR-20, FR-11, SC-02, #466, §4.1 追補3, IADR-0180: 応答が運ぶ**実効の**合格条件。

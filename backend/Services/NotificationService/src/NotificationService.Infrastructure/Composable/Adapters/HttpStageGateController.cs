@@ -30,7 +30,7 @@ internal sealed class HttpStageGateController(
     // 表示に載せる直近履歴の件数（多すぎると Discord の表示が冗長になるため直近のみ）。
     private const int RecentHistoryCount = 5;
 
-    // AST #466, FR-20, SC-02, §4.1 追補3, IADR-0180: **Stage 1 の最小取引件数の引き下げ警告の文言（単一情報源）。**
+    // #466, FR-20, SC-02, §4.1 追補3, IADR-0180: **Stage 1 の最小取引件数の引き下げ警告の文言（単一情報源）。**
     //
     // `/stage status`（現況照会）と `/stage promote`（承認操作）の**両方**が本定数を使う。issue #466 が
     // 「画面側（SC-02）の警告と**文言・条件を揃える**」ことを求めており、経路ごとに書き下ろすと必ず割れる。
@@ -46,7 +46,7 @@ internal sealed class HttpStageGateController(
         + "条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。"
         + "この警告は設定を妨げません（変更は理由とともに履歴へ残ります）。";
 
-    // AST #466: 上の文言に、その場の実効値（何件に設定されているか）を添えた 1 行。
+    // #466: 上の文言に、その場の実効値（何件に設定されているか）を添えた 1 行。
     //
     // **本メソッドは判定しない**——`BelowStatisticalBasis` が true のときだけ呼ぶ。
     // 文中の「100 件」は**説明文の一部**であり（SC-02 の文言も同じ数を散文で含む）、
@@ -76,7 +76,13 @@ internal sealed class HttpStageGateController(
                 return new StageGateStatusResult(false, "段階ゲートの応答を解釈できませんでした");
             }
 
-            return new StageGateStatusResult(true, FormatStatus(view));
+            // #466, IADR-0180: 警告は Message にも含まれるが、**確認ボタンを出す前**に警告だけを
+            // 添えられるよう単独でも返す（現況の全文を確認プロンプトへ貼ると警告が埋もれる）。
+            var warning = view.Stage1Criteria is { BelowStatisticalBasis: true } c
+                ? FormatBelowBasisWarning(c.MinimumTradeCount)
+                : null;
+
+            return new StageGateStatusResult(true, FormatStatus(view), warning);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -113,7 +119,7 @@ internal sealed class HttpStageGateController(
                     return new StageTransitionCommandResult(false, false, "段階遷移の応答を解釈できませんでした");
                 }
 
-                // AST #466, FR-20, SC-02, §4.1 追補3（Q13-a）, IADR-0180: 承認操作にも警告を届ける。
+                // #466, FR-20, SC-02, §4.1 追補3（Q13-a）, IADR-0180: 承認操作にも警告を届ける。
                 //
                 // **判定はサーバ（Risk）の `belowStatisticalBasis` の宣言に従う**（閾値 100 を写経しない）。
                 // 応答が本項目を持たない（旧版 Risk）場合は警告を出さない（null＝宣言が無い。`/stage status` と同型）。
@@ -208,7 +214,7 @@ internal sealed class HttpStageGateController(
         // 写経すると、計画が値を変えたときにこの 1 か所だけが古いままになる。
         // 応答が本項目を持たない（旧版サーバ）場合は警告を出さない（null＝宣言が無い）。
         //
-        // AST #466: 文言は `/stage promote` と共通の定数 `FormatBelowBasisWarning` に集約した
+        // #466: 文言は `/stage promote` と共通の定数 `FormatBelowBasisWarning` に集約した
         // （経路ごとに書き下ろすと必ず割れる。issue #466 が SC-02 との一致を求めている）。
         if (v.Stage1Criteria is { BelowStatisticalBasis: true } criteria)
         {
@@ -353,7 +359,7 @@ internal sealed class HttpStageGateController(
 
     internal sealed record WithdrawalAssessmentView(bool Triggered, int? Reason, bool HaltNewEntries, int? ProposedStage);
 
-    // AST #466: 遷移応答も合格条件を運ぶ（Risk 側の契約変更・IADR-0180）。
+    // #466: 遷移応答も合格条件を運ぶ（Risk 側の契約変更・IADR-0180）。
     // nullable＝本項目を返さない旧版 Risk への耐性（`StageGateStatusView.Stage1Criteria` と同型）。
     internal sealed record StageTransitionResultView(
         bool Accepted,

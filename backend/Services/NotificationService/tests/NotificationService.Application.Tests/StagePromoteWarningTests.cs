@@ -22,12 +22,20 @@ public class StagePromoteWarningTests
     // 本テストは**ハンドラが付加するか否か**だけを見るため、識別できる文字列を置く。
     private const string Warning = "⚠ Stage 1 の最小取引件数が 5 件に設定されています（既定 100 件）。統計的な根拠…";
 
-    private sealed class FakeStageGateController(string? warning, bool accepted = true) : IStageGateController
+    private sealed class FakeStageGateController(
+        string? warning, bool accepted = true, bool statusSucceeds = true) : IStageGateController
     {
         public int TransitionCalls { get; private set; }
 
-        public Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new StageGateStatusResult(true, "現段階: Stage 1（SIMULATE）"));
+        public int StatusCalls { get; private set; }
+
+        public Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default)
+        {
+            StatusCalls++;
+            return Task.FromResult(statusSucceeds
+                ? new StageGateStatusResult(true, "現段階: Stage 1（SIMULATE）", warning)
+                : new StageGateStatusResult(false, "段階ゲートの照会に失敗しました（HTTP 503）"));
+        }
 
         public Task<StageTransitionCommandResult> RequestTransitionAsync(
             int targetStage, CancellationToken cancellationToken = default)
@@ -126,6 +134,59 @@ public class StagePromoteWarningTests
         result.Accepted.Should().BeFalse();
         result.Message.Should().Contain("受理されませんでした");
         result.Message.Should().Contain(Warning);
+    }
+
+    // ---- IADR-0180 決定5: **確認を出す前**にも警告を届ける（§4.1 追補3 Q13-a の趣旨） ----
+    //
+    // ボタンを押した後にだけ警告が出る形は、裁定が名指しで否定した「読まなければ届かない」構図と
+    // 実効的に同じである（押した時点で遷移は既に受理・記録されている）。
+
+    [Fact]
+    public async Task 確認を出す前に引き下げ警告を取得できる()
+    {
+        var controller = new FakeStageGateController(Warning);
+
+        var result = await Handler(controller).GetPromotionWarningAsync(Context("/stage promote 2"));
+
+        result.Should().Be(Warning);
+        controller.StatusCalls.Should().Be(1);
+        // **確認前の照会で遷移を起こさない**（読み取りのみ）。
+        controller.TransitionCalls.Should().Be(0);
+    }
+
+    // **否定形**: 既定値のままなら確認前にも警告は出ない。
+    [Fact]
+    public async Task 既定値のままなら確認前の警告は_null()
+    {
+        var controller = new FakeStageGateController(warning: null);
+
+        var result = await Handler(controller).GetPromotionWarningAsync(Context("/stage promote 2"));
+
+        result.Should().BeNull();
+    }
+
+    // **否定形**: 照会に失敗しても確認そのものは止めない（警告は昇格を妨げない）。
+    [Fact]
+    public async Task 照会に失敗したら確認前の警告は_null_で確認を止めない()
+    {
+        var controller = new FakeStageGateController(Warning, statusSucceeds: false);
+
+        var result = await Handler(controller).GetPromotionWarningAsync(Context("/stage promote 2"));
+
+        result.Should().BeNull();
+    }
+
+    // **否定形**: 許可外の着信へ現況を漏らさない（多層認証は確認前の照会にも掛かる）。
+    [Fact]
+    public async Task 許可外の利用者には確認前の警告を返さず照会もしない()
+    {
+        var controller = new FakeStageGateController(Warning);
+        var foreign = new DiscordCommandContext(Guild, Channel, "discord-stranger", false, "/stage promote 2");
+
+        var result = await Handler(controller).GetPromotionWarningAsync(foreign);
+
+        result.Should().BeNull();
+        controller.StatusCalls.Should().Be(0);
     }
 
     // 旧版 Risk（合格条件を返さない）への耐性: 宣言が無ければ警告を出さない。

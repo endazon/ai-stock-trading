@@ -110,15 +110,19 @@ SC-02 と別に書き下ろされており、既に割れている。`/stage pro
 
 ## テスト（受け入れ基準の写像）
 
-| # | 受け入れ基準 | テスト |
+| # | 受け入れ基準 | テスト（実ファイル） |
 | --- | --- | --- |
-| 1 | 引き下げ状態の `/stage promote` の応答に警告が含まれる | `StageGateCommandHandlerTests`（promote・below basis） |
-| 2 | **否定形**: 既定値のままなら警告は出ない | 同上（100 件・警告なし） |
-| 3 | **否定形**: 警告が出ても昇格は拒否されない | `StageGateServiceTests` / `Stage1GateTests`（`Evaluate` が `BelowStatisticalBasis` を参照しない） |
-| 4 | 監査ログに設定値と警告有無が残る | `RiskControlEndpoints`（発行）・`AuditEntryFactoryTests`（要約・payload） |
-| 5 | **否定形**: `/stage demote` には警告が出ない | `StageGateCommandHandlerTests`（demote） |
-| 6 | `/stage status` にも引き続き出る（回帰） | `HttpStageGateControllerTests` 既存 |
-| 7 | 文言が SC-02 と一致する | C# 側の文言を定数テストで固定（クロス言語の強制は不可・残余リスク） |
+| 1 | 引き下げ状態の `/stage promote` の応答に警告が含まれる | `NotificationService.Application.Tests/StagePromoteWarningTests.cs` |
+| 1b | **確認ボタンを出す前**にも同じ警告が届く（裁定 Q13-a の核心） | 同上（`確認を出す前に引き下げ警告を取得できる` ほか 3 本） |
+| 2 | **否定形**: 既定値のままなら警告は出ない | 同上 ／ `NotificationService.Infrastructure.Tests/HttpStageGateControllerTests.cs` ／ `RiskManagementService.Domain.Tests/StageTransitionCriteriaCarriageTests.cs` |
+| 3 | **否定形**: 警告が出ても昇格は拒否されない | `RiskManagementService.Domain.Tests/StageTransitionCriteriaCarriageTests.cs`（`警告が出ていても昇格そのものは拒否されない`。実ドメイン判定を通す） |
+| 4 | 監査ログに設定値と警告有無が残る | **`RiskManagementService.Api.Tests/StageGateEndpointsTests.cs`（発行経路・ここだけが実供給を検査する）** ／ `AuditService.Application.Tests/AuditEntryFactoryTests.cs`（要約・payload） |
+| 5 | **否定形**: `/stage demote` には警告が出ない | `StagePromoteWarningTests.cs`（`差し戻しには警告を出さない`） |
+| 6 | `/stage status` にも引き続き出る（回帰） | `HttpStageGateControllerTests.cs` 既存 |
+| 7 | 文言が SC-02 と一致する | `HttpStageGateControllerTests.cs`（`警告文言が_SC02_の文言と同一である`。クロス言語の強制は不可・残余リスク） |
+
+**必須仕様書（CLAUDE.md の必須範囲＝FR-20）**: `docs/functional/FR-20_staged-gates.md` §4-1-4 と
+`docs/tests/FR-20_staged-gates-tests.md` T-96〜T-106 を同時に更新する。
 
 ## 対照実験（緑 → 赤 → 緑）
 
