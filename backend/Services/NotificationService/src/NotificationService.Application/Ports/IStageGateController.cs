@@ -26,8 +26,21 @@ public interface IStageGateController
 // FR-20: 段階ゲート照会・撤退評価の結果。Message は利用者へ表示する整形済みテキスト。
 // Succeeded=false は Risk 呼び出しが失敗（HTTP エラー・タイムアウト・解釈不能）したことを意味する
 // （失敗を成功に見せない）。
-public sealed record StageGateStatusResult(bool Succeeded, string Message);
+//
+// #466, IADR-0180: <see cref="Stage1Warning"/> は Message に含まれる引き下げ警告を**単独でも取り出せる**形で
+// 併記したものである（出ていなければ null）。**確認ボタンを出す前**に警告だけを添えるために要る——
+// 現況照会の全文を確認プロンプトへ貼ると長すぎて警告が埋もれる。
+public sealed record StageGateStatusResult(bool Succeeded, string Message, string? Stage1Warning = null);
 
 // FR-20, UC-06: 段階遷移要求の結果。Accepted は Risk が遷移を受理したか（422 拒否時は false）。
 // Succeeded=false は Risk 呼び出し自体が失敗したこと（HTTP エラー等）を意味し、Accepted とは区別する。
-public sealed record StageTransitionCommandResult(bool Succeeded, bool Accepted, string Message);
+//
+// FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180:
+// <see cref="Stage1Warning"/> は**最小取引件数が引き下げられている場合の警告文言**（整形済み・出ていなければ null）。
+//
+// **Message へ混ぜず別項目で返す。** アダプタは `targetStage` しか知らず現段階を持たないため、
+// 昇格か差し戻しかを判定できない。裁定が名指ししたのは**昇格承認**（`/stage promote`）であり、
+// 差し戻しへ同じ警告を出すと「読まれない警告」化する。よって**付加の可否はコマンド種別を知る
+// `StageGateCommandHandler` が決める**（整形はアダプタ・付加判断は Application 層）。
+public sealed record StageTransitionCommandResult(
+    bool Succeeded, bool Accepted, string Message, string? Stage1Warning = null);

@@ -166,6 +166,8 @@
     "OccurredAt": "DateTimeOffset",
     "Reason": "String",
     "Sequence": "Int32",
+    "Stage1BelowStatisticalBasis": "Boolean",
+    "Stage1MinimumTradeCount": "Int32",
     "ToStage": "Int32"
   },
   "StopLossTriggered": {
