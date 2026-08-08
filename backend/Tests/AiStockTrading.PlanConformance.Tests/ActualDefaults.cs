@@ -259,7 +259,17 @@ public static class ActualDefaults
         const decimal Notional = 100_000m;
 
         var roundTrip = CostCalculator.EstimateRoundTripCost(probe, Market.UnitedStates, Notional);
-        var minimum = CostCalculator.MinimumViableProfit(probe, Market.UnitedStates, Notional);
+
+        // #461, IADR-0177: しきい値は解が無いとき null（＝見送り）を返す。プローブ（m=2 / r=0.2 →
+        // m × r = 0.4）は解を持つため、null は**プローブか実装が壊れた**ことを意味する。
+        // **黙って else 側（「税なし」）へ落とさない** —— null と decimal を `>` で比べると常に false に
+        // なり、「基準に税が入っていない」というダイジェストを静かに生んで検知そのものを無力化する。
+        var minimum = CostCalculator.MinimumViableProfit(probe, Market.UnitedStates, Notional)
+            ?? throw new InvalidOperationException(
+                "最小期待利益の基準を判定できない: 解を持つはずのプローブ"
+                    + $"（倍率={probe.MinimumExpectedProfitMultiple} 税率={probe.CapitalGainsTaxRate}）で"
+                    + " しきい値が解無しになった。プローブか CostCalculator の退行を疑うこと。");
+
         return minimum > roundTrip * probe.MinimumExpectedProfitMultiple
             ? "round-trip cost + tax"
             : "round-trip cost";
