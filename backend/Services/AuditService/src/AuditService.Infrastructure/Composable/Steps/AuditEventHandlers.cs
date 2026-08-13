@@ -170,6 +170,28 @@ public sealed class GoodFaithViolationsClearedAuditHandler(IAuditEventStore stor
     }
 }
 
+// FR-10, FR-11, #465, ADR-0027 決定1, IADR-0183: 借株料の**日次の計上額**を中央監査台帳へ記録する。
+// **累計だけを保持すると、後から日別の内訳を復元できない**（決定1）。
+public sealed class BorrowFeeAccruedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BorrowFeeAccrued message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183: 借株料を**計上できなかった日**を中央監査台帳へ記録する。
+// 🔴 **0 円の計上として残さない**——「費用が発生しなかった」と「取得できなかった」は別の事実である。
+public sealed class BorrowFeeAccrualUnavailableAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(BorrowFeeAccrualUnavailable message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-20, #166, IADR-0083: 撤退基準到達（自動安全側の発火・撤退の定期評価ドライバ #166）を中央監査台帳へ記録する。
 public sealed class WithdrawalTriggeredAuditHandler(IAuditEventStore store, IClock clock)
 {

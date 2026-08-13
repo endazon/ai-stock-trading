@@ -59,6 +59,14 @@
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
     <!-- Slice B（#82 / IADR-0050）: OwnerOnly エンドポイントを実 Keycloak トークンで検証する。 -->
     <PackageVersion Include="Testcontainers.Keycloak" Version="4.13.0" />
+    <!-- NFR, #61 と同手順: Testcontainers が推移的に持ち込む SSH.NET のセキュリティ更新。
+         2025.1.0 に高深刻度の脆弱性が公表され（GHSA-q939-rpr3-3284）、`security` ワークフローの
+         「Vulnerable transitive dependencies」が develop・全 PR で一斉に落ちた（本リポの差分に起因しない）。
+         **推移パッケージであるため直接参照は増やさず**、CPM の推移ピン留め
+         （`CentralPackageTransitivePinningEnabled`）でパッチ版へ引き上げる。
+         引き上げ後に `dotnet list package` の脆弱性検査（vulnerable ＋ 推移を含める指定）が
+         「no vulnerable packages」を返すことを実測で確認している。 -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- NFR, ADR-0013, IADR-0129, #354（第 3 段階）: 実 RabbitMQ 上のトポロジ（キュー・consumer 数・DLQ）を
          受動宣言で読むために Integration E2E だけが直接参照する。WolverineFx.RabbitMQ が推移的に持ち込む版と
          同一に固定する（CPM の推移ピン留めが効いており、版がずれると同居できない）。 -->

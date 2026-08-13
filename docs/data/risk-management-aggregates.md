@@ -151,6 +151,43 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 > 部分約定の累積更新（実ブローカー）は #13/moomoo 後続でゲート済み（IADR-0016）。含み損益・DD の日次終値マークは市場データ
 > 連携まで対象外（`UnrealizedPnl`/`DrawdownRatio` は射影上 0。IADR-0008 の #12 後続）。
 
+### 借株料の日次計上（`BorrowFeeAccrualRow` / `BorrowFeeUnavailableDayRow`・永続。#465 / ADR-0027 / [IADR-0183](../adr/IADR-0183_borrow-fee-accrual-recording.md)）
+
+ADR-0027 が「借株料の累計」の作り方（計上のタイミング・単位・期間の境界・料率変動・供給元）を確定させたことに伴う記録側。
+**計上の単位は「建玉 × 取引日」**であり、銘柄別・口座全体・月次は**すべて本表の合算で導出する**（決定2「別々に積まない」）。
+
+#### `borrow_fee_accruals`（**計上できた日**）
+
+| 属性 | 型 | 必須 | 説明 |
+| --- | --- | --- | --- |
+| Symbol | string(32) | ○ | 銘柄コード。**主キーの一部** |
+| Market | Market | ○ | 市場。**主キーの一部**。(Symbol, Market) が建玉の一次識別子（決定2） |
+| TradingDay | DateOnly | ○ | 計上の帰属日。**主キーの一部**。**按分しない**——この日が属する日・月へ帰属する（決定3） |
+| RateAnnual | decimal | ○ | **計上日に照会した**年率（比率）。建玉時の料率ではない（決定4） |
+| PositionValueUsd | decimal | ○ | 計上の基礎となった建玉評価額（USD） |
+| AmountUsd | decimal | ○ | その日の計上額（USD）＝ `RateAnnual × PositionValueUsd ÷ 365`。**丸めない**（丸め規則は計画に無い） |
+| AccruedAtUtc | DateTimeOffset | ○ | 計上を記録した時刻 |
+
+#### `borrow_fee_unavailable_days`（**料率が取得できなかった日**）
+
+| 属性 | 型 | 必須 | 説明 |
+| --- | --- | --- | --- |
+| Symbol / Market / TradingDay | — | ○ | 上表と同じ複合主キー |
+| Reason | string(512) | ○ | 取得できなかった理由（診断用） |
+| ObservedAtUtc | DateTimeOffset | ○ | 未供給を記録した時刻 |
+
+🔴 **2 表に分けるのはスキーマ設計上の意図である。** `borrow_fee_accruals` に `AmountUsd` を null 許容で持たせて
+1 表に畳むと、**合計を取る SQL / LINQ が未供給の日を 0 として扱う経路が自然に書ける**。
+ADR-0027 決定4 は「取得できなかった日を **0 として計上しない**」と明示しており、
+**0 を積むと「その日は費用が発生しなかった」と読める**（Stage 1 の「借株料は 1 円も掛かっていない」という誤読）。
+**未供給の表は金額の欄そのものを持たない**ため、その経路は書けない。
+
+- **主キーによる冪等**: 同じ建玉の同じ取引日を二度計上しても行は増えず、金額が狂わない。
+- **既存行は更新しない**: 後から別の料率で上書きすると、監査へ残した日次の内訳（`BorrowFeeAccrued`）と食い違う。
+- **索引**: `TradingDay`（月報の月次合計・日報の当日分を期間で引く）。
+- 🔴 **供給はまだ始まっていない**（ADR-0027 決定6・ADR-0026 PoC 項目 9）。表は存在するが、
+  日次の料率照会もスケジューラも実装していないため**行は書かれない**。
+
 ## ER 図（永続対象＝設定・注文・監査）
 
 ```mermaid

@@ -223,6 +223,16 @@ builder.Services.AddScoped<BuyInInferenceService>();
 // 「観測して 0 件だった（正常）」を区別できない。**本ストアがあって初めて件数を正当な 0 として供給できる。**
 // 永続でなければならない（プロセス内に持つと再起動で「観測が届いていない」へ戻り、供給が未供給へ化ける）。
 builder.Services.AddScoped<IPositionObservationArrivalStore, EfPositionObservationArrivalStore>();
+// FR-10, FR-11, SC-03, UC-06, #465, ADR-0027, IADR-0183: 借株料の日次計上（**記録側のみ**）。
+// 累計は建玉の生涯にわたって積み上がるため永続でなければならない（プロセス内に持つと再起動で費用が消え、
+// 実費より小さい累計が「正しい累計」として報告される）。
+//
+// 🔴 **供給はまだ始まっていない。** ADR-0027 決定6 が ADR-0026 の PoC 項目 9（`ShortFeeRate` の単位確定・
+// 期限 2026-08-31）を前提としており、**単位を取り違えると累計は 100 倍ずれる**。したがってここでは
+// **日次で計上を回すスケジューラも、料率の供給元（`TrdGetMarginRatio` 照会）も登録しない** ——
+// 登録した時点で供給が始まるため、これは「実装漏れ」ではなく**意図した遮断**である（#331 / #342 の範囲）。
+builder.Services.AddScoped<IBorrowFeeAccrualStore, EfBorrowFeeAccrualStore>();
+builder.Services.AddScoped<BorrowFeeAccrualService>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。TradeDecisionMade を購読し承認/拒否を発行、
 // StopLossTriggered を購読し LLM 迂回で決済（Close）を発行する。承認・約定・訂正・取消は取引台帳（IADR-0018）と

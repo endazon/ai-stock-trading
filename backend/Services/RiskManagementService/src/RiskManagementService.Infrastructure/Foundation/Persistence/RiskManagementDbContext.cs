@@ -68,6 +68,15 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     public DbSet<GoodFaithViolationClearanceRow> GoodFaithViolationClearances =>
         Set<GoodFaithViolationClearanceRow>();
 
+    // FR-10, FR-11, SC-03, UC-06, #465, ADR-0027, IADR-0183: 借株料の日次計上の台帳（建玉 × 取引日）。
+    // 銘柄別・口座全体・月次はすべて本表の**合算で導出する**（決定2「別々に積まない」）。
+    public DbSet<BorrowFeeAccrualRow> BorrowFeeAccruals => Set<BorrowFeeAccrualRow>();
+
+    // FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183: **料率が取得できなかった日**の台帳。
+    // 🔴 計上表とは**別テーブル**である——0 円の計上として書けないようにするための分離であり、
+    // 「費用が発生しなかった」と「取得できなかった」を後から必ず区別できるようにする。
+    public DbSet<BorrowFeeUnavailableDayRow> BorrowFeeUnavailableDays => Set<BorrowFeeUnavailableDayRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -266,6 +275,37 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.Property(r => r.OrderId).HasMaxLength(64).ValueGeneratedNever();
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
             e.HasIndex(r => r.OccurredOn);
+        });
+
+        // FR-10, FR-11, SC-03, UC-06, #465, ADR-0027 決定1〜4, IADR-0183: 借株料の日次計上。
+        //
+        // **主キーは (銘柄, 市場, 取引日)** ——「建玉ごとに日次で積む」（決定1・決定2）の計上単位そのものを
+        // 主キーにすることで、再送・リトライで二重計上しないことを DB 側で担保する
+        //（IADR-0165 の OrderId 主キー・IADR-0181 の取引日主キーと同じ規律）。
+        //
+        // **並行トークンを置かない。** 計上は「まだ無い日を書く」だけであり、既存行は書き換えない。
+        mb.Entity<BorrowFeeAccrualRow>(e =>
+        {
+            e.ToTable("borrow_fee_accruals");
+            e.HasKey(r => new { r.Symbol, r.Market, r.TradingDay });
+            e.Property(r => r.Symbol).HasMaxLength(32).ValueGeneratedNever();
+            e.Property(r => r.TradingDay).ValueGeneratedNever();
+            // 月報の月次合計・日報の当日分は取引日の範囲で引く（決定3。按分せず期間で絞るだけ）。
+            e.HasIndex(r => r.TradingDay);
+        });
+
+        // FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183: 料率が取得できなかった日。
+        //
+        // 🔴 **計上表と同じ表に畳まない。** 金額欄を null 許容にして畳むと、合計を取る SQL が
+        // 未供給の日を 0 として扱う経路が自然に書ける。決定4 は「0 として計上しない」と明示している。
+        mb.Entity<BorrowFeeUnavailableDayRow>(e =>
+        {
+            e.ToTable("borrow_fee_unavailable_days");
+            e.HasKey(r => new { r.Symbol, r.Market, r.TradingDay });
+            e.Property(r => r.Symbol).HasMaxLength(32).ValueGeneratedNever();
+            e.Property(r => r.TradingDay).ValueGeneratedNever();
+            e.Property(r => r.Reason).HasMaxLength(512).IsRequired();
+            e.HasIndex(r => r.TradingDay);
         });
     }
 }
