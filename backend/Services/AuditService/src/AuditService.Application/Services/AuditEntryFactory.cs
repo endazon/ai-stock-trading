@@ -123,6 +123,28 @@ public static class AuditEntryFactory
             + $"—— **違反記録そのものは失効しません**: {e.Reason}"),
         AuditSerialization.Serialize(e), e.ClearedAt, recordedAt);
 
+    // FR-10, FR-11, SC-03, #465, ADR-0027 決定1, IADR-0183: 借株料の**日次の計上額**。
+    //
+    // ADR-0027 決定1 は「**日次の計上額は監査ログへ残す**」と定める ——
+    // **累計だけを保持すると、後から日別の内訳を復元できない。**
+    // 建玉（銘柄）ごとに追えるよう相関を銘柄で束ね、`Symbol` にも載せる。
+    public static AuditEntry From(BorrowFeeAccrued e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BorrowFeeAccrued), AuditCorrelation.From($"borrow-fee:{e.Symbol}:{e.Market}"), e.Symbol,
+        Truncate($"借株料を計上 {e.TradingDay:yyyy-MM-dd} {e.Symbol}（{e.Market}）: {e.AmountUsd} USD"
+            + $"（計上日の年率 {e.RateAnnual}・建玉評価額 {e.PositionValueUsd} USD）"),
+        AuditSerialization.Serialize(e), e.AccruedAt, recordedAt);
+
+    // FR-10, FR-11, SC-03, #465, ADR-0027 決定4, IADR-0183: 借株料を**計上できなかった日**。
+    //
+    // 🔴 **「0 円」と書かない。** 決定4 は「取得できなかった日を 0 として計上しない」と明示している ——
+    // 0 と書けば「その日は費用が発生しなかった」と読め、**Stage 1 の「借株料は 1 円も掛かっていない」という
+    // 誤読が構造的に起こる**。要約は「取得できず未計上」であることを明言する。
+    public static AuditEntry From(BorrowFeeAccrualUnavailable e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(BorrowFeeAccrualUnavailable), AuditCorrelation.From($"borrow-fee:{e.Symbol}:{e.Market}"), e.Symbol,
+        Truncate($"借株料の料率を取得できず未計上 {e.TradingDay:yyyy-MM-dd} {e.Symbol}（{e.Market}）"
+            + $"—— **0 円ではありません（費用は発生しています）**: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
+
     // FR-20, FR-11, #166, IADR-0083: 撤退基準到達（自動安全側の発火）。段階遷移と同じ "stage-gate" 相関で束ね、
     // 監査照会で撤退と遷移をまとめて辿れるようにする（段階の実降格は提案に留まるため StageTransitioned は伴わない）。
     public static AuditEntry From(WithdrawalTriggered e, Guid id, DateTimeOffset recordedAt) => new(

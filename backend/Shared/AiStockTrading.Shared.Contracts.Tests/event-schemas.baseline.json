@@ -13,6 +13,22 @@
     "Passed": "Boolean",
     "ProbabilityOfBacktestOverfitting": "Double"
   },
+  "BorrowFeeAccrualUnavailable": {
+    "Market": "Market",
+    "ObservedAt": "DateTimeOffset",
+    "Reason": "String",
+    "Symbol": "String",
+    "TradingDay": "DateOnly"
+  },
+  "BorrowFeeAccrued": {
+    "AccruedAt": "DateTimeOffset",
+    "AmountUsd": "Decimal",
+    "Market": "Market",
+    "PositionValueUsd": "Decimal",
+    "RateAnnual": "Decimal",
+    "Symbol": "String",
+    "TradingDay": "DateOnly"
+  },
   "BrokerAccountObserved": {
     "Account": "BrokerAccountState",
     "ObservedAt": "DateTimeOffset",

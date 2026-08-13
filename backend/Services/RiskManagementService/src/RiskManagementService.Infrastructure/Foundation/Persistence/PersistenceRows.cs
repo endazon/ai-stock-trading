@@ -450,3 +450,49 @@ internal sealed class GoodFaithViolationClearanceRow
 
     public DateTimeOffset ClearedAtUtc { get; set; }
 }
+
+// FR-10, FR-11, SC-03, UC-06, #465, ADR-0027 決定1〜4, IADR-0183:
+// **借株料を計上できた** 1 日の 1 行（**建玉 × 取引日**で 1 行）。
+//
+// 主キーは (Symbol, Market, TradingDay)。**同じ日を二度計上しても金額が狂わない**（冪等）。
+// 銘柄別・口座全体・月次の値は本行の**合算で導出する**（決定2。別々に積む行を作らない）。
+internal sealed class BorrowFeeAccrualRow
+{
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    /// <summary>計上の帰属日。**按分しない**——この日が属する日・月へ帰属する（決定3）。</summary>
+    public DateOnly TradingDay { get; set; }
+
+    /// <summary>**計上日に照会した**年率（比率）。建玉時の料率ではない（決定4）。</summary>
+    public decimal RateAnnual { get; set; }
+
+    /// <summary>計上の基礎となった建玉評価額（USD）。</summary>
+    public decimal PositionValueUsd { get; set; }
+
+    /// <summary>その日の計上額（USD）。**未供給の日はこの行を持たない**（0 を書かない）。</summary>
+    public decimal AmountUsd { get; set; }
+
+    public DateTimeOffset AccruedAtUtc { get; set; }
+}
+
+// FR-10, FR-11, SC-03, UC-06, #465, ADR-0027 決定4, IADR-0183:
+// **料率が取得できず計上できなかった** 1 日の 1 行（建玉 × 取引日で 1 行）。
+//
+// 🔴 **金額の欄を持たない。** `BorrowFeeAccrualRow` に `AmountUsd` を null 許容で持たせて畳むと、
+// 合計の SQL・LINQ が null を 0 として扱う経路が自然に書け、ADR-0027 決定4 が禁じた
+// 「未供給を 0 として積む」向きがスキーマの上で表現可能なまま残る。
+internal sealed class BorrowFeeUnavailableDayRow
+{
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    public DateOnly TradingDay { get; set; }
+
+    /// <summary>取得できなかった理由（診断用）。</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset ObservedAtUtc { get; set; }
+}

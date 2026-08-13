@@ -504,4 +504,43 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("残 1 件");
         entry.Detail.Should().Contain("RemainingCount");
     }
+
+    // FR-10, FR-11, SC-03, #465, ADR-0027 決定1, IADR-0183:
+    // **日次の計上額**を監査へ残す（累計だけでは日別の内訳を復元できない）。
+    [Fact]
+    public void BorrowFeeAccrued_は日次の計上額と計上日の料率を残す()
+    {
+        var e = new BorrowFeeAccrued(
+            "AAPL", Market.UnitedStates, new DateOnly(2026, 8, 12),
+            RateAnnual: 0.10m, PositionValueUsd: 36_500m, AmountUsd: 10m, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BorrowFeeAccrued");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("2026-08-12").And.Contain("AAPL").And.Contain("10");
+        // **計上日の料率**（決定4）が要約から追える。建玉時の料率で固定していないことの証跡である。
+        entry.Summary.Should().Contain("0.10");
+        entry.Detail.Should().Contain("RateAnnual").And.Contain("PositionValueUsd");
+        entry.OccurredAt.Should().Be(e.AccruedAt);
+    }
+
+    // FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183:
+    // 🔴 **料率が取れなかった日を「0 円」と書かない。** 0 と書けば「その日は費用が発生しなかった」と読め、
+    // Stage 1 の「借株料は 1 円も掛かっていない」という誤読が構造的に起こる。
+    [Fact]
+    public void BorrowFeeAccrualUnavailable_は0円ではなく未計上と書く()
+    {
+        var e = new BorrowFeeAccrualUnavailable(
+            "GME", Market.UnitedStates, new DateOnly(2026, 8, 12), "料率照会に失敗", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BorrowFeeAccrualUnavailable");
+        entry.Symbol.Should().Be("GME");
+        entry.Summary.Should().Contain("未計上").And.Contain("料率照会に失敗");
+        // **「0 円ではない」と明言する**（費用は発生しているが金額が分からない、という事実である）。
+        entry.Summary.Should().Contain("0 円ではありません");
+        entry.OccurredAt.Should().Be(e.ObservedAt);
+    }
 }
