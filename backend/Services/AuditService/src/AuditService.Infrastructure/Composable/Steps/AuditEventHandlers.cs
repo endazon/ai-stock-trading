@@ -159,6 +159,17 @@ public sealed class StageTransitionedAuditHandler(IAuditEventStore store, IClock
     }
 }
 
+// FR-19, FR-11, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の解除を中央監査台帳へ記録する。
+// **解けたのは停止であって記録ではない**（決定1「違反記録は失効させない」）。
+public sealed class GoodFaithViolationsClearedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(GoodFaithViolationsCleared message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-20, #166, IADR-0083: 撤退基準到達（自動安全側の発火・撤退の定期評価ドライバ #166）を中央監査台帳へ記録する。
 public sealed class WithdrawalTriggeredAuditHandler(IAuditEventStore store, IClock clock)
 {

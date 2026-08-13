@@ -2,6 +2,8 @@ using AwesomeAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -60,6 +62,58 @@ public class BffPassThroughTests
         using var req = new HttpRequestMessage(new HttpMethod(method), path);
         var resp = await host.Client.SendAsync(req);
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // AST #464, FR-19, UC-06, ADR-0028 決定3, IADR-0182:
+    // **実際に登録されているルートの集合が AllRoutes と完全一致すること**を固定する。
+    //
+    // `AllRoutes` の Theory は「列挙したルートが 401 を返す」ことしか主張せず、**ホワイトリストに
+    // 無いルートが増えても赤くならない**。ADR-0028 決定3 は「解除の窓口は Discord Bot とし、
+    // **画面（SC-02 / SC-03）からは解除できない**」と定めており、その回帰ガードは
+    // 「BFF に経路が生えていないこと」でしか作れない —— 実測で「今は無い」と言うだけでは、
+    // 次に誰かが足したときに誰も気づかない。
+    //
+    // **本テストが赤くなったら**、増えたルートが画面に開いてよいものかを ADR で確かめること
+    // （とくに破壊的統制操作は Discord Bot へ一元化する方針である）。
+    [Fact]
+    public async Task 登録されている_BFF_ルートは_AllRoutes_と完全一致する()
+    {
+        await using var host = await BffTestHost.StartAsync();
+
+        var actual = host.App.Services.GetRequiredService<EndpointDataSource>()
+            .Endpoints
+            .OfType<RouteEndpoint>()
+            .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["*"])
+                // MapGroup のプレフィックス＋空ルートは末尾 "/" を生むため正規化して比較する
+                // （表記の揺れであってルートの増減ではない）。
+                .Select(m => $"{m} /{(e.RoutePattern.RawText ?? string.Empty).Trim('/')}"))
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        var expected = AllRoutes
+            .Select(r => $"{r[0]} /{((string)r[1]).Trim('/')}")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        actual.Should().BeEquivalentTo(expected,
+            "BFF のルートが増減したら、画面へ開いてよい経路かを ADR で確かめる必要がある"
+            + "（ADR-0028 決定3: 破壊的統制操作は Discord Bot へ一元化し画面からは行わない）");
+    }
+
+    // **否定形**: GFV 解除の経路が BFF に存在しない（ADR-0028 決定3 の名指しの回帰ガード）。
+    // 上の完全一致テストがあれば冗長に見えるが、**こちらは何を守っているかが名前で分かる** ——
+    // 完全一致テストが将来ホワイトリストごと更新されたとき、この 1 本だけは意図を主張し続ける。
+    [Fact]
+    public async Task GFV_解除の経路は_BFF_に存在しない()
+    {
+        await using var host = await BffTestHost.StartAsync();
+
+        host.App.Services.GetRequiredService<EndpointDataSource>()
+            .Endpoints
+            .OfType<RouteEndpoint>()
+            .Select(e => e.RoutePattern.RawText ?? string.Empty)
+            .Should().NotContain(p => p.Contains("good-faith-violation", StringComparison.OrdinalIgnoreCase),
+                "ADR-0028 決定3: 解除の窓口は Discord Bot であり、画面（SC-02 / SC-03）からは解除できない");
     }
 
     [Fact]

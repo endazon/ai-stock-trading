@@ -64,6 +64,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(ReportConfirmed), "AiStockTrading.Shared.Contracts.Events.ReportConfirmed")]
         [InlineData(typeof(ReportDraftPresented), "AiStockTrading.Shared.Contracts.Events.ReportDraftPresented")]
         [InlineData(typeof(StageTransitioned), "AiStockTrading.Shared.Contracts.Events.StageTransitioned")]
+        // #464, ADR-0028 決定2: GFV 違反による停止の解除（誰が・いつ・どの記録に対して）。
+        [InlineData(typeof(GoodFaithViolationsCleared), "AiStockTrading.Shared.Contracts.Events.GoodFaithViolationsCleared")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]

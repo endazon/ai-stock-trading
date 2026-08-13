@@ -38,8 +38,12 @@ public class DiscordBotGatewayFactoryTests
             new StubPauseController(), options, NullLogger<PauseCommandHandler>.Instance);
         var stageGateHandler = new StageGateCommandHandler(
             new StubStageGateController(), options, NullLogger<StageGateCommandHandler>.Instance);
+        // #464, ADR-0028 決定3: GFV 解除も Discord Bot の窓口に載る（kill switch と同水準）。
+        var gfvHandler = new GoodFaithViolationCommandHandler(
+            new StubGoodFaithViolationController(), options,
+            NullLogger<GoodFaithViolationCommandHandler>.Instance);
         return DiscordBotGatewayFactory.Create(
-            options, handler, pauseHandler, stageGateHandler, NullLoggerFactory.Instance);
+            options, handler, pauseHandler, stageGateHandler, gfvHandler, NullLoggerFactory.Instance);
     }
 
     // 受け入れ基準11: 何も設定しなければ接続しない。
@@ -164,5 +168,13 @@ public class DiscordBotGatewayFactoryTests
 
         public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
+    }
+
+    // #464: 本テストは Gateway の接続可否だけを見るため、Risk は呼ばれない（呼ばれたら設計の誤りである）。
+    private sealed class StubGoodFaithViolationController : IGoodFaithViolationController
+    {
+        public Task<GoodFaithViolationClearResult> ClearAsync(
+            string reason, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では Risk を呼ばない。");
     }
 }

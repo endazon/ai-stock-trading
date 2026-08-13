@@ -90,11 +90,29 @@ builder.Services.AddSingleton<IStageGateController>(sp =>
 });
 builder.Services.AddSingleton<StageGateCommandHandler>();
 
+// FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182: GFV 違反による停止の解除。
+// **解除の窓口は Discord Bot に一元化される**（決定3。画面〔SC-02 / SC-03〕からは解除できない）。
+// kill switch と同じく Risk の OwnerOnly エンドポイントを owner マップ機密クライアントのトークンで呼ぶ。
+builder.Services.AddHttpClient("risk-good-faith-violations", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IGoodFaithViolationController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-good-faith-violations");
+    var baseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpGoodFaithViolationController(
+        http, sp.GetRequiredService<ILogger<HttpGoodFaithViolationController>>());
+});
+builder.Services.AddSingleton<GoodFaithViolationCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
     sp.GetRequiredService<PauseCommandHandler>(),
     sp.GetRequiredService<StageGateCommandHandler>(),
+    sp.GetRequiredService<GoodFaithViolationCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

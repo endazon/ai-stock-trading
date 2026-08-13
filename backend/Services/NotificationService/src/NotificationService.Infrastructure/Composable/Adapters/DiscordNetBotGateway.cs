@@ -36,10 +36,23 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     private const string StagePromoteButtonPrefix = "ast-stage-promote-";
     private const string StageDemoteButtonPrefix = "ast-stage-demote-";
 
+    // FR-19, UC-06, #464, ADR-0028 決定2/決定3: GFV 違反による停止の解除。
+    // **kill switch と同水準**（確認ボタン → 確認フレーズのモーダル）。モーダル ID を専用に分けることで、
+    // 送信ハンドラが ID 一致だけで種別を確定でき、誤って別操作を実行する余地が無い（IADR-0097 の規律）。
+    private const string GfvClearButtonId = "ast-gfv-clear-confirm";
+    private const string GfvClearModalId = "ast-gfv-clear-modal";
+    private const string GfvClearPhraseInputId = "ast-gfv-clear-phrase";
+
+    // ADR-0028 §理由「解除の記録が監査ログに残ることで、**後から「なぜ解除したか」を追える**」。
+    // 決定3 により Discord が唯一の窓口であるため、**理由を利用者が書けなければ全解除の理由が
+    // 同一文字列になり、「なぜ」は監査から復元できない**（残るのは「解除者が確認済みと自称した」ことだけ）。
+    private const string GfvClearReasonInputId = "ast-gfv-clear-reason";
+
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
     private readonly PauseCommandHandler _pauseHandler;
     private readonly StageGateCommandHandler _stageGateHandler;
+    private readonly GoodFaithViolationCommandHandler _gfvHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
@@ -47,12 +60,14 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         KillSwitchCommandHandler handler,
         PauseCommandHandler pauseHandler,
         StageGateCommandHandler stageGateHandler,
+        GoodFaithViolationCommandHandler gfvHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
         _handler = handler;
         _pauseHandler = pauseHandler;
         _stageGateHandler = stageGateHandler;
+        _gfvHandler = gfvHandler;
         _options = options;
         _logger = logger;
 
@@ -149,9 +164,23 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 .WithMaxValue(3))
             .Build();
 
+        // FR-19, UC-06, #464, ADR-0028 決定3: GFV 違反による停止の解除（**Discord Bot が唯一の窓口**）。
+        // 副コマンドを clear の 1 つに絞る（暗黙に別の操作が生えない）。
+        var gfv = new SlashCommandBuilder()
+            .WithName("gfv")
+            .WithDescription("GFV 違反による停止を解除します（違反記録そのものは消えません）")
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("action")
+                .WithDescription("操作")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .AddChoice("clear", "clear"))
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(gfv).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(pause).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(resume).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(status).ConfigureAwait(false);
@@ -184,9 +213,44 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             case "stage":
                 await OnStageSlashAsync(command).ConfigureAwait(false);
                 return;
+            case "gfv":
+                await OnGfvSlashAsync(command).ConfigureAwait(false);
+                return;
             default:
                 return;
         }
+    }
+
+    // FR-19, FR-11, UC-06, #464, ADR-0028 決定2/決定3: /gfv clear → 確認ボタンを提示する。
+    // **ここでは Risk を呼ばない。** 認証・確認フレーズはモーダル送信時にハンドラが評価する
+    // （kill switch と同型＝ADR-0028 §結果 が求める「既存の破壊的統制操作と同じ確認水準」）。
+    private async Task OnGfvSlashAsync(SocketSlashCommand command)
+    {
+        // 詳細設計07 / ADR-0028 §結果: 許可外の着信は無視しログのみ残す。**ここで早期に弾き、ボタンすら出さない。**
+        // kill switch / pause / stage と同水準（**破壊的操作の窓口を許可外へ露出しない**）。
+        // ハンドラ側の閂1 でも認証は再評価されるが、そこだけに頼ると許可外の利用者へ
+        // Danger ボタンと確認モーダルが提示されてしまう。
+        var context = ContextOf(command, "/gfv clear");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        var builder = new ComponentBuilder().WithButton(
+            "GFV による停止を解除する", GfvClearButtonId, ButtonStyle.Danger);
+
+        // 🔴 **確認の文面に「記録は消えない」ことを明示する。** ADR-0028 決定1 が「違反記録は失効させない」と
+        // 定めており、解けるのは**停止**である。ここを曖昧にすると「記録を消す操作」として押される。
+        await command.RespondAsync(
+            "GFV 違反による停止を解除しますか？"
+            + "**この操作は違反記録を消しません**（記録は監査証跡として残ります）。解除されるのは**停止**です。"
+            + "原因の是正が済んでいることを確認したうえで実行してください。",
+            components: builder.Build(),
+            ephemeral: true).ConfigureAwait(false);
     }
 
     private async Task OnKillSwitchSlashAsync(SocketSlashCommand command)
@@ -374,6 +438,23 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                     return;
                 }
 
+            case GfvClearButtonId:
+                {
+                    // #464, ADR-0028: kill switch と同じく確認フレーズのモーダルを要求する
+                    // （確認ボタンのみでは統制を解かない）。
+                    var modal = new ModalBuilder()
+                        .WithTitle("GFV による停止の解除")
+                        .WithCustomId(GfvClearModalId)
+                        // ADR-0028 決定2 は「**原因の是正が済んでいることの確認を伴う**」解除を求める。
+                        // 何を是正したかを利用者に書かせ、監査へそのまま残す。
+                        .AddTextInput("何を是正したか（監査に残ります）", GfvClearReasonInputId,
+                            TextInputStyle.Paragraph, required: true)
+                        .AddTextInput("確認フレーズを入力してください", GfvClearPhraseInputId, required: true)
+                        .Build();
+                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
+                    return;
+                }
+
             case PauseConfirmButtonId:
             case ResumeConfirmButtonId:
                 {
@@ -421,6 +502,15 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     // （送信ハンドラは ID 一致だけで種別を確定でき、誤って別操作を実行する余地が無い）。
     private async Task OnModalAsync(SocketModal modal)
     {
+        // #464, ADR-0028 決定2/決定3: GFV 解除は kill switch とは**別のハンドラ**が扱う
+        // （閂の並びは同一だが、呼ぶ Risk エンドポイントも結果の型も違う）。
+        // モーダル ID が分かれているため、ID 一致だけで種別を確定でき誤実行の余地が無い（IADR-0097 の規律）。
+        if (modal.Data.CustomId == GfvClearModalId)
+        {
+            await OnGfvClearModalAsync(modal).ConfigureAwait(false);
+            return;
+        }
+
         var rawCommand = modal.Data.CustomId switch
         {
             KillSwitchEngageModalId => "/killswitch",
@@ -440,6 +530,25 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             .ConfigureAwait(false);
 
         await modal.FollowupAsync(ResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+    }
+
+    // #464, ADR-0028 決定2: 確認フレーズの送信 → 解除の実行。認証・フレーズ検証はハンドラ側で行う。
+    private async Task OnGfvClearModalAsync(SocketModal modal)
+    {
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
+
+        var phrase = modal.Data.Components
+            .FirstOrDefault(c => c.CustomId == GfvClearPhraseInputId)?.Value;
+        var reason = modal.Data.Components
+            .FirstOrDefault(c => c.CustomId == GfvClearReasonInputId)?.Value;
+
+        var result = await _gfvHandler
+            .HandleAsync(ContextOf(modal, "/gfv clear"), phrase, reason)
+            .ConfigureAwait(false);
+
+        // 拒否理由（内部の層名）はそのまま出さず一般化する（kill switch と同じ規律）。
+        var text = result.WasExecuted ? result.Message : "この操作は許可されていません。";
+        await modal.FollowupAsync(text, ephemeral: true).ConfigureAwait(false);
     }
 
     // 実行結果の文言。拒否理由（内部の層名）はそのまま出さず、一般化した文言にする。

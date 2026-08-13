@@ -4,7 +4,8 @@ namespace AiStockTrading.Notification.Application.Services;
 
 // FR-14, UC-06, ADR-0009, IADR-0062/0075/0081: スラッシュコマンドの解析（純関数）。
 // 扱うのは kill switch（/killswitch・/killswitch off）・一時停止（/pause・/resume）・稼働状態照会（/status）・
-// 段階ゲート（/stage status・/stage promote <n>・/stage demote <n>・/stage withdrawal）。
+// 段階ゲート（/stage status・/stage promote <n>・/stage demote <n>・/stage withdrawal）・
+// GFV 違反による停止の解除（/gfv clear・#464・ADR-0028 決定3）。
 // /report は #14 交差のため対象外。未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
 public static class BotCommandParser
 {
@@ -30,6 +31,10 @@ public static class BotCommandParser
             "/resume" or "resume" when tokens.Length == 1 => new BotCommand(BotCommandKind.Resume),
             "/status" or "status" when tokens.Length == 1 => new BotCommand(BotCommandKind.Status),
             "/stage" or "stage" => ParseStage(tokens),
+            // FR-19, UC-06, #464, ADR-0028: /gfv clear のみ。副コマンドの省略・typo は Unknown へ倒す
+            // （暗黙に統制を解除しない）。
+            "/gfv" or "gfv" when tokens.Length == 2 && tokens[1] == "clear" =>
+                new BotCommand(BotCommandKind.GoodFaithViolationClear),
             _ => BotCommand.Unknown,
         };
     }

@@ -431,3 +431,22 @@ internal sealed class PositionObservationDayRow
 
     public DateTimeOffset UpdatedAt { get; set; }
 }
+
+// FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の 1 行（追記専用）。
+//
+// 🔴 **違反記録（GoodFaithViolationRow）は消さない・更新しない。** ADR-0028 決定1 が「失効させない」と
+// 定めている。本行は「その記録による停止を利用者が解いた」という**別の事実**であり、
+// 発生と解除の双方が監査に残る。主キーは解除対象の OrderId（＝違反記録の計上単位。二重解除で冪等）。
+internal sealed class GoodFaithViolationClearanceRow
+{
+    /// <summary>解除対象の違反記録（計上単位＝ブローカの注文 ID）。</summary>
+    public string OrderId { get; set; } = string.Empty;
+
+    /// <summary>解除した利用者（認証済みトークンの名前）。</summary>
+    public string ClearedBy { get; set; } = string.Empty;
+
+    /// <summary>解除の理由（原因の是正が済んでいることの確認の記録）。</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset ClearedAtUtc { get; set; }
+}

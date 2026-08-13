@@ -471,4 +471,37 @@ public class AuditEntryFactoryTests
         entry.OccurredAt.Should().Be(e.RecordedAt);
         entry.Detail.Should().Contain("PurchaseAmountInBase").And.Contain("OccurredOn");
     }
+
+    // FR-19, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182:
+    // 解除は「誰が・いつ・どの記録に対して」の粒度で監査へ残る。
+    [Fact]
+    public void GoodFaithViolationsCleared_は誰がどの記録を解除したかを残す()
+    {
+        var e = new GoodFaithViolationsCleared(
+            "endazon", "決済済み資金の判定を修正した", ["ord-1", "ord-2"], RemainingCount: 0, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("GoodFaithViolationsCleared");
+        entry.Summary.Should().Contain("endazon").And.Contain("2 件");
+        // 🔴 **解けたのは停止であって記録ではない。** 監査を読む者が「記録が消えた」と誤読しないよう明示する。
+        entry.Summary.Should().Contain("失効しません");
+        // どの記録に対して解除したかは payload に残る（決定2 の「どの記録に対して」）。
+        entry.Detail.Should().Contain("ord-1").And.Contain("ord-2");
+        entry.OccurredAt.Should().Be(e.ClearedAt);
+    }
+
+    // **残件数を載せる。** 解除の最中に新たな違反が計上され得るため 0 とは限らず、
+    // 0 でなければ停止は続いている——「解除したのに止まったまま」を監査から説明できるようにする。
+    [Fact]
+    public void GoodFaithViolationsCleared_は解除後の残件数を残す()
+    {
+        var e = new GoodFaithViolationsCleared(
+            "endazon", "是正済み", ["ord-1"], RemainingCount: 1, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("残 1 件");
+        entry.Detail.Should().Contain("RemainingCount");
+    }
 }

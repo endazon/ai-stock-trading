@@ -272,6 +272,61 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         List<DateOnly>? ObservedTradingDays,
         List<object>? Inferences);
 
+    // ---- FR-19, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182: GFV 違反による停止の解除 ----
+    //
+    // **OwnerOnly。** ADR-0028 §結果 が「解除操作そのものが新たな攻撃面・誤操作面になる」と明記しており、
+    // 既存の破壊的統制操作（kill switch・pause）と同じ権限管理の下に置く。
+
+    [Fact]
+    public async Task 未認証の_GFV解除は401()
+    {
+        var client = factory.CreateClient();
+
+        var res = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear",
+            new { reason = "原因を是正した" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // 🔴 **否定形**: サービスロール（trading-service）では解除できない。
+    // 生成AI・自動処理が統制を解けてはならない（IADR-0051 最小権限）。
+    [Fact]
+    public async Task サービスロールは_GFV解除できない_403()
+    {
+        var client = ClientWithRoles(Service);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear",
+            new { reason = "原因を是正した" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // **否定形**: 理由が空の解除は 400（ADR-0028 決定2「原因の是正が済んでいることの確認を伴う」）。
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task 理由が空の_GFV解除は400(string reason)
+    {
+        var client = ClientWithRoles(Owner);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new { reason });
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // **否定形**: 解除対象が無い（停止していない）ときは 422 —— **成功に見せない**。
+    // 200 を返すと、実際には何も起きていない操作が「解除した」という監査上の事実になる。
+    [Fact]
+    public async Task 解除対象が無い_GFV解除は422()
+    {
+        var client = ClientWithRoles(Owner);
+
+        var res = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear",
+            new { reason = "原因を是正した" });
+
+        res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
     [Fact]
     public async Task サービスロールは_kill_switch_を操作できない_403()
     {

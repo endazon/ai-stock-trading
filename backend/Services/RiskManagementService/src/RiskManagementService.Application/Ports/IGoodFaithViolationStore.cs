@@ -29,6 +29,10 @@ public interface IGoodFaithViolationStore
     /// その場合は現金口座の新規建てが <c>GoodFaithViolationLimitReached</c> で止まる（fail-closed）。
     /// </para>
     /// <para>
+    /// <b>解除された記録は数えない</b>（#464・ADR-0028 決定2。利用者の明示的な操作で解かれた分）。
+    /// ただし<b>記録そのものは残る</b>——数えないことと消すことは別である。
+    /// </para>
+    /// <para>
     /// <b>失効期間は設けていない</b>（累計である）。計画（ADR-0021 / ADR-0025）は「違反記録の失効」の
     /// 期間も手段も定義しておらず、**自動失効は fail-open** であるため実装で値を発明しない
     /// （IADR-0165 決定4・計画へ環流済み）。
@@ -38,6 +42,27 @@ public interface IGoodFaithViolationStore
 
     /// <summary>
     /// 期間 [fromInclusive, toInclusive]（計上した取引日）の記録。監査・報告の明細に用いる。
+    /// <para>
+    /// <b>解除済みの記録も含めて返す</b>（ADR-0028 決定1「違反記録は失効させない」）——
+    /// 解除は件数にしか作用せず、<b>証跡そのものは消えない</b>。
+    /// </para>
     /// </summary>
     IReadOnlyList<GoodFaithViolationRecord> GetRecordedBetween(DateOnly fromInclusive, DateOnly toInclusive);
+
+    /// <summary>
+    /// FR-19, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182:
+    /// <b>まだ解除されていない</b>違反記録（＝現在の計数の内訳）。解除操作の対象を決めるために用いる。
+    /// </summary>
+    IReadOnlyList<GoodFaithViolationRecord> GetUncleared();
+
+    /// <summary>
+    /// FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: 解除を 1 件**追記する**。
+    /// <para>
+    /// 🔴 <b>違反記録の行を削除・更新してはならない。</b> ADR-0028 決定1 が「失効させない」と定めており、
+    /// 解除は別の追記で表す。<see cref="GetTally"/> は解除済みを除いた件数を返すが、
+    /// <see cref="GetRecordedBetween"/> は解除の有無に関わらず全件を返す。
+    /// </para>
+    /// <para><b><c>OrderId</c> で冪等</b>（同じ記録を二重に解除しても件数が狂わない）。</para>
+    /// </summary>
+    void AppendClearance(GoodFaithViolationClearance clearance);
 }

@@ -63,6 +63,11 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     public DbSet<PositionObservationDayRow> PositionObservationDays =>
         Set<PositionObservationDayRow>();
 
+    // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の追記専用台帳。
+    // **違反記録とは別テーブルである**——決定1 が「失効させない」と定めるため、解除で行を消さない。
+    public DbSet<GoodFaithViolationClearanceRow> GoodFaithViolationClearances =>
+        Set<GoodFaithViolationClearanceRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<RiskSettingsRow>(e =>
@@ -223,6 +228,20 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
             e.ToTable("position_observation_days");
             e.HasKey(r => r.TradingDay);
             e.Property(r => r.TradingDay).ValueGeneratedNever();
+        });
+
+        // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**（追記専用）。
+        //
+        // 🔴 **違反記録（good_faith_violations）とは別テーブルである。** 決定1 が「違反記録は失効させない」と
+        // 定めるため、解除で行を消さない・更新しない。主キー＝解除対象の OrderId（＝違反記録の計上単位）で
+        // あり、同じ記録を二重に解除しても件数が狂わない。
+        mb.Entity<GoodFaithViolationClearanceRow>(e =>
+        {
+            e.ToTable("good_faith_violation_clearances");
+            e.HasKey(r => r.OrderId);
+            e.Property(r => r.OrderId).HasMaxLength(128).ValueGeneratedNever();
+            e.Property(r => r.ClearedBy).HasMaxLength(256).IsRequired();
+            e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
         });
 
         // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの推定台帳（追記専用）。

@@ -432,7 +432,7 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 | 拒否理由 | クラス | 解除条件 | 根拠 |
 | --- | --- | --- | --- |
 | `CashAccountSettlementHold` | **A** | T+1 の決済 | ADR-0021 決定4-5 が明示。制度・決済由来の事象であり `BannedSymbol`（クラス C）へ混ぜない |
-| `GoodFaithViolationLimitReached` | **A** | 違反記録の失効 | 統制が設計どおり作動した記録 |
+| `GoodFaithViolationLimitReached` | **A** | **利用者の明示的な解除操作**（Discord `/gfv clear`。ADR-0028 決定2/決定3・[IADR-0182](../adr/IADR-0182_gfv-violation-clearing.md)） | 統制が設計どおり作動した記録。**「違反記録の失効」ではない**——ADR-0028 決定1 が「記録は失効させない」と定め、解除は記録を消さず**追記**で表す |
 | `BrokerAccountTypeUnverified` | **B** | 照会の成功（と設定値の一致） | 「取引を止めている状態そのものの記録」。kill switch / pause / 段階制約と同じ区分 |
 
 **3 種を 1 つに畳まないのは ADR-0016 決定10 の規律による**——解除条件が互いに異なり、畳むと監査ログ（FR-11）と
