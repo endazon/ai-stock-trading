@@ -67,9 +67,12 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # 許可リストは初回スケジュール実行（2026-08-10・run 31348684057）の権限拒否 75 件の
           # 実測から拡張した（#478。分類の方針は IADR-0145 = 「許可リストで直せるか」で分ける）。
-          #   - gh の読み取り系（pr list/view・label list・search・api）と wc を追加した。
-          #     `gh api` は書き込みも打てるが、**書ける先は本ジョブの GITHUB_TOKEN が持つ
-          #     issues: write に限られる**（それは gh issue create/edit で既に許可している面と同じ）。
+          #   - 追加できるのは **.claude/settings.json の allow に既に在るツールだけ**である
+          #     （ci.yml の ai-workflow-config が STRICT で 3 系統の乖離を失敗にする。
+          #     settings.json 自体は deny 規則により AI が編集できず、同期は人手が要る〔B-6〕。
+          #     gh pr list / gh label list / gh search / gh api / wc の追加は settings.json への
+          #     人手適用待ちとして作業仕様書 20260814_478 §残作業に記録した）。
+          #   - PR の参照は MCP（pull_request_read / list_pull_requests）と gh pr view で行う。
           #   - `git -C planning …` は**相対パス**で許可する（絶対パスは check-permission-denials.js が
           #     原理的に直せない形に分類する。claude-code-review.yml と同じ流儀）。
           #   - Write を許可する。結果 issue の長い本文は `--body-file` で渡すのが唯一堅牢な形であり、
@@ -78,7 +81,7 @@ jobs:
           #   - 許可リストで直せない形（パイプ・ループ・リダイレクト・引用符内の `|`）は
           #     プロンプト側の「使ってよいコマンドの形」で回避する（下記）。
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git submodule status:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh label list:*),Bash(gh search:*),Bash(gh api:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__create_issue,mcp__github__update_issue,mcp__github__add_issue_comment,mcp__github__search_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
+            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git submodule status:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__pull_request_read,mcp__github__get_pull_request,mcp__github__list_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
           prompt: |
             このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
 
@@ -136,7 +139,7 @@ jobs:
             - **1 コマンド 1 実行**。パイプ（`|`）・`for` / `while` ループ・`xargs`・複合コマンド
               （`A && B` / `A; B`）・コマンド置換は**許可判定が分割してしまうため使えません**。
               件数勘定や整形は、一度素の出力を読み、**必要なら node で処理**してください
-              （`Bash(node:*)` は許可済み）。
+              （`Bash(node:*)` は許可済み。`wc` は許可されていません）。
             - **リダイレクト（`>` `>>` `2>&1` `2>/dev/null`）を使わない**。出力はそのまま読みます。
               ファイルへ書くのは Write ツールだけです（issue 本文の下書き用）。
             - **`--jq` や `grep -E` の引用符の中にも `|` を書かない**。許可判定は引用符の中の `|` も
@@ -144,8 +147,12 @@ jobs:
               node で処理するか、`--jq` を使わず素の JSON を読んでください。
             - **python3・mkdir・find は使わない**（許可されていません）。走査は Glob / Grep / rg で行います。
             - **`git -C` は相対パス `planning` のみ**（`git -C planning log` は許可・絶対パスは拒否されます）。
-            - gh は **issue list/view/create/edit・pr list/view・label list・search・api・run list** が
-              使えます。`gh api` は読み取り（issue のタイムライン・cross-reference 等）に使ってください。
+            - gh で使えるのは **issue list/view/create/edit・pr view・run list** です。
+              **`gh api`・`gh pr list`・`gh label list`・`gh search` は許可されていません**——
+              PR の一覧・詳細は MCP ツール（`list_pull_requests` / `pull_request_read`）で、
+              ラベルは `gh issue list --json labels` で読んでください。issue のタイムラインや
+              cross-reference など**上記の手段で確認できないものは「未確認」と明記**してください
+              （確認したふりをしないこと）。
 
       # AI がツール権限拒否に当たっていないかを検査する。
       # 拒否が起きると監査は静かに劣化する（「調べていない」ことが本文からは判らない）。
