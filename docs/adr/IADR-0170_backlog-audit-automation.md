@@ -55,11 +55,28 @@ updated: 2026-08-07
 
 **番号なしの `project-planning/` を参照とみなしてはならない** —— それはリポジトリへのリンクであって**起票の証拠ではない**。実際、着手時点の記録には番号なしのリンクが 17 件あり、これを参照と数えると**検査は骨抜きになる**（ミューテーションで確認した: 番号なしを許すと否定形テストが赤くなる）。
 
+> 🔴 **［2026-08-14 追記］本決定は [IADR-0188](IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md) 決定1 で置き換えられた。**
+> **判定の形が狭すぎた** —— `feedback/README.md` 手順 3 は伝達を**2 経路**（GitHub Issue 経路 /
+> 記録ファイル経路）で認めるのに、本決定は Issue 経路の証拠しか読まない。
+> **実測（2026-08-14）では警告 9 件が全件偽陽性であり、9 件とも計画リポへ到達済み・9 件とも計画側で
+> `status: accepted` であった**（[#483 のコメント](https://github.com/endazon/ai-stock-trading/issues/483#issuecomment-5294041520)）。
+> **記録に嘘は無く、検査器が経路を読めていなかった。** 検査は kit の `check-feedback-dispatched.js`
+> （2 経路対応・planning#319 / #320）へ移し、`check-feedback-reflux.js` は廃止した。
+
 ### 決定5: **逆向きの乖離は機械検査に入れない**
 
 `status: resolved` なのに計画側 issue が open のまま、という乖離は **計画リポジトリの issue 状態を問い合わせないと判定できない**。本スクリプトの**外部依存ゼロ**（`check-doc-links.js` と同じ規律）を壊す。
 
 **この観点は週次 AI 監査の担当とする。** ただし `github_token` は本リポジトリにスコープされるため計画側 issue は参照できない —— **参照できないときは「未確認」と明記させる**（確認したふりをさせない）。
+
+> 🔴 **［2026-08-14 追記］`status: resolved` という値はもう存在しない**（planning#323 の裁定。
+> 語彙は `open` / `awaiting-decision` / `accepted` / `rejected` の 4 値で、**`resolved` は語彙外であった**）。
+> 本決定の観点自体は生きているが、**言い換えると「実装側の `status` が計画側の裁定に追随していない」
+> という乖離**である。IADR-0188 決定2 で 30 件を転記して解消し、`backlog-audit.yml` の指示文も改めた。
+>
+> **「参照できない」という前提も一部は誤りであった** —— 計画リポジトリの issue の open/closed には
+> トークンが要るが、**`planning/draft/feedback/<同名>.md` の `status`（計画側のトリアージ出力）は
+> submodule だけで読める**。監査はまずそこを見る。
 
 ### 決定6: 週次 AI 監査は **issue を自動でクローズしない**
 

@@ -1,13 +1,15 @@
 ---
 title: 空売りの「逆指値の同時発注必須」と「強制買戻し 30 日禁止」に対応する拒否理由コードが ADR-0016 決定10 に無い
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-10, UC-06, ADR-0016]
 source_repo: ai-stock-trading
 source_ref: feat/FR-10-risk-control-core / docs/specs/20260804_329_short-selling-controls.md / IADR-0131
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 178
 ---
 
 # フィードバック: 空売りの拒否理由 7 種に、実装すべき規則 2 つに対応するコードが無い

@@ -8,7 +8,30 @@ source_repo: <この実装リポジトリ名>
 source_ref: <ブランチ / コミット / PR / 仕様書パス>
 author: <作成者>
 created: <YYYY-MM-DD>
+dispatched: false
+planning_issue:
 ---
+
+<!--
+  status —— 計画側の裁定がどこまで進んだかを表す。**「伝達したか」は表さない**（それは下の
+  dispatched / planning_issue が担う）。値域と遷移は `feedback/README.md`「status の語彙」を読む。
+
+    open → awaiting-decision → accepted / rejected  （一方向。awaiting-decision は飛ばしてよい）
+
+  open のまま置くのは「まだ裁定が下りていない」という意味である。伝達し終えても、裁定が
+  下りるまでは open のままでよい —— **伝達の事実は dispatched: true などで書く。**
+
+  dispatched / planning_issue —— 計画リポジトリへ伝達したかの記録である（`scripts/check-feedback-dispatched.js`）。
+  記録を作っただけでは計画へ届かない。伝達し終えたら必ずどちらかを更新すること。
+
+  - GitHub Issue 経路 … `planning_issue: <計画リポの issue 番号または URL>` を書く
+  - 記録ファイル経路 … 本文にコピーを載せた計画リポの PR URL を書く（`dispatched: true` でもよい）
+
+  どちらか一方を書けば足りる（`dispatched: true` は両経路で使える）。
+  **どちらも書かないまま `dispatched: false` を残すと、`status` に関わらず CI が警告する**（自己申告として扱う）。
+  **`dispatched:` に書けるのは `true` / `false` だけである。** `no` / `off` と書くと
+  「解釈できない値」として警告される（YAML 1.1 ではこれらも偽だが、鍵の意味を 2 通りに割らないため）。
+-->
 
 # フィードバック: <概要>
 

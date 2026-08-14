@@ -1,13 +1,15 @@
 ---
 title: SC-03「表示項目の供給元」の記述更新 2 点 — 強制買戻しの発生回数は「推定経路が未実装」ではなく「推定台帳が観測の到達を記録しないため供給できない」／「正当な 0」を守る規約が片方向にしか書かれていない
 type: plan-feedback
-status: open
+status: accepted
 category: 記述の陳腐化・規約の片方向性
 related_ids: [SC-01, SC-02, SC-03, FR-10, UC-06, ADR-0016]
 source_repo: ai-stock-trading
 source_ref: feat/SC-03-424-unsupplied-metric-display-convention（作業仕様書 docs/specs/20260807_424_unsupplied-metric-display-convention.md・IADR-0162）
 author: Claude Code
 created: 2026-08-07
+dispatched: true
+planning_issue: 248
 ---
 
 # フィードバック: SC-03「表示項目の供給元」の記述更新 2 点

@@ -49,8 +49,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Check feedback reflux
-        run: node scripts/check-feedback-reflux.js
+      - name: Self-test feedback dispatch checker
+        run: node scripts/check-feedback-dispatched.js --self-test
+      - name: Check feedback dispatched
+        run: node scripts/check-feedback-dispatched.js
 
       - name: Run backlog audit
         # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
@@ -122,13 +124,28 @@ jobs:
                本リポにも前例があります（A-4 の「日銀サイトが自動取得を拒否」は実測で覆りました）。
                **分類を書き換えるのはあなたではありません**。候補と根拠を出すだけです（最重要の制約と同じ）。
 
-            ## 環流の未起票
+            ## 環流の未伝達
 
-            `node scripts/check-feedback-reflux.js` の出力（本ジョブの前段で実行済み）を確認してください。
-            あわせて、**`status: resolved` なのに計画側 issue が open のまま**という逆向きの乖離も見てください
-            ——**これは機械的検査に入れていない観点であり、本監査の担当です**（IADR-0170 決定3）。
-            計画リポジトリの issue は `github_token` のスコープ外のため参照できません。
-            **参照できない場合は「未確認」と明記してください**（確認したふりをしないこと）。
+            `node scripts/check-feedback-dispatched.js` の出力（本ジョブの前段で実行済み）を確認してください。
+
+            **出力をそのまま「未起票」と読み替えないでください。** 検査器が見るのは
+            **記録に伝達の証拠が書かれているか**であって、**実際に届いたか**ではありません。
+            2026-08-14 の実測では、前身の検査器が出した警告 9 件は**全件が偽陽性**でした
+            （9 件とも計画リポへ到達済みで、9 件とも計画側で `status: accepted` だった。#483 のコメント）。
+
+            **一次情報は submodule で読めます。** 計画リポジトリの issue の open/closed には
+            `github_token` のスコープが要りますが、**`planning/draft/feedback/<同名>.md` の
+            `status` は submodule だけで読め、そこには計画側のトリアージ結果が入っています**。
+            警告を報告する前に、まず同名ファイルの有無と `status` を確認してください。
+
+            あわせて、**実装側の `status` が計画側の裁定に追随していない**記録も見てください
+            （実装側 `open` ／ 計画側 `accepted` など）。**逆向きの乖離**（実装側が先に進んでいる）も同様です。
+            **`status` は「計画側の裁定段階」だけを表し、伝達の有無は `dispatched:` / `planning_issue:`
+            が担います**（planning#323 の裁定 2026-08-14）。語彙は
+            `open` / `awaiting-decision` / `accepted` / `rejected` の 4 値で、**これ以外の値は誤りです**
+            （語彙を検査する機械はありません。値の誤りは沈黙します）。
+
+            **確認できなかった項目は「未確認」と明記してください**（確認したふりをしないこと）。
 
             ## 出力
 

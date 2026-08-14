@@ -1,13 +1,15 @@
 ---
 title: レビュー用 allowedTools に awk / npx / git -C planning grep が無く、権限拒否 6 件で claude-review が赤くなる（#163 の残り）
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids: [NFR]
 source_repo: endazon/ai-stock-trading
 source_ref: "PR endazon/ai-stock-trading#401 の claude-review 実行ログ（run 31027396832 / job 92379325087・2026-08-06）"
 author: endazon (with Claude Code)
 created: 2026-08-06
+dispatched: true
+planning_issue: 216
 ---
 
 # フィードバック: レビュー用 allowedTools の欠落 3 種（awk / npx / git -C planning grep）

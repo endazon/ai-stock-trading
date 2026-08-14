@@ -1,13 +1,15 @@
 ---
 title: ADR-0025（GFV 発生回数の自前計数）の実装で判明した 2 点 — 違反記録の失効が未定義であること・自前計数の限界を運用手順へ落とす必要があること
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0025, ADR-0021, ADR-0019]
 source_repo: ai-stock-trading
 source_ref: feat/FR-19-425-gfv-self-counting（作業仕様書 docs/specs/20260807_425_gfv-self-counting.md・IADR-0165）
 author: Claude Code
 created: 2026-08-07
+dispatched: true
+planning_issue: 251
 ---
 
 # フィードバック: ADR-0025（GFV 発生回数の自前計数）の実装で判明した 2 点

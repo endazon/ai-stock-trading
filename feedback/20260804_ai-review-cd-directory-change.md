@@ -1,7 +1,7 @@
 ---
 title: AI ワークフローのプロンプトに「`cd` でディレクトリを移動しない」が無く、`cd planning && git log` が拒否される（実測 4 件）— impl-handoff-kit への追記提案
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids:
   - NFR
@@ -9,6 +9,8 @@ source_repo: ai-stock-trading
 source_ref: "fix/NFR-ai-workflow-readonly-tool-parity / docs/specs/20260804_ai-workflow-readonly-tool-parity.md / endazon/ai-stock-trading#371 の claude-review 実行ログ"
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 196
 ---
 
 # フィードバック: 実行できない形の列挙に `cd` が無い

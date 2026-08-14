@@ -1,13 +1,15 @@
 ---
 title: SC-02 の実額併記が計画は「$750」だが供給値は円建てである（表示の通貨をどちらへ揃えるか）
 type: plan-feedback
-status: open
+status: accepted
 category: 計画内部の不整合
 related_ids: [SC-02, FR-10, UC-06, ADR-0021]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0151_risk-limit-percent-input-and-bounds.md / docs/specs/20260805_362_sc02-ratio-input.md / ブランチ fix/SC-02-362-ratio-input
 author: endazon (with Claude Code)
 created: 2026-08-05
+dispatched: true
+planning_issue: 219
 ---
 
 # フィードバック: SC-02 の実額併記の通貨が計画と実装で食い違う
@@ -95,5 +97,15 @@ equity が取得できない場合は 5 項目すべて「—」へ縮退させ�
 
 ## 送付状況
 
-**未送付。** 計画リポジトリ（endazon/project-planning）へ issue として起票する。
+~~**未送付。** 計画リポジトリ（endazon/project-planning）へ issue として起票する~~
+→ **送付・受理済み（実測 2026-08-14）。**
+
+- **GitHub Issue 経路**: [project-planning#219](https://github.com/endazon/project-planning/issues/219)（CLOSED）
+- **記録ファイル経路**: 計画リポ `draft/feedback/20260805_sc02-equity-amount-currency.md`
+  （planning PR #223「環流 #209〜#222 をトリアージし、質問票 第13回の裁定を計画へ反映する」でマージ済み）。
+  **計画側の同記録は `status: accepted`** である。
+
 実装側の追跡は [#409](https://github.com/endazon/ai-stock-trading/issues/409)（**#364 の完了により解消済み**）。
+
+> **本節が「未送付」のまま 9 日間残っていた。** 伝達は 2026-08-05 に済んでおり、記録の側だけが
+> 取り残されていた（#477 / [IADR-0188](../docs/adr/IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md) の実測で判明）。

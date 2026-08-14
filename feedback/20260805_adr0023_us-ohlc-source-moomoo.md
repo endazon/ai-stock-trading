@@ -1,7 +1,7 @@
 ---
 title: ADR-0023 が定めていない米国株日足 OHLC の代替源として moomoo が使えることの環流
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-15, FR-20, ADR-0005, ADR-0019, ADR-0023]
 source_repo: ai-stock-trading
@@ -9,6 +9,8 @@ source_ref: chore/ADR-0019-moomoo-poc-plan（作業仕様書 docs/specs/20260805
 author: Claude Code（実機確認セッション）／endazon（実機実行）
 created: 2026-08-05
 updated: 2026-08-06
+dispatched: true
+planning_issue: 205
 ---
 
 # フィードバック: 米国株日足 OHLC の履歴源として moomoo を使える

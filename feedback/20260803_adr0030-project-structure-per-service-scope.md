@@ -1,7 +1,7 @@
 ---
 title: 7 標準プロジェクト構成は「常設」か「実体があるものだけ」か／サービス公開クライアント（`*.Client`）の置き場が無い — ADR-0030・12_backend-application-stack への確認
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids:
   - NFR
@@ -12,6 +12,8 @@ source_repo: ai-stock-trading
 source_ref: "refactor/NFR-standard-project-layout / #353 / docs/specs/20260803_353_standard-project-layout.md §12 未決事項 3・6 / docs/adr/IADR-0128_standard-project-layout.md"
 author: endazon (with Claude Code)
 created: 2026-08-03
+dispatched: true
+planning_issue: 180
 ---
 
 # フィードバック: 7 標準プロジェクト構成の適用範囲と、サービス公開クライアントの置き場

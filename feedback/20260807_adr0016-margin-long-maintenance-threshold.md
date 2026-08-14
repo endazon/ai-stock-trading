@@ -1,13 +1,15 @@
 ---
 title: ADR-0016 決定7 の 2026-08-07 追記を取り込むと信用買いの適用閾値は「緩む方向」へ動く（ほか 2 件の未定義事項）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-10, UC-06, ADR-0016]
 source_repo: ai-stock-trading
 source_ref: fix/FR-10-420-maintenance-margin-threshold-account-wide / docs/specs/20260807_420_maintenance-margin-threshold-account-wide.md
 author: endazon (with Claude Code)
 created: 2026-08-07
+dispatched: true
+planning_issue: 230
 ---
 
 # フィードバック: 維持率の適用閾値まわりで、追記の取り込み時に残った 3 点

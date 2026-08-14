@@ -1,13 +1,15 @@
 ---
 title: Stage 1 の期間カウントの除外「市場休場」に判定源が無い（祝日を判別できず営業日が過大計上される）
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-20, FR-12, ADR-0008, ADR-0019, ADR-0022]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0150_stage1-uptime-observation-and-session-hypotheses.md / docs/specs/20260805_385_stage1-trading-day-driver.md / ブランチ feat/FR-20-385-stage1-trading-day-driver
 author: endazon (with Claude Code)
 created: 2026-08-05
+dispatched: true
+planning_issue: 217
 ---
 
 # フィードバック: Stage 1 の期間カウントの除外「市場休場」に判定源が無い

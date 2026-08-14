@@ -1,13 +1,15 @@
 ---
 title: Stage 1 最小取引件数の設定化で計画が触れていない 3 点（下限 1 の根拠・昇格承認への警告経路・全置換 PUT の監査要件）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-03, FR-11, FR-13, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0008]
 source_repo: ai-stock-trading
 source_ref: feat/SC-01-423-collection-params-relocation / docs/specs/20260807_423_sc01-section2-removal-and-sc02-relocation.md / IADR-0164
 author: endazon (with Claude Code)
 created: 2026-08-07
+dispatched: true
+planning_issue: 252
 ---
 
 # フィードバック: Stage 1 最小取引件数の設定化で計画が触れていない 3 点

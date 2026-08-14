@@ -1,13 +1,15 @@
 ---
 title: リスク統制の既定値表に逆算値（1注文金額上限・日次発注金額上限・保有銘柄数上限）の明記を提案
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-10, FR-17, FR-19]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0002_trading-defaults-derivation.md / docs/specs/20260708_risk-guard-core.md / ブランチ develop
 author: endazon (with Claude Code)
 created: 2026-07-08
+dispatched: true
+planning_issue: 61
 ---
 
 # フィードバック: リスク統制の既定値表に逆算値 3 件の明記を提案

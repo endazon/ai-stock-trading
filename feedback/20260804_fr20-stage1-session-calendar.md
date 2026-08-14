@@ -1,13 +1,15 @@
 ---
 title: Stage 1 の期間カウント規則に「半日取引日の判定源」が無い（§4.2 の分母をどこから知るか）
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-20, FR-12, ADR-0008, ADR-0022]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0137_stage1-trading-day-counting.md / docs/specs/20260804_333_stage-gate.md / ブランチ feat/FR-20-stage-gate
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 213
 ---
 
 # フィードバック: Stage 1 の期間カウント規則に「半日取引日の判定源」が無い

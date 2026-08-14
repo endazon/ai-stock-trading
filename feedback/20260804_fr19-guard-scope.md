@@ -1,13 +1,15 @@
 ---
 title: 取引ガード（FR-19）の適用範囲（新規建てのみか手仕舞いも含むか）が計画に明記されていない
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-19, FR-10, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016]
 source_repo: ai-stock-trading
 source_ref: feat/FR-19-trading-guards / docs/specs/20260804_332_trading-guards.md / IADR-0132
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 179
 ---
 
 # フィードバック: 取引ガードの適用範囲（Open / Close）が計画に無く、実装側の推論に依存している

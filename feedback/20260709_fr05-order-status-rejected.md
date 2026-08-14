@@ -1,13 +1,15 @@
 ---
 title: FR-05 の注文状態に「証券会社拒否（Rejected）」を追記
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-05]
 source_repo: ai-stock-trading
 source_ref: PR #43 / fix/FR-05-paper-broker-validation / docs/adr/IADR-0007_broker-rejection-vs-risk-rejection.md
 author: endazon (with Claude Code)
 created: 2026-07-09
+dispatched: true
+planning_issue: 211
 ---
 
 # フィードバック: FR-05 の注文状態に「証券会社拒否（Rejected）」を追記

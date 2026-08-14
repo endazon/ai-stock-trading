@@ -1,13 +1,15 @@
 ---
 title: Stage 1 の合格条件「最小取引件数 100 件」に計上単位の定義が無い（分割約定・手仕舞い注文の扱い）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-20, FR-12, ADR-0008]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0149_stage1-trade-count-supply.md / docs/specs/20260805_386_stage1-trade-count.md / ブランチ feat/FR-20-386-stage1-trade-count
 author: endazon (with Claude Code)
 created: 2026-08-05
+dispatched: true
+planning_issue: 218
 ---
 
 # フィードバック: Stage 1 の「最小取引件数 100 件」に計上単位の定義が無い
@@ -88,4 +90,13 @@ CountTrades(fills) = fills.Where(CountsAsTrade).Select(f => f.DecisionId).Distin
 
 ## 送付
 
-未送付。計画リポジトリ（endazon/project-planning）へ issue として起票する。
+~~未送付。計画リポジトリ（endazon/project-planning）へ issue として起票する~~
+→ **送付・受理済み（実測 2026-08-14）。**
+
+- **GitHub Issue 経路**: [project-planning#218](https://github.com/endazon/project-planning/issues/218)（CLOSED）
+- **記録ファイル経路**: 計画リポ `draft/feedback/20260805_fr20-stage1-trade-count-unit.md`
+  （planning PR #223「環流 #209〜#222 をトリアージし、質問票 第13回の裁定を計画へ反映する」でマージ済み）。
+  **計画側の同記録は `status: accepted`** である。
+
+> **本節が「未送付」のまま 9 日間残っていた。** 伝達は 2026-08-05 に済んでおり、記録の側だけが
+> 取り残されていた（#477 / [IADR-0188](../docs/adr/IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md) の実測で判明）。
