@@ -27,6 +27,8 @@ updated: 2026-08-14
 
 ### (a) 許可リストで直るもの（34 件）
 
+> **34 の定義は「75 −(b) 41」である**（check-permission-denials.js は (b) を機械分類し件数を出すが、(a) 側はコマンド先頭 2 トークンでグループ化するため、1 つの拒否が複数の用途にまたがり行単位の件数は排他にならない）。以下の表の件数は「そのグループとして報告された件数」であり、単純合計は 34 に一致しない。追試するときは run ログの分類出力（本仕様書冒頭の run リンク）を読むこと。
+
 **前提となる制約**: ci.yml の `ai-workflow-config` は **STRICT**（`STRICT_AI_WORKFLOW_CONFIG=1`）であり、CI の allowedTools に **`.claude/settings.json` の allow に無いツールを足すと CI が落ちる**（3 系統同期の強制）。settings.json 自体は deny 規則により AI が編集できない（B-6。本作業でも編集は permission classifier に拒否された＝統制は実効している）。したがって (a) は**今回追加できたもの（a-1）**と**settings.json への人手適用待ち（a-2）**に分かれる。
 
 #### (a-1) allowedTools へ追加した（settings.json の allow に既に在るツール）
