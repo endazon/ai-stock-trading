@@ -56,13 +56,31 @@ public class ShortSellingStatusServiceTests
             RequiredMarginUsd = requiredMargin,
         };
 
+    // FR-21, SC-03, #470: 当日を固定する時計。強制買戻しの発生回数の期間（当月）はここから決まる。
+    private sealed class FixedClock(DateOnly today) : IClock
+    {
+        public DateTimeOffset UtcNow => new(today.Year, today.Month, today.Day, 3, 0, 0, TimeSpan.Zero);
+
+        public DateOnly Today => today;
+    }
+
+    // 既定の当日。2026-08-06 は木曜（当月の営業日は 8/3〜8/6 の 4 日）。
+    private static readonly DateOnly Today = new(2026, 8, 6);
+
     private static ShortSellingStatusService Create(
         MaintenanceMarginSnapshot? snapshot = null,
         LedgerFill[]? fills = null,
-        Dictionary<(string Symbol, Market Market), decimal>? prices = null) =>
+        Dictionary<(string Symbol, Market Market), decimal>? prices = null,
+        IPositionObservationArrivalStore? observationArrivals = null,
+        IBuyInInferenceStore? buyInInferences = null,
+        DateOnly? today = null) =>
         new(new InMemoryRiskSettingsStore(),
             new FakeLedger(fills ?? []),
             new FixedSnapshotSource(snapshot),
+            observationArrivals ?? new InMemoryPositionObservationArrivalStore(),
+            buyInInferences ?? new InMemoryBuyInInferenceStore(),
+            new FixedClock(today ?? Today),
+            new WeekendBusinessCalendar(),
             prices is null ? null : new FakePriceSource(prices));
 
     // ---- 維持率（ADR-0016 決定7・画面最上位） ----
@@ -88,7 +106,11 @@ public class ShortSellingStatusServiceTests
         var service = new ShortSellingStatusService(
             new InMemoryRiskSettingsStore(),
             new FakeLedger(),
-            new UnavailableMaintenanceMarginSnapshotSource());
+            new UnavailableMaintenanceMarginSnapshotSource(),
+            new InMemoryPositionObservationArrivalStore(),
+            new InMemoryBuyInInferenceStore(),
+            new FixedClock(Today),
+            new WeekendBusinessCalendar());
 
         service.Build().MaintenanceMarginAvailability.Should().Be(MetricAvailability.NotSupplied);
     }
@@ -356,5 +378,149 @@ public class ShortSellingStatusServiceTests
 
         view.ShortExposureAvailability.Should().Be(MetricAvailability.Available);
         view.ShortExposureRatio.Should().Be(0m);
+    }
+
+    // ---- 強制買戻しの発生回数の供給（FR-21・#470・IADR-0186） ----
+    //
+    // 🔴 **FR-21 の規約は両方向に効く。** 未供給を 0 に見せないことと、**正当な 0 を未供給に見せない**ことの
+    // 両方を固定する。上の T-10-257 / T-10-258 が前者、以下が後者を担う。
+    //
+    // 期間は**当月（月初〜当日）**である（IADR-0186 決定1。ADR-0016 決定15 が「発生回数」を月報＝当月へ、
+    // 「発生有無」を日報＝当日へ割り当てているため）。
+
+    // 当月の営業日をすべて観測済みにする（＝被覆が成立する状態）。
+    private static InMemoryPositionObservationArrivalStore FullyObservedMonth(DateOnly today)
+    {
+        var store = new InMemoryPositionObservationArrivalStore();
+        var calendar = new WeekendBusinessCalendar();
+        for (var day = new DateOnly(today.Year, today.Month, 1); day <= today; day = day.AddDays(1))
+        {
+            if (calendar.IsBusinessDay(day))
+            {
+                store.Record(day, new DateTimeOffset(day.Year, day.Month, day.Day, 3, 0, 0, TimeSpan.Zero));
+            }
+        }
+
+        return store;
+    }
+
+    // T-10-278（**本 issue の主目的**）: FR-21 —— **正当な 0 を未供給に見せない。**
+    // 当月が観測で覆われており推定が 1 件も無いなら、それは**観測した結果の 0** である。
+    [Fact]
+    public void 当月が観測で覆われ推定0件なら供給ありの0を返す()
+    {
+        var view = Create(observationArrivals: FullyObservedMonth(Today)).Build();
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.Available);
+        view.BuyInCount.Should().Be(0);
+    }
+
+    // T-10-279: 被覆が成立していれば件数をそのまま返す（集計元は推定台帳＝ADR-0016 決定15）。
+    [Fact]
+    public void 当月が観測で覆われていれば推定件数を供給する()
+    {
+        var inferences = new InMemoryBuyInInferenceStore();
+        inferences.Append(BuyIn("AAPL", new DateOnly(2026, 8, 4)));
+        inferences.Append(BuyIn("GME", new DateOnly(2026, 8, 5)));
+
+        var view = Create(
+            observationArrivals: FullyObservedMonth(Today),
+            buyInInferences: inferences).Build();
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.Available);
+        view.BuyInCount.Should().Be(2);
+    }
+
+    // T-10-280（**否定形**）: 観測が 1 日も届いていなければ未供給のままである（0 件と描かない）。
+    // 推定台帳が空であることと、観測が届いていないことは**別の事実**である。
+    [Fact]
+    public void 観測が一度も届いていなければ未供給のままである()
+    {
+        var view = Create(observationArrivals: new InMemoryPositionObservationArrivalStore()).Build();
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+        view.BuyInCount.Should().BeNull();
+    }
+
+    // T-10-281（**否定形・最重要**）: **1 日でも欠ければ未供給へ倒す。**
+    // 部分的な観測を「覆っている」と扱うと、観測が止まっていた日の推定 0 件が正当な 0 として画面に出る
+    // （FR-21 が塞いだ失敗モード 2＝観測が途中で止まった期間）。
+    [Fact]
+    public void 当月の営業日が一日でも欠ければ未供給へ倒す()
+    {
+        var store = FullyObservedMonth(Today);
+        var partial = new InMemoryPositionObservationArrivalStore();
+        foreach (var day in store.GetObservedDaysBetween(new DateOnly(2026, 8, 1), Today))
+        {
+            // 8/4 だけ落とす（＝その日は観測が届かなかった）。
+            if (day != new DateOnly(2026, 8, 4))
+            {
+                partial.Record(day, new DateTimeOffset(day.Year, day.Month, day.Day, 3, 0, 0, TimeSpan.Zero));
+            }
+        }
+
+        var view = Create(observationArrivals: partial).Build();
+
+        view.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+        view.BuyInCount.Should().BeNull();
+    }
+
+    // T-10-282（**否定形**・IADR-0154 残余リスク4）: **他の指標の供給状態を条件に混ぜない。**
+    // 維持率・現在値が供給されていても、本項の可否は観測の到達だけで決まる（両方向で確認する）。
+    [Fact]
+    public void 強制買戻しの発生回数は他の指標の供給状態に影響されない()
+    {
+        var snapshot = new MaintenanceMarginSnapshot
+        {
+            NetEquityUsd = 40_000m,
+            Positions = [Short("AAPL", 100m, 1_000, 30_000m)],
+        };
+        var prices = new Dictionary<(string Symbol, Market Market), decimal>
+        {
+            [("SHRT", Market.UnitedStates)] = 80m,
+        };
+
+        // 他の指標が供給されていても、観測が無ければ未供給のまま（T-10-258 と同じ向き）。
+        var withoutObservation = Create(
+            snapshot, fills: [Fill(TradeSide.Sell, 10, 90m, "SHRT")], prices: prices).Build();
+        withoutObservation.MaintenanceMarginAvailability.Should().Be(MetricAvailability.Available);
+        withoutObservation.BuyInCountAvailability.Should().Be(MetricAvailability.NotSupplied);
+
+        // 逆に、他の指標が**未供給**でも、観測が覆っていれば本項は供給される。
+        var withObservation = Create(observationArrivals: FullyObservedMonth(Today)).Build();
+        withObservation.MaintenanceMarginAvailability.Should().Be(MetricAvailability.NotSupplied);
+        withObservation.BuyInCountAvailability.Should().Be(MetricAvailability.Available);
+    }
+
+    // T-10-283（**否定形・構造**・IADR-0186 決定4 / IADR-0163 決定2 と同型）:
+    // **観測ストアと推定台帳は必須依存である。** 省略可能引数へ戻すと配線を落としても既定値で緑のまま通る
+    //（「緑だが検査されていない」）。`currentPrices` は**省略可能のまま**であることも同時に固定する
+    //（供給が無いことが正当な状態であり、`null` の意味が違う）。
+    [Fact]
+    public void 観測ストアと推定台帳はSC03集約の必須依存である()
+    {
+        var parameters = typeof(ShortSellingStatusService).GetConstructors().Single().GetParameters();
+
+        var required = parameters
+            .Where(p => !p.IsOptional)
+            .Select(p => p.ParameterType)
+            .ToList();
+
+        required.Should().Contain(typeof(IPositionObservationArrivalStore));
+        required.Should().Contain(typeof(IBuyInInferenceStore));
+
+        parameters.Single(p => p.ParameterType == typeof(ICurrentPriceSource)).IsOptional
+            .Should().BeTrue("現在値の供給が無いことは正当な状態である（null の意味が違う）");
+    }
+
+    // 推定 1 件（リセット行ではない＝発生回数に数える。NewlyInferredQuantity > 0）。
+    private static BuyInInferenceRecord BuyIn(string symbol, DateOnly inferredOn)
+    {
+        var at = new DateTimeOffset(inferredOn.Year, inferredOn.Month, inferredOn.Day, 3, 0, 0, TimeSpan.Zero);
+        return new BuyInInferenceRecord(
+            Guid.NewGuid(), symbol, Market.UnitedStates,
+            LedgerShortQuantity: 10, BrokerShortQuantity: 0, InFlightCloseQuantity: 0,
+            UnexplainedQuantity: 10, NewlyInferredQuantity: 10,
+            BanUntil: inferredOn.AddDays(30), InferredOn: inferredOn, ObservedAt: at, InferredAt: at);
     }
 }
