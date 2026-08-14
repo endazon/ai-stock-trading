@@ -365,7 +365,7 @@ AI（Claude Code）と CI だけでは**原理的に完了できない**作業�
 | 項目 | 内容 |
 | --- | --- |
 | 対象 | **`build-and-test` と `claude-review`（完走）** ほかを develop の required status check にする（正しい check 名の全表と手順は `docs/ai-workflow.md`）。claude-review は #473 で `types:` へ `reopened` を足し「必須にできる状態」にした（IADR-0185 決定3） |
-| なぜ AI が行わないか（**能力と規則を分けて記録する**・IADR-0185 決定2） | **(a) 能力の不在ではない**——ローカルの `gh` は `repo` スコープで認証済み・本リポに `admin: true`（実測 2026-08-14。`gh api repos/endazon/ai-stock-trading --jq .permissions`）。**(b) 規則による禁止である**——リポジトリ設定（統制の配備）は利用者の判断・操作に留保される（運用ガイド §6「人間の関与」の 3 点＋required check 配備までのマージ操作。どのチェックを必須にするかは統制の設計判断であり、AI が自分に課す関門を自分で決めない）。**(c) CI 環境（Actions の `GITHUB_TOKEN`）では能力も無い**——branch protection の変更権限が無い。混ぜて「できない」と書くと、環境が変わっても誰も測り直さない |
+| なぜ AI にできないか（**能力と規則を分けて記録する**・IADR-0185 決定2。本項は「できない」ではなく「行わない」——規則による禁止——が主である） | **(a) 能力の不在ではない**——ローカルの `gh` は `repo` スコープで認証済み・本リポに `admin: true`（実測 2026-08-14。`gh api repos/endazon/ai-stock-trading --jq .permissions`）。**(b) 規則による禁止である**——リポジトリ設定（統制の配備）は利用者の判断・操作に留保される（運用ガイド §6「人間の関与」の 3 点＋required check 配備までのマージ操作。どのチェックを必須にするかは統制の設計判断であり、AI が自分に課す関門を自分で決めない）。**(c) CI 環境（Actions の `GITHUB_TOKEN`）では能力も無い**——branch protection の変更権限が無い。混ぜて「できない」と書くと、環境が変わっても誰も測り直さない |
 | **最後に測った時点** | **2026-08-14 / #473**（棚卸しごとに測り直す。backlog-audit の観点 5） |
 | 再測定手順 | ① `gh auth status`（`repo` スコープの有無）② `gh api repos/endazon/ai-stock-trading --jq .permissions`（`admin` の有無）③ 規則の側は運用ガイド §6 を読み直す（**規則は環境が変わっても消えない**。指示が変わらない限り残る） |
 | 現況の懸念 | **必須チェックが未設定のため、赤い CI のままでもマージできてしまう**。`claude-review` が赤のまま #390 をマージできた事実は、少なくともこのチェックが必須でないことを示す。**配備までの暫定手段**: マージ操作は人間が行い、マージ前に Checks タブで `build-and-test` / `claude-review` の green を目視確認する |
