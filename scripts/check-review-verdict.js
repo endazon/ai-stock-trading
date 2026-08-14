@@ -52,18 +52,53 @@ const VERDICT_HEADINGS = [
   { key: '軽微', re: /^#{1,6}\s*🟢\s*軽微\s*$/m },
 ];
 
-/** AI（assistant）が出力したテキストをすべて連結して返す。 */
+/**
+ * AI が出力したテキストを集める。
+ *
+ * 🔴 **全文を走査してはならない。** 実行ログには**プロンプト自身**が含まれ、その中に
+ * 判定フォーマットの雛形（`### 🔴 重大` 等）が書かれている。素朴に全文を検索すると
+ * **常に一致して緑になり、ゲートが無意味になる**（本検査器の初版を実 CI へ載せる前に発見した）。
+ *
+ * よって**AI の出力に当たる場所だけ**を見る。配送経路が複数あるため、次を対象とする。
+ *   1. `assistant` メッセージの `text` ブロック（通常の応答）
+ *   2. `result` イベントの `result`（最終応答がここに入る版がある）
+ *   3. コメント投稿ツールの `input.body`（判定をツール呼び出しで投稿する経路）
+ *
+ * 3 を入れるのは、`--allowedTools` に `mcp__github__add_issue_comment` /
+ * `pull_request_review_write` / `add_comment_to_pending_review` が含まれており、
+ * **判定をそれらで投稿すると 1・2 に現れない**ためである（AI レビューの指摘・PR #491）。
+ * **`input.body` に限定する** —— 全ての `input` を見ると `Bash` の `command` 等まで拾い、
+ * 本文にたまたま見出しを含むコマンドで緑にできてしまう。
+ */
 function assistantText(events) {
   const out = [];
+  const push = (v) => {
+    if (typeof v === 'string' && v) out.push(v);
+  };
   for (const e of events) {
-    if (!e || e.type !== 'assistant') continue;
+    if (!e) continue;
+    if (e.type === 'result') push(e.result);
+    if (e.type !== 'assistant') continue;
     const content = e.message && e.message.content;
     if (!Array.isArray(content)) continue;
     for (const c of content) {
-      if (c && c.type === 'text' && typeof c.text === 'string') out.push(c.text);
+      if (!c) continue;
+      if (c.type === 'text') push(c.text);
+      // 判定をコメント投稿ツールで出す経路。body 以外は見ない（上のコメント参照）。
+      if (c.type === 'tool_use' && c.input) push(c.input.body);
     }
   }
   return out.join('\n');
+}
+
+/** 実行ログのイベント種別の内訳（判定不能だったときの診断用）。 */
+function eventShape(events) {
+  const counts = new Map();
+  for (const e of events) {
+    const t = (e && e.type) || '(no type)';
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return [...counts.entries()].map(([t, n]) => `${t}=${n}`).join(' ');
 }
 
 /**
@@ -124,7 +159,24 @@ function main(argv) {
     return 0;
   }
 
-  const result = inspectVerdict(assistantText(events));
+  const text = assistantText(events);
+
+  // 🔴 **AI の出力を 1 文字も取り出せなかった場合は判定できない。落とさない。**
+  //
+  // 初版はここを区別せず「判定なし」として落とし、**PR #491 の初回実行で偽陽性を出した**
+  // （レビューは判定を正しく投稿していたのに、こちらが実行ログの形を取り違えて何も
+  // 抽出できていなかった）。**「判定が無い」と「読めていない」は別である。**
+  //
+  // 診断のためイベント種別の内訳を出す。次に同じことが起きたとき、ログを漁らずに形が分かる。
+  if (!text.trim()) {
+    warn(
+      '[check-review-verdict] AI の出力を実行ログから取り出せなかったため判定できない（検査をスキップする）。' +
+        ` イベント内訳: ${eventShape(events) || '(空)'}`
+    );
+    return 0;
+  }
+
+  const result = inspectVerdict(text);
   if (result.ok) {
     notice('[check-review-verdict] OK: レビューの判定（🔴/🟡/🟢）が出力されている。');
     return 0;
@@ -204,6 +256,51 @@ function selfTest() {
       ...ev('### 🟢 軽微\n- 指摘なし'),
     ];
     assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
+  });
+
+  // --- 配送経路（PR #491 の 🔴/🟡 を受けた回帰） ---
+
+  ok('result イベントの result からも判定を拾う', () => {
+    const events = [{ type: 'result', subtype: 'success', result: VERDICT }];
+    assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
+  });
+
+  // 判定をコメント投稿ツールで出す経路（`use_sticky_comment` に頼らない書き方）。
+  ok('コメント投稿ツールの input.body からも判定を拾う', () => {
+    const events = [
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'mcp__github__add_issue_comment', input: { body: VERDICT } }] } },
+    ];
+    assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
+  });
+
+  // **`body` 以外は見ない。** 全 input を見ると Bash の command 等で緑にできてしまう。
+  ok('tool_use の body 以外（command 等）は判定に使わない', () => {
+    const events = [
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: `echo '${VERDICT}'` } }] } },
+    ];
+    assert.strictEqual(inspectVerdict(assistantText(events)).ok, false);
+  });
+
+  // 🔴 **最重要**: 「判定が無い」と「読めていない」を区別する。
+  // 初版はこれを混同し、PR #491 の初回実行で偽陽性を出した。
+  ok('AI の出力を取り出せなければ exit 0（判定不能。落とさない）', () => {
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'review-verdict-shape-'));
+    const f = path.join(dir, 'unknown-shape.json');
+    // 出力に当たるフィールドを持たないイベントだけのログ。
+    fs.writeFileSync(f, JSON.stringify([{ type: 'system', subtype: 'init' }, { type: 'result', subtype: 'success' }]));
+    try {
+      assert.strictEqual(main([f]), 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  ok('eventShape はイベント種別の内訳を返す', () => {
+    const s = eventShape([{ type: 'system' }, { type: 'result' }, { type: 'result' }]);
+    assert.match(s, /system=1/);
+    assert.match(s, /result=2/);
   });
 
   ok('実行ログのパスが無ければ exit 0（fail-open）', () => {
