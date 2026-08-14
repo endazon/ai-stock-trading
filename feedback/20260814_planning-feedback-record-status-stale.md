@@ -1,7 +1,7 @@
 ---
 title: 計画リポの環流記録 `20260708_trading-defaults-derived-values.md` が `status: open` のままで、対応する planning#61 の決着に追随していない
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids: [NFR, FR-10, FR-17, FR-19]
 source_repo: endazon/ai-stock-trading
@@ -13,6 +13,10 @@ planning_issue: 329
 ---
 
 # フィードバック: 計画側の環流記録が issue の決着に追随していない（1 件）
+
+
+> ✅ **［2026-08-14］受理済み。計画側の記録 `20260708_trading-defaults-derived-values.md` は `status: accepted` へ是正された**（[project-planning#329](https://github.com/endazon/project-planning/issues/329)。反映は planning #330・`130a109`）。
+> あわせて `20260709_sc11-wireframe-drawio.md` の同型の陳腐化も是正され、`draft/feedback/README.md` の索引も更新された。
 
 ## 種別
 
