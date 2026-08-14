@@ -1,8 +1,19 @@
+---
+title: 作業仕様書 — CodeQL の PR 解析をコード変更のある PR に限定する（#481）
+type: spec
+status: done
+related_ids:
+  - NFR
+  - IADR-0047
+author: claude
+created: 2026-08-14
+updated: 2026-08-14
+plan_refs: []
+---
+
 # 作業仕様書: CodeQL の PR 解析をコード変更のある PR に限定する
 
 - 起点 issue: #481（起点 ID: NFR。kit 改定 project-planning#327 への追随）
-- 作成日: 2026-08-14
-- 状態: done
 
 ## 目的
 
