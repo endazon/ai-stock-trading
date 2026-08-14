@@ -1,7 +1,7 @@
 ---
 title: SC-03 の「強制買戻しの発生回数」の対象期間が計画に定義されていない（FR-21 の被覆判定に期間が要る）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-21, FR-10, SC-03, UC-06, ADR-0016]
 source_repo: endazon/ai-stock-trading
@@ -13,6 +13,10 @@ planning_issue: 328
 ---
 
 # フィードバック: SC-03 の強制買戻し発生回数の「期間」が未定義
+
+
+> ✅ **［2026-08-14］裁定済み。案 A（当月＝月初〜当日）が採用された**（[project-planning#328](https://github.com/endazon/project-planning/issues/328)。反映は planning #330・`130a109`）。
+> **実装は既に案 A であり、コードの変更は不要であった。** 計画側の同記録も `status: accepted` である。
 
 ## 種別
 
