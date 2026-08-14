@@ -1,13 +1,15 @@
 ---
 title: ADR-0022 日銀「外国為替市況（日次）」の系列 ID 確定と、実測で判明した 3 点（系列の取り違え・403 の非再現・検索サイト収録が翌々営業日）
 type: plan-feedback
-status: open
+status: accepted
 category: 新たな制約(ADR要)
 related_ids: [FR-01, FR-10, ADR-0022]
 source_repo: ai-stock-trading
 source_ref: docs/FR-01-boj-fx-series-id（PR #394・実機確認セッション 2026-08-05・コード変更なし）
 author: Claude Code（実機確認セッション）
 created: 2026-08-05
+dispatched: true
+planning_issue: 209
 ---
 
 # フィードバック: 日銀「外国為替市況（日次）」の系列 ID 確定と鮮度の実測

@@ -1,13 +1,15 @@
 ---
 title: ADR-0003 のプロンプトインジェクション対策フォローアップを実装した — 消化と、計画側の記述の具体化提案
 type: plan-feedback
-status: open
+status: accepted
 category: フォローアップの消化
 related_ids: [FR-04, FR-08, ADR-0003, ADR-0004, IADR-0072, IADR-0169]
 source_repo: ai-stock-trading
 source_ref: feat/FR-04-252-rag-prompt-injection-defense（作業仕様書 docs/specs/20260807_252_rag-prompt-injection-defense.md・IADR-0169）
 author: Claude Code
 created: 2026-08-07
+dispatched: true
+planning_issue: 307
 ---
 
 # フィードバック: ADR-0003 のプロンプトインジェクション対策フォローアップの消化

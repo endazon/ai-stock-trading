@@ -1,13 +1,15 @@
 ---
 title: SC-01 §2 の収集間隔と SC-03 の空売り表示項目に供給元が無い（変動閾値の由来サービス誤り・値域の未定義を含む）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-03, FR-10, FR-11, FR-13, UC-06, SC-01, SC-03, ADR-0016, ADR-0019]
 source_repo: ai-stock-trading
 source_ref: feat/SC-01-340-screens-reimplementation / docs/specs/20260806_340_screens-reimplementation.md / IADR-0154・IADR-0155
 author: endazon (with Claude Code)
 created: 2026-08-06
+dispatched: true
+planning_issue: 221
 ---
 
 # フィードバック: 画面が表示を求める値に供給元が無い（SC-01 §2 収集間隔・SC-03 空売り現況）

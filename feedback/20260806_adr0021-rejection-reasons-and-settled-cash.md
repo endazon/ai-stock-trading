@@ -1,7 +1,7 @@
 ---
 title: ADR-0021 の実装で判明した 3 点 — 拒否理由 2 種の追加・決済済み資金と GFV 回数が moomoo API から取得できないこと・GFV 前提の無条件記述
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-19, FR-10, FR-11, UC-06, ADR-0021, ADR-0016, ADR-0019, ADR-0025]
 source_repo: ai-stock-trading
@@ -9,6 +9,8 @@ source_ref: feat/FR-19-375-cash-account-support（作業仕様書 docs/specs/202
 author: Claude Code
 created: 2026-08-06
 updated: 2026-08-07
+dispatched: true
+planning_issue: 220
 ---
 
 > ## ✅ 受理（2026-08-07・submodule pin `a4616a8` で確認）

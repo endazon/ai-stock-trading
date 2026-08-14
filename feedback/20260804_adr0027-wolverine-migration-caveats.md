@@ -1,7 +1,7 @@
 ---
 title: Wolverine 移行の 3 つの罠（RuntimeCompilation 必須／既定設定が fan-out を壊す／既定が internal 実装型に依存するハンドラを落とす）— ADR-0027・ADR-0030・12_backend-application-stack への追記提案
 type: plan-feedback
-status: open
+status: accepted
 category: 新たな制約(ADR要)
 related_ids:
   - NFR
@@ -15,6 +15,8 @@ source_repo: ai-stock-trading
 source_ref: "refactor/NFR-wolverine-migration / #354 / docs/specs/20260803_354_wolverine-migration.md §2.2・§3・§13・§13.13 / docs/adr/IADR-0129_wolverine-messaging-topology.md"
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 181
 ---
 
 # フィードバック: Wolverine 移行で実測した 3 つの罠（起動失敗・fan-out の破壊・ハンドラの生成失敗）

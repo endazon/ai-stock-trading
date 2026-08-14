@@ -964,91 +964,73 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
   });
 
-  // --- check-feedback-reflux.js: 環流の未起票の滞留（NFR / #439 / IADR-0170） ---
+  // --- 環流記録の `status` 語彙（NFR / #477 / IADR-0188） ---
   //
-  // **本検査も「効かない方向」に壊れると、CI は緑のまま滞留だけが戻る。**
-  // とくに**日数のしきい値**が要である——0 日で報告すると正常な運用（起票までのタイムラグ）が
-  // 騒音になり、長すぎると検出しない。よって**境界を両方向で固定する**。
-  const pathFr = require('path');
-  const fr = require('./check-feedback-reflux.js');
+  // **伝達の判定そのものは kit の `check-feedback-dispatched.js` が自己試験で守る**ため、
+  // ここで二重に書かない（書くと kit 同期のたびに二重の追随が要る。IADR-0047 決定1）。
+  //
+  // **本リポが独自に守るのは `status` の語彙だけである。** kit の `feedback/README.md` は
+  // 「**この語彙を検査する機械は無い。値の誤りは沈黙する**」と明記しており、実際に
+  // **本リポは語彙外の `resolved` を 8 件持っていた**（planning#323 の裁定 2026-08-14 が名指しで是正を指示）。
+  // 同じ kit を配った 2 リポジトリで語彙が割れた**同型 2 回目**であるため、番人を置く
+  // （planning#296「検査器・規約の追加は同型の事故が 2 回から」）。
+  //
+  // **検査器ではなくリポジトリ固有の回帰テストとして置く。** kit 由来ファイルを改変せずに済み、
+  // 語彙が kit 側で変わったときは本テストだけを追随させればよい。
+  const pathFb = require('path');
+  const fsFb = require('fs');
 
-  const FR_NOW = Date.parse('2026-08-07T00:00:00Z');
-  const frRecord = ({ status = 'open', created = '2026-08-01', body = '本文' } = {}) =>
-    `---\ntitle: t\ntype: plan-feedback\nstatus: ${status}\ncreated: ${created}\n---\n\n${body}\n`;
+  /** kit `feedback/README.md` §`status` の語彙（4 値）。**増やすときは kit 側の節を先に直すこと。** */
+  const FEEDBACK_STATUSES = ['open', 'awaiting-decision', 'accepted', 'rejected'];
 
-  ok('check-feedback-reflux: status 欠落を検出する', () => {
-    const hit = fr.inspect({
-      file: 'x.md', now: FR_NOW, days: 3,
-      text: '---\ntitle: t\ntype: plan-feedback\ncreated: 2026-08-01\n---\n\n本文\n',
+  const feedbackRecords = () => {
+    const dir = pathFb.resolve(__dirname, '..', 'feedback');
+    return fsFb
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.md') && !['README.md', 'TEMPLATE.md'].includes(f))
+      .map((f) => ({ file: f, text: fsFb.readFileSync(pathFb.join(dir, f), 'utf8') }));
+  };
+
+  const statusOf = (text) => {
+    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!m) return null;
+    const s = m[1].match(/^status:[ \t]*(\S+)[ \t]*$/m);
+    return s ? s[1] : null;
+  };
+
+  ok('実ツリー: 環流記録を 1 件以上読めている（0 件なら以降の主張は空振りである）', () => {
+    assert.ok(feedbackRecords().length > 0);
+  });
+
+  // **語彙外の値の再混入を止める。** `resolved` はここで落ちる。
+  ok('実ツリー: 環流記録の status が kit の語彙（4 値）の内にある（#477 の回帰）', () => {
+    const bad = feedbackRecords()
+      .map(({ file, text }) => ({ file, status: statusOf(text) }))
+      .filter(({ status }) => !FEEDBACK_STATUSES.includes(status));
+    assert.deepStrictEqual(bad, [], `語彙は ${FEEDBACK_STATUSES.join(' / ')} である`);
+  });
+
+  // **`status` に伝達の軸を混ぜない**（planning#323 の裁定）。伝達は下の 2 鍵が担う。
+  ok('実ツリー: 環流記録が dispatched: を true / false のいずれかで持つ（#477 の回帰）', () => {
+    const bad = feedbackRecords()
+      .filter(({ text }) => !/^dispatched:[ \t]*(true|false)[ \t]*$/m.test(text))
+      .map(({ file }) => file);
+    assert.deepStrictEqual(bad, [], 'YAML 1.1 の no / off も偽になるため true / false に限る');
+  });
+
+  ok('実ツリー: 伝達済みの記録は planning_issue: を伴う（#477 の回帰）', () => {
+    const bad = feedbackRecords()
+      .filter(({ text }) => /^dispatched:[ \t]*true[ \t]*$/m.test(text))
+      .filter(({ text }) => !/^planning_issue:[ \t]*\S+[ \t]*$/m.test(text))
+      .map(({ file }) => file);
+    assert.deepStrictEqual(bad, [], '伝達したなら到達先の番号が残っていること');
+  });
+
+  // kit 検査器の判定規則そのものが壊れていれば、実データに対する結果は意味を持たない。
+  ok('実ツリー: kit の伝達検査器の自己試験が通る（#477 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-feedback-dispatched.js'), '--self-test'], {
+      stdio: 'pipe',
     });
-    assert.strictEqual(hit && hit.kind, 'missing-status');
-  });
-
-  ok('check-feedback-reflux: open かつ未起票かつ猶予超で検出する', () => {
-    const hit = fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-01' }), now: FR_NOW, days: 3 });
-    assert.strictEqual(hit && hit.kind, 'unfiled');
-    assert.strictEqual(hit.age, 6);
-  });
-
-  // **境界（正）**: 猶予日数ちょうどは「まだ猶予の内」であり検出しない。
-  ok('check-feedback-reflux: 猶予ちょうど（境界）は検出しない', () => {
-    assert.strictEqual(
-      fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-04' }), now: FR_NOW, days: 3 }), null);
-  });
-
-  // **境界（負）**: 猶予を 1 日でも超えたら検出する。
-  ok('check-feedback-reflux: 猶予 +1 日（境界）は検出する', () => {
-    const hit = fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-08-03' }), now: FR_NOW, days: 3 });
-    assert.strictEqual(hit && hit.kind, 'unfiled');
-    assert.strictEqual(hit.age, 4);
-  });
-
-  ok('check-feedback-reflux: 計画側 issue の参照 2 形はいずれも起票済みとみなす', () => {
-    for (const ref of ['環流: project-planning#212', 'https://github.com/endazon/project-planning/issues/212']) {
-      assert.strictEqual(
-        fr.inspect({ file: 'x.md', text: frRecord({ created: '2026-07-01', body: ref }), now: FR_NOW, days: 3 }),
-        null, `参照形式が認識されていない: ${ref}`);
-    }
-  });
-
-  // **番号なしのリポジトリリンクは起票の証拠ではない**（これを参照とみなすと検査が骨抜きになる）。
-  ok('check-feedback-reflux: 番号なしの project-planning/ は起票とみなさない', () => {
-    const hit = fr.inspect({
-      file: 'x.md', now: FR_NOW, days: 3,
-      text: frRecord({ created: '2026-07-01', body: 'https://github.com/endazon/project-planning/blob/main/x.md' }),
-    });
-    assert.strictEqual(hit && hit.kind, 'unfiled');
-  });
-
-  ok('check-feedback-reflux: resolved は対象外（逆向きの乖離は週次 AI 監査の担当）', () => {
-    assert.strictEqual(
-      fr.inspect({ file: 'x.md', text: frRecord({ status: 'resolved', created: '2026-07-01' }), now: FR_NOW, days: 3 }),
-      null);
-  });
-
-  ok('check-feedback-reflux: created が読めなければ日数で判定しない', () => {
-    assert.strictEqual(fr.ageInDays('not-a-date', FR_NOW), null);
-    assert.strictEqual(
-      fr.inspect({ file: 'x.md', text: frRecord({ created: 'not-a-date' }), now: FR_NOW, days: 3 }), null);
-  });
-
-  ok('check-feedback-reflux: 猶予日数は環境変数で上書きでき、読めない値は既定へ倒す', () => {
-    assert.strictEqual(fr.graceDays('7'), 7);
-    assert.strictEqual(fr.graceDays('0'), 0, '0 は「猶予なし」の有効な指定である');
-    assert.strictEqual(fr.graceDays('-1'), fr.DEFAULT_GRACE_DAYS);
-    assert.strictEqual(fr.graceDays('abc'), fr.DEFAULT_GRACE_DAYS);
-    assert.strictEqual(fr.graceDays(undefined), fr.DEFAULT_GRACE_DAYS);
-  });
-
-  ok('check-feedback-reflux: README/TEMPLATE は記録として走査しない', () => {
-    const files = fr.listRecords(pathFr.resolve(__dirname, '..')).map((f) => pathFr.basename(f));
-    assert.ok(files.length > 0, '環流記録を 1 件も読めていないなら本検査は無意味である');
-    assert.ok(!files.includes('README.md') && !files.includes('TEMPLATE.md'));
-  });
-
-  ok('実ツリー: 環流記録の走査が例外を投げない（#439 の回帰）', () => {
-    const findings = fr.checkTree(pathFr.resolve(__dirname, '..'), Date.now(), fr.DEFAULT_GRACE_DAYS);
-    assert.ok(Array.isArray(findings));
-    for (const f of findings) assert.ok(['missing-status', 'unfiled'].includes(f.kind));
   });
 };

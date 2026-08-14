@@ -94,7 +94,10 @@ bash scripts/apply-profile.sh copilot
 - **`backlog-audit.yml` が週 1 回（月曜 00:00 UTC）バックログを監査する**（#439 / [IADR-0170](adr/IADR-0170_backlog-audit-automation.md)）。
   クローズ漏れ・重複起票・`docs/blocked-tasks.md` との突き合わせ・エピック進捗を見て、
   **単一の追跡 issue へ upsert** する。**issue を自動クローズしない**（提案のみ・判断は人間）。
-  前段で `check-feedback-reflux.js` が**環流記録の未起票の滞留**を warn として出す。
+  前段で `check-feedback-dispatched.js`（kit 由来）が**環流記録の未伝達**を warn として出す
+  （［2026-08-14］`check-feedback-reflux.js` から置き換えた。#477 / [IADR-0188](adr/IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md)）。
+  **同検査器は手順書が定める 2 経路（GitHub Issue 経路 / 記録ファイル経路）のどちらでも緑になる。**
+  **出力を「未起票」と読み替えないこと** —— 見ているのは*記録に伝達の証拠が書かれているか*であって*実際に届いたか*ではない。
   **監査が増える主因は実装速度ではなく「閉じるより速く増えること」だった**という実測が起点である。
 
 ## 全自動化のための推奨ツール・設定

@@ -1,13 +1,15 @@
 ---
 title: §4 最小期待利益「往復費用＋税の 2 倍」の「税」の算入方法が未定義（実効倍率が 1.5 → 2.684 に変わる）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-17, FR-02]
 source_repo: ai-stock-trading
 source_ref: "#358 / PR: fix/FR-17-358-minimum-expected-profit / docs/adr/IADR-0173"
 author: endazon (with Claude Code)
 created: 2026-08-07
+dispatched: true
+planning_issue: 289
 ---
 
 # フィードバック: 最小期待利益の「税」の算入方法

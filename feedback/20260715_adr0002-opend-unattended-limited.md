@@ -1,7 +1,7 @@
 ---
 title: moomoo OpenD の無人運用は条件付き成立（安定 egress IP で無人再起動可・要デバイス信頼永続化）— ADR-0002 未決への PoC 回答
 type: plan-feedback
-status: open
+status: accepted
 category: 新たな制約(ADR要)
 related_ids:
   - ADR-0002
@@ -9,6 +9,8 @@ source_repo: ai-stock-trading
 source_ref: "feat/124-opend-docker / IADR-0053 / docs/opend PoC（2026-07-15）"
 author: claude
 created: 2026-07-15
+dispatched: true
+planning_issue: 212
 ---
 
 # フィードバック: moomoo OpenD の無人運用は条件付き成立（安定 egress IP で無人再起動可）

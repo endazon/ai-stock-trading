@@ -8,6 +8,8 @@ source_repo: endazon/ai-stock-trading
 source_ref: docs/specs/20260813_470_sc03-buy-in-count-supply.md / IADR-0186 / issue #470
 author: endazon (with Claude Code)
 created: 2026-08-13
+dispatched: true
+planning_issue: 328
 ---
 
 # フィードバック: SC-03 の強制買戻し発生回数の「期間」が未定義

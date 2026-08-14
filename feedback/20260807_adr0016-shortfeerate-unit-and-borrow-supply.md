@@ -1,13 +1,15 @@
 ---
 title: ADR-0016 決定3 改訂の実装で判明した 3 点 — ShortFeeRate の単位が未確定であること・「20% 閾値は永久に超えない」が単位の読みに依存すること・単位が確定しない限り一次ゲートを実地で観測できないこと
 type: plan-feedback
-status: open
+status: accepted
 category: 前提の不足・記述の前提条件
 related_ids: [FR-10, FR-15, FR-17, UC-06, ADR-0016, ADR-0019]
 source_repo: ai-stock-trading
 source_ref: fix/FR-10-417-short-sell-borrow-permit-gate（作業仕様書 docs/specs/20260807_417_short-sell-borrow-permit-gate.md・IADR-0158）
 author: Claude Code
 created: 2026-08-07
+dispatched: true
+planning_issue: 228
 ---
 
 # フィードバック: ADR-0016 決定3 改訂（一次ゲートの移設）の実装で判明した 3 点

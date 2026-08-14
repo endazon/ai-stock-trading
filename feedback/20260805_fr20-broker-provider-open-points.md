@@ -1,13 +1,15 @@
 ---
 title: 発注先（Broker Provider）の 2 軸分離に残る 3 つの未定事項（実弾の組み合わせでの発注可否・確認文字列の照合規則・初期値）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-20, FR-13, FR-12, UC-06, SC-02, ADR-0008]
 source_repo: endazon/ai-stock-trading
 source_ref: docs/adr/IADR-0140_broker-provider-axis.md / docs/adr/IADR-0141_live-switch-explicit-confirmation.md / docs/adr/IADR-0142_stage1-simulate-only-aggregation.md / docs/specs/20260805_334_broker-provider-axis.md / ブランチ feat/FR-20-broker-provider-axis
 author: endazon (with Claude Code)
 created: 2026-08-05
+dispatched: true
+planning_issue: 215
 ---
 
 # フィードバック: 発注先の 2 軸分離に残る 3 つの未定事項

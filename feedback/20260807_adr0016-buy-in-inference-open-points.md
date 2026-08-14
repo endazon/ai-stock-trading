@@ -1,13 +1,15 @@
 ---
 title: ADR-0016 決定4 改訂（強制買戻しの事後推定）の実装で判明した 4 点 — 「自らの決済指示」に承認済み未約定を含めるか・過剰推定の代価の所在・報告書への供給経路が無いこと・推定経路が Stage 1 で発火しないこと
 type: plan-feedback
-status: open
+status: accepted
 category: 前提の不足・記述の前提条件
 related_ids: [FR-06, FR-10, FR-11, UC-06, ADR-0016, ADR-0019]
 source_repo: ai-stock-trading
 source_ref: feat/FR-10-419-buy-in-post-hoc-inference（作業仕様書 docs/specs/20260807_419_buy-in-post-hoc-inference.md・IADR-0159）
 author: Claude Code
 created: 2026-08-07
+dispatched: true
+planning_issue: 232
 ---
 
 # フィードバック: ADR-0016 決定4 改訂（強制買戻しの事後推定）の実装で判明した 4 点

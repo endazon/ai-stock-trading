@@ -1,13 +1,15 @@
 ---
 title: 維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率が計画に無い（自動縮小の実装で必要）
 type: plan-feedback
-status: open
+status: accepted
 category: 要求の不足
 related_ids: [FR-10, UC-06, ADR-0016]
 source_repo: ai-stock-trading
 source_ref: feat/FR-10-maintenance-margin-auto-reduce / docs/specs/20260804_330_maintenance-margin-auto-reduce.md
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 214
 ---
 
 # フィードバック: 維持率割れの自動縮小に必要な 3 つの未定義事項

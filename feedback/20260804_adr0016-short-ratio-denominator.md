@@ -1,13 +1,15 @@
 ---
 title: 空売り比率 50%（ADR-0016 決定9）は「空売り建玉 ≦ ロング建玉総額」と等価であり、ロング建玉が 0 件のときは空売りを 1 件も開始できない
 type: plan-feedback
-status: resolved
+status: accepted
 category: 要求の不足
 related_ids: [FR-10, FR-20, UC-06, ADR-0016, ADR-0008]
 source_repo: ai-stock-trading
 source_ref: feat/FR-10-risk-control-core / docs/specs/20260804_329_short-selling-controls.md / IADR-0131 決定5
 author: endazon (with Claude Code)
 created: 2026-08-04
+dispatched: true
+planning_issue: 177
 ---
 
 # フィードバック: 空売り比率 50% の分母を「建玉総額」と読むと、空売りは必ずロング建玉を持ってからでないと開始できない

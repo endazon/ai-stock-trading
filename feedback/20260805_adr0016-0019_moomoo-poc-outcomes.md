@@ -1,13 +1,15 @@
 ---
 title: ADR-0019 PoC 結果報告と、ADR-0016 決定 3（借株料 20% 上限）が発火しない統制になることの環流
 type: plan-feedback
-status: open
+status: accepted
 category: 新たな制約(ADR要)
 related_ids: [FR-05, FR-12, FR-20, ADR-0002, ADR-0016, ADR-0019, ADR-0023]
 source_repo: ai-stock-trading
 source_ref: chore/ADR-0019-moomoo-poc-plan（作業仕様書 docs/specs/20260805_342_moomoo-poc-plan.md・IADR-0144）
 author: Claude Code（実機確認セッション）／endazon（実機実行）
 created: 2026-08-05
+dispatched: true
+planning_issue: 204
 ---
 
 # フィードバック: moomoo PoC の結果と、借株料統制の見直し
