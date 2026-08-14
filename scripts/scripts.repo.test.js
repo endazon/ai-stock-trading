@@ -1079,6 +1079,41 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
+  // --- 計画書実在検査が PR 段階で実効していること（NFR / #496） ---
+  //
+  // 🔴 **ここも守るのは検査結果ではなく「検査が実効していること」である。**
+  // doc-links / test-traceability は planning が未 populate なら該当検査を skip して緑になる。
+  // submodule の取得と `--require-planning` の両方が揃って初めて実効するため、CI 設定側を固定する。
+  //
+  // **この 2 ジョブは長らく「PR CI にはトークンが無い」という誤った前提で skip していた**（#496）。
+  // 前提が誤りだったと分かった以上、**戻さないことを機械で担保する。**
+  for (const job of ['doc-links', 'test-traceability']) {
+    ok(`ci.yml の ${job} ジョブが submodule を取得し --require-planning を渡している（#496 の回帰）`, () => {
+      const fsP = require('fs');
+      const ci = fsP.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+      const start = ci.indexOf(`\n  ${job}:`);
+      assert(start !== -1, `${job} ジョブが ci.yml に無い`);
+      const rest = ci.slice(start + 1);
+      const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+      const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
+      // 🔴 **コメント行を落としてから照合する。** 落とさないと、この設定を説明する
+      // コメント自身（「--require-planning を必ず付ける」等）に一致して**素通りする**。
+      // 初版が実際にそうなっており、変異試験（run 行からフラグを外す）で緑のままだった。
+      // **語ではなく実行行を見る**——planning#319 知見3 と同型の罠である。
+      const body = bodyRaw
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('#'))
+        .join('\n');
+      const runLines = body.split('\n').filter((l) => l.includes('run:'));
+      assert(body.includes('submodules: recursive'), `${job} が submodule を取得していない（planning 配下は検査されない）`);
+      assert(body.includes('PLANNING_REPO_TOKEN'), `${job} が planning 取得用トークンを渡していない`);
+      assert(
+        runLines.some((l) => l.includes('--require-planning')),
+        `${job} の run 行に --require-planning が無い。取得失敗時に skip して緑になり、検査が実効しない`,
+      );
+    });
+  }
+
   ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
     const table = require('./kit-sync-classification.json');
     const entries = Object.entries(table.classes.B);

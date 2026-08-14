@@ -24,9 +24,9 @@ plan_refs:
 - 関連する計画書 ID: FR-10（リスク統制）、FR-19（取引ガード）、ADR-0007（信用の両対応）、ADR-0003（AI ガードレール）
 - 関連する実装仕様書: [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - 対象 Issue: #25
-- 対象コード: [`OrderIntent.cs`](../../src/Shared/AiStockTrading.Shared.Contracts/Trading/OrderIntent.cs)、
-  [`PositionEffect.cs`](../../src/Shared/AiStockTrading.Shared.Contracts/Trading/PositionEffect.cs)、
-  [`RiskEvaluator.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
+- 対象コード: [`OrderIntent.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/OrderIntent.cs)、
+  [`PositionEffect.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/PositionEffect.cs)、
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
 
 ## コンテキストと課題
 

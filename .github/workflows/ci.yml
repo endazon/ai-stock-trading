@@ -101,35 +101,49 @@ jobs:
 
   # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
+  # NFR / #493 / #496: 相対リンクの実在検査。**planning を含めて PR 段階で検査する。**
+  #
+  # 以前は submodule 無しで走らせ、planning 配下リンクの実在検査を夜間の
+  # doc-links-planning.yml へ委ねていた。その根拠は「PR CI には PLANNING_REPO_TOKEN が無い」
+  # であったが、**#495 の kit-sync ジョブが同じトークンで PR の CI から取得に成功して反証された**。
+  # 夜間方式は「PR に紐づかない赤」が放置される弱点を持つ（実運用で 14 夜連続の実績）。
+  #
+  # --require-planning を必ず付ける。付けないと取得失敗時に skip して緑になり、
+  # 「配線したのに一度も検査しない」状態が固定される（IADR-0191 決定3 と同じ判断）。
   doc-links:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          token: ${{ secrets.PLANNING_REPO_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Check doc links
-        run: node scripts/check-doc-links.js
+      - name: Self-test doc link checker
+        run: node scripts/check-doc-links.js --self-test
+      - name: Check doc links (including planning submodule)
+        run: node scripts/check-doc-links.js --require-planning
 
   # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
   # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
-  # doc-links と同じく submodule 無しで走らせるため、テストが参照する ID の計画書実在検査だけは skip される。
-  # 実在検査は doc-links-planning.yml（夜間・トークン付き）が --require-planning で担う。
-  # 役割分担と弱点は同ワークフローの冒頭コメントを参照。
   #
-  # 🔴 この分離の根拠であった「PR CI には PLANNING_REPO_TOKEN が無い」は**実測で反証された**（#496）。
-  # 下の kit-sync ジョブは同じトークンで PR の CI から submodule を取得し success している。
-  # **よって本ジョブを PR 段階で実効させられる余地がある。** 移行は #496 で行う
-  # （移行時に溜まっていた破損が出る可能性があるため、本 PR の範囲では触らない）。
+  # NFR / #496: **テストが参照する ID の計画書実在検査を PR 段階で実効させる。**
+  # 以前は submodule 無しで走らせ、実在検査だけを skip して夜間へ委ねていた。
+  # その根拠（「PR CI には PLANNING_REPO_TOKEN が無い」）は #495 の実測で反証された。
+  # doc-links と同じく --require-planning を必ず付ける（取得失敗を skip で緑にしない）。
   test-traceability:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          token: ${{ secrets.PLANNING_REPO_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Check test traceability
-        run: node scripts/check-test-traceability.js
+      - name: Check test traceability (including planning submodule)
+        run: node scripts/check-test-traceability.js --require-planning
 
   # 不採用ライブラリ（platform ADR-0030 の棚卸し）の再混入を止める（issue #345 / #351）。
   # 剥がした事実をレビューの記憶に頼ると必ず戻るため、機械的に落とす。移行未完了のものは

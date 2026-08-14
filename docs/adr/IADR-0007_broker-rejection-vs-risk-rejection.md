@@ -24,9 +24,9 @@ plan_refs:
 - 関連する計画書 ID: FR-05（発注執行・注文状態追跡）、FR-12（ペーパートレード）、FR-10/FR-11（リスク統制・監査）
 - 関連する実装仕様書: [20260709_paper-broker-validation](../specs/20260709_paper-broker-validation.md)
 - 対象 Issue: #30
-- 対象コード: [`OrderStatus.cs`](../../src/Shared/AiStockTrading.Shared.Contracts/Trading/OrderStatus.cs)、
-  [`PaperBrokerAdapter.cs`](../../src/Shared/AiStockTrading.Shared.Infrastructure/Composable/Adapters/Broker/PaperBrokerAdapter.cs)、
-  [`OrderRejected.cs`](../../src/Shared/AiStockTrading.Shared.Contracts/Events/OrderRejected.cs)
+- 対象コード: [`OrderStatus.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/OrderStatus.cs)、
+  [`PaperBrokerAdapter.cs`](../../backend/Shared/AiStockTrading.Shared.Infrastructure/Composable/Adapters/Broker/PaperBrokerAdapter.cs)、
+  [`OrderRejected.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Events/OrderRejected.cs)
 
 ## コンテキストと課題
 
