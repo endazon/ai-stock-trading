@@ -39,7 +39,7 @@ AST には k8s デプロイ資産が無く（`backend/Dockerfile` ＋ compose �
    テンプレート**（`range .Values.services`）でレンダリングする。#24（GitOps）へ再利用できる形にする。
 2. **共有インフラは MSP の `platform-infra` を参照**する。AST namespace 内に ExternalName エイリアス
    （`postgres`/`rabbitmq`/`keycloak`/`otel-collector` → `*.platform-infra.svc`）を張り、appsettings/compose
-   と同じ**素のサービス名**で解決させる（MSP IADR-0066 と同一方式）。DB は共有 Postgres 上の AST 用
+   と同じ**素のサービス名**で解決させる（MSP/IADR-0066 と同一方式）。DB は共有 Postgres 上の AST 用
    ユーザ `ai`＋専有 DB（`*_svc`。MSP infra init が作成）を用いる（ADR-0001: DB per service）。
 3. **外部連携は fail-safe 既定**で chart 変数化する。`ast-secrets`（空既定）を明示設定した時のみ有効化:
    `ANTHROPIC_API_KEY`（空=Placeholder LLM・#79）／Finnhub（空=NoOp・#81）／Discord（空=NoOp・#15）／

@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- FR-14, IADR-0063, MSP IADR-0073 / AST IADR-0091: ai-stock-trading ユニットの BFF エンドポイント（集約）
+  <!-- FR-14, IADR-0063, MSP/IADR-0073 / AST/IADR-0091: ai-stock-trading ユニットの BFF エンドポイント（集約）
        ライブラリ。platform 実装リポ（microservices-platform）へ submodule 配置されたとき、platform BFF の
        合成点（Platform.Bff/Composition）から exception3（例外3）で参照され、合成点の登録簿へ組み込まれる。
        pass-through（DTO 非結合）のため MSP の Contracts / Shared を一切参照せず、ASP.NET Core の

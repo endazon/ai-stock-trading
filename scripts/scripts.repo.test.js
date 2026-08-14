@@ -1033,4 +1033,29 @@ module.exports = ({ ok, assert }) => {
       stdio: 'pipe',
     });
   });
+
+  // --- 計画 ID の修飾（NFR / #477 / IADR-0189） ---
+  //
+  // **CI ジョブだけでは足りない。** `plan-id-qualification` ジョブは `PLAN_ID_PREFIXES` を渡して
+  // 走らせるが、**その環境変数を落とすと `PROJECT_PREFIXES` が空になり、検査は skip して緑になる**
+  // （fail-open。「他プロジェクトを参照しないリポジトリ」のための正常な挙動である）。
+  //
+  // よって本テストは**環境変数を自前で明示的に与えて**呼ぶ。CI 側の env を消しても、こちらが赤くなる。
+  ok('実ツリー: 他プロジェクトの計画 ID が `<PROJ>/<ID>` で書かれている（#477 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-plan-id-qualification.js')], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      // **`MSP` だけにしない。** 本リポは `AST/` を自プロジェクトの修飾として実際に使っており、
+      // `/` と空白が混在していた（着手時点で 46 件）。修飾を使う以上、表記は一貫している必要がある。
+      env: { ...process.env, PLAN_ID_PREFIXES: 'MSP,AST' },
+      stdio: 'pipe',
+    });
+  });
+
+  ok('実ツリー: kit の計画 ID 修飾検査器の自己試験が通る（#477 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-plan-id-qualification.js'), '--self-test'], {
+      stdio: 'pipe',
+    });
+  });
 };

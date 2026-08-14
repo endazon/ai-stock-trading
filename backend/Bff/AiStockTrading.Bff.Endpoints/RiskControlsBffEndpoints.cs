@@ -43,20 +43,20 @@ public static class RiskControlsBffEndpoints
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/limits", ct))
             .WithName("BffRiskControlsSettingsLimitsPut");
 
-        // ガード変更（AST IADR-0086。危険な緩和の確認は後段/フロントが担う。BFF は素通し）。
+        // ガード変更（AST/IADR-0086。危険な緩和の確認は後段/フロントが担う。BFF は素通し）。
         g.MapPut("/settings/guard", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/guard", ct))
             .WithName("BffRiskControlsSettingsGuardPut");
 
         // AST #334, FR-20, FR-13: 発注先（Broker Provider）の変更。SC-02 だけが持つ操作である。
         // **実弾切替の明示確認（同意＋「REAL」の入力）は後段が検証する**（BFF は素通し）。
-        // 統制を BFF へ持たせない——後段が単独で守れることが要点であり、二重化するなら後段側である（AST IADR-0141）。
+        // 統制を BFF へ持たせない——後段が単独で守れることが要点であり、二重化するなら後段側である（AST/IADR-0141）。
         g.MapPut("/settings/broker-provider", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/broker-provider", ct))
             .WithName("BffRiskControlsSettingsBrokerProviderPut");
 
         // AST #423, FR-20, FR-13, SC-02: Stage 1 の最小取引件数（06_daytrading-review §4.1 条件 3）。
-        // 既定 100・値域 1〜1000。**100 件未満でも後段は受理する**（警告は設定を妨げない・AST IADR-0164 決定6）。
+        // 既定 100・値域 1〜1000。**100 件未満でも後段は受理する**（警告は設定を妨げない・AST/IADR-0164 決定6）。
         // BFF は素通し（値域・理由の検証は後段が実効。統制を BFF へ持たせない）。
         g.MapPut("/settings/stage1-minimum-trade-count", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/stage1-minimum-trade-count", ct))

@@ -60,7 +60,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 ## ローカル（経路B）での可観測性バックエンド stand-up（opt-in）
 
 - Prometheus/Grafana/Loki/Tempo の **k8s manifest と `k8s-local-up.sh` の env ゲートは MSP 側の共有 overlay**
-  （別 PR・MSP IADR-0077）で追加する。既定オフ＝現行の debug exporter のまま（外部送信なし）。
+  （別 PR・MSP/IADR-0077）で追加する。既定オフ＝現行の debug exporter のまま（外部送信なし）。
 - 有効化後、Grafana へ AST ダッシュボード（[`deploy/observability/dashboards/ai-stock-trading-overview.json`](../../deploy/observability/dashboards/ai-stock-trading-overview.json)）を
   provisioning または手動 import する（datasource: `Prometheus`/`Loki`/`Tempo`）。
 

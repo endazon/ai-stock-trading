@@ -27,7 +27,7 @@ plan_refs:
 
 - 関連する計画書 ID: platform **ADR-0030**（アプリ層ライブラリ標準）・
   [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed・§プロジェクト構成）・
-  platform ADR-0019（ユニット第一構成）・AST ADR-0001（platform 再利用）
+  platform ADR-0019（ユニット第一構成）・AST/ADR-0001（platform 再利用）
 - 関連する実装仕様書: [作業仕様書 20260803（#353）](../specs/20260803_353_standard-project-layout.md)
 - 関連 issue: [#353](https://github.com/endazon/ai-stock-trading/issues/353)（親 [#345](https://github.com/endazon/ai-stock-trading/issues/345) / [#344](https://github.com/endazon/ai-stock-trading/issues/344)）
 - 既存決定: [IADR-0001](IADR-0001_repo-structure-and-stack.md)（規約は基盤実装リポに揃える）・

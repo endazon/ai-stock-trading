@@ -3,7 +3,7 @@
 #
 # ⚠️ opt-in。実運用（Hetzner 実 k3s での実同期）は Tier 3（本 PR 対象外）。本マニフェストは宣言の妥当性
 #    （kubectl --dry-run / ArgoCD 描画）までをスコープとする。ローカル（経路B）で回すには MSP 側の ArgoCD install
-#    （別 PR・MSP IADR-0077）が前提。docs/infra/infra.md の Tier 境界を参照。
+#    （別 PR・MSP/IADR-0077）が前提。docs/infra/infra.md の Tier 境界を参照。
 #
 # 独立デプロイ・ロールバック（NFR）:
 #   - サービス単位のデプロイは values の services.<name>.tag を Git で更新して行う。

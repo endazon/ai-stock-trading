@@ -25,7 +25,7 @@ Git を単一の真実源とし、ArgoCD が AST の Helm チャート（[`../he
 - **Tier 3（対象外・後続）**: Hetzner 実 k3s での**実同期**・実 egress・稼働率99%の実測。詳細は
   [`../../docs/infra/infra.md`](../../docs/infra/infra.md) を参照。
 - **ローカル（経路B）で回す前提**: ArgoCD 本体の install（`argocd` Namespace）は **MSP 側の共有 stand-up**
-  （別 PR・MSP IADR-0077）で行う。ここでは AST の `Application`/`AppProject` のみを提供する。
+  （別 PR・MSP/IADR-0077）で行う。ここでは AST の `Application`/`AppProject` のみを提供する。
 
 ## 前提（段階順序）
 

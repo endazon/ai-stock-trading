@@ -28,7 +28,7 @@ plan_refs:
   [ADR-0003](../../planning/projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md)（不確実なら取引しない）、
   [ADR-0011](../../planning/projects/ai-stock-trading/07_adr/ADR-0011_llm-model-pinning.md)（LLM モデル固定・基盤既定層の追随）
 - 対象 Issue: [#247](https://github.com/endazon/ai-stock-trading/issues/247)
-- 上流（microservices-platform）: #379 / PR #391（`/complete` の応答へ `stopReason` を追加。MSP IADR-0104・MSP ADR-0025）
+- 上流（microservices-platform）: #379 / PR #391（`/complete` の応答へ `stopReason` を追加。MSP/IADR-0104・MSP/ADR-0025）
 - 関連する実装仕様書: [20260726_llm-refusal-explicit-hold](../specs/20260726_llm-refusal-explicit-hold.md)
 - 関連 IADR: [IADR-0017](IADR-0017_trade-decision-structure.md)（判断コア・安全既定＝取引しない）、
   [IADR-0039](IADR-0039_decision-orchestration.md)（多数決・代表票の一体採用）、
@@ -43,7 +43,7 @@ plan_refs:
 
 上流の LLM ゲートウェイは Anthropic の `stop_reason` を判別できず、安全性分類器による**拒否を「空応答」へ静かに縮退**
 させていた（MSP #379）。PR #391 でこれが修正され、`/complete` の応答に `stopReason` が載る。既定モデル層は
-MSP ADR-0025 で `claude-opus-5` であり、**拒否は HTTP 200・例外なしで実際に起き得る経路**である。
+MSP/ADR-0025 で `claude-opus-5` であり、**拒否は HTTP 200・例外なしで実際に起き得る経路**である。
 
 AST 側の 2 つの消費者（取引判断の `HttpLlmCompletionClient`・報告書散文の `HttpReportNarrativeDrafter`）は
 `stopReason` を受けておらず、判断続行を `Sent` と**本文が非空か**だけで決めている。ここから 3 つの穴が生じる。
@@ -63,7 +63,7 @@ AST 側の 2 つの消費者（取引判断の `HttpLlmCompletionClient`・報�
 `IsMaxTokens`・大小無視）を共有物へ置き、取引判断と報告書散文の 2 消費者が同じ判定を使う。各アダプタに重複定義すると
 上流語彙の追随漏れが 2 箇所へ分散する。
 
-`enum` にしない: 未知の終了理由が既定値へ黙って落ちるのを防ぎ、そのまま透過してログへ残す（上流 MSP IADR-0104 と同方針）。
+`enum` にしない: 未知の終了理由が既定値へ黙って落ちるのを防ぎ、そのまま透過してログへ残す（上流 MSP/IADR-0104 と同方針）。
 置き場所は `Events` 名前空間**外**のため、イベント後方互換の契約テスト（IADR-0079。母集合は `EventTypeDiscovery` ＝
 `Events` 名前空間の record 型）の対象にならず、`event-schemas.baseline` は不変である。
 

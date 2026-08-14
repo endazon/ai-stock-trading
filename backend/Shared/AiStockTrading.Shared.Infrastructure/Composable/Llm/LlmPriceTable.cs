@@ -3,7 +3,7 @@ using System.Globalization;
 namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 
 // NFR（費用）, FR-04, IADR-0122 決定2/3: モデル別の単価表。**応答が名乗った実効モデル**から単価を引く。
-// 用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で trade-decision=sonnet-5・report-*=fable-5/opus-5/sonnet-5 と
+// 用途別モデル割当（計画 ADR-0014 / MSP/IADR-0112）で trade-decision=sonnet-5・report-*=fable-5/opus-5/sonnet-5 と
 // モデルが混在したため、global 単一ペアでは実態と乖離する（#303）。ゲートウェイは越境ルーティング（ADR-0010）で
 // 要求と異なるモデルを選び得るので、用途→単価の静的対応では追随できない。
 //
