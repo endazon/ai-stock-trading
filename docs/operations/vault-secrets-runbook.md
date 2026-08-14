@@ -59,7 +59,7 @@ plan_refs:
 ## 前提
 
 1. **External Secrets Operator（`external-secrets.io` CRD）** と **Vault ストア**（`SecretStore`/`ClusterSecretStore`）が
-   クラスタに導入済みであること。ローカル（経路B）では **MSP 側の共有 stand-up**（別 PR・MSP IADR-0077）が入れる。
+   クラスタに導入済みであること。ローカル（経路B）では **MSP 側の共有 stand-up**（別 PR・MSP/IADR-0077）が入れる。
    CRD 未導入で有効化すると `ExternalSecret` の apply が失敗する。
 2. Vault に上表のパスで KV が格納済みであること（**Git には載せない**。投入は Vault CLI/UI で人手または CD で行う）。
 

@@ -162,7 +162,7 @@ services:
       # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
       #
       # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」）。
-      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / MSP IADR-0112）で
+      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / MSP/IADR-0112）で
       #   trade-decision=sonnet-5 / report-monthly=fable-5 / report-weekly=opus-5 / report-daily=sonnet-5 と
       #   モデルが混在するため、global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の
       #   過大計上だった）。単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の

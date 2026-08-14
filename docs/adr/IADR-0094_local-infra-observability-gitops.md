@@ -33,7 +33,7 @@ plan_refs:
   [IADR-0058](IADR-0058_helm-chart-ci-gate.md)（チャートの `helm lint`/`template` CI ゲート）
 
 > **参照上の注意（ADR 番号の跨ぎ）**: MSP 側の共有 stand-up（`deploy/local/observability`・`vault`・`argocd`）は
-> 上流基盤リポ [`../microservices-platform`](../../../microservices-platform) の別採番 IADR（MSP IADR-0077）で扱う。
+> 上流基盤リポ [`../microservices-platform`](../../../microservices-platform) の別採番 IADR（MSP/IADR-0077）で扱う。
 
 ## 背景・課題
 
@@ -102,5 +102,5 @@ ADR-0006 は稼働環境を Hetzner とし、NFR で「認証情報の Vault 秘
 - 悪い影響 / トレードオフ: 本 PR 単体では「実際に Vault へ鍵が載り ESO が同期する」「ArgoCD が実同期する」ことは
   検証できない（ストア/ArgoCD install は MSP PR・実運用は Tier 3）。可観測性ダッシュボードの provisioning は MSP の
   Grafana に依存する（AST は資産と docs のみ提供）。
-- フォローアップ: (1) MSP PR で共有 stand-up（MSP IADR-0077）、(2) Tier 3 で Hetzner 実デプロイ・実測・GitOps 実同期、
+- フォローアップ: (1) MSP PR で共有 stand-up（MSP/IADR-0077）、(2) Tier 3 で Hetzner 実デプロイ・実測・GitOps 実同期、
   (3) 実測結果を [ADR-0006](../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md) へ `/plan-feedback` 環流。

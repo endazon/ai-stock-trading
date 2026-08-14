@@ -23,7 +23,7 @@ plan_refs:
 - **NFR**（運用保守）
 - 実装 issue: **#473**（受け入れ基準 1）
 - 正本: `planning/tools/impl-handoff-kit/repo-template/.github/workflows/pr-size.yml`（kit `e0bc81c`・pin `cff0e7b`）
-- 参照実装: microservices-platform PR #704（MSP IADR-0181。**同じキットを同じ方針で較正した先例**）
+- 参照実装: microservices-platform PR #704（MSP/IADR-0181。**同じキットを同じ方針で較正した先例**）
 - 作業仕様書: [20260814_473](../specs/20260814_473_guide-enforcement.md)
 
 ## コンテキストと課題
@@ -53,7 +53,7 @@ plan_refs:
 | --- | --- | --- |
 | 追加 | `planning` | 計画 submodule の pin。1 行だが実装 diff ではない |
 | 追加 | `CHANGELOG.md` | `changelog.yml` の生成物。automation/ の PR は差分の大半がこれになる |
-| 削除 | `**/pnpm-lock.yaml` / `**/orval/**` / `**/*.po` | **本リポに 1 ファイルも存在しない**（`git ls-files` で実測 0 件）。当たらない除外を残すと「効いている」と誤読される。MSP IADR-0181 の「生成物は設定ファイルが指す出力先で決まる。自リポの設定を見て書く」と同じ規律 |
+| 削除 | `**/pnpm-lock.yaml` / `**/orval/**` / `**/*.po` | **本リポに 1 ファイルも存在しない**（`git ls-files` で実測 0 件）。当たらない除外を残すと「効いている」と誤読される。MSP/IADR-0181 の「生成物は設定ファイルが指す出力先で決まる。自リポの設定を見て書く」と同じ規律 |
 | 維持 | `docs/**` / `feedback/**` | 必須文書（作業仕様書・IADR・環流記録）は issue を細かく割るほど増える＝本検査の目的に対して逆向きに動く指標（MSP 実測: 必須文書だけで中央値 393 行） |
 | 維持 | `**/Migrations/**` | EF Core のマイグレーション（Designer / スナップショット含む）。生成物 |
 | 維持 | `**/*.lock` / `**/package-lock.json` / `**/*.generated.*` | ロック・生成物の一般形（`frontend/package-lock.json` が実在） |

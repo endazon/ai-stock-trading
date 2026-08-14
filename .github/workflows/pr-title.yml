@@ -33,8 +33,15 @@ jobs:
   pr-title:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # bot 作成 PR は規約対象外（check-commit-messages.js の BOT_AUTHORS と同方針）。
-    if: github.event.pull_request.user.type != 'Bot'
+    # 【重要】bot 作成 PR の除外を、ここ（ワークフローの条件）で行ってはならない。
+    #
+    # `if: github.event.pull_request.user.type != 'Bot'` と書くと、**GitHub App が作成した PR
+    # （`claude[bot]` 等）も `user.type == 'Bot'` になるため一緒に落ちる**。本リポジトリは
+    # AI に実装を委ねる運用が主要な経路であり、**その経路でだけ「最後の砦」が skipped になる**
+    # （planning#202 が実測。人間の PR は success・GitHub App の PR は skipped という差が観測された）。
+    #
+    # 除外は**スクリプト側**（`isBotLogin()` が `BOT_AUTHORS` へ完全一致した場合のみ）が担う。
+    # `claude[bot]` は `BOT_AUTHORS` に無いため**検査される**。それが意図である（#477 / IADR-0189）。
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,4 +52,6 @@ jobs:
         # Revert / [skip ci] の除外と、空タイトル時の fail-open はスクリプト側が担う。
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          # bot 判定は作成者の**ログイン名**で行う（`user.type` ではない。上のコメント参照）。
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: node scripts/check-commit-messages.js

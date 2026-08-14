@@ -25,12 +25,12 @@ plan_refs:
 - 対象 Issue: MSP [#286](https://github.com/endazon/microservices-platform/issues/286)（本 PR はその依存＝AST 側先行）
 - 関連する実装仕様書: [作業仕様](../specs/20260719_bff-unit-owned-endpoints.md)
 - 前段: [IADR-0088](IADR-0088_watchlist-settings-api.md)（watchlist API）／[IADR-0090](IADR-0090_frontend-watchlist-ui.md)
-  （SC-02 監視銘柄 UI）／MSP IADR-0063（BFF 合成点・例外3）／MSP IADR-0070/0071/0072（interim 同居）／
-  MSP IADR-0073（本 PR を受けた MSP 側移行）
+  （SC-02 監視銘柄 UI）／MSP/IADR-0063（BFF 合成点・例外3）／MSP/IADR-0070/0071/0072（interim 同居）／
+  MSP/IADR-0073（本 PR を受けた MSP 側移行）
 
 ## 背景・課題
 
-MSP の BFF は「例外3」（MSP IADR-0063）で、可変ユニットのドメイン固有 BFF エンドポイントを **当該ユニットの
+MSP の BFF は「例外3」（MSP/IADR-0063）で、可変ユニットのドメイン固有 BFF エンドポイントを **当該ユニットの
 `<unit>/backend/Bff/` プロジェクト**へ置き合成点から参照する。AST の設定画面（SC-01/02/03）向け pass-through は
 AST が submodule のため、MSP #285/#289/#294 では MSP の `Platform.Bff/Foundation/Endpoints/` に interim で置かれた。
 恒久像（AST unit-owned Bff）へ移すため、AST 側に受け皿プロジェクトが要る。
@@ -46,7 +46,7 @@ DELETE 本文転送・502/4xx/409 透過・匿名 401・`Authorization` 伝播�
 
 ### 2. FrameworkReference のみの自己完結ライブラリとする（DTO 非結合を維持）
 
-3 モジュールは pass-through で DTO 非結合（MSP IADR-0057=一方向依存）。よって `OutputType=Library` ＋
+3 モジュールは pass-through で DTO 非結合（MSP/IADR-0057=一方向依存）。よって `OutputType=Library` ＋
 `FrameworkReference Include="Microsoft.AspNetCore.App"` のみとし、MSP の Contracts / Shared を参照しない。
 
 - **利点**: AST 単独リポでも AST の `Directory.Build.props`（net10.0 継承・IADR-0046 のフォールバック）だけで
@@ -66,7 +66,7 @@ MSP 側の `Platform.Bff.Tests` とは二重化になるが、単独 CI の独�
 ## 影響・トレードオフ
 
 - **利点**: 例外3 の恒久像（ユニット所有 BFF）に一致し、AST の BFF が AST 側へ閉じる。MSP は合成点 1 行参照＋
-  submodule 再pinのみで移行できる（MSP IADR-0073）。
+  submodule 再pinのみで移行できる（MSP/IADR-0073）。
 - **代償**: AST の CI ビルド対象が 1 プロジェクト増える（FrameworkReference のみで軽量）。
 - **却下案**: (a) MSP 同居のまま放置 → 例外3 規範逸脱の恒久化で却下。(b) AST Contracts を参照して型付き化 →
   現状 pass-through には不要で AST 単独ビルドを重くするため却下（必要時に後続で追加可能）。

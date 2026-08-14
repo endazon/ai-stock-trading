@@ -4,7 +4,7 @@
 
 AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）でメトリクス・ログ・トレースを送出する
 （[IADR-0052](../../docs/adr/IADR-0052_k8s-helm-chart-shared-infra.md)）。本ディレクトリは AST 固有の**可観測性資産**を置く。
-バックエンド（Prometheus/Grafana/Loki/Tempo）の**実 stand-up は MSP 側の共有 overlay**（別 PR・MSP IADR-0077）で行う。
+バックエンド（Prometheus/Grafana/Loki/Tempo）の**実 stand-up は MSP 側の共有 overlay**（別 PR・MSP/IADR-0077）で行う。
 
 ## 構成
 

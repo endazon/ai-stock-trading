@@ -32,7 +32,7 @@ plan_refs:
 
 - 起点 issue: [#303](https://github.com/endazon/ai-stock-trading/issues/303)
 - 仕様書: `docs/specs/20260731_303_per-model-llm-pricing.md`
-- 基盤側: [microservices-platform#422](https://github.com/endazon/microservices-platform/pull/422)（MSP IADR-0112。
+- 基盤側: [microservices-platform#422](https://github.com/endazon/microservices-platform/pull/422)（MSP/IADR-0112。
   `Llm:Routing:PurposeModels` に `report-monthly`/`report-weekly`/`report-daily` を追加し、`trade-decision` を
   `claude-sonnet-5` へ改定）。計画側は `ADR-0014`（Accepted・2026-07-31・[project-planning#50](https://github.com/endazon/project-planning/issues/50)）。
 - 役割の分担（重複起票を避けるための相互参照）:

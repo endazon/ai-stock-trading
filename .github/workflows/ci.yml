@@ -192,6 +192,37 @@ jobs:
       - name: Check feedback dispatched
         run: node scripts/check-feedback-dispatched.js
 
+  # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
+  # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
+  #
+  # **ここに違反の実例を書かないこと。** 規約は「意図的な誤例はインラインコードへ入れる」と定めるが、
+  # **その除外は Markdown でしか効かない**（YAML のバッククォートはコード記法ではない）。
+  # 実際、本コメントの初版が誤例を平文で書いて自分の検査に捕まった。
+  #
+  # **本ジョブは exit 1 で落とす**（`feedback-dispatched` と違い warn ではない）。表記の是正は
+  # 人手の判断を伴わず、書式が一意に決まるためである。
+  #
+  # 【重要】`PLAN_ID_PREFIXES` を落とすと `PROJECT_PREFIXES` が空になり、検査は **skip して緑になる**
+  # （fail-open）。これは「他プロジェクトを参照しないリポジトリ」のための正常な挙動であって、
+  # 本リポでは設定漏れを意味する。**環境変数を明示的に与える回帰テストが `scripts.repo.test.js`
+  # にあり、ここを落としても別経路で赤くなる**（緑だが検査されていない、を避ける）。
+  plan-id-qualification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      # 判定規則そのものが壊れていれば実データに対する結果は意味を持たない。自己試験を先に走らせる。
+      - name: Self-test plan ID qualification checker
+        run: node scripts/check-plan-id-qualification.js --self-test
+      - name: Check plan ID qualification
+        env:
+          # AST は自プロジェクトだが、本リポは `AST/` を修飾として実際に使うため含める
+          # （修飾を使うと決めた以上、表記が一貫していなければ機械的突合の役に立たない）。
+          PLAN_ID_PREFIXES: "MSP,AST"
+        run: node scripts/check-plan-id-qualification.js
+
   # 実行環境スキャフォールド（docker-compose / appsettings / .env.example）の静的検査（issue #107 / IADR-0048）。
   # fail-safe 既定（base appsettings が挙動中立・機密は空既定）と構成の存在・整合を Docker 起動なしで検証する。
   # 実コンテナ/実 API 疎通は #82 に分離するため、本ジョブは Node 標準のみ（依存・Docker 不要）で完結する。

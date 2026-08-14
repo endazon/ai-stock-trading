@@ -237,7 +237,7 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
 80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
 
-用途別モデル割当（計画 `ADR-0014` / MSP IADR-0112）で `trade-decision`=sonnet-5 / `report-monthly`=fable-5 /
+用途別モデル割当（計画 `ADR-0014` / MSP/IADR-0112）で `trade-decision`=sonnet-5 / `report-monthly`=fable-5 /
 `report-weekly`=opus-5 / `report-daily`=sonnet-5 とモデルが混在するため、単価は**応答が名乗った実効モデル**
 （`CompletionApiResponse.Model`）で引く。要求側の希望モデルは根拠にしない（ゲートウェイは越境ルーティング
 〈ADR-0010〉で別モデルへ着地し得る）。

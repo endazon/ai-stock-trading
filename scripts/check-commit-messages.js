@@ -123,6 +123,24 @@ function isBot(c) {
   return BOT_AUTHORS.some((b) => hay.includes(b.toLowerCase()));
 }
 
+/**
+ * PR 作成者のログイン名が bot かを **完全一致**で判定する（#477 / IADR-0189）。
+ *
+ * **コミット著者向けの `isBot()` と規則が違う。** あちらは「著者名＋メール」への**部分一致**だが、
+ * PR 作成者は**単一のログイン名**で得られるため、部分一致にすると `dependabot` を含む
+ * 無関係なログイン名（例: `not-dependabot-really`）まで除外され得る。
+ *
+ * **`claude[bot]` は `BOT_AUTHORS` に無いため除外されない。これが意図である。**
+ * GitHub App が作成した PR も `user.type == 'Bot'` になるため、ワークフローの条件で
+ * `user.type != 'Bot'` と書くと、**AI に実装を委ねる運用でだけ「最後の砦」が skipped になる**
+ * （planning#202 が実測。人間の PR は success・GitHub App の PR は skipped という差が観測された）。
+ */
+function isBotLogin(login) {
+  const name = String(login == null ? '' : login).trim().toLowerCase();
+  if (!name) return false;
+  return BOT_AUTHORS.some((b) => b.toLowerCase() === name);
+}
+
 /** 短縮/完全 SHA を前方一致で照合する（changelog-overrides.json と同方針）。 */
 function hashMatches(a, b) {
   if (!a || !b) return false;
@@ -324,9 +342,16 @@ function validateSubject(subject) {
  * git を使わず、渡された 1 件名のみを規約に照合する。Revert / [skip ci] はスキップ扱い。
  * 合格・スキップ時 0、違反時 1 を返す。
  */
-function checkSingleTitle(title) {
+function checkSingleTitle(title, prAuthor) {
   const subject = String(title == null ? '' : title).trim();
   process.stdout.write(`PR タイトル（スカッシュ後件名）チェック: "${subject}"\n`);
+
+  // bot 作成 PR の除外は**ここ（スクリプト側）が担う**（#477 / IADR-0189）。
+  // ワークフローの `if: user.type != 'Bot'` で弾くと GitHub App の PR まで落ちる。
+  if (isBotLogin(prAuthor)) {
+    process.stdout.write(`  skip(auto)   bot 作成 PR は規約対象外（作成者: ${String(prAuthor).trim()}）\n`);
+    return 0;
+  }
 
   if (!subject) {
     // タイトル未取得（イベント外実行等）。CI をブロックしない（fail-open）。
@@ -361,7 +386,7 @@ function main() {
   // 単一件名モード（PR タイトル検査）。git リポジトリ内外を問わず動作する。
   const title = args.title != null ? args.title : process.env.PR_TITLE;
   if (title != null) {
-    process.exit(checkSingleTitle(title));
+    process.exit(checkSingleTitle(title, process.env.PR_AUTHOR));
   }
 
   if (tryGit('rev-parse --is-inside-work-tree') !== 'true') {
@@ -456,6 +481,7 @@ module.exports = {
   loadExistingPlanAdrIds,
   checkSingleTitle,
   isBot,
+  isBotLogin,
   isSkippable,
   hashMatches,
   loadAllowlist,
