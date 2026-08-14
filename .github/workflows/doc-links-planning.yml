@@ -1,25 +1,29 @@
-# doc-links（planning submodule 込み）— 定期・トークン付き検査の雛形
+# doc-links（planning submodule 込み）— 定期・トークン付き検査
 #
-# 背景: 本体 CI の `doc-links` ジョブ（ci.yml）は actions/checkout を submodule なしで実行するため、
-# private な planning サブモジュール配下への破損リンクを検出できない（planning が未 populate だと
-# scripts/check-doc-links.js は planning リンクを検査対象外にする）。この隙間で破損リンクが蓄積した
-# 実例がある（microservices-platform #232 / IADR-0058、ai-stock-trading #104）。
+# 【役割（2026-08-14 更新・#496）】
 #
-# 対応（IADR-0058 の方式）: planning を含む全リンクの検査を、トークン付きで submodule を取得する
-# 専用の定期ジョブに分離する。本体 PR CI の doc-links は従来どおり高速・トークン不要のまま
-# 非 planning リンクを毎回検査し、planning リンクは本ワークフロー（夜間 + 手動）で検査する。
+# **PR 段階の検査は ci.yml が担うようになった。** `ci.yml` の `doc-links` / `test-traceability` は
+# `submodules: recursive` + `PLANNING_REPO_TOKEN` + `--require-planning` で走り、
+# **planning 配下リンクも PR ごとに検査して落とす**。
 #
-# 【この分離が抱える弱点（運用前に必ず判断すること）】
-# planning リンクは PR では検査されないため、計画側のファイル改名や実装側の参照ミスは
-# **マージを止められず、夜間に初めて赤くなる**。しかも失敗が PR に紐づかないため気付かれにくい。
+# 以前の分離（PR は非 planning だけ・planning は夜間）は、**「PR CI には PLANNING_REPO_TOKEN が
+# 無い」という前提**に立っていた。**この前提は #495 の実測で反証された**——`kit-sync` ジョブが
+# 同じトークンで PR の CI から submodule の取得に成功した。
+#
+# **それでも本ワークフローは畳まない。役割が変わったのである。**
+#
+#   PR CI が見るのは「**その PR の差分**」である。**計画側（planning）が更新されて実装側の参照が
+#   切れる事故は、実装側に PR が無い間に起きる**。pin を進めた瞬間ではなく、進めないまま計画側で
+#   ファイルが改名されたときに壊れる。**それを拾えるのは定期実行だけである。**
+#
 # 実例: 計画側の ADR ファイル改名に実装側 2 ファイルが未追随となり、夜間ジョブが 4 夜連続で
-# 失敗したまま放置された（microservices-platform #430）。同型の事故は複数回発生している。
-#   - `PLANNING_REPO_TOKEN` を PR CI でも使える場合は、`ci.yml` の `doc-links` ジョブに
-#     `submodules: recursive` + `token:` を付け、**PR 段階で落とす**方が望ましい。
-#   - 夜間のみで運用する場合は、失敗に気付く導線（issue 自動起票・通知）を必ず用意すること。
-#     導線が無いと「誰も見ない赤」が常態化する。
-# 同じ理由で、`scripts/check-commit-messages.js` の計画 ADR 実在性検査も PR CI では常時
-# skip される（submodule 未取得のため）。実効するのは実装 ADR（IADR）側のみである。
+# 失敗したまま放置された（microservices-platform #430）。**放置されたのが問題であって、
+# 夜間に検査すること自体は正しい。** 失敗に気付く導線（下の Notify ステップ）が要点である。
+#
+# 【まだ残る穴】
+# `scripts/check-commit-messages.js` の計画 ADR 実在性検査は、`commit-messages` ジョブが
+# submodule を取得しないため **PR CI では今も skip される**。実効するのは実装 ADR（IADR）側のみ。
+# 同じ手（submodules + token + 必須化）で塞げるが、本ワークフローの範囲外である。
 #
 # 有効化手順（**本リポジトリでは 1) は完了済み＝本ファイルは稼働中**。キット雛形向けの手順を残す）:
 #   1) 本ファイルを `doc-links-planning.yml` にリネームする。

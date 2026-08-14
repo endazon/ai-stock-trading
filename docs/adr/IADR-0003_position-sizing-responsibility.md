@@ -23,8 +23,8 @@ plan_refs:
 
 - 関連する計画書 ID: FR-10（リスク統制）、UC-01/UC-02（取引サイクル）、ADR-0003（AI 判断のガードレール）
 - 関連する実装仕様書: [20260708_risk-guard-core](../specs/20260708_risk-guard-core.md)
-- 対象コード: [`PositionSizer.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/PositionSizer.cs)、
-  [`RiskEvaluator.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
+- 対象コード: [`PositionSizer.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/PositionSizer.cs)、
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
 
 ## コンテキストと課題
 

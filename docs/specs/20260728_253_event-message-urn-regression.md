@@ -27,7 +27,11 @@ plan_refs:
 - 決定: [[IADR-0037]]（AsyncAPI 不採用・**代替として `MessageUrn` 回帰ガードを後続 issue/PR で実装せよ**と明示）、
   [[IADR-0079]]（`EventBackwardCompatibilityTests`＝プロパティ単位の後方互換 snapshot）。
 - 制約: [[ADR-0001]]（platform 再利用）。platform の同型テスト `EventMessageUrnTests`
-  （`../microservices-platform/src/knowledge/backend/Shared/Knowledge.Contracts.Tests/EventMessageUrnTests.cs`）に揃える。
+  （microservices-platform リポジトリの
+  `src/knowledge/backend/Shared/Knowledge.Contracts.Tests/EventMessageUrnTests.cs`）に揃える。
+  **先頭を `../` にした相対パスで書かない** —— 隣接クローンは CI に存在せず、
+  **live link として解決できないまま検査を素通りしていた**（#493 で検出）。
+  他リポジトリのファイルは**リポジトリ名を明示して参照する**。
 - Issue: [#253](https://github.com/endazon/ai-stock-trading/issues/253)（`tech-debt` / priority: could）。
 
 ## 目的・背景

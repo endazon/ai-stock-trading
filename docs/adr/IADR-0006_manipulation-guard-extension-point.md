@@ -25,10 +25,10 @@ plan_refs:
 - 関連する実装仕様書: [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)、
   [20260708_risk-guard-core](../specs/20260708_risk-guard-core.md)
 - 対象 Issue: #28
-- 対象コード: [`TradingGuardSettings.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/TradingGuardSettings.cs)、
-  [`IManipulativeOrderPatternDetector.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/IManipulativeOrderPatternDetector.cs)、
-  [`RiskEvaluator.cs`](../../src/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)、
-  [`RejectionReason.cs`](../../src/Shared/AiStockTrading.Shared.Contracts/Trading/RejectionReason.cs)
+- 対象コード: [`TradingGuardSettings.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/TradingGuardSettings.cs)、
+  [`IManipulativeOrderPatternDetector.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/IManipulativeOrderPatternDetector.cs)、
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)、
+  [`RejectionReason.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/RejectionReason.cs)
 
 ## コンテキストと課題
 

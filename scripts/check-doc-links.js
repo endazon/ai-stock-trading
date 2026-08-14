@@ -10,13 +10,14 @@
  * 対象外（誤検知回避）:
  *   - 外部 URL（http/https/mailto ほかスキーム付き）・アンカー(#...)・ルート絶対パス(/...)
  *   - テンプレ変数（${...} / {{...}} / <...>）
+ *   - planning/ サブモジュール未チェックアウト時の planning/ 配下リンク
  *   - 拡張子（LINK_EXT）を持たない裸の語（本文中の README 等をリンク扱いしない）
  *   - インラインコード内の裸ファイル名（第 3 経路は ./ ../ 始まりのみを拾う）
- *   - planning/ サブモジュール未チェックアウト時の planning/ 配下リンク
  * 外部依存ゼロ（Node 標準モジュールのみ）。破損リンクがあれば終了コード 1。
  *
  * 使い方:
  *   node scripts/check-doc-links.js [--dir docs]
+ *   node scripts/check-doc-links.js --self-test  # 検査ロジック自体の自己試験。
  *   # CI 例: - run: node scripts/check-doc-links.js
  */
 const fs = require('fs');
@@ -28,8 +29,15 @@ const REPO_ROOT = process.env.DOC_LINKS_ROOT
   ? path.resolve(process.env.DOC_LINKS_ROOT)
   : path.resolve(__dirname, '..');
 
-// 参照として実在検査を行う拡張子（仕様書・図・スキーマ等）
-const LINK_EXT = /\.(md|ya?ml|json|puml|mmd|png|jpe?g|svg|drawio)$/i;
+// 参照として実在検査を行う拡張子（仕様書・図・スキーマ・**コードファイル**）。
+// コード拡張子（js/ts/cs/csproj/props/slnx/sh ほか）が抜けていた間、仕様書からコードへの
+// live link は一切検査されず、破損したまま「OK: 384 件」と報告された（MSP#470 / planning#167。
+// 検査器を作る PR が、検査器の穴で自分の参照切れを見逃した型）。
+// `txt` / `log` / `lock` 等の汎用拡張子は誤検知リスクのため**意図的に対象外**とし、その方針を
+// 下の自己試験（--self-test）で固定してある。スタック固有分（cs/csproj/props/targets/slnx は
+// .NET、ts/tsx は TS）もキット既定に含める（在っても他スタックで誤検知しない拡張子のみ）。
+// 増減するときは self-test の正例・負例を必ず対で更新すること。
+const LINK_EXT = /\.(md|ya?ml|json|puml|mmd|png|jpe?g|svg|drawio|js|mjs|cjs|ts|tsx|cs|csproj|props|targets|slnx|sh)$/i;
 
 function parseArgs(argv) {
   const a = { dir: 'docs', requirePlanning: false };
@@ -126,6 +134,9 @@ function isBrokenRef(ref, baseDir, onSkip) {
   // だった（実在しないファイルへのリンクが CI で `OK` を返し続けた。発見は PR #395 の AI レビュー）。
   // 拡張子（LINK_EXT）を要求するのは、本文中の普通の語（`README` 等）をリンク扱いしないため。
   // `!t.includes('/')` を明示して従来の節と互いに素にしてある（何が新たに対象へ入ったかを読めるように）。
+  //
+  // **本節はキットに無い（本リポが進んでいる分）。** 環流するまで分類 B である（#494）。
+  // **キット版で上書きすると本節が消える** —— 追随のたびにマージが要ることを分類表へ書いてある。
   const bareFileName = !t.includes('/') && LINK_EXT.test(t);
   const looksRelative =
     t.startsWith('./') || t.startsWith('../') || (t.includes('/') && !t.startsWith('/')) || bareFileName;
@@ -178,7 +189,102 @@ function collectBroken(fp, onSkip) {
   return Array.from(broken);
 }
 
+// --- 自己試験 -------------------------------------------------------------------
+//
+// 検査対象の拡張子を広げるたび、正例（実在 → OK）と負例（不在 → 検出）を対で足す。
+// 「検査しているつもりで何も見ていない」状態（planning#167）を回帰させないための最小の歯止め。
+
+function selfTest() {
+  const cases = [];
+  const t = (name, pass, actual) => cases.push({ name, pass, actual });
+  const os = require('os');
+
+  // LINK_EXT: 既存の対象（仕様書・図・スキーマ）は従来どおり。
+  t('LINK_EXT: .md / .yaml / .json / .svg は対象', ['a.md', 'a.yaml', 'a.yml', 'a.json', 'a.svg']
+    .every((x) => LINK_EXT.test(x)));
+  // LINK_EXT: コードファイル（MSP#470 / planning#167 で追加）。
+  for (const ext of ['js', 'mjs', 'cjs', 'ts', 'tsx', 'cs', 'csproj', 'props', 'targets', 'slnx', 'sh']) {
+    t(`LINK_EXT: .${ext} は対象（planning#167）`, LINK_EXT.test(`a.${ext}`));
+  }
+  t('LINK_EXT: 対象外の拡張子は素通し（誤検知しない）',
+    !LINK_EXT.test('a.txt') && !LINK_EXT.test('a.tsv') && !LINK_EXT.test('a'));
+
+  // isBrokenRef の正例／負例。baseDir は scripts/ 自身（実在する .js が確実にある）。
+  const here = __dirname;
+  t('正例: 実在する .js への相対リンクは破損でない',
+    isBrokenRef('./check-doc-links.js', here) === false);
+  t('正例: 一段上がる .js リンクも解決する',
+    isBrokenRef('../scripts/check-doc-links.js', here) === false);
+  t('負例: 実在しない .js への相対リンクは破損として検出する',
+    isBrokenRef('./__no_such_script__.js', here) === true);
+  for (const ext of ['mjs', 'cjs', 'ts', 'tsx', 'cs', 'csproj', 'props', 'targets', 'slnx', 'sh']) {
+    t(`負例: 実在しない .${ext} も検出する`, isBrokenRef(`./__no_such__.${ext}`, here) === true);
+  }
+  t('対象外: 拡張子が対象外なら実在しなくても検出しない',
+    isBrokenRef('./__no_such__.txt', here) === false);
+  t('対象外: 外部 URL・アンカー・ルート絶対パスは検出しない',
+    ['https://example.com/a.js', '#section', '/etc/a.js'].every((x) => isBrokenRef(x, here) === false));
+  t('対象外: テンプレ変数を含む表記は検出しない',
+    isBrokenRef('${DIR}/a.js', here) === false && isBrokenRef('<path>/a.js', here) === false);
+  t('アンカー・クエリ付きでも本体パスで判定する',
+    isBrokenRef('./check-doc-links.js#L30', here) === false
+      && isBrokenRef('./__no_such_script__.js#L1', here) === true);
+
+  // collectBroken: Markdown リンク／インラインコード／フロントマターの 3 経路で .js を拾う。
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doclinks-selftest-'));
+    const okJs = path.join(dir, 'real.js');
+    fs.writeFileSync(okJs, '// fixture\n');
+    const md = path.join(dir, 'a.md');
+    fs.writeFileSync(
+      md,
+      '---\nrelated_specs:\n  - ./real.js\n  - ./fm-missing.js\n---\n\n' +
+        '# A\n\n[ok](./real.js) と [ng](./missing.js)。\n\n' +
+        'インラインコードの `./inline-missing.js` も拾う。\n'
+    );
+    const broken = collectBroken(md).sort();
+    t('collectBroken: 実在する .js リンクは報告しない（正例）', !broken.includes('./real.js'), broken);
+    t('collectBroken: 本文の .js リンク切れを検出（負例）', broken.includes('./missing.js'), broken);
+    t('collectBroken: フロントマターの .js も検出', broken.includes('./fm-missing.js'), broken);
+    t('collectBroken: インラインコードの .js も検出', broken.includes('./inline-missing.js'), broken);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // --- #399: 同一ディレクトリ内の裸ファイル名（本リポ固有。キットに無い） ---------------
+  //
+  // **キットの自己試験はこの機能を知らない。** 本リポが進んでいる分は、こちらで回帰を固定する
+  // （固定しないと、次のキット追随で黙って消える。追跡: #494）。
+  {
+    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'doclinks-bare-'));
+    fs.writeFileSync(path.join(dir, 'IADR-0001_real.md'), '# real\n');
+    const md = path.join(dir, 'a.md');
+    fs.writeFileSync(
+      md,
+      '# A\n\n[実在](IADR-0001_real.md) と [不在](IADR-9999_missing.md)。\n\n' +
+        '本文中の README や AGENTS という語はリンクではない。\n',
+    );
+    const broken = collectBroken(md).sort();
+    t('#399 正例: 実在する裸ファイル名は報告しない', !broken.includes('IADR-0001_real.md'), broken);
+    t('#399 負例: 実在しない裸ファイル名を検出する', broken.includes('IADR-9999_missing.md'), broken);
+    t('#399 対象外: 拡張子の無い裸の語はリンク扱いしない',
+      !broken.some((b) => b === 'README' || b === 'AGENTS'), broken);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  let failed = 0;
+  for (const c of cases) {
+    process.stdout.write(`  ${c.pass ? 'ok  ' : 'FAIL'} ${c.name}\n`);
+    if (!c.pass) { failed++; if (c.actual !== undefined) console.error('    actual:', JSON.stringify(c.actual)); }
+  }
+  if (failed) {
+    console.error(`[check-doc-links] 自己試験 ${failed} 件 失敗。`);
+    process.exit(1);
+  }
+  console.log(`[check-doc-links] 自己試験 ${cases.length} 件 OK。`);
+}
+
 function main() {
+  if (process.argv.includes('--self-test')) { selfTest(); return; }
   const a = parseArgs(process.argv.slice(2));
   // 定期ジョブでは planning が populate されている前提を検証する。未 populate なら
   // planning リンクは（isBrokenRef により）検査対象外となり破損を見逃すため、ここで明示的に fail する。
@@ -245,4 +351,6 @@ module.exports = {
   unpopulatedSubmoduleOf,
   isBrokenRef,
   collectBroken,
+  selfTest,
+  LINK_EXT,
 };
