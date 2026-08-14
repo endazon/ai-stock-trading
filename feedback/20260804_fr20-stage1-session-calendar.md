@@ -1,7 +1,7 @@
 ---
 title: Stage 1 の期間カウント規則に「半日取引日の判定源」が無い（§4.2 の分母をどこから知るか）
 type: plan-feedback
-status: open
+status: resolved
 category: 要求の不足
 related_ids: [FR-20, FR-12, ADR-0008, ADR-0022]
 source_repo: endazon/ai-stock-trading
@@ -11,6 +11,14 @@ created: 2026-08-04
 ---
 
 # フィードバック: Stage 1 の期間カウント規則に「半日取引日の判定源」が無い
+
+> **裁定済み（2026-08-07・質問票 第13回 Q3 案2）。** 計画は判定源を与えるのではなく、
+> **「祝日は判別しない。除外しない」「分母と除外の判定に外部カレンダーを用いない」と定めた**
+> （計画 06_daytrading-review §4.2「分母と除外の判定源」。planning `06fa163`。環流 project-planning#213 / #217）。
+> **本環流が求めた「判定源」は与えられないことが確定した。**
+> 実装への反映は endazon/ai-stock-trading#407 / [IADR-0187](../docs/adr/IADR-0187_stage1-holiday-non-detection-arbitration.md)。
+> 🔴 **祝日表・休場日リスト・外部カレンダーを足すことは裁定違反である。**
+
 
 > **送付済み（2026-08-06 JST）。** 計画リポジトリへ `plan-feedback` ラベル付き Issue として起票した:
 > [endazon/project-planning#213](https://github.com/endazon/project-planning/issues/213)。

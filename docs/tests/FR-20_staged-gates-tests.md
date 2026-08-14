@@ -122,7 +122,7 @@ related_specs:
 | T-71 | DST 切替をまたぐ（2026-03-09 EDT / 2026-11-02 EST）同じ現地時刻の観測 | 稼働分数を積む | いずれも 9:30 ET が同じ分（570）へ写り、1 営業日として算入される（**UTC 固定で数える実装の退行を検知**） | FR-20, #385 | 自動（境界値） |
 | T-72 | 午前だけ記録して別コンテキスト（再起動相当）で午後を足す | 稼働分数を積む | 同じ取引日の行へ積み上がり 1 営業日になる（**分数を永続する理由そのもの**） | FR-20, #385 | 自動 |
 | T-73 | 段階遷移が受理される／受理されない | 稼働の観測窓を確認する | 受理時のみ窓が区切られ 0 日へ戻る（起算点＝Stage 1 遷移日）。**受理されない要求では区切られない** | FR-20, #385 | 自動（否定形） |
-| T-74 | **市場の祝日**（2026-01-01・2026-07-03・2026-11-26）に満稼働 | 同上 | **算入されてしまう**（既知の限界。判定源が計画に無く実装は表を発明しない。[B-4](../blocked-tasks.md) の裁定待ち）。テストはこの穴を**可視化**する | FR-20, #385 | 自動（既知の限界） |
+| T-74 | **市場の祝日**（2026-01-01・2026-07-03・2026-11-26）に満稼働 | 同上 | **算入される**。🔴 **これは欠陥ではなく裁定どおりの挙動である**（利用者裁定 2026-08-07「祝日は判別しない。除外しない」。#407 / [IADR-0187](../adr/IADR-0187_stage1-holiday-non-detection-arbitration.md)）。過大計上は年 2〜3 日／60 営業日で**「昇格が早まる」側（fail-safe ではない）**だが、昇格には取引件数と利用者承認も要る。テストは**裁定どおりであることを固定**する | FR-20, #385 | 自動（既知の限界） |
 
 ### 段階別の資金上限と商品種別
 
@@ -328,7 +328,7 @@ related_specs:
 | T-12 / T-37 | #329 / #333 | 実装済み（`RejectionReasonClassificationTests` / `StageGateTests`） |
 | T-49〜T-53 | #387 | 実装済み（`ControlViolationAggregationTests` / `StageGateTests` / `StageGateServiceTests` / `EfControlViolationObservationStoreTests` / `OrderScreeningServiceTests` / `TradeDecisionMadeConsumerTests`）。**供給元は本 issue で実装済み**（発注審査が動けば集計が供給される） |
 | T-54〜T-60 | #386 | 実装済み（`Stage1TradeCountUnitTests` / `Stage1AggregationTests` / `Stage1FillObservationConsumerTests` / `StageGateServiceTests` / `EfStage1FillObservationStoreTests` / `OrderExecutionServiceTests` / `OrderFillPollerTests`）。**供給元は本 issue で実装済み**（`SIMULATE` の約定が届けば件数が増える） |
-| T-61〜T-74 | #385 | 実装済み（`Stage1SessionUptimeTests` / `BrokerAvailabilityObservedConsumerTests` / `EfStage1TradingDayObservationStoreTests` / `StageGateServiceTests` / `BrokerAvailabilityProbeServiceTests`）。**供給元は本 issue で実装済み**（OpenD へ到達できる限り営業日が積まれる）。**ただし T-74 のとおり市場の祝日は判別できない**（B-4 の裁定待ち） |
+| T-61〜T-74 | #385 | 実装済み（`Stage1SessionUptimeTests` / `BrokerAvailabilityObservedConsumerTests` / `EfStage1TradingDayObservationStoreTests` / `StageGateServiceTests` / `BrokerAvailabilityProbeServiceTests`）。**供給元は本 issue で実装済み**（OpenD へ到達できる限り営業日が積まれる）。**T-74 のとおり市場の祝日は判別しない —— 裁定どおりである**（2026-08-07・#407 / IADR-0187。「除外しない」と決まった。**祝日表を足すことは裁定違反**） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
 
@@ -341,5 +341,5 @@ related_specs:
 | 2026-08-05 | #334（2 軸分離）の実装に合わせて T-41〜T-48 を追加し、担当表を更新。計画適合レジストリの #334 担当 2 行の解消を反映 |
 | 2026-08-05 | #387（クラス C 統制違反件数の供給）の実装に合わせて T-49〜T-53 を追加。**未供給と 0 件の区別**を否定形で固定した |
 | 2026-08-05 | #386（取引件数の供給）の実装に合わせて T-54〜T-60 を追加。**計上単位**（分割約定・再送・手仕舞い）と**発注先の出どころ**（実発注したアダプタの値）を否定形で固定した |
-| 2026-08-05 | #385（稼働営業日の供給）の実装に合わせて T-61〜T-74 を追加。**稼働分数の積み方**（落とした区間・冪等・上限）と**カレンダー不在の構造的証明**（T-70）を固定し、**祝日を判別できない既知の限界**（T-74）を可視化した |
+| 2026-08-05 | #385（稼働営業日の供給）の実装に合わせて T-61〜T-74 を追加。**稼働分数の積み方**（落とした区間・冪等・上限）と**カレンダー不在の構造的証明**（T-70）を固定し、**祝日を判別しないこと**（T-74）を可視化した（**2026-08-07 の裁定でこれが正式な設計となった**。#407 / IADR-0187） |
 | 2026-08-07 | #434（`Stage.Mode` の書き込み経路 allow-list）の実装に合わせて T-105〜T-108 を追加。**読み書きの非対称**（書き込みは拒否・読み取りは倒す）を両方向で固定した |
