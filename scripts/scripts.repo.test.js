@@ -1058,4 +1058,50 @@ module.exports = ({ ok, assert }) => {
       stdio: 'pipe',
     });
   });
+
+  // --- キット追随（NFR / #492） ---
+  //
+  // 🔴 **ここで守るのは検査結果ではなく「検査が実効していること」である。**
+  // `check-kit-sync.js` は planning が未 populate なら skip して緑になる（fail-open）。
+  // CI の `kit-sync` ジョブは submodule を取得したうえで `--require-planning` を渡すことで
+  // その fail-open を閉じているが、**どちらか一方でも落ちると検査は永久に skip し、
+  // 「配線したのに一度も検査していない緑」が固定される**。CI 設定側を機械で固定する。
+  ok('ci.yml の kit-sync ジョブが submodule を取得し --require-planning を渡している（#492 の回帰）', () => {
+    const fsK = require('fs');
+    const ci = fsK.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const job = ci.slice(ci.indexOf('\n  kit-sync:'));
+    const body = job.slice(0, job.indexOf('\n\n  ') === -1 ? job.length : job.indexOf('\n\n  '));
+    assert(body.includes('submodules: recursive'), 'kit-sync ジョブが submodule を取得していない（取得しないと検査は skip する）');
+    assert(body.includes('PLANNING_REPO_TOKEN'), 'kit-sync ジョブが planning 取得用トークンを渡していない');
+    assert(
+      body.includes('--require-planning'),
+      '--require-planning が無い。未 populate 時に skip して緑になり、検査が実効しない',
+    );
+  });
+
+  ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
+    const table = require('./kit-sync-classification.json');
+    const entries = Object.entries(table.classes.B);
+    assert(entries.length > 0, '分類 B が空である（表が壊れている疑い）');
+    for (const [file, reason] of entries) {
+      assert(typeof reason === 'string' && reason.trim() !== '', `${file} の分類理由が空である`);
+      // 先頭が 4 種の番号（1〜4）か X であること
+      assert(/^[1-4X][.．]/.test(reason.trim()), `${file} の分類理由が 4 種の番号でも X でもない: ${reason}`);
+      // X（4 種に当たらない）は暫定であり、追跡先が無いと放置される
+      if (reason.trim().startsWith('X')) {
+        assert(/#\d+/.test(reason), `${file} は X 分類なのに追跡先の issue 番号が無い`);
+      }
+    }
+  });
+
+  ok('実ツリー: キット追随の検査が通る（#492 の回帰）', () => {
+    const fsK = require('fs');
+    const kit = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');
+    if (!fsK.existsSync(kit)) return; // planning 未 populate のローカル環境では skip（CI は --require-planning で落とす）
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-kit-sync.js'), '--require-planning'], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      stdio: 'pipe',
+    });
+  });
 };

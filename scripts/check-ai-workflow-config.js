@@ -20,6 +20,8 @@
  *   [ERROR] 引用符で囲まれていない --allowedTools 値に空白が含まれる（分割されて無効になる）
  *   [ERROR] setup-* でツールチェーンを用意しているのに、対応する実行ツールを許可していない
  *   [ERROR] 実装用とレビュー用でスタック別の実行ツールが食い違う（部分的な複製漏れ）
+ *   [ERROR] スタック別以外の Bash 指定（読み取り専用の汎用コマンド・git -C 変種等）が
+ *           実装用とレビュー用で食い違う（意図的な非対称は除外リストで宣言。issue #163）
  *   [WARN ] .claude/settings.json の allow とワークフローのツール集合の乖離（情報提供のみ）
  *   [WARN ] 検査そのものが成立していない（claude_args を解析できない / 既定名で引き当てられない）
  *
@@ -55,6 +57,26 @@ const TOOLCHAINS = [
   // 末尾（`gradlew`）へ正規化するため、`./gradlew` だけでは永久に一致しない。両方載せる。
   { action: 'setup-java', commands: ['mvn', 'gradle', './gradlew', 'gradlew'] },
 ];
+
+// issue #163: スタック別以外の Bash 指定（読み取り専用の汎用コマンド・`git -C <submodule>` 変種
+// 等）の片落ちを ERROR で検出するための**意図的な非対称の宣言**。toolchainDrift は TOOLCHAINS
+// （スタック別の実行ツール）しか比較しないため、#155 の cat/head/tail、#160 の cmp/diff、
+// #163 の grep/sort と**同じ型の欠落が 3 度**すり抜けた。「手で揃えること」というコメントでは
+// 守れなかったので、以後は下の除外リストに無い Bash 指定の差分をすべて ERROR にする。
+// 除外リストは Bash(...) の内側（末尾の `:*` を除く）と完全一致で照合する。
+// 実装用にだけあるのが正しいコマンド（書き込み・ファイル操作系。レビューは読むだけ）:
+const CODING_ONLY_BASH = [
+  'git add',
+  'git commit',
+  'git push',
+  'git switch',
+  'git checkout',
+  'git branch',
+  'find',
+  'mkdir',
+];
+// レビュー用にだけあるのが正しいコマンド（PR / CI の読解系。実装用は GitHub MCP で代替する）:
+const REVIEW_ONLY_BASH = ['gh issue view', 'gh pr view', 'gh run list'];
 
 /** `claude_args: |` のブロックスカラー本文を配列で返す（複数あれば複数要素）。 */
 function extractClaudeArgsBlocks(text) {
@@ -260,6 +282,67 @@ function toolchainDrift(files) {
   return errors;
 }
 
+/** Bash(<内側>) の内側を返す（末尾の `:*` は除く）。Bash 指定でなければ null。 */
+function bashInnerOf(tool) {
+  const m = tool.match(/^Bash\((.*?)(?::\*)?\)$/);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * スタック別以外の Bash 指定（読み取り専用の汎用コマンド・`git -C <submodule>` 変種等）の
+ * 実装用⇔レビュー用ドリフトを検出する（issue #163）。
+ *
+ * toolchainDrift が塞ぐのはスタック別の実行ツールだけで、`grep` / `sort` / `git -C … log` の
+ * 片落ちは検出されない。この型の欠落は #155（cat/head/tail）→ #160（cmp/diff）→
+ * #163（grep/sort）と 3 度繰り返された。パイプは各コマンドが個別判定されるため、後段の
+ * 1 コマンドの欠落で鎖全体が実行されず、しかも**その回のレビューが何回それを使おうと
+ * したかで拒否件数が変わる**（間欠的に赤くなり「再実行したら緑」を誘発する）。
+ * 人手の規律では守れないため、意図的な非対称（CODING_ONLY_BASH / REVIEW_ONLY_BASH）を
+ * 明示の除外リストとして持ち、それ以外の Bash 指定の差分をすべて ERROR にする。
+ *
+ * 比較は toolchainDrift と同じく**ツール指定そのもの**（`Bash(git -C planning log:*)`）の
+ * 粒度で行う。`git -C` はパスごとに別エントリであり、コマンド名へ畳み込むと
+ * submodule パスの片落ち（#163 の本体）が消えるためである。
+ */
+function genericBashDrift(files) {
+  const errors = [];
+  const coding = pickCanonical(files, 'claude-coding');
+  const review = pickCanonical(files, 'claude-code-review');
+  if (!coding || !review) return errors; // 片方しか無い構成は対象外
+
+  const opts = { requireUses: false };
+  const genericOf = (f, excluded) => {
+    const toolchain = toolchainCommandsOf(f.text, f.tools, opts);
+    return new Set(
+      f.tools.filter((t) => {
+        if (!/^Bash\(/.test(t) || toolchain.has(t)) return false;
+        const inner = bashInnerOf(t);
+        return inner !== null && !excluded.includes(inner);
+      })
+    );
+  };
+  const a = genericOf(coding, CODING_ONLY_BASH);
+  const b = genericOf(review, REVIEW_ONLY_BASH);
+  const missingInReview = [...a].filter((t) => !b.has(t));
+  const missingInCoding = [...b].filter((t) => !a.has(t));
+
+  if (missingInReview.length) {
+    errors.push(
+      `${path.basename(review.file)}: 実装用にある汎用 Bash 指定が欠けている: ` +
+        `${missingInReview.join(', ')}（パイプの後段で使われると鎖全体が拒否され、間欠的に赤くなる。` +
+        '意図的な非対称なら check-ai-workflow-config.js の CODING_ONLY_BASH へ宣言すること）'
+    );
+  }
+  if (missingInCoding.length) {
+    errors.push(
+      `${path.basename(coding.file)}: レビュー用にある汎用 Bash 指定が欠けている: ` +
+        `${missingInCoding.join(', ')}（意図的な非対称なら check-ai-workflow-config.js の ` +
+        'REVIEW_ONLY_BASH へ宣言すること）'
+    );
+  }
+  return errors;
+}
+
 /** 1 ファイルを検査し {errors, warnings, tools} を返す。 */
 function checkWorkflow(file, text) {
   const errors = [];
@@ -449,6 +532,35 @@ function selfTest() {
     ['レビュー側にだけあるツールも検出する', pair(FULL, `${FULL},Bash(node:*)`), true],
   ];
 
+  // issue #163: スタック別以外の Bash 指定のドリフト（genericBashDrift）。
+  // 受け入れ時の陽性対照（片方から Bash(grep:*) を抜いて ERROR / 戻して合格）を恒久化する。
+  const RO = 'Read,Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(git -C planning log:*)';
+  const genericCases = [
+    ['陽性対照: レビュー側に grep が無ければ検出する', pair(RO, RO.replace(',Bash(grep:*)', '')), true],
+    ['陽性対照の対: 両者が揃っていれば検出しない', pair(RO, RO), false],
+    ['git -C のパス片落ちも検出する', pair(`${RO},Bash(git -C src/x log:*)`, RO), true],
+    [
+      '意図的な非対称（実装専用の書き込み系 git / find / mkdir）は誤検知しない',
+      pair(`${RO},Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(find:*),Bash(mkdir:*)`, RO),
+      false,
+    ],
+    [
+      '意図的な非対称（レビュー専用の gh 読解系）は誤検知しない',
+      pair(RO, `${RO},Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*)`),
+      false,
+    ],
+    [
+      'スタック別ツールは対象外（toolchainDrift の持ち場と重複させない）',
+      pair(`${RO},Bash(dotnet test:*)`, RO),
+      false,
+    ],
+    [
+      '引数固定形（:* なし）の片落ちも検出する',
+      pair(`${RO},Bash(true --version)`, RO),
+      true,
+    ],
+  ];
+
   // issue #130 副次 / #134: 検査が無言で無効になる経路。
   // 第 3 要素は allFiles（ディスク上の全ワークフロー）。
   const CANON = ['.github/workflows/claude-coding.example.yml', '.github/workflows/claude-code-review.example.yml'];
@@ -499,6 +611,15 @@ function selfTest() {
       process.stderr.write(`  NG  ${label}（期待 ${expectDrift} / 実際 ${got}）\n`);
     }
   }
+  for (const [label, files, expectDrift] of genericCases) {
+    const got = genericBashDrift(files).length > 0;
+    if (got === expectDrift) {
+      process.stdout.write(`  ok  ${label}\n`);
+    } else {
+      failed++;
+      process.stderr.write(`  NG  ${label}（期待 ${expectDrift} / 実際 ${got}）\n`);
+    }
+  }
 
   for (const c of cases) {
     const r = checkWorkflow('self-test', c.yaml);
@@ -514,7 +635,7 @@ function selfTest() {
     return 1;
   }
   process.stdout.write(
-    `✓ 検証器の自己試験 ${cases.length + driftCases.length + scopeCases.length} 件すべて合格\n`
+    `✓ 検証器の自己試験 ${cases.length + driftCases.length + genericCases.length + scopeCases.length} 件すべて合格\n`
   );
   return 0;
 }
@@ -549,6 +670,8 @@ function main(argv) {
 
   // 2 ファイル間の突き合わせ（部分的な複製漏れ）。単一ファイルの検査では捉えられない。
   allErrors.push(...toolchainDrift(forDrift));
+  // スタック別以外の Bash 指定（読み取り専用の汎用コマンド等）も突き合わせる（issue #163）。
+  allErrors.push(...genericBashDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
   // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue #134 の検査は黙って
@@ -590,8 +713,10 @@ module.exports = {
   parseAllowedTools,
   parseFlagArgs,
   bashCommandsOf,
+  bashInnerOf,
   toolchainCommandsOf,
   toolchainDrift,
+  genericBashDrift,
   driftScopeWarnings,
   checkWorkflow,
   selfTest,

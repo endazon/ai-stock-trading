@@ -113,9 +113,14 @@ jobs:
 
   # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
   # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
-  # doc-links と同じく submodule 無しで走らせるため、テストが参照する ID の計画書実在検査だけは skip される
-  # （PR CI には PLANNING_REPO_TOKEN が無い）。実在検査は doc-links-planning.yml（夜間・トークン付き）が
-  # --require-planning で担う。役割分担と弱点は同ワークフローの冒頭コメントを参照。
+  # doc-links と同じく submodule 無しで走らせるため、テストが参照する ID の計画書実在検査だけは skip される。
+  # 実在検査は doc-links-planning.yml（夜間・トークン付き）が --require-planning で担う。
+  # 役割分担と弱点は同ワークフローの冒頭コメントを参照。
+  #
+  # 🔴 この分離の根拠であった「PR CI には PLANNING_REPO_TOKEN が無い」は**実測で反証された**（#496）。
+  # 下の kit-sync ジョブは同じトークンで PR の CI から submodule を取得し success している。
+  # **よって本ジョブを PR 段階で実効させられる余地がある。** 移行は #496 で行う
+  # （移行時に溜まっていた破損が出る可能性があるため、本 PR の範囲では触らない）。
   test-traceability:
     runs-on: ubuntu-latest
     steps:
@@ -191,6 +196,29 @@ jobs:
         run: node scripts/check-feedback-dispatched.js --self-test
       - name: Check feedback dispatched
         run: node scripts/check-feedback-dispatched.js
+
+  # NFR / #492: impl-handoff-kit の配布物への追随（分類 A のバイト一致）を検査する。
+  #
+  # 本ジョブだけは submodule を取得する（他のジョブは取得しない）。取得しないと
+  # check-kit-sync.js は skip し、**配線したのに一度も検査しない緑**が固定されるためである。
+  # そのため `--require-planning` を必ず付け、**取得できなかったら fail させる**。
+  #
+  # PR 段階で落とす配置を採る（doc-links-planning.yml の夜間ジョブではなく）。キットからの
+  # ドリフトは PR が持ち込むものであり、夜間に初めて赤くすると「PR に紐づかない赤」になって
+  # 放置される（同リポの doc-links-planning.yml が抱える弱点として明記されている形である）。
+  kit-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # 本体リポと planning submodule 双方の取得に使う（双方 read 権限が必要）。
+          token: ${{ secrets.PLANNING_REPO_TOKEN }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Check kit sync (classification A must be byte-identical)
+        run: node scripts/check-kit-sync.js --require-planning
 
   # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
   # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
