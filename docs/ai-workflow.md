@@ -77,8 +77,10 @@ bash scripts/apply-profile.sh copilot
 ### 3. レビューとゲート
 
 - PR を開くと AI 自動レビュー（`claude-code-review.yml`）が走る。
-- CI（`ci.yml`）・PR タイトル（`pr-title.yml`）・セキュリティ（`security.yml` / `codeql.yml`）が green であることを必須にする。
-  `pr-title.yml` はスカッシュ後件名の唯一の予防線であり（中間コミットは force push 禁止で事後修正できない）、
+- `ci.yml` / `pr-title.yml` / `security.yml` / `codeql.yml` の各ジョブが green であることを必須にする。
+  **required status check として設定する名前はワークフロー名ではなく check 名**（`build-and-test` 等。
+  実名の表は後述「必須チェックの有効化」）である。
+  `pr-title` はスカッシュ後件名の唯一の予防線であり（中間コミットは force push 禁止で事後修正できない）、
   全 PR で起動するため必須チェックに指定してよい（後述「必須チェックに指定する際の注意」）。
 - Helm chart を変更した PR では `helm.yml`（`helm lint` / `helm template`）も green にする。
 - 人間は PR テンプレートの「レビュアー向け（AI実装の確認観点）」で最終確認する。
@@ -113,12 +115,40 @@ bash scripts/apply-profile.sh copilot
 
 ### 必須チェックの有効化（人手の検証を最小化する要）
 
+> **これは推奨設定であり、現在の状態ではない。** ブランチ保護は**未配備**である（実測 2026-08-14。
+> 承認レビュー無し・claude-review が赤のままの PR がマージできている。`docs/blocked-tasks.md` B-2 に
+> **blocked:human** として記録済み）。**配備までの暫定手段**: マージ操作は人間が行い、マージ前に
+> PR の Checks タブで `build-and-test` と `claude-review` の完走（green）を目視確認する。
+
 GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule）で以下を推奨設定する。
 
 - Require a pull request before merging（直接 push 禁止）
-- Require status checks to pass before merging → `CI`・`pr-title`（`pr-title.yml`）・`Security`・`CodeQL` を必須に
+- Require status checks to pass before merging → 下表の **check 名**を必須に
 - Require review from Code Owners（`CODEOWNERS` を配置）
 - Require conversation resolution before merging
+
+**必須に指定するのは「check の名前（ジョブ側の名前）」である。ワークフロー名（`name:`）は
+status check の context として存在しない**（IADR-0185 決定1）。従前の本節は `CI`・`Security` を
+挙げていたが、**どちらもワークフロー名であり check として report されない**——そのとおり設定すると
+**存在しないチェックを待ち続け、develop が恒久的にマージ不能になる**。誤りは消さず訂正として残す。
+
+| 必須にする check 名 | 定義元（ジョブ） | 備考 |
+| --- | --- | --- |
+| `build-and-test` | `ci.yml` の `build-and-test` | バックエンドのビルド・テスト・カバレッジ |
+| `lint` | `ci.yml` の `lint` | `dotnet format` 検証 |
+| `commit-messages` | `ci.yml` の `commit-messages` | コミット規約 |
+| `pr-title` | `pr-title.yml` の `pr-title` | スカッシュ後件名の唯一の予防線 |
+| `secret-scan` | `security.yml` の `secret-scan` | gitleaks |
+| `dependency-review` | `security.yml` の `dependency-review` | PR でのみ起動（push では if で skip） |
+| `Analyze (csharp)` 等 | `codeql.yml` の `analyze`（matrix 展開名） | 実名は PR の Checks タブで確認する |
+| `claude-review` | `claude-code-review.yml` の `claude-review` | **完走**の担保であり「指摘なし」の担保ではない（下記） |
+
+**`CI` / `Security` / `CodeQL`（ワークフロー名）を書いてはならない。**
+
+- **`claude-review` の必須化で担保できるのは「レビューが完走した」ことだけである。** 🔴 の指摘が
+  あっても success を返す（採否は人間の判断）ため、**必須にしても 🔴 のままのマージは止まらない**。
+  あわせて、AI 基盤の停止・トークン失効・レート超過で**全 PR がマージ不能になる**副作用を持つ。
+- `pr-size`（`pr-size.yml`）は **warn 方式の趣旨に反するため必須にしない**（IADR-0184）。
 
 これにより、AI が作成した PR も「機械チェック green ＋ 必要なレビュー承認」を満たさない限りマージされない。
 
