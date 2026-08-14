@@ -1,0 +1,108 @@
+# PR サイズの検査（警告のみ・マージは止めない）。
+#
+# 背景: 大きい PR はレビューが形骸化する。とくに AI に実装を委ねる運用では、1 PR に複数の
+# issue が混ざると「フェーズ末監査で diff と受け入れ基準だけを渡す」形が成立しなくなる
+# （何の受け入れ基準に対する diff なのかが 1 対 1 で言えなくなるため）。
+#
+# **失敗させない。** サイズは正しさの指標ではなく、束ね方を見直す契機にすぎない。生成物
+# （orval・Lingui カタログ・EF マイグレーション等）を含む PR は正当に大きくなるため、
+# 機械的にブロックすると「分割のために実装を歪める」圧力が生まれる（planning#296 の
+# 「検査器・規約の追加は同型の事故が 2 回起きたら」という統制と同じ理由で、まず警告に留める）。
+#
+# しきい値を厳しくする場合も、**まず実測してから**動かすこと。
+#
+# 除外するもの:
+#   - 生成物・ロックファイル（差分の大半を占めるが人が読む対象ではない）
+#   - 削除のみの行（消す作業を萎縮させない）
+#
+# このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
+
+name: PR Size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# 出力先は GITHUB_STEP_SUMMARY だけであり、PR へコメントを投稿しない。
+# したがって `pull-requests: write` は不要である（宣言だけ残った未使用権限を持たない）。
+# 将来コメント投稿を足すときに併せて付けること。
+permissions:
+  contents: read
+
+jobs:
+  pr-size:
+    name: pr-size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Measure added lines (excluding generated files)
+        id: measure
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # 数えるのは**実装 diff だけ**である（planning 裁定 2026-08-11・planning#312）。
+          #
+          #   - 生成物・ロックファイル: 人が読む対象ではない。
+          #   - **必須文書**（`docs/` = 作業仕様書・実装 ADR ほか、`feedback/` = 環流記録）:
+          #     **issue を細かく割るほど 1 PR あたりの文書は増える**ため、
+          #     文書量は「複数 issue の混在」という本検査の目的に対して**逆向きに動く指標**である。
+          #     実測（MSP 直近 30 PR・2026-08-11）では**必須文書だけで中央値 393 行**であり、
+          #     含めて数えると**コードを 1 行も書かずに 4 回に 1 回しきい値を超えた**。
+          #
+          # 生成物のパターンはプロジェクトに応じて追加すること（pathspec の除外構文）。
+          # **生成物は「パターン」ではなく「設定ファイルが指す出力先」で決まる**ものがある。
+          # **自リポの設定を見て書く。**
+          #
+          # 本リポの較正（IADR-0184。キット既定との差分は EXCLUDES のみ）:
+          #   - `planning` … 計画 submodule の pin（1 行だが実装 diff ではない）
+          #   - `CHANGELOG.md` … `changelog.yml` の生成物（automation/ の PR で大半を占める）
+          #   - `**/Migrations/**` … EF Core のマイグレーション（Designer / スナップショット含む）
+          #   - キット既定の `**/pnpm-lock.yaml` / `**/orval/**` / `**/*.po` は本リポに
+          #     1 ファイルも存在しないため落とした（実測 2026-08-14。当たらない除外を残すと
+          #     「効いている」と誤読される）。
+          EXCLUDES: >-
+            :(exclude)docs/**
+            :(exclude)feedback/**
+            :(exclude)planning
+            :(exclude)CHANGELOG.md
+            :(exclude)**/*.lock
+            :(exclude)**/package-lock.json
+            :(exclude)**/*.generated.*
+            :(exclude)**/Migrations/**
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${BASE_SHA}" "${HEAD_SHA}" 2>/dev/null || true
+          # 追加行のみを数える（削除は数えない）。
+          added=$(git diff --numstat "${BASE_SHA}...${HEAD_SHA}" -- . ${EXCLUDES} \
+            | awk '$1 != "-" { s += $1 } END { print s + 0 }')
+          # 除外前も併せて数える。**除外の妥当性をその場で確かめられるようにするため**であり、
+          # 両方を出さないと「何をどれだけ除いたのか」が読み手に見えない。
+          total=$(git diff --numstat "${BASE_SHA}...${HEAD_SHA}" -- . \
+            | awk '$1 != "-" { s += $1 } END { print s + 0 }')
+          echo "added=${added}" >> "${GITHUB_OUTPUT}"
+          echo "total=${total}" >> "${GITHUB_OUTPUT}"
+          echo "追加行数: 除外後 ${added} / 除外前 ${total}"
+
+      - name: Warn when the PR is large
+        if: steps.measure.outputs.added != '' && fromJSON(steps.measure.outputs.added) > 400
+        run: |
+          {
+            echo "## PR サイズの警告"
+            echo
+            echo "**実装 diff の追加行数が ${{ steps.measure.outputs.added }} 行**で、目安の 400 行を超えている。"
+            echo "（除外前の全追加行数は ${{ steps.measure.outputs.total }} 行。差は生成物と必須文書〔\`docs/\` \`feedback/\`〕である）"
+            echo
+            echo "**マージは止めていない。** 次のどれかに当たらないかだけ確認すること。"
+            echo
+            echo "- 複数の issue が 1 PR に混ざっていないか（フェーズ末監査で「diff と受け入れ基準」を 1 対 1 で渡せなくなる）"
+            echo "- 分割すると実装を歪める束ね（同一資源・同一契約に触れる変更）であれば、**そのままでよい**。理由を PR 本文へ書く"
+            echo "- 除外し損ねた生成物があれば、本ワークフローの EXCLUDES へ追加する"
+          } >> "${GITHUB_STEP_SUMMARY}"

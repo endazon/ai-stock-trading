@@ -34,7 +34,10 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    # `reopened` が必要である（IADR-0185 決定3）。無いと、close → reopen した PR で本チェックが
+    # 起動せず、claude-review を required status check にしたとき当該 PR が恒久 pending でマージ
+    # 不能になる。他のワークフロー（ci / security / pr-title）はすべて reopened を持つ。
+    types: [opened, synchronize, reopened]
 
 # 連続 push でレビューが多重起動するのを防ぐ（古い実行はキャンセルする）。
 # 未設定だと 1 PR で 3〜4 本が並走し、サブスク枠を消費したうえ陳腐化した結果で
