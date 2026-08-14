@@ -113,9 +113,14 @@ jobs:
 
   # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
   # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
-  # doc-links と同じく submodule 無しで走らせるため、テストが参照する ID の計画書実在検査だけは skip される
-  # （PR CI には PLANNING_REPO_TOKEN が無い）。実在検査は doc-links-planning.yml（夜間・トークン付き）が
-  # --require-planning で担う。役割分担と弱点は同ワークフローの冒頭コメントを参照。
+  # doc-links と同じく submodule 無しで走らせるため、テストが参照する ID の計画書実在検査だけは skip される。
+  # 実在検査は doc-links-planning.yml（夜間・トークン付き）が --require-planning で担う。
+  # 役割分担と弱点は同ワークフローの冒頭コメントを参照。
+  #
+  # 🔴 この分離の根拠であった「PR CI には PLANNING_REPO_TOKEN が無い」は**実測で反証された**（#496）。
+  # 下の kit-sync ジョブは同じトークンで PR の CI から submodule を取得し success している。
+  # **よって本ジョブを PR 段階で実効させられる余地がある。** 移行は #496 で行う
+  # （移行時に溜まっていた破損が出る可能性があるため、本 PR の範囲では触らない）。
   test-traceability:
     runs-on: ubuntu-latest
     steps:
