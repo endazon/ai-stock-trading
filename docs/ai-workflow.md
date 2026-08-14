@@ -140,7 +140,7 @@ status check の context として存在しない**（IADR-0185 決定1）。従
 | `pr-title` | `pr-title.yml` の `pr-title` | スカッシュ後件名の唯一の予防線 |
 | `secret-scan` | `security.yml` の `secret-scan` | gitleaks |
 | `dependency-review` | `security.yml` の `dependency-review` | PR でのみ起動（push では if で skip） |
-| `Analyze (csharp)` 等 | `codeql.yml` の `analyze`（matrix 展開名） | 実名は PR の Checks タブで確認する |
+| ~~`Analyze (csharp)` 等~~ | `codeql.yml` の `analyze`（matrix 展開名） | **必須にしない（#481 で除外へ変更）**。`pull_request` に `paths:` を持つため、コード変更の無い PR では check 自体が report されず、必須指定すると恒久 pending になる。網羅は push（develop/main）と週次 schedule の全量解析が担保する |
 | `claude-review` | `claude-code-review.yml` の `claude-review` | **完走**の担保であり「指摘なし」の担保ではない（下記） |
 
 **`CI` / `Security` / `CodeQL`（ワークフロー名）を書いてはならない。**

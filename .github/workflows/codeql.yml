@@ -10,6 +10,17 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+    # コード変更の無い PR では解析を回さない（#481・kit: planning#327 追随）。
+    # push / schedule は全量解析のまま。paths 付きチェックは required check に指定しないこと（恒久 pending になる）。
+    paths:
+      - "**/*.cs"
+      - "**/*.csproj"
+      - "**/*.slnx"
+      - "**/*.sln"
+      - "**/*.props"
+      - "**/*.targets"
+      - "**/packages.lock.json"
+      - ".github/workflows/codeql.yml"
   schedule:
     - cron: "0 3 * * 1"
 
