@@ -62,13 +62,16 @@ const VERDICT_HEADINGS = [
  * よって**AI の出力に当たる場所だけ**を見る。配送経路が複数あるため、次を対象とする。
  *   1. `assistant` メッセージの `text` ブロック（通常の応答）
  *   2. `result` イベントの `result`（最終応答がここに入る版がある）
- *   3. コメント投稿ツールの `input.body`（判定をツール呼び出しで投稿する経路）
+ *   3. **`input.body` を持つツール呼び出し全般**（判定をツール呼び出しで投稿する経路）
  *
- * 3 を入れるのは、`--allowedTools` に `mcp__github__add_issue_comment` /
- * `pull_request_review_write` / `add_comment_to_pending_review` が含まれており、
- * **判定をそれらで投稿すると 1・2 に現れない**ためである（AI レビューの指摘・PR #491）。
- * **`input.body` に限定する** —— 全ての `input` を見ると `Bash` の `command` 等まで拾い、
- * 本文にたまたま見出しを含むコマンドで緑にできてしまう。
+ * 3 を入れるのは、`--allowedTools` にコメント投稿系のツール
+ * （`mcp__github__add_issue_comment` / `pull_request_review_write` /
+ * `add_comment_to_pending_review` 等）が含まれており、**判定をそれらで投稿すると
+ * 1・2 に現れない**ためである（AI レビューの指摘・PR #491）。
+ * **ツール名では絞らない** —— 実測では本ワークフローが実際に使うのは
+ * `mcp__github_comment__update_claude_comment` であり、**名前で列挙すると取りこぼす**。
+ * 代わりに **`input.body` というフィールドに限定する** —— 全ての `input` を見ると
+ * `Bash` の `command` 等まで拾い、本文にたまたま見出しを含むコマンドで緑にできてしまう。
  */
 function assistantText(events) {
   const out = [];
