@@ -149,7 +149,7 @@ kit の定義は「**他**プロジェクトの短縮名」であり、字面ど
 - [x] 両スクリプトの `--self-test`（69 件 / 38 件） が通る
 - [x] `PLAN_ID_PREFIXES=MSP,AST` での違反が **0 件**である（1718 件走査。着手時 46 件）
 - [x] CI（`ci.yml`）が `check-plan-id-qualification.js` を**自己試験つき**で走らせる
-- [x] `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` が通る（**206 件**）
+- [x] `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` が通る（**213 件**。着手時 204 → 計画 ID の回帰 2 件 ＋ 決定7 の bot 除外 7 件）
 - [x] `dotnet build backend/backend.slnx` が警告 0 で通る（コメントのみの変更であることの確認）
 - [x] `node scripts/check-doc-links.js` が通る（458 件 OK）
 - [x] **`claude[bot]` の PR が PR タイトル検査を skip しない**（決定7。実測 exit=1）
