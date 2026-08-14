@@ -33,11 +33,25 @@ body:
   - type: textarea
     id: acceptance
     attributes:
-      label: 受け入れ基準
-      description: 計画書の受け入れ基準を転記する（完了判定の根拠）
+      label: 受け入れ基準（Given-When-Then）
+      description: >-
+        計画書の受け入れ基準を Given-When-Then で書く（完了判定の根拠）。
+        「〜できること」だけの記述は、何を満たせば閉じてよいかが人によって変わるため避ける。
       value: |
-        - [ ]
-        - [ ]
+        - [ ] Given <前提> / When <操作> / Then <期待結果>
+        - [ ] Given <前提> / When <操作> / Then <期待結果>
+    validations:
+      required: true
+
+  - type: input
+    id: file_scope
+    attributes:
+      label: ファイル領域（並列判定に使う）
+      description: >-
+        本 issue が触るディレクトリ・ファイルの範囲を宣言する。
+        並列に回せるかは「ファイル領域が重ならないか」で判定するため、宣言が無いと束ね方・並列順を決められない。
+        着手時に広がった場合は追記する。
+      placeholder: "例: backend/Services/OrderExecutionService/**, backend/Shared/**/Trading/*.cs"
     validations:
       required: true
 
