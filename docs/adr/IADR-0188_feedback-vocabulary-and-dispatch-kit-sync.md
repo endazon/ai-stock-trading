@@ -104,6 +104,15 @@ planning#323 の裁定は、**`status` は「計画側の裁定段階」だけ�
 
 `status` から伝達の軸を抜く。**両経路とも `dispatched: true`** で表し、到達先の番号を `planning_issue:` に残す。
 
+> **`dispatched: true` かつ `status: open` は正しい状態である。** 「送ったのに `open` のまま」と読めるが、
+> **2 つの鍵は別の軸を表している** —— `dispatched` は**実装側が送ったか**、`status` は**計画側が裁定したか**である。
+> 送った直後は必ずこの組み合わせになり、計画側が受理して初めて `accepted` へ動く。
+> 本 PR 時点では [project-planning#328](https://github.com/endazon/project-planning/issues/328) /
+> [#329](https://github.com/endazon/project-planning/issues/329) の 2 件がこの状態にある。
+>
+> **軸を分けた目的がまさにこれである** —— 旧来の 1 語（`resolved`）では、この 2 件を
+> 「送ったが裁定待ち」と書き分けられず、**送っていない記録と同じ見た目になっていた。**
+
 ### 決定4: **未伝達の 1 件は、警告を消すのではなく実際に伝達した**
 
 `20260813_sc03-buy-in-count-period-undefined.md`（#470 / IADR-0186 決定1 の環流）は
