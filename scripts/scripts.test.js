@@ -11,6 +11,7 @@ const { warn, notice } = require('./lib/ci-annotate.js');
 const {
   validateSubject,
   checkSingleTitle,
+  isBotLogin,
   findAllowlisted,
   loadAllowlist,
 } = require('./check-commit-messages.js');
@@ -562,6 +563,45 @@ ok('PR タイトル Revert はスキップ扱いで 0', () =>
   assert.strictEqual(silent(() => checkSingleTitle('Revert "feat(FR-08): x"')), 0));
 ok('PR タイトル [skip ci] はスキップ扱いで 0', () =>
   assert.strictEqual(silent(() => checkSingleTitle('なんでも [skip ci]')), 0));
+
+// --- check-commit-messages: isBotLogin（bot 作成 PR の除外・#477 / IADR-0189） ---
+//
+// **除外はワークフローの `user.type != 'Bot'` ではなくスクリプト側が担う。** GitHub App が
+// 作成した PR も `user.type == 'Bot'` になるため、ワークフローで弾くと AI 実装委任の運用でだけ
+// 「最後の砦」が skipped になる（planning#202）。以下はその規則を両方向で固定する。
+
+ok('isBotLogin: BOT_AUTHORS への完全一致だけを bot とみなす', () => {
+  assert.strictEqual(isBotLogin('dependabot[bot]'), true);
+  assert.strictEqual(isBotLogin('renovate[bot]'), true);
+  assert.strictEqual(isBotLogin('github-actions[bot]'), true);
+});
+
+// **最重要の否定形。** ここが true になると PR タイトル検査が AI の PR で skip され、
+// 規約外の件名が統合ブランチへ載る（本検査が防ごうとしている当のもの）。
+ok('isBotLogin: claude[bot] は bot 扱いしない（GitHub App の PR も検査する）', () =>
+  assert.strictEqual(isBotLogin('claude[bot]'), false));
+
+// **部分一致にしてはならない**（コミット著者向けの isBot() と規則が違う）。
+ok('isBotLogin: 部分一致では除外しない', () => {
+  assert.strictEqual(isBotLogin('not-dependabot-really'), false);
+  assert.strictEqual(isBotLogin('dependabot-clone'), false);
+});
+
+ok('isBotLogin: 空・未設定は bot 扱いしない（fail-closed 側へ倒す）', () => {
+  assert.strictEqual(isBotLogin(''), false);
+  assert.strictEqual(isBotLogin(undefined), false);
+  assert.strictEqual(isBotLogin(null), false);
+});
+
+ok('PR タイトル: bot 作成 PR は件名が規約違反でも 0（スキップ）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'dependabot[bot]')), 0));
+
+// **claude[bot] の PR は検査される。** これが #477 / IADR-0189 で塞いだ穴である。
+ok('PR タイトル: claude[bot] の PR は規約違反なら 1（skip しない）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'claude[bot]')), 1));
+
+ok('PR タイトル: 作成者未指定でも従来どおり検査する（後方互換）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff')), 1));
 
 // --- check-commit-messages: findAllowlisted（規約導入前コミットの恒久除外） ---
 
