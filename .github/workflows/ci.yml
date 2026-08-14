@@ -192,6 +192,29 @@ jobs:
       - name: Check feedback dispatched
         run: node scripts/check-feedback-dispatched.js
 
+  # NFR / #492: impl-handoff-kit の配布物への追随（分類 A のバイト一致）を検査する。
+  #
+  # 本ジョブだけは submodule を取得する（他のジョブは取得しない）。取得しないと
+  # check-kit-sync.js は skip し、**配線したのに一度も検査しない緑**が固定されるためである。
+  # そのため `--require-planning` を必ず付け、**取得できなかったら fail させる**。
+  #
+  # PR 段階で落とす配置を採る（doc-links-planning.yml の夜間ジョブではなく）。キットからの
+  # ドリフトは PR が持ち込むものであり、夜間に初めて赤くすると「PR に紐づかない赤」になって
+  # 放置される（同リポの doc-links-planning.yml が抱える弱点として明記されている形である）。
+  kit-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # 本体リポと planning submodule 双方の取得に使う（双方 read 権限が必要）。
+          token: ${{ secrets.PLANNING_REPO_TOKEN }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Check kit sync (classification A must be byte-identical)
+        run: node scripts/check-kit-sync.js --require-planning
+
   # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
   # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
   #
