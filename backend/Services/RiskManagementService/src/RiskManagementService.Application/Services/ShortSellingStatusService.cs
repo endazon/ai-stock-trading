@@ -10,16 +10,24 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 // **本サービスは値を作らない。** 供給元が無い指標は `MetricAvailability.NotSupplied` として返し、
 // 画面がそれを「取得できていません」と描く。0 や空列へ倒すと、画面は正常な統制として描いてしまう。
 //
-// 供給の実測（2026-08-06 時点）:
+// 供給の実測（2026-08-13 時点）:
 //   維持率        … IMaintenanceMarginSnapshotSource の既定は UnavailableMaintenanceMarginSnapshotSource（常に null）
-//   借株料の累計  … 累計を保持する型・ストア・イベントがコード全体に存在しない
+//   借株料の累計  … 記録側は入った（#465 / IADR-0183）が、**供給は ADR-0026 PoC 項目 9〔単位確定〕待ちで意図的に未開始**
 //   自動縮小の履歴… 発火元（維持率）が無く、履歴ストアも照会 API も無い
 //   空売り比率    … 建玉の射影はあるが、分母（建玉総額＝時価）に現在値が要る（MarketData:EnableMarkToMarket 既定 false）
 //   建玉の方向    … **有る**（台帳射影 OpenPosition.Side）
+//   強制買戻し回数… **結線済み**（#470 / IADR-0186）。当月が観測の届いた取引日で覆われていれば供給する
+//                   （観測そのものは OpenD 常駐待ちのため、現況では未供給へ倒れる）
 public sealed class ShortSellingStatusService(
     IRiskSettingsStore settingsStore,
     IPortfolioLedgerStore ledger,
     IMaintenanceMarginSnapshotSource snapshotSource,
+    // FR-21, SC-03, #470, IADR-0186 決定4: **必須依存である**（省略可能引数にしない）。
+    // 省略可能にすると配線を落としても既定値で緑のまま通る（IADR-0163 決定2 と同じ規律）。
+    IPositionObservationArrivalStore observationArrivals,
+    IBuyInInferenceStore buyInInferences,
+    IClock clock,
+    IBusinessCalendar calendar,
     ICurrentPriceSource? currentPrices = null)
 {
     public ShortSellingStatusView Build()
@@ -41,6 +49,8 @@ public sealed class ShortSellingStatusService(
             BuildMaintenanceMargin(snapshot, limits);
 
         var (exposureAvailability, exposureRatio) = BuildShortExposure(positionViews);
+
+        var (buyInAvailability, buyInCount) = BuildBuyInCount();
 
         return new ShortSellingStatusView(
             MaintenanceMarginAvailability: maintenanceAvailability,
@@ -67,24 +77,52 @@ public sealed class ShortSellingStatusService(
             // **記録経路を実装するまでは無条件に未供給である。**
             ReductionHistoryAvailability: MetricAvailability.NotSupplied,
             ReductionHistory: [],
-            // ADR-0016 決定15, #424, IADR-0162 決定2: **強制買戻しの発生回数は供給が無い。**
+            // ADR-0016 決定15, FR-21, #470, IADR-0186: **強制買戻しの発生回数。**
             //
-            // #419（IADR-0159）で推定台帳（`buy_in_inferences`）は入った。しかし台帳は**推定が起きたときにしか
-            // 行を書かない**——観測が届かなければ 1 行も書かれず、観測が届いて何も推定しなくても 1 行も書かれない。
-            // したがって**行数 0 は 2 つの別事実を区別できない**。
+            // 推定台帳（`buy_in_inferences`）は**推定が起きたときにしか行を書かない**ため、
+            // **行数 0 だけでは 2 つの別事実を区別できない**。
             //   1. ブローカ建玉の観測が一度も届いていない（＝**この統制はまったく働いていない**）
             //   2. 観測した結果、強制買戻しは 1 件も無かった（＝正常）
-            // 前者を 0 件と描けば「強制買戻しは起きていない」と読める。計画（05_screens SC-03 の供給元の表）は
-            // **「0 件と表示してはならない」**と名指しで禁じており、ADR-0016 決定15 も同じ向きである。
             //
-            // **`IBuyInInferenceStore.CountInferredBetween` をここへ結線しないのは意図的である。**
-            // 結線すれば「観測が一度も無い」状態が `Available` かつ 0 として応答に載り、上記 1 が 2 に化ける。
-            // 供給できる形にするには「観測が届いた事実」を記録する経路が要る（`blocked-tasks` へ登録済み）。
-            //
-            // **他の指標の供給状態を条件に混ぜない**（IADR-0154 残余リスク4 の規律）。維持率や現在値の供給が
-            // 入った日に本項が黙って `Available` / `NotApplicable` へ化けてはならない。
-            BuyInCountAvailability: MetricAvailability.NotSupplied,
-            BuyInCount: null);
+            // **観測の到達（FR-21）で区別する**——#463 / IADR-0181 が記録経路を入れたため、
+            // 本サービスは残っていた**結線**を行う（従前のコメント「記録経路が要る」は stale であった）。
+            BuyInCountAvailability: buyInAvailability,
+            BuyInCount: buyInCount);
+    }
+
+    // FR-21, FR-10, SC-03, UC-06, ADR-0016 決定15, #470, IADR-0186:
+    // **強制買戻しの発生回数を「正当な 0」として供給できるかを判定する。**
+    //
+    // 計画 FR-21（2026-08-08 改定）:
+    // > **報告期間が観測の届いた取引日で覆われている場合に限り、件数 0 を正当な 0 として供給する。**
+    //
+    // 🔴 **期間は当月（月初〜当日）である**（IADR-0186 決定1）。ADR-0016 決定15 は
+    // **「発生回数」を月報（当月）に、「発生有無」を日報（当日）に**割り当てており、SC-03 の当該項目の
+    // 名称は**発生回数**である。**計画は SC-03 の期間を明示していない**ため、決定15 の語彙から導出した
+    // 最も説明可能な読みを採り、同時に計画へ環流している（発明ではなく導出であることを残す）。
+    //
+    // **判定規則を再実装しない。** 照会 API（#469）と同じ純関数 `ObservationCoverage.Covers` を通す
+    // ——規則が 2 か所に分かれると必ず食い違う。**1 日でも欠ければ未供給**へ倒れる。
+    //
+    // **他の指標の供給状態を条件に混ぜない**（IADR-0154 残余リスク4）。維持率・現在値・空売り比率の
+    // 供給が入った日に、本項の可否が黙って変わってはならない——入力は観測の到達と推定台帳だけである。
+    private (MetricAvailability Availability, int? Count) BuildBuyInCount()
+    {
+        var today = clock.Today;
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+
+        var observedDays = observationArrivals.GetObservedDaysBetween(monthStart, today);
+
+        // 覆えていない＝「観測が届いていない期間がある」。**0 件と描いてはならない**
+        //（計画が名指しで禁じた向き。ADR-0016 決定15 / IADR-0162 決定2）。
+        if (!ObservationCoverage.Covers(observedDays, monthStart, today, calendar))
+        {
+            return (MetricAvailability.NotSupplied, null);
+        }
+
+        // 覆えている＝観測した結果である。**0 件でも `Available` として返す**——
+        // 正当な 0 を未供給に見せることも FR-21 の規約違反である（規約は両方向に効く）。
+        return (MetricAvailability.Available, buyInInferences.CountInferredBetween(monthStart, today));
     }
 
     // ADR-0016 決定7（2026-08-07 追記）, IADR-0133 決定2: 維持率と、適用される閾値・回復目標。
