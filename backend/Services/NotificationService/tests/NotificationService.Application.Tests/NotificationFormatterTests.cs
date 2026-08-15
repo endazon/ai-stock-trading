@@ -167,4 +167,45 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("GME").And.Contain("2026-09-06");
         msg.Content.Should().Contain("100").And.Contain("説明できない消失");
     }
+
+    // --- FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化 ---
+
+    private static readonly DateTimeOffset FxT0 = new(2026, 8, 15, 3, 0, 0, TimeSpan.Zero);
+
+    // 🔴 **Warning であって Critical ではない。** Critical にすると損切り到達（実際に止まる事象）と
+    // 同じ重みになり、**本当に止まったときの通知が埋もれる**。
+    [Fact]
+    public void 為替のフォールバック切替は_Warning_で劣化の内容まで書く()
+    {
+        var msg = NotificationFormatter.From(new FxRateSourceFellBack("USD", "fred", 2, 2, FxT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Content.Should().Contain("fred");
+        // 「フォールバックした」だけでは受け手が影響を判断できない。
+        msg.Content.Should().Contain("週次");
+        msg.Content.Should().Contain("新規建ては止まっていません");
+    }
+
+    // ADR-0022 決定2 は事実だけでなく**期間**の記録を求めている。
+    [Fact]
+    public void 為替の復帰は_Info_でフォールバック期間を書く()
+    {
+        var msg = NotificationFormatter.From(
+            new FxRateSourcePrimaryRestored("USD", "boj", FxT0.AddHours(-6), FxT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Info);
+        msg.Content.Should().Contain("6 時間");
+    }
+
+    // 🔴 **「止まった」と読ませない。** 警告域は続行する（ADR-0022 決定5）。
+    [Fact]
+    public void 為替の鮮度警告は_止まっていないことと停止の上限を併記する()
+    {
+        var msg = NotificationFormatter.From(new FxRateStale("USD", FxT0.AddDays(-7), 7, 5, 30, FxT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Content.Should().Contain("新規建ては止まっていません");
+        // 受け手が緊急度を判断できること。
+        msg.Content.Should().Contain("30");
+    }
 }

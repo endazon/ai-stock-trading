@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
@@ -21,10 +22,13 @@ internal sealed class CachingFxRateSource(
     TimeSpan maxRateAge,
     TimeSpan staleRateWarning,
     TimeProvider timeProvider,
-    ILogger<CachingFxRateSource> logger)
+    ILogger<CachingFxRateSource> logger,
+    IFxSourceStatusNotifier? statusNotifier = null)
     : IFxRateSource
 {
     private readonly ConcurrentDictionary<Currency, (FxRate Rate, DateTimeOffset FetchedAt)> _cache = new();
+
+    private readonly IFxSourceStatusNotifier _statusNotifier = statusNotifier ?? NoOpFxSourceStatusNotifier.Instance;
 
     public async Task<FxRate?> GetRateToBaseAsync(Currency quote, CancellationToken cancellationToken = default)
     {
@@ -60,9 +64,45 @@ internal sealed class CachingFxRateSource(
                 "警告 {WarnDays} 日 / 停止 {MaxDays} 日）。**直近レートで続行します**（新規建ては止めません）。" +
                 "上限を超えると非基準通貨の新規建てが見送られます（ADR-0022 決定4・IADR-0174）。",
                 quote, rate.AsOf, age.TotalDays, staleRateWarning.TotalDays, maxRateAge.TotalDays);
+
+            // ADR-0022 決定5 / #381 第 2 層: 警告の宛先はログだけではない。監査・Discord・日報へ広げる
+            // （IADR-0196）。暦日単位の抑止は通知側が持つため、**警告域にいる間は毎回呼んでよい**。
+            await NotifyStaleAsync(quote, rate.AsOf, age, cancellationToken).ConfigureAwait(false);
         }
 
         _cache[quote] = (rate, now);
         return rate;
+    }
+
+    /// <summary>
+    /// 鮮度警告を可視化経路へ報告する。
+    /// <para>
+    /// 🔴 <b>可視化の失敗でレートを捨てない。</b> ここは「値は返す（新規建ては止めない）」と決めた経路であり
+    /// （ADR-0022 決定5）、<b>通知が出せないことを理由に値を捨てると、警告が停止へ化ける。</b>
+    /// 例外は飲み込むが、<b>飲み込んだ事実はログへ残す</b>。
+    /// </para>
+    /// </summary>
+    private async Task NotifyStaleAsync(
+        Currency quote, DateTimeOffset asOf, TimeSpan age, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _statusNotifier
+                .ReportStaleAsync(
+                    CurrencyFormat.CodeOf(quote), asOf, age, staleRateWarning, maxRateAge, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "為替レートの鮮度警告を可視化経路へ報告できませんでした（{Quote}）。" +
+                "**この警告は監査・通知・日報に現れません**（値は返しており新規建ては止めていません）。",
+                quote);
+        }
     }
 }

@@ -252,6 +252,45 @@ public static class AuditEntryFactory
             + $"{e.BanUntil:yyyy-MM-dd} まで空売り禁止。突合した決済約定 {e.CoveringFills.Count}件"),
         AuditSerialization.Serialize(e), e.InferredAt, recordedAt);
 
+    // FR-10, FR-17, FR-11, #381, ADR-0022 決定2, IADR-0196: 為替の情報源がフォールバックへ落ちた。
+    //
+    // 注文相関を持たないため決定的 GUID を相関にする。**落ちた／戻ったを同じ相関に置く**ことで、
+    // 台帳から**期間を 1 本の相関で辿れる**（ADR-0022 決定2 が求める「切り替わっていた期間」）。
+    //
+    // 🔴 **相関は通貨ごとに分ける。** USD と EUR は独立して劣化し得る（FxSourceStatusTracker は
+    // 通貨ごとに状態を持つ）。固定の相関にすると**複数通貨の切替・復帰が 1 本に混在し、
+    // 「期間を 1 本の相関で辿れる」が成立しなくなる**（AI レビューの指摘・2026-08-15）。
+    // 並行するタイムラインをエンティティで分ける形は BorrowFeeAccrued の
+    // `borrow-fee:{Symbol}:{Market}` と同じである。
+    // Subject は通貨コード（銘柄ではない）——為替の劣化は銘柄単位ではなく通貨単位で起きる。
+    public static AuditEntry From(FxRateSourceFellBack e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateSourceFellBack), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レート源がフォールバックへ切替: {e.Quote} は {e.SourceName}（優先度 {e.Rank}/{e.TotalSources}）から取得。"
+            + "第一の源が使えていない（鮮度が週次へ悪化し得る）。新規建ては止まっていない",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 期間は**このイベント自身が持つ**（受け手に引き算させない）。片方を取りこぼしても期間が黙って狂わない。
+    public static AuditEntry From(FxRateSourcePrimaryRestored e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateSourcePrimaryRestored), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レート源が第一（{e.SourceName}）へ復帰: {e.Quote}。"
+            + $"フォールバックしていた期間 {FormatDuration(e.FallbackDuration)}（{e.FellBackAt:yyyy-MM-dd HH:mm}Z 〜）",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 **「停止」ではない。** 警告域は値を返して続行する（ADR-0022 決定5）。要約でも明示する——
+    // 台帳を読む人が「止まっていた」と誤読すると、事後の検証が事実とずれる。
+    public static AuditEntry From(FxRateStale e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateStale), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レートの鮮度警告: {e.Quote} 観測日 {e.AsOf:yyyy-MM-dd}・経過 {e.AgeDays:0.#} 日"
+            + $"（警告 {e.WarnThresholdDays:0.#} 日 / 停止 {e.MaxAgeDays:0.#} 日）。"
+            + "直近レートで続行しており新規建ては止まっていない",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
+    private static string FormatDuration(TimeSpan d) =>
+        d.TotalDays >= 1 ? $"{d.TotalDays:0.#} 日"
+        : d.TotalHours >= 1 ? $"{d.TotalHours:0.#} 時間"
+        : $"{d.TotalMinutes:0.#} 分";
+
     // 全量決済すると建玉が無くなり維持率の概念が消える（null）。「0%」と書くと破綻したように読めるため区別する。
     private static string FormatRatio(decimal? ratio) => ratio is { } r ? Percent(r) : "建玉なし";
 

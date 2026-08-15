@@ -47,8 +47,13 @@ internal sealed class BojFxRateSource(
 
     /// <summary>
     /// 利用条件で必須のクレジット表記。報告書の為替欄へ伝播させる（ADR-0022 決定1）。
+    /// <para>
+    /// 🔴 <b>実体は <see cref="FxSourceCredits.Boj"/> にある。ここで文字列を持たない。</b>
+    /// 表示側（ReportService）も同じ文言を要するため、両側が literal を持つと
+    /// <b>片方だけ古くなっても誰も気づかない</b>（IADR-0196 決定4）。
+    /// </para>
     /// </summary>
-    public const string Credit = "このサービスは、日本銀行時系列統計データ検索サイトのAPI機能を使用しています";
+    public const string Credit = FxSourceCredits.Boj;
 
     // 日銀の統計は日本時間で公表される。日本標準時は夏時間を持たないため固定オフセットで扱う。
     private static readonly TimeSpan JapanOffset = TimeSpan.FromHours(9);

@@ -258,11 +258,19 @@ builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
 // レート源に依存せず従来どおり判断でき、非基準通貨（米国株）はレートが解決できなければ新規建てを見送る（安全側）。
 builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
 builder.Services.AddHttpClient("fx");
+
+// FR-10, FR-17, FR-09, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化を 3 経路へ可視化する。
+// 監査・Discord は本ポートの publish が担い、日報は期間で引く（ReportService の供給ポート）。
+// **singleton にする**——フォールバック中か・当日通知済みかの状態を巡回を跨いで保持するため
+// （scoped だと巡回ごとに状態が消え、遷移が毎回「初回」になって洪水が戻る）。
+builder.Services.AddSingleton<IFxSourceStatusNotifier, PublishingFxSourceStatusNotifier>();
+
 builder.Services.AddSingleton<IFxRateSource>(sp => FxRateSourceFactory.Create(
     sp.GetRequiredService<IOptions<FxOptions>>().Value,
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("fx"),
     sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+    sp.GetRequiredService<ILoggerFactory>(),
+    sp.GetRequiredService<IFxSourceStatusNotifier>()));
 builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<IFxRateSource>(),
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));

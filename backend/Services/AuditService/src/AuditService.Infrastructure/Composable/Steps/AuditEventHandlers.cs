@@ -320,3 +320,35 @@ public sealed class MaintenanceMarginReductionExecutedAuditHandler(IAuditEventSt
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-10, FR-11, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化を監査台帳へ記録する 3 本。
+//
+// 🔴 **監査台帳に残す意味は「後から期間を復元できる」ことである。** 通知は流れて消えるが、
+// 台帳は残る——「いつからいつまで劣化した情報源で判断していたか」は、
+// 事後に取引を検証するときに要る（FR-11 の 7 年保持）。
+public sealed class FxRateSourceFellBackAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(FxRateSourceFellBack message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class FxRateSourcePrimaryRestoredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(FxRateSourcePrimaryRestored message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+public sealed class FxRateStaleAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(FxRateStale message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

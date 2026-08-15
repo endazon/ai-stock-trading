@@ -68,4 +68,14 @@ public sealed record ReportView
     /// </para>
     /// </summary>
     public IReadOnlyList<BuyInInferred>? BuyInInferences { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196: 期間内の為替情報源の状態。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>照会できなかった</b>」であり「切替なし」ではない。
+    /// 事象が無かった場合は<b>空の <see cref="FxSourceStatus"/></b> が入る。
+    /// 両者を潰すと、劣化を隠したのと同じ結果になる（<see cref="MarginReductions"/> と同じ規律）。
+    /// </para>
+    /// </summary>
+    public FxSourceStatus? FxSourceStatus { get; init; }
 }

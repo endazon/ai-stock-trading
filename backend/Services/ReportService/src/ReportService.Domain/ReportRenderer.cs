@@ -55,6 +55,7 @@ public static class ReportRenderer
         // 4. リスク統制の記録（維持率割れによる自動縮小／強制買戻しの推定）。
         // 日報＝明細・月報＝回数（04_report-templates・ADR-0016 決定15）。
         AppendMarginReductions(sb, view);
+        AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
 
         return sb.ToString();
@@ -117,6 +118,94 @@ public static class ReportRenderer
                 + $"{e.InferredAt:yyyy-MM-dd HH:mm}Z |\n");
         }
     }
+
+    // FR-06, FR-10, FR-17, UC-06, #381, ADR-0022 決定1・決定2・決定5, IADR-0196: 為替の情報源の状態。
+    //
+    // 🔴 **計画が「日報へ記録する」と明示的に求めている**——フォールバックへ切り替わった事実と
+    // **切り替わっていた期間**（決定2）、鮮度警告（決定5）、そして**出典のクレジット表記**（決定1）。
+    //
+    // **「劣化しなかった」ことも書く。** 節ごと消すと、読み手は
+    // 「劣化が無かったのか／節を出し忘れたのか」を区別できない。
+    private static void AppendFxSourceStatus(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind == ReportKind.Weekly)
+            return;
+
+        sb.Append("\n### 為替レートの情報源\n\n");
+
+        // 🔴 照会不能を「切替なし」と書かない（IADR-0196 決定3）。劣化を隠したのと同じ結果になる。
+        if (view.FxSourceStatus is not { } fx)
+        {
+            sb.Append("- **状態を照会できませんでした（要確認）**: 「切替なし」とは区別しています。\n");
+            return;
+        }
+
+        // 🔴 **クレジット表記は劣化の有無と無関係に出す。** ADR-0022 決定1 が求めるのは
+        // 「使ったなら出典を書く」ことであり、劣化しなかった期間こそ普通に日銀を使っている。
+        if (fx.IsClean)
+        {
+            sb.Append("- 第一の情報源から取得できており、鮮度警告もありません。\n");
+            AppendFxCredits(sb, fx);
+            return;
+        }
+
+        // 月報は**回数のみ**。個々の内容は該当日報に委ねる——直前後の節（維持率割れ・強制買戻し）と
+        // 同じ規律である（「日報＝明細・月報＝回数」）。鮮度警告は暦日ごとに 1 件出るため、
+        // **月報で明細にすると 20 行を超えて他の節を押し流す**（AI レビューの指摘・2026-08-15）。
+        if (view.Kind == ReportKind.Monthly)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **フォールバックへの切替 {fx.FellBacks.Count} 件 / 復帰 {fx.Restorations.Count} 件 / "
+                + $"鮮度警告 {fx.StaleWarnings.Count} 件**（個々の内容は該当日報を参照）\n");
+            AppendFxCredits(sb, fx);
+            return;
+        }
+
+        foreach (var e in fx.FellBacks)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **フォールバックへ切替**: {e.Quote} を {e.SourceName}（優先度 {e.Rank}/{e.TotalSources}）から取得"
+                + $"（{e.OccurredAt:yyyy-MM-dd HH:mm}Z〜）。鮮度が週次へ悪化し得ます。**新規建ては止まっていません**。{'\n'}");
+        }
+
+        // 期間はイベント自身が持つ（受け手が引き算しない・IADR-0196 決定1）。
+        foreach (var e in fx.Restorations)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **第一の情報源へ復帰**: {e.Quote}／{e.SourceName}（{e.OccurredAt:yyyy-MM-dd HH:mm}Z）。"
+                + $"フォールバックしていた期間 {FormatDuration(e.FallbackDuration)}。{'\n'}");
+        }
+
+        foreach (var e in fx.StaleWarnings)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **鮮度警告**: {e.Quote} 観測日 {e.AsOf:yyyy-MM-dd}・経過 {e.AgeDays:0.#} 日"
+                + $"（警告 {e.WarnThresholdDays:0.#} 日 / 停止 {e.MaxAgeDays:0.#} 日）。"
+                + $"**直近レートで続行しており新規建ては止まっていません**。{'\n'}");
+        }
+
+        AppendFxCredits(sb, fx);
+    }
+
+    // ADR-0022 決定1: 出典の明記。**実際に使った情報源のぶんだけ**出す
+    // （使っていない情報源のクレジットを載せるのは事実に反する・IADR-0196 決定4）。
+    //
+    // **3 つの出口すべてから呼ぶ**（劣化なし／月報の回数／日報の明細）。
+    // 出口ごとに書くと、**どれか 1 つで書き忘れても他が通るため気づかない**。
+    private static void AppendFxCredits(StringBuilder sb, FxSourceStatus fx)
+    {
+        foreach (var credit in fx.PrimarySourceCredits)
+        {
+            // 文字列のみのため書式指定は不要（culture 依存の値を含まない）。
+            sb.Append("- 出典: ").Append(credit).Append('\n');
+        }
+    }
+
+    // 期間は意味のある単位まで（秒まで書くと読み手が桁を数えることになる）。監査・通知と同じ規則。
+    private static string FormatDuration(TimeSpan d) =>
+        d.TotalDays >= 1 ? d.TotalDays.ToString("0.#", CultureInfo.InvariantCulture) + " 日"
+        : d.TotalHours >= 1 ? d.TotalHours.ToString("0.#", CultureInfo.InvariantCulture) + " 時間"
+        : d.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture) + " 分";
 
     // FR-10, FR-06, UC-06, #330, IADR-0133 決定7, 04_report-templates（日報 §4・月報 §6）:
     // 「維持率割れによる自動縮小」の記録。**システムが自ら決済注文を発注する唯一の統制**であるため、

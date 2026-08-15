@@ -107,9 +107,33 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
     // 理由入力による再レンダリングが click に間に合わなければ PUT は発火しない。
     // **ただしこの機序は未実証である** —— 素で 15 回・CPU 飽和下で 6 回、計 21 回連続で再現しなかった。
     // よって「原因を直した」とは書かない。**次に落ちたとき原因を切り分けられるようにする**のが本変更の目的である。
-    const save = within(form).getByRole('button', { name: '最小取引件数を保存' });
-    await waitFor(() => expect(save).toBeEnabled());
-    await user.click(save);
+    // 🔴 【2 度目の発生・2026-08-15 / PR #509 の CI】前回入れた切り分けが機序を 1 段絞った。
+    // 落ちたのは PUT の assert ではなく **`toBeEnabled()` の waitFor** であった——
+    // **click が握り潰されたのではなく、ボタンがそもそも有効化されなかった。**
+    //
+    // それを踏まえて 2 つ直す。
+    //
+    // 1. **入力が入ったことを先に確かめる。** ボタンの `disabled` は
+    //    「値域エラー」「理由の空」「保存中」の 3 つで決まる。入力が入っていなければ
+    //    有効化されないのは**正しい挙動**であり、テストの前提が崩れているだけである。
+    //    ここで落ちれば「入力が届いていない」と分かり、ボタン側の問題と区別できる。
+    // 2. **待ち時間を明示的に伸ばす。** 落ち方は `waitFor` の**時間切れ**であり、既定は 1000ms である。
+    //    CI の負荷下で `userEvent` の入力と React の再描画が 1 秒に収まらなければ、
+    //    **実装が正しくても落ちる**。伸ばしても**有効化されないなら結局落ちる**ため、
+    //    不具合を隠すことにはならない（遅くなるだけである）。
+    //
+    // 🔴 **機序はまだ確定していない。** 「掴んだノードが作り直されるのでは」という仮説は
+    // **実測で否定した**（同一性を調べたところ React は同じノードの属性を書き換えており、
+    // ノードは作り直されていなかった）。**要素を毎回引き直すのは堅牢化であって原因の是正ではない。**
+    // 本変更もまた「原因を直した」とは書かない。
+    expect(within(form).getByLabelText('Stage 1 の最小取引件数 件')).toHaveValue(150);
+    expect(within(form).getByLabelText('最小取引件数の変更理由')).toHaveValue('標本を増やす');
+
+    await waitFor(
+      () => expect(within(form).getByRole('button', { name: '最小取引件数を保存' })).toBeEnabled(),
+      { timeout: 5000 },
+    );
+    await user.click(within(form).getByRole('button', { name: '最小取引件数を保存' }));
 
     const putCalls = mocks.apiFetch.mock.calls.filter((call) => call[1]?.method === 'PUT');
     expect(putCalls).toHaveLength(1); // 先にここで落ちれば「発火しなかった」と分かる

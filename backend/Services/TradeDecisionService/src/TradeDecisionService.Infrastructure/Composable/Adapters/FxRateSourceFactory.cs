@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
+using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
@@ -51,7 +52,8 @@ internal static class FxRateSourceFactory
         FxOptions options,
         HttpClient httpClient,
         TimeProvider timeProvider,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IFxSourceStatusNotifier? statusNotifier = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -89,8 +91,9 @@ internal static class FxRateSourceFactory
                 return Cached(
                     ordered.Count == 1
                         ? ordered[0].Source
-                        : new FallbackFxRateSource(ordered, loggerFactory.CreateLogger<FallbackFxRateSource>()),
-                    options, timeProvider, loggerFactory);
+                        : new FallbackFxRateSource(
+                            ordered, loggerFactory.CreateLogger<FallbackFxRateSource>(), statusNotifier),
+                    options, timeProvider, loggerFactory, statusNotifier);
 
             case Fred:
                 if (string.IsNullOrWhiteSpace(options.Fred.ApiKey))
@@ -105,7 +108,7 @@ internal static class FxRateSourceFactory
 
                 return Cached(
                     CreateFred(options, httpClient, timeProvider, loggerFactory),
-                    options, timeProvider, loggerFactory);
+                    options, timeProvider, loggerFactory, statusNotifier);
 
             default:
                 logger.LogWarning(
@@ -156,14 +159,19 @@ internal static class FxRateSourceFactory
     /// </para>
     /// </summary>
     private static IFxRateSource Cached(
-        IFxRateSource inner, FxOptions options, TimeProvider timeProvider, ILoggerFactory loggerFactory) =>
+        IFxRateSource inner,
+        FxOptions options,
+        TimeProvider timeProvider,
+        ILoggerFactory loggerFactory,
+        IFxSourceStatusNotifier? statusNotifier) =>
         new CachingFxRateSource(
             inner,
             Ttl(options),
             ResolveMaxRateAge(options),
             ResolveStaleRateWarning(options),
             timeProvider,
-            loggerFactory.CreateLogger<CachingFxRateSource>());
+            loggerFactory.CreateLogger<CachingFxRateSource>(),
+            statusNotifier);
 
     private static BojFxRateSource CreateBoj(
         FxOptions options, HttpClient httpClient, TimeProvider timeProvider, ILoggerFactory loggerFactory) =>
