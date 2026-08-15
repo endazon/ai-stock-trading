@@ -1,6 +1,7 @@
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
@@ -160,6 +161,43 @@ public class CachingFxRateSourceTests
         (await source.GetRateToBaseAsync(Currency.Jpy)).Should().BeNull();
     }
 
+    // --- #381 停止側 / IADR-0198 決定1: 統制が発動したことを外へ出す -----------------------------
+    //
+    // 🔴 **従来、上限超の分岐はログを出して return するだけだった。**
+    // 「新規建てを止めた」という**統制の発動が、7 年保持のどこにも残っていなかった**——
+    // ADR-0022 決定2 の「黙って劣化させない」は警告域だけの話ではない。
+
+    [Fact]
+    public async Task 上限を超えたら停止したことを可視化経路へ報告する()
+    {
+        var notifier = new RecordingNotifier();
+        var source = new CachingFxRateSource(
+            new CountingSource(Rate(Now.AddDays(-31))), TimeSpan.FromHours(6),
+            TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            new TestTimeProvider(Now), NullLogger<CachingFxRateSource>.Instance, notifier);
+
+        await source.GetRateToBaseAsync(Currency.Jpy);
+
+        notifier.Stales.Should().ContainSingle().Which.EntryBlocked.Should().BeTrue(
+            "新規建てを止めたなら、止めたことを外へ出す");
+    }
+
+    // 🔴 **否定形: 警告域を「止まった」と報告しない。** 同じ経路で報告するため、ここが逆転すると
+    // **止まっていないのに止まったと通知が飛ぶ**（ADR-0022 決定5 の読み違いを招く）。
+    [Fact]
+    public async Task 警告域では止まっていないものとして報告する()
+    {
+        var notifier = new RecordingNotifier();
+        var source = new CachingFxRateSource(
+            new CountingSource(Rate(Now.AddDays(-7))), TimeSpan.FromHours(6),
+            TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            new TestTimeProvider(Now), NullLogger<CachingFxRateSource>.Instance, notifier);
+
+        await source.GetRateToBaseAsync(Currency.Jpy);
+
+        notifier.Stales.Should().ContainSingle().Which.EntryBlocked.Should().BeFalse();
+    }
+
     // #364, IADR-0152 決定1/2: 基準通貨は USD であり、解決対象は JPY（レートは USD per JPY）。
     private static FxRate Rate(DateTimeOffset asOf) => new(Currency.Jpy, Currency.Usd, 1m / 152.35m, asOf);
 
@@ -207,6 +245,29 @@ public class CachingFxRateSourceTests
         public override DateTimeOffset GetUtcNow() => _now;
 
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
+    }
+
+    // #381 停止側: 「何を報告したか」だけを記録する最小の偽装（抑止の判定は本物の実装が持つ）。
+    private sealed class RecordingNotifier : IFxSourceStatusNotifier
+    {
+        public List<(string Quote, TimeSpan Age, bool EntryBlocked)> Stales { get; } = [];
+
+        public Task ReportSourceUsedAsync(
+            string quote, string sourceName, int rank, int totalSources,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task ReportStaleAsync(
+            string quote, DateTimeOffset asOf, TimeSpan age, TimeSpan warnThreshold, TimeSpan maxAge,
+            CancellationToken cancellationToken = default, bool entryBlocked = false)
+        {
+            Stales.Add((quote, age, entryBlocked));
+            return Task.CompletedTask;
+        }
+
+        public Task ReportClosedWithStaleRateAsync(
+            string symbol, Market market, string quote, int quantity, decimal fxRateToBase,
+            DateTimeOffset rateAsOf, TimeSpan age, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class CountingSource(FxRate? rate) : IFxRateSource

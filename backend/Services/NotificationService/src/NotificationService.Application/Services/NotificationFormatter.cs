@@ -52,7 +52,26 @@ public static class NotificationFormatter
     // 🔴 **「止まった」と読ませない。** 警告域は続行する（ADR-0022 決定5）。
     // 本文で「止まっていない」と明示し、**どこまで来たら止まるのか**（上限）も併記する——
     // それが無いと受け手は緊急度を判断できない。
-    public static NotificationMessage From(FxRateStale e) => new(
+    // 🔴 #381 停止側: **警告と停止を読み分けられるようにする。** 同じイベント型だが、
+    // `EntryBlocked` で件名も本文も変える——**同じ文面だと「止まった」ことが埋もれる。**
+    public static NotificationMessage From(FxRateStale e) => e.EntryBlocked
+        ? new NotificationMessage(
+            "為替: レートが上限超のため新規建てを停止",
+            $"{e.Quote} の為替レートの観測が {e.AgeDays:0.#} 日前です"
+                + $"（観測日 {e.AsOf:yyyy-MM-dd}・上限 {e.MaxAgeDays:0.#} 日）。"
+                + "**新規建てを停止しました。手仕舞い・損切りは止めていません**（ADR-0022 決定5）。",
+            NotificationSeverity.Critical)
+        : StaleWarning(e);
+
+    // 🔴 鮮度切れのレートで実際に決済した。**取引そのものの通知であり、状態の通知ではない。**
+    public static NotificationMessage From(PositionClosedWithStaleFxRate e) => new(
+        "為替: 鮮度切れのレートで決済した",
+        $"{e.Symbol}/{e.Market} を数量 {e.Quantity} で決済しました。"
+            + $"換算率 {e.FxRateToBase}（観測日 {e.RateAsOf:yyyy-MM-dd}・{e.AgeDays:0.#} 日前）。"
+            + "**計画どおり手仕舞いは止めていません**が、**円換算額は実勢から乖離し得ます**。",
+        NotificationSeverity.Warning);
+
+    private static NotificationMessage StaleWarning(FxRateStale e) => new(
         "為替: レートの鮮度警告",
         $"{e.Quote} の為替レートの観測が {e.AgeDays:0.#} 日前です"
             + $"（観測日 {e.AsOf:yyyy-MM-dd}・警告 {e.WarnThresholdDays:0.#} 日超）。"

@@ -28,7 +28,8 @@ public sealed class TradeDecisionService(
     ICurrentPriceProvider? currentPrice = null,
     IFxRateProvider? fxRate = null,
     IHeldPositionProvider? heldPosition = null,
-    RetrievalSourcePolicy? retrievalSourcePolicy = null)
+    RetrievalSourcePolicy? retrievalSourcePolicy = null,
+    IFxSourceStatusNotifier? statusNotifier = null)
 {
     // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
     // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
@@ -58,6 +59,9 @@ public sealed class TradeDecisionService(
     // FR-02, IADR-0099: 判断文脈の現在値（価格文脈）供給口。未指定＝NoOp（IsEnabled=false・常に null＝現行動作）。
     // 実供給（MarketDataCurrentPriceProvider）は Worker が MarketData:Provider 設定時に opt-in で差し替える。
     private readonly ICurrentPriceProvider _currentPrice = currentPrice ?? new NoOpCurrentPriceProvider();
+
+    // #381 停止側 / IADR-0198: 未配線なら報告しない（NoOp を差さず null のままにして、判定を 1 箇所に置く）。
+    private readonly IFxSourceStatusNotifier? _statusNotifier = statusNotifier;
 
     // FR-10, FR-17, #257, #364, IADR-0107/0152: 基準通貨（USD）への換算レートの供給口。未指定＝基準通貨の市場だけ
     // レート 1（米国株は現行どおり／日本株は解決不能＝新規建て見送り）。実供給は Worker が Fx:Provider 設定時に差し替える。
@@ -249,6 +253,15 @@ public sealed class TradeDecisionService(
                 "判断由来の決済: {Symbol} {Side} 数量={Quantity}（保有全量・統制で止めない）",
                 trigger.Symbol, side, effect.CloseQuantity);
 
+            // 🔴 FR-11, #381 停止側, IADR-0198 決定3: **鮮度切れの値で取引した事実を残す。**
+            // 監査台帳の行は観測日の列を持たないため、**イベントに載せることが 7 年保持へ入れる唯一の経路**である。
+            // 抑止しない——取引は 1 件ずつ残さなければ後から件数も金額も復元できない。
+            if (!fxReading.UsableForEntry)
+            {
+                await ReportClosedWithStaleRateSafeAsync(
+                    trigger, effect.CloseQuantity, rateToBase, fxReading, cancellationToken).ConfigureAwait(false);
+            }
+
             return new TradeDecisionMade(Guid.NewGuid(), closeIntent, decision.Rationale, clock.UtcNow);
         }
 
@@ -398,6 +411,56 @@ public sealed class TradeDecisionService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "日報未確定の通知発行に失敗しました（見送りは継続）。");
+        }
+    }
+
+    /// <summary>
+    /// 鮮度切れでの決済を可視化経路へ報告する。
+    /// <para>
+    /// 🔴 <b>可視化の失敗で決済を止めない。</b> ここは計画が「手仕舞いは止めない」と定めた経路であり
+    /// （ADR-0022 決定5）、<b>記録できないことを理由に決済を止めるのは本末転倒である。</b>
+    /// ただし<b>飲み込んだ事実はログへ残す</b>——この 1 件は台帳に残らない。
+    /// </para>
+    /// </summary>
+    private async Task ReportClosedWithStaleRateSafeAsync(
+        DecisionTrigger trigger,
+        int quantity,
+        decimal rateToBase,
+        FxRateReading reading,
+        CancellationToken cancellationToken)
+    {
+        if (_statusNotifier is null)
+        {
+            return;
+        }
+
+        var age = clock.UtcNow - reading.Rate.AsOf;
+
+        try
+        {
+            await _statusNotifier
+                .ReportClosedWithStaleRateAsync(
+                    trigger.Symbol,
+                    trigger.Market,
+                    CurrencyFormat.CodeOf(MarketCurrency.Of(trigger.Market)),
+                    quantity,
+                    rateToBase,
+                    reading.Rate.AsOf,
+                    age,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "鮮度切れのレートでの決済を可視化経路へ報告できませんでした（{Symbol}）。" +
+                "**この決済は「古いレートで出た」記録が台帳に残りません**（決済自体は続行します）。",
+                trigger.Symbol);
         }
     }
 

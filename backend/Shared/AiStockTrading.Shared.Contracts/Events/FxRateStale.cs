@@ -16,4 +16,19 @@ public record FxRateStale(
     double AgeDays,
     double WarnThresholdDays,
     double MaxAgeDays,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    bool EntryBlocked = false)
+{
+    /// <summary>
+    /// 🔴 <b>新規建てが止まっているか</b>（#381 停止側・IADR-0198 決定1）。
+    /// <para>
+    /// <c>false</c> = 警告域（5 日超〜30 日以下）。<b>直近レートで続行し新規建ても止めない。</b><br/>
+    /// <c>true</c> = 絶対上限超（30 日超）。<b>新規建てを停止する。手仕舞いは止めない。</b>
+    /// </para>
+    /// <para>
+    /// <b>停止側を別イベントにしない。</b> 同じ「鮮度が閾値を超えた」事実であり、
+    /// 分けると受け手が 2 つ購読し抑止も 2 系統になる——<b>同じ事象で 2 種類の通知が飛ぶ。</b>
+    /// </para>
+    /// </summary>
+    public bool EntryBlocked { get; init; } = EntryBlocked;
+}

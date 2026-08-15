@@ -19,8 +19,15 @@ internal sealed class FxSourceStatusTracker
         /// <summary>非 null ＝<b>現在フォールバック中</b>。値はフォールバックを開始した時刻。</summary>
         public DateTimeOffset? FellBackAt { get; set; }
 
-        /// <summary>鮮度警告を最後に出した暦日（UTC）。<b>日をまたげば再通知する</b>。</summary>
-        public DateOnly? LastStaleNotifiedDay { get; set; }
+        /// <summary>
+        /// 鮮度警告を最後に出した (暦日, 新規建てが止まっているか)。<b>日をまたげば再通知する</b>。
+        /// <para>
+        /// 🔴 <b>状態を鍵に含める</b>（#381 停止側・IADR-0198 決定2）。含めないと
+        /// <b>朝に警告を出した通貨が夕方に停止域へ落ちても黙る</b>——
+        /// <b>警告から停止への昇格は、同じ日に起きても知らせる必要がある。</b>
+        /// </para>
+        /// </summary>
+        public (DateOnly Day, bool EntryBlocked)? LastStaleNotified { get; set; }
     }
 
     /// <summary>
@@ -69,21 +76,27 @@ internal sealed class FxSourceStatusTracker
     /// </para>
     /// </summary>
     public FxRateStale? OnStale(
-        string quote, DateTimeOffset asOf, TimeSpan age, TimeSpan warnThreshold, TimeSpan maxAge, DateTimeOffset now)
+        string quote,
+        DateTimeOffset asOf,
+        TimeSpan age,
+        TimeSpan warnThreshold,
+        TimeSpan maxAge,
+        DateTimeOffset now,
+        bool entryBlocked = false)
     {
-        var day = DateOnly.FromDateTime(now.UtcDateTime);
+        var key = (Day: DateOnly.FromDateTime(now.UtcDateTime), EntryBlocked: entryBlocked);
 
         lock (_gate)
         {
             var state = Get(quote);
-            if (state.LastStaleNotifiedDay == day)
+            if (state.LastStaleNotified == key)
             {
                 return null;
             }
 
-            state.LastStaleNotifiedDay = day;
+            state.LastStaleNotified = key;
             return new FxRateStale(
-                quote, asOf, age.TotalDays, warnThreshold.TotalDays, maxAge.TotalDays, now);
+                quote, asOf, age.TotalDays, warnThreshold.TotalDays, maxAge.TotalDays, now, entryBlocked);
         }
     }
 
@@ -106,7 +119,7 @@ internal sealed class FxSourceStatusTracker
                     state.FellBackAt = restored.FellBackAt;
                     break;
                 case FxRateStale:
-                    state.LastStaleNotifiedDay = null;
+                    state.LastStaleNotified = null;
                     break;
             }
         }

@@ -208,4 +208,44 @@ public class NotificationFormatterTests
         // 受け手が緊急度を判断できること。
         msg.Content.Should().Contain("30");
     }
+
+    // --- #381 停止側 / IADR-0198 決定1 ------------------------------------------------------------
+
+    // 🔴 **同じイベント型でも、止まったなら文面を変える。**
+    // 警告と同じ件名・同じ重大度で流すと、**統制が発動した通知が日々の警告に埋もれる。**
+    [Fact]
+    public void 為替の鮮度切れは_Critical_で停止したことを書く()
+    {
+        var msg = NotificationFormatter.From(
+            new FxRateStale("USD", FxT0.AddDays(-31), 31, 5, 30, FxT0, EntryBlocked: true));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("新規建てを停止");
+        msg.Content.Should().Contain("新規建てを停止しました");
+        // 手仕舞いまで止まったと読ませない（ADR-0022 決定5）。
+        msg.Content.Should().Contain("手仕舞い・損切りは止めていません");
+    }
+
+    // 🔴 **否定形。** 警告域が停止側の文面へ引きずられていないこと（読み分けが壊れると意味が無い）。
+    [Fact]
+    public void 為替の鮮度警告は_停止したとは書かない()
+    {
+        var msg = NotificationFormatter.From(new FxRateStale("USD", FxT0.AddDays(-7), 7, 5, 30, FxT0));
+
+        msg.Severity.Should().NotBe(NotificationSeverity.Critical);
+        msg.Content.Should().NotContain("新規建てを停止しました");
+    }
+
+    // 🔴 **取引そのものの通知**（決定3）。状態の通知とは別に、**1 件ずつ**飛ぶ。
+    [Fact]
+    public void 鮮度切れでの決済は_観測日と乖離の可能性を書く()
+    {
+        var msg = NotificationFormatter.From(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, FxT0.AddDays(-31), 31, FxT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Content.Should().Contain("7203");
+        msg.Content.Should().Contain("観測日");
+        msg.Content.Should().Contain("乖離し得ます");
+    }
 }

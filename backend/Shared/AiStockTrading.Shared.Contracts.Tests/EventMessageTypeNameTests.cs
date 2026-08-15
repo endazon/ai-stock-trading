@@ -73,6 +73,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(FxRateSourceFellBack), "AiStockTrading.Shared.Contracts.Events.FxRateSourceFellBack")]
         [InlineData(typeof(FxRateSourcePrimaryRestored), "AiStockTrading.Shared.Contracts.Events.FxRateSourcePrimaryRestored")]
         [InlineData(typeof(FxRateStale), "AiStockTrading.Shared.Contracts.Events.FxRateStale")]
+        // #381 停止側: 鮮度切れのレートで決済した事実（IADR-0198）。
+        [InlineData(typeof(PositionClosedWithStaleFxRate), "AiStockTrading.Shared.Contracts.Events.PositionClosedWithStaleFxRate")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]

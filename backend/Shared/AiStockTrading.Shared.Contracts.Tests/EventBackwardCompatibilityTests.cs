@@ -53,6 +53,36 @@ public class EventBackwardCompatibilityTests
             + "\n" + string.Join("\n", violations));
     }
 
+    // 🔴 #381 停止側 / IADR-0198: **追加を許容することと、追加を記録しないことは違う。**
+    //
+    // 上のテストは「基準に載っている型」しか見ない（追加は後方互換なので違反にしない）。
+    // その結果、**新イベントは誰かが基準を再生成するまで一切保護されない** —— 追加した次の PR で
+    // フィールドを削除・改名しても、基準に無いのだから緑のまま通る。
+    //
+    // 実測: #509 で追加した 3 型（FxRateSourceFellBack / FxRateSourcePrimaryRestored / FxRateStale）が
+    // 基準に載らないまま develop に入っていた。**本 PR は現にその FxRateStale を書き換えている** ——
+    // 削除していたら誰も気づかなかった。
+    //
+    // よってここで「基準への登録漏れ」を別立てで落とす。承認は従来どおり UPDATE_EVENT_BASELINE=1 の
+    // 再生成＋PR レビューであり、**手順は増えない。忘れたときに気づけるようになるだけである。**
+    [Fact]
+    public void 全イベントが基準に登録されている_追加は許容するが記録漏れは許容しない()
+    {
+        var baselinePath = BaselinePath();
+        File.Exists(baselinePath).Should().BeTrue(
+            $"イベント契約の基準ファイルが必要です（UPDATE_EVENT_BASELINE=1 で生成）: {baselinePath}");
+
+        var baseline = JsonSerializer.Deserialize<SortedDictionary<string, SortedDictionary<string, string>>>(
+            File.ReadAllText(baselinePath))!;
+
+        var unpinned = ComputeSchema().Keys.Where(evt => !baseline.ContainsKey(evt)).ToArray();
+
+        unpinned.Should().BeEmpty(
+            "基準に無いイベントは後方互換の検査対象外＝**追加した瞬間から無保護**になります。"
+            + "UPDATE_EVENT_BASELINE=1 で基準を再生成し、差分を PR レビューで確認してください。"
+            + "\n未登録: " + string.Join(", ", unpinned));
+    }
+
     // --- 比較ロジック自体の回帰テスト（削除/改名/型変更を検出し、追加は許容する） -----------------
 
     [Fact]

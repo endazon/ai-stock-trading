@@ -156,7 +156,9 @@ public static class ReportRenderer
         {
             sb.Append(CultureInfo.InvariantCulture,
                 $"- **フォールバックへの切替 {fx.FellBacks.Count} 件 / 復帰 {fx.Restorations.Count} 件 / "
-                + $"鮮度警告 {fx.StaleWarnings.Count} 件**（個々の内容は該当日報を参照）\n");
+                + $"鮮度警告 {fx.StaleWarnings.Count} 件"
+                + $"（うち新規建て停止 {fx.StaleWarnings.Count(s => s.EntryBlocked)} 件）/ "
+                + $"鮮度切れでの決済 {fx.StaleCloses.Count} 件**（個々の内容は該当日報を参照）\n");
             AppendFxCredits(sb, fx);
             return;
         }
@@ -176,12 +178,30 @@ public static class ReportRenderer
                 + $"フォールバックしていた期間 {FormatDuration(e.FallbackDuration)}。{'\n'}");
         }
 
+        // 🔴 #381 停止側 / IADR-0198: **警告と停止を同じ文で書かない。**
+        // 停止域（EntryBlocked）でも「新規建ては止まっていません」と書いていたため、
+        // **統制が発動した日の日報が、発動していないと読める**状態だった。
         foreach (var e in fx.StaleWarnings)
         {
+            var label = e.EntryBlocked ? "鮮度切れ（新規建て停止）" : "鮮度警告";
+            var effect = e.EntryBlocked
+                ? "**新規建てを停止しました。手仕舞い・損切りは止めていません**"
+                : "**直近レートで続行しており新規建ては止まっていません**";
+
             sb.Append(CultureInfo.InvariantCulture,
-                $"- **鮮度警告**: {e.Quote} 観測日 {e.AsOf:yyyy-MM-dd}・経過 {e.AgeDays:0.#} 日"
-                + $"（警告 {e.WarnThresholdDays:0.#} 日 / 停止 {e.MaxAgeDays:0.#} 日）。"
-                + $"**直近レートで続行しており新規建ては止まっていません**。{'\n'}");
+                $"- **{label}**: {e.Quote} 観測日 {e.AsOf:yyyy-MM-dd}・経過 {e.AgeDays:0.#} 日"
+                + $"（警告 {e.WarnThresholdDays:0.#} 日 / 停止 {e.MaxAgeDays:0.#} 日）。{effect}。{'\n'}");
+        }
+
+        // 🔴 **取引そのものの記録**（IADR-0198 決定3）。状態の行と別に、**1 件ずつ**出す——
+        // 鮮度警告は 1 日 1 回へ抑止されるが、**決済は件数も金額も後から復元できなければならない。**
+        foreach (var e in fx.StaleCloses)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **鮮度切れのレートで決済**: {e.Symbol}/{e.Market} 数量 {e.Quantity}・"
+                + $"換算率 {e.FxRateToBase}（{e.Quote}→基準通貨・観測日 {e.RateAsOf:yyyy-MM-dd}・"
+                + $"{e.AgeDays:0.#} 日前）。**計画どおり手仕舞いは止めていません**が、"
+                + $"**換算額は実勢から乖離し得ます**。{'\n'}");
         }
 
         AppendFxCredits(sb, fx);
