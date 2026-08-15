@@ -8,7 +8,7 @@
 docs/
 ├── templates/    # 各仕様書のひな形（spec / functional / screen / api / data / tech / test /
 │                 #   operations / security / adr / observability / authz / integration /
-│                 #   batch / migration / error / infra）
+│                 #   batch / migration / error / infra / runbook / how_to）
 ├── specs/        # 作業仕様書（作業/PR 単位の横断仕様）
 ├── functional/   # 機能仕様書        ├── operations/    # 運用仕様書
 ├── screens/      # 画面仕様書        ├── security/      # セキュリティ仕様書

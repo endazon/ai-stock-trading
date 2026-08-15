@@ -1,23 +1,60 @@
 {
   "$comment": [
     "キット repo-template との分類表（NFR / issue #492）。",
-    "A = バイト一致であるべき（check-kit-sync.js が機械検査する）。",
-    "B = キット土台＋固有デルタ。値の先頭は 4 種の番号、または X。",
-    "  1 リポジトリ構成 / 2 技術スタックとその CI 配線 / 3 本リポにしか存在しない成果物 / 4 Dependabot が更新した Actions バージョン",
-    "  X 4 種のどれにも当たらない。環流するか期限つき暫定とする。追跡先の issue 番号が必須。",
-    "C = 本リポの中身そのもの（雛形から書き起こした実体、または置換点を持つ配布物）。同期しない。",
+    "A = キットとバイト一致であるべきファイル。`check-kit-sync.js` が機械検査する。",
+    "B = キット土台 ＋ 固有デルタ。値の先頭は下の種の番号、または X。",
+    "  1 リポジトリ構成（ユニット構成・submodule 取得ステップ等）",
+    "  2 技術スタックとその CI 配線",
+    "  3 本リポにしか存在しない成果物・スクリプト",
+    "  4 Dependabot が更新した GitHub Actions のバージョン",
+    "  5 キットが選択・追記を委ねている欄（裁定 planning#339）。",
+    "    キットが**空欄・空配列・未選択の状態で配り、各リポジトリが必ず埋める**ことを設計として",
+    "    意図しているもの。例: AI_SETUP.md の利用可能な AI のチェックボックス、",
+    "    scripts/commit-allowlist.json の allow 配列、scripts/kit-sync-classification.json 自身。",
+    "    **これは是正対象ではない。** 埋まっていることが正しい状態であり、環流も要らない。",
+    "    ただし**土台（説明文・規約文）はキット側が正**であり、追随の対象から外れるわけではない。",
+    "  X 上のどれにも当たらない。**環流するか、期限つきの暫定とする。追跡先の issue 番号を必須にする。**",
+    "    X が減っていくこと自体が環流債務の測定値になるため、**恒久的に正しいデルタを X に置かない**",
+    "    （置くと測定値が読めなくなる。これが 5 を新設した理由である）。",
+    "C = 本リポの中身そのもの。同期しない。**次のどちらかに限る。**",
+    "  (a) キットに対応物が無いファイル（本リポ固有の実体）",
+    "  (b) 雛形から書き起こし、**本リポが置換点を実際に埋めている**ファイル",
+    "  **『置換点を持つ』ではなく『置換点を埋めている』が条件である**（裁定 planning#363）。",
+    "  持つだけで埋めていないものは**固有デルタ 0** であり、C の根拠が無い。**A か B に入れる。**",
+    "  🔴 **C は「同期しない」であるため、置いた瞬間に検査が止まる。誤った分類は、誤りを検出する機構ごと無効化する。**",
+    "  実測（planning#363）: 実装側が 2 件を誤って C に置き、**キット側の是正 3 件が戻らなかった**",
+    "  （表記是正・母集合の規則 8・IADR 番号の誤引用と古い前提）。",
+    "  **判定の手がかり（どれかに当たれば C の根拠が無い）**:",
+    "    - キット版と**バイト一致** → 固有デルタ 0",
+    "    - 置換点の**プレースホルダが残っている** → 埋めていない",
+    "    - 置換点を使わず**環境変数などで注入している** → 埋めていない",
+    "  注意: 置換点の目印を**文字列としてだけ**引くと偽陽性が出る（規約・ADR が",
+    "  プレースホルダを引用しただけの行に当たる）。**キット版が置換点を宣言しているファイルに限定する。**",
+    "notApplicable = キットには在るが本リポでは対象にならないもの（例: 有効化して実名へ改名した *.example.yml）。",
+    "",
+    "**A / B / C / notApplicable のどこにも書かれていないキットのファイルがあると検査は fail する。**",
+    "これは「キットに増えたファイルを黙って見逃さない」ための門である。",
+    "",
+    "── 本リポの履歴（上の定義はキット kit-sync-classification.example.json の $comment と同文。pin 4d6a7d6）──",
     "対象外 8 件は *.example.yml であり、本リポは有効化済みの実名を持つ。",
     "2026-08-15（#517 / IADR-0202）: .claude/rules/traceability.md を C から A へ移した。",
     "  C を当てていたが、当のファイルの冒頭が『直接編集するとバイト一致が崩れる』＝A の意味論を要求しており、",
     "  置換点も持たない（固有規約は companion の traceability.repo.md へ分離済み）。C は『同期しない』ため",
     "  check-kit-sync.js が何も言わず、本リポの写しだけが古いまま固定されていた（実測で 2 件取りこぼし）。",
     "2026-08-15（#521 / IADR-0203）: check-cross-repo-refs.js と check-plan-id-qualification.js を C から A へ移した。",
-    "  🔴 C の定義『置換点を持つ配布物』は、置換点を『持つ』ことではなく本リポが『埋めている』ことで判定する。",
     "  この 2 本は置換点を一度も埋めていない（前者は env 注入を選び IADR-0200 決定5、後者は他プロジェクトを",
     "  参照しないため空＝正常な skip）。固有デルタが 0 なのに C に置くと、キット側の是正が戻ってこない。",
-    "  実測: check-cross-repo-refs.js は 13 行すべてがキット側の是正（planning#354）で、本リポの写しだけが",
-    "  古い IADR 番号と『ワークフローを編集できない』という誤った前提を保持し続けていた。",
-    "  再発防止は scripts.repo.test.js の『分類 C は固有デルタを持つ』テストが担う。"
+    "  再発防止は scripts.repo.test.js の『分類 C は固有デルタを持つ』テストが担う。",
+    "2026-08-16（#524 / IADR-0205）: 上の定義（planning#363 の新条件）で C 全 14 件を再判定した。C に残したのは (b) を満たす 7 件＝",
+    "  雛形を本リポが埋めた文書 6 件（CLAUDE.md は末尾『技術スタック別ルール』を、docs/adr/README.md・operations.md・security.md・",
+    "  tech-requirements.md は frontmatter の <作成者>/<YYYY-MM-DD> と本文を、CHANGELOG.md は gen-changelog.js が本リポの履歴で本文を埋める）と、",
+    "  宣言された【置換点】PLAN_PROJECT を埋めた check-commit-messages.js（キット版が唯一【置換点】を宣言するファイル）。",
+    "  移した 7 件: scripts.test.js → A（当のファイルが『キットとバイト一致に保て』と書く。C が 43KB の追随漏れを隠していた）、",
+    "  AGENTS.md → A（差分は同内容の要約節の位置だけで固有デルタ無し）、changelog-overrides.json → B 5（overrides を空で配り各リポが埋める欄）、",
+    "  .gitignore → B 2（キット土台に .NET/Node/IDE の無視を足した）、docs/README.md・docs/ai-workflow.md・scripts/README.md → B 2/3",
+    "  （本リポ固有の成果物・CI 配線の記述を足しているが、キット土台の追随漏れも同時に見つかった。移す際に追随した）。",
+    "  scripts/kit-sync-classification.example.json は notApplicable → A（キットの scripts.test.js が『雛形が検査器の読む形と一致する』",
+    "  ことを検査するため実体が要る。同期は上書きコピーで済む）。判定表は docs/specs/20260816_524_pin-4d6a7d6-catchup.md。"
   ],
   "classes": {
     "A": [
@@ -103,7 +140,11 @@
       "scripts/gen-openapi-skeleton.js",
       "scripts/lib/ci-annotate.js",
       "scripts/setup.sh",
-      "scripts/validate-pipeline-config.js"
+      "scripts/validate-pipeline-config.js",
+      "AGENTS.md",
+      "scripts/scripts.test.js",
+      "scripts/kit-sync-classification.example.json",
+      "scripts/check-kit-sync.js"
     ],
     "B": {
       ".editorconfig": "2. 技術スタックとその CI 配線（xUnit1051 の抑止。xUnit v3 同梱アナライザの助言的規則であり、検証の正しさに関わらない。#352）",
@@ -114,23 +155,20 @@
       "docs/DEFINITION_OF_DONE.md": "X. 4 種に当たらない（全面再実装 #344 中の追加条件。IADR-0126 / IADR-0127）。本リポ固有の期間限定条件であり環流しない",
       ".claude/hooks/check-impl.js": "5. **キットが埋める欄を委ねている型**（planning#339）。キットが「リポジトリ固有の直下ファイル（作業台帳など）を足す場合はここへ追加する（固有デルタ）」と明示したため、`blocked-tasks.md` の追加は正当なデルタである。**環流は完了しており「環流候補」ではない**（planning#337 で採択）。",
       "scripts/commit-allowlist.json": "5. **キットが空欄・空配列で配り、各リポが埋める欄**（planning#339 で新設された第 5 種）。`allow` の実エントリは本リポ固有であり、**埋まっていること自体は追随漏れではない**。方針文（`_note` / `_categories`）はキットへ揃えた。",
-      "scripts/check-kit-sync.js": "X. 4 種に当たらない。**本リポが進んでいる** —— キット版は `--require-planning` を持たず、**フラグを渡しても認識せず skip して exit 0 になる**（2026-08-15 に実走で確認）。これを採ると「submodule の取得に失敗しても検査が skip して緑になる」状態が復活し、IADR-0191 決定3 が塞いだ穴が開き直る。**回帰テストは `run:` 行しか見ないため通り続ける。** 環流済み。追跡: #494"
+      ".gitignore": "2. 技術スタックとその CI 配線（キット土台の全行を保持し、.NET / Node / IDE / ローカル k8s の無視パターンを足した。#524 の再判定で C → B）",
+      "docs/README.md": "3. 本リポにしか存在しない成果物（docs/ 直下の横断記録・必須範囲 FR の網羅裁定・Runbook 実例の追記）。#524 の再判定で C → B。★ 土台はキットが正（移す際に how_to の行を追随した）",
+      "docs/ai-workflow.md": "2. 技術スタックとその CI 配線（helm.yml の除外・required check の実名表・ブランチ保護の未配備注記）＋ 3. 本リポにしか存在しない成果物（backlog-audit の週次節）。#524 の再判定で C → B。★ 土台はキットが正（移す際に『check 名は引く』『types: に reopened』の 2 節を追随した）",
+      "scripts/README.md": "3. 本リポにしか存在しない成果物（本リポ固有スクリプト表・置換点表・固有 CI ジョブ行）＋ 2. 技術スタックとその CI 配線（--compare-with-ref の基準ブランチ）。#524 の再判定で C → B。★ 土台はキットが正（移す際にキット共通表の欠落 6 行と『検査器を書くときの規約』節を追随した）",
+      "scripts/changelog-overrides.json": "5. キットが空配列で配り、各リポが埋める欄（overrides。traceability.md『配布時の overrides は空である』）。方針文（_note 等）はキットと同文。#524 の再判定で C → B"
     },
     "C": [
-      ".gitignore",
-      "AGENTS.md",
       "CHANGELOG.md",
       "CLAUDE.md",
-      "docs/README.md",
       "docs/adr/README.md",
-      "docs/ai-workflow.md",
       "docs/operations/operations.md",
       "docs/security/security.md",
       "docs/tech/tech-requirements.md",
-      "scripts/README.md",
-      "scripts/changelog-overrides.json",
-      "scripts/check-commit-messages.js",
-      "scripts/scripts.test.js"
+      "scripts/check-commit-messages.js"
     ]
   },
   "notApplicable": [
@@ -141,7 +179,6 @@
     ".github/workflows/copilot-setup-steps.example.yml",
     ".github/workflows/doc-links-planning.example.yml",
     ".github/workflows/frontend-tests.example.yml",
-    ".github/workflows/frontend.example.yml",
-    "scripts/kit-sync-classification.example.json"
+    ".github/workflows/frontend.example.yml"
   ]
 }

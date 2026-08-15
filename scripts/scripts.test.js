@@ -298,6 +298,165 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
+// --- check-review-verdict: 判定を投稿しないまま緑になる形を止める ---
+// planning#333: 同一 PR で 3 回連続、AI レビューが判定を投稿しなかった。うち 2 回は
+// `success` で終わり、**判定が 1 つも無いまま PR がマージされた**。隣の
+// check-permission-denials は「ツールを 1 つも実行できなかった」形を見るため捕まらない。
+{
+  const { collectAssistantText, findVerdicts, VERDICTS } = require('./check-review-verdict.js');
+  const FULL = '## AI コードレビュー結果\n\n### 🔴 重大\n- なし\n\n### 🟡 推奨\n- なし\n\n### 🟢 軽微\n- なし\n';
+
+  ok('判定 3 種がそろって初めて緑になる', () => {
+    assert.deepStrictEqual(findVerdicts(FULL).missing, []);
+    assert.strictEqual(findVerdicts(FULL.replace('### 🟢 軽微', '### 軽微')).missing.length, 1);
+  });
+
+  // 実測された形 A の再現。プレースホルダだけを残して終わる。
+  ok('判定を投稿しない形（形 A）を検出する', () => {
+    const t = '`dotnet test` をバックグラウンドで実行中です。完了後にサマリを投稿します。';
+    assert.strictEqual(findVerdicts(t).missing.length, 3);
+  });
+
+  // planning#319 知見 3 と同型のアンチパターン。語の一致だけで判定したら、
+  // レビューが本文でその語を使った瞬間に緑になってしまう。
+  ok('本文の語だけでは緑にしない（散文で自己発火しない）', () => {
+    assert.strictEqual(findVerdicts('重大な問題は無い。推奨も軽微も無い。').missing.length, 3);
+    assert.strictEqual(findVerdicts('### 🔴\n### 🟡\n### 🟢\n').missing.length, 3);
+    assert.strictEqual(findVerdicts('### 重大\n### 推奨\n### 軽微\n').missing.length, 3);
+  });
+
+  ok('見出しでない行の絵文字＋語は拾わない', () => {
+    assert.strictEqual(findVerdicts('- 🔴 重大 の指摘は無い\n- 🟡 推奨 も無い\n- 🟢 軽微 も無い\n').missing.length, 3);
+  });
+
+  // planning#341: 本検査器自身が偽陽性で落ちた。レビューは判定を**コメント投稿ツールの
+  // 入力**として出しており、assistant の text ブロックには載らない。**検査対象を取り違えると
+  // 「判定が在るのに無い」と読む** —— 恒久的な偽陽性は検査器そのものを外させる。
+  ok('コメント投稿ツールの入力から判定を拾う（実際の投稿経路）', () => {
+    const { COMMENT_TOOLS } = require('./check-review-verdict.js');
+    for (const name of COMMENT_TOOLS) {
+      const events = [{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name, input: { body: FULL } }] } }];
+      assert.deepStrictEqual(findVerdicts(collectAssistantText(events)).missing, [], name);
+    }
+  });
+
+  // 逆に、無条件で tool_use を含めてはならない。Bash の引数で緑になる。
+  ok('コメント投稿以外の tool_use は数えない', () => {
+    const events = [
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: `grep '${FULL}'` } }] } },
+    ];
+    assert.strictEqual(findVerdicts(collectAssistantText(events)).missing.length, 3);
+  });
+
+  ok('assistant の text と result の最終出力の両方を見る', () => {
+    assert.deepStrictEqual(
+      findVerdicts(collectAssistantText([{ type: 'assistant', message: { content: [{ type: 'text', text: FULL }] } }])).missing,
+      []
+    );
+    assert.deepStrictEqual(findVerdicts(collectAssistantText([{ type: 'result', result: FULL }])).missing, []);
+  });
+
+  // 検査器の定数とプロンプトの「出力フォーマット」は対である。片方だけ変えると
+  // 恒久的な偽陽性になり、検査器そのものが外される。定数を固定して気付けるようにする。
+  ok('判定の語彙は 3 種で固定されている（プロンプトと対）', () => {
+    assert.deepStrictEqual(VERDICTS.map((v) => v.word), ['重大', '推奨', '軽微']);
+    assert.deepStrictEqual(VERDICTS.map((v) => v.emoji), ['🔴', '🟡', '🟢']);
+  });
+
+  // 実行ログを読めないときは fail-open（その形は check-permission-denials が捕まえる）。
+  ok('実行ログを読めないときは fail-open（exit 0）', () => {
+    const bin = require('path').join(__dirname, 'check-review-verdict.js');
+    execSync(`node ${JSON.stringify(bin)} /nonexistent-execution-log.json`, { stdio: 'ignore' });
+    execSync(`node ${JSON.stringify(bin)}`, { stdio: 'ignore' });
+  });
+
+  ok('check-review-verdict の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-review-verdict.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
+// --- check-kit-sync: キットへの追随を機械が見る（planning#336） -------------------------
+//
+// 本体の網羅的な検査は当該スクリプトの `--self-test`（10 件）が持つ。ここでは
+// **配布物として壊れていないこと**と、**雛形が検査器の読む形と一致していること**を見る。
+// 雛形と検査器がずれると、雛形からコピーした表がいきなり落ちる（配布事故になる）。
+{
+  const { inspect: inspectKit, resolveKit } = require('./check-kit-sync.js');
+
+  ok('キットを参照できなければ skip へ倒す（fail-open）', () => {
+    assert.strictEqual(resolveKit(__dirname, { KIT_DIR: '/no/such/kit' }), null);
+  });
+
+  ok('雛形 kit-sync-classification.example.json が検査器の読む形と一致する', () => {
+    const t = require('./kit-sync-classification.example.json');
+    assert.ok(Array.isArray(t.classes.A) && t.classes.A.length > 0, 'classes.A は非空の配列');
+    assert.strictEqual(typeof t.classes.B, 'object');
+    assert.ok(Array.isArray(t.classes.C));
+    // **notApplicable は classes の外**（中に置くと unclassified が誤って上がる）。
+    assert.ok(Array.isArray(t.notApplicable), 'notApplicable は top-level の配列');
+    assert.strictEqual(t.classes.notApplicable, undefined);
+    // 雛形をそのまま食わせても検査器が例外を出さない。
+    const files = [...t.classes.A, ...Object.keys(t.classes.B), ...t.classes.C, ...t.notApplicable];
+    const { errors } = inspectKit(t, files, () => true, () => true, () => true);
+    assert.deepStrictEqual(errors, []);
+  });
+
+  ok('雛形の分類 B は必ず種の番号か X で始まる（第 5 種を含む）', () => {
+    for (const [file, reason] of Object.entries(require('./kit-sync-classification.example.json').classes.B)) {
+      assert.match(reason, /^([1-5]|X)\. /, `${file}: ${reason}`);
+    }
+  });
+
+  ok('check-kit-sync の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-kit-sync.js'))} --self-test`, {
+      stdio: 'ignore',
+    });
+  });
+}
+
+// --- check-feedback-status-sync / check-planning-pin-freshness（planning#337） -------------
+//
+// どちらも計画リポジトリを参照できない環境では skip する。**その skip を緑と読み違えないよう、
+// 本体の検査は fixture / 純関数で駆動する**（自己試験がそれを持つ）。ここでは配布物として
+// 壊れていないことと、**参照できないときに落ちないこと**を見る。
+{
+  const { compare: compareStatus, resolvePlanDir } = require('./check-feedback-status-sync.js');
+  const { freshness } = require('./check-planning-pin-freshness.js');
+
+  ok('status 突合は計画側を参照できなければ skip へ倒す', () => {
+    assert.strictEqual(resolvePlanDir(__dirname, { PLANNING_FEEDBACK_DIR: '/no/such/dir' }), null);
+  });
+
+  ok('status 突合は fixture で駆動できる（実データ無しでも実効する）', () => {
+    const os = require('os');
+    const fs = require('fs');
+    const dir = fs.mkdtempSync(require('path').join(os.tmpdir(), 'kit-fbstatus-'));
+    const [a, b] = ['impl', 'plan'].map((n) => {
+      const d = require('path').join(dir, n);
+      fs.mkdirSync(d);
+      return d;
+    });
+    fs.writeFileSync(require('path').join(a, 'x.md'), '---\nstatus: open\n---\n');
+    fs.writeFileSync(require('path').join(b, 'x.md'), '---\nstatus: accepted\n---\n');
+    assert.strictEqual(compareStatus(a, b).errors.length, 1);
+  });
+
+  ok('pin 鮮度はしきい値ちょうどで鳴らさない（毎回鳴ると読まれなくなる）', () => {
+    const now = 1_700_000_000;
+    assert.strictEqual(freshness(now - 14 * 86400, now, 14).state, 'fresh');
+    assert.strictEqual(freshness(now - 15 * 86400, now, 14).state, 'stale');
+    assert.strictEqual(freshness(null, now, 14).state, 'unknown');
+  });
+
+  for (const s of ['check-feedback-status-sync.js', 'check-planning-pin-freshness.js']) {
+    ok(`${s} の自己試験が通る`, () => {
+      execSync(`node ${JSON.stringify(require('path').join(__dirname, s))} --self-test`, { stdio: 'ignore' });
+    });
+  }
+}
+
 // --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue #148） ---
 //
 // Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか
@@ -564,44 +723,31 @@ ok('PR タイトル Revert はスキップ扱いで 0', () =>
 ok('PR タイトル [skip ci] はスキップ扱いで 0', () =>
   assert.strictEqual(silent(() => checkSingleTitle('なんでも [skip ci]')), 0));
 
-// --- check-commit-messages: isBotLogin（bot 作成 PR の除外・#477 / IADR-0189） ---
-//
-// **除外はワークフローの `user.type != 'Bot'` ではなくスクリプト側が担う。** GitHub App が
-// 作成した PR も `user.type == 'Bot'` になるため、ワークフローで弾くと AI 実装委任の運用でだけ
-// 「最後の砦」が skipped になる（planning#202）。以下はその規則を両方向で固定する。
-
-ok('isBotLogin: BOT_AUTHORS への完全一致だけを bot とみなす', () => {
-  assert.strictEqual(isBotLogin('dependabot[bot]'), true);
-  assert.strictEqual(isBotLogin('renovate[bot]'), true);
-  assert.strictEqual(isBotLogin('github-actions[bot]'), true);
-});
-
-// **最重要の否定形。** ここが true になると PR タイトル検査が AI の PR で skip され、
-// 規約外の件名が統合ブランチへ載る（本検査が防ごうとしている当のもの）。
-ok('isBotLogin: claude[bot] は bot 扱いしない（GitHub App の PR も検査する）', () =>
-  assert.strictEqual(isBotLogin('claude[bot]'), false));
-
-// **部分一致にしてはならない**（コミット著者向けの isBot() と規則が違う）。
-ok('isBotLogin: 部分一致では除外しない', () => {
-  assert.strictEqual(isBotLogin('not-dependabot-really'), false);
-  assert.strictEqual(isBotLogin('dependabot-clone'), false);
-});
-
-ok('isBotLogin: 空・未設定は bot 扱いしない（fail-closed 側へ倒す）', () => {
+// PR 作成者による除外（planning#202）。
+// ワークフローの `user.type != 'Bot'` による除外を廃し、判定をここへ一本化した。
+// GitHub App が作った PR（claude[bot] 等）まで除外すると、AI に実装を委ねる運用でだけ
+// 「最後の砦」が skipped になるため、**BOT_AUTHORS への完全一致だけ**を除外する。
+ok('PR 作成者 dependabot[bot] は規約外件名でも 0（除外）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'dependabot[bot]')), 0));
+ok('PR 作成者 github-actions[bot] は除外', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'github-actions[bot]')), 0));
+ok('PR 作成者 claude[bot] は除外しない（規約外件名は 1）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'claude[bot]')), 1));
+ok('PR 作成者 claude[bot] でも規約に合えば 0', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('feat(FR-08): ログイン実装', 'claude[bot]')), 0));
+ok('PR 作成者 人間は除外しない（規約外件名は 1）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'endazon')), 1));
+ok('PR 作成者 未指定でも従来どおり検査する', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff')), 1));
+ok('PR 作成者は部分一致では除外しない（not-dependabot-really）', () =>
+  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'not-dependabot-really')), 1));
+ok('isBotLogin は大小文字を無視して完全一致する', () => {
+  assert.strictEqual(isBotLogin('Dependabot[bot]'), true);
+  assert.strictEqual(isBotLogin('renovate'), true);
+  assert.strictEqual(isBotLogin('claude[bot]'), false);
   assert.strictEqual(isBotLogin(''), false);
-  assert.strictEqual(isBotLogin(undefined), false);
   assert.strictEqual(isBotLogin(null), false);
 });
-
-ok('PR タイトル: bot 作成 PR は件名が規約違反でも 0（スキップ）', () =>
-  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'dependabot[bot]')), 0));
-
-// **claude[bot] の PR は検査される。** これが #477 / IADR-0189 で塞いだ穴である。
-ok('PR タイトル: claude[bot] の PR は規約違反なら 1（skip しない）', () =>
-  assert.strictEqual(silent(() => checkSingleTitle('update stuff', 'claude[bot]')), 1));
-
-ok('PR タイトル: 作成者未指定でも従来どおり検査する（後方互換）', () =>
-  assert.strictEqual(silent(() => checkSingleTitle('update stuff')), 1));
 
 // --- check-commit-messages: findAllowlisted（規約導入前コミットの恒久除外） ---
 
@@ -983,6 +1129,460 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
 
 // --- 環境依存の出力先切り替えの回帰防止（issue #140） ---
 //
+// --- check-feedback-dispatched: 計画へ未送付のまま滞留した環流記録を見逃さない ---
+// planning#217: 記録は作られるが起票されず、PR がマージされても検出されない事故が
+// 6 件・最長 1 か月近く滞留した。判定の穴（自リポの issue URL を起票の証拠と誤認する等）は
+// 「OK: n 件」の陰に隠れるため、境界だけは固定しておく。
+{
+  const {
+    inspect: inspectRawFb,
+    fmValue: fmValueFb,
+    foreignPlanRefs: foreignPlanRefsRaw,
+    EXCLUDED: EXCLUDED_FB,
+  } = require('./check-feedback-dispatched.js');
+  const SELF_FB = 'endazon/ai-stock-trading';
+
+  // 置換点 PLANNING_REPO は配布時に自組織の計画リポジトリへ書き換える前提である
+  // （HOWTO.md B-5 の差し替え対象表）。検体は endazon/project-planning を前提に
+  // 書いてあるため、既定引数（＝書き換え後の値）を踏むと配布先で必ず落ちる。
+  // 試験用の固定設定を明示的に渡し、テストを置換点から独立させる
+  // （selfTest() および check-cross-repo-refs.js と同じ方式）。
+  const PLAN_FB = 'endazon/project-planning';
+  const inspectFb = (text, selfRepo, planningRepo = PLAN_FB) => inspectRawFb(text, selfRepo, planningRepo);
+  const foreignPlanRefs = (text, selfRepo, planningRepo = PLAN_FB) =>
+    foreignPlanRefsRaw(text, selfRepo, planningRepo);
+
+  ok('計画リポジトリの issue URL があれば伝達済みと見なす', () => {
+    const r = inspectFb('---\nstatus: open\n---\nhttps://github.com/endazon/project-planning/issues/209', SELF_FB);
+    assert.deepStrictEqual(r.reasons, []);
+  });
+
+  ok('自リポジトリの issue URL は計画への伝達の証拠にならない', () => {
+    const r = inspectFb('---\nstatus: open\n---\nhttps://github.com/endazon/ai-stock-trading/issues/375', SELF_FB);
+    assert.ok(r.reasons.length > 0, '自リポの issue を伝達済みと誤認している');
+  });
+
+  // planning#319 知見 1: README は伝達を 2 経路（issue / 記録ファイルのコピー）認めるが、
+  // 記録ファイル経路は issue を作らないため、証拠になり得るのは計画リポの PR だけである。
+  ok('計画リポジトリの PR URL も伝達の証拠と認める（記録ファイル経路）', () => {
+    const r = inspectFb('---\nstatus: open\n---\nhttps://github.com/endazon/project-planning/pull/306', SELF_FB);
+    assert.deepStrictEqual(r.reasons, [], '記録ファイル経路が恒久的な偽陽性になっている');
+  });
+
+  ok('自リポジトリの PR URL は計画への伝達の証拠にならない', () => {
+    const r = inspectFb('---\nstatus: open\n---\nhttps://github.com/endazon/ai-stock-trading/pull/306', SELF_FB);
+    assert.ok(r.reasons.length > 0);
+  });
+
+  ok('`dispatched: false` ＋証拠なしは status に関わらず警告する', () => {
+    const r = inspectFb('---\nstatus: accepted\ndispatched: false\n---\n本文', SELF_FB);
+    assert.ok(r.reasons.length > 0);
+  });
+
+  // planning#320 の再監査で検出: 本文の「起票済み」は素の部分一致（撤廃した「未送付」と
+  // 同じアンチパターン）であり、明示的な自己申告を打ち消させると**自己鎮火**が成立する
+  // —— 知見 3 が防いだ自己発火の鏡像である。
+  ok('本文の「起票済み」は明示的な `dispatched: false` を打ち消さない', () => {
+    const r = inspectFb('---\nstatus: accepted\ndispatched: false\n---\n本文の「起票済み」を証拠と見なす', SELF_FB);
+    assert.ok(r.reasons.length > 0, '弱い証拠が自己申告を上書きしている（自己鎮火）');
+  });
+
+  // planning#320 の 3 巡目監査で検出: `dispatched:` から塞いでも `status: open` 側に
+  // 残っていては一貫しない。素の部分一致は**文意と無関係に**当たる。
+  ok('本文の「起票済み」は `status: open` の証拠にもならない', () => {
+    const r = inspectFb('---\nstatus: open\n---\n他件は起票済みだが本件は未対応である', SELF_FB);
+    assert.ok(r.reasons.length > 0, '文意と無関係な部分一致が証拠になっている');
+  });
+
+  // planning#320 の 3 巡目監査で検出（重大）: `fmValue` の区切りに `\s` を使うと
+  // **改行に一致する**ため、空の鍵が次の行を値として飲み込む。`planning_issue:` の値が
+  // `"dispatched: false"` になり非空と判定され、**検査器が完全に沈黙する**。
+  // 雛形が空の `planning_issue:` を配るため、この経路は現実に踏まれる。
+  ok('空の鍵が次の行を値として飲み込まない', () => {
+    assert.strictEqual(
+      fmValueFb('---\nstatus: open\nplanning_issue:\ndispatched: false\n---\n', 'planning_issue'),
+      '',
+      '空の鍵が次の行を飲み込んでいる'
+    );
+    const r = inspectFb('---\nstatus: open\nplanning_issue:\ndispatched: false\n---\n本文', SELF_FB);
+    assert.strictEqual(r.reasons.length, 2, '検査器が沈黙している（警告 2 件が出るべき）');
+  });
+
+  // planning#320 の 3 巡目監査で検出: 値検証を入れた以上、正規化が判定に効く。
+  // **4 巡目監査の指摘**: 件数だけを見る `> 0` では、正規化が壊れても「解釈できない値」の
+  // 警告へ入れ替わるだけで件数が 1 のままになり**素通りする（vacuous）**。理由文まで検証し、
+  // 肯定側（緑になるべき形）も固定する。
+  ok('`dispatched` の値を正規化する（クォート・大小・コメント）', () => {
+    assert.match(
+      inspectFb('---\nstatus: accepted\ndispatched: "false"\n---\n本文', SELF_FB).reasons.join(),
+      /他に伝達の証拠も無い/,
+      'クォート付きの `"false"` を false と解釈できていない'
+    );
+    assert.match(
+      inspectFb('---\nstatus: accepted\ndispatched: FALSE\n---\n本文', SELF_FB).reasons.join(),
+      /他に伝達の証拠も無い/,
+      '大文字の `FALSE` を false と解釈できていない'
+    );
+    assert.strictEqual(inspectFb('---\nstatus: open\ndispatched: "true"\n---\n本文', SELF_FB).reasons.length, 0);
+    assert.strictEqual(inspectFb('---\nstatus: open\ndispatched: True\n---\n本文', SELF_FB).reasons.length, 0);
+    assert.strictEqual(
+      inspectFb('---\nstatus: accepted\ndispatched: false # 補足\n---\nhttps://github.com/endazon/project-planning/issues/1', SELF_FB)
+        .reasons.length,
+      0,
+      '行末コメントを値に含めてしまっている'
+    );
+  });
+
+  // planning#320 の 4 巡目監査で検出（重大）: 3 巡目のコメント除去は「値の後ろ」しか落とさず、
+  // **値がコメントだけの鍵**（`planning_issue: # 後で埋める`）は非空の証拠と判定され、
+  // 空鍵と同じ沈黙を招いていた。`#319` は人が書く形なので落としてはならない。
+  ok('値がコメントだけの鍵は空として扱う（`#319` は落とさない）', () => {
+    assert.strictEqual(fmValueFb('---\nplanning_issue: # 後で埋める\n---\n', 'planning_issue'), '');
+    assert.match(
+      inspectFb('---\nstatus: open\nplanning_issue: # 後で埋める\n---\n本文', SELF_FB).reasons.join(),
+      /status: open/,
+      'コメントだけの値が証拠と誤判定され、検査器が沈黙している'
+    );
+    assert.strictEqual(
+      fmValueFb('---\nplanning_issue: #319\n---\n', 'planning_issue'),
+      '#319',
+      '`#319` をコメントとして落としている（逆向きの偽陽性）'
+    );
+    // 全角空白（U+3000）を挟んだコメントも落とす。`[ \t]` へ狭めると値に残って沈黙する。
+    assert.strictEqual(
+      fmValueFb('---\nplanning_issue: 　# 後で埋める\n---\n', 'planning_issue'),
+      '',
+      '全角空白を挟んだコメントが値に残っている'
+    );
+  });
+
+  // planning#320 の 5 巡目監査で検出（重大）: `#<数字>` を値として残す例外を全鍵へ一律に
+  // 効かせたため、**閉じた語彙と突き合わせる鍵が両方向に壊れた** —— `status` は open と
+  // 読めず沈黙し、`dispatched` は「解釈できない値」の偽陽性になる。例外は
+  // `planning_issue:` に限る。
+  ok('`#<数字>` の例外は `planning_issue:` に限る（status は沈黙せず dispatched は誤検知しない）', () => {
+    assert.match(
+      inspectFb('---\nstatus: open #319 で起票予定\n---\n本文', SELF_FB).reasons.join(),
+      /status: open/,
+      '`status:` の行末コメントが値に残り、open と読めず沈黙している'
+    );
+    assert.deepStrictEqual(
+      inspectFb('---\nstatus: accepted\ndispatched: true #319 へ起票済み\nplanning_issue: 319\n---\n本文', SELF_FB)
+        .reasons,
+      [],
+      '`dispatched:` の行末コメントが値に残り、証拠が揃っているのに赤くなっている'
+    );
+  });
+
+  ok('`status` の大小を正規化する', () => {
+    assert.strictEqual(inspectFb('---\nstatus: Open\n---\n本文', SELF_FB).reasons.length, 1);
+  });
+
+  // planning#320 の再監査で検出: YAML 1.1 では `no` / `off` も偽であり、`dispatched: no` と
+  // 書くと黙って警告が消えていた。**空振りを緑として記録しない。**
+  ok('`dispatched` の解釈できない値を警告する（no / off / 0 で黙らない）', () => {
+    for (const bad of ['no', 'off', '0']) {
+      const r = inspectFb(`---\nstatus: accepted\ndispatched: ${bad}\n---\n本文`, SELF_FB);
+      assert.ok(r.reasons.length > 0, `dispatched: ${bad} が静かに緑になっている`);
+    }
+  });
+
+  // planning#320 の監査で検出: 雛形は `dispatched: false` を既定で配るため、この条件が
+  // 無条件だと**雛形どおりに書いた記録が必ず偽陽性になる**（偽陽性を消す変更が
+  // 別の口から確実な偽陽性を作っていた）。裁定は「いずれか一方で足りる」である。
+  ok('`planning_issue:` があれば `dispatched: false` のままでも警告しない', () => {
+    const r = inspectFb('---\nstatus: accepted\ndispatched: false\nplanning_issue: 319\n---\n本文', SELF_FB);
+    assert.deepStrictEqual(r.reasons, [], '雛形どおりに書いた記録が偽陽性になっている');
+  });
+
+  ok('計画リポの PR URL があれば `dispatched: false` のままでも警告しない', () => {
+    const r = inspectFb(
+      '---\nstatus: accepted\ndispatched: false\n---\nhttps://github.com/endazon/project-planning/pull/320',
+      SELF_FB
+    );
+    assert.deepStrictEqual(r.reasons, [], '記録ファイル経路が偽陽性になっている');
+  });
+
+  // planning#319 知見 3: 以前は本文の「未送付」の素の部分一致で発火したため、
+  // **検査器について書いた記録**が語を含むだけで自己発火した（実測 1 → 2 件）。
+  ok('本文の「未送付」の語では発火しない（検査器を論じた記録の自己発火を防ぐ）', () => {
+    const r = inspectFb('---\nstatus: accepted\n---\n## 「未送付」検査器が語の一致で発火する\n本文', SELF_FB);
+    assert.deepStrictEqual(r.reasons, [], '語の一致だけで自己発火している');
+  });
+
+  ok('空値の planning_issue は伝達の証拠にならない', () => {
+    assert.strictEqual(fmValueFb('---\nstatus: open\nplanning_issue:\n---\n', 'planning_issue'), '');
+    const r = inspectFb('---\nstatus: open\nplanning_issue:\n---\n本文', SELF_FB);
+    assert.ok(r.reasons.length > 0);
+  });
+
+  ok('selfRepo 不明時は誤検出しない側へ倒す', () => {
+    // 自リポを特定できなくても、計画リポジトリの URL は証拠のままである。
+    const links = foreignPlanRefs('https://github.com/endazon/project-planning/issues/1', '');
+    assert.strictEqual(links.length, 1, 'selfRepo が空だと計画リポの URL まで落としている');
+  });
+
+  // planning#320 の 6 巡目監査で検出（重大）: 証拠が「自リポ以外なら何でも」だったため、
+  // **無関係な第三者リポの issue URL を 1 行足すだけで検査器が沈黙**していた。
+  // 「本文の『起票済み』」を外したのと同じ理由（文意と無関係に一致する）で認められない。
+  // planning#320 の 6 巡目監査が「生存」と報告した 3 件。いずれも壊すと沈黙側へ倒れる。
+  ok('CRLF のフロントマターを読める（壊すと全鍵が読めず全沈黙する）', () => {
+    const crlf = '---\r\nstatus: open\r\ndispatched: false\r\n---\r\n本文';
+    assert.strictEqual(fmValueFb(crlf, 'status'), 'open', 'CRLF で鍵が読めていない');
+    assert.strictEqual(inspectFb(crlf, SELF_FB).reasons.length, 2);
+  });
+
+  ok('`status` は完全一致で判定する（`opened` を open と読まない）', () => {
+    assert.deepStrictEqual(inspectFb('---\nstatus: opened\n---\n本文', SELF_FB).reasons, []);
+  });
+
+  ok('自リポジトリの判定は大小を無視する（`GITHUB_REPOSITORY` の表記ゆれで証拠に化けない）', () => {
+    const r = inspectFb('---\nstatus: open\n---\nhttps://github.com/endazon/Project-Planning/issues/1', 'ENDAZON/PROJECT-PLANNING');
+    assert.ok(r.reasons.length > 0, '自リポの URL が大小の違いで証拠になっている');
+  });
+
+  ok('第三者リポの issue URL は伝達の証拠にならない', () => {
+    const r = inspectFb('---\nstatus: open\n---\n参考: https://github.com/dotnet/runtime/issues/12345', SELF_FB);
+    assert.ok(r.reasons.length > 0, '第三者リポの URL で沈黙している');
+  });
+
+  ok('置換点が空なら従来どおり「自リポ以外なら証拠」へ倒す（fail-open）', () => {
+    assert.strictEqual(foreignPlanRefs('https://github.com/dotnet/runtime/issues/1', SELF_FB, '').length, 1);
+  });
+
+  // planning#320 の 8 巡目監査で検出: 形式検査は純関数として試験されていたが、
+  // **モジュールがそれを使っているか**が試験されておらず、配線を外しても全件緑だった。
+  // 併せて「黙って記録しない」（警告を出すこと）も CLI で確かめる。
+  // planning#320 の 8 巡目監査で検出（重大）: 検体が計画リポ名をハードコードしていたため、
+  // **配布先が手順書どおりに置換点を書き換えた瞬間に自己試験が落ちていた**。
+  // 「警告のみ・ジョブは落とさない」という設計原則が全配布先で破れる。
+  ok('自己試験は置換点に依存しない（書き換えた配布先で CI を赤くしない）', () => {
+    const bin = require('path').join(__dirname, 'check-feedback-dispatched.js');
+    for (const v of ['acme/planning', '', 'endazon/project-planning.git']) {
+      execSync(`node ${JSON.stringify(bin)} --self-test`, {
+        env: { ...process.env, PLANNING_REPOSITORY: v },
+        stdio: 'pipe',
+      });
+    }
+  });
+
+  ok('置換点の形式検査がモジュールへ配線されている（不正値で警告を出し旧挙動へ倒す）', () => {
+    const bin = require('path').join(__dirname, 'check-feedback-dispatched.js');
+    // 警告が同じ stdout へ出るため、末尾の 1 行だけを見る。
+    const probe =
+      `const m=require(${JSON.stringify(bin)});process.stdout.write('\\nRESULT=' + JSON.stringify(m.PLANNING_REPO));`;
+    const got = execSync(`node -e ${JSON.stringify(probe)}`, {
+      env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning.git' },
+      encoding: 'utf8',
+    });
+    assert.match(got, /RESULT=""$/, '不正な置換点が正規化されずモジュールへ渡っている');
+
+    const out = execSync(`node ${JSON.stringify(bin)} --self-test 2>&1 || true`, {
+      env: { ...process.env, PLANNING_REPOSITORY: 'not-a-repo' },
+      encoding: 'utf8',
+    });
+    assert.match(out, /owner\/repo の形ではありません/, '不正な置換点を黙って受け入れている');
+  });
+
+  // planning#320 の 8 巡目監査で検出: コメント除去の**非 `planning_issue` 枝**だけを
+  // `[ \t]` へ狭めても全件緑だった。5 巡目に潰した全角空白の穴と同型である。
+  ok('全角空白を挟んだコメントは `status` / `dispatched` でも落とす', () => {
+    assert.strictEqual(fmValueFb('---\nstatus: open　# 補足\n---\n', 'status'), 'open');
+    assert.strictEqual(fmValueFb('---\ndispatched: true　# 補足\n---\n', 'dispatched'), 'true');
+  });
+
+  // planning#320 の 8 巡目監査で検出（推奨）: テストは関数を試験するが**配線を試験していない**。
+  // 実際に改名で `main()` が壊れたのに 149 件は緑のままだった。**CLI を実走させる。**
+  ok('CLI を実走できる（配線の回帰。関数だけ試験しても main は守れない）', () => {
+    const os = require('os');
+    const fsx = require('fs');
+    const p = require('path');
+    const root = fsx.mkdtempSync(p.join(os.tmpdir(), 'fbcli-'));
+    fsx.mkdirSync(p.join(root, 'feedback'), { recursive: true });
+    fsx.writeFileSync(
+      p.join(root, 'feedback', 'x.md'),
+      '---\nstatus: open\ndispatched: false\n---\n参考: https://github.com/acme/planning/issues/12\n'
+    );
+    const bin = p.join(__dirname, 'check-feedback-dispatched.js');
+    const out = execSync(`node ${JSON.stringify(bin)} 2>&1 || true`, {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning', GITHUB_REPOSITORY: 'acme/impl' },
+    });
+    assert.match(out, /未送付の可能性がある環流記録が 1 件/, 'CLI が検出結果を出していない');
+    // 置換点の取り違えに気付けるヒントが出ること（行動不能な恒久警告にしない）。
+    assert.match(out, /PLANNING_REPO/, '置換点の取り違えを示すヒントが出ていない');
+    fsx.rmSync(root, { recursive: true, force: true });
+  });
+
+  // 指摘があるフィクスチャを用意し、終了コードだけを見るヘルパ。
+  // 既存の CLI テストは `|| true` で終了コードを握り潰しているため、**設計原則そのもの**は
+  // 無防備だった（planning#320 の 9 巡目監査で検出。exit(0) を exit(1) へ変えても全件緑）。
+  const runFbCli = (env) => {
+    const os = require('os');
+    const fsx = require('fs');
+    const p = require('path');
+    const root = fsx.mkdtempSync(p.join(os.tmpdir(), 'fbexit-'));
+    fsx.mkdirSync(p.join(root, 'feedback'), { recursive: true });
+    fsx.writeFileSync(p.join(root, 'feedback', 'x.md'), '---\nstatus: open\ndispatched: false\n---\n本文\n');
+    const bin = p.join(__dirname, 'check-feedback-dispatched.js');
+    let status = 0;
+    try {
+      execSync(`node ${JSON.stringify(bin)}`, { cwd: root, stdio: 'pipe', env: { ...process.env, ...env } });
+    } catch (e) {
+      status = e.status;
+    }
+    fsx.rmSync(root, { recursive: true, force: true });
+    return status;
+  };
+
+  // 受け入れ基準の中核（4 箇所で明文化）: **警告のみ。ジョブは落とさない。**
+  // ブロックにすると「記録を作らない」という回避策を誘発し、統制の目的と逆の結果になる。
+  ok('指摘があっても終了コードは 0（警告のみ・ジョブを落とさない）', () => {
+    assert.strictEqual(runFbCli({ STRICT_FEEDBACK_DISPATCH: '' }), 0);
+  });
+
+  ok('STRICT_FEEDBACK_DISPATCH=1 のときだけ失敗として扱う', () => {
+    assert.strictEqual(runFbCli({ STRICT_FEEDBACK_DISPATCH: '1' }), 1);
+    // `1` 以外の値で厳格化しない（`0` や `true` を書いて黙って落ちる事故を防ぐ）。
+    assert.strictEqual(runFbCli({ STRICT_FEEDBACK_DISPATCH: '0' }), 0);
+  });
+
+  // planning#320 の 9 巡目監査で検出: 置換点が**主経路（inspect）へ配線されている**ことが
+  // 未試験で、既定引数をリテラルへ固定する変異が全件緑のまま生き残った。
+  // 既存の env テストは `foreignPlanRefs` を直接叩くため、この配線切断を検出できない。
+  ok('置換点が主経路（inspect）へ配線されている', () => {
+    const mod = require('path').join(__dirname, 'check-feedback-dispatched.js');
+    const probe =
+      `const m=require(${JSON.stringify(mod)});` +
+      'const t="---\\nstatus: open\\n---\\nhttps://github.com/endazon/project-planning/issues/1";' +
+      'process.stdout.write("\\nRESULT=" + m.inspect(t, "endazon/ai-stock-trading").reasons.length);';
+    const shifted = execSync(`node -e ${JSON.stringify(probe)}`, {
+      env: { ...process.env, PLANNING_REPOSITORY: 'acme/planning' },
+      encoding: 'utf8',
+    });
+    const normal = execSync(`node -e ${JSON.stringify(probe)}`, {
+      env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning' },
+      encoding: 'utf8',
+    });
+    assert.match(shifted, /RESULT=1$/, '置換点を変えても inspect の判定が変わらない（配線が切れている）');
+    assert.match(normal, /RESULT=0$/, '正しい置換点で証拠と認めていない');
+  });
+
+  // planning#320 の 9 巡目監査で検出: ローカル実行（GITHUB_REPOSITORY 無し）では selfRepo が
+  // 空になり、**自リポの URL が「制限を外せば証拠になった URL」に化けて** hint が誤発火した。
+  // 文書が「まず置換点を疑え」と誘導するため、正しい設定を疑わせる誤誘導になる。
+  ok('selfRepo が不明なときは置換点のヒントを出さない（誤誘導しない）', () => {
+    const os = require('os');
+    const fsx = require('fs');
+    const p = require('path');
+    const root = fsx.mkdtempSync(p.join(os.tmpdir(), 'fbhint-'));
+    fsx.mkdirSync(p.join(root, 'feedback'), { recursive: true });
+    fsx.writeFileSync(
+      p.join(root, 'feedback', 'x.md'),
+      '---\nstatus: open\n---\n自リポ: https://github.com/endazon/ai-stock-trading/issues/375\n'
+    );
+    const bin = p.join(__dirname, 'check-feedback-dispatched.js');
+    const run = (env) =>
+      execSync(`node ${JSON.stringify(bin)} 2>&1 || true`, {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning', ...env },
+      });
+    const unknown = run({ GITHUB_REPOSITORY: '' });
+    assert.match(unknown, /未送付の可能性がある環流記録が 1 件/, '指摘そのものが出ていない');
+    assert.ok(!/PLANNING_REPO/.test(unknown), 'selfRepo 不明時に置換点のヒントが誤発火している');
+    // 自リポが判る場合も、自リポ URL しか無いならヒントは出ない。
+    assert.ok(
+      !/PLANNING_REPO/.test(run({ GITHUB_REPOSITORY: 'endazon/ai-stock-trading' })),
+      '自リポ URL だけでヒントが出ている'
+    );
+    fsx.rmSync(root, { recursive: true, force: true });
+  });
+
+  // planning#320 の 7 巡目監査で検出: `PLANNING_REPOSITORY` は文書化しているのに未試験で、
+  // 読み込みを消しても全件緑だった。**env は読み込み時に評価される**ため、別プロセスで確かめる。
+  ok('環境変数 `PLANNING_REPOSITORY` で置換点を上書きできる', () => {
+    const mod = require('path').join(__dirname, 'check-feedback-dispatched.js');
+    const probe = `const {foreignPlanRefs}=require(${JSON.stringify(mod)});` +
+      'process.stdout.write(String(foreignPlanRefs("https://github.com/acme/plan/issues/7","o/r").length));';
+    const withEnv = execSync(`node -e ${JSON.stringify(probe)}`, {
+      env: { ...process.env, PLANNING_REPOSITORY: 'acme/plan' },
+      encoding: 'utf8',
+    });
+    const without = execSync(`node -e ${JSON.stringify(probe)}`, {
+      env: { ...process.env, PLANNING_REPOSITORY: '' },
+      encoding: 'utf8',
+    });
+    assert.strictEqual(withEnv, '1', '環境変数で指定した計画リポが証拠として効いていない');
+    assert.strictEqual(without, '1', '空指定時の fail-open が効いていない');
+  });
+
+  // planning#320 の 9 巡目監査で検出（軽微）: `www.` 付き・大文字混じりのホストが証拠に
+  // ならなかった。**証拠を取りこぼす向きの誤りは、正しく起票した記録を恒久的に赤くする**。
+  // 逆に番号なしの一覧 URL は特定の issue / PR を指さないので証拠にしない（`\d+` は必須）。
+  ok('ホストの表記ゆれを受け、番号なしの URL は証拠にしない', () => {
+    const P = 'endazon/project-planning';
+    for (const u of [
+      'https://www.github.com/endazon/project-planning/issues/319',
+      'https://GitHub.com/endazon/project-planning/issues/319',
+      'http://github.com/endazon/project-planning/pull/320',
+    ]) {
+      assert.strictEqual(foreignPlanRefsRaw(u, SELF_FB, P).length, 1, `証拠と認めていない: ${u}`);
+    }
+    assert.strictEqual(
+      foreignPlanRefsRaw('https://github.com/endazon/project-planning/issues/', SELF_FB, P).length,
+      0,
+      '番号なしの一覧 URL を証拠と誤認している'
+    );
+  });
+
+  ok('TEMPLATE.md / README.md は検査対象から外す', () => {
+    assert.ok(EXCLUDED_FB.has('template.md'));
+    assert.ok(EXCLUDED_FB.has('readme.md'));
+  });
+
+  // planning#320 の 5 巡目監査で検出: 列挙経路が一度も走っておらず、`.md` フィルタや
+  // `FEEDBACK_DIR` を壊すと **0 件検査＝全沈黙**（CLI は「Markdown がありません」で exit 0）
+  // になるのに CI が気付かない。**実ディレクトリを列挙して固定する。**
+  ok('feedback/ の列挙が .md だけを拾い、雛形・README・サブディレクトリを除く', () => {
+    const os = require('os');
+    const fsx = require('fs');
+    const p = require('path');
+    const { listFeedbackFiles, FEEDBACK_DIR } = require('./check-feedback-dispatched.js');
+    // **フィクスチャのパスをリテラルで書く。** 被検査対象の `FEEDBACK_DIR` で組み立てると
+    // 自己参照になり、**`FEEDBACK_DIR` を壊す変異が素通りする**（planning#320 の 6 巡目監査で
+    // 検出。改名すると全沈黙するのにテストは緑のままであった）。定数自体も直接固定する。
+    assert.strictEqual(FEEDBACK_DIR, 'feedback', '検査対象のディレクトリ名が変わっている');
+    const root = fsx.mkdtempSync(p.join(os.tmpdir(), 'fb-'));
+    const dir = p.join(root, 'feedback');
+    fsx.mkdirSync(dir, { recursive: true });
+    fsx.writeFileSync(p.join(dir, 'a.md'), '---\nstatus: open\n---\n');
+    fsx.writeFileSync(p.join(dir, 'TEMPLATE.md'), '---\nstatus: open\n---\n');
+    fsx.writeFileSync(p.join(dir, 'README.md'), '# readme\n');
+    fsx.writeFileSync(p.join(dir, 'b.txt'), 'not markdown');
+    fsx.mkdirSync(p.join(dir, 'sub.md'));
+    const got = listFeedbackFiles(root).map((f) => p.basename(f));
+    assert.deepStrictEqual(got, ['a.md'], '列挙が壊れている（0 件検査で緑になる経路）');
+    fsx.rmSync(root, { recursive: true, force: true });
+  });
+
+  // planning#320 の 5 巡目監査で検出: フロントマター抽出が貪欲だと、本文中の `---`
+  // （Markdown の水平線。環流記録に頻出）まで飲み込み、**本文のコードブロックに書いた
+  // `dispatched: false` を frontmatter の値として読む**。実測で判定が反転した。
+  ok('フロントマターの抽出は非貪欲（本文の `---` を飲み込まない）', () => {
+    const t = '---\nstatus: accepted\n---\n本文\n\n```yaml\ndispatched: false\n```\n\n---\n終わり';
+    assert.strictEqual(fmValueFb(t, 'dispatched'), '', '本文の `---` まで飲み込んでいる');
+    assert.deepStrictEqual(inspectFb(t, SELF_FB).reasons, []);
+  });
+
+  ok('check-feedback-dispatched の自己試験が通る', () => {
+    execSync(`node ${JSON.stringify(require('path').join(__dirname, 'check-feedback-dispatched.js'))} --self-test`, {
+      stdio: 'pipe',
+    });
+  });
+}
+
 // ci-annotate は GITHUB_ACTIONS の有無で書き込み先（stdout / 呼び出し側指定）を変える。
 // **片方の環境でしかテストしないと必ず見落とす**。実際 #138 は「ローカルで緑・CI で赤」
 // という最も気付きにくい形で入り、取り込んだ全リポジトリの scripts-tests を落とした。
@@ -1007,4 +1607,114 @@ if (!process.env.SCRIPTS_TEST_CHILD) {
   });
 }
 
+// planning#320 の 9 巡目監査で検出（重大）: 8 巡目は check-feedback-dispatched.js の
+// selfTest() だけを置換点から独立させ、**検体 20 箇所を抱えるこのファイル自身**を
+// 同じ形にしていなかった。HOWTO.md が新たに指示する書き換え（PLANNING_REPO を自組織の
+// 計画リポジトリへ）を行うと scripts-tests が全配布先で恒久的に赤くなる（実測 exit=1）。
+// 「自己試験だけ直す」では足りない —— **ジョブが実際に走らせるのはこのファイルである**。
+// SCRIPTS_TEST_CHILD で再帰を止める。
+if (!process.env.SCRIPTS_TEST_CHILD) {
+  ok('テスト自身が置換点 PLANNING_REPO に依存しない（書き換えた配布先で CI を赤くしない）', () => {
+    for (const v of ['acme/planning', '', 'endazon/project-planning.git', 'not-a-repo']) {
+      execSync(`node ${JSON.stringify(__filename)}`, {
+        env: { ...process.env, PLANNING_REPOSITORY: v, SCRIPTS_TEST_CHILD: '1' },
+        stdio: 'pipe',
+      });
+    }
+  });
+}
+
+// --- check-cross-repo-refs: 他リポジトリ issue / PR 番号の修飾 ---
+//
+// 本体の網羅的な検査は当該スクリプトの `--self-test`（69 件）が持つ。ここではそれを
+// **この試験の一部として必ず走らせる**ことと、配布物として最低限守るべき 2 点を固定する。
+// 規約に書くだけでは守られないことが実測で確かめられている（規約の書いてある当のファイルを
+// 編集する PR が同じ違反を犯し、CI を green で通過した）。
+
+{
+  const { selfTest, createChecker, findViolations } = require('./check-cross-repo-refs.js');
+
+  ok('check-cross-repo-refs の自己試験が全件通る', () => {
+    // selfTest は失敗時に process.exit(1) するため、通ればここへ戻る。
+    // 標準出力は握り潰す（本試験の出力を 69 行汚さない）。
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = () => true;
+    try {
+      selfTest();
+    } finally {
+      process.stdout.write = write;
+    }
+  });
+
+  // 配布物としての要点 1: 置換点を書き換えなくても壊れない（プレースホルダのまま動く）。
+  ok('置換点がプレースホルダのままでも読み込めて例外を投げない', () => {
+    assert.ok(Array.isArray(findViolations('#123')));
+  });
+
+  // 配布物としての要点 2: SELF_NAMES の書き忘れを設定エラーで止める。
+  // 書き忘れると正当な自リポ参照を大量に違反として上げ、検査そのものが外される。
+  ok('自リポ名を CROSS_REPOS へ入れたら設定エラーで止まる', () => {
+    assert.throws(
+      () => createChecker({ crossRepos: { 'my-repo': 'MINE' }, selfNames: ['MINE'] }),
+      /SELF_NAMES/
+    );
+  });
+}
+// --- check-plan-id-qualification: 他プロジェクトの計画 ID 修飾 ---
+//
+// 本体の網羅的な検査は当該スクリプトの `--self-test` が持つ。ここではそれを
+// **この試験の一部として必ず走らせる**ことと、配布物として守るべき 3 点を固定する。
+//
+// **`check-cross-repo-refs.js` とは別物である**（あちらは issue / PR 番号、こちらは計画 ID）。
+// 同じ短縮名で始まるので混同しやすいが、規約の別々の節が定めており母集合も別である。
+{
+  const {
+    selfTest: planIdSelfTest,
+    createChecker: createPlanIdChecker,
+    createExcluder,
+    DEFAULT_CHECKER: PLAN_ID_DEFAULT,
+  } = require('./check-plan-id-qualification.js');
+
+  ok('check-plan-id-qualification の自己試験が全件通る', () => {
+    // selfTest は失敗時に process.exit(1) する。標準出力は握り潰す（本試験の出力を汚さない）。
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = () => true;
+    try {
+      planIdSelfTest();
+    } finally {
+      process.stdout.write = write;
+    }
+  });
+
+  // 配布物としての要点 1: 置換点を書き換えなくても壊れない（プレースホルダのまま読み込める）。
+  // **既定は「対象が無い」＝ null であり、これは設定漏れではなく正常な状態である。**
+  ok('置換点が空でも読み込めて例外を投げない（既定は skip）', () => {
+    assert.ok(PLAN_ID_DEFAULT === null || typeof PLAN_ID_DEFAULT.findPlanIdViolations === 'function');
+  });
+
+  // 配布物としての要点 2: 空設定を「検査した」と誤認しないこと。
+  // ここを取り違えると、対象が無いリポジトリで**緑を返しながら何も見ていない**状態になる。
+  ok('prefixes が空なら検査器を作らない（0 件検査で緑を返さない）', () => {
+    assert.strictEqual(createPlanIdChecker({ prefixes: [], idKinds: ['FR'] }), null);
+  });
+
+  // 配布物としての要点 3: submodule の除外を手で保守しないこと。
+  // 除外リストを手書きにすると、submodule を足したときに黙って走査対象へ入り誤検出する。
+  ok('submodule の除外を .gitmodules から導出する', () => {
+    const fsx = require('fs');
+    const patx = require('path');
+    const osx = require('os');
+    const dir = fsx.mkdtempSync(patx.join(osx.tmpdir(), 'planid-wire-'));
+    fsx.writeFileSync(patx.join(dir, '.gitmodules'), '[submodule "planning"]\n\tpath = planning\n\turl = x\n');
+    const excluded = createExcluder([], dir);
+    assert.ok(excluded('planning/a.md'));
+    assert.ok(!excluded('src/a.md'));
+  });
+}
+
+// **テストを足すときは、必ずこの行より前に書くこと。**
+// 後ろへ足すと `ok()` は走るが `passed` の集計に載らず、**報告件数が実行件数より少なくなる**
+// （実測: 4 件を後ろへ足して「124 件」と報告し、実際は 128 件走っていた。planning#318 のレビューが
+// CI ログを読んで検出した）。**失敗は依然として検出される**（`ok()` は例外でプロセスを落とす）が、
+// **「何件通ったか」の報告が事実とずれる。**
 process.stdout.write(`\n✓ ${passed} tests passed\n`);
