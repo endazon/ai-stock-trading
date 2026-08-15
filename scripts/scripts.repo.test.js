@@ -1068,12 +1068,14 @@ module.exports = ({ ok, assert }) => {
   //
   // 除外の根拠は `.claude/rules/traceability.repo.md`（全数を理由つきで記載）。要点:
   //   - `docs/specs/` `feedback/` は **point-in-time の記録**（後から表記だけ直すと当時の記述と食い違う）
-  //   - `.claude/rules/traceability.md` は**キット配布物**であり手元で直さない（環流済み: planning#349）
   //   - **`CHANGELOG.md` は除外しない**（生成物は `changelog-overrides.json` の remap で是正する）
+  //   - 🔴 **`.claude/rules/traceability.md` の除外は 2026-08-15 に外した**（#517 / IADR-0202）。
+  //     キット側が planning#349 を反映して `planning#202` へ是正し、本リポも追随したため対象に戻せる。
+  //     **同ファイルは分類 A（バイト一致）へ移したので、今後キットが違反を持ち込めばここが赤くなる。**
   const CROSS_REPO_ENV = {
     CROSS_REPO_NAMES: 'project-planning:planning,microservices-platform:MSP',
     CROSS_REPO_SELF_NAMES: 'AST,ai-stock-trading',
-    CROSS_REPO_EXCLUDES: ':!planning,:!docs/specs,:!feedback,:!.claude/rules/traceability.md',
+    CROSS_REPO_EXCLUDES: ':!planning,:!docs/specs,:!feedback',
   };
 
   ok('実ツリー: 他リポの issue / PR 番号が短縮形で書かれている（#487 の回帰）', () => {
@@ -1372,10 +1374,13 @@ module.exports = ({ ok, assert }) => {
   });
 
   // 🔴 `check-feedback-status-sync.js` はキット配布物であり、計画リポを参照できないとき
-  // **skip して exit 0** に倒れる。`--require-planning` に当たるフラグを持たないため、
-  // **submodule の取得に失敗すると「配線したのに検査していない緑」が固定される。**
-  // キット配布物を書き換えない方針のため、ジョブ側の populate 確認だけが唯一の歯止めである。
-  // **その歯止めを落とすと検査は静かに無力化する** ——ここで固定する。
+  // **skip して exit 0** に倒れる。**submodule の取得に失敗すると
+  // 「配線したのに検査していない緑」が固定される。**
+  //
+  // **【更新・2026-08-15／#517】キットが `--require-planning` を新設した**（planning#343。
+  // **本リポの環流が起点**）。従前は「フラグを持たないため populate 確認だけが唯一の歯止め」
+  // だったが、いまは**二重に塞いでいる**——両方をここで固定する。
+  // **どちらを落としても静かに無力化する**（片方だけ残っても、エラーの精度か検出の確実さが落ちる）。
   ok('ci.yml の feedback-status-sync が submodule を取得し populate を確かめている（#494 の回帰）', () => {
     const fsS = require('fs');
     const ci = fsS.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
@@ -1392,10 +1397,22 @@ module.exports = ({ ok, assert }) => {
     assert(body.includes('PLANNING_REPO_TOKEN'), 'planning 取得用トークンを渡していない');
     assert(
       body.includes('planning/draft/feedback'),
-      'populate の確認ステップが無い。検査器は fail-open のため、これが唯一の歯止めである',
+      'populate の確認ステップが無い。--require-planning と二重に塞いでいる片方であり、'
+        + '落とすと「planning/draft/feedback が無い」という具体的な壊れ方を名指しできなくなる',
     );
-    const runLines = body.split('\n').filter((l) => l.includes('check-feedback-status-sync.js'));
+    // 🔴 **`node scripts/…` の形で絞る。** ジョブ内の `echo` にも同じファイル名が出るため、
+    // ファイル名だけで引くと**実行していない行を実行行として数える**（実際に踏んだ）。
+    const runLines = body
+      .split('\n')
+      .filter((l) => l.includes('node scripts/check-feedback-status-sync.js'));
     assert(runLines.length >= 2, '自己試験と本検査の両方を走らせていない');
+    // #517: 本検査（自己試験でない側）に --require-planning が付いていること。
+    const mainRun = runLines.filter((l) => !l.includes('--self-test'));
+    assert(mainRun.length >= 1, '本検査の run 行が無い');
+    assert(
+      mainRun.every((l) => l.includes('--require-planning')),
+      '本検査に --require-planning が無い。参照できないとき skip して緑になる（planning#343 が塞いだ穴が開き直る）',
+    );
   });
 
   ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
@@ -1414,6 +1431,24 @@ module.exports = ({ ok, assert }) => {
         assert(/#\d+/.test(reason), `${file} は X 分類なのに追跡先の issue 番号が無い`);
       }
     }
+  });
+
+  // 🔴 **分類が C に戻ると、写しが古いまま固定されても誰も気づけない**（#517 で実際に起きた）。
+  // 分類 C は「同期しない」ため `check-kit-sync.js` が何も言わず、**キット側の是正が戻ってこない**——
+  // 実測で planning#349（表記の是正）と planning#350（母集合の規則 8）の**2 件を取りこぼしていた**。
+  // **どちらも本リポからの環流である**（往路だけが動き、復路が構造的に塞がっていた）。
+  // 併せてクロスリポ検査の除外を 1 件外せた（[IADR-0202](../docs/adr/IADR-0202_traceability-md-classification.md)）。
+  ok('`traceability.md` は分類 A である（C へ戻すとキットの是正が戻ってこない。#517 の回帰）', () => {
+    const table = require('./kit-sync-classification.json');
+    const target = '.claude/rules/traceability.md';
+    assert(
+      table.classes.A.includes(target),
+      `${target} が分類 A に無い。当のファイルの冒頭が「直接編集するとバイト一致が崩れる」＝A の意味論を要求している`,
+    );
+    assert(
+      !table.classes.C.includes(target),
+      `${target} が分類 C に在る。C は「同期しない」であり、キット側の是正が戻ってこなくなる`,
+    );
   });
 
   ok('実ツリー: キット追随の検査が通る（#492 の回帰）', () => {

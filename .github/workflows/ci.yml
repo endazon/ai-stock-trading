@@ -218,9 +218,15 @@ jobs:
   # （planning#335 / #333 はいずれも accepted 済みだった）。
   #
   # 🔴 【重要】`check-feedback-status-sync.js` は計画リポを参照できないとき **skip して exit 0** に
-  # 倒れる（キット既定の fail-open）。**`--require-planning` に当たるフラグを持たない。**
-  # したがって submodule の取得に失敗すると「配線したのに一度も検査していない緑」が固定される。
-  # **キット配布物を書き換えず、ジョブ側で populate を明示的に確かめて塞ぐ。**
+  # 倒れる（キット既定の fail-open）。submodule の取得に失敗すると
+  # 「配線したのに一度も検査していない緑」が固定される。
+  #
+  # **【更新・2026-08-15／#517】キットが `--require-planning` を新設した**（planning#343。
+  # **本リポの環流が起点**）。従前ここには「**当たるフラグを持たない**」と書いてあったが、
+  # planning#342 の追随で**事実でなくなった**ため、フラグを渡す形へ改めた。
+  # **populate の明示確認は残す** —— フラグは「参照できない」ことしか見ず、
+  # **`planning/draft/feedback` が無い**という具体的な壊れ方を名指しできない
+  # （エラーメッセージの精度は落とさない）。**二重に塞ぐ。**
   feedback-status-sync:
     runs-on: ubuntu-latest
     steps:
@@ -243,7 +249,7 @@ jobs:
       - name: Self-test feedback status sync checker
         run: node scripts/check-feedback-status-sync.js --self-test
       - name: Check feedback status sync
-        run: node scripts/check-feedback-status-sync.js
+        run: node scripts/check-feedback-status-sync.js --require-planning
 
   # NFR / #497: 実装ADR の本文を変更したら docs/adr/README.md の索引行も変更されていること。
   #

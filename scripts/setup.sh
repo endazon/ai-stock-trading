@@ -48,7 +48,8 @@ fi
 if command -v node >/dev/null 2>&1 && [ -f scripts/check-planning-pin-freshness.js ]; then
   # ★ 【落とし穴】`| sed` の後ろに `|| log` を置くと、`||` は**最終段（sed）の終了コード**を
   #   見るため **node が落ちても発火しない**（死んだコードになる）。PIPESTATUS で先頭段を見る。
-  #   `set -o pipefail` は POSIX sh に無く、SessionStart hook の実行シェルを選べないため使わない。
+  #   `set -o pipefail` は POSIX sh に無いため使わない。**本スクリプトはシバンで bash を要求して
+  #   いるので `PIPESTATUS` は使える。**
   node scripts/check-planning-pin-freshness.js 2>&1 | sed 's/^/[setup] /'
   [ "${PIPESTATUS[0]}" -eq 0 ] || log "pin 鮮度の確認でエラー（継続）"
 fi
