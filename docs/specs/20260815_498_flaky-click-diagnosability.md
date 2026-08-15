@@ -72,6 +72,42 @@ const blocked = validationError !== null || reasonMissing || saveState === 'savi
 **38 箇所を一括で書き換えるのは、再現していない機序に対する投機的な変更である。**
 **変更が効いたかどうかを確かめる術も無い**（元々落ちないため）。**採らない。**
 
+#### 母集合を引いた実際のコマンド（第三者が追検証できるように）
+
+**単一の `grep` では表現できない複合条件**（`disabled` 束縛のあるボタン × click 前に有効化を待っていない）
+であるため、次のスクリプトで引いた。**「53 件」という数字だけを残すと誰も再検証できない**（規則 6）。
+
+まず**実装側で `disabled` 束縛を持つボタンのラベル**を集め（`grep -rn -A3 '<button' src --include='*.tsx'`）、
+そのラベル集合に対してテスト側を走査した。
+
+```python
+# frontend/ で実行
+import re, glob
+LABELS = ['最小取引件数を保存','変動閾値を保存','クールダウンを保存','監視銘柄を追加',
+          '削除','キャンセル','保存','実弾への切替を確認する','追加']
+files = glob.glob('src/**/*.test.tsx', recursive=True) + glob.glob('e2e/*.spec.ts')
+rows = []
+for f in files:
+    lines = open(f).read().split('\n')
+    for i, l in enumerate(lines):
+        if 'click(' not in l:
+            continue
+        ctx = '\n'.join(lines[max(0, i - 3):i + 1])          # ボタン名は直前行にあることがある
+        m = re.search(r"name:\s*'([^']+)'", ctx) or re.search(r'name:\s*"([^"]+)"', ctx)
+        if not m or not any(lb in m.group(1) for lb in LABELS):
+            continue
+        guard = '\n'.join(lines[max(0, i - 6):i + 1])         # click の手前 6 行に待機があるか
+        waited = ('toBeEnabled' in guard) or ('not.toBeDisabled' in guard)
+        rows.append((f, i + 1, m.group(1), waited))
+```
+
+**結果: 55 行が該当し、うち待機ありが 2 件・待機なしが 53 件**
+（53 の内訳が vitest 38 / Playwright 15）。
+
+> **この引き方の限界も書いておく。** ラベルの部分一致（`'保存'` は「変動閾値を保存」にも当たる）で
+> 引いているため、**厳密な一対一対応ではない**。**オーダーを掴むための母集合**であり、
+> **決定1（一括変更しない）を左右する精度は十分**だが、**個別に直すときは 1 件ずつ実物を見ること。**
+
 ### 決定2: **「原因の修正」ではなく「次に落ちたときの切り分け」を入れる**
 
 **本件で最も困るのは、落ちたときに何も分からないことである。**
