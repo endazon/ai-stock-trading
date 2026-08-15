@@ -140,9 +140,25 @@ public static class ReportRenderer
             return;
         }
 
+        // 🔴 **クレジット表記は劣化の有無と無関係に出す。** ADR-0022 決定1 が求めるのは
+        // 「使ったなら出典を書く」ことであり、劣化しなかった期間こそ普通に日銀を使っている。
         if (fx.IsClean)
         {
             sb.Append("- 第一の情報源から取得できており、鮮度警告もありません。\n");
+            AppendFxCredits(sb, fx);
+            return;
+        }
+
+        // 月報は**回数のみ**。個々の内容は該当日報に委ねる——直前後の節（維持率割れ・強制買戻し）と
+        // 同じ規律である（「日報＝明細・月報＝回数」）。鮮度警告は暦日ごとに 1 件出るため、
+        // **月報で明細にすると 20 行を超えて他の節を押し流す**（AI レビューの指摘・2026-08-15）。
+        if (view.Kind == ReportKind.Monthly)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **フォールバックへの切替 {fx.FellBacks.Count} 件 / 復帰 {fx.Restorations.Count} 件 / "
+                + $"鮮度警告 {fx.StaleWarnings.Count} 件**（個々の内容は該当日報を参照）\n");
+            AppendFxCredits(sb, fx);
+            return;
         }
 
         foreach (var e in fx.FellBacks)
@@ -168,8 +184,16 @@ public static class ReportRenderer
                 + $"**直近レートで続行しており新規建ては止まっていません**。{'\n'}");
         }
 
-        // ADR-0022 決定1: 出典の明記。**実際に使った情報源のぶんだけ**出す
-        // （使っていない情報源のクレジットを載せるのは事実に反する・IADR-0196 決定4）。
+        AppendFxCredits(sb, fx);
+    }
+
+    // ADR-0022 決定1: 出典の明記。**実際に使った情報源のぶんだけ**出す
+    // （使っていない情報源のクレジットを載せるのは事実に反する・IADR-0196 決定4）。
+    //
+    // **3 つの出口すべてから呼ぶ**（劣化なし／月報の回数／日報の明細）。
+    // 出口ごとに書くと、**どれか 1 つで書き忘れても他が通るため気づかない**。
+    private static void AppendFxCredits(StringBuilder sb, FxSourceStatus fx)
+    {
         foreach (var credit in fx.PrimarySourceCredits)
         {
             // 文字列のみのため書式指定は不要（culture 依存の値を含まない）。

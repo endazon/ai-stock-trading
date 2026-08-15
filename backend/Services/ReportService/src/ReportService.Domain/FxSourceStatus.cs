@@ -19,6 +19,14 @@ public sealed record FxSourceStatus(
     IReadOnlyList<FxRateStale> StaleWarnings,
     IReadOnlyList<string> PrimarySourceCredits)
 {
-    /// <summary>期間内に劣化を示す事象が 1 件も無かったか。</summary>
-    public bool IsClean => FellBacks.Count == 0 && StaleWarnings.Count == 0;
+    /// <summary>
+    /// 期間内に劣化を示す事象が 1 件も無かったか。
+    /// <para>
+    /// 🔴 <b><see cref="Restorations"/> も見る。</b> 期間より前から続いていたフォールバックが期間内に
+    /// 復帰した場合、<see cref="FellBacks"/> は期間外にあり空になる——
+    /// <b>復帰の明細行と「劣化はありませんでした」が並んで出る</b>ことになり、報告書が自己矛盾する
+    /// （AI レビューの指摘・2026-08-15）。
+    /// </para>
+    /// </summary>
+    public bool IsClean => FellBacks.Count == 0 && StaleWarnings.Count == 0 && Restorations.Count == 0;
 }

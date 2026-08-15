@@ -123,4 +123,42 @@ public class ReportRendererFxSourceStatusTests
 
         md.Should().NotContain("為替レートの情報源");
     }
+
+    // 🔴 月報は**回数のみ**（直前後の節と同じ規律）。鮮度警告は暦日ごとに 1 件出るため、
+    // 明細にすると月報で 20 行を超えて他の節を押し流す。
+    [Fact]
+    public void 月報は明細ではなく回数で出す()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            fellBacks: [new FxRateSourceFellBack("USD", "fred", 2, 2, T0)],
+            restorations: [new FxRateSourcePrimaryRestored("USD", "boj", T0, T0.AddHours(3))],
+            stales: [new FxRateStale("USD", T0.AddDays(-7), 7, 5, 30, T0)]), ReportKind.Monthly));
+
+        md.Should().Contain("フォールバックへの切替 1 件");
+        md.Should().Contain("鮮度警告 1 件");
+        md.Should().Contain("該当日報を参照");
+        // 明細の文言は出さない（出すと日報と同じ量になる）。
+        md.Should().NotContain("観測日");
+    }
+
+    [Fact]
+    public void 月報でも出典のクレジット表記は出す()
+    {
+        var md = ReportRenderer.RenderMarkdown(
+            View(Status(credits: [FxSourceCredits.Boj]), ReportKind.Monthly));
+
+        md.Should().Contain("出典: " + FxSourceCredits.Boj);
+    }
+
+    // 🔴 期間より前から続いていたフォールバックが期間内に復帰した場合、FellBacks は空になる。
+    // ここで IsClean を true にすると「劣化はありません」と復帰の明細が並んで出て、報告書が自己矛盾する。
+    [Fact]
+    public void 期間内に復帰だけがある場合は_劣化なしと書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            restorations: [new FxRateSourcePrimaryRestored("USD", "boj", T0.AddDays(-2), T0)])));
+
+        md.Should().Contain("第一の情報源へ復帰");
+        md.Should().NotContain("鮮度警告もありません", "復帰があったなら期間内に劣化していた");
+    }
 }
