@@ -157,15 +157,83 @@ status check の context として存在しない**（IADR-0185 決定1）。従
 
 #### 必須チェックに指定する際の注意
 
-- **`paths:` フィルタを持つワークフローを必須チェックにしてはならない。** GitHub は必須チェックが
-  report されるまでマージを許さないが、対象パスに触れない PR ではそのチェックが**起動しない**ため、
-  **永久に pending のままマージ不能**になる。デプロイ用・フロントエンド用など特定ディレクトリだけを
-  対象にするワークフローが該当する。必須にするのは全 PR で起動するものに限る。
+**大原則: その PR で起動しないことがあるチェックを必須にしてはならない。** GitHub は必須チェックが
+report されるまでマージを許さないため、**起動しなければ永久に pending のままマージ不能**になる。
+既知の原因は次の 3 つで、**原因は違うが結果はどれも同じ「恒久的にマージできない」である**。
+
+1. **指定した名前が check として存在しない**（下記「ワークフロー名とジョブ名」）。
+2. **`paths:` フィルタを持つ**。対象パスに触れない PR では起動しない。デプロイ用・フロントエンド用など
+   特定ディレクトリだけを対象にするワークフローが該当する。
+   - **`paths:` を機械的に禁じてはならない。** `paths:` を持つワークフローは**意図してそう作られており**、
+     **必須にしないことで正しく運用されている**。**直すべきは「必須に指定したこと」であって `paths:` ではない。**
+   - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
+3. **`types:` の取りこぼし**。とくに **`reopened` が無いと、再オープンされた PR で起動しない**
+   （下記「`types:` に `reopened` を含める」）。
+
+##### ワークフロー名とジョブ名（**最も踏みやすい**）
+
+**必須チェックに指定するのは、ワークフローの `name:` ではなく、report される check の名前＝ジョブ名である。**
+
+本キット同梱のワークフローで実際に食い違う例を挙げる（**ワークフロー名は check として存在しない**）。
+
+**規則は 1 つである。ジョブに `name:` があればその値、無ければジョブ ID がそのまま check 名になる。**
+**同じファイル内でも両方の形が混在する**（下表の `security.yml` が実例）。
+
+| ワークフローの `name:` | check として report される名前 |
+| --- | --- |
+| `CI`（`ci.yml`） | `commit-messages` / `scripts-tests` / `doc-links` / `pipeline-config` / `ai-workflow-config` / `lint` / `build-and-test`（**7 件とも `name:` 無し＝ジョブ ID**） |
+| `Security`（`security.yml`） | `Secret scan (gitleaks)` / `Dependency review` / **`Vulnerable transitive dependencies`**（**3 件とも `name:` あり。ジョブ ID〔`secret-scan` / `dependency-review` / `vulnerable-scan`〕ではない**） |
+| `PR Title`（`pr-title.yml`） | `pr-title` |
+| `PR Size`（`pr-size.yml`） | `pr-size`（**そもそも必須にしない**。警告専用である） |
+| `Frontend CI`（`frontend.yml`） | `build-test` / `e2e`（**`paths:` を持つ。必須にしない**） |
+| `Frontend Tests`（`frontend-tests.yml`） | `test`（同上） |
+| `Claude Code Review`（`claude-code-review.yml`） | `claude-review` |
+
+- **`CodeQL` は例外である。** CodeQL は個別ジョブ（`Analyze (csharp)` 等。ジョブ定義は
+  `name: Analyze (${{ matrix.language }})` で**マトリクス展開される**）とは別に**集約 check** を
+  report するため、`CodeQL` の指定で機能する。
+- **スタックによってジョブ名は変わる。上表を信じて写さない。** 本キットを取り込んだ時点の値であり、
+  ジョブを足す・`name:` を付けるだけで古くなる。
+
+##### check 名は「読む」のではなく「引く」
+
+**表の手書きは腐る。** 実際、この表の初版は `vulnerable-scan`（ジョブ ID）を載せており、
+**「ジョブ名が優先される」という自分が直前に書いた規則に違反していた**（planning#317 のレビューが検出）。
+**指定する前に、次のどちらかで実物を引くこと。**
+
+```bash
+# 1) 実際の PR が report した check 名を引く（最も確実。マトリクス展開後の名前も出る）
+gh api "repos/<owner>/<repo>/commits/<PR の head SHA>/check-runs" --jq '.check_runs[].name' | sort -u
+
+# 2) 設定から引く（PR を出す前に確認したいとき。name: があればその値、無ければジョブ ID）
+for f in .github/workflows/*.yml; do
+  awk -v f="$f" '/^jobs:/{j=1;next}
+    j && /^  [A-Za-z0-9_-]+:$/{id=$1; sub(/:$/,"",id); ids[++n]=id}
+    j && /^    name:/{sub(/^    name:[ ]*/,""); nm[n]=$0}
+    END{for(i=1;i<=n;i++) print f": "(nm[i]?nm[i]:ids[i])}' "$f"
+done
+```
+
+**1 のほうが正である**（`name:` の式展開・再利用ワークフローの入れ子まで反映されるため）。
+2 は PR を出す前の下見に使う。
+
+##### `types:` に `reopened` を含める
+
+`pull_request` で起動するワークフローの `types:` には **`reopened` を必ず含める**。
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+```
+
+**close → reopen された PR でそのチェックが起動せず、必須にしていれば恒久的にマージできなくなる。**
+**`pull_request` で起動する全ワークフローが `reopened` を含むことを回帰テストで固定してよい**
+（`paths:` と違い、**`reopened` を意図して外す正当な理由が無い**ため、機械検査にできる規則である）。
 - **`pr-title.yml` は必須チェックに指定してよい。** 全 PR で起動し、かつスカッシュ後件名の唯一の
   予防線である（中間コミットは force push 禁止で事後修正できない）。
 - **bot 作成 PR で `if:` によりジョブごとスキップされたチェックは、必須チェック上「合格」として扱われる**
   ためマージは止まらない。bot を除外する条件を書いてもブランチ保護と矛盾しない。
-  - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
 
 ## よくある詰まり（FAQ）
 

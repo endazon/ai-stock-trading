@@ -1195,9 +1195,9 @@ module.exports = ({ ok, assert }) => {
   // 🔴 **上のテストは「CI がフラグを渡すこと」しか見ていない。**
   // **スクリプトがそのフラグを尊重するかは見ていない。** —— この 2 つは別の問いである。
   //
-  // これは机上の心配ではない。**キット版の `check-kit-sync.js` は `--require-planning` を
-  // 持たない**（planning#342 で配られた版。2026-08-15 に実走で確認）。うっかりキット原文で
-  // 上書きすると次が起きる。
+  // これは机上の心配ではない。**キット版の `check-kit-sync.js` は当初 `--require-planning` を
+  // 持たなかった**（planning#342 で配られた版。2026-08-15 に実走で確認）。当時キット原文で
+  // 上書きしていれば次が起きていた。
   //
   //   1. CI は `--require-planning` を渡し続ける（3 ジョブ）
   //   2. **スクリプトはフラグを認識せず黙って無視する**
@@ -1205,6 +1205,12 @@ module.exports = ({ ok, assert }) => {
   //   4. 🔴 **上のテストは通り続ける**（`run:` 行に文字列が在るため）
   //
   // **「配線を見るテスト」は「配線が効いていること」を保証しない。** 挙動で固定する。
+  //
+  // 【2026-08-16・#524 / IADR-0205】キット版は planning#343 で `--require-planning`・未知引数の拒否・
+  // `--self-test` を得た。HOWTO の手順（両版を同フラグで実走し exit code を比較）で優劣を再判定し、
+  // **キット版が本リポ版を上回った**（本リポ版は Windows で `path.relative` の `\` 区切りが表と一致せず
+  // 108/115 件を偽 unclassified にしていた）ため、**キット版で差し替えて分類 A へ移した**。
+  // 本テストはその後も残す —— A に置いた以上、キット側の退行がそのまま本リポへ入るためである。
   ok('check-kit-sync.js が --require-planning を実際に尊重する（未 populate で exit 1・#494）', () => {
     const { execFileSync } = require('child_process');
     const fsR = require('fs');
@@ -1563,5 +1569,73 @@ module.exports = ({ ok, assert }) => {
       cwd: pathFb.resolve(__dirname, '..'),
       stdio: 'pipe',
     });
+  });
+
+  // --- check-kit-sync.js の Windows パス（NFR / #524 / IADR-0205） ---------------------------------
+  //
+  // 🔴 **分類表は `/` 区切りで書かれ、走査は `path.relative` で取る。** Windows では `path.sep` が `\` のため
+  // 両者が一致せず、**キット 115 件中 108 件が偽 unclassified・exit 1** になっていた（2026-08-16 実測）。
+  // Linux の CI では露見しない —— **「CI は緑・ローカルは赤」で、ローカルの検査だけが黙って死んでいた**。
+  // 走査結果を `/` へ正規化する（キット版が `.split(path.sep).join('/')` で持つ）挙動を、
+  // **区切り文字を含むパスをテスト側で明示して**固定する。プラットフォームに依らず同じ断言を通す。
+  ok('check-kit-sync.js: 走査結果は OS に依らず `/` 区切りで返る（Windows の偽 unclassified・#524 の回帰）', () => {
+    const fsW = require('fs');
+    const osW = require('os');
+    const { listFiles, inspect } = require('./check-kit-sync.js');
+    const tmp = fsW.mkdtempSync(pathFb.join(osW.tmpdir(), 'kit-sync-sep-'));
+    try {
+      fsW.mkdirSync(pathFb.join(tmp, 'a', 'b'), { recursive: true });
+      fsW.writeFileSync(pathFb.join(tmp, 'a', 'b', 'c.md'), 'x');
+      fsW.writeFileSync(pathFb.join(tmp, 'top.md'), 'y');
+      const files = listFiles(tmp).sort();
+      assert.deepStrictEqual(files, ['a/b/c.md', 'top.md'], `区切りが正規化されていない: ${files.join(', ')}`);
+      assert(!files.some((f) => f.includes('\\')), 'バックスラッシュが残っている');
+      // 表（/ 区切り）と突き合わせて unclassified が 0 になること。**ここが実害の面である。**
+      const table = { classes: { A: ['a/b/c.md'], B: {}, C: ['top.md'] }, notApplicable: [] };
+      const { errors } = inspect(table, files, () => true, () => true, () => true);
+      assert.deepStrictEqual(errors, [], `偽 unclassified が出た:\n  ${errors.join('\n  ')}`);
+    } finally {
+      fsW.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  // 🔴 否定形。区切りを正規化しない走査（`path.relative` の生の結果）を表へ当てると、
+  // Windows では unclassified が出る。**正規化が効いているから緑**であって、
+  // 「Windows でなくても緑」と区別するため、`\` 区切りを人工的に与えて赤くなることを見る。
+  ok('check-kit-sync.js: `\\` 区切りのパスは表と一致しない（正規化が要ることの実証・#524）', () => {
+    const { inspect } = require('./check-kit-sync.js');
+    const table = { classes: { A: ['a/b/c.md'], B: {}, C: [] }, notApplicable: [] };
+    const { errors } = inspect(table, ['a\\b\\c.md'], () => true, () => true, () => true);
+    assert(errors.some((e) => e.startsWith('[unclassified] a\\b\\c.md')), '`\\` 区切りが unclassified にならなかった');
+  });
+
+  // --- 必読規約の予算の CI 配線（NFR / #524。IADR-0204 の残余リスク） -----------------------------
+  //
+  // 検査器はあるが CI に居ない、は「手で叩いたときだけ走る検査器」であり予算を守らせない。
+  // 配線を機械で固定する（`run:` 行の存在しか見ないことは承知のうえで、挙動は上の実ツリー試験が見る）。
+  ok('ci.yml に reading-budget ジョブがあり check-reading-budget.js を自己試験＋本検査で走らせる（#524）', () => {
+    const fsK = require('fs');
+    const ci = fsK.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  reading-budget:');
+    assert(start >= 0, 'reading-budget ジョブが無い');
+    const job = ci.slice(start);
+    const body = job.slice(0, job.indexOf('\n\n  ') === -1 ? job.length : job.indexOf('\n\n  '));
+    assert(body.includes('check-reading-budget.js --self-test'), '自己試験が配線されていない');
+    const runs = body.split('\n').filter((l) => l.includes('run:') && l.includes('check-reading-budget.js'));
+    assert(runs.some((l) => !l.includes('--self-test')), '本検査が配線されていない（自己試験だけでは母集合を測らない）');
+  });
+
+  // 🔴 予算値の複製には出典が要る（運用ガイド §8「出典の無い複製は認めない」。planning#364）。
+  // 値だけ直して出典を落とす退行を止める。
+  ok('check-reading-budget.js の既定予算は 51,200 で、値の隣に正本（運用ガイド §8）の出典がある（#524）', () => {
+    const fsK = require('fs');
+    const src = fsK.readFileSync(pathFb.join(__dirname, 'check-reading-budget.js'), 'utf8');
+    const lines = src.split('\n');
+    const i = lines.findIndex((l) => /^const BUDGET_BYTES = /.test(l));
+    assert(i >= 0, 'BUDGET_BYTES の定義が無い');
+    assert(/\|\| 51200\)/.test(lines[i]), `既定値が 51200 でない: ${lines[i]}`);
+    const near = lines.slice(Math.max(0, i - 8), i).join('\n');
+    assert(/ai-implementation-workflow-guide\.md/.test(near) && /§8/.test(near), '値の隣（直前 8 行）に正本の出典が無い');
+    assert(budget.BUDGET_BYTES === 51200 || process.env.READING_BUDGET_BYTES, 'エクスポートされた既定値が 51200 でない');
   });
 };

@@ -3,9 +3,9 @@ title: 技術要件書
 type: tech-requirements
 status: draft
 related_ids: [NFR, IADR-0128]
-author: <作成者>
-created: <YYYY-MM-DD>
-updated: 2026-08-03
+author: endazon (with Claude Code)
+created: 2026-07-08
+updated: 2026-08-16
 plan_refs:
   - ../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md
   - ../../planning/projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md

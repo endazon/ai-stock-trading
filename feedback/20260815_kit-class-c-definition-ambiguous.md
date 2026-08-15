@@ -1,7 +1,7 @@
 ---
 title: 分類 C の定義「置換点を持つ配布物」が曖昧で、同じ取り違えが 2 回起きた
 type: plan-feedback
-status: open
+status: accepted
 category: 改善提案
 related_ids: [NFR, IADR-0202, IADR-0203]
 source_repo: ai-stock-trading
@@ -56,7 +56,9 @@ planning_issue: 363
 
 ## トリアージ結果
 
-（計画側で記入）
+- **accepted**（計画側 2026-08-15・planning#363 → 計画コミット `4d6a7d6`）。kit の `kit-sync-classification.example.json` の `$comment` に C の新条件（(a) 対応物が無い／(b) 置換点を実際に埋めている）と判定の手がかり 3 つが入った。
+- 本リポへの反映: [#524](https://github.com/endazon/ai-stock-trading/issues/524) / [IADR-0205](../docs/adr/IADR-0205_kit-sync-version-and-class-c-rejudgement.md)（分類 C 全 14 件を再判定。C 14 → 7）。
+
 
 ## 関連
 
