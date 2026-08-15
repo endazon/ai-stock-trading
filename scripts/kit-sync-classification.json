@@ -10,7 +10,14 @@
     "2026-08-15（#517 / IADR-0202）: .claude/rules/traceability.md を C から A へ移した。",
     "  C を当てていたが、当のファイルの冒頭が『直接編集するとバイト一致が崩れる』＝A の意味論を要求しており、",
     "  置換点も持たない（固有規約は companion の traceability.repo.md へ分離済み）。C は『同期しない』ため",
-    "  check-kit-sync.js が何も言わず、本リポの写しだけが古いまま固定されていた（実測で 2 件取りこぼし）。"
+    "  check-kit-sync.js が何も言わず、本リポの写しだけが古いまま固定されていた（実測で 2 件取りこぼし）。",
+    "2026-08-15（#521 / IADR-0203）: check-cross-repo-refs.js と check-plan-id-qualification.js を C から A へ移した。",
+    "  🔴 C の定義『置換点を持つ配布物』は、置換点を『持つ』ことではなく本リポが『埋めている』ことで判定する。",
+    "  この 2 本は置換点を一度も埋めていない（前者は env 注入を選び IADR-0200 決定5、後者は他プロジェクトを",
+    "  参照しないため空＝正常な skip）。固有デルタが 0 なのに C に置くと、キット側の是正が戻ってこない。",
+    "  実測: check-cross-repo-refs.js は 13 行すべてがキット側の是正（planning#354）で、本リポの写しだけが",
+    "  古い IADR 番号と『ワークフローを編集できない』という誤った前提を保持し続けていた。",
+    "  再発防止は scripts.repo.test.js の『分類 C は固有デルタを持つ』テストが担う。"
   ],
   "classes": {
     "A": [
@@ -31,6 +38,8 @@
       ".claude/hooks/guard-secrets.js",
       ".claude/rules/traceability.md",
       ".devcontainer/devcontainer.json",
+      "scripts/check-cross-repo-refs.js",
+      "scripts/check-plan-id-qualification.js",
       ".github/CODEOWNERS.example",
       ".github/ISSUE_TEMPLATE/ai-implementation.yml",
       ".github/ISSUE_TEMPLATE/bug_report.md",
@@ -121,8 +130,6 @@
       "scripts/README.md",
       "scripts/changelog-overrides.json",
       "scripts/check-commit-messages.js",
-      "scripts/check-cross-repo-refs.js",
-      "scripts/check-plan-id-qualification.js",
       "scripts/scripts.test.js"
     ]
   },

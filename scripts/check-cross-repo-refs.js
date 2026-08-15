@@ -23,7 +23,7 @@
  *   型 3（空白区切り）: 修飾語と番号が空白で離れた形。規約の書式は詰めた形であり、空白が入ると
  *                       機械的突合に掛からない。#507 のクロス監査（2026-08-07）が実測した型。
  *
- * **自動リンクが効く面と効かない面を区別すること**（クロス監査の実測。IADR-0140 決定 1・4）:
+ * **自動リンクが効く面と効かない面を区別すること**（クロス監査の実測）:
  *   - `.md` のレンダリングでは、裸の `#NNN` も短縮形の修飾も**自動リンクにならない**。
  *     `.md` で自動リンクするのはフルパス形式（`endazon/<repo>` + `#` + 番号）だけである。
  *     したがって `.md` における 3 型の害は**表記ゆれ（機械的突合の不安定）**であって誤リンクではない。
@@ -48,10 +48,15 @@
  *   node scripts/check-cross-repo-refs.js --self-test  # 検査ロジック自体の自己試験
  *   node scripts/check-cross-repo-refs.js <file>...    # ファイル指定
  *
- * CI への載せ方（.github/workflows/ は GitHub App 権限で編集できないため、既存の呼び出し口へ相乗りする。
- * IADR-0140）:
+ * CI への載せ方（**ワークフローを新設せず、既存の呼び出し口へ相乗りする**）:
  *   - scripts/scripts.repo.test.js から --self-test ＋ 実データ走査（ci.yml の scripts-tests ジョブ）
  *   - scripts/check-commit-messages.js から件名・本文・PR タイトル（ci.yml の commit-messages / pr-title.yml）
+ *
+ *   理由は**移植性**である。キットが配るワークフローは `.example.yml`（opt-in）であり、
+ *   **配布先に ci.yml が在るとは限らず、在っても構成が違う**。呼び出し口へ相乗りすれば
+ *   CI 設定を触らずに検査を増やせる。
+ *   **「GitHub App 権限でワークフローを編集できない」を理由にしない** —— 環境依存であり、
+ *   実測では配布先で成立していなかった（planning#354）。
  */
 const fs = require('fs');
 const path = require('path');
