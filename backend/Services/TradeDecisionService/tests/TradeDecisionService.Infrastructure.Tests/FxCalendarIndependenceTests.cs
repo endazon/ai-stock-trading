@@ -1,4 +1,5 @@
 using System.Reflection;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
@@ -59,12 +60,31 @@ public class FxCalendarIndependenceTests
     /// そこで<b>意図的に参照を持つ型</b>を食わせ、確かに検出できることを同じ経路で示す。
     /// これが無いと <c>ReferencesMarketCalendar</c> が常に <c>false</c> を返すよう壊れても誰も気付かない。
     /// </para>
+    /// <para>
+    /// 🔴 <b>検出の経路ごとに個別に確かめる。</b> 初版は「引数・フィールド・プロパティ・シグネチャ」を
+    /// <c>||</c> で繋いだ検出器に対し、<b>4 つすべてを備えた型を 1 つだけ</b>食わせていた。
+    /// <b>それでは「どれか 1 つが生きている」ことしか示せない</b>——実際、変異試験で
+    /// <b>先頭の節だけを潰した変異が生き残った</b>（他の節が拾っていた）。
+    /// 経路ごとに型を分ければ、<b>1 つの節が静かに壊れたことも捕まる。</b>
+    /// </para>
     /// </summary>
-    [Fact]
-    public void 検査は営業日カレンダーへの参照を実際に検出できる()
+    [Theory]
+    [InlineData(typeof(CalendarViaConstructor))]
+    [InlineData(typeof(CalendarViaField))]
+    [InlineData(typeof(CalendarViaProperty))]
+    [InlineData(typeof(CalendarViaMethodSignature))]
+    [InlineData(typeof(CalendarViaConcreteType))]
+    public void 検査は営業日カレンダーへの参照を経路ごとに検出できる(Type deliberateUser)
     {
-        ReferencesMarketCalendar(typeof(DeliberateCalendarUser)).Should().BeTrue(
+        ReferencesMarketCalendar(deliberateUser).Should().BeTrue(
             "検出器が働いていることを示す。これが false なら上のテストはゼロ件を数えているだけである");
+    }
+
+    // **否定形**: カレンダーと無関係な型は検出しない（何でも true を返す検出器は検査になっていない）。
+    [Fact]
+    public void 検査は無関係な型を誤検出しない()
+    {
+        ReferencesMarketCalendar(typeof(UnrelatedType)).Should().BeFalse();
     }
 
     /// <summary>
@@ -90,9 +110,49 @@ public class FxCalendarIndependenceTests
                 IsCalendar(m.ReturnType) || m.GetParameters().Any(p => IsCalendar(p.ParameterType)));
     }
 
-    /// <summary>検出器が働くことを示すための、意図的にカレンダーへ依存した型。</summary>
-    private sealed class DeliberateCalendarUser(IMarketCalendar calendar)
+    // --- 検出器が働くことを示すための、意図的にカレンダーへ依存した型（**経路ごとに 1 つ**） ---
+
+    /// <summary>コンストラクタ引数だけで参照する型（DI で注入される最も普通の形）。</summary>
+    private sealed class CalendarViaConstructor
     {
-        public IMarketCalendar Calendar { get; } = calendar;
+        // 引数を保持しない（フィールド・プロパティの節に拾わせない）。
+        public CalendarViaConstructor(IMarketCalendar calendar) => Available = calendar is not null;
+
+        public bool Available { get; }
+    }
+
+    /// <summary>フィールドだけで参照する型。</summary>
+    private sealed class CalendarViaField
+    {
+        private readonly IMarketCalendar? _calendar = null;
+
+        public bool Available => _calendar is not null;
+    }
+
+    /// <summary>プロパティだけで参照する型。</summary>
+    private sealed class CalendarViaProperty
+    {
+        public IMarketCalendar? Calendar => null;
+    }
+
+    /// <summary>メソッドのシグネチャだけで参照する型。</summary>
+    private sealed class CalendarViaMethodSignature
+    {
+        public static bool IsOpen(IMarketCalendar calendar, Market market, DateTimeOffset at) =>
+            calendar.IsOpen(market, at);
+    }
+
+    /// <summary>ポートではなく**具象**（<see cref="MarketCalendar"/>）で参照する型。</summary>
+    private sealed class CalendarViaConcreteType
+    {
+        public MarketCalendar? Calendar => null;
+    }
+
+    /// <summary>カレンダーと無関係な型（誤検出しないことを示す）。</summary>
+    private sealed class UnrelatedType
+    {
+        public string Name => "無関係";
+
+        public int Add(int a, int b) => a + b;
     }
 }
