@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
@@ -95,8 +95,24 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
     await user.clear(within(form).getByLabelText('Stage 1 の最小取引件数 件'));
     await user.type(within(form).getByLabelText('Stage 1 の最小取引件数 件'), '150');
     await user.type(within(form).getByLabelText('最小取引件数の変更理由'), '標本を増やす');
-    await user.click(within(form).getByRole('button', { name: '最小取引件数を保存' }));
 
+    // NFR (#498): click の前に有効化を待ち、PUT の発火そのものを先に確かめる。
+    //
+    // 本テストは CI で 1 度だけ落ちており、そのときの出力は
+    // 「`toHaveBeenCalledWith` 不一致・Number of calls: 7」だけであった。
+    // **これでは「PUT が発火しなかった」のか「違う引数で発火した」のかを区別できない**
+    // （7 件は初期表示の GET 群で、PUT が 0 件でも 1 件でも同じ見え方になる）。
+    //
+    // `userEvent.click()` は**無効化されたボタンに対して例外も投げず何もしない**ため、
+    // 理由入力による再レンダリングが click に間に合わなければ PUT は発火しない。
+    // **ただしこの機序は未実証である** —— 素で 15 回・CPU 飽和下で 6 回、計 21 回連続で再現しなかった。
+    // よって「原因を直した」とは書かない。**次に落ちたとき原因を切り分けられるようにする**のが本変更の目的である。
+    const save = within(form).getByRole('button', { name: '最小取引件数を保存' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+
+    const putCalls = mocks.apiFetch.mock.calls.filter((call) => call[1]?.method === 'PUT');
+    expect(putCalls).toHaveLength(1); // 先にここで落ちれば「発火しなかった」と分かる
     expect(mocks.apiFetch).toHaveBeenCalledWith('/risk-controls/settings/stage1-minimum-trade-count', {
       method: 'PUT',
       json: { minimumTradeCount: 150, reason: '標本を増やす' },
