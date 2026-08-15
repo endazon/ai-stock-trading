@@ -128,7 +128,7 @@ IADR-0200 の残余リスクは明記していた —— 「**キット配布物
 | バイト一致 | `cmp` → **identical** |
 | 除外なしのクロスリポ検査 | `OK: 293 件の Markdown に…違反はありません` |
 | リポテスト | **231 tests passed**（+1。新設の分類テスト） |
-| 必読規約の総量 | **45,082 バイト**（`CLAUDE.md` 15,678 ＋ `AGENTS.md` 4,434 ＋ `traceability.md` 20,912 ＋ companion 4,058）。予算 50KB に対し**残り約 10%** |
+| 必読規約の総量 | ~~**45,082 バイト**（`CLAUDE.md` 15,678 ＋ `AGENTS.md` 4,434 ＋ `traceability.md` 20,912 ＋ companion 4,058）。予算 50KB に対し**残り約 10%**~~ 🔴 **【訂正・2026-08-15／[#519](https://github.com/endazon/ai-stock-trading/issues/519)・[IADR-0204](../adr/IADR-0204_reading-budget-mother-set.md)】この値は誤りである。** `AGENTS.md` は「**Claude 以外の AI エージェント**が読み込む共通指示」（同ファイル冒頭）であり、**Claude は読まない**。**異なるエージェントの集合を足していた。** 正しくは **40,648 バイト（81.3%）**（`CLAUDE.md` ＋ `.claude/rules/*.md`） |
 | リンク | `OK: 489 件の Markdown に破損した相対リンクはありません` |
 | 環流の状態突合 | `OK: 記録 37 件のうち 27 件を計画側と突合` |
 

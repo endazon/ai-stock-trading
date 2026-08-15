@@ -1459,6 +1459,64 @@ module.exports = ({ ok, assert }) => {
   // **C の定義「置換点を持つ配布物」は、置換点を「持つ」ことではなく
   // 本リポが「埋めている」ことで判定する。** 埋めていないなら固有デルタは 0 であり、
   // 「各リポが自分の値を埋める前提」という C の根拠がそもそも成り立たない。
+  // --- 必読規約の総量予算（NFR / #519 / IADR-0204） -------------------------------------------
+  //
+  // 🔴 **合算しないことが設計の核心である。** 「毎セッション必読」は読む主体によって中身が違い、
+  // **1 つのセッションが Claude 用と AGENTS.md 用の両方を背負うことはない。**
+  // 合算は**誰も背負わない量**を作る —— 実測で 2 回とも誤った（#519。`AGENTS.md` を足して
+  // 90.2% / 91.5% と報告し、**着手条件 90% を満たしたことにしていた**。正しくは 82.7%）。
+  const budget = require('./check-reading-budget.js');
+
+  ok('必読規約の予算: 自己試験が通る（#519）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-reading-budget.js'), '--self-test'], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      stdio: 'pipe',
+    });
+  });
+
+  ok('必読規約の予算: 実ツリーが予算内である（#519 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-reading-budget.js')], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      stdio: 'pipe',
+    });
+  });
+
+  // 🔴 **否定形。** 予算を実測より小さくすれば赤くなること＝**検査が実効している**ことを示す。
+  // これが無いと「たまたま余裕があるから緑」と区別が付かない
+  // （IADR-0200 の対照実験 2 / 3 が「緑のまま」で終わった形と同じ）。
+  ok('必読規約の予算: 予算を縮めると赤くなる（実効している証拠。#519）', () => {
+    const { execFileSync } = require('child_process');
+    let failed = false;
+    try {
+      execFileSync(process.execPath, [pathFb.join(__dirname, 'check-reading-budget.js')], {
+        cwd: pathFb.resolve(__dirname, '..'),
+        env: { ...process.env, READING_BUDGET_BYTES: '1000' },
+        stdio: 'pipe',
+      });
+    } catch {
+      failed = true;
+    }
+    assert(failed, '予算を 1000 バイトへ縮めても緑だった。検査が母集合を 1 件も見ていない疑いがある');
+  });
+
+  // 🔴 **`AGENTS.md` が Claude Code の集合へ紛れ込むと、この 2 回の誤りが再発する。**
+  ok('必読規約の予算: AGENTS.md は Claude Code の集合に入らない（#519 の回帰）', () => {
+    const claude = budget.AGENT_SETS.find((s) => s.name === 'Claude Code');
+    assert(claude, 'Claude Code の集合が無い');
+    const { found } = budget.resolveSet(claude);
+    assert(
+      !found.includes('AGENTS.md'),
+      'AGENTS.md が Claude Code の集合に入っている。同ファイルは「Claude 以外の AI エージェント」が読む',
+    );
+    assert(found.includes('CLAUDE.md'), 'CLAUDE.md が集合に無い');
+    assert(
+      found.some((f) => f.startsWith('.claude/rules/')),
+      '.claude/rules/ の自動適用ルールが集合に無い',
+    );
+  });
+
   ok('分類 C は固有デルタを持つ（バイト一致・置換点の未記入を許さない。#521 の回帰）', () => {
     const fsC = require('fs');
     const kitRoot = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');
