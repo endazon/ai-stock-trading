@@ -73,11 +73,29 @@ public class FxCalendarIndependenceTests
     [InlineData(typeof(CalendarViaField))]
     [InlineData(typeof(CalendarViaProperty))]
     [InlineData(typeof(CalendarViaMethodSignature))]
-    [InlineData(typeof(CalendarViaConcreteType))]
     public void 検査は営業日カレンダーへの参照を経路ごとに検出できる(Type deliberateUser)
     {
         ReferencesMarketCalendar(deliberateUser).Should().BeTrue(
             "検出器が働いていることを示す。これが false なら上のテストはゼロ件を数えているだけである");
+    }
+
+    /// <summary>
+    /// <b>型の軸</b>（ポートか具象か）は経路の軸とは別である。
+    /// <para>
+    /// 上の <see cref="検査は営業日カレンダーへの参照を経路ごとに検出できる"/> は
+    /// <b>経路</b>（引数／フィールド／プロパティ／シグネチャ）を網羅するもので、いずれも
+    /// <see cref="IMarketCalendar"/> を使う。<b>2 つの軸を 1 つのテストへ混ぜると、
+    /// どちらを網羅しているのか読めなくなる</b>ため分けてある（AI レビューの指摘・2026-08-15）。
+    /// </para>
+    /// <para>
+    /// 具象（<see cref="MarketCalendar"/>）を別に見るのは、<b>DI を経由せず直接 new する形</b>でも
+    /// 検出したいからである——ポート型だけを見る検出器は、その形を取りこぼす。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void 検査はポート型だけでなく具象型への参照も検出する()
+    {
+        ReferencesMarketCalendar(typeof(CalendarViaConcreteType)).Should().BeTrue();
     }
 
     // **否定形**: カレンダーと無関係な型は検出しない（何でも true を返す検出器は検査になっていない）。
