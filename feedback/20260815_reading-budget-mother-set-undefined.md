@@ -1,7 +1,7 @@
 ---
 title: 必読規約の「総量 50KB」に母集合の定義が無く、実装側で 2 回とも誤った数値を報告した
 type: plan-feedback
-status: open
+status: accepted
 category: 不足
 related_ids: [NFR, IADR-0204]
 source_repo: ai-stock-trading
@@ -73,7 +73,9 @@ issue #519 は「**90% を超えたら着手する**」という着手条件を�
 
 ## トリアージ結果
 
-（計画側で記入）
+- **accepted**（計画側 2026-08-15・planning#364 → 計画コミット `4d6a7d6`）。運用ガイド §8 に「母集合はそのエージェントが自動で読み込む集合。エージェントごとに分けて測り合算しない」「予算値 51,200 の正本は §8。複製は値の隣に出典を書く」が入った。
+- 本リポへの反映: [#524](https://github.com/endazon/ai-stock-trading/issues/524) / [IADR-0205](../docs/adr/IADR-0205_kit-sync-version-and-class-c-rejudgement.md) 決定3（`check-reading-budget.js` を 51,200＋出典へ改め CI へ配線）。
+
 
 ## 関連
 
