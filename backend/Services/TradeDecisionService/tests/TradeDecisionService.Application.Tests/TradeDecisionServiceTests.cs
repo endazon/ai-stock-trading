@@ -860,4 +860,73 @@ public class TradeDecisionServiceTests
 
         decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
     }
+
+    // --- FR-10, #381, ADR-0022 決定5, IADR-0194: 鮮度切れ（30 日超）は新規建てだけを止める ---
+    //
+    // 🔴 計画 ADR-0022 決定5 は明示している ——「**30 日超: 新規建てを停止する。手仕舞い・損切りは止めない**」。
+    // #381 の受け入れ基準も「30 日超でも手仕舞い・損切りが止まらないことを実測で固定する」を求めている。
+    //
+    // **鮮度切れは CachingFxRateSource がレート無し（null）として返す**ため、本サービスから見れば
+    // 「換算レートが解決できない」状態と同一である。したがって本節は FX 未解決時の**建玉効果ごとの挙動**を固定する。
+
+    private const string NonBaseSellJson =
+        """{"action":"Sell","rationale":"撤退","referencePrice":300000,"stopLossDistancePerShare":7500}""";
+
+    // 🔴 **計画との既知の乖離（#506 で担当）。本テストは「計画どおり」ではなく「現状」を固定している。**
+    //
+    // **#381 の受け入れ基準に従って実測した結果、計画と食い違うことが判明した。**
+    // ADR-0022 決定5 は「30 日超: 新規建てを停止する。**手仕舞い・損切りは止めない**」と定めているが、
+    // 実装では**換算レートのゲートが建玉効果を決めるより前に置かれている**ため
+    // （`TradeDecisionService.DecideAsync` の FX ゲートは LLM 呼び出しより前＝費用抑制のための配置）、
+    // **非基準通貨の判断由来の決済も一緒に止まる。**
+    //
+    // **影響範囲**: 非基準通貨（日本株）**のみ**である。基準通貨（米国株）は `CachingFxRateSource` が
+    // 鮮度判定を経ずに `FxRate.Identity` を返すため影響を受けない。日本株の取引自体が現在 #397
+    // （moomoo に日本株の市況権限が無い）で止まっているため、**実害は潜在的であり顕在化していない。**
+    //
+    // **本 PR で直さない理由**: 正しく直すには決済へ載せる `FxRateToBase` の扱いを決める必要がある。
+    // 既定の 1m をそのまま載せると、JPY 建ての約定金額が USD としてそのまま台帳へ記録され
+    // **監査台帳（FR-11・7 年保持）の金額が約 150 倍にずれる。** 契約（`OrderIntent`）と永続化の変更を伴い、
+    // #381 の「情報源の二段化」とは別の決定である（IADR-0194 §残余リスク）。
+    //
+    // **本テストは #506 が直した時点で赤になる。** それが狙いである——`KnownPlanDeviations` と同じ規律で、
+    // **乖離が解消したのに記録が残る状態を作らない**（直したら本テストを削除し、上の「止めない」版へ差し替える）。
+    [Fact]
+    public async Task 鮮度切れは非基準通貨の手仕舞いも止める_計画との乖離_506()
+    {
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(null), heldPosition: new FakeHeld(300));
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision.Should().BeNull(
+            "現状の実装は換算レートのゲートを建玉効果の判定より前に置いている。"
+            + "ADR-0022 決定5 は手仕舞いを止めないと定めており、これは計画との乖離である（#506）");
+    }
+
+    // 基準通貨（米国株）の手仕舞いは影響を受けない——鮮度判定を経ずレート 1 が返るためである。
+    // **乖離の範囲が非基準通貨に限られること**を固定する（範囲を広く誤読しないため）。
+    [Fact]
+    public async Task 基準通貨の手仕舞いは鮮度切れの影響を受けない()
+    {
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(4072)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Quantity.Should().Be(4072);
+    }
+
+    // **否定形（対**）: 同じ鮮度切れでも、**新規建ては止まる**。
+    // 上のテストだけでは「ゲートが丸ごと無効になった」場合も緑になってしまう。
+    [Fact]
+    public async Task 鮮度切れなら非基準通貨の新規建ては止まる()
+    {
+        var logger = new RecordingLogger();
+
+        var decision = await CreateForCurrency(new FakeFxRate(null), logger: logger).DecideAsync(NonBaseTrigger());
+
+        decision.Should().BeNull("統制が意味を失った状態で新規建てをしない");
+        string.Join("\n", logger.Messages).Should().Contain("基準通貨への換算レートが解決できないため見送り");
+    }
 }

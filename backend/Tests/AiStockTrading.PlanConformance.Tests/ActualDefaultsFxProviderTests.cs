@@ -52,11 +52,15 @@ public class ActualDefaultsFxProviderTests
     }
 
     // 上記の seam が実装の本物の型に結線されていること（偽の型だけ緑という状態を作らない）。
-    // 実際値が変わったときは KnownPlanDeviations（担当 #381）の更新が別途強制される。
+    // 実際値が変わったときは KnownPlanDeviations の更新が別途強制される。
+    //
+    // #381, IADR-0194: 日銀アダプタの新設により「fred のみ」→「boj, fred」へ変わった。
+    // **集合は Sorted で返るため boj が先に来る。これは順位ではない**——順位（日銀が第一）は
+    // 値ではなく振る舞いであり、FallbackFxRateSourceTests / FxRateSourceFactoryTests が担保する。
     [Fact]
-    public void 実装スナップショットのprovider集合はfredのみである()
+    public void 実装スナップショットのprovider集合は日銀とFREDである()
     {
-        ActualDefaults.Snapshot()["Fx.RateSourceProviders"].Should().Be("fred");
+        ActualDefaults.Snapshot()["Fx.RateSourceProviders"].Should().Be("boj, fred");
     }
 
     /// <summary>
