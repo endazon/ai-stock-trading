@@ -2,7 +2,7 @@
 title: IADR-0200 クロスリポジトリ参照は短縮形へ確定し、検査器を置換点つきで配線する
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0140, IADR-0189, IADR-0199]
+related_ids: [NFR, IADR-0189, IADR-0199, IADR-0201]
 author: endazon (with Claude Code)
 created: 2026-08-15
 updated: 2026-08-15
@@ -71,8 +71,15 @@ updated: 2026-08-15
 
 ### 決定5: **配線は `scripts.repo.test.js` から。置換点は環境変数で自前で与える**
 
-`.github/workflows/` は GitHub App 権限で編集できないため、既存の呼び出し口へ相乗りする
-（IADR-0140／IADR-0189 決定2・決定6 と同じ形）。
+既存の呼び出し口へ相乗りする（IADR-0189 決定2・決定6 と同じ形）。
+
+> 🔴 **【訂正・2026-08-15／[IADR-0201](IADR-0201_cross-repo-refs-commit-face.md)】初版はこの理由を
+> 「`.github/workflows/` は GitHub App 権限で編集できないため（IADR-0140）」と書いていたが、
+> 二重に誤りであった。** ①**ワークフローは編集できる**——本リポで実測 65 コミット分変更されており、
+> `docs/specs/20260801_impl-handoff-kit-sync.md` は 2026-08-01 に「解消した」と記録していた。
+> ②**`IADR-0140` は本リポでは「発注先を独立軸として導入」であり無関係**である
+> （番号はキット docstring から引き写したもので、キットの出自リポジトリの採番を指す。planning#354 へ環流）。
+> **決定は変えない**——テストから env を注入する形は「相乗り」として今も妥当である。**変えたのは根拠である。**
 
 🔴 **テストが自分で環境変数を与えることが要点である。** CI 側の env を消しても、こちらが赤くなる。
 

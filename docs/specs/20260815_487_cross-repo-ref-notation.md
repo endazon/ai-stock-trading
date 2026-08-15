@@ -2,7 +2,7 @@
 title: 他リポジトリ issue / PR 番号の表記を短縮形へ確定し、検査器を CI へ配線する
 type: spec
 status: approved
-related_ids: [NFR, IADR-0140, IADR-0189, IADR-0200]
+related_ids: [NFR, IADR-0189, IADR-0200, IADR-0201]
 author: endazon (with Claude Code)
 created: 2026-08-15
 updated: 2026-08-15
@@ -111,7 +111,10 @@ updated: 2026-08-15
 - **既存のコミットメッセージの書き換え**（履歴不変・force push 禁止）
 - **`.claude/rules/traceability.md` の直接編集**（分類 A・環流する）
 - **`docs/specs/` `feedback/` の是正**（裁定により対象外）
-- **`.github/workflows/` の編集**（GitHub App 権限で編集できないため、既存の呼び出し口へ相乗りする）
+- **`.github/workflows/` の編集**（既存の呼び出し口へ相乗りするため不要）
+  - 🔴 **【訂正・2026-08-15】初版は「GitHub App 権限で編集できないため」と書いていたが事実に反する。**
+    ワークフローは**実測 65 コミット分、実際に変更されている**（IADR-0201 の訂正を参照）。
+    **相乗りを選んだこと自体は妥当**だが、理由は「できないから」ではなく「不要だから」である。
 
 ## 受け入れ基準
 

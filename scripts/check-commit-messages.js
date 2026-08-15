@@ -23,9 +23,65 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
+const crossRepoRefs = require('./check-cross-repo-refs.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
 const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
+
+// --- クロスリポジトリ参照の検査（NFR / #515 / IADR-0201） -------------------------------------
+//
+// 🔴 **ここが「実害の出る面」である。** 規約（.claude/rules/traceability.md）は面ごとに壊れ方が
+// 違うと定めている——**コミットメッセージ・PR 本文では裸の `#NNN` が本リポジトリの issue へ
+// 自動リンクし「誤リンク」という実害が出る**のに対し、`.md` は表記ゆれに留まる。
+// そして規約は「**優先して直すのは issue / PR / コミットメッセージ側**」と明記している。
+//
+// #487 / PR #514 が配線したのは `.md` の面だけであった。本経路はその残りである。
+//
+// 🔴 **置換点をここへ直書きする。理由は「env を忘れられないこと」である。**
+// 環境変数で渡す形は、**env を落とすと検査が緑のまま素通りする**（fail-open）。
+// #487 の対照実験で実測した——キット既定のマップは `project-planning` しか持たないため、
+// `microservices-platform#123` と書いても素の実行は exit=0 になる。
+// **直書きなら、CI・ローカル・`--title` モードのどの経路から呼ばれても同じ設定で効く。**
+//
+// 本ファイルは**キット同期の分類 C**（本リポの中身・置換点を持つ配布物）であり、
+// **各リポが自分の値を埋める前提**である（kit-sync-classification.json）。
+// **検査器本体（check-cross-repo-refs.js）は分類 A であり、手を触れない。**
+//
+// 値は `.claude/rules/traceability.repo.md`（#487 の利用者裁定）と**同じものを使う**。
+// 試験のために環境変数でも上書きできるようにしてある。
+const CROSS_REPO_NAMES =
+  crossRepoRefs.parseNameMap(process.env.CROSS_REPO_NAMES) || {
+    'project-planning': 'planning',
+    'microservices-platform': 'MSP',
+  };
+const CROSS_REPO_SELF_NAMES = crossRepoRefs.splitList(process.env.CROSS_REPO_SELF_NAMES, [
+  'AST',
+  'ai-stock-trading',
+]);
+
+const CROSS_REPO_CHECKER = crossRepoRefs.createChecker({
+  crossRepos: CROSS_REPO_NAMES,
+  selfNames: CROSS_REPO_SELF_NAMES,
+});
+
+/**
+ * コミット件名 / 本文 / PR タイトルに含まれるクロスリポ参照の表記を検査する。
+ *
+ * 🔴 <b>`markdown: true` で呼ぶ。</b> コミット本文はバックティックでコードを引用することがあり
+ * （実際に本リポの環流コミットが `grep -c '...'` を本文へ書いている）、
+ * **literal な引用は表記規約の対象外**という検査器の定義に合わせる。
+ *
+ * @returns {string[]} 違反の説明（0 件なら合格）
+ */
+function validateCrossRepoRefs(text) {
+  const violations = crossRepoRefs.findViolations(text, {
+    checker: CROSS_REPO_CHECKER,
+    markdown: true,
+  });
+  return violations.map(
+    (v) => `他リポ参照の表記が規約に反する: "${v.matched}" → "${v.suggestion}"`
+  );
+}
 
 // gen-changelog.js の TYPE_ORDER と一致させること。
 const VALID_TYPES = ['feat', 'fix', 'perf', 'refactor', 'docs', 'test', 'build', 'ci', 'style', 'chore'];
@@ -101,7 +157,10 @@ function resolveRange(explicit) {
 
 /** 範囲のコミットを {hash, subject, author} で返す（マージコミットは除外）。 */
 function collectCommits(range) {
-  const fmt = `%H${US}%s${US}%an${US}%ae`;
+  // #515: 本文（%B）も取る。**規約が名指しした実害例は footer の `Refs #NNN`** であり、
+  // 件名だけ見ていては構造的に取りこぼす。**%B は最後に置く**——改行を含むため、
+  // 区切り（US）で分割したときに後続フィールドを飲み込まないようにする。
+  const fmt = `%H${US}%s${US}%an${US}%ae${US}%B`;
   const raw = tryGit(`log ${range} --no-merges --pretty=format:${fmt}${RS}`);
   if (raw === null) {
     process.stderr.write(`検査範囲を git log できなかった: ${range}\n`);
@@ -113,8 +172,8 @@ function collectCommits(range) {
     .map((r) => r.replace(/^\n/, '').trim())
     .filter(Boolean)
     .map((line) => {
-      const [hash, subject = '', author = '', email = ''] = line.split(US);
-      return { hash, subject, author, email };
+      const [hash, subject = '', author = '', email = '', body = ''] = line.split(US);
+      return { hash, subject, author, email, body };
     });
 }
 
@@ -363,9 +422,11 @@ function checkSingleTitle(title, prAuthor) {
     return 0;
   }
 
-  const reasons = validateSubject(subject).concat(
-    validateIdExistence(subject, loadExistingIadrIds(), loadExistingPlanAdrIds())
-  );
+  const reasons = validateSubject(subject)
+    .concat(validateIdExistence(subject, loadExistingIadrIds(), loadExistingPlanAdrIds()))
+    // #515: PR タイトルはスカッシュ後にコミット件名として統合ブランチへ載る。
+    // **ここを通すと、誤リンクする件名がそのまま履歴へ入り、二度と直せない**（force push 禁止）。
+    .concat(validateCrossRepoRefs(subject));
   if (reasons.length) {
     process.stderr.write('\n✗ PR タイトルが規約違反:\n');
     process.stderr.write(`  ${subject}\n`);
@@ -445,7 +506,13 @@ function main() {
       skipped++;
       continue;
     }
-    const reasons = validateSubject(c.subject).concat(validateIdExistence(c.subject, iadrIds, planAdrIds));
+    // #515: 件名の書式・ID 実在性に加え、**件名と本文の両方**でクロスリポ参照の表記を検査する。
+    // 🔴 本文を含めるのが要点である——規約が名指しした実害例は **footer の `Refs #NNN`** であり、
+    // 件名だけ見ていては構造的に取りこぼす。
+    const reasons = validateSubject(c.subject)
+      .concat(validateIdExistence(c.subject, iadrIds, planAdrIds))
+      // `%B` は件名を含む全文であるため、件名は本文の検査に含まれる（二重に渡さない）。
+      .concat(validateCrossRepoRefs(c.body));
     if (reasons.length) {
       violations.push({ short, subject: c.subject, reasons });
     } else if (args.verbose) {
@@ -477,6 +544,8 @@ if (require.main === module) {
 module.exports = {
   validateSubject,
   validateIdExistence,
+  // #515: 実害の出る面（件名・本文・PR タイトル）のクロスリポ参照検査。
+  validateCrossRepoRefs,
   loadExistingIadrIds,
   loadExistingPlanAdrIds,
   checkSingleTitle,
