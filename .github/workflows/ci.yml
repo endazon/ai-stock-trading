@@ -272,6 +272,27 @@ jobs:
       - name: Check ADR index sync
         run: node scripts/check-adr-index-sync.js
 
+  # NFR / #524 / IADR-0204 の残余リスクの解消: 必読規約の総量予算をエージェントごとに検査する。
+  #
+  # 予算値 51,200 の正本は計画リポ運用ガイド §8（planning#364）であり、検査器が持つのは複製である
+  # （値の隣に出典を書いてある）。母集合は「そのエージェントが自動で読み込む集合」であり、
+  # Claude Code（CLAUDE.md ＋ .claude/rules/*.md）と AGENTS.md 系は**合算しない**（合算は誰も
+  # 背負わない量を作る。実測で 2 回誤った）。submodule は要らない（母集合に planning/ は入らない）。
+  #
+  # 超過で fail・90% で warn。**#519 で配線を後回しにした残余リスク**（「検査器はあるが CI に居ない」）
+  # を本ジョブで塞ぐ —— 手で叩いたときだけ走る検査器は、予算を守らせない。
+  reading-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test reading budget checker
+        run: node scripts/check-reading-budget.js --self-test
+      - name: Check reading budget (per agent, not summed)
+        run: node scripts/check-reading-budget.js
+
   # NFR / #492: impl-handoff-kit の配布物への追随（分類 A のバイト一致）を検査する。
   #
   # 本ジョブだけは submodule を取得する（他のジョブは取得しない）。取得しないと

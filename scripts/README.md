@@ -147,6 +147,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `kit-sync` | `check-kit-sync.js --require-planning`（キットへの追随。**計画リポジトリを取得するジョブであり、取得できなければ fail させる**） |
 | `adr-index-sync` | `check-adr-index-sync.js`（IADR 本文と索引行の同時変更） |
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
+| `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
 | `test-traceability` | `check-test-traceability.js --require-planning`（必須範囲 FR のテスト・仕様書の存在。本リポ固有） |
 | `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査、および `check-action-versions.js`（Actions のバージョン退行。`fetch-depth: 0` が必要。**置換点**: `--compare-with-ref` は本リポの統合ブランチ `origin/develop`） |
 | `pipeline-config` | `validate-pipeline-config.js --self-test` ＋ 実ファイル（`PIPELINE_CONFIG`。本リポは採用する） |

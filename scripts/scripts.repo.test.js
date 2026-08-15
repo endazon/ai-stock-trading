@@ -1608,4 +1608,34 @@ module.exports = ({ ok, assert }) => {
     const { errors } = inspect(table, ['a\\b\\c.md'], () => true, () => true, () => true);
     assert(errors.some((e) => e.startsWith('[unclassified] a\\b\\c.md')), '`\\` 区切りが unclassified にならなかった');
   });
+
+  // --- 必読規約の予算の CI 配線（NFR / #524。IADR-0204 の残余リスク） -----------------------------
+  //
+  // 検査器はあるが CI に居ない、は「手で叩いたときだけ走る検査器」であり予算を守らせない。
+  // 配線を機械で固定する（`run:` 行の存在しか見ないことは承知のうえで、挙動は上の実ツリー試験が見る）。
+  ok('ci.yml に reading-budget ジョブがあり check-reading-budget.js を自己試験＋本検査で走らせる（#524）', () => {
+    const fsK = require('fs');
+    const ci = fsK.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  reading-budget:');
+    assert(start >= 0, 'reading-budget ジョブが無い');
+    const job = ci.slice(start);
+    const body = job.slice(0, job.indexOf('\n\n  ') === -1 ? job.length : job.indexOf('\n\n  '));
+    assert(body.includes('check-reading-budget.js --self-test'), '自己試験が配線されていない');
+    const runs = body.split('\n').filter((l) => l.includes('run:') && l.includes('check-reading-budget.js'));
+    assert(runs.some((l) => !l.includes('--self-test')), '本検査が配線されていない（自己試験だけでは母集合を測らない）');
+  });
+
+  // 🔴 予算値の複製には出典が要る（運用ガイド §8「出典の無い複製は認めない」。planning#364）。
+  // 値だけ直して出典を落とす退行を止める。
+  ok('check-reading-budget.js の既定予算は 51,200 で、値の隣に正本（運用ガイド §8）の出典がある（#524）', () => {
+    const fsK = require('fs');
+    const src = fsK.readFileSync(pathFb.join(__dirname, 'check-reading-budget.js'), 'utf8');
+    const lines = src.split('\n');
+    const i = lines.findIndex((l) => /^const BUDGET_BYTES = /.test(l));
+    assert(i >= 0, 'BUDGET_BYTES の定義が無い');
+    assert(/\|\| 51200\)/.test(lines[i]), `既定値が 51200 でない: ${lines[i]}`);
+    const near = lines.slice(Math.max(0, i - 8), i).join('\n');
+    assert(/ai-implementation-workflow-guide\.md/.test(near) && /§8/.test(near), '値の隣（直前 8 行）に正本の出典が無い');
+    assert(budget.BUDGET_BYTES === 51200 || process.env.READING_BUDGET_BYTES, 'エクスポートされた既定値が 51200 でない');
+  });
 };

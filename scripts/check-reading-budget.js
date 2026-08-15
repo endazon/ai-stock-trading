@@ -3,7 +3,7 @@
  * 必読規約の総量予算（NFR / #519 / IADR-0204）を検査する。
  *
  * 運用標準（planning/docs/ai-implementation-workflow-guide.md・CLAUDE.md）は
- * 「**毎セッション必読の規約は総量 50KB の予算内に収める**」と定める。
+ * 「**毎セッション必読の規約は総量 50KB（= 51,200 バイト）の予算内に収める**」と定める。
  * 本スクリプトはその母集合を定義し、実測して予算と比べる。
  *
  * ■ 🔴 なぜ「エージェントごと」に判定するのか（本検査器の設計の核心）
@@ -35,14 +35,20 @@
  *   node scripts/check-reading-budget.js [--self-test]
  *
  * 環境変数:
- *   READING_BUDGET_BYTES  予算（既定 50000）
+ *   READING_BUDGET_BYTES  予算（既定 51200。出典は BUDGET_BYTES の注記＝計画リポ運用ガイド §8）
  *   READING_BUDGET_WARN   warn を出す割合（既定 0.9）
  */
 const fs = require('fs');
 const path = require('path');
 
 const REPO = path.resolve(__dirname, '..');
-const BUDGET_BYTES = Number(process.env.READING_BUDGET_BYTES || 50000);
+// 🔴 予算値 51,200 の正本は計画リポ `planning/docs/ai-implementation-workflow-guide.md` §8
+//   「毎セッション必読の規約文書に総量予算を設ける（50KB 目安）」＝ 50KB = 51,200 バイト
+//   （裁定 2026-08-15。planning#364。算定根拠は Claude 側の実測＝効率が出ている AST の 36KB に余裕を見た値）。
+//   ここに持つのは**複製**である。正本が変わったら追随すること（同 §8「出典の無い複製は認めない」。#524）。
+//   `AGENTS.md` 系は実測が無いため同じ値を暫定的に流用する（正本は「超過を fail の根拠にせず観測に留める」と
+//   定める。本検査器は集合ごとに同じ閾値で判定しており、その集合の実測が揃った時点で別に定める）。
+const BUDGET_BYTES = Number(process.env.READING_BUDGET_BYTES || 51200);
 const WARN_RATIO = Number(process.env.READING_BUDGET_WARN || 0.9);
 
 /**
