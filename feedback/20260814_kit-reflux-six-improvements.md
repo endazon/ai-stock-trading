@@ -1,7 +1,7 @@
 ---
 title: キット配布物への改善 6 件を環流する（check-permission-denials.js ほか）。あわせて check-kit-sync.js 自体がキットに無いことを報告する
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids: [NFR]
 source_repo: endazon/ai-stock-trading

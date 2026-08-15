@@ -1,349 +1,270 @@
 #!/usr/bin/env node
-'use strict';
 /*
- * check-review-verdict.js
+ * AI レビューの判定投稿チェッカー
  *
- * NFR / #490 / IADR-0190:
- * AI レビューが**判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）を投稿しないまま終わった**ことを検出し、
- * ジョブを落とす。
+ * **「緑だが検査されていない」を止める。**
  *
- * 背景（2026-08-14・PR #489 で実測）:
- *   同一 PR で **3 回連続**、レビューが判定を投稿しなかった。うち 2 回はジョブが
- *   **`success`** で終わっている——PR には進行中のプレースホルダだけが残り、
- *   「`dotnet test` をバックグラウンドで実行中です。完了後にサマリを投稿します」と
- *   書かれたまま終了していた。
+ * claude-code-action は、AI が判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）を投稿しないまま
+ * ターンを終えても `success` で終わる。ジョブは緑になり、PR には進行中の
+ * プレースホルダだけが残る。**「レビュー済み・指摘なし」と読まれるが、実際には
+ * 何も判定されていない。マージも止まらない。**
  *
- *   **`claude-review` が緑であることは、PR を読む人にとって「レビュー済み・指摘なし」を意味する。**
- *   しかし何も判定されておらず、**マージも止まらない**。これが「緑だが検査されていない」である。
+ * 実測（planning#333。実装 ai-stock-trading#489 / #490 / `IADR-0190`）:
+ * 同一 PR で 3 回連続、判定の投稿が無かった。
  *
- * **`check-permission-denials.js` とは別の穴を見る。**
- *   あちらは「AI がツールを 1 つも実行できなかった」形。本件は**ツールは正常に動いており、
- *   最後の投稿だけが無い**。実行ログは同じものを読むため `parseEvents` を借りる（2 本セット）。
+ *   | 試行 | 実行時間 | 結論      | 判定 | 形                        |
+ *   | ---: | -------- | --------- | ---- | ------------------------- |
+ *   | 1    | 3m55s    | success   | 無し | A: 待たずにターンを終える |
+ *   | 2    | 20m16s   | cancelled | 無し | B: 待って job timeout     |
+ *   | 3    | 11m16s   | success   | 無し | A                         |
  *
- * 判定の検出は**見出しの構造**で行う（決定2）:
- *   本文の語（「重大」等）を素で探すと、**レビューが本文中でその語を使った瞬間に誤検出する**。
- *   これは planning#319 知見3 で実証済みの同型のアンチパターンである（検査器について書いた
- *   記録が、語の一致だけで自己発火した）。よって**判定セクションの見出しが 3 種そろうこと**を
- *   条件とし、1 つでも欠ければ判定と認めない。
+ * **形 A の green のまま PR がマージされた。** B は少なくともマージを止めるが、
+ * A は何の signal も出さない。ここで止める。
  *
- * 実行ログを読めないときは **warn ＋ exit 0**（fail-open）。
- *   実行ログが無いのは「レビューが動かなかった」ことを意味し、**その形は
- *   `check-permission-denials.js` が既に捕まえる**。二重に落とす必要は無い。
- *
- * 外部依存ゼロ（Node 標準モジュールのみ）。
+ * **`check-permission-denials.js` では捕まらない。** あちらは「AI がツールを 1 つも
+ * 実行できなかった」形を見る。本件は**ツールは正常に動いており、最後の投稿だけが
+ * 無い** —— 別の穴である。入力（実行ログ）と配線は同じであり、`parseEvents` を
+ * 借りる。**2 本セットで配布すること。**
  *
  * 使い方:
- *   node scripts/check-review-verdict.js <execution_file>
- *   node scripts/check-review-verdict.js --self-test
+ *   node scripts/check-review-verdict.js <execution-file> [--self-test]
+ *
+ * 環境変数:
+ *   ALLOW_MISSING_VERDICT=1   判定が無くても失敗させない（警告のみ。緊急避難用）
+ *
+ * 終了コード: 判定が揃っていない=1 / 揃っている=0 / 実行ログを読めない=0（fail-open）。
  */
+'use strict';
 const fs = require('fs');
-const { warn, notice } = require('./lib/ci-annotate.js');
+const { emit, warn } = require('./lib/ci-annotate.js');
 const { parseEvents } = require('./check-permission-denials.js');
 
 /**
- * 判定セクションの見出し。**3 種すべて**が必要である。
+ * 判定の見出し（置換点ではない。**プロンプトの「出力フォーマット」と対にして直す**）。
  *
- * 絵文字と語の両方を要求する。**語だけ・絵文字だけでは通さない**——
- * 本文が「重大な問題は無い」と書いただけで緑になってはならない。
+ * **絵文字と語の両方を要求する。** 語だけで探すと、レビューが本文中でその語を使った
+ * 瞬間に誤検出する —— 「**重大**な問題は無い」という散文で緑になってしまう。これは
+ * planning#319 知見 3 で実証済みの同型のアンチパターンである（検査器について書いた
+ * 記録が、語の一致だけで自己発火した）。**見出しの構造で見る。**
  */
-const VERDICT_HEADINGS = [
-  { key: '重大', re: /^#{1,6}\s*🔴\s*重大\s*$/m },
-  { key: '推奨', re: /^#{1,6}\s*🟡\s*推奨\s*$/m },
-  { key: '軽微', re: /^#{1,6}\s*🟢\s*軽微\s*$/m },
+const VERDICTS = [
+  { emoji: '🔴', word: '重大' },
+  { emoji: '🟡', word: '推奨' },
+  { emoji: '🟢', word: '軽微' },
 ];
 
 /**
- * AI が出力したテキストを集める。
+ * **判定はコメント投稿ツールの入力に載る。** レビューはサマリを地の文として出力するのではなく、
+ * `mcp__github_comment__update_claude_comment` 等でコメントを更新する形で投稿する。
+ * よって assistant の text ブロックだけを見ると**判定が在っても「無い」と読む**
+ * （実測: planning#341 で本検査器自身が偽陽性で落ちた）。
  *
- * 🔴 **全文を走査してはならない。** 実行ログには**プロンプト自身**が含まれ、その中に
- * 判定フォーマットの雛形（`### 🔴 重大` 等）が書かれている。素朴に全文を検索すると
- * **常に一致して緑になり、ゲートが無意味になる**（本検査器の初版を実 CI へ載せる前に発見した）。
- *
- * よって**AI の出力に当たる場所だけ**を見る。配送経路が複数あるため、次を対象とする。
- *   1. `assistant` メッセージの `text` ブロック（通常の応答）
- *   2. `result` イベントの `result`（最終応答がここに入る版がある）
- *   3. **`input.body` を持つツール呼び出し全般**（判定をツール呼び出しで投稿する経路）
- *
- * 3 を入れるのは、`--allowedTools` にコメント投稿系のツール
- * （`mcp__github__add_issue_comment` / `pull_request_review_write` /
- * `add_comment_to_pending_review` 等）が含まれており、**判定をそれらで投稿すると
- * 1・2 に現れない**ためである（AI レビューの指摘・PR #491）。
- * **ツール名では絞らない** —— 実測では本ワークフローが実際に使うのは
- * `mcp__github_comment__update_claude_comment` であり、**名前で列挙すると取りこぼす**。
- * 代わりに **`input.body` というフィールドに限定する** —— 全ての `input` を見ると
- * `Bash` の `command` 等まで拾い、本文にたまたま見出しを含むコマンドで緑にできてしまう。
+ * **ただし tool_use を無条件に含めてはならない。** `Bash(grep '### 🔴 重大' …)` のような
+ * 入力で緑になってしまう。**コメント投稿ツールに限って**本文フィールドを読む。
  */
-function assistantText(events) {
-  const out = [];
-  const push = (v) => {
-    if (typeof v === 'string' && v) out.push(v);
-  };
-  for (const e of events) {
-    if (!e) continue;
-    if (e.type === 'result') push(e.result);
-    if (e.type !== 'assistant') continue;
-    const content = e.message && e.message.content;
-    if (!Array.isArray(content)) continue;
-    for (const c of content) {
-      if (!c) continue;
-      if (c.type === 'text') push(c.text);
-      // 判定をコメント投稿ツールで出す経路。body 以外は見ない（上のコメント参照）。
-      if (c.type === 'tool_use' && c.input) push(c.input.body);
-    }
-  }
-  return out.join('\n');
-}
+const COMMENT_TOOLS = [
+  'mcp__github_comment__update_claude_comment',
+  'mcp__github__add_issue_comment',
+  'mcp__github__create_pull_request_review',
+  'mcp__github__add_comment_to_pending_review',
+];
 
-/** 実行ログのイベント種別の内訳（判定不能だったときの診断用）。 */
-function eventShape(events) {
-  const counts = new Map();
-  for (const e of events) {
-    const t = (e && e.type) || '(no type)';
-    counts.set(t, (counts.get(t) || 0) + 1);
+/** コメント投稿ツールの入力から本文らしき文字列を取り出す。 */
+function commentBodyOf(block) {
+  const name = block && (block.name || block.tool_name);
+  if (!name || !COMMENT_TOOLS.includes(name)) return '';
+  const input = block.input || block.tool_input || {};
+  const parts = [];
+  for (const key of ['body', 'content', 'text', 'comment']) {
+    if (typeof input[key] === 'string') parts.push(input[key]);
   }
-  return [...counts.entries()].map(([t, n]) => `${t}=${n}`).join(' ');
+  return parts.join('\n');
 }
 
 /**
- * 判定の有無を調べる。
- * @returns {{ok: boolean, found: string[], missing: string[]}}
+ * 実行ログから AI の出力テキストを集める。
+ *
+ * 次の 3 つを見る。**どれか 1 つだけだと action の出力形式が変わったときに黙って通る。**
+ *   1. `assistant` イベントの text ブロック（地の文で出す場合）
+ *   2. **コメント投稿ツールの入力**（実際の投稿経路。上記のとおり本命である）
+ *   3. `result` イベントの最終出力
  */
-function inspectVerdict(text) {
-  const src = String(text == null ? '' : text);
-  const found = [];
-  const missing = [];
-  for (const h of VERDICT_HEADINGS) (h.re.test(src) ? found : missing).push(h.key);
-  return { ok: missing.length === 0, found, missing };
+function collectAssistantText(events) {
+  const parts = [];
+  for (const e of events) {
+    if (!e) continue;
+    if (e.type === 'assistant') {
+      const content = e.message && e.message.content;
+      if (Array.isArray(content)) {
+        for (const b of content) {
+          if (b && b.type === 'text' && typeof b.text === 'string') parts.push(b.text);
+          else if (b && b.type === 'tool_use') {
+            const body = commentBodyOf(b);
+            if (body) parts.push(body);
+          }
+        }
+      }
+    } else if (e.type === 'result' && typeof e.result === 'string') {
+      parts.push(e.result);
+    }
+  }
+  return parts.join('\n');
 }
 
-function writeStepSummary(result) {
-  const file = process.env.GITHUB_STEP_SUMMARY;
-  if (!file) return false;
-  const lines = [
-    '## 🔴 AI レビューが判定を投稿していない',
-    '',
-    'レビューは実行されたが、**判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）が出力されていない**。',
-    'ジョブが緑のままだと「レビュー済み・指摘なし」と読まれるため、ここで落とす。',
-    '',
-    `- 見つかった見出し: ${result.found.length ? result.found.join(' / ') : '（無し）'}`,
-    `- 欠けている見出し: **${result.missing.join(' / ')}**`,
-    '',
-    '**よくある原因**: コマンドをバックグラウンドで起動し、その完了を待たずにターンを終えた。',
-    '時間が足りないときは待たずに「未検証（理由）」と書き、**サマリの投稿を最優先する**こと。',
-    '',
-    '詳細は #490 / IADR-0190 を参照。',
-  ];
-  try {
-    fs.appendFileSync(file, `${lines.join('\n')}\n`);
-    return true;
-  } catch (e) {
-    return false;
+/**
+ * 判定の見出しが在るかを返す。
+ *
+ * 見出しレベル（`##`〜`####`）は問わない。**絵文字と語の距離も問わない**
+ * （`### 🔴 重大` / `### 🔴 重大（新規）` のどちらも拾う）。
+ * ただし**同じ行に絵文字と語の両方が要る**。
+ */
+function findVerdicts(text) {
+  const found = [];
+  const missing = [];
+  const lines = String(text || '').split('\n');
+  for (const v of VERDICTS) {
+    const hit = lines.some((line) => {
+      if (!/^\s{0,3}#{2,4}\s/.test(line)) return false;
+      return line.includes(v.emoji) && line.includes(v.word);
+    });
+    (hit ? found : missing).push(v);
   }
+  return { found, missing };
+}
+
+function selfTest() {
+  const assert = require('assert');
+  const ok = (name, fn) => {
+    fn();
+    console.log(`  ok  ${name}`);
+  };
+  let n = 0;
+  const T = (name, fn) => {
+    n += 1;
+    ok(name, fn);
+  };
+
+  const full = '## AI コードレビュー結果\n\n### 🔴 重大\n- なし\n\n### 🟡 推奨\n- なし\n\n### 🟢 軽微\n- なし\n';
+
+  T('判定 3 種が揃っていれば missing は空', () => {
+    assert.deepStrictEqual(findVerdicts(full).missing, []);
+  });
+
+  T('1 つ欠けると検出する', () => {
+    const t = full.replace('### 🟢 軽微', '### 軽微');
+    assert.strictEqual(findVerdicts(t).missing.length, 1);
+    assert.strictEqual(findVerdicts(t).missing[0].word, '軽微');
+  });
+
+  T('判定を 1 つも投稿しない形 A を検出する', () => {
+    const t = '`dotnet test` をバックグラウンドで実行中です。完了後にサマリを投稿します。';
+    assert.strictEqual(findVerdicts(t).missing.length, 3);
+  });
+
+  T('本文に語だけあっても緑にしない（散文で発火しない）', () => {
+    const t = '## レビュー結果\n\n重大な問題は無い。推奨も軽微も特に無い。\n';
+    assert.strictEqual(findVerdicts(t).missing.length, 3);
+  });
+
+  T('絵文字だけ・語だけの見出しでは通さない', () => {
+    assert.strictEqual(findVerdicts('### 🔴\n### 🟡\n### 🟢\n').missing.length, 3);
+    assert.strictEqual(findVerdicts('### 重大\n### 推奨\n### 軽微\n').missing.length, 3);
+  });
+
+  T('見出しレベルは ## 〜 #### を許す', () => {
+    const t = '## 🔴 重大\n### 🟡 推奨\n#### 🟢 軽微\n';
+    assert.deepStrictEqual(findVerdicts(t).missing, []);
+  });
+
+  T('見出しでない行に絵文字と語があっても拾わない', () => {
+    const t = '- 🔴 重大 の指摘は無い\n- 🟡 推奨 も無い\n- 🟢 軽微 も無い\n';
+    assert.strictEqual(findVerdicts(t).missing.length, 3);
+  });
+
+  T('見出しの後ろに補足が付いても拾う', () => {
+    const t = '### 🔴 重大（新規）\n### 🟡 推奨\n### 🟢 軽微\n';
+    assert.deepStrictEqual(findVerdicts(t).missing, []);
+  });
+
+  T('assistant イベントの text を集める', () => {
+    const events = [{ type: 'assistant', message: { content: [{ type: 'text', text: full }] } }];
+    assert.deepStrictEqual(findVerdicts(collectAssistantText(events)).missing, []);
+  });
+
+  T('result イベントの最終出力も見る（assistant が空でも拾う）', () => {
+    const events = [{ type: 'result', result: full }];
+    assert.deepStrictEqual(findVerdicts(collectAssistantText(events)).missing, []);
+  });
+
+  T('コメント投稿ツールの入力から判定を拾う（実際の投稿経路）', () => {
+    for (const name of COMMENT_TOOLS) {
+      const events = [
+        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name, input: { body: full } }] } },
+      ];
+      assert.deepStrictEqual(findVerdicts(collectAssistantText(events)).missing, [], name);
+    }
+  });
+
+  T('コメント投稿以外の tool_use は数えない（Bash の引数で緑にしない）', () => {
+    const events = [
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: `grep '${full}'` } }] },
+      },
+    ];
+    assert.strictEqual(findVerdicts(collectAssistantText(events)).missing.length, 3);
+  });
+
+  console.log(`[check-review-verdict] self-test OK（${n} 件）`);
 }
 
 function main(argv) {
-  const file = argv[0];
+  const args = argv.slice(2);
+  if (args.includes('--self-test')) {
+    selfTest();
+    return;
+  }
+  const file = args.find((a) => !a.startsWith('--'));
+
+  // **実行ログを読めないときは fail-open。** その形（AI がそもそも動かなかった等）は
+  // `check-permission-denials.js` が捕まえるため、二重に落とす必要は無い。
   if (!file) {
-    warn('[check-review-verdict] 実行ログのパスが渡されていないため検査をスキップする。');
-    return 0;
+    warn('[check-review-verdict] 実行ログのパスが渡されていないため skip する（fail-open）。');
+    process.exit(0);
   }
-  let raw;
+  let text;
   try {
-    raw = fs.readFileSync(file, 'utf8');
+    text = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    // 実行ログが無い＝レビューが動いていない。その形は check-permission-denials.js の担当。
-    warn(`[check-review-verdict] 実行ログを読めないため検査をスキップする: ${e.message}`);
-    return 0;
+    warn(`[check-review-verdict] 実行ログを読めないため skip する（fail-open）: ${file}`);
+    process.exit(0);
   }
 
-  const events = parseEvents(raw);
-  if (!events.length) {
-    warn('[check-review-verdict] 実行ログにイベントが無いため検査をスキップする。');
-    return 0;
+  const events = parseEvents(text);
+  const { missing } = findVerdicts(collectAssistantText(events));
+
+  if (missing.length === 0) {
+    console.log('[check-review-verdict] OK: 判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）が投稿されています。');
+    process.exit(0);
   }
 
-  const text = assistantText(events);
+  const list = missing.map((v) => `${v.emoji} ${v.word}`).join(' / ');
+  const message =
+    `[check-review-verdict] AI レビューが判定を投稿していません（欠けている見出し: ${list}）。` +
+    'ジョブは success でも**内容は検査されていない**。' +
+    'PR に残ったコメントを確認し、レビューを再実行してください。' +
+    '判定を投稿せずに終わる原因は、バックグラウンド実行やサブエージェントの結果待ちである。';
 
-  // 🔴 **AI の出力を 1 文字も取り出せなかった場合は判定できない。落とさない。**
-  //
-  // 初版はここを区別せず「判定なし」として落とし、**PR #491 の初回実行で偽陽性を出した**
-  // （レビューは判定を正しく投稿していたのに、こちらが実行ログの形を取り違えて何も
-  // 抽出できていなかった）。**「判定が無い」と「読めていない」は別である。**
-  //
-  // 診断のためイベント種別の内訳を出す。次に同じことが起きたとき、ログを漁らずに形が分かる。
-  if (!text.trim()) {
-    warn(
-      '[check-review-verdict] AI の出力を実行ログから取り出せなかったため判定できない（検査をスキップする）。' +
-        ` イベント内訳: ${eventShape(events) || '(空)'}`
-    );
-    return 0;
+  if (process.env.ALLOW_MISSING_VERDICT === '1') {
+    warn(`${message}（ALLOW_MISSING_VERDICT=1 のため失敗としない）`);
+    process.exit(0);
   }
-
-  const result = inspectVerdict(text);
-  if (result.ok) {
-    notice('[check-review-verdict] OK: レビューの判定（🔴/🟡/🟢）が出力されている。');
-    return 0;
-  }
-
-  writeStepSummary(result);
-  process.stderr.write(
-    '\n[check-review-verdict] 🔴 レビューが判定を投稿しないまま終了した。\n' +
-      `  見つかった見出し: ${result.found.length ? result.found.join(' / ') : '（無し）'}\n` +
-      `  欠けている見出し: ${result.missing.join(' / ')}\n\n` +
-      'ジョブを緑にすると「レビュー済み・指摘なし」と読まれるため落とす（#490 / IADR-0190）。\n' +
-      'よくある原因: コマンドをバックグラウンドで起動し、完了を待たずにターンを終えた。\n' +
-      '時間が足りないときは待たずに「未検証（理由）」と書き、サマリの投稿を最優先すること。\n'
-  );
-  return 1;
-}
-
-/** 自己試験。判定規則そのものが壊れていれば、実データに対する結果は意味を持たない。 */
-function selfTest() {
-  const assert = require('assert');
-  let n = 0;
-  const ok = (name, fn) => {
-    fn();
-    n += 1;
-    process.stdout.write(`  ok   ${name}\n`);
-  };
-
-  const VERDICT = ['### 🔴 重大', '- 指摘なし', '', '### 🟡 推奨', '- 指摘なし', '', '### 🟢 軽微', '- 指摘なし'].join('\n');
-  const ev = (text) => [{ type: 'assistant', message: { content: [{ type: 'text', text }] } }];
-
-  ok('判定 3 種がそろえば ok', () => {
-    const r = inspectVerdict(VERDICT);
-    assert.strictEqual(r.ok, true);
-    assert.deepStrictEqual(r.missing, []);
-  });
-
-  // **最重要の否定形。** #489 で実際に起きた形（判定を投稿せず終了）を再現する。
-  ok('判定が無ければ ok=false（#489 の形 A の回帰）', () => {
-    const r = inspectVerdict('レビュー進行中\n\n- [ ] サマリコメント投稿\n\nバックグラウンドで実行中です。');
-    assert.strictEqual(r.ok, false);
-    assert.deepStrictEqual(r.missing, ['重大', '推奨', '軽微']);
-  });
-
-  ok('1 つでも欠ければ ok=false', () => {
-    for (const drop of ['🔴 重大', '🟡 推奨', '🟢 軽微']) {
-      const partial = VERDICT.split('\n').filter((l) => !l.includes(drop)).join('\n');
-      assert.strictEqual(inspectVerdict(partial).ok, false, `${drop} を欠いても ok になっている`);
-    }
-  });
-
-  // **語の一致で緑にしない**（planning#319 知見3 と同型のアンチパターンを避ける）。
-  ok('本文で語を使っただけでは ok にならない', () => {
-    const prose = '重大な問題は無い。推奨事項も無く、軽微な指摘も無い。';
-    assert.strictEqual(inspectVerdict(prose).ok, false);
-  });
-
-  // 絵文字だけ・語だけの見出しも通さない。
-  ok('見出しに絵文字と語の両方が要る', () => {
-    assert.strictEqual(inspectVerdict('### 重大\n### 推奨\n### 軽微').ok, false);
-    assert.strictEqual(inspectVerdict('### 🔴\n### 🟡\n### 🟢').ok, false);
-  });
-
-  ok('見出しレベルは 1〜6 のいずれでもよい', () => {
-    const h2 = VERDICT.replace(/^### /gm, '## ');
-    assert.strictEqual(inspectVerdict(h2).ok, true);
-  });
-
-  ok('assistant 以外のイベントのテキストは判定に使わない', () => {
-    const events = [{ type: 'user', message: { content: [{ type: 'text', text: VERDICT }] } }];
-    assert.strictEqual(inspectVerdict(assistantText(events)).ok, false);
-  });
-
-  ok('assistant の複数メッセージを連結して判定する', () => {
-    const events = [
-      ...ev('### 🔴 重大\n- 指摘なし'),
-      ...ev('### 🟡 推奨\n- 指摘なし'),
-      ...ev('### 🟢 軽微\n- 指摘なし'),
-    ];
-    assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
-  });
-
-  // --- 配送経路（PR #491 の 🔴/🟡 を受けた回帰） ---
-
-  ok('result イベントの result からも判定を拾う', () => {
-    const events = [{ type: 'result', subtype: 'success', result: VERDICT }];
-    assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
-  });
-
-  // 判定をコメント投稿ツールで出す経路（`use_sticky_comment` に頼らない書き方）。
-  ok('コメント投稿ツールの input.body からも判定を拾う', () => {
-    const events = [
-      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'mcp__github__add_issue_comment', input: { body: VERDICT } }] } },
-    ];
-    assert.strictEqual(inspectVerdict(assistantText(events)).ok, true);
-  });
-
-  // **`body` 以外は見ない。** 全 input を見ると Bash の command 等で緑にできてしまう。
-  ok('tool_use の body 以外（command 等）は判定に使わない', () => {
-    const events = [
-      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: `echo '${VERDICT}'` } }] } },
-    ];
-    assert.strictEqual(inspectVerdict(assistantText(events)).ok, false);
-  });
-
-  // 🔴 **最重要**: 「判定が無い」と「読めていない」を区別する。
-  // 初版はこれを混同し、PR #491 の初回実行で偽陽性を出した。
-  ok('AI の出力を取り出せなければ exit 0（判定不能。落とさない）', () => {
-    const os = require('os');
-    const path = require('path');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'review-verdict-shape-'));
-    const f = path.join(dir, 'unknown-shape.json');
-    // 出力に当たるフィールドを持たないイベントだけのログ。
-    fs.writeFileSync(f, JSON.stringify([{ type: 'system', subtype: 'init' }, { type: 'result', subtype: 'success' }]));
-    try {
-      assert.strictEqual(main([f]), 0);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  ok('eventShape はイベント種別の内訳を返す', () => {
-    const s = eventShape([{ type: 'system' }, { type: 'result' }, { type: 'result' }]);
-    assert.match(s, /system=1/);
-    assert.match(s, /result=2/);
-  });
-
-  ok('実行ログのパスが無ければ exit 0（fail-open）', () => {
-    assert.strictEqual(main([]), 0);
-  });
-
-  ok('実行ログを読めなければ exit 0（fail-open）', () => {
-    assert.strictEqual(main(['/nonexistent/execution.json']), 0);
-  });
-
-  ok('判定を含む実行ログなら exit 0 / 含まなければ exit 1', () => {
-    const os = require('os');
-    const path = require('path');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'review-verdict-'));
-    const good = path.join(dir, 'good.json');
-    const bad = path.join(dir, 'bad.json');
-    fs.writeFileSync(good, JSON.stringify(ev(VERDICT)));
-    fs.writeFileSync(bad, JSON.stringify(ev('進行中です')));
-    // GITHUB_STEP_SUMMARY を汚さない（#140 と同型の事故を避ける）。
-    const prev = process.env.GITHUB_STEP_SUMMARY;
-    delete process.env.GITHUB_STEP_SUMMARY;
-    try {
-      assert.strictEqual(main([good]), 0);
-      assert.strictEqual(main([bad]), 1);
-    } finally {
-      if (prev !== undefined) process.env.GITHUB_STEP_SUMMARY = prev;
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  process.stdout.write(`[check-review-verdict] 自己試験 ${n} 件 all passed。\n`);
+  emit('error', message);
+  process.exit(1);
 }
 
 if (require.main === module) {
-  const argv = process.argv.slice(2);
-  if (argv.includes('--self-test')) {
-    selfTest();
-    process.exit(0);
-  }
-  process.exit(main(argv));
+  main(process.argv);
 }
 
-module.exports = { inspectVerdict, assistantText, main, selfTest, VERDICT_HEADINGS };
+module.exports = { collectAssistantText, commentBodyOf, findVerdicts, selfTest, VERDICTS, COMMENT_TOOLS };
