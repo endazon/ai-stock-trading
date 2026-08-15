@@ -6,7 +6,11 @@
     "  1 リポジトリ構成 / 2 技術スタックとその CI 配線 / 3 本リポにしか存在しない成果物 / 4 Dependabot が更新した Actions バージョン",
     "  X 4 種のどれにも当たらない。環流するか期限つき暫定とする。追跡先の issue 番号が必須。",
     "C = 本リポの中身そのもの（雛形から書き起こした実体、または置換点を持つ配布物）。同期しない。",
-    "対象外 8 件は *.example.yml であり、本リポは有効化済みの実名を持つ。"
+    "対象外 8 件は *.example.yml であり、本リポは有効化済みの実名を持つ。",
+    "2026-08-15（#517 / IADR-0202）: .claude/rules/traceability.md を C から A へ移した。",
+    "  C を当てていたが、当のファイルの冒頭が『直接編集するとバイト一致が崩れる』＝A の意味論を要求しており、",
+    "  置換点も持たない（固有規約は companion の traceability.repo.md へ分離済み）。C は『同期しない』ため",
+    "  check-kit-sync.js が何も言わず、本リポの写しだけが古いまま固定されていた（実測で 2 件取りこぼし）。"
   ],
   "classes": {
     "A": [
@@ -25,6 +29,7 @@
       ".claude/commands/verify.md",
       ".claude/hooks/guard-bash.js",
       ".claude/hooks/guard-secrets.js",
+      ".claude/rules/traceability.md",
       ".devcontainer/devcontainer.json",
       ".github/CODEOWNERS.example",
       ".github/ISSUE_TEMPLATE/ai-implementation.yml",
@@ -103,7 +108,6 @@
       "scripts/check-kit-sync.js": "X. 4 種に当たらない。**本リポが進んでいる** —— キット版は `--require-planning` を持たず、**フラグを渡しても認識せず skip して exit 0 になる**（2026-08-15 に実走で確認）。これを採ると「submodule の取得に失敗しても検査が skip して緑になる」状態が復活し、IADR-0191 決定3 が塞いだ穴が開き直る。**回帰テストは `run:` 行しか見ないため通り続ける。** 環流済み。追跡: #494"
     },
     "C": [
-      ".claude/rules/traceability.md",
       ".gitignore",
       "AGENTS.md",
       "CHANGELOG.md",

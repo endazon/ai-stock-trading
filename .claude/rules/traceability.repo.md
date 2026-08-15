@@ -32,7 +32,7 @@
 ```
 CROSS_REPO_NAMES=project-planning:planning,microservices-platform:MSP
 CROSS_REPO_SELF_NAMES=AST,ai-stock-trading
-CROSS_REPO_EXCLUDES=:!planning,:!docs/specs,:!feedback,:!.claude/rules/traceability.md
+CROSS_REPO_EXCLUDES=:!planning,:!docs/specs,:!feedback
 ```
 
 ### 除外とその理由
@@ -42,7 +42,16 @@ CROSS_REPO_EXCLUDES=:!planning,:!docs/specs,:!feedback,:!.claude/rules/traceabil
 | `planning`（submodule） | 別リポジトリの実体であり、本リポジトリの成果物ではない |
 | `docs/specs/`（作業仕様書） | **point-in-time の記録**。後から表記だけ直すと**当時の記述と食い違う**（裁定 2026-08-15。姉妹検査器 `check-plan-id-qualification.js` と同じ既定） |
 | `feedback/`（環流記録） | 同上。**送付・環流した時点の記録**である |
-| `.claude/rules/traceability.md` | 🔴 **キット配布物（分類 A）であり手元で直さない。** 違反 1 件は計画側へ環流した（planning#349） |
 
 **`CHANGELOG.md` は除外しない。** 生成物であるため、コミット件名は書き換えず
 `scripts/changelog-overrides.json` の `remap` で**生成物の側を是正する**。
+
+### 外した除外（黙って消さない）
+
+| 除外 | いつ | なぜ外せたか |
+| --- | --- | --- |
+| `.claude/rules/traceability.md` | 2026-08-15（[#517](https://github.com/endazon/ai-stock-trading/issues/517) / [IADR-0202](../../docs/adr/IADR-0202_traceability-md-classification.md)） | キット配布物の違反 1 件（`planning issue #202`）を計画側へ環流し（planning#349）、**キット側が是正された**。本リポも追随したため対象へ戻した。同ファイルは**分類 A（バイト一致）へ移した**ので、今後キットが違反を持ち込めば検査が赤くなる |
+
+> 🔴 **暫定の除外は、外す条件と一緒に書く。** この除外は「planning#349 が是正されたら外す」と
+> [IADR-0200](../../docs/adr/IADR-0200_cross-repo-ref-notation.md) の残余リスクに書いてあったから外せた。
+> **条件を書かない除外は、恒久化する。**

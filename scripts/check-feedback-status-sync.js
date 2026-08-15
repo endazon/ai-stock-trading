@@ -33,8 +33,18 @@
  *   計画リポジトリを参照できないときは **skip（exit 0）**（`check-doc-links.js` と同じ扱い）。
  *   **ただし 0 件走査では緑にしない** —— 参照できているのに対象が 0 件なら **fail** する。
  *
+ *   🔴 **`--require-planning` を付けると、参照できないときは skip ではなく fail になる。**
+ *   **CI では必ずこれを付ける。** 計画リポを取得するはずのジョブで取得に失敗したとき、
+ *   fail-open のままだと**「配線したのに一度も検査していない」状態が緑で固定される**
+ *   （planning#343）。**フラグが無いと、各リポジトリが個別に気付いてジョブ側で塞ぐしかない。**
+ *
+ * ■ 未知の引数は受け付けない（planning#343）
+ *   **知らないフラグを黙って無視してはならない。** 無視すると「CI は渡し続けているのに
+ *   効いていない」状態が生まれ、**`run:` 行に文字列が在ることしか見ていない回帰テストは
+ *   それを検出できない。** 未知の引数は設定誤りとして落とす。
+ *
  * 使い方:
- *   node scripts/check-feedback-status-sync.js [--self-test]
+ *   node scripts/check-feedback-status-sync.js [--require-planning] [--self-test]
  *
  * 環境変数:
  *   PLANNING_FEEDBACK_DIR   計画側の環流ディレクトリを明示する（既定の探索順を上書きする）
@@ -203,6 +213,24 @@ function selfTest() {
   // --- 参照先の解決 ---
   t('計画側を参照できなければ null（skip へ倒す）', resolvePlanDir(REPO, { PLANNING_FEEDBACK_DIR: '/no/such/dir' }) === null);
 
+  // --- planning#343: fail-open を閉じる手段と、未知の引数の扱い ---
+  //
+  // **配線を見るテスト（`run:` 行に文字列が在るか）では捕まらない**ため、挙動を固定する。
+  t('★ --require-planning を認識する（黙って無視しない）', parseArgs(['node', 'x', '--require-planning']).requirePlanning === true);
+  t('★ 未知の引数は unknown へ入る', parseArgs(['node', 'x', '--requre-planning']).unknown.join() === '--requre-planning');
+  t('★ 未知の引数を渡すと exit 1', main(['node', 'x', '--requre-planning']) === 1);
+  {
+    const saved = process.env.PLANNING_FEEDBACK_DIR;
+    process.env.PLANNING_FEEDBACK_DIR = '/no/such/dir';
+    try {
+      t('★ 参照できないとき、フラグ無しは skip（exit 0）', main(['node', 'x']) === 0);
+      t('★ 参照できないとき、--require-planning なら fail（exit 1）', main(['node', 'x', '--require-planning']) === 1);
+    } finally {
+      if (saved === undefined) delete process.env.PLANNING_FEEDBACK_DIR;
+      else process.env.PLANNING_FEEDBACK_DIR = saved;
+    }
+  }
+
   let failed = 0;
   for (const c of cases) {
     process.stdout.write(`  ${c.pass ? 'ok  ' : 'FAIL'} ${c.name}\n`);
@@ -219,14 +247,45 @@ function selfTest() {
   return 0;
 }
 
-function main() {
-  if (process.argv.slice(2).includes('--self-test')) return selfTest();
+/** 受け付ける引数（ここに無いものは設定誤りとして落とす。planning#343）。 */
+const KNOWN_FLAGS = ['--require-planning', '--self-test'];
+
+/** 引数を解釈する。**未知のフラグは黙って無視せず、呼び出し側へ返す。** */
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  return {
+    requirePlanning: args.includes('--require-planning'),
+    selfTest: args.includes('--self-test'),
+    unknown: args.filter((a) => !KNOWN_FLAGS.includes(a)),
+  };
+}
+
+function main(argv = process.argv) {
+  const { requirePlanning, selfTest: wantSelfTest, unknown } = parseArgs(argv);
+  if (unknown.length) {
+    console.error(
+      `[check-feedback-status-sync] 未知の引数: ${unknown.join(' ')}\n` +
+        `  受け付けるのは ${KNOWN_FLAGS.join(' / ')} である。` +
+        '黙って無視すると、CI が渡し続けているフラグが効いていないことに誰も気付けない。',
+    );
+    return 1;
+  }
+  if (wantSelfTest) return selfTest();
 
   const planDir = resolvePlanDir();
   if (!planDir) {
+    const where = PLAN_CANDIDATES.join(' / ');
+    if (requirePlanning) {
+      console.error(
+        `[check-feedback-status-sync] 計画リポジトリを参照できない（探した先: ${where}）。` +
+          '--require-planning が指定されているため fail する —— ' +
+          '取得するはずのジョブで取得できていない。skip して緑にしてはならない。',
+      );
+      return 1;
+    }
     console.log(
-      '  warn  [check-feedback-status-sync] 計画リポジトリを参照できないため skip した（探した先: ' +
-        `${PLAN_CANDIDATES.join(' / ')}）。この範囲は検査されていない。`,
+      `  warn  [check-feedback-status-sync] 計画リポジトリを参照できないため skip した（探した先: ${where}）。` +
+        'この範囲は検査されていない。',
     );
     return 0;
   }
@@ -251,4 +310,4 @@ function main() {
 }
 
 if (require.main === module) process.exit(main());
-module.exports = { main, compare, resolvePlanDir, frontmatterValue, selfTest, PLAN_CANDIDATES };
+module.exports = { main, compare, resolvePlanDir, frontmatterValue, parseArgs, selfTest, PLAN_CANDIDATES, KNOWN_FLAGS };
