@@ -116,7 +116,8 @@ public class ReportAutoGeneratorTests
         IReportNarrativeDrafter? drafter = null,
         ReportAutoGenerationSettings? settings = null,
         IReportDraftPresentedNotifier? notifier = null,
-        IBuyInInferenceRecordSource? buyInSource = null) =>
+        IBuyInInferenceRecordSource? buyInSource = null,
+        IFxSourceStatusSource? fxSourceStatusSource = null) =>
         new(store,
             new ReportDraftService(drafter ?? new StubDrafter()),
             fills ?? new NoOpPeriodFillSource(),
@@ -124,7 +125,8 @@ public class ReportAutoGeneratorTests
             settings ?? new ReportAutoGenerationSettings(),
             notifier,
             reductionSource: null,
-            buyInSource: buyInSource);
+            buyInSource: buyInSource,
+            fxSourceStatusSource: fxSourceStatusSource);
 
     // #419: 照会そのものが失敗する記録源（未供給と区別せず null へ倒すことを確かめる）。
     private sealed class ThrowingBuyInSource : IBuyInInferenceRecordSource
@@ -688,5 +690,69 @@ public class ReportAutoGeneratorTests
 
         store.Get("daily-2026-07-08")!.Report.Body
             .Should().Contain("記録を照会できませんでした（供給元がありません）");
+    }
+
+    // --- FR-06, FR-10, UC-06, #381, IADR-0199: 為替の情報源の状態を日報へ通す -------------------
+    //
+    // 🔴 **ここが繋がっていなかったために、レンダラが完成していても日報には何も出なかった。**
+    // 供給ポートは定義され、表示側も実装されていたが、**生成器が呼んでいなかった**——
+    // 「部品はあるが繋がっていない」は赤くならない（本 PR の起点）。
+
+    private sealed class StubFxSourceStatusSource(FxSourceStatus? status) : IFxSourceStatusSource
+    {
+        public Task<FxSourceStatus?> GetStatusAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            Task.FromResult(status);
+    }
+
+    private sealed class ThrowingFxSourceStatusSource : IFxSourceStatusSource
+    {
+        public Task<FxSourceStatus?> GetStatusAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            throw new HttpRequestException("監査台帳へ到達できません");
+    }
+
+    [Fact]
+    public async Task 為替の情報源の状態が日報の本文へ出る()
+    {
+        var store = new InMemoryReportStore();
+        var t0 = new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero);
+        var status = new FxSourceStatus(
+            [new FxRateSourceFellBack("USD", "fred", 2, 2, t0)], [], [], [], []);
+
+        await NewGenerator(store, WedAfterClose, fxSourceStatusSource: new StubFxSourceStatusSource(status))
+            .RunOnceAsync();
+
+        var body = store.Get("daily-2026-07-08")!.Report.Body;
+        body.Should().Contain("### 為替レートの情報源");
+        body.Should().Contain("フォールバックへ切替");
+        body.Should().Contain("fred");
+    }
+
+    // 🔴 **否定形**: 供給元が未注入なら「照会できませんでした」であり、「劣化なし」ではない。
+    // **為替のイベントは本番で実際に発行されている**ため、「なし」と書けば端的に嘘になる。
+    [Fact]
+    public async Task 為替の供給元が無いときは_劣化なしと書かない()
+    {
+        var store = new InMemoryReportStore();
+
+        await NewGenerator(store, WedAfterClose).RunOnceAsync();
+
+        var body = store.Get("daily-2026-07-08")!.Report.Body;
+        body.Should().Contain("状態を照会できませんでした（要確認）");
+        body.Should().NotContain("情報源の切替・鮮度警告・鮮度切れでの決済の記録はありません");
+    }
+
+    // **否定形**: 照会が例外でも同じ（未供給へ倒す。空へ倒さない）。
+    [Fact]
+    public async Task 為替の状態を照会できないときも_劣化なしと書かない()
+    {
+        var store = new InMemoryReportStore();
+
+        await NewGenerator(store, WedAfterClose, fxSourceStatusSource: new ThrowingFxSourceStatusSource())
+            .RunOnceAsync();
+
+        store.Get("daily-2026-07-08")!.Report.Body
+            .Should().Contain("状態を照会できませんでした（要確認）");
     }
 }

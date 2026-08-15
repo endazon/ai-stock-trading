@@ -99,6 +99,88 @@ public class AuditQueryEndpointsTests(AuditWorkerWebApplicationFactory factory)
         entries!.Count.Should().Be(1);
     }
 
+    // --- FR-06, #381, IADR-0199 決定2: 種別 × 期間の照会（日報の為替欄が引く） -------------------
+
+    private const string ServiceRole = "trading-service";
+
+    private HttpClient ServiceClient()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, ServiceRole);
+        return client;
+    }
+
+    private static string ByType(DateTimeOffset from, DateTimeOffset to, string types) =>
+        $"/audit/events/by-type?from={Uri.EscapeDataString(from.ToString("o"))}"
+            + $"&to={Uri.EscapeDataString(to.ToString("o"))}&types={types}";
+
+    // 🔴 **本 1 本だけ OwnerOrService へ開けた**（ReportService からの s2s）。
+    // 未認証は 401 のままであることも同時に固定する（開けすぎていないこと）。
+    [Fact]
+    public async Task 種別期間照会は_サービスロールで引けるが_未認証は_401()
+    {
+        var t0 = new DateTimeOffset(2026, 7, 11, 0, 0, 0, TimeSpan.Zero);
+        var url = ByType(t0, t0.AddDays(1), "FxRateStale");
+
+        (await factory.CreateClient().GetAsync(url)).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized);
+
+        (await ServiceClient().GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // 🔴 **否定形: 他の 2 本は OwnerOnly のままである**（必要な 1 本だけを開けた）。
+    [Fact]
+    public async Task 既存の照会はサービスロールでは引けない_開けたのは1本だけ()
+    {
+        (await ServiceClient().GetAsync("/audit/events")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden, "直近照会は OwnerOnly のままである");
+
+        (await ServiceClient().GetAsync($"/audit/events/{Guid.NewGuid()}")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden, "相関照会も OwnerOnly のままである");
+    }
+
+    [Fact]
+    public async Task 種別期間照会は_指定種別を期間で返す()
+    {
+        var t0 = new DateTimeOffset(2026, 7, 12, 0, 0, 0, TimeSpan.Zero);
+        Seed(Row(Guid.NewGuid(), t0.AddHours(1), "FxRateStale"));
+        Seed(Row(Guid.NewGuid(), t0.AddHours(2), "OrderApproved"));
+        Seed(Row(Guid.NewGuid(), t0.AddDays(3), "FxRateStale"));
+
+        var res = await ServiceClient().GetAsync(ByType(t0, t0.AddDays(1), "FxRateStale"));
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var entries = await res.Content.ReadFromJsonAsync<List<AuditEntryDto>>();
+        entries.Should().ContainSingle();
+        entries![0].EventType.Should().Be("FxRateStale");
+    }
+
+    // 🔴 **否定形: `types` の指定漏れを「全件」と読まない。** 全件取得に化けると
+    // **取引履歴（機微情報）が意図せず流れる**。空・空白のみも同じ扱いである。
+    [Theory]
+    [InlineData("")]
+    [InlineData(",,")]
+    [InlineData("  ")]
+    public async Task 種別の指定が空なら_400(string types)
+    {
+        var t0 = new DateTimeOffset(2026, 7, 13, 0, 0, 0, TimeSpan.Zero);
+
+        (await ServiceClient().GetAsync(ByType(t0, t0.AddDays(1), types))).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // **否定形**: 区間が逆・空なら 400（黙って空を返して「事象なし」に見せない）。
+    [Fact]
+    public async Task 区間が逆または空なら_400()
+    {
+        var t0 = new DateTimeOffset(2026, 7, 14, 0, 0, 0, TimeSpan.Zero);
+
+        (await ServiceClient().GetAsync(ByType(t0.AddDays(1), t0, "FxRateStale"))).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await ServiceClient().GetAsync(ByType(t0, t0, "FxRateStale"))).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest, "半開区間なので [t, t) は空区間である");
+    }
+
     // 照会レスポンスの逆直列化用（AuditEntry の必要フィールドのみ）。
     private sealed record AuditEntryDto(string EventType, Guid CorrelationId, string? Symbol, DateTimeOffset OccurredAt);
 }

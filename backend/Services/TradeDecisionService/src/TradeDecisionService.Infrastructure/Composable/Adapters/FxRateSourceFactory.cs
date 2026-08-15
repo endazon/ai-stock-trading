@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
@@ -21,7 +22,12 @@ internal static class FxRateSourceFactory
     /// <c>Fx:Provider: "boj"</c> だけで動く（FRED と違い認証不要）。FRED が構成されていれば
     /// 順位つきフォールバックとして後段に付く（#381・IADR-0194 決定4）。
     /// </summary>
-    public const string Boj = "boj";
+    /// <remarks>
+    /// 🔴 リテラルは <see cref="FxSourceCredits.BojSourceName"/> を参照する（#381 供給結線・IADR-0199）。
+    /// **表示側（報告書）はイベントに載ったこの名前で出典を引く**ため、
+    /// **両側に別々のリテラルを置くと、名前を変えたときに出典だけが静かに出なくなる。**
+    /// </remarks>
+    public const string Boj = FxSourceCredits.BojSourceName;
 
     public const string Fred = "fred";
 

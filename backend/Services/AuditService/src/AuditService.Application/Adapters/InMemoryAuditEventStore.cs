@@ -21,4 +21,24 @@ public sealed class InMemoryAuditEventStore : IAuditEventStore
 
     public IReadOnlyList<AuditEntry> GetRecent(int limit) =>
         [.. _entries.Values.OrderByDescending(e => e.OccurredAt).Take(limit)];
+
+    // #381, IADR-0199 決定2: 種別 × 期間（半開区間）。上限は持たない（取りこぼしが静かに起きる形にしない）。
+    public IReadOnlyList<AuditEntry> GetByTypesInPeriod(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromInclusive,
+        DateTimeOffset toExclusive)
+    {
+        ArgumentNullException.ThrowIfNull(eventTypes);
+
+        // 種別が空なら結果も空になる（下の絞り込みがそのまま効く）。**明示的な早期 return は置かない**
+        // ——**振る舞いが 1 ミリも変わらない防御は、守っているように見えて何も守らない**
+        // （変異試験で実測。`if (false)` にしてもテストが 1 本も落ちなかった）。
+        // 「種別の指定漏れ」を止めるのは**エンドポイント側の 400** であり、そちらは実際に検査している。
+        var wanted = eventTypes.ToHashSet(StringComparer.Ordinal);
+
+        return [.. _entries.Values
+            .Where(e => wanted.Contains(e.EventType))
+            .Where(e => e.OccurredAt >= fromInclusive && e.OccurredAt < toExclusive)
+            .OrderBy(e => e.OccurredAt)];
+    }
 }
