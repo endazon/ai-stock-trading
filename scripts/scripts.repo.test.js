@@ -1079,6 +1079,58 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
+  // 🔴 **上のテストは「CI がフラグを渡すこと」しか見ていない。**
+  // **スクリプトがそのフラグを尊重するかは見ていない。** —— この 2 つは別の問いである。
+  //
+  // これは机上の心配ではない。**キット版の `check-kit-sync.js` は `--require-planning` を
+  // 持たない**（planning#342 で配られた版。2026-08-15 に実走で確認）。うっかりキット原文で
+  // 上書きすると次が起きる。
+  //
+  //   1. CI は `--require-planning` を渡し続ける（3 ジョブ）
+  //   2. **スクリプトはフラグを認識せず黙って無視する**
+  //   3. submodule の取得に失敗すると **検査は skip して緑になる**
+  //   4. 🔴 **上のテストは通り続ける**（`run:` 行に文字列が在るため）
+  //
+  // **「配線を見るテスト」は「配線が効いていること」を保証しない。** 挙動で固定する。
+  ok('check-kit-sync.js が --require-planning を実際に尊重する（未 populate で exit 1・#494）', () => {
+    const { execFileSync } = require('child_process');
+    const fsR = require('fs');
+    const osR = require('os');
+    // キットを参照できない状況を合成する（planning を持たない空の作業ディレクトリ）。
+    const tmp = fsR.mkdtempSync(pathFb.join(osR.tmpdir(), 'kit-sync-flag-'));
+    try {
+      fsR.mkdirSync(pathFb.join(tmp, 'scripts'));
+      fsR.copyFileSync(pathFb.join(__dirname, 'check-kit-sync.js'), pathFb.join(tmp, 'scripts', 'check-kit-sync.js'));
+      fsR.copyFileSync(
+        pathFb.join(__dirname, 'kit-sync-classification.json'),
+        pathFb.join(tmp, 'scripts', 'kit-sync-classification.json'),
+      );
+      const run = (args) => {
+        try {
+          execFileSync(process.execPath, [pathFb.join(tmp, 'scripts', 'check-kit-sync.js'), ...args], {
+            cwd: tmp,
+            stdio: 'pipe',
+          });
+          return 0;
+        } catch (e) {
+          return e.status;
+        }
+      };
+      // フラグ無し = fail-open（ローカル環境差で CI を落とさないための既定）
+      assert.strictEqual(run([]), 0, 'フラグ無しでは skip して exit 0 になるべきである');
+      // フラグ有り = fail-closed。**ここが本題**
+      assert.strictEqual(
+        run(['--require-planning']),
+        1,
+        '--require-planning を渡してもキットを参照できないまま exit 0 になった。'
+          + 'フラグが無視されている（キット版で上書きした疑い）。'
+          + 'この状態では submodule 取得の失敗が「検査済みの緑」として固定される',
+      );
+    } finally {
+      fsR.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   // --- 計画書実在検査が PR 段階で実効していること（NFR / #496） ---
   //
   // 🔴 **ここも守るのは検査結果ではなく「検査が実効していること」である。**
@@ -1208,14 +1260,44 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
+  // 🔴 `check-feedback-status-sync.js` はキット配布物であり、計画リポを参照できないとき
+  // **skip して exit 0** に倒れる。`--require-planning` に当たるフラグを持たないため、
+  // **submodule の取得に失敗すると「配線したのに検査していない緑」が固定される。**
+  // キット配布物を書き換えない方針のため、ジョブ側の populate 確認だけが唯一の歯止めである。
+  // **その歯止めを落とすと検査は静かに無力化する** ——ここで固定する。
+  ok('ci.yml の feedback-status-sync が submodule を取得し populate を確かめている（#494 の回帰）', () => {
+    const fsS = require('fs');
+    const ci = fsS.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  feedback-status-sync:');
+    assert(start !== -1, 'feedback-status-sync ジョブが ci.yml に無い');
+    const rest = ci.slice(start + 1);
+    const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
+    const body = bodyRaw
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    assert(body.includes('submodules: recursive'), 'submodule を取得していない（取得しないと検査は skip する）');
+    assert(body.includes('PLANNING_REPO_TOKEN'), 'planning 取得用トークンを渡していない');
+    assert(
+      body.includes('planning/draft/feedback'),
+      'populate の確認ステップが無い。検査器は fail-open のため、これが唯一の歯止めである',
+    );
+    const runLines = body.split('\n').filter((l) => l.includes('check-feedback-status-sync.js'));
+    assert(runLines.length >= 2, '自己試験と本検査の両方を走らせていない');
+  });
+
   ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
     const table = require('./kit-sync-classification.json');
     const entries = Object.entries(table.classes.B);
     assert(entries.length > 0, '分類 B が空である（表が壊れている疑い）');
     for (const [file, reason] of entries) {
       assert(typeof reason === 'string' && reason.trim() !== '', `${file} の分類理由が空である`);
-      // 先頭が 4 種の番号（1〜4）か X であること
-      assert(/^[1-4X][.．]/.test(reason.trim()), `${file} の分類理由が 4 種の番号でも X でもない: ${reason}`);
+      // 先頭が固有デルタの種別番号（1〜5）か X であること。
+      // **第 5 種「キットが空欄・空配列で配り、各リポが埋める欄」は planning#339 で新設された**
+      // （本リポの環流が起点。`commit-allowlist.json` の `allow` / `check-impl.js` の免除集合が該当）。
+      // 従前は 4 種しか無く、これらを X（4 種に当たらない）として扱うほか無かった。
+      assert(/^[1-5X][.．]/.test(reason.trim()), `${file} の分類理由が 5 種の番号でも X でもない: ${reason}`);
       // X（4 種に当たらない）は暫定であり、追跡先が無いと放置される
       if (reason.trim().startsWith('X')) {
         assert(/#\d+/.test(reason), `${file} は X 分類なのに追跡先の issue 番号が無い`);

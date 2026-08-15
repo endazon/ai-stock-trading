@@ -5,14 +5,12 @@
  * docs/ 配下の Markdown 仕様書に含まれる相対リンクの実在を検査する（リンク切れ再発防止）。
  * 検査対象:
  *   - フロントマター（先頭 --- ... ---）のリスト項目パス（plan_refs / related_specs / related など）
- *   - 本文の Markdown リンク [text](path)（`/` を含まない同一ディレクトリ内の裸ファイル名も含む。#399）
+ *   - 本文の Markdown リンク [text](path)
  *   - 本文のインラインコード内の相対パス表記 `../path.ext`
  * 対象外（誤検知回避）:
  *   - 外部 URL（http/https/mailto ほかスキーム付き）・アンカー(#...)・ルート絶対パス(/...)
  *   - テンプレ変数（${...} / {{...}} / <...>）
  *   - planning/ サブモジュール未チェックアウト時の planning/ 配下リンク
- *   - 拡張子（LINK_EXT）を持たない裸の語（本文中の README 等をリンク扱いしない）
- *   - インラインコード内の裸ファイル名（第 3 経路は ./ ../ 始まりのみを拾う）
  * 外部依存ゼロ（Node 標準モジュールのみ）。破損リンクがあれば終了コード 1。
  *
  * 使い方:
@@ -45,7 +43,7 @@ function parseArgs(argv) {
     const x = argv[i];
     if (x === '--dir') a.dir = argv[++i];
     else if (x.startsWith('--dir=')) a.dir = x.slice(6);
-    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（microservices-platform #232 と同根）。
+    // --require-planning: planning サブモジュールが未チェックアウトなら fail する（endazon/microservices-platform#232 と同根）。
     // トークン付きで submodule を取得する定期ジョブから使い、取得漏れ（＝planning リンクの検査漏れ）を
     // 黙って通さず可視化する。
     else if (x === '--require-planning') a.requirePlanning = true;
@@ -129,14 +127,18 @@ function isBrokenRef(ref, baseDir, onSkip) {
   if (t.startsWith('<') || t.includes('${') || t.includes('{{')) return false; // テンプレ変数
   t = t.split('#')[0].split('?')[0].trim();
   if (!t) return false;
-  // NFR (#399): `/` を含まない同一ディレクトリ内の裸ファイル名（例: `IADR-0119_xxx.md`）も対象にする。
-  // docs/adr/ の IADR 相互参照はこの形で書くのが通例であり、**最も壊れやすい箇所がまるごと検査対象外**
-  // だった（実在しないファイルへのリンクが CI で `OK` を返し続けた。発見は PR #395 の AI レビュー）。
-  // 拡張子（LINK_EXT）を要求するのは、本文中の普通の語（`README` 等）をリンク扱いしないため。
-  // `!t.includes('/')` を明示して従来の節と互いに素にしてある（何が新たに対象へ入ったかを読めるように）。
+  // **同一ディレクトリのベアファイル名（`./` も `/` も無い形）も相対リンクである**（planning#337）。
+  // かつては `./` `../` で始まるか `/` を含むものしか相対と見なさず、`IADR-0118_xxx.md` の形が
+  // **一切検査されていなかった** —— 実在しないファイルを指すリンクを足しても
+  // `OK: … 破損した相対リンクはありません` で緑になった。**`docs/adr/` の §関連 はほぼこの形で
+  // 書かれる**ため、最も壊れやすい箇所がまるごと対象外だったことになる。
+  // **2 つの実装リポジトリが独立に同じ穴を踏んで同じ修正へ至った**（endazon/ai-stock-trading#399 /
+  // endazon/microservices-platform#609）。**実測件数はここに書かない** —— リンクを 1 本足しただけで
+  // 黙って古くなるためである。
   //
-  // **本節はキットに無い（本リポが進んでいる分）。** 環流するまで分類 B である（#494）。
-  // **キット版で上書きすると本節が消える** —— 追随のたびにマージが要ることを分類表へ書いてある。
+  // 誤検出の抑えは `LINK_EXT`（直後）が担う —— 拡張子を持たない語（`README`）や
+  // `Foo.Bar` のような識別子は `LINK_EXT` に掛からず、相対リンクとして扱われない。
+  // `!t.includes('/')` を明示して従来の節と互いに素にしてある（何が新たに対象へ入ったかを読めるように）。
   const bareFileName = !t.includes('/') && LINK_EXT.test(t);
   const looksRelative =
     t.startsWith('./') || t.startsWith('../') || (t.includes('/') && !t.startsWith('/')) || bareFileName;
@@ -222,6 +224,23 @@ function selfTest() {
   }
   t('対象外: 拡張子が対象外なら実在しなくても検出しない',
     isBrokenRef('./__no_such__.txt', here) === false);
+
+  // --- 同一ディレクトリのベアファイル名（`./` も `/` も無い形。planning#337） ----------------
+  //
+  // **この対が無かったことが穴を長く開けたままにした直接の原因である。**
+  // `docs/adr/` の §関連 はほぼこの形で書かれており、実データに多数あるが、`looksRelative` が
+  // `/` の有無しか見ていなかったため**全件が無検査**だった。
+  t('正例: 同一ディレクトリの実在ファイルをベア名で指しても破損でない',
+    isBrokenRef('check-doc-links.js', here) === false);
+  t('負例: 同一ディレクトリの不在ファイルをベア名で指すと検出する',
+    isBrokenRef('__no_such_script__.js', here) === true);
+  t('負例: .md も同じ（ADR の §関連 で実際に踏んだ型）',
+    isBrokenRef('__no_such_adr__.md', here) === true);
+  t('誤検出しない: 拡張子を持たない語はベア名でも相対リンクと見なさない',
+    isBrokenRef('README', here) === false && isBrokenRef('IADR-0118', here) === false);
+  t('誤検出しない: 対象外拡張子の識別子はベア名でも検出しない',
+    isBrokenRef('Foo.Bar', here) === false && isBrokenRef('__no_such__.txt', here) === false);
+
   t('対象外: 外部 URL・アンカー・ルート絶対パスは検出しない',
     ['https://example.com/a.js', '#section', '/etc/a.js'].every((x) => isBrokenRef(x, here) === false));
   t('対象外: テンプレ変数を含む表記は検出しない',
@@ -250,27 +269,6 @@ function selfTest() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 
-  // --- #399: 同一ディレクトリ内の裸ファイル名（本リポ固有。キットに無い） ---------------
-  //
-  // **キットの自己試験はこの機能を知らない。** 本リポが進んでいる分は、こちらで回帰を固定する
-  // （固定しないと、次のキット追随で黙って消える。追跡: #494）。
-  {
-    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'doclinks-bare-'));
-    fs.writeFileSync(path.join(dir, 'IADR-0001_real.md'), '# real\n');
-    const md = path.join(dir, 'a.md');
-    fs.writeFileSync(
-      md,
-      '# A\n\n[実在](IADR-0001_real.md) と [不在](IADR-9999_missing.md)。\n\n' +
-        '本文中の README や AGENTS という語はリンクではない。\n',
-    );
-    const broken = collectBroken(md).sort();
-    t('#399 正例: 実在する裸ファイル名は報告しない', !broken.includes('IADR-0001_real.md'), broken);
-    t('#399 負例: 実在しない裸ファイル名を検出する', broken.includes('IADR-9999_missing.md'), broken);
-    t('#399 対象外: 拡張子の無い裸の語はリンク扱いしない',
-      !broken.some((b) => b === 'README' || b === 'AGENTS'), broken);
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-
   let failed = 0;
   for (const c of cases) {
     process.stdout.write(`  ${c.pass ? 'ok  ' : 'FAIL'} ${c.name}\n`);
@@ -296,6 +294,13 @@ function main() {
     process.exit(1);
   }
   const files = mdFiles(a.dir);
+  // ★ 0 件走査で緑を返さない（fail-closed。planning#337）。走査対象を 1 件も拾えないのは
+  // 「検査しているつもりで何も見ていない」状態であり、**退行を止めているという記録だけが残る**。
+  if (files.length === 0) {
+    console.error(`[check-doc-links] ${a.dir} 配下に Markdown が 1 件もありません。`);
+    console.error('  0 件検査は「検査しているつもりで何も見ていない」状態なので fail させています。');
+    process.exit(1);
+  }
   let total = 0;
   const report = [];
   // 未 populate な submodule 配下として除外したリンクを submodule 別に数える。

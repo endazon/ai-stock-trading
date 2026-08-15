@@ -3,7 +3,7 @@
 /*
  * check-feedback-dispatched.js — 計画リポジトリへ「送付されていない」環流記録を警告する。
  *
- * 背景（planning issue #217 / #218 / #219 / #220 / #221 / #222）:
+ * 背景（planning#217 / planning#218 / planning#219 / planning#220 / planning#221 / planning#222）:
  *   `/plan-feedback` は 2 つの作業から成る ——(1) `feedback/<日付>_<概要>.md` に記録を作る、
  *   (2) 計画リポジトリへ**伝達する**（issue 起票、または記録を `draft/feedback/` へコピー。
  *   経路は後述の 2 つ）。**(1) だけ行われて (2) が漏れる事故が繰り返し

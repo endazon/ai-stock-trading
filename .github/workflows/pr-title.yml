@@ -11,7 +11,8 @@
 # 本ファイルはその呼び出し配線のみを担う（規約の単一情報源を二重実装しない）。
 #
 # edited を含めることで、PR タイトルを後から編集した場合にも再検査する。
-# bot 作成 PR（dependabot 等）は commit-messages ジョブと同方針で除外する。
+#
+# bot 作成 PR（dependabot 等）の除外はスクリプト側が担う（理由は下のジョブのコメント）。
 #
 # このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効。
 
@@ -36,19 +37,19 @@ jobs:
     # 【重要】bot 作成 PR の除外を、ここ（ワークフローの条件）で行ってはならない。
     #
     # `if: github.event.pull_request.user.type != 'Bot'` と書くと、**GitHub App が作成した PR
-    # （`claude[bot]` 等）も `user.type == 'Bot'` になるため一緒に落ちる**。本リポジトリは
-    # AI に実装を委ねる運用が主要な経路であり、**その経路でだけ「最後の砦」が skipped になる**
+    # （`claude[bot]` 等）も `user.type == 'Bot'` になるため一緒に落ちる**。本キットは AI に
+    # 実装を委ねる運用を前提としており、**その主要な経路でだけ「最後の砦」が skipped になる**
     # （planning#202 が実測。人間の PR は success・GitHub App の PR は skipped という差が観測された）。
     #
-    # 除外は**スクリプト側**（`isBotLogin()` が `BOT_AUTHORS` へ完全一致した場合のみ）が担う。
-    # `claude[bot]` は `BOT_AUTHORS` に無いため**検査される**。それが意図である（#477 / IADR-0189）。
+    # 除外は**スクリプト側**（`isBotLogin()` が `BOT_AUTHORS` へ完全一致した場合のみ）が担い、
+    # `BOT_AUTHORS` を単一情報源とする。`claude[bot]` はそこに無いため**検査される**。それが意図である。
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
       - name: Check PR title (squash subject)
-        # タイトルは環境変数経由で渡し、シェル展開による注入を避ける。
+        # タイトル・作成者は環境変数経由で渡し、シェル展開による注入を避ける。
         # Revert / [skip ci] の除外と、空タイトル時の fail-open はスクリプト側が担う。
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}

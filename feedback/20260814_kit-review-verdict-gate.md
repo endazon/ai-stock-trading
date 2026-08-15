@@ -1,7 +1,7 @@
 ---
 title: kit の AI レビューが判定を投稿しないまま success で終わる穴がある（緑だが検査されていない）— check-review-verdict.js の環流提案
 type: plan-feedback
-status: open
+status: accepted
 category: その他
 related_ids: [NFR]
 source_repo: endazon/ai-stock-trading
