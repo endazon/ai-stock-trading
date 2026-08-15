@@ -157,6 +157,31 @@ builder.Services.AddSingleton<IBuyInInferenceRecordSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpBuyInInferenceRecordSource>>());
 });
 
+// FR-06, FR-10, FR-11, UC-06, #381, ADR-0022 決定1・決定2, IADR-0196 決定2〜4, IADR-0199:
+// 日報・月報の「為替レートの情報源」欄。**権威源は監査台帳**（イベント全量を JSON で 7 年保持）であり、
+// GET /audit/events/by-type（OwnerOrService）へ s2s 同期照会する。
+//
+// 🔴 **判断サービスへ引きに行かない。** あちらの状態は in-memory・プロセスごとで**再起動で消える**——
+// 期間の集計の権威源にはできない（IADR-0199 決定1）。
+//
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした（要確認）」。**
+// 🔴 ここで空（＝事象なし）へ倒さない。**為替のイベントは本番で実際に発行されている**ため、
+// 「劣化はありませんでした」と書けば端的に嘘になる（上の margin-reduction が空列で正しいのは、
+// **発火元が無く 1 度も発動し得ない**からであり、状況が違う。**揃えてはならない**）。
+builder.Services.AddHttpClient("audit-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<IFxSourceStatusSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedFxSourceStatusSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpFxSourceStatusSource(
+        http, sp.GetRequiredService<ILogger<HttpFxSourceStatusSource>>());
+});
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

@@ -21,4 +21,23 @@ public sealed class InMemoryAuditEventStore : IAuditEventStore
 
     public IReadOnlyList<AuditEntry> GetRecent(int limit) =>
         [.. _entries.Values.OrderByDescending(e => e.OccurredAt).Take(limit)];
+
+    // #381, IADR-0199 決定2: 種別 × 期間（半開区間）。上限は持たない（取りこぼしが静かに起きる形にしない）。
+    public IReadOnlyList<AuditEntry> GetByTypesInPeriod(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromInclusive,
+        DateTimeOffset toExclusive)
+    {
+        ArgumentNullException.ThrowIfNull(eventTypes);
+
+        if (eventTypes.Count == 0)
+            return [];
+
+        var wanted = eventTypes.ToHashSet(StringComparer.Ordinal);
+
+        return [.. _entries.Values
+            .Where(e => wanted.Contains(e.EventType))
+            .Where(e => e.OccurredAt >= fromInclusive && e.OccurredAt < toExclusive)
+            .OrderBy(e => e.OccurredAt)];
+    }
 }

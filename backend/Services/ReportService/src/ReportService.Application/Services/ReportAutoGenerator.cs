@@ -21,7 +21,8 @@ public sealed class ReportAutoGenerator(
     ReportAutoGenerationSettings settings,
     IReportDraftPresentedNotifier? notifier = null,
     IMarginReductionRecordSource? reductionSource = null,
-    IBuyInInferenceRecordSource? buyInSource = null)
+    IBuyInInferenceRecordSource? buyInSource = null,
+    IFxSourceStatusSource? fxSourceStatusSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -84,6 +85,7 @@ public sealed class ReportAutoGenerator(
         var fills = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
         var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
         var buyIns = await SafeBuyInInferencesAsync(due, cancellationToken).ConfigureAwait(false);
+        var fxStatus = await SafeFxSourceStatusAsync(due, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -100,7 +102,8 @@ public sealed class ReportAutoGenerator(
                 parent?.Report.PeriodKey, policy, fills, CurrentPrices: null,
                 ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary),
                 MarginReductions: reductions,
-                BuyInInferences: buyIns),
+                BuyInInferences: buyIns,
+                FxSourceStatus: fxStatus),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -197,6 +200,33 @@ public sealed class ReportAutoGenerator(
     // **供給元が未注入（既定構成）のときも null＝未供給である**——自動縮小（SafeReductionsAsync が空列へ倒す）と
     // **向きが違う**。あちらは発火元が存在せず「発動なし」が事実として正しいが、**推定経路は実在し発火し得る**ため、
     // 報告書は「起きていない」ことを知らない。事実として正しくない値を既定にしない。
+    // FR-06, FR-10, UC-06, #381, ADR-0022 決定2, IADR-0196 決定3, IADR-0199: 為替の情報源の状態。
+    //
+    // **未注入・照会失敗のいずれも null（未供給）である**——買戻し推定と同じ向きであり、自動縮小とは逆である。
+    // 🔴 **為替のイベントは本番で実際に発行されている**（`PublishingFxSourceStatusNotifier` は登録済み）。
+    // したがって「事象なし」を既定にすると**端的に嘘になる**。
+    private async Task<FxSourceStatus?> SafeFxSourceStatusAsync(
+        DueReport due, CancellationToken cancellationToken)
+    {
+        if (fxSourceStatusSource is null)
+            return null;
+
+        try
+        {
+            return await fxSourceStatusSource
+                .GetStatusAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private async Task<IReadOnlyList<BuyInInferred>?> SafeBuyInInferencesAsync(
         DueReport due, CancellationToken cancellationToken)
     {

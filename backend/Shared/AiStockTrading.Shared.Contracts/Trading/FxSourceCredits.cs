@@ -19,4 +19,24 @@ public static class FxSourceCredits
     /// </para>
     /// </summary>
     public const string Boj = "このサービスは、日本銀行時系列統計データ検索サイトのAPI機能を使用しています";
+
+    /// <summary>
+    /// 情報源の識別子（イベントの <c>SourceName</c> ／構成の <c>Fx:Provider</c>）。
+    /// <para>
+    /// 🔴 <b>クレジット文言と同じ理由でここに置く。</b> 取得側は自分の名前を、表示側は
+    /// <b>イベントに載ってきた名前</b>を見る——**別々に書くと、名前を変えたときに
+    /// 出典だけが出なくなる**（表示が静かに欠ける最も気づきにくい形）。
+    /// </para>
+    /// </summary>
+    public const string BojSourceName = "boj";
+
+    /// <summary>
+    /// 情報源の識別子に対して<b>出すべきクレジット</b>を返す。要求の無い源は <c>null</c>。
+    /// <para>
+    /// 🔴 <b>「使ったと分かっている源」にだけ使うこと</b>（IADR-0196 決定4・IADR-0199 決定5）。
+    /// 使っていない源のクレジットを出すのは事実に反する。
+    /// </para>
+    /// </summary>
+    public static string? ForSource(string? sourceName) =>
+        string.Equals(sourceName, BojSourceName, StringComparison.OrdinalIgnoreCase) ? Boj : null;
 }

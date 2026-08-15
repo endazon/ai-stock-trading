@@ -73,6 +73,9 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // FR-10, UC-06, ADR-0016 決定4/決定15, #419: 強制買戻し（推定）も同様にコード集計値である。
             // **null（未供給）を空列（推定 0 件）へ潰さない**（決定15: 供給が無い間は 0 件と表示しない）。
             BuyInInferences = request.BuyInInferences,
+            // FR-10, FR-06, UC-06, #381: 為替の情報源の状態もコード集計値である（散文に語らせない）。
+            // **null（未供給）を空（事象なし）へ潰さない**——「照会できませんでした」と「劣化なし」は別物である。
+            FxSourceStatus = request.FxSourceStatus,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
@@ -143,7 +146,11 @@ public sealed record DraftRequest(
     // FR-10, UC-06, ADR-0016 決定4/決定15, #419: 当期間に強制買戻しと**推定**した件。
     // **空列＝推定 0 件／null＝供給が無い**（決定15: 供給が無い間は 0 件と表示してはならない）。
     // 既定 null は「未供給」であり、既存の呼び出しは非破壊で通る。
-    IReadOnlyList<BuyInInferred>? BuyInInferences = null);
+    IReadOnlyList<BuyInInferred>? BuyInInferences = null,
+    // FR-06, FR-10, UC-06, #381, ADR-0022 決定2, IADR-0196 決定3, IADR-0199: 当期間の為替の情報源の状態。
+    // **空の FxSourceStatus＝事象なし／null＝照会できていない**（「切替なし」と書かないため区別する）。
+    // 既定 null は「未供給」であり、既存の呼び出しは非破壊で通る。
+    FxSourceStatus? FxSourceStatus = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

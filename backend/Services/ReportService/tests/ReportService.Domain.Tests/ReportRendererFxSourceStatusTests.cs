@@ -53,10 +53,43 @@ public class ReportRendererFxSourceStatusTests
     {
         var md = ReportRenderer.RenderMarkdown(View(Status()));
 
-        md.Should().Contain("第一の情報源から取得できており、鮮度警告もありません");
+        md.Should().Contain("情報源の切替・鮮度警告・鮮度切れでの決済の記録はありません");
         // 本節の文言だけを見る。「照会できませんでした」は他節（維持率割れの記録）も使うため、
         // 素で否定すると**別の節の正常な出力で落ちる**（実際に一度落とした）。
         md.Should().NotContain("状態を照会できませんでした", "空（事象なし）と照会不能を混同しない");
+    }
+
+    // 🔴 **否定形（IADR-0199 決定5）。** 記録は**遷移時にしか残らない**ため、
+    // **記録が無いことは「第一の源を使った」ことを意味しない**（為替を一度も使わなかった期間と区別が付かない）。
+    // 旧文「第一の情報源から取得できており」は**証拠が支えていない主張**だった。
+    [Fact]
+    public void 記録が無い期間に_第一の情報源を使ったとは書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status()));
+
+        md.Should().NotContain("第一の情報源から取得できており",
+            "遷移が無いことは「第一の源を使った」ことの証拠にならない");
+    }
+
+    // 🔴 **出典が空であることを黙って通さない。** 読み手が「書き忘れ」と「書ける根拠が無い」を
+    // 区別できなければ、本節が一貫して避けてきた形（黙って劣化させない）に反する。
+    [Fact]
+    public void 出典の証拠が無い期間は_特定できないと明記する()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            stales: [new FxRateStale("USD", T0.AddDays(-7), 7, 5, 30, T0)])));
+
+        md.Should().Contain("出典: **記録からは特定できません**");
+    }
+
+    // 🔴 **否定形（対）。** 証拠があるときに「特定できません」を出さない（読み分けが壊れると意味が無い）。
+    [Fact]
+    public void 出典の証拠がある期間は_特定できないとは書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(credits: [FxSourceCredits.Boj])));
+
+        md.Should().Contain("出典: " + FxSourceCredits.Boj);
+        md.Should().NotContain("記録からは特定できません");
     }
 
     [Fact]
