@@ -26,8 +26,8 @@ plan_refs:
 - 関連する実装仕様書: [作業仕様書 20260804（#381）](../specs/20260804_381_fx-rate-plan-transcription.md)
 - 関連 issue: [#381](https://github.com/endazon/ai-stock-trading/issues/381)（為替源の日銀第一化・鮮度 3/30 日）／
   [#382](https://github.com/endazon/ai-stock-trading/issues/382)（Stooq 取得不能・FR-15）／
-  由来 [project-planning#59](https://github.com/endazon/project-planning/issues/59)・
-  [project-planning#57](https://github.com/endazon/project-planning/issues/57)
+  由来 [planning#59](https://github.com/endazon/project-planning/issues/59)・
+  [planning#57](https://github.com/endazon/project-planning/issues/57)
 - 先行 IADR: [IADR-0134](IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) 決定3（本 IADR が実行する運用規律）／
   [IADR-0127](IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合レジストリ）／
   [IADR-0112](IADR-0112_fx-rate-freshness-publication-cadence.md)（`DefaultMaxRateAgeDays = 14` の一次記録。本 IADR で根拠が計画側へ移る）／
@@ -340,7 +340,7 @@ private static string SelectProvider(FxOptions options)
   （「計画書 → `PlanRiskDefaults`」の人手ホップと、`ActualDefaults` の抽出候補の網羅性）。
   決定6 が塞いだのは同じ根の**多すぎる向き**であり、#378 の「抽出候補配列の網羅性」を設計する際の
   先例として参照すること（検査側の候補列挙を実装側の単一メンバへ寄せれば、網羅性の検査は不要になる）。
-- 計画への環流: **`feedback/` に project-planning#57 / #59 に対応する控えは存在しない**（本作業で grep により確認。
+- 計画への環流: **`feedback/` に planning#57 / planning#59 に対応する控えは存在しない**（本作業で grep により確認。
   同ディレクトリ最古の記録は 2026-07-08 であり、#57 / #59 はそれ以前に **Issue 経路**で起票され控えが残らなかった）。
   裁定結果の一次記録は planning 側の [ADR-0022](../../planning/projects/ai-stock-trading/07_adr/ADR-0022_fx-rate-source-and-freshness.md)・
   [ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) であり、

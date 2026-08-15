@@ -23,7 +23,7 @@ related_specs:
 # テスト仕様書: ペーパートレード（内蔵 `paper`）— FR-12
 
 > 全面再実装（[#344](https://github.com/endazon/ai-stock-trading/issues/344)）に合わせた再作成。
-> 計画大改定（project-planning#144）で FR-12 の位置づけが変わった点を反映する。
+> 計画大改定（planning#144）で FR-12 の位置づけが変わった点を反映する。
 
 ## 起点となる計画書（トレーサビリティ）
 

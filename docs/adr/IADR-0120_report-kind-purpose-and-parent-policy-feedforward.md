@@ -35,10 +35,10 @@ plan_refs:
 
 - 起点 issue: [#291](https://github.com/endazon/ai-stock-trading/issues/291)（種別ごとの purpose）、
   [#293](https://github.com/endazon/ai-stock-trading/issues/293)（上位方針の feed-forward）。
-- 基盤側: [microservices-platform#422](https://github.com/endazon/microservices-platform/pull/422)
+- 基盤側: [MSP#422](https://github.com/endazon/microservices-platform/pull/422)
   （`Llm:Routing:PurposeModels` へ `report-monthly`=`claude-fable-5` / `report-weekly`=`claude-opus-5` /
   `report-daily`=`claude-sonnet-5` を追加。あわせて `trade-decision` を `claude-sonnet-5` へ改定）。
-- 計画への環流: [project-planning#50](https://github.com/endazon/project-planning/issues/50)。
+- 計画への環流: [planning#50](https://github.com/endazon/project-planning/issues/50)。
   ADR-0011 §決定「報告書生成の LLM は別扱い。基盤の既定モデルを用いてよい」は、報告書を方針書と
   位置づける以上整合しないため、新 ADR による改定を起案依頼済み。
 - 仕様書: `docs/specs/20260730_issue-291-293_report-model-and-feedforward.md`。
@@ -202,14 +202,14 @@ AST 側にモデル ID を持たない方針は [[IADR-0071]] から不変であ
     現れるため冗長に見え得る。月報の上位を「前月の月報」と明示して混同を避けるが、完全な重複解消は
     しない（最上位に上位が無いことを表現し分けるほうが、節を消すより誤読が少ない）。
   - **本 PR 単体では割当モデルは変わらない。** 基盤の `PurposeModels` 追加
-    （microservices-platform#422）が入るまで、新 purpose は未知として `DefaultModel` へ落ちる。
+    （MSP#422）が入るまで、新 purpose は未知として `DefaultModel` へ落ちる。
     これは現行と同じ挙動（非破壊）だが、両方が揃って初めて実効化する。
   - 上位方針が「直近の確定済み」である以上、**期間が飛んでいても参照する**。例えば先月の月報が
     未確定のまま 2 か月前の月報を参照し得る。`CarryOver` は期間キーを明示するため利用者は気付けるが、
     「当月の月報」という計画の記述とは厳密には異なる。既存挙動（`BasedOn` の決め方）を踏襲しており
     本作業で変えない。
 - フォローアップ:
-  1. **基盤 PR とのマージ順の確認**（microservices-platform#422）。どちらが先でも非破壊だが、
+  1. **基盤 PR とのマージ順の確認**（MSP#422）。どちらが先でも非破壊だが、
     両方入るまで報告書のモデルは変わらない。
   2. **入力トークンの実測と費用影響**（#243 / #282）。上位方針の本文追加ぶんと、種別ごとの
     モデル単価差を実測する。特に月報の `claude-fable-5` は単価が高い。

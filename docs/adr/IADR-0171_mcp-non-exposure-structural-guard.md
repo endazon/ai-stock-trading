@@ -39,7 +39,7 @@ $ grep -rniE 'mcp' backend deploy | grep -v '/bin/\|/obj/'
 
 対象は `backend/`（`*.cs` 1092 件・`appsettings*.json` 22 件・`*.csproj` / `*.props`）と `deploy/`（`*.yaml` 19 件ほか）。**大文字小文字を問わず、部分一致でも 0 件**であった。
 
-次に構成を触る者から見れば、**MCP 公開は「まだ作っていない機能」と区別が付かない**。基盤 MCP は microservices-platform#445 で作り直される途中であり、その際に「ついでに繋いでおく」ことは自然な発想である。
+次に構成を触る者から見れば、**MCP 公開は「まだ作っていない機能」と区別が付かない**。基盤 MCP は MSP#445 で作り直される途中であり、その際に「ついでに繋いでおく」ことは自然な発想である。
 
 さらに #348 が求めた 3 点のうち、**AST 側で完結するのは 1 点だけ**であった。
 
@@ -151,7 +151,7 @@ $ grep -rniE 'mcp' backend deploy | grep -v '/bin/\|/obj/'
 ## 関連
 
 - 起点 issue: [#348](https://github.com/endazon/ai-stock-trading/issues/348)（エピック [#344](https://github.com/endazon/ai-stock-trading/issues/344) の再実装 issue 群のうち ADR-0012 の担当）
-- 待ち: microservices-platform#445（基盤 MCP の再実装）→ [`docs/blocked-tasks.md`](../blocked-tasks.md) A-10
+- 待ち: MSP#445（基盤 MCP の再実装）→ [`docs/blocked-tasks.md`](../blocked-tasks.md) A-10
 - 先例: [IADR-0164](./IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md) 決定1（変更経路が無いことを構造で固定する）／[IADR-0166](./IADR-0166_plan-source-digest.md)（「緑だが検査されていない」を作らない）
 - 作業仕様書: [20260807_348_mcp-non-exposure](../specs/20260807_348_mcp-non-exposure.md)
 - セキュリティ仕様書: [`docs/security/security.md`](../security/security.md)「MCP（外部 AI エージェント）への公開」

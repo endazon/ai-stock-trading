@@ -87,7 +87,7 @@ backend/Services/<Svc>/
 ## 開発・ビルド・テスト・デプロイ
 
 - **ビルド/テスト/整形**: `dotnet build|test backend/backend.slnx` / `dotnet format`（net10.0・**xUnit v3**（`xunit.v3`）+ AwesomeAssertions。実行は VSTest 経路＝`Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` 3.x・#352）。
-- **実行環境（dev）**: docker-compose（IADR-0048）／ ローカル k8s（k3d・Rancher Desktop 内蔵 k3s。microservices-platform#266）。
+- **実行環境（dev）**: docker-compose（IADR-0048）／ ローカル k8s（k3d・Rancher Desktop 内蔵 k3s。MSP#266）。
 - **デプロイ**: Kubernetes（IADR-0052）。Helm chart `deploy/helm/ai-stock-trading`（10 Worker）。共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は MSP `platform-infra` を ExternalName で参照。イメージは `scripts/k8s-local-images.sh`（Rancher=nerdctl / Docker Desktop=k3d import・自動判定）。
 - **moomoo OpenD**: 常駐コンテナ（`deploy/opend/`・IADR-0053・常駐モデル）。
 - **CI**: lint/build/test/coverage・gitleaks/dependency-review・commit-messages（`.github/workflows/`）。

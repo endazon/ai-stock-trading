@@ -26,7 +26,7 @@ plan_refs:
 - 関連する実装仕様書: [作業仕様書 20260804（#374）](../specs/20260804_374_short-sell-rejection-reasons-nine.md)・
   [機能仕様書 FR-10](../functional/FR-10_risk-controls.md)・[テスト仕様書 FR-10](../tests/FR-10_risk-controls-tests.md)
 - 関連 issue: [#374](https://github.com/endazon/ai-stock-trading/issues/374)／
-  由来 [project-planning#178](https://github.com/endazon/project-planning/issues/178)
+  由来 [planning#178](https://github.com/endazon/project-planning/issues/178)
 - 先行 IADR: [IADR-0131](IADR-0131_short-selling-controls-fail-closed.md)（決定3 が本 IADR で改まる）・
   [IADR-0132](IADR-0132_product-type-tri-state-and-guard-scope.md)（決定1 の序数保存と同じ規律）・
   [IADR-0127](IADR-0127_plan-conformance-known-deviation-registry.md)（計画適合レジストリ。本 IADR 決定3 がその限界を記録する）

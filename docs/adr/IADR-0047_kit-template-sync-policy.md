@@ -21,13 +21,13 @@ plan_refs:
 
 - 起点: NFR（CI ゲート・環境セットアップ）・issue #104・PR #105
 - 関連: [IADR-0046](IADR-0046_unit-repo-layout.md) 決定 4（本 ADR で部分変更）・
-  kit 雛形（planning PR #21、platform IADR-0058 / #256 の教訓を反映済み）
+  kit 雛形（planning#21、platform IADR-0058 / #256 の教訓を反映済み）
 
 ## コンテキストと課題
 
 IADR-0046 決定 4 は再編時の CI 追随を「パスを `backend/backend.slnx` へ更新する。CI の構造（単一ユニット）は
 維持する（platform 側のような自動発見は不要）」と定めた。その直後、本リポジトリの生成元である
-impl-handoff-kit のテンプレートが更新され（planning PR #21・マージ済み）、restore 系
+impl-handoff-kit のテンプレートが更新され（planning#21・マージ済み）、restore 系
 （security / copilot-setup / setup.sh）は slnx/sln **自動発見ループ**が標準形になった。
 オーナーより「kit 更新内容を本リポジトリへ反映する」指示があり、IADR-0046 決定 4 の
 「自動発見は不要」との関係を整理する必要がある。

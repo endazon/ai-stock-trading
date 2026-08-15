@@ -38,7 +38,7 @@ related_specs:
 # SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
 
 > 起点: **FR-13**（利用者が設定を変更できる）、FR-19（相場操縦ガード）、FR-20（段階）、**UC-06**。計画リポジトリ `05_screens/`
-> は空のため SC-02 は素案（project-planning#33・#31 後続 で環流）。データ源は RiskManagementService `/risk-controls/settings`（OwnerOnly）。
+> は空のため SC-02 は素案（planning#33・planning#31 後続 で環流）。データ源は RiskManagementService `/risk-controls/settings`（OwnerOnly）。
 
 ## 画面の位置づけ
 

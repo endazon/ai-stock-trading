@@ -43,7 +43,7 @@ plan_refs:
 **moomoo の採用には ADR-0023 の改定裁定が要る**として実装を見送った（同 決定6）。
 その裁定が**同日中に下りた**。
 
-> **ADR-0023 決定5（2026-08-06 追加・利用者裁定・環流 project-planning#205）**
+> **ADR-0023 決定5（2026-08-06 追加・利用者裁定・環流 planning#205）**
 > 米国株の日足 OHLC 履歴源は **moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・
 > `RehabType_Forward`）とする。1 リクエスト 1,000 件上限・`NextReqKey` でページング。**追加費用なし**。
 > Stooq の扱い（決定1）は変更しない。単一障害点の集中は**許容する**。

@@ -26,7 +26,7 @@ plan_refs:
   **UC-06** 代替フロー（縮小量・対象選択・AI 非介在・記録）／ FR-11 ／
   **ADR-0016 決定7**（閾値）・**ADR-0003**（AI 判断のガードレール）・**ADR-0009**（手仕舞いは止めない）／
   [05_trading-assumptions §5](../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md) の
-  2 行（回復目標・対象選択。2026-08-02 追補・project-planning#90 第 10 回）／
+  2 行（回復目標・対象選択。2026-08-02 追補・planning#90 第 10 回）／
   [04_report-templates](../../planning/projects/ai-stock-trading/06_technical/04_report-templates.md)（日報 §4・月報 §6）
 - 関連する実装仕様書: [作業仕様書 20260804（#330）](../specs/20260804_330_maintenance-margin-auto-reduce.md)・
   [機能仕様書 FR-10](../functional/FR-10_risk-controls.md)・[テスト仕様書 FR-10](../tests/FR-10_risk-controls-tests.md)

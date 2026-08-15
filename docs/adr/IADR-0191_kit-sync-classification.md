@@ -21,7 +21,7 @@ updated: 2026-08-14
 - 計画書 ID: **NFR**（工程の統制。計画側の非機能要件表に当たる番号が無いため無採番。planning#311 の 2）
 - 対象 Issue: [#492](https://github.com/endazon/ai-stock-trading/issues/492)
 - 作業仕様書: [20260814_492_kit-sync-classification](../specs/20260814_492_kit-sync-classification.md)
-- 先行実装: microservices-platform#734（同リポの IADR-0192）
+- 先行実装: MSP#734（同リポの IADR-0192）
 - 派生 Issue: [#493](https://github.com/endazon/ai-stock-trading/issues/493)（`check-doc-links.js` の穴）/ [#494](https://github.com/endazon/ai-stock-trading/issues/494)（環流 4 件）
 
 ## コンテキストと課題

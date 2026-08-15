@@ -1059,6 +1059,57 @@ module.exports = ({ ok, assert }) => {
     });
   });
 
+  // --- クロスリポジトリ参照の表記（NFR / #487 / IADR-0200） ---
+  //
+  // 🔴 **姉妹検査器と同じ理由でここに置く。** `check-cross-repo-refs.js` は置換点
+  // （`CROSS_REPOS` / `SELF_NAMES`）がキットのプレースホルダのままだと**正当な自リポ参照を大量に
+  // 違反として上げる**——規約自身が「検査そのものを外させる」と警告している状態である。
+  // よって**環境変数を自前で明示的に与えて**呼ぶ。CI 側の env を消しても、こちらが赤くなる。
+  //
+  // 除外の根拠は `.claude/rules/traceability.repo.md`（全数を理由つきで記載）。要点:
+  //   - `docs/specs/` `feedback/` は **point-in-time の記録**（後から表記だけ直すと当時の記述と食い違う）
+  //   - `.claude/rules/traceability.md` は**キット配布物**であり手元で直さない（環流済み: planning#349）
+  //   - **`CHANGELOG.md` は除外しない**（生成物は `changelog-overrides.json` の remap で是正する）
+  const CROSS_REPO_ENV = {
+    CROSS_REPO_NAMES: 'project-planning:planning,microservices-platform:MSP',
+    CROSS_REPO_SELF_NAMES: 'AST,ai-stock-trading',
+    CROSS_REPO_EXCLUDES: ':!planning,:!docs/specs,:!feedback,:!.claude/rules/traceability.md',
+  };
+
+  ok('実ツリー: 他リポの issue / PR 番号が短縮形で書かれている（#487 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-cross-repo-refs.js')], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      env: { ...process.env, ...CROSS_REPO_ENV },
+      stdio: 'pipe',
+    });
+  });
+
+  // 🔴 **除外が効いていることを否定形で固定する。**
+  // 除外を外せば `docs/specs/` の point-in-time 記録が一斉に違反として上がる——
+  // **上のテストが「たまたま 0 件だから緑」なのではなく、除外設定が効いた結果であること**を示す。
+  ok('実ツリー: 除外を外すと point-in-time 記録が違反として上がる（除外が効いている証拠）', () => {
+    const { execFileSync } = require('child_process');
+    let failed = false;
+    try {
+      execFileSync(process.execPath, [pathFb.join(__dirname, 'check-cross-repo-refs.js')], {
+        cwd: pathFb.resolve(__dirname, '..'),
+        env: { ...process.env, ...CROSS_REPO_ENV, CROSS_REPO_EXCLUDES: ':!planning' },
+        stdio: 'pipe',
+      });
+    } catch {
+      failed = true;
+    }
+    assert(failed, '除外を外しても違反 0 件だった。除外設定が実は何も除外していない可能性がある');
+  });
+
+  ok('実ツリー: kit のクロスリポ参照検査器の自己試験が通る（#487 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-cross-repo-refs.js'), '--self-test'], {
+      stdio: 'pipe',
+    });
+  });
+
   // --- キット追随（NFR / #492） ---
   //
   // 🔴 **ここで守るのは検査結果ではなく「検査が実効していること」である。**

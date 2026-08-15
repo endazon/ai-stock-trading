@@ -21,7 +21,7 @@ plan_refs:
 >
 > 本 IADR は「**moomoo の採用には ADR-0023 の改定裁定が要り、それは未了である**」ことを前提に書かれた（決定6）。
 > **その裁定は同日中に下りた** —— [ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md)
-> **決定5**（2026-08-06 追加・利用者裁定・環流 project-planning#205）が
+> **決定5**（2026-08-06 追加・利用者裁定・環流 planning#205）が
 > 米国株日足 OHLC の履歴源を **moomoo OpenAPI の履歴 K 線**と定めた。
 >
 > | 本 IADR の決定 | 改訂後（[IADR-0157](./IADR-0157_moomoo-history-kline-adapter.md)） |

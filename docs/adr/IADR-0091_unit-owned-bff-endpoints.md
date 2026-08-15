@@ -32,7 +32,7 @@ plan_refs:
 
 MSP の BFF は「例外3」（MSP/IADR-0063）で、可変ユニットのドメイン固有 BFF エンドポイントを **当該ユニットの
 `<unit>/backend/Bff/` プロジェクト**へ置き合成点から参照する。AST の設定画面（SC-01/02/03）向け pass-through は
-AST が submodule のため、MSP #285/#289/#294 では MSP の `Platform.Bff/Foundation/Endpoints/` に interim で置かれた。
+AST が submodule のため、MSP#285/MSP#289/MSP#294 では MSP の `Platform.Bff/Foundation/Endpoints/` に interim で置かれた。
 恒久像（AST unit-owned Bff）へ移すため、AST 側に受け皿プロジェクトが要る。
 
 ## 決定

@@ -41,7 +41,7 @@
 - **ADR-0006**: ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps を opt-in で整備する (#219) (e4570dd)
 - **FR-08**: 実 KB 保存のクロスレルム s2s 配線（MSP レルムの専用クライアント認証） (#218) (f8fb2ae)
 - **FR-05**: 発注予約 Reserved 滞留の実照会プローブ（moomoo/OpenD SIMULATE）を配線する (#214) (16040fc)
-- **IADR-0091**: AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP #286 の依存） (#202) (594deed)
+- **IADR-0091**: AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP#286 の依存） (#202) (594deed)
 - **FR-20,FR-15**: バックテスト verdict／実DDを段階別実績へイベント射影で供給する (#198) (36555f1)
 - **FR-13,FR-03,SC-02**: 監視銘柄(watchlist)の変更UIをSC-02に追加する (#197) (d34c25b)
 - **FR-13,FR-03,FR-11**: 監視銘柄(watchlist)設定ストアAPI（取得/追加/削除・変更履歴）を整備 (#195) (c367f60)

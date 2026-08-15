@@ -23,7 +23,7 @@ plan_refs:
 - **NFR**（運用保守）
 - 実装 issue: **#473**（受け入れ基準 1）
 - 正本: `planning/tools/impl-handoff-kit/repo-template/.github/workflows/pr-size.yml`（kit `e0bc81c`・pin `cff0e7b`）
-- 参照実装: microservices-platform PR #704（MSP/IADR-0181。**同じキットを同じ方針で較正した先例**）
+- 参照実装: MSP#704（MSP/IADR-0181。**同じキットを同じ方針で較正した先例**）
 - 作業仕様書: [20260814_473](../specs/20260814_473_guide-enforcement.md)
 
 ## コンテキストと課題

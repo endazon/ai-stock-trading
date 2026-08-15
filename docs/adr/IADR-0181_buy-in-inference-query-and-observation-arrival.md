@@ -50,7 +50,7 @@ plan_refs:
 > **［2026-08-08 改定］** 初版は計画の当時の文言「**最終観測時刻の永続化**」に従い**単一行**で実装した。
 > しかしその粒度では**報告期間を観測が覆っていたか**を判定できず、**初回観測より前の期間**や
 > **観測が途中で止まった期間**が「正当な 0」として報告される——**FR-21 が塞ごうとした誤読そのもの**が残る。
-> 本件を計画へ環流し（[project-planning#292](https://github.com/endazon/project-planning/issues/292)）、
+> 本件を計画へ環流し（[planning#292](https://github.com/endazon/project-planning/issues/292)）、
 > **計画が粒度を「観測が届いた取引日の集合」へ改定した**（planning `d9c2014`・利用者裁定 2026-08-08）。
 > 本 ADR はその改定へ追随している。**単一値の設計は採らない。**
 
@@ -151,7 +151,7 @@ GET /risk-controls/buy-in-inferences?from=YYYY-MM-DD&to=YYYY-MM-DD
 ## 残余リスク
 
 - ~~**最終観測時刻は報告期間を観測が覆っていたかを判定できない。**~~ **[2026-08-08 解消]**
-  環流（[project-planning#292](https://github.com/endazon/project-planning/issues/292)）に対し
+  環流（[planning#292](https://github.com/endazon/project-planning/issues/292)）に対し
   **計画が粒度を「観測が届いた取引日の集合」へ改定した**（planning `d9c2014`）。決定1〜3 がこれに追随済みである。
 - **祝日を含む営業日暦がまだ無い**（[#407](https://github.com/endazon/ai-stock-trading/issues/407)）。
   現在の暦（週末のみ除外）では祝日が「観測されていない営業日」として現れ、**未供給へ倒れる**。

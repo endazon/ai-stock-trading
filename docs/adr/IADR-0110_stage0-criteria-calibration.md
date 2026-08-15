@@ -140,7 +140,7 @@ PBO 単独の識別力は弱く、閾値を下げることは主として偽陰�
 
 > **［2026-08-04 追記・値は計画側で 0.10 へ改まった。追随は [IADR-0138](IADR-0138_stage0-drawdown-tolerance-tightening.md)（#333）］**
 > **本決定（較正対象にしない・変更権限は計画側にある）は維持される。改まったのは値そのものである。**
-> 本決定が求めた環流は [project-planning#56](https://github.com/endazon/project-planning/issues/56) として実際に行われ、
+> 本決定が求めた環流は [planning#56](https://github.com/endazon/project-planning/issues/56) として実際に行われ、
 > [ADR-0018 決定2](../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md)（2026-08-01）が
 > **10%（`0.10`）** を確定した（同 ADR は本 IADR を「変更の権限を計画側へ明示的に戻した記録」として名指ししている）。
 >

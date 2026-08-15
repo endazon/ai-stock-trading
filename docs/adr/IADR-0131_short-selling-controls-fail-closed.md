@@ -131,7 +131,7 @@ FR-10 本文と ADR-0016 決定2(b) は「逆指値（ストップ注文）を�
 （決定10 が `$5` 未満の除外について明示的に禁じた誤りと同型である）。
 
 > **［2026-08-04 追記・本段落は [IADR-0134](IADR-0134_rejection-reason-ordinal-and-plan-registry-transcription.md) が改めた］**
-> 計画側の裁定（ADR-0016 決定10 の 2026-08-04 改訂・project-planning#178）により、拒否理由は
+> 計画側の裁定（ADR-0016 決定10 の 2026-08-04 改訂・planning#178）により、拒否理由は
 > **7 種から 9 種**へ改められた。`StopOrderRequired` は**実装と同名で追認**された（本決定の前段は有効）。
 > 強制買戻しの 30 日禁止には **`BuyInBanned` が新設**され、計画は
 > **「`BuyInBanned` を `BorrowUnavailable` へ写像してはならない」**と明示的に禁じた

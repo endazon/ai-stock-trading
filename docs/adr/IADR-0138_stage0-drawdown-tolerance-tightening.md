@@ -32,7 +32,7 @@ plan_refs:
 Stage 0 は**運用停止ラインより 5 ポイント緩い戦略を合格させ得た**。すなわち**検証を通った戦略が、
 運用開始と同時に停止条件へ抵触し得る**。ゲートが「合格」と言った意味が運用側で成立しない。
 
-計画側は IADR-0110 が求めた環流（[project-planning#56](https://github.com/endazon/project-planning/issues/56)）を受け、
+計画側は IADR-0110 が求めた環流（[planning#56](https://github.com/endazon/project-planning/issues/56)）を受け、
 [ADR-0018 決定2](../../planning/projects/ai-stock-trading/07_adr/ADR-0018_risk-defaults-sync-and-stage0-dd.md)（2026-08-01）で
 **10%（`0.10`）** を確定した。あわせて §4 の Stage 0 合格基準の表現を「最大 DD が**許容内**」から
 **「最大 DD ≤ 10%」** へ数値化した（検証不能な表現が実装の裁量を生んだため）。

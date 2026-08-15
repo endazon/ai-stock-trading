@@ -33,7 +33,7 @@ plan_refs:
 フロントは platform SPA へビルド時ソース合成される **feature ユニット**であり、単独の実行アプリ（ルータ/エントリ）を持たない。
 IADR-0080 決定 3 で実ブラウザ E2E は実基盤依存として後続へ分離していた。E2E を追加するには、(a) 実ブラウザで実コンポーネントを
 描画する手段、(b) 認証/ロールの供給、(c) BFF 応答の供給、を単独リポ内で決定性を保って用意する必要がある。同時に、実 BFF/Keycloak/
-稼働クラスタへ依存させると CI の安定性・速度を損ない、実基盤の準備状況に E2E が縛られる（#82 系・MSP #284 の live 検証と役割が重複する）。
+稼働クラスタへ依存させると CI の安定性・速度を損ない、実基盤の準備状況に E2E が縛られる（#82 系・MSP#284 の live 検証と役割が重複する）。
 
 ## 決定
 
@@ -50,7 +50,7 @@ IADR-0080 決定 3 で実ブラウザ E2E は実基盤依存として後続へ�
 4. **ロールは URL クエリ `?roles=` から供給し、既定は空（fail-closed）**。空/未指定は非利用者として `RequireRole` が NotFound を
    描画する（存在秘匿の既定・安全側）。owner 検証は `?roles=trading-owner` を明示する。
 5. **CI は `frontend-e2e` ジョブを追加のみで配線する**（chromium のみ・vite webServer・Docker 不要）。既存 `frontend` ジョブ
-   （typecheck/lint/vitest）は不変。実基盤（実ブラウザ＋実 API＋Keycloak）依存の live E2E は #82 系／MSP #284 へ分離を維持する。
+   （typecheck/lint/vitest）は不変。実基盤（実ブラウザ＋実 API＋Keycloak）依存の live E2E は #82 系／MSP#284 へ分離を維持する。
 
 ## 根拠 / 代替案
 
@@ -59,7 +59,7 @@ IADR-0080 決定 3 で実ブラウザ E2E は実基盤依存として後続へ�
   スタブ apiClient（呼ばれると throw）では画面が動かない。platform 実装を写像した実 fetch 版にすることで、Playwright の
   ネットワーク横取り（実ブラウザの HTTP）で検証でき、かつ本番の apiClient 挙動（status 写像）と等価な経路を通る。
 - **`page.route` モック（実 BFF ではない）**: 受け入れ基準の「保存が 200/400/409 を返し分ける」「縮退」は UI の分岐検証であり、
-  実バックエンドの状態遷移を要しない。実疎通（実 BFF/DB/Keycloak）は #82 系・MSP #284 の live 検証が担う（重複回避・切り分け）。
+  実バックエンドの状態遷移を要しない。実疎通（実 BFF/DB/Keycloak）は #82 系・MSP#284 の live 検証が担う（重複回避・切り分け）。
 - **chromium のみ**: クロスブラウザ差の検証は本 issue の目的ではない（UI フローの決定性・CI 速度を優先）。必要になれば後続で拡張。
 
 ## 影響 / 制約
@@ -67,9 +67,9 @@ IADR-0080 決定 3 で実ブラウザ E2E は実基盤依存として後続へ�
 - 追加物は `frontend/e2e/**`・`frontend/playwright.config.ts`・`package.json`（devDep `@playwright/test`＋scripts）・
   `eslint.config.js`（e2e オーバーライド）・`.gitignore`（`playwright-report/`・`test-results/`）・`ci.yml`（`frontend-e2e` ジョブ）。
 - 本番コード（`src/**`）・既存テスト（`src/**/*.test.tsx`）・既存 CI ジョブは無改修。E2E は `src/**` の vitest include に含めない。
-- `planning/` submodule は `05_screens/` が空・SC-02/03 未定義（IADR-0084 で環流済 project-planning#33）。本 IADR は既存の環流に追随し新規提案はしない。
+- `planning/` submodule は `05_screens/` が空・SC-02/03 未定義（IADR-0084 で環流済 planning#33）。本 IADR は既存の環流に追随し新規提案はしない。
 
 ## 計画へのフィードバック
 
 - なし（新規の計画差異は生じない）。SC-02/SC-03 の採番確定・UC-07 誤参照是正・ADR-0009 実在確認は [IADR-0084](IADR-0084_frontend-risk-settings-and-control-status.md) で
-  project-planning#33 へ環流済み。
+  planning#33 へ環流済み。

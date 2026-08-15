@@ -202,5 +202,5 @@ updated: 2026-08-14
   `VERDICT_HEADINGS` を同時に直す必要がある。**両者が離れていることが弱点である。**
 - **B の形（timeout で `cancelled`）は本 ADR では直らない。** 決定4 で頻度は下がるはずだが、
   **重い PR では依然として起こり得る**。その場合はマージが止まる（安全側）。
-- **kit への環流は起票まで済んでいる**（決定5。[project-planning#333](https://github.com/endazon/project-planning/issues/333)）が、
+- **kit への環流は起票まで済んでいる**（決定5。[planning#333](https://github.com/endazon/project-planning/issues/333)）が、
   **反映されるまで配布先の他リポジトリは同じ穴を踏み続ける。** 決定6 の是正も併せて環流が要る。

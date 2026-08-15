@@ -50,7 +50,7 @@ plan_refs:
 3. **削除は破壊的**: 監視から外すと当該銘柄は変動検知・取引サイクルの対象外になる（誤操作で「見ていない」状態になる）。
 4. **enum は数値表現**: MarketMonitor Worker も `JsonStringEnumConverter` 非設定のため、`market`・`changeType` は数値で往復する。
 5. **実 BFF プロキシは別リポ**: フロントの apiFetch は `/bff` 前置で BFF を叩くが、`/monitor/*` を MarketMonitor へ中継する
-   合成点は microservices-platform（MSP）側にあり、`risk-controls` の合成点（MSP #287）と同様に本リポでは触れない。
+   合成点は microservices-platform（MSP）側にあり、`risk-controls` の合成点（MSP#287）と同様に本リポでは触れない。
 6. **計画の画面帰属**: 計画 `05_screens/01_screens.md` は監視銘柄を **SC-01（設定画面）の運用パラメータ**節に置くが、frontend 実装は
    IADR-0084 で「所有サービス単位に画面を分ける」方針を採り、リスク統制系を SC-02（`settings/risk`）へ独立させている。#196 は
    SC-02 への追加を明示指定する。
@@ -90,7 +90,7 @@ SC-01 に置くが、#196 の明示指定と IADR-0084 の「所有サービス�
 ### 5. 実 BFF の `/monitor/*` プロキシ結線は MSP 後続へ分離し、フロントは論理パスを消費・E2E で契約検証する
 
 フロントは `/monitor/watchlist`（apiFetch が `/bff` 前置）を叩く。実プロキシ（BFF→MarketMonitor 中継）は MSP 側の合成点であり、
-`risk-controls`（MSP #287）と同様に別リポの後続作業として分離する。E2E（Playwright）は `page.route('**/bff/**')` のモックで
+`risk-controls`（MSP#287）と同様に別リポの後続作業として分離する。E2E（Playwright）は `page.route('**/bff/**')` のモックで
 `GET/POST/DELETE /monitor/watchlist` のパス/メソッドを契約として追認する（実クラスタ疎通に依存しない）。MSP 側フォローアップ issue を
 優先度ラベル付きで起票する。
 
