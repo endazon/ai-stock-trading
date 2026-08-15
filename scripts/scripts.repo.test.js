@@ -1103,6 +1103,66 @@ module.exports = ({ ok, assert }) => {
     assert(failed, '除外を外しても違反 0 件だった。除外設定が実は何も除外していない可能性がある');
   });
 
+  // --- クロスリポ参照を「実害の出る面」で検査する（NFR / #515 / IADR-0201） -------------------
+  //
+  // 🔴 **`.md` の面（#487）とは守っている対象が違う。**
+  // コミットメッセージ・PR タイトルでは**裸の `#NNN` が本リポジトリの issue へ自動リンクする**ため、
+  // 他リポの番号を裸で書くと**誤リンク**という実害が出る。規約はこの面を「優先して直す」と定めている。
+  //
+  // ここで検査するのは `check-commit-messages.js` が**実際に検査器を呼んでいること**である。
+  // 呼んでいなければ、違反を含む件名が緑で通ってしまう（配線前の状態）。
+  const ccm = require('./check-commit-messages.js');
+
+  ok('クロスリポ参照: 違反する件名を検出する（#515 の回帰）', () => {
+    assert(ccm.validateCrossRepoRefs('chore(NFR): project-planning#349 を取り込む').length > 0);
+    assert(ccm.validateCrossRepoRefs('chore(NFR): microservices-platform#445 を待つ').length > 0);
+    assert(ccm.validateCrossRepoRefs('chore(NFR): planning PR #329 に追随する').length > 0);
+    assert(ccm.validateCrossRepoRefs('chore(NFR): planning#319 / #323 を反映する').length > 0);
+  });
+
+  // 🔴 **否定形（最重要）。** 正当な参照を止めると**検査そのものを外させる**——
+  // 規約自身が「正当な自リポ参照を大量に違反として上げ、検査そのものを外させる」と警告している。
+  ok('クロスリポ参照: 正当な参照は止めない（#515 の否定形）', () => {
+    assert.strictEqual(ccm.validateCrossRepoRefs('chore(NFR): planning#349 を取り込む').length, 0);
+    assert.strictEqual(ccm.validateCrossRepoRefs('chore(NFR): MSP#445 を待つ').length, 0);
+    // 裸の #NNN は**本リポジトリ**を指す。これは正しい。
+    assert.strictEqual(ccm.validateCrossRepoRefs('chore(NFR): 自リポの #487 を閉じる').length, 0);
+    // スカッシュ既定件名の末尾。
+    assert.strictEqual(ccm.validateCrossRepoRefs('chore(NFR,IADR-0200): 表記を確定する (#514)').length, 0);
+    // 意図的な誤例はインラインコードへ入れる（literal な引用は表記規約の対象外）。
+    assert.strictEqual(
+      ccm.validateCrossRepoRefs('chore(NFR): 誤例は `project-planning#1` と書く').length, 0);
+  });
+
+  // 🔴 **本文の面**。規約が名指しした実害例は **footer の `Refs #NNN`** であり、
+  // 件名だけ見ていては構造的に取りこぼす。
+  ok('クロスリポ参照: 本文だけに違反があっても検出する（#515 の回帰）', () => {
+    const body = '件名は適合している。\n\nRefs project-planning#349\n';
+    assert(ccm.validateCrossRepoRefs(body).length > 0, '本文の違反を取りこぼしている');
+  });
+
+  // 🔴 **配線が実効していることの対照実験。**
+  // `checkSingleTitle` は書式・ID 実在性・クロスリポ参照の 3 つを見る。
+  // **書式も ID も正しく、クロスリポ参照だけが違反**の件名で 1 が返ることを確かめる——
+  // ここが 0 なら「検査器を呼んでいない」（配線前の状態）である。
+  ok('クロスリポ参照: PR タイトル経路が配線されている（#515 の対照実験）', () => {
+    // `checkSingleTitle` は違反を stderr へ書く。**フィクスチャ由来の出力を CI ログへ漏らさない**
+    // （scripts.test.js の同種テストと同じ作法。漏らすと本物の違反と見分けが付かなくなる）。
+    const [so, se] = [process.stdout.write, process.stderr.write];
+    process.stdout.write = () => true;
+    process.stderr.write = () => true;
+    let violating, clean;
+    try {
+      violating = ccm.checkSingleTitle('chore(NFR): project-planning#349 を取り込む', '');
+      clean = ccm.checkSingleTitle('chore(NFR): planning#349 を取り込む', '');
+    } finally {
+      process.stdout.write = so;
+      process.stderr.write = se;
+    }
+    assert.strictEqual(violating, 1, 'クロスリポ参照だけが違反の件名が通った＝検査器が呼ばれていない');
+    assert.strictEqual(clean, 0, '正当な件名が止まった＝偽陽性');
+  });
+
   ok('実ツリー: kit のクロスリポ参照検査器の自己試験が通る（#487 の回帰）', () => {
     const { execFileSync } = require('child_process');
     execFileSync(process.execPath, [pathFb.join(__dirname, 'check-cross-repo-refs.js'), '--self-test'], {

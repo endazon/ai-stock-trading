@@ -539,6 +539,8 @@ if (require.main === module) {
 module.exports = {
   validateSubject,
   validateIdExistence,
+  // #515: 実害の出る面（件名・本文・PR タイトル）のクロスリポ参照検査。
+  validateCrossRepoRefs,
   loadExistingIadrIds,
   loadExistingPlanAdrIds,
   checkSingleTitle,
