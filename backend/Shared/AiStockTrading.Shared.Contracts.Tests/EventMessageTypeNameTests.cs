@@ -69,6 +69,10 @@ namespace AiStockTrading.Shared.Contracts.Tests
         // #465, ADR-0027 決定1/決定4: 借株料の日次の計上額と、**計上できなかった日**（別イベント）。
         [InlineData(typeof(BorrowFeeAccrued), "AiStockTrading.Shared.Contracts.Events.BorrowFeeAccrued")]
         [InlineData(typeof(BorrowFeeAccrualUnavailable), "AiStockTrading.Shared.Contracts.Events.BorrowFeeAccrualUnavailable")]
+        // FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化（切替・復帰・鮮度警告）。
+        [InlineData(typeof(FxRateSourceFellBack), "AiStockTrading.Shared.Contracts.Events.FxRateSourceFellBack")]
+        [InlineData(typeof(FxRateSourcePrimaryRestored), "AiStockTrading.Shared.Contracts.Events.FxRateSourcePrimaryRestored")]
+        [InlineData(typeof(FxRateStale), "AiStockTrading.Shared.Contracts.Events.FxRateStale")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]
