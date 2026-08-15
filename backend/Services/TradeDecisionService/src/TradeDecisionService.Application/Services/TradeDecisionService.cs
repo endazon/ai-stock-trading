@@ -111,14 +111,48 @@ public sealed class TradeDecisionService(
         // FR-10, FR-17, #257, #364, IADR-0107 決定2/3: 発注意図を作る前に基準通貨（USD）への換算レートを確定させる。
         // 解決できない（レート源未設定・取得失敗・鮮度切れ）非基準通貨の銘柄は、誤った実効上限で発注せず見送る。
         // 基準通貨の市場（米国株）は常に 1 が返る。LLM 呼び出しより前に倒すことで無駄な費用も避ける。
-        var fxRateToBase = await GetFxRateToBaseSafeAsync(trigger.Market, cancellationToken).ConfigureAwait(false);
-        if (fxRateToBase is not { } rateToBase || rateToBase <= 0m)
+        var fxReading = await GetFxReadingSafeAsync(trigger.Market, cancellationToken).ConfigureAwait(false);
+        if (fxReading is null)
         {
             // 通貨は市場から導けるため、ここでは市場だけを記録する（未定義の市場でも記録が例外で欠けないように）。
+            // **値がまったく無い場合は決済も出さない** —— 決済意図へ載せる換算率が無く、既定の 1m を載せると
+            // 監査台帳（FR-11・7 年保持）へ JPY を USD として記録することになる（#506）。
             logger.LogInformation(
                 "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market}",
                 trigger.Symbol, trigger.Market);
             return null;
+        }
+
+        var rateToBase = fxReading.Rate.Rate;
+
+        // 🔴 FR-10, #506, ADR-0022 決定5, IADR-0197: 鮮度切れ（30 日超）は**新規建てだけを止める。手仕舞いは止めない。**
+        //
+        // 従来はここで一律 return しており、**出口が入口と同じゲートで塞がれていた**——
+        // 建玉効果（Open / Close）が分かるのは LLM の判断後だからである。
+        // **「止められない」より「閉じられない」ほうが危険である**（損失を抱えた建玉から出られない）。
+        //
+        // 費用の据え置き（IADR-0107 決定2）: 保有が無ければ建玉効果は Open にしかならないため、
+        // **鮮度切れかつ保有なしのときだけ保有数を先に引いて即座に見送る**（LLM を呼ばない）。
+        // 正常時の経路は変えない。先読みした保有数は後段で再利用する（ブローカ照会を二重に打たない）。
+        int? preFetchedHeldQuantity = null;
+        if (!fxReading.UsableForEntry)
+        {
+            preFetchedHeldQuantity =
+                await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+
+            if (preFetchedHeldQuantity is not { } held || held == 0)
+            {
+                logger.LogInformation(
+                    "換算レートが鮮度切れで保有も無いため見送り（新規建てのみ停止・手仕舞いは対象外）: " +
+                    "{Symbol} market={Market} asOf={AsOf}",
+                    trigger.Symbol, trigger.Market, fxReading.Rate.AsOf);
+                return null;
+            }
+
+            logger.LogWarning(
+                "換算レートが鮮度切れだが保有があるため判断を続行する（手仕舞いのみ許可・ADR-0022 決定5）: " +
+                "{Symbol} held={Held} asOf={AsOf}",
+                trigger.Symbol, held, fxReading.Rate.AsOf);
         }
 
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
@@ -153,7 +187,9 @@ public sealed class TradeDecisionService(
 
         // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉から建玉効果を決める。従来は Open がリテラル固定で、
         // LLM の Sell が「保有ロングの決済」ではなく新規ショート建てとして扱われていた（AI に出口が無かった）。
-        var heldQuantity = await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+        // 鮮度切れの経路では上で先読み済み（ブローカ照会を二重に打たない・#506）。
+        var heldQuantity = preFetchedHeldQuantity
+            ?? await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
         var effect = PositionEffectResolver.Resolve(side, heldQuantity);
         if (effect.IsSkipped)
         {
@@ -183,6 +219,18 @@ public sealed class TradeDecisionService(
         //   - 損切り幅の検証: 決済注文に損切り価格は無い（StopLossPrice=null・IADR-0035 は建玉側が保持する）。
         // 発注前スクリーニングは通すが、RiskEvaluator の isEntry=(PositionEffect==Open) により kill switch・pause・
         // ロックアウト・段階資金上限・同日再エントリーは構造的に素通りする（FR-10「手仕舞いは止めない」）。
+        // 🔴 FR-10, #506, ADR-0022 決定5: 鮮度切れで**新規建てを止めるのはここである**（ゲートではない）。
+        // ゲートで止めると出口まで塞がるため、**建玉効果が確定したこの地点まで判断を遅らせている**。
+        // 保有があっても LLM が Buy（買い増し）と言えば Open であり、その場合は止める。
+        if (!fxReading.UsableForEntry && !effect.IsClose)
+        {
+            logger.LogInformation(
+                "換算レートが鮮度切れのため新規建てを見送る（手仕舞いは止めない・ADR-0022 決定5）: " +
+                "{Symbol} effect={Effect} asOf={AsOf}",
+                trigger.Symbol, effect.Effect, fxReading.Rate.AsOf);
+            return null;
+        }
+
         if (effect.IsClose)
         {
             var closeIntent = new OrderIntent(
@@ -356,11 +404,11 @@ public sealed class TradeDecisionService(
     // FR-10, FR-17, #257, IADR-0107 決定3: 換算レート取得の fail-safe ラッパ。取得失敗（例外）は「レート無し（null）」に
     // 縮退する。呼び出し側が null を新規建ての見送りへ倒すため、例外は安全側（過大発注を招かない側）に働く。
     // キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
-    private async Task<decimal?> GetFxRateToBaseSafeAsync(Market market, CancellationToken cancellationToken)
+    private async Task<FxRateReading?> GetFxReadingSafeAsync(Market market, CancellationToken cancellationToken)
     {
         try
         {
-            return await _fxRate.GetRateToBaseAsync(market, cancellationToken).ConfigureAwait(false);
+            return await _fxRate.GetReadingAsync(market, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

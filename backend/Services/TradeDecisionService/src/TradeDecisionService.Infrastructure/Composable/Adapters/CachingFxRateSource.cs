@@ -30,15 +30,38 @@ internal sealed class CachingFxRateSource(
 
     private readonly IFxSourceStatusNotifier _statusNotifier = statusNotifier ?? NoOpFxSourceStatusNotifier.Instance;
 
+    /// <summary>
+    /// 鮮度切れを <c>null</c> へ潰した結果を返す（新規建ての既定経路）。
+    /// <para>
+    /// 🔴 <b>ここで鮮度を判定し直さない。</b> <see cref="GetReadingAsync"/> の結果から導く——
+    /// 二本立てにすると<b>片方だけ直して静かにずれる</b>（IADR-0197 決定3）。
+    /// </para>
+    /// </summary>
     public async Task<FxRate?> GetRateToBaseAsync(Currency quote, CancellationToken cancellationToken = default)
+    {
+        var reading = await GetReadingAsync(quote, cancellationToken).ConfigureAwait(false);
+        return reading is { UsableForEntry: true } ? reading.Rate : null;
+    }
+
+    /// <summary>
+    /// レートと鮮度の判定結果を返す（#506・IADR-0197 決定1・決定2）。
+    /// <para>
+    /// 🔴 <b>鮮度切れ（30 日超）でも値そのものは返す。</b> 計画 ADR-0022 決定5 は
+    /// 「新規建てを停止する。<b>手仕舞い・損切りは止めない</b>」と定めており、
+    /// <b>出口には古いレートでも実在する値が要る</b>——ここで <c>null</c> にすると、
+    /// 呼び出し側が決済へ既定の <c>1m</c> を載せることになり、
+    /// <b>監査台帳の金額が約 150 倍ずれる</b>（JPY を USD として記録する）。
+    /// </para>
+    /// </summary>
+    public async Task<FxRateReading?> GetReadingAsync(Currency quote, CancellationToken cancellationToken = default)
     {
         // ポート契約: 基準通貨は外部へ問い合わせず必ずレート 1（観測ではないため鮮度判定もしない）。
         if (quote == MarketCurrency.Base)
-            return FxRate.Identity(quote);
+            return new FxRateReading(FxRate.Identity(quote), FxRateFreshness.Fresh);
 
         var now = timeProvider.GetUtcNow();
         if (_cache.TryGetValue(quote, out var cached) && now - cached.FetchedAt < ttl)
-            return cached.Rate;
+            return new FxRateReading(cached.Rate, Classify(now - cached.Rate.AsOf));
 
         var rate = await inner.GetRateToBaseAsync(quote, cancellationToken).ConfigureAwait(false);
         if (rate is null)
@@ -46,18 +69,21 @@ internal sealed class CachingFxRateSource(
 
         // 齢は停止（maxRateAge）と警告（staleRateWarning）の両方が同じ観測を見て判断する。
         var age = now - rate.AsOf;
+        var freshness = Classify(age);
 
-        if (age > maxRateAge)
+        if (freshness == FxRateFreshness.Expired)
         {
             logger.LogWarning(
-                "為替レートの観測が古いため採用しません（{Quote}: 観測日 {AsOf} / 上限 {MaxAgeDays} 日）。" +
-                "当該通貨建て銘柄の新規建ては見送られます（IADR-0107）。",
+                "為替レートの観測が古いため新規建てには採用しません（{Quote}: 観測日 {AsOf} / 上限 {MaxAgeDays} 日）。" +
+                "**手仕舞いは止めません**（ADR-0022 決定5・#506）。",
                 quote, rate.AsOf, maxRateAge.TotalDays);
-            return null;
+
+            // 🔴 **鮮度切れはキャッシュしない**（従来どおり）。一時障害を TTL のあいだ引きずると回復後も続くため。
+            return new FxRateReading(rate, freshness);
         }
 
         // 警告域（警告しきい値超〜上限以下）: **値は返す**（新規建ては止めない）。気づくために警告だけ出す。
-        if (age > staleRateWarning)
+        if (freshness == FxRateFreshness.Warning)
         {
             logger.LogWarning(
                 "為替レートの観測が古くなっています（{Quote}: 観測日 {AsOf} / 経過 {AgeDays:0.#} 日 / " +
@@ -71,8 +97,14 @@ internal sealed class CachingFxRateSource(
         }
 
         _cache[quote] = (rate, now);
-        return rate;
+        return new FxRateReading(rate, freshness);
     }
+
+    /// <summary>齢を 3 段の判定へ写す。**判定規則をここ 1 箇所に置く**（決定3）。</summary>
+    private FxRateFreshness Classify(TimeSpan age) =>
+        age > maxRateAge ? FxRateFreshness.Expired
+        : age > staleRateWarning ? FxRateFreshness.Warning
+        : FxRateFreshness.Fresh;
 
     /// <summary>
     /// 鮮度警告を可視化経路へ報告する。

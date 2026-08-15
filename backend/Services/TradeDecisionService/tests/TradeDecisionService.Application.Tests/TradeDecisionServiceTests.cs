@@ -21,8 +21,14 @@ public class TradeDecisionServiceTests
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => Now; }
     private sealed class FakeLlm(string output) : ILlmCompletionClient
     {
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default) =>
-            Task.FromResult(output);
+        // #506: 「鮮度切れ＋保有なしで LLM を呼ばない」（費用の据え置き）を固定するために数える。
+        public int Calls { get; private set; }
+
+        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(output);
+        }
     }
     private sealed class FakePolicy(DailyPolicy? policy) : IDailyPolicyProvider
     {
@@ -626,15 +632,39 @@ public class TradeDecisionServiceTests
 
     // --- FR-10, FR-17, #257, IADR-0107: 通貨換算（基準通貨 JPY）の検証 ---
 
-    private sealed class FakeFxRate(decimal? rate) : IFxRateProvider
+    // #506, IADR-0197: 鮮度の判定結果まで表現できる擬装。
+    // **従来は decimal? しか返せず「古いレートがある」を表現できなかった**ため、
+    // 出口が塞がれている事実をテストで再現できていなかった（乖離の発見が実測任せになっていた）。
+    private sealed class FakeFxRate(decimal? rate, FxRateFreshness freshness = FxRateFreshness.Fresh)
+        : IFxRateProvider
     {
         public int Calls { get; private set; }
 
         public Task<decimal?> GetRateToBaseAsync(Market market, CancellationToken ct = default)
         {
             Calls++;
-            return Task.FromResult(rate);
+            // 鮮度切れは新規建てには使えない＝従来の契約どおり null。
+            return Task.FromResult(freshness == FxRateFreshness.Expired ? null : rate);
         }
+
+        public Task<FxRateReading?> GetReadingAsync(Market market, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(
+                rate is not { } r || r <= 0m
+                    ? null
+                    : new FxRateReading(
+                        new FxRate(MarketCurrency.Of(market), MarketCurrency.Base, r, AsOfFor(freshness)),
+                        freshness));
+        }
+
+        // 観測日は鮮度に整合させる（判定は装飾側が持つが、意図が読めるようにしておく）。
+        private static DateTimeOffset AsOfFor(FxRateFreshness f) => f switch
+        {
+            FxRateFreshness.Expired => new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero),
+            FxRateFreshness.Warning => new DateTimeOffset(2026, 8, 5, 0, 0, 0, TimeSpan.Zero),
+            _ => new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero),
+        };
     }
 
     private sealed class ThrowingFxRate : IFxRateProvider
@@ -892,7 +922,71 @@ public class TradeDecisionServiceTests
     // **本テストは #506 が直した時点で赤になる。** それが狙いである——`KnownPlanDeviations` と同じ規律で、
     // **乖離が解消したのに記録が残る状態を作らない**（直したら本テストを削除し、上の「止めない」版へ差し替える）。
     [Fact]
-    public async Task 鮮度切れは非基準通貨の手仕舞いも止める_計画との乖離_506()
+    public async Task 鮮度切れでも非基準通貨の手仕舞いは発行される_506()
+    {
+        // FR-10, #506, ADR-0022 決定5: 30 日超は**新規建てだけを停止し、手仕舞いは止めない**。
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300));
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision.Should().NotBeNull("ADR-0022 決定5 は 30 日超でも手仕舞いを止めないと定めている");
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Quantity.Should().Be(300);
+    }
+
+    // 🔴 **否定形（最重要）。** 決済へ既定の 1m を載せると、JPY 建ての約定金額が USD として
+    // 監査台帳（FR-11・7 年保持）へ記録され、**金額が約 150 倍ずれる**。古いが実在するレートを載せる。
+    [Fact]
+    public async Task 鮮度切れの手仕舞いには実レートが載る_1mを載せない_506()
+    {
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300));
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision!.Intent.FxRateToBase.Should().Be(0.0067m);
+        decision.Intent.FxRateToBase.Should().NotBe(1m, "1m を載せると JPY を USD として台帳へ記録することになる");
+    }
+
+    // 🔴 **否定形**: ゲートを丸ごと外していないこと。鮮度切れの**新規建ては止まる**。
+    [Fact]
+    public async Task 鮮度切れの新規建ては保有があっても止まる_506()
+    {
+        var service = new AppSvc(
+            new FakeLlm(NonBaseBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300));
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision.Should().BeNull("保有があっても買い増しは新規建てであり、鮮度切れでは止める");
+    }
+
+    // 費用の据え置き（IADR-0107 決定2）: 保有が無ければ建玉効果は Open にしかならないため、
+    // **LLM を呼ぶ前に見送る**。ゲートを後ろへ動かしたことで費用が増えていないことを固定する。
+    [Fact]
+    public async Task 鮮度切れかつ保有なしならLLMを呼ばずに見送る_506()
+    {
+        var llm = new FakeLlm(NonBaseSellJson);
+        var service = new AppSvc(
+            llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(0));
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision.Should().BeNull();
+        llm.Calls.Should().Be(0, "保有が無ければ入口しかあり得ず、LLM を呼ぶ理由が無い");
+    }
+
+    // 🔴 **否定形**: 値がまったく無いときは決済も出さない（載せる換算率が無いため）。
+    [Fact]
+    public async Task レートがまったく取得できなければ手仕舞いも出ない_506()
     {
         var service = new AppSvc(
             new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
@@ -901,9 +995,19 @@ public class TradeDecisionServiceTests
 
         var decision = await service.DecideAsync(NonBaseTrigger());
 
-        decision.Should().BeNull(
-            "現状の実装は換算レートのゲートを建玉効果の判定より前に置いている。"
-            + "ADR-0022 決定5 は手仕舞いを止めないと定めており、これは計画との乖離である（#506）");
+        decision.Should().BeNull("値が無いのに決済へ換算率を載せることはできない（1m を載せない）");
+    }
+
+    // #381 の受け入れ基準の残り: 警告域（5 日超〜30 日以下）では**発注が止まらない**。
+    [Fact]
+    public async Task 警告域では新規建ても手仕舞いも止まらない_381()
+    {
+        var buy = new AppSvc(
+            new FakeLlm(NonBaseBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Warning), heldPosition: new FakeHeld(0));
+
+        (await buy.DecideAsync(NonBaseTrigger())).Should().NotBeNull("警告は発注を止めない（ADR-0022 決定5）");
     }
 
     // 基準通貨（米国株）の手仕舞いは影響を受けない——鮮度判定を経ずレート 1 が返るためである。

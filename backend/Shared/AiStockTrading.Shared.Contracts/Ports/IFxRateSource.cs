@@ -18,4 +18,24 @@ public interface IFxRateSource
     /// </para>
     /// </summary>
     Task<FxRate?> GetRateToBaseAsync(Currency quote, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// レートと**鮮度の判定結果**を返す（#506・ADR-0022 決定5・IADR-0197）。
+    /// <para>
+    /// 🔴 <b>鮮度切れでも値そのものは返す。</b> <see cref="GetRateToBaseAsync"/> は鮮度切れを
+    /// <c>null</c> へ潰すため、呼び出し側は「レートが無い」と「古いレートがある」を区別できない。
+    /// その結果、<b>入口（新規建て）と出口（手仕舞い）が同じゲートで塞がれていた</b>——
+    /// 計画は「30 日超は<b>新規建てを停止する。手仕舞い・損切りは止めない</b>」と両者を分けている。
+    /// </para>
+    /// <para>
+    /// <b>既定実装は鮮度を判定しない</b>（<see cref="FxRateFreshness.Unknown"/> を返す）。
+    /// 判定するのは鮮度装飾（<c>CachingFxRateSource</c>）だけであり、
+    /// 生のレート源（日銀・FRED）は<b>判定していないことを表明する</b>。
+    /// </para>
+    /// </summary>
+    async Task<FxRateReading?> GetReadingAsync(Currency quote, CancellationToken cancellationToken = default)
+    {
+        var rate = await GetRateToBaseAsync(quote, cancellationToken).ConfigureAwait(false);
+        return rate is null ? null : new FxRateReading(rate, FxRateFreshness.Unknown);
+    }
 }

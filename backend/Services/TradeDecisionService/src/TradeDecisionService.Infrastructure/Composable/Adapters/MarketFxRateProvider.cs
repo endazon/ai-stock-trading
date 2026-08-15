@@ -25,4 +25,24 @@ internal sealed class MarketFxRateProvider(IFxRateSource source, ILogger<MarketF
 
         return rate.Rate;
     }
+
+    /// <summary>
+    /// レートと鮮度の判定結果を写す（#506・IADR-0197）。
+    /// <b>鮮度切れでも値は返す</b>——出口（手仕舞い）には古いレートでも実在する値が要る。
+    /// </summary>
+    public async Task<FxRateReading?> GetReadingAsync(Market market, CancellationToken cancellationToken = default)
+    {
+        var currency = MarketCurrency.Of(market);
+        var reading = await source.GetReadingAsync(currency, cancellationToken).ConfigureAwait(false);
+        if (reading is null || reading.Rate.Rate <= 0m)
+        {
+            logger.LogInformation(
+                "基準通貨への換算レートが未解決です（market={Market} currency={Currency}）。" +
+                "当該銘柄は新規建て・手仕舞いともに見送られます（値が無いため決済へ載せる換算率が無い）。",
+                market, currency);
+            return null;
+        }
+
+        return reading;
+    }
 }
