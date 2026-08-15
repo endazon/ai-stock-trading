@@ -1187,6 +1187,27 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
+  // 🔴 自己試験は合成した入力で判定規則を確かめるだけであり、**その副産物を CI の注意喚起として
+  // 出してはならない**。lib/ci-annotate.js の notice()/warn() は console ではなく
+  // **process.stdout.write へ直接書く**ため、console だけ差し替えた初版は本物の ::notice:: を
+  // 漏らしていた（実測 2 件。AI レビューが検出）。無関係な IADR 番号に言及する notice が
+  // 毎 PR で出続けると、**notice が読まれなくなる** —— IADR-0193 決定2 は「宣言すると notice が
+  // 出るから黙って素通りにはならない」という前提の上に立っているため、これは統制の土台を崩す。
+  ok('自己試験は CI アノテーションを漏らさない（GITHUB_ACTIONS=true で実行しても notice/warning ゼロ）', () => {
+    const { execFileSync } = require('child_process');
+    const out = execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js'), '--self-test'], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      env: { ...process.env, GITHUB_ACTIONS: 'true' },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const leaked = out.split('\n').filter((l) => l.startsWith('::notice::') || l.startsWith('::warning::'));
+    assert(
+      leaked.length === 0,
+      `自己試験が CI アノテーションを ${leaked.length} 件漏らした:\n${leaked.join('\n')}`,
+    );
+  });
+
   ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
     const table = require('./kit-sync-classification.json');
     const entries = Object.entries(table.classes.B);

@@ -46,7 +46,9 @@ const { warn, notice } = require('./lib/ci-annotate.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = 'docs/adr/README.md';
-const ADR_RE = /^docs\/adr\/(IADR-\d{4})_[^/]+\.md$/;
+// 規約の書式は `IADR-\d{3,4}`（.claude/rules/traceability.md）。現在 3 桁のファイルは無いが、
+// 4 桁固定にすると**3 桁運用へ戻ったとき静かに検査対象から漏れる**（AI レビューの指摘）。
+const ADR_RE = /^docs\/adr\/(IADR-\d{3,4})_[^/]+\.md$/;
 
 /**
  * 意図的に索引を変えない場合の逃げ道。**コミット本文の「行頭から単独で」書く。**
@@ -118,7 +120,7 @@ function collect(range, opts = {}) {
   const rowsTouched = new Set();
   for (const line of indexDiff.split('\n')) {
     if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
-    const m = /^[+-]\s*\|\s*(IADR-\d{4})\s*\|/.exec(line);
+    const m = /^[+-]\s*\|\s*(IADR-\d{3,4})\s*\|/.exec(line);
     if (m) rowsTouched.add(m[1]);
   }
   return { changedAdrs, rowsTouched };
@@ -199,16 +201,25 @@ function selfTest() {
   const t = (name, pass, actual) => cases.push({ name, pass, actual });
   const run = (o) => main({ range: 'X..Y', ...o });
 
+  // 🔴 **process.stdout.write も塞ぐ。** lib/ci-annotate.js の notice()/warn() は
+  // console ではなく **process.stdout.write へ直接書く**ため、console だけ差し替えても
+  // **本物の ::notice:: が CI のチェック画面へ漏れる**（AI レビューが実測して検出した）。
+  // 自己試験は合成した入力で判定規則を確かめるだけであり、**その副産物を CI の注意喚起として
+  // 出してはならない** —— 毎 PR で無関係な IADR 番号に言及する notice が出続け、
+  // **notice が読まれなくなる**（notice は読まれる前提で設計している。IADR-0190）。
   const quiet = (fn) => {
     const e = console.error;
     const l = console.log;
+    const w = process.stdout.write.bind(process.stdout);
     console.error = () => {};
     console.log = () => {};
+    process.stdout.write = () => true;
     try {
       return fn();
     } finally {
       console.error = e;
       console.log = l;
+      process.stdout.write = w;
     }
   };
 
@@ -288,6 +299,21 @@ function selfTest() {
         nameStatus: 'docs/adr/IADR-0190_x.md\n',
         indexDiff: '',
         commitBodies: `docs(IADR-0190): 誤字を直す\n\n  ${SKIP_TOKEN}  \n`,
+      }),
+    ) === 0,
+  );
+
+  t(
+    '3 桁の IADR も対象にする（規約は IADR-\\d{3,4} を許容する）',
+    quiet(() => run({ nameStatus: 'docs/adr/IADR-099_x.md\n', indexDiff: '' })) === 1,
+  );
+
+  t(
+    '3 桁の索引行も「触った」と数える',
+    quiet(() =>
+      run({
+        nameStatus: 'docs/adr/IADR-099_x.md\ndocs/adr/README.md\n',
+        indexDiff: '+| IADR-099 | 要約 | Accepted |\n',
       }),
     ) === 0,
   );
