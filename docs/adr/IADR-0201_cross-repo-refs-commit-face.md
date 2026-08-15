@@ -2,7 +2,7 @@
 title: IADR-0201 クロスリポ参照の検査を実害の出る面へ配線し、置換点は分類 C へ直書きする
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0140, IADR-0189, IADR-0198, IADR-0200]
+related_ids: [NFR, IADR-0189, IADR-0198, IADR-0200]
 author: endazon (with Claude Code)
 created: 2026-08-15
 updated: 2026-08-15
@@ -53,21 +53,35 @@ updated: 2026-08-15
 `check-cross-repo-refs.js` が公開する `createChecker` / `findViolations` / `parseNameMap` / `splitList` を使う。
 **同ファイルは分類 A（キットとバイト一致）であり、手元で編集しない。**
 
-### 決定2: 🔴 **置換点は `check-commit-messages.js` へ直書きする**（env ではなく）
+### 決定2: 🔴 **置換点は `check-commit-messages.js` へ直書きする。理由は「env を忘れられないこと」である**
 
-**`.github/workflows/` を GitHub App 権限で編集できない**（IADR-0140）ため、
-既存の `commit-messages` / `pr-title` ジョブへ env を足せない。
+env で渡す形は、**env を落とすと検査が緑のまま素通りする**（fail-open）。
+[IADR-0200](IADR-0200_cross-repo-ref-notation.md) の対照実験 4 が実測したとおり、
+**キット既定のマップは `project-planning` しか持たない**ため
+`microservices-platform#123` と書いても素の実行は **exit=0** になる。
 
+**直書きなら、CI・ローカル・`--title` モードのどの経路から呼ばれても同じ設定で効く。**
 `check-commit-messages.js` は**キット同期の分類 C**＝「本リポの中身そのもの（**置換点を持つ配布物**）。
 同期しない」であり、**各リポが自分の値を埋める前提**である（`kit-sync-classification.json` の `$comment`）。
-**したがって直書きが素直であり、ワークフローを触らずに既存ジョブが新しい検査を拾う。**
-
-> **IADR-0200 決定5（env をテストから注入）とは形が違う。**
-> あちらは呼び出し口が**リポ固有のテスト**だったので env で渡せた。
-> こちらは呼び出し口が**分類 C のスクリプト自身**である。**同じ問題に同じ答えを機械的に当てない。**
 
 **env でも上書きできる**ようにしてある（試験のため）。値は
 `.claude/rules/traceability.repo.md`（#487 の利用者裁定）と同じものである。
+
+> 🔴 **【訂正】初版の本 ADR は「`.github/workflows/` を GitHub App 権限で編集できない（IADR-0140）ため
+> env を足せない」を理由として書いていたが、これは二重に誤りであった**（AI レビューの指摘・実測で追認）。
+>
+> 1. **制約が事実に反する。** `.github/workflows/` は**本リポで 65 コミット分、実際に変更されている**——
+>    そのうち `889e41f`（[PR #505](https://github.com/endazon/ai-stock-trading/pull/505)）は**本セッション群の作業**であり `ci.yml` へ 21 行足している。
+>    さらに [`docs/specs/20260801_impl-handoff-kit-sync.md`](../specs/20260801_impl-handoff-kit-sync.md) は
+>    **2026-08-01 の時点で「`workflow` スコープを持つローカル認証から push することで解消した」と記録していた。**
+>    **解消済みの制約を、リポジトリ内の記録を確かめずに引き写した。**
+> 2. **出典が別の ADR を指す。** 本リポの `IADR-0140` は「**発注先（Broker Provider）を独立軸として導入**」であり、
+>    権限の記述は **0 件**である。番号はキット docstring から引き写したものであり、
+>    **キットの出自リポジトリの採番**を指していた（クロスリポジトリの ID 衝突。planning#354 へ環流）。
+>
+> **決定そのものは変えない**——直書きは上記の「fail-open にしない」という**独立した理由**で正しい。
+> **変えたのは根拠である。** 🔴 **本 ADR の主眼が「維持されない記述はあるだけ有害」であるだけに、
+> 同じ型を自分で持ち込んでいた。**
 
 ### 決定3: **検査するのは PR 範囲のコミット（件名＋本文）と PR タイトル**
 
@@ -117,4 +131,5 @@ bot 著者・`Revert`・`[skip ci]`・allowlist は**既存の判定をそのま
   両方がそこを指すようにコメントで結んである。**機械は同期を見ていない。**
 - **PR 本文（description）は検査していない。** 規約は本文も対象と定めるが、
   `pr-title.yml` はタイトルしか渡さない。**本文は誤リンクが起きる面である**ため穴が残る
-  （ワークフローを編集できないため、渡す口が無い）。
+  （`pr-title.yml` が本文を渡していないだけであり、**ワークフローは編集できる**——上の訂正を参照。
+  渡す口を足せば塞げる。**塞いでいないのは範囲外としたからであって、できないからではない**）。

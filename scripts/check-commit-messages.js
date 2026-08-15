@@ -37,8 +37,12 @@ const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
 //
 // #487 / PR #514 が配線したのは `.md` の面だけであった。本経路はその残りである。
 //
-// 🔴 **置換点をここへ直書きする。** `.github/workflows/` は GitHub App 権限で編集できず
-// （IADR-0140）、既存の `commit-messages` / `pr-title` ジョブへ env を足せない。
+// 🔴 **置換点をここへ直書きする。理由は「env を忘れられないこと」である。**
+// 環境変数で渡す形は、**env を落とすと検査が緑のまま素通りする**（fail-open）。
+// #487 の対照実験で実測した——キット既定のマップは `project-planning` しか持たないため、
+// `microservices-platform#123` と書いても素の実行は exit=0 になる。
+// **直書きなら、CI・ローカル・`--title` モードのどの経路から呼ばれても同じ設定で効く。**
+//
 // 本ファイルは**キット同期の分類 C**（本リポの中身・置換点を持つ配布物）であり、
 // **各リポが自分の値を埋める前提**である（kit-sync-classification.json）。
 // **検査器本体（check-cross-repo-refs.js）は分類 A であり、手を触れない。**
@@ -507,7 +511,8 @@ function main() {
     // 件名だけ見ていては構造的に取りこぼす。
     const reasons = validateSubject(c.subject)
       .concat(validateIdExistence(c.subject, iadrIds, planAdrIds))
-      .concat(validateCrossRepoRefs(c.body || c.subject));
+      // `%B` は件名を含む全文であるため、件名は本文の検査に含まれる（二重に渡さない）。
+      .concat(validateCrossRepoRefs(c.body));
     if (reasons.length) {
       violations.push({ short, subject: c.subject, reasons });
     } else if (args.verbose) {

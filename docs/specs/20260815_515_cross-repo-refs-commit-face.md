@@ -2,7 +2,7 @@
 title: クロスリポ参照の検査を「実害の出る面」（コミット件名・本文・PR タイトル）へ配線する
 type: spec
 status: approved
-related_ids: [NFR, IADR-0140, IADR-0189, IADR-0200, IADR-0201]
+related_ids: [NFR, IADR-0189, IADR-0200, IADR-0201]
 author: endazon (with Claude Code)
 created: 2026-08-15
 updated: 2026-08-15
@@ -55,14 +55,18 @@ updated: 2026-08-15
 **分類 C は「置換点を持つ配布物」であり、各リポが自分の値を埋める前提**である
 （`kit-sync-classification.json` の `$comment`）。したがって**設定を直書きしてよい。**
 
-### `.github/workflows/` を編集できない制約が、設計を決める
+### 🔴 置換点を直書きにする理由は「env を忘れられないこと」である
 
-env をワークフローへ足せない（IADR-0140）。**よって置換点は `check-commit-messages.js` へ直書きする** ——
-そうすれば既存の `commit-messages` / `pr-title` ジョブが**ワークフローを触らずに**新しい検査を拾う。
+env で渡す形は、**env を落とすと検査が緑のまま素通りする**（fail-open）。
+[IADR-0200](../adr/IADR-0200_cross-repo-ref-notation.md) の対照実験 4 が実測したとおり、
+**キット既定のマップは `project-planning` しか持たない**ため `microservices-platform#123` は素通りする。
 
-> **`.md` の面（[IADR-0200](../adr/IADR-0200_cross-repo-ref-notation.md) 決定5）が env をテストから注入したのとは形が違う。**
-> あちらは呼び出し口が**リポ固有のテスト**だったので env で渡せた。
-> こちらは呼び出し口が**分類 C のスクリプト自身**であり、直書きが素直である。
+**直書きなら、CI・ローカル・`--title` モードのどの経路から呼ばれても同じ設定で効く。**
+
+> 🔴 **【訂正】初版は「`.github/workflows/` を編集できないため env を足せない」を理由に挙げていたが、
+> これは事実に反する。** ワークフローは**本リポで 65 コミット分、実際に変更されている**
+> （うち `889e41f` は本セッション群の作業）。`docs/specs/20260801_impl-handoff-kit-sync.md` も
+> **2026-08-01 に「解消した」と記録していた。決定は変えないが、根拠を差し替えた。**
 
 ## 決定
 
@@ -73,7 +77,7 @@ env をワークフローへ足せない（IADR-0140）。**よって置換点�
 
 ### 決定2: **置換点は `check-commit-messages.js` へ直書きする**
 
-`.github/workflows/` を編集できないため。**env でも上書きできる**ようにはしておく（試験のため）。
+**env を落としたときに素通りさせないため**（fail-open の回避）。**env でも上書きできる**ようにはしておく（試験のため）。
 
 ### 決定3: **検査するのは PR 範囲のコミット（件名＋本文）と PR タイトル**
 
@@ -100,7 +104,7 @@ bot 著者・`Revert`・`[skip ci]`・allowlist は**既存の判定をそのま
 - **既存コミット件名の是正**（履歴不変。生成物は `changelog-overrides.json`）
 - **`.md` 面の再配線**（PR #514 で完了済み）
 - **`check-cross-repo-refs.js` の編集**（分類 A）
-- **`.github/workflows/` の編集**（権限が無い）
+- **`.github/workflows/` の編集**（**編集はできるが、直書きで足りるため不要**）
 
 ## 受け入れ基準
 
