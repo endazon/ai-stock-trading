@@ -1114,6 +1114,79 @@ module.exports = ({ ok, assert }) => {
     });
   }
 
+  // --- ADR 索引行の追随（NFR / #497） ---
+  //
+  // 🔴 **過去の事故そのものを回帰として固定する。**
+  // 自己試験は合成した差分で判定規則を確かめるが、**実データで捕まえられることは示さない**。
+  // #491 / #495 の実コミットを食わせて赤になることを確かめる（履歴が浅い環境では skip）。
+  ok('過去の索引追随漏れ 2 件を検出できる（#491 / #495 の実コミットで回帰）', () => {
+    const { execFileSync } = require('child_process');
+    const repo = pathFb.resolve(__dirname, '..');
+    const revOk = (rev) => {
+      try {
+        execFileSync('git', ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], { cwd: repo, stdio: 'pipe' });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // 事故1: PR #491 の 270a7c1（IADR-0190 本文を更新・索引は据え置き）
+    // 事故2: PR #495 の a39e3e7（IADR-0191 本文を訂正・索引は据え置き）
+    const cases = [
+      ['270a7c1^', '270a7c1'],
+      ['4788905', 'a39e3e7'],
+    ];
+    let checked = 0;
+    for (const [base, head] of cases) {
+      if (!revOk(base) || !revOk(head)) continue; // 浅いクローンでは対象外
+      checked += 1;
+      let exitCode = 0;
+      try {
+        execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js')], {
+          cwd: repo,
+          env: { ...process.env, COMMIT_RANGE: `${base}..${head}` },
+          stdio: 'pipe',
+        });
+      } catch (e) {
+        exitCode = e.status;
+      }
+      assert(exitCode === 1, `${base}..${head} は索引追随漏れとして赤になるべきだが exit=${exitCode} だった`);
+    }
+    // 是正コミットは緑であること（偽陽性を出していないことの確認）
+    if (revOk('270a7c1') && revOk('04126d8')) {
+      execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js')], {
+        cwd: repo,
+        env: { ...process.env, COMMIT_RANGE: '270a7c1..04126d8' },
+        stdio: 'pipe',
+      });
+    }
+    if (checked === 0) {
+      // 履歴が無い環境では検査していないことを明示する（黙って緑にしない）
+      process.stdout.write('       （履歴が浅いため過去コミットでの回帰は skip した）\n');
+    }
+  });
+
+  ok('ci.yml の adr-index-sync ジョブが fetch-depth: 0 を指定している（#497 の回帰）', () => {
+    const fsA = require('fs');
+    const ci = fsA.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  adr-index-sync:');
+    assert(start !== -1, 'adr-index-sync ジョブが ci.yml に無い');
+    const rest = ci.slice(start + 1);
+    const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
+    const body = bodyRaw
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    // fetch-depth が無いと差分の範囲を解決できず、検査は永久に skip して緑になる。
+    assert(body.includes('fetch-depth: 0'), 'adr-index-sync が fetch-depth: 0 を指定していない（範囲を解決できず skip する）');
+    const runLines = body.split('\n').filter((l) => l.includes('run:'));
+    assert(
+      runLines.some((l) => l.includes('check-adr-index-sync.js --self-test')),
+      'adr-index-sync が自己試験を走らせていない',
+    );
+  });
+
   ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
     const table = require('./kit-sync-classification.json');
     const entries = Object.entries(table.classes.B);
