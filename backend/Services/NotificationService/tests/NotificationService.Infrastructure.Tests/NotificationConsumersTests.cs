@@ -146,4 +146,46 @@ public class NotificationConsumersTests
 
         await host.StopAsync();
     }
+
+    // --- #381 停止側 / IADR-0198 決定1・決定3 ---------------------------------------------------
+
+    // 🔴 **統制の発動が日々の警告に埋もれないこと。** 同じイベント型を使う以上、
+    // **重大度と件名で読み分けられなければ決定1 は成立しない。**
+    [Fact]
+    public async Task 鮮度切れは_Critical_で新規建ての停止を通知する()
+    {
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var now = DateTimeOffset.UtcNow;
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new FxRateStale("USD", now.AddDays(-31), 31, 5, 30, now, EntryBlocked: true));
+        session.Executed.MessagesOf<FxRateStale>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Critical
+            && m.Title.Contains("新規建てを停止")
+            // 手仕舞いまで止まったと読ませない（ADR-0022 決定5）。
+            && m.Content.Contains("手仕舞い・損切りは止めていません"));
+
+        await host.StopAsync();
+    }
+
+    // 🔴 **取引そのものの通知**（決定3）。状態の通知とは別に飛ぶ。
+    [Fact]
+    public async Task 鮮度切れでの決済は_観測日つきで通知する()
+    {
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var now = DateTimeOffset.UtcNow;
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, now.AddDays(-31), 31, now));
+        session.Executed.MessagesOf<PositionClosedWithStaleFxRate>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Content.Contains("7203") && m.Content.Contains("観測日") && m.Content.Contains("乖離し得ます"));
+
+        await host.StopAsync();
+    }
 }
