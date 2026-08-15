@@ -14,6 +14,14 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 internal static class FxRateSourceFactory
 {
     public const string None = "none";
+
+    /// <summary>
+    /// 日本銀行 時系列統計データ（**第一の情報源**・ADR-0022 決定1）。**API キーを要さない**ため、
+    /// <c>Fx:Provider: "boj"</c> だけで動く（FRED と違い認証不要）。FRED が構成されていれば
+    /// 順位つきフォールバックとして後段に付く（#381・IADR-0194 決定4）。
+    /// </summary>
+    public const string Boj = "boj";
+
     public const string Fred = "fred";
 
     /// <summary>
@@ -31,7 +39,7 @@ internal static class FxRateSourceFactory
     /// 「実装が実際に受け付ける集合」は構造的に乖離できない（集合への追加を忘れた provider は動かない）。
     /// </para>
     /// </summary>
-    public static readonly ImmutableArray<string> ProviderNames = [None, Fred];
+    public static readonly ImmutableArray<string> ProviderNames = [None, Boj, Fred];
 
     /// <summary>
     /// <see cref="ProviderNames"/> に属さない provider 指定を表す番兵。
@@ -55,6 +63,35 @@ internal static class FxRateSourceFactory
                 // 既定（未指定を含む）。差し替え漏れの警告は NoOpFxRateSource 自身が初回 1 回だけ出す。
                 return NoOp(loggerFactory);
 
+            case Boj:
+                WarnIfMaxRateAgeRounded(options, logger);
+
+                // #381, ADR-0022 決定1・2, IADR-0194 決定4: 日銀を第一とし、FRED が構成されていれば
+                // 順位つきフォールバックとして後段に付ける。**FRED のキーが無くても日銀単独で動く**
+                // （日銀は認証不要）。冗長化が無い状態であることは分かるよう警告を出す。
+                var ordered = new List<(string Name, IFxRateSource Source)>
+                {
+                    (Boj, CreateBoj(options, httpClient, timeProvider, loggerFactory)),
+                };
+
+                if (!string.IsNullOrWhiteSpace(options.Fred.ApiKey))
+                {
+                    ordered.Add((Fred, CreateFred(options, httpClient, timeProvider, loggerFactory)));
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Fx:Provider に boj が指定されていますが、FRED の APIキー（Fx:Fred:ApiKey）が未設定のため" +
+                        "フォールバックがありません。日銀側の障害・仕様変更で為替の取得が完全に止まります" +
+                        "（ADR-0022 決定2 は冗長化を求めている）。");
+                }
+
+                return Cached(
+                    ordered.Count == 1
+                        ? ordered[0].Source
+                        : new FallbackFxRateSource(ordered, loggerFactory.CreateLogger<FallbackFxRateSource>()),
+                    options, timeProvider, loggerFactory);
+
             case Fred:
                 if (string.IsNullOrWhiteSpace(options.Fred.ApiKey))
                 {
@@ -64,31 +101,11 @@ internal static class FxRateSourceFactory
                     return NoOp(loggerFactory);
                 }
 
-                if (options.MaxRateAgeDays > FxOptions.MaxAllowedRateAgeDays)
-                {
-                    logger.LogWarning(
-                        "Fx:MaxRateAgeDays（{Configured} 日）は上限 {Max} 日を超えるため丸めます。" +
-                        "公表周期（DEXJPUS＝週次）で説明できない古さの観測は採らない（IADR-0112 決定2）。",
-                        options.MaxRateAgeDays, FxOptions.MaxAllowedRateAgeDays);
-                }
+                WarnIfMaxRateAgeRounded(options, logger);
 
-                return new CachingFxRateSource(
-                    new FredFxRateSource(
-                        httpClient,
-                        options.Fred.ApiKey,
-                        string.IsNullOrWhiteSpace(options.Fred.SeriesId)
-                            ? FredFxRateSource.DefaultSeriesId
-                            : options.Fred.SeriesId,
-                        Limiter(options.Fred.RequestsPerMinute, timeProvider),
-                        loggerFactory.CreateLogger<FredFxRateSource>(),
-                        string.IsNullOrWhiteSpace(options.Fred.BaseUrl)
-                            ? FredFxRateSource.DefaultBaseUrl
-                            : options.Fred.BaseUrl),
-                    Ttl(options),
-                    ResolveMaxRateAge(options),
-                    ResolveStaleRateWarning(options),
-                    timeProvider,
-                    loggerFactory.CreateLogger<CachingFxRateSource>());
+                return Cached(
+                    CreateFred(options, httpClient, timeProvider, loggerFactory),
+                    options, timeProvider, loggerFactory);
 
             default:
                 logger.LogWarning(
@@ -108,10 +125,67 @@ internal static class FxRateSourceFactory
 
         return SelectProvider(options) switch
         {
+            // 日銀は認証不要のため、キーの有無で no-op へ倒れることはない（#381・IADR-0194 決定5）。
+            Boj => Boj,
             Fred when !string.IsNullOrWhiteSpace(options.Fred.ApiKey) => Fred,
             _ => None,
         };
     }
+
+    /// <summary>
+    /// 鮮度上限の丸めを警告する。<see cref="Create"/> の各分岐で同じ規則を使うため切り出した
+    /// （分岐ごとに書くと、片方だけ直して静かにずれる）。
+    /// </summary>
+    private static void WarnIfMaxRateAgeRounded(FxOptions options, ILogger logger)
+    {
+        if (options.MaxRateAgeDays > FxOptions.MaxAllowedRateAgeDays)
+        {
+            logger.LogWarning(
+                "Fx:MaxRateAgeDays（{Configured} 日）は上限 {Max} 日を超えるため丸めます。" +
+                "計画 ADR-0022 決定5 の絶対上限（30 日）を構成で超えさせない（IADR-0112 決定2 / IADR-0174 決定2）。",
+                options.MaxRateAgeDays, FxOptions.MaxAllowedRateAgeDays);
+        }
+    }
+
+    /// <summary>
+    /// 鮮度判定（TTL・5 日超の警告・30 日超の停止）で包む。
+    /// <para>
+    /// 🔴 <b>合成の最外に置く。</b> 3 段縮退は<b>採用された値</b>に対して効くべきである。
+    /// フォールバックの内側に置くと源ごとに別々の警告が出て、<b>どちらの値が使われたのか読めなくなる</b>
+    /// （IADR-0194 決定4）。
+    /// </para>
+    /// </summary>
+    private static IFxRateSource Cached(
+        IFxRateSource inner, FxOptions options, TimeProvider timeProvider, ILoggerFactory loggerFactory) =>
+        new CachingFxRateSource(
+            inner,
+            Ttl(options),
+            ResolveMaxRateAge(options),
+            ResolveStaleRateWarning(options),
+            timeProvider,
+            loggerFactory.CreateLogger<CachingFxRateSource>());
+
+    private static BojFxRateSource CreateBoj(
+        FxOptions options, HttpClient httpClient, TimeProvider timeProvider, ILoggerFactory loggerFactory) =>
+        new(
+            httpClient,
+            string.IsNullOrWhiteSpace(options.Boj.SeriesCode)
+                ? BojFxRateSource.DefaultSeriesCode
+                : options.Boj.SeriesCode,
+            Limiter(options.Boj.RequestsPerMinute, timeProvider),
+            loggerFactory.CreateLogger<BojFxRateSource>(),
+            string.IsNullOrWhiteSpace(options.Boj.BaseUrl) ? BojFxRateSource.DefaultBaseUrl : options.Boj.BaseUrl,
+            string.IsNullOrWhiteSpace(options.Boj.Db) ? BojFxRateSource.DefaultDb : options.Boj.Db);
+
+    private static FredFxRateSource CreateFred(
+        FxOptions options, HttpClient httpClient, TimeProvider timeProvider, ILoggerFactory loggerFactory) =>
+        new(
+            httpClient,
+            options.Fred.ApiKey!,
+            string.IsNullOrWhiteSpace(options.Fred.SeriesId) ? FredFxRateSource.DefaultSeriesId : options.Fred.SeriesId,
+            Limiter(options.Fred.RequestsPerMinute, timeProvider),
+            loggerFactory.CreateLogger<FredFxRateSource>(),
+            string.IsNullOrWhiteSpace(options.Fred.BaseUrl) ? FredFxRateSource.DefaultBaseUrl : options.Fred.BaseUrl);
 
     /// <summary>
     /// 実際に適用される鮮度上限（#271, IADR-0112）。両側でクランプする。

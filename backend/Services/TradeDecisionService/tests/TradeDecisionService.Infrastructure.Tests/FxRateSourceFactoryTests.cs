@@ -40,6 +40,69 @@ public class FxRateSourceFactoryTests
         Create(new FxOptions { Provider = "fred" }).Should().BeOfType<NoOpFxRateSource>();
     }
 
+    // #381, ADR-0022 決定1, IADR-0194 決定5: 日銀は**認証不要**である。
+    // FRED と違い、キーが無くても no-op へ倒れない（倒れると第一の情報源が永久に使われない）。
+    [Theory]
+    [InlineData("boj")]
+    [InlineData("Boj")]
+    [InlineData(" BOJ ")]
+    public void boj指定はAPIキー無しでも実レート源になる(string provider)
+    {
+        var source = Create(new FxOptions { Provider = provider });
+
+        // 実レート源は TTL・鮮度判定の装飾を必ず経由する（生の取得器を直に配らない）。
+        source.Should().BeOfType<CachingFxRateSource>();
+    }
+
+    // #381, ADR-0022 決定2, IADR-0194 決定4: 日銀を第一・FRED をフォールバックとする順位つき合成。
+    // 合成の順序は Caching( Fallback( Boj, Fred ) ) である——鮮度判定は**採用された値**に対して効くべきであり、
+    // フォールバックの内側に置くと源ごとに別々の警告が出てどちらの値が使われたのか読めなくなる。
+    [Fact]
+    public void boj指定でFREDのキーがあれば順位つきフォールバックを組む()
+    {
+        var source = Create(new FxOptions
+        {
+            Provider = "boj",
+            Fred = new FredFxOptions { ApiKey = "key" },
+        });
+
+        source.Should().BeOfType<CachingFxRateSource>();
+        Inner(source).Should().BeOfType<FallbackFxRateSource>("鮮度判定は合成の最外に置く");
+    }
+
+    // FRED のキーが無ければ日銀単独になる（フォールバックの合成を挟まない）。
+    [Fact]
+    public void boj指定でFREDのキーが無ければ日銀単独になる()
+    {
+        var source = Create(new FxOptions { Provider = "boj" });
+
+        Inner(source).Should().BeOfType<BojFxRateSource>();
+    }
+
+    // 🔴 冗長化が無い状態は ADR-0022 決定2 が求める形ではない。**黙って単独運転にしない。**
+    [Fact]
+    public void boj単独運転になるときは冗長化が無いことを警告する()
+    {
+        var loggerFactory = new CapturingLoggerFactory();
+
+        Create(new FxOptions { Provider = "boj" }, loggerFactory);
+
+        loggerFactory.Warnings.Should().ContainSingle(w => w.Contains("フォールバックがありません"));
+    }
+
+    // **否定形**: フォールバックが揃っているときに「冗長化が無い」と警告しない（狼少年にしない）。
+    [Fact]
+    public void フォールバックが揃っていれば冗長化の警告は出さない()
+    {
+        var loggerFactory = new CapturingLoggerFactory();
+
+        Create(
+            new FxOptions { Provider = "boj", Fred = new FredFxOptions { ApiKey = "key" } },
+            loggerFactory);
+
+        loggerFactory.Warnings.Should().NotContain(w => w.Contains("フォールバックがありません"));
+    }
+
     [Theory]
     [InlineData("fred")]
     [InlineData("Fred")]
@@ -73,20 +136,23 @@ public class FxRateSourceFactoryTests
     [Fact]
     public void 公開するprovider集合は実装が実際に受け付ける集合と一致する()
     {
-        FxRateSourceFactory.ProviderNames.Should().Equal(FxRateSourceFactory.None, FxRateSourceFactory.Fred);
+        FxRateSourceFactory.ProviderNames.Should().Equal(
+            FxRateSourceFactory.None, FxRateSourceFactory.Boj, FxRateSourceFactory.Fred);
 
         // (1) 集合の各名前は実際に分岐へ到達する（到達しなければ「飾りのメンバ」である）。
         FxRateSourceFactory.ResolveProvider(new FxOptions { Provider = FxRateSourceFactory.None })
             .Should().Be(FxRateSourceFactory.None);
+        // #381, IADR-0194 決定5: 日銀は**認証不要**のため、キー無しでも分岐へ到達する（no-op へ倒れない）。
+        FxRateSourceFactory.ResolveProvider(new FxOptions { Provider = FxRateSourceFactory.Boj })
+            .Should().Be(FxRateSourceFactory.Boj);
         FxRateSourceFactory.ResolveProvider(Fred(days: FxOptions.DefaultMaxRateAgeDays))
             .Should().Be(FxRateSourceFactory.Fred);
 
         // (2) 集合に無い名前は、構成が整っていても分岐へ到達しない。
-        //     ＝ 集合への追加を忘れた provider は動かないので、更新漏れが「黙って通る」形にならない
-        //     （日銀 boj の追加は #381 の担当。追加時は本テストの期待も同時に更新される）。
+        //     ＝ 集合への追加を忘れた provider は動かないので、更新漏れが「黙って通る」形にならない。
         var outsideTheSet = new FxOptions
         {
-            Provider = "boj",
+            Provider = "ecb",
             Fred = new FredFxOptions { ApiKey = "key" },
         };
         FxRateSourceFactory.ResolveProvider(outsideTheSet).Should().Be(FxRateSourceFactory.None);
@@ -214,6 +280,18 @@ public class FxRateSourceFactoryTests
     private static IFxRateSource Create(FxOptions options, ILoggerFactory? loggerFactory = null) =>
         FxRateSourceFactory.Create(
             options, new HttpClient(), TimeProvider.System, loggerFactory ?? NullLoggerFactory.Instance);
+
+    /// <summary>
+    /// <see cref="CachingFxRateSource"/> が包んでいる内側の源を取り出す（合成の順序を検査するため）。
+    /// 内部実装へ踏み込むのは、**合成の順序そのものが決定**（IADR-0194 決定4）だからである——
+    /// 外から観察できる振る舞いだけでは「鮮度判定が最外にあるか」を区別できない。
+    /// </summary>
+    private static object Inner(IFxRateSource source) =>
+        typeof(CachingFxRateSource)
+            .GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            .Select(f => f.GetValue(source))
+            .OfType<IFxRateSource>()
+            .Single();
 
     // 構成不備・クランプの警告は「有効化したつもりで効いていない／緩めたつもりで丸められた」の唯一の検知点
     // であるため、出力そのものを検証する。中央パッケージ管理にログ用の偽装は無いので最小の実装を置く。

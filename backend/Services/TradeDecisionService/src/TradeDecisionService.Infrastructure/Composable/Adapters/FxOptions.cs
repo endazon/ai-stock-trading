@@ -79,8 +79,41 @@ internal sealed class FxOptions
     /// </summary>
     public int StaleRateWarningDays { get; set; } = DefaultStaleRateWarningDays;
 
+    /// <summary>
+    /// 日銀（Provider="boj"）の構成。**API キーを要さない**ため、キー未設定でも no-op へ倒れない
+    /// （#381・ADR-0022 決定1・IADR-0194 決定5）。
+    /// </summary>
+    public BojFxOptions Boj { get; set; } = new();
+
     /// <summary>FRED（Provider="fred"）の構成。API キーが空なら no-op へ倒す（実接続しない）。</summary>
     public FredFxOptions Fred { get; set; } = new();
+}
+
+// #381, ADR-0022 決定1, IADR-0194: 日銀 時系列統計データ API の FX 系列構成。
+// 情報収集の Collection:Source:Boj とは別枠にする（有効化の判断もレート予算も別。FRED と同じ整理）。
+internal sealed class BojFxOptions
+{
+    /// <summary>
+    /// 系列コード。既定 <c>FXERD04</c>（東京市場 ドル・円 スポット **17 時時点**＝**仲値**）。
+    /// <para>
+    /// 🔴 <b>データコード <c>FM08'FXERD04</c> ではなく系列コードを指定する</b>（落とし穴 1）。
+    /// 🔴 <b>中心相場 <c>FXERD05</c> は別系列であり仲値ではない</b>（落とし穴 2）。
+    /// </para>
+    /// </summary>
+    public string SeriesCode { get; set; } = BojFxRateSource.DefaultSeriesCode;
+
+    /// <summary>DB 名。既定 <c>fm08</c>（系列コードとは別のパラメータとして渡す）。</summary>
+    public string Db { get; set; } = BojFxRateSource.DefaultDb;
+
+    /// <summary>API のエンドポイント。既定で足りるため通常は設定不要（テスト・将来の移行用）。</summary>
+    public string BaseUrl { get; set; } = BojFxRateSource.DefaultBaseUrl;
+
+    /// <summary>
+    /// 当サービスに配るレート予算（回/分）。既定 1。
+    /// 日銀は具体的な数値上限を示さず「短時間における高頻度のアクセス」を禁止行為とするため、
+    /// **保守側に自制する**（情報収集側の日銀源も 1 回/分。IADR-0064 と同じ規律）。
+    /// </summary>
+    public int RequestsPerMinute { get; set; } = 1;
 }
 
 // #257, IADR-0064/0106: FRED の FX 系列構成。情報収集の Collection:Source:Fred とは別枠にする（有効化の判断も
