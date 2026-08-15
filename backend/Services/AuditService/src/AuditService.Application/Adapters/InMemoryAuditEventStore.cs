@@ -30,9 +30,10 @@ public sealed class InMemoryAuditEventStore : IAuditEventStore
     {
         ArgumentNullException.ThrowIfNull(eventTypes);
 
-        if (eventTypes.Count == 0)
-            return [];
-
+        // 種別が空なら結果も空になる（下の絞り込みがそのまま効く）。**明示的な早期 return は置かない**
+        // ——**振る舞いが 1 ミリも変わらない防御は、守っているように見えて何も守らない**
+        // （変異試験で実測。`if (false)` にしてもテストが 1 本も落ちなかった）。
+        // 「種別の指定漏れ」を止めるのは**エンドポイント側の 400** であり、そちらは実際に検査している。
         var wanted = eventTypes.ToHashSet(StringComparer.Ordinal);
 
         return [.. _entries.Values

@@ -52,10 +52,10 @@ internal sealed class EfAuditEventStore(AuditDbContext db) : IAuditEventStore
     {
         ArgumentNullException.ThrowIfNull(eventTypes);
 
-        // 種別が空なら「すべて」ではなく「該当なし」である（意図しない全件取得を作らない）。
-        if (eventTypes.Count == 0)
-            return [];
-
+        // 種別が空なら結果も空になる（`Contains` が `IN ()` へ落ち、1 件も一致しない）。
+        // **明示的な早期 return は置かない**——振る舞いが変わらない防御は何も守らない（IADR-0199 の変異試験）。
+        // 「種別の指定漏れ」を止めるのは**エンドポイント側の 400** である。
+        //
         // 半開区間。終端を閉じるとその日の最後の 1 秒が落ちる。
         return [.. db.AuditEvents
             .Where(r => eventTypes.Contains(r.EventType))
