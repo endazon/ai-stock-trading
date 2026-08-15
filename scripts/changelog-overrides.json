@@ -24,6 +24,13 @@
       "scope": "SC-01,SC-02,FR-20,IADR-0164",
       "reason": "件名は `feat(SC-01,SC-02,FR-20,IADR-0165): …(#438)` だが、当該実装 ADR は #440 で **IADR-0164 へ繰り下げられた**（上の 3aa012da と同じ繰り下げ作業）。繰り下げ後の IADR-0165 は #435 由来の別の決定（GFV 発生回数の自前計数）を指すため、**補正しないと CHANGELOG が別の決定へ誤リンクする** —— 到達不能になるだけの上のケースより誤りが重い。理由・経緯は上と同じ。**type と desc は変えない**（種別 feat と要約は当時も現在も正しい）。",
       "scope_before": "SC-01,SC-02,FR-20,IADR-0165"
+    },
+    {
+      "hash": "594deed794015ebcdd9335c4105423b925775123",
+      "action": "remap",
+      "desc": "AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP#286 の依存）",
+      "reason": "件名の要約に他リポ参照が `MSP` + 半角スペース + `#286` の形（空白区切りの修飾）で入っており、#487 で確定した表記規約（短縮形へ詰めて書く）に反する。**コミット件名は書き換えない**（履歴不変・force push 禁止）ため、`.claude/rules/traceability.md`「事前防止と事後補正の使い分け」に従い生成物のみをここで是正する。**type と scope は変えない** —— 誤っていたのは要約の中の表記だけであり、種別 feat と起点 ID IADR-0091 は当時も現在も正しい。**空白区切りは `.md` では誤リンクを起こさない**（自動リンクするのはフルパス形式だけ）ため実害は表記ゆれに留まるが、CHANGELOG は追跡下の成果物であり検査対象に含めると決めた（除外して見なかったことにしない）。",
+      "desc_before": "AiStockTrading.Bff.Endpoints を新設（unit-owned BFF・MSP #286 の依存）"
     }
   ]
 }

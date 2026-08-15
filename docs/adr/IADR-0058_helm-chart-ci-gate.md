@@ -23,12 +23,12 @@ plan_refs:
 - 関連する計画書 ID: NFR（運用・保守）
 - 関連 ADR: [[IADR-0049]]（実基盤 E2E は既定 CI から分離し `integration.yml` で実走する）
 - 関連仕様書: `docs/specs/20260716_129_ci-gates-pr-title-helm.md`
-- Issue: #129（本 issue）／#122（AST chart 追加）／参考: microservices-platform#268（サービス Dockerfile の CI 未検証）
+- Issue: #129（本 issue）／#122（AST chart 追加）／参考: MSP#268（サービス Dockerfile の CI 未検証）
 
 ## コンテキストと課題
 
 `deploy/helm/ai-stock-trading`（#122）はデプロイ資産だが、`helm lint` / `helm template` を回す CI が無く、
-**chart の破損を CI で検出できない**。microservices-platform#268 が「サービス Dockerfile が CI 未検証で
+**chart の破損を CI で検出できない**。MSP#268 が「サービス Dockerfile が CI 未検証で
 ビルド不能に気づけなかった」のと同型の穴である。
 
 さらに本 chart には fail-safe 既定として、次の**既定 disabled のフィーチャフラグ**がある。

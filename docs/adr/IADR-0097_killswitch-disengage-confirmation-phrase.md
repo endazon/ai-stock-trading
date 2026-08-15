@@ -21,15 +21,15 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **FR-14**（双方向 Bot による運用操作）、**UC-06**（kill switch）、**ADR-0009**（Discord 運用 Bot・
-  裁定 [project-planning#35](https://github.com/endazon/project-planning/issues/35) / 計画修正 PR
-  [project-planning#37](https://github.com/endazon/project-planning/pull/37)）。
+  裁定 [planning#35](https://github.com/endazon/project-planning/issues/35) / 計画修正 PR
+  [planning#37](https://github.com/endazon/project-planning/pull/37)）。
 - 対象 Issue: [#223](https://github.com/endazon/ai-stock-trading/issues/223)（kill switch 解除に確認フレーズ検証を追加）。
 - 関連 IADR: [IADR-0062]（双方向 Bot・多層認証・確認フレーズの導入）、[IADR-0063]（Bot 常駐）、[IADR-0075]（pause/resume）、
   [IADR-0081]（段階ゲート Bot コマンド）。
 
 ## コンテキストと課題
 
-planning 裁定（project-planning#35）により、**kill switch は起動・解除の双方で「確認ボタン＋確認フレーズ」を要する**ことが
+planning 裁定（planning#35）により、**kill switch は起動・解除の双方で「確認ボタン＋確認フレーズ」を要する**ことが
 確定した。これは計画文書間の不整合が原因である: `07_discord-bot-design.md` は「kill switch は確認フレーズを要求する」と述べる
 一方、同文書に「解除のみ確認ステップを追加する」（＝ボタンのみで足りると読める）記述が併存していた。実装は後者に沿って解除を
 **確認ボタンのみ**（フレーズ検証なし）としており、裁定後の計画と乖離する。
@@ -86,7 +86,7 @@ kill switch の解除は「全取引停止の解除」＝実弾方向へ戻す�
 
 ## 代替案と却下理由
 
-- **解除は確認ボタンのみのまま（現状維持）**: 裁定 project-planning#35 に反する。却下。
+- **解除は確認ボタンのみのまま（現状維持）**: 裁定 planning#35 に反する。却下。
 - **解除用に別フレーズ・別検証を新設**: 設定・実装が二重化し運用が複雑化。単一フレーズで足りる。却下。
 - **未設定時は解除だけ許可（摩擦を下げる）**: 解除は実弾方向へ戻す高リスク操作。非対称な緩和は危険（決定2）。却下。
 - **モーダルを単一 ID のまま操作種別を埋め込む**: 送信時の再解析で分岐が増え誤実行の余地。ID 分離が単純で安全（決定3）。却下。

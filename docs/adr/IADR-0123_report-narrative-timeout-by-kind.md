@@ -40,7 +40,7 @@ plan_refs:
 - 前提: [IADR-0120](./IADR-0120_report-kind-purpose-and-parent-policy-feedforward.md)（種別別 purpose）、
   [IADR-0115](./IADR-0115_report-auto-generation-scheduler.md)（自動生成）、
   [IADR-0071](./IADR-0071_report-service-remaining.md)（実 LLM 散文ドラフトと fail-safe）。
-- 基盤側: [microservices-platform#422](https://github.com/endazon/microservices-platform/pull/422)
+- 基盤側: [MSP#422](https://github.com/endazon/microservices-platform/pull/422)
   （`report-weekly`=`claude-opus-5` / `report-monthly`=`claude-fable-5` / `report-daily`=`claude-sonnet-5`）。
 - 作業仕様書: [20260801_308_report-narrative-timeout-by-kind](../specs/20260801_308_report-narrative-timeout-by-kind.md)
 

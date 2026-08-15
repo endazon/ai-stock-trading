@@ -30,7 +30,7 @@ plan_refs:
 
 ## コンテキストと課題
 
-計画リポジトリの大幅更新（[project-planning PR #144](https://github.com/endazon/project-planning/pull/144)）を受け、本リポジトリの実装をほぼ全面的に
+計画リポジトリの大幅更新（[planning#144](https://github.com/endazon/project-planning/pull/144)）を受け、本リポジトリの実装をほぼ全面的に
 作り直す。作業は 20 件の子 issue に分割済みだが、**どの単位で PR を切り、どの順で進めるか**が
 決まっていない。これは体裁の問題ではなく、次の 2 つの実害に直結する。
 

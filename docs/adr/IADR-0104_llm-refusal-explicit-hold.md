@@ -42,7 +42,7 @@ plan_refs:
 ## 背景・課題
 
 上流の LLM ゲートウェイは Anthropic の `stop_reason` を判別できず、安全性分類器による**拒否を「空応答」へ静かに縮退**
-させていた（MSP #379）。PR #391 でこれが修正され、`/complete` の応答に `stopReason` が載る。既定モデル層は
+させていた（MSP#379）。PR #391 でこれが修正され、`/complete` の応答に `stopReason` が載る。既定モデル層は
 MSP/ADR-0025 で `claude-opus-5` であり、**拒否は HTTP 200・例外なしで実際に起き得る経路**である。
 
 AST 側の 2 つの消費者（取引判断の `HttpLlmCompletionClient`・報告書散文の `HttpReportNarrativeDrafter`）は

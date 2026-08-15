@@ -18,15 +18,15 @@ plan_refs:
 
 - 状態: Accepted
 - 日付: 2026-08-14
-- 決定者: endazon（利用者裁定 2026-08-13〜08-14・planning#319 / #323）／ Claude Code（本リポへの適用）
+- 決定者: endazon（利用者裁定 2026-08-13〜08-14・planning#319 / planning#323）／ Claude Code（本リポへの適用）
 
 ## 起点・関連
 
 - 計画書 ID: **NFR**（運用保守）
 - 対象 Issue: [#477](https://github.com/endazon/ai-stock-trading/issues/477)（kit 追随の棚卸し）のうち**環流語彙の項**
 - 作業仕様書: [20260814_477_feedback-vocabulary-kit-sync](../specs/20260814_477_feedback-vocabulary-kit-sync.md)
-- 裁定: [project-planning#319](https://github.com/endazon/project-planning/issues/319)（検査器が 2 経路の片方しか読まない）／
-  [project-planning#323](https://github.com/endazon/project-planning/issues/323)（`status` の語彙）。
+- 裁定: [planning#319](https://github.com/endazon/project-planning/issues/319)（検査器が 2 経路の片方しか読まない）／
+  [planning#323](https://github.com/endazon/project-planning/issues/323)（`status` の語彙）。
   反映は planning [#320](https://github.com/endazon/project-planning/pull/320) / [#325](https://github.com/endazon/project-planning/pull/325)
 - 実測の入力: [#483 のコメント](https://github.com/endazon/ai-stock-trading/issues/483#issuecomment-5294041520)
 
@@ -107,7 +107,7 @@ planning#323 の裁定は、**`status` は「計画側の裁定段階」だけ�
 **適用は 30 件中 1 件**（`20260708_trading-defaults-derived-values.md`）。
 ① は `status: open` だが、**対応する planning#61 は CLOSED** であり、
 実装側の記録は決着日（2026-08-02）とその内容を引いていた。
-**② を採り、① の陳腐化を [project-planning#329](https://github.com/endazon/project-planning/issues/329) として環流した**（残余リスクに再掲）。
+**② を採り、① の陳腐化を [planning#329](https://github.com/endazon/project-planning/issues/329) として環流した**（残余リスクに再掲）。
 
 > **例外を無条件の裁量にしない。** ③ は「**①と②が矛盾したとき**」に限る。
 > 矛盾が無ければ ① が優先であり、**②だけを見て ① を無視してはならない**
@@ -122,7 +122,7 @@ planning#323 の裁定は、**`status` は「計画側の裁定段階」だけ�
 > **`dispatched: true` かつ `status: open` は正しい状態である。** 「送ったのに `open` のまま」と読めるが、
 > **2 つの鍵は別の軸を表している** —— `dispatched` は**実装側が送ったか**、`status` は**計画側が裁定したか**である。
 > 送った直後は必ずこの組み合わせになり、計画側が受理して初めて `accepted` へ動く。
-> 本 PR 時点では [project-planning#328](https://github.com/endazon/project-planning/issues/328) /
+> 本 PR 時点では [planning#328](https://github.com/endazon/project-planning/issues/328) /
 > [#329](https://github.com/endazon/project-planning/issues/329) の 2 件がこの状態にある。
 >
 > **軸を分けた目的がまさにこれである** —— 旧来の 1 語（`resolved`）では、この 2 件を
@@ -133,7 +133,7 @@ planning#323 の裁定は、**`status` は「計画側の裁定段階」だけ�
 `20260813_sc03-buy-in-count-period-undefined.md`（#470 / IADR-0186 決定1 の環流）は
 **30 件中ただ 1 件の真に未伝達の記録**であった。**記録に嘘を書いて警告を消さない**
 （planning#319 で実装側 IADR-0184 決定2 として確立した規律）。
-**[project-planning#328](https://github.com/endazon/project-planning/issues/328) として起票し、`dispatched: true` にした。**
+**[planning#328](https://github.com/endazon/project-planning/issues/328) として起票し、`dispatched: true` にした。**
 
 > 🔴 **この 1 件は、移行前から検査器が「緑」と判定していた。** 記録が本文で
 > `project-planning#292` を**文脈として**引いており、**検査器は URL の走査をファイル全体で行う**ため

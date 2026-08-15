@@ -13,7 +13,7 @@ plan_refs:
 
 ## 背景
 
-計画の裁定（**[project-planning#289](https://github.com/endazon/project-planning/issues/289)**・**2026-08-08 確定**）が、最小期待利益のしきい値について次を定めた。
+計画の裁定（**[planning#289](https://github.com/endazon/project-planning/issues/289)**・**2026-08-08 確定**）が、最小期待利益のしきい値について次を定めた。
 
 > **解が無い領域では見送る。** 分母は `1 − 倍率 × 税率` であり、**`倍率 × 税率 ≥ 1` になるとしきい値に解が無い**。この領域に入った場合は**採算不能とみなし、当該取引を見送る**（fail-closed）。**負のしきい値を返して全通過させることは、いかなる経路でも行わない。**
 >
@@ -113,6 +113,6 @@ plan_refs:
 
 - 起点 issue: [#461](https://github.com/endazon/ai-stock-trading/issues/461)
 - 作業仕様書: [20260808_461_minimum-viable-profit-fail-closed.md](../specs/20260808_461_minimum-viable-profit-fail-closed.md)
-- 起点の裁定: **[project-planning#289](https://github.com/endazon/project-planning/issues/289)**（planning `2791e4f`）。**その裁定の起点は本リポの [#358](https://github.com/endazon/ai-stock-trading/issues/358)**（[IADR-0173](IADR-0173_minimum-expected-profit-tax-inclusive.md) から `/plan-feedback` で環流）
+- 起点の裁定: **[planning#289](https://github.com/endazon/project-planning/issues/289)**（planning `2791e4f`）。**その裁定の起点は本リポの [#358](https://github.com/endazon/ai-stock-trading/issues/358)**（[IADR-0173](IADR-0173_minimum-expected-profit-tax-inclusive.md) から `/plan-feedback` で環流）
 - 前提: [IADR-0173](IADR-0173_minimum-expected-profit-tax-inclusive.md)（式の単一情報源・基準は往復費用＋税）
 - pin 更新: [#459](https://github.com/endazon/ai-stock-trading/issues/459)

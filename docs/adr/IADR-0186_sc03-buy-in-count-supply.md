@@ -54,7 +54,7 @@ SC-03 は「正当な 0 を未供給に見せる」側の規約違反へ黙っ�
 ### 🔴 issue #470 の本文は 1 点が陳腐化していた
 
 issue は受け入れ基準に「**裁定前は最終観測時刻の存在のみで判定する**」と書いていたが、
-**その裁定（[project-planning#292](https://github.com/endazon/project-planning/issues/292)）は起票と同日中に下りた**。
+**その裁定（[planning#292](https://github.com/endazon/project-planning/issues/292)）は起票と同日中に下りた**。
 FR-21 は「観測が届いた取引日の集合」＋「期間被覆」へ改定され、実装も #469 で追随済みで、
 `observationArrivedAt`（最終観測時刻）という API はもう存在しない。**本 IADR は改定後の FR-21 に従う。**
 
@@ -83,7 +83,7 @@ FR-21 は「**報告期間**が覆われている場合に限り供給する」�
   **どの案でも安全側の性質は変わらない** —— 覆えていなければ未供給であり、案の違いは*いつ供給が始まるか*にのみ効く。
 
 > ✅ **［2026-08-14 追記］裁定が下り、案 A（当月）がそのまま採用された。**
-> （[project-planning#328](https://github.com/endazon/project-planning/issues/328)。反映は planning #330・`130a109`。
+> （[planning#328](https://github.com/endazon/project-planning/issues/328)。反映は planning#330・`130a109`。
 > 計画 05_screens SC-03 §供給元の表へ「**対象期間は当月（月初〜当日）とする**」が追加された。）
 >
 > **差し替えは起きなかったが、1 か所に閉じた判断そのものは無駄ではない**

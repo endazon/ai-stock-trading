@@ -15,7 +15,7 @@ plan_refs:
 ## 背景
 
 計画 **[ADR-0028](../../planning/projects/ai-stock-trading/07_adr/ADR-0028_gfv-violation-clearing-and-reconciliation.md)**
-（2026-08-07 Accepted・質問票 第15回 Q10/Q11・環流 project-planning#251）が空白を埋めた。
+（2026-08-07 Accepted・質問票 第15回 Q10/Q11・環流 planning#251）が空白を埋めた。
 
 | # | 決定 | 本作業 |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ plan_refs:
 
 実測（2026-08-08）: `IGoodFaithViolationStore` は追記専用（`Append` / `GetTally` / `GetRecordedBetween`）で
 **解除の口が無く**、`BotCommandParser` にも解除コマンドが無かった。
-**したがって原因を是正しても停止状態を解けなかった**（project-planning#251 が指摘した空白）。
+**したがって原因を是正しても停止状態を解けなかった**（planning#251 が指摘した空白）。
 
 **なお本計数が数えているのは「自らのガードの失敗回数」であり、ブローカーの GFV 件数ではない**
 （ADR-0025 §理由）。ガードが正しく働けば 0 のままであり、**1 件出た時点で人が原因を調べるべき事象**である。

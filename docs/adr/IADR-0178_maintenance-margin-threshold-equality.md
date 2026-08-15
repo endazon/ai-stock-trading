@@ -15,7 +15,7 @@ plan_refs:
 
 ## 背景
 
-計画の裁定（**ADR-0016 決定7 の 2026-08-07 確定**・利用者裁定 質問票 第 14 回 Q6・裁定依頼 [project-planning#240](https://github.com/endazon/project-planning/issues/240)）が定めた。
+計画の裁定（**ADR-0016 決定7 の 2026-08-07 確定**・利用者裁定 質問票 第 14 回 Q6・裁定依頼 [planning#240](https://github.com/endazon/project-planning/issues/240)）が定めた。
 
 > **`≦` へ揃える。新規建ての拒否は「維持率 ≦ 適用閾値」で拒否する**（従前の記述は「割り込む」＝ `<` と読めた）。自動縮小（UC-06）は従前どおり **`≦` で発動**する。揃えないと、**維持率がちょうど閾値のときに縮小が決済を出している最中の口座へ新規空売りが承認される**。**非対称を意図として残す案は採らない** —— 幅は等号の 1 ケースだが、統制が自ら作った状態の上で別の統制が反対向きに働くことになり、説明がつかないためである。
 
@@ -92,6 +92,6 @@ plan_refs:
 
 - 起点 issue: [#459](https://github.com/endazon/ai-stock-trading/issues/459)（計画 pin の前進。**本件はその棚卸しで見つかった**）
 - 作業仕様書: [20260808_459_planning-pin-advance.md](../specs/20260808_459_planning-pin-advance.md) 検査5
-- 起点の裁定: **ADR-0016 決定7 の 2026-08-07 確定**（質問票 第 14 回 Q6・裁定依頼 [project-planning#240](https://github.com/endazon/project-planning/issues/240)）。**その裁定の起点は本リポの [#420](https://github.com/endazon/ai-stock-trading/issues/420)**（[IADR-0160](IADR-0160_maintenance-margin-applied-threshold-account-wide.md) 残余リスクから環流）
+- 起点の裁定: **ADR-0016 決定7 の 2026-08-07 確定**（質問票 第 14 回 Q6・裁定依頼 [planning#240](https://github.com/endazon/project-planning/issues/240)）。**その裁定の起点は本リポの [#420](https://github.com/endazon/ai-stock-trading/issues/420)**（[IADR-0160](IADR-0160_maintenance-margin-applied-threshold-account-wide.md) 残余リスクから環流）
 - 前提: [IADR-0133](IADR-0133_maintenance-margin-auto-reduce.md)（自動縮小・`≦` で発動）／[IADR-0160](IADR-0160_maintenance-margin-applied-threshold-account-wide.md)（適用閾値の口座単位化）
 - テスト: `MaintenanceMarginAppliedThresholdTests`（T-10-248・**T-10-268**）／`ShortSellingControlsTests`（`維持率は適用閾値の境界で切り替わる`）

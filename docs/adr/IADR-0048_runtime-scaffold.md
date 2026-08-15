@@ -32,7 +32,7 @@ plan_refs:
   [IADR-0016](IADR-0016_safe-broker-execution.md)（ブローカ既定ペーパー）・
   [IADR-0046](IADR-0046_unit-repo-layout.md)（import-chain フォールバック props）
 - 関連する作業仕様書: [作業仕様書](../specs/20260712_107_runtime-scaffold.md)
-- 上流の結合検証: microservices-platform #245（submodule 通し検証・IADR-0060 残作業）
+- 上流の結合検証: MSP#245（submodule 通し検証・IADR-0060 残作業）
 
 ## コンテキストと課題
 

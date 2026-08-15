@@ -43,7 +43,7 @@ plan_refs:
 | 項目 | 内容 |
 | --- | --- |
 | 環境 | dev（ローカル k8s: k3d / Rancher Desktop 内蔵 k3s）/ stg・prod（k3s・#24） |
-| 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（microservices-platform#266 / IADR-0066） |
+| 実行基盤 | Kubernetes（IADR-0052）。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照（MSP#266 / IADR-0066） |
 | 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動（#121 / IADR-0054） |
 | 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267 / [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
@@ -242,7 +242,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 
 - 実測に基づく再ベースライン（実消費と月次上限の妥当性）は
   [#243](https://github.com/endazon/ai-stock-trading/issues/243)、計画側の上限評価は
-  [project-planning#54](https://github.com/endazon/project-planning/issues/54) が担う。本節は**単価の鮮度**のみを扱う。
+  [planning#54](https://github.com/endazon/project-planning/issues/54) が担う。本節は**単価の鮮度**のみを扱う。
 - 単価の出所・換算・丸めは `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」に表で残している。
 - 本番（ArgoCD＝`values.yaml`）には単価を置かない。よって本番の計上は従来どおり ¥0 であり、
   本節の見直しは経路B（`values-local.yaml`）に対して行う。

@@ -22,7 +22,7 @@ updated: 2026-08-14
 - 対象 Issue: [#493](https://github.com/endazon/ai-stock-trading/issues/493)（コード拡張子）／[#496](https://github.com/endazon/ai-stock-trading/issues/496)（PR 段階へ戻す）
 - 作業仕様書: [20260814_493_496](../specs/20260814_493_496_doc-links-code-and-pr-gate.md)
 - 発見元: [IADR-0191](IADR-0191_kit-sync-classification.md) のキット突合
-- 先行: **microservices-platform の IADR-0058**（夜間分離の元になった決定。microservices-platform#232）。
+- 先行: **microservices-platform の IADR-0058**（夜間分離の元になった決定。MSP#232）。
   🔴 **本リポの [IADR-0058](IADR-0058_helm-chart-ci-gate.md) は Helm チャートの CI ゲートであり別物である**
   —— 計画 ID・実装 ID はリポジトリごとに独立採番であり、**裸の `IADR-0058` は本リポのものを指す**
   （`.claude/rules/traceability.md`）。本作業中に実際に取り違えかけた。
@@ -38,7 +38,7 @@ updated: 2026-08-14
 
 **キット版には入っている。** キット側のコメントは、この穴が**実際に事故になった**と記録している ——
 「コード拡張子が抜けていた間、仕様書からコードへの live link は一切検査されず、破損したまま
-『OK: 384 件』と報告された（microservices-platform#470 / planning#167。
+『OK: 384 件』と報告された（MSP#470 / planning#167。
 **検査器を作る PR が、検査器の穴で自分の参照切れを見逃した型**）」。
 
 **本リポジトリは、その是正が入る前のキットから枝分かれしたまま追随していなかった。**
@@ -103,7 +103,7 @@ updated: 2026-08-14
 > **PR CI が見るのは「その PR の差分」である。計画側が更新されて実装側の参照が切れる事故は、
 > 実装側に PR が無い間に起きる。それを拾えるのは定期実行だけである。**
 
-**microservices-platform#430 の事故（4 夜連続の失敗が放置）は「夜間に検査したこと」ではなく
+**MSP#430 の事故（4 夜連続の失敗が放置）は「夜間に検査したこと」ではなく
 「放置したこと」が問題である。** 気付く導線（Notify ステップ）が要点であり、それは既にある。
 
 ## 対照実験（実走した実測）

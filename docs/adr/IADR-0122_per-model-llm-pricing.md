@@ -32,14 +32,14 @@ plan_refs:
 
 - 起点 issue: [#303](https://github.com/endazon/ai-stock-trading/issues/303)
 - 仕様書: `docs/specs/20260731_303_per-model-llm-pricing.md`
-- 基盤側: [microservices-platform#422](https://github.com/endazon/microservices-platform/pull/422)（MSP/IADR-0112。
+- 基盤側: [MSP#422](https://github.com/endazon/microservices-platform/pull/422)（MSP/IADR-0112。
   `Llm:Routing:PurposeModels` に `report-monthly`/`report-weekly`/`report-daily` を追加し、`trade-decision` を
-  `claude-sonnet-5` へ改定）。計画側は `ADR-0014`（Accepted・2026-07-31・[project-planning#50](https://github.com/endazon/project-planning/issues/50)）。
+  `claude-sonnet-5` へ改定）。計画側は `ADR-0014`（Accepted・2026-07-31・[planning#50](https://github.com/endazon/project-planning/issues/50)）。
 - 役割の分担（重複起票を避けるための相互参照）:
   - 本 IADR = **構造**（実効モデルに基づく単価解決）
   - [#243](https://github.com/endazon/ai-stock-trading/issues/243) = **実測値**（Opus 5 化に伴う実測と月次上限の再ベースライン）
   - [#282](https://github.com/endazon/ai-stock-trading/issues/282) = **経路**（report-service に費用計上経路が無い）
-  - [project-planning#54](https://github.com/endazon/project-planning/issues/54) = **計画**（3 種別で別モデルを使う前提の月次上限の妥当性）
+  - [planning#54](https://github.com/endazon/project-planning/issues/54) = **計画**（3 種別で別モデルを使う前提の月次上限の妥当性）
 - 前提の更新: IADR-0114 決定6 は「per-model 化は本作業の範囲外」と明記して global 単一ペアを投入した。
   本 IADR はその宿題を解く（決定6 の**単価の出典・換算・経路B 限定という方針は維持**し、粒度だけを変える）。
 - **採番の経緯**: 当初 `IADR-0121` で起票したが、並行 PR [#311](https://github.com/endazon/ai-stock-trading/pull/311)

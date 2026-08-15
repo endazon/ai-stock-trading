@@ -16,7 +16,7 @@ plan_refs:
 ## 背景
 
 計画 `06_technical/06_daytrading-review.md` **§4.1 の 2026-08-07 追補3**（planning pin `c2998a6`。
-利用者裁定 質問票 第15回 Q13-a / Q13-b。環流 project-planning#252）が 2 点を定めた。
+利用者裁定 質問票 第15回 Q13-a / Q13-b。環流 planning#252）が 2 点を定めた。
 
 - **「昇格承認」が指すのは承認操作そのもの**（Q13-a）。`/stage promote` に警告を出す。
   `/stage status`（現況照会）だけでは足りない ——「承認前に status を読む」は**人の運用に依存する前提**である。

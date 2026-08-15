@@ -61,7 +61,7 @@ updated: 2026-08-07
 > **実測（2026-08-14）では警告 9 件が全件偽陽性であり、9 件とも計画リポへ到達済み・9 件とも計画側で
 > `status: accepted` であった**（[#483 のコメント](https://github.com/endazon/ai-stock-trading/issues/483#issuecomment-5294041520)）。
 > **記録に嘘は無く、検査器が経路を読めていなかった。** 検査は kit の `check-feedback-dispatched.js`
-> （2 経路対応・planning#319 / #320）へ移し、`check-feedback-reflux.js` は廃止した。
+> （2 経路対応・planning#319 / planning#320）へ移し、`check-feedback-reflux.js` は廃止した。
 
 ### 決定5: **逆向きの乖離は機械検査に入れない**
 

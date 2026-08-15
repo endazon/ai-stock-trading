@@ -209,7 +209,7 @@ BrokerAvailabilityProbeService（既存の 5 分巡回）     ↓
 - ~~**計画との差異**: 計画が新設を求めたのは 1 種のみである。**環流済み**（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)）。~~
   **【✅ 差異は解消 2026-08-07】環流を計画が受理し、ADR-0021 決定4-5 が 3 種を同名・同クラス（A / B / A）で追認した**
   （環流 [feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)
-  → project-planning#220 → 質問票 第 13 回 Q8-1）。**実装は一切変えていない**（序数 25 / 26 / 27・分類とも起案時のまま）。
+  → planning#220 → 質問票 第 13 回 Q8-1）。**実装は一切変えていない**（序数 25 / 26 / 27・分類とも起案時のまま）。
   先例の `StopOrderRequired`（#329）と同じ形である。
 
 ### 決定 6: 口座種別依存の統制は `AccountTypePolicy`（純関数）に集約する

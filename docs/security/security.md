@@ -80,7 +80,7 @@ plan_refs:
 **このテストは本リポジトリ内しか見ない。** 基盤側の許可リストへ基盤側の PR で追加された場合は
 検出できない —— **基盤 MCP 再実装後の結合確認**が別途必要であり、
 [`docs/blocked-tasks.md`](../blocked-tasks.md) の A-10 に登録してある
-（microservices-platform#445 待ち）。
+（MSP#445 待ち）。
 
 ## 認証・認可
 

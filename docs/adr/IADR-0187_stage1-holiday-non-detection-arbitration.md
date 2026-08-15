@@ -22,7 +22,7 @@ plan_refs:
 ## 起点・関連
 
 - 計画書 ID: **FR-20**（段階ゲート §4.2）／FR-12／SC-03
-- 裁定: **2026-08-07**（質問票 第13回 Q3・案2。環流 project-planning#213 / #217。planning `06fa163`）。
+- 裁定: **2026-08-07**（質問票 第13回 Q3・案2。環流 planning#213 / planning#217。planning `06fa163`）。
   計画 [06_daytrading-review](../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md) §4.2 §分母と除外の判定源
 - 対象 Issue: [#407](https://github.com/endazon/ai-stock-trading/issues/407)
 - 作業仕様書: [20260814_407_stage1-holiday-arbitration-reflection](../specs/20260814_407_stage1-holiday-arbitration-reflection.md)

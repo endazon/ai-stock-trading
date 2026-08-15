@@ -152,7 +152,7 @@ Stage 1 に居る間の窓は「Stage 1 へ入った時点から現在まで」�
     （未供給として止まる）。
 
     > **【2026-08-07 裁定・案 A（現行動作の追認）で確定した】** 環流
-    > [project-planning#238](https://github.com/endazon/project-planning/issues/238)（クローズ済み）／
+    > [planning#238](https://github.com/endazon/project-planning/issues/238)（クローズ済み）／
     > 追跡 [#404](https://github.com/endazon/ai-stock-trading/issues/404)。
     > **上記の「必要なら計画側へ確認する論点」は、確認され、決着した。**
     >
@@ -165,7 +165,7 @@ Stage 1 に居る間の窓は「Stage 1 へ入った時点から現在まで」�
     >
     > **受け入れた抜け道（計画が明示的に受容した）**: **内蔵 `paper` では禁止銘柄への発注を
     > 繰り返していたが `SIMULATE` では違反しなかった AI が、条件1 を満たして昇格し得る。**
-    > クラス C の定義（「AI が法令・計画上の禁止事項を犯そうとした件数」・project-planning#58）は
+    > クラス C の定義（「AI が法令・計画上の禁止事項を犯そうとした件数」・planning#58）は
     > 発注先を問わないとも読めるため、**この扱いは定義と厳密には整合しない**。
     > 実害の範囲が狭いこと（`paper` だけでは条件1 を通せない・昇格には利用者承認が要る）を理由に受容した。
     >

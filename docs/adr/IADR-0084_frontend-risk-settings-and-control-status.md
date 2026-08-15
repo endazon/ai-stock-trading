@@ -34,7 +34,7 @@ plan_refs:
   - 計画 **ADR-0009** は既存バックエンド（`RiskStatusService`/`RiskControlEndpoints`）および `IADR-0075` が「取引統制の優先順位」
     の根拠として参照する既存慣行 ID だが、pin 済み planning submodule の `07_adr/` には ADR-0001〜0008 しか存在せず ADR-0009 の
     ファイルは未在（plan_refs には含めない）。ADR-0009 の実在・採番確認を計画へ提案する。
-  - 上記は `/plan-feedback` で **project-planning#33**（#31 後続）へ環流済み（SC-02/SC-03 の採番確定・UC-07 誤参照の是正・
+  - 上記は `/plan-feedback` で **planning#33**（#31 後続）へ環流済み（SC-02/SC-03 の採番確定・UC-07 誤参照の是正・
     ADR-0009 の実在確認を提案）。
 - 対象 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)（T1 残スライス 1b/1c）
 - 関連する実装仕様書: [作業仕様](../specs/20260718_106_frontend-risk-settings-and-controls.md)、
@@ -67,7 +67,7 @@ T1 残スライスは **1b: FR-13 個別設定**と **1c: #20 承認・統制状
 
 根拠: 消費するサービス・認可・失敗縮退が SC-01 と独立で、`FeatureModule`（1 画面 = 1 モジュール）の粒度に沿う。単一の巨大
 コンポーネントに畳むより、所有サービス単位で分離した方がテスト・保守・存在秘匿の出し分けが明快。SC-01 画面仕様書の「同画面へ
-節追加」注記からは逸脱するため、計画側 `05_screens/` の SC-02/SC-03 定義を `/plan-feedback`（project-planning#31）で提案する。
+節追加」注記からは逸脱するため、計画側 `05_screens/` の SC-02/SC-03 定義を `/plan-feedback`（planning#31）で提案する。
 
 ### 2. 参照優先。破壊的操作は #165 の Bot 側に委ねる（安全既定・責務非分散）
 
