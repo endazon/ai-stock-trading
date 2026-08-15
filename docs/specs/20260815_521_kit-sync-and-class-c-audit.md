@@ -128,7 +128,7 @@ updated: 2026-08-15
 | --- | --- |
 | キット追随 | `A 83 件はバイト一致 / B 9 件 / C 14 件 / 対象外 9 件`（A 81 → 83・C 16 → 14） |
 | リポテスト | **232 tests passed**（+1） |
-| 必読規約の総量 | 🔴 **45,760 バイト＝予算の 91.5%**（`traceability.md` が 20,912 → 21,590 へ増えた） |
+| 必読規約の総量 | ~~🔴 **45,760 バイト＝予算の 91.5%**（`traceability.md` が 20,912 → 21,590 へ増えた）~~ 🔴 **【訂正・2026-08-15／[#519](https://github.com/endazon/ai-stock-trading/issues/519)・[IADR-0204](../adr/IADR-0204_reading-budget-mother-set.md)】この値は誤りである。** `AGENTS.md`（4,434）は **Claude が読まない**（同ファイル冒頭「Claude 以外の AI エージェント…が読み込む」）。**異なるエージェントの集合を足していた。** 正しくは **41,326 バイト（82.7%）**。**[#519](https://github.com/endazon/ai-stock-trading/issues/519) の着手条件 90% は満たされていなかった**（`traceability.md` の増加 20,912 → 21,590 は事実） |
 | クロスリポ検査 | **295 件**の Markdown・違反 0 件（`git ls-files -- '*.md' ':!planning' ':!docs/specs' ':!feedback' \| wc -l` も 295） |
 
 > 🔴 **初報は「294 件」と書いた。AI レビューが 295 件と実測して差し戻した（軽微・結論は同じ）。**
