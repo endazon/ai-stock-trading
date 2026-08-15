@@ -48,8 +48,25 @@ const REPO = path.join(__dirname, '..');
 const INDEX_PATH = 'docs/adr/README.md';
 const ADR_RE = /^docs\/adr\/(IADR-\d{4})_[^/]+\.md$/;
 
-/** 意図的に索引を変えない場合の逃げ道。コミット本文かPRタイトルに書く。 */
+/**
+ * 意図的に索引を変えない場合の逃げ道。**コミット本文の「行頭から単独で」書く。**
+ *
+ * 🔴 **本文中に埋めた言及では発動しない。** 素朴に `body.includes(TOKEN)` にすると、
+ * **この逃げ道について説明した文章そのものが逃げ道を発動させる。**
+ * 実際に、本検査器を導入したコミットのメッセージが
+ * 「逃げ道は `[skip-adr-index]` だが宣言すると notice が出る」と書いたために**自分で発動した**
+ * （自分自身へ適用して発見した）。**planning#319 知見3 と同型の自己発火である。**
+ *
+ * よって**トリムした行が完全に一致する場合のみ**逃げ道として扱う。
+ */
 const SKIP_TOKEN = '[skip-adr-index]';
+
+/** 逃げ道が「宣言」されているか。**行として単独で書かれた場合のみ真** */
+function declaresSkip(text) {
+  return String(text || '')
+    .split('\n')
+    .some((line) => line.trim() === SKIP_TOKEN);
+}
 
 function sh(cmd) {
   return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -116,7 +133,7 @@ function hasSkipToken(range, opts = {}) {
     }
   })();
   const title = process.env.PR_TITLE || '';
-  return body.includes(SKIP_TOKEN) || title.includes(SKIP_TOKEN);
+  return declaresSkip(body) || declaresSkip(title);
 }
 
 function main(opts = {}) {
@@ -254,6 +271,28 @@ function selfTest() {
   );
 
   t(
+    `🔴 ${SKIP_TOKEN} を本文中で言及しただけでは発動しない（自己発火の防止）`,
+    quiet(() =>
+      run({
+        nameStatus: 'docs/adr/IADR-0190_x.md\n',
+        indexDiff: '',
+        commitBodies: `chore: 逃げ道は ${SKIP_TOKEN} だが宣言すると notice が出る\n`,
+      }),
+    ) === 1,
+  );
+
+  t(
+    `${SKIP_TOKEN} が行として単独で書かれていれば発動する`,
+    quiet(() =>
+      run({
+        nameStatus: 'docs/adr/IADR-0190_x.md\n',
+        indexDiff: '',
+        commitBodies: `docs(IADR-0190): 誤字を直す\n\n  ${SKIP_TOKEN}  \n`,
+      }),
+    ) === 0,
+  );
+
+  t(
     '仕様書（docs/specs/）の変更は対象外',
     quiet(() => run({ nameStatus: 'docs/specs/20260814_x.md\n', indexDiff: '' })) === 0,
   );
@@ -285,4 +324,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, collect, resolveRange, SKIP_TOKEN };
+module.exports = { main, collect, resolveRange, declaresSkip, SKIP_TOKEN };
