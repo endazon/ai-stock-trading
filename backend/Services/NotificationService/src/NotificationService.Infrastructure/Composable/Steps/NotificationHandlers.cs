@@ -119,3 +119,10 @@ public sealed class FxRateStaleNotificationHandler(INotificationSender sender)
     public Task Handle(FxRateStale message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
+
+// FR-10, FR-09, #381, IADR-0198: 鮮度切れのレートで決済した事実を Discord へ通知する。
+public sealed class PositionClosedWithStaleFxRateNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(PositionClosedWithStaleFxRate message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}

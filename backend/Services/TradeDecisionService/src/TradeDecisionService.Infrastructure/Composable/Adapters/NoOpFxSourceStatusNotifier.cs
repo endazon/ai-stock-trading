@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Application.Ports;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
@@ -21,6 +22,18 @@ internal sealed class NoOpFxSourceStatusNotifier : IFxSourceStatusNotifier
         TimeSpan age,
         TimeSpan warnThreshold,
         TimeSpan maxAge,
+        CancellationToken cancellationToken = default,
+        bool entryBlocked = false) =>
+        Task.CompletedTask;
+
+    public Task ReportClosedWithStaleRateAsync(
+        string symbol,
+        Market market,
+        string quote,
+        int quantity,
+        decimal fxRateToBase,
+        DateTimeOffset rateAsOf,
+        TimeSpan age,
         CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 }

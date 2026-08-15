@@ -78,6 +78,10 @@ internal sealed class CachingFxRateSource(
                 "**手仕舞いは止めません**（ADR-0022 決定5・#506）。",
                 quote, rate.AsOf, maxRateAge.TotalDays);
 
+            // #381 停止側 / IADR-0198 決定1: **停止側も可視化する。** 従来はここで return しており、
+            // **統制が発動した事実がログ以外どこにも出ていなかった**（ADR-0022 決定2「黙って劣化させない」）。
+            await NotifyStaleAsync(quote, rate.AsOf, age, cancellationToken, entryBlocked: true).ConfigureAwait(false);
+
             // 🔴 **鮮度切れはキャッシュしない**（従来どおり）。一時障害を TTL のあいだ引きずると回復後も続くため。
             return new FxRateReading(rate, freshness);
         }
@@ -115,13 +119,18 @@ internal sealed class CachingFxRateSource(
     /// </para>
     /// </summary>
     private async Task NotifyStaleAsync(
-        Currency quote, DateTimeOffset asOf, TimeSpan age, CancellationToken cancellationToken)
+        Currency quote,
+        DateTimeOffset asOf,
+        TimeSpan age,
+        CancellationToken cancellationToken,
+        bool entryBlocked = false)
     {
         try
         {
             await _statusNotifier
                 .ReportStaleAsync(
-                    CurrencyFormat.CodeOf(quote), asOf, age, staleRateWarning, maxRateAge, cancellationToken)
+                    CurrencyFormat.CodeOf(quote), asOf, age, staleRateWarning, maxRateAge, cancellationToken,
+                    entryBlocked)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

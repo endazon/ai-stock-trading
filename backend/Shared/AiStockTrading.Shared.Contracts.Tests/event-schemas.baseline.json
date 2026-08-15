@@ -68,6 +68,29 @@
     "BusinessDay": "DateOnly",
     "OccurredAt": "DateTimeOffset"
   },
+  "FxRateSourceFellBack": {
+    "OccurredAt": "DateTimeOffset",
+    "Quote": "String",
+    "Rank": "Int32",
+    "SourceName": "String",
+    "TotalSources": "Int32"
+  },
+  "FxRateSourcePrimaryRestored": {
+    "FallbackDuration": "TimeSpan",
+    "FellBackAt": "DateTimeOffset",
+    "OccurredAt": "DateTimeOffset",
+    "Quote": "String",
+    "SourceName": "String"
+  },
+  "FxRateStale": {
+    "AgeDays": "Double",
+    "AsOf": "DateTimeOffset",
+    "EntryBlocked": "Boolean",
+    "MaxAgeDays": "Double",
+    "OccurredAt": "DateTimeOffset",
+    "Quote": "String",
+    "WarnThresholdDays": "Double"
+  },
   "GoodFaithViolationRecorded": {
     "DecisionId": "Guid",
     "EventId": "Guid",
@@ -151,6 +174,16 @@
     "Reason": "String",
     "RequestedAt": "DateTimeOffset",
     "Side": "TradeSide",
+    "Symbol": "String"
+  },
+  "PositionClosedWithStaleFxRate": {
+    "AgeDays": "Double",
+    "FxRateToBase": "Decimal",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Quantity": "Int32",
+    "Quote": "String",
+    "RateAsOf": "DateTimeOffset",
     "Symbol": "String"
   },
   "PositionReconciliationDrift": {

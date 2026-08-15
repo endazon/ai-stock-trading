@@ -285,6 +285,17 @@ public static class AuditEntryFactory
             + "直近レートで続行しており新規建ては止まっていない",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-11, #381, IADR-0198: 鮮度切れのレートで決済した。**取引 1 件ごとに残す**（抑止しない）。
+    //
+    // 相関は銘柄ごとに分ける——**同じ銘柄の決済を時系列で辿れる**ようにするため。
+    // 🔴 要約に**観測日**を出す。台帳の行には観測日の列が無く、**ここが唯一の手掛かり**である。
+    public static AuditEntry From(PositionClosedWithStaleFxRate e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionClosedWithStaleFxRate), AuditCorrelation.From($"fx-stale-close:{e.Symbol}"), e.Symbol,
+        $"鮮度切れのレートで決済: {e.Symbol}/{e.Market} 数量{e.Quantity}・"
+            + $"換算率 {e.FxRateToBase}（{e.Quote}→基準通貨）・**観測日 {e.RateAsOf:yyyy-MM-dd}（{e.AgeDays:0.#} 日前）**。"
+            + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
     private static string FormatDuration(TimeSpan d) =>
         d.TotalDays >= 1 ? $"{d.TotalDays:0.#} 日"

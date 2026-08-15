@@ -140,6 +140,59 @@ public class FxSourceStatusTrackerTests
         e.MaxAgeDays.Should().Be(30);
     }
 
+    // --- #381 停止側（IADR-0198 決定1・決定2） ---------------------------------------------------
+
+    // 🔴 **昇格は同じ日でも知らせる。** 抑止の鍵に状態を含めていないと、
+    // **朝に警告を出した通貨が夕方に停止域へ落ちても黙る**——統制の発動が埋もれる。
+    [Fact]
+    public void 警告から停止への昇格は同じ日でも通知する()
+    {
+        var tracker = NewTracker();
+        var asOf = T0.AddDays(-31);
+
+        tracker.OnStale("USD", asOf, TimeSpan.FromDays(7), TimeSpan.FromDays(5), TimeSpan.FromDays(30), T0)
+            .Should().NotBeNull();
+
+        var blocked = tracker.OnStale(
+            "USD", asOf, TimeSpan.FromDays(31), TimeSpan.FromDays(5), TimeSpan.FromDays(30),
+            T0.AddHours(6), entryBlocked: true);
+
+        blocked.Should().NotBeNull("同じ日でも、警告から停止への昇格は知らせる必要がある");
+        blocked!.EntryBlocked.Should().BeTrue();
+    }
+
+    // 🔴 **否定形: 洪水を戻していないこと。** 状態を鍵へ足したせいで抑止が緩んでいないか。
+    [Fact]
+    public void 停止域が続いている間は同じ日に1回だけ発行する()
+    {
+        var tracker = NewTracker();
+        var asOf = T0.AddDays(-31);
+
+        tracker.OnStale(
+            "USD", asOf, TimeSpan.FromDays(31), TimeSpan.FromDays(5), TimeSpan.FromDays(30),
+            T0, entryBlocked: true).Should().NotBeNull();
+
+        var published = Enumerable.Range(1, 50)
+            .Select(i => tracker.OnStale(
+                "USD", asOf, TimeSpan.FromDays(31), TimeSpan.FromDays(5), TimeSpan.FromDays(30),
+                T0.AddSeconds(i), entryBlocked: true))
+            .Count(e => e is not null);
+
+        published.Should().Be(0, "同じ状態が続く間は 1 日 1 回（状態を鍵へ足しても洪水は防いだまま）");
+    }
+
+    // 🔴 **否定形: 警告域で「止まった」と言わない。**
+    [Fact]
+    public void 警告域では新規建てを止めていないことをイベントが示す()
+    {
+        var tracker = NewTracker();
+
+        var e = tracker.OnStale(
+            "USD", T0.AddDays(-7), TimeSpan.FromDays(7), TimeSpan.FromDays(5), TimeSpan.FromDays(30), T0)!;
+
+        e.EntryBlocked.Should().BeFalse("警告域は続行する（ADR-0022 決定5）");
+    }
+
     // 発行に失敗したら状態を戻す。戻さないと「発行済み」が残り、二度と出なくなる。
     [Fact]
     public void 発行に失敗した状態を戻すと次の機会に再発行できる()

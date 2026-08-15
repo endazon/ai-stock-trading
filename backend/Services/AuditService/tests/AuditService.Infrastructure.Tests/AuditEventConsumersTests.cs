@@ -217,4 +217,57 @@ public class AuditEventConsumersTests
 
         await host.StopAsync();
     }
+
+    // FR-10, FR-11, #381 停止側, IADR-0198 決定3: 鮮度切れのレートでの決済を台帳へ記録する。
+    //
+    // 🔴 **本経路が「いつのレートで決済したか」を 7 年保持へ入れる唯一の手段である。**
+    // 台帳の行（`ApprovedOrderRow`）は観測日の列を持たないが、**イベント全量は JSON で保存される**——
+    // ここが通らなければ観測日はどこにも残らない。
+    [Fact]
+    public async Task 鮮度切れでの決済は_銘柄ごとの相関で台帳へ記録される()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var now = DateTimeOffset.UtcNow;
+        var evt = new PositionClosedWithStaleFxRate(
+            "7203", Market.Japan, "JPY", 300, 0.0067m, now.AddDays(-31), 31, now);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
+        session.Executed.MessagesOf<PositionClosedWithStaleFxRate>().Should().NotBeEmpty();
+
+        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(evt, Guid.NewGuid(), now).CorrelationId;
+
+        var entry = store.GetByCorrelation(correlation)
+            .Should().ContainSingle(e => e.EventType == nameof(PositionClosedWithStaleFxRate)).Subject;
+        // 🔴 観測日が残っていなければ本イベントを足した意味が無い。
+        entry.Summary.Should().Contain("観測日");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 **否定形: 抑止しない。** 状態（`FxRateStale`）は 1 日 1 回へ抑止するが、
+    // **取引は 1 件ずつ残さなければ後から件数も金額も復元できない**（IADR-0198 決定3）。
+    [Fact]
+    public async Task 鮮度切れでの決済は_同じ銘柄でも件数ぶん台帳へ残る()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var now = DateTimeOffset.UtcNow;
+        var first = new PositionClosedWithStaleFxRate(
+            "7203", Market.Japan, "JPY", 300, 0.0067m, now.AddDays(-31), 31, now);
+        var second = first with { Quantity = 100, OccurredAt = now.AddMinutes(5) };
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(first);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(second);
+
+        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(first, Guid.NewGuid(), now).CorrelationId;
+
+        store.GetByCorrelation(correlation).Should().HaveCount(2, "取引は 1 件ずつ残す（抑止しない）");
+
+        await host.StopAsync();
+    }
 }

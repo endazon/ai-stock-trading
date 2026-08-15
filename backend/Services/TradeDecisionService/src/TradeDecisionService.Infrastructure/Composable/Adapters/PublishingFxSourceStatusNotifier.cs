@@ -1,4 +1,6 @@
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
 using Wolverine;
@@ -29,8 +31,28 @@ internal sealed class PublishingFxSourceStatusNotifier(
         TimeSpan age,
         TimeSpan warnThreshold,
         TimeSpan maxAge,
+        CancellationToken cancellationToken = default,
+        bool entryBlocked = false) =>
+        PublishIfAny(quote, _tracker.OnStale(quote, asOf, age, warnThreshold, maxAge, clock.UtcNow, entryBlocked));
+
+    /// <summary>
+    /// 🔴 <b>抑止しない。</b> これは「状態」ではなく「取引」であり、
+    /// <b>1 件ずつ台帳に残さなければ後から件数も金額も復元できない</b>（IADR-0198 決定3）。
+    /// </summary>
+    public Task ReportClosedWithStaleRateAsync(
+        string symbol,
+        Market market,
+        string quote,
+        int quantity,
+        decimal fxRateToBase,
+        DateTimeOffset rateAsOf,
+        TimeSpan age,
         CancellationToken cancellationToken = default) =>
-        PublishIfAny(quote, _tracker.OnStale(quote, asOf, age, warnThreshold, maxAge, clock.UtcNow));
+        PublishIfAny(
+            quote,
+            new PositionClosedWithStaleFxRate(
+                symbol, market, quote, quantity, fxRateToBase, rateAsOf,
+                age.TotalDays, clock.UtcNow));
 
     /// <summary>
     /// 判定器が「発行すべき」と返したときだけ publish する。

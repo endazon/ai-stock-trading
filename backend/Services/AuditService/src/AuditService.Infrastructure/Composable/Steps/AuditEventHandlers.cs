@@ -352,3 +352,17 @@ public sealed class FxRateStaleAuditHandler(IAuditEventStore store, IClock clock
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-10, FR-11, #381, ADR-0022 決定5, IADR-0198: 鮮度切れのレートで決済した事実を台帳へ記録する。
+//
+// 🔴 **本ハンドラが「いつのレートで決済したか」を 7 年保持へ入れる唯一の経路である。**
+// 台帳の行（ApprovedOrderRow）は FxRateToBase の数値だけを持ち観測日の列が無いが、
+// 台帳は**イベント全量を JSON で保存する**ため、ここを通ることで RateAsOf が残る。
+public sealed class PositionClosedWithStaleFxRateAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionClosedWithStaleFxRate message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

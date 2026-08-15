@@ -576,4 +576,38 @@ public class AuditEntryFactoryTests
         entry.EventType.Should().Be(nameof(FxRateStale));
         entry.Summary.Should().Contain("新規建ては止まっていない");
     }
+
+    // --- #381 停止側 / IADR-0198 決定3 ------------------------------------------------------------
+
+    // 🔴 **台帳の行（ApprovedOrderRow）は観測日の列を持たない。**
+    // 本エントリの要約が「何日前のレートで換算したか」を残す唯一の手掛かりである。
+    [Fact]
+    public void 鮮度切れでの決済は_観測日を要約に残す()
+    {
+        var entry = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(PositionClosedWithStaleFxRate));
+        entry.Symbol.Should().Be("7203", "決済は銘柄単位の事実である（通貨単位の劣化とは別）");
+        entry.Summary.Should().Contain("鮮度切れのレートで決済");
+        entry.Summary.Should().Contain("観測日");
+        // 手仕舞いを止めていないことも読めること（ADR-0022 決定5）。
+        entry.Summary.Should().Contain("手仕舞いは止めていない");
+    }
+
+    // 🔴 **相関は銘柄ごとに分ける**——同じ銘柄の決済を時系列で辿れるようにするため。
+    // ここが固定だと、全銘柄の決済が 1 本の相関に混ざる。
+    [Fact]
+    public void 鮮度切れでの決済の相関は_銘柄ごとに分かれる()
+    {
+        var a = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+        var b = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("6758", Market.Japan, "JPY", 100, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+
+        b.CorrelationId.Should().NotBe(a.CorrelationId);
+    }
 }

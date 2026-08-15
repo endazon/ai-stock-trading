@@ -34,8 +34,9 @@ public class ReportRendererFxSourceStatusTests
         IReadOnlyList<FxRateSourceFellBack>? fellBacks = null,
         IReadOnlyList<FxRateSourcePrimaryRestored>? restorations = null,
         IReadOnlyList<FxRateStale>? stales = null,
-        IReadOnlyList<string>? credits = null) =>
-        new(fellBacks ?? [], restorations ?? [], stales ?? [], credits ?? []);
+        IReadOnlyList<string>? credits = null,
+        IReadOnlyList<PositionClosedWithStaleFxRate>? staleCloses = null) =>
+        new(fellBacks ?? [], restorations ?? [], stales ?? [], credits ?? [], staleCloses ?? []);
 
     // 🔴 **否定形（決定3）。** 照会不能を「切替なし」と書くと、劣化を隠したのと同じ結果になる。
     [Fact]
@@ -95,6 +96,63 @@ public class ReportRendererFxSourceStatusTests
         md.Should().Contain("新規建ては止まっていません");
     }
 
+    // --- #381 停止側 / IADR-0198 -----------------------------------------------------------------
+
+    // 🔴 **停止域を警告と同じ文で書かない。** 従来は `EntryBlocked` を見ずに
+    // 「新規建ては止まっていません」と書いていたため、**統制が発動した日の日報が
+    // 「発動していない」と読める**状態だった。
+    [Fact]
+    public void 停止域は_新規建てを停止したことを書く()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            stales: [new FxRateStale("USD", T0.AddDays(-31), 31, 5, 30, T0, EntryBlocked: true)])));
+
+        md.Should().Contain("鮮度切れ（新規建て停止）");
+        md.Should().Contain("新規建てを停止しました");
+        // 手仕舞いまで止まったと読ませない（ADR-0022 決定5）。
+        md.Should().Contain("手仕舞い・損切りは止めていません");
+    }
+
+    // 🔴 **否定形。** 警告域の行が停止域の文言へ引きずられていないこと。
+    [Fact]
+    public void 警告域は_停止したとは書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            stales: [new FxRateStale("USD", T0.AddDays(-7), 7, 5, 30, T0)])));
+
+        md.Should().NotContain("新規建てを停止しました");
+        md.Should().Contain("新規建ては止まっていません");
+    }
+
+    // 🔴 **取引の記録は 1 件ずつ出す**（IADR-0198 決定3）。鮮度警告は 1 日 1 回へ抑止されるが、
+    // **決済は件数も金額も後から復元できなければならない。**
+    [Fact]
+    public void 鮮度切れでの決済は_観測日つきで1件ずつ出す()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(staleCloses: [
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, T0.AddDays(-31), 31, T0),
+            new PositionClosedWithStaleFxRate("6758", Market.Japan, "JPY", 100, 0.0067m, T0.AddDays(-31), 31, T0),
+        ])));
+
+        md.Should().Contain("7203");
+        md.Should().Contain("6758", "抑止されないため 2 件とも出る");
+        md.Should().Contain("観測日 2026-07-15");
+        md.Should().Contain("換算額は実勢から乖離し得ます");
+    }
+
+    // 🔴 **否定形。** 鮮度警告が当日ぶん既に出ていて空でも、決済だけが残ることがある。
+    // ここを落とすと「劣化はありませんでした」と決済の明細が並ぶ（復帰で踏んだ穴と同じ形）。
+    [Fact]
+    public void 鮮度切れでの決済だけがある場合は_劣化なしと書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(staleCloses: [
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, T0.AddDays(-31), 31, T0),
+        ])));
+
+        md.Should().Contain("鮮度切れのレートで決済");
+        md.Should().NotContain("鮮度警告もありません", "劣化した値で取引したなら劣化はあった");
+    }
+
     // ADR-0022 決定1: 出典の明記。
     [Fact]
     public void 日銀を使った期間は_クレジット表記を出す()
@@ -132,10 +190,20 @@ public class ReportRendererFxSourceStatusTests
         var md = ReportRenderer.RenderMarkdown(View(Status(
             fellBacks: [new FxRateSourceFellBack("USD", "fred", 2, 2, T0)],
             restorations: [new FxRateSourcePrimaryRestored("USD", "boj", T0, T0.AddHours(3))],
-            stales: [new FxRateStale("USD", T0.AddDays(-7), 7, 5, 30, T0)]), ReportKind.Monthly));
+            stales: [
+                new FxRateStale("USD", T0.AddDays(-7), 7, 5, 30, T0),
+                new FxRateStale("USD", T0.AddDays(-31), 31, 5, 30, T0, EntryBlocked: true),
+            ],
+            staleCloses: [
+                new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, T0.AddDays(-31), 31, T0),
+            ]), ReportKind.Monthly));
 
         md.Should().Contain("フォールバックへの切替 1 件");
-        md.Should().Contain("鮮度警告 1 件");
+        md.Should().Contain("鮮度警告 2 件");
+        // 🔴 **停止に至った回数を回数の中に埋めない。** 「警告 2 件」だけだと
+        // **統制が発動した月と、警告どまりの月が同じに見える。**
+        md.Should().Contain("うち新規建て停止 1 件");
+        md.Should().Contain("鮮度切れでの決済 1 件");
         md.Should().Contain("該当日報を参照");
         // 明細の文言は出さない（出すと日報と同じ量になる）。
         md.Should().NotContain("観測日");

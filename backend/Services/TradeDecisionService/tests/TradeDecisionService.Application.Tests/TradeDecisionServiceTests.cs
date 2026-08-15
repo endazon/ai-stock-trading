@@ -953,6 +953,119 @@ public class TradeDecisionServiceTests
         decision.Intent.FxRateToBase.Should().NotBe(1m, "1m を載せると JPY を USD として台帳へ記録することになる");
     }
 
+    // --- #381 停止側 / IADR-0198 決定3: **劣化した値で取引したことを記録に残す** ---------------
+    //
+    // 🔴 **監査台帳の行（ApprovedOrderRow）は観測日の列を持たない。**
+    // 本経路が「いつのレートで決済したか」を 7 年保持へ入れる**唯一の手段**である——
+    // ここが黙ると、後から「その決済が何日前のレートで換算されたか」を復元できない。
+
+    [Fact]
+    public async Task 鮮度切れのレートで決済したら観測日つきで記録へ残す()
+    {
+        var notifier = new RecordingStatusNotifier();
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300),
+            statusNotifier: notifier);
+
+        await service.DecideAsync(NonBaseTrigger());
+
+        var reported = notifier.StaleCloses.Should().ContainSingle().Subject;
+        reported.Symbol.Should().Be("7203");
+        reported.Quantity.Should().Be(300);
+        reported.FxRateToBase.Should().Be(0.0067m);
+        // 🔴 これが載らなければ本イベントを足した意味が無い（台帳に観測日が残らない）。
+        reported.RateAsOf.Should().Be(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
+    }
+
+    // 🔴 **否定形**: 鮮度が正常な決済で鳴らさない。鳴らすと**台帳が「劣化した取引」で埋まり**、
+    // 本当に劣化した 1 件が見つけられなくなる（可視化は「異常が目立つこと」で価値が出る）。
+    [Fact]
+    public async Task 鮮度が正常な決済では記録へ残さない()
+    {
+        var notifier = new RecordingStatusNotifier();
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m), heldPosition: new FakeHeld(300),
+            statusNotifier: notifier);
+
+        await service.DecideAsync(NonBaseTrigger());
+
+        notifier.StaleCloses.Should().BeEmpty("劣化していない取引を「劣化した」と記録しない");
+    }
+
+    // 🔴 **否定形**: **新規建てが止まった場合は出さない。** 「取引した」イベントであり、
+    // **止まった事実は `FxRateStale`（EntryBlocked）が運ぶ**——ここで出すと同じ事象が 2 系統になる。
+    [Fact]
+    public async Task 鮮度切れで新規建てが止まった場合は決済の記録を出さない()
+    {
+        var notifier = new RecordingStatusNotifier();
+        var service = new AppSvc(
+            new FakeLlm(NonBaseBuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300),
+            statusNotifier: notifier);
+
+        await service.DecideAsync(NonBaseTrigger());
+
+        notifier.StaleCloses.Should().BeEmpty("新規建ては取引が成立していない（止めた側の事実は FxRateStale が運ぶ）");
+    }
+
+    // 🔴 **可視化の失敗で決済を止めない**（ADR-0022 決定5 が守っている経路そのもの）。
+    [Fact]
+    public async Task 記録の発行に失敗しても決済は止めない()
+    {
+        var service = new AppSvc(
+            new FakeLlm(NonBaseSellJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            fxRate: new FakeFxRate(0.0067m, FxRateFreshness.Expired), heldPosition: new FakeHeld(300),
+            statusNotifier: new ThrowingStatusNotifier());
+
+        var decision = await service.DecideAsync(NonBaseTrigger());
+
+        decision.Should().NotBeNull("記録できないことを理由に手仕舞いを止めるのは本末転倒である");
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+    }
+
+    private sealed class RecordingStatusNotifier : IFxSourceStatusNotifier
+    {
+        public List<(string Symbol, int Quantity, decimal FxRateToBase, DateTimeOffset RateAsOf)> StaleCloses { get; } = [];
+
+        public Task ReportSourceUsedAsync(
+            string quote, string sourceName, int rank, int totalSources,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task ReportStaleAsync(
+            string quote, DateTimeOffset asOf, TimeSpan age, TimeSpan warnThreshold, TimeSpan maxAge,
+            CancellationToken cancellationToken = default, bool entryBlocked = false) => Task.CompletedTask;
+
+        public Task ReportClosedWithStaleRateAsync(
+            string symbol, Market market, string quote, int quantity, decimal fxRateToBase,
+            DateTimeOffset rateAsOf, TimeSpan age, CancellationToken cancellationToken = default)
+        {
+            StaleCloses.Add((symbol, quantity, fxRateToBase, rateAsOf));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingStatusNotifier : IFxSourceStatusNotifier
+    {
+        public Task ReportSourceUsedAsync(
+            string quote, string sourceName, int rank, int totalSources,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task ReportStaleAsync(
+            string quote, DateTimeOffset asOf, TimeSpan age, TimeSpan warnThreshold, TimeSpan maxAge,
+            CancellationToken cancellationToken = default, bool entryBlocked = false) => Task.CompletedTask;
+
+        public Task ReportClosedWithStaleRateAsync(
+            string symbol, Market market, string quote, int quantity, decimal fxRateToBase,
+            DateTimeOffset rateAsOf, TimeSpan age, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("可視化経路の擬似障害");
+    }
+
     // 🔴 **否定形**: ゲートを丸ごと外していないこと。鮮度切れの**新規建ては止まる**。
     [Fact]
     public async Task 鮮度切れの新規建ては保有があっても止まる_506()
