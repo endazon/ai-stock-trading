@@ -26,6 +26,40 @@ public static class NotificationFormatter
         $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）",
         NotificationSeverity.Critical);
 
+    // FR-10, FR-17, #381, ADR-0022 決定2, IADR-0196: 為替レート源がフォールバックへ切り替わった。
+    //
+    // 🔴 **Warning であって Critical ではない。** 新規建ては止まっておらず、判断は続いている。
+    // Critical にすると損切り到達（実際に止まる事象）と同じ重みになり、**本当に止まったときの
+    // 通知が埋もれる**。ADR-0022 決定2 が求めるのは「黙って劣化させない」ことであって、
+    // 「止まったのと同じ扱いにする」ことではない。
+    //
+    // **何が劣化したのかを本文に書く。** 「フォールバックした」だけでは受け手が影響を判断できない。
+    public static NotificationMessage From(FxRateSourceFellBack e) => new(
+        "為替: 情報源がフォールバックへ切替",
+        $"{e.Quote} の為替レートを {e.SourceName}（優先度 {e.Rank}/{e.TotalSources}）から取得しています。"
+            + "第一の情報源が使えていません。**鮮度が日次から週次へ悪化し得ます**"
+            + "（新規建ては止まっていません・ADR-0022 決定2）。",
+        NotificationSeverity.Warning);
+
+    // 回復は Info。**期間を本文へ入れる**——「いつ戻ったか」だけでは、どれだけ劣化した状態で
+    // 判断していたのかが分からない（ADR-0022 決定2 は期間の記録を求めている）。
+    public static NotificationMessage From(FxRateSourcePrimaryRestored e) => new(
+        "為替: 第一の情報源へ復帰",
+        $"{e.Quote} の為替レートは第一の情報源（{e.SourceName}）へ戻りました。"
+            + $"フォールバックしていた期間: {FormatDuration(e.FallbackDuration)}。",
+        NotificationSeverity.Info);
+
+    // 🔴 **「止まった」と読ませない。** 警告域は続行する（ADR-0022 決定5）。
+    // 本文で「止まっていない」と明示し、**どこまで来たら止まるのか**（上限）も併記する——
+    // それが無いと受け手は緊急度を判断できない。
+    public static NotificationMessage From(FxRateStale e) => new(
+        "為替: レートの鮮度警告",
+        $"{e.Quote} の為替レートの観測が {e.AgeDays:0.#} 日前です"
+            + $"（観測日 {e.AsOf:yyyy-MM-dd}・警告 {e.WarnThresholdDays:0.#} 日超）。"
+            + $"**直近レートで続行しており新規建ては止まっていません**。"
+            + $"{e.MaxAgeDays:0.#} 日を超えると新規建てを停止します（手仕舞いは止めません・ADR-0022 決定5）。",
+        NotificationSeverity.Warning);
+
     // FR-17: 全体前提条件の変更（利用者による設定変更の通知）。
     public static NotificationMessage From(AssumptionsChanged e) => new(
         "設定変更: 全体前提条件",
@@ -114,6 +148,13 @@ public static class NotificationFormatter
         NotificationSeverity.Critical);
 
     // 04_report-templates の <n%> 表記（小数第 1 位・文化非依存）。"P1" は文化により空白が入るため使わない。
+    // #381, IADR-0196: フォールバック期間の表示。意味のある単位までで止める
+    // （秒まで書くと受け手が桁を数えることになる）。監査台帳側と同じ規則。
+    private static string FormatDuration(TimeSpan d) =>
+        d.TotalDays >= 1 ? d.TotalDays.ToString("0.#", CultureInfo.InvariantCulture) + " 日"
+        : d.TotalHours >= 1 ? d.TotalHours.ToString("0.#", CultureInfo.InvariantCulture) + " 時間"
+        : d.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture) + " 分";
+
     private static string Ratio(decimal ratio) =>
         (ratio * 100m).ToString("0.0", CultureInfo.InvariantCulture) + "%";
 

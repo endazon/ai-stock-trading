@@ -99,3 +99,23 @@ public sealed class MaintenanceMarginReductionExecutedNotificationHandler(INotif
     public Task Handle(MaintenanceMarginReductionExecuted message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
+
+// FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化を Discord へ通知する 3 本。
+// 「黙って劣化させない」——ログだけでは運用者が能動的に見に行かない限り気づけない。
+public sealed class FxRateSourceFellBackNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(FxRateSourceFellBack message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+public sealed class FxRateSourcePrimaryRestoredNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(FxRateSourcePrimaryRestored message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+public sealed class FxRateStaleNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(FxRateStale message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}

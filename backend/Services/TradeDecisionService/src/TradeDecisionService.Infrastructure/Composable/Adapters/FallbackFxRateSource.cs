@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
@@ -16,11 +17,14 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 // 定めたのは公表頻度の構造によるものであり、個別の観測日で入れ替わってよいものではない）。
 internal sealed class FallbackFxRateSource(
     IReadOnlyList<(string Name, IFxRateSource Source)> sources,
-    ILogger<FallbackFxRateSource> logger)
+    ILogger<FallbackFxRateSource> logger,
+    IFxSourceStatusNotifier? statusNotifier = null)
     : IFxRateSource
 {
     private readonly IReadOnlyList<(string Name, IFxRateSource Source)> _sources =
         sources ?? throw new ArgumentNullException(nameof(sources));
+
+    private readonly IFxSourceStatusNotifier _statusNotifier = statusNotifier ?? NoOpFxSourceStatusNotifier.Instance;
 
     /// <summary>
     /// 構成順に試し、最初に解決できた源のレートを返す。
@@ -45,9 +49,7 @@ internal sealed class FallbackFxRateSource(
             }
 
             // 🔴 第一以外が採用された＝**フォールバック中である**。ADR-0022 決定2 は「黙って劣化させない」ため
-            // 日報・監査ログ・Discord への記録を求めている。**本 PR ではログのみであり、3 経路への配線は
-            // #381 の第 2 層（次 PR）で行う**（IADR-0194 §残余リスク）。ログに留まる間は、
-            // **切り替わった事実は運用者が能動的に見に行かないと分からない。**
+            // 日報・監査ログ・Discord への記録を求めている（#381 第 2 層・IADR-0196 で配線した）。
             if (i > 0)
             {
                 logger.LogWarning(
@@ -56,6 +58,11 @@ internal sealed class FallbackFxRateSource(
                     name, i + 1, _sources.Count);
             }
 
+            // **毎回報告してよい。** 遷移の判定と重複抑止は IFxSourceStatusNotifier の実装が持つ
+            // （IADR-0196 決定1）。ここで「i > 0 のときだけ」報告すると**回復を検出できない**——
+            // 第一へ戻ったことは「rank 1 が使われた」という報告からしか分からない。
+            await NotifySourceUsedAsync(quote, name, i + 1, cancellationToken).ConfigureAwait(false);
+
             return rate;
         }
 
@@ -63,5 +70,41 @@ internal sealed class FallbackFxRateSource(
             "為替レートをどの源からも解決できませんでした（試した源 {Total} 件）。レート無しとして扱います。",
             _sources.Count);
         return null;
+    }
+
+    /// <summary>
+    /// 情報源の採用を可視化経路へ報告する。
+    /// <para>
+    /// 🔴 <b>可視化の失敗で取引判断を止めない。</b> 本メソッドは例外を飲み込む——
+    /// フォールバックはしているがレート自体は取れている状況で、<b>通知経路の障害を理由に
+    /// レートを捨てるのは本末転倒である</b>（可視化は統制の観測であって、統制そのものではない）。
+    /// </para>
+    /// <para>
+    /// <b>ただし黙って飲み込まない。</b> 飲み込んだ事実をログへ残す——
+    /// これを黙らせると「通知が来ない＝正常」と読めてしまい、#381 が解こうとしている問題が戻る。
+    /// <see cref="OperationCanceledException"/> は伝播させる（取り消しは失敗ではない）。
+    /// </para>
+    /// </summary>
+    private async Task NotifySourceUsedAsync(
+        Currency quote, string sourceName, int rank, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _statusNotifier
+                .ReportSourceUsedAsync(CurrencyFormat.CodeOf(quote), sourceName, rank, _sources.Count, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "為替の情報源の状態を可視化経路へ報告できませんでした（{Source} / 優先度 {Rank}）。" +
+                "レート自体は取得できているため取引判断は続行しますが、**この間の劣化は監査・通知・日報に現れません**。",
+                sourceName, rank);
+        }
     }
 }
