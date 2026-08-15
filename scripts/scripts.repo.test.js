@@ -1451,6 +1451,51 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
+  // 🔴 **分類 C は「同期しない」であるため、置いた瞬間に検査が止まる。**
+  // 固有デルタが 0 のファイルを C に置くと、**キット側の是正が永久に戻ってこない**。
+  // 実測で 2 度起きた（#517 の `traceability.md`・#521 の検査器 2 本）ため、機械で止める
+  // （運用標準「検査器の追加は同型事故 2 回から」を満たした。IADR-0203）。
+  //
+  // **C の定義「置換点を持つ配布物」は、置換点を「持つ」ことではなく
+  // 本リポが「埋めている」ことで判定する。** 埋めていないなら固有デルタは 0 であり、
+  // 「各リポが自分の値を埋める前提」という C の根拠がそもそも成り立たない。
+  ok('分類 C は固有デルタを持つ（バイト一致・置換点の未記入を許さない。#521 の回帰）', () => {
+    const fsC = require('fs');
+    const kitRoot = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');
+    if (!fsC.existsSync(kitRoot)) return; // planning 未 populate では skip（CI は kit-sync が --require-planning で落とす）
+    const table = require('./kit-sync-classification.json');
+    const repoRoot = pathFb.resolve(__dirname, '..');
+    // キットが配る置換点の目印。**埋めていないなら、この形がそのまま残る。**
+    const PLACEHOLDERS = ['<sibling-repo-name>', '<SHORT>', '<SELF_SHORT>', '<self-repo-name>'];
+    const bad = [];
+    for (const rel of table.classes.C) {
+      const mine = pathFb.join(repoRoot, rel);
+      const kit = pathFb.join(kitRoot, rel);
+      if (!fsC.existsSync(kit) || !fsC.existsSync(mine)) continue; // キットに無い＝本リポ固有。C で正しい
+      if (fsC.readFileSync(mine).equals(fsC.readFileSync(kit))) {
+        bad.push(`${rel}: キットとバイト一致（固有デルタ 0）。分類 A へ移すこと`);
+        continue;
+      }
+      // 🔴 **置換点の信号は、置換点を宣言しているファイルにだけ当てる。**
+      // 目印の文字列だけで引くと、**規約や ADR がプレースホルダを引用しただけの行に当たる**
+      // （実測: 本テストの初版が `docs/adr/README.md` の IADR-0203 索引行——
+      // 「置換点は `<sibling-repo-name>` 等のプレースホルダのまま」という**引用**——を違反として上げた）。
+      // キット版が `【置換点】` を宣言しているかで絞る。
+      const kitText = fsC.readFileSync(kit, 'utf8');
+      if (!kitText.includes('【置換点】')) continue;
+      const text = fsC.readFileSync(mine, 'utf8');
+      const left = PLACEHOLDERS.filter((p) => text.includes(p));
+      if (left.length > 0) {
+        bad.push(`${rel}: 置換点が未記入のまま（${left.join(' ')}）。埋めていないなら分類 A へ移すこと`);
+      }
+    }
+    assert(
+      bad.length === 0,
+      '分類 C なのに固有デルタが無いファイルがある。C は「同期しない」ため、'
+        + 'キット側の是正が戻ってこなくなる:\n  ' + bad.join('\n  '),
+    );
+  });
+
   ok('実ツリー: キット追随の検査が通る（#492 の回帰）', () => {
     const fsK = require('fs');
     const kit = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');

@@ -191,7 +191,7 @@ jobs:
 
   # NFR / #477 / IADR-0188: 環流記録（feedback/*.md）が計画リポジトリへ伝達されたかを報告する。
   # 検査器は kit 由来（`check-feedback-dispatched.js`）であり、**手順書が定める 2 経路**
-  # （GitHub Issue 経路 / 記録ファイル経路）の**どちらでも緑になる**（planning#319 / #320）。
+  # （GitHub Issue 経路 / 記録ファイル経路）の**どちらでも緑になる**（planning#319 / planning#320）。
   #
   # **warn のみで exit 0 である**（本ジョブは落ちない）。起票は人手の判断を伴うため、
   # ブロックにすると回避策（記録を作らない）を誘発し、統制の目的と逆の結果になる。
@@ -215,7 +215,7 @@ jobs:
   #
   # `status` は「計画側の裁定がどこまで進んだか」を表し、**値の正は計画側にある**（planning#323）。
   # 実装側は人手でしか追随せず、実測でも本ジョブ導入時に **2 件が open のまま取り残されていた**
-  # （planning#335 / #333 はいずれも accepted 済みだった）。
+  # （planning#335 / planning#333 はいずれも accepted 済みだった）。
   #
   # 🔴 【重要】`check-feedback-status-sync.js` は計画リポを参照できないとき **skip して exit 0** に
   # 倒れる（キット既定の fail-open）。submodule の取得に失敗すると

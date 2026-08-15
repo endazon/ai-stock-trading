@@ -1,7 +1,7 @@
 ---
 title: キットの traceability.md で「規則 8」が表の外に落ちている（GFM が表として描画しない）
 type: plan-feedback
-status: open
+status: accepted
 category: 誤り
 related_ids: [NFR, IADR-0202]
 source_repo: ai-stock-trading
