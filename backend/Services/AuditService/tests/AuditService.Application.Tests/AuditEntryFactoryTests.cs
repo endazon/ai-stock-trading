@@ -543,4 +543,32 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("0 円ではありません");
         entry.OccurredAt.Should().Be(e.ObservedAt);
     }
+
+    // --- FR-10, FR-17, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化 ---
+
+    private static readonly DateTimeOffset FxT0 = new(2026, 8, 15, 3, 0, 0, TimeSpan.Zero);
+
+    // 相関は落ちた側と戻った側で同じにする（台帳から**期間を 1 本の相関で辿れる**ようにするため）。
+    [Fact]
+    public void 為替の切替と復帰は同じ相関を持ち_期間を辿れる()
+    {
+        var fell = AuditEntryFactory.From(new FxRateSourceFellBack("USD", "fred", 2, 2, FxT0), Id, RecordedAt);
+        var back = AuditEntryFactory.From(
+            new FxRateSourcePrimaryRestored("USD", "boj", FxT0, FxT0.AddHours(6)), Id, RecordedAt);
+
+        back.CorrelationId.Should().Be(fell.CorrelationId);
+        // Symbol 欄には通貨を入れる（銘柄ではない）——為替の劣化は銘柄単位ではなく通貨単位で起きる。
+        fell.Symbol.Should().Be("USD");
+        back.Summary.Should().Contain("6 時間");
+    }
+
+    // 🔴 台帳を読む人が「止まっていた」と誤読すると、事後の検証が事実とずれる。
+    [Fact]
+    public void 為替の鮮度警告は_止まっていないことを要約に明記する()
+    {
+        var entry = AuditEntryFactory.From(new FxRateStale("USD", FxT0.AddDays(-7), 7, 5, 30, FxT0), Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(FxRateStale));
+        entry.Summary.Should().Contain("新規建ては止まっていない");
+    }
 }
