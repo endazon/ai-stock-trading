@@ -27,8 +27,18 @@ updated: 2026-08-15
 
 | # | どこ | 書いた値 | 実際 |
 | --- | --- | --- | --- |
-| 1 | [PR #518](https://github.com/endazon/ai-stock-trading/pull/518) 受け入れ基準・[作業仕様書 20260815_517](20260815_517_kit-sync-and-exclusion-removal.md) | 45,082 バイト（90.2%） | **41,326 バイト（82.7%）** |
+| 1 | [PR #518](https://github.com/endazon/ai-stock-trading/pull/518) 受け入れ基準・[作業仕様書 20260815_517](20260815_517_kit-sync-and-exclusion-removal.md) | 45,082 バイト（90.2%） | **40,648 バイト（81.3%）** |
 | 2 | [PR #522](https://github.com/endazon/ai-stock-trading/pull/522)・[IADR-0203](../adr/IADR-0203_class-c-requires-local-delta.md) 残余リスク・[#519](https://github.com/endazon/ai-stock-trading/issues/519) | 45,760 バイト（91.5%） | **41,326 バイト（82.7%）** |
+
+> **2 つの「実際」が違うのは、`traceability.md` が 20,912 → 21,590 バイトへ増えたためである**
+> （PR #522 のキット追随。規則 8 の追加分）。
+> **`CLAUDE.md` 15,678 と companion 4,058 は両時点で同じである**（`git show 30191c1:` で確認）。
+>
+> 🔴 **【訂正・AI レビューの指摘】初版はこの表の 1 行目にも `41,326（82.7%）` と書いていた。**
+> **2 つの時点の値を同じにしてしまった** —— **数値の取り違えを主題にする文書で、数値を取り違えた。**
+> 本 PR の他の記述（[IADR-0204](../adr/IADR-0204_reading-budget-mother-set.md) の表・
+> 実際に適用した訂正・PR 本文）は最初から `40,648` で正しく、**この 1 セルだけがずれていた** ——
+> **同じ値を 2 度書く形は、片方だけ直す事故（規則 7）と同型である。**
 
 **どちらも `AGENTS.md`（4,434 バイト）を足していた。**
 

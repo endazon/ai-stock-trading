@@ -2,7 +2,7 @@
 title: IADR-0203 分類 C は「置換点を持つ」ではなく「本リポが埋めている」で判定し、機械で止める
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0191, IADR-0200, IADR-0201, IADR-0202]
+related_ids: [NFR, IADR-0191, IADR-0200, IADR-0201, IADR-0202, IADR-0204]
 author: endazon (with Claude Code)
 created: 2026-08-15
 updated: 2026-08-15
