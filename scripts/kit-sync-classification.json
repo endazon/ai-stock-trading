@@ -35,7 +35,7 @@
     "**A / B / C / notApplicable のどこにも書かれていないキットのファイルがあると検査は fail する。**",
     "これは「キットに増えたファイルを黙って見逃さない」ための門である。",
     "",
-    "── 本リポの履歴（上の定義はキット kit-sync-classification.example.json の $comment と同文。pin 479f4dd）──",
+    "── 本リポの履歴（上の定義はキット kit-sync-classification.example.json の $comment と同文。pin d5fa84b）──",
     "対象外 8 件は *.example.yml であり、本リポは有効化済みの実名を持つ。",
     "2026-08-15（#517 / IADR-0202）: .claude/rules/traceability.md を C から A へ移した。",
     "  C を当てていたが、当のファイルの冒頭が『直接編集するとバイト一致が崩れる』＝A の意味論を要求しており、",
