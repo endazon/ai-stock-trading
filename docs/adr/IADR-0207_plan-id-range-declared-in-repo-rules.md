@@ -29,7 +29,7 @@ plan_refs:
 
 ## 検討した選択肢
 
-1. **本リポの追跡ファイル（`.claude/rules/traceability.repo.md`）へレンジを宣言し、そこを読む**（採用。MSP #579 と同型）
+1. **本リポの追跡ファイル（`.claude/rules/traceability.repo.md`）へレンジを宣言し、そこを読む**（採用。MSP#579 と同型）
 2. planning submodule を走査して実在 ID を集める — `ci.yml` の `commit-messages` ジョブは checkout に `submodules` 指定が無く、submodule を取得しない（実測）。走査すると実在集合が空になり、キット版 `loadExistingPlanIds()` が `new Set(readPlanIds())` へ潰すため **全 ID が違反**になる。`null` を返して skip させても #530 以前と同じ無検査に戻る。**却下**
 3. CI 側に submodule 取得を足して 2 を成立させる — 件名検査のためだけに全ジョブの取得コストを増やし、かつ**取得失敗が「静かに検査ゼロ」へ落ちる**経路を残す。**却下**
 
