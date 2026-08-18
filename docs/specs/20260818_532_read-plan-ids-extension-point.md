@@ -2,7 +2,7 @@
 title: check-test-traceability.js へ readPlanIds() を実装し、コミット件名の FR/UC/SC 実在性検査を実効させる
 type: spec
 status: approved
-related_ids: [NFR, IADR-0206]
+related_ids: [NFR, IADR-0206, IADR-0207]
 author: claude
 created: 2026-08-18
 updated: 2026-08-18
@@ -94,3 +94,4 @@ node scripts/check-reading-budget.js   Claude Code: 39,318B / 51,200B（76.8%）
 
 - **レンジ宣言は人手更新である**（走査基準 pin を節に明記）。計画側で FR/UC/SC が増えたとき、宣言を更新しないと**新 ID が「実在しない」と判定されて落ちる**。落ち方は fail であって黙る形ではないため、更新漏れは検知できる（`SC-04` を使う PR が出た時点で赤くなる）。
 - MSP は同じ拡張点を `#579` で先行実装済み。本作業でキット同型が両実装リポに揃った（§11 パリティ）。
+- 方式選択（planning 走査を採らない）と fail-loud の判断は [IADR-0207](../adr/IADR-0207_plan-id-range-declared-in-repo-rules.md) に記録した。
