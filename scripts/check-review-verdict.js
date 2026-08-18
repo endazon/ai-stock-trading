@@ -13,7 +13,7 @@
  * プレースホルダだけが残る。**「レビュー済み・指摘なし」と読まれるが、実際には
  * 何も判定されていない。マージも止まらない。**
  *
- * 実測（planning#333。実装 ai-stock-trading#489 / endazon/ai-stock-trading#490 / `IADR-0190`）:
+ * 実測（planning#333。実装 endazon/ai-stock-trading#489 / endazon/ai-stock-trading#490 / `IADR-0190`）:
  * 同一 PR で 3 回連続、判定の投稿が無かった。
  *
  *   | 試行 | 実行時間 | 結論      | 判定 | 形                        |
