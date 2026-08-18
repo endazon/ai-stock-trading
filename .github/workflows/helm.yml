@@ -1,7 +1,7 @@
 # Issue #129, IADR-0058: Helm chart（deploy/helm/ai-stock-trading）の CI ゲート。
 #
 # 背景: chart（#122）を追加したが helm lint / helm template を回すジョブが無く、chart 破損を
-# CI で検出できなかった（microservices-platform#268 と同種の「デプロイ資産が CI 未検証」問題）。
+# CI で検出できなかった（MSP#268 と同種の「デプロイ資産が CI 未検証」問題）。
 #
 # 設計（詳細は docs/adr/IADR-0058_helm-chart-ci-gate.md）:
 #   - helm バイナリのみで完結させる。--validate / --dry-run=server は実 API サーバ依存のため使わない

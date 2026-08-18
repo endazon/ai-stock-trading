@@ -49,7 +49,7 @@
 - **裁定依頼は小さく高頻度**に出す。**blocked 判定は棚卸しごとに再検証**する（放置しない）。
 - **検査器・規約の追加は同型事故 2 回から**。毎セッション必読の規約は**総量 50KB＝51,200 バイトの予算**内に収める（正本: 運用ガイド §8。planning#364）。
   - **母集合は「そのエージェントが自動で読み込む集合」であり、エージェントごとに分けて測り、合算しない**（制約はセッション 1 本が背負う量に掛かる。`AGENTS.md` は Claude 以外が読み、Claude は読まない）。`.claude/rules/` は列挙せず走査し、submodule 配下の `CLAUDE.md` は入れない。
-  - 測定: `cat CLAUDE.md .claude/rules/*.md | wc -c`（Claude 用）／`wc -c < AGENTS.md`（別枠観測。実測が無いため同値を暫定流用し、超過を fail の根拠にしない）。CI では `scripts/check-reading-budget.js` が同じ母集合を測る（値は正本の複製。出典を値の隣に書く）。
+  - **予算の増減を伴う作業（規約の追加・別紙化・キット同期）に入る前に、[`docs/ai-workflow.md`](docs/ai-workflow.md) §必読規約の総量予算の測り方 を読む** —— 測るコマンド・別紙の同時取り込み・超過時の切り分けはそこが持つ。CI では `scripts/check-reading-budget.js` が同じ母集合を測る（値は正本の複製。出典を値の隣に書く）。
 - **人間の関与**はフェーズ計画承認・監査サンプリング・裁定の 3 点（＋required check 配備までのマージ操作）。
 - **複数実装リポのパリティ維持**（運用ガイド §11）: 運用装備（検査器・テンプレート）の**配布点は kit（`planning/tools/impl-handoff-kit/repo-template/`）に一本化**し、リポ個別に直したら kit へ環流して他リポに追随 issue を立てる。**複数リポへ同時起票した issue は起票から 7 日後に相互のクローズ状態を突合**し、片側のみ完了なら残る側へ追随 issue を立てる。突合の観点は 6 種（強制化装備／ラベル体系／必読規約の総量／planning pin の鮮度／kit 追随の未消化数／定期監査・レビュー基盤の稼働＝**最後に結果が産出された日時**を見る）。pin の遅れは `planning-pin-freshness.yml` で機械監視する。
 
@@ -84,19 +84,7 @@
 
 > **機能仕様書・テスト仕様書の必須範囲（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211)・[作業仕様書 20260720](docs/specs/20260720_required-spec-coverage-arbitration.md)）**: 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核 FR＝FR-10（リスク統制）・FR-12（ペーパートレード）・FR-15（バックテスト）・FR-19（取引ガード）・FR-20（段階ゲート）**を必須範囲とする（設定駆動・横断的で独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み FR は、作業仕様書（`docs/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数 FR をまとめてよい。
 
-**任意**（必要に応じて作成）:
-
-| 種別 | 文書 | 出力先 |
-| --- | --- | --- |
-| `observability` | ログ・可観測性仕様書 | `docs/observability/` |
-| `authz` | 権限・認可仕様書 | `docs/authz/` |
-| `integration` | 外部連携仕様書 | `docs/integration/` |
-| `batch` | バッチ・ジョブ仕様書 | `docs/batch/` |
-| `migration` | 移行仕様書 | `docs/migration/` |
-| `error` | エラー・メッセージ仕様書 | `docs/errors/` |
-| `infra` | インフラ・構成仕様書 | `docs/infra/` |
-| `runbook` | 運用 Runbook（運用仕様書の下位の手順書。複数可） | `docs/operations/` |
-| `how-to` | 手順ガイド（環境起動・デプロイ等。起点 ID 任意） | `docs/how-to/` |
+**任意**（必要に応じて作成。9 種: `observability` / `authz` / `integration` / `batch` / `migration` / `error` / `infra` / `runbook` / `how-to`。出力先と粒度は `/new-spec` のコマンド定義と `docs/README.md` が持つ）。
 
 - 詳細・計画書との対応は `docs/README.md` を参照。実装着手前に少なくとも作業仕様書を作成する。
 - 重要な実装判断（内部設計・ライブラリ選定等）は**実装ADR（`docs/adr/`、`IADR-XXXX`）に必ず残す**。計画に影響する決定は `/plan-feedback` で計画側へ環流する（計画ADR `ADR-XXXX` と区別する）。
@@ -113,7 +101,9 @@
 - 実装・レビュー・テスト生成にサブエージェントとスラッシュコマンドを活用する。一覧は `.claude/agents/` `.claude/commands/` を参照。
 - GitHub 上では `@claude` メンションで Issue/PR に AI を呼び出せる（`.github/workflows/claude-coding.yml`。既定は `.example`。`AI_SETUP.md` のプロファイルで有効化する）。PR には自動 AI レビューが走る（`claude-code-review.yml`）。
   - 認証は **サブスクリプション＝`CLAUDE_CODE_OAUTH_TOKEN`（`claude setup-token` で発行）/ API＝`ANTHROPIC_API_KEY`** のいずれか一方を登録する。サブスクのみでも GitHub 上の自律実装が可能。
+- **AI の対話的なブラウザ操作は Playwright CLI（`playwright-cli`）に統一する。Playwright MCP は導入しない**（二重化するとツール選択が不定になる）。**CI の E2E テストランナーは別の関心事であり、リポジトリの既存選択（`@playwright/test` 等）を覆さない**（導入手順と併存の注意は `AI_SETUP.md`）。
 - 他の AI（Cursor / Codex / GitHub Copilot）を使う場合も、本ファイルおよび `AGENTS.md` の方針（特にトレーサビリティ最優先）に従う。Copilot 固有の運用は `.github/copilot-instructions.md` と `AI_SETUP.md` を参照。
+- 役割スロット（orchestrator / worker / reviewer）の配役とフォールバック連鎖は `ai-roster.json` で宣言する。差し替えの契約・切り戻しの正本は `docs/ai-orchestration.md`（都度読み）。
 - **実装を AI に任せる前提の運用全体（起票→実装→検証→レビュー→マージ）と推奨ツールは `docs/ai-workflow.md` を参照する。**
 
 ## 自動化・検証・安全

@@ -1,0 +1,40 @@
+{
+  "$comment": [
+    "ロースター（配役）: どの役割スロットにどのエンジンを挿すかの宣言。正本は docs/ai-orchestration.md。",
+    "",
+    "🔴 宣言だけでは何も動かない。各割当の implemented_by（必須）が現在の実現手段であり、",
+    "実体（アダプタ・ワークフロー）の無い割当は無効である。エンジンの能力（ライセンス・シークレット）は",
+    "AI_SETUP.md のプロファイル側で宣言する。使えないエンジンをここへ書いても動かない。",
+    "",
+    "engine: エンジン名（単一値。CLI アダプタ run-worker-<engine>.sh の <engine> と一致させる）。",
+    "implemented_by: その割当の実現手段（実在するファイル・仕組み）。",
+    "fallback: 失敗時に切り替える先のエンジン名の配列（先頭から順に試す。空なら切り替えない）。",
+    "  既定以外のエンジンを挿すときは、末尾に \"claude\" を置いて既定へ戻れるようにすることを推奨する。",
+    "",
+    "reviewer は単一値＋fallback のみであり、複数エンジンの並記はできない（AI レビューの多重化は",
+    "品質を上げない — 計画リポ docs/ai-implementation-workflow-guide.md §4 の裁定。同時有効は常に 1 実装）。",
+    "",
+    "本ファイルは「キットが選択を委ねている欄」（固有デルタ第 5 種）である。キットは Claude 既定で配り、",
+    "配布先がエンジンを差し替えた状態は追随漏れではない。"
+  ],
+  "slots": {
+    "orchestrator": {
+      "engine": "claude-code",
+      "implemented_by": "Claude Code 対話セッション + .claude/commands/",
+      "fallback": []
+    },
+    "worker": {
+      "engine": "claude",
+      "implemented_by": {
+        "cli": "scripts/ai-adapters/run-worker-claude.sh",
+        "github": ".github/workflows/claude-coding.yml"
+      },
+      "fallback": []
+    },
+    "reviewer": {
+      "engine": "claude",
+      "implemented_by": ".github/workflows/claude-code-review.yml",
+      "fallback": []
+    }
+  }
+}

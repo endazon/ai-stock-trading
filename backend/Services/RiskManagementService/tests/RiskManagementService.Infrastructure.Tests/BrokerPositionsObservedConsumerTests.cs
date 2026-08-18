@@ -107,7 +107,7 @@ public class BrokerPositionsObservedConsumerTests
         session.Sent.MessagesOf<BuyInInferred>().Should().BeEmpty();
         session.Sent.MessagesOf<PositionReconciliationDrift>().Should().BeEmpty();
         // ……観測の到達だけは記録されている。
-        // **取引日ごとに記録される**（[2026-08-08 改定] 計画 FR-21・裁定 project-planning#292）。
+        // **取引日ごとに記録される**（[2026-08-08 改定] 計画 FR-21・裁定 planning#292）。
         arrivals.GetObservedDaysBetween(TradingDay.Of(At), TradingDay.Of(At))
             .Should().ContainSingle().Which.Should().Be(TradingDay.Of(At));
 

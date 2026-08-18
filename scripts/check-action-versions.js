@@ -5,15 +5,15 @@
  * ワークフローの `uses: <action>@vN` を集め、メジャーバージョンの退行を検出する。
  * 既定はオフライン（外部依存ゼロ・Node 標準モジュールのみ）。
  *
- * 背景（issue #96 / #97 → #98 → #148）:
+ * 背景（issue planning#96 / planning#97 → planning#98 → planning#148）:
  *   キットが配布するワークフロー雛形の Actions が古いままだと、実装リポジトリが同期する
- *   たびに**実装リポ側で前進したバージョンが巻き戻る**。#98 で dependabot.yml に
+ *   たびに**実装リポ側で前進したバージョンが巻き戻る**。planning#98 で dependabot.yml に
  *   `directory: "/tools/impl-handoff-kit/repo-template"` のエントリを足して対処したはずが、
  *   これは実質 no-op だった。github-actions エコシステムの Dependabot は**リポジトリ直下の
  *   .github/workflows/ しか走査せず**、`directory` で探されるのは複合アクションの action.yml
  *   だからである。
  *
- *   実測（issue #148）: エントリ投入後に本リポジトリで Dependabot が作った PR は 4 件、
+ *   実測（issue planning#148）: エントリ投入後に本リポジトリで Dependabot が作った PR は 4 件、
  *   すべてルート（directory: "/"）由来の `chore:` 接頭辞であり、テンプレート用に設定した
  *   `template:` 接頭辞の PR は **0 件**。その間に upload-artifact は v4 のまま取り残され、
  *   実装リポ側では手作業で v7 へ差し戻していた。
@@ -40,14 +40,14 @@
  *   node scripts/check-action-versions.js --check-latest   # GitHub API で新しいメジャーを調べる（warn のみ）
  *   node scripts/check-action-versions.js --self-test
  *
- * 実装リポジトリでの使い方（issue #152）:
+ * 実装リポジトリでの使い方（issue planning#152）:
  *   巻き戻りが実際に起きるのは「キットを同期した実装リポ」の側である。配布元だけを守っても
  *   被害が出る側は守れないため、ci.example.yml の ai-workflow-config ジョブに同梱してある。
  *   統合ブランチと比べる `--compare-with-ref` を使うと、キットのコピーでバージョンが下がった
  *   PR をマージ前に止められる（表の下限だけでは、実装リポが下限より先へ進んでいる場合を
  *   捉えられない）。
  *
- * 実装リポ固有のアクション（issue #153）:
+ * 実装リポ固有のアクション（issue planning#153）:
  *   scripts/action-versions.repo.json を置くと expected / $exempt をマージして読む。
  *   キットの action-versions.json を直接編集するとバイト一致が崩れ、以後の同期で毎回
  *   手動マージが要る（scripts.repo.test.js と同じ受け口・同じ理由）。
@@ -63,7 +63,7 @@ const { warn, notice } = require('./lib/ci-annotate.js');
 const REPO_ROOT = path.join(__dirname, '..');
 const DEFAULT_DIR = path.join(REPO_ROOT, '.github', 'workflows');
 const MANIFEST_PATH = path.join(__dirname, 'action-versions.json');
-// 実装リポジトリ固有の追記の受け口（issue #153）。scripts.repo.test.js と同じ規約。
+// 実装リポジトリ固有の追記の受け口（issue planning#153）。scripts.repo.test.js と同じ規約。
 const COMPANION_PATH = path.join(__dirname, 'action-versions.repo.json');
 
 /** ワークフローらしきファイルを列挙する（.example.yml も対象）。 */
@@ -138,8 +138,8 @@ function gitTry(args, cwd = process.cwd()) {
 /**
  * 指定した git ref 時点の同じディレクトリを走査して action → メジャーを集計する。
  *
- * 「同期のたびに実装リポの Actions が巻き戻る」（issue #148）は、表による下限検査では
- * 捉えきれない形が残る（issue #152 指摘 2）。実装リポが Dependabot で表の下限より先へ
+ * 「同期のたびに実装リポの Actions が巻き戻る」（issue planning#148）は、表による下限検査では
+ * 捉えきれない形が残る（issue planning#152 指摘 2）。実装リポが Dependabot で表の下限より先へ
  * 進んだあとにキットのファイルをコピーすると、実装リポにとっては退行なのに表の上では
  * 合格する（表 v7 / 実装リポ v8 / キット v7）。`--compare-with` は 2 つのディレクトリを
  * 比べる仕組みなので、ワークフローが 1 か所しか無い実装リポでは使えない。
@@ -173,7 +173,7 @@ function scanRef(ref, dir) {
 /**
  * 表を読む。読めなければ null（呼び出し側が warn する）。
  *
- * companion（action-versions.repo.json）があればマージする（issue #153）。
+ * companion（action-versions.repo.json）があればマージする（issue planning#153）。
  * キットの表を各実装リポが直接編集すると**バイト一致が崩れ**、以後の同期で毎回手動
  * マージが要る。`scripts.repo.test.js` で一度解決したのと同型の問題であり、同じ設計で
  * 受け口を設ける。編集せず放置すると「表に無い」warn が毎回出続け、`ci-annotate` を
@@ -372,7 +372,7 @@ function selfTest() {
     return r.errors.length === 0;
   });
 
-  // --- companion（action-versions.repo.json）の受け口（issue #153） ---
+  // --- companion（action-versions.repo.json）の受け口（issue planning#153） ---
   const osq = require('os');
   const mkTmp = (files) => {
     const d = fs.mkdtempSync(path.join(osq.tmpdir(), 'actver-'));
@@ -412,7 +412,7 @@ function selfTest() {
     return m.expected['actions/checkout'] === 9 && !m.warnings.some((w) => w.includes('下げている'));
   });
 
-  // --- --compare-with-ref（同期による巻き戻りの検出。issue #152） ---
+  // --- --compare-with-ref（同期による巻き戻りの検出。issue planning#152） ---
   add('存在しない ref では null を返す（fail-open の判断材料）', () =>
     scanRef('refs/heads/__no_such_ref__', process.cwd()) === null);
 

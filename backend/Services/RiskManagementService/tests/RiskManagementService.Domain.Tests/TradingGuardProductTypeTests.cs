@@ -204,7 +204,7 @@ public class TradingGuardProductTypeTests
     // **誤適用の退行防止（本 issue の必須要請）**: 差金決済ガードは日本の差金決済規制
     //（金商法 161 条の 2）向けであり、**米国株には適用しない**。米国口座は信用口座（margin account）で
     // 運用するため Good Faith Violation が発生せず、決済制度由来の回転数制約が無いためである
-    //（05_trading-assumptions §5「米国口座の種別・決済」・FR-19 本文・project-planning#81）。
+    //（05_trading-assumptions §5「米国口座の種別・決済」・FR-19 本文・planning#81）。
     // 誤適用すると米国株の当日回転が丸ごと止まり、日中スイング戦略そのものが成立しなくなる。
     [Fact]
     public void 差金決済ガードは米国株では作動しない()
@@ -332,7 +332,7 @@ public class TradingGuardProductTypeTests
         result.Reasons.Should().Contain(RejectionReason.BannedSymbol);
     }
 
-    // FR-20, ADR-0016 決定10, project-planning#58: 「統制違反 0 件」に計上されるのは**クラス C 限定**
+    // FR-20, ADR-0016 決定10, planning#58: 「統制違反 0 件」に計上されるのは**クラス C 限定**
     //（BannedSymbol / ManipulativeOrderPattern）。商品種別ガードはクラス B であり計上しない。
     [Fact]
     public void 商品種別ガードの拒否は統制違反に計上されない()

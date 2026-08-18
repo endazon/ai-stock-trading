@@ -6,7 +6,7 @@
  * 外部依存ゼロ（Node 標準 assert のみ）。実行: node scripts/scripts.test.js
  */
 const assert = require('assert');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { warn, notice } = require('./lib/ci-annotate.js');
 const {
   validateSubject,
@@ -48,6 +48,30 @@ ok('ci(NFR) は合格', () => assert.deepStrictEqual(validateSubject('ci(NFR): C
 ok('複数 ID 併記は合格', () => assert.deepStrictEqual(validateSubject('feat(FR-08,UC-03): 実装'), []));
 ok('P0 フェーズ ID は合格', () => assert.deepStrictEqual(validateSubject('docs(P0): 骨格仕様'), []));
 ok('末尾 PR 番号は許容', () => assert.deepStrictEqual(validateSubject('fix(FR-01): 修正 (#123)'), []));
+
+// --- HTML エンティティ（planning#415。恒久履歴へ焼き付く事故の再発防止） ---
+//
+// GitHub は PR タイトルの素の `<` `>` を作成時点でエスケープして保存するため、
+// **検査対象はエスケープ済みの文字列**である。素の山括弧を検査しても素通りする。
+const entityReason = (subject) =>
+  validateSubject(subject).filter((r) => r.includes('HTML エンティティ'));
+
+ok('エスケープされた山括弧を含む件名は落ちる', () =>
+  assert.strictEqual(entityReason('ci(NFR): git -C &lt;submodule&gt; grep を足す').length, 1));
+ok('&amp; を含む件名は落ちる', () =>
+  assert.strictEqual(entityReason('docs(NFR): A &amp; B を整理').length, 1));
+ok('数値参照（&#60;）を含む件名は落ちる', () =>
+  assert.strictEqual(entityReason('fix(FR-01): &#60;path&gt; を直す').length, 1));
+// 偽陽性が 1 件でも出ると検査そのものが外される。通常の件名は必ず通す。
+ok('素の & を含むだけの件名は通る（エンティティではない）', () =>
+  assert.deepStrictEqual(validateSubject('docs(NFR): A & B を整理'), []));
+ok('素の山括弧は落とさない（GitHub がエスケープする前の形）', () =>
+  assert.deepStrictEqual(validateSubject('ci(NFR): git -C <submodule> grep を足す'), []));
+ok('セミコロンを含む通常の件名は通る', () =>
+  assert.deepStrictEqual(validateSubject('fix(FR-01): a; b を直す'), []));
+// 形式違反より先にエンティティを報告する（形式に適合したまま履歴へ載るため）。
+ok('末尾 PR 番号つきでもエンティティを検出する', () =>
+  assert.strictEqual(entityReason('ci(NFR): &lt;x&gt; を足す (#856)').length, 1));
 
 // 抜け穴防止: 内容変更の種別で起点 ID が無ければ違反として検出する。
 ok('feat（ID 無し）は違反', () => {
@@ -153,9 +177,9 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   ok('権限拒否でないツールエラー（File not found 等）は数えない', () =>
     assert.strictEqual(looksLikeDenial('File not found'), false));
 
-  // issue #146: 報告が「Bash（4 件）」で止まると、許可リストに何を足せばよいか決められない。
+  // issue planning#146: 報告が「Bash（4 件）」で止まると、許可リストに何を足せばよいか決められない。
   // 許可リストの粒度はコマンド単位（Bash(git diff:*)）なので、報告もそこへ揃える。
-  ok('Bash はコマンド名まで報告する（実障害 issue #146 の形）', () => {
+  ok('Bash はコマンド名まで報告する（実障害 issue planning#146 の形）', () => {
     const r = collectDenials([
       {
         type: 'result',
@@ -176,7 +200,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
 
   ok('Bash 以外はツール名のまま', () => assert.strictEqual(labelOf('Task', {}), 'Task'));
 
-  // issue #158: 旧実装は先頭セグメントだけを見て、許可済みの git show を名指しし、
+  // issue planning#158: 旧実装は先頭セグメントだけを見て、許可済みの git show を名指しし、
   // 実際の原因（未許可の cmp）を隠していた。報告が原因を指さないと塞ぎようがない。
   ok('パイプの全セグメントを列挙する（実障害 git show | cmp の形）', () =>
     assert.strictEqual(
@@ -187,7 +211,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   ok('フラグは 2 トークン目に採らない（head -5 は head）', () =>
     assert.strictEqual(labelOf('Bash', { command: 'git log | head -5' }), 'Bash(git log | head)'));
 
-  // issue #160: 2 トークン固定だと Bash(git -C) になり、対処に必要なサブコマンドが消える。
+  // issue planning#160: 2 トークン固定だと Bash(git -C) になり、対処に必要なサブコマンドが消える。
   ok('git -C <dir> <sub> は許可リストと同じ粒度で出す', () =>
     assert.strictEqual(
       labelOf('Bash', { command: 'git -C planning rev-parse HEAD' }),
@@ -237,7 +261,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       /後段のコマンドかもしれない/
     ));
 
-  // issue #155: 内訳がジョブログにしか無いと、レビュー本文の「✅ 実測」との突き合わせができない。
+  // issue planning#155: 内訳がジョブログにしか無いと、レビュー本文の「✅ 実測」との突き合わせができない。
   ok('拒否の内訳を実行サマリ（人が読む場所）へ書く', () => {
     const { writeStepSummary } = require('./check-permission-denials.js');
     const fsw = require('fs');
@@ -269,7 +293,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   ok('NDJSON・壊れた行があっても読めた分で判断する', () =>
     assert.strictEqual(parseEvents('{"type":"result","permission_denials_count":3}\n{壊れ').length, 1));
 
-  // 6 巡目の実測（issue #158 の続報）: プロセス置換が壊れたラベルになっていた。
+  // 6 巡目の実測（issue planning#158 の続報）: プロセス置換が壊れたラベルになっていた。
   ok('プロセス置換 <(…) の中のコマンドを露出させる', () =>
     assert.strictEqual(
       labelOf('Bash', { command: 'diff <(git show a:f) <(git show b:f)' }),
@@ -457,7 +481,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   }
 }
 
-// --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue #148） ---
+// --- check-action-versions: 配布テンプレートの Actions が巻き戻らないようにする（issue planning#148） ---
 //
 // Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか
 // 走査しない。dependabot.yml に directory: エントリを足しても no-op であり、しかも
@@ -501,7 +525,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     assert.deepStrictEqual(r.errors, []);
   });
 
-  // issue #153: キットの表を直接編集するとバイト一致が崩れる。companion で受ける。
+  // issue planning#153: キットの表を直接編集するとバイト一致が崩れる。companion で受ける。
   {
     const fsv = require('fs');
     const patv = require('path');
@@ -528,7 +552,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       assert.match(loadIn(mkTmp(JSON.stringify({ expected: { 'actions/checkout': 5 } }))).warnings.join(' '), /下げている/));
   }
 
-  // issue #152: 表の下限だけでは、実装リポが下限より先へ進んでいる場合の同期退行を捉えられない。
+  // issue planning#152: 表の下限だけでは、実装リポが下限より先へ進んでいる場合の同期退行を捉えられない。
   ok('存在しない ref では null（fail-open の判断材料になる）', () => {
     const { scanRef } = require('./check-action-versions.js');
     assert.strictEqual(scanRef('refs/heads/__no_such_ref__', process.cwd()), null);
@@ -541,7 +565,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
-// --- check-doc-links: 未 populate な submodule の除外を可視化する（issue #139） ---
+// --- check-doc-links: 未 populate な submodule の除外を可視化する（issue planning#139） ---
 
 {
   const { unpopulatedSubmoduleOf, underUnpopulatedSubmodule, collectBroken } = require('./check-doc-links.js');
@@ -575,7 +599,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 
   // 除外を黙って行うと「破損リンクはありません」が検査していない範囲まで含んだ断定になる。
-  // 実際に ai-stock-trading で破損 20 件がこの隙間に蓄積した（issue #139）。
+  // 実際に ai-stock-trading で破損 20 件がこの隙間に蓄積した（issue planning#139）。
   ok('除外したリンクは onSkip で件数を数えられる（黙って消えない）', () => {
     const r = mkFixture();
     const prev = process.env.DOC_LINKS_ROOT;
@@ -623,7 +647,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
   });
 }
 
-// --- lib/ci-annotate: CI 上の警告を GitHub アノテーションとして出す（issue #136 / #137） ---
+// --- lib/ci-annotate: CI 上の警告を GitHub アノテーションとして出す（issue planning#136 / planning#137） ---
 
 {
   const ann = require('./lib/ci-annotate.js');
@@ -821,7 +845,7 @@ ok('未知の action は補正を無視する（黙って remap 扱いにしな�
   const c = { hash: 'cccccccddd', type: 'feat', scope: 'FR-01', desc: 'x' };
   // stdout も抑止する。gen-changelog は現状 stderr へ直接書くが、ci-annotate へ移すと
   // Actions 上では stdout へ出るため、片方だけの抑止は警告をテスト実行中に漏らす
-  // （issue #140 / #142 と同型。silent() と同じく最初から両方を塞いでおく）。
+  // （issue planning#140 / planning#142 と同型。silent() と同じく最初から両方を塞いでおく）。
   const silencedErr = process.stderr.write;
   const silencedOut = process.stdout.write;
   process.stderr.write = () => true;
@@ -857,6 +881,166 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
   assert.ok(fsx.readFileSync(out, 'utf8').trim().length > 0, '生成された CHANGELOG が空');
 });
 
+// --- check-commit-messages: 計画レンジ（FR / UC / SC）の実在性 ---
+//
+// 実在性検査が ADR / IADR にしか無かった間、`feat(SC-99)` は **exit 0 で受理**され、
+// スカッシュ後件名として恒久履歴へ載れた（force push 禁止で事後修正できない面である）。
+
+{
+  const {
+    validateIdExistence,
+    normalizePlanId,
+    loadExistingPlanIds,
+  } = require('./check-commit-messages.js');
+
+  ok('計画レンジに無い FR / UC / SC を違反として上げる', () => {
+    const ids = new Set(['FR-01', 'UC-02', 'SC-03']);
+    assert.strictEqual(validateIdExistence('feat(SC-99): x', null, null, ids).length, 1);
+    assert.strictEqual(validateIdExistence('feat(FR-01): x', null, null, ids).length, 0);
+  });
+
+  // 桁数の違いで「実在しない」と誤検出しない（規約は `FR-\d+` を書式として許す）。
+  ok('ゼロ埋めの桁数が違っても同じ ID として突き合わせる', () => {
+    assert.strictEqual(normalizePlanId('FR-012'), 'FR-12');
+    assert.strictEqual(normalizePlanId('FR-1'), 'FR-01');
+    // ADR / IADR は正規化の対象外（別系統の採番である）。
+    assert.strictEqual(normalizePlanId('ADR-0001'), 'ADR-0001');
+    assert.strictEqual(validateIdExistence('feat(FR-012): x', null, null, new Set(['FR-12'])).length, 0);
+  });
+
+  // **配布物の試験が「キット既定の構成」を断定してはならない。** 拡張点は埋められる前提で
+  // 配るものであり、埋めた側で落ちる試験は分類 A（バイト一致で配る）を成立させない。
+  // **実測で落ちた**（拡張点を実装した配布先で `Set(54)` が返り、`null` との比較が失敗した）。
+  //
+  // **「持たない構成でだけ試験する」形（early return）にもしない** —— 実効している側が
+  // 一度も試験されなくなり、`readPlanIds()` の結線が切れても緑になる。**両方向を固定する。**
+  ok('拡張点の有無に応じて loadExistingPlanIds の戻り値を固定する', () => {
+    let hasExtension = false;
+    try {
+      hasExtension = typeof require('./check-test-traceability.js').readPlanIds === 'function';
+    } catch (e) {
+      if (!e || e.code !== 'MODULE_NOT_FOUND') throw e;
+    }
+    if (hasExtension) {
+      // 拡張点を埋めた配布先: 実在集合が返り、実在しない ID が違反として上がる。
+      const ids = loadExistingPlanIds();
+      assert.ok(ids instanceof Set && ids.size > 0, '拡張点が在るのに実在集合が空である');
+      assert.strictEqual(validateIdExistence('feat(SC-99): x', null, null, ids).length, 1);
+    } else {
+      // キット既定（拡張点を持たない）: throw せず null を返す。
+      assert.strictEqual(loadExistingPlanIds(), null);
+    }
+  });
+
+  // 構成によらず固定できるのはこちら —— 集合が null なら当該検査を skip する。
+  ok('実在集合が null なら FR / UC / SC の実在性を検査しない', () => {
+    assert.strictEqual(validateIdExistence('feat(SC-99): x', null, null, null).length, 0);
+  });
+}
+
+// --- check-commit-messages: PR タイトル末尾の (#NNN) が PR 自身の番号か ---
+//
+// **末尾の番号は GitHub がスカッシュ時に自動付加するもの**であり、起点 issue の番号ではない。
+// 形状だけを見ていた間、**起点 issue の番号を書いた PR が素通りしていた**（実測した配布元では
+// 末尾に番号を持つ PR のうち自番号と一致するものが 1 件も無かった）。**変異試験 4 方向で固定する。**
+
+{
+  const { validateTitlePrNumber, normalizePrNumber, checkSingleTitle } = require('./check-commit-messages.js');
+  const T = 'feat(FR-01): 何かを実装';
+
+  ok('方向 1: 末尾番号が PR 自身の番号と違えば違反', () => {
+    const r = validateTitlePrNumber(`${T} (#100)`, 200);
+    assert.strictEqual(r.length, 1);
+    assert.match(r[0], /#100/);
+    assert.match(r[0], /#200/);
+  });
+
+  ok('方向 2: 末尾番号が PR 自身の番号と同じなら合格', () => {
+    assert.deepStrictEqual(validateTitlePrNumber(`${T} (#200)`, 200), []);
+  });
+
+  ok('方向 3: 末尾に番号が無ければ合格（番号は任意である）', () => {
+    assert.deepStrictEqual(validateTitlePrNumber(T, 200), []);
+  });
+
+  // **これが配布物としての要点である。** コミット件名モードには PR 番号が無く、ここで一致を
+  // 要求すると**スカッシュ後の履歴コミットが全滅する**。
+  ok('方向 4: PR 番号が未設定なら形状のみ（履歴コミットを全滅させない）', () => {
+    assert.deepStrictEqual(validateTitlePrNumber(`${T} (#100)`, null), []);
+    assert.deepStrictEqual(validateTitlePrNumber(`${T} (#100)`, undefined), []);
+  });
+
+  // 読めない値は null（検査しない）ではなく NaN を返す —— 呼び出し側が notice で可視化するため。
+  // 黙って検査を消すと「設定したのに効いていない」に誰も気付けない。
+  ok('normalizePrNumber: 未設定は null・読めない値は NaN', () => {
+    assert.strictEqual(normalizePrNumber(null), null);
+    assert.strictEqual(normalizePrNumber(''), null);
+    assert.strictEqual(normalizePrNumber('  '), null);
+    assert.strictEqual(normalizePrNumber('200'), 200);
+    assert.ok(Number.isNaN(normalizePrNumber('abc')));
+    assert.ok(Number.isNaN(normalizePrNumber('0')));
+    assert.ok(Number.isNaN(normalizePrNumber('-1')));
+  });
+
+  // 単一件名モードの終了コードまで通しで見る（配線が切れていれば緑にならない）。
+  ok('checkSingleTitle: 番号違いは 1・一致は 0 を返す', () => {
+    const write = process.stdout.write.bind(process.stdout);
+    const errw = process.stderr.write.bind(process.stderr);
+    process.stdout.write = () => true;
+    process.stderr.write = () => true;
+    try {
+      assert.strictEqual(checkSingleTitle(`${T} (#100)`, 'someone', 200), 1);
+      assert.strictEqual(checkSingleTitle(`${T} (#200)`, 'someone', 200), 0);
+      assert.strictEqual(checkSingleTitle(`${T} (#100)`, 'someone'), 0);
+    } finally {
+      process.stdout.write = write;
+      process.stderr.write = errw;
+    }
+  });
+
+  // 配布物としての要点: ワークフローが PR_NUMBER を渡していなければ検査は永久に働かない。
+  ok('pr-title.yml が PR_NUMBER を渡している', () => {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const yml = fsx.readFileSync(
+      pathx.join(__dirname, '..', '.github', 'workflows', 'pr-title.yml'),
+      'utf8'
+    );
+    assert.match(yml, /PR_NUMBER:\s*\$\{\{\s*github\.event\.pull_request\.number\s*\}\}/);
+  });
+}
+
+// --- check-commit-messages: 他リポジトリ issue / PR 番号の修飾（件名・本文・PR タイトル） ---
+
+{
+  const { crossRepoRefReasons, CROSS_REPO_REF_LABELS } = require('./check-commit-messages.js');
+  const fsx = require('fs');
+
+  ok('本文の列挙形の修飾漏れを違反理由として返す', () => {
+    const reasons = crossRepoRefReasons('関連: planning#206 / #207', '本文');
+    assert.strictEqual(reasons.length, 1);
+    assert.match(reasons[0], /^本文の /);
+    assert.match(reasons[0], /planning#206 \/ planning#207/);
+  });
+
+  ok('空の本文は違反を出さない（body を取らないコミットで誤検出しない）', () => {
+    assert.deepStrictEqual(crossRepoRefReasons('', '本文'), []);
+    assert.deepStrictEqual(crossRepoRefReasons(null, '本文'), []);
+  });
+
+  // ラベルと kind の 1:1 対応。**実測で 2 度漏れた**（検査の型を足すたびに漏れる）。
+  // 3 度目を止めるため、`check-cross-repo-refs.js` の `kind:` リテラルを静的に走査して
+  // **全 kind がラベル表に在ること**を機械で固定する。
+  ok('CROSS_REPO_REF_LABELS が検査器の全 kind を網羅する', () => {
+    const src = fsx.readFileSync(require.resolve('./check-cross-repo-refs.js'), 'utf8');
+    const kinds = new Set([...src.matchAll(/kind:\s*'([a-z]+)'/g)].map((m) => m[1]));
+    assert.ok(kinds.size >= 4, `kind リテラルを拾えていない（${kinds.size} 件）`);
+    for (const k of kinds) {
+      assert.ok(CROSS_REPO_REF_LABELS[k], `kind "${k}" のラベルが CROSS_REPO_REF_LABELS に無い`);
+    }
+  });
+}
+
 // --- check-commit-messages: 計画 ADR の名前空間限定（他プロジェクトの ID を誤受理しない） ---
 
 {
@@ -886,7 +1070,7 @@ ok('gen-changelog: 実行して CHANGELOG を生成できる（呼び出し側�
   // workflow コマンドの要件から必ず stdout へ書くため、stderr だけを捕捉すると
   //   - Actions 上で警告文が取れず、このテストが落ちる（ローカルは緑・CI だけ赤）
   //   - テストのフィクスチャが出した警告が**本物のアノテーション**として PR に漏れる
-  // という 2 つの不具合が同時に起きる（issue #140。実際に #138 で発生させた）。
+  // という 2 つの不具合が同時に起きる（issue planning#140。実際に planning#138 で発生させた）。
   const captureOutput = (fn) => {
     const origErr = process.stderr.write;
     const origOut = process.stdout.write;
@@ -1127,7 +1311,7 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
   }
 }
 
-// --- 環境依存の出力先切り替えの回帰防止（issue #140） ---
+// --- 環境依存の出力先切り替えの回帰防止（issue planning#140） ---
 //
 // --- check-feedback-dispatched: 計画へ未送付のまま滞留した環流記録を見逃さない ---
 // planning#217: 記録は作られるが起票されず、PR がマージされても検出されない事故が
@@ -1371,7 +1555,7 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     // 警告が同じ stdout へ出るため、末尾の 1 行だけを見る。
     const probe =
       `const m=require(${JSON.stringify(bin)});process.stdout.write('\\nRESULT=' + JSON.stringify(m.PLANNING_REPO));`;
-    const got = execSync(`node -e ${JSON.stringify(probe)}`, {
+    const got = execFileSync(process.execPath, ['-e', probe], {
       env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning.git' },
       encoding: 'utf8',
     });
@@ -1451,17 +1635,28 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
   // planning#320 の 9 巡目監査で検出: 置換点が**主経路（inspect）へ配線されている**ことが
   // 未試験で、既定引数をリテラルへ固定する変異が全件緑のまま生き残った。
   // 既存の env テストは `foreignPlanRefs` を直接叩くため、この配線切断を検出できない。
+  // planning#367 の環流で判明: 上記 3 件の probe は `execSync` でシェルへ渡していたため、
+  // **Windows（cmd.exe）で `\n` を含む引数が壊れて落ちた**（Linux CI では通るため気付かない）。
+  // `execFileSync` ＋ 引数配列へ変え、シェルを経由しない形にした。**その機構をここで固定する** ——
+  // 起動の仕方を `execSync` へ戻すと、本試験が（Windows で）落ちる。
+  ok('改行・引用符を含む引数がシェルを介さず子プロセスへ渡る（OS 差の回帰）', () => {
+    const probe = 'process.stdout.write(JSON.stringify(process.argv[1]));';
+    const arg = 'a\nb"c\\d';
+    const out = execFileSync(process.execPath, ['-e', probe, arg], { encoding: 'utf8' });
+    assert.strictEqual(JSON.parse(out), arg, '改行・引用符・バックスラッシュを含む引数が壊れている');
+  });
+
   ok('置換点が主経路（inspect）へ配線されている', () => {
     const mod = require('path').join(__dirname, 'check-feedback-dispatched.js');
     const probe =
       `const m=require(${JSON.stringify(mod)});` +
       'const t="---\\nstatus: open\\n---\\nhttps://github.com/endazon/project-planning/issues/1";' +
       'process.stdout.write("\\nRESULT=" + m.inspect(t, "endazon/ai-stock-trading").reasons.length);';
-    const shifted = execSync(`node -e ${JSON.stringify(probe)}`, {
+    const shifted = execFileSync(process.execPath, ['-e', probe], {
       env: { ...process.env, PLANNING_REPOSITORY: 'acme/planning' },
       encoding: 'utf8',
     });
-    const normal = execSync(`node -e ${JSON.stringify(probe)}`, {
+    const normal = execFileSync(process.execPath, ['-e', probe], {
       env: { ...process.env, PLANNING_REPOSITORY: 'endazon/project-planning' },
       encoding: 'utf8',
     });
@@ -1506,11 +1701,11 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     const mod = require('path').join(__dirname, 'check-feedback-dispatched.js');
     const probe = `const {foreignPlanRefs}=require(${JSON.stringify(mod)});` +
       'process.stdout.write(String(foreignPlanRefs("https://github.com/acme/plan/issues/7","o/r").length));';
-    const withEnv = execSync(`node -e ${JSON.stringify(probe)}`, {
+    const withEnv = execFileSync(process.execPath, ['-e', probe], {
       env: { ...process.env, PLANNING_REPOSITORY: 'acme/plan' },
       encoding: 'utf8',
     });
-    const without = execSync(`node -e ${JSON.stringify(probe)}`, {
+    const without = execFileSync(process.execPath, ['-e', probe], {
       env: { ...process.env, PLANNING_REPOSITORY: '' },
       encoding: 'utf8',
     });
@@ -1584,7 +1779,7 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
 }
 
 // ci-annotate は GITHUB_ACTIONS の有無で書き込み先（stdout / 呼び出し側指定）を変える。
-// **片方の環境でしかテストしないと必ず見落とす**。実際 #138 は「ローカルで緑・CI で赤」
+// **片方の環境でしかテストしないと必ず見落とす**。実際 planning#138 は「ローカルで緑・CI で赤」
 // という最も気付きにくい形で入り、取り込んだ全リポジトリの scripts-tests を落とした。
 // 子プロセスで GITHUB_ACTIONS=true を与えて自分自身を回し、次の 2 点を確認する。
 //   (1) 全テストが通る（execSync は非 0 終了で throw する）
@@ -1607,6 +1802,21 @@ if (!process.env.SCRIPTS_TEST_CHILD) {
   });
 }
 
+// ★★ 本ファイルを書くときの規則: **配布物のテストは、配布先の構成を断定してはならない。**
+//
+// 置換点（`PLANNING_REPO` 等）も拡張点（`check-test-traceability.js` 等）も**埋められる前提**で
+// 配るものであり、埋めた側で落ちるテストは分類 A（バイト一致で配る）を成立させない。配布先は
+// **バイト一致を捨てるか、テストを赤のまま放置するか**の二択になる。
+//
+// **同型が 2 回起きた**（planning#296 の「2 回で規則にしてよい」条件を満たす）。
+//   1 回目: `PLANNING_REPO` を書き換えた配布先で本ファイルが恒久的に赤くなった（planning#320。下記の門）
+//   2 回目: `loadExistingPlanIds()` が `null` を返すと断定したテストが、拡張点を実装した
+//           配布先で `Set(54)` を受け取って落ちた（planning#380。上の「拡張点の有無に応じて…」）
+//
+// **書き方**: 構成を判定してから期待値を選び、**両方向を固定する**。
+// **「持つ側でだけ試験する」形（early return）にはしない** —— 実効している側が一度も
+// 試験されなくなり、結線が切れても緑になる。
+//
 // planning#320 の 9 巡目監査で検出（重大）: 8 巡目は check-feedback-dispatched.js の
 // selfTest() だけを置換点から独立させ、**検体 20 箇所を抱えるこのファイル自身**を
 // 同じ形にしていなかった。HOWTO.md が新たに指示する書き換え（PLANNING_REPO を自組織の
@@ -1626,8 +1836,9 @@ if (!process.env.SCRIPTS_TEST_CHILD) {
 
 // --- check-cross-repo-refs: 他リポジトリ issue / PR 番号の修飾 ---
 //
-// 本体の網羅的な検査は当該スクリプトの `--self-test`（69 件）が持つ。ここではそれを
-// **この試験の一部として必ず走らせる**ことと、配布物として最低限守るべき 2 点を固定する。
+// 本体の網羅的な検査は当該スクリプトの `--self-test` が持つ。ここではそれを
+// **この試験の一部として必ず走らせる**ことと、配布物として最低限守るべき 3 点を固定する。
+// **件数はここに書かない** —— 自己試験へ 1 件足すたびに古くなる（現に古くなった）。
 // 規約に書くだけでは守られないことが実測で確かめられている（規約の書いてある当のファイルを
 // 編集する PR が同じ違反を犯し、CI を green で通過した）。
 
@@ -1636,7 +1847,7 @@ if (!process.env.SCRIPTS_TEST_CHILD) {
 
   ok('check-cross-repo-refs の自己試験が全件通る', () => {
     // selfTest は失敗時に process.exit(1) するため、通ればここへ戻る。
-    // 標準出力は握り潰す（本試験の出力を 69 行汚さない）。
+    // 標準出力は握り潰す（本試験の出力を自己試験 1 件 1 行で汚さない）。
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = () => true;
     try {
@@ -1659,6 +1870,74 @@ if (!process.env.SCRIPTS_TEST_CHILD) {
       /SELF_NAMES/
     );
   });
+
+  // 配布物としての要点 3: KNOWN_OWNERS はプレースホルダのままなら型 4 を**検査しない**。
+  // 検査してしまうと、**規約が許す正しいフルパス形式を全件違反として上げる** ——
+  // SELF_NAMES の書き忘れと同じ「検査そのものを外させる」事故になる。
+  ok('KNOWN_OWNERS が置換点のままなら型 4 を検査しない（正しい記述を止めない）', () => {
+    const C = createChecker({ crossRepos: { 'my-repo': 'MINE' }, knownOwners: ['<owner>'] });
+    assert.strictEqual(C.OWNER_RE, null);
+    assert.strictEqual(findViolations('acme/my-repo#1', { checker: C }).length, 0);
+  });
+
+  // 配布物としての要点 4: 置換点の値そのものを配布先の回帰テストが固定できる。
+  // **除外は「ディレクトリ 1 本の規則」であり、名指しのファイルリストへ戻さない。**
+  ok('EXCLUDED_DIRS を export し、ディレクトリ 1 本の規則になっている', () => {
+    const { EXCLUDED_DIRS } = require('./check-cross-repo-refs.js');
+    assert.ok(Array.isArray(EXCLUDED_DIRS));
+    for (const d of EXCLUDED_DIRS) {
+      assert.ok(d.endsWith('/'), `"${d}" がディレクトリの形でない（名指しリストへ戻っている）`);
+    }
+  });
+
+  // 廃止した関数が戻っていないか（「後方互換」と書きながら誰も呼んでいなかった）。
+  ok('呼び出し元の無い trackedMarkdown を復活させていない', () => {
+    assert.strictEqual(require('./check-cross-repo-refs.js').trackedMarkdown, undefined);
+  });
+
+  // --- 0 件走査の門（fail-closed）------------------------------------------------
+  //
+  // **0 件走査で緑を返すのは「検査しているつもりで何も見ていない」状態**であり、
+  // 退行を止めているという記録だけが残る。**CLI を実走して終了コードで固定する**
+  // （`main()` は関数として呼べないため、ここだけは子プロセスで見るしかない）。
+  {
+    const os = require('os');
+    const fsx = require('fs');
+    const pathx = require('path');
+    const { execFileSync, spawnSync } = require('child_process');
+
+    /** 一時ディレクトリへ検査器だけを置き、CLI として走らせて {status, out} を返す。 */
+    const runIn = (initGit) => {
+      const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'xrepo-gate-'));
+      fsx.mkdirSync(pathx.join(dir, 'scripts'));
+      fsx.copyFileSync(
+        require.resolve('./check-cross-repo-refs.js'),
+        pathx.join(dir, 'scripts', 'check-cross-repo-refs.js')
+      );
+      if (initGit) execFileSync('git', ['-C', dir, 'init', '-q'], { stdio: 'ignore' });
+      // **stdout と stderr の両方を取る。** 検査器は理由を stderr へ書くため、
+      // stdout だけを見ると「理由を述べたか」を確かめられない。
+      const r = spawnSync(process.execPath, [pathx.join(dir, 'scripts', 'check-cross-repo-refs.js')], {
+        encoding: 'utf8',
+      });
+      fsx.rmSync(dir, { recursive: true, force: true });
+      return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+    };
+
+    ok('走査対象が 0 件なら fail させる（0 件検査で緑を返さない）', () => {
+      const { status, out } = runIn(true);
+      assert.strictEqual(status, 1, `0 件走査で exit ${status} を返した`);
+      assert.match(out, /1 件も見つけられませんでした/);
+    });
+
+    // **上の門とは別の分岐である。** git を使えない環境（tarball 展開等）は従来どおり
+    // fail-open にする —— ローカル環境差で CI を落とさないため。
+    ok('git を使えない環境では従来どおり skip する（fail-open）', () => {
+      const { status, out } = runIn(false);
+      assert.strictEqual(status, 0, `fail-open のはずが exit ${status} を返した`);
+      assert.match(out, /git ls-files を実行できない/);
+    });
+  }
 }
 // --- check-plan-id-qualification: 他プロジェクトの計画 ID 修飾 ---
 //

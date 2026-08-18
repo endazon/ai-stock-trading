@@ -2,7 +2,7 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 
 // FR-10, FR-20, ADR-0016 決定10: 発注拒否の分類。段階ゲート（Stage 1→2）の合格条件
 // 「統制違反 0 件」が数える対象を**クラス C 限定**にするための単一情報源である
-// （project-planning#58 の裁定・06_daytrading-review §4.1）。
+// （planning#58 の裁定・06_daytrading-review §4.1）。
 public enum RejectionReasonClass
 {
     /// <summary>
@@ -37,7 +37,7 @@ public static class RejectionReasonClassification
     /// <summary>拒否理由のクラスを返す。</summary>
     public static RejectionReasonClass ClassOf(RejectionReason reason) => reason switch
     {
-        // クラス C: 禁止事項への抵触（限定列挙。project-planning#58 の裁定）。
+        // クラス C: 禁止事項への抵触（限定列挙。planning#58 の裁定）。
         RejectionReason.BannedSymbol or RejectionReason.ManipulativeOrderPattern => RejectionReasonClass.C,
 
         // クラス B: 緊急停止中・段階制約・ガード設定による拒否。

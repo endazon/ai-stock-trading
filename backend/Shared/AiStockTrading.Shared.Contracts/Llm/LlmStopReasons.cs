@@ -1,7 +1,7 @@
 namespace AiStockTrading.Shared.Contracts.Llm;
 
 // #247, FR-04, FR-06, FR-11, IADR-0104 決定1: platform LLM ゲートウェイ /complete 応答の終了理由（stopReason）の語彙。
-// 上流（microservices-platform の Platform.Shared.Contracts.Dtos.CompletionStopReasons。MSP #379 / PR #391・MSP/ADR-0025）
+// 上流（microservices-platform の Platform.Shared.Contracts.Dtos.CompletionStopReasons。MSP#379 / PR #391・MSP/ADR-0025）
 // の写像であり、本リポジトリからは上流アセンブリを参照できないため、判定を 1 箇所に置いて追随漏れの分散を防ぐ。
 // 消費者は取引判断（HttpLlmCompletionClient）と報告書散文（HttpReportNarrativeDrafter）の 2 つ。
 //

@@ -6,7 +6,7 @@ namespace AiStockTrading.Shared.Contracts.Tests;
 
 // FR-10, FR-20, UC-06, ADR-0016 決定10, #329 第 2 段階: 拒否理由のクラス分類。
 // 段階ゲート（Stage 1→2）の合格条件「統制違反 0 件」が数える対象は**クラス C 限定**である
-//（project-planning#58 の裁定・06_daytrading-review §4.1）。分類が実際に分かれていることを固定する。
+//（planning#58 の裁定・06_daytrading-review §4.1）。分類が実際に分かれていることを固定する。
 public class RejectionReasonClassificationTests
 {
     // 06_daytrading-review §4.1: 統制違反＝クラス C の拒否理由（BannedSymbol / ManipulativeOrderPattern）

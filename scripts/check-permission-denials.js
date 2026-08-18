@@ -6,6 +6,9 @@
  * ツール**を itemize して報告する。拒否が実行を実質潰した規模ならジョブを止める。
  * 外部依存ゼロ（Node 標準モジュールのみ）。
  *
+ * 適用範囲: claude-code-action の実行ログ形式・拒否文言専用である。他エンジンのワークフローは
+ *   対象外であり、**対象外は「検査済み」を意味しない**（docs/ai-orchestration.md §6）。
+ *
  * 背景（実運用で発生した障害）:
  *   claude-doc-review.yml のレビューが 21 ターン中 17 回の権限拒否で潰れ、レビュー本文を
  *   1 文字も書けないまま終了した。にもかかわらず結果は `"subtype": "success",
@@ -27,7 +30,7 @@
  *     B. 探索的コマンド 1〜2 件の拒否（レビュー本文は正常・「実行できなかったこと」節も
  *        誠実に出力。プロセス置換・env 前置きなど**許可リストでは原理的に解決できない構文**
  *        が主で、ツールを足しても根絶できない）
- *   B まで赤にすると「成果物は正しいのにジョブが赤」（issue #146 / #149 / #160 が繰り返し
+ *   B まで赤にすると「成果物は正しいのにジョブが赤」（issue planning#146 / planning#149 / planning#160 が繰り返し
  *   問題視した形）が常態化し、「権限拒否の赤は無視してよい」という学習を生む。それは
  *   本検査器を入れた目的（A を見逃さない）を逆から壊す。
  *
@@ -84,7 +87,7 @@ function contentOf(event) {
 /**
  * 報告用のラベルを作る。Bash は**コマンド名まで**出す。
  *
- * 背景（issue #146）: 当初はツール名だけを出していたため、報告が「Bash（4 件）」で止まり
+ * 背景（issue planning#146）: 当初はツール名だけを出していたため、報告が「Bash（4 件）」で止まり
  * **どのコマンドが拒否されたのか判らなかった**。許可リストは `Bash(git diff:*)` のように
  * コマンド単位で書くため、ツール名だけでは何を足せばよいか決められない。実際、起票者は
  * ジョブログを追って読み取り系 git だと推定する必要があった。報告が行動につながらないなら、
@@ -94,7 +97,7 @@ function contentOf(event) {
  * 理由は 2 つある。許可リストの粒度がコマンド＋サブコマンドであること、そして引数には
  * トークン・パス等が入り得るため、ログへ丸ごと出さないことである。
  *
- * 【パイプライン（issue #158）】当初は「パイプ以降は別の話」として**先頭セグメントだけ**を
+ * 【パイプライン（issue planning#158）】当初は「パイプ以降は別の話」として**先頭セグメントだけ**を
  * 見ていた。これは権限判定については誤りである。Claude Code の Bash 許可は
  * **パイプラインの各コマンドを個別に判定する**ため、`git show X | cmp - Y` は `cmp` が
  * 未許可なら拒否される。ところが先頭だけを見る実装では、報告に出るのは**無実の `git show`**
@@ -144,7 +147,7 @@ function labelOf(name, input) {
     const tokens = seg.split(/\s+/).filter(Boolean);
     while (tokens.length && SHELL_KEYWORDS.has(tokens[0])) tokens.shift();
     if (!tokens.length) continue;
-    // `git -C <dir> <sub>` は 4 トークンまで採る（issue #160）。2 トークン固定だと
+    // `git -C <dir> <sub>` は 4 トークンまで採る（issue planning#160）。2 トークン固定だと
     // `Bash(git -C)` になり、**対処に必要なサブコマンドが消える**。キットは
     // `Bash(git -C planning log:*)` 等を自ら配布しており、planning を submodule 参照する
     // 全リポジトリでこの形が日常的に出る。許可リストのエントリと同じ粒度へ揃える。
@@ -193,7 +196,7 @@ function hasQuotedPipe(cmd) {
 }
 
 /**
- * その拒否が「許可リストを直せば消えるか」を判定する（#391 ②の本体）。
+ * その拒否が「許可リストを直せば消えるか」を判定する（endazon/ai-stock-trading#391 ②の本体）。
  *
  * 拒否には性質の違う 2 種類がある。
  *   A. 許可漏れ            … `npm ci` / `dotnet ef` / `git ls-files` / MCP ツール等。**直せる**
@@ -201,7 +204,7 @@ function hasQuotedPipe(cmd) {
  *                            `git -C <絶対パス>`。**許可リストでは原理的に直せない**
  *
  * B を失敗判定の分母に入れると、**許可リストを完璧にしても偽の赤が出続ける**。
- * かといって件数しきい値を上げると A の検出が鈍る。#391 が「維持すると偽の赤が出続け、
+ * かといって件数しきい値を上げると A の検出が鈍る。endazon/ai-stock-trading#391 が「維持すると偽の赤が出続け、
  * 緩めると許可漏れに気づけなくなる」と書いたトレードオフは、**2 種類を分けていない**
  * ことから生じている。よって分類して A だけで失敗を判定する。
  *
@@ -226,7 +229,7 @@ function unfixableReason(name, input) {
   // 前方一致を見るため、**引用符の中の `|` もパイプとして分割され**、`B"` のような
   // 存在しないコマンドが未許可と判定される。**正規表現の断片は許可リストに書けない**ので
   // 原理的に直せない。対処はプロンプト側（交替を使わず grep を分ける）である。
-  // 実測: PR #395 のレビューで 5 件中 3 件がこの形だった
+  // 実測: PR endazon/ai-stock-trading#395 のレビューで 5 件中 3 件がこの形だった
   // （`Bash(git -C planning show | Grep | 決定 | 決定14\ | …)` のように分割された姿で報告される）。
   if (hasQuotedPipe(cmd)) return '引用符内の `|`（grep の交替等。許可判定が分割してしまう）';
 
@@ -266,7 +269,7 @@ function hasPipeline(byTool) {
  *
  * リダイレクトはラベルから落とす（ファイル名はコマンドではない）が、**拒否の原因が
  * リダイレクトそのもの**である場合がある（レビュー用は書き込み手段を持たない設計のため。
- * issue #160 で `git show X > /tmp/a` が `Bash(git show)` として報告された）。
+ * issue planning#160 で `git show X > /tmp/a` が `Bash(git show)` として報告された）。
  * ラベルだけ見ると「許可済みのはずが拒否された」と読めてしまうので、注記の材料に使う。
  */
 function hasRedirect(input) {
@@ -311,7 +314,7 @@ function collectDenials(events) {
   const result = events.find((e) => e && e.type === 'result') || null;
   const numTurns = result && Number.isFinite(result.num_turns) ? result.num_turns : null;
   const byTool = new Map();
-  // #391 ②: 許可リストで直せない拒否（B）は失敗判定の分母から外す。理由ごとに件数を持つ。
+  // endazon/ai-stock-trading#391 ②: 許可リストで直せない拒否（B）は失敗判定の分母から外す。理由ごとに件数を持つ。
   const unfixableByReason = new Map();
   let unfixableCount = 0;
   const bump = (name) => byTool.set(name, (byTool.get(name) || 0) + 1);
@@ -414,7 +417,7 @@ function collectDenials(events) {
  * 純粋関数（I/O を持たない。テスト可能にするため）。
  */
 function isCritical({ count, fixableCount, numTurns }, tolerance) {
-  // #391 ②: 判定に用いるのは**許可リストで直せる拒否（A）だけ**である。B を含めると
+  // endazon/ai-stock-trading#391 ②: 判定に用いるのは**許可リストで直せる拒否（A）だけ**である。B を含めると
   // 許可リストを完璧にしても偽の赤が出続ける。fixableCount を持たない呼び出し（旧形の
   // オブジェクト・テスト）では count へ退避する（分類できないなら安全側＝全件 A）。
   const effective = Number.isFinite(fixableCount) ? fixableCount : count;
@@ -456,7 +459,7 @@ function formatDenials(denials) {
 }
 
 /**
- * 許可リストで直せない拒否（B）の内訳を 1 文にする（#391 ②）。
+ * 許可リストで直せない拒否（B）の内訳を 1 文にする（endazon/ai-stock-trading#391 ②）。
  * **失敗させないからこそ、必ず見せる。** 見せないと「B が何件あるか」が誰にも判らず、
  * 分類器が壊れて A を B と誤判定しても気付けない。
  */
@@ -481,7 +484,7 @@ function unfixableNote(denials) {
 /**
  * 拒否の内訳を GitHub の実行サマリ（$GITHUB_STEP_SUMMARY）へ書く。
  *
- * 背景（issue #155）: 拒否の内訳を知るにはジョブログを開く必要があり、**人が読む場所には
+ * 背景（issue planning#155）: 拒否の内訳を知るにはジョブログを開く必要があり、**人が読む場所には
  * 出ていなかった**。実運用で、レビューが「実行できなかった検証」を ✅ として報告し、
  * 拒否への言及を本文に 1 行も書かなかった事例が出た。結論（レビュー本文）と、その結論が
  * どこまで裏付けられているか（拒否の内訳）が別々の場所にあると、読み手には見分けが付かない。
@@ -509,7 +512,7 @@ function writeStepSummary(denials) {
   } else {
     lines.push('実行ログにツール名が残っていないため内訳を特定できない。');
   }
-  // #391 ②: 許可リストで直せない形（B）は失敗判定の対象外だが、**必ず見せる**。
+  // endazon/ai-stock-trading#391 ②: 許可リストで直せない形（B）は失敗判定の対象外だが、**必ず見せる**。
   if (unfixableCount) {
     lines.push(
       '',
@@ -592,7 +595,7 @@ function selfTest() {
       events: [{ type: 'result', permission_denials_count: 17 }],
       expect: (r) => r.count === 17 && r.itemized === false,
     },
-    // issue #146: 「Bash（4 件）」ではどのコマンドを許可すればよいか決められない。
+    // issue planning#146: 「Bash（4 件）」ではどのコマンドを許可すればよいか決められない。
     {
       name: 'Bash はコマンド名まで報告する（許可リストの粒度に合わせる）',
       events: [
@@ -608,7 +611,7 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(git diff)') === 2 && r.byTool.get('Bash(git status)') === 1,
     },
     {
-      // issue #158: 旧実装は先頭だけを見て `Bash(git log)` と報告し、原因の head を隠していた。
+      // issue planning#158: 旧実装は先頭だけを見て `Bash(git log)` と報告し、原因の head を隠していた。
       name: 'パイプの各セグメントを列挙する（原因を隠さない）',
       events: [
         { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git log | head -5' } }] },
@@ -637,7 +640,7 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(cd | npm ci | npm test)') === 1,
     },
     {
-      // 実測（issue #158 の 6 巡目）: `diff <(git show A) <(git show B)` が
+      // 実測（issue planning#158 の 6 巡目）: `diff <(git show A) <(git show B)` が
       // `Bash(diff (git` という壊れたラベルになっていた。
       name: 'プロセス置換の中のコマンドを露出させる',
       events: [
@@ -698,7 +701,7 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(node x.js)') === 1,
     },
     {
-      // issue #160: `git show X > /tmp/a` が `Bash(git show)`（許可済み）として報告された。
+      // issue planning#160: `git show X > /tmp/a` が `Bash(git show)`（許可済み）として報告された。
       name: 'リダイレクトを含むなら注記を出す（許可済みに見えて実は書き込みが原因）',
       events: [
         { type: 'result', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'git show a:b > /tmp/x' } }] },
@@ -742,7 +745,7 @@ function selfTest() {
       expect: (r) => r.byTool.get('Bash(git show | diff | head | echo)') === 1,
     },
     {
-      // issue #160: 2 トークン固定だと `Bash(git -C)` になりサブコマンドが消える。
+      // issue planning#160: 2 トークン固定だと `Bash(git -C)` になりサブコマンドが消える。
       name: 'git -C <dir> <sub> は 4 トークンまで採る（許可リストと同じ粒度）',
       events: [
         {
@@ -831,7 +834,7 @@ function selfTest() {
       process.stderr.write(`  NG  ${c.name}\n      got=${JSON.stringify({ ...r, byTool: [...r.byTool] })}\n`);
     }
   }
-  // issue #155: 内訳が「人が読む場所」へ出ること。
+  // issue planning#155: 内訳が「人が読む場所」へ出ること。
   {
     const osq = require('os');
     const pathq = require('path');
@@ -871,7 +874,7 @@ function selfTest() {
       ['検証偽装の 12 件は失敗', { count: 12, numTurns: 30 }, 4, true],
       ['許容値を超える 5 件は失敗', { count: 5, numTurns: 40 }, 4, true],
       ['探索的な 2 件 / 43 ターンは失敗させない', { count: 2, numTurns: 43 }, 4, false],
-      ['4 件 / 16 ターンは失敗させない（#146 の形）', { count: 4, numTurns: 16 }, 4, false],
+      ['4 件 / 16 ターンは失敗させない（planning#146 の形）', { count: 4, numTurns: 16 }, 4, false],
       ['件数が少なくても実行の半分が拒否なら失敗', { count: 3, numTurns: 6 }, 4, true],
       ['ターン数が取れない場合は件数だけで判定', { count: 2, numTurns: null }, 4, false],
       ['STRICT（許容 0）では 1 件でも失敗', { count: 1, numTurns: 43 }, 0, true],
@@ -885,7 +888,7 @@ function selfTest() {
     }
   }
 
-  // --- #391 ②: A（許可リストで直せる）/ B（直せない）の分類と、それに基づく失敗判定 ---
+  // --- endazon/ai-stock-trading#391 ②: A（許可リストで直せる）/ B（直せない）の分類と、それに基づく失敗判定 ---
   {
     const mk = (cmds) => ({
       type: 'result',
@@ -905,7 +908,7 @@ function selfTest() {
       ['cd によるディレクトリ移動', 'cd planning && git log -1'],
       ['git -C の絶対パス', 'git -C /home/runner/work/x/x log -1'],
       ['鎖の後段が B なら全体が B', 'git diff | cd x'],
-      // 実測（PR #395・5 件中 3 件）: 引用符内の `|` が分割され、正規表現の断片が
+      // 実測（PR endazon/ai-stock-trading#395・5 件中 3 件）: 引用符内の `|` が分割され、正規表現の断片が
       // 未許可コマンドとして判定される。許可リストには書けないので B。
       ['引用符内の | （二重引用符）', 'git -C planning show a:b | grep -E "決定|決定14"'],
       ["引用符内の | （単一引用符）", "ls docs | grep -E 'check-banned|check-coverage'"],
@@ -958,7 +961,7 @@ function selfTest() {
         process.stderr.write(`  NG  ${label}\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
       }
     }
-    // 実測の再現 2（PR #395 の run 31012341385・5 件）。rev-parse を許可すれば A は 1 件になる。
+    // 実測の再現 2（PR endazon/ai-stock-trading#395 の run 31012341385・5 件）。rev-parse を許可すれば A は 1 件になる。
     {
       const r = collectDenials([
         mk([
@@ -970,10 +973,10 @@ function selfTest() {
         ]),
       ]);
       const ok = r.unfixableCount === 3 && r.fixableCount === 2 && isCritical(r, 4) === false;
-      if (ok) process.stdout.write('  ok  PR #395 の 5 件を再現し、分類後は失敗しない\n');
+      if (ok) process.stdout.write('  ok  PR endazon/ai-stock-trading#395 の 5 件を再現し、分類後は失敗しない\n');
       else {
         failed++;
-        process.stderr.write(`  NG  PR #395 の再現\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
+        process.stderr.write(`  NG  PR endazon/ai-stock-trading#395 の再現\n      got=${JSON.stringify({ f: r.fixableCount, u: r.unfixableCount })}\n`);
       }
     }
     // 実測の再現（run 30998236984・5 件）。すべて A なので従来どおり失敗する。
@@ -1020,7 +1023,7 @@ function selfTest() {
   }
   // +42 は、上のループに含まれない個別検査の合計。内訳:
   //   ポリシー 8 / 実行サマリ 2 / 件数メッセージ 1
-  //   #391 ② の分類: B 判定 11 / A 判定 12 / 失敗判定 5 / 実測 run の再現 2 / B の可視化 1
+  //   endazon/ai-stock-trading#391 ② の分類: B 判定 11 / A 判定 12 / 失敗判定 5 / 実測 run の再現 2 / B の可視化 1
   process.stdout.write(`✓ 検証器の自己試験 ${cases.length + parseCases.length + 42} 件すべて合格\n`);
   return 0;
 }

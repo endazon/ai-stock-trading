@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { defaultBff, installBff, pathWithRoles } from './fixtures';
 
 // SC-03, FR-10, FR-20, UC-06, IADR-0087: 統制状態参照画面（参照専用）の実ブラウザ E2E。
-// BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP #284）。
+// BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP#284）。
 // 破壊的操作（pause/resume・kill switch・段階承認）は本画面に無い（Bot 側と役割分担）ため、参照表示と縮退を検証する。
 
 test.describe('SC-03 統制状態参照（#187）', () => {

@@ -3,7 +3,7 @@
     "キットが配布するワークフローで使う GitHub Actions の**メジャーバージョンの下限**。",
     "check-action-versions.js がこの表と `uses:` を突き合わせ、下回っていれば CI を落とす。",
     "Dependabot は github-actions エコシステムではリポジトリ直下の .github/workflows/ しか",
-    "走査しないため、テンプレート配下は自動追随しない（issue #148）。この表が単一情報源である。",
+    "走査しないため、テンプレート配下は自動追随しない（issue planning#148）。この表が単一情報源である。",
     "更新方法: node scripts/check-action-versions.js --check-latest で新しいメジャーを確認し、",
     "テンプレートの uses: と本表を同時に上げる。"
   ],

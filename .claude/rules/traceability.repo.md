@@ -27,13 +27,18 @@
 > **短縮名にリポジトリ名そのものを与えても、自分自身への置換を提案して違反にし続ける**（実測）。
 > 長い表記を採るには**キット配布物の改修を計画側へ環流する**必要がある。
 
-### 検査の置換点（`scripts/scripts.repo.test.js` が与える）
+### 検査の置換点（`check-cross-repo-refs.js` のファイル内で埋める。#530 / [IADR-0206](../../docs/adr/IADR-0206_kit-pin-179a69a-substitution-points-in-file.md)）
 
 ```
-CROSS_REPO_NAMES=project-planning:planning,microservices-platform:MSP
-CROSS_REPO_SELF_NAMES=AST,ai-stock-trading
-CROSS_REPO_EXCLUDES=:!planning,:!docs/specs,:!feedback
+CROSS_REPOS          = project-planning:planning, microservices-platform:MSP
+SELF_NAMES           = AST, ai-stock-trading
+EXCLUDE_PATHSPECS    = :!planning, :!docs/specs, :!feedback
+KNOWN_OWNERS         = endazon
 ```
+
+旧方式（env 注入でバイト一致を温存。IADR-0200 決定5）は、キット版 `scripts.test.js` が実データ本走を
+env なしの素実行で行うようになり成立しなくなった。同名の環境変数（`CROSS_REPO_*`）による上書きは
+引き続き有効で、`scripts.repo.test.js` のテストが同値を与えて検査する。
 
 ### 除外とその理由
 

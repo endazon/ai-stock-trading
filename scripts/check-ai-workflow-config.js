@@ -5,6 +5,10 @@
  * Claude 系ワークフロー（claude-coding / claude-code-review）のツール許可設定を機械検査する。
  * 外部依存ゼロ（Node 標準モジュールのみ）。
  *
+ * 適用範囲: claude-code-action（既定名 claude-coding / claude-code-review）専用である。
+ *   他エンジンのワークフロー（<engine>-coding.yml 等。docs/ai-orchestration.md）は対象外であり、
+ *   **対象外は「検査済み」を意味しない**（非 Claude エンジンは本検査の外で動く）。
+ *
  * 背景（実運用で発生した障害）:
  *   `claude_args` は**空白区切りで argv へトークン化**される。そのため
  *   `--allowedTools Bash(dotnet test:*)` と 1 ツール 1 行で書くと、値が
@@ -21,14 +25,14 @@
  *   [ERROR] setup-* でツールチェーンを用意しているのに、対応する実行ツールを許可していない
  *   [ERROR] 実装用とレビュー用でスタック別の実行ツールが食い違う（部分的な複製漏れ）
  *   [ERROR] スタック別以外の Bash 指定（読み取り専用の汎用コマンド・git -C 変種等）が
- *           実装用とレビュー用で食い違う（意図的な非対称は除外リストで宣言。issue #163）
+ *           実装用とレビュー用で食い違う（意図的な非対称は除外リストで宣言。issue planning#163）
  *   [WARN ] .claude/settings.json の allow とワークフローのツール集合の乖離（情報提供のみ）
  *   [WARN ] 検査そのものが成立していない（claude_args を解析できない / 既定名で引き当てられない）
  *
  * 警告の出し方:
  *   GitHub Actions 上では workflow コマンド（`::warning::`）で出し、PR の Checks 画面と
  *   実行サマリのアノテーションに載せる。素の stdout 行は**緑ジョブのログに埋もれて読まれない**
- *   （issue #122 の 3 系統乖離は、修正までのあいだ CI で毎回 warn が出ていたのに、
+ *   （issue planning#122 の 3 系統乖離は、修正までのあいだ CI で毎回 warn が出ていたのに、
  *   気付いたのはローカル実行と AI レビューの実走であり CI ログ経由ではなかった）。
  *   ローカル実行時の見た目は従来どおり。実装は scripts/lib/ci-annotate.js。
  *
@@ -58,10 +62,10 @@ const TOOLCHAINS = [
   { action: 'setup-java', commands: ['mvn', 'gradle', './gradlew', 'gradlew'] },
 ];
 
-// issue #163: スタック別以外の Bash 指定（読み取り専用の汎用コマンド・`git -C <submodule>` 変種
+// issue planning#163: スタック別以外の Bash 指定（読み取り専用の汎用コマンド・`git -C <submodule>` 変種
 // 等）の片落ちを ERROR で検出するための**意図的な非対称の宣言**。toolchainDrift は TOOLCHAINS
-// （スタック別の実行ツール）しか比較しないため、#155 の cat/head/tail、#160 の cmp/diff、
-// #163 の grep/sort と**同じ型の欠落が 3 度**すり抜けた。「手で揃えること」というコメントでは
+// （スタック別の実行ツール）しか比較しないため、planning#155 の cat/head/tail、planning#160 の cmp/diff、
+// planning#163 の grep/sort と**同じ型の欠落が 3 度**すり抜けた。「手で揃えること」というコメントでは
 // 守れなかったので、以後は下の除外リストに無い Bash 指定の差分をすべて ERROR にする。
 // 除外リストは Bash(...) の内側（末尾の `:*` を除く）と完全一致で照合する。
 // 実装用にだけあるのが正しいコマンド（書き込み・ファイル操作系。レビューは読むだけ）:
@@ -118,7 +122,7 @@ function parseAllowedTools(body) {
  * claude_args ブロックの `--<flag> <値>` をすべて取り出す。
  *
  * 記法の落とし穴（空白で割れて無効になる）は `--allowedTools` に固有ではない。
- * issue #149 で `--append-system-prompt "…"` を導入したように、値に空白を含む指定は
+ * issue planning#149 で `--append-system-prompt "…"` を導入したように、値に空白を含む指定は
  * 今後も増える。フラグ名で限定していると、次に増えたものが同じ形で黙って壊れる
  * ——このキットが繰り返し潰してきた型そのものになる。よってフラグ横断で検査する。
  *
@@ -169,14 +173,14 @@ function pickCanonical(files, keyword) {
  * その代わり「効いていない」ことは必ず出力に出す。warn を読まない運用だと 1 は
  * 素通りするため、CI ログの warn は無視しないこと。
  *
- * 1. **既定名のファイルがあるのに claude_args を解析できない**（issue #134）。
+ * 1. **既定名のファイルがあるのに claude_args を解析できない**（issue planning#134）。
  *    checkWorkflow は claude_args ブロックを 1 つも取れないと applicable: false を返し、
  *    呼び出し側が集計から丸ごと除外する。結果、記法検査・SDK 整合検査・ドリフト検査の
  *    **すべてが実行されない**のに green で終わる。手がかりは「2 件を検査」→「1 件を検査」
  *    という件数の変化だけで、これは誰も見ていない。この状態からレビュー側の実行ツールが
  *    全部消えても検出されず、検査器が入ったまま元の障害へ戻れてしまう。
  *    起こり方は現実的である（入力名の変更・YAML のインデント崩れ・`with:` の付け替えミス）。
- * 2. **既定名で 2 ファイルを引き当てられない**（issue #130 副次指摘）。2 つを 1 ファイルへ
+ * 2. **既定名で 2 ファイルを引き当てられない**（issue planning#130 副次指摘）。2 つを 1 ファイルへ
  *    統合した構成や別名を採ったリポジトリでは、ドリフト検査だけが黙って無効になる。
  *
  * allFiles はディスク上の全ワークフローのパス（listWorkflowFiles の結果）。
@@ -249,10 +253,10 @@ function toolchainCommandsOf(text, tools, { requireUses = true } = {}) {
  *   - **偽陰性**: ランナーにプリインストール済みのランタイムは setup-* を書かないため
  *     比較対象から外れる。`Bash(node:*)` の複製漏れが検出できなかった。これは
  *     キットの検査器群（scripts.test.js / check-*.js …）をレビューが実走する唯一の口で、
- *     落ちると検証が全滅する。`dotnet test` 1 つより影響が広い（issue #131）。
+ *     落ちると検証が全滅する。`dotnet test` 1 つより影響が広い（issue planning#131）。
  *   - **偽陽性**: 2 ファイルの setup-* 構成が非対称だと、`--allowedTools` が完全に同一でも
  *     差分として報告された。「両ファイルを同じ内容に保つ」という規約を守っている利用者ほど
- *     踏む形であり、しかも ERROR（exit 1）だった（issue #130）。
+ *     踏む形であり、しかも ERROR（exit 1）だった（issue planning#130）。
  * 2 ファイル間では、片方にあって片方に無ければ setup-* の有無に関わらずドリフトである。
  */
 function toolchainDrift(files) {
@@ -290,11 +294,11 @@ function bashInnerOf(tool) {
 
 /**
  * スタック別以外の Bash 指定（読み取り専用の汎用コマンド・`git -C <submodule>` 変種等）の
- * 実装用⇔レビュー用ドリフトを検出する（issue #163）。
+ * 実装用⇔レビュー用ドリフトを検出する（issue planning#163）。
  *
  * toolchainDrift が塞ぐのはスタック別の実行ツールだけで、`grep` / `sort` / `git -C … log` の
- * 片落ちは検出されない。この型の欠落は #155（cat/head/tail）→ #160（cmp/diff）→
- * #163（grep/sort）と 3 度繰り返された。パイプは各コマンドが個別判定されるため、後段の
+ * 片落ちは検出されない。この型の欠落は planning#155（cat/head/tail）→ planning#160（cmp/diff）→
+ * planning#163（grep/sort）と 3 度繰り返された。パイプは各コマンドが個別判定されるため、後段の
  * 1 コマンドの欠落で鎖全体が実行されず、しかも**その回のレビューが何回それを使おうと
  * したかで拒否件数が変わる**（間欠的に赤くなり「再実行したら緑」を誘発する）。
  * 人手の規律では守れないため、意図的な非対称（CODING_ONLY_BASH / REVIEW_ONLY_BASH）を
@@ -302,7 +306,7 @@ function bashInnerOf(tool) {
  *
  * 比較は toolchainDrift と同じく**ツール指定そのもの**（`Bash(git -C planning log:*)`）の
  * 粒度で行う。`git -C` はパスごとに別エントリであり、コマンド名へ畳み込むと
- * submodule パスの片落ち（#163 の本体）が消えるためである。
+ * submodule パスの片落ち（planning#163 の本体）が消えるためである。
  */
 function genericBashDrift(files) {
   const errors = [];
@@ -469,7 +473,7 @@ function selfTest() {
       yaml: 'jobs:\n  x:\n    steps:\n      - uses: actions/setup-dotnet@v5\n      - with:\n          claude_args: |\n            --allowedTools "Read,Bash(dotnet test:*)"\n',
       expect: (r) => r.errors.length === 0,
     },
-    // issue #149: 記法の穴は --allowedTools に固有ではない。
+    // issue planning#149: 記法の穴は --allowedTools に固有ではない。
     {
       // 実際の文面は「Task ツールによる spawn」のように空白を含む。
       name: '引用符なしで空白を含む --append-system-prompt は ERROR',
@@ -515,14 +519,14 @@ function selfTest() {
     ['両者が揃っていれば検出しない', pair(FULL, FULL), false],
     // 実装側にしか無いのが正しいツール（Edit / Write / 書き込み系 git）で誤検知しないこと。
     ['設計上の差（Edit / 書き込み系 git）では誤検知しない', pair(`${FULL},Edit,Write,Bash(git commit:*)`, FULL), false],
-    // issue #131: setup-* を書かないツールチェーン（node はランナーにプリインストール）。
+    // issue planning#131: setup-* を書かないツールチェーン（node はランナーにプリインストール）。
     // これを取りこぼすと、レビューがキットの検査器群を実走できなくなる。
     [
       'setup-* を書かないツールチェーン（node）の複製漏れも検出する',
       pair(`${FULL},Bash(node:*)`, FULL),
       true,
     ],
-    // issue #130: setup-* が非対称でも、ツール指定が同一なら差分ではない。
+    // issue planning#130: setup-* が非対称でも、ツール指定が同一なら差分ではない。
     [
       'setup-* が非対称でもツール指定が同一なら検出しない',
       pairWith(`${FULL},Bash(npm run:*)`, `${FULL},Bash(npm run:*)`, ['setup-dotnet', 'setup-node'], ['setup-dotnet']),
@@ -532,7 +536,7 @@ function selfTest() {
     ['レビュー側にだけあるツールも検出する', pair(FULL, `${FULL},Bash(node:*)`), true],
   ];
 
-  // issue #163: スタック別以外の Bash 指定のドリフト（genericBashDrift）。
+  // issue planning#163: スタック別以外の Bash 指定のドリフト（genericBashDrift）。
   // 受け入れ時の陽性対照（片方から Bash(grep:*) を抜いて ERROR / 戻して合格）を恒久化する。
   const RO = 'Read,Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(git -C planning log:*)';
   const genericCases = [
@@ -561,7 +565,7 @@ function selfTest() {
     ],
   ];
 
-  // issue #130 副次 / #134: 検査が無言で無効になる経路。
+  // issue planning#130 副次 / planning#134: 検査が無言で無効になる経路。
   // 第 3 要素は allFiles（ディスク上の全ワークフロー）。
   const CANON = ['.github/workflows/claude-coding.example.yml', '.github/workflows/claude-code-review.example.yml'];
   const scopeCases = [
@@ -575,7 +579,7 @@ function selfTest() {
       true,
     ],
     ['1 ファイルのみの構成は警告しない', [{ file: 'claude.yml', text: mkWf(FULL), tools: FULL.split(',') }], false],
-    // issue #134: 既定名のファイルはディスクに在るが、claude_args を解析できず
+    // issue planning#134: 既定名のファイルはディスクに在るが、claude_args を解析できず
     // applicable: false で除外された（＝ files に現れない）状態。
     [
       '既定名のファイルがあるのに claude_args を解析できなければ警告する',
@@ -670,16 +674,16 @@ function main(argv) {
 
   // 2 ファイル間の突き合わせ（部分的な複製漏れ）。単一ファイルの検査では捉えられない。
   allErrors.push(...toolchainDrift(forDrift));
-  // スタック別以外の Bash 指定（読み取り専用の汎用コマンド等）も突き合わせる（issue #163）。
+  // スタック別以外の Bash 指定（読み取り専用の汎用コマンド等）も突き合わせる（issue planning#163）。
   allErrors.push(...genericBashDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
-  // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue #134 の検査は黙って
+  // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue planning#134 の検査は黙って
   // 効かなくなる——この検査器が塞いでいる不具合と同じ形になる。省略しないこと。
   const warnings = [...driftScopeWarnings(forDrift, files), ...parityWarnings(perFile)];
   for (const w of warnings) warn(w);
 
-  // 【任意・opt-in】警告を失敗として扱う厳格モード（issue #136）。
+  // 【任意・opt-in】警告を失敗として扱う厳格モード（issue planning#136）。
   // 警告はいずれも「検査そのものが効いていない」状態を指すため、ファイル名・構成が
   // 固まったリポジトリでは失敗させたい。既定は fail-open のまま（アクションの入力名変更で
   // 全リポジトリの CI が一斉に落ちるのを避ける）。scripts.test.js の REQUIRE_REPO_TESTS と

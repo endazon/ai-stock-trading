@@ -55,7 +55,7 @@ internal sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbC
     public DbSet<GoodFaithViolationRow> GoodFaithViolations => Set<GoodFaithViolationRow>();
 
     // FR-21, FR-10, FR-06, #463, IADR-0181: ブローカ建玉の観測が到達した事実
-    // （**観測が届いた取引日ごとに 1 行**。2026-08-08 改定・裁定 project-planning#292）。
+    // （**観測が届いた取引日ごとに 1 行**。2026-08-08 改定・裁定 planning#292）。
     // **推定台帳とは別の事実である**——台帳は推定が起きたときにしか行を書かないため、
     // 台帳だけでは「観測が届いていない」と「0 件だった」を区別できない。
     // 判定は**期間の被覆**で行う（単一の最終観測時刻では、初回観測より前の期間や観測が

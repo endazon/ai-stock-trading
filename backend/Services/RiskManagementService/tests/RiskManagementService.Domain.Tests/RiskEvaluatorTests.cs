@@ -717,7 +717,7 @@ public class RiskEvaluatorTests
         result.Reasons.Should().Contain(RejectionReason.StageProductTypeProhibited);
     }
 
-    // **否定形の中心**（project-planning#179 の裁定・ADR-0009）: 段階別の商品種別強制の適用範囲は
+    // **否定形の中心**（planning#179 の裁定・ADR-0009）: 段階別の商品種別強制の適用範囲は
     // **新規建てのみ**である。**手仕舞い・損切りを止めてはならない**——段階を上げる前に建てた建玉
     // （信用買い・空売り）を閉じられなくなると、損失に上限が無い建玉を抱えたまま閉じられなくなる。
     [Theory]

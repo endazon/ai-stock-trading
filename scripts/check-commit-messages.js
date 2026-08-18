@@ -83,6 +83,33 @@ function validateCrossRepoRefs(text) {
   );
 }
 
+// ラベルは kind と 1:1 で対応させる（キット pin 179a69a の追随。#530）。分岐が足りないと、
+// CI ログを読んで直す人が実際には存在しない違反種別を探すことになる。**型を足したら必ずここへも足すこと。**
+const CROSS_REPO_REF_LABELS = {
+  long: '他リポジトリ名の長い表記',
+  enum: '列挙形の修飾漏れ（裸の #NNN が本リポの issue へ誤リンクする）',
+  spaced: '空白区切りの修飾（裸の #NNN が本リポの issue へ誤リンクする）',
+  owner: 'フルパス形式の owner 誤り（存在しない owner への死んだリンクになる）',
+  fence: '閉じないコードフェンス（以降の行が検査から漏れる）',
+};
+
+/**
+ * 他リポジトリ issue / PR 番号の修飾違反を「面ラベル付き」の違反理由の配列で返す
+ * （キットと同面の関数。planning#377 / #530）。
+ * コミットメッセージは Markdown ではない（バッククォートはコードスパンとして描画されず、
+ * `#NNN` の自動リンクは効く）ため、コードスパン除外を**しない**モードで見る。
+ */
+function crossRepoRefReasons(text, where) {
+  const s = String(text == null ? '' : text);
+  if (!s.trim()) return [];
+  return crossRepoRefs
+    .findViolations(s, { checker: CROSS_REPO_CHECKER, markdown: false })
+    .map((v) => {
+      const label = CROSS_REPO_REF_LABELS[v.kind] || `未知の違反種別 ${v.kind}`;
+      return `${where}の ${label}: "${v.matched}" → "${v.suggestion}"（.claude/rules/traceability.md）`;
+    });
+}
+
 // gen-changelog.js の TYPE_ORDER と一致させること。
 const VALID_TYPES = ['feat', 'fix', 'perf', 'refactor', 'docs', 'test', 'build', 'ci', 'style', 'chore'];
 
@@ -335,11 +362,42 @@ function loadExistingPlanAdrIds(
 }
 
 /**
- * 件名スコープ中の `IADR-xxxx` / `ADR-xxxx` が実在するか検証し、違反理由の配列を返す。
- * 各集合が null（読めない環境）の場合は該当種別の検査をスキップする。
+ * 計画レンジ（FR / UC / SC）の実在集合を読む（キット pin 179a69a の追随。planning#377 / #530）。
+ * キットは自前パーサを持たず、拡張点として `./check-test-traceability.js` の `readPlanIds()` を探す
+ * （同じ事実を 2 本のパーサで持たないため）。本リポの同スクリプトは現時点で `readPlanIds` を
+ * 持たないため null（＝skip・notice で可視化）となる。持たせれば自動で実効する。
+ */
+function loadExistingPlanIds() {
+  let traceability;
+  try {
+    traceability = require('./check-test-traceability.js');
+  } catch (e) {
+    // 「持っていない」だけを skip にする。構文エラーまで握ると fail の向きが崩れる。
+    if (e && e.code === 'MODULE_NOT_FOUND') return null;
+    throw e;
+  }
+  if (typeof traceability.readPlanIds !== 'function') return null;
+  // 節が壊れていれば readPlanIds が投げる。握り潰さない。
+  return new Set(traceability.readPlanIds());
+}
+
+/**
+ * 計画レンジ側はゼロ埋め 2 桁（`FR-01`）で持つが、規約は `FR-012` のような表記も書式として許す。
+ * 桁数の違いで「実在しない」と誤検出しないよう、比較の前に数値へ正規化して突き合わせる。
+ */
+function normalizePlanId(id) {
+  const m = String(id).match(/^(FR|UC|SC)-(\d+)$/);
+  if (!m) return id;
+  return `${m[1]}-${String(Number(m[2])).padStart(2, '0')}`;
+}
+
+/**
+ * 件名スコープ中の `IADR-xxxx` / `ADR-xxxx` / `FR-xx` / `UC-xx` / `SC-xx` が実在するか検証し、
+ * 違反理由の配列を返す。
+ * 各集合が null（読めない環境・当該検査器を持たない構成）の場合は該当種別の検査をスキップする。
  * 書式違反の検出は validateSubject が担う（本関数は書式適合を前提に実在のみ見る）。
  */
-function validateIdExistence(subject, iadrIds, planAdrIds) {
+function validateIdExistence(subject, iadrIds, planAdrIds, planIds) {
   const s = String(subject == null ? '' : subject).replace(/\s*\(#\d+\)\s*$/, '').trim();
   const m = s.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s+(.+)$/);
   if (!m || m[2] === undefined) return [];
@@ -349,16 +407,70 @@ function validateIdExistence(subject, iadrIds, planAdrIds) {
       reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性）`);
     } else if (planAdrIds && /^ADR-\d{3,4}$/.test(id) && !planAdrIds.has(id)) {
       reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性）`);
+    } else if (planIds && /^(FR|UC|SC)-\d+$/.test(id) && !planIds.has(normalizePlanId(id))) {
+      // ここが無い間、`feat(SC-99)` は exit 0 で恒久履歴へ載れた。
+      reasons.push(
+        `起点 ID "${id}" が計画レンジに実在しない（誤記・別プロジェクトの ID の可能性）`
+      );
     }
   }
   return reasons;
 }
 
+/**
+ * PR タイトル末尾の `(#NNN)` が PR 自身の番号かを検証し、違反理由の配列を返す
+ * （キット pin 179a69a の追随。planning#385 / planning#386 / #530）。
+ * `prNumber` が null / undefined のときは形状のみ（コミット件名モードには PR 番号が無い）。
+ */
+function validateTitlePrNumber(subject, prNumber) {
+  if (prNumber == null) return [];
+  const m = String(subject == null ? '' : subject).match(/\(#(\d+)\)\s*$/);
+  if (!m) return [];
+  if (Number(m[1]) === Number(prNumber)) return [];
+  return [
+    `末尾の "(#${m[1]})" が PR 自身の番号（#${prNumber}）と一致しない。` +
+      '末尾の (#NNN) を外すか、PR 自身の番号にすること。' +
+      '起点 issue は本文の `Closes #NNN` で示す' +
+      '（GitHub はスカッシュ時に PR 番号を自動付加するため、通常はタイトルへ番号を書かない）',
+  ];
+}
+
+/**
+ * `PR_NUMBER` / `--pr-number` の生値を正の整数へ正規化する。
+ * 未設定・空文字は `null`（＝番号一致検査をしない）。数値として読めない値は `NaN` を返す
+ * （呼び出し側が「設定されているのに読めない」を notice で可視化する。黙って検査を消さない）。
+ */
+function normalizePrNumber(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (!/^\d+$/.test(s)) return NaN;
+  const n = Number(s);
+  return n > 0 ? n : NaN;
+}
+
 /** 件名を検証し、違反理由の配列を返す（空なら合格）。 */
+// 件名に現れてはならない HTML エンティティ（キット pin 179a69a の追随。planning#415 / #530）。
+//
+// **GitHub は PR タイトルの素の `<` `>` `&` `"` を作成時点でエスケープして保存する。**
+// スカッシュ後の件名は PR タイトルがそのまま載るため、恒久履歴へ焼き付き force push 禁止で直せない。
+// **エスケープ済みの文字列を検査するのが要点である**（素の `<` を検査しても素通りする）。
+const HTML_ENTITY_PATTERN = /&(?:lt|gt|amp|quot|#\d+|#x[0-9a-fA-F]+);/;
+
 function validateSubject(subject) {
   const reasons = [];
   // 末尾の PR 番号 " (#123)" は除去して判定する。
   const s = subject.replace(/\s*\(#\d+\)\s*$/, '').trim();
+
+  // 形式検査より先に見る。エンティティは形式に適合したまま恒久履歴へ載るためである。
+  const entity = s.match(HTML_ENTITY_PATTERN);
+  if (entity) {
+    reasons.push(
+      `HTML エンティティ "${entity[0]}" を含む（GitHub が PR タイトルの < > & " を` +
+        'エスケープして保存し、スカッシュ後の件名へ焼き付く。素の山括弧を使わず、' +
+        'バッククォートで囲むか山括弧を用いない書き方にする）'
+    );
+  }
 
   const m = s.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s+(.+)$/);
   if (!m) {
@@ -401,7 +513,7 @@ function validateSubject(subject) {
  * git を使わず、渡された 1 件名のみを規約に照合する。Revert / [skip ci] はスキップ扱い。
  * 合格・スキップ時 0、違反時 1 を返す。
  */
-function checkSingleTitle(title, prAuthor) {
+function checkSingleTitle(title, prAuthor, prNumber) {
   const subject = String(title == null ? '' : title).trim();
   process.stdout.write(`PR タイトル（スカッシュ後件名）チェック: "${subject}"\n`);
 
@@ -423,10 +535,19 @@ function checkSingleTitle(title, prAuthor) {
   }
 
   const reasons = validateSubject(subject)
-    .concat(validateIdExistence(subject, loadExistingIadrIds(), loadExistingPlanAdrIds()))
+    .concat(
+      validateIdExistence(
+        subject,
+        loadExistingIadrIds(),
+        loadExistingPlanAdrIds(),
+        loadExistingPlanIds()
+      )
+    )
     // #515: PR タイトルはスカッシュ後にコミット件名として統合ブランチへ載る。
     // **ここを通すと、誤リンクする件名がそのまま履歴へ入り、二度と直せない**（force push 禁止）。
-    .concat(validateCrossRepoRefs(subject));
+    .concat(validateCrossRepoRefs(subject))
+    // 末尾の `(#NNN)` が PR 自身の番号かどうか。prNumber 未指定なら形状のみ（planning#386）。
+    .concat(validateTitlePrNumber(subject, prNumber));
   if (reasons.length) {
     process.stderr.write('\n✗ PR タイトルが規約違反:\n');
     process.stderr.write(`  ${subject}\n`);
@@ -447,7 +568,19 @@ function main() {
   // 単一件名モード（PR タイトル検査）。git リポジトリ内外を問わず動作する。
   const title = args.title != null ? args.title : process.env.PR_TITLE;
   if (title != null) {
-    process.exit(checkSingleTitle(title, process.env.PR_AUTHOR));
+    // PR 自身の番号。**コミット件名モードへは渡さない**（スカッシュ後の履歴コミットが全滅する）。
+    // notice は呼び出し側でのみ出す（checkSingleTitle の中に置くと単体テストが本物の
+    // CI アノテーションを漏らす。loadExisting* と同じ扱い。planning#386 / #530）。
+    let prNumber = normalizePrNumber(process.env.PR_NUMBER);
+    if (Number.isNaN(prNumber)) {
+      notice(
+        `PR_NUMBER="${process.env.PR_NUMBER}" を正の整数として読めないため、PR タイトル末尾 (#NNN) の` +
+          '番号一致チェックをスキップした（形状のみ検査している）。' +
+          'pr-title.yml が github.event.pull_request.number を渡しているか確認すること'
+      );
+      prNumber = null;
+    }
+    process.exit(checkSingleTitle(title, process.env.PR_AUTHOR, prNumber));
   }
 
   if (tryGit('rev-parse --is-inside-work-tree') !== 'true') {
@@ -466,6 +599,7 @@ function main() {
   const allowlist = loadAllowlist();
   const iadrIds = loadExistingIadrIds();
   const planAdrIds = loadExistingPlanAdrIds();
+  const planIds = loadExistingPlanIds();
   // 検査を skip したことは notice で可視化する（issue #139）。素の stderr 行は緑ジョブの
   // ログに埋もれて読まれず、「検査していない範囲があること」が CI の UI から読み取れない。
   // 終了コードは変えない（fail-open。ローカル環境差で CI を落とさない）。
@@ -479,6 +613,13 @@ function main() {
       'planning submodule が未 populate のため計画 ADR 実在性チェックをスキップした' +
         '（この範囲は検査されていない。実効しているのは IADR 検査のみである）。' +
         'PR 段階で検査するには checkout に submodules とトークンを付けること'
+    );
+  }
+  if (!planIds) {
+    // 拡張点（check-test-traceability.js の readPlanIds）を持たない構成でのみここへ来る。
+    notice(
+      'check-test-traceability.js が readPlanIds を持たないため FR / UC / SC の実在性チェックをスキップした' +
+        '（この範囲は検査されていない）'
     );
   }
 
@@ -510,7 +651,7 @@ function main() {
     // 🔴 本文を含めるのが要点である——規約が名指しした実害例は **footer の `Refs #NNN`** であり、
     // 件名だけ見ていては構造的に取りこぼす。
     const reasons = validateSubject(c.subject)
-      .concat(validateIdExistence(c.subject, iadrIds, planAdrIds))
+      .concat(validateIdExistence(c.subject, iadrIds, planAdrIds, planIds))
       // `%B` は件名を含む全文であるため、件名は本文の検査に含まれる（二重に渡さない）。
       .concat(validateCrossRepoRefs(c.body));
     if (reasons.length) {
@@ -544,8 +685,14 @@ if (require.main === module) {
 module.exports = {
   validateSubject,
   validateIdExistence,
+  loadExistingPlanIds,
+  normalizePlanId,
+  validateTitlePrNumber,
+  normalizePrNumber,
   // #515: 実害の出る面（件名・本文・PR タイトル）のクロスリポ参照検査。
   validateCrossRepoRefs,
+  crossRepoRefReasons,
+  CROSS_REPO_REF_LABELS,
   loadExistingIadrIds,
   loadExistingPlanAdrIds,
   checkSingleTitle,

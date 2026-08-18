@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: moomoo OpenAPI の履歴 K 線（QotRequestHistoryKL）による
-// **米国株の日足 OHLCV** の取得。ADR-0023 決定5（利用者裁定 2026-08-06・環流 project-planning#205）が
+// **米国株の日足 OHLCV** の取得。ADR-0023 決定5（利用者裁定 2026-08-06・環流 planning#205）が
 // 米国株日足 OHLC の履歴源として moomoo を正式採用したことへの追随である。
 //
 // ⚠️⚠️ **本アダプタを構成しても、確認が済むまで本番のバックテストへ流してはならない。** ⚠️⚠️

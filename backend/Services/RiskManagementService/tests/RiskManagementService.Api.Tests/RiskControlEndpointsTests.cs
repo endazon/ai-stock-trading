@@ -245,7 +245,7 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
 
         var body = await res.Content.ReadFromJsonAsync<BuyInInferenceQueryDto>();
         body.Should().NotBeNull();
-        // **[2026-08-08 改定] 期間判定である**（計画 FR-21・裁定 project-planning#292）。
+        // **[2026-08-08 改定] 期間判定である**（計画 FR-21・裁定 planning#292）。
         body!.PeriodCovered.Should().BeFalse("観測はまだ一度も届いていない");
         body.ObservedTradingDays.Should().NotBeNull().And.BeEmpty();
         body.Inferences.Should().NotBeNull().And.BeEmpty();
