@@ -7,7 +7,7 @@ updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-13, FR-14]
+ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-13, FR-14, NFR-13]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0006, MSP:ADR-0010]
 iadrs: [IADR-0019, IADR-0021, IADR-0027, IADR-0048, IADR-0052, IADR-0053, IADR-0055, IADR-0056, IADR-0061]
 specs: [01_architecture-overview, ADR-0001_platform-reuse]
@@ -202,7 +202,7 @@ sequenceDiagram
 | Report | —| 日報 / 週報 / 月報の集計・ドラフト生成・対話的確定 | `ReportConfirmed` |
 | Notification | —| イベント購読 → Discord 送信、Discord Bot 対話の中継（報告書質疑・kill switch 起動） | — |
 | Configuration | —| 全体前提条件・取引ガード設定の管理（監視銘柄・閾値・上限の変更） | `AssumptionsChanged` |
-| CostControl | NFR | LLM/運用費用のしきい値監視と統制状態遷移 | `CostThresholdReached` |
+| CostControl | —| LLM/運用費用のしきい値監視と統制状態遷移 | `CostThresholdReached` |
 | Audit | —| 全イベントの監査記録 | — |
 
 > Backtest は Worker としてデプロイされない補助サービス（過去データ検証用）。実 LLM・実市場データ・実発注・

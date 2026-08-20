@@ -11,7 +11,7 @@ ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
 iadrs: [IADR-0049, IADR-0127, IADR-0128]
 specs: [01_requirements, 05_trading-assumptions, 20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, traceability]
-issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344]
+issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344, MSP#446]
 -->
 
 
@@ -114,7 +114,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 | --- | --- | --- |
 | フェイクブローカー / フェイク LLM によるサイクル 1 周のシナリオテスト | #331 / #335 / #337 | 対象の実体が無い段階では書けない |
 | moomoo `SIMULATE` 結合テスト | #342 | PoC（2026-08-31 期限）の完了が前提 |
-| フロント Playwright E2E | #340 | platform#446 の新スタック追随後 |
+| フロント Playwright E2E | #340 | 基盤側の新スタック追随後 |
 | 性能ゲート（取引サイクル 10 分 / 変動→発注 5 分） | #337（実測は #203 を接続） | 取引サイクルの実体が必要 |
 
 ## 変更履歴
