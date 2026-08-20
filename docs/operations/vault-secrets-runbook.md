@@ -3,22 +3,23 @@ title: Vault 秘匿参照（External Secrets）opt-in 手順 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-07-28
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: []
+ids: [NFR-05]
 adrs: [ADR-0006]
-iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152]
+iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, MSP:IADR-0077]
 specs: [ADR-0006_hosting-hetzner]
-issues: [#24]
+issues: [#24, #262, #263, #364]
 -->
 
 
 # Runbook: Vault 秘匿参照（External Secrets）の opt-in 配線
 
-> 起点: ADR-0006（計画リポ）（Vault 秘匿）/
-> IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す 決定4（受け口）/ IADR-0094: ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps は AST リポ内の opt-in manifest／docs として整備し、共有スタックの stand-up は MSP 側へ分離する。
+> 起点は稼働環境の計画 ADR（Vault 秘匿）である。受け口は「OpenD 本番化は『既定 no-op の整備』として先行し、
+> 切替はゲート＋チェックリストで人手に残す」の決定 4 が定め、ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps は
+> AST リポ内の opt-in manifest／docs として整備し、共有スタックの stand-up は MSP 側へ分離する。
 >
 > ⚠️ **既定は k8s Secret 直運用（Vault 非依存）。本手順は opt-in で、有効化しない限り現行挙動は変わらない。**
 > **平文の秘密を Git にコミットしない。** 実際に Vault へ鍵が載り ESO が同期して初めて「Vault 化」は充足する。
@@ -43,22 +44,22 @@ issues: [#24]
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
 `discord-owner-auth-client-id` / `discord-owner-auth-client-secret`。
 
-> **`fred-api-key` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 /
-> #364 / IADR-0107: 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う /
-> IADR-0152: 判定の基準通貨を USD へ反転し、換算の向き・equity の 1 点換算・表示単位をまとめて正す）。欠けると JPY 建て銘柄は判断前に全件見送りになる
+> **`fred-api-key` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 / #364。
+> 統制の金額は基準通貨で判定し換算は判断境界の 1 点で行う、および判定の基準通貨を USD へ反転した各決定による）。
+> 欠けると JPY 建て銘柄は判断前に全件見送りになる
 > （米国株は無影響）。**#364 で基準通貨が USD へ移行し、必須となる市場が US 株から日本株へ入れ替わった。**
 > 他の API 鍵と違い「無ければ当該ソースが無効」で済まないため、日本株を回す環境では
 > 投入必須として扱う。詳細は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)。
 >
 > **既定（Vault 非依存）の手動 Secret では `scripts/k8s-local-deploy.sh` が env 未設定のキーに触れない**
-> （投入済みの値を保持する・#263 / IADR-0109: `ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ）。
+> （投入済みの値を保持する・#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ）。
 > ESO 同期を有効化した環境では `ast-secrets` は `ExternalSecret` が所有するため、値の投入は Vault 側で行い、
 > スクリプトの env は使わない（両者を併用すると所有が割れる）。
 
 ## 前提
 
 1. **External Secrets Operator（`external-secrets.io` CRD）** と **Vault ストア**（`SecretStore`/`ClusterSecretStore`）が
-   クラスタに導入済みであること。ローカル（経路B）では **MSP 側の共有 stand-up**（別 PR・MSP/IADR-0077）が入れる。
+   クラスタに導入済みであること。ローカル（経路B）では **MSP 側の共有 stand-up**（別 PR。基盤側の共有 overlay の決定に従う）が入れる。
    CRD 未導入で有効化すると `ExternalSecret` の apply が失敗する。
 2. Vault に上表のパスで KV が格納済みであること（**Git には載せない**。投入は Vault CLI/UI で人手または CD で行う）。
 
@@ -105,5 +106,5 @@ issues: [#24]
 
 ## Tier 3（対象外）
 
-- Hetzner 実環境の Vault 本番運用（unseal・監査・ローテーション）・IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す の
-  実弾解禁前提としての「秘匿情報の Vault 化」実充足は実基盤依存（[`docs/infra/infra.md`](../infra/infra.md) の Tier 境界）。
+- Hetzner 実環境の Vault 本番運用（unseal・監査・ローテーション）と、OpenD 本番化の実弾解禁前提としての
+  「秘匿情報の Vault 化」の実充足は実基盤依存（[`docs/infra/infra.md`](../infra/infra.md) の Tier 境界）。

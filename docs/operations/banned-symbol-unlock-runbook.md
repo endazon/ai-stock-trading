@@ -3,22 +3,22 @@ title: 禁止銘柄の一時解除 Runbook（建玉を手仕舞えないとき�
 type: runbook
 status: draft
 created: 2026-08-07
-updated: 2026-08-07
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-10, FR-11, FR-19, UC-06]
+ids: [FR-10, FR-11, FR-19, UC-06, UC-07]
 adrs: [ADR-0007]
 iadrs: [IADR-0132]
 specs: [20260807_380_guard-scope-arbitration, ADR-0007_trading-guard-and-margin]
-issues: []
+issues: [#380]
 -->
 
 
 # Runbook: 禁止銘柄の一時解除（建玉を手仕舞えないときの手順）
 
-> リポジトリ単位の運用 Runbook。起点: [#380](https://github.com/endazon/ai-stock-trading/issues/380) /
-> ADR-0007（計画リポ） の 2026-08-04 追補。
+> リポジトリ単位の運用 Runbook。起点は [#380](https://github.com/endazon/ai-stock-trading/issues/380) と、
+> 取引商品・取引ガードを定めた計画 ADR の 2026-08-04 追補である。
 
 ## 症状 — **建玉が閉じられない**
 
@@ -32,7 +32,7 @@ issues: []
 
 ## なぜそうなっているか
 
-**取引禁止銘柄ガードは「全注文」に適用される** —— 新規建てだけでなく**手仕舞いも拒否する**（ADR-0007 2026-08-04 追補・利用者裁定 質問票 第 1 回 Q4）。
+**取引禁止銘柄ガードは「全注文」に適用される** —— 新規建てだけでなく**手仕舞いも拒否する**（取引ガードの計画 ADR の 2026-08-04 追補・利用者裁定 質問票 第 1 回 Q4）。
 
 理由は計画に明記されている。
 
@@ -40,7 +40,7 @@ issues: []
 
 つまりこのロックインは**受容された代償**であり、緩めてはならない。
 
-> **他のガードと適用範囲が違うのは意図である。** ADR-0007 追補は「ガードごとに適用範囲が異なるのは**各ガードの目的が異なるためであり、揃えるべき不整合ではない**」と明示している。**「一貫性がない」として揃えないこと。**
+> **他のガードと適用範囲が違うのは意図である。** 同追補は「ガードごとに適用範囲が異なるのは**各ガードの目的が異なるためであり、揃えるべき不整合ではない**」と明示している。**「一貫性がない」として揃えないこと。**
 
 | ガード | 適用範囲 |
 | --- | --- |
@@ -58,7 +58,7 @@ issues: []
 
 対象銘柄を禁止銘柄リストから外す。
 
-- 画面: **SC-02**（リスク統制設定）のガード設定
+- 画面: **リスク設定画面**のガード設定
 - API: **`PUT /risk-controls/settings/guard`**（`RiskControlEndpoints.cs` の `MapGroup("/risk-controls")` ＋ `MapPut("/settings/guard")`）
 - BFF 経由: **`PUT /bff/risk-controls/settings/guard`**（`RiskControlsBffEndpoints.cs`）
 
@@ -91,7 +91,7 @@ issues: []
 - `backend/Services/RiskManagementService/src/RiskManagementService.Application/Services/RiskSettingsService.cs`（`UpdateGuard` → `RequireActorAndReason` → `Save(..., SettingsChangeType.Guard, actor, reason)`）
 - `backend/Services/RiskManagementService/src/RiskManagementService.Application/State/SettingsChangeEntry.cs`
 
-照会は **UC-06 / UC-07** の設定変更履歴から行う。
+照会は設定変更（一時停止・緊急停止）および取引履歴・判断根拠の参照の各ユースケースが定める設定変更履歴から行う。
 
 ## 本 Runbook の限界（正直に記録する）
 
@@ -102,8 +102,8 @@ issues: []
 
 ## 関連
 
-- 計画: ADR-0007（計画リポ）（2026-08-04 追補が適用範囲と本手順を定める）
-- 実装 ADR: IADR-0132: 商品種別は 3 値を単一情報源とし、実効値で照合する。商品種別ガードと差金決済ガードは適用範囲を絞る（商品種別の 3 値化とガード適用範囲）
-- 機能仕様: [FR-19 取引ガード](../functional/FR-19_trading-guard.md)
+- 計画: 取引商品・取引ガードを定めた計画 ADR（2026-08-04 追補が適用範囲と本手順を定める）
+- 実装 ADR: 商品種別は 3 値を単一情報源とし、実効値で照合する。商品種別ガードと差金決済ガードは適用範囲を絞る
+- 機能仕様: [取引ガード](../functional/FR-19_trading-guard.md)
 - 作業仕様書: 仕様書: ガード適用範囲の裁定の反映
 - 運用仕様書: [operations.md](operations.md)

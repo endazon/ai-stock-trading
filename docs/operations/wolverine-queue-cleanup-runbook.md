@@ -3,7 +3,7 @@ title: MassTransit 時代の旧キュー（47 本）の削除手順 Runbook
 type: runbook
 status: draft
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-21
 author: claude
 ---
 <!-- trace:
@@ -17,10 +17,11 @@ issues: [#258, #354, #45]
 
 # Runbook: MassTransit 時代の旧キュー（47 本）を RabbitMQ から削除する
 
-> 起点: ADR-0013（計画リポ）（Wolverine 移行）/
-> IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する）（トポロジ設計・「結果」の悪い影響に本手順の必要性を記載）/
-> IADR-0106: consumer クラス名＝キュー名（サービス跨ぎの一意性）（旧キュー名の導出規則。Superseded）/
-> 作業仕様書 仕様書: MassTransit を Wolverine へ移行しローカルディスパッチを統一する。
+> 起点は、メッセージング基盤の Wolverine 移行を定めた計画 ADR である。
+> 実装側では「Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する）」が
+> 本手順の必要性を「結果」の悪い影響として記載し、旧キュー名の導出規則は「consumer クラス名＝キュー名
+> （サービス跨ぎの一意性）」（Superseded）が定めていた。
+> 作業仕様書は 仕様書: MassTransit を Wolverine へ移行しローカルディスパッチを統一する。
 >
 > ⚠️ **本手順は「Wolverine 版をデプロイし、正常稼働を確認したあと」に実施する。** 先に消しても得は無く、
 > 切り戻し（旧版の再デプロイ）の余地を失うだけである。**急がないこと**が最大の安全策である。
@@ -29,7 +30,7 @@ issues: [#258, #354, #45]
 
 ## なぜ要るのか
 
-Wolverine 移行でキュー名の導出規則が変わった（IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する） 決定 1）。
+Wolverine 移行でキュー名の導出規則が変わった（新トポロジ設計の決定 1）。
 
 | | 旧（MassTransit） | 新（Wolverine） |
 | --- | --- | --- |
@@ -85,7 +86,7 @@ kubectl -n ai-stock-trading exec -it deploy/rabbitmq -- \
 
 - `*_error`（デッドレター）に残っているもの: 処理に失敗した業務イベントである。**捨てる前に監査台帳
   （AuditService）と突き合わせ**、必要なら人手で是正する。エンベロープ形式が MassTransit 互換であるため、
-  **Wolverine 版へそのまま再投入しても消費できない**（IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する） 決定 7）。
+  **Wolverine 版へそのまま再投入しても消費できない**（新トポロジ設計の決定 7）。
   再現が必要なら、内容を読んで**新しいイベントとして発行し直す**（＝再投入ではなく再発行）。
 - 通常キューに残っているもの: 移行の瞬間に in-flight だったイベント。上と同じ扱い。
 
@@ -186,7 +187,7 @@ kubectl -n ai-stock-trading exec -it deploy/rabbitmq -- \
 | 15 | `LlmCostIncurredAudit` | Audit | `ai-stock-trading.audit-service.LlmCostIncurred` |
 | 16 | `OrderApproved` | OrderExecution | `ai-stock-trading.order-execution-service.OrderApproved` |
 | 17 | `OrderApprovedActivity` | RiskManagement | `ai-stock-trading.risk-management-service.OrderApproved`（**18 と統合**） |
-| 18 | `OrderApprovedLedger` | RiskManagement | 同上（1 キューを 2 ハンドラが共有・IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する） 決定 10） |
+| 18 | `OrderApprovedLedger` | RiskManagement | 同上（1 キューを 2 ハンドラが共有。新トポロジ設計の決定 10） |
 | 19 | `OrderApprovedAudit` | Audit | `ai-stock-trading.audit-service.OrderApproved` |
 | 20 | `OrderCancelledActivity` | RiskManagement | `ai-stock-trading.risk-management-service.OrderCancelled` |
 | 21 | `OrderCancelledAudit` | Audit | `ai-stock-trading.audit-service.OrderCancelled` |
@@ -218,7 +219,7 @@ kubectl -n ai-stock-trading exec -it deploy/rabbitmq -- \
 | 47 | `WithdrawalTriggeredNotification` | Notification | `ai-stock-trading.notification-service.WithdrawalTriggered` |
 
 > **`TradeDecisionMadeBaseline`の由来**: `MarketMonitorService` の consumer は
-> IADR-0106: consumer クラス名＝キュー名（サービス跨ぎの一意性）で `TradeDecisionMade` と
+> 旧規則（consumer クラス名＝キュー名）のもとで `TradeDecisionMade` と
 > キューを分けるために改名されたものである。Wolverine ではクラス名がキュー名に関与しないため、
 > この分離はサービス名の前置が担う（改名の役目は終わった）。
 >
@@ -227,7 +228,7 @@ kubectl -n ai-stock-trading exec -it deploy/rabbitmq -- \
 
 ## 関連
 
-- 実装ADR: IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する）（新トポロジ）/
-  IADR-0106: consumer クラス名＝キュー名（サービス跨ぎの一意性）（旧キュー名の規則・Superseded）
+- 実装ADR: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する。新トポロジ）／
+  consumer クラス名＝キュー名（サービス跨ぎの一意性。旧キュー名の規則・Superseded）
 - 運用仕様書: [operations.md](operations.md)（再配信の猶予・保持期間の根拠）
 - 作業仕様書: 仕様書: MassTransit を Wolverine へ移行しローカルディスパッチを統一する

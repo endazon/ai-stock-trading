@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-08-07
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-05]
-adrs: [ADR-0002]
+ids: [FR-05, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
+adrs: [ADR-0002, ADR-0007, ADR-0013]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187]
 specs: [20260716_132_opend-production-readiness, ADR-0002_broker-selection]
-issues: [#121, #132, #137, #141, MSP#266]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, MSP#266, planning#54]
 -->
 
 
@@ -20,15 +20,16 @@ issues: [#121, #132, #137, #141, MSP#266]
 > 必須ドキュメント（リポジトリ単位）。本リポジトリの運用を定める。雛形は `docs/templates/operations_spec_template.md`。
 > **未記入のまま放置しない**。デプロイ・監視・バックアップ・障害対応を埋めること。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 非機能要件（NFR・運用/可用性）: デプロイ・監視・障害対応、および**データ保持**（重複排除ストアの
+- 非機能要件（運用・可用性）: デプロイ・監視・障害対応、および**データ保持**（重複排除ストアの
   無期限肥大化の防止・#137）
-- 関連 ADR / 技術検討: IADR-0052: AST の k8s デプロイは Helm chart とし、共有インフラは MSP platform-infra を参照する（K8s/Helm）、
-  IADR-0054: 取引サイクルの本番スケジューラ＝run-once HTTP トリガ＋Collection:Trigger モード（スケジューラ）、
-  IADR-0056: moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート）（実弾ゲート）、
-  IADR-0057: 発注の冪等化は「発注前 DecisionId 予約」の3相で行い、不明な窓は再発注せず拒否する（発注の冪等化）、
-  IADR-0059: 重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージし、未確定の行には触れない（重複排除ストアの保持期間・パージ）
+- 関連する実装 ADR / 技術検討:
+  - AST の k8s デプロイは Helm chart とし、共有インフラは MSP の platform-infra を参照する（K8s/Helm）
+  - 取引サイクルの本番スケジューラは run-once HTTP トリガ＋`Collection:Trigger` モードとする（スケジューラ）
+  - moomoo SIMULATE PoC 完了に基づき実アダプタを実装する（実弾は引き続きゲート）
+  - 発注の冪等化は「発注前 `DecisionId` 予約」の 3 相で行い、不明な窓は再発注せず拒否する
+  - 重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージし、未確定の行には触れない
 
 ## デプロイ
 
@@ -38,12 +39,12 @@ issues: [#121, #132, #137, #141, MSP#266]
 | 実行基盤 | Kubernetes。Helm chart [`deploy/helm/ai-stock-trading`](../../deploy/helm/ai-stock-trading)。共有インフラは MSP `platform-infra` を ExternalName で参照 |
 | 手順（dev） | `scripts/k8s-local-images.sh`（10 Worker のビルド＆import）→ `scripts/k8s-local-deploy.sh`（ns/secret/helm）。詳細は chart README。fail-safe 既定（外部連携空=no-op / Broker=paper） |
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動 |
-| 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267 / IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
+| 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267。ブローカー選択は provider × environment の直交 2 軸で表現する）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
 | moomoo OpenD | 常駐モデル。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
-| GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24 / IADR-0094）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
-| 秘匿情報 | 既定は k8s Secret 直（`ast-secrets` 手動）。Vault 化は opt-in（[Vault 秘匿 runbook](vault-secrets-runbook.md)・#24 / IADR-0094）。実充足は MSP stand-up＋Tier 3。**`k8s-local-deploy.sh` の再実行は env 未設定のキーに触れない**（投入済みの値を保持する。明示的な空指定だけはキー名を列挙して中断・#263 / IADR-0109: `ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） |
-| 為替レート（日本株） | **`FRED_API_KEY` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 / #364 / IADR-0107: 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う / IADR-0152: 判定の基準通貨を USD へ反転し、換算の向き・equity の 1 点換算・表示単位をまとめて正す）。未設定＝JPY 建て銘柄は判断前に全件見送り（米国株は無影響）。**#364 で必須となる市場が US 株から日本株へ入れ替わった。** 手順・切り分けは [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md) |
+| GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24。ローカル経路の GitOps は AST リポ内の opt-in manifest として整備する）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
+| 秘匿情報 | 既定は k8s Secret 直（`ast-secrets` 手動）。Vault 化は opt-in（[Vault 秘匿 runbook](vault-secrets-runbook.md)・#24）。実充足は MSP stand-up＋Tier 3。**`k8s-local-deploy.sh` の再実行は env 未設定のキーに触れない**（投入済みの値を保持する。明示的な空指定だけはキー名を列挙して中断・#263。`ast-secrets` は差分パッチで同期する） |
+| 為替レート（日本株） | **`FRED_API_KEY` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 / #364。換算は判断境界の 1 点で行い、基準通貨は USD である）。未設定＝JPY 建て銘柄は判断前に全件見送り（米国株は無影響）。**#364 で必須となる市場が US 株から日本株へ入れ替わった。** 手順・切り分けは [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md) |
 | 可観測性 | OTLP→otel-collector→Prometheus/Loki/Tempo（[可観測性仕様](../observability/observability.md)）。環境境界は [インフラ仕様](../infra/infra.md) |
 
 > 環境境界（経路A/B／実基盤 Tier 3）と #24 受け入れ基準の充足状況は [インフラ仕様](../infra/infra.md) を単一情報源とする。
@@ -51,7 +52,7 @@ issues: [#121, #132, #137, #141, MSP#266]
 ## OpenD の本番切替チェックリスト
 
 > 起点: [#132](https://github.com/endazon/ai-stock-trading/issues/132)（OpenD 常駐の本番化・残検証）／
-> 設計判断: IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す／
+> 設計判断: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す／
 > 仕様書: 仕様書: OpenD 本番化の整備
 >
 > **現在地**: 本番化に必要な**整備は済んでいる**（chart 化・ハードニングの切替口・秘匿の受け口・切替ゲート）が、
@@ -65,26 +66,26 @@ issues: [#121, #132, #137, #141, MSP#266]
 | 1. 整備 | chart 化（`opend.enabled`）・パーミッション・秘匿受け口・切替ゲート・手順書 | **済** |
 | 2. シミュレータ環境での全動作確認 | SIMULATE のまま、本番相当の配備（chart 経路）で一巡を確認する | **未** |
 | 3. 本番移行（SIMULATE 常用） | 安定ノード・Vault・監視を整えて常駐運用 | **未** |
-| 4. 実弾解禁 | **別 IADR が要る**。本表と IADR-0056 §3 の前提がすべて充足してから | **未**（本 issue の対象外） |
+| 4. 実弾解禁 | **別の実装 ADR が要る**。本表と実アダプタ実装の実装 ADR §3 の前提がすべて充足してから | **未**（本 issue の対象外） |
 
 ### 前提条件（切替前に潰す）
 
 | # | 前提 | 状態 | 確かめ方 / 担当 |
 | --- | --- | --- | --- |
-| 1 | **egress-IP 変更時に再検証が要るか**の切り分け | 🔴 **未充足** | 単一ノード（安定 egress IP）では Pod 再作成をまたぐ**無人再ログインが成立**すると確認済み（IADR-0053 追検証）。**マルチノード/クラウド（egress IP 変動）での実測が未了**。ノードを跨ぐ再スケジュールを起こして再検証の有無を見る |
+| 1 | **egress-IP 変更時に再検証が要るか**の切り分け | 🔴 **未充足** | 単一ノード（安定 egress IP）では Pod 再作成をまたぐ**無人再ログインが成立**すると確認済み（OpenD 常駐の実装 ADR の追検証）。**マルチノード/クラウド（egress IP 変動）での実測が未了**。ノードを跨ぐ再スケジュールを起こして再検証の有無を見る |
 | 2 | **ノード固定**（egress IP の安定） | 🟡 **手段は用意済み・設定は運用側** | `opend.nodeSelector` / `affinity` を指定する（chart README）。**指定しないと #1 の危険に晒される** |
 | 3 | `securityContext`（非 root 実行） | 🔴 **未充足**（切替口のみ） | イメージは uid/gid 10001 と `/home/opend` を用意済み。`opend.home=/home/opend` ＋ `securityContext` で切替（chart README）。**実 OpenD で未検証**。HOME 変更でデバイス信頼を失う恐れがあり、切替時は PVC の `.com.moomoo.OpenD` 移設か再検証が要る |
 | 4 | `OpenD.xml`（`login_pwd_md5` を含む）のパーミッション | 🟢 **充足** | entrypoint が `umask 077` ＋ `chmod 600` で生成する |
 | 5 | RSA 秘密鍵ファイルのパーミッション | 🟢 **充足** | Secret マウントを `defaultMode: 0400`（非 root 時は `fsGroup` ＋ `0440`）。entrypoint が実際のモードを起動時に検査し警告する |
 | 6 | **資格情報の Vault / External Secrets 化** | 🔴 **未充足** | `ExternalSecret` の**受け口のみ**用意（`externalSecrets.enabled`・既定 false）。**ストア（Vault / ESO）は #24 の管掌で未整備**。受け口の存在は充足ではない |
-| 7 | Hetzner（海外 IP）からの接続可否・**ToS** | 🔴 **未充足** | 人手の確認・契約判断（#24 / ADR-0002 の未決事項） |
+| 7 | Hetzner（海外 IP）からの接続可否・**ToS** | 🔴 **未充足** | 人手の確認・契約判断（#24 / 証券会社連携の計画 ADR の未決事項） |
 | 8 | 長期常駐の安定性・強制アップデート頻度 | 🔴 **未充足** | 実測（常駐させて観測する） |
-| 9 | 取引パスワードのアンロック | 🔴 **未充足** | SIMULATE では不要な範囲の切り分けが要る（ADR-0002 未決） |
+| 9 | 取引パスワードのアンロック | 🔴 **未充足** | SIMULATE では不要な範囲の切り分けが要る（証券会社連携の計画 ADR が未決） |
 | 10 | OpenD の**ログイン済み**判定（healthcheck） | 🟡 **限界を明示** | readiness は **TCP 疎通のみ**。OpenD は**検証前から listen する**ため、**probe 通過≠ログイン完了**。「使える」判定は `kubectl attach` でのログイン成功確認に依る。liveness は付けない（自動再起動が有人検証待ちの停止を招くため） |
-| 11 | **発注予約 `Reserved` 滞留の監視・自動リコンサイル** | 🔴 **未充足** | 現状は人手（下記 Runbook）。自動化は **#141**。実弾では「発注済みか不明な注文」＝未確定の建玉を意味する（IADR-0056 §3） |
-| 12 | `TradingDefaults`（リスク統制・上限）の**実弾向け再確認** | 🔴 **未充足** | 実弾解禁 IADR の前提（IADR-0056 §3） |
+| 11 | **発注予約 `Reserved` 滞留の監視・自動リコンサイル** | 🔴 **未充足** | 現状は人手（下記 Runbook）。自動化は **#141**。実弾では「発注済みか不明な注文」＝未確定の建玉を意味する（実アダプタ実装の実装 ADR §3） |
+| 12 | `TradingDefaults`（リスク統制・上限）の**実弾向け再確認** | 🔴 **未充足** | 実弾解禁の実装 ADR の前提（実アダプタ実装の実装 ADR §3） |
 
-> 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別 IADR ＋ 明示 config** が要り、
+> 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別の実装 ADR ＋ 明示 config** が要り、
 > 現状のコードは `TrdEnv_Simulate` 固定・`BrokerFactory` の config ゲート・`Broker:Moomoo:TrdEnv` の拒否という
 > **三重の閂**で塞いである。
 >
@@ -122,12 +123,12 @@ issues: [#121, #132, #137, #141, MSP#266]
 
 - キュー名は **`<ServiceName>.<メッセージ型名>`**（例 `ai-stock-trading.risk-management-service.TradeDecisionMade`）。
   デッドレターは **`<queue>_error`**。いずれもサービス起動時に自動生成される（AutoProvision）。
-  規則の根拠は IADR-0129: Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する）（ADR-0013・Wolverine 移行）。
+  規則の根拠は Wolverine 移行のトポロジ設計（キュー名にサービス名を前置し、ローカルルーティングを無効化する）である。
 - **キュー名から所有サービスが読める**（接頭辞）。`consumers = 0` のキューは所有サービスが購読できていない印である。
 - 移行前（MassTransit）の旧キュー 47 本はブローカ上に残るため、Wolverine 版の安定稼働後に削除する:
   [旧キュー削除 Runbook](wolverine-queue-cleanup-runbook.md)。
 
-## データ保持・パージ（#137 / IADR-0059: 重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージし、未確定の行には触れない）
+## データ保持・パージ（#137。重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージする）
 
 冪等化のための**重複排除ストア**は追記専用のため、保持期間ベースでパージする。対象は下表の 2 つに限る。
 `cost_entries`（月次費用台帳）・`executed_orders`（発注履歴）・`audit_events`（監査証跡）は**業務台帳・
@@ -188,7 +189,7 @@ SELECT count(*) FROM order_dispatch_reservations
 SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
 ```
 
-## 発注予約の自動リコンサイル（#141 / IADR-0074: Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する）
+## 発注予約の自動リコンサイル（#141。プローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する）
 
 `Reserved` 滞留（上の Runbook で人手対応する「発注済みか不明な予約」）を、ブローカ照会で自動解消する
 バックグラウンド機構（`OrderReservationReconciliationService`）。**二重発注を絶対に起こさない fail-safe** を守る。
@@ -220,7 +221,7 @@ Reconciliation:
   `失敗` が継続的に出る場合は照会・保存の恒常障害（DB 権限・接続・プローブ実装の不具合）を疑う。
 - **停止**: `Reconciliation__Enabled=false` に戻して再デプロイすれば次回巡回から走査しない。
 
-## LLM 単価の定期見直し（#303 / IADR-0122: LLM 費用のモデル別単価解決）
+## LLM 単価の定期見直し（#303。LLM 費用のモデル別単価解決）
 
 LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__PerModel__<model-id>__*`・円/1k トークン）で計上する。
 単価は外部の公開価格と為替から導いた値であり、**恒久値ではない**。放置すると月次上限（¥15,000）の判定が
@@ -230,20 +231,20 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | --- | --- | --- |
 | **`claude-sonnet-5` の導入価格終了** | **2026-08-31**（$2/$10 は同日までの導入価格） | 公開単価を再確認し `values-local.yaml` の該当行を更新する。`trade-decision`・`report-daily` の計上額が直接変わる |
 | 公開単価の改定・モデルの追加 | 基盤の `Llm:Routing:PurposeModels` が変わったとき | 新しい実効モデルの行を表へ足す。**足さないと最大単価で過大計上される**（安全側だが実態とずれる） |
-| 為替の乖離 | USD→JPY が投入時の **163.71**（FRED `DEXJPUS`・IADR-0107）から大きく離れたとき | 換算し直して表を更新する |
+| 為替の乖離 | USD→JPY が投入時の **163.71**（FRED `DEXJPUS`）から大きく離れたとき | 換算し直して表を更新する |
 
 - 実測に基づく再ベースライン（実消費と月次上限の妥当性）は
   [#243](https://github.com/endazon/ai-stock-trading/issues/243)、計画側の上限評価は
-  [planning#54](https://github.com/endazon/project-planning/issues/54) が担う。本節は**単価の鮮度**のみを扱う。
+  計画リポジトリの担当 issue が担う。本節は**単価の鮮度**のみを扱う。
 - 単価の出所・換算・丸めは `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」に表で残している。
 - 本番（ArgoCD＝`values.yaml`）には単価を置かない。よって本番の計上は従来どおり ¥0 であり、
   本節の見直しは経路B（`values-local.yaml`）に対して行う。
 
-## Stage 1 の営業日カウントと市場の祝日（#407 / IADR-0187: Stage 1 の営業日カウントで祝日を判別しないのは裁定であり、祝日表を足すことは裁定違反である）
+## Stage 1 の営業日カウントと市場の祝日（#407。祝日を判別しないのは裁定であり、祝日表を足すことは裁定違反である）
 
 **Stage 1 の「60 営業日」は市場の祝日を除外しない。** これは未実装ではなく、
 **利用者裁定（2026-08-07・質問票 第13回 Q3 案2）で「そうする」と決まった設計**である
-（計画 06_daytrading-review §4.2「**分母と除外の判定に外部カレンダーを用いない**」）。
+（計画側のデイトレード方針レビュー §4.2「**分母と除外の判定に外部カレンダーを用いない**」）。
 
 | 対象 | 判定方法 |
 | --- | --- |
@@ -260,7 +261,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
   昇格には**取引件数（§4.1 条件3）と利用者承認**も要る。**期間だけで昇格することはない。**
 - **半日取引日は逆に過少計上（安全側）へ倒れる。** 取り得る通常取引時間の仮説
   （半日 210 分／通常日 390 分）の**両方**で 50% 以上を求めるためである。
-- **SC-03 の Stage 1 進捗（営業日数）を読むときは、この過大計上を織り込むこと。**
+- **統制状態参照画面の Stage 1 進捗（営業日数）を読むときは、この過大計上を織り込むこと。**
   厳密な営業日数が要る場面（監査・報告）では、対象期間の米国市場の休場日を人手で差し引いて評価する。
 
 ### 🔴 やってはならないこと
@@ -274,18 +275,18 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 
 | 事象 | 検知 | 一次対応 | エスカレーション |
 | --- | --- | --- | --- |
-| **禁止銘柄の建玉が手仕舞えない**（#380 / ADR-0007（計画リポ） 2026-08-04 追補） | 手仕舞い注文が拒否理由 **`BannedSymbol`** で拒否される。**不具合ではなく設計どおり**である——禁止銘柄ガードは新規建てだけでなく**手仕舞いにも適用する**（理由: **インサイダー取引は売付けも対象**であり、AI が利用者の関知しないタイミングで規制対象銘柄を自動売却する経路を残さない） | **一時解除 → 手仕舞い → 再登録**（[禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) が単一情報源）。解除・再登録はアクターと理由が必須で、日時・対象銘柄とともに設定変更履歴へ自動で残る | **再登録の忘れを検知する仕組みは無い**（解除しっぱなしでも警告は出ない）。解除中は当該銘柄への新規建ても通るため、手順の所要時間を最小にする |
-| **発注予約が `Reserved` のまま滞留**（#131 / IADR-0057: 発注の冪等化は「発注前 DecisionId 予約」の3相で行い、不明な窓は再発注せず拒否する / 自動化は #141 / IADR-0074: Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。自動リコンサイルが有効かつ実照会プローブが配線済みなら自動解消される。未配線（既定 no-op）なら手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
-| **重複排除ストアが肥大化する**（#137 / IADR-0059: 重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージし、未確定の行には触れない） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（IADR-0059 代替案） |
+| **禁止銘柄の建玉が手仕舞えない**（#380。取引ガードの計画 ADR の 2026-08-04 追補） | 手仕舞い注文が拒否理由 **`BannedSymbol`** で拒否される。**不具合ではなく設計どおり**である——禁止銘柄ガードは新規建てだけでなく**手仕舞いにも適用する**（理由: **インサイダー取引は売付けも対象**であり、AI が利用者の関知しないタイミングで規制対象銘柄を自動売却する経路を残さない） | **一時解除 → 手仕舞い → 再登録**（[禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) が単一情報源）。解除・再登録はアクターと理由が必須で、日時・対象銘柄とともに設定変更履歴へ自動で残る | **再登録の忘れを検知する仕組みは無い**（解除しっぱなしでも警告は出ない）。解除中は当該銘柄への新規建ても通るため、手順の所要時間を最小にする |
+| **発注予約が `Reserved` のまま滞留**（#131。発注の冪等化は 3 相で行い、不明な窓は再発注せず拒否する。自動化は #141） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。自動リコンサイルが有効かつ実照会プローブが配線済みなら自動解消される。未配線（既定 no-op）なら手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
+| **重複排除ストアが肥大化する**（#137。終端行のみを保持期間でパージする） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（パージ方針の代替案） |
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
-| **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364 / IADR-0107: 統制の金額は基準通貨（JPY）で判定し、換算は判断境界の 1 点で行う / IADR-0152: 判定の基準通貨を USD へ反転し、換算の向き・equity の 1 点換算・表示単位をまとめて正す） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源（FRED `DEXJPUS`）が未接続。**`FRED_API_KEY` は日本株取引の必須前提**（#364 以降。任意の収集ソース鍵ではない）。鍵を `export FRED_API_KEY=…` して `scripts/k8s-local-deploy.sh` を再実行し、`fx-rate` が `fred` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` でも鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点 | 鍵が正しいのに `none` のままなら provider 名の誤り（未知の値は警告して no-op）。`fred` 申告でも見送りが続く場合は FRED 側の `DEXJPUS` 更新停止（**鮮度上限 14 日**超過は採らない・IADR-0112: 為替レートの鮮度上限はデータ源の公表周期から導く）を疑う。`DEXJPUS` の公表は **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であり、**最新観測が 10 日前でも正常**である点に注意する（鮮度上限はこの公表周期から導いており、これを超える空白は系列側の異常）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |
-| **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263 / IADR-0109: `ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
+| **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364。基準通貨は USD で、換算は判断境界の 1 点で行う） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源（FRED `DEXJPUS`）が未接続。**`FRED_API_KEY` は日本株取引の必須前提**（#364 以降。任意の収集ソース鍵ではない）。鍵を `export FRED_API_KEY=…` して `scripts/k8s-local-deploy.sh` を再実行し、`fx-rate` が `fred` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` でも鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点 | 鍵が正しいのに `none` のままなら provider 名の誤り（未知の値は警告して no-op）。`fred` 申告でも見送りが続く場合は FRED 側の `DEXJPUS` 更新停止（**鮮度上限 14 日**超過は採らない。鮮度上限はデータ源の公表周期から導く）を疑う。`DEXJPUS` の公表は **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であり、**最新観測が 10 日前でも正常**である点に注意する（鮮度上限はこの公表周期から導いており、これを超える空白は系列側の異常）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |
+| **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
 
 > **`Reserved` 滞留の発生条件**: ブローカ発注の前後でプロセスが落ちる／DB が書けない場合に限る。moomoo の
 > API 瞬断・不達そのものは `MoomooBrokerAdapter` が終端 `Rejected` へ倒すため、滞留にはならない。
 >
 > **実弾（`TrdEnv_Real`）解禁の前提**: 上記の検知（滞留の監視・アラート）と自動リコンサイル（**#141**）を
-> 整備してから解禁すること。滞留は「発注済みか不明な注文」＝実弾では未確定の建玉を意味する（IADR-0056 §3）。
+> 整備してから解禁すること。滞留は「発注済みか不明な注文」＝実弾では未確定の建玉を意味する（実アダプタ実装の実装 ADR §3）。
 >
 > **保持期間パージとの関係**: パージジョブは `State=Reserved` に一切触れないため、
 > 滞留行が自動で消えることはない。滞留の解消は本 Runbook の手順（または #141）だけが行う。
@@ -294,7 +295,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 
 | 文書 | 本書との関係 |
 | --- | --- |
-| [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（IADR-0175: セキュリティ仕様書における「無いこと」の書き分け 決定3） |
+| [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（セキュリティ仕様書における「無いこと」の書き分けの決定 3） |
 | [禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) | **建玉を手仕舞えないとき**の手順（一時解除 → 手仕舞い → 再登録）。解除・再登録が監査に残る根拠つき |
 | [ブロック中のタスク](../blocked-tasks.md) | 基盤・実機待ちで本リポジトリだけでは進められない項目 |
 
