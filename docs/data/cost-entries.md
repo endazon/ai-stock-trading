@@ -3,28 +3,29 @@ title: 費用台帳（cost_entries）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-09, FR-16, FR-17]
+ids: [FR-09, FR-16, FR-17, NFR-13, NFR-15]
 adrs: [ADR-0001]
 iadrs: [IADR-0021, IADR-0027]
 specs: [05_trading-assumptions, 20260710_cost-control]
-issues: [#21, #22, #9]
+issues: [#9, #14, #19, #21, #22, #23]
 -->
 
 
 # データ仕様書: 費用台帳（cost_entries）
 
 > 費用統制サービス（`CostControlService`）が所有する月次費用の追記専用台帳。NFR（費用）＝LLM 月次上限の間隔延長/停止判定・
-> 月報の費用レビュー。設計は IADR-0027: 費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する。作業仕様は 仕様書: 費用統制サービス Slice A。
+> 月報の費用レビュー。設計は「費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する」。
+> 作業仕様は 仕様書: 費用統制サービス Slice A。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 非機能要件（NFR・費用）: LLM 費用は月次上限・超過時に定時サイクル間隔を自動延長（05 §6: 80% 延長・100% 停止）
-- 関連 FR: FR-17（月次費用上限＝前提条件・#19）、FR-16（月報の費用レビュー）
-- ADR: ADR-0001（Database per Service）
+- 非機能要件（費用）: LLM 費用は月次上限・超過時に定時サイクル間隔を自動延長（全体前提条件 §6: 80% 延長・100% 停止）
+- 関連する機能要求: 全体前提条件としての月次費用上限（#19）、月報の費用レビュー
+- 計画 ADR: 基盤採用（Database per Service）
 
 ## エンティティ定義（`cost_entries`・追記専用）
 
@@ -41,7 +42,7 @@ issues: [#21, #22, #9]
 ## 統制判定・照会
 
 - `CostGovernor`（純関数）: 月内 LLM 累計 ÷ `MonthlyCostLimits.Llm`。**<80%=Normal / 80〜100%=Throttled（間隔倍率2）/ ≥100%=Halted（停止）**（05 §6）。
-- `POST /costs/record`（費用計上）、`GET /costs/state`（現在の統制判定）、`GET /costs/review?capital=`（費用÷資金比率・FR-16）。すべて OwnerOnly。
+- `POST /costs/record`（費用計上）、`GET /costs/state`（現在の統制判定）、`GET /costs/review?capital=`（費用÷資金比率。月報の費用レビュー用）。すべて OwnerOnly。
 - 統制状態が上方に遷移（Normal→Throttled→Halted）したときのみ `CostThresholdReached` を発行 → 通知サービスが Discord 通知。
 
 ## 整合性・制約ルール
@@ -62,4 +63,4 @@ issues: [#21, #22, #9]
 ## 関連仕様
 
 - 作業仕様書: 仕様書: 費用統制サービス Slice A
-- 実装ADR: IADR-0027: 費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する、IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する（`MonthlyCostLimits`）
+- 実装ADR: 費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する／全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する（`MonthlyCostLimits`）

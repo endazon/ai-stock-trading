@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
-adrs: []
+adrs: [ADR-0008, ADR-0016, ADR-0018]
 iadrs: [IADR-0049, IADR-0127, IADR-0128]
 specs: [01_requirements, 05_trading-assumptions, 20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, traceability]
-issues: [#343]
+issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344]
 -->
 
 
@@ -20,7 +20,7 @@ issues: [#343]
 全面再実装（[#344](https://github.com/endazon/ai-stock-trading/issues/344)）では既存実装を破棄し得るため、
 **退行の検知手段をテストへ移す**。本書はその共通規約であり、各ドメイン issue のテストはこれに従う。
 
-本システムは資金を扱う。**統制系（リスク統制 FR-10・取引ガード FR-19・段階ゲート FR-20）の網羅を最優先**とする。
+本システムは資金を扱う。**統制系（リスク統制・取引ガード・段階ゲート）の網羅を最優先**とする。
 
 ## 1. 受け入れ基準 → テストの写像規約
 
@@ -36,9 +36,9 @@ public void 日次損失が上限に達したら新規建てを拒否する() { 
 
 CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）が次を強制する。
 
-1. **必須範囲 FR**（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211): FR-10 / 12 / 15 / 19 / 20）が、それぞれ 1 本以上のテストから参照されていること
-2. 必須範囲 FR に機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）が存在すること
-3. テストが参照する FR / UC / SC が計画書に実在すること（PR CI では planning submodule を取得しないため skip し、夜間の `doc-links-planning` が担う）
+1. **必須範囲の機能要求**（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211): リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート）が、それぞれ 1 本以上のテストから参照されていること
+2. 必須範囲の機能要求に機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）が存在すること
+3. テストが参照する機能要求・ユースケース・画面の ID が計画書に実在すること（PR CI では planning submodule を取得しないため skip し、夜間の `doc-links-planning` が担う）
 
 ## 2. 統制系の網羅方式（3 点セット）
 
@@ -70,11 +70,11 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 
 ## 3. 計画確定値の適合検査（既知逸脱レジストリ）
 
-`backend/Tests/AiStockTrading.PlanConformance.Tests` が、計画書の確定値（05_trading-assumptions §5・
-ADR-0008 / 0016 / 0018）と実装の既定値を突き合わせる。再実装の途上で受容する逸脱は
+`backend/Tests/AiStockTrading.PlanConformance.Tests` が、計画書の確定値（全体前提条件 §5、および段階ゲート運用・
+空売りの段階解禁・リスク統制既定値の各計画 ADR）と実装の既定値を突き合わせる。再実装の途上で受容する逸脱は
 `KnownPlanDeviations` に**担当 issue 付き**で登録する。
 
-**担当 issue が値を直したら、登録簿から該当行を消さない限り CI が赤になる**（IADR-0127: 計画確定値の適合は「計画値テーブル＋既知逸脱レジストリ」で検査し、逸脱の解消を機械的に強制する）。
+**担当 issue が値を直したら、登録簿から該当行を消さない限り CI が赤になる**（計画確定値の適合は「計画値テーブル＋既知逸脱レジストリ」で検査し、逸脱の解消を機械的に強制するという決定による）。
 逸脱の解消が記録へ反映されることが機械的に保証されるため、「直したが登録簿が古いまま」という状態が残らない。
 
 新しい統制値を実装するときは:
@@ -102,7 +102,7 @@ ADR-0008 / 0016 / 0018）と実装の既定値を突き合わせる。再実装�
 | アプリケーション単体 | `.../<Svc>.Application.Tests` | 既定 CI |
 | ホスト / エンドポイント（Api） | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 既定 CI |
 | 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 既定 CI |
-| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析・IADR-0128: 標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する） | 既定 CI |
+| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析。標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する） | 既定 CI |
 | 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 既定 CI |
 | 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
 
