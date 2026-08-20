@@ -1,3 +1,11 @@
+<!-- trace:
+ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
+adrs: []
+iadrs: [IADR-0126, IADR-0127]
+specs: []
+issues: []
+-->
+
 # 完了の定義（Definition of Done）
 
 実装作業が「完了」と見なせる条件を定める。AI・人間ともに、PR を出す前・マージ前にこのチェックリストを満たす。
@@ -12,11 +20,11 @@
 
 ## 全面再実装（#344）中の追加条件
 
-全面再実装の子 issue（#329〜#348）では、上記に加えて次を満たす（[IADR-0126](../.ai-context/adr/IADR-0126_reimplementation-sequencing-and-pr-granularity.md) / [IADR-0127](../.ai-context/adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
+全面再実装の子 issue（#329〜#348）では、上記に加えて次を満たす（PR 分割規約の実装ADR・計画適合の既知逸脱レジストリの実装ADR）。
 
 - [ ] **1 issue = 1 PR** である（複数 issue をまとめていない・1 issue を分割していない）。PR 本文に `Closes #<issue>` を書いた
 - [ ] 依存する先行 issue がマージ済みである（フェーズ順。フェーズ内は並行可）
-- [ ] **統制系（FR-10 / 19 / 20）のテストは 3 点セットを揃えた**（境界値テーブル・プロパティベース・**否定形**。[docs/tests/README.md](tests/README.md)）
+- [ ] **統制系（リスク統制・取引ガード・段階ゲート）のテストは 3 点セットを揃えた**（境界値テーブル・プロパティベース・**否定形**。[docs/tests/README.md](tests/README.md)）
 - [ ] 統制値を実装・変更した場合、`PlanRiskDefaults`（計画値）と `ActualDefaults`（実装からの抽出）を更新した
 - [ ] **担当 issue として登録されていた既知逸脱を解消した場合、`KnownPlanDeviations` から該当行を削除した**
       （削除しないと計画適合テストが失敗するため、CI が通っていればこの項目は自動的に満たされている）
@@ -26,7 +34,7 @@
 
 - [ ] ビルドが成功する
 - [ ] 受け入れ基準・ユースケースのフロー（基本/代替/例外）をテストに写像し、テストが green
-- [ ] **必須範囲 FR（FR-10 / 12 / 15 / 19 / 20）のテストと仕様書が揃っている**（CI の `test-traceability` が検査する）
+- [ ] **必須範囲の機能要求（リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート）のテストと仕様書が揃っている**（CI の `test-traceability` が検査する）
 - [ ] **カバレッジが floor を下回っていない**（CI の `build-and-test` が `coverage-floor.json` で検査する）
 - [ ] フォーマット/lint が通る
 - [ ] `/verify` を実行し合格した

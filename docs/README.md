@@ -1,3 +1,11 @@
+<!-- trace:
+ids: [FR-10, FR-12, FR-15, FR-19, FR-20, NFR]
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+
 # docs — 実装リポジトリのドキュメント
 
 この実装リポジトリの仕様書置き場である。計画リポジトリ（`project-planning`）の上流ドキュメント（要求・UC・画面設計・技術検討・ADR）を、実装向けに**詳細化**した仕様書を管理する。**作業着手前に仕様書を作成し、それに沿って実装する**運用とする。
@@ -45,18 +53,19 @@ docs/
 | `screen` | 画面仕様書 | `docs/screens/` | 画面（SC）単位 | 05_screens |
 | `api` | 通信仕様書 | `docs/api/` | API/IF 単位 | 03_usecases / 04_workflows / 06_technical |
 | `data` | データ仕様書 | `docs/data/` | エンティティ単位 | 02_requirements / 06_technical / 07_adr |
-| `tech` | 技術要件書 | `docs/tech/` | リポ単位（1つ） | 06_technical / 07_adr / NFR |
+| `tech` | 技術要件書 | `docs/tech/` | リポ単位（1つ） | 06_technical / 07_adr / 非機能要件 |
 | `test` | テスト仕様書 | `docs/tests/` | 機能（FR）単位 | 02_requirements（受け入れ基準）/ 03_usecases |
-| `operations` | 運用仕様書 | `docs/operations/` | リポ単位（1つ） | NFR（運用・保守） |
-| `security` | セキュリティ仕様書 | `docs/security/` | リポ単位（1つ） | NFR（セキュリティ）/ 07_adr |
+| `operations` | 運用仕様書 | `docs/operations/` | リポ単位（1つ） | 非機能要件（運用・保守） |
+| `security` | セキュリティ仕様書 | `docs/security/` | リポ単位（1つ） | 非機能要件（セキュリティ）/ 07_adr |
 | `adr` | 実装ADR（`IADR-XXXX`） | `.ai-context/adr/` | 決定単位 | 06_technical / 07_adr（実装に閉じた判断） |
 
 > **機能仕様書・テスト仕様書の必須範囲（網羅裁定・[作業仕様書 20260720](../.ai-context/specs/20260720_required-spec-coverage-arbitration.md)）**:
-> 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核 FR
-> ＝ FR-10（リスク統制）・FR-12（ペーパートレード）・FR-15（バックテスト）・FR-19（取引ガード）・FR-20（段階ゲート）**を
-> 必須範囲とする（これらは設定駆動・横断的で、独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み FR は、
+> 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核となる機能要求
+> ＝リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート**を
+> 必須範囲とする（これらは設定駆動・横断的で、独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み機能要求は、
 > 作業仕様書（`.ai-context/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト
-> 仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数 FR をまとめてよい（例: [FR-10/12/19/20 テスト仕様書](tests/FR-10_risk-guard-core-tests.md)）。
+> 仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数の機能要求をまとめてよい（例:
+> [統制系コア（リスク統制・ペーパートレード・取引ガード・段階ゲート）のテスト仕様書](tests/FR-10_risk-guard-core-tests.md)）。
 
 ## 任意の仕様書
 
