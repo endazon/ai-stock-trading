@@ -47,6 +47,29 @@ const REPO_ROOT = process.env.TRACE_BLOCKS_ROOT
 
 const DOCS_DIR = 'docs';
 
+/**
+ * 走査から除外するパスと理由（母集合の規則 6。planning リポ `check-related-graph.js` の
+ * 「除外ルートを理由つきで表示する」方式に倣う。実行のたびに必ず出力へ出す）。
+ *   - `docs/templates/` … 雛形。記入欄・例示に ID プレースホルダを置くのがテンプレートの目的そのもの
+ *     であり、可視本文の ID 残存検査（grep-zero）はここでは成立しない
+ *   - `docs/blocked-tasks.md` … ID をキーとする作業台帳。backend のコードコメント・
+ *     `.github/workflows/backlog-audit.yml`・`.claude/hooks/check-impl.js` から参照され、
+ *     ID を隠すと台帳として機能しない
+ */
+const EXCLUDED_ROOTS = [
+  ['docs/templates/', '雛形。記入欄・例示の ID プレースホルダはテンプレートの目的そのものである'],
+  [
+    'docs/blocked-tasks.md',
+    'ID をキーとする作業台帳。コードコメント・backlog-audit.yml・check-impl.js から参照され、ID を隠すと台帳として機能しない',
+  ],
+];
+
+/** `EXCLUDED_ROOTS` に基づき、REPO_ROOT 相対パス（`docs/...`。`/` 区切り）が除外対象かを判定する。 */
+function isExcludedRelPath(rel) {
+  const norm = rel.replace(/\\/g, '/');
+  return EXCLUDED_ROOTS.some(([root]) => (root.endsWith('/') ? norm.startsWith(root) : norm === root));
+}
+
 // 可視本文に残っていてはならないトークン（HTML コメント・コードフェンスの外）。
 // issue 参照は「英数字短縮名 + `#数字`」という形だけを見る（個別リポジトリ名はハードコードしない。
 // ADR-0029 決定9）。裸の `#NNN`（自リポジトリ言及）はここには含めない。
@@ -488,6 +511,42 @@ function selfTest() {
     ).some((e) => e.includes('複数あります'))
   );
 
+  // --- 除外ルート（母集合の規則 6。docs/templates/・docs/blocked-tasks.md） ---
+  t(
+    '正例: docs/templates/ 配下は除外対象と判定する',
+    isExcludedRelPath('docs/templates/adr_template.md')
+  );
+  t(
+    '正例: docs/blocked-tasks.md は除外対象と判定する',
+    isExcludedRelPath('docs/blocked-tasks.md')
+  );
+  t(
+    '負例: docs/templates という名前だけの兄弟ファイルは除外しない（前方一致の誤爆防止）',
+    !isExcludedRelPath('docs/templates-overview.md')
+  );
+  t(
+    '負例: 通常の docs/ 文書は除外しない',
+    !isExcludedRelPath('docs/functional/FR-10_risk-controls.md')
+  );
+  t(
+    '正例: 除外ファイルは可視本文に計画 ID が残っていても走査対象外なので違反にならない',
+    (() => {
+      const files0 = collectMdFiles(path.join(REPO_ROOT, DOCS_DIR));
+      const templateFiles = files0.filter((fp) => isExcludedRelPath(path.relative(REPO_ROOT, fp)));
+      // 実ツリーに docs/templates/ 配下のファイルが存在すること（判定が空振りしていないこと）の確認。
+      return templateFiles.some((fp) => fp.includes(`${path.sep}templates${path.sep}`));
+    })()
+  );
+  t(
+    '正例: docs/blocked-tasks.md は実ツリーに存在し、除外リストに一致する',
+    (() => {
+      const rels = collectMdFiles(path.join(REPO_ROOT, DOCS_DIR))
+        .map((fp) => path.relative(REPO_ROOT, fp).replace(/\\/g, '/'))
+        .filter((rel) => rel === 'docs/blocked-tasks.md');
+      return rels.length === 1 && rels.every((rel) => isExcludedRelPath(rel));
+    })()
+  );
+
   // --- lib/plan-ranges.js: 実ツリーの traceability.repo.md からレンジを読めること ---
   t(
     'plan-ranges: 実ツリーから計画 ADR レンジを読める（fail-loud の裏返し）',
@@ -538,11 +597,17 @@ function main() {
     selfTest();
     return;
   }
-  const files = collectMdFiles(path.join(REPO_ROOT, DOCS_DIR));
-  if (files.length === 0) {
+  const allFiles = collectMdFiles(path.join(REPO_ROOT, DOCS_DIR));
+  if (allFiles.length === 0) {
     console.error(`[check-trace-blocks] ${DOCS_DIR}/ 配下に Markdown が 1 件もありません。`);
     process.exit(1);
   }
+  console.log('[check-trace-blocks] 除外ルート（母集合の規則 6。走査対象から外す。理由は各行末）:');
+  for (const [root, reason] of EXCLUDED_ROOTS) console.log(`  - ${root} … ${reason}`);
+  const files = allFiles.filter((fp) => !isExcludedRelPath(path.relative(REPO_ROOT, fp)));
+  console.log(
+    `[check-trace-blocks] 走査対象 ${files.length} 件（除外 ${allFiles.length - files.length} 件を差し引いた後）`
+  );
   let ctx;
   try {
     ctx = buildContext(REPO_ROOT);
@@ -591,6 +656,8 @@ if (require.main === module) main();
 module.exports = {
   REPO_ROOT,
   DOCS_DIR,
+  EXCLUDED_ROOTS,
+  isExcludedRelPath,
   collectMdFiles,
   loadIadrIds,
   buildContext,
