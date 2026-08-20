@@ -137,6 +137,45 @@ jobs:
       - name: Check test traceability
         run: node scripts/check-test-traceability.js
 
+  # trace ブロック検査（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段。
+  # 同決定の後続 PR で新設）。docs/**/*.md（.ai-context/ は対象外・凍結記録のため）に置く
+  # `<!-- trace: -->` / `<!-- trace-table: -->` の文法・許可キー・値域（FR/UC/SC は
+  # `.claude/rules/traceability.repo.md` 宣言レンジ、計画 ADR は同宣言のレンジ、IADR は
+  # `.ai-context/adr/` のファイル実在）を検査し、可視本文に計画 ID・IADR・修飾付き issue 参照が
+  # 残っていないかも見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず
+  # 「英字+英数字の短縮名 + `:`」という形だけで external とみなす（利用者裁定・ADR-0029 決定9。
+  # 実装リポジトリが今後増える前提）。
+  trace-blocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test trace block checker
+        run: node scripts/check-trace-blocks.js --self-test
+      - name: Check trace blocks
+        run: node scripts/check-trace-blocks.js
+
+  # ナレッジグラフ生成（docs/ の trace / trace-table ブロックと .ai-context/{adr,specs}/ の
+  # frontmatter〔related_ids / related_specs / plan_refs〕から組み立てる）。生成物はコミットしない
+  # （都度標準出力へ書く。--json / --mermaid は成果物確認用、CI では --check のみを走らせる）。
+  # --check は in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在）。修飾付き参照
+  # （`planning:` / `MSP:` 等。個別名はハードコードしない）は external として数のみ数え、
+  # specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため
+  # 失敗とはしない（標準出力に注記する）。
+  knowledge-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test knowledge graph generator
+        run: node scripts/gen-knowledge-graph.js --self-test
+      - name: Check knowledge graph (in-repo existence)
+        run: node scripts/gen-knowledge-graph.js --check
+
   # 不採用ライブラリ（platform ADR-0030 の棚卸し）の再混入を止める（issue #345 / #351）。
   # 剥がした事実をレビューの記憶に頼ると必ず戻るため、機械的に落とす。移行未完了のものは
   # スクリプトの PENDING に担当 issue 付きで残し、移行完了時に BANNED へ移す。

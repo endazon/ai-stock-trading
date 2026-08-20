@@ -1320,4 +1320,100 @@ module.exports = ({ ok, assert }) => {
       assert.match(section, /SC-13/, 'SC-13 / SC-16 を実在集合へ入れない理由が書かれていない');
     });
   }
+
+  // --- check-trace-blocks.js / gen-knowledge-graph.js -------------------------------
+  //
+  // project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段として新設した
+  // 2 本（NFR）。文法・分類ロジックの単一情報源は `scripts/lib/trace-blocks.js`
+  // （両スクリプトが requires する）、計画 ADR レンジの読み手は `scripts/lib/plan-ranges.js`
+  // （`check-test-traceability.js` の `readPlanIds()`/`planRangeSection()` を拡張点として再利用し、
+  // `check-test-traceability.js` 自体は変更しない）。
+  //
+  // 他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードしない
+  // （利用者裁定・ADR-0029 決定9）。「英字+英数字の短縮名 + `:`」という形だけで external とみなす
+  // 汎用規則になっていることを、未知の短縮名で確かめる。
+  //
+  // 本走（docs/ 実データ）の合否はここでは問わない —— docs/ は並行編集中で残違反が既知（作業報告に
+  // 件数と一覧を記録する）。ここで固定するのは「クラッシュしない」「自己試験が通る」
+  // 「CI に配線されている」という自己試験主体の契約である。
+  {
+    const fsTb = require('fs');
+    const pathTb = require('path');
+    const { execFileSync: execTb } = require('child_process');
+    const REPO_ROOT_TB = pathTb.resolve(__dirname, '..');
+
+    ok('check-trace-blocks: 自己試験が全件通る', () => {
+      execTb(process.execPath, [pathTb.join(__dirname, 'check-trace-blocks.js'), '--self-test'], {
+        cwd: REPO_ROOT_TB,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('gen-knowledge-graph: 自己試験が全件通る', () => {
+      execTb(process.execPath, [pathTb.join(__dirname, 'gen-knowledge-graph.js'), '--self-test'], {
+        cwd: REPO_ROOT_TB,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('lib/trace-blocks.js: 修飾子は個別リポジトリ名を問わない汎用規則である（ADR-0029 決定9）', () => {
+      const tbLib = require('./lib/trace-blocks.js');
+      assert.strictEqual(tbLib.classifyIdToken('MSP:FR-01').external, true);
+      assert.strictEqual(tbLib.classifyIdToken('FR-01').external, false);
+      // ハードコードした許可リストではないことの証拠: コードベースに存在しない未知の短縮名でも
+      // 「英字+英数字 + `:`」の形さえ満たせば external になる（将来リポジトリが増えても変更不要）。
+      assert.strictEqual(tbLib.classifyIdToken('SOMEFUTUREREPO:IADR-0001').external, true);
+      assert.strictEqual(tbLib.classifyIssueToken('SOMEFUTUREREPO#1').external, true);
+    });
+
+    ok('lib/plan-ranges.js: 実ツリーの計画 ADR レンジを読める（check-trace-blocks / gen-knowledge-graph 共有の拡張点）', () => {
+      const planRangesRp = require('./lib/plan-ranges.js');
+      const r = planRangesRp.readPlanAdrRange();
+      assert.ok(Number.isInteger(r.from) && Number.isInteger(r.to) && r.to >= r.from, `不正なレンジ: ${JSON.stringify(r)}`);
+      assert.strictEqual(planRangesRp.isAdrInRange(`ADR-${String(r.to).padStart(4, '0')}`, r), true);
+      assert.strictEqual(planRangesRp.isAdrInRange(`ADR-${String(r.to + 1).padStart(4, '0')}`, r), false);
+    });
+
+    ok('check-trace-blocks: 実データに対してクラッシュせず走る（合否は自己試験主体。docs/ は並行編集中）', () => {
+      try {
+        execTb(process.execPath, [pathTb.join(__dirname, 'check-trace-blocks.js')], { cwd: REPO_ROOT_TB, stdio: 'pipe' });
+      } catch (e) {
+        assert.strictEqual(e.status, 1, `異常終了（クラッシュ）の可能性がある: status=${e.status}\n${e.stderr}`);
+      }
+    });
+
+    ok('gen-knowledge-graph: --json / --mermaid / --check の 3 面がいずれもクラッシュせず走る', () => {
+      for (const args of [['--json'], ['--mermaid'], ['--mermaid', '--scope', 'docs/functional']]) {
+        const out = execTb(process.execPath, [pathTb.join(__dirname, 'gen-knowledge-graph.js'), ...args], {
+          cwd: REPO_ROOT_TB,
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.ok(out.length > 0, `${args.join(' ')} の出力が空`);
+      }
+      try {
+        execTb(process.execPath, [pathTb.join(__dirname, 'gen-knowledge-graph.js'), '--check'], {
+          cwd: REPO_ROOT_TB,
+          stdio: 'pipe',
+        });
+      } catch (e) {
+        assert.strictEqual(e.status, 1, `--check が異常終了（クラッシュ）した可能性がある: status=${e.status}\n${e.stderr}`);
+      }
+    });
+
+    ok('ci.yml: check-trace-blocks / gen-knowledge-graph の自己試験と本検査の両方が配線されている', () => {
+      const ciYml = fsTb.readFileSync(pathTb.join(REPO_ROOT_TB, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ciYml, /check-trace-blocks\.js --self-test/, 'check-trace-blocks の自己試験が ci.yml に無い');
+      const ctbCount = (ciYml.match(/check-trace-blocks\.js/g) || []).length;
+      assert.ok(ctbCount >= 2, `check-trace-blocks.js の呼び出しが ${ctbCount} 件（自己試験＋本検査で最低 2 件必要）`);
+      assert.match(ciYml, /gen-knowledge-graph\.js --self-test/, 'gen-knowledge-graph の自己試験が ci.yml に無い');
+      assert.match(ciYml, /gen-knowledge-graph\.js --check/, 'gen-knowledge-graph --check が ci.yml に無い');
+    });
+
+    ok('scripts/README.md: 本リポジトリ固有の表に check-trace-blocks.js / gen-knowledge-graph.js を記載している', () => {
+      const readme = fsTb.readFileSync(pathTb.join(REPO_ROOT_TB, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-trace-blocks\.js/, 'scripts/README.md に check-trace-blocks.js の記載が無い');
+      assert.match(readme, /gen-knowledge-graph\.js/, 'scripts/README.md に gen-knowledge-graph.js の記載が無い');
+    });
+  }
 };

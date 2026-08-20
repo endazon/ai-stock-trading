@@ -30,6 +30,8 @@
 
 | スクリプト | 役割 | 出力 |
 | --- | --- | --- |
+| `check-trace-blocks.js` | `docs/**/*.md`（`.ai-context/` は対象外）に置く trace ブロック（`<!-- trace: -->`）・trace-table ブロック（`<!-- trace-table: -->`）を検査する（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段）。**文法**（frontmatter 直後・最初の H1 前に 1 文書 1 ブロック、`ids/adrs/iadrs/specs/issues` をこの順ですべて 1 回ずつ持つ）・**許可キー**（未知キーは error）・**trace-table の行番号連番**（`row1` から）・**値域**（`ids` の FR/UC/SC は `.claude/rules/traceability.repo.md` 宣言レンジ、`adrs` の計画 ADR は同宣言レンジ〔`scripts/lib/plan-ranges.js` 経由〕、`iadrs` は `.ai-context/adr/` のファイル実在、`NFR` は無採番許容）・**可視本文への残存**（HTML コメント外・コードフェンス外に計画 ID・IADR・修飾付き issue 参照が残っていれば error。裸の `#NNN` は対象外）を見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず「英字+英数字の短縮名 + `:`」の形だけで external と判定する（利用者裁定・ADR-0029 決定9）。trace ブロックを持たない文書は許容する。文法・分類ロジックは `scripts/lib/trace-blocks.js` が単一情報源（`gen-knowledge-graph.js` と共有）。`--self-test` あり | 標準出力（レポート） |
+| `gen-knowledge-graph.js` | `docs/` の trace / trace-table ブロックと `.ai-context/{adr,specs}/` の frontmatter（`related_ids`/`related_specs`/`plan_refs`）からナレッジグラフ（ノード／エッジ）を組み立てる。`--json` で JSON、`--mermaid [--scope <dir>]` で Mermaid `graph LR`（scope 指定でそのディレクトリ配下のノードとそれに繋がる参照へ絞り込む）、`--check` で in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在。`planning:`/`MSP:` 等の修飾付き参照は external として数のみ数える。specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため失敗にしない）を行う。生成物はコミットしない（都度標準出力へ書く）。`--self-test` あり | 標準出力（JSON / Mermaid / レポート） |
 | `check-consumer-endpoint-names.js` | サービスを跨ぐ MassTransit エンドポイント名（＝RabbitMQ キュー名）の衝突を検査（`--self-test` あり） | 標準出力（レポート） |
 | `validate-runtime-scaffold.js` | 実行環境スキャフォールド（docker-compose / appsettings / `.env.example`）の静的検査 | 標準出力（レポート） |
 | `check-banned-settled-cash-sources.js` | **決済済み資金（settled cash）の代替に使ってはならないブローカー値**（`MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal`）の**コードとしての参照**を検出。コメント・XML ドキュメント中の言及は誤検出しない（禁止の理由を書けなくしないため）。とりわけ現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**（#425 / ADR-0025 / IADR-0165） | 標準出力（レポート） |
@@ -37,6 +39,8 @@
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
 | `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
+| `lib/trace-blocks.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。trace / trace-table ブロックのパーサと ID トークン分類（修飾子の汎用規則を含む）の単一情報源 | — |
+| `lib/plan-ranges.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。計画 ADR の実在レンジを `.claude/rules/traceability.repo.md` から読む（`check-test-traceability.js` の `readPlanIds()`/`planRangeSection()` を拡張点として再利用。同ファイル自体は変更しない） | — |
 | `scripts.repo.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
 
 ## プロファイルの適用
@@ -67,6 +71,10 @@ node scripts/check-kit-sync.js --require-planning  # キットへの追随（CI 
 node scripts/check-feedback-status-sync.js --require-planning  # 環流記録 status の追随
 node scripts/check-planning-pin-freshness.js       # 計画 pin の鮮度（常に exit 0）
 node scripts/check-banned-settled-cash-sources.js  # 決済済み資金の代替値のコード参照を検査（#425）
+node scripts/check-trace-blocks.js                 # docs/ の trace ブロック規約を検査（ADR-0029 決定4）
+node scripts/gen-knowledge-graph.js --json          # ナレッジグラフを JSON で出力
+node scripts/gen-knowledge-graph.js --mermaid --scope docs/functional  # 一部スコープを Mermaid で出力
+node scripts/gen-knowledge-graph.js --check         # in-repo 実在検査
 node scripts/scripts.test.js                       # 上記スクリプト群の単体テスト
 ```
 
@@ -150,6 +158,8 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
 | `test-traceability` | `check-test-traceability.js --require-planning`（必須範囲 FR のテスト・仕様書の存在。本リポ固有） |
+| `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |
+| `knowledge-graph` | `gen-knowledge-graph.js --self-test` と `gen-knowledge-graph.js --check`（in-repo 実在検査。本リポ固有） |
 | `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査、および `check-action-versions.js`（Actions のバージョン退行。`fetch-depth: 0` が必要。**置換点**: `--compare-with-ref` は本リポの統合ブランチ `origin/develop`） |
 | `pipeline-config` | `validate-pipeline-config.js --self-test` ＋ 実ファイル（`PIPELINE_CONFIG`。本リポは採用する） |
 | `consumer-endpoint-names` | `check-consumer-endpoint-names.js --self-test` と本検査（本リポ固有） |
