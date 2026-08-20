@@ -38,7 +38,7 @@ Pull Request
 - [ ] GitHub Secrets（`CLAUDE_CODE_OAUTH_TOKEN` か `ANTHROPIC_API_KEY`）を登録済みである（Copilot 利用時はリポジトリで Copilot を有効化）。
 - [ ] 環境セットアップ（`scripts/setup.sh`）が通り、ビルド・テストが実走できる。
 
-**最初に `AI_SETUP.md` で利用可能な AI（プロファイル）を宣言する。** プロファイルにより有効化するファイルとシークレットが変わる。`*.example` ファイルは拡張子から `.example` を外すと有効になる（GitHub Actions は `.github/workflows/*.yml` のみ実行する）。`scripts/apply-profile.sh` で自動化できる。
+**最初に `AI_SETUP.md` で利用可能な AI（プロファイル）を宣言する。** プロファイルにより有効化するファイルとシークレットが変わる。本書の Claude 系ワークフローは役割スロット（orchestrator / worker / reviewer）の**既定エンジン実装**であり、エンジンの差し替え・フォールバックは `ai-roster.json` と [`docs/ai-orchestration.md`](ai-orchestration.md)（正本）に従う。`*.example` ファイルは拡張子から `.example` を外すと有効になる（GitHub Actions は `.github/workflows/*.yml` のみ実行する）。`scripts/apply-profile.sh` で自動化できる。
 
 技術非依存の CI 系は全プロファイル共通で有効化する。
 
@@ -234,6 +234,47 @@ on:
   予防線である（中間コミットは force push 禁止で事後修正できない）。
 - **bot 作成 PR で `if:` によりジョブごとスキップされたチェックは、必須チェック上「合格」として扱われる**
   ためマージは止まらない。bot を除外する条件を書いてもブランチ保護と矛盾しない。
+
+## 必読規約の総量予算の測り方
+
+**原則（予算 50KB・配備先の実測で測る・エージェントごとに分けて合算しない）は `CLAUDE.md`
+§メタ作業の統制が持つ。** ここは予算の増減を伴う作業（規約の追加・別紙化・キット同期）のときに読む
+運用の詳細である。
+
+- **測るコマンドを決めておく。測れない予算は守られない。**
+
+  ```bash
+  cat CLAUDE.md .claude/rules/*.md | wc -c   # Claude。50KB = 51200 を目安に
+  wc -c < AGENTS.md                          # AGENTS.md 系（下記のとおり暫定）
+  ```
+
+  - **予算値 51,200 の算定根拠は Claude 側の実測である。** `AGENTS.md` 系は実測が無いため
+    **同じ値を暫定的に流用する** —— **超過を fail の根拠にせず、観測に留める**。
+  - **`.claude/rules/` は列挙せず走査する。** 自動適用のため、**ファイルを 1 つ置いただけで予算が動く**。
+  - **submodule（`planning/` 等）配下の `CLAUDE.md` は入れない。** そのディレクトリで作業するときだけ読まれる。
+  - **予算値 51200 の正本は計画リポの `docs/ai-implementation-workflow-guide.md` である。**
+    スクリプトが値を持つのは**複製として認めるが、値の隣に出典を書く**（出典の無い複製は認めない）。
+- **エージェントごとに分けて測る理由**: 制約は「セッション 1 本が背負う量」に掛かる。`AGENTS.md` は
+  Claude 以外のエージェント（Cursor / Codex 等）が読むもので Claude は読まない。逆に `AGENTS.md` を
+  読むツールは `.claude/rules/` を読まない。**合算すると「誰も背負わない量」を作る**（実測: 実装側が
+  2 回とも `AGENTS.md` を足して過大に報告し、**着手条件の判定まで狂った**。planning#364）。
+- **増減は上限と、本リポジトリが持つ下限（確保した余白のラチェット）の両方に照らす。** 上限だけを
+  見ると、**ブロッカーが下限へ移っただけの状態を「解決した」と誤読する**（planning#408）。
+- **キットが規約を別紙へ移した pin では、移設元と移設先を同時に取り込む。** 規約側はリンクだけを
+  残すため片側取り込みは中身を失うが、**バイト一致検査は 1 ファイルずつ見るので緑になる。**
+- **超えていたら、まず「配布物を直接編集していないか」を疑う。** 固有節は companion
+  （`.claude/rules/traceability.repo.md` 等）へ置く。実測では、配布物への直接追記 **10.8 KB** が
+  そのまま超過分になっていた。
+  - **ただし companion へ移しても総量は 1 バイトも減らない**（companion も上の glob に入る）。
+    **移動が解くのは同期〔バイト一致〕であって予算ではない。超過の解消には、その固有節を落とすか
+    他を削るかが要る**（確定・2026-08-11。planning#315）。
+
+### 検査器の配線・CHANGELOG の是正（別紙）
+
+**規約の本文は [`.claude/rules/traceability.md`](../.claude/rules/traceability.md)、配線と運用の詳細は
+[`docs/traceability-appendix.md`](traceability-appendix.md)（キット配布物・分類 A）が持つ。**
+本書は技術スタック固有の CI 配線を扱うため配布先ごとに差分を持ちうるが、**別紙は差分を持たない**
+（どの配布先でもバイト一致で取り込める）。
 
 ## よくある詰まり（FAQ）
 

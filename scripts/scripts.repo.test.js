@@ -1638,4 +1638,62 @@ module.exports = ({ ok, assert }) => {
     assert(/ai-implementation-workflow-guide\.md/.test(near) && /§8/.test(near), '値の隣（直前 8 行）に正本の出典が無い');
     assert(budget.BUDGET_BYTES === 51200 || process.env.READING_BUDGET_BYTES, 'エクスポートされた既定値が 51200 でない');
   });
+
+  // --- #532: readPlanIds 拡張点（キット check-commit-messages.js が探す面） -------------
+  //
+  // この拡張点が無い間、`feat(SC-99)` は exit 0 で受理され恒久履歴へ載った（force push 禁止で
+  // 事後修正できない面）。planning submodule を走査する planIds(root) は使えない——
+  // commit-messages ジョブは submodule を取得せず、走査すると実在集合が空になり全 ID が違反になる。
+  {
+    const fsRp = require('fs');
+    const osRp = require('os');
+    const pathRp = require('path');
+    const ttRp = require('./check-test-traceability.js');
+    const cmRp = require('./check-commit-messages.js');
+
+    ok('#532: readPlanIds が規約節のレンジを実在集合へ展開する（FR-01..21 / UC-01..07 / SC-01..03）', () => {
+      const ids = ttRp.readPlanIds();
+      assert.strictEqual(ids.length, 31, `実在集合の件数が違う: ${ids.length}`);
+      for (const id of ['FR-01', 'FR-21', 'UC-01', 'UC-07', 'SC-01', 'SC-03']) {
+        assert.ok(ids.includes(id), `${id} が実在集合に無い`);
+      }
+      // SC-13 / SC-16 は基盤（MSP）の画面への参照であり本リポの名前空間ではない。
+      for (const id of ['SC-04', 'SC-13', 'SC-16', 'FR-22', 'UC-08']) {
+        assert.ok(!ids.includes(id), `${id} が実在集合に混ざっている`);
+      }
+    });
+
+    // ★ 実バイナリでの検出力。純関数が正しくても、キット側の loadExistingPlanIds が
+    //   拡張点を見つけられなければ検査は skip のままになる（notice で緑のまま素通り）。
+    ok('#532: 実在しない起点 ID の件名を違反として検出する（拡張点がキットから見えている）', () => {
+      const ids = new Set(ttRp.readPlanIds());
+      assert.strictEqual(cmRp.validateIdExistence('feat(SC-99): x', null, null, ids).length, 1);
+      assert.strictEqual(cmRp.validateIdExistence('feat(FR-99): x', null, null, ids).length, 1);
+      assert.strictEqual(cmRp.validateIdExistence('feat(SC-03): x', null, null, ids).length, 0);
+      assert.strictEqual(cmRp.validateIdExistence('feat(FR-21): x', null, null, ids).length, 0);
+      // キット側の入口（拡張点の解決）も通ること。null が返ると検査は skip へ落ちる。
+      const loaded = cmRp.loadExistingPlanIds();
+      assert.ok(loaded && loaded.size === 31, `loadExistingPlanIds が拡張点を解決していない: ${loaded && loaded.size}`);
+    });
+
+    // ★ fail-loud。規約側の破壊（節の改名・書式変更）を黙って skip すると
+    //   「違反 0 件」という最も安全に見える出力で素通りする。
+    ok('#532: 規約節を読めない／壊れているときは例外（黙って 0 件検査へ落ちない）', () => {
+      assert.throws(() => ttRp.readPlanIds(pathRp.join(osRp.tmpdir(), 'no-such-rules-532.md')));
+      const f = pathRp.join(fsRp.mkdtempSync(pathRp.join(osRp.tmpdir(), 'rp532-')), 'rules.md');
+      fsRp.writeFileSync(f, '# 節が無い規約\n\n本文だけ\n');
+      assert.throws(() => ttRp.readPlanIds(f), /節が見つかりません/);
+      // 種別の欠落・範囲の不正も例外。
+      assert.throws(() => ttRp.expandPlanIds({ FR: { from: 1, to: 3 }, UC: { from: 1, to: 2 } }));
+      assert.throws(() => ttRp.expandPlanIds({ FR: { from: 5, to: 1 }, UC: { from: 1, to: 2 }, SC: { from: 1, to: 2 } }));
+    });
+
+    ok('#532: 規約ファイルが機械の単一情報源であることを明記している（節を消させない）', () => {
+      const md = fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8');
+      const section = ttRp.planRangeSection(md);
+      assert.ok(section !== null, `${ttRp.RULES_FILE} に「${ttRp.PLAN_RANGE_HEADING}」節が無い`);
+      assert.match(section, /readPlanIds/, '節が機械の単一情報源であることを書いていない');
+      assert.match(section, /SC-13/, 'SC-13 / SC-16 を実在集合へ入れない理由が書かれていない');
+    });
+  }
 };

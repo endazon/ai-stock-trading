@@ -79,7 +79,7 @@ public class KillSwitchCommandHandlerTests
         controller.LastReason.Should().Contain("endazon");
     }
 
-    // #223, IADR-0097: 裁定（project-planning#35 / ADR-0009）により解除も確認フレーズを要する。
+    // #223, IADR-0097: 裁定（planning#35 / ADR-0009）により解除も確認フレーズを要する。
     [Fact]
     public async Task 本人が確認フレーズを入力すれば解除される()
     {

@@ -16,12 +16,16 @@
  * PR が同じ違反を犯して CI を green で通過した**（件名・本文・PR タイトルの 3 面すべて）。
  * 本検査器はそれを止めるために作られた。
  *
- * 検出する 3 つの型:
+ * 検出する 4 つの型:
  *   型 1（長い表記）  : リポジトリ名の裸書き（第 3 の表記）。短縮形でもフルパス形式でもない。
  *   型 2（列挙裸）    : 修飾付き参照の**直後**に続く裸の #NNN。先頭だけ修飾して後続を裸にする形。
  *                       PR #561 が、規約の書いてある当のファイルの中で犯した型である。
  *   型 3（空白区切り）: 修飾語と番号が空白で離れた形。規約の書式は詰めた形であり、空白が入ると
  *                       機械的突合に掛からない。#507 のクロス監査（2026-08-07）が実測した型。
+ *   型 4（owner 誤り）: フルパス形式の owner が誤っている形。**他の 3 型と実害の性質が違う** ——
+ *                       型 1〜3 は `.md` では表記ゆれに留まるが、**型 4 は `.md` でも死んだリンク
+ *                       になる**（フルパス形式は `.md` でも自動リンクするため）。
+ *                       **置換点 KNOWN_OWNERS を書き換えないと検査しない**（下記）。
  *
  * **自動リンクが効く面と効かない面を区別すること**（クロス監査の実測）:
  *   - `.md` のレンダリングでは、裸の `#NNN` も短縮形の修飾も**自動リンクにならない**。
@@ -44,9 +48,16 @@
  * 外部依存ゼロ（Node 標準モジュールのみ）。違反があれば終了コード 1。
  *
  * 使い方:
- *   node scripts/check-cross-repo-refs.js              # 追跡下の *.md を走査（既定）
+ *   node scripts/check-cross-repo-refs.js              # 追跡下の全ファイルを走査（既定）
  *   node scripts/check-cross-repo-refs.js --self-test  # 検査ロジック自体の自己試験
  *   node scripts/check-cross-repo-refs.js <file>...    # ファイル指定
+ *
+ * **走査対象は `*.md` に限らない。** 人が読む散文は `docs/`（`.md`）だけでなく `.github/` や
+ * `deploy/` にもあり、`*.md` だけを見ていた頃はワークフロー YAML の中の違反を誰も見ていなかった
+ * （実測）。代わりに **置換点 EXCLUDED_DIRS のディレクトリの非 Markdown を外す** ——
+ * そこは検査器・自己試験フィクスチャ・baseline が住む場所であり、**違反の文字列を書くことが
+ * 仕事**だからである。**除外した件数は必ずログに出す**（「検査していない」と「違反 0 件」を
+ * 読み分けられるようにするため）。
  *
  * CI への載せ方（**ワークフローを新設せず、既存の呼び出し口へ相乗りする**）:
  *   - scripts/scripts.repo.test.js から --self-test ＋ 実データ走査（ci.yml の scripts-tests ジョブ）
@@ -73,7 +84,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // 環境変数 `CROSS_REPO_NAMES` で上書きできる（`repo:short,repo:short` の形）。
 const CROSS_REPOS = parseNameMap(process.env.CROSS_REPO_NAMES) || {
   'project-planning': 'planning',
-  '<sibling-repo-name>': '<SHORT>',
+  'microservices-platform': 'MSP',
 };
 
 // 【置換点】**本リポジトリ自身**を指す名前（短縮形とリポジトリ名の両方を書く）。
@@ -83,11 +94,48 @@ const CROSS_REPOS = parseNameMap(process.env.CROSS_REPO_NAMES) || {
 // 違反として上げ、検査そのものが外される**（microservices-platform で 22 件が該当した）。
 //
 // 環境変数 `CROSS_REPO_SELF_NAMES` で上書きできる（カンマ区切り）。
-const SELF_NAMES = splitList(process.env.CROSS_REPO_SELF_NAMES, ['<SELF_SHORT>', '<self-repo-name>']);
+const SELF_NAMES = splitList(process.env.CROSS_REPO_SELF_NAMES, ['AST', 'ai-stock-trading']);
 
 // 【置換点】走査から外すパス（git pathspec の除外形）。サブモジュール・ベンダー配下を書く。
 // 環境変数 `CROSS_REPO_EXCLUDES` で上書きできる（カンマ区切り）。
-const EXCLUDE_PATHSPECS = splitList(process.env.CROSS_REPO_EXCLUDES, [':!planning']);
+// planning は submodule。docs/specs/ と feedback/ は point-in-time の記録であり後付けの表記是正を
+// しない（裁定 2026-08-15。IADR-0200 の除外表と同じ。書式・理由の正本は .claude/rules/traceability.repo.md）。
+const EXCLUDE_PATHSPECS = splitList(process.env.CROSS_REPO_EXCLUDES, [
+  ':!planning',
+  ':!docs/specs',
+  ':!feedback',
+]);
+
+// 【置換点】走査から外すディレクトリ（**非 Markdown に限る**。`.md` は常に検査する）。
+//
+// 既定の `scripts/` は**キットが配る検査器と自己試験フィクスチャの置き場所**であり、
+// 違反の文字列を書くことが仕事のため既定で外す。実測では `.md` 外の違反 64 件のうち **63 件**が
+// この種のフィクスチャ・説明文だった。
+//
+// **名指しのファイル除外リストにしないこと。** 実測で 3 ファイルへ膨らみ、次に検査器を足した
+// 時点で静かに古くなった。**ディレクトリ 1 本の規則**にし、例外は「`.md` は常に対象」の 1 行だけ
+// とする（`scripts/README.md` は人が読む散文であり、外すと是正前に見ていたものを見なくなる）。
+//
+// ★ **限界**: 外したディレクトリの中の**コード中コメント**に違反があっても検出しない。
+//   だからこそ**除外件数をログに出す**。環境変数 `CROSS_REPO_EXCLUDED_DIRS`（カンマ区切り）。
+const EXCLUDED_DIRS = splitList(process.env.CROSS_REPO_EXCLUDED_DIRS, ['scripts/']);
+
+// 【置換点】規約が許すフルパス形式の owner（GitHub の organization / user 名）。
+//
+// **書き換えるまで型 4 は検査しない。** プレースホルダのまま検査すると、**正しいフルパス形式を
+// 全件違反として上げる** —— SELF_NAMES の書き忘れと同じ「検査そのものを外させる」事故である。
+// 検査しないことは実行時に notice で可視化する（黙って 0 件検査へ落ちない）。
+// 環境変数 `CROSS_REPO_OWNERS` で上書きできる（カンマ区切り）。
+const KNOWN_OWNERS = splitList(process.env.CROSS_REPO_OWNERS, ['endazon']);
+
+// 【置換点】**リポジトリ相対パスであって owner ではない**もの（`<dir>/<repo>` の形）。
+//
+// 可変ユニットを `src/<repo>` に submodule で持つ構成では、`src/<repo>#1` の `src` が
+// 「owner=src」と読まれる。**この偽陽性は実測で起きた**（是正コミットの本文がこの形を含み、
+// CI が赤になった。force push は規約で禁止のため検査器側を直すのが正しい解である）。
+// **`src` 一般を owner 集合から外さない** —— `src` という実在の GitHub owner を取りこぼす。
+// 環境変数 `CROSS_REPO_RELATIVE_PATHS` で上書きできる（カンマ区切り）。
+const REPO_RELATIVE_PATHS = splitList(process.env.CROSS_REPO_RELATIVE_PATHS, []);
 // ---------------------------------------------------------------------------
 
 /** `a:b,c:d` 形式を `{a:b, c:d}` へ。未設定なら null（既定値を使わせる）。 */
@@ -113,6 +161,15 @@ function reEscape(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** 置換点が書き換えられていない（`<...>` のまま）か。 */
+function isPlaceholder(s) {
+  return /^<.*>$/.test(String(s));
+}
+
+// 列挙の区切りのうち句読点・スラッシュ系。**空白のみは採らない**（スカッシュ既定件名の
+// ` (#123)` と衝突するため）。`createChecker` の SEP と ENUM_FIX_RE の単一情報源である。
+const SEP_PUNCT = String.raw`[/／,，、・･]`;
+
 /**
  * 設定から検査器一式（正規表現と補助）を組み立てる。
  *
@@ -120,11 +177,14 @@ function reEscape(s) {
  * 自己試験が回るようにするためである。** 自己試験は固定の試験用設定で `createChecker` を
  * 呼ぶため、配布先が 置換点 をどう書き換えても結果が変わらない。
  *
- * @param {{crossRepos: Record<string,string>, selfNames?: string[]}} config
+ * @param {{crossRepos: Record<string,string>, selfNames?: string[],
+ *          knownOwners?: string[], repoRelativePaths?: string[]}} config
  */
 function createChecker(config) {
   const crossRepos = (config && config.crossRepos) || {};
   const selfNames = (config && config.selfNames) || [];
+  const knownOwners = ((config && config.knownOwners) || []).filter((o) => !isPlaceholder(o));
+  const repoRelativePaths = new Set((config && config.repoRelativePaths) || []);
   const longNames = Object.keys(crossRepos);
   const shortNames = [...new Set(Object.values(crossRepos))];
 
@@ -152,10 +212,28 @@ function createChecker(config) {
 
   // 修飾付き参照 1 個ぶん（短縮形・長い表記・フルパス形式のいずれか）。
   const QUALIFIED = String.raw`(?:[A-Za-z][\w.-]*\/)?(?:${allAlt})#\d+`;
-  // 列挙の区切り。**空白のみは採らない**（スカッシュ既定件名の ` (#123)` と衝突するため）。
-  const SEP = String.raw`[ \t]*[/／,，、・･][ \t]*`;
+  // 列挙の区切り（注記括弧）。「PR 番号に裁定依頼 issue 番号を添える」記法
+  //   `PR planning#244〔裁定依頼 planning#237〕`
+  // の開き括弧である。規約は**`〔〕` の中の番号は先頭と同じ他リポジトリを指す**と定めるため、
+  // 中を裸の `#NNN` にした形は型 2（先頭だけ修飾）として検出する。短い見出し語（`裁定依頼` 等）を
+  // 挟む形も同じ扱いにする。
+  //
+  // **全角丸括弧 `（` は入れない。** 日本語の地の文で従属節を開く一般的な記号であり、その直後の
+  // 裸 `#NNN` が**本リポジトリを指すのは正しい**（規約: 裸の `#NNN` は常に本リポジトリ）。
+  // 実測すると偽陽性が出る（`planning#197（#502 由来）` の `#502` は本リポジトリの issue であり、
+  // 止めてはならない）。対して `〔` を入れた場合の追加検出は追跡下の全 `.md` で **0 件**である。
+  // 見出し語の長さ上限 16 は、節や文をまたいで拾わないための保険（超える形は検出しない側へ倒す）。
+  //
+  // **見出し語に修飾語（短縮形・長い表記）が現れたら区切りとして採らない。** 採らないと、
+  // 採用形 `〔裁定依頼 planning#237〕` の `〔裁定依頼 planning` までを区切りと読んで
+  // **正しい書き方そのものを違反にしてしまう**（自己試験の負例で固定してある）。
+  const SEP_BRACKET = String.raw`〔(?:(?!${allAlt})[^#〔〕\n]){0,16}`;
+  const SEP = String.raw`[ \t]*(?:${SEP_PUNCT}|${SEP_BRACKET})[ \t]*`;
   // 型 2: 修飾付き参照の直後に「区切り + 裸の #数字」が 1 個以上続く形。
   const ENUM_RE = new RegExp(`(${QUALIFIED})((?:${SEP}#\\d+)+)`, 'g');
+  // 是正案を組み立てるときの「区切り + 裸の #数字」。**ENUM_RE と同じ区切り定義から作る**
+  // （2 箇所に別々の文字集合を書くと、片方だけ足したときに是正案が黙って壊れる）。
+  const ENUM_FIX_RE = new RegExp(String.raw`(^|(?:${SEP_PUNCT}|${SEP_BRACKET})[ \t]*)#(\d+)`, 'g');
 
   // 型 3: 修飾語と番号が空白で離れた形（間に PR / issue の語が入る形も含む）。
   // **自リポジトリを指す修飾語は含まれない**——上の 置換点 SELF_NAMES を参照。
@@ -166,15 +244,38 @@ function createChecker(config) {
   // 列挙の先頭から修飾語を取り出す式。
   const HEAD_RE = new RegExp(String.raw`(?:^|\/)(${allAlt})#`);
 
+  // 型 4: フルパス形式の owner 誤り。**自組織が持つリポジトリ名 → 短縮形**の集合に限って見る
+  // （知らないリポジトリの owner が正しいかは判定できない）。自リポジトリの短縮形は空文字
+  // ＝裸の `#NNN` が正（規約: 裸の `#NNN` は常に本リポジトリ）。
+  // **集合はここから導出する** —— 2 箇所に別々に書くと、片方だけ足したときに是正案が
+  // `undefined#123` として黙って壊れる（ENUM_FIX_RE が戒めているのと同じ型）。
+  const ownedRepoShort = Object.assign({}, crossRepos);
+  for (const n of selfNames) ownedRepoShort[n] = '';
+  const ownedRepos = Object.keys(ownedRepoShort);
+  // 直前が \w / - / `/` なら owner ではない（URL 中の `github.com/<owner>/…` を含む）。
+  // URL 形式の owner は本検査の射程外である。
+  // **KNOWN_OWNERS が空（＝置換点が未書き換え）なら型 4 を検査しない。**
+  const OWNER_RE = knownOwners.length
+    ? new RegExp(
+        String.raw`(?<![\w/-])([A-Za-z][\w.-]*)\/(${ownedRepos.map(reEscape).join('|')})#(\d+)`,
+        'g'
+      )
+    : null;
+
   return {
     crossRepos,
     selfNames,
     longNames,
     shortNames,
+    knownOwners,
+    repoRelativePaths,
+    ownedRepoShort,
     LONG_RE,
     ENUM_RE,
+    ENUM_FIX_RE,
     SPACED_RE,
     HEAD_RE,
+    OWNER_RE,
     /** 長い表記なら短縮形へ寄せる。短縮形はそのまま。 */
     toShort: (name) => crossRepos[name] || name,
     /** 修飾語を取り出せなかったときに配る既定の短縮形。 */
@@ -183,7 +284,12 @@ function createChecker(config) {
 }
 
 /** 置換点から作った既定の検査器。`findViolations` はこれを使う。 */
-const DEFAULT_CHECKER = createChecker({ crossRepos: CROSS_REPOS, selfNames: SELF_NAMES });
+const DEFAULT_CHECKER = createChecker({
+  crossRepos: CROSS_REPOS,
+  selfNames: SELF_NAMES,
+  knownOwners: KNOWN_OWNERS,
+  repoRelativePaths: REPO_RELATIVE_PATHS,
+});
 const SHORT_NAMES = DEFAULT_CHECKER.shortNames;
 const LONG_NAMES = DEFAULT_CHECKER.crossRepos;
 const { LONG_RE, ENUM_RE, SPACED_RE } = DEFAULT_CHECKER;
@@ -270,7 +376,8 @@ function findViolations(text, opts = {}) {
     // 先頭の修飾語（短縮形へ正規化した名前）を後続の裸番号へ配る。
     const nameMatch = m[1].match(C.HEAD_RE);
     const short = nameMatch ? C.toShort(nameMatch[1]) : C.fallbackShort;
-    const fixed = m[0].replace(/(^|[/／,，、・･][ \t]*)#(\d+)/g, (whole, pre, num) =>
+    C.ENUM_FIX_RE.lastIndex = 0;
+    const fixed = m[0].replace(C.ENUM_FIX_RE, (whole, pre, num) =>
       pre === '' ? whole : `${pre}${short}#${num}`
     );
     out.push({
@@ -292,6 +399,24 @@ function findViolations(text, opts = {}) {
     });
   }
 
+  // 型 4: フルパス形式の owner 誤り。**置換点 KNOWN_OWNERS を書き換えていなければ検査しない。**
+  if (C.OWNER_RE) {
+    C.OWNER_RE.lastIndex = 0;
+    while ((m = C.OWNER_RE.exec(scan))) {
+      if (C.knownOwners.includes(m[1])) continue; // 規約が許すフルパス形式。
+      if (C.repoRelativePaths.has(`${m[1]}/${m[2]}`)) continue; // owner ではなくリポ相対パス。
+      const short = C.ownedRepoShort[m[2]];
+      out.push({
+        kind: 'owner',
+        line: lineNumberAt(scan, m.index),
+        matched: m[0],
+        // 規約は短縮形へ寄せることを求めるため、owner を直すのではなく短縮形を提案する
+        // （自リポジトリは裸の `#NNN` が正なので短縮形は空文字になる）。
+        suggestion: `${short}#${m[3]}`,
+      });
+    }
+  }
+
   // 閉じないフェンスは「検査していない範囲」を生む。Markdown モードでのみ見る
   // （コミットメッセージにフェンスの概念は無い）。
   if (opts.markdown) {
@@ -310,19 +435,36 @@ function findViolations(text, opts = {}) {
   return out;
 }
 
-/** git 管理下の *.md（submodule 配下を除く）を列挙する。git を使えなければ null。 */
-function trackedMarkdown(root = REPO_ROOT) {
+/**
+ * 走査から外すか。**`.md` は常に検査する**（置換点 EXCLUDED_DIRS のコメント参照）。
+ *
+ * ★ 「ディレクトリ 1 本」の形を保つ。**例外は「拡張子 `.md` は常に対象」の 1 行**であり、
+ *   ファイルを名指ししない —— 名指しリストへ戻すと静かに古くなる。
+ */
+function isExcluded(file, dirs = EXCLUDED_DIRS) {
+  if (/\.md$/i.test(file)) return false;
+  return dirs.some((d) => String(file).startsWith(d));
+}
+
+/**
+ * git 管理下の全ファイル（`EXCLUDE_PATHSPECS` と `EXCLUDED_DIRS` の非 Markdown を除く）を
+ * 列挙する。git を使えなければ null。**除外件数を `excluded` プロパティで返す**
+ * （「検査していない」と「違反 0 件」を読み分けられるようにするため）。
+ */
+function trackedFiles(root = REPO_ROOT, dirs = EXCLUDED_DIRS) {
   let raw;
   try {
-    raw = execFileSync(
-      'git',
-      ['-C', root, 'ls-files', '--', '*.md', ...EXCLUDE_PATHSPECS],
-      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
-    );
+    raw = execFileSync('git', ['-C', root, 'ls-files', '--', ...EXCLUDE_PATHSPECS], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
   } catch (e) {
     return null;
   }
-  return raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  const all = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  const kept = all.filter((f) => !isExcluded(f, dirs));
+  kept.excluded = all.length - kept.length;
+  return kept;
 }
 
 /** ファイル群を検査し、{file, violations} の配列を返す。 */
@@ -335,6 +477,9 @@ function checkFiles(files, root = REPO_ROOT, opts = {}) {
     } catch (e) {
       continue;
     }
+    // バイナリは読み飛ばす（NUL を含むものを非テキストとみなす）。走査対象を `*.md` から
+    // 追跡下の全ファイルへ広げた以上、画像・フォント等が混ざる。
+    if (text.includes('\u0000')) continue;
     const violations = findViolations(text, { markdown: /\.md$/i.test(rel), checker: opts.checker });
     if (violations.length) report.push({ file: rel, violations });
   }
@@ -350,6 +495,7 @@ function formatReport(report) {
         long: '長い表記',
         enum: '列挙形の修飾漏れ',
         spaced: '空白区切りの修飾',
+        owner: 'フルパス形式の owner 誤り',
         fence: '閉じないコードフェンス',
       }[v.kind];
       lines.push(`    ${r.file}:${v.line}  [${label}] ${v.matched}  →  ${v.suggestion}`);
@@ -370,6 +516,8 @@ function selfTest() {
   const TEST = createChecker({
     crossRepos: { 'project-planning': 'planning', 'ai-stock-trading': 'AST' },
     selfNames: ['MSP', 'microservices-platform'],
+    knownOwners: ['endazon'],
+    repoRelativePaths: ['src/ai-stock-trading'],
   });
   const cases = [];
   const t = (name, pass, actual) => cases.push({ name, pass, actual });
@@ -424,7 +572,40 @@ function selfTest() {
   t('型3: 型 3 を直すと 2 回目に型 2 が上がる',
     kinds('AST#196/#197 を参照').join() === 'enum');
 
+  // --- 正のケース: 型 2 のうち `〔〕` で添える形 ---
+  t('型2〔〕: 注記括弧の中の裸番号を検出する',
+    kinds('PR planning#244〔裁定依頼 #237〕を参照').join() === 'enum');
+  t('型2〔〕: 是正案は括弧の中も修飾する',
+    violations('PR planning#244〔裁定依頼 #237〕')[0].suggestion
+      === 'planning#244〔裁定依頼 planning#237');
+  t('型2〔〕: 見出し語なし（〔#237〕）でも検出する',
+    kinds('planning#244〔#237〕').join() === 'enum');
+
+  // --- 正のケース: 型 4（フルパス形式の owner 誤り） ---
+  t('型4: owner が誤ったフルパス形式を検出する',
+    kinds('acme/project-planning#50 を参照').join() === 'owner');
+  t('型4: 是正案は短縮形へ寄せる（owner を直すのではない）',
+    violations('acme/project-planning#50')[0].suggestion === 'planning#50');
+  t('型4: 自リポジトリのフルパス形式で owner が誤っていれば裸の #NNN を提案する',
+    violations('acme/microservices-platform#3')[0].suggestion === '#3');
+
   // --- 負のケース: 偽陽性を出してはならない ---
+  // **`〔〕` の中が正しく修飾されていれば違反ではない**（採用形そのものを止めない）。
+  t('負例〔〕: 括弧の中も修飾した採用形は検出しない',
+    kinds('PR planning#244〔裁定依頼 planning#237〕').length === 0);
+  // **全角丸括弧は区切りにしない**（直後の裸 #NNN は本リポジトリ参照が正）。
+  t('負例〔〕: 全角丸括弧の中の裸番号は検出しない（自リポ参照が正）',
+    kinds('planning#197（#502 由来）を参照').length === 0);
+  t('負例: 既知の owner のフルパス形式は型 4 に掛からない',
+    kinds('endazon/project-planning#50 と endazon/microservices-platform#3').length === 0);
+  t('負例: リポジトリ相対パス（src/ai-stock-trading#1）は owner ではない',
+    kinds('src/ai-stock-trading#1 を参照').length === 0);
+  t('負例: 設定に無いリポジトリなら owner が何であれ型 4 に掛からない',
+    kinds('acme/other-repo#1 を参照').length === 0);
+  t('負例: KNOWN_OWNERS が未設定なら型 4 を検査しない（置換点のまま緑になる）', (() => {
+    const C = createChecker({ crossRepos: { 'project-planning': 'planning' }, knownOwners: ['<owner>'] });
+    return C.OWNER_RE === null && findViolations('acme/project-planning#50', { checker: C }).length === 0;
+  })());
   // **自リポジトリの修飾語は型 3 に含めない。** 裸の #NNN が本リポジトリを指すのは正しい。
   t('負例: MSP + 空白 + 番号（自リポジトリの修飾語）は検出しない',
     kinds('本 issue は MSP #283 である').length === 0);
@@ -568,8 +749,22 @@ function selfTest() {
       rep.map((r) => r.file));
     t('checkFiles: 1 ファイル内の 2 型を両方報告する',
       rep[0] && rep[0].violations.length === 2, rep[0] && rep[0].violations);
+    // 走査対象を `*.md` から広げた以上、バイナリが混ざる。NUL を含むものは読み飛ばす。
+    fs.writeFileSync(path.join(dir, 'bin.dat'), Buffer.from([0x50, 0x00, 0x51]));
+    t('checkFiles: NUL を含むファイル（バイナリ）は読み飛ばす',
+      checkFiles(['bin.dat'], dir, { checker: TEST }).length === 0);
     fs.rmSync(dir, { recursive: true, force: true });
   }
+
+  // --- 走査範囲（`*.md` 以外も見る／除外ディレクトリの非 Markdown は外す） ---
+  t('isExcluded: 除外ディレクトリの非 Markdown は外す',
+    isExcluded('scripts/check-x.js', ['scripts/']) === true);
+  t('isExcluded: 除外ディレクトリでも `.md` は常に対象（是正前に見ていたものを見なくならない）',
+    isExcluded('scripts/README.md', ['scripts/']) === false);
+  t('isExcluded: 除外ディレクトリの外の非 Markdown は対象',
+    isExcluded('.github/workflows/ci.yml', ['scripts/']) === false);
+  t('isExcluded: 除外ディレクトリが空なら何も外さない',
+    isExcluded('scripts/check-x.js', []) === false);
 
   let failed = 0;
   for (const c of cases) {
@@ -592,21 +787,43 @@ function main() {
     selfTest();
     return;
   }
+  // **型 4 を検査していないなら、そう言う。** 置換点が未書き換えのまま緑になると、
+  // 「検査した結果 0 件」と読まれる（黙って 0 件検査へ落ちない）。
+  if (!DEFAULT_CHECKER.OWNER_RE) {
+    console.error(
+      '[check-cross-repo-refs] notice: 置換点 KNOWN_OWNERS が未設定のため型 4（owner 誤り）を' +
+        '検査していない。この範囲は検査されていない。'
+    );
+  }
   const explicit = argv.filter((x) => !x.startsWith('--'));
   let files = explicit;
   if (files.length === 0) {
-    files = trackedMarkdown();
+    files = trackedFiles();
     if (files === null) {
       // git を使えない環境（tarball 展開等）では検査をスキップする（fail-open）。
       // 黙って 0 件検査へ落ちたことが分かるよう理由を出す。
       console.error('[check-cross-repo-refs] git ls-files を実行できないため走査をスキップした。');
       process.exit(0);
     }
+    // **除外件数は必ず出す**（走査範囲を `*.md` から広げた以上、除外が効いている範囲がある）。
+    console.log(
+      `[check-cross-repo-refs] 走査 ${files.length} 件 / 除外 ${files.excluded} 件` +
+        `（${EXCLUDED_DIRS.join(' / ')} の非 Markdown）`
+    );
+  }
+  // **0 件走査で緑を返さない**（fail-closed）。走査対象を 1 件も拾えないのは
+  // 「検査しているつもりで何も見ていない」状態であり、退行を止めているという記録だけが残る。
+  // **上の skip とは別物である** —— あちらは「git を使えない」（fail-open）、こちらは「拾えなかった」。
+  // 姉妹の検査器（`check-doc-links.js` / `check-plan-id-qualification.js`）と横並びの作法である。
+  if (files.length === 0) {
+    console.error('[check-cross-repo-refs] 走査対象のファイルを 1 件も見つけられませんでした。');
+    console.error('  0 件検査は「検査しているつもりで何も見ていない」状態なので fail させています。');
+    process.exit(1);
   }
   const report = checkFiles(files);
   const total = report.reduce((n, r) => n + r.violations.length, 0);
   if (total === 0) {
-    console.log(`[check-cross-repo-refs] OK: ${files.length} 件の Markdown に他リポジトリ参照の表記違反はありません。`);
+    console.log(`[check-cross-repo-refs] OK: ${files.length} 件に他リポジトリ参照の表記違反はありません。`);
     process.exit(0);
   }
   console.error(`[check-cross-repo-refs] 他リポジトリ参照の表記違反 ${total} 件を検出しました:`);
@@ -628,7 +845,13 @@ module.exports = {
   formatReport,
   maskCode,
   unbalancedFenceLine,
-  trackedMarkdown,
+  // **`trackedMarkdown` は置かない。** 走査を追跡下の全ファイルへ広げた時点で呼び出し元が
+  // 無くなった関数であり、「後方互換」の名目で残すと次に走査範囲を触る人が主経路と取り違える。
+  trackedFiles,
+  isExcluded,
+  // 置換点の値そのものを配布先の回帰テストが固定できるように出す
+  //（除外が「ディレクトリ 1 本の規則」のままか＝名指しリストへ戻っていないかを見るため）。
+  EXCLUDED_DIRS,
   selfTest,
   // 設定から検査器を組み立てる（呼び出し側が別構成で検査したい場合に使う）。
   createChecker,

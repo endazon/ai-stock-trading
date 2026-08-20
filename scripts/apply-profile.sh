@@ -2,9 +2,14 @@
 # apply-profile.sh — AI_SETUP.md で宣言したプロファイルに応じてキットを構成する。
 #
 # 使い方:
-#   bash scripts/apply-profile.sh [--prune] <profile> [<profile> ...]
+#   bash scripts/apply-profile.sh [--prune] <profile|engine> [<profile|engine> ...]
 #     profile: claude-code | api | copilot（複数可）
+#     engine : 上記以外の引数はエンジン名とみなし、.github/workflows/<engine>-*.example.yml を
+#              有効化する（役割スロットの他エンジン実装。命名規約は docs/ai-orchestration.md）。
+#              対象が無ければ従来どおり skip する。--prune の削除対象にはしない。
 #     --prune : 宣言しなかったプロファイルのベンダー固有ファイルを削除する（既定は削除しない）
+#               🔴 他エンジンを主とする場合も Claude 系を prune しないこと（フォールバックの
+#               切り戻し先を失う。docs/ai-orchestration.md §4）。
 #
 # 動作:
 #   - 宣言したプロファイルが必要とする *.example ファイルの拡張子から .example を外して有効化する。
@@ -22,17 +27,20 @@ log() { printf '[apply-profile] %s\n' "$1"; }
 
 PRUNE=0
 PROFILES=()
+ENGINES=()
 for arg in "$@"; do
   case "$arg" in
     --prune) PRUNE=1 ;;
     claude-code|api|copilot) PROFILES+=("$arg") ;;
+    [a-z]*) ENGINES+=("$arg") ;;
     *) log "未知の引数を無視: $arg" ;;
   esac
 done
 
-if [ "${#PROFILES[@]}" -eq 0 ]; then
+if [ "${#PROFILES[@]}" -eq 0 ] && [ "${#ENGINES[@]}" -eq 0 ]; then
   log "プロファイルが指定されていません。例: bash scripts/apply-profile.sh claude-code"
   log "指定可能: claude-code | api | copilot（複数可、--prune で未宣言分を削除）"
+  log "上記以外の引数はエンジン名として <engine>-*.example.yml の有効化を試みる（docs/ai-orchestration.md）"
   exit 0
 fi
 
@@ -84,6 +92,22 @@ if [ "$WANT_COPILOT" -eq 1 ]; then
   log "Copilot を有効化。Issue を Copilot にアサインすると自律実装が始まる"
 fi
 
+# --- 他エンジン（役割スロットの差し替え。命名規約は docs/ai-orchestration.md）---
+for engine in "${ENGINES[@]:+${ENGINES[@]}}"; do
+  found=0
+  for ex in ".github/workflows/${engine}"-*.example.yml; do
+    [ -f "$ex" ] || continue
+    enable_example "$ex"
+    found=1
+  done
+  if [ "$found" -eq 1 ]; then
+    log "エンジン ${engine} のワークフローを有効化。ai-roster.json の該当スロットへ配役を宣言すること"
+    log "⚠ 注意: .claude/hooks と検査器（check-ai-workflow-config / check-permission-denials / check-review-verdict）は Claude 専用であり、${engine} には効かない（docs/ai-orchestration.md §6）"
+  else
+    log "エンジン ${engine} のワークフロー（.github/workflows/${engine}-*.example.yml）は無いため skip。CLI アダプタ（scripts/ai-adapters/run-worker-${engine}.sh）を使う場合はこのまま ai-roster.json を宣言する"
+  fi
+done
+
 # --- 未宣言プロファイルの後始末（--prune 時のみ）---
 if [ "$PRUNE" -eq 1 ]; then
   if [ "$WANT_CLAUDE" -eq 0 ]; then
@@ -104,9 +128,10 @@ fi
 # --- 適用結果を記録 ---
 {
   printf '# このファイルは apply-profile.sh が生成する。有効なプロファイルを記録する。\n'
-  for p in "${PROFILES[@]}"; do printf '%s\n' "$p"; done
+  for p in "${PROFILES[@]:+${PROFILES[@]}}"; do printf '%s\n' "$p"; done
+  for e in "${ENGINES[@]:+${ENGINES[@]}}"; do printf 'engine:%s\n' "$e"; done
 } > .ai-profile
-log "適用プロファイルを .ai-profile に記録: ${PROFILES[*]}"
+log "適用プロファイルを .ai-profile に記録: ${PROFILES[*]:-（なし）} ${ENGINES[*]:-}"
 
 log "完了"
 exit 0

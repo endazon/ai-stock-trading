@@ -13,7 +13,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(git switch:*), Bash(git branc
    - `UC-xx` → `projects/<name>/03_usecases/`（基本/代替/例外フロー）と関連要求・画面。
 2. 関連 ADR（`07_adr/`）を読み、確定済み制約を確認する。曖昧なら実装を止めて確認する。
 3. 作業ブランチを作成する（例 `feat/FR-012-<概要のケバブケース>`）。
-4. `spec-implementer` の方針で実装し、受け入れ基準を `test-author` の方針でテスト化する。
+4. `spec-implementer` の方針で実装し、受け入れ基準を `test-author` の方針でテスト化する。**手順 1〜2 で読んだ計画書・ADR は再読しない**（同じ内容を二重にコンテキストへ載せない）。
 5. コード内コメント・コミットメッセージに起点 ID を残す（`.claude/rules/traceability.md` に従う）。
 6. 実装した内容・テスト・計画書との差異（あれば）を報告する。
 

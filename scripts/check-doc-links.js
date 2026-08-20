@@ -84,7 +84,7 @@ function submodulePaths(root = REPO_ROOT) {
 // .gitmodules 由来の一般則へ拡張してある。
 //
 // 真偽値ではなく**対象を返す**のは、どの submodule を何件飛ばしたかを報告するためである。
-// 黙って除外すると「検査していない範囲があること」が出力から読み取れない（issue #139）。
+// 黙って除外すると「検査していない範囲があること」が出力から読み取れない（issue planning#139）。
 function unpopulatedSubmoduleOf(resolvedAbs, root = REPO_ROOT) {
   const rel = path.relative(root, resolvedAbs).replace(/\\/g, '/');
   for (const sub of submodulePaths(root)) {
@@ -151,7 +151,7 @@ function isBrokenRef(ref, baseDir, onSkip) {
   const skippedSub = unpopulatedSubmoduleOf(resolved);
   if (skippedSub) {
     // 除外したことを呼び出し側へ知らせる。件数を報告しないと「破損リンクはありません」が
-    // 検査していない範囲まで含んだ断定になる（issue #139）。
+    // 検査していない範囲まで含んだ断定になる（issue planning#139）。
     if (onSkip) onSkip(skippedSub);
     return false;
   }
@@ -314,7 +314,7 @@ function main() {
     }
   }
 
-  // 検査対象外にした範囲を必ず知らせる（issue #139）。
+  // 検査対象外にした範囲を必ず知らせる（issue planning#139）。
   // これを黙っていると「破損した相対リンクはありません」が、実際には検査していない範囲まで
   // 含んだ断定になる。実際に ai-stock-trading では PR CI が planning 配下 753 件を毎回飛ばし、
   // その隙間で破損 20 件が蓄積した（夜間の doc-links-planning は PR に紐づかず、

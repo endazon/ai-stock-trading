@@ -8,7 +8,7 @@ import {
 } from './fixtures';
 
 // SC-01, FR-17, UC-06, IADR-0087: 設定画面（全体前提条件の閲覧/変更）の実ブラウザ E2E。
-// BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP #284）。
+// BFF 応答はモック（page.route）。実 API・実クラスタ疎通に依存しない（live 検証は #82 系／MSP#284）。
 
 test.describe('SC-01 設定（#187）', () => {
   test('trading-owner に現在値とバージョンを表示する', async ({ page }) => {

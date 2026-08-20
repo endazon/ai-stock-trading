@@ -49,7 +49,7 @@ public static class PlanRiskDefaults
         new("Guard.EnabledMarkets", "Japan, UnitedStates", Assumptions5),
         // 比較は序数順に正規化するため、登録順ではなく昇順で記す。
         new("Guard.BannedSymbols", "6457/Japan, 6502/Japan, 6902/Japan", Assumptions5),
-        // 適用範囲は 2026-08-06 に条件付きへ改められた（ADR-0021 決定4-1・環流 project-planning#220）。
+        // 適用範囲は 2026-08-06 に条件付きへ改められた（ADR-0021 決定4-1・環流 planning#220）。
         // 旧注記は「日本株現物」のみとしており、**現金口座の米国株にも適用される**ことが落ちていた。
         // 注記は飾りではなく、読み手が「この値は本当に計画どおりか」を確かめる唯一の手掛かりである。
         // **実装側の適用範囲が計画に追随しているかは #380 の担当**であり、ここでは注記のみを正す（#445）。

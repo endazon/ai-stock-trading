@@ -13,9 +13,14 @@
 #   - Issue / PR のコメント、PR レビューコメント、Issue 本文で「@claude ...」と書くと起動する
 #   - このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効
 #
+# 位置づけ: worker スロットの Claude 用 GitHub 実装である（配役は ai-roster.json、
+#   正本は docs/ai-orchestration.md）。他エンジンを worker の主とする場合も本ファイルは
+#   削除せず有効のまま残す（失敗時に @claude メンションで切り戻すフォールバック経路になる）。
+#
 # モデル:
-#   既定は最新の claude-opus-5。メンションで「@claude opus / sonnet / haiku」と
-#   書くと、そのモデルで起動する（"Select model from mention" ステップが解析）。
+#   既定は claude-sonnet-5（レビュー側と同じ既定。高コストモデルは明示指定に限る）。
+#   メンションで「@claude opus / fable / sonnet / haiku」と書くと、そのモデルで起動する
+#   （"Select model from mention" ステップが解析）。
 #   既定値を変えたい場合は同ステップの MODEL="..." を書き換える。
 
 name: Claude Coding
@@ -92,8 +97,9 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # @claude メンションでモデルを選択する。既定は claude-opus-5。
-      # 「@claude opus / sonnet / haiku」と書くとそのモデルで起動する。
+      # @claude メンションでモデルを選択する。既定は claude-sonnet-5（品質基準を満たす最安モデルを
+      # 既定にし、高コストモデルは明示指定に限る。レビュー側 claude-code-review と同じ方針）。
+      # 複雑な実装には「@claude opus / fable」と書くと上位モデルで起動する。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
       - name: Select model from mention
         id: model
@@ -107,7 +113,7 @@ jobs:
           ${REVIEW_BODY}
           ${ISSUE_BODY}
           ${ISSUE_TITLE}"
-          MODEL="claude-opus-5"
+          MODEL="claude-sonnet-5"
           if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
@@ -147,7 +153,7 @@ jobs:
           # 末尾のビルド/テスト系（node / dotnet）がスタック別の可変部分である。
           # claude-code-review.example.yml の対応箇所と**同じ内容**に保つこと。
           #
-          # 【読み取り専用ツールの対称性（issue #160）】head / tail / cmp / diff /
+          # 【読み取り専用ツールの対称性（issue planning#160）】head / tail / cmp / diff /
           # git ls-tree / git submodule status / git fetch はレビュー用に先に入ったが、
           # 実装用にも同じ作業（キット同期時のバイト一致確認・submodule pin の確認）が
           # あるため揃えてある。**ドリフト検査（check-ai-workflow-config）はスタック別の
@@ -155,7 +161,7 @@ jobs:
           #
           # 【--append-system-prompt: サブエージェント禁止】レビュー用は同じ制約を prompt:
           # 入力に書いているが、本ファイルは `@claude` メンション本文で駆動する構造のため
-          # prompt: を持たず、置き場所がここしか無い（issue #149）。
+          # prompt: を持たず、置き場所がここしか無い（issue planning#149）。
           # 制約が無いと次の形で**成果物が正しくてもジョブが赤くなる**:
           #   AI が Task（サブエージェント）を試みる → 許可リストにも既定にも無いので拒否
           #   → Task 抜きで実装を完遂しコミット・PR も正しく出せる
@@ -166,8 +172,8 @@ jobs:
           # （改行して書くと後続行が別の引数になり、指示が壊れる）。
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。また cd でディレクトリを移動しないこと（cd は許可リストに無く、cd planning && git log の形は後続が許可済みでも先頭で拒否される）。submodule の履歴は git -C planning の log / show / diff / ls-tree で参照すること。"
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+            --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。また cd でディレクトリを移動しないこと（cd は許可リストに無く、cd planning && git log の形は後続が許可済みでも先頭で拒否される）。submodule の履歴は git -C planning の log / show / diff / ls-tree / grep で参照すること。"
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning grep:*),Bash(git -C planning rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
 
       # 権限拒否の可視化（安全弁）。claude-code-review.example.yml と同じ内容に保つこと。
       #

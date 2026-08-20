@@ -408,7 +408,7 @@ jobs:
         env:
           STRICT_AI_WORKFLOW_CONFIG: "1"
         run: node scripts/check-ai-workflow-config.js
-      # Actions のバージョン退行を止める（キット issue #148 / #152）。
+      # Actions のバージョン退行を止める（キット issue planning#148 / planning#152）。
       #
       # **巻き戻りが実際に起きるのはここ（キットを同期した実装リポ）である。** 配布元
       # （project-planning）にも同じ検査があるが、それが守るのは「テンプレートが取り残されて
@@ -533,7 +533,7 @@ jobs:
 
   # フロント3画面（SC-01/02/03）の Playwright E2E（issue #187 / IADR-0087）。実ブラウザ（chromium）で UI フロー
   # （表示・保存の 200/400/409 出し分け・権限外の存在秘匿・縮退）を検証する。BFF 応答はモック（page.route）で、
-  # 実 BFF/Keycloak/クラスタ疎通には依存させない（実基盤 live 検証は #82 系／MSP #284 へ分離）。Docker 不要・frontend/ に閉じる。
+  # 実 BFF/Keycloak/クラスタ疎通には依存させない（実基盤 live 検証は #82 系／MSP#284 へ分離）。Docker 不要・frontend/ に閉じる。
   frontend-e2e:
     runs-on: ubuntu-latest
     defaults:

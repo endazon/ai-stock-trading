@@ -7,7 +7,7 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
 
 // FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた**取引日**の EF 永続化を InMemory DB で検証する。
 //
-// **［2026-08-08 改定］粒度は取引日の集合である**（計画 FR-21・裁定 project-planning#292）。
+// **［2026-08-08 改定］粒度は取引日の集合である**（計画 FR-21・裁定 planning#292）。
 // 従前の単一の「最終観測時刻」は報告期間を観測が覆っていたかを判定できず、
 // **初回観測より前の期間や観測が途中で止まった期間が「正当な 0」として報告されていた**。
 public class EfPositionObservationArrivalStoreTests

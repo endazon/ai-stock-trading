@@ -163,7 +163,7 @@ internal sealed class HttpLlmCompletionClient(
     // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
     // #247, IADR-0104: StopReason は**送信が成立した**場合のモデル側の終了理由（"end_turn" / "max_tokens" / "refusal" 等）で、
     // Sent とは独立した軸（Sent=false＝越境させていない／StopReason="refusal"＝送信したがモデルが拒否した）。
-    // 上流（MSP #379 / PR #391）が CompletionApiResponse に追加した。未設定（null）＝上流未更新・未対応プロバイダでは
+    // 上流（MSP#379 / PR #391）が CompletionApiResponse に追加した。未設定（null）＝上流未更新・未対応プロバイダでは
     // 本フィールドを見ない従来どおりの分岐へ素通りする（非破壊）。
     private sealed record CompletionResponse(
         string? Text, bool Sent, int? InputTokens, int? OutputTokens, string? Model, string? StopReason = null);

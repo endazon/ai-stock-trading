@@ -2,6 +2,10 @@
 #
 # PR がオープン/更新されたときに、計画書との整合・トレーサビリティの観点で AI レビューを行う。
 #
+# 位置づけ: reviewer スロット（検証実走付きレビューの実行主体）の Claude 用実装である
+#   （配役は ai-roster.json、正本は docs/ai-orchestration.md）。reviewer の同時有効は常に
+#   1 実装であり、別エンジンのレビューを並走させない（AI レビューの多重化は品質を上げない）。
+#
 # 有効化（このファイルは .example。AI_SETUP.md のプロファイルに従って有効化する）:
 #   - 拡張子から .example を外す（git mv claude-code-review.example.yml claude-code-review.yml）。
 #   - 認証シークレットを「どちらか一方のみ」登録する:
@@ -190,9 +194,9 @@ jobs:
           # 【読み取り系 git は必須】アクション自身の組み込みプロンプトが差分の取得手段を
           # 指示している（`git diff origin/main...HEAD` / `git log origin/main..HEAD` /
           # `git status`）。許可しないと差分の内容と無関係に**毎回必ず拒否が出る**
-          # （planning 側で同じ欠落により全 PR の CI が赤くなった。issue #146）。
+          # （planning 側で同じ欠落により全 PR の CI が赤くなった。issue planning#146）。
           #
-          # 【整形パイプと submodule 確認（issue #155）】拒否の実測から 2 つの穴が判った。
+          # 【整形パイプと submodule 確認（issue planning#155）】拒否の実測から 2 つの穴が判った。
           #   - `cat` / `head` / `tail` が 1 つも無かった。パイプは**各コマンドが個別に判定される**
           #     ため、`node scripts/x.js | tail -5` は先頭が許可済みでも tail で拒否される。
           #     報告に出るのは先頭コマンド名なので、原因が判りにくい形で毎回落ちる。
@@ -234,36 +238,34 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning rev-parse:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning grep:*),Bash(git -C planning rev-parse:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+          # 【プロンプトの書き方】prompt: の中身は毎 PR そのまま送信され課金される。事故の経緯・
+          # 実測値の記録は送信されないこの YAML コメント側へ書き、prompt には AI が従う指示だけを
+          # 置く（planning#416 の追随。#530）。prompt が禁じる各項目の経緯:
+          #   - サブエージェント禁止: CI では起動が完了せず停止し、本文未投稿のままジョブが終わる。
+          #   - バックグラウンド待ち禁止: 2026-08-14 の PR #489 で `dotnet test` を背景起動したまま
+          #     完了を待たずにターンを終える事故が 3 回連続で起き、3 回とも判定が投稿されず、
+          #     うち 2 回は success で終わった（#490。check-review-verdict.js 新設の起点）。
+          #   - 「検証の誠実性」節の由来: 権限拒否 12 件を伏せて「実測した ✅」と報告した事例。
+          #   - cd 禁止の実測: 1 回のレビューで cd 起点の拒否が 4 件出た。
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
             指摘を「重大 / 推奨 / 軽微」に分類してコメントせよ。
 
             【実行制約・最重要】
-            - このレビューは必ず単一セッション内で完結させること。サブエージェント（Task ツールに
-              よる spawn。`adr-guardian` / `traceability-auditor` / `general-purpose` などの
-              `.claude/agents/` 定義の起動を含む）を一切使用してはならない。CI 環境ではサブ
-              エージェントの起動が完了せず停止（ハング）し、レビュー本文が投稿されないまま
-              ジョブが終わる不具合が発生するためである。
-            - 「ADR 制約チェック」「トレーサビリティ監査」を含む全観点は、サブエージェントに委譲
-              せず、このセッション内で自分自身が Read / Bash(gh) 等の直接ツールで実施すること。
-            - レビューの最後に、下記フォーマットのサマリコメントを必ず自分で投稿してから終了する
-              こと。サブエージェントの結果待ちで停止したり、監査を委譲したまま終了してはならない。
-            - **コマンドをバックグラウンドで起動してはならない**（`&` での起動・「バックグラウンドで
-              実行して後で回収する」形のいずれも）。前景で実行し、**完了を待ってから次へ進むこと**。
-              2026-08-14 の PR #489 で、`dotnet test` をバックグラウンドで起動したまま
-              **その完了を待たずにターンを終える事故が 3 回連続で起きた**。3 回とも判定が
-              投稿されず、うち 2 回はジョブが success で終わっている（#490）。
-            - **サマリの投稿は、どの検証よりも優先される。** 時間が足りないと判断したら、
-              検証の完了を待たずに**「未検証（理由）」と書いてサマリを投稿すること**。
-              **判定を欠いたまま終了すると `check-review-verdict.js` がジョブを落とす**
-              —— 緑のまま「レビュー済み」と誤読されるのを防ぐためである。
+            - **単一セッション内で完結させる。** サブエージェント（Task ツール。`adr-guardian` /
+              `traceability-auditor` / `general-purpose` など `.claude/agents/` 定義の起動を含む）は
+              CI では停止するため一切使用しない。「ADR 制約チェック」「トレーサビリティ監査」を含む
+              全観点を、このセッション内で自分自身が Read / Bash 等の直接ツールで実施する。
+            - **サマリの投稿はどの検証よりも優先する。** レビューの最後に、下記フォーマットの
+              サマリコメントを必ず自分で投稿してから終了する。委譲したまま・**バックグラウンド実行
+              （`&` での起動・「後で回収する」形）の完了を待ったまま**終了してはならない
+              （判定ゼロのまま success になり「レビュー済み・指摘なし」と読まれる。
+              **判定を欠いたまま終了すると `check-review-verdict.js` がジョブを落とす**）。
+              時間が足りなければ「未検証（理由）」と書いて投稿すること。
 
             【検証の誠実性・最重要】
-            実運用で、レビューが**自分が実行できなかった検証を「実測した」として ✅ で報告した**
-            事例がある（権限拒否 12 件が発生していたが、本文に言及が 1 行も無かった）。
-            読み手にはこれを見分ける手段が無い。以下を厳守すること。
             - 「実測」「確認済み」「✅」と書けるのは、**このセッション内で実際にコマンドを実行し、
               その出力を自分の目で見た項目だけ**である。
             - 実行できなかった項目を、推測・PR 本文の引き写し・「そうなっているはず」で
@@ -281,8 +283,7 @@ jobs:
                 ときは**1 ファイルずつ個別のコマンドで**実行すること。
               - **`cd` によるディレクトリ移動**（`cd planning && git log …` の形を含む）。`cd` は
                 許可リストに無いため、後続が許可済みでも先頭で拒否される。submodule の履歴を見る
-                ときは **`git -C planning log / show / diff / ls-tree`** を使うこと（許可済み）。
-                この形の拒否は実際に発生している（1 回のレビューで `cd | git log` 4 件）。
+                ときは **`git -C planning log / show / diff / ls-tree / grep`** を使うこと（許可済み）。
               - **`git -C` に絶対パスを渡す形**（`git -C /home/runner/work/… log`）。許可は
                 `Bash(git -C planning log:*)` のように**相対パス `planning` を含む前方一致**で
                 与えてあるため、絶対パスは当たらない。`Bash(git -C:*)` の一括許可は書き込み系まで
@@ -383,7 +384,7 @@ jobs:
             セットアップ手順は失敗しても続行する構成のため、実行してエラーになったら
             「環境の不備で未検証」と書けばよい（**推測で ✅ にしない**）。
             計画書 submodule の**履歴**（pin の進み方・その差分・「変更が無いこと」）についても
-            `git -C planning log / show / diff / ls-tree` で検証できる。PR が submodule の pin に
+            `git -C planning log / show / diff / ls-tree / grep` で検証できる。PR が submodule の pin に
             言及している場合は、その主張を実際に確かめること。
 
             【.claude / CLAUDE.md を変更する PR での注意】

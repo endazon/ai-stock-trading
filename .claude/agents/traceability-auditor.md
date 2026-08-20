@@ -9,11 +9,13 @@ model: inherit
 
 ## 検査手順
 
-1. `CLAUDE.md` と `.claude/rules/traceability.md` を読み、規約を確認する。
-2. 計画リポジトリ（既定 `../project-planning`）の `projects/<name>/` から ID を収集する。
+規約（`CLAUDE.md`・`.claude/rules/traceability.md`）は**自動で読み込まれている。改めて Read しない。**
+
+1. 計画リポジトリ（既定 `../project-planning`）の `projects/<name>/` から ID を収集する。
    - 機能要求 `FR-\d+`、ユースケース `UC-\d+`、画面 `SC-\d+`、ADR `ADR-\d{4}`。
-3. 実装リポジトリのコード・コミットログ・PR から ID 参照を収集する（`rg` で `FR-\d+` 等を検索、`git log` でコミットメッセージを走査）。
-4. 双方向で突き合わせる。
+   - **収集は `rg -o` によるパターン抽出で行い、ファイル全文の Read は要求表・トレーサビリティ表・索引（README）に留める**。計画書の本文全読は検査に不要である。
+2. 実装リポジトリのコード・コミットログ・PR から ID 参照を収集する（`rg` で `FR-\d+` 等を検索、`git log` でコミットメッセージを走査）。
+3. 双方向で突き合わせる。
 
 ## 複数プロジェクトを跨ぐ場合の除外規則
 

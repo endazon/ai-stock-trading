@@ -47,7 +47,7 @@ public static class CostCalculator
     /// </para>
     /// <para>
     /// FR-17, 05_trading-assumptions §4「解が無い領域では見送る」（利用者裁定 2026-08-08・
-    /// project-planning#289）, #461, IADR-0177: <b>3 経路（共有契約・採算ゲート・本関数）が
+    /// planning#289）, #461, IADR-0177: <b>3 経路（共有契約・採算ゲート・本関数）が
     /// 同じ意味を返す。</b> 本関数は 2026-08-08 まで <c>InvalidOperationException</c> を送出しており、
     /// 通過させない向きは合っていたが<b>「見送り」とは壊れ方が違った</b>（処理ごと落ちる）。
     /// </para>

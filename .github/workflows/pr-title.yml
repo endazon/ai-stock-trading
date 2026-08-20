@@ -55,4 +55,9 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           # bot 判定は作成者の**ログイン名**で行う（`user.type` ではない。上のコメント参照）。
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          # 末尾 `(#NNN)` が **PR 自身の番号**かを見るために渡す。
+          # **渡さないと形状しか見られず、起点 issue の番号を書いた PR が素通りする。**
+          # スクリプト側は未設定なら従来どおり形状のみを見る（コミット件名モードには PR 番号が
+          # 無いため、必須にすると commit-messages ジョブが全滅する）。
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node scripts/check-commit-messages.js

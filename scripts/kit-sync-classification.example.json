@@ -42,12 +42,15 @@
     "A": [
       ".claude/agents/adr-guardian.md",
       ".claude/rules/traceability.md",
+      "docs/traceability-appendix.md",
+      "docs/ai-orchestration.md",
       "docs/templates/adr_template.md"
     ],
     "B": {
       ".claude/settings.json": "1. リポジトリ構成（本リポの submodule 構成に合わせた許可コマンド）",
       ".github/workflows/ci.yml": "2. 技術スタックとその CI 配線",
       "AI_SETUP.md": "5. キットが選択を委ねている欄（利用可能な AI のチェックボックス）",
+      "ai-roster.json": "5. キットが選択を委ねている欄（役割スロットの配役とフォールバック連鎖）",
       "scripts/commit-allowlist.json": "5. キットが追記を委ねている欄（allow 配列）",
       "docs/README.md": "X. 4 種に当たらない（キット側の記述の不足を是正した）。環流済み。追跡: <自リポ>#NNN / planning#NNN"
     },

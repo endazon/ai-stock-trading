@@ -24,7 +24,7 @@ public enum RejectionReason
 
     // --- 空売り専用の拒否理由 9 種（FR-10, ADR-0016 決定10。#329 第 2 段階・#374 で 7 種から改訂） ---
     // **9 種すべてクラス A**（統制が設計どおり作動した記録）である。「統制違反 0 件」の計上対象は
-    // クラス C（BannedSymbol / ManipulativeOrderPattern）限定であり（project-planning#58 の裁定）、
+    // クラス C（BannedSymbol / ManipulativeOrderPattern）限定であり（planning#58 の裁定）、
     // 9 種はその件数に影響しない。分類は RejectionReasonClassification が単一情報源である。
     //
     // **メンバの序数は不変**である。拒否理由は HTTP 経路で整数として往来する（段階ゲートの拒否理由）ため、
@@ -63,7 +63,7 @@ public enum RejectionReason
     /// 逆指値を受け付けない銘柄・時間帯では建玉を持たない」・ADR-0016 決定2(b)。
     /// <para>
     /// #329 第 2 段階で実装側が先行して新設したコードであり（IADR-0131 決定3・計画へ環流）、
-    /// **2026-08-04 に計画側が同名で追認した**（ADR-0016 決定10 の改訂・project-planning#178）。
+    /// **2026-08-04 に計画側が同名で追認した**（ADR-0016 決定10 の改訂・planning#178）。
     /// クラス分類は**クラス A**である。
     /// </para>
     /// </summary>
@@ -95,7 +95,7 @@ public enum RejectionReason
     /// FR-20, ADR-0016 決定8: **その運用段階では当該商品種別の新規建てを行わない。**
     /// Stage 2（最小実弾）は現物のみであり、信用買い・空売りは Stage 3 からである。
     /// <para>
-    /// **適用は新規建てのみ**（project-planning#179 の裁定）。手仕舞い・損切りは止めない——
+    /// **適用は新規建てのみ**（planning#179 の裁定）。手仕舞い・損切りは止めない——
     /// 段階を上げる前に建てた建玉を閉じられないと、FR-10 の不変条件（ADR-0009）に反する。
     /// </para>
     /// </summary>
@@ -120,7 +120,7 @@ public enum RejectionReason
     // 起案時に計画が明示していたのは `CashAccountSettlementHold` の 1 種のみであり、残る 2 種は
     // 決定3（照会失敗・設定値との食い違いで発注を止める）と決定4-3（3 回目の手前で停止）が
     // **統制としては要求しているが拒否理由コードを与えていない**ために実装が先行して追加したものである。
-    // **その環流（feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md → project-planning#220 →
+    // **その環流（feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md → planning#220 →
     // 質問票 第 13 回 Q8-1）を計画が受理し、同名・同クラスで追認した。したがって計画との差異は解消している。**
     // 先例は `StopOrderRequired`（#329 で実装が先行し 2026-08-04 に計画が同名で追認）であり、本件も同じ形である。
     //

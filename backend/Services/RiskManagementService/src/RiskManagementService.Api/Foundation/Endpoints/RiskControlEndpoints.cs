@@ -88,7 +88,7 @@ internal static class RiskControlEndpoints
                 return Results.BadRequest(new { error = "from は to 以前の日付を指定してください。" });
 
             // **［2026-08-08 改定］期間が観測の届いた取引日で覆われているかを返す**
-            //（計画 FR-21・裁定 project-planning#292）。従前は「最終観測時刻が非 null か」であり、
+            //（計画 FR-21・裁定 planning#292）。従前は「最終観測時刻が非 null か」であり、
             // **初回観測より前の期間や観測が途中で止まった期間が「正当な 0」として報告されていた**。
             var observedDays = arrivals.GetObservedDaysBetween(fromDay, toDay);
 

@@ -4,12 +4,16 @@
  *
  * **「緑だが検査されていない」を止める。**
  *
+ * 適用範囲: claude-code-action（claude-code-review）の投稿挙動専用である。reviewer スロットを
+ *   他エンジンへ差し替えた場合は対象外であり、**対象外は「検査済み」を意味しない** —— 同等の
+ *   安全弁は差し替える側の責務である（docs/ai-orchestration.md §6）。
+ *
  * claude-code-action は、AI が判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）を投稿しないまま
  * ターンを終えても `success` で終わる。ジョブは緑になり、PR には進行中の
  * プレースホルダだけが残る。**「レビュー済み・指摘なし」と読まれるが、実際には
  * 何も判定されていない。マージも止まらない。**
  *
- * 実測（planning#333。実装 ai-stock-trading#489 / #490 / `IADR-0190`）:
+ * 実測（planning#333。実装 endazon/ai-stock-trading#489 / endazon/ai-stock-trading#490 / `IADR-0190`）:
  * 同一 PR で 3 回連続、判定の投稿が無かった。
  *
  *   | 試行 | 実行時間 | 結論      | 判定 | 形                        |

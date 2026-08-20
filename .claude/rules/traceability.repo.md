@@ -3,6 +3,21 @@
 `traceability.md`（キット配布物）を補う、**ai-stock-trading 固有**の取り決めを置く。
 配布物は直接編集しない（同期のたびに手動マージが要るため）。同ディレクトリの `*.md` は自動適用される。
 
+## 起点 ID の種別（固有）
+
+裸の ID は**本リポジトリ（ai-stock-trading）の計画書**を指す。レンジは
+`FR-01..21` / `UC-01..07` / `SC-01..03`（**走査基準: planning `d5fa84b`**。#532）。
+
+- **この節は機械の単一情報源である。** `scripts/check-test-traceability.js` の `readPlanIds()` が
+  本節のレンジ表記（バッククォート囲みの `FR-01..21` の形）を読み、`check-commit-messages.js` が
+  コミット件名・PR タイトルの起点 ID の**実在性**を検査する。**節を消す・改名する・書式を崩すと
+  検査器は例外で落ちる**（黙って 0 件検査へ落ちない fail-loud）。レンジを更新したら pin も直す。
+- **`SC-13` / `SC-16` は本リポの画面ではない。** 計画 `05_screens/01_screens.md` に現れるが、
+  いずれも**基盤（microservices-platform）の画面を明示的に参照**する地の文である
+  （例: 「基盤の SC-16（アカウント設定）へ遷移する」）。実在集合へ入れない。
+- **`NFR` はレンジを持たない**（無採番を許す 2 場合は配布物 `traceability.md` が定める）。
+  `ADR` / `IADR` の実在性は該当ファイルの有無で検査するため本節の対象外。
+
 ## クロスリポジトリ参照の表記（確定・2026-08-15）
 
 キット規約は「**プロジェクト内で短縮形とフルパス形式のどちらに寄せるかを最初に決め、混在させない**」と
@@ -27,13 +42,18 @@
 > **短縮名にリポジトリ名そのものを与えても、自分自身への置換を提案して違反にし続ける**（実測）。
 > 長い表記を採るには**キット配布物の改修を計画側へ環流する**必要がある。
 
-### 検査の置換点（`scripts/scripts.repo.test.js` が与える）
+### 検査の置換点（`check-cross-repo-refs.js` のファイル内で埋める。#530 / [IADR-0206](../../docs/adr/IADR-0206_kit-pin-179a69a-substitution-points-in-file.md)）
 
 ```
-CROSS_REPO_NAMES=project-planning:planning,microservices-platform:MSP
-CROSS_REPO_SELF_NAMES=AST,ai-stock-trading
-CROSS_REPO_EXCLUDES=:!planning,:!docs/specs,:!feedback
+CROSS_REPOS          = project-planning:planning, microservices-platform:MSP
+SELF_NAMES           = AST, ai-stock-trading
+EXCLUDE_PATHSPECS    = :!planning, :!docs/specs, :!feedback
+KNOWN_OWNERS         = endazon
 ```
+
+旧方式（env 注入でバイト一致を温存。IADR-0200 決定5）は、キット版 `scripts.test.js` が実データ本走を
+env なしの素実行で行うようになり成立しなくなった。同名の環境変数（`CROSS_REPO_*`）による上書きは
+引き続き有効で、`scripts.repo.test.js` のテストが同値を与えて検査する。
 
 ### 除外とその理由
 
