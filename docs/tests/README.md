@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
 iadrs: [IADR-0049, IADR-0127, IADR-0128]
-specs: [01_requirements, 05_trading-assumptions, 20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, traceability]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry]
 issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344, MSP#446]
 -->
 

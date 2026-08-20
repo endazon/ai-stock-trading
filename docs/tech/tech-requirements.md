@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: []
 adrs: [MSP:ADR-0019, MSP:ADR-0030]
 iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128]
-specs: [12_backend-application-stack, ADR-0019_unit-first-repo-structure, ADR-0030_backend-application-libraries]
+specs: []
 issues: [#352, #353, MSP#266]
 -->
 

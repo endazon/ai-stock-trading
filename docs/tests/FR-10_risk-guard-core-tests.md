@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-12, FR-17, FR-19, FR-20, UC-01, UC-02, UC-06]
 adrs: [ADR-0003]
 iadrs: [IADR-0003, IADR-0006, IADR-0008, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0152]
-specs: [01_requirements, 05_trading-assumptions, 20260729_270_moomoo-fill-polling]
+specs: [20260729_270_moomoo-fill-polling]
 issues: [#11, #12, #25, #257, #26, #27, #270, #28, #29, #292, #30, #32, #364]
 -->
 

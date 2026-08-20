@@ -8,9 +8,9 @@ author: claude
 ---
 <!-- trace:
 ids: [FR-03, FR-10]
-adrs: [ADR-0013]
+adrs: [ADR-0013, MSP:ADR-0027, MSP:ADR-0028]
 iadrs: [IADR-0106, IADR-0129]
-specs: [20260803_354_wolverine-migration, ADR-0013_messaging-follow-wolverine-kafka, ADR-0027_messaging-wolverine, ADR-0028_broker-rabbitmq-kafka]
+specs: [20260803_354_wolverine-migration]
 issues: [#258, #354, #45]
 -->
 

@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-19]
 adrs: [ADR-0007]
 iadrs: [IADR-0006, IADR-0040]
-specs: [01_requirements, 06_daytrading-review, 20260711_manipulation-detector]
+specs: [20260711_manipulation-detector]
 issues: [#13, #17, #49, #82]
 -->
 

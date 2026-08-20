@@ -12,7 +12,6 @@ plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (NFR: 品質・テスト)
 related_specs:
   - "../adr/IADR-0049_integration-e2e-foundation.md（E2E 基盤の決定・本変更は補助経路）"
-  - "../adr/IADR-0050_integration-e2e-multiservice-auth.md（Keycloak/マルチサービス E2E）"
 ---
 
 # 仕様書: Docker API 非依存で統合 E2E を実走する（Issue #82 後続）

@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
 iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158]
-specs: [01_requirements, 06_daytrading-review, 20260711_backtest-foundation, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, ADR-0008_staged-gates-and-backtest, ADR-0023_us-daily-ohlc-history-source, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
+specs: [20260711_backtest-foundation, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
 issues: [#20, #82, #164, #208, #211, #382, #417]
 -->
 

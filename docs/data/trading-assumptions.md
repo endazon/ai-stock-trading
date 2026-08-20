@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-13, FR-17, FR-18, UC-06]
 adrs: [ADR-0001]
 iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173]
-specs: [01_requirements, 05_trading-assumptions, 20260710_configuration-assumptions]
+specs: [20260710_configuration-assumptions]
 issues: [#14, #19, #139, #358]
 -->
 

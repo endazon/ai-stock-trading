@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-11, FR-14, FR-19, FR-20, SC-02, SC-03, UC-06]
 adrs: [ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, ADR-0028]
 iadrs: [IADR-0051, IADR-0127, IADR-0131, IADR-0132, IADR-0152, IADR-0153, IADR-0165, IADR-0182]
-specs: [01_requirements, 05_trading-assumptions, 06_daytrading-review, 20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, ADR-0007_trading-guard-and-margin, ADR-0016_short-selling-staged-release, ADR-0021_us-account-type-dual-support, ADR-0025_settled-cash-poc-and-gfv-counting, FR-10_risk-controls-tests, FR-19_manipulation-detection-tests, FR-19_trading-guard, IADR-0132_product-type-tri-state-and-guard-scope, IADR-0153_broker-account-type-supply-and-fail-closed, IADR-0165_gfv-self-counting-and-settled-cash-source-ban, README]
+specs: [20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, FR-10_risk-controls-tests, FR-19_manipulation-detection-tests, FR-19_trading-guard, IADR-0132_product-type-tri-state-and-guard-scope, IADR-0153_broker-account-type-supply-and-fail-closed, IADR-0165_gfv-self-counting-and-settled-cash-source-ban, README]
 issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425, #464]
 -->
 

@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-05, FR-20]
 adrs: [ADR-0002]
 iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111]
-specs: [ADR-0002_broker-selection]
+specs: []
 issues: [#20, #24, #131, #132, #141, #204, #268]
 -->
 

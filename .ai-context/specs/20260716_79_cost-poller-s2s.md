@@ -13,7 +13,6 @@ created: 2026-07-16
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (NFR: 費用統制)
 related_specs:
-  - "../adr/IADR-0031_cost-control-poller-application.md（poller が同期照会して適用する決定）"
   - "../adr/IADR-0051_service-to-service-auth.md（s2s 認証・読み取りは OwnerOrService）"
   - "20260715_79_llm-cost-metering-impl.md（#79 の費用計測スライス・PR #134 でマージ済）"
 ---

@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
 iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0183]
-specs: [01_architecture-overview, 05_trading-assumptions, ADR-0007_trading-guard-and-margin, ADR-0008_staged-gates-and-backtest]
+specs: []
 issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465]
 -->
 

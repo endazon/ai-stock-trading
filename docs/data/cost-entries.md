@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-09, FR-16, FR-17, NFR-13, NFR-15]
 adrs: [ADR-0001]
 iadrs: [IADR-0021, IADR-0027]
-specs: [05_trading-assumptions, 20260710_cost-control]
+specs: [20260710_cost-control]
 issues: [#9, #14, #19, #21, #22, #23]
 -->
 

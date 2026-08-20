@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-11, FR-19, UC-06, UC-07]
 adrs: [ADR-0007]
 iadrs: [IADR-0132]
-specs: [20260807_380_guard-scope-arbitration, ADR-0007_trading-guard-and-margin]
+specs: [20260807_380_guard-scope-arbitration]
 issues: [#380]
 -->
 

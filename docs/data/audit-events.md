@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-04, FR-08, FR-10, FR-11, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003]
 iadrs: [IADR-0015, IADR-0019]
-specs: [01_architecture-overview, 01_requirements, 01_usecases, 20260710_audit-log]
+specs: [20260710_audit-log]
 issues: [#17, #18]
 -->
 

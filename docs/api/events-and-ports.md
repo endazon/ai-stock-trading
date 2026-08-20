@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-09, FR-10, FR-11, FR-12, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013]
 iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, MSP:IADR-0049]
-specs: [01_architecture-overview, ADR-0002_broker-selection]
+specs: []
 issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354]
 -->
 

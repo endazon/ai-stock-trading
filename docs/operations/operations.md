@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-05, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
 adrs: [ADR-0002, ADR-0007, ADR-0013]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187]
-specs: [20260716_132_opend-production-readiness, ADR-0002_broker-selection]
+specs: [20260716_132_opend-production-readiness]
 issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, MSP#266, planning#54]
 -->
 

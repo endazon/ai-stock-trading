@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-05, FR-12]
 adrs: [ADR-0002]
 iadrs: [IADR-0016, IADR-0056, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, ADR-0002_broker-selection]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction]
 issues: [#132, #268, #269, #270]
 -->
 

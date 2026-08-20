@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0016, ADR-0018, ADR-0019, ADR-0023]
 iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157]
-specs: [01_requirements, 06_daytrading-review, 20260711_backtest-foundation, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, ADR-0008_staged-gates-and-backtest, ADR-0019_moomoo-poc-margin-paper-account, ADR-0023_us-daily-ohlc-history-source]
+specs: [20260711_backtest-foundation, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration]
 issues: [#20, #82, #99, #100, #208, #382]
 -->
 

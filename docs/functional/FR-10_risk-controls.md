@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, ADR-0026, ADR-0027, ADR-0028]
 iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183]
-specs: [01_requirements, 05_trading-assumptions, 06_daytrading-review, 20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, ADR-0003_ai-decision-guardrails, ADR-0016_short-selling-staged-release, ADR-0018_risk-defaults-sync-and-stage0-dd, ADR-0019_moomoo-poc-margin-paper-account]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide]
 issues: [#12, #31, #33, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, planning#292]
 -->
 

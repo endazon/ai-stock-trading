@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-12, FR-13, FR-20, SC-01, SC-02, SC-03, UC-01, UC-02, UC-06]
 adrs: []
 iadrs: [IADR-0111, IADR-0127, IADR-0140, IADR-0142]
-specs: [01_requirements, 01_screens, 05_trading-assumptions, 20260803_343_regression-test-foundation, 20260805_334_broker-provider-axis, FR-12_paper-trade, FR-20_staged-gates-tests, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, README]
+specs: [20260803_343_regression-test-foundation, 20260805_334_broker-provider-axis, FR-12_paper-trade, FR-20_staged-gates-tests, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, README]
 issues: [#334, #343, #344, #386, planning#144]
 -->
 

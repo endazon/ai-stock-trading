@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-10, FR-12, FR-13, FR-20, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019]
 iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162]
-specs: [01_requirements, 01_usecases, 20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
 issues: [#20, #165, #331, #334, #340, #342, #419, #424, planning#31, planning#33]
 -->
 

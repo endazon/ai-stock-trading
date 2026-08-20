@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
 iadrs: [IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176]
-specs: [20260807_450_security-spec-from-measurement, ADR-0012_mcp-exposure-policy]
+specs: [20260807_450_security-spec-from-measurement]
 issues: [#24, #346, #450, #456, MSP#445]
 -->
 

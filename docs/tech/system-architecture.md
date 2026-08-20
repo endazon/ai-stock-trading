@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-13, FR-14, NFR-13]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0006, MSP:ADR-0010]
 iadrs: [IADR-0019, IADR-0021, IADR-0027, IADR-0048, IADR-0052, IADR-0053, IADR-0055, IADR-0056, IADR-0061]
-specs: [01_architecture-overview, ADR-0001_platform-reuse]
+specs: []
 issues: []
 -->
 

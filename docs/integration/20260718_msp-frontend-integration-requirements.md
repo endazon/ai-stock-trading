@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-13, FR-17, UC-06]
 adrs: [ADR-0001]
 iadrs: [IADR-0080, IADR-0128, MSP:IADR-0056]
-specs: [01_architecture-overview, 20260718_SC-01_settings, 20260718_frontend-settings-screen, ADR-0001_platform-reuse, IADR-0080_frontend-settings-screen]
+specs: [20260718_SC-01_settings, 20260718_frontend-settings-screen, IADR-0080_frontend-settings-screen]
 issues: [#106, #185, #275, #353]
 -->
 

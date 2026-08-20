@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [NFR-03, NFR-07]
 adrs: [ADR-0006]
 iadrs: [IADR-0052, IADR-0061, IADR-0094, MSP:IADR-0077]
-specs: [ADR-0006_hosting-hetzner]
+specs: []
 issues: [#24]
 -->
 
