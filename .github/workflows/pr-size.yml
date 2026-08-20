@@ -51,7 +51,8 @@ jobs:
           # 数えるのは**実装 diff だけ**である（planning 裁定 2026-08-11・planning#312）。
           #
           #   - 生成物・ロックファイル: 人が読む対象ではない。
-          #   - **必須文書**（`docs/` = 作業仕様書・実装 ADR ほか、`feedback/` = 環流記録）:
+          #   - **必須文書**（`docs/` = 機能・画面・テスト・運用等の生きた仕様書、
+          #     `.ai-context/` = 実装 ADR・作業仕様書ほか AI 向け文脈資料・凍結記録）:
           #     **issue を細かく割るほど 1 PR あたりの文書は増える**ため、
           #     文書量は「複数 issue の混在」という本検査の目的に対して**逆向きに動く指標**である。
           #     実測（MSP 直近 30 PR・2026-08-11）では**必須文書だけで中央値 393 行**であり、
@@ -70,6 +71,7 @@ jobs:
           #     「効いている」と誤読される）。
           EXCLUDES: >-
             :(exclude)docs/**
+            :(exclude).ai-context/**
             :(exclude)feedback/**
             :(exclude)planning
             :(exclude)CHANGELOG.md
@@ -98,7 +100,7 @@ jobs:
             echo "## PR サイズの警告"
             echo
             echo "**実装 diff の追加行数が ${{ steps.measure.outputs.added }} 行**で、目安の 400 行を超えている。"
-            echo "（除外前の全追加行数は ${{ steps.measure.outputs.total }} 行。差は生成物と必須文書〔\`docs/\` \`feedback/\`〕である）"
+            echo "（除外前の全追加行数は ${{ steps.measure.outputs.total }} 行。差は生成物と必須文書〔\`docs/\` \`.ai-context/\`〕である）"
             echo
             echo "**マージは止めていない。** 次のどれかに当たらないかだけ確認すること。"
             echo

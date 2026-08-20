@@ -1,7 +1,7 @@
 # infra/ — ローカル実行の補助アセット（dev 専用）
 
 `docker-compose.yml` が参照する開発用インフラ設定。**すべて dev 専用**であり、本番へは import/流用しない。
-本番の資格情報・構成は Vault/Secrets（[ADR-0006](../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md) / #24）で管理する。起動手順は [docs/how-to/local-run.md](../docs/how-to/local-run.md)。
+本番の資格情報・構成は Vault/Secrets（ADR-0006（計画リポ） / #24）で管理する。起動手順は [docs/how-to/local-run.md](../docs/how-to/local-run.md)。
 
 ## postgres/init/01-create-databases.sql
 

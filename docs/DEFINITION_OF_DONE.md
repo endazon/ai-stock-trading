@@ -12,7 +12,7 @@
 
 ## 全面再実装（#344）中の追加条件
 
-全面再実装の子 issue（#329〜#348）では、上記に加えて次を満たす（[IADR-0126](adr/IADR-0126_reimplementation-sequencing-and-pr-granularity.md) / [IADR-0127](adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
+全面再実装の子 issue（#329〜#348）では、上記に加えて次を満たす（[IADR-0126](../.ai-context/adr/IADR-0126_reimplementation-sequencing-and-pr-granularity.md) / [IADR-0127](../.ai-context/adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
 
 - [ ] **1 issue = 1 PR** である（複数 issue をまとめていない・1 issue を分割していない）。PR 本文に `Closes #<issue>` を書いた
 - [ ] 依存する先行 issue がマージ済みである（フェーズ順。フェーズ内は並行可）

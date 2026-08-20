@@ -4,7 +4,7 @@ argument-hint: （省略可）対象の作業仕様書パス or 起点 ID
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-引数 `$ARGUMENTS`: 検証対象の作業仕様書（`docs/specs/...`）または起点 ID（省略時は直近の変更・作業仕様書）。
+引数 `$ARGUMENTS`: 検証対象の作業仕様書（`.ai-context/specs/...`）または起点 ID（省略時は直近の変更・作業仕様書）。
 
 目的: 実装が「動く」かつ「受け入れ基準を満たす」ことを機械的・客観的に確認する（AI 自身による完了前検証）。
 

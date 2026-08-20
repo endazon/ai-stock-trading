@@ -14,38 +14,42 @@ const { execSync } = require('child_process');
 
 module.exports = ({ ok, assert }) => {
 
-  // --- check-doc-links.js: --require-planning / planningPopulated（Issue #104 / PR #105） ---
+  // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
   const osDl = require('os');
   const pathDl = require('path');
-  const { parseArgs: dlParseArgs, planningPopulated } = require('./check-doc-links.js');
+  const { parseArgs: dlParseArgs, DEFAULT_DIRS: dlDefaultDirs } = require('./check-doc-links.js');
 
-  ok('check-doc-links: parseArgs 既定は requirePlanning=false', () => {
+  ok('check-doc-links: parseArgs 既定は docs/ と .ai-context/ を両方走査する', () => {
     const a = dlParseArgs([]);
-    assert.strictEqual(a.requirePlanning, false);
-    assert.strictEqual(a.dir, 'docs');
+    assert.deepStrictEqual(a.dirs, ['docs', '.ai-context']);
+    assert.deepStrictEqual(dlDefaultDirs, ['docs', '.ai-context']);
   });
-  ok('check-doc-links: --require-planning で requirePlanning=true', () => {
-    assert.strictEqual(dlParseArgs(['--require-planning']).requirePlanning, true);
+  ok('check-doc-links: --dir を明示すると既定を上書きする', () => {
+    const a = dlParseArgs(['--dir', 'notes']);
+    assert.deepStrictEqual(a.dirs, ['notes']);
   });
-  ok('check-doc-links: --dir と --require-planning の併用', () => {
-    const a = dlParseArgs(['--dir', 'notes', '--require-planning']);
-    assert.strictEqual(a.dir, 'notes');
-    assert.strictEqual(a.requirePlanning, true);
+  ok('check-doc-links: --dir を複数回渡すと両方が対象になる', () => {
+    const a = dlParseArgs(['--dir', 'notes', '--dir', 'more']);
+    assert.deepStrictEqual(a.dirs, ['notes', 'more']);
   });
-  ok('check-doc-links: planningPopulated は planning/projects 実在で true', () => {
-    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-pop-'));
-    fsDl.mkdirSync(pathDl.join(root, 'planning', 'projects'), { recursive: true });
-    assert.strictEqual(planningPopulated(root), true);
-  });
-  ok('check-doc-links: planningPopulated は空プレースホルダ（planning/ のみ）で false', () => {
-    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-empty-'));
-    fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true });
-    assert.strictEqual(planningPopulated(root), false);
-  });
-  ok('check-doc-links: planningPopulated は planning/ 不在で false', () => {
-    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-none-'));
-    assert.strictEqual(planningPopulated(root), false);
+  ok('check-doc-links: 資料再編後は .ai-context/ 配下も実在検査の対象になる', () => {
+    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-aictx-'));
+    fsDl.mkdirSync(pathDl.join(root, '.ai-context', 'adr'), { recursive: true });
+    fsDl.writeFileSync(
+      pathDl.join(root, '.ai-context', 'adr', 'IADR-0001_x.md'),
+      '# X\n\n[missing](./IADR-9999_missing.md)\n'
+    );
+    let out = '';
+    try {
+      out = execSync(
+        `node ${JSON.stringify(pathDl.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(pathDl.join(root, '.ai-context'))}`,
+        { encoding: 'utf8' }
+      );
+    } catch (e) {
+      out = (e.stdout || '').toString() + (e.stderr || '').toString();
+    }
+    assert.match(out, /破損リンク 1 件/, '.ai-context/ 配下の破損リンクを検出する');
   });
 
   // --- check-doc-links: 同一ディレクトリ内の裸ファイル名リンク（NFR / #399 / IADR-0147） ---
@@ -138,7 +142,9 @@ module.exports = ({ ok, assert }) => {
     assert.match(run(), /OK: /, '復元しても緑に戻らない（検査が効きすぎている）');
   });
 
-  // ---- 否定形の確認（誤検出しないこと）: N1〜N11。正の確認 5 件に対し 11 件 ----
+  // ---- 否定形の確認（誤検出しないこと）: N1〜N10。正の確認 5 件に対し 10 件
+  //      （旧 N11「未 populate な submodule 配下は skip される」は、資料再編 ADR-0029 で
+  //      planning submodule 自体が撤去され対象外になったため削除した） ----
 
   ok('check-doc-links[N1]: 実在する裸ファイル名リンクは破損としない', () => {
     const { docs } = mkBareFixture();
@@ -209,39 +215,6 @@ module.exports = ({ ok, assert }) => {
         '設定は `no-such-config.yaml` に置く。\n'
     );
     assert.deepStrictEqual(dlCollect(fp), []);
-  });
-
-  ok('check-doc-links[N11]: 未 populate な submodule 配下は従来どおり skip される', () => {
-    // 裸ファイル名は必ず「その Markdown 自身のディレクトリ」に解決するため、裸ファイル名が
-    // 未 populate submodule 配下へ落ちることは構造上あり得ない（その Markdown 自身が submodule
-    // 内に必要になるが、未 populate＝空ディレクトリなので存在し得ない）。よってここで固定するのは
-    // 「判定拡張が既存の skip 分岐を壊していないこと」であり、`/` 形と裸ファイル名の破損を
-    // 同一フィクスチャに同居させて確認する。
-    const root = fsDl.mkdtempSync(pathDl.join(osDl.tmpdir(), 'dl-sub-'));
-    fsDl.writeFileSync(pathDl.join(root, '.gitmodules'), '[submodule "planning"]\n\tpath = planning\n\turl = x\n');
-    fsDl.mkdirSync(pathDl.join(root, 'planning'), { recursive: true }); // 空＝未 populate
-    const docs = pathDl.join(root, 'docs');
-    fsDl.mkdirSync(docs, { recursive: true });
-    fsDl.writeFileSync(
-      pathDl.join(docs, 'a.md'),
-      '# A\n\n- [plan](../planning/projects/x/07_adr/ADR-0001_a.md)\n' +
-        '- [bare](IADR-9999_no-such.md)\n'
-    );
-    let out = '';
-    try {
-      execSync(`node ${JSON.stringify(pathDl.join(__dirname, 'check-doc-links.js'))} --dir ${JSON.stringify(docs)}`, {
-        env: { ...process.env, DOC_LINKS_ROOT: root },
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      assert.fail('裸ファイル名の破損で exit 1 になっていない');
-    } catch (e) {
-      if (e && e.code === 'ERR_ASSERTION') throw e;
-      out = String(e.stdout || '') + String(e.stderr || '');
-    }
-    assert.match(out, /IADR-9999_no-such\.md/, '裸ファイル名の破損は検出されること');
-    assert.doesNotMatch(out, /ADR-0001_a\.md/, '未 populate submodule 配下は破損として挙げないこと');
-    assert.match(out, /未 populate の submodule 配下 1 件/, '除外は黙って行わず件数を報告すること');
   });
 
   // --- validate-pipeline-config: 実 pipeline.json の契約テスト -------------------
@@ -964,75 +937,8 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
   });
 
-  // --- 環流記録の `status` 語彙（NFR / #477 / IADR-0188） ---
-  //
-  // **伝達の判定そのものは kit の `check-feedback-dispatched.js` が自己試験で守る**ため、
-  // ここで二重に書かない（書くと kit 同期のたびに二重の追随が要る。IADR-0047 決定1）。
-  //
-  // **本リポが独自に守るのは `status` の語彙だけである。** kit の `feedback/README.md` は
-  // 「**この語彙を検査する機械は無い。値の誤りは沈黙する**」と明記しており、実際に
-  // **本リポは語彙外の `resolved` を 8 件持っていた**（planning#323 の裁定 2026-08-14 が名指しで是正を指示）。
-  // 同じ kit を配った 2 リポジトリで語彙が割れた**同型 2 回目**であるため、番人を置く
-  // （planning#296「検査器・規約の追加は同型の事故が 2 回から」）。
-  //
-  // **検査器ではなくリポジトリ固有の回帰テストとして置く。** kit 由来ファイルを改変せずに済み、
-  // 語彙が kit 側で変わったときは本テストだけを追随させればよい。
+
   const pathFb = require('path');
-  const fsFb = require('fs');
-
-  /** kit `feedback/README.md` §`status` の語彙（4 値）。**増やすときは kit 側の節を先に直すこと。** */
-  const FEEDBACK_STATUSES = ['open', 'awaiting-decision', 'accepted', 'rejected'];
-
-  const feedbackRecords = () => {
-    const dir = pathFb.resolve(__dirname, '..', 'feedback');
-    return fsFb
-      .readdirSync(dir)
-      .filter((f) => f.endsWith('.md') && !['README.md', 'TEMPLATE.md'].includes(f))
-      .map((f) => ({ file: f, text: fsFb.readFileSync(pathFb.join(dir, f), 'utf8') }));
-  };
-
-  const statusOf = (text) => {
-    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    if (!m) return null;
-    const s = m[1].match(/^status:[ \t]*(\S+)[ \t]*$/m);
-    return s ? s[1] : null;
-  };
-
-  ok('実ツリー: 環流記録を 1 件以上読めている（0 件なら以降の主張は空振りである）', () => {
-    assert.ok(feedbackRecords().length > 0);
-  });
-
-  // **語彙外の値の再混入を止める。** `resolved` はここで落ちる。
-  ok('実ツリー: 環流記録の status が kit の語彙（4 値）の内にある（#477 の回帰）', () => {
-    const bad = feedbackRecords()
-      .map(({ file, text }) => ({ file, status: statusOf(text) }))
-      .filter(({ status }) => !FEEDBACK_STATUSES.includes(status));
-    assert.deepStrictEqual(bad, [], `語彙は ${FEEDBACK_STATUSES.join(' / ')} である`);
-  });
-
-  // **`status` に伝達の軸を混ぜない**（planning#323 の裁定）。伝達は下の 2 鍵が担う。
-  ok('実ツリー: 環流記録が dispatched: を true / false のいずれかで持つ（#477 の回帰）', () => {
-    const bad = feedbackRecords()
-      .filter(({ text }) => !/^dispatched:[ \t]*(true|false)[ \t]*$/m.test(text))
-      .map(({ file }) => file);
-    assert.deepStrictEqual(bad, [], 'YAML 1.1 の no / off も偽になるため true / false に限る');
-  });
-
-  ok('実ツリー: 伝達済みの記録は planning_issue: を伴う（#477 の回帰）', () => {
-    const bad = feedbackRecords()
-      .filter(({ text }) => /^dispatched:[ \t]*true[ \t]*$/m.test(text))
-      .filter(({ text }) => !/^planning_issue:[ \t]*\S+[ \t]*$/m.test(text))
-      .map(({ file }) => file);
-    assert.deepStrictEqual(bad, [], '伝達したなら到達先の番号が残っていること');
-  });
-
-  // kit 検査器の判定規則そのものが壊れていれば、実データに対する結果は意味を持たない。
-  ok('実ツリー: kit の伝達検査器の自己試験が通る（#477 の回帰）', () => {
-    const { execFileSync } = require('child_process');
-    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-feedback-dispatched.js'), '--self-test'], {
-      stdio: 'pipe',
-    });
-  });
 
   // --- 計画 ID の修飾（NFR / #477 / IADR-0189） ---
   //
@@ -1067,15 +973,17 @@ module.exports = ({ ok, assert }) => {
   // よって**環境変数を自前で明示的に与えて**呼ぶ。CI 側の env を消しても、こちらが赤くなる。
   //
   // 除外の根拠は `.claude/rules/traceability.repo.md`（全数を理由つきで記載）。要点:
-  //   - `docs/specs/` `feedback/` は **point-in-time の記録**（後から表記だけ直すと当時の記述と食い違う）
+  //   - `.ai-context/specs/` は **point-in-time の記録**（後から表記だけ直すと当時の記述と食い違う）
   //   - **`CHANGELOG.md` は除外しない**（生成物は `changelog-overrides.json` の remap で是正する）
   //   - 🔴 **`.claude/rules/traceability.md` の除外は 2026-08-15 に外した**（#517 / IADR-0202）。
   //     キット側が planning#349 を反映して `planning#202` へ是正し、本リポも追随したため対象に戻せる。
   //     **同ファイルは分類 A（バイト一致）へ移したので、今後キットが違反を持ち込めばここが赤くなる。**
+  //   - `planning`（submodule）・`feedback/` の除外は資料再編（ADR-0029）で両ディレクトリ自体が
+  //     消滅したため削除した（2026-08-21）。
   const CROSS_REPO_ENV = {
     CROSS_REPO_NAMES: 'project-planning:planning,microservices-platform:MSP',
     CROSS_REPO_SELF_NAMES: 'AST,ai-stock-trading',
-    CROSS_REPO_EXCLUDES: ':!planning,:!docs/specs,:!feedback',
+    CROSS_REPO_EXCLUDES: ':!.ai-context/specs',
   };
 
   ok('実ツリー: 他リポの issue / PR 番号が短縮形で書かれている（#487 の回帰）', () => {
@@ -1088,7 +996,7 @@ module.exports = ({ ok, assert }) => {
   });
 
   // 🔴 **除外が効いていることを否定形で固定する。**
-  // 除外を外せば `docs/specs/` の point-in-time 記録が一斉に違反として上がる——
+  // 除外を外せば `.ai-context/specs/` の point-in-time 記録が一斉に違反として上がる——
   // **上のテストが「たまたま 0 件だから緑」なのではなく、除外設定が効いた結果であること**を示す。
   ok('実ツリー: 除外を外すと point-in-time 記録が違反として上がる（除外が効いている証拠）', () => {
     const { execFileSync } = require('child_process');
@@ -1096,7 +1004,7 @@ module.exports = ({ ok, assert }) => {
     try {
       execFileSync(process.execPath, [pathFb.join(__dirname, 'check-cross-repo-refs.js')], {
         cwd: pathFb.resolve(__dirname, '..'),
-        env: { ...process.env, ...CROSS_REPO_ENV, CROSS_REPO_EXCLUDES: ':!planning' },
+        env: { ...process.env, ...CROSS_REPO_ENV, CROSS_REPO_EXCLUDES: ':!CHANGELOG.md' },
         stdio: 'pipe',
       });
     } catch {
@@ -1171,119 +1079,6 @@ module.exports = ({ ok, assert }) => {
       stdio: 'pipe',
     });
   });
-
-  // --- キット追随（NFR / #492） ---
-  //
-  // 🔴 **ここで守るのは検査結果ではなく「検査が実効していること」である。**
-  // `check-kit-sync.js` は planning が未 populate なら skip して緑になる（fail-open）。
-  // CI の `kit-sync` ジョブは submodule を取得したうえで `--require-planning` を渡すことで
-  // その fail-open を閉じているが、**どちらか一方でも落ちると検査は永久に skip し、
-  // 「配線したのに一度も検査していない緑」が固定される**。CI 設定側を機械で固定する。
-  ok('ci.yml の kit-sync ジョブが submodule を取得し --require-planning を渡している（#492 の回帰）', () => {
-    const fsK = require('fs');
-    const ci = fsK.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-    const job = ci.slice(ci.indexOf('\n  kit-sync:'));
-    const body = job.slice(0, job.indexOf('\n\n  ') === -1 ? job.length : job.indexOf('\n\n  '));
-    assert(body.includes('submodules: recursive'), 'kit-sync ジョブが submodule を取得していない（取得しないと検査は skip する）');
-    assert(body.includes('PLANNING_REPO_TOKEN'), 'kit-sync ジョブが planning 取得用トークンを渡していない');
-    assert(
-      body.includes('--require-planning'),
-      '--require-planning が無い。未 populate 時に skip して緑になり、検査が実効しない',
-    );
-  });
-
-  // 🔴 **上のテストは「CI がフラグを渡すこと」しか見ていない。**
-  // **スクリプトがそのフラグを尊重するかは見ていない。** —— この 2 つは別の問いである。
-  //
-  // これは机上の心配ではない。**キット版の `check-kit-sync.js` は当初 `--require-planning` を
-  // 持たなかった**（planning#342 で配られた版。2026-08-15 に実走で確認）。当時キット原文で
-  // 上書きしていれば次が起きていた。
-  //
-  //   1. CI は `--require-planning` を渡し続ける（3 ジョブ）
-  //   2. **スクリプトはフラグを認識せず黙って無視する**
-  //   3. submodule の取得に失敗すると **検査は skip して緑になる**
-  //   4. 🔴 **上のテストは通り続ける**（`run:` 行に文字列が在るため）
-  //
-  // **「配線を見るテスト」は「配線が効いていること」を保証しない。** 挙動で固定する。
-  //
-  // 【2026-08-16・#524 / IADR-0205】キット版は planning#343 で `--require-planning`・未知引数の拒否・
-  // `--self-test` を得た。HOWTO の手順（両版を同フラグで実走し exit code を比較）で優劣を再判定し、
-  // **キット版が本リポ版を上回った**（本リポ版は Windows で `path.relative` の `\` 区切りが表と一致せず
-  // 108/115 件を偽 unclassified にしていた）ため、**キット版で差し替えて分類 A へ移した**。
-  // 本テストはその後も残す —— A に置いた以上、キット側の退行がそのまま本リポへ入るためである。
-  ok('check-kit-sync.js が --require-planning を実際に尊重する（未 populate で exit 1・#494）', () => {
-    const { execFileSync } = require('child_process');
-    const fsR = require('fs');
-    const osR = require('os');
-    // キットを参照できない状況を合成する（planning を持たない空の作業ディレクトリ）。
-    const tmp = fsR.mkdtempSync(pathFb.join(osR.tmpdir(), 'kit-sync-flag-'));
-    try {
-      fsR.mkdirSync(pathFb.join(tmp, 'scripts'));
-      fsR.copyFileSync(pathFb.join(__dirname, 'check-kit-sync.js'), pathFb.join(tmp, 'scripts', 'check-kit-sync.js'));
-      fsR.copyFileSync(
-        pathFb.join(__dirname, 'kit-sync-classification.json'),
-        pathFb.join(tmp, 'scripts', 'kit-sync-classification.json'),
-      );
-      const run = (args) => {
-        try {
-          execFileSync(process.execPath, [pathFb.join(tmp, 'scripts', 'check-kit-sync.js'), ...args], {
-            cwd: tmp,
-            stdio: 'pipe',
-          });
-          return 0;
-        } catch (e) {
-          return e.status;
-        }
-      };
-      // フラグ無し = fail-open（ローカル環境差で CI を落とさないための既定）
-      assert.strictEqual(run([]), 0, 'フラグ無しでは skip して exit 0 になるべきである');
-      // フラグ有り = fail-closed。**ここが本題**
-      assert.strictEqual(
-        run(['--require-planning']),
-        1,
-        '--require-planning を渡してもキットを参照できないまま exit 0 になった。'
-          + 'フラグが無視されている（キット版で上書きした疑い）。'
-          + 'この状態では submodule 取得の失敗が「検査済みの緑」として固定される',
-      );
-    } finally {
-      fsR.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  // --- 計画書実在検査が PR 段階で実効していること（NFR / #496） ---
-  //
-  // 🔴 **ここも守るのは検査結果ではなく「検査が実効していること」である。**
-  // doc-links / test-traceability は planning が未 populate なら該当検査を skip して緑になる。
-  // submodule の取得と `--require-planning` の両方が揃って初めて実効するため、CI 設定側を固定する。
-  //
-  // **この 2 ジョブは長らく「PR CI にはトークンが無い」という誤った前提で skip していた**（#496）。
-  // 前提が誤りだったと分かった以上、**戻さないことを機械で担保する。**
-  for (const job of ['doc-links', 'test-traceability']) {
-    ok(`ci.yml の ${job} ジョブが submodule を取得し --require-planning を渡している（#496 の回帰）`, () => {
-      const fsP = require('fs');
-      const ci = fsP.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-      const start = ci.indexOf(`\n  ${job}:`);
-      assert(start !== -1, `${job} ジョブが ci.yml に無い`);
-      const rest = ci.slice(start + 1);
-      const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
-      const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
-      // 🔴 **コメント行を落としてから照合する。** 落とさないと、この設定を説明する
-      // コメント自身（「--require-planning を必ず付ける」等）に一致して**素通りする**。
-      // 初版が実際にそうなっており、変異試験（run 行からフラグを外す）で緑のままだった。
-      // **語ではなく実行行を見る**——planning#319 知見3 と同型の罠である。
-      const body = bodyRaw
-        .split('\n')
-        .filter((l) => !l.trim().startsWith('#'))
-        .join('\n');
-      const runLines = body.split('\n').filter((l) => l.includes('run:'));
-      assert(body.includes('submodules: recursive'), `${job} が submodule を取得していない（planning 配下は検査されない）`);
-      assert(body.includes('PLANNING_REPO_TOKEN'), `${job} が planning 取得用トークンを渡していない`);
-      assert(
-        runLines.some((l) => l.includes('--require-planning')),
-        `${job} の run 行に --require-planning が無い。取得失敗時に skip して緑になり、検査が実効しない`,
-      );
-    });
-  }
 
   // --- ADR 索引行の追随（NFR / #497） ---
   //
@@ -1379,92 +1174,6 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
-  // 🔴 `check-feedback-status-sync.js` はキット配布物であり、計画リポを参照できないとき
-  // **skip して exit 0** に倒れる。**submodule の取得に失敗すると
-  // 「配線したのに検査していない緑」が固定される。**
-  //
-  // **【更新・2026-08-15／#517】キットが `--require-planning` を新設した**（planning#343。
-  // **本リポの環流が起点**）。従前は「フラグを持たないため populate 確認だけが唯一の歯止め」
-  // だったが、いまは**二重に塞いでいる**——両方をここで固定する。
-  // **どちらを落としても静かに無力化する**（片方だけ残っても、エラーの精度か検出の確実さが落ちる）。
-  ok('ci.yml の feedback-status-sync が submodule を取得し populate を確かめている（#494 の回帰）', () => {
-    const fsS = require('fs');
-    const ci = fsS.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-    const start = ci.indexOf('\n  feedback-status-sync:');
-    assert(start !== -1, 'feedback-status-sync ジョブが ci.yml に無い');
-    const rest = ci.slice(start + 1);
-    const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
-    const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
-    const body = bodyRaw
-      .split('\n')
-      .filter((l) => !l.trim().startsWith('#'))
-      .join('\n');
-    assert(body.includes('submodules: recursive'), 'submodule を取得していない（取得しないと検査は skip する）');
-    assert(body.includes('PLANNING_REPO_TOKEN'), 'planning 取得用トークンを渡していない');
-    assert(
-      body.includes('planning/draft/feedback'),
-      'populate の確認ステップが無い。--require-planning と二重に塞いでいる片方であり、'
-        + '落とすと「planning/draft/feedback が無い」という具体的な壊れ方を名指しできなくなる',
-    );
-    // 🔴 **`node scripts/…` の形で絞る。** ジョブ内の `echo` にも同じファイル名が出るため、
-    // ファイル名だけで引くと**実行していない行を実行行として数える**（実際に踏んだ）。
-    const runLines = body
-      .split('\n')
-      .filter((l) => l.includes('node scripts/check-feedback-status-sync.js'));
-    assert(runLines.length >= 2, '自己試験と本検査の両方を走らせていない');
-    // #517: 本検査（自己試験でない側）に --require-planning が付いていること。
-    const mainRun = runLines.filter((l) => !l.includes('--self-test'));
-    assert(mainRun.length >= 1, '本検査の run 行が無い');
-    assert(
-      mainRun.every((l) => l.includes('--require-planning')),
-      '本検査に --require-planning が無い。参照できないとき skip して緑になる（planning#343 が塞いだ穴が開き直る）',
-    );
-  });
-
-  ok('分類表の B は全件が理由を持ち、X 分類は追跡先の issue 番号を持つ（#492）', () => {
-    const table = require('./kit-sync-classification.json');
-    const entries = Object.entries(table.classes.B);
-    assert(entries.length > 0, '分類 B が空である（表が壊れている疑い）');
-    for (const [file, reason] of entries) {
-      assert(typeof reason === 'string' && reason.trim() !== '', `${file} の分類理由が空である`);
-      // 先頭が固有デルタの種別番号（1〜5）か X であること。
-      // **第 5 種「キットが空欄・空配列で配り、各リポが埋める欄」は planning#339 で新設された**
-      // （本リポの環流が起点。`commit-allowlist.json` の `allow` / `check-impl.js` の免除集合が該当）。
-      // 従前は 4 種しか無く、これらを X（4 種に当たらない）として扱うほか無かった。
-      assert(/^[1-5X][.．]/.test(reason.trim()), `${file} の分類理由が 5 種の番号でも X でもない: ${reason}`);
-      // X（4 種に当たらない）は暫定であり、追跡先が無いと放置される
-      if (reason.trim().startsWith('X')) {
-        assert(/#\d+/.test(reason), `${file} は X 分類なのに追跡先の issue 番号が無い`);
-      }
-    }
-  });
-
-  // 🔴 **分類が C に戻ると、写しが古いまま固定されても誰も気づけない**（#517 で実際に起きた）。
-  // 分類 C は「同期しない」ため `check-kit-sync.js` が何も言わず、**キット側の是正が戻ってこない**——
-  // 実測で planning#349（表記の是正）と planning#350（母集合の規則 8）の**2 件を取りこぼしていた**。
-  // **どちらも本リポからの環流である**（往路だけが動き、復路が構造的に塞がっていた）。
-  // 併せてクロスリポ検査の除外を 1 件外せた（[IADR-0202](../docs/adr/IADR-0202_traceability-md-classification.md)）。
-  ok('`traceability.md` は分類 A である（C へ戻すとキットの是正が戻ってこない。#517 の回帰）', () => {
-    const table = require('./kit-sync-classification.json');
-    const target = '.claude/rules/traceability.md';
-    assert(
-      table.classes.A.includes(target),
-      `${target} が分類 A に無い。当のファイルの冒頭が「直接編集するとバイト一致が崩れる」＝A の意味論を要求している`,
-    );
-    assert(
-      !table.classes.C.includes(target),
-      `${target} が分類 C に在る。C は「同期しない」であり、キット側の是正が戻ってこなくなる`,
-    );
-  });
-
-  // 🔴 **分類 C は「同期しない」であるため、置いた瞬間に検査が止まる。**
-  // 固有デルタが 0 のファイルを C に置くと、**キット側の是正が永久に戻ってこない**。
-  // 実測で 2 度起きた（#517 の `traceability.md`・#521 の検査器 2 本）ため、機械で止める
-  // （運用標準「検査器の追加は同型事故 2 回から」を満たした。IADR-0203）。
-  //
-  // **C の定義「置換点を持つ配布物」は、置換点を「持つ」ことではなく
-  // 本リポが「埋めている」ことで判定する。** 埋めていないなら固有デルタは 0 であり、
-  // 「各リポが自分の値を埋める前提」という C の根拠がそもそも成り立たない。
   // --- 必読規約の総量予算（NFR / #519 / IADR-0204） -------------------------------------------
   //
   // 🔴 **合算しないことが設計の核心である。** 「毎セッション必読」は読む主体によって中身が違い、
@@ -1523,91 +1232,6 @@ module.exports = ({ ok, assert }) => {
     );
   });
 
-  ok('分類 C は固有デルタを持つ（バイト一致・置換点の未記入を許さない。#521 の回帰）', () => {
-    const fsC = require('fs');
-    const kitRoot = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');
-    if (!fsC.existsSync(kitRoot)) return; // planning 未 populate では skip（CI は kit-sync が --require-planning で落とす）
-    const table = require('./kit-sync-classification.json');
-    const repoRoot = pathFb.resolve(__dirname, '..');
-    // キットが配る置換点の目印。**埋めていないなら、この形がそのまま残る。**
-    const PLACEHOLDERS = ['<sibling-repo-name>', '<SHORT>', '<SELF_SHORT>', '<self-repo-name>'];
-    const bad = [];
-    for (const rel of table.classes.C) {
-      const mine = pathFb.join(repoRoot, rel);
-      const kit = pathFb.join(kitRoot, rel);
-      if (!fsC.existsSync(kit) || !fsC.existsSync(mine)) continue; // キットに無い＝本リポ固有。C で正しい
-      if (fsC.readFileSync(mine).equals(fsC.readFileSync(kit))) {
-        bad.push(`${rel}: キットとバイト一致（固有デルタ 0）。分類 A へ移すこと`);
-        continue;
-      }
-      // 🔴 **置換点の信号は、置換点を宣言しているファイルにだけ当てる。**
-      // 目印の文字列だけで引くと、**規約や ADR がプレースホルダを引用しただけの行に当たる**
-      // （実測: 本テストの初版が `docs/adr/README.md` の IADR-0203 索引行——
-      // 「置換点は `<sibling-repo-name>` 等のプレースホルダのまま」という**引用**——を違反として上げた）。
-      // キット版が `【置換点】` を宣言しているかで絞る。
-      const kitText = fsC.readFileSync(kit, 'utf8');
-      if (!kitText.includes('【置換点】')) continue;
-      const text = fsC.readFileSync(mine, 'utf8');
-      const left = PLACEHOLDERS.filter((p) => text.includes(p));
-      if (left.length > 0) {
-        bad.push(`${rel}: 置換点が未記入のまま（${left.join(' ')}）。埋めていないなら分類 A へ移すこと`);
-      }
-    }
-    assert(
-      bad.length === 0,
-      '分類 C なのに固有デルタが無いファイルがある。C は「同期しない」ため、'
-        + 'キット側の是正が戻ってこなくなる:\n  ' + bad.join('\n  '),
-    );
-  });
-
-  ok('実ツリー: キット追随の検査が通る（#492 の回帰）', () => {
-    const fsK = require('fs');
-    const kit = pathFb.resolve(__dirname, '../planning/tools/impl-handoff-kit/repo-template');
-    if (!fsK.existsSync(kit)) return; // planning 未 populate のローカル環境では skip（CI は --require-planning で落とす）
-    const { execFileSync } = require('child_process');
-    execFileSync(process.execPath, [pathFb.join(__dirname, 'check-kit-sync.js'), '--require-planning'], {
-      cwd: pathFb.resolve(__dirname, '..'),
-      stdio: 'pipe',
-    });
-  });
-
-  // --- check-kit-sync.js の Windows パス（NFR / #524 / IADR-0205） ---------------------------------
-  //
-  // 🔴 **分類表は `/` 区切りで書かれ、走査は `path.relative` で取る。** Windows では `path.sep` が `\` のため
-  // 両者が一致せず、**キット 115 件中 108 件が偽 unclassified・exit 1** になっていた（2026-08-16 実測）。
-  // Linux の CI では露見しない —— **「CI は緑・ローカルは赤」で、ローカルの検査だけが黙って死んでいた**。
-  // 走査結果を `/` へ正規化する（キット版が `.split(path.sep).join('/')` で持つ）挙動を、
-  // **区切り文字を含むパスをテスト側で明示して**固定する。プラットフォームに依らず同じ断言を通す。
-  ok('check-kit-sync.js: 走査結果は OS に依らず `/` 区切りで返る（Windows の偽 unclassified・#524 の回帰）', () => {
-    const fsW = require('fs');
-    const osW = require('os');
-    const { listFiles, inspect } = require('./check-kit-sync.js');
-    const tmp = fsW.mkdtempSync(pathFb.join(osW.tmpdir(), 'kit-sync-sep-'));
-    try {
-      fsW.mkdirSync(pathFb.join(tmp, 'a', 'b'), { recursive: true });
-      fsW.writeFileSync(pathFb.join(tmp, 'a', 'b', 'c.md'), 'x');
-      fsW.writeFileSync(pathFb.join(tmp, 'top.md'), 'y');
-      const files = listFiles(tmp).sort();
-      assert.deepStrictEqual(files, ['a/b/c.md', 'top.md'], `区切りが正規化されていない: ${files.join(', ')}`);
-      assert(!files.some((f) => f.includes('\\')), 'バックスラッシュが残っている');
-      // 表（/ 区切り）と突き合わせて unclassified が 0 になること。**ここが実害の面である。**
-      const table = { classes: { A: ['a/b/c.md'], B: {}, C: ['top.md'] }, notApplicable: [] };
-      const { errors } = inspect(table, files, () => true, () => true, () => true);
-      assert.deepStrictEqual(errors, [], `偽 unclassified が出た:\n  ${errors.join('\n  ')}`);
-    } finally {
-      fsW.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  // 🔴 否定形。区切りを正規化しない走査（`path.relative` の生の結果）を表へ当てると、
-  // Windows では unclassified が出る。**正規化が効いているから緑**であって、
-  // 「Windows でなくても緑」と区別するため、`\` 区切りを人工的に与えて赤くなることを見る。
-  ok('check-kit-sync.js: `\\` 区切りのパスは表と一致しない（正規化が要ることの実証・#524）', () => {
-    const { inspect } = require('./check-kit-sync.js');
-    const table = { classes: { A: ['a/b/c.md'], B: {}, C: [] }, notApplicable: [] };
-    const { errors } = inspect(table, ['a\\b\\c.md'], () => true, () => true, () => true);
-    assert(errors.some((e) => e.startsWith('[unclassified] a\\b\\c.md')), '`\\` 区切りが unclassified にならなかった');
-  });
 
   // --- 必読規約の予算の CI 配線（NFR / #524。IADR-0204 の残余リスク） -----------------------------
   //

@@ -91,11 +91,11 @@ bash scripts/apply-profile.sh copilot
 
 ### 5. 週次（マージとは独立）
 
-- **`backlog-audit.yml` が週 1 回（月曜 00:00 UTC）バックログを監査する**（#439 / [IADR-0170](adr/IADR-0170_backlog-audit-automation.md)）。
+- **`backlog-audit.yml` が週 1 回（月曜 00:00 UTC）バックログを監査する**（#439 / [IADR-0170](../.ai-context/adr/IADR-0170_backlog-audit-automation.md)）。
   クローズ漏れ・重複起票・`docs/blocked-tasks.md` との突き合わせ・エピック進捗を見て、
   **単一の追跡 issue へ upsert** する。**issue を自動クローズしない**（提案のみ・判断は人間）。
   前段で `check-feedback-dispatched.js`（kit 由来）が**環流記録の未伝達**を warn として出す
-  （［2026-08-14］`check-feedback-reflux.js` から置き換えた。#477 / [IADR-0188](adr/IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md)）。
+  （［2026-08-14］`check-feedback-reflux.js` から置き換えた。#477 / [IADR-0188](../.ai-context/adr/IADR-0188_feedback-vocabulary-and-dispatch-kit-sync.md)）。
   **同検査器は手順書が定める 2 経路（GitHub Issue 経路 / 記録ファイル経路）のどちらでも緑になる。**
   **出力を「未起票」と読み替えないこと** —— 見ているのは*記録に伝達の証拠が書かれているか*であって*実際に届いたか*ではない。
   **監査が増える主因は実装速度ではなく「閉じるより速く増えること」だった**という実測が起点である。
@@ -166,7 +166,7 @@ report されるまでマージを許さないため、**起動しなければ�
    特定ディレクトリだけを対象にするワークフローが該当する。
    - **`paths:` を機械的に禁じてはならない。** `paths:` を持つワークフローは**意図してそう作られており**、
      **必須にしないことで正しく運用されている**。**直すべきは「必須に指定したこと」であって `paths:` ではない。**
-   - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
+   - 本リポジトリでは `helm.yml`（`paths: deploy/helm/**`・[IADR-0058](../.ai-context/adr/IADR-0058_helm-chart-ci-gate.md)）が該当するため必須チェックに指定しない。chart 変更 PR ではレビューで green を確認する。
 3. **`types:` の取りこぼし**。とくに **`reopened` が無いと、再オープンされた PR で起動しない**
    （下記「`types:` に `reopened` を含める」）。
 

@@ -3,7 +3,7 @@
 `pipeline.json` は取引ドメインの**イベント発行・購読バインディング**（どの段がどのイベントを購読し、
 どのイベントを発行するか）を宣言する**単一の正**である（ADR-0001／platform ADR-0018 の可変部品規約、
 platform IADR-0028（隣接リポ `../microservices-platform`・未リンク）の宣言的パイプライン構成、
-[IADR-0077](../../../../docs/adr/IADR-0077_declarative-pipeline-binding.md)）。
+[IADR-0077](../../../../.ai-context/adr/IADR-0077_declarative-pipeline-binding.md)）。
 
 ## 位置づけ
 
@@ -12,7 +12,7 @@ platform IADR-0028（隣接リポ `../microservices-platform`・未リンク）�
   段（consumer）単位で宣言する。段名・購読イベント・発行イベント・有効状態を一箇所で表現する。
 - **横断オブザーバは段に含めない**: 監査（全イベント購読）・通知（一部購読）・読み取りモデル射影・
   市場監視のベースライン更新は変換段ではないため宣言しない（platform の pipeline.json が監査・通知を
-  含めないのと同じ方針。[IADR-0077](../../../../docs/adr/IADR-0077_declarative-pipeline-binding.md) 参照）。
+  含めないのと同じ方針。[IADR-0077](../../../../.ai-context/adr/IADR-0077_declarative-pipeline-binding.md) 参照）。
 
 ## 検証（CI ゲート）
 

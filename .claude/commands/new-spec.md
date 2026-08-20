@@ -10,7 +10,7 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*)
 
 | 種別 | 文書 | テンプレート | 出力先 | 粒度 |
 | --- | --- | --- | --- | --- |
-| `work` | 作業仕様書 | `spec_template.md` | `docs/specs/` | 作業（PR）単位 |
+| `work` | 作業仕様書 | `spec_template.md` | `.ai-context/specs/` | 作業（PR）単位 |
 | `functional` | 機能仕様書 | `functional_spec_template.md` | `docs/functional/` | 機能（FR）単位 |
 | `screen` | 画面仕様書 | `screen_spec_template.md` | `docs/screens/` | 画面（SC）単位 |
 | `api` | 通信仕様書 | `api_spec_template.md` | `docs/api/` | API/IF 単位 |
@@ -19,7 +19,7 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*)
 | `test` | テスト仕様書 | `test_spec_template.md` | `docs/tests/` | 機能（FR）単位 |
 | `operations` | 運用仕様書 | `operations_spec_template.md` | `docs/operations/` | リポ単位（原則1つ） |
 | `security` | セキュリティ仕様書 | `security_spec_template.md` | `docs/security/` | リポ単位（原則1つ） |
-| `adr` | 実装ADR | `adr_template.md` | `docs/adr/` | 決定単位（`IADR-XXXX` 採番） |
+| `adr` | 実装ADR | `adr_template.md` | `.ai-context/adr/` | 決定単位（`IADR-XXXX` 採番） |
 | `observability` | ログ・可観測性仕様書 | `observability_spec_template.md` | `docs/observability/` | 任意 |
 | `authz` | 権限・認可仕様書 | `authz_spec_template.md` | `docs/authz/` | 任意 |
 | `integration` | 外部連携仕様書 | `integration_spec_template.md` | `docs/integration/` | 外部システム単位 |
@@ -39,7 +39,7 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*)
 4. ファイル名を決めて作成する。
    - 通常: `<出力先>/<YYYYMMDD>_<概要のケバブケース>.md`。
    - リポ単位（`tech`/`operations`/`security`/`error`）: 既存があればそれを更新、無ければ既定名（例 `docs/operations/operations.md`）で作成。
-   - `adr`: `docs/adr/` の既存 `IADR-\d{4}` から最大連番を調べ、次の連番（4桁ゼロ埋め）で `IADR-XXXX_<タイトルのケバブケース>.md` を作成する。欠番・重複を作らない。作成後 `docs/adr/README.md` の一覧に追記する。
+   - `adr`: `.ai-context/adr/` の既存 `IADR-\d{4}` から最大連番を調べ、次の連番（4桁ゼロ埋め）で `IADR-XXXX_<タイトルのケバブケース>.md` を作成する。欠番・重複を作らない。作成後 `.ai-context/adr/README.md` の一覧に追記する。
 5. メタ情報（`type`・`related_ids`・`plan_refs`・`created`/`updated`=本日・`status`=`draft`（ADR は `Proposed`））を埋める。起点 ID（FR/UC/SC/ADR）と計画書リンクを「起点となる計画書」欄に、関連仕様書へのリンクを「関連仕様」欄に記入する。
 6. 作成したパスと未決事項を報告する。
 

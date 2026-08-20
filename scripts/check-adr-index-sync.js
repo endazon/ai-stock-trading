@@ -2,7 +2,7 @@
 'use strict';
 /*
  * check-adr-index-sync.js
- * 実装ADR の本文を変更したら、docs/adr/README.md の当該索引行も変更されていることを要求する
+ * 実装ADR の本文を変更したら、.ai-context/adr/README.md の当該索引行も変更されていることを要求する
  * （NFR / issue #497）。外部依存ゼロ（Node 標準モジュールのみ）。
  *
  * ■ なぜ要るか
@@ -22,8 +22,8 @@
  *   運用標準は「**検査器・規約の追加は同型事故 2 回から**」。**2 回に達した。**
  *
  * ■ 何を見るか（構造だけ）
- *   PR の差分に `docs/adr/IADR-XXXX_*.md` が含まれるなら、
- *   **同じ差分の `docs/adr/README.md` に `| IADR-XXXX |` で始まる行の変更があること。**
+ *   PR の差分に `.ai-context/adr/IADR-XXXX_*.md` が含まれるなら、
+ *   **同じ差分の `.ai-context/adr/README.md` に `| IADR-XXXX |` で始まる行の変更があること。**
  *
  * ■ 🔴 何を見ないか（明示する）
  *   - **索引行の「内容」が本文と一致しているか** —— **機械では判定できない。**
@@ -45,10 +45,10 @@ const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
 
 const REPO = path.join(__dirname, '..');
-const INDEX_PATH = 'docs/adr/README.md';
+const INDEX_PATH = '.ai-context/adr/README.md';
 // 規約の書式は `IADR-\d{3,4}`（.claude/rules/traceability.md）。現在 3 桁のファイルは無いが、
 // 4 桁固定にすると**3 桁運用へ戻ったとき静かに検査対象から漏れる**（AI レビューの指摘）。
-const ADR_RE = /^docs\/adr\/(IADR-\d{3,4})_[^/]+\.md$/;
+const ADR_RE = /^\.ai-context\/adr\/(IADR-\d{3,4})_[^/]+\.md$/;
 
 /**
  * 意図的に索引を変えない場合の逃げ道。**コミット本文の「行頭から単独で」書く。**
@@ -229,7 +229,7 @@ function selfTest() {
     'ADR を変更し索引行も変更していれば緑',
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\ndocs/adr/README.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n.ai-context/adr/README.md\n',
         indexDiff: '+| IADR-0190 | 要約 | Accepted |\n-| IADR-0190 | 旧 | Accepted |\n',
       }),
     ) === 0,
@@ -237,14 +237,14 @@ function selfTest() {
 
   t(
     '🔴 ADR を変更したのに索引行を変更していなければ赤',
-    quiet(() => run({ nameStatus: 'docs/adr/IADR-0190_x.md\n', indexDiff: '' })) === 1,
+    quiet(() => run({ nameStatus: '.ai-context/adr/IADR-0190_x.md\n', indexDiff: '' })) === 1,
   );
 
   t(
     '🔴 README を触っていても別の ADR の行しか変えていなければ赤',
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\ndocs/adr/README.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n.ai-context/adr/README.md\n',
         indexDiff: '+| IADR-0187 | 別の行 | Accepted |\n',
       }),
     ) === 1,
@@ -254,7 +254,7 @@ function selfTest() {
     '削除行だけでも「索引を触った」と数える（行の書き換えは削除＋追加で現れる）',
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\ndocs/adr/README.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n.ai-context/adr/README.md\n',
         indexDiff: '-| IADR-0190 | 旧 | Accepted |\n',
       }),
     ) === 0,
@@ -264,7 +264,7 @@ function selfTest() {
     '複数 ADR のうち 1 つでも索引が欠ければ赤',
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\ndocs/adr/IADR-0191_y.md\ndocs/adr/README.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n.ai-context/adr/IADR-0191_y.md\n.ai-context/adr/README.md\n',
         indexDiff: '+| IADR-0190 | 要約 | Accepted |\n',
       }),
     ) === 1,
@@ -274,7 +274,7 @@ function selfTest() {
     `${SKIP_TOKEN} が宣言されていれば許容する`,
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n',
         indexDiff: '',
         commitBodies: `docs(IADR-0190): 誤字を直す\n\n${SKIP_TOKEN}\n`,
       }),
@@ -285,7 +285,7 @@ function selfTest() {
     `🔴 ${SKIP_TOKEN} を本文中で言及しただけでは発動しない（自己発火の防止）`,
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n',
         indexDiff: '',
         commitBodies: `chore: 逃げ道は ${SKIP_TOKEN} だが宣言すると notice が出る\n`,
       }),
@@ -296,7 +296,7 @@ function selfTest() {
     `${SKIP_TOKEN} が行として単独で書かれていれば発動する`,
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-0190_x.md\n',
+        nameStatus: '.ai-context/adr/IADR-0190_x.md\n',
         indexDiff: '',
         commitBodies: `docs(IADR-0190): 誤字を直す\n\n  ${SKIP_TOKEN}  \n`,
       }),
@@ -305,22 +305,22 @@ function selfTest() {
 
   t(
     '3 桁の IADR も対象にする（規約は IADR-\\d{3,4} を許容する）',
-    quiet(() => run({ nameStatus: 'docs/adr/IADR-099_x.md\n', indexDiff: '' })) === 1,
+    quiet(() => run({ nameStatus: '.ai-context/adr/IADR-099_x.md\n', indexDiff: '' })) === 1,
   );
 
   t(
     '3 桁の索引行も「触った」と数える',
     quiet(() =>
       run({
-        nameStatus: 'docs/adr/IADR-099_x.md\ndocs/adr/README.md\n',
+        nameStatus: '.ai-context/adr/IADR-099_x.md\n.ai-context/adr/README.md\n',
         indexDiff: '+| IADR-099 | 要約 | Accepted |\n',
       }),
     ) === 0,
   );
 
   t(
-    '仕様書（docs/specs/）の変更は対象外',
-    quiet(() => run({ nameStatus: 'docs/specs/20260814_x.md\n', indexDiff: '' })) === 0,
+    '仕様書（.ai-context/specs/）の変更は対象外',
+    quiet(() => run({ nameStatus: '.ai-context/specs/20260814_x.md\n', indexDiff: '' })) === 0,
   );
 
   t(
@@ -328,7 +328,7 @@ function selfTest() {
     quiet(() => run({ nameStatus: 'planning/projects/x/07_adr/ADR-0022_y.md\n', indexDiff: '' })) === 0,
   );
 
-  t('索引ファイル自体だけの変更は緑', quiet(() => run({ nameStatus: 'docs/adr/README.md\n', indexDiff: '+| IADR-0190 | x |\n' })) === 0);
+  t('索引ファイル自体だけの変更は緑', quiet(() => run({ nameStatus: '.ai-context/adr/README.md\n', indexDiff: '+| IADR-0190 | x |\n' })) === 0);
 
   let failed = 0;
   for (const c of cases) {

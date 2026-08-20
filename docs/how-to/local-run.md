@@ -1,8 +1,8 @@
 # ローカル実行手順（docker compose） — issue #107 / IADR-0048
 
 ai-stock-trading を単独で起動して疎通を確認するための手順。設計判断は
-[IADR-0048](../adr/IADR-0048_runtime-scaffold.md)、作業仕様は
-[作業仕様書](../specs/20260712_107_runtime-scaffold.md) を参照。
+[IADR-0048](../../.ai-context/adr/IADR-0048_runtime-scaffold.md)、作業仕様は
+[作業仕様書](../../.ai-context/specs/20260712_107_runtime-scaffold.md) を参照。
 
 > **fail-safe 既定**: 既定では実 LLM を呼ばず・実市場データに接続せず・実発注せず・外部送信しない。
 > 実接続は `.env` の明示設定時のみ有効化される（#13/#79/#81/#15/#76）。実基盤を起動しての

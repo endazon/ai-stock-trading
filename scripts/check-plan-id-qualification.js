@@ -57,7 +57,7 @@ const EXTRA_EXCLUDES = splitList(process.env.PLAN_ID_EXCLUDES, []);
 
 // 生成物・記録は既定で外す。**CHANGELOG は履歴の写しであり書き換えない**（生成時に是正する）。
 // **作業仕様書と環流記録は point-in-time の記録**であり、後から表記だけ直すと当時の記述と食い違う。
-const DEFAULT_EXCLUDES = ['planning/', 'CHANGELOG.md', 'docs/specs/', 'feedback/'];
+const DEFAULT_EXCLUDES = ['planning/', 'CHANGELOG.md', '.ai-context/specs/', 'feedback/'];
 
 /**
  * `.gitmodules` から submodule のパスを引く。**除外リストを手で保守しない**ため。

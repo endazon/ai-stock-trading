@@ -9,18 +9,20 @@ docs/
 ├── templates/    # 各仕様書のひな形（spec / functional / screen / api / data / tech / test /
 │                 #   operations / security / adr / observability / authz / integration /
 │                 #   batch / migration / error / infra / runbook / how_to）
-├── specs/        # 作業仕様書（作業/PR 単位の横断仕様）
 ├── functional/   # 機能仕様書        ├── operations/    # 運用仕様書
 ├── screens/      # 画面仕様書        ├── security/      # セキュリティ仕様書
-├── api/          # 通信仕様書        ├── adr/           # 実装ADR（IADR-XXXX）
-├── data/         # データ仕様書      ├── observability/ # ログ・可観測性（任意）
-├── tech/         # 技術要件書        ├── authz/         # 権限・認可（任意）
-├── tests/        # テスト仕様書      ├── integration/   # 外部連携（任意）
-│                                     ├── batch/         # バッチ・ジョブ（任意）
+├── api/          # 通信仕様書        ├── observability/ # ログ・可観測性（任意）
+├── data/         # データ仕様書      ├── authz/         # 権限・認可（任意）
+├── tech/         # 技術要件書        ├── integration/   # 外部連携（任意）
+├── tests/        # テスト仕様書      ├── batch/         # バッチ・ジョブ（任意）
 │                                     ├── migration/     # 移行（任意）
 │                                     ├── errors/        # エラー・メッセージ（任意）
 │                                     ├── infra/         # インフラ・構成（任意）
 │                                     └── how-to/        # 手順ガイド（任意）
+
+.ai-context/      # AI 向け文脈資料・凍結記録（docs/ とは主従が異なる。.ai-context/README.md 参照）
+├── specs/        # 作業仕様書（作業/PR 単位の横断仕様）
+└── adr/          # 実装ADR（IADR-XXXX）
 ```
 
 `docs/` 直下には、上記の分類に属さない**リポジトリ横断の記録**を置く。仕様書ではないため
@@ -38,7 +40,7 @@ docs/
 
 | 種別 | 文書 | 出力先 | 粒度 | 計画書の一次情報 |
 | --- | --- | --- | --- | --- |
-| `work` | 作業仕様書 | `docs/specs/` | 作業/PR 単位 | 該当する FR/UC/SC |
+| `work` | 作業仕様書 | `.ai-context/specs/` | 作業/PR 単位 | 該当する FR/UC/SC |
 | `functional` | 機能仕様書 | `docs/functional/` | 機能（FR）単位 | 02_requirements / 03_usecases / 04_workflows |
 | `screen` | 画面仕様書 | `docs/screens/` | 画面（SC）単位 | 05_screens |
 | `api` | 通信仕様書 | `docs/api/` | API/IF 単位 | 03_usecases / 04_workflows / 06_technical |
@@ -47,13 +49,13 @@ docs/
 | `test` | テスト仕様書 | `docs/tests/` | 機能（FR）単位 | 02_requirements（受け入れ基準）/ 03_usecases |
 | `operations` | 運用仕様書 | `docs/operations/` | リポ単位（1つ） | NFR（運用・保守） |
 | `security` | セキュリティ仕様書 | `docs/security/` | リポ単位（1つ） | NFR（セキュリティ）/ 07_adr |
-| `adr` | 実装ADR（`IADR-XXXX`） | `docs/adr/` | 決定単位 | 06_technical / 07_adr（実装に閉じた判断） |
+| `adr` | 実装ADR（`IADR-XXXX`） | `.ai-context/adr/` | 決定単位 | 06_technical / 07_adr（実装に閉じた判断） |
 
-> **機能仕様書・テスト仕様書の必須範囲（網羅裁定・[作業仕様書 20260720](specs/20260720_required-spec-coverage-arbitration.md)）**:
+> **機能仕様書・テスト仕様書の必須範囲（網羅裁定・[作業仕様書 20260720](../.ai-context/specs/20260720_required-spec-coverage-arbitration.md)）**:
 > 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核 FR
 > ＝ FR-10（リスク統制）・FR-12（ペーパートレード）・FR-15（バックテスト）・FR-19（取引ガード）・FR-20（段階ゲート）**を
 > 必須範囲とする（これらは設定駆動・横断的で、独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み FR は、
-> 作業仕様書（`docs/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト
+> 作業仕様書（`.ai-context/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト
 > 仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数 FR をまとめてよい（例: [FR-10/12/19/20 テスト仕様書](tests/FR-10_risk-guard-core-tests.md)）。
 
 ## 任意の仕様書
@@ -92,7 +94,7 @@ docs/
 
 1. **作業着手前に必ず作業仕様書を作成する**（`/new-spec`）。
 2. 必須の仕様書は対象が存在する限り作成・維持する。任意の仕様書は必要に応じて作成する。
-3. 重要な実装判断は**実装ADR（`docs/adr/`、`IADR-XXXX`）に残す**。計画ADR（計画リポ `ADR-XXXX`）とは別系統。
+3. 重要な実装判断は**実装ADR（`.ai-context/adr/`、`IADR-XXXX`）に残す**。計画ADR（計画リポ `ADR-XXXX`）とは別系統。
 4. すべての仕様書に起点 ID（FR/UC/SC/ADR）と計画書リンクを記入し、関連仕様書を相互リンクする。
 5. 計画書の誤り・不足・新たな制約は `/plan-feedback` で計画リポジトリへ環流する。
 

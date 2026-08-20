@@ -1,7 +1,7 @@
 # ai-stock-trading k8s Helm chart（MSP 連結ローカル k8s dev）
 
-> 起点: [IADR-0052](../../../docs/adr/IADR-0052_k8s-helm-chart-shared-infra.md) /
-> 作業仕様書 [`docs/specs/20260713_122_k8s-helm-chart.md`](../../../docs/specs/20260713_122_k8s-helm-chart.md) /
+> 起点: [IADR-0052](../../../.ai-context/adr/IADR-0052_k8s-helm-chart-shared-infra.md) /
+> 作業仕様書 [`docs/specs/20260713_122_k8s-helm-chart.md`](../../../.ai-context/specs/20260713_122_k8s-helm-chart.md) /
 > Issue #122・#24・#121
 
 AST の 10 Worker を k8s へデプロイする chart。**共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は
@@ -27,8 +27,8 @@ kubectl -n ai-stock-trading get pods
 
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
-> 起点: [IADR-0100](../../../docs/adr/IADR-0100_route-b-values-local-standing-config.md) /
-> 作業仕様書 [`docs/specs/20260725_route-b-values-local-standing-config.md`](../../../docs/specs/20260725_route-b-values-local-standing-config.md) /
+> 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
+> 作業仕様書 [`docs/specs/20260725_route-b-values-local-standing-config.md`](../../../.ai-context/specs/20260725_route-b-values-local-standing-config.md) /
 > Issue #238
 
 経路B（ローカル k8s / SIMULATE）で取引サイクルを end-to-end 検証するための **local/SIMULATE 有効化プロファイル**を
@@ -47,7 +47,7 @@ kubectl -n ai-stock-trading get pods
   **日本株を取引するための必須前提**（下記「為替換算」参照）。未設定だと JPY 建て銘柄は LLM 呼び出し前に全件見送りになる。
   **#364 で基準通貨が USD へ移行したため、必須となる市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株は本キー無しで回る）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
-- **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../docs/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
+- **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../.ai-context/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
   **自動 kill switch の発火は Stage 2/3（実弾段階）に限られ、現在の Stage 0 では起きない**（下記「撤退評価と自動 kill switch」）。
@@ -82,15 +82,15 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 
 > **Discord の環境固有 ID**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は**空既定**であり、
 > 下記「Discord の環境固有 ID」の env（`DISCORD_BOT_*`）で与える（[#245](https://github.com/endazon/ai-stock-trading/issues/245) /
-> [IADR-0102](../../../docs/adr/IADR-0102_discord-env-ids-via-values.md)）。**空のまま**だと IADR-0062 の
+> [IADR-0102](../../../.ai-context/adr/IADR-0102_discord-env-ids-via-values.md)）。**空のまま**だと IADR-0062 の
 > 安全既定（空 GuildId/ChannelId/AllowedUserIds は「全許可」ではなく**全拒否**）で Bot は接続しても操作を受け付けない。
 > Discord を使わないなら `Notifications__Provider=""` / `Bot__Enabled="false"` に戻す。
 
 ### 鍵の供給と再実行時の挙動（`ast-secrets`）
 
 > 起点: [#263](https://github.com/endazon/ai-stock-trading/issues/263) /
-> [IADR-0109](../../../docs/adr/IADR-0109_deploy-secret-preservation.md) /
-> [IADR-0052](../../../docs/adr/IADR-0052_k8s-helm-chart-shared-infra.md)
+> [IADR-0109](../../../.ai-context/adr/IADR-0109_deploy-secret-preservation.md) /
+> [IADR-0052](../../../.ai-context/adr/IADR-0052_k8s-helm-chart-shared-infra.md)
 
 `ast-secrets` は**手動作成の Secret**（既定は Vault 非依存）。`scripts/k8s-local-deploy.sh` が上表の env を読み、
 **キー単位の差分パッチ**で同期する。**env を export せずに再実行しても、投入済みの値は失われない。**
@@ -141,10 +141,10 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 
 > 起点: [#262](https://github.com/endazon/ai-stock-trading/issues/262) / [#257](https://github.com/endazon/ai-stock-trading/issues/257) /
 > [#364](https://github.com/endazon/ai-stock-trading/issues/364) /
-> [IADR-0107](../../../docs/adr/IADR-0107_base-currency-conversion.md) /
-> [IADR-0152](../../../docs/adr/IADR-0152_usd-base-currency-migration.md) /
-> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
-> [`docs/specs/20260805_364_usd-base-currency.md`](../../../docs/specs/20260805_364_usd-base-currency.md)
+> [IADR-0107](../../../.ai-context/adr/IADR-0107_base-currency-conversion.md) /
+> [IADR-0152](../../../.ai-context/adr/IADR-0152_usd-base-currency-migration.md) /
+> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
+> [`docs/specs/20260805_364_usd-base-currency.md`](../../../.ai-context/specs/20260805_364_usd-base-currency.md)
 
 統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝米ドル**で行う（計画 §3・IADR-0152 決定1）。
 非基準通貨（JPY 建て）の銘柄は、USD への換算レートが解決できない限り**新規建てを見送る**（IADR-0107 決定3 の
@@ -199,22 +199,22 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 
 > 換算を正した結果 AAPL は 1 株あたり約 5.2 万円となり、本番既定の 1 注文金額上限 35,000 円を超えて
 > **数量 0＝見送り**になる。これは通貨を正した後の正しい帰結である。経路B では
-> [IADR-0108](../../../docs/adr/IADR-0108_simulator-risk-profile.md) の SIMULATE 限定プロファイル
+> [IADR-0108](../../../.ai-context/adr/IADR-0108_simulator-risk-profile.md) の SIMULATE 限定プロファイル
 > （`values-local.yaml` の `Risk__SimulatorProfile__Enabled=true`・本番既定は false）が上限をシミュレータ残高に
 > 合わせるため発注まで到達する。本番既定での上限見直し・銘柄選定は運用判断として #257 に残置。
 
 ### 撤退評価と自動 kill switch（#279 / IADR-0114 決定3）
 
 経路B では実DD 供給（`ObservedDrawdownRefresh__Enabled`）と撤退評価（`WithdrawalEvaluation__Enabled`）を**ともに true** にしている。
-[ADR-0008](../../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md) の撤退基準に該当すると、
-**撤退評価が自動で kill switch を起動する**（[IADR-0083](../../../docs/adr/IADR-0083_withdrawal-evaluation-driver.md)）。
+ADR-0008（計画リポ） の撤退基準に該当すると、
+**撤退評価が自動で kill switch を起動する**（[IADR-0083](../../../.ai-context/adr/IADR-0083_withdrawal-evaluation-driver.md)）。
 
 **発火するのは実弾段階だけ**（`StageGate.AssessWithdrawal`）。過度に身構えないための整理:
 
 | 段階 | 判定 | kill switch |
 | --- | --- | --- |
 | Stage 0（検証） | `Triggered: false` | **起動しない** |
-| Stage 1（ペーパー） | 乖離が説明不能なら `Triggered: true` だが `HaltNewEntries: false` | **起動しない**（降格提案＋通知のみ・[IADR-0085](../../../docs/adr/IADR-0085_paper-withdrawal-notification-dedup.md)） |
+| Stage 1（ペーパー） | 乖離が説明不能なら `Triggered: true` だが `HaltNewEntries: false` | **起動しない**（降格提案＋通知のみ・[IADR-0085](../../../.ai-context/adr/IADR-0085_paper-withdrawal-notification-dedup.md)） |
 | Stage 2/3（実弾） | 実DD ≥ バックテスト最大DD × 倍率 | **起動する** |
 
 現在の段階は Stage 0 で、Stage 2/3 は実弾未解禁（`LiveTradingReleased=false`・IADR-0111 の閂 0）のため到達不能。
@@ -222,7 +222,7 @@ scripts/k8s-local-deploy.sh              # ast-secrets/fred-api-key へ反映（
 「将来 Stage 2/3 が解禁されたとき最初から効いていること」。以下は実際に起動した場合の手順。
 
 - 起動すると**新規建てが止まる**。既存建玉の損切りは止まらない。
-- **解除は自動では起きない**。確認フレーズの入力が要る（[IADR-0097](../../../docs/adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）。
+- **解除は自動では起きない**。確認フレーズの入力が要る（[IADR-0097](../../../.ai-context/adr/IADR-0097_killswitch-disengage-confirmation-phrase.md)）。
   フレーズは `DISCORD_BOT_KILLSWITCH_PHRASE`（`ast-secrets/discord-bot-killswitch-phrase`）で与えた値で、
   **未設定なら解除できない**（摩擦を下げない設計）。解除の導線は Discord Bot の制御コマンドか SC-03 の統制状態画面。
 - 「dogfood が動かない」ときは、まず kill switch 状態を疑う（`kubectl -n ai-stock-trading logs deploy/risk-management-service` に

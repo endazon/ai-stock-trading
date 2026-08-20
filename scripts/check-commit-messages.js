@@ -296,8 +296,8 @@ function loadExistingAdrIds(prefix, dir) {
   }
 }
 
-/** 実装 ADR（本リポ `docs/adr/`）の実在番号集合。読めなければ null。 */
-function loadExistingIadrIds(dir = path.join(__dirname, '..', 'docs', 'adr')) {
+/** 実装 ADR（本リポ `.ai-context/adr/`）の実在番号集合。読めなければ null。 */
+function loadExistingIadrIds(dir = path.join(__dirname, '..', '.ai-context', 'adr')) {
   return loadExistingAdrIds('IADR', dir);
 }
 
@@ -404,7 +404,7 @@ function validateIdExistence(subject, iadrIds, planAdrIds, planIds) {
   const reasons = [];
   for (const id of m[2].split(',').map((x) => x.trim()).filter(Boolean)) {
     if (iadrIds && /^IADR-\d{3,4}$/.test(id) && !iadrIds.has(id)) {
-      reasons.push(`起点 ID "${id}" が docs/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性）`);
+      reasons.push(`起点 ID "${id}" が .ai-context/adr/ に実在しない（採番衝突・改番後のタイトル未追随の可能性）`);
     } else if (planAdrIds && /^ADR-\d{3,4}$/.test(id) && !planAdrIds.has(id)) {
       reasons.push(`起点 ID "${id}" が planning の 07_adr/ に実在しない（誤記・廃止の可能性）`);
     } else if (planIds && /^(FR|UC|SC)-\d+$/.test(id) && !planIds.has(normalizePlanId(id))) {
@@ -606,7 +606,7 @@ function main() {
   // 注: notice はここ（実行時の呼び出し側）でのみ出す。loadExisting* の内部に置くと、
   // 未 populate を模したテストのフィクスチャが本物のアノテーションを漏らす（#140 と同型）。
   if (!iadrIds) {
-    notice('docs/adr/ を読めないため IADR 実在性チェックをスキップした（この範囲は検査されていない）');
+    notice('.ai-context/adr/ を読めないため IADR 実在性チェックをスキップした（この範囲は検査されていない）');
   }
   if (!planAdrIds) {
     notice(
