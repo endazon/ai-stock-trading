@@ -187,6 +187,7 @@
 
 ### ドキュメント
 
+- **NFR**: CHANGELOG を自動更新 (#443) (2fe0575)
 - **NFR**: キット配布物の改善 6 件を計画側へ環流する (#503) (fea15e6)
 - **NFR**: blocked 判定を実測で棚卸しし、ラベルと受け皿 issue を整える (#502) (4df42a7)
 - **FR-21,SC-03,IADR-0186**: SC-03 発生回数の期間の裁定（当月）を反映し、計画 pin を 130a109 へ進める (#489) (5be9e0f)
@@ -257,6 +258,7 @@
 
 ### ビルド
 
+- **deps**: bump github/codeql-action from 4.37.6 to 4.37.7 (#534) (c4a75c8)
 - **deps**: bump github/codeql-action from 4.37.4 to 4.37.6 (#475) (6d7e7c6)
 - **deps**: bump github/codeql-action from 4.37.3 to 4.37.4 (#383) (e4b1a30)
 - **deps**: bump github/codeql-action from 4 to 4.37.3 (#326) (0febc5d)
@@ -287,6 +289,8 @@
 
 ### その他
 
+- Update permissions in settings.json (62955ac)
+- **NFR,IADR-0206**: 計画 pin を 179a69a へ進め、キット大幅更新（役割スロット制・必読別紙化・検査強化）へ追随する (#531) (85e1a4d)
 - **NFR,IADR-0205**: 計画 pin を 4d6a7d6 へ進め、母集合定義・分類 C 再判定・§11 パリティ・check-kit-sync.js の Windows パスを追随する (#525) (0053a4b)
 - **NFR,IADR-0203**: キットへ追随し、分類 C の全数監査で取り違え 2 件を是正する (#522) (392fff7)
 - **NFR,IADR-0202**: traceability.md の同期分類を C から A へ移し、暫定の検査除外を外す (#518) (30191c1)
