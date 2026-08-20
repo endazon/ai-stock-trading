@@ -3,13 +3,13 @@ title: システム構成図（ai-stock-trading + microservices-platform）
 type: tech-architecture
 status: draft
 created: 2026-07-16
-updated: 2026-07-16
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-13, FR-14]
-adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0006]
-iadrs: [IADR-0019, IADR-0021, IADR-0027, IADR-0048, IADR-0052, IADR-0055]
+adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0006, MSP:ADR-0010]
+iadrs: [IADR-0019, IADR-0021, IADR-0027, IADR-0048, IADR-0052, IADR-0053, IADR-0055, IADR-0056, IADR-0061]
 specs: [01_architecture-overview, ADR-0001_platform-reuse]
 issues: []
 -->
@@ -23,11 +23,11 @@ issues: []
 > を、現時点の実装（10 サービス構成・LLM ゲートウェイ委譲）に合わせて詳細化した。計画上の新規 7 サービスに対し、
 > 実装は監査・設定管理・費用統制を加えた 10 サービスへ拡張済みである。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 技術検討: ai-stock-trading `06_technical/01_architecture-overview.md`、platform `06_technical/01_architecture-overview.md`
-- ADR: ADR-0001（計画リポ）（基盤再利用・無改修）、ADR-0002（証券会社アダプタ。計画リポ上 `Proposed`）、ADR-0003（損切り執行）
-- 実装 ADR: IADR-0019（監査サービス）、IADR-0021（設定管理サービス）、IADR-0027（費用統制サービス）、IADR-0048（ローカル実行）、IADR-0052（k8s デプロイ）、IADR-0055（LLM 費用計測イベント。`Proposed`・未実装）
+- 技術検討: ai-stock-trading と platform の各アーキテクチャ概要（`06_technical/01_architecture-overview.md`）
+- 計画 ADR: 基盤再利用・無改修、証券会社アダプタ（計画リポ上は `Proposed`）、損切り執行
+- 実装 ADR: 監査サービス、設定管理サービス、費用統制サービス、ローカル実行、k8s デプロイ、LLM 費用計測イベント（`Proposed`・未実装）
 - 通信契約: [通信仕様書（イベント・ポート）](../api/events-and-ports.md)
 
 ## 読み方（凡例）
@@ -214,12 +214,12 @@ sequenceDiagram
   ＋ 10 Worker。全 Worker は Web SDK（`:8080`）で `/health/ready` を公開し、ホストへはポート非公開。
 - **本番 / k8s**: Kubernetes。Helm chart `deploy/helm/ai-stock-trading`。共有インフラ
   （Postgres/RabbitMQ/Keycloak/otel）は platform の `platform-infra` を **ExternalName** で参照し、
-  基盤側と共有する。moomoo OpenD は常駐コンテナ（`deploy/opend/`・IADR-0053）。実アダプタは
-  SIMULATE（仮想売買）まで実装済みで、実弾発注は別ゲートで抑止する（ADR-0002 は計画リポ上まだ
-  `Proposed`、実装判断は IADR-0056）。
+  基盤側と共有する。moomoo OpenD は常駐コンテナ（`deploy/opend/`）。実アダプタは
+  SIMULATE（仮想売買）まで実装済みで、実弾発注は別ゲートで抑止する（証券会社アダプタの計画 ADR は
+  計画リポ上まだ `Proposed` であり、実アダプタ実装は SIMULATE PoC 完了に基づく実装側の判断による）。
 - **機密**: moomoo 資格情報 / Discord Webhook は Vault/Secrets。**LLM プロバイダ鍵は AST では
   扱わない**（鍵は MSP の LlmGateway 側が保持し、AST は `LlmGateway:BaseUrl` 経由でゲートウェイを呼ぶだけ。
-  ADR-0010 / IADR-0061 決定6）。
+  基盤の LLM ゲートウェイの計画 ADR と、実 LLM 接続の安全既定を定めた実装 ADR の決定 6 による）。
 
 ## 関連仕様
 

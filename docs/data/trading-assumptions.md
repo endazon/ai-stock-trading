@@ -3,30 +3,31 @@ title: 全体前提条件（assumptions / assumptions_change_log）データ仕�
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-08-21
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-13, FR-17, UC-06]
+ids: [FR-13, FR-17, FR-18, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0012, IADR-0021, IADR-0173]
+iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173]
 specs: [01_requirements, 05_trading-assumptions, 20260710_configuration-assumptions]
-issues: [#14, #358]
+issues: [#14, #19, #139, #358]
 -->
 
 
 # データ仕様書: 全体前提条件（assumptions / assumptions_change_log）
 
 > 設定管理サービス（`ConfigurationService`）が所有する全体前提条件（税・手数料・為替・計算方針・月次費用上限）の永続化。
-> FR-17（一元管理・バージョン管理・利用者のみ変更）・UC-06。設計は IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する、
-> バージョニング/履歴は IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する を踏襲。作業仕様は
+> 全体前提条件の一元管理・バージョン管理・利用者のみによる変更と、設定変更のユースケースを支える。
+> 設計は「全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する」、
+> バージョニング/履歴は「単一行 JSON ＋バージョン列で永続化し楽観的排他制御する」を踏襲する。作業仕様は
 > 仕様書: 設定管理サービス Slice A（全体前提条件の一元管理）。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 機能要求（FR）: FR-17（全体前提条件の一元管理・バージョン管理。Must）、FR-13（設定変更）
-- ユースケース（UC）: UC-06（設定変更・変更履歴・通知）
-- ADR: ADR-0001（Database per Service）、FR-17（変更は利用者のみ・変更履歴を記録）
+- 機能要求: 全体前提条件の一元管理・バージョン管理（Must）、画面からの設定変更
+- ユースケース: 設定変更・変更履歴・通知
+- 計画 ADR: 基盤採用（Database per Service）。全体前提条件の要求により、変更は利用者のみ・変更履歴を記録する
 
 ## ドメイン型（`TradingAssumptions`）
 
@@ -38,7 +39,7 @@ issues: [#14, #358]
 | JapanCommission | CommissionSchedule | (0,0,0) 未登録 | 日本株手数料（Rate/Minimum/Cap。要確認・口座開設後に登録） |
 | UnitedStatesCommission | CommissionSchedule | (0,0,0) 未登録 | 米国株手数料（同上） |
 | FxSpreadRatio | decimal | 0 未登録 | 非 JPY 市場の為替スプレッド率（約定代金比・片道。実 FX レート連携までの近似） |
-| MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358 / IADR-0173: 最小期待利益の税込み基準。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
+| MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358。最小期待利益は税込み基準で評価する。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
 | CostLimits | MonthlyCostLimits | (20000,15000,5000,0) | 月次費用上限（総額/LLM/インフラ/データ・円） |
 
 - `CommissionSchedule(Rate, Minimum, Cap)`: 手数料 = clamp(約定代金×Rate, Minimum, Cap)。Cap≤0 は上限なし。
@@ -52,7 +53,7 @@ issues: [#14, #358]
 | --- | --- | --- |
 | Id | int (PK=1) | 単一行の固定キー |
 | Json | jsonb | `TradingAssumptions` の JSON |
-| Version | int（並行トークン） | 楽観的排他制御（更新時 +1・IADR-0012） |
+| Version | int（並行トークン） | 楽観的排他制御（更新時 +1） |
 | UpdatedAt | DateTimeOffset | 最終更新時刻 |
 
 ### AssumptionsChangeRow（`assumptions_change_log`・追記専用）
@@ -69,15 +70,15 @@ issues: [#14, #358]
 ## 照会・変更
 
 - `GET /assumptions`（現在値＋Version）は **OwnerOrService**（利用者＝`trading-owner` またはサービス＝`trading-service`）。
-  消費側サービス（費用統制 #139・損益集計・AI 判断）が単一の真実源を共通参照するため（IADR-0063 決定 2）。
+  消費側サービス（費用統制 #139・損益集計・AI 判断）が単一の真実源を共通参照するため（共有クライアント方式の決定 2）。
 - `GET /assumptions/history`（新しい順）・`PUT /assumptions`（更新）は **OwnerOnly 据え置き**（最小権限）。履歴は「誰がなぜ
   変えたか」の運用情報のためサービスへ開放しない。
 - `PUT` は `ExpectedVersion`・`Reason` 必須（欠如は 400）。版不一致は 409（楽観排他）。成功時に `AssumptionsChanged` イベントを発行
-  → 通知サービスが Discord 通知（IADR-0020/0021）。AI・自動処理は `trading-owner` を持たず変更できない。
+  → 通知サービスが Discord 通知（通知は既定で外部送信しない安全既定に従う）。AI・自動処理は `trading-owner` を持たず変更できない。
 
 ## 消費側からの参照（共有クライアント）
 
-- 消費側サービスは `AiStockTrading.Configuration.Client` の `IAssumptionsProvider` で参照する（IADR-0063 決定 3）。
+- 消費側サービスは `AiStockTrading.Configuration.Client` の `IAssumptionsProvider` で参照する（共有クライアント方式の決定 3）。
   配線は `services.AddAiStockTradingAssumptions(configuration)` の 1 行＋`x.AddConsumer<AssumptionsChangedConsumer>()`（版の追随）。
 - キャッシュは `AssumptionsChanged` で無効化し、TTL（`Configuration:AssumptionsCacheTtlSeconds`・既定 300 秒）でも失効する。
 - フェイルセーフ: 取得不可時は ①last known good → ②既定値（`Version=0`＝未解決）の順に倒す（決定 5）。
@@ -93,16 +94,16 @@ issues: [#14, #358]
 
 | 集約 | 永続化 | 実装 issue | 備考 |
 | --- | --- | --- | --- |
-| TradingAssumptions（`assumptions`） | PostgreSQL 単一行 JSON＋Version（専有 DB `configuration_svc`） | #19（PR） | 楽観排他・既定シード（IADR-0012 踏襲） |
+| TradingAssumptions（`assumptions`） | PostgreSQL 単一行 JSON＋Version（専有 DB `configuration_svc`） | #19（PR） | 楽観排他・既定シード（単一行 JSON ＋バージョン列の方式を踏襲） |
 | 変更履歴（`assumptions_change_log`） | PostgreSQL 追記専用 | #19（PR） | アクター・理由・前後値・日時・版 |
 
 ## 対象外（後続）
 
 - 手数料・為替スプレッドの実額登録（moomoo 口座開設後・05 §2/§3 要確認）。損益/AI判断/リスク統制からの `CostCalculator` 実利用。
-- 報告書の `assumptions_version` 凍結。税・為替の精緻化（外国税額控除・実レート・NISA・損益通算＝FR-18 将来拡張）。
-- FR-13 の監視銘柄・変動閾値・収集間隔（各サービス所管）。
+- 報告書の `assumptions_version` 凍結。税・為替の精緻化（外国税額控除・実レート・NISA・損益通算は将来拡張の要求）。
+- 画面からの設定変更のうち、監視銘柄・変動閾値・収集間隔（各サービス所管）。
 
 ## 関連仕様
 
 - 作業仕様書: 仕様書: 設定管理サービス Slice A（全体前提条件の一元管理）
-- 実装ADR: IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する、IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する（踏襲）
+- 実装ADR: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する／リスク管理設定は単一行 JSON ＋バージョン列で永続化し楽観的排他制御する（踏襲）
