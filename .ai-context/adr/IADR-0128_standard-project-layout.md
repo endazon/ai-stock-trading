@@ -6,7 +6,7 @@ related_ids:
   - NFR
   - IADR-0001
   - IADR-0046
-  - ADR-0030 # platform（microservices-platform）側の計画 ADR
+  - MSP:ADR-0030 # platform（microservices-platform）側の計画 ADR
   - ADR-0019 # 同上（ユニット第一構成）
 author: endazon (with Claude Code)
 created: 2026-08-03

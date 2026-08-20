@@ -28,7 +28,7 @@ plan_refs:
 - 関連 ADR: [IADR-0016](../adr/IADR-0016_safe-broker-execution.md)（安全既定・二重ゲート）、
   [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md)（§3 実弾解禁前提）、
   [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md)（決定 5＝第三の閂）、計画 ADR-0002（broker-selection）
-- 計画書リンク: `../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md`
+- 計画書リンク: `planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md`
 
 ## 目的・背景
 
