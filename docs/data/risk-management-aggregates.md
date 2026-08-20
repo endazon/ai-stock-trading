@@ -2,23 +2,25 @@
 title: リスク管理ドメインの集約（設定・スナップショット・注文）データ仕様書
 type: data-spec
 status: draft
-related_ids: [FR-10, FR-12, FR-17, FR-19, FR-20, ADR-0001, ADR-0003, ADR-0007, ADR-0008]
-author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-04
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
-  - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
+adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008]
+iadrs: [IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0183]
+specs: [01_architecture-overview, 05_trading-assumptions, ADR-0007_trading-guard-and-margin, ADR-0008_staged-gates-and-backtest]
+issues: [#12, #17, #19, #25, #27, #302, #31, #329, #346]
+-->
+
 
 # データ仕様書: リスク管理ドメインの集約（設定・スナップショット・注文）
 
 > 実装済みドメイン型（`RiskManagementService.Domain` / `AiStockTrading.Shared.Contracts.Trading`）の集約境界・
 > 属性・永続化方針を定義する。属性 `PositionEffect` / `InvestedCapital` / `UnrealizedPnl` / `OrderStatus.Rejected` 等は
 > PR #41・#42・#44（develop にマージ済み）と本 PR に統合済みの #43 で確定したもの。各属性の逆算根拠は
-> [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)、判定での用途は
+> IADR-0002: TradingDefaults の既定値は全体前提条件からの逆算値として明示する、判定での用途は
 > [FR-10 機能仕様](../functional/FR-10_risk-controls.md) を参照する。
 
 ## 起点となる計画書（トレーサビリティ）
@@ -34,11 +36,11 @@ plan_refs:
 1. **設定（`RiskManagementSettings` 集約）**: 取引ガード・リスク上限・段階ゲートの確定値。利用者のみ変更でき、生成AIは
    上書きできない（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008）。実運用では設定ストア（PostgreSQL）から読み込み、既定値は `TradingDefaults` が提供する。
 2. **運用状態スナップショット（`PortfolioSnapshot` 値オブジェクト）**: 判定時点のポートフォリオ・当日損益・kill switch 等。
-   永続エンティティではなく、リスク管理ホスト（#12）が保有・約定・損益から**都度組み立てる派生データ**。
+   永続エンティティではなく、リスク管理ホストが保有・約定・損益から**都度組み立てる派生データ**。
 3. **注文（`OrderIntent` / `BrokerOrder`）**: 取引判断が生成する注文意図と、証券会社アダプタが返す注文実体。注文・監査ログの
-   永続化は後続スライス（#12/#17/#19）で PostgreSQL に実装する。
+   永続化は後続スライスで PostgreSQL に実装する。
 
-永続化は platform の **Database per Service**（ADR-0001）に従い、リスク管理サービス専有スキーマに配置する。
+永続化は platform の **Database per Service**に従い、リスク管理サービス専有スキーマに配置する。
 
 ## エンティティ定義
 
@@ -48,9 +50,9 @@ plan_refs:
 
 | 属性 | 型 | 必須 | 説明 |
 | --- | --- | --- | --- |
-| Guard | TradingGuardSettings | ○ | 取引ガード（FR-19） |
-| Limits | RiskLimitSettings | ○ | リスク上限（FR-10） |
-| Stage | StageSettings | ○ | 段階ゲート（FR-20） |
+| Guard | TradingGuardSettings | ○ | 取引ガード |
+| Limits | RiskLimitSettings | ○ | リスク上限 |
+| Stage | StageSettings | ○ | 段階ゲート |
 
 ### TradingGuardSettings（FR-19, ADR-0007, ADR-0016 決定1。#332 / IADR-0132）
 
@@ -83,9 +85,9 @@ plan_refs:
 > `maxDailyOrderAmountRatio` へ変わる。**SC-02（リスク設定画面）は旧名で送るため保存が 400 で拒否される**
 > （＝古い画面から誤った単位の値を保存できない安全側の縮退）。画面の追随は
 > [#340](https://github.com/endazon/ai-stock-trading/issues/340) の担当であり、比率と「現在 equity での実額」の
-> 併記が要る。既存の永続化行（JSON）も旧名のままでは復元できないため、切替計画（#346）で扱う。
+> 併記が要る。既存の永続化行（JSON）も旧名のままでは復元できないため、切替計画で扱う。
 
-### StageSettings（FR-20, ADR-0008）
+### StageSettings
 
 `record StageSettings(Stage, Mode, CapitalCap)`。既定は
 `(Stage0Verification, Paper, TradingDefaults.InitialCapital)`（#329: $3,000 ＝ ¥491,100）。
@@ -95,9 +97,9 @@ plan_refs:
 | --- | --- | --- |
 | Stage | TradingStage | Stage0Verification / Stage1Paper / Stage2MinimalLive / Stage3ScaledLive |
 | Mode | TradeMode | Paper / Live。段階が許可するモードのみ実行可 |
-| CapitalCap | decimal | 段階資金上限（円）。累計投入額の上限（IADR-0005） |
+| CapitalCap | decimal | 段階資金上限（円）。累計投入額の上限 |
 
-### BannedSymbol（FR-19）
+### BannedSymbol
 
 `record BannedSymbol(Symbol, Market, Reason, RegisteredOn)`。禁止銘柄は（Symbol, Market）で一意。
 
@@ -105,12 +107,12 @@ plan_refs:
 
 | 属性 | 型 | 既定 | 説明 |
 | --- | --- | --- | --- |
-| Capital | decimal | 必須 | 判定に用いる自己資金（**equity**）＝当日開始時運用資金（前営業日終値時点・当日中不変）。金額系上限もこの値から解決する（#329/IADR-0130） |
+| Capital | decimal | 必須 | 判定に用いる自己資金（**equity**）＝当日開始時運用資金（前営業日終値時点・当日中不変）。金額系上限もこの値から解決する |
 | OpenPositionCount | int | 0 | 保有**建玉**数 |
-| InvestedCapital | decimal | 0 | 保有取得額合計（コストベース）。段階資金上限の累計判定（#27/IADR-0005） |
-| DailyOrderedAmount | decimal | 0 | 当日発注金額累計。**新規建て（Open）の約定のみ**を積む（#302/#329） |
+| InvestedCapital | decimal | 0 | 保有取得額合計（コストベース）。段階資金上限の累計判定 |
+| DailyOrderedAmount | decimal | 0 | 当日発注金額累計。**新規建て（Open）の約定のみ**を積む |
 | DailyRealizedPnl | decimal | 0 | 当日実現損益（負=損失） |
-| UnrealizedPnl | decimal | 0 | 含み損益（日次終値評価）。日次損失上限は実現+含みの合算で判定（#31/IADR-0008） |
+| UnrealizedPnl | decimal | 0 | 含み損益（日次終値評価）。日次損失上限は実現+含みの合算で判定 |
 | DrawdownRatio | decimal | 0 | 資金ピークからのDD率 |
 | ConsecutiveLosses | int | 0 | 連敗数（サイジング縮小に使用） |
 | SymbolsTradedToday | Set&lt;(Symbol, Market)&gt; | 空 | 当日取引済み銘柄（差金決済防止。市場込み #26） |
@@ -119,7 +121,7 @@ plan_refs:
 ### OrderIntent / BrokerOrder（FR-04/05/12）
 
 `OrderIntent(Symbol, Market, Side, ProductType, Mode, Quantity, Price, PositionEffect=Open)`。`Notional = Quantity × Price`。
-`PositionEffect`（Open/Close）でエントリー/手仕舞いを表す（#25/IADR-0004）。
+`PositionEffect`（Open/Close）でエントリー/手仕舞いを表す。
 
 `BrokerOrder(OrderId, Intent, Status, FilledQuantity, AveragePrice, PlacedAt, CompletedAt?)`。`OrderStatus` は
 Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証券会社拒否 #30/IADR-0007）。
@@ -148,10 +150,10 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 | FilledQuantity / AveragePrice | int / decimal | 約定数量・約定単価 |
 | ExecutedAt | DateTimeOffset | 約定時刻（取引日境界は JST 固定オフセットで解釈。IADR-0018） |
 
-> 部分約定の累積更新（実ブローカー）は #13/moomoo 後続でゲート済み（IADR-0016）。含み損益・DD の日次終値マークは市場データ
+> 部分約定の累積更新（実ブローカー）は #13/moomoo 後続でゲート済み。含み損益・DD の日次終値マークは市場データ
 > 連携まで対象外（`UnrealizedPnl`/`DrawdownRatio` は射影上 0。IADR-0008 の #12 後続）。
 
-### 借株料の日次計上（`BorrowFeeAccrualRow` / `BorrowFeeUnavailableDayRow`・永続。#465 / ADR-0027 / [IADR-0183](../adr/IADR-0183_borrow-fee-accrual-recording.md)）
+### 借株料の日次計上（`BorrowFeeAccrualRow` / `BorrowFeeUnavailableDayRow`・永続。#465 / ADR-0027 / IADR-0183: 借株料は「建玉 × 取引日」で積み、未供給の日を別テーブル・別イベントで持つ）
 
 ADR-0027 が「借株料の累計」の作り方（計上のタイミング・単位・期間の境界・料率変動・供給元）を確定させたことに伴う記録側。
 **計上の単位は「建玉 × 取引日」**であり、銘柄別・口座全体・月次は**すべて本表の合算で導出する**（決定2「別々に積まない」）。
@@ -204,13 +206,13 @@ erDiagram
 
 | 集約 | 永続化 | 実装 issue | 備考 |
 | --- | --- | --- | --- |
-| RiskManagementSettings（＋子） | PostgreSQL 設定ストア。バージョン管理（FR-17）で前提条件の履歴を保持 | #12, #17, #19 | 変更は利用者のみ・変更履歴を記録（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008） |
+| RiskManagementSettings（＋子） | PostgreSQL 設定ストア。バージョン管理で前提条件の履歴を保持 | #12, #17, #19 | 変更は利用者のみ・変更履歴を記録（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008） |
 | PortfolioSnapshot | 非永続（都度算出） | #12 | 保有・約定・損益から組み立てる派生データ |
-| 取引台帳（`approved_orders` / `trade_fills`） | PostgreSQL 追記専用（専有 DB） | #12（PR #63） | `OrderApproved`/`OrderExecuted` を記録し `PortfolioState` を射影（IADR-0018）。`DecisionId`/`OrderId` で冪等 |
+| 取引台帳（`approved_orders` / `trade_fills`） | PostgreSQL 追記専用（専有 DB） | #12（PR #63） | `OrderApproved`/`OrderExecuted` を記録し `PortfolioState` を射影。`DecisionId`/`OrderId` で冪等 |
 | BrokerOrder / OrderIntent | PostgreSQL 注文テーブル | #12, #13 | 注文状態遷移（受付→約定/拒否/取消）を追跡 |
-| 監査イベント（FR-11） | PostgreSQL 監査ログ（時系列） | #17 | 判定結果・拒否理由・全イベントを記録 |
+| 監査イベント | PostgreSQL 監査ログ（時系列） | #17 | 判定結果・拒否理由・全イベントを記録 |
 
-- Database per Service（ADR-0001）に従い、リスク管理サービス専有スキーマに配置する。他サービスは直接参照せずイベント経由で連携する。
+- Database per Serviceに従い、リスク管理サービス専有スキーマに配置する。他サービスは直接参照せずイベント経由で連携する。
 - 設定値は不変オブジェクトとして注入し、生成AI・自動処理は変更できない（ガード設定: ADR-0007 / 統制上限: ADR-0003 / 段階設定: ADR-0008）。
 
 ## 整合性・制約ルール
@@ -228,10 +230,10 @@ erDiagram
 
 - 機能仕様書: [FR-10 リスク統制](../functional/FR-10_risk-controls.md)
 - 通信仕様書: [イベント・ポート契約](../api/events-and-ports.md)
-- 実装ADR: [IADR-0002](../adr/IADR-0002_trading-defaults-derivation.md)（既定値の逆算）、[IADR-0003](../adr/IADR-0003_position-sizing-responsibility.md)（サイジング責務）、
-  [IADR-0004](../adr/IADR-0004_position-effect-entry-scoping.md)（建玉効果）、[IADR-0005](../adr/IADR-0005_stage-capital-cap-definition.md)（段階資金上限）、
-  [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否）、[IADR-0008](../adr/IADR-0008_daily-loss-limit-basis.md)（日次損失基準）、
-  [IADR-0018](../adr/IADR-0018_portfolio-ledger-projection.md)（取引台帳射影＝運用状態の実データ化）
+- 実装ADR: IADR-0002: TradingDefaults の既定値は全体前提条件からの逆算値として明示する（既定値の逆算）、IADR-0003: ポジションサイジングは取引判断サービスが行い、RiskEvaluator は検証のみとする（サイジング責務）、
+  IADR-0004: エントリー/手仕舞いは建玉効果（PositionEffect）で判定し、売買方向から分離する（建玉効果）、IADR-0005: 段階資金上限は保有ポジションの取得額合計＋当該注文額（コストベース累計）で判定する（段階資金上限）、
+  IADR-0007: 証券会社拒否は OrderStatus.Rejected で表し、リスク事前拒否（OrderRejected イベント）と区別する（証券会社拒否）、IADR-0008: 日次損失上限は実現損益と含み損益の合算で判定する（日次損失基準）、
+  IADR-0018: ポートフォリオ状態は追記専用取引台帳からの純射影で供給する（取引台帳射影＝運用状態の実データ化）
 
 ## 未決事項
 

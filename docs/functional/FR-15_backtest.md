@@ -2,22 +2,23 @@
 title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
-related_ids: [FR-15, FR-20, FR-17, ADR-0008, ADR-0023, ADR-0019, ADR-0016, IADR-0105, IADR-0138, IADR-0156, IADR-0157]
-author: endazon (with Claude Code)
 created: 2026-07-11
 updated: 2026-08-06
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-15, FR-17, FR-20]
+adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
+iadrs: [IADR-0043, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157]
+specs: [01_requirements, 06_daytrading-review, 20260711_backtest-foundation, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, ADR-0008_staged-gates-and-backtest, ADR-0019_moomoo-poc-margin-paper-account, ADR-0023_us-daily-ohlc-history-source]
+issues: [#382]
+-->
 
-# 機能仕様書: バックテスト基盤（FR-15）
 
-> 過去データによるバックテストを実弾投入前の**必須ゲート（Stage 0）**とする（ADR-0008）。本基盤は過去データ供給の抽象・
-> シミュレーション実行・結果集計・過剰適合補正・Stage 0 合格判定を提供する。実装は純ドメイン中心（[IADR-0043](../adr/IADR-0043_backtest-foundation.md)）。
+# 機能仕様書: バックテスト基盤
+
+> 過去データによるバックテストを実弾投入前の**必須ゲート（Stage 0）**とする。本基盤は過去データ供給の抽象・
+> シミュレーション実行・結果集計・過剰適合補正・Stage 0 合格判定を提供する。実装は純ドメイン中心（IADR-0043: バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける）。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -39,7 +40,7 @@ plan_refs:
 
 ## 機能詳細
 
-### 過去データの供給（#208・[IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)）
+### 過去データの供給（#208・IADR-0105: バックテストの実過去データ源は非同期ポートで取得しスナップショットへ固定する（Stooq・既定 no-op））
 
 取得（非同期・外部 I/O）と評価（同期・純粋）をポートで分ける。取得はシミュレーションの**外側で 1 回だけ**行い、
 結果をスナップショットへ固定するため、ウォークフォワードの分割ごと・試行ごとの再取得で結果が揺れない（決定性の保全）。
@@ -60,12 +61,12 @@ plan_refs:
 - **通信例外は送出する**: 取得が失敗すればバックテストは完走せず verdict も出ない＝昇格は起きない（fail-safe）。
 - 取得データは個人利用の範囲に留め、外部へ再配信しない（計画書 `02_datasource-candidates.md` の運用制約）。
 
-### 🟠 米国株日足 OHLC 履歴の現況（2026-08-06 改定・[ADR-0023](../../planning/projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md) **決定5** / [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）
+### 🟠 米国株日足 OHLC 履歴の現況（2026-08-06 改定・ADR-0023（計画リポ） **決定5** / IADR-0157: moomoo 履歴 K 線アダプタは実装するが、既定は `none` のままとする / [#382](https://github.com/endazon/ai-stock-trading/issues/382)）
 
 **履歴源は裁定され、アダプタも実装した。ただし ADR-0023 決定5 が本決定の前提とした 2 点が未確認であり、
 確認が済むまで本番のバックテストへ流してはならない。** 現況は次の 4 点であり、
-**1 点でも落として要約すると誤読になる**（[IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md) 決定4。
-2026-08-06 の裁定前は [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md) 決定2 の 4 点だった）。
+**1 点でも落として要約すると誤読になる**（IADR-0157: moomoo 履歴 K 線アダプタは実装するが、既定は `none` のままとする 決定4。
+2026-08-06 の裁定前は IADR-0156: 既定 no-op は「差し替え漏れ」ではなく「差し替え先の不在」である（米国株日足 OHLC 履歴源） 決定2 の 4 点だった）。
 
 1. **Stooq は取得不能である。** プログラムからの取得に対し **JavaScript proof-of-work のボット検知チャレンジ**を返す。
    **ADR-0023 決定1 はこの回避実装を明示的に禁じた**（提供側が自動取得を排除している以上、回避は規約リスクを負う。
@@ -80,12 +81,12 @@ plan_refs:
    （[blocked-tasks](../blocked-tasks.md) A-3）。
    - **取得枠の単位と回復周期**（`remainQuota: 300` が銘柄数かリクエスト数か。**多数銘柄を遡ると枠を使い切る可能性**があり、
      銘柄数単位ならバックテスト対象銘柄数の上限が制約になる）
-   - **前復権の調整方式が [ADR-0016](../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md)
+   - **前復権の調整方式が ADR-0016（計画リポ）
      決定14 の費用モデル（借株料・配当相当額）と二重計上・欠落を起こさないか**
 4. したがって **既定は `none`（no-op）のままであり、Stage 0 の合格判定はまだ発火しない。**
    バーが 1 本も取れなければ Stage 0 は不合格へ倒れる（fail-safe は壊れていない・IADR-0105 決定2）。
    発火させるには `Backtest:BarData:Provider=moomoo` を**明示的に構成する**必要があり、それは 3 の確認が済んでから行う。
-   [IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（最大 DD 0.15→0.10 の厳格化）も同じ理由で未発火のままである。
+   IADR-0138: Stage 0 の最大 DD 許容値を 0.15 から 0.10 へ厳格化し、運用の DD 停止ラインとの同値性をテストで固定する（最大 DD 0.15→0.10 の厳格化）も同じ理由で未発火のままである。
 
 > **「使える履歴源が無い」と書かないこと**（2 の裁定と実装を否定する）。
 > **「moomoo で解決した」とも書かないこと**（3 を落とすと、未確認のまま本番へ流す経路そのものになる）。
@@ -110,14 +111,14 @@ plan_refs:
 
 ### Stage 0 合格判定・遷移接続（Slice C）
 
-| 判定 | 条件（ADR-0008） | 既定閾値 |
+| 判定 | 条件 | 既定閾値 |
 | --- | --- | --- |
 | エッジ有意 | DSR 補正後もエッジが正 | DSR ≥ 0.95（真 SR>0 の確率） |
 | 過剰適合 | PBO が閾値以下 | PBO ≤ 0.5 |
-| 最大 DD | ≤ 10% | **≤ 10%**（[IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md) が 0.15 → 0.10 へ厳格化。ADR-0018 §4／前提条件 §5 の DD 上限と同値。**本行は 2026-08-06 に是正した**——旧記述「既定 15%＝前提条件の DD 上限」は二重に誤りで、15% は前提条件の値ではなく旧レンジ上限側からの逆算だった） |
+| 最大 DD | ≤ 10% | **≤ 10%**（IADR-0138: Stage 0 の最大 DD 許容値を 0.15 から 0.10 へ厳格化し、運用の DD 停止ラインとの同値性をテストで固定する が 0.15 → 0.10 へ厳格化。ADR-0018 §4／前提条件 §5 の DD 上限と同値。**本行は 2026-08-06 に是正した**——旧記述「既定 15%＝前提条件の DD 上限」は二重に誤りで、15% は前提条件の値ではなく旧レンジ上限側からの逆算だった） |
 | コスト頑健性 | **コスト 2 倍でも期待値が正** | 2x リターン > 0 |
 | ウォークフォワード | OOS が正 | OOS 総リターン > 0 |
-| 試行数 | 最小試行数以上 | **N ≥ 20**（[IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md) で 1 から較正）。1 では多重検定補正（期待最大 Sharpe）が恒等的に 0 になり、探索の過少申告を素通しさせる |
+| 試行数 | 最小試行数以上 | **N ≥ 20**（IADR-0110: Stage 0 の最小試行数を 1 → 20 へ較正する で 1 から較正）。1 では多重検定補正（期待最大 Sharpe）が恒等的に 0 になり、探索の過少申告を素通しさせる |
 | データ健全性 | 全バーがカットオフ後/匿名化（検証条件①） | `DataCutoffPolicy` 充足（`Stage0GateCheck.DataCutoff`） |
 
 - 合格 → `Stage0Verification → Stage1Paper` の**昇格推奨**を返す（実際の遷移承認は利用者・#20）。
@@ -163,15 +164,15 @@ plan_refs:
 ## 関連仕様
 
 - 機能仕様: [FR-20 段階ゲート](FR-20_staged-gates.md)、[FR-10 リスク統制](FR-10_risk-controls.md)
-- 実装 ADR: [IADR-0043](../adr/IADR-0043_backtest-foundation.md)、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
-  [IADR-0105](../adr/IADR-0105_backtest-historical-bar-source.md)（実過去データ源・安全既定）、
-  [IADR-0110](../adr/IADR-0110_stage0-criteria-calibration.md)（合格基準の閾値較正）、
-  [IADR-0138](../adr/IADR-0138_stage0-drawdown-tolerance-tightening.md)（最大 DD 0.15→0.10）、
-  [IADR-0156](../adr/IADR-0156_us-ohlc-history-source-absence.md)（履歴源の不在。**2026-08-06 に決定2・4・6 が改訂された**）、
-  [IADR-0157](../adr/IADR-0157_moomoo-history-kline-adapter.md)（**moomoo 履歴 K 線アダプタ。既定は `none` のまま・未確認 2 点**）
+- 実装 ADR: IADR-0043: バックテスト基盤は純ドメイン中心に構成し、実データ源/ホストは後続に切り分ける、IADR-0044（過剰適合補正）、IADR-0045（Stage 0 合格判定）、
+  IADR-0105: バックテストの実過去データ源は非同期ポートで取得しスナップショットへ固定する（Stooq・既定 no-op）（実過去データ源・安全既定）、
+  IADR-0110: Stage 0 の最小試行数を 1 → 20 へ較正する（合格基準の閾値較正）、
+  IADR-0138: Stage 0 の最大 DD 許容値を 0.15 から 0.10 へ厳格化し、運用の DD 停止ラインとの同値性をテストで固定する（最大 DD 0.15→0.10）、
+  IADR-0156: 既定 no-op は「差し替え漏れ」ではなく「差し替え先の不在」である（米国株日足 OHLC 履歴源）（履歴源の不在。**2026-08-06 に決定2・4・6 が改訂された**）、
+  IADR-0157: moomoo 履歴 K 線アダプタは実装するが、既定は `none` のままとする（**moomoo 履歴 K 線アダプタ。既定は `none` のまま・未確認 2 点**）
 - テスト仕様: [FR-15 バックテスト基盤](../tests/FR-15_backtest-tests.md)
-- 作業仕様: [20260711_backtest-foundation](../specs/20260711_backtest-foundation.md)、
-  [20260726_backtest-historical-bar-source](../specs/20260726_backtest-historical-bar-source.md)、
-  [20260806_382_us-ohlc-source-arbitration](../specs/20260806_382_us-ohlc-source-arbitration.md)、
-  [20260806_382_moomoo-ohlc-adapter](../specs/20260806_382_moomoo-ohlc-adapter.md)
+- 作業仕様: 作業仕様書: バックテスト基盤、
+  仕様書: バックテストの実過去データ源アダプタ（Stooq）、
+  仕様書: Stooq が取得不能である裁定への追随、
+  仕様書: moomoo 履歴 K 線アダプタの実装（#382 の残り / ADR-0023 決定5）
 - 実機確認・裁定待ちの一覧: [blocked-tasks](../blocked-tasks.md)（A-3〔未確認 2 点〕・B-4）

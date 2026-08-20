@@ -2,27 +2,24 @@
 title: 実弾（live trading・TrdEnv_Real）解禁 Runbook
 type: runbook
 status: draft
-related_ids:
-  - FR-05
-  - FR-20
-  - ADR-0002
-  - IADR-0016
-  - IADR-0056
-  - IADR-0057
-  - IADR-0060
-  - IADR-0074
-author: endazon (with Claude Code)
 created: 2026-07-19
 updated: 2026-07-29
-plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-05, FR-20]
+adrs: [ADR-0002]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111]
+specs: [ADR-0002_broker-selection]
+issues: [#132, #141, #24, #268]
+-->
+
 
 # 実弾（live trading・`TrdEnv_Real`）解禁 Runbook
 
 > リポジトリ単位の運用 Runbook。実弾（本物の資金による発注・moomoo `TrdEnv_Real`）へ切り替える際の
 > **前提確認・手順・切り戻し**を定める。運用仕様書 [`operations.md`](operations.md) の
-> 「OpenD の本番切替チェックリスト（#132）」段階 4（実弾解禁）を実務手順に落としたもの。
+> 「OpenD の本番切替チェックリスト」段階 4（実弾解禁）を実務手順に落としたもの。
 
 ## この文書の位置づけと現在地
 
@@ -41,9 +38,9 @@ plan_refs:
 ## 実弾防止の閂（現行）— 何が config で、何がコードか
 
 実弾は次の多重で塞いである。**config で「実弾を選ぼうとする」ことはできる**が、それは*拒否される入口*であって
-*開く入口ではない*（[IADR-0016](../adr/IADR-0016_safe-broker-execution.md) の二重ゲート ＋
-[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) §5 の第三の閂 ＋
-[IADR-0111](../adr/IADR-0111_broker-tier-selection.md) の解禁ゲート）。
+*開く入口ではない*（IADR-0016: 発注執行は安全既定（ペーパー）とし、moomoo 実発注は PoC までゲートする の二重ゲート ＋
+IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す §5 の第三の閂 ＋
+IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する の解禁ゲート）。
 
 | # | 閂 | 実体 | 実装箇所 | config で通せるか |
 | --- | --- | --- | --- | --- |
@@ -58,8 +55,8 @@ plan_refs:
 > 要約版が [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) にもあるが、**本表を単一情報源とする**。
 >
 > 閂 0・3 は「実弾を可能にする設定の入口」**ではない**。実弾を*拒否する*入口である
-> （[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定 5 / トレードオフ、
-> [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) 決定 5）。実弾の入口は**別 IADR**でのみ開く。
+> （IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す 決定 5 / トレードオフ、
+> IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する 決定 5）。実弾の入口は**別 IADR**でのみ開く。
 
 ## 関連する config キー（実コードで確認済み）
 
@@ -75,12 +72,12 @@ plan_refs:
 | `Broker:Moomoo:OpenD:RsaPrivateKeyPath` | （空＝非暗号） | cross-network trade に必須の RSA 秘密鍵パス。設定済みでファイル不在なら起動時停止（preflight） | 同上 / `MoomooPreflight.Validate` |
 | `Broker:Moomoo:OpenD:ReplyTimeoutSeconds` | `15` | OpenD 応答待ち上限（1〜600 秒）。範囲外は起動時停止 | `MoomooBrokerOptions.ParseReplyTimeout` |
 
-Helm では **`broker.tier`**（単一スイッチ・[IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）が階層を決める。
+Helm では **`broker.tier`**（単一スイッチ・IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する）が階層を決める。
 `moomoo-sim` で `Broker__Provider=moomoo` ＋ `Broker__Environment=sim` ＋ OpenD 接続パラメータが注入される
 （[`deploy/helm/ai-stock-trading/README.md`](../../deploy/helm/ai-stock-trading/README.md)）。
 `moomoo.enabled=true` は**非推奨エイリアス**で、`broker.tier` 未指定のときだけ `moomoo-sim` として解釈される。
 **`moomoo-live` は描画時に `fail` し、`TrdEnv` を values で `real` にできる口も用意していない**
-（[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) トレードオフ / [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) 決定 5）。
+（IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す トレードオフ / IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する 決定 5）。
 
 ## 切替の設計（目標像）: 解禁 IADR 後の「単一 config フリップ」
 
@@ -106,20 +103,20 @@ broker:
 
 ## 解禁前チェックリスト（すべて充足するまで解禁しない）
 
-実弾解禁の前提は [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 と
-[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定 6 に定義される。詳細な状態表（12 項目）は
-[`operations.md`](operations.md) の「OpenD の本番切替チェックリスト（#132）> 前提条件」にあり、ここでは
+実弾解禁の前提は IADR-0056: moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） §3 と
+IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す 決定 6 に定義される。詳細な状態表（12 項目）は
+[`operations.md`](operations.md) の「OpenD の本番切替チェックリスト> 前提条件」にあり、ここでは
 **実弾解禁に直結する項目**を再掲する（重複管理を避け、状態は `operations.md` を単一情報源とする）。
 
 | # | 前提 | 出所 | 確かめ方 |
 | --- | --- | --- | --- |
 | 1 | **段階ゲート（Stage）が実弾段まで進んでいる** | FR-20 / [#20](https://github.com/endazon/ai-stock-trading/issues/20) | バックテスト（Stage 0→1）・ペーパー実績（Stage 1→）を経て、撤退（kill switch）が発火していないこと。Stage が戻っていないこと |
-| 2 | **秘匿情報の Vault / External Secrets 化** | [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 / [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) 決定 4 | `externalSecrets.enabled=true` で実 Vault/ESO から同期されていること。**受け口の存在は充足ではない**（ストアは #24 管掌） |
-| 3 | **発注予約 `Reserved` 滞留の監視＋自動リコンサイル** | [#141](https://github.com/endazon/ai-stock-trading/issues/141) / [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md) | `Reconciliation:Enabled=true` かつ**実照会プローブが配線済み**であること（既定 no-op では自動解消しない）。滞留＝「発注済みか不明な建玉」で実弾では実損リスク |
-| 4 | **無人 OpenD 常駐の成立** | [#132](https://github.com/endazon/ai-stock-trading/issues/132) / [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) | 安定ノード固定（egress IP 安定）・デバイス信頼の永続化で無人再ログインが成立。`securityContext`（非 root）実動作確認。**readiness 通過≠ログイン完了**に注意 |
-| 5 | **Hetzner（海外 IP）接続・ToS の確認** | ADR-0002 未決 / [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) | 人手の接続確認・契約判断（#24） |
-| 6 | **`TradingDefaults`（リスク統制・上限）の実弾向け再確認** | [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 | 全体前提条件（05_trading-assumptions §5）と一致し、実弾向けに保守的であることを再確認。少額上限から始めること |
-| 7 | **発注の冪等化（at-most-once）** | [#131](https://github.com/endazon/ai-stock-trading/issues/131) / [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) | **充足済み**（発注前 `DecisionId` 予約の 3 相化）。ただし #3 の滞留リコンサイルと併せて運用すること |
+| 2 | **秘匿情報の Vault / External Secrets 化** | IADR-0056: moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） §3 / IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す 決定 4 | `externalSecrets.enabled=true` で実 Vault/ESO から同期されていること。**受け口の存在は充足ではない**（ストアは #24 管掌） |
+| 3 | **発注予約 `Reserved` 滞留の監視＋自動リコンサイル** | [#141](https://github.com/endazon/ai-stock-trading/issues/141) / IADR-0074: Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する | `Reconciliation:Enabled=true` かつ**実照会プローブが配線済み**であること（既定 no-op では自動解消しない）。滞留＝「発注済みか不明な建玉」で実弾では実損リスク |
+| 4 | **無人 OpenD 常駐の成立** | [#132](https://github.com/endazon/ai-stock-trading/issues/132) / IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す | 安定ノード固定（egress IP 安定）・デバイス信頼の永続化で無人再ログインが成立。`securityContext`（非 root）実動作確認。**readiness 通過≠ログイン完了**に注意 |
+| 5 | **Hetzner（海外 IP）接続・ToS の確認** | ADR-0002 未決 / IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す | 人手の接続確認・契約判断 |
+| 6 | **`TradingDefaults`（リスク統制・上限）の実弾向け再確認** | IADR-0056: moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） §3 | 全体前提条件（05_trading-assumptions §5）と一致し、実弾向けに保守的であることを再確認。少額上限から始めること |
+| 7 | **発注の冪等化（at-most-once）** | [#131](https://github.com/endazon/ai-stock-trading/issues/131) / IADR-0057: 発注の冪等化は「発注前 DecisionId 予約」の3相で行い、不明な窓は再発注せず拒否する | **充足済み**（発注前 `DecisionId` 予約の 3 相化）。ただし #3 の滞留リコンサイルと併せて運用すること |
 | 8 | **監査サインオフ** | [#204](https://github.com/endazon/ai-stock-trading/issues/204)（go-live 前実装監査） | 実環境構築前の実装監査（FR/NFR/UC/SC/ADR トレース・安全性）で Conditional-Go 以上。指摘の未解消がないこと |
 
 > 上表に一つでも未充足があれば、実弾解禁 IADR を Accepted 化してはならない。とりわけ #2〜#5 は
@@ -177,12 +174,12 @@ broker:
 
 ## 参照
 
-- [運用仕様書 `operations.md`](operations.md) — OpenD 本番切替チェックリスト（#132）・`Reserved` 滞留 Runbook・データ保持
+- [運用仕様書 `operations.md`](operations.md) — OpenD 本番切替チェックリスト・`Reserved` 滞留 Runbook・データ保持
 - [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) — paper（内蔵擬似約定）と moomoo SIMULATE の違い・
-  どちらの経路で約定したかの識別（#268）
-- [IADR-0016](../adr/IADR-0016_safe-broker-execution.md) — 安全既定 paper・実弾防止の二重ゲート
-- [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) — SIMULATE PoC 完了・実弾ゲート（§3 解禁前提）
-- [IADR-0057](../adr/IADR-0057_order-dispatch-idempotency.md) — 発注の冪等化（at-most-once）
-- [IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md) — OpenD 本番化・切替ゲート（決定 5＝第三の閂）
-- [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md) — 発注予約の自動リコンサイル（#141）
-- [IADR-0111](../adr/IADR-0111_broker-tier-selection.md) — ブローカ階層（provider × environment）・解禁ゲート（閂 0）
+  どちらの経路で約定したかの識別
+- IADR-0016: 発注執行は安全既定（ペーパー）とし、moomoo 実発注は PoC までゲートする — 安全既定 paper・実弾防止の二重ゲート
+- IADR-0056: moomoo SIMULATE PoC 完了に基づき実アダプタを実装（実弾は引き続きゲート） — SIMULATE PoC 完了・実弾ゲート（§3 解禁前提）
+- IADR-0057: 発注の冪等化は「発注前 DecisionId 予約」の3相で行い、不明な窓は再発注せず拒否する — 発注の冪等化（at-most-once）
+- IADR-0060: OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す — OpenD 本番化・切替ゲート（決定 5＝第三の閂）
+- IADR-0074: Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する — 発注予約の自動リコンサイル
+- IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する — ブローカ階層（provider × environment）・解禁ゲート（閂 0）

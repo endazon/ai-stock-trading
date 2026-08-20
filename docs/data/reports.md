@@ -2,20 +2,24 @@
 title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
-related_ids: [FR-06, FR-07, FR-16, FR-17, ADR-0001, ADR-0003]
-author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/06_technical/04_report-templates.md
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-06, FR-07, FR-16, FR-17]
+adrs: [ADR-0001, ADR-0003]
+iadrs: [IADR-0012, IADR-0024]
+specs: [01_requirements, 04_report-templates, 20260710_report-confirmation]
+issues: [#22]
+-->
+
 
 # データ仕様書: 報告書（reports）
 
 > 報告書サービス（`ReportService`）が所有する報告書（日報/週報/月報）の永続化。FR-06/07（階層方針・確定）・FR-16（テンプレート・
-> 集計）・FR-17（前提条件バージョン）。設計は [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)、版番号確定は
-> [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md) 踏襲。作業仕様は [20260710_report-confirmation](../specs/20260710_report-confirmation.md)。
+> 集計）・FR-17（前提条件バージョン）。設計は IADR-0024: 報告書サービスが確定管理と確定済み日報方針を所有し、確定はイベントで通知する、版番号確定は
+> IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する 踏襲。作業仕様は 仕様書: 報告書サービス Slice A（確定管理・方針の実体）。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -47,7 +51,7 @@ plan_refs:
 | AssumptionsVersion | int | 前提条件バージョン |
 | PolicySummary | string(8192) | 方針テキスト |
 | ConfirmedAt | timestamptz? | 確定日時 |
-| Version | int（並行トークン） | 版番号付き冪等確定の楽観排他（IADR-0012） |
+| Version | int（並行トークン） | 版番号付き冪等確定の楽観排他 |
 
 - インデックス: `(Kind, State, PeriodStart)`（最新の確定済み日報の照会）。
 
@@ -61,7 +65,7 @@ plan_refs:
 ## 整合性・制約ルール
 
 - PeriodKey ごとに 1 行。確定済みは不変（`UpsertDraft` で変更不可）。版番号（Version）で楽観排他しロストアップデートを防ぐ。
-- 確定は利用者のみ（OwnerOnly・アクター必須）。生成AI・自動処理は確定できない（ADR-0003）。
+- 確定は利用者のみ（OwnerOnly・アクター必須）。生成AI・自動処理は確定できない。
 
 ## 永続化方針
 
@@ -72,9 +76,9 @@ plan_refs:
 ## 対象外（後続）
 
 - 損益・費用・税の集計列（FR-16。取引台帳 #63・前提条件 #19 参照のコード集計）。LLM ドラフト・対話的確定・KB 保存（FR-08・#18）。
-- 無応答時の既定動作・階層（月報→週報→日報）参照の強制・取引判断の `IDailyPolicyProvider` 結線（#22）。
+- 無応答時の既定動作・階層（月報→週報→日報）参照の強制・取引判断の `IDailyPolicyProvider` 結線。
 
 ## 関連仕様
 
-- 作業仕様書: [20260710_report-confirmation](../specs/20260710_report-confirmation.md)
-- 実装ADR: [IADR-0024](../adr/IADR-0024_report-confirmation-and-policy.md)、[IADR-0012](../adr/IADR-0012_risk-settings-persistence.md)（踏襲）
+- 作業仕様書: 仕様書: 報告書サービス Slice A（確定管理・方針の実体）
+- 実装ADR: IADR-0024: 報告書サービスが確定管理と確定済み日報方針を所有し、確定はイベントで通知する、IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する（踏襲）

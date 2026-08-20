@@ -2,24 +2,23 @@
 title: 禁止銘柄の一時解除 Runbook（建玉を手仕舞えないときの手順）
 type: runbook
 status: draft
-related_ids:
-  - FR-19
-  - FR-10
-  - FR-11
-  - UC-06
-  - ADR-0007
-  - IADR-0132
-author: endazon (with Claude Code)
 created: 2026-08-07
 updated: 2026-08-07
-plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md"
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-10, FR-11, FR-19, UC-06]
+adrs: [ADR-0007]
+iadrs: [IADR-0132]
+specs: [20260807_380_guard-scope-arbitration, ADR-0007_trading-guard-and-margin]
+issues: []
+-->
+
 
 # Runbook: 禁止銘柄の一時解除（建玉を手仕舞えないときの手順）
 
 > リポジトリ単位の運用 Runbook。起点: [#380](https://github.com/endazon/ai-stock-trading/issues/380) /
-> [ADR-0007](../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md) の 2026-08-04 追補。
+> ADR-0007（計画リポ） の 2026-08-04 追補。
 
 ## 症状 — **建玉が閉じられない**
 
@@ -103,8 +102,8 @@ plan_refs:
 
 ## 関連
 
-- 計画: [ADR-0007](../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md)（2026-08-04 追補が適用範囲と本手順を定める）
-- 実装 ADR: [IADR-0132](../adr/IADR-0132_product-type-tri-state-and-guard-scope.md)（商品種別の 3 値化とガード適用範囲）
+- 計画: ADR-0007（計画リポ）（2026-08-04 追補が適用範囲と本手順を定める）
+- 実装 ADR: IADR-0132: 商品種別は 3 値を単一情報源とし、実効値で照合する。商品種別ガードと差金決済ガードは適用範囲を絞る（商品種別の 3 値化とガード適用範囲）
 - 機能仕様: [FR-19 取引ガード](../functional/FR-19_trading-guard.md)
-- 作業仕様書: [20260807_380_guard-scope-arbitration](../specs/20260807_380_guard-scope-arbitration.md)
+- 作業仕様書: 仕様書: ガード適用範囲の裁定の反映
 - 運用仕様書: [operations.md](operations.md)

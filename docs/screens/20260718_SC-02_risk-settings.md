@@ -2,40 +2,20 @@
 title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク上限の閲覧/変更）
 type: screen
 status: Draft
-related_ids: [SC-02, FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164]
-issue: 106
-author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-08-07
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/05_screens/01_screens.md
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
-related_specs:
-  - ../specs/20260718_106_frontend-risk-settings-and-controls.md
-  - ../specs/20260718_196_frontend-watchlist-ui.md
-  - ../adr/IADR-0084_frontend-risk-settings-and-control-status.md
-  - ../adr/IADR-0086_frontend-guard-edit-ui.md
-  - ../adr/IADR-0090_frontend-watchlist-ui.md
-  - ../adr/IADR-0130_equity-ratio-risk-limits.md
-  - ../adr/IADR-0140_broker-provider-axis.md
-  - ../adr/IADR-0141_live-switch-explicit-confirmation.md
-  - ../adr/IADR-0151_risk-limit-percent-input-and-bounds.md
-  - ../adr/IADR-0161_broker-provider-allow-list-resolution.md
-  - ../specs/20260805_334_broker-provider-axis.md
-  - ../specs/20260805_362_sc02-ratio-input.md
-  - ../specs/20260806_340_screens-reimplementation.md
-  - ../specs/20260807_422_broker-provider-default-paper.md
-  - ../specs/20260807_423_sc01-section2-removal-and-sc02-relocation.md
-  - ../adr/IADR-0155_sc01-collection-parameters-supply.md
-  - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
-  - ../adr/IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md
-  - ../specs/20260807_424_unsupplied-metric-display-convention.md
-  - 20260718_SC-01_settings.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
+adrs: [ADR-0003, ADR-0007, ADR-0008]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164]
+specs: [01_requirements, 01_screens, 01_usecases, 05_trading-assumptions, 20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation]
+issues: [#188, #196, #334, #423]
+-->
 
-# SC-02 リスク設定画面（リスク上限の閲覧/変更）【素案】
+
+# リスク設定画面（リスク上限の閲覧/変更）【素案】
 
 > 起点: **FR-13**（利用者が設定を変更できる）、FR-19（相場操縦ガード）、FR-20（段階）、**UC-06**。計画リポジトリ `05_screens/`
 > は空のため SC-02 は素案（planning#33・planning#31 後続 で環流）。データ源は RiskManagementService `/risk-controls/settings`（OwnerOnly）。
@@ -43,7 +23,7 @@ related_specs:
 ## 画面の位置づけ
 
 platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` としてマウント（route `settings/risk`・nav「リスク設定」）。
-SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス由来のため独立画面とする（[IADR-0084](../adr/IADR-0084_frontend-risk-settings-and-control-status.md)）。
+SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス由来のため独立画面とする（IADR-0084: FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる）。
 
 ## アクセス制御
 
@@ -52,13 +32,13 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 
 ## 構成要素
 
-1. **リスク上限（変更可・#362／[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md)）**: `RiskLimitSettings` の 8 項目。
+1. **リスク上限（変更可・#362／IADR-0151: リスク上限の画面表現は百分率（%）とし、統制を無効化する値はサーバのドメイン値域で拒否する）**: `RiskLimitSettings` の 8 項目。
    数値入力（文字列保持・送信時に数値化）。**「保有銘柄数上限」の語は用いない**（ADR-0016 決定9・計画 §5。
    同一銘柄で複数の建玉を持ち得るため銘柄数と建玉数は一致しない）。
 
-   ### 割合の画面表現 — **百分率（`25%`）を採る**（#362 の裁定事項・[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md) 決定1）
+   ### 割合の画面表現 — **百分率（`25%`）を採る**（#362 の裁定事項・IADR-0151: リスク上限の画面表現は百分率（%）とし、統制を無効化する値はサーバのドメイン値域で拒否する 決定1）
 
-   [IADR-0130](../adr/IADR-0130_equity-ratio-risk-limits.md) 決定1 により、金額系の統制上限は **equity 比**で保持される。
+   IADR-0130: 金額系の統制上限は equity 比で保持し解決点を 1 つに閉じる。equity の権威値は USD で持ち、判定通貨の移行とは切り離す 決定1 により、金額系の統制上限は **equity 比**で保持される。
    その割合を画面でどう表すか（`0.25` か `25%` か）は #362 の裁定事項であり、**百分率（%）**を採る。
 
    - **画面（表示・入力）は %**。ワイヤ（HTTP・永続化・ドメイン）は**比率のまま**（バックエンドは無改変）。
@@ -71,7 +51,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
    - **単位が異なる 3 項目は % にしない** — 保有建玉数上限・連敗しきい値は**件数**、連敗時サイズ縮小係数は**倍率**である。
      **各入力欄には単位を明示表示する**（`%` / `%/日` / `件` / `連敗` / `倍`）。
 
-   ### 実額の併記（issue #362・[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md) 決定4）
+   ### 実額の併記（issue #362・IADR-0151: リスク上限の画面表現は百分率（%）とし、統制を無効化する値はサーバのドメイン値域で拒否する 決定4）
 
    割合だけでは利用者が実効額を判断できないため、**equity 比の 5 項目には現在 equity での実額を併記する**
    （1注文発注額上限・1日発注額上限・日次損失上限・1取引あたりリスク・最大DD上限）。
@@ -81,7 +61,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
    - **保存前の入力値に対する実額は画面が `capital × 入力比率` で計算する。** サーバの
      `RiskStatusView.maxOrderAmount` は**現在保存されている設定**から解決した実額であり、入力中の値は表せない。
    - **通貨は基準通貨（USD）建てで表示し「$」を付ける**（[#364](https://github.com/endazon/ai-stock-trading/issues/364) /
-     [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md) 決定6 で `MarketCurrency.Base = Usd` へ移行した）。
+     IADR-0152: 判定の基準通貨を USD へ反転し、換算の向き・equity の 1 点換算・表示単位をまとめて正す 決定6 で `MarketCurrency.Base = Usd` へ移行した）。
      これにより計画 SC-02 の表記例「**25%（$750）**」がそのまま正しくなり、
      [#409](https://github.com/endazon/ai-stock-trading/issues/409) は解消した。
    - **equity が供給されていないときは「取得できていません（供給元がありません）」と述べる**
@@ -105,10 +85,10 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
      （**円建ての数値に「$」を付けることは単位の取り違えそのもの**）、通貨が一致した今は記号を付けることが正しい表示である。
    - **equity を取得できないときは実額を「—」とし、その旨を明記する**（併記できないことを黙って隠さない）。
 
-   ### 値域バリデーション（[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md) 決定2）
+   ### 値域バリデーション（IADR-0151: リスク上限の画面表現は百分率（%）とし、統制を無効化する値はサーバのドメイン値域で拒否する 決定2）
 
    統制を無効化する値を保存させない。**画面（送信前の即時提示）とサーバ（`RiskLimitBounds`・実効）の両方**に置く
-   （画面だけの統制は API 直叩きで消える＝[IADR-0141](../adr/IADR-0141_live-switch-explicit-confirmation.md) 決定1 と同じ判断）。
+   （画面だけの統制は API 直叩きで消える＝IADR-0141: 実弾（moomoo `REAL`）への切替に明示的な確認操作をサーバ側でも強制する 決定1 と同じ判断）。
 
    | 項目 | 画面のラベル / 単位 | 範囲 |
    | --- | --- | --- |
@@ -159,14 +139,14 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
    サーバは発注先を **allow-list** で解決して返す（3 値の明示一致のみ。旧行・`null`・未知の序数・未知の文字列・
    別の型は**すべて内蔵 `paper`**）。したがって画面が受け取る `brokerProvider` は常に 3 値のいずれかであり、
    **未知値のフォールバック表示に依存しない**。
-3-3. **内蔵 `paper` 稼働中の警告バナー（#334）**: 画面上部に常時表示（必須 2 文言。FR-12・共通規約）。
+3-3. **内蔵 `paper` 稼働中の警告バナー**: 画面上部に常時表示（必須 2 文言。FR-12・共通規約）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 5. **監視銘柄（変更可・#196/IADR-0090）**: `MonitoredSymbol[]`（銘柄コード・市場）の一覧・追加・削除。データ源は
    **別サービス** MarketMonitorService `/monitor/watchlist`（取得は OwnerOrService・変更は OwnerOnly）で、リスク設定の取得可否に
    連動せず**独立ロード/縮退**する。追加は理由必須（1 段）。削除は破壊的なため**明示確認**（削除理由必須＋確認ボタン）を要求
    （fail-safe）。市場は数値 enum を写像。監視銘柄の変更履歴（`MonitorSettingsChangeEntry[]`・changeType=追加/削除）を別表で一覧。
 
-6. **市場監視パラメータ（変更可・2026-08-07 追加・#423／[IADR-0164](../adr/IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md) 決定2）**:
+6. **市場監視パラメータ（変更可・2026-08-07 追加・#423／IADR-0164: Stage 1 最小取引件数の設定化と市場監視パラメータの SC-02 移管 決定2）**:
    **変動閾値・クールダウン。SC-01 §2 から移管された**（利用者裁定 質問票 第 13 回 Q12・案 B）。
 
    - **権威は MarketMonitorService である**（`GET /monitor/settings`・`PUT /monitor/settings/{項目}`）。
@@ -189,8 +169,8 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 7. **Stage 1 の最小取引件数（変更可・2026-08-07 追加・#423／[IADR-0164] 決定4〜決定6）**:
    06_daytrading-review §4.1 条件 3 の件数。**利用者裁定（質問票 第 13 回 Q6 の追加指示）で設定値になった。**
 
-   - **既定 100 件・値域 1〜1000。** 変更理由必須・監査ログ記録・版（楽観排他）の対象（FR-13）。
-   - **運用段階（FR-20）の参照表示の近くに置く**（段階ゲートの合格条件に属する値であるため）。
+   - **既定 100 件・値域 1〜1000。** 変更理由必須・監査ログ記録・版（楽観排他）の対象。
+   - **運用段階の参照表示の近くに置く**（段階ゲートの合格条件に属する値であるため）。
      実装は「運用段階と発注先（参照）」節の直後である。
    - **100 件未満を設定した場合は「統計的な根拠（§4.3）を満たさない設定である」旨の警告を常時表示する。**
      **警告は設定を妨げない**（保存ボタンを無効化しない）。下げた事実が理由つきで履歴に残ることを担保する。
@@ -211,16 +191,16 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`。`limits` は **`*Ratio` キー＝比率**。画面の % を送信時に比率へ変換する・#362/IADR-0151） | 成功=再取得。**400=値域違反（`{error, details}`。サーバの `RiskLimitBounds` が実効させる）または検証**、409=競合（DbUpdateConcurrency）＋再取得を促す |
 | 発注先の変更 | `PUT /risk-controls/settings/broker-provider`（`{provider, reason, acknowledgedLiveTrading, acknowledgement}`） | 成功=再取得＋段階ゲート飛ばしの警告。**実弾は同意と「REAL」の入力の両方が無ければ 400**（サーバ側も同じ関門・IADR-0141）。理由が空も 400 |
 | equity・統制値の実額（モーダル③） | `GET /risk-controls/status` | `RiskStatusView`（`capital` / `maxOrderAmount` / `maxDailyOrderAmount` / `maxOpenPositions`）。失敗時は**実弾への切替を許さない** |
-| ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す（#188/IADR-0086） |
+| ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
-| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す（#196/IADR-0090） |
-| 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す（#196/IADR-0090） |
-| 市場監視パラメータ 取得（#423） | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424・[IADR-0162]） |
-| 市場監視パラメータ 履歴（#423） | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |
-| 変動閾値 保存（#423） | `PUT /monitor/settings/movement-threshold`（`{movementThresholdRatio, reason}`） | 成功=再取得。**400=値域（サーバの `MonitorSettingsBounds` が実効）／理由欠如**、409=競合＋再取得を促す |
-| クールダウン 保存（#423） | `PUT /monitor/settings/cooldown`（`{cooldown, reason}`。`cooldown` は `"HH:mm:ss"`） | 同上 |
-| Stage 1 最小取引件数 保存（#423） | `PUT /risk-controls/settings/stage1-minimum-trade-count`（`{minimumTradeCount, reason}`） | 成功=再取得。**400=値域外（1〜1000）／省略／理由欠如**。**100 件未満は 400 にしない**（警告は設定を妨げない）、409=競合＋再取得を促す |
+| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す |
+| 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す |
+| 市場監視パラメータ 取得 | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424・[IADR-0162]） |
+| 市場監視パラメータ 履歴 | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |
+| 変動閾値 保存 | `PUT /monitor/settings/movement-threshold`（`{movementThresholdRatio, reason}`） | 成功=再取得。**400=値域（サーバの `MonitorSettingsBounds` が実効）／理由欠如**、409=競合＋再取得を促す |
+| クールダウン 保存 | `PUT /monitor/settings/cooldown`（`{cooldown, reason}`。`cooldown` は `"HH:mm:ss"`） | 同上 |
+| Stage 1 最小取引件数 保存 | `PUT /risk-controls/settings/stage1-minimum-trade-count`（`{minimumTradeCount, reason}`） | 成功=再取得。**400=値域外（1〜1000）／省略／理由欠如**。**100 件未満は 400 にしない**（警告は設定を妨げない）、409=競合＋再取得を促す |
 
 ## 振る舞い（安全既定）
 
@@ -242,14 +222,14 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 > あわせて **BFF へ `/bff/monitor/settings*` の 4 本を登録した**（[IADR-0164] 決定2）——
 > 「フロントが叩かないため登録しない」という前提は #340 の時点で崩れており、**SC-01 §2 は BFF 未結線のまま存在していた**。
 
-> 監視銘柄（watchlist）変更 UI は **#196（IADR-0090）で実装済み**（上表「監視銘柄」）。計画 `05_screens/01_screens.md` は監視銘柄を
-> SC-01 の運用パラメータ節に置くが、所有サービス単位に画面を分ける方針（IADR-0084）と #196 の指定に従い SC-02 に載せた（環流対象）。
+> 監視銘柄（watchlist）変更 UI は **#196で実装済み**（上表「監視銘柄」）。計画 `05_screens/01_screens.md` は監視銘柄を
+> SC-01 の運用パラメータ節に置くが、所有サービス単位に画面を分ける方針と #196 の指定に従い SC-02 に載せた（環流対象）。
 
 > **暫定結線の解消（#209/IADR-0095・2026-07-20）**: 従来 TradeDecision の定時サイクルは監視銘柄を構成ファイル（`TradeCycle:Watchlist`）
-> から読む暫定実装で、本画面（SC-02）での変更が判断対象に反映されなかった。#209 で TradeDecision は権威源（本画面と同じ
+> から読む暫定実装で、本画面での変更が判断対象に反映されなかった。#209 で TradeDecision は権威源（本画面と同じ
 > MarketMonitor `GET /monitor/watchlist`）を **s2s 同期照会**（`OwnerOrService`）するよう恒久化され、**本画面での監視銘柄変更は
 > 以後の定時サイクルの判断対象に反映される**。供給不達時は構成ベース（既定 watchlist）へ fail-safe に倒す。詳細は
-> [IADR-0095](../adr/IADR-0095_watchlist-authoritative-wiring.md)。
+> IADR-0095: watchlist 供給を権威源 MarketMonitor の s2s 同期照会に一本化する。
 
 > **リスク上限の保存の復旧（#362・2026-08-05）**: [#329](https://github.com/endazon/ai-stock-trading/issues/329) の equity 比化以降、
 > 本画面からのリスク上限の保存は **400 で拒否されていた**（PUT の本文が旧名＝金額キーのままだったため）。これは
@@ -257,7 +237,7 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 > `35000` が **equity の 35,000 倍**として保存され、統制が無効化された状態で保存が成功するためである。
 > #362 で**割合（%）入力・実額併記・値域バリデーション（画面とサーバの双方）**を同時に入れ、保存を復旧した。
 > **サーバ側にはそれまでリスク上限の値域検証が一切存在しなかった**（400 は値の危険ではなくキー名の不一致で起きていた）。
-> 詳細は [作業仕様書 20260805_362](../specs/20260805_362_sc02-ratio-input.md)・[IADR-0151](../adr/IADR-0151_risk-limit-percent-input-and-bounds.md)。
+> 詳細は 作業仕様書: SC-02 のリスク上限を割合（%）入力へ作り直す・IADR-0151: リスク上限の画面表現は百分率（%）とし、統制を無効化する値はサーバのドメイン値域で拒否する。
 
 > **#340（画面の再実装）における本画面の扱い（2026-08-06）**: 計画 05_screens（fixed 2026-08-02）が SC-02 へ求める項目
 > —— 発注先の 3 値変更・**変更理由必須**・監査ログ・版（楽観排他）・**実弾切替の警告モーダル 4 点**・
@@ -270,8 +250,8 @@ SC-01（FR-17 全体前提条件・ConfigurationService）とは別サービス�
 >
 > **収集パラメータ（変動閾値・クールダウン）は SC-01 §2 へ置いた**（[IADR-0155]）。監視銘柄と同じ MarketMonitorService 由来
 > であるため SC-02 に置く選択肢もあったが、計画 05_screens が §2 を SC-01 に置いていることを優先した。
-> 由来サービスによる責務分界（planning#33 / [IADR-0084](../adr/IADR-0084_frontend-risk-settings-and-control-status.md)）
-> との整合は環流記録で計画へ返した（[feedback/20260806](../../feedback/20260806_sc01-sc03-unsupplied-screen-items.md) 問題 2）。
+> 由来サービスによる責務分界（planning#33 / IADR-0084: FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる）
+> との整合は環流記録で計画へ返した（feedback/20260806（環流記録） 問題 2）。
 
 [IADR-0155]: ../adr/IADR-0155_sc01-collection-parameters-supply.md
 

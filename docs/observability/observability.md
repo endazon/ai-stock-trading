@@ -2,28 +2,29 @@
 title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
-related_ids:
-  - ADR-0006
-  - NFR
-  - IADR-0052
-  - IADR-0094
-author: endazon (with Claude Code)
 created: 2026-07-19
 updated: 2026-07-19
-plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md"
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: []
+adrs: [ADR-0006]
+iadrs: [IADR-0052, IADR-0061, IADR-0094]
+specs: [ADR-0006_hosting-hetzner]
+issues: [#24]
+-->
+
 
 # ログ・可観測性仕様書（AST）
 
 > ログ・メトリクス・トレースの経路と、ローカル（経路B）での可観測性バックエンドの opt-in stand-up を定める。
-> 起点: [ADR-0006](../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md)（OTel/Prometheus/Loki）/
-> [IADR-0094](../adr/IADR-0094_local-infra-observability-gitops.md)（#24）。
+> 起点: ADR-0006（計画リポ）（OTel/Prometheus/Loki）/
+> IADR-0094: ローカル（経路B）の Vault 秘匿参照・可観測性・GitOps は AST リポ内の opt-in manifest／docs として整備し、共有スタックの stand-up は MSP 側へ分離する。
 
 ## 起点となる計画書（トレーサビリティ）
 
 - 非機能要件（**NFR**）: 可観測性（メトリクス・ログ・トレース）・稼働率 99%（開場時間帯）
-- 関連 ADR: [ADR-0006](../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md)、実装は [IADR-0052](../adr/IADR-0052_k8s-helm-chart-shared-infra.md)（OTLP 送出）
+- 関連 ADR: ADR-0006（計画リポ）、実装は IADR-0052: AST の k8s デプロイは Helm chart とし、共有インフラは MSP platform-infra を参照する（OTLP 送出）
 
 ## 送出経路（テレメトリの流れ）
 
@@ -34,7 +35,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
                                                           --> Grafana（可視化・datasource: Prometheus/Loki/Tempo）
 ```
 
-- AST サービスは OTLP エンドポイント（`Otlp__Endpoint`＝`http://otel-collector:4317`・[IADR-0052](../adr/IADR-0052_k8s-helm-chart-shared-infra.md)）
+- AST サービスは OTLP エンドポイント（`Otlp__Endpoint`＝`http://otel-collector:4317`・IADR-0052: AST の k8s デプロイは Helm chart とし、共有インフラは MSP platform-infra を参照する）
   へメトリクス・ログ・トレースを push する。**AST 側に Prometheus scrape の口は持たない**（push モデル）。
 - otel-collector（MSP `platform-infra` の共有 infra）が受けて各バックエンドへ export する。
   dev の既定は debug exporter（標準出力のみ・外部送信なし）。実バックエンド連携は**下記 opt-in**。
@@ -54,7 +55,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 ## ログ・トレース
 
 - **ログ**: 構造化ログを OTLP で送出。Loki の `{namespace="ai-stock-trading"}` で参照する。個人情報・秘匿値は
-  ログへ流さない（LLM プロンプトの全量ログは既定オフ・[IADR-0061](../adr/IADR-0061_llm-production-wiring.md)）。
+  ログへ流さない（LLM プロンプトの全量ログは既定オフ・IADR-0061: 実 LLM 接続の実運用化のスコープと安全既定）。
 - **トレース**: サービス間（s2s）呼び出しは Tempo で追跡する。Grafana の Trace→Logs 相関を有効化済み（MSP datasource）。
 
 ## ローカル（経路B）での可観測性バックエンド stand-up（opt-in）

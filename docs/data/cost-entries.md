@@ -2,18 +2,23 @@
 title: 費用台帳（cost_entries）データ仕様書
 type: data-spec
 status: review
-related_ids: [NFR, FR-17, FR-16, ADR-0001]
-author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-09, FR-16, FR-17]
+adrs: [ADR-0001]
+iadrs: [IADR-0021, IADR-0027]
+specs: [05_trading-assumptions, 20260710_cost-control]
+issues: [#21, #22, #9]
+-->
+
 
 # データ仕様書: 費用台帳（cost_entries）
 
 > 費用統制サービス（`CostControlService`）が所有する月次費用の追記専用台帳。NFR（費用）＝LLM 月次上限の間隔延長/停止判定・
-> 月報の費用レビュー（FR-16）。設計は [IADR-0027](../adr/IADR-0027_cost-control.md)。作業仕様は [20260710_cost-control](../specs/20260710_cost-control.md)。
+> 月報の費用レビュー。設計は IADR-0027: 費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する。作業仕様は 仕様書: 費用統制サービス Slice A。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -37,7 +42,7 @@ plan_refs:
 
 - `CostGovernor`（純関数）: 月内 LLM 累計 ÷ `MonthlyCostLimits.Llm`。**<80%=Normal / 80〜100%=Throttled（間隔倍率2）/ ≥100%=Halted（停止）**（05 §6）。
 - `POST /costs/record`（費用計上）、`GET /costs/state`（現在の統制判定）、`GET /costs/review?capital=`（費用÷資金比率・FR-16）。すべて OwnerOnly。
-- 統制状態が上方に遷移（Normal→Throttled→Halted）したときのみ `CostThresholdReached` を発行 → 通知サービスが Discord 通知（FR-09）。
+- 統制状態が上方に遷移（Normal→Throttled→Halted）したときのみ `CostThresholdReached` を発行 → 通知サービスが Discord 通知。
 
 ## 整合性・制約ルール
 
@@ -51,10 +56,10 @@ plan_refs:
 
 ## 対象外（後続）
 
-- 実 LLM 費用計測（platform ゲートウェイ連携）・poller（#9/#21）への間隔延長/停止の配線（#22）。#19 バージョン付き上限取得。
+- 実 LLM 費用計測（platform ゲートウェイ連携）・pollerへの間隔延長/停止の配線。#19 バージョン付き上限取得。
   EUR→円換算の実レート（前提条件は率近似）。月報への費用レビュー供給（#14 連携）。
 
 ## 関連仕様
 
-- 作業仕様書: [20260710_cost-control](../specs/20260710_cost-control.md)
-- 実装ADR: [IADR-0027](../adr/IADR-0027_cost-control.md)、[IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)（`MonthlyCostLimits`）
+- 作業仕様書: 仕様書: 費用統制サービス Slice A
+- 実装ADR: IADR-0027: 費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する、IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する（`MonthlyCostLimits`）

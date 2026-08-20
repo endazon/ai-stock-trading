@@ -2,19 +2,18 @@
 title: テスト戦略 — 受け入れ基準の写像規約と統制系の網羅方式
 type: test
 status: approved
-related_ids: [NFR, FR-10, FR-12, FR-15, FR-19, FR-20, IADR-0127]
-author: endazon (with Claude Code)
 created: 2026-08-03
 updated: 2026-08-03
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
-related_specs:
-  - ../adr/IADR-0127_plan-conformance-known-deviation-registry.md
-  - ../specs/20260803_343_regression-test-foundation.md
-  - ../DEFINITION_OF_DONE.md
-  - ../../.claude/rules/traceability.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
+adrs: []
+iadrs: [IADR-0049, IADR-0127, IADR-0128]
+specs: [01_requirements, 05_trading-assumptions, 20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, traceability]
+issues: [#343]
+-->
+
 
 # テスト戦略
 
@@ -43,7 +42,7 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
 
 ## 2. 統制系の網羅方式（3 点セット）
 
-統制系（FR-10 / FR-19 / FR-20）のテストは、次の 3 種を**必ず揃える**。1 種でも欠けたら統制のテストとして不完全とみなす。
+統制系のテストは、次の 3 種を**必ず揃える**。1 種でも欠けたら統制のテストとして不完全とみなす。
 
 | 種別 | 何を確かめるか | 例 |
 | --- | --- | --- |
@@ -75,7 +74,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 ADR-0008 / 0016 / 0018）と実装の既定値を突き合わせる。再実装の途上で受容する逸脱は
 `KnownPlanDeviations` に**担当 issue 付き**で登録する。
 
-**担当 issue が値を直したら、登録簿から該当行を消さない限り CI が赤になる**（[IADR-0127](../adr/IADR-0127_plan-conformance-known-deviation-registry.md)）。
+**担当 issue が値を直したら、登録簿から該当行を消さない限り CI が赤になる**（IADR-0127: 計画確定値の適合は「計画値テーブル＋既知逸脱レジストリ」で検査し、逸脱の解消を機械的に強制する）。
 逸脱の解消が記録へ反映されることが機械的に保証されるため、「直したが登録簿が古いまま」という状態が残らない。
 
 新しい統制値を実装するときは:
@@ -103,13 +102,13 @@ ADR-0008 / 0016 / 0018）と実装の既定値を突き合わせる。再実装�
 | アプリケーション単体 | `.../<Svc>.Application.Tests` | 既定 CI |
 | ホスト / エンドポイント（Api） | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 既定 CI |
 | 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 既定 CI |
-| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析・[IADR-0128](../adr/IADR-0128_standard-project-layout.md)） | 既定 CI |
+| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析・IADR-0128: 標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する） | 既定 CI |
 | 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 既定 CI |
-| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走（IADR-0049） |
+| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
 
 ## 6. 未整備（担当 issue で追加する）
 
-本作業（#343）では枠組みのみを定め、実体は対象の実装が入る issue で追加する。
+本作業では枠組みのみを定め、実体は対象の実装が入る issue で追加する。
 
 | 項目 | 追加する issue | 理由 |
 | --- | --- | --- |

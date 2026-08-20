@@ -2,21 +2,25 @@
 title: 全体前提条件（assumptions / assumptions_change_log）データ仕様書
 type: data-spec
 status: review
-related_ids: [FR-17, FR-13, UC-06, ADR-0001]
-author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-13, FR-17, UC-06]
+adrs: [ADR-0001]
+iadrs: [IADR-0012, IADR-0021, IADR-0173]
+specs: [01_requirements, 05_trading-assumptions, 20260710_configuration-assumptions]
+issues: [#14, #358]
+-->
+
 
 # データ仕様書: 全体前提条件（assumptions / assumptions_change_log）
 
 > 設定管理サービス（`ConfigurationService`）が所有する全体前提条件（税・手数料・為替・計算方針・月次費用上限）の永続化。
-> FR-17（一元管理・バージョン管理・利用者のみ変更）・UC-06。設計は [IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)、
-> バージョニング/履歴は [IADR-0012](../adr/IADR-0012_risk-settings-persistence.md) を踏襲。作業仕様は
-> [20260710_configuration-assumptions](../specs/20260710_configuration-assumptions.md)。
+> FR-17（一元管理・バージョン管理・利用者のみ変更）・UC-06。設計は IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する、
+> バージョニング/履歴は IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する を踏襲。作業仕様は
+> 仕様書: 設定管理サービス Slice A（全体前提条件の一元管理）。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -34,11 +38,11 @@ plan_refs:
 | JapanCommission | CommissionSchedule | (0,0,0) 未登録 | 日本株手数料（Rate/Minimum/Cap。要確認・口座開設後に登録） |
 | UnitedStatesCommission | CommissionSchedule | (0,0,0) 未登録 | 米国株手数料（同上） |
 | FxSpreadRatio | decimal | 0 未登録 | 非 JPY 市場の為替スプレッド率（約定代金比・片道。実 FX レート連携までの近似） |
-| MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358 / [IADR-0173](../adr/IADR-0173_minimum-expected-profit-tax-inclusive.md)。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
+| MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358 / IADR-0173: 最小期待利益の税込み基準。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
 | CostLimits | MonthlyCostLimits | (20000,15000,5000,0) | 月次費用上限（総額/LLM/インフラ/データ・円） |
 
 - `CommissionSchedule(Rate, Minimum, Cap)`: 手数料 = clamp(約定代金×Rate, Minimum, Cap)。Cap≤0 は上限なし。
-- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。**税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**（#358 / IADR-0173）。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。**m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
+- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。**税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。**m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
 
 ## エンティティ定義（永続）
 
@@ -83,7 +87,7 @@ plan_refs:
 
 - 前提条件は単一行（Id=1）。更新は Version 増分・楽観排他（ロストアップデート防止）。変更履歴は追記専用。
 - 過去報告書は生成時 Version を凍結参照する（遡及再計算しない・05 変更管理）。本スライスは Version を API 公開するに留め、
-  報告書側の凍結は報告書サービス（#14）で実装する。
+  報告書側の凍結は報告書サービスで実装する。
 
 ## 永続化方針
 
@@ -95,10 +99,10 @@ plan_refs:
 ## 対象外（後続）
 
 - 手数料・為替スプレッドの実額登録（moomoo 口座開設後・05 §2/§3 要確認）。損益/AI判断/リスク統制からの `CostCalculator` 実利用。
-- 報告書の `assumptions_version` 凍結（#14）。税・為替の精緻化（外国税額控除・実レート・NISA・損益通算＝FR-18 将来拡張）。
+- 報告書の `assumptions_version` 凍結。税・為替の精緻化（外国税額控除・実レート・NISA・損益通算＝FR-18 将来拡張）。
 - FR-13 の監視銘柄・変動閾値・収集間隔（各サービス所管）。
 
 ## 関連仕様
 
-- 作業仕様書: [20260710_configuration-assumptions](../specs/20260710_configuration-assumptions.md)
-- 実装ADR: [IADR-0021](../adr/IADR-0021_trading-assumptions-configuration.md)、[IADR-0012](../adr/IADR-0012_risk-settings-persistence.md)（踏襲）
+- 作業仕様書: 仕様書: 設定管理サービス Slice A（全体前提条件の一元管理）
+- 実装ADR: IADR-0021: 全体前提条件は専用の設定サービスが所有し、バージョン管理・変更履歴・イベント発行で一元管理する、IADR-0012: リスク管理設定は単一行 JSON＋バージョン列で永続化し楽観的排他制御する（踏襲）

@@ -2,21 +2,24 @@
 title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
-related_ids: [FR-11, UC-07, ADR-0001, ADR-0003]
-author: endazon (with Claude Code)
 created: 2026-07-10
 updated: 2026-07-10
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-  - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-11, UC-07]
+adrs: [ADR-0001, ADR-0003]
+iadrs: [IADR-0015, IADR-0019]
+specs: [01_architecture-overview, 01_requirements, 01_usecases, 20260710_audit-log]
+issues: []
+-->
+
 
 # データ仕様書: 監査イベント（audit_events）
 
 > 監査ログサービス（`AuditService`）が全ドメインイベントを購読して記録する追記専用の時系列台帳。FR-11（全イベントの
-> 時系列記録）・UC-07（取引履歴の参照）の実データ。設計判断は [IADR-0019](../adr/IADR-0019_audit-log-service.md)、
-> 作業仕様は [20260710_audit-log](../specs/20260710_audit-log.md) を参照する。
+> 時系列記録）・UC-07（取引履歴の参照）の実データ。設計判断は IADR-0019: 監査ログは専用サービスが全ドメインイベントを購読し追記専用台帳へ記録する、
+> 作業仕様は 仕様書: 監査ログサービス（全ドメインイベントの時系列記録） を参照する。
 
 ## 起点となる計画書（トレーサビリティ）
 
@@ -28,7 +31,7 @@ plan_refs:
 
 ### AuditEventRow（`audit_events`・永続・追記専用）
 
-`AuditEntry`（Application 値オブジェクト）を正規化した監査記録。専有 DB `audit_svc` に配置する（ADR-0001）。
+`AuditEntry`（Application 値オブジェクト）を正規化した監査記録。専有 DB `audit_svc` に配置する。
 
 | 属性 | 型 | 必須 | 説明 |
 | --- | --- | --- | --- |
@@ -52,14 +55,14 @@ plan_refs:
 ## 整合性・制約ルール
 
 - 追記専用（更新・削除しない）。冪等は `Id`（=MessageId）で担保する。
-- 損切り機械執行は `StopLossTriggered.EventId` が後続の `DecisionId` になる（IADR-0015）ため、市場検知から決済までを
+- 損切り機械執行は `StopLossTriggered.EventId` が後続の `DecisionId` になるため、市場検知から決済までを
   同一 `CorrelationId` で辿れる。
 
 ## 永続化方針
 
 | 集約 | 永続化 | 実装 issue | 備考 |
 | --- | --- | --- | --- |
-| AuditEventRow（`audit_events`） | PostgreSQL 追記専用（専有 DB `audit_svc`） | #17（PR）| 全ドメインイベントをイベント駆動で一元記録（IADR-0019） |
+| AuditEventRow（`audit_events`） | PostgreSQL 追記専用（専有 DB `audit_svc`） | #17（PR）| 全ドメインイベントをイベント駆動で一元記録 |
 
 ## 対象外（後続）
 
@@ -68,5 +71,5 @@ plan_refs:
 
 ## 関連仕様
 
-- 作業仕様書: [20260710_audit-log](../specs/20260710_audit-log.md)
-- 実装ADR: [IADR-0019](../adr/IADR-0019_audit-log-service.md)、[IADR-0015](../adr/IADR-0015_stop-loss-mechanical-close.md)（EventId→DecisionId 相関）
+- 作業仕様書: 仕様書: 監査ログサービス（全ドメインイベントの時系列記録）
+- 実装ADR: IADR-0019: 監査ログは専用サービスが全ドメインイベントを購読し追記専用台帳へ記録する、IADR-0015: 損切りの決済注文はスクリーニングを通さず無条件に Close 承認を発行する（EventId→DecisionId 相関）

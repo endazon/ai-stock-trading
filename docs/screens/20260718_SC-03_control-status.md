@@ -2,27 +2,20 @@
 title: 画面仕様書（素案） — SC-03 承認・統制状態参照画面
 type: screen
 status: Draft
-related_ids: [SC-03, FR-10, FR-20, FR-12, FR-13, UC-06, ADR-0008, ADR-0009, ADR-0016, ADR-0019, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162]
-issue: 106
-author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-08-07
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/03_usecases/01_usecases.md
-related_specs:
-  - ../specs/20260718_106_frontend-risk-settings-and-controls.md
-  - ../specs/20260805_334_broker-provider-axis.md
-  - ../adr/IADR-0140_broker-provider-axis.md
-  - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
-  - ../adr/IADR-0154_supply-availability-declared-by-server.md
-  - ../adr/IADR-0162_unsupplied-metric-display-convention-all-screens.md
-  - ../specs/20260807_424_unsupplied-metric-display-convention.md
-  - ../specs/20260806_340_screens-reimplementation.md
-  - ../adr/IADR-0084_frontend-risk-settings-and-control-status.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-10, FR-12, FR-13, FR-20, SC-03, UC-06]
+adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019]
+iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162]
+specs: [01_requirements, 01_usecases, 20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
+issues: [#334, #340, #424]
+-->
 
-# SC-03 承認・統制状態参照画面【素案】
+
+# 承認・統制状態参照画面【素案】
 
 > 起点: **FR-10**（取引統制）、**FR-20**（段階ゲート）、**UC-06**（設定変更・一時停止・緊急停止。本画面は当該統制の状態を閲覧する参照面）。
 > 計画リポジトリ `05_screens/` は空のため SC-03 は素案（planning#33・planning#31 後続 で環流）。データ源は RiskManagementService
@@ -32,7 +25,7 @@ related_specs:
 
 platform SPA 認証済みレイアウト配下に feature `sc03-controls` としてマウント（route `controls`・nav「統制状態」）。
 破壊的操作（pause/resume・kill switch・段階遷移承認）は **#165 の Discord Bot 側と役割分担**し、本画面には置かない
-（[IADR-0084](../adr/IADR-0084_frontend-risk-settings-and-control-status.md) 決定 2・安全既定）。
+（IADR-0084: FR-13 リスク設定と #20 統制状態は Risk の既存 OwnerOnly 契約を消費する参照優先の別 feature とし、破壊的操作は Bot 側に委ね、数値 enum の写像はフロントに閉じる 決定 2・安全既定）。
 
 ## アクセス制御
 
@@ -84,7 +77,7 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
    **3 統制は優先順位つきの表**（1: kill switch ＞ 2: 日次損失ロックアウト ＞ 3: 一時停止）で描き、
    **優先統制**（`activeControl`）を明示する。各行に**発動主体**と**解除条件**を併記する（[ADR-0009]。
    日次損失ロックアウトはシステム自動発動であり利用者は解除できない）。
-   **発注先（#334）**: 現在の発注先を運用段階の**隣に行を分けて**表示する（1 行に混ぜない。INDEX 決定 46）。
+   **発注先**: 現在の発注先を運用段階の**隣に行を分けて**表示する（1 行に混ぜない。INDEX 決定 46）。
    **本画面は参照専用であり、変更は SC-02 で行う**（導線を置く）。
    内蔵 `paper` 稼働中は画面上部に警告バナー（必須 2 文言）を出し、統制状態のカード類に `paper・参考値` ラベルを付す。
 2. **段階ゲート現況（`StageGateStatus`）**: 現段階・**段階の既定発注先**、昇格評価（`promotion`: 昇格先・可否・未充足基準）、
@@ -113,7 +106,7 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 - 取得不能・権限外・BFF 未登録は安全側（縮退・存在秘匿）へ倒す。機微情報は権限外に載せない。
 - 各領域（統制状態・段階ゲート・履歴）は独立に縮退する（一方の取得失敗が他方を巻き込まない）。
 
-## テストとの対応（#340）
+## テストとの対応
 
 | 構成要素 / 受け入れ基準 | テスト |
 | --- | --- |
@@ -123,9 +116,9 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 | 空売り比率の「該当なし」と「取得できていません」を出し分ける | 同「空売り比率は建玉が無ければ…」 |
 | 保有ポジションの建玉方向（ロング / ショート） | 同「保有ポジションに建玉の方向…」 |
 | 借株料の累計を未供給として明示し 0 を表示しない | 同「借株料の累計は未供給として明示され、0 を表示しない」 |
-| **強制買戻しの発生回数**を未供給として明示し「0 件」と表示しない（#424） | 同「強制買戻しの発生回数は未供給として明示され、0 件と表示しない」／ E2E `sc03-controls.spec.ts`「強制買戻しの発生回数を「0 件」に見せない」 |
+| **強制買戻しの発生回数**を未供給として明示し「0 件」と表示しない | 同「強制買戻しの発生回数は未供給として明示され、0 件と表示しない」／ E2E `sc03-controls.spec.ts`「強制買戻しの発生回数を「0 件」に見せない」 |
 | **正当な 0 を未供給へ倒さない**（発生回数 0 件・空売り比率 0.0%・借株料 $0） | 同「強制買戻しが供給されていれば 0 件を「0」として表示する」「供給されている 0（空売り比率 0.0% ・借株料 $0）を未供給として描かない」 |
-| 維持率が **Stage 1 の全期間表示できない**事実を「不具合ではない」と明示する（#424） | 同「維持率が未供給のとき Stage 1 の全期間表示できない事実を「不具合ではない」と明示する」 |
+| 維持率が **Stage 1 の全期間表示できない**事実を「不具合ではない」と明示する | 同「維持率が未供給のとき Stage 1 の全期間表示できない事実を「不具合ではない」と明示する」 |
 | 供給が始まれば表示が追随する（画面に「未供給」を書き込んでいない） | 同「維持率が供給されているとき、値・適用閾値・回復目標（閾値 + 5pt）を表示する」（Stage 1 の注記も消える） |
 | 自動縮小を 3 統制と別枠で「動かす」統制として描き、必要証拠金の降順を明記する | 同「維持率割れ自動縮小は 3 統制と別枠で…」 |
 | 発動履歴が未供給のとき「発動なし」と表示しない | 同「発動履歴が未供給のとき…」 |

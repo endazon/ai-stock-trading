@@ -2,31 +2,26 @@
 title: 内蔵 paper（擬似約定）と警告表示（FR-12）機能仕様書
 type: functional-spec
 status: review
-related_ids: [FR-12, FR-05, FR-20, FR-13, UC-01, UC-02, UC-06, SC-01, SC-02, SC-03, ADR-0002, IADR-0140, IADR-0142]
-author: endazon (with Claude Code)
 created: 2026-07-09
 updated: 2026-08-05
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/INDEX.md
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/05_screens/01_screens.md
-  - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
-related_specs:
-  - ./FR-20_staged-gates.md
-  - ../tests/FR-12_paper-trade-tests.md
-  - ../adr/IADR-0140_broker-provider-axis.md
-  - ../adr/IADR-0142_stage1-simulate-only-aggregation.md
-  - ../specs/20260805_334_broker-provider-axis.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-05, FR-12, FR-13, FR-20, SC-01, SC-02, SC-03, UC-01, UC-02, UC-06]
+adrs: [ADR-0002]
+iadrs: [IADR-0007, IADR-0111, IADR-0140, IADR-0142]
+specs: [01_requirements, 01_screens, 06_daytrading-review, 20260805_334_broker-provider-axis, ADR-0002_broker-selection, FR-12_paper-trade-tests, FR-20_staged-gates, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, INDEX]
+issues: [#13, #334]
+-->
 
-# 機能仕様書: 内蔵 `paper`（擬似約定）と警告表示（FR-12）
+
+# 機能仕様書: 内蔵 `paper`（擬似約定）と警告表示
 
 > 実発注せず、判断・記録・報告のフローは実発注（moomoo アダプタ）と**完全に同一**とする仮想ブローカー
 > （`PaperBrokerAdapter`）。証券会社アダプタのポート `IBrokerAdapter` を実装し、実装差し替えで実発注へ切り替える
-> （ADR-0002）。
+> 。
 >
-> **2026-08-05（#334）改定。** 計画（FR-12・INDEX 決定 46）は本モードを**デバッグ・開発用途**と定め、
+> **2026-08-05改定。** 計画（FR-12・INDEX 決定 46）は本モードを**デバッグ・開発用途**と定め、
 > **Stage 1 の検証手段ではない**と明記した（Stage 1 は moomoo `SIMULATE` によるデモ取引）。
 > 内蔵 `paper` は発注先（Broker Provider）の 3 値のうちの 1 つであり、**外部へ一度も発注しない**。
 >
@@ -41,7 +36,7 @@ related_specs:
 
 ## 機能詳細
 
-### 1. 発注先としての内蔵 `paper`（#334・[IADR-0140](../adr/IADR-0140_broker-provider-axis.md)）
+### 1. 発注先としての内蔵 `paper`（#334・IADR-0140: 発注先（Broker Provider）を独立した軸として導入し、`TradeMode` を廃止する）
 
 `BrokerProvider.InternalPaper`（序数 0）。運用段階とは独立した軸であり、SC-02 から選べる
 （詳細は [FR-20 機能仕様書](FR-20_staged-gates.md) §0・§1-2）。**安全な方向への切替であるため、
@@ -63,7 +58,7 @@ related_specs:
 - 計画本文の注意: バナーの見た目は **SC-02 のモックアップにのみ描かれている**。
   **モックアップの見た目だけを頼りにすると SC-01・SC-03 の実装を落とす。**
 
-### 3. Stage 1 集計からの除外（#334・[IADR-0142](../adr/IADR-0142_stage1-simulate-only-aggregation.md)）
+### 3. Stage 1 集計からの除外（#334・IADR-0142: Stage 1 の合格集計から内蔵 `paper` を構造的に排除し、除外営業日数を別掲する）
 
 内蔵 `paper` の約定・稼働日数は **Stage 1 の合格判定に算入しない**。`paper` 稼働により算入されなかった
 営業日は**除外日数として別掲**し、SC-03 が進捗表示に併記する。詳細は
@@ -123,12 +118,12 @@ stateDiagram-v2
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
 - テスト仕様書: [FR-10 リスクガードコア](../tests/FR-10_risk-guard-core-tests.md)
 - 通信仕様書: [イベント・ポート契約](../api/events-and-ports.md)
-- 実装ADR: [IADR-0007](../adr/IADR-0007_broker-rejection-vs-risk-rejection.md)（証券会社拒否とリスク事前拒否の区別）
+- 実装ADR: IADR-0007: 証券会社拒否は OrderStatus.Rejected で表し、リスク事前拒否（OrderRejected イベント）と区別する（証券会社拒否とリスク事前拒否の区別）
 
 ## 未決事項
 
 - **発注先の設定値（`RiskManagementSettings.BrokerProvider`）はまだ発注経路を動かさない。**
   実際に `PaperBrokerAdapter` が使われるかは起動時の構成（`Broker:Provider`・
-  [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）が決める。結線は別 issue。
-- moomoo アダプタ（実発注）は ADR-0002 の PoC 後に実装（#13）。非同期約定の非終端状態遷移・値幅制限等の
+  IADR-0111: ブローカー選択は provider × environment の直交 2 軸で表現する）が決める。結線は別 issue。
+- moomoo アダプタ（実発注）は ADR-0002 の PoC 後に実装。非同期約定の非終端状態遷移・値幅制限等の
   実ブローカー固有の拒否理由はそこで拡張する。

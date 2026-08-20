@@ -2,24 +2,23 @@
 title: 外部連携仕様書 — AST フロントエンド/設定画面の microservices-platform 組み込み要件（MSP 側別 PR 向け）
 type: integration
 status: Requirements (MSP 側実装は別リポ/別セッション)
-related_ids: [FR-13, FR-17, UC-06, ADR-0001]
-issue: 106
-author: endazon (with Claude Code)
 created: 2026-07-18
 updated: 2026-07-18
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/06_technical/01_architecture-overview.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
-related_specs:
-  - ../specs/20260718_frontend-settings-screen.md
-  - ../screens/20260718_SC-01_settings.md
-  - ../adr/IADR-0080_frontend-settings-screen.md
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-13, FR-17, UC-06]
+adrs: [ADR-0001]
+iadrs: [IADR-0080, IADR-0128]
+specs: [01_architecture-overview, 20260718_SC-01_settings, 20260718_frontend-settings-screen, ADR-0001_platform-reuse, IADR-0080_frontend-settings-screen]
+issues: [#185]
+-->
+
 
 # 外部連携仕様書: AST フロントエンド/設定画面の microservices-platform 組み込み要件
 
 > 本書は **ai-stock-trading（AST）側から洗い出した、microservices-platform（MSP）への統合要件**である。実装は **MSP リポジトリの別 PR / 別セッション**で行う（本 AST PR #185 のスコープ外）。AST 側は要件・受け入れ基準・二重定義回避の境界を明示する。
-> 起点 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)。前提: AST フロント第1スライス（PR #185・[IADR-0080](../adr/IADR-0080_frontend-settings-screen.md)）。
+> 起点 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)。前提: AST フロント第1スライス（PR #185・IADR-0080: フロントエンドは platform unit-template 規約に準拠し、単独リポの型検査/テストを @foundation スタブ＋ローカル vitest で自己完結させ、設定画面は FR-17 前提条件の閲覧/変更に限定する）。
 
 ## 統合モデル（二重定義を避ける前提）
 
@@ -31,7 +30,7 @@ related_specs:
 ### 2b. submodule ピン更新
 - **要件**: `src/ai-stock-trading` のピンを、AST PR #185 マージ後の `develop` commit（`frontend/` を含む版）へ更新する。
 - **対象**: MSP `.gitmodules` / submodule pin（Renovate `git-submodules` で自動化可）。
-- **依存**: AST 1a（#185）マージ。
+- **依存**: AST 1aマージ。
 - **受け入れ基準**: MSP CI が `src/ai-stock-trading/frontend` を認識（npm workspaces `*/frontend`）。
 
 ### 2a. SPA へのフロント features 合成
@@ -56,7 +55,7 @@ related_specs:
     （`SERVICE_PROJECT=backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj`・
     `SERVICE_DLL=ConfigurationService.Api.dll`。AST 側の `docker-compose.yml` / `scripts/k8s-local-images.sh` と同形）。
     プロジェクト名が `.Worker` → `.Api` へ変わったのは標準プロジェクト構成への再配置
-    （[IADR-0128](../adr/IADR-0128_standard-project-layout.md)・[#353](https://github.com/endazon/ai-stock-trading/issues/353)）による。
+    （IADR-0128: 標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する・[#353](https://github.com/endazon/ai-stock-trading/issues/353)）による。
     MSP 側で実装する際は本注記の形で登録すること（本書の他の記述は起票時＝2026-07-18 の point-in-time 記録として据え置く）。
 - **依存**: —（ただし ConfigurationService の実行時依存＝DB/バス等の解決が要る。AST バックデプロイの初回導入点）。
 - **受け入れ基準**: `k8s-local-images.sh` がドリフトなく AST service イメージをビルド。ConfigurationService が起動しヘルスチェック緑。
