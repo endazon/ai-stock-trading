@@ -74,21 +74,9 @@ jobs:
           # 後段の git push もそのトークンで実行されるため、実装リポへの書き込み
           # 権限が無い PAT だと 403（Permission denied）になる。
 
-      # 計画リポジトリ(project-planning)を submodule 参照している場合のみ有効。
-      # PLANNING_REPO_TOKEN は organization の secret に登録した fine-grained PAT で、
-      # project-planning への Contents: Read 権限のみを付与する。実装リポの push 認証
-      # (GITHUB_TOKEN) とは分離するため、submodule 取得の間だけ一時的に PAT を使い、
-      # 直後に解除して push へ漏れないようにする（.gitmodules が無ければ何もしない）。
-      - name: Fetch planning submodule (read-only PAT)
-        env:
-          SUBMODULE_PAT: ${{ secrets.PLANNING_REPO_TOKEN }}
-        run: |
-          if [ -f .gitmodules ]; then
-            git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "https://github.com/"
-            git submodule sync --recursive
-            git submodule update --init --recursive
-            git config --global --unset-all url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf
-          fi
+      # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。以前ここにあった
+      # 「計画リポジトリ(project-planning)を submodule 参照している場合のみ有効」な submodule
+      # 取得ステップ（read-only PAT を一時的に使う形）は、.gitmodules 自体が撤去されたため削除した。
 
       # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
       # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
@@ -173,7 +161,7 @@ jobs:
           claude_args: |
             --model ${{ steps.model.outputs.model }}
             --append-system-prompt "この実行は単一セッション内で完結させること。サブエージェント（Task ツールによる spawn。.claude/agents/ 定義の起動を含む）は使用しない。CI では Task が許可されておらず、呼び出しは必ず拒否されるうえ、拒否が 1 件でも記録されるとジョブは失敗する。作業の分割は自分の作業順序として扱い、Read / Grep / Glob / Bash / GitHub MCP ツールで自分自身が順に実施すること。また cd でディレクトリを移動しないこと（cd は許可リストに無く、cd planning && git log の形は後続が許可済みでも先頭で拒否される）。submodule の履歴は git -C planning の log / show / diff / ls-tree / grep で参照すること。"
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning grep:*),Bash(git -C planning rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(find:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(mkdir:*),Bash(gh issue create:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
 
       # 権限拒否の可視化（安全弁）。claude-code-review.example.yml と同じ内容に保つこと。
       #

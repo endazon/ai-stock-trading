@@ -3,31 +3,11 @@
 
 version: 2
 
-registries:
-  planning-git:
-    type: git
-    url: https://github.com
-    username: x-access-token
-    password: ${{secrets.PLANNING_REPO_TOKEN}}
-
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-
-  # NFR: submodule の pin 自動更新（gitlink を追跡先の先端へ前進させる更新 PR を生成する）。
-  # 既定は自動マージしない（人手レビュー必須）。root .gitmodules の全 submodule が対象
-  # （planning=private の project-planning を含む）。private submodule の更新には
-  # Dependabot secret の PLANNING_REPO_TOKEN を registries(planning-git) 経由で使う。
-  # 特定 submodule だけ除外するなら ignore の dependency-name にそのパスを指定する。
-  - package-ecosystem: "gitsubmodule"
-    directory: "/"
-    registries:
-      - planning-git
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
 
   # 使用スタックに合わせて有効化（コメント解除）:
   # - package-ecosystem: "nuget"       # C# / .NET
