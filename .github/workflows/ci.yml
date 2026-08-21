@@ -68,10 +68,11 @@ jobs:
         with:
           # 差分を取るため base まで遡る必要がある。PR では base...HEAD を使う。
           fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      # 判定器そのものが壊れていないことを毎回確かめる（黙って壊れると skip 側へ倒れ得る）。
+      # ⚠️ **setup-node を置かない。** 実測でこのジョブ 13 秒のうち **6 秒が setup-node** で、
+      # 判定そのものは 0 秒だった。本ジョブは `backend-test` の直列の前置きなので、
+      # その 6 秒がそのまま全 backend PR の待ち時間に乗る。
+      # 判定器は**依存パッケージを持たない素の Node スクリプト**であり、
+      # ランナー既定の Node（20 以上）で動く。版を固定する意味がここには無い。
       - name: Self-test
         run: node scripts/detect-changed-areas.js --self-test
       - name: Detect
@@ -563,10 +564,9 @@ jobs:
           esac
       - uses: actions/checkout@v7
         if: ${{ env.SKIPPED != '1' }}
-      - uses: actions/setup-node@v7
-        if: ${{ env.SKIPPED != '1' }}
-        with:
-          node-version: "20"
+      # ⚠️ ここも setup-node を置かない（実測 5 秒。check-coverage.js は素の Node スクリプトで
+      # 依存を持たず、ランナー既定の Node で動く）。集約ジョブは必須チェックの最後尾なので、
+      # ここの数秒はそのまま待ち時間になる。
       # 全シャードのレポートを 1 箇所へ集める。merge-multiple で同名パスも共存させる。
       - uses: actions/download-artifact@v7
         if: ${{ env.SKIPPED != '1' }}
