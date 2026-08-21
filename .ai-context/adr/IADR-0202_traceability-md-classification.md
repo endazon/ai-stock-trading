@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, IADR-0189, IADR-0191, IADR-0200, IADR-0201]
 author: endazon (with Claude Code)
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-21
 ---
 
 # IADR-0202: `traceability.md` は分類 A である（分類表がファイル自身の要求と矛盾していた）
@@ -15,6 +15,15 @@ updated: 2026-08-15
 - 状態: Accepted
 - 日付: 2026-08-15
 - 決定者: Claude Code（[IADR-0200](IADR-0200_cross-repo-ref-notation.md) が残した残余リスクの解消）
+
+> ［2026-08-21 追記 / #536］**分類 A（バイト一致）の検査体制は資料再編で退役した。** 計画 ADR-0029 決定 6 により
+> キットは bootstrap 専用となり、`check-kit-sync.js`・分類表は撤去、キットとの乖離は「気付いたら受容として
+> 記録する」運用へ移った。本 ADR の決定のうち**機械検査（バイト一致）を前提とする部分は適用されない**。
+> #536 のコミット `cc82f5a` が同ファイル 37 行目の IADR 置き場を `docs/adr/` → `.ai-context/adr/` へ直接
+> 改めたのは、**資料再編後のキット配布物（planning 側 `tools/impl-handoff-kit/repo-template/` の同ファイル）が
+> 同じ行を既に `.ai-context/adr/` で配布しているため**であり（実測一致）、乖離の導入ではなく**キット現行版への
+> 収斂**である。「固有規約は companion（`traceability.repo.md`）へ書く」設計には引き続き従う（IADR の実在検査が
+> `.ai-context/adr/` を見る旨は companion「起点 ID の種別（固有）」に既載）。
 
 ## 起点・関連
 
