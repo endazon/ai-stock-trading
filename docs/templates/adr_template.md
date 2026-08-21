@@ -13,7 +13,7 @@ plan_refs: []
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
-> 計画に影響する決定は計画側へ環流する（`/plan-feedback`）。
+> 計画に影響する決定は planning へ issue で環流する（`feedback.yml` テンプレート）。
 
 - 状態: Proposed <!-- Proposed / Accepted / Deprecated / Superseded -->
 - 日付: <YYYY-MM-DD>

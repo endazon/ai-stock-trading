@@ -177,7 +177,7 @@ issues: [#11, #12, #25, #257, #26, #27, #270, #28, #29, #292, #30, #32, #364]
 
 - 機能仕様書: [リスク統制](../functional/FR-10_risk-controls.md)、[取引ガード](../functional/FR-19_trading-guard.md)、[段階ゲート](../functional/FR-20_staged-gates.md)、[ペーパートレード](../functional/FR-12_paper-trade.md)
 - データ仕様書: [リスク管理ドメインの集約](../data/risk-management-aggregates.md)
-- 作業仕様書: `docs/specs/20260708_risk-guard-core.md` / `docs/specs/20260709_risk-eval-core-fixes.md` / `docs/specs/20260709_position-sizer-cap.md` / `docs/specs/20260709_paper-broker-validation.md` / 仕様書: moomoo 経路の約定状態ポーリングと台帳反映
+- 作業仕様書: `.ai-context/specs/20260708_risk-guard-core.md` ほか同日程の各作業仕様書（trace の specs 参照） / 仕様書: moomoo 経路の約定状態ポーリングと台帳反映
 
 ## 未決事項
 

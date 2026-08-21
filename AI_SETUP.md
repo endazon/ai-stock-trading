@@ -182,8 +182,8 @@ npx playwright-cli install --skills   # Claude Code 用スキルを配置
 | Playwright MCP | 導入しない |
 
 **両者は併存してよい。** 「ブラウザ操作の統一」を字義どおり読んで既存の E2E ランナーを捨てると、
-**確定済み ADR の無断逸脱になる**（実測: microservices-platform が `IADR-0033` との衝突を検出し、
-役割で棲み分ける `IADR-0221` を起こした。planning#409）。
+**確定済み ADR の無断逸脱になる**（実測: microservices-platform が `MSP:IADR-0033` との衝突を検出し、
+役割で棲み分ける `MSP:IADR-0221` を起こした。planning#409）。
 
 - **pnpm workspace では `@playwright/cli` をルートへ入れない。** 2 つ目の Playwright が入るうえ、
   **どの CI ジョブも起動しない**。入れるならフロントエンドのワークスペースへ入れ、
