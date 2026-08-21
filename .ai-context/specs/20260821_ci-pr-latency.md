@@ -11,7 +11,7 @@ related_ids:
   - IADR-0208
 author: claude
 created: 2026-08-21
-updated: 2026-08-21
+updated: 2026-08-22
 plan_refs:
   - planning:docs/ai-implementation-workflow-guide.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0029_impl-docs-restructure.md
@@ -74,14 +74,21 @@ CI のクリティカルパスは `build-and-test`（3分13秒。Restore 20s / B
 `cancel-in-progress` は式で分岐し、**`develop` / `main` への push は完走させる**
 （後述 5 の担保がそこに載るため、途中でキャンセルしてはならない）。
 
-### 2. 🔴 `claude-code-review.yml` の工具導入を PR の差分で出し分ける（本作業で最大の効果）
+### 2. 🔴 `claude-code-review.yml` の工具導入を「docs だけなら省く」で出し分ける（本作業で最大の効果）
 
 前段に `git diff --name-only` の判定ステップを置き、4 つのセットアップを `if:` 条件付きにする。
-docs だけの PR では 4 つとも丸ごとスキップされる。
+
+> **［2026-08-22 追記］判定を逆向きに書き直した。**
+> 当初は「`backend/` `frontend/` のパターンに当たったら入れる」（＝**当たらなければ省く**）だった。
+> 利用者裁定「なるべく精度は落とさない方向で」に従い、
+> **「入れる」を既定にし、docs だけだと確かめられたときにだけ省く**形へ改めた。
+>
+> **同じ取りこぼしでも倒れる先が違う。** 旧は「省いてしまう」（＝検証が落ちる）、
+> 新は「余計に入れる」（＝**遅くなるだけ**）である。
+> 差分を解決できなかった場合も入れる（fail-safe）。
 
 🔴 **`--allowedTools` と `.claude/settings.json` は触っていない**（3 系統一致の規約。
 `check-ai-workflow-config.js` が STRICT で見ている）。変えたのは**事前導入の有無だけ**である。
-したがって「許可されているのに実行できない」を作らないよう、**判定は広めに倒した**。
 取りこぼすと AI が「実行したが失敗した」と報告し、原因が環境不備であることは本文から判らない ——
 **拒否されるより質が悪い**（#391 の教訓）。
 
@@ -101,12 +108,19 @@ docs だけの PR では 4 つとも丸ごとスキップされる。
 `packages.lock.json` を持たないため `setup-dotnet` の `cache: true` は使えない。
 `actions/cache` を `~/.nuget/packages` と `~/.cache/ms-playwright` へ直接張る。
 
-### 5. CodeQL は **PR だけ** `build-mode: none` にし、`vulnerable-scan` を PR から外す
+### 5.（取り下げ）CodeQL の `build-mode` と `vulnerable-scan` は PR のまま変えない
 
-`build-mode` は式を受け付ける文字列入力（`none` / `autobuild` / `manual`）なので、
-**PR は `none`・push と週次 schedule は `autobuild`** に切り替える。
-`vulnerable-scan` は「既存の推移依存 × 後から公開された advisory」を見るジョブで
-**PR の差分とは無関係**であり、PR 差分は `dependency-review` が既にカバーしている。
+> **［2026-08-22 追記］利用者裁定が更新された。**「なるべく精度は落とさない方向で」。
+> 当初あった 2 件の「PR から外す」変更を**取り下げた**。
+
+- **CodeQL は常に `autobuild`。** `none` は生成コードを解析対象外にし、かつ
+  「PR は緑だが push で赤」という読み分けの難しい状態を作る。
+- **`vulnerable-scan` は PR に残す。** `dependency-review` は依存グラフの差分を見るのに対し、
+  本ジョブは実際に restore した推移閉包を `--include-transitive` で見る。
+  **見ている面が違う以上「重複だから外してよい」と言い切れない。** 迷ったら残す。
+
+速さは `concurrency` と NuGet キャッシュで取る。どちらも**中身を 1 行も削らない**。
+両ワークフローとも CI と並列に走り**クリティカルパスではない**。
 
 ### 6. changelog 自動 PR の空振りを止める
 
@@ -117,15 +131,18 @@ docs だけの PR では 4 つとも丸ごとスキップされる。
 **必須チェック上「合格」として扱われる**（`docs/ai-workflow.md` に明記）。
 `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
 
-### 7. 落とした精度の担保 ＋ 失敗時の自動 issue 起票
+### 7. 失敗時の自動 issue 起票
 
-利用者裁定（2026-08-21）: **「毎 PR の精度は下がってもよいが、develop マージ時か日次実行で
-どこかで担保する。そこで失敗したら自動で issue を起票する」。**
+利用者裁定は 2 段階で入った。**後が前を狭めている。**
 
-5 は「検証をやめる」のではなく**「PR から後段へ移す」**である。
-後段が黙って赤いまま放置されれば、移しただけで失っているのと同じになる。
-`ci-failure-issue.yml`（再利用ワークフロー）を新設し、`codeql.yml` / `security.yml` /
-`integration.yml` の末尾から呼ぶ。
+- **［08-21］**「毎 PR の精度は下がってもよいが、develop マージ時か日次実行でどこかで担保する。
+  そこで失敗したら自動で issue を起票する」
+- **［08-22］**「なるべく精度は落とさない方向で」
+
+後者により **5 の「PR から外す」案は取り下げた**。
+一方 **`ci-failure-issue.yml` は残す** —— 外すのをやめても、日次（`integration.yml`）・
+週次（`codeql.yml` / `security.yml`）の実行は**誰も見ていない**ためである。
+落ちたまま何日も気付かれない形を塞ぐ。
 
 **`integration.yml` は今回落とすものではない**（IADR-0049 で既に nightly 分離済み）が、
 **自動起票が無く赤が黙って積み上がる形**だったので同じ仕組みを入れ、
@@ -137,9 +154,9 @@ docs だけの PR では 4 つとも丸ごとスキップされる。
    `secret-scan` / `dependency-review` / `claude-review`）が**1 つも消えていない**。
 2. 走る検査器の本数と対象が統合前後で**一致する**。
 3. NuGet / Playwright キャッシュが 2 回目の run で**ヒットする**。
-4. CodeQL が **PR / push の両経路**で意図どおりのモードで走る。
+4. CodeQL が **PR / push の両経路**で `autobuild`（＝従来の精度）で走る。
 5. `claude-review` が docs のみの PR で 4 セットアップをスキップし、
-   backend / frontend を触る PR では実行する。
+   **それ以外のあらゆる PR では実行する**（許可リスト方式の倒れ方を実測する）。
 6. `report-failure` が **① 失敗時に issue を立て ② 2 回目はコメントを足すだけ**であり、
    **PR では起票しない**。
 

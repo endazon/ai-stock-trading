@@ -20,8 +20,8 @@ on:
     - cron: "0 3 * * 1"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる。
-# 🔴 develop / main への push と週次 schedule はキャンセルしない —— vulnerable-scan を PR から
-# 外した分の担保がそちらに載っているため、途中で捨てると担保が失われる。
+# 🔴 develop / main への push と週次 schedule はキャンセルしない（後から公開された advisory を
+# 既存の依存に対して検出する定期実行であり、捨てると当該時点の走査が残らない）。
 concurrency:
   group: security-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -66,17 +66,18 @@ jobs:
   vulnerable-scan:
     name: Vulnerable transitive dependencies
     runs-on: ubuntu-latest
-    # 🔴 NFR / IADR-0208 決定 5: PR では走らせない。
+    # NFR / IADR-0208 決定 5: **PR でも走らせる。**
     #
-    # 本ジョブが見るのは「既存の推移依存 × 後から公開された advisory」であり、**PR の差分とは
-    # 無関係**である（ファイル冒頭のコメントも「schedule での定期実行が主目的」と書いている）。
-    # PR 差分の依存レビューは上の dependency-review が既にカバーしている。
-    # にもかかわらず毎 PR で全ソリューションの restore（キャッシュ無し）を回しており、
-    # PR の待ち時間だけを消費していた。
+    # 当初は「本ジョブが見るのは『既存の推移依存 × 後から公開された advisory』であり PR の差分とは
+    # 無関係。PR 差分は dependency-review がカバーしている」として PR から外していた。
+    # **利用者裁定（2026-08-22）「なるべく精度は落とさない方向で」により取り下げた。**
     #
-    # 本ジョブは必須チェックではない（必須 check 名の正本は docs/ai-workflow.md の表）。
-    # push（develop/main）と週次 schedule で回し、落ちたら下の report-failure が issue を立てる。
-    if: github.event_name != 'pull_request'
+    # dependency-review が依存グラフの差分を見るのに対し、本ジョブは実際に restore した推移閉包を
+    # `dotnet list package --vulnerable --include-transitive` で見る。**見ている面が違う以上、
+    # 「重複だから外してよい」と言い切れない。** 迷ったら残す。
+    #
+    # 速さは NuGet キャッシュ（下）で取る。security.yml は CI と並列に走り
+    # クリティカルパスではないため、残しても PR の待ち時間はほぼ変わらない。
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -105,8 +106,8 @@ jobs:
           fi
           echo "No vulnerable packages found."
 
-  # 🔴 PR から外した検証（vulnerable-scan）と、秘密情報スキャンの後段での失敗を issue に残す
-  # （IADR-0208 決定 1）。PR では起票しない —— PR は自身の check が赤くなるので気付けるためである。
+  # push / 週次 schedule での失敗を issue に残す（IADR-0208 決定 1）。
+  # PR では起票しない —— PR は自身の check が赤くなるので気付けるためである。
   report-failure:
     needs: [secret-scan, vulnerable-scan]
     if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')

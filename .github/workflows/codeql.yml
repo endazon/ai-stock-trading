@@ -25,8 +25,8 @@ on:
     - cron: "0 3 * * 1"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる。
-# 🔴 develop / main への push と週次 schedule はキャンセルしない —— PR で落とした精度を
-# 担保しているのはそちら（build-mode: autobuild の全量解析）であり、捨てると担保が失われる。
+# 🔴 develop / main への push と週次 schedule はキャンセルしない（全量解析の記録が Security タブへ
+# 載る経路であり、途中で捨てると当該コミットの解析結果が残らない）。
 concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -50,18 +50,16 @@ jobs:
         uses: github/codeql-action/init@v4.37.7
         with:
           languages: ${{ matrix.language }}
-          # NFR / IADR-0208 決定 4: **PR だけ** ビルド不要の build-mode: none にする。
-          # build-mode は none / autobuild / manual の 3 値を取る文字列入力なので、
-          # イベントで切り替えられる。
+          # NFR / IADR-0208 決定 4: **PR でも精度を落とさない。常に build-mode: autobuild である。**
           #
-          # 🔴 **PR と後段で精度が違う。** ここが最も誤解しやすい点なので明記する。
-          #   - PR: build-mode: none。ビルドせず解析する（PR ではインクリメンタル解析が効く）。
-          #     **生成コードは解析対象外になる。** 下の Autobuild も走らない。
-          #   - push（develop/main）・週次 schedule: build-mode: autobuild ＋ 下の Autobuild。
-          #     **従来と同じ精度**であり、PR で落とした分をここで担保する（IADR-0208 決定 1）。
+          # 当初は「PR だけ build-mode: none にしてビルドを省く」案を採っていたが、
+          # **利用者裁定（2026-08-22）「なるべく精度は落とさない方向で」により取り下げた。**
+          # none にすると生成コードが解析対象外になり、かつ「PR は緑だが push で赤」という
+          # 読み分けの難しい状態を作る。
           #
-          # したがって **PR が緑でも push で赤くなることがあり得る。それは退行ではなく設計どおり**である。
-          build-mode: ${{ github.event_name == 'pull_request' && 'none' || 'autobuild' }}
+          # 速さは concurrency（上）と NuGet キャッシュで取る。どちらも**解析の中身を 1 行も削らない**。
+          # 本ワークフローは**必須チェックではない**ため、残る所要はマージを止めない。
+          build-mode: autobuild
       # 【落とし穴】autobuild はリポジトリ全体を走査してビルド対象を推定するため、**ビルド不可の
       # 雛形ソリューション**（スキャフォールド用に置いてあり、共通 props を継承せず単体では
       # ビルドできないもの）を同梱するリポジトリでは、それを拾ってジョブが失敗する。
@@ -82,18 +80,15 @@ jobs:
       #       done
       #
       # 明示ビルドにする場合は、init と analyze の間に置いて CodeQL のトレーサに載せること。
-      # build-mode: none（PR）ではビルドしないので走らせない。これが PR の待ち時間の大半である。
       - name: Autobuild
-        if: github.event_name != 'pull_request'
         uses: github/codeql-action/autobuild@v4.37.7
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.7
         with:
           category: "/language:${{ matrix.language }}"
 
-  # 🔴 PR から落とした精度の担保（build-mode: autobuild の全量解析）が落ちたことを issue に残す
-  # （IADR-0208 決定 1）。PR 経路（build-mode: none）では起票しない —— PR は自身の check が
-  # 赤くなるので気付けるためである。
+  # push / 週次 schedule で解析が落ちたことを issue に残す（IADR-0208 決定 1）。
+  # PR では起票しない —— PR は自身の check が赤くなるので気付けるためである。
   report-failure:
     needs: [analyze]
     if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
