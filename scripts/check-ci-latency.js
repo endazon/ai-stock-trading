@@ -157,9 +157,20 @@ async function fetchJson(url, token) {
   if (!res.ok) {
     const err = new Error(`${res.status} ${res.statusText} for ${url}`);
     err.status = res.status;
+    err.rateLimited = isRateLimited(res.headers);
     throw err;
   }
   return res.json();
+}
+
+/**
+ * レート制限による失敗か。**GitHub はレート制限超過にも 403 を返す**ため、
+ * ステータスだけ見ると権限誤りと区別が付かない（AI レビューの指摘）。
+ * レート制限は待てば直る＝**一過性**なので、赤くしてはならない。
+ */
+function isRateLimited(headers) {
+  if (!headers || typeof headers.get !== 'function') return false;
+  return headers.get('x-ratelimit-remaining') === '0' || Boolean(headers.get('retry-after'));
 }
 
 /**
@@ -174,8 +185,19 @@ async function fetchJson(url, token) {
  * **Pulls API（`pull-requests`）と Checks API（`checks`）**であり、別スコープである
  * （AI レビューが両リポジトリで独立に指摘した）。**その形はこの分岐が無ければ緑のまま素通りする。**
  */
-function isConfigError(status) {
-  return status === 401 || status === 403 || status === 404;
+function classifyFailure(status, { rateLimited = false, scope = 'repo' } = {}) {
+  // レート制限（403 で来る）は待てば直る。権限誤りと同じ扱いにしない。
+  if (rateLimited) return 'transient';
+  if (status === 401 || status === 403) return 'config';
+  if (status === 404) {
+    // 🔴 **404 の意味は文脈で変わる**（AI レビューの指摘）。
+    // リポジトリ／PR 一覧が 404 = リポジトリ名の誤りかアクセス権なし＝**設定の誤り**。
+    // 個別コミットの check-runs が 404 = **その 1 本が消えただけ**（スカッシュ後に
+    // head ブランチが削除され、dangling commit が GC された等）。
+    // ここを一緒くたにすると、**1 本 GC されただけでバッチ全体が赤くなり誤起票する**。
+    return scope === 'repo' ? 'config' : 'missing';
+  }
+  return 'transient'; // 5xx・ネットワーク断
 }
 
 /**
@@ -194,12 +216,19 @@ function sortByMergedAtDesc(prs) {
 async function collect({ repo, token, samples }) {
   const base = `https://api.github.com/repos/${repo}`;
   // per_page を samples の 3 倍取るのは、closed には**マージされずに閉じた** PR が混ざるためである。
-  const prs = await fetchJson(`${base}/pulls?state=closed&per_page=${samples * 3}&sort=updated&direction=desc`, token);
+  let prs;
+  try {
+    prs = await fetchJson(`${base}/pulls?state=closed&per_page=${samples * 3}&sort=updated&direction=desc`, token);
+  } catch (e) {
+    e.scope = 'repo'; // リポジトリ全体が引けない＝設定の誤りとして扱う
+    throw e;
+  }
   const merged = sortByMergedAtDesc(prs).slice(0, samples);
 
   const targetDurations = [];
   const baselineDurations = [];
   let fetchFailures = 0;
+  let missingHeads = 0;
   for (const pr of merged) {
     const sha = pr.head && pr.head.sha;
     if (!sha) continue;
@@ -209,8 +238,14 @@ async function collect({ repo, token, samples }) {
     } catch (e) {
       // 🔴 権限・認証の誤りは**握りつぶさない**。握りつぶすと「権限設定が恒久的に誤っている」と
       // 「単にマージ済み PR が少ない」が**区別できなくなり**、監視は緑のまま一度も働かない。
-      if (isConfigError(e.status)) throw e;
-      fetchFailures += 1; // 一過性（5xx・ネットワーク断）は 1 本落として続ける
+      const kind = classifyFailure(e.status, { rateLimited: e.rateLimited, scope: 'commit' });
+      if (kind === 'config') {
+        e.scope = 'commit';
+        throw e;
+      }
+      // 一過性（5xx・レート制限）と、その 1 本が消えただけ（404）は落として続ける。
+      if (kind === 'missing') missingHeads += 1;
+      else fetchFailures += 1;
       continue;
     }
     const all = runs.check_runs || [];
@@ -222,7 +257,7 @@ async function collect({ repo, token, samples }) {
       else if (r.name === BASELINE) baselineDurations.push(d);
     }
   }
-  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures };
+  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures, missingHeads };
 }
 
 function selfTest() {
@@ -285,12 +320,26 @@ function selfTest() {
 
   // 🔴 AI レビューが両リポジトリで独立に指摘した罠の回帰テスト。
   // permissions が足りないと 403 で早期終了し、fail-open で**緑のまま永久に働かない**。
-  ok('isConfigError: 401 / 403 / 404 は設定の誤り（赤くする）', () => {
-    eq([401, 403, 404].map(isConfigError), [true, true, true]);
-  });
-  ok('isConfigError: 5xx・不明は一過性（fail-open のまま）', () => {
-    eq([500, 502, 503, undefined, null].map(isConfigError), [false, false, false, false, false]);
-  });
+  ok('classifyFailure: 401 / 403 は設定の誤り（赤くする）', () =>
+    eq([401, 403].map((c) => classifyFailure(c)), ['config', 'config']));
+  ok('classifyFailure: 5xx・不明は一過性（fail-open のまま）', () =>
+    eq([500, 502, 503, undefined, null].map((c) => classifyFailure(c)), ['transient', 'transient', 'transient', 'transient', 'transient']));
+  // 🔴 AI レビューの指摘の回帰テスト。403 はレート制限でも返るため、
+  // ステータスだけで権限誤りと断じると**待てば直る失敗で誤起票する**。
+  ok('classifyFailure: レート制限の 403 は一過性（待てば直るので赤くしない）', () =>
+    eq(classifyFailure(403, { rateLimited: true }), 'transient'));
+  // 🔴 AI レビューの指摘の回帰テスト。404 の意味は文脈で変わる。
+  ok('classifyFailure: リポジトリ側の 404 は設定の誤り（リポジトリ名の誤り・権限なし）', () =>
+    eq(classifyFailure(404, { scope: 'repo' }), 'config'));
+  ok('classifyFailure: 個別コミットの 404 は「その 1 本が消えただけ」', () =>
+    eq(classifyFailure(404, { scope: 'commit' }), 'missing'));
+  ok('isRateLimited: x-ratelimit-remaining=0 を拾う', () =>
+    eq(isRateLimited(new Map([['x-ratelimit-remaining', '0']]).get ? { get: (k) => (k === 'x-ratelimit-remaining' ? '0' : null) } : null), true));
+  ok('isRateLimited: retry-after を拾う', () =>
+    eq(isRateLimited({ get: (k) => (k === 'retry-after' ? '60' : null) }), true));
+  ok('isRateLimited: 余裕があれば false', () =>
+    eq(isRateLimited({ get: (k) => (k === 'x-ratelimit-remaining' ? '4321' : null) }), false));
+  ok('isRateLimited: headers が無ければ false', () => eq(isRateLimited(null), false));
   // 🔴 `sort=updated` はマージ後のコメントでも進むため、マージ順とは一致しない。
   ok('sortByMergedAtDesc: merged_at の新しい順に並べ直す', () =>
     eq(
@@ -382,7 +431,7 @@ async function main() {
     return;
   }
 
-  const { merged, targetDurations, baselineDurations, fetchFailures } = await collect({
+  const { merged, targetDurations, baselineDurations, fetchFailures, missingHeads } = await collect({
     repo,
     token,
     samples: SAMPLES,
@@ -392,7 +441,8 @@ async function main() {
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
       `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件` +
-      (fetchFailures ? `（うち ${fetchFailures} 本は一過性の API 失敗で取得できず）` : ''),
+      (fetchFailures ? `（うち ${fetchFailures} 本は一過性の API 失敗で取得できず）` : '') +
+      (missingHeads ? `（うち ${missingHeads} 本は head が既に無く 404。GC 済みのため恒久的にこのまま）` : ''),
   );
   // 🔴 該当 run が 0 件なら、まず **check 名の設定ミス**を疑わせる。
   // 既定値のまま配備すると 0 件になり、fail-open で**緑のまま永久に skip する**。
@@ -436,7 +486,7 @@ main().catch((e) => {
   // 🔴 **権限・認証の誤りは赤くする。** これは「CI が遅い」ではなく「**監視が壊れている**」であり、
   // fail-open で緑を返せば、監視は一度も働かないまま緑を返し続ける
   // （＝「監視が黙って壊れるのは監視が無いより悪い」そのもの）。
-  if (isConfigError(e.status)) {
+  if (classifyFailure(e.status, { rateLimited: e.rateLimited, scope: e.scope || 'repo' }) === 'config') {
     console.log(
       `::error::[check-ci-latency] GitHub API が ${e.status} を返した。**監視が動いていない。** ` +
         'ワークフローの permissions を確かめること —— 本検査器は Pulls API（pull-requests: read）と ' +
