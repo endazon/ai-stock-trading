@@ -57,7 +57,7 @@ append_contract() {
 ---
 【worker 契約（必須・AGENTS.md §worker スロットとして動く場合の契約）】
 - この worktree の中だけで作業する。worktree の外に書かない。force push しない。
-- 作業仕様書（docs/specs/）を作成してから実装する。仕様書なしの着手は禁止。
+- 作業仕様書（.ai-context/specs/）を作成してから実装する。仕様書なしの着手は禁止。
 - 起点 ID をブランチ・コミット・コード・PR に残す（トレーサビリティ規約）。
 - コミットには帰属トレーラ「Co-Authored-By: ${engine} <使用モデル名>」を付ける。
 - 中間成果物（質問票・作業指示書）をコミットしない。

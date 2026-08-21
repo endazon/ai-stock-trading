@@ -34,7 +34,7 @@ paths:
 - `UC-xx`: ユースケース（`03_usecases/`）
 - `SC-xx`: 画面（`05_screens/`）
 - `ADR-xxxx`: 計画ADR（計画リポ `07_adr/`）
-- `IADR-xxxx`: 実装ADR（本リポ `docs/adr/`。計画ADR とは別系統）
+- `IADR-xxxx`: 実装ADR（本リポ `.ai-context/adr/`。計画ADR とは別系統）
 
 上記の裸（無修飾）の ID は、**本リポジトリが主に実装するプロジェクトの計画書の名前空間**を指す。
 

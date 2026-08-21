@@ -29,7 +29,7 @@ const REPO_ROOT = process.env.TEST_TRACE_ROOT
   : path.resolve(__dirname, '..');
 
 /**
- * 機能仕様書・テスト仕様書が必須の FR（網羅裁定 #211 / docs/specs/20260720_required-spec-coverage-arbitration.md）。
+ * 機能仕様書・テスト仕様書が必須の FR（網羅裁定 #211 / .ai-context/specs/20260720_required-spec-coverage-arbitration.md）。
  * 安全・統制の中核であり、設定駆動・横断的で独立した仕様書が統制価値を持つもの。
  */
 const REQUIRED_FRS = [10, 12, 15, 19, 20];
