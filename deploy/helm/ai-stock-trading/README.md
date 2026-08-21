@@ -1,7 +1,7 @@
 # ai-stock-trading k8s Helm chart（MSP 連結ローカル k8s dev）
 
 > 起点: [IADR-0052](../../../.ai-context/adr/IADR-0052_k8s-helm-chart-shared-infra.md) /
-> 作業仕様書 [`docs/specs/20260713_122_k8s-helm-chart.md`](../../../.ai-context/specs/20260713_122_k8s-helm-chart.md) /
+> 作業仕様書 [`.ai-context/specs/20260713_122_k8s-helm-chart.md`](../../../.ai-context/specs/20260713_122_k8s-helm-chart.md) /
 > Issue #122・#24・#121
 
 AST の 10 Worker を k8s へデプロイする chart。**共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は
@@ -28,7 +28,7 @@ kubectl -n ai-stock-trading get pods
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
-> 作業仕様書 [`docs/specs/20260725_route-b-values-local-standing-config.md`](../../../.ai-context/specs/20260725_route-b-values-local-standing-config.md) /
+> 作業仕様書 [`.ai-context/specs/20260725_route-b-values-local-standing-config.md`](../../../.ai-context/specs/20260725_route-b-values-local-standing-config.md) /
 > Issue #238
 
 経路B（ローカル k8s / SIMULATE）で取引サイクルを end-to-end 検証するための **local/SIMULATE 有効化プロファイル**を
@@ -143,8 +143,8 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 > [#364](https://github.com/endazon/ai-stock-trading/issues/364) /
 > [IADR-0107](../../../.ai-context/adr/IADR-0107_base-currency-conversion.md) /
 > [IADR-0152](../../../.ai-context/adr/IADR-0152_usd-base-currency-migration.md) /
-> 作業仕様書 [`docs/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
-> [`docs/specs/20260805_364_usd-base-currency.md`](../../../.ai-context/specs/20260805_364_usd-base-currency.md)
+> 作業仕様書 [`.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
+> [`.ai-context/specs/20260805_364_usd-base-currency.md`](../../../.ai-context/specs/20260805_364_usd-base-currency.md)
 
 統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝米ドル**で行う（計画 §3・IADR-0152 決定1）。
 非基準通貨（JPY 建て）の銘柄は、USD への換算レートが解決できない限り**新規建てを見送る**（IADR-0107 決定3 の
