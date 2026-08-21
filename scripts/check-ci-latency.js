@@ -233,6 +233,28 @@ function loadBackendDecider() {
   }
 }
 
+const FILES_PAGE_SIZE = 100;
+// GitHub の `/pulls/{n}/files` は最大 3000 件までしか返さない（＝30 ページ）。
+const FILES_MAX_PAGES = 30;
+
+/**
+ * PR の変更ファイル名を**全ページ**集める。
+ * `complete` は「最後のページまで読み切れたか」であり、false のときに母集合を狭めてはならない。
+ * fetchPage を引数に取るのは、ネットワークを伴わずに自己試験できるようにするためである。
+ */
+async function fetchChangedFiles(fetchPage, { maxPages = FILES_MAX_PAGES } = {}) {
+  const names = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const batch = await fetchPage(page);
+    const list = Array.isArray(batch) ? batch : [];
+    for (const f of list) {
+      if (f && f.filename) names.push(f.filename);
+    }
+    if (list.length < FILES_PAGE_SIZE) return { names, complete: true };
+  }
+  return { names, complete: false };
+}
+
 async function collect({ repo, token, samples }) {
   const base = `https://api.github.com/repos/${repo}`;
   // per_page を samples の 3 倍取るのは、closed には**マージされずに閉じた** PR が混ざるためである。
@@ -261,11 +283,18 @@ async function collect({ repo, token, samples }) {
     // 定常性の門（決定 9）が「構成が変わった」と誤認して**永久に判定しなくなる**。
     if (decideBackend) {
       try {
-        const files = await fetchJson(`${base}/pulls/${pr.number}/files?per_page=100`, token);
-        const names = (files || []).map((f) => f && f.filename).filter(Boolean);
+        // 🔴 **1 ページ目だけ見てはならない。** 変更 100 件を超える PR で、最初の 100 件が
+        // すべて許可リスト内（docs 等）・backend の変更が 101 件目以降にある場合、
+        // **実際には backend を触った PR を母集合から静かに落とす**（AI レビューの指摘）。
+        // 実害は小さい（監視は門ではない）が、**決定 13 の狙いを黙って損なう経路**である。
+        const { names, complete } = await fetchChangedFiles((page) =>
+          fetchJson(`${base}/pulls/${pr.number}/files?per_page=${FILES_PAGE_SIZE}&page=${page}`, token)
+        );
         // ファイル一覧が引けなかった場合は names が空になり、decide() は
         // 「差分の取得に失敗した可能性」として backend=true へ倒す＝母集合に残す（安全側）。
-        if (!decideBackend(names).backend) {
+        // **全ページを読み切れなかったときも除外しない** —— 判断材料が欠けている状態で
+        // 母集合を狭めるのは、この検査が防ごうとしている「黙って狭める」ことそのものである。
+        if (complete && !decideBackend(names).backend) {
           skippedBackend += 1;
           continue;
         }
@@ -306,16 +335,38 @@ async function collect({ repo, token, samples }) {
   return { merged: merged.length, targetDurations, baselineDurations, fetchFailures, missingHeads, skippedBackend };
 }
 
-function selfTest() {
+async function selfTest() {
   const t = [];
+  // 🔴 **非同期の試験を同期のハーネスへ入れてはならない。** `fn()` を await しないと、
+  // 中で throw しても**その行は `ok` と表示され、集計も「N 件 OK」と出る**（実測）。
+  // 落ちるのは Node が未処理の拒否でプロセスを中断するからであり、
+  // **報告と実態が食い違う**（どの試験が失敗したのか読み取れない）。
+  // 実測: ページネーションを 1 ページ目で打ち切る変異を入れた状態で、
+  // 同期ハーネスは当該試験を `ok` と表示した。非同期対応後は `FAIL` と表示する。
+  // 戻り値が thenable なら解決を待ち、その完了を pending へ積んで最後にまとめて待つ。
+  const pending = [];
   const ok = (name, fn) => {
+    let r;
     try {
-      fn();
-      t.push(`  ok   ${name}`);
+      r = fn();
     } catch (e) {
       t.push(`  FAIL ${name}: ${e.message}`);
       process.exitCode = 1;
+      return;
     }
+    if (r && typeof r.then === 'function') {
+      pending.push(
+        r.then(
+          () => t.push(`  ok   ${name}`),
+          (e) => {
+            t.push(`  FAIL ${name}: ${e.message}`);
+            process.exitCode = 1;
+          }
+        )
+      );
+      return;
+    }
+    t.push(`  ok   ${name}`);
   };
   const eq = (a, b, m) => {
     if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m || ''} ${JSON.stringify(a)} != ${JSON.stringify(b)}`);
@@ -494,13 +545,53 @@ function selfTest() {
     eq(d([]).backend, true);
   });
 
+  // 🔴 ページネーションの回帰テスト（AI レビューの指摘）。
+  // 1 ページ目だけ見ると、**backend の変更が 101 件目以降にある PR を静かに母集合から落とす**。
+  const page = (n, prefix) => Array.from({ length: n }, (_, i) => ({ filename: `${prefix}${i}.md` }));
+  ok('fetchChangedFiles: 1 ページで終わる場合', async () => {
+    const r = await fetchChangedFiles(() => page(3, 'docs/a'));
+    eq(r.names.length, 3);
+    eq(r.complete, true);
+  });
+  ok('fetchChangedFiles: ちょうど 100 件なら次ページを引く', async () => {
+    const calls = [];
+    const r = await fetchChangedFiles((p) => {
+      calls.push(p);
+      return p === 1 ? page(100, 'docs/a') : [];
+    });
+    eq(calls.join(','), '1,2');
+    eq(r.names.length, 100);
+    eq(r.complete, true);
+  });
+  ok('🔴 fetchChangedFiles: 101 件目以降の backend 変更を取りこぼさない', async () => {
+    const r = await fetchChangedFiles((p) =>
+      p === 1 ? page(100, 'docs/a') : [{ filename: 'backend/Services/X/src/X.cs' }]
+    );
+    eq(r.complete, true);
+    eq(loadBackendDecider()(r.names).backend, true);
+  });
+  ok('参考: 1 ページ目だけ見ると backend=false になる（回帰の再現）', () => {
+    eq(loadBackendDecider()(page(100, 'docs/a').map((f) => f.filename)).backend, false);
+  });
+  ok('fetchChangedFiles: 上限まで読んでも終わらなければ complete=false', async () => {
+    const r = await fetchChangedFiles(() => page(100, 'docs/a'), { maxPages: 3 });
+    eq(r.complete, false);
+    eq(r.names.length, 300);
+  });
+  ok('fetchChangedFiles: 配列以外が返っても落ちない（complete で扱う）', async () => {
+    const r = await fetchChangedFiles(() => null);
+    eq(r.names.length, 0);
+    eq(r.complete, true);
+  });
+
+  await Promise.all(pending);
   console.log(t.join('\n'));
   console.log(`[check-ci-latency] 自己試験 ${t.length} 件${process.exitCode ? ' に失敗あり' : ' OK。'}`);
 }
 
 async function main() {
   const argv = process.argv.slice(2);
-  if (argv.includes('--self-test')) return selfTest();
+  if (argv.includes('--self-test')) return await selfTest();
 
   const reportOnly = argv.includes('--report-only');
   const repo = process.env.GITHUB_REPOSITORY;
