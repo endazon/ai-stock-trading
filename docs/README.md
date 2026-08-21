@@ -88,11 +88,11 @@ docs/
 | 種別 | 文書 | 出力先 |
 | --- | --- | --- |
 | `observability` | ログ・可観測性仕様書 | `docs/observability/` |
-| `authz` | 権限・認可仕様書 | `docs/authz/` |
+| `authz` | 権限・認可仕様書 | `docs/authz/`（未作成。必要になった時点で作る） |
 | `integration` | 外部連携仕様書 | `docs/integration/` |
-| `batch` | バッチ・ジョブ仕様書 | `docs/batch/` |
-| `migration` | 移行仕様書 | `docs/migration/` |
-| `error` | エラー・メッセージ仕様書 | `docs/errors/` |
+| `batch` | バッチ・ジョブ仕様書 | `docs/batch/`（未作成。必要になった時点で作る） |
+| `migration` | 移行仕様書 | `docs/migration/`（未作成。必要になった時点で作る） |
+| `error` | エラー・メッセージ仕様書 | `docs/errors/`（未作成。必要になった時点で作る） |
 | `infra` | インフラ・構成仕様書 | `docs/infra/` |
 | `runbook` | 運用 Runbook（運用仕様書の**下位**にあたる手順書） | `docs/operations/` |
 | `how-to` | 手順ガイド（開発環境の起動・デプロイ・ローカル基盤の立ち上げなど） | `docs/how-to/` |
