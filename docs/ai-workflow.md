@@ -40,7 +40,7 @@ Pull Request
 **初回チェックリスト**（着手前に上から順に確認する）:
 
 - [ ] repo-template の中身をこのリポジトリ直下にコピー済みである（`.claude/` `.github/` `docs/` など）。
-- [ ] 計画リポ（`project-planning`）を参照できる（git submodule か隣接クローン。既定パス `../project-planning`）。`/sync-plan` または計画書の該当 ID を開いて確認する。
+- [ ] 計画リポ（`project-planning`）を参照できる。**submodule は張らない**（資料再編の計画 ADR 決定 2）—— GitHub 上の URL を直接開くか、隣接クローン（既定パス `../project-planning`。読み取り専用・pin 固定なし）を用意し、該当 ID の計画書が開けることを確認する。
 - [ ] `AI_SETUP.md` で利用可能な AI を宣言し、`bash scripts/apply-profile.sh <profile>` を実行済みである。
 - [ ] CI 系を有効化済みである（`ci.example.yml` / `codeql.example.yml` の `.example` を外す）。
 - [ ] GitHub Secrets（`CLAUDE_CODE_OAUTH_TOKEN` か `ANTHROPIC_API_KEY`）を登録済みである（Copilot 利用時はリポジトリで Copilot を有効化）。
@@ -103,12 +103,14 @@ bash scripts/apply-profile.sh copilot
   （#439。バックログ定期監査自動化の実装ADR。機械検査は warn・AI 監査は提案のみ）。
   クローズ漏れ・重複起票・`docs/blocked-tasks.md` との突き合わせ・エピック進捗を見て、
   **単一の追跡 issue へ upsert** する。**issue を自動クローズしない**（提案のみ・判断は人間）。
-  前段で `check-feedback-dispatched.js`（kit 由来）が**環流記録の未伝達**を warn として出す
-  （［2026-08-14］`check-feedback-reflux.js` から置き換えた。#477。環流記録の語彙と伝達検査を
-  kit へ揃える実装ADR）。
-  **同検査器は手順書が定める 2 経路（GitHub Issue 経路 / 記録ファイル経路）のどちらでも緑になる。**
-  **出力を「未起票」と読み替えないこと** —— 見ているのは*記録に伝達の証拠が書かれているか*であって*実際に届いたか*ではない。
   **監査が増える主因は実装速度ではなく「閉じるより速く増えること」だった**という実測が起点である。
+
+  > **［2026-08-21 変更］環流記録の未伝達検査（`check-feedback-dispatched.js`）と status 突合検査
+  > （`check-feedback-status-sync.js`）は退役した。** 資料再編（計画 ADR 決定 5）で環流が計画リポジトリの
+  > GitHub issue へ一本化され、**突合対象だった `feedback/` ディレクトリが本リポジトリから無くなった**ためである。
+  > **is-was**: 旧は「記録ファイルに伝達の証拠が書かれているか」を warn で出していた（実際に届いたかは見ていない）。
+  > 新は**起票そのものが伝達**であり、滞留の検知は計画リポジトリ側の issue 運用（`decision-needed` ラベルの棚卸し）が担う。
+  > 検査器の設計を定めた実装ADR は記録として残す（本書の trace ブロック参照）。
 
 ## 全自動化のための推奨ツール・設定
 
@@ -124,7 +126,8 @@ bash scripts/apply-profile.sh copilot
 | 脆弱性 | dependency-review（`security.yml`）＋ CodeQL ＋ Dependabot | 供給網・SAST |
 | 完了の定義 | `docs/DEFINITION_OF_DONE.md` ＋ `/verify` | AI 自身の完了前検証 |
 | トレーサビリティ | `/trace-check`・`/adr-check`・`.claude/rules/traceability.md` | 計画と実装の整合 |
-| 計画への環流 | `/plan-feedback`（実装→計画） | 計画書の誤り・不足を戻す |
+| `docs/` の非表示メタデータ | `scripts/check-trace-blocks.js`・`scripts/gen-knowledge-graph.js` | trace ブロックの文法・値域・可視本文への ID 残存 |
+| 計画への環流 | 計画リポジトリの GitHub issue（`feedback.yml` テンプレート・`decision-needed` ラベル） | 計画書の誤り・不足を戻す。**起票前に同件の既存 issue を検索する** |
 
 ### 必須チェックの有効化（人手の検証を最小化する要）
 
@@ -248,8 +251,8 @@ on:
 ## 必読規約の総量予算の測り方
 
 **原則（予算 50KB・配備先の実測で測る・エージェントごとに分けて合算しない）は `CLAUDE.md`
-§メタ作業の統制が持つ。** ここは予算の増減を伴う作業（規約の追加・別紙化・キット同期）のときに読む
-運用の詳細である。
+§実装作業の進め方（計画リポの運用ガイド）が持つ。** ここは予算の増減を伴う作業（規約の追加・別紙化）の
+ときに読む運用の詳細である。
 
 - **測るコマンドを決めておく。測れない予算は守られない。**
 
@@ -261,7 +264,7 @@ on:
   - **予算値 51,200 の算定根拠は Claude 側の実測である。** `AGENTS.md` 系は実測が無いため
     **同じ値を暫定的に流用する** —— **超過を fail の根拠にせず、観測に留める**。
   - **`.claude/rules/` は列挙せず走査する。** 自動適用のため、**ファイルを 1 つ置いただけで予算が動く**。
-  - **submodule（`planning/` 等）配下の `CLAUDE.md` は入れない。** そのディレクトリで作業するときだけ読まれる。
+  - **母集合に他リポジトリの `CLAUDE.md` は入れない。** 本リポジトリは planning を submodule で取り込まないため、対象は本リポジトリ直下の `CLAUDE.md` と `.claude/rules/*.md` だけである。
   - **予算値 51200 の正本は計画リポの `docs/ai-implementation-workflow-guide.md` である。**
     スクリプトが値を持つのは**複製として認めるが、値の隣に出典を書く**（出典の無い複製は認めない）。
 - **エージェントごとに分けて測る理由**: 制約は「セッション 1 本が背負う量」に掛かる。`AGENTS.md` は
@@ -270,8 +273,10 @@ on:
   2 回とも `AGENTS.md` を足して過大に報告し、**着手条件の判定まで狂った**。計画リポジトリ側の実測）。
 - **増減は上限と、本リポジトリが持つ下限（確保した余白のラチェット）の両方に照らす。** 上限だけを
   見ると、**ブロッカーが下限へ移っただけの状態を「解決した」と誤読する**（計画リポジトリ側の実測）。
-- **キットが規約を別紙へ移した pin では、移設元と移設先を同時に取り込む。** 規約側はリンクだけを
-  残すため片側取り込みは中身を失うが、**バイト一致検査は 1 ファイルずつ見るので緑になる。**
+- **規約を別紙へ移すときは、移設元と移設先を同時に直す。** 規約側はリンクだけを残すため、片方だけを
+  更新すると参照先に中身が無い状態になる。**［2026-08-21 変更］キットとのバイト一致同期検査は退役し、
+  キットは bootstrap 専用になった**（資料再編の計画 ADR 決定 6）—— 旧は pin を進めるたびに移設元・移設先の
+  両方を取り込む必要があったが、新は**乖離を受容として記録する**だけでよい。
 - **超えていたら、まず「配布物を直接編集していないか」を疑う。** 固有節は companion
   （`.claude/rules/traceability.repo.md` 等）へ置く。実測では、配布物への直接追記 **10.8 KB** が
   そのまま超過分になっていた。
@@ -281,24 +286,25 @@ on:
 
 ### 検査器の配線・CHANGELOG の是正（別紙）
 
-**規約の本文は [`.claude/rules/traceability.md`](../.claude/rules/traceability.md)、配線と運用の詳細は
-[`docs/traceability-appendix.md`](traceability-appendix.md)（キット配布物・分類 A）が持つ。**
-本書は技術スタック固有の CI 配線を扱うため配布先ごとに差分を持ちうるが、**別紙は差分を持たない**
-（どの配布先でもバイト一致で取り込める）。
+**規約の本文は [`.claude/rules/traceability.md`](../.claude/rules/traceability.md)（と同ディレクトリの
+companion）、配線と運用の詳細は [`docs/traceability-appendix.md`](traceability-appendix.md) が持つ。**
+本書は技術スタック固有の CI 配線を扱う。**［2026-08-21 変更］別紙はもはやキットとのバイト一致を
+前提としない** —— 資料再編でキット同期検査が退役したため、本リポジトリの実情（`.ai-context/` 分離・
+planning 非依存・trace ブロック）に合わせて書き換えてよい。
 
 ## よくある詰まり（FAQ）
 
 | 症状 | 対処 |
 | --- | --- |
 | スラッシュコマンド（`/new-spec` 等）が出ない | repo-template の `.claude/` をリポ直下にコピーしたか確認し、Claude Code を再起動して読み直す。 |
-| 計画書（`projects/<name>`）を参照できない | git submodule か隣接クローンを設定する（既定パス `../project-planning`）。`/sync-plan` で `.ai-context/` に再生成して確認する。 |
+| 計画書（`projects/<name>`）を参照できない | GitHub 上の URL を直接開くか、隣接クローンを用意する（既定パス `../project-planning`。読み取り専用）。**submodule は張らない。** |
 | CI / AI ワークフローが起動しない | `.example` を外して有効化したか（`scripts/apply-profile.sh`）、必要な Secrets を登録したか確認する。Actions のログでトリガ条件を確認する。 |
 | `@claude` が反応しない | `claude-coding.yml` が有効化済みか、`CLAUDE_CODE_OAUTH_TOKEN` か `ANTHROPIC_API_KEY` のいずれかが登録済みかを確認する。 |
 | ビルド・テストが C#/.NET 前提で合わない | 技術スタック別の差し替え対象（`ci.yml` / `setup.sh` / `.devcontainer/` / `settings.json` の permissions）を使用言語へ直す。一覧は計画リポの `tools/impl-handoff-kit/README.md`「技術スタック別の差し替え対象」。 |
 
 ## 安全に任せるための原則
 
-- AI は**着手前に作業仕様書を作成**し、それに沿って実装する（hook が警告）。
+- AI は**着手前に作業仕様書を作成**し（`.ai-context/specs/`）、それに沿って実装する（hook が警告）。
 - 破壊的操作・秘密情報コミットは hook と権限設定でブロックする。
 - マージ前に **CI ゲート ＋ 人間の最終レビュー** を必ず通す（全自動でも最後の人間ゲートは残す）。
-- 計画書に反する判断は実装で押し通さず、`/plan-feedback` で計画側へ戻す。
+- 計画書に反する判断は実装で押し通さず、計画リポジトリの GitHub issue で計画側へ戻す。
