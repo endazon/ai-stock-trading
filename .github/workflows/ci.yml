@@ -472,7 +472,7 @@ jobs:
       # **失敗の全体像を 1 回の run で見る**（赤が入れ替わって何周もするのを避ける）。
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v7
       # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
@@ -495,25 +495,22 @@ jobs:
         run: dotnet restore backend/backend.slnx
       - name: Build
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
-      - name: Test (shard ${{ matrix.shard }} / 3)
+      - name: Test (shard ${{ matrix.shard }} / 5)
         run: |
           set -euo pipefail
-          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 3 > shard.txt
+          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 5 --slnx shard.slnx > shard.txt
           echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
           cat shard.txt
-          # 🔴 **1 本ずつ直列に回してはならない。** 現在の 4 並列を失い、
-          # シャード時間が 480/3 = 160 秒となって分割前の 133 秒より遅くなる。
-          # xargs -P 4 でシャード内の並列度を保つ。1 本でも落ちれば xargs が非ゼロで返る。
-          # ⚠️ `--collect:"XPlat Code Coverage"` は**空白を含んで 1 引数**である。
-          # 外側のシェルが引用符を外した時点で 1 語になっており、xargs はそれを
-          # 1 argv 要素として渡す（argv を数えて実測済み。**echo の出力では区別が付かない**ので、
-          # 疑ったら `echo` ではなく引数を数えて確かめること）。
-          xargs -a shard.txt -P 4 -I{} \
-            dotnet test {} --no-build --configuration Release \
-              --filter "Category!=Integration" \
-              --collect:"XPlat Code Coverage" \
-              --results-directory "$PWD/cov" \
-              --verbosity normal
+          # 🔴 **シャード用 solution を 1 回だけ叩く。** 1 プロジェクトずつ回すと
+          # **1 回あたり約 4.9 秒の起動コスト**（MSBuild 評価・テストホスト立ち上げ）が
+          # 本数だけ積み上がる —— 実測で較正した値であり、51 本なら**約 250 秒**の無駄になる。
+          # solution にまとめれば起動はシャードごとに 1 回で済み、
+          # **プロジェクト間の 4 並列は MSBuild が従来どおり面倒を見る**（分割前と同じ経路）。
+          dotnet test shard.slnx --no-build --configuration Release \
+            --filter "Category!=Integration" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory "$PWD/cov" \
+            --verbosity normal
       # 🔴 **1 テストプロジェクト = 1 カバレッジレポート**の不変条件で、
       # 「走らなかった」と「二重に走った」を**両方**捕まえる。
       # 第 1 弾では同じテストプロジェクトが 2 回走ってレポートが 30 件になり、

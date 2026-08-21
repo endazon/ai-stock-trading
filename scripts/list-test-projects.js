@@ -89,6 +89,27 @@ function assign(projects, shard, of) {
   return projects.filter((_, i) => i % of === shard - 1);
 }
 
+/**
+ * シャード用の solution（`.slnx`）を組み立てる。
+ *
+ * 🔴 **なぜ solution にするのか。** 1 プロジェクトずつ `dotnet test` を回すと、
+ * **1 回あたり約 4.9 秒の起動コスト**（MSBuild の評価・テストホストの立ち上げ）が
+ * プロジェクト数だけ積み上がる —— 51 本で **約 250 秒**の純粋な無駄である（実測で較正）。
+ * solution にまとめれば起動は**シャードごとに 1 回**で済み、
+ * プロジェクト間の並列も MSBuild が従来どおり面倒を見る。
+ *
+ * パスは solution ファイルからの相対である。**リポジトリ直下に置く前提**で、
+ * `discover()` が返すリポジトリ相対パスをそのまま書ける（書き換えを挟むと取り違える）。
+ */
+function buildSlnx(projects) {
+  const esc = (v) =>
+    String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const lines = ['<Solution>'];
+  for (const p of projects) lines.push(`  <Project Path="${esc(p)}" />`);
+  lines.push('</Solution>', '');
+  return lines.join('\n');
+}
+
 function selfTest() {
   const t = [];
   const ok = (name, fn) => {
@@ -142,6 +163,29 @@ function selfTest() {
     }
   });
 
+  ok('buildSlnx: Solution 要素で包む', () => {
+    const x = buildSlnx(['a/b.csproj']);
+    if (!x.startsWith('<Solution>')) throw new Error('ルート要素が違う');
+    if (!x.trimEnd().endsWith('</Solution>')) throw new Error('閉じ要素が無い');
+  });
+  ok('buildSlnx: 1 プロジェクト 1 行で、件数が保たれる', () => {
+    const projs = ['a/x.csproj', 'b/y.csproj', 'c/z.csproj'];
+    const n = buildSlnx(projs).split('\n').filter((l) => l.includes('<Project ')).length;
+    eq(n, projs.length);
+  });
+  ok('buildSlnx: パスをそのまま書く（書き換えない）', () => {
+    if (!buildSlnx(['backend/Services/X/tests/X.Tests/X.Tests.csproj']).includes(
+      'Path="backend/Services/X/tests/X.Tests/X.Tests.csproj"')) throw new Error('パスが変わっている');
+  });
+  ok('buildSlnx: XML の特殊文字を escape する', () => {
+    const x = buildSlnx(['a&b/"c".csproj']);
+    if (x.includes('a&b')) throw new Error('& が escape されていない');
+    if (!x.includes('&amp;') || !x.includes('&quot;')) throw new Error('escape が足りない');
+  });
+  ok('buildSlnx: 空でも壊れない（呼び出し側が 0 件を弾く前提）', () => {
+    if (!buildSlnx([]).includes('<Solution>')) throw new Error('壊れている');
+  });
+
   console.log(t.join('\n'));
   console.log(`[list-test-projects] 自己試験 ${t.length} 件${process.exitCode ? ' に失敗あり' : ' OK。'}`);
 }
@@ -184,12 +228,18 @@ function main() {
       process.exitCode = 1;
       return;
     }
+    const slnxAt = argv.indexOf('--slnx');
+    if (slnxAt >= 0) {
+      const out = argv[slnxAt + 1];
+      fs.writeFileSync(out, buildSlnx(picked));
+      console.error(`[list-test-projects] ${out} へ ${picked.length} 件を書いた。`);
+    }
     console.log(picked.join('\n'));
     return;
   }
   console.log(projects.join('\n'));
 }
 
-module.exports = { discover, assign, isTestProject };
+module.exports = { discover, assign, isTestProject, buildSlnx };
 
 if (require.main === module) main();
