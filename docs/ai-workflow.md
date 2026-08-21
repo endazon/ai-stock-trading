@@ -167,6 +167,7 @@ status check の context として存在しない**（必須チェックは chec
 | `pr-title` | `pr-title.yml` の `pr-title` | スカッシュ後件名の唯一の予防線 |
 | `Secret scan (gitleaks)` | `security.yml` の `secret-scan` | gitleaks。🔴 **check 名はジョブ ID ではなく `name:` の値である**（下表参照） |
 | `Dependency review` | `security.yml` の `dependency-review` | PR でのみ起動（push では if で skip）。🔴 同上 |
+| ~~`backend-test (1..7)`~~ | `ci.yml` の `backend-test`（matrix の脚） | **必須にしない。** シャードの脚であり、成否は集約ジョブ `build-and-test` がまとめて report する。脚を必須にすると**シャード数を変えるたびに必須チェック名が変わり、そのつどマージ不能になる** |
 | ~~`Analyze (csharp)` 等~~ | `codeql.yml` の `analyze`（matrix 展開名） | **必須にしない（#481 で除外へ変更）**。`pull_request` に `paths:` を持つため、コード変更の無い PR では check 自体が report されず、必須指定すると恒久 pending になる。網羅は push（develop/main）と週次 schedule の全量解析が担保する |
 | `claude-review` | `claude-code-review.yml` の `claude-review` | **完走**の担保であり「指摘なし」の担保ではない（下記） |
 
@@ -215,9 +216,17 @@ report されるまでマージを許さないため、**起動しなければ�
 **規則は 1 つである。ジョブに `name:` があればその値、無ければジョブ ID がそのまま check 名になる。**
 **同じファイル内でも両方の形が混在する**（下表の `security.yml` が実例）。
 
+🔴 **この表はジョブ名を書き写したものであり、`ci.yml` と機械的に突き合わせる検査は無い。**
+実際に乖離した —— 第 1 弾（CI 高速化）で Node 検査ジョブを `static-checks` へ統合した際、
+本表は `doc-links` / `pipeline-config` / `ai-workflow-config` を挙げたまま残っていた
+（**いずれも既に存在しないジョブ**）。
+**この表に従って必須チェックを設定すると、report されないチェックを待ち続けて
+develop が恒久的にマージ不能になる** —— 上で警告している失敗形そのものである。
+**ジョブを統合・改名・追加したら、この表を必ず引き直すこと。**
+
 | ワークフローの `name:` | check として report される名前 |
 | --- | --- |
-| `CI`（`ci.yml`） | `commit-messages` / `scripts-tests` / `doc-links` / `pipeline-config` / `ai-workflow-config` / `lint` / `build-and-test`（**7 件とも `name:` 無し＝ジョブ ID**） |
+| `CI`（`ci.yml`） | `commit-messages` / `scripts-tests` / `static-checks` / `lint` / `build-and-test` / `backend-test (1..7)` / `frontend` / `frontend-e2e`（**いずれも `name:` 無し＝ジョブ ID**。`backend-test` は matrix なので `backend-test (1)` … の形で report される） |
 | `Security`（`security.yml`） | `Secret scan (gitleaks)` / `Dependency review` / **`Vulnerable transitive dependencies`**（**3 件とも `name:` あり。ジョブ ID〔`secret-scan` / `dependency-review` / `vulnerable-scan`〕ではない**） |
 | `PR Title`（`pr-title.yml`） | `pr-title` |
 | `PR Size`（`pr-size.yml`） | `pr-size`（**そもそも必須にしない**。警告専用である） |
