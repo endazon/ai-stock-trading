@@ -352,8 +352,8 @@ function main() {
 
   console.error(`[check-consumer-endpoint-names] 違反 ${errors.length} 件を検出しました:`);
   for (const e of errors) console.error(`\n  ${e}`);
-  console.error('\n根拠は docs/adr/IADR-0129_wolverine-messaging-topology.md を参照してください');
-  console.error('（前身の規則と #258 の経緯は docs/adr/IADR-0106_consumer-endpoint-name-uniqueness.md）。');
+  console.error('\n根拠は .ai-context/adr/IADR-0129_wolverine-messaging-topology.md を参照してください');
+  console.error('（前身の規則と #258 の経緯は .ai-context/adr/IADR-0106_consumer-endpoint-name-uniqueness.md）。');
   process.exit(1);
 }
 
