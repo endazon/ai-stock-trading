@@ -57,8 +57,23 @@ jobs:
       - name: Build
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
       # 実基盤 E2E のみ実行する（Testcontainers が Docker で実 PostgreSQL/RabbitMQ を起動する）。
+      #
+      # 🔴 fail-closed の門を置いてある。**1 件も走らなければ落とす**（IADR-0208 決定 1・MSP#894 の指摘）。
+      # `dotnet test` は --filter に 1 件も一致しなくても exit 0 で終わる。したがって新しい統合テストへ
+      # [Trait("Category","Integration")] を付け忘れると、**0 件実行のまま緑**で通り続け、
+      # 「日次で統合テストが走っている」という記録だけが残る。既定 CI（ci.yml）は同じ Trait で
+      # 逆向きに除外しているため、付け忘れたテストは**どちらでも走らない**。
       - name: Integration tests (real containers)
-        run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category=Integration" --verbosity normal
+        run: |
+          set -euo pipefail
+          log="$(mktemp)"
+          dotnet test backend/backend.slnx --no-build --configuration Release \
+            --filter "Category=Integration" --verbosity normal 2>&1 | tee "$log"
+          # 🔴 fail-closed: 0 件実行のまま緑にしない。
+          if ! grep -qE '^[[:space:]]*(Passed|Failed)[[:space:]]+[A-Za-z]' "$log"; then
+            echo "::error::Category=Integration のテストが 1 件も実行されなかった。Trait の付け忘れかフィルタの誤りである。"
+            exit 1
+          fi
 
   # 🔴 PR から外した検証（Category=Integration）の担保が落ちたことを issue に残す
   # （IADR-0208 決定 1）。これが無ければ「PR から外した」は「やめた」と同義になる。
