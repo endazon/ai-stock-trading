@@ -213,6 +213,26 @@ function sortByMergedAtDesc(prs) {
     .sort((a, b) => Date.parse(b.merged_at) - Date.parse(a.merged_at));
 }
 
+/**
+ * 「この PR で backend のビルド・テストが走ったか」を判定する道具を読む（IADR-0208 決定 13）。
+ *
+ * 🔴 **判定ロジックを 2 つ持たない。** CI 側（`detect-changed-areas.js`）と監視側で
+ * 判定が食い違うと、**どちらが正しいのか誰にも分からなくなる**。同じ `decide()` を使う。
+ *
+ * 🔴 **同ファイルが無いリポジトリでも壊れないこと。** 本検査器は複数のリポジトリへ
+ * **複写して**使っており、backend ジョブの skip（決定 11）を持たないリポジトリには
+ * `detect-changed-areas.js` が無い。読めなければ**絞り込みをしないだけ**で、
+ * 従来どおり全 PR を母集合にする（機能が減るだけで壊れない）。
+ */
+function loadBackendDecider() {
+  try {
+    const { decide } = require('./detect-changed-areas.js');
+    return typeof decide === 'function' ? decide : null;
+  } catch {
+    return null;
+  }
+}
+
 async function collect({ repo, token, samples }) {
   const base = `https://api.github.com/repos/${repo}`;
   // per_page を samples の 3 倍取るのは、closed には**マージされずに閉じた** PR が混ざるためである。
@@ -229,9 +249,35 @@ async function collect({ repo, token, samples }) {
   const baselineDurations = [];
   let fetchFailures = 0;
   let missingHeads = 0;
+  let skippedBackend = 0;
+  const decideBackend = loadBackendDecider();
   for (const pr of merged) {
     const sha = pr.head && pr.head.sha;
     if (!sha) continue;
+
+    // 🔴 **backend を skip した PR は母集合に入れない**（決定 13）。
+    // 監視が答えたい問いは「**CI が仕事をしたとき**、レビューより長くかかるか」である。
+    // docs だけの PR は構造上速く終わる（実測 24 秒）ので、混ぜると母集合が二峰性になり、
+    // 定常性の門（決定 9）が「構成が変わった」と誤認して**永久に判定しなくなる**。
+    if (decideBackend) {
+      try {
+        const files = await fetchJson(`${base}/pulls/${pr.number}/files?per_page=100`, token);
+        const names = (files || []).map((f) => f && f.filename).filter(Boolean);
+        // ファイル一覧が引けなかった場合は names が空になり、decide() は
+        // 「差分の取得に失敗した可能性」として backend=true へ倒す＝母集合に残す（安全側）。
+        if (!decideBackend(names).backend) {
+          skippedBackend += 1;
+          continue;
+        }
+      } catch (e) {
+        if (classifyFailure(e.status, { rateLimited: e.rateLimited, scope: 'commit' }) === 'config') {
+          e.scope = 'commit';
+          throw e;
+        }
+        // 引けなければ絞り込まない（母集合に残す）。速さの監視を門に化けさせない。
+      }
+    }
+
     let runs;
     try {
       runs = await fetchJson(`${base}/commits/${sha}/check-runs?per_page=100`, token);
@@ -257,7 +303,7 @@ async function collect({ repo, token, samples }) {
       else if (r.name === BASELINE) baselineDurations.push(d);
     }
   }
-  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures, missingHeads };
+  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures, missingHeads, skippedBackend };
 }
 
 function selfTest() {
@@ -416,6 +462,38 @@ function selfTest() {
   ok('judge: 同値は逆転ではない（境界）', () =>
     eq(judge({ targetDurations: [148], baselineDurations: [148] }).ok, true));
 
+  // 🔴 決定 13 の回帰テスト。複写して使うファイルなので、
+  // 「同ファイルが無いリポジトリでも壊れない」ことを固定する。
+  ok('loadBackendDecider: 本リポでは decide を返す', () => {
+    const d = loadBackendDecider();
+    if (typeof d !== 'function') throw new Error('decide を読めていない');
+  });
+  ok('loadBackendDecider: 読めなければ null（絞り込みをしないだけ）', () => {
+    const Module = require('module');
+    const orig = Module.prototype.require;
+    Module.prototype.require = function (id) {
+      if (String(id).includes('detect-changed-areas')) throw new Error('模擬: ファイルが無い');
+      return orig.apply(this, arguments);
+    };
+    try {
+      eq(loadBackendDecider(), null);
+    } finally {
+      Module.prototype.require = orig;
+    }
+  });
+  ok('decide: docs だけの PR は母集合から外れる側（backend=false）', () => {
+    const d = loadBackendDecider();
+    eq(d(['docs/a.md']).backend, false);
+  });
+  ok('decide: backend を触る PR は母集合に残る（backend=true）', () => {
+    const d = loadBackendDecider();
+    eq(d(['backend/x.cs']).backend, true);
+  });
+  ok('decide: ファイル一覧が引けなかった場合は母集合に残す（安全側）', () => {
+    const d = loadBackendDecider();
+    eq(d([]).backend, true);
+  });
+
   console.log(t.join('\n'));
   console.log(`[check-ci-latency] 自己試験 ${t.length} 件${process.exitCode ? ' に失敗あり' : ' OK。'}`);
 }
@@ -433,7 +511,7 @@ async function main() {
     return;
   }
 
-  const { merged, targetDurations, baselineDurations, fetchFailures, missingHeads } = await collect({
+  const { merged, targetDurations, baselineDurations, fetchFailures, missingHeads, skippedBackend } = await collect({
     repo,
     token,
     samples: SAMPLES,
@@ -444,6 +522,8 @@ async function main() {
   const notes = [];
   if (fetchFailures) notes.push(`${fetchFailures} 本は一過性の API 失敗で取得できず`);
   if (missingHeads) notes.push(`${missingHeads} 本は head が既に無く 404（GC 済みのため恒久的にこのまま）`);
+  // 🔴 黙って母集合を狭めない。何本外したかを必ず出す。
+  if (skippedBackend) notes.push(`${skippedBackend} 本は backend を skip した PR なので母集合から外した`);
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
       `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件` +

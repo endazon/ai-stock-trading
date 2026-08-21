@@ -388,6 +388,20 @@ jobs:
       - name: Self-test test-project sharder
         if: ${{ !cancelled() }}
         run: node scripts/list-test-projects.js --self-test
+      # docs/ai-workflow.md が挙げる check 名・ジョブ名を .github/workflows/ の実物と突き合わせる
+      # （NFR / IADR-0208 決定 14。同型の乖離が 2 回起きたため新設 ——
+      # 1 回目は基盤リポの scripts/README.md、2 回目は本リポの ai-workflow.md が
+      # `doc-links` / `pipeline-config` / `ai-workflow-config`〔いずれも static-checks へ統合済み〕
+      # を挙げたまま残っていた）。
+      # 🔴 実在しない check 名をブランチ保護へ指定すると、report されない check を待ち続けて
+      # develop が恒久的にマージ不能になる。文書自身がその失敗形を警告しながら破っていた。
+      - name: Self-test workflow job reference checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-workflow-job-refs.js --self-test
+      - name: Check workflow job references in docs
+        if: ${{ !cancelled() }}
+        run: node scripts/check-workflow-job-refs.js
+
       - name: Self-test consumer endpoint name checker
         if: ${{ !cancelled() }}
         run: node scripts/check-consumer-endpoint-names.js --self-test
