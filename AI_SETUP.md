@@ -52,7 +52,7 @@ worker を Codex 等へ差し替える場合や、失敗時の切り戻しを設
 
 ### 共通（どのプロファイルでも実施）
 
-1. 計画リポジトリ `project-planning` を参照可能にする（submodule か隣接クローン。既定パス `../project-planning`）。
+1. 計画リポジトリ `project-planning` を参照できる状態にする。**submodule は張らない**（資料再編 ADR-0029 決定 2）。GitHub 上の URL を直接開くか、**隣接クローン**（既定パス `../project-planning`。読み取り専用・pin 固定なし）を用意する。参照専用のトークン・シークレットは不要である。
 2. 技術スタックに合わせて `*.example` の CI 系（`ci.example.yml` / `codeql.example.yml`）を有効化する。
    - **注意: `.github/workflows/` 配下では `.example` を挟んでも無効にならない。** GitHub Actions は
      同ディレクトリ内の `*.yml` をファイル名に関わらず実行するため、`frontend.example.yml` のような
