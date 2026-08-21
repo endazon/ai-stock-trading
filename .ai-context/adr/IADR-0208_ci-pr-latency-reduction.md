@@ -1,5 +1,5 @@
 ---
-title: IADR-0208 PR の CI は並列化とキャッシュで速くし、検出力は落とさない。日次・週次の失敗は自動起票する
+title: IADR-0208 PR は速さを採り、落とした精度は回収先（push・日次・週次）で取り戻す。回収先の失敗は自動起票する
 type: impl-adr
 status: Accepted
 related_ids:
@@ -14,7 +14,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0029_impl-docs-restructure.md (決定 6・kit との乖離は受容する)
 ---
 
-# IADR-0208 PR の CI は並列化とキャッシュで速くし、検出力は落とさない。日次・週次の失敗は自動起票する
+# IADR-0208 PR は速さを採り、落とした精度は回収先（push・日次・週次）で取り戻す。回収先の失敗は自動起票する
 
 ## 状況
 

@@ -169,7 +169,8 @@ CI のクリティカルパスは `build-and-test`（3分13秒。Restore 20s / B
    `secret-scan` / `dependency-review` / `claude-review`）が**1 つも消えていない**。
 2. 走る検査器の本数と対象が統合前後で**一致する**。
 3. NuGet / Playwright キャッシュが 2 回目の run で**ヒットする**。
-4. CodeQL が **PR / push の両経路**で `autobuild`（＝従来の精度）で走る。
+4. CodeQL が **PR は `build-mode: none`、push / 週次は `autobuild`（＝回収）**で走る。
+   🔴 **PR の Security タブのアラートが 0 件になっていないこと**（0 件なら「速くなった」ではなく「何も解析していない」）。
 5. `claude-review` が docs のみの PR で 4 セットアップをスキップし、
    **それ以外のあらゆる PR では実行する**（許可リスト方式の倒れ方を実測する）。
 6. `report-failure` が **① 失敗時に issue を立て ② 2 回目はコメントを足すだけ**であり、
