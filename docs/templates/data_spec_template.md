@@ -2,22 +2,22 @@
 title: <対象データ / エンティティ> データ仕様書
 type: data-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # データ仕様書: <対象データ / エンティティ>
 
 > エンティティ / 集約単位で作成する（DB 設計を含む）。計画リポジトリの要求・技術検討・ADR を実装向けに詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 関連機能要求（FR）:
-- 技術検討（06_technical）/ ADR:
-- 計画書リンク:
 
 ## 概要
 

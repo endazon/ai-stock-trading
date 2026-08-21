@@ -2,23 +2,22 @@
 title: <画面名> 画面仕様書
 type: screen-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
-# 画面仕様書: <画面名>（SC-xx）
+# 画面仕様書: <画面名>
 
 > 画面（SC）単位で作成する。計画リポジトリの画面設計（05_screens）を実装向けに詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 画面（SC）:
-- 関連ユースケース（UC）:
-- 関連機能要求（FR）:
-- 計画書リンク:
 
 ## 画面概要・目的
 

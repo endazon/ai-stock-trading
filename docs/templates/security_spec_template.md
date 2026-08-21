@@ -2,22 +2,22 @@
 title: セキュリティ仕様書
 type: security-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # セキュリティ仕様書
 
 > リポジトリ単位で1つ作成する（必須）。計画リポジトリの非機能要件（セキュリティ）と ADR を実装観点で詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 非機能要件（NFR・セキュリティ）:
-- 関連 ADR:
-- 計画書リンク:
 
 ## 認証・認可
 

@@ -2,24 +2,23 @@
 title: 技術要件書
 type: tech-requirements
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 技術要件書
 
 > リポジトリ単位で1つ作成する（基盤文書）。計画リポジトリの技術検討（06_technical）・ADR・非機能要件を実装向けに確定する。
 > 確定済みの技術・設計判断は ADR を一次情報とし、本書はその実装上の要件をまとめる。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 技術検討（06_technical）:
-- 関連 ADR:
-- 非機能要件（NFR）:
-- 計画書リンク:
 
 ## 技術スタック
 
@@ -40,7 +39,7 @@ flowchart TB
 
 ## 採用方針と根拠
 
-<!-- 主要な技術選定の方針。根拠は ADR を参照する（ADR-xxxx） -->
+<!-- 主要な技術選定の方針。根拠は ADR を参照する（起点 ID は trace ブロックの adrs: へ） -->
 
 ## 非機能要件の実現方針
 
@@ -59,11 +58,5 @@ flowchart TB
 ## 制約・前提
 
 <!-- 技術・運用上の制約。守るべき境界 -->
-
-## 関連 ADR 一覧
-
-| ADR | 状態 | 決定の要旨 |
-| --- | --- | --- |
-|  |  |  |
 
 ## 未決事項

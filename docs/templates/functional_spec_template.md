@@ -2,23 +2,22 @@
 title: <機能名> 機能仕様書
 type: functional-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 機能仕様書: <機能名>
 
 > 機能（FR）単位で作成する。計画リポジトリ（`project-planning`）の要求・ユースケースを実装向けに詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 機能要求（FR）:
-- ユースケース（UC）:
-- 業務フロー（04_workflows）:
-- 計画書リンク:
 
 ## 概要
 

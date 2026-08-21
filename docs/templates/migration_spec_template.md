@@ -2,22 +2,22 @@
 title: <対象> 移行仕様書
 type: migration-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 移行仕様書: <対象>
 
 > 任意。既存システム/データからの移行を定める。計画リポジトリの課題整理（As-Is）・要求を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 課題整理（01_problems・As-Is）:
-- 関連機能要求（FR）/ ADR:
-- 計画書リンク:
 
 ## 移行概要
 

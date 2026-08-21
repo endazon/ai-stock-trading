@@ -2,12 +2,18 @@
 title: 運用 Runbook — <対象>
 type: runbook
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 運用 Runbook: <対象>
 
@@ -17,12 +23,6 @@ plan_refs: []
 >
 > **`type` は `runbook` である**（`operations-spec` ではない）。
 > 運用仕様書と同じ `type` にすると、**「リポ単位で 1 つ」という規約と、複数ある実体が矛盾する。**
-
-## 起点となる計画書（トレーサビリティ）
-
-- 非機能要件（NFR）:
-- 関連 ADR / 実装 ADR:
-- 運用仕様書の該当節:
 
 ## この手順を実行する条件（いつ走らせるか）
 

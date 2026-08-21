@@ -2,22 +2,22 @@
 title: <外部システム名> 外部連携仕様書
 type: integration-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 外部連携仕様書: <外部システム名>
 
 > 任意。外部システムとの連携を定める。計画リポジトリの業務フロー（外部システム）・技術検討を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 関連ユースケース（UC）/ 業務フロー（04_workflows）:
-- 技術検討（06_technical）/ ADR:
-- 計画書リンク:
 
 ## 連携概要
 

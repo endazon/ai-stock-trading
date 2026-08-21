@@ -40,7 +40,10 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*)
    - 通常: `<出力先>/<YYYYMMDD>_<概要のケバブケース>.md`。
    - リポ単位（`tech`/`operations`/`security`/`error`）: 既存があればそれを更新、無ければ既定名（例 `docs/operations/operations.md`）で作成。
    - `adr`: `.ai-context/adr/` の既存 `IADR-\d{4}` から最大連番を調べ、次の連番（4桁ゼロ埋め）で `IADR-XXXX_<タイトルのケバブケース>.md` を作成する。欠番・重複を作らない。作成後 `.ai-context/adr/README.md` の一覧に追記する。
-5. メタ情報（`type`・`related_ids`・`plan_refs`・`created`/`updated`=本日・`status`=`draft`（ADR は `Proposed`））を埋める。起点 ID（FR/UC/SC/ADR）と計画書リンクを「起点となる計画書」欄に、関連仕様書へのリンクを「関連仕様」欄に記入する。
+5. メタ情報を埋める。`type`・`created`/`updated`=本日・`status`=`draft`（ADR は `Proposed`）は共通。
+   - **`.ai-context/`（`work`/`adr`）**: `related_ids`・`plan_refs` を frontmatter に書き、起点 ID（FR/UC/SC/ADR）と計画書リンクを「起点となる計画書」欄に記入する（従来どおり本文にそのまま書く）。
+   - **`docs/` 向け（それ以外の全種別）**: テンプレートに `related_ids`・`plan_refs` は無い。起点 ID（FR/UC/SC/ADR）・関連 IADR・仕様書名・修飾付き issue 参照は表示テキストへ書かず、frontmatter 直後の trace ブロック（`ids:`/`adrs:`/`iadrs:`/`specs:`/`issues:`）へ入れる（`scripts/check-trace-blocks.js` が検査する）。
+   - 種別を問わず、関連仕様書（同一リポジトリ `docs/` 内）へのリンクは「関連仕様」欄に記入する。
 6. 作成したパスと未決事項を報告する。
 
 注意:
