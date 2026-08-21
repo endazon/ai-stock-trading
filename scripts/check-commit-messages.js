@@ -627,9 +627,10 @@ function main() {
   }
   if (!planAdrIds) {
     notice(
-      'planning submodule が未 populate のため計画 ADR 実在性チェックをスキップした' +
+      '計画 ADR の宣言レンジを読めないため計画 ADR 実在性チェックをスキップした' +
         '（この範囲は検査されていない。実効しているのは IADR 検査のみである）。' +
-        'PR 段階で検査するには checkout に submodules とトークンを付けること'
+        '.claude/rules/traceability.repo.md「起点 ID の種別（固有）」節の ADR レンジ宣言' +
+        '（`ADR-0001..0029` の形）を確認すること'
     );
   }
   if (!planIds) {

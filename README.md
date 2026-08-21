@@ -9,8 +9,8 @@
 - `backend/` — .NET 10 / C# 13。`backend/backend.slnx`（ユニットリポジトリレイアウト）。
   - `Services/<ServiceName>/{src,tests}` — 10 サービス（Domain/Application/Worker）＋ Backtest。
   - `Shared/`・`TestSupport/` — 共有契約・インフラ、Foundation 最小移植 shim（test-only / IADR-0013）。
-- `docs/` — 実装向け仕様書・実装 ADR（`docs/adr/IADR-XXXX`）。
-- `planning/` — 計画書（submodule）。
+- `docs/` — 人が読む実装向け仕様書（機能・画面・テスト・運用等）。
+- `.ai-context/` — AI 向け文脈資料・凍結記録（実装 ADR `IADR-XXXX`・作業仕様書）。
 - `infra/`・`docker-compose.yml`・`.env.example` — ローカル実行環境（IADR-0048）。
 
 ## ビルド / テスト
