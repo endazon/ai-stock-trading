@@ -50,6 +50,46 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 変更領域の判定（NFR / IADR-0208 決定 11）。
+  #
+  # 実測（2026-08-22・直近 52 マージ）では **18 本（34%）が backend に影響しない変更だけ**で、
+  # それでも build-and-test（208 秒）と lint を全額払っていた。
+  #
+  # 🔴 **既定は「走らせる」。** 許可リストに全件が収まるときだけ skip する。
+  # 誤りの倒れ方が非対称だからである —— 余計に走らせる誤りは遅いだけで気付けるが、
+  # **走らせない誤りは退行を無検証でマージし、緑のまま誰も気付かない。**
+  # 判定と自己試験は scripts/detect-changed-areas.js が持つ。
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 差分を取るため base まで遡る必要がある。PR では base...HEAD を使う。
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      # 判定器そのものが壊れていないことを毎回確かめる（黙って壊れると skip 側へ倒れ得る）。
+      - name: Self-test
+        run: node scripts/detect-changed-areas.js --self-test
+      - name: Detect
+        id: detect
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed.txt
+          else
+            # push では前後 1 コミットの差分。取れなければ空になり、判定器が backend=true へ倒す。
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > changed.txt || true
+          fi
+          echo "--- 変更ファイル ---"
+          cat changed.txt
+          echo "--------------------"
+          node scripts/detect-changed-areas.js --files changed.txt
+
   # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
   # fetch-depth: 0 は base..HEAD の範囲解決に必須。
@@ -361,6 +401,7 @@ jobs:
 
 
   lint:
+    needs: [changes]
     runs-on: ubuntu-latest
     # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
     # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
@@ -371,7 +412,10 @@ jobs:
     # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
     # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
     # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    #
+    # NFR / IADR-0208 決定 11: backend に影響しない変更だけの PR では回さない
+    # （dotnet format は backend しか見ない）。判定は changes ジョブが持つ。
+    if: ${{ !startsWith(github.head_ref, 'automation/') && needs.changes.outputs.backend == 'true' }}
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
@@ -396,26 +440,30 @@ jobs:
       - name: Format check
         run: dotnet format backend/backend.slnx --verify-no-changes
 
-  build-and-test:
+  # 🔴 テストのシャーディング（NFR / IADR-0208 決定 10）。
+  #
+  # 着手前の実測: build-and-test 208 秒 ＝ Restore 13 / Build 43 / **Test 133** / セットアップ 19。
+  # テストアセンブリ 51 本・所要の合計 480 秒・実効並列度 3.61 本・**最長 28 秒**。
+  # 決定 8 で確かめたとおり **1 ランナー内は既に 4 並列で頭打ち**であり、
+  # これ以上縮めるには**ランナーを増やす**しかない。
+  #
+  # ⚠️ **このジョブは必須チェックではない。** 必須チェック名 `build-and-test` は
+  # 下の集約ジョブが保持する（改名は恒久的なマージ不能を招く）。
+  backend-test:
+    needs: [changes]
+    if: ${{ !startsWith(github.head_ref, 'automation/') && needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
-    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
-    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
-    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
-    # restore / build / test は要らない。
-    #
-    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
-    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
-    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
-    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
-    if: ${{ !startsWith(github.head_ref, 'automation/') }}
+    strategy:
+      # 🔴 fail-fast を切る。1 シャードが落ちても他を走り切らせ、
+      # **失敗の全体像を 1 回の run で見る**（赤が入れ替わって何周もするのを避ける）。
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
-      # --- スタック別に書き換え（例: C#/.NET） ---
-      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
-      # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
-      # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
-      # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
-      # （ロックファイルのハッシュをキーにする実装のため）。
+      # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
+      # base が温まっていれば新規 PR ブランチは初回からヒットする。
+      # develop へマージ直後の初回 run が miss するのは壊れているのではない。
       - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
@@ -424,39 +472,111 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      # カバレッジ floor 検査（scripts/check-coverage.js）は Node で動く。ランナー既定の Node に
-      # 依存せず版を固定する（他ジョブと同じ 20 系）。
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
+      - name: Self-test (分配ロジック)
+        run: node scripts/list-test-projects.js --self-test
       - name: Restore
         run: dotnet restore backend/backend.slnx
       - name: Build
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
-      # 実基盤 E2E（Category=Integration・Docker 依存）は既定 CI から除外し、専用 integration.yml
-      # （nightly/dispatch）で実走する（issue #82 / IADR-0049）。既定 CI の安定性・速度を損なわない。
-      # 🔴 **テストのアセンブリ間並列化は「試したが不採用」である**（IADR-0208 決定 8・実測 2026-08-22）。
-      #
-      # `-- RunConfiguration.MaxCpuCount=0` を入れて実 CI で前後比較したところ、
-      # **最大同時実行数は前後とも 4 本で変わらなかった**（アセンブリ 51 本の開始・終了時刻から復元）。
-      # Test の壁時計 147 秒 → 133 秒の差は、アセンブリ所要の合計が 531 秒 → 480 秒へ揺れた
-      # **run 間のばらつき**で説明が付く（実効並列度はどちらも 3.6 本で同一）。
-      # **既に 4 並列で走っており、指定しても何も変わらない。** ランナーが 4 コアだからである。
-      #
-      # 🔴 **着手時の診断が誤っていた。「`Test Run Successful` が 2〜6 秒間隔で 51 回並ぶから直列」
-      # と読んだが、完了時刻の間隔はアセンブリの所要時間を反映するだけで、並列度の証拠にならない。**
-      # 並列度を見るなら**開始・終了の区間を復元して同時実行数を数える**こと。
-      #
-      # ⚠️ **この行を「効くはず」で足し直さないこと。** 効かないと実測済みである。
-      # テスト時間を縮めたいなら、下限は**最長アセンブリ 28 秒**なので
-      # 並列度を上げる手（シャーディングでランナーを増やす）しか効かない（IADR-0208 段 3-a）。
-      - name: Test (with coverage)
-        run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category!=Integration" --collect:"XPlat Code Coverage" --verbosity normal
+      - name: Test (shard ${{ matrix.shard }} / 3)
+        run: |
+          set -euo pipefail
+          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 3 > shard.txt
+          echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
+          cat shard.txt
+          # 🔴 **1 本ずつ直列に回してはならない。** 現在の 4 並列を失い、
+          # シャード時間が 480/3 = 160 秒となって分割前の 133 秒より遅くなる。
+          # xargs -P 4 でシャード内の並列度を保つ。1 本でも落ちれば xargs が非ゼロで返る。
+          # ⚠️ `--collect:"XPlat Code Coverage"` は**空白を含んで 1 引数**である。
+          # 外側のシェルが引用符を外した時点で 1 語になっており、xargs はそれを
+          # 1 argv 要素として渡す（argv を数えて実測済み。**echo の出力では区別が付かない**ので、
+          # 疑ったら `echo` ではなく引数を数えて確かめること）。
+          xargs -a shard.txt -P 4 -I{} \
+            dotnet test {} --no-build --configuration Release \
+              --filter "Category!=Integration" \
+              --collect:"XPlat Code Coverage" \
+              --results-directory "$PWD/cov" \
+              --verbosity normal
+      # 🔴 **1 テストプロジェクト = 1 カバレッジレポート**の不変条件で、
+      # 「走らなかった」と「二重に走った」を**両方**捕まえる。
+      # 第 1 弾では同じテストプロジェクトが 2 回走ってレポートが 30 件になり、
+      # カバレッジが 20% へ半減した（実測）。件数を数えるのはそのときの教訓である。
+      - name: Verify report count
+        run: |
+          set -euo pipefail
+          want=$(wc -l < shard.txt)
+          got=$(find cov -name coverage.cobertura.xml | wc -l)
+          echo "期待 $want 件 / 実際 $got 件"
+          if [ "$want" -ne "$got" ]; then
+            echo "::error::シャード ${{ matrix.shard }}: カバレッジレポートが $want 件でなく $got 件である。テストが走っていないか二重に走っている。"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: cov/**/coverage.cobertura.xml
+          retention-days: 3
+          if-no-files-found: error
+
+  # 集約ジョブ。🔴 **必須チェック名 `build-and-test` はここが保持する。**
+  # 脚（backend-test）の成否をまとめ、カバレッジ床をここ 1 箇所で強制する。
+  build-and-test:
+    needs: [changes, backend-test]
+    # 🔴 always() が要る。脚が skip / 失敗しても集約は必ず report しなければ、
+    # 必須チェックが恒久 pending になりマージできなくなる。
+    if: ${{ always() && !startsWith(github.head_ref, 'automation/') }}
+    runs-on: ubuntu-latest
+    steps:
+      # 🔴 判定を最初に置く。「backend 非変更だから緑」と「脚が落ちたのに緑」を
+      # 取り違えないよう、理由を必ず出力する。
+      - name: Gate
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::changes ジョブが ${{ needs.changes.result }} である。判定できないので失敗させる。"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.backend }}" != "true" ]; then
+            echo "backend に影響しない変更のため、backend のビルド・テストは skip した（IADR-0208 決定 11）。"
+            echo "SKIPPED=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          case "${{ needs.backend-test.result }}" in
+            success) echo "全シャードが成功した。" ;;
+            *) echo "::error::backend-test が ${{ needs.backend-test.result }} である。"; exit 1 ;;
+          esac
+      - uses: actions/checkout@v7
+        if: ${{ env.SKIPPED != '1' }}
+      - uses: actions/setup-node@v7
+        if: ${{ env.SKIPPED != '1' }}
+        with:
+          node-version: "20"
+      # 全シャードのレポートを 1 箇所へ集める。merge-multiple で同名パスも共存させる。
+      - uses: actions/download-artifact@v7
+        if: ${{ env.SKIPPED != '1' }}
+        with:
+          pattern: coverage-shard-*
+          path: cov
+          merge-multiple: true
       # カバレッジ floor（下限）の強制（issue #343 / IADR-0127）。閾値は coverage-floor.json。
-      # 集計は (ファイル, 行番号) の和集合で行い、複数テストプロジェクトによる重複計上を避ける。
+      # 🔴 集計は **(ファイル, 行番号) の和集合**で行うため、シャード間でレポートが
+      # 分かれていても分母・分子は変わらない（重複計上も起きない）。
       # 引き上げ（ratchet）は自動では行わない（--suggest が候補値を出すのみ。更新は人手の PR）。
       - name: Check coverage floor
-        run: node scripts/check-coverage.js --suggest
+        if: ${{ env.SKIPPED != '1' }}
+        run: |
+          set -euo pipefail
+          n=$(find cov -name coverage.cobertura.xml | wc -l)
+          echo "集めたカバレッジレポート: $n 件"
+          # 🔴 0 件で床検査を通さない（「何も測っていないのに緑」を作らない）。
+          if [ "$n" -eq 0 ]; then
+            echo "::error::カバレッジレポートが 1 件も無い。シャードの artifact 受け渡しを疑うこと。"
+            exit 1
+          fi
+          node scripts/check-coverage.js --suggest --root cov
 
       # 参考: 他スタックの例
       # Node.js:
