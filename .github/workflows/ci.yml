@@ -429,9 +429,29 @@ jobs:
     #
     # NFR / IADR-0208 決定 11: backend に影響しない変更だけの PR では回さない
     # （dotnet format は backend しか見ない）。判定は changes ジョブが持つ。
-    if: ${{ !startsWith(github.head_ref, 'automation/') && needs.changes.outputs.backend == 'true' }}
+    #
+    # 🔴 **`always()` が要る。** これが無いと、`changes` が落ちたとき lint は
+    # **skip** になる（needs が失敗した依存ジョブは if: を評価する前に skip される）。
+    # そして **`if` でスキップされた必須チェックは「合格」として扱われる**ため、
+    # **dotnet format 違反が一度も検査されないままマージできてしまう。**
+    # 集約ジョブ（build-and-test）と同じ Gate を必ず置くこと。
+    # ⚠️ backend-test（脚）は必須チェックではないので、この対処は要らない。
+    if: ${{ always() && !startsWith(github.head_ref, 'automation/') }}
     steps:
+      # 🔴 判定を最初に置く。skip の理由と、判定できなかった場合を区別する。
+      - name: Gate
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::changes ジョブが ${{ needs.changes.result }} である。判定できないので失敗させる（必須チェックを黙って合格にしない）。"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.backend }}" != "true" ]; then
+            echo "backend に影響しない変更のため dotnet format は skip した（IADR-0208 決定 11）。"
+            echo "SKIPPED=1" >> "$GITHUB_ENV"
+          fi
       - uses: actions/checkout@v7
+        if: ${{ env.SKIPPED != '1' }}
       # --- スタック別に書き換え（例: C#/.NET） ---
       # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
       # ブランチは**自分の base ブランチのキャッシュを読める**ので、develop が温まっていれば
@@ -444,14 +464,17 @@ jobs:
       # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
       # （ロックファイルのハッシュをキーにする実装のため）。
       - uses: actions/cache@v6
+        if: ${{ env.SKIPPED != '1' }}
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
+        if: ${{ env.SKIPPED != '1' }}
         with:
           dotnet-version: "10.0.x"
       - name: Format check
+        if: ${{ env.SKIPPED != '1' }}
         run: dotnet format backend/backend.slnx --verify-no-changes
 
   # 🔴 テストのシャーディング（NFR / IADR-0208 決定 10）。

@@ -47,7 +47,6 @@ const SAFE = [
   /^[^/]+\.md$/, // ルート直下の Markdown（README / CHANGELOG / CLAUDE / AGENTS 等）
   /^\.gitignore$/,
   /^\.gitattributes$/,
-  /^\.editorconfig$/, // dotnet format の入力だが lint 側の話であり、テスト結果は変わらない
 ];
 
 /**
@@ -56,6 +55,12 @@ const SAFE = [
  */
 const FORCE = [
   /^backend\//,
+  // 🔴 `.editorconfig` は **`dotnet format --verify-no-changes` がまさに反応すべき入力**である。
+  // 当初は「テスト結果は変わらない」として許可リストへ入れていたが、**`backend` フラグ 1 本で
+  // `backend-test` と `lint` の両方を出し分けている**以上、その理由づけは lint 側に通らない
+  // （AI レビューの指摘）。**1 つのフラグで 2 つのジョブを決めるなら、
+  // どちらか一方でも走らせるべき入力は走らせる側へ倒す。**
+  /^\.editorconfig$/,
   /^Directory\.(Build|Packages)\.props$/,
   /^global\.json$/,
   /^nuget\.config$/i,
@@ -125,6 +130,10 @@ function selfTest() {
   ok('workflows が 1 件でも混ざれば走らせる', () => isRun(['docs/a.md', '.github/workflows/ci.yml']));
   ok('ISSUE_TEMPLATE は skip してよい（workflows と混同しない）', () =>
     isSkip(['.github/ISSUE_TEMPLATE/bug.yml']));
+
+  // 🔴 AI レビューの指摘の回帰テスト。1 フラグで lint と test の両方を決めている以上、
+  // dotnet format が反応する入力は走らせる側へ倒さねばならない。
+  ok('🔴 .editorconfig は走らせる（dotnet format がまさに反応する入力）', () => isRun(['.editorconfig']));
 
   // 🔴 「未知は走らせる」＝ 既定の向き。ここが逆になると退行が無検証で通る。
   ok('🔴 知らないパスは走らせる（許可リスト方式の既定）', () => isRun(['some/new/thing.txt']));
