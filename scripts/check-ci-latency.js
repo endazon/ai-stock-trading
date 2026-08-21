@@ -440,11 +440,14 @@ async function main() {
   });
   const r = judge({ targetDurations, baselineDurations });
 
+  // 内訳は 1 つの括弧へまとめる（両方非ゼロのとき括弧が区切りなく並んで読みにくいため）。
+  const notes = [];
+  if (fetchFailures) notes.push(`${fetchFailures} 本は一過性の API 失敗で取得できず`);
+  if (missingHeads) notes.push(`${missingHeads} 本は head が既に無く 404（GC 済みのため恒久的にこのまま）`);
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
       `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件` +
-      (fetchFailures ? `（うち ${fetchFailures} 本は一過性の API 失敗で取得できず）` : '') +
-      (missingHeads ? `（うち ${missingHeads} 本は head が既に無く 404。GC 済みのため恒久的にこのまま）` : ''),
+      (notes.length ? `（うち ${notes.join('、')}）` : ''),
   );
   // 🔴 該当 run が 0 件なら、まず **check 名の設定ミス**を疑わせる。
   // 既定値のまま配備すると 0 件になり、fail-open で**緑のまま永久に skip する**。
