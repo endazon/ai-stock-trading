@@ -43,7 +43,9 @@ issues: [#14, #19, #139, #358]
 | CostLimits | MonthlyCostLimits | (20000,15000,5000,0) | 月次費用上限（総額/LLM/インフラ/データ・円） |
 
 - `CommissionSchedule(Rate, Minimum, Cap)`: 手数料 = clamp(約定代金×Rate, Minimum, Cap)。Cap≤0 は上限なし。
-- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。**税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。**m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
+- `CostCalculator`（純関数・05 §4）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。
+  **税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。
+  **m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
 
 ## エンティティ定義（永続）
 

@@ -18,11 +18,14 @@ issues: [#106, #185, #275, #353]
 # 外部連携仕様書: AST フロントエンド/設定画面の microservices-platform 組み込み要件
 
 > 本書は **ai-stock-trading（AST）側から洗い出した、microservices-platform（MSP）への統合要件**である。実装は **MSP リポジトリの別 PR / 別セッション**で行う（本 AST PR #185 のスコープ外）。AST 側は要件・受け入れ基準・二重定義回避の境界を明示する。
-> 起点 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)。前提: AST フロント第1スライス（PR #185）。同スライスでは、フロントエンドは platform unit-template 規約に準拠し、単独リポの型検査/テストを `@foundation` スタブ＋ローカル vitest で自己完結させ、設定画面は全体前提条件の閲覧/変更に限定すると決めている。
+> 起点 Issue: [#106](https://github.com/endazon/ai-stock-trading/issues/106)。前提: AST フロント第1スライス（PR #185）。
+> 同スライスでは、フロントエンドは platform unit-template 規約に準拠し、単独リポの型検査/テストを `@foundation` スタブ＋ローカル vitest で自己完結させ、設定画面は全体前提条件の閲覧/変更に限定すると決めている。
 
 ## 統合モデル（二重定義を避ける前提）
 
-- MSP の `frontend` は **単一 SPA**（`src/platform/frontend/Dockerfile`）で、可変機能ユニットの画面 features を**ビルド時にソース合成**する（基盤側のユニット構成の決定による）。**AST フロントは独立デプロイ物ではなく**、platform SPA へ features として載る。SPA ホスト・`@foundation`・BFF は MSP 側の単一実装を使い、**AST 側で再定義しない**（AST のテスト用 `@foundation` スタブは合成時に使われない）。
+- MSP の `frontend` は **単一 SPA**（`src/platform/frontend/Dockerfile`）で、可変機能ユニットの画面 features を**ビルド時にソース合成**する（基盤側のユニット構成の決定による）。
+  **AST フロントは独立デプロイ物ではなく**、platform SPA へ features として載る。
+  SPA ホスト・`@foundation`・BFF は MSP 側の単一実装を使い、**AST 側で再定義しない**（AST のテスト用 `@foundation` スタブは合成時に使われない）。
 - MSP は既に `src/ai-stock-trading` を submodule 化（`develop` ピン）。AST バックエンド各 service は submodule 配置済みだが、**deploy 面（compose/helm/`k8s-local-images.sh` MAPPING）には未登録**（現状 platform＋knowledge のみ）。
 
 ## トラック2 要件（MSP 側・依存順）

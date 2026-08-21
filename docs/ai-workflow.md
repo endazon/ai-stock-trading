@@ -55,7 +55,9 @@ Pull Request
 - [ ] GitHub Secrets（`CLAUDE_CODE_OAUTH_TOKEN` か `ANTHROPIC_API_KEY`）を登録済みである（Copilot 利用時はリポジトリで Copilot を有効化）。
 - [ ] 環境セットアップ（`scripts/setup.sh`）が通り、ビルド・テストが実走できる。
 
-**最初に `AI_SETUP.md` で利用可能な AI（プロファイル）を宣言する。** プロファイルにより有効化するファイルとシークレットが変わる。本書の Claude 系ワークフローは役割スロット（orchestrator / worker / reviewer）の**既定エンジン実装**であり、エンジンの差し替え・フォールバックは `ai-roster.json` と [`docs/ai-orchestration.md`](ai-orchestration.md)（正本）に従う。`*.example` ファイルは拡張子から `.example` を外すと有効になる（GitHub Actions は `.github/workflows/*.yml` のみ実行する）。`scripts/apply-profile.sh` で自動化できる。
+**最初に `AI_SETUP.md` で利用可能な AI（プロファイル）を宣言する。** プロファイルにより有効化するファイルとシークレットが変わる。
+本書の Claude 系ワークフローは役割スロット（orchestrator / worker / reviewer）の**既定エンジン実装**であり、エンジンの差し替え・フォールバックは `ai-roster.json` と [`docs/ai-orchestration.md`](ai-orchestration.md)（正本）に従う。
+`*.example` ファイルは拡張子から `.example` を外すと有効になる（GitHub Actions は `.github/workflows/*.yml` のみ実行する）。`scripts/apply-profile.sh` で自動化できる。
 
 技術非依存の CI 系は全プロファイル共通で有効化する。
 

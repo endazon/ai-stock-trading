@@ -183,9 +183,10 @@ issues: [#24, #346, #450, #456, MSP#445]
 
 **計画は監査証跡・業務台帳の 7 年保持を求めるが、それを担保する仕組みは実装されていない。**
 
-パージ（終端行のみ・保持期間 90 日・下限クランプ付き）の対象は**重複排除ストア 2 つ**（`processed_messages` / `order_dispatch_reservations`）**だけ**であり、`audit_events`・`cost_entries`・`executed_orders` は**明示的に対象外**である。
+パージ（終端行のみ・保持期間 90 日・下限クランプ付き）の対象は**重複排除ストア 2 つ**（`processed_messages` / `order_dispatch_reservations`）だけであり、`audit_events`・`cost_entries`・`executed_orders` は**明示的に対象外**である。
 
-> ⚠️ **「パージ対象外」は「7 年保持が担保されている」ことを意味しない。** 除外の記述は「消さない」しか言っておらず、**バックアップ・保全・可用性の担保は別の実装**である。担当は [#346](https://github.com/endazon/ai-stock-trading/issues/346)（再実装版への切替計画 — 監査証跡・業務台帳の 7 年保持の保全）。
+> ⚠️ **「パージ対象外」は「7 年保持が担保されている」ことを意味しない。** 除外の記述は「消さない」しか言っておらず、**バックアップ・保全・可用性の担保は別の実装**である。
+> 担当は [#346](https://github.com/endazon/ai-stock-trading/issues/346)（再実装版への切替計画 — 監査証跡・業務台帳の 7 年保持の保全）。
 
 ## 脅威と対策
 
@@ -217,7 +218,9 @@ issues: [#24, #346, #450, #456, MSP#445]
 
 ## 関連
 
-- 実装 ADR: run-once の認可と CronJob のトークン取得（**run-once の認可・CronJob のトークン・無認証経路の構造固定**）／セキュリティ仕様書における「無いこと」の書き分け（**本書の書き分けの規約**）／MCP 非公開の維持／基盤ランタイム Foundation の最小移植とサービス間同期照会の s2s 認証（認証・認可）／Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ（Discord 多層認可）／RAG 取得文脈のプロンプトインジェクション対策
+- 実装 ADR: run-once の認可と CronJob のトークン取得（**run-once の認可・CronJob のトークン・無認証経路の構造固定**）／セキュリティ仕様書における「無いこと」の書き分け（**本書の書き分けの規約**）／MCP 非公開の維持／
+  基盤ランタイム Foundation の最小移植とサービス間同期照会の s2s 認証（認証・認可）／Discord Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ（Discord 多層認可）／
+  RAG 取得文脈のプロンプトインジェクション対策
 - 運用仕様書: [operations.md](../operations/operations.md)（データ保持・パージ／トラブルシュート）
 - 運用 Runbook: [banned-symbol-unlock-runbook.md](../operations/banned-symbol-unlock-runbook.md)（統制の一時解除と監査への記録）
 - 作業仕様書: 仕様書: セキュリティ仕様書の記入（実測ベース）
