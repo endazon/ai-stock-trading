@@ -44,7 +44,7 @@ const ALLOWLIST_PATH = path.join(__dirname, 'commit-allowlist.json');
 // **直書きなら、CI・ローカル・`--title` モードのどの経路から呼ばれても同じ設定で効く。**
 //
 // 本ファイルは**キット同期の分類 C**（本リポの中身・置換点を持つ配布物）であり、
-// **各リポが自分の値を埋める前提**である（kit-sync-classification.json）。
+// **各リポが自分の値を埋める前提**である（旧 kit-sync の分類運用は資料再編で退役済み）。
 // **検査器本体（check-cross-repo-refs.js）は分類 A であり、手を触れない。**
 //
 // 値は `.claude/rules/traceability.repo.md`（#487 の利用者裁定）と**同じものを使う**。
@@ -307,8 +307,11 @@ function loadExistingIadrIds(dir = path.join(__dirname, '..', '.ai-context', 'ad
 const PLAN_PROJECT = process.env.PLAN_PROJECT || 'ai-stock-trading';
 
 /**
- * 計画 ADR（planning submodule の `projects/<name>/07_adr/`）の実在番号集合。
- * submodule 未 populate なら null（skip）。
+ * 計画 ADR の実在番号集合。
+ * 一次情報は `.claude/rules/traceability.repo.md` の宣言レンジ（`ADR-0001..0029` の形。
+ * `scripts/lib/plan-ranges.js` 経由）である —— 資料再編（計画 ADR-0029 決定 2）で planning
+ * submodule を撤去したため、ファイルシステム走査は**テスト・別構成向けの引数指定時のみ**
+ * 意味を持つ（既定パスは実在せず、宣言レンジへ進む）。どちらも読めなければ null（skip）。
  *
  * **自プロジェクトの名前空間に限定する**こと。計画 ID はプロジェクトごとに独立採番のため
  * 番号帯が丸ごと重複する。全プロジェクトの和集合を実在集合にすると、他プロジェクトにしか
@@ -316,15 +319,29 @@ const PLAN_PROJECT = process.env.PLAN_PROJECT || 'ai-stock-trading';
  * 漏れて実体と別内容の ADR を名乗る事故の検出）が働かなくなる。
  * 自プロジェクトを解決できない構成では、従来どおり全走査へ退避する（fail-open）。
  */
+const DEFAULT_PLAN_PROJECTS_DIR = path.join(__dirname, '..', 'planning', 'projects');
+
 function loadExistingPlanAdrIds(
-  projectsDir = path.join(__dirname, '..', 'planning', 'projects'),
+  projectsDir = DEFAULT_PLAN_PROJECTS_DIR,
   project = PLAN_PROJECT
 ) {
   let entries;
   try {
     entries = fs.readdirSync(projectsDir);
   } catch (e) {
-    return null;
+    // 明示パス指定（テスト・別構成）で読めない場合は従来どおり null（skip）。
+    if (projectsDir !== DEFAULT_PLAN_PROJECTS_DIR) return null;
+    // 既定パス（旧 submodule）は資料再編で実在しない。宣言レンジから実在集合を構築する。
+    try {
+      const { readPlanAdrRange } = require('./lib/plan-ranges.js');
+      const range = readPlanAdrRange();
+      if (!range) return null;
+      const set = new Set();
+      for (let n = range.from; n <= range.to; n++) set.add(`ADR-${String(n).padStart(4, '0')}`);
+      return set;
+    } catch (e2) {
+      return null;
+    }
   }
   // 自プロジェクトの名前空間だけを実在集合とする（規約どおりの厳密な検査）。
   const own = loadExistingAdrIds('ADR', path.join(projectsDir, project, '07_adr'));

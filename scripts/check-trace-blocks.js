@@ -646,7 +646,7 @@ function main() {
     for (const e of r.errs) console.error(`    - ${e}`);
   }
   console.error(
-    '\n書式は project-planning ADR-0029 決定4（.claude/rules/traceability.md の trace ブロック規約）を参照してください。'
+    '\n書式の正本は計画 ADR-0029 決定4、運用の詳細は docs/traceability-appendix.md §trace ブロック を参照してください。'
   );
   process.exit(1);
 }
