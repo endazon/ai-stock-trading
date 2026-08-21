@@ -509,9 +509,9 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # ⚠️ ここも setup-node を置かない（実測 4〜9 秒）。`list-test-projects.js` は依存を持たない
+      # 素の Node スクリプトで、ランナー既定の Node で動く。**このジョブが必須チェックの
+      # クリティカルパスそのもの**なので、数秒がそのまま待ち時間になる。
       - name: Self-test (分配ロジック)
         run: node scripts/list-test-projects.js --self-test
       - name: Restore
