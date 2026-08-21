@@ -2,23 +2,22 @@
 title: <インターフェース名> 通信仕様書
 type: api-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 通信仕様書: <インターフェース名 / API 群>
 
 > API・インターフェース単位で作成する。計画リポジトリのユースケース・業務フロー・技術検討を実装向けに詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 関連機能要求（FR）:
-- 関連ユースケース（UC）:
-- 技術検討（06_technical）/ ADR:
-- 計画書リンク:
 
 ## 概要
 

@@ -98,12 +98,12 @@ const SELF_NAMES = splitList(process.env.CROSS_REPO_SELF_NAMES, ['AST', 'ai-stoc
 
 // 【置換点】走査から外すパス（git pathspec の除外形）。サブモジュール・ベンダー配下を書く。
 // 環境変数 `CROSS_REPO_EXCLUDES` で上書きできる（カンマ区切り）。
-// planning は submodule。docs/specs/ と feedback/ は point-in-time の記録であり後付けの表記是正を
-// しない（裁定 2026-08-15。IADR-0200 の除外表と同じ。書式・理由の正本は .claude/rules/traceability.repo.md）。
+// .ai-context/specs/ は point-in-time の記録であり後付けの表記是正をしない（裁定 2026-08-15。
+// IADR-0200 の除外表と同じ。書式・理由の正本は .claude/rules/traceability.repo.md）。
+// planning（submodule）・feedback/ の除外は資料再編（ADR-0029）で両ディレクトリ自体が
+// 消滅したため削除した（除外を維持する対象が存在しない）。
 const EXCLUDE_PATHSPECS = splitList(process.env.CROSS_REPO_EXCLUDES, [
-  ':!planning',
-  ':!docs/specs',
-  ':!feedback',
+  ':!.ai-context/specs',
 ]);
 
 // 【置換点】走査から外すディレクトリ（**非 Markdown に限る**。`.md` は常に検査する）。

@@ -2,22 +2,22 @@
 title: <ジョブ名> バッチ・ジョブ仕様書
 type: batch-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # バッチ・ジョブ仕様書: <ジョブ名>
 
 > 任意。定期実行・非同期処理を定める。計画リポジトリの業務フロー・要求を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 関連機能要求（FR）/ 業務フロー（04_workflows）:
-- 関連 ADR:
-- 計画書リンク:
 
 ## ジョブ概要
 

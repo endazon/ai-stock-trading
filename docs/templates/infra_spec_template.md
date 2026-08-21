@@ -2,22 +2,22 @@
 title: インフラ・構成仕様書
 type: infra-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # インフラ・構成仕様書
 
 > 任意。環境構成・インフラ構成を定める（技術要件書から環境面を分離したい場合）。計画リポジトリの技術検討・ADR を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 技術検討（06_technical）/ ADR:
-- 非機能要件（可用性・拡張性）:
-- 計画書リンク:
 
 ## 環境一覧
 

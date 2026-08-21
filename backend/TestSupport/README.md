@@ -2,7 +2,7 @@
 
 このディレクトリには、**本番実装ではない**「足場（scaffold / shim）」を置く。本番の取引ドメイン実装
 （`src/Services/**`・`src/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`）とは物理的に分離し、
-「実際に本番で使っている」と誤解されないようにするためのものである（[IADR-0013](../../docs/adr/IADR-0013_platform-foundation-testsupport-shim.md)）。
+「実際に本番で使っている」と誤解されないようにするためのものである（[IADR-0013](../../.ai-context/adr/IADR-0013_platform-foundation-testsupport-shim.md)）。
 
 ## AiStockTrading.TestSupport.PlatformShim
 

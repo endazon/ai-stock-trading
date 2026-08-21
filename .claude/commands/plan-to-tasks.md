@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, TodoWrite
 
 手順:
 
-1. 計画リポジトリ（既定 `../project-planning`）から対象の計画書を読む。
+1. 計画リポジトリ `project-planning`（GitHub URL または隣接クローン `../project-planning`。**読み取り専用**）から対象の計画書を読む。
 2. 実装に必要なタスクへ分解する。各タスクに起点 ID を紐づける。
    - 観点: データモデル / 画面・UI / API・ロジック / バリデーション（画面設計の入力規則）/ 例外処理（UC の例外フロー）/ テスト（受け入れ基準）/ 非機能要件（NFR）。
 3. TodoWrite でチェックリスト化し、依存関係・優先度（MoSCoW があれば反映）を示す。

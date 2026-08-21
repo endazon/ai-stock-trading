@@ -2,22 +2,22 @@
 title: <対象> ログ・可観測性仕様書
 type: observability-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # ログ・可観測性仕様書: <対象>
 
 > 任意。ログ・メトリクス・トレースの方針を定める。計画リポジトリの非機能要件（運用・保守）を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 非機能要件（NFR）:
-- 関連 ADR:
-- 計画書リンク:
 
 ## ログ
 

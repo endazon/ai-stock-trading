@@ -2,23 +2,22 @@
 title: <対象機能> テスト仕様書
 type: test-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # テスト仕様書: <対象機能>
 
 > 機能（FR）単位で作成する。計画リポジトリの受け入れ基準とユースケースのフローをテストケースへ写像する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 機能要求（FR）:
-- ユースケース（UC）:
-- 受け入れ基準の所在（02_requirements）:
-- 計画書リンク:
 
 ## テスト対象・範囲
 

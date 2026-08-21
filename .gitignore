@@ -458,9 +458,6 @@ id_ed25519*
 # （例: id_rsa.pub / id_ed25519.pub。コメントの意図と glob 挙動を一致させる）。
 !*.pub
 
-# AI 生成の参照サマリ（生成物）
-.ai-context/
-
 # エディタ / IDE
 .vscode/*
 !.vscode/extensions.json

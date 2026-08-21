@@ -39,20 +39,5 @@ fi
 #   python3 -m pip install -e '.[test]' 2>/dev/null || python3 -m pip install -r requirements.txt || log "pip セットアップでエラー（継続）"
 # fi
 
-# --- 計画 pin の鮮度（planning#337） ---
-# 計画側で裁定が反映されても、pin を進めるまで実装側には何も伝わらない。実測では、**待ち時間の
-# 実体は「回答待ち」ではなく「回答に気づいていない時間」だった**。セッション開始時に目へ入れる。
-#
-# 【必ず fail-open にする】ネットワーク・認証・submodule の populate 状態に依存するため、
-# ここで失敗してもセットアップは続ける。**pin 検査よりセットアップを壊さないことを優先する。**
-if command -v node >/dev/null 2>&1 && [ -f scripts/check-planning-pin-freshness.js ]; then
-  # ★ 【落とし穴】`| sed` の後ろに `|| log` を置くと、`||` は**最終段（sed）の終了コード**を
-  #   見るため **node が落ちても発火しない**（死んだコードになる）。PIPESTATUS で先頭段を見る。
-  #   `set -o pipefail` は POSIX sh に無いため使わない。**本スクリプトはシバンで bash を要求して
-  #   いるので `PIPESTATUS` は使える。**
-  node scripts/check-planning-pin-freshness.js 2>&1 | sed 's/^/[setup] /'
-  [ "${PIPESTATUS[0]}" -eq 0 ] || log "pin 鮮度の確認でエラー（継続）"
-fi
-
 log "セットアップ完了"
 exit 0

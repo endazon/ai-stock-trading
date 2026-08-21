@@ -1,8 +1,16 @@
-# ローカル実行手順（docker compose） — issue #107 / IADR-0048
+<!-- trace:
+ids: []
+adrs: [ADR-0006, MSP:ADR-0010]
+iadrs: [IADR-0048, IADR-0061, IADR-0128]
+specs: []
+issues: []
+-->
 
-ai-stock-trading を単独で起動して疎通を確認するための手順。設計判断は
-[IADR-0048](../adr/IADR-0048_runtime-scaffold.md)、作業仕様は
-[作業仕様書](../specs/20260712_107_runtime-scaffold.md) を参照。
+# ローカル実行手順（docker compose） — issue #107
+
+ai-stock-trading を単独で起動して疎通を確認するための手順。設計判断は実行環境スキャフォールドの
+実装ADR、作業仕様は
+[作業仕様書](../../.ai-context/specs/20260712_107_runtime-scaffold.md) を参照。
 
 > **fail-safe 既定**: 既定では実 LLM を呼ばず・実市場データに接続せず・実発注せず・外部送信しない。
 > 実接続は `.env` の明示設定時のみ有効化される（#13/#79/#81/#15/#76）。実基盤を起動しての
@@ -55,11 +63,13 @@ HTTP 疎通（ヘルスチェック `/health/live`・`/health/ready`、同期照
 
 - **compose で使う**: `.env` に記入（`.env.example` のキーを埋める）。例:
   - `LLM_GATEWAY_BASEURL`（実 LLM を使う場合 / #11）。**鍵ではなく MSP の LLM ゲートウェイ URL** を入れる。
-    LLM プロバイダ鍵は AST では扱わず MSP 側が保持する（ADR-0010 / IADR-0061 決定6）。
+    LLM プロバイダ鍵は AST では扱わず MSP 側が保持する（基盤の LLM ゲートウェイの計画 ADR・
+    実 LLM 接続の実装ADR 決定6）。
   - `COLLECTION_SOURCE_PROVIDER` + `COLLECTION_FINNHUB_API_KEY`（実市場情報 / #81）
   - `NOTIFICATIONS_PROVIDER=discord-webhook` + `NOTIFICATIONS_DISCORD_WEBHOOK_URL`（実通知 / #15）
   - `MOOMOO_API_KEY` / `MOOMOO_API_SECRET`（実発注 / #13。既定は実弾防止ゲートで無効）
-- **ホストで `dotnet run` する**: `dotnet user-secrets`（ホスト＝`<Svc>.Api` プロジェクトごと・IADR-0128）に設定する。例:
+- **ホストで `dotnet run` する**: `dotnet user-secrets`（ホスト＝`<Svc>.Api` プロジェクトごと・
+  標準プロジェクト構成の実装ADR）に設定する。例:
 
   ```sh
   cd backend/Services/TradeDecisionService/src/TradeDecisionService.Api
@@ -67,7 +77,7 @@ HTTP 疎通（ヘルスチェック `/health/live`・`/health/ready`、同期照
   dotnet user-secrets set "Anthropic:ApiKey" "<your-key>"
   ```
 
-本番の DB/MQ/Keycloak・証券会社資格情報は Vault/Secrets（[ADR-0006] / #24）で管理し、本手順の
+本番の DB/MQ/Keycloak・証券会社資格情報は Vault/Secrets（稼働環境の計画ADR・#24）で管理し、本手順の
 dev ダミーは用いない。
 
 ## 停止 / クリーンアップ
@@ -83,5 +93,3 @@ docker compose down -v         # DB ボリュームも削除（初期化し直�
 - **サービスが DB へ繋がらない**: `postgres` の healthcheck 完了を待って app が起動する。
   ログは `docker compose logs -f <service>`。EF Migration は各 Worker 起動時に適用される。
 - **実基盤ありの E2E**: 実 migration 適用・キュー疎通・OwnerOnly 認可の通し検証は #82 で行う。
-
-[ADR-0006]: ../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md

@@ -2,17 +2,23 @@
 title: 手順ガイド — <対象>
 type: how-to
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 手順ガイド: <対象>
 
 > **仕様ではなく作業手順の案内である**（`docs/README.md`）。**起点 ID を持たないことがあり、
-> その場合は `related_ids` を空にしてよい**（他の仕様書と異なり必須としない）。
+> その場合は trace ブロックの `ids:` / `adrs:` を空のままにしてよい**（他の仕様書と異なり必須としない）。
 >
 > **`type` は `how-to` である**（`spec` ではない）。
 > 作業仕様書と同じ `type` にすると、**`type` から「仕様書か手順ガイドか」を区別できない。**

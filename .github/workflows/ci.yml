@@ -99,51 +99,82 @@ jobs:
       - name: Test opend entrypoint.sh (RSA key permission check)
         run: bash deploy/opend/entrypoint.test.sh
 
-  # スタック非依存: docs/ 配下 Markdown の相対リンク切れを検査（再発防止）。
+  # スタック非依存: docs/ ・ .ai-context/ 配下 Markdown の相対リンク切れを検査（再発防止）。
   # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
-  # NFR / #493 / #496: 相対リンクの実在検査。**planning を含めて PR 段階で検査する。**
+  # NFR / #493 / #496: 相対リンクの実在検査。
   #
-  # 以前は submodule 無しで走らせ、planning 配下リンクの実在検査を夜間の
-  # doc-links-planning.yml へ委ねていた。その根拠は「PR CI には PLANNING_REPO_TOKEN が無い」
-  # であったが、**#495 の kit-sync ジョブが同じトークンで PR の CI から取得に成功して反証された**。
-  # 夜間方式は「PR に紐づかない赤」が放置される弱点を持つ（実運用で 14 夜連続の実績）。
-  #
-  # --require-planning を必ず付ける。付けないと取得失敗時に skip して緑になり、
-  # 「配線したのに一度も検査しない」状態が固定される（IADR-0191 決定3 と同じ判断）。
+  # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。かつて
+  # ここにあった「PR 段階で planning submodule を populate して当該配下も検査する」分岐
+  # （submodule 取得・取得用トークンの受け渡し・--require-planning）は、planning
+  # 自体が撤去されたため削除した。
   doc-links:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          token: ${{ secrets.PLANNING_REPO_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
       - name: Self-test doc link checker
         run: node scripts/check-doc-links.js --self-test
-      - name: Check doc links (including planning submodule)
-        run: node scripts/check-doc-links.js --require-planning
+      - name: Check doc links
+        run: node scripts/check-doc-links.js
 
   # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
   # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
   #
-  # NFR / #496: **テストが参照する ID の計画書実在検査を PR 段階で実効させる。**
-  # 以前は submodule 無しで走らせ、実在検査だけを skip して夜間へ委ねていた。
-  # その根拠（「PR CI には PLANNING_REPO_TOKEN が無い」）は #495 の実測で反証された。
-  # doc-links と同じく --require-planning を必ず付ける（取得失敗を skip で緑にしない）。
+  # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。テストが参照する
+  # FR/UC/SC が計画書へ実在するかの突合（旧 --require-planning。取得用トークンの受け渡しも含む）は、
+  # 突合先の planning submodule 自体が撤去されたため恒久的に skip へ倒れる（`planIds()` が
+  # null を返す。notice で可視化される）。**本ジョブ自体は存続する** —— 必須 FR のテスト・仕様書の
+  # 存在チェック（本検査の主眼）は元から planning 非依存であり、引き続き実効する。
   test-traceability:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          token: ${{ secrets.PLANNING_REPO_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Check test traceability (including planning submodule)
-        run: node scripts/check-test-traceability.js --require-planning
+      - name: Check test traceability
+        run: node scripts/check-test-traceability.js
+
+  # trace ブロック検査（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段。
+  # 同決定の後続 PR で新設）。docs/**/*.md（.ai-context/ は対象外・凍結記録のため）に置く
+  # `<!-- trace: -->` / `<!-- trace-table: -->` の文法・許可キー・値域（FR/UC/SC は
+  # `.claude/rules/traceability.repo.md` 宣言レンジ、計画 ADR は同宣言のレンジ、IADR は
+  # `.ai-context/adr/` のファイル実在）を検査し、可視本文に計画 ID・IADR・修飾付き issue 参照が
+  # 残っていないかも見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず
+  # 「英字+英数字の短縮名 + `:`」という形だけで external とみなす（利用者裁定・ADR-0029 決定9。
+  # 実装リポジトリが今後増える前提）。
+  trace-blocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test trace block checker
+        run: node scripts/check-trace-blocks.js --self-test
+      - name: Check trace blocks
+        run: node scripts/check-trace-blocks.js
+
+  # ナレッジグラフ生成（docs/ の trace / trace-table ブロックと .ai-context/{adr,specs}/ の
+  # frontmatter〔related_ids / related_specs / plan_refs〕から組み立てる）。生成物はコミットしない
+  # （都度標準出力へ書く。--json / --mermaid は成果物確認用、CI では --check のみを走らせる）。
+  # --check は in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在）。修飾付き参照
+  # （`planning:` / `MSP:` 等。個別名はハードコードしない）は external として数のみ数え、
+  # specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため
+  # 失敗とはしない（標準出力に注記する）。
+  knowledge-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Self-test knowledge graph generator
+        run: node scripts/gen-knowledge-graph.js --self-test
+      - name: Check knowledge graph (in-repo existence)
+        run: node scripts/gen-knowledge-graph.js --check
 
   # 不採用ライブラリ（platform ADR-0030 の棚卸し）の再混入を止める（issue #345 / #351）。
   # 剥がした事実をレビューの記憶に頼ると必ず戻るため、機械的に落とす。移行未完了のものは
@@ -189,69 +220,7 @@ jobs:
       - name: Check tracked session timeout
         run: node scripts/check-tracked-session-timeout.js
 
-  # NFR / #477 / IADR-0188: 環流記録（feedback/*.md）が計画リポジトリへ伝達されたかを報告する。
-  # 検査器は kit 由来（`check-feedback-dispatched.js`）であり、**手順書が定める 2 経路**
-  # （GitHub Issue 経路 / 記録ファイル経路）の**どちらでも緑になる**（planning#319 / planning#320）。
-  #
-  # **warn のみで exit 0 である**（本ジョブは落ちない）。起票は人手の判断を伴うため、
-  # ブロックにすると回避策（記録を作らない）を誘発し、統制の目的と逆の結果になる。
-  # 出力はジョブログとアノテーションとして人間に見せる（週次の backlog-audit.yml も同じ検査を回す）。
-  #
-  # **自己試験を先に走らせる。** 検査器の判定規則そのものが壊れていれば、実データに対する
-  # 結果は意味を持たない（「緑だが検査されていない」を避ける）。
-  feedback-dispatched:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Self-test feedback dispatch checker
-        run: node scripts/check-feedback-dispatched.js --self-test
-      - name: Check feedback dispatched
-        run: node scripts/check-feedback-dispatched.js
-
-  # NFR / #494 / planning#342: 環流記録の `status` が計画側の裁定に追随していること。
-  #
-  # `status` は「計画側の裁定がどこまで進んだか」を表し、**値の正は計画側にある**（planning#323）。
-  # 実装側は人手でしか追随せず、実測でも本ジョブ導入時に **2 件が open のまま取り残されていた**
-  # （planning#335 / planning#333 はいずれも accepted 済みだった）。
-  #
-  # 🔴 【重要】`check-feedback-status-sync.js` は計画リポを参照できないとき **skip して exit 0** に
-  # 倒れる（キット既定の fail-open）。submodule の取得に失敗すると
-  # 「配線したのに一度も検査していない緑」が固定される。
-  #
-  # **【更新・2026-08-15／#517】キットが `--require-planning` を新設した**（planning#343。
-  # **本リポの環流が起点**）。従前ここには「**当たるフラグを持たない**」と書いてあったが、
-  # planning#342 の追随で**事実でなくなった**ため、フラグを渡す形へ改めた。
-  # **populate の明示確認は残す** —— フラグは「参照できない」ことしか見ず、
-  # **`planning/draft/feedback` が無い**という具体的な壊れ方を名指しできない
-  # （エラーメッセージの精度は落とさない）。**二重に塞ぐ。**
-  feedback-status-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          # 本体リポと planning submodule 双方の取得に使う（双方 read 権限が必要）。
-          token: ${{ secrets.PLANNING_REPO_TOKEN }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      # 検査器が skip へ倒れる条件を、検査器より先に潰す。
-      - name: Ensure planning submodule is populated
-        run: |
-          if [ ! -d planning/draft/feedback ]; then
-            echo "::error::planning submodule が populate されていない。" \
-                 "この状態で check-feedback-status-sync.js を走らせても skip して緑になる。"
-            exit 1
-          fi
-      - name: Self-test feedback status sync checker
-        run: node scripts/check-feedback-status-sync.js --self-test
-      - name: Check feedback status sync
-        run: node scripts/check-feedback-status-sync.js --require-planning
-
-  # NFR / #497: 実装ADR の本文を変更したら docs/adr/README.md の索引行も変更されていること。
+  # NFR / #497: 実装ADR の本文を変更したら .ai-context/adr/README.md の索引行も変更されていること。
   #
   # 同型の事故が連続する 2 PR で 2 回起きた（#491 は自己試験の件数、#495 は解消済みの残余リスク）。
   # いずれも AI レビューが検出し、**CI は緑のまま通した**。運用標準「検査器の追加は同型事故 2 回から」。
@@ -293,29 +262,6 @@ jobs:
       - name: Check reading budget (per agent, not summed)
         run: node scripts/check-reading-budget.js
 
-  # NFR / #492: impl-handoff-kit の配布物への追随（分類 A のバイト一致）を検査する。
-  #
-  # 本ジョブだけは submodule を取得する（他のジョブは取得しない）。取得しないと
-  # check-kit-sync.js は skip し、**配線したのに一度も検査しない緑**が固定されるためである。
-  # そのため `--require-planning` を必ず付け、**取得できなかったら fail させる**。
-  #
-  # PR 段階で落とす配置を採る（doc-links-planning.yml の夜間ジョブではなく）。キットからの
-  # ドリフトは PR が持ち込むものであり、夜間に初めて赤くすると「PR に紐づかない赤」になって
-  # 放置される（同リポの doc-links-planning.yml が抱える弱点として明記されている形である）。
-  kit-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          # 本体リポと planning submodule 双方の取得に使う（双方 read 権限が必要）。
-          token: ${{ secrets.PLANNING_REPO_TOKEN }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Check kit sync (classification A must be byte-identical)
-        run: node scripts/check-kit-sync.js --require-planning
-
   # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
   # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
   #
@@ -323,7 +269,7 @@ jobs:
   # **その除外は Markdown でしか効かない**（YAML のバッククォートはコード記法ではない）。
   # 実際、本コメントの初版が誤例を平文で書いて自分の検査に捕まった。
   #
-  # **本ジョブは exit 1 で落とす**（`feedback-dispatched` と違い warn ではない）。表記の是正は
+  # **本ジョブは exit 1 で落とす**（他の一部検査器のような warn ではない）。表記の是正は
   # 人手の判断を伴わず、書式が一意に決まるためである。
   #
   # 【重要】`PLAN_ID_PREFIXES` を落とすと `PROJECT_PREFIXES` が空になり、検査は **skip して緑になる**

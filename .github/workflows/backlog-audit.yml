@@ -43,16 +43,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 環流記録の機械的検査。**warn のみで exit 0** であり、ここで落ちることはない
-      # （落とすと監査そのものが走らなくなる）。出力は下の AI 監査が読む前提ではなく、
-      # ジョブログとアノテーションとして人間に見せるためである。
+      # 監査プロンプトが node で検査器を実走するため setup-node は維持する。
+      # （旧 check-feedback-dispatched.js のステップは資料再編 ADR-0029 決定 5 で撤去した。
+      #   環流はファイルではなく planning の issue で管理され、突合対象が存在しない。）
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      - name: Self-test feedback dispatch checker
-        run: node scripts/check-feedback-dispatched.js --self-test
-      - name: Check feedback dispatched
-        run: node scripts/check-feedback-dispatched.js
 
       - name: Run backlog audit
         # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
@@ -75,15 +71,15 @@ jobs:
           #     gh pr list / gh label list / gh search / gh api / wc の追加は settings.json への
           #     人手適用待ちとして作業仕様書 20260814_478 §残作業に記録した）。
           #   - PR の参照は MCP（pull_request_read / list_pull_requests）と gh pr view で行う。
-          #   - `git -C planning …` は**相対パス**で許可する（絶対パスは check-permission-denials.js が
-          #     原理的に直せない形に分類する。claude-code-review.yml と同じ流儀）。
+          #   - `git -C planning …` の許可は撤去した（資料再編 ADR-0029 決定 2 で planning
+          #     submodule 自体が撤去済み。settings.json との 3 系統一致は ai-workflow-config が検査する）。
           #   - Write を許可する。結果 issue の長い本文は `--body-file` で渡すのが唯一堅牢な形であり、
           #     本ジョブは contents: read のため書いたファイルはどこへも永続しない
           #     （レビュー用ワークフローの「書き込み手段を持たない設計」とは目的が異なる）。
           #   - 許可リストで直せない形（パイプ・ループ・リダイレクト・引用符内の `|`）は
           #     プロンプト側の「使ってよいコマンドの形」で回避する（下記）。
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git submodule status:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__pull_request_read,mcp__github__get_pull_request,mcp__github__list_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
+            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__pull_request_read,mcp__github__get_pull_request,mcp__github__list_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
           prompt: |
             このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
 
@@ -124,26 +120,14 @@ jobs:
                本リポにも前例があります（A-4 の「日銀サイトが自動取得を拒否」は実測で覆りました）。
                **分類を書き換えるのはあなたではありません**。候補と根拠を出すだけです（最重要の制約と同じ）。
 
-            ## 環流の未伝達
+            ## 環流（計画へのフィードバック）について
 
-            `node scripts/check-feedback-dispatched.js` の出力（本ジョブの前段で実行済み）を確認してください。
-
-            **出力をそのまま「未起票」と読み替えないでください。** 検査器が見るのは
-            **記録に伝達の証拠が書かれているか**であって、**実際に届いたか**ではありません。
-            2026-08-14 の実測では、前身の検査器が出した警告 9 件は**全件が偽陽性**でした
-            （9 件とも計画リポへ到達済みで、9 件とも計画側で `status: accepted` だった。#483 のコメント）。
-
-            **一次情報は submodule で読めます。** 計画リポジトリの issue の open/closed には
-            `github_token` のスコープが要りますが、**`planning/draft/feedback/<同名>.md` の
-            `status` は submodule だけで読め、そこには計画側のトリアージ結果が入っています**。
-            警告を報告する前に、まず同名ファイルの有無と `status` を確認してください。
-
-            あわせて、**実装側の `status` が計画側の裁定に追随していない**記録も見てください
-            （実装側 `open` ／ 計画側 `accepted` など）。**逆向きの乖離**（実装側が先に進んでいる）も同様です。
-            **`status` は「計画側の裁定段階」だけを表し、伝達の有無は `dispatched:` / `planning_issue:`
-            が担います**（planning#323 の裁定 2026-08-14）。語彙は
-            `open` / `awaiting-decision` / `accepted` / `rejected` の 4 値で、**これ以外の値は誤りです**
-            （語彙を検査する機械はありません。値の誤りは沈黙します）。
+            環流は project-planning の GitHub issue（feedback.yml・decision-needed ラベル）へ
+            一本化されました（資料再編 ADR-0029 決定 5）。本リポジトリに環流記録ファイルは無く、
+            未伝達の突合対象も存在しません。**環流の滞留監査は planning 側の週次棚卸し
+            （stocktake.yml）が担うため、本監査では扱いません。** 実装作業の中で「計画書の誤り・
+            不足に気づいたのに issue 未起票」の形跡（コード内 TODO・PR 本文の言及など）を見つけた
+            場合のみ、候補として挙げてください（起票の代行はしないこと）。
 
             **確認できなかった項目は「未確認」と明記してください**（確認したふりをしないこと）。
 
@@ -174,7 +158,6 @@ jobs:
               パイプとして分割します。`--jq '.[] | .number'` は拒否されます——`--json number` で受けて
               node で処理するか、`--jq` を使わず素の JSON を読んでください。
             - **python3・mkdir・find は使わない**（許可されていません）。走査は Glob / Grep / rg で行います。
-            - **`git -C` は相対パス `planning` のみ**（`git -C planning log` は許可・絶対パスは拒否されます）。
             - gh で使えるのは **issue list/view/create/edit・pr view・run list** です。
               **`gh api`・`gh pr list`・`gh label list`・`gh search` は許可されていません**——
               PR の一覧・詳細は MCP ツール（`list_pull_requests` / `pull_request_read`）で、

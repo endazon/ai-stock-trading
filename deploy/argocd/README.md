@@ -1,6 +1,6 @@
 # ArgoCD GitOps 配備（AST チャート）
 
-> 起点: [ADR-0006](../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md)（Hetzner・GitOps）/ [IADR-0094](../../docs/adr/IADR-0094_local-infra-observability-gitops.md)（#24）
+> 起点: ADR-0006（計画リポ）（Hetzner・GitOps）/ [IADR-0094](../../.ai-context/adr/IADR-0094_local-infra-observability-gitops.md)（#24）
 > 受け入れ基準（Tier 3・本 PR では未充足）: ArgoCD 経由のデプロイが Git の状態と同期し、手動 kubectl 依存がない
 
 Git を単一の真実源とし、ArgoCD が AST の Helm チャート（[`../helm/ai-stock-trading`](../helm/ai-stock-trading/README.md)）を

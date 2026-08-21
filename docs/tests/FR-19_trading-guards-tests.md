@@ -2,57 +2,60 @@
 title: 取引ガード（FR-19・再実装）テスト仕様書
 type: test-spec
 status: approved
-related_ids: [FR-19, FR-10, FR-11, FR-20, UC-06, ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, IADR-0131, IADR-0132, IADR-0153, IADR-0165, IADR-0182]
-author: endazon (with Claude Code)
 created: 2026-08-04
-updated: 2026-08-08
-plan_refs:
-  - ../../planning/projects/ai-stock-trading/02_requirements/01_requirements.md
-  - ../../planning/projects/ai-stock-trading/06_technical/05_trading-assumptions.md
-  - ../../planning/projects/ai-stock-trading/06_technical/06_daytrading-review.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0021_us-account-type-dual-support.md
-  - ../../planning/projects/ai-stock-trading/07_adr/ADR-0025_settled-cash-poc-and-gfv-counting.md
-related_specs:
-  - ../functional/FR-19_trading-guard.md
-  - ../specs/20260804_332_trading-guards.md
-  - ../adr/IADR-0132_product-type-tri-state-and-guard-scope.md
-  - ../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md
-  - ../specs/20260806_375_cash-account-support.md
-  - ../specs/20260807_425_gfv-self-counting.md
-  - ../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md
-  - ./README.md
-  - ./FR-19_manipulation-detection-tests.md
-  - ./FR-10_risk-controls-tests.md
+updated: 2026-08-21
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-10, FR-11, FR-14, FR-19, FR-20, SC-02, SC-03, UC-06]
+adrs: [ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, ADR-0028]
+iadrs: [IADR-0051, IADR-0127, IADR-0131, IADR-0132, IADR-0152, IADR-0153, IADR-0165, IADR-0182]
+specs: [20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, FR-10_risk-controls-tests, FR-19_manipulation-detection-tests, FR-19_trading-guard, IADR-0132_product-type-tri-state-and-guard-scope, IADR-0153_broker-account-type-supply-and-fail-closed, IADR-0165_gfv-self-counting-and-settled-cash-source-ban, README]
+issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425, #464]
+-->
 
-# テスト仕様書: 取引ガード（FR-19・再実装 #332）
+
+# テスト仕様書: 取引ガード（再実装 #332）
+
+## 目次
+
+- [本書が受け持つ範囲](#本書が受け持つ範囲)
+- [テスト対象・範囲](#テスト対象範囲)
+- [3 点セット（テスト戦略 §2）](#3-点セットテスト戦略-2)
+- [計画確定値との適合検査](#計画確定値との適合検査)
+- [5. 現金口座対応（#375。米国口座種別の計画 ADR と、口座種別の観測供給の実装 ADR）— 口座種別 × 市場 × 商品種別](#5-現金口座対応375米国口座種別の計画-adr-と口座種別の観測供給の実装-adr-口座種別--市場--商品種別)
+- [6. 現金口座対応 — GFV 回避ガードと GFV 回数（境界値）](#6-現金口座対応--gfv-回避ガードと-gfv-回数境界値)
+- [7. 現金口座対応 — 否定形（**本 issue の主眼**）](#7-現金口座対応--否定形本-issue-の主眼)
+- [8. GFV 発生回数の自前計数（#425。GFV 計数の計画 ADR の決定 2）](#8-gfv-発生回数の自前計数425gfv-計数の計画-adr-の決定-2)
+- [テストデータ](#テストデータ)
+- [未カバー・実施予定](#未カバー実施予定)
+- [関連仕様](#関連仕様)
+- [未決事項](#未決事項)
 
 > 全面再実装（[#344](https://github.com/endazon/ai-stock-trading/issues/344)）の
 > [#332](https://github.com/endazon/ai-stock-trading/issues/332) が扱う取引ガードのテスト仕様である。
-> **相場操縦パターン検知の写像表は [FR-19_manipulation-detection-tests](./FR-19_manipulation-detection-tests.md) を
+> **相場操縦パターン検知の写像表は [相場操縦パターン検知のテスト仕様書](./FR-19_manipulation-detection-tests.md) を
 > 引き続き正とし**、本書は再実装で確定した規則（商品種別の 3 値化・ガードの適用範囲・
 > 差金決済ガードの日本株現物限定・禁止銘柄の照合規則）を扱う。
 >
-> **2026-08-06 追補（[#375](https://github.com/endazon/ai-stock-trading/issues/375) / ADR-0021 / [IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)）**:
+> **2026-08-06 追補（[#375](https://github.com/endazon/ai-stock-trading/issues/375)。米国口座種別の計画 ADR と、口座種別を観測として供給し不明・食い違い・供給欠如をすべて新規建ての停止へ倒す実装 ADR）**:
 > **米国口座の現金口座対応**（口座種別の照会・差金決済ガードの条件付き適用・GFV 回避ガード・GFV 回数の停止・
 > 信用系の設定不能化）の写像表を §5〜§7 として追加した。**#332 の日本株現物限定は巻き戻していない**ことを
 > 両方向で固定する（T-19-241 / T-19-251）。
 >
-> **2026-08-07 追補（[#425](https://github.com/endazon/ai-stock-trading/issues/425) / ADR-0025 決定2 / [IADR-0165](../adr/IADR-0165_gfv-self-counting-and-settled-cash-source-ban.md)）**:
+> **2026-08-07 追補（[#425](https://github.com/endazon/ai-stock-trading/issues/425)。GFV 計数の計画 ADR の決定 2 と、発生回数を約定の事後検出で自前計数する実装 ADR）**:
 > **GFV 発生回数の自前計数**の写像表を §8 として追加した。**数えているのは「自らのガードをすり抜けた買付」であり、
-> ブローカーが GFV と判定した件数ではない**（両者が一致する保証はない・ADR-0025 §理由）。
-> **`IADR-0153` の fail-closed は覆していない**ことを T-19-296 が固定する。
+> ブローカーが GFV と判定した件数ではない**（両者が一致する保証はない。GFV 計数の計画 ADR の §理由）。
+> **口座種別供給の fail-closed は覆していない**ことを T-19-296 が固定する。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 機能要求（FR）: **FR-19**（取引ガード）／ FR-10（空売り統制との接続）・FR-20（段階別の商品種別＝ #333）は境界
-- ユースケース（UC）: UC-06（ガード設定の変更・強制）
-- 関連 ADR: **ADR-0016**（決定1＝ 3 値化・決定8＝段階解禁・決定13＝空売りは米国株のみ）・
-  **ADR-0007**（ソフト設定・禁止銘柄）・ADR-0009（手仕舞い不停止）
-- 受け入れ基準の所在: `02_requirements/01_requirements.md` FR-19 本文・受け入れ基準（103 行）／
-  `05_trading-assumptions.md` §5（商品種別・差金決済防止・禁止銘柄・発注パターン・米国口座の種別）
+- 機能要求: **取引ガード**。リスク統制（空売り統制との接続）と段階ゲート（段階別の商品種別＝ #333）は境界である。
+- ユースケース: 設定変更（ガード設定の変更・強制）。
+- 関連する計画 ADR: **空売りの段階解禁**（決定 1＝ 3 値化・決定 8＝段階解禁・決定 13＝空売りは米国株のみ）・
+  **取引商品と取引ガード**（ソフト設定・禁止銘柄）・**3 統制の優先順位**（手仕舞い不停止）
+- 受け入れ基準の所在: 計画リポジトリの要求定義（取引ガードの本文・受け入れ基準 103 行）／
+  全体前提条件 §5（商品種別・差金決済防止・禁止銘柄・発注パターン・米国口座の種別）
 
 ## テスト対象・範囲
 
@@ -60,20 +63,20 @@ related_specs:
 | --- | --- | --- |
 | 商品種別 3 値・実効値の解決・ガードの適用範囲 | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` |
 | 差金決済ガードの適用範囲（日本株現物） | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` / `RiskEvaluatorTests.cs` |
-| **口座種別 × 市場 × 商品種別**・GFV 回避・fail-closed（#375） | `RiskManagementService.Domain.Tests` | **`CashAccountControlsTests.cs`** |
-| **現金口座での信用系の設定不能化**（#375） | `RiskManagementService.Application.Tests` / `…Api.Tests` | **`CashAccountSettingsGuardTests.cs`** / **`CashAccountGuardEndpointTests.cs`** |
-| **口座種別の観測の保持・鮮度・供給経路**（#375） | `RiskManagementService.Application.Tests` / `…Infrastructure.Tests` | **`BrokerAccountObservationStoreTests.cs`** / **`BrokerAccountObservedConsumerTests.cs`** |
-| **口座種別の照会と観測の発行**（#375） | `OrderExecutionService.Infrastructure.Tests` | `MoomooBrokerAdapterTests.cs` / `BrokerAvailabilityProbeServiceTests.cs` |
-| **新拒否理由 3 種の序数・クラス分類**（#375） | `AiStockTrading.Shared.Contracts.Tests` | `RejectionReasonOrdinalStabilityTests.cs` / `RejectionReasonClassificationTests.cs` |
+| **口座種別 × 市場 × 商品種別**・GFV 回避・fail-closed | `RiskManagementService.Domain.Tests` | **`CashAccountControlsTests.cs`** |
+| **現金口座での信用系の設定不能化** | `RiskManagementService.Application.Tests` / `…Api.Tests` | **`CashAccountSettingsGuardTests.cs`** / **`CashAccountGuardEndpointTests.cs`** |
+| **口座種別の観測の保持・鮮度・供給経路** | `RiskManagementService.Application.Tests` / `…Infrastructure.Tests` | **`BrokerAccountObservationStoreTests.cs`** / **`BrokerAccountObservedConsumerTests.cs`** |
+| **口座種別の照会と観測の発行** | `OrderExecutionService.Infrastructure.Tests` | `MoomooBrokerAdapterTests.cs` / `BrokerAvailabilityProbeServiceTests.cs` |
+| **新拒否理由 3 種の序数・クラス分類** | `AiStockTrading.Shared.Contracts.Tests` | `RejectionReasonOrdinalStabilityTests.cs` / `RejectionReasonClassificationTests.cs` |
 | 約定到達後に差金決済ガードが拘束すること（#270 回帰） | `RiskManagementService.Infrastructure.Tests` | `MoomooFillControlRegressionTests.cs` |
 | 禁止銘柄の登録内容と照合規則 | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` |
 | 相場操縦パターン禁止（既定・クラス C） | `RiskManagementService.Domain.Tests` / `…Application.Tests` | `TradingGuardProductTypeTests.cs` / `Manipulation/*` |
 | 空売り統制との接続（有効化しても統制は解除されない） | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` / `ShortSellingControlsTests.cs` |
 | 既定値の計画適合（`ProductType.Values` ほか） | `AiStockTrading.PlanConformance.Tests` | `PlanRiskDefaults.cs` / `ActualDefaults.cs` |
-| 画面（SC-02）の商品種別 3 値・危険な緩和の確認 | `frontend`（vitest） | `risk/contracts.test.ts` / `sc02-risk-settings/RiskSettingsPage.guard.test.tsx` |
+| 画面の商品種別 3 値・危険な緩和の確認 | `frontend`（vitest） | `risk/contracts.test.ts` / `sc02-risk-settings/RiskSettingsPage.guard.test.tsx` |
 
-対象外（担当 issue）: 段階別の商品種別強制（#333）・発注先の 2 軸分離（#334）・
-相場操縦しきい値の較正（#251）・空売り文脈の供給元（#342）・信用買いの建玉表現（未起票）。
+対象外（担当 issue）: 段階別の商品種別強制・発注先の 2 軸分離・
+相場操縦しきい値の較正・空売り文脈の供給元・信用買いの建玉表現（未起票）。
 
 ## 3 点セット（テスト戦略 §2）
 
@@ -110,15 +113,15 @@ related_specs:
 | T-19-225 | **別表記**（禁止銘柄） | `aapl` / `AAPL␣` / `␣Aapl` | いずれも `BannedSymbol` | `禁止銘柄は表記差で迂回できない` |
 | T-19-226 | **商品種別の付け替え**（禁止銘柄） | 6457 を現物 / 信用買い / 空売りで発注 | いずれも `BannedSymbol` | `禁止銘柄は商品種別を変えても迂回できない` |
 | T-19-227 | **統制違反の計上汚染** | 商品種別ガードの拒否 | クラス B（計上しない）／禁止銘柄はクラス C（計上する） | `商品種別ガードの拒否は統制違反に計上されない` |
-| T-19-228 | **手仕舞いの封鎖**（逆向きの事故） | 無効な種別（空売り・信用買い）の Close | **承認**される（ADR-0009） | `無効な商品種別でも手仕舞いは止めない` |
+| T-19-228 | **手仕舞いの封鎖**（逆向きの事故） | 無効な種別（空売り・信用買い）の Close | **承認**される | `無効な商品種別でも手仕舞いは止めない` |
 | T-19-229 | **設定の緩和で統制ごと解除** | 商品種別で空売りを有効化 | `ShortSellDisabled` は消えるが `BorrowUnavailable`（フェイルクローズ）で止まる | `空売りを有効化しても専用統制は解除されない` |
 | T-19-230 | **二重の情報源** | 空売り統制値だけを緩める | 有効・無効は変わらない（`Guard.EnabledProductTypes` が単一情報源） | `空売りの有効無効は取引ガードの商品種別だけで決まる` |
-| T-19-231 | 画面からの**危険な緩和**の素通し | SC-02 で信用買い／空売りを有効化 | 確認チェックなしでは保存不可・警告に該当種別が出る | `treats enabling margin-long / short-selling as a dangerous change…`（vitest） |
+| T-19-231 | 画面からの**危険な緩和**の素通し | リスク設定画面で信用買い／空売りを有効化 | 確認チェックなしでは保存不可・警告に該当種別が出る | `treats enabling margin-long / short-selling as a dangerous change…`（vitest） |
 
-## 計画確定値との適合検査（IADR-0127）
+## 計画確定値との適合検査
 
 `ProductType.Values` の既知逸脱（担当 #332）を解消し、レジストリから削除した。
-**赤→緑の実測**（IADR-0127 の機械的証明）:
+**赤→緑の実測**（計画確定値の適合検査による機械的証明）:
 
 | 段階 | 結果 |
 | --- | --- |
@@ -129,7 +132,7 @@ related_specs:
 `Guard.PreventSameDayReentry`（True）・`Guard.ProhibitManipulativeOrderPatterns`（True）は
 **逸脱していなかった**ため、レジストリに登録が無く、`PlanConformanceTests` が常時突き合わせている。
 
-## 5. 現金口座対応（#375・ADR-0021・IADR-0153）— 口座種別 × 市場 × 商品種別
+## 5. 現金口座対応（#375。米国口座種別の計画 ADR と、口座種別の観測供給の実装 ADR）— 口座種別 × 市場 × 商品種別
 
 すべて `RiskManagementService.Domain.Tests/CashAccountControlsTests.cs`（明記のあるものを除く）。
 
@@ -141,7 +144,7 @@ related_specs:
 | T-19-243 | 日本株現物は口座種別に依存しない | 信用口座 × 7203 当日取引済み | 拒否され `SameDayReentry` | `信用口座でも日本株現物の同日再エントリーは拒否する` |
 | T-19-244 | 口座種別**不明**でも日本の規制は効き続ける | 観測 null × {日本, 米国} × 現物 | 日本のみ適用 | `口座種別が不明でも日本株現物への差金決済ガードは効き続ける` |
 | T-19-245 | 口座が対応する商品種別 | {信用, 現金} × 3 種別 | 現金口座は**現物のみ** | `口座が対応する商品種別を口座種別ごとに固定する` |
-| T-19-246 | 既定の口座種別（ADR-0021 決定1） | `TradingDefaults.CreateGuardSettings()` | `AccountType.Margin` | `設定の既定の口座種別は信用口座である` |
+| T-19-246 | 既定の口座種別（米国口座種別の計画 ADR の決定 1） | `TradingDefaults.CreateGuardSettings()` | `AccountType.Margin` | `設定の既定の口座種別は信用口座である` |
 | T-19-247 | 口座種別の**序数不変**（永続化と結合） | `AccountType` | Margin=0 / Cash=1 | `RiskSettingsSerializationAccountTypeTests.口座種別の序数は不変である` |
 | T-19-248 | 拒否理由 3 種の**序数不変** | `RejectionReason` | 25 / 26 / 27（末尾追加） | `RejectionReasonOrdinalStabilityTests.拒否理由の序数は不変である` |
 
@@ -179,7 +182,7 @@ related_specs:
 | T-19-271 | **決済済み資金を代替値で埋める** | 現金口座を照会 | `SettledCashInBase` / `GoodFaithViolationCount` はいずれも `null` | `MoomooBrokerAdapterTests.決済済み資金とGFV回数は供給しない` |
 | T-19-272 | **古い観測で発注する** | 記録から 2 時間経過 | スナップショットに載らない（＝新規建てが止まる） | `BrokerAccountObservationStoreTests.失効した観測はスナップショットに載らない` |
 | T-19-273 | **逆行する観測で古い種別へ戻す** | 現金口座の観測後に、より古い時刻の信用口座観測 | 現金口座のまま | `BrokerAccountObservationStoreTests.逆行する観測は無視する` / `BrokerAccountObservedConsumerTests.順序が入れ替わって届いても新しい観測が保たれる` |
-| **T-19-274** | **手仕舞いを止めてしまう**（FR-10 の不変条件・ADR-0009） | 観測 null × Close × {現物, 信用買い, 空売り買戻し} | **承認**される | `口座種別が不明でも手仕舞いは止めない` |
+| **T-19-274** | **手仕舞いを止めてしまう**（リスク統制の不変条件） | 観測 null × Close × {現物, 信用買い, 空売り買戻し} | **承認**される | `口座種別が不明でも手仕舞いは止めない` |
 | T-19-275 | 口座種別を切り替えた後に信用建玉が閉じられない | 現金口座 × 信用買いの Close | **承認**される | `現金口座でも信用建玉の手仕舞いは止めない` |
 | T-19-276 | 決済済み資金・GFV 回数の未供給で手仕舞いが止まる | 現金口座 × 資金 null / 回数 null × Close | **承認**される | `決済済み資金が未供給でも手仕舞いの買戻しは止めない` / `GFV発生回数が未供給でも手仕舞いは止めない` |
 | T-19-277 | 現金口座で**売却**まで止めてしまう | 現金口座 × 資金 null × Sell の新規建て | `CashAccountSettlementHold` を含まない | `決済済み資金が未供給でも現金口座の売却は本ガードで止めない` |
@@ -192,11 +195,11 @@ related_specs:
 | T-19-284 | 観測が無いのに既定値が入る | イベント 0 件 | ストアは `null` を返す | `BrokerAccountObservedConsumerTests.観測が届かなければ口座種別は未確定のままである` |
 | T-19-285 | 旧行（口座種別なし）の読み方 | `configuredAccountType` キーの無い設定 JSON | 信用口座として読む（統制は照会結果で切り替わるため緩まない） | `RiskSettingsSerializationAccountTypeTests.口座種別を持たない旧行は信用口座として読まれる` |
 
-## 8. GFV 発生回数の自前計数（#425・ADR-0025 決定2・IADR-0165）
+## 8. GFV 発生回数の自前計数（#425。GFV 計数の計画 ADR の決定 2）
 
 > **★ 何を数えているのかを取り違えないこと。** 自前で数えられるのは**自らのガードをすり抜けた買付**だけであり、
 > **ブローカー側が独自に GFV と判定した事象は捕捉できない**。本計数は「ブローカーの GFV カウンタの写し」ではなく
-> 「**自らのガードの失敗回数**」であり、**両者が一致する保証はない**（ADR-0025 §理由）。
+> 「**自らのガードの失敗回数**」であり、**両者が一致する保証はない**（同計画 ADR の §理由）。
 
 ### 8.1 しきい値・「0 件」と「未供給」の区別（境界値）
 
@@ -215,11 +218,11 @@ related_specs:
 
 | ID | 塞ぐ迂回／守る不変条件 | 状況 | 期待 | テスト |
 | --- | --- | --- | --- | --- |
-| T-19-296 | **`IADR-0153` の fail-closed を解除してしまう** | 現金口座 × 計数 0 件（供給あり）× 決済済み資金 **null** | 拒否され `CashAccountSettlementHold`。**現金口座はなお使えない**（ADR-0025 決定3） | `自前計数を供給しても決済済み資金が無い限り現金口座の買付は止まる` |
+| T-19-296 | **口座種別供給の fail-closed を解除してしまう** | 現金口座 × 計数 0 件（供給あり）× 決済済み資金 **null** | 拒否され `CashAccountSettlementHold`。**現金口座はなお使えない**（GFV 計数の計画 ADR の決定 3） | `自前計数を供給しても決済済み資金が無い限り現金口座の買付は止まる` |
 | T-19-297 | **計数が分からないのに通す**（fail-open） | 現金口座 × 計数 **未供給** | 拒否され `GoodFaithViolationLimitReached` | `計数が未供給なら現金口座の新規建てを拒否する` |
 | T-19-298 | **未供給を `CashAccountSettlementHold` へ写像する**（解除条件の取り違え） | 同上（決済済み資金は供給あり） | `GoodFaithViolationLimitReached` を含み `CashAccountSettlementHold` を**含まない** | `計数の未供給を決済保留へ写像しない` |
 | T-19-299 | 上記が「常に拒否」ではない（トートロジー防止） | 現金口座 × 計数 0 件 × 決済済み資金あり | 承認 | `計数が0件なら本統制では新規建てを止めない` |
-| T-19-300 | 手仕舞いを止めてしまう（ADR-0009 の不変条件） | 現金口座 × 計数 未供給 × Close | **承認**される | `計数が未供給でも手仕舞いは止めない` |
+| T-19-300 | 手仕舞いを止めてしまう（3 統制の優先順位を定めた計画 ADR の不変条件） | 現金口座 × 計数 未供給 × Close | **承認**される | `計数が未供給でも手仕舞いは止めない` |
 | T-19-301 | **信用口座が本統制の影響を受ける**（否定形） | 信用口座 × 計数 {未供給, 3} | いずれも承認 | `信用口座では計数が未供給でも新規建てを止めない` / `信用口座では計数が停止基準に達していても新規建てを止めない` |
 
 ### 8.3 計数の対象事象（＝ガードが拒否しようとする事象と同一であること）
@@ -231,7 +234,7 @@ related_specs:
 | T-19-304 | 検出の条件表（口座種別 × 方向 × 建玉効果 × 資金） | 6 通り | 現金 × Buy × Open × 説明不能 のときだけ true | `未決済資金による買付だけをGFV発生として数える` |
 | T-19-305 | **口座種別が不明なのに数える**（否定形） | 観測 null × Buy × Open | 数えない（信用口座の通常の売買が違反として積み上がるのを防ぐ） | `口座種別を確認できていなければGFV発生として数えない` |
 
-### 8.4 供給経路・計上単位・監査（FR-11）
+### 8.4 供給経路・計上単位・監査
 
 `RiskManagementService.Application.Tests/GoodFaithViolationCountingServiceTests.cs` および
 `RiskManagementService.Infrastructure.Tests/GoodFaithViolationCountingConsumerTests.cs`。
@@ -247,7 +250,7 @@ related_specs:
 | T-19-312 | 2 件で停止基準に達する | 記録を 0 → 1 → 2 件 | 2 件目で `BlocksNewEntry` | `記録が2件に達したら新規建ての停止基準に達する` |
 | T-19-313 | **台帳が未結線なら未供給**（fail-closed。0 件で埋めない） | ストア注入なし | `GoodFaithViolations` が `null` | `台帳が結線されていなければ未供給のまま渡す` |
 | T-19-314 | 台帳が結線されていれば **0 行でも「0 件」** | ストア注入・行なし | `Observed(0)` | `台帳が結線されていれば0件でも供給する` |
-| T-19-315 | **監査（FR-11）へ運ばれる** | 現金口座の買付が約定 | `GoodFaithViolationRecorded` を発行・取引日は**米国東部時間** | `未決済資金による買付は記録され監査イベントが発行される` |
+| T-19-315 | **監査へ運ばれる** | 現金口座の買付が約定 | `GoodFaithViolationRecorded` を発行・取引日は**米国東部時間** | `未決済資金による買付は記録され監査イベントが発行される` |
 | T-19-316 | 監査を無関係な事象で汚さない（否定形） | 信用口座／観測なし | 発行しない | `信用口座の約定では記録も発行もしない` / `口座種別を確認できていなければ記録も発行もしない` |
 | T-19-317 | **監査の要約が限界を明記する** | `GoodFaithViolationRecorded` | 「自前計数」「ガードの失敗」「ブローカーの GFV 判定とは一致しない」「未供給」を含む | `AuditEntryFactoryTests.GoodFaithViolationRecorded_は自前計数でありブローカー判定と一致しないことを明記する` |
 
@@ -297,9 +300,9 @@ related_specs:
 
 ## テストデータ
 
-- equity: `TradingDefaults.InitialCapital`（＝ $3,000。#364 / IADR-0152 決定3 で基準通貨が USD になり、参照レートによる 1 点換算は廃止した）
+- equity: `TradingDefaults.InitialCapital`（＝ $3,000。#364 で基準通貨が USD になり、参照レートによる 1 点換算は廃止した）
 - 銘柄: `AAPL`（米国株）／ `7203`（日本株・禁止リスト外）／ `6457`・`6902`・`6502`（計画登録の禁止銘柄）
-- 空売りの成立条件は米国株・株価 $5.00 以上・逆指値つき（ADR-0016 決定7・決定2(b)）
+- 空売りの成立条件は米国株・株価 $5.00 以上・逆指値つき（空売り段階解禁の計画 ADR の決定 7・決定 2(b)）
 
 ## 未カバー・実施予定
 
@@ -308,59 +311,77 @@ related_specs:
 | 段階別の商品種別強制（Stage 2＝現物のみ） | #333（本ガードの有効集合と AND で効かせる） |
 | 相場操縦検知のしきい値較正 | #251（既存の検知アルゴリズムのテストは `Manipulation/*` が担う） |
 | 信用買いの建玉・金利・必要証拠金 | 未起票（実弾解禁は Stage 3） |
-| ~~禁止銘柄・市場ガードの手仕舞い適用の是非~~ | **✅ 2026-08-04 裁定済み（ADR-0007 追補）＝選択肢 A（全注文適用）。実装は現状のままで一致**。適用範囲は既存テストで固定済みであり、追加のテストは不要（#380） |
-| **現金口座の GFV 回避ガードが実データで作動すること**（#375） | **決済済み資金の情報源が moomoo API に存在しない**（IADR-0153 決定4）。判定は境界値テストで固定済みだが、**実運用では常に「未供給」側で止まる**。`TrdFlowSummary` からの導出は未検証（計画へ環流済み） |
-| **GFV 発生回数の追跡と 2 回目の警告通知**（#375） | 回数の情報源が無く、Discord への通知も未結線。判定（純関数）のみテスト済み |
-| **現金口座を選択した状態の E2E**（#375） | 上記 2 件が解決するまで到達できない。SC-02 に口座種別を選ぶ UI も無い（本 issue の範囲外） |
+| ~~禁止銘柄・市場ガードの手仕舞い適用の是非~~ | **✅ 2026-08-04 裁定済み（取引ガードの計画 ADR の追補）＝選択肢 A（全注文適用）。実装は現状のままで一致**。適用範囲は既存テストで固定済みであり、追加のテストは不要 |
+| **現金口座の GFV 回避ガードが実データで作動すること** | **決済済み資金の情報源が moomoo API に存在しない**（口座種別供給の決定 4）。判定は境界値テストで固定済みだが、**実運用では常に「未供給」側で止まる**。`TrdFlowSummary` からの導出は未検証（計画へ環流済み） |
+| **GFV 発生回数の追跡と 2 回目の警告通知** | 回数の情報源が無く、Discord への通知も未結線。判定（純関数）のみテスト済み |
+| **現金口座を選択した状態の E2E** | 上記 2 件が解決するまで到達できない。リスク設定画面に口座種別を選ぶ UI も無い（本 issue の範囲外） |
 
 ## 関連仕様
 
-- 機能仕様書: [FR-19 取引ガード](../functional/FR-19_trading-guard.md)・[FR-10 リスク統制](../functional/FR-10_risk-controls.md)
-- 作業仕様書: [20260804_332_trading-guards](../specs/20260804_332_trading-guards.md)・[20260806_375_cash-account-support](../specs/20260806_375_cash-account-support.md)
-- 実装 ADR: [IADR-0153](../adr/IADR-0153_broker-account-type-supply-and-fail-closed.md)（#375・口座種別の供給と fail-closed）・
-  [IADR-0132](../adr/IADR-0132_product-type-tri-state-and-guard-scope.md)・
-  [IADR-0131](../adr/IADR-0131_short-selling-controls-fail-closed.md)
-- テスト仕様書: [FR-19 相場操縦パターン検知](./FR-19_manipulation-detection-tests.md)・
-  [FR-10 リスク統制（再実装）](./FR-10_risk-controls-tests.md)・[FR-10 リスクガードコア](./FR-10_risk-guard-core-tests.md)
+- 機能仕様書: [取引ガード](../functional/FR-19_trading-guard.md)・[リスク統制](../functional/FR-10_risk-controls.md)
+- 作業仕様書: 作業仕様書: 取引ガードの再実装・仕様書: 米国口座の現金口座対応（#375）
+- 実装 ADR: 口座種別を観測として供給し、不明・食い違い・供給欠如をすべて新規建ての停止へ倒す（#375）／
+  商品種別は 3 値を単一情報源とし、実効値で照合する（ガードの適用範囲）／
+  空売り専用統制は「新規売り建て」を起点に判定し、外部照会が欠けたら通さない
+- テスト仕様書: [相場操縦パターン検知](./FR-19_manipulation-detection-tests.md)・
+  [リスク統制（再実装）](./FR-10_risk-controls-tests.md)・[リスクガードコア](./FR-10_risk-guard-core-tests.md)
 
 ## 未決事項
 
-- 差金決済ガードの適用範囲を計画本文（FR-19）が「日本株の現物取引」と明記している一方、
-  06_daytrading-review §2.2 には「日本の差金決済禁止は moomoo の米国株現物にも適用される」という
-  2026-07 時点の調査記述が残る。**口座種別の裁定（2026-07-31・planning#81）と FR-19 の
+- 差金決済ガードの適用範囲を計画本文が「日本株の現物取引」と明記している一方、
+  計画のデイトレード方針レビュー §2.2 には「日本の差金決済禁止は moomoo の米国株現物にも適用される」という
+  2026-07 時点の調査記述が残る。**口座種別の裁定（2026-07-31）と取引ガードの要求の
   2026-08-01 改訂が新しく、実装はそちらに従った**。§2.2 の記述の更新要否は計画側の判断に委ねる。
-  → 2026-08-04 に計画へ環流した（[feedback/20260804_fr19-guard-scope.md](../../feedback/20260804_fr19-guard-scope.md)
-  論点 3）。あわせて論点 1（商品種別ガードの Open 限定の明示化）・論点 2（禁止銘柄ガードの
+  → 2026-08-04 に計画へ環流した（2026-08-04 の環流記録 論点 3）。あわせて論点 1（商品種別ガードの Open 限定の明示化）・論点 2（禁止銘柄ガードの
   Close 適用の裁定）も同文書で環流している。
-  → **✅ 3 論点とも 2026-08-04 に裁定済み**（ADR-0007 追補。論点 1＝Open のみ／論点 2＝全注文／論点 3＝§2.2 更新済み）。
-  **いずれも実装の変更は不要**であった（#380）。
-  → **2026-08-06 に §2.2 の記述も環流の対象へ加えた**（[feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md](../../feedback/20260806_adr0021-rejection-reasons-and-settled-cash.md)
-  論点 3）。ADR-0021 により「米国株では GFV が発生しない」は**信用口座に条件づけられた命題**になったため、
+  → **✅ 3 論点とも 2026-08-04 に裁定済み**（取引ガードの計画 ADR の追補。論点 1＝Open のみ／論点 2＝全注文／論点 3＝§2.2 更新済み）。
+  **いずれも実装の変更は不要**であった。
+  → **2026-08-06 に §2.2 の記述も環流の対象へ加えた**（2026-08-06 の環流記録 論点 3）。
+  米国口座種別の計画 ADR により「米国株では GFV が発生しない」は**信用口座に条件づけられた命題**になったため、
   §2.2 の「米国株現物にも適用される」という記述は**現金口座については正しい**。3 文書の無条件の記述を
   条件付きへ改めることを提案している。
 
 
-### GFV 違反による停止の解除（#464・ADR-0028 決定2/決定3・[IADR-0182](../adr/IADR-0182_gfv-violation-clearing.md)）
+### GFV 違反による停止の解除（#464。記録は消さず解除を追記する）
 
-**解除は「消す」ことではない。** 決定1 が「違反記録は失効させない」と定めており、
+**解除は「消す」ことではない。** 解除条件を定めた計画 ADR の決定 1 が「違反記録は失効させない」と定めており、
 解けるのは**停止**であって記録ではない。
 
 | ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
 | --- | --- | --- | --- | --- | --- |
-| T-19-40 | GFV 違反 2 件（停止中） | 解除する | 計数が 0 になり**停止が解ける**。解除した `OrderId` の一覧と残件数が返る | FR-19 | 自動 |
-| T-19-41 | 同上 | 解除後に台帳を照会する | **違反記録 2 件はそのまま残る**（決定1。`GetRecordedBetween` は解除の有無に関わらず全件を返す） | FR-19, FR-11 | 自動（否定形・決定1 の核心） |
-| T-19-42 | GFV 違反 1 件 | 同じ記録を 2 度解除する | 2 度目は**受理されない**（解除対象なし）。件数は狂わず記録も残る | FR-19 | 自動（否定形・冪等） |
-| T-19-43 | GFV 違反 1 件 | 理由を空（空白のみ・未指定）で解除する | **受理せず解除行を 1 件も書かない**（決定2「原因の是正が済んでいることの確認を伴う」） | FR-19, FR-11 | 自動（否定形） |
-| T-19-44 | 停止していない | 解除する | **422**（成功に見せない）。「解除した」と記録すると**何も起きていない操作が監査上の事実になる** | FR-19, FR-11 | 自動（否定形） |
-| T-19-45 | 発生回数が**未供給**（ストア未結線） | 解除する | **拒否は解けない**（ADR-0028 明記。解除は件数にしか作用せず `null` を非 `null` にする手段が無い） | FR-19 | 自動（否定形・最重要） |
-| T-19-46 | 多層認証: DM／許可外の利用者／設定が空 | `/gfv clear` を送る | **すべて拒否し Risk を呼ばない**（閂が「呼んだ後で無視する」形なら統制の解除がサーバ側で起きてしまう） | FR-19, FR-14 | 自動（否定形） |
-| T-19-47 | 確認フレーズが不一致／未入力／**未設定** | 同上 | **すべて拒否し Risk を呼ばない**。未設定を「フレーズ不要」と解釈しない（安全既定） | FR-19, FR-14 | 自動（否定形） |
-| T-19-48 | `/killswitch`・`/pause`・`/stage promote 2`・`/gfv`（副コマンド欠落）・typo | GFV 解除ハンドラへ渡す | **すべて実行しない**（種別を絞らないと別種のコマンドが解除経路へ落ちる） | FR-19, FR-14 | 自動（否定形） |
-| T-19-49 | サービスロール（trading-service）／未認証 | 解除エンドポイントを叩く | **403 / 401**（生成AI・自動処理が統制を解けない。IADR-0051 最小権限） | FR-19, NFR | 自動（否定形） |
-| T-19-50 | 解除を実行 | 監査エントリを見る | **誰が・いつ・どの記録に対して**＋**残件数**が残る。要約に「**違反記録そのものは失効しません**」が含まれる（解けたのは停止であって記録ではない） | FR-11 | 自動 |
-| T-19-51 | 解除の理由が空（空白のみ・未入力） | `/gfv clear` の確認モーダルを送信する | **拒否し Risk を呼ばない**。**定型文で埋めない**——決定3 により Discord が唯一の窓口であるため、定型文にすると**全解除の理由が同一文字列になり「なぜ解除したか」が監査から復元できない** | FR-19, FR-11 | 自動（否定形） |
-| T-19-52 | 利用者が理由を入力 | 同上 | 入力した理由が**そのまま**監査へ渡る（操作者も併記される） | FR-11 | 自動 |
-| T-19-53 | 許可外の利用者 | `/gfv` を実行する | **確認ボタンすら出さない**（kill switch / pause / stage と同水準。ハンドラ側の閂だけに頼ると破壊的操作の窓口が許可外へ露出する） | FR-19, FR-14 | 手動（Gateway 経路） |
-| T-19-54 | BFF を起動する | 登録済みルートを `EndpointDataSource` から列挙し想定集合と突合する | **完全一致**。**ホワイトリスト方式では「増えても赤くならない」**ため網羅突合にする。ADR-0028 決定3（画面からは解除できない）の回帰ガードであり、`good-faith-violation` を含むルートが無いことも個別に固定する | FR-19, SC-02, SC-03 | 自動（否定形・構造） |
-| T-19-55 | 違反 2 件・owner | 解除エンドポイントを叩く | **200**。解除した `OrderId` の一覧と残件数を返し、**`GoodFaithViolationsCleared` がバス発行される**。**発行側を検査しないと `AuditEntryFactory` が緑でも Risk が一度も発行していない状態を検知できない** | FR-11 | 自動（供給経路） |
-| T-19-56 | 解除対象なし | 同上 | **発行しない**（受理されない操作を監査上の事実にしない） | FR-11 | 自動（否定形） |
+| T-19-40 | GFV 違反 2 件（停止中） | 解除する | 計数が 0 になり**停止が解ける**。解除した `OrderId` の一覧と残件数が返る | —| 自動 |
+| T-19-41 | 同上 | 解除後に台帳を照会する | **違反記録 2 件はそのまま残る**（決定 1。`GetRecordedBetween` は解除の有無に関わらず全件を返す） | —| 自動（否定形・決定 1 の核心） |
+| T-19-42 | GFV 違反 1 件 | 同じ記録を 2 度解除する | 2 度目は**受理されない**（解除対象なし）。件数は狂わず記録も残る | —| 自動（否定形・冪等） |
+| T-19-43 | GFV 違反 1 件 | 理由を空（空白のみ・未指定）で解除する | **受理せず解除行を 1 件も書かない**（決定 2「原因の是正が済んでいることの確認を伴う」） | —| 自動（否定形） |
+| T-19-44 | 停止していない | 解除する | **422**（成功に見せない）。「解除した」と記録すると**何も起きていない操作が監査上の事実になる** | —| 自動（否定形） |
+| T-19-45 | 発生回数が**未供給**（ストア未結線） | 解除する | **拒否は解けない**（同計画 ADR が明記。解除は件数にしか作用せず `null` を非 `null` にする手段が無い） | —| 自動（否定形・最重要） |
+| T-19-46 | 多層認証: DM／許可外の利用者／設定が空 | `/gfv clear` を送る | **すべて拒否し Risk を呼ばない**（閂が「呼んだ後で無視する」形なら統制の解除がサーバ側で起きてしまう） | —| 自動（否定形） |
+| T-19-47 | 確認フレーズが不一致／未入力／**未設定** | 同上 | **すべて拒否し Risk を呼ばない**。未設定を「フレーズ不要」と解釈しない（安全既定） | —| 自動（否定形） |
+| T-19-48 | `/killswitch`・`/pause`・`/stage promote 2`・`/gfv`（副コマンド欠落）・typo | GFV 解除ハンドラへ渡す | **すべて実行しない**（種別を絞らないと別種のコマンドが解除経路へ落ちる） | —| 自動（否定形） |
+| T-19-49 | サービスロール（trading-service）／未認証 | 解除エンドポイントを叩く | **403 / 401**（生成AI・自動処理が統制を解けない。s2s 認証の最小権限） | —| 自動（否定形） |
+| T-19-50 | 解除を実行 | 監査エントリを見る | **誰が・いつ・どの記録に対して**＋**残件数**が残る。要約に「**違反記録そのものは失効しません**」が含まれる（解けたのは停止であって記録ではない） | —| 自動 |
+| T-19-51 | 解除の理由が空（空白のみ・未入力） | `/gfv clear` の確認モーダルを送信する | **拒否し Risk を呼ばない**。**定型文で埋めない**——決定 3 により Discord が唯一の窓口であるため、定型文にすると**全解除の理由が同一文字列になり「なぜ解除したか」が監査から復元できない** | —| 自動（否定形） |
+| T-19-52 | 利用者が理由を入力 | 同上 | 入力した理由が**そのまま**監査へ渡る（操作者も併記される） | —| 自動 |
+| T-19-53 | 許可外の利用者 | `/gfv` を実行する | **確認ボタンすら出さない**（kill switch / pause / stage と同水準。ハンドラ側の閂だけに頼ると破壊的操作の窓口が許可外へ露出する） | —| 手動（Gateway 経路） |
+| T-19-54 | BFF を起動する | 登録済みルートを `EndpointDataSource` から列挙し想定集合と突合する | **完全一致**。**ホワイトリスト方式では「増えても赤くならない」**ため網羅突合にする。解除の計画 ADR の決定 3（画面からは解除できない）の回帰ガードであり、`good-faith-violation` を含むルートが無いことも個別に固定する | —| 自動（否定形・構造） |
+| T-19-55 | 違反 2 件・owner | 解除エンドポイントを叩く | **200**。解除した `OrderId` の一覧と残件数を返し、**`GoodFaithViolationsCleared` がバス発行される**。**発行側を検査しないと `AuditEntryFactory` が緑でも Risk が一度も発行していない状態を検知できない** | —| 自動（供給経路） |
+| T-19-56 | 解除対象なし | 同上 | **発行しない**（受理されない操作を監査上の事実にしない） | —| 自動（否定形） |
+
+<!-- trace-table:
+row1: FR-19
+row2: FR-19, FR-11
+row3: FR-19
+row4: FR-19, FR-11
+row5: FR-19, FR-11
+row6: FR-19
+row7: FR-19, FR-14
+row8: FR-19, FR-14
+row9: FR-19, FR-14
+row10: FR-11
+row11: FR-19, FR-11
+row12: FR-11
+row13: FR-19, FR-14
+row14: FR-19, SC-02, SC-03
+row15: FR-11
+row16: FR-11
+-->

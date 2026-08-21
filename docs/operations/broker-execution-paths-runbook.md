@@ -2,33 +2,31 @@
 title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomoo SIMULATE）
 type: runbook
 status: draft
-related_ids:
-  - FR-05
-  - FR-12
-  - ADR-0002
-  - IADR-0016
-  - IADR-0056
-  - IADR-0060
-  - IADR-0111
-author: endazon (with Claude Code)
 created: 2026-07-29
-updated: 2026-07-29
-plan_refs:
-  - "../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md"
+updated: 2026-08-21
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: [FR-05, FR-12]
+adrs: [ADR-0002]
+iadrs: [IADR-0016, IADR-0056, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction]
+issues: [#132, #268, #269, #270]
+-->
+
 
 # Runbook: 発注経路の区別と識別（paper ＝内蔵擬似約定 / moomoo SIMULATE ＝OpenD 経由）
 
 > リポジトリ単位の運用 Runbook。**「約定した」と見えたものが、どちらの経路の約定なのか**を取り違えないための
-> 対比・識別手順を定める。起点: [#268](https://github.com/endazon/ai-stock-trading/issues/268) /
-> [ADR-0002](../../planning/projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md)（証券会社連携）。
+> 対比・識別手順を定める。起点は [#268](https://github.com/endazon/ai-stock-trading/issues/268) と、
+> 証券会社連携を定めた計画 ADR である。
 >
 > ⚠️ **どちらの経路も実弾ではない。** 実弾（`TrdEnv_Real`）は多重の閂で拒否される
 > （[実弾切替 Runbook](live-trading-cutover-runbook.md) が単一情報源。本書「実弾には行かない」節も参照）。
 
 ## なぜこの文書があるか
 
-検証中に「SIMULATE で発注したのに moomoo 側に何も届かない」という取り違えが起きた（#268）。
+検証中に「SIMULATE で発注したのに moomoo 側に何も届かない」という取り違えが起きた。
 両者は**どちらも「実弾ではない」**が、**約定の主体・残高・注文履歴の所在がまったく別**である。
 
 - `broker.tier=paper`（既定・`Broker__Provider=paper`）は **AST プロセス内蔵の `PaperBrokerAdapter`** による擬似約定で、
@@ -48,7 +46,7 @@ paper の擬似約定を moomoo 模擬口座の残高・履歴で探しても**�
 | 状態遷移 | 発注＝即 `Filled`（`CompletedAt` も同時刻）。不正注文（数量/価格 ≤ 0）は `Rejected` | 発注直後は `Accepted`（moomoo の `Submitted`）。約定は**後追い**で `PartiallyFilled` / `Filled` |
 | 残高の所在 | AST の内部台帳のみ（risk-management の `trade_fills` を起点とする射影）。**現金・建玉は仮想** | **moomoo 模擬口座の残高・建玉が権威**。AST の台帳は現状これを取り込まない（[#270](https://github.com/endazon/ai-stock-trading/issues/270)） |
 | 注文履歴の確認先 | order-execution DB の `executed_orders` / `order_lifecycle_events`、および `OrderExecuted` イベント | 上記に加えて **moomoo アプリ / OpenD の注文照会**（moomoo 側が権威） |
-| 訂正・取消 | 訂正・取消の口（`IOrderAmendmentBroker`）を**paper だけが実装**する（ただし既定の即時約定では常に終端のため成立しない） | **その口を実装しない**＝訂正・取消の配管（`OrderAmendmentService`）を構成上そもそも登録しない（fail-safe・[IADR-0067](../adr/IADR-0067_order-lifecycle-telemetry.md)） |
+| 訂正・取消 | 訂正・取消の口（`IOrderAmendmentBroker`）を**paper だけが実装**する（ただし既定の即時約定では常に終端のため成立しない） | **その口を実装しない**＝訂正・取消の配管（`OrderAmendmentService`）を構成上そもそも登録しない（fail-safe。訂正・取消の口はペーパー専用ポートに閉じるという決定による） |
 | 前提（運用） | 無し（起動するだけ） | **OpenD 常駐＋ログイン済み**、`moomoo-credentials` / `moomoo-rsa` Secret |
 | 実弾か | いいえ（そもそも外へ出さない） | いいえ（`TrdEnv_Simulate` 固定） |
 
@@ -58,7 +56,7 @@ paper の擬似約定を moomoo 模擬口座の残高・履歴で探しても**�
 
 ## どの設定でどちらになるか
 
-Helm では**単一スイッチ `broker.tier`**（[IADR-0111](../adr/IADR-0111_broker-tier-selection.md)）で選ぶ。
+Helm では**単一スイッチ `broker.tier`**（ブローカー選択は provider × environment の直交 2 軸で表現する）で選ぶ。
 アプリ側は provider（証券会社）× environment（取引環境）の 2 キーで受ける。環境変数化は `:` を `__` に置換する。
 
 | `broker.tier` | 注入される env | 経路 |
@@ -128,7 +126,7 @@ FROM executed_orders ORDER BY "ExecutedAt" DESC LIMIT 20;
 moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `orderId=` と同じ番号の注文がある。
 
 - **注文の備考（remark）に `DecisionId` が入る**。ハイフン無しの 32 桁 hex（`Guid` の `"N"` 書式）で、
-  AST 側の `executed_orders."DecisionId"` と 1 対 1 に対応する（[IADR-0092](../adr/IADR-0092_reservation-broker-probe-moomoo.md)）。
+  AST 側の `executed_orders."DecisionId"` と 1 対 1 に対応する（Reserved 滞留の実照会プローブが moomoo の remark で突合する）。
   これが AST の判断と moomoo の注文を突き合わせる唯一のキーである。
 - **moomoo アプリに何も無い＝paper で回っていた**、が最も多い原因である（既定が paper のため）。
 
@@ -144,7 +142,7 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
    ```
 
    dev は `deploy/opend/k8s` の生 manifest、本番配備は chart の `opend.enabled=true`
-   （[IADR-0060](../adr/IADR-0060_opend-production-cutover-gates.md)）。
+   （OpenD 本番化は「既定 no-op の整備」として先行し、切替はゲート＋チェックリストで人手に残す）。
    無人再ログインの成立条件は「デバイス信頼の永続化（PVC）＋ egress IP の安定（＝ノード固定）」である。
 2. **資格情報**: Secret `moomoo-credentials`（`login-account` / `login-pwd-md5`）。
 3. **RSA 秘密鍵**: Secret `moomoo-rsa`（OpenD と**同一の鍵**）。cross-network（worker → opend）の trade は暗号化必須で、
@@ -165,7 +163,7 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
 
 | # | 閂 | 実体 |
 | --- | --- | --- |
-| 0 | 実弾解禁ゲート | `Broker:Environment=live` なら**起動時停止**。解禁点は `LiveTradingGate.LiveTradingReleased`（`const false`）ただ 1 つ（IADR-0111） |
+| 0 | 実弾解禁ゲート | `Broker:Environment=live` なら**起動時停止**。解禁点は `LiveTradingGate.LiveTradingReleased`（`const false`）ただ 1 つ |
 | 2 | SIMULATE のヘッダ固定 | 発注ヘッダ `TrdHeader` に `TrdEnv_Simulate` を**無条件**でセット（`MMApiMoomooTradeClient.BuildHeader`） |
 | 3 | `TrdEnv=real` の起動時拒否 | `Broker:Moomoo:TrdEnv` が `simulate` 以外なら**起動時停止**（`MoomooBrokerOptions.EnsureSimulate`） |
 | 4 | SIMULATE 口座のみ採用 | OpenD の口座一覧から `TrdEnv_Simulate` の口座だけを掴む（`MMApiMoomooTradeClient.FetchSimulateAccIdAsync`） |
@@ -174,7 +172,7 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
 > 上表は要約である。閂 1（ブローカ選択ゲート＝`Broker:Provider` の既定 paper・未知値停止）を含む全体像・実装箇所・
 > 「config で通せるか」・解禁手順は [実弾切替 Runbook](live-trading-cutover-runbook.md) を**単一情報源**とし、
 > 番号（0〜4）も同表および `LiveTradingGate.cs` のコメントと一致させてある。
-> 解禁には別の実装 ADR と [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md) §3 の前提充足が要る。
+> 解禁には別の実装 ADR と、「moomoo SIMULATE PoC 完了に基づき実アダプタを実装する（実弾は引き続きゲート）」の §3 の前提充足が要る。
 
 ## 既知の制約（検証結果の読み方）
 
@@ -183,7 +181,7 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
 - moomoo は発注時に `Accepted`（未約定）を返し、AST は `OrderExecuted` を**約定数 0** で発行する。
   risk-management の台帳（`trade_fills`）は `Filled` かつ約定数 > 0 のみを記録するため、行が入らない。
 - 約定状態を後から取りに行く定期経路が無い（`GetOrderAsync` の呼び出し元は訂正・取消と、既定無効の
-  リコンサイル [IADR-0074](../adr/IADR-0074_reservation-reconciliation.md) / [IADR-0092](../adr/IADR-0092_reservation-broker-probe-moomoo.md) のみ）。
+  リコンサイル（自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する）のみ）。
 - **帰結**: moomoo 経路では `/risk-controls/sizing-context` の残枠が減らず、統制上限（同日再エントリ・日次発注上限・
   段階残枠）が次サイクルで実効しない。**「残枠が減っていない＝発注されていない」と読んではいけない。**
   moomoo 模擬口座側には注文が積み上がっている。
@@ -194,12 +192,12 @@ moomoo アプリ（模擬取引口座）の注文履歴に、上記ログの `or
 ## 参照
 
 - [実弾（live trading）解禁 Runbook](live-trading-cutover-runbook.md) — 閂の全体像・config キー・解禁手順（単一情報源）
-- [運用仕様書](operations.md) — OpenD の本番切替チェックリスト（#132）
+- [運用仕様書](operations.md) — OpenD の本番切替チェックリスト
 - [chart README](../../deploy/helm/ai-stock-trading/README.md) — 経路B（ローカル SIMULATE）の有効化手順
 - [ローカル実行手順（docker compose）](../how-to/local-run.md)
-- [IADR-0016](../adr/IADR-0016_safe-broker-execution.md)（安全既定のブローカ執行）/
-  [IADR-0056](../adr/IADR-0056_moomoo-simulate-poc-complete-real-gated.md)（SIMULATE PoC 完了・実弾はゲート）/
-  [IADR-0111](../adr/IADR-0111_broker-tier-selection.md)（ブローカ階層）
-- 作業仕様書: [20260729_268_paper-vs-moomoo-simulate-distinction](../specs/20260729_268_paper-vs-moomoo-simulate-distinction.md)
+- 実装ADR: 発注執行は安全既定（ペーパー）とし、moomoo 実発注は PoC までゲートする（安全既定のブローカ執行）／
+  moomoo SIMULATE PoC 完了に基づき実アダプタを実装する（実弾は引き続きゲート）／
+  ブローカー選択は provider × environment の直交 2 軸で表現する（ブローカ階層）
+- 作業仕様書: 仕様書: paper と moomoo SIMULATE の区別の明文化
 - 関連 issue: [#269](https://github.com/endazon/ai-stock-trading/issues/269)（ブローカ階層化・`broker.tier`）/
   [#270](https://github.com/endazon/ai-stock-trading/issues/270)（moomoo 経路で約定が台帳へ反映されない）

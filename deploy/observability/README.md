@@ -1,9 +1,9 @@
 # deploy/observability/ — AST 可観測性資産（opt-in）
 
-> 起点: [ADR-0006](../../planning/projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md)（OTel/Prometheus/Loki 可観測性）/ [IADR-0094](../../docs/adr/IADR-0094_local-infra-observability-gitops.md)（#24）
+> 起点: ADR-0006（計画リポ）（OTel/Prometheus/Loki 可観測性）/ [IADR-0094](../../.ai-context/adr/IADR-0094_local-infra-observability-gitops.md)（#24）
 
 AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）でメトリクス・ログ・トレースを送出する
-（[IADR-0052](../../docs/adr/IADR-0052_k8s-helm-chart-shared-infra.md)）。本ディレクトリは AST 固有の**可観測性資産**を置く。
+（[IADR-0052](../../.ai-context/adr/IADR-0052_k8s-helm-chart-shared-infra.md)）。本ディレクトリは AST 固有の**可観測性資産**を置く。
 バックエンド（Prometheus/Grafana/Loki/Tempo）の**実 stand-up は MSP 側の共有 overlay**（別 PR・MSP/IADR-0077）で行う。
 
 ## 構成

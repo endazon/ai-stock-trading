@@ -15,7 +15,7 @@
       "hash": "3aa012da433dfb1550ae51b403197c9382599029",
       "action": "remap",
       "scope": "FR-19,IADR-0165",
-      "reason": "件名は `feat(FR-19,IADR-0166): …(#435)` だが、当該実装 ADR は #440 で **IADR-0165 へ繰り下げられた**（IADR-0164 の暫定欠番の解消。作業仕様書 docs/specs/20260807_iadr-0164-gap-renumber.md）。マージ時点では IADR-0166 が正しい件名であり誤記ではなかったが、繰り下げ後は docs/adr/ に IADR-0166 が実在せず、CHANGELOG だけが到達不能な ID を指し続ける。改番を両 PR の中で行えなかったのは、プッシュ済みの中間コミットの件名が force push 禁止（CLAUDE.md）で書き換えられず、commit-allowlist もスカッシュマージ後に幻 SHA となり scripts.test.js が develop で赤くなるためである。したがって履歴不変の原則に従い、生成物のみをここで是正する（.claude/rules/traceability.md 「事前防止と事後補正の使い分け」）。**type と desc は変えない** —— 誤っていたのは起点 ID だけであり、種別 feat と要約は当時も現在も正しい。",
+      "reason": "件名は `feat(FR-19,IADR-0166): …(#435)` だが、当該実装 ADR は #440 で **IADR-0165 へ繰り下げられた**（IADR-0164 の暫定欠番の解消。作業仕様書 .ai-context/specs/20260807_iadr-0164-gap-renumber.md）。マージ時点では IADR-0166 が正しい件名であり誤記ではなかったが、繰り下げ後は .ai-context/adr/ に IADR-0166 が実在せず、CHANGELOG だけが到達不能な ID を指し続ける。改番を両 PR の中で行えなかったのは、プッシュ済みの中間コミットの件名が force push 禁止（CLAUDE.md）で書き換えられず、commit-allowlist もスカッシュマージ後に幻 SHA となり scripts.test.js が develop で赤くなるためである。したがって履歴不変の原則に従い、生成物のみをここで是正する（.claude/rules/traceability.md 「事前防止と事後補正の使い分け」）。**type と desc は変えない** —— 誤っていたのは起点 ID だけであり、種別 feat と要約は当時も現在も正しい。",
       "scope_before": "FR-19,IADR-0166"
     },
     {

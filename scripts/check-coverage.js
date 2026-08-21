@@ -23,7 +23,7 @@
  *
  * 外部依存ゼロ（Node 標準モジュールのみ）。floor 未達なら終了コード 1。
  *
- * 測定手順の罠（作業仕様書 docs/specs/20260805_coverage-exclude-generated.md）:
+ * 測定手順の罠（作業仕様書 .ai-context/specs/20260805_coverage-exclude-generated.md）:
  *   1. **CI は Release ビルド**である（ci.yml の build-and-test）。Debug で測ると行数が変わり
  *      CI と違う値が出る（実測: Debug 63.11% vs Release 61.10%）。
  *   2. **bin / obj / TestResults の残骸が混入する**（#353）。過去の実行が残っていると分母・分子とも

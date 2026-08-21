@@ -3,7 +3,7 @@
 # 背景: chart（#122）を追加したが helm lint / helm template を回すジョブが無く、chart 破損を
 # CI で検出できなかった（MSP#268 と同種の「デプロイ資産が CI 未検証」問題）。
 #
-# 設計（詳細は docs/adr/IADR-0058_helm-chart-ci-gate.md）:
+# 設計（詳細は .ai-context/adr/IADR-0058_helm-chart-ci-gate.md）:
 #   - helm バイナリのみで完結させる。--validate / --dry-run=server は実 API サーバ依存のため使わない
 #     （実基盤依存の検査は integration.yml が担う。IADR-0049 / #82 の切り分けを踏襲）。
 #   - 既定値だけでなく、既定 disabled のフィーチャフラグを ON にした派生も描画する。既定値の描画では

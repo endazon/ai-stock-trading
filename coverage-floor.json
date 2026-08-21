@@ -10,7 +10,7 @@
     "除外した内容は check-coverage.js が毎回出力する（黙って分母を縮めない）。",
     "maxExcludedLineShare は除外が効きすぎることへの歯止め（除外行が全体行に占める割合の上限）。",
     "測定は Release ビルドかつ bin/obj/TestResults を清掃した状態で行うこと（罠の詳細は",
-    "docs/specs/20260805_coverage-exclude-generated.md の『測定手順』を参照）。"
+    ".ai-context/specs/20260805_coverage-exclude-generated.md の『測定手順』を参照）。"
   ],
   "lineRateFloor": 0.79,
   "maxExcludedLineShare": 0.35,

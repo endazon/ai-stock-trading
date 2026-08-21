@@ -2,22 +2,22 @@
 title: エラー・メッセージ仕様書
 type: error-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # エラー・メッセージ仕様書
 
 > 任意。エラーコードとメッセージを一元管理する。計画リポジトリの画面設計・ユースケース（例外フロー）を詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 関連ユースケース（UC・例外フロー）/ 画面（SC）:
-- 関連 ADR:
-- 計画書リンク:
 
 ## エラーコード体系
 

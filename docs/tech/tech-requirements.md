@@ -2,26 +2,30 @@
 title: 技術要件書
 type: tech-requirements
 status: draft
-related_ids: [NFR, IADR-0128]
-author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-08-16
-plan_refs:
-  - ../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md
-  - ../../planning/projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md
-  - ../../planning/projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md
+updated: 2026-08-21
+author: endazon (with Claude Code)
 ---
+<!-- trace:
+ids: []
+adrs: [MSP:ADR-0019, MSP:ADR-0030]
+iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128]
+specs: []
+issues: [#352, #353, MSP#266]
+-->
+
 
 # 技術要件書
 
 > 必須ドキュメント（リポジトリ単位）。本リポジトリの技術要件を定める。雛形は `docs/templates/tech_requirements_template.md`。
-> **未記入のまま放置しない**。技術スタック・アーキテクチャ・非機能の実現方針を埋めること。確定判断は実装ADR（`docs/adr/`）に残す。
+> **未記入のまま放置しない**。技術スタック・アーキテクチャ・非機能の実現方針を埋めること。確定判断は実装ADR（`.ai-context/adr/`）に残す。
 
-## 起点となる計画書（トレーサビリティ）
+## 本書が受け持つ範囲
 
-- 技術検討（06_technical）: platform [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed・§プロジェクト構成）
-- 関連 ADR / 非機能要件（NFR）: platform ADR-0030（アプリ層ライブラリ標準）・ADR-0019（ユニット第一構成）／
-  実装 ADR [IADR-0128](../adr/IADR-0128_standard-project-layout.md)（標準プロジェクト構成）・[IADR-0046](../adr/IADR-0046_unit-repo-layout.md)（ユニットリポジトリレイアウト）
+- 技術検討: 基盤（platform）のバックエンドアプリケーションスタック（fixed・§プロジェクト構成）
+- 関連する計画 ADR / 非機能要件: 基盤のアプリ層ライブラリ標準、およびユニット第一のリポジトリ構成／
+  実装側では「標準プロジェクト構成は Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現し、
+  「ユニットリポジトリレイアウト（ルート直下 `backend/`・import-chain フォールバック props）」を採る。
 
 ## 技術スタック
 
@@ -51,9 +55,9 @@ flowchart TB
 
 ## プロジェクト構成（サービス単位）
 
-platform **ADR-0030** / [12_backend-application-stack](../../planning/projects/microservices-platform/06_technical/12_backend-application-stack.md)（fixed）が定めた 7 標準
+基盤（platform）のアプリ層ライブラリ標準とバックエンドアプリケーションスタック（fixed）が定めた 7 標準
 （`Api` / `Application` / `Domain` / `Infrastructure` / `Contracts` / `SharedKernel` / `Tests`）へ、
-**実体があるものだけを作る**方針で揃える（[IADR-0128](../adr/IADR-0128_standard-project-layout.md)・#353）。
+**実体があるものだけを作る**方針で揃える（#353）。
 旧構成の `<Svc>.Worker`（ホストと技術詳細の同居）は廃止し、`Api` と `Infrastructure` に割った。
 
 ```text
@@ -70,8 +74,8 @@ backend/Services/<Svc>/
 | 標準 | 本リポジトリでの実体 |
 | --- | --- |
 | Api / Application / Domain / Infrastructure | `backend/Services/<Svc>/src/<Svc>.<Layer>`（11 サービス。`Domain` は実体のある 9 サービスのみ） |
-| Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。サービス個別には作らない＝platform ADR-0019 決定 4。サービス間共有のイベント契約の置き場） |
-| SharedKernel | **作らない**（`Result` / `Error` 型が未導入。ADR-0030 の但し書き「過度な共通化は避ける」に従う。導入は別 issue） |
+| Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。サービス個別には作らない＝基盤のユニット第一構成の決定 4。サービス間共有のイベント契約の置き場） |
+| SharedKernel | **作らない**（`Result` / `Error` 型が未導入。基盤のアプリ層ライブラリ標準の但し書き「過度な共通化は避ける」に従う。導入は別 issue） |
 | Tests | `backend/Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,PlanConformance,Integration}.Tests` |
 | （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。7 標準のどの層にも当たらないため第 8 のプロジェクトとして残す |
 
@@ -87,9 +91,9 @@ backend/Services/<Svc>/
 ## 開発・ビルド・テスト・デプロイ
 
 - **ビルド/テスト/整形**: `dotnet build|test backend/backend.slnx` / `dotnet format`（net10.0・**xUnit v3**（`xunit.v3`）+ AwesomeAssertions。実行は VSTest 経路＝`Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` 3.x・#352）。
-- **実行環境（dev）**: docker-compose（IADR-0048）／ ローカル k8s（k3d・Rancher Desktop 内蔵 k3s。MSP#266）。
-- **デプロイ**: Kubernetes（IADR-0052）。Helm chart `deploy/helm/ai-stock-trading`（10 Worker）。共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は MSP `platform-infra` を ExternalName で参照。イメージは `scripts/k8s-local-images.sh`（Rancher=nerdctl / Docker Desktop=k3d import・自動判定）。
-- **moomoo OpenD**: 常駐コンテナ（`deploy/opend/`・IADR-0053・常駐モデル）。
+- **実行環境（dev）**: docker-compose／ ローカル k8s（k3d・Rancher Desktop 内蔵 k3s）。
+- **デプロイ**: Kubernetes。Helm chart `deploy/helm/ai-stock-trading`（10 Worker）。共有インフラ（Postgres/RabbitMQ/Keycloak/otel）は MSP `platform-infra` を ExternalName で参照。イメージは `scripts/k8s-local-images.sh`（Rancher=nerdctl / Docker Desktop=k3d import・自動判定）。
+- **moomoo OpenD**: 常駐コンテナ（`deploy/opend/`。ダウンロード方式の Docker Image を常駐させ、k8s へはオプトイン配備する）。
 - **CI**: lint/build/test/coverage・gitleaks/dependency-review・commit-messages（`.github/workflows/`）。
 
 ## 未決事項

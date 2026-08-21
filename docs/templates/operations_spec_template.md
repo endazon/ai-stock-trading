@@ -2,22 +2,22 @@
 title: 運用仕様書
 type: operations-spec
 status: draft
-related_ids: []
 author: <作成者>
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-plan_refs: []
 ---
+<!-- trace:
+ids: []
+adrs: []
+iadrs: []
+specs: []
+issues: []
+-->
+<!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
 # 運用仕様書
 
 > リポジトリ単位で1つ作成する（必須）。計画リポジトリの非機能要件（運用・保守）を実装・運用の観点で詳細化する。
-
-## 起点となる計画書（トレーサビリティ）
-
-- 非機能要件（NFR・運用/可用性）:
-- 関連 ADR / 技術検討:
-- 計画書リンク:
 
 ## デプロイ
 

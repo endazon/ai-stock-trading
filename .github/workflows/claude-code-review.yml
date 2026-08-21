@@ -83,21 +83,9 @@ jobs:
           # 後段の git push もそのトークンで実行されるため、実装リポへの書き込み
           # 権限が無い PAT だと 403（Permission denied）になる。
 
-      # 計画リポジトリ(project-planning)を submodule 参照している場合のみ有効。
-      # PLANNING_REPO_TOKEN は organization の secret に登録した fine-grained PAT で、
-      # project-planning への Contents: Read 権限のみを付与する。実装リポの push 認証
-      # (GITHUB_TOKEN) とは分離するため、submodule 取得の間だけ一時的に PAT を使い、
-      # 直後に解除して push へ漏れないようにする（.gitmodules が無ければ何もしない）。
-      - name: Fetch planning submodule (read-only PAT)
-        env:
-          SUBMODULE_PAT: ${{ secrets.PLANNING_REPO_TOKEN }}
-        run: |
-          if [ -f .gitmodules ]; then
-            git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "https://github.com/"
-            git submodule sync --recursive
-            git submodule update --init --recursive
-            git config --global --unset-all url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf
-          fi
+      # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。以前ここにあった
+      # 「計画リポジトリ(project-planning)を submodule 参照している場合のみ有効」な submodule
+      # 取得ステップ（read-only PAT を一時的に使う形）は、.gitmodules 自体が撤去されたため削除した。
 
       # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
       # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
@@ -183,7 +171,8 @@ jobs:
           # 既定モデル: 変更可（厳密さ優先なら claude-opus-5）。
           # GitHub MCP ツールはここで許可する（mcp__github__pull_request_review_write 等の
           # 権限拒否はこれで解消する。additional_permissions は使わない）。
-          # Read は計画書（../project-planning）の参照に必要。
+          # Read はリポジトリ内の文書・コードの参照に必要（計画書は本リポジトリから参照
+          # できない。資料再編 ADR-0029 決定 2。planning submodule・隣接クローンとも CI に無い）。
           # 安全性の注記: 下のビルド/テスト許可は PR のコードを**実行**する。fork からの
           # pull_request では secrets が渡らずアクションの認証自体が成立しない（＝実質
           # 同一リポの PR のみが対象）ため既定では許容範囲だが、公開リポジトリで fork の
@@ -201,22 +190,17 @@ jobs:
           #     ため、`node scripts/x.js | tail -5` は先頭が許可済みでも tail で拒否される。
           #     報告に出るのは先頭コマンド名なので、原因が判りにくい形で毎回落ちる。
           #     実装用には `cat` があり、レビュー用にだけ無いのも非対称であった。
-          #   - `git -C planning ls-tree` は許可済みなのに、直下の `git ls-tree` と
-          #     `git submodule status` が無かった。submodule の pin を確認する最も自然な手段であり、
-          #     キット同期 PR のレビューでは毎回要る。いずれも読み取り専用である。
-          # `git submodule` を丸ごと許可しないこと（前方一致で `update` / `add` まで通る）。
+          #   - （旧: submodule の pin 確認用に `git -C planning` 系を列挙していたが、資料再編
+          #     〔ADR-0029 決定 2〕で submodule ごと撤去した。`git submodule` を丸ごと許可しない
+          #     こと〔前方一致で `update` / `add` まで通る〕という設計判断は引き続き有効である。）
           # なお `VAR=1 cmd` 形（環境変数の前置き）は**許可リストでは解決できない**。先頭トークンが
           # `VAR=1` になり前方一致しないためである。`Bash(env:*)` を許すと任意コマンドが通るので
           # 危険であり、プロンプト側で「実行できない。未検証と明記せよ」と指示してある。
           #
           # 【前方一致の落とし穴】Bash の許可は**コマンド文字列の前方一致**である。したがって
-          # `Bash(git log:*)` を許可しても `git -C planning log` には当たらない。planning を
-          # submodule 参照する構成では、pin の進み方・差分・「変更が無いこと」といった
-          # **履歴に関する主張だけ検証できない**状態になる（ファイル内容は Read/Grep で読める）。
-          # そのため読み取り専用サブコマンドを個別に列挙してある。
-          # `Bash(git -C:*)` と一括で許可してはならない（前方一致で `git -C planning push` /
+          # `Bash(git log:*)` を許可しても `git -C <パス> log` には当たらない。
+          # `Bash(git -C:*)` と一括で許可してはならない（前方一致で `git -C <パス> push` /
           # `commit` / `reset` まで通り、書き込み系を外した設計が崩れる）。
-          # 【置換点】submodule のパスが `planning` でない場合は 4 か所とも書き換える。
           #
           # 【記法・最重要】claude_args は**空白区切りで argv へトークン化**される。
           # したがって `--allowedTools Bash(dotnet test:*)` のように 1 ツール 1 行で書くと、
@@ -238,7 +222,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(git -C planning log:*),Bash(git -C planning show:*),Bash(git -C planning diff:*),Bash(git -C planning ls-tree:*),Bash(git -C planning grep:*),Bash(git -C planning rev-parse:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
           # 【プロンプトの書き方】prompt: の中身は毎 PR そのまま送信され課金される。事故の経緯・
           # 実測値の記録は送信されないこの YAML コメント側へ書き、prompt には AI が従う指示だけを
           # 置く（planning#416 の追随。#530）。prompt が禁じる各項目の経緯:
@@ -281,14 +265,11 @@ jobs:
               - **シェルのループ・複合形**（`for` / `while` / `if … then … fi`）。先頭トークンが
                 `for` 等になるため許可リストで表現できず、必ず拒否される。複数ファイルを調べる
                 ときは**1 ファイルずつ個別のコマンドで**実行すること。
-              - **`cd` によるディレクトリ移動**（`cd planning && git log …` の形を含む）。`cd` は
-                許可リストに無いため、後続が許可済みでも先頭で拒否される。submodule の履歴を見る
-                ときは **`git -C planning log / show / diff / ls-tree / grep`** を使うこと（許可済み）。
-              - **`git -C` に絶対パスを渡す形**（`git -C /home/runner/work/… log`）。許可は
-                `Bash(git -C planning log:*)` のように**相対パス `planning` を含む前方一致**で
-                与えてあるため、絶対パスは当たらない。`Bash(git -C:*)` の一括許可は書き込み系まで
-                通るため設計上禁止している。**リポジトリ直下は `git log` 等をそのまま使い、
-                submodule は `git -C planning …` を使うこと**（実測で 2 件の拒否が出た形である）。
+              - **`cd` によるディレクトリ移動**（`cd <サブディレクトリ> && git log …` の形を含む）。
+                `cd` は許可リストに無いため、後続が許可済みでも先頭で拒否される。サブディレクトリの
+                履歴は **`git log -- <パス>`** の形で見ること。
+              - **`git -C` の使用**。資料再編（ADR-0029 決定 2）で submodule が撤去され、`git -C` 系の
+                許可はすべて外した。リポジトリ直下の `git log` / `git show` 等をそのまま使うこと。
             - **パイプは各コマンドが個別に許可判定される。** `git show X | cmp - Y` は `cmp` が
               未許可なら拒否される（前段が許可済みでも通らない）。バイト一致の確認には
               `cmp` / `diff` を許可してあるので、そのまま使ってよい。
@@ -383,9 +364,9 @@ jobs:
             **必ず自分で実走して確かめること**（従来これらは検証されないまま通過していた）。
             セットアップ手順は失敗しても続行する構成のため、実行してエラーになったら
             「環境の不備で未検証」と書けばよい（**推測で ✅ にしない**）。
-            計画書 submodule の**履歴**（pin の進み方・その差分・「変更が無いこと」）についても
-            `git -C planning log / show / diff / ls-tree / grep` で検証できる。PR が submodule の pin に
-            言及している場合は、その主張を実際に確かめること。
+            計画リポジトリ（project-planning）は本リポジトリから参照できない（資料再編
+            ADR-0029 決定 2 で submodule を撤去済み）。PR が計画書の内容に言及している場合、
+            その照合はできないため「未検証（計画リポ参照不可）」と明記すること（推測で ✅ にしない）。
 
             【.claude / CLAUDE.md を変更する PR での注意】
             アクションはセキュリティ上、`.claude` / `CLAUDE.md` / `.mcp.json` 等を統合ブランチ版へ

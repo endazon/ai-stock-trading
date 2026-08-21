@@ -3,3 +3,6 @@ contact_links:
   - name: 計画・仕様に関する相談
     url: https://github.com/endazon/project-planning
     about: 要求・ユースケース・ADR など上流工程の内容は計画リポジトリで議論する。
+  - name: 実装からの環流（計画書の誤り・不足・新たな制約）
+    url: https://github.com/endazon/project-planning/issues/new?template=feedback.yml
+    about: 計画リポジトリの feedback テンプレート（decision-needed ラベル）で起票する。完了記録は計画リポジトリ側 projects/<name>/10_feedback/ に残る。

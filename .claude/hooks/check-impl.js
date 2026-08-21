@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * PostToolUse(Edit|Write) フック: 実装規約チェック（警告のみ・ブロックしない）。
- * - docs 以外のソースを編集したのに作業仕様書（docs/specs/）が無い場合に警告。
+ * - docs 以外のソースを編集したのに作業仕様書（.ai-context/specs/）が無い場合に警告。
  * - docs 配下の .md でフロントマター（先頭 ---）が無い場合に警告。
  * エラー時も常に exit 0。依存ゼロ・安全弁つき。
  */
@@ -24,17 +24,17 @@ function tryGit(args) {
 
 function hasWorkSpec() {
   try {
-    // 作業仕様書は「作業/PR 単位・着手前に必須」（CLAUDE.md）。docs/specs/ に過去の仕様書が
+    // 作業仕様書は「作業/PR 単位・着手前に必須」（CLAUDE.md）。.ai-context/specs/ に過去の仕様書が
     // 蓄積しても判定が形骸化しないよう、現在のブランチで追加された仕様書を数える
     // （統合ブランチとの差分＋未追跡の新規ファイル）。base を解決できない環境では
     // 「1 つでもあれば合格」の従来判定へ退避する（誤検知より見逃しを選ぶ・警告のみのため）。
     const base = BASE_CANDIDATES.find((r) => tryGit(`rev-parse --verify --quiet ${r}`) !== null);
     if (base) {
-      const diffed = tryGit(`diff --name-only --diff-filter=A ${base} -- docs/specs`) || '';
-      const untracked = tryGit('ls-files --others --exclude-standard -- docs/specs') || '';
+      const diffed = tryGit(`diff --name-only --diff-filter=A ${base} -- .ai-context/specs`) || '';
+      const untracked = tryGit('ls-files --others --exclude-standard -- .ai-context/specs') || '';
       return `${diffed}\n${untracked}`.split('\n').some((f) => f.trim().endsWith('.md'));
     }
-    const files = fs.readdirSync('docs/specs');
+    const files = fs.readdirSync('.ai-context/specs');
     return files.some((f) => f.endsWith('.md'));
   } catch (e) { return true; } // ディレクトリが無い等は判定しない（誤検知回避）
 }
@@ -77,7 +77,7 @@ function run(raw) {
   // ソース編集だが作業仕様書が無い
   const isDocs = /(^|\/)docs\//.test(norm);
   if (!isDocs && CODE_EXT.test(norm) && !hasWorkSpec()) {
-    warns.push('作業仕様書（`docs/specs/`）が見つかりません。実装着手前に `/new-spec` で作業仕様書を作成してください（CLAUDE.md の最優先ルール）。');
+    warns.push('作業仕様書（`.ai-context/specs/`）が見つかりません。実装着手前に `/new-spec` で作業仕様書を作成してください（CLAUDE.md の最優先ルール）。');
   }
 
   if (warns.length) {
