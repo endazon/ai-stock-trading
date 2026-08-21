@@ -275,6 +275,9 @@ function selfTest() {
     if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m || ''} ${JSON.stringify(a)} != ${JSON.stringify(b)}`);
   };
 
+  // fetch の Headers を模す（`get` を持つオブジェクト）。実物の Headers は Node 18+ に有るが、
+  // 試験の意図は「`get` で引ける入れ物なら拾えるか」なので最小の模造で足りる。
+  const headersOf = (obj) => ({ get: (k) => (k in obj ? obj[k] : null) });
   const okRun = (a, b, extra) => ({ started_at: a, completed_at: b, status: 'completed', conclusion: 'success', ...extra });
   ok('durationSec: 差を秒で返す', () => eq(durationSec(okRun('2026-01-01T00:00:00Z', '2026-01-01T00:02:00Z')), 120));
   ok('durationSec: 欠損は null', () => eq(durationSec(okRun(null, 'x')), null));
@@ -334,11 +337,10 @@ function selfTest() {
   ok('classifyFailure: 個別コミットの 404 は「その 1 本が消えただけ」', () =>
     eq(classifyFailure(404, { scope: 'commit' }), 'missing'));
   ok('isRateLimited: x-ratelimit-remaining=0 を拾う', () =>
-    eq(isRateLimited(new Map([['x-ratelimit-remaining', '0']]).get ? { get: (k) => (k === 'x-ratelimit-remaining' ? '0' : null) } : null), true));
-  ok('isRateLimited: retry-after を拾う', () =>
-    eq(isRateLimited({ get: (k) => (k === 'retry-after' ? '60' : null) }), true));
+    eq(isRateLimited(headersOf({ 'x-ratelimit-remaining': '0' })), true));
+  ok('isRateLimited: retry-after を拾う', () => eq(isRateLimited(headersOf({ 'retry-after': '60' })), true));
   ok('isRateLimited: 余裕があれば false', () =>
-    eq(isRateLimited({ get: (k) => (k === 'x-ratelimit-remaining' ? '4321' : null) }), false));
+    eq(isRateLimited(headersOf({ 'x-ratelimit-remaining': '4321' })), false));
   ok('isRateLimited: headers が無ければ false', () => eq(isRateLimited(null), false));
   // 🔴 `sort=updated` はマージ後のコメントでも進むため、マージ順とは一致しない。
   ok('sortByMergedAtDesc: merged_at の新しい順に並べ直す', () =>
