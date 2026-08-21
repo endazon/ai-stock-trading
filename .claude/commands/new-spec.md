@@ -34,8 +34,8 @@ allowed-tools: Read, Grep, Glob, Write, Bash(ls:*), Bash(mkdir:*)
 
 1. 先頭トークンを種別として解決する。既知の種別でなければ `work`（作業仕様書）とみなし、全体を起点 ID/概要として扱う。
 2. 対応テンプレート（`docs/templates/<...>`）を読む。
-3. 計画リポジトリ（既定 `../project-planning`、submodule の場合 `planning/`）から、起点 ID に対応する計画書
-   （要求・UC・画面・技術検討・ADR）を読み、各セクションの素案を埋める。
+3. 計画リポジトリ `project-planning`（GitHub URL または隣接クローン `../project-planning`。**読み取り専用**）から、
+   起点 ID に対応する計画書（要求・UC・画面・技術検討・ADR）を読み、各セクションの素案を埋める。
 4. ファイル名を決めて作成する。
    - 通常: `<出力先>/<YYYYMMDD>_<概要のケバブケース>.md`。
    - リポ単位（`tech`/`operations`/`security`/`error`）: 既存があればそれを更新、無ければ既定名（例 `docs/operations/operations.md`）で作成。

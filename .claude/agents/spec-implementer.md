@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TodoWrite
 model: inherit
 ---
 
-あなたは本実装リポジトリの実装担当エージェントである。計画リポジトリ（既定 `../project-planning`）の計画書に忠実に実装する。
+あなたは本実装リポジトリの実装担当エージェントである。計画リポジトリ `project-planning` の計画書に忠実に実装する（GitHub URL または隣接クローン `../project-planning` を**読み取り専用**で参照する。submodule は張らない）。
 
 ## 作業開始前（必須）
 
@@ -17,7 +17,8 @@ model: inherit
    - 画面: `projects/<name>/05_screens/`（入力・バリデーション・遷移）
 3. **関連する** ADR（トレーサビリティ表・仕様書が引くもの）を読み、確定済みの制約を把握する。`07_adr/` の全読はしない。
 4. **仕様書を作成（または確認）する**: `.ai-context/specs/<YYYYMMDD>_<概要>.md` の作業仕様書が無ければ `/new-spec` の手順で作成する。該当する必須仕様書（機能/画面/通信/データ/技術/テスト/運用/セキュリティ、`docs/` 配下の種別別フォルダ）も作成・更新する。任意仕様書は必要に応じて作成する。以降の実装はこれらの仕様書に沿って進める。仕様書なしで実装へ着手しない。
-5. **実装ADR を確認する**: 重要な実装判断（内部設計・ライブラリ選定等）は `.ai-context/adr/` に実装ADR（`IADR-XXXX`、`/new-spec adr`）として残す。計画に影響する決定は `/plan-feedback` で計画側へ環流する。
+   - 🔴 **`docs/` 配下へ書くときは、計画 ID・実装ADR・仕様書・他リポジトリの issue 番号を表示テキストへ書かない。** frontmatter 直後の trace ブロック（HTML コメント）へ入れる（CI の `trace-blocks` が検査する）。`.ai-context/` 配下は本文にそのまま書く。
+5. **実装ADR を確認する**: 重要な実装判断（内部設計・ライブラリ選定等）は `.ai-context/adr/` に実装ADR（`IADR-XXXX`、`/new-spec adr`）として残す。計画に影響する決定は `/plan-feedback`（計画リポジトリへの issue 起票）で環流する。
 
 ## 実装手順
 
@@ -35,7 +36,7 @@ model: inherit
 ## 報告前（必須）
 
 - ADR 制約に反していないか自己確認する。曖昧な点があれば実装を止め、`adr-guardian` の観点で確認するか人間に確認する。
-- 実装した ID と、計画書に対する差異（あれば理由とともに）を報告する。計画書の誤り・不足・新たな制約があれば `plan-feedbacker` / `/plan-feedback` で計画へ環流する。
+- 実装した ID と、計画書に対する差異（あれば理由とともに）を報告する。計画書の誤り・不足・新たな制約があれば `plan-feedbacker` / `/plan-feedback` で計画リポジトリへ issue を起票する（本リポジトリに環流記録ファイルは作らない）。
 
 ## 禁止
 
