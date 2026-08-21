@@ -154,25 +154,64 @@ async function fetchJson(url, token) {
       'X-GitHub-Api-Version': '2022-11-28',
     },
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  if (!res.ok) {
+    const err = new Error(`${res.status} ${res.statusText} for ${url}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
+}
+
+/**
+ * 権限・認証・存在の誤り（＝**直さない限り永久に直らない**失敗）か。
+ *
+ * 🔴 **これを 5xx やネットワーク断と同じ「fail-open」で扱ってはならない。** 本検査器は
+ * 速さの監視なので API が引けないときは緑を返す設計だが、**権限設定を間違えていると
+ * 毎回同じ 403 で早期終了し、監視は一度も働かないまま緑を返し続ける**。
+ * それは本 ADR が「監視が黙って壊れるのは監視が無いより悪い」と書いている事態そのものである。
+ *
+ * 実際、ワークフローの `permissions` は当初 `actions: read` だけだった。スクリプトが叩くのは
+ * **Pulls API（`pull-requests`）と Checks API（`checks`）**であり、別スコープである
+ * （AI レビューが両リポジトリで独立に指摘した）。**その形はこの分岐が無ければ緑のまま素通りする。**
+ */
+function isConfigError(status) {
+  return status === 401 || status === 403 || status === 404;
+}
+
+/**
+ * マージ済み PR を**新しくマージされた順**に並べる。
+ *
+ * 🔴 **`sort=updated` の順をそのまま使わない。** `updated_at` はマージ後のコメント追加でも
+ * 進むため、**古い PR が新しい PR より前に来る**ことがある（AI レビューの指摘）。
+ * 監視は「直近の CI 構成」を見たいので、**`merged_at` で並べ直す**。
+ */
+function sortByMergedAtDesc(prs) {
+  return prs
+    .filter((p) => p && p.merged_at)
+    .sort((a, b) => Date.parse(b.merged_at) - Date.parse(a.merged_at));
 }
 
 async function collect({ repo, token, samples }) {
   const base = `https://api.github.com/repos/${repo}`;
-  const prs = await fetchJson(`${base}/pulls?state=closed&per_page=${samples * 2}&sort=updated&direction=desc`, token);
-  const merged = prs.filter((p) => p.merged_at).slice(0, samples);
+  // per_page を samples の 3 倍取るのは、closed には**マージされずに閉じた** PR が混ざるためである。
+  const prs = await fetchJson(`${base}/pulls?state=closed&per_page=${samples * 3}&sort=updated&direction=desc`, token);
+  const merged = sortByMergedAtDesc(prs).slice(0, samples);
 
   const targetDurations = [];
   const baselineDurations = [];
+  let fetchFailures = 0;
   for (const pr of merged) {
     const sha = pr.head && pr.head.sha;
     if (!sha) continue;
     let runs;
     try {
       runs = await fetchJson(`${base}/commits/${sha}/check-runs?per_page=100`, token);
-    } catch {
-      continue; // 個別の失敗で全体を落とさない
+    } catch (e) {
+      // 🔴 権限・認証の誤りは**握りつぶさない**。握りつぶすと「権限設定が恒久的に誤っている」と
+      // 「単にマージ済み PR が少ない」が**区別できなくなり**、監視は緑のまま一度も働かない。
+      if (isConfigError(e.status)) throw e;
+      fetchFailures += 1; // 一過性（5xx・ネットワーク断）は 1 本落として続ける
+      continue;
     }
     const all = runs.check_runs || [];
     const t0 = checkSetStart(all);
@@ -183,7 +222,7 @@ async function collect({ repo, token, samples }) {
       else if (r.name === BASELINE) baselineDurations.push(d);
     }
   }
-  return { merged: merged.length, targetDurations, baselineDurations };
+  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures };
 }
 
 function selfTest() {
@@ -243,6 +282,33 @@ function selfTest() {
   });
   ok('waitSec: t0 が無ければ null', () =>
     eq(waitSec(okRun('2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z'), null), null));
+
+  // 🔴 AI レビューが両リポジトリで独立に指摘した罠の回帰テスト。
+  // permissions が足りないと 403 で早期終了し、fail-open で**緑のまま永久に働かない**。
+  ok('isConfigError: 401 / 403 / 404 は設定の誤り（赤くする）', () => {
+    eq([401, 403, 404].map(isConfigError), [true, true, true]);
+  });
+  ok('isConfigError: 5xx・不明は一過性（fail-open のまま）', () => {
+    eq([500, 502, 503, undefined, null].map(isConfigError), [false, false, false, false, false]);
+  });
+  // 🔴 `sort=updated` はマージ後のコメントでも進むため、マージ順とは一致しない。
+  ok('sortByMergedAtDesc: merged_at の新しい順に並べ直す', () =>
+    eq(
+      sortByMergedAtDesc([
+        { number: 1, merged_at: '2026-08-20T00:00:00Z' },
+        { number: 2, merged_at: '2026-08-22T00:00:00Z' },
+        { number: 3, merged_at: '2026-08-21T00:00:00Z' },
+      ]).map((p) => p.number),
+      [2, 3, 1]
+    ));
+  ok('sortByMergedAtDesc: マージされずに閉じた PR を落とす', () =>
+    eq(
+      sortByMergedAtDesc([
+        { number: 1, merged_at: null },
+        { number: 2, merged_at: '2026-08-22T00:00:00Z' },
+      ]).map((p) => p.number),
+      [2]
+    ));
 
   ok('median: 奇数個', () => eq(median([3, 1, 2]), 2));
   ok('median: 偶数個は下側（鳴りにくい側へ倒す）', () => eq(median([1, 2, 3, 4]), 2));
@@ -316,13 +382,26 @@ async function main() {
     return;
   }
 
-  const { merged, targetDurations, baselineDurations } = await collect({ repo, token, samples: SAMPLES });
+  const { merged, targetDurations, baselineDurations, fetchFailures } = await collect({
+    repo,
+    token,
+    samples: SAMPLES,
+  });
   const r = judge({ targetDurations, baselineDurations });
 
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
-      `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件`,
+      `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件` +
+      (fetchFailures ? `（うち ${fetchFailures} 本は一過性の API 失敗で取得できず）` : ''),
   );
+  // 🔴 該当 run が 0 件なら、まず **check 名の設定ミス**を疑わせる。
+  // 既定値のまま配備すると 0 件になり、fail-open で**緑のまま永久に skip する**。
+  if (!targetDurations.length || !baselineDurations.length) {
+    console.log(
+      `[check-ci-latency] ⚠️ 該当 run が 0 件の側がある。CI_LATENCY_TARGET（現在 ${TARGET}）/ ` +
+        `CI_LATENCY_BASELINE（現在 ${BASELINE}）が**このリポジトリの check 名と一致しているか**を確かめること。`,
+    );
+  }
   if (r.skipped) {
     console.log(`[check-ci-latency] 判定を skip した（${r.reason}）。`);
     console.log('[check-ci-latency] **緑は「逆転していない」を意味しない。判定していないだけである。**');
@@ -354,6 +433,19 @@ async function main() {
 }
 
 main().catch((e) => {
-  // ネットワーク・API の失敗で赤くしない（fail-open）。ただし黙らない。
+  // 🔴 **権限・認証の誤りは赤くする。** これは「CI が遅い」ではなく「**監視が壊れている**」であり、
+  // fail-open で緑を返せば、監視は一度も働かないまま緑を返し続ける
+  // （＝「監視が黙って壊れるのは監視が無いより悪い」そのもの）。
+  if (isConfigError(e.status)) {
+    console.log(
+      `::error::[check-ci-latency] GitHub API が ${e.status} を返した。**監視が動いていない。** ` +
+        'ワークフローの permissions を確かめること —— 本検査器は Pulls API（pull-requests: read）と ' +
+        'Checks API（checks: read）を叩く。actions: read では足りない。',
+    );
+    console.log(`[check-ci-latency] 詳細: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  // 一過性のネットワーク・API 失敗では赤くしない（fail-open）。ただし黙らない。
   console.log(`[check-ci-latency] 実行できなかったため skip した（fail-open）: ${e.message}`);
 });

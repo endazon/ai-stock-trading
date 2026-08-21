@@ -24,8 +24,16 @@ on:
 
 permissions:
   contents: read
-  # check-run の所要を読むために要る（既定の metadata: read では引けない）。
-  actions: read
+  # 🔴 **スクリプトが叩く API のスコープを正確に付ける。**
+  #   GET /repos/{repo}/pulls               → pull-requests: read
+  #   GET /repos/{repo}/commits/{sha}/check-runs → checks: read
+  # `actions: read`（workflow run / artifact 用）**では足りない**。当初 actions: read だけを
+  # 付けており、AI レビューが両リポジトリで独立に指摘した。
+  # ⚠️ **足りないと 403 になるが、その形は静かに壊れる** —— fail-open で緑を返し、
+  # 監視は一度も働かないまま緑を返し続ける。そのため check-ci-latency.js は
+  # 401/403/404 だけは fail-open せず**赤くする**（5xx・ネットワーク断は従来どおり fail-open）。
+  pull-requests: read
+  checks: read
 
 jobs:
   watch:
