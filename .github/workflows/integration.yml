@@ -7,15 +7,27 @@
 name: Integration E2E
 
 on:
+  # 🔴 IADR-0208 決定 1（利用者裁定 2026-08-21）: PR から外した検証は develop へのマージ時にも
+  # 回す。日次だけだと、朝までの間に別の PR が積み上がって原因の切り分けが難しくなる。
+  push:
+    branches: [develop]
   schedule:
     # 毎日 UTC 18:00（JST 03:00）に実行。
     - cron: "0 18 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_failure:
+        description: "自動起票の動作確認用に、テストを走らせず必ず失敗させる（IADR-0208 残余リスク）"
+        type: boolean
+        required: false
+        default: false
 
 # 同時実行は 1 本に制限（ランナー上の Docker リソース競合回避）。
+# 🔴 cancel-in-progress: false。ここは PR から外した検証の担保そのものなので、
+# 後続の push で捨ててはならない（ci.yml の PR 側とは意図が逆である。IADR-0208 決定 1）。
 concurrency:
   group: integration-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   integration-e2e:
@@ -23,9 +35,23 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする（ci.yml と同じキー）。
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
+      # 自動起票が本当に動くかを実測するための入口（IADR-0208 残余リスク）。
+      # 自動起票は失敗時にしか走らないため、平時は常に skip で緑になる ——
+      # 意図的に失敗させない限り「壊れていること」に永久に気付けない。
+      - name: Force failure (自動起票の動作確認用)
+        if: ${{ inputs.force_failure }}
+        run: |
+          echo "::error::force_failure=true が指定された。自動起票の経路を確認するための意図的な失敗である。"
+          exit 1
       - name: Restore
         run: dotnet restore backend/backend.slnx
       - name: Build
@@ -33,3 +59,15 @@ jobs:
       # 実基盤 E2E のみ実行する（Testcontainers が Docker で実 PostgreSQL/RabbitMQ を起動する）。
       - name: Integration tests (real containers)
         run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category=Integration" --verbosity normal
+
+  # 🔴 PR から外した検証（Category=Integration）の担保が落ちたことを issue に残す
+  # （IADR-0208 決定 1）。これが無ければ「PR から外した」は「やめた」と同義になる。
+  # 本ワークフローは元から nightly 分離済み（IADR-0049）だが自動起票が無く、
+  # 赤が黙って積み上がる形だった。同型の穴を 2 つ残さないため、ここにも入れる。
+  report-failure:
+    needs: [integration-e2e]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    permissions:
+      contents: read
+      issues: write

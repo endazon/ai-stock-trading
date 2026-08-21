@@ -1132,11 +1132,14 @@ module.exports = ({ ok, assert }) => {
     }
   });
 
-  ok('ci.yml の adr-index-sync ジョブが fetch-depth: 0 を指定している（#497 の回帰）', () => {
+  // ［2026-08-21 追記 / IADR-0208 決定 6］旧 adr-index-sync ジョブは static-checks へ統合された。
+  // 本試験の主眼は「fetch-depth: 0 が在るか」（無いと差分の範囲を解決できず**検査は永久に skip して
+  // 緑になる**）であって「専用ジョブが在るか」ではないため、ジョブ名だけ追随させる。
+  ok('ci.yml の static-checks ジョブが fetch-depth: 0 を指定している（#497 の回帰）', () => {
     const fsA = require('fs');
     const ci = fsA.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-    const start = ci.indexOf('\n  adr-index-sync:');
-    assert(start !== -1, 'adr-index-sync ジョブが ci.yml に無い');
+    const start = ci.indexOf('\n  static-checks:');
+    assert(start !== -1, 'static-checks ジョブが ci.yml に無い');
     const rest = ci.slice(start + 1);
     const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
     const bodyRaw = nextJob === -1 ? rest : rest.slice(0, nextJob);
@@ -1145,11 +1148,11 @@ module.exports = ({ ok, assert }) => {
       .filter((l) => !l.trim().startsWith('#'))
       .join('\n');
     // fetch-depth が無いと差分の範囲を解決できず、検査は永久に skip して緑になる。
-    assert(body.includes('fetch-depth: 0'), 'adr-index-sync が fetch-depth: 0 を指定していない（範囲を解決できず skip する）');
+    assert(body.includes('fetch-depth: 0'), 'static-checks が fetch-depth: 0 を指定していない（範囲を解決できず skip する）');
     const runLines = body.split('\n').filter((l) => l.includes('run:'));
     assert(
       runLines.some((l) => l.includes('check-adr-index-sync.js --self-test')),
-      'adr-index-sync が自己試験を走らせていない',
+      'static-checks が check-adr-index-sync の自己試験を走らせていない',
     );
   });
 
@@ -1237,13 +1240,19 @@ module.exports = ({ ok, assert }) => {
   //
   // 検査器はあるが CI に居ない、は「手で叩いたときだけ走る検査器」であり予算を守らせない。
   // 配線を機械で固定する（`run:` 行の存在しか見ないことは承知のうえで、挙動は上の実ツリー試験が見る）。
-  ok('ci.yml に reading-budget ジョブがあり check-reading-budget.js を自己試験＋本検査で走らせる（#524）', () => {
+  // ［2026-08-21 追記 / IADR-0208 決定 6］旧 reading-budget ジョブは static-checks へ統合された。
+  // 見るのは「自己試験と本検査の両方が配線されているか」なのでジョブ名だけ追随させる。
+  //
+  // ★ ジョブ本文の切り出しに `\n\n  ` を使わないこと。統合後のジョブは移設した由来コメントの前に
+  //   空行を挟むため、最初の空行で切れて本検査を見落とす。次の**ジョブキー**までを取る。
+  ok('ci.yml の static-checks が check-reading-budget.js を自己試験＋本検査で走らせる（#524）', () => {
     const fsK = require('fs');
     const ci = fsK.readFileSync(pathFb.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-    const start = ci.indexOf('\n  reading-budget:');
-    assert(start >= 0, 'reading-budget ジョブが無い');
-    const job = ci.slice(start);
-    const body = job.slice(0, job.indexOf('\n\n  ') === -1 ? job.length : job.indexOf('\n\n  '));
+    const start = ci.indexOf('\n  static-checks:');
+    assert(start >= 0, 'static-checks ジョブが無い');
+    const rest = ci.slice(start + 1);
+    const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const body = nextJob === -1 ? rest : rest.slice(0, nextJob);
     assert(body.includes('check-reading-budget.js --self-test'), '自己試験が配線されていない');
     const runs = body.split('\n').filter((l) => l.includes('run:') && l.includes('check-reading-budget.js'));
     assert(runs.some((l) => !l.includes('--self-test')), '本検査が配線されていない（自己試験だけでは母集合を測らない）');
