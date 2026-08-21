@@ -375,6 +375,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
+      # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
+      # ブランチは**自分の base ブランチのキャッシュを読める**ので、develop が温まっていれば
+      # **新規 PR ブランチは初回からヒットする**。逆に **develop へマージ直後の初回 run は miss** する。
+      # **miss を見たら壊れたと決めつけず、どのブランチのスコープかを先に確かめること。**
+      #
       # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
       # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
       # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
@@ -430,6 +435,21 @@ jobs:
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
       # 実基盤 E2E（Category=Integration・Docker 依存）は既定 CI から除外し、専用 integration.yml
       # （nightly/dispatch）で実走する（issue #82 / IADR-0049）。既定 CI の安定性・速度を損なわない。
+      # 🔴 **テストのアセンブリ間並列化は「試したが不採用」である**（IADR-0208 決定 8・実測 2026-08-22）。
+      #
+      # `-- RunConfiguration.MaxCpuCount=0` を入れて実 CI で前後比較したところ、
+      # **最大同時実行数は前後とも 4 本で変わらなかった**（アセンブリ 51 本の開始・終了時刻から復元）。
+      # Test の壁時計 147 秒 → 133 秒の差は、アセンブリ所要の合計が 531 秒 → 480 秒へ揺れた
+      # **run 間のばらつき**で説明が付く（実効並列度はどちらも 3.6 本で同一）。
+      # **既に 4 並列で走っており、指定しても何も変わらない。** ランナーが 4 コアだからである。
+      #
+      # 🔴 **着手時の診断が誤っていた。「`Test Run Successful` が 2〜6 秒間隔で 51 回並ぶから直列」
+      # と読んだが、完了時刻の間隔はアセンブリの所要時間を反映するだけで、並列度の証拠にならない。**
+      # 並列度を見るなら**開始・終了の区間を復元して同時実行数を数える**こと。
+      #
+      # ⚠️ **この行を「効くはず」で足し直さないこと。** 効かないと実測済みである。
+      # テスト時間を縮めたいなら、下限は**最長アセンブリ 28 秒**なので
+      # 並列度を上げる手（シャーディングでランナーを増やす）しか効かない（IADR-0208 段 3-a）。
       - name: Test (with coverage)
         run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category!=Integration" --collect:"XPlat Code Coverage" --verbosity normal
       # カバレッジ floor（下限）の強制（issue #343 / IADR-0127）。閾値は coverage-floor.json。
