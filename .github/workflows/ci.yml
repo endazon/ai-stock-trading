@@ -375,6 +375,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
+      # 🔴 キャッシュは**ブランチ単位でスコープされる**（実測 2026-08-21）。
+      # ブランチは**自分の base ブランチのキャッシュを読める**ので、develop が温まっていれば
+      # **新規 PR ブランチは初回からヒットする**。逆に **develop へマージ直後の初回 run は miss** する。
+      # **miss を見たら壊れたと決めつけず、どのブランチのスコープかを先に確かめること。**
+      #
       # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
       # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
       # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
@@ -430,8 +435,30 @@ jobs:
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
       # 実基盤 E2E（Category=Integration・Docker 依存）は既定 CI から除外し、専用 integration.yml
       # （nightly/dispatch）で実走する（issue #82 / IADR-0049）。既定 CI の安定性・速度を損なわない。
+      # 🔴 RunConfiguration.MaxCpuCount=0 —— テストアセンブリ間の並列実行（IADR-0208 決定 8）。
+      #
+      # 実測（2026-08-21・run 32503346711）: build-and-test 241 秒の内訳は
+      # Restore 14 / Build 48 / **Test 147（61%）**。ログの `Test Run Successful` が
+      # 2〜6 秒間隔で **51 回**並んでおり、**アセンブリ 51 本が直列**に走っていた
+      # （並列なら同時刻に固まる）。`xunit.runner.json` も `.runsettings` も無く、
+      # VSTest 既定（アセンブリ間 MaxCpuCount=1 ＝直列）だったためである。
+      # 0 はランナーの全コアを使う指定である。
+      #
+      # 🔴 **なぜ縮める必要があるか** —— `claude-review` の**下限**（実測 148 秒）を
+      # build-and-test が超えると、**それ以降のビルド時間の増加が 1 秒残らず待ち時間になる**
+      # （下限を下回っている間はレビューの陰に隠れて見えない）。241 秒は既に逆転している。
+      # 逆転の監視は ci-latency-watch.yml が行う。
+      #
+      # ⚠️ **テストの独立性が崩れていると赤くなる**（共有ファイル・固定ポート・static 状態）。
+      # 失敗の向きは loud なので静かな劣化にはならない。切り戻しは下の 1 行を削るだけである。
+      # **赤くなったら「並列化が持ち込んだ事故」か「直列実行が隠していた実在の欠陥」かを
+      # 見分けること** —— 後者なら並列化をやめても欠陥は残る（見えなくなるだけである）。
       - name: Test (with coverage)
-        run: dotnet test backend/backend.slnx --no-build --configuration Release --filter "Category!=Integration" --collect:"XPlat Code Coverage" --verbosity normal
+        run: |
+          dotnet test backend/backend.slnx --no-build --configuration Release \
+            --filter "Category!=Integration" \
+            --collect:"XPlat Code Coverage" --verbosity normal \
+            -- RunConfiguration.MaxCpuCount=0
       # カバレッジ floor（下限）の強制（issue #343 / IADR-0127）。閾値は coverage-floor.json。
       # 集計は (ファイル, 行番号) の和集合で行い、複数テストプロジェクトによる重複計上を避ける。
       # 引き上げ（ratchet）は自動では行わない（--suggest が候補値を出すのみ。更新は人手の PR）。

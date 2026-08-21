@@ -1,0 +1,56 @@
+# 「逆転」の監視 —— build-and-test が claude-review の下限を追い越したことを検知する。
+#
+# ■ なぜ要るか（IADR-0208 決定 9・利用者裁定 2026-08-21）
+# PR の待ち時間は必須チェックの最大値で決まる。ビルド時間が claude-review の下限を
+# **下回っている間、その増加はレビューの陰に隠れて見えない**。下限を超えた瞬間から、
+# 増加は 1 秒残らず待ち時間になる。ビルド時間は機能追加とともに連続的に伸びるため、
+# **いつ超えたか誰も気付かない**。自動起票や fail-closed の門と同じ「気付けない種類の劣化」であり、
+# 検知を機械に任せる。
+#
+# ■ 必須チェックにしない
+# 監視は PR の待ち時間を増やしてはならない（それ自体が監視対象の悪化になる）。
+# 週次 ＋ 手動実行のみで走らせ、ブランチ保護の required check には**入れない**。
+#
+# ■ 失敗したら
+# 既存の ci-failure-issue.yml を marker_key: ci-latency で呼び、統合テストの失敗とは
+# 別スレッドの issue へ集約する。
+name: CI Latency Watch
+
+on:
+  schedule:
+    # 毎週月曜 00:10 UTC。週の頭に、前週マージ分を母集合として見る。
+    - cron: '10 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # check-run の所要を読むために要る（既定の metadata: read では引けない）。
+  actions: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      # 判定ロジックの回帰試験。監視そのものが壊れていないことを毎回確かめる
+      # （監視が黙って壊れるのは、監視が無いより悪い）。
+      - name: Self-test
+        run: node scripts/check-ci-latency.js --self-test
+      - name: Check CI latency
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-ci-latency.js
+
+  report-failure:
+    needs: [watch]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      marker_key: ci-latency
