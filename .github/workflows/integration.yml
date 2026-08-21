@@ -1,8 +1,13 @@
-# 実コンテナ統合 E2E（issue #82 / IADR-0049）
+# 全テスト（実コンテナ含む）の回収実行（issue #82 / IADR-0049 / IADR-0208 改定 3）
 #
-# 実 PostgreSQL/RabbitMQ を Testcontainers で起動する統合テスト（Category=Integration）を実行する。
-# 既定 CI（ci.yml）とは分離し、既定 CI は同トレイトを --filter で除外する（不安定化・低速化の回避）。
-# 実基盤 E2E は本ワークフローで nightly（schedule）＋手動（workflow_dispatch）に実走する。
+# 既定 CI（ci.yml）は --filter "Category!=Integration" で、実 PostgreSQL / RabbitMQ を
+# Testcontainers で起動するテストを PR から外している。**その回収先が本ワークフローである。**
+# **回収先が無ければ「PR から外した」は「やめた」と同義になる。**
+#
+# 🔴 **ここでは --filter を付けず、全テストを 1 回走らせる**（下の run ステップに理由を詳述）。
+# 両側でフィルタすると、Trait を付け忘れたテストがどこでも走らない形に倒れるためである。
+#
+# 走るのは develop への push（マージのたび）／日次 schedule（flaky・環境ドリフト）／手動である。
 # GitHub の ubuntu ランナーは Docker 同梱のため Testcontainers が動作する。
 name: Integration E2E
 
@@ -56,27 +61,24 @@ jobs:
         run: dotnet restore backend/backend.slnx
       - name: Build
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
-      # 実基盤 E2E のみ実行する（Testcontainers が Docker で実 PostgreSQL/RabbitMQ を起動する）。
+      # 🔴 **--filter を付けない。全テストを 1 回だけ走らせる**（IADR-0208 改定 3）。
       #
-      # 🔴 fail-closed の門を置いてある。**1 件も走らなければ落とす**（IADR-0208 決定 1・MSP#894 の指摘）。
-      # `dotnet test` は --filter に 1 件も一致しなくても exit 0 で終わる。したがって新しい統合テストへ
-      # [Trait("Category","Integration")] を付け忘れると、**0 件実行のまま緑**で通り続け、
-      # 「日次で統合テストが走っている」という記録だけが残る。既定 CI（ci.yml）は同じ Trait で
-      # 逆向きに除外しているため、付け忘れたテストは**どちらでも走らない**。
-      - name: Integration tests (real containers)
-        run: |
-          set -euo pipefail
-          log="$(mktemp)"
-          dotnet test backend/backend.slnx --no-build --configuration Release \
-            --filter "Category=Integration" --verbosity normal 2>&1 | tee "$log"
-          # 🔴 fail-closed: 0 件実行のまま緑にしない。
-          if ! grep -qE '^[[:space:]]*(Passed|Failed)[[:space:]]+[A-Za-z]' "$log"; then
-            echo "::error::Category=Integration のテストが 1 件も実行されなかった。Trait の付け忘れかフィルタの誤りである。"
-            exit 1
-          fi
+      # 既定 CI（ci.yml）は --filter "Category!=Integration" で Testcontainers を起動するテストを
+      # 外している。その回収先が本ワークフローである。**ここでもフィルタすると、
+      # [Trait("Category","Integration")] を付け忘れたテストが「PR でも日次でも走らない」形に倒れる。**
+      # フィルタを外しておけば、付け忘れたテストは ci.yml 側に残る（fail-safe）。
+      #
+      # 副次的に、フィルタに依存しなくなるので fail-closed の門（0 件実行で落とす）も要らなくなった。
+      # 門は「フィルタに依存するなら併設する」ものであり、依存自体を無くしたということである。
+      #
+      # 🔴 **ここに --filter を戻すなら、fail-closed の門を必ず併設すること。**
+      # `dotnet test` はフィルタに 1 件も一致しなくても exit 0 で終わるため、
+      # 門が無いと「0 件実行のまま緑」で通り続ける。
+      - name: All tests including real containers
+        run: dotnet test backend/backend.slnx --no-build --configuration Release --verbosity normal
 
-  # 🔴 PR から外した検証（Category=Integration）の担保が落ちたことを issue に残す
-  # （IADR-0208 決定 1）。これが無ければ「PR から外した」は「やめた」と同義になる。
+  # 🔴 PR から外した検証の回収が落ちたことを issue に残す（IADR-0208 決定 1）。
+  # これが無ければ「PR から外した」は「やめた」と同義になる。
   # 本ワークフローは元から nightly 分離済み（IADR-0049）だが自動起票が無く、
   # 赤が黙って積み上がる形だった。同型の穴を 2 つ残さないため、ここにも入れる。
   report-failure:

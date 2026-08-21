@@ -66,18 +66,18 @@ jobs:
   vulnerable-scan:
     name: Vulnerable transitive dependencies
     runs-on: ubuntu-latest
-    # NFR / IADR-0208 決定 5: **PR でも走らせる。**
+    # NFR / IADR-0208 決定 5（改定 3）: **PR では走らせない。**
     #
-    # 当初は「本ジョブが見るのは『既存の推移依存 × 後から公開された advisory』であり PR の差分とは
-    # 無関係。PR 差分は dependency-review がカバーしている」として PR から外していた。
-    # **利用者裁定（2026-08-22）「なるべく精度は落とさない方向で」により取り下げた。**
+    # 本ジョブが見るのは「**既存の**推移依存 × **後から公開された** advisory」であり、
+    # PR の差分とは元来無関係である（差分は dependency-review が見ている）。
+    # 全ソリューションの restore を伴うため PR 1 本ごとに払う費用が大きい。
     #
-    # dependency-review が依存グラフの差分を見るのに対し、本ジョブは実際に restore した推移閉包を
-    # `dotnet list package --vulnerable --include-transitive` で見る。**見ている面が違う以上、
-    # 「重複だから外してよい」と言い切れない。** 迷ったら残す。
-    #
-    # 速さは NuGet キャッシュ（下）で取る。security.yml は CI と並列に走り
-    # クリティカルパスではないため、残しても PR の待ち時間はほぼ変わらない。
+    # 🔴 **回収先**: push（develop / main）＋ 週次 schedule。落ちたら report-failure が自動起票する。
+    # PR で見えなくなるのは「その PR が新しく持ち込んだ依存に、既知の advisory が既にある」場合だが、
+    # **これは dependency-review が PR で捕まえる**（同ファイルの別ジョブ・必須チェック）。
+    # 本ジョブ固有の価値（既存依存への新規 advisory）は時間の経過で現れるものなので、
+    # push / 週次で十分に間に合う。
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
