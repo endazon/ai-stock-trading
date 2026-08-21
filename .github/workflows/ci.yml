@@ -77,17 +77,30 @@ jobs:
       - name: Detect
         id: detect
         run: |
-          set -euo pipefail
+          # 🔴 **-e を付けない。** 差分が取れないときにジョブを落とすのではなく、
+          # **空の一覧を渡して判定器に backend=true へ倒させる**のが正しい倒れ方である
+          # （目的は速さであって門ではない。落とすと PR が赤いまま止まる）。
+          set -uo pipefail
+          : > changed.txt
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
-            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed.txt
+            # base を明示の refspec で取る（`--depth=0` は不正。実測で `fatal: depth 0 is not
+            # a positive number` に当たった）。取れなければマージコミットの第 1 親へ落とす
+            # —— pull_request では refs/pull/N/merge が checkout され、HEAD^1 が base である。
+            git fetch --no-tags --quiet origin \
+              "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed.txt 2>/dev/null \
+              || git diff --name-only HEAD^1 HEAD > changed.txt 2>/dev/null \
+              || : > changed.txt
           else
-            # push では前後 1 コミットの差分。取れなければ空になり、判定器が backend=true へ倒す。
-            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > changed.txt || true
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > changed.txt 2>/dev/null \
+              || : > changed.txt
           fi
-          echo "--- 変更ファイル ---"
+          echo "--- 変更ファイル（$(wc -l < changed.txt) 件）---"
           cat changed.txt
           echo "--------------------"
+          if [ ! -s changed.txt ]; then
+            echo "::warning::変更ファイルを 1 件も取得できなかった。判定せず backend を走らせる（安全側）。"
+          fi
           node scripts/detect-changed-areas.js --files changed.txt
 
   # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
