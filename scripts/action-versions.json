@@ -16,7 +16,9 @@
     "peter-evans/create-pull-request": 8,
     "softprops/action-gh-release": 3,
     "gitleaks/gitleaks-action": 3,
-    "anthropics/claude-code-action": 1
+    "anthropics/claude-code-action": 1,
+    "actions/cache": 6,
+    "actions/github-script": 8
   },
   "$exempt": {
     "github/codeql-action": "リリースタグが codeql-bundle-vX.Y.Z 形式でメジャー番号を引けない。実装リポ側の Dependabot が個別に pin する運用のため、テンプレート既定は v4 のままでよい。"

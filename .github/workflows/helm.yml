@@ -24,6 +24,13 @@ on:
       - "deploy/helm/**"
       - ".github/workflows/helm.yml"
 
+# NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
+# 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
+# レンダリングの整理（並列化・再レンダリングの削減）は射程外として別 issue へ切り出す。
+concurrency:
+  group: helm-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 

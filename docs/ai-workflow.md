@@ -165,12 +165,24 @@ status check の context として存在しない**（必須チェックは chec
 | `lint` | `ci.yml` の `lint` | `dotnet format` 検証 |
 | `commit-messages` | `ci.yml` の `commit-messages` | コミット規約 |
 | `pr-title` | `pr-title.yml` の `pr-title` | スカッシュ後件名の唯一の予防線 |
-| `secret-scan` | `security.yml` の `secret-scan` | gitleaks |
-| `dependency-review` | `security.yml` の `dependency-review` | PR でのみ起動（push では if で skip） |
+| `Secret scan (gitleaks)` | `security.yml` の `secret-scan` | gitleaks。🔴 **check 名はジョブ ID ではなく `name:` の値である**（下表参照） |
+| `Dependency review` | `security.yml` の `dependency-review` | PR でのみ起動（push では if で skip）。🔴 同上 |
 | ~~`Analyze (csharp)` 等~~ | `codeql.yml` の `analyze`（matrix 展開名） | **必須にしない（#481 で除外へ変更）**。`pull_request` に `paths:` を持つため、コード変更の無い PR では check 自体が report されず、必須指定すると恒久 pending になる。網羅は push（develop/main）と週次 schedule の全量解析が担保する |
 | `claude-review` | `claude-code-review.yml` の `claude-review` | **完走**の担保であり「指摘なし」の担保ではない（下記） |
 
 **`CI` / `Security` / `CodeQL`（ワークフロー名）を書いてはならない。**
+
+> 🔴 **［2026-08-21 訂正］上の 2 行は誤っていた。** 本表は長らく `secret-scan` /
+> `dependency-review`（＝**ジョブ ID**）を必須 check 名として挙げていたが、
+> `security.yml` の当該 3 ジョブは `name:` を持つため、**report される check 名は
+> `Secret scan (gitleaks)` / `Dependency review` である**。
+> **同じ文書の下表「ワークフロー名とジョブ名」は最初から正しく書いてあり、本表と矛盾していた。**
+> 誤ったほうを信じてブランチ保護へ `secret-scan` を指定すると、**存在しない check を待ち続けて
+> develop が恒久的にマージ不能になる** —— まさに本節が警告している事故そのものである。
+>
+> **見つけ方**: 全ワークフローの `jobs` を機械的に列挙し（`name:` があればその値、
+> 無ければジョブ ID）、本表と突合した。**表を読み比べるのではなく、実データから引いた。**
+> 誤りは消さず訂正として残す。
 
 - **`claude-review` の必須化で担保できるのは「レビューが完走した」ことだけである。** 🔴 の指摘が
   あっても success を返す（採否は人間の判断）ため、**必須にしても 🔴 のままのマージは止まらない**。

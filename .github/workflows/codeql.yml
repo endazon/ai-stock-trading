@@ -24,6 +24,13 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+# NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる。
+# 🔴 develop / main への push と週次 schedule はキャンセルしない（全量解析の記録が Security タブへ
+# 載る経路であり、途中で捨てると当該コミットの解析結果が残らない）。
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   security-events: write
   contents: read
@@ -43,6 +50,20 @@ jobs:
         uses: github/codeql-action/init@v4.37.7
         with:
           languages: ${{ matrix.language }}
+          # NFR / IADR-0208 決定 4（改定 3）: **PR だけ build-mode: none にする。**
+          #
+          # 利用者裁定（2026-08-22）「PR の精度低下は、どこかで回収できるならある程度許容する。
+          # AI コーディング→PR→CI→AI コーディングのループ効率を上げよ」に従い、PR ではビルドを省く。
+          #
+          # 🔴 **PR と push / schedule で精度が違う。同じ check 名なので最も誤解されやすい点である。**
+          #   - PR:  build-mode: none。**生成コードが解析対象外になる。** これが落とす精度である。
+          #   - push（develop/main）/ 週次 schedule: autobuild で**全量解析**。
+          #     **PR で落とした精度はここで回収する。** 失敗は report-failure が自動起票する。
+          #
+          # 本ワークフローは**必須チェックではない**ため、PR で軽くしてもマージ判定は変わらない。
+          # 副次効果として、下の【落とし穴】（autobuild が雛形ソリューションを拾う）は PR 経路では
+          # 起こらなくなる。**push 経路には残るのでコメントは消さないこと。**
+          build-mode: ${{ github.event_name == 'pull_request' && 'none' || 'autobuild' }}
       # 【落とし穴】autobuild はリポジトリ全体を走査してビルド対象を推定するため、**ビルド不可の
       # 雛形ソリューション**（スキャフォールド用に置いてあり、共通 props を継承せず単体では
       # ビルドできないもの）を同梱するリポジトリでは、それを拾ってジョブが失敗する。
@@ -64,8 +85,20 @@ jobs:
       #
       # 明示ビルドにする場合は、init と analyze の間に置いて CodeQL のトレーサに載せること。
       - name: Autobuild
+        # 🔴 build-mode: autobuild のときだけ走らせる（IADR-0208 改定 3）。
+        if: github.event_name != 'pull_request'
         uses: github/codeql-action/autobuild@v4.37.7
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.7
         with:
           category: "/language:${{ matrix.language }}"
+
+  # push / 週次 schedule で解析が落ちたことを issue に残す（IADR-0208 決定 1）。
+  # PR では起票しない —— PR は自身の check が赤くなるので気付けるためである。
+  report-failure:
+    needs: [analyze]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    permissions:
+      contents: read
+      issues: write

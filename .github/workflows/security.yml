@@ -19,6 +19,13 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+# NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる。
+# 🔴 develop / main への push と週次 schedule はキャンセルしない（後から公開された advisory を
+# 既存の依存に対して検出する定期実行であり、捨てると当該時点の走査が残らない）。
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -59,6 +66,18 @@ jobs:
   vulnerable-scan:
     name: Vulnerable transitive dependencies
     runs-on: ubuntu-latest
+    # NFR / IADR-0208 決定 5（改定 3）: **PR では走らせない。**
+    #
+    # 本ジョブが見るのは「**既存の**推移依存 × **後から公開された** advisory」であり、
+    # PR の差分とは元来無関係である（差分は dependency-review が見ている）。
+    # 全ソリューションの restore を伴うため PR 1 本ごとに払う費用が大きい。
+    #
+    # 🔴 **回収先**: push（develop / main）＋ 週次 schedule。落ちたら report-failure が自動起票する。
+    # PR で見えなくなるのは「その PR が新しく持ち込んだ依存に、既知の advisory が既にある」場合だが、
+    # **これは dependency-review が PR で捕まえる**（同ファイルの別ジョブ・必須チェック）。
+    # 本ジョブ固有の価値（既存依存への新規 advisory）は時間の経過で現れるものなので、
+    # push / 週次で十分に間に合う。
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -86,3 +105,13 @@ jobs:
             exit 1
           fi
           echo "No vulnerable packages found."
+
+  # push / 週次 schedule での失敗を issue に残す（IADR-0208 決定 1）。
+  # PR では起票しない —— PR は自身の check が赤くなるので気付けるためである。
+  report-failure:
+    needs: [secret-scan, vulnerable-scan]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+    uses: ./.github/workflows/ci-failure-issue.yml
+    permissions:
+      contents: read
+      issues: write

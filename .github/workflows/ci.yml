@@ -40,6 +40,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる。実測（2026-08-21・run 32443950165）では
+# PR ブランチへ短い間隔で push が続き、キャンセルされない旧 run がランナーを占有し続けていた。
+#
+# 🔴 develop / main への push はキャンセルしない。PR から外した検証（全量 CodeQL・vulnerable-scan）の
+# 担保がそちらに載るため、途中で捨てると担保そのものが失われる（IADR-0208 決定 1）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # コミットメッセージ規約（種別(起点ID): 要約）の機械チェック（再発防止）。
   # PR で追加されるコミット（base..HEAD）のみ検査し、bot・マージ・[skip ci] は除外する。
@@ -86,261 +95,215 @@ jobs:
           REQUIRE_REPO_TESTS: "1"
         run: node scripts/scripts.test.js
 
-  # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
-  # kubectl スタブで検証する。実クラスタ・実 kubectl・追加パッケージは不要（Bash のみ）。
-  shell-scripts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Test k8s-local-deploy.sh (ast-secrets sync)
-        run: bash scripts/k8s-local-deploy.test.sh
-      # #274, IADR-0060 決定3: OpenD entrypoint の RSA 鍵検査（k8s Secret の symlink 越しに実体の
-      # パーミッションを見る）を固定する。symlink と chmod が要るため ubuntu-latest で実行する。
-      - name: Test opend entrypoint.sh (RSA key permission check)
-        run: bash deploy/opend/entrypoint.test.sh
-
-  # スタック非依存: docs/ ・ .ai-context/ 配下 Markdown の相対リンク切れを検査（再発防止）。
-  # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
-  # NFR / #493 / #496: 相対リンクの実在検査。
+  # NFR / IADR-0208 決定 6: 依存ゼロの検査（Node ＋ bash）を 1 ジョブへ束ねる（統合前は 15 の独立ジョブ）。
   #
-  # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。かつて
-  # ここにあった「PR 段階で planning submodule を populate して当該配下も検査する」分岐
-  # （submodule 取得・取得用トークンの受け渡し・--require-planning）は、planning
-  # 自体が撤去されたため削除した。
-  doc-links:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Self-test doc link checker
-        run: node scripts/check-doc-links.js --self-test
-      - name: Check doc links
-        run: node scripts/check-doc-links.js
-
-  # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
-  # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
+  # 束ねた理由は「ジョブが多いと遅いから」ではない。ci.yml は needs: を 1 つも持たず全並列なので
+  # 待ち時間はほとんど作っていなかった（実測: 各ジョブ 10〜15 秒）。問題は 2 つある。
+  #   - 1 ジョブあたり約 13 秒（checkout 2s ＋ setup-node 5s ＋ 起動 3s）が実処理 1 秒未満の検査に掛かる
+  #   - 同時実行スロットを 15 個占有し、本命の build-and-test の開始を遅らせる
   #
-  # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。テストが参照する
-  # FR/UC/SC が計画書へ実在するかの突合（旧 --require-planning。取得用トークンの受け渡しも含む）は、
-  # 突合先の planning submodule 自体が撤去されたため恒久的に skip へ倒れる（`planIds()` が
-  # null を返す。notice で可視化される）。**本ジョブ自体は存続する** —— 必須 FR のテスト・仕様書の
-  # 存在チェック（本検査の主眼）は元から planning 非依存であり、引き続き実効する。
-  test-traceability:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Check test traceability
-        run: node scripts/check-test-traceability.js
-
-  # trace ブロック検査（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段。
-  # 同決定の後続 PR で新設）。docs/**/*.md（.ai-context/ は対象外・凍結記録のため）に置く
-  # `<!-- trace: -->` / `<!-- trace-table: -->` の文法・許可キー・値域（FR/UC/SC は
-  # `.claude/rules/traceability.repo.md` 宣言レンジ、計画 ADR は同宣言のレンジ、IADR は
-  # `.ai-context/adr/` のファイル実在）を検査し、可視本文に計画 ID・IADR・修飾付き issue 参照が
-  # 残っていないかも見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず
-  # 「英字+英数字の短縮名 + `:`」という形だけで external とみなす（利用者裁定・ADR-0029 決定9。
-  # 実装リポジトリが今後増える前提）。
-  trace-blocks:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Self-test trace block checker
-        run: node scripts/check-trace-blocks.js --self-test
-      - name: Check trace blocks
-        run: node scripts/check-trace-blocks.js
-
-  # ナレッジグラフ生成（docs/ の trace / trace-table ブロックと .ai-context/{adr,specs}/ の
-  # frontmatter〔related_ids / related_specs / plan_refs〕から組み立てる）。生成物はコミットしない
-  # （都度標準出力へ書く。--json / --mermaid は成果物確認用、CI では --check のみを走らせる）。
-  # --check は in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在）。修飾付き参照
-  # （`planning:` / `MSP:` 等。個別名はハードコードしない）は external として数のみ数え、
-  # specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため
-  # 失敗とはしない（標準出力に注記する）。
-  knowledge-graph:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Self-test knowledge graph generator
-        run: node scripts/gen-knowledge-graph.js --self-test
-      - name: Check knowledge graph (in-repo existence)
-        run: node scripts/gen-knowledge-graph.js --check
-
-  # 不採用ライブラリ（platform ADR-0030 の棚卸し）の再混入を止める（issue #345 / #351）。
-  # 剥がした事実をレビューの記憶に頼ると必ず戻るため、機械的に落とす。移行未完了のものは
-  # スクリプトの PENDING に担当 issue 付きで残し、移行完了時に BANNED へ移す。
-  banned-libraries:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Check banned libraries
-        run: node scripts/check-banned-libraries.js
-
-  # FR-19, #425, ADR-0025, IADR-0165: 決済済み資金（settled cash）の代替に使ってはならないブローカー値
-  # （MaxTrdQtys.MaxCashBuy / Funds.AvlWithdrawalCash / Funds.MaxWithdrawal）のコード参照を止める。
-  # とりわけ**現金買付余力は現金口座では未決済の売却代金を含む**のが通例であり、
-  # **分母に据えると GFV 回避ガードが GFV を許可する**。コメントでの注意書きだけでは足りず、
-  # 「決済済み資金の供給元」を探した実装者の手が最も近い名前へ伸びる経路を機械的に塞ぐ。
-  banned-settled-cash-sources:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Check banned settled-cash sources
-        run: node scripts/check-banned-settled-cash-sources.js
-
-  # NFR / #357 / IADR-0168: Wolverine のテストハーネスの**素の入口** `host.TrackActivity()` を止める。
-  # 素の入口は**既定 5 秒の壁時計**で打ち切るため、ソリューション全体の並列実行では
-  # スケジューリング遅延だけで超え、flaky failure になる（実測 6 秒・#357）。
-  # 131 か所を予算つきの入口へ替えても、**次に書かれるテストは標準 API を素直に呼ぶ**。
-  # flake は CI ゲートを構造的に無効化する（確率的な赤が「再実行すればよい」を習慣化し、
-  # 本物の退行も同じ反応で流される）ため、コメントではなく機械で止める。
-  tracked-session-timeout:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - name: Check tracked session timeout
-        run: node scripts/check-tracked-session-timeout.js
-
-  # NFR / #497: 実装ADR の本文を変更したら .ai-context/adr/README.md の索引行も変更されていること。
+  # 副次効果として、統合前は 4 ジョブがそれぞれ 1147 個の .cs を個別に走査していたのが 1 回で済む。
   #
-  # 同型の事故が連続する 2 PR で 2 回起きた（#491 は自己試験の件数、#495 は解消済みの残余リスク）。
-  # いずれも AI レビューが検出し、**CI は緑のまま通した**。運用標準「検査器の追加は同型事故 2 回から」。
+  # 🔴 検査は 1 本も減らしていない。ジョブが減っただけで、走る検査器の本数と対象は統合前と同一である。
   #
-  # fetch-depth: 0 が要る —— 差分の範囲（origin/<base>..HEAD）を解決するため。
-  # 浅いクローンでは範囲を決められず skip する（その旨を warn で出す）。
-  adr-index-sync:
+  # 🔴 各ステップに `if: ${{ !cancelled() }}` を付けてある。これが無いと最初の失敗で以降が走らず、
+  # 1 回の CI で 1 件しか分からなくなって往復が増える（束ねたことで可読性が落ちる形）。
+  # 付けてあるので、落ちた検査が複数あれば一度に全部出る。ジョブの合否は従来どおり
+  # 「どれか 1 つでも失敗すれば赤」である。
+  #
+  # 🔴 各検査の直前のコメントは統合前のジョブのものをそのまま移した。ADR 番号・事故の経緯・
+  # 「これを外すと検査が空回りする」という設計要点を持つため、1 行も捨てない。
+  #
+  # commit-messages（必須チェック）と scripts-tests（子プロセスを多数回す重量級）は単独のまま残す。
+  static-checks:
     runs-on: ubuntu-latest
+    # 【置換点】キット既定は空（採らないプロジェクトでは自己試験だけが走る）。本リポは取引パイプラインを宣言する。
+    env:
+      PIPELINE_CONFIG: "deploy/helm/ai-stock-trading/files/pipeline.json"
     steps:
       - uses: actions/checkout@v7
         with:
+          # check-action-versions の --compare-with-ref が統合ブランチ時点のワークフローを
+          # 読むため、履歴が要る（shallow だと当該検査が warn で skip される）。
+          # adr-index-sync も diff 範囲の解決に履歴を使う。
+          # 履歴は現在 50 コミット程度なので全取得しても安い。
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
+
+      # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
+      # kubectl スタブで検証する。実クラスタ・実 kubectl・追加パッケージは不要（Bash のみ）。
+      - name: Test k8s-local-deploy.sh (ast-secrets sync)
+        if: ${{ !cancelled() }}
+        run: bash scripts/k8s-local-deploy.test.sh
+      # #274, IADR-0060 決定3: OpenD entrypoint の RSA 鍵検査（k8s Secret の symlink 越しに実体の
+      # パーミッションを見る）を固定する。symlink と chmod が要るため ubuntu-latest で実行する。
+      - name: Test opend entrypoint.sh (RSA key permission check)
+        if: ${{ !cancelled() }}
+        run: bash deploy/opend/entrypoint.test.sh
+
+      # スタック非依存: docs/ ・ .ai-context/ 配下 Markdown の相対リンク切れを検査（再発防止）。
+      # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
+      # NFR / #493 / #496: 相対リンクの実在検査。
+      #
+      # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。かつて
+      # ここにあった「PR 段階で planning submodule を populate して当該配下も検査する」分岐
+      # （submodule 取得・取得用トークンの受け渡し・--require-planning）は、planning
+      # 自体が撤去されたため削除した。
+      - name: Self-test doc link checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-doc-links.js --self-test
+      - name: Check doc links
+        if: ${{ !cancelled() }}
+        run: node scripts/check-doc-links.js
+
+      # 受け入れ基準 → テスト写像のトレーサビリティ検査（issue #343 / IADR-0127）。
+      # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
+      #
+      # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。テストが参照する
+      # FR/UC/SC が計画書へ実在するかの突合（旧 --require-planning。取得用トークンの受け渡しも含む）は、
+      # 突合先の planning submodule 自体が撤去されたため恒久的に skip へ倒れる（`planIds()` が
+      # null を返す。notice で可視化される）。**本ジョブ自体は存続する** —— 必須 FR のテスト・仕様書の
+      # 存在チェック（本検査の主眼）は元から planning 非依存であり、引き続き実効する。
+      - name: Check test traceability
+        if: ${{ !cancelled() }}
+        run: node scripts/check-test-traceability.js
+
+      # trace ブロック検査（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段。
+      # 同決定の後続 PR で新設）。docs/**/*.md（.ai-context/ は対象外・凍結記録のため）に置く
+      # `<!-- trace: -->` / `<!-- trace-table: -->` の文法・許可キー・値域（FR/UC/SC は
+      # `.claude/rules/traceability.repo.md` 宣言レンジ、計画 ADR は同宣言のレンジ、IADR は
+      # `.ai-context/adr/` のファイル実在）を検査し、可視本文に計画 ID・IADR・修飾付き issue 参照が
+      # 残っていないかも見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず
+      # 「英字+英数字の短縮名 + `:`」という形だけで external とみなす（利用者裁定・ADR-0029 決定9。
+      # 実装リポジトリが今後増える前提）。
+      - name: Self-test trace block checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-trace-blocks.js --self-test
+      - name: Check trace blocks
+        if: ${{ !cancelled() }}
+        run: node scripts/check-trace-blocks.js
+
+      # ナレッジグラフ生成（docs/ の trace / trace-table ブロックと .ai-context/{adr,specs}/ の
+      # frontmatter〔related_ids / related_specs / plan_refs〕から組み立てる）。生成物はコミットしない
+      # （都度標準出力へ書く。--json / --mermaid は成果物確認用、CI では --check のみを走らせる）。
+      # --check は in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在）。修飾付き参照
+      # （`planning:` / `MSP:` 等。個別名はハードコードしない）は external として数のみ数え、
+      # specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため
+      # 失敗とはしない（標準出力に注記する）。
+      - name: Self-test knowledge graph generator
+        if: ${{ !cancelled() }}
+        run: node scripts/gen-knowledge-graph.js --self-test
+      - name: Check knowledge graph (in-repo existence)
+        if: ${{ !cancelled() }}
+        run: node scripts/gen-knowledge-graph.js --check
+
+      # 不採用ライブラリ（platform ADR-0030 の棚卸し）の再混入を止める（issue #345 / #351）。
+      # 剥がした事実をレビューの記憶に頼ると必ず戻るため、機械的に落とす。移行未完了のものは
+      # スクリプトの PENDING に担当 issue 付きで残し、移行完了時に BANNED へ移す。
+      - name: Check banned libraries
+        if: ${{ !cancelled() }}
+        run: node scripts/check-banned-libraries.js
+
+      # FR-19, #425, ADR-0025, IADR-0165: 決済済み資金（settled cash）の代替に使ってはならないブローカー値
+      # （MaxTrdQtys.MaxCashBuy / Funds.AvlWithdrawalCash / Funds.MaxWithdrawal）のコード参照を止める。
+      # とりわけ**現金買付余力は現金口座では未決済の売却代金を含む**のが通例であり、
+      # **分母に据えると GFV 回避ガードが GFV を許可する**。コメントでの注意書きだけでは足りず、
+      # 「決済済み資金の供給元」を探した実装者の手が最も近い名前へ伸びる経路を機械的に塞ぐ。
+      - name: Check banned settled-cash sources
+        if: ${{ !cancelled() }}
+        run: node scripts/check-banned-settled-cash-sources.js
+
+      # NFR / #357 / IADR-0168: Wolverine のテストハーネスの**素の入口** `host.TrackActivity()` を止める。
+      # 素の入口は**既定 5 秒の壁時計**で打ち切るため、ソリューション全体の並列実行では
+      # スケジューリング遅延だけで超え、flaky failure になる（実測 6 秒・#357）。
+      # 131 か所を予算つきの入口へ替えても、**次に書かれるテストは標準 API を素直に呼ぶ**。
+      # flake は CI ゲートを構造的に無効化する（確率的な赤が「再実行すればよい」を習慣化し、
+      # 本物の退行も同じ反応で流される）ため、コメントではなく機械で止める。
+      - name: Check tracked session timeout
+        if: ${{ !cancelled() }}
+        run: node scripts/check-tracked-session-timeout.js
+
+      # NFR / #497: 実装ADR の本文を変更したら .ai-context/adr/README.md の索引行も変更されていること。
+      #
+      # 同型の事故が連続する 2 PR で 2 回起きた（#491 は自己試験の件数、#495 は解消済みの残余リスク）。
+      # いずれも AI レビューが検出し、**CI は緑のまま通した**。運用標準「検査器の追加は同型事故 2 回から」。
+      #
+      # fetch-depth: 0 が要る —— 差分の範囲（origin/<base>..HEAD）を解決するため。
+      # 浅いクローンでは範囲を決められず skip する（その旨を warn で出す）。
       - name: Self-test ADR index sync checker
+        if: ${{ !cancelled() }}
         run: node scripts/check-adr-index-sync.js --self-test
       - name: Check ADR index sync
+        if: ${{ !cancelled() }}
         run: node scripts/check-adr-index-sync.js
 
-  # NFR / #524 / IADR-0204 の残余リスクの解消: 必読規約の総量予算をエージェントごとに検査する。
-  #
-  # 予算値 51,200 の正本は計画リポ運用ガイド §8（planning#364）であり、検査器が持つのは複製である
-  # （値の隣に出典を書いてある）。母集合は「そのエージェントが自動で読み込む集合」であり、
-  # Claude Code（CLAUDE.md ＋ .claude/rules/*.md）と AGENTS.md 系は**合算しない**（合算は誰も
-  # 背負わない量を作る。実測で 2 回誤った）。submodule は要らない（母集合に planning/ は入らない）。
-  #
-  # 超過で fail・90% で warn。**#519 で配線を後回しにした残余リスク**（「検査器はあるが CI に居ない」）
-  # を本ジョブで塞ぐ —— 手で叩いたときだけ走る検査器は、予算を守らせない。
-  reading-budget:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # NFR / #524 / IADR-0204 の残余リスクの解消: 必読規約の総量予算をエージェントごとに検査する。
+      #
+      # 予算値 51,200 の正本は計画リポ運用ガイド §8（planning#364）であり、検査器が持つのは複製である
+      # （値の隣に出典を書いてある）。母集合は「そのエージェントが自動で読み込む集合」であり、
+      # Claude Code（CLAUDE.md ＋ .claude/rules/*.md）と AGENTS.md 系は**合算しない**（合算は誰も
+      # 背負わない量を作る。実測で 2 回誤った）。submodule は要らない（母集合に planning/ は入らない）。
+      #
+      # 超過で fail・90% で warn。**#519 で配線を後回しにした残余リスク**（「検査器はあるが CI に居ない」）
+      # を本ジョブで塞ぐ —— 手で叩いたときだけ走る検査器は、予算を守らせない。
       - name: Self-test reading budget checker
+        if: ${{ !cancelled() }}
         run: node scripts/check-reading-budget.js --self-test
       - name: Check reading budget (per agent, not summed)
+        if: ${{ !cancelled() }}
         run: node scripts/check-reading-budget.js
 
-  # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
-  # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
-  #
-  # **ここに違反の実例を書かないこと。** 規約は「意図的な誤例はインラインコードへ入れる」と定めるが、
-  # **その除外は Markdown でしか効かない**（YAML のバッククォートはコード記法ではない）。
-  # 実際、本コメントの初版が誤例を平文で書いて自分の検査に捕まった。
-  #
-  # **本ジョブは exit 1 で落とす**（他の一部検査器のような warn ではない）。表記の是正は
-  # 人手の判断を伴わず、書式が一意に決まるためである。
-  #
-  # 【重要】`PLAN_ID_PREFIXES` を落とすと `PROJECT_PREFIXES` が空になり、検査は **skip して緑になる**
-  # （fail-open）。これは「他プロジェクトを参照しないリポジトリ」のための正常な挙動であって、
-  # 本リポでは設定漏れを意味する。**環境変数を明示的に与える回帰テストが `scripts.repo.test.js`
-  # にあり、ここを落としても別経路で赤くなる**（緑だが検査されていない、を避ける）。
-  plan-id-qualification:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # NFR / #477 / IADR-0189: 他プロジェクトの計画 ID が `<PROJ>/<ID>` の形で書かれていることを
+      # 検査する（短縮名と ID が空白・TAB 等で離れる形を止める）。検査器は kit 由来である。
+      #
+      # **ここに違反の実例を書かないこと。** 規約は「意図的な誤例はインラインコードへ入れる」と定めるが、
+      # **その除外は Markdown でしか効かない**（YAML のバッククォートはコード記法ではない）。
+      # 実際、本コメントの初版が誤例を平文で書いて自分の検査に捕まった。
+      #
+      # **本ジョブは exit 1 で落とす**（他の一部検査器のような warn ではない）。表記の是正は
+      # 人手の判断を伴わず、書式が一意に決まるためである。
+      #
+      # 【重要】`PLAN_ID_PREFIXES` を落とすと `PROJECT_PREFIXES` が空になり、検査は **skip して緑になる**
+      # （fail-open）。これは「他プロジェクトを参照しないリポジトリ」のための正常な挙動であって、
+      # 本リポでは設定漏れを意味する。**環境変数を明示的に与える回帰テストが `scripts.repo.test.js`
+      # にあり、ここを落としても別経路で赤くなる**（緑だが検査されていない、を避ける）。
       # 判定規則そのものが壊れていれば実データに対する結果は意味を持たない。自己試験を先に走らせる。
       - name: Self-test plan ID qualification checker
+        if: ${{ !cancelled() }}
         run: node scripts/check-plan-id-qualification.js --self-test
       - name: Check plan ID qualification
+        if: ${{ !cancelled() }}
         env:
           # AST は自プロジェクトだが、本リポは `AST/` を修飾として実際に使うため含める
           # （修飾を使うと決めた以上、表記が一貫していなければ機械的突合の役に立たない）。
           PLAN_ID_PREFIXES: "MSP,AST"
         run: node scripts/check-plan-id-qualification.js
 
-  # 実行環境スキャフォールド（docker-compose / appsettings / .env.example）の静的検査（issue #107 / IADR-0048）。
-  # fail-safe 既定（base appsettings が挙動中立・機密は空既定）と構成の存在・整合を Docker 起動なしで検証する。
-  # 実コンテナ/実 API 疎通は #82 に分離するため、本ジョブは Node 標準のみ（依存・Docker 不要）で完結する。
-  runtime-scaffold:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # 実行環境スキャフォールド（docker-compose / appsettings / .env.example）の静的検査（issue #107 / IADR-0048）。
+      # fail-safe 既定（base appsettings が挙動中立・機密は空既定）と構成の存在・整合を Docker 起動なしで検証する。
+      # 実コンテナ/実 API 疎通は #82 に分離するため、本ジョブは Node 標準のみ（依存・Docker 不要）で完結する。
       - name: Validate runtime scaffold
+        if: ${{ !cancelled() }}
         run: node scripts/validate-runtime-scaffold.js
 
-  # 【任意コンポーネント・本リポジトリは採用】宣言的パイプライン構成のスキーマ検証。
-  # 検証器自体の自己試験に加え、取引パイプラインの実宣言を検証する（ADR-0001, IADR-0077, #22）。
-  # 宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
-  pipeline-config:
-    runs-on: ubuntu-latest
-    env:
-      # 【置換点】キット既定は空（採らないプロジェクトでは自己試験だけが走る）。本リポは取引パイプラインを宣言する。
-      PIPELINE_CONFIG: "deploy/helm/ai-stock-trading/files/pipeline.json"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # 【任意コンポーネント・本リポジトリは採用】宣言的パイプライン構成のスキーマ検証。
+      # 検証器自体の自己試験に加え、取引パイプラインの実宣言を検証する（ADR-0001, IADR-0077, #22）。
+      # 宣言が接続性/循環/構造違反へ退行した時点で CI が止める。
       # 検証器自体の試験。構成ファイルの有無に関わらず毎回走らせ、検証ロジックの退行を防ぐ。
       - name: Validate pipeline config (self-test)
+        if: ${{ !cancelled() }}
         run: node scripts/validate-pipeline-config.js --self-test
       - name: Validate pipeline config
-        if: env.PIPELINE_CONFIG != ''
+        if: ${{ !cancelled() && (env.PIPELINE_CONFIG != '') }}
         run: node scripts/validate-pipeline-config.js "$PIPELINE_CONFIG"
 
-  # Claude 系ワークフローのツール許可設定を検査する（安全弁）。
-  # claude_args の記法誤りは CI を失敗させずに「AI が検証できない」状態を作るため、
-  # 人間にもジョブ結果にも現れない。ここで機械的に止める。
-  ai-workflow-config:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # check-action-versions の --compare-with-ref が統合ブランチ時点のワークフローを
-          # 読むため、履歴が要る（shallow だと当該検査が warn で skip される）。
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # Claude 系ワークフローのツール許可設定を検査する（安全弁）。
+      # claude_args の記法誤りは CI を失敗させずに「AI が検証できない」状態を作るため、
+      # 人間にもジョブ結果にも現れない。ここで機械的に止める。
       - name: Check AI workflow config (self-test)
+        if: ${{ !cancelled() }}
         run: node scripts/check-ai-workflow-config.js --self-test
       # 警告（検査そのものが成立していない状態）は GitHub のアノテーションとして出るため、
       # ジョブログを開かなくても PR の Checks 画面で気付ける。
@@ -351,6 +314,7 @@ jobs:
       # claude-code-action の入力名が変わったときに全リポジトリの CI が検証器の更新まで
       # 一斉に落ちるのを避けるためである。追随できない事態になったら本 env を外す。
       - name: Check AI workflow config
+        if: ${{ !cancelled() }}
         env:
           STRICT_AI_WORKFLOW_CONFIG: "1"
         run: node scripts/check-ai-workflow-config.js
@@ -371,39 +335,56 @@ jobs:
       # 【置換点】本リポの統合ブランチは develop（キット既定は origin/main）。
       # ref を読めない場合（shallow clone 等）は warn を出して素通りする（fail-open）。
       - name: Check action versions
+        if: ${{ !cancelled() }}
         run: |
           node scripts/check-action-versions.js \
             --dir .github/workflows \
             --compare-with-ref origin/develop
 
-  # FR-03/FR-10, ADR-0013, IADR-0106, IADR-0129, Issue #258 / #354 再発防止:
-  # サービスを跨いで RabbitMQ のキュー名が衝突していないかを機械検査する。
-  # #258 では 2 サービスが同一キューを共有し、pub/sub のつもりが competing consumer（取り合い）になって
-  # 取引判断が承認・拒否・エラーのいずれにも現れず無言で消えた。
-  # Wolverine（#354 で全面移行）はキュー名の導出にハンドラのクラス名を一切使わないため、当時の対策
-  #（クラス名をサービス跨ぎで一意にする）は効かない。キュー名は <ServiceName>.<メッセージ型名> であり、
-  # 一意性は ServiceName の一意性へ帰着する。よって検査するのは
-  #   N1 ServiceName の一意性 / N2 トポロジの直接指定の禁止 / N3 共通ヘルパ経由でのみ Wolverine を配線する
-  # ＋ メタ検査（走査したサービス数・Wolverine 配線サービス数の下限＝検査の空振り防止）である。
-  # 旧 MassTransit 規則は移行完了に伴い #354 第 3 段階で撤去した（再混入は check-banned-libraries.js が止める）。
-  # 外部依存ゼロ（Node のみ）。--self-test で検査器自体も毎回試験する。
-  consumer-endpoint-names:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
+      # FR-03/FR-10, ADR-0013, IADR-0106, IADR-0129, Issue #258 / #354 再発防止:
+      # サービスを跨いで RabbitMQ のキュー名が衝突していないかを機械検査する。
+      # #258 では 2 サービスが同一キューを共有し、pub/sub のつもりが competing consumer（取り合い）になって
+      # 取引判断が承認・拒否・エラーのいずれにも現れず無言で消えた。
+      # Wolverine（#354 で全面移行）はキュー名の導出にハンドラのクラス名を一切使わないため、当時の対策
+      #（クラス名をサービス跨ぎで一意にする）は効かない。キュー名は <ServiceName>.<メッセージ型名> であり、
+      # 一意性は ServiceName の一意性へ帰着する。よって検査するのは
+      #   N1 ServiceName の一意性 / N2 トポロジの直接指定の禁止 / N3 共通ヘルパ経由でのみ Wolverine を配線する
+      # ＋ メタ検査（走査したサービス数・Wolverine 配線サービス数の下限＝検査の空振り防止）である。
+      # 旧 MassTransit 規則は移行完了に伴い #354 第 3 段階で撤去した（再混入は check-banned-libraries.js が止める）。
+      # 外部依存ゼロ（Node のみ）。--self-test で検査器自体も毎回試験する。
       - name: Self-test consumer endpoint name checker
+        if: ${{ !cancelled() }}
         run: node scripts/check-consumer-endpoint-names.js --self-test
       - name: Check queue name uniqueness across services
+        if: ${{ !cancelled() }}
         run: node scripts/check-consumer-endpoint-names.js
+
 
   lint:
     runs-on: ubuntu-latest
+    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
+    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
+    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
+    # restore / build / test は要らない。
+    #
+    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
+    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
+    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
+    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
+    if: ${{ !startsWith(github.head_ref, 'automation/') }}
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
+      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
+      # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
+      # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
+      # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
+      # （ロックファイルのハッシュをキーにする実装のため）。
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
@@ -412,9 +393,29 @@ jobs:
 
   build-and-test:
     runs-on: ubuntu-latest
+    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
+    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
+    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
+    # restore / build / test は要らない。
+    #
+    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
+    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
+    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
+    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
+    if: ${{ !startsWith(github.head_ref, 'automation/') }}
     steps:
       - uses: actions/checkout@v7
       # --- スタック別に書き換え（例: C#/.NET） ---
+      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
+      # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
+      # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
+      # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
+      # （ロックファイルのハッシュをキーにする実装のため）。
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
@@ -458,6 +459,16 @@ jobs:
   # 疎通は実基盤依存として後続スライスへ分離するため、本ジョブは Node のみ（Docker 不要）で完結する。
   frontend:
     runs-on: ubuntu-latest
+    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
+    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
+    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
+    # restore / build / test は要らない。
+    #
+    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
+    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
+    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
+    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
+    if: ${{ !startsWith(github.head_ref, 'automation/') }}
     defaults:
       run:
         working-directory: frontend
@@ -482,6 +493,16 @@ jobs:
   # 実 BFF/Keycloak/クラスタ疎通には依存させない（実基盤 live 検証は #82 系／MSP#284 へ分離）。Docker 不要・frontend/ に閉じる。
   frontend-e2e:
     runs-on: ubuntu-latest
+    # 🔴 NFR / IADR-0208 決定 8: changelog の自動 PR（automation/*）では回さない。
+    # 実測で automation/changelog-update-develop の PR が CI を毎回起動し、
+    # 6 件以上が action_required のまま積み上がっていた。生成物だけの PR に
+    # restore / build / test は要らない。
+    #
+    # ⚠️ 必須チェックのジョブへ if: を付けてよい根拠: **`if` でスキップされたジョブは
+    # 必須チェック上「合格」として扱われる**（docs/ai-workflow.md に明記）。
+    # `paths:` でワークフローごと起動しない場合と違い、恒久 pending にはならない。
+    # claude-code-review.yml が既に同型の除外条件を持っている（:69）。
+    if: ${{ !startsWith(github.head_ref, 'automation/') }}
     defaults:
       run:
         working-directory: frontend
@@ -494,6 +515,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
+      # NFR / IADR-0208: Playwright のブラウザをキャッシュする。実測で毎回 31 秒掛かっていた
+      # （e2e:install = playwright install --with-deps chromium。apt-get も叩く）。
+      # キーは package-lock.json のハッシュ（= @playwright/test の版が変われば取り直す）。
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+      # ヒット時もシステム依存（apt）の導入だけは要るため --with-deps は落とさない。
+      # ブラウザ本体はキャッシュから復元され、ダウンロードが省かれる。
       - name: Install Playwright browser (chromium)
         run: npm run e2e:install
       - name: E2E typecheck

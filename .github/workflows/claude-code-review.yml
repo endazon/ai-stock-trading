@@ -87,10 +87,64 @@ jobs:
       # 「計画リポジトリ(project-planning)を submodule 参照している場合のみ有効」な submodule
       # 取得ステップ（read-only PAT を一時的に使う形）は、.gitmodules 自体が撤去されたため削除した。
 
+      # 🔴 NFR / IADR-0208 決定 7: 工具の事前導入を PR の差分で出し分ける。
+      #
+      # 実測（2026-08-21・run 32443950165）で本ワークフローは 4 分 21 秒掛かり、**AST で最も長い**
+      # ワークフローだった（CI 3 分 29 秒より長い）。しかも claude-review は**必須チェック**である。
+      # 内訳の大半は「AI が動き出す前」の工具一式（setup-dotnet / dotnet-ef / npm ci /
+      # playwright install --with-deps）で、**docs だけの PR でも全額を払っていた**。
+      #
+      # プロンプト側は「backend/ が変わっていなければビルドするな」と指示しているが、
+      # **セットアップはその時点で既に払い終わっている**。指示では回収できない。
+      #
+      # 🔴 **判定は「入れる」を既定にし、docs だけだと確かめられたときにだけ省く。**
+      # 利用者裁定（2026-08-22）「なるべく精度は落とさない方向で」に従い、
+      # 当初の「backend/ frontend のパターンに当たったら入れる」（＝当たらなければ省く）を
+      # **逆向きに書き直した**。パターンの取りこぼしは前者では「省いてしまう」に倒れるが、
+      # 後者では「余計に入れる」に倒れる。**遅くなるだけで、検証は落ちない。**
+      #
+      # 省くのは **変更ファイルがすべて .md（または LICENSE / .gitignore 等の非コード）である場合**に限る。
+      # 1 つでもそれ以外があれば全部入れる。
+      #
+      # 🔴 取りこぼすと AI は「実行したが失敗した」と報告する。**原因が環境不備であることは
+      # 本文から判らないため、拒否されるより質が悪い**（#391 の教訓）。
+      #
+      # 🔴 --allowedTools と .claude/settings.json は触っていない（3 系統一致の規約。
+      # check-ai-workflow-config.js が STRICT で見ている）。変えたのは**事前導入の有無だけ**である。
+      - name: Detect whether this PR is docs-only
+        id: touched
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true
+          files="$(git diff --name-only "$BASE_SHA...$HEAD_SHA" 2>/dev/null \
+                   || git diff --name-only "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true)"
+          n="$(printf '%s\n' "$files" | grep -c . || true)"
+          echo "変更ファイル ${n} 件"
+          printf '%s\n' "$files" | sed 's/^/    /'
+          # 🔴 差分を引けなかった（0 件）ときは「docs のみ」と判定しない。fail-safe に全部入れる。
+          if [ "$n" -eq 0 ]; then
+            echo "::notice::差分を解決できなかった。工具一式を入れる（fail-safe）。"
+            echo "setup=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # コードに影響しないと確かめられる拡張子・パスだけを列挙する（許可リスト方式）。
+          # ここに無いものが 1 つでもあれば setup=true になる。
+          if printf '%s\n' "$files" | grep -qvE '(\.md$|^LICENSE$|^\.gitignore$|^\.gitattributes$|^docs/.*\.(png|jpg|svg|drawio)$)'; then
+            echo "setup=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::変更が Markdown 等のみ。工具の事前導入を省く（AI の検証対象がコードに無いため）。"
+            echo "setup=false" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
       # 検証(build/test)を @claude セッション内で実走するための SDK 準備。
       # 技術スタックに合わせて書き換える（既定は C#/.NET 10。ci.example.yml と揃える。
       # 他スタックは actions/setup-node / actions/setup-python 等に置き換える）。
       - uses: actions/setup-dotnet@v6
+        if: steps.touched.outputs.setup == 'true'
         with:
           dotnet-version: "10.0.x"
 
@@ -98,6 +152,7 @@ jobs:
       # 本リポジトリは tool manifest（.config/dotnet-tools.json）を持たないためグローバル導入する。
       # 導入に失敗してもレビュー自体は続ける（EF の主張だけが「未検証」になる）。
       - name: Install dotnet-ef
+        if: steps.touched.outputs.setup == 'true'
         continue-on-error: true
         run: dotnet tool install --global dotnet-ef
 
@@ -108,17 +163,26 @@ jobs:
       # vitest も動かず、レビューは「実行したが失敗した」と報告する。原因が環境不備であることは
       # 本文からは判らないため、**拒否されるより質が悪い**。許可とセットアップは必ず対で入れる。
       - uses: actions/setup-node@v7
+        if: steps.touched.outputs.setup == 'true'
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend deps
+        if: steps.touched.outputs.setup == 'true'
         continue-on-error: true
         run: npm ci
         working-directory: frontend
       # Playwright（E2E）は利用者裁定によりレビューでも実走を許可する（2026-08-05・#391 ①）。
       # ブラウザ取得に 1〜2 分かかるが、E2E の主張を未検証のまま通すほうが害が大きいと判断した。
+      # NFR / IADR-0208: ブラウザをキャッシュする（ci.yml の frontend-e2e と同じキー）。
+      - uses: actions/cache@v6
+        if: steps.touched.outputs.setup == 'true'
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
       - name: Install Playwright browser (chromium)
+        if: steps.touched.outputs.setup == 'true'
         continue-on-error: true
         run: npm run e2e:install
         working-directory: frontend

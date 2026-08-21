@@ -1,0 +1,122 @@
+# 後段（develop へのマージ時・日次/週次）で落ちた検証を issue として残す再利用ワークフロー。
+#
+# ■ なぜ要るか（IADR-0208 決定 1・利用者裁定 2026-08-21）
+# PR の CI を速くするため、重い検証（Testcontainers 統合テスト・全量 CodeQL・脆弱性走査）を
+# PR から後段へ移した。**これは「検証をやめる」のではなく「場所を移す」である。**
+# しかし後段は誰も見ていない。落ちたまま放置されれば、移しただけで失っているのと同じになる。
+# したがって「後段が落ちたら issue を立てる」ことが、移設の成立条件そのものである。
+#
+# ■ 呼び出し側の書き方
+#   report-failure:
+#     needs: [<担保するジョブ>]
+#     if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
+#     uses: ./.github/workflows/ci-failure-issue.yml
+#     permissions:
+#       contents: read
+#       issues: write
+#
+# ■ 設計の要点（いずれも外すと運用が壊れる）
+#   - **重複起票を防ぐ。** 日次実行が同じ理由で 5 日続けば issue が 5 本立つ。body に
+#     `<!-- ci-failure:<workflow> -->` のマーカーを埋め、open issue を label で引いて
+#     マーカー一致を探す。見つかればコメント追記だけにする。タイトル一致では引かない
+#     （タイトルに日付や run 番号を入れたくなり、その瞬間に重複防止が壊れるため）。
+#   - **PR では呼ばない。** 呼び出し側の if: に github.event_name != 'pull_request' を必ず入れる。
+#     入れ忘れると PR が赤くなるたびに issue が立つ。
+#   - **ラベル欠落で起票が失敗しないようにする。** ci-failure は新規ラベルなので、
+#     起票前に createLabel を try/catch で idempotent に呼ぶ。担保の担保が無い状態を作らない。
+#   - **run の URL・失敗ジョブ名・SHA を body へ入れる。** 1 クリックで辿れないと放置される。
+name: CI Failure Issue
+
+on:
+  workflow_call:
+    inputs:
+      # 既定は呼び出し元のワークフロー名。マーカーの一部になるので、
+      # 同じワークフローの失敗が 1 本の issue へ集約される。
+      marker_key:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        env:
+          MARKER_KEY: ${{ inputs.marker_key }}
+        with:
+          script: |
+            const key = process.env.MARKER_KEY || context.workflow;
+            const marker = `<!-- ci-failure:${key} -->`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                           `/actions/runs/${context.runId}`;
+
+            // 失敗したジョブ名を実際の run から引く（呼び出し側から渡させると必ずずれる）。
+            let failed = [];
+            try {
+              const jobs = await github.paginate(
+                github.rest.actions.listJobsForWorkflowRun,
+                { ...context.repo, run_id: context.runId, per_page: 100 });
+              failed = jobs.filter(j => j.conclusion === 'failure').map(j => j.name);
+            } catch (e) {
+              core.warning(`失敗ジョブ名の取得に失敗した: ${e.message}`);
+            }
+
+            const detail = [
+              `- ワークフロー: **${key}**`,
+              `- 実行: ${runUrl}`,
+              `- 契機: \`${context.eventName}\` / ブランチ \`${context.ref}\``,
+              `- コミット: \`${context.sha}\``,
+              failed.length ? `- 失敗ジョブ: ${failed.map(n => `\`${n}\``).join(' / ')}`
+                            : `- 失敗ジョブ: （取得できなかった。run を開いて確認すること）`,
+            ].join('\n');
+
+            // マーカーで既存の open issue を引く。無ければ立てる、あればコメントを足す。
+            const open = await github.paginate(github.rest.issues.listForRepo,
+              { ...context.repo, state: 'open', labels: 'ci-failure', per_page: 100 });
+            const hit = open.find(i => (i.body || '').includes(marker));
+
+            if (hit) {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: hit.number,
+                body: `${key} がまた落ちた。\n\n${detail}`,
+              });
+              core.notice(`既存 issue #${hit.number} へ追記した（重複起票はしない）。`);
+              return;
+            }
+
+            // ラベルが無いと起票そのものが失敗する。先に idempotent に作る。
+            for (const [name, color, description] of [
+              ['ci-failure', 'b60205', 'PR から後段へ移した検証が落ちた（IADR-0208 決定 1）'],
+              ['automation', 'ededed', '自動生成'],
+            ]) {
+              try {
+                await github.rest.issues.createLabel({ ...context.repo, name, color, description });
+              } catch (e) {
+                if (e.status !== 422) throw e;  // 422 = 既にある
+              }
+            }
+
+            const issue = await github.rest.issues.create({
+              ...context.repo,
+              title: `[CI] ${key} が失敗している`,
+              labels: ['ci-failure', 'automation'],
+              body: [
+                marker,
+                `**${key} が失敗した。**`,
+                '',
+                'この検証は PR の待ち時間を縮めるために PR から後段へ移したものである',
+                '（IADR-0208 決定 1）。**PR が緑でもここが赤ければ、その退行は入っている。**',
+                '',
+                detail,
+                '',
+                '---',
+                '同じワークフローが再び落ちても新しい issue は立たず、この issue へコメントが足される。',
+                '直したらこの issue を閉じること（次に落ちたときは新しい issue が立つ）。',
+              ].join('\n'),
+            });
+            core.notice(`issue #${issue.data.number} を起票した。`);
