@@ -19,6 +19,7 @@
  *   CI 自身を変える PR で backend を skip すると、**その変更を検証できない**。
  *
  * 使い方:
+ *   node scripts/detect-changed-areas.js --git                    # git から差分を取って判定（CI 既定）
  *   node scripts/detect-changed-areas.js --files <一覧ファイル>   # 1 行 1 パス
  *   git diff --name-only base...HEAD | node scripts/detect-changed-areas.js
  *   node scripts/detect-changed-areas.js --self-test
@@ -88,6 +89,33 @@ function decide(files) {
   return { backend: false, reason: '変更が許可リストに収まっている', trigger: null };
 }
 
+/**
+ * git から変更ファイル一覧を取る（`--git`）。
+ *
+ * 🔴 **`HEAD^1 HEAD` の 1 本で PR も push も賄える。**
+ *   - `pull_request`: checkout が `refs/pull/N/merge` を取るため **`HEAD^1` が base** である。
+ *   - `push`: `HEAD^1` は直前のコミットで、求める差分そのものである。
+ *   分岐が要らないぶん、**片方だけ壊れて気付かない**という形にならない。
+ *   checkout は `fetch-depth: 2` で足りる。
+ *
+ * 🔴 **取れなければ空を返す。** 呼び出し側（`decide`）が「変更 0 件＝差分取得の失敗の
+ * 可能性」として **`backend=true`（走らせる）へ倒す**。ここで例外を投げてジョブを
+ * 落とさない —— 本判定は速さのためのものであって門ではない。
+ */
+function filesFromGit() {
+  const { execFileSync } = require('child_process');
+  try {
+    const out = execFileSync('git', ['diff', '--name-only', 'HEAD^1', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return out.split('\n');
+  } catch (e) {
+    console.log(`[detect-changed-areas] ::warning::git から差分を取得できなかった（${e.message.split('\n')[0]}）。走らせる側へ倒す。`);
+    return [];
+  }
+}
+
 function selfTest() {
   const t = [];
   const ok = (name, fn) => {
@@ -150,11 +178,34 @@ function selfTest() {
   });
   ok('ルート直下でない Markdown は許可リストに当たらない', () => isRun(['weird/place/notes.md']));
 
+  // 🔴 `--git` の契約: **何があっても例外を投げず配列を返す**。
+  // 投げるとジョブが落ち、「速さのための判定」が「門」に化ける。
+  ok('filesFromGit: 例外を投げず配列を返す', () => {
+    const r = filesFromGit();
+    if (!Array.isArray(r)) throw new Error('配列でない');
+  });
+  ok('filesFromGit: git の無い場所でも空配列に倒れる（走らせる側へ）', () => {
+    const cwd = process.cwd();
+    const os = require('os');
+    const tmp = require('fs').mkdtempSync(require('path').join(os.tmpdir(), 'nogit-'));
+    try {
+      process.chdir(tmp);
+      const r = filesFromGit();
+      if (!Array.isArray(r)) throw new Error('配列でない');
+      // 空（または空文字だけ）→ decide が走らせる側へ倒すこと
+      const d = decide(r);
+      if (!d.backend) throw new Error('差分が取れないのに skip した');
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   console.log(t.join('\n'));
   console.log(`[detect-changed-areas] 自己試験 ${t.length} 件${process.exitCode ? ' に失敗あり' : ' OK。'}`);
 }
 
 function readFiles(argv) {
+  if (argv.includes('--git')) return filesFromGit();
   const i = argv.indexOf('--files');
   if (i >= 0) return fs.readFileSync(argv[i + 1], 'utf8').split('\n');
   try {
@@ -184,6 +235,6 @@ function main() {
   }
 }
 
-module.exports = { decide, SAFE, FORCE };
+module.exports = { decide, SAFE, FORCE, filesFromGit };
 
 if (require.main === module) main();
