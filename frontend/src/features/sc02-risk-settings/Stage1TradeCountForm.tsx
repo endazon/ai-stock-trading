@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import {
@@ -64,10 +64,23 @@ export function Stage1TradeCountForm({
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // 現在値に追随して入力を初期化する（自分の保存成功後の再取得・外部変更）。
-  useEffect(() => {
+  //
+  // 🔴 #498, NFR: **これを `useEffect` で行わない。** commit（DOM が見える）と passive effect の
+  // 実行の間には窓があり、**その窓で利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って
+  // 巻き戻す**。テストが CI で 3 度落ちた原因はこれであり、実測で確定した（作業仕様書
+  // `.ai-context/specs/20260821_498_stage1-trade-count-flake-root-cause.md`）——
+  // `findByRole` が DOM の出現で解決した直後に `clear()` が走り、そのあとに mount 時の effect が
+  // `setValue('100')` / `setReason('')` を書き戻したため、入力が `150` ではなく `100150` になった。
+  //
+  // React 公式の「prop が変わったときに state を調整する」書き方（前回の prop を state に持ち、
+  // **描画中に同期的に**調整する）へ寄せる。**mount 時は走らない**ため窓そのものが消え、
+  // `current` が実際に変わったときの初期化は従来どおり効く。
+  const [syncedCurrent, setSyncedCurrent] = useState(current);
+  if (syncedCurrent !== current) {
+    setSyncedCurrent(current);
     setValue(String(current));
     setReason('');
-  }, [current]);
+  }
 
   const validationError = validateStage1TradeCountInput(value);
   const reasonMissing = reason.trim() === '';
