@@ -81,16 +81,24 @@ function parseWorkflow(text) {
     if (currentJob) {
       const nameMatch = /^ {4}name:\s*(.+?)\s*$/.exec(line);
       if (nameMatch) {
-        jobs.set(currentJob, stripQuotes(nameMatch[1]));
+        jobs.set(currentJob, parseScalar(nameMatch[1]));
       }
     }
   }
   return jobs;
 }
 
-function stripQuotes(s) {
-  const m = /^(['"])(.*)\1$/.exec(s);
-  return m ? m[2] : s;
+/**
+ * YAML のスカラー値を読む。引用符とインラインコメントを落とす。
+ * 🔴 **行末までを値として取ると `name: X # 説明` が check 名へ混入する**（AI レビューの指摘）。
+ * 実在する check 名と一致しなくなり、**偽陽性を出す** —— 偽陽性を出す検査器は外される。
+ * YAML でコメントになるのは**空白に続く `#`** だけであり、`Foo#1` の `#` は値の一部である。
+ * 引用符の中の `#` もコメントではない。
+ */
+function parseScalar(raw) {
+  const quoted = /^(['"])(.*)\1\s*(?:#.*)?$/.exec(raw);
+  if (quoted) return quoted[2];
+  return raw.replace(/\s+#.*$/, '').trim();
 }
 
 function loadWorkflows(dir) {
@@ -338,6 +346,14 @@ function selfTest() {
     eq([...parseWorkflow('jobs:\n  lint: # 整形\n').keys()], ['lint'], 'jobs'));
   t('引用符付きの name: を剥がす', () =>
     eq(parseWorkflow('jobs:\n  a:\n    name: "PR Size"\n').get('a'), 'PR Size', 'name'));
+  t('🔴 name: のインラインコメントを値へ混ぜない', () =>
+    eq(parseWorkflow('jobs:\n  a:\n    name: Secret scan # gitleaks を回す\n').get('a'), 'Secret scan', 'name'));
+  t('引用符の中の # はコメントではない', () =>
+    eq(parseWorkflow('jobs:\n  a:\n    name: "Build # 1"\n').get('a'), 'Build # 1', 'name'));
+  t('空白の無い # は値の一部（YAML のコメント条件）', () =>
+    eq(parseWorkflow('jobs:\n  a:\n    name: Build#1\n').get('a'), 'Build#1', 'name'));
+  t('引用符の後ろのコメントは落とす', () =>
+    eq(parseWorkflow('jobs:\n  a:\n    name: "PR Size" # 警告専用\n').get('a'), 'PR Size', 'name'));
 
   t('注記の手前で切る', () =>
     eq(beforeAnnotation('`a` / `b`（**`name:` 無し**。`c` も）'), '`a` / `b`', 'cut'));
@@ -450,4 +466,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseWorkflow, parseDoc, check, normalizeCheckName, beforeAnnotation };
+module.exports = { parseWorkflow, parseDoc, check, normalizeCheckName, beforeAnnotation, parseScalar };
