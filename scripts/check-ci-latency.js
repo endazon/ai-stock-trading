@@ -280,6 +280,40 @@ async function fetchChangedFiles(fetchPage, { maxPages = FILES_MAX_PAGES } = {})
 }
 
 /**
+ * 母集合の PR が実際にマージされた先＝**統合ブランチ**を、PR 自身から導く。
+ *
+ * 🔴 **ブランチ名を焼き込まない。** 本ファイルは複数リポジトリへ複写して使うため、
+ * `develop` と決め打つと複写先で静かに誤る。
+ *
+ * 🔴 **GitHub の「既定ブランチ」設定にも依存しない**（AI レビューの指摘）。
+ * Commits API は `sha` を省略すると**既定ブランチ**を見る。本リポジトリでは現在
+ * 既定＝`develop` なので実害は無いが、**設定が変われば epoch は別ブランチの値になる**。
+ * 実測では `main` に `.github/workflows/ci.yml` を触ったコミットが 1 つも無く、
+ * その場合 epoch は null になって**絞り込みが黙って消える**。
+ *
+ * 母集合の PR の `base.ref` は「その計測がどのブランチ向けに行われたか」そのものであり、
+ * リポジトリ設定より確かな情報である。**最頻値**を採る（1 本だけ別ブランチ向けの PR が
+ * 混ざっても揺らがない）。1 本も無ければ null＝`sha` を付けない（従来どおり既定ブランチ）。
+ */
+function integrationBranch(prs) {
+  const counts = new Map();
+  for (const p of prs || []) {
+    const ref = p && p.base && p.base.ref;
+    if (!ref) continue;
+    counts.set(ref, (counts.get(ref) || 0) + 1);
+  }
+  let best = null;
+  let bestN = 0;
+  for (const [ref, n] of counts) {
+    if (n > bestN) {
+      best = ref;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/**
  * 「CI 構成が最後に変わった時刻」（epoch）を GitHub API から引く。IADR-0208 決定 15。
  *
  * 🔴 **日付を焼き込まない。** 固定値は必ず腐る —— 本検査器が「しきい値を固定値で持たない
@@ -293,10 +327,11 @@ async function fetchChangedFiles(fetchPage, { maxPages = FILES_MAX_PAGES } = {})
  * 引けなければ null を返す（呼び出し側は絞り込みをやめる＝従来どおり全 PR を母集合にする）。
  * **監視を門に化けさせない** —— ここで赤くすると、速さの監視が可用性の門になる。
  */
-async function fetchConfigEpoch({ base, token, path = CONFIG_PATH }) {
+async function fetchConfigEpoch({ base, token, path = CONFIG_PATH, branch = null }) {
   if (process.env.CI_LATENCY_EPOCH) return process.env.CI_LATENCY_EPOCH;
   try {
-    const commits = await fetchJson(`${base}/commits?path=${encodeURIComponent(path)}&per_page=1`, token);
+    const sha = branch ? `&sha=${encodeURIComponent(branch)}` : '';
+    const commits = await fetchJson(`${base}/commits?path=${encodeURIComponent(path)}&per_page=1${sha}`, token);
     const date =
       Array.isArray(commits) && commits[0] && commits[0].commit && commits[0].commit.committer
         ? commits[0].commit.committer.date
@@ -355,11 +390,12 @@ async function collect({ repo, token, samples }) {
   // 🔴 **現在の CI 構成で測られた PR だけを母集合にする**（決定 15）。
   // 中央値は「窓の多数派」を映すので、構成を変えた直後の窓は旧構成の値を現在の値として報告する。
   // 判定は下のループで、**計測時刻（check 群の開始）**に対して行う（マージ時刻ではない）。
-  const epoch = await fetchConfigEpoch({ base, token });
+  const branch = integrationBranch(merged);
+  const epoch = await fetchConfigEpoch({ base, token, branch });
   let skippedPreEpoch = 0;
   if (!epoch) {
     console.log(
-      `::notice::[check-ci-latency] ${CONFIG_PATH} の最終変更時刻を引けなかったため、` +
+      `::notice::[check-ci-latency] ${CONFIG_PATH}（${branch || '既定ブランチ'}）の最終変更時刻を引けなかったため、` +
         'CI 構成による母集合の限定をしていない（従来どおり全 PR を見る）。',
     );
   }
@@ -450,6 +486,7 @@ async function collect({ repo, token, samples }) {
     skippedBackend,
     skippedPreEpoch,
     epoch,
+    branch,
   };
 }
 
@@ -741,6 +778,60 @@ async function selfTest() {
       true,
       'run は新しい ci.yml で走っている。最も知りたい 1 本目を落としてはならない',
     ));
+  // 🔴 AI レビューの指摘の回帰テスト。epoch を**どのブランチで測るか**。
+  const withBase = (ref) => ({ base: { ref } });
+  ok('integrationBranch: 母集合の PR がマージされた先を採る', () =>
+    eq(integrationBranch([withBase('develop'), withBase('develop')]), 'develop'));
+  ok('integrationBranch: 最頻値を採る（1 本の別ブランチで揺らがない）', () =>
+    // 🔴 **先頭を別ブランチにしてある。** `[develop, main, develop]` だと
+    // 「先頭を採る」実装でも通ってしまい、**最頻値を採っていることを検査できない**（実測）。
+    eq(integrationBranch([withBase('main'), withBase('develop'), withBase('develop')]), 'develop'));
+  ok('integrationBranch: 1 本も無ければ null（＝既定ブランチに委ねる）', () => {
+    eq(integrationBranch([]), null);
+    eq(integrationBranch(null), null);
+    eq(integrationBranch([{}, { base: {} }]), null);
+  });
+  ok('🔴 fetchConfigEpoch: ブランチを渡したら sha としてクエリへ載せる', async () => {
+    const orig = process.env.CI_LATENCY_EPOCH;
+    delete process.env.CI_LATENCY_EPOCH;
+    const seen = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url) => {
+      seen.push(String(url));
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => [{ commit: { committer: { date: '2026-08-22T00:15:29Z' } } }],
+      };
+    };
+    try {
+      const e = await fetchConfigEpoch({ base: 'https://api.example/repos/o/r', token: 'x', branch: 'develop' });
+      eq(e, '2026-08-22T00:15:29Z');
+      if (!seen[0].includes('&sha=develop')) throw new Error(`sha が載っていない: ${seen[0]}`);
+    } finally {
+      global.fetch = origFetch;
+      if (orig === undefined) delete process.env.CI_LATENCY_EPOCH;
+      else process.env.CI_LATENCY_EPOCH = orig;
+    }
+  });
+  ok('fetchConfigEpoch: ブランチが無ければ sha を付けない（既定ブランチに委ねる）', async () => {
+    const orig = process.env.CI_LATENCY_EPOCH;
+    delete process.env.CI_LATENCY_EPOCH;
+    const seen = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url) => {
+      seen.push(String(url));
+      return { ok: true, headers: { get: () => null }, json: async () => [] };
+    };
+    try {
+      eq(await fetchConfigEpoch({ base: 'https://api.example/repos/o/r', token: 'x', branch: null }), null);
+      if (seen[0].includes('sha=')) throw new Error(`sha が載ってしまっている: ${seen[0]}`);
+    } finally {
+      global.fetch = origFetch;
+      if (orig === undefined) delete process.env.CI_LATENCY_EPOCH;
+      else process.env.CI_LATENCY_EPOCH = orig;
+    }
+  });
   ok('representsCurrentConfig: 古い構成変更 PR は残さない（マージも epoch より前）', () =>
     eq(
       rep({ t0: at('2026-08-19T00:00:00Z'), mergedAt: '2026-08-19T01:00:00Z', changedConfig: true }),
@@ -812,6 +903,7 @@ async function main() {
     skippedBackend,
     skippedPreEpoch,
     epoch,
+    branch,
   } = await collect({ repo, token, samples: SAMPLES });
   const r = judge({ targetDurations, baselineDurations, epoch });
 
@@ -823,7 +915,9 @@ async function main() {
   if (skippedBackend) notes.push(`${skippedBackend} 本は backend を skip した PR なので母集合から外した`);
   // 🔴 黙って母集合を狭めない（決定 15 も同じ扱い）。
   if (skippedPreEpoch) {
-    notes.push(`${skippedPreEpoch} 本は現在の CI 構成より前（${epoch} より前）に測られたので母集合から外した`);
+    notes.push(
+      `${skippedPreEpoch} 本は現在の CI 構成より前（${branch || '既定ブランチ'} の ${CONFIG_PATH} が最後に変わった ${epoch} より前）に測られたので母集合から外した`,
+    );
   }
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
