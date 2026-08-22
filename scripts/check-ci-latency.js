@@ -47,12 +47,18 @@
  *   CI_LATENCY_BASELINE   基準の check 名（既定 claude-review）
  *   CI_LATENCY_SAMPLES    走査するマージ済み PR の本数（既定 10）
  *   CI_LATENCY_STEP_RATIO 定常性の門の倍率（既定 2）。中央値 ÷ 最小 がこれ以上なら判定を skip する
+ *   CI_LATENCY_CONFIG_PATH  CI 構成ファイル（既定 .github/workflows/ci.yml）。epoch の導出に使う
+ *   CI_LATENCY_EPOCH        epoch の上書き（ISO 8601）。**両方向の実測に使う**
+ *   CI_LATENCY_MIN_SAMPLES  判定に要る最小本数（既定 3）
  */
 
 const TARGET = process.env.CI_LATENCY_TARGET || 'build-and-test';
 const BASELINE = process.env.CI_LATENCY_BASELINE || 'claude-review';
 const SAMPLES = Number(process.env.CI_LATENCY_SAMPLES || 10);
 const STEP_RATIO = Number(process.env.CI_LATENCY_STEP_RATIO || 2);
+const CONFIG_PATH = process.env.CI_LATENCY_CONFIG_PATH || '.github/workflows/ci.yml';
+// 🔴 中央値は本数が少ないと 1 本に引きずられる。3 本を下限とする。
+const MIN_SAMPLES = Number(process.env.CI_LATENCY_MIN_SAMPLES || 3);
 
 /**
  * 秒。completed_at - started_at。**実際に走った run だけ**を返し、それ以外は null。
@@ -126,9 +132,27 @@ function min(xs) {
  * （窓が入れ替われば次回鳴る）。速さの監視は fail-open であるという上の方針と同じ向きであり、
  * **見逃しより誤報のほうが監視を壊す**という判断で意図的にこちらへ倒している。
  */
-function judge({ targetDurations, baselineDurations, stepRatio = STEP_RATIO }) {
+function judge({ targetDurations, baselineDurations, stepRatio = STEP_RATIO, minSamples = MIN_SAMPLES, epoch = null }) {
   const t = median(targetDurations);
   const b = min(baselineDurations);
+  // 🔴 **現在の CI 構成で測られた PR が少なすぎるうちは判定しない**（決定 15）。
+  // 🔴 **この門を null 判定より前に置く。** 0 本のときこそ epoch を理由に添えねばならない ——
+  // 「サンプルが足りない」とだけ言われると、**check 名の設定ミスと区別が付かない**。
+  // 中央値は「窓の多数派」を映す。構成を変えた直後は多数派が旧構成のままなので、
+  // **判定すれば必ず旧構成の値を現在の値として報告する**。決定 9 の定常性の門は
+  // 段差が 2 倍未満だとくぐられる（実測 223 → 125 秒 ＝ 1.8 倍）ため、これだけでは足りない。
+  if (targetDurations.length < minSamples) {
+    return {
+      ok: true,
+      skipped: true,
+      reason:
+        `現在の CI 構成（${epoch ? `${epoch} 以降` : 'epoch 不明'}）で測られた ${TARGET} の対象が ` +
+        `${targetDurations.length} 本しかない（判定には ${minSamples} 本要る）。` +
+        '中央値がまだ現在の構成を表さないため判定しない',
+      target: t,
+      baseline: b,
+    };
+  }
   if (t === null || b === null) {
     return { ok: true, skipped: true, reason: 'サンプルが足りない', target: t, baseline: b };
   }
@@ -255,6 +279,102 @@ async function fetchChangedFiles(fetchPage, { maxPages = FILES_MAX_PAGES } = {})
   return { names, complete: false };
 }
 
+/**
+ * 母集合の PR が実際にマージされた先＝**統合ブランチ**を、PR 自身から導く。
+ *
+ * 🔴 **ブランチ名を焼き込まない。** 本ファイルは複数リポジトリへ複写して使うため、
+ * `develop` と決め打つと複写先で静かに誤る。
+ *
+ * 🔴 **GitHub の「既定ブランチ」設定にも依存しない**（AI レビューの指摘）。
+ * Commits API は `sha` を省略すると**既定ブランチ**を見る。本リポジトリでは現在
+ * 既定＝`develop` なので実害は無いが、**設定が変われば epoch は別ブランチの値になる**。
+ * 実測では `main` に `.github/workflows/ci.yml` を触ったコミットが 1 つも無く、
+ * その場合 epoch は null になって**絞り込みが黙って消える**。
+ *
+ * 母集合の PR の `base.ref` は「その計測がどのブランチ向けに行われたか」そのものであり、
+ * リポジトリ設定より確かな情報である。**最頻値**を採る（1 本だけ別ブランチ向けの PR が
+ * 混ざっても揺らがない）。1 本も無ければ null＝`sha` を付けない（従来どおり既定ブランチ）。
+ */
+function integrationBranch(prs) {
+  const counts = new Map();
+  for (const p of prs || []) {
+    const ref = p && p.base && p.base.ref;
+    if (!ref) continue;
+    counts.set(ref, (counts.get(ref) || 0) + 1);
+  }
+  let best = null;
+  let bestN = 0;
+  for (const [ref, n] of counts) {
+    if (n > bestN) {
+      best = ref;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/**
+ * 「CI 構成が最後に変わった時刻」（epoch）を GitHub API から引く。IADR-0208 決定 15。
+ *
+ * 🔴 **日付を焼き込まない。** 固定値は必ず腐る —— 本検査器が「しきい値を固定値で持たない
+ * （自己校正）」と決めたのと同じ理由である。構成ファイルの最終変更時刻なら、
+ * CI を触るたびに自動で前進する。
+ *
+ * 🔴 **`git log` で求めてはならない。** `actions/checkout` は既定で shallow であり、
+ * その出力は**履歴の打ち切り位置**を指し得る。しかも形式としては正しい日付が返るため、
+ * 誤っていることに気付けない。API なら `contents: read` だけで確実に引ける。
+ *
+ * 引けなければ null を返す（呼び出し側は絞り込みをやめる＝従来どおり全 PR を母集合にする）。
+ * **監視を門に化けさせない** —— ここで赤くすると、速さの監視が可用性の門になる。
+ */
+async function fetchConfigEpoch({ base, token, path = CONFIG_PATH, branch = null }) {
+  if (process.env.CI_LATENCY_EPOCH) return process.env.CI_LATENCY_EPOCH;
+  try {
+    const sha = branch ? `&sha=${encodeURIComponent(branch)}` : '';
+    const commits = await fetchJson(`${base}/commits?path=${encodeURIComponent(path)}&per_page=1${sha}`, token);
+    const date =
+      Array.isArray(commits) && commits[0] && commits[0].commit && commits[0].commit.committer
+        ? commits[0].commit.committer.date
+        : null;
+    return date && Number.isFinite(Date.parse(date)) ? date : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 「この計測は現在の CI 構成を表すか」。
+ *
+ * 🔴 **マージ時刻だけで判定してはならない**（AI レビューの指摘で是正）。判定したいのは
+ * 「どの構成で**測られた**か」であって「いつマージされたか」ではない。
+ * **CI が走ったのは構成変更の前、マージはその後**という PR は普通に起こる
+ * （PR を放置している間に develop 側で `ci.yml` が変わり、リベースせずマージされた場合）。
+ * その 1 本は旧構成の値なのに母集合へ残り、**決定 15 が塞ごうとした穴を epoch 自身が再現する**。
+ *
+ * 🔴 **逆に、計測時刻だけで判定すると今度は取りこぼす**（実データで判明）。
+ * **構成変更を持ち込んだ PR 自身**は、その run が**新しい `ci.yml` で走っている**
+ * （`pull_request` の run は base を取り込んだ merge ref で動く）のに、
+ * epoch＝develop へ載った時刻はその run より**後**になるため落ちてしまう。
+ * 実測では #546 がこれに当たり、**母集合が 0 本になった**。
+ * 落ちるのは「新しい構成での最初の 1 本」＝**最も知りたいサンプル**である。
+ *
+ * したがって両方を見る。変更ファイル一覧は backend の判定のために既に引いており、追加の API 呼び出しは無い。
+ *
+ * fail-open（絞り込まない）に倒すのは、epoch が無い・壊れている・計測時刻が取れないときである。
+ * 境界（同時刻）は**残す** —— その構成で測られた 1 本目だからである。
+ */
+function representsCurrentConfig({ t0, mergedAt, changedConfig, epoch }) {
+  if (!epoch) return true;
+  const e = Date.parse(epoch);
+  if (!Number.isFinite(e)) return true;
+  if (t0 === null || t0 === undefined) return true; // 計測時刻が取れない
+  if (t0 >= e) return true; // 現在の構成で測られた
+  // その構成変更を持ち込んだ PR 自身（run は新しい ci.yml で走っている）
+  const m = Date.parse(mergedAt);
+  if (changedConfig && Number.isFinite(m) && m >= e) return true;
+  return false;
+}
+
 async function collect({ repo, token, samples }) {
   const base = `https://api.github.com/repos/${repo}`;
   // per_page を samples の 3 倍取るのは、closed には**マージされずに閉じた** PR が混ざるためである。
@@ -267,6 +387,19 @@ async function collect({ repo, token, samples }) {
   }
   const merged = sortByMergedAtDesc(prs).slice(0, samples);
 
+  // 🔴 **現在の CI 構成で測られた PR だけを母集合にする**（決定 15）。
+  // 中央値は「窓の多数派」を映すので、構成を変えた直後の窓は旧構成の値を現在の値として報告する。
+  // 判定は下のループで、**計測時刻（check 群の開始）**に対して行う（マージ時刻ではない）。
+  const branch = integrationBranch(merged);
+  const epoch = await fetchConfigEpoch({ base, token, branch });
+  let skippedPreEpoch = 0;
+  if (!epoch) {
+    console.log(
+      `::notice::[check-ci-latency] ${CONFIG_PATH}（${branch || '既定ブランチ'}）の最終変更時刻を引けなかったため、` +
+        'CI 構成による母集合の限定をしていない（従来どおり全 PR を見る）。',
+    );
+  }
+
   const targetDurations = [];
   const baselineDurations = [];
   let fetchFailures = 0;
@@ -277,34 +410,35 @@ async function collect({ repo, token, samples }) {
     const sha = pr.head && pr.head.sha;
     if (!sha) continue;
 
-    // 🔴 **backend を skip した PR は母集合に入れない**（決定 13）。
-    // 監視が答えたい問いは「**CI が仕事をしたとき**、レビューより長くかかるか」である。
-    // docs だけの PR は構造上速く終わる（実測 24 秒）ので、混ぜると母集合が二峰性になり、
+    // 決定 13: docs だけの PR は構造上速く終わる（実測 24 秒）ので、混ぜると母集合が二峰性になり、
     // 定常性の門（決定 9）が「構成が変わった」と誤認して**永久に判定しなくなる**。
-    if (decideBackend) {
-      try {
-        // 🔴 **1 ページ目だけ見てはならない。** 変更 100 件を超える PR で、最初の 100 件が
-        // すべて許可リスト内（docs 等）・backend の変更が 101 件目以降にある場合、
-        // **実際には backend を触った PR を母集合から静かに落とす**（AI レビューの指摘）。
-        // 実害は小さい（監視は門ではない）が、**決定 13 の狙いを黙って損なう経路**である。
-        const { names, complete } = await fetchChangedFiles((page) =>
-          fetchJson(`${base}/pulls/${pr.number}/files?per_page=${FILES_PAGE_SIZE}&page=${page}`, token)
-        );
-        // ファイル一覧が引けなかった場合は names が空になり、decide() は
-        // 「差分の取得に失敗した可能性」として backend=true へ倒す＝母集合に残す（安全側）。
-        // **全ページを読み切れなかったときも除外しない** —— 判断材料が欠けている状態で
-        // 母集合を狭めるのは、この検査が防ごうとしている「黙って狭める」ことそのものである。
-        if (complete && !decideBackend(names).backend) {
-          skippedBackend += 1;
-          continue;
-        }
-      } catch (e) {
-        if (classifyFailure(e.status, { rateLimited: e.rateLimited, scope: 'commit' }) === 'config') {
-          e.scope = 'commit';
-          throw e;
-        }
-        // 引けなければ絞り込まない（母集合に残す）。速さの監視を門に化けさせない。
+    // 監視が答えたい問いは「**CI が仕事をしたとき**、レビューより長くかかるか」である。
+    // 変更ファイル一覧は **1 度だけ**引き、backend の判定（決定 13）と
+    // 「構成変更を持ち込んだ PR か」の判定（決定 15）の両方に使う。
+    // 🔴 **1 ページ目だけ見てはならない。** 変更 100 件を超える PR で、最初の 100 件が
+    // すべて許可リスト内（docs 等）・backend の変更が 101 件目以降にある場合、
+    // **実際には backend を触った PR を母集合から静かに落とす**（AI レビューの指摘）。
+    // 実測でも #536（変更 619 ファイル）が該当した。
+    let changedFiles = null; // 読み切れなかった／引けなかったときは null のまま
+    try {
+      const { names, complete } = await fetchChangedFiles((page) =>
+        fetchJson(`${base}/pulls/${pr.number}/files?per_page=${FILES_PAGE_SIZE}&page=${page}`, token)
+      );
+      if (complete) changedFiles = names;
+    } catch (e) {
+      if (classifyFailure(e.status, { rateLimited: e.rateLimited, scope: 'commit' }) === 'config') {
+        e.scope = 'commit';
+        throw e;
       }
+      // 引けなければ絞り込まない（母集合に残す）。速さの監視を門に化けさせない。
+    }
+
+    // 🔴 **backend を skip した PR は母集合に入れない**（決定 13）。
+    // 一覧が引けなかった／読み切れなかったときは**除外しない**（判断材料が欠けている状態で
+    // 母集合を狭めるのは、この検査が防ごうとしている「黙って狭める」ことそのものである）。
+    if (decideBackend && changedFiles && !decideBackend(changedFiles).backend) {
+      skippedBackend += 1;
+      continue;
     }
 
     let runs;
@@ -325,6 +459,26 @@ async function collect({ repo, token, samples }) {
     }
     const all = runs.check_runs || [];
     const t0 = checkSetStart(all);
+    // 🔴 旧構成で測られた run は母集合に入れない（決定 15）。
+    // **計測時刻で見る**（マージ時刻ではない）。ただし構成変更を持ち込んだ PR 自身は残す。
+    //
+    // 🔴 **ここだけ fail-open の向きが逆なのは意図的である**（AI レビューの 🟢 指摘）。
+    // ファイル一覧が引けなかった（`changedFiles === null`）とき、backend の判定は
+    // 「除外しない」へ倒すが、こちらは `changedConfig` が false 扱いになり、
+    // **計測が epoch より前ならその PR は落ちる**。理由:
+    //   - 落とす誤り  … 母集合が 1 本小さくなるだけで、**本数は出力される**（黙っていない）
+    //   - 残す誤り    … **旧構成の値が中央値へ混ざる**＝決定 15 が塞いだ誤報そのものが戻る
+    // 「判断材料が欠けたら狭めない」の原則は**黙って狭めないこと**を言っており、
+    // ここは数えて出しているので当たらない。**向きを揃えると誤報の側へ倒れる。**
+    if (!representsCurrentConfig({
+      t0,
+      mergedAt: pr.merged_at,
+      changedConfig: Boolean(changedFiles && changedFiles.includes(CONFIG_PATH)),
+      epoch,
+    })) {
+      skippedPreEpoch += 1;
+      continue;
+    }
     for (const r of all) {
       const d = waitSec(r, t0);
       if (d === null) continue;
@@ -332,7 +486,17 @@ async function collect({ repo, token, samples }) {
       else if (r.name === BASELINE) baselineDurations.push(d);
     }
   }
-  return { merged: merged.length, targetDurations, baselineDurations, fetchFailures, missingHeads, skippedBackend };
+  return {
+    merged: merged.length,
+    targetDurations,
+    baselineDurations,
+    fetchFailures,
+    missingHeads,
+    skippedBackend,
+    skippedPreEpoch,
+    epoch,
+    branch,
+  };
 }
 
 async function selfTest() {
@@ -468,8 +632,11 @@ async function selfTest() {
   ok('judge: 対象の中央値が基準の最小を超えたら NG（＝逆転）', () =>
     eq(judge({ targetDurations: [200, 240, 260], baselineDurations: [148, 400] }).ok, false));
   ok('judge: 基準は中央値ではなく最小で見る', () => {
-    // 基準の中央値は 300 だが最小は 148。対象 240 は中央値なら通り、最小なら落ちる。
-    const r = judge({ targetDurations: [240], baselineDurations: [148, 300, 500] });
+    // 基準の中央値は 300 だが最小は 148。対象の中央値 240 は中央値なら通り、最小なら落ちる。
+    // 🔴 対象を 3 本にしてあるのは、決定 15 の最小本数の門（既定 3 本）を通すためである。
+    // 1 本だと門が先に効いて skip し、**この試験は「落ちない」ことを確かめるだけの空試験になる**。
+    const r = judge({ targetDurations: [235, 240, 245], baselineDurations: [148, 300, 500] });
+    eq(r.skipped, false, '門ではなく本判定に到達していること');
     eq(r.ok, false, '最小と比べていない');
   });
   ok('judge: 対象は最小ではなく中央値で見る（外れ値で鳴らさない）', () => {
@@ -510,8 +677,13 @@ async function selfTest() {
     eq(r.ok, true);
     eq(r.skipped, true);
   });
-  ok('judge: 同値は逆転ではない（境界）', () =>
-    eq(judge({ targetDurations: [148], baselineDurations: [148] }).ok, true));
+  ok('judge: 同値は逆転ではない（境界）', () => {
+    // 🔴 対象を 3 本にする理由は上と同じ。1 本だと最小本数の門が先に効き、
+    // **skip の ok:true を「境界が通った」と読み違える**（黙って素通りする試験になっていた）。
+    const r = judge({ targetDurations: [148, 148, 148], baselineDurations: [148] });
+    eq(r.skipped, false, '門ではなく本判定に到達していること');
+    eq(r.ok, true);
+  });
 
   // 🔴 決定 13 の回帰テスト。複写して使うファイルなので、
   // 「同ファイルが無いリポジトリでも壊れない」ことを固定する。
@@ -584,6 +756,135 @@ async function selfTest() {
     eq(r.complete, true);
   });
 
+
+  // 🔴 決定 15 の回帰テスト。母集合を「現在の CI 構成以降」に限る。
+  const EPOCH = '2026-08-22T00:15:00Z';
+  const at = (iso) => Date.parse(iso);
+  const rep = (o) => representsCurrentConfig({ changedConfig: false, mergedAt: null, epoch: EPOCH, ...o });
+  ok('representsCurrentConfig: epoch より前に測られた run は落とす', () =>
+    eq(rep({ t0: at('2026-08-21T00:00:00Z') }), false));
+  ok('representsCurrentConfig: epoch 以降に測られた run は残す', () =>
+    eq(rep({ t0: at('2026-08-23T00:00:00Z') }), true));
+  ok('representsCurrentConfig: 境界（epoch と同時刻）は残す', () =>
+    eq(rep({ t0: at(EPOCH) }), true, 'その構成で測られた 1 本目である'));
+  ok('🔴 representsCurrentConfig: epoch が無ければ絞り込まない（fail-open）', () =>
+    eq(rep({ t0: at('2020-01-01T00:00:00Z'), epoch: null }), true));
+  ok('representsCurrentConfig: 壊れた epoch でも絞り込まない（fail-open）', () =>
+    eq(rep({ t0: at('2020-01-01T00:00:00Z'), epoch: 'not-a-date' }), true));
+  ok('representsCurrentConfig: 計測時刻が取れなければ絞り込まない（fail-open）', () =>
+    eq(rep({ t0: null }), true));
+  // 🔴 AI レビューの指摘の回帰テスト。**マージ時刻だけで判定していたら通ってしまう形。**
+  ok('🔴 representsCurrentConfig: 「CI は構成変更の前、マージはその後」の PR を落とす', () =>
+    eq(
+      rep({ t0: at('2026-08-21T12:00:00Z'), mergedAt: '2026-08-23T00:00:00Z' }),
+      false,
+      '計測時刻で見ていない',
+    ));
+  // 🔴 実データで判明した取りこぼしの回帰テスト。**計測時刻だけで判定していたら落ちてしまう形。**
+  ok('🔴 representsCurrentConfig: 構成変更を持ち込んだ PR 自身は残す（実測 #546）', () =>
+    eq(
+      rep({ t0: at('2026-08-21T23:57:00Z'), mergedAt: '2026-08-22T00:15:29Z', changedConfig: true }),
+      true,
+      'run は新しい ci.yml で走っている。最も知りたい 1 本目を落としてはならない',
+    ));
+  // 🔴 AI レビューの指摘の回帰テスト。epoch を**どのブランチで測るか**。
+  const withBase = (ref) => ({ base: { ref } });
+  ok('integrationBranch: 母集合の PR がマージされた先を採る', () =>
+    eq(integrationBranch([withBase('develop'), withBase('develop')]), 'develop'));
+  ok('integrationBranch: 最頻値を採る（1 本の別ブランチで揺らがない）', () =>
+    // 🔴 **先頭を別ブランチにしてある。** `[develop, main, develop]` だと
+    // 「先頭を採る」実装でも通ってしまい、**最頻値を採っていることを検査できない**（実測）。
+    eq(integrationBranch([withBase('main'), withBase('develop'), withBase('develop')]), 'develop'));
+  ok('integrationBranch: 1 本も無ければ null（＝既定ブランチに委ねる）', () => {
+    eq(integrationBranch([]), null);
+    eq(integrationBranch(null), null);
+    eq(integrationBranch([{}, { base: {} }]), null);
+  });
+  ok('🔴 fetchConfigEpoch: ブランチを渡したら sha としてクエリへ載せる', async () => {
+    const orig = process.env.CI_LATENCY_EPOCH;
+    delete process.env.CI_LATENCY_EPOCH;
+    const seen = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url) => {
+      seen.push(String(url));
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => [{ commit: { committer: { date: '2026-08-22T00:15:29Z' } } }],
+      };
+    };
+    try {
+      const e = await fetchConfigEpoch({ base: 'https://api.example/repos/o/r', token: 'x', branch: 'develop' });
+      eq(e, '2026-08-22T00:15:29Z');
+      if (!seen[0].includes('&sha=develop')) throw new Error(`sha が載っていない: ${seen[0]}`);
+    } finally {
+      global.fetch = origFetch;
+      if (orig === undefined) delete process.env.CI_LATENCY_EPOCH;
+      else process.env.CI_LATENCY_EPOCH = orig;
+    }
+  });
+  ok('fetchConfigEpoch: ブランチが無ければ sha を付けない（既定ブランチに委ねる）', async () => {
+    const orig = process.env.CI_LATENCY_EPOCH;
+    delete process.env.CI_LATENCY_EPOCH;
+    const seen = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url) => {
+      seen.push(String(url));
+      return { ok: true, headers: { get: () => null }, json: async () => [] };
+    };
+    try {
+      eq(await fetchConfigEpoch({ base: 'https://api.example/repos/o/r', token: 'x', branch: null }), null);
+      if (seen[0].includes('sha=')) throw new Error(`sha が載ってしまっている: ${seen[0]}`);
+    } finally {
+      global.fetch = origFetch;
+      if (orig === undefined) delete process.env.CI_LATENCY_EPOCH;
+      else process.env.CI_LATENCY_EPOCH = orig;
+    }
+  });
+  ok('representsCurrentConfig: 古い構成変更 PR は残さない（マージも epoch より前）', () =>
+    eq(
+      rep({ t0: at('2026-08-19T00:00:00Z'), mergedAt: '2026-08-19T01:00:00Z', changedConfig: true }),
+      false,
+    ));
+
+  ok('🔴 judge: 対象が最小本数に満たなければ判定しない', () => {
+    const r = judge({ targetDurations: [120, 130], baselineDurations: [146], minSamples: 3, epoch: EPOCH });
+    eq(r.skipped, true);
+    if (!r.reason.includes('2 本しかない')) throw new Error(`本数が理由に出ていない: ${r.reason}`);
+    if (!r.reason.includes(EPOCH)) throw new Error(`epoch が理由に出ていない: ${r.reason}`);
+  });
+  ok('🔴 judge: 本数が足りれば判定する（skip しっぱなしでない）', () => {
+    const r = judge({ targetDurations: [120, 130, 125], baselineDurations: [146], minSamples: 3, epoch: EPOCH });
+    eq(r.skipped, false);
+    eq(r.ok, true, '125 秒 <= 146 秒');
+  });
+  ok('judge: 本数が足りていれば逆転を検出する', () => {
+    const r = judge({ targetDurations: [200, 210, 205], baselineDurations: [146], minSamples: 3, epoch: EPOCH });
+    eq(r.skipped, false);
+    eq(r.ok, false);
+  });
+  ok('judge: 最小本数の門は定常性の門より先に効く', () => {
+    // 中央値 240 / 最小 20 ＝ 12 倍。両方の門に当たるが、報告すべきは「本数が足りない」ほうである。
+    const r = judge({ targetDurations: [20, 240], baselineDurations: [146], minSamples: 3, epoch: EPOCH });
+    eq(r.skipped, true);
+    if (!r.reason.includes('本しかない')) throw new Error(`理由が違う: ${r.reason}`);
+  });
+  ok('judge: epoch 不明でも本数の門は効く（理由にその旨が出る）', () => {
+    const r = judge({ targetDurations: [120], baselineDurations: [146], minSamples: 3, epoch: null });
+    eq(r.skipped, true);
+    if (!r.reason.includes('epoch 不明')) throw new Error(`理由が違う: ${r.reason}`);
+  });
+  ok('CI_LATENCY_EPOCH が指定されていれば API を叩かずそれを使う', async () => {
+    const orig = process.env.CI_LATENCY_EPOCH;
+    process.env.CI_LATENCY_EPOCH = EPOCH;
+    try {
+      // token/base を渡さずとも API を叩かないことが、例外が出ないことで分かる。
+      eq(await fetchConfigEpoch({ base: 'http://invalid.invalid', token: 'x' }), EPOCH);
+    } finally {
+      if (orig === undefined) delete process.env.CI_LATENCY_EPOCH;
+      else process.env.CI_LATENCY_EPOCH = orig;
+    }
+  });
   await Promise.all(pending);
   console.log(t.join('\n'));
   console.log(`[check-ci-latency] 自己試験 ${t.length} 件${process.exitCode ? ' に失敗あり' : ' OK。'}`);
@@ -602,12 +903,18 @@ async function main() {
     return;
   }
 
-  const { merged, targetDurations, baselineDurations, fetchFailures, missingHeads, skippedBackend } = await collect({
-    repo,
-    token,
-    samples: SAMPLES,
-  });
-  const r = judge({ targetDurations, baselineDurations });
+  const {
+    merged,
+    targetDurations,
+    baselineDurations,
+    fetchFailures,
+    missingHeads,
+    skippedBackend,
+    skippedPreEpoch,
+    epoch,
+    branch,
+  } = await collect({ repo, token, samples: SAMPLES });
+  const r = judge({ targetDurations, baselineDurations, epoch });
 
   // 内訳は 1 つの括弧へまとめる（両方非ゼロのとき括弧が区切りなく並んで読みにくいため）。
   const notes = [];
@@ -615,6 +922,12 @@ async function main() {
   if (missingHeads) notes.push(`${missingHeads} 本は head が既に無く 404（GC 済みのため恒久的にこのまま）`);
   // 🔴 黙って母集合を狭めない。何本外したかを必ず出す。
   if (skippedBackend) notes.push(`${skippedBackend} 本は backend を skip した PR なので母集合から外した`);
+  // 🔴 黙って母集合を狭めない（決定 15 も同じ扱い）。
+  if (skippedPreEpoch) {
+    notes.push(
+      `${skippedPreEpoch} 本は現在の CI 構成より前（${branch || '既定ブランチ'} の ${CONFIG_PATH} が最後に変わった ${epoch} より前）に測られたので母集合から外した`,
+    );
+  }
   console.log(
     `[check-ci-latency] マージ済み PR ${merged} 本を走査: ` +
       `${TARGET} ${targetDurations.length} 件 / ${BASELINE} ${baselineDurations.length} 件` +
@@ -622,7 +935,10 @@ async function main() {
   );
   // 🔴 該当 run が 0 件なら、まず **check 名の設定ミス**を疑わせる。
   // 既定値のまま配備すると 0 件になり、fail-open で**緑のまま永久に skip する**。
-  if (!targetDurations.length || !baselineDurations.length) {
+  // 🔴 **ただし epoch で外したことが原因なら、この警告を出してはならない。**
+  // 原因が分かっているのに「設定ミスを疑え」と言うと、**読み手を誤った方向へ差し向ける**
+  // ——「監視が黙って壊れる」と同じくらい、**誤った原因を指す監視**は害になる。
+  if ((!targetDurations.length || !baselineDurations.length) && !skippedPreEpoch) {
     console.log(
       `[check-ci-latency] ⚠️ 該当 run が 0 件の側がある。CI_LATENCY_TARGET（現在 ${TARGET}）/ ` +
         `CI_LATENCY_BASELINE（現在 ${BASELINE}）が**このリポジトリの check 名と一致しているか**を確かめること。`,
