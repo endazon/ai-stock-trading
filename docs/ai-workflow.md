@@ -230,8 +230,6 @@ develop が恒久的にマージ不能になる** —— 上で警告してい�
 | `Security`（`security.yml`） | `Secret scan (gitleaks)` / `Dependency review` / **`Vulnerable transitive dependencies`**（**3 件とも `name:` あり。ジョブ ID〔`secret-scan` / `dependency-review` / `vulnerable-scan`〕ではない**） |
 | `PR Title`（`pr-title.yml`） | `pr-title` |
 | `PR Size`（`pr-size.yml`） | `pr-size`（**そもそも必須にしない**。警告専用である） |
-| `Frontend CI`（`frontend.yml`） | `build-test` / `e2e`（**`paths:` を持つ。必須にしない**） |
-| `Frontend Tests`（`frontend-tests.yml`） | `test`（同上） |
 | `Claude Code Review`（`claude-code-review.yml`） | `claude-review` |
 
 - **`CodeQL` は例外である。** CodeQL は個別ジョブ（`Analyze (csharp)` 等。ジョブ定義は

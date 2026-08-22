@@ -30,6 +30,7 @@
 | `check-trace-blocks.js` | `docs/**/*.md`（`.ai-context/` は対象外）に置く trace ブロック（`<!-- trace: -->`）・trace-table ブロック（`<!-- trace-table: -->`）を検査する（project-planning ADR-0029 決定4「trace ブロック規約」の検査の実現手段）。**文法**（frontmatter 直後・最初の H1 前に 1 文書 1 ブロック、`ids/adrs/iadrs/specs/issues` をこの順ですべて 1 回ずつ持つ）・**許可キー**（未知キーは error）・**trace-table の行番号連番**（`row1` から）・**値域**（`ids` の FR/UC/SC は `.claude/rules/traceability.repo.md` 宣言レンジ、`adrs` の計画 ADR は同宣言レンジ〔`scripts/lib/plan-ranges.js` 経由〕、`iadrs` は `.ai-context/adr/` のファイル実在、`NFR` は無採番許容）・**可視本文への残存**（HTML コメント外・コードフェンス外に計画 ID・IADR・修飾付き issue 参照が残っていれば error。裸の `#NNN` は対象外）を見る。他プロジェクト／他リポジトリの修飾子（`MSP:` 等）は個別名をハードコードせず「英字+英数字の短縮名 + `:`」の形だけで external と判定する（利用者裁定・ADR-0029 決定9）。trace ブロックを持たない文書は許容する。文法・分類ロジックは `scripts/lib/trace-blocks.js` が単一情報源（`gen-knowledge-graph.js` と共有）。`--self-test` あり | 標準出力（レポート） |
 | `gen-knowledge-graph.js` | `docs/` の trace / trace-table ブロックと `.ai-context/{adr,specs}/` の frontmatter（`related_ids`/`related_specs`/`plan_refs`）からナレッジグラフ（ノード／エッジ）を組み立てる。`--json` で JSON、`--mermaid [--scope <dir>]` で Mermaid `graph LR`（scope 指定でそのディレクトリ配下のノードとそれに繋がる参照へ絞り込む）、`--check` で in-repo 実在検査（計画 ID・計画 ADR はレンジ、IADR はファイル実在。`planning:`/`MSP:` 等の修飾付き参照は external として数のみ数える。specs / related_specs の基準名が解決できないものは計画リポジトリ側の文書等を指し得るため失敗にしない）を行う。生成物はコミットしない（都度標準出力へ書く）。`--self-test` あり | 標準出力（JSON / Mermaid / レポート） |
 | `check-consumer-endpoint-names.js` | サービスを跨ぐ MassTransit エンドポイント名（＝RabbitMQ キュー名）の衝突を検査（`--self-test` あり） | 標準出力（レポート） |
+| `check-workflow-job-refs.js` | `docs/ai-workflow.md` の「必須にする check 名」「report される名前」の表を `.github/workflows/` の実物と突き合わせる。**実在しない check 名をブランチ保護へ指定すると develop が恒久的にマージ不能になる**ため、表の腐りを機械で止める。ジョブ ID を check 名として書いた誤り（`name:` がある場合は `name:` の値が check 名）も検出する。表の見出しが見つからなければ**例外で落ちる**（黙って 0 件検査にしない）。`--self-test` あり | 標準出力（レポート） |
 | `validate-runtime-scaffold.js` | 実行環境スキャフォールド（docker-compose / appsettings / `.env.example`）の静的検査 | 標準出力（レポート） |
 | `check-banned-settled-cash-sources.js` | **決済済み資金（settled cash）の代替に使ってはならないブローカー値**（`MaxTrdQtys.MaxCashBuy` / `Funds.AvlWithdrawalCash` / `Funds.MaxWithdrawal`）の**コードとしての参照**を検出。コメント・XML ドキュメント中の言及は誤検出しない（禁止の理由を書けなくしないため）。とりわけ現金買付余力は現金口座では**未決済の売却代金を含む**のが通例であり、**分母に据えると GFV 回避ガードが GFV を許可する**（#425 / ADR-0025 / IADR-0165） | 標準出力（レポート） |
 | `detect-changed-areas.js` | 変更ファイル一覧から **backend のビルド・テストを走らせる必要があるか**を判定し、`$GITHUB_OUTPUT` へ `backend=true|false` を書く（IADR-0208 決定 11）。🔴 **既定は「走らせる」で、許可リストに全件が収まるときだけ skip する。** 誤りの倒れ方が非対称だからである —— 余計に走らせる誤りは遅いだけで**気付ける**が、**走らせない誤りは退行を無検証でマージし、緑のまま誰も気付かない**。未知のパス・変更 0 件（＝差分の取得に失敗した可能性）はいずれも走らせる側へ倒す。🔴 **`.github/workflows/**` は許可リストに入れない**（CI 自身を変える PR で skip するとその変更を検証できない）。**`.editorconfig` も走らせる** —— `backend` フラグ 1 本で `backend-test` と `lint` の両方を決めており、`dotnet format --verify-no-changes` はこの入力にまさに反応するためである。**`--git`** で `HEAD^1..HEAD` の差分取得まで自分で行う（CI の各ジョブはこの 1 行でゲートできる。`pull_request` では `refs/pull/N/merge` が checkout されるため `HEAD^1` が base、`push` では直前のコミットで、**分岐なしに両方を賄える**。`fetch-depth: 2` で足りる）。**差分が取れなくても例外を投げず空を返す** —— 速さのための判定を門に化けさせない。`--self-test`（26 件） | 標準出力＋`$GITHUB_OUTPUT` |
@@ -121,7 +122,14 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 
 `ci.yml` が PR ごとに以下を実行する。**`scripts.test.js` は `scripts-tests` ジョブで走る**。
 
-| ジョブ | 実行内容 |
+> 🔴 **左列は check 名ではない。** 独立ジョブなのは `scripts-tests` / `commit-messages` /
+> `lint` / `build-and-test`（と `pr-title.yml` の `pr-title`）だけで、**残りは `static-checks`
+> ジョブの step である**（統合前は 1 検査 1 ジョブだった名残）。**step 名をブランチ保護へ
+> 指定すると、report されない check を待ち続けて develop が恒久的にマージ不能になる。**
+> **必須 check 名の正本は [`docs/ai-workflow.md`](../docs/ai-workflow.md) の表**であり、
+> そちらは `scripts/check-workflow-job-refs.js` が実物のワークフローと機械的に突き合わせる。
+
+| 検査（`static-checks` の step。上記の 4 つのみジョブ） | 実行内容 |
 | --- | --- |
 | `scripts-tests` | `node scripts/scripts.test.js`（本 README のスクリプト群の横断テスト。`fetch-depth: 0` が必要） |
 | `commit-messages` | `check-commit-messages.js`（コミット件名の規約、`ADR` / `IADR` と `FR` / `UC` / `SC` の実在性、および**件名・本文・PR タイトルの 3 面**での他リポジトリ番号の修飾） |
@@ -138,6 +146,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査、および `check-action-versions.js`（Actions のバージョン退行。`fetch-depth: 0` が必要。**置換点**: `--compare-with-ref` は本リポの統合ブランチ `origin/develop`） |
 | `pipeline-config` | `validate-pipeline-config.js --self-test` ＋ 実ファイル（`PIPELINE_CONFIG`。本リポは採用する） |
 | `consumer-endpoint-names` | `check-consumer-endpoint-names.js --self-test` と本検査（本リポ固有） |
+| `workflow-job-refs` | `check-workflow-job-refs.js --self-test` と本検査（`docs/ai-workflow.md` が挙げる check 名・ジョブ名と `.github/workflows/` の実物の突合。本リポ固有） |
 | `runtime-scaffold` | `validate-runtime-scaffold.js`（本リポ固有） |
 | `banned-settled-cash-sources` | `check-banned-settled-cash-sources.js`（本リポ固有・#425） |
 | `shell-scripts` | `k8s-local-deploy.test.sh` / `deploy/opend/entrypoint.test.sh`（本リポ固有） |
