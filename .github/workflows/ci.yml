@@ -593,7 +593,7 @@ jobs:
       # 依存を持たず、ランナー既定の Node で動く）。集約ジョブは必須チェックの最後尾なので、
       # ここの数秒はそのまま待ち時間になる。
       # 全シャードのレポートを 1 箇所へ集める。merge-multiple で同名パスも共存させる。
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           pattern: coverage-shard-*
