@@ -91,8 +91,27 @@ public static class AuditEntryFactory
         id, nameof(LlmCostIncurred),
         AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
         Symbol: null,
-        $"LLM 費用発生 {e.Amount:N2} 円",
+        $"LLM 費用発生 {e.Amount:N2} 円（用途 {e.Purpose ?? "不明"}・モデル {e.Model ?? "不明"}）",
         AuditSerialization.Serialize(e), e.At, recordedAt);
+
+    // FR-04, FR-06, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火（用途別・原因別）。
+    // 月報の「当月のフォールバック発火回数」の供給元であるため、**発生月で束ねられる相関**にする。
+    public static AuditEntry From(LlmFallbackFired e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmFallbackFired),
+        AuditCorrelation.From($"llm-fallback:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"LLM 割当逸脱（{e.Outcome}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-04, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送り。
+    // **障害ではなく設計上の正常な結果**であり、日報の「当日のスキップ回数」の供給元になる。
+    // 発生日で辿れるよう、発火と同じく月で束ねる相関にする（日報は日で絞って数える）。
+    public static AuditEntry From(TradeDecisionSkipped e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionSkipped),
+        AuditCorrelation.From($"trade-decision-skip:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"取引判断の見送り（{e.Reason}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し）。注文/市場相関を持たないため
     // "stage-gate" の決定的 GUID を相関にする（すべての段階遷移が同一相関で束ねられ、監査照会でまとめて辿れる）。

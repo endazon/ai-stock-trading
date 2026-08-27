@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Ports;
@@ -57,7 +58,9 @@ public class PublishingLlmUsageReporterTests
         using var scope = host.Services.CreateScope();
         var reporter = new PublishingLlmUsageReporter(
             scope.ServiceProvider.GetRequiredService<IMessageBus>(),
-            new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
+            new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance,
+            // #347, IADR-0218: 用途を必ず載せる（費用の対象範囲の判別入力）。
+            LlmPurposes.TradeDecision);
 
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => reporter.ReportAsync(usage));
 

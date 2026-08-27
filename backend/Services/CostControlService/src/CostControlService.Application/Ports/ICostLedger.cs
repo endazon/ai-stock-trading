@@ -20,6 +20,16 @@ public interface ICostLedger
 
     /// <summary>指定月の全カテゴリ累計費用。</summary>
     decimal GetMonthlyTotalAll(string month);
+
+    /// <summary>
+    /// NFR（費用）, 05_trading-assumptions §6.1, #347: 指定月のカテゴリ別内訳。
+    /// <para>
+    /// 月報の「当月の LLM 利用実績」へ**対象外の費用も含めて**実績を供給するための口である
+    /// （抑制はしないが記録はする。#282 の「報告書散文費用の計上漏れ→過少申告」の再発防止）。
+    /// 計上のない月・カテゴリはキーを含めない（0 円の行を作らない）。
+    /// </para>
+    /// </summary>
+    IReadOnlyDictionary<CostCategory, decimal> GetMonthlyTotals(string month);
 }
 
 // NFR（費用）, IADR-0034: 1 回の計上における当該月 LLM 累計（計上前・計上後）。しきい値上方遷移の判定入力（計上と不可分）。

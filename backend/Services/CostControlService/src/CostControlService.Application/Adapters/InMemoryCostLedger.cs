@@ -39,6 +39,17 @@ public sealed class InMemoryCostLedger : ICostLedger
         }
     }
 
+    public IReadOnlyDictionary<CostCategory, decimal> GetMonthlyTotals(string month)
+    {
+        lock (_gate)
+        {
+            return _totals
+                .Where(kv => kv.Key.Month == month)
+                .GroupBy(kv => kv.Key.Category)
+                .ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+        }
+    }
+
     // ロック保持下で呼ぶこと。当該月の LLM 累計。
     private decimal LlmTotal(string month) =>
         _totals.TryGetValue((month, CostCategory.Llm), out var total) ? total : 0m;

@@ -117,7 +117,16 @@
   },
   "LlmCostIncurred": {
     "Amount": "Decimal",
-    "At": "DateTimeOffset"
+    "At": "DateTimeOffset",
+    "Model": "String",
+    "Purpose": "String"
+  },
+  "LlmFallbackFired": {
+    "EffectiveModel": "String",
+    "ExpectedModel": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Outcome": "String",
+    "Purpose": "String"
   },
   "MaintenanceMarginReductionExecuted": {
     "EventId": "Guid",
@@ -241,6 +250,13 @@
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
     "Rationale": "String"
+  },
+  "TradeDecisionSkipped": {
+    "EffectiveModel": "String",
+    "ExpectedModel": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Purpose": "String",
+    "Reason": "String"
   },
   "WithdrawalTriggered": {
     "HaltNewEntries": "Boolean",
