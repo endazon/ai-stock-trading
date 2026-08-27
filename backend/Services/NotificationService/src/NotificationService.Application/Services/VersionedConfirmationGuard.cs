@@ -48,6 +48,32 @@ public sealed class VersionedConfirmationGuard
             return ConfirmationOutcome.Accepted;
         }
     }
+
+    /// <summary>
+    /// FR-14, IADR-0240 決定3: <see cref="TryConfirm"/> が <see cref="ConfirmationOutcome.Accepted"/> を返した後、
+    /// <b>実際の確定に失敗した</b>ときに予約を解放する。
+    /// <para>
+    /// 🔴 <b>解放しないと、同じ版を二度と確定できなくなる。</b> 確定 API が HTTP エラー・タイムアウトで
+    /// 終わっても本ガードは「確定済み」を覚えたままになり、再試行が <see cref="ConfirmationOutcome.AlreadyConfirmed"/>
+    /// へ落ちる。<b>Discord は破壊的統制操作の唯一の窓口</b>であり、詰みは Bot の再起動でしか解けない。
+    /// </para>
+    /// <para>
+    /// 記録が同一版のときだけ消す（他版の予約は触らない）。未登録の解放は無害な no-op である。
+    /// 「より新しい版が上書きした直前の版」は復元しない —— 復元しなくても<b>権威は報告書サービスの
+    /// 版番号付き冪等 API</b>であり、古い版の確定はそちらが 409 で弾く。<b>安全側は解放である。</b>
+    /// </para>
+    /// </summary>
+    public void Release(string targetId, int version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(version);
+
+        lock (_gate)
+        {
+            if (_confirmed.TryGetValue(targetId, out var confirmedVersion) && confirmedVersion == version)
+                _confirmed.Remove(targetId);
+        }
+    }
 }
 
 // FR-14: 版番号付き確定の判定結果。

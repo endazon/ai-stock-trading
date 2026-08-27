@@ -42,8 +42,13 @@ public class DiscordBotGatewayFactoryTests
         var gfvHandler = new GoodFaithViolationCommandHandler(
             new StubGoodFaithViolationController(), options,
             NullLogger<GoodFaithViolationCommandHandler>.Instance);
+        // #341, IADR-0240: 報告書レビュー（版番号の照会・冪等確定・差し戻し）も同じ Gateway に載る。
+        var reportHandler = new ReportCommandHandler(
+            new StubReportReviewController(), new VersionedConfirmationGuard(), options,
+            NullLogger<ReportCommandHandler>.Instance);
         return DiscordBotGatewayFactory.Create(
-            options, handler, pauseHandler, stageGateHandler, gfvHandler, NullLoggerFactory.Instance);
+            options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler,
+            NullLoggerFactory.Instance);
     }
 
     // 受け入れ基準11: 何も設定しなければ接続しない。
@@ -176,5 +181,21 @@ public class DiscordBotGatewayFactoryTests
         public Task<GoodFaithViolationClearResult> ClearAsync(
             string reason, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Gateway の生成では Risk を呼ばない。");
+    }
+
+    // #341: 同上。Gateway の生成では報告書サービスを呼ばない（呼ばれたら設計の誤りである）。
+    private sealed class StubReportReviewController : IReportReviewController
+    {
+        public Task<ReportReviewResult> GetReviewAsync(
+            string periodKey, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
+
+        public Task<ReportConfirmResult> ConfirmAsync(
+            string periodKey, int expectedVersion, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
+
+        public Task<ReportReviewResult> RequestChangesAsync(
+            string periodKey, int expectedVersion, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
     }
 }
