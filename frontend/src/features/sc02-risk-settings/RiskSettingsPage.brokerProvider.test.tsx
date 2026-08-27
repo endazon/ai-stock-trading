@@ -163,6 +163,39 @@ describe('SC-02 発注先の変更（FR-13・#334）', () => {
       reason: 'デバッグのため',
     });
   });
+
+  // #539: mount 時にも走っていた prop 追随を描画中の state 調整へ揃えた。**`current` が実際に
+  // 変わったとき（自分の保存成功後の再取得）の初期化は従来どおり効く**ことを固定する
+  // （置換前は `useEffect([current])` が同じ役割を担っていた）。
+  it('保存成功後の再取得で発注先が実際に変わると、選択・理由が新しい current で初期化される', async () => {
+    let liveCurrent = BROKER_PROVIDER_MOOMOO_SIMULATE;
+    calls = [];
+    mocks.apiFetch.mockImplementation(
+      async (path: string, req?: { method?: string; json?: unknown }) => {
+        calls.push({ path, method: req?.method, json: req?.json });
+        if (path === '/risk-controls/settings/history') return [];
+        if (path === '/monitor/watchlist' || path === '/monitor/watchlist/history') return [];
+        if (path === '/risk-controls/status') return STATUS;
+        if (path === '/risk-controls/settings/broker-provider' && req?.method === 'PUT') {
+          liveCurrent = (req.json as { provider: number }).provider;
+          return { settings: settings(liveCurrent) };
+        }
+        return settings(liveCurrent);
+      },
+    );
+    render(<RiskSettingsPage />);
+    const form = await screen.findByRole('form', { name: '発注先の変更' });
+
+    await userEvent.click(within(form).getByRole('radio', { name: /内蔵 paper/ }));
+    await userEvent.type(within(form).getByLabelText('変更理由'), 'デバッグのため');
+    await userEvent.click(within(form).getByRole('button', { name: '保存' }));
+
+    await within(form).findByText('保存しました。');
+    // current が実際に変わったので、選択は新しい current に追随し、理由は初期化される。
+    expect(within(form).getByRole('radio', { name: /内蔵 paper/ })).toBeChecked();
+    expect(within(form).getByLabelText('変更理由')).toHaveValue('');
+    expect(within(form).getByText('発注先は変更されていません。')).toBeInTheDocument();
+  });
 });
 
 describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）', () => {
