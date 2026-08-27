@@ -40,6 +40,9 @@ public sealed class RetrievalSourcePolicy
     [
         // --- 収集側の許可ソース（ADR-0004 案A+ / SourceAllowlist.Default と同一語彙） ---
         "finnhub",
+        // #336, ADR-0020 決定2: ニュース系の 2 系統。**片方だけ足すと、その源の文書が判断へ一度も届かない。**
+        "finnhub-news",
+        "google-news",
         "sec-edgar",
         "edinet",
         "boj",
@@ -47,6 +50,10 @@ public sealed class RetrievalSourcePolicy
         "moomoo",
         // --- 自リポジトリが書いた文書 ---
         "report",
+        // #336, ADR-0020 決定2-1: 収集サービス自身が書く「欠測している」ことの明示。
+        // **外部から注入された文字列ではない**ため自リポジトリ文書として扱う。
+        // これを落とすと、欠測が無言の空データとして判断へ渡る（ADR-0020 が塞いだ形が復活する）。
+        "collection-status",
     ]);
 
     /// <summary>許可タグの集合（テスト・診断用。順序は保証しない）。</summary>

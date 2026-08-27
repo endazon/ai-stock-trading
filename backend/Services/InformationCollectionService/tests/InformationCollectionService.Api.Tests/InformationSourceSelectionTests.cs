@@ -1,5 +1,6 @@
 using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
+using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -21,7 +22,7 @@ public class InformationSourceSelectionTests
         using var factory = new Factory([]);
         _ = factory.CreateClient();
 
-        factory.Services.GetRequiredService<IInformationSource>().Should().BeOfType<NoOpInformationSource>();
+        factory.Services.GetRequiredService<ISourceFetcher>().Should().BeOfType<NoSourcesFetcher>();
     }
 
     [Fact]
@@ -35,7 +36,7 @@ public class InformationSourceSelectionTests
         });
         _ = factory.CreateClient();
 
-        factory.Services.GetRequiredService<IInformationSource>().Should().BeOfType<FredInformationSource>();
+        SourceNames(factory).Should().Equal("fred");
     }
 
     [Fact]
@@ -51,7 +52,38 @@ public class InformationSourceSelectionTests
         });
         _ = factory.CreateClient();
 
-        factory.Services.GetRequiredService<IInformationSource>().Should().BeOfType<CompositeInformationSource>();
+        SourceNames(factory).Should().Equal("sec-edgar", "boj");
+    }
+
+    // FR-01, ADR-0020 決定2: ニュース系 2 系統の構成キーが Program の束縛に効くこと。
+    // **綴り違いは「静かにニュース系ゼロ」として現れ、必須条件を満たさないまま緑になる。**
+    [Fact]
+    public void ニュース系2系統の構成キーが選択に効く()
+    {
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["Collection:Source:Provider"] = "finnhub-news,google-news",
+            ["Collection:Source:Finnhub:ApiKey"] = "key",
+            ["Collection:Source:Finnhub:Symbols:0"] = "AAPL",
+            ["Collection:Source:GoogleNews:Queries:0"] = "AAPL 株価",
+        });
+        _ = factory.CreateClient();
+
+        SourceNames(factory).Should().Equal("finnhub-news", "google-news");
+    }
+
+    // ADR-0005 決定5: 一時降格の構成キーがカタログへ効くこと。
+    [Fact]
+    public void 一時降格の構成キーがカタログへ効く()
+    {
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["Collection:Source:DemotedToRecommended"] = "finnhub-news",
+        });
+        _ = factory.CreateClient();
+
+        var catalog = factory.Services.GetRequiredService<InformationSourceCatalog>();
+        catalog.Find("finnhub-news")!.Tier.Should().Be(SourceTier.Recommended);
     }
 
     [Fact]
@@ -66,8 +98,11 @@ public class InformationSourceSelectionTests
         });
         _ = factory.CreateClient();
 
-        factory.Services.GetRequiredService<IInformationSource>().Should().BeOfType<FredInformationSource>();
+        SourceNames(factory).Should().Equal("fred");
     }
+
+    private static IReadOnlyList<string> SourceNames(Factory factory) =>
+        factory.Services.GetRequiredService<ISourceFetcher>().Should().BeOfType<SourceFetchRunner>().Which.SourceNames;
 
     private sealed class Factory(Dictionary<string, string?> settings) : WebApplicationFactory<Program>
     {

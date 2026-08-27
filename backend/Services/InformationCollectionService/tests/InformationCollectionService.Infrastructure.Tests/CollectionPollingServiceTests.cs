@@ -27,10 +27,21 @@ public class CollectionPollingServiceTests
 {
     private const string ServiceName = "ai-stock-trading.information-collection-service";
 
-    private sealed class StubSource(IReadOnlyList<RawInformationItem> items) : IInformationSource
+    // ソース単位の成否つきの取得結果を返すフェイク（ADR-0020 決定3 の判定入力）。
+    private sealed class StubFetcher(SourceFetchResult result) : ISourceFetcher
     {
-        public Task<IReadOnlyList<RawInformationItem>> FetchAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(items);
+        public StubFetcher(IReadOnlyList<RawInformationItem> items)
+            : this(new SourceFetchResult(items, [.. items.Select(i => SourceOutcome.Ok(i.Source)).Distinct()]))
+        {
+        }
+
+        public Task<SourceFetchResult> FetchAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(result);
+    }
+
+    private sealed class StubClock : IClock
+    {
+        public DateTimeOffset UtcNow => DateTimeOffset.UnixEpoch;
     }
 
     // 費用統制ゲートのフェイク（既定 Normal・Halted を注入可能）。
@@ -40,13 +51,15 @@ public class CollectionPollingServiceTests
     }
 
     // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
-    private static Task<IHost> BuildAsync(IInformationSource source, CostControlGate? gate = null) =>
+    private static Task<IHost> BuildAsync(ISourceFetcher fetcher, CostControlGate? gate = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
-                opts.Services.AddSingleton(source);
+                opts.Services.AddSingleton(fetcher);
                 opts.Services.AddSingleton<IKnowledgeBaseSink, InMemoryKnowledgeBaseSink>();
                 opts.Services.AddSingleton(SourceAllowlist.Default);
+                opts.Services.AddSingleton(InformationSourceCatalog.Default);
+                opts.Services.AddSingleton<IClock>(new StubClock());
                 opts.Services.AddSingleton<ICostControlGate>(new FakeGate(gate ?? CostControlGate.Normal));
                 opts.Services.AddScoped<AppSvc>();
 
@@ -64,7 +77,7 @@ public class CollectionPollingServiceTests
     public async Task 収集があれば_InformationCollected_を発行する()
     {
         var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "好決算", DateTimeOffset.UtcNow);
-        using var host = await BuildAsync(new StubSource([raw]));
+        using var host = await BuildAsync(new StubFetcher([raw]));
 
         var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
@@ -85,7 +98,7 @@ public class CollectionPollingServiceTests
     [Fact]
     public async Task 収集ゼロなら発行しない()
     {
-        using var host = await BuildAsync(new NoOpInformationSource());
+        using var host = await BuildAsync(new NoSourcesFetcher());
 
         var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
@@ -100,7 +113,7 @@ public class CollectionPollingServiceTests
     {
         // NFR（費用）, IADR-0031: LLM 月次上限 100% 到達＝停止。収集/発行をスキップしてサイクルを回さない。
         var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "好決算", DateTimeOffset.UtcNow);
-        using var host = await BuildAsync(new StubSource([raw]), new CostControlGate(Halted: true, IntervalMultiplier: 0m));
+        using var host = await BuildAsync(new StubFetcher([raw]), new CostControlGate(Halted: true, IntervalMultiplier: 0m));
 
         var session = await host.TrackActivityForTest()
             .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
@@ -123,7 +136,7 @@ public class CollectionPollingServiceTests
     public async Task External_モードでは_in_process_巡回を行わない()
     {
         var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "本文", DateTimeOffset.UtcNow);
-        using var host = await BuildAsync(new StubSource([raw]));
+        using var host = await BuildAsync(new StubFetcher([raw]));
 
         var svc = new CollectionPollingService(
             host.Services.GetRequiredService<IServiceScopeFactory>(),
@@ -143,6 +156,72 @@ public class CollectionPollingServiceTests
         await svc.StartAsync(CancellationToken.None);
         await Task.Delay(300);
         await svc.StopAsync(CancellationToken.None);
+    }
+
+    // 🔴 FR-01, #336, ADR-0020 決定3: **サイクル中止**（必須ソースの欠測）では取引サイクルを起こさない。
+    // 止まるのは**新規の判断サイクル**だけであり、手仕舞い・損切りは別経路（ブローカ側の逆指値・NFR-04）である。
+    [Fact]
+    public async Task サイクル中止の欠測では_InformationCollected_を発行しない()
+    {
+        var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "好決算", DateTimeOffset.UtcNow);
+        var fetcher = new StubFetcher(new SourceFetchResult(
+            [raw], [SourceOutcome.Ok("finnhub"), SourceOutcome.Failed("moomoo")]));
+        using var host = await BuildAsync(fetcher);
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
+
+        session.Sent.MessagesOf<InformationCollected>().Should().BeEmpty("必須情報源の欠測でサイクルを中止する");
+        session.Sent.MessagesOf<InformationSourceDegraded>().Should().ContainSingle()
+            .Which.Behavior.Should().Be(nameof(MissingSourceBehavior.AbortCycle));
+
+        await host.StopAsync();
+    }
+
+    // 🔴 **限定縮退ではサイクルを止めない。** 止めるのは新規建てだけであり、収集も判断も続く（ADR-0020 決定2）。
+    [Fact]
+    public async Task ニュース系の全滅では縮退を通知しつつサイクルは継続する()
+    {
+        var raw = new RawInformationItem(InformationKind.Quote, "finnhub", "AAPL", "現在値", "current=1", DateTimeOffset.UtcNow);
+        var fetcher = new StubFetcher(new SourceFetchResult(
+            [raw],
+            [SourceOutcome.Ok("finnhub"), SourceOutcome.Failed("finnhub-news"), SourceOutcome.Failed("google-news")]));
+        using var host = await BuildAsync(fetcher);
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
+
+        session.Sent.MessagesOf<InformationCollected>().Should().NotBeEmpty("限定縮退はサイクルを止めない");
+        var degraded = session.Sent.MessagesOf<InformationSourceDegraded>().Should().ContainSingle().Which;
+        degraded.Category.Should().Be(InformationSourceCatalog.NewsCategory);
+        degraded.BlocksNewEntries.Should().BeTrue();
+        degraded.ClosesAllowed.Should().BeTrue("手仕舞いは止めない");
+
+        await host.StopAsync();
+    }
+
+    // 遷移でのみ発行する（続いている間は黙る）。1 巡回で N 件出る洪水を作らない。
+    [Fact]
+    public async Task 欠測が続いている間は再発行しない()
+    {
+        var fetcher = new StubFetcher(new SourceFetchResult(
+            [], [SourceOutcome.Failed("finnhub-news"), SourceOutcome.Failed("google-news")]));
+        using var host = await BuildAsync(fetcher);
+        var polling = NewPolling(host);
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => RunTwiceAsync(polling));
+
+        session.Sent.MessagesOf<InformationSourceDegraded>().Should().HaveCount(1);
+
+        await host.StopAsync();
+    }
+
+    // 2 巡回を 1 つの追跡セッションで回す（ラムダの戻り値型が曖昧にならないよう明示的な Task メソッドにする）。
+    private static async Task RunTwiceAsync(CollectionPollingService polling)
+    {
+        await polling.RunOnceAsync(CancellationToken.None);
+        await polling.RunOnceAsync(CancellationToken.None);
     }
 
     // NFR（費用）, IADR-0031: 実効間隔の境界（Normal=base、Throttled=base×2、Halted=base×2）。
