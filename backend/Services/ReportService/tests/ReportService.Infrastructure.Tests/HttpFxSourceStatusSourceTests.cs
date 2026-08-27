@@ -59,7 +59,9 @@ public class HttpFxSourceStatusSourceTests
         query.Should().Contain(nameof(FxRateSourceFellBack))
             .And.Contain(nameof(FxRateSourcePrimaryRestored))
             .And.Contain(nameof(FxRateStale))
-            .And.Contain(nameof(PositionClosedWithStaleFxRate));
+            .And.Contain(nameof(PositionClosedWithStaleFxRate))
+            // #513: 静かな期間の出典はこの種別からしか導けない。要求から落ちると平常時が再び空白になる。
+            .And.Contain(nameof(FxRateSourceUsed));
     }
 
     // 🔴 **JST 取引日 → UTC 半開区間**（IADR-0199 決定3）。
@@ -136,6 +138,38 @@ public class HttpFxSourceStatusSourceTests
 
         result.Should().NotBeNull("照会は成功しており、事象が無かったという事実である");
         result!.PrimarySourceCredits.Should().BeEmpty("使ったと証明できない源のクレジットは出さない");
+    }
+
+    // --- #513（IADR-0225）: 静かな期間の出典 ------------------------------------------------------
+
+    // 🔴 **本 issue の核心。** 切替も復帰も起きない期間でも、**使用記録から出典を導ける**。
+    // これが無いと日報の為替欄は平常時こそ「記録からは特定できません」になる。
+    [Fact]
+    public async Task 静かな期間でも_使用記録から出典を導ける()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, Ledger(
+            new FxRateSourceUsed("USD", "boj", 1, 2, T0)));
+
+        var result = await Source(handler).GetStatusAsync(From, To);
+
+        result!.PrimarySourceCredits.Should().ContainSingle().Which.Should().Be(FxSourceCredits.Boj);
+        result.Usages.Should().ContainSingle().Which.IsPrimary.Should().BeTrue();
+        result.IsClean.Should().BeTrue("使用記録は劣化ではない");
+    }
+
+    // 🔴 **否定形（IADR-0196 決定4 を壊していないこと）。** 使用記録がフォールバック先だけなら、
+    // **日銀のクレジットは出さない**——使っていない源のクレジットは事実に反する。
+    [Fact]
+    public async Task 使用記録がフォールバック先だけなら_日銀の出典を出さない()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, Ledger(
+            new FxRateSourceUsed("USD", "fred", 2, 2, T0)));
+
+        var result = await Source(handler).GetStatusAsync(From, To);
+
+        result!.PrimarySourceCredits.Should().BeEmpty();
+        result.UsedSourceNames.Should().ContainSingle().Which.Should().Be("fred", "使った源自体は特定できている");
+        result.PrimarySourceNames.Should().BeEmpty("第一の情報源を使った証拠は無い");
     }
 
     // 🔴 **否定形。** FRED へ落ちていた記録しか無いなら、**日銀のクレジットは出さない**

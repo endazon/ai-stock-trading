@@ -35,8 +35,9 @@ public class ReportRendererFxSourceStatusTests
         IReadOnlyList<FxRateSourcePrimaryRestored>? restorations = null,
         IReadOnlyList<FxRateStale>? stales = null,
         IReadOnlyList<string>? credits = null,
-        IReadOnlyList<PositionClosedWithStaleFxRate>? staleCloses = null) =>
-        new(fellBacks ?? [], restorations ?? [], stales ?? [], credits ?? [], staleCloses ?? []);
+        IReadOnlyList<PositionClosedWithStaleFxRate>? staleCloses = null,
+        IReadOnlyList<FxRateSourceUsed>? usages = null) =>
+        new(fellBacks ?? [], restorations ?? [], stales ?? [], credits ?? [], staleCloses ?? [], usages ?? []);
 
     // 🔴 **否定形（決定3）。** 照会不能を「切替なし」と書くと、劣化を隠したのと同じ結果になる。
     [Fact]
@@ -90,6 +91,45 @@ public class ReportRendererFxSourceStatusTests
 
         md.Should().Contain("出典: " + FxSourceCredits.Boj);
         md.Should().NotContain("記録からは特定できません");
+    }
+
+    // --- #513（IADR-0225 決定D・決定E）: 静かな期間の出典 ---------------------------------------
+
+    // 🔴 **証拠ができたので、外していた文言を戻す。** IADR-0199 決定5 が外したのは
+    // 「証拠が支えていない主張」であって、文言そのものではない。
+    [Fact]
+    public void 第一の源の使用記録があれば_第一から取得できていたと書く()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            usages: [new FxRateSourceUsed("USD", "boj", 1, 2, T0)])));
+
+        md.Should().Contain("第一の情報源（boj）から取得できており");
+        md.Should().Contain("記録はありません", "使用記録は劣化ではない");
+    }
+
+    // 🔴 **否定形（決定D）。** 使用記録を IsClean に混ぜると、**平常運転の日が「劣化あり」と読める**。
+    [Fact]
+    public void 使用記録だけの期間は_劣化ありとは書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            usages: [new FxRateSourceUsed("USD", "boj", 1, 2, T0)])));
+
+        // 明細行の見出しで見る（「情報源の切替・鮮度警告…の記録はありません」という
+        // **劣化なしの文自身が語を含む**ため、素の語で否定すると正常な出力で落ちる）。
+        md.Should().NotContain("- **フォールバックへ切替**");
+        md.Should().NotContain("- **鮮度警告**");
+    }
+
+    // 🔴 **否定形（決定E）。** 使用記録が入ったことで「使った源は分かるが、その源はクレジットを
+    // 求めていない」状態が生じた。ここを「特定できません」と書くと**端的に誤りになる**。
+    [Fact]
+    public void クレジットを求めない源だけを使った期間は_特定できないとは書かない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(Status(
+            usages: [new FxRateSourceUsed("USD", "fred", 2, 2, T0)])));
+
+        md.Should().Contain("出典: fred（クレジット表記を求めていない情報源です）");
+        md.Should().NotContain("記録からは特定できません", "使った源は台帳から特定できている");
     }
 
     [Fact]
