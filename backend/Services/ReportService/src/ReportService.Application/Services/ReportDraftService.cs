@@ -47,12 +47,15 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             : null;
 
         // 散文のみ LLM ドラフトへ委ねる（数値は提示のみで再計算させない）。
-        var narrative = await drafter
-            .DraftNarrativeAsync(
+        // #335, ADR-0017 決定4-(1), IADR-0217: あわせて**実際に使用したモデル**を受け取り、報告書のメタ情報へ残す。
+        // 「月報が第 1 候補で書かれたのか第 2 候補で書かれたのかは、その月報を方針書として採用する際の判断材料である」。
+        var draft = await drafter
+            .DraftAsync(
                 new ReportNarrativeContext(
                     request.Kind, request.PeriodKey, periodLabel, markets, pnl, request.PolicySummary, parentPolicy),
                 cancellationToken)
             .ConfigureAwait(false);
+        var narrative = draft.Text;
 
         var view = new ReportView
         {
@@ -76,6 +79,9 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // FR-10, FR-06, UC-06, #381: 為替の情報源の状態もコード集計値である（散文に語らせない）。
             // **null（未供給）を空（事象なし）へ潰さない**——「照会できませんでした」と「劣化なし」は別物である。
             FxSourceStatus = request.FxSourceStatus,
+            // #335, ADR-0017 決定4-(1), IADR-0217: **null（未供給）を「フォールバックなし」へ潰さない。**
+            // プレースホルダ実装・縮退時はモデルを知り得ないため、節ごと出さない（他の未供給項目と同じ扱い）。
+            LlmModelUsage = draft.ModelUsage,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);

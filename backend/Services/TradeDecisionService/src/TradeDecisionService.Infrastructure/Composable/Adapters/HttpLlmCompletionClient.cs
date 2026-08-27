@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using Microsoft.Extensions.Logging;
 
@@ -16,15 +18,24 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 // #79, IADR-0055 決定3: 成功応答のトークンを ILlmUsageReporter へ渡す（計測点は egress）。既定 NoOp＝publish しない。
 // #11, FR-11, IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する（判断根拠の事後再構成）。
 // プロンプトは保有ポジション・資金残枠等の機微を含むため既定オフ＝記録しない（最小権限）。
+// #335, ADR-0014 §決定3, ADR-0017 決定2/決定3, IADR-0216: 取引判断は**フォールバックしない**。
+// - 上流の失敗は 429（再試行）と 400 系（モデル不可）へ分け、モデル不可のときだけ見送りとして記録・通知する。
+// - 応答が返っても**ピン留めしたモデル以外が答えたなら本文を読まずに破棄する**（基盤で用途エントリが未登録・
+//   ZDR 除外・提供終了だと LlmRouter が無音で DefaultModel へ落ちるため。platform IADR-0102）。
+// いずれの経路でも返すのは Hold であり、**発注は構造的に生じない**。見送りは障害ではなく設計上の正常な結果である。
 internal sealed class HttpLlmCompletionClient(
     HttpClient httpClient,
     ILogger<HttpLlmCompletionClient> logger,
     string confidentiality,
     string purpose,
     ILlmUsageReporter usageReporter,
-    bool logPrompts = false)
+    bool logPrompts = false,
+    ILlmGovernanceReporter? governanceReporter = null)
     : ILlmCompletionClient
 {
+    // 割当統制の記録先。未注入は安全既定（記録しないだけで、見送りの統制自体は本クラスが担う）。
+    private readonly ILlmGovernanceReporter _governance = governanceReporter ?? new NoOpLlmGovernanceReporter();
+
     // #247, IADR-0104 決定3: Hold へ倒れる理由を系統別に分ける。倒れる先はいずれも Hold（IADR-0017 の安全既定は不変）だが、
     // 「なぜ倒れたか」を監査（FR-11）で切り分けられなければ運用で原因を追えない。
     private const string HoldFallback = """{"action":"Hold","rationale":"LLM ゲートウェイ送信不可のため見送り"}""";
@@ -32,6 +43,10 @@ internal sealed class HttpLlmCompletionClient(
     private const string HoldRefused = """{"action":"Hold","rationale":"LLM が要求を拒否したため見送り"}""";
     private const string HoldEmpty = """{"action":"Hold","rationale":"LLM 応答が空のため見送り"}""";
     private const string HoldMaxTokens = """{"action":"Hold","rationale":"LLM 応答が出力上限に到達し本文が無いため見送り"}""";
+
+    // #335, ADR-0017 決定2: 割当モデルが使えないための見送り。**障害ではなく設計上の正常な結果**である。
+    // 伝送の失敗（HoldFallback）と区別して記録する——「使えるモデルが無かった」は運用の判断材料が違う。
+    private const string HoldModelUnavailable = """{"action":"Hold","rationale":"割当モデルが利用できないため取引判断を見送り（フォールバック禁止）"}""";
 
     public async Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken cancellationToken = default)
     {
@@ -51,8 +66,25 @@ internal sealed class HttpLlmCompletionClient(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("LLM ゲートウェイ /complete が非 2xx（{Status}）。取引しない安全側（Hold）に倒します。",
-                    (int)response.StatusCode);
+                // #335, ADR-0017 決定3, IADR-0216: 429（再試行）と 400 系（モデル不可）を分ける。
+                // **429 でスキップ事象を出さない** —— 混雑のたびに「モデルが使えない」という誤った
+                // 運用シグナルが積み上がり、恒常的な格下げを疑う根拠になってしまう。
+                var status = (int)response.StatusCode;
+                var kind = LlmFailureClassification.Classify(status);
+                if (kind == LlmFailureKind.ModelUnavailable)
+                {
+                    logger.LogWarning(
+                        "LLM ゲートウェイ /complete がモデル不可（{Status}）。取引判断を実行せず見送ります（フォールバック禁止）。",
+                        status);
+                    await ReportSkipAsync(
+                        TradeDecisionSkipReasons.ModelUnavailable, effectiveModel: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    return HoldModelUnavailable;
+                }
+
+                logger.LogWarning(
+                    "LLM ゲートウェイ /complete が非 2xx（{Status}・{Kind}）。取引しない安全側（Hold）に倒します。",
+                    status, kind);
                 return HoldFallback;
             }
 
@@ -108,6 +140,34 @@ internal sealed class HttpLlmCompletionClient(
                 logger.LogWarning(ex, "LLM 費用計測の報告に失敗しました（応答は継続）。");
             }
 
+            // #335, ADR-0014 §決定3, ADR-0017 決定2, IADR-0216: **ピン留めしたモデルが答えたかを本文より先に見る。**
+            // 費用計測の後に置くのは、送信が成立した以上 課金は発生しており、モデルが違っても計上は要るためである。
+            //
+            // 🔴 ここで倒れるのは「取引判断を実行しない」であって障害ではない。別モデルの応答で発注すると、
+            // ADR-0014 §決定3 が実弾解禁の条件に掲げた「検証したモデルと本番モデルの一致」がその場で空洞化する。
+            // 鎖（フォールバック先）を持たない用途で別モデルが答えるのは、基盤の用途エントリが未登録・ZDR 除外・
+            // 提供終了で `DefaultModel` へ無音に落ちたときであり、**まさに検知したい事象**である。
+            var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
+            if (!evaluation.Allowed)
+            {
+                var reason = evaluation.Outcome switch
+                {
+                    LlmAssignmentOutcome.Forbidden => TradeDecisionSkipReasons.ForbiddenModel,
+                    _ => TradeDecisionSkipReasons.ModelMismatch,
+                };
+
+                logger.LogWarning(
+                    "割当モデル以外が応答しました（purpose={Purpose} expected={Expected} effective={Effective} outcome={Outcome} textLength={TextLength}）。"
+                    + "本文を破棄し、取引判断を実行せず見送ります（フォールバック禁止）。",
+                    purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome, dto.Text?.Length ?? 0);
+
+                // ADR-0017 決定4: 発火は「埋もれない経路」で出す。見送りの記録（決定2）と両方を出す——
+                // 前者は「割当が効いていない」、後者は「取引機会を逸した」という別々の運用事実である。
+                await ReportFallbackAsync(evaluation, cancellationToken).ConfigureAwait(false);
+                await ReportSkipAsync(reason, evaluation.EffectiveModel, cancellationToken).ConfigureAwait(false);
+                return HoldModelUnavailable;
+            }
+
             // #247, IADR-0104 決定2: 拒否（安全性分類器による停止）は**本文を読む前に**評価する。分類器は本文の途中で
             // 停止し得るため、上流が非空の断片を渡してきても判断材料にしない（上流の破棄実装に依存しない多層防御）。
             // 本文長だけは残す（全量ログ無効でも「断片が届いた＝この防御が効いた」事実を観測できるようにする）。
@@ -146,6 +206,35 @@ internal sealed class HttpLlmCompletionClient(
         {
             logger.LogWarning(ex, "LLM ゲートウェイ /complete で例外。取引しない安全側（Hold）に倒します。");
             return HoldFallback;
+        }
+    }
+
+    // #335, ADR-0017 決定2/決定4: 記録は best-effort＝失敗しても取引判断の結果（Hold）を変えない。
+    // 記録できないことを理由に発注へ進むことは無いため、握り潰しても統制は緩まない（緩むのは可観測性だけ）。
+    private async Task ReportSkipAsync(string reason, string? effectiveModel, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _governance
+                .DecisionSkippedAsync(
+                    purpose, reason, LlmAssignments.For(purpose)?.PrimaryModel, effectiveModel, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "取引判断の見送りの記録に失敗しました（見送り自体は成立しています）。");
+        }
+    }
+
+    private async Task ReportFallbackAsync(LlmAssignmentEvaluation evaluation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _governance.FallbackFiredAsync(evaluation, purpose, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "割当逸脱の記録に失敗しました（見送り自体は成立しています）。");
         }
     }
 
