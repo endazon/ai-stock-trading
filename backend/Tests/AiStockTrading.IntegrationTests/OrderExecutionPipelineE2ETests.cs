@@ -144,6 +144,7 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
                 $"再試行を使い切った失敗の退避先 {deadLetterQueueName} が宣言されること（IADR-0129 決定 5）");
 
         var decisionId = Guid.NewGuid();
+        // FR-10, #331, IADR-0210: Open 注文は損切り価格が必須（無いと見送り＝逆指値なしの建玉を持たない）。
         var intent = new OrderIntent(
             Symbol: "AAPL",
             Market: Market.UnitedStates,
@@ -152,7 +153,8 @@ public sealed class OrderExecutionPipelineE2ETests : IAsyncLifetime
             Mode: BrokerProvider.InternalPaper,
             Quantity: 10,
             Price: 150m,
-            PositionEffect: PositionEffect.Open);
+            PositionEffect: PositionEffect.Open,
+            StopLossPrice: 140m);
         var approved = new OrderApproved(decisionId, intent, ApprovedQuantity: 10, ApprovedAt: DateTimeOffset.UtcNow);
 
         // 実 RabbitMQ へ発行する（Worker の実 Wolverine 配線が購読・執行・永続する）。

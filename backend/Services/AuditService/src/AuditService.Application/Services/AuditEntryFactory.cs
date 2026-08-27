@@ -296,6 +296,35 @@ public static class AuditEntryFactory
             + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-05, FR-11, ADR-0002（SPOF）, #331, IADR-0211: 発注の見送り（発注せず破棄・再試行なし）。
+    // 🔴 **事前拒否（OrderRejected）・証券会社拒否（OrderExecuted の Rejected）と別 EventType で記録する**——
+    // 「拒否」は証券会社が受理しなかった状態（FR-05）であり、届いてすらいない見送りを混ぜると集計が汚染される。
+    // 注文相関（DecisionId）で承認（OrderApproved）と束ね、「なぜ発注されなかったか」を辿れるようにする。
+    public static AuditEntry From(OrderDispatchForgone e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(OrderDispatchForgone), e.DecisionId, e.Intent.Symbol,
+        Truncate($"{e.Intent.Symbol} 発注見送り（{e.Reason}）: {e.Intent.Side} 数量{e.Intent.Quantity}"
+            + "——発注していない（拒否ではない）。再試行されない（キューイングしない・IADR-0211）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時・失効後の再発注）。
+    // エントリーの DecisionId を相関に採り、「建玉あり ⇒ 有効な逆指値あり」の証跡をエントリーと 1 本で辿れるようにする。
+    public static AuditEntry From(ProtectiveStopPlaced e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ProtectiveStopPlaced), e.EntryDecisionId, e.CloseIntent.Symbol,
+        Truncate($"{e.CloseIntent.Symbol} 保護逆指値を発注 {e.CloseIntent.Side} 数量{e.CloseIntent.Quantity}"
+            + $" トリガー{e.TriggerPrice}（試行{e.Attempt}・StopOrderId={e.StopOrderId}）"),
+        AuditSerialization.Serialize(e), e.PlacedAt, recordedAt);
+
+    // FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかった（未受理・失効）ときの建玉解消の記録。
+    // 利用者の承認なしに注文取消・建玉決済が起きた事象であり、この記録が「なぜ建玉/注文が消えたか」の一次証跡になる。
+    // Remediation=None は解消も失敗した状態（逆指値なしの建玉が残り得る）——要約で明示する。
+    public static AuditEntry From(ProtectiveStopCoverageLost e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ProtectiveStopCoverageLost), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 保護逆指値が成立せず（{e.Cause}）数量{e.Quantity}を対処: {e.Remediation}"
+            + (e.Remediation == ProtectiveStopRemediation.None
+                ? "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**"
+                : string.Empty)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
     private static string FormatDuration(TimeSpan d) =>
         d.TotalDays >= 1 ? $"{d.TotalDays:0.#} 日"

@@ -25,7 +25,8 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
 public class OrderApprovedConsumerTests
 {
     // 発注回数を数えるペーパーブローカ（再配送で二重発注しないことの確認用・#131）。
-    private sealed class CountingPaperBroker : IBrokerAdapter
+    // #331, IADR-0210: 保護逆指値（IProtectiveOrderBroker）は内側の paper に委譲する（未実装だと Open が見送られる）。
+    private sealed class CountingPaperBroker : IBrokerAdapter, IProtectiveOrderBroker
     {
         private readonly PaperBrokerAdapter _inner = new();
 
@@ -40,11 +41,41 @@ public class OrderApprovedConsumerTests
             return _inner.PlaceOrderAsync(intent, ct);
         }
 
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceStopOrderAsync(closeIntent, triggerPrice, decisionId, ct);
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
             _inner.GetOrderAsync(orderId, ct);
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default) =>
             _inner.CancelOrderAsync(orderId, ct);
+    }
+
+    // #331, IADR-0211: OpenD 接続不可（確実に未発注）を再現するブローカ。
+    private sealed class UnavailableBroker : IBrokerAdapter, IProtectiveOrderBroker
+    {
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            throw new BrokerUnavailableException("OpenD へ接続できません（テスト）");
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            throw new BrokerUnavailableException("OpenD へ接続できません（テスト）");
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            throw new BrokerUnavailableException("OpenD へ接続できません（テスト）");
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            Task.FromResult<BrokerOrder?>(null);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private const string ServiceName = "ai-stock-trading.order-execution-service";
@@ -67,8 +98,10 @@ public class OrderApprovedConsumerTests
             })
             .StartAsync();
 
+    // FR-10, #331: Open 注文は StopLossPrice 必須（無いと見送り）。
     private static OrderIntent NewIntent() =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m);
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m,
+            StopLossPrice: 950m);
 
     [Fact]
     public async Task 承認注文を購読しOrderExecutedを発行する()
@@ -108,7 +141,65 @@ public class OrderApprovedConsumerTests
         first.Executed.MessagesOf<OrderApproved>().Concat(second.Executed.MessagesOf<OrderApproved>())
             .Should().HaveCount(2, "同じメッセージが2回処理されること");
         broker.PlaceCount.Should().Be(1);        // 二重発注しない
-        store.GetAll().Should().ContainSingle(); // 二重計上しない
+        store.GetAll().Should().ContainSingle(r => r.DecisionId == approved.DecisionId); // 二重計上しない
+
+        await host.StopAsync();
+    }
+
+    // FR-10, #331, IADR-0210 決定2: エントリーと同時に保護逆指値が発注され、ProtectiveStopPlaced が発行される
+    // （リスク管理が台帳の承認行へ結線するイベント）。
+    [Fact]
+    public async Task Open注文では保護逆指値が同時発注されProtectiveStopPlacedが発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        using var host = await NewHostAsync(store, new PaperBrokerAdapter());
+
+        var decisionId = Guid.NewGuid();
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new OrderApproved(decisionId, NewIntent(), 10, DateTimeOffset.UtcNow));
+
+        var placed = session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().ContainSingle().Which;
+        placed.EntryDecisionId.Should().Be(decisionId);
+        placed.TriggerPrice.Should().Be(950m);
+        placed.CloseIntent.Side.Should().Be(TradeSide.Sell);
+        placed.CloseIntent.PositionEffect.Should().Be(PositionEffect.Close);
+        // 逆指値レグも発注結果として記録され、約定追跡ポーリングの対象になる（IADR-0113 へ載せる）。
+        store.GetAll().Should().Contain(r => r.DecisionId == placed.StopDecisionId);
+
+        await host.StopAsync();
+    }
+
+    // FR-05, ADR-0002（SPOF）, #331, IADR-0211: OpenD 切断（確実に未発注）は**キューイングせず見送り＋通知**。
+    // ハンドラは例外を投げず（＝Wolverine の再試行・error キュー滞留を作らず）、OrderDispatchForgone のみ発行する。
+    [Fact]
+    public async Task OpenD切断時はキューイングせず見送りイベントを発行する()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, SystemClock>();
+                opts.Services.AddSingleton<IBrokerAdapter>(new UnavailableBroker());
+                opts.Services.AddSingleton<IExecutedOrderStore>(store);
+                opts.Services.AddSingleton<IOrderReservationStore>(reservations);
+                opts.Services.AddSingleton<AppSvc>();
+                opts.UseAiStockTradingRabbitMq(
+                    ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+
+        var approved = new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved);
+
+        // 例外にならず正常終了し（＝再試行キューに入らない）、見送りイベントだけが発行される。
+        var forgone = session.Sent.MessagesOf<OrderDispatchForgone>().Should().ContainSingle().Which;
+        forgone.DecisionId.Should().Be(approved.DecisionId);
+        forgone.Reason.Should().Be(OrderDispatchForgoneReason.BrokerUnavailable);
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty("発注していないため注文状態は存在しない");
+        store.GetAll().Should().BeEmpty("発注していない注文の記録を残さない");
+        reservations.Find(approved.DecisionId).Should().BeNull("確実に未発注のため予約は解放される");
 
         await host.StopAsync();
     }

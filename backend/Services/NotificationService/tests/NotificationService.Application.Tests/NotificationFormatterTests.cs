@@ -248,4 +248,67 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("観測日");
         msg.Content.Should().Contain("乖離し得ます");
     }
+
+    // ===== FR-05, FR-09, FR-10, #331, IADR-0210/0211: 見送り・保護逆指値の通知 =====
+
+    private static readonly DateTimeOffset StopT0 = new(2026, 8, 28, 6, 0, 0, TimeSpan.Zero);
+
+    private static OrderIntent StopIntent(PositionEffect effect = PositionEffect.Open) =>
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate,
+            10, 1_000m, effect, StopLossPrice: 950m);
+
+    [Fact]
+    public void 発注見送りは_再試行されないことを明記したWarningになる()
+    {
+        var msg = NotificationFormatter.From(new OrderDispatchForgone(
+            Guid.NewGuid(), StopIntent(), OrderDispatchForgoneReason.BrokerUnavailable, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning,
+            "建玉は増えておらずリスクは未発生（Critical の埋没を防ぐ・IADR-0211）");
+        msg.Title.Should().Contain("見送り");
+        msg.Content.Should().Contain("再試行されません");
+    }
+
+    [Fact]
+    public void 保護逆指値の発注はInfoで通知される()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopPlaced(
+            Guid.NewGuid(), Guid.NewGuid(), "stop-1", StopIntent(PositionEffect.Close), 950m, 1, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Info);
+        msg.Content.Should().Contain("950");
+    }
+
+    [Fact]
+    public void 保護喪失のNoneは直ちに確認を求めるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None, 10, null, null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("直ちに確認");
+    }
+
+    [Fact]
+    public void 保護喪失の建玉解消は解消内容が読めるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.PositionClosed,
+            10, Guid.NewGuid(), StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("手仕舞いました");
+    }
+
+    // 🔴 否定形（#331）: 損切り到達の通知は「システムが決済した」と読ませない（実行はブローカー側の逆指値）。
+    [Fact]
+    public void 損切り到達の通知は_システムが決済注文を出すとは書かない()
+    {
+        var msg = NotificationFormatter.From(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, StopT0));
+
+        msg.Content.Should().Contain("システムは決済注文を発行しません");
+    }
 }

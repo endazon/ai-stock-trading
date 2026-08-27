@@ -366,3 +366,37 @@ public sealed class PositionClosedWithStaleFxRateAuditHandler(IAuditEventStore s
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-05, FR-11, ADR-0002（SPOF）, #331, IADR-0211: 発注の見送りを中央監査台帳へ記録する。
+// キューイングしない裁定のため、この記録が「なぜ発注されなかったか」の唯一の永続証跡である
+// （事前拒否・証券会社拒否とは別 EventType＝別集計）。
+public sealed class OrderDispatchForgoneAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderDispatchForgone message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値の発注を中央監査台帳へ記録する
+// （「建玉あり ⇒ 有効な逆指値あり」の一次証跡）。
+public sealed class ProtectiveStopPlacedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ProtectiveStopPlaced message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかったときの建玉解消を中央監査台帳へ記録する。
+// 利用者の承認なしに注文取消・建玉決済が起きるため、記録が無いと「知らないうちに建玉が消えた」状態になる。
+public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ProtectiveStopCoverageLost message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

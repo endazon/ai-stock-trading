@@ -149,6 +149,64 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Migrations
 
                     b.ToTable("order_lifecycle_events", (string)null);
                 });
+
+            modelBuilder.Entity("AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence.ProtectiveStopOrderRow", b =>
+                {
+                    b.Property<Guid>("EntryDecisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempt")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EntrySide")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("FxRateToBase")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("Market")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProductType")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StopDecisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("StopOrderId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("TriggerPrice")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("EntryDecisionId");
+
+                    b.HasIndex("State", "CreatedAt");
+
+                    b.ToTable("protective_stop_orders", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }

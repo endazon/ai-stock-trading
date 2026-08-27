@@ -121,11 +121,74 @@ public class MoomooBrokerAdapterTests
     }
 
     [Fact]
-    public async Task client_例外_OpenD不達_は_Rejected_に倒す_fail_safe()
+    public async Task client_例外_送信後の失敗_は_Rejected_に倒す_fail_safe()
     {
-        var client = new FakeClient { ThrowOnPlace = () => new InvalidOperationException("OpenD 不達") };
+        // 送信後の分類不能な失敗（届いたか不明）は従来どおり終端 Rejected（予約とリコンサイルが守る）。
+        var client = new FakeClient { ThrowOnPlace = () => new InvalidOperationException("応答異常") };
         var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent());
         order.Status.Should().Be(OrderStatus.Rejected);
+    }
+
+    // FR-05, #331, IADR-0211: **接続確立の失敗（確実に未発注）は Rejected へ丸めない**——
+    // 「拒否 = 証券会社が受理しなかった状態」の集計を接続障害で汚染しない（別状態・別集計の要）。
+    [Fact]
+    public async Task OpenD接続不可は_Rejected_に丸めず伝播する_否定形()
+    {
+        var client = new FakeClient
+        {
+            ThrowOnPlace = () => new Shared.Contracts.Ports.BrokerUnavailableException("OpenD 接続不可"),
+        };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var act = async () => await adapter.PlaceOrderAsync(Intent());
+
+        await act.Should().ThrowAsync<Shared.Contracts.Ports.BrokerUnavailableException>(
+            "見送り（キューイングせず破棄）は呼び出し側が行う。Rejected にすると証券会社拒否の件数へ混入する");
+    }
+
+    // --- FR-10, #331, IADR-0210: 保護注文（IProtectiveOrderBroker） ---
+
+    [Fact]
+    public async Task 逆指値は_Stop種別とトリガー価格と_remark_で発注される()
+    {
+        var client = new FakeClient { Result = new("mo-stop", MoomooOrderState.Submitted, 0, 0m) };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+        var decisionId = Guid.NewGuid();
+        var closeIntent = Intent(side: TradeSide.Sell) with { PositionEffect = PositionEffect.Close };
+
+        var order = await adapter.PlaceStopOrderAsync(closeIntent, triggerPrice: 95m, decisionId);
+
+        client.LastRequest!.Kind.Should().Be(MoomooOrderKind.Stop);
+        client.LastRequest.TriggerPrice.Should().Be(95m);
+        client.LastRequest.Remark.Should().Be(decisionId.ToString("N"), "レグも DecisionId で照合できるようにする");
+        order.Status.Should().Be(OrderStatus.Accepted);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task 発火価格が正でない逆指値は送信せず_Rejected(decimal trigger)
+    {
+        var client = new FakeClient();
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var order = await adapter.PlaceStopOrderAsync(Intent(side: TradeSide.Sell), trigger, Guid.NewGuid());
+
+        order.Status.Should().Be(OrderStatus.Rejected);
+        client.LastRequest.Should().BeNull("送信していない（呼び出し側は建玉解消の分岐に入る）");
+    }
+
+    [Fact]
+    public async Task 成行手仕舞いは_Market種別で発注される()
+    {
+        var client = new FakeClient { Result = new("mo-close", MoomooOrderState.FilledAll, 10, 99m) };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var order = await adapter.PlaceMarketOrderAsync(
+            Intent(side: TradeSide.Sell) with { PositionEffect = PositionEffect.Close }, Guid.NewGuid());
+
+        client.LastRequest!.Kind.Should().Be(MoomooOrderKind.Market);
+        order.Status.Should().Be(OrderStatus.Filled);
     }
 
     [Fact]

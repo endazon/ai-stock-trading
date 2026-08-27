@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using AiStockTrading.Shared.Contracts.Ports;
 using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
@@ -74,15 +75,26 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
         var (trdMarket, secMarket) = MapMarket(request.Market);
         var side = request.Side == MoomooSide.Sell ? TrdCommon.TrdSide.TrdSide_Sell : TrdCommon.TrdSide.TrdSide_Buy;
 
+        // FR-10, #331, IADR-0210: 注文種別の写像。Limit=指値（従来）／Stop=逆指値（発火価格は AuxPrice）／
+        // Market=成行。Stop・Market には Price を載せない（発火後成行・板成行の意味を保つ）。
+        var orderType = request.Kind switch
+        {
+            MoomooOrderKind.Stop => TrdCommon.OrderType.OrderType_Stop,
+            MoomooOrderKind.Market => TrdCommon.OrderType.OrderType_Market,
+            _ => TrdCommon.OrderType.OrderType_Normal,
+        };
         var c2sBuilder = TrdPlaceOrder.C2S.CreateBuilder()
             .SetPacketID(_trd.NextPacketID()) // 発注は packetID（冪等キー）必須
             .SetHeader(BuildHeader(trdMarket))
             .SetTrdSide((int)side)
-            .SetOrderType((int)TrdCommon.OrderType.OrderType_Normal) // 指値
+            .SetOrderType((int)orderType)
             .SetCode(request.Symbol)
             .SetQty(request.Quantity)
-            .SetPrice((double)request.Price)
             .SetSecMarket(secMarket);
+        if (request.Kind == MoomooOrderKind.Limit)
+            c2sBuilder.SetPrice((double)request.Price);
+        if (request.Kind == MoomooOrderKind.Stop && request.TriggerPrice is { } trigger)
+            c2sBuilder.SetAuxPrice((double)trigger);
         // #141, IADR-0092: DecisionId を remark（client order id相当）として紐づける。滞留 Reserved を後から
         // DecisionId で照合し、実照会リコンサイルで発注済みを終端化・未発注を解放できるようにする。
         if (!string.IsNullOrEmpty(request.Remark))
@@ -341,6 +353,10 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
 
     // ---- 接続・口座 ----
 
+    // #331, IADR-0211: 接続確立の失敗は BrokerUnavailableException に分類する——この段階の失敗は
+    // **注文がブローカーへ届き得ない**（確実に未発注）ため、発注執行は予約を解放して「見送り」にできる。
+    // 発注**送信後**の失敗（SendAsync のタイムアウト等）は届いたか不明であり、本分類の対象外
+    // （従来どおり例外を伝播し、予約とリコンサイル〔IADR-0057/0092〕が守る）。
     private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
     {
         if (_connected)
@@ -358,7 +374,7 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
             _logger.LogInformation("OpenD へ接続します {Host}:{Port} encrypt={Encrypt}", _options.OpenDHost, _options.OpenDPort, _encrypt);
             if (!_trd.InitConnect(_options.OpenDHost, _options.OpenDPort, _encrypt))
             {
-                throw new InvalidOperationException($"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
+                throw new BrokerUnavailableException($"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
             }
             await _connectTcs.Task.WaitAsync(_replyTimeout, cancellationToken).ConfigureAwait(false);
             (_simAccId, _simAccType) = await FetchSimulateAccountAsync(cancellationToken).ConfigureAwait(false);
@@ -367,6 +383,11 @@ internal sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTra
                 "OpenD 接続完了・SIMULATE 口座 accId={AccId} 種別={AccType}",
                 _simAccId,
                 _simAccType?.ToString() ?? "不明");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
+        {
+            // 接続応答の失敗・タイムアウト・口座列挙の失敗——いずれも注文送信前＝確実に未発注。
+            throw new BrokerUnavailableException("OpenD への接続を確立できませんでした（未発注）。", ex);
         }
         finally
         {

@@ -15,7 +15,7 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 //   - **AI を介在させない**（判定は純関数 MaintenanceMarginReducer。LLM 関連の型を依存に持たない）
 //   - **3 統制が成立していても動く**（統制ストア〔IKillSwitchStore/ILockoutStore/IPauseStore〕を依存に持たない
 //     ことが構造的な保証である。本統制自体が手仕舞いであり、統制で止めることは ADR-0009 違反になる）
-//   - **発注前スクリーニング（RiskEvaluator）を通さない**（同上。PositionCloseService・StopLossExecutionService と同じ規律）
+//   - **発注前スクリーニング（RiskEvaluator）を通さない**（同上。PositionCloseService と同じ規律）
 //
 // 供給元（維持率・純資産・必要証拠金）と定期評価のドライバは未実装であり #342 / #331 が担当する。
 public sealed class MaintenanceMarginReductionService(
@@ -109,7 +109,7 @@ public sealed class MaintenanceMarginReductionService(
 
     // 台帳の建玉が持つ加重平均約定時レート（IADR-0107 決定4 と同じ近似＝外部 FX 源に依存しない）。
     // 台帳未注入・該当建玉なしはレート 1（基準通貨建てとみなす）。**縮小は止めない**——
-    // 換算レートが引けないことを理由に手仕舞いを見送るのは ADR-0009 に反する（StopLossExecutionService と同じ判断）。
+    // 換算レートが引けないことを理由に手仕舞いを見送るのは ADR-0009 に反する（旧・損切り機械執行〔IADR-0015〕と同じ判断）。
     private Dictionary<(string Symbol, Market Market), decimal> ResolveFxRates() =>
         ledger is null
             ? []

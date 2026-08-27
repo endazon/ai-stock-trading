@@ -32,12 +32,15 @@ public class OrderExecutionServiceTests
 
     // 任意の BrokerOrder を返すテスト用ブローカ（スリッページ等の制御用）。発注回数を数える。
     // onPlace は「発注が起きたその瞬間」の観測用（予約が発注前にコミットされることの確認に使う）。
-    private sealed class FakeBroker(BrokerOrder order, Action? onPlace = null) : IBrokerAdapter
+    // FR-10, #331, IADR-0210: 保護逆指値（IProtectiveOrderBroker）も実装する——実装しないと Open 注文が
+    // 見送られる（fail-closed）。既定は逆指値を滞留 Accepted で受理する。
+    private sealed class FakeBroker(BrokerOrder order, Action? onPlace = null) : IBrokerAdapter, IProtectiveOrderBroker
     {
         // #386, IADR-0149: 既定は moomoo SIMULATE（Stage 1 の発注先）。paper 経路は個別に差し替える。
         public BrokerProvider Provider { get; init; } = BrokerProvider.MoomooSimulate;
 
         public int PlaceCount { get; private set; }
+        public int StopPlaceCount { get; private set; }
 
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
         {
@@ -46,6 +49,20 @@ public class OrderExecutionServiceTests
             return Task.FromResult(order);
         }
 
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default)
+        {
+            StopPlaceCount++;
+            return Task.FromResult(new BrokerOrder(
+                Guid.NewGuid().ToString("N"), closeIntent, OrderStatus.Accepted, 0, 0m, Now, null));
+        }
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder(
+                Guid.NewGuid().ToString("N"), closeIntent, OrderStatus.Filled,
+                closeIntent.Quantity, closeIntent.Price, Now, Now));
+
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
             => Task.FromResult<BrokerOrder?>(order);
 
@@ -53,7 +70,8 @@ public class OrderExecutionServiceTests
     }
 
     // #141, IADR-0092: client order id（DecisionId）伝播に対応するブローカ。伝播された DecisionId を記録する。
-    private sealed class FakeCorrelatingBroker(BrokerOrder order) : IBrokerAdapter, IClientOrderIdBroker
+    private sealed class FakeCorrelatingBroker(BrokerOrder order)
+        : IBrokerAdapter, IClientOrderIdBroker, IProtectiveOrderBroker
     {
         public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
 
@@ -71,6 +89,17 @@ public class OrderExecutionServiceTests
             PlainPlaceCount++; // client order id 対応ブローカでは呼ばれてはならない経路（回帰検出用）。
             return Task.FromResult(order);
         }
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder(
+                Guid.NewGuid().ToString("N"), closeIntent, OrderStatus.Accepted, 0, 0m, Now, null));
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder(
+                Guid.NewGuid().ToString("N"), closeIntent, OrderStatus.Filled,
+                closeIntent.Quantity, closeIntent.Price, Now, Now));
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default)
             => Task.FromResult<BrokerOrder?>(order);
@@ -148,9 +177,11 @@ public class OrderExecutionServiceTests
     private static OrderApproved Approved(OrderIntent intent) =>
         new(Guid.NewGuid(), intent, intent.Quantity, Now);
 
+    // FR-10, #331, IADR-0210: Open 注文は StopLossPrice が必須（無いと見送り＝fail-closed）。既定で持たせる。
     private static OrderIntent Intent(int qty = 10, decimal price = 1_000m,
         PositionEffect effect = PositionEffect.Open, TradeSide side = TradeSide.Buy) =>
-        new("AAPL", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper, qty, price, effect);
+        new("AAPL", Market.UnitedStates, side, ProductType.Cash, BrokerProvider.InternalPaper, qty, price, effect,
+            StopLossPrice: effect == PositionEffect.Open ? 950m : null);
 
     [Fact]
     public async Task 承認注文はペーパーで約定しOrderExecutedを返す()
@@ -159,8 +190,9 @@ public class OrderExecutionServiceTests
         var service = NewService(new PaperBrokerAdapter(), store);
         var approved = Approved(Intent());
 
-        var executed = await service.ExecuteAsync(approved);
+        var result = await service.ExecuteAsync(approved);
 
+        var executed = result.Executed!;
         executed.Status.Should().Be(OrderStatus.Filled);
         executed.FilledQuantity.Should().Be(10);
         executed.AveragePrice.Should().Be(1_000m);
@@ -177,18 +209,18 @@ public class OrderExecutionServiceTests
         // 承認 Intent の Mode を SIMULATE にしておく。発注先は paper アダプタであり、載るべきは paper 側である。
         var simulateIntent = Intent() with { Mode = BrokerProvider.MoomooSimulate };
 
-        var paper = await NewService(new PaperBrokerAdapter(), new InMemoryExecutedOrderStore())
-            .ExecuteAsync(Approved(simulateIntent));
+        var paper = (await NewService(new PaperBrokerAdapter(), new InMemoryExecutedOrderStore())
+            .ExecuteAsync(Approved(simulateIntent))).Executed!;
 
         paper.Provider.Should().Be(
             BrokerProvider.InternalPaper, "発注先は intent.Mode ではなく実際に発注したアダプタが決める");
 
         // 対照: SIMULATE を名乗るアダプタなら SIMULATE が載る（常に paper を返す実装では緑にならない）。
         var order = new BrokerOrder("ORD-SIM", simulateIntent, OrderStatus.Filled, 10, 1_000m, Now, Now);
-        var simulate = await NewService(
+        var simulate = (await NewService(
                 new FakeBroker(order) { Provider = BrokerProvider.MoomooSimulate },
                 new InMemoryExecutedOrderStore())
-            .ExecuteAsync(Approved(simulateIntent));
+            .ExecuteAsync(Approved(simulateIntent))).Executed!;
 
         simulate.Provider.Should().Be(BrokerProvider.MoomooSimulate);
     }
@@ -200,11 +232,11 @@ public class OrderExecutionServiceTests
         var store = new InMemoryExecutedOrderStore();
         var service = NewService(new PaperBrokerAdapter(), store);
 
-        var executed = await service.ExecuteAsync(Approved(Intent(qty: 0)));
+        var executed = (await service.ExecuteAsync(Approved(Intent(qty: 0)))).Executed!;
 
         executed.Status.Should().Be(OrderStatus.Rejected);
         executed.FilledQuantity.Should().Be(0);
-        store.GetAll().Single().SlippageRatio.Should().Be(0m); // 未約定はスリッページ 0
+        store.GetAll().Single().SlippageRatio.Should().Be(0m); // 未約定はスリッページ 0（保護レグも張られない）
     }
 
     [Fact]
@@ -213,7 +245,8 @@ public class OrderExecutionServiceTests
         var store = new InMemoryExecutedOrderStore();
         var service = NewService(new PaperBrokerAdapter(), store);
 
-        var executed = await service.ExecuteAsync(Approved(Intent(effect: PositionEffect.Close, side: TradeSide.Sell)));
+        var executed = (await service.ExecuteAsync(
+            Approved(Intent(effect: PositionEffect.Close, side: TradeSide.Sell)))).Executed!;
 
         executed.Status.Should().Be(OrderStatus.Filled);
         store.GetAll().Single().PositionEffect.Should().Be(PositionEffect.Close);
@@ -228,9 +261,10 @@ public class OrderExecutionServiceTests
         var brokerOrder = new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_005m, Now, Now);
         var service = NewService(new FakeBroker(brokerOrder), store);
 
-        await service.ExecuteAsync(Approved(intent));
+        var approved = Approved(intent);
+        await service.ExecuteAsync(approved);
 
-        store.GetAll().Single().SlippageRatio.Should().Be(0.005m);
+        store.GetAll().Single(r => r.DecisionId == approved.DecisionId).SlippageRatio.Should().Be(0.005m);
     }
 
     [Fact]
@@ -247,8 +281,10 @@ public class OrderExecutionServiceTests
         var second = await service.ExecuteAsync(approved); // 再処理
 
         broker.PlaceCount.Should().Be(1);          // 再発注しない
-        store.GetAll().Should().ContainSingle();    // 二重計上しない
-        second.OrderId.Should().Be(first.OrderId);  // 既存結果を返す
+        broker.StopPlaceCount.Should().Be(1);      // 保護レグも再発注しない（#331）
+        store.GetAll().Where(r => r.DecisionId == approved.DecisionId)
+            .Should().ContainSingle();              // 二重計上しない
+        second.Executed!.OrderId.Should().Be(first.Executed!.OrderId); // 既存結果を返す
     }
 
     // ---- #131 / IADR-0057: 発注前 DecisionId 予約による冪等化（予約 → 発注 → 確定の3相）----
@@ -334,9 +370,10 @@ public class OrderExecutionServiceTests
 
         var second = await service.ExecuteAsync(approved); // 再配送
 
-        second.OrderId.Should().Be("o1");
+        second.Executed!.OrderId.Should().Be("o1");
         broker.PlaceCount.Should().Be(1);        // 再発注しない
-        store.GetAll().Should().ContainSingle(); // 二重計上しない
+        store.GetAll().Where(r => r.DecisionId == approved.DecisionId)
+            .Should().ContainSingle();           // 二重計上しない
     }
 
     [Fact]
@@ -371,7 +408,7 @@ public class OrderExecutionServiceTests
             store, reservations, new AdvancingClock(Now, TimeSpan.FromSeconds(1)));
         var approved = Approved(intent);
 
-        var executed = await service.ExecuteAsync(approved);
+        var executed = (await service.ExecuteAsync(approved)).Executed!;
 
         executed.ExecutedAt.Should().BeAfter(reservations.Find(approved.DecisionId)!.ReservedAt);
     }
@@ -403,7 +440,7 @@ public class OrderExecutionServiceTests
         var broker = new FakeBroker(new BrokerOrder("o1", intent, OrderStatus.Filled, 10, 1_000m, Now, Now));
         var service = NewService(broker, store);
 
-        var executed = await service.ExecuteAsync(Approved(intent));
+        var executed = (await service.ExecuteAsync(Approved(intent))).Executed!;
 
         executed.Status.Should().Be(OrderStatus.Filled);
         broker.PlaceCount.Should().Be(1);
