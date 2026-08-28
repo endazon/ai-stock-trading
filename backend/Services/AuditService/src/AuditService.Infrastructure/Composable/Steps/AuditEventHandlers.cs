@@ -401,6 +401,8 @@ public sealed class InformationSourceRecoveredAuditHandler(IAuditEventStore stor
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
+}
+
 // FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
 //
 // 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**
@@ -423,6 +425,8 @@ public sealed class GeneralWebCollectionStateChangedAuditHandler(IAuditEventStor
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
+}
+
 // FR-04, FR-09, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 取引判断の見送りを台帳へ記録する。
 //
 // 🔴 **見送りは障害ではなく設計上の正常な結果である。** 記録する理由は障害追跡ではなく、
