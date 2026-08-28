@@ -78,6 +78,33 @@ public class OrderApprovedConsumerTests
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
     }
 
+    // #331, IADR-0210: 逆指値だけをブローカーが受理しないブローカ（エントリーと手仕舞いは paper に委譲）。
+    private sealed class StopRejectingPaperBroker : IBrokerAdapter, IProtectiveOrderBroker
+    {
+        private readonly PaperBrokerAdapter _inner = new();
+
+        public BrokerProvider Provider => _inner.Provider;
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            _inner.PlaceOrderAsync(intent, ct);
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder(
+                Guid.NewGuid().ToString("N"), closeIntent, OrderStatus.Rejected, 0, 0m,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.GetOrderAsync(orderId, ct);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.CancelOrderAsync(orderId, ct);
+    }
+
     private const string ServiceName = "ai-stock-trading.order-execution-service";
 
     private static Task<IHost> NewHostAsync(IExecutedOrderStore store, IBrokerAdapter broker) =>
@@ -200,6 +227,32 @@ public class OrderApprovedConsumerTests
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty("発注していないため注文状態は存在しない");
         store.GetAll().Should().BeEmpty("発注していない注文の記録を残さない");
         reservations.Find(approved.DecisionId).Should().BeNull("確実に未発注のため予約は解放される");
+
+        await host.StopAsync();
+    }
+
+    // FR-10, #331, IADR-0210 決定3: 逆指値が未受理でも**逆指値なしの建玉を残さない**。
+    // 約定済みのエントリーは成行で手仕舞い、ProtectiveStopCoverageLost を発行する。
+    // 🔴 発行が欠けると、監査にも Critical 通知にも「なぜ建玉が消えたか」が残らない。
+    [Fact]
+    public async Task 逆指値が未受理なら建玉を解消しProtectiveStopCoverageLostが発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        using var host = await NewHostAsync(store, new StopRejectingPaperBroker());
+
+        var decisionId = Guid.NewGuid();
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new OrderApproved(decisionId, NewIntent(), 10, DateTimeOffset.UtcNow));
+
+        session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().BeEmpty("逆指値は受理されていない");
+        var lost = session.Sent.MessagesOf<ProtectiveStopCoverageLost>().Should().ContainSingle().Which;
+        lost.EntryDecisionId.Should().Be(decisionId);
+        lost.Cause.Should().Be(ProtectiveStopLossCause.RejectedAtEntry);
+        lost.Remediation.Should().Be(ProtectiveStopRemediation.PositionClosed,
+            "paper のエントリーは即時約定するため、建玉は成行で手仕舞われる");
+        lost.CloseIntent!.PositionEffect.Should().Be(PositionEffect.Close);
+        // 手仕舞いレグも記録され、台帳の建玉を減らす経路（OrderExecuted 相関）に載る。
+        store.GetAll().Should().Contain(r => r.DecisionId == lost.CloseDecisionId);
 
         await host.StopAsync();
     }

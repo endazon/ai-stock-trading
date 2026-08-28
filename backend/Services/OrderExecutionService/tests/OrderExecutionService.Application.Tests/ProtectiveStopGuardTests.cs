@@ -35,6 +35,12 @@ public class ProtectiveStopGuardTests
         public bool RejectReplacement { get; set; }
         public bool ThrowOnMarketClose { get; set; }
 
+        /// <summary>この StopOrderId の注文照会は例外になる（ブローカ側の異常。その 1 件の評価が落ちる）。</summary>
+        public HashSet<string> ThrowOnGetOrderIds { get; } = [];
+
+        /// <summary>再発注の送信が例外になる（接続断など）。</summary>
+        public bool ThrowOnStopPlace { get; set; }
+
         public List<string> Cancelled { get; } = [];
         public int StopPlaceCount { get; private set; }
         public int MarketCloseCount { get; private set; }
@@ -49,6 +55,8 @@ public class ProtectiveStopGuardTests
         {
             StopPlaceCount++;
             LastStopIntent = closeIntent;
+            if (ThrowOnStopPlace)
+                throw new InvalidOperationException("再発注の送信に失敗（テスト）");
             return Task.FromResult(new BrokerOrder(
                 $"stop-re-{StopPlaceCount}", closeIntent,
                 RejectReplacement ? OrderStatus.Rejected : OrderStatus.Accepted, 0, 0m, Now,
@@ -68,7 +76,9 @@ public class ProtectiveStopGuardTests
         }
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
-            Task.FromResult(Orders.TryGetValue(orderId, out var order) ? order : null);
+            ThrowOnGetOrderIds.Contains(orderId)
+                ? throw new InvalidOperationException($"注文照会に失敗（テスト）: {orderId}")
+                : Task.FromResult(Orders.TryGetValue(orderId, out var order) ? order : null);
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
@@ -81,8 +91,8 @@ public class ProtectiveStopGuardTests
     }
 
     private static ProtectiveStopOrder ActiveStop(
-        TradeSide entrySide = TradeSide.Buy, int quantity = 10, int attempt = 1) =>
-        new(Guid.NewGuid(), Guid.NewGuid(), "stop-1", "AAPL", Market.UnitedStates, entrySide,
+        TradeSide entrySide = TradeSide.Buy, int quantity = 10, int attempt = 1, string stopOrderId = "stop-1") =>
+        new(Guid.NewGuid(), Guid.NewGuid(), stopOrderId, "AAPL", Market.UnitedStates, entrySide,
             ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 950m, 1m, attempt,
             ProtectiveStopState.Active, Now.AddMinutes(-5), Now.AddMinutes(-5));
 
@@ -311,5 +321,72 @@ public class ProtectiveStopGuardTests
         ProtectiveStopGuard.RemainingPositionFor(shortStop, [Short(1)]).Should().Be(1);
         ProtectiveStopGuard.RemainingPositionFor(shortStop, [Long(5)]).Should().Be(0);
         ProtectiveStopGuard.RemainingPositionFor(shortStop, []).Should().Be(0);
+    }
+
+    // ---- バッチの fail-safe（1 件の異常で巡回全体を止めない） ----
+
+    [Fact]
+    public async Task 巡回対象が無ければ建玉照会もしない_否定形()
+    {
+        // 保護中の建玉がゼロのときに毎回 OpenD へ建玉照会を投げると、無駄な往復が常時走る。
+        // 「対象ゼロなら何もしない」を固定する（結果は空のサマリ）。
+        var broker = new GuardBroker { Positions = null };
+        var guard = new ProtectiveStopGuard(
+            broker, broker, new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), new FakeClock());
+
+        var result = await guard.RunOnceAsync(10);
+
+        result.Should().Be(ProtectiveStopGuardResult.Empty);
+        result.Scanned.Should().Be(0);
+        result.Failed.Should().Be(0);
+        result.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 一件の評価が例外でも残りの件は処理し失敗として数える()
+    {
+        // 1 銘柄のブローカ照会が壊れたとき、巡回全体が中断すると**他の建玉の保護喪失が検知されなくなる**。
+        // 失敗は件数へ計上し（可観測性）、残りの評価は続ける。
+        var broken = ActiveStop(stopOrderId: "stop-broken");
+        var healthy = ActiveStop(stopOrderId: "stop-ok");
+        var broker = new GuardBroker
+        {
+            Positions = [Long(10)],
+        };
+        broker.ThrowOnGetOrderIds.Add("stop-broken");
+        broker.Orders["stop-ok"] = StopOrder(OrderStatus.Accepted);
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(broken);
+        stops.Save(healthy);
+        var guard = new ProtectiveStopGuard(
+            broker, broker, stops, new InMemoryExecutedOrderStore(), new FakeClock());
+
+        var result = await guard.RunOnceAsync(10);
+
+        result.Scanned.Should().Be(2);
+        result.Failed.Should().Be(1, "壊れた 1 件だけを失敗として数える");
+        result.StillActive.Should().Be(1, "残りの 1 件は評価され続ける");
+    }
+
+    [Fact]
+    public async Task 再発注の送信が例外でも手仕舞いへ倒れる()
+    {
+        // 「再発注の**拒否**」だけでなく「再発注の**送信失敗**（接続断など）」も、逆指値なしの建玉を
+        // 残さない側へ倒れなければならない。例外がそのまま抜けると建玉が無防備なまま残る。
+        var stop = ActiveStop();
+        var (guard, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Cancelled);
+        broker.Positions = [Long(10)];
+        broker.ThrowOnStopPlace = true;
+
+        var result = await guard.RunOnceAsync(10);
+
+        result.ClosedOut.Should().Be(1);
+        broker.MarketCloseCount.Should().Be(1, "再発注が送れなければ成行で手仕舞う");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        store.FindByDecisionId(ProtectiveStopIds.CloseDecisionId(stop.EntryDecisionId, attempt: 2))
+            .Should().NotBeNull("手仕舞いレグは約定追跡へ載る");
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle(e =>
+            e.Remediation == ProtectiveStopRemediation.PositionClosed);
     }
 }

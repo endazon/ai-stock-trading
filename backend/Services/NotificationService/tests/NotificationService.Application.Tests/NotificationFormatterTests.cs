@@ -302,6 +302,35 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("手仕舞いました");
     }
 
+    [Fact]
+    public void 保護喪失のエントリー取消は建玉が生じていないことを伝える()
+    {
+        // 3 つの対処（取消・手仕舞い・None）は利用者の受け取り方がまったく違う。
+        // 取消は**建玉が生じていない**＝損益に影響しないことを読み取れなければ、不要な確認作業を招く。
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.EntryCancelled,
+            10, null, null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("建玉は生じていません");
+    }
+
+    [Theory]
+    [InlineData(OrderDispatchForgoneReason.BrokerUnavailable, "接続")]
+    [InlineData(OrderDispatchForgoneReason.StopLossPriceMissing, "損切り価格")]
+    [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported, "逆指値に対応")]
+    public void 見送りの理由は日本語で読み分けられる(OrderDispatchForgoneReason reason, string expected)
+    {
+        // 見送りは 3 つの原因で起こり、**対処がそれぞれ違う**（OpenD の復旧／判断側の損切り価格の欠落／
+        // ブローカー構成の誤り）。列挙子名だけを出すと利用者は何をすべきか判断できない。
+        var msg = NotificationFormatter.From(new OrderDispatchForgone(
+            Guid.NewGuid(), StopIntent(), reason, StopT0));
+
+        msg.Title.Should().Contain(expected);
+        msg.Content.Should().Contain(expected);
+    }
+
     // 🔴 否定形（#331）: 損切り到達の通知は「システムが決済した」と読ませない（実行はブローカー側の逆指値）。
     [Fact]
     public void 損切り到達の通知は_システムが決済注文を出すとは書かない()

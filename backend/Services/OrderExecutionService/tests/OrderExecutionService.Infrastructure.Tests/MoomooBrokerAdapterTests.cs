@@ -24,8 +24,13 @@ public class MoomooBrokerAdapterTests
             return Task.FromResult(Result);
         }
 
-        public Task<MoomooOrderResult?> QueryOrderAsync(string orderId, CancellationToken ct = default) =>
-            Task.FromResult(QueryResult);
+        public Func<Exception>? ThrowOnQuery { get; set; }
+
+        public Task<MoomooOrderResult?> QueryOrderAsync(string orderId, CancellationToken ct = default)
+        {
+            if (ThrowOnQuery is not null) throw ThrowOnQuery();
+            return Task.FromResult(QueryResult);
+        }
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
         {
@@ -189,6 +194,39 @@ public class MoomooBrokerAdapterTests
 
         client.LastRequest!.Kind.Should().Be(MoomooOrderKind.Market);
         order.Status.Should().Be(OrderStatus.Filled);
+    }
+
+    // 🔴 FR-10, #331: 保護逆指値ガードは**照会不能（null）を「無い」と取り違えない**ことを前提に据え置く。
+    // ここで例外が漏れると、ガードの 1 件が失敗として落ち、逆に Rejected を捏造すると
+    // 「失効した」と誤認して不要な再発注・手仕舞いが走る。どちらも実弾で実損になる。
+    [Fact]
+    public async Task 状態照会が例外なら_nullに倒す_否定形()
+    {
+        var client = new FakeClient { ThrowOnQuery = () => new InvalidOperationException("OpenD 不達（テスト）") };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var found = await adapter.GetOrderAsync("mo-9");
+
+        found.Should().BeNull("照会不能は『不明』であり、状態を捏造しない");
+    }
+
+    // #331, IADR-0211: 接続確立の失敗は原因例外を保ったまま分類され、Rejected へ丸められない。
+    // 原因が落ちるとログから「なぜ OpenD に繋がらなかったか」が消え、切り分けができなくなる。
+    [Fact]
+    public async Task 接続不可の原因例外は保たれたまま伝播する()
+    {
+        var cause = new TimeoutException("接続応答なし（テスト）");
+        var client = new FakeClient
+        {
+            ThrowOnPlace = () => new Shared.Contracts.Ports.BrokerUnavailableException(
+                "OpenD への接続を確立できませんでした（未発注）。", cause),
+        };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var act = async () => await adapter.PlaceOrderAsync(Intent());
+
+        var thrown = await act.Should().ThrowAsync<Shared.Contracts.Ports.BrokerUnavailableException>();
+        thrown.Which.InnerException.Should().BeSameAs(cause);
     }
 
     [Fact]

@@ -164,6 +164,59 @@ Active な `ProtectiveStopOrder` を定期巡回（moomoo 構成のみ配線。�
 - 既存テストの改廃: `StopLossExecutionServiceTests` は削除（対象クラス削除）。`StopLossTriggeredConsumerTests` は
   否定形テストへ置き換え。`MoomooBrokerAdapterTests` ほかは新分岐を追加。
 
+### ［2026-08-28 追記 / #331］カバレッジ床割れとテスト追補
+
+**事実**: 初回 push の CI（`build-and-test`）が**カバレッジ床割れで失敗した**。実測
+`78.78%`（14326/18185 行・レポート 51 件）に対し `coverage-floor.json` の `lineRateFloor` は `0.79`。
+本 PR は 69 ファイル・+3591/−356 で、**新規コードのうち常駐・配線・契約の層にテストが当たっていなかった**
+（床は回帰防止のラチェットであり、下げない）。
+
+**分母が増えた内訳（実測）**: 手書きマイグレーション `20260827232000_AddProtectiveStopOrders.cs` の
+**32 行**が丸ごと分母へ入る（`exclude` は `*.Designer.cs` / `*ModelSnapshot.cs` だけで、手書きの
+`Up`/`Down` は IADR-0143 決定2 により除外しない）。この 32 行は本追補でも被覆していない
+（EF マイグレーションの実行検査は既存のどのマイグレーションでも行っていない。同じ扱いを踏襲する）。
+
+**被覆が無かった新規コード（cobertura の実データで特定。推測ではない）**:
+
+| 箇所 | 未被覆 | なぜ意味があるか |
+| --- | --- | --- |
+| `ProtectiveStopGuardService`（常駐） | 42/42 行（0%） | 巡回結果の**発行**・無効化・失敗時の再試行が全て無検証だった |
+| `ProtectiveStopGuard` の fail-safe 分岐 | 10 行 | 対象ゼロ・1 件失敗・再発注の送信例外 |
+| 監査ハンドラ 3 種 | 12 行 | 相関（DecisionId）で注文チェーンへ載ることが無検証 |
+| 通知ハンドラ 3 種 | 6 行 | 購読→送信の配線が無検証 |
+| `OrderApprovedHandler` の保護喪失発行 | 5 行 | `ProtectiveStopCoverageLost` の発行経路 |
+| `NotificationFormatter` の対処・理由の分岐 | 4 行 | 3 つの見送り理由・`EntryCancelled` の文面 |
+| 新イベント 3 種のレコード（契約） | 23 行 | wire / 監査 payload の往復（null が意味を持つ） |
+| `BrokerUnavailableException`（原因つき） | 4 行 | 原因例外の保持 |
+| `MoomooBrokerAdapter.GetOrderAsync` の fail-safe | 3 行 | 照会不能を `null` に倒す（状態を捏造しない） |
+
+**追加したテスト（すべて安全・統制に直結する経路。カバレッジ稼ぎの空テストは置かない）**:
+
+- `ProtectiveStopGuardServiceTests`（新規・8 件）: 再発注／保護喪失の**イベント発行**、維持だけの巡回では
+  発行しない（否定形）、無効化時は一度も巡回せず**警告を残す**、間隔ごとの巡回、巡回失敗後の再試行、
+  停止要求のキャンセルをエラーとして記録しない、設定の既定値。
+  常駐の `ExecuteAsync` は `StartAsync` とは別タスクで走るため、**固定待ちではなくシグナル**で待つ
+  （時間依存のちらつきを作らない。この事実は `BrokerPositionSnapshotService` の既存テストでは
+  観測されておらず、同サービスの `ExecuteAsync` は現在も未被覆である）。
+- `ProtectiveStopGuardTests`（+3 件）: 巡回対象ゼロなら建玉照会もしない（否定形）、1 件の評価が例外でも
+  残りを処理し失敗として数える、再発注の**送信例外**でも手仕舞いへ倒れる。
+- `AuditEventConsumersTests`（+3 件）: 見送りが**拒否とは別 EventType**で注文チェーンに載る、
+  保護逆指値の発注がエントリーと同じ相関で載る、保護喪失が相関・銘柄つきで残る。
+- `NotificationConsumersTests`（+3 件）: 見送り通知が「再試行されない」ことを伝える、保護逆指値の発注は
+  Info、保護喪失は解消内容つきの Critical。
+- `NotificationFormatterTests`（+2 件）: `EntryCancelled` は「建玉は生じていません」と読める、
+  見送りの 3 理由が日本語で読み分けられる（`Theory`）。
+- `OrderApprovedConsumerTests`（+1 件）: 逆指値未受理 → 建玉解消 → `ProtectiveStopCoverageLost` の発行と
+  手仕舞いレグの記録。
+- `MoomooBrokerAdapterTests`（+2 件）: 状態照会の例外は `null` に倒す（否定形）、接続不可の原因例外は保たれる。
+- `ProtectiveStopEventPayloadTests`（新規・6 件）: 新イベント 3 種の **JSON 往復**（監査 payload が唯一の
+  一次証跡であり、`CloseDecisionId` / `CloseIntent` の **null が意味を持つ**）と、接続不可分類の原因例外保持。
+  `EventBackwardCompatibilityTests` はプロパティの**型名**しか見ない（同テストの「既知の限界」）ため、
+  その外側を押さえる。
+
+**結果（実測）**: `78.78%`（14326/18185）→ `79.44%`（14446/18185・レポート 51 件）。床 `79.00%` に対し
+**0.44 ポイントの余裕**を持たせた（床ぎりぎりだと測定誤差で再び落ちるため）。**床は変更していない。**
+
 ## 実環境依存で本 PR では検証できない範囲（#342 PoC 待ち）
 
 | 事項 | 本 PR での扱い |
