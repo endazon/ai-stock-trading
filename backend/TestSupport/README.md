@@ -1,7 +1,7 @@
 # TestSupport — テスト実行・単体実行のための足場（本番非使用）
 
 このディレクトリには、**本番実装ではない**「足場（scaffold / shim）」を置く。本番の取引ドメイン実装
-（`src/Services/**`・`src/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`）とは物理的に分離し、
+（`backend/Services/**`・`backend/Shared/AiStockTrading.Shared.*`）とは物理的に分離し、
 「実際に本番で使っている」と誤解されないようにするためのものである（[IADR-0013](../../.ai-context/adr/IADR-0013_platform-foundation-testsupport-shim.md)）。
 
 ## AiStockTrading.TestSupport.PlatformShim

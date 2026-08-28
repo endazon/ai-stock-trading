@@ -11,6 +11,14 @@
  * **PROJECT_PREFIXES が空なら本検査は skip する** —— 他プロジェクトの計画書を参照しない
  * リポジトリでは検査すべき対象がそもそも無いためである（設定漏れではなく正常な状態）。
  *
+ * 🔴 **本リポ（ai-stock-trading）は既定を空のまま残さない。** `.claude/rules/traceability.repo.md`
+ * 「検査の置換点」に本リポの値（`['MSP', 'AST']`）と根拠を記録している。CI（`ci.yml`）は
+ * `PLAN_ID_PREFIXES=MSP,AST` を明示して渡すが、**素の実行（env なし）まで既定へ埋めておかないと
+ * 「CI では検査され、手元では skip して緑になる」という非対称が残る**（[IADR-0262](../.ai-context/adr/IADR-0262_plan-id-qualification-default-and-doc-contradictions.md)。
+ * [IADR-0189](../.ai-context/adr/IADR-0189_plan-id-qualification-and-traceability-kit-sync.md) 決定2・
+ * 決定6が「バイト一致を保つため env のみで供給する」としていた設計を、資料再編（ADR-0029 決定6。
+ * kit との乖離を受容する方針）に伴い部分的に supersede する）。
+ *
  * **`check-cross-repo-refs.js` とは対象が違う。** あちらは **issue / PR 番号**（`AST#24`）、
  * 本スクリプトは **計画 ID / ADR ID**（`AST/FR-17`）を見る。同じ短縮名で始まるので混同しやすいが、
  * 規約の別々の節が定めており母集合も別である。**ファイルを分けたのは関心の分離のためでもある。**
@@ -46,7 +54,13 @@ function splitList(envValue, fallback) {
 // 【置換点】他プロジェクトの短縮名（例: ['AST']）。
 // **空のままなら本検査は skip する。** 他プロジェクトを参照しないリポジトリでは対象が無い。
 // 環境変数 `PLAN_ID_PREFIXES`（カンマ区切り）で上書きできる。
-const PROJECT_PREFIXES = splitList(process.env.PLAN_ID_PREFIXES, []);
+//
+// 【本リポの値・NFR / IADR-0262】`MSP`（基盤リポへの参照）＋ `AST`（本リポ自身の自己修飾。
+// `AST/FR-17` 等を実際に使っているため。IADR-0189 決定3）。**既定を空のままにして CI 側で
+// 環境変数を渡す形は採らない** —— 空は skip（exit 0）であり、素の実行（手元・pre-commit 相当）
+// だけが検査されない非対称を生む。CI は `ci.yml` で同値を明示しているが、**それとは別に既定へ
+// 書く**（MSP 側 `check-plan-id-qualification.js` と同じ考え方）。
+const PROJECT_PREFIXES = splitList(process.env.PLAN_ID_PREFIXES, ['MSP', 'AST']);
 
 // 【置換点】計画 ID / 実装 ADR ID の種別。通常は書き換え不要である。
 const ID_KINDS = splitList(process.env.PLAN_ID_KINDS, ['IADR', 'ADR', 'FR', 'NFR', 'UC', 'SC']);
@@ -292,6 +306,14 @@ function selfTest() {
   t('置換点がプレースホルダのままでも読み込めて例外を投げない',
     DEFAULT_CHECKER === null || typeof DEFAULT_CHECKER.findPlanIdViolations === 'function');
 
+  // --- 走査 0 件の下限検査（isEmptyScanFailure。NFR / IADR-0262） ---
+  // skip（対象なし）・fail-closed（拾えなかった）・fail-open（git 失敗）の 3 分岐を混同しないこと。
+  t('checker あり・files=[] は fail-closed と判定する', isEmptyScanFailure(C, []) === true);
+  t('checker あり・files に要素があれば判定しない', isEmptyScanFailure(C, ['a.md']) === false);
+  t('checker が無ければ判定しない（skip 分岐が先に処理する前提）', isEmptyScanFailure(null, []) === false);
+  t('files が null（git 失敗）なら判定しない（fail-open 分岐は別にある）',
+    isEmptyScanFailure(C, null) === false);
+
   // **自己除外が外れていないこと。** 外すと検査器自身のヘッダと自己試験フィクスチャで必ず落ちる。
   t('自己除外: trackedFiles に検査器自身が含まれない', (() => {
     const files = trackedFiles();
@@ -349,6 +371,22 @@ function selfTest() {
   console.log(`[check-plan-id-qualification] 自己試験 ${cases.length} 件 all passed。`);
 }
 
+/**
+ * 走査結果 0 件を fail-closed とみなすべきかを判定する（副作用なしの純関数。NFR / IADR-0262）。
+ *
+ * `main()` の意思決定（「対象が無い＝skip・exit 0」「拾えなかった＝fail・exit 1」「git 失敗＝
+ * fail-open・exit 0」の 3 分岐のうち、後 2 者を分ける部分）をここへ切り出し、`--self-test` から
+ * 直接固定できるようにした。**skip 分岐（checker が無い）は呼び出し側が先に処理する前提で、
+ * ここでは判定しない**（`checker` が falsy なら常に false を返す）。
+ *
+ * @param {object|null} checker createChecker() の戻り値（無ければ null）
+ * @param {string[]|null} files trackedFiles() の戻り値。git 失敗時は null（別の fail-open 分岐）
+ * @returns {boolean} true なら「非空の checker があるのに 0 件しか拾えなかった」ため fail させる
+ */
+function isEmptyScanFailure(checker, files) {
+  return Boolean(checker) && Array.isArray(files) && files.length === 0;
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--self-test')) {
@@ -378,7 +416,7 @@ function main() {
   // **0 件走査で緑を返さない**（fail-closed）。走査対象を 1 件も拾えないのは
   // 「検査しているつもりで何も見ていない」状態であり、退行を止めているという記録だけが残る。
   // **上の skip とは別物である** —— あちらは「対象が無い」、こちらは「拾えなかった」。
-  if (files.length === 0) {
+  if (isEmptyScanFailure(DEFAULT_CHECKER, files)) {
     console.error('[check-plan-id-qualification] 走査対象のファイルを 1 件も見つけられませんでした。');
     console.error('  0 件検査は「検査しているつもりで何も見ていない」状態なので fail させています。');
     process.exit(1);
@@ -404,6 +442,7 @@ module.exports = {
   createChecker,
   createExcluder,
   submodulePaths,
+  isEmptyScanFailure,
   checkFiles,
   formatReport,
   trackedFiles,

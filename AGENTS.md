@@ -6,7 +6,7 @@
 
 - 上流工程リポジトリ `project-planning` で確定した計画書を**実装する**作業リポジトリ。
 - 計画書・裁定は `project-planning` の `projects/ai-stock-trading/00_vision 〜 07_adr` にある。**本リポジトリは planning に依存しない（submodule は張らない。資料再編 ADR-0029 決定 2）。** 参照は GitHub 上の URL か隣接クローン（既定パス `../project-planning`。**読み取り専用・pin 固定なし**）で行う。
-- 計画書への指摘は project-planning へ GitHub issue（`feedback.yml` テンプレート・`decision-needed` ラベル）で起票する。裁定の完了記録は planning 側 `projects/ai-stock-trading/10_feedback/` に残る（本リポジトリには残さない）。
+- 計画書への指摘は project-planning へ GitHub issue（`feedback.yml` テンプレート・`feedback` / `decision-needed` ラベル）で起票する。**起票前に同件の既存 issue を必ず検索する。** 裁定の完了記録は planning 側 `projects/ai-stock-trading/10_feedback/` に残る（本リポジトリには残さない）。
 - 利用可能な AI（Claude Code サブスク / Anthropic API / GitHub Copilot）と有効化するファイルは `AI_SETUP.md` で宣言する。AI 機能の一部はプロファイル依存である。
 - 成果物の主従（主たる成果物と付随成果物）は README 冒頭・`CLAUDE.md` に明示し、計画書と一致させ続ける。
 - **資料の主従**: `docs/` ＝人が読む生きた文書、`.ai-context/` ＝ AI 向け文脈資料・凍結記録（実装ADR・作業仕様書。ここで起草を続ける）。詳細は `.ai-context/README.md`（ADR-0029 決定 1・7）。
@@ -39,7 +39,7 @@
 - `main` への直接コミット禁止。作業ブランチ → PR 経由。
 - 破壊的 git 操作（force push, `reset --hard`）禁止。
 - 機密情報をコミットしない。
-- 計画書（fixed / Accepted）に反する実装をしない。差異が必要なら根拠（新 ADR 等）を残し、planning へ issue で環流する。
+- 計画書（fixed / Accepted）に反する実装をしない。差異が必要なら根拠（新 IADR 等）を残し、planning へ issue で環流する。
 - **planning への依存を再導入しない**（submodule 化・pin 固定・計画書をビルド／CI の前提にすること）。
 
 ## worker スロットとして動く場合の契約
