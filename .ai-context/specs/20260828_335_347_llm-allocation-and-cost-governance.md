@@ -230,5 +230,80 @@ LlmCostScope           purpose → 月次上限の対象か否か
 - 基盤側の鎖・層別 purpose の配備時期（上記 1・2）。配備までは AST の実効モデル検証が
   「割当が効いていない」ことを**取引の停止**という形で顕在化させる。**これは設計上の正常な結果**である
   （ADR-0017 決定 2）が、Stage 0 検証の実施前に配備が要る。
-</content>
-</invoke>
+
+## ［2026-08-28 追記 / #335・#347］カバレッジ床割れとその回復
+
+### 起きたこと（実測）
+
+本作業の実装コミット 2 本（58 ファイル・3002 行追加）を push した結果、CI の集約ジョブ
+`build-and-test` が**カバレッジ床（`coverage-floor.json` の `lineRateFloor` = 0.79）割れ**で落ちた。
+
+```
+集めたカバレッジレポート: 51 件
+[check-coverage] 除外 41 ファイル・8988 行（うち被覆 0 行）。分母 26990 → 18002 行
+[check-coverage] floor 79.00% を下回りました（実測 78.70%）。
+[check-coverage] 行カバレッジ 78.70%（14167/18002 行・レポート 51 件）/ floor 79.00%
+```
+
+ローカル再現（CI と同じ Release ビルド・`Category!=Integration`・`cov` へ収集・レポート 51 件）は
+**78.65%（14159/18002 行）**。CI との差 9 行は測定環境の差であり、床割れの事実は同じである。
+
+🔴 **床は下げていない。** 床は回帰防止のラチェットであり、下げて緑にすることは規約上禁止である
+（`coverage-floor.json` の `$comment`・`scripts/check-coverage.js` 冒頭）。**テストの追加だけで回復させた。**
+
+### 被覆が無かった新規コードの特定（カバレッジレポートの実データから）
+
+`cov/**/coverage.cobertura.xml` を `(ファイル, 行番号)` で和集合して未被覆行を数え、
+本 PR が触った 39 の非テストファイルへ絞った。上位は次のとおり（被覆前）。
+
+| 未被覆 / 全行 | ファイル | 内容 |
+| --- | --- | --- |
+| 14 / 14 | `ReportService.Infrastructure/Composable/Adapters/PublishingLlmUsageReporter.cs` | 新規。報告書費用の publish |
+| 12 / 12 | `ReportService.Infrastructure/Composable/Adapters/PublishingLlmGovernanceReporter.cs` | 新規。発火の publish |
+| 18 / 181 | `AuditService.Application/Services/AuditEntryFactory.cs` | `LlmCostIncurred` / `LlmFallbackFired` / `TradeDecisionSkipped` の 3 写像 |
+| 12 / 140 | `AuditService.Infrastructure/Composable/Steps/AuditEventHandlers.cs` | 上記 3 イベントの監査ハンドラ本体 |
+| 10 / 118 | `NotificationService.Application/Services/NotificationFormatter.cs` | `LlmFallbackFired` / `TradeDecisionSkipped` の文言 |
+| 4 / 36 | `NotificationService.Infrastructure/Composable/Steps/NotificationHandlers.cs` | 同 2 イベントの通知ハンドラ |
+| 10 / 190 | `ReportService.Domain/ReportRenderer.cs` | `AppendLlmModelUsage`（報告書メタの描画） |
+| 5 / 34 | `CostControlService.Infrastructure/.../EfCostLedger.cs` | `GetMonthlyTotals`（カテゴリ別内訳） |
+| 8 / 99 | `ReportService.Infrastructure/.../HttpReportNarrativeDrafter.cs` | 発火記録の best-effort catch・JSON null・本文空 |
+| 14 / 158 | `ReportService.Api/Program.cs` | ゲートウェイ設定時の散文生成アダプタの結線 |
+
+**除外して手を付けなかったもの（規則 6）**
+
+| 除外 | 理由 |
+| --- | --- |
+| `AuditEventHandlers.cs` の残り 68 行（本 PR と無関係な 17 ハンドラ） | 射程外。#335 / #347 が触っていないイベントである |
+| `AuditEntryFactory.cs` の残り 11 行（`BrokerAvailabilityObserved` / `BrokerAccountObserved`） | 同上 |
+| `NotificationHandlers.cs` の残り 14 行 | 同上 |
+| `AiStockTrading.Shared.Contracts/**`（Shared.Infrastructure.Tests のレポート由来・447 行） | **既存の構造的な事象**。同じソースが `<source>` 根の違いで別キーとして数えられ、契約型ほぼ全件が同キーで 0% になっている。本 PR が作ったものではなく、ここを埋めるには**別プロジェクトへ重複テストを置く**しかないため採らない |
+| `EfCostLedger` の relational 経路（`pg_advisory_xact_lock`）と `AdvisoryKey` | 実 PostgreSQL が要る。`Category!=Integration` の母集合では実行し得ない |
+| `CostControlEndpoints` の `ArgumentException` フィルタ 2 行 | 到達させるには不自然な入力の捏造が要る防御的分岐。**通すためだけのテストになる** |
+
+### 追加したテストと、それが意味を持つ理由
+
+| ファイル | テスト | なぜ意味があるか（カバレッジ稼ぎでない理由） |
+| --- | --- | --- |
+| `ReportService.Infrastructure.Tests/PublishingLlmReportersTests.cs`（新規 4 本） | `報告書生成の費用は用途と実効モデルを載せて発行する` / `フォールバック先のモデルで応答したらその単価で計上する` / `フォールバック発火は用途と期待_実効モデルを載せて発行する` / `割当外のモデルへ落ちた場合は原因を_Unassigned_として発行する` | 既存の `HttpReportNarrativeDrafterVisibilityTests` は**アダプタが呼ばれること**しか見ていない。**呼ばれた結果がメッセージバスへ出ること**は別の事実であり、publish しない実装（No-op のまま配線）でも前者は緑になる。②通知・③台帳・費用実績はこの publish が唯一の出口である |
+| `ReportService.Api.Tests/LlmGovernanceWiringTests.cs`（新規 5 ケース） | `費用計測ポートは発行実装へ結線される` / `割当逸脱の可視化ポートは発行実装へ結線される` / `ゲートウェイ設定時の散文生成アダプタが組み上がる` / `ゲートウェイ未設定または不正_URI_ならプレースホルダへ倒す`（2 値） | 両ポートの**既定は No-op（fail-safe）**である。配線を落としてもアダプタ単体テストは緑のままで、**本番だけが沈黙する**。その差を観測できる唯一の場所が composition root である |
+| `ReportService.Domain.Tests/ReportRendererLlmModelUsageTests.cs`（新規 5 本） | 第 1 候補／第 2 候補／割当外／未供給／実効モデル不明の 5 形 | ADR-0017 決定 4-(1) 「月報が第 1 候補で書かれたのか第 2 候補で書かれたのかは判断材料である」は**描画されて初めて満たされる**。写像が正しくても描画で落ちれば読み手に届かない。未供給を「発火なし」と読ませない否定形を含む |
+| `AuditService.Application.Tests/AuditEntryFactoryLlmGovernanceTests.cs`（新規 8 本） | 3 イベントの要約・相関（月別）・見送りと発火の相関分離 | 決定 4-(3) の「**当月の**発火回数」は相関が月で分かれて初めて数えられる。見送りと発火を同じ相関へ混ぜると月報の回数が狂う——その分離を固定する |
+| `AuditService.Infrastructure.Tests/LlmGovernanceAuditHandlersTests.cs`（新規 4 本） | 発火・見送り・対象外費用の台帳着地／同月の発火は抑止せず件数ぶん残る | 既存 `AuditConsumerCoverageTests` は「ハンドラが**発見される**」までしか見ない。**発見と着地の間**（ハンドラ本体・写像・冪等キー）が抜けても緑になる |
+| `NotificationService.Infrastructure.Tests/LlmGovernanceNotificationTests.cs`（新規 2 本） | 発火・見送りの通知（文言＋**重大度**） | 決定 4-(2) は「埋もれない経路」を、決定 2 は「障害ではない」を求める。どちらも `Warning` が正であり、**Info に落とせば沈黙し、Critical に上げれば運用が障害として扱ってフォールバック追加を招く**——決定 2 が最も避けたい結末を固定する |
+| `ReportService.Infrastructure.Tests/HttpReportNarrativeDrafterVisibilityTests.cs`（3 本追記） | `発火の記録に失敗しても散文生成は壊さない` / `応答が_JSON_null_ならプレースホルダへ倒しメタ情報も残さない` / `応答本文が空でもモデルを名乗っていればメタ情報は残す` | 可視化は best-effort であり、逆向き（記録できないなら散文も落とす）にすると通知経路の一時障害が月次の方針書を止める。後の 2 本は「モデルを知り得ない縮退」と「本文だけが空」でメタの残り方が変わる対の否定形である |
+| `CostControlService.Infrastructure.Tests/EfCostLedgerTests.cs`（3 本追記） | `月次内訳は上限対象外のカテゴリも含めて返す` / `月次内訳は当月の計上だけを集計する` / `計上の無い月の内訳は空になる` | 対象外（`LlmUncapped`）も返すことが `GetMonthlyTotals` の存在理由である（§6.1）。対象内だけを返すと #282 の過少申告がそのまま再発する。空の月に 0 円行を捏造しないことも固定する |
+
+いずれも**既にテストが厚い箇所への重複ではない**（新規経路・未検証の継ぎ目・否定形のみ）。
+`ReportService.Infrastructure.Tests.csproj` に `TestSupport.PlatformShim` / `TestSupport.Messaging` の
+ProjectReference を追加した（本番と同じ Wolverine 配線でホストを起こすため。
+`TradeDecisionService.Infrastructure.Tests` と同型）。
+
+### 回復後の実測
+
+```
+[check-coverage] 除外 41 ファイル・8988 行（うち被覆 0 行）。分母 26990 → 18002 行
+[check-coverage] 行カバレッジ 79.30%（14276/18002 行・レポート 51 件）/ floor 79.00%
+```
+
+**78.65% → 79.30%（+117 行）。** レポート件数は 51 件で不変（テストプロジェクトの増減なし）。
+床 79.00% に対し 0.30 ポイント（約 54 行）の余裕を持たせた。

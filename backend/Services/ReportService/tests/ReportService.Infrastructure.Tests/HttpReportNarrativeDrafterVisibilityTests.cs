@@ -213,6 +213,60 @@ public class HttpReportNarrativeDrafterVisibilityTests
         (await drafter.DraftAsync(Ctx(ReportKind.Daily))).Text.Should().Be("本日は堅調な地合いでした。");
     }
 
+    // 🔴 可視化も best-effort（決定4 の但し書き）。**発火の記録に失敗しても報告書生成は壊さない。**
+    // 逆向き（記録できないなら散文も落とす）にすると、通知経路の一時障害が月次の方針書を止める。
+    [Fact]
+    public async Task 発火の記録に失敗しても散文生成は壊さない()
+    {
+        var drafter = new HttpReportNarrativeDrafter(
+            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")))
+            {
+                BaseAddress = new Uri("http://llm-gateway"),
+            },
+            NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", purposeOverride: null,
+            logPrompts: false, timeoutFor: null,
+            usageReporter: new RecordingUsageReporter(),
+            governanceReporter: new ThrowingGovernanceReporter());
+
+        // 月報の第 1 候補は opus-5 なので、この応答は発火扱い＝記録経路を必ず通る。
+        var draft = await drafter.DraftAsync(Ctx(ReportKind.Monthly));
+
+        draft.Text.Should().Be("本日は堅調な地合いでした。");
+        // 記録が失敗しても①メタ情報は残る（3 経路は互いに独立している）。
+        draft.ModelUsage!.Outcome.Should().Be(nameof(LlmAssignmentOutcome.FallbackFired));
+    }
+
+    // ---- 縮退の理由ごとにメタ情報の残り方が変わる（#247, IADR-0104 決定3） ---------------------
+
+    // 🔴 **応答が空（JSON null）ならモデルを知り得ない**——メタは null のままにする。
+    // ここで「第 1 候補で書かれた」と読める値を作ると、沈黙のフォールバックそのものになる。
+    [Fact]
+    public async Task 応答が_JSON_null_ならプレースホルダへ倒しメタ情報も残さない()
+    {
+        var governance = new RecordingGovernanceReporter();
+
+        var draft = await Drafter(new StubHandler(HttpStatusCode.OK, "null"), governance: governance)
+            .DraftAsync(Ctx(ReportKind.Daily));
+
+        draft.Text.Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        draft.ModelUsage.Should().BeNull();
+        governance.Fired.Should().BeEmpty("名乗りが無い応答を割当逸脱として数えない");
+    }
+
+    // 🔴 **対になる否定形。** 本文が空でも**モデルは名乗られている**ため、メタ情報は残す。
+    // 本文の可否とモデルの記録は別の関心事であり、まとめて捨てると月報の判断材料が欠ける。
+    [Fact]
+    public async Task 応答本文が空でもモデルを名乗っていればメタ情報は残す()
+    {
+        var draft = await Drafter(
+            new StubHandler(HttpStatusCode.OK, """{"text":"   ","model":"claude-sonnet-5","sent":true}"""))
+            .DraftAsync(Ctx(ReportKind.Daily));
+
+        draft.Text.Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        draft.ModelUsage!.EffectiveModel.Should().Be("claude-sonnet-5");
+        draft.ModelUsage.IsPrimary.Should().BeTrue("日報の第 1 候補どおりに応答している");
+    }
+
     // ---- 非破壊の確認 -----------------------------------------------------------------------
 
     // 既定実装（DraftAsync）を持たない fake は従来どおり動く（既定インターフェース実装が委譲する）。
@@ -262,6 +316,13 @@ public class HttpReportNarrativeDrafterVisibilityTests
             Fired.Add((evaluation, purpose));
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingGovernanceReporter : ILlmGovernanceReporter
+    {
+        public Task FallbackFiredAsync(
+            LlmAssignmentEvaluation evaluation, string purpose, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("発火の記録に失敗");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

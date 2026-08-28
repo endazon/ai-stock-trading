@@ -11,5 +11,11 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\..\src\ReportService.Infrastructure\ReportService.Infrastructure.csproj" />
+    <!-- ADR-0013, IADR-0129, #354, #335, #347: 本番と同じ Wolverine 配線でホストを起こし、
+         発行アダプタ（PublishingLlmUsageReporter / PublishingLlmGovernanceReporter）が実際に
+         イベントを publish することを検証するため、共通配線ヘルパと追跡ハーネスを参照する
+         （TradeDecisionService.Infrastructure.Tests と同型）。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
   </ItemGroup>
 </Project>
