@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
@@ -32,6 +33,10 @@ public sealed class OrderScreeningService(
         ArgumentNullException.ThrowIfNull(decision);
 
         var intent = decision.Intent;
+        // #337（#249 吸収）, IADR-0246: 日次損失ロックアウトの「当日」は**注文の市場の現地取引日**で解釈する。
+        // JST 固定（clock.Today）では ET 10-11 時（セッション中）に日付が変わり、同一の米国セッションの
+        // 途中でデイリーストップが解除されていた。導出は TradingDay.Of（単一情報源）。
+        var tradingDay = TradingDay.Of(clock.UtcNow, intent.Market);
         var settings = settingsStore.GetCurrent();
         var snapshot = snapshotBuilder.Build();
         var isEntry = intent.PositionEffect == PositionEffect.Open;
@@ -51,9 +56,9 @@ public sealed class OrderScreeningService(
         // RiskEvaluator は実現+含み損の合算で当該時点の到達を判定する（IADR-0008）。
         if (reasons.Contains(RejectionReason.DailyLossLimitReached))
         {
-            EngageLockout();
+            EngageLockout(tradingDay);
         }
-        else if (isEntry && IsLockedOut())
+        else if (isEntry && IsLockedOut(tradingDay))
         {
             // ロックアウトは当日中維持する。含み損が回復して RiskEvaluator が到達と判定しなくても、
             // 一度到達した当日は翌営業日の解除まで新規建てを拒否し続ける（デイリーストップの趣旨）。
@@ -80,7 +85,8 @@ public sealed class OrderScreeningService(
             new OrderApproved(decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow), observation);
     }
 
-    private bool IsLockedOut()
+    // #249 / IADR-0246: 当日（tradingDay）は呼び出し側が注文の市場の現地取引日で解決して渡す。
+    private bool IsLockedOut(DateOnly tradingDay)
     {
         var lockout = lockoutStore.Get();
         if (lockout is null)
@@ -89,7 +95,7 @@ public sealed class OrderScreeningService(
         }
 
         // 翌営業日の解除日に達していれば失効させ、状態を掃除する。
-        if (!lockout.IsActiveOn(clock.Today))
+        if (!lockout.IsActiveOn(tradingDay))
         {
             lockoutStore.Clear();
             return false;
@@ -98,16 +104,16 @@ public sealed class OrderScreeningService(
         return true;
     }
 
-    private void EngageLockout()
+    private void EngageLockout(DateOnly tradingDay)
     {
         var existing = lockoutStore.Get();
         // 既に当日有効なロックアウトがあれば解除日を延長しない（同日中の重複到達で解除が先送りされるのを防ぐ）。
-        if (existing is not null && existing.IsActiveOn(clock.Today))
+        if (existing is not null && existing.IsActiveOn(tradingDay))
         {
             return;
         }
 
-        var releaseOn = businessCalendar.NextBusinessDay(clock.Today);
+        var releaseOn = businessCalendar.NextBusinessDay(tradingDay);
         lockoutStore.Set(new LockoutState(
             releaseOn,
             "日次損失上限到達により当日ロックアウト（翌営業日まで）",

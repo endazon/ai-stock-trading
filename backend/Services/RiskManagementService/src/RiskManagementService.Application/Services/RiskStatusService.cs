@@ -1,3 +1,4 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.State;
 
@@ -23,8 +24,11 @@ public sealed class RiskStatusService(
 
         // 日次損失ロックアウトは「当日有効か」で判定する（翌営業日の解除日 ReleaseOn 未満なら有効）。
         // 表示専用のため状態の掃除（Clear）は行わない（掃除は発注審査経路の責務・OrderScreeningService）。
+        // #337（#249 吸収）, IADR-0246: 表示は市場を特定できないため、**最も遅れている市場の現地取引日**で
+        // 判定する（保守側）。JST（先行側）で判定すると、米国セッションではまだ効いている統制を
+        // 「解除済み」と表示してしまう。発注審査の実判定は注文の市場ごと（OrderScreeningService）。
         var lockout = lockoutStore.Get();
-        var lockoutActive = lockout is not null && lockout.IsActiveOn(clock.Today);
+        var lockoutActive = lockout is not null && lockout.IsActiveOn(TradingDay.EarliestCurrent(clock.UtcNow));
 
         // 優先順位（ADR-0009・重い順）: kill switch > 日次損失ロックアウト > 一時停止。表示の見出し用。
         var activeControl = snapshot.KillSwitchEngaged
