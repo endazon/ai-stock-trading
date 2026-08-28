@@ -33,23 +33,68 @@ public class DomainLayerDependencyTests
     // 検査4（先に置く）: 探索そのものが壊れていないこと。
     // Domain プロジェクトが 0 件になると、以下の検査はすべて「違反なし」で無条件に緑になる。
     // 検査器が静かに失効する経路を塞ぐためのメタ検査である（IADR-0127 と同じ性質）。
+    //
+    // NFR, IADR-0265: 下限はハードコードした数値ではなく RepositoryLayout.UnmigratedServicesWithDomainProjectCount
+    // （実ツリーの src/*.Domain 走査）から動的に導く。単一プロジェクト＋VSA への移送（IADR-0259）が
+    // 1 サービス進むたびに、その動的な下限自体が 1 件ずつ減る——手書きの下限を移送のたびに更新する運用は、
+    // 残り 9 回のうちどこかで「2 減らすべきを 1 しか減らさない／逆に減らし過ぎる」事故を生む機会があるため、
+    // 数値の更新そのものをやめた。
     [Fact]
     public void Domain_プロジェクトの探索が空振りしていない()
     {
         var domains = RepositoryLayout.DomainProjectFiles;
+        var expected = RepositoryLayout.UnmigratedServicesWithDomainProjectCount;
+
+        // 🔴 0 件になったら「探索が壊れている」のではなく「全サービスが移送済みで
+        // *.Domain.csproj が 1 本も残っていない」——本検査（csproj 静的解析による層の強制）は
+        // 役目を終えている。黙って「違反なし」の緑を返さず、次にすることを名指しして落とす。
+        if (expected == 0)
+        {
+            Assert.Fail(
+                "未移送で *.Domain.csproj を持つサービスが 0 件になった。全サービスが単一プロジェクト＋"
+                    + "VSA へ移送済みであり、csproj 静的解析（DomainLayerDependencyTests 全体）は役目を終えた。"
+                    + "ソース走査版（DomainSourceDependencyTests）へ一本化し、本クラスと "
+                    + "IsAllowedDomainDependency 等の csproj 依存の仕組みを削除すること（IADR-0265 フォローアップ）。"
+                    + $"実際に見つかった Domain プロジェクト: {(domains.Count == 0 ? "(なし)" : string.Join(", ", domains.Select(Path.GetFileNameWithoutExtension)))}");
+            return;
+        }
 
         domains.Should().HaveCountGreaterThanOrEqualTo(
-            8,
-            "Domain プロジェクトは実測 8 件（Backtest / CostControl / InformationCollection / "
-                + "MarketMonitor / OrderExecution / Report / RiskManagement / TradeDecision）ある。"
-                + "🔴 本検査は**層をプロジェクトで表す旧構成**だけを数える（`*.Domain.csproj`）。"
-                + "単一プロジェクト＋VSA への移送（IADR-0259）が 1 サービス進むたびに 1 件ずつ減るのが正常であり、"
-                + "**減ったこと自体は退行ではない** —— 移送後の Domain フォルダは "
+            expected,
+            "Domain プロジェクト（*.Domain.csproj）は、未移送サービスの実測 {0} 件あるはずである"
+                + "（RepositoryLayout.UnmigratedServicesWithDomainProjectCount。ハードコードした数値ではなく、"
+                + "実ツリーの src/*.Domain 走査から動的に導く。IADR-0265）。"
+                + "単一プロジェクト＋VSA への移送（IADR-0259）が 1 サービス進むたびに、この動的な下限自体が "
+                + "1 件ずつ減るのが正常であり、**減ったこと自体は退行ではない** —— 移送後の Domain フォルダは "
                 + "DomainSourceDependencyTests（ソース領域を新旧の和集合で数える）が引き続き検査する。"
                 + "Configuration は IADR-0264 決定 2 で Domain の唯一の型を共有カーネルへ移したため、"
                 + "移送後は**どちらの検査でも数えられない**（Domain を持たないサービスになった）。"
-                + "これを下回るなら探索が壊れているか、Domain が削除された。実際に見つかったのは: {0}",
+                + "これを下回るなら探索が壊れているか、Domain が想定外に削除された。実際に見つかったのは: {1}",
+            expected,
             string.Join(", ", domains.Select(Path.GetFileNameWithoutExtension)));
+    }
+
+    // ── 自己試験: 下限の導出ロジックそのものが load-bearing であること（IADR-0265）───────────
+    // RepositoryLayout.UnmigratedServicesWithDomainProjectCount は実ディスクを読むため、
+    // 判定の中身（CountsAsUnmigratedServiceWithDomainProject）をファイルシステムから切り離して
+    // 固定する。否定形（src/ が無い・Domain 系のフォルダが無い・接尾辞が違う）を含めて確かめる ——
+    // 肯定形だけでは「常に true を返す」壊れ方を検出できない。
+    [Theory]
+    [InlineData(true, new[] { "CostControlService.Domain" }, true)]
+    [InlineData(true, new[] { "CostControlService.Application", "CostControlService.Domain" }, true)]
+    // 否定形1: src/ 自体が存在しない（移送済みサービス。Domain/ はルート直下の新樹形にある）。
+    [InlineData(false, new[] { "CostControlService.Domain" }, false)]
+    // 否定形2: src/ はあるが Domain 系のディレクトリを持たない。
+    [InlineData(true, new[] { "CostControlService.Application", "CostControlService.Infrastructure" }, false)]
+    // 否定形3: src/ が空。
+    [InlineData(true, new string[0], false)]
+    // 否定形4: 接尾辞が ".Domain" と完全一致しない（部分一致で誤検出しない）。
+    [InlineData(true, new[] { "CostControlService.DomainEvents" }, false)]
+    public void 未移送判定は_src_の実在と_Domain_接尾辞のディレクトリの両方を要求する(
+        bool srcDirectoryExists, string[] srcSubdirectoryNames, bool expected)
+    {
+        RepositoryLayout.CountsAsUnmigratedServiceWithDomainProject(srcDirectoryExists, srcSubdirectoryNames)
+            .Should().Be(expected);
     }
 
     // 検査1: Domain は外部ライブラリへ依存しない（.NET 標準のみ）。
