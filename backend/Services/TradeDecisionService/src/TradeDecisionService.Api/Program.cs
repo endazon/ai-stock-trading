@@ -194,8 +194,10 @@ builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
         ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
         sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
 
-// FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄。
-builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
+// FR-02, IADR-0023, #337, IADR-0245: 市場カレンダー（休場日・半日取引日・場中ゲート）と定時サイクルの監視銘柄。
+builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(
+    LoadMarketDates(builder.Configuration, "TradeCycle:Holidays"),
+    LoadMarketDates(builder.Configuration, "TradeCycle:HalfDays")));
 // FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）は権威源（市場監視 #10）の GET /monitor/watchlist を
 // s2s 同期照会（OwnerOrService・IADR-0051）して供給する。MarketMonitor:BaseUrl 未設定/不正 URI は従来どおり構成ベース
 // （TradeCycle:Watchlist）＝現行挙動・後方互換。照会失敗（非 2xx・timeout・例外）は構成ベース（既定 watchlist）へ倒す fail-safe。
@@ -304,13 +306,14 @@ app.MapAiStockTradingIntrospection();
 
 app.Run();
 
-// IADR-0023: 市場別の休場日を構成（TradeCycle:Holidays:<Market> = ["yyyy-MM-dd", ...]）から読み込む。既定は空（週末のみ）。
-static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadHolidays(IConfiguration configuration)
+// IADR-0023, #337: 市場別の日付集合（休場日 TradeCycle:Holidays:<Market> / 半日取引日 TradeCycle:HalfDays:<Market>、
+// いずれも ["yyyy-MM-dd", ...]）を構成から読み込む。既定は空（週末と場中時間帯のみ）。
+static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadMarketDates(IConfiguration configuration, string sectionPrefix)
 {
     var result = new Dictionary<Market, IReadOnlySet<DateOnly>>();
     foreach (var market in Enum.GetValues<Market>())
     {
-        var dates = configuration.GetSection($"TradeCycle:Holidays:{market}").Get<string[]>() ?? [];
+        var dates = configuration.GetSection($"{sectionPrefix}:{market}").Get<string[]>() ?? [];
         var set = new HashSet<DateOnly>();
         foreach (var d in dates)
         {
