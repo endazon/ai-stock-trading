@@ -30,6 +30,10 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture, $"assumptions_version: v{view.AssumptionsVersion}\n");
         sb.Append(CultureInfo.InvariantCulture, $"confirmed_at: {confirmedAt}\n");
         sb.Append(CultureInfo.InvariantCulture, $"markets: [{markets}]\n");
+        // INDEX 決定43, #92, 04_report-templates 共通仕様: 報告書の機密区分は **`internal`** で確定している
+        // （全報告書共通・`internal` × ZDR 有効の構成）。基盤のデータ越境ポリシーの判定入力になるため、
+        // **書かない選択肢は無い**——欠けると受け手が既定区分で扱い、区分の決定が無かったことになる。
+        sb.Append(CultureInfo.InvariantCulture, $"confidentiality: {ReportPolicyYaml.Confidentiality}\n");
         sb.Append("---\n\n");
 
         sb.Append(CultureInfo.InvariantCulture, $"# {kanji} {view.PeriodLabel}\n\n");
@@ -50,14 +54,27 @@ public static class ReportRenderer
         // 3. 翌期間の方針（確定で取引方針として有効化される）。
         sb.Append(CultureInfo.InvariantCulture, $"{policyHeading}\n\n");
         sb.Append(string.IsNullOrWhiteSpace(view.PolicySummary) ? "（方針未設定）" : view.PolicySummary.Trim());
-        sb.Append('\n');
+        sb.Append("\n\n");
+
+        // INDEX 決定29, #338, IADR-0252: 目標値の **YAML ブロック併記**。
+        // 表（人間可読）と YAML（機械可読）を併記し、**取引判断サービスは YAML だけを読む**。
+        sb.Append(ReportPolicyYaml.Render(view));
 
         // 4. リスク統制の記録（維持率割れによる自動縮小／強制買戻しの推定）。
         // 日報＝明細・月報＝回数（04_report-templates・ADR-0016 決定15）。
         AppendMarginReductions(sb, view);
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
+        AppendShortSelling(sb, view);
+        AppendControlActivations(sb, view);
         AppendLlmModelUsage(sb, view);
+
+        // 5. 稼働状況（OpenD）— 日報＝当日の稼働率と Stage 1 日数への算入可否 / 月報＝分布（INDEX 決定34）。
+        AppendUptime(sb, view);
+        // 6. 三者比較（月報のみ・04_report-templates 月報 §5）。
+        AppendThreeWayComparison(sb, view);
+        // 7. 当月の LLM 利用実績（月報のみ・同 §7。#282 で計上された費用の出口）。
+        AppendLlmUsage(sb, view);
 
         return sb.ToString();
     }
@@ -345,6 +362,293 @@ public static class ReportRenderer
         }
     }
 
+    // FR-06, #338, ADR-0016 決定15, ADR-0027 決定1・決定4, 04_report-templates 日報 §4 / 月報 §6.1:
+    // 空売りの記録（借株コスト）。
+    //
+    // 🔴 **未計上（料率が取れなかった日）を 0 円として合計へ混ぜない**（ADR-0027 決定4）。
+    // 合計と別に件数を出すことで、「借株コストが安かった」と「費用を計上できていなかった」を読み分けられるようにする。
+    //
+    // 空売り建玉が無い期間も **「0 件」と明記する**（計画: 空欄と 0 を区別する）。
+    // **照会できなかった場合は「0」と書かない**——費用が無かったのと同じに読めるため区別する。
+    private static void AppendShortSelling(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind == ReportKind.Weekly)
+            return; // 計画は週報への記載を求めていない（求められていない節を勝手に増やさない）。
+
+        sb.Append("\n### 空売りの記録");
+        sb.Append(view.Kind == ReportKind.Monthly ? "（当月）\n\n" : "（当日）\n\n");
+
+        if (view.BorrowFees is not { } record)
+        {
+            sb.Append("- **借株コストを照会できませんでした（供給元がありません）**: "
+                + "「0 USD」とは区別しています。**費用が無かったのではありません。**\n");
+            return;
+        }
+
+        var summary = BorrowFeeAggregator.Aggregate(record);
+
+        if (record.Accruals.Count == 0 && record.Unavailable.Count == 0)
+        {
+            sb.Append("- **空売り建玉: 0 件**（借株料の計上・未計上のいずれも記録がありません）\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **借株コスト（経費区分 BorrowFee）合計: {ReportAmountFormat.Base(summary.TotalUsd)}**"
+            + $"（計上 {record.Accruals.Count} 件）\n");
+
+        sb.Append(summary.MaxRateAnnual is { } max
+            ? $"- 適用年率の最大: {Percent(max)}（上限 {Percent(BorrowFeeAggregator.MaxAnnualRate)}）\n"
+            : "- 適用年率: **計上が無いため該当なし**（0% ではありません）\n");
+
+        // 🔴 未計上の件数は必ず出す。**0 件のときも出す**——「未計上があったのか無かったのか」を
+        // 読み手が節の有無で推測しなければならない状態にしない。
+        sb.Append(record.Unavailable.Count == 0
+            ? "- 料率を取得できず未計上だった日: **なし**\n"
+            : $"- **料率を取得できず未計上だった日: {record.Unavailable.Count} 件**"
+                + "（0 円として合計へ含めていません。**実際の借株コストは上の合計より大きくなります**）\n");
+
+        if (summary.BySymbolUsd.Count == 0)
+            return;
+
+        sb.Append("\n| 銘柄 | 借株コスト | 適用年率（最大） |\n");
+        sb.Append("| --- | --- | --- |\n");
+        foreach (var (symbol, amount, rate) in summary.BySymbolUsd)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {symbol} | {ReportAmountFormat.Base(amount)} | {Percent(rate)} |\n");
+        }
+    }
+
+    // FR-06, FR-10, FR-20, #338, IADR-0253, 04_report-templates 月報 §6 / 04_workflows/03 月報 3:
+    // **統制作動状況**。作動機会があり作動しなかった統制と、作動機会そのものが存在しなかった統制を**分けて**出す。
+    //
+    // 🔴 計画の明文: 「どちらも『0 件』と報告すると**検証されたものと検証されなかったものの区別が失われる**。
+    // Stage 2 昇格の判断には後者の一覧が要る。」
+    //
+    // 🔴 **1 つの一覧に混ぜない。** 見出しを分け、片方が空でも**見出しごと消さない**——
+    // 節が無いことは「該当が無かった」とも「出し忘れた」とも読めるためである。
+    private static void AppendControlActivations(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind != ReportKind.Monthly)
+            return; // 計画は月報にのみ本節を求めている。
+
+        // 🔴 **新しい供給を要求しない。** 判定の入力は本ビューが既に持っている証拠だけである
+        // （維持率割れ自動縮小・強制買戻し推定・借株料・為替情報源の状態）。
+        var report = ControlActivationCatalog.Evaluate(
+            view.MarginReductions, view.BuyInInferences, view.BorrowFees, view.FxSourceStatus);
+
+        sb.Append("\n### 当月の統制作動状況\n\n");
+        sb.Append("> **「作動機会が無かった統制」と「統制違反 0 件」は別の事実である。**"
+            + " 前者は未検証であり、Stage 2 昇格の判断には後者と分けて読む必要がある。\n\n");
+
+        AppendControlGroup(sb, "1. 作動機会があり、作動しなかった統制（この統制については違反 0 件を主張できる）",
+            report.OpportunityWithoutActivation,
+            "該当なし（作動機会があり作動しなかった統制はありません）");
+
+        AppendControlGroup(sb, "2. **作動機会そのものが存在しなかった統制（未検証）**",
+            report.NoOpportunity,
+            "該当なし（当月はすべての統制に作動機会がありました）");
+
+        AppendControlGroup(sb, "3. 当月に作動した統制",
+            report.Activated,
+            "該当なし（当月に作動した統制はありません）");
+
+        AppendControlGroup(sb, "4. **判定に要る記録を照会できず、判定できなかった統制**",
+            report.NotSupplied,
+            "該当なし（すべての統制について記録を照会できました）");
+    }
+
+    // 統制の 1 グループ。**空でも見出しを出す**（節の有無で意味を持たせない）。
+    private static void AppendControlGroup(
+        StringBuilder sb, string heading, IReadOnlyList<ControlActivation> controls, string emptyNote)
+    {
+        sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+
+        if (controls.Count == 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"- {emptyNote}\n\n");
+            return;
+        }
+
+        foreach (var c in controls)
+            sb.Append(CultureInfo.InvariantCulture, $"- {c.Name}: {c.Evidence}\n");
+
+        sb.Append('\n');
+    }
+
+    // FR-06, FR-20, #338, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2: OpenD 稼働率。
+    // 日報は**当日の稼働率と Stage 1 日数への算入可否**（サマリ行）、月報は**分布**（本節）。
+    //
+    // 🔴 **未供給を 0% と書かない。** 稼働率 0% は「終日停止していた」という重い事実であり、
+    // 「観測を照会できていない」とは別物である。
+    private static void AppendUptime(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind != ReportKind.Monthly)
+            return; // 日報はサマリ行で出す（本節は月報の分布）。週報は計画が求めていない。
+
+        sb.Append("\n## 5. 当月の OpenD 稼働率分布\n\n");
+
+        if (view.Uptime is not { } uptime)
+        {
+            sb.Append("- **稼働率の観測を照会できませんでした（供給元がありません）**: "
+                + "「稼働率 0%」「算入 0 日」とは区別しています。\n");
+            return;
+        }
+
+        var d = OpenDUptimeAggregator.Distribution(uptime);
+
+        sb.Append("| 稼働率の区分（その日の通常取引時間に対する比率） | 日数 |\n");
+        sb.Append("| --- | --- |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 100% | {d.FullDays} 日 |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 50〜99%（Stage 1 の日数に算入する） | {d.PartialCountedDays} 日 |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 50% 未満（Stage 1 の日数に算入しない） | {d.NotCountedDays} 日 |\n\n");
+
+        sb.Append(uptime.Stage1CumulativeCountedDays is { } cumulative
+            ? $"- Stage 1 の累計算入日数: {cumulative} / {OpenDUptimeAggregator.Stage1TargetDays} 日\n"
+            : $"- Stage 1 の累計算入日数: **供給されていません**（当月の算入は {d.CountedDays} 日"
+                + $" / 目標 {OpenDUptimeAggregator.Stage1TargetDays} 日。**累計ではありません**）\n");
+
+        sb.Append("- **稼働率 50% 台の日が常態化していないか**を確認する"
+            + "（閾値方式のため、稼働率 51% の日も 100% の日も同じ 1 日として数えられる）。\n");
+    }
+
+    // FR-06, FR-15, FR-20, #338, 04_report-templates 月報 §5: バックテスト / SIMULATE / 実弾の三者比較。
+    //
+    // 🔴 **「空欄」と「値が 0」を区別できる表記にする**（計画の明文）。
+    // 空欄は「その段をまだ走らせていない」、0 は「走らせた結果 0 だった」であり、乖離の読み方が正反対になる。
+    // 🔴 **合否判定には使わない**（人間が読む材料）。本節はどの判定にも入力されない。
+    private static void AppendThreeWayComparison(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind != ReportKind.Monthly)
+            return;
+
+        sb.Append("\n## 6. バックテスト / SIMULATE / 実弾の三者比較\n\n");
+
+        if (view.ThreeWayComparison is not { } c)
+        {
+            sb.Append("- **三者比較の実績を照会できませんでした（供給元がありません）**: "
+                + "「取引件数 0 件」とは区別しています。**走らせた結果 0 だったのではありません。**\n");
+            return;
+        }
+
+        sb.Append("| 比較指標 | バックテスト | SIMULATE（Stage 1） | 実弾（Stage 2 以降） |\n");
+        sb.Append("| --- | --- | --- | --- |\n");
+        AppendMetricRow(sb, "勝率", c.WinRate, MetricFormat.Ratio);
+        AppendMetricRow(sb, "平均損益", c.AveragePnlUsd, MetricFormat.BaseAmount);
+        AppendMetricRow(sb, "最大ドローダウン", c.MaxDrawdown, MetricFormat.Ratio);
+        AppendMetricRow(sb, "取引件数", c.TradeCount, MetricFormat.Count);
+        sb.Append('\n');
+
+        sb.Append(string.IsNullOrWhiteSpace(c.DivergenceNote)
+            ? "- 差分が大きい指標の要因考察: **未記入**（① 証拠金条件の差 / ② 借株料の差 / ③ 執行の差 のいずれか）\n"
+            : $"- 差分が大きい指標の要因考察: {c.DivergenceNote.Trim()}\n");
+        sb.Append("- 「該当なし」はその段をまだ走らせていないことを表す。**値 0 とは区別する。**\n");
+    }
+
+    private enum MetricFormat { Ratio, BaseAmount, Count }
+
+    private static void AppendMetricRow(StringBuilder sb, string label, ThreeWayMetric metric, MetricFormat format)
+    {
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| {label} | {Cell(metric.Backtest, format)} | {Cell(metric.Simulate, format)} | {Cell(metric.Live, format)} |\n");
+    }
+
+    // 🔴 null は「該当なし」（空欄）であり 0 ではない。**"0" や "—" へ潰さない。**
+    private static string Cell(decimal? value, MetricFormat format) => value switch
+    {
+        null => "該当なし",
+        { } v when format == MetricFormat.Ratio => Percent(v),
+        { } v when format == MetricFormat.BaseAmount => ReportAmountFormat.Base(v),
+        { } v => v.ToString("0.###", CultureInfo.InvariantCulture) + " 件",
+    };
+
+    // FR-06, FR-16, #338, #282, #347, ADR-0017 決定2・決定4, INDEX 決定44, 04_report-templates 月報 §7:
+    // **当月の LLM 利用実績**。
+    //
+    // 🔴 **取引判断の費用と報告書生成の費用は必ず分けて記載する**（計画の明文。
+    // 「合算すると、どちらが上限に効いているか分からなくなる」）。
+    // 🔴 **報告書生成は月次上限の対象外であって、計上しないという意味ではない**——#282 はまさに
+    // 「対象外だから計測点が無い」状態であった。本節がその費用の**出口**である。
+    // 🔴 **分割（材料は減らない）と切り詰め（材料が減る）を分けて数える**（決定44）。
+    private static void AppendLlmUsage(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind != ReportKind.Monthly)
+            return;
+
+        sb.Append("\n## 7. 当月の LLM 利用実績\n\n");
+
+        if (view.LlmUsage is not { } record)
+        {
+            sb.Append("- **LLM の利用実績を照会できませんでした（供給元がありません）**: "
+                + "「費用 0 円」「フォールバック 0 件」「スキップ 0 件」とは区別しています。\n");
+            return;
+        }
+
+        var u = LlmUsageAggregator.Aggregate(record);
+
+        sb.Append("| 項目 | 値 |\n");
+        sb.Append("| --- | --- |\n");
+
+        var ratio = LlmUsageAggregator.ConsumptionRatio(u.TradeDecisionCostJpy);
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| 取引判断の費用実績（月次上限 {ReportAmountFormat.Threshold(LlmUsageAggregator.MonthlyLlmCostLimitJpy, Currency.Jpy)} に対する消費率） "
+            + $"| {ReportAmountFormat.Jpy(u.TradeDecisionCostJpy)} / {(ratio is { } r ? Percent(r) : "算出不能")} |\n");
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| 報告書生成の費用実績（上限の対象外） | {ReportCostBreakdown(u)} |\n");
+
+        // 🔴 上限の対象でも報告書でもない用途（情報収集等）を**落とさない**。
+        // 落とすと「どこにも現れない費用」ができ、#282 と同じ形が別の用途で再発する。
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| その他の用途の費用実績（上限の対象外） | {ReportAmountFormat.Jpy(u.OtherCostJpy)} |\n");
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| フォールバック発火回数（用途別・原因別） | {FallbackBreakdown(u)} |\n");
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| モデル利用不能による取引判断スキップ回数 | {SkipBreakdown(u)} |\n");
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| スクリーニング入力の分割回数・切り詰め発生件数 | {ScreeningBreakdown(record.ScreeningDegradation)} |\n");
+    }
+
+    private static string ReportCostBreakdown(LlmUsageSummary u) =>
+        u.ReportCostJpyByPurpose.Count == 0
+            ? $"{ReportAmountFormat.Jpy(0m)}（当月の報告書生成の費用計上はありません）"
+            : string.Join(" / ", u.ReportCostJpyByPurpose.Select(e => $"{e.Purpose}: {ReportAmountFormat.Jpy(e.AmountJpy)}"));
+
+    private static string FallbackBreakdown(LlmUsageSummary u) =>
+        u.FallbacksByPurposeAndOutcome.Count == 0
+            ? "0 件"
+            : string.Join(" / ", u.FallbacksByPurposeAndOutcome.Select(e =>
+                string.Format(CultureInfo.InvariantCulture, "{0}／{1}: {2} 件", e.Purpose, e.Outcome, e.Count)));
+
+    private static string SkipBreakdown(LlmUsageSummary u) =>
+        u.SkipCount == 0
+            ? "0 件（**障害ではなく設計上の正常な結果である**。ADR-0017 決定2）"
+            : string.Format(CultureInfo.InvariantCulture, "{0} 件（{1}）", u.SkipCount,
+                string.Join(" / ", u.SkipsByReason.Select(e =>
+                    string.Format(CultureInfo.InvariantCulture, "{0}: {1} 件", e.Reason, e.Count))));
+
+    // 🔴 供給が無いことを **0 回 / 0 件と書かない**（決定44）。
+    // 「静かに判断材料が減っていた」状態に気づけるようにするための記録であり、
+    // 未供給を 0 と書けばその目的そのものが失われる。
+    private static string ScreeningBreakdown(ScreeningDegradationCounts? counts)
+    {
+        if (counts is null)
+            return "**供給されていません**（分割・切り詰めの計数はスクリーニング層が供給する。**0 回 / 0 件ではありません**）";
+
+        var targets = counts.TruncatedTargets.Count == 0
+            ? "内訳なし"
+            : string.Join(" / ", counts.TruncatedTargets
+                .OrderBy(e => e.Key, StringComparer.Ordinal)
+                .Select(e => string.Format(CultureInfo.InvariantCulture, "{0}: {1}", e.Key, e.Value)));
+
+        return string.Format(CultureInfo.InvariantCulture,
+            "分割 {0} 回 / 切り詰め {1} 件（{2}）", counts.SplitCount, counts.TruncationCount, targets);
+    }
+
     // 維持率の表記（小数第 1 位。04_report-templates の <n%> に合わせる）。
     // "P1" は文化により数値と % の間に空白が入るため使わない（テンプレートの表記は <n%>）。
     private static string Percent(decimal ratio) =>
@@ -382,6 +686,8 @@ public static class ReportRenderer
 
             case ReportKind.Monthly:
                 yield return ("月間実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
+                // #338, 04_report-templates §数値の定義: **為替差損益は取引損益と混ぜず独立した行**で出す。
+                yield return ("為替差損益（独立表示）", FxTranslationCell(view));
                 yield return ("総資産（月初 → 月末）", Pending); // 04_report-templates の表記に一致（矢印前後に半角スペース）
                 yield return ("年初来累計損益", Pending);
                 yield return ("費用合計 / 費用率", $"{Amount(p.TotalCost)} / {Pending}");
@@ -390,13 +696,60 @@ public static class ReportRenderer
 
             default: // Daily
                 yield return ("実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
+                // #338, 04_report-templates 日報 §1: 為替差損益は独立行。
+                yield return ("為替差損益（独立表示）", FxTranslationCell(view));
                 yield return ("評価損益（税引前・参考）", Amount(p.UnrealizedPnl));
                 yield return ("取引回数（買/売/決済）", counts);
                 yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
                 yield return ("源泉徴収税額", Amount(p.TaxWithheld));
+                // INDEX 決定34: 当日の稼働率と Stage 1 日数への算入可否。
+                yield return ("OpenD 稼働率（当日の通常取引時間に対する比率）", DailyUptimeCell(view));
+                // ADR-0017 決定2: **障害ではなく設計上の正常な結果**。沈黙のスキップにしない。
+                yield return ("モデル利用不能による取引判断スキップ", DailySkipCell(view));
                 yield return ("日次目標に対する達成", Pending);
                 break;
         }
+    }
+
+    // #338, 04_report-templates §数値の定義: 為替差損益（円換算により生じた損益）。
+    //
+    // 🔴 **未供給を 0 円と書かない。** 「為替では損得が無かった」と読めるためである。
+    // 取引損益とは別の型（FxTranslationSummary）で持つため、この行が取引損益と合算されることはない。
+    private static string FxTranslationCell(ReportView view) =>
+        view.FxTranslation is { } fx
+            ? string.Format(CultureInfo.InvariantCulture, "{0}（明細 {1} 件）",
+                ReportAmountFormat.Jpy(fx.TranslationGainJpy), fx.EntryCount)
+            : "**供給されていません**（0 円ではありません）";
+
+    // INDEX 決定34, 06_daytrading-review §4.2: 当日の稼働率と Stage 1 日数への算入可否。
+    // 🔴 **未供給を「稼働率 0%」と書かない**——終日停止という重い事実と混同させない。
+    private static string DailyUptimeCell(ReportView view)
+    {
+        if (view.Uptime is not { } uptime || uptime.Days.Count == 0)
+            return "**供給されていません**（稼働率 0% ではありません）";
+
+        // 日報は 1 取引日ぶん。複数日が届いた場合は最新日を当日として扱う（決定的）。
+        var day = uptime.Days.OrderBy(d => d.SessionDateEasternTime).Last();
+        var counted = OpenDUptimeAggregator.IsCounted(day.UptimeRatio);
+        return string.Format(CultureInfo.InvariantCulture,
+            "{0} — Stage 1 の日数算入: {1}",
+            Percent(day.UptimeRatio),
+            counted ? "算入（50% 以上）" : "非算入（50% 未満）");
+    }
+
+    // ADR-0017 決定2: モデル利用不能による取引判断スキップ回数。
+    // 🔴 **未供給を 0 件と書かない**（「取引機会を逸していない」と読める）。
+    private static string DailySkipCell(ReportView view)
+    {
+        if (view.LlmUsage is not { } usage)
+            return "**供給されていません**（0 件ではありません）";
+
+        var u = LlmUsageAggregator.Aggregate(usage);
+        return u.SkipCount == 0
+            ? "0 件"
+            : string.Format(CultureInfo.InvariantCulture, "{0} 件（{1}）", u.SkipCount,
+                string.Join(" / ", u.SkipsByReason.Select(e =>
+                    string.Format(CultureInfo.InvariantCulture, "{0}: {1} 件", e.Reason, e.Count))));
     }
 
     // 勝率（04_report-templates: 週報「<n%（n/n）>」形式）。決済ゼロなら "-（0/0）"。パーセントは文化非依存で整数表記する。

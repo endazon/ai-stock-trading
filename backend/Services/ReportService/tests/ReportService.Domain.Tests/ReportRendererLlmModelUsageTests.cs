@@ -76,7 +76,11 @@ public class ReportRendererLlmModelUsageTests
         var md = ReportRenderer.RenderMarkdown(View(usage: null));
 
         md.Should().NotContain("### 散文生成に使用した LLM");
-        md.Should().NotContain("フォールバック");
+        // #338: 「フォールバック」の語そのものは、月報 §7（当月の LLM 利用実績）が**別の事実**として使う。
+        // ここで見たいのは「**この報告書の散文がフォールバックで書かれたか**」という主張が出ないことなので、
+        // 本節が出す 2 つの主張の文言で照合する（語での照合は他節の追加で偽陽性になる）。
+        md.Should().NotContain("フォールバック: 発火あり");
+        md.Should().NotContain("フォールバック: 発火なし");
     }
 
     // 実効モデルが不明（応答がモデルを名乗らない）でも「不明」と書き、空欄で流さない。

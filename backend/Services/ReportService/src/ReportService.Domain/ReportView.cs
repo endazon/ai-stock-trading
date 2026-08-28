@@ -89,4 +89,44 @@ public sealed record ReportView
     /// </para>
     /// </summary>
     public LlmModelUsage? LlmModelUsage { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-16, #338, 04_report-templates 月報 §7 / 日報 §1, ADR-0017 決定2・決定4, INDEX 決定44:
+    /// 当期間の LLM 利用実績（費用・フォールバック発火・取引判断スキップ・縮退件数）。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>照会できていない</b>」であり「利用実績が無い」ではない。
+    /// 費用 0 円・スキップ 0 件と書けば、計上漏れ（#282 の形）が正常として読まれる。
+    /// </para>
+    /// </summary>
+    public LlmUsageRecord? LlmUsage { get; init; }
+
+    /// <summary>
+    /// FR-06, #338, ADR-0016 決定15, ADR-0027, 04_report-templates 月報 §6.1 / 日報 §4: 当期間の借株料の記録。
+    /// <para>🔴 <c>null</c> は「照会できていない」であり「借株コスト 0」ではない。</para>
+    /// </summary>
+    public BorrowFeeRecord? BorrowFees { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-16, #338, 04_report-templates §数値の定義・日報 §1・月報 §1: <b>為替差損益</b>（独立表示）。
+    /// <para>
+    /// 🔴 <c>null</c> は「供給されていない」であり「為替差損益 0 円」ではない。
+    /// 取引損益（<see cref="Pnl"/>）とは<b>別の型</b>で持つことで、合算する書き方を構造的に不可能にしている。
+    /// </para>
+    /// </summary>
+    public FxTranslationSummary? FxTranslation { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-20, #338, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2: OpenD の稼働率。
+    /// <para>🔴 <c>null</c> は「照会できていない」であり「稼働率 0%」ではない。</para>
+    /// </summary>
+    public OpenDUptimeRecord? Uptime { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-15, FR-20, #338, 04_report-templates 月報 §5: バックテスト / SIMULATE / 実弾の三者比較。
+    /// <para>
+    /// 🔴 <c>null</c> は「照会できていない」。個々のセルの <c>null</c> は「<b>その段をまだ走らせていない</b>（空欄）」
+    /// であり、<c>0</c>（値が 0）とは別である。
+    /// </para>
+    /// </summary>
+    public ThreeWayComparison? ThreeWayComparison { get; init; }
 }

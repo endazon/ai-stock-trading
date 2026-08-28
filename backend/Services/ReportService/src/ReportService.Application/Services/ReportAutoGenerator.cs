@@ -22,7 +22,9 @@ public sealed class ReportAutoGenerator(
     IReportDraftPresentedNotifier? notifier = null,
     IMarginReductionRecordSource? reductionSource = null,
     IBuyInInferenceRecordSource? buyInSource = null,
-    IFxSourceStatusSource? fxSourceStatusSource = null)
+    IFxSourceStatusSource? fxSourceStatusSource = null,
+    ILlmUsageRecordSource? llmUsageSource = null,
+    IBorrowFeeRecordSource? borrowFeeSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -86,6 +88,8 @@ public sealed class ReportAutoGenerator(
         var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
         var buyIns = await SafeBuyInInferencesAsync(due, cancellationToken).ConfigureAwait(false);
         var fxStatus = await SafeFxSourceStatusAsync(due, cancellationToken).ConfigureAwait(false);
+        var llmUsage = await SafeLlmUsageAsync(due, cancellationToken).ConfigureAwait(false);
+        var borrowFees = await SafeBorrowFeesAsync(due, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -103,7 +107,9 @@ public sealed class ReportAutoGenerator(
                 ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary),
                 MarginReductions: reductions,
                 BuyInInferences: buyIns,
-                FxSourceStatus: fxStatus),
+                FxSourceStatus: fxStatus,
+                LlmUsage: llmUsage,
+                BorrowFees: borrowFees),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -215,6 +221,56 @@ public sealed class ReportAutoGenerator(
         {
             return await fxSourceStatusSource
                 .GetStatusAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-16, #338, #282, ADR-0017 決定2・決定4: LLM 利用実績。
+    //
+    // **未注入・照会失敗のいずれも null（未供給）である**——買戻し推定・為替と同じ向きであり、
+    // 自動縮小（空列へ倒す）とは逆である。🔴 **LLM の呼び出しは本番で実際に行われている**
+    // （報告書散文・取引判断のいずれも）。したがって「費用 0 円・発火 0 件」を既定にすると端的に嘘になる。
+    // #282 は「計上されていない費用が誰にも見えなかった」事故であり、既定を空へ倒すことは同じ形の再発である。
+    private async Task<LlmUsageRecord?> SafeLlmUsageAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        if (llmUsageSource is null)
+            return null;
+
+        try
+        {
+            return await llmUsageSource
+                .GetUsageAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, #338, ADR-0016 決定15, ADR-0027 決定4: 借株料の記録。
+    // **未注入・照会失敗のいずれも null（未供給）**——「借株コスト 0 USD」は費用が無かったと読める。
+    private async Task<BorrowFeeRecord?> SafeBorrowFeesAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        if (borrowFeeSource is null)
+            return null;
+
+        try
+        {
+            return await borrowFeeSource
+                .GetBorrowFeesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
