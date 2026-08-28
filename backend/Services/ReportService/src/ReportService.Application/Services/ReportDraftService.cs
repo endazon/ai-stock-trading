@@ -82,6 +82,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // #335, ADR-0017 決定4-(1), IADR-0217: **null（未供給）を「フォールバックなし」へ潰さない。**
             // プレースホルダ実装・縮退時はモデルを知り得ないため、節ごと出さない（他の未供給項目と同じ扱い）。
             LlmModelUsage = draft.ModelUsage,
+            // #338: 以下はいずれもコード集計値であり、散文（LLM）には渡さない（FR-16）。
+            // **null（未供給）を空・0 へ潰さない**——既存の各節と同じ規律である。
+            LlmUsage = request.LlmUsage,
+            BorrowFees = request.BorrowFees,
+            FxTranslation = request.FxTranslation,
+            Uptime = request.Uptime,
+            ThreeWayComparison = request.ThreeWayComparison,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
@@ -156,7 +163,19 @@ public sealed record DraftRequest(
     // FR-06, FR-10, UC-06, #381, ADR-0022 決定2, IADR-0196 決定3, IADR-0199: 当期間の為替の情報源の状態。
     // **空の FxSourceStatus＝事象なし／null＝照会できていない**（「切替なし」と書かないため区別する）。
     // 既定 null は「未供給」であり、既存の呼び出しは非破壊で通る。
-    FxSourceStatus? FxSourceStatus = null);
+    FxSourceStatus? FxSourceStatus = null,
+    // FR-06, FR-16, #338, #282, ADR-0017 決定2・決定4, 04_report-templates 月報 §7: 当期間の LLM 利用実績。
+    // **null＝照会できていない**（費用 0 円・スキップ 0 件と書かない）。既定 null で既存の呼び出しは非破壊。
+    LlmUsageRecord? LlmUsage = null,
+    // FR-06, #338, ADR-0016 決定15, ADR-0027 決定4: 当期間の借株料の記録。**null＝照会できていない**。
+    BorrowFeeRecord? BorrowFees = null,
+    // FR-06, FR-16, #338: 為替差損益（独立表示）。**null＝供給されていない**（0 円と書かない）。
+    // 本 PR では供給元が無い（換算前の外貨額と換算レートを台帳が保持していない）。
+    FxTranslationSummary? FxTranslation = null,
+    // FR-06, FR-20, #338, INDEX 決定34: OpenD 稼働率。**null＝照会できていない**（稼働率 0% と書かない）。
+    OpenDUptimeRecord? Uptime = null,
+    // FR-06, FR-15, #338, 04_report-templates 月報 §5: 三者比較。**null＝照会できていない**。
+    ThreeWayComparison? ThreeWayComparison = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

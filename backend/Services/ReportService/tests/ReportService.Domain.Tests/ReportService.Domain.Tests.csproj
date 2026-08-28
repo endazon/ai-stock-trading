@@ -11,4 +11,9 @@
     <PackageReference Include="coverlet.collector" />
     <ProjectReference Include="..\..\src\ReportService.Domain\ReportService.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- FR-06, #338: 報告書テンプレートのゴールデンファイル（種別 × 供給あり/なし）。
+         テスト実行ディレクトリへ複写し、実出力とバイト単位で突き合わせる。 -->
+    <None Include="Golden\*.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

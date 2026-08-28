@@ -53,7 +53,7 @@ internal sealed class HttpFxSourceStatusSource(
         DateOnly toInclusive,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = JstHalfOpenRange(fromInclusive, toInclusive);
+        var (from, to) = AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
@@ -183,22 +183,8 @@ internal sealed class HttpFxSourceStatusSource(
             .OfType<string>()
             .Distinct(StringComparer.Ordinal)];
 
-    /// <summary>
-    /// JST 取引日の範囲を UTC の<b>半開区間</b>へ写す。
-    /// <para>
-    /// 台帳の <c>OccurredAt</c> は UTC 基準の瞬間であり、報告期間は JST の暦日である。
-    /// <b>ここを取り違えると、日付境界の事象が隣の日の報告書へ落ちる。</b>
-    /// </para>
-    /// </summary>
-    private static (DateTimeOffset From, DateTimeOffset To) JstHalfOpenRange(
-        DateOnly fromInclusive, DateOnly toInclusive)
-    {
-        var jst = TimeSpan.FromHours(9);
-        var from = new DateTimeOffset(fromInclusive.ToDateTime(TimeOnly.MinValue), jst);
-        // 終端は「翌日の 0 時」。閉区間にすると最後の 1 秒が落ちる。
-        var to = new DateTimeOffset(toInclusive.AddDays(1).ToDateTime(TimeOnly.MinValue), jst);
-        return (from.ToUniversalTime(), to.ToUniversalTime());
-    }
+    // 🔴 期間の作り方は AuditPeriodRange（#338 で 1 箇所へ集約）。
+    // 照会元が 3 つに増えたため各アダプタで書き写さない——1 つで境界を間違えても他が正しいと気づけない。
 
     // 監査台帳の応答の受け皿。**必要な 3 項目だけ**を受ける（残りは報告書が使わない）。
     private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
