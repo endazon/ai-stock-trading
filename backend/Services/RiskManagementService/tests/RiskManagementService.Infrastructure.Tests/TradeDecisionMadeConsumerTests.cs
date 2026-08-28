@@ -47,6 +47,8 @@ public class TradeDecisionMadeConsumerTests
                 // FR-19, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測ストア（スナップショット組み立ての依存）。
                 // 本テストの注文意図は内蔵 paper であり口座種別を要求しないため、観測は投入しない
                 // （＝口座種別を確認できていない状態のまま検証する）。
+                // #337, IADR-0249: 縮退状態は PortfolioSnapshotBuilder の必須依存（本テストは縮退なし）。
+                opts.Services.AddSingleton<IInformationDegradationStore, InMemoryInformationDegradationStore>();
                 opts.Services.AddSingleton<IBrokerAccountObservationStore>(
                     new InMemoryBrokerAccountObservationStore(TimeProvider.System));
                 opts.Services.AddSingleton<PortfolioSnapshotBuilder>();
