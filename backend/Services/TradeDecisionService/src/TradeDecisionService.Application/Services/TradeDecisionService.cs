@@ -177,10 +177,13 @@ public sealed class TradeDecisionService(
         var decision = orchestrated.Decision;
 
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
+        // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
         logger.LogInformation(
-            "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut}",
+            "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
+                + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable}",
             trigger.Symbol, decision.Action, decision.Rationale,
-            orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut);
+            orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
+            orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable);
 
         if (decision.Action == TradeAction.Hold)
         {

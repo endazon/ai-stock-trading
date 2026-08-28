@@ -90,4 +90,63 @@ public class TradeDecisionParserTests
 
         TradeDecisionParser.Parse(json).Action.Should().Be(TradeAction.Hold);
     }
+
+    // --- #337（#290 吸収）, IADR-0248: 解析不能と見送りの区別 ---
+
+    [Theory]
+    [InlineData("", TradeDecisionParseFailureKind.EmptyOutput)]
+    [InlineData("   ", TradeDecisionParseFailureKind.EmptyOutput)]
+    [InlineData("not json at all", TradeDecisionParseFailureKind.NoJsonObject)]
+    [InlineData("""{"broken json""", TradeDecisionParseFailureKind.NoJsonObject)]
+    [InlineData("""{"action": }""", TradeDecisionParseFailureKind.MalformedJson)]
+    [InlineData("""{"rationale":"actionなし","referencePrice":1,"stopLossDistancePerShare":1}""", TradeDecisionParseFailureKind.UnknownAction)]
+    [InlineData("""{"action":"Explode","rationale":"x","referencePrice":1,"stopLossDistancePerShare":1}""", TradeDecisionParseFailureKind.UnknownAction)]
+    [InlineData("""{"action":"Buy","rationale":"x","referencePrice":0,"stopLossDistancePerShare":30}""", TradeDecisionParseFailureKind.InvalidValues)]
+    [InlineData("""{"action":"Buy","rationale":"x","referencePrice":1000,"stopLossDistancePerShare":1000}""", TradeDecisionParseFailureKind.InvalidValues)]
+    public void 解析不能は失敗種別つきでHoldに倒す(string output, TradeDecisionParseFailureKind expected)
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(output);
+
+        parsed.IsUnparseable.Should().BeTrue("解析不能は見送りと区別して記録する（#290）");
+        parsed.Failure!.Kind.Should().Be(expected);
+        // 安全既定は不変: 挙動は Hold（取引しない）のまま。
+        parsed.Decision.Action.Should().Be(TradeAction.Hold);
+    }
+
+    [Fact]
+    public void 解析できた見送りは解析不能ではない_対の肯定形()
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(
+            """{"action":"Hold","rationale":"方針外のため見送る"}""");
+
+        parsed.IsUnparseable.Should().BeFalse("LLM が選んだ見送りは解析不能ではない");
+        parsed.Failure.Should().BeNull();
+        parsed.Decision.Action.Should().Be(TradeAction.Hold);
+        parsed.Decision.Rationale.Should().Be("方針外のため見送る");
+    }
+
+    [Fact]
+    public void 解析できたBuyは解析不能ではない_対の肯定形()
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(
+            """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""");
+
+        parsed.IsUnparseable.Should().BeFalse();
+        parsed.Decision.Action.Should().Be(TradeAction.Buy);
+    }
+
+    [Fact]
+    public void 互換APIのParseはParseDetailedのDecisionと一致する()
+    {
+        // Parse は ParseDetailed の互換ラッパ。区別の導入で既存経路の挙動（Hold へ倒す）を変えない。
+        foreach (var output in new[]
+                 {
+                     "", "not json",
+                     """{"action":"Buy","rationale":"x","referencePrice":1000,"stopLossDistancePerShare":30}""",
+                     """{"action":"Hold","rationale":"見送り"}""",
+                 })
+        {
+            TradeDecisionParser.Parse(output).Should().Be(TradeDecisionParser.ParseDetailed(output).Decision);
+        }
+    }
 }
