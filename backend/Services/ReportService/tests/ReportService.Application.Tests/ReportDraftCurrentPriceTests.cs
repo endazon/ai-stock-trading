@@ -1,12 +1,12 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // #81, FR-16, IADR-0025/0066: 評価損益の現在値供給（要求未指定時のみ市場データ源から補完する）を検証する。
 public class ReportDraftCurrentPriceTests

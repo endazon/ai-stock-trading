@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, FR-11, #387, 06_daytrading-review §4.1 条件1, IADR-0148:
 // 発注審査の観測ログ（統制違反件数の供給元）の EF ストアを InMemory DB で検証する。

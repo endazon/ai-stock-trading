@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-11: スクリーニング結果。承認なら OrderApproved、拒否なら OrderRejected（理由列挙つき）を保持する。
 // ホスト（Slice B）はこの結果に応じて対応するイベントをバスへ発行する。

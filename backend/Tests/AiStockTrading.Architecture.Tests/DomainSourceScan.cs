@@ -25,8 +25,12 @@ internal static class DomainSourceScan
             + @"(?<ns>[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*;\s*$",
         RegexOptions.Compiled);
 
-    /// <summary>本ユニットの名前空間の接頭辞。</summary>
-    public const string UnitNamespace = "AiStockTrading";
+    /// <summary>
+    /// <b>共有物</b>の名前空間の接頭辞。IADR-0261 でサービスのルート名前空間は <c>&lt;Name&gt;Service</c> へ
+    /// 移ったが、<c>AiStockTrading.Shared.*</c> / <c>.TestSupport.*</c> は据え置きである
+    /// （基盤 MSP も <c>Platform.Shared.*</c> を据え置いている）。
+    /// </summary>
+    public const string SharedNamespace = "AiStockTrading";
 
     /// <summary>1 行を <c>using</c> ディレクティブとして解析する。解析できたら名前空間を返す。</summary>
     public static bool TryParseUsingNamespace(string line, out string ns)
@@ -68,49 +72,51 @@ internal static class DomainSourceScan
     /// 検査 (b): Domain が <c>using</c> してよい名前空間か。<b>許可リストである（fail-closed）。</b>
     /// <list type="bullet">
     ///   <item><c>System[.*]</c>: .NET 標準（platform ADR-0030 §基本方針が Domain に許す唯一の外部）</item>
-    ///   <item><c>AiStockTrading.&lt;任意&gt;.Domain[.*]</c>: 他の Domain（旧 csproj 方式の許可リスト
-    ///     <c>*.Domain</c> と同じ広さ。自サービスかどうかは検査 (d) が別に絞る）</item>
+    ///   <item><c>&lt;サービスのルート&gt;.Domain[.*]</c>: 他の Domain（旧 csproj 方式の許可リスト
+    ///     <c>*.Domain</c> と同じ広さ。自サービスかどうかは検査 (d) が別に絞る）。
+    ///     <b>ルートは実ツリーから引いた集合に限る</b>（IADR-0261。手書きの一覧ではない）</item>
     ///   <item><c>AiStockTrading.Shared.Contracts[.*]</c>: ユニット単位の契約（platform ADR-0019 決定 4）</item>
     ///   <item><c>AiStockTrading.Shared.Kernel[.*]</c>: 共有カーネル（IADR-0260 で新設）</item>
     /// </list>
     /// <c>AiStockTrading.Shared.Infrastructure</c> / <c>.KnowledgeBase</c> は<b>許可しない</b>
     /// （外部ライブラリを引き込む実装であり、Domain から到達できてはならない）。
     /// </summary>
-    public static bool IsAllowedDomainNamespace(string ns)
+    public static bool IsAllowedDomainNamespace(string ns, IEnumerable<string> serviceNamespaceRoots)
     {
         if (IsOrStartsWith(ns, "System")) return true;
-        if (IsOrStartsWith(ns, $"{UnitNamespace}.Shared.Contracts")) return true;
-        if (IsOrStartsWith(ns, $"{UnitNamespace}.Shared.Kernel")) return true;
+        if (IsOrStartsWith(ns, $"{SharedNamespace}.Shared.Contracts")) return true;
+        if (IsOrStartsWith(ns, $"{SharedNamespace}.Shared.Kernel")) return true;
 
         var segments = ns.Split('.');
-        return segments.Length >= 3
-            && segments[0] == UnitNamespace
-            && segments[2] == "Domain";
+        return segments.Length >= 2
+            && serviceNamespaceRoots.Contains(segments[0], StringComparer.Ordinal)
+            && segments[1] == "Domain";
     }
 
     private static bool IsOrStartsWith(string ns, string prefix) =>
         ns == prefix || ns.StartsWith(prefix + ".", StringComparison.Ordinal);
 
     /// <summary>
-    /// 検査 (d): ソース中に現れる<b>他サービスの名前空間の根</b>（<c>AiStockTrading.&lt;Other&gt;</c>）。
+    /// 検査 (d): ソース中に現れる<b>他サービスのルート名前空間</b>（<c>&lt;Other&gt;Service</c>）。
     /// <para>
-    /// <c>using</c> 行に限らず全文を走査する。完全修飾（<c>AiStockTrading.Configuration.Domain.CostCalculator</c>）で
+    /// <c>using</c> 行に限らず全文を走査する。完全修飾（<c>ConfigurationService.Domain.CostCalculator</c>）で
     /// 書けば <c>using</c> 走査を迂回できてしまうためである。
     /// </para>
-    /// <c>AiStockTrading.Shared.*</c> は共有物であり他サービスではないので除く。
+    /// <c>AiStockTrading.Shared.*</c> は共有物であり他サービスではないので、そもそも根の集合に入らない。
+    /// <para>
+    /// 🔴 <b>照合するのは実ツリーから引いたサービスのルートだけである</b>（IADR-0261）。
+    /// 「末尾が <c>Service</c> の識別子」で判定すると、<c>StageGateService.EffectivePolicy()</c> のような
+    /// <b>クラス名の言及</b>を他サービス参照と誤認する（実測で Domain のコメントに 3 件ある）。
+    /// </para>
     /// </summary>
-    public static IReadOnlyList<string> ForeignServiceReferencesIn(string sourceText, string ownServiceShortName)
+    public static IReadOnlyList<string> ForeignServiceReferencesIn(
+        string sourceText, string ownServiceNamespaceRoot, IEnumerable<string> serviceNamespaceRoots)
     {
-        var pattern = new Regex(
-            @"(?<![A-Za-z0-9_.])" + UnitNamespace + @"\.(?<svc>[A-Za-z_][A-Za-z0-9_]*)",
-            RegexOptions.None);
-
         var found = new SortedSet<string>(StringComparer.Ordinal);
-        foreach (Match match in pattern.Matches(sourceText))
+        foreach (var root in serviceNamespaceRoots)
         {
-            var service = match.Groups["svc"].Value;
-            if (service == "Shared" || service == ownServiceShortName) continue;
-            found.Add($"{UnitNamespace}.{service}");
+            if (string.Equals(root, ownServiceNamespaceRoot, StringComparison.Ordinal)) continue;
+            if (ContainsQualifiedNameRoot(sourceText, root)) found.Add(root);
         }
 
         return found.ToArray();
@@ -151,15 +157,19 @@ internal static class DomainSourceScan
     /// </para>
     /// <b>これも走査由来であり、手書きの拒否リストではない。</b>
     /// </summary>
-    public static IReadOnlyList<string> ExternalNamespaceRootsIn(IEnumerable<string> sourceTexts)
+    public static IReadOnlyList<string> ExternalNamespaceRootsIn(
+        IEnumerable<string> sourceTexts, IEnumerable<string> serviceNamespaceRoots)
     {
+        // 🔴 サービスのルート（IADR-0261 で <Name>Service になった）を除かないと、Domain の全ファイルが
+        // **自分自身の namespace 宣言**で検査 (c) に違反する（根が System でも AiStockTrading でもなくなったため）。
+        var own = new HashSet<string>(serviceNamespaceRoots, StringComparer.Ordinal) { "System", SharedNamespace };
         var roots = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var text in sourceTexts)
         {
             foreach (var ns in UsingNamespacesIn(text))
             {
                 var root = ns.Split('.')[0];
-                if (root == "System" || root == UnitNamespace) continue;
+                if (own.Contains(root)) continue;
                 roots.Add(root);
             }
         }

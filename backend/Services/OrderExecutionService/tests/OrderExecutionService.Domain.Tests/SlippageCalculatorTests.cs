@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Domain.Tests;
+namespace OrderExecutionService.Domain.Tests;
 
 // FR-05, FR-16: 実効スリッページ算出（不利＝正）の検証。
 public class SlippageCalculatorTests

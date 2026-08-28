@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
+namespace RiskManagementService.Application.Tests.Manipulation;
 
 // FR-19, #154, IADR-0067: 注文アクティビティ射影ストア（インメモリ）の射影と読み取りを検証する。
 // EfOrderActivityStore/EfOrderActivitySource と射影ロジックを共有するため、本テストが射影仕様の権威になる。

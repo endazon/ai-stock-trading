@@ -1,7 +1,7 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約ストアの EF 実装。
 // TryReserve はブローカ発注より前に呼ばれ、SaveChanges で「コミットしてから」true を返す（発注前予約の要）。

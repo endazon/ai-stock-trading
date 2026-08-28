@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 
-namespace AiStockTrading.MarketMonitor.Application.Services;
+namespace MarketMonitorService.Application.Services;
 
 // FR-03, FR-11, FR-13, UC-06, SC-01 §2, #340, IADR-0155: 収集パラメータ（変動閾値・クールダウン）の
 // 閲覧・変更。変更は利用者のみ（ホスト層 OwnerOnly）・**理由必須**・**値域検証**・**変更履歴に記録**する。

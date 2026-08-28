@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-03, FR-10, IADR-0030/0035: #63 台帳の射影が返す銘柄別ネット建玉（数量>0）。Side は符号付き在庫の向き
 // （+ ロング=Buy / − ショート=Sell）、AverageEntryPrice は平均取得単価。

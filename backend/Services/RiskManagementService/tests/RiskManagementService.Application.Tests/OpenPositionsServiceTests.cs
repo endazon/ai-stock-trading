@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-03, FR-10, IADR-0030/0035: 保有ポジションの公開ビュー導出（#63 台帳射影＋損切り価格の実値/近似）を検証する。
 public class OpenPositionsServiceTests

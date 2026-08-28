@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, 04_report-templates, IADR-0032: 期間表記・自然キーの導出（純関数・種別ごとの形式）を検証する。
 public class ReportPeriodTests

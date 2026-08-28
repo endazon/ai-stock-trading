@@ -1,13 +1,13 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, UC-07, ADR-0009: `/status` 集約の検証。3 統制の状態・優先順位・段階・当日損益・上限使用率・ポジションを束ねる。
 public class RiskStatusServiceTests

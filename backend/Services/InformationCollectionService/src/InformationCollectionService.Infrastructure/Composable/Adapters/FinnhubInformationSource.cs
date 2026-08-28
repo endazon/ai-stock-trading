@@ -1,9 +1,9 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004/0005: Finnhub（案A+・無料枠）から現在値を取得する最小の情報源アダプタ。構成で明示有効化したときのみ用いる。
 // 取得失敗（レート制限・一時エラー）は当該銘柄をスキップしてログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。

@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Api.Tests;
+namespace NotificationService.Api.Tests;
 
 // FR-09: 通知サービスホストが起動し（既定の安全 sender で外部送信せず）、ヘルスが応答することを検証する。
 public class HealthEndpointTests(NotificationWorkerWebApplicationFactory factory)

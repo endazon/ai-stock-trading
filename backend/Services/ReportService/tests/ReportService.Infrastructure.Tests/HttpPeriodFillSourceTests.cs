@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06/16, IADR-0095/0115 決定5, #280: 権威源（リスク管理の取引台帳）への s2s 照会と、その fail-safe を
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。供給不達はすべて空列＝数値 0 の報告書として生成を続ける。

@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測（最新 1 件）のインメモリ保持。
 //

@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い。
 //

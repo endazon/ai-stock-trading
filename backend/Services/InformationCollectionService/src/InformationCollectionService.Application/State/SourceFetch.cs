@@ -1,7 +1,7 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
 
-namespace AiStockTrading.InformationCollection.Application.State;
+namespace InformationCollectionService.Application.State;
 
 // FR-01, ADR-0020: 情報源アダプタに**名前を持たせて**扱う。
 //

@@ -1,9 +1,9 @@
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Domain.Tests;
+namespace TradeDecisionService.Domain.Tests;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: 判断由来の建玉効果の決定（純関数）。
 public class PositionEffectResolverTests

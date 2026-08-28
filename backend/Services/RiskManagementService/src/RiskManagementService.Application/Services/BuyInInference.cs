@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 強制買戻し（buy-in）の**事後推定**（純関数）。
 //

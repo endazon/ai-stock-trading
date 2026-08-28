@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, UC-06, IADR-0062 決定1/2: Discord.Net による Gateway（WebSocket）常駐の実装。
 // 詳細設計07 が採用した接続方式（アウトバウンドのみ・受信ポートを外部公開しない）。

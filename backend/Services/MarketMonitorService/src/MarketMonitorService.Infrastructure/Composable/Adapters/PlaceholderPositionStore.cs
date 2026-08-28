@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Composable.Adapters;
+namespace MarketMonitorService.Infrastructure.Adapters;
 
 // FR-03, FR-10: IPositionStore のフォールバック実装。保有・損切り価格の実データはリスク管理（#12/#63 台帳）を照会する
 // HttpPositionStore（RiskManagement:BaseUrl）が供給する。BaseUrl 未設定時は本実装が「保有なし」を返す（＝損切り検知対象なし）。差し替え漏れ検知のため初回利用時に 1 回警告する

@@ -1,9 +1,9 @@
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-14, UC-06: スラッシュコマンドの解析。受け入れ基準8: /killswitch・/killswitch off の解析と未知コマンドの拒否。
 //

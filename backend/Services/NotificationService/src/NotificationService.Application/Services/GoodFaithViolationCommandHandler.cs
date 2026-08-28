@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182:
 // GFV 違反による停止の解除コマンドの処理。**kill switch と同じ閂の並び**（多層認証 → コマンド解析 →

@@ -1,12 +1,12 @@
 using System.Net;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // #289, FR-09, NFR（セキュリティ）: Discord Webhook URL は「知っていれば認証なしで投稿できる」＝それ自体が資格情報。
 // IHttpClientFactory の既定ログはリクエスト URI を平文で出力し、otel 経由で Loki に蓄積されるため、

@@ -1,10 +1,10 @@
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-08, FR-04, IADR-0069/0072: 判断文脈への RAG 取得アダプタ。#18 の RAG 取得ポート IKnowledgeBaseSearch を包み、
 // トリガー（銘柄/市場）＋確定日報方針の要約から検索クエリを組み、KnowledgeHit を Application 側 RetrievedContext へ写像する。

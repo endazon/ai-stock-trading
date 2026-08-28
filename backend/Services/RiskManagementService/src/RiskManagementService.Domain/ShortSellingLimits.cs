@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016（決定2,3,4,7,9）: 空売り（信用売り）専用の統制値。
 // 空売りは**損失に上限が無い**（株価は理論上無限に上昇し得る）ため、損切りが機能する前提で作られた

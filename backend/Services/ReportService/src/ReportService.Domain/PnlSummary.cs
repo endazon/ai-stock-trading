@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 数値定義: 期間の損益集計結果。数値はコードで集計する（LLM に計算させない）。
 public sealed record PnlSummary(

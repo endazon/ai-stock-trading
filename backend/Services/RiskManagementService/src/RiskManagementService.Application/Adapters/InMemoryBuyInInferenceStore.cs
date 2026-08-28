@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの推定台帳のインメモリ実装（ユニット試験・非 relational 用）。
 //

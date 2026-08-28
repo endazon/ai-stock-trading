@@ -1,4 +1,4 @@
-namespace AiStockTrading.MarketMonitor.Domain;
+namespace MarketMonitorService.Domain;
 
 // FR-03: 価格変動の判定結果。変動率と閾値超過フラグ。
 public readonly record struct PriceMovement(decimal ChangeRatio, bool Exceeded);

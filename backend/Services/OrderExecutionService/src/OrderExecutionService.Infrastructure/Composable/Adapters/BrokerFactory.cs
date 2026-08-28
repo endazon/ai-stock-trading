@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // FR-05, ADR-0002, IADR-0016, IADR-0111: ブローカ選択（BrokerSelection＝provider × environment）によるアダプタ生成。
 // 安全既定はペーパー（実弾を撃たない）。moomoo は OpenD（IMoomooTradeClient）経由・SIMULATE 限定で発注する（#13）。

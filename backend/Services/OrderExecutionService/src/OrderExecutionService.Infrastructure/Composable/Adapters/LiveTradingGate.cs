@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // FR-05, FR-20, ADR-0002, IADR-0056, IADR-0111: 実弾（実口座での発注）解禁の**単一の決定点**（閂 0）。
 //

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, UC-03〜05, 04_workflows/03_reporting-cycle, IADR-0115, #280: 自動生成の期間判定（純関数・決定的・副作用なし）。
 //

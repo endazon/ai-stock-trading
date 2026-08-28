@@ -1,8 +1,8 @@
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.State;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.State;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
+namespace ConfigurationService.Infrastructure.Persistence;
 
 // FR-17: 前提条件変更履歴の EF 実装（追記専用・新しい順）。
 internal sealed class EfAssumptionsChangeLog(ConfigurationDbContext db) : IAssumptionsChangeLog

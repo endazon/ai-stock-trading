@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, FR-17, IADR-0012: 設定ストアの EF 実装。単一行 JSON＋Version 列で楽観的排他制御する。
 // 未設定時は TradingDefaults をシードして返す。DbContext は scoped のため本ストアも scoped。

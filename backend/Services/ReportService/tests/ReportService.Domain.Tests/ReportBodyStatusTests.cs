@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-07, #338, #310, INDEX 決定29, IADR-0252:
 // **確定した報告書の本文が「未確定」を名乗り続けない**ことを固定する。

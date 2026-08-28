@@ -1,13 +1,13 @@
 using System.Net;
 using System.Text.Json;
-using AiStockTrading.MarketMonitor.Domain;
-using AiStockTrading.MarketMonitor.Infrastructure.Composable.Adapters;
+using MarketMonitorService.Domain;
+using MarketMonitorService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
+namespace MarketMonitorService.Infrastructure.Tests;
 
 // FR-03, FR-10, IADR-0030: リスク管理の GET /risk-controls/open-positions を同期照会する実装の写像とフェイルセーフを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。未取得系は空列（＝損切り検知対象なし）へ倒す。

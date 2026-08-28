@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // SC-01, FR-13, UC-06, #423, IADR-0164 決定1:
 // **収集間隔（巡回間隔）を画面・API から変更する経路が存在しないことを構造で固定する。**

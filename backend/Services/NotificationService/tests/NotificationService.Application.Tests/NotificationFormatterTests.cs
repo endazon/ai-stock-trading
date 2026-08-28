@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-09, UC-01, UC-02, UC-06: イベント→通知メッセージの整形（種別・銘柄・拒否理由・重大度）を検証する。
 public class NotificationFormatterTests

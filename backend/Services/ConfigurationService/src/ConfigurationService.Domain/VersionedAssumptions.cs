@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Configuration.Domain;
+namespace ConfigurationService.Domain;
 
 // FR-17: 現在の全体前提条件とそのバージョン。報告書は生成時 Version を凍結参照でき、消費側サービス（費用統制・損益集計・
 // AI 判断）は Version つきで共通参照する（IADR-0021/0063）。消費側が設定サービスの Application 層に依存せず参照できるよう

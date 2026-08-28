@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-09, IADR-0020: 既定の安全 sender。外部送信せずログに出力するだけ（no-op）。CI/dev の安全既定で、
 // 実 Discord への誤送信を構造的に防ぐ。実送信は構成で discord-webhook を明示有効化したときのみ。

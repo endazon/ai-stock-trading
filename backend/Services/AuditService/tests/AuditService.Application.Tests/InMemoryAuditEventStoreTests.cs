@@ -1,9 +1,9 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.Adapters;
+using AuditService.Application.State;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-11, IADR-0019: 監査台帳（インメモリ）の追記・冪等・相関/期間照会を検証する。
 public class InMemoryAuditEventStoreTests

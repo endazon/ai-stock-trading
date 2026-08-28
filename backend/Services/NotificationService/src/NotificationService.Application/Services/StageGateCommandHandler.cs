@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲートのコマンド処理。多層認証 → コマンド解析 →
 // Risk 呼び出しの順に閂を掛ける。kill switch / pause（KillSwitchCommandHandler / PauseCommandHandler）と同型。

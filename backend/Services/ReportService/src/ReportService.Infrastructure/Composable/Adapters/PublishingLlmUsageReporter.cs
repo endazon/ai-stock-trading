@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // NFR（費用）, FR-06, FR-16, 05_trading-assumptions §6.1, #347, IADR-0219:
 // 報告書生成のトークン使用量に単価を適用し LlmCostIncurred を publish する。

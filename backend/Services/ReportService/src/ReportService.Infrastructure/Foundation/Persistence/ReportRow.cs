@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+namespace ReportService.Infrastructure.Persistence;
 
 // FR-06/07, IADR-0024: 報告書の行モデル。PeriodKey を主キー、Version を楽観排他トークンとする（IADR-0012 踏襲）。
 // ADR-0001 の専有 DB（report_svc）に配置する。数値集計列（FR-16）は後続スライスで拡充する。

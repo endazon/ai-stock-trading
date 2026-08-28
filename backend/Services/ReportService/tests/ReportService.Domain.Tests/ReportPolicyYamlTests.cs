@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-07, FR-16, FR-17, #338, INDEX 決定29 / 決定43, IADR-0252:
 // 目標値の **YAML ブロック併記**を固定する。

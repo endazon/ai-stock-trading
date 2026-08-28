@@ -2,8 +2,8 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TestSupport.Messaging;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +13,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0122: 応答が名乗った実効モデルの単価で計上額を決める。
 // 用途別モデル割当（ADR-0014 / MSP/IADR-0112）で trade-decision=claude-sonnet-5 になったため、

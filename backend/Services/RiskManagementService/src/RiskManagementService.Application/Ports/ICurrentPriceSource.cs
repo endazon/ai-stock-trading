@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-10, #81, IADR-0066: 時価評価（含み損益・DD）の入力となる現在値の供給。
 // 判定は同期経路（OrderScreeningService → PortfolioSnapshotBuilder → IPortfolioStateProvider.GetCurrent）にあり、

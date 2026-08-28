@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Domain.Tests;
+namespace MarketMonitorService.Domain.Tests;
 
 // FR-03, UC-02: 変動率判定（基準値比・閾値超過）の検証。
 public class PriceMovementEvaluatorTests

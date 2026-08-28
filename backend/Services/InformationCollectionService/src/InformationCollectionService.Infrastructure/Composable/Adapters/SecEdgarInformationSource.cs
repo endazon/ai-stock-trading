@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Net.Http.Json;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004/0005, IADR-0064: SEC EDGAR（米国の企業開示・無料・APIキー不要）から直近の提出書類を取得する。
 // 規約上 User-Agent に連絡先が必須のため、未設定なら本ソースは有効化しない（InformationSourceFactory で除外）。

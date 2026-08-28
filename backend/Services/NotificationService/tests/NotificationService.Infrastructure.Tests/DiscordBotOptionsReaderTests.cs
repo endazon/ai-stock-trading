@@ -1,9 +1,9 @@
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-14, IADR-0062: 構成の読み取り。未設定が「拒否側の既定」のまま残ることを固定する（補完しない）。
 public class DiscordBotOptionsReaderTests

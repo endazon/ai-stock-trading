@@ -1,14 +1,14 @@
 using System.Net;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, FR-16, ADR-0015, ADR-0017 決定4, #335, #347, IADR-0217/0219:
 // 報告書生成における **①実効モデルの記録（報告書メタ）**・**②フォールバック発火の通知**・

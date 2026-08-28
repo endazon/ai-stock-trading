@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-14, UC-06, IADR-0062: kill switch コマンド処理の閂（多層認証→解析→確認ステップ→Risk 呼び出し）。
 // 受け入れ基準9: 起動済みへの再起動は副作用なし（冪等）。

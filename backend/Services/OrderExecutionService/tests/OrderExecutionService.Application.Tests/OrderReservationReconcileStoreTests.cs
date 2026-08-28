@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Reconciliation;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Reconciliation;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // #141, FR-05, IADR-0074: リコンサイルの下支え（滞留走査・解放ガード・no-op プローブ・滞留閾値ポリシー）。
 public class OrderReservationReconcileStoreTests

@@ -1,6 +1,6 @@
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.State;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-02, FR-04, FR-10, ADR-0003, ADR-0004, IADR-0099: 判断文脈の現在値（価格文脈）の供給口。
 // 定時（Scheduled）トリガーは価格を持たないため（IADR-0023）、LLM が価格文脈を得られず常に Hold に倒れる。

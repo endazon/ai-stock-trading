@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Infrastructure.Composable.Adapters;
-using AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Infrastructure.Adapters;
+using MarketMonitorService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -11,9 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.MarketMonitor.Infrastructure.Composable;
+using Composable = MarketMonitorService.Infrastructure;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // FR-03, FR-10, IADR-0030: RiskManagement:BaseUrl の有無で IPositionStore が安全既定（プレースホルダ・空）/
 // 同期照会（Http）に切り替わることを検証する。選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。

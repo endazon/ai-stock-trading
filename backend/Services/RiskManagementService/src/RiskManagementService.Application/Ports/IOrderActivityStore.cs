@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-19, #154, IADR-0067: 注文アクティビティの射影ストア（相場操縦検知の入力源）。
 // 注文系イベント（OrderApproved/OrderExecuted/OrderModified/OrderCancelled）を Risk 専有 DB へ射影し、

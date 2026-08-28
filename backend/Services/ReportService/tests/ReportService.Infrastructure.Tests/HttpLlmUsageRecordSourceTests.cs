@@ -1,14 +1,14 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, FR-11, FR-16, #338, #282, #347, ADR-0017 決定2・決定4, 04_report-templates 月報 §7, IADR-0254:
 // 監査台帳（権威源）から LLM 利用実績を期間で引く。fake HttpMessageHandler で検証する（実ネットワーク不使用）。

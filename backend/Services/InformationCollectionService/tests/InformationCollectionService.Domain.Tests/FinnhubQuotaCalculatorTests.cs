@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0020 §結果（フォローアップ）: 日次上限からの監視銘柄数の逆算。
 //

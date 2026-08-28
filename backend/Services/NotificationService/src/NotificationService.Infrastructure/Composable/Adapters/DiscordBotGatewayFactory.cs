@@ -1,9 +1,9 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, IADR-0062 決定1: Bot Gateway の選択。安全既定は接続しない no-op（IADR-0020 の
 // NotificationSenderFactory と同型）。実 Gateway 接続は設定が揃った時のみ。

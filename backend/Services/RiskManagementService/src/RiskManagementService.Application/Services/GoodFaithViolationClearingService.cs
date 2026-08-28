@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182:
 // GFV 違反による停止の**解除**（利用者の明示的な操作）。

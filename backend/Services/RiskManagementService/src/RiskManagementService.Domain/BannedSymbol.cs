@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 // 計画（05_trading-assumptions §5「取引禁止銘柄リスト」）はグローリー 6457・デンソー 6902・
 // 東芝 旧6502（再上場時に適用）を登録済みとし、システムの責務を
 // 「登録されたものを確実に強制する」ことに限定する（ADR-0007 §理由）。
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 public record BannedSymbol(
     string Symbol,

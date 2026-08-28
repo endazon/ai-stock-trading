@@ -5,7 +5,7 @@ using AiStockTrading.TestSupport.ContractFixtures;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests.Contracts;
+namespace MarketMonitorService.Api.Tests.Contracts;
 
 // FR-03, FR-13, SC-01 §2, SC-02, #340, IADR-0146 / IADR-0155: **バックエンド↔フロントの契約テスト（監視設定）。**
 //

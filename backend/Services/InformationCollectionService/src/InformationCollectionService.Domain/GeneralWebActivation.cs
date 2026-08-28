@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0020 決定4: 一般インターネット収集（許可リスト外の一般サイトからの取得）の発動申請。
 //

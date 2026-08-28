@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Application.Services;
+namespace OrderExecutionService.Application.Services;
 
 // #141, FR-05, IADR-0074: 滞留した Reserved 予約（IADR-0057 の「発注済みか不明」の窓）をブローカ照会で
 // 自動解消する。二重発注を絶対に起こさない fail-safe を最優先する（IADR-0057 の at-most-once を破らない）。

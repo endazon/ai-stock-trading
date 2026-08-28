@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Application.Reconciliation;
+using OrderExecutionService.Application.Reconciliation;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // #292, FR-05, IADR-0118: 建玉突合の構成。既定有効・間隔のクランプ。
 public class PositionReconciliationOptionsTests

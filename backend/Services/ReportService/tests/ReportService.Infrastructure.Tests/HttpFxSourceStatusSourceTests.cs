@@ -1,14 +1,14 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, FR-10, FR-11, UC-06, #381, ADR-0022 決定1・決定2, IADR-0196 決定2〜4, IADR-0199:
 // 監査台帳（権威源）から為替の情報源の状態を期間で引く。fake HttpMessageHandler で検証する（実ネットワーク不使用）。

@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+using ReportService.Application;
+using ReportService.Domain;
+using ReportService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06/07, IADR-0012/0024: 報告書 EF ストア（upsert・確定遷移・冪等・版排他・確定済み日報照会）を InMemory DB で検証する。
 public class EfReportStoreTests

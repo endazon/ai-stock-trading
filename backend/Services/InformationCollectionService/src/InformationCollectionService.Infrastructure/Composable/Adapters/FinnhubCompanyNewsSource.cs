@@ -1,13 +1,13 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004, ADR-0020 決定2, IADR-0064: Finnhub Free の**企業ニュース**（/api/v1/company-news）。
 // ニュース系の第一の必須ソースである（銘柄との紐付けが提供側で済んでいる唯一の無料候補）。

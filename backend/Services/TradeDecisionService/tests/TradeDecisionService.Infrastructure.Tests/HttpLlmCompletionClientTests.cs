@@ -1,16 +1,16 @@
 using System.Net;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Domain;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Domain;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // #79, FR-04, IADR-0017/0039: platform LLM ゲートウェイ POST /complete を呼ぶ実 LLM egress の写像とフェイルセーフを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。送信拒否/失敗/タイムアウトは Hold（取引しない）に倒す。

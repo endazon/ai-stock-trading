@@ -1,9 +1,9 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 using AiStockTrading.Shared.Contracts.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-02, FR-04, FR-10, IADR-0099: 判断文脈の現在値供給アダプタ。#158（IADR-0068）で共有化された現在値の権威ポート
 // IMarketDataSource を包み、鮮度（AsOf と現在時刻の差）を検査して権威ある現在値を判断サービスへ渡す。

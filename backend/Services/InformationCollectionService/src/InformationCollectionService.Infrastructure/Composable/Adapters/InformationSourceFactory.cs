@@ -1,11 +1,11 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004, ADR-0020, IADR-0022/0064: 構成 Collection:Source:Provider による情報源の選択。
 // 安全既定は「有効な情報源 0 件」＝外部接続しない。案A+ は複数ソースの組み合わせのため、Provider は

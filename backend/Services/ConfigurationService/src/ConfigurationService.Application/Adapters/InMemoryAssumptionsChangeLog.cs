@@ -1,7 +1,7 @@
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.State;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.State;
 
-namespace AiStockTrading.Configuration.Application.Adapters;
+namespace ConfigurationService.Application.Adapters;
 
 // FR-17: 前提条件変更履歴のインメモリ実装（テスト・単体実行用）。追記専用・新しい順で返す。
 public sealed class InMemoryAssumptionsChangeLog : IAssumptionsChangeLog

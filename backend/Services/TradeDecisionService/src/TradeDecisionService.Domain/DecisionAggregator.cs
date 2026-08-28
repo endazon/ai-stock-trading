@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-04, FR-11, ADR-0003, IADR-0039: 多数決の集約（純関数）。同一入力を複数回 LLM 実行した各判断を安定化する。
 // 最多得票の action を採り、同数タイ・空入力は安全側 Hold（ADR-0003「不確実なら取引しない」）。

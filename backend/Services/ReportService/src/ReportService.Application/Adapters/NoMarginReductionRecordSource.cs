@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-10, FR-06, UC-06, #330, IADR-0133: 自動縮小の記録供給の既定（空列＝発動なし）。
 //

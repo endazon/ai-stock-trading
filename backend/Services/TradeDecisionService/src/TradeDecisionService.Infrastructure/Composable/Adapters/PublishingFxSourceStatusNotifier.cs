@@ -1,12 +1,12 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-10, FR-17, FR-09, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の状態変化を publish する実装。
 // AuditService（監査台帳）と NotificationService（Discord）が購読する。日報は期間で引く（供給ポート）。

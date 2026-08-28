@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Domain;
+namespace MarketMonitorService.Domain;
 
 // FR-03, FR-10, ADR-0003: 保有ポジションが損切りラインに到達したかを判定する。建玉方向で対称に扱う。
 public static class StopLossEvaluator

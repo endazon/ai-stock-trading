@@ -1,6 +1,6 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Steps;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-09, UC-01, UC-02, UC-06: 取引実行・リスク統制発動のイベント購読 → 通知送信を
 // Wolverine のテストハーネス（Wolverine.Tracking）+ 記録 sender で検証する。

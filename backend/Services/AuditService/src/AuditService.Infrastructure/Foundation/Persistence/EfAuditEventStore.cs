@@ -1,8 +1,8 @@
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.Ports;
+using AuditService.Application.State;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
+namespace AuditService.Infrastructure.Persistence;
 
 // FR-11, IADR-0019: 監査台帳の EF 実装（追記専用・専有 DB）。Id（=MessageId）で冪等。相関・期間で照会する。
 internal sealed class EfAuditEventStore(AuditDbContext db) : IAuditEventStore

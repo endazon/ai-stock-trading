@@ -1,11 +1,11 @@
-using AiStockTrading.OrderExecution.Domain;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-10, #331, IADR-0210 決定6: 保護逆指値レグ記録の永続化を InMemory DB で検証する
 // （契約: EntryDecisionId upsert・Active の洗い出し・ラウンドトリップ）。

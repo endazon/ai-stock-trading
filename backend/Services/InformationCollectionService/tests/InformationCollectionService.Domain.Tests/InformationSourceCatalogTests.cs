@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0020 決定1, ADR-0005 決定5: 情報源の区分表（必須/推奨/任意/検証用途）が計画の割当表と一致すること。
 //

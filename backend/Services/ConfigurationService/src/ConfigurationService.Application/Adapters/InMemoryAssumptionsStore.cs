@@ -1,9 +1,9 @@
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.State;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.State;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Configuration.Application.Adapters;
+namespace ConfigurationService.Application.Adapters;
 
 // FR-17, IADR-0021: 全体前提条件ストアのインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の
 // EfAssumptionsStore で差し替える。既定値を Version=1 でシードし、Save は expectedVersion 一致時のみ +1 する。

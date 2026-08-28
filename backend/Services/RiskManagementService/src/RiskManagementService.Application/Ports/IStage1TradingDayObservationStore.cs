@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, FR-12, #385, 06_daytrading-review §4.2, IADR-0150: 段階ゲートの「60 営業日」（§4.2 の期間カウント）を
 // 数えるための**稼働の観測ログ**。1 取引日 × 1 発注先 で 1 行。

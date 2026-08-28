@@ -1,13 +1,13 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-20, FR-13, FR-11, UC-06, SC-02, INDEX 決定 46, #334, IADR-0140 / IADR-0141:
 // 発注先（Broker Provider）の変更と、運用段階との**独立性**の検証。

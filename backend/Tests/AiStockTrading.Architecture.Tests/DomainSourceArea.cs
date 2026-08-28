@@ -11,13 +11,12 @@ namespace AiStockTrading.Architecture.Tests;
 /// </para>
 /// </summary>
 /// <param name="FullPath">Domain ソースを含むディレクトリの絶対パス。</param>
-/// <param name="ServiceShortName">
-/// 属するサービスの短縮名（<c>BacktestService</c> → <c>Backtest</c>）。
-/// <b>実測で、名前空間 <c>AiStockTrading.&lt;Short&gt;.Domain</c> の <c>&lt;Short&gt;</c> と一致する</b>
-/// （10 種類の名前空間宣言すべてで確認。作業仕様書 軸 3）。この一致が「自サービスか他サービスか」の
-/// 機械判定の根拠である。
+/// <param name="ServiceNamespaceRoot">
+/// 属するサービスの<b>ルート名前空間</b>（<c>BacktestService</c>）。IADR-0261 の名前空間整合により、
+/// <b>サービスディレクトリ名がそのままルート名前空間（<c>BacktestService.Domain</c> の第 1 セグメント）と一致する</b>
+/// （基盤 MSP:IADR-0282 決定 3 と同じ規則）。この一致が「自サービスか他サービスか」の機械判定の根拠である。
 /// </param>
-internal sealed record DomainSourceArea(string FullPath, string ServiceShortName)
+internal sealed record DomainSourceArea(string FullPath, string ServiceNamespaceRoot)
 {
     /// <summary>リポジトリルートからの相対パス（失敗メッセージ用）。</summary>
     public string RelativePath =>

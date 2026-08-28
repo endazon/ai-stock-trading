@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: Risk の stage-gate エンドポイント呼び出しを fake
 // HttpMessageHandler で検証する（実ネットワーク不使用）。要点は 200 受理／422 拒否（未充足基準）の整形と、

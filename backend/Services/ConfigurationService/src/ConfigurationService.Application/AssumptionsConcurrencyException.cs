@@ -1,4 +1,4 @@
-namespace AiStockTrading.Configuration.Application;
+namespace ConfigurationService.Application;
 
 // FR-17, IADR-0021: 楽観的排他制御の競合。読み込んだ版と現在の版が一致しない更新で送出する。
 // ホストのエンドポイントはこれを 409 Conflict に写像する（ロストアップデート防止）。

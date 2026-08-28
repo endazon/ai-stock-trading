@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5:
 // 強制買戻し由来の 30 日空売り禁止だけを、**空売り文脈（ShortSellOrderContext）とは独立に**判定コアへ供給する入力。

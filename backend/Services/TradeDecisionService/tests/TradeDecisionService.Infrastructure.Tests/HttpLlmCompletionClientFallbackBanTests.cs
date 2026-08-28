@@ -1,15 +1,15 @@
 using System.Net;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Domain;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Domain;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-04, UC-01, ADR-0014 §決定3, ADR-0017 決定2/決定3, #335, IADR-0216:
 // **取引判断のフォールバック禁止**の退行防止（統制系 3 点セット: 境界値・プロパティベース・否定形）。

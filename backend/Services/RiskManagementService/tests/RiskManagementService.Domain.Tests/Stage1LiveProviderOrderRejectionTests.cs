@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20 (1), SC-02, UC-06, #422, IADR-0161:
 // **「設定は保存できるが、発注は段階が実弾を既定とするまで拒否する」を 1 か所で同時に固定する。**

@@ -1,10 +1,10 @@
-using AiStockTrading.Configuration.Client.Foundation.Extensions;
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+using ConfigurationService.Client.Extensions;
+using ConfigurationService.Client.Ports;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Infrastructure.Adapters;
+using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -299,7 +299,7 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<IFxRateSource>(),
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));
 
-builder.Services.AddScoped<TradeDecisionService>();
+builder.Services.AddScoped<TradeDecisionAppService>();
 
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。

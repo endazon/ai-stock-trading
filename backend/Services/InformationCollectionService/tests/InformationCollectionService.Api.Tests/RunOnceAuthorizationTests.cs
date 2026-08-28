@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // NFR（セキュリティ）, FR-02, UC-01, #456, IADR-0176:
 // **run-once（収集サイクルの起動）は業務操作であり、無認証で公開しない。**

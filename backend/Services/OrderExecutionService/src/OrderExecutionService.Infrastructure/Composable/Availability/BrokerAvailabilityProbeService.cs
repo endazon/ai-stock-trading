@@ -1,4 +1,4 @@
-using AiStockTrading.OrderExecution.Application.Availability;
+using OrderExecutionService.Application.Availability;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using Microsoft.Extensions.Hosting;
@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
+namespace OrderExecutionService.Infrastructure.Availability;
 
 // FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150 決定1: ブローカ（OpenD）へ到達できるかを定期に確かめ、
 // 到達できた事実だけを BrokerAvailabilityObserved として発行する。Stage 1 の「稼働分数」の供給元である。

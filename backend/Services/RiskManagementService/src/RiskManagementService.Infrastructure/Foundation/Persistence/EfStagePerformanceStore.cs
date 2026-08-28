@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-20, FR-15, IADR-0070: 段階別実績の EF 実装（単一行 upsert）。未記録時は fail-safe 既定
 // （BacktestPassed=false ほか全 false/0）を返す＝既定で昇格を許可しない安全側。DbContext は scoped のため本ストアも scoped。

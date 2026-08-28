@@ -1,7 +1,7 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 
-namespace AiStockTrading.TradeDecision.Application.Adapters;
+namespace TradeDecisionService.Application.Adapters;
 
 // FR-02, FR-04, IADR-0099 決定1: 現在値供給の安全既定。実ソースを呼ばず常に null（＝現在値なし＝現行動作）を返す。
 // IsEnabled=false のため判断側の fail-safe ゲート（有効化時のみ発注抑止）は作動せず、既定挙動をバイト等価に保つ。

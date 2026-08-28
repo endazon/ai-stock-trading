@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-16, #338, #282, #347, ADR-0017 決定2・決定4, 04_report-templates 月報 §7, IADR-0251:
 // LLM 利用実績の集計（純関数）を固定する。

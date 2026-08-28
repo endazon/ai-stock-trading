@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-20, FR-10, UC-06, ADR-0008, IADR-0103, #164: 実DD（観測最大ドローダウン）の段階別実績への射影（純関数）を検証する。
 // 単調非減少・負値の無視・フィールド所有権の分離（他フィールド温存）・観測窓リセットを受け入れ基準へ写像する。

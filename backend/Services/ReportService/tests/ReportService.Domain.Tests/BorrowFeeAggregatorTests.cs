@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-16, #338, ADR-0016 決定3・決定15, ADR-0027 決定1・決定4, 04_report-templates 月報 §6.1:
 // 借株料の集計（純関数）を固定する。

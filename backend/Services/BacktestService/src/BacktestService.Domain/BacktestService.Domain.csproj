@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Backtest.Domain</RootNamespace>
+    <RootNamespace>BacktestService.Domain</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- IADR-0043: 符号付き在庫の畳み込み（SignedInventory）と Market を共有する。 -->

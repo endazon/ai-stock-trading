@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Availability;
+namespace OrderExecutionService.Application.Availability;
 
 // FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150: ブローカ稼働 probe（Stage 1 の稼働分数の供給元）の構成。
 //

@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, IADR-0008/0036: 含み損益・ドローダウンの時価評価（純関数）を検証する。
 public class PortfolioValuationTests

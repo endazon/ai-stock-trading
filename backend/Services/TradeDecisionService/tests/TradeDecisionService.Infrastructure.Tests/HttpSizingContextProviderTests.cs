@@ -1,14 +1,14 @@
 using System.Net;
 using System.Text.Json;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-04, FR-10, IADR-0029: リスク管理の GET /risk-controls/sizing-context を同期照会する実装の写像とフェイルセーフを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。未取得系は残枠 0 の安全既定（取引しない）へ倒す。

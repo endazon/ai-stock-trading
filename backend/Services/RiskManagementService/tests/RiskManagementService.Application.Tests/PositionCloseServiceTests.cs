@@ -1,14 +1,14 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い。
 // 統制（kill switch/pause/ロックアウト）は本サービスの依存に含まれない＝手仕舞いを止めない（FR-10 本文）。

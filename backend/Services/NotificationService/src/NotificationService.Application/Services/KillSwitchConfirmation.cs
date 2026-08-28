@@ -1,6 +1,6 @@
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.State;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-14, UC-06, IADR-0062 決定5 / IADR-0097: 高リスク操作の確認ステップ（詳細設計07「認証・認可」層4）。
 // kill switch は起動・解除ともに確認ボタン（2段階）に加えて**確認フレーズの入力**を必須とする（planning#35 裁定）。

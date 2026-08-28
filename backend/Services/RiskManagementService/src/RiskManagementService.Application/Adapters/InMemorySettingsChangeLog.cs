@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-11: 変更履歴のインメモリ実装（dev/test 用）。実運用は PostgreSQL 実装（EfSettingsChangeLog）が担う。
 public sealed class InMemorySettingsChangeLog : ISettingsChangeLog

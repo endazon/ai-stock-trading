@@ -1,8 +1,8 @@
-using AiStockTrading.Configuration.Application.Adapters;
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.Services;
-using AiStockTrading.Configuration.Api.Foundation.Endpoints;
-using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
+using ConfigurationService.Application.Adapters;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.Services;
+using ConfigurationService.Api.Endpoints;
+using ConfigurationService.Infrastructure.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;

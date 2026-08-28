@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -17,7 +17,7 @@ using Wolverine.Tracking;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, UC-01, UC-02: TradeDecisionMade 購読 → 承認/拒否発行を Wolverine のテストハーネス
 // （Wolverine.Tracking）で検証する。

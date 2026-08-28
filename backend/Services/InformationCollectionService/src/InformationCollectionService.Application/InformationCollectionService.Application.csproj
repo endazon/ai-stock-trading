@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.InformationCollection.Application</RootNamespace>
+    <RootNamespace>InformationCollectionService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InformationCollectionService.Domain\InformationCollectionService.Domain.csproj" />

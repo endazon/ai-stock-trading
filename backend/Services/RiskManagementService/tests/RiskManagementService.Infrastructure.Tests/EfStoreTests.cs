@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, FR-11, IADR-0012: EF ストアの永続化を InMemory DB で検証する（設定・kill switch・ロックアウト・履歴）。
 public class EfStoreTests
@@ -25,7 +25,7 @@ public class EfStoreTests
         var settings = store.GetCurrent();
 
         settings.Limits.MaxOpenPositions.Should().Be(TradingDefaults.CreateRiskLimits().MaxOpenPositions);
-        settings.Guard.EnabledProductTypes.Should().Contain(Shared.Contracts.Trading.ProductType.Cash);
+        settings.Guard.EnabledProductTypes.Should().Contain(AiStockTrading.Shared.Contracts.Trading.ProductType.Cash);
     }
 
     // FR-20 (3), #422, IADR-0161: **新規インストールの発注先は内蔵 paper**（外部へ一度も発注しない唯一の値）。
@@ -39,14 +39,14 @@ public class EfStoreTests
         using (var db = NewContext(dbName))
         {
             new EfRiskSettingsStore(db).GetCurrent()
-                .BrokerProvider.Should().Be(Shared.Contracts.Trading.BrokerProvider.InternalPaper);
+                .BrokerProvider.Should().Be(AiStockTrading.Shared.Contracts.Trading.BrokerProvider.InternalPaper);
         }
 
         // シードされた行を読み直しても同じであること（書いた値が実弾でない）。
         using (var db2 = NewContext(dbName))
         {
             new EfRiskSettingsStore(db2).GetCurrent()
-                .BrokerProvider.Should().NotBe(Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+                .BrokerProvider.Should().NotBe(AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooReal);
         }
     }
 
@@ -78,7 +78,7 @@ public class EfStoreTests
         {
             new EfRiskSettingsStore(db2).GetCurrent()
                 .BrokerProvider.Should().Be(
-                    Shared.Contracts.Trading.BrokerProvider.InternalPaper,
+                    AiStockTrading.Shared.Contracts.Trading.BrokerProvider.InternalPaper,
                     "「読めない行は実弾」に倒れる移行は取り返しがつかない（FR-20 (3)）");
         }
     }
@@ -116,13 +116,13 @@ public class EfStoreTests
         var settings = new EfRiskSettingsStore(db2).GetCurrent();
 
         settings.Stage.Mode.Should().Be(
-            Shared.Contracts.Trading.BrokerProvider.InternalPaper,
+            AiStockTrading.Shared.Contracts.Trading.BrokerProvider.InternalPaper,
             "解決できない段階の既定発注先は内蔵 paper へ落とす（FR-20 (3)）");
-        settings.Stage.Mode.Should().NotBe(Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+        settings.Stage.Mode.Should().NotBe(AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooReal);
         // 統制値・ガード・発注先が巻き添えで失われていないこと。
         settings.Limits.MaxOpenPositions.Should().Be(TradingDefaults.CreateRiskLimits().MaxOpenPositions);
-        settings.Guard.EnabledProductTypes.Should().Contain(Shared.Contracts.Trading.ProductType.Cash);
-        settings.BrokerProvider.Should().Be(Shared.Contracts.Trading.BrokerProvider.InternalPaper);
+        settings.Guard.EnabledProductTypes.Should().Contain(AiStockTrading.Shared.Contracts.Trading.ProductType.Cash);
+        settings.BrokerProvider.Should().Be(AiStockTrading.Shared.Contracts.Trading.BrokerProvider.InternalPaper);
     }
 
     [Fact]

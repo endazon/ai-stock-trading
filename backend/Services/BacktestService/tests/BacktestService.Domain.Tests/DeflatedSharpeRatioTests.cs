@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: Deflated Sharpe Ratio。
 // 多重検定（試行数）と非正規性を補正した「真 Sharpe が正である確率」を検証する。

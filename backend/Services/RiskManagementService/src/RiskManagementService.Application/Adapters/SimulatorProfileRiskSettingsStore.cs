@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10, FR-12, FR-20, #257, IADR-0108 決定3: SIMULATE 限定のリスク上限プロファイルを**読み取り時**に適用する
 // デコレータ。内側のストア（永続化の権威・IADR-0012）はそのままで、返す設定を必要なだけ差し替える。

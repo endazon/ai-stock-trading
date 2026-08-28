@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016, #330, IADR-0133: 維持率割れによる自動縮小の対象となる信用建玉 1 件。
 // 対象は**信用建玉（信用買い）と空売り建玉**であり（UC-06 代替フロー）、現物は維持率の概念を持たないため

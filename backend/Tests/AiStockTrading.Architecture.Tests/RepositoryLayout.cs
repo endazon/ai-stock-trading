@@ -55,13 +55,21 @@ internal static class RepositoryLayout
     public static IReadOnlyList<DomainSourceArea> DomainSourceDirectories { get; } = BuildDomainSourceDirectories();
 
     /// <summary>
-    /// サービスディレクトリ名からサービス短縮名を導く（<c>BacktestService</c> → <c>Backtest</c>）。
-    /// 実測で名前空間 <c>AiStockTrading.&lt;Short&gt;.Domain</c> の <c>&lt;Short&gt;</c> と一致する。
+    /// NFR, IADR-0261: サービスの<b>ルート名前空間</b>の集合。<c>backend/Services</c> のディレクトリ名
+    /// （<c>BacktestService</c>）がそのままルート名前空間（<c>BacktestService.Domain</c> の第 1 セグメント）である
+    /// （基盤 MSP:IADR-0282 決定 3「ルート名前空間は <c>&lt;Name&gt;</c>」と同じ規則）。
+    /// <para>
+    /// <b>一覧を手で書かない。</b> 実ツリーから引くため、サービスが増減しても検査の母集合が自動で追随する。
+    /// 「末尾が <c>Service</c> の識別子」という形の判定は採らない —— <c>StageGateService</c> /
+    /// <c>RiskSettingsService</c> のような<b>クラス名</b>を名前空間の根と誤認する（実測で Domain のコメントに 3 件ある）。
+    /// </para>
     /// </summary>
-    public static string ServiceShortName(string serviceDirectoryName) =>
-        serviceDirectoryName.EndsWith("Service", StringComparison.Ordinal)
-            ? serviceDirectoryName[..^"Service".Length]
-            : serviceDirectoryName;
+    public static IReadOnlyList<string> ServiceNamespaceRoots { get; } =
+        Directory.EnumerateDirectories(Path.Combine(Root, "backend", "Services"))
+            .Select(Path.GetFileName)
+            .OfType<string>()
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
 
     private static IReadOnlyList<DomainSourceArea> BuildDomainSourceDirectories()
     {
@@ -70,7 +78,7 @@ internal static class RepositoryLayout
 
         foreach (var serviceDir in Directory.EnumerateDirectories(servicesRoot))
         {
-            var shortName = ServiceShortName(Path.GetFileName(serviceDir));
+            var namespaceRoot = Path.GetFileName(serviceDir);
 
             // 形 1（現行）: src/<Svc>Service.Domain/ ——「Domain 層のプロジェクト」のディレクトリ。
             var srcDir = Path.Combine(serviceDir, "src");
@@ -79,20 +87,20 @@ internal static class RepositoryLayout
                 foreach (var projectDir in Directory.EnumerateDirectories(srcDir))
                 {
                     if (!Path.GetFileName(projectDir).EndsWith(".Domain", StringComparison.Ordinal)) continue;
-                    Add(projectDir, shortName);
+                    Add(projectDir, namespaceRoot);
                 }
             }
 
             // 形 2（Vertical Slice 移行後）: <Svc>Service/Domain/ ——「Domain 層のフォルダ」。
-            Add(Path.Combine(serviceDir, "Domain"), shortName);
+            Add(Path.Combine(serviceDir, "Domain"), namespaceRoot);
         }
 
         return areas.Values.ToArray();
 
-        void Add(string directory, string shortName)
+        void Add(string directory, string namespaceRoot)
         {
             if (!Directory.Exists(directory)) return;
-            var area = new DomainSourceArea(Path.GetFullPath(directory), shortName);
+            var area = new DomainSourceArea(Path.GetFullPath(directory), namespaceRoot);
 
             // .cs を 1 つも含まない枠は数えない（空の枠で下限検査を水増しさせない）。
             if (area.SourceFiles.Count == 0) return;

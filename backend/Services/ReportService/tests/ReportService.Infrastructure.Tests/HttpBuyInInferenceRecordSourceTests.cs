@@ -1,11 +1,11 @@
 using System.Net;
 using System.Text;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
+using ReportService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-10, FR-06, FR-21, UC-06, ADR-0016 決定15, #463, IADR-0181:
 // 権威源（リスク管理の推定台帳）への s2s 照会を fake HttpMessageHandler で検証する（実ネットワーク不使用）。

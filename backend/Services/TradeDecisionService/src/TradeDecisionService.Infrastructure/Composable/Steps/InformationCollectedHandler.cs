@@ -1,13 +1,13 @@
 using System.Diagnostics;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
+using AppSvc = TradeDecisionService.Application.Services.TradeDecisionAppService;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+namespace TradeDecisionService.Infrastructure.Steps;
 
 // FR-02, UC-01, IADR-0023: 定時系統の合流点。情報収集の完了（InformationCollected）を購読し、監視銘柄（watchlist）を巡回して
 // 市場開場中のもののみ AI 判断を実行する。判断が成立（発注意図あり）した銘柄について TradeDecisionMade を発行する。

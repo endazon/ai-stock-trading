@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, #385, 06_daytrading-review §4.2, IADR-0150:
 // 稼働の観測から「その日の稼働分数」を積み、**カレンダーを持たないまま**算入可否を判定する規則を固定する。

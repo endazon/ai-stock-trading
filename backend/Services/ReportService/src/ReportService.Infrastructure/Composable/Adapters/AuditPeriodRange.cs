@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06, FR-11, #338, #381, IADR-0199 決定3: 監査台帳を期間で引くときの区間の作り方（純関数）。
 //

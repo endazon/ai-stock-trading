@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // FR-03: クールダウン（銘柄別最終トリガー時刻）ストアの EF 実装（(Symbol, Market) キー）。
 internal sealed class EfCooldownStore(MarketMonitorDbContext db) : ICooldownStore

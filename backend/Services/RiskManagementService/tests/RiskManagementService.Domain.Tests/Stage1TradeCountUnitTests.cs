@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3 / §4.3, IADR-0149:
 // Stage 1 の合格条件「最小取引件数 100 件」の**計上単位**を固定する。

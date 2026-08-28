@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 
-namespace AiStockTrading.OrderExecution.Application.Polling;
+namespace OrderExecutionService.Application.Polling;
 
 // #270, FR-05, FR-10, IADR-0113: 発注済み・非終端の注文をブローカへ照会し、約定の進捗・終端化を記録へ反映して
 // OrderExecuted を再発行する（＝統制の入力である取引台帳へ約定を届ける）。

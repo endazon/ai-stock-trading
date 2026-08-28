@@ -1,14 +1,14 @@
 using System.Collections.Concurrent;
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Application.State;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Application.State;
+using CostControlService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Application.Tests;
+namespace CostControlService.Application.Tests;
 
 // NFR（費用）, IADR-0027: 費用計上・累計・上方遷移検知・月跨ぎ・費用レビューを検証する。
 // #139, IADR-0065: 上限は供給元（設定サービス）で変わりうるため、変更がしきい値判定に効くことも併せて固定する。

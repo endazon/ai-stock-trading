@@ -1,10 +1,10 @@
-using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Application;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace BacktestService.Application.Tests;
 
 // FR-15, #208, IADR-0105: 実データ源から取得したバーのスナップショット（本番経路の IBarDataSource）。
 // 取得は 1 回・評価は純粋。正規化（重複排除・安定ソート）はここを単一情報源にする。

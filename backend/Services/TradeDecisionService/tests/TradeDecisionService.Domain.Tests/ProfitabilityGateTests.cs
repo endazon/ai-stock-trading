@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Domain.Tests;
+namespace TradeDecisionService.Domain.Tests;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（純関数）のテスト。
 // しきい値 = (往復費用 + 判断費用) × 最小期待利益倍率。想定利益 ≥ しきい値 → Viable。

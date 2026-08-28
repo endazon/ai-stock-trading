@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, FR-09, IADR-0085, #189: 撤退の非停止降格提案の通知重複排除ストアのインメモリ実装（ユニット試験・非 relational 用）。
 // 未記録時は null（未通知）を返す＝fail-safe。durable な永続は EF 実装（EfWithdrawalNotificationStore）が担う。

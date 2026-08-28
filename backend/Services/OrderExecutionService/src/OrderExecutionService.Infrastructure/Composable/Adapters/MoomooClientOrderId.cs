@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // #141, IADR-0092: DecisionId（Guid）を moomoo の remark（client order id相当）へ写す書式の単一情報源。
 //

@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-05, FR-10, FR-11, #292, IADR-0118: 発注執行が観測したブローカ建玉を購読し、取引台帳の射影と突き合わせる。
 //

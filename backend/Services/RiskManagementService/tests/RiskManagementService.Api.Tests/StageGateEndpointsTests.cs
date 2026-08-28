@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-20, UC-06, ADR-0008, IADR-0070: 段階ゲートエンドポイントの認可（OwnerOnly）・承認遷移・fail-safe 昇格・
 // 遷移履歴の永続化を検証する。各テストは専用ファクトリ（隔離 InMemory DB）で段階状態の相互干渉を避ける。

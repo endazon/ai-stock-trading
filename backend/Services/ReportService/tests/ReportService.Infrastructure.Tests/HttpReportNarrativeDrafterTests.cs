@@ -1,15 +1,15 @@
 using System.Net;
 using System.Text.Json;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06/16, IADR-0071 決定1: platform LLM ゲートウェイ POST /complete を呼ぶ実 LLM 散文ドラフトの写像とフェイルセーフを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。送信拒否/失敗/タイムアウト/空応答はプレースホルダ散文へ倒す。

@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.StageGate;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-20, FR-11, FR-09, UC-06, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバの結線を検証する。
 // 休場ガード・新規停止時のみ通知（冪等）・fail-safe 非発火・多重実行防止（逐次）を受け入れ基準へ写像する。

@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // FR-06/07, UC-03〜05, ADR-0003: 報告書エンドポイントの OwnerOnly 認可・ドラフト upsert・版番号付き冪等確定・
 // 確定済み日報方針照会・確定イベント発行を WebApplicationFactory で検証する。テストごとに独立 Factory（独立 InMemory DB）。

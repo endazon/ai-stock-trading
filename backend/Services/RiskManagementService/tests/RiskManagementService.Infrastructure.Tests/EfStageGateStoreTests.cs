@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, UC-06, IADR-0070: 段階ゲートの EF 永続化を InMemory DB で検証する（追記専用台帳・単一行実績）。
 public class EfStageGateStoreTests

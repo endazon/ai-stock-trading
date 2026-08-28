@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-16, 04_report-templates 日報 §2, IADR-0042: 取引履歴（全明細）＋取引詳細＋見送り判断のレンダリング（純関数）を fake データで検証する。
 public class TradeHistoryRendererTests

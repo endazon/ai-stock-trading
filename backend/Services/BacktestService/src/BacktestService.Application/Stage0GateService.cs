@@ -1,6 +1,6 @@
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Domain;
 
-namespace AiStockTrading.Backtest.Application;
+namespace BacktestService.Application;
 
 // FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定オーケストレーションの入力。
 // Slice A/B の集計・試行台帳・性能行列・カットオフ材料を束ねる。

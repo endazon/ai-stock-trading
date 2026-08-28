@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: Probability of Backtest Overfitting（CSCV）。
 // 「IS で最良の戦略が OOS で中央値以下に落ちる確率」を検証する。performance[block][strategy]。

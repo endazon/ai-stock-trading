@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-20, FR-13, UC-06, SC-02, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定4〜決定6:
 // `PUT /risk-controls/settings/stage1-minimum-trade-count` の検証。

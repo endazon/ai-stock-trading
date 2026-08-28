@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, #330, IADR-0133 決定1: 維持率判定の入力（ブローカー由来の実測値の束）。
 //

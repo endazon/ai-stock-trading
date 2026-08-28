@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, UC-06, IADR-0062 決定4: Bot が Risk の kill switch（OwnerOnly）を呼ぶための owner トークン配線。
 //

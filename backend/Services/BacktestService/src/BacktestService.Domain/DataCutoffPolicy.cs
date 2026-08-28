@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: LLM 学習カットオフ後データの検証（検証条件①）。
 // バックテストの全バーが LLM の学習カットオフより後であれば、LLM の記憶による汚染がないと判定する。

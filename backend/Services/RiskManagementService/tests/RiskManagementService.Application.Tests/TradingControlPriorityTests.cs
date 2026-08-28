@@ -1,13 +1,13 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, UC-06, ADR-0009, ADR-0003, #329 第 2 段階: 取引停止の 3 統制
 //（kill switch ＞ 日次損失ロックアウト ＞ 一時停止）の優先順位と共通不変条件。

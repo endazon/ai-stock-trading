@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0020 決定1: 情報源の 4 区分。区分は「無いと動かないもの」と「有れば良いもの」を分けるためにある。
 public enum SourceTier

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Application.Ports;
+namespace OrderExecutionService.Application.Ports;
 
 // #141, FR-05, IADR-0092: 発注時に DecisionId を「ブローカ側の client order id」として伝播できるブローカの capability。
 //

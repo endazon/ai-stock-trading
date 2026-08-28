@@ -5,7 +5,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.CostControl.Infrastructure</RootNamespace>
+    <RootNamespace>CostControlService.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

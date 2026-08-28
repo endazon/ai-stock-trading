@@ -1,6 +1,6 @@
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Domain;
 
-namespace AiStockTrading.Configuration.Client.Ports;
+namespace ConfigurationService.Client.Ports;
 
 // FR-17, IADR-0021/0063: バージョン付き全体前提条件の解決口。消費側サービス（費用統制 #139・損益集計・AI 判断・
 // リスク統制）はこのポートだけを見る（HTTP・キャッシュ・fail-safe は実装側の関心）。

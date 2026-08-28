@@ -1,7 +1,7 @@
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, IADR-0062 決定1: Bot の安全既定＝Gateway に接続しない no-op（IADR-0020 の LoggingNotificationSender と同型）。
 // 未設定・設定不備のときに実 Discord へ接続してコマンドを受け付けることがないようにする。

@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 
-namespace AiStockTrading.TradeDecision.Application.Adapters;
+namespace TradeDecisionService.Application.Adapters;
 
 // #337, IADR-0247: 既定の no-op（publish しない）。縮退制御が無効（予算未設定）の既定構成では
 // 縮退自体が起きないため、本実装が呼ばれることはない。実発行（PublishingScreeningReductionReporter）は

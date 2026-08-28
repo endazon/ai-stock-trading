@@ -1,11 +1,11 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
-using AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
+using CostControlService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, IADR-0027: 費用台帳 EF ストアの追記・月/カテゴリ別集計を InMemory DB で検証する。
 public class EfCostLedgerTests

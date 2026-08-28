@@ -1,4 +1,4 @@
-using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
+using ConfigurationService.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Wolverine;
 
-namespace AiStockTrading.Configuration.Api.Tests;
+namespace ConfigurationService.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、InMemory DB・
 // Wolverine の外部トランスポート無効化（AssumptionsChanged の発行は stub で記録され、Wolverine.Tracking で

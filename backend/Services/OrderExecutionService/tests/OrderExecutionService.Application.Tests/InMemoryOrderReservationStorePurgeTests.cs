@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // NFR（運用）, #137, FR-05, IADR-0059: 発注予約の保持期間パージ。
 //

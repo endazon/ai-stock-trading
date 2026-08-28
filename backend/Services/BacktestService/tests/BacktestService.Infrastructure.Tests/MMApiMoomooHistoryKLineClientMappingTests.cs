@@ -1,8 +1,8 @@
-using AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
+using BacktestService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Infrastructure.Tests;
+namespace BacktestService.Infrastructure.Tests;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: MMApiMoomooHistoryKLineClient の SDK 非依存な写像を単体検証する
 // （実 OpenD 不使用）。protobuf の組み立てそのものは live 検証に委ねる（発注側 MMApiMoomooTradeClientMappingTests と同方針）。

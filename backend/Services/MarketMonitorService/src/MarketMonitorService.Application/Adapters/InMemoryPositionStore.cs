@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
 
-namespace AiStockTrading.MarketMonitor.Application.Adapters;
+namespace MarketMonitorService.Application.Adapters;
 
 // FR-03, FR-10: 保有ポジションのインメモリ実装。実運用の供給はリスク管理（#12/#63 台帳）を照会する HttpPositionStore が担い、本実装はシード／テスト用に用いる。
 // 既定は空（保有なし＝損切り検知の対象なし）で安全側に倒す。

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Domain;
+namespace OrderExecutionService.Domain;
 
 // FR-10, UC-02, #331, IADR-0210: エントリー建玉を保護する逆指値レグの記録。
 // ProtectiveStopGuard の巡回対象（Active）の洗い出しと、再発注の冪等（Attempt ごとに決定的な

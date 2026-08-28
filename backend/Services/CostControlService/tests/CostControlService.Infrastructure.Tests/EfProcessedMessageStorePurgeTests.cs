@@ -1,9 +1,9 @@
-using AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+using CostControlService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（運用）, #137, IADR-0059: 重複排除ストアの保持期間パージ（EF 実装）を InMemory DB で検証する。
 // 検証の主眼は **述語**（cutoff より新しい行に触れないこと）。実 PostgreSQL 上の実行計画・大量行での

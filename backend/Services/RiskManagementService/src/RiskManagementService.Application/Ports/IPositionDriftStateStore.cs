@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-05, FR-09, FR-10, #305, IADR-0124: 建玉乖離の報告可否を決める追跡状態。**レプリカ間で共有する**。
 //

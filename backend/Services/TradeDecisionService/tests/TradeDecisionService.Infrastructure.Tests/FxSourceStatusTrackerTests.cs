@@ -1,9 +1,9 @@
 using AiStockTrading.Shared.Contracts.Events;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196 決定1: 「いつ発行するか」の判定。
 //

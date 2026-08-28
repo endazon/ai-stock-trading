@@ -1,7 +1,7 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
-using AiStockTrading.Notification.Infrastructure.Composable.Steps;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Infrastructure.Adapters;
+using NotificationService.Infrastructure.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;

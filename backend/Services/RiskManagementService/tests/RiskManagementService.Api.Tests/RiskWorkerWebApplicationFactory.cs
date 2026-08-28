@@ -1,4 +1,4 @@
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,9 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.RiskManagement.Infrastructure.Composable;
+using Composable = RiskManagementService.Infrastructure;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // WebApplicationFactory（platform Worker テスト準拠）。実 RabbitMQ/Postgres/Keycloak に依存せず、
 // InMemory DB・Wolverine の外部トランスポート無効化（ADR-0013 / IADR-0129 / #354）・TestAuthHandler へ

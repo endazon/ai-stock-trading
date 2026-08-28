@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-09, FR-16, 04_workflows/03_reporting-cycle, IADR-0116 決定4, #280:
 // Discord へ提示する要約の組み立て（純関数・決定的）。

@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, FR-08, ADR-0020 決定2-1: 「ニュース情報が欠測している」ことを**取引判断の文脈へ明示して渡す**。
 //

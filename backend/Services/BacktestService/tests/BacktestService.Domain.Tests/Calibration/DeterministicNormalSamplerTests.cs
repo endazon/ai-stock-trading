@@ -1,8 +1,8 @@
-using AiStockTrading.Backtest.Domain.Tests.Calibration;
+using BacktestService.Domain.Tests.Calibration;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008, #208, IADR-0110: 閾値較正に使う決定論的な正規乱数源。
 // 較正の数値は根拠として IADR に記録するため、実行のたびに変わってはならない。

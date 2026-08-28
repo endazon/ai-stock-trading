@@ -1,8 +1,8 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // NFR（費用）, IADR-0027/0034: 月次費用台帳の EF 実装（追記専用・専有 DB）。集計は月・カテゴリで絞って合算する。
 // 計上と当該月 LLM 累計の before/after 読み取りを、月単位の PostgreSQL アドバイザリロック（トランザクション内）で
@@ -64,7 +64,7 @@ internal sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
         return new LlmCostRecordOutcome(before, after);
     }
 
-    // 月キー "yyyy-MM"（常に CostControlService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
+    // 月キー "yyyy-MM"（常に CostControlAppService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
     // （複数レプリカでも同月は同キーで直列化）＝ string.GetHashCode（プロセス毎ランダム）は用いない。
     private static long AdvisoryKey(string month)
     {

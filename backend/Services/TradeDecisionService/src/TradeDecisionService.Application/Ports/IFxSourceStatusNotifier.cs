@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-10, FR-17, FR-09, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の状態を外へ知らせるポート。
 //

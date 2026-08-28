@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06: 報告書の種別（日報・週報・月報）。階層は 月報→週報→日報（BasedOn で上位方針を参照）。
 public enum ReportKind

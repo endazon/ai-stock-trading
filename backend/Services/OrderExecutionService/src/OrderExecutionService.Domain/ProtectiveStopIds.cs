@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace AiStockTrading.OrderExecution.Domain;
+namespace OrderExecutionService.Domain;
 
 // FR-10, #331, IADR-0210: 保護レグ（逆指値・手仕舞い）の DecisionId をエントリー DecisionId から
 // **決定的に**導出する。再送・再巡回で同じレグは同じ DecisionId になり、発注結果ストアの

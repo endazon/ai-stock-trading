@@ -1,7 +1,7 @@
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // FR-10, #331, IADR-0210 決定6: 保護逆指値レグの行モデル。EntryDecisionId 主キー（1 エントリー = 高々 1 保護。
 // 再発注は同キーの上書き＝最新試行のみを保持する）。ProtectiveStopGuard の巡回対象（State=Active）の権威。

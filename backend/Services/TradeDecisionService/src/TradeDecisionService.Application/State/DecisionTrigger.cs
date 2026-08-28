@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.State;
+namespace TradeDecisionService.Application.State;
 
 // FR-02, FR-03, IADR-0023: 判断の起点を一般化したトリガー。定時（Scheduled）と価格変動（PriceMovement）の 2 系統を
 // 同一の DecideAsync へ合流させる。価格文脈（Price/BaselinePrice/ChangeRatio）は PriceMovement 起点でのみ与えられる。

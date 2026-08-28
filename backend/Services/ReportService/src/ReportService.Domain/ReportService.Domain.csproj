@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Report.Domain</RootNamespace>
+    <RootNamespace>ReportService.Domain</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型（全体前提条件・概算費用関数・運用段階）。 -->

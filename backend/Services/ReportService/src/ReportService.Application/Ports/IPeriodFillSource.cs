@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, FR-16, IADR-0115 決定5, #280: 集計対象期間の約定を供給するポート。
 // 権威源はリスク管理サービスの取引台帳（approved_orders × trade_fills）であり、Database per Service（ADR-0001）を

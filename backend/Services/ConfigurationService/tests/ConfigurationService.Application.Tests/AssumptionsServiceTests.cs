@@ -1,12 +1,12 @@
-using AiStockTrading.Configuration.Application;
-using AiStockTrading.Configuration.Application.Adapters;
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.Services;
+using ConfigurationService.Application;
+using ConfigurationService.Application.Adapters;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.Services;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Application.Tests;
+namespace ConfigurationService.Application.Tests;
 
 // FR-17, UC-06: 前提条件の更新（Version 増分・アクター/理由必須・前後値履歴・楽観排他）を検証する。
 public class AssumptionsServiceTests

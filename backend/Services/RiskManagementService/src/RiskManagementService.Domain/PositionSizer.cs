@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10: 1取引あたりリスクに基づくポジションサイジング（ATR連動を想定した損切り幅入力）
 public static class PositionSizer

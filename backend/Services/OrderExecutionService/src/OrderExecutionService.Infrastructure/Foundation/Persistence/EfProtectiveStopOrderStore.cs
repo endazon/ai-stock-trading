@@ -1,7 +1,7 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // FR-10, #331, IADR-0210 決定6: 保護逆指値レグ記録ストアの EF 実装（発注執行の専有 DB）。
 // Save は EntryDecisionId で upsert（再発注＝試行の置き換え）。

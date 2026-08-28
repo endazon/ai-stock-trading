@@ -1,4 +1,4 @@
-namespace AiStockTrading.MarketMonitor.Domain;
+namespace MarketMonitorService.Domain;
 
 // FR-03, FR-13, SC-01 §2, #340, IADR-0155: 監視設定として設定できる値域。
 //

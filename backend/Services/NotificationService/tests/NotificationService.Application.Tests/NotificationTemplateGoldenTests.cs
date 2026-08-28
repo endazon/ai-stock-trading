@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Reflection;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-09, #341, IADR-0242: **通知テンプレートのゴールデンテスト（必須項目の欠落検知）。**
 //

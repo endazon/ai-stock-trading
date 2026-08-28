@@ -7,9 +7,9 @@ using AwesomeAssertions;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // FR-04: ホストが起動し（安全既定のプレースホルダで）ヘルスエンドポイントが応答することを検証する。
 public class HealthEndpointTests(HealthEndpointTests.Factory factory) : IClassFixture<HealthEndpointTests.Factory>

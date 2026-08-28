@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Infrastructure.Composable.Polling;
+using ReportService.Infrastructure.Polling;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, IADR-0115 決定6, #280: 自動生成の構成解釈を検証する。既定は安全側で、不正値は黙って壊れず既定へ倒す
 // （閉場前に生成する・巡回が暴走する・休場日の解釈が消える、といった事故を避ける）。

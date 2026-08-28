@@ -1,7 +1,7 @@
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-16, 04_report-templates, IADR-0116: 報告書で用いる金額表記（純関数）。
 // 本文テンプレート（ReportRenderer）と Discord 要約（ReportSummary）で同じ表記を使うため、

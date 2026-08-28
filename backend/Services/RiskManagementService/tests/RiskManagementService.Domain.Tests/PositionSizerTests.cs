@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%・ATR 連動サイジング）と連敗時縮小（既定: 5 連敗で半減）
 public class PositionSizerTests

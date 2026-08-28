@@ -1,13 +1,13 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-09, IADR-0020: Discord Webhook 実送信の POST 本文と非 2xx 例外化を fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 public class DiscordWebhookNotificationSenderTests

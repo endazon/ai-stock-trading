@@ -1,8 +1,8 @@
-using AiStockTrading.Configuration.Application.State;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Application.State;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Configuration.Application.Ports;
+namespace ConfigurationService.Application.Ports;
 
 // FR-17, IADR-0012/0021: 全体前提条件ストア（単一行＋Version）。未設定時は既定値をシードして返す。
 public interface IAssumptionsStore

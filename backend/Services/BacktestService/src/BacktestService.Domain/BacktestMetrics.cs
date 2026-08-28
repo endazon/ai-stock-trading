@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008: バックテスト結果の集計指標。Stage 0 合格判定（DSR・最大DD 許容）の入力。
 // DailyReturns は後段の過剰適合補正（DSR/PBO・Slice B）が消費する日次リターン列。

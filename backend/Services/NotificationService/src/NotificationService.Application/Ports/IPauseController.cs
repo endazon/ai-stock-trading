@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.Ports;
+namespace NotificationService.Application.Ports;
 
 // FR-14, UC-06, UC-07, ADR-0009, IADR-0075: リスク管理（#12）の一時停止/再開・状態照会エンドポイントの抽象。
 // 通知サービスは pause の状態を持たず、既存の Risk エンドポイントを呼ぶだけ（権威は Risk 側）。

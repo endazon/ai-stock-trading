@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 
-namespace AiStockTrading.OrderExecution.Application.Services;
+namespace OrderExecutionService.Application.Services;
 
 // FR-05, FR-19, FR-11, #154, IADR-0067: 発注済み注文の訂正・取消をブローカへ適用し、追記専用台帳へ永続化して
 // 対応するイベント（OrderModified/OrderCancelled）を組み立てる。

@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #141, FR-05, IADR-0074: EF 実装での滞留走査（FindStalledReserved）・解放（Release）のラウンドトリップ。
 // Reserved のみ・閾値より古いもののみを対象にし、終端行は決して削除しないことを検証する。

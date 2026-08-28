@@ -1,11 +1,11 @@
 using System.Reflection;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 /// <summary>
 /// FR-10, FR-17, #381, ADR-0022 <b>決定3</b>, IADR-0194:

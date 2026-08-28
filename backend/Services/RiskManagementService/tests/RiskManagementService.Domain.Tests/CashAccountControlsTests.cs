@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-19, FR-10, UC-06, #375, ADR-0021（決定2〜5）, IADR-0153: 現金口座（cash account）対応の判定。
 //

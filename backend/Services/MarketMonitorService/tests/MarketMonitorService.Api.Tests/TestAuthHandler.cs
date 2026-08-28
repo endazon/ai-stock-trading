@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // テスト用認証ハンドラ（リスク管理 Worker テスト準拠）。ロールはヘッダ "X-Test-Roles" で指定する。
 //   - ヘッダ無し → 未認証（NoResult）→ OwnerOnly は 401

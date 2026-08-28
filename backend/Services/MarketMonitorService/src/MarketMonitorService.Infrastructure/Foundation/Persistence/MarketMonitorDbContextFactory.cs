@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // IADR-0012 踏襲: 設計時（dotnet ef migrations）用の DbContext ファクトリ。
 // マイグレーション生成が Program.cs の実行に依存しないようにする。

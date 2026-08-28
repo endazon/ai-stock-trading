@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, FR-11, SC-03, UC-06, #465, ADR-0027, IADR-0183: 借株料の日次計上の EF 実装。
 //

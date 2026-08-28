@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Polling;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Polling;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Infrastructure.Adapters;
+using OrderExecutionService.Infrastructure.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -19,7 +19,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングの定期実行。終端化・進捗の OrderExecuted 発行と、
 // 無効時に一切走査しないことを Wolverine のテストハーネス（Wolverine.Tracking）で検証する

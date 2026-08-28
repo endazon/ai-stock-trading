@@ -1,5 +1,5 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // FR-08, IADR-0069 決定 4: KnowledgeBase:Documents:BaseUrl の有無で IKnowledgeBaseSink が安全既定
 // （Logging＝no-op）／実 KB 保存（KnowledgeBaseWriterSink）に切り替わることを検証する。既定は現行挙動を保持する。

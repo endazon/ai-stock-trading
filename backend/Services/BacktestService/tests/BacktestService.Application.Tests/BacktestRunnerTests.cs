@@ -1,11 +1,11 @@
-using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Application;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace BacktestService.Application.Tests;
 
 // FR-15, IADR-0043: 過去データ供給の抽象（IBarDataSource）と PIT ユニバースでの生存者バイアス排除を検証する。
 public class BacktestRunnerTests

@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, FR-19, UC-06, ADR-0016: 空売り専用統制値の集約（設定ストア由来）。
 //

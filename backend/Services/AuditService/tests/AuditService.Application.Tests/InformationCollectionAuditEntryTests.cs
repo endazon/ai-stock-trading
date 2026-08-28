@@ -1,10 +1,10 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Services;
+using AuditService.Application.Adapters;
+using AuditService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-01, FR-11, #336, ADR-0020 決定2〜4: 情報収集の縮退・回復・一般 Web 発動の台帳写像と、
 // **月次の期間集計へ届くこと**（#336 受け入れ基準③後段）。

@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Domain.Tests;
+namespace TradeDecisionService.Domain.Tests;
 
 // FR-04, FR-11: LLM 構造化出力の解析（不正は Hold へ倒す安全側）の検証。
 public class TradeDecisionParserTests

@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, UC-02, #331, IADR-0210 決定2/3: 保護レグ（逆指値・成行手仕舞い）の決済 Intent を
 // 取引台帳の承認行へ結線するハンドラの検証。承認行が無いとレグの約定（OrderExecuted）を

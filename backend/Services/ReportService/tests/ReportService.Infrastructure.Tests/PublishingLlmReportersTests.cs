@@ -1,5 +1,5 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
@@ -14,7 +14,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-04, FR-06, FR-09, FR-16, NFR（費用）, ADR-0017 決定4-(2)/(3), #335, #347, IADR-0217/0219:
 // 報告書サービスの**発行アダプタ**。可視化 3 経路のうち②通知・③台帳と、費用実績の供給は

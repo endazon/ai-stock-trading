@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-21, FR-10, FR-06, UC-06, ADR-0016 決定15, #463, IADR-0181:
 // **ブローカ建玉の観測が到達した事実を、期間で判定できる形で記録する。**

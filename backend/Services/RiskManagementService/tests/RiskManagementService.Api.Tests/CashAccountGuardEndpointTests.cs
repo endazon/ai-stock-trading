@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-19, UC-06, SC-02, #375, ADR-0021 決定3/決定4-4, IADR-0153:
 // 取引ガード更新エンドポイント（`PUT /risk-controls/settings/guard`）における口座種別の扱い。

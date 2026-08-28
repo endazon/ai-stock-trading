@@ -1,12 +1,12 @@
-using AiStockTrading.Configuration.Client.Adapters;
-using AiStockTrading.Configuration.Client.Ports;
+using ConfigurationService.Client.Adapters;
+using ConfigurationService.Client.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Configuration.Client.Foundation.Extensions;
+namespace ConfigurationService.Client.Extensions;
 
 // FR-17, IADR-0063 決定 3/6: バージョン付き全体前提条件の解決を消費側サービスへ 1 行で配線する。
 //

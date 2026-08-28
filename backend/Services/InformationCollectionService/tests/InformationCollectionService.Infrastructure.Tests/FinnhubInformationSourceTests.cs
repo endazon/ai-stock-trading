@@ -1,13 +1,13 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004: Finnhub 取得アダプタの応答写像・失敗スキップを fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 // IADR-0068: HTTP は共有の FinnhubQuoteClient へ抽出した。本テストは情報収集側の写像（high/low/prevClose を含む

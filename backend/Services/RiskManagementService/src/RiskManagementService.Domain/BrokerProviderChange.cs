@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 /// <summary>
 /// FR-20, FR-13, SC-02, #334, IADR-0141: 発注先（Broker Provider）の変更要求を受理してよいかの判定（純関数）。

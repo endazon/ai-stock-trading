@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, IADR-0070: 段階遷移台帳のインメモリ実装（ユニット試験・非 relational 用）。EF 実装（EfStageGateStore）は
 // Worker 側で差し替える。Append は純ドメイン StageGateLedger.Append の追記整合（遷移元＝現在段階・連番）を用いる。

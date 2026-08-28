@@ -1,6 +1,6 @@
-using AiStockTrading.Configuration.Client.Adapters;
-using AiStockTrading.Configuration.Client.Foundation.Extensions;
-using AiStockTrading.Configuration.Client.Ports;
+using ConfigurationService.Client.Adapters;
+using ConfigurationService.Client.Extensions;
+using ConfigurationService.Client.Ports;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Client.Tests;
+namespace ConfigurationService.Client.Tests;
 
 // FR-17, IADR-0063 決定 6: 消費側の 1 行配線（AddAiStockTradingAssumptions）の安全既定を検証する。
 // BaseUrl 未設定なら HTTP を構築せず既定プロバイダ（外部接続なし）＝既定ビルド/CI が緑であること。

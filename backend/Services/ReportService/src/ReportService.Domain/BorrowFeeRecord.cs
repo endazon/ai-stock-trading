@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-16, #338, ADR-0016 決定15, ADR-0027 決定1・決定4, 04_report-templates 月報 §6.1 / 日報 §4:
 // 当期間の借株料の記録（空売りの記録の素材）。

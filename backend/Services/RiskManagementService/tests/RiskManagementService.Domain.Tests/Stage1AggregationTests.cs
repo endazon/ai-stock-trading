@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-12, SC-03, INDEX 決定 46, #334, IADR-0142:
 // Stage 1 の合格集計から**内蔵 paper を構造的に排除する**ことの検証。

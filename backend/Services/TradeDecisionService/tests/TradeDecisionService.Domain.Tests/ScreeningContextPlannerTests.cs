@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Domain.Tests;
+namespace TradeDecisionService.Domain.Tests;
 
 // FR-02, FR-04, ADR-0003, #337, IADR-0247: スクリーニング入力の縮退順序（① 銘柄分割 → ② RAG 削除 →
 // ③ ニュース/開示を古い順・関連度の低い順に削除）の検証。

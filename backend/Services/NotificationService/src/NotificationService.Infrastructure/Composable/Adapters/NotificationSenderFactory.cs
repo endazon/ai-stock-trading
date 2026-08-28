@@ -1,7 +1,7 @@
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-09, IADR-0020: 構成 Notifications:Provider による送信手段の選択。安全既定は no-op（外部送信しない）。
 // discord-webhook 指定でも WebhookUrl 未設定なら no-op へフォールバックし警告する（設定不備で実送信を試みない）。

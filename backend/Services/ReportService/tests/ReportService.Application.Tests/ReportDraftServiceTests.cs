@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06/07/16, IADR-0032: 報告書ドラフト生成のオーケストレーション（数値集計→散文ドラフト→テンプレート組み立て・日報/週報/月報）を検証する。
 public class ReportDraftServiceTests

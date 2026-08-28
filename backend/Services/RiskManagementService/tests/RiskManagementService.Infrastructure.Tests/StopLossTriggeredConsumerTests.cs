@@ -1,4 +1,4 @@
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -9,7 +9,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, FR-03, UC-02, #331, IADR-0210 決定5: 損切りの実行機構はブローカー側逆指値へ一本化された
 // （planning#88 裁定）。StopLossTriggered の購読は**検知の記録のみ**であり、

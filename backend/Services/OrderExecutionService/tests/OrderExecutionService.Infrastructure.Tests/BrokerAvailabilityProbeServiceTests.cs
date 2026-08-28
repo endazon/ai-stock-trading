@@ -1,5 +1,5 @@
-using AiStockTrading.OrderExecution.Application.Availability;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
+using OrderExecutionService.Application.Availability;
+using OrderExecutionService.Infrastructure.Availability;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -15,7 +15,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150 決定1: ブローカ稼働の定期観測。
 // 中核の契約は「**到達できたときだけ発行する**」——沈黙が「稼働していない」を意味する（fail-safe）。

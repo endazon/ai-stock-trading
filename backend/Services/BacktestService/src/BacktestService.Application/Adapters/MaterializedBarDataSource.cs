@@ -1,7 +1,7 @@
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Application;
+namespace BacktestService.Application;
 
 // FR-15, #208, IADR-0105: 実過去データ源から取得済みのバーを IBarDataSource として供給するスナップショット（本番経路）。
 //

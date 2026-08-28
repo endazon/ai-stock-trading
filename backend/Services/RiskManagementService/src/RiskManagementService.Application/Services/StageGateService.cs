@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-20, FR-15, UC-06, ADR-0008, IADR-0041/0070: 段階ゲートの遷移管理（承認による昇格・差し戻し）を運用系へ結線する。
 // 純ドメイン StageGate（承認ゲート・撤退評価）を、永続化台帳（IStageGateStore）と段階別実績（IStagePerformanceStore）、

@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-07, UC-03〜05, ADR-0003, IADR-0071 決定2: 無応答時の既定動作（純関数・決定的）。
 // 翌営業日開場（deadline）までに提示済みドラフトへの応答（承認）が無い場合の挙動を安全側で定義する。

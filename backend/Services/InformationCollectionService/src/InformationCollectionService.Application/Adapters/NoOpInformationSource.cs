@@ -1,7 +1,7 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
 
-namespace AiStockTrading.InformationCollection.Application.Adapters;
+namespace InformationCollectionService.Application.Adapters;
 
 // FR-01, IADR-0022: 何も取得しない安全既定の情報源。外部 API に接続しない（費用/レート違反を起こさない）。
 // 実情報源は構成で明示有効化する。

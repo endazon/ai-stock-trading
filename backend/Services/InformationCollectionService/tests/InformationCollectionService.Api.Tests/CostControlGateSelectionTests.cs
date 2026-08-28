@@ -1,5 +1,5 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // NFR（費用）, IADR-0031: CostControl:BaseUrl の有無で ICostControlGate が安全既定（プレースホルダ・Normal）/
 // 同期照会（Http）に切り替わることを検証する。選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。

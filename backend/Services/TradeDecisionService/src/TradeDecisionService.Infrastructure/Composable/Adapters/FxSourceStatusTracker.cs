@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-10, FR-17, #381, ADR-0022 決定2・決定5, IADR-0196 決定1: 「いつ発行すべきか」だけを決める純粋な判定器。
 //

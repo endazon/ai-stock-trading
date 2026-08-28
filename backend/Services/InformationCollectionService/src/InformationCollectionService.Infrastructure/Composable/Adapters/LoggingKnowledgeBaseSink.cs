@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, FR-08, IADR-0022: 既定の安全 KB シンク。実 platform KB に保存せずログに出力するだけ（no-op）。
 // 実 KB 取り込み（FR-08・#18）は構成有効化で差し替える。

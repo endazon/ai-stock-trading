@@ -1,5 +1,5 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.MarketData;
+namespace RiskManagementService.Infrastructure.MarketData;
 
 // FR-10, #81, IADR-0066: 保有建玉の現在値を定期的に補充して QuoteCache へ入れる。判定の同期経路
 // （OrderScreeningService → PortfolioSnapshotBuilder → IPortfolioStateProvider.GetCurrent）から市況取得の

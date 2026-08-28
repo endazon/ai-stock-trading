@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, UC-06, ADR-0009, ADR-0016, ADR-0018, #329, IADR-0130:
 // 金額系の統制上限 3 値（1 注文 equity の 25% / 1 日 equity の 150% / 保有建玉数 3）の網羅。

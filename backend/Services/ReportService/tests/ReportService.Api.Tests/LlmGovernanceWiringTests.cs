@@ -1,12 +1,11 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // FR-04, FR-06, FR-09, FR-16, NFR（費用）, ADR-0017 決定4, #335, #347, IADR-0217/0219:
 // フォールバック発火の可視化（②通知・③台帳）と報告書生成費用の計上が、**composition root で

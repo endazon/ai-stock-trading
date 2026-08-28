@@ -1,10 +1,10 @@
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.TradeDecision.Application.Ports;
+using RiskManagementService.Domain;
+using TradeDecisionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-04, FR-10, IADR-0029: サイジング文脈をリスク管理（#12）の GET /risk-controls/sizing-context から同期照会する。
 // 未取得・非 2xx・例外・タイムアウト・不正応答は残枠 0 の安全既定（availableCapital 0 → 数量 0 → 見送り＝取引しない）に倒す。

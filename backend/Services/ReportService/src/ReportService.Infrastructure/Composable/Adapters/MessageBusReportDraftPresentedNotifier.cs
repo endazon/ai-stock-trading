@@ -1,9 +1,9 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06/07/09, IADR-0116 決定1/2, #280: 提示（確定依頼）を ReportDraftPresented としてバスへ発行する。
 // 通知サービスが購読して Discord へ投稿し、監査サービスが中央台帳へ集約する。

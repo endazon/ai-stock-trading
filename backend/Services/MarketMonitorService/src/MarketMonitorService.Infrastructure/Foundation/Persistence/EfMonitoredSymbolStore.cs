@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // FR-03, FR-13, IADR-0012 踏襲: 監視設定ストアの EF 実装。単一行 JSON＋Version 楽観排他。
 // 未設定時は MonitorDefaults をシードして返す。

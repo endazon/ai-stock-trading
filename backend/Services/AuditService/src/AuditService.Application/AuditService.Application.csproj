@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Audit.Application</RootNamespace>
+    <RootNamespace>AuditService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- FR-11: 全ドメインイベントを購読・正規化するため共有イベント契約を参照する（監査に固有 Domain 層は持たない）。 -->

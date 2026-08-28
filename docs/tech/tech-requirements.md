@@ -95,10 +95,15 @@ backend/Services/<Svc>/
 | Tests | 新: `Services/<Name>/Tests/<Name>.Tests.csproj`（サービスにつき 1）／旧: `Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,Integration}.Tests`（実測。`PlanConformance.Tests` は `docs/tests/README.md` に記述があるが `backend/Tests/` に実体は無い。VSA 移行とは独立した既存の齟齬であり、本書はこの行を実測に合わせるに留め、`docs/tests/README.md` 側の是正は別途起票する） |
 | （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。移行に伴い呼び出し元の `Infrastructure/ExternalServices/` へ吸収予定 |
 
-- 名前空間・アセンブリ名は当面 `AiStockTrading.<Short>.<Layer>[.<下位階層>]` のまま変えない
-  （`<Short>` = サービス名から接尾辞 `Service` を除いたもの。構造の再編と名前空間の改名は別の波に分ける）。
-  完全整合（基盤と同じ規則でルート名前空間 `<Name>Service` へ揃える）は独立した後続波として方針は決まっているが、
-  本書はその実施前の状態を記す。
+- **サービスのルート名前空間は基盤と同じ規則で `<Name>Service` である**（`RiskManagementService.Domain` /
+  `AuditService.Infrastructure.Persistence`）。`.Foundation` / `.Composable` の名前空間セグメントは持たない
+  （**フォルダとしての `Foundation/` `Composable/` は移送波まで残る**——名前空間とフォルダは独立に動かせる）。
+  **アセンブリ名・プロジェクト名は変えていない**（`RiskManagementService.Domain.csproj` のまま）。
+- **共有物の名前空間は `AiStockTrading.Shared.*` / `AiStockTrading.TestSupport.*` のまま据え置く**
+  （横断テストの `AiStockTrading.Architecture.Tests` / `AiStockTrading.IntegrationTests` / `AiStockTrading.Bff.Endpoints` も同じ）。
+  基盤も `Platform.Shared.*` を据え置いている。
+- サービスのルート名前空間と同名だったアプリケーションサービス 6 クラスは `<Svc>AppService` へ改名した
+  （同名だと、そのクラスが可視な場所から修飾名 `<Svc>Service.Domain.X` を書いたときにコンパイルできない）。
 - **層の依存規律は csproj の静的解析（旧構成）とソース走査（新構成）を二重化して機械的に強制する**
   （`backend/Tests/AiStockTrading.Architecture.Tests`）。旧構成側の検査は (1) `Domain` の `PackageReference` が
   0 件 (2) `ProjectReference` が許可リスト内 (3) 推移閉包上のすべてのプロジェクトも `PackageReference` 0 件

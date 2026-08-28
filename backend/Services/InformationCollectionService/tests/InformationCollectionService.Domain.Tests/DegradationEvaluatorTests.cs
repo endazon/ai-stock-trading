@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0020 決定2・決定3: **区分 × 欠測の判定テーブル**（#336 受け入れ基準①）。
 //

@@ -1,8 +1,8 @@
 using System.Globalization;
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
-using AiStockTrading.CostControl.Infrastructure.Composable.Steps;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
+using CostControlService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TestSupport.Messaging;
@@ -14,9 +14,9 @@ using Wolverine;
 using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, 05_trading-assumptions §6.1, #347, IADR-0218:
 // **月次 LLM 費用上限の対象範囲の判別**（否定形が主眼）。

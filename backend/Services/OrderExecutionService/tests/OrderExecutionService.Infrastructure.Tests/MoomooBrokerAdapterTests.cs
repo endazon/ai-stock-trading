@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #13, FR-05, ADR-0002, IADR-0016: moomoo アダプタの写像・状態変換・SIMULATE 限定・fail-safe を fake client で検証する
 // （実 OpenD 不使用）。実結合（MMApiMoomooTradeClient）は live 検証。
@@ -141,13 +141,13 @@ public class MoomooBrokerAdapterTests
     {
         var client = new FakeClient
         {
-            ThrowOnPlace = () => new Shared.Contracts.Ports.BrokerUnavailableException("OpenD 接続不可"),
+            ThrowOnPlace = () => new AiStockTrading.Shared.Contracts.Ports.BrokerUnavailableException("OpenD 接続不可"),
         };
         var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
 
         var act = async () => await adapter.PlaceOrderAsync(Intent());
 
-        await act.Should().ThrowAsync<Shared.Contracts.Ports.BrokerUnavailableException>(
+        await act.Should().ThrowAsync<AiStockTrading.Shared.Contracts.Ports.BrokerUnavailableException>(
             "見送り（キューイングせず破棄）は呼び出し側が行う。Rejected にすると証券会社拒否の件数へ混入する");
     }
 
@@ -218,14 +218,14 @@ public class MoomooBrokerAdapterTests
         var cause = new TimeoutException("接続応答なし（テスト）");
         var client = new FakeClient
         {
-            ThrowOnPlace = () => new Shared.Contracts.Ports.BrokerUnavailableException(
+            ThrowOnPlace = () => new AiStockTrading.Shared.Contracts.Ports.BrokerUnavailableException(
                 "OpenD への接続を確立できませんでした（未発注）。", cause),
         };
         var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
 
         var act = async () => await adapter.PlaceOrderAsync(Intent());
 
-        var thrown = await act.Should().ThrowAsync<Shared.Contracts.Ports.BrokerUnavailableException>();
+        var thrown = await act.Should().ThrowAsync<AiStockTrading.Shared.Contracts.Ports.BrokerUnavailableException>();
         thrown.Which.InnerException.Should().BeSameAs(cause);
     }
 

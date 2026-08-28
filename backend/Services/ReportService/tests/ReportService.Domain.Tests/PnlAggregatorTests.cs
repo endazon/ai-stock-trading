@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-16, 04_report-templates 数値定義, IADR-0025: 損益集計（実現損益・費用・税・評価損益）を検証する。
 public class PnlAggregatorTests

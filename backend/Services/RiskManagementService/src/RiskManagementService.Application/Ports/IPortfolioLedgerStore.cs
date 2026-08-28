@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-10, FR-05, FR-11, IADR-0018: 取引台帳。承認済み注文の Intent（銘柄・方向・建玉効果）を DecisionId で保持し、
 // OrderExecuted の約定を OrderId で記録して DecisionId で相関する。GetFills は相関済みの LedgerFill 列（射影入力）を返す。

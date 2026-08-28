@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // #13 Slice A, FR-05, FR-16: 発注結果（注文実体＋スリッページ）の行モデル。月報・ポジション射影のデータ源。
 // ADR-0001 の専有 DB に配置する。OrderId を主キーとする（ブローカ注文 ID）。

@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-10, UC-02, #331, IADR-0210 決定2/3: 発注執行が発注した保護レグ（逆指値・成行手仕舞い）の
 // 決済 Intent を取引台帳の承認行へ結線するハンドラ群。

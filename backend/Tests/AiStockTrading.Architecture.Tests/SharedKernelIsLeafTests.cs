@@ -61,7 +61,7 @@ public class SharedKernelIsLeafTests
     // 否定形: 許可判定そのものが load-bearing であること。
     // 実ツリーの違反は 0 件であるため、判定が常に「違反なし」を返すよう壊れても上の検査は緑のままになる。
     [Theory]
-    [InlineData("AiStockTrading.RiskManagement.Domain")]
+    [InlineData("RiskManagementService.Domain")]
     [InlineData("ConfigurationService.Domain")]
     [InlineData("AiStockTrading.Shared.Infrastructure")]
     [InlineData("AiStockTrading.Shared.KnowledgeBase")]

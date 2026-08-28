@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06, FR-09, FR-11, ADR-0017 決定4-(2)/(3), #335, IADR-0217:
 // 報告書生成でピン以外のモデルが応答した事実を publish する。NotificationService が警告として通知し（②）、

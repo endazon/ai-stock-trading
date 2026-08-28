@@ -1,8 +1,8 @@
-using AiStockTrading.Backtest.Domain.Tests.Calibration;
+using BacktestService.Domain.Tests.Calibration;
 // NFR, IADR-0001, #352: xUnit v3 では ITestOutputHelper が Xunit 名前空間へ移り、Xunit.Abstractions は無い。
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-20, ADR-0008, #208, IADR-0110: IADR-0110 に記録した較正表を再生成する実行。
 //

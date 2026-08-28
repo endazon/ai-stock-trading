@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Domain.Tests;
+namespace TradeDecisionService.Domain.Tests;
 
 // FR-04, FR-11, ADR-0003, IADR-0039: 多数決の集約（純関数）の検証。
 // 最多得票の action を採り、タイ・空は安全側 Hold。数値は勝利票の参照価格中央値を持つ代表票を一体採用。

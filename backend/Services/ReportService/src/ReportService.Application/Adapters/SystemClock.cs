@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-07: システム時刻に基づく IClock。確定日時に用いる。
 public sealed class SystemClock : IClock

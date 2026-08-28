@@ -1,7 +1,7 @@
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+namespace InformationCollectionService.Infrastructure.Polling;
 
 // FR-01, FR-09, FR-11, #336, ADR-0020 決定2-3: 「いつイベントを発行すべきか」だけを決める純粋な判定器。
 //

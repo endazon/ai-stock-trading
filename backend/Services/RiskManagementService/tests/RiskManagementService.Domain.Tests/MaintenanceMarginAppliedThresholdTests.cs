@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, UC-06, ADR-0016 決定7（2026-08-07 追記）, #420, IADR-0160:
 // **維持率の適用閾値は口座単位**（建玉ごとの閾値の最大値）であり、自動縮小（MaintenanceMarginReducer）と

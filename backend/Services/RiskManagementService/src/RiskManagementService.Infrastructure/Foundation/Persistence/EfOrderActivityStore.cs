@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-19, #154, IADR-0067: 注文アクティビティ射影ストアの EF 実装（Risk 専有 DB）。承認で行を作り、
 // 約定・訂正・取消で DecisionId 相関の既存行を更新する。相関する承認が無いイベントは無視する（射影の一貫性）。

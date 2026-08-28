@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, IADR-0044: 標準正規分布の CDF / 逆 CDF（外部依存なしの純実装）。DSR の算出に用いる。
 // CDF は Abramowitz-Stegun 7.1.26 の erf 近似（誤差 ~1.5e-7）、逆 CDF は Acklam のアルゴリズム（相対誤差 ~1.15e-9）。

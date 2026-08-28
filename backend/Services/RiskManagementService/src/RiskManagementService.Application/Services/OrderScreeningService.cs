@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-19, FR-20, UC-01, UC-02, ADR-0003: 取引判断（TradeDecisionMade）を発注前に決定的に検証し、
 // OrderApproved / OrderRejected を生成する。判定コア RiskEvaluator（ステートレス）に、ホストが保持する

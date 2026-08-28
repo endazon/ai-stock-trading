@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, UC-06, UC-07, ADR-0009, IADR-0075: リスク管理（#12）の一時停止/再開・状態照会エンドポイントを呼ぶだけの
 // アダプタ。通知サービスは pause の状態を持たない（権威は Risk 側）。kill switch（HttpKillSwitchController）と同型。

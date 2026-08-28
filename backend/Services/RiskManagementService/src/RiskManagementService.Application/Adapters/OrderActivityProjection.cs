@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-19, #154, IADR-0067: 注文アクティビティ射影の状態遷移ロジック（インメモリ・EF で共有する純ヘルパ）。
 // 承認で行を作り、約定・訂正・取消で更新する。銘柄・方向は承認だけが持つため、それを起点に DecisionId で相関する。

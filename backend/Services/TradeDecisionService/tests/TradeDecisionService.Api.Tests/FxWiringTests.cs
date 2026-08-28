@@ -2,8 +2,8 @@ using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using ShimIntrospection = AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection.IntrospectionExtensions;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,9 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // FR-10, FR-17, #257, IADR-0107: 為替レート源の配線を固定する。配線が外れると、構成で有効化したつもりのレート源が
 // 黙って no-op のままになり、外貨建て銘柄が恒久的に見送られる（＝症状が「取引しない」なので気づきにくい）。

@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, FR-12, #386, IADR-0149: Stage 1 の約定観測ログのインメモリ実装（ユニット試験・ローカル実行用）。
 // 本番配線は EfStage1FillObservationStore。未記録＝0 件＝昇格しない安全側。

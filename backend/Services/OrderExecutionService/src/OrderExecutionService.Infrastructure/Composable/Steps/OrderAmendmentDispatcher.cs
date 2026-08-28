@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Services;
+using OrderExecutionService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
+namespace OrderExecutionService.Infrastructure.Steps;
 
 // FR-05, FR-19, FR-11, #154, IADR-0067: 注文の訂正・取消を適用・永続化し、結果を発行する。
 // Application 層（OrderAmendmentService）はメッセージ基盤を参照しない既存のレイヤリングを保つため、

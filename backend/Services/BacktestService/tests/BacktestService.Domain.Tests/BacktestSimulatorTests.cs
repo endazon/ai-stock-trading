@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, 06_daytrading-review §3.2, IADR-0043: 決定的シミュレーション。ルックアヘッド排除
 // （判断=当日終値まで／約定=翌営業日始値）とコスト計上・時価評価を検証する。

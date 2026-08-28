@@ -1,6 +1,6 @@
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 
-namespace AiStockTrading.InformationCollection.Application.State;
+namespace InformationCollectionService.Application.State;
 
 // FR-01: 情報源が返す生の取得アイテム（未正規化・未サニタイズ）。収集サービスが許可リスト選別→正規化→サニタイズする。
 public sealed record RawInformationItem(

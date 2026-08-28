@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain.Manipulation;
+namespace RiskManagementService.Domain.Manipulation;
 
 // FR-19, IADR-0040: 相場操縦とみなされ得る発注パターンのシグナル種別（計画書 06_daytrading-review §2.3 の禁止対象）。
 public enum ManipulationSignal

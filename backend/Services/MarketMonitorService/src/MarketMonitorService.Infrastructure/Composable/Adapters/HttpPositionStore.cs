@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Composable.Adapters;
+namespace MarketMonitorService.Infrastructure.Adapters;
 
 // FR-03, FR-10, IADR-0030: 保有ポジションをリスク管理（#12・#63 台帳）の GET /risk-controls/open-positions から同期照会する。
 // 未取得・非 2xx・例外・タイムアウト・不正応答は空列の安全既定（＝損切り検知対象なし）に倒す。

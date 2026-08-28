@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, ADR-0008, 06_daytrading-review §4: 段階ゲートの合格・撤退基準を評価するための観測実績。
 // FR-15 バックテスト verdict・実DD・統制違反数・スリッページ/費用実績は別コンポーネント（後続）で

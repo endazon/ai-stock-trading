@@ -1,7 +1,7 @@
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
 
-namespace AiStockTrading.Configuration.Client.Tests;
+namespace ConfigurationService.Client.Tests;
 
 // IADR-0063 決定 4: キャッシュの TTL 失効を決定的に検証するための可変時刻（PlatformShim.Tests の同名テストダブルに倣う）。
 internal sealed class MutableTimeProvider : TimeProvider

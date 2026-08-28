@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Ports;
+namespace OrderExecutionService.Application.Ports;
 
 // #131, FR-05, IADR-0057: 発注の3相（予約 → 発注 → 確定）における予約の状態。
 public enum OrderDispatchState

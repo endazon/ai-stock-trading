@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-01, FR-02, FR-10, ADR-0020, #337, IADR-0249: 縮退状態のプロセス内保持（カテゴリ集合）。
 //

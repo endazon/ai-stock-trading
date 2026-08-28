@@ -1,6 +1,6 @@
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.State;
 
-namespace AiStockTrading.Audit.Application.Ports;
+namespace AuditService.Application.Ports;
 
 // FR-11, UC-07, IADR-0019: 監査台帳（追記専用）。Id（=MessageId）で冪等。相関・期間で照会する。
 public interface IAuditEventStore

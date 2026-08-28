@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Application.Adapters;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+using InformationCollectionService.Application.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.Messaging;
@@ -16,9 +16,9 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
+using AppSvc = InformationCollectionService.Application.Services.InformationCollectionAppService;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, FR-02: 1 巡回で収集→保存し、収集があれば InformationCollected を発行することを検証する。
 //

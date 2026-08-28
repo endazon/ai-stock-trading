@@ -1,8 +1,8 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, FR-10, FR-17, UC-06, #381, ADR-0022 決定2・決定5, IADR-0196 決定2・決定3: 期間内の
 // 為替の情報源の状態（フォールバックの発生・復帰・鮮度警告）を供給するポート。

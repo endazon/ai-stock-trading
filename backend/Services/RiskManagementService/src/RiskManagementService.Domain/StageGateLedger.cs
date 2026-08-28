@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, IADR-0041: 段階遷移履歴の append-only 台帳（純関数・不変）。
 // 現在段階・次シーケンスを履歴の畳み込み（fold）で導出し、「遷移履歴が監査できる」を満たす。

@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, #292, IADR-0117: 処理中（承認済み・未約定）の決済数量。Application 側の
 // PortfolioLedgerInFlightCloseTests（InMemory 実装）と同一の観点を EF 実装でも固定し、両実装の乖離を検知する。

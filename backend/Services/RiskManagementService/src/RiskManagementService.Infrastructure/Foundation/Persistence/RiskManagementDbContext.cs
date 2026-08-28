@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0012: リスク管理サービス専有の DbContext。
 // 設定・kill switch・ロックアウトは単一行、変更履歴は追記専用。

@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, IADR-0005, IADR-0008, ADR-0009: 判定入力 PortfolioSnapshot（Domain・非永続の派生データ）を組み立てる。
 // 生の運用状態（IPortfolioStateProvider）に kill switch 状態（IKillSwitchStore）と一時停止状態（IPauseStore）を合成する。

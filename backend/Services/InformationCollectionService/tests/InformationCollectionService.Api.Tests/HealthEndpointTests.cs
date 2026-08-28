@@ -3,7 +3,7 @@ using AwesomeAssertions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // FR-01: 情報収集サービスホストが起動し（既定の安全な no-op 情報源で外部接続せず）、ヘルスが応答することを検証する。
 public class HealthEndpointTests(InformationCollectionWorkerWebApplicationFactory factory)

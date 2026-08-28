@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-07, FR-16, FR-17, #338, INDEX 決定29, 04_report-templates §目標値・約定外イベントの扱い, IADR-0252:
 // 目標値の **YAML ブロック併記**（純関数・決定的）。

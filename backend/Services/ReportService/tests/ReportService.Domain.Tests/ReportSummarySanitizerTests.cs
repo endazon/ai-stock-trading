@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-09, ADR-0003, IADR-0116 決定3, #280: Discord へ投稿する要約のサニタイズ（純関数）を検証する。
 // 本文には LLM 生成の散文が入るため、「データを命令にしない」防御思想（IADR-0022 の PromptSafetySanitizer と同じ）を

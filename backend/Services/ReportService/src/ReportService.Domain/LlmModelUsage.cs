@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217:
 // 報告書のメタ情報として残す「**実際に使用したモデル**」と、フォールバック発火の事実。

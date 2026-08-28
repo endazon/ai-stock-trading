@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, FR-12, FR-17, FR-20, #257, #364, IADR-0108/0152: SIMULATE（ペーパー検証）限定のリスク上限プロファイル。
 // moomoo シミュレータ口座の残高（USD $1,000,000 / JPY ¥20,000,000）に見合う統制上限を与え、

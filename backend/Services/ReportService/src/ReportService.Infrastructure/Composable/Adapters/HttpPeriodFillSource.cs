@@ -1,10 +1,10 @@
 using System.Net.Http.Json;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06, FR-16, IADR-0115 決定5, #280: 期間の約定を権威源（リスク管理 #12 の取引台帳）から s2s 同期照会する
 // （GET /risk-controls/fills・OwnerOrService・IADR-0051）。IADR-0095（watchlist）と同型の作法。

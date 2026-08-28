@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Services;
+using ReportService.Application.Services;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Polling;
+namespace ReportService.Infrastructure.Polling;
 
 // FR-06/07, UC-03〜05, 04_workflows/03_reporting-cycle, IADR-0115, #280: 報告書自動生成の常駐ドライバ。
 // 閉場後の日報・週報・月報のドラフトを生成し、提示（PendingApproval）まで進める。**確定はしない**（ADR-0003）。

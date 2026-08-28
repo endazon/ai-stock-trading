@@ -1,21 +1,21 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Configuration.Client.Foundation.Extensions;
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
-using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+using ConfigurationService.Client.Extensions;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
+using CostControlService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, FR-17, #139, IADR-0065: 月次費用上限がバージョン付き前提条件（設定サービス）から供給され、
 // しきい値判定（80%/100%）に反映されることを検証する。

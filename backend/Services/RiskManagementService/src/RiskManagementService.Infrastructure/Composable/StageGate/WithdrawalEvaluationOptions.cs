@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+namespace RiskManagementService.Infrastructure.StageGate;
 
 // FR-20, ADR-0008, IADR-0083: 撤退の定期評価ドライバの構成。既定は安全側（無効・opt-in）。
 // 有効化しても既定 StagePerformance（実 DD 未供給・起点 Stage 0）では発火しない＝不活性。実 DD 供給（別 issue）が

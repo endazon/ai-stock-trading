@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0003, アーキ概要「ニュース入力の防御」: 取得テキストを LLM 文脈で「命令ではなくデータ」として扱うための
 // 構造的分離（spotlighting）。本文を境界デリミタでラップし、本文中のデリミタ衝突を除去、制御文字を除去する。

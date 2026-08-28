@@ -1,6 +1,6 @@
-using AiStockTrading.CostControl.Application.Ports;
+using CostControlService.Application.Ports;
 
-namespace AiStockTrading.CostControl.Application.Adapters;
+namespace CostControlService.Application.Adapters;
 
 // NFR（費用）: システム時刻に基づく IClock。
 public sealed class SystemClock : IClock

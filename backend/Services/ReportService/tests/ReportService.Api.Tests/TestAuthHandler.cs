@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // テスト用認証ハンドラ（RiskManagement.Worker.Tests 準拠）。ロールはヘッダ "X-Test-Roles" で指定する
 // （無し→401、trading-owner 含む→OwnerOnly 通過、含まない→403）。

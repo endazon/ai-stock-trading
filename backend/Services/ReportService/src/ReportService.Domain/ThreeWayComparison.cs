@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-15, FR-20, #338, 04_report-templates 月報 §5, 06_daytrading-review §4.1:
 // バックテスト / SIMULATE（Stage 1）/ 実弾（Stage 2 以降）の三者比較。

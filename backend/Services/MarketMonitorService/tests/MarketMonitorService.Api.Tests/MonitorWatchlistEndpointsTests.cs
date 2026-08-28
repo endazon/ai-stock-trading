@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // FR-03, FR-11, FR-13, UC-06, IADR-0088: 監視銘柄（watchlist）エンドポイントの認可（owner サブグループ）・
 // 追加/削除・検証(400)・変更履歴を検証する。

@@ -1,9 +1,9 @@
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // T-1〜T-4, FR-06/16, IADR-0123, #308: 報告書散文 LLM のタイムアウトを報告書種別ごとに解決する純関数。
 //

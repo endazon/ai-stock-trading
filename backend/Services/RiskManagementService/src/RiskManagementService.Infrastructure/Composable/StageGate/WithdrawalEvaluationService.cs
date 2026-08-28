@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Wolverine;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+namespace RiskManagementService.Infrastructure.StageGate;
 
 // FR-20, FR-11, FR-09, UC-06, ADR-0008, IADR-0070/0083, #166: 撤退（差し戻し）基準の定期評価ドライバ。
 // StageGateService.EvaluateWithdrawal()（#20/IADR-0070 実装済み）を定時に叩き、撤退基準到達かつ HaltNewEntries なら

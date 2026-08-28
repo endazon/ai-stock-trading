@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06, FR-07, #338, #310, UC-03〜05, ADR-0003, INDEX 決定29, 04_workflows/03_reporting-cycle:
 // **確定フローの状態遷移**を、自動生成 → 提示 → 確定 の一連で固定する。
@@ -45,7 +45,7 @@ public class ReportConfirmationFlowTests
     public async Task 自動生成しただけの方針は取引へ適用されない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
 
@@ -61,7 +61,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した方針は取引へ適用される()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -80,7 +80,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した報告書の本文は未確定を名乗らない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -101,7 +101,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した方針文に生成器の状態文言が残らない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -120,7 +120,7 @@ public class ReportConfirmationFlowTests
     public async Task 無応答のまま期限を過ぎたら直近の確定済み方針を継続する()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);

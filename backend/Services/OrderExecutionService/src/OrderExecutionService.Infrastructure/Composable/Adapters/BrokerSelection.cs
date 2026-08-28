@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 // 後者は `Trading.BrokerProvider` と明示的に修飾して参照する。
 using Trading = AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // FR-05, ADR-0002, IADR-0111: 発注先の証券会社（ベンダ）。将来の他証券（ADR-0002 が挙げる立花証券 e支店 API 等）は
 // ここへ 1 値足し、BrokerFactory の switch に 1 腕・Helm の tier 値を 1 つ足すだけで追加できる。

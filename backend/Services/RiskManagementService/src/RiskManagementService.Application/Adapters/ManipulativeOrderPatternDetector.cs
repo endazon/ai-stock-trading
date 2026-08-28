@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-19, ADR-0007, IADR-0006/0040: 相場操縦パターン判定ポートの具体実装。
 // 注文アクティビティ源から intent の（銘柄, 市場）の直近窓を取得し、純関数コア ManipulationPatternAnalyzer で判定する。

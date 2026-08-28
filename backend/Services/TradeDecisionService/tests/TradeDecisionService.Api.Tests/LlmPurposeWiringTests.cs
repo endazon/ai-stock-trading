@@ -3,8 +3,8 @@ using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,9 +12,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using Orchestrated = AiStockTrading.TradeDecision.Application.Services;
+using Orchestrated = TradeDecisionService.Application.Services;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // 🔴 FR-04, UC-01, NFR（費用）, ADR-0014, ADR-0017 決定1/決定2, #335, #347, IADR-0212:
 // **二段判断の層別 purpose が composition root の配線を通って実際にゲートウェイへ届くこと**を固定する。
@@ -43,7 +43,7 @@ public class LlmPurposeWiringTests
         _ = factory.CreateClient(); // ホスト起動（Program.cs の配線がここで組み上がる）
 
         using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionService>()
+        await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionAppService>()
             .DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
 
         return factory.Handler;
@@ -87,7 +87,7 @@ public class LlmPurposeWiringTests
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
             using var scope = factory.Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionService>()
+            await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionAppService>()
                 .DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
         });
 

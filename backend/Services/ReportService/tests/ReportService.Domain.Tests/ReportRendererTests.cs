@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06/16, 04_report-templates, IADR-0032: 報告書テンプレートへの組み立て（純関数・日報/週報/月報）を検証する。
 // 数値は PnlSummary（コード集計値）から埋まり、散文・方針が挿入されることを確認する。

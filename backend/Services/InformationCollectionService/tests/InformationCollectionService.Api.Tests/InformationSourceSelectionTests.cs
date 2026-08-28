@@ -1,7 +1,7 @@
-using AiStockTrading.InformationCollection.Application.Adapters;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Application.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // FR-01, IADR-0022/0064: Program の構成束縛（Collection:Source:*）が実際に情報源の選択へ効くことを検証する。
 // 構成キーの綴り違いは「静かに全ソース無効（ゼロ件収集）」として現れるため、ホスト起動込みで確かめる。

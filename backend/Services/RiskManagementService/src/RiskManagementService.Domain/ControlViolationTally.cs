@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, FR-11, #387, 06_daytrading-review §4.1 条件1, IADR-0148:
 // Stage 1 → Stage 2 の合格条件「統制違反 0 件」（**クラス C 限定**）の集計。

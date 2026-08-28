@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-03, FR-10, IADR-0030/0035: 市場監視（#10）の損切りライン検知へ供給する保有ポジションを、#63 取引台帳
 // （IPortfolioLedgerStore）の射影から導出する。損切り価格は取引判断が決めた権威データ（IADR-0035）を優先し、

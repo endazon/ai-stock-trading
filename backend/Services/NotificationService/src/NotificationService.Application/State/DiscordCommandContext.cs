@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.State;
+namespace NotificationService.Application.State;
 
 // FR-14, IADR-0062: Discord から着信したコマンドの文脈（Gateway 実装に依存しない素の値）。
 // Discord.Net の型を Application へ持ち込まないための境界。DM は GuildId/ChannelId が専用サーバーと

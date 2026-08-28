@@ -1,6 +1,6 @@
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 /// <summary>
 /// FR-04, FR-08, ADR-0003, ADR-0004, #252, IADR-0169: 判断プロンプトへ注入してよい RAG 取得文脈を
@@ -27,7 +27,7 @@ public sealed class RetrievalSourcePolicy
     /// <summary>
     /// 既定の許可出所 = <b>収集側の許可リスト（ADR-0004 案A+）∪ 自リポジトリが書いた文書種別</b>。
     /// <para>
-    /// 収集ソース名は <c>InformationCollection.Domain.SourceAllowlist.Default</c> と同じ語彙である。
+    /// 収集ソース名は <c>InformationCollectionService.Domain.SourceAllowlist.Default</c> と同じ語彙である。
     /// <b>収集サービスの型を参照しない</b>のは、判断サービスが収集サービスへ依存しない構成（ユニット境界）を崩さないためである
     /// ——代わりに<b>語彙が一致していることをテストで固定する</b>（片方を増やしてもう片方を忘れる形を検知する）。
     /// </para>

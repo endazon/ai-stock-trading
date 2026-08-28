@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, FR-11: 判定結果。拒否時は違反理由を網羅的に列挙する（監査性優先）
 public record OrderScreeningResult

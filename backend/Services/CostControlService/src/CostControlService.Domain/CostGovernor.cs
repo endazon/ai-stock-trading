@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.CostControl.Domain;
+namespace CostControlService.Domain;
 
 // NFR（費用）, 05_trading-assumptions §6, IADR-0027: 費用のカテゴリ。
 //

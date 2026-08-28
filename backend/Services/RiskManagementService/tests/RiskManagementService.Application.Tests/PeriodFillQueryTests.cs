@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-06, FR-16, IADR-0115 決定5, #280: 報告書サービスへ供給する期間約定の絞り込み（純関数）を検証する。
 // 取引日は JST 境界（PortfolioProjection.TradeDate）で解釈する。UTC 暦日で切ると日本市場の午前が前日に落ちる。

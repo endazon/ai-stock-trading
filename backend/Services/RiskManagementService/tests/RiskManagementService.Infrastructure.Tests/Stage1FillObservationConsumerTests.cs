@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3, IADR-0149:
 // 約定（OrderExecuted）から Stage 1 の取引件数の観測を作る**供給経路**の検証。

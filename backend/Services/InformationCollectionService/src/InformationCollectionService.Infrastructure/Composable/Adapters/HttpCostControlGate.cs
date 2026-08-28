@@ -1,8 +1,8 @@
 using System.Net.Http.Json;
-using AiStockTrading.InformationCollection.Application.Ports;
+using InformationCollectionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // NFR（費用）, IADR-0031: 費用統制（#23）の GET /costs/state を同期照会して統制ゲートに写像する。
 // 未取得・非 2xx・例外・タイムアウト・不正応答は Normal（停止せず・1×）の安全既定に倒す。
@@ -16,7 +16,7 @@ internal sealed class HttpCostControlGate(
     ILogger<HttpCostControlGate> logger)
     : ICostControlGate
 {
-    // CostControlDecision（費用統制）の JSON 受け皿。CostControl.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
+    // CostControlDecision（費用統制）の JSON 受け皿。CostControlService.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
     private sealed record CostStateDto(bool IsHalted, decimal IntervalMultiplier);
 
     public async Task<CostControlGate> GetAsync(CancellationToken cancellationToken = default)

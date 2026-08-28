@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, ADR-0003: kill switch 状態の EF 実装（単一行）。
 internal sealed class EfKillSwitchStore(RiskManagementDbContext db) : IKillSwitchStore

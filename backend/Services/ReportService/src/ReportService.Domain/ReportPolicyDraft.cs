@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-07, ADR-0003, 04_workflows/03_reporting-cycle, IADR-0115 決定4, IADR-0125, #280/#310:
 // 自動生成ドラフトの方針文（純関数・決定的）。

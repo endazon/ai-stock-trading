@@ -1,4 +1,4 @@
-namespace AiStockTrading.CostControl.Application.Ports;
+namespace CostControlService.Application.Ports;
 
 // NFR（費用）, IADR-0055 決定5: 消費済みメッセージ ID の重複排除ストア。
 // 月次費用台帳（ICostLedger）とは別物で、メッセージングの at-least-once 再配信により LlmCostIncurred が

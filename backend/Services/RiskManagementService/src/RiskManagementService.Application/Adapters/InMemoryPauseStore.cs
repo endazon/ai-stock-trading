@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10, ADR-0009: 一時停止（pause）状態のインメモリ実装。初期は非停止。PostgreSQL 永続化は EfPauseStore で差し替える。
 public sealed class InMemoryPauseStore : IPauseStore

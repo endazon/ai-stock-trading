@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 
-namespace AiStockTrading.TradeDecision.Application.Adapters;
+namespace TradeDecisionService.Application.Adapters;
 
 // FR-04, ADR-0017 決定2/決定4, #335, IADR-0216: 割当統制の記録の安全既定。外部へ publish せず何もしない。
 // 実発行（LlmFallbackFired / TradeDecisionSkipped）は Worker が PublishingLlmGovernanceReporter を

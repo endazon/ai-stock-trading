@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, UC-03〜05, 04_report-templates, 03_reporting-cycle, IADR-0115, #280:
 // 自動生成の期間判定（純関数）を検証する。時刻境界は JST 固定（PortfolioProjection.TradingDayOffset=+9 と整合）、

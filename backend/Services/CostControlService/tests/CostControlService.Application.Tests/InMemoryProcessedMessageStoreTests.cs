@@ -1,8 +1,8 @@
-using AiStockTrading.CostControl.Application.Adapters;
+using CostControlService.Application.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Application.Tests;
+namespace CostControlService.Application.Tests;
 
 // NFR（費用）, IADR-0055 決定5: 重複排除ストアの基本性質（初回のみ true・Unmark で再試行可能）。
 public class InMemoryProcessedMessageStoreTests

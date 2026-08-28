@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, FR-11, #387, IADR-0148: 発注審査の観測ログのインメモリ実装（ユニット試験・ローカル実行用）。
 // 本番配線は EfControlViolationObservationStore。未記録＝未供給（null）＝昇格しない安全側。

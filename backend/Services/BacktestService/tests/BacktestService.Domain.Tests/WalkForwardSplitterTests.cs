@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2: ウォークフォワード検証。In-Sample→Out-of-Sample の窓分割を検証する。
 public class WalkForwardSplitterTests

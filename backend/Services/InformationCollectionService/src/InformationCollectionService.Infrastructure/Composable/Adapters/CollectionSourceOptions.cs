@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004, ADR-0020, IADR-0022/0064: 情報源の構成（Collection:Source）。すべて既定は空＝当該ソースを有効化しない
 // （安全既定＝外部接続しない）。Provider に列挙されたソースのみ、必須構成が揃っていれば実接続する。

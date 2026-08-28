@@ -1,6 +1,6 @@
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Domain;
 
-namespace AiStockTrading.Backtest.Application;
+namespace BacktestService.Application;
 
 // FR-15, IADR-0043: 決定的な in-memory 過去データ源。
 //

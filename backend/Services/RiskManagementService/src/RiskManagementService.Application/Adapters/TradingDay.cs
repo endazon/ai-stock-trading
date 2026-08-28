@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-21, FR-10, FR-06, #463, IADR-0181, #337（#249 吸収）, IADR-0246: **取引日の導出の単一情報源。**
 //

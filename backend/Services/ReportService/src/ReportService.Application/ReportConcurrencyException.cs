@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Application;
+namespace ReportService.Application;
 
 // FR-07, IADR-0024: 版番号付き冪等確定の楽観排他競合。読み込んだ版と現在版が一致しない更新/確定で送出する。
 // ホストのエンドポイントはこれを 409 Conflict に写像する。

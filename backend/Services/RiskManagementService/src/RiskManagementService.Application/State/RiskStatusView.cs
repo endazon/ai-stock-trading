@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, UC-07, ADR-0009: `/status`（詳細設計07）が参照する稼働状態の集約ビュー。表示専用（設定変更は含まない）。
 // 3 統制（kill switch / 日次損失ロックアウト / 一時停止）はいずれも新規建てのみを止める。優先順位は表示用で、

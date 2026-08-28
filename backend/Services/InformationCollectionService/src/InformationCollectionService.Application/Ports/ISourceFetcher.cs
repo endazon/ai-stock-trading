@@ -1,6 +1,6 @@
-using AiStockTrading.InformationCollection.Application.State;
+using InformationCollectionService.Application.State;
 
-namespace AiStockTrading.InformationCollection.Application.Ports;
+namespace InformationCollectionService.Application.Ports;
 
 // FR-01, ADR-0020 決定3: 有効化された情報源をまとめて 1 巡回ぶん取得し、**ソース単位の成否**を返すポート。
 //

@@ -1,4 +1,4 @@
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -6,9 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.OrderExecution.Infrastructure.Composable;
+using Composable = OrderExecutionService.Infrastructure;
 
-namespace AiStockTrading.OrderExecution.Api.Tests;
+namespace OrderExecutionService.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ/Postgres に依存せず、InMemory DB・
 // Wolverine の外部トランスポートを無効化する（ADR-0013 / IADR-0129 / #354）。ブローカは既定（paper）で安全。

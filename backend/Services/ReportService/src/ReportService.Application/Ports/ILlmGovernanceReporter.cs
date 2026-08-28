@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Llm;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, FR-09, FR-11, ADR-0017 決定4-(2)/(3), #335, IADR-0217:
 // 報告書生成で「割当どおりのモデルが応答しなかった」事実を外へ出すポート。

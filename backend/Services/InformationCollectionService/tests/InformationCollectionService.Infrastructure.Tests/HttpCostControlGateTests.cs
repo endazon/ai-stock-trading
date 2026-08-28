@@ -1,10 +1,10 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // NFR（費用）, IADR-0031: 費用統制の GET /costs/state を同期照会する実装の写像とフェイルセーフを fake HttpMessageHandler で
 // 検証する（実ネットワーク不使用）。未取得系は Normal（停止せず・1×）へ倒す。
@@ -76,8 +76,8 @@ public class HttpCostControlGateTests
         (await gate.GetAsync()).Should().Be(CostControlGateNormal());
     }
 
-    private static AiStockTrading.InformationCollection.Application.Ports.CostControlGate CostControlGateNormal() =>
-        AiStockTrading.InformationCollection.Application.Ports.CostControlGate.Normal;
+    private static InformationCollectionService.Application.Ports.CostControlGate CostControlGateNormal() =>
+        InformationCollectionService.Application.Ports.CostControlGate.Normal;
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {

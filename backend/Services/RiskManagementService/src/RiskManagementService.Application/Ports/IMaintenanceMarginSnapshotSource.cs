@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-10, UC-06, #330, IADR-0133 決定5: 維持率判定の実測入力（純資産・建玉・必要証拠金）の供給元。
 //

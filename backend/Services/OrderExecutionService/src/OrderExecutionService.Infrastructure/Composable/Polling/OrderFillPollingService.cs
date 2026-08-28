@@ -1,4 +1,4 @@
-using AiStockTrading.OrderExecution.Application.Polling;
+using OrderExecutionService.Application.Polling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
+namespace OrderExecutionService.Infrastructure.Polling;
 
 // #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングを短周期（既定 30 秒）で回す。
 //

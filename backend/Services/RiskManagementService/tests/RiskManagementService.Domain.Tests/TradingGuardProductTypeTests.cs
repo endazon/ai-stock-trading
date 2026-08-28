@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-19, UC-06, ADR-0007, ADR-0016 決定1/8/13, ADR-0009, #332, IADR-0132:
 // 取引ガードの再実装（商品種別の 3 値化・差金決済ガードの日本株現物限定・禁止銘柄・発注パターン）。

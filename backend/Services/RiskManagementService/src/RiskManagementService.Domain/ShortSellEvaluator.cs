@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016: 空売り（新規売り建て）専用の統制 8 規則を発注前に判定する決定的コア。
 // 違反は最初の 1 件で打ち切らず**全件列挙**する（FR-11 監査のため。RiskEvaluator と同じ規律）。

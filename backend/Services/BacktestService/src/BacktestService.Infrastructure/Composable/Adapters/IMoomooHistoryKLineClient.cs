@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
+namespace BacktestService.Infrastructure.Adapters;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: moomoo OpenAPI の履歴 K 線（QotRequestHistoryKL）取得の抽象。
 //

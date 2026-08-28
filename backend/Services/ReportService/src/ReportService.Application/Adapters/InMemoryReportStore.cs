@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.State;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Application.State;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-06/07, IADR-0024: 報告書ストアのインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の EfReportStore で差し替える。
 // PeriodKey ごとに 1 行＋Version。確定済みは不変。

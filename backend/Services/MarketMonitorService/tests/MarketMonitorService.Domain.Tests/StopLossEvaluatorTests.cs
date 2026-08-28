@@ -1,9 +1,9 @@
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Domain.Tests;
+namespace MarketMonitorService.Domain.Tests;
 
 // FR-03, FR-10, ADR-0003: 損切りライン到達判定（建玉方向で対称）の検証。
 public class StopLossEvaluatorTests

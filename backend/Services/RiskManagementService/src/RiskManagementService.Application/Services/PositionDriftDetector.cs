@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-05, FR-10, FR-11, #292, IADR-0118: 取引台帳の建玉射影とブローカ実ポジションを突き合わせる純関数。
 //

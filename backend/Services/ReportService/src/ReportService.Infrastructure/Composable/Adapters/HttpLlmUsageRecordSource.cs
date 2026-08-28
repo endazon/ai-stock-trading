@@ -1,11 +1,11 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06, FR-11, FR-16, #338, #282, #347, ADR-0017 決定2・決定4, 04_report-templates 月報 §7, IADR-0254:
 // 当期間の LLM 利用実績を**監査台帳**から引く（GET /audit/events/by-type・OwnerOrService）。

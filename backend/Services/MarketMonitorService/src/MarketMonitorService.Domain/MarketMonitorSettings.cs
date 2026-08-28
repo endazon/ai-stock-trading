@@ -1,4 +1,4 @@
-namespace AiStockTrading.MarketMonitor.Domain;
+namespace MarketMonitorService.Domain;
 
 // FR-03, FR-13: 市場監視のソフト設定。変動閾値・クールダウン・監視銘柄。設定ストアで変更できる。
 public record MarketMonitorSettings

@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-10, FR-20, #338, 04_report-templates 月報 §6, 04_workflows/03 月報 3, IADR-0253:
 // **「作動機会がなかった統制」と「統制違反 0 件」の分離**を固定する。

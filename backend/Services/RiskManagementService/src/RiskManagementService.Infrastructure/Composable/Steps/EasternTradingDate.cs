@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-20, #386, #385, 06_daytrading-review §4.2: 時刻（UTC）を**米国東部時間の取引日・分**へ写す。
 //

@@ -1,6 +1,6 @@
 using AiStockTrading.TestSupport.Messaging;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
@@ -12,7 +12,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // UC-01, FR-09, FR-11, IADR-0096, #210: 日報未確定通知の実発行と営業日単位の重複抑止（dedup）を検証する。
 //

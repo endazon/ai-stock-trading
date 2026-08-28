@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Application.Ports;
+namespace OrderExecutionService.Application.Ports;
 
 // #141, FR-05, IADR-0074: 滞留した Reserved 予約の「ブローカに実際に発注されたか」をブローカへ照会するポート。
 //

@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Domain.Tests;
+namespace ConfigurationService.Domain.Tests;
 
 // FR-17, IADR-0063 決定 5, IADR-0260: 版付き全体前提条件の「解決済みか」の判定を固定する。
 //

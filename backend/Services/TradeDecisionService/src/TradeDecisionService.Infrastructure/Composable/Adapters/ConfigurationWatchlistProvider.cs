@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Configuration;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-02, IADR-0023/0095: 定時サイクルで評価する監視銘柄を構成（TradeCycle:Watchlist）から供給する。
 // 権威源は市場監視（#10 MarketMonitor の watchlist・IADR-0088）だが、本アダプタは MarketMonitor:BaseUrl 未設定時の

@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-11, #387, 06_daytrading-review §4.1 条件1, IADR-0148:
 // クラス C 統制違反件数の集計（発注審査の観測 → 件数 / 未供給）。

@@ -4,7 +4,7 @@
      Infrastructure に置く。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <RootNamespace>AiStockTrading.Report.Api</RootNamespace>
+    <RootNamespace>ReportService.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->

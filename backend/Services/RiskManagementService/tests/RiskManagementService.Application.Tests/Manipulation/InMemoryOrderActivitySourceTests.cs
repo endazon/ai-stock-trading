@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
+namespace RiskManagementService.Application.Tests.Manipulation;
 
 // FR-19, IADR-0040: 注文アクティビティ源（インメモリ）の窓抽出・窓外刈り込み・（銘柄, 市場）分離を固定する。
 public class InMemoryOrderActivitySourceTests

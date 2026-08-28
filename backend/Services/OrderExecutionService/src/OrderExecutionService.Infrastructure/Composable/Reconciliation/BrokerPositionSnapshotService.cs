@@ -1,4 +1,4 @@
-using AiStockTrading.OrderExecution.Application.Reconciliation;
+using OrderExecutionService.Application.Reconciliation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using Microsoft.Extensions.Hosting;
@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
+namespace OrderExecutionService.Infrastructure.Reconciliation;
 
 // #292, FR-05, FR-10, IADR-0118: ブローカの現在建玉を定期照会し BrokerPositionsObserved として発行する。
 //

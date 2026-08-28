@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Http.Logging;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // #289, FR-09, NFR（セキュリティ）: リクエスト URI 自体が資格情報である送信先（Discord Webhook）向けの
 // HttpClient ログ。IHttpClientFactory の既定ログ（"Sending HTTP request POST <uri>" とスコープ "HTTP POST <uri>"）は

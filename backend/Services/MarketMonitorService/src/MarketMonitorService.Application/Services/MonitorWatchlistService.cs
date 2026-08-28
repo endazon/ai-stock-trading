@@ -1,9 +1,9 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Application.Services;
+namespace MarketMonitorService.Application.Services;
 
 // FR-03, FR-11, FR-13, UC-06: 監視銘柄（watchlist）の取得・追加・削除。変更（追加・削除）は利用者のみ（アクター・理由必須）。
 // 変更は前後値つきで履歴に記録する（FR-13。変更は利用者のみ・変更履歴を記録する）。Risk の RiskSettingsService を

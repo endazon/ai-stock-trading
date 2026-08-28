@@ -1,9 +1,9 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004, ADR-0020 決定3, IADR-0064: 有効化された情報源を束ねて 1 巡回＝1 収集として扱う。
 // 1 ソースの障害・キー切れが他ソースと巡回を巻き込まないよう、失敗はソース単位で隔離する。

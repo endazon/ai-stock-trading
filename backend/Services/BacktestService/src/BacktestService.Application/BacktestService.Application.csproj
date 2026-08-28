@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Backtest.Application</RootNamespace>
+    <RootNamespace>BacktestService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\BacktestService.Domain\BacktestService.Domain.csproj" />

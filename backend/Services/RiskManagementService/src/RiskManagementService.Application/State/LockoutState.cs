@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, IADR-0008: 日次損失上限到達後のロックアウト状態。当日全停止し、翌営業日（ReleaseOn）まで新規発注を止める
 // （05_trading-assumptions §5「デイリーストップ」）。ステートレスな RiskEvaluator では「翌営業日まで」を表現できない

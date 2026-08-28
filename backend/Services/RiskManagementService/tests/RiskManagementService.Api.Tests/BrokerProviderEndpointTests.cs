@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-20, FR-13, UC-06, SC-02, INDEX 決定 46, #334, IADR-0141:
 // 発注先の変更エンドポイント `PUT /risk-controls/settings/broker-provider` の検証。

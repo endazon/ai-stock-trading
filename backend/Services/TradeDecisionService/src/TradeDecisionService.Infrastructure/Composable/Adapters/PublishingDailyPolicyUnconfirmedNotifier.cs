@@ -1,10 +1,10 @@
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // UC-01, FR-09, FR-11, IADR-0096, #210: 日報未確定（policy-null）による見送りを通知する実装（opt-in）。
 // DailyPolicyUnconfirmed を publish し、NotificationService（利用者通知）・AuditService（監査）へ連携する。

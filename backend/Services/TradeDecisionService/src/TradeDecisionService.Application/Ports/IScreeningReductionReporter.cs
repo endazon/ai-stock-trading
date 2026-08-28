@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退発生を記録経路（監査台帳・月報集計）へ
 // 渡すポート。既定は NoOpScreeningReductionReporter（publish しない）。Worker が Publishing 実装を配線する。

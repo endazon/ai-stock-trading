@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+using ReportService.Application;
+using ReportService.Application.Services;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
@@ -14,9 +14,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
+using AppSvc = ReportService.Application.Services.ReportAppService;
 
-namespace AiStockTrading.Report.Api.Foundation.Endpoints;
+namespace ReportService.Api.Endpoints;
 
 // FR-06/07, UC-03〜05, ADR-0003: 報告書のドラフト管理・確定・照会エンドポイント。確定は OwnerOnly（利用者のみ・Keycloak
 // trading-owner）。生成AI・自動処理は確定できない（ADR-0003）。確定の遷移時に ReportConfirmed を発行する。

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 /// <summary>
 /// 期間内の為替情報源の状態。

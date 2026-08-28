@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.Ports;
+namespace NotificationService.Application.Ports;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182:
 // GFV 違反による停止の解除（リスク管理の OwnerOnly エンドポイント）を呼ぶだけのポート。

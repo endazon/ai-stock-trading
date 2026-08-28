@@ -1,6 +1,6 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AuditService.Application.Adapters;
+using AuditService.Application.Ports;
+using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +9,7 @@ using Wolverine;
 using Wolverine.Runtime;
 using Xunit;
 
-namespace AiStockTrading.Audit.Infrastructure.Tests;
+namespace AuditService.Infrastructure.Tests;
 
 // FR-11, #80: 「全イベントの時系列記録」の担保。Shared.Contracts.Events の全イベントに対応する監査ハンドラが
 // 存在することを検証し、新規イベント追加時の監査購読の追随漏れを CI で検知する。

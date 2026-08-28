@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-04, FR-10, IADR-0029: 取引判断へ供給するサイジング文脈を、設定（IRiskSettingsStore）とポートフォリオ状態
 // （PortfolioSnapshotBuilder＝#63 台帳の実データ）から導出する。取引判断は本文脈を同期 API で照会する。

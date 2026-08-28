@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-20, ADR-0008: Stage 0 合格→Stage 1 昇格推奨（承認は利用者・#20）を検証する。
 public class Stage0PromotionTests

@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0004: 案A+ の許可リスト（許可ソースのみ受理・大文字小文字無視・非許可は破棄）を検証する。
 public class SourceAllowlistTests

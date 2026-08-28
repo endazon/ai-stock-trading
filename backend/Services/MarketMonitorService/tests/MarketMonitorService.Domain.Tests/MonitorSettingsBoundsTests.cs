@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Domain.Tests;
+namespace MarketMonitorService.Domain.Tests;
 
 // FR-03, FR-13, SC-02, #423, IADR-0155 決定3 / IADR-0164 決定2:
 // 市場監視パラメータ（変動閾値・クールダウン）の値域の**境界**を固定する。

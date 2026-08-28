@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain.Manipulation;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -12,7 +12,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-19, #154, IADR-0067: 注文系イベントを購読して注文アクティビティへ射影する Consumer 群を
 // MassTransit テストハーネス + インメモリ射影ストアで検証する。射影後に窓として読めることまで確かめる。

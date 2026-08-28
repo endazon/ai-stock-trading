@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, ADR-0021 決定4-2/4-3, IADR-0165:
 // **GFV 発生回数の自前計数**（未決済資金による買付を自ら記録して数える）の判定。

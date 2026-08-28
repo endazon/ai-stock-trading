@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0043: 銘柄ユニバースの上場/上場廃止区間。
 // 生存者バイアスを排除するため、当時上場していた銘柄（後に廃止された銘柄を含む）を Point-in-Time で表現する。

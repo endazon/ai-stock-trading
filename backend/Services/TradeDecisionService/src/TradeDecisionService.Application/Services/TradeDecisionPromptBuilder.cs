@@ -5,10 +5,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
 
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 // FR-02, FR-04, ADR-0003: 確定済み日報の方針・判断トリガー・サイジング文脈から LLM プロンプトを構築する。
 // AI は「確定済み日報の方針とリスク制約の範囲内でのみ」判断する（ADR-0003）。出力は JSON 構造化を要求する。

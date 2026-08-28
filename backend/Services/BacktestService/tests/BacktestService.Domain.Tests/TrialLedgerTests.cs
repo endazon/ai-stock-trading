@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008: 試行数の記録（検証条件④の前提）。試行台帳が候補数 N・IS Sharpe の分散・最良候補を提供する。
 public class TrialLedgerTests

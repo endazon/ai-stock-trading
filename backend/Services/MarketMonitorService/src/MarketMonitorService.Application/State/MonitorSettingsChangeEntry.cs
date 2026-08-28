@@ -1,4 +1,4 @@
-namespace AiStockTrading.MarketMonitor.Application.State;
+namespace MarketMonitorService.Application.State;
 
 // FR-03, FR-11, FR-13: 監視設定（監視銘柄）変更履歴の 1 レコード。
 // 「変更は利用者のみ・変更履歴を記録する」（FR-13）を満たすため、アクター・種別・理由・前後値・日時を残す。

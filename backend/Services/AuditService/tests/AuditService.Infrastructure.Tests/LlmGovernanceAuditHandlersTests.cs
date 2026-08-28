@@ -1,7 +1,7 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Application.Services;
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AuditService.Application.Adapters;
+using AuditService.Application.Ports;
+using AuditService.Application.Services;
+using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TestSupport.Messaging;
@@ -12,7 +12,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Audit.Infrastructure.Tests;
+namespace AuditService.Infrastructure.Tests;
 
 // FR-04, FR-11, UC-01, UC-07, ADR-0017 決定2・決定4-(3), #335, #347, IADR-0216/0217/0219:
 // LLM 統制の 3 イベントが**実際に台帳へ着地する**ことを、本番と同じ発見範囲のホストで確かめる。

@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, IADR-0008: 日次損失ロックアウト状態の EF 実装（単一行。不在=ロックなし）。
 internal sealed class EfLockoutStore(RiskManagementDbContext db) : ILockoutStore

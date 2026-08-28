@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-04, FR-11, #337（#290 吸収）, IADR-0248: LLM の JSON 構造化出力を LlmDecision に解析する。LLM 出力は前後に
 // 散文を含み得るため、最初の JSON オブジェクト（{...}）を抽出して解析する。

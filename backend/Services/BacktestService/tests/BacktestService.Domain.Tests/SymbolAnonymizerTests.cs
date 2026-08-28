@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008: 銘柄匿名化（検証条件①）。LLM が銘柄を同定できないよう決定的に匿名化する。
 public class SymbolAnonymizerTests

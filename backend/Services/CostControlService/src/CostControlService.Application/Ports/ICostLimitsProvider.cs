@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.CostControl.Application.Ports;
+namespace CostControlService.Application.Ports;
 
 // NFR（費用）, FR-17, IADR-0027/0065: 月次費用上限の供給。実体は #19 のバージョン付き前提条件（設定サービス）から解決する
 // （AssumptionsCostLimitsProvider）。設定サービスへ到達できない構成では既定値（DefaultCostLimitsProvider）。

@@ -18,7 +18,7 @@
     {
       "name": "decide-on-price-movement",
       "service": "trade-decision-service",
-      "consumer": "AiStockTrading.TradeDecision.Worker.Composable.Steps.PriceMovementDetectedConsumer",
+      "consumer": "TradeDecisionService.Infrastructure.Steps.PriceMovementDetectedHandler",
       "input": "PriceMovementDetected",
       "outputs": ["TradeDecisionMade"],
       "enabled": true
@@ -26,7 +26,7 @@
     {
       "name": "decide-on-information",
       "service": "trade-decision-service",
-      "consumer": "AiStockTrading.TradeDecision.Worker.Composable.Steps.InformationCollectedConsumer",
+      "consumer": "TradeDecisionService.Infrastructure.Steps.InformationCollectedHandler",
       "input": "InformationCollected",
       "outputs": ["TradeDecisionMade"],
       "enabled": true
@@ -34,7 +34,7 @@
     {
       "name": "risk-approve",
       "service": "risk-management-service",
-      "consumer": "AiStockTrading.RiskManagement.Worker.Composable.Steps.TradeDecisionMadeConsumer",
+      "consumer": "RiskManagementService.Infrastructure.Steps.TradeDecisionMadeHandler",
       "input": "TradeDecisionMade",
       "outputs": ["OrderApproved", "OrderRejected"],
       "enabled": true
@@ -42,7 +42,7 @@
     {
       "name": "risk-stop-loss",
       "service": "risk-management-service",
-      "consumer": "AiStockTrading.RiskManagement.Worker.Composable.Steps.StopLossTriggeredConsumer",
+      "consumer": "RiskManagementService.Infrastructure.Steps.StopLossTriggeredHandler",
       "input": "StopLossTriggered",
       "outputs": ["OrderApproved"],
       "enabled": true
@@ -50,7 +50,7 @@
     {
       "name": "execute-order",
       "service": "order-execution-service",
-      "consumer": "AiStockTrading.OrderExecution.Worker.Composable.Steps.OrderApprovedConsumer",
+      "consumer": "OrderExecutionService.Infrastructure.Steps.OrderApprovedHandler",
       "input": "OrderApproved",
       "outputs": ["OrderExecuted"],
       "enabled": true

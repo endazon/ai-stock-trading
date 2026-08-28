@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
+using TradeDecisionService.Domain;
 
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 // FR-02, FR-04, ADR-0003, #337, IADR-0247: RAG 取得文脈からスクリーニング入力（材料）を組み、
 // ScreeningContextPlanner（縮退順序の純関数）を適用して「プロンプトへ残す参考情報」を確定する。

@@ -1,10 +1,10 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-10, FR-17, UC-06, #381, ADR-0022 決定1・決定2・決定5, IADR-0196: 日報の「為替レートの情報源」節。
 //

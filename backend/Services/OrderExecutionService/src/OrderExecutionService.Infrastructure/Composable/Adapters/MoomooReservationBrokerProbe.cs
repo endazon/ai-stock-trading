@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // #141, FR-05, IADR-0092: 滞留 Reserved の実照会プローブ（moomoo/OpenD SIMULATE）。
 //

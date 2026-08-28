@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, UC-06, IADR-0062 決定4: リスク管理（#12）の kill switch エンドポイントを呼ぶだけのアダプタ。
 // 通知サービスは kill switch の状態を持たない（権威は Risk 側）。

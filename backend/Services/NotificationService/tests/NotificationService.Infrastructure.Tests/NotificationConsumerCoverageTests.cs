@@ -1,6 +1,6 @@
 using System.Reflection;
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Infrastructure.Composable.Steps;
+using NotificationService.Application.Ports;
+using NotificationService.Infrastructure.Steps;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +9,7 @@ using Wolverine;
 using Wolverine.Runtime;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-09, ADR-0013, IADR-0129, #354, #381, IADR-0198: 通知ハンドラが**実際に発見されている**ことの担保。
 //

@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Application.Adapters;
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Infrastructure.Composable.Steps;
+using MarketMonitorService.Application.Adapters;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
+namespace MarketMonitorService.Infrastructure.Tests;
 
 // FR-03, UC-02: TradeDecisionMade 購読で基準値が判断時点価格へ更新されることを検証する。
 //

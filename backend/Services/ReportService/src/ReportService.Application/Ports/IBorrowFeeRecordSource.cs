@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, #338, ADR-0016 決定15, ADR-0027 決定1・決定4, 04_report-templates 月報 §6.1 / 日報 §4, IADR-0254:
 // 当期間の借株料の記録の供給（計上できた日と、料率が取れず未計上だった日）。

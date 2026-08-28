@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-07, FR-16, FR-17, #338, 04_report-templates（拡張後）, 04_workflows/03_reporting-cycle,
 // INDEX 決定29 / 34 / 43 / 44 / 45, ADR-0016 決定15, ADR-0017 決定2・決定4:

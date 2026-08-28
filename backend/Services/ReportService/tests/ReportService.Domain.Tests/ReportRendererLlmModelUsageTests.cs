@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-04, FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: 報告書の「散文生成に使用した LLM」節。
 //

@@ -1,13 +1,13 @@
 using System.Net;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-02, FR-13, UC-06, SC-02, IADR-0088/0095: 権威源（市場監視 #10）の GET /monitor/watchlist を s2s 同期照会する実装の
 // 写像とフェイルセーフを fake HttpMessageHandler で検証する（実ネットワーク不使用）。
@@ -25,7 +25,7 @@ public class HttpWatchlistProviderTests
     [Fact]
     public async Task 権威源の_watchlist_を_WatchedSymbol_に写像する()
     {
-        // MonitoredSymbol（MarketMonitor.Domain）と WatchedSymbol は同形。web 既定（camelCase・列挙は数値）で往復する。
+        // MonitoredSymbol（MarketMonitorService.Domain）と WatchedSymbol は同形。web 既定（camelCase・列挙は数値）で往復する。
         var payload = new[] { new WatchedSymbol("7203", Market.Japan), new WatchedSymbol("AAPL", Market.UnitedStates) };
         var body = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var handler = new StubHandler(HttpStatusCode.OK, body);

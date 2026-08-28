@@ -1,12 +1,12 @@
-using AiStockTrading.Configuration.Client.Adapters;
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Adapters;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Client.Tests;
+namespace ConfigurationService.Client.Tests;
 
 // FR-17, IADR-0063 決定 4/5: バージョン付き前提条件のキャッシュ・イベント無効化・TTL 失効・フェイルセーフ順序を検証する。
 public class CachedAssumptionsProviderTests

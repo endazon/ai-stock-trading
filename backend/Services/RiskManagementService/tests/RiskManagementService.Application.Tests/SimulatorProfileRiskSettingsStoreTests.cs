@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, FR-12, FR-20, #257, #329, IADR-0108 決定3/4, IADR-0130 決定6: SIMULATE 限定プロファイルの読み取り時適用。
 // 金額系が equity 比になったため、プロファイルが差し替えるのは**ペーパー段階の資金上限だけ**である。

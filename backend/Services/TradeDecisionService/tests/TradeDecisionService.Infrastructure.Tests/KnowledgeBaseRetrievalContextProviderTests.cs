@@ -1,14 +1,14 @@
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-08, IADR-0069/0072: RAG 取得アダプタが trigger+policy から検索クエリを組み、KnowledgeHit を RetrievedContext へ写像することを検証する。
 public class KnowledgeBaseRetrievalContextProviderTests

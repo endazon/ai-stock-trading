@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Configuration.Client.Adapters;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Adapters;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Client.Tests;
+namespace ConfigurationService.Client.Tests;
 
 // FR-17, IADR-0063 決定 1/5: GET /assumptions の同期照会。失敗（401/500・不正応答・タイムアウト・不達）は例外を出さず
 // null（＝取得不可）に倒し、縮退の判断は CachedAssumptionsProvider に委ねることを検証する。

@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-20, FR-15, UC-06, IADR-0089: バックテスト verdict（BacktestEvaluated・BacktestService/#16）を購読し、
 // 段階別実績ストア（IStagePerformanceStore）へ backtest 由来フィールド（BacktestPassed / BacktestMaxDrawdownRatio）

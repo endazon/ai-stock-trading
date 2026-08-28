@@ -1,10 +1,10 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // NFR（費用）, FR-04, IADR-0055 決定2/3: トークン使用量に単価を適用し LlmCostIncurred を publish する。
 // 単価既定 0（未設定）でも publish する: 金額 0 は統制判定に無害で、計上経路の健全性を保てるため（IADR-0055 根拠）。

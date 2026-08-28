@@ -1,9 +1,9 @@
-using AiStockTrading.CostControl.Application.Adapters;
+using CostControlService.Application.Adapters;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Application.Tests;
+namespace CostControlService.Application.Tests;
 
 // NFR（費用）, 05_trading-assumptions §6, IADR-0027/0065 決定 5: 設定サービスに依存しない既定の上限供給。
 // 費用統制の fail-safe の**底**にあたる値であり、利用者決定（2026-07-07）の既定 20,000/15,000 から

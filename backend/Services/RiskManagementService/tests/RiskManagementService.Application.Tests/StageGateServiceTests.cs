@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-20, FR-15, UC-06, ADR-0008, IADR-0070: 段階ゲート遷移サービスの結線を検証する。
 // 承認ゲート・履歴永続化・fail-safe 昇格・撤退の自動安全側（kill switch 起動）を受け入れ基準へ写像する。

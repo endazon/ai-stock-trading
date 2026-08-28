@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // #12 Slice B, IADR-0012: 永続化の行モデル（EF Core エンティティ）。設定・kill switch・ロックアウトは
 // 単一行のシングルトン（SingletonId 固定）。変更履歴は追記専用。ADR-0001 の専有 DB に配置する。
@@ -140,7 +140,7 @@ internal sealed class StageTransitionRow
 
     public AiStockTrading.Shared.Kernel.Trading.TradingStage ToStage { get; set; }
 
-    public AiStockTrading.RiskManagement.Domain.StageTransitionKind Kind { get; set; }
+    public RiskManagementService.Domain.StageTransitionKind Kind { get; set; }
 
     public string ApprovedBy { get; set; } = string.Empty;
 

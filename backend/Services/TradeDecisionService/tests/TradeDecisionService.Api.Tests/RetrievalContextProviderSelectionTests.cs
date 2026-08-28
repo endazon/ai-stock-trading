@@ -1,6 +1,6 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -10,9 +10,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // FR-08, IADR-0069/0072: RAG 取得は常に KnowledgeBaseRetrievalContextProvider として登録され、実接続の可否は
 // KnowledgeBase:Search:BaseUrl（#18 の IKnowledgeBaseSearch）で決まる。未設定なら NoOp 検索＝空取得＝文脈なし（安全既定）。

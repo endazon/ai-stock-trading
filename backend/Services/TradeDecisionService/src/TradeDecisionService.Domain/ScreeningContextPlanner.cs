@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-02, FR-04, ADR-0003, #337, IADR-0247: スクリーニング入力のコンテキスト超過時の縮退計画（純関数）。
 //

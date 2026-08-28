@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-10, FR-03, UC-02, #331, IADR-0210 決定5: 市場監視の損切りイベント（StopLossTriggered）を購読し、
 // **検知の記録（ログ）のみ**を行う。損切りの実行はブローカー側の逆指値が担い（planning#88 裁定・

@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // FR-06, FR-16, #338, #282, ADR-0016 決定15, ADR-0027, ADR-0017 決定2・決定4, IADR-0254:
 // 報告サイクルの新しい供給（LLM 利用実績・借株料）が **composition root で実際に結線されている**ことを固定する。

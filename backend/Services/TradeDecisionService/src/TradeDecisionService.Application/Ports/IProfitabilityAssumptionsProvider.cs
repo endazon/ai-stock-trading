@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価に必要な費用見積りの供給口。
 // 設定サービスの版付き前提条件（IADR-0063）＋概算費用関数（CostCalculator・IADR-0021）を Worker アダプタが包み、
@@ -14,7 +14,7 @@ public interface IProfitabilityAssumptionsProvider
 // FR-17, IADR-0076: 採算評価の費用見積り。RoundTripCost は往復の概算取引費用（円）、MinimumProfitMultiple は最小期待利益倍率、
 // AssumptionsVersion は適用した前提条件のバージョン（FR-17 の版記録・FR-11 監査ログ用）。
 // #358, IADR-0173: CapitalGainsTaxRate を運ぶ。しきい値の基準が「往復費用＋**税**」になったが、
-// 採算ゲートは TradeDecision.Domain にあり設定サービスへ依存できないため、税率は本 DTO で渡す。
+// 採算ゲートは TradeDecisionService.Domain にあり設定サービスへ依存できないため、税率は本 DTO で渡す。
 public sealed record TradeCostAssessment(
     decimal RoundTripCost,
     decimal MinimumProfitMultiple,

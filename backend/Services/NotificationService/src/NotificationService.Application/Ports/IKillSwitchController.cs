@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.Ports;
+namespace NotificationService.Application.Ports;
 
 // FR-14, UC-06, IADR-0062 決定4: リスク管理（#12）の kill switch HTTP エンドポイントの抽象。
 // 通知サービスは kill switch の状態を持たず、**既存エンドポイントを呼ぶだけ**（権威は Risk 側）。

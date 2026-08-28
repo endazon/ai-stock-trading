@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, #330, IADR-0133 決定7: 自動縮小 1 回分の計画（＝記録先 4 つが写像する唯一の情報源）。
 // 04_report-templates の日報 §4 の表が要求する 7 列（時刻を除く 6 列＋明細）をそのまま保持する。

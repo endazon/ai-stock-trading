@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.State;
+namespace NotificationService.Application.State;
 
 // FR-14, IADR-0062: Discord Bot の多層認証・有効化の設定。
 //

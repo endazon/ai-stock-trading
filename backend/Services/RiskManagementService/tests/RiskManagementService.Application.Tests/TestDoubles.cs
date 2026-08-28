@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // テスト用の固定クロック。ロックアウトの翌営業日解除を決定的に検証するため時刻・当日を明示制御する。
 internal sealed class FakeClock(DateTimeOffset utcNow, DateOnly today) : IClock

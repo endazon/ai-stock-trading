@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182:
 // GFV 違反による停止の解除コマンドの閂（多層認証 → コマンド解析 → 確認フレーズ → Risk 呼び出し）。

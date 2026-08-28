@@ -2,7 +2,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // T-8, FR-06/16, IADR-0123 決定1/2/4, #308: 散文 LLM のタイムアウト構成が Program.cs へ結線されていることを固定する。
 //

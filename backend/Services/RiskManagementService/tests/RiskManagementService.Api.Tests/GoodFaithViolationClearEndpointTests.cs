@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182:
 // GFV 解除の**成功経路**（200 応答とイベント発行）を固定する。

@@ -1,7 +1,7 @@
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Configuration;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, IADR-0062: 構成から DiscordBotOptions を読む。
 // AllowedUserIds は配列（`Bot:AllowedUserIds:0`）とカンマ区切り文字列の双方を受ける。環境変数で与える場合に

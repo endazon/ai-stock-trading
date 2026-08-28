@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 /// <summary>
 /// FR-19, FR-10, #375, ADR-0021 決定2〜5, IADR-0153: 口座種別に依存する統制の**単一情報源**（純関数）。

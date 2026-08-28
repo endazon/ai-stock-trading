@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0020 決定2/決定3: 1 巡回におけるソース単位の取得結果。**成否だけを持つ**——
 // 0 件（そのソースに新着が無い）と失敗（取れなかった）は別の事実であり、混同すると

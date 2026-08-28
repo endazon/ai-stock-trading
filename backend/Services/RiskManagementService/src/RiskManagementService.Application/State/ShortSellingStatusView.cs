@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, UC-06, SC-03, ADR-0016（決定3・決定7・決定9・決定15）, #340, IADR-0154:
 // SC-03「維持率・空売りの現況」が参照する読み取り専用ビュー。表示専用（副作用なし）。

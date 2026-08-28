@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-16, #338, 04_report-templates §数値の定義（為替差損益）・日報 §1・月報 §1:
 // **為替差損益**（円換算により生じた損益）。

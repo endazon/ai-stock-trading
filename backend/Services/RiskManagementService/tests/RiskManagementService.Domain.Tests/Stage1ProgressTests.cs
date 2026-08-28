@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, #333, 06_daytrading-review §4.2 / §4.3, INDEX 決定 34・42, IADR-0137:
 // Stage 1（SIMULATE）の期間カウント規則と、期間 × 件数の 2 条件・120 営業日打ち切りの判定を固定する。

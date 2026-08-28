@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06/16, 04_report-templates, IADR-0032: 報告書 Markdown 生成の入力（日報/週報/月報 共通）。数値は PnlSummary
 // （コード集計値）、Narrative は LLM ドラフトの散文。ReportRenderer が Kind に応じて決定的に Markdown を組み立てる。

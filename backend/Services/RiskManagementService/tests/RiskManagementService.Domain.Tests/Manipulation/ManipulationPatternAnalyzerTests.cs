@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Domain;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests.Manipulation;
+namespace RiskManagementService.Domain.Tests.Manipulation;
 
 // FR-19, IADR-0040: 相場操縦検知アルゴリズム（自口座の直近発注統計に対する純関数ヒューリスティック）。
 // 受け入れ基準（20260711_manipulation-detector）: 4 シグナルの検知・最小標本未満/正常取引の無嫌疑・境界。

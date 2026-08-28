@@ -1,10 +1,10 @@
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
 using AiStockTrading.Shared.KnowledgeBase;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-08, IADR-0069/0071 決定3: 確定報告書→KB カタログ文書の写像を検証する。機密区分 internal・タグ・属性を持ち、本文は送らない。
 public class ReportKnowledgeMapperTests

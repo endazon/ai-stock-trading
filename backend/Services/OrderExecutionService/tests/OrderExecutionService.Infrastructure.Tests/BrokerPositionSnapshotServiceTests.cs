@@ -1,5 +1,5 @@
-using AiStockTrading.OrderExecution.Application.Reconciliation;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
+using OrderExecutionService.Application.Reconciliation;
+using OrderExecutionService.Infrastructure.Reconciliation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -15,7 +15,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #292, FR-05, FR-10, IADR-0118: ブローカ建玉の定期観測。
 // 中核の契約は「照会不能（null）は発行しない・空列（建玉ゼロ）は発行する」。

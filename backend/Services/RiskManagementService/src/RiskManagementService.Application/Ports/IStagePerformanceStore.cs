@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, FR-15, IADR-0070: 段階ゲートの合格・撤退基準の入力＝段階別実績（StagePerformance）の永続化ポート。
 // 未記録時は fail-safe 既定（BacktestPassed=false ほか全 false/0）を返し、既定で昇格を許可しない安全側に倒す。

@@ -1,14 +1,14 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06, FR-16, #338, #282, ADR-0016 決定15, ADR-0027 決定4, ADR-0017 決定2・決定4, IADR-0254:
 // 報告サイクルの新しい供給（LLM 利用実績・借株料）が自動生成へ結線されていることと、

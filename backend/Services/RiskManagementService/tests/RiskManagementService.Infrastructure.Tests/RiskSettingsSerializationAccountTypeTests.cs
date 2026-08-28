@@ -1,11 +1,11 @@
 using System.Text.RegularExpressions;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-19, UC-06, #375, ADR-0021 決定1/決定3, IADR-0153:
 // 設定ストア（単一行 JSON）における**利用者が設定した口座種別**の往復と、**旧行の読み方**の検証。

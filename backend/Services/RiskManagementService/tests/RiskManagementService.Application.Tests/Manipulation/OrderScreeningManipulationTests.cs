@@ -1,14 +1,14 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
+namespace RiskManagementService.Application.Tests.Manipulation;
 
 // FR-19, IADR-0006/0040: 検出器を注入した OrderScreeningService の結合検証。
 // 受け入れ基準: ガード有効（既定）＋該当履歴 → 拒否（ManipulativeOrderPattern）／正常履歴 → 承認／ガード無効 → スキップ。

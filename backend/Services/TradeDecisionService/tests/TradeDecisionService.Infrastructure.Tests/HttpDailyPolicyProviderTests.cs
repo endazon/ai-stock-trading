@@ -1,10 +1,10 @@
 using System.Net;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-04, FR-07, IADR-0028: 報告書サービスの GET /reports/daily-policy を同期照会する実装の写像とフェイルセーフを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。

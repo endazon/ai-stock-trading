@@ -1,7 +1,7 @@
-using AiStockTrading.CostControl.Application.Ports;
+using CostControlService.Application.Ports;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // NFR（費用）, IADR-0055 決定5: 重複排除ストアの PostgreSQL 実装（専有 DB cost_control_svc）。
 // MessageId を主キーに持つ行の挿入可否で「未処理か」を判定する。同時到達は PK 衝突（DbUpdateException）で

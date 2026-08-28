@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
 
-namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
+namespace BacktestService.Infrastructure.Adapters;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: moomoo-api（MMAPI4Net）による実 OpenD 結合。
 // **米国株の日足 K 線（QotRequestHistoryKL）を 1 リクエスト分だけ取得する**（ページングの制御は

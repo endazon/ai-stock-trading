@@ -3,7 +3,7 @@
      技術詳細（EF Core 永続化・Migration・consumer・常駐ジョブ）は Infrastructure に置く。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <RootNamespace>AiStockTrading.RiskManagement.Api</RootNamespace>
+    <RootNamespace>RiskManagementService.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->

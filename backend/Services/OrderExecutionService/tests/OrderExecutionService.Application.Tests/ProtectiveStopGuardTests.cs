@@ -1,14 +1,14 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.StopGuard;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.StopGuard;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値ガード（失効検知・再発注・残存取消）の検証。
 // 業務フロー 02「逆指値の未受理・失効を検知 → 再発注、不可なら成行で手仕舞い」の分岐表と、

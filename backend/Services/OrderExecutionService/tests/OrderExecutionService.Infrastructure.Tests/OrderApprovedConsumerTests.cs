@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -15,9 +15,9 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
+using AppSvc = OrderExecutionService.Application.Services.OrderExecutionAppService;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-05, UC-01, UC-02: OrderApproved 購読 → ペーパー発注 → OrderExecuted 発行の検証。
 //

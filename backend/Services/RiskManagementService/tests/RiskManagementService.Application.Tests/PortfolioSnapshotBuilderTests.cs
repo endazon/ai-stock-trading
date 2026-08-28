@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, IADR-0005, IADR-0008: スナップショット構築の検証。生の運用状態と kill switch を合成し、
 // InvestedCapital・UnrealizedPnl・KillSwitchEngaged を判定入力へ正しく反映する。

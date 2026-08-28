@@ -2,9 +2,9 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
+using AppSvc = OrderExecutionService.Application.Services.OrderExecutionAppService;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
+namespace OrderExecutionService.Infrastructure.Steps;
 
 // FR-05, UC-01, UC-02, ADR-0003: リスク管理が承認した注文（OrderApproved・損切りの Close 含む）を購読し、
 // ブローカへ発注して結果を OrderExecuted として発行する。発注ロジックは Application 層に委譲する。

@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態ストア（単一行）の EF 永続化を InMemory DB で検証する。
 // 別コンテキストは「別レプリカ／再起動」の代理。連続観測回数と報告済みシグネチャが跨いで一貫すること、

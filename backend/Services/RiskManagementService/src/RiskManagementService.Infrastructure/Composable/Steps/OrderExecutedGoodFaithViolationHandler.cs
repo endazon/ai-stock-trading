@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // 約定（OrderExecuted）を購読し、**未決済資金による買付＝GFV 発生**を事後に計数する。

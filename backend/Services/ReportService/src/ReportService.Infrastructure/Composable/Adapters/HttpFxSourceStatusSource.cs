@@ -1,13 +1,13 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06, FR-10, FR-11, UC-06, #381, ADR-0022 決定1・決定2, IADR-0196 決定2〜4, IADR-0199:
 // 為替の情報源の状態を**監査台帳**から期間で引く（GET /audit/events/by-type・OwnerOrService）。

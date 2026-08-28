@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3 / §4.3, IADR-0149: 約定（OrderExecuted）を購読し、
 // 段階ゲートの「最小取引件数 100 件」を数えるための観測を記録する。

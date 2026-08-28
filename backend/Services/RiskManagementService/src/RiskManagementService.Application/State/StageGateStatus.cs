@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-20, UC-06, IADR-0070: 段階ゲートの現況（GET /risk-controls/stage-gate の応答）。
 // 現段階・その設定（モード・資金上限）・遷移履歴（監査）・昇格評価・撤退評価をまとめて返す。

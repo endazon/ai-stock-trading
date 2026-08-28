@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #141, FR-05, IADR-0092: 実照会プローブの3値写像を fake client で検証する（実 OpenD 不使用）。
 // at-most-once の要＝「不明は解放しない」を単体で固定する。実 OpenD 照会（MMApiMoomooTradeClient）は live 検証。

@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Application.Ports;
+namespace InformationCollectionService.Application.Ports;
 
 // NFR（費用）, FR-02, IADR-0031: 定時サイクル（情報収集 poller）が費用統制（#23）へ照会する統制ゲート。
 // 実データは費用統制サービスの GET /costs/state を同期照会して供給する（HttpCostControlGate）。

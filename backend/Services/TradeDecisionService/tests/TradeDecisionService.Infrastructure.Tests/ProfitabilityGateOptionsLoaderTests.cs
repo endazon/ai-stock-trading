@@ -1,10 +1,10 @@
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-17, IADR-0076: Profitability:* 構成の読み取りと安全側フォールバックの検証。
 // 既定＝現行挙動（採算評価無効・判断費用 0）を config 経由で壊さないことを保証する。

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016 決定7（2026-08-07 追記）, #420, IADR-0160:
 // **維持率統制の単一情報源**（純関数）。算式・建玉 1 件の閾値・口座へ適用する閾値・回復目標を、

@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.StopGuard;
-using AiStockTrading.OrderExecution.Domain;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.StopGuard;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.StopGuard;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Infrastructure.StopGuard;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -19,7 +19,7 @@ using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値ガードの**常駐**（巡回の駆動とイベント発行）の検証。
 //

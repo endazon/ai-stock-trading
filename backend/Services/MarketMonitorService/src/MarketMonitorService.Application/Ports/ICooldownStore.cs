@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Application.Ports;
+namespace MarketMonitorService.Application.Ports;
 
 // FR-03: 銘柄別の最終トリガー時刻を保持し、クールダウン中の再トリガーを抑制する。
 public interface ICooldownStore
