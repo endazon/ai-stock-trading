@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR]
 author: endazon (with Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-08-29
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/microservices-platform/07_adr/ADR-0030_backend-library-selection.md
@@ -96,7 +96,7 @@ csproj は既存の共有プロジェクトの書式に厳密に倣い、`Target
 | `TradingAssumptionsDefaults` | ○ | Report の Domain が引いている。`TradingAssumptions` を返すため単独では残せない |
 | `CostCalculator` | ○ | Backtest / Report の Domain が**実際に呼んでいる**（上記の発見） |
 | `TradingStage` | ○ | Backtest の Domain が引いている。通知・報告もこの段階を運ぶ |
-| `VersionedAssumptions` | ✕ | **設定サービス固有**（設定ストアの版・楽観排他）。他サービスの Domain は引いておらず、消費側は認可された経路（`ConfigurationService.Client`）越しに使う |
+| `VersionedAssumptions` | ✕ →〔2026-08-29 / #526〕**○** | **設定サービス固有**（設定ストアの版・楽観排他）。他サービスの Domain は引いておらず、消費側は認可された経路（`ConfigurationService.Client`）越しに使う。🔴 ［2026-08-29 追記 / #526］**[IADR-0264](IADR-0264_configurationservice-vsa-and-client-abolition.md) 決定 2 で本行の判定を引き直し、共有カーネルへ移送した。**除外の理由（「認可された経路越しに使う」）は、同 ADR 決定 1 が `ConfigurationService.Client` を廃止したことで成立しなくなったためである。**他の行の判定は不変。** |
 | `StageSettings` | ✕ | **リスク管理固有**（発注先と資金上限比）。`TradingStage` と同一ファイルにあったが、**ファイルを分割し enum だけを抜く** |
 
 **「移送を最小にする案」と「意味的なまとまりを保つ案」の両方を検討した。**
