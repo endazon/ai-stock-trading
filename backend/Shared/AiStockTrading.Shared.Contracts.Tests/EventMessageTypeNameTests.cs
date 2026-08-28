@@ -73,6 +73,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(FxRateSourceFellBack), "AiStockTrading.Shared.Contracts.Events.FxRateSourceFellBack")]
         [InlineData(typeof(FxRateSourcePrimaryRestored), "AiStockTrading.Shared.Contracts.Events.FxRateSourcePrimaryRestored")]
         [InlineData(typeof(FxRateStale), "AiStockTrading.Shared.Contracts.Events.FxRateStale")]
+        // #513: どの情報源を使ったかの暦日ごとの記録（IADR-0225）。
+        [InlineData(typeof(FxRateSourceUsed), "AiStockTrading.Shared.Contracts.Events.FxRateSourceUsed")]
         // #381 停止側: 鮮度切れのレートで決済した事実（IADR-0198）。
         [InlineData(typeof(PositionClosedWithStaleFxRate), "AiStockTrading.Shared.Contracts.Events.PositionClosedWithStaleFxRate")]
         // FR-04, FR-06, FR-09, #335, ADR-0017 決定4, IADR-0217: フォールバック発火（可視化 3 経路の②③）。

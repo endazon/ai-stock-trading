@@ -82,6 +82,14 @@
     "Quote": "String",
     "SourceName": "String"
   },
+  "FxRateSourceUsed": {
+    "IsPrimary": "Boolean",
+    "OccurredAt": "DateTimeOffset",
+    "Quote": "String",
+    "Rank": "Int32",
+    "SourceName": "String",
+    "TotalSources": "Int32"
+  },
   "FxRateStale": {
     "AgeDays": "Double",
     "AsOf": "DateTimeOffset",

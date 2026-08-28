@@ -335,6 +335,19 @@ public sealed class FxRateSourceFellBackAuditHandler(IAuditEventStore store, ICl
     }
 }
 
+// FR-06, FR-10, FR-11, #513, ADR-0022 決定1, IADR-0225: **どの情報源を使ったか**を暦日ごとに台帳へ残す。
+//
+// 🔴 **本ハンドラが無いと「静かな期間」の出典を後から証明できない。** 切替・復帰は遷移でしか出ないため、
+// 平常時の台帳は空白であり、**「静かに第一の源を使った」と「為替を一度も使わなかった」の区別が付かない。**
+public sealed class FxRateSourceUsedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(FxRateSourceUsed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 public sealed class FxRateSourcePrimaryRestoredAuditHandler(IAuditEventStore store, IClock clock)
 {
     public void Handle(FxRateSourcePrimaryRestored message, Envelope envelope)
