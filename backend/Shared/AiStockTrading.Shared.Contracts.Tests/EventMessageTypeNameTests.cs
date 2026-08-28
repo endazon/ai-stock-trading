@@ -87,6 +87,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(TradeDecisionSkipped), "AiStockTrading.Shared.Contracts.Events.TradeDecisionSkipped")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
+        // FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
+        [InlineData(typeof(TradeExpenseRecorded), "AiStockTrading.Shared.Contracts.Events.TradeExpenseRecorded")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]
         // FR-01, #336, ADR-0020 決定2〜4: 情報源の欠測による縮退・回復と、一般 Web 収集の発動／解除。
         [InlineData(typeof(InformationSourceDegraded), "AiStockTrading.Shared.Contracts.Events.InformationSourceDegraded")]

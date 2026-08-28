@@ -121,4 +121,36 @@ public class ProcessedMessageRetentionServiceTests
 
         (await service.PurgeOnceAsync(CancellationToken.None)).Should().Be(42);
     }
+
+    // NFR-10, NFR-11, FR-11, #339, IADR-0228: 本サービスが消すストアは**パージしてよいと宣言されている**ものだけである。
+    // 重複排除メタデータ（NFR-08）
+    //
+    // 🔴 業務台帳・監査証跡（費用台帳・発注履歴・監査ログ）は 7 年保持でパージ対象外であり、
+    // 配線がそちらを指した瞬間に `PurgeOnceAsync` が 1 行も消さずに落ちる（<c>RetentionScope.EnsurePurgeable</c>）。
+    [Fact]
+    public void パージ対象は保持区分の宣言でパージ可とされている()
+    {
+        RetentionScope.IsPurgeable("processed_messages").Should().BeTrue();
+    }
+
+    // 否定形: 監査台帳を対象にすることはできない（7 年保持）。
+    // **宣言を読むだけでなく、パージ経路が呼ぶ関門そのものが止めることを確かめる。**
+    [Fact]
+    public void 否定形_監査台帳をパージ対象にしようとすると関門が止める()
+    {
+        RetentionScope.IsPurgeable("audit_events").Should().BeFalse();
+
+        var act = () => RetentionScope.EnsurePurgeable("audit_events");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    // 本サービスの対象は関門を通る（＝実際に呼ばれる PurgeOnceAsync が落ちない）。
+    [Fact]
+    public void パージ対象は関門を通る()
+    {
+        var act = () => RetentionScope.EnsurePurgeable("processed_messages");
+
+        act.Should().NotThrow();
+    }
 }

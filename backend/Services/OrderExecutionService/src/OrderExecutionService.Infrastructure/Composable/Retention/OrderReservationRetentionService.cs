@@ -20,6 +20,9 @@ internal sealed class OrderReservationRetentionService(
     IOptions<RetentionOptions> options,
     ILogger<OrderReservationRetentionService> logger) : BackgroundService
 {
+    // NFR-08, NFR-09, #339: 本サービスが消すストア。RetentionScope の宣言と照合する（7 年保持側を指したら落ちる）。
+    private const string PurgeTarget = "order_dispatch_reservations";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -67,6 +70,10 @@ internal sealed class OrderReservationRetentionService(
     public Task<int> PurgeOnceAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        // NFR-10, FR-11, #339: パージしてよいストアかを削除の前に確かめる。
+        // 業務台帳・監査証跡（7 年保持）を指すよう配線が変わったら、1 行も消さずにここで落ちる。
+        RetentionScope.EnsurePurgeable(PurgeTarget);
 
         var cutoff = RetentionPolicy.CutoffFor(clock.UtcNow, options.Value.RetentionDays);
 
