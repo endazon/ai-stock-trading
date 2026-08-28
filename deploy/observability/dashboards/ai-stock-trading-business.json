@@ -1,0 +1,135 @@
+{
+  "title": "AI Stock Trading Business",
+  "uid": "ai-stock-trading-business",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "tags": ["ai-stock-trading", "business"],
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "取引サイクル: 収集件数（1h あたり）",
+      "description": "情報収集が回っているか。0 が続くならサイクルの起点が止まっている（空巡回は 0 の測定値として出る）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum(increase(ast_information_items_collected_total[1h]))",
+        "legendFormat": "収集件数"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "取引サイクル: 判断回数の内訳（buy / sell / 見送り）",
+      "description": "action タグで Buy・Sell・no-trade を読み分ける。no-trade だけが伸びるなら判断は動いているが発注意図が生まれていない。",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (action) (increase(ast_trade_cycle_decisions_total[1h]))",
+        "legendFormat": "{{action}}"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "取引サイクル: 判断レイテンシ P95（ms）",
+      "description": "trigger 別（scheduled / price-movement）。価格変動から発注完了までの所要（5 分以内）の内訳として読む。",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.95, sum by (le, trigger) (rate(ast_trade_cycle_decision_duration_ms_bucket[5m])))",
+        "legendFormat": "{{trigger}}"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "統制: 発注前審査（承認 / 拒否）",
+      "description": "承認も拒否も数える。両方 0 なら『違反 0 件』ではなく『審査が動いていない』である。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 7, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (outcome) (increase(ast_risk_screenings_total[1h]))",
+        "legendFormat": "{{outcome}}"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "統制: 見送り理由の内訳（24h）",
+      "description": "上限超過・kill switch・一時停止・禁止銘柄などの内訳。1 注文に複数の理由が同時に立ち得る。",
+      "type": "barchart",
+      "gridPos": { "x": 8, "y": 7, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_risk_rejections_total[24h]))",
+        "legendFormat": "{{reason}}"
+      }]
+    },
+    {
+      "id": 6,
+      "title": "発注: 結果の内訳（status / provider）",
+      "description": "Accepted・Filled・Rejected・Cancelled などの別と発注先の別。Stage 1 の算入対象は provider=MoomooSimulate である。",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 7, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (status, provider) (increase(ast_order_executions_total[1h]))",
+        "legendFormat": "{{status}} / {{provider}}"
+      }]
+    },
+    {
+      "id": 7,
+      "title": "発注: 見送り（ブローカーへ届いていない）",
+      "description": "OpenD 断・逆指値を張れない Open など。ブローカーの拒否（status=Rejected）とは別の事象である。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 14, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_order_dispatch_forgone_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
+    },
+    {
+      "id": 8,
+      "title": "費用: LLM 費用の計上（30d・category 別）",
+      "description": "category=Llm は月次上限の対象、LlmUncapped は対象外（報告書生成・情報収集）。上限判定は次のパネルの比率を見る。",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 14, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (category) (increase(ast_llm_cost_jpy_total[30d]))",
+        "legendFormat": "{{category}}"
+      }]
+    },
+    {
+      "id": 9,
+      "title": "費用: 月次 LLM 上限に対する比率（%）",
+      "description": "80% で定時サイクルの間隔を延長、100% で停止する。カウンタは月次リセットを表現しないため、上限判定はこのゲージで見る。",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 14, "w": 8, "h": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 120,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "max(ast_llm_cost_limit_ratio_percent)",
+        "legendFormat": "上限消費率"
+      }]
+    }
+  ]
+}

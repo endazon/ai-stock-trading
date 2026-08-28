@@ -1425,4 +1425,64 @@ module.exports = ({ ok, assert }) => {
       assert.match(readme, /gen-knowledge-graph\.js/, 'scripts/README.md に gen-knowledge-graph.js の記載が無い');
     });
   }
+  // --- check-observability-assets: 業務メトリクスとダッシュボードの乖離検査（NFR-07 / #287 / IADR-0255） ---
+  //
+  // 🔴 ダッシュボードとコードの乖離は**エラーを出さない**。系列名がずれたパネルは空のグラフを描き、
+  // 空のグラフは「異常が起きていない」と読める。**監視しているつもりで何も見ていない**状態が
+  // 気付かれずに続くため、名前の一致を機械で止める。
+  {
+    const fsOa = require('fs');
+    const pathOa = require('path');
+    const { execFileSync: execOa } = require('child_process');
+    const REPO_ROOT_OA = pathOa.resolve(__dirname, '..');
+    const oa = require('./check-observability-assets.js');
+
+    ok('check-observability-assets: 自己試験が全件通る', () => {
+      execOa(process.execPath, [pathOa.join(__dirname, 'check-observability-assets.js'), '--self-test'], {
+        cwd: REPO_ROOT_OA,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('check-observability-assets: 実データ（ダッシュボード × 計器レジストリ）が一致している', () => {
+      execOa(process.execPath, [pathOa.join(__dirname, 'check-observability-assets.js')], {
+        cwd: REPO_ROOT_OA,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('check-observability-assets: コード名 → Prometheus 名の変換は単純な置換 1 本である', () => {
+      assert.strictEqual(oa.promPrefixOf('ast.trade_cycle.decisions'), 'ast_trade_cycle_decisions');
+    });
+
+    ok('check-observability-assets: 実レジストリから 9 計器を読める（読み取りが壊れたら気付く）', () => {
+      const src = fsOa.readFileSync(
+        pathOa.join(REPO_ROOT_OA, 'backend', 'Shared', 'AiStockTrading.Shared.Contracts',
+          'Observability', 'BusinessMetricNames.cs'),
+        'utf8');
+      const names = oa.parseRegistry(src);
+      assert.ok(names.length >= 9, `読めた計器が ${names.length} 件（9 件以上を期待）`);
+      assert.ok(names.every((n) => n.startsWith('ast.')), `ast. 以外が混ざった: ${names}`);
+    });
+
+    ok('check-observability-assets: 業務ダッシュボードが 9 計器すべてを引いている', () => {
+      const dash = JSON.parse(fsOa.readFileSync(
+        pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'dashboards', 'ai-stock-trading-business.json'),
+        'utf8'));
+      const series = oa.referencedSeries(dash);
+      assert.ok(series.length >= 9, `引いている ast_* 系列が ${series.length} 件（9 件以上を期待）`);
+    });
+
+    ok('ci.yml: check-observability-assets の自己試験と本検査の両方が配線されている', () => {
+      const ciYml = fsOa.readFileSync(pathOa.join(REPO_ROOT_OA, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ciYml, /check-observability-assets\.js --self-test/, '自己試験が ci.yml に無い');
+      const count = (ciYml.match(/check-observability-assets\.js/g) || []).length;
+      assert.ok(count >= 2, `呼び出しが ${count} 件（自己試験＋本検査で最低 2 件必要）`);
+    });
+
+    ok('scripts/README.md: 本リポジトリ固有の表に check-observability-assets.js を記載している', () => {
+      const readme = fsOa.readFileSync(pathOa.join(REPO_ROOT_OA, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-observability-assets\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
 };
