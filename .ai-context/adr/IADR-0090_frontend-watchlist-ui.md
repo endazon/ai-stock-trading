@@ -30,7 +30,7 @@ plan_refs:
   [IADR-0084](IADR-0084_frontend-risk-settings-and-control-status.md)（SC-02/SC-03 新設・数値 enum 写像）、
   [IADR-0080](IADR-0080_frontend-settings-screen.md)（frontend 新設・単独リポの @foundation スタブ＋vitest）
 - 前提（develop マージ済み）: MarketMonitor `GET/POST/DELETE /monitor/watchlist`・`GET /monitor/watchlist/history`
-  （OwnerOnly・[MonitorSettingsEndpoints.cs](../../backend/Services/MarketMonitorService/src/MarketMonitorService.Api/Foundation/Endpoints/MonitorSettingsEndpoints.cs)・PR #195）
+  （OwnerOnly・[MonitorSettingsEndpoints.cs](../../backend/Services/MarketMonitorService/Features/MarketMonitor/MonitorSettingsEndpoints.cs)・PR #195）
 - **採番について（0089 の欠番は意図的）**: 本 IADR は **0090** を用いる。**0089 は並行作業の #164 に先着で割り当て済み**
   （ユーザー調整による）で、本ブランチで 0089 を使うと衝突する。番号衝突の扱いは「先着尊重」（[README の採番手順](README.md)・
   前例 [20260717_iadr-0059-number-collision-fix.md](../specs/20260717_iadr-0059-number-collision-fix.md)）に従い当面 0089 を空けて
