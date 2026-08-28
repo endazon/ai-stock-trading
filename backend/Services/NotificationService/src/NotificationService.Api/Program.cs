@@ -27,7 +27,9 @@ builder.Services.AddAiStockTradingHealthChecks();
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("notifier", string.IsNullOrWhiteSpace(builder.Configuration["Notifications:Provider"]) ? "noop" : builder.Configuration["Notifications:Provider"]!)
-    .AddPortFromBaseUrl("risk-control", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder"));
+    .AddPortFromBaseUrl("risk-control", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
+    // #341, IADR-0240: 報告書レビュー（確定）の実効経路。未設定なら placeholder＝Discord からの確定は失敗する。
+    .AddPortFromBaseUrl("report-review", builder.Configuration["Reports:BaseUrl"], "http", "placeholder"));
 
 // FR-09, IADR-0020: 送信手段の選択（安全既定 no-op）。実 Discord 送信は Notifications:Provider=discord-webhook で明示有効化する。
 // #289: Webhook URL は資格情報のため、送信専用クライアントの既定リクエストログ（URI を平文で出す）を抑止する。
@@ -107,12 +109,34 @@ builder.Services.AddSingleton<IGoodFaithViolationController>(sp =>
 });
 builder.Services.AddSingleton<GoodFaithViolationCommandHandler>();
 
+// FR-07, FR-14, UC-03〜05, ADR-0003, #341, IADR-0240: 報告書レビュー（版番号の照会・冪等確定・差し戻し）。
+// kill switch と同じく報告書サービス（#14）の OwnerOnly エンドポイントを owner マップ機密クライアントの
+// トークンで呼ぶ（trading-service では 403）。報告書サービス側は無改修。
+// Reports:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝呼び出し失敗（Succeeded=false）に倒す。
+builder.Services.AddHttpClient("report-review", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IReportReviewController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-review");
+    var baseUrl = builder.Configuration["Reports:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
+});
+
+// 詳細設計07 §二重実行防止: 窓口での多重押下を弾く前段のガード（**権威は報告書サービスの版番号付き冪等 API**）。
+// Bot はステートレスであるべきなので永続化しない（IADR-0240 決定2）。プロセス内で共有するため singleton。
+builder.Services.AddSingleton<VersionedConfirmationGuard>();
+builder.Services.AddSingleton<ReportCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
     sp.GetRequiredService<PauseCommandHandler>(),
     sp.GetRequiredService<StageGateCommandHandler>(),
     sp.GetRequiredService<GoodFaithViolationCommandHandler>(),
+    sp.GetRequiredService<ReportCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 
