@@ -4,7 +4,9 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
@@ -52,6 +54,9 @@ public class TradeDecisionMadeConsumerTests
                 opts.Services.AddSingleton<IBrokerAccountObservationStore>(
                     new InMemoryBrokerAccountObservationStore(TimeProvider.System));
                 opts.Services.AddSingleton<PortfolioSnapshotBuilder>();
+                // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton(sp => new OrderScreeningService(
                     sp.GetRequiredService<IRiskSettingsStore>(),
                     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -122,6 +127,45 @@ public class TradeDecisionMadeConsumerTests
         var tally = violations.GetTally();
         tally.Should().NotBeNull("審査が動けば集計は供給される");
         tally!.Count.Should().Be(0, "緊急停止による拒否はクラス B であり統制違反に計上しない");
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, FR-10, FR-19, #287, IADR-0255: **統制が効いていることが業務メトリクスで見える**（肯定形）。
+    // 審査 1 件（outcome=rejected）と拒否理由の内訳（reason=KillSwitchActive）が実際に刻まれる。
+    // 「拒否だけを数えない」設計であるため、承認側も同じ計器 ast.risk.screenings で数える。
+    [Fact]
+    public async Task 拒否の審査で統制メトリクスが実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        var killSwitch = new InMemoryKillSwitchStore();
+        killSwitch.SetState(new KillSwitchState(true, "user", "停止", DateTimeOffset.UtcNow));
+        using var host = await BuildHostAsync(killSwitch);
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
+
+        capture.TagValuesOf(BusinessMetricNames.RiskScreenings, BusinessMetricNames.TagOutcome)
+            .Should().Contain(BusinessMetrics.OutcomeRejected);
+        capture.TagValuesOf(BusinessMetricNames.RiskRejections, BusinessMetricNames.TagReason)
+            .Should().Contain(nameof(RejectionReason.KillSwitchActive));
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, FR-10, #287, IADR-0255: **承認でも審査回数を数える**（対の肯定形）。
+    // 承認を数えないと「違反 0 件」と「そもそも審査が動いていない」を区別できない（#387 と同じ fail-open）。
+    [Fact]
+    public async Task 承認の審査でも審査回数が刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await BuildHostAsync(new InMemoryKillSwitchStore());
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new TradeDecisionMade(Guid.NewGuid(), Entry(), "判断", DateTimeOffset.UtcNow));
+
+        capture.TagValuesOf(BusinessMetricNames.RiskScreenings, BusinessMetricNames.TagOutcome)
+            .Should().Contain(BusinessMetrics.OutcomeApproved);
 
         await host.StopAsync();
     }

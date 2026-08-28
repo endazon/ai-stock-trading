@@ -4,7 +4,9 @@ using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,6 +58,9 @@ public class PriceMovementDetectedConsumerTests
                 opts.Services.AddSingleton<IDailyPolicyProvider>(new FakePolicy(policy));
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
                 opts.Services.AddScoped<AppSvc>();
+                // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
+                opts.Services.AddSingleton<BusinessMetrics>();
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -116,6 +121,26 @@ public class PriceMovementDetectedConsumerTests
 
         session.Executed.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, #287, IADR-0255: **「計器を定義した」と「計器が発火した」は別の事実である。**
+    // 価格変動起点で判断が成立したとき、判断回数（action=buy・trigger=price-movement）とレイテンシが
+    // 実際に刻まれることを MeterListener で観測して固定する（肯定形）。
+    [Fact]
+    public async Task 判断が成立すると業務メトリクスが実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"));
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(Trigger());
+
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagAction)
+            .Should().Contain("buy");
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagTrigger)
+            .Should().Contain(BusinessMetrics.TriggerPriceMovement);
+        capture.ValuesOf(BusinessMetricNames.TradeCycleDecisionDurationMs).Should().NotBeEmpty();
 
         await host.StopAsync();
     }
