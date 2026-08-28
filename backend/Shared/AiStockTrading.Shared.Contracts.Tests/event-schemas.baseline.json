@@ -99,6 +99,13 @@
     "Quote": "String",
     "WarnThresholdDays": "Double"
   },
+  "GeneralWebCollectionStateChanged": {
+    "Category": "String",
+    "Engaged": "Boolean",
+    "OccurredAt": "DateTimeOffset",
+    "ProvisionalUntil": "DateTimeOffset?",
+    "Reason": "String"
+  },
   "GoodFaithViolationRecorded": {
     "DecisionId": "Guid",
     "EventId": "Guid",
@@ -122,6 +129,21 @@
     "CollectedAt": "DateTimeOffset",
     "EventId": "Guid",
     "ItemCount": "Int32"
+  },
+  "InformationSourceDegraded": {
+    "Behavior": "String",
+    "BlocksNewEntries": "Boolean",
+    "Category": "String",
+    "ClosesAllowed": "Boolean",
+    "MissingSources": "IReadOnlyList\u003CString\u003E",
+    "OccurredAt": "DateTimeOffset"
+  },
+  "InformationSourceRecovered": {
+    "AffectedCycles": "Int32",
+    "Category": "String",
+    "DegradedAt": "DateTimeOffset",
+    "OccurredAt": "DateTimeOffset",
+    "OutageDuration": "TimeSpan"
   },
   "LlmCostIncurred": {
     "Amount": "Decimal",

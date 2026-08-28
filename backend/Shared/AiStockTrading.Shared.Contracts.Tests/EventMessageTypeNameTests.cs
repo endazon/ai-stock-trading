@@ -84,6 +84,10 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]
+        // FR-01, #336, ADR-0020 決定2〜4: 情報源の欠測による縮退・回復と、一般 Web 収集の発動／解除。
+        [InlineData(typeof(InformationSourceDegraded), "AiStockTrading.Shared.Contracts.Events.InformationSourceDegraded")]
+        [InlineData(typeof(InformationSourceRecovered), "AiStockTrading.Shared.Contracts.Events.InformationSourceRecovered")]
+        [InlineData(typeof(GeneralWebCollectionStateChanged), "AiStockTrading.Shared.Contracts.Events.GeneralWebCollectionStateChanged")]
         public void 全イベントのメッセージ識別子は固定値である(Type eventType, string expectedMessageTypeName)
         {
             // ToMessageTypeName を実際に呼ぶ（識別子を自前で組み立てない）。

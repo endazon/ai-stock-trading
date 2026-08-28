@@ -393,6 +393,16 @@ public sealed class LlmFallbackFiredAuditHandler(IAuditEventStore store, IClock 
     }
 }
 
+// FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退を台帳へ記録する。
+public sealed class InformationSourceDegradedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(InformationSourceDegraded message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-04, FR-09, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 取引判断の見送りを台帳へ記録する。
 //
 // 🔴 **見送りは障害ではなく設計上の正常な結果である。** 記録する理由は障害追跡ではなく、
@@ -401,6 +411,30 @@ public sealed class LlmFallbackFiredAuditHandler(IAuditEventStore store, IClock 
 public sealed class TradeDecisionSkippedAuditHandler(IAuditEventStore store, IClock clock)
 {
     public void Handle(TradeDecisionSkipped message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-01, FR-11, #336, ADR-0020 決定2-3: 欠測からの回復（発生時刻・継続時間・該当サイクル数）を台帳へ記録する。
+//
+// 🔴 **本ハンドラが日報・月報の集計経路である。** 種別 × 期間の照会（IADR-0199 決定2）で引ける形で
+// 残さないと、「欠測の月次合計を月報に記録する」（ADR-0020 決定2-3）が成立しない。
+public sealed class InformationSourceRecoveredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(InformationSourceRecovered message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集の発動／解除を台帳へ記録する。
+// ADR-0020 決定4 は「発動・解除はいずれも監査ログに残し、月報に記載する」ことを求めている。
+public sealed class GeneralWebCollectionStateChangedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(GeneralWebCollectionStateChanged message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));

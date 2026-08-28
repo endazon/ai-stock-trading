@@ -78,6 +78,14 @@ services:
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
+      # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
+      # 実 API キーでの実測後に値を入れる。推測値を焼き込まないこと。
+      - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============
+      # ローカルでは Provider に finnhub-news / google-news を含めていないため**未構成**である
+      # （未構成は欠測に数えない＝IADR-0220）。boj と同じく env の枠だけ保持し、既定描画から
+      # 落とさない（helm.yml の env 突合が values-local の写し忘れを検出する）。
+      - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # ============ SEC EDGAR（米国の開示・API キー不要）: #279/IADR-0114 ============
       # SEC 規約は**連絡先（実在のメールアドレス）入り**の User-Agent を必須とする（IADR-0064 決定4 が構成必須化）。
       # これは環境固有の個人情報のため values へ直書きせず ast-secrets 経由で与える（IADR-0114 決定2）。
