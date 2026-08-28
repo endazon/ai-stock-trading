@@ -154,6 +154,9 @@
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure.Tests/AiStockTrading.Shared.Infrastructure.Tests.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.KnowledgeBase/AiStockTrading.Shared.KnowledgeBase.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.KnowledgeBase.Tests/AiStockTrading.Shared.KnowledgeBase.Tests.csproj" />
+    <!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型の共有カーネル（葉であること・外部ライブラリ依存ゼロ）。 -->
+    <Project Path="Shared/AiStockTrading.Shared.Kernel/AiStockTrading.Shared.Kernel.csproj" />
+    <Project Path="Shared/AiStockTrading.Shared.Kernel.Tests/AiStockTrading.Shared.Kernel.Tests.csproj" />
   </Folder>
   <Folder Name="/TestSupport/">
     <Project Path="TestSupport/AiStockTrading.TestSupport.ContractFixtures/AiStockTrading.TestSupport.ContractFixtures.csproj" />

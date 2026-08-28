@@ -1,9 +1,9 @@
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.Report.Application.Services;
 

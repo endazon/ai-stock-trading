@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;

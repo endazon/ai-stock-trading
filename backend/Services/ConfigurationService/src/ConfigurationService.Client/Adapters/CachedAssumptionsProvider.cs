@@ -1,5 +1,6 @@
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Configuration.Client.Adapters;

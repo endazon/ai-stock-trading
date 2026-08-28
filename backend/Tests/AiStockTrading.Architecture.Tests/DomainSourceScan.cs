@@ -71,7 +71,7 @@ internal static class DomainSourceScan
     ///   <item><c>AiStockTrading.&lt;任意&gt;.Domain[.*]</c>: 他の Domain（旧 csproj 方式の許可リスト
     ///     <c>*.Domain</c> と同じ広さ。自サービスかどうかは検査 (d) が別に絞る）</item>
     ///   <item><c>AiStockTrading.Shared.Contracts[.*]</c>: ユニット単位の契約（platform ADR-0019 決定 4）</item>
-    ///   <item><c>AiStockTrading.Shared.Kernel[.*]</c>: 将来の共有カーネル。<b>実体はまだ無い</b></item>
+    ///   <item><c>AiStockTrading.Shared.Kernel[.*]</c>: 共有カーネル（IADR-0260 で新設）</item>
     /// </list>
     /// <c>AiStockTrading.Shared.Infrastructure</c> / <c>.KnowledgeBase</c> は<b>許可しない</b>
     /// （外部ライブラリを引き込む実装であり、Domain から到達できてはならない）。

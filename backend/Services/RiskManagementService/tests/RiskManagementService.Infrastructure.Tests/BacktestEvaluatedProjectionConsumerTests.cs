@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;

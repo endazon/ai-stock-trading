@@ -1,6 +1,6 @@
 using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Ports;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
 

@@ -1,6 +1,7 @@
 using AiStockTrading.Configuration.Client.Adapters;
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

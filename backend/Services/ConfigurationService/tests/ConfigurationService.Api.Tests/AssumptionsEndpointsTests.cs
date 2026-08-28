@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;

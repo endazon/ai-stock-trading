@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Kernel.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, ADR-0008, UC-06, IADR-0041: 段階ゲートの遷移管理（状態機械＋承認フロー・純ロジック）。

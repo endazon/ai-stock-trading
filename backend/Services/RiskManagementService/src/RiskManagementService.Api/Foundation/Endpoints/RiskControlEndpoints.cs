@@ -4,6 +4,7 @@ using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

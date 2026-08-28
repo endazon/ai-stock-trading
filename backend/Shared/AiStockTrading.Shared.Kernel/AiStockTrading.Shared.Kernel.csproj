@@ -1,0 +1,14 @@
+<!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型の置き場（共有カーネル）。
+     Domain 層から到達してよい共有プロジェクトであるため、外部ライブラリへ依存しない
+     （platform ADR-0030 §基本方針。SharedProjectDependencyTests が強制する）。
+     🔴 本プロジェクトは葉である —— どのサービスも参照しない（SharedKernelIsLeafTests が強制する）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Shared.Kernel</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FR-17: 概算費用関数が Market 等の共有取引型を用いるため参照する（契約プロジェクトも外部ライブラリ依存ゼロ）。 -->
+    <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>

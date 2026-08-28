@@ -2,6 +2,7 @@ using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 

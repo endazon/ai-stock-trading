@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.ContractFixtures;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,6 +1,7 @@
 using AiStockTrading.Configuration.Client.Ports;
 using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
