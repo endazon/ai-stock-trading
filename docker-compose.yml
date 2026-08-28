@@ -143,8 +143,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj
-        SERVICE_DLL: BacktestService.Api.dll
+        SERVICE_PROJECT: backend/Services/BacktestService/BacktestService.csproj
+        SERVICE_DLL: BacktestService.dll
     environment:
       <<: *app-env
       Backtest__BarData__Provider: ${BACKTEST_BAR_DATA_PROVIDER:-}
