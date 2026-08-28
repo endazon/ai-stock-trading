@@ -1,5 +1,6 @@
 using AiStockTrading.Audit.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Audit.Application.Services;
 
@@ -295,6 +296,37 @@ public static class AuditEntryFactory
             + $"換算率 {e.FxRateToBase}（{e.Quote}→基準通貨）・**観測日 {e.RateAsOf:yyyy-MM-dd}（{e.AgeDays:0.#} 日前）**。"
             + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-11, UC-07, ADR-0016 決定15, ADR-0027 決定2, #339, IADR-0226: **取引記録の経費 1 行**。
+    //
+    // 相関は**建玉ごと**（`trade-expense:{Symbol}:{Market}`）。ADR-0016 決定15 が求める
+    // 「建玉単位で紐づけられること」を、既存の借株料（`borrow-fee:{Symbol}:{Market}`）と同じ作法で満たす。
+    // 建玉の一次識別子が (銘柄, 市場) であることは ADR-0027 決定2 が定めている。
+    //
+    // 🔴 **区分ラベルを金額より先に置く。** 要約は 200 文字で切り詰めるため、後ろに置いた注記は
+    // 発生元 ID が長いだけで落ちる。`DividendInLieu` の「配当ではない」という注記が落ちると、
+    // **要約を読む監査で配当の受取と読み違えられる**——ADR-0016 決定15 が名指しした誤りそのものである。
+    public static AuditEntry From(TradeExpenseRecorded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeExpenseRecorded),
+        AuditCorrelation.From($"trade-expense:{e.Expense.Symbol}:{e.Expense.Market}"), e.Expense.Symbol,
+        Truncate($"経費計上 {CategoryLabel(e.Expense.Category)} {e.Expense.Symbol}/{e.Expense.Market} "
+            + $"{e.Expense.AmountUsd} USD（計上日 {e.Expense.OccurredOn:yyyy-MM-dd}・発生元 {e.Expense.SourceId}）"),
+        AuditSerialization.Serialize(e), e.Expense.RecordedAt, recordedAt);
+
+    // 経費区分の表示ラベル。**配当相当額だけは注記を label に埋め込む**——切り詰めで落ちないようにするため。
+    private static string CategoryLabel(TradeExpenseCategory category) => category switch
+    {
+        TradeExpenseCategory.Realized => "実現損益（費用ではありません）",
+        TradeExpenseCategory.BorrowFee => "借株料",
+        TradeExpenseCategory.MarginInterest => "信用金利",
+        // 🔴 ADR-0016 決定15 の要点。配当（収入）と混同すると税務上の扱いが変わる。
+        TradeExpenseCategory.DividendInLieu => "配当相当額の支払い（**配当の受取ではありません**／譲渡費用に近い扱い）",
+        TradeExpenseCategory.Commission => "売買手数料",
+        TradeExpenseCategory.Fee => "諸費用",
+        TradeExpenseCategory.FxCost => "為替コスト",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(category), category, "経費区分の表示ラベルが定義されていない（区分を追加したらラベルも追加すること）。"),
+    };
 
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
     private static string FormatDuration(TimeSpan d) =>

@@ -242,6 +242,9 @@
     "Intent": "OrderIntent",
     "Rationale": "String"
   },
+  "TradeExpenseRecorded": {
+    "Expense": "TradeExpense"
+  },
   "WithdrawalTriggered": {
     "HaltNewEntries": "Boolean",
     "OccurredAt": "DateTimeOffset",

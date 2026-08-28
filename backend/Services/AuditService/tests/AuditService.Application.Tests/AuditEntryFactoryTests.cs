@@ -610,4 +610,109 @@ public class AuditEntryFactoryTests
 
         b.CorrelationId.Should().NotBe(a.CorrelationId);
     }
+
+    // ── FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費区分 7 種 ───────────────
+
+    private static readonly DateOnly ExpenseDay = new(2026, 8, 28);
+    private static readonly DateTimeOffset ExpenseAt = new(2026, 8, 28, 9, 0, 0, TimeSpan.Zero);
+
+    private static TradeExpenseRecorded Expense(
+        TradeExpenseCategory category, string symbol = "AAPL", Market market = Market.UnitedStates) =>
+        new(new TradeExpense(symbol, market, category, 12.34m, ExpenseDay, "ORD-1", ExpenseAt));
+
+    [Fact]
+    public void 経費計上は建玉ごとの相関と銘柄で記録される()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(TradeExpenseRecorded));
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("売買手数料");
+        entry.Summary.Should().Contain("AAPL/UnitedStates");
+        entry.OccurredAt.Should().Be(ExpenseAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        // 区分は payload にも残る（要約は切り詰められるが、payload は全量である）。
+        entry.Detail.Should().Contain("Commission");
+    }
+
+    // 建玉の一次識別子は (銘柄, 市場) である（ADR-0027 決定2）。
+    // 相関が固定だと、全建玉の経費が 1 本に混ざり「建玉単位で紐づけられる」が成立しない。
+    [Fact]
+    public void 経費計上の相関は建玉ごとに分かれる()
+    {
+        var apple = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+        var microsoft = AuditEntryFactory.From(
+            Expense(TradeExpenseCategory.Commission, "MSFT"), Id, RecordedAt);
+        var appleInJapan = AuditEntryFactory.From(
+            Expense(TradeExpenseCategory.Commission, "AAPL", Market.Japan), Id, RecordedAt);
+
+        microsoft.CorrelationId.Should().NotBe(apple.CorrelationId);
+        appleInJapan.CorrelationId.Should().NotBe(apple.CorrelationId, "市場が違えば別の建玉である");
+    }
+
+    [Fact]
+    public void 同じ建玉の経費は区分が違っても同じ相関で辿れる()
+    {
+        var commission = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+        var borrowFee = AuditEntryFactory.From(Expense(TradeExpenseCategory.BorrowFee), Id, RecordedAt);
+
+        borrowFee.CorrelationId.Should().Be(commission.CorrelationId);
+    }
+
+    // 🔴 ADR-0016 決定15 の要点。要約を走査する監査で「配当を受け取った」と読み違えられないこと。
+    [Fact]
+    public void 否定形_配当相当額の要約は配当の受取ではないと明示する()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.DividendInLieu), Id, RecordedAt);
+
+        entry.Summary.Should().Contain("配当相当額の支払い");
+        entry.Summary.Should().Contain("配当の受取ではありません");
+        entry.Summary.Should().Contain("譲渡費用");
+    }
+
+    // 🔴 要約は 200 文字で切り詰める。注記を金額や発生元より後ろに置くと、
+    // **発生元 ID が長いだけで「配当ではない」が落ちる**。区分ラベルを先頭側に置いてあることを固定する。
+    [Fact]
+    public void 否定形_発生元が極端に長くても配当ではない旨は切り詰めで落ちない()
+    {
+        var longSource = new string('X', 500);
+        var e = new TradeExpenseRecorded(new TradeExpense(
+            "AAPL", Market.UnitedStates, TradeExpenseCategory.DividendInLieu,
+            12.34m, ExpenseDay, longSource, ExpenseAt));
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("配当の受取ではありません");
+    }
+
+    [Fact]
+    public void 実現損益の要約は費用ではないと明示する()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.Realized), Id, RecordedAt);
+
+        entry.Summary.Should().Contain("実現損益");
+        entry.Summary.Should().Contain("費用ではありません");
+    }
+
+    // 区分を増やして表示ラベルの写像を足し忘れたら、既定値へ倒れず例外で落ちる。
+    [Fact]
+    public void 全区分に表示ラベルが定義されている()
+    {
+        foreach (var category in TradeExpenseClassification.All)
+        {
+            var act = () => AuditEntryFactory.From(Expense(category), Id, RecordedAt);
+            act.Should().NotThrow($"区分 {category} の表示ラベルが定義されていない");
+        }
+    }
+
+    [Fact]
+    public void 否定形_未知の区分は既定ラベルへ倒れず例外になる()
+    {
+        var e = new TradeExpenseRecorded(new TradeExpense(
+            "AAPL", Market.UnitedStates, (TradeExpenseCategory)999, 1m, ExpenseDay, "S", ExpenseAt));
+
+        var act = () => AuditEntryFactory.From(e, Id, RecordedAt);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }

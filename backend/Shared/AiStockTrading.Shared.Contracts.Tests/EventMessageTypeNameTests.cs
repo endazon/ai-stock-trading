@@ -77,6 +77,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(PositionClosedWithStaleFxRate), "AiStockTrading.Shared.Contracts.Events.PositionClosedWithStaleFxRate")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
+        // FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
+        [InlineData(typeof(TradeExpenseRecorded), "AiStockTrading.Shared.Contracts.Events.TradeExpenseRecorded")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]
         public void 全イベントのメッセージ識別子は固定値である(Type eventType, string expectedMessageTypeName)
         {
