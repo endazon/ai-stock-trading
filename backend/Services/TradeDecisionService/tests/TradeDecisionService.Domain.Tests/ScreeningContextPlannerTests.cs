@@ -191,31 +191,31 @@ public class ScreeningContextPlannerTests
         };
 
         foreach (var budget in budgets)
-        foreach (var symbols in symbolSets)
-        foreach (var materials in materialSets)
-        {
-            var plan = ScreeningContextPlanner.Plan(100, symbols, materials, budget);
+            foreach (var symbols in symbolSets)
+                foreach (var materials in materialSets)
+                {
+                    var plan = ScreeningContextPlanner.Plan(100, symbols, materials, budget);
 
-            // 不変条件 1: 銘柄（保護対象）は 1 つも失われず、ちょうど 1 バッチに属する。
-            plan.Batches.SelectMany(b => b.Symbols).Select(s => s.Symbol)
-                .Should().BeEquivalentTo(symbols.Select(s => s.Symbol),
-                    "縮退は保護対象（銘柄の市況・価格）を削らない");
+                    // 不変条件 1: 銘柄（保護対象）は 1 つも失われず、ちょうど 1 バッチに属する。
+                    plan.Batches.SelectMany(b => b.Symbols).Select(s => s.Symbol)
+                        .Should().BeEquivalentTo(symbols.Select(s => s.Symbol),
+                            "縮退は保護対象（銘柄の市況・価格）を削らない");
 
-            // 不変条件 2: カウンタ＝実際に削られた材料数（分割と切り詰めは別勘定）。
-            var retained = plan.Batches.Count > 0 ? plan.Batches[0].Materials.Count : materials.Length;
-            (plan.DroppedRagCount + plan.DroppedNewsCount).Should().Be(materials.Length - retained);
+                    // 不変条件 2: カウンタ＝実際に削られた材料数（分割と切り詰めは別勘定）。
+                    var retained = plan.Batches.Count > 0 ? plan.Batches[0].Materials.Count : materials.Length;
+                    (plan.DroppedRagCount + plan.DroppedNewsCount).Should().Be(materials.Length - retained);
 
-            // 不変条件 3: 削られるのは削減可能種別のみ（保持列は元材料の部分集合）。
-            if (plan.Batches.Count > 0)
-            {
-                plan.Batches[0].Materials.Should().BeSubsetOf(materials);
-            }
+                    // 不変条件 3: 削られるのは削減可能種別のみ（保持列は元材料の部分集合）。
+                    if (plan.Batches.Count > 0)
+                    {
+                        plan.Batches[0].Materials.Should().BeSubsetOf(materials);
+                    }
 
-            // 不変条件 4: 解消不能でない限り、全バッチが予算内。
-            if (!plan.UnresolvableOverflow)
-            {
-                plan.Batches.Should().AllSatisfy(b => b.ExceedsBudget.Should().BeFalse());
-            }
-        }
+                    // 不変条件 4: 解消不能でない限り、全バッチが予算内。
+                    if (!plan.UnresolvableOverflow)
+                    {
+                        plan.Batches.Should().AllSatisfy(b => b.ExceedsBudget.Should().BeFalse());
+                    }
+                }
     }
 }
