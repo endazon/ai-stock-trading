@@ -25,7 +25,7 @@ echo "==> runtime: $RUNTIME"
 MAPPING=(
   "audit-service|backend/Services/AuditService/AuditService.csproj|AuditService.dll"
   "backtest-service|backend/Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj|BacktestService.Api.dll"
-  "configuration-service|backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj|ConfigurationService.Api.dll"
+  "configuration-service|backend/Services/ConfigurationService/ConfigurationService.csproj|ConfigurationService.dll"
   "cost-control-service|backend/Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj|CostControlService.Api.dll"
   "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj|InformationCollectionService.Api.dll"
   "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj|MarketMonitorService.Api.dll"

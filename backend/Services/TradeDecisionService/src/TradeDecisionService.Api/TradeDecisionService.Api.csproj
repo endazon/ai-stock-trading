@@ -19,8 +19,6 @@
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
     <!-- FR-02, IADR-0068/0099: 判断文脈の現在値供給に共有の現在値ソース（MarketDataSourceFactory・IMarketDataSource）を用いるため参照する。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
-    <!-- FR-17, IADR-0076: 採算評価の費用見積りを設定サービスの版付き前提条件＋概算費用関数（CostCalculator）から供給するため参照する（#139 と同経路）。 -->
-    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Client\ConfigurationService.Client.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）。 -->
     <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <InternalsVisibleTo Include="TradeDecisionService.Api.Tests" />

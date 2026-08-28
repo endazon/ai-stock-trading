@@ -9,8 +9,10 @@ related_ids:
   - IADR-0021 # 設定サービスが前提条件を所有・バージョン管理する
   - IADR-0051 # s2s 認証・読み取りは OwnerOrService・書き込みは OwnerOnly
   - IADR-0027 # 費用統制（#139 の消費側）
+  - IADR-0264 # 決定 3（共有クライアント）を廃止した後継
 author: claude
 created: 2026-07-17
+updated: 2026-08-29
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
 ---
@@ -66,6 +68,13 @@ IADR-0021 は前提条件を「損益集計・AI 判断・費用統制が**共�
   サービストークンが 403 になる（`CostControlEndpoints`・`RiskControlEndpoints`・`ReportEndpoints` と同形にする）。
 
 ### 決定 3: 共有クライアント `ConfigurationService.Client` を置き、各消費側は 1 行で配線する
+
+> 🔴 ［2026-08-29 追記 / #526］**本決定 3 は [IADR-0264](IADR-0264_configurationservice-vsa-and-client-abolition.md) 決定 1 で廃止された。**
+> `ConfigurationService.Client` プロジェクトは撤去し、中身（ポート・HTTP クライアント・キャッシュ・fail-safe・DI 拡張・
+> `AssumptionsChanged` ハンドラ）は**呼び出し元サービスの `Infrastructure/ExternalServices/`** へ移した。
+> `VersionedAssumptions` は `AiStockTrading.Shared.Kernel` へ移した（同決定 2）。
+> **決定 1 / 4 / 5 / 6（HTTP 照会・二段失効・fail-safe の順序・安全既定）は内容そのままで呼び出し元側に存続する。**
+> 以下の本文は起草時点（2026-07-17）の記録であり、書き換えない。
 
 - 既存の同期照会は消費側ごとに Http アダプタを手書きしている（`HttpDailyPolicyProvider`・`HttpCostControlGate` 等）。
   前提条件は**3 サービス以上が同じ形で参照する**（IADR-0021）ため、同じキャッシュ・無効化・fail-safe を 3 回

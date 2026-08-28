@@ -52,21 +52,12 @@
     <Project Path="Services/ReportService/tests/ReportService.Infrastructure.Tests/ReportService.Infrastructure.Tests.csproj" />
     <Project Path="Services/ReportService/tests/ReportService.Api.Tests/ReportService.Api.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/ConfigurationService/" />
-  <Folder Name="/Services/ConfigurationService/src/">
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Domain/ConfigurationService.Domain.csproj" />
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Application/ConfigurationService.Application.csproj" />
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Infrastructure/ConfigurationService.Infrastructure.csproj" />
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj" />
-    <!-- IADR-0128 決定 5: 標準 7 層に当たらない「他サービスへ公開するクライアントライブラリ」（IADR-0063 決定 3）。 -->
-    <Project Path="Services/ConfigurationService/src/ConfigurationService.Client/ConfigurationService.Client.csproj" />
-  </Folder>
-  <Folder Name="/Services/ConfigurationService/tests/">
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Domain.Tests/ConfigurationService.Domain.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Application.Tests/ConfigurationService.Application.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Infrastructure.Tests/ConfigurationService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Api.Tests/ConfigurationService.Api.Tests.csproj" />
-    <Project Path="Services/ConfigurationService/tests/ConfigurationService.Client.Tests/ConfigurationService.Client.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1, IADR-0264: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-2）。
+       他サービスへ公開していた ConfigurationService.Client は廃止し、呼び出し元 2 サービスの
+       Infrastructure/ExternalServices/ へ移した（#526 / IADR-0264 決定1）。 -->
+  <Folder Name="/Services/ConfigurationService/">
+    <Project Path="Services/ConfigurationService/ConfigurationService.csproj" />
+    <Project Path="Services/ConfigurationService/Tests/ConfigurationService.Tests.csproj" />
   </Folder>
   <!-- NFR/IADR-0259 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（MSP:IADR-0282 決定1 と同一樹形。W11 段 4-1）。 -->
   <Folder Name="/Services/AuditService/">

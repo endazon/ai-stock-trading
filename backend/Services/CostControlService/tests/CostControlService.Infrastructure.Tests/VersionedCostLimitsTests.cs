@@ -1,14 +1,12 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using ConfigurationService.Client.Extensions;
-using ConfigurationService.Client.Ports;
-using ConfigurationService.Domain;
+using CostControlService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Kernel.Trading;
 using CostControlService.Application.Adapters;
 using CostControlService.Application.Ports;
 using CostControlService.Domain;
 using CostControlService.Infrastructure.Adapters;
-using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

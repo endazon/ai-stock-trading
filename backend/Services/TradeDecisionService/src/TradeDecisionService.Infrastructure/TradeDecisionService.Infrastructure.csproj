@@ -17,8 +17,10 @@
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
     <!-- FR-02, IADR-0068/0099: 判断文脈の現在値供給に共有の現在値ソース（MarketDataSourceFactory・IMarketDataSource）を用いるため参照する。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
-    <!-- FR-17, IADR-0076: 採算評価の費用見積りを設定サービスの版付き前提条件＋概算費用関数（CostCalculator）から供給するため参照する（#139 と同経路）。 -->
-    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Client\ConfigurationService.Client.csproj" />
+    <!-- FR-17, NFR, #526, IADR-0264 決定 1: 前提条件の解決（ExternalServices/）は s2s トークン付与
+         （AddAiStockTradingServiceToken）を使うため shim を参照する。旧 ConfigurationService.Client が
+         持っていた参照を、複製先である本プロジェクトが引き継いだもの。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
          テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
     <InternalsVisibleTo Include="TradeDecisionService.Api" />

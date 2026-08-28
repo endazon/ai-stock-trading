@@ -3,13 +3,13 @@ title: 技術要件書
 type: tech-requirements
 status: draft
 created: 2026-07-08
-updated: 2026-08-28
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: []
 adrs: [MSP:ADR-0019, MSP:ADR-0030]
-iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128, IADR-0259, MSP:IADR-0282]
+iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128, IADR-0259, IADR-0260, IADR-0263, IADR-0264, MSP:IADR-0282]
 specs: [20260828_w9f4_vsa-migration-policy-and-docs]
 issues: [#352, #353, #526, #527, #528]
 -->
@@ -91,9 +91,9 @@ backend/Services/<Svc>/
 | --- | --- |
 | サービス本体 | 新: `Services/<Name>/<Name>.csproj`（単一）／旧: `Services/<Svc>/src/<Svc>.<Layer>`（11 サービス。`Domain` は実体のある 9 サービスのみ） |
 | Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。新旧とも不変。サービス間共有のイベント契約の置き場） |
-| SharedKernel | 新設予定 `AiStockTrading.Shared.Kernel`（現時点で中身は無い） |
+| SharedKernel | `backend/Shared/AiStockTrading.Shared.Kernel`（**実体あり**。サービスを跨いで消費される取引前提条件の型を持つ。依存グラフの葉であることをアーキテクチャテストが強制する） |
 | Tests | 新: `Services/<Name>/Tests/<Name>.Tests.csproj`（サービスにつき 1）／旧: `Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,Integration}.Tests`（実測。`PlanConformance.Tests` は `docs/tests/README.md` に記述があるが `backend/Tests/` に実体は無い。VSA 移行とは独立した既存の齟齬であり、本書はこの行を実測に合わせるに留め、`docs/tests/README.md` 側の是正は別途起票する） |
-| （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。移行に伴い呼び出し元の `Infrastructure/ExternalServices/` へ吸収予定 |
+| （標準外） | **無し。** かつて設定サービスが持っていた「他サービスへ公開するクライアントライブラリ」は 2026-08-29 に廃止し、呼び出し元 2 サービスの `Infrastructure/ExternalServices/` へ吸収した（#526） |
 
 - **サービスのルート名前空間は基盤と同じ規則で `<Name>Service` である**（`RiskManagementService.Domain` /
   `AuditService.Infrastructure.Persistence`）。`.Foundation` / `.Composable` の名前空間セグメントは持たない

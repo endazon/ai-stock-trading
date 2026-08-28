@@ -22,7 +22,8 @@ namespace AiStockTrading.Architecture.Tests;
 public class DomainSourceDependencyTests
 {
     /// <summary>
-    /// 走査対象ファイル数の下限（IADR-0256 着手時点の実測 120。IADR-0260 の Shared.Kernel 移送後は 117）。
+    /// 走査対象ファイル数の下限（IADR-0256 着手時点の実測 120。IADR-0260 の Shared.Kernel 移送後は 117、
+    /// IADR-0264 の VersionedAssumptions 移送後は 116）。
     /// <b>0 件走査でも「違反 0 件」で緑になる</b>ため、対象が痩せていないことを明示的に固定する。
     /// </summary>
     private const int MinimumDomainSourceFiles = 100;
@@ -62,10 +63,14 @@ public class DomainSourceDependencyTests
         var areas = RepositoryLayout.DomainSourceDirectories;
 
         areas.Should().HaveCountGreaterThanOrEqualTo(
-            9,
-            "Domain を持つサービスは実測 9 件（Backtest / Configuration / CostControl / InformationCollection / "
+            8,
+            "Domain を持つサービスは実測 8 件（Backtest / CostControl / InformationCollection / "
                 + "MarketMonitor / OrderExecution / Report / RiskManagement / TradeDecision）である"
-                + "（Audit / Notification は Domain を持たない）。"
+                + "（Audit / Notification は元から Domain を持たない）。"
+                + "🔴 IADR-0264 決定 2 で Configuration が 9 → 8 へ減った —— 設定サービスの Domain に残っていた"
+                + "唯一の型 VersionedAssumptions を AiStockTrading.Shared.Kernel へ移した結果、Domain 領域が空になった"
+                + "（空の枠は数えない）。**移送でサービスの Domain が空になり得るため、この下限はサービス数ではなく"
+                + "「実測 - 0」で読む**。"
                 + "層がプロジェクトからフォルダへ移っても和集合で数えるため、この下限は移行の前後で成立する。"
                 + "実際に見つかったのは: {0}",
             string.Join(", ", areas.Select(a => a.RelativePath)));
@@ -79,7 +84,8 @@ public class DomainSourceDependencyTests
         files.Should().HaveCountGreaterThan(
             MinimumDomainSourceFiles,
             "走査対象が痩せると「違反 0 件」が「1 件も読んでいない」と区別できなくなる"
-                + "（実測は 117 件。IADR-0256 着手時点は 120 件で、IADR-0260 が共有型 3 ファイルを Shared.Kernel へ移した）");
+                + "（実測は 116 件。IADR-0256 着手時点は 120 件で、IADR-0260 が共有型 3 ファイルを、"
+                + "IADR-0264 が VersionedAssumptions を Shared.Kernel へ移した）");
     }
 
     // ── 検査 (b): using は許可リスト内のみ ────────────────────────────────────────

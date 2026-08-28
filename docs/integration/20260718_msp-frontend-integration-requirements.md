@@ -3,15 +3,15 @@ title: 外部連携仕様書 — AST フロントエンド/設定画面の micro
 type: integration
 status: Requirements (MSP 側実装は別リポ/別セッション)
 created: 2026-07-18
-updated: 2026-08-21
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-13, FR-17, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0080, IADR-0128, MSP:IADR-0056]
+iadrs: [IADR-0080, IADR-0128, IADR-0259, IADR-0264, MSP:IADR-0056]
 specs: [20260718_SC-01_settings, 20260718_frontend-settings-screen, IADR-0080_frontend-settings-screen]
-issues: [#106, #185, #275, #353]
+issues: [#106, #185, #275, #353, #526]
 -->
 
 
@@ -55,8 +55,12 @@ issues: [#106, #185, #275, #353]
   - **#275 整合**: compose の `build` と `MAPPING` の一致（ドリフト検査）を保つ。AST service を足すなら両方に足す（片方漏れは #275 検査で落ちる）。
   - **注（2026-08-03・#353 追記）**: 上の 2 行が指す `ConfigurationService.Worker/Dockerfile` は**存在しない**。AST は
     サービスごとの Dockerfile を持たず、**単一の `backend/Dockerfile` を build args で切り替える**
-    （`SERVICE_PROJECT=backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj`・
-    `SERVICE_DLL=ConfigurationService.Api.dll`。AST 側の `docker-compose.yml` / `scripts/k8s-local-images.sh` と同形）。
+    （`SERVICE_PROJECT=backend/Services/ConfigurationService/ConfigurationService.csproj`・
+    `SERVICE_DLL=ConfigurationService.dll`。AST 側の `docker-compose.yml` / `scripts/k8s-local-images.sh` と同形）。
+    - ［2026-08-29 追記 / #526］**上の 2 つの値は本日変更した。** 設定サービスを単一プロジェクトへ移送し、
+      層プロジェクト（`.Api` / `.Application` / `.Domain` / `.Infrastructure`）を撤去したためである。
+      **旧値（`…/src/ConfigurationService.Api/ConfigurationService.Api.csproj` ・`ConfigurationService.Api.dll`）で
+      登録すると MSP 側のビルドが落ちる。**
     プロジェクト名が `.Worker` → `.Api` へ変わったのは標準プロジェクト構成への再配置
     （標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する。[#353](https://github.com/endazon/ai-stock-trading/issues/353)）による。
     MSP 側で実装する際は本注記の形で登録すること（本書の他の記述は起票時＝2026-07-18 の point-in-time 記録として据え置く）。

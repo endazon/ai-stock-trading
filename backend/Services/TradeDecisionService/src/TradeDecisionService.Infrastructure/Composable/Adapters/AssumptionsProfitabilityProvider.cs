@@ -1,4 +1,4 @@
-using ConfigurationService.Client.Ports;
+using TradeDecisionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using TradeDecisionService.Application.Ports;
