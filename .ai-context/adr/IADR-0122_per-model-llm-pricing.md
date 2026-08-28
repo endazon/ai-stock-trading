@@ -15,7 +15,7 @@ related_ids:
   - IADR-0120
 author: claude
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-28
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04／NFR 費用: 月次上限 15,000 円)
   - planning:projects/ai-stock-trading/07_adr/ADR-0014_llm-model-assignment-revision.md (用途別モデル割当・Accepted)
@@ -134,11 +134,22 @@ AST 側で「用途→単価」を静的に対応付けても実際の呼び出�
 表に無いモデル（`claude-sonnet-4-6` / `gpt-5` 等。現行の用途割当では選ばれない）は決定3 により
 最大単価（fable-5）で計上される。**意図した過大計上**であり、必要になった時点で行を足す。
 
+> ［2026-08-28 追記 / #243］**`claude-sonnet-5` の $2/$10 の恒久化を確認した。** Anthropic 公式ドキュメント
+> （`https://platform.claude.com/docs/en/about-claude/pricing` Model pricing 表・注記
+> `claude-sonnet-5-introductory-pricing`）が「2026-08-31 までの導入価格として発表した $2/$10 pre-1M
+> input/output を標準価格とし、2026-09-01 に予定していた $3/$15 への改定は行わない」と明記した。
+> **USD 単価が変わらないため、本表の投入値（`0.327` / `1.637`）は変更不要である。** 詳細は
+> `.ai-context/specs/20260828_243_sonnet5-pricing-update.md`。
+
 ### 決定5: 陳腐化の検知は時限テストではなく文書と #243 で行う
 
 期日を過ぎると失敗するテストは、無関係な PR の CI を落とすため採らない。
 `values-local.yaml` のコメント・作業仕様書・本 IADR に **2026-08-31 の再確認期日**と
 出典・時点・換算率を明記し、実測再ベースラインの #243 に寄せる。
+
+> ［2026-08-28 追記 / #243］**上記の再確認期日への対応を実施した。** `values-local.yaml` の
+> コメント・`deploy/helm/ai-stock-trading/README.md`・`docs/operations/operations.md`「LLM 単価の
+> 定期見直し」をいずれも「恒久化確認済み」の記述へ更新した（本 IADR の決定4 直後の追記を参照）。
 
 ## 理由
 
@@ -160,7 +171,9 @@ AST 側で「用途→単価」を静的に対応付けても実際の呼び出�
   - `LlmPricing` の名前空間が変わる（`AiStockTrading.TradeDecision.Domain` →
     `AiStockTrading.Shared.Infrastructure.Composable.Llm`）。参照箇所は計上経路のみ。
 - フォローアップ:
-  - **2026-08-31**: `claude-sonnet-5` の導入価格終了。単価と換算率を再確認する（#243 と併せて）。
+  - ~~**2026-08-31**: `claude-sonnet-5` の導入価格終了。単価と換算率を再確認する（#243 と併せて）。~~
+    ［2026-08-28 追記 / #243］**解消済み。** 恒久化を確認し、換算率（163.71）も変更不要だった
+    （上記追記参照）。
   - #282 の対応時に report-service へ同じ解決経路を配線する。
   - `LlmCostIncurred` にモデル名を載せて台帳をモデル別に集計する案は見送った（購読側は金額しか要らない）。
     モデル別の実消費を見たくなったら #243 の実測と併せて再検討する。
