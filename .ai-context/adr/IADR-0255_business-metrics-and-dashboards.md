@@ -160,6 +160,14 @@ otel-collector の exporter 構成が決める（dev 既定は `debug`＝標準�
   - 計上点 6 クラスの依存が 1 つ増え、それらを起こすテストホストは `BusinessMetrics` の登録が要る。
   - LLM 費用のカウンタは**プロセス起動からの累計**であり月次のリセットを表現しない。
     上限判定はゲージ（`ast.llm.cost_limit_ratio_percent`）で行う設計にしてある。
+  - 🔴 **`BusinessMetrics`（生きた `Meter`）を `Shared.Contracts` に置いたため、Domain 層から手が届く。**
+    同プロジェクトは 6 つの Domain（MarketMonitor / Backtest / RiskManagement / TradeDecision /
+    Configuration / OrderExecution）から参照されている。**`DomainLayerDependencyTests` はこれを止められない**
+    —— 同テストは `PackageReference` の推移閉包を見るが、`System.Diagnostics.Metrics` は BCL であり
+    `PackageReference` に現れないためである。**現時点で実害は無い**（`grep` で確認: Domain 配下の使用は 0 件。
+    本番の使用 6 箇所はすべて `Infrastructure/Composable/Steps` か `Polling`）。**検査器は足していない**
+    —— 運用標準「検査器・規約の追加は同型の事故が 2 回起きたら」の 1 回目に当たるため、ここに記録するに留める。
+    2 回目が起きたら、`Domain/` 配下の `using` 走査（NsDepCop 相当）で塞ぐのが筋である。
 - フォローアップ（**実環境待ちであり、達成したふりをしない**）:
   1. **Prometheus 疎通の確認**（取引サイクル 1 巡回で値が動くこと）。実環境が要る。
   2. **MSP を develop へ追随させ、LLM 拒否率（MSP/IADR-0110 の計上）を消費する。** 別リポジトリの作業。
