@@ -10,15 +10,34 @@
  *   2. 必須範囲の FR にテスト仕様書（docs/tests/*.md）と機能仕様書（docs/functional/*.md）が存在すること。
  *   3. テストが参照する FR / UC / SC が計画書に実在すること
  *      （planning submodule が未 populate の環境では本検査のみ skip。check-doc-links.js と同じ扱い）。
+ *   T1. サービス配下の新旧テスト樹形のうち、**実在するほうの走査件数が 0 でない**こと
+ *       （NFR / IADR-0258。下の「プロジェクト構成への依存」参照）。
  *
  * 「テストが 1 本もない FR」を CI で止めることが目的であり、テストの中身の妥当性は見ない。
  * 中身は 3 点セット（境界値・プロパティベース・否定形。docs/tests/README.md）と人手レビューが担う。
+ *
+ * ── プロジェクト構成への依存（NFR / IADR-0258。VSA 全面移行の土台 3）
+ * `testFiles()` はサービス配下のテストディレクトリを 2 通りの樹形から拾う:
+ *   旧: `backend/Services/<Svc>/tests/<Svc>.<層>.Tests/**`（ディレクトリ名は小文字 `tests`）
+ *   新: `backend/Services/<Svc>/Tests/**`（VSA 統合後。ディレクトリ名は大文字始まり `Tests`。
+ *       基盤 microservices-platform IADR-0282 決定 1 の樹形に合わせる）
+ * 🔴 **`backend/Tests/`（横断テスト。`AiStockTrading.Architecture.Tests` 等）は対象が違う。**
+ * 素朴に `e.name === 'Tests'` を足すと `backend/Tests/` そのものが新たに条件へ当たってしまい、
+ * 現行は「素通りして配下の `*.Tests` プロジェクトだけ拾う」母集合が変わる。そこで新樹形の判定は
+ * **`backend/Services/<Svc>/Tests` という位置**も合わせて見る（`isNewLayoutServiceTestsDir`）。
+ * この検査器は「必須 FR にテスト参照が 1 本もない」を fail-closed で止めるため、**全滅すれば必ず赤に
+ * なる**（IADR-0258 決定時点の残余リスク 1 として記録されていた）。ただし**部分移行時**（1 サービス
+ * だけ移送された状態）は、そのサービスのテストだけが母集合から静かに落ちても他サービスが必須 FR を
+ * 参照していれば緑のままであり得る。**T1 はこの部分移行の痩せを塞ぐ**——新旧いずれかの樹形の
+ * サービスディレクトリが実在するのに、その樹形からテストファイルを 1 件も走査できていなければ
+ * 落とす（`check-consumer-endpoint-names.js` の M4 と同じ設計）。
  *
  * 外部依存ゼロ（Node 標準モジュールのみ）。違反があれば終了コード 1。
  *
  * 使い方:
  *   node scripts/check-test-traceability.js
  *   node scripts/check-test-traceability.js --require-planning   # 計画書実在検査の skip を許さない
+ *   TEST_TRACE_ROOT=<dir> node scripts/check-test-traceability.js  # 任意のツリーを検査する（模擬ツリーの実証用）
  */
 const fs = require('fs');
 const path = require('path');
@@ -50,7 +69,20 @@ function planningPopulated(root) {
   return fs.existsSync(path.join(root, 'planning', 'projects'));
 }
 
-/** backend 配下の tests ディレクトリにある .cs を集める。 */
+/**
+ * そのディレクトリが**新樹形（VSA 統合後）のサービス配下テストディレクトリ**かを返す
+ * （`backend/Services/<Svc>/Tests` に一致するかだけを見る。NFR / IADR-0258）。
+ *
+ * 🔴 `e.name === 'Tests'` の単独判定にしない。`backend/Tests`（横断テスト）は名前だけなら
+ * 一致してしまい、現行の母集合（配下の `*.Tests` プロジェクトだけを拾う）を変えてしまう。
+ * 位置（`Services/<Svc>/` の直下）まで見て、横断テストと新樹形のサービステストを区別する。
+ */
+function isNewLayoutServiceTestsDir(root, absDir) {
+  const rel = path.relative(root, absDir).split(path.sep).join('/');
+  return /^backend\/Services\/[^/]+\/Tests$/.test(rel);
+}
+
+/** backend 配下の tests ディレクトリにある .cs を集める（新旧両樹形。NFR / IADR-0258）。 */
 function testFiles(root) {
   const out = [];
   const walk = (dir) => {
@@ -82,13 +114,48 @@ function testFiles(root) {
       if (!e.isDirectory()) continue;
       const p = path.join(dir, e.name);
       if (e.name === 'bin' || e.name === 'obj') continue;
-      // `tests/` ディレクトリ、または `*.Tests` で終わるプロジェクトディレクトリを収集対象とする。
-      if (e.name === 'tests' || e.name.endsWith('.Tests')) walk(p);
+      // 旧: `tests/` ディレクトリ、または `*.Tests` で終わるプロジェクトディレクトリ。
+      // 新: `backend/Services/<Svc>/Tests`（VSA 統合後。位置まで見て `backend/Tests` と区別する）。
+      if (e.name === 'tests' || e.name.endsWith('.Tests') || isNewLayoutServiceTestsDir(root, p)) walk(p);
       else walkTests(p);
     }
   };
   walkTests(backend);
   return out;
+}
+
+/**
+ * `backend/Services/` 直下のサービスディレクトリを、新旧テスト樹形の実在で数える（T1 の母数）。
+ * **走査結果ではなくディレクトリの有無から引く**——走査結果から引くと「走査が壊れて 0 件」と
+ * 「その樹形のテストがそもそも無い」を区別できない（`check-consumer-endpoint-names.js` の
+ * `dirs` と同じ設計）。
+ */
+function serviceTestDirs(root) {
+  const dirs = { old: 0, new: 0 };
+  const services = path.join(root, 'backend', 'Services');
+  if (!fs.existsSync(services)) return dirs;
+  for (const e of fs.readdirSync(services, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    if (fs.existsSync(path.join(services, e.name, 'tests'))) dirs.old++;
+    if (fs.existsSync(path.join(services, e.name, 'Tests'))) dirs.new++;
+  }
+  return dirs;
+}
+
+/**
+ * `testFiles()` が集めたファイルを、サービス配下の新旧テスト樹形で仕分ける（T1 の走査件数）。
+ * `backend/Tests`（横断テスト）配下のファイルはどちらにも属さず、この集計には現れない
+ * （T1 は「サービス配下テストの痩せ」だけを見る）。
+ */
+function serviceTestLayoutCounts(root, files) {
+  const counts = { old: 0, new: 0 };
+  for (const fp of files) {
+    const rel = path.relative(root, fp).split(path.sep).join('/');
+    const m = rel.match(/^backend\/Services\/[^/]+\/(tests|Tests)\//);
+    if (!m) continue;
+    counts[m[1] === 'tests' ? 'old' : 'new']++;
+  }
+  return counts;
 }
 
 /** テストファイル群から起点 ID の参照を収集する。戻り値は `FR-10` 形式 → 参照ファイルの配列。 */
@@ -253,6 +320,24 @@ function main() {
     errors.push(`必須仕様書がありません — ${m}`);
   }
 
+  // T1: サービス配下の新旧テスト樹形のうち、実在するほうが 0 件走査になっていないこと
+  // （NFR / IADR-0258）。**静的な下限ではなく、樹形の実在から動的に導く**——旧樹形が全滅するのは
+  // 移行完了時の正常な帰結であり、新樹形が 0 件のまま静的な門を置くと移行着手前から赤くなる。
+  const testDirs = serviceTestDirs(REPO_ROOT);
+  const testLayoutCounts = serviceTestLayoutCounts(REPO_ROOT, files);
+  for (const [layout, label, shape] of [
+    ['old', '旧樹形', 'backend/Services/<Svc>/tests/**'],
+    ['new', '新樹形（VSA 統合後）', 'backend/Services/<Svc>/Tests/**'],
+  ]) {
+    if (testDirs[layout] > 0 && testLayoutCounts[layout] === 0) {
+      errors.push(
+        `[T1] ${label}のサービス配下テストディレクトリが ${testDirs[layout]} 件あるのに、`
+          + `${label}のテスト .cs を 1 件も走査できていません（期待する形: ${shape}）。`
+          + 'その樹形のサービスは母集合から静かに落ちている可能性があります。'
+      );
+    }
+  }
+
   // 3. 参照 ID が計画書に実在すること
   const ids = planIds(REPO_ROOT);
   let skipNote = '';
@@ -276,6 +361,8 @@ function main() {
   if (errors.length === 0) {
     console.log(
       `[check-test-traceability] OK: テスト ${files.length} ファイル・起点 ID ${refs.size} 種を検査しました${skipNote}。`
+        + `\n  サービス配下テスト: 旧樹形 ${testLayoutCounts.old} 件 / 新樹形 ${testLayoutCounts.new} 件`
+        + `（サービスディレクトリ: 旧 ${testDirs.old} 件 / 新 ${testDirs.new} 件）。`
     );
     process.exit(0);
   }
@@ -291,7 +378,10 @@ module.exports = {
   REQUIRED_FRS,
   parseArgs,
   planningPopulated,
+  isNewLayoutServiceTestsDir,
   testFiles,
+  serviceTestDirs,
+  serviceTestLayoutCounts,
   collectReferences,
   planIds,
   missingSpecs,
