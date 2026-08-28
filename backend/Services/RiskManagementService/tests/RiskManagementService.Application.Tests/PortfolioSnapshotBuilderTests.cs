@@ -30,7 +30,7 @@ public class PortfolioSnapshotBuilderTests
         };
         var builder = new PortfolioSnapshotBuilder(
             new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved());
+            FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
 
         var snapshot = builder.Build();
 
@@ -55,7 +55,7 @@ public class PortfolioSnapshotBuilderTests
         killSwitch.SetState(new KillSwitchState(true, "user", "停止", Now));
         var builder = new PortfolioSnapshotBuilder(
             new FakePortfolioStateProvider(state), killSwitch, new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved());
+            FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
 
         builder.Build().KillSwitchEngaged.Should().BeTrue();
     }
@@ -69,7 +69,7 @@ public class PortfolioSnapshotBuilderTests
         pause.SetState(new PauseState(true, "user", "様子見", Now));
         var builder = new PortfolioSnapshotBuilder(
             new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), pause,
-            FakeBrokerAccountObservations.NotObserved());
+            FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
 
         builder.Build().TradingPaused.Should().BeTrue();
     }

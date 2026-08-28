@@ -43,6 +43,8 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.CashAccountSettlementHold, 25 },
         { RejectionReason.BrokerAccountTypeUnverified, 26 },
         { RejectionReason.GoodFaithViolationLimitReached, 27 },
+        // FR-01, FR-10, ADR-0020, #337, IADR-0249: 情報源の欠測による限定縮退。**末尾へ追加**している。
+        { RejectionReason.InformationSourceDegraded, 28 },
     };
 
     [Theory]

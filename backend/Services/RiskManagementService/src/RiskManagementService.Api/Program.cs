@@ -134,6 +134,11 @@ builder.Services.AddScoped<IGoodFaithViolationStore, EfGoodFaithViolationStore>(
 // **解除は記録を消さず追記する**（決定1「違反記録は失効させない」）。DbContext が scoped のため本サービスも scoped。
 builder.Services.AddScoped<GoodFaithViolationClearingService>();
 builder.Services.AddScoped<GoodFaithViolationCountingService>();
+// FR-01, FR-02, FR-10, ADR-0020, #337, IADR-0249: 情報収集の縮退状態（新規建て停止）の保持。
+// **singleton・非永続**である——発行側（収集サービスの遷移判定）もプロセス内であり、こちらだけ永続化しても
+// 再起動時の取りこぼしは解消しない（残余リスクは IADR-0249）。状態は Wolverine ハンドラ
+// （InformationSourceDegradedRiskHandler / InformationSourceRecoveredRiskHandler）が畳む。
+builder.Services.AddSingleton<IInformationDegradationStore, InMemoryInformationDegradationStore>();
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。
 builder.Services.AddScoped<SizingContextService>();

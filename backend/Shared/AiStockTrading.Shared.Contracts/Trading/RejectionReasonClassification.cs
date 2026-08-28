@@ -46,6 +46,8 @@ public static class RejectionReasonClassification
         // 発注要求は「段階ゲートが設計どおり止めた」記録であり、禁止事項への抵触ではない。
         // #375, ADR-0021 決定3: 口座種別を確認できていない状態も**取引を止めている状態そのものの記録**であり
         // クラス B である。照会の失敗・設定値との食い違いは「AI が禁止事項を犯そうとした」ものではない。
+        // #337, IADR-0249: 情報源の欠測による限定縮退（ADR-0020）も「取引を止めている状態そのものの記録」
+        // であり、kill switch / pause と同じクラス B である（市況由来の事象をクラス C へ混ぜない）。
         RejectionReason.KillSwitchActive
             or RejectionReason.TradingPaused
             or RejectionReason.StageProhibitsLiveTrading
@@ -54,6 +56,7 @@ public static class RejectionReasonClassification
             or RejectionReason.StageShortSellReleaseUnmet
             or RejectionReason.ProductTypeDisabled
             or RejectionReason.BrokerAccountTypeUnverified
+            or RejectionReason.InformationSourceDegraded
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 
         // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種、

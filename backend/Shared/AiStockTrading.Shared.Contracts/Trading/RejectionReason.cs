@@ -180,4 +180,21 @@ public enum RejectionReason
     /// <para>クラス分類は**クラス A**（統制が設計どおり作動した記録）である。</para>
     /// </summary>
     GoodFaithViolationLimitReached,
+
+    /// <summary>
+    /// FR-01, FR-02, FR-10, ADR-0020 決定2/決定3, #337, IADR-0249: **情報源の欠測による限定縮退中**
+    /// （収集サービスの <c>InformationSourceDegraded</c> で <c>BlocksNewEntries=true</c> のカテゴリが残っている）。
+    /// <para>
+    /// 単一ソース由来の急シグナル・欠測した文脈での新規建てを止める（ADR-0020 の限定縮退）。
+    /// **手仕舞い（Close）・損切りは止めない**——縮退は「材料が欠けた新規判断」を疑うものであり、
+    /// 建玉から出る判断を塞ぐと「止められない」より危険な「閉じられない」を作る（ADR-0009 の不変条件）。
+    /// </para>
+    /// <para>
+    /// クラス分類は**クラス B**である。「取引を止めている状態そのものの記録」であり、
+    /// <see cref="KillSwitchActive"/> / <see cref="TradingPaused"/> と同じ区分である。市況由来の事象を
+    /// クラス C（AI が禁止事項を犯そうとした件数）へ混ぜると段階昇格ゲートが機能しなくなる。
+    /// </para>
+    /// <para>**序数は 28（末尾追加）で不変**（IADR-0134 決定2）。</para>
+    /// </summary>
+    InformationSourceDegraded,
 }

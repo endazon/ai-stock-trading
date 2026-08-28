@@ -46,7 +46,8 @@ public class OrderScreeningServiceTests
         // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
-            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
+            new InMemoryInformationDegradationStore());
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -172,7 +173,8 @@ public class OrderScreeningServiceTests
         // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
-            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
+            new InMemoryInformationDegradationStore());
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -205,7 +207,7 @@ public class OrderScreeningServiceTests
         var lockout = new InMemoryLockoutStore();
         var builder = new PortfolioSnapshotBuilder(
             portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved());
+            FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore());

@@ -64,6 +64,9 @@ public class RejectionReasonClassificationTests
     [InlineData(RejectionReason.CashAccountSettlementHold, RejectionReasonClass.A)]
     [InlineData(RejectionReason.GoodFaithViolationLimitReached, RejectionReasonClass.A)]
     [InlineData(RejectionReason.BrokerAccountTypeUnverified, RejectionReasonClass.B)]
+    // FR-01, FR-10, ADR-0020, #337, IADR-0249: 情報源の欠測による限定縮退は「取引を止めている状態そのものの
+    // 記録」であり、kill switch / pause と同じクラス B（統制違反に計上しない）。
+    [InlineData(RejectionReason.InformationSourceDegraded, RejectionReasonClass.B)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)
     {
