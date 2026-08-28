@@ -96,4 +96,64 @@ public class VersionedConfirmationGuardTests
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // --- #341, IADR-0240 決定3: 失敗時の予約解放 -------------------------------------------------
+
+    [Fact]
+    public void 解放した版は再び受理される()
+    {
+        // 🔴 解放しないと、確定 API が失敗したとき**同じ版を二度と確定できなくなる**
+        //（Discord は破壊的統制操作の唯一の窓口であり、詰みは Bot の再起動でしか解けない）。
+        var guard = new VersionedConfirmationGuard();
+        guard.TryConfirm(Daily, 2).Should().Be(ConfirmationOutcome.Accepted);
+
+        guard.Release(Daily, 2);
+
+        guard.TryConfirm(Daily, 2).Should().Be(ConfirmationOutcome.Accepted);
+    }
+
+    [Fact]
+    public void 別の版を指定した解放は予約を消さない()
+    {
+        // 否定形: 取り違えた解放で他の版の予約が消えると、二重確定の穴になる。
+        var guard = new VersionedConfirmationGuard();
+        guard.TryConfirm(Daily, 2);
+
+        guard.Release(Daily, 3);
+
+        guard.TryConfirm(Daily, 2).Should().Be(ConfirmationOutcome.AlreadyConfirmed);
+    }
+
+    [Fact]
+    public void 別の対象IDを指定した解放は予約を消さない()
+    {
+        var guard = new VersionedConfirmationGuard();
+        guard.TryConfirm(Daily, 2);
+
+        guard.Release("weekly-2026-W35", 2);
+
+        guard.TryConfirm(Daily, 2).Should().Be(ConfirmationOutcome.AlreadyConfirmed);
+    }
+
+    [Fact]
+    public void 未登録の解放は何も起こさない()
+    {
+        var guard = new VersionedConfirmationGuard();
+
+        var act = () => guard.Release(Daily, 1);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void 解放の版番号が正でなければ例外になる(int version)
+    {
+        var guard = new VersionedConfirmationGuard();
+
+        var act = () => guard.Release(Daily, version);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }
