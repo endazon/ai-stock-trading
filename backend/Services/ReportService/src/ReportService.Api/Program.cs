@@ -207,6 +207,44 @@ builder.Services.AddSingleton<IFxSourceStatusSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpFxSourceStatusSource>>());
 });
 
+// FR-06, FR-11, FR-16, #338, #282, #347, ADR-0017 決定2・決定4, 04_report-templates 月報 §7, IADR-0254:
+// 月報の「当月の LLM 利用実績」と日報の「取引判断スキップ回数」。**権威源は監査台帳**である。
+//
+// 🔴 **費用統制サービスへ引きに行かない。** あちらの月次カウンタは**上限の対象ぶんしか積まない**
+// （`LlmCostScope.IsGoverned` が false の用途は別カテゴリ）ため、**報告書生成の費用が引けない**——
+// #282 で計上点を作ったのに月報へ出せない、という状態になる。
+//
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**
+// 🔴 ここで空（＝費用 0 円・発火 0 件）へ倒さない。**LLM は本番で実際に呼ばれている**ため嘘になる。
+builder.Services.AddSingleton<ILlmUsageRecordSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedLlmUsageRecordSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpLlmUsageRecordSource(
+        http, sp.GetRequiredService<ILogger<HttpLlmUsageRecordSource>>());
+});
+
+// FR-06, FR-11, #338, ADR-0016 決定15, ADR-0027 決定1・決定4, 04_report-templates 月報 §6.1 / 日報 §4:
+// 「空売りの記録」の借株コスト。**権威源は監査台帳**（日次の計上額を残すのは ADR-0027 決定1 の要求である）。
+//
+// 🔴 **未計上（料率が取れなかった日）を 0 円として合計へ混ぜない**ため、
+// 計上イベントと未計上イベントの両方を引く（契約が 2 つに分かれている理由そのもの）。
+builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedBorrowFeeRecordSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpBorrowFeeRecordSource(
+        http, sp.GetRequiredService<ILogger<HttpBorrowFeeRecordSource>>());
+});
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

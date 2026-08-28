@@ -99,6 +99,11 @@ internal sealed class EfReportStore(ReportDbContext db) : IReportStore
         // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
         row.ReviewState = ReviewState.Confirmed;
         row.ConfirmedAt = confirmedAt;
+        // #338, #310, INDEX 決定29: **本文の状態表記も確定へ揃える**（InMemoryReportStore と同じ規則）。
+        // 本文は生成時に一度だけ組み立てられるため、ここで揃えないと確定済みの報告書が
+        // frontmatter と YAML ブロックで「未確定」を名乗り続ける（取引判断は YAML を読む）。
+        // **散文は作り直さない**——確定とは「その本文でよい」と承認した行為である。
+        row.Body = ReportBodyStatus.MarkConfirmed(row.Body, confirmedAt);
         row.Version += 1;
         db.SaveChanges();
         return new ConfirmResult(ToReport(row), Transitioned: true);
