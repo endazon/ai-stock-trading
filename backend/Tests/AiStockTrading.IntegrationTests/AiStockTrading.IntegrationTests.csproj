@@ -38,8 +38,8 @@
          テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->
     <ProjectReference Include="..\..\Services\ReportService\src\ReportService.Api\ReportService.Api.csproj" Aliases="ReportWorker" />
     <!-- 費用統制 Worker（#79・IADR-0031/0051: poller が s2s で照会する /costs/state の提供側）。 -->
-    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（CostControlWorker）は
-         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->
-    <ProjectReference Include="..\..\Services\CostControlService\src\CostControlService.Api\CostControlService.Api.csproj" Aliases="CostControlWorker" />
+    <!-- NFR/IADR-0259 決定1, IADR-0264: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-3）。
+         extern alias 名（CostControlWorker）はテスト本文の変更を避けるため据え置く。 -->
+    <ProjectReference Include="..\..\Services\CostControlService\CostControlService.csproj" Aliases="CostControlWorker" />
   </ItemGroup>
 </Project>

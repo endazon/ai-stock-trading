@@ -1,0 +1,41 @@
+<!-- #23 Slice A, NFR（費用）, IADR-0027, IADR-0128, NFR/IADR-0259 決定1, IADR-0264: 費用統制サービス。単一プロジェクト＋
+     VSA/DDD フォルダ構成（層プロジェクト .Api/.Application/.Domain/.Infrastructure は撤去し、Features/・Domain/・
+     Common/・Infrastructure/・Hosted/ のフォルダで境界を表す。基盤 MSP:IADR-0282 決定1 と同一樹形）。月次費用台帳・
+     LLM 上限の間隔延長/停止判定（Keycloak 認可）とヘルスチェックのため Web SDK を使用。しきい値の上方遷移時に
+     CostThresholdReached を発行。旧 ConfigurationService.Client（#526・IADR-0264 決定1）から複製した前提条件の
+     解決口は Infrastructure/ExternalServices/ に置く。実行時基盤は test-support shim（IADR-0013）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
+         （入れ子のままだと二重コンパイルで CS0246 が出る。基盤が実測済み・NFR/IADR-0259）。 -->
+    <Compile Remove="Tests/**" />
+    <Content Remove="Tests/**" />
+    <None Remove="Tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- #34 準拠: Relational を直接ピンし Npgsql と Design の推移依存衝突（MSB3277）を避ける。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- dotnet ef の startup project となるため Design を保持する。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型（全体前提条件・概算費用関数・運用段階）。
+         Domain/CostGovernor.cs が MonthlyCostLimits を、Infrastructure/ExternalServices の複製ファイルが
+         TradingAssumptions 系の型を使う。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。
+         NFR, #526, IADR-0264 決定1: 前提条件の解決（Infrastructure/ExternalServices/）は s2s トークン付与
+         （AddAiStockTradingServiceToken）を使うため、旧 ConfigurationService.Client が持っていた参照を
+         本プロジェクトが引き継いでいる。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+  </ItemGroup>
+</Project>
