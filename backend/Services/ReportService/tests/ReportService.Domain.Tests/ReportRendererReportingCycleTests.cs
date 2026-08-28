@@ -429,6 +429,42 @@ public class ReportRendererReportingCycleTests
         a.Should().NotBe(b); // 対の肯定形: 散文は確かに差し替わっている
     }
 
+    // --- 🔴 #308 / #315: 縮退（プレースホルダ散文）でも数値節は完全に出る ---
+
+    // 散文 LLM がタイムアウト等で縮退すると `PlaceholderReportNarrativeDrafter` の定型文になり、
+    // そのとき **モデルは知り得ないため `LlmModelUsage` は null** である（IADR-0217 の規律）。
+    //
+    // 🔴 **否定形**: モデルの節は出さない（「第 1 候補で書かれた」と読ませない）。
+    // 🔴 **対の肯定形**: それでも**数値節は 1 つ残らず出る**——散文の縮退が数値の欠落へ波及しない。
+    [Fact]
+    public void 縮退でプレースホルダ散文になっても数値節は完全に出る()
+    {
+        var degraded = View(ReportKind.Monthly) with
+        {
+            Narrative = "（LLM 未接続のため定型文）",
+            LlmModelUsage = null, // 縮退時はモデルを知り得ない
+            LlmUsage = new LlmUsageRecord(
+                [new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "m")], [], []),
+            BorrowFees = new BorrowFeeRecord([], []),
+            FxTranslation = new FxTranslationSummary(-1_234m, 5),
+            Uptime = new OpenDUptimeRecord([new OpenDUptimeDay(new DateOnly(2026, 8, 3), 1.0m)], 41),
+        };
+
+        var md = ReportRenderer.RenderMarkdown(degraded);
+
+        // 否定形: モデルの節は出ない。
+        md.Should().NotContain("### 散文生成に使用した LLM");
+
+        // 対の肯定形: 数値節はすべて出る。
+        md.Should().Contain("月間実現損益（税引後・費用込み） | +1,520.00 USD");
+        md.Should().Contain("為替差損益（独立表示） | -1,234 JPY（明細 5 件）");
+        md.Should().Contain("### 当月の統制作動状況");
+        md.Should().Contain("## 5. 当月の OpenD 稼働率分布");
+        md.Should().Contain("## 6. バックテスト / SIMULATE / 実弾の三者比較");
+        md.Should().Contain("## 7. 当月の LLM 利用実績");
+        md.Should().Contain("取引判断の費用実績（月次上限 15,000 JPY に対する消費率） | +3,000 JPY / 20.0%");
+    }
+
     // 散文節（"## 2." 〜 "## 3." の直前）を除いた本文。数値はすべてこちら側にある。
     private static string NumericSections(string markdown)
     {
