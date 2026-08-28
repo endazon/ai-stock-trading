@@ -1,0 +1,21 @@
+<!-- NFR/IADR-0259 決定4: サービス単位のテストは 1 プロジェクトへ統合する（旧 Api/Application/Infrastructure
+     の 3 本を統合。中身は移送のみで変えていない）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <ProjectReference Include="..\AuditService.csproj" />
+    <!-- ADR-0013, IADR-0129, #354: Wolverine のハンドラをランタイム生成で動かすため（RuntimeCompilation）、
+         共通配線ヘルパを持つ shim をテストからのみ参照する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+  </ItemGroup>
+</Project>
