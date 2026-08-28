@@ -99,4 +99,62 @@ public class BotCommandParserTests
         command.Kind.Should().Be(expectedKind);
         command.TargetStage.Should().Be(expectedStage);
     }
+
+    // --- FR-07, FR-14, UC-03〜05, #341, IADR-0240: 報告書レビュー ---------------------------------
+
+    [Theory]
+    [InlineData("/report show daily-2026-08-28", BotCommandKind.ReportShow, "daily-2026-08-28", null)]
+    [InlineData("report show weekly-2026-w35", BotCommandKind.ReportShow, "weekly-2026-w35", null)]
+    // 版番号なしの approve は「確認ボタンを出す前段」。実行可否はハンドラが版番号の有無で判断する。
+    [InlineData("/report approve daily-2026-08-28", BotCommandKind.ReportApprove, "daily-2026-08-28", null)]
+    [InlineData("/report approve daily-2026-08-28 2", BotCommandKind.ReportApprove, "daily-2026-08-28", 2)]
+    [InlineData("/report request-changes daily-2026-08-28", BotCommandKind.ReportRequestChanges, "daily-2026-08-28", null)]
+    [InlineData("/report request-changes daily-2026-08-28 3", BotCommandKind.ReportRequestChanges, "daily-2026-08-28", 3)]
+    [InlineData("  /REPORT  Approve  DAILY-2026-08-28  4 ", BotCommandKind.ReportApprove, "daily-2026-08-28", 4)]
+    public void report_は会話キーと版番号つきで解析される(
+        string raw, BotCommandKind expectedKind, string expectedPeriodKey, int? expectedVersion)
+    {
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(expectedKind);
+        command.PeriodKey.Should().Be(expectedPeriodKey);
+        command.Version.Should().Be(expectedVersion);
+    }
+
+    [Theory]
+    [InlineData("/report")]
+    [InlineData("/report show")]
+    [InlineData("/report approve")]
+    [InlineData("/report unknown-action daily-2026-08-28")]
+    // show は表示専用のため版番号を取らない（余分な引数は typo とみなす）。
+    [InlineData("/report show daily-2026-08-28 2")]
+    [InlineData("/report approve daily-2026-08-28 2 3")]
+    // 版番号は 1 以上の整数のみ。
+    [InlineData("/report approve daily-2026-08-28 0")]
+    [InlineData("/report approve daily-2026-08-28 -1")]
+    [InlineData("/report approve daily-2026-08-28 v2")]
+    // 🔴 IADR-0240 決定6: periodKey はそのまま URL パスへ載る。英小文字・数字・ハイフン以外は解析しない。
+    [InlineData("/report approve ../../secrets 1")]
+    [InlineData("/report approve daily_2026 1")]
+    [InlineData("/report approve daily/2026 1")]
+    [InlineData("/report approve daily%2f2026 1")]
+    [InlineData("/report approve daily-2026-08-28?x=1 1")]
+    public void 報告書レビューの書式外は_Unknown_になる(string raw)
+    {
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(BotCommandKind.Unknown);
+        command.PeriodKey.Should().BeNull();
+    }
+
+    [Fact]
+    public void 会話キーの長さ上限を超えると解析しない()
+    {
+        // 境界値: 32 文字まで許容し、33 文字は拒否する。
+        var ok = new string('a', 32);
+        var tooLong = new string('a', 33);
+
+        BotCommandParser.Parse($"/report show {ok}").Kind.Should().Be(BotCommandKind.ReportShow);
+        BotCommandParser.Parse($"/report show {tooLong}").Kind.Should().Be(BotCommandKind.Unknown);
+    }
 }

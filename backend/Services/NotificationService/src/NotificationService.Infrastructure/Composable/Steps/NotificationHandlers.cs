@@ -120,6 +120,15 @@ public sealed class FxRateStaleNotificationHandler(INotificationSender sender)
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-09, FR-19, FR-10, FR-11, UC-06, #341, ADR-0025, ADR-0028 決定3, IADR-0241:
+// GFV 違反の計上を購読して利用者へ通知する。**発注前ガードのすり抜けが現に起きたこと**を知らせる唯一の経路であり、
+// 停止の解除窓口が Discord だけである以上（ADR-0028 決定3）、通知が無ければ利用者は解除が要ることに気付けない。
+public sealed class GoodFaithViolationRecordedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(GoodFaithViolationRecorded message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // FR-10, FR-09, #381, IADR-0198: 鮮度切れのレートで決済した事実を Discord へ通知する。
 public sealed class PositionClosedWithStaleFxRateNotificationHandler(INotificationSender sender)
 {

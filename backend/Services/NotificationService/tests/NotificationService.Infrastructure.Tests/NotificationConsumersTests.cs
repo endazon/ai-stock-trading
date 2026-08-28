@@ -188,4 +188,29 @@ public class NotificationConsumersTests
 
         await host.StopAsync();
     }
+
+    // FR-09, FR-19, UC-06, #341, ADR-0025, ADR-0028 決定3, IADR-0241:
+    // GFV 違反の計上は Critical で通知される。**発注前ガードのすり抜けが現に起きたこと**を知らせる唯一の経路であり、
+    // 停止の解除窓口が Discord だけである以上、通知が無ければ利用者は解除が要ることに気付けない。
+    [Fact]
+    public async Task GFV違反の計上はガードのすり抜けとして通知する()
+    {
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var now = DateTimeOffset.UtcNow;
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new GoodFaithViolationRecorded(
+                Guid.NewGuid(), Guid.NewGuid(), "ORD-9", "AAPL", Market.UnitedStates, 12_345.67m, null,
+                new DateOnly(2026, 8, 27), now, now));
+        session.Executed.MessagesOf<GoodFaithViolationRecorded>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Critical
+            && m.Content.Contains("ORD-9")
+            && m.Content.Contains("すり抜けた買付")
+            && m.Content.Contains("/gfv clear"));
+
+        await host.StopAsync();
+    }
 }
