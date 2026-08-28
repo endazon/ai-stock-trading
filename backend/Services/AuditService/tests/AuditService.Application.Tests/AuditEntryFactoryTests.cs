@@ -624,4 +624,57 @@ public class AuditEntryFactoryTests
 
         b.CorrelationId.Should().NotBe(a.CorrelationId);
     }
+
+    // ===== FR-05, FR-10, FR-11, #331, IADR-0210/0211: 見送り・保護逆指値の記録 =====
+
+    private static readonly DateTimeOffset StopT0 = new(2026, 8, 28, 6, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void 見送りは_拒否とも事前拒否とも別のEventTypeで記録される()
+    {
+        // 別状態・別集計（issue #331 受け入れ基準 3）: 台帳上の種別が 3 者で異なることを固定する。
+        var forgone = AuditEntryFactory.From(
+            new OrderDispatchForgone(Guid.NewGuid(), Intent(), OrderDispatchForgoneReason.BrokerUnavailable, StopT0),
+            Id, RecordedAt);
+        var preRejected = AuditEntryFactory.From(
+            new OrderRejected(Guid.NewGuid(), Intent(), [RejectionReason.KillSwitchActive], StopT0),
+            Id, RecordedAt);
+        var brokerRejected = AuditEntryFactory.From(
+            new OrderExecuted(Guid.NewGuid(), "o1", OrderStatus.Rejected, 0, 0m, StopT0, BrokerProvider.MoomooSimulate),
+            Id, RecordedAt);
+
+        forgone.EventType.Should().Be(nameof(OrderDispatchForgone));
+        forgone.EventType.Should().NotBe(preRejected.EventType);
+        forgone.EventType.Should().NotBe(brokerRejected.EventType);
+        preRejected.EventType.Should().NotBe(brokerRejected.EventType);
+        // 「拒否ではない・再試行されない」と読めること（誤読は集計と運用判断を狂わせる）。
+        forgone.Summary.Should().Contain("発注していない");
+        forgone.Summary.Should().Contain("再試行されない");
+    }
+
+    [Fact]
+    public void 保護逆指値の発注はエントリーのDecisionIdで相関する()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopPlaced(entryDecisionId, Guid.NewGuid(), "stop-1", Intent(PositionEffect.Close), 950m, 1, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopPlaced));
+        entry.CorrelationId.Should().Be(entryDecisionId, "「建玉あり ⇒ 逆指値あり」の証跡をエントリーと 1 本で辿る");
+        entry.Summary.Should().Contain("保護逆指値");
+    }
+
+    [Fact]
+    public void 保護喪失のNoneは人手対応が要ると読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,
+                10, null, null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("人手対応");
+    }
 }

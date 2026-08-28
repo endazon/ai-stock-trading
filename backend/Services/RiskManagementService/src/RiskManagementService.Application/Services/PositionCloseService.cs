@@ -7,7 +7,7 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 
 // FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い。
 //
-// 損切りの機械執行（StopLossExecutionService）と同じ層・同じ出力（OrderApproved）に揃える。以降は既存経路
+// 機械執行の決済（維持率割れの自動縮小）と同じ層・同じ出力（OrderApproved）に揃える。以降は既存経路
 //（発注執行 → OrderExecuted → 台帳 → 枠回復 → 通知）にそのまま載るため、決済専用の約定経路は作らない。
 //
 // 発注前スクリーニング（RiskEvaluator）は通さない。FR-10 本文が「kill switch・日次損失ロックアウト・一時停止は

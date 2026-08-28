@@ -14,6 +14,9 @@ internal sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbC
     // #154, IADR-0067: 発注済み注文の訂正・取消（注文履歴テレメトリ）。追記専用。
     public DbSet<OrderLifecycleEventRow> OrderLifecycleEvents => Set<OrderLifecycleEventRow>();
 
+    // FR-10, #331, IADR-0210: 保護逆指値レグ（ProtectiveStopGuard の巡回対象の権威）。
+    public DbSet<ProtectiveStopOrderRow> ProtectiveStopOrders => Set<ProtectiveStopOrderRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // #131, IADR-0057: DecisionId を主キーにすることで、並行配送でも予約は高々1つに限定される
@@ -40,6 +43,18 @@ internal sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbC
             // 監査・照会の既定並び（新しい順）と DecisionId 相関の検索用インデックス。
             e.HasIndex(r => r.ExecutedAt);
             e.HasIndex(r => r.DecisionId);
+        });
+
+        // FR-10, #331, IADR-0210 決定6: 保護逆指値レグ。EntryDecisionId 主キー（1 エントリー = 高々 1 保護・
+        // 再発注は上書き）。Guard の巡回（State=Active を古い順）用の複合インデックスを持つ。
+        mb.Entity<ProtectiveStopOrderRow>(e =>
+        {
+            e.ToTable("protective_stop_orders");
+            e.HasKey(r => r.EntryDecisionId);
+            e.Property(r => r.EntryDecisionId).ValueGeneratedNever();
+            e.Property(r => r.StopOrderId).HasMaxLength(64).IsRequired();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.HasIndex(r => new { r.State, r.CreatedAt });
         });
 
         // #154, IADR-0067: 訂正・取消の追記専用台帳。

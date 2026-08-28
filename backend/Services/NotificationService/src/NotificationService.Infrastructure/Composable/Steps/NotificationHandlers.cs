@@ -151,3 +151,26 @@ public sealed class TradeDecisionSkippedNotificationHandler(INotificationSender 
     public Task Handle(TradeDecisionSkipped message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
+
+// FR-05, FR-09, ADR-0002（SPOF）, #331, IADR-0211: 発注の見送り（OpenD 切断・逆指値を張れない Open）。
+// 「キューイングせず見送り＋通知」の通知面——再試行されないことを利用者へ知らせる。
+public sealed class OrderDispatchForgoneNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(OrderDispatchForgone message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-10, FR-09, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時・失効後の再発注）。
+public sealed class ProtectiveStopPlacedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(ProtectiveStopPlaced message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-10, FR-09, UC-02, #331, IADR-0210: 保護逆指値が成立せず建玉を解消した（Critical）。
+// Remediation=None（解消も失敗）は人手対応を要するため、通知が唯一の即時警報である。
+public sealed class ProtectiveStopCoverageLostNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(ProtectiveStopCoverageLost message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}

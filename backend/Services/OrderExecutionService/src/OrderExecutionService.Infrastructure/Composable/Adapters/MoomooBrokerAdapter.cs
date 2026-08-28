@@ -15,12 +15,17 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
 // 持たないため OrderExecutionService は従来経路に倒れる。
 // #292, IADR-0118: IBrokerPositionSource も実装し、建玉突合へ現在建玉を供給する。照会不能は null（＝不明）に倒す。
 // paper（PaperBrokerAdapter）は本ポートを実装しないため、突合の常駐は paper 構成では起動時に自己停止する。
+// FR-10, #331, IADR-0210: IProtectiveOrderBroker（保護逆指値・成行手仕舞い）も実装する。損切りはブローカー側
+// 逆指値へ一本化されており、逆指値レグは OrderType_Stop（AuxPrice=発火価格）で発注する。
+// FR-05, #331, IADR-0211: 接続確立の失敗（BrokerUnavailableException＝確実に未発注）は Rejected へ**丸めない**
+// （「拒否＝証券会社が受理しなかった状態」の集計を接続障害で汚染しない）。呼び出し側が「見送り」にする。
 internal sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
     BrokerProvider provider,
     TimeProvider? timeProvider = null,
     ILogger<MoomooBrokerAdapter>? logger = null)
-    : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe, IBrokerAccountSource
+    : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe, IBrokerAccountSource,
+      IProtectiveOrderBroker
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -41,25 +46,48 @@ internal sealed class MoomooBrokerAdapter(
         OrderIntent intent, Guid decisionId, CancellationToken cancellationToken = default) =>
         PlaceCoreAsync(intent, remark: MoomooClientOrderId.From(decisionId), cancellationToken);
 
-    private async Task<BrokerOrder> PlaceCoreAsync(OrderIntent intent, string? remark, CancellationToken cancellationToken)
+    // FR-10, #331, IADR-0210: 保護逆指値（OrderType_Stop・AuxPrice=発火価格）。DecisionId を remark へ伝播する。
+    public Task<BrokerOrder> PlaceStopOrderAsync(
+        OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken cancellationToken = default) =>
+        PlaceCoreAsync(closeIntent, MoomooClientOrderId.From(decisionId), cancellationToken,
+            MoomooOrderKind.Stop, triggerPrice);
+
+    // FR-10, #331, IADR-0210: 成行の手仕舞い（逆指値が成立しない場合の建玉解消）。
+    public Task<BrokerOrder> PlaceMarketOrderAsync(
+        OrderIntent closeIntent, Guid decisionId, CancellationToken cancellationToken = default) =>
+        PlaceCoreAsync(closeIntent, MoomooClientOrderId.From(decisionId), cancellationToken,
+            MoomooOrderKind.Market);
+
+    private async Task<BrokerOrder> PlaceCoreAsync(
+        OrderIntent intent,
+        string? remark,
+        CancellationToken cancellationToken,
+        MoomooOrderKind kind = MoomooOrderKind.Limit,
+        decimal? triggerPrice = null)
     {
         var now = _time.GetUtcNow();
 
         // FR-05, #30: 実ブローカーが拒否する不正注文（数量/価格 <= 0）は送信せず終端 Rejected で返す（Paper と同一）。
-        if (intent.Quantity <= 0 || intent.Price <= 0m)
+        // 逆指値は発火価格が正であることも要する（#331）。成行は価格を送らないため参照価格の正負は問わない。
+        var invalid = intent.Quantity <= 0
+            || (kind == MoomooOrderKind.Limit && intent.Price <= 0m)
+            || (kind == MoomooOrderKind.Stop && triggerPrice is not > 0m);
+        if (invalid)
             return Terminal(intent, OrderStatus.Rejected, now);
 
         try
         {
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
-                intent.Quantity, intent.Price, remark);
+                intent.Quantity, intent.Price, remark, kind, triggerPrice);
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return ToBrokerOrder(intent, result, now);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
         {
-            // OpenD 不達・SDK 例外は終端 Rejected（フローを止めない・実弾防止の安全側）。原因はログに残す。
+            // 送信後の SDK 例外・応答異常は終端 Rejected（フローを止めない・実弾防止の安全側）。原因はログに残す。
+            // BrokerUnavailableException（接続確立の失敗＝確実に未発注）だけは**丸めずに伝播**する——
+            // Rejected は「証券会社が受理しなかった状態」（FR-05）であり、届いてすらいない事象を混ぜない（IADR-0211）。
             _logger.LogWarning(ex, "moomoo 発注に失敗したため Rejected に倒します symbol={Symbol} qty={Qty}",
                 intent.Symbol, intent.Quantity);
             return Terminal(intent, OrderStatus.Rejected, now);

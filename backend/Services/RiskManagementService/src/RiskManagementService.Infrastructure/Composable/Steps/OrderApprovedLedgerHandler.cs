@@ -6,7 +6,8 @@ namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 
 // FR-10, FR-05, IADR-0018: 承認済み注文（OrderApproved）を購読し、Intent（銘柄・方向・建玉効果）を DecisionId で
 // 取引台帳に記録する。後続の OrderExecuted（銘柄・方向を持たない）を DecisionId で相関して補完するための土台。
-// 通常経路（TradeDecisionMadeHandler）・損切り機械執行（StopLossExecutionService）の両方の承認を統一的に取り込む。
+// 通常経路（TradeDecisionMadeHandler）・機械執行の決済（owner 手仕舞い・維持率自動縮小）の承認を統一的に取り込む
+// （保護レグ〔逆指値・#331〕の承認行は ProtectiveStopLedgerHandlers が別イベントから追加する）。
 //
 // ADR-0013, IADR-0129 決定 10, #354: **本ハンドラは OrderApprovedActivityHandler と同一のハンドラチェーンで実行される。**
 // MassTransit ではキューが分かれていたため片方の失敗が他方の再試行を引き起こさなかったが、Wolverine は

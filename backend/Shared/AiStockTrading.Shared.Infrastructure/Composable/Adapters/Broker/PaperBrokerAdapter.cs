@@ -9,7 +9,12 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 //
 // FR-05, FR-19, IADR-0067: 注文履歴テレメトリ（#154）の訂正・取消を成立させるため IOrderAmendmentBroker も実装する。
 // 実ブローカー（moomoo）は本ポートを実装しない＝実弾経路には訂正・取消の口が型として存在しない（fail-safe）。
-public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker, IBrokerAvailabilityProbe
+//
+// FR-10, #331, IADR-0210: 保護注文（IProtectiveOrderBroker）も実装する——損切りはブローカー側逆指値へ
+// 一本化されており、実装しないと paper 構成の Open 注文がすべて見送られる（逆指値なしの建玉を持たない・
+// fail-closed）。paper の逆指値は板を持たないため**滞留 Accepted**（非終端）で受け、発火の模擬はしない。
+// 成行手仕舞いは参照価格（CloseIntent.Price）で即時全量約定する。
+public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker, IBrokerAvailabilityProbe, IProtectiveOrderBroker
 {
     private readonly ConcurrentDictionary<string, BrokerOrder> _orders = new();
     private readonly TimeProvider _timeProvider;
@@ -67,6 +72,33 @@ public sealed class PaperBrokerAdapter : IBrokerAdapter, IOrderAmendmentBroker, 
         _orders[order.OrderId] = order;
         return Task.FromResult(order);
     }
+
+    // FR-10, #331, IADR-0210: 保護逆指値。トリガー・注文内容が不正なら Rejected（実ブローカーの未受理と同じ分岐へ
+    // 呼び出し側を導く）。受理は**滞留 Accepted**——paper は板を持たず発火を模擬しない（発火分岐はフェイクで検証する）。
+    public Task<BrokerOrder> PlaceStopOrderAsync(
+        OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(closeIntent);
+
+        var now = _timeProvider.GetUtcNow();
+        var valid = IsValidOrder(closeIntent.Quantity, triggerPrice);
+        var order = new BrokerOrder(
+            OrderId: Guid.NewGuid().ToString("N"),
+            Intent: closeIntent,
+            Status: valid ? OrderStatus.Accepted : OrderStatus.Rejected,
+            FilledQuantity: 0,
+            AveragePrice: 0m,
+            PlacedAt: now,
+            CompletedAt: valid ? null : now);
+
+        _orders[order.OrderId] = order;
+        return Task.FromResult(order);
+    }
+
+    // FR-10, #331, IADR-0210: 成行の手仕舞い（逆指値が成立しない場合の建玉解消）。参照価格で即時全量約定する。
+    public Task<BrokerOrder> PlaceMarketOrderAsync(
+        OrderIntent closeIntent, Guid decisionId, CancellationToken cancellationToken = default) =>
+        PlaceOrderAsync(closeIntent, cancellationToken);
 
     public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {

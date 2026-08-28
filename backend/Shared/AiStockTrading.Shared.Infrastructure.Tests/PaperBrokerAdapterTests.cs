@@ -206,4 +206,47 @@ public class PaperBrokerAdapterTests
         fetched!.Intent.Quantity.Should().Be(10);
         fetched.Intent.Price.Should().Be(3000m);
     }
+
+    // --- FR-10, #331, IADR-0210: 保護注文（IProtectiveOrderBroker）---
+
+    [Fact]
+    public async Task 逆指値は滞留Acceptedで受理される()
+    {
+        // paper は板を持たないため発火を模擬しない。受理＝非終端の Accepted（建玉を保護している状態）。
+        var broker = new PaperBrokerAdapter();
+        var closeIntent = Intent(quantity: 10, price: 3000m);
+
+        var stop = await broker.PlaceStopOrderAsync(closeIntent, triggerPrice: 2900m, Guid.NewGuid());
+
+        stop.Status.Should().Be(OrderStatus.Accepted);
+        stop.FilledQuantity.Should().Be(0);
+        stop.CompletedAt.Should().BeNull("非終端＝滞留中");
+        (await broker.GetOrderAsync(stop.OrderId)).Should().NotBeNull("照会・取消の対象になる");
+    }
+
+    [Theory]
+    [InlineData(0, 2900)]   // 数量ゼロ
+    [InlineData(10, 0)]     // 発火価格ゼロ
+    [InlineData(10, -1)]    // 発火価格が負
+    public async Task 不正な逆指値は_Rejected_で受ける(int quantity, decimal trigger)
+    {
+        // 実ブローカーの未受理と同じ分岐（建玉を持たない側）へ呼び出し側を導く。例外にしない。
+        var broker = new PaperBrokerAdapter();
+
+        var stop = await broker.PlaceStopOrderAsync(Intent(quantity: quantity, price: 3000m), trigger, Guid.NewGuid());
+
+        stop.Status.Should().Be(OrderStatus.Rejected);
+    }
+
+    [Fact]
+    public async Task 成行手仕舞いは参照価格で即時全量約定する()
+    {
+        var broker = new PaperBrokerAdapter();
+
+        var close = await broker.PlaceMarketOrderAsync(Intent(quantity: 7, price: 2950m), Guid.NewGuid());
+
+        close.Status.Should().Be(OrderStatus.Filled);
+        close.FilledQuantity.Should().Be(7);
+        close.AveragePrice.Should().Be(2950m);
+    }
 }

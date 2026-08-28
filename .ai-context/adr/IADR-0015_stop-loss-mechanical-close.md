@@ -1,11 +1,11 @@
 ---
 title: IADR-0015 損切りの決済注文はスクリーニングを通さず無条件に Close 承認を発行する
 type: impl-adr
-status: Accepted
-related_ids: [FR-10, FR-03, ADR-0003]
+status: Superseded
+related_ids: [FR-10, FR-03, ADR-0003, IADR-0210]
 author: endazon (with Claude Code)
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-08-28
 plan_refs:
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -15,7 +15,13 @@ plan_refs:
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 
-- 状態: Accepted
+> **［2026-08-28 追記 / #331］Superseded by [IADR-0210](IADR-0210_broker-side-stop-loss-unification.md)。**
+> 計画大改定（FR-10・利用者裁定 planning#88）により損切りの実行機構は**ブローカー側の逆指値へ一本化**され、
+> システム側の価格監視は検知・記録・通知のみとなった（決済注文を発行しない）。本 IADR の
+> `StopLossExecutionService`（`StopLossTriggered` → Close の `OrderApproved` 発行）は撤去した。
+> 「損切りレグはスクリーニングを通さない（統制で止めない）」という規律は IADR-0210 決定 3 が引き継ぐ。
+
+- 状態: Superseded（当初 Accepted・2026-08-28 に IADR-0210 で置換）
 - 日付: 2026-07-10
 - 決定者: endazon（利用者・マージ判断）/ Claude Code（起案）
 
@@ -80,5 +86,5 @@ plan_refs:
 ## 関連
 
 - Supersedes: なし
-- Superseded by: なし
+- Superseded by: [IADR-0210](IADR-0210_broker-side-stop-loss-unification.md)（2026-08-28・#331。逆指値一本化）
 - 関連: [IADR-0014](IADR-0014_market-monitor-events-and-boundary.md)、[IADR-0004](IADR-0004_position-effect-entry-scoping.md)、[ADR-0003]

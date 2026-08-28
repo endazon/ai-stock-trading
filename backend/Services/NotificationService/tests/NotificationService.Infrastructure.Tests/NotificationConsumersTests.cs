@@ -213,4 +213,66 @@ public class NotificationConsumersTests
 
         await host.StopAsync();
     }
+
+    // FR-05, FR-09, FR-10, #331, IADR-0210/0211: 損切りの逆指値一本化で足した 3 イベントの通知。
+    // 通知が飛ばないと、利用者は「発注されなかった」「建玉が勝手に消えた」ことに気付けない。
+
+    [Fact]
+    public async Task 見送りイベントは再試行されないことを伝える通知を送信する()
+    {
+        // 🔴 キューイングしない裁定（IADR-0211）の帰結を利用者へ伝えるのは通知だけである。
+        // 「あとで自動的に発注される」と誤解されると、利用者は次の取引判断を待たずに放置してしまう。
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderDispatchForgone(
+            Guid.NewGuid(), Intent(), OrderDispatchForgoneReason.BrokerUnavailable, DateTimeOffset.UtcNow));
+        session.Executed.MessagesOf<OrderDispatchForgone>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Warning
+            && m.Content.Contains("再試行されません"));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 保護逆指値の発注は統制が働いた記録としてInfoで通知する()
+    {
+        // 平常時に流れる通知であり Critical にすると実際に止まる事象が埋もれる（重大度の切り分け）。
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var closeIntent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.InternalPaper, 10, 950m, PositionEffect.Close);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new ProtectiveStopPlaced(
+            Guid.NewGuid(), Guid.NewGuid(), "stop-1", closeIntent, 950m, 1, DateTimeOffset.UtcNow));
+        session.Executed.MessagesOf<ProtectiveStopPlaced>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Info && m.Content.Contains("stop-1"));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 保護喪失は建玉解消の内容つきでCriticalに通知する()
+    {
+        // 利用者の承認なしに建玉が消える事象であり、対処内容まで読めないと事後に何が起きたか分からない。
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var closeIntent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.InternalPaper, 10, 1_000m, PositionEffect.Close);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.PositionClosed, 10, Guid.NewGuid(), closeIntent, DateTimeOffset.UtcNow));
+        session.Executed.MessagesOf<ProtectiveStopCoverageLost>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Critical
+            && m.Content.Contains("成行で手仕舞い"));
+
+        await host.StopAsync();
+    }
 }
