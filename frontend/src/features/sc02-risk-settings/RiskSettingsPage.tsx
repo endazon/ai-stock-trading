@@ -446,19 +446,27 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
   const [newMarket, setNewMarket] = useState<number>(MARKET_OPTIONS[0]?.value ?? 0);
   const [newReason, setNewReason] = useState('');
 
-  // 現在値に追随してフォームを初期化する。ただし依存を「値のシグネチャ」にして、ガードの内容が実際に変わったとき
+  // 現在値に追随してフォームを初期化する。ただし比較対象を「値のシグネチャ」にして、ガードの内容が実際に変わったとき
   // （＝自分の保存成功後の再取得や外部変更）だけ初期化する。隣接するリスク上限フォームの保存でも親の current は再生成
   // され guard の参照は変わるが、ガードの内容が同一なら初期化しない（編集中のガード内容・理由・危険確認・下書きを
-  // 黙って破棄しない・fail-safe / #188 AI レビュー指摘）。guard は guardSignature と同一値のため依存に含めない。
+  // 黙って破棄しない・fail-safe / #188 AI レビュー指摘）。
+  //
+  // 🔴 #539, NFR: **これを `useEffect` で行わない。** #498（`.ai-context/specs/20260821_498_...md`）で
+  // 実証された機序と同型——commit（DOM が見える）と passive effect の実行の間には窓があり、その窓で
+  // 利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って巻き戻す。React 公式の「prop が変わった
+  // ときに state を調整する」書き方（前回のシグネチャを state に持ち、描画中に同期的に比較・調整する）へ
+  // 寄せる。**mount 時は走らない**ため窓そのものが消え、`guardSignature` が実際に変わったときの初期化は
+  // 従来どおり効く。
   const guardSignature = JSON.stringify(guard);
-  useEffect(() => {
+  const [syncedGuardSignature, setSyncedGuardSignature] = useState(guardSignature);
+  if (syncedGuardSignature !== guardSignature) {
+    setSyncedGuardSignature(guardSignature);
     setForm(toGuardForm(guard));
     setReason('');
     setConfirmDanger(false);
     setNewSymbol('');
     setNewReason('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guardSignature]);
+  }
 
   const dangers = dangerousChanges(guard, form);
   // 危険確認は「その時点の危険リスト」に紐付ける。確認後にさらに危険な変更が増えたら確認を外し、再確認を要求する
@@ -510,7 +518,7 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
           reason: reason.trim(),
         },
       });
-      // 成功後は現在値・履歴を再取得（useEffect が form/理由/確認を初期化する）。破壊的操作はしない。
+      // 成功後は現在値・履歴を再取得（guardSignature の変化を描画中に検知して form/理由/確認を初期化する）。破壊的操作はしない。
       setSaveState('idle');
       setSavedNotice('保存しました。');
       await onSaved();
@@ -745,13 +753,22 @@ function BrokerProviderForm({
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // 現在値に追随して選択を初期化する（自分の保存成功後の再取得・外部変更）。
-  useEffect(() => {
+  //
+  // 🔴 #539, NFR: **これを `useEffect` で行わない。** #498（`.ai-context/specs/20260821_498_...md`）で
+  // 実証された機序と同型——commit（DOM が見える）と passive effect の実行の間には窓があり、その窓で
+  // 利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って巻き戻す。React 公式の「prop が変わった
+  // ときに state を調整する」書き方（前回の prop を state に持ち、描画中に同期的に比較・調整する）へ
+  // 寄せる。**mount 時は走らない**ため窓そのものが消え、`current` が実際に変わったときの初期化は
+  // 従来どおり効く。
+  const [syncedCurrent, setSyncedCurrent] = useState(current);
+  if (syncedCurrent !== current) {
+    setSyncedCurrent(current);
     setSelected(current);
     setReason('');
     setModalOpen(false);
     setAcknowledged(false);
     setPhrase('');
-  }, [current]);
+  }
 
   const live = isLiveProvider(selected);
   const unchanged = selected === current;
