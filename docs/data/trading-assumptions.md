@@ -3,15 +3,15 @@ title: 全体前提条件（assumptions / assumptions_change_log）データ仕�
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-08-28
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-13, FR-17, FR-18, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173, IADR-0260]
+iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173, IADR-0259, IADR-0260, IADR-0264]
 specs: [20260710_configuration-assumptions]
-issues: [#14, #19, #139, #358]
+issues: [#14, #19, #139, #358, #526]
 -->
 
 
@@ -84,11 +84,18 @@ issues: [#14, #19, #139, #358]
 - `PUT` は `ExpectedVersion`・`Reason` 必須（欠如は 400）。版不一致は 409（楽観排他）。成功時に `AssumptionsChanged` イベントを発行
   → 通知サービスが Discord 通知（通知は既定で外部送信しない安全既定に従う）。AI・自動処理は `trading-owner` を持たず変更できない。
 
-## 消費側からの参照（共有クライアント）
+## 消費側からの参照（呼び出し元ごとの解決器）
 
-- 消費側サービスは `ConfigurationService.Client` の `IAssumptionsProvider` で参照する（共有クライアント方式の決定 3）。
-  配線は `services.AddAiStockTradingAssumptions(configuration)` の 1 行＋`x.AddConsumer<AssumptionsChangedConsumer>()`（版の追随）。
+- 消費側サービスは**自サービスの `Infrastructure/ExternalServices/`** が持つ `IAssumptionsProvider` で参照する。
+  配線は `services.AddAiStockTradingAssumptions(configuration)` の 1 行。版の追随を要する消費側だけが
+  `AssumptionsChanged` のハンドラを自サービスに置き、Wolverine の発見範囲へ含める。
+  - ［2026-08-29 追記 / #526］**設定サービスが公開していた共有クライアントプロジェクトは廃止した。**
+    キャッシュ・タイムアウト・フェイルセーフ・DI 拡張は**呼び出し元の `Infrastructure` に置く**
+    （適切な値は呼び出し元の要求で決まるため。呼び出し先が固定すると合わない側が回避策を書く）。
+    版付きの型 `VersionedAssumptions` は共有カーネル `AiStockTrading.Shared.Kernel` に置く。
+    **移送で振る舞いは変えていない**（購読しているのは費用統制サービスのみで、これも移送前と同じ）。
 - キャッシュは `AssumptionsChanged` で無効化し、TTL（`Configuration:AssumptionsCacheTtlSeconds`・既定 300 秒）でも失効する。
+  購読を持たない消費側は TTL のみで失効する（移送前と同じ）。
 - フェイルセーフ: 取得不可時は ①last known good → ②既定値（`Version=0`＝未解決）の順に倒す（決定 5）。
   `Configuration:BaseUrl` 未設定なら HTTP を構築せず既定値のみ（決定 6）。
 
