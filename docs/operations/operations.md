@@ -3,7 +3,7 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -229,7 +229,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 
 | 見直し契機 | 期日・条件 | 対応 |
 | --- | --- | --- |
-| **`claude-sonnet-5` の導入価格終了** | **2026-08-31**（$2/$10 は同日までの導入価格） | 公開単価を再確認し `values-local.yaml` の該当行を更新する。`trade-decision`・`report-daily` の計上額が直接変わる |
+| ~~`claude-sonnet-5` の導入価格終了~~ | ~~2026-08-31~~（**解消済み・2026-08-28 確認**） | Anthropic が $2/$10 を恒久価格にすると公式発表し、2026-09-01 予定の $3/$15 改定は行われない。単価は変更不要（`values-local.yaml` は据え置き）。#243 で確認 |
 | 公開単価の改定・モデルの追加 | 基盤の `Llm:Routing:PurposeModels` が変わったとき | 新しい実効モデルの行を表へ足す。**足さないと最大単価で過大計上される**（安全側だが実態とずれる） |
 | 為替の乖離 | USD→JPY が投入時の **163.71**（FRED `DEXJPUS`）から大きく離れたとき | 換算し直して表を更新する |
 

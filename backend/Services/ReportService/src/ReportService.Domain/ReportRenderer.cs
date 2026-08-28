@@ -57,8 +57,36 @@ public static class ReportRenderer
         AppendMarginReductions(sb, view);
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
+        AppendLlmModelUsage(sb, view);
 
         return sb.ToString();
+    }
+
+    // FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: 報告書のメタ情報として「実際に使用したモデル」を残す。
+    //
+    // ADR-0017 決定4 の明文: 「**月報が第 1 候補で書かれたのか第 2 候補で書かれたのかは、その月報を
+    // 次の 1 か月の方針書として採用する際の判断材料である。**」フォールバック機構の最大の危険は、
+    // 設定ミスや制度変更が「動いているように見える」ことで発見されなくなる点にある（＝沈黙のフォールバック）。
+    //
+    // **未供給（null）は節ごと出さない。** 「照会できていない」を「第 1 候補で書かれた」と読ませないための
+    // 扱いであり、AppendFxSourceStatus と同じ規律である（既存の描画結果も変わらない）。
+    private static void AppendLlmModelUsage(StringBuilder sb, ReportView view)
+    {
+        if (view.LlmModelUsage is not { } usage)
+            return;
+
+        sb.Append("\n### 散文生成に使用した LLM\n\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 用途: {usage.Purpose}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 割当（第 1 候補）: {usage.ExpectedModel ?? "（割当なし）"}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 実際に使用したモデル: {usage.EffectiveModel ?? "（不明）"}\n");
+        if (usage.IsPrimary)
+        {
+            sb.Append("- フォールバック: 発火なし（第 1 候補で生成）\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **フォールバック: 発火あり（{usage.Outcome}）**: 第 1 候補以外のモデルで生成されています。品質が第 1 候補と同一である保証はありません。\n");
     }
 
     // FR-10, FR-06, UC-06, ADR-0016 決定4（2026-08-06 改訂）・決定15（2026-08-06 追記）, #419, IADR-0159 決定3:
@@ -147,9 +175,16 @@ public static class ReportRenderer
         // **記録は遷移時にしか残らない**（IADR-0196 決定1）ため、**記録が無いことは
         // 「第一の源を使った」ことを意味しない**——為替を一度も使わなかった期間と区別が付かない。
         // IADR-0196 決定3（照会不能を「切替なし」と書かない）と同じ規律を 1 段深く当てたものである。
+        // 🔴 #513 / IADR-0225 決定E: **証拠ができたので、外していた文言を戻す。**
+        // 使用記録（暦日ごと・rank ≤ 1）があるなら「第一の情報源から取得できていた」は
+        // **台帳が支える事実**である。**証拠が無ければ従来どおり書かない**（IADR-0199 決定5 は不変）。
         if (fx.IsClean)
         {
-            sb.Append("- 期間内に、情報源の切替・鮮度警告・鮮度切れでの決済の記録はありません。\n");
+            var primaries = fx.PrimarySourceNames;
+            sb.Append(primaries.Count > 0
+                ? $"- 期間内は**第一の情報源（{string.Join("・", primaries)}）から取得できており**、"
+                    + "情報源の切替・鮮度警告・鮮度切れでの決済の記録はありません。\n"
+                : "- 期間内に、情報源の切替・鮮度警告・鮮度切れでの決済の記録はありません。\n");
             AppendFxCredits(sb, fx);
             return;
         }
@@ -225,15 +260,27 @@ public static class ReportRenderer
             sb.Append("- 出典: ").Append(credit).Append('\n');
         }
 
+        if (fx.PrimarySourceCredits.Count > 0)
+        {
+            return;
+        }
+
+        // 🔴 #513 / IADR-0225 決定E: **「クレジットが空」と「使った源が分からない」は別である。**
+        // 使用記録が入ったことで、**使った源は分かるがその源はクレジット表記を求めていない**
+        // （FRED だけを使った期間）という状態が生じた。ここを「特定できません」と書くと**端的に誤りになる**。
+        var used = fx.UsedSourceNames;
+        if (used.Count > 0)
+        {
+            sb.Append("- 出典: ").Append(string.Join("・", used))
+                .Append("（クレジット表記を求めていない情報源です）\n");
+            return;
+        }
+
         // 🔴 #381 供給結線 / IADR-0199 決定5: **出典が空であることを黙って通さない。**
-        // 台帳の記録は**遷移時にしか残らない**ため、静かな期間はどの情報源を使ったのか証明できない。
         // ここを無言で済ませると、読み手は「出典の記載を忘れている」のか
         // 「**書ける根拠が無い**」のかを区別できない——本節が一貫して避けてきた形である。
-        if (fx.PrimarySourceCredits.Count == 0)
-        {
-            sb.Append("- 出典: **記録からは特定できません**"
-                + "（情報源の記録は切替時にのみ残るため、切替の無い期間は使用した情報源を判別できません）。\n");
-        }
+        sb.Append("- 出典: **記録からは特定できません**"
+            + "（期間内に情報源の使用記録が残っていないため、使用した情報源を判別できません）。\n");
     }
 
     // 期間は意味のある単位まで（秒まで書くと読み手が桁を数えることになる）。監査・通知と同じ規則。

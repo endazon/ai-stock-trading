@@ -91,8 +91,27 @@ public static class AuditEntryFactory
         id, nameof(LlmCostIncurred),
         AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
         Symbol: null,
-        $"LLM 費用発生 {e.Amount:N2} 円",
+        $"LLM 費用発生 {e.Amount:N2} 円（用途 {e.Purpose ?? "不明"}・モデル {e.Model ?? "不明"}）",
         AuditSerialization.Serialize(e), e.At, recordedAt);
+
+    // FR-04, FR-06, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火（用途別・原因別）。
+    // 月報の「当月のフォールバック発火回数」の供給元であるため、**発生月で束ねられる相関**にする。
+    public static AuditEntry From(LlmFallbackFired e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmFallbackFired),
+        AuditCorrelation.From($"llm-fallback:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"LLM 割当逸脱（{e.Outcome}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-04, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送り。
+    // **障害ではなく設計上の正常な結果**であり、日報の「当日のスキップ回数」の供給元になる。
+    // 発生日で辿れるよう、発火と同じく月で束ねる相関にする（日報は日で絞って数える）。
+    public static AuditEntry From(TradeDecisionSkipped e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionSkipped),
+        AuditCorrelation.From($"trade-decision-skip:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"取引判断の見送り（{e.Reason}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し）。注文/市場相関を持たないため
     // "stage-gate" の決定的 GUID を相関にする（すべての段階遷移が同一相関で束ねられ、監査照会でまとめて辿れる）。
@@ -267,6 +286,18 @@ public static class AuditEntryFactory
         id, nameof(FxRateSourceFellBack), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
         $"為替レート源がフォールバックへ切替: {e.Quote} は {e.SourceName}（優先度 {e.Rank}/{e.TotalSources}）から取得。"
             + "第一の源が使えていない（鮮度が週次へ悪化し得る）。新規建ては止まっていない",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-06, FR-10, FR-11, #513, ADR-0022 決定1, IADR-0225: どの情報源から取ったかの記録（暦日ごとに 1 件）。
+    //
+    // 🔴 **これが「静かな期間」の出典の唯一の根拠である。** 遷移でしか発行しない設計（IADR-0196 決定1）では
+    // 切替も復帰も起きない期間に何も残らず、**日報の出典が平常時こそ「特定できません」になっていた**。
+    // 相関は切替・復帰と**同じ `fx-rate-source:{Quote}`** に置く——通貨ごとの 1 本のタイムラインに
+    // 「使った・落ちた・戻った」が時系列で並ぶ（別相関にすると期間の追跡が 2 本に割れる）。
+    public static AuditEntry From(FxRateSourceUsed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateSourceUsed), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レート源の使用記録（当日初回）: {e.Quote} は {e.SourceName}"
+            + $"（優先度 {e.Rank}/{e.TotalSources}{(e.IsPrimary ? "・第一の情報源" : "・フォールバック")}）から取得",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // 🔴 期間は**このイベント自身が持つ**（受け手に引き算させない）。片方を取りこぼしても期間が黙って狂わない。

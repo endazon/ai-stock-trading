@@ -78,4 +78,15 @@ public sealed record ReportView
     /// </para>
     /// </summary>
     public FxSourceStatus? FxSourceStatus { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: この報告書の散文を<b>実際に生成したモデル</b>と、
+    /// フォールバック発火の事実（可視化 3 経路の①）。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>モデルを照会できていない</b>」であり「フォールバックしていない」ではない
+    /// （プレースホルダ生成・縮退時が該当する）。<see cref="FxSourceStatus"/> と同じ規律で、
+    /// <b>節ごと出さない</b>ことで両者を潰さない。
+    /// </para>
+    /// </summary>
+    public LlmModelUsage? LlmModelUsage { get; init; }
 }

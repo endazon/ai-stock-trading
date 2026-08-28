@@ -247,7 +247,7 @@ ADR-0008（計画リポ） の撤退基準に該当すると、
 | `claude-fable-5` | 10 / 50 | `1.637` / `8.186` | `report-monthly`（＝表の最大単価） |
 | `claude-opus-5` | 5 / 25 | `0.819` / `4.093` | `report-weekly`・ゲートウェイ既定 |
 | `claude-opus-4-8` | 5 / 25 | `0.819` / `4.093` | ADR-0011 が意図する固定先 |
-| `claude-sonnet-5` | 2 / 10 ※導入価格 | `0.327` / `1.637` | **`trade-decision`**・`report-daily` |
+| `claude-sonnet-5` | 2 / 10（恒久化確認済み・2026-08-28。#243） | `0.327` / `1.637` | **`trade-decision`**・`report-daily` |
 | `claude-haiku-4-5` | 1 / 5 | `0.164` / `0.819` | （基盤の `diagram-coding`） |
 
 USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入。
@@ -258,8 +258,11 @@ USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同�
 表そのものが空なら従来キー `LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens`（global 単一ペア・未設定 0）へ倒れる
 ＝ per-model を持たない既存デプロイは従来どおり動く。
 
-**恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は **2026-08-31 までの導入価格**であり、
-**同日以降は必ず再確認する**。再評価は [#243](https://github.com/endazon/ai-stock-trading/issues/243)。
+**恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は当初「2026-08-31 までの導入価格」
+だったが、**Anthropic が 2026-08-28 の確認時点でこれを恒久価格にすると公式発表しており**（2026-09-01 予定
+だった $3/$15 への改定は行われない。出典: [Anthropic 公式 Pricing ドキュメント](https://platform.claude.com/docs/en/about-claude/pricing)
+の注記 `claude-sonnet-5-introductory-pricing`）、**本表の値は変更不要**である（[#243](https://github.com/endazon/ai-stock-trading/issues/243)）。
+他モデルの単価・為替レートは引き続き変動し得るため、乖離が出たら本値を更新する。
 本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
 
 > **過少申告が残る点**: report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても実消費より

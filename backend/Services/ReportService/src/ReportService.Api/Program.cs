@@ -9,6 +9,7 @@ using AiStockTrading.Report.Api.Foundation.Endpoints;
 using AiStockTrading.Report.Infrastructure.Foundation.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -66,6 +67,26 @@ builder.Services.AddScoped<AppSvc>();
 builder.Services.AddHttpClient("report-llm",
     c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max);
 builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
+
+// NFR（費用）, #347, IADR-0219: 報告書生成の LLM 費用の計測点。**用途（purpose）を載せて発行する**ため、
+// 費用統制サービスは上限の対象外（LlmUncapped）として計上し、抑制せずに月報の実績へ供給できる。
+// #303, IADR-0122: 単価は応答が名乗った実効モデルから引く（LlmPricing:PerModel:<model-id>:*・円/1k）。
+builder.Services.AddSingleton<ILlmUsageReporter>(sp => new PublishingLlmUsageReporter(
+    sp.GetRequiredService<IWolverineRuntime>(),
+    sp.GetRequiredService<IClock>(),
+    LlmPriceTable.From(
+        sp.GetRequiredService<IConfiguration>().GetSection("LlmPricing:PerModel").GetChildren()
+            .Select(s => (Model: s.Key, Input: s["InputPer1kTokens"], Output: s["OutputPer1kTokens"])),
+        sp.GetRequiredService<IConfiguration>()["LlmPricing:InputPer1kTokens"],
+        sp.GetRequiredService<IConfiguration>()["LlmPricing:OutputPer1kTokens"]),
+    sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>()));
+
+// FR-06, FR-09, ADR-0017 決定4, #335, IADR-0217: フォールバック発火の警告通知・月報集計の供給元。
+builder.Services.AddSingleton<ILlmGovernanceReporter>(sp => new PublishingLlmGovernanceReporter(
+    sp.GetRequiredService<IWolverineRuntime>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
+
 builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -85,7 +106,11 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
         // IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
         // IADR-0123 決定1: 要求ごとに種別のタイムアウトを解決する（日報 30 秒 / 週報・月報 120 秒が組込既定）。
-        timeoutFor: NarrativeTimeouts(cfg).For);
+        timeoutFor: NarrativeTimeouts(cfg).For,
+        // #347, IADR-0219: 報告書生成の費用計測（上限の対象外だが実績は月報へ記載する）。
+        usageReporter: sp.GetRequiredService<ILlmUsageReporter>(),
+        // #335, ADR-0017 決定4, IADR-0217: フォールバック発火の可視化（②通知・③月報集計）。
+        governanceReporter: sp.GetRequiredService<ILlmGovernanceReporter>());
 });
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため

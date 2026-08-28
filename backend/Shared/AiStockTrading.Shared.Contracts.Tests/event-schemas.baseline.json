@@ -82,6 +82,14 @@
     "Quote": "String",
     "SourceName": "String"
   },
+  "FxRateSourceUsed": {
+    "IsPrimary": "Boolean",
+    "OccurredAt": "DateTimeOffset",
+    "Quote": "String",
+    "Rank": "Int32",
+    "SourceName": "String",
+    "TotalSources": "Int32"
+  },
   "FxRateStale": {
     "AgeDays": "Double",
     "AsOf": "DateTimeOffset",
@@ -139,7 +147,16 @@
   },
   "LlmCostIncurred": {
     "Amount": "Decimal",
-    "At": "DateTimeOffset"
+    "At": "DateTimeOffset",
+    "Model": "String",
+    "Purpose": "String"
+  },
+  "LlmFallbackFired": {
+    "EffectiveModel": "String",
+    "ExpectedModel": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Outcome": "String",
+    "Purpose": "String"
   },
   "MaintenanceMarginReductionExecuted": {
     "EventId": "Guid",
@@ -263,6 +280,13 @@
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
     "Rationale": "String"
+  },
+  "TradeDecisionSkipped": {
+    "EffectiveModel": "String",
+    "ExpectedModel": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Purpose": "String",
+    "Reason": "String"
   },
   "WithdrawalTriggered": {
     "HaltNewEntries": "Boolean",
