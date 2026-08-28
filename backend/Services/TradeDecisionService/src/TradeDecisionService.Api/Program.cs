@@ -75,16 +75,20 @@ builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 // 未設定なら従来キー LlmPricing:InputPer1kTokens / OutputPer1kTokens（global 単一ペア）へ倒れる＝後方互換。
 // 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
 // NFR（費用）, #347, IADR-0218: 用途（purpose）を必ず載せる。費用統制の対象範囲は購読側が purpose で判別する。
-builder.Services.AddScoped<ILlmUsageReporter>(sp =>
-{
-    var cfg = sp.GetRequiredService<IConfiguration>();
-    return new PublishingLlmUsageReporter(
-        sp.GetRequiredService<IMessageBus>(),
-        sp.GetRequiredService<IClock>(),
-        BuildLlmPriceTable(cfg),
-        sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>(),
-        cfg["LlmGateway:Purpose"] ?? LlmPurposes.TradeDecision);
-});
+// #335, IADR-0212: 用途は**計測ごと**に egress（HttpLlmCompletionClient）が載せる。ここで固定すると
+// 二段判断の一次スクリーニングと本判断が同じ用途で積まれ、層別の内訳が取れない。
+builder.Services.AddScoped<ILlmUsageReporter>(sp => new PublishingLlmUsageReporter(
+    sp.GetRequiredService<IMessageBus>(),
+    sp.GetRequiredService<IClock>(),
+    BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
+    sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>()));
+
+// FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
+// フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
+builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovernanceReporter(
+    sp.GetRequiredService<IMessageBus>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
 
 // FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
 // フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
@@ -106,7 +110,10 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
     return new HttpLlmCompletionClient(http,
         sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
-        cfg["LlmGateway:Purpose"] ?? LlmPurposes.TradeDecision,
+        // #335, IADR-0212: 用途は**呼び出しごと**に DecisionOrchestrator が名乗る（一次=trade-decision-screening／
+        // 二次=trade-decision）。ここを固定すると層を区別できず、一次の応答が二次の割当と照合されて全サイクルが
+        // 見送りへ倒れる。LlmGateway:Purpose は明示設定時のみ全呼び出しへ上書き適用する（既存デプロイの非破壊）。
+        cfg["LlmGateway:Purpose"],
         sp.GetRequiredService<ILlmUsageReporter>(),
         // FR-11, IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,

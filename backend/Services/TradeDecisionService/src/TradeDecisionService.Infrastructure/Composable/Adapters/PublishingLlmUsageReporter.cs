@@ -16,21 +16,24 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 // NFR（費用）, 05_trading-assumptions §6.1, #347, IADR-0218: **用途（purpose）を必ず載せる。**
 // 月次 LLM 費用上限（15,000 円）の対象は取引判断サイクルのみであり、対象範囲の判別は購読側
 // （LlmCostIncurredHandler）が purpose だけを見て行う。載せ忘れると上限側へ倒れる（過小計上を作らない既定）。
+//
+// 🔴 #335, IADR-0212: 用途は**計測ごと**（`usage.Purpose`）に受け取る。構築時に固定していた頃は、二段判断の
+// 一次スクリーニング（trade-decision-screening）の費用が本判断（trade-decision）として積まれ、
+// **層別の内訳が取れなかった**。計上側が purpose を決めてはならない —— 決めてよいのは egress だけである。
 internal sealed class PublishingLlmUsageReporter(
     IMessageBus bus,
     IClock clock,
     LlmPriceTable priceTable,
-    ILogger<PublishingLlmUsageReporter> logger,
-    string purpose) : ILlmUsageReporter
+    ILogger<PublishingLlmUsageReporter> logger) : ILlmUsageReporter
 {
     public async Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
     {
         var price = priceTable.Resolve(usage.Model);
         var amount = LlmPricing.Compute(usage.InputTokens, usage.OutputTokens, price);
         // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
-        await bus.PublishAsync(new LlmCostIncurred(amount, clock.UtcNow, purpose, usage.Model)).ConfigureAwait(false);
+        await bus.PublishAsync(new LlmCostIncurred(amount, clock.UtcNow, usage.Purpose, usage.Model)).ConfigureAwait(false);
         logger.LogDebug(
             "LLM 費用計上イベントを発行 purpose={Purpose} model={Model} in={InputTokens} out={OutputTokens} amount={Amount}",
-            purpose, usage.Model, usage.InputTokens, usage.OutputTokens, amount);
+            usage.Purpose, usage.Model, usage.InputTokens, usage.OutputTokens, amount);
     }
 }
