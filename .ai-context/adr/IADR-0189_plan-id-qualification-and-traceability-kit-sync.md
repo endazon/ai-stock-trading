@@ -2,10 +2,10 @@
 title: IADR-0189 計画 ID 修飾の検査器を kit から取り込み、修飾の表記を一貫させる（cross-repo-refs は配線しない）
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0047, IADR-0188]
+related_ids: [NFR, IADR-0047, IADR-0188, IADR-0262]
 author: endazon (with Claude Code)
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-28
 plan_refs:
   - planning:tools/impl-handoff-kit/repo-template/.claude/rules/traceability.md
   - planning:tools/impl-handoff-kit/repo-template/scripts/check-plan-id-qualification.js
@@ -218,3 +218,19 @@ CI ジョブのコメントに**違反の実例を平文で書いて**自分の�
   「bot 側の件名を直す」かを判断すること。
 - **`.md` 以外では誤例を書けない。** `maskCode` は Markdown のコード記法しか外さないため、
   YAML・C# のコメントに違反の実例を書くと検査に捕まる（本作業で実際に踏んだ）。
+
+### ［2026-08-28 追記 / IADR-0262］決定2・決定6 は部分的に Superseded
+
+**決定2**（検査器の置換点は環境変数で与え、ファイルはキットとバイト一致のまま保つ）と**決定6**
+（その結果生じる fail-open を、回帰テストを唯一の番人として受容する）は、
+[IADR-0262](IADR-0262_plan-id-qualification-default-and-doc-contradictions.md) により部分的に
+Superseded された。
+
+理由: 両決定の動機は「キットとのバイト一致を保つ」ことにあったが、その後の資料再編（計画 ADR-0029・
+2026-08-21）が「kit との乖離は受容する」方針へ転換し、kit-sync のバイト一致検査も退役した。動機が
+失われたまま、**CI では検査され、素の実行（env なし）だけが skip して緑になる**という非対称
+（本節が「fail-open は残る」と自認していたリスクそのもの）が残っていた。IADR-0262 は
+`PROJECT_PREFIXES` の既定を `['MSP', 'AST']` としてファイルへ直接埋め、この非対称を閉じた。
+
+**決定1・決定3・決定4・決定5・決定7 は影響を受けず、引き続き有効である。** 決定3（`AST` を
+`PROJECT_PREFIXES` へ含める判断）は IADR-0262 の既定値へそのまま引き継がれた。

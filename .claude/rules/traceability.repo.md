@@ -64,6 +64,20 @@ KNOWN_OWNERS         = endazon
 env なしの素実行で行うようになり成立しなくなった。同名の環境変数（`CROSS_REPO_*`）による上書きは
 引き続き有効で、`scripts.repo.test.js` のテストが同値を与えて検査する。
 
+### 検査の置換点（`check-plan-id-qualification.js` のファイル内で埋める。NFR / [IADR-0262](../../.ai-context/adr/IADR-0262_plan-id-qualification-default-and-doc-contradictions.md)）
+
+```
+PROJECT_PREFIXES     = MSP, AST
+```
+
+**姉妹検査器（`check-cross-repo-refs.js`）と同じくファイル内へ直書きする。** [IADR-0189](../../.ai-context/adr/IADR-0189_plan-id-qualification-and-traceability-kit-sync.md)
+決定2・決定6は「既定を空のまま保ち `PLAN_ID_PREFIXES` は CI の環境変数と回帰テストだけで供給する」
+としていたが、これは**バイト一致をキットと保つため**という、資料再編（ADR-0029 決定6。kit との乖離を
+受容する）より前の理由づけであった。**素の実行（env なし）だけが skip して緑になる非対称**が
+IADR-0189 自身の残余リスクとして残っており、本 IADR-0262 で決定2・決定6 を部分的に supersede して
+埋めた。`AST` を含むのは、本リポが `AST/FR-17` のような**自己修飾**を実際に使っているため
+（IADR-0189 決定3の踏襲）。環境変数 `PLAN_ID_PREFIXES` による上書きは引き続き有効。
+
 ### 除外とその理由
 
 | 除外 | 理由 |

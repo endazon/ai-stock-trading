@@ -102,7 +102,7 @@
 ## 禁止事項
 
 - **仕様書（`.ai-context/specs/`）を作成せずに実装へ着手すること**。
-- 計画書（特に fixed / Accepted）に反する実装。差異が必要な場合は、新 ADR または planning への issue 起票で根拠を残す。
+- 計画書（特に fixed / Accepted）に反する実装。差異が必要な場合は、新 IADR または planning への issue 起票で根拠を残す。
 - ADR で確定した制約（技術スタック・アーキテクチャ等）の無断逸脱。
 - **planning への依存の再導入**（submodule 化・pin 固定・計画書をビルド／CI の前提にすること）。ADR-0029 決定 2 を覆すには新しい計画 ADR が要る。
 - **`docs/` 配下の表示テキストへ計画 ID・IADR・修飾付き issue 参照を書くこと**（trace ブロックへ入れる）。

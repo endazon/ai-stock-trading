@@ -1322,13 +1322,13 @@ module.exports = ({ ok, assert }) => {
 
   const pathFb = require('path');
 
-  // --- 計画 ID の修飾（NFR / #477 / IADR-0189） ---
+  // --- 計画 ID の修飾（NFR / #477 / IADR-0189 / IADR-0262） ---
   //
-  // **CI ジョブだけでは足りない。** `plan-id-qualification` ジョブは `PLAN_ID_PREFIXES` を渡して
-  // 走らせるが、**その環境変数を落とすと `PROJECT_PREFIXES` が空になり、検査は skip して緑になる**
-  // （fail-open。「他プロジェクトを参照しないリポジトリ」のための正常な挙動である）。
-  //
-  // よって本テストは**環境変数を自前で明示的に与えて**呼ぶ。CI 側の env を消しても、こちらが赤くなる。
+  // 🔴 **［2026-08-28 変更］既定値は空ではない。** `PROJECT_PREFIXES` は本リポの値（`MSP, AST`）を
+  // ファイルへ直書きしている（IADR-0262 が IADR-0189 決定2・決定6 を部分的に supersede した）。
+  // **CI ジョブが `PLAN_ID_PREFIXES` を渡すのは冗長化のためであり、落としても skip して緑には
+  // ならない**（既定が拾う）。本テストは env を明示的に与えて呼ぶが、これは「env が無いと検査され
+  // ない」からではなく、**単に CI と同じ値で走らせて確認する**ためである。
   ok('実ツリー: 他プロジェクトの計画 ID が `<PROJ>/<ID>` で書かれている（#477 の回帰）', () => {
     const { execFileSync } = require('child_process');
     execFileSync(process.execPath, [pathFb.join(__dirname, 'check-plan-id-qualification.js')], {
@@ -1338,6 +1338,22 @@ module.exports = ({ ok, assert }) => {
       env: { ...process.env, PLAN_ID_PREFIXES: 'MSP,AST' },
       stdio: 'pipe',
     });
+  });
+
+  // **既定を空へ戻す退行を検出する（NFR / IADR-0262）。** `PLAN_ID_PREFIXES` を明示的に落とし、
+  // それでも skip（exit 0・「PROJECT_PREFIXES が空のため skip した」）にならないことを固定する。
+  // 落ちれば「素の実行が検査されない」という IADR-0189 決定6 の残余リスクが再発したことになる。
+  ok('実ツリー: PLAN_ID_PREFIXES を明示的に落としても既定値で走査する（IADR-0262 の回帰）', () => {
+    const { execFileSync } = require('child_process');
+    const env = { ...process.env };
+    delete env.PLAN_ID_PREFIXES;
+    const out = execFileSync(process.execPath, [pathFb.join(__dirname, 'check-plan-id-qualification.js')], {
+      cwd: pathFb.resolve(__dirname, '..'),
+      env,
+      stdio: 'pipe',
+    }).toString();
+    assert.ok(!/PROJECT_PREFIXES が空のため skip した/.test(out), `skip してはならない: ${out}`);
+    assert.ok(/件に他プロジェクト ID の修飾違反はありません/.test(out), `実件数を報告すること: ${out}`);
   });
 
   ok('実ツリー: kit の計画 ID 修飾検査器の自己試験が通る（#477 の回帰）', () => {
