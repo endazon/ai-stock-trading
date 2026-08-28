@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -25,7 +26,7 @@ public class LlmPricingWiringTests
         {
             using var scope = factory.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<ILlmUsageReporter>()
-                .ReportAsync(new LlmUsage(1000, 2000, model));
+                .ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model));
         });
 
         return session.Sent.MessagesOf<LlmCostIncurred>().Single().Amount;

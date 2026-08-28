@@ -325,6 +325,9 @@
     "Purpose": "String",
     "Reason": "String"
   },
+  "TradeExpenseRecorded": {
+    "Expense": "TradeExpense"
+  },
   "WithdrawalTriggered": {
     "HaltNewEntries": "Boolean",
     "OccurredAt": "DateTimeOffset",

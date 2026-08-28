@@ -307,3 +307,93 @@ ProjectReference を追加した（本番と同じ Wolverine 配線でホスト�
 
 **78.65% → 79.30%（+117 行）。** レポート件数は 51 件で不変（テストプロジェクトの増減なし）。
 床 79.00% に対し 0.30 ポイント（約 54 行）の余裕を持たせた。
+
+---
+
+## ［2026-08-28 追記 / #335・#347］レビュー指摘の是正 —— 層別 purpose が実行時配線では区別できなかった
+
+### 何が欠陥だったか（実コードで確認した事実）
+
+上記までの実装は、`purpose` を入力に取る統制を 3 つ導入した（IADR-0215 の割当表・IADR-0216 の実効モデル照合・
+IADR-0218 の費用の対象範囲判別）。**しかし実行時の配線では、二段判断の 2 つの層を purpose で区別できていなかった。**
+
+| # | 実測した事実 | ファイル |
+| --- | --- | --- |
+| 1 | `CompleteAsync(prompt, model, cancellationToken)` に **purpose を渡す引数が無い** | `TradeDecisionService.Application/Ports/ILlmCompletionClient.cs` |
+| 2 | `ILlmUsageReporter` と `ILlmCompletionClient` を `LlmGateway:Purpose ?? trade-decision` で**固定して 1 インスタンスだけ**登録 | `TradeDecisionService.Api/Program.cs` |
+| 3 | 一次・二次の**両方で同じインスタンス**を使い、変えていたのは `PrimaryModel` / `SecondaryModel` という**希望値だけ** | `TradeDecisionService.Application/Services/DecisionOrchestrator.cs` |
+
+**希望値は判定に使われない。** 割当照合（`LlmAssignmentEvaluator.Evaluate(purpose, dto.Model)`）も、
+基盤 `LlmRouter` のモデル解決も、費用の計上区分も、**すべて purpose の側で引かれる**。
+
+帰結: `Decision:EnableScreening=true` にすると
+
+- **軽量モデルによる絞り込みという費用統制が成立しない**（一次が本判断と同じモデルへ着地する）
+- 一次に軽量モデルが割り当たった場合は、その応答が本判断の割当（sonnet-5 ピン留め・フォールバック禁止）と
+  照合されて**必ず「割当外」となり、全サイクルが見送りへ倒れる**
+- `LlmCostIncurred` の `Purpose` が両層とも `trade-decision` になり、**層別の内訳が取れない**
+  （金額は合うので、症状は内訳の欠落だけ＝台帳を読むまで気づけない）
+
+安全側には倒れるが、**スクリーニング機能そのものが成立しない**。`EnableScreening` の既定 false と
+基盤側の `trade-decision-screening` 未登録により潜伏していた。
+
+### 🔴 テストが緑だった理由 —— 「配線では作れない状態」を検証していた
+
+`HttpLlmCompletionClientFallbackBanTests.スクリーニング層もピン以外なら見送る` は緑だった。
+しかしそれは **purpose を `HttpLlmCompletionClient` のコンストラクタへ直接渡して**組んだクライアントであり、
+**`Program.cs` の配線では決して生成されないインスタンス**である。テストは**実在しない配線**を検証していた。
+
+**アダプタ単体の粒度では、この種の退行は原理的に捕まらない。** 単体テストが緑であることと、
+composition root がその状態を作れることは、別の事実である。
+
+### 是正内容
+
+決定と却下した案は [IADR-0212](../adr/IADR-0212_per-call-llm-purpose.md) に記録した。要点のみ:
+
+1. **`purpose` を `CompleteAsync` の引数にした**（`DecisionOrchestrator` が層に応じて渡す）。
+   用途キーは ADR-0017 決定1 と 01_architecture-overview が確定させた統制値であり、**構成で可変にしない**。
+2. **用途の解決は egress の 1 箇所（`HttpLlmCompletionClient.ResolvePurpose`）へ閉じた**。
+   `構成の明示上書き → 呼び出し側の申告 → 安全既定 trade-decision` の順。安全既定を**上限対象内かつ最も厳しい
+   統制の側**に置き、用途不明の呼び出しを対象外・統制外へ倒さない。
+3. **費用計上の用途も同時に正した。** `LlmUsage` に `Purpose` を**必須の先頭位置引数**として持たせ、
+   `PublishingLlmUsageReporter` からコンストラクタ引数の purpose を削除した。省略可にすると載せ忘れが
+   静かに通り、#347 の対象範囲判定が誤った区分で積まれる。**計上側が用途を決めてはならない**
+   （決めてよいのは用途を知っている egress だけ）。報告書側 `ILlmUsageReporter` と同型になった。
+4. **keyed DI は採らなかった。** リポジトリ内の前例 0 件であり、`[FromKeyedServices]` は
+   **Application 層へ DI 属性を持ち込む**（層の依存規律に反する）。得られる区別は選択肢 4 と同じである。
+
+### 追加したテスト（再発防止の本体）
+
+| ファイル | テスト | なぜこの退行を捕まえられるか |
+| --- | --- | --- |
+| **`TradeDecisionService.Api.Tests/LlmPurposeWiringTests.cs`（新規 3 本）** | `二段判断の各層は層別の用途でゲートウェイへ届く` / `層別の用途が届くならスクリーニングは割当外へ倒れず二次へ進む` / `費用計上イベントも層別の用途で発行される` | 🔴 **`Program.cs` の DI 登録を実際に起こし**、`Decision:EnableScreening=true` で 1 サイクル判断させ、**送信された要求本文の `purpose`** と **publish された `LlmCostIncurred.Purpose`** を観測する。スタブは**実ゲートウェイと同じく purpose からモデルを解決して名乗る**（未登録の用途は `DefaultModel` へ無音で落ちる挙動・platform IADR-0102 を模す）ため、用途を取り違えれば**割当外と判定されて一次で打ち切られる**という本番の帰結がそのまま再現される |
+| `TradeDecisionService.Application.Tests/DecisionOrchestratorTests.cs`（2 本追記） | `二段_用途ルーティング_一次はスクリーニング用途_二次は本判断用途を渡す` / `スクリーニング無効なら本判断の用途しか渡さない` | 既存の `二段_モデルルーティング_…` はモデル（希望値）しか見ておらず、**判定に使われる側**を検証していなかった。否定形で一次の用途が漏れ出さないことも固定する |
+| `TradeDecisionService.Infrastructure.Tests/HttpLlmCompletionClientTests.cs`（2 本追記） | `呼び出しごとの用途が要求と費用計測の両方へ届く`（2 値） / `構成の明示上書きがあるときは呼び出し側の用途より優先する` | 用途の解決順（決定 2）を、**送信の purpose と計測の purpose の両面**で固定する。上書きの否定形は既存デプロイの非破壊を守る |
+| `TradeDecisionService.Infrastructure.Tests/PublishingLlmUsageReporterTests.cs`（1 本追記） | `計上イベントには計測ごとの用途がそのまま載る`（2 値） | 計上側が用途を決めていないことを固定する。金額は正しいまま内訳だけが壊れる欠陥なので、**金額のテストでは捕まらない** |
+
+#### 退行検知の実証（変異による確認）
+
+「テストを足した」ではなく「**足したテストが当の退行で赤くなる**」ことを実測した。
+`DecisionOrchestrator` の一次呼び出しの用途を `TradeDecisionScreening` → `TradeDecision` に戻した状態で:
+
+```
+Failed!  - Failed: 3, Passed: 0, Skipped: 0, Total: 3 - TradeDecisionService.Api.Tests.dll
+  Expected handler.Purposes to be equal to {"trade-decision-screening", "trade-decision"},
+    but {"trade-decision", "trade-decision"} differs at index 0.
+  Expected session.Sent.MessagesOf<LlmCostIncurred>().Select(e => e.Purpose) to be equal to
+    {"trade-decision-screening", "trade-decision"}, but {"trade-decision", "trade-decision"} differs at index 0.
+```
+
+変異は確認後に戻した（本 PR の成果物は是正後の状態である）。
+
+### 母集合の取り方（規則 6: 引いた結果と除外の理由）
+
+`purpose` 固定・`LlmUsage` の構築・`CompleteAsync` の実装/呼び出しを、**誤りの側の文字列**で全走査した
+（`CompleteAsync` / `LlmUsage(` / `new LlmUsage` / `LlmGateway:Purpose` / `LlmPurposes`。拡張子で絞らずパスの除外のみ）。
+コンパイラが署名変更で全実装を落とすため、**取りこぼしは構造的に起こらない**（fail-loud）。
+
+| 除外 | 理由 |
+| --- | --- |
+| `ReportService` 側の `ILlmUsageReporter` / `LlmUsage` / `HttpReportNarrativeDrafter` | **既に同じ形で解決済み**（IADR-0120 決定1 / IADR-0219）。本欠陥は取引判断側にのみ存在する。むしろ本是正はそちらへ**揃えた**ものである |
+| `PlaceholderLlmCompletionClient` の本文 | 常に Hold を返す安全既定であり用途を使わない。署名の追随のみ行った |
+| 基盤（microservices-platform）の `Llm:Routing:PurposeModels` への `trade-decision-screening` 登録 | **本リポジトリの射程外**。本システムは検知する側に立つ（IADR-0215 と同じ立場） |

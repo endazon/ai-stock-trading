@@ -25,7 +25,8 @@ public class ScreeningContextDegradationTests
     {
         public List<string> Prompts { get; } = [];
 
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
         {
             Prompts.Add(prompt);
             return Task.FromResult(output);

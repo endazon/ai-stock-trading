@@ -12,7 +12,9 @@ namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
 // 冪等キーは `context.MessageId`（`Guid?`・null なら新規採番していた）から `envelope.Id`（`Guid`・非 null）
 // になり、**「MessageId が無ければ重複排除できない」分岐が構造的に不要**になった（Wolverine は送信時に必ず採番する）。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
-// 22 イベントそれぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+// **契約イベントの全数**それぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+// #339: ここに件数を書かない —— 件数はイベントを 1 つ足すたびに腐る導出値であり、実測でも
+// 「22」と書いたまま 33 まで乖離していた。**全数一致は AuditConsumerCoverageTests が機械で保証する。**
 
 public sealed class PriceMovementDetectedAuditHandler(IAuditEventStore store, IClock clock)
 {
@@ -380,13 +382,13 @@ public sealed class PositionClosedWithStaleFxRateAuditHandler(IAuditEventStore s
     }
 }
 
-// FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
+// FR-11, UC-07, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
 //
-// 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**
-// ADR-0017 決定4-(3) は月報への集計掲載を求めるが、集計は記録が残っていて初めて可能になる。
-public sealed class LlmFallbackFiredAuditHandler(IAuditEventStore store, IClock clock)
+// 🔴 **監査台帳が経費台帳の保存先である。** 専用の永続テーブルを作らず、イベント全量の JSON を
+// 7 年保持（NFR-10）する監査台帳へ残す。建玉単位の照会は相関（`trade-expense:{Symbol}:{Market}`）で成立する。
+public sealed class TradeExpenseRecordedAuditHandler(IAuditEventStore store, IClock clock)
 {
-    public void Handle(LlmFallbackFired message, Envelope envelope)
+    public void Handle(TradeExpenseRecorded message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
@@ -415,22 +417,59 @@ public sealed class InformationSourceDegradedAuditHandler(IAuditEventStore store
     }
 }
 
-// FR-02, FR-04, FR-11, #337, IADR-0247: スクリーニング入力の縮退（分割/切り詰め）を台帳へ記録する。
-// 月報の件数記載（分割と切り詰めを分けて数える）は台帳の種別 × 期間照会が集計経路である。
-public sealed class ScreeningContextReducedAuditHandler(IAuditEventStore store, IClock clock)
+// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値の発注を中央監査台帳へ記録する
+// （「建玉あり ⇒ 有効な逆指値あり」の一次証跡）。
+public sealed class ProtectiveStopPlacedAuditHandler(IAuditEventStore store, IClock clock)
 {
-    public void Handle(ScreeningContextReduced message, Envelope envelope)
+    public void Handle(ProtectiveStopPlaced message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
 
-// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値の発注を中央監査台帳へ記録する
-// （「建玉あり ⇒ 有効な逆指値あり」の一次証跡）。
-public sealed class ProtectiveStopPlacedAuditHandler(IAuditEventStore store, IClock clock)
+// FR-01, FR-11, #336, ADR-0020 決定2-3: 欠測からの回復（発生時刻・継続時間・該当サイクル数）を台帳へ記録する。
+//
+// 🔴 **本ハンドラが日報・月報の集計経路である。** 種別 × 期間の照会（IADR-0199 決定2）で引ける形で
+// 残さないと、「欠測の月次合計を月報に記録する」（ADR-0020 決定2-3）が成立しない。
+public sealed class InformationSourceRecoveredAuditHandler(IAuditEventStore store, IClock clock)
 {
-    public void Handle(ProtectiveStopPlaced message, Envelope envelope)
+    public void Handle(InformationSourceRecovered message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかったときの建玉解消を中央監査台帳へ記録する。
+// 利用者の承認なしに注文取消・建玉決済が起きるため、記録が無いと「知らないうちに建玉が消えた」状態になる。
+public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ProtectiveStopCoverageLost message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
+//
+// 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**
+// ADR-0017 決定4-(3) は月報への集計掲載を求めるが、集計は記録が残っていて初めて可能になる。
+public sealed class LlmFallbackFiredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(LlmFallbackFired message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集の発動／解除を台帳へ記録する。
+// ADR-0020 決定4 は「発動・解除はいずれも監査ログに残し、月報に記載する」ことを求めている。
+public sealed class GeneralWebCollectionStateChangedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(GeneralWebCollectionStateChanged message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
@@ -451,35 +490,11 @@ public sealed class TradeDecisionSkippedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
-// FR-01, FR-11, #336, ADR-0020 決定2-3: 欠測からの回復（発生時刻・継続時間・該当サイクル数）を台帳へ記録する。
-//
-// 🔴 **本ハンドラが日報・月報の集計経路である。** 種別 × 期間の照会（IADR-0199 決定2）で引ける形で
-// 残さないと、「欠測の月次合計を月報に記録する」（ADR-0020 決定2-3）が成立しない。
-public sealed class InformationSourceRecoveredAuditHandler(IAuditEventStore store, IClock clock)
+// FR-02, FR-04, FR-11, #337, IADR-0247: スクリーニング入力の縮退（分割/切り詰め）を台帳へ記録する。
+// 月報の件数記載（分割と切り詰めを分けて数える）は台帳の種別 × 期間照会が集計経路である。
+public sealed class ScreeningContextReducedAuditHandler(IAuditEventStore store, IClock clock)
 {
-    public void Handle(InformationSourceRecovered message, Envelope envelope)
-    {
-        ArgumentNullException.ThrowIfNull(envelope);
-        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
-    }
-}
-
-// FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集の発動／解除を台帳へ記録する。
-// ADR-0020 決定4 は「発動・解除はいずれも監査ログに残し、月報に記載する」ことを求めている。
-public sealed class GeneralWebCollectionStateChangedAuditHandler(IAuditEventStore store, IClock clock)
-{
-    public void Handle(GeneralWebCollectionStateChanged message, Envelope envelope)
-    {
-        ArgumentNullException.ThrowIfNull(envelope);
-        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
-    }
-}
-
-// FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかったときの建玉解消を中央監査台帳へ記録する。
-// 利用者の承認なしに注文取消・建玉決済が起きるため、記録が無いと「知らないうちに建玉が消えた」状態になる。
-public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore store, IClock clock)
-{
-    public void Handle(ProtectiveStopCoverageLost message, Envelope envelope)
+    public void Handle(ScreeningContextReduced message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));

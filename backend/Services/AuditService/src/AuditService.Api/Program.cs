@@ -41,9 +41,9 @@ builder.Services.AddScoped<IAuditEventStore, EfAuditEventStore>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。全ドメインイベントを購読して監査台帳へ記録する。
 // ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
-// 購読対象は AuditEventHandlers.cs の 21 種（市場・注文チェーン・訂正取消 FR-19/#154／設定変更 FR-17・報告書 FR-07／
-// 費用 NFR・情報収集 FR-01／段階ゲート FR-20/#167・撤退 #166・バックテスト verdict #164／日報未確定 #210／
-// 報告書ドラフト提示 #280／建玉の手仕舞い要求 #292・ブローカ建玉観測と乖離 #292）。
+// 購読対象は AuditEventHandlers.cs の**全ハンドラ**であり、契約イベント（Shared.Contracts.Events）の全数と一致する。
+// #339: ここに件数を書かない —— 件数はイベントを 1 つ足すたびに腐る導出値であり、実測でも
+// 「21 種」と書いたまま 33 まで乖離していた。**全数一致は AuditConsumerCoverageTests が機械で保証する。**
 // **契約イベントの追加に対する追随漏れ**（FR-11「全イベントの時系列記録」の穴）は
 // AuditConsumerCoverageTests がリフレクションで検出する。
 // 再試行（2s/10s/30s）と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。

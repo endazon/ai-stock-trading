@@ -1,3 +1,4 @@
+using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 
@@ -65,10 +66,17 @@ public sealed record LlmUsageSummary(
 public static class LlmUsageAggregator
 {
     /// <summary>
-    /// 月次 LLM 費用上限（円）。05_trading-assumptions §6.1・TradingAssumptionsDefaults の Llm と同値。
-    /// 消費率の分母に用いる（**抑制はしない**。計画 §7「目的は検知のみであり、上限による抑制は行わない」）。
+    /// 月次 LLM 費用上限（円）。消費率の分母に用いる（**抑制はしない**。
+    /// 計画 §7「目的は検知のみであり、上限による抑制は行わない」）。
     /// </summary>
-    public const decimal MonthlyLlmCostLimitJpy = 15_000m;
+    /// <remarks>
+    /// 🔴 **値を書かず、前提条件（05_trading-assumptions §6.1）の既定から引く。**
+    /// 同じ数を 2 箇所に置くと、片方だけ変わったときに消費率が黙って誤表示になる
+    /// （分母がずれても計算は成立するため、テストも実行時も気づけない）。
+    /// `const` にできないのは意図的で、コンパイル時定数にすると再び値の複写になる。
+    /// </remarks>
+    public static readonly decimal MonthlyLlmCostLimitJpy =
+        TradingAssumptionsDefaults.Create().CostLimits.Llm;
 
     /// <summary>集計する（決定的・入力順に依存しない）。</summary>
     public static LlmUsageSummary Aggregate(LlmUsageRecord record)
@@ -121,6 +129,13 @@ public static class LlmUsageAggregator
     /// 月次上限に対する消費率（0〜。1.0 = 100%）。
     /// <para>上限が 0 以下なら消費率は定義できないため <c>null</c> を返す（0% と書かない）。</para>
     /// </summary>
-    public static decimal? ConsumptionRatio(decimal amountJpy, decimal limitJpy = MonthlyLlmCostLimitJpy) =>
-        limitJpy <= 0m ? null : amountJpy / limitJpy;
+    /// <remarks>
+    /// 既定値を省略可能引数に書けない（<see cref="MonthlyLlmCostLimitJpy"/> は
+    /// コンパイル時定数ではない）ため、<c>null</c> を「既定の上限を使う」の意味に用いる。
+    /// </remarks>
+    public static decimal? ConsumptionRatio(decimal amountJpy, decimal? limitJpy = null)
+    {
+        var limit = limitJpy ?? MonthlyLlmCostLimitJpy;
+        return limit <= 0m ? null : amountJpy / limit;
+    }
 }

@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Domain;
@@ -11,15 +12,20 @@ namespace AiStockTrading.TradeDecision.Application.Tests;
 // 実 LLM 非決定性を「順次出力の fake」で再現し、票割れ・スクリーニング打ち切り・モデルルーティング・呼び出し回数を決定的に確認する。
 public class DecisionOrchestratorTests
 {
-    // 呼び出しごとに出力を進め、(prompt, model) を記録する fake。非決定性（票の割れ）を決定的に再現する。
+    // 呼び出しごとに出力を進め、(prompt, model, purpose) を記録する fake。非決定性（票の割れ）を決定的に再現する。
     private sealed class SequencedLlm(params string[] outputs) : ILlmCompletionClient
     {
         private int _index;
         public List<(string Prompt, string? Model)> Calls { get; } = [];
 
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        // #335, IADR-0212: 層別の用途（purpose）を記録する。モデルの希望値と違い、**割当統制と費用区分はこちらで引かれる**。
+        public List<string?> Purposes { get; } = [];
+
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
         {
             Calls.Add((prompt, model));
+            Purposes.Add(purpose);
             var output = outputs[Math.Min(_index, outputs.Length - 1)];
             _index++;
             return Task.FromResult(output);
@@ -143,6 +149,32 @@ public class DecisionOrchestratorTests
 
         llm.Calls[0].Model.Should().Be("light"); // 一次スクリーニング
         llm.Calls.Skip(1).Should().OnlyContain(c => c.Model == "pro"); // 二次本判断
+    }
+
+    // 🔴 FR-04, ADR-0014, ADR-0017 決定1/決定2, #335, IADR-0212: **用途（purpose）も層別に渡す。**
+    // モデルは希望値にすぎず、割当統制（LlmAssignments による実効モデルの照合）も費用の計上区分も
+    // purpose の側で引かれる。両層が同じ用途を名乗ると、一次の応答が二次の割当と照合されて必ず割当外になる。
+    [Fact]
+    public async Task 二段_用途ルーティング_一次はスクリーニング用途_二次は本判断用途を渡す()
+    {
+        var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Buy"));
+        var options = new DecisionOrchestrationOptions { VoteCount = 2, EnableScreening = true };
+
+        await Create(llm, options).DecideAsync(() => "screen", "decision");
+
+        llm.Purposes[0].Should().Be(LlmPurposes.TradeDecisionScreening);
+        llm.Purposes.Skip(1).Should().OnlyContain(p => p == LlmPurposes.TradeDecision);
+    }
+
+    // 否定形: スクリーニング無効（既定）では本判断の用途しか出ない —— 一次の用途が漏れ出さないことを固定する。
+    [Fact]
+    public async Task スクリーニング無効なら本判断の用途しか渡さない()
+    {
+        var llm = new SequencedLlm(Json("Buy"));
+
+        await Create(llm, DecisionOrchestrationOptions.Default).DecideAsync(() => "screen", "decision");
+
+        llm.Purposes.Should().Equal(LlmPurposes.TradeDecision);
     }
 
     [Fact]
