@@ -7,7 +7,7 @@ updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-11, UC-07, NFR]
+ids: [FR-11, UC-07, NFR-08, NFR-09, NFR-10, NFR-11]
 adrs: [ADR-0016, ADR-0027]
 iadrs: [IADR-0226, IADR-0228]
 specs: [20260828_339_audit-and-trade-records]
