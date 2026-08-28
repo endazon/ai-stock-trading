@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
 

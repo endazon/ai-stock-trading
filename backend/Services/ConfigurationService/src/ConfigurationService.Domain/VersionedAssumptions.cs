@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Kernel.Trading;
+
 namespace AiStockTrading.Configuration.Domain;
 
 // FR-17: 現在の全体前提条件とそのバージョン。報告書は生成時 Version を凍結参照でき、消費側サービス（費用統制・損益集計・

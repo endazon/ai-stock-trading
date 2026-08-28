@@ -1,6 +1,6 @@
 using System.Reflection;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 

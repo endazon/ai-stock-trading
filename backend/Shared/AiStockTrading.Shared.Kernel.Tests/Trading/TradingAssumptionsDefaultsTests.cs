@@ -1,7 +1,8 @@
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Domain.Tests;
+namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
 // FR-17, 05_trading-assumptions §1/§4/§6: 既定値（確定値＋未登録 0）を固定する。
 public class TradingAssumptionsDefaultsTests

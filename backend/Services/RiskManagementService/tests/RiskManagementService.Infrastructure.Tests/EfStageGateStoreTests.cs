@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;

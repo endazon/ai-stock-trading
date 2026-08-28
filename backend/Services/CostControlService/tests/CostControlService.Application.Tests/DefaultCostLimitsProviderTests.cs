@@ -1,5 +1,5 @@
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Adapters;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 

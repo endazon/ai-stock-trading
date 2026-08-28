@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Configuration.Client.Adapters;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

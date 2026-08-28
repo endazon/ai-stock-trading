@@ -1,6 +1,7 @@
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.State;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.Configuration.Application.Adapters;
 

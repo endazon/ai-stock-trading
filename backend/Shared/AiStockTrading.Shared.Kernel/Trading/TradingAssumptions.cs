@@ -1,4 +1,4 @@
-namespace AiStockTrading.Configuration.Domain;
+namespace AiStockTrading.Shared.Kernel.Trading;
 
 // FR-17, 05_trading-assumptions §2: 市場別の売買手数料体系。手数料 = clamp(約定代金 × Rate, Minimum, Cap)。
 // Cap <= 0 は上限なしを表す。moomoo の実額は口座開設後に登録するため既定は 0（未登録）。

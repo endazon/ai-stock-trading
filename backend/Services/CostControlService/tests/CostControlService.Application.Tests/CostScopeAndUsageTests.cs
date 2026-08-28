@@ -1,7 +1,7 @@
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.CostControl.Application.Adapters;
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;

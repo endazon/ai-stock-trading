@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Kernel.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, ADR-0008: 段階ごとの動作モード・資金上限（StageSettings）と撤退基準の倍率を定める方針。

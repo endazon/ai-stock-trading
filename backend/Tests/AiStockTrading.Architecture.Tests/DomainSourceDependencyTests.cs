@@ -22,41 +22,36 @@ namespace AiStockTrading.Architecture.Tests;
 public class DomainSourceDependencyTests
 {
     /// <summary>
-    /// 走査対象ファイル数の下限（着手時点の実測 120）。
+    /// 走査対象ファイル数の下限（IADR-0256 着手時点の実測 120。IADR-0260 の Shared.Kernel 移送後は 117）。
     /// <b>0 件走査でも「違反 0 件」で緑になる</b>ため、対象が痩せていないことを明示的に固定する。
     /// </summary>
     private const int MinimumDomainSourceFiles = 100;
 
     /// <summary>
-    /// <c>using</c> ディレクティブ数の下限（着手時点の実測 80）。
+    /// <c>using</c> ディレクティブ数の下限（IADR-0256 着手時点の実測 80。IADR-0260 の移送後は 87）。
     /// 解析器が壊れて 1 本も拾わなくなっても、検査 (b) は「違反 0 件」で緑になる。
     /// </summary>
     private const int MinimumScannedUsings = 60;
 
     /// <summary>
-    /// 検査 (c) の禁止トークン数の下限（着手時点の実測 63 ＝ CPM 由来 57 ＋ 実 import の根 14 を重複排除）。
+    /// 検査 (c) の禁止トークン数の下限（実測 63 ＝ CPM 由来 57 ＋ 実 import の根 14 を重複排除。IADR-0260 の前後で不変）。
     /// 母集合の導出が壊れて 0 件になれば、走査は何も見つけずに緑になる。
     /// </summary>
     private const int MinimumForbiddenTokens = 30;
 
     /// <summary>
-    /// 🔴 <b>既知の逸脱。</b> Domain から他サービスの名前空間を参照している箇所である
-    /// （設計 §1.5・作業仕様書 軸 4 の実測。<b>ファイル 5 件・プロジェクト間の辺 4 本</b>）。
+    /// 🔴 <b>既知の逸脱。</b> Domain から他サービスの名前空間を参照している箇所である。
     /// <para>
-    /// これらは <c>AiStockTrading.Shared.Kernel</c> の新設（VSA 移行の土台 5）で解消される前提であり、
-    /// <b>本一覧は移行が済むまでの暫定である</b>。解消したらこの一覧から削除すること
-    /// （削除し忘れは <c>既知の逸脱は今も実際に観測できる</c> が赤で知らせる）。
+    /// <b>IADR-0260（VSA 移行の土台 5）で 5 件すべてを解消したため、現在は空である。</b>
+    /// 共有が要る型は <c>AiStockTrading.Shared.Kernel</c> へ移した
+    /// （<c>TradingAssumptions</c> / <c>CommissionSchedule</c> / <c>MonthlyCostLimits</c> /
+    /// <c>TradingAssumptionsDefaults</c> / <c>CostCalculator</c> / <c>TradingStage</c>）。
     /// </para>
+    /// <b>空のまま保つこと。</b> ここへ行を足すのは「Domain がサービス境界を跨いだ」ことの追認であり、
+    /// 許容範囲が広がるぶんだけ新しい違反を見逃す。足す前に <c>Shared.Kernel</c> へ抜けないかを検討する。
     /// <b>一覧に無い他サービス参照が 1 つでも増えたら落ちる。</b>
     /// </summary>
-    private static readonly (string RelativePath, string ForeignNamespace)[] KnownForeignReferences =
-    [
-        ("backend/Services/BacktestService/src/BacktestService.Domain/BacktestCostModel.cs", "AiStockTrading.Configuration"),
-        ("backend/Services/BacktestService/src/BacktestService.Domain/Stage0Promotion.cs", "AiStockTrading.RiskManagement"),
-        ("backend/Services/CostControlService/src/CostControlService.Domain/CostGovernor.cs", "AiStockTrading.Configuration"),
-        ("backend/Services/ReportService/src/ReportService.Domain/LlmUsageRecord.cs", "AiStockTrading.Configuration"),
-        ("backend/Services/ReportService/src/ReportService.Domain/PnlAggregator.cs", "AiStockTrading.Configuration"),
-    ];
+    private static readonly (string RelativePath, string ForeignNamespace)[] KnownForeignReferences = [];
 
     // ── 検査 (a): 探索そのものが空振りしていないこと ────────────────────────────────
     // 領域が 0 件になると以下の検査はすべて「違反なし」で無条件に緑になる。
@@ -83,7 +78,8 @@ public class DomainSourceDependencyTests
 
         files.Should().HaveCountGreaterThan(
             MinimumDomainSourceFiles,
-            "走査対象が痩せると「違反 0 件」が「1 件も読んでいない」と区別できなくなる（着手時点の実測は 120 件）");
+            "走査対象が痩せると「違反 0 件」が「1 件も読んでいない」と区別できなくなる"
+                + "（実測は 117 件。IADR-0256 着手時点は 120 件で、IADR-0260 が共有型 3 ファイルを Shared.Kernel へ移した）");
     }
 
     // ── 検査 (b): using は許可リスト内のみ ────────────────────────────────────────
@@ -118,7 +114,7 @@ public class DomainSourceDependencyTests
 
         count.Should().BeGreaterThan(
             MinimumScannedUsings,
-            "using を 1 本も拾えていないと、許可リスト検査は中身を見ずに緑になる（着手時点の実測は 80 本）");
+            "using を 1 本も拾えていないと、許可リスト検査は中身を見ずに緑になる（実測は 87 本）");
     }
 
     // ── 検査 (c): 完全修飾での迂回を塞ぐ ────────────────────────────────────────

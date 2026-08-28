@@ -5,6 +5,7 @@ using AiStockTrading.RiskManagement.Domain;
 using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

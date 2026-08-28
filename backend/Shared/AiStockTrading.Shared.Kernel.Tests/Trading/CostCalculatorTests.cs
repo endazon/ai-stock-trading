@@ -1,9 +1,10 @@
 using System.Reflection;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Domain.Tests;
+namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
 // FR-17, 05_trading-assumptions §4: 概算費用関数（手数料クランプ・為替スプレッド・往復・最小期待利益）を検証する。
 public class CostCalculatorTests

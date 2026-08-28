@@ -1,4 +1,4 @@
-namespace AiStockTrading.Configuration.Domain;
+namespace AiStockTrading.Shared.Kernel.Trading;
 
 // FR-17, 05_trading-assumptions §1/§4/§6: 全体前提条件の既定値。確定値（税率・費用上限・最小期待利益倍率）を既定にし、
 // moomoo の手数料・為替スプレッド（§2/§3 の「要確認」）は未登録＝0 とする（口座開設後に利用者が登録）。

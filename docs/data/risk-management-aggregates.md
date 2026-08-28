@@ -3,13 +3,13 @@ title: リスク管理ドメインの集約（設定・スナップショット�
 type: data-spec
 status: draft
 created: 2026-07-09
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0183]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0183, IADR-0260]
 specs: []
 issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465]
 -->
@@ -17,7 +17,8 @@ issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #3
 
 # データ仕様書: リスク管理ドメインの集約（設定・スナップショット・注文）
 
-> 実装済みドメイン型（`RiskManagementService.Domain` / `AiStockTrading.Shared.Contracts.Trading`）の集約境界・
+> 実装済みドメイン型（`RiskManagementService.Domain` / `AiStockTrading.Shared.Contracts.Trading` /
+> `AiStockTrading.Shared.Kernel.Trading`）の集約境界・
 > 属性・永続化方針を定義する。属性 `PositionEffect` / `InvestedCapital` / `UnrealizedPnl` / `OrderStatus.Rejected` 等は
 > PR #41・#42・#44（develop にマージ済み）と本 PR に統合済みの #43 で確定したもの。各属性の逆算根拠は
 > 「`TradingDefaults` の既定値は全体前提条件からの逆算値として明示する」に基づく。判定での用途は
@@ -98,6 +99,11 @@ issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #3
 | Stage | TradingStage | Stage0Verification / Stage1Paper / Stage2MinimalLive / Stage3ScaledLive |
 | Mode | TradeMode | Paper / Live。段階が許可するモードのみ実行可 |
 | CapitalCap | decimal | 段階資金上限（円）。累計投入額の上限 |
+
+> **`TradingStage`（列挙）の置き場は `AiStockTrading.Shared.Kernel.Trading` である。** バックテストの
+> 昇格推奨・通知・報告がリスク管理サービスの外から同じ段階を参照するため、共有カーネルへ移した。
+> **序数（0〜3）は移送の前後で不変**であり、永続化された遷移履歴と設定 JSON の意味は変わらない。
+> 段階ごとの発注先・資金上限比を持つ `StageSettings` は**リスク管理固有**であり `RiskManagementService.Domain` に残る。
 
 ### BannedSymbol
 

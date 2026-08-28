@@ -1,8 +1,8 @@
 using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.Services;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
