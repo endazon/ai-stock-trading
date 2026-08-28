@@ -48,11 +48,18 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
     // 同一文字列になり、「なぜ」は監査から復元できない**（残るのは「解除者が確認済みと自称した」ことだけ）。
     private const string GfvClearReasonInputId = "ast-gfv-clear-reason";
 
+    // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書の確定の確認ボタン。
+    // **版番号を CustomId に載せる**（押下時に復元する）——詳細設計07 は「確定要求は 対象ID＋版番号 を必須とする」と
+    // 定めており、ボタンを出した時点の版を運ばなければ、押すまでの間にドラフトが更新されたときに
+    // **利用者が見ていない版を確定してしまう**。書式: "ast-report-approve-<periodKey>-<version>"。
+    private const string ReportApproveButtonPrefix = "ast-report-approve-";
+
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
     private readonly PauseCommandHandler _pauseHandler;
     private readonly StageGateCommandHandler _stageGateHandler;
     private readonly GoodFaithViolationCommandHandler _gfvHandler;
+    private readonly ReportCommandHandler _reportHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
@@ -61,6 +68,7 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         PauseCommandHandler pauseHandler,
         StageGateCommandHandler stageGateHandler,
         GoodFaithViolationCommandHandler gfvHandler,
+        ReportCommandHandler reportHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
@@ -68,6 +76,7 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         _pauseHandler = pauseHandler;
         _stageGateHandler = stageGateHandler;
         _gfvHandler = gfvHandler;
+        _reportHandler = reportHandler;
         _options = options;
         _logger = logger;
 
@@ -177,10 +186,32 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 .AddChoice("clear", "clear"))
             .Build();
 
+        // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書レビュー（版番号の照会・確定・差し戻し）。
+        // 🔴 **設定値を変更する副コマンドは持たない。** FR-14 は「設定値の変更は Discord からは参照のみ」と定め、
+        // 例外は kill switch と pause/resume だけである（`DiscordSettingsAreReadOnlyTests` が固定）。
+        var report = new SlashCommandBuilder()
+            .WithName("report")
+            .WithDescription("報告書のレビュー（版番号の確認・確定・差し戻し）を行います")
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("action")
+                .WithDescription("操作")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .AddChoice("show", "show")
+                .AddChoice("approve", "approve")
+                .AddChoice("request-changes", "request-changes"))
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("period")
+                .WithDescription("会話キー（例: daily-2026-08-28）")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true))
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(gfv).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(report).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(pause).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(resume).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(status).ConfigureAwait(false);
@@ -216,9 +247,62 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
             case "gfv":
                 await OnGfvSlashAsync(command).ConfigureAwait(false);
                 return;
+            case "report":
+                await OnReportSlashAsync(command).ConfigureAwait(false);
+                return;
             default:
                 return;
         }
+    }
+
+    // FR-07, FR-14, UC-03〜05, IADR-0240: /report → action で分岐。
+    // show は参照のみのため直接実行。approve は破壊的（確定した方針が取引に適用される）ため、
+    // **現在の版番号を照会してから確認ボタンを出す**（詳細設計07 §認証・認可 4項＝報告書確定は 2 段階）。
+    // request-changes は安全方向・可逆のため直接実行する。
+    private async Task OnReportSlashAsync(SocketSlashCommand command)
+    {
+        var action = command.Data.Options.FirstOrDefault(o => o.Name == "action")?.Value as string;
+        var period = command.Data.Options.FirstOrDefault(o => o.Name == "period")?.Value as string;
+
+        // 許可外にはボタンすら出さない（kill switch / stage / gfv と同水準）。ハンドラ側でも再評価される。
+        var context = ContextOf(command, $"/report {action} {period}");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+
+        // show / approve（版番号なし）はいずれも「現在の版番号の照会」に落ちる（ハンドラが決める）。
+        var result = await _reportHandler.HandleAsync(context).ConfigureAwait(false);
+
+        if (action != "approve")
+        {
+            await command.FollowupAsync(ReportResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        // 照会に失敗したら確認ボタンを出さない（版番号が分からないまま確定させない）。
+        if (!result.WasExecuted || result.Version is not { } version)
+        {
+            await command.FollowupAsync(ReportResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        var builder = new ComponentBuilder().WithButton(
+            $"版 {version} を確定する",
+            ReportApproveButtonPrefix + $"{period}-{version}",
+            // 確定は取引方針を有効化する破壊的操作（ADR-0003）のため危険色。
+            ButtonStyle.Danger);
+
+        await command.FollowupAsync(
+            $"{result.Message}\n確定すると、この版の方針が取引に適用されます。確定しますか？",
+            components: builder.Build(),
+            ephemeral: true).ConfigureAwait(false);
     }
 
     // FR-19, FR-11, UC-06, #464, ADR-0028 決定2/決定3: /gfv clear → 確認ボタンを提示する。
@@ -470,11 +554,41 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
                 }
 
             default:
+                // FR-07, IADR-0240: 報告書の確定の確認ボタン（CustomId に periodKey と版番号を載せる）。
+                if (component.Data.CustomId.StartsWith(ReportApproveButtonPrefix, StringComparison.Ordinal))
+                {
+                    await OnReportApproveButtonAsync(component).ConfigureAwait(false);
+                    return;
+                }
+
                 // FR-20, ADR-0008: 段階遷移の確認ボタン（CustomId に遷移先を載せる）。押下で promote/demote を実行する。
                 // 認証はハンドラ側で再評価される（押下者のすり替え防止）。二重押下はボタン無効化＋Risk 側連番検証で弾く。
                 await OnStageButtonAsync(component).ConfigureAwait(false);
                 return;
         }
+    }
+
+    // FR-07, FR-14, UC-03〜05, IADR-0240: 確定の確認ボタンの押下 → 版番号付きの確定を実行する。
+    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英小文字・数字・ハイフンのみで
+    // パーサが値域を保証する。**版番号は最後のハイフン以降**＝periodKey 自体がハイフンを含んでも曖昧にならない）。
+    //
+    // **二重押下は 2 段で吸収する**: ①押下後にボタンを取り除く（再押下できない）②ハンドラの版番号ガードが
+    // 同一 periodKey＋版番号 の 2 回目で確定 API を呼ばない。①だけでは、押下と応答編集の間の連打を止められない。
+    private async Task OnReportApproveButtonAsync(SocketMessageComponent component)
+    {
+        var payload = component.Data.CustomId[ReportApproveButtonPrefix.Length..];
+        var separator = payload.LastIndexOf('-');
+        if (separator <= 0 || separator == payload.Length - 1)
+            return; // 書式外（他機能のボタン）。
+
+        var periodKey = payload[..separator];
+        var version = payload[(separator + 1)..];
+
+        await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _reportHandler
+            .HandleAsync(ContextOf(component, $"/report approve {periodKey} {version}"))
+            .ConfigureAwait(false);
+        await DisableComponentsAsync(component, ReportResponseTextOf(result)).ConfigureAwait(false);
     }
 
     // FR-20, UC-06: 段階遷移確認ボタンの押下。CustomId のプレフィックスで昇格/差し戻しを判別し、末尾の遷移先を復元する。
@@ -570,6 +684,15 @@ internal sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposabl
         result.WasExecuted
             ? result.Message
             : "この操作は実行されませんでした（許可されていません）。";
+
+    // FR-07, FR-14, IADR-0240: 報告書レビュー系の結果文言。
+    // **拒否（多層認証・解釈不能）と失敗（呼び出しエラー・版落ち）を読み分ける。**
+    // 拒否理由（内部の層名）は返さないが、**失敗はそのまま返す**——利用者が対処できる情報
+    //（「最新ドラフトを確認してください」「HTTP 409」）であり、伏せると確定できない理由が分からなくなる。
+    private static string ReportResponseTextOf(ReportCommandResult result) =>
+        result.IsDenied
+            ? "この操作は実行されませんでした（許可されていません）。"
+            : result.Message;
 
     private static async Task DisableComponentsAsync(SocketMessageComponent component, string text)
     {

@@ -38,11 +38,31 @@ public enum BotCommandKind
 
     // /stage withdrawal: 撤退基準の評価（安全側＝HaltNewEntries 成立時に Risk が kill switch を自動起動）。確認不要。
     StageWithdrawal,
+
+    // FR-14, FR-07, UC-03〜05, IADR-0240: /report show <periodKey>。
+    // レビュー局面（版番号）の参照（表示専用・副作用なし）。
+    ReportShow,
+
+    // /report approve <periodKey> [<version>]: 報告書の確定（破壊的＝確定した方針が取引に適用される）。
+    // 版番号を伴わない要求は**確認ボタンを出す前段**であり、確定そのものは版番号つきの要求でのみ行う
+    // （詳細設計07「確定要求は 対象ID＋版番号 を必須とする」）。
+    ReportApprove,
+
+    // /report request-changes <periodKey> <version>: 差し戻し（修正指示）。安全方向・可逆。
+    ReportRequestChanges,
 }
 
 // FR-14: 解析済みコマンド。TargetStage は段階遷移（StagePromote/StageDemote）の遷移先（0〜3）。
 // それ以外の種別では null（既定）。
-public sealed record BotCommand(BotCommandKind Kind, int? TargetStage = null)
+//
+// FR-07, UC-03〜05, IADR-0240: PeriodKey / Version は報告書レビュー系（ReportShow / ReportApprove /
+// ReportRequestChanges）でのみ意味を持つ。**Version が null の ReportApprove は「確認前」**であり、
+// 確定を実行してよいのは版番号が確定している要求だけである。
+public sealed record BotCommand(
+    BotCommandKind Kind,
+    int? TargetStage = null,
+    string? PeriodKey = null,
+    int? Version = null)
 {
     public static readonly BotCommand Unknown = new(BotCommandKind.Unknown);
 }

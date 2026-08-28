@@ -188,6 +188,36 @@ public static class NotificationFormatter
             + "手動売買・外部要因による建玉の消失を取り違えている可能性があります。",
         NotificationSeverity.Critical);
 
+    // FR-09, FR-19, FR-10, FR-11, UC-06, #341, ADR-0025 決定2, ADR-0028 決定3, IADR-0241:
+    // GFV（Good Faith Violation）違反を 1 件計上した。詳細設計07 §通知設計の「リスク統制の発動（**ガード違反**）」。
+    //
+    // 🔴 **発行された時点で、発注前の GFV 回避ガードをすり抜けた買付が現に約定している**（契約コメントが明記）。
+    // ガードが正しく働けば 1 件も発行されない事象であり、発行は**ガードの不具合または口座観測の欠落**を示す。
+    // 積み上がると新規取引が止まり、**停止の解除窓口は Discord の `/gfv clear` だけ**である（ADR-0028 決定3）。
+    // 通知が無ければ、止まったことも解除が要ることも利用者へ届かない。よって **Critical**。
+    //
+    // 🔴 **「停止した」と断定しない。** 停止のしきい値は Risk 側が持ち、本イベントは件数を運ばない
+    // （断定すると、止まっていないのに止まったと読ませる）。
+    //
+    // 🔴 **限界を本文へ書く。** ADR-0025 §理由 のとおり、これは「ブローカの GFV カウンタの写し」ではなく
+    // 「**自らのガードの失敗回数**」である。両者が一致する保証はない。
+    public static NotificationMessage From(GoodFaithViolationRecorded e) => new(
+        "リスク統制: GFV 違反を計上（発注前ガードのすり抜け）",
+        $"{e.Symbol}/{e.Market} の買付（注文 {e.OrderId}・{e.PurchaseAmountInBase.ToString("N2", CultureInfo.InvariantCulture)} USD）を "
+            + $"GFV 発生 1 件として計上しました（取引日 {e.OccurredOn:yyyy-MM-dd}・判定に用いた決済済み資金 "
+            + $"{SettledCash(e.SettledCashInBase)}）。"
+            + "**発注前の GFV 回避ガードをすり抜けた買付が約定しています**（ガードの不具合または口座観測の欠落）。"
+            + "これは**自らのガードの失敗回数**であり、ブローカ側の GFV カウンタの写しではありません（ADR-0025）。"
+            + "違反が積み上がると新規取引が停止します。停止の解除は Discord の `/gfv clear` のみです"
+            + "（違反記録そのものは消えません）。",
+        NotificationSeverity.Critical);
+
+    // #424 の表示規約: **null は「未供給」であって 0 ではない。** 0 と書くと「残高が 0 だった」と読まれる。
+    private static string SettledCash(decimal? settledCashInBase) =>
+        settledCashInBase is { } cash
+            ? cash.ToString("N2", CultureInfo.InvariantCulture) + " USD"
+            : "未供給";
+
     // 04_report-templates の <n%> 表記（小数第 1 位・文化非依存）。"P1" は文化により空白が入るため使わない。
     // #381, IADR-0196: フォールバック期間の表示。意味のある単位までで止める
     // （秒まで書くと受け手が桁を数えることになる）。監査台帳側と同じ規則。
