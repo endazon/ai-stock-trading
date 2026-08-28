@@ -71,7 +71,15 @@ public sealed class InMemoryReportStore : IReportStore
             if (expectedVersion != existing.Version)
                 throw new ReportConcurrencyException(periodKey, expectedVersion, existing.Version);
 
-            var confirmed = existing.Report with { State = ReportState.Confirmed, ConfirmedAt = confirmedAt };
+            // #338, #310, INDEX 決定29: **本文の状態表記も確定へ揃える**（EfReportStore と同じ規則）。
+            // 本文は生成時に一度だけ組み立てられるため、ここで揃えないと確定済みの報告書が
+            // frontmatter と YAML ブロックで「未確定」を名乗り続ける（取引判断は YAML を読む）。
+            var confirmed = existing.Report with
+            {
+                State = ReportState.Confirmed,
+                ConfirmedAt = confirmedAt,
+                Body = ReportBodyStatus.MarkConfirmed(existing.Report.Body, confirmedAt) ?? string.Empty,
+            };
             // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
             _rows[periodKey] = (confirmed, existing.Version + 1, ReviewState.Confirmed);
             return new ConfirmResult(confirmed, Transitioned: true);
