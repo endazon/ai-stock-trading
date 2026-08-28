@@ -38,7 +38,7 @@ public static class ScreeningContextPlanner
 
         var materialTotal = materials.Sum(m => m.Chars);
 
-        // 段 1: 分割（材料は減らさない）。銘柄を入力順に貪欲詰めし、予算内に収まる呼び出し単位を作る。
+        // 段 1: 分割（材料は減らさない）。銘柄を First-Fit Decreasing で詰め、予算内に収まる呼び出し単位を作る。
         // 全銘柄が 1 バッチで収まれば分割なし。単独でも収まらない銘柄が出たら段 2 へ。
         var packed = TryPack(sharedProtectedChars, symbols, materialTotal, budgetChars);
         if (packed is not null)
@@ -105,37 +105,64 @@ public static class ScreeningContextPlanner
             UnresolvableOverflow: stillOver);
     }
 
-    // 段 1 の貪欲詰め。すべての銘柄が予算内のバッチへ入れば列を返す。単独でも収まらない銘柄が
+    // 段 1 の詰め。すべての銘柄が予算内のバッチへ入れば列を返す。単独でも収まらない銘柄が
     // あれば null（段 2 へ縮退）。材料は全バッチに同じものが載る（分割は材料を減らさない）。
+    //
+    // **First-Fit Decreasing** を用いる（サイズ降順に並べ、入る**最初の**バッチへ置く）。
+    // 初版は Next-Fit（現在のバッチにだけ入れ、入らなければ即座に閉じる）だったが、
+    // **一度閉じたバッチの空きを二度と使わない**ため呼び出し回数が最悪 2 倍になる。
+    // 呼び出し 1 回ぶんの費用は共有分（shared + 全材料）を毎回積み直すことであり、
+    // **バッチ数がそのまま LLM の費用と待ち時間に効く**（IADR-0247 の目的は費用統制である）。
+    //
+    // 🔴 **並べ替えは割当を決めるためだけに使い、出力の順序には持ち込まない。**
+    // バッチ内の銘柄は入力順、バッチ自体は含む最小添字の順に戻す。監視銘柄の並びが
+    // 優先度を表す運用へ移っても、本型が黙って順序を入れ替えることはない。
+    // 並べ替えの鍵は (サイズ降順, 元の添字昇順) の安定順であり、決定性は保たれる。
     private static List<List<ScreeningSymbolLoad>>? TryPack(
         int shared, IReadOnlyList<ScreeningSymbolLoad> symbols, int materialTotal, int budget)
     {
-        var batches = new List<List<ScreeningSymbolLoad>>();
-        var current = new List<ScreeningSymbolLoad>();
-        var currentSize = shared + materialTotal;
+        var overhead = shared + materialTotal;
 
-        foreach (var symbol in symbols)
+        // 単独でも収まらない銘柄が 1 つでもあれば、分割では解けない → 段 2 へ。
+        if (symbols.Any(s => overhead + s.ProtectedChars > budget))
         {
-            if (shared + materialTotal + symbol.ProtectedChars > budget)
-            {
-                return null; // 単独でも収まらない → 段 2（材料の切り詰め）へ。
-            }
-
-            if (current.Count > 0 && currentSize + symbol.ProtectedChars > budget)
-            {
-                batches.Add(current);
-                current = [];
-                currentSize = shared + materialTotal;
-            }
-
-            current.Add(symbol);
-            currentSize += symbol.ProtectedChars;
+            return null;
         }
 
-        if (current.Count > 0)
-            batches.Add(current);
+        // 割当のみを決める。要素は (元の添字, 銘柄)。
+        var bins = new List<List<(int Index, ScreeningSymbolLoad Symbol)>>();
+        var binSizes = new List<int>();
 
-        return batches;
+        foreach (var (symbol, index) in symbols
+                     .Select((s, i) => (Symbol: s, Index: i))
+                     .OrderByDescending(x => x.Symbol.ProtectedChars)
+                     .ThenBy(x => x.Index)
+                     .Select(x => (x.Symbol, x.Index)))
+        {
+            var placed = false;
+            for (var b = 0; b < bins.Count; b++)
+            {
+                if (binSizes[b] + symbol.ProtectedChars <= budget)
+                {
+                    bins[b].Add((index, symbol));
+                    binSizes[b] += symbol.ProtectedChars;
+                    placed = true;
+                    break;
+                }
+            }
+
+            if (!placed)
+            {
+                bins.Add([(index, symbol)]);
+                binSizes.Add(overhead + symbol.ProtectedChars);
+            }
+        }
+
+        // 出力は入力順へ戻す（バッチ内は添字昇順、バッチ列は各バッチの最小添字順）。
+        return bins
+            .OrderBy(b => b.Min(x => x.Index))
+            .Select(b => b.OrderBy(x => x.Index).Select(x => x.Symbol).ToList())
+            .ToList();
     }
 }
 

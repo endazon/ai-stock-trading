@@ -60,6 +60,59 @@ public class ScreeningContextPlannerTests
             .Should().BeEquivalentTo(["AAPL", "MSFT"], "分割で銘柄は失われない");
     }
 
+    // 段 1 は **First-Fit Decreasing** で詰める（サイズ降順に並べ、入る**最初の**バッチへ置く）。
+    // 初版の Next-Fit は現在のバッチにだけ入れ、入らなければ即座に閉じるため、
+    // **一度閉じたバッチの空きが二度と使われない**。バッチ数はそのまま LLM の呼び出し回数
+    // （＝費用と待ち時間）であり、IADR-0247 の目的は費用統制である。
+    //
+    // 共有 100・材料 0・予算 260 → 1 バッチに載る銘柄合計は 160 まで。入力 150,150,10,10:
+    //   Next-Fit: [150] → 150 入らず閉じる → [150] → 10 入る(160) → 10 入らず閉じる → **3 バッチ**
+    //   FFD:      降順 150,150,10,10 → [150] → [150] → 10 を 1 本目へ → 10 を 2 本目へ → **2 バッチ**
+    [Fact]
+    public void 段1_一度閉じたバッチの空きも使うので呼び出し回数が増えない()
+    {
+        var plan = ScreeningContextPlanner.Plan(
+            100,
+            [Sym("BIG1", 150), Sym("BIG2", 150), Sym("S1", 10), Sym("S2", 10)],
+            [],
+            budgetChars: 260);
+
+        plan.SplitOccurred.Should().BeTrue();
+        plan.Batches.Should().HaveCount(2, "空きを使い直せば 2 回の呼び出しで足りる（Next-Fit なら 3 回）");
+        plan.Batches.Should().AllSatisfy(b =>
+            b.Symbols.Sum(s => s.ProtectedChars).Should().BeLessThanOrEqualTo(160, "どのバッチも予算内"));
+        plan.Batches.Should().AllSatisfy(b => b.ExceedsBudget.Should().BeFalse());
+        plan.TruncationOccurred.Should().BeFalse("分割は材料を減らさない");
+    }
+
+    // 🔴 **並べ替えは割当を決めるためだけに使い、出力の順序には持ち込まない。**
+    // 監視銘柄の並びが優先度を表す運用へ移っても、本型が黙って順序を入れ替えることはない。
+    // 不変条件は 2 つ: バッチ内は入力順、バッチ列は各バッチの最小添字順。
+    [Fact]
+    public void 段1_詰め直しても出力の並びは入力順に基づく()
+    {
+        var input = new[] { Sym("BIG1", 150), Sym("BIG2", 150), Sym("S1", 10), Sym("S2", 10) };
+        var order = input.Select(s => s.Symbol).ToList();
+
+        var plan = ScreeningContextPlanner.Plan(100, input, [], budgetChars: 260);
+
+        // FFD の内部順は BIG1,BIG2,S1,S2（サイズ降順）だが、出力はそれを持ち込まない。
+        foreach (var batch in plan.Batches)
+        {
+            var indexes = batch.Symbols.Select(s => order.IndexOf(s.Symbol)).ToList();
+            indexes.Should().BeInAscendingOrder("バッチ内の銘柄は入力順のまま");
+        }
+
+        var firstIndexes = plan.Batches
+            .Select(b => b.Symbols.Min(s => order.IndexOf(s.Symbol)))
+            .ToList();
+        firstIndexes.Should().BeInAscendingOrder("バッチ列は各バッチの最小添字の順");
+
+        // 対の肯定形: 詰め方を変えても銘柄は 1 つも失われず重複もしない。
+        plan.Batches.SelectMany(b => b.Symbols).Select(s => s.Symbol)
+            .Should().BeEquivalentTo(order);
+    }
+
     [Fact]
     public void 段2_分割しても収まらなければRAGを関連度の低い順に削る()
     {

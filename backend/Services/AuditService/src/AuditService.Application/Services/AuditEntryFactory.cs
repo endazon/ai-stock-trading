@@ -1,5 +1,6 @@
 using AiStockTrading.Audit.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Audit.Application.Services;
 
@@ -327,51 +328,36 @@ public static class AuditEntryFactory
             + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
-    // FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退。
+    // FR-11, UC-07, ADR-0016 決定15, ADR-0027 決定2, #339, IADR-0226: **取引記録の経費 1 行**。
     //
-    // 相関は**カテゴリごと**に分ける（ニュース系と開示系は独立に劣化する）。欠測と回復を同じ相関に置くことで、
-    // 台帳から**期間を 1 本の相関で辿れる**（FxRateSourceFellBack / FxRateSourcePrimaryRestored と同じ形）。
+    // 相関は**建玉ごと**（`trade-expense:{Symbol}:{Market}`）。ADR-0016 決定15 が求める
+    // 「建玉単位で紐づけられること」を、既存の借株料（`borrow-fee:{Symbol}:{Market}`）と同じ作法で満たす。
+    // 建玉の一次識別子が (銘柄, 市場) であることは ADR-0027 決定2 が定めている。
     //
-    // 🔴 要約に「**手仕舞い・損切りは止まっていない**」を必ず書く。台帳を読む人が「取引が全部止まっていた」と
-    // 誤読すると、事後の検証が事実とずれる（FxRateStale の要約と同じ配慮）。
-    public static AuditEntry From(InformationSourceDegraded e, Guid id, DateTimeOffset recordedAt) => new(
-        id, nameof(InformationSourceDegraded), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
-        Truncate($"情報源の欠測（{e.Category}）: {string.Join(",", e.MissingSources)} が取得できない。"
-            + $"振る舞い={e.Behavior}・新規建ての停止={(e.BlocksNewEntries ? "あり" : "なし")}。"
-            + "手仕舞い・損切りは止まっていない"),
-        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+    // 🔴 **区分ラベルを金額より先に置く。** 要約は 200 文字で切り詰めるため、後ろに置いた注記は
+    // 発生元 ID が長いだけで落ちる。`DividendInLieu` の「配当ではない」という注記が落ちると、
+    // **要約を読む監査で配当の受取と読み違えられる**——ADR-0016 決定15 が名指しした誤りそのものである。
+    public static AuditEntry From(TradeExpenseRecorded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeExpenseRecorded),
+        AuditCorrelation.From($"trade-expense:{e.Expense.Symbol}:{e.Expense.Market}"), e.Expense.Symbol,
+        Truncate($"経費計上 {CategoryLabel(e.Expense.Category)} {e.Expense.Symbol}/{e.Expense.Market} "
+            + $"{e.Expense.AmountUsd} USD（計上日 {e.Expense.OccurredOn:yyyy-MM-dd}・発生元 {e.Expense.SourceId}）"),
+        AuditSerialization.Serialize(e), e.Expense.RecordedAt, recordedAt);
 
-    // 🔴 期間と該当サイクル数は**このイベント自身が持つ**（受け手に引き算・数え直しをさせない）。
-    // ADR-0020 決定2-3 が日報・月報へ求める 3 点（発生時刻・継続時間・該当サイクル数）がこの 1 行で揃う。
-    public static AuditEntry From(InformationSourceRecovered e, Guid id, DateTimeOffset recordedAt) => new(
-        id, nameof(InformationSourceRecovered), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
-        $"情報源の欠測から回復（{e.Category}）: 継続 {FormatDuration(e.OutageDuration)}"
-            + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
-        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
-
-    // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（コンテキスト予算超過）。
-    //
-    // 🔴 **分割（材料は減らない）と切り詰め（材料が減る）を分けて記録する**（planning#53 の裁定）。
-    // 月報は台帳の種別 × 期間照会で「分割の件数」「切り詰めの件数」を別々に数える。
-    // 要約に切り詰めの内訳（RAG / ニュース）を出すのは、「静かに判断材料が減っていた」状態を
-    // 事後に検証可能にするためである（ADR-0017 決定4 と同じ考え方）。
-    public static AuditEntry From(ScreeningContextReduced e, Guid id, DateTimeOffset recordedAt) => new(
-        id, nameof(ScreeningContextReduced), AuditCorrelation.From("screening-context"), Symbol: null,
-        Truncate($"スクリーニング入力の縮退: 対象銘柄 {e.Symbols.Count} 件・呼び出し {e.BatchCount} 回"
-            + $"（分割={(e.Split ? "あり" : "なし")}・切り詰め={(e.Truncated ? "あり" : "なし")}"
-            + $"・RAG {e.DroppedRagCount} 件・ニュース/開示 {e.DroppedNewsCount} 件を削除・予算 {e.BudgetChars} 文字）"
-            + (e.UnresolvableOverflow ? "。**保護対象（方針・市況）だけで予算超過**（削らずに呼び出した）" : string.Empty)),
-        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
-
-    // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
-    //
-    // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。
-    // 発動と解除を同じ相関に置き、月報が期間として読めるようにする。
-    public static AuditEntry From(GeneralWebCollectionStateChanged e, Guid id, DateTimeOffset recordedAt) => new(
-        id, nameof(GeneralWebCollectionStateChanged), AuditCorrelation.From($"general-web:{e.Category}"), Symbol: null,
-        Truncate($"一般 Web 収集を{(e.Engaged ? "発動" : "解除")}（{e.Category}）: {e.Reason}"
-            + (e.ProvisionalUntil is { } until ? $"。暫定期限 {until:yyyy-MM-dd}（次回月報まで・恒久化しない）" : string.Empty)),
-        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+    // 経費区分の表示ラベル。**配当相当額だけは注記を label に埋め込む**——切り詰めで落ちないようにするため。
+    private static string CategoryLabel(TradeExpenseCategory category) => category switch
+    {
+        TradeExpenseCategory.Realized => "実現損益（費用ではありません）",
+        TradeExpenseCategory.BorrowFee => "借株料",
+        TradeExpenseCategory.MarginInterest => "信用金利",
+        // 🔴 ADR-0016 決定15 の要点。配当（収入）と混同すると税務上の扱いが変わる。
+        TradeExpenseCategory.DividendInLieu => "配当相当額の支払い（**配当の受取ではありません**／譲渡費用に近い扱い）",
+        TradeExpenseCategory.Commission => "売買手数料",
+        TradeExpenseCategory.Fee => "諸費用",
+        TradeExpenseCategory.FxCost => "為替コスト",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(category), category, "経費区分の表示ラベルが定義されていない（区分を追加したらラベルも追加すること）。"),
+    };
 
     // FR-05, FR-11, ADR-0002（SPOF）, #331, IADR-0211: 発注の見送り（発注せず破棄・再試行なし）。
     // 🔴 **事前拒否（OrderRejected）・証券会社拒否（OrderExecuted の Rejected）と別 EventType で記録する**——
@@ -400,6 +386,52 @@ public static class AuditEntryFactory
             + (e.Remediation == ProtectiveStopRemediation.None
                 ? "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**"
                 : string.Empty)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退。
+    //
+    // 相関は**カテゴリごと**に分ける（ニュース系と開示系は独立に劣化する）。欠測と回復を同じ相関に置くことで、
+    // 台帳から**期間を 1 本の相関で辿れる**（FxRateSourceFellBack / FxRateSourcePrimaryRestored と同じ形）。
+    //
+    // 🔴 要約に「**手仕舞い・損切りは止まっていない**」を必ず書く。台帳を読む人が「取引が全部止まっていた」と
+    // 誤読すると、事後の検証が事実とずれる（FxRateStale の要約と同じ配慮）。
+    public static AuditEntry From(InformationSourceDegraded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceDegraded), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        Truncate($"情報源の欠測（{e.Category}）: {string.Join(",", e.MissingSources)} が取得できない。"
+            + $"振る舞い={e.Behavior}・新規建ての停止={(e.BlocksNewEntries ? "あり" : "なし")}。"
+            + "手仕舞い・損切りは止まっていない"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 期間と該当サイクル数は**このイベント自身が持つ**（受け手に引き算・数え直しをさせない）。
+    // ADR-0020 決定2-3 が日報・月報へ求める 3 点（発生時刻・継続時間・該当サイクル数）がこの 1 行で揃う。
+    public static AuditEntry From(InformationSourceRecovered e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceRecovered), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        $"情報源の欠測から回復（{e.Category}）: 継続 {FormatDuration(e.OutageDuration)}"
+            + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
+    //
+    // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。
+    // 発動と解除を同じ相関に置き、月報が期間として読めるようにする。
+    public static AuditEntry From(GeneralWebCollectionStateChanged e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(GeneralWebCollectionStateChanged), AuditCorrelation.From($"general-web:{e.Category}"), Symbol: null,
+        Truncate($"一般 Web 収集を{(e.Engaged ? "発動" : "解除")}（{e.Category}）: {e.Reason}"
+            + (e.ProvisionalUntil is { } until ? $"。暫定期限 {until:yyyy-MM-dd}（次回月報まで・恒久化しない）" : string.Empty)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（コンテキスト予算超過）。
+    //
+    // 🔴 **分割（材料は減らない）と切り詰め（材料が減る）を分けて記録する**（planning#53 の裁定）。
+    // 月報は台帳の種別 × 期間照会で「分割の件数」「切り詰めの件数」を別々に数える。
+    // 要約に切り詰めの内訳（RAG / ニュース）を出すのは、「静かに判断材料が減っていた」状態を
+    // 事後に検証可能にするためである（ADR-0017 決定4 と同じ考え方）。
+    public static AuditEntry From(ScreeningContextReduced e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ScreeningContextReduced), AuditCorrelation.From("screening-context"), Symbol: null,
+        Truncate($"スクリーニング入力の縮退: 対象銘柄 {e.Symbols.Count} 件・呼び出し {e.BatchCount} 回"
+            + $"（分割={(e.Split ? "あり" : "なし")}・切り詰め={(e.Truncated ? "あり" : "なし")}"
+            + $"・RAG {e.DroppedRagCount} 件・ニュース/開示 {e.DroppedNewsCount} 件を削除・予算 {e.BudgetChars} 文字）"
+            + (e.UnresolvableOverflow ? "。**保護対象（方針・市況）だけで予算超過**（削らずに呼び出した）" : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。

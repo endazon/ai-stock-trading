@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Domain;
@@ -124,7 +125,7 @@ public class HttpLlmCompletionClientTests
         await Client(handler, reporter).CompleteAsync("prompt");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(120, 34, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 120, 34, "claude-sonnet-5"));
     }
 
     // #303, IADR-0122 決定1: 要求の model は希望値でしかなく、越境ルーティング（ADR-0010）で別モデルへ着地し得る。
@@ -138,7 +139,7 @@ public class HttpLlmCompletionClientTests
 
         await Client(handler, reporter).CompleteAsync("prompt", "claude-sonnet-5");
 
-        reporter.Last.Should().Be(new LlmUsage(10, 5, "claude-fable-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 10, 5, "claude-fable-5"));
     }
 
     // 送信拒否・失敗時は費用が発生していないため計測しない。
@@ -177,7 +178,7 @@ public class HttpLlmCompletionClientTests
         // モデル名も欠落させる（本試験の主題）。#335 の割当検証は計測より後段のため、計測の表明はそのまま成立する。
         await Client(new StubHandler(HttpStatusCode.OK, """{"text":"{}","sent":true}"""), reporter).CompleteAsync("p");
 
-        reporter.Last.Should().Be(new LlmUsage(0, 0, null));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 0, 0, null));
     }
 
     // ADR-0010（platform LLM ゲートウェイの越境ルーティング）: 要求に prompt/model/confidentiality/purpose を載せる。
@@ -191,6 +192,43 @@ public class HttpLlmCompletionClientTests
         doc.RootElement.GetProperty("prompt").GetString().Should().Be("私のプロンプト");
         doc.RootElement.GetProperty("model").GetString().Should().Be("primary-model");
         doc.RootElement.GetProperty("confidentiality").GetString().Should().Be("internal");
+        doc.RootElement.GetProperty("purpose").GetString().Should().Be("trade-decision");
+    }
+
+    // 🔴 FR-04, ADR-0014, ADR-0017, #335, IADR-0212: **用途は呼び出しごとに決まる。**
+    // 構成の明示上書きが無いとき、送信する purpose も費用計上の用途も**呼び出し側の申告**に従う。
+    // 二段判断はこれで層を区別する（一次=trade-decision-screening／二次=trade-decision）。
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecisionScreening)]
+    [InlineData(LlmPurposes.TradeDecision)]
+    public async Task 呼び出しごとの用途が要求と費用計測の両方へ届く(string purpose)
+    {
+        var reporter = new RecordingReporter();
+        var handler = new CapturingHandler(
+            """{"text":"{}","model":"claude-sonnet-5","inputTokens":7,"outputTokens":3,"sent":true}""");
+
+        // 構成上書きなし（purposeOverride=null）＝呼び出し側の申告がそのまま効く配線。
+        var client = new HttpLlmCompletionClient(
+            new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
+            NullLogger<HttpLlmCompletionClient>.Instance, "internal", purposeOverride: null, reporter);
+
+        await client.CompleteAsync("p", model: null, purpose);
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("purpose").GetString().Should().Be(purpose);
+        reporter.Last!.Value.Purpose.Should().Be(purpose);
+    }
+
+    // 否定形: 構成 LlmGateway:Purpose を明示したデプロイでは**全呼び出しへ上書き適用**する（既存デプロイの非破壊）。
+    [Fact]
+    public async Task 構成の明示上書きがあるときは呼び出し側の用途より優先する()
+    {
+        var handler = new CapturingHandler(
+            """{"text":"{}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+
+        await Client(handler).CompleteAsync("p", model: null, LlmPurposes.TradeDecisionScreening);
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
         doc.RootElement.GetProperty("purpose").GetString().Should().Be("trade-decision");
     }
 
@@ -321,7 +359,7 @@ public class HttpLlmCompletionClientTests
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(80, 12, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 80, 12, "claude-sonnet-5"));
     }
 
     // IADR-0104 決定4: 上限到達で本文が空になる場合も思考トークンは課金済み（IADR-0101）。Sent=true なら計測する。
@@ -335,7 +373,7 @@ public class HttpLlmCompletionClientTests
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(50, 4096, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 50, 4096, "claude-sonnet-5"));
     }
 
     // IADR-0104 決定5: 上限到達は劣化であり拒否ではない。本文は破棄せず判断へ渡す（IADR-0101 の劣化観測を壊さない）。

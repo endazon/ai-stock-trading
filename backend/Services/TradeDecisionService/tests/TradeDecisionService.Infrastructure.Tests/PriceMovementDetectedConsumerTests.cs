@@ -27,7 +27,8 @@ public class PriceMovementDetectedConsumerTests
 {
     private sealed class FakeLlm(string output) : ILlmCompletionClient
     {
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default) =>
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default) =>
             Task.FromResult(output);
     }
     private sealed class FakePolicy(DailyPolicy? p) : IDailyPolicyProvider { public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) => Task.FromResult(p); }
