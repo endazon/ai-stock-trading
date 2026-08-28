@@ -1,0 +1,11 @@
+<!-- NFR-07, #287, IADR-0255: 業務メトリクスが**実際に値を刻むこと**をテストで観測するための共有支援。
+     **テスト専用**であり本番アセンブリからは参照しない。
+     「メトリクスを定義した」ではなく「処理点を通すと計器が発火する」を固定するために、
+     計上点を持つ 5 サービスのテストが等しく使う（サービスごとに写経すると同じ 40 行が 5 つになる）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.TestSupport.Metrics</RootNamespace>
+  </PropertyGroup>
+</Project>

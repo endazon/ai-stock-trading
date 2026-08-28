@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using Wolverine;
 using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
 
@@ -13,9 +14,11 @@ namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling
 // FR-01, FR-02, UC-01: 収集間隔ごとのポーリング。1 巡回で収集→正規化→サニタイズ→KB 保存し、収集があれば InformationCollected
 // を発行して取引サイクル（FR-02）の起点にする。巡回の例外は握りつぶしてログする（フェイルセーフ・収集を止めない）。
 // NFR（費用）, IADR-0031: 各巡回で費用統制（#23）を照会し、Halted なら巡回をスキップ（サイクル停止）、Throttled なら間隔を延長する。
+// NFR-07, #287, IADR-0255: 取引サイクルの起点が動いているかを見るため、1 巡回の収集件数を計上する。
 internal sealed class CollectionPollingService(
     IServiceScopeFactory scopeFactory,
     IOptions<CollectionOptions> options,
+    BusinessMetrics metrics,
     ILogger<CollectionPollingService> logger) : BackgroundService
 {
     // Halted 時の再照会倍率（収集はしないが、復帰検知のため Throttled と同じ間隔で回す）。
@@ -111,6 +114,10 @@ internal sealed class CollectionPollingService(
                 string.Join(", ", result.Degradation.MissingRequired));
             return gate;
         }
+
+        // NFR-07, #287: 収集件数は**空巡回（0 件）でも計上する**——0 を計上しないと「巡回が回って 0 件だった」と
+        // 「巡回そのものが止まっている」を区別できない（カウンタが伸びないという同じ形になる）。
+        metrics.RecordInformationCollected(result.ItemCount);
 
         // 収集があった場合のみ取引サイクルの起点イベントを発行する（空巡回では起動しない）。
         if (result.ItemCount > 0)

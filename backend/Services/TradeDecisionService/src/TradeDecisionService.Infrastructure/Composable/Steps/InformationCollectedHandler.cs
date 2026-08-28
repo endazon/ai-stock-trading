@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
@@ -14,11 +16,15 @@ namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 // ADR-0013, IADR-0129, #354: MassTransit の IConsumer<InformationCollected> から Wolverine のハンドラへ移行した。
 // ConsumeContext<T> は消え、メッセージ本体・IMessageBus・CancellationToken をメソッド引数で受け取る。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
+//
+// NFR-07, #287, IADR-0255: 定時系統の判断回数・内訳・レイテンシを銘柄ごとに計上する（銘柄はタグにしない。
+// 系列のカーディナリティを業務量に比例させないため。銘柄単位の追跡はログ・トレースが担う）。
 public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
     IMarketCalendar calendar,
     IClock clock,
+    BusinessMetrics metrics,
     ILogger<InformationCollectedHandler> logger)
 {
     public async Task Handle(InformationCollected message, IMessageBus bus, CancellationToken cancellationToken)
@@ -44,9 +50,14 @@ public sealed class InformationCollectedHandler(
             // 失敗銘柄はログに残して次銘柄へ継続し、次回巡回で再評価する（キャンセルは伝播させる）。
             try
             {
+                // NFR-07, #287: 判断の所要と結果は「成立したか」に関わらず計上する（見送りも 1 回の判断である）。
+                var started = Stopwatch.GetTimestamp();
                 var decision = await decisionService
                     .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), cancellationToken)
                     .ConfigureAwait(false);
+                metrics.RecordTradeDecisionDuration(
+                    BusinessMetrics.TriggerScheduled, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                metrics.RecordTradeDecision(BusinessMetrics.TriggerScheduled, decision?.Intent.Side);
 
                 if (decision is null)
                     continue; // 方針なし・Hold・見送り

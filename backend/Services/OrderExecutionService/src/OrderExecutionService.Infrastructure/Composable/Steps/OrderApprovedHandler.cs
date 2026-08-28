@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
@@ -13,8 +14,12 @@ namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
 // OrderApproved は発行元の RiskManagementService 自身も購読しており、Wolverine の既定のままだと発行が
 // RiskManagement のプロセス内に閉じ、本サービスへ一通も届かない（＝発注が一件も執行されない）。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする。
+//
+// NFR-07, #287, IADR-0255: 発注の健全性メトリクス（発注結果と、発注に届かなかった見送り）はここで計上する。
+// **見送りは注文状態を持たない**ため、ブローカーの拒否（OrderStatus.Rejected）とは別の計器で数える。
 public sealed class OrderApprovedHandler(
     AppSvc executionService,
+    BusinessMetrics metrics,
     ILogger<OrderApprovedHandler> logger)
 {
     public async Task Handle(OrderApproved message, IMessageBus bus, CancellationToken cancellationToken)
@@ -29,6 +34,7 @@ public sealed class OrderApprovedHandler(
         // 「キューイングせず見送り」の裁定に反する。再発注は次の取引判断からのみ。
         if (result.Forgone is { } forgone)
         {
+            metrics.RecordOrderDispatchForgone(forgone.Reason);
             logger.LogWarning(
                 "発注見送り: DecisionId={DecisionId} 銘柄={Symbol} 理由={Reason}（再試行しません）",
                 forgone.DecisionId, forgone.Intent.Symbol, forgone.Reason);
@@ -37,6 +43,7 @@ public sealed class OrderApprovedHandler(
         }
 
         var executed = result.Executed!;
+        metrics.RecordOrderExecuted(executed.Status, executed.Provider);
         logger.LogInformation(
             "発注執行: DecisionId={DecisionId} OrderId={OrderId} 状態={Status} 約定数={Filled} 平均価格={AvgPrice}",
             executed.DecisionId, executed.OrderId, executed.Status, executed.FilledQuantity, executed.AveragePrice);

@@ -409,6 +409,21 @@ jobs:
         if: ${{ !cancelled() }}
         run: node scripts/check-consumer-endpoint-names.js
 
+      # NFR-07, NFR-13, issue #287, IADR-0255: 業務メトリクスとダッシュボードの乖離検査。
+      # 🔴 乖離は**エラーを出さない** —— 系列名がずれたパネルは空のグラフを描き、空のグラフは
+      # 「異常が起きていない」と読める。**監視しているつもりで何も見ていない**状態が続くため、
+      # (a) ダッシュボードが引く ast_* 系列がコード側のレジストリに実在すること、
+      # (b) レジストリの各計器を少なくとも 1 枚のダッシュボードが引いていること、
+      # (c) dev の otel-collector が metrics を debug（標準出力のみ）にしか出さないこと
+      #     ＝既定では計装が有効でも外部へ送らない（opt-in の作法）
+      # を機械で止める。
+      - name: Self-test observability asset checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-observability-assets.js --self-test
+      - name: Check observability assets (dashboards vs instruments)
+        if: ${{ !cancelled() }}
+        run: node scripts/check-observability-assets.js
+
 
   lint:
     runs-on: ubuntu-latest

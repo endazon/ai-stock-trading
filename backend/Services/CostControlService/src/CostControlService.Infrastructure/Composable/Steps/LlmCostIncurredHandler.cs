@@ -2,6 +2,7 @@ using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
@@ -19,10 +20,14 @@ namespace AiStockTrading.CostControl.Infrastructure.Composable.Steps;
 // - `context.MessageId`（`Guid?`）は `envelope.Id`（`Guid`・非 null）になる。Wolverine は送信時に必ず ID を採番するため、
 //   MassTransit 時代にあった「MessageId が無ければ重複排除できない」分岐は**構造的に不要**になる。
 // - **public であること自体が要件である**（Wolverine は public なハンドラ型しか発見しない。実測）。
+//
+// NFR-07, NFR-13, #287, IADR-0255: 費用メトリクス（計上額と月次上限の消費率）はここで計上する。
+// 重複排除を通過した計上だけを数える（マークが立たなかった再配信は台帳にも積まれない）。
 public sealed class LlmCostIncurredHandler(
     IProcessedMessageStore processedMessages,
     AppSvc svc,
     IClock clock,
+    BusinessMetrics metrics,
     ILogger<LlmCostIncurredHandler> logger)
 {
     public async Task Handle(
@@ -57,6 +62,11 @@ public sealed class LlmCostIncurredHandler(
 
             var result = await svc.RecordAsync(category, message.Amount, cancellationToken)
                 .ConfigureAwait(false);
+
+            // NFR-07, NFR-13, #287: 計上額（カテゴリ別）と、当月 LLM 費用が上限に占める割合を計上する。
+            // Percent は LLM 上限（対象カテゴリ）に対する比率であり、対象外の計上でも現在値を再掲する
+            // （ゲージは最後の観測値を持つ。対象外の計上で比率が動かないのは正しい）。
+            metrics.RecordLlmCost(category.ToString(), message.Amount, result.Percent);
 
             // しきい値が上方遷移したら通知（/costs/record エンドポイントと同一の挙動・IADR-0027）。
             // 対象外の計上では LLM 累計が動かないため CrossedTo は構造的に null になる（RecordAsync の

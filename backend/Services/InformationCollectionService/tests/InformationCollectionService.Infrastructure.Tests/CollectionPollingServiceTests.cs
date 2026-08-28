@@ -4,7 +4,9 @@ using AiStockTrading.InformationCollection.Application.State;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -68,9 +70,10 @@ public class CollectionPollingServiceTests
             })
             .StartAsync();
 
-    private static CollectionPollingService NewPolling(IHost host) =>
+    private static CollectionPollingService NewPolling(IHost host, BusinessMetrics? metrics = null) =>
         new(host.Services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new CollectionOptions()),
+            metrics ?? new BusinessMetrics(),
             NullLogger<CollectionPollingService>.Instance);
 
     [Fact]
@@ -141,6 +144,7 @@ public class CollectionPollingServiceTests
         var svc = new CollectionPollingService(
             host.Services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new CollectionOptions { Trigger = CollectionTrigger.External, PollIntervalSeconds = 1 }),
+            new BusinessMetrics(),
             NullLogger<CollectionPollingService>.Instance);
 
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => RunBrieflyAsync(svc));
@@ -232,5 +236,39 @@ public class CollectionPollingServiceTests
         CollectionPollingService.EffectiveInterval(b, CostControlGate.Normal).Should().Be(TimeSpan.FromSeconds(60));
         CollectionPollingService.EffectiveInterval(b, new CostControlGate(false, 2m)).Should().Be(TimeSpan.FromSeconds(120));
         CollectionPollingService.EffectiveInterval(b, new CostControlGate(true, 0m)).Should().Be(TimeSpan.FromSeconds(120));
+    }
+
+    // NFR-07, FR-01, FR-02, #287, IADR-0255: 取引サイクルの起点（収集）が動いていることが見える（肯定形）。
+    [Fact]
+    public async Task 収集件数が業務メトリクスへ実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        var raw = new RawInformationItem(InformationKind.News, "finnhub", "AAPL", "見出し", "本文", DateTimeOffset.UtcNow);
+        using var host = await BuildAsync(new StubFetcher([raw]));
+
+        await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
+
+        capture.SumOf(BusinessMetricNames.InformationItemsCollected).Should().BeGreaterThan(0);
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, #287, IADR-0255: **空巡回（0 件）でも計上する**（対の肯定形）。
+    // 0 を計上しないと「巡回が回って 0 件だった」と「巡回そのものが止まっている」がどちらも
+    // 「カウンタが伸びない」という同じ形になり、区別できない。
+    [Fact]
+    public async Task 空巡回でも収集件数の計器が発火する()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await BuildAsync(new StubFetcher([]));
+
+        await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
+
+        capture.ValuesOf(BusinessMetricNames.InformationItemsCollected)
+            .Should().Contain(m => m.Value == 0d, "0 件の巡回も 1 件の測定値として出る");
+
+        await host.StopAsync();
     }
 }

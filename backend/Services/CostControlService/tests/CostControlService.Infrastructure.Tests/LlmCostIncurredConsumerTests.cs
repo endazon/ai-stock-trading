@@ -4,7 +4,9 @@ using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.CostControl.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +48,8 @@ public class LlmCostIncurredConsumerTests
                 opts.Services.AddSingleton<ICostLimitsProvider, DefaultCostLimitsProvider>();
                 opts.Services.AddSingleton(ledger);
                 opts.Services.AddSingleton(processed);
+                // NFR-07, NFR-13, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddScoped<AppSvc>();
 
                 if (withProductionMessaging)
@@ -192,5 +196,26 @@ public class LlmCostIncurredConsumerTests
 
         public IReadOnlyDictionary<CostCategory, decimal> GetMonthlyTotals(string month) =>
             new Dictionary<CostCategory, decimal>();
+    }
+
+    // NFR-07, NFR-13, #287, IADR-0255: 費用の計上で、金額（category 別）と月次上限の消費率が
+    // 実際に刻まれることを固定する（肯定形）。上限 15,000 円に対し 1,500 円＝10%。
+    // 🔴 **比率を計器で持つのは、累計カウンタだけでは「上限に近づいているか」が読めないため**である
+    //     （カウンタはプロセス起動からの累計であり、月次のリセットを表現しない）。
+    [Fact]
+    public async Task 費用の計上で費用メトリクスと上限消費率が実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await BuildHostAsync(new InMemoryCostLedger(), new InMemoryProcessedMessageStore());
+
+        await DeliverAsync(host, new LlmCostIncurred(1_500m, DateTimeOffset.UtcNow), Guid.NewGuid());
+
+        capture.TagValuesOf(BusinessMetricNames.LlmCostJpy, BusinessMetricNames.TagCategory)
+            .Should().Contain(nameof(CostCategory.Llm));
+        capture.ValuesOf(BusinessMetricNames.LlmCostJpy).Should().Contain(m => m.Value == 1_500d);
+        capture.ValuesOf(BusinessMetricNames.LlmCostLimitRatioPercent)
+            .Should().Contain(m => m.Value == 10d, "既定の月次 LLM 上限 15,000 円に対し 1,500 円は 10% である");
+
+        await host.StopAsync();
     }
 }

@@ -2,10 +2,12 @@ using AiStockTrading.OrderExecution.Application.Adapters;
 using AiStockTrading.OrderExecution.Application.Ports;
 using AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,6 +118,8 @@ public class OrderApprovedConsumerTests
                 opts.Services.AddSingleton(store);
                 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
                 opts.Services.AddSingleton<IOrderReservationStore, InMemoryOrderReservationStore>();
+                // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<AppSvc>();
 
                 opts.UseAiStockTradingRabbitMq(
@@ -210,6 +214,8 @@ public class OrderApprovedConsumerTests
                 opts.Services.AddSingleton<IBrokerAdapter>(new UnavailableBroker());
                 opts.Services.AddSingleton<IExecutedOrderStore>(store);
                 opts.Services.AddSingleton<IOrderReservationStore>(reservations);
+                // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<AppSvc>();
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
@@ -253,6 +259,40 @@ public class OrderApprovedConsumerTests
         lost.CloseIntent!.PositionEffect.Should().Be(PositionEffect.Close);
         // 手仕舞いレグも記録され、台帳の建玉を減らす経路（OrderExecuted 相関）に載る。
         store.GetAll().Should().Contain(r => r.DecisionId == lost.CloseDecisionId);
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, FR-05, #287, IADR-0255: 発注が通ったとき、発注結果メトリクス（status・provider）が実際に刻まれる（肯定形）。
+    [Fact]
+    public async Task 発注が通ると発注結果メトリクスが実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await NewHostAsync(new InMemoryExecutedOrderStore(), new PaperBrokerAdapter());
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow));
+
+        capture.TagValuesOf(BusinessMetricNames.OrderExecutions, BusinessMetricNames.TagProvider)
+            .Should().Contain(nameof(BrokerProvider.InternalPaper));
+        capture.ValuesOf(BusinessMetricNames.OrderExecutions).Should().NotBeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, FR-05, FR-10, #287, IADR-0255: **見送りは注文状態を持たない**ため別の計器で数える（対の肯定形）。
+    // ブローカーの拒否（OrderStatus.Rejected）へ混ぜると、集計が接続障害で汚染される。
+    [Fact]
+    public async Task 発注見送りは別の計器で刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await NewHostAsync(new InMemoryExecutedOrderStore(), new UnavailableBroker());
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow));
+
+        capture.TagValuesOf(BusinessMetricNames.OrderDispatchForgone, BusinessMetricNames.TagReason)
+            .Should().Contain(nameof(OrderDispatchForgoneReason.BrokerUnavailable));
 
         await host.StopAsync();
     }

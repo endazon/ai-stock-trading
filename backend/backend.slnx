@@ -158,6 +158,7 @@
   <Folder Name="/TestSupport/">
     <Project Path="TestSupport/AiStockTrading.TestSupport.ContractFixtures/AiStockTrading.TestSupport.ContractFixtures.csproj" />
     <Project Path="TestSupport/AiStockTrading.TestSupport.Messaging/AiStockTrading.TestSupport.Messaging.csproj" />
+    <Project Path="TestSupport/AiStockTrading.TestSupport.Metrics/AiStockTrading.TestSupport.Metrics.csproj" />
     <Project Path="TestSupport/AiStockTrading.TestSupport.Messaging.Tests/AiStockTrading.TestSupport.Messaging.Tests.csproj" />
     <Project Path="TestSupport/AiStockTrading.TestSupport.PlatformShim/AiStockTrading.TestSupport.PlatformShim.csproj" />
     <Project Path="TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/AiStockTrading.TestSupport.PlatformShim.Tests.csproj" />

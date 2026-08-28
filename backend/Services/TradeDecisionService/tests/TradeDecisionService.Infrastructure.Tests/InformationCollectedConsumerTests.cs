@@ -4,7 +4,9 @@ using AiStockTrading.TradeDecision.Application.Adapters;
 using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,6 +76,9 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
                 opts.Services.AddScoped<AppSvc>();
+                // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
+                // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
+                opts.Services.AddSingleton<BusinessMetrics>();
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -152,6 +157,29 @@ public class InformationCollectedConsumerTests
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // NFR-07, #287, IADR-0255: 定時系統でも判断回数・レイテンシが実際に刻まれる（肯定形）。
+    // trigger タグで定時（scheduled）と価格変動（price-movement）を読み分けられることを固定する
+    // —— 分けられないと「定時サイクルだけが止まっている」を検知できない。
+    [Fact]
+    public async Task 定時系統の判断で業務メトリクスが実際に刻まれる()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new CalendarStub(open: true));
+
+        await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagTrigger)
+            .Should().Contain(BusinessMetrics.TriggerScheduled);
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagAction)
+            .Should().Contain("buy");
+        capture.ValuesOf(BusinessMetricNames.TradeCycleDecisionDurationMs).Should().NotBeEmpty();
 
         await host.StopAsync();
     }
