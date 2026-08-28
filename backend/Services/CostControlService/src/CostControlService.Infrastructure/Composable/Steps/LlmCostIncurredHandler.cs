@@ -1,6 +1,7 @@
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
@@ -45,14 +46,25 @@ public sealed class LlmCostIncurredHandler(
 
         try
         {
-            var result = await svc.RecordAsync(CostCategory.Llm, message.Amount, cancellationToken)
+            // NFR（費用）, 05_trading-assumptions §6.1, #347, IADR-0218: **用途で対象範囲を判別する。**
+            // 月次 LLM 費用上限（15,000 円）の対象は取引判断サイクルのみであり、報告書生成・情報収集は
+            // LlmUncapped へ計上する（記録はするが上限には積まない・抑制もしない）。
+            //
+            // 🔴 同じカウンタに積むと、100% 到達で報告書生成が止まり、日報が確定せず翌営業日の取引が止まる
+            // （UC-01 の事前条件）。**費用統制が取引を止める連鎖**であり、計画が名指しで禁じた形である。
+            // purpose が無い（従来の形）ときは上限側へ倒す——過小計上を作らない（LlmCostScope）。
+            var category = LlmCostScope.IsGoverned(message.Purpose) ? CostCategory.Llm : CostCategory.LlmUncapped;
+
+            var result = await svc.RecordAsync(category, message.Amount, cancellationToken)
                 .ConfigureAwait(false);
 
             // しきい値が上方遷移したら通知（/costs/record エンドポイントと同一の挙動・IADR-0027）。
+            // 対象外の計上では LLM 累計が動かないため CrossedTo は構造的に null になる（RecordAsync の
+            // before/after は CostCategory.Llm だけを見る）。ここでカテゴリを見て抑制する必要はない。
             if (result.CrossedTo is { } crossed)
             {
                 await bus.PublishAsync(new CostThresholdReached(
-                    result.Month, CostCategory.Llm.ToString(), result.Percent, crossed.ToString(), now))
+                    result.Month, category.ToString(), result.Percent, crossed.ToString(), now))
                     .ConfigureAwait(false);
             }
         }

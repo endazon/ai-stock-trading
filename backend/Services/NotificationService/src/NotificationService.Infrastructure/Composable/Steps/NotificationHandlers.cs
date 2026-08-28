@@ -149,3 +149,19 @@ public sealed class ProtectiveStopCoverageLostNotificationHandler(INotificationS
     public Task Handle(ProtectiveStopCoverageLost message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
+
+// FR-04, FR-06, FR-09, ADR-0017 決定4-(2), #335, IADR-0217: フォールバック発火を Discord へ警告通知する
+// （可視化 3 経路の②）。**埋もれない経路で出す**ことが決定の目的である。
+public sealed class LlmFallbackFiredNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(LlmFallbackFired message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-04, FR-09, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送りを通知する。
+// **沈黙のスキップにしない**（同決定2）。障害ではなく設計上の正常な結果であることは文言側が担う。
+public sealed class TradeDecisionSkippedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(TradeDecisionSkipped message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}

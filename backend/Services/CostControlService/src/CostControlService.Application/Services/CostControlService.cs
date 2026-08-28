@@ -44,6 +44,26 @@ public sealed class CostControlService(ICostLedger ledger, ICostLimitsProvider l
         return CostGovernor.EvaluateLlm(ledger.GetMonthlyTotal(month, CostCategory.Llm), limits);
     }
 
+    /// <summary>
+    /// NFR（費用）, 05_trading-assumptions §6.1, #347: 現在月の費用実績（カテゴリ別内訳＋上限に対する消費率）。
+    /// <para>
+    /// 月報の「当月の LLM 利用実績」の供給元である。**上限の対象外（LlmUncapped）も返す** ——
+    /// 対象外の費用は抑制しないが、実績は月報へ記載すると計画が定めている（§6.1 の表）。
+    /// 記載しないと #282 の「報告書散文費用の計上漏れ→過少申告」が再発する。
+    /// </para>
+    /// </summary>
+    public async ValueTask<MonthlyCostUsage> GetUsageAsync(CancellationToken cancellationToken = default)
+    {
+        var month = MonthKey(clock.UtcNow);
+        var limits = await limitsProvider.GetLimitsAsync(cancellationToken).ConfigureAwait(false);
+        var totals = ledger.GetMonthlyTotals(month);
+
+        var governed = totals.TryGetValue(CostCategory.Llm, out var llm) ? llm : 0m;
+        var percent = limits.Llm <= 0m ? 0m : governed / limits.Llm * 100m;
+
+        return new MonthlyCostUsage(month, totals, limits.Llm, percent);
+    }
+
     /// <summary>現在月の費用÷資金比率（月報の費用レビュー・FR-16）。上限を参照しないため同期のまま。</summary>
     public decimal Review(decimal capital)
     {

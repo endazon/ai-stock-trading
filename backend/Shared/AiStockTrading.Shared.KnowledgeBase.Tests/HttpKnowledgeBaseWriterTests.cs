@@ -61,6 +61,65 @@ public class HttpKnowledgeBaseWriterTests
     }
 
     [Fact]
+    public async Task owner_departmentは未指定なら予約値を補完して送る()
+    {
+        // FR-08, #520: planning#344 確定の予約値（owner=system, department=unassigned）。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.GetProperty("owner").GetString().Should().Be("system");
+        attributes.GetProperty("department").GetString().Should().Be("unassigned");
+    }
+
+    [Fact]
+    public async Task ownerは明示指定があれば上書きしない()
+    {
+        // FR-08, #520: 否定形テスト。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        var doc = new KnowledgeDocument(
+            "t",
+            Attributes: new Dictionary<string, string> { ["owner"] = "alice@example.com" });
+        await writer.SaveAsync(doc);
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.GetProperty("owner").GetString().Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task departmentは明示指定があれば上書きしない()
+    {
+        // FR-08, #520: 否定形テスト。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        var doc = new KnowledgeDocument(
+            "t",
+            Attributes: new Dictionary<string, string> { ["department"] = "engineering" });
+        await writer.SaveAsync(doc);
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.GetProperty("department").GetString().Should().Be("engineering");
+    }
+
+    [Fact]
+    public async Task lifecycleは意図的に付与しない()
+    {
+        // FR-08, #520: planning#361 が未裁定のため、推測で lifecycle を入れないことを固定する。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.TryGetProperty("lifecycle", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task 非2xxは未保存に倒し例外を投げない()
     {
         var handler = StubHttpMessageHandler.Status(HttpStatusCode.Forbidden); // ロール未付与＝403（IADR-0069）

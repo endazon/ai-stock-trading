@@ -247,6 +247,33 @@ public class AuditEventConsumersTests
         await host.StopAsync();
     }
 
+    // FR-06, FR-10, FR-11, #513, ADR-0022 決定1, IADR-0225: **どの情報源を使ったか**を台帳へ記録する。
+    //
+    // 🔴 **本経路が「静かな期間」の出典の唯一の根拠である。** 切替・復帰は遷移でしか出ないため、
+    // ここが通らなければ**平常時の台帳は空白**であり、日報は「記録からは特定できません」に戻る。
+    [Fact]
+    public async Task 為替の情報源の使用記録は_通貨ごとの相関で台帳へ記録される()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var now = DateTimeOffset.UtcNow;
+        var evt = new FxRateSourceUsed("USD", "boj", 1, 2, now);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
+        session.Executed.MessagesOf<FxRateSourceUsed>().Should().NotBeEmpty();
+
+        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+            .From(evt, Guid.NewGuid(), now).CorrelationId;
+
+        var entry = store.GetByCorrelation(correlation)
+            .Should().ContainSingle(e => e.EventType == nameof(FxRateSourceUsed)).Subject;
+        // 🔴 源の名前が残っていなければ出典を導けない（本イベントを足した意味が無い）。
+        entry.Summary.Should().Contain("boj");
+
+        await host.StopAsync();
+    }
+
     // 🔴 **否定形: 抑止しない。** 状態（`FxRateStale`）は 1 日 1 回へ抑止するが、
     // **取引は 1 件ずつ残さなければ後から件数も金額も復元できない**（IADR-0198 決定3）。
     [Fact]

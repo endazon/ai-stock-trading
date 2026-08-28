@@ -16,13 +16,96 @@ public class FxSourceStatusTrackerTests
 
     private static FxSourceStatusTracker NewTracker() => new();
 
+    // 🔴 #513 / IADR-0225 決定A: **平常時に何も残らないのが元の課題だった。**
+    // 遷移が無くても**暦日ごとに 1 件だけ**使用記録を出す（洪水は防いだまま）。
     [Fact]
-    public void 第一の源が使えている間は何も発行しない()
+    public void 第一の源が使えている間は_日次の使用記録を1件だけ発行する()
     {
         var tracker = NewTracker();
 
-        tracker.OnSourceUsed("USD", "boj", rank: 1, totalSources: 2, T0).Should().BeNull();
-        tracker.OnSourceUsed("USD", "boj", rank: 1, totalSources: 2, T0.AddMinutes(1)).Should().BeNull();
+        var first = tracker.OnSourceUsed("USD", "boj", rank: 1, totalSources: 2, T0);
+
+        first.Should().BeOfType<FxRateSourceUsed>("静かな期間の出典はこの記録からしか導けない");
+        var e = (FxRateSourceUsed)first!;
+        e.SourceName.Should().Be("boj");
+        e.Rank.Should().Be(1);
+        e.IsPrimary.Should().BeTrue("第一の情報源を使った証拠になる");
+
+        tracker.OnSourceUsed("USD", "boj", rank: 1, totalSources: 2, T0.AddMinutes(1))
+            .Should().BeNull("同じ暦日・同じ源なら 1 件だけ（1 巡回で N 件出さない）");
+    }
+
+    // 🔴 **洪水の否定形（使用記録の側）。** watchlist の銘柄数だけ呼ばれても 1 件で止まること。
+    [Fact]
+    public void 使用記録は同じ日に何度呼んでも1件しか出さない()
+    {
+        var tracker = NewTracker();
+        tracker.OnSourceUsed("USD", "boj", 1, 2, T0).Should().NotBeNull();
+
+        var published = Enumerable.Range(1, 50)
+            .Select(i => tracker.OnSourceUsed("USD", "boj", 1, 2, T0.AddSeconds(i)))
+            .Count(e => e is not null);
+
+        published.Should().Be(0, "抑止の鍵は (通貨, 源, 暦日) である");
+    }
+
+    // 🔴 **境界。** 1 度出して終わりにすると、翌日以降の出典が再び証明できなくなる。
+    [Fact]
+    public void 使用記録は日をまたげば再び発行する()
+    {
+        var tracker = NewTracker();
+        tracker.OnSourceUsed("USD", "boj", 1, 2, T0).Should().NotBeNull();
+
+        tracker.OnSourceUsed("USD", "boj", 1, 2, T0.AddDays(1))
+            .Should().BeOfType<FxRateSourceUsed>("暦日が変われば再び 1 件出る");
+    }
+
+    [Fact]
+    public void 使用記録は通貨ごとに独立して1件ずつ出す()
+    {
+        var tracker = NewTracker();
+
+        tracker.OnSourceUsed("USD", "boj", 1, 2, T0).Should().BeOfType<FxRateSourceUsed>();
+        tracker.OnSourceUsed("EUR", "boj", 1, 2, T0).Should()
+            .BeOfType<FxRateSourceUsed>("通貨ごとに出典を示す必要がある（片方の記録で他方を黙らせない）");
+    }
+
+    // 🔴 **鍵に源を含める。** フォールバック中に源が入れ替わっても遷移は起きないため、
+    // 含めないと**実際に使った源が台帳に残らない**。
+    [Fact]
+    public void フォールバック中に源が入れ替われば_その源の使用記録を出す()
+    {
+        var tracker = NewTracker();
+        tracker.OnSourceUsed("USD", "fred", 2, 3, T0).Should().BeOfType<FxRateSourceFellBack>();
+
+        var used = tracker.OnSourceUsed("USD", "other", 3, 3, T0.AddHours(1));
+
+        used.Should().BeOfType<FxRateSourceUsed>("遷移は出ないが、使った源は残さなければならない");
+        ((FxRateSourceUsed)used!).SourceName.Should().Be("other");
+    }
+
+    // 🔴 **否定形（決定B）。** 遷移イベントは SourceName を運ぶ＝使用の証拠そのものであり、
+    // 同じ日に使用記録を重ねると**同じ事実が 2 件台帳へ入る**。
+    [Fact]
+    public void 遷移を発行した日は_同じ源の使用記録を重ねない()
+    {
+        var tracker = NewTracker();
+        tracker.OnSourceUsed("USD", "fred", 2, 2, T0).Should().BeOfType<FxRateSourceFellBack>();
+
+        tracker.OnSourceUsed("USD", "fred", 2, 2, T0.AddHours(1))
+            .Should().BeNull("切替の記録が、その日の使用の証拠を兼ねる");
+    }
+
+    [Fact]
+    public void 使用記録の発行に失敗した状態を戻すと同日でも再発行できる()
+    {
+        var tracker = NewTracker();
+        var used = tracker.OnSourceUsed("USD", "boj", 1, 2, T0)!;
+
+        tracker.Rollback("USD", used);
+
+        tracker.OnSourceUsed("USD", "boj", 1, 2, T0.AddMinutes(5))
+            .Should().BeOfType<FxRateSourceUsed>("欠測より重複を採る（証拠が永久に欠けるほうが悪い）");
     }
 
     [Fact]
