@@ -11,7 +11,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;
 using Wolverine;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
+using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionAppService;
 
 const string ServiceName = "ai-stock-trading.information-collection-service";
 

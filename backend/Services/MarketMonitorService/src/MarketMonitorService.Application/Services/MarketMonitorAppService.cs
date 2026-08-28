@@ -10,7 +10,7 @@ namespace AiStockTrading.MarketMonitor.Application.Services;
 // (1) 保有銘柄の損切りライン到達を検知して StopLossTriggered を、(2) 監視銘柄の変動閾値超過（クールダウン外）を
 // 検知して PriceMovementDetected を生成する。損切りはクールダウン・変動判定と独立に常に評価する（フェイルセーフ）。
 // 価格取得失敗（null）の銘柄はスキップして監視を継続する。発行（メッセージング）は Worker（Slice B）が担う。
-public sealed class MarketMonitorService(
+public sealed class MarketMonitorAppService(
     IMonitoredSymbolStore settingsStore,
     IPositionStore positionStore,
     IPriceBaselineStore baselineStore,

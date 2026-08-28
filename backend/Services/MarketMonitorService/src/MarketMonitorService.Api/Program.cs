@@ -82,7 +82,7 @@ builder.Services.AddScoped<IPositionStore>(sp =>
 builder.Services.AddScoped<IMonitoredSymbolStore, EfMonitoredSymbolStore>();
 builder.Services.AddScoped<IPriceBaselineStore, EfPriceBaselineStore>();
 builder.Services.AddScoped<ICooldownStore, EfCooldownStore>();
-builder.Services.AddScoped<MarketMonitorService>();
+builder.Services.AddScoped<MarketMonitorAppService>();
 
 // FR-03/FR-11/FR-13, UC-06, IADR-0088: 監視銘柄（watchlist）の取得/追加/削除と変更履歴（Risk 設定の作法をミラー）。
 // IClock は上で singleton 登録済み。変更履歴は DbContext 依存のため scoped。

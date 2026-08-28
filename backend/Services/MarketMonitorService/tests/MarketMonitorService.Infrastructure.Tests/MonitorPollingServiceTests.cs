@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
+using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
 

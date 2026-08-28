@@ -3,7 +3,7 @@ using AiStockTrading.MarketMonitor.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
+using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
 
 namespace AiStockTrading.MarketMonitor.Application.Tests;
 

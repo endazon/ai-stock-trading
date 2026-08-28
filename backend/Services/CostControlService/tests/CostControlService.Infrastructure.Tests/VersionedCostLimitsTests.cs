@@ -13,7 +13,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 namespace AiStockTrading.CostControl.Infrastructure.Tests;
 

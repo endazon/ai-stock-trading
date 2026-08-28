@@ -14,12 +14,12 @@ namespace AiStockTrading.TradeDecision.Application.Services;
 // → PositionSizer で数量確定 → TradeDecisionMade。
 // 安全既定: 確定済み日報なし / Hold / 数量 0 は取引しない（発注意図を作らない）。
 // options 未指定なら DecisionOrchestrationOptions.Default（1 票・スクリーニング無効）＝単発判断（IADR-0017）と等価。
-public sealed class TradeDecisionService(
+public sealed class TradeDecisionAppService(
     ILlmCompletionClient llm,
     IDailyPolicyProvider policyProvider,
     ISizingContextProvider sizingProvider,
     IClock clock,
-    ILogger<TradeDecisionService> logger,
+    ILogger<TradeDecisionAppService> logger,
     IRetrievalContextProvider? retrieval = null,
     DecisionOrchestrationOptions? options = null,
     IProfitabilityAssumptionsProvider? profitability = null,

@@ -43,7 +43,7 @@ public class LlmPurposeWiringTests
         _ = factory.CreateClient(); // ホスト起動（Program.cs の配線がここで組み上がる）
 
         using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionService>()
+        await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionAppService>()
             .DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
 
         return factory.Handler;
@@ -87,7 +87,7 @@ public class LlmPurposeWiringTests
         var session = await factory.Services.ExecuteAndWaitAsync(async () =>
         {
             using var scope = factory.Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionService>()
+            await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionAppService>()
                 .DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
         });
 

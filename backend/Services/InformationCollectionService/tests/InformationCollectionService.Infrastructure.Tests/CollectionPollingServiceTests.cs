@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
+using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionAppService;
 
 namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
 

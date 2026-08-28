@@ -45,7 +45,7 @@ public class ReportConfirmationFlowTests
     public async Task 自動生成しただけの方針は取引へ適用されない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
 
@@ -61,7 +61,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した方針は取引へ適用される()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -80,7 +80,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した報告書の本文は未確定を名乗らない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -101,7 +101,7 @@ public class ReportConfirmationFlowTests
     public async Task 確定した方針文に生成器の状態文言が残らない()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);
@@ -120,7 +120,7 @@ public class ReportConfirmationFlowTests
     public async Task 無応答のまま期限を過ぎたら直近の確定済み方針を継続する()
     {
         var store = new InMemoryReportStore();
-        var svc = new ReportService(store, new FixedClock(WedAfterClose));
+        var svc = new ReportAppService(store, new FixedClock(WedAfterClose));
 
         await NewGenerator(store).RunOnceAsync();
         var daily = store.List().Single(r => r.Kind == ReportKind.Daily);

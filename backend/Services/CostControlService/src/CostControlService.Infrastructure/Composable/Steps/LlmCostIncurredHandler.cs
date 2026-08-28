@@ -5,7 +5,7 @@ using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 namespace AiStockTrading.CostControl.Infrastructure.Composable.Steps;
 

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionService;
+using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionAppService;
 
 namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
 

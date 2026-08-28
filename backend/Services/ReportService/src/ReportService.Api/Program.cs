@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using Wolverine;
 using Wolverine.Runtime;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
+using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
 
 const string ServiceName = "ai-stock-trading.report-service";
 

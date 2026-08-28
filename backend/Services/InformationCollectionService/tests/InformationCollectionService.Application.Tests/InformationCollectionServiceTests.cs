@@ -31,7 +31,7 @@ public class InformationCollectionServiceTests
         public DateTimeOffset UtcNow => now;
     }
 
-    private static InformationCollectionService Create(ISourceFetcher fetcher, IKnowledgeBaseSink sink) =>
+    private static InformationCollectionAppService Create(ISourceFetcher fetcher, IKnowledgeBaseSink sink) =>
         new(fetcher, sink, SourceAllowlist.Default, InformationSourceCatalog.Default,
             new FixedClock(DateTimeOffset.UnixEpoch));
 

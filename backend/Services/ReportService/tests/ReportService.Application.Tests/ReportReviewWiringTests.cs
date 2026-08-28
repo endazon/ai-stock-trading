@@ -3,7 +3,7 @@ using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Domain;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
+using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
 
 namespace AiStockTrading.Report.Application.Tests;
 

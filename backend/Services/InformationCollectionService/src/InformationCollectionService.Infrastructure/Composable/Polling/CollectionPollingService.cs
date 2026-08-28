@@ -7,7 +7,7 @@ using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Wolverine;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
+using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionAppService;
 
 namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
 

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 namespace AiStockTrading.CostControl.Api.Foundation.Endpoints;
 

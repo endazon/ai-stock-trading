@@ -15,7 +15,7 @@ using Wolverine;
 using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 namespace AiStockTrading.CostControl.Infrastructure.Tests;
 

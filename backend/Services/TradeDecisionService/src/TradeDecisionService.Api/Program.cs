@@ -299,7 +299,7 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<IFxRateSource>(),
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));
 
-builder.Services.AddScoped<TradeDecisionService>();
+builder.Services.AddScoped<TradeDecisionAppService>();
 
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。

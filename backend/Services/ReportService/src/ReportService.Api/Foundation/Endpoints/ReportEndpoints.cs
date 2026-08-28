@@ -14,7 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportService;
+using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
 
 namespace AiStockTrading.Report.Api.Foundation.Endpoints;
 

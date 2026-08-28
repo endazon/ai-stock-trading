@@ -64,7 +64,7 @@ internal sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
         return new LlmCostRecordOutcome(before, after);
     }
 
-    // 月キー "yyyy-MM"（常に CostControlService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
+    // 月キー "yyyy-MM"（常に CostControlAppService.MonthKey 由来）から決定的な bigint を導出する。プロセス跨ぎで安定
     // （複数レプリカでも同月は同キーで直列化）＝ string.GetHashCode（プロセス毎ランダム）は用いない。
     private static long AdvisoryKey(string month)
     {

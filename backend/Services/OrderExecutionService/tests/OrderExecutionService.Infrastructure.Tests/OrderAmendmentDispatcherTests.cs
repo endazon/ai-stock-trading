@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
+using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionAppService;
 
 namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
 

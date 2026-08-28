@@ -655,7 +655,7 @@ public class ReportAutoGeneratorTests
         var generated = store.Get("daily-2026-07-08")!;
         store.Confirm("daily-2026-07-08", generated.Version, WedAfterClose);
 
-        var policy = new Services.ReportService(store, new FixedClock(WedAfterClose)).GetConfirmedDailyPolicy();
+        var policy = new Services.ReportAppService(store, new FixedClock(WedAfterClose)).GetConfirmedDailyPolicy();
 
         policy!.Summary.Should().Be("押し目買い・上限 3 銘柄");
         policy.Summary.Should().NotContain("未確定");

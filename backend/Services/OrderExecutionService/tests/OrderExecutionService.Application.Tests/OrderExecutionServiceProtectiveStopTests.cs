@@ -6,7 +6,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionService;
+using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionAppService;
 
 namespace AiStockTrading.OrderExecution.Application.Tests;
 

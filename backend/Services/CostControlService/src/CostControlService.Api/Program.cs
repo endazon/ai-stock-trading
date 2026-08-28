@@ -13,7 +13,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 const string ServiceName = "ai-stock-trading.cost-control-service";
 

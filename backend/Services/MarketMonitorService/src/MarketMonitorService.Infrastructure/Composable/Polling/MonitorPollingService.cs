@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Wolverine;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorService;
+using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
 
 namespace AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
 

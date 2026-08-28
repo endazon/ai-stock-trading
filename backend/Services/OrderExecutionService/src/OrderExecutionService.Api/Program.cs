@@ -75,7 +75,7 @@ builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 // FR-10, #331, IADR-0210: 保護逆指値レグの記録（同時発注の保存とガードの巡回対象）。
 builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore>();
-builder.Services.AddScoped<OrderExecutionService>();
+builder.Services.AddScoped<OrderExecutionAppService>();
 
 // #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
 // 訂正・取消の口（IOrderAmendmentBroker）はペーパーだけが実装する。実ブローカー（moomoo）選択時は本経路を

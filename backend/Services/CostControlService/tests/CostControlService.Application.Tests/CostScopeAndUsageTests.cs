@@ -4,7 +4,7 @@ using AiStockTrading.CostControl.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlService;
+using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
 
 namespace AiStockTrading.CostControl.Application.Tests;
 

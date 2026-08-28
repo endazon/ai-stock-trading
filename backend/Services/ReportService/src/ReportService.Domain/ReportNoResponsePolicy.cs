@@ -25,7 +25,7 @@ public enum NoResponseOutcome
 }
 
 // FR-07, UC-03〜05, ADR-0003, IADR-0071 決定2: 無応答時の既定動作を決める純関数（決定的・副作用なし）。
-// 「確定前の方針は取引に適用されない」（未確定ドラフトは方針として返らない）ことは ReportService.GetConfirmedDailyPolicy が
+// 「確定前の方針は取引に適用されない」（未確定ドラフトは方針として返らない）ことは ReportAppService.GetConfirmedDailyPolicy が
 // 構造的に担保する。本ポリシーは、提示済みで無応答のまま期限（翌営業日開場）を過ぎたときに、継続／停止のいずれへ倒すかを定める。
 public static class ReportNoResponsePolicy
 {
