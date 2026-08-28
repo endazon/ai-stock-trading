@@ -2,7 +2,7 @@ using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.Adapters;
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.Services;
-using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 

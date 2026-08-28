@@ -1,4 +1,4 @@
-using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.Backtest.Domain;
 

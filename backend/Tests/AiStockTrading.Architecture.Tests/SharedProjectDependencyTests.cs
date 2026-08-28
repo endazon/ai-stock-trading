@@ -24,9 +24,9 @@ public class SharedProjectDependencyTests
 {
     /// <summary>
     /// Domain から参照してよい共有プロジェクト（＝外部ライブラリ依存ゼロを守らせる対象）。
-    /// <c>AiStockTrading.Shared.Kernel</c> は<b>まだ実体が無い</b>（VSA 移行の土台 5 で新設する）。
-    /// 一覧に書いておくのは、<b>新設された瞬間に検査へ入る</b>ようにするためである
-    /// （新設 PR が検査の追加を忘れても規律が効く）。
+    /// <c>AiStockTrading.Shared.Kernel</c> は <b>IADR-0260 で新設した</b>（VSA 移行の土台 5）。
+    /// 新設前から一覧に書いてあったため、<b>新設された瞬間に検査へ入った</b>
+    /// （新設 PR が検査の追加を忘れても規律が効く形である）。
     /// </summary>
     private static readonly string[] DomainReachableSharedProjects =
     [

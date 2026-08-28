@@ -1,5 +1,6 @@
 using AiStockTrading.RiskManagement.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.RiskManagement.Domain;
 

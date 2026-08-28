@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Kernel.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, ADR-0008, UC-06: 段階遷移の型（承認フロー・履歴・撤退評価の結果）。

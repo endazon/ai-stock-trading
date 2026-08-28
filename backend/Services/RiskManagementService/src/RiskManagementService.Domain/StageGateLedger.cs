@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Kernel.Trading;
+
 namespace AiStockTrading.RiskManagement.Domain;
 
 // FR-20, IADR-0041: 段階遷移履歴の append-only 台帳（純関数・不変）。

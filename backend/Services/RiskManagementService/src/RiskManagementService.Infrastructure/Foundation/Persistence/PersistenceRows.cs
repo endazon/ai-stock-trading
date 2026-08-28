@@ -136,9 +136,9 @@ internal sealed class StageTransitionRow
 {
     public int Sequence { get; set; }
 
-    public AiStockTrading.RiskManagement.Domain.TradingStage FromStage { get; set; }
+    public AiStockTrading.Shared.Kernel.Trading.TradingStage FromStage { get; set; }
 
-    public AiStockTrading.RiskManagement.Domain.TradingStage ToStage { get; set; }
+    public AiStockTrading.Shared.Kernel.Trading.TradingStage ToStage { get; set; }
 
     public AiStockTrading.RiskManagement.Domain.StageTransitionKind Kind { get; set; }
 

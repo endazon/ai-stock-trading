@@ -1,7 +1,7 @@
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.CostControl.Application.Ports;
 using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Runtime;

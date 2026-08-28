@@ -3,13 +3,13 @@ title: 全体前提条件（assumptions / assumptions_change_log）データ仕�
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-13, FR-17, FR-18, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173]
+iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173, IADR-0260]
 specs: [20260710_configuration-assumptions]
 issues: [#14, #19, #139, #358]
 -->
@@ -32,6 +32,12 @@ issues: [#14, #19, #139, #358]
 ## ドメイン型（`TradingAssumptions`）
 
 `record TradingAssumptions`（JSON で単一行に保持）。数値計算はコードで行い LLM には計算させない（05 採用方針）。
+
+> **型の置き場は `AiStockTrading.Shared.Kernel.Trading` である**（`TradingAssumptions` /
+> `CommissionSchedule` / `MonthlyCostLimits` / 既定値 / 概算費用関数）。損益集計・採算評価・費用統制が
+> サービスを跨いで同じ型を参照するため、共有カーネルへ移した。
+> **所有（永続化・バージョン管理・変更履歴・イベント発行）は引き続き設定管理サービスにある** ——
+> 版付きの現在値を表す `VersionedAssumptions` は設定サービスのドメインに残る。
 
 | 属性 | 型 | 既定 | 説明 |
 | --- | --- | --- | --- |

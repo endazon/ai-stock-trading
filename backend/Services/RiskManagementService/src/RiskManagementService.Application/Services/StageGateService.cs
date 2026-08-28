@@ -1,6 +1,7 @@
 using AiStockTrading.RiskManagement.Application.Ports;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.RiskManagement.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 

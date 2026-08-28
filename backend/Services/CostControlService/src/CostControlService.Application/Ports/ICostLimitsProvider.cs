@@ -1,4 +1,4 @@
-using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace AiStockTrading.CostControl.Application.Ports;
 

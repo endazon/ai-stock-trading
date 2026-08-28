@@ -4,7 +4,7 @@
     <RootNamespace>AiStockTrading.CostControl.Domain</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- NFR 費用: 月次費用上限（MonthlyCostLimits）を前提条件ドメインから再利用する（IADR-0027）。 -->
-    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />
+    <!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型（全体前提条件・概算費用関数・運用段階）。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
   </ItemGroup>
 </Project>

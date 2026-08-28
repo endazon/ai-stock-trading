@@ -1,7 +1,7 @@
 using AiStockTrading.Backtest.Application;
 using AiStockTrading.Backtest.Domain;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
@@ -66,7 +66,7 @@ public class Stage0GateServiceTests
         decision.DataCutoffSatisfied.Should().BeTrue();
         decision.Gate.Passed.Should().BeTrue();
         decision.Promotion.Recommended.Should().BeTrue();
-        decision.Promotion.ToStage.Should().Be(RiskManagement.Domain.TradingStage.Stage1Simulate);
+        decision.Promotion.ToStage.Should().Be(TradingStage.Stage1Simulate);
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.State;
-using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;

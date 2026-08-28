@@ -2,6 +2,7 @@ using AiStockTrading.Configuration.Application;
 using AiStockTrading.Configuration.Application.Ports;
 using AiStockTrading.Configuration.Application.State;
 using AiStockTrading.Configuration.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.EntityFrameworkCore;
 
 namespace AiStockTrading.Configuration.Infrastructure.Foundation.Persistence;

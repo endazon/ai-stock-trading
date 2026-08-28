@@ -15,14 +15,20 @@ public class DomainLayerDependencyTests
 {
     /// <summary>
     /// Domain が <c>ProjectReference</c> してよい相手。ファイル名（拡張子なし）で判定する。
-    /// - <c>*.Domain</c>: 他サービスの Domain（現行 4 件の既知の状態。作業仕様書 §5.9 / §12 未決事項 5）
-    /// - <c>*.SharedKernel</c>: ADR-0030 の SharedKernel（Result / Error）。現時点では実体が無い（IADR-0128 決定 2）
+    /// - <c>*.Domain</c>: 他サービスの Domain（<b>IADR-0260 でサービスを跨ぐ 4 本を解消し、現在は 0 本</b>。
+    ///   同一サービス内の Domain 同士は将来もあり得るため許可は残す）
+    /// - <c>*.SharedKernel</c>: ADR-0030 の SharedKernel（Result / Error）。<b>本リポジトリに実体は無い</b>（IADR-0128 決定 2）
     /// - <c>AiStockTrading.Shared.Contracts</c>: ユニット単位の契約プロジェクト（platform ADR-0019 決定 4）
+    /// - <c>AiStockTrading.Shared.Kernel</c>: サービスを跨いで共有する Domain 型の共有カーネル（IADR-0260）。
+    ///   <b>ソース走査側の許可リスト（<c>DomainSourceScan.IsAllowedDomainNamespace</c>）は先に
+    ///   <c>AiStockTrading.Shared.Kernel[.*]</c> を許していたが、csproj 側は許していなかった</b>——
+    ///   二重化した検査は<b>両方に同じ許可を書く</b>必要がある。
     /// </summary>
     private static bool IsAllowedDomainDependency(string projectName) =>
         projectName.EndsWith(".Domain", StringComparison.Ordinal)
         || projectName.EndsWith(".SharedKernel", StringComparison.Ordinal)
-        || projectName == "AiStockTrading.Shared.Contracts";
+        || projectName == "AiStockTrading.Shared.Contracts"
+        || projectName == "AiStockTrading.Shared.Kernel";
 
     // 検査4（先に置く）: 探索そのものが壊れていないこと。
     // Domain プロジェクトが 0 件になると、以下の検査はすべて「違反なし」で無条件に緑になる。
