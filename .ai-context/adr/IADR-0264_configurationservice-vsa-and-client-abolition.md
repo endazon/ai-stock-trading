@@ -183,9 +183,12 @@ updated: 2026-08-29
     決定 3 は基盤の現物から引いた基準であり、**AST 内での初適用は 3 本目以降になる**。
 - フォローアップ:
   1. **gRPC 化は本 ADR の射程外**（[IADR-0259](IADR-0259_single-project-vsa-structure.md) 決定 9 が
-     「トランスポートの変更＝振る舞いの変更」として切り出しを指示）。別 issue で扱う。
+     「トランスポートの変更＝振る舞いの変更」として切り出しを指示）。
+     **[#584](https://github.com/endazon/ai-stock-trading/issues/584) を起票した**（起票前に既存 issue を
+     `grpc` で検索し、0 件であることを確認済み）。
      [#526](https://github.com/endazon/ai-stock-trading/issues/526) の「呼び出し元ごとのタイムアウト・
-     リトライを結合テストで固定する」も同 issue へ送る（現行は単体テストで固定済み）。
+     リトライを結合テストで固定する」と `Http.Resilience` / `HybridCache` への置き換えも同 issue へ送った
+     （現行は呼び出し元ごとの単体テストで固定済み）。
   2. 3 本目（費用統制）・9 本目（取引判断）の移送では、本 PR が置いた
      `src/<Svc>.Infrastructure/ExternalServices/` をそのまま `Infrastructure/ExternalServices/` へ移す。
 

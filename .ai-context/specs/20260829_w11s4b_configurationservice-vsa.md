@@ -272,6 +272,10 @@ backend/Services/ConfigurationService/
 - 差異: なし。#526 の**スコープのうち gRPC 化だけ**を積み残すが、これは
   [IADR-0259](../adr/IADR-0259_single-project-vsa-structure.md) 決定 9 が
   「gRPC 化は行わない・別 issue へ切り出す」と**計画側で先に決めている**ためであり、逸脱ではない。
+  切り出し先として [#584](https://github.com/endazon/ai-stock-trading/issues/584) を起票した
+  （起票前に `grpc` で既存 issue を検索し 0 件を確認）。同 issue には #526 の「呼び出し元ごとの
+  タイムアウト・リトライを結合テストで固定する」と `Http.Resilience` / `HybridCache` への
+  置き換えも送っている。
 
 ## 残り 9 サービスへの申し送り（踏んだ落とし穴・再利用可能な手順）
 
