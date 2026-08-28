@@ -496,7 +496,12 @@ jobs:
       # **失敗の全体像を 1 回の run で見る**（赤が入れ替わって何周もするのを避ける）。
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        # 🔴 **シャード数を本文へ焼き込むのはここ 1 箇所だけにする**（下の `--of` と対で読む）。
+        # 7 → 4（NFR / IADR-0257）。分配が LPT になり重みを見るようになったため、
+        # 脚を増やしても makespan は理想分配より下がらない一方、
+        # **`dotnet build backend.slnx` は脚ごとに丸ごと重複する**（`--no-build` はテスト時のみ）。
+        # 脚を減らした分だけ runner 時間が直接減る。
+        shard: [1, 2, 3, 4]
     steps:
       # 変更領域の判定（決定 12）。`--git` が HEAD^1..HEAD の差分を自分で取る。
       # 🔴 差分が取れなければ判定器は **backend=true（走らせる）へ倒す**。落とさない。
@@ -533,11 +538,14 @@ jobs:
       - name: Build
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
-      - name: Test (shard ${{ matrix.shard }} / 7)
+      - name: Test (shard ${{ matrix.shard }} / 4)
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: |
           set -euo pipefail
-          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 7 --slnx shard.slnx > shard.txt
+          # 🔴 分配は **LPT 貪欲**（重み＝走査で数えた `[Fact` / `[Theory` の件数）。
+          # 重みは JSON へ持たず**毎 run 走査で導く**（IADR-0257 決定 2）——
+          # コミットした重みは必ず実体とずれ、**ずれても誰も気付かない**。
+          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 4 --slnx shard.slnx > shard.txt
           echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
           cat shard.txt
           # 🔴 **シャード用 solution を 1 回だけ叩く。** 1 プロジェクトずつ回すと
