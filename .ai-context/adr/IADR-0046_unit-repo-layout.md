@@ -5,9 +5,10 @@ status: Accepted
 related_ids:
   - ADR-0001
   - ADR-0019 # platform（microservices-platform）側の計画 ADR
+  - IADR-0259 # 決定 1 の {src,tests} 2 段のみを改定する
 author: claude
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-08-28
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md（2026-07-12 更新）
   - planning:projects/microservices-platform/07_adr/ADR-0019_unit-first-repo-structure.md
@@ -80,3 +81,16 @@ plan_refs:
   スタック・規約の他の決定は存続）
 - Superseded by: [IADR-0047](IADR-0047_kit-template-sync-policy.md)（決定 4 のうち「自動発見は不要」の部分のみ。
   kit テンプレート更新への追随により restore 系は slnx 自動発見形へ変更。他の決定は存続）
+
+> ［2026-08-28 追記 / IADR-0259（利用者裁定 2026-08-28）］
+> **決定 1 のうち `backend/Services/<Svc>/{src,tests}` の 2 段のみを
+> [IADR-0259](IADR-0259_single-project-vsa-structure.md) が改定する**（Superseded ではない）。
+> 移行後は `backend/Services/<Name>/` の直下が単一プロジェクトになる。
+> **決定 2（props の import-chain フォールバック）・決定 3（再編で名前空間・アセンブリ名を変えない）・
+> 決定 4（CI のパスは `backend/backend.slnx` 系）と、`backend/` 直下の `Services/` `Shared/` `TestSupport/` は存続する。**
+> とくに決定 3 は、IADR-0259 決定 5④（移送波＝構造再編そのものでは `namespace` を変えない）と
+> 同じ方向であり、**その場の構造移動については**覆されていない。
+> 🔴 **ただし名前空間の完全整合そのものは、IADR-0259 決定 5③（2026-08-28 追記）が独立した後続波
+> （想定 IADR-0261）として確定した**（`AiStockTrading.<Short>.*` → `<Svc>Service.*`。MSP と揃える）。
+> これは決定 3 が扱う「その場の再編」とは別の、後続の専用の波であり、決定 3 の射程とは矛盾しない。
+> **本文は当時の記録であり、書き換えていない。**
