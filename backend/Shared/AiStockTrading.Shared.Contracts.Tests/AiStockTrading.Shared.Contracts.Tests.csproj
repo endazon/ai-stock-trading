@@ -16,5 +16,7 @@
          （#354 第 3 段階で MassTransit 参照から置き換えた。旧テストは EventMessageUrnTests） -->
     <PackageReference Include="WolverineFx" />
     <ProjectReference Include="..\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
-  </ItemGroup>
+    <!-- NFR-07, #287, IADR-0255: 業務メトリクスが実際に発火することを MeterListener で観測する共有支援。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
+</ItemGroup>
 </Project>

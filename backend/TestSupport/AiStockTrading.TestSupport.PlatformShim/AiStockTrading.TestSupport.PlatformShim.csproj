@@ -22,4 +22,9 @@
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- NFR-07, #287, IADR-0255: 業務メトリクスの計器（BusinessMetrics）は契約プロジェクトが持つ。
+         可観測性の配線は 11 サービスが等しく通る本 shim にしか無いため、DI 登録と AddMeter をここで行う。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
 </Project>

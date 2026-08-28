@@ -1,5 +1,7 @@
+using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -22,6 +24,11 @@ public static class ObservabilityExtensions
         var resourceBuilder = ResourceBuilder.CreateDefault()
             .AddService(serviceName, serviceVersion: "0.1.0");
 
+        // NFR-07, #287, IADR-0255: 業務メトリクスの計器を DI へ登録する。
+        // 🔴 **計器を定義しても DI に登録されていなければ 1 系列も出ない。** 本メソッドは 11 サービス全部が
+        // 通る唯一の可観測性配線であり、ここへ置くことで「あるサービスだけ計上されない」形を構造的に消す。
+        services.TryAddSingleton<BusinessMetrics>();
+
         services.AddOpenTelemetry()
             .WithTracing(tracing => tracing
                 .SetResourceBuilder(resourceBuilder)
@@ -33,6 +40,10 @@ public static class ObservabilityExtensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
+                // NFR-07, #287, IADR-0255: 業務メトリクスの Meter をパイプラインへ載せる。
+                // **この 1 行が消えると BusinessMetrics は記録し続けるが 1 件も外へ出ない**（無音の失効）。
+                // BusinessMetricsWiringTests が否定形（AddMeter が無ければ出ない）と対で固定している。
+                .AddMeter(BusinessMetricNames.MeterName)
                 .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
 
         return services;
