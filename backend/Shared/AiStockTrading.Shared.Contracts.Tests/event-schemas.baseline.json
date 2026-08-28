@@ -280,6 +280,17 @@
     "Summary": "String",
     "Version": "Int32"
   },
+  "ScreeningContextReduced": {
+    "BatchCount": "Int32",
+    "BudgetChars": "Int32",
+    "DroppedNewsCount": "Int32",
+    "DroppedRagCount": "Int32",
+    "OccurredAt": "DateTimeOffset",
+    "Split": "Boolean",
+    "Symbols": "IReadOnlyList\u003CString\u003E",
+    "Truncated": "Boolean",
+    "UnresolvableOverflow": "Boolean"
+  },
   "StageTransitioned": {
     "ApprovedBy": "String",
     "FromStage": "Int32",

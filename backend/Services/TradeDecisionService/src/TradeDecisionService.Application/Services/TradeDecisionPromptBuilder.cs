@@ -101,12 +101,21 @@ public static class TradeDecisionPromptBuilder
 
     // FR-04, IADR-0039, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
     // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させ、Parser を共有する。方針外・不確実は Hold。
-    public static string BuildScreening(DecisionTrigger trigger, DailyPolicy policy, SizingContext context)
+    //
+    // #337, IADR-0247: 縮退制御が有効（Decision:ScreeningContextBudgetChars 設定）なときだけ、呼び出し側が
+    // currentPrice（当日の市況・価格＝**保護対象**）と references（ScreeningContextPlanner が縮退順序を適用した
+    // 残余）を渡す。既定（両方 null）は従来のプロンプトと完全に一致する（IADR-0072 決定2 の従来挙動を保つ）。
+    // 参考情報の構造分離（1 件 1 行 JSON フェンス）は本判断と同じ防御を再利用する（ADR-0003 追補）。
+    public static string BuildScreening(
+        DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
+        decimal? currentPrice = null,
+        IReadOnlyList<RetrievedContext>? references = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(context);
 
+        var ci = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
         sb.AppendLine("あなたは取引候補の一次スクリーニング担当です。詳細な本判断は行いません。");
         sb.AppendLine("確定済み日報の方針に照らし、この銘柄が本判断に値する取引候補かを絞り込みます。");
@@ -116,7 +125,16 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(policy.Summary);
         sb.AppendLine();
         sb.AppendLine($"# 対象: {trigger.Symbol} / 市場: {trigger.Market}");
+        if (currentPrice is { } cp)
+        {
+            // #337: 当日の市況・価格データは縮退の**保護対象**（削ると銘柄を評価できない）。
+            var currency = MarketCurrency.Of(trigger.Market);
+            var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
+            sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
+        }
+
         sb.AppendLine();
+        AppendRetrievalSection(sb, references);
         sb.AppendLine("# 出力形式（JSON のみ・関心の方向のみ）");
         sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"絞り込み理由\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
         return sb.ToString();

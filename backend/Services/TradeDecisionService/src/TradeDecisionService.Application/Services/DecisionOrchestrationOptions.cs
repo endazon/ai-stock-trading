@@ -24,6 +24,27 @@ public sealed record DecisionOrchestrationOptions
     // true なら一次スクリーニング（軽量モデル 1 回）を行い、Hold なら二次をスキップ（費用統制・L129）。
     public bool EnableScreening { get; init; }
 
+    private readonly int? _screeningContextBudgetChars;
+
+    // #337, IADR-0247: スクリーニング入力のコンテキスト予算（文字数プロキシ。claude-haiku-4-5 の 200K
+    // トークン制約に対応する運用値を構成で与える）。null（既定）＝縮退制御なし＝参考情報をスクリーニングへ
+    // 載せない現行プロンプト（IADR-0072 決定2 の従来挙動）。設定時のみ、市況・参考情報つきの
+    // スクリーニング入力を組み、超過時に ① 分割 → ② RAG → ③ ニュースの縮退順序を適用する。
+    public int? ScreeningContextBudgetChars
+    {
+        get => _screeningContextBudgetChars;
+        init
+        {
+            if (value is <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(ScreeningContextBudgetChars), value, "予算は正の値でなければならない（無効化は null）。");
+            }
+
+            _screeningContextBudgetChars = value;
+        }
+    }
+
     // 一次スクリーニング用モデル識別子（軽量）。実解決はゲートウェイの構成に委ねる（L34）。
     public string? PrimaryModel { get; init; }
 

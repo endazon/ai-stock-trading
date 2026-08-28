@@ -197,4 +197,58 @@ public class DecisionOrchestratorTests
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // --- #337（#290 吸収）, IADR-0248: 解析不能と見送りの区別 ---
+
+    [Fact]
+    public async Task 二次の解析不能票はHold票として数えつつ解析不能件数を区別して残す()
+    {
+        // 3 票中 1 票が解析不能（散文のみ）。Buy 2 票で Buy が勝つが、UnparseableVotes=1 が記録に残る。
+        var llm = new SequencedLlm(Json("Buy"), "モデルが散文で回答した（JSON なし）", Json("Buy"));
+        var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { VoteCount = 3 });
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+
+        result.Decision.Action.Should().Be(TradeAction.Buy);
+        result.UnparseableVotes.Should().Be(1, "解析不能は見送りと区別して数える（#290）");
+        result.TotalVotes.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task 一次スクリーニングの解析不能は見送りと区別して打ち切る()
+    {
+        var llm = new SequencedLlm("応答が JSON ではない");
+        var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { EnableScreening = true });
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+
+        result.ScreenedOut.Should().BeTrue("解析不能でも安全側で打ち切る（挙動は従来どおり）");
+        result.ScreeningUnparseable.Should().BeTrue("打ち切りの理由が解析不能であることを区別して残す（#290）");
+        llm.Calls.Should().HaveCount(1, "二次は呼ばない");
+    }
+
+    [Fact]
+    public async Task 一次スクリーニングの見送りは解析不能として記録しない_対の肯定形()
+    {
+        var llm = new SequencedLlm("""{"action":"Hold","rationale":"方針外"}""");
+        var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { EnableScreening = true });
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+
+        result.ScreenedOut.Should().BeTrue();
+        result.ScreeningUnparseable.Should().BeFalse("LLM が選んだ見送りは解析不能ではない");
+        result.Decision.Rationale.Should().Be("方針外");
+    }
+
+    [Fact]
+    public async Task 全票解析可能なら解析不能件数は0_対の肯定形()
+    {
+        var llm = new SequencedLlm(Json("Buy"));
+        var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { VoteCount = 2 });
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+
+        result.UnparseableVotes.Should().Be(0);
+        result.ScreeningUnparseable.Should().BeFalse();
+    }
 }

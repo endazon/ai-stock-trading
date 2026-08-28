@@ -94,6 +94,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(InformationSourceDegraded), "AiStockTrading.Shared.Contracts.Events.InformationSourceDegraded")]
         [InlineData(typeof(InformationSourceRecovered), "AiStockTrading.Shared.Contracts.Events.InformationSourceRecovered")]
         [InlineData(typeof(GeneralWebCollectionStateChanged), "AiStockTrading.Shared.Contracts.Events.GeneralWebCollectionStateChanged")]
+        // FR-02, FR-04, #337, IADR-0247: スクリーニング入力の縮退（分割/切り詰め）の発生記録。
+        [InlineData(typeof(ScreeningContextReduced), "AiStockTrading.Shared.Contracts.Events.ScreeningContextReduced")]
         public void 全イベントのメッセージ識別子は固定値である(Type eventType, string expectedMessageTypeName)
         {
             // ToMessageTypeName を実際に呼ぶ（識別子を自前で組み立てない）。

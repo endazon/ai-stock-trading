@@ -119,7 +119,8 @@ public class BrokerAccountObservationStoreTests
             new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
-            store);
+            store,
+            new InMemoryInformationDegradationStore());
 
         builder.Build().Account.Should().Be(observed);
     }
@@ -131,7 +132,8 @@ public class BrokerAccountObservationStoreTests
             new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
-            new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Origin)));
+            new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Origin)),
+            new InMemoryInformationDegradationStore());
 
         builder.Build().Account.Should().BeNull();
     }
@@ -147,7 +149,8 @@ public class BrokerAccountObservationStoreTests
             new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
-            store);
+            store,
+            new InMemoryInformationDegradationStore());
 
         builder.Build().Account.Should().BeNull();
     }

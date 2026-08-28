@@ -364,7 +364,7 @@ public class BuyInInferenceTests
         var portfolio = new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m });
         var builder = new PortfolioSnapshotBuilder(
             portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.Margin());
+            FakeBrokerAccountObservations.Margin(), new InMemoryInformationDegradationStore());
 
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),

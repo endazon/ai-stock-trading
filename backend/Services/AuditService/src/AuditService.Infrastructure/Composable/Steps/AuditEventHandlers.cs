@@ -489,3 +489,14 @@ public sealed class TradeDecisionSkippedAuditHandler(IAuditEventStore store, ICl
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-02, FR-04, FR-11, #337, IADR-0247: スクリーニング入力の縮退（分割/切り詰め）を台帳へ記録する。
+// 月報の件数記載（分割と切り詰めを分けて数える）は台帳の種別 × 期間照会が集計経路である。
+public sealed class ScreeningContextReducedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ScreeningContextReduced message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

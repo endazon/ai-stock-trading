@@ -27,6 +27,16 @@ public static class DecisionOptionsLoader
             options = options with { EnableScreening = enableScreening };
         }
 
+        // #337, IADR-0247: スクリーニング入力のコンテキスト予算。未設定・不正・非正値は null
+        // （縮退制御なし＝現行プロンプト）に倒す安全側フォールバック。
+        if (int.TryParse(
+                section["ScreeningContextBudgetChars"], NumberStyles.Integer, CultureInfo.InvariantCulture,
+                out var budget)
+            && budget > 0)
+        {
+            options = options with { ScreeningContextBudgetChars = budget };
+        }
+
         // 空文字・未設定は null（モデル未指定＝ゲートウェイ既定）に正規化する。
         return options with
         {

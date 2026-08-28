@@ -265,6 +265,9 @@ public class AuditCycleCompletenessTests
             new ProtectiveStopPlaced(decisionId, Guid.NewGuid(), "STOP-1", Intent(), 950m, 1, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
+            new ScreeningContextReduced(
+                ["AAPL", "MSFT"], 2, Split: true, DroppedRagCount: 1, DroppedNewsCount: 2,
+                UnresolvableOverflow: false, BudgetChars: 8_000, t),
             new StageTransitioned(1, 1, 2, "Promotion", "endazon", "基準を満たした", t, 100, false),
             new StopLossTriggered(
                 Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 950m, 960m, t),

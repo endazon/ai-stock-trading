@@ -17,11 +17,15 @@ namespace AiStockTrading.RiskManagement.Application.Services;
 // **台帳が結線されていなければ null（未供給）のまま渡す。** 判定コアは未供給を「止める」へ倒すため
 // （ADR-0025 決定2 の fail-closed）、結線し忘れは**安全側**に落ちる。IADR-0148 決定2 が「必須引数にせよ」と
 // したのは既定が fail-open（0 件＝合格）だったからであり、向きが逆の本件では省略可能でよい。
+// FR-01, FR-02, FR-10, ADR-0020, #337, IADR-0249: 情報収集の縮退状態（新規建て停止）も合成する。
+// **必須依存である**（IADR-0163 決定2「不在が統制の無効を意味する依存は必須にする」——省略可能引数で
+// 受けると、配線を削ってもコンパイルが通り、縮退中の新規建て停止だけが静かに効かなくなる）。
 public sealed class PortfolioSnapshotBuilder(
     IPortfolioStateProvider stateProvider,
     IKillSwitchStore killSwitchStore,
     IPauseStore pauseStore,
     IBrokerAccountObservationStore accountObservations,
+    IInformationDegradationStore informationDegradation,
     IGoodFaithViolationStore? goodFaithViolations = null)
 {
     public PortfolioSnapshot Build()
@@ -45,6 +49,7 @@ public sealed class PortfolioSnapshotBuilder(
             GoodFaithViolations = goodFaithViolations?.GetTally(),
             KillSwitchEngaged = killSwitch.Engaged,
             TradingPaused = pause.Paused,
+            InformationDegradedBlocksNewEntries = informationDegradation.BlocksNewEntries,
         };
     }
 }

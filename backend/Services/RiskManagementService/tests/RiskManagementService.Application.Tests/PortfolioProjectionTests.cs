@@ -10,7 +10,11 @@ namespace AiStockTrading.RiskManagement.Application.Tests;
 public class PortfolioProjectionTests
 {
     private const decimal InitialCapital = 100_000m;
-    private static readonly DateOnly Today = new(2026, 7, 10);
+
+    // #337（#249 吸収）, IADR-0246: 当日判定は「判定時点（now）」と「約定時刻」を**同じ市場の現地取引日**へ
+    // 写して比較する。判定時点は既存テストの当日正午（JST）に固定する（相対的な当日/前日関係は市場に
+    // よらず保存される——両者を同じ TZ で写すため）。
+    private static readonly DateTimeOffset Now = new(2026, 7, 10, 12, 0, 0, TimeSpan.FromHours(9));
 
     // JST 当日の約定時刻（+9 の 12:00 = UTC 03:00）。
     private static DateTimeOffset TodayAt(int hour = 12) =>
@@ -29,7 +33,7 @@ public class PortfolioProjectionTests
     {
         var state = PortfolioProjection.Project(
             new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt()) },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.OpenPositionCount.Should().Be(1);
         state.InvestedCapital.Should().Be(10_000m);
@@ -49,7 +53,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
                 Fill(TradeSide.Sell, PositionEffect.Close, 6, 1_200m, TodayAt(10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyRealizedPnl.Should().Be(1_200m);
         state.OpenPositionCount.Should().Be(1);
@@ -65,7 +69,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
                 Fill(TradeSide.Sell, PositionEffect.Close, 10, 900m, TodayAt(10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.OpenPositionCount.Should().Be(0);
         state.InvestedCapital.Should().Be(0m);
@@ -82,7 +86,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Sell, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
                 Fill(TradeSide.Buy, PositionEffect.Close, 10, 800m, TodayAt(10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyRealizedPnl.Should().Be(2_000m);
         state.OpenPositionCount.Should().Be(0);
@@ -100,7 +104,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
                 Fill(TradeSide.Sell, PositionEffect.Close, 10, 950m, TodayAt(10)),    // 当日 -500
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.Capital.Should().Be(103_000m);
         state.DailyRealizedPnl.Should().Be(-500m);
@@ -126,7 +130,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 1, 1_000m, OnDay(9, 9)),
                 Fill(TradeSide.Sell, PositionEffect.Close, 1, 900m, OnDay(9, 10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.ConsecutiveLosses.Should().Be(1);
     }
@@ -144,7 +148,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 1, 1_000m, OnDay(9, 9)),
                 Fill(TradeSide.Sell, PositionEffect.Close, 1, 850m, OnDay(9, 10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.ConsecutiveLosses.Should().Be(3);
     }
@@ -159,7 +163,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 5, 2_000m, TodayAt(10), symbol: "MSFT"), // 10,000
                 Fill(TradeSide.Buy, PositionEffect.Open, 3, 1_000m, OnDay(9, 10), symbol: "GOOG"), // 前日 → 発注額に含めない
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyOrderedAmount.Should().Be(20_000m);
         state.OpenPositionCount.Should().Be(3); // AAPL, MSFT, GOOG
@@ -178,7 +182,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),    // 新規建て 10,000
                 Fill(TradeSide.Sell, PositionEffect.Close, 10, 5_000m, TodayAt(10)), // 決済 50,000 は算入しない
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyOrderedAmount.Should().Be(10_000m);
     }
@@ -193,7 +197,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, OnDay(9, 10)),  // 前日の新規建て
                 Fill(TradeSide.Sell, PositionEffect.Close, 10, 5_000m, TodayAt(10)), // 当日は決済のみ
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyOrderedAmount.Should().Be(0m);
         // 決済そのものは当日取引銘柄・実現損益には反映される（差金決済防止・日次損失の入力）。
@@ -217,7 +221,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),    // ロング 10 株
                 Fill(TradeSide.Sell, PositionEffect.Close, 30, 1_000m, TodayAt(10)), // 「決済」30 株＝20 株の反転
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyOrderedAmount.Should().Be(10_000m, "決済（Close）は当日発注累計を消費しない");
         state.OpenPositionCount.Should().Be(1, "反転して残ったショート建玉は保有建玉数に数える");
@@ -227,7 +231,7 @@ public class PortfolioProjectionTests
     [Fact]
     public void 空の台帳は初期資金のみの状態を返す()
     {
-        var state = PortfolioProjection.Project(Array.Empty<LedgerFill>(), Today, InitialCapital);
+        var state = PortfolioProjection.Project(Array.Empty<LedgerFill>(), Now, InitialCapital);
 
         state.Capital.Should().Be(InitialCapital);
         state.OpenPositionCount.Should().Be(0);
@@ -250,7 +254,7 @@ public class PortfolioProjectionTests
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)),
                 Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_400m, TodayAt(10)),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.InvestedCapital.Should().Be(24_000m);
         state.OpenPositionCount.Should().Be(1);
@@ -355,7 +359,7 @@ public class PortfolioProjectionTests
         // 現在エクイティ = 100,000 + 0 + 1,000 = 101,000。ピーク 105,000 → DD = (105,000−101,000)/105,000。
         var state = PortfolioProjection.Project(
             new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)) },
-            Today, InitialCapital,
+            Now, InitialCapital,
             currentPrices: new Dictionary<(string, Market), decimal> { [("AAPL", Market.UnitedStates)] = 1_100m },
             equityHighWaterMark: 105_000m);
 
@@ -369,7 +373,7 @@ public class PortfolioProjectionTests
         // IADR-0036: 既定（引数省略）は production 現挙動を保持（含み 0・DD 0）。
         var state = PortfolioProjection.Project(
             new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(9)) },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.UnrealizedPnl.Should().Be(0m);
         state.DrawdownRatio.Should().Be(0m);
@@ -387,7 +391,7 @@ public class PortfolioProjectionTests
         // 20 USD × 10 株 × 150 円 = 30,000 円。換算しなければ 200（円と誤読）で統制が桁で緩む。
         var state = PortfolioProjection.Project(
             new[] { UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(), rate: 150m) },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.InvestedCapital.Should().Be(30_000m);
         state.DailyOrderedAmount.Should().Be(30_000m);
@@ -403,7 +407,7 @@ public class PortfolioProjectionTests
                 UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(9), rate: 150m),
                 UsdFill(TradeSide.Sell, PositionEffect.Close, 10, 25m, TodayAt(11), rate: 150m),
             },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.DailyRealizedPnl.Should().Be(7_500m);
         state.OpenPositionCount.Should().Be(0);
@@ -417,7 +421,7 @@ public class PortfolioProjectionTests
 
         var state = PortfolioProjection.Project(
             new[] { UsdFill(TradeSide.Buy, PositionEffect.Open, 10, 20m, TodayAt(), rate: 150m) },
-            Today, InitialCapital, prices);
+            Now, InitialCapital, prices);
 
         state.UnrealizedPnl.Should().Be(7_500m);
     }
@@ -433,13 +437,66 @@ public class PortfolioProjectionTests
         positions[0].AverageEntryPrice.Should().Be(20m);
     }
 
+    // --- #337（#249 吸収）, IADR-0246: 取引日境界の市場別解釈 ---
+
+    [Fact]
+    public void 米国市場の約定は米国東部時間の取引日で当日判定される()
+    {
+        // 約定 = UTC 7/9 19:30（ET 7/9 15:30・JST では既に 7/10 4:30）。
+        // 判定時点 = UTC 7/9 14:30（ET 7/9 10:30・JST 7/9 23:30）。
+        // ET では同一取引日（7/9）＝当日。旧 JST 固定境界では約定が「翌日」に落ち、
+        // 当日発注累計・同日再エントリー判定から漏れていた。
+        var fillAt = new DateTimeOffset(2026, 7, 9, 19, 30, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2026, 7, 9, 14, 30, 0, TimeSpan.Zero);
+
+        var state = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, fillAt) },
+            now, InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(10_000m);
+        state.SymbolsTradedToday.Should().Contain(("AAPL", Market.UnitedStates));
+    }
+
+    [Fact]
+    public void 米国市場の前取引日の実現損益は当日ではなく資金基準へ畳まれる()
+    {
+        // 建て（ET 7/8）→ 決済（ET 7/8 の引け近く）で +2,000。判定時点は ET 7/9 の場中。
+        // 実現は「当日より前」＝ Capital（当日開始基準）へ入り、DailyRealizedPnl は 0。
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, new DateTimeOffset(2026, 7, 8, 14, 0, 0, TimeSpan.Zero)),
+                Fill(TradeSide.Sell, PositionEffect.Close, 10, 1_200m, new DateTimeOffset(2026, 7, 8, 19, 0, 0, TimeSpan.Zero)),
+            },
+            new DateTimeOffset(2026, 7, 9, 14, 30, 0, TimeSpan.Zero), InitialCapital);
+
+        state.DailyRealizedPnl.Should().Be(0m);
+        state.Capital.Should().Be(InitialCapital + 2_000m);
+    }
+
+    [Fact]
+    public void 日本市場の約定はJSTの取引日で当日判定される()
+    {
+        // 約定 = JST 7/10 9:00（UTC 7/10 0:00）。判定時点 = JST 7/10 10:00。同一 JST 取引日＝当日。
+        var state = PortfolioProjection.Project(
+            new[]
+            {
+                Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m,
+                    new DateTimeOffset(2026, 7, 10, 9, 0, 0, TimeSpan.FromHours(9)), symbol: "7203", market: Market.Japan),
+            },
+            new DateTimeOffset(2026, 7, 10, 10, 0, 0, TimeSpan.FromHours(9)), InitialCapital);
+
+        state.DailyOrderedAmount.Should().Be(10_000m);
+        state.SymbolsTradedToday.Should().Contain(("7203", Market.Japan));
+    }
+
     [Fact]
     public void レート未記録の約定は従来どおり基準通貨建てとして積まれる_回帰()
     {
         // 既定 1＝日本株および列追加前の既存データ。現行挙動と等価であることを固定する。
         var state = PortfolioProjection.Project(
             new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt(), symbol: "7203", market: Market.Japan) },
-            Today, InitialCapital);
+            Now, InitialCapital);
 
         state.InvestedCapital.Should().Be(10_000m);
         state.DailyOrderedAmount.Should().Be(10_000m);

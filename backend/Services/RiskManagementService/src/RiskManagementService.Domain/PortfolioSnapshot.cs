@@ -104,4 +104,11 @@ public record PortfolioSnapshot
     /// 日次損失ロックアウト（IADR-0008）とは別状態で、`/resume` は本状態のみを解除する。
     /// </summary>
     public bool TradingPaused { get; init; }
+
+    /// <summary>
+    /// FR-01, FR-02, FR-10, ADR-0020 決定2/決定3, #337, IADR-0249: 情報収集の縮退により**新規建てを
+    /// 停止すべき状態**か（収集サービスの <c>InformationSourceDegraded</c>〔BlocksNewEntries=true〕が
+    /// 回復せず残っている）。kill switch / pause と同じく**新規建てのみ**を止め、手仕舞い・損切りは止めない。
+    /// </summary>
+    public bool InformationDegradedBlocksNewEntries { get; init; }
 }

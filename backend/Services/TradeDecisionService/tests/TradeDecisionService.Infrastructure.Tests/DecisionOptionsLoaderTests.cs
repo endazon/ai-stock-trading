@@ -69,4 +69,23 @@ public class DecisionOptionsLoaderTests
     {
         Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeFalse();
     }
+
+    // #337, IADR-0247: スクリーニング入力のコンテキスト予算（縮退制御）の読み込み。
+    [Fact]
+    public void スクリーニング予算を読み込む()
+    {
+        Load(("Decision:ScreeningContextBudgetChars", "500000"))
+            .ScreeningContextBudgetChars.Should().Be(500_000);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("abc")]
+    [InlineData("")]
+    public void 不正なスクリーニング予算は未設定のまま_縮退制御なし(string raw)
+    {
+        // 0・負数・非数値・空は null（縮退制御なし＝現行プロンプト）を保つ安全側フォールバック。
+        Load(("Decision:ScreeningContextBudgetChars", raw)).ScreeningContextBudgetChars.Should().BeNull();
+    }
 }

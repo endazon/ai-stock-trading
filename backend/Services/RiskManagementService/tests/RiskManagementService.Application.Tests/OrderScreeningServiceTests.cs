@@ -46,7 +46,8 @@ public class OrderScreeningServiceTests
         // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
-            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
+            new InMemoryInformationDegradationStore());
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -149,7 +150,9 @@ public class OrderScreeningServiceTests
         var (service, clock, portfolio, _, lockout) = CreateService(state);
         service.Screen(Decision(EntryIntent())); // 7/9 に到達 → 7/10 解除予定
 
-        // 翌営業日（7/10）へ進め、損益は回復済み。
+        // 翌営業日（7/10）へ進め、損益は回復済み。#249 / IADR-0246: 当日は clock.UtcNow から
+        // 注文の市場（米国東部時間）の現地取引日として導出されるため、UtcNow を進める。
+        clock.UtcNow = new DateTimeOffset(2026, 7, 10, 15, 0, 0, TimeSpan.Zero); // ET 7/10 金 11:00
         clock.Today = new DateOnly(2026, 7, 10);
         portfolio.State = HealthyState;
         var outcome = service.Screen(Decision(EntryIntent()));
@@ -170,7 +173,8 @@ public class OrderScreeningServiceTests
         // 観測を供給しないままにしてあるのは意図的で、発注先を moomoo へ変えた瞬間に
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
-            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved());
+            portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
+            new InMemoryInformationDegradationStore());
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -179,14 +183,50 @@ public class OrderScreeningServiceTests
         service.Screen(Decision(EntryIntent())); // 金曜に到達
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 13)); // 月曜
 
-        // 土曜に回復しても継続。
+        // 土曜に回復しても継続（#249: 当日は UtcNow から市場現地取引日で導出する）。
+        clock.UtcNow = new DateTimeOffset(2026, 7, 11, 15, 0, 0, TimeSpan.Zero); // ET 7/11 土
         clock.Today = new DateOnly(2026, 7, 11);
         portfolio.State = HealthyState;
         service.Screen(Decision(EntryIntent())).IsApproved.Should().BeFalse();
 
         // 月曜に解除。
+        clock.UtcNow = new DateTimeOffset(2026, 7, 13, 15, 0, 0, TimeSpan.Zero); // ET 7/13 月
         clock.Today = new DateOnly(2026, 7, 13);
         service.Screen(Decision(EntryIntent())).IsApproved.Should().BeTrue();
+    }
+
+    // #337（#249 吸収）, IADR-0246 の否定形: JST の日付が変わっても、米国市場の**同一セッション中**は
+    // 日次損失ロックアウトが解除されない。JST 固定の従来実装では ET 10-11 時（JST 0 時）に
+    // 「翌日」となり、デイリーストップが同一セッションの途中で外れていた。
+    [Fact]
+    public void 米国セッション中にJSTの日付が変わってもロックアウトは解除されない()
+    {
+        // ET 7/9（木）10:00 = JST 7/9 23:00 に日次損失上限へ到達。
+        var clock = new FakeClock(new DateTimeOffset(2026, 7, 9, 14, 0, 0, TimeSpan.Zero), new DateOnly(2026, 7, 9));
+        var portfolio = new FakePortfolioStateProvider(HealthyState with { DailyRealizedPnl = -2_000m });
+        var lockout = new InMemoryLockoutStore();
+        var builder = new PortfolioSnapshotBuilder(
+            portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
+        var service = new OrderScreeningService(
+            new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
+            new InMemoryBuyInInferenceStore());
+
+        service.Screen(Decision(EntryIntent()));
+        lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 10)); // 翌営業日（ET 基準）
+
+        // 90 分後 = ET 7/9 11:30（同一セッション）。JST では 7/10 0:30 ＝ 日付が既に変わっている。
+        clock.UtcNow = new DateTimeOffset(2026, 7, 9, 15, 30, 0, TimeSpan.Zero);
+        clock.Today = new DateOnly(2026, 7, 10); // JST 基準の「当日」は翌日へ進んでいる
+        portfolio.State = HealthyState;
+
+        // それでも米国市場の現地取引日は 7/9 のままであり、新規建ては拒否され続ける。
+        var outcome = service.Screen(Decision(EntryIntent()));
+        outcome.IsApproved.Should().BeFalse();
+        outcome.Rejected!.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
+
+        // 手仕舞いは同じ状況でも止まらない（ADR-0009 の不変条件）。
+        service.Screen(Decision(EntryIntent(PositionEffect.Close))).IsApproved.Should().BeTrue();
     }
 
     [Fact]

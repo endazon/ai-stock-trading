@@ -1,24 +1,26 @@
+using AiStockTrading.RiskManagement.Application.Adapters;
 using AiStockTrading.RiskManagement.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.RiskManagement.Application.Services;
 
-// FR-10, FR-05, IADR-0018: 取引台帳（LedgerFill 列）から判定入力 PortfolioState を組み立てる純関数。
-// 符号付き在庫・平均取得単価法で Open/Close を統一処理し、実現損益は在庫が減少する約定で計上する。
-// DB・Clock 非依存（today と initialCapital は呼び出し側＝プロバイダが与える）。
+// FR-10, FR-05, IADR-0018, #337（#249 吸収）, IADR-0246: 取引台帳（LedgerFill 列）から判定入力 PortfolioState を
+// 組み立てる純関数。符号付き在庫・平均取得単価法で Open/Close を統一処理し、実現損益は在庫が減少する約定で計上する。
+// DB・Clock 非依存（now と initialCapital は呼び出し側＝プロバイダが与える）。
 public static class PortfolioProjection
 {
-    // 取引日境界の解釈に用いる固定オフセット（JST=+9・DST なし）。市場別の取引日境界は後続（IADR-0018）。
-    public static readonly TimeSpan TradingDayOffset = TimeSpan.FromHours(9);
-
-    public static DateOnly TradeDate(DateTimeOffset instant) =>
-        DateOnly.FromDateTime(instant.ToOffset(TradingDayOffset).DateTime);
+    // 🔴 #249 / IADR-0246: 取引日境界は**約定の市場の現地取引日**で解釈する（従来の JST 固定 +9 を廃止）。
+    // JST 固定では米国市場の日次境界が ET 10–11 時（セッション中）に走り、当日損益・日次発注枠・
+    // 同日再エントリーが同一セッションの途中でリセットされていた。導出は TradingDay.Of（単一情報源）。
+    public static DateOnly TradeDate(DateTimeOffset instant, Market market) => TradingDay.Of(instant, market);
 
     // IADR-0036: currentPrices（(Symbol,Market)→現在値）と equityHighWaterMark（資金ピーク）を与えると含み損益・DD を
     // 時価で算出する。既定（null）では従来どおり UnrealizedPnl=0/DrawdownRatio=0（実供給の結線は #22/#82 の後続）。
+    // #249 / IADR-0246: 「当日」は市場ごとに異なる（同一瞬間でも JST と ET で日付が違う）ため、
+    // DateOnly ではなく判定時点（now）を受け、約定ごとに**その市場の現地取引日**同士で比較する。
     public static PortfolioState Project(
         IReadOnlyList<LedgerFill> fills,
-        DateOnly today,
+        DateTimeOffset now,
         decimal initialCapital,
         IReadOnlyDictionary<(string Symbol, Market Market), decimal>? currentPrices = null,
         decimal? equityHighWaterMark = null)
@@ -56,7 +58,9 @@ public static class PortfolioProjection
             positionsInBase[key] = (appliedInBase.Lot.Quantity, appliedInBase.Lot.AverageCost);
             var realized = appliedInBase.RealizedPnl;
 
-            var date = TradeDate(fill.ExecutedAt);
+            // #249 / IADR-0246: 当日判定は約定の市場の現地取引日で行う（JST 固定だと ET 夜間で日付がずれる）。
+            var date = TradeDate(fill.ExecutedAt, fill.Market);
+            var today = TradeDate(now, fill.Market);
             var isToday = date == today;
             if (isToday)
             {

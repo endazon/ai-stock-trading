@@ -26,10 +26,10 @@ public sealed class LedgerPortfolioStateProvider(
         var fills = ledger.GetFills();
 
         if (currentPrices is null)
-            return PortfolioProjection.Project(fills, clock.Today, _initialCapital);
+            return PortfolioProjection.Project(fills, clock.UtcNow, _initialCapital);
 
         var prices = currentPrices.GetCurrentPrices(PortfolioProjection.ProjectOpenPositions(fills));
-        var state = PortfolioProjection.Project(fills, clock.Today, _initialCapital, prices);
+        var state = PortfolioProjection.Project(fills, clock.UtcNow, _initialCapital, prices);
 
         // 現在エクイティ＝当日開始基準（初期資金＋当日より前の実現）＋当日実現＋含み（Project の定義と同一）。
         // ピークは台帳から再計算し（IADR-0066）、DD だけを差し替える（Project をもう一度走らせない）。

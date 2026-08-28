@@ -31,7 +31,7 @@ public class RiskStatusServiceTests
         {
             var builder = new PortfolioSnapshotBuilder(
                 new FakePortfolioStateProvider(State), KillSwitch, Pause,
-                FakeBrokerAccountObservations.NotObserved());
+                FakeBrokerAccountObservations.NotObserved(), new InMemoryInformationDegradationStore());
             var svc = new RiskStatusService(
                 builder,
                 new InMemoryRiskSettingsStore(),

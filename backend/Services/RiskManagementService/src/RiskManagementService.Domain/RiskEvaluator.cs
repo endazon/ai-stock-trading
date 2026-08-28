@@ -61,6 +61,15 @@ public static class RiskEvaluator
             reasons.Add(RejectionReason.TradingPaused);
         }
 
+        // FR-01, FR-02, FR-10, ADR-0020 決定2/決定3, #337, IADR-0249: 情報収集の縮退（限定縮退）中は
+        // 新規建てを止める。欠測した文脈・単一ソース由来の急シグナルでの新規建てを、LLM の自制（KB の
+        // 欠測文言）ではなく決定的コードで止める（ADR-0003 の最終防衛線と同じ位置）。
+        // 手仕舞い（Close）・損切りは isEntry の短絡で止めない——「止められない」より「閉じられない」ほうが危険。
+        if (isEntry && snapshot.InformationDegradedBlocksNewEntries)
+        {
+            reasons.Add(RejectionReason.InformationSourceDegraded);
+        }
+
         // FR-20, #334, IADR-0140 決定5: 段階ゲート（既定の発注先と資金上限）。
         // 発注先の**設定**（RiskManagementSettings.BrokerProvider）は段階と独立に変更でき、Stage 1 のまま
         // moomoo REAL を選ぶ操作も計画上は保存できる（05_screens「保存を妨げないが警告を表示する」）。

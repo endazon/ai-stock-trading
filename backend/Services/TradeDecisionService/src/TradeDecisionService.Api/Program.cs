@@ -5,6 +5,7 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -81,6 +82,13 @@ builder.Services.AddScoped<ILlmUsageReporter>(sp => new PublishingLlmUsageReport
     sp.GetRequiredService<IClock>(),
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>()));
+
+// FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
+// フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
+builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovernanceReporter(
+    sp.GetRequiredService<IMessageBus>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
 
 // FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
 // フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
@@ -193,8 +201,10 @@ builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
         ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
         sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
 
-// FR-02, IADR-0023: 市場カレンダー（休場日ゲート）と定時サイクルの監視銘柄。
-builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(LoadHolidays(builder.Configuration)));
+// FR-02, IADR-0023, #337, IADR-0245: 市場カレンダー（休場日・半日取引日・場中ゲート）と定時サイクルの監視銘柄。
+builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(
+    LoadMarketDates(builder.Configuration, "TradeCycle:Holidays"),
+    LoadMarketDates(builder.Configuration, "TradeCycle:HalfDays")));
 // FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）は権威源（市場監視 #10）の GET /monitor/watchlist を
 // s2s 同期照会（OwnerOrService・IADR-0051）して供給する。MarketMonitor:BaseUrl 未設定/不正 URI は従来どおり構成ベース
 // （TradeCycle:Watchlist）＝現行挙動・後方互換。照会失敗（非 2xx・timeout・例外）は構成ベース（既定 watchlist）へ倒す fail-safe。
@@ -215,6 +225,10 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
 // FR-04, IADR-0039: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
 // ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
+// FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（Decision:ScreeningContextBudgetChars
+// 設定時のみ発火）の記録経路。発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の
+// 集計経路）へ届ける。予算未設定（既定）では縮退自体が起きないため publish は発生しない。
+builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReductionReporter>();
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
@@ -303,13 +317,14 @@ app.MapAiStockTradingIntrospection();
 
 app.Run();
 
-// IADR-0023: 市場別の休場日を構成（TradeCycle:Holidays:<Market> = ["yyyy-MM-dd", ...]）から読み込む。既定は空（週末のみ）。
-static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadHolidays(IConfiguration configuration)
+// IADR-0023, #337: 市場別の日付集合（休場日 TradeCycle:Holidays:<Market> / 半日取引日 TradeCycle:HalfDays:<Market>、
+// いずれも ["yyyy-MM-dd", ...]）を構成から読み込む。既定は空（週末と場中時間帯のみ）。
+static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadMarketDates(IConfiguration configuration, string sectionPrefix)
 {
     var result = new Dictionary<Market, IReadOnlySet<DateOnly>>();
     foreach (var market in Enum.GetValues<Market>())
     {
-        var dates = configuration.GetSection($"TradeCycle:Holidays:{market}").Get<string[]>() ?? [];
+        var dates = configuration.GetSection($"{sectionPrefix}:{market}").Get<string[]>() ?? [];
         var set = new HashSet<DateOnly>();
         foreach (var d in dates)
         {
