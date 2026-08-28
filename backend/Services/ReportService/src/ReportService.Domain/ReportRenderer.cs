@@ -57,8 +57,36 @@ public static class ReportRenderer
         AppendMarginReductions(sb, view);
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
+        AppendLlmModelUsage(sb, view);
 
         return sb.ToString();
+    }
+
+    // FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: 報告書のメタ情報として「実際に使用したモデル」を残す。
+    //
+    // ADR-0017 決定4 の明文: 「**月報が第 1 候補で書かれたのか第 2 候補で書かれたのかは、その月報を
+    // 次の 1 か月の方針書として採用する際の判断材料である。**」フォールバック機構の最大の危険は、
+    // 設定ミスや制度変更が「動いているように見える」ことで発見されなくなる点にある（＝沈黙のフォールバック）。
+    //
+    // **未供給（null）は節ごと出さない。** 「照会できていない」を「第 1 候補で書かれた」と読ませないための
+    // 扱いであり、AppendFxSourceStatus と同じ規律である（既存の描画結果も変わらない）。
+    private static void AppendLlmModelUsage(StringBuilder sb, ReportView view)
+    {
+        if (view.LlmModelUsage is not { } usage)
+            return;
+
+        sb.Append("\n### 散文生成に使用した LLM\n\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 用途: {usage.Purpose}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 割当（第 1 候補）: {usage.ExpectedModel ?? "（割当なし）"}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"- 実際に使用したモデル: {usage.EffectiveModel ?? "（不明）"}\n");
+        if (usage.IsPrimary)
+        {
+            sb.Append("- フォールバック: 発火なし（第 1 候補で生成）\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **フォールバック: 発火あり（{usage.Outcome}）**: 第 1 候補以外のモデルで生成されています。品質が第 1 候補と同一である保証はありません。\n");
     }
 
     // FR-10, FR-06, UC-06, ADR-0016 決定4（2026-08-06 改訂）・決定15（2026-08-06 追記）, #419, IADR-0159 決定3:

@@ -5,6 +5,7 @@ using AiStockTrading.TradeDecision.Application.Ports;
 using AiStockTrading.TradeDecision.Application.Services;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
 using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -73,6 +74,7 @@ builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 // モデル別は LlmPricing:PerModel:<model-id>:InputPer1kTokens / OutputPer1kTokens（円/1k）。
 // 未設定なら従来キー LlmPricing:InputPer1kTokens / OutputPer1kTokens（global 単一ペア）へ倒れる＝後方互換。
 // 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
+// NFR（費用）, #347, IADR-0218: 用途（purpose）を必ず載せる。費用統制の対象範囲は購読側が purpose で判別する。
 builder.Services.AddScoped<ILlmUsageReporter>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -80,8 +82,16 @@ builder.Services.AddScoped<ILlmUsageReporter>(sp =>
         sp.GetRequiredService<IMessageBus>(),
         sp.GetRequiredService<IClock>(),
         BuildLlmPriceTable(cfg),
-        sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>());
+        sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>(),
+        cfg["LlmGateway:Purpose"] ?? LlmPurposes.TradeDecision);
 });
+
+// FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
+// フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
+builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovernanceReporter(
+    sp.GetRequiredService<IMessageBus>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
 
 builder.Services.AddScoped<ILlmCompletionClient>(sp =>
 {
@@ -96,10 +106,11 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
     return new HttpLlmCompletionClient(http,
         sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
-        cfg["LlmGateway:Purpose"] ?? "trade-decision",
+        cfg["LlmGateway:Purpose"] ?? LlmPurposes.TradeDecision,
         sp.GetRequiredService<ILlmUsageReporter>(),
         // FR-11, IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
-        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
+        sp.GetRequiredService<ILlmGovernanceReporter>());
 });
 
 // #11, IADR-0061 決定2: LLM ゲートウェイのタイムアウト（秒）。未設定・不正・非正値は既定 30 秒（fail-safe）。

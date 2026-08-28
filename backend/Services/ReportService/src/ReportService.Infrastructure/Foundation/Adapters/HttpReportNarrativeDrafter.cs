@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Report.Application.Adapters;
 using AiStockTrading.Report.Application.Ports;
 using AiStockTrading.Report.Application.Services;
 using AiStockTrading.Report.Domain;
@@ -20,16 +21,27 @@ namespace AiStockTrading.Report.Infrastructure.Foundation.Adapters;
 // - IADR-0123 決定1, #308: タイムアウトも要求ごとに種別から決める（timeoutFor）。種別ごとに別モデルが
 //   割り当たる（IADR-0120）以上、サービス共通の 1 本では週報・月報が構造的に間に合わない。
 //   timeoutFor 未注入なら従来どおり HttpClient.Timeout のみが効く（非破壊）。
+// - #335, #347, ADR-0017 決定4, IADR-0217/0219: 送信が成立した応答から **①実効モデル（報告書メタ）**・
+//   **②フォールバック発火の通知**・**③費用の計上（月報の利用実績）** の 3 つを取り出す。
+//   従来は応答の `Model` を受け取りながら捨てており、報告書がどのモデルで書かれたか誰も知り得なかった。
 internal sealed class HttpReportNarrativeDrafter(
     HttpClient httpClient,
     ILogger<HttpReportNarrativeDrafter> logger,
     string confidentiality,
     string? purposeOverride,
     bool logPrompts = false,
-    Func<ReportKind, TimeSpan>? timeoutFor = null)
+    Func<ReportKind, TimeSpan>? timeoutFor = null,
+    ILlmUsageReporter? usageReporter = null,
+    ILlmGovernanceReporter? governanceReporter = null)
     : IReportNarrativeDrafter
 {
-    public async Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default)
+    private readonly ILlmUsageReporter _usage = usageReporter ?? new NoOpLlmUsageReporter();
+    private readonly ILlmGovernanceReporter _governance = governanceReporter ?? new NoOpLlmGovernanceReporter();
+
+    public async Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default) =>
+        (await DraftAsync(context, cancellationToken).ConfigureAwait(false)).Text;
+
+    public async Task<ReportNarrativeDraft> DraftAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         var prompt = ReportNarrativePromptBuilder.Build(context);
@@ -47,6 +59,11 @@ internal sealed class HttpReportNarrativeDrafter(
         using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts?.CancelAfter(timeout!.Value);
         var requestToken = timeoutCts?.Token ?? cancellationToken;
+
+        // #335, ADR-0017 決定4-(1), IADR-0217: 報告書のメタ情報へ残す「実際に使用したモデル」。
+        // 応答が返るまでは **null＝照会できていない**であり、「フォールバックしていない」ではない。
+        // 縮退（非 2xx・タイムアウト・送信拒否）でプレースホルダへ倒れた場合も null のまま返す。
+        LlmModelUsage? modelUsage = null;
 
         try
         {
@@ -66,7 +83,7 @@ internal sealed class HttpReportNarrativeDrafter(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("報告書散文 LLM /complete が非 2xx（{Status}）。プレースホルダ散文に倒します。", (int)response.StatusCode);
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             // Sent=false は機密区分による送信拒否（縮退）。空応答・欠落もプレースホルダ散文に倒す。
@@ -81,25 +98,64 @@ internal sealed class HttpReportNarrativeDrafter(
             catch (Exception ex) when (ex is JsonException or NotSupportedException)
             {
                 logger.LogWarning(ex, "報告書散文 LLM /complete の応答を解釈できません（不正 JSON・想定外の形式）。プレースホルダ散文に倒します。");
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             if (dto is null)
             {
                 logger.LogWarning("報告書散文 LLM /complete の応答が空です（JSON null）。プレースホルダ散文に倒します。");
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             if (!dto.Sent)
             {
                 logger.LogWarning("報告書散文 LLM が送信不可（Sent=false・機密区分による縮退）。プレースホルダ散文に倒します。");
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             // IADR-0061 決定1: 生出力の全量記録は、以降で破棄し得る本文も含めて拒否・空応答の判定より前に行う。
             if (logPrompts)
                 logger.LogInformation("報告書散文 LLM 応答: model={Model} stopReason={StopReason} text={Text}",
                     dto.Model, dto.StopReason, dto.Text);
+
+            // #347, IADR-0219, IADR-0104 決定4: 送信が成立した（Sent=true）応答のトークンを費用計測へ渡す。
+            // 本文の扱い（拒否・空・上限到達で破棄するか否か）とは独立に課金は発生しているため、
+            // 本文を読む前に一度だけ計測する。**報告書の費用は月次上限の対象外だが、実績は月報に記載する**
+            // （05_trading-assumptions §6.1。対象範囲の判別は購読側が purpose で行う）。
+            // 計測は best-effort＝失敗しても報告書生成は壊さない。
+            try
+            {
+                await _usage
+                    .ReportAsync(
+                        new LlmUsage(purpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), requestToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "報告書散文の LLM 費用計測の報告に失敗しました（応答は継続）。");
+            }
+
+            // #335, ADR-0017 決定4, IADR-0217: 実効モデルを割当表と突き合わせ、①メタ情報へ載せ、
+            // ピン以外が答えたなら②警告通知・③月報集計の供給元へ流す。
+            // **沈黙のフォールバックを作らないことが決定 4 の目的である。**
+            var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
+            modelUsage = new LlmModelUsage(
+                purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome.ToString());
+
+            if (evaluation.Outcome != LlmAssignmentOutcome.Primary)
+                await ReportFallbackAsync(evaluation, purpose, requestToken).ConfigureAwait(false);
+
+            // ADR-0015 / ADR-0017 決定1: 本システムで使用しないと決めたモデルの出力は成果物にしない。
+            // 報告書はフォールバックを許すが、**禁止モデル（ZDR 非対応）だけは許可集合の外側**である。
+            // 未割当（基盤の DefaultModel へ落ちた等）は記録に留めて本文を採る——報告書は発注を伴わず、
+            // 基盤の構成ドリフトのたびに方針階層が途切れる不利益のほうが大きい（ADR-0017 §理由）。
+            if (evaluation.Outcome == LlmAssignmentOutcome.Forbidden)
+            {
+                logger.LogWarning(
+                    "報告書散文が本システムで使用しないモデルで生成されました（model={Model}）。本文を破棄し、プレースホルダ散文に倒します。",
+                    evaluation.EffectiveModel);
+                return Placeholder(modelUsage);
+            }
 
             // #247, IADR-0104 決定2: 拒否（安全性分類器による停止）は**本文を読む前に**評価し、本文が非空でも破棄する。
             // 拒否された断片が報告書の成果物になることを、上流の破棄実装に依存せず防ぐ（多層防御）。
@@ -108,14 +164,14 @@ internal sealed class HttpReportNarrativeDrafter(
                 logger.LogWarning(
                     "報告書散文 LLM が要求を拒否しました（stopReason={StopReason} textLength={TextLength}）。本文を破棄し、プレースホルダ散文に倒します。",
                     dto.StopReason, dto.Text?.Length ?? 0);
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             if (string.IsNullOrWhiteSpace(dto.Text))
             {
                 logger.LogWarning("報告書散文 LLM の応答本文が空です（stopReason={StopReason}）。プレースホルダ散文に倒します。",
                     dto.StopReason);
-                return ReportNarrativeDefaults.PlaceholderText;
+                return Placeholder(modelUsage);
             }
 
             // IADR-0104 決定5, IADR-0101: 上限到達は拒否ではなく劣化。本文は破棄せず（途中で切れることの観測を残し）、
@@ -125,7 +181,7 @@ internal sealed class HttpReportNarrativeDrafter(
                     "報告書散文 LLM の応答が出力上限に到達しました（stopReason={StopReason}）。散文が途中で切れている可能性があります。",
                     dto.StopReason);
 
-            return dto.Text;
+            return new ReportNarrativeDraft(dto.Text, modelUsage);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -134,12 +190,30 @@ internal sealed class HttpReportNarrativeDrafter(
             logger.LogWarning(
                 "報告書散文 LLM /complete がタイムアウト（kind={Kind} timeoutSeconds={TimeoutSeconds}）。プレースホルダ散文に倒します。",
                 context.Kind, (timeout ?? httpClient.Timeout).TotalSeconds);
-            return ReportNarrativeDefaults.PlaceholderText;
+            return Placeholder(modelUsage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "報告書散文 LLM /complete で例外。プレースホルダ散文に倒します。");
-            return ReportNarrativeDefaults.PlaceholderText;
+            return Placeholder(modelUsage);
+        }
+    }
+
+    // 縮退時の戻り値。散文はプレースホルダ（捏造しない定型文）、メタは分かっている分だけ載せる。
+    private static ReportNarrativeDraft Placeholder(LlmModelUsage? modelUsage) =>
+        new(ReportNarrativeDefaults.PlaceholderText, modelUsage);
+
+    // #335, ADR-0017 決定4: 発火の通知は best-effort（記録に失敗しても報告書生成は壊さない）。
+    private async Task ReportFallbackAsync(
+        LlmAssignmentEvaluation evaluation, string purpose, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _governance.FallbackFiredAsync(evaluation, purpose, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "報告書散文の割当逸脱の記録に失敗しました（応答は継続）。");
         }
     }
 
@@ -150,5 +224,7 @@ internal sealed class HttpReportNarrativeDrafter(
     // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
     // #247, IADR-0104: StopReason は送信が成立した場合のモデル側の終了理由（Sent とは独立した軸）。
     // 未設定（null）＝上流未更新・未対応プロバイダでは従来どおりの分岐へ素通りする（非破壊）。
-    private sealed record CompletionResponse(string? Text, bool Sent, string? Model, string? StopReason = null);
+    // #347, IADR-0219: InputTokens/OutputTokens は費用計測の入力。欠落時は 0 として扱う（部分写像・非破壊）。
+    private sealed record CompletionResponse(
+        string? Text, bool Sent, string? Model, string? StopReason = null, int? InputTokens = null, int? OutputTokens = null);
 }
