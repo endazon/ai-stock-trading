@@ -239,8 +239,10 @@ module.exports = ({ ok, assert }) => {
   // N3（共通ヘルパ経由でのみ Wolverine を配線する）＋メタ検査（走査数の下限）である。
   // 旧 MassTransit 規則（consumer クラス名の一意性）は移行完了に伴い #354 第 3 段階で撤去した。
   const {
+    MIN_SCANNED_FILES: CEN_MIN_SCANNED_FILES,
     wolverineQueueNameOf,
     pathService,
+    isProductionServiceFile,
     serviceNameConstantIn,
     wiringOf,
     forbiddenTopologyCallsIn,
@@ -317,6 +319,238 @@ module.exports = ({ ok, assert }) => {
       result.services.filter((s) => s.wiresWolverine).length >= 10,
       'Wolverine を配線しているサービスが少なすぎる（N1〜N3 の母数が消えている）'
     );
+    // M3: サービス数だけでなく、実際に読んだファイルの厚みも表明する（NFR / IADR-0258）。
+    assert.ok(
+      result.scannedFiles >= CEN_MIN_SCANNED_FILES,
+      `走査した本番 .cs が ${result.scannedFiles} 件（下限 ${CEN_MIN_SCANNED_FILES}）`
+    );
+  });
+
+  // ==========================================================================
+  // 構造依存の検査器を新旧両対応にする（NFR / IADR-0258。VSA 全面移行の土台 3）
+  //
+  // 🔴 移行は 1 サービス = 1 PR で進み、混在期間が 11 PR ぶん続く。その間、パス構造を
+  // 前提にした検査器は「黙って母集合が痩せる」形で壊れ得る——その壊れ方は失敗メッセージにも
+  // 現れない。以下は **統合後の構造を模した一時ツリー**で両検査器が正しく動くことと、
+  // **母集合が痩せたら落ちる**ことを対で固定する。
+  // ==========================================================================
+  const fsVsa = require('fs');
+  const osVsa = require('os');
+  const pathVsa = require('path');
+  const REPO_ROOT_VSA = pathVsa.join(__dirname, '..');
+
+  // 統合後（1 サービス = 1 プロジェクト）のサービスツリーを作る。
+  // `Program.cs` はサービスディレクトリ直下、テストは `<Svc>/Tests/**`（設計 §5.2 / §7）。
+  const mkVsaServices = (root, services, { filesPerService = 60, withTests = true } = {}) => {
+    for (const svc of services) {
+      const base = pathVsa.join(root, 'backend', 'Services', svc);
+      fsVsa.mkdirSync(pathVsa.join(base, 'Features', 'Order', 'Approved'), { recursive: true });
+      fsVsa.mkdirSync(pathVsa.join(base, 'Infrastructure', 'Persistence'), { recursive: true });
+      fsVsa.writeFileSync(pathVsa.join(base, 'Program.cs'), [
+        `const string ServiceName = "ai-stock-trading.${svc.toLowerCase()}";`,
+        'builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));',
+      ].join('\n'));
+      for (let i = 0; i < filesPerService; i++) {
+        fsVsa.writeFileSync(
+          pathVsa.join(base, 'Features', 'Order', 'Approved', `Slice${i}.cs`),
+          `namespace X; public sealed class Slice${i} { }\n`
+        );
+      }
+      if (withTests) {
+        // 🔴 テスト資産には**わざと違反（トポロジの直接指定）を仕込む**。
+        // 走査対象へ入ってしまえば必ず赤くなるので、「除外されている」ことが証明できる。
+        fsVsa.mkdirSync(pathVsa.join(base, 'Tests', 'Features'), { recursive: true });
+        fsVsa.writeFileSync(
+          pathVsa.join(base, 'Tests', 'Features', 'SliceTests.cs'),
+          'opts.UseRabbitMq().UseConventionalRouting();\n'
+        );
+      }
+    }
+  };
+
+  ok('[統合後] check-consumer-endpoint-names: サービスディレクトリ直下の構成でも 11 サービスを走査する', () => {
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-cen-'));
+    const services = Array.from({ length: 11 }, (_, i) => `Svc${String(i).padStart(2, '0')}Service`);
+    mkVsaServices(root, services);
+    const r = checkConsumerEndpointNames(root);
+    assert.strictEqual(r.services.length, 11, '統合後の構成でサービスを見失っている');
+    assert.strictEqual(r.services.filter((s) => s.wiresWolverine).length, 11);
+    assert.strictEqual(r.scannedFiles, 11 * 61, `走査ファイル数が合わない: ${r.scannedFiles}`);
+    assert.deepStrictEqual(r.serviceNameCollisions, []);
+    assert.deepStrictEqual(r.bypassed, []);
+    // 🔴 対の否定形: Tests/ に仕込んだ違反を拾っていない＝テスト資産が除外されている。
+    assert.deepStrictEqual(r.forbidden, [], '統合後の Tests/ を本番ソースとして走査してしまっている');
+  });
+
+  ok('[統合後] check-consumer-endpoint-names: 本番ソースの違反は統合後の構成でも検出する（対の肯定形）', () => {
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-cen-pos-'));
+    const services = Array.from({ length: 11 }, (_, i) => `Svc${String(i).padStart(2, '0')}Service`);
+    mkVsaServices(root, services);
+    // 統合後の本番スライスへ違反を置く。除外規則が効きすぎていれば、ここが緑になって割れる。
+    fsVsa.writeFileSync(
+      pathVsa.join(root, 'backend', 'Services', 'Svc00Service', 'Features', 'Order', 'Approved', 'Bad.cs'),
+      'opts.UseRabbitMq().UseConventionalRouting();\n'
+    );
+    const r = checkConsumerEndpointNames(root);
+    assert.strictEqual(r.forbidden.length, 1, '統合後の本番ソースの違反を見逃している');
+    assert.strictEqual(r.forbidden[0].service, 'Svc00Service');
+  });
+
+  ok('[混在期間] check-consumer-endpoint-names: 旧 src/ 構成と統合後が混ざっても全サービスを走査する', () => {
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-cen-mix-'));
+    mkVsaServices(root, ['NewAService', 'NewBService']);
+    // 旧構成（`<Svc>/src/<Svc>.Api/`）を 2 件混ぜる。
+    for (const svc of ['OldAService', 'OldBService']) {
+      const dir = pathVsa.join(root, 'backend', 'Services', svc, 'src', `${svc}.Api`);
+      fsVsa.mkdirSync(dir, { recursive: true });
+      fsVsa.writeFileSync(pathVsa.join(dir, 'Program.cs'), [
+        `const string ServiceName = "ai-stock-trading.${svc.toLowerCase()}";`,
+        'builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));',
+      ].join('\n'));
+      const tdir = pathVsa.join(root, 'backend', 'Services', svc, 'tests', `${svc}.Api.Tests`);
+      fsVsa.mkdirSync(tdir, { recursive: true });
+      fsVsa.writeFileSync(pathVsa.join(tdir, 'XTests.cs'), 'opts.UseRabbitMq().UseConventionalRouting();\n');
+    }
+    const r = checkConsumerEndpointNames(root);
+    assert.strictEqual(r.services.length, 4, '新旧が混ざるとサービスを取りこぼす');
+    assert.strictEqual(r.services.filter((s) => s.wiresWolverine).length, 4);
+    // 旧 `tests/` も新 `Tests/` も、どちらも除外されていること。
+    assert.deepStrictEqual(r.forbidden, [], '新旧いずれかのテスト資産を走査してしまっている');
+  });
+
+  // 🔴 否定形: 母集合が空・あるいは痩せたら緑にしない（この PR の中核）。
+  ok('[否定形] check-consumer-endpoint-names: 母集合が空なら M1/M2/M3 がすべて落とす', () => {
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-cen-empty-'));
+    fsVsa.mkdirSync(pathVsa.join(root, 'backend', 'Services'), { recursive: true });
+    let out = '';
+    let code = 0;
+    try {
+      execSync(`node ${JSON.stringify(pathVsa.join(__dirname, 'check-consumer-endpoint-names.js'))}`, {
+        encoding: 'utf8',
+        env: { ...process.env, CONSUMER_ENDPOINT_NAMES_ROOT: root },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      code = e.status;
+      out = (e.stdout || '').toString() + (e.stderr || '').toString();
+    }
+    assert.strictEqual(code, 1, '0 件走査で緑になっている');
+    assert.match(out, /\[M1\]/);
+    assert.match(out, /\[M2\]/);
+    assert.match(out, /\[M3\]/);
+  });
+
+  ok('🔴 [否定形] check-consumer-endpoint-names: M1/M2 が通っても母集合が痩せれば M3 が落とす', () => {
+    // **M1 はサービス「数」しか数えない。** パス判定が痩せて各サービス 1 ファイルしか
+    // 当たらなくなっても M1・M2 は通り、N2 の走査だけが静かに空振りする。
+    // その隙間を埋めているのが M3 であることを、ここで実測として固定する。
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-cen-thin-'));
+    const services = Array.from({ length: 11 }, (_, i) => `Svc${String(i).padStart(2, '0')}Service`);
+    mkVsaServices(root, services, { filesPerService: 0, withTests: false });
+    const r = checkConsumerEndpointNames(root);
+    // M1 / M2 は通ってしまう（＝この 2 つだけでは守れない）。
+    assert.ok(r.services.length >= 11, 'M1 が通る前提が崩れている');
+    assert.ok(r.services.filter((s) => s.wiresWolverine).length >= 10, 'M2 が通る前提が崩れている');
+    // それでも M3 が落とす。
+    assert.ok(r.scannedFiles < CEN_MIN_SCANNED_FILES, '前提が崩れている（母集合が痩せていない）');
+    let code = 0;
+    let out = '';
+    try {
+      execSync(`node ${JSON.stringify(pathVsa.join(__dirname, 'check-consumer-endpoint-names.js'))}`, {
+        encoding: 'utf8',
+        env: { ...process.env, CONSUMER_ENDPOINT_NAMES_ROOT: root },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      code = e.status;
+      out = (e.stdout || '').toString() + (e.stderr || '').toString();
+    }
+    assert.strictEqual(code, 1, '母集合が痩せているのに緑になっている');
+    assert.match(out, /\[M3\]/);
+    assert.doesNotMatch(out, /\[M1\]/, 'M1 が落ちているならこの試験は M3 の必要性を示せていない');
+  });
+
+  ok('check-consumer-endpoint-names: 走査対象の判定は新旧を同じ規則で分ける（isProductionServiceFile）', () => {
+    // 旧構成（現行）——挙動が変わっていないこと。
+    assert.strictEqual(isProductionServiceFile('backend/Services/A/src/A.Api/Program.cs'), true);
+    assert.strictEqual(isProductionServiceFile('backend/Services/A/tests/A.Api.Tests/X.cs'), false);
+    // 統合後。
+    assert.strictEqual(isProductionServiceFile('backend/Services/AService/Program.cs'), true);
+    assert.strictEqual(isProductionServiceFile('backend/Services/AService/Features/O/Ap/Handler.cs'), true);
+    assert.strictEqual(isProductionServiceFile('backend/Services/AService/Tests/Features/X.cs'), false);
+    // サービス外。
+    assert.strictEqual(isProductionServiceFile('backend/Shared/X.cs'), false);
+    assert.strictEqual(isProductionServiceFile('backend/Tests/AiStockTrading.Architecture.Tests/X.cs'), false);
+  });
+
+  // --- validate-runtime-scaffold: hostDir の 3 通り（NFR / IADR-0258） ---------
+  //
+  // 実ツリーは候補 1（`<Svc>.Api`）でしかヒットしないため、**統合後の候補 3 は実ツリーでは
+  // 1 度も評価されない**。模擬ツリーを作らないと「足したつもりで効いていない」が起きる。
+  const RUNTIME_WORKERS = [
+    'AuditService', 'BacktestService', 'ConfigurationService', 'CostControlService',
+    'InformationCollectionService', 'MarketMonitorService', 'NotificationService',
+    'OrderExecutionService', 'ReportService', 'RiskManagementService', 'TradeDecisionService',
+  ];
+
+  // 実リポジトリの補助ファイル（.env.example / docker-compose.yml / infra）をそのまま持ち込み、
+  // **サービスの置き方だけを差し替えた**ツリーを作る。ここを自作すると検査の他の観点まで
+  // 模造することになり、「模造物に対して緑」になってしまう。
+  const mkScaffoldRoot = (layout) => {
+    const root = fsVsa.mkdtempSync(pathVsa.join(osVsa.tmpdir(), 'vsa-scaffold-'));
+    for (const rel of ['.env.example', 'docker-compose.yml', '.dockerignore', 'backend/Dockerfile',
+      'infra/postgres/init/01-create-databases.sql', 'infra/otel/otel-collector-config.yaml']) {
+      const dst = pathVsa.join(root, rel);
+      fsVsa.mkdirSync(pathVsa.dirname(dst), { recursive: true });
+      fsVsa.copyFileSync(pathVsa.join(REPO_ROOT_VSA, rel), dst);
+    }
+    for (const svc of RUNTIME_WORKERS) {
+      const from = pathVsa.join(REPO_ROOT_VSA, 'backend', 'Services', svc, 'src', `${svc}.Api`);
+      const to = layout === 'merged'
+        ? pathVsa.join(root, 'backend', 'Services', svc)
+        : pathVsa.join(root, 'backend', 'Services', svc, 'src', `${svc}.${layout}`);
+      fsVsa.mkdirSync(to, { recursive: true });
+      for (const f of ['appsettings.json', 'appsettings.Development.json']) {
+        fsVsa.copyFileSync(pathVsa.join(from, f), pathVsa.join(to, f));
+      }
+    }
+    return root;
+  };
+  const runScaffold = (root) => {
+    try {
+      return { code: 0, out: execSync(
+        `node ${JSON.stringify(pathVsa.join(__dirname, 'validate-runtime-scaffold.js'))}`,
+        { encoding: 'utf8', env: { ...process.env, RUNTIME_SCAFFOLD_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'] }
+      ) };
+    } catch (e) {
+      return { code: e.status, out: (e.stdout || '').toString() + (e.stderr || '').toString() };
+    }
+  };
+
+  ok('[統合後] validate-runtime-scaffold: appsettings がサービスディレクトリ直下でも合格する', () => {
+    const r = runScaffold(mkScaffoldRoot('merged'));
+    assert.strictEqual(r.code, 0, `統合後の構成で落ちている:\n${r.out}`);
+    assert.match(r.out, /実行環境スキャフォールド検査 OK（Worker 11/);
+  });
+
+  ok('[現行] validate-runtime-scaffold: <Svc>.Api 構成は従来どおり合格する（挙動不変の確認）', () => {
+    const r = runScaffold(mkScaffoldRoot('Api'));
+    assert.strictEqual(r.code, 0, `現行構成で落ちている:\n${r.out}`);
+  });
+
+  ok('[旧] validate-runtime-scaffold: <Svc>.Worker 構成も従来どおり合格する', () => {
+    const r = runScaffold(mkScaffoldRoot('Worker'));
+    assert.strictEqual(r.code, 0, `旧 Worker 構成で落ちている:\n${r.out}`);
+  });
+
+  ok('🔴 [否定形] validate-runtime-scaffold: 3 通りのどれも無ければ落ち、.Api の名前で報告する', () => {
+    const root = mkScaffoldRoot('merged');
+    // 統合後の appsettings を消す。**3 候補すべてが不在**になる。
+    fsVsa.rmSync(pathVsa.join(root, 'backend', 'Services', 'AuditService', 'appsettings.json'));
+    const r = runScaffold(root);
+    assert.strictEqual(r.code, 1, '候補が 1 つも無いのに緑になっている');
+    // 報告に使うパスは現行どおり標準構成（`.Api`）のまま——失敗メッセージの読み方を変えない。
+    assert.match(r.out, /AuditService: backend\/Services\/AuditService\/src\/AuditService\.Api\/appsettings\.json が存在しない/);
   });
 
   // --- check-test-traceability.js: 受け入れ基準 → テスト写像の検査（#343 / IADR-0127） ---
@@ -384,6 +618,154 @@ module.exports = ({ ok, assert }) => {
       assert.ok(refs.has(id), `${id} を参照するテストが無い`);
     }
     assert.deepStrictEqual(tt.missingSpecs(pathTt.resolve(__dirname, '..')), []);
+  });
+
+  // ==========================================================================
+  // check-test-traceability.js: サービス配下テストの新旧両対応（NFR / IADR-0258・T1）
+  //
+  // 🔴 着手前の設計書は本検査器を「`.Tests` で終わるので無改修で拾う」と評価していたが、
+  // 新樹形のディレクトリ名は `Tests`（大文字始まり）であり `.Tests` 接尾ではないため実際には
+  // 拾えない（設計 §5.2 が確定したツリーと矛盾）。以下は収集（`testFiles`）と、部分移行時の
+  // 痩せを塞ぐ下限（T1）の両方を、模擬ツリーで固定する。
+  // ==========================================================================
+
+  ok('check-test-traceability: isNewLayoutServiceTestsDir は Services/<Svc>/Tests だけに一致する', () => {
+    const root = '/repo';
+    assert.strictEqual(
+      tt.isNewLayoutServiceTestsDir(root, '/repo/backend/Services/AuditService/Tests'), true
+    );
+    // 横断テスト（backend/Tests 直下）は対象外——ここを誤って一致させると母集合が変わる。
+    assert.strictEqual(tt.isNewLayoutServiceTestsDir(root, '/repo/backend/Tests'), false);
+    // 深い階層の Tests（サービス直下でない）も対象外。
+    assert.strictEqual(
+      tt.isNewLayoutServiceTestsDir(root, '/repo/backend/Services/AuditService/Features/Tests'), false
+    );
+    // 小文字 tests は旧樹形の判定（testFiles 側）が別に見る。ここでは一致しない。
+    assert.strictEqual(
+      tt.isNewLayoutServiceTestsDir(root, '/repo/backend/Services/AuditService/tests'), false
+    );
+  });
+
+  ok('[統合後] check-test-traceability: Services/<Svc>/Tests 配下の起点 ID 参照を収集する', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-vsa-'));
+    const dir = pathTt.join(root, 'backend', 'Services', 'AuditService', 'Tests', 'Features', 'Order');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'ApprovedTests.cs'), '// FR-10, UC-02: 統合後のテスト\n');
+    const files = tt.testFiles(root);
+    assert.strictEqual(files.length, 1, '統合後の Tests/ 配下を収集できていない');
+    const refs = tt.collectReferences(files, root);
+    assert.strictEqual(refs.get('FR-10').length, 1);
+  });
+
+  ok('[混在期間] check-test-traceability: 旧 tests/ と新 Tests/ が混ざっても両方収集する', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-mix-'));
+    const oldDir = pathTt.join(root, 'backend', 'Services', 'OldSvc', 'tests', 'OldSvc.Domain.Tests');
+    fsTt.mkdirSync(oldDir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(oldDir, 'A.cs'), '// FR-12\n');
+    const newDir = pathTt.join(root, 'backend', 'Services', 'NewSvc', 'Tests', 'Features');
+    fsTt.mkdirSync(newDir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(newDir, 'B.cs'), '// FR-15\n');
+    // 横断テスト（backend/Tests）も引き続き拾えること（現行挙動が変わっていないこと）。
+    const crossDir = pathTt.join(root, 'backend', 'Tests', 'AiStockTrading.Architecture.Tests');
+    fsTt.mkdirSync(crossDir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(crossDir, 'C.cs'), '// FR-19\n');
+    const files = tt.testFiles(root);
+    assert.strictEqual(files.length, 3);
+    const refs = tt.collectReferences(files, root);
+    assert.ok(refs.has('FR-12') && refs.has('FR-15') && refs.has('FR-19'));
+  });
+
+  ok('check-test-traceability: serviceTestDirs / serviceTestLayoutCounts は新旧を分けて数える', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-counts-'));
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'A', 'tests', 'A.Tests'), { recursive: true });
+    fsTt.writeFileSync(pathTt.join(root, 'backend', 'Services', 'A', 'tests', 'A.Tests', 'X.cs'), '// FR-10\n');
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'B', 'Tests'), { recursive: true });
+    fsTt.writeFileSync(pathTt.join(root, 'backend', 'Services', 'B', 'Tests', 'Y.cs'), '// FR-12\n');
+    const dirs = tt.serviceTestDirs(root);
+    assert.deepStrictEqual(dirs, { old: 1, new: 1 });
+    const counts = tt.serviceTestLayoutCounts(root, tt.testFiles(root));
+    assert.deepStrictEqual(counts, { old: 1, new: 1 });
+  });
+
+  // 🔴 否定形（T1 の中核）: 樹形のサービスディレクトリが実在するのに、その樹形が 0 件走査なら落とす。
+  const runTraceability = (root, extraArgv = []) => {
+    try {
+      return {
+        code: 0,
+        out: execSync(
+          `node ${JSON.stringify(pathTt.join(__dirname, 'check-test-traceability.js'))} ${extraArgv.join(' ')}`,
+          { encoding: 'utf8', env: { ...process.env, TEST_TRACE_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'] }
+        ),
+      };
+    } catch (e) {
+      return { code: e.status, out: (e.stdout || '').toString() + (e.stderr || '').toString() };
+    }
+  };
+
+  // T1 単体を見るため、必須 FR / 仕様書の違反で先に落ちないよう最小限の実データを揃えるヘルパ。
+  const mkTraceabilityFixture = (root) => {
+    for (const n of tt.REQUIRED_FRS) {
+      const id = `FR-${String(n).padStart(2, '0')}`;
+      const dir = pathTt.join(root, 'backend', 'Tests', 'AiStockTrading.Fixture.Tests');
+      fsTt.mkdirSync(dir, { recursive: true });
+      fsTt.appendFileSync(pathTt.join(dir, 'Fixture.cs'), `// ${id}\n`);
+      for (const kind of ['tests', 'functional']) {
+        const specDir = pathTt.join(root, 'docs', kind);
+        fsTt.mkdirSync(specDir, { recursive: true });
+        fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), '');
+      }
+    }
+  };
+
+  ok('🔴 [否定形] check-test-traceability: 旧樹形のディレクトリがあるのに旧樹形が 0 件走査なら T1 が落とす', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-old-'));
+    mkTraceabilityFixture(root);
+    // 旧樹形のサービスディレクトリだけを作り、中身の .cs は置かない（0 件走査を再現する）。
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'ThinSvc', 'tests'), { recursive: true });
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, '旧樹形が痩せているのに緑になっている');
+    assert.match(r.out, /\[T1\]/);
+    assert.match(r.out, /旧樹形/);
+  });
+
+  ok('🔴 [否定形] check-test-traceability: 新樹形のディレクトリがあるのに新樹形が 0 件走査なら T1 が落とす', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-new-'));
+    mkTraceabilityFixture(root);
+    // 新樹形のサービスディレクトリだけを作り、中身の .cs は置かない。
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'ThinSvc', 'Tests'), { recursive: true });
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, '新樹形が痩せているのに緑になっている');
+    assert.match(r.out, /\[T1\]/);
+    assert.match(r.out, /新樹形/);
+  });
+
+  ok('check-test-traceability: どちらの樹形も実在しなければ T1 は発火しない（0 件が正常な状態）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-none-'));
+    mkTraceabilityFixture(root);
+    // backend/Services 自体を作らない＝サービスディレクトリが 1 つも無い状態。
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 0, `サービスが 1 つも無いだけで T1 が誤発火している:\n${r.out}`);
+    assert.doesNotMatch(r.out, /\[T1\]/);
+  });
+
+  ok('check-test-traceability: 旧樹形が実在し中身もあれば T1 は発火しない（正の確認）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-old-ok-'));
+    mkTraceabilityFixture(root);
+    const dir = pathTt.join(root, 'backend', 'Services', 'OldSvc', 'tests', 'OldSvc.Domain.Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'X.cs'), '// FR-10\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 0, `旧樹形に中身があるのに T1 が誤発火している:\n${r.out}`);
+  });
+
+  ok('check-test-traceability: 新樹形が実在し中身もあれば T1 は発火しない（正の確認）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-new-ok-'));
+    mkTraceabilityFixture(root);
+    const dir = pathTt.join(root, 'backend', 'Services', 'NewSvc', 'Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'X.cs'), '// FR-10\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 0, `新樹形に中身があるのに T1 が誤発火している:\n${r.out}`);
   });
 
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
