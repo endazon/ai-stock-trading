@@ -1,7 +1,7 @@
 ---
 title: 名前空間を基盤（MSP）の規則へ完全整合させる（W11 段 3・機械変換）
 type: spec
-status: approved
+status: done
 related_ids: [NFR]
 author: endazon (with Claude Code)
 created: 2026-08-28
@@ -147,3 +147,57 @@ dotnet ef migrations has-pending-model-changes --project $P --startup-project $P
 - [ ] `EventMessageTypeNameTests.cs` と `event-schemas.baseline.json` の diff が 0 行
 - [ ] `scripts/` の検査器・`scripts.test.js` / `scripts.repo.test.js` が全て緑
 - [ ] カバレッジが床 79.00% を割らない
+
+---
+
+## 実施結果（着手後の追記・2026-08-28）
+
+### チェックリスト 11 項目の実績（見つけた / 直した / 除外）
+
+| # | 対象 | 見つけた | 直した | 除外 |
+| ---: | --- | ---: | ---: | --- |
+| 1 | `namespace` 宣言 | 1,292 | **1,081** | 据え置き 210 ／ テスト用ソース文字列内の擬似宣言 1 |
+| 2 | `using` ディレクティブ | 規則 A・B と同一の走査で一括 | 同左（総置換 **3,025 出現 / 1,182 ファイル**、走査 1,405 ファイル） | 据え置き根への `using` |
+| 3 | 本文中の（部分）修飾名 | 32 ＋ **コンパイラが捕まえた 18**（下記）＋ コメント 8 | 32 ＋ 18 ＋ **6** | コメントのうち「元は〜」の移設由来 3 件と `RiskManagement.Worker.Tests` 4 件（後述） |
+| 4 | csproj の `<RootNamespace>` | 100 | **86** | 据え置き 14 |
+| 5 | EF の CLR 型名文字列 | 35 種（`*ModelSnapshot.cs` 7・migration 本体 35） | 35 種 | `MigrationId` は不変（diff 0 行で確認） |
+| 6 | `*.Designer.cs` | 35 | 35（型名文字列のみ） | 同上 |
+| 7 | `InternalsVisibleTo` / `[assembly:]` | 47 | **0** | アセンブリ名・プロジェクト名を変えないため対象外 |
+| 8 | 検査器（`scripts/*.js`） | 名前空間で分岐する箇所 0／据え置きを明記した散文 1 | **1**（`check-consumer-endpoint-names.js` の冒頭コメントを訂正） | `UseAiStockTradingRabbitMq` / `AiStockTrading.Business` / `backend/Tests/AiStockTrading.*`（いずれも本 PR で不変） |
+| 9 | `Architecture.Tests` の許可リスト・判定 | 4 ファイル（`DomainSourceScan` / `RepositoryLayout` / `DomainSourceArea` / `DomainSourceDependencyTests`） | 4 | `SharedKernelIsLeafTests` / `SharedProjectDependencyTests` / `DomainLayerDependencyTests`（**プロジェクト名**で判定しており不変） |
+| 10 | `docs/` と `.ai-context/adr/` の live な記述 | `docs/` 2 行 ＋ `CLAUDE.md` 2 行 ／ `.ai-context/adr/` 5 ファイル 9 行 | **4 行**（`docs/tech/tech-requirements.md` / `docs/data/trading-assumptions.md` / `CLAUDE.md` × 2） | `.ai-context/adr/` の 9 行（当時の実測・当時の決定・貼り付けたログ）と `.ai-context/specs/` `superpowers/`（凍結記録） |
+| 11 | `pipeline.json` | 5 | 5（実体の `<Event>Handler` の新名前空間へ是正。`#580` を `Closes`） | — |
+
+### 母集合の引き直しで親の一覧に無かったもの（4 件）
+
+1. 🔴 **`DomainSourceScan` の機能破壊**（`IADR-0261` 決定 6）。走査器 3 判定を実ツリー由来のサービスルート集合で判定する形へ改めた。
+2. 🔴 **コンパイラが捕まえた「部分修飾」18 箇所 / 6 ファイル。** `namespace AiStockTrading.RiskManagement.Infrastructure.Tests` の中で
+   `Shared.Contracts.Trading.X` と書いた箇所は**囲む `AiStockTrading` 名前空間を経由して解決していた**。根が変わると解決しない。
+   **`using` の走査には現れない依存**であり、規則 B（セグメント除去）でも同型の破れが起こり得る。`AiStockTrading.` を補って完全修飾へ直した。
+3. **`docs/tech/tech-requirements.md` / `CLAUDE.md` の live な規範記述**（「名前空間は当面 `AiStockTrading.<Short>.<Layer>` のまま変えない」）。
+   親の走査は `AiStockTrading.<Svc>` の形しか引いていないため、`<Short>` を含む一般形は出ない。
+4. **名前空間統合による `using` の重複 2 件（CS0105）。** 規則 B が `Report.Infrastructure.Foundation.Adapters` と
+   `Report.Infrastructure.Composable.Adapters` を同じ `ReportService.Infrastructure.Adapters` へ畳んだため、両方を `using` していた 2 ファイルで重複した。
+   **型名の衝突は 0 件**（全サービスで畳んだ後の `(名前空間, 型名)` の重複なし。ビルドで実証）。
+
+### 除外したものとその理由（規則 6）
+
+| 除外 | 理由 |
+| --- | --- |
+| `.ai-context/specs/` / `.ai-context/superpowers/` | 凍結記録。本仕様書（作業中の PR のもの）だけは経過を追記する |
+| `.ai-context/adr/` の旧名前空間 9 行 | **当時の実測・当時の決定・貼り付けたテスト失敗ログ**。書き換えると記録が当時と食い違う |
+| コード内コメント「元は `InformationCollection.Application.Ports` / `.Worker` / `.Domain`」3 件 | **移設の由来（当時の所在）**を述べている。新名前空間へ直すと事実に反する |
+| `TestAuthHandler.cs` 4 件の `RiskManagement.Worker.Tests 準拠` | **本 PR 以前から死んだ参照**（`Worker` プロジェクトは存在しない）。本 PR で新たに誤りになったものではない |
+| テストクラス名・テストファイル名（`ReportServiceTests` 等） | 衝突しておらず、改名は純粋な churn。**サービス**の名前を冠していると読む |
+| アセンブリ名・プロジェクト名・`.slnx`・Dockerfile の `SERVICE_PROJECT` | 本 PR では変えない（移送波の射程） |
+
+### 検証の実績
+
+- `dotnet build backend/backend.slnx`（clean 後）: **0 warning / 0 error**
+- `dotnet test backend/backend.slnx`: **Passed 5,075 / Failed 8**。失敗は `AiStockTrading.IntegrationTests` の 8 件のみ（Docker 不在の環境制約）。
+  `Architecture.Tests` は 74 件緑（否定形 1 件を追加したため 73 → 74）
+- `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし
+- **`dotnet ef migrations has-pending-model-changes` は 7 サービスすべてで
+  「No changes have been made to the model since the last migration.」**
+- `EventMessageTypeNameTests.cs` / `event-schemas.baseline.json` の `origin/develop..HEAD` diff: **0 行**
+- カバレッジ（Release・清掃済み・`Category!=Integration`・レポート 52 件）: **82.24%**（16795/20421 行）/ 床 79.00%
