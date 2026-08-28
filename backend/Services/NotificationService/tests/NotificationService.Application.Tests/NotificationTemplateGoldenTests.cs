@@ -63,12 +63,90 @@ public class NotificationTemplateGoldenTests
                 "AAPL 拒否: KillSwitchActive,DailyLossLimitReached（DecisionId=11111111-1111-1111-1111-111111111111）",
                 NotificationSeverity.Warning)),
 
+        // 🔴 #331, IADR-0210: 損切りはブローカー側逆指値へ一本化した。**「システムは決済注文を発行しない」
+        // ことを本文に書く**——書かないと、通知を見た利用者が「システムが決済を出した」と読み、
+        // 実際にはブローカー側の逆指値が執行した約定を二重に説明してしまう。
         ["StopLossTriggered"] = (
             new StopLossTriggered(Id, "7203", Market.Japan, TradeSide.Buy, 5, 950m, 940m, T),
             new NotificationMessage(
                 "リスク統制: 損切りライン到達",
-                "7203 損切り SL=940（現在 950・数量 5・建玉 Buy）",
+                "7203 損切り SL=940（現在 950・数量 5・建玉 Buy）。"
+                    + "決済はブローカー側の逆指値が実行します（システムは決済注文を発行しません）。",
                 NotificationSeverity.Critical)),
+
+        // #331, IADR-0211: 発注の見送り。**「再試行されません」が本文から欠けると、利用者は
+        // 「あとで自動的に発注される」と誤解して次の取引判断まで放置する。**
+        ["OrderDispatchForgone"] = (
+            new OrderDispatchForgone(Id, Intent(), OrderDispatchForgoneReason.BrokerUnavailable, T),
+            new NotificationMessage(
+                "発注見送り: ブローカー（OpenD）へ接続できません",
+                "AAPL/UnitedStates Buy 数量10 の発注を見送りました"
+                    + "（理由: ブローカー（OpenD）へ接続できません"
+                    + "・DecisionId=11111111-1111-1111-1111-111111111111）。"
+                    + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
+                NotificationSeverity.Warning)),
+
+        // #331, IADR-0210: 保護逆指値の発注。統制が設計どおり働いた記録であり Info
+        // （Critical にすると実際に止まる事象が埋もれる）。
+        ["ProtectiveStopPlaced"] = (
+            new ProtectiveStopPlaced(
+                Id, Id, "stop-1",
+                new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                    BrokerProvider.InternalPaper, 10, 950m, PositionEffect.Close),
+                950m, 1, T),
+            new NotificationMessage(
+                "保護逆指値を発注",
+                "AAPL/UnitedStates Sell 数量10 トリガー 950（試行 1・StopOrderId=stop-1）。",
+                NotificationSeverity.Info)),
+
+        // 🔴 同じイベント型でも**対処の結末で本文が変わる**（FxRateStale と同じ扱いで分岐ごとに 1 行）。
+        // 手仕舞いに成功した側。
+        ["ProtectiveStopCoverageLost/建玉を手仕舞い"] = (
+            new ProtectiveStopCoverageLost(
+                Id, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+                ProtectiveStopRemediation.PositionClosed, 10, Id,
+                new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                    BrokerProvider.InternalPaper, 10, 1_000m, PositionEffect.Close),
+                T),
+            new NotificationMessage(
+                "リスク統制: 保護逆指値が成立せず建玉を解消",
+                "AAPL/UnitedStates 数量10: 逆指値が滞留中に失効（再発注不可）のため、"
+                    + "建玉を成行で手仕舞いました（逆指値なしの建玉を持たない規律・FR-10）。",
+                NotificationSeverity.Critical)),
+
+        // 🔴 解消にも失敗した側。**逆指値なしの建玉が残り得る唯一の分岐であり、人手対応を促す
+        // 文言が欠けると「対処済み」と読まれる。** 分岐ごとにゴールデンを持つ理由がここにある。
+        ["ProtectiveStopCoverageLost/解消も失敗"] = (
+            new ProtectiveStopCoverageLost(
+                Id, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
+                ProtectiveStopRemediation.None, 10, null, null, T),
+            new NotificationMessage(
+                "リスク統制: 保護逆指値が成立せず建玉を解消",
+                "AAPL/UnitedStates 数量10: 逆指値がエントリー時に未受理のため、"
+                    + "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。"
+                    + "直ちに確認してください。**",
+                NotificationSeverity.Critical)),
+
+        // #335, IADR-0217: LLM 割当逸脱。Warning——沈黙させないことが目的であり、
+        // Critical にすると本当に止まった事象が埋もれる。
+        ["LlmFallbackFired"] = (
+            new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", T),
+            new NotificationMessage(
+                "LLM 割当逸脱: report-monthly",
+                "用途 report-monthly が割当（claude-opus-5）ではなく claude-sonnet-5 で応答しました"
+                    + "（FallbackFired）。恒常的に発火している場合は割当設定を確認してください。",
+                NotificationSeverity.Warning)),
+
+        // #335, IADR-0216: 取引判断の見送り。**「設計上の正常な結果」が本文から欠けると
+        // 運用が障害として扱い、善意のフォールバック追加を招く**（ADR-0017 決定2）。
+        ["TradeDecisionSkipped"] = (
+            new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", T),
+            new NotificationMessage(
+                "取引判断の見送り: 割当モデルが利用できません",
+                "用途 trade-decision の割当モデル（claude-opus-5）が使えないため取引判断を実行せず、"
+                    + "発注も行いませんでした（理由 model-mismatch・実際 claude-haiku-4-5）。"
+                    + "**設計上の正常な結果**です（フォールバック禁止）。",
+                NotificationSeverity.Warning)),
 
         ["FxRateSourceFellBack"] = (
             new FxRateSourceFellBack("USD", "fred", 2, 2, T),
