@@ -4,7 +4,6 @@ using ReportService.Application.Services;
 using ReportService.Domain;
 using ReportService.Infrastructure.Adapters;
 using ReportService.Infrastructure.Polling;
-using ReportService.Infrastructure.Adapters;
 using ReportService.Api.Endpoints;
 using ReportService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;

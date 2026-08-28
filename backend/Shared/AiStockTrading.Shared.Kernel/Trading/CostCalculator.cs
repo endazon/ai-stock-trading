@@ -59,7 +59,7 @@ public static class CostCalculator
         var roundTrip = EstimateRoundTripCost(assumptions, market, notional);
 
         // 式の単一情報源は Shared.Contracts の MinimumExpectedProfit（#358・IADR-0173 決定3）。
-        // 採算ゲート（TradeDecision.Domain）も同じ関数を使う——別ユニットの Domain どうしは互いを
+        // 採算ゲート（TradeDecisionService.Domain）も同じ関数を使う——別ユニットの Domain どうしは互いを
         // 参照できないため、式を 2 か所に書くと片方だけ直したときに気付けない。
         //
         // #461, IADR-0177: 解無し（倍率 × 税率 >= 1）は共有契約と同じく null で返す。番兵値は採らない

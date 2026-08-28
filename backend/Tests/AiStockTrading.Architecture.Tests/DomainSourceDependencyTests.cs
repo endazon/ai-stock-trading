@@ -91,9 +91,9 @@ public class DomainSourceDependencyTests
         {
             foreach (var ns in DomainSourceScan.UsingNamespacesIn(File.ReadAllText(file)))
             {
-                if (!DomainSourceScan.IsAllowedDomainNamespace(ns))
+                if (!DomainSourceScan.IsAllowedDomainNamespace(ns, ServiceNamespaceRoots))
                 {
-                    violations.Add($"{Relative(file)} → using {ns} (service={area.ServiceShortName})");
+                    violations.Add($"{Relative(file)} → using {ns} (service={area.ServiceNamespaceRoot})");
                 }
             }
         }
@@ -167,7 +167,7 @@ public class DomainSourceDependencyTests
         foreach (var (area, file) in DomainFilesWithArea())
         {
             var foreigns = DomainSourceScan.ForeignServiceReferencesIn(
-                File.ReadAllText(file), area.ServiceShortName);
+                File.ReadAllText(file), area.ServiceNamespaceRoot, ServiceNamespaceRoots);
             foreach (var foreign in foreigns)
             {
                 var entry = $"{Relative(file)} → {foreign}";
@@ -208,7 +208,8 @@ public class DomainSourceDependencyTests
                 continue;
             }
 
-            var foreigns = DomainSourceScan.ForeignServiceReferencesIn(File.ReadAllText(full), area.ServiceShortName);
+            var foreigns = DomainSourceScan.ForeignServiceReferencesIn(
+                File.ReadAllText(full), area.ServiceNamespaceRoot, ServiceNamespaceRoots);
             if (!foreigns.Contains(foreignNamespace)) stale.Add($"{relativePath} → {foreignNamespace}（もう参照していない）");
         }
 
@@ -255,7 +256,7 @@ public class DomainSourceDependencyTests
     [InlineData("RiskManagementService.Domain.Manipulation")]
     public void 許可判定は正当な名前空間を許す(string ns)
     {
-        DomainSourceScan.IsAllowedDomainNamespace(ns).Should().BeTrue();
+        DomainSourceScan.IsAllowedDomainNamespace(ns, ServiceNamespaceRoots).Should().BeTrue();
     }
 
     [Theory]
@@ -268,9 +269,11 @@ public class DomainSourceDependencyTests
     [InlineData("ReportService.Application")]
     [InlineData("ReportService.Infrastructure.Persistence")]
     [InlineData("Systemic.Things")]
+    // 実ツリーに無いサービス名は根として認めない（fail-closed。IADR-0261）。
+    [InlineData("PhantomService.Domain")]
     public void 許可判定は許可外の名前空間を拒む(string ns)
     {
-        DomainSourceScan.IsAllowedDomainNamespace(ns).Should().BeFalse();
+        DomainSourceScan.IsAllowedDomainNamespace(ns, ServiceNamespaceRoots).Should().BeFalse();
     }
 
     [Theory]
@@ -304,15 +307,16 @@ public class DomainSourceDependencyTests
             namespace BacktestService.Domain;
             public static class X
             {
+                // クラス名の言及（StageGateService.EffectivePolicy()）は他サービスの根ではない。
                 public static object Y() => new RiskManagementService.Domain.Stage0Promotion();
             }
             """;
 
-        DomainSourceScan.ForeignServiceReferencesIn(source, "Backtest")
+        DomainSourceScan.ForeignServiceReferencesIn(source, "BacktestService", ServiceNamespaceRoots)
             .Should().Equal("ConfigurationService", "RiskManagementService");
 
         // 自分自身を own として渡せば、同じソースから自サービスは出てこない。
-        DomainSourceScan.ForeignServiceReferencesIn(source, "Configuration")
+        DomainSourceScan.ForeignServiceReferencesIn(source, "ConfigurationService", ServiceNamespaceRoots)
             .Should().NotContain("ConfigurationService");
     }
 
@@ -325,7 +329,8 @@ public class DomainSourceDependencyTests
             namespace ReportService.Domain;
             """;
 
-        DomainSourceScan.ForeignServiceReferencesIn(source, "Report").Should().BeEmpty();
+        DomainSourceScan.ForeignServiceReferencesIn(source, "ReportService", ServiceNamespaceRoots)
+            .Should().BeEmpty();
     }
 
     [Fact]
@@ -354,6 +359,9 @@ public class DomainSourceDependencyTests
     private static IEnumerable<(DomainSourceArea Area, string File)> DomainFilesWithArea() =>
         RepositoryLayout.DomainSourceDirectories.SelectMany(a => a.SourceFiles.Select(f => (a, f)));
 
+    /// <summary>サービスのルート名前空間（実ツリー由来。IADR-0261）。</summary>
+    private static IReadOnlyList<string> ServiceNamespaceRoots => RepositoryLayout.ServiceNamespaceRoots;
+
     private static string Relative(string path) =>
         Path.GetRelativePath(RepositoryLayout.Root, path).Replace('\\', '/');
 
@@ -375,7 +383,11 @@ public class DomainSourceDependencyTests
             .EnumerateFiles(Path.Combine(RepositoryLayout.Root, "backend"), "*.cs", SearchOption.AllDirectories)
             .Where(RepositoryLayout.NotUnderBuildOutput)
             .Select(File.ReadAllText);
-        foreach (var root in DomainSourceScan.ExternalNamespaceRootsIn(backendSources)) tokens.Add(root);
+        foreach (var root in DomainSourceScan.ExternalNamespaceRootsIn(
+                     backendSources, RepositoryLayout.ServiceNamespaceRoots))
+        {
+            tokens.Add(root);
+        }
 
         return tokens.ToArray();
     });

@@ -86,7 +86,7 @@ issues: [#14, #19, #139, #358]
 
 ## 消費側からの参照（共有クライアント）
 
-- 消費側サービスは `AiStockTrading.Configuration.Client` の `IAssumptionsProvider` で参照する（共有クライアント方式の決定 3）。
+- 消費側サービスは `ConfigurationService.Client` の `IAssumptionsProvider` で参照する（共有クライアント方式の決定 3）。
   配線は `services.AddAiStockTradingAssumptions(configuration)` の 1 行＋`x.AddConsumer<AssumptionsChangedConsumer>()`（版の追随）。
 - キャッシュは `AssumptionsChanged` で無効化し、TTL（`Configuration:AssumptionsCacheTtlSeconds`・既定 300 秒）でも失効する。
 - フェイルセーフ: 取得不可時は ①last known good → ②既定値（`Version=0`＝未解決）の順に倒す（決定 5）。

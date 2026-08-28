@@ -25,7 +25,7 @@ public class HttpWatchlistProviderTests
     [Fact]
     public async Task 権威源の_watchlist_を_WatchedSymbol_に写像する()
     {
-        // MonitoredSymbol（MarketMonitor.Domain）と WatchedSymbol は同形。web 既定（camelCase・列挙は数値）で往復する。
+        // MonitoredSymbol（MarketMonitorService.Domain）と WatchedSymbol は同形。web 既定（camelCase・列挙は数値）で往復する。
         var payload = new[] { new WatchedSymbol("7203", Market.Japan), new WatchedSymbol("AAPL", Market.UnitedStates) };
         var body = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var handler = new StubHandler(HttpStatusCode.OK, body);

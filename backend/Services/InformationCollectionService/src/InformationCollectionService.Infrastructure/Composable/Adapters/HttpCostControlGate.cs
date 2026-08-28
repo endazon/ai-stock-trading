@@ -16,7 +16,7 @@ internal sealed class HttpCostControlGate(
     ILogger<HttpCostControlGate> logger)
     : ICostControlGate
 {
-    // CostControlDecision（費用統制）の JSON 受け皿。CostControl.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
+    // CostControlDecision（費用統制）の JSON 受け皿。CostControlService.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
     private sealed record CostStateDto(bool IsHalted, decimal IntervalMultiplier);
 
     public async Task<CostControlGate> GetAsync(CancellationToken cancellationToken = default)

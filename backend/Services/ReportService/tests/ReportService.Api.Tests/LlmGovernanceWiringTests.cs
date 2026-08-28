@@ -1,7 +1,6 @@
 using ReportService.Application.Adapters;
 using ReportService.Application.Ports;
 using ReportService.Infrastructure.Adapters;
-using ReportService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

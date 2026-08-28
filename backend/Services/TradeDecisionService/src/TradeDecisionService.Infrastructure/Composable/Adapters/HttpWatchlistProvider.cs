@@ -30,7 +30,7 @@ internal sealed class HttpWatchlistProvider(
                 return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            // MonitoredSymbol（MarketMonitor.Domain）と WatchedSymbol は同形。camelCase・列挙は数値で往復する。
+            // MonitoredSymbol（MarketMonitorService.Domain）と WatchedSymbol は同形。camelCase・列挙は数値で往復する。
             var symbols = await response.Content
                 .ReadFromJsonAsync<List<WatchedSymbol>>(cancellationToken)
                 .ConfigureAwait(false);
