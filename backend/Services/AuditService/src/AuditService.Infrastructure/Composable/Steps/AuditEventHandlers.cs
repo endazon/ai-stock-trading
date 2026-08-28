@@ -12,7 +12,9 @@ namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
 // 冪等キーは `context.MessageId`（`Guid?`・null なら新規採番していた）から `envelope.Id`（`Guid`・非 null）
 // になり、**「MessageId が無ければ重複排除できない」分岐が構造的に不要**になった（Wolverine は送信時に必ず採番する）。
 // IADR-0129 決定 9 によりハンドラ型は public sealed とする（Wolverine は public でない型を受け付けない）。
-// 22 イベントそれぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+// **契約イベントの全数**それぞれに 1 本ずつキューを持つ（ai-stock-trading.audit-service.<イベント型名>）。
+// #339: ここに件数を書かない —— 件数はイベントを 1 つ足すたびに腐る導出値であり、実測でも
+// 「22」と書いたまま 33 まで乖離していた。**全数一致は AuditConsumerCoverageTests が機械で保証する。**
 
 public sealed class PriceMovementDetectedAuditHandler(IAuditEventStore store, IClock clock)
 {
@@ -374,6 +376,19 @@ public sealed class FxRateStaleAuditHandler(IAuditEventStore store, IClock clock
 public sealed class PositionClosedWithStaleFxRateAuditHandler(IAuditEventStore store, IClock clock)
 {
     public void Handle(PositionClosedWithStaleFxRate message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-11, UC-07, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
+//
+// 🔴 **監査台帳が経費台帳の保存先である。** 専用の永続テーブルを作らず、イベント全量の JSON を
+// 7 年保持（NFR-10）する監査台帳へ残す。建玉単位の照会は相関（`trade-expense:{Symbol}:{Market}`）で成立する。
+public sealed class TradeExpenseRecordedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(TradeExpenseRecorded message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
