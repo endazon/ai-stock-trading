@@ -26,18 +26,12 @@
     <Project Path="Services/BacktestService/tests/BacktestService.Infrastructure.Tests/BacktestService.Infrastructure.Tests.csproj" />
     <Project Path="Services/BacktestService/tests/BacktestService.Api.Tests/BacktestService.Api.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/CostControlService/" />
-  <Folder Name="/Services/CostControlService/src/">
-    <Project Path="Services/CostControlService/src/CostControlService.Domain/CostControlService.Domain.csproj" />
-    <Project Path="Services/CostControlService/src/CostControlService.Application/CostControlService.Application.csproj" />
-    <Project Path="Services/CostControlService/src/CostControlService.Infrastructure/CostControlService.Infrastructure.csproj" />
-    <Project Path="Services/CostControlService/src/CostControlService.Api/CostControlService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/CostControlService/tests/">
-    <Project Path="Services/CostControlService/tests/CostControlService.Domain.Tests/CostControlService.Domain.Tests.csproj" />
-    <Project Path="Services/CostControlService/tests/CostControlService.Application.Tests/CostControlService.Application.Tests.csproj" />
-    <Project Path="Services/CostControlService/tests/CostControlService.Infrastructure.Tests/CostControlService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/CostControlService/tests/CostControlService.Api.Tests/CostControlService.Api.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1, IADR-0264 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-3）。
+       旧 ConfigurationService.Client（w11s4b で廃止）から複製した前提条件の解決口
+       （Infrastructure/ExternalServices/）を含む。 -->
+  <Folder Name="/Services/CostControlService/">
+    <Project Path="Services/CostControlService/CostControlService.csproj" />
+    <Project Path="Services/CostControlService/Tests/CostControlService.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/ReportService/" />
   <Folder Name="/Services/ReportService/src/">
