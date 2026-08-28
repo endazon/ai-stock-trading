@@ -3,15 +3,15 @@ title: 技術要件書
 type: tech-requirements
 status: draft
 created: 2026-07-08
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: []
 adrs: [MSP:ADR-0019, MSP:ADR-0030]
-iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128]
-specs: []
-issues: [#352, #353, MSP#266]
+iadrs: [IADR-0046, IADR-0048, IADR-0052, IADR-0053, IADR-0128, IADR-0259, MSP:IADR-0282]
+specs: [20260828_w9f4_vsa-migration-policy-and-docs]
+issues: [#352, #353, #526, #527, #528]
 -->
 
 
@@ -24,8 +24,9 @@ issues: [#352, #353, MSP#266]
 
 - 技術検討: 基盤（platform）のバックエンドアプリケーションスタック（fixed・§プロジェクト構成）
 - 関連する計画 ADR / 非機能要件: 基盤のアプリ層ライブラリ標準、およびユニット第一のリポジトリ構成／
-  実装側では「標準プロジェクト構成は Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現し、
-  「ユニットリポジトリレイアウト（ルート直下 `backend/`・import-chain フォールバック props）」を採る。
+  実装側では「ユニットリポジトリレイアウト（ルート直下 `backend/`・import-chain フォールバック props）」を採る。
+  サービス単位のプロジェクト構成は、基盤側の方針転換に合わせて**単一プロジェクト＋VSA/DDD**へ移行中である
+  （下記「プロジェクト構成」参照。逸脱ではなく基盤との整合）。
 
 ## 技術スタック
 
@@ -55,38 +56,59 @@ flowchart TB
 
 ## プロジェクト構成（サービス単位）
 
-基盤（platform）のアプリ層ライブラリ標準とバックエンドアプリケーションスタック（fixed）が定めた 7 標準
-（`Api` / `Application` / `Domain` / `Infrastructure` / `Contracts` / `SharedKernel` / `Tests`）へ、
-**実体があるものだけを作る**方針で揃える（#353）。
-旧構成の `<Svc>.Worker`（ホストと技術詳細の同居）は廃止し、`Api` と `Infrastructure` に割った。
+**単一プロジェクト＋VSA/DDD 構成が目標であり、移行はサービス単位で行うため新旧が混在する期間がある**
+（触る前に必ず現物を見る）。旧構成は基盤（platform）のアプリ層ライブラリ標準とバックエンドアプリケーション
+スタック（fixed）が定めていた 7 標準（`Api` / `Application` / `Domain` / `Infrastructure` / `Contracts` /
+`SharedKernel` / `Tests`）の実体化だったが、**基盤側もこの実体化を撤回し**、同じ単一プロジェクト＋VSA へ
+移行している。したがって本移行は基盤標準からの逸脱ではなく、基盤との整合である。
+
+### 目標構成（新）
+
+```text
+backend/Services/<Name>/
+ ├── <Name>.csproj              # 単一プロジェクト（.Api 接尾辞なし）
+ ├── Program.cs / appsettings*.json
+ ├── Features/<集約>/           # Vertical Slice: Endpoint / Command|Query / Handler（操作単位の 3 段分割は採らない）
+ ├── Domain/                    # エンティティ・値オブジェクト（外部依存ゼロ）
+ ├── Infrastructure/{Persistence,Authentication,Messaging,ExternalServices}
+ ├── Hosted/                    # BackgroundService（ルート直下）
+ ├── Common/
+ └── Tests/
+      └── <Name>.Tests.csproj   # サービスにつき 1 プロジェクト
+```
+
+### 旧構成（未移送のサービスに残る）
 
 ```text
 backend/Services/<Svc>/
  ├── src/
- │    ├── <Svc>.Api             # Program.cs・appsettings*.json・Foundation/Endpoints（この 3 種類だけ）
- │    ├── <Svc>.Application     # ユースケース・ポート定義
- │    ├── <Svc>.Domain          # エンティティ・値オブジェクト（外部依存ゼロ。実体が無いサービスは作らない）
- │    └── <Svc>.Infrastructure  # EF Core・Migration・メッセージング consumer・外部 API アダプタ（上記以外すべて）
+ │    ├── <Svc>.Api / .Application / .Domain（実体があるもののみ）/ .Infrastructure
  └── tests/
       └── <Svc>.<Layer>.Tests   # 本番プロジェクトと 1:1
 ```
 
-| 標準 | 本リポジトリでの実体 |
+| 標準 | 本リポジトリでの実体（新 / 旧） |
 | --- | --- |
-| Api / Application / Domain / Infrastructure | `backend/Services/<Svc>/src/<Svc>.<Layer>`（11 サービス。`Domain` は実体のある 9 サービスのみ） |
-| Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。サービス個別には作らない＝基盤のユニット第一構成の決定 4。サービス間共有のイベント契約の置き場） |
-| SharedKernel | **作らない**（`Result` / `Error` 型が未導入。基盤のアプリ層ライブラリ標準の但し書き「過度な共通化は避ける」に従う。導入は別 issue） |
-| Tests | `backend/Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,PlanConformance,Integration}.Tests` |
-| （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。7 標準のどの層にも当たらないため第 8 のプロジェクトとして残す |
+| サービス本体 | 新: `Services/<Name>/<Name>.csproj`（単一）／旧: `Services/<Svc>/src/<Svc>.<Layer>`（11 サービス。`Domain` は実体のある 9 サービスのみ） |
+| Contracts | `backend/Shared/AiStockTrading.Shared.Contracts`（**ユニット単位で 1 つ**。新旧とも不変。サービス間共有のイベント契約の置き場） |
+| SharedKernel | 新設予定 `AiStockTrading.Shared.Kernel`（現時点で中身は無い） |
+| Tests | 新: `Services/<Name>/Tests/<Name>.Tests.csproj`（サービスにつき 1）／旧: `Services/<Svc>/tests/<Svc>.<Layer>.Tests` ＋ 横断 `backend/Tests/{Architecture,Integration}.Tests`（実測。`PlanConformance.Tests` は `docs/tests/README.md` に記述があるが `backend/Tests/` に実体は無い。VSA 移行とは独立した既存の齟齬であり、本書はこの行を実測に合わせるに留め、`docs/tests/README.md` 側の是正は別途起票する） |
+| （標準外） | `ConfigurationService.Client`＝他サービスへ公開するクライアントライブラリ。移行に伴い呼び出し元の `Infrastructure/ExternalServices/` へ吸収予定 |
 
-- 名前空間・アセンブリ名は `AiStockTrading.<Short>.<Layer>[.<下位階層>]`（`<Short>` = サービス名から接尾辞 `Service` を除いたもの）。
-- **層の依存規律はアーキテクチャテストで機械的に強制する**（`backend/Tests/AiStockTrading.Architecture.Tests`。csproj の静的解析）。
-  検査は (1) `Domain` の `PackageReference` が 0 件 (2) `ProjectReference` が許可リスト（`*.Domain` / `*.SharedKernel` /
-  `AiStockTrading.Shared.Contracts`）内 (3) **推移閉包上のすべてのプロジェクトも `PackageReference` 0 件**（迂回の遮断）
-  (4) 発見した `Domain` が 9 件以上（探索が空振りしたまま緑になるのを防ぐ）の 4 点。
-- コンテナのエントリポイントは単一 `backend/Dockerfile` を `SERVICE_PROJECT` / `SERVICE_DLL`（＝`<Svc>.Api`）で切り替える
+- 名前空間・アセンブリ名は当面 `AiStockTrading.<Short>.<Layer>[.<下位階層>]` のまま変えない
+  （`<Short>` = サービス名から接尾辞 `Service` を除いたもの。構造の再編と名前空間の改名は別の波に分ける）。
+  完全整合（基盤と同じ規則でルート名前空間 `<Name>Service` へ揃える）は独立した後続波として方針は決まっているが、
+  本書はその実施前の状態を記す。
+- **層の依存規律は csproj の静的解析（旧構成）とソース走査（新構成）を二重化して機械的に強制する**
+  （`backend/Tests/AiStockTrading.Architecture.Tests`）。旧構成側の検査は (1) `Domain` の `PackageReference` が
+  0 件 (2) `ProjectReference` が許可リスト内 (3) 推移閉包上のすべてのプロジェクトも `PackageReference` 0 件
+  (4) 発見した `Domain` が一定数以上、の 4 点。新構成側はプロジェクト境界が無いため `Domain/` フォルダ配下の
+  `using` を走査する（許可リスト方式・CPM 由来のパッケージ名から迂回トークンを導出）。**NsDepCop は導入しない**
+  （移行元・移行先の基盤とも未導入であることを実地に確認したため）。
+- コンテナのエントリポイントは単一 `backend/Dockerfile` を `SERVICE_PROJECT` / `SERVICE_DLL` で切り替える
   （`docker-compose.yml` / `scripts/k8s-local-images.sh` と同一の build args）。
-- 総プロジェクト数は **99**（`backend/backend.slnx` 実測）。
+- 総プロジェクト数は移行前で **99**（`backend/backend.slnx` 実測）。移行完了後はサービス本体・テストとも
+  大きく減る見込みで、規模の実測は作業仕様書側（サービス移送時の PR）で都度更新する。
 
 ## 開発・ビルド・テスト・デプロイ
 

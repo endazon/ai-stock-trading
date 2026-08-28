@@ -1,16 +1,17 @@
 ---
 title: IADR-0128 標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する
 type: impl-adr
-status: Accepted
+status: Superseded
 related_ids:
   - NFR
   - IADR-0001
   - IADR-0046
+  - IADR-0259 # 本 ADR を Superseded する後継
   - MSP:ADR-0030 # platform（microservices-platform）側の計画 ADR
   - ADR-0019 # 同上（ユニット第一構成）
 author: endazon (with Claude Code)
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-28
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0030_backend-application-libraries.md
   - planning:projects/microservices-platform/06_technical/12_backend-application-stack.md
@@ -19,7 +20,7 @@ plan_refs:
 
 # IADR-0128: 標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する
 
-- 状態: Accepted
+- 状態: Superseded（by [IADR-0259](IADR-0259_single-project-vsa-structure.md)）
 - 日付: 2026-08-03
 - 決定者: endazon（方針）/ Claude Code（実装詳細の起案）
 
@@ -158,4 +159,15 @@ platform 12_backend-application-stack（fixed）は、サービス単位のプ�
 
 - Supersedes: なし（[IADR-0046](IADR-0046_unit-repo-layout.md) の `backend/Services/<Svc>/{src,tests}` レイアウトは
   そのまま有効であり、本 IADR はその `src/` 配下のプロジェクト割りを定める）
-- Superseded by: なし
+- Superseded by: [IADR-0259](IADR-0259_single-project-vsa-structure.md)
+
+> ［2026-08-28 追記 / IADR-0259（利用者裁定 2026-08-28）］
+> **本 ADR は [IADR-0259](IADR-0259_single-project-vsa-structure.md) により Superseded された。**
+> 決定 1〜6 はいずれも「層をプロジェクト境界で表す」ことを前提としており、
+> 単一プロジェクト＋VSA/DDD フォルダ構成への移行で前提ごと成立しない。決定 5
+> （`ConfigurationService.Client` を第 8 のプロジェクトとして残す）は結論が逆転した。
+> 決定 7（本再配置ではライブラリ標準を適用しない）の論法は IADR-0259 決定 7 が引き継ぐ。
+> 決定 6 の csproj 静的解析は [IADR-0256](IADR-0256_domain-dependency-inspection-by-source-scan.md) が
+> ソース走査と二重化しており、移行完了まで並置する。
+> **移送は専用の波が実施するため、完了までは現行コードが本 ADR の形を保つ**
+> （IADR-0259 決定 6）。**本文は当時の記録であり、書き換えていない。**
