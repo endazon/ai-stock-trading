@@ -147,6 +147,17 @@ function selfTest() {
   // 🔴 コードでなくてもテストが読む入力は走らせる。
   ok('backend の JSON フィクスチャも走らせる', () => isRun(['backend/Services/X/tests/data/fixture.json']));
   ok('backend の appsettings も走らせる', () => isRun(['backend/Services/X/src/appsettings.json']));
+  // VSA 統合後（1 サービス = 1 プロジェクト）のパス形（NFR / IADR-0258）。
+  // 判定は `^backend/` 前置だけを見ており構成に依存しないが、**その事実をテストで固定しておく**
+  // ——「たまたま動く」と「動くと確かめてある」は、移行の途中で読み分けられなくなる。
+  ok('統合後: サービスディレクトリ直下の Program.cs も走らせる',
+    () => isRun(['backend/Services/AuditService/Program.cs']));
+  ok('統合後: Features/<Entity>/<Operation>/Handler.cs も走らせる',
+    () => isRun(['backend/Services/AuditService/Features/Order/Approved/Handler.cs']));
+  ok('統合後: サービス内 Tests/ も走らせる',
+    () => isRun(['backend/Services/AuditService/Tests/Features/HandlerTests.cs']));
+  ok('統合後: サービスディレクトリ直下の appsettings も走らせる',
+    () => isRun(['backend/Services/AuditService/appsettings.json']));
   ok('Directory.Packages.props は走らせる', () => isRun(['Directory.Packages.props']));
   ok('Directory.Build.props は走らせる', () => isRun(['Directory.Build.props']));
   ok('global.json は走らせる', () => isRun(['global.json']));

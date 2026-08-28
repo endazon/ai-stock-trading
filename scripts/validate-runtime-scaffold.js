@@ -20,6 +20,7 @@
  *
  * 使い方:
  *   node scripts/validate-runtime-scaffold.js
+ *   RUNTIME_SCAFFOLD_ROOT=<dir> node scripts/validate-runtime-scaffold.js  # 任意のツリーを検査する
  */
 const fs = require('fs');
 const path = require('path');
@@ -124,15 +125,25 @@ function topLevelKeysDeep(obj, prefix, acc) {
 }
 
 /**
- * ホストプロジェクトのディレクトリ。標準構成（#353 / IADR-0128）では `<Svc>.Api`、
- * 未移行のサービスは `<Svc>.Worker` に appsettings がある。**移行は 1 サービス = 1 コミットで進む**ため、
- * 途中のコミットでは新旧が混在する。両方を見て、どちらも無ければ新（`.Api`）の名前で報告する。
+ * ホストプロジェクトのディレクトリ。**3 通りある**（NFR / IADR-0258）。
+ *
+ *   1. `backend/Services/<Svc>/src/<Svc>.Api`    標準構成（#353 / IADR-0128）。現行の全 11 サービス。
+ *   2. `backend/Services/<Svc>/src/<Svc>.Worker` 旧構成（標準構成へ未移行）。
+ *   3. `backend/Services/<Svc>`                  **VSA 統合後**（1 サービス = 1 プロジェクト）。
+ *      層ごとの中間ディレクトリが消え、`Program.cs` と `appsettings*.json` が
+ *      サービスディレクトリの直下へ来る。
+ *
+ * **移行はいずれも 1 サービス = 1 PR で進む**ため、途中のコミットでは新旧が混在する。
+ * 3 つとも無ければ、**現行どおり**標準構成（`.Api`）の名前で報告する
+ * （報告に現れるパスを変えると、既存の失敗メッセージの読み方が変わってしまう）。
  */
 function hostDir(svc) {
   const api = `backend/Services/${svc}/src/${svc}.Api`;
   const worker = `backend/Services/${svc}/src/${svc}.Worker`;
+  const merged = `backend/Services/${svc}`;
   if (exists(`${api}/appsettings.json`)) return api;
   if (exists(`${worker}/appsettings.json`)) return worker;
+  if (exists(`${merged}/appsettings.json`)) return merged;
   return api;
 }
 
