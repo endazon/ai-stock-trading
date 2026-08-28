@@ -235,13 +235,17 @@ services:
     auth: true
     extraEnv:
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の情報源はカンマ区切りで列挙して有効化する
-      # （例: "finnhub,sec-edgar,edinet,boj,fred"）。列挙しても必須設定（キー・銘柄・CIK・系列コード）が
+      # （例: "finnhub,finnhub-news,google-news,sec-edgar,edinet,boj,fred"）。列挙しても必須設定（キー・銘柄・CIK・系列コード）が
       # 空のソースは、そのソースだけ無効に倒れる（他ソースは有効なまま・IADR-0064）。
       - { name: Collection__Source__Provider, value: "" }
       # Finnhub Free（米国株の市況・60回/分）。
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
+      # ADR-0020 §結果 / IADR-0224: 日次上限は空=未実測（銘柄数上限を逆算しない）。実測後に設定する。
+      - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。空=本ソース無効。
+      - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # SEC EDGAR（米国の開示・キー不要）。連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
       - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
       - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }

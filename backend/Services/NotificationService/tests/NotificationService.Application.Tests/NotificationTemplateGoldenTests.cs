@@ -239,6 +239,28 @@ public class NotificationTemplateGoldenTests
                     + "違反が積み上がると新規取引が停止します。停止の解除は Discord の `/gfv clear` のみです"
                     + "（違反記録そのものは消えません）。",
                 NotificationSeverity.Critical)),
+
+        // #335, IADR-0217: LLM 割当逸脱。develop 側（#335）が `NotificationFormatter.From` へ
+        // 足したテンプレートであり、母集合をリフレクションで引く網羅検査が合流時に要求する。
+        // Warning——沈黙させないことが目的であり、Critical にすると本当に止まった事象が埋もれる。
+        ["LlmFallbackFired"] = (
+            new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", T),
+            new NotificationMessage(
+                "LLM 割当逸脱: report-monthly",
+                "用途 report-monthly が割当（claude-opus-5）ではなく claude-sonnet-5 で応答しました"
+                    + "（FallbackFired）。恒常的に発火している場合は割当設定を確認してください。",
+                NotificationSeverity.Warning)),
+
+        // #335, IADR-0216: 取引判断の見送り。**「設計上の正常な結果」が本文から欠けると
+        // 運用が障害として扱い、善意のフォールバック追加を招く**（ADR-0017 決定2）。
+        ["TradeDecisionSkipped"] = (
+            new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", T),
+            new NotificationMessage(
+                "取引判断の見送り: 割当モデルが利用できません",
+                "用途 trade-decision の割当モデル（claude-opus-5）が使えないため取引判断を実行せず、"
+                    + "発注も行いませんでした（理由 model-mismatch・実際 claude-haiku-4-5）。"
+                    + "**設計上の正常な結果**です（フォールバック禁止）。",
+                NotificationSeverity.Warning)),
     };
 
     public static TheoryData<string> GoldenKeys()

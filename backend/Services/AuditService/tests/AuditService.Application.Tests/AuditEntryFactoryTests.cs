@@ -567,6 +567,20 @@ public class AuditEntryFactoryTests
         back.Summary.Should().Contain("6 時間");
     }
 
+    // #513 / IADR-0225: **使用記録は切替・復帰と同じ相関へ置く**——通貨ごとの 1 本のタイムラインに
+    // 「使った・落ちた・戻った」が時系列で並ぶ。別相関にすると期間の追跡が 2 本に割れる。
+    [Fact]
+    public void 為替の使用記録は_切替と同じ相関で_使った源を要約に残す()
+    {
+        var used = AuditEntryFactory.From(new FxRateSourceUsed("USD", "boj", 1, 2, FxT0), Id, RecordedAt);
+        var fell = AuditEntryFactory.From(new FxRateSourceFellBack("USD", "fred", 2, 2, FxT0), Id, RecordedAt);
+
+        used.CorrelationId.Should().Be(fell.CorrelationId);
+        used.Symbol.Should().Be("USD", "為替は銘柄単位ではなく通貨単位で記録する");
+        used.Summary.Should().Contain("boj", "どの源を使ったかが分からなければ出典を導けない");
+        used.Summary.Should().Contain("第一の情報源");
+    }
+
     // 🔴 台帳を読む人が「止まっていた」と誤読すると、事後の検証が事実とずれる。
     [Fact]
     public void 為替の鮮度警告は_止まっていないことを要約に明記する()

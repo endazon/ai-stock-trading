@@ -206,10 +206,14 @@ services:
     environment:
       <<: *app-env
       # fail-safe: 空=NoOp（外部接続しない）。案A+（ADR-0004）の複数ソースはカンマ区切りで列挙する
-      # （例: finnhub,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0064）。
+      # （例: finnhub,finnhub-news,google-news,sec-edgar,edinet,boj,fred）。列挙しても必須設定が空のソースは無効に倒れる（IADR-0064）。
       Collection__Source__Provider: ${COLLECTION_SOURCE_PROVIDER:-}
       Collection__Source__Finnhub__ApiKey: ${COLLECTION_FINNHUB_API_KEY:-}
       Collection__Source__Finnhub__Symbols__0: ${COLLECTION_FINNHUB_SYMBOLS_0:-}
+      # ADR-0020 §結果 / IADR-0224: 日次上限は空=未実測（銘柄数上限を逆算しない）。
+      Collection__Source__Finnhub__DailyRequestLimit: ${COLLECTION_FINNHUB_DAILY_REQUEST_LIMIT:-}
+      # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。
+      Collection__Source__GoogleNews__Queries__0: ${COLLECTION_GOOGLENEWS_QUERIES_0:-}
       # SEC EDGAR（米国の開示）: 連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
       Collection__Source__SecEdgar__UserAgent: ${COLLECTION_SECEDGAR_USERAGENT:-}
       Collection__Source__SecEdgar__Ciks__0: ${COLLECTION_SECEDGAR_CIKS_0:-}

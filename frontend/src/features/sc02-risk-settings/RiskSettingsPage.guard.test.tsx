@@ -230,6 +230,34 @@ describe('RiskSettingsPage guard editing (SC-02, FR-13, FR-19, IADR-0086)', () =
     expect(within(guardForm(view)).getByLabelText('変更理由')).toHaveValue('銘柄整理');
   });
 
+  // #539: mount 時にも走っていた prop 追随を描画中の state 調整へ揃えた。**`guardSignature` が
+  // 実際に変わったとき（自分の保存成功後の再取得）の初期化は従来どおり効く**ことを固定する
+  // （置換前は `useEffect([guardSignature])` が同じ役割を担っていた）。
+  it('保存成功後の再取得でガード内容が実際に変わると、理由・確認・下書きが初期化される', async () => {
+    let saved = false;
+    mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {
+      if (path === '/risk-controls/settings/history') return [];
+      if (path === '/monitor/watchlist' || path === '/monitor/watchlist/history') return [];
+      if (path === '/risk-controls/settings/guard' && req?.method === 'PUT') {
+        saved = true;
+        return { settings: SETTINGS };
+      }
+      // 保存後の再取得は、実際に内容が変わった値を返す（米国(1) が除かれている）。
+      if (saved) return { ...SETTINGS, guard: { ...SETTINGS.guard, enabledMarkets: [0] } };
+      return SETTINGS;
+    });
+    const user = userEvent.setup();
+    const view = await renderReady();
+    const form = guardForm(view);
+    await user.type(within(form).getByLabelText('変更理由'), '保存確認用');
+    await user.click(within(form).getByRole('button', { name: '保存' }));
+
+    await within(form).findByText('保存しました。');
+    // guardSignature が実際に変わったので、理由・下書きが初期化され、新しいガード内容が反映される。
+    expect(within(guardForm(view)).getByLabelText('変更理由')).toHaveValue('');
+    expect(within(guardForm(view)).getByRole('checkbox', { name: '米国' })).not.toBeChecked();
+  });
+
   it('shows a conflict message on 409 without destructive retry', async () => {
     const user = userEvent.setup();
     mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {

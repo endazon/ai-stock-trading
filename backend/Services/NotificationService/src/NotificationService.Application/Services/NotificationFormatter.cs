@@ -107,6 +107,28 @@ public static class NotificationFormatter
         $"{e.Category} 費用が月次上限の {e.Percent:F0}% に到達しました（{e.Month}・{e.State}）。",
         e.State == "Halted" ? NotificationSeverity.Critical : NotificationSeverity.Warning);
 
+    // FR-04, FR-06, FR-09, ADR-0017 決定4-(2), #335: フォールバック発火の**警告**（可視化 3 経路の②）。
+    //
+    // 🔴 計画の明文: 「フォールバックの発火を警告として通知する。**恒常的に発火しているなら設定が誤っている**ため、
+    // 埋もれない経路で出す。」——沈黙のフォールバックを作らないことが目的であり、Info では埋もれる。
+    public static NotificationMessage From(LlmFallbackFired e) => new(
+        $"LLM 割当逸脱: {e.Purpose}",
+        $"用途 {e.Purpose} が割当（{e.ExpectedModel ?? "なし"}）ではなく {e.EffectiveModel ?? "不明"} で応答しました（{e.Outcome}）。"
+        + "恒常的に発火している場合は割当設定を確認してください。",
+        NotificationSeverity.Warning);
+
+    // FR-04, FR-09, UC-01, ADR-0017 決定2, #335: 割当モデル不可による取引判断の見送り。
+    //
+    // 🔴 **「モデルが使えないのに発注が出ない＝バグ」ではない。** 計画は「金融取引において『判断できないので
+    // 見送る』は正常な結果であり、『別のモデルで代替して判断する』より安全である」と明記している。
+    // よって Critical にはしない（Critical にすると運用が障害として扱い、善意のフォールバック追加を招く）。
+    // 一方、沈黙のスキップにもしない（同決定2）ため Warning で通知する。
+    public static NotificationMessage From(TradeDecisionSkipped e) => new(
+        "取引判断の見送り: 割当モデルが利用できません",
+        $"用途 {e.Purpose} の割当モデル（{e.ExpectedModel ?? "なし"}）が使えないため取引判断を実行せず、発注も行いませんでした"
+        + $"（理由 {e.Reason}・実際 {e.EffectiveModel ?? "不明"}）。**設計上の正常な結果**です（フォールバック禁止）。",
+        NotificationSeverity.Warning);
+
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。
     public static NotificationMessage From(DailyPolicyUnconfirmed e) => new(

@@ -20,6 +20,9 @@
     </PackageReference>
     <ProjectReference Include="..\ReportService.Application\ReportService.Application.csproj" />
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR（費用）, #347, IADR-0219: 報告書生成の LLM 費用計上に単価表（LlmPriceTable / LlmPricing）を用いる。
+         取引判断サービスと同じ単価解決を使うため、共有プロジェクトを参照する（ロジックを複製しない）。 -->
+    <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
     <!-- FR-08, IADR-0069/0071: 確定報告書の KB 保存（既定 no-op・BaseUrl 設定で opt-in）は共有クライアントを用いる。 -->
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
     <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその

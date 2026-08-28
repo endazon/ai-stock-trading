@@ -91,8 +91,27 @@ public static class AuditEntryFactory
         id, nameof(LlmCostIncurred),
         AuditCorrelation.From($"llm-cost:{e.At.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
         Symbol: null,
-        $"LLM 費用発生 {e.Amount:N2} 円",
+        $"LLM 費用発生 {e.Amount:N2} 円（用途 {e.Purpose ?? "不明"}・モデル {e.Model ?? "不明"}）",
         AuditSerialization.Serialize(e), e.At, recordedAt);
+
+    // FR-04, FR-06, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火（用途別・原因別）。
+    // 月報の「当月のフォールバック発火回数」の供給元であるため、**発生月で束ねられる相関**にする。
+    public static AuditEntry From(LlmFallbackFired e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmFallbackFired),
+        AuditCorrelation.From($"llm-fallback:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"LLM 割当逸脱（{e.Outcome}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-04, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送り。
+    // **障害ではなく設計上の正常な結果**であり、日報の「当日のスキップ回数」の供給元になる。
+    // 発生日で辿れるよう、発火と同じく月で束ねる相関にする（日報は日で絞って数える）。
+    public static AuditEntry From(TradeDecisionSkipped e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionSkipped),
+        AuditCorrelation.From($"trade-decision-skip:{e.OccurredAt.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}"),
+        Symbol: null,
+        Truncate($"取引判断の見送り（{e.Reason}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-20, FR-11, #167, IADR-0082: 段階ゲートの遷移（承認による昇格・差し戻し）。注文/市場相関を持たないため
     // "stage-gate" の決定的 GUID を相関にする（すべての段階遷移が同一相関で束ねられ、監査照会でまとめて辿れる）。
@@ -269,6 +288,18 @@ public static class AuditEntryFactory
             + "第一の源が使えていない（鮮度が週次へ悪化し得る）。新規建ては止まっていない",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-06, FR-10, FR-11, #513, ADR-0022 決定1, IADR-0225: どの情報源から取ったかの記録（暦日ごとに 1 件）。
+    //
+    // 🔴 **これが「静かな期間」の出典の唯一の根拠である。** 遷移でしか発行しない設計（IADR-0196 決定1）では
+    // 切替も復帰も起きない期間に何も残らず、**日報の出典が平常時こそ「特定できません」になっていた**。
+    // 相関は切替・復帰と**同じ `fx-rate-source:{Quote}`** に置く——通貨ごとの 1 本のタイムラインに
+    // 「使った・落ちた・戻った」が時系列で並ぶ（別相関にすると期間の追跡が 2 本に割れる）。
+    public static AuditEntry From(FxRateSourceUsed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateSourceUsed), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レート源の使用記録（当日初回）: {e.Quote} は {e.SourceName}"
+            + $"（優先度 {e.Rank}/{e.TotalSources}{(e.IsPrimary ? "・第一の情報源" : "・フォールバック")}）から取得",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 🔴 期間は**このイベント自身が持つ**（受け手に引き算させない）。片方を取りこぼしても期間が黙って狂わない。
     public static AuditEntry From(FxRateSourcePrimaryRestored e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(FxRateSourcePrimaryRestored), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
@@ -294,6 +325,38 @@ public static class AuditEntryFactory
         $"鮮度切れのレートで決済: {e.Symbol}/{e.Market} 数量{e.Quantity}・"
             + $"換算率 {e.FxRateToBase}（{e.Quote}→基準通貨）・**観測日 {e.RateAsOf:yyyy-MM-dd}（{e.AgeDays:0.#} 日前）**。"
             + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退。
+    //
+    // 相関は**カテゴリごと**に分ける（ニュース系と開示系は独立に劣化する）。欠測と回復を同じ相関に置くことで、
+    // 台帳から**期間を 1 本の相関で辿れる**（FxRateSourceFellBack / FxRateSourcePrimaryRestored と同じ形）。
+    //
+    // 🔴 要約に「**手仕舞い・損切りは止まっていない**」を必ず書く。台帳を読む人が「取引が全部止まっていた」と
+    // 誤読すると、事後の検証が事実とずれる（FxRateStale の要約と同じ配慮）。
+    public static AuditEntry From(InformationSourceDegraded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceDegraded), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        Truncate($"情報源の欠測（{e.Category}）: {string.Join(",", e.MissingSources)} が取得できない。"
+            + $"振る舞い={e.Behavior}・新規建ての停止={(e.BlocksNewEntries ? "あり" : "なし")}。"
+            + "手仕舞い・損切りは止まっていない"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 期間と該当サイクル数は**このイベント自身が持つ**（受け手に引き算・数え直しをさせない）。
+    // ADR-0020 決定2-3 が日報・月報へ求める 3 点（発生時刻・継続時間・該当サイクル数）がこの 1 行で揃う。
+    public static AuditEntry From(InformationSourceRecovered e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceRecovered), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        $"情報源の欠測から回復（{e.Category}）: 継続 {FormatDuration(e.OutageDuration)}"
+            + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
+    //
+    // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。
+    // 発動と解除を同じ相関に置き、月報が期間として読めるようにする。
+    public static AuditEntry From(GeneralWebCollectionStateChanged e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(GeneralWebCollectionStateChanged), AuditCorrelation.From($"general-web:{e.Category}"), Symbol: null,
+        Truncate($"一般 Web 収集を{(e.Engaged ? "発動" : "解除")}（{e.Category}）: {e.Reason}"
+            + (e.ProvisionalUntil is { } until ? $"。暫定期限 {until:yyyy-MM-dd}（次回月報まで・恒久化しない）" : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。

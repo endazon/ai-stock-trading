@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AiStockTrading.InformationCollection.Application.Ports;
+using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using Wolverine;
 using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionService;
@@ -19,6 +20,10 @@ internal sealed class CollectionPollingService(
 {
     // Halted 時の再照会倍率（収集はしないが、復帰検知のため Throttled と同じ間隔で回す）。
     private const decimal HaltedRecheckMultiplier = 2m;
+
+    // #336, ADR-0020 決定2-3: 欠測の遷移判定（発生時刻・継続時間・該当サイクル数）。巡回をまたいで状態を持つため
+    // ポーラ（singleton）が保持する。判定そのものは DegradationStateTracker（外部依存なし）が行う。
+    private readonly DegradationStateTracker _degradationTracker = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -91,6 +96,22 @@ internal sealed class CollectionPollingService(
 
         var result = await collector.CollectAsync(cancellationToken).ConfigureAwait(false);
 
+        // FR-01, FR-09, FR-11, #336, ADR-0020 決定2-3: 欠測の遷移を記録・通知する（継続中は黙る）。
+        // 発行はクリティカルパス外であり、失敗しても収集を壊さない（状態は巻き戻して次回に再発行する）。
+        await PublishDegradationSafeAsync(publish, result.Degradation).ConfigureAwait(false);
+
+        // 🔴 ADR-0020 決定3: **サイクル中止**（moomoo 等の必須ソースの欠測）は取引サイクルを起こさない。
+        // ここで止めるのは**新規の判断サイクル**だけであり、**手仕舞い・損切りは別経路**である
+        // （損切りの実行機構はブローカー側の逆指値であり、系が止まっても効く・NFR-04）。
+        if (result.Degradation.AbortCycle)
+        {
+            logger.LogError(
+                "必須情報源の欠測により当該サイクルを中止します（フェイルセーフ）。欠測: {Missing}。"
+                + "手仕舞い・損切りは止めていません。",
+                string.Join(", ", result.Degradation.MissingRequired));
+            return gate;
+        }
+
         // 収集があった場合のみ取引サイクルの起点イベントを発行する（空巡回では起動しない）。
         if (result.ItemCount > 0)
         {
@@ -100,5 +121,24 @@ internal sealed class CollectionPollingService(
         }
 
         return gate;
+    }
+
+    // #336, ADR-0020 決定2-3: 欠測・回復の遷移イベントを発行する。
+    // fail-safe: 発行の失敗で収集を止めない。**ただし状態は巻き戻す**——巻き戻さないと「発行済み」として
+    // 記録され、次の機会にも二度と出なくなる（IADR-0196 と同じ理由）。
+    private async Task PublishDegradationSafeAsync(IMessageBus publish, CollectionDegradation degradation)
+    {
+        foreach (var message in _degradationTracker.Observe(degradation, DateTimeOffset.UtcNow))
+        {
+            try
+            {
+                await publish.PublishAsync(message).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _degradationTracker.Rollback(message);
+                logger.LogError(ex, "情報源の欠測状態の発行に失敗しました（収集は継続します）。");
+            }
+        }
     }
 }
