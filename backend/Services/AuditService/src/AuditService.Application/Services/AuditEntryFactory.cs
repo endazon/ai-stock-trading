@@ -327,6 +327,38 @@ public static class AuditEntryFactory
             + "計画どおり手仕舞いは止めていないが、**換算額は実勢から乖離し得る**",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退。
+    //
+    // 相関は**カテゴリごと**に分ける（ニュース系と開示系は独立に劣化する）。欠測と回復を同じ相関に置くことで、
+    // 台帳から**期間を 1 本の相関で辿れる**（FxRateSourceFellBack / FxRateSourcePrimaryRestored と同じ形）。
+    //
+    // 🔴 要約に「**手仕舞い・損切りは止まっていない**」を必ず書く。台帳を読む人が「取引が全部止まっていた」と
+    // 誤読すると、事後の検証が事実とずれる（FxRateStale の要約と同じ配慮）。
+    public static AuditEntry From(InformationSourceDegraded e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceDegraded), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        Truncate($"情報源の欠測（{e.Category}）: {string.Join(",", e.MissingSources)} が取得できない。"
+            + $"振る舞い={e.Behavior}・新規建ての停止={(e.BlocksNewEntries ? "あり" : "なし")}。"
+            + "手仕舞い・損切りは止まっていない"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 期間と該当サイクル数は**このイベント自身が持つ**（受け手に引き算・数え直しをさせない）。
+    // ADR-0020 決定2-3 が日報・月報へ求める 3 点（発生時刻・継続時間・該当サイクル数）がこの 1 行で揃う。
+    public static AuditEntry From(InformationSourceRecovered e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceRecovered), AuditCorrelation.From($"information-source:{e.Category}"), Symbol: null,
+        $"情報源の欠測から回復（{e.Category}）: 継続 {FormatDuration(e.OutageDuration)}"
+            + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
+    //
+    // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。
+    // 発動と解除を同じ相関に置き、月報が期間として読めるようにする。
+    public static AuditEntry From(GeneralWebCollectionStateChanged e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(GeneralWebCollectionStateChanged), AuditCorrelation.From($"general-web:{e.Category}"), Symbol: null,
+        Truncate($"一般 Web 収集を{(e.Engaged ? "発動" : "解除")}（{e.Category}）: {e.Reason}"
+            + (e.ProvisionalUntil is { } until ? $"。暫定期限 {until:yyyy-MM-dd}（次回月報まで・恒久化しない）" : string.Empty)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
     private static string FormatDuration(TimeSpan d) =>
         d.TotalDays >= 1 ? $"{d.TotalDays:0.#} 日"

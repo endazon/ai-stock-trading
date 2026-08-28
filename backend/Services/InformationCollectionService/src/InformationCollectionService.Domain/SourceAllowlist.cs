@@ -19,6 +19,9 @@ public sealed class SourceAllowlist
     public static SourceAllowlist Default { get; } = new(new[]
     {
         "finnhub",
+        // ADR-0020 決定2: ニュース系（いずれか 1 つ以上が生きていることを必須とする 2 系統）。
+        "finnhub-news",
+        "google-news",
         "sec-edgar",
         "edinet",
         "boj",

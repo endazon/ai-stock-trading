@@ -1,5 +1,6 @@
-using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
+using AiStockTrading.InformationCollection.Application.State;
+using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -7,56 +8,83 @@ using Xunit;
 
 namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
 
-// FR-01, IADR-0022/0064: 情報源の選択。安全既定（no-op）・設定不備フォールバック（IADR-0022）と、
-// 案A+ の複数ソース合成・ソース単位の除外（IADR-0064）を検証する。
+// FR-01, ADR-0020, IADR-0022/0064: 情報源の選択。安全既定（外部接続しない）・設定不備での除外（IADR-0022）と、
+// 案A+ の複数ソース合成・ソース単位の除外（IADR-0064）、および**名前つきで返す**ことを検証する。
 public class InformationSourceFactoryTests
 {
     private static readonly HttpClient Http = new();
 
     [Fact]
-    public void 既定_provider未設定_は_NoOpInformationSource()
+    public void 既定_provider未設定_は有効な情報源が0件()
     {
-        Create(new CollectionSourceOptions()).Should().BeOfType<NoOpInformationSource>();
+        Create(new CollectionSourceOptions()).Should().BeEmpty();
     }
 
     [Fact]
-    public void none_指定_は_NoOpInformationSource()
+    public void none_指定_は有効な情報源が0件()
     {
-        Create(new CollectionSourceOptions { Provider = "none" }).Should().BeOfType<NoOpInformationSource>();
+        Create(new CollectionSourceOptions { Provider = "none" }).Should().BeEmpty();
     }
 
     [Fact]
     public void finnhub_かつ_APIキーと銘柄あり_は_FinnhubInformationSource()
     {
-        Create(Finnhub()).Should().BeOfType<FinnhubInformationSource>();
+        var source = Create(Finnhub()).Should().ContainSingle().Which;
+
+        source.Name.Should().Be("finnhub");
+        source.Source.Should().BeOfType<FinnhubInformationSource>();
     }
 
     [Fact]
-    public void finnhub_だが_APIキー未設定_は_no_opへフォールバックする()
+    public void finnhub_だが_APIキー未設定_は除外される()
     {
         var options = Finnhub();
         options.Finnhub.ApiKey = null;
 
-        Create(options).Should().BeOfType<NoOpInformationSource>();
+        Create(options).Should().BeEmpty();
     }
 
     [Fact]
-    public void finnhub_だが_銘柄未設定_は_no_opへフォールバックする()
+    public void finnhub_だが_銘柄未設定_は除外される()
     {
         var options = Finnhub();
         options.Finnhub.Symbols = [];
 
-        Create(options).Should().BeOfType<NoOpInformationSource>();
+        Create(options).Should().BeEmpty();
     }
 
     [Fact]
-    public void 未知の_provider_は安全側_no_opに倒す()
+    public void 未知の_provider_は安全側_収集しない()
     {
-        Create(new CollectionSourceOptions { Provider = "bloomberg" }).Should().BeOfType<NoOpInformationSource>();
+        Create(new CollectionSourceOptions { Provider = "bloomberg" }).Should().BeEmpty();
+    }
+
+    // ADR-0020 決定2: ニュース系 2 系統。**カタログの見出しと同じ名前で返る**こと（名前が違うと欠測判定に届かない）。
+    [Fact]
+    public void ニュース系2系統は構成が揃えばカタログと同じ名前で返る()
+    {
+        var options = Finnhub();
+        options.Provider = "finnhub-news,google-news";
+        options.GoogleNews = new GoogleNewsOptions { Queries = ["AAPL 株価"] };
+
+        var sources = Create(options);
+
+        sources.Select(s => s.Name).Should().Equal("finnhub-news", "google-news");
+        sources[0].Source.Should().BeOfType<FinnhubCompanyNewsSource>();
+        sources[1].Source.Should().BeOfType<GoogleNewsRssSource>();
+        sources.Should().OnlyContain(s => InformationSourceCatalog.Default.Find(s.Name) != null);
     }
 
     [Fact]
-    public void 複数指定_は_CompositeInformationSource_で束ねる()
+    public void google_news_はクエリ未設定なら除外される()
+    {
+        var options = new CollectionSourceOptions { Provider = "google-news" };
+
+        Create(options).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void 複数指定_は名前つきで並べて返す()
     {
         var options = Finnhub();
         options.Provider = "finnhub,sec-edgar,edinet,boj,fred";
@@ -69,7 +97,7 @@ public class InformationSourceFactoryTests
         options.Boj = new BojOptions { Db = "CO", SeriesCodes = ["CODE"] };
         options.Fred = new FredOptions { ApiKey = "key", SeriesIds = ["DGS10"] };
 
-        Create(options).Should().BeOfType<CompositeInformationSource>();
+        Create(options).Select(s => s.Name).Should().Equal("finnhub", "sec-edgar", "edinet", "boj", "fred");
     }
 
     [Fact]
@@ -82,68 +110,32 @@ public class InformationSourceFactoryTests
             Fred = new FredOptions { ApiKey = "key", SeriesIds = ["DGS10"] },
         };
 
-        Create(options).Should().BeOfType<FredInformationSource>("EDINET のみ除外され FRED は残る");
+        Create(options).Select(s => s.Name).Should().Equal("fred");
+    }
+
+    // ADR-0005 決定5 / ADR-0020 決定5: 有料化の判断が下りるまでは**推奨へ一時降格**して運用を継続する。
+    [Fact]
+    public void 一時降格すると区分が推奨になり欠測時の扱いが記録のみになる()
+    {
+        var catalog = InformationSourceFactory.ApplyDemotions(
+            InformationSourceCatalog.Default, "finnhub-news", NullLogger.Instance);
+
+        var demoted = catalog.Find("finnhub-news")!;
+        demoted.Tier.Should().Be(SourceTier.Recommended);
+        demoted.MissingBehavior.Should().Be(MissingSourceBehavior.RecordAndNotifyOnly);
+
+        // 降格していないソースは元のまま。
+        catalog.Find("google-news")!.Tier.Should().Be(SourceTier.Required);
     }
 
     [Fact]
-    public void 有効なソースが1件も無ければ_no_opに倒す()
+    public void 一時降格の指定が未知の名前ならカタログを変えない()
     {
-        var options = new CollectionSourceOptions { Provider = "edinet,fred" };
+        var catalog = InformationSourceFactory.ApplyDemotions(
+            InformationSourceCatalog.Default, "bloomberg", NullLogger.Instance);
 
-        Create(options).Should().BeOfType<NoOpInformationSource>();
-    }
-
-    [Fact]
-    public void 空白や大文字混じりの指定も解釈する()
-    {
-        var options = Finnhub();
-        options.Provider = " FINNHUB , none ";
-
-        Create(options).Should().BeOfType<FinnhubInformationSource>();
-    }
-
-    [Theory]
-    [InlineData(null, "320193")]
-    [InlineData("AiStockTrading/1.0 (owner@example.com)", null)]
-    public void sec_edgar_は_User_Agent_と_CIK_の両方が要る(string? userAgent, string? cik)
-    {
-        // SEC は連絡先入り User-Agent を規約で必須としているため、未設定のまま接続しない。
-        var options = new CollectionSourceOptions
-        {
-            Provider = "sec-edgar",
-            SecEdgar = new SecEdgarOptions { UserAgent = userAgent, Ciks = cik is null ? [] : [cik] },
-        };
-
-        Create(options).Should().BeOfType<NoOpInformationSource>();
-    }
-
-    [Fact]
-    public void boj_は_DB_と系列コードが要る()
-    {
-        var options = new CollectionSourceOptions { Provider = "boj", Boj = new BojOptions { Db = "CO" } };
-
-        Create(options).Should().BeOfType<NoOpInformationSource>();
-    }
-
-    [Fact]
-    public void 一覧の空要素は未設定として扱う()
-    {
-        // 環境変数の空指定（Collection__Source__Fred__SeriesIds__0=""）で実体のない構成のまま有効化しない。
-        var options = new CollectionSourceOptions
-        {
-            Provider = "fred",
-            Fred = new FredOptions { ApiKey = "key", SeriesIds = ["", "  "] },
-        };
-
-        Create(options).Should().BeOfType<NoOpInformationSource>();
-    }
-
-    [Fact]
-    public void fred_は_APIキーと系列IDが要る()
-    {
-        var options = new CollectionSourceOptions { Provider = "fred", Fred = new FredOptions { ApiKey = "key" } };
-
-        Create(options).Should().BeOfType<NoOpInformationSource>();
+        catalog.Definitions.Should().HaveSameCount(InformationSourceCatalog.Default.Definitions);
+        catalog.Find("finnhub-news")!.Tier.Should().Be(SourceTier.Required);
     }
 
     private static CollectionSourceOptions Finnhub() => new()
@@ -152,7 +144,7 @@ public class InformationSourceFactoryTests
         Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"] },
     };
 
-    private static IInformationSource Create(CollectionSourceOptions options) =>
+    private static IReadOnlyList<NamedInformationSource> Create(CollectionSourceOptions options) =>
         InformationSourceFactory.Create(options, Http, new StubClock(), TimeProvider.System, NullLoggerFactory.Instance);
 
     private sealed class StubClock : IClock

@@ -53,7 +53,9 @@ public class RetrievalSourceVocabularyTests
         var retrievalTags = QuotedLiteralsInDefault(RetrievalPolicyPath);
 
         // 自リポジトリが書く文書のタグ（ReportKnowledgeMapper が付ける）。増やすときは意図的に。
-        string[] ownDocumentKinds = ["report"];
+        // #336, ADR-0020 決定2-1: collection-status は収集サービス自身が書く「欠測の明示」であり、
+        // 外部から取得したテキストではない（DegradationNotice.SourceName）。
+        string[] ownDocumentKinds = ["report", "collection-status"];
 
         var unexpected = retrievalTags
             .Except(collectionSources, StringComparer.OrdinalIgnoreCase)
