@@ -14,6 +14,11 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // 機密区分（microservices-platform IADR-0047）: attributes["confidentiality"] は必須のため、KnowledgeDocument.Confidentiality を
 // 常に補完する（呼び出し側 Attributes が同キーを持っていても機密区分は Confidentiality を優先する）。
 //
+// FR-08, #520: owner / department も必須属性として常に補完する（planning#344 確定）。
+// 明示指定（Attributes に非空の値がある）は上書きしない。解決できない場合は KnowledgeAttributeDefaults
+// の予約値（owner=system, department=unassigned）へ倒す（欠落させない）。
+// 🔴 lifecycle は planning#361 で既定が未裁定のため、意図的に補完しない（推測で入れない）。
+//
 // 注意: 現行の POST /documents は本文（Markdown）を受け取らない（本文はオブジェクトストレージ + Ingestion 経由）。
 // 本アダプタはカタログ登録（メタデータ）に限る。本文取り込みによる検索可能化は後続 #9（IADR-0069 スコープ境界）。
 internal sealed class HttpKnowledgeBaseWriter(
@@ -90,6 +95,15 @@ internal sealed class HttpKnowledgeBaseWriter(
             ? KnowledgeConfidentiality.Default
             : document.Confidentiality;
         attributes["confidentiality"] = confidentiality;
+
+        // owner / department: 明示指定（非空）があれば保持し、無ければ予約値へ倒す（欠落させない）。
+        if (!attributes.TryGetValue("owner", out var owner) || string.IsNullOrWhiteSpace(owner))
+            attributes["owner"] = KnowledgeAttributeDefaults.ReservedOwner;
+
+        if (!attributes.TryGetValue("department", out var department) || string.IsNullOrWhiteSpace(department))
+            attributes["department"] = KnowledgeAttributeDefaults.UnassignedDepartment;
+
+        // lifecycle は意図的に補完しない（planning#361 未裁定。上記コメント参照）。
 
         return attributes;
     }

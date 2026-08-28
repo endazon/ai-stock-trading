@@ -15,6 +15,22 @@ public static class KnowledgeConfidentiality
     public const string Default = Internal;
 }
 
+// FR-08: 必須属性 owner / department の予約値（planning#344 確定・
+// project-planning/projects/microservices-platform/10_feedback/20260815_ingestion-owner-department-resolution.md）。
+// 「解決できなかった」ことの記録であり既定値ではない（platform 側 measure-abac-combinations.js が
+// 環流債務として件数を観測する）。#520 での判断根拠は作業仕様書 20260828_520 を参照。
+public static class KnowledgeAttributeDefaults
+{
+    // owner: AST は無人のバッチ実行であり、解決できる利用者主体が存在しない（更新者を運ぶ器が無い）。
+    public const string ReservedOwner = "system";
+
+    // department: AST を表す固有の部門コードは計画側に存在しない。部門コードの値域自体が
+    // 組織側の取り決めとして未確定（project-planning/projects/microservices-platform/06_technical/
+    // 09_datasource-connectors.md §未確定事項「値域が定まるまで department の写像は行わない」）。
+    // 推測で値を決めず、予約値へ倒す。
+    public const string UnassignedDepartment = "unassigned";
+}
+
 // FR-08: KB へ保存する 1 文書。Title/属性/タグはカタログ登録に用いる。
 //   Content     — 正規化 Markdown 本文（将来のオブジェクトストレージ取り込み用。現行の POST /documents は本文を受けない）。
 //   SourceUri   — 元情報への参照（platform 側 OriginalUri に写像）。
