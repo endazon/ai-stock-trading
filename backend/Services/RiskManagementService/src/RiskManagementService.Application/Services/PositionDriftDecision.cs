@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-05, FR-09, FR-10, #292, #305, IADR-0118, IADR-0124: 乖離を報告するかの判定（純関数）。
 //

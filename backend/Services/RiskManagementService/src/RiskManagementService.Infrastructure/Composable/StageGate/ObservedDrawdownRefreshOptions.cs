@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+namespace RiskManagementService.Infrastructure.StageGate;
 
 // FR-20, FR-10, ADR-0008, IADR-0103, #164: 実DD（観測最大ドローダウン）供給ドライバの構成。既定は安全側（無効・opt-in）。
 // 有効化しても時価評価が既定無効（MarketData:EnableMarkToMarket=false・IADR-0066）のうちは DrawdownRatio が常に 0 で

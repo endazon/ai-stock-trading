@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, IADR-0240: 報告書レビューコマンドの処理。
 // 多層認証 → コマンド解析 → 版番号ガード → 報告書サービス呼び出しの順に閂を掛ける。

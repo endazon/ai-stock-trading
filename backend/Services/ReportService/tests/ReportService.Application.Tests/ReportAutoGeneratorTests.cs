@@ -1,14 +1,14 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Application.State;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Application.State;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06/07/16, UC-03〜05, ADR-0003, IADR-0115, #280: 報告書の自動生成（生成→提示まで）を検証する。
 // 最重要の不変条件は「自動生成は確定（Confirmed）しない」こと。確定は OwnerOnly の対話経路のみ（ADR-0003）。

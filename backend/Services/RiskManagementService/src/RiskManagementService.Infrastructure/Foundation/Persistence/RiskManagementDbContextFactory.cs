@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // IADR-0012: 設計時（dotnet ef migrations）用の DbContext ファクトリ。マイグレーション生成が Program.cs の
 // 実行（ホスト起動・メッセージング等）に依存しないようにする。実行時の接続は Program.cs の構成が用いる。

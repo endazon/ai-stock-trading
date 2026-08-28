@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
@@ -10,7 +10,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-01, FR-02, FR-10, ADR-0020 決定2/決定3, #337, IADR-0249:
 // 情報収集の縮退遷移（InformationSourceDegraded / Recovered）→ 新規建て停止状態への結線の検証。

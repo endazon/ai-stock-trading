@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, FR-16, #338, #282, ADR-0017 決定2・決定4, 04_report-templates 月報 §7, IADR-0254:
 // 当期間の LLM 利用実績（費用・フォールバック発火・取引判断スキップ）の供給。

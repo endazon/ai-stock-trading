@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.RiskManagement.Application</RootNamespace>
+    <RootNamespace>RiskManagementService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- #257, IADR-0107: 損切り決済の換算レート縮退（fail-safe）を検知可能にするためのログ抽象（実装には依存しない）。

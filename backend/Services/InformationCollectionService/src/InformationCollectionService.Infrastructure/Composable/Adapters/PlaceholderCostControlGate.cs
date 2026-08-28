@@ -1,7 +1,7 @@
-using AiStockTrading.InformationCollection.Application.Ports;
+using InformationCollectionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // NFR（費用）, IADR-0031: ICostControlGate の暫定実装。費用統制（#23）の実データ（CostControl:BaseUrl）が未設定の間は
 // Normal（停止せず・1×）を返す＝間隔延長/停止は行わない。差し替え漏れ検知のため初回利用時に 1 回警告する。

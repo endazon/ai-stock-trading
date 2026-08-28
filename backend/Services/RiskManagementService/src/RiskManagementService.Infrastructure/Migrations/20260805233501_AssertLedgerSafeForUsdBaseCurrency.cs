@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
     /// FR-10, FR-17, #364, 06_technical/05_trading-assumptions §3, IADR-0152 決定5:

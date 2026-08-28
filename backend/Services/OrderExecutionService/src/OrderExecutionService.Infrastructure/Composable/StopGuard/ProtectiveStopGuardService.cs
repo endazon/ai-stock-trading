@@ -1,4 +1,4 @@
-using AiStockTrading.OrderExecution.Application.StopGuard;
+using OrderExecutionService.Application.StopGuard;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.StopGuard;
+namespace OrderExecutionService.Infrastructure.StopGuard;
 
 // FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値の失効検知・再発注・残存取消を定期巡回で回す。
 // **逆指値なしの建玉を持たない**（FR-10）の滞留側の守り手であり、エントリー時の同時発注

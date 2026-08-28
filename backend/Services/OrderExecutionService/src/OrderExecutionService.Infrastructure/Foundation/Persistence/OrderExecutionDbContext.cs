@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）: 発注執行サービス専有の DbContext（発注結果の履歴・発注予約）。
 internal sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbContext> options)

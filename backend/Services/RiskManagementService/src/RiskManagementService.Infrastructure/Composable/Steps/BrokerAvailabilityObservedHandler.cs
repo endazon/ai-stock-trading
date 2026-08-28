@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-20, FR-12, #385, 06_daytrading-review §4.2, IADR-0150: 稼働の観測（BrokerAvailabilityObserved）を購読し、
 // 段階ゲートの「60 営業日」を数えるための稼働分数を積む。

@@ -1,8 +1,8 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Application.Tests;
+namespace MarketMonitorService.Application.Tests;
 
 // テスト用の固定クロック。
 internal sealed class FakeClock(DateTimeOffset utcNow) : IClock

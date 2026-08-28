@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-06, FR-10, UC-06, #381, IADR-0196 決定3, IADR-0199: 為替の状態供給の既定（**未供給＝null**）。
 //

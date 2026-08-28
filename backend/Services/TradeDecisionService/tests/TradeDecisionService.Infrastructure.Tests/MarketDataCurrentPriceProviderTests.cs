@@ -1,13 +1,13 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.State;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.State;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-02, FR-04, FR-10, IADR-0068/0099: 現在値供給アダプタの検証。共有 IMarketDataSource を包み、鮮度を検査して
 // 権威ある現在値を判断サービスへ渡す。未有効化（no-op）は実取得せず null。取得不可・鮮度切れは現在値なしへ倒す。

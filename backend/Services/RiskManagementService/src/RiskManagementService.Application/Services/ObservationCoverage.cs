@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-21, FR-10, FR-06, UC-06, #463, IADR-0181:
 // **報告期間が観測の届いた取引日で覆われているか**の判定（純関数）。

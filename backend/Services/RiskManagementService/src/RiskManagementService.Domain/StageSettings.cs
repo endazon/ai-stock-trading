@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, #334, IADR-0140: 段階ごとの**既定の発注先**（動作モード）と発注可能額の上限。
 //

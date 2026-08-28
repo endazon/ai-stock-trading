@@ -1,12 +1,12 @@
-using AiStockTrading.InformationCollection.Application.Adapters;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.Services;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.Services;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Application.Tests;
+namespace InformationCollectionService.Application.Tests;
 
 // FR-01, ADR-0003, ADR-0004, ADR-0020: 収集オーケストレーション（検証用途の排除・許可リスト選別・サニタイズ・
 // KB 保存・件数・欠測の明示）を検証する。

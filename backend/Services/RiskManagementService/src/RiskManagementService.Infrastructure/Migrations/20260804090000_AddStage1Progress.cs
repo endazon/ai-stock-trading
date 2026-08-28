@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
     /// FR-20, #333, 06_daytrading-review §4.1〜§4.3: Stage 1（SIMULATE）の合格条件を

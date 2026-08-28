@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Notification.Application</RootNamespace>
+    <RootNamespace>NotificationService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- FR-14, IADR-0062: Bot の拒否理由をログに残すため（詳細設計07: 許可外の着信は無視しログのみ残す）。 -->

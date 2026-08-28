@@ -1,9 +1,9 @@
 using System.Reflection;
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Application.Services;
-using AiStockTrading.Audit.Application.State;
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AuditService.Application.Adapters;
+using AuditService.Application.Ports;
+using AuditService.Application.Services;
+using AuditService.Application.State;
+using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -14,7 +14,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Audit.Infrastructure.Tests;
+namespace AuditService.Infrastructure.Tests;
 
 // FR-11, UC-07, ADR-0016 決定15, #339, IADR-0226:
 // **取引サイクル 1 周で必須イベントがすべて記録される**ことの完全性テスト。

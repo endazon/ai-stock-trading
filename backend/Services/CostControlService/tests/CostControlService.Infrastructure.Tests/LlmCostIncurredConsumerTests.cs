@@ -1,8 +1,8 @@
 using System.Globalization;
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
-using AiStockTrading.CostControl.Infrastructure.Composable.Steps;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
+using CostControlService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.Messaging;
@@ -15,9 +15,9 @@ using Wolverine;
 using Wolverine.Runtime;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, FR-04, IADR-0055 決定1/5: LlmCostIncurred を購読して LLM 費用を計上する Handler を
 // Wolverine のテストハーネス（Wolverine.Tracking）＋インメモリ台帳/重複排除ストアで検証する

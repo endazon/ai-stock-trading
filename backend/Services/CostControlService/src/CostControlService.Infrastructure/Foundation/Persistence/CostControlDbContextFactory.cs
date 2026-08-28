@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // 設計時（dotnet ef migrations）用の DbContext ファクトリ。マイグレーション生成が Program.cs の実行に依存しないようにする。
 internal sealed class CostControlDbContextFactory : IDesignTimeDbContextFactory<CostControlDbContext>

@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 /// <summary>
 /// FR-20, FR-19, ADR-0016 決定8・決定14, #333, IADR-0139: **段階別の商品種別強制**（純関数）。

@@ -94,7 +94,7 @@ internal static class DomainSourceScan
     /// <summary>
     /// 検査 (d): ソース中に現れる<b>他サービスの名前空間の根</b>（<c>AiStockTrading.&lt;Other&gt;</c>）。
     /// <para>
-    /// <c>using</c> 行に限らず全文を走査する。完全修飾（<c>AiStockTrading.Configuration.Domain.CostCalculator</c>）で
+    /// <c>using</c> 行に限らず全文を走査する。完全修飾（<c>ConfigurationService.Domain.CostCalculator</c>）で
     /// 書けば <c>using</c> 走査を迂回できてしまうためである。
     /// </para>
     /// <c>AiStockTrading.Shared.*</c> は共有物であり他サービスではないので除く。

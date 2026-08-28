@@ -1,6 +1,6 @@
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Domain;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // NFR（費用）, IADR-0027: 費用計上の行モデル（追記専用）。専有 DB（cost_control_svc）に配置する。Month は "yyyy-MM"。
 internal sealed class CostEntryRow

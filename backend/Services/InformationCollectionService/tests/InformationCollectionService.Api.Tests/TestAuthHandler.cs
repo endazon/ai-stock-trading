@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // NFR, #456: テスト用認証ハンドラ（他 Worker テスト準拠）。ロールはヘッダ "X-Test-Roles" で指定する。
 //   - ヘッダ無し → 未認証（NoResult）→ 401

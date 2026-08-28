@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -9,9 +9,9 @@ using AwesomeAssertions;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // FR-17, IADR-0076: 採算費用見積りプロバイダの配線を検証する。Configuration:BaseUrl 未設定（既定）では
 // 共有クライアントが既定（未解決）を返すため、アダプタは null（＝採算見積り不能＝安全側 Hold）に倒れる。

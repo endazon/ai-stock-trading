@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-20, FR-10, UC-06, ADR-0008, IADR-0103, #164: 段階別実績（StagePerformance）の運用系フィールドのうち
 // 実DD（ObservedMaxDrawdownRatio）だけを更新する純関数。DB・Clock 非依存。

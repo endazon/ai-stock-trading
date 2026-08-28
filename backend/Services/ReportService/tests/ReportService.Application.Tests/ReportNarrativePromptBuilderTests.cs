@@ -1,10 +1,10 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06/16, IADR-0071 決定1: 散文ドラフトの LLM プロンプトは純関数で決定的に構築する。数値は参考として載せるが
 // 「再計算・改変しない（数値はコード集計が権威）」を明示する（FR-16）。プロンプト構築は Application に置き実 LLM 実装から分離する。

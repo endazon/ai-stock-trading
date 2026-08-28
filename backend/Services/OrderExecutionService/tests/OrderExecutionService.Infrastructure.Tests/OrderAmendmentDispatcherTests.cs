@@ -1,7 +1,7 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Services;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Services;
+using OrderExecutionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -14,9 +14,9 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionAppService;
+using AppSvc = OrderExecutionService.Application.Services.OrderExecutionAppService;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #154, FR-05, FR-19, IADR-0067: 訂正・取消の発行を Wolverine のテストハーネス（Wolverine.Tracking）で検証する。
 // ADR-0013, IADR-0129, #354: harness.Published → session.Sent への移行。表明の意味は同じ。

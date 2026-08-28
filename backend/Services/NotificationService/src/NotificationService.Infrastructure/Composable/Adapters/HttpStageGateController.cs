@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲート（#20）の OwnerOnly エンドポイントを呼ぶだけの
 // アダプタ。通知サービスは段階ゲートの状態を持たない（権威は Risk 側）。kill switch / pause と同型。

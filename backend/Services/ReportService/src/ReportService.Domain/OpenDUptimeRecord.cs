@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-20, #338, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2, 06_daytrading-review §4.1・§4.2:
 // OpenD の稼働率。**日報には当日の稼働率と Stage 1 日数への算入可否**、**月報には分布**を載せる。

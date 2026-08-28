@@ -1,12 +1,12 @@
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-17, IADR-0076 決定1/3: 採算費用見積りアダプタの検証。
 // 版付き前提条件（IAssumptionsProvider）＋既存の概算費用関数（CostCalculator）から往復費用・倍率を供給し、

@@ -1,4 +1,4 @@
-using AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
+using BacktestService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AwesomeAssertions;
@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Infrastructure.Tests;
+namespace BacktestService.Infrastructure.Tests;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: moomoo 履歴 K 線からの米国株日足 OHLCV 取得。
 //
@@ -85,7 +85,7 @@ public class MoomooHistoricalBarSourceTests
         var load = await Create(client).LoadBarsAsync(Aapl, From, To);
 
         load.Bars.Should().ContainSingle().Which.Should().Be(
-            new AiStockTrading.Backtest.Domain.PriceBar(
+            new BacktestService.Domain.PriceBar(
                 "AAPL", Market.UnitedStates, new DateOnly(2024, 3, 1), 1.1m, 2.2m, 0.9m, 2.0m, 12345));
     }
 

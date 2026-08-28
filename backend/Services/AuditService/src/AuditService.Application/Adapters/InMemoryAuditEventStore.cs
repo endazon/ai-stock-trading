@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.Ports;
+using AuditService.Application.State;
 
-namespace AiStockTrading.Audit.Application.Adapters;
+namespace AuditService.Application.Adapters;
 
 // FR-11, IADR-0019: 監査台帳のインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の EfAuditEventStore で差し替える。
 // Id（=MessageId）で冪等。

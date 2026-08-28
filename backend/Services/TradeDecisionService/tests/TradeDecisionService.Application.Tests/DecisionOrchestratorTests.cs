@@ -1,12 +1,12 @@
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Application.Tests;
+namespace TradeDecisionService.Application.Tests;
 
 // FR-04, FR-11, ADR-0003, IADR-0039: 多数決・二段オーケストレーションの検証。
 // 実 LLM 非決定性を「順次出力の fake」で再現し、票割れ・スクリーニング打ち切り・モデルルーティング・呼び出し回数を決定的に確認する。

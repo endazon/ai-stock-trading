@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008: ウォークフォワードの窓（In-Sample / Out-of-Sample、いずれも両端含む）。
 public readonly record struct WalkForwardWindow(

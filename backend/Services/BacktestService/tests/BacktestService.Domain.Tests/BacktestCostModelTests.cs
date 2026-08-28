@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-17, 06_daytrading-review §3.2: 現実的コスト計上（FR-17 費用関数＋スリッページ）と
 // コスト2倍の感度分析を検証する。「コストを2倍にしても期待値が正」を合格条件にするための倍率適用。

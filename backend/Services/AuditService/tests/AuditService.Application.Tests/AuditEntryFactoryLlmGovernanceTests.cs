@@ -1,10 +1,10 @@
-using AiStockTrading.Audit.Application.Services;
+using AuditService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-04, FR-11, UC-01, UC-07, ADR-0017 決定2・決定4-(3), #335, #347, IADR-0216/0217/0219:
 // LLM 統制まわりの 3 イベント（費用発生・フォールバック発火・取引判断の見送り）→ AuditEntry の写像。

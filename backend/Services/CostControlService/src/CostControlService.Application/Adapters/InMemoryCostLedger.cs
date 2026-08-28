@@ -1,7 +1,7 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
 
-namespace AiStockTrading.CostControl.Application.Adapters;
+namespace CostControlService.Application.Adapters;
 
 // NFR（費用）, IADR-0027/0034: 月次費用台帳のインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の EfCostLedger で差し替える。
 // 計上（追記）と当該月 LLM 累計の before/after 読み取りを Lock で直列化し、並行計上でもしきい値遷移を高々 1 回に保つ。

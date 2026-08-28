@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // FR-05: 発注結果ストアのインメモリ実装。PostgreSQL 永続化は Slice B で差し替える。
 public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore

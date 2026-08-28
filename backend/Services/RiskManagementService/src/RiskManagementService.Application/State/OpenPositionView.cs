@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-03, FR-10, IADR-0030: 市場監視（#10）へ公開する保有ポジション。市場監視の HeldPosition と同形
 // （Symbol・Market・Side・Quantity・EntryPrice・StopLossPrice）で JSON 往復する。StopLossPrice は

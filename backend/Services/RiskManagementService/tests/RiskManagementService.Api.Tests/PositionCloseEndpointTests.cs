@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Api.Endpoints;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-10, FR-11, UC-06, ADR-0003, #292, IADR-0117: 建玉の手仕舞いエンドポイント。
 // 認可（OwnerOnly）・入力検証・HTTP 写像・発行イベント、そして「統制で止まらない」ことを固定する。

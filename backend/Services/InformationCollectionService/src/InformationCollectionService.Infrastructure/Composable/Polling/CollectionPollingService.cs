@@ -2,14 +2,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Wolverine;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionAppService;
+using AppSvc = InformationCollectionService.Application.Services.InformationCollectionAppService;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+namespace InformationCollectionService.Infrastructure.Polling;
 
 // FR-01, FR-02, UC-01: 収集間隔ごとのポーリング。1 巡回で収集→正規化→サニタイズ→KB 保存し、収集があれば InformationCollected
 // を発行して取引サイクル（FR-02）の起点にする。巡回の例外は握りつぶしてログする（フェイルセーフ・収集を止めない）。

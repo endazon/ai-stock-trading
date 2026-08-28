@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-19, #154, IADR-0067: Risk Worker の DI 配線で、注文履歴テレメトリの供給源と相場操縦検出器が解決でき、
 // OrderScreeningService に検出器が注入される（本番経路で相場操縦判定が有効になる）ことを確かめる。

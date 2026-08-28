@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: 判断対象の銘柄について現在の保有建玉を照会するポート。
 // 実体はリスク管理（#12・#63 台帳）の GET /risk-controls/open-positions（既存・OwnerOrService）。

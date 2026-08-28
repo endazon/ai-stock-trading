@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
+namespace AuditService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0019: 監査サービス専有の DbContext（追記専用の監査台帳）。
 internal sealed class AuditDbContext(DbContextOptions<AuditDbContext> options)

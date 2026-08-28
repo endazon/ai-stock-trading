@@ -4,7 +4,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.Configuration.Client</RootNamespace>
+    <RootNamespace>ConfigurationService.Client</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ConfigurationService.Domain\ConfigurationService.Domain.csproj" />

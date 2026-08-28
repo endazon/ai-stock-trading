@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // IADR-0012: RiskManagementSettings の JSON 直列化。ドメイン型の Guard は IReadOnlySet/IReadOnlyCollection を
 // 用いており System.Text.Json が逆直列化時に具象化できないため、具象コレクションの永続 DTO を介して双方向変換する。

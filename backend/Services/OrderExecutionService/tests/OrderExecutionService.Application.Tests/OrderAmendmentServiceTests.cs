@@ -1,14 +1,14 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Services;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Services;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionAppService;
+using AppSvc = OrderExecutionService.Application.Services.OrderExecutionAppService;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // FR-05, FR-19, #154, IADR-0067: 注文の訂正・取消（ブローカ適用＋永続化＋イベント生成）の検証。
 // 本サービスは配管であり、訂正・取消を「起こす」駆動元（時限取消・#141 リコンサイル・#152 pause 強制取消）は
@@ -46,7 +46,7 @@ public class OrderAmendmentServiceTests
             var execution = new AppSvc(
                 Broker, ExecutedOrders, new InMemoryOrderReservationStore(), new FakeClock());
             var executed = (await execution.ExecuteAsync(
-                new Shared.Contracts.Events.OrderApproved(decisionId, intent, quantity, Now))).Executed!;
+                new AiStockTrading.Shared.Contracts.Events.OrderApproved(decisionId, intent, quantity, Now))).Executed!;
             return (decisionId, executed.OrderId);
         }
     }
@@ -154,7 +154,7 @@ public class OrderAmendmentServiceTests
         var decisionId = Guid.NewGuid();
         var execution = new AppSvc(broker, store, new InMemoryOrderReservationStore(), new FakeClock());
         var executed = (await execution.ExecuteAsync(
-            new Shared.Contracts.Events.OrderApproved(decisionId, Intent(), 10, Now))).Executed!;
+            new AiStockTrading.Shared.Contracts.Events.OrderApproved(decisionId, Intent(), 10, Now))).Executed!;
 
         var service = new OrderAmendmentService(broker, broker, store, lifecycle, new FakeClock());
         var act = () => service.ModifyAsync(decisionId, quantity: 5, price: 2900m, reason: "遅れた訂正");

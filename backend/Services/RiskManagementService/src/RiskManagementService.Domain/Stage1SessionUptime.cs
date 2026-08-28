@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, #385, 06_daytrading-review §4.2, IADR-0150: Stage 1 の「その日の稼働分数」を観測から積み、
 // **カレンダーを持たないまま**算入可否を判定する純ロジック。

@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // FR-06/07: 報告書サービスホストが起動し、ヘルスが応答することを検証する。
 public class HealthEndpointTests(ReportWorkerWebApplicationFactory factory)

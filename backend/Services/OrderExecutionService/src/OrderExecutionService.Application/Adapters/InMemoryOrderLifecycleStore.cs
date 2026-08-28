@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // FR-05, FR-19, IADR-0067: 注文の訂正・取消のインメモリ台帳（追記専用）。実運用の EF 実装は Worker 層。
 // 単体テスト・ローカル実行のための供給で、本番配線は EfOrderLifecycleStore（IADR-0067）。

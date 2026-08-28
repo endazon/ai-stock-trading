@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, IADR-0041: 遷移履歴の畳み込み。現在段階を append-only 履歴の fold で導出し、遷移履歴が監査できる。
 public class StageGateLedgerTests

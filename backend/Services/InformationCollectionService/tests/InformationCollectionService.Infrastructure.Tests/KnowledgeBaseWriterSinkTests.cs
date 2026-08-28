@@ -1,12 +1,12 @@
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-08, IADR-0069 決定 4: KnowledgeBaseWriterSink が CollectedInformation を KnowledgeDocument へ写像し、
 // 共有クライアントの IKnowledgeBaseWriter へ各件を委譲することを検証する。

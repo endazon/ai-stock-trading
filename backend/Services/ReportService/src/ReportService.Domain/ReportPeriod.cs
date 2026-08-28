@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, 04_report-templates, IADR-0032: 報告書の期間表記と自然キーの導出（純関数）。
 // period（フロントマター）と PeriodKey の形式を種別ごとに一元化する（daily=yyyy-MM-dd / weekly=yyyy-Www(ISO週) / monthly=yyyy-MM）。

@@ -1,6 +1,6 @@
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 /// <summary>
 /// FR-04, FR-08, ADR-0003, ADR-0004, #252, IADR-0169: 判断プロンプトへ注入してよい RAG 取得文脈を

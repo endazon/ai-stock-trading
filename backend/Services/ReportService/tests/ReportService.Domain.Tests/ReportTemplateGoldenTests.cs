@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-07, FR-16, FR-17, #338, 04_report-templates（fixed）:
 // **報告書テンプレート出力のゴールデンファイルテスト**（各報告書種別 × 代表データで形式を固定する）。

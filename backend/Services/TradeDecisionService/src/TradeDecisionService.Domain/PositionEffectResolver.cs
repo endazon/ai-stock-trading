@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: LLM の判断（売買方向）と保有建玉から、発行すべき建玉効果を決める純関数。
 //

@@ -1,13 +1,13 @@
 extern alias RiskManagementWorker;
 
 using System.Data;
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Xunit;
-using RiskManagementDbContext = RiskManagementWorker::AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.RiskManagementDbContext;
-using EfPositionDriftStateStore = RiskManagementWorker::AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.EfPositionDriftStateStore;
+using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext;
+using EfPositionDriftStateStore = RiskManagementWorker::RiskManagementService.Infrastructure.Persistence.EfPositionDriftStateStore;
 
 namespace AiStockTrading.IntegrationTests;
 

@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-13, SC-02, INDEX 決定 46, #334, IADR-0141:
 // 実弾（moomoo REAL）への切替に明示的な確認操作を強制する純ロジックの検証。

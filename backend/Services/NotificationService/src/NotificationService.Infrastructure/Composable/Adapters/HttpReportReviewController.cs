@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, IADR-0240: 報告書サービス（#14）のレビュー・確定エンドポイントを
 // 呼ぶだけのアダプタ。通知サービスは報告書の状態を持たない（権威は報告書サービス側）。

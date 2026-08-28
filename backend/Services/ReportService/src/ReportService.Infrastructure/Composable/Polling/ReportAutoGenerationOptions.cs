@@ -1,8 +1,8 @@
 using System.Globalization;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Services;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Polling;
+namespace ReportService.Infrastructure.Polling;
 
 // FR-06, UC-03〜05, IADR-0115 決定6, #280: 報告書自動生成の構成。既定は安全側（無効・opt-in）。
 // 有効化しない限り常駐は登録されず、現行挙動とバイト等価（ObservedDrawdownRefreshOptions・IADR-0103 と同型）。

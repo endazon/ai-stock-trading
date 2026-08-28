@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Migrations
+namespace OrderExecutionService.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class AddReservationRetentionIndex : Migration

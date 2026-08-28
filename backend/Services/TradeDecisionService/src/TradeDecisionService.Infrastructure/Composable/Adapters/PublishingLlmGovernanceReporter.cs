@@ -1,10 +1,10 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217:
 // 割当統制の事実を publish する実装。AuditService（台帳＝月報集計の供給元）と

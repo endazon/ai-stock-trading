@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 
-namespace AiStockTrading.MarketMonitor.Application.Ports;
+namespace MarketMonitorService.Application.Ports;
 
 // FR-03, FR-10: 損切りライン検知のための保有ポジション（銘柄・建玉方向・数量・損切り価格）の供給。
 // 実データはリスク管理（#12・#63 台帳）の GET /risk-controls/open-positions を同期照会して得る（IADR-0030）。

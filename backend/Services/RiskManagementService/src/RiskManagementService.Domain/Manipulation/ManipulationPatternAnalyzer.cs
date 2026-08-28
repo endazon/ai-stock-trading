@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain.Manipulation;
+namespace RiskManagementService.Domain.Manipulation;
 
 // FR-19, ADR-0007, IADR-0040: 相場操縦とみなされ得る発注パターンの検知（純関数コア）。
 // 自口座の直近窓（既定 5 分）の発注統計に対するヒューリスティックで、見せ玉・過剰訂正取消・自己レイヤリングを近似検知する。

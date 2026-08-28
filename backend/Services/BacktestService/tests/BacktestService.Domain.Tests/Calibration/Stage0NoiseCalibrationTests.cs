@@ -1,8 +1,8 @@
-using AiStockTrading.Backtest.Domain.Tests.Calibration;
+using BacktestService.Domain.Tests.Calibration;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-20, ADR-0008, #208, IADR-0110: Stage 0 の試行数下限（MinTrials）較正の土台。
 //

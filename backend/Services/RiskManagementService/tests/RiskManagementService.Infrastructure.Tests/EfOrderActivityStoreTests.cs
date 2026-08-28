@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-19, #154, IADR-0067: 注文アクティビティ射影の EF ストア/供給源を InMemory DB で検証する。
 // 射影の状態遷移仕様は InMemoryOrderActivityStoreTests が権威。ここは EF 版が同じ結果を返すこと（別スコープ含む）を確かめる。

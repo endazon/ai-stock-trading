@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, ADR-0008, UC-06: 段階ゲートの遷移管理（状態機械＋承認フロー・純ロジック）
 // 受け入れ基準（Issue #20）:

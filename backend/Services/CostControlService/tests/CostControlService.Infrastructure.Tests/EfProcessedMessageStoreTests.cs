@@ -1,10 +1,10 @@
-using AiStockTrading.CostControl.Domain;
-using AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+using CostControlService.Domain;
+using CostControlService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, IADR-0055 決定5 / IADR-0034: 重複排除ストア（EF 実装）の性質を実 DbContext で検証する。
 // フェイクでは検出できない「ChangeTracker を台帳と共有しない」ことが本質（claude-review 🔴 の回帰）。

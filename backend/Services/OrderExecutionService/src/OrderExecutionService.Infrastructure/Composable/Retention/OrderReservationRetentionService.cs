@@ -1,11 +1,11 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Retention;
+namespace OrderExecutionService.Infrastructure.Retention;
 
 // NFR（運用）, #137, FR-05, IADR-0059: order_dispatch_reservations の **終端行のみ** の保持期間パージ。
 //

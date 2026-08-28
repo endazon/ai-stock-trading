@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008: LLM 学習カットオフ後データ／銘柄匿名化（検証条件①）。LLM 汚染の排除を検証する。
 public class DataCutoffPolicyTests

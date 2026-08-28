@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.TestSupport.Messaging;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -14,9 +14,9 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Application.Services.TradeDecisionAppService;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-04, UC-02: PriceMovementDetected 購読 → 判断成立時のみ TradeDecisionMade を発行することを検証する。
 //

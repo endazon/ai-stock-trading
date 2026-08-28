@@ -1,11 +1,11 @@
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
-using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
+using CostControlService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（費用）, FR-17, #139, IADR-0065 決定 2/3: 上限アダプタと解決側（IAssumptionsProvider）の**契約**を固定する。
 //

@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008: バックテスト結果集計（総リターン・Sharpe・最大DD・勝率・取引数）を検証する。
 // Stage 0 合格判定（DSR/最大DD 許容）の入力となる指標。

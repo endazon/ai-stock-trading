@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-10, FR-06, UC-06, ADR-0016 決定15（2026-08-06 追記）, #419, IADR-0159 決定3:
 // 強制買戻し（推定）の記録供給の既定＝**未供給（null）**。

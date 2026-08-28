@@ -1,13 +1,13 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06/16, IADR-0071 決定1, ADR-0003: 報告書の散文ドラフトを platform LLM ゲートウェイ（POST /complete）へ委譲する実装。
 // IADR-0061（#11 の実 LLM 接続）と同形の安全既定・fail-safe に倣う:

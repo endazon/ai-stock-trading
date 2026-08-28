@@ -1,11 +1,11 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004, IADR-0064: SEC EDGAR（米国開示・無料・キー不要／User-Agent 必須）コネクタ。
 // 実 API の応答形（filings.recent の列指向配列）に対する写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。

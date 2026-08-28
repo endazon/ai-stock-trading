@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Application.Ports;
+namespace OrderExecutionService.Application.Ports;
 
 // FR-05, FR-19, FR-11, IADR-0067: 注文の訂正・取消の永続化（追記専用）。実運用では PostgreSQL。
 public interface IOrderLifecycleStore

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-10, FR-06, UC-06, #330, IADR-0133 決定7: 期間内に発動した「維持率割れによる自動縮小」を供給するポート
 // （04_report-templates 日報 §4・月報 §6）。

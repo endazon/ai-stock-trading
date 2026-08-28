@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // UC-01, FR-09, FR-07, IADR-0096, #210: 確定済み日報の方針が無く取引サイクルを見送った際に、確定を促す通知を促す出力ポート。
 // 既定は NoOp（何もしない＝現行のログのみ）。Worker が opt-in で実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）へ

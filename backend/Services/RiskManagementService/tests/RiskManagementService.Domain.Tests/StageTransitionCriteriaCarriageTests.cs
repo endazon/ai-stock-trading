@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-11, SC-02, UC-06, #466, 06_daytrading-review §4.1 追補3（2026-08-07・質問票 第15回 Q13-a）,
 // IADR-0180: **遷移応答へ実効の合格条件を載せる契約変更**。

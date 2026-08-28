@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, IADR-0008/0036: 含み損益・ドローダウンの時価評価（純関数）。現在値・エクイティピークは入力として受ける
 // （実供給＝市場データ源・ピーク追跡は #22/#82 の後続）。日次損失上限（実現＋含み）・最大DD 判定の入力を供給する。

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ に依存せず Wolverine の外部トランスポートを無効化する（ADR-0013 / IADR-0129 / #354）。
 // 情報源・KB は既定の安全実装（no-op）で外部接続しない。DB は持たない。

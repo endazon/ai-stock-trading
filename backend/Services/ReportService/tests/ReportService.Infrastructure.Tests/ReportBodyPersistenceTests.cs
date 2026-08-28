@@ -1,12 +1,12 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Domain;
+using ReportService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, IADR-0115, #280: 報告書本文（Markdown）の永続化を検証する。自動生成が保存した本文が利用者のレビュー対象になるため、
 // ラウンドトリップと「手動 upsert で消えないこと」を固定する。EF とインメモリで同じ規則になっていることも併せて確認する。

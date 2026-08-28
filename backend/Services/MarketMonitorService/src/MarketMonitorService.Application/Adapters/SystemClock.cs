@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 
-namespace AiStockTrading.MarketMonitor.Application.Adapters;
+namespace MarketMonitorService.Application.Adapters;
 
 // FR-03: システム時刻に基づく IClock。
 public sealed class SystemClock : IClock

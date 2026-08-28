@@ -1,16 +1,16 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Availability;
-using AiStockTrading.OrderExecution.Application.Polling;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Reconciliation;
-using AiStockTrading.OrderExecution.Application.Services;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Availability;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Polling;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Retention;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Steps;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Availability;
+using OrderExecutionService.Application.Polling;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Reconciliation;
+using OrderExecutionService.Application.Services;
+using OrderExecutionService.Infrastructure.Adapters;
+using OrderExecutionService.Infrastructure.Availability;
+using OrderExecutionService.Infrastructure.Polling;
+using OrderExecutionService.Infrastructure.Reconciliation;
+using OrderExecutionService.Infrastructure.Retention;
+using OrderExecutionService.Infrastructure.Steps;
+using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -145,20 +145,20 @@ if (brokerSelection.IsMoomoo)
 // FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値ガード（失効検知・再発注・残存取消。既定有効）。
 // 判定の前提（ブローカー注文照会＋建玉照会 IBrokerPositionSource）を持つ moomoo 構成でのみ配線する。
 // paper は建玉照会を実装しないため常駐そのものを登録しない（構造的な非干渉。分岐は単体テストで固定）。
-builder.Services.Configure<AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuardOptions>(
+builder.Services.Configure<OrderExecutionService.Application.StopGuard.ProtectiveStopGuardOptions>(
     builder.Configuration.GetSection(
-        AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuardOptions.SectionName));
+        OrderExecutionService.Application.StopGuard.ProtectiveStopGuardOptions.SectionName));
 if (brokerSelection.IsMoomoo)
 {
-    builder.Services.AddScoped<AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuard>(sp =>
-        new AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuard(
+    builder.Services.AddScoped<OrderExecutionService.Application.StopGuard.ProtectiveStopGuard>(sp =>
+        new OrderExecutionService.Application.StopGuard.ProtectiveStopGuard(
             sp.GetRequiredService<IBrokerAdapter>(),
             (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
             sp.GetRequiredService<IProtectiveStopOrderStore>(),
             sp.GetRequiredService<IExecutedOrderStore>(),
             sp.GetRequiredService<IClock>()));
     builder.Services.AddHostedService<
-        AiStockTrading.OrderExecution.Infrastructure.Composable.StopGuard.ProtectiveStopGuardService>();
+        OrderExecutionService.Infrastructure.StopGuard.ProtectiveStopGuardService>();
 }
 
 // FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150: ブローカ稼働の定期観測（既定有効）。

@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // #154, FR-05, FR-19, FR-11, IADR-0067: 発注済み注文に起きた訂正・取消の行モデル（追記専用）。
 // ADR-0001 の専有 DB に配置する。発注（Place）と終端結果は ExecutedOrderRow が権威のため、本表は訂正・取消のみ。

@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, FR-19, FR-20, ADR-0003, ADR-0007: 発注前の決定的判定コア。
 // 生成AIの判断がどうであれ、ここで違反と判定された注文は発注執行へ到達しない。

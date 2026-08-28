@@ -1,11 +1,11 @@
-using AiStockTrading.OrderExecution.Domain;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-05, FR-16: 発注結果ストアの永続化を InMemory DB で検証する（ラウンドトリップ・新しい順）。
 public class EfExecutedOrderStoreTests

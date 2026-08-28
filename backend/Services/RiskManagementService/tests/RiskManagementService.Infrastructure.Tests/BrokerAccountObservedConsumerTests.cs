@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153:
 // 口座種別の観測（BrokerAccountObserved）が判定コアへ届く**供給経路**の検証。
@@ -101,11 +101,11 @@ public class BrokerAccountObservedConsumerTests
     {
         const string serviceName = "ai-stock-trading.risk-management-service";
 
-        var accountQueue = TestSupport.PlatformShim.Foundation.Extensions.WolverineExtensions
+        var accountQueue = AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions.WolverineExtensions
             .QueueNameFor(serviceName, typeof(BrokerAccountObserved));
 
         accountQueue.Should().Be("ai-stock-trading.risk-management-service.BrokerAccountObserved");
-        accountQueue.Should().NotBe(TestSupport.PlatformShim.Foundation.Extensions.WolverineExtensions
+        accountQueue.Should().NotBe(AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions.WolverineExtensions
             .QueueNameFor(serviceName, typeof(BrokerAvailabilityObserved)));
     }
 }

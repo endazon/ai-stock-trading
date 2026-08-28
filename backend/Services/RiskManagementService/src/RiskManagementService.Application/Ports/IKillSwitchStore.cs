@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-10, ADR-0003: kill switch 状態の取得・保存。実運用では PostgreSQL 永続化（Slice B）。
 public interface IKillSwitchStore

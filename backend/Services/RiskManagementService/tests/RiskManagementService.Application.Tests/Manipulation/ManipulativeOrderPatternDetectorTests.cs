@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Domain;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests.Manipulation;
+namespace RiskManagementService.Application.Tests.Manipulation;
 
 // FR-19, IADR-0006/0040: 判定ポート具体実装が intent の（銘柄, 市場）の直近窓を取得して純関数コアで判定することを固定する。
 public class ManipulativeOrderPatternDetectorTests

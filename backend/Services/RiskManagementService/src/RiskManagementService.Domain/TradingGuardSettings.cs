@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-19, ADR-0007: 取引ガードのソフト設定。変更は利用者のみが行える（生成AI・自動処理は変更不可）
 public record TradingGuardSettings

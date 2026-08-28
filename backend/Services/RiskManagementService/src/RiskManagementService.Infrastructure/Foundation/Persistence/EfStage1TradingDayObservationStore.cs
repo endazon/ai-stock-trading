@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-20, FR-12, #385, 06_daytrading-review §4.2, IADR-0150: Stage 1 の稼働観測ログの EF 実装。
 // 段階ゲートの「60 営業日」（期間カウント）を数える供給元である。

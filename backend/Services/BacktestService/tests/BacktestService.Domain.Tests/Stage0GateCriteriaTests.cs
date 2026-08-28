@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-20, ADR-0008, #208, IADR-0110: Stage 0 合格基準の既定値を較正結果として固定する。
 // 較正の手順と実測値は IADR-0110（再生成は Stage0CalibrationReportTests）。

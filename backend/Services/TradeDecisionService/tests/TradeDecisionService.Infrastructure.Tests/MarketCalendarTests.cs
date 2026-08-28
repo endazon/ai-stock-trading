@@ -1,9 +1,9 @@
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Tests;
+namespace TradeDecisionService.Infrastructure.Tests;
 
 // FR-02, UC-01, IADR-0023, #337, IADR-0245: 市場カレンダー
 // （週末・構成休場日・半日取引日・市場ローカル TZ での場中判定）を検証する。

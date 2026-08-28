@@ -1,4 +1,4 @@
-namespace AiStockTrading.CostControl.Domain;
+namespace CostControlService.Domain;
 
 // NFR（費用）, FR-16, 05_trading-assumptions §6: 月報の費用レビュー（費用÷資金比率）。数値はコードで算出する。
 public static class CostReview

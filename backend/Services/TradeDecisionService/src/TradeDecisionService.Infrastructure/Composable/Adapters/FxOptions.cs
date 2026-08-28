@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-10, FR-17, #257, #364, IADR-0107/0152: 為替レート源の構成（セクション "Fx"）。既定は no-op＝外部へ接続しない。
 // レートが解決できない間、非基準通貨（日本株）の新規建ては見送られる（基準通貨の米国株は影響を受けない）。

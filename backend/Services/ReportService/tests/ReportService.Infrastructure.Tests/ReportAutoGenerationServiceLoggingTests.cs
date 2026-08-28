@@ -1,16 +1,16 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Application.State;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Composable.Polling;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Application.State;
+using ReportService.Domain;
+using ReportService.Infrastructure.Polling;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 
-namespace AiStockTrading.Report.Infrastructure.Tests;
+namespace ReportService.Infrastructure.Tests;
 
 // FR-06, IADR-0115 決定1, #280: 常駐が 1 巡回の結果をどうログへ落とすかを検証する。
 // 提示が受理されなかった期間は「承認待ちに並ばない」ため運用者が気付ける必要があり、同一 PeriodKey について

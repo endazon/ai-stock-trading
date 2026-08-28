@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Domain.Tests;
+namespace CostControlService.Domain.Tests;
 
 // NFR（費用）, 05_trading-assumptions §6, IADR-0027: LLM 上限に対する統制判定（80%間隔延長・100%停止）を検証する。
 public class CostGovernorTests

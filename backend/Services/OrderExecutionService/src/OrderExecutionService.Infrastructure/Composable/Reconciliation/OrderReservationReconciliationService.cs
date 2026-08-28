@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Reconciliation;
-using AiStockTrading.OrderExecution.Application.Services;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Reconciliation;
+using OrderExecutionService.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Runtime;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Reconciliation;
+namespace OrderExecutionService.Infrastructure.Reconciliation;
 
 // #141, FR-05, IADR-0074: 滞留 Reserved（IADR-0057 の「発注済みか不明」の窓）の自動リコンサイルを定期実行する。
 //

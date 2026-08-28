@@ -1,11 +1,11 @@
 using System.Reflection;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-05, FR-10, FR-20, #331, IADR-0211: 「拒否」（証券会社が受理しなかった状態＝OrderExecuted の Rejected）と
 // 「見送り」（OrderDispatchForgone）が、**事前拒否（リスク管理・OrderRejected）の統制違反観測へ混入しない**ことの

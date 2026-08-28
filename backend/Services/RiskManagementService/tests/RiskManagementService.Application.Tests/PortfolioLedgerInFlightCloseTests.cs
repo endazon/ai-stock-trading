@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
+using RiskManagementService.Application.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, #292, IADR-0117: 処理中（承認済み・未約定）の決済数量。EfPortfolioLedgerStore と同一の意味論を
 // インメモリ実装側で固定する（同名テストが Worker.Tests 側にもあり、両実装の乖離を検知する）。

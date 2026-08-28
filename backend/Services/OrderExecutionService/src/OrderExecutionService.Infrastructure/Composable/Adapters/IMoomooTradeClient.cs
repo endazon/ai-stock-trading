@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // #13, FR-05, ADR-0002: moomoo 取引の薄いポート（SDK 非依存）。写像・状態変換・fail-safe は MoomooBrokerAdapter に集約し、
 // 本ポートの実装（MMApiMoomooTradeClient）へ protobuf/コールバックの SDK 固有配線を隔離する。

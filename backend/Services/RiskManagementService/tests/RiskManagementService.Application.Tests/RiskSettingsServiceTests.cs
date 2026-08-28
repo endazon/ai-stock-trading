@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008: 設定変更の検証。利用者のみ・変更履歴（前後値つき）の記録・現行値の更新。
 public class RiskSettingsServiceTests
@@ -46,7 +46,7 @@ public class RiskSettingsServiceTests
     {
         // FR-20: 段階ゲートの昇格は利用者承認で行う。
         var (service, store, log) = Create();
-        var stage = new StageSettings(TradingStage.Stage1Simulate, Shared.Contracts.Trading.BrokerProvider.InternalPaper, 100_000m);
+        var stage = new StageSettings(TradingStage.Stage1Simulate, AiStockTrading.Shared.Contracts.Trading.BrokerProvider.InternalPaper, 100_000m);
 
         service.UpdateStage(stage, "user", "Stage0 の合格基準を満たしたため昇格");
 

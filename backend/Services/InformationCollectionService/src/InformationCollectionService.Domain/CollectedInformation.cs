@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01: 収集情報の種別（市況・ニュース・開示・マクロ指標・収集状態）。
 public enum InformationKind

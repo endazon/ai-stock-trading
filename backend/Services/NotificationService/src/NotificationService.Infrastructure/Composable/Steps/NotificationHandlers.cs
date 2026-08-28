@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Steps;
+namespace NotificationService.Infrastructure.Steps;
 
 // FR-09, UC-01, UC-02, UC-06: 取引実行・リスク統制発動のイベントを購読し、テンプレート整形して通知するハンドラ群。
 // 送信失敗（実 Discord 送信時）は例外化され、メッセージングの再試行（2s/10s/30s）→ <queue>_error で

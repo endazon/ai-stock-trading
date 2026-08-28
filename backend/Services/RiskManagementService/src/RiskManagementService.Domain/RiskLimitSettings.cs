@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10: リスク統制の上限値。既定値は全体前提条件（05_trading-assumptions §5）に従う。
 // 変更は方針確定プロセス（報告書）または利用者の設定変更のみ。生成AIは上書きできない。

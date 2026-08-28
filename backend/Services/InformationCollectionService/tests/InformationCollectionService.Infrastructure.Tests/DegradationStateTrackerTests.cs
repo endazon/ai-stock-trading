@@ -1,10 +1,10 @@
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, FR-09, FR-11, #336, ADR-0020 決定2-3: 欠測の遷移判定。
 // **発生時刻・継続時間・該当サイクル数**（日報・月報が要求する 3 点）が回復イベントに載ることを固定する。

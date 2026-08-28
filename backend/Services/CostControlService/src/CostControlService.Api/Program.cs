@@ -1,19 +1,19 @@
-using AiStockTrading.Configuration.Client.Composable.Steps;
-using AiStockTrading.Configuration.Client.Foundation.Extensions;
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
-using AiStockTrading.CostControl.Infrastructure.Composable.Retention;
-using AiStockTrading.CostControl.Infrastructure.Composable.Steps;
-using AiStockTrading.CostControl.Api.Foundation.Endpoints;
-using AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+using ConfigurationService.Client.Steps;
+using ConfigurationService.Client.Extensions;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Infrastructure.Adapters;
+using CostControlService.Infrastructure.Retention;
+using CostControlService.Infrastructure.Steps;
+using CostControlService.Api.Endpoints;
+using CostControlService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
 const string ServiceName = "ai-stock-trading.cost-control-service";
 

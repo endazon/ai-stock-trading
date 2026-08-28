@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-02, UC-01, #337, IADR-0245: 市場の時刻構造（計画 04_workflows/01「市場の時刻構造への対応」の対比表を写像）。
 //

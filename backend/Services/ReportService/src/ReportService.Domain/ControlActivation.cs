@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-10, FR-20, #338, 04_report-templates 月報 §6「当月の統制作動状況」, 04_workflows/03 月報 3,
 // IADR-0253: **「作動機会がなかった統制」を「統制違反 0 件」と分けて記載する**ための分類。

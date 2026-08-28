@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3 / §4.3, IADR-0149: 段階ゲートの「最小取引件数 100 件」を
 // 数えるための約定の観測ログ。

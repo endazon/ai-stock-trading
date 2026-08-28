@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
+using AppSvc = ReportService.Application.Services.ReportAppService;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-07, UC-03〜05, IADR-0042/0071 決定5: ReportReviewStateMachine を永続ストアへ結線した対話的確定を検証する
 // （提示・差し戻しの永続化・版番号・確定連携）。

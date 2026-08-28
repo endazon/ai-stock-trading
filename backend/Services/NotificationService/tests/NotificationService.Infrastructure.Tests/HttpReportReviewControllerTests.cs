@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, #341, IADR-0240: 報告書サービスのレビュー・確定エンドポイント呼び出しを
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。kill switch と同じく

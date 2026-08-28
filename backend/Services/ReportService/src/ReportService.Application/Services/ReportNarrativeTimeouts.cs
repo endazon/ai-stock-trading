@@ -1,7 +1,7 @@
 using System.Globalization;
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Services;
+namespace ReportService.Application.Services;
 
 // FR-06/16, IADR-0123, #308, 04_workflows/03_reporting-cycle:
 // 報告書散文 LLM（POST /complete）のタイムアウトを**報告書種別ごとに**解決する純関数。

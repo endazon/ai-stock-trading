@@ -1,12 +1,12 @@
-using AiStockTrading.Report.Application;
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
+using AppSvc = ReportService.Application.Services.ReportAppService;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06/07, UC-03〜05, ADR-0003: 報告書の upsert・版番号付き冪等確定・確定済み日報方針照会を検証する。
 public class ReportServiceTests

@@ -1,17 +1,17 @@
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Application.State;
+using RiskManagementService.Domain;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Application.Services.TradeDecisionAppService;
 
-namespace AiStockTrading.TradeDecision.Application.Tests;
+namespace TradeDecisionService.Application.Tests;
 
 // FR-04, FR-07, FR-10, ADR-0003, IADR-0003/0004/0017: 取引判断の中核ロジックの検証。
 public class TradeDecisionServiceTests

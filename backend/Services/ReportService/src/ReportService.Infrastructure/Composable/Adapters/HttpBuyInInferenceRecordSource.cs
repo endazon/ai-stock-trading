@@ -1,10 +1,10 @@
 using System.Net.Http.Json;
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Composable.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-10, FR-06, FR-21, UC-06, ADR-0016 決定15（2026-08-07 確定）, #463, IADR-0181:
 // 強制買戻しの推定を権威源（リスク管理の推定台帳）から s2s 同期照会する

@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-14, UC-06, ADR-0009: 取引の一時停止（pause）/再開（resume）の操作。利用者のみ（アクター・理由必須）。
 // kill switch（KillSwitchService）と同型。呼び出し側の権限（利用者か否か）はホスト層の Keycloak 認可で担保する。

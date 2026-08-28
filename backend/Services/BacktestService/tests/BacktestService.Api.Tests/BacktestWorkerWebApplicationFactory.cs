@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 
-namespace AiStockTrading.Backtest.Api.Tests;
+namespace BacktestService.Api.Tests;
 
 // #208, IADR-0105: バックテストホストの WebApplicationFactory（他 Worker テスト準拠）。
 // 本ホストは DB もメッセージバスも持たないため差し替えは不要。構成だけを注入し、安全既定

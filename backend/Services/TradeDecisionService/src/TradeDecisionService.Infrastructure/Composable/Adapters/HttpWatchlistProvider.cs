@@ -1,8 +1,8 @@
 using System.Net.Http.Json;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-02, FR-13, UC-06, SC-02, IADR-0088/0095: 定時サイクルの監視銘柄を権威源（市場監視 #10 MarketMonitor）の
 // GET /monitor/watchlist（OwnerOrService・IADR-0051）から s2s 同期照会する。SizingContext（IADR-0029）と同型の作法。

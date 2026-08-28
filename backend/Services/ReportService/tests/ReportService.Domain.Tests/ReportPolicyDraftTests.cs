@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-07, ADR-0003, IADR-0115 決定4, IADR-0125, #280/#310: 自動生成ドラフトの方針文（純関数）を検証する。
 // 自動生成では新しい方針を機械が提案せず、直近の確定済み方針の継続に留める（確定は利用者の対話・ADR-0003）。

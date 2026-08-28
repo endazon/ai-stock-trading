@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Reconciliation;
+namespace OrderExecutionService.Application.Reconciliation;
 
 // #292, FR-05, FR-10, IADR-0118: ブローカ建玉スナップショットの定期発行の構成。
 //

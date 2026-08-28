@@ -1,5 +1,5 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Infrastructure.Composable.Retention;
+using CostControlService.Application.Ports;
+using CostControlService.Infrastructure.Retention;
 using AiStockTrading.Shared.Contracts.Operations;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Infrastructure.Tests;
+namespace CostControlService.Infrastructure.Tests;
 
 // NFR（運用）, #137, IADR-0059: processed_messages のパージジョブ。
 // 既定無効（不可逆な DELETE はオプトイン）・cutoff は RetentionPolicy が決める・例外でサービスを止めない。

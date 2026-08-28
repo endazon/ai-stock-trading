@@ -1,9 +1,9 @@
 using System.Globalization;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Application.State;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Ports;
+using CostControlService.Application.State;
+using CostControlService.Domain;
 
-namespace AiStockTrading.CostControl.Application.Services;
+namespace CostControlService.Application.Services;
 
 // NFR（費用）, 05_trading-assumptions §6, IADR-0027: 費用の月次計上と LLM 上限に対する統制判定。
 // LLM の月内累計が上限の 80% で間隔延長・100% で停止。状態が上方に遷移したときのみ CrossedTo を返す（イベント発行対象）。

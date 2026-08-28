@@ -1,14 +1,14 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.OrderExecution.Application.Services.OrderExecutionAppService;
+using AppSvc = OrderExecutionService.Application.Services.OrderExecutionAppService;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // FR-10, UC-02, ADR-0016 決定2(b), #331, IADR-0210: 保護逆指値の同時発注と「逆指値なしの建玉を持たない」
 // （未受理時の建玉解消/不成立の全分岐）の検証。issue #331 受け入れ基準 1 のテスト群。

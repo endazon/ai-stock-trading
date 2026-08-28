@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, UC-07, ADR-0009: `/status`（詳細設計07）が参照する稼働状態を集約する。表示専用（副作用なし）。
 // 3 統制（kill switch / 日次損失ロックアウト / 一時停止）の現在状態・優先順位・段階・当日損益・上限使用率・

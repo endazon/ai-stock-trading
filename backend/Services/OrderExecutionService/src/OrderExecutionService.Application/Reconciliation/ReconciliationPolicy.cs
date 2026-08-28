@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Reconciliation;
+namespace OrderExecutionService.Application.Reconciliation;
 
 // #141, FR-05, IADR-0074: 滞留 Reserved の「滞留」判定境界を決める純関数。
 //

@@ -1,10 +1,10 @@
-using AiStockTrading.Configuration.Client.Foundation.Extensions;
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.TradeDecision.Application.Adapters;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+using ConfigurationService.Client.Extensions;
+using ConfigurationService.Client.Ports;
+using TradeDecisionService.Application.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Infrastructure.Adapters;
+using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-07, UC-03〜05, ADR-0003, IADR-0071 決定2: 無応答時の既定動作の設定。
 // 対話的確定で提示したドラフト方針に、翌営業日開場までに応答（承認）が無かった場合の挙動。

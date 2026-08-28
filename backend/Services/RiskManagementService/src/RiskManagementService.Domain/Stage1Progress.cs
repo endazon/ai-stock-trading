@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, #333, 06_daytrading-review §4.1〜§4.3, INDEX 決定 34・42, IADR-0137:
 // Stage 1（moomoo SIMULATE）の進捗＝「実際に取引できた日数」と「取引件数」の純ロジック。

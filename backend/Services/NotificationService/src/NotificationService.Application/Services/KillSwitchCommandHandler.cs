@@ -1,8 +1,8 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-14, UC-06, IADR-0062: kill switch コマンドの処理。多層認証 → コマンド解析 → 確認ステップ → Risk 呼び出し
 // の順に閂を掛ける。いずれかで不成立なら Risk を呼ばない（誤爆防止）。

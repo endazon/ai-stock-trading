@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.State;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-14, UC-06, ADR-0009, IADR-0062/0075/0081: スラッシュコマンドの解析（純関数）。
 // 扱うのは kill switch（/killswitch・/killswitch off）・一時停止（/pause・/resume）・稼働状態照会（/status）・

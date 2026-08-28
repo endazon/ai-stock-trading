@@ -1,11 +1,11 @@
-using AiStockTrading.MarketMonitor.Domain;
-using AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+using MarketMonitorService.Domain;
+using MarketMonitorService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
+namespace MarketMonitorService.Infrastructure.Tests;
 
 // FR-03, FR-13, IADR-0012: EF ストアの永続化を InMemory DB で検証する（設定・基準値・クールダウン）。
 public class EfStoreTests

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-07, UC-03〜05, 07_discord-bot-design, IADR-0042: 対話的確定のレビュー状態。
 // 既存の永続 ReportState.Draft/Confirmed の Draft 局面を、提示・差し戻し・改訂・承認の対話ライフサイクルへ精緻化する。

@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-20, ADR-0008, IADR-0083: 撤退評価の結果。撤退判定（Assessment）に加え、この呼び出しで新規に kill switch を
 // 起動したか（NewlyEngaged）を返す。定期評価ドライバ（#166）は「新規停止時のみ 1 回通知」の判定に本フラグを用いる。

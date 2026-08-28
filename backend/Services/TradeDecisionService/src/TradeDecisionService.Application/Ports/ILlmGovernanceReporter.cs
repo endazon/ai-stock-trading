@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Llm;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217:
 // LLM の割当統制に関する事実（フォールバック発火・取引判断のスキップ）を外へ出すポート。

@@ -1,11 +1,11 @@
-using AiStockTrading.MarketMonitor.Application.Adapters;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Adapters;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
+using AppSvc = MarketMonitorService.Application.Services.MarketMonitorAppService;
 
-namespace AiStockTrading.MarketMonitor.Application.Tests;
+namespace MarketMonitorService.Application.Tests;
 
 // FR-03, UC-02, ADR-0003, IADR-0014: 監視 1 巡回のオーケストレーション検証。
 // 変動閾値・クールダウン・損切り検知・取得失敗スキップを固定する。

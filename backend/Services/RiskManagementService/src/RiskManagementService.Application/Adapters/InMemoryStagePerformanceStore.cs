@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, FR-15, IADR-0070: 段階別実績のインメモリ実装（ユニット試験・非 relational 用）。
 // 未記録時は fail-safe 既定（BacktestPassed=false）＝昇格を許可しない安全側。

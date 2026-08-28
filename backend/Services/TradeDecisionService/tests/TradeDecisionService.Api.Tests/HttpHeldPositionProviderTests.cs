@@ -1,7 +1,7 @@
 using System.Net;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉の同期照会（GET /risk-controls/open-positions）。
 // 中核の契約は「空配列＝0（保有なし）／失敗＝null（不明）」の厳格な区別。
@@ -118,7 +118,7 @@ public class HttpHeldPositionProviderTests
 
         using var scope = factory.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>()
-            .Should().BeOfType<AiStockTrading.TradeDecision.Application.Adapters.NoOpHeldPositionProvider>();
+            .Should().BeOfType<TradeDecisionService.Application.Adapters.NoOpHeldPositionProvider>();
     }
 
     [Fact]

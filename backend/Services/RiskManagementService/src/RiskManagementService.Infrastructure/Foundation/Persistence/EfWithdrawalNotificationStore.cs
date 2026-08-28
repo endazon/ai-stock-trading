@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-20, FR-09, IADR-0085, #189: 撤退の非停止（ペーパー乖離）降格提案の通知重複排除ストアの EF 実装（単一行 upsert）。
 // 最後に通知した撤退提案シグネチャを DB 永続し、プロセス再起動をまたいでも重複通知しない（durable 冪等）。

@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
+using RiskManagementService.Api.Endpoints;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-10, UC-06, ADR-0003, ADR-0007: kill switch/設定エンドポイントの認可（OwnerOnly）と永続化・履歴を検証する。
 public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)

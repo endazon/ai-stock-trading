@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Adapters;
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
-using AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
+using MarketMonitorService.Application.Adapters;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
+using MarketMonitorService.Infrastructure.Polling;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -15,9 +15,9 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
+using AppSvc = MarketMonitorService.Application.Services.MarketMonitorAppService;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
+namespace MarketMonitorService.Infrastructure.Tests;
 
 // FR-03, UC-02, ADR-0003: ポーリング巡回（RunOnceAsync）の検証。市場開場時に評価結果を発行し、閉場時は発行しない。
 //

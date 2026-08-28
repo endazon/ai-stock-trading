@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+namespace InformationCollectionService.Infrastructure.Polling;
 
 // #121, FR-02, IADR-0023: 取引サイクルの定時トリガ方式。
 // InProcess（既定）: dev/単体の in-process ポーリング（現行・IADR-0023）。

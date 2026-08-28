@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016: 空売り 1 件を判定するために、注文意図・統制設定・ポートフォリオ状態の
 // **いずれからも導けない**外部由来の入力。借株の可否（一次ゲート）と料率（ブローカー照会）・現在の維持率・

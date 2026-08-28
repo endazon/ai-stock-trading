@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // FR-05: システム時刻に基づく IClock。
 public sealed class SystemClock : IClock

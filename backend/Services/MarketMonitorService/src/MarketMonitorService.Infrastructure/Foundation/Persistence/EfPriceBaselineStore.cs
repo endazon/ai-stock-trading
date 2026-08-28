@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // FR-03: 基準値（前回判断時点価格）ストアの EF 実装（(Symbol, Market) キー）。
 internal sealed class EfPriceBaselineStore(MarketMonitorDbContext db) : IPriceBaselineStore

@@ -1,9 +1,9 @@
 using AiStockTrading.Shared.Contracts.Events;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退発生を ScreeningContextReduced として
 // publish する。監査サービスが台帳へ記録し、月報の期間集計（分割と切り詰めを分けて数える）の集計経路になる。

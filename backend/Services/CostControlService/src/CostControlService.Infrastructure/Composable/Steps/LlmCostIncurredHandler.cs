@@ -1,13 +1,13 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Infrastructure.Composable.Steps;
+namespace CostControlService.Infrastructure.Steps;
 
 // NFR（費用）, FR-04, IADR-0055 決定1/5: LlmCostIncurred を購読し CostCategory.Llm として月次台帳へ計上する。
 // HTTP /costs/record は OwnerOnly でサービストークンでは 403 のため、内部メッセージングで計上する。

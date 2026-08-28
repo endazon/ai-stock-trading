@@ -1,10 +1,10 @@
-using AiStockTrading.Audit.Application.Services;
+using AuditService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-11, UC-07, IADR-0019: 各ドメインイベント→AuditEntry の写像（EventType・相関・銘柄・拒否理由）を検証する。
 public class AuditEntryFactoryTests

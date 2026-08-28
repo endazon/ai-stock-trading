@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 /// <summary>
 /// FR-19, ADR-0016 決定1, #332, IADR-0132 決定3: 注文の**実効商品種別**を解決する。

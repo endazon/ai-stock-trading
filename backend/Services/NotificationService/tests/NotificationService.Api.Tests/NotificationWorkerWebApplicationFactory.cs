@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 
-namespace AiStockTrading.Notification.Api.Tests;
+namespace NotificationService.Api.Tests;
 
 // WebApplicationFactory（他 Worker テスト準拠）。実 RabbitMQ に依存せず、Wolverine の外部トランスポートを
 // 無効化する（ADR-0013 / IADR-0129 / #354）。送信は既定の安全 sender（no-op）で外部送信しない。DB・認可なし。

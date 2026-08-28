@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-10, FR-17, #257, #364, IADR-0107/0152: 銘柄の市場通貨を基準通貨（USD）へ換算するレートの供給口。
 // 統制・台帳の金額は基準通貨で判定するため（計画 05_trading-assumptions §3）、発注意図を作る前にレートを確定させ、

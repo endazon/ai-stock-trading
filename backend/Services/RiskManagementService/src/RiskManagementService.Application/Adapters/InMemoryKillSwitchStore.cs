@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10: kill switch 状態のインメモリ実装。初期は未起動。PostgreSQL 永続化は Slice B で差し替える。
 public sealed class InMemoryKillSwitchStore : IKillSwitchStore

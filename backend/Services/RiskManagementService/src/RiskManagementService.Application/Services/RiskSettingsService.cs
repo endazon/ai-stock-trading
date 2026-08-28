@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008: リスク管理設定（ガード・上限・段階）の変更。利用者のみ（アクター・理由必須）。
 // 変更は前後値つきで履歴に記録する（ガード設定は ADR-0007「変更は利用者のみ・変更履歴を記録」。上限は FR-10、段階は ADR-0008 が同じ規律を課す）。生成AI・自動処理は本サービスを

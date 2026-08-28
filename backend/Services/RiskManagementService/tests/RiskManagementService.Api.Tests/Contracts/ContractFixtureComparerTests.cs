@@ -2,7 +2,7 @@ using AiStockTrading.TestSupport.ContractFixtures;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests.Contracts;
+namespace RiskManagementService.Api.Tests.Contracts;
 
 // FR-10, FR-20, #389, IADR-0146 決定6: **契約比較器の否定形テスト（検査器そのものの試験）。**
 //

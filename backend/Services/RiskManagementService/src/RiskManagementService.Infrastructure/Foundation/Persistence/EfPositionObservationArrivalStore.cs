@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた取引日の EF 実装（取引日ごとに 1 行）。
 //

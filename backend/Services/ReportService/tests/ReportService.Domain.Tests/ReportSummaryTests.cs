@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-09, FR-16, IADR-0116 決定4, #280: Discord へ投稿する要約の組み立て（純関数）を検証する。
 // 数値はコード集計値（PnlSummary）だけを使い、散文（LLM 出力）は必ずサニタイズを通す。

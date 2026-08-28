@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Api.Tests;
+namespace CostControlService.Api.Tests;
 
 // NFR（費用）, IADR-0027: 費用計上・統制判定・費用レビューエンドポイントの OwnerOnly・しきい値イベント発行を検証する。
 // 月次台帳は可変状態のためテストごとに独立 Factory（独立 InMemory DB）。

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
     /// FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3, IADR-0149:

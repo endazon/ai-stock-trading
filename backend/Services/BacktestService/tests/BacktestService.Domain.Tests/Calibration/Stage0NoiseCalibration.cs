@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain.Tests.Calibration;
+namespace BacktestService.Domain.Tests.Calibration;
 
 // FR-15, FR-20, ADR-0008, #208, IADR-0110: Stage 0 のエッジ有意条件（DSR）に対する較正ハーネス。
 //

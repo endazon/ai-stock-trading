@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, FR-09, ADR-0008, IADR-0085, #189: 撤退の非停止（Stage 1 ペーパー乖離）降格提案について、最後に通知した
 // 「撤退提案シグネチャ」を永続化する重複排除ポート。停止経路（Stage 2/3・#166/IADR-0083）は kill switch 状態（DB 永続）を

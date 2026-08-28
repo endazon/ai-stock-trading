@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-19, #154, IADR-0067: 注文アクティビティ射影ストアのインメモリ実装（射影と読み取りの両方）。
 // 単体テスト・ローカル実行のための供給で、本番配線は EfOrderActivityStore / EfOrderActivitySource（IADR-0067）。

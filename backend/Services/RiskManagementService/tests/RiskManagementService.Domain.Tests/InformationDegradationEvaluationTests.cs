@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-01, FR-02, FR-10, ADR-0020 決定2/決定3, #337, IADR-0249:
 // 情報収集の縮退（BlocksNewEntries）による新規建て停止の判定コア検証。

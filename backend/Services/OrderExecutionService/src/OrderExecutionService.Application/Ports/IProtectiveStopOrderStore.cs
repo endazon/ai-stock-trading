@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Application.Ports;
+namespace OrderExecutionService.Application.Ports;
 
 // FR-10, #331, IADR-0210 決定6: 保護逆指値レグの記録ストア。EntryDecisionId につき高々 1 行
 // （最新試行のみ）。ProtectiveStopGuard の巡回対象（Active）の洗い出しの権威。実運用では PostgreSQL。

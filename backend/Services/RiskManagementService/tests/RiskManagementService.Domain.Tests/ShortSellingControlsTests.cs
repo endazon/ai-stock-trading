@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, UC-06, ADR-0016, ADR-0009, #329 第 2 段階, IADR-0131:
 // 空売り専用統制 8 規則（1 銘柄 equity の 10% / 逆指値必須 / 借株料 年率 20% / 維持率 40% と規制要求の

@@ -1,6 +1,6 @@
-using AiStockTrading.Configuration.Application;
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.Services;
+using ConfigurationService.Application;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 
-namespace AiStockTrading.Configuration.Api.Foundation.Endpoints;
+namespace ConfigurationService.Api.Endpoints;
 
 // FR-17, UC-06: 全体前提条件の照会・変更エンドポイント。actor は認証済みトークンの名前（preferred_username）。
 //

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.State;
+namespace NotificationService.Application.State;
 
 // FR-14, UC-06, ADR-0009: 受け付けるコマンド種別。詳細設計07 のコマンド体系のうち kill switch と
 // 一時停止（pause/resume）・稼働状態照会（status）を扱う。

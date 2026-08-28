@@ -1,11 +1,11 @@
-using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Application;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace BacktestService.Application.Tests;
 
 // FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定オーケストレーション（DSR・PBO・ゲート・昇格推奨の合成）を検証する。
 public class Stage0GateServiceTests

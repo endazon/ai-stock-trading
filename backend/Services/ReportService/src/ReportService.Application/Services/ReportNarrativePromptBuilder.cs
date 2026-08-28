@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Services;
+namespace ReportService.Application.Services;
 
 // FR-06/16, IADR-0071 決定1: 散文ドラフトの LLM プロンプトを純関数で決定的に構築する。
 // 数値は集計済みの参考値として提示するが、「散文のみ・数値は再計算/改変しない（数値はコード集計が権威・FR-16）」を明示する。

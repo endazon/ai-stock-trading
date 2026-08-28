@@ -1,13 +1,13 @@
 using AiStockTrading.Shared.Contracts.Events;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Runtime;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Api.Tests;
+namespace CostControlService.Api.Tests;
 
 // NFR（費用）, FR-17, #139, IADR-0065: 費用統制ホストが上限をバージョン付き前提条件から取るよう配線されていることを固定する。
 // 挙動（追随・fail-safe）は VersionedCostLimitsTests が見る。ここは「Program.cs の配線が外れていないこと」だけを見る

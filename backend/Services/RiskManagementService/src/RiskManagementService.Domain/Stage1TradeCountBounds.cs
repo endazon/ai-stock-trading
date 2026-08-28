@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-20, FR-13, SC-02, UC-06, #423, IADR-0164 決定5: Stage 1 の最小取引件数（§4.1 条件 3）として
 // **設定できる値域**と、統計的根拠（§4.3）を満たすかの判定。

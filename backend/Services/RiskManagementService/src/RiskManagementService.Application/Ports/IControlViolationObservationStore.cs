@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, FR-11, #387, 06_daytrading-review §4.1 条件1, IADR-0148: 段階ゲートの「統制違反 0 件」を数えるための
 // 発注審査の観測ログ。**未記録＝未供給（null）**であり、「違反 0 件」とは別物である

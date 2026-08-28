@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Api.Endpoints;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests;
+namespace RiskManagementService.Api.Tests;
 
 // FR-10, SC-02, UC-06, #362, IADR-0151 決定2: `PUT /risk-controls/settings/limits` の値域の関門。
 //

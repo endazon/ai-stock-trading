@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-05, ADR-0002, IADR-0016, IADR-0111: ブローカ選択の安全ゲート（実弾防止）の検証。
 public class BrokerFactoryTests

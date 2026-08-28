@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10, FR-05, IADR-0018: 取引台帳のインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の
 // EfPortfolioLedgerStore で差し替える。承認は DecisionId、約定は OrderId で冪等に保持する。

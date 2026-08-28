@@ -251,8 +251,8 @@ public class DomainSourceDependencyTests
     [InlineData("AiStockTrading.Shared.Contracts")]
     [InlineData("AiStockTrading.Shared.Contracts.Trading")]
     [InlineData("AiStockTrading.Shared.Kernel.Results")]
-    [InlineData("AiStockTrading.RiskManagement.Domain")]
-    [InlineData("AiStockTrading.RiskManagement.Domain.Manipulation")]
+    [InlineData("RiskManagementService.Domain")]
+    [InlineData("RiskManagementService.Domain.Manipulation")]
     public void 許可判定は正当な名前空間を許す(string ns)
     {
         DomainSourceScan.IsAllowedDomainNamespace(ns).Should().BeTrue();
@@ -265,8 +265,8 @@ public class DomainSourceDependencyTests
     [InlineData("Xunit")]
     [InlineData("AiStockTrading.Shared.Infrastructure")]
     [InlineData("AiStockTrading.Shared.KnowledgeBase")]
-    [InlineData("AiStockTrading.Report.Application")]
-    [InlineData("AiStockTrading.Report.Infrastructure.Persistence")]
+    [InlineData("ReportService.Application")]
+    [InlineData("ReportService.Infrastructure.Persistence")]
     [InlineData("Systemic.Things")]
     public void 許可判定は許可外の名前空間を拒む(string ns)
     {
@@ -299,21 +299,21 @@ public class DomainSourceDependencyTests
     public void 他サービス参照の照合器は他サービスだけを返す()
     {
         const string source = """
-            using AiStockTrading.Configuration.Domain;
+            using ConfigurationService.Domain;
             using AiStockTrading.Shared.Contracts.Trading;
-            namespace AiStockTrading.Backtest.Domain;
+            namespace BacktestService.Domain;
             public static class X
             {
-                public static object Y() => new AiStockTrading.RiskManagement.Domain.Stage0Promotion();
+                public static object Y() => new RiskManagementService.Domain.Stage0Promotion();
             }
             """;
 
         DomainSourceScan.ForeignServiceReferencesIn(source, "Backtest")
-            .Should().Equal("AiStockTrading.Configuration", "AiStockTrading.RiskManagement");
+            .Should().Equal("ConfigurationService", "RiskManagementService");
 
         // 自分自身を own として渡せば、同じソースから自サービスは出てこない。
         DomainSourceScan.ForeignServiceReferencesIn(source, "Configuration")
-            .Should().NotContain("AiStockTrading.Configuration");
+            .Should().NotContain("ConfigurationService");
     }
 
     [Fact]
@@ -322,7 +322,7 @@ public class DomainSourceDependencyTests
         const string source = """
             using AiStockTrading.Shared.Contracts.Events;
             using AiStockTrading.Shared.Kernel;
-            namespace AiStockTrading.Report.Domain;
+            namespace ReportService.Domain;
             """;
 
         DomainSourceScan.ForeignServiceReferencesIn(source, "Report").Should().BeEmpty();

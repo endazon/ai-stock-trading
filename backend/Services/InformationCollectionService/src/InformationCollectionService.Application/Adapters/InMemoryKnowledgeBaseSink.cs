@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
 
-namespace AiStockTrading.InformationCollection.Application.Adapters;
+namespace InformationCollectionService.Application.Adapters;
 
 // FR-01, FR-08: KB シンクのインメモリ実装（テスト・単体実行用）。実 platform KB 取り込みは #18 で差し替える。
 public sealed class InMemoryKnowledgeBaseSink : IKnowledgeBaseSink

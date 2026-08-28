@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+namespace OrderExecutionService.Infrastructure.Adapters;
 
 // #13, #132, ADR-0002: moomoo アダプタ（OpenD 接続）の構成。既定は常駐 OpenD の k8s Service（opend:11111）。
 // SIMULATE 固定（実弾は撃たない・IADR-0016 / IADR-0056）。実弾解禁は別 IADR＋明示 config で。

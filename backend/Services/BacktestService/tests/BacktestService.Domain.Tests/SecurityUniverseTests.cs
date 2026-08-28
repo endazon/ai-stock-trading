@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2: 生存者バイアスのない銘柄ユニバース。
 // Point-in-Time メンバーシップ（当時上場・後に廃止された銘柄を含む）を検証する。

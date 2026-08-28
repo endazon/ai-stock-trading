@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, FR-12, FR-17, FR-20, #257, #329, IADR-0108, IADR-0130 決定6: SIMULATE 限定リスク上限プロファイルの
 // 値と不変条件。金額系を equity 比で保持するようになったため（計画 05_trading-assumptions §5）、

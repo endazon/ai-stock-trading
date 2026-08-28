@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）・決定15, #419, IADR-0159 決定2/決定3:
 // 強制買戻しの事後推定を記録する**追記専用**の 1 行。

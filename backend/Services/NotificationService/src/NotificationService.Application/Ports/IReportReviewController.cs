@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.Ports;
+namespace NotificationService.Application.Ports;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, IADR-0240: 報告書サービス（#14）のレビュー操作エンドポイントの抽象。
 // 通知サービスは報告書の状態を持たない（権威は報告書サービス側）。kill switch / pause / 段階ゲートと同型。

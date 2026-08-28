@@ -1,9 +1,9 @@
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-09, IADR-0020: 送信手段の選択と安全既定（no-op）・設定不備フォールバックを検証する。
 public class NotificationSenderFactoryTests

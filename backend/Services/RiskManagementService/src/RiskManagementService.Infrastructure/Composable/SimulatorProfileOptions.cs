@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable;
+namespace RiskManagementService.Infrastructure;
 
 // FR-10, FR-12, #257, IADR-0108 決定2/5: SIMULATE 限定リスク上限プロファイルの構成（セクション "Risk:SimulatorProfile"）。
 // 有効/無効だけを構成で選ばせ、**上限値そのものは構成から与えない**（SimulatorTradingDefaults の Domain 定数が単一情報源）。

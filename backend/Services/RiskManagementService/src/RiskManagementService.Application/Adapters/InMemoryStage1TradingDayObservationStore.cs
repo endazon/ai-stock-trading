@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-20, FR-12, #385, IADR-0150: Stage 1 の稼働観測ログのインメモリ実装（ユニット試験・ローカル実行用）。
 // 本番配線は EfStage1TradingDayObservationStore。未記録＝0 日＝昇格しない安全側。

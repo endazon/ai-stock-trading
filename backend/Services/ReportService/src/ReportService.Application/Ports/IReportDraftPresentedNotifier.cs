@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06, FR-07, FR-09, IADR-0116, #280: 報告書ドラフトを提示（承認待ちに）したことを利用者へ知らせるポート。
 // #210（IADR-0096）の通知ポートと同型で、Application 層をメッセージ基盤（Wolverine・ADR-0013 / IADR-0129 / #354）へ依存させない。

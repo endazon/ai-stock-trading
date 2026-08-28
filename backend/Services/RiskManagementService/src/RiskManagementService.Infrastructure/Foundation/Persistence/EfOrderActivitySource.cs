@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-19, #154, IADR-0067: 相場操縦検知の入力窓を注文アクティビティ射影（order_activity）から供給する EF 実装。
 // IOrderActivitySource は同期契約（RiskEvaluator が同期純関数）のため同期で読む。行が無ければ空窓を返し、

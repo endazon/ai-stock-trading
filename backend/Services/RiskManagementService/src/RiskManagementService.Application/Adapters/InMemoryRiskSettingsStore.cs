@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10, FR-17: 設定ストアのインメモリ実装。初期値は TradingDefaults（全体前提条件 §5）。
 // 実運用の PostgreSQL 設定ストア（バージョン管理）は Slice B で差し替える（IRiskSettingsStore で吸収）。

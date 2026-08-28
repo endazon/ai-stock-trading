@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, ADR-0009: 取引の一時停止（pause）の状態。利用者が手動で発動し（アクター・理由つき）、
 // 期限を持たず `/resume` まで継続する軽い統制。kill switch と同型で、新規建て（エントリー）のみを停止し、

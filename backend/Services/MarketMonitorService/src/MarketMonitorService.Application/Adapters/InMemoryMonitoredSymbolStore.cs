@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Domain;
 
-namespace AiStockTrading.MarketMonitor.Application.Adapters;
+namespace MarketMonitorService.Application.Adapters;
 
 // FR-03, FR-13: 監視設定のインメモリ実装。既定は MonitorDefaults（閾値 3%・クールダウン 15 分）。
 // 実運用の PostgreSQL 設定ストアは Slice B で差し替える。

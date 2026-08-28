@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約の永続化を InMemory DB で検証する。
 // 実 PostgreSQL の一意制約による並行予約の排他は実基盤 E2E 側で担保する（本テストは契約とラウンドトリップ）。

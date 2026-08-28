@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.Report.Application.Services;
+namespace ReportService.Application.Services;
 
 // FR-06/07/16, UC-03〜05, ADR-0003, 04_workflows/03_reporting-cycle, IADR-0115, #280:
 // 日報/週報/月報の自動生成（1 巡回ぶん）。常駐（BackgroundService）から分離し、時刻を固定して単体テストできる単位にする。

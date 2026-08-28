@@ -1,14 +1,14 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
-using AiStockTrading.Report.Infrastructure.Composable.Polling;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
+using ReportService.Infrastructure.Polling;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 
-namespace AiStockTrading.Report.Api.Tests;
+namespace ReportService.Api.Tests;
 
 // FR-06, IADR-0115 決定5/6, #280: 自動生成スケジューラと約定供給の結線を検証する。
 // 既定（未設定）は「常駐なし・約定は no-op」＝現行挙動とバイト等価であることを固定する。

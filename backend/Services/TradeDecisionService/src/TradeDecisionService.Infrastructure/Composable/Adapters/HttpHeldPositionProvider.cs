@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉をリスク管理（#12・#63 台帳）の
 // GET /risk-controls/open-positions（既存・OwnerOrService）から同期照会する。新規エンドポイントは作らない。

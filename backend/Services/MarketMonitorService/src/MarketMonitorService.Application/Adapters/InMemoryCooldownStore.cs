@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Application.Adapters;
+namespace MarketMonitorService.Application.Adapters;
 
 // FR-03: クールダウン（銘柄別最終トリガー時刻）のインメモリ実装。PostgreSQL 永続化は Slice B で差し替える。
 public sealed class InMemoryCooldownStore : ICooldownStore

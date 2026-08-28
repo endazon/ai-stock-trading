@@ -1,10 +1,10 @@
-using AiStockTrading.Report.Application;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.State;
-using AiStockTrading.Report.Domain;
+using ReportService.Application;
+using ReportService.Application.Ports;
+using ReportService.Application.State;
+using ReportService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+namespace ReportService.Infrastructure.Persistence;
 
 // FR-06/07, IADR-0012/0024: 報告書ストアの EF 実装。PeriodKey ごとに 1 行＋Version 楽観排他。確定済みは不変。
 internal sealed class EfReportStore(ReportDbContext db) : IReportStore

@@ -1,12 +1,12 @@
-using AiStockTrading.MarketMonitor.Application.Adapters;
-using AiStockTrading.MarketMonitor.Application.Services;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Adapters;
+using MarketMonitorService.Application.Services;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Application.Tests;
+namespace MarketMonitorService.Application.Tests;
 
 // FR-03, FR-11, FR-13, UC-06: 監視銘柄の追加/削除サービスの検証・履歴・理由必須をユニットで確認する。
 public class MonitorWatchlistServiceTests

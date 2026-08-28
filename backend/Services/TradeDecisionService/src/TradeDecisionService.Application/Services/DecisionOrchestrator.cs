@@ -1,9 +1,9 @@
 using AiStockTrading.Shared.Contracts.Llm;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 // FR-04, FR-11, ADR-0003, IADR-0039: 多数決・二段（一次スクリーニング→二次本判断）オーケストレーション。
 // LLM 非決定性への対策として、二次は同一入力を VoteCount 回実行し DecisionAggregator で多数決を採る（L128）。

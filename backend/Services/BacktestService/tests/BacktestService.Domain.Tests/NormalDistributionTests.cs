@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, IADR-0044: DSR に必要な標準正規 CDF / 逆 CDF（外部依存なしの純実装）を検証する。
 public class NormalDistributionTests

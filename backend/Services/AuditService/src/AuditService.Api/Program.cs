@@ -1,8 +1,8 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
-using AiStockTrading.Audit.Api.Foundation.Endpoints;
-using AiStockTrading.Audit.Infrastructure.Foundation.Persistence;
+using AuditService.Application.Adapters;
+using AuditService.Application.Ports;
+using AuditService.Infrastructure.Steps;
+using AuditService.Api.Endpoints;
+using AuditService.Infrastructure.Persistence;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;

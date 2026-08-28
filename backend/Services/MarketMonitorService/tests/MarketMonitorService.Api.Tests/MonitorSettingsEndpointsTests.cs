@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // FR-03, FR-13: 監視設定エンドポイントの認可（OwnerOnly）と永続化・反映を検証する。
 public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory factory)

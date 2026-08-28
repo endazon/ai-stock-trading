@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, ADR-0021 決定4-3, IADR-0165:
 // Good Faith Violation（GFV）の発生回数の**自前計数**。

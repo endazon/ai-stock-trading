@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // #141, FR-05, IADR-0074: リコンサイル・プローブの既定 no-op 実装。**常に Indeterminate を返す**。
 //

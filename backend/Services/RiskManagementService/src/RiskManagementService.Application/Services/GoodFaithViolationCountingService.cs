@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165:
 // **GFV 発生回数の自前計数。** 約定 1 件について「未決済資金による買付だったか」を事後に判定し、

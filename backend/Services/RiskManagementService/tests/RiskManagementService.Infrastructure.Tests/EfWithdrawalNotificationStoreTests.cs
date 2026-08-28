@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, FR-09, IADR-0085, #189: 撤退の非停止降格提案の通知重複排除ストア（単一行）の EF 永続化を InMemory DB で検証する。
 // durable な「通知済みシグネチャ」を別コンテキスト（＝再起動の代理）から読めること・クリアで再通知可能になることを担保する。

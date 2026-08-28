@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Services;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-21, FR-10, FR-06, #463, IADR-0181: **報告期間が観測の届いた取引日で覆われているか**の判定。
 //
@@ -90,7 +90,7 @@ public class ObservationCoverageTests
     }
 
     // 週末のみを営業日から外す暦（本番の WeekendBusinessCalendar と同じ規則）。
-    private sealed class IBusinessCalendarStub : AiStockTrading.RiskManagement.Application.Ports.IBusinessCalendar
+    private sealed class IBusinessCalendarStub : RiskManagementService.Application.Ports.IBusinessCalendar
     {
         public DateOnly NextBusinessDay(DateOnly date)
         {

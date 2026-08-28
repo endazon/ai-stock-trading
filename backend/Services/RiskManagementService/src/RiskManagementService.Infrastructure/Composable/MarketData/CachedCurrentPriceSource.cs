@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.MarketData;
+namespace RiskManagementService.Infrastructure.MarketData;
 
 // FR-10, #81, IADR-0066: 手元に補充済みの現在値（QuoteCache）を同期に読み出す ICurrentPriceSource 実装。
 // 発注判断の同期経路から呼ばれるため、ここではネットワーク I/O を行わない（補充は QuoteRefreshService が非同期に行う）。

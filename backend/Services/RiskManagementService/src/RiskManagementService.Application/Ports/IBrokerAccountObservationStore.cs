@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: ブローカーへ照会して得た口座の状態（最新 1 件）の保持。
 //

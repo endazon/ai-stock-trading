@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を購読し、取引台帳へ記録する。銘柄・方向は先行の承認（OrderApproved）を
 // DecisionId で相関して補完する。

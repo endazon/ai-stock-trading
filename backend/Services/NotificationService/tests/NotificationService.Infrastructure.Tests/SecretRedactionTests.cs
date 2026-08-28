@@ -1,12 +1,12 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // NFR（セキュリティ）, FR-09, FR-14, #341, #318, IADR-0242 決定4:
 // **秘密情報がログへ出力されないことの否定形。**

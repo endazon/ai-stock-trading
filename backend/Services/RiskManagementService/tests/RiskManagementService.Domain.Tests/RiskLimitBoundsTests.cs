@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, SC-02, UC-06, #362, IADR-0151 決定2: リスク上限として設定できる値域の検証。
 //

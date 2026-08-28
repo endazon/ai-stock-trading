@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-05, FR-20, ADR-0002, IADR-0056, IADR-0111: 実弾（live）階層は「型として表現できるが到達不能」であることを固定する。
 //

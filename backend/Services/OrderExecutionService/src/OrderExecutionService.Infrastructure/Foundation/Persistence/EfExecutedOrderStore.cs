@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // FR-05, FR-16: 発注結果ストアの EF 実装（追記中心）。DecisionId は相関キー、OrderId は主キー。
 internal sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecutedOrderStore

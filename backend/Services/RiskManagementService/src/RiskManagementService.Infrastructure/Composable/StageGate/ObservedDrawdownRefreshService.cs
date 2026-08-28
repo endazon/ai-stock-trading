@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
+namespace RiskManagementService.Infrastructure.StageGate;
 
 // FR-20, FR-10, UC-06, ADR-0008, IADR-0103, #164: 実DD（観測最大ドローダウン）の供給ドライバ。
 // 段階別実績（IStagePerformanceStore）の運用系フィールド ObservedMaxDrawdownRatio を定時サンプリングで供給し、

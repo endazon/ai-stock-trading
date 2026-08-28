@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態ストアのインメモリ実装（ユニット試験・非 relational 用）。
 // durable な永続は EF 実装（EfPositionDriftStateStore）が担う。

@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
+using RiskManagementService.Application.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-10: 週末スキップの営業日算出。ロックアウト解除日（翌営業日）の基礎。祝日対応は #21 で差し替える。
 public class WeekendBusinessCalendarTests

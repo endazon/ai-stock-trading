@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Configuration.Client.Adapters;
+namespace ConfigurationService.Client.Adapters;
 
 // FR-17, IADR-0063 決定 1: 設定サービス（#19）の GET /assumptions を同期照会して現在の前提条件と Version を得る。
 // 非 2xx・例外・タイムアウト・不正応答は null（＝取得不可）に倒し、例外を伝播させない。何へ縮退するかの判断は

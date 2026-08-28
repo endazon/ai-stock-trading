@@ -1,6 +1,6 @@
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.State;
 
-namespace AiStockTrading.Notification.Application.Services;
+namespace NotificationService.Application.Services;
 
 // FR-14, UC-06, IADR-0062 決定3: 詳細設計07「認証・認可（本人確認）」の多層を上から順に評価する純関数。
 //

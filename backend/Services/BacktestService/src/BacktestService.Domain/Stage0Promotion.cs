@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, FR-20, ADR-0008, IADR-0045: 段階昇格の推奨。実際の遷移・承認は FR-20 の利用者承認フロー（#20）。
 public sealed record StagePromotionRecommendation(

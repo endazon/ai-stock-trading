@@ -1,12 +1,12 @@
-using AiStockTrading.CostControl.Application.Adapters;
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Adapters;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Application.Tests;
+namespace CostControlService.Application.Tests;
 
 // NFR（費用）, FR-16, FR-17, 05_trading-assumptions §6・§6.1, #347, IADR-0218:
 // **対象外カテゴリの分離**（否定形）と**月報への実績供給**、および月次リセット・上限変更の境界。

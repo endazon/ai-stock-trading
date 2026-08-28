@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.OrderExecution.Application.Services;
+namespace OrderExecutionService.Application.Services;
 
 // FR-05, FR-10, #331, IADR-0210/0211: 1 件の OrderApproved 処理の結果。
 // 発注した（Executed）か見送った（Forgone）かは排他であり、Open のエントリー発注には

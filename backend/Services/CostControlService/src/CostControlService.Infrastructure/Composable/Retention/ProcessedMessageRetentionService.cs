@@ -1,11 +1,11 @@
-using AiStockTrading.CostControl.Application.Ports;
+using CostControlService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AiStockTrading.CostControl.Infrastructure.Composable.Retention;
+namespace CostControlService.Infrastructure.Retention;
 
 // NFR（運用）, #137, IADR-0059: processed_messages（重複排除ストア）の保持期間パージ。
 // 追記専用で無期限に肥大化するのを止める。境界は RetentionPolicy が決め、cutoff より新しい行には触れない

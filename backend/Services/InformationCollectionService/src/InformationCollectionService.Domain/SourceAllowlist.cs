@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0004: 情報源の許可リスト（案A+ の公式/準公式ソースのみ受理）。非許可ソースのアイテムは破棄する
 // （ニュース入力の防御・許可リストに限定）。ソース名は大文字小文字を無視して照合する。

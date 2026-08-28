@@ -1,4 +1,4 @@
-namespace AiStockTrading.InformationCollection.Domain;
+namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0020 §結果（フォローアップ）: Finnhub Free の**日次上限から監視銘柄数の上限を逆算**する純関数。
 //

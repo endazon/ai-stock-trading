@@ -1,11 +1,11 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Application.Tests;
+namespace ReportService.Application.Tests;
 
 // FR-06, FR-07, #338, #310, UC-03〜05, ADR-0003, INDEX 決定29, 04_workflows/03_reporting-cycle:
 // **確定フローの状態遷移**を、自動生成 → 提示 → 確定 の一連で固定する。

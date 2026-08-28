@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace AiStockTrading.Audit.Application.Services;
+namespace AuditService.Application.Services;
 
 // FR-11, IADR-0019/0026: 注文チェーンの Guid 相関（DecisionId/EventId）を持たないイベント（設定変更・報告書確定）向けに、
 // 自然キーから決定的な CorrelationId（Guid）を導出する。同一キーは同一相関となり、監査照会でまとめて辿れる。

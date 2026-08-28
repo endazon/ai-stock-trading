@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Domain;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #154, FR-05, FR-19, IADR-0067: 訂正・取消台帳の永続化を InMemory DB で検証する。
 public class EfOrderLifecycleStoreTests

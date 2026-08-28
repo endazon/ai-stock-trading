@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008, 06_daytrading-review §3.2, IADR-0044: Deflated Sharpe Ratio（Bailey & López de Prado）。
 // 多数の戦略候補を試すこと（多重検定）と非正規性を補正し、「真 Sharpe が正である確率」を返す。

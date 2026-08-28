@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165 決定3:
 // 自前計数した GFV 発生 1 件（**追記専用**の 1 行）。

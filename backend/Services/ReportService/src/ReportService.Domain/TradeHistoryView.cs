@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 日報 §2: 取引を発生させたトリガー種別（定時サイクル/価格変動/損切り機械執行）。
 public enum TradeTrigger

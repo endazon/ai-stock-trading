@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Retention;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Retention;
 using AiStockTrading.Shared.Contracts.Operations;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // NFR（運用）, #137, FR-05, IADR-0059: 発注予約の保持期間パージジョブ。
 // 既定無効・cutoff は RetentionPolicy が決める・Reserved には触れない・例外でサービスを止めない。

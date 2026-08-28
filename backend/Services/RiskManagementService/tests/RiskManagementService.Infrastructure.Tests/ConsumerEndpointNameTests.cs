@@ -3,7 +3,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-10, UC-01, UC-02, IADR-0106, IADR-0129, #258, #354: 取引判断の承認/拒否は本サービスが単独で担う。
 // 他サービス（MarketMonitorService）も TradeDecisionMade を購読するため、同一キューを共有すると

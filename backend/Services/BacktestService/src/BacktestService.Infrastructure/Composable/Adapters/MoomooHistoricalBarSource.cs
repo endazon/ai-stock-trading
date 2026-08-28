@@ -1,10 +1,10 @@
-using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Application;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Backtest.Infrastructure.Composable.Adapters;
+namespace BacktestService.Infrastructure.Adapters;
 
 // FR-15, ADR-0023 決定5, IADR-0157, #382: moomoo OpenAPI の履歴 K 線（QotRequestHistoryKL）による
 // **米国株の日足 OHLCV** の取得。ADR-0023 決定5（利用者裁定 2026-08-06・環流 planning#205）が

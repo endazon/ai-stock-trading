@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, UC-03, INDEX 決定事項16, IADR-0071 決定4: 初回月報ブートストラップ。
 // 確定済み月報がまだ存在しない（＝運用開始直後）とき、初期監視銘柄を選定した月報ドラフトを純関数で生成する。

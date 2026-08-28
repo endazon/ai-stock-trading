@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // NFR（運用）, #137, FR-05, IADR-0059: 発注予約の保持期間パージ（EF 実装）を InMemory DB で検証する。
 // 検証の主眼は **述語**（どの行を消し、どの行を絶対に消さないか）である。実 PostgreSQL 上の実行計画・

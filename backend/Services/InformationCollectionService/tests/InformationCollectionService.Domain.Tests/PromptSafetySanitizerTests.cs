@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0003: 取得テキストをデータとして分離する構造（境界ラップ・デリミタ衝突除去・制御文字除去）を検証する。
 public class PromptSafetySanitizerTests

@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-09, IADR-0020: Discord Webhook への実送信（縮退用 Webhook・詳細設計07 が許容）。Bot Gateway 送信 API は FR-14 後続。
 // 非 2xx 応答は例外化し、メッセージングの再試行→デッドレターに委ねる（可用性 NFR）。

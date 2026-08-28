@@ -1,9 +1,9 @@
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Client.Ports;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Configuration.Client.Adapters;
+namespace ConfigurationService.Client.Adapters;
 
 // FR-17, IADR-0063 決定 4/5: バージョン付き前提条件のキャッシュ付き解決器。
 //

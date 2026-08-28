@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.CostControl.Infrastructure.Migrations
+namespace CostControlService.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class AddProcessedMessages : Migration

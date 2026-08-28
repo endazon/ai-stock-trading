@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // #10 Slice B, IADR-0012 踏襲: 永続化の行モデル。設定は単一行 JSON＋Version（楽観排他）、
 // 基準値・クールダウンは (Symbol, Market) キーの行。ADR-0001 の専有 DB に配置する。

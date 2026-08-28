@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-10: 営業日の算出。日次損失ロックアウトの解除日（翌営業日）を求めるのに用いる（05_trading-assumptions §5）。
 // 本 PR は週末スキップの最小実装（WeekendBusinessCalendar）。祝日データを含む市場カレンダーは #21 で差し替える。

@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Domain.Tests;
+namespace BacktestService.Domain.Tests;
 
 // FR-15, FR-20, ADR-0008: 実弾段階の撤退キルスイッチ（実DD がバックテスト最大DD の 1.5 倍で停止）を検証する。
 public class KillSwitchTests

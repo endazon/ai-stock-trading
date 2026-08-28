@@ -1,12 +1,12 @@
-using AiStockTrading.MarketMonitor.Application.Adapters;
-using AiStockTrading.MarketMonitor.Application.Services;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Adapters;
+using MarketMonitorService.Application.Services;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Application.Tests;
+namespace MarketMonitorService.Application.Tests;
 
 // FR-03, FR-11, FR-13, UC-06, SC-01 §2, #340, IADR-0155:
 // 収集パラメータ（変動閾値・クールダウン）の部分更新。理由必須・値域検証・履歴記録を確認する。

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.ContractFixtures;
@@ -9,7 +9,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Api.Tests.Contracts;
+namespace RiskManagementService.Api.Tests.Contracts;
 
 // FR-10, FR-20, SC-02, SC-03, #389, IADR-0146: **バックエンド↔フロントの契約テスト。**
 //

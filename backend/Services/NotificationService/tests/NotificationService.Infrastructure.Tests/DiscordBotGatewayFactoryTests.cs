@@ -1,12 +1,12 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-14, IADR-0062 決定1: Bot Gateway の安全既定。受け入れ基準11: 既定で接続しない／設定不備でも接続しない。
 // 実 Discord への接続は行わない（Create は接続せずインスタンスを返すのみ）。

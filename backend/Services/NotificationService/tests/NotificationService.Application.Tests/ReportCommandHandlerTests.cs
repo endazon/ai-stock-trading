@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, #341, IADR-0240: 報告書レビューコマンドの閂
 //（多層認証 → 解析 → 版番号ガード → 報告書サービス呼び出し）。

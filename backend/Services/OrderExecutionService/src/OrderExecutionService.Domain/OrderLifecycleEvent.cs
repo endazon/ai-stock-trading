@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Domain;
+namespace OrderExecutionService.Domain;
 
 // FR-05, FR-19, IADR-0067: 注文ライフサイクルの種別（発注後に起きた変化）。
 // 発注（Place）と終端結果（Executed）は ExecutionRecord が権威のため、本種別は訂正・取消のみを扱う。

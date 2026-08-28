@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, IADR-0005, IADR-0008: ポートフォリオの生の運用状態。kill switch を除く数値状態を保持する。
 // これに kill switch 状態を合成して判定入力 PortfolioSnapshot（Domain）を組み立てる（PortfolioSnapshotBuilder）。

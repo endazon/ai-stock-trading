@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // テスト用の記録 sender。送信されたメッセージを収集する（外部送信しない）。
 internal sealed class RecordingNotificationSender : INotificationSender

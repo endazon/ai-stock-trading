@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Application.Services;
+namespace TradeDecisionService.Application.Services;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲートの構成。
 // 既定は無効（Enabled=false）＝現行の判断挙動を一切変えない（段階的有効化・opt-in）。有効化は Configuration:BaseUrl

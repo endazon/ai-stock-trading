@@ -1,9 +1,9 @@
-using AiStockTrading.Configuration.Client.Ports;
+using ConfigurationService.Client.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076 決定1: 採算費用見積りを設定サービスの版付き前提条件（#19・IADR-0063）と
 // 既存の概算費用関数（CostCalculator・IADR-0021）から供給する。CostControl(#139・IADR-0065) と同じ薄いアダプタ方針で、

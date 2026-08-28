@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価の判定結果。
 // Viable=採算成立（発注可）／NotViable=採算不成立（見送り）／Indeterminate=費用見積り不能（安全側で見送り）。

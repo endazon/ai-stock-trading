@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.Ports;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // FR-06, #338, IADR-0254: 監査台帳へ結線されていない構成の安全既定。**常に null（未供給）**。
 //

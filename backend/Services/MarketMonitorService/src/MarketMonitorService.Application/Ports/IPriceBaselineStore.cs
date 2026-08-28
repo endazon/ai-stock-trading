@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.MarketMonitor.Application.Ports;
+namespace MarketMonitorService.Application.Ports;
 
 // FR-03: 変動判定の基準値（前回 AI 判断時点の価格）を銘柄別に保持する。
 // 基準値の更新契機は Slice B で TradeDecisionMade 購読により実装する。未設定銘柄は null を返す。

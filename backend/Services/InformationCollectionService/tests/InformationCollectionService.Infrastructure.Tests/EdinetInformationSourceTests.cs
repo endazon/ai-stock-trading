@@ -1,12 +1,12 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004, IADR-0064: EDINET API v2（金融庁・日本の企業開示）コネクタ。書類一覧（documents.json・type=2）の
 // 写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。

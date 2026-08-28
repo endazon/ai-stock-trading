@@ -1,12 +1,12 @@
 using System.Text.RegularExpressions;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20 (3), UC-06, #431, IADR-0161 / IADR-0163 決定1:
 // **段階の既定発注先（StageSettings.Mode）も allow-list を通して読む。**

@@ -1,10 +1,10 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // FR-05, FR-12, ADR-0002, IADR-0111: ブローカ選択の 2 軸（provider × environment）と fail-safe を検証する。
 //

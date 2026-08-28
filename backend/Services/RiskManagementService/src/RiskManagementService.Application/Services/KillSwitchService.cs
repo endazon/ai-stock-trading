@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-10, UC-06, ADR-0003: 全停止スイッチ（kill switch）の操作。利用者のみ（アクター・理由必須）。
 // 呼び出し側の権限（利用者か否か）はホスト層の Keycloak 認可で担保する（Slice B）。操作は履歴に記録する。

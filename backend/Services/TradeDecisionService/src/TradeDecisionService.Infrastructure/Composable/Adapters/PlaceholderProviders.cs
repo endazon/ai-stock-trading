@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.TradeDecision.Application.Ports;
+using RiskManagementService.Domain;
+using TradeDecisionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-04, IADR-0017: 実 LLM/実データが揃うまでの安全既定プレースホルダ（取引しない）。差し替え漏れ検知のため初回に 1 回警告する。
 

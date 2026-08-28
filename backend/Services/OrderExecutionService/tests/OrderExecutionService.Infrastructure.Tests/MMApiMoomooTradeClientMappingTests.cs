@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #13, FR-05: MMApiMoomooTradeClient の SDK 非依存な写像ロジック（OpenD OrderStatus・市場）を単体検証する
 // （実 OpenD 不使用）。実結合の疎通は別途 live 検証（常駐 OpenD 前提）。

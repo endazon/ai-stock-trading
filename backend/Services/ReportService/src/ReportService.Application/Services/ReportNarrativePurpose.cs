@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Services;
+namespace ReportService.Application.Services;
 
 // FR-06/11, IADR-0120 決定1, #291, 04_workflows/03_reporting-cycle:
 // 報告書は取引方針を「月報→週報→日報→取引」の階層で管理する方針書であり、上位ほど難度が高い。

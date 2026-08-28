@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-09, ADR-0003, IADR-0116 決定3, #280: Discord へ投稿する要約本文の無害化（純関数・冪等）。
 //

@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-10, UC-06, ADR-0003, ADR-0016 決定7, #330, IADR-0133:
 // 維持率割れによる建玉の自動縮小（回復目標＝閾値+5pt・対象＝必要証拠金の降順・量＝最小限・AI 非介在）。

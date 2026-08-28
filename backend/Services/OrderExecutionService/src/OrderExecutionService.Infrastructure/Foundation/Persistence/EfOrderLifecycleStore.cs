@@ -1,8 +1,8 @@
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Foundation.Persistence;
+namespace OrderExecutionService.Infrastructure.Persistence;
 
 // #154, FR-05, FR-19, IADR-0067: 注文の訂正・取消台帳の EF 実装（追記専用・専有 DB）。
 internal sealed class EfOrderLifecycleStore(OrderExecutionDbContext db) : IOrderLifecycleStore

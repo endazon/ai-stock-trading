@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Api.Tests;
+namespace OrderExecutionService.Api.Tests;
 
 // FR-05: ホストが起動し（既定の paper ブローカで安全に）ヘルスエンドポイントが応答することを検証する。
 public class HealthEndpointTests(ExecutionWorkerWebApplicationFactory factory)

@@ -1,6 +1,6 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.State;
-using AiStockTrading.Notification.Infrastructure.Composable.Steps;
+using NotificationService.Application.Ports;
+using NotificationService.Application.State;
+using NotificationService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-04, FR-06, FR-09, UC-01, ADR-0017 決定2・決定4-(2), #335, IADR-0216/0217:
 // LLM 割当の逸脱（フォールバック発火）と、割当モデル不可による取引判断の見送りの**通知経路**。

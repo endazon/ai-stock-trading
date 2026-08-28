@@ -1,6 +1,6 @@
-using AiStockTrading.OrderExecution.Application.Ports;
+using OrderExecutionService.Application.Ports;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // #131, FR-05, IADR-0057: 発注予約ストアのインメモリ実装（dev/test 用）。実運用は EF 実装（一意制約が権威）。
 public sealed class InMemoryOrderReservationStore : IOrderReservationStore

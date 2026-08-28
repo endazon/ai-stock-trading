@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.OrderExecution.Domain;
+namespace OrderExecutionService.Domain;
 
 // FR-05, FR-16: 実効スリッページの算出（アーキ概要「執行方針: 実効スリッページの取引毎記録」）。
 // 計画価格（OrderIntent.Price）と平均約定価格の差を、常に「不利＝正」の符号で表す:

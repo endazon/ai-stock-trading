@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-16, #338, 04_report-templates §数値の定義（為替差損益）, IADR-0251:
 // 為替差損益の集計（純関数）を固定する。

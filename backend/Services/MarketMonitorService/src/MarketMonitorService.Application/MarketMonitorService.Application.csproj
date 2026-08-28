@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <RootNamespace>AiStockTrading.MarketMonitor.Application</RootNamespace>
+    <RootNamespace>MarketMonitorService.Application</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MarketMonitorService.Domain\MarketMonitorService.Domain.csproj" />

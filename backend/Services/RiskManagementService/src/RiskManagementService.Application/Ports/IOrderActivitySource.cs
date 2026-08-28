@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-19, IADR-0040/0067: 相場操縦検知の入力＝直近の注文アクティビティ窓を供給するポート。
 // RiskEvaluator は同期純関数のため同期契約とする。本番は注文履歴テレメトリ（注文系イベントの Risk 専有 DB への

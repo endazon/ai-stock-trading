@@ -1,7 +1,7 @@
 using System.Text.Json;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Domain;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // IADR-0012 踏襲: MarketMonitorSettings の JSON 直列化。MonitoredSymbols は IReadOnlyCollection のため
 // System.Text.Json が逆直列化時に具象化できない。具象 List の永続 DTO を介して双方向変換する。

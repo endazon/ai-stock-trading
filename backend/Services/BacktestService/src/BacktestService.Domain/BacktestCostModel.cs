@@ -1,7 +1,7 @@
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, 06_daytrading-review §3.2: コストの感度分析。Baseline=現実的コスト、Doubled=コスト2倍。
 // 「コストを2倍にしても期待値が正」を Stage 0 合格条件にするため、同一戦略を 1x/2x で走らせる。

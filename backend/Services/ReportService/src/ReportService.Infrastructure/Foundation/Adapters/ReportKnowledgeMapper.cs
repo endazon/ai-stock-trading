@@ -1,8 +1,8 @@
 using System.Globalization;
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 using AiStockTrading.Shared.KnowledgeBase;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-08, IADR-0069/0071 決定3: 確定報告書を KB カタログ文書（KnowledgeDocument）へ写像する純関数。
 // 本文（Markdown 実体）は現行 platform POST /documents が受けない（オブジェクトストレージ経路は platform 依存・IADR-0069）ため

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain.Tests.Calibration;
+namespace BacktestService.Domain.Tests.Calibration;
 
 // FR-15, ADR-0008, #208, IADR-0110: 閾値較正専用の決定論的な正規乱数源（splitmix64 ＋ Box-Muller）。
 //

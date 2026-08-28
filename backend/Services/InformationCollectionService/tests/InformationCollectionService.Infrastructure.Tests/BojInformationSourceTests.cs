@@ -1,11 +1,11 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004, IADR-0064: 日銀 時系列統計データ API（無料・認証不要・2026-02 提供開始）コネクタ。
 // 実 API の応答形（一次確認済み）に対する写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。

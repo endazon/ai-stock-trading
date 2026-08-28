@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class AddApprovedOrderStopLoss : Migration

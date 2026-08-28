@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-10, FR-11, SC-03, UC-06, #465, ADR-0027, IADR-0183:
 // 借株料の累計の**記録側**の型。ADR-0016 決定15 が表示と報告だけを要求し、

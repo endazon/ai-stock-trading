@@ -1,8 +1,8 @@
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Domain;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-02, UC-01, IADR-0023, #337, IADR-0245: 市場カレンダー。市場ローカル時刻（日本=JST、米国=US Eastern）で
 // 「取引時間内か（週末・休場日でなく、かつ場中）」を判定する。

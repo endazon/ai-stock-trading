@@ -3,7 +3,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Tests;
+namespace MarketMonitorService.Infrastructure.Tests;
 
 // FR-03, UC-02, IADR-0106, IADR-0129, #258, #354: 同じ TradeDecisionMade を購読する RiskManagementService と
 // キューを取り合わないことを固定する。実測（取引フェーズ2 検証）では両サービス計 4 Pod が同一キューを

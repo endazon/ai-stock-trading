@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-07, #338, #310, INDEX 決定29, IADR-0252:
 // **確定した報告書の本文が「未確定」を名乗り続けないようにする**（純関数・冪等）。

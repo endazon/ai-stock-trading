@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -13,7 +13,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, FR-15, UC-06, IADR-0089: バックテスト verdict（BacktestEvaluated）を購読して段階別実績へ射影するハンドラを
 // Wolverine のテストハーネス（Wolverine.Tracking）+ インメモリストアで検証する。運用系フィールド保全と fail-safe（昇格拒否）を担保する。

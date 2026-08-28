@@ -1,6 +1,6 @@
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Domain;
 
-namespace AiStockTrading.CostControl.Application.State;
+namespace CostControlService.Application.State;
 
 // NFR（費用）, FR-16, 05_trading-assumptions §6.1, #347, IADR-0218: 当月の費用実績（月報への供給形）。
 //

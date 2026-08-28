@@ -1,9 +1,9 @@
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Application.Services;
+using AuditService.Application.Ports;
+using AuditService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Wolverine;
 
-namespace AiStockTrading.Audit.Infrastructure.Composable.Steps;
+namespace AuditService.Infrastructure.Steps;
 
 // FR-11, UC-07, IADR-0019: 全ドメインイベントを購読して監査台帳へ記録するハンドラ群。
 // 冪等キーはメッセージ ID（再送で重複記録しない）。記録時刻は IClock。写像は AuditEntryFactory（純関数）。

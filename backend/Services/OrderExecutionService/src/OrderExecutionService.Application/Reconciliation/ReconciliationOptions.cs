@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Reconciliation;
+namespace OrderExecutionService.Application.Reconciliation;
 
 // #141, FR-05, IADR-0074: 発注予約の自動リコンサイル（Reserved 滞留の解消）の構成。
 //

@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0003, ADR-0016 決定7, #330, IADR-0133: 維持率割れによる自動縮小の決定的コア（純関数）。
 //

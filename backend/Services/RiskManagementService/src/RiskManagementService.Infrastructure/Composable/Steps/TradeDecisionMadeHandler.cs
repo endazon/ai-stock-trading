@@ -1,11 +1,11 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-10, UC-01, UC-02, ADR-0003: 取引判断（TradeDecisionMade）を購読し、発注前に決定的に検証して
 // OrderApproved / OrderRejected を発行する。判定ロジックは Application 層の OrderScreeningService に委譲する。

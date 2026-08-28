@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
-using RiskManagementDbContext = RiskManagementWorker::AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence.RiskManagementDbContext;
+using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext;
 
 namespace AiStockTrading.IntegrationTests;
 

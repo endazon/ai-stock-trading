@@ -1,4 +1,4 @@
-namespace AiStockTrading.MarketMonitor.Domain;
+namespace MarketMonitorService.Domain;
 
 // FR-03, FR-13, FR-17: 市場監視の既定設定（全体前提条件 05_trading-assumptions・ワークフロー 02 準拠）。
 // 実運用では設定ストアから読み込む。本クラスは初期値を提供する。

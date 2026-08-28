@@ -1,7 +1,7 @@
-using AiStockTrading.Report.Application.State;
-using AiStockTrading.Report.Domain;
+using ReportService.Application.State;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06/07, IADR-0012/0024: 報告書ストア（PeriodKey ごとに 1 行＋Version 楽観排他）。確定済みは不変。
 public interface IReportStore

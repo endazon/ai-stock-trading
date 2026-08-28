@@ -1,6 +1,6 @@
 using System.Net;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 using Wolverine;
 using Xunit;
 // IADR-0128: consumer は Infrastructure へ移った。相対名（Composable.Steps.*）参照をテスト本文を触らずに解決する。
-using Composable = AiStockTrading.TradeDecision.Infrastructure.Composable;
+using Composable = TradeDecisionService.Infrastructure;
 
-namespace AiStockTrading.TradeDecision.Api.Tests;
+namespace TradeDecisionService.Api.Tests;
 
 // #79, FR-04, IADR-0017: LlmGateway:BaseUrl の有無で ILlmCompletionClient が安全既定（プレースホルダ＝常に Hold）/
 // 実 egress（Http）に切り替わることを検証する（fail-safe: 未設定なら実 LLM を呼ばない）。

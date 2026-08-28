@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-20, UC-06, IADR-0041/0070: 段階遷移台帳（追記専用）の永続化ポート。現在段階・次シーケンスは
 // 履歴の畳み込み（StageGateLedger）で導出するため、可変の「現在段階」は持たず履歴のみを保存・追記する。

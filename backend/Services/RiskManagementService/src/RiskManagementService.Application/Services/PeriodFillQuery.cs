@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Application.Services;
+namespace RiskManagementService.Application.Services;
 
 // FR-06, FR-16, IADR-0115 決定5, #280, #337（#249 吸収）, IADR-0246: 取引台帳の約定を期間（取引日）で絞る純関数。
 // 報告書サービス（#14）が日報/週報/月報の数値集計のため s2s 同期照会する GET /risk-controls/fills の実体。

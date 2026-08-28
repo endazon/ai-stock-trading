@@ -2,7 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.CostControl.Api.Tests;
+namespace CostControlService.Api.Tests;
 
 // NFR（費用）: 費用統制サービスホストが起動し、ヘルスが応答することを検証する。
 public class HealthEndpointTests(CostControlWorkerWebApplicationFactory factory)

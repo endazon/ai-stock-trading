@@ -1,13 +1,13 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004, ADR-0020 決定2, IADR-0064: ニュース系 2 系統のコネクタ。
 // **録画した応答**（実 API の形をそのまま写したフィクスチャ）を fake HttpMessageHandler で返し、

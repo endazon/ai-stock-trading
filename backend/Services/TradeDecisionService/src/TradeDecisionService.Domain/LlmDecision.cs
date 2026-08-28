@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Domain;
+namespace TradeDecisionService.Domain;
 
 // FR-04: LLM の売買判断（構造化出力）。Buy/Sell は発注、Hold は見送り（取引しない）。
 public enum TradeAction

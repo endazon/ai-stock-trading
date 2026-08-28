@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-06, FR-16, #338, 04_report-templates 月報 §7, ADR-0017 決定2・決定4, INDEX 決定44, IADR-0250/0251:
 // 当期間の LLM 利用実績（月報 §7 と日報サマリのスキップ回数の素材）。

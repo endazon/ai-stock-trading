@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain.Manipulation;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain.Manipulation;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-19, IADR-0040/0067: 注文アクティビティ源のインメモリ実装（プロセス内リングバッファ）。
 // 事前構築した OrderActivityRecord を Record で流し込んで検知アルゴリズムを検証するためのテスト・ローカル用供給。

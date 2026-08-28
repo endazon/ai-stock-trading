@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain.Manipulation;
+namespace RiskManagementService.Domain.Manipulation;
 
 // FR-19, IADR-0040/0067: 相場操縦検知の入力＝直近窓内の 1 注文のライフサイクル要約。
 // 自口座の発注統計（見せ玉・過剰訂正取消・自己レイヤリング）から相場操縦とみなされ得る型を近似検知するための素データ。

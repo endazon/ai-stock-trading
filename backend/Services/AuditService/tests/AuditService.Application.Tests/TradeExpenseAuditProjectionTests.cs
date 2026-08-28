@@ -1,12 +1,12 @@
 using System.Text.Json;
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Services;
+using AuditService.Application.Adapters;
+using AuditService.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-11, UC-07, ADR-0016 決定15, #339, IADR-0226:
 // **「後から集計可能な粒度で記録する」ことの検証。**

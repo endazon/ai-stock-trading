@@ -1,9 +1,9 @@
-using AiStockTrading.Configuration.Application.Ports;
-using AiStockTrading.Configuration.Application.State;
-using AiStockTrading.Configuration.Domain;
+using ConfigurationService.Application.Ports;
+using ConfigurationService.Application.State;
+using ConfigurationService.Domain;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.Configuration.Application.Services;
+namespace ConfigurationService.Application.Services;
 
 // FR-17, UC-06: 全体前提条件の照会・変更。変更は利用者のみ（アクター・理由必須）、Version 増分、前後値つき履歴記録。
 // 生成AI・自動処理は本サービスを呼ばない（呼び出し側の権限はホスト層の Keycloak 認可で担保）。変更通知イベントの発行は

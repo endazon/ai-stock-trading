@@ -1,9 +1,9 @@
 using System.Globalization;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Domain.Tests;
+namespace InformationCollectionService.Domain.Tests;
 
 // FR-01, ADR-0020 決定4: 一般インターネット収集（最終手段）の**発動条件 4 件の境界テスト**（#336 受け入れ基準③）。
 //

@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+using NotificationService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Infrastructure.Tests;
+namespace NotificationService.Infrastructure.Tests;
 
 // FR-14, UC-06, IADR-0062 決定4: Risk の kill switch エンドポイント呼び出しを fake HttpMessageHandler で検証する
 // （実ネットワーク不使用）。受け入れ基準12。

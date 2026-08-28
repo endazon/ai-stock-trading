@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.StopGuard;
+namespace OrderExecutionService.Application.StopGuard;
 
 // FR-10, #331, IADR-0210 決定4: 保護逆指値ガード（失効検知・再発注・残存取消）の巡回設定。
 // 既定有効——無効化は「逆指値なしの建玉を検知しない」ことを明示的に選ぶ運用判断である。

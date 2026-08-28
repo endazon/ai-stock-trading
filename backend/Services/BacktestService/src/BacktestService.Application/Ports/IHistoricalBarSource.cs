@@ -1,7 +1,7 @@
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Application;
+namespace BacktestService.Application;
 
 // FR-15, ADR-0004, #208, IADR-0105: 実過去データ源（外部 API）からの日足バー取得の抽象。
 //

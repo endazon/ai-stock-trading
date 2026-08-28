@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008, IADR-0044: 1 試行（戦略構成候補）の記録。IS Sharpe・OOS 実績。
 public readonly record struct BacktestTrial(string Name, double InSampleSharpe, double OutOfSampleReturn);

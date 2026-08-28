@@ -1,4 +1,4 @@
-namespace AiStockTrading.OrderExecution.Application.Polling;
+namespace OrderExecutionService.Application.Polling;
 
 // #270, FR-05, FR-10, IADR-0113: 約定状態の追跡ポーリングの構成。
 //

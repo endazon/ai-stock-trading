@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.State;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.State;
+using RiskManagementService.Domain;
 
-namespace AiStockTrading.RiskManagement.Application.Ports;
+namespace RiskManagementService.Application.Ports;
 
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, ADR-0021 決定4-3, IADR-0165 決定3:
 // GFV 発生回数の**自前計数の追記専用台帳**。ADR-0025 が「未決済資金による買付を自らのシステムで記録し、

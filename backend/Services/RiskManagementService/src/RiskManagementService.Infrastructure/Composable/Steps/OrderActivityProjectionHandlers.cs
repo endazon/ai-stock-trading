@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-19, #154, IADR-0067: 注文系イベントを購読して注文アクティビティストア（相場操縦検知の入力源）へ射影するハンドラ群。
 // IOrderActivitySource は同期契約かつ発注審査のホットパス上にあるため、供給は他サービスへの同期照会ではなく

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, ADR-0008, IADR-0044: 銘柄の決定的仮名化（pseudonymization・検証条件①）。同一銘柄は常に同一の匿名 ID に写す。
 // 目的は「LLM がプレーンテキストのティッカーを文脈から認識するのを防ぐ」ことであり、本用途には十分。

@@ -1,14 +1,14 @@
-using AiStockTrading.OrderExecution.Application.Adapters;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Application.Services;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Adapters;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Application.Services;
+using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Application.Tests;
+namespace OrderExecutionService.Application.Tests;
 
 // #141, FR-05, IADR-0074: 滞留 Reserved の自動リコンサイル。受け入れ基準1/2（発注済み→確定・未発注→解放・
 // 不確定は解放しない）を fake プローブで検証する。二重発注を絶対に起こさない fail-safe が最優先。

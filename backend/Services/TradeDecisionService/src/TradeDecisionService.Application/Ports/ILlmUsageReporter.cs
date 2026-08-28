@@ -1,4 +1,4 @@
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // NFR（費用）, FR-04, IADR-0055 決定3: LLM 呼び出しのトークン使用量を費用計測へ渡すポート（計測点は egress）。
 // 既定は NoOpLlmUsageReporter（publish しない＝fail-safe）。Worker が PublishingLlmUsageReporter を配線する。

@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.Notification.Application.Ports;
+using NotificationService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Notification.Infrastructure.Composable.Adapters;
+namespace NotificationService.Infrastructure.Adapters;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182:
 // GFV 違反による停止の解除（Risk の OwnerOnly エンドポイント）を呼ぶだけのアダプタ。

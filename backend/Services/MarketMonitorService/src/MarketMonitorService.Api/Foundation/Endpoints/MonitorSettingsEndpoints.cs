@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Application.Services;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Application.Services;
+using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.MarketMonitor.Api.Foundation.Endpoints;
+namespace MarketMonitorService.Api.Endpoints;
 
 // FR-03, FR-13, UC-06: 監視設定（監視銘柄・変動閾値・クールダウン）の照会・変更。
 // 変更（PUT /settings・POST/DELETE /watchlist）と履歴は利用者のみ（OwnerOnly）＝生成AI・自動処理はこのロールを持たず変更できない。

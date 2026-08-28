@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-20, FR-13, SC-02, #423, IADR-0164 決定5:
 // 設定ストア（単一行 JSON）における **Stage 1 の最小取引件数**の往復と、**旧行・値域外の読み方**の検証。

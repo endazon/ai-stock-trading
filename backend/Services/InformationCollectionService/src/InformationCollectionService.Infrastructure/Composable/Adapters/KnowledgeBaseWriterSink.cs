@@ -1,10 +1,10 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, FR-08, IADR-0069 決定 4: 正規化済み収集情報を実 platform KB（DocumentService）へ保存するシンク。
 // 共有クライアントの IKnowledgeBaseWriter へ委譲するだけの薄い写像で、fail-safe（未保存への縮退）は writer が担う。

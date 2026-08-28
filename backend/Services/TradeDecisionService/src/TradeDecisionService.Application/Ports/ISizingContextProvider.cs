@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-04, FR-10, IADR-0003/0017/0029: サイジングに必要な文脈（資金・リスク設定・段階/日次残枠・連敗/DD・動作モード）。
 // 実データはリスク管理（#12）の GET /risk-controls/sizing-context を同期照会して供給する（HttpSizingContextProvider）。

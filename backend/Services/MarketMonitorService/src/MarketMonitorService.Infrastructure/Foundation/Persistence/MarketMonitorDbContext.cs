@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Foundation.Persistence;
+namespace MarketMonitorService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0012 踏襲: 市場監視サービス専有の DbContext。
 internal sealed class MarketMonitorDbContext(DbContextOptions<MarketMonitorDbContext> options)

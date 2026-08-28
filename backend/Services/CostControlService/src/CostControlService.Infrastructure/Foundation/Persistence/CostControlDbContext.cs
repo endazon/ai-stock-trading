@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0027: 費用統制サービス専有の DbContext（月次費用台帳・追記専用）。
 internal sealed class CostControlDbContext(DbContextOptions<CostControlDbContext> options)

@@ -1,8 +1,8 @@
-using AiStockTrading.CostControl.Application.Ports;
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Application.Ports;
+using CostControlService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.CostControl.Infrastructure.Foundation.Persistence;
+namespace CostControlService.Infrastructure.Persistence;
 
 // NFR（費用）, IADR-0027/0034: 月次費用台帳の EF 実装（追記専用・専有 DB）。集計は月・カテゴリで絞って合算する。
 // 計上と当該月 LLM 累計の before/after 読み取りを、月単位の PostgreSQL アドバイザリロック（トランザクション内）で

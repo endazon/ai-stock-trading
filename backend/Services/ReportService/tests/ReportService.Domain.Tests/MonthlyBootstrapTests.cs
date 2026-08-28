@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, UC-03, INDEX 決定事項16, IADR-0071 決定4: 初回月報ブートストラップ（初期監視銘柄の選定ドラフト）を純関数で生成する。
 public class MonthlyBootstrapTests

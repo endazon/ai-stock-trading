@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-10, #257, #364, IADR-0107 決定5: 「そのレートを取りに行くか」「そのレートを使ってよいか」を決める装飾。
 //   - TTL: 取得済みレートの再利用時間。日次系列（DEXJPUS）を判断サイクルごとに叩かない。

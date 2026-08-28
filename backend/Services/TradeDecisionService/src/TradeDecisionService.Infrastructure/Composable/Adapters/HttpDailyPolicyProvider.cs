@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-04, FR-07, IADR-0028: 確定済み日報方針を報告書サービス（#14）の GET /reports/daily-policy から同期照会する。
 // 未確定（404）・非 2xx・例外・不達は null（＝取引しない）に倒す（フェイルセーフ・FR-07 の安全既定と一致）。

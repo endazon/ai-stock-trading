@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, IADR-0043: 日足 OHLCV バー（不変レコード）。
 public readonly record struct PriceBar(

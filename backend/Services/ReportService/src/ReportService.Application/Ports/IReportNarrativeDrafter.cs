@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Domain;
+using ReportService.Domain;
 
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // FR-06/16, IADR-0032: 報告書の散文（市況・振り返り・評価等）を LLM でドラフトするポート。数値は含めない（数値はコード集計・FR-16）。
 // 実データは platform LLM ゲートウェイ経由（後続）。本スライスは安全既定プレースホルダ＋テストの fake で供給する。

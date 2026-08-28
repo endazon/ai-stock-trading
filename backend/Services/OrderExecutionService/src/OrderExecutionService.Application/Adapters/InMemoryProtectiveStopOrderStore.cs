@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
-using AiStockTrading.OrderExecution.Application.Ports;
-using AiStockTrading.OrderExecution.Domain;
+using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Domain;
 
-namespace AiStockTrading.OrderExecution.Application.Adapters;
+namespace OrderExecutionService.Application.Adapters;
 
 // FR-10, #331, IADR-0210: 保護逆指値レグ記録のインメモリ実装（paper 構成・単体テスト用）。
 public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore

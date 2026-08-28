@@ -1,9 +1,9 @@
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Tests;
+namespace RiskManagementService.Infrastructure.Tests;
 
 // FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた**取引日**の EF 永続化を InMemory DB で検証する。
 //

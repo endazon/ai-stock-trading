@@ -1,10 +1,10 @@
-using AiStockTrading.Backtest.Application;
-using AiStockTrading.Backtest.Domain;
+using BacktestService.Application;
+using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Backtest.Application.Tests;
+namespace BacktestService.Application.Tests;
 
 // FR-15, FR-20, IADR-0089: Stage 0 判定（Stage0Decision）→ 契約イベント（BacktestEvaluated）の純写像を検証する。
 // 発行側（BacktestService）が自分の verdict の契約表現を所有する（バス発行の実駆動は go-live ホスト #82 系）。

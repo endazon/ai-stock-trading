@@ -4,7 +4,7 @@
      実過去データ源のアダプタ（Stooq 等）は Infrastructure に置く。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <RootNamespace>AiStockTrading.Backtest.Api</RootNamespace>
+    <RootNamespace>BacktestService.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />

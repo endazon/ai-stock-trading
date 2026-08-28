@@ -1,8 +1,8 @@
-using AiStockTrading.Configuration.Client.Ports;
-using AiStockTrading.CostControl.Application.Ports;
+using ConfigurationService.Client.Ports;
+using CostControlService.Application.Ports;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.CostControl.Infrastructure.Composable.Adapters;
+namespace CostControlService.Infrastructure.Adapters;
 
 // NFR（費用）, FR-17, #139, IADR-0065 決定 2: 月次費用上限を #19 のバージョン付き全体前提条件から供給する。
 // これにより、利用者が設定サービスで上限を変更するとしきい値判定（80%/100%）に反映される。

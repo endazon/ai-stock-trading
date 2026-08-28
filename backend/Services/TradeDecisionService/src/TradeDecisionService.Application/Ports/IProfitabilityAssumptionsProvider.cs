@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価に必要な費用見積りの供給口。
 // 設定サービスの版付き前提条件（IADR-0063）＋概算費用関数（CostCalculator・IADR-0021）を Worker アダプタが包み、

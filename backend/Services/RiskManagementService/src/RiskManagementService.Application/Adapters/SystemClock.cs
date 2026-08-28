@@ -1,6 +1,6 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 
-namespace AiStockTrading.RiskManagement.Application.Adapters;
+namespace RiskManagementService.Application.Adapters;
 
 // FR-10: システム時刻に基づく IClock。基準タイムゾーンは全体前提条件に合わせ Asia/Tokyo（JST）とする
 // （§5 の日次基準・営業日は日本時間で運用する想定）。Slice B で構成から差し替え可能にする。

@@ -1,8 +1,8 @@
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Adapters;
+namespace ReportService.Infrastructure.Adapters;
 
 // FR-06/16, IADR-0032: IReportNarrativeDrafter の安全既定プレースホルダ。実 LLM ドラフト（platform ゲートウェイ）が
 // 入るまでは定型の散文（LLM 未接続の旨）を返す。数値には関与しない（数値はコード集計・FR-16）。

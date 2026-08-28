@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-14, UC-06, UC-07, ADR-0009, IADR-0075: 一時停止/再開・状態照会コマンド処理の閂（多層認証→解析→Risk 呼び出し）。
 // kill switch と同水準の多層認証。ただし確認フレーズは要求しない（確認ボタンのみ）。拒否時に Risk を呼ばない。

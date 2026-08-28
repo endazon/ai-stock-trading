@@ -1,10 +1,10 @@
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Application.State;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Application.Tests;
+namespace RiskManagementService.Application.Tests;
 
 // FR-05, FR-10, FR-11, #292, IADR-0118: 取引台帳とブローカ実ポジションの突合（純関数）。
 public class PositionDriftDetectorTests

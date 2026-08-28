@@ -1,4 +1,4 @@
-namespace AiStockTrading.Backtest.Domain;
+namespace BacktestService.Domain;
 
 // FR-15, FR-20, ADR-0008: Stage 0 合格判定の各条件。
 public enum Stage0GateCheck

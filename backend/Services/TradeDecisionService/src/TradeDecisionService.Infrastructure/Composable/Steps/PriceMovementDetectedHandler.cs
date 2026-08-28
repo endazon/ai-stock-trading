@@ -1,12 +1,12 @@
 using System.Diagnostics;
-using AiStockTrading.TradeDecision.Application.Ports;
+using TradeDecisionService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Application.Services.TradeDecisionAppService;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Steps;
+namespace TradeDecisionService.Infrastructure.Steps;
 
 // FR-02, FR-04, UC-02, ADR-0003, IADR-0023: 市場監視の価格変動イベント（PriceMovementDetected）を購読し、AI 判断を行う
 // （イベント駆動系統）。市場カレンダーで休場日（週末・祝日）はスキップする。判断が成立（発注意図あり）した場合のみ

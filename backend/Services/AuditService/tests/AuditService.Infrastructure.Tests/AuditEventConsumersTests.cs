@@ -1,6 +1,6 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.Ports;
-using AiStockTrading.Audit.Infrastructure.Composable.Steps;
+using AuditService.Application.Adapters;
+using AuditService.Application.Ports;
+using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
@@ -11,7 +11,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Audit.Infrastructure.Tests;
+namespace AuditService.Infrastructure.Tests;
 
 // FR-11, UC-07, IADR-0019: 全ドメインイベントを購読して監査台帳へ記録するハンドラを
 // Wolverine のテストハーネス（Wolverine.Tracking）+ インメモリ台帳で検証する。
@@ -112,7 +112,7 @@ public class AuditEventConsumersTests
         session0.Executed.MessagesOf<AssumptionsChanged>().Should().NotBeEmpty();
         session1.Executed.MessagesOf<ReportConfirmed>().Should().NotBeEmpty();
 
-        var reportCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var reportCorr = AuditService.Application.Services.AuditEntryFactory
             .From(new ReportConfirmed("daily-2026-07-10", "Daily", "x", 0, DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(reportCorr).Should().ContainSingle(e => e.EventType == "ReportConfirmed");
@@ -135,7 +135,7 @@ public class AuditEventConsumersTests
 
         store.GetByCorrelation(collectId).Should().ContainSingle(e => e.EventType == "InformationCollected");
 
-        var costCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var costCorr = AuditService.Application.Services.AuditEntryFactory
             .From(new CostThresholdReached("2026-07", "Llm", 0m, "x", DateTimeOffset.UtcNow), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(costCorr).Should().ContainSingle(e => e.EventType == "CostThresholdReached");
@@ -154,7 +154,7 @@ public class AuditEventConsumersTests
             new StageTransitioned(1, 0, 1, "Promotion", "owner", "利用者承認による昇格", DateTimeOffset.UtcNow, 100, false));
         session0.Executed.MessagesOf<StageTransitioned>().Should().NotBeEmpty();
 
-        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var stageCorr = AuditService.Application.Services.AuditEntryFactory
             .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "StageTransitioned");
@@ -174,7 +174,7 @@ public class AuditEventConsumersTests
             0, "DrawdownBreachedMultiple", HaltNewEntries: true, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<WithdrawalTriggered>().Should().NotBeEmpty();
 
-        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var stageCorr = AuditService.Application.Services.AuditEntryFactory
             .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "WithdrawalTriggered");
@@ -195,7 +195,7 @@ public class AuditEventConsumersTests
             ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow));
         session0.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
-        var stageCorr = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var stageCorr = AuditService.Application.Services.AuditEntryFactory
             .From(new StageTransitioned(0, 0, 0, "Promotion", "x", "y", DateTimeOffset.UtcNow, 100, false), Guid.NewGuid(), DateTimeOffset.UtcNow)
             .CorrelationId;
         store.GetByCorrelation(stageCorr).Should().ContainSingle(e => e.EventType == "BacktestEvaluated");
@@ -236,7 +236,7 @@ public class AuditEventConsumersTests
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
         session.Executed.MessagesOf<PositionClosedWithStaleFxRate>().Should().NotBeEmpty();
 
-        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var correlation = AuditService.Application.Services.AuditEntryFactory
             .From(evt, Guid.NewGuid(), now).CorrelationId;
 
         var entry = store.GetByCorrelation(correlation)
@@ -263,7 +263,7 @@ public class AuditEventConsumersTests
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
         session.Executed.MessagesOf<FxRateSourceUsed>().Should().NotBeEmpty();
 
-        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var correlation = AuditService.Application.Services.AuditEntryFactory
             .From(evt, Guid.NewGuid(), now).CorrelationId;
 
         var entry = store.GetByCorrelation(correlation)
@@ -290,7 +290,7 @@ public class AuditEventConsumersTests
         await host.TrackActivityForTest().InvokeMessageAndWaitAsync(first);
         await host.TrackActivityForTest().InvokeMessageAndWaitAsync(second);
 
-        var correlation = AiStockTrading.Audit.Application.Services.AuditEntryFactory
+        var correlation = AuditService.Application.Services.AuditEntryFactory
             .From(first, Guid.NewGuid(), now).CorrelationId;
 
         store.GetByCorrelation(correlation).Should().HaveCount(2, "取引は 1 件ずつ残す（抑止しない）");

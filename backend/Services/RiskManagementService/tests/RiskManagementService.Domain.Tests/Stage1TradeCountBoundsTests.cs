@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.RiskManagement.Domain.Tests;
+namespace RiskManagementService.Domain.Tests;
 
 // FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定5・決定6:
 // **Stage 1 の最小取引件数を設定値にしたことの退行防止。**

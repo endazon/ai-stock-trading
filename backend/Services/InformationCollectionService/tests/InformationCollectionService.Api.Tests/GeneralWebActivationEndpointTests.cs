@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Domain;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動申請エンドポイント。
 //

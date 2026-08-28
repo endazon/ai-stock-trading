@@ -1,4 +1,4 @@
-namespace AiStockTrading.Report.Application.Ports;
+namespace ReportService.Application.Ports;
 
 // NFR（費用）, FR-06, FR-16, 05_trading-assumptions §6.1, #347, IADR-0219:
 // 報告書生成の LLM 呼び出しのトークン使用量を費用計測へ渡すポート（計測点は egress）。

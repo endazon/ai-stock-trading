@@ -1,8 +1,8 @@
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Audit.Application.Services;
+namespace AuditService.Application.Services;
 
 // FR-11, UC-07, IADR-0019: 各ドメインイベントを共通形 AuditEntry へ写像する純関数群。
 // CorrelationId は注文系の DecisionId／市場系の EventId。Detail はイベント全量 JSON（AuditSerialization）。

@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Domain;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-20, FR-12, #386, 06_daytrading-review §4.1 条件3, IADR-0149: Stage 1 の約定観測ログの EF 実装。
 // 段階ゲートの「最小取引件数 100 件」を数える供給元である。

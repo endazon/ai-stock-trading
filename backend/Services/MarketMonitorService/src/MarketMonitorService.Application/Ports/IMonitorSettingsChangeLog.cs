@@ -1,6 +1,6 @@
-using AiStockTrading.MarketMonitor.Application.State;
+using MarketMonitorService.Application.State;
 
-namespace AiStockTrading.MarketMonitor.Application.Ports;
+namespace MarketMonitorService.Application.Ports;
 
 // FR-11, FR-13: 監視設定（監視銘柄）変更履歴の記録・照会。追記専用。
 // 実運用では PostgreSQL の専有 DB（EF 実装）、テストは InMemory 実装で差し替える。

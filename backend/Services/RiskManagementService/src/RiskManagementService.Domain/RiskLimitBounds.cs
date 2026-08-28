@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, SC-02, UC-06, #362, IADR-0151 決定2: リスク上限として**設定できる値域**。
 //

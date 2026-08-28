@@ -1,7 +1,7 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
-using AiStockTrading.MarketMonitor.Application.State;
+using MarketMonitorService.Application.Ports;
+using MarketMonitorService.Application.State;
 
-namespace AiStockTrading.MarketMonitor.Application.Adapters;
+namespace MarketMonitorService.Application.Adapters;
 
 // FR-11, FR-13: 監視設定変更履歴のインメモリ実装。実運用の PostgreSQL 監査ログは EF 実装で差し替える。
 public sealed class InMemoryMonitorSettingsChangeLog : IMonitorSettingsChangeLog

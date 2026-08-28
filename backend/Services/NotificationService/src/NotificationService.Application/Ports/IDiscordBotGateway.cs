@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.Ports;
+namespace NotificationService.Application.Ports;
 
 // FR-14, IADR-0062 決定1: Discord Gateway（WebSocket）常駐の抽象。
 //

@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Application.State;
+namespace RiskManagementService.Application.State;
 
 // FR-11, ADR-0003, ADR-0007, ADR-0008: ガード・上限・段階設定および kill switch の変更履歴の 1 レコード。
 // 「変更は利用者のみ・変更履歴を記録する」（ガード設定は ADR-0007。上限・段階・kill switch にも同じ規律を課す）を満たすため、アクター・種別・理由・前後値・日時を残す。

@@ -1,4 +1,4 @@
-namespace AiStockTrading.Notification.Application.State;
+namespace NotificationService.Application.State;
 
 // FR-09: 通知の重大度（テンプレート・宛先の出し分けや将来の抑制ポリシーに用いる）。
 public enum NotificationSeverity

@@ -1,4 +1,4 @@
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10, UC-06, ADR-0016 決定4/決定10, #374, #419, IADR-0159 決定5:
 // 強制買戻し（buy-in）由来の 30 日空売り禁止が有効かを判定する**単一情報源**。

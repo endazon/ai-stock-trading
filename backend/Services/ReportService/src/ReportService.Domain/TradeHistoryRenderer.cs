@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.Report.Domain;
+namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 日報 §2, IADR-0042: 取引履歴（全明細）＋取引詳細＋見送り判断のレンダリング（純関数・決定的）。
 // 数値は #63 台帳のコード集計値を提示するだけで再計算しない（LLM に計算させない・IADR-0032 と同方針）。実データ連携は後続。

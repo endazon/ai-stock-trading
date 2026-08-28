@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+namespace ReportService.Infrastructure.Persistence;
 
 // ADR-0001（Database per Service）, IADR-0012/0024: 報告書サービス専有の DbContext。PeriodKey ごとに 1 行・Version 楽観排他。
 internal sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)

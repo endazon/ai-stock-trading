@@ -1,9 +1,9 @@
-using AiStockTrading.OrderExecution.Infrastructure.Composable.Adapters;
+using OrderExecutionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
-namespace AiStockTrading.OrderExecution.Infrastructure.Tests;
+namespace OrderExecutionService.Infrastructure.Tests;
 
 // #132, FR-05, ADR-0002, IADR-0016, IADR-0060: OpenD 接続パラメータの外部化と、本番切替の安全ゲートを検証する。
 // 本テストは実 OpenD を使わない（構成の解釈と preflight のみ）。実接続・実発注は #132 の実測フェーズ（実基盤）。

@@ -1,6 +1,6 @@
-using AiStockTrading.Report.Application.Ports;
+using ReportService.Application.Ports;
 
-namespace AiStockTrading.Report.Application.Adapters;
+namespace ReportService.Application.Adapters;
 
 // NFR（費用）, #347, IADR-0219: 費用計測の安全既定。外部へ publish せず何もしない。
 // 実計測（LlmCostIncurred publish）は Worker が発行実装を明示配線したときのみ有効になる。

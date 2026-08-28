@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using AiStockTrading.MarketMonitor.Application.State;
-using AiStockTrading.MarketMonitor.Domain;
+using MarketMonitorService.Application.State;
+using MarketMonitorService.Domain;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.MarketMonitor.Api.Tests;
+namespace MarketMonitorService.Api.Tests;
 
 // FR-03, FR-11, FR-13, UC-06, SC-01 §2, #340, IADR-0155:
 // 収集パラメータ（変動閾値・クールダウン）の部分更新エンドポイントの認可・検証(400)・履歴を検証する。
@@ -98,7 +98,7 @@ public class MonitorCollectionSettingsEndpointsTests(MonitorWorkerWebApplication
     {
         var client = OwnerClient();
         await client.PostAsJsonAsync("/monitor/watchlist",
-            new { Symbol = "MSFT", Market = Shared.Contracts.Trading.Market.UnitedStates, Reason = "監視開始" });
+            new { Symbol = "MSFT", Market = AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, Reason = "監視開始" });
 
         await PutThresholdAsync(client, new { movementThresholdRatio = 0.09m, reason = "引き上げ" });
 

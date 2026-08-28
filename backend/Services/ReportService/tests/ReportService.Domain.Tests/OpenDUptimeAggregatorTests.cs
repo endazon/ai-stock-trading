@@ -1,7 +1,7 @@
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Report.Domain.Tests;
+namespace ReportService.Domain.Tests;
 
 // FR-06, FR-20, #338, INDEX 決定34, 06_daytrading-review §4.2, 04_report-templates 月報 §6.2:
 // OpenD 稼働率の分布（純関数）を固定する。

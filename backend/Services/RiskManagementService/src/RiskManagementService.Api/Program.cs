@@ -1,12 +1,12 @@
-using AiStockTrading.RiskManagement.Application.Adapters;
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.Services;
-using AiStockTrading.RiskManagement.Infrastructure.Composable;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.MarketData;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.StageGate;
-using AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
-using AiStockTrading.RiskManagement.Api.Foundation.Endpoints;
-using AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+using RiskManagementService.Application.Adapters;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.Services;
+using RiskManagementService.Infrastructure;
+using RiskManagementService.Infrastructure.MarketData;
+using RiskManagementService.Infrastructure.StageGate;
+using RiskManagementService.Infrastructure.Steps;
+using RiskManagementService.Api.Endpoints;
+using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -107,7 +107,7 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
     // 無効（既定）なら現在値ソースを注入しない＝含み 0・DD 0 の現行挙動をそのまま保つ。
     // #257, IADR-0108: 基準資金（台帳射影の初期資金）もプロファイルに追随させる。無効（既定）は null＝本番既定。
     var initialCapital = simulatorProfileEnabled
-        ? AiStockTrading.RiskManagement.Domain.SimulatorTradingDefaults.InitialCapital
+        ? RiskManagementService.Domain.SimulatorTradingDefaults.InitialCapital
         : (decimal?)null;
     return options.Value.EnableMarkToMarket
         ? new LedgerPortfolioStateProvider(
@@ -156,7 +156,7 @@ builder.Services.AddScoped<RiskSettingsService>();
 // プロファイル値へ注入すれば上限額は比例して自動的に上がる（IADR-0130 決定6 と同じ論法）。
 // 結果として「検証用フラグで実弾段階の上限を動かさない」という不変条件（IADR-0108 決定4）は
 // 差し替え対象そのものが無いことで構造的に成立する。
-builder.Services.AddSingleton(AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateStagePolicy());
+builder.Services.AddSingleton(RiskManagementService.Domain.TradingDefaults.CreateStagePolicy());
 builder.Services.AddScoped<StageGateService>();
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の
@@ -183,8 +183,8 @@ if (builder.Configuration.GetSection(ObservedDrawdownRefreshOptions.SectionName)
 builder.Services.AddScoped<IOrderActivityStore, EfOrderActivityStore>();
 builder.Services.AddScoped<IOrderActivitySource, EfOrderActivitySource>();
 builder.Services.AddSingleton(
-    AiStockTrading.RiskManagement.Domain.TradingDefaults.CreateManipulationDetectionSettings());
-builder.Services.AddScoped<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector,
+    RiskManagementService.Domain.TradingDefaults.CreateManipulationDetectionSettings());
+builder.Services.AddScoped<RiskManagementService.Domain.IManipulativeOrderPatternDetector,
     ManipulativeOrderPatternDetector>();
 // OrderScreeningService は検出器を GetService（null 許容）で受けるため、上の登録により相場操縦判定が有効になる。
 // FR-10, #428, IADR-0163 決定2: 推定台帳は**必須引数**であり、下の行を削るとコンパイルが通らない
@@ -196,7 +196,7 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IBusinessCalendar>(),
     sp.GetRequiredService<IBuyInInferenceStore>(),
-    sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
+    sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
 // 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。

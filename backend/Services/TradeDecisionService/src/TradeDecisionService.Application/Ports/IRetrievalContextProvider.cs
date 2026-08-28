@@ -1,6 +1,6 @@
-using AiStockTrading.TradeDecision.Application.State;
+using TradeDecisionService.Application.State;
 
-namespace AiStockTrading.TradeDecision.Application.Ports;
+namespace TradeDecisionService.Application.Ports;
 
 // FR-08, FR-04, ADR-0003, IADR-0072: 判断文脈への RAG 取得ポート（Application 抽象）。
 // 実体は #18（IADR-0069）の RAG 取得ポート IKnowledgeBaseSearch を包む Worker アダプタ（KnowledgeBaseRetrievalContextProvider）。

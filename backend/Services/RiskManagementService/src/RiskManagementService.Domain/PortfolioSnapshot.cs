@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace AiStockTrading.RiskManagement.Domain;
+namespace RiskManagementService.Domain;
 
 // FR-10: 判定時点のポートフォリオ・運用状態のスナップショット
 public record PortfolioSnapshot

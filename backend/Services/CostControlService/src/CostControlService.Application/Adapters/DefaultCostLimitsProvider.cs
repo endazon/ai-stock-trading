@@ -1,7 +1,7 @@
-using AiStockTrading.CostControl.Application.Ports;
+using CostControlService.Application.Ports;
 using AiStockTrading.Shared.Kernel.Trading;
 
-namespace AiStockTrading.CostControl.Application.Adapters;
+namespace CostControlService.Application.Adapters;
 
 // NFR（費用）, IADR-0027/0065 決定 5: 外部依存を持たない既定の上限供給（前提条件の既定値・05_trading-assumptions §6）。
 //

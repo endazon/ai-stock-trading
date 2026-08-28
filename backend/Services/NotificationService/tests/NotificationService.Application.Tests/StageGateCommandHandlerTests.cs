@@ -1,11 +1,11 @@
-using AiStockTrading.Notification.Application.Ports;
-using AiStockTrading.Notification.Application.Services;
-using AiStockTrading.Notification.Application.State;
+using NotificationService.Application.Ports;
+using NotificationService.Application.Services;
+using NotificationService.Application.State;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.Notification.Application.Tests;
+namespace NotificationService.Application.Tests;
 
 // FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲートコマンド処理の閂（多層認証→解析→Risk 呼び出し）。
 // kill switch / pause と同水準の多層認証。確認（promote/demote のボタン）は Gateway が担い、ハンドラは確認済み前提で呼ばれる。

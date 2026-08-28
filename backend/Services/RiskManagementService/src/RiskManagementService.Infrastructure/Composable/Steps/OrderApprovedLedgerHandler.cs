@@ -1,8 +1,8 @@
-using AiStockTrading.RiskManagement.Application.Ports;
+using RiskManagementService.Application.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
+namespace RiskManagementService.Infrastructure.Steps;
 
 // FR-10, FR-05, IADR-0018: 承認済み注文（OrderApproved）を購読し、Intent（銘柄・方向・建玉効果）を DecisionId で
 // 取引台帳に記録する。後続の OrderExecuted（銘柄・方向を持たない）を DecisionId で相関して補完するための土台。

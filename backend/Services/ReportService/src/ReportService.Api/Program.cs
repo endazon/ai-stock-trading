@@ -1,12 +1,12 @@
-using AiStockTrading.Report.Application.Adapters;
-using AiStockTrading.Report.Application.Ports;
-using AiStockTrading.Report.Application.Services;
-using AiStockTrading.Report.Domain;
-using AiStockTrading.Report.Infrastructure.Composable.Adapters;
-using AiStockTrading.Report.Infrastructure.Composable.Polling;
-using AiStockTrading.Report.Infrastructure.Foundation.Adapters;
-using AiStockTrading.Report.Api.Foundation.Endpoints;
-using AiStockTrading.Report.Infrastructure.Foundation.Persistence;
+using ReportService.Application.Adapters;
+using ReportService.Application.Ports;
+using ReportService.Application.Services;
+using ReportService.Domain;
+using ReportService.Infrastructure.Adapters;
+using ReportService.Infrastructure.Polling;
+using ReportService.Infrastructure.Adapters;
+using ReportService.Api.Endpoints;
+using ReportService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using Wolverine;
 using Wolverine.Runtime;
-using AppSvc = AiStockTrading.Report.Application.Services.ReportAppService;
+using AppSvc = ReportService.Application.Services.ReportAppService;
 
 const string ServiceName = "ai-stock-trading.report-service";
 

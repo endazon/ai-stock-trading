@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Net.Http.Json;
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Application.State;
-using AiStockTrading.InformationCollection.Domain;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Application.State;
+using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+namespace InformationCollectionService.Infrastructure.Adapters;
 
 // FR-01, ADR-0004/0005, IADR-0064: EDINET API v2（金融庁・日本の企業開示・無料／要 API キー）から当日提出の書類一覧を
 // 取得する。レート制限は非公表のため 1 分 1 回程度に自制する（IRateLimiter）。取得失敗は空を返してログする

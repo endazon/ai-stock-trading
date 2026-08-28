@@ -1,13 +1,13 @@
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Wolverine;
-using AppSvc = AiStockTrading.CostControl.Application.Services.CostControlAppService;
+using AppSvc = CostControlService.Application.Services.CostControlAppService;
 
-namespace AiStockTrading.CostControl.Api.Foundation.Endpoints;
+namespace CostControlService.Api.Endpoints;
 
 // NFR（費用）, FR-09, IADR-0027: 費用計上・統制判定・費用レビューのエンドポイント。
 // しきい値の上方遷移時に CostThresholdReached を発行する。

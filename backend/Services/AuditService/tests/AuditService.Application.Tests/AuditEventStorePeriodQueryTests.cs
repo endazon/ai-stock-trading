@@ -1,9 +1,9 @@
-using AiStockTrading.Audit.Application.Adapters;
-using AiStockTrading.Audit.Application.State;
+using AuditService.Application.Adapters;
+using AuditService.Application.State;
 using AwesomeAssertions;
 using Xunit;
 
-namespace AiStockTrading.Audit.Application.Tests;
+namespace AuditService.Application.Tests;
 
 // FR-06, FR-11, #381, IADR-0019, IADR-0199 決定2・決定3: 種別 × 期間の照会（日報の集計が引く経路）。
 //

@@ -1,8 +1,8 @@
 using System.Globalization;
-using AiStockTrading.TradeDecision.Application.Services;
+using TradeDecisionService.Application.Services;
 using Microsoft.Extensions.Configuration;
 
-namespace AiStockTrading.TradeDecision.Infrastructure.Composable.Adapters;
+namespace TradeDecisionService.Infrastructure.Adapters;
 
 // FR-17, IADR-0076: Profitability:* から採算評価ゲートの構成を読む。
 // 未設定・不正値は Default（無効・判断費用 0＝現行挙動）に倒す安全側フォールバック。Program.cs から利用し単体テストする。

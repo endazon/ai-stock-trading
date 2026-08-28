@@ -1,12 +1,12 @@
-using AiStockTrading.MarketMonitor.Application.Ports;
+using MarketMonitorService.Application.Ports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Wolverine;
-using AppSvc = AiStockTrading.MarketMonitor.Application.Services.MarketMonitorAppService;
+using AppSvc = MarketMonitorService.Application.Services.MarketMonitorAppService;
 
-namespace AiStockTrading.MarketMonitor.Infrastructure.Composable.Polling;
+namespace MarketMonitorService.Infrastructure.Polling;
 
 // FR-03, UC-02, ADR-0003: 監視間隔ごとのポーリング。市場開場時に 1 巡回評価し、検知イベント（損切り・変動）を発行する。
 // 閉場中はスキップ（監視停止）。個々の巡回の例外は監視を止めないよう握りつぶしてログする（フェイルセーフ）。

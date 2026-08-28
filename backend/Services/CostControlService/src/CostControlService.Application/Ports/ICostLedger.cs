@@ -1,6 +1,6 @@
-using AiStockTrading.CostControl.Domain;
+using CostControlService.Domain;
 
-namespace AiStockTrading.CostControl.Application.Ports;
+namespace CostControlService.Application.Ports;
 
 // NFR（費用）, IADR-0027/0034: 月次費用台帳（追記・月×カテゴリ別集計）。Month は "yyyy-MM"。
 public interface ICostLedger

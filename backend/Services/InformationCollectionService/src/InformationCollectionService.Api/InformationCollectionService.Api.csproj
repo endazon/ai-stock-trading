@@ -3,7 +3,7 @@
      実行時基盤は test-support shim（IADR-0013）。技術詳細（情報源アダプタ・ポーリング）は Infrastructure に置く。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <RootNamespace>AiStockTrading.InformationCollection.Api</RootNamespace>
+    <RootNamespace>InformationCollectionService.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->

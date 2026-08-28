@@ -1,15 +1,15 @@
-using AiStockTrading.RiskManagement.Domain;
-using AiStockTrading.TradeDecision.Application.Ports;
-using AiStockTrading.TradeDecision.Application.Services;
-using AiStockTrading.TradeDecision.Application.State;
+using RiskManagementService.Domain;
+using TradeDecisionService.Application.Ports;
+using TradeDecisionService.Application.Services;
+using TradeDecisionService.Application.State;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
-using AppSvc = AiStockTrading.TradeDecision.Application.Services.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Application.Services.TradeDecisionAppService;
 
-namespace AiStockTrading.TradeDecision.Application.Tests;
+namespace TradeDecisionService.Application.Tests;
 
 // FR-02, FR-04, ADR-0003, #337, IADR-0247: スクリーニング入力の縮退の**結線**検証
 // （縮退順序そのものの網羅は ScreeningContextPlannerTests が持つ。ここでは

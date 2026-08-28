@@ -1,11 +1,11 @@
 using System.Net;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, ADR-0004, IADR-0064: FRED（米セントルイス連銀・無料／要 API キー・120回/分）コネクタ。
 // series/observations の写像を fake HttpMessageHandler で検証する（実ネットワーク不使用）。

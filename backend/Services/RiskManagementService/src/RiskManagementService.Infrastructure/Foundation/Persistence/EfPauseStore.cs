@@ -1,7 +1,7 @@
-using AiStockTrading.RiskManagement.Application.Ports;
-using AiStockTrading.RiskManagement.Application.State;
+using RiskManagementService.Application.Ports;
+using RiskManagementService.Application.State;
 
-namespace AiStockTrading.RiskManagement.Infrastructure.Foundation.Persistence;
+namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, ADR-0009: 取引の一時停止（pause）状態の EF 実装（単一行）。kill switch（EfKillSwitchStore）と同型。
 internal sealed class EfPauseStore(RiskManagementDbContext db) : IPauseStore

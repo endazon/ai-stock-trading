@@ -1,8 +1,8 @@
-using AiStockTrading.InformationCollection.Application.Ports;
-using AiStockTrading.InformationCollection.Domain;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
-using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
-using AiStockTrading.InformationCollection.Application.Adapters;
+using InformationCollectionService.Application.Ports;
+using InformationCollectionService.Domain;
+using InformationCollectionService.Infrastructure.Adapters;
+using InformationCollectionService.Infrastructure.Polling;
+using InformationCollectionService.Application.Adapters;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
@@ -11,7 +11,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;
 using Wolverine;
-using AppSvc = AiStockTrading.InformationCollection.Application.Services.InformationCollectionAppService;
+using AppSvc = InformationCollectionService.Application.Services.InformationCollectionAppService;
 
 const string ServiceName = "ai-stock-trading.information-collection-service";
 

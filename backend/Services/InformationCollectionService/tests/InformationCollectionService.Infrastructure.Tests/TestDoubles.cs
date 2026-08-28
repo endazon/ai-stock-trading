@@ -1,7 +1,7 @@
 using System.Net;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 
-namespace AiStockTrading.InformationCollection.Infrastructure.Tests;
+namespace InformationCollectionService.Infrastructure.Tests;
 
 // FR-01, IADR-0064: 公式ソースコネクタのテスト用テストダブル（実ネットワーク・実時間を使わない）。
 

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace AiStockTrading.InformationCollection.Api.Tests;
+namespace InformationCollectionService.Api.Tests;
 
 // NFR（セキュリティ）, #456, IADR-0176 決定4:
 // **認可メタデータを持たないエンドポイントが、明示した無認証許可リスト以外に存在しないこと**を構造で固定する。

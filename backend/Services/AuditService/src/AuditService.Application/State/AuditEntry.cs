@@ -1,4 +1,4 @@
-namespace AiStockTrading.Audit.Application.State;
+namespace AuditService.Application.State;
 
 // FR-11, UC-07, IADR-0019: 監査台帳の 1 記録（全ドメインイベントを共通形へ正規化したもの）。追記専用。
 // Id は冪等キー（メッセージ ID＝Wolverine の Envelope.Id）。CorrelationId は注文系の DecisionId／市場系の EventId（注文の全体像を辿る）。

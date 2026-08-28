@@ -1,5 +1,5 @@
-using AiStockTrading.Configuration.Client.Composable.Steps;
-using AiStockTrading.Configuration.Client.Ports;
+using ConfigurationService.Client.Steps;
+using ConfigurationService.Client.Ports;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
@@ -9,7 +9,7 @@ using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
-namespace AiStockTrading.Configuration.Client.Tests;
+namespace ConfigurationService.Client.Tests;
 
 // FR-17, UC-06, IADR-0063 決定 1/4: 利用者の前提条件変更（AssumptionsChanged）でキャッシュが無効化され、次の参照で
 // 新しい版へ追随することを検証する（#139 の受け入れ基準「版が上がったときに追随する」）。

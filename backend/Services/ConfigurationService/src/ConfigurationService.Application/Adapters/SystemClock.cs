@@ -1,6 +1,6 @@
-using AiStockTrading.Configuration.Application.Ports;
+using ConfigurationService.Application.Ports;
 
-namespace AiStockTrading.Configuration.Application.Adapters;
+namespace ConfigurationService.Application.Adapters;
 
 // FR-17: システム時刻に基づく IClock。変更履歴の日時に用いる。
 public sealed class SystemClock : IClock
