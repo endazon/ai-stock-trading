@@ -249,6 +249,7 @@ public class AuditCycleCompletenessTests
                 t),
             new OrderApproved(decisionId, Intent(), 10, t),
             new OrderCancelled(decisionId, "ORD-1", "市場閉場のため取消", t),
+            new OrderDispatchForgone(decisionId, Intent(), OrderDispatchForgoneReason.BrokerUnavailable, t),
             new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_005m, t, BrokerProvider.MoomooSimulate),
             new OrderModified(decisionId, "ORD-1", 10, 1_000m, 8, 1_010m, "数量を縮小", t),
             new OrderRejected(decisionId, Intent(), [RejectionReason.PerOrderAmountExceeded], t),
@@ -258,6 +259,10 @@ public class AuditCycleCompletenessTests
             new PositionReconciliationDrift(
                 [new PositionDriftItem("AAPL", Market.UnitedStates, 10, 8, PositionDriftKind.QuantityMismatch)], t, t),
             new PriceMovementDetected(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_050m, 1_000m, 0.05m, t),
+            new ProtectiveStopCoverageLost(
+                decisionId, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+                ProtectiveStopRemediation.PositionClosed, 10, Guid.NewGuid(), Intent(), t),
+            new ProtectiveStopPlaced(decisionId, Guid.NewGuid(), "STOP-1", Intent(), 950m, 1, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
             new StageTransitioned(1, 1, 2, "Promotion", "endazon", "基準を満たした", t, 100, false),

@@ -115,8 +115,10 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // 新規建て。10 株 × $20 ＝ $200 は 1 注文上限（25% ＝ $750）・日次上限（150% ＝ $4,500）の内側であり、
         // リスク管理の決定的スクリーニングを通過する。AAPL は基準通貨市場のため換算レートは既定 1 でよい。
         var decisionId = Guid.NewGuid();
+        // FR-10, #331: Open 注文は損切り価格が必須（発注執行が保護逆指値を同時発注する）。
         var intent = new OrderIntent(
-            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 20m);
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 20m,
+            StopLossPrice: 18m);
         var decision = new TradeDecisionMade(decisionId, intent, "E2E", DateTimeOffset.UtcNow);
 
         // 取引判断イベントを実 RabbitMQ へ発行する（リスク管理が購読・承認し、発注執行が執行・永続する）。
@@ -184,7 +186,8 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // ② 実配送: 1 通の OrderApproved で、購読する 2 サービスが**どちらも**処理する。
         var decisionId = Guid.NewGuid();
         var intent = new OrderIntent(
-            "MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 5, 200m);
+            "MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 5, 200m,
+            StopLossPrice: 180m); // FR-10, #331: Open は損切り価格が必須
         var approved = new OrderApproved(decisionId, intent, ApprovedQuantity: 5, ApprovedAt: DateTimeOffset.UtcNow);
 
         // 発行元はリスク管理（＝この型を自分でも購読しているプロセス。退行 B の直撃対象）。

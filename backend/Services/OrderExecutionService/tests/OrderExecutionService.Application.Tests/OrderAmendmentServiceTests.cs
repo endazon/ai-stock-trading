@@ -22,8 +22,11 @@ public class OrderAmendmentServiceTests
         public DateTimeOffset UtcNow => Now;
     }
 
+    // #331, IADR-0210: 本テストの関心事は訂正・取消の配管であり、保護逆指値の同時発注（Open 専用）を
+    // 巻き込まないよう Close 注文で発注済み状態を作る（訂正・取消の挙動は建玉効果に依存しない）。
     private static OrderIntent Intent(int quantity = 10, decimal price = 3000m) =>
-        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, quantity, price);
+        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
+            quantity, price, PositionEffect.Close);
 
     // 非終端の注文を1件発注済みにした状態を作る（immediateFill=false・IADR-0067）。
     private sealed class Fixture
@@ -42,8 +45,8 @@ public class OrderAmendmentServiceTests
             var intent = Intent(quantity, price);
             var execution = new AppSvc(
                 Broker, ExecutedOrders, new InMemoryOrderReservationStore(), new FakeClock());
-            var executed = await execution.ExecuteAsync(
-                new Shared.Contracts.Events.OrderApproved(decisionId, intent, quantity, Now));
+            var executed = (await execution.ExecuteAsync(
+                new Shared.Contracts.Events.OrderApproved(decisionId, intent, quantity, Now))).Executed!;
             return (decisionId, executed.OrderId);
         }
     }
@@ -150,8 +153,8 @@ public class OrderAmendmentServiceTests
         var lifecycle = new InMemoryOrderLifecycleStore();
         var decisionId = Guid.NewGuid();
         var execution = new AppSvc(broker, store, new InMemoryOrderReservationStore(), new FakeClock());
-        var executed = await execution.ExecuteAsync(
-            new Shared.Contracts.Events.OrderApproved(decisionId, Intent(), 10, Now));
+        var executed = (await execution.ExecuteAsync(
+            new Shared.Contracts.Events.OrderApproved(decisionId, Intent(), 10, Now))).Executed!;
 
         var service = new OrderAmendmentService(broker, broker, store, lifecycle, new FakeClock());
         var act = () => service.ModifyAsync(decisionId, quantity: 5, price: 2900m, reason: "遅れた訂正");

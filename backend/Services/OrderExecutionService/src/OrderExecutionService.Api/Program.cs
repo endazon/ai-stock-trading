@@ -73,6 +73,8 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
 builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
+// FR-10, #331, IADR-0210: 保護逆指値レグの記録（同時発注の保存とガードの巡回対象）。
+builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore>();
 builder.Services.AddScoped<OrderExecutionService>();
 
 // #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
@@ -138,6 +140,25 @@ if (brokerSelection.IsMoomoo)
     // TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
+}
+
+// FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値ガード（失効検知・再発注・残存取消。既定有効）。
+// 判定の前提（ブローカー注文照会＋建玉照会 IBrokerPositionSource）を持つ moomoo 構成でのみ配線する。
+// paper は建玉照会を実装しないため常駐そのものを登録しない（構造的な非干渉。分岐は単体テストで固定）。
+builder.Services.Configure<AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuardOptions>(
+    builder.Configuration.GetSection(
+        AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuardOptions.SectionName));
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddScoped<AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuard>(sp =>
+        new AiStockTrading.OrderExecution.Application.StopGuard.ProtectiveStopGuard(
+            sp.GetRequiredService<IBrokerAdapter>(),
+            (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
+            sp.GetRequiredService<IProtectiveStopOrderStore>(),
+            sp.GetRequiredService<IExecutedOrderStore>(),
+            sp.GetRequiredService<IClock>()));
+    builder.Services.AddHostedService<
+        AiStockTrading.OrderExecution.Infrastructure.Composable.StopGuard.ProtectiveStopGuardService>();
 }
 
 // FR-20, FR-05, #385, 06_daytrading-review §4.2, IADR-0150: ブローカ稼働の定期観測（既定有効）。

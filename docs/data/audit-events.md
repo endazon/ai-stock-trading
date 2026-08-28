@@ -56,8 +56,10 @@ issues: [#17, #18]
 ## 整合性・制約ルール
 
 - 追記専用（更新・削除しない）。冪等は `Id`（=MessageId）で担保する。
-- 損切り機械執行は `StopLossTriggered.EventId` が後続の `DecisionId` になるため、市場検知から決済までを
-  同一 `CorrelationId` で辿れる。
+- 損切りライン到達（`StopLossTriggered`）は検知の記録である（#331 の逆指値一本化により、到達を起点とする
+  決済発行は廃止）。決済はエントリーと同時に発注済みの保護逆指値がブローカー側で行い、
+  保護レグの記録（`ProtectiveStopPlaced` / `ProtectiveStopCoverageLost`）はエントリーの `DecisionId` を
+  `CorrelationId` に採るため、エントリーから保護・解消までを同一相関で辿れる。
 
 ## 永続化方針
 

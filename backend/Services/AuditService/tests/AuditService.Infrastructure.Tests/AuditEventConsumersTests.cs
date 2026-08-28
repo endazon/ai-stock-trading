@@ -297,4 +297,76 @@ public class AuditEventConsumersTests
 
         await host.StopAsync();
     }
+
+    // FR-05, FR-10, FR-11, #331, IADR-0210/0211: 損切りのブローカー側逆指値への一本化で足した 3 イベント。
+    // いずれも**注文チェーンと同じ DecisionId 相関**で台帳に載らなければ、後から
+    // 「なぜ発注されなかったか」「なぜ建玉が消えたか」を 1 本の相関で辿れない。
+
+    [Fact]
+    public async Task 見送りは注文チェーンに拒否とは別のEventTypeで載る()
+    {
+        // 🔴 見送り（届いていない）を Rejected（証券会社が受理しなかった）と同じ種別で数えると、
+        // 「拒否」の集計が接続障害で汚染される（FR-05・IADR-0211）。別 EventType であることを固定する。
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var decisionId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, Intent(), 10, now));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderDispatchForgone(decisionId, Intent(), OrderDispatchForgoneReason.BrokerUnavailable, now));
+        session.Executed.MessagesOf<OrderDispatchForgone>().Should().NotBeEmpty();
+
+        var trail = store.GetByCorrelation(decisionId);
+        trail.Select(e => e.EventType).Should().Contain([nameof(OrderApproved), nameof(OrderDispatchForgone)]);
+        trail.Select(e => e.EventType).Should().NotContain(nameof(OrderRejected));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 保護逆指値の発注はエントリーと同じ相関で載る()
+    {
+        // 「建玉あり ⇒ 有効な逆指値あり」の証跡はエントリーと 1 本で辿れなければ監査に使えない。
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var entryDecisionId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var closeIntent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 10, 950m, PositionEffect.Close);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(entryDecisionId, Intent(), 10, now));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new ProtectiveStopPlaced(entryDecisionId, Guid.NewGuid(), "stop-1", closeIntent, 950m, 1, now));
+        session.Executed.MessagesOf<ProtectiveStopPlaced>().Should().NotBeEmpty();
+
+        store.GetByCorrelation(entryDecisionId).Select(e => e.EventType)
+            .Should().Contain([nameof(OrderApproved), nameof(ProtectiveStopPlaced)]);
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 保護喪失は建玉が消えた理由として台帳に残る()
+    {
+        // 利用者の承認なしに注文取消・建玉決済が起きる事象であり、この記録が唯一の一次証跡になる。
+        // Remediation=None（解消も失敗）は要約から人手対応が要ると読めなければならない。
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var entryDecisionId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new ProtectiveStopCoverageLost(entryDecisionId, "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.None, 10,
+                CloseDecisionId: null, CloseIntent: null, now));
+        session.Executed.MessagesOf<ProtectiveStopCoverageLost>().Should().NotBeEmpty();
+
+        var entry = store.GetByCorrelation(entryDecisionId)
+            .Should().ContainSingle(e => e.EventType == nameof(ProtectiveStopCoverageLost)).Subject;
+        entry.CorrelationId.Should().Be(entryDecisionId, "エントリーの DecisionId で注文チェーンへ束ねる");
+        entry.Symbol.Should().Be("AAPL");
+
+        await host.StopAsync();
+    }
 }

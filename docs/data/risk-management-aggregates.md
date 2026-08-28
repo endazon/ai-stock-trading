@@ -136,7 +136,7 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 
 | 属性 | 型 | 説明 |
 | --- | --- | --- |
-| DecisionId | Guid (PK) | 判断/損切りイベント由来の一意キー（冪等）。通常経路・損切り機械執行の両承認を記録 |
+| DecisionId | Guid (PK) | 判断/機械執行イベント由来の一意キー（冪等）。通常経路・owner 手仕舞い・自動縮小に加え、保護逆指値レグ・その手仕舞いレグ（#331。発注執行が発注済みのレグを専用イベントで結線）の承認を記録 |
 | Symbol / Market / Side / ProductType / PositionEffect / Mode | 各列挙・文字列 | 承認 Intent の写し（約定に銘柄・方向・建玉効果を補完するための権威情報） |
 | Quantity / Price | int / decimal | 承認数量・参照価格 |
 | ApprovedAt | DateTimeOffset | 承認時刻 |

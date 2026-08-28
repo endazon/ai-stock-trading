@@ -179,6 +179,12 @@
     "OrderId": "String",
     "Reason": "String"
   },
+  "OrderDispatchForgone": {
+    "DecisionId": "Guid",
+    "Intent": "OrderIntent",
+    "OccurredAt": "DateTimeOffset",
+    "Reason": "OrderDispatchForgoneReason"
+  },
   "OrderExecuted": {
     "AveragePrice": "Decimal",
     "DecisionId": "Guid",
@@ -238,6 +244,26 @@
     "Market": "Market",
     "Price": "Decimal",
     "Symbol": "String"
+  },
+  "ProtectiveStopCoverageLost": {
+    "Cause": "ProtectiveStopLossCause",
+    "CloseDecisionId": "Guid?",
+    "CloseIntent": "OrderIntent",
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Quantity": "Int32",
+    "Remediation": "ProtectiveStopRemediation",
+    "Symbol": "String"
+  },
+  "ProtectiveStopPlaced": {
+    "Attempt": "Int32",
+    "CloseIntent": "OrderIntent",
+    "EntryDecisionId": "Guid",
+    "PlacedAt": "DateTimeOffset",
+    "StopDecisionId": "Guid",
+    "StopOrderId": "String",
+    "TriggerPrice": "Decimal"
   },
   "ReportConfirmed": {
     "Actor": "String",

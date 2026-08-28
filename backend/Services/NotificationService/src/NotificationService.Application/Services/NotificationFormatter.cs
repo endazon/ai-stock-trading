@@ -20,11 +20,55 @@ public static class NotificationFormatter
         $"{e.Intent.Symbol} 拒否: {string.Join(",", e.Reasons)}（DecisionId={e.DecisionId}）",
         NotificationSeverity.Warning);
 
-    // リスク統制発動: 損切りライン到達（機械執行の起点）。
+    // リスク統制: 損切りライン到達の検知（#331・逆指値一本化）。決済はブローカー側の逆指値が実行し、
+    // システムは発注しない——本文にその旨を明示する（「システムが決済した」と誤読させない）。
     public static NotificationMessage From(StopLossTriggered e) => new(
         "リスク統制: 損切りライン到達",
-        $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）",
+        $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）。"
+            + "決済はブローカー側の逆指値が実行します（システムは決済注文を発行しません）。",
         NotificationSeverity.Critical);
+
+    // FR-05, ADR-0002（OpenD 常駐・SPOF）, #331, IADR-0211: 発注の見送り。
+    // 🔴 **「再試行されない」を明示する。** キューイングしない裁定のため、この注文は破棄され、
+    // 再発注は次の取引判断からになる。建玉は増えておらずリスクは発生していないため Warning
+    // （実際に止まる事象〔損切り到達・保護喪失〕の Critical を埋もれさせない）。
+    public static NotificationMessage From(OrderDispatchForgone e) => new(
+        "発注見送り: " + ReasonLabel(e.Reason),
+        $"{e.Intent.Symbol}/{e.Intent.Market} {e.Intent.Side} 数量{e.Intent.Quantity} の発注を見送りました"
+            + $"（理由: {ReasonLabel(e.Reason)}・DecisionId={e.DecisionId}）。"
+            + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
+        NotificationSeverity.Warning);
+
+    // FR-10, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時 or 失効後の再発注）。
+    // 統制が設計どおり働いた記録であり Info。
+    public static NotificationMessage From(ProtectiveStopPlaced e) => new(
+        "保護逆指値を発注",
+        $"{e.CloseIntent.Symbol}/{e.CloseIntent.Market} {e.CloseIntent.Side} 数量{e.CloseIntent.Quantity}"
+            + $" トリガー {e.TriggerPrice}（試行 {e.Attempt}・StopOrderId={e.StopOrderId}）。",
+        NotificationSeverity.Info);
+
+    // FR-10, UC-02, #331, IADR-0210: 保護逆指値が成立しない（未受理・失効）——建玉を持たないための対処。
+    // 対処が成功しても**利用者の承認なしに建玉が消えた/注文が取り消された**事象であり Critical。
+    // Remediation=None は逆指値なしの建玉が残っている可能性があり、人手対応を明示的に求める。
+    public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: 保護逆指値が成立せず建玉を解消",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
+            + $"{(e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリー時に未受理" : "滞留中に失効（再発注不可）")}のため、"
+            + e.Remediation switch
+            {
+                ProtectiveStopRemediation.EntryCancelled => "エントリー注文を取り消しました（建玉は生じていません）。",
+                ProtectiveStopRemediation.PositionClosed => "建玉を成行で手仕舞いました（逆指値なしの建玉を持たない規律・FR-10）。",
+                _ => "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。直ちに確認してください。**",
+            },
+        NotificationSeverity.Critical);
+
+    private static string ReasonLabel(OrderDispatchForgoneReason reason) => reason switch
+    {
+        OrderDispatchForgoneReason.BrokerUnavailable => "ブローカー（OpenD）へ接続できません",
+        OrderDispatchForgoneReason.StopLossPriceMissing => "損切り価格がなく保護逆指値を張れません",
+        OrderDispatchForgoneReason.StopOrderUnsupported => "ブローカーが逆指値に対応していません",
+        _ => reason.ToString(),
+    };
 
     // FR-10, FR-17, #381, ADR-0022 決定2, IADR-0196: 為替レート源がフォールバックへ切り替わった。
     //
