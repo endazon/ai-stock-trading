@@ -505,7 +505,16 @@ module.exports = ({ ok, assert }) => {
       fsVsa.copyFileSync(pathVsa.join(REPO_ROOT_VSA, rel), dst);
     }
     for (const svc of RUNTIME_WORKERS) {
-      const from = pathVsa.join(REPO_ROOT_VSA, 'backend', 'Services', svc, 'src', `${svc}.Api`);
+      // NFR/IADR-0263: 移送済みサービス（例 AuditService）は appsettings.json が
+      // 旧 `src/<Svc>.Api/` ではなくサービスディレクトリ直下にある。実ツリーの現況に
+      // フィクスチャの読み出し元を合わせないと、移送が進むたびに本テストが ENOENT で壊れる
+      // （ここはテスト対象の検査器〔validate-runtime-scaffold.js〕そのものではなく、
+      // フィクスチャを組み立てる本テスト側の前提が旧樹形決め打ちだった箇所）。
+      const legacyFrom = pathVsa.join(REPO_ROOT_VSA, 'backend', 'Services', svc, 'src', `${svc}.Api`);
+      const mergedFrom = pathVsa.join(REPO_ROOT_VSA, 'backend', 'Services', svc);
+      const from = fsVsa.existsSync(pathVsa.join(legacyFrom, 'appsettings.json'))
+        ? legacyFrom
+        : mergedFrom;
       const to = layout === 'merged'
         ? pathVsa.join(root, 'backend', 'Services', svc)
         : pathVsa.join(root, 'backend', 'Services', svc, 'src', `${svc}.${layout}`);
