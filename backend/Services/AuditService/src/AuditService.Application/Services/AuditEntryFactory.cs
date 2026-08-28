@@ -349,6 +349,20 @@ public static class AuditEntryFactory
             + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（コンテキスト予算超過）。
+    //
+    // 🔴 **分割（材料は減らない）と切り詰め（材料が減る）を分けて記録する**（planning#53 の裁定）。
+    // 月報は台帳の種別 × 期間照会で「分割の件数」「切り詰めの件数」を別々に数える。
+    // 要約に切り詰めの内訳（RAG / ニュース）を出すのは、「静かに判断材料が減っていた」状態を
+    // 事後に検証可能にするためである（ADR-0017 決定4 と同じ考え方）。
+    public static AuditEntry From(ScreeningContextReduced e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ScreeningContextReduced), AuditCorrelation.From("screening-context"), Symbol: null,
+        Truncate($"スクリーニング入力の縮退: 対象銘柄 {e.Symbols.Count} 件・呼び出し {e.BatchCount} 回"
+            + $"（分割={(e.Split ? "あり" : "なし")}・切り詰め={(e.Truncated ? "あり" : "なし")}"
+            + $"・RAG {e.DroppedRagCount} 件・ニュース/開示 {e.DroppedNewsCount} 件を削除・予算 {e.BudgetChars} 文字）"
+            + (e.UnresolvableOverflow ? "。**保護対象（方針・市況）だけで予算超過**（削らずに呼び出した）" : string.Empty)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
     //
     // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。

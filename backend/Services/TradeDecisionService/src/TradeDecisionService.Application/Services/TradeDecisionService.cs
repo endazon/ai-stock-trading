@@ -29,7 +29,8 @@ public sealed class TradeDecisionService(
     IFxRateProvider? fxRate = null,
     IHeldPositionProvider? heldPosition = null,
     RetrievalSourcePolicy? retrievalSourcePolicy = null,
-    IFxSourceStatusNotifier? statusNotifier = null)
+    IFxSourceStatusNotifier? statusNotifier = null,
+    IScreeningReductionReporter? screeningReporter = null)
 {
     // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
     // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
@@ -39,6 +40,14 @@ public sealed class TradeDecisionService(
     // IADR-0039: LLM 呼び出しは多数決・二段のオーケストレータへ委譲する（プロンプト構築とサイジングは本サービスの責務）。
     private readonly DecisionOrchestrator _orchestrator =
         new(llm, options ?? DecisionOrchestrationOptions.Default, logger);
+
+    // #337, IADR-0247: スクリーニング入力の縮退（予算・順序）の構成。オーケストレータと同じ実効値を共有する。
+    private readonly DecisionOrchestrationOptions _options = options ?? DecisionOrchestrationOptions.Default;
+
+    // FR-06, FR-11, #337, IADR-0247: 縮退発生の記録経路（監査台帳・月報集計）。未指定＝NoOp。
+    // 実発行（PublishingScreeningReductionReporter）は Worker が配線する。
+    private readonly IScreeningReductionReporter _screeningReporter =
+        screeningReporter ?? new NoOpScreeningReductionReporter();
 
     // UC-01, FR-09, IADR-0096: 日報未確定（policy-null）で見送った際に確定を促す通知を促す出力ポート。
     // 未指定＝NoOp（何もしない＝現行のログのみ）。実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）は Worker が
@@ -171,10 +180,29 @@ public sealed class TradeDecisionService(
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice);
+
+        // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
+        // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
+        // 未設定（既定）は従来プロンプト（参考情報なし・IADR-0072 決定2）＝現行挙動。
+        var screening = _options is { EnableScreening: true, ScreeningContextBudgetChars: { } budget }
+            ? ScreeningContextAssembler.Assemble(trigger, policy, retrieved, currentPrice, budget)
+            : null;
+
         var orchestrated = await _orchestrator.DecideAsync(
-            () => TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context), decisionPrompt, cancellationToken)
+            () => screening is null
+                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context)
+                : TradeDecisionPromptBuilder.BuildScreening(
+                    trigger, policy, context, currentPrice, screening.RetainedReferences),
+            decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
+
+        // #337, IADR-0247: 縮退（分割・切り詰め・解消不能な超過）が発生したら記録する（planning#53 の裁定・
+        // 月報の件数記載）。fail-safe: 記録は判断のクリティカルパス外。発行失敗で判断を壊さない。キャンセルは伝播。
+        if (screening is { Plan.ReductionOccurred: true })
+        {
+            await ReportScreeningReductionSafeAsync(trigger, screening, cancellationToken).ConfigureAwait(false);
+        }
 
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
@@ -506,6 +534,32 @@ public sealed class TradeDecisionService(
     // FR-04, ADR-0003, #252, IADR-0169 決定2: 取得結果は**出典で限定してから**プロンプトへ渡す。
     // **絞り込みは取得側（アダプタ）ではなくここで行う** —— 守るのは「注入点」であって特定の provider 実装ではない。
     // 別の provider を挿しても統制が抜けない位置に置く（IADR-0163 決定2 と同じ考え方）。
+    // #337, IADR-0247: 縮退発生の記録（fail-safe ラッパ）。発行の例外は握って判断を続ける（キャンセルは伝播）。
+    private async Task ReportScreeningReductionSafeAsync(
+        DecisionTrigger trigger, ScreeningContextAssembler.AssembledScreeningContext screening,
+        CancellationToken cancellationToken)
+    {
+        var plan = screening.Plan;
+        try
+        {
+            await _screeningReporter.ReportAsync(
+                new ScreeningContextReduced(
+                    [trigger.Symbol],
+                    plan.Batches.Count,
+                    plan.SplitOccurred,
+                    plan.DroppedRagCount,
+                    plan.DroppedNewsCount,
+                    plan.UnresolvableOverflow,
+                    screening.BudgetChars,
+                    clock.UtcNow),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "スクリーニング縮退の記録発行に失敗しました（判断は継続します）: {Symbol}", trigger.Symbol);
+        }
+    }
+
     private async Task<IReadOnlyList<RetrievedContext>> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {

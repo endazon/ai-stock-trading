@@ -21,7 +21,6 @@ public sealed class DecisionOrchestrator(
         ArgumentNullException.ThrowIfNull(decisionPrompt);
 
         // 一次スクリーニング（軽量モデル・1 回）。Hold なら二次をスキップして打ち切る（費用統制）。
-        var screeningUnparseable = false;
         if (options.EnableScreening)
         {
             var screenOutput = await llm.CompleteAsync(screeningPromptFactory(), options.PrimaryModel, cancellationToken)
