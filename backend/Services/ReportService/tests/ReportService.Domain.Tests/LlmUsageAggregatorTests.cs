@@ -1,3 +1,4 @@
+using AiStockTrading.Configuration.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
@@ -107,6 +108,24 @@ public class LlmUsageAggregatorTests
     public void 上限がゼロなら消費率は算出できない()
     {
         LlmUsageAggregator.ConsumptionRatio(100m, 0m).Should().BeNull();
+    }
+
+    // 🔴 消費率の分母は**前提条件の月次 LLM 上限そのもの**でなければならない。
+    // 値を書き写すと、前提条件だけが改定されたときに分母が古いまま残り、
+    // **計算は成立するので誰も気づかないまま消費率が誤表示になる**（危険側は過小表示）。
+    // 本テストは、既定値を literal へ戻す変更を落とすための番人である。
+    [Fact]
+    public void 消費率の分母は前提条件の月次LLM上限と同一である()
+    {
+        LlmUsageAggregator.MonthlyLlmCostLimitJpy
+            .Should().Be(TradingAssumptionsDefaults.Create().CostLimits.Llm);
+    }
+
+    // 対の肯定形: 上限を明示すればその値が分母になる（既定へ落ちない）。
+    [Fact]
+    public void 上限を明示すればその値が分母になる()
+    {
+        LlmUsageAggregator.ConsumptionRatio(5_000m, 10_000m).Should().Be(0.5m);
     }
 
     // --- フォールバック・スキップ ---
