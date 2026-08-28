@@ -189,5 +189,8 @@ public class LlmCostIncurredConsumerTests
         public decimal GetMonthlyTotal(string month, CostCategory category) => 0m;
 
         public decimal GetMonthlyTotalAll(string month) => 0m;
+
+        public IReadOnlyDictionary<CostCategory, decimal> GetMonthlyTotals(string month) =>
+            new Dictionary<CostCategory, decimal>();
     }
 }

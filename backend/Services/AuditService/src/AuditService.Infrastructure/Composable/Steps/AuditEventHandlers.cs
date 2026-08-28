@@ -379,3 +379,30 @@ public sealed class PositionClosedWithStaleFxRateAuditHandler(IAuditEventStore s
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
+//
+// 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**
+// ADR-0017 決定4-(3) は月報への集計掲載を求めるが、集計は記録が残っていて初めて可能になる。
+public sealed class LlmFallbackFiredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(LlmFallbackFired message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-04, FR-09, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 取引判断の見送りを台帳へ記録する。
+//
+// 🔴 **見送りは障害ではなく設計上の正常な結果である。** 記録する理由は障害追跡ではなく、
+// ADR-0017 決定2 が「日報に当日のスキップ回数を記載する」と定めたためである
+// （取引機会を逸した回数は、日報を方針書として読むうえで必要な情報である）。
+public sealed class TradeDecisionSkippedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(TradeDecisionSkipped message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

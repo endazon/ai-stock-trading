@@ -39,6 +39,14 @@ internal sealed class EfCostLedger(CostControlDbContext db) : ICostLedger
     public decimal GetMonthlyTotalAll(string month) =>
         db.CostEntries.Where(r => r.Month == month).Sum(r => (decimal?)r.Amount) ?? 0m;
 
+    // NFR（費用）, #347: 月報へ供給するカテゴリ別内訳。対象外（LlmUncapped）も含めて返す。
+    public IReadOnlyDictionary<CostCategory, decimal> GetMonthlyTotals(string month) =>
+        db.CostEntries
+            .Where(r => r.Month == month)
+            .GroupBy(r => r.Category)
+            .Select(g => new { g.Key, Total = g.Sum(r => r.Amount) })
+            .ToDictionary(x => x.Key, x => x.Total);
+
     // ロック/トランザクション保持下で呼ぶこと。before 読み取り→追記→after 読み取りを不可分に行う。
     private LlmCostRecordOutcome AppendAndRead(string month, CostCategory category, decimal amount, DateTimeOffset at)
     {
