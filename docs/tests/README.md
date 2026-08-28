@@ -3,13 +3,13 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259]
 specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry]
 issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344, MSP#446]
 -->
@@ -96,15 +96,18 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 
 ## 5. テストの層と実行区分
 
-| 層 | 置き場所 | CI |
-| --- | --- | --- |
-| ドメイン単体 | `backend/Services/<Svc>/tests/<Svc>.Domain.Tests` | 既定 CI |
-| アプリケーション単体 | `.../<Svc>.Application.Tests` | 既定 CI |
-| ホスト / エンドポイント（Api） | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 既定 CI |
-| 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 既定 CI |
-| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析。標準プロジェクト構成は「Worker を Api / Infrastructure に割り、実体のある層だけを作る」形で実現する） | 既定 CI |
-| 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 既定 CI |
-| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
+**単一プロジェクト＋VSA/DDD 構成への移行中は、サービス単位で下表の「新」「旧」いずれかが実体として存在する**
+（新旧混在。移送済みかどうかは現物で確認する）。
+
+| 層 | 置き場所（旧・層別プロジェクト） | 置き場所（新・単一プロジェクト） | CI |
+| --- | --- | --- | --- |
+| ドメイン単体 | `backend/Services/<Svc>/tests/<Svc>.Domain.Tests` | `backend/Services/<Name>/Tests/<Name>.Tests.csproj` の `Domain/` フォルダ | 既定 CI |
+| アプリケーション/機能単体 | `.../<Svc>.Application.Tests` | 同上 `Features/` フォルダ | 既定 CI |
+| ホスト / エンドポイント | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 同上（サービスにつき 1 プロジェクトへ統合） | 既定 CI |
+| 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 同上 `Infrastructure/` フォルダ | 既定 CI |
+| 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析。プロジェクト境界で層を強制） | 同上（ソース走査を併置。プロジェクト境界が無い新構成はこちらが本体） | 既定 CI |
+| 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 新旧不変（横断テストは統合しない） | 既定 CI |
+| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | 新旧不変（横断テストは統合しない） | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
 
 ## 6. 未整備（担当 issue で追加する）
 

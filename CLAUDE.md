@@ -2,7 +2,7 @@
 
 このリポジトリは、上流工程リポジトリ（`project-planning`）で確定した計画書を**実装する**ための作業リポジトリである。Claude はこのファイルを毎セッション読み込む。指示は具体・簡潔に保つ。
 
-> 本ファイルは `impl-handoff-kit` のテンプレートから生成された。技術スタック依存の規約は末尾の「技術スタック別ルール」に追記すること。**キットは bootstrap 専用であり、既存リポジトリに追随義務は無い**（資料再編 ADR-0029 決定 6。同期のバイト一致検査は退役済み）。
+> 技術スタック依存の規約は末尾の「技術スタック別ルール」へ追記する。**キット（`impl-handoff-kit`）は bootstrap 専用であり、既存リポジトリに追随義務は無い**（ADR-0029 決定 6。同期のバイト一致検査は退役済み）。
 >
 > **最初に `AI_SETUP.md` を読む**。利用可能な AI（Claude Code サブスク / Anthropic API / GitHub Copilot）の宣言と、有効化するファイル・シークレットがそこで決まる。
 
@@ -65,7 +65,7 @@
 - **着手前に必須**なのは**作業仕様書**（`.ai-context/specs/<YYYYMMDD>_<概要>.md`）である。重要な実装判断は**実装ADR**（`.ai-context/adr/`、`IADR-XXXX`）に必ず残す（計画ADR `ADR-XXXX` と区別する）。
 - **種別の一覧（必須 10 / 任意 9）と出力先・粒度は [`docs/README.md`](docs/README.md) が正本である。ここへ複写しない**（2 箇所に置くと片方が古くなる）。
 
-> **機能仕様書・テスト仕様書の必須範囲（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211)・[作業仕様書 20260720](.ai-context/specs/20260720_required-spec-coverage-arbitration.md)）**: 機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）は、**安全・統制の中核 FR＝FR-10（リスク統制）・FR-12（ペーパートレード）・FR-15（バックテスト）・FR-19（取引ガード）・FR-20（段階ゲート）**を必須範囲とする（設定駆動・横断的で独立した機能/テスト仕様書が統制価値を持つため）。それ以外の実装済み FR は、作業仕様書（`.ai-context/specs/`・PR 単位の point-in-time 記録）と xUnit テスト（起点 ID コメント付）を正の記録とし、機能/テスト仕様書は任意とする。1 つのテスト/機能仕様書が関連する複数 FR をまとめてよい。
+> **機能仕様書・テスト仕様書の必須範囲は [`docs/README.md`](docs/README.md) の裁定（網羅裁定 #211）が正本**。安全・統制の中核 FR（リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート）のみ必須、他は作業仕様書と xUnit テストを正の記録として任意とする。
 
 - **`docs/` 配下の仕様書は、起点 ID・計画書参照・関連仕様書リンクを表示テキストに書かない**（前節の trace ブロック）。可視のリンクとして張ってよいのは**同一リポジトリの `docs/` 内**に限る。`.ai-context/` 配下は従来どおり本文に書く。
 
@@ -115,13 +115,13 @@
 
 ### C# / .NET
 
-- 対象プロジェクト: **ai-stock-trading**（生成AI株取引自動化）。計画書の所在と参照手段は前掲「計画リポジトリとの関係」。
-- 基盤: microservices-platform の拡張（可変部分への組み込み。基盤無改修）。リポ構成・規約は基盤実装リポ `../microservices-platform` に揃える（[IADR-0001](.ai-context/adr/IADR-0001_repo-structure-and-stack.md)）。
+- 対象: **ai-stock-trading**（生成AI株取引自動化）。計画書の所在と参照手段は前掲「計画リポジトリとの関係」。
+- 基盤: microservices-platform の拡張（可変部分への組み込み。基盤無改修）。リポ構成・規約は基盤実装リポ `../microservices-platform` に揃える（IADR-0001）。
 - ターゲット: **net10.0 / C# 13**（ルート `Directory.Build.props`＝単独ビルド用 import-chain フォールバック。IADR-0046）。パッケージは Central Package Management（ルート `Directory.Packages.props`）で一元管理し、バージョンは基盤リポと揃える。
-- ソリューション: `backend/backend.slnx`（ユニットリポジトリレイアウト。platform ADR-0019 / ADR-0001 2026-07-12 更新 / IADR-0046）。サービスは `backend/Services/<ServiceName>/{src,tests}`、共有物は `backend/Shared/AiStockTrading.Shared.{Contracts,Infrastructure}`。
-- 命名規約: 名前空間プレフィックスは `AiStockTrading`。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
-- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは **xUnit v3**（パッケージ ID は `xunit.v3`。`xunit` は v2 系）+ **AwesomeAssertions**（`using Xunit;` を忘れない）。**FluentAssertions は v8 の商用化により不採用**であり、`scripts/check-banned-libraries.js` が CI で再混入を止める（platform ADR-0030 / [#351](https://github.com/endazon/ai-stock-trading/issues/351)）。
-  - v3 での注意（[#352](https://github.com/endazon/ai-stock-trading/issues/352) / [作業仕様書](.ai-context/specs/20260803_352_xunit-v3-migration.md)）: `IAsyncLifetime` は `ValueTask` を返す。`ITestOutputHelper` は `Xunit` 名前空間（`Xunit.Abstractions` は無い）。テストアセンブリは実行可能（`OutputType=Exe` は自動設定・`.csproj` への記述不要）。実行は `Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` 3.x の **VSTest 経路**を維持する（`dotnet test` のフィルタとカバレッジ収集をそのまま使うため）。
+- ソリューション: `backend/backend.slnx`（ユニットリポジトリレイアウト。IADR-0046）。共有物は `backend/Shared/AiStockTrading.Shared.*`。**サービスは単一プロジェクト＋VSA へ全面移行中**（[IADR-0259](.ai-context/adr/IADR-0259_single-project-vsa-structure.md)。MSP も同樹形へ移行中＝**逸脱ではなく整合**）—— 新は `Services/<Name>/` 直下の `<Name>.csproj` ＋ `Features/<集約>/ Domain/ Infrastructure/ Hosted/ Common/ Tests/<Name>.Tests.csproj`（3 段目のスライス分割は MSP も未実装のため採らない）、旧は `Services/<Svc>/{src,tests}` の `<Svc>.{Api,Application,Domain,Infrastructure}`。🔴 **サービス単位で新旧が混在する**（現物を見てから触る。**移送波の完了までは新規コードも現行配置で書く**）。依存方向は自前検査器（IADR-0256）のみで強制する（NsDepCop は導入しない）。**移送波そのものでは `namespace` を変えないが、完全整合（`<Svc>Service.*` へ。MSP と同規則）は独立した後続波として決定済み**（IADR-0259 決定5）。
+- 命名規約: 名前空間プレフィックスは現状 `AiStockTrading`（IADR-0259 決定5③の後続波で `<Svc>Service.*` へ整合予定）。公開メンバは PascalCase、private フィールドは `_camelCase`。テストメソッド名は日本語可（ただし識別子に全角記号は使えない）。
+- ビルド/テスト: `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通ること。テストは **xUnit v3**（ID は `xunit.v3`。`xunit` は v2 系）+ **AwesomeAssertions**（`using Xunit;` を忘れない）。**FluentAssertions は不採用**（v8 の商用化。`scripts/check-banned-libraries.js` が再混入を止める。platform ADR-0030 / #351）。
+  - v3 での注意（#352 / 作業仕様書 `20260803_352_xunit-v3-migration`）: `IAsyncLifetime` は `ValueTask` を返す。`ITestOutputHelper` は `Xunit` 名前空間（`Xunit.Abstractions` は無い）。テストアセンブリは実行可能（`OutputType=Exe` は自動設定・`.csproj` への記述不要）。実行は `Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` 3.x の **VSTest 経路**を維持する（`dotnet test` のフィルタとカバレッジ収集を使うため）。
 - フォーマット: `dotnet format` で整形する。`nullable` 有効・警告ゼロを保つ。
 - 受け入れ基準は `[Fact]`/`[Theory]` のテストケースに写像し、コメントに起点 ID（FR/UC/ADR）を残す。
 - リスク統制・取引ガードの既定値は計画書の全体前提条件（05_trading-assumptions §5）と一致させ、`TradingDefaults` のテストで固定する。
