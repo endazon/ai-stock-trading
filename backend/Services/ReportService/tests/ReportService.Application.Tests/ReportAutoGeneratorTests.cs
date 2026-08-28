@@ -718,7 +718,7 @@ public class ReportAutoGeneratorTests
         var store = new InMemoryReportStore();
         var t0 = new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero);
         var status = new FxSourceStatus(
-            [new FxRateSourceFellBack("USD", "fred", 2, 2, t0)], [], [], [], []);
+            [new FxRateSourceFellBack("USD", "fred", 2, 2, t0)], [], [], [], [], []);
 
         await NewGenerator(store, WedAfterClose, fxSourceStatusSource: new StubFxSourceStatusSource(status))
             .RunOnceAsync();

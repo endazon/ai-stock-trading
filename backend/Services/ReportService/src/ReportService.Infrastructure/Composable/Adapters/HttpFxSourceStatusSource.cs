@@ -37,6 +37,8 @@ internal sealed class HttpFxSourceStatusSource(
         nameof(FxRateSourcePrimaryRestored),
         nameof(FxRateStale),
         nameof(PositionClosedWithStaleFxRate),
+        // #513 / IADR-0225: **静かな期間の出典はこの種別からしか導けない**（遷移は平常時に出ない）。
+        nameof(FxRateSourceUsed),
     ];
 
     /// <summary>
@@ -106,6 +108,7 @@ internal sealed class HttpFxSourceStatusSource(
         var restorations = new List<FxRateSourcePrimaryRestored>();
         var stales = new List<FxRateStale>();
         var staleCloses = new List<PositionClosedWithStaleFxRate>();
+        var usages = new List<FxRateSourceUsed>();
 
         foreach (var e in entries)
         {
@@ -123,6 +126,9 @@ internal sealed class HttpFxSourceStatusSource(
                 case nameof(PositionClosedWithStaleFxRate):
                     Add(staleCloses, e);
                     break;
+                case nameof(FxRateSourceUsed):
+                    Add(usages, e);
+                    break;
                 default:
                     // 要求していない種別が返った＝台帳側の絞り込みが効いていない。混ぜずに落とす。
                     logger.LogWarning("要求していない監査種別が返りました（{EventType}）。無視します。", e.EventType);
@@ -131,7 +137,7 @@ internal sealed class HttpFxSourceStatusSource(
         }
 
         return new FxSourceStatus(
-            fellBacks, restorations, stales, Credits(fellBacks, restorations), staleCloses);
+            fellBacks, restorations, stales, Credits(fellBacks, restorations, usages), staleCloses, usages);
     }
 
     private void Add<T>(List<T> into, AuditEntryDto entry)
@@ -157,16 +163,22 @@ internal sealed class HttpFxSourceStatusSource(
     /// <summary>
     /// 🔴 <b>台帳に「使った証拠」のある情報源のクレジットだけを返す</b>（IADR-0199 決定5）。
     /// <para>
-    /// 遷移でしか発行しない（IADR-0196 決定1）ため、<b>静かな期間はどの源を使ったのか台帳から
-    /// 証明できない</b>。証明できないものを「たぶん第一の源だろう」で書かない——
-    /// <b>使っていない源のクレジットを出すのは事実に反する</b>（IADR-0196 決定4）。
+    /// 証拠は 3 種ある——<b>切替・復帰（遷移）と、暦日ごとの使用記録</b>（#513・IADR-0225）。
+    /// 遷移だけを見ていた頃は<b>静かな期間にどの源を使ったのか証明できず</b>、
+    /// 平常時こそ出典が空になっていた。<b>使用記録が入ったことで、平常時も証拠から導ける。</b>
+    /// </para>
+    /// <para>
+    /// 🔴 <b>証拠の無い源のクレジットは今も出さない</b>——「たぶん第一の源だろう」で書かない
+    /// （<b>使っていない源のクレジットを出すのは事実に反する</b>。IADR-0196 決定4）。
     /// </para>
     /// </summary>
     private static IReadOnlyList<string> Credits(
         IReadOnlyList<FxRateSourceFellBack> fellBacks,
-        IReadOnlyList<FxRateSourcePrimaryRestored> restorations) =>
+        IReadOnlyList<FxRateSourcePrimaryRestored> restorations,
+        IReadOnlyList<FxRateSourceUsed> usages) =>
         [.. fellBacks.Select(e => e.SourceName)
             .Concat(restorations.Select(e => e.SourceName))
+            .Concat(usages.Select(e => e.SourceName))
             .Select(FxSourceCredits.ForSource)
             .OfType<string>()
             .Distinct(StringComparer.Ordinal)];

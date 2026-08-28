@@ -269,6 +269,18 @@ public static class AuditEntryFactory
             + "第一の源が使えていない（鮮度が週次へ悪化し得る）。新規建ては止まっていない",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-06, FR-10, FR-11, #513, ADR-0022 決定1, IADR-0225: どの情報源から取ったかの記録（暦日ごとに 1 件）。
+    //
+    // 🔴 **これが「静かな期間」の出典の唯一の根拠である。** 遷移でしか発行しない設計（IADR-0196 決定1）では
+    // 切替も復帰も起きない期間に何も残らず、**日報の出典が平常時こそ「特定できません」になっていた**。
+    // 相関は切替・復帰と**同じ `fx-rate-source:{Quote}`** に置く——通貨ごとの 1 本のタイムラインに
+    // 「使った・落ちた・戻った」が時系列で並ぶ（別相関にすると期間の追跡が 2 本に割れる）。
+    public static AuditEntry From(FxRateSourceUsed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(FxRateSourceUsed), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
+        $"為替レート源の使用記録（当日初回）: {e.Quote} は {e.SourceName}"
+            + $"（優先度 {e.Rank}/{e.TotalSources}{(e.IsPrimary ? "・第一の情報源" : "・フォールバック")}）から取得",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 🔴 期間は**このイベント自身が持つ**（受け手に引き算させない）。片方を取りこぼしても期間が黙って狂わない。
     public static AuditEntry From(FxRateSourcePrimaryRestored e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(FxRateSourcePrimaryRestored), AuditCorrelation.From($"fx-rate-source:{e.Quote}"), e.Quote,
