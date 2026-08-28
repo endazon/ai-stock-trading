@@ -1,8 +1,9 @@
-using AiStockTrading.InformationCollection.Application.Adapters;
 using AiStockTrading.InformationCollection.Application.Ports;
 using AiStockTrading.InformationCollection.Domain;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Adapters;
 using AiStockTrading.InformationCollection.Infrastructure.Composable.Polling;
+using AiStockTrading.InformationCollection.Application.Adapters;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
@@ -49,6 +50,13 @@ builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(C
 // FR-01, ADR-0004: 案A+ の許可リスト（許可された情報源のみ受理）。
 builder.Services.AddSingleton(SourceAllowlist.Default);
 
+// FR-01, ADR-0020, ADR-0005 決定5: 情報源の区分表（必須/推奨/任意/検証用途と欠測時の振る舞い）。
+// Collection:Source:DemotedToRecommended に列挙したソースは**推奨へ一時降格**する（有料化の判断が下りるまで）。
+builder.Services.AddSingleton(sp => InformationSourceFactory.ApplyDemotions(
+    InformationSourceCatalog.Default,
+    sp.GetRequiredService<IConfiguration>()["Collection:Source:DemotedToRecommended"],
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("InformationSourceCatalog")));
+
 // FR-01, IADR-0022/0064: 情報源の選択（安全既定 no-op）。実接続は Collection:Source:Provider に列挙し、かつ当該ソースの
 // 必須構成（APIキー・銘柄・CIK・系列コード等）が揃ったときのみ有効になる。案A+ の複数ソースはカンマ区切りで指定する
 // （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0064）。
@@ -56,12 +64,21 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IClock, SystemClock>();
 // IADR-0068: レート制限の時刻源は共有物へ揃えるため TimeProvider（IClock は情報源の日付計算で引き続き使う）。
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IInformationSource>(sp => InformationSourceFactory.Create(
-    builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
-    sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+// #336, ADR-0020 決定3: 取得は**ソース単位の成否**を返す ISourceFetcher へ委ねる（どの区分が落ちたかを
+// 欠測判定へ渡すため）。有効なソースが 0 件なら NoSourcesFetcher（外部接続しない安全既定）。
+builder.Services.AddSingleton<ISourceFetcher>(sp =>
+{
+    var sources = InformationSourceFactory.Create(
+        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return sources.Count == 0
+        ? new NoSourcesFetcher()
+        : new SourceFetchRunner(sources, sp.GetRequiredService<ILogger<SourceFetchRunner>>());
+});
 
 // FR-01, FR-08, IADR-0069: KB 連携（保存 IKnowledgeBaseWriter・取得 IKnowledgeBaseSearch）を配線する。
 // KnowledgeBase:Documents:BaseUrl 未設定なら保存は no-op、Search:BaseUrl 未設定なら取得は no-op（安全既定）。
@@ -137,6 +154,40 @@ app.MapPost("/internal/collection/run-once",
         return Results.Ok();
     })
     .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
+// FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の**発動申請**。
+// 4 条件をすべて満たす場合に限り、**次回月報までの暫定措置**として発動を記録する。
+//
+// 🔴 **認可は OwnerOnly**（run-once の OwnerOrService とは非対称）。ADR-0020 決定4 は
+// **利用者の承認**を要件としており、無人サービスが自動で発動してよいものではない。
+//
+// 🔴 **本エンドポイントは発動条件の判定と記録だけを行い、一般 Web からの取得は実装しない。**
+// 承認前に取得経路を作らない（条件が成立していない状態で「使える」ものを置かない）。
+app.MapPost("/internal/collection/general-web-activation",
+    async (GeneralWebActivationRequest request, IMessageBus publish, IClock clock, CancellationToken ct) =>
+    {
+        var decision = GeneralWebActivationPolicy.Evaluate(request, clock.UtcNow);
+        if (!decision.Approved)
+        {
+            // **満たしていない条件を必ず返す。** 「だいたい満たしている」を作らない。
+            return Results.BadRequest(new { error = "一般 Web 収集の発動条件を満たしていません。", decision.UnmetConditions });
+        }
+
+        await publish.PublishAsync(new GeneralWebCollectionStateChanged(
+            request.Category,
+            Engaged: true,
+            Reason: $"ADR-0020 決定4 の 4 条件を充足（欠測 {request.OutageBusinessDays} 営業日"
+                + $"・提供終了公表={request.ProviderAnnouncedDiscontinuation}"
+                + $"・実害の記録確認={request.HarmConfirmedInReports}"
+                + $"・規約上の自動取得可={request.TermsPermitAutomatedAccess}"
+                + $"・データ分離={request.DataSeparationApplied}"
+                + $"・複数独立ソースの裏取り={request.CorroboratedByIndependentSources}）",
+            decision.ProvisionalUntil,
+            clock.UtcNow)).ConfigureAwait(false);
+
+        return Results.Ok(decision);
+    })
+    .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
 app.Run();
 

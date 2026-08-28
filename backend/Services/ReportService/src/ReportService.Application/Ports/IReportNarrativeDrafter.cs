@@ -7,7 +7,28 @@ namespace AiStockTrading.Report.Application.Ports;
 public interface IReportNarrativeDrafter
 {
     Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-06, ADR-0017 決定4-(1), #335, IADR-0217: 散文に加えて<b>実際に使用したモデル</b>を返す。
+    /// <para>
+    /// 「月報が第 1 候補で書かれたのか第 2 候補で書かれたのかは、その月報を次の 1 か月の方針書として
+    /// 採用する際の判断材料である」（ADR-0017 決定4）。フォールバックの最大の危険は
+    /// <b>成功しているように見える失敗</b>であり、記録が無ければ誰も気づかない。
+    /// </para>
+    /// <para>
+    /// 既定実装は従来の <see cref="DraftNarrativeAsync"/> へ委譲し、モデル情報を持たない（null）。
+    /// これにより既存の実装・テストの fake は非破壊で通り、実 LLM を呼ぶ実装だけが override すればよい。
+    /// </para>
+    /// </summary>
+    async Task<ReportNarrativeDraft> DraftAsync(
+        ReportNarrativeContext context, CancellationToken cancellationToken = default) =>
+        new(await DraftNarrativeAsync(context, cancellationToken).ConfigureAwait(false), ModelUsage: null);
 }
+
+// FR-06, ADR-0017 決定4-(1), #335: 散文ドラフトの結果。ModelUsage は null＝モデル情報を供給していない
+// （プレースホルダ実装・fake）。**null を「フォールバックしていない」へ潰さない** ——
+// 「照会できていない」と「発火なし」は別物であり、報告書のメタ情報でも区別する。
+public sealed record ReportNarrativeDraft(string Text, LlmModelUsage? ModelUsage);
 
 // 散文ドラフトの文脈（LLM プロンプトの素材）。数値は集計済みの参考値として渡すが、LLM に再計算はさせない（提示のみ）。
 // Kind/PeriodLabel/Markets で対象種別・期間・市場を踏まえた散文を書けるようにする。

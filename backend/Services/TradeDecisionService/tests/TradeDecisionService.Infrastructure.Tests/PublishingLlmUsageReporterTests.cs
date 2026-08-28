@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TradeDecision.Application.Ports;
@@ -41,7 +42,11 @@ public class PublishingLlmUsageReporterTests
         ("claude-haiku-4-5", "0.164", "0.819"),
     ]);
 
-    private static async Task<decimal> ReportAsync(LlmUsage usage, LlmPriceTable prices)
+    private static async Task<decimal> ReportAsync(LlmUsage usage, LlmPriceTable prices) =>
+        (await PublishAsync(usage, prices)).Amount;
+
+    // #335, IADR-0212: 発行された計上イベントそのものを返す（用途の写しを見るため）。
+    private static async Task<LlmCostIncurred> PublishAsync(LlmUsage usage, LlmPriceTable prices)
     {
         using var host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
@@ -55,6 +60,8 @@ public class PublishingLlmUsageReporterTests
 
         // 本アダプタは scoped。Wolverine の IMessageBus も scoped であり、スコープから解決する。
         using var scope = host.Services.CreateScope();
+        // #347, IADR-0218 / #335, IADR-0212: 用途は**計測ごと**（LlmUsage.Purpose）に載る。
+        // アダプタは purpose を持たない —— 持たせると二段判断の層が混ざる。
         var reporter = new PublishingLlmUsageReporter(
             scope.ServiceProvider.GetRequiredService<IMessageBus>(),
             new FixedClock(), prices, NullLogger<PublishingLlmUsageReporter>.Instance);
@@ -64,7 +71,7 @@ public class PublishingLlmUsageReporterTests
         var published = session.Sent.MessagesOf<LlmCostIncurred>().Single();
         published.At.Should().Be(Now);
         await host.StopAsync();
-        return published.Amount;
+        return published;
     }
 
     // 基準2（#303）: trade-decision は claude-sonnet-5。入力 1000 × 0.327 + 出力 2000 × 1.637 = 3.601 円。
@@ -72,7 +79,7 @@ public class PublishingLlmUsageReporterTests
     [Fact]
     public async Task trade_decision_は_sonnet_5_の単価で計上する()
     {
-        var amount = await ReportAsync(new LlmUsage(1000, 2000, "claude-sonnet-5"), Prices());
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5"), Prices());
 
         amount.Should().Be(3.601m);
     }
@@ -84,7 +91,7 @@ public class PublishingLlmUsageReporterTests
     [InlineData("claude-sonnet-5", 3.601)]   // report-daily:   0.327 + 2×1.637
     public async Task 報告書の種別ごとのモデルでも実効単価で計上する(string model, double expected)
     {
-        var amount = await ReportAsync(new LlmUsage(1000, 2000, model), Prices());
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model), Prices());
 
         amount.Should().Be((decimal)expected);
     }
@@ -95,16 +102,30 @@ public class PublishingLlmUsageReporterTests
     [InlineData(null)]
     public async Task 未知のモデルは最大単価で計上する(string? model)
     {
-        var amount = await ReportAsync(new LlmUsage(1000, 2000, model), Prices());
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model), Prices());
 
         amount.Should().Be(18.009m);
+    }
+
+    // 🔴 NFR（費用）, #335, #347, IADR-0212/0218: **計上イベントの用途は、計測ごとの用途がそのまま載る。**
+    // 二段判断は一次（trade-decision-screening）と二次（trade-decision）で用途が違い、月次上限の対象範囲は
+    // 購読側が purpose だけを見て決める。アダプタ構築時に固定していた頃は**両層が同じ用途で積まれ**、
+    // 層別の内訳が取れなかった（金額は合っているので、症状が内訳の欠落だけで気づけない）。
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecision)]
+    [InlineData(LlmPurposes.TradeDecisionScreening)]
+    public async Task 計上イベントには計測ごとの用途がそのまま載る(string purpose)
+    {
+        var published = await PublishAsync(new LlmUsage(purpose, 1000, 2000, "claude-sonnet-5"), Prices());
+
+        published.Purpose.Should().Be(purpose);
     }
 
     // IADR-0055: 単価未設定でも publish する（金額 0 は統制判定に無害で、計上経路の健全性を保てる）。
     [Fact]
     public async Task 単価未設定でも金額_0_で発行する()
     {
-        var amount = await ReportAsync(new LlmUsage(1000, 2000, "claude-sonnet-5"), LlmPriceTable.From([]));
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5"), LlmPriceTable.From([]));
 
         amount.Should().Be(0m);
     }

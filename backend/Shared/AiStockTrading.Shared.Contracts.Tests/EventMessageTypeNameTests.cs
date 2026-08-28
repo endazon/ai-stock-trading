@@ -73,13 +73,23 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(FxRateSourceFellBack), "AiStockTrading.Shared.Contracts.Events.FxRateSourceFellBack")]
         [InlineData(typeof(FxRateSourcePrimaryRestored), "AiStockTrading.Shared.Contracts.Events.FxRateSourcePrimaryRestored")]
         [InlineData(typeof(FxRateStale), "AiStockTrading.Shared.Contracts.Events.FxRateStale")]
+        // #513: どの情報源を使ったかの暦日ごとの記録（IADR-0225）。
+        [InlineData(typeof(FxRateSourceUsed), "AiStockTrading.Shared.Contracts.Events.FxRateSourceUsed")]
         // #381 停止側: 鮮度切れのレートで決済した事実（IADR-0198）。
         [InlineData(typeof(PositionClosedWithStaleFxRate), "AiStockTrading.Shared.Contracts.Events.PositionClosedWithStaleFxRate")]
+        // FR-04, FR-06, FR-09, #335, ADR-0017 決定4, IADR-0217: フォールバック発火（可視化 3 経路の②③）。
+        [InlineData(typeof(LlmFallbackFired), "AiStockTrading.Shared.Contracts.Events.LlmFallbackFired")]
+        // FR-04, UC-01, #335, ADR-0017 決定2, IADR-0216: 割当モデル不可による取引判断の見送り（発注しない）。
+        [InlineData(typeof(TradeDecisionSkipped), "AiStockTrading.Shared.Contracts.Events.TradeDecisionSkipped")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
         // FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
         [InlineData(typeof(TradeExpenseRecorded), "AiStockTrading.Shared.Contracts.Events.TradeExpenseRecorded")]
         [InlineData(typeof(WithdrawalTriggered), "AiStockTrading.Shared.Contracts.Events.WithdrawalTriggered")]
+        // FR-01, #336, ADR-0020 決定2〜4: 情報源の欠測による縮退・回復と、一般 Web 収集の発動／解除。
+        [InlineData(typeof(InformationSourceDegraded), "AiStockTrading.Shared.Contracts.Events.InformationSourceDegraded")]
+        [InlineData(typeof(InformationSourceRecovered), "AiStockTrading.Shared.Contracts.Events.InformationSourceRecovered")]
+        [InlineData(typeof(GeneralWebCollectionStateChanged), "AiStockTrading.Shared.Contracts.Events.GeneralWebCollectionStateChanged")]
         public void 全イベントのメッセージ識別子は固定値である(Type eventType, string expectedMessageTypeName)
         {
             // ToMessageTypeName を実際に呼ぶ（識別子を自前で組み立てない）。

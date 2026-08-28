@@ -24,7 +24,8 @@ public class TradeDecisionServiceTests
         // #506: 「鮮度切れ＋保有なしで LLM を呼ばない」（費用の据え置き）を固定するために数える。
         public int Calls { get; private set; }
 
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
         {
             Calls++;
             return Task.FromResult(output);
@@ -57,7 +58,8 @@ public class TradeDecisionServiceTests
     {
         public string? LastPrompt { get; private set; }
 
-        public Task<string> CompleteAsync(string prompt, string? model = null, CancellationToken ct = default)
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
         {
             LastPrompt = prompt;
             return Task.FromResult(output);

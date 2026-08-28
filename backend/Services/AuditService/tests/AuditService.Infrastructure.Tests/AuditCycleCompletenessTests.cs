@@ -231,12 +231,17 @@ public class AuditCycleCompletenessTests
             new DailyPolicyUnconfirmed(day, t),
             new FxRateSourceFellBack("JPY", "fallback-source", 2, 3, t),
             new FxRateSourcePrimaryRestored("JPY", "primary-source", t.AddHours(-3), t),
+            new FxRateSourceUsed("JPY", "primary-source", 1, 3, t),
             new FxRateStale("JPY", t.AddDays(-10), 10d, 7d, 30d, t),
+            new GeneralWebCollectionStateChanged("news", true, "必須情報源が全滅", t.AddDays(30), t),
             new GoodFaithViolationRecorded(
                 Guid.NewGuid(), decisionId, "ORD-1", "AAPL", Market.UnitedStates, 1_000m, 500m, day, t, t),
             new GoodFaithViolationsCleared("endazon", "入金により解消", ["ORD-1"], 0, t),
             new InformationCollected(Guid.NewGuid(), 5, t),
+            new InformationSourceDegraded("news", "LimitedDegradation", ["finnhub-company-news"], true, t),
+            new InformationSourceRecovered("news", t.AddHours(-2), 4, t),
             new LlmCostIncurred(12.5m, t),
+            new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", t),
             new MaintenanceMarginReductionExecuted(
                 Guid.NewGuid(), 0.38m, 0.40m, 0.45m, 0.46m,
                 [new MaintenanceMarginReductionItem(
@@ -259,6 +264,7 @@ public class AuditCycleCompletenessTests
             new StopLossTriggered(
                 Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 950m, 960m, t),
             new TradeDecisionMade(decisionId, Intent(), "上昇トレンドのため買い", t),
+            new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", t),
             new TradeExpenseRecorded(new TradeExpense(
                 "AAPL", Market.UnitedStates, TradeExpenseCategory.Commission, 1.00m, day, "ORD-1", t)),
             new WithdrawalTriggered(0, "最大 DD 到達", true, t),

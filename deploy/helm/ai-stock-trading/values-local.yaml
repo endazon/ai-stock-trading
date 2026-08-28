@@ -78,6 +78,14 @@ services:
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
+      # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
+      # 実 API キーでの実測後に値を入れる。推測値を焼き込まないこと。
+      - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============
+      # ローカルでは Provider に finnhub-news / google-news を含めていないため**未構成**である
+      # （未構成は欠測に数えない＝IADR-0220）。boj と同じく env の枠だけ保持し、既定描画から
+      # 落とさない（helm.yml の env 突合が values-local の写し忘れを検出する）。
+      - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # ============ SEC EDGAR（米国の開示・API キー不要）: #279/IADR-0114 ============
       # SEC 規約は**連絡先（実在のメールアドレス）入り**の User-Agent を必須とする（IADR-0064 決定4 が構成必須化）。
       # これは環境固有の個人情報のため values へ直書きせず ast-secrets 経由で与える（IADR-0114 決定2）。
@@ -176,8 +184,12 @@ services:
       #     sonnet-5 = 2/10、haiku-4-5 = 1/5
       #   USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列・IADR-0107）／小数第 3 位で四捨五入
       #   例: 0.002 × 163.71 = 0.32742 ≒ 0.327、0.010 × 163.71 = 1.6371 ≒ 1.637（sonnet-5）
-      #   ⚠️ **sonnet-5 の $2/$10 は 2026-08-31 までの導入価格**。同日以降は必ず再確認する（IADR-0122 決定5）。
-      #   ※ 為替・公開単価はいずれも変動する。乖離が出たら本値と #243（実測再ベースライン）を更新する。
+      #   ✅ **sonnet-5 の $2/$10 は恒久化を確認済み**（#243・確認日 2026-08-28。出典:
+      #   https://platform.claude.com/docs/en/about-claude/pricing の Model pricing 表・注記
+      #   claude-sonnet-5-introductory-pricing「2026-08-31 までの導入価格として発表した $2/$10 を標準単価とし、
+      #   2026-09-01 予定だった $3/$15 への改定は行わない」）。USD 単価が変わっていないため本表の値
+      #   （0.327 / 1.637）は変更不要。
+      #   ※ 為替・他モデルの公開単価はいずれも変動する。乖離が出たら本値と #243（実測再ベースライン）を更新する。
       #   ※ 報告書散文（report-service）は計上経路自体が無い（#282）。本表は #282 の解消後に報告書へも効く。
       - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（report-monthly）
       - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
@@ -186,7 +198,7 @@ services:
       - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
       - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
       - { name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens, value: "0.327" }   # $2/1M（trade-decision・report-daily）
-      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M ※導入価格〜2026-08-31
+      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
       - { name: LlmPricing__PerModel__claude-haiku-4-5__InputPer1kTokens, value: "0.164" }  # $1/1M
       - { name: LlmPricing__PerModel__claude-haiku-4-5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
