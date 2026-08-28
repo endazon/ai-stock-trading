@@ -3,14 +3,14 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-08-21
+updated: 2026-08-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0021, ADR-0026, ADR-0027, ADR-0028]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0210, IADR-0211]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection]
 issues: [#12, #31, #33, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, planning#292]
 -->
 
@@ -671,13 +671,38 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 決済（`PositionEffect.Close`）は kill switch・pause・日次損失ロックアウト・段階資金上限・同日再エントリー禁止の
 いずれの判定にも掛からない。
 
-決済を起こせる経路は 3 つある。
+決済を起こせる経路は 4 つある（#331 の逆指値一本化で再編。従前の「損切りの機械執行」＝
+`StopLossTriggered` 購読からの決済発行は**廃止**した）。
 
 | 経路 | 起点 | 数量 | スクリーニング |
 | --- | --- | --- | --- |
-| 損切りの機械執行 | 市場監視の `StopLossTriggered` | 建玉数 | 通さない（無条件執行） |
+| **ブローカー側の保護逆指値** | エントリーと同時に発注執行がブローカーへ発注（下記「損切りの実行機構」） | 建玉数 | 通さない（ブローカー側で約定する） |
+| 保護逆指値が成立しないときの建玉解消 | 発注執行（未受理・失効の検知） | 約定済み数量 | 通さない（機械的規則） |
 | **owner の手仕舞い** | `POST /risk-controls/positions/close`（OwnerOnly・理由必須） | 保有全量または指定数量 | 通さない |
 | **判断由来の決済** | LLM が保有建玉の反対売買を判断 | 保有全量 | 通す（Close は上記のとおり素通りする） |
+
+このほか維持率割れの自動縮小（前掲）も決済を起こす。
+
+### 損切りの実行機構 — ブローカー側逆指値への一本化（#331）
+
+損切りは**建玉と同時にブローカーへ発注する逆指値（ストップ注文）**で行う。システム側の価格監視
+（市場監視サービスの `StopLossTriggered`）は到達の**検知・記録・通知のみ**を行い、**決済注文を発行しない**
+——同一の損切りがシステム側とブローカー側の 2 経路から発注されると二重決済となり、決済後に残る注文が
+反対方向の建玉を生むためである。逆指値はブローカー側に置かれるため、**系（OpenD 含む）が停止していても効く**。
+
+**逆指値なしの建玉を持たない**（fail-closed）。実現手段は次のとおり。
+
+| 場面 | 動作 | 実現手段 |
+| --- | --- | --- |
+| Open 注文に損切り価格が無い／ブローカーに逆指値能力が無い | 発注せず**見送る**（建玉を作らない） | 発注執行の事前検証（`OrderDispatchForgone`） |
+| 逆指値が未受理（エントリーと同時に発注したが拒否） | エントリー未約定なら**取消**、約定済みなら**即座に成行で手仕舞い** | 発注執行の建玉解消（`ProtectiveStopCoverageLost`・Critical 通知） |
+| 逆指値が滞留中に失効（取消・拒否・期限切れ） | **再発注**する。再発注できなければ成行で手仕舞い | 発注執行の常駐ガード（定期巡回） |
+| 建玉が消滅した（owner 手仕舞い・自動縮小・強制買戻し等） | **残存逆指値を取り消す**（反対建玉の防止） | 同ガード |
+| 建玉解消も失敗した | Critical 通知で**人手対応**を求める（黙って残さない） | `ProtectiveStopCoverageLost`（Remediation=None） |
+
+逆指値レグ・手仕舞いレグの約定は発注執行の約定追跡ポーリング経由で取引台帳へ届き、建玉・枠回復・
+報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値の受理可否（SIMULATE・銘柄・時間帯）の
+実測は PoC（#342）待ちであり、受理されない環境では設計どおり建玉が作られない（安全側）。
 
 owner の手仕舞いには**過剰決済ガード**がある。取引台帳は約定でしか動かないため、決済要求から約定が届くまでの間は
 建玉数量が減らない。多重投入で在庫を超える決済（意図しないショート化）を作らせないため、

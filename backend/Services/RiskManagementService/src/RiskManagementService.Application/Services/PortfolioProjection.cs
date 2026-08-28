@@ -132,7 +132,7 @@ public static class PortfolioProjection
 
     // IADR-0035: 損切り価格は最新の同方向エントリー（新規/建て増し/反転）を採る（一部決済では保持・全決済で消滅）。
     // IADR-0107: 価格（平均取得単価・損切り価格）はローカル通貨のまま返す（損切り検知は現在値と同一通貨で比較する）。
-    // 併せて建玉の加重平均約定時レート（FxRateToBase）を載せる。損切りの機械執行（StopLossExecutionService）が
+    // 併せて建玉の加重平均約定時レート（FxRateToBase）を載せる。機械執行の決済（維持率割れの自動縮小等）が
     // 決済注文へ引き継ぎ、決済レグの台帳集計が基準通貨で揃うようにするため（Project と同じ二重畳み込み）。
     public static IReadOnlyList<OpenPosition> ProjectOpenPositions(IReadOnlyList<LedgerFill> fills)
     {

@@ -132,7 +132,7 @@ internal static class RiskControlEndpoints
 
         // ---- 建玉の手仕舞い（FR-10, FR-11, UC-06, #292, IADR-0117）: 利用者のみ（OwnerOnly）。理由必須 ----
         // FR-10 本文「kill switch・日次損失ロックアウト・一時停止は…いずれも手仕舞い（Close）と損切りは止めない」に従い、
-        // 発注前スクリーニング（OrderScreeningService）を通さない（損切りの機械執行と同型・IADR-0015）。
+        // 発注前スクリーニング（OrderScreeningService）を通さない（手仕舞い・損切りは統制で止めない〔FR-10〕・旧 IADR-0015 → IADR-0210 決定3 の規律）。
         // サービストークンには開かない（生成AI・自動処理が建玉を落とせないようにする＝FR-10「生成AIはこれらを上書きできない」・ADR-0003）。
         owner.MapPost("/positions/close",
             async (PositionCloseRequest req, PositionCloseService svc, IMessageBus bus, HttpContext http) =>

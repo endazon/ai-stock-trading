@@ -1,33 +1,26 @@
-using AiStockTrading.RiskManagement.Application.Services;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
-using Wolverine;
 
 namespace AiStockTrading.RiskManagement.Infrastructure.Composable.Steps;
 
-// FR-10, FR-03, UC-02, ADR-0003, IADR-0015: 市場監視の損切りイベント（StopLossTriggered）を購読し、
-// LLM を迂回して決済（Close）注文を機械的に発行する。損切りは無条件執行のためスクリーニングを通さない。
+// FR-10, FR-03, UC-02, #331, IADR-0210 決定5: 市場監視の損切りイベント（StopLossTriggered）を購読し、
+// **検知の記録（ログ）のみ**を行う。損切りの実行はブローカー側の逆指値が担い（planning#88 裁定・
+// 逆指値一本化）、**本ハンドラは決済注文（OrderApproved）を発行しない**——同一の損切りがシステム側と
+// ブローカー側の 2 経路から発注されると二重決済となり、決済後に残る注文が反対方向の建玉を生むためである
+// （業務フロー 02。旧実装〔IADR-0015・StopLossExecutionService〕は Close 承認を発行していた）。
 //
-// ADR-0013, IADR-0129, #354: MassTransit の IConsumer<StopLossTriggered> から Wolverine のハンドラへ移行した。
-// ここで発行する OrderApproved は本サービス自身も購読しているため、IADR-0129 決定 3 が無いと
-// 発注執行へ届かず損切りが執行されない（TradeDecisionMadeHandler と同じ経路）。
-public sealed class StopLossTriggeredHandler(
-    StopLossExecutionService executionService,
-    ILogger<StopLossTriggeredHandler> logger)
+// 永続記録は監査サービス（FR-11）、Discord 通知（FR-09）は通知サービスが同イベントを独立に購読して担う。
+public sealed class StopLossTriggeredHandler(ILogger<StopLossTriggeredHandler> logger)
 {
-    public async Task Handle(StopLossTriggered message, IMessageBus bus)
+    public void Handle(StopLossTriggered message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        ArgumentNullException.ThrowIfNull(bus);
 
-        var approval = executionService.BuildCloseApproval(message);
-
-        // FR-11: 損切り実行を監査・通知の起点として記録する（永続監査は #17・通知は #15）。
+        // 到達の検知をサービスログにも残す（決済はブローカー側の逆指値が実行する。ここでは何も発注しない）。
         logger.LogWarning(
-            "損切りの機械執行: {Symbol}/{Market} 建玉方向={PositionSide} 数量={Quantity} 損切り価格={StopLossPrice} → 決済 {CloseSide}",
+            "損切りライン到達を検知: {Symbol}/{Market} 建玉方向={PositionSide} 数量={Quantity}"
+                + " 損切り価格={StopLossPrice} 現在値={Price}（決済はブローカー側の逆指値が実行・システムは発注しない）",
             message.Symbol, message.Market, message.PositionSide, message.Quantity,
-            message.StopLossPrice, approval.Intent.Side);
-
-        await bus.PublishAsync(approval).ConfigureAwait(false);
+            message.StopLossPrice, message.Price);
     }
 }

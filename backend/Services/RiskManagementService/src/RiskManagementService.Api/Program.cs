@@ -192,8 +192,8 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IBusinessCalendar>(),
     sp.GetRequiredService<IBuyInInferenceStore>(),
     sp.GetService<AiStockTrading.RiskManagement.Domain.IManipulativeOrderPatternDetector>()));
-// FR-10, ADR-0003, IADR-0015: 損切りの機械執行（StopLossTriggered → Close の OrderApproved・無条件）。
-builder.Services.AddScoped<StopLossExecutionService>();
+// FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
+// 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();

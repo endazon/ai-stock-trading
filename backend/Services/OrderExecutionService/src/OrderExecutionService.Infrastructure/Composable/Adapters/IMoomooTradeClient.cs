@@ -54,16 +54,24 @@ internal sealed record MoomooPositionSnapshot(
     int Quantity,
     decimal AverageCost);
 
-// SDK 非依存の発注リクエスト（マーケタブルリミット。SIMULATE は実装側で固定）。
+// SDK 非依存の発注リクエスト（既定はマーケタブルリミット。SIMULATE は実装側で固定）。
 // #141, IADR-0092: Remark は client order id相当（DecisionId）。滞留 Reserved を後から DecisionId で照合するために
 // ブローカ注文へ紐づける。null/空なら付与しない（従来挙動）。
+// FR-10, #331, IADR-0210: Kind=Stop は保護逆指値（TriggerPrice=発火価格・OrderType_Stop＋AuxPrice）、
+// Kind=Market は成行（逆指値が成立しない場合の建玉解消）。Stop/Market では Price を注文へ載せない
+// （Stop は発火後成行・Market は板成行であり、指値を送ると意味が変わる）。
 internal sealed record MoomooOrderRequest(
     string Symbol,
     MoomooMarket Market,
     MoomooSide Side,
     int Quantity,
     decimal Price,
-    string? Remark = null);
+    string? Remark = null,
+    MoomooOrderKind Kind = MoomooOrderKind.Limit,
+    decimal? TriggerPrice = null);
+
+// FR-10, #331, IADR-0210: 注文種別（SDK 非依存）。Limit=OrderType_Normal / Stop=OrderType_Stop / Market=OrderType_Market。
+internal enum MoomooOrderKind { Limit, Stop, Market }
 
 internal enum MoomooMarket { Japan, UnitedStates }
 
