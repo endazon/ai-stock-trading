@@ -157,8 +157,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        SERVICE_PROJECT: backend/Services/ConfigurationService/src/ConfigurationService.Api/ConfigurationService.Api.csproj
-        SERVICE_DLL: ConfigurationService.Api.dll
+        SERVICE_PROJECT: backend/Services/ConfigurationService/ConfigurationService.csproj
+        SERVICE_DLL: ConfigurationService.dll
     environment:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=configuration_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}

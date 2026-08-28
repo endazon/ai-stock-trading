@@ -1,7 +1,6 @@
-using ConfigurationService.Client.Ports;
-using ConfigurationService.Domain;
-using AiStockTrading.Shared.Contracts.Trading;
+using TradeDecisionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Infrastructure.Adapters;
 using AwesomeAssertions;
 using Xunit;

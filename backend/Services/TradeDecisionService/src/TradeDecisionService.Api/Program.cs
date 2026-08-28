@@ -1,9 +1,8 @@
-using ConfigurationService.Client.Extensions;
-using ConfigurationService.Client.Ports;
 using TradeDecisionService.Application.Adapters;
 using TradeDecisionService.Application.Ports;
 using TradeDecisionService.Application.Services;
 using TradeDecisionService.Infrastructure.Adapters;
+using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Ports;

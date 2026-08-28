@@ -39,9 +39,15 @@ public class DomainLayerDependencyTests
         var domains = RepositoryLayout.DomainProjectFiles;
 
         domains.Should().HaveCountGreaterThanOrEqualTo(
-            9,
-            "Domain プロジェクトは実測 9 件（Backtest / Configuration / CostControl / InformationCollection / "
+            8,
+            "Domain プロジェクトは実測 8 件（Backtest / CostControl / InformationCollection / "
                 + "MarketMonitor / OrderExecution / Report / RiskManagement / TradeDecision）ある。"
+                + "🔴 本検査は**層をプロジェクトで表す旧構成**だけを数える（`*.Domain.csproj`）。"
+                + "単一プロジェクト＋VSA への移送（IADR-0259）が 1 サービス進むたびに 1 件ずつ減るのが正常であり、"
+                + "**減ったこと自体は退行ではない** —— 移送後の Domain フォルダは "
+                + "DomainSourceDependencyTests（ソース領域を新旧の和集合で数える）が引き続き検査する。"
+                + "Configuration は IADR-0264 決定 2 で Domain の唯一の型を共有カーネルへ移したため、"
+                + "移送後は**どちらの検査でも数えられない**（Domain を持たないサービスになった）。"
                 + "これを下回るなら探索が壊れているか、Domain が削除された。実際に見つかったのは: {0}",
             string.Join(", ", domains.Select(Path.GetFileNameWithoutExtension)));
     }

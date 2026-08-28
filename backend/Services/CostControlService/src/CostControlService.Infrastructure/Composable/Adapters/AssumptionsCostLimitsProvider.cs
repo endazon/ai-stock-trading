@@ -1,4 +1,4 @@
-using ConfigurationService.Client.Ports;
+using CostControlService.Infrastructure.ExternalServices;
 using CostControlService.Application.Ports;
 using AiStockTrading.Shared.Kernel.Trading;
 

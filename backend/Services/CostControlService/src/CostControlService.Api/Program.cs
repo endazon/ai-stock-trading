@@ -1,8 +1,7 @@
-using ConfigurationService.Client.Steps;
-using ConfigurationService.Client.Extensions;
 using CostControlService.Application.Adapters;
 using CostControlService.Application.Ports;
 using CostControlService.Infrastructure.Adapters;
+using CostControlService.Infrastructure.ExternalServices;
 using CostControlService.Infrastructure.Retention;
 using CostControlService.Infrastructure.Steps;
 using CostControlService.Api.Endpoints;
@@ -65,13 +64,15 @@ builder.Services.AddHostedService<ProcessedMessageRetentionService>();
 // #139, IADR-0065 決定4: AssumptionsChanged を購読し、上限キャッシュを無効化して新しい版へ追随する
 // （購読が外れると TTL 既定 5 分まで上限変更が反映されない）。
 // ハンドラは MassTransit の `AddConsumer<T>()` に代えて**アセンブリ走査**で発見されるため、
-// ハンドラを持つアセンブリ（Infrastructure・ConfigurationService.Client）を明示する。
+// ハンドラを持つアセンブリ（Infrastructure）を明示する。
+// NFR, #526, IADR-0264 決定 1/決定 4: AssumptionsChangedHandler は旧 ConfigurationService.Client から
+// 本サービスの Infrastructure/Composable/Steps へ移したため、LlmCostIncurredHandler と**同じアセンブリ**になった
+// （引数の重複を残すと「別アセンブリがある」と読めるので 1 つに畳む。発見範囲は不変）。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
     ServiceName,
     builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(LlmCostIncurredHandler).Assembly,
-    typeof(AssumptionsChangedHandler).Assembly));
+    typeof(LlmCostIncurredHandler).Assembly));
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。

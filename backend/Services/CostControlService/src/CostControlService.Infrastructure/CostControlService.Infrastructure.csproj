@@ -20,8 +20,10 @@
     </PackageReference>
     <ProjectReference Include="..\CostControlService.Application\CostControlService.Application.csproj" />
     <ProjectReference Include="..\..\..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
-    <!-- #139, IADR-0065: 月次費用上限をバージョン付き全体前提条件（#19・設定サービス）から解決する共有クライアント。 -->
-    <ProjectReference Include="..\..\..\ConfigurationService\src\ConfigurationService.Client\ConfigurationService.Client.csproj" />
+    <!-- #139, IADR-0065, NFR, #526, IADR-0264 決定 1: 前提条件の解決（ExternalServices/）は s2s トークン付与
+         （AddAiStockTradingServiceToken）を使うため shim を参照する。旧 ConfigurationService.Client が
+         持っていた参照を、複製先である本プロジェクトが引き継いだもの。 -->
+    <ProjectReference Include="..\..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <!-- IADR-0128: 実装型は internal のまま据え置き、composition root（Api）とその
          テストにだけ可視にする。public へ広げると分割前に無かった公開面が生まれる。 -->
     <InternalsVisibleTo Include="CostControlService.Api" />
