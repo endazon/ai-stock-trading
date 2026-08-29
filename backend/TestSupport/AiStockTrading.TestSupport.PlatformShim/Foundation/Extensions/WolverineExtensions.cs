@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using JasperFx.CodeGeneration.Model;
 using Wolverine;
 using Wolverine.ErrorHandling;
@@ -67,7 +68,13 @@ public static class WolverineExtensions
     /// <param name="options">Wolverine の構成。</param>
     /// <param name="serviceName">サービス識別子（例 <c>ai-stock-trading.cost-control-service</c>）。キュー名の接頭辞になる。</param>
     /// <param name="connectionString">RabbitMQ の接続文字列。未指定なら <see cref="DefaultRabbitMqConnectionString"/>。</param>
-    /// <param name="handlerAssemblies">ハンドラを含むアセンブリ（Infrastructure 等。エントリアセンブリ以外は明示が要る）。</param>
+    /// <param name="handlerAssemblies">
+    /// 自アセンブリ**以外**にハンドラを置いている場合の追加アセンブリ。自分自身は常に走査されるため渡す必要はない
+    /// （IADR-0268 で application assembly を呼び出し元へ固定した。渡しても重複は無害）。
+    /// </param>
+    // IADR-0268: GetCallingAssembly を使うため、インライン化を禁止する（インライン化されると
+    // 呼び出し元がひとつ上へずれ、固定するアセンブリを取り違える）。
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void UseAiStockTradingRabbitMq(
         this WolverineOptions options,
         string serviceName,
@@ -78,6 +85,26 @@ public static class WolverineExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
         options.ServiceName = serviceName;
+
+        // 🔴 IADR-0268 決定 1: **ハンドラ探索の範囲を呼び出し元サービスのアセンブリへ固定する。**
+        //
+        // Wolverine の既定はハンドラを「application assembly」から走査する。application assembly は
+        // 明示しなければ実行時に推論され、**同一プロセスで 2 つ目以降に起動したホストは、先に起動した
+        // ホストが確定させたものを引き継ぐ**。1 サービス 1 プロセスの本番では表に出ないが、
+        // 複数サービスの Worker を同居させる実基盤 E2E（WebApplicationFactory）では、
+        // **後から起動したサービスが他サービスのハンドラを自分のハンドラグラフへ取り込む**。
+        //
+        // 取り込んだ側には相手の依存が DI に無いため、チェーンの組み立てが
+        // NotSupportedException（"does not have a suitable, public constructor ... or is missing
+        // registered dependencies"）で失敗する。これは**起動時ではなく 1 通目の受信時**に起きるため、
+        // 起動・ヘルスチェック・キュー宣言・consumer 接続がすべて成功したまま、
+        // **メッセージだけが無言で処理されない**（IADR-0129 決定 11 と同じ失敗様式）。
+        //
+        // 実測（#600 の VSA 移送後）: リスク管理ホストを先に起動したプロセスで発注執行ホストが
+        // RiskManagementService のハンドラを拾い、OrderApproved が一通も執行されなくなった。
+        // 移送前は相手の application assembly（`*.Api`）がハンドラを含まなかったため無害だっただけで、
+        // **配線の欠陥は移送前から存在した**。
+        options.ApplicationAssembly = Assembly.GetCallingAssembly();
 
         // IADR-0129 決定 11: ハンドラの生成コードに service location を許可する。
         // 本ユニットの永続アダプタ（EfExecutedOrderStore 等）は `internal sealed` であり、生成コードは
