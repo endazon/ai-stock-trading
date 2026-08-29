@@ -465,6 +465,10 @@ BacktestService・AuditService・NotificationService は既に移送済みのた
       `dotnet ef migrations has-pending-model-changes` は
       「doesn't reference Microsoft.EntityFrameworkCore.Design」で exit 1 になることを確認した）
 - [x] `list-test-projects.js --count` が 32 → 29（base `f434ce5`。実測どおり）
+
+  ［2026-08-29 追記 / #594］develop（`bd39cbd`＝OrderExecutionService #593 の移送を含む）
+  を取り込んだため、**PR の最終状態では 29 → 26 になる**（#593 がテストプロジェクトを 3 本
+  減らしたぶん、移送前後とも 3 少ない）。**どちらも正しく、基準が違うだけである。**
 - [x] `coverage-floor.json` の床を割らない（実測 82.50%〔16505/20006 行〕・floor 79.00%・
       レポート 29 件＝`list-test-projects --count` と一致。`rm -rf cov` の後に取り直した）
 - [x] 検査器一式（`scripts/README.md` 掲載分）が緑（`check-doc-links` / `check-adr-index-sync` /
