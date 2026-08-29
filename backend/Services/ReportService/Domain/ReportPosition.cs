@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 namespace ReportService.Domain;
 
 // FR-06, FR-16, 04_report-templates 日報 §3「ポジション一覧（当日終了時点）」の 1 建玉。
-// #563, IADR-0268: 権威源はリスク管理の取引台帳の射影（GET /risk-controls/open-positions）である。
+// #563, IADR-0269: 権威源はリスク管理の取引台帳の射影（GET /risk-controls/open-positions）である。
 //
 // 🔴 **nullable は「未供給」であり 0 ではない。**
 //   - `CurrentPrice` / `UnrealizedPnl`: 現在値を引けなかった銘柄（評価損益 0 と書かない）。

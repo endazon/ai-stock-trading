@@ -290,7 +290,7 @@ public sealed class ReportAutoGenerator(
         }
     }
 
-    // FR-16, FR-11, #563, IADR-0268: 日報 §2 の判断根拠（記録の転記）。
+    // FR-16, FR-11, #563, IADR-0269: 日報 §2 の判断根拠（記録の転記）。
     // **未注入・照会失敗のいずれも null（未供給）である**——買戻し推定・為替・LLM 実績と同じ向きであり、
     // 約定の供給（空列へ倒す）とは逆である。🔴 **判断根拠は本番で実際に記録されている**ため、
     // 「根拠なし」を既定にすると端的に嘘になり、説明責任が果たされていない状態が正常に見える。
@@ -316,7 +316,7 @@ public sealed class ReportAutoGenerator(
         }
     }
 
-    // FR-06, FR-16, #563, IADR-0268: 日報 §3 のポジション一覧。
+    // FR-06, FR-16, #563, IADR-0269: 日報 §3 のポジション一覧。
     // **未注入・照会失敗のいずれも null（未供給）である**——空列は「建玉なし」という別の主張になる。
     private async Task<IReadOnlyList<ReportPosition>?> SafeOpenPositionsAsync(CancellationToken cancellationToken)
     {

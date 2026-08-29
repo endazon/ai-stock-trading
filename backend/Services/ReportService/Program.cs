@@ -242,7 +242,7 @@ builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpBorrowFeeRecordSource>>());
 });
 
-// FR-16, FR-11, #563, IADR-0268: 日報 §2「判断根拠（要約）」。**権威源は監査台帳**であり、
+// FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」。**権威源は監査台帳**であり、
 // GET /audit/events/by-type（OwnerOrService）へ s2s 同期照会して `TradeDecisionMade.Rationale` を
 // **そのまま**明細へ載せる（報告書生成時に LLM へ書かせない・FR-16 / IADR-0251）。
 //
@@ -261,7 +261,7 @@ builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpTradeRationaleSource>>());
 });
 
-// FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
+// FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
 // 権威源はリスク管理サービスの取引台帳の射影であり、GET /risk-controls/open-positions（OwnerOrService・
 // IADR-0051）へ s2s 同期照会する。
 //

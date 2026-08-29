@@ -51,7 +51,7 @@ public class HttpPeriodFillSourceTests
         fill.Price.Should().Be(2100.5m);
     }
 
-    // 🔴 **肯定形（#563, IADR-0268）**: 判断記録と突き合わせる相関キー（DecisionId）をそのまま通す。
+    // 🔴 **肯定形（#563, IADR-0269）**: 判断記録と突き合わせる相関キー（DecisionId）をそのまま通す。
     // これが欠けると日報 §2 の「判断根拠（要約）」が全行で未供給になる。
     [Fact]
     public async Task 台帳のDecisionIdをそのまま通す()

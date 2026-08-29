@@ -10,7 +10,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-16, FR-11, #563, IADR-0268: 監査台帳（GET /audit/events/by-type）から**記録済みの判断根拠**を引く
+// FR-16, FR-11, #563, IADR-0269: 監査台帳（GET /audit/events/by-type）から**記録済みの判断根拠**を引く
 // s2s 照会と、その fail-safe を fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 //
 // 🔴 **供給不達はすべて null（未供給）へ倒す。空の辞書（引けたが記録が無い）と混ぜない。**

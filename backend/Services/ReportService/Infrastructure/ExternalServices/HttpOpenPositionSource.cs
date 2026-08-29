@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ReportService.Infrastructure.ExternalServices;
 
-// FR-06, FR-16, #563, IADR-0268: 日報 §3「ポジション一覧」の建玉を権威源（リスク管理 #12 の取引台帳の射影）から
+// FR-06, FR-16, #563, IADR-0269: 日報 §3「ポジション一覧」の建玉を権威源（リスク管理 #12 の取引台帳の射影）から
 // s2s 同期照会する（GET /risk-controls/open-positions・OwnerOrService・IADR-0051）。
 //
 // 🔴 **供給不達は `null`（未供給）へ倒す。空列（建玉なし）と混ぜない**——

@@ -131,7 +131,7 @@ public sealed record ReportView
     public ThreeWayComparison? ThreeWayComparison { get; init; }
 
     /// <summary>
-    /// FR-16, #563, IADR-0268, 04_report-templates 日報 §2: 取引履歴（全明細）＋取引詳細＋見送り判断。
+    /// FR-16, #563, IADR-0269, 04_report-templates 日報 §2: 取引履歴（全明細）＋取引詳細＋見送り判断。
     /// <para>
     /// 🔴 <c>null</c> は「<b>明細を組み立てられていない</b>」であり「約定が無かった」ではない。
     /// 約定 0 件は<b>空の <see cref="TradeHistoryLine"/> 列を持つ <see cref="TradeHistoryView"/></b> で表し、
@@ -143,7 +143,7 @@ public sealed record ReportView
     public TradeHistoryView? TradeHistory { get; init; }
 
     /// <summary>
-    /// FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
+    /// FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
     /// <para>
     /// 🔴 <c>null</c> は「<b>照会できていない</b>」であり「建玉なし」ではない。
     /// 建玉が 1 件も無いことは<b>空列</b>で表す（<see cref="MarginReductions"/> と同じ規律）。

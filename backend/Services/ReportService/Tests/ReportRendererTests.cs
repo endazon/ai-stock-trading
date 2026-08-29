@@ -47,7 +47,7 @@ public class ReportRendererTests
         md.Should().Contain("評価損益（税引前・参考） | -300.00 USD");
         md.Should().Contain("取引回数（買/売/決済） | 2 / 1 / 4");
         md.Should().Contain("源泉徴収税額 | +380.00 USD");
-        // #563, IADR-0268: 日報の §2 / §3 は取引履歴・ポジション一覧が占め、散文と方針は §5 / §6 へ下がる。
+        // #563, IADR-0269: 日報の §2 / §3 は取引履歴・ポジション一覧が占め、散文と方針は §5 / §6 へ下がる。
         md.Should().Contain("## 2. 取引履歴（全明細）");
         md.Should().Contain("## 3. ポジション一覧（当日終了時点）");
         md.Should().Contain("## 5. 市況・振り返り");

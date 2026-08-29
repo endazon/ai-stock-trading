@@ -89,13 +89,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             FxTranslation = request.FxTranslation,
             Uptime = request.Uptime,
             ThreeWayComparison = request.ThreeWayComparison,
-            // FR-16, #563, IADR-0268, 04_report-templates 日報 §2: 取引履歴の明細。**日報だけが持つ**
+            // FR-16, #563, IADR-0269, 04_report-templates 日報 §2: 取引履歴の明細。**日報だけが持つ**
             //（週報・月報は計画の粒度対応表が集計を求めており、明細ではない）。
             // 数値は PnlAggregator と同じ関数・同じ畳み込みで積み、判断根拠は**記録の転記**である（LLM に書かせない）。
             TradeHistory = request.Kind == ReportKind.Daily
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales)
                 : null,
-            // FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
+            // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
             // **null（照会できていない）を空列（建玉なし）へ潰さない。**
             Positions = request.Kind == ReportKind.Daily
                 ? WithValuation(request.Positions, currentPrices)
@@ -105,7 +105,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
     }
 
-    // FR-06, FR-16, #563, IADR-0268: 建玉へ現在値と評価損益を載せる。
+    // FR-06, FR-16, #563, IADR-0269: 建玉へ現在値と評価損益を載せる。
     //
     // 🔴 **現在値を引けなかった銘柄は `null`（未供給）のままにする。** 評価損益 0 と書けば
     // 「値動きが無かった」と読める——本サービスが一貫して避けている取り違えである。
@@ -227,10 +227,10 @@ public sealed record DraftRequest(
     OpenDUptimeRecord? Uptime = null,
     // FR-06, FR-15, #338, 04_report-templates 月報 §5: 三者比較。**null＝照会できていない**。
     ThreeWayComparison? ThreeWayComparison = null,
-    // FR-16, FR-11, #563, IADR-0268: 日報 §2「判断根拠（要約）」の記録（DecisionId 引き）。
+    // FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」の記録（DecisionId 引き）。
     // **null＝照会できていない／空の辞書＝引けたが記録が 1 件も無い。** 既定 null で既存の呼び出しは非破壊。
     IReadOnlyDictionary<Guid, string>? TradeRationales = null,
-    // FR-06, FR-16, #563, IADR-0268: 日報 §3 の建玉。**null＝照会できていない／空列＝建玉なし。**
+    // FR-06, FR-16, #563, IADR-0269: 日報 §3 の建玉。**null＝照会できていない／空列＝建玉なし。**
     IReadOnlyList<ReportPosition>? Positions = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。

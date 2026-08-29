@@ -84,7 +84,7 @@ public class ReportTemplateGoldenTests
             new OpenDUptimeDay(new DateOnly(2026, 8, 4), 0.60m),
             new OpenDUptimeDay(new DateOnly(2026, 8, 5), 0.20m),
         ], Stage1CumulativeCountedDays: 41),
-        // FR-16, #563, IADR-0268, 04_report-templates 日報 §2: 取引履歴（全明細）。
+        // FR-16, #563, IADR-0269, 04_report-templates 日報 §2: 取引履歴（全明細）。
         // **現在の供給経路が実際に組み立てる形**を置く（銘柄名・税・トリガーは記録源が無く、
         // 判断根拠は監査台帳から引けた約定にだけ入る）。日報以外では描画されない。
         TradeHistory = new TradeHistoryView
@@ -99,7 +99,7 @@ public class ReportTemplateGoldenTests
                     Trigger: null, RationaleSummary: null),
             ],
         },
-        // FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧（ロング＋ショート）。
+        // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（ロング＋ショート）。
         // 現在値が引けた建玉と引けなかった建玉の両方を置く（未供給と 0 を混同していないことを全文で固定する）。
         Positions =
         [

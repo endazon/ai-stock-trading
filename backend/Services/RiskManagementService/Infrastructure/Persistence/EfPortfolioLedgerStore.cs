@@ -120,7 +120,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             select new LedgerFill(
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
                 f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice, a.FxRateToBase ?? 1m,
-                // #563, IADR-0268: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
+                // #563, IADR-0269: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
                 f.DecisionId);
 
         return query.ToList();

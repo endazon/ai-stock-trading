@@ -8,7 +8,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, #563, IADR-0268: 日報 §3 の建玉を権威源（GET /risk-controls/open-positions）から引く
+// FR-06, FR-16, #563, IADR-0269: 日報 §3 の建玉を権威源（GET /risk-controls/open-positions）から引く
 // s2s 照会と、その fail-safe を fake HttpMessageHandler で検証する（実ネットワーク不使用）。
 //
 // 🔴 **供給不達は null（未供給）へ倒す。空列（建玉なし）と混ぜない**——

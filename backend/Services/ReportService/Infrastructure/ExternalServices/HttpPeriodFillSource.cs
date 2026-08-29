@@ -63,7 +63,7 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     // 同伴レート（承認時に固定された FxRateToBase）で換算する。LedgerFill.PriceInBase と同じ規則だが、
     // 別サービスの型は参照しないため、ここで一次フィールドから導出する。
     //
-    // #563, IADR-0268: DecisionId をそのまま通す。**欠落した応答（旧版 Risk）は Guid.Empty のままにする**——
+    // #563, IADR-0269: DecisionId をそのまま通す。**欠落した応答（旧版 Risk）は Guid.Empty のままにする**——
     // ここで別の値を作ると、無関係な判断根拠が明細へ載る。相関できない約定は判断根拠が未供給になる。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(
         r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,

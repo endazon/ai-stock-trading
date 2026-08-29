@@ -145,6 +145,13 @@
     "OccurredAt": "DateTimeOffset",
     "OutageDuration": "TimeSpan"
   },
+  "InformationSourceStateObserved": {
+    "BlockingCategories": "IReadOnlyList\u003CString\u003E",
+    "BlocksNewEntries": "Boolean",
+    "ClosesAllowed": "Boolean",
+    "ObservedAt": "DateTimeOffset",
+    "ValidFor": "TimeSpan"
+  },
   "LlmCostIncurred": {
     "Amount": "Decimal",
     "At": "DateTimeOffset",

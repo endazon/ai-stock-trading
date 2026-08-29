@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 
 namespace ReportService.Domain;
 
-// FR-16, 04_report-templates 日報 §2, #563, IADR-0268: 台帳の約定列と**記録済みの判断根拠**から
+// FR-16, 04_report-templates 日報 §2, #563, IADR-0269: 台帳の約定列と**記録済みの判断根拠**から
 // 日報 §2 の入力（TradeHistoryView）を組み立てる純関数。
 //
 // 🔴 **数値はコード集計値・文章は記録の転記であり、いずれも LLM に作らせない**（FR-16・IADR-0251）。

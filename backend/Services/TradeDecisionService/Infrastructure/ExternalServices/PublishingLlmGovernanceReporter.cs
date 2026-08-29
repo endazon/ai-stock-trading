@@ -14,7 +14,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
 // 本アダプタは HttpLlmCompletionClient（scoped）から呼ばれるため scoped で登録してよい
 // （PublishingLlmUsageReporter と同じ形）。
-internal sealed class PublishingLlmGovernanceReporter(
+public sealed class PublishingLlmGovernanceReporter(
     IMessageBus bus,
     IClock clock,
     ILogger<PublishingLlmGovernanceReporter> logger) : ILlmGovernanceReporter

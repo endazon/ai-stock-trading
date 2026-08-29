@@ -6,7 +6,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-16, #563, IADR-0268: 台帳の約定列と記録済みの判断根拠から日報 §2 の明細を組み立てる純関数の検証。
+// FR-16, #563, IADR-0269: 台帳の約定列と記録済みの判断根拠から日報 §2 の明細を組み立てる純関数の検証。
 // **数値はコード集計値・文章は記録の転記**であり、いずれも報告書生成時に作られていないことを固定する。
 public class TradeHistoryViewBuilderTests
 {

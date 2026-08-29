@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ReportService.Infrastructure.ExternalServices;
 
-// FR-16, FR-11, #563, IADR-0268: 日報 §2「判断根拠（要約）」を**監査台帳**から期間で引く
+// FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」を**監査台帳**から期間で引く
 // （GET /audit/events/by-type・OwnerOrService。IADR-0199 と同型の作法）。
 //
 // 🔴 **権威源は監査台帳であり、取引判断サービスではない。** 判断サービスは根拠を**ログにしか残さず**、

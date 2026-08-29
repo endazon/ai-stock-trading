@@ -54,7 +54,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             result.Add(new LedgerFill(
                 intent.Symbol, intent.Market, intent.Side, intent.PositionEffect,
                 fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt, intent.StopLossPrice, intent.FxRateToBase,
-                // #563, IADR-0268: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
+                // #563, IADR-0269: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
                 fill.DecisionId));
         }
 

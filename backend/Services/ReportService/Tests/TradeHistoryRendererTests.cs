@@ -5,7 +5,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-16, 04_report-templates 日報 §2, IADR-0042, #563, IADR-0268:
+// FR-16, 04_report-templates 日報 §2, IADR-0042, #563, IADR-0269:
 // 取引履歴（全明細）＋取引詳細＋見送り判断のレンダリング（純関数）を fake データで検証する。
 //
 // 🔴 **本ファイルだけでは #563 の再発を捕まえられない**——レンダラを直接叩くため、本番から呼ばれていなくても

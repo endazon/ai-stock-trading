@@ -1,16 +1,16 @@
 ---
-title: IADR-0268 日報の取引履歴・ポジション一覧は出口のゴールデンで結線を固定し、判断根拠は監査台帳の記録を LLM を介さず転記する
+title: IADR-0269 日報の取引履歴・ポジション一覧は出口のゴールデンで結線を固定し、判断根拠は監査台帳の記録を LLM を介さず転記する
 type: impl-adr
 status: Accepted
 related_ids: [FR-06, FR-11, FR-16, UC-05, ADR-0003, IADR-0032, IADR-0042, IADR-0115, IADR-0199, IADR-0251]
-author: endazon (with 実装エージェント)
+author: endazon (with Claude Code)
 created: 2026-08-29
 updated: 2026-08-29
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
 ---
 
-# IADR-0268: 日報の取引履歴・ポジション一覧は出口のゴールデンで結線を固定し、判断根拠は監査台帳の記録を LLM を介さず転記する
+# IADR-0269: 日報の取引履歴・ポジション一覧は出口のゴールデンで結線を固定し、判断根拠は監査台帳の記録を LLM を介さず転記する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

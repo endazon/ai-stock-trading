@@ -6,7 +6,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, FR-11, #563, IADR-0268:
+// FR-06, FR-16, FR-11, #563, IADR-0269:
 // 日報 §2 の判断根拠と §3 の建玉の供給が **composition root で実際に結線されている**ことを固定する。
 //
 // 🔴 **コンストラクタへ直接値を渡す単体テストでは、本番の配線が切れていても緑になる。**

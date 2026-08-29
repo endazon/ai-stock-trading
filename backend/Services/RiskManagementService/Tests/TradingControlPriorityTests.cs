@@ -71,7 +71,7 @@ public class TradingControlPriorityTests
             Pause,
             // 本テストの注文は内蔵 paper であり口座種別を要求しない（IADR-0153 決定2）。
             FakeBrokerAccountObservations.NotObserved(),
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
 
         public RiskStatusView Status() => new RiskStatusService(
             Builder(),

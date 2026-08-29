@@ -5,7 +5,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §2 / §3:
+// FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §2 / §3:
 // **出口（`ReportRenderer` の本文）で** 取引履歴・取引詳細・見送り判断・ポジション一覧が出ることを固定する。
 //
 // 🔴 **これが #563 の受け入れ基準 4「呼ばれていないと落ちるテスト」である。**

@@ -36,7 +36,7 @@ public class EfPortfolioLedgerStoreTests
         new EfPortfolioLedgerStore(db2).GetFills().Single().StopLossPrice.Should().Be(950m);
     }
 
-    // 🔴 **#563, IADR-0268**: 約定に DecisionId を載せる。報告書の日報 §2「判断根拠（要約）」が、
+    // 🔴 **#563, IADR-0269**: 約定に DecisionId を載せる。報告書の日報 §2「判断根拠（要約）」が、
     // 監査台帳の TradeDecisionMade を**この鍵で**引く。載っていないと全行が未供給になる。
     [Fact]
     public void 約定に相関キー_DecisionId_を載せて返す()

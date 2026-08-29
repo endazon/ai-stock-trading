@@ -2,7 +2,7 @@ using ReportService.Domain;
 
 namespace ReportService.Features.Reports;
 
-// FR-06, FR-16, #563, IADR-0268: 日報 §3「ポジション一覧（当日終了時点）」の建玉を供給するポート。
+// FR-06, FR-16, #563, IADR-0269: 日報 §3「ポジション一覧（当日終了時点）」の建玉を供給するポート。
 // 権威源はリスク管理サービスの取引台帳の射影（GET /risk-controls/open-positions・OwnerOrService・IADR-0051）。
 //
 // 🔴 **期間を引数に取らない。** 台帳は建玉のスナップショット履歴を持たず、射影は**照会時点**の建玉を返す。

@@ -2,8 +2,8 @@
 title: 日報の取引履歴・取引詳細・見送り判断・ポジション一覧の結線と供給経路（#563）
 type: spec
 status: review
-related_ids: [FR-06, FR-16, FR-11, UC-05, ADR-0003, IADR-0042, IADR-0115, IADR-0199, IADR-0251, IADR-0268]
-author: 実装エージェント
+related_ids: [FR-06, FR-16, FR-11, UC-05, ADR-0003, IADR-0042, IADR-0115, IADR-0199, IADR-0251, IADR-0269]
+author: endazon (with Claude Code)
 created: 2026-08-29
 updated: 2026-08-29
 plan_refs:
