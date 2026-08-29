@@ -25,7 +25,9 @@ public sealed class ReportAutoGenerator(
     IBuyInInferenceRecordSource? buyInSource = null,
     IFxSourceStatusSource? fxSourceStatusSource = null,
     ILlmUsageRecordSource? llmUsageSource = null,
-    IBorrowFeeRecordSource? borrowFeeSource = null)
+    IBorrowFeeRecordSource? borrowFeeSource = null,
+    ITradeRationaleSource? rationaleSource = null,
+    IOpenPositionSource? openPositionSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -91,6 +93,8 @@ public sealed class ReportAutoGenerator(
         var fxStatus = await SafeFxSourceStatusAsync(due, cancellationToken).ConfigureAwait(false);
         var llmUsage = await SafeLlmUsageAsync(due, cancellationToken).ConfigureAwait(false);
         var borrowFees = await SafeBorrowFeesAsync(due, cancellationToken).ConfigureAwait(false);
+        var rationales = await SafeRationalesAsync(due, cancellationToken).ConfigureAwait(false);
+        var positions = await SafeOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -110,7 +114,9 @@ public sealed class ReportAutoGenerator(
                 BuyInInferences: buyIns,
                 FxSourceStatus: fxStatus,
                 LlmUsage: llmUsage,
-                BorrowFees: borrowFees),
+                BorrowFees: borrowFees,
+                TradeRationales: rationales,
+                Positions: positions),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -273,6 +279,53 @@ public sealed class ReportAutoGenerator(
             return await borrowFeeSource
                 .GetBorrowFeesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-16, FR-11, #563, IADR-0269: 日報 §2 の判断根拠（記録の転記）。
+    // **未注入・照会失敗のいずれも null（未供給）である**——買戻し推定・為替・LLM 実績と同じ向きであり、
+    // 約定の供給（空列へ倒す）とは逆である。🔴 **判断根拠は本番で実際に記録されている**ため、
+    // 「根拠なし」を既定にすると端的に嘘になり、説明責任が果たされていない状態が正常に見える。
+    private async Task<IReadOnlyDictionary<Guid, string>?> SafeRationalesAsync(
+        DueReport due, CancellationToken cancellationToken)
+    {
+        if (rationaleSource is null)
+            return null;
+
+        try
+        {
+            return await rationaleSource
+                .GetRationalesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-16, #563, IADR-0269: 日報 §3 のポジション一覧。
+    // **未注入・照会失敗のいずれも null（未供給）である**——空列は「建玉なし」という別の主張になる。
+    private async Task<IReadOnlyList<ReportPosition>?> SafeOpenPositionsAsync(CancellationToken cancellationToken)
+    {
+        if (openPositionSource is null)
+            return null;
+
+        try
+        {
+            return await openPositionSource.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

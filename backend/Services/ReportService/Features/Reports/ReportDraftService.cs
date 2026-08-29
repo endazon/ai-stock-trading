@@ -33,7 +33,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             ?? await ResolveCurrentPricesAsync(fills, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計（FR-16）。前提条件は暫定で既定値（#19 バージョン付き取得・#63 台帳連携は #22 後続）。
-        var pnl = PnlAggregator.Aggregate(fills, TradingAssumptionsDefaults.Create(), currentPrices);
+        var assumptions = TradingAssumptionsDefaults.Create();
+        var pnl = PnlAggregator.Aggregate(fills, assumptions, currentPrices);
 
         var buyCount = fills.Count(f => f.Side == TradeSide.Buy);
         var sellCount = fills.Count(f => f.Side == TradeSide.Sell);
@@ -88,9 +89,60 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             FxTranslation = request.FxTranslation,
             Uptime = request.Uptime,
             ThreeWayComparison = request.ThreeWayComparison,
+            // FR-16, #563, IADR-0269, 04_report-templates 日報 §2: 取引履歴の明細。**日報だけが持つ**
+            //（週報・月報は計画の粒度対応表が集計を求めており、明細ではない）。
+            // 数値は PnlAggregator と同じ関数・同じ畳み込みで積み、判断根拠は**記録の転記**である（LLM に書かせない）。
+            TradeHistory = request.Kind == ReportKind.Daily
+                ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales)
+                : null,
+            // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
+            // **null（照会できていない）を空列（建玉なし）へ潰さない。**
+            Positions = request.Kind == ReportKind.Daily
+                ? WithValuation(request.Positions, currentPrices)
+                : null,
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
+    }
+
+    // FR-06, FR-16, #563, IADR-0269: 建玉へ現在値と評価損益を載せる。
+    //
+    // 🔴 **現在値を引けなかった銘柄は `null`（未供給）のままにする。** 評価損益 0 と書けば
+    // 「値動きが無かった」と読める——本サービスが一貫して避けている取り違えである。
+    // 現在値の辞書は**銘柄コードのみ**がキーで市場を持たない（IADR-0025）ため、同一コードが複数市場に
+    // 現れる建玉は判別できない。**その場合は両方とも未供給に倒す**（誤った市場の価格で評価するより安全側）。
+    private static IReadOnlyList<ReportPosition>? WithValuation(
+        IReadOnlyList<ReportPosition>? positions,
+        IReadOnlyDictionary<string, decimal>? currentPrices)
+    {
+        if (positions is null)
+            return null;
+
+        if (currentPrices is null || positions.Count == 0)
+            return positions;
+
+        var ambiguous = positions
+            .GroupBy(p => p.Symbol, StringComparer.Ordinal)
+            .Where(g => g.Select(p => p.Market).Distinct().Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return
+        [
+            .. positions.Select(p =>
+            {
+                if (ambiguous.Contains(p.Symbol) || !currentPrices.TryGetValue(p.Symbol, out var price))
+                    return p;
+
+                // ロングは +数量、ショートは −数量で評価する（符号付き在庫と同じ規則・IADR-0033）。
+                var signedQuantity = p.Side == TradeSide.Buy ? p.Quantity : -p.Quantity;
+                return p with
+                {
+                    CurrentPrice = price,
+                    UnrealizedPnl = (price - p.AverageEntryPrice) * signedQuantity,
+                };
+            }),
+        ];
     }
 
     // #81, IADR-0066: 期間末に建玉が残る銘柄の現在値を市場データ源から引く（全決済済みは評価に不要なので引かない
@@ -174,7 +226,12 @@ public sealed record DraftRequest(
     // FR-06, FR-20, #338, INDEX 決定34: OpenD 稼働率。**null＝照会できていない**（稼働率 0% と書かない）。
     OpenDUptimeRecord? Uptime = null,
     // FR-06, FR-15, #338, 04_report-templates 月報 §5: 三者比較。**null＝照会できていない**。
-    ThreeWayComparison? ThreeWayComparison = null);
+    ThreeWayComparison? ThreeWayComparison = null,
+    // FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」の記録（DecisionId 引き）。
+    // **null＝照会できていない／空の辞書＝引けたが記録が 1 件も無い。** 既定 null で既存の呼び出しは非破壊。
+    IReadOnlyDictionary<Guid, string>? TradeRationales = null,
+    // FR-06, FR-16, #563, IADR-0269: 日報 §3 の建玉。**null＝照会できていない／空列＝建玉なし。**
+    IReadOnlyList<ReportPosition>? Positions = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。
