@@ -46,9 +46,10 @@ public class KnowledgeBaseRetrievalContextProviderTests
     public async Task 検索ヒットはRetrievedContextへ写像される()
     {
         var docId = Guid.NewGuid();
+        var publishedAt = new DateTimeOffset(2026, 7, 9, 21, 0, 0, TimeSpan.Zero);
         var search = new FakeSearch(new[]
         {
-            new KnowledgeHit(docId, "決算メモ", "増収増益。", 0.91d, "kb://doc/1", ["earnings"]),
+            new KnowledgeHit(docId, "決算メモ", "増収増益。", 0.91d, "kb://doc/1", ["earnings"], publishedAt),
         });
         var provider = Create(search);
 
@@ -59,6 +60,25 @@ public class KnowledgeBaseRetrievalContextProviderTests
         result[0].Text.Should().Be("増収増益。");
         result[0].SourceUri.Should().Be("kb://doc/1");
         result[0].Score.Should().Be(0.91d);
+        // FR-08, #568: KnowledgeHit.PublishedAt は RetrievedContext.PublishedAt へそのまま伝播する
+        // （ScreeningContextAssembler が段③の並び替え鍵に使う）。
+        result[0].PublishedAt.Should().Be(publishedAt);
+    }
+
+    // FR-08, #568: 対の否定形。KnowledgeHit.PublishedAt が無ければ RetrievedContext.PublishedAt も
+    // null のまま伝播する（捏造しない・最古扱いの保守側既定へつながる）。
+    [Fact]
+    public async Task 検索ヒットに発行時刻が無ければRetrievedContextのPublishedAtもnullのまま()
+    {
+        var search = new FakeSearch(new[]
+        {
+            new KnowledgeHit(Guid.NewGuid(), "発行時刻不明の記事", "本文。", 0.5d, null, []),
+        });
+        var provider = Create(search);
+
+        var result = await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
+
+        result.Should().ContainSingle().Which.PublishedAt.Should().BeNull();
     }
 
     [Fact]

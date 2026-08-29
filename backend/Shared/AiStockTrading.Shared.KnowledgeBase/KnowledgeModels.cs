@@ -59,11 +59,17 @@ public sealed record KnowledgeQuery(
     int TopK = 8,
     IReadOnlyDictionary<string, string>? AttributeFilters = null);
 
-// FR-08: RAG 検索ヒット 1 件（チャンク単位。platform SearchResultDto に対応）。
+// FR-08, FR-02, FR-04, #568: RAG 検索ヒット 1 件（チャンク単位。platform SearchResultDto に対応）。
+//   PublishedAt — 元記事・開示の発行時刻（ScreeningContextPlanner 段③「古い順」の並び替え鍵。
+//   IADR-0247 残余リスクの解消・IADR-0270）。platform 契約の `SearchResultDto.UpdatedAt`（索引の
+//   更新時刻）とは意味が異なるため流用しない——本項目は AST 書き込み側（KnowledgeBaseWriterSink）が
+//   ABAC 属性 `publishedAt` として書いた値を検索応答の Attributes から復元したものである
+//   （供給できない・解釈できない場合は null＝最古扱いの保守側既定。捏造しない）。
 public sealed record KnowledgeHit(
     Guid DocumentId,
     string DocumentTitle,
     string Text,
     double Score,
     string? SourceUri,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    DateTimeOffset? PublishedAt = null);
