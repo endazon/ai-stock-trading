@@ -399,6 +399,13 @@ TradeDecisionService）。`dotnet test` で `AiStockTrading.Architecture.Tests` 
 - [x] `dotnet format backend/backend.slnx --verify-no-changes` が通る（exit 0）
 - [x] `dotnet ef migrations has-pending-model-changes` は対象外（DbContext 0 件。実測証跡を上記に記録）
 - [x] `list-test-projects.js --count` が 37 → 34
+
+  ［2026-08-29 追記 / #592］**この 37 → 34 は base `35b330a` に対する値である。**
+  その後 develop（`58854e3`＝NotificationService #591 の移送を含む）を取り込んだため、
+  **PR の最終状態では 35 → 32 になる**（#591 がテストプロジェクトを 2 本減らしたぶん、
+  移送前後とも 2 少ない）。**どちらも正しく、基準が違うだけである。**
+  **`--count` のような導出値は develop 取り込みの前後で必ず変わるので、記録するときは
+  *どの base に対する値か* を必ず添える**（6 本目 #591 のレビュー指摘を踏まえた先回りの明示）。
 - [x] `coverage-floor.json` の床を割らない（実測値は「検証（再測定）」節）
 - [x] 検査器一式（`scripts/README.md` 掲載分）が緑（実行コマンドの直接終了コードで確認）
 - [x] `DomainLayerDependencyTests` の下限が自動追随し（5 → 4）、`RepositoryLayout.cs` /
