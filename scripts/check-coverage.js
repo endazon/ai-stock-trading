@@ -179,9 +179,15 @@ function summarize(acc) {
  * Cobertura の filename を比較用に正規化する。
  * 区切りを `/` に揃え、先頭へ `/` を 1 つ置く（絶対パス・相対パスのどちらで出力されても
  * `**\/` 始まりのパターンが同じように当たるようにするため）。
+ *
+ * 🔴 `..` / `.` のセグメントも解決する（#562 のレビュー指摘）。ここが解決しないと、
+ * `<source>` 根と相対 `filename` の単純結合で `…/Other/../Contracts/X.cs` のようなキーが生まれ、
+ * **同一の実ファイルが再び別キーとして二重計上される**。本関数は集計キーと除外パターン照合の
+ * 両方が通る唯一の関門なので、ここで畳んでおく。
  */
 function normalizePath(filename) {
-  return '/' + String(filename).replace(/\\/g, '/').replace(/^\/+/, '');
+  const slashed = '/' + String(filename).replace(/\\/g, '/').replace(/^\/+/, '');
+  return path.posix.normalize(slashed);
 }
 
 /**

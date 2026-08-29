@@ -893,6 +893,32 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(cov.resolveCoverageKey('Pkg/Z.cs', roots, () => false), '/w/no-such/Pkg/Z.cs');
   });
 
+  ok('check-coverage: 根と相対パスの結合に .. が混じっても同一キーへ畳む（#562 レビュー指摘）', () => {
+    // 単純結合だけだと `…/Other/../Contracts/Events/X.cs` と `…/Contracts/Events/X.cs` が
+    // 別キーになり、是正したはずの二重計上が別の入り口から復活する。
+    const viaDirect = cov.resolveCoverageKey(
+      'Events/X.cs',
+      ['/w/backend/Shared/AiStockTrading.Shared.Contracts/'],
+      () => true
+    );
+    const viaParent = cov.resolveCoverageKey(
+      '../AiStockTrading.Shared.Contracts/Events/X.cs',
+      ['/w/backend/Shared/Other/'],
+      () => true
+    );
+    assert.strictEqual(viaDirect, '/w/backend/Shared/AiStockTrading.Shared.Contracts/Events/X.cs');
+    assert.strictEqual(viaParent, viaDirect);
+  });
+
+  ok('check-coverage: normalizePath は . と .. のセグメントを解決する（#562 レビュー指摘）', () => {
+    assert.strictEqual(cov.normalizePath('/a/b/../c.cs'), '/a/c.cs');
+    assert.strictEqual(cov.normalizePath('/a/./b.cs'), '/a/b.cs');
+    // 冪等であること（applyExcludes が再度かけても壊れない）。
+    assert.strictEqual(cov.normalizePath(cov.normalizePath('/a/b/../c.cs')), '/a/c.cs');
+    // 通常のパスは変えない。
+    assert.strictEqual(cov.normalizePath('A.cs'), '/A.cs');
+  });
+
   ok('check-coverage: readSourceRoots は <sources> の全ての根を順に返す（#562）', () => {
     assert.deepStrictEqual(cov.readSourceRoots('<sources><source>/a/</source><source>/b/</source></sources>'), [
       '/a/',

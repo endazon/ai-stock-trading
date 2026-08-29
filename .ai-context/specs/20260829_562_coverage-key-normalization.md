@@ -123,3 +123,27 @@ issue: 562
 - [x] 根が異なる 2 つの疑似 cobertura を食わせるテストを置いた
 - [x] 正規化後の実測値で `coverage-floor.json` を引き上げた（0.79 → 0.83。**下げていない**）
 - [x] 「重なりが 1 件も無い」状態でも空振りしないこと（過剰併合の否定形が担保・変異試験で実証）
+
+---
+
+## ［2026-08-29 追記］レビュー指摘（🟢）への対応 —— `..` セグメントの解決
+
+**指摘は正しく、再現した。** `normalizePath` は `..` / `.` を解決していなかったため、
+`<source>` 根と相対 `filename` の**単純結合**で次のようにキーが割れる:
+
+```
+根 /w/backend/Shared/AiStockTrading.Shared.Contracts/ + Events/X.cs
+  → /w/backend/Shared/AiStockTrading.Shared.Contracts/Events/X.cs
+根 /w/backend/Shared/Other/ + ../AiStockTrading.Shared.Contracts/Events/X.cs
+  → /w/backend/Shared/Other/../AiStockTrading.Shared.Contracts/Events/X.cs   ← 別キー
+```
+
+🔴 **これは本 PR が消したはずの二重計上が、別の入り口から復活する経路である。**
+`normalizePath` は**集計キーと除外パターン照合の両方が通る唯一の関門**なので、そこで畳んだ
+（`path.posix.normalize`）。
+
+**実測値は変わらない**（85.30%・16208/19001・レポート 20 件）。現行の coverlet 出力に `..` を
+含む相対パスが無いというレビューの観察と一致する。**したがって floor 0.83 の根拠は影響を受けない。**
+
+変異試験: `path.posix.normalize` を外すと **exit 1**（追加した 2 テストが落ちる）。
+冪等性（`applyExcludes` が再度かけても壊れない）も固定した。
