@@ -817,6 +817,90 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(s.covered, 1);
   });
 
+  // --- check-coverage.js: <source> 根の解決（#562） ---
+  // coverlet の class/@filename は **その レポートの <source> 根からの相対パス**であり、
+  // 根はテストプロジェクトごとに違う。根を無視すると同一の実ファイルが別キーになり、
+  // レポートの数だけ分母へ積まれる（実測で Shared.Contracts の 70 ファイルが二重計上されていた）。
+  const withSources = (roots, filename, hits) =>
+    `<coverage><sources>${roots.map((r) => `<source>${r}</source>`).join('')}</sources>` +
+    `<packages><package><classes><class filename="${filename}">` +
+    `<lines>${hits.map((h, i) => `<line number="${i + 1}" hits="${h}" />`).join('')}</lines>` +
+    `</class></classes></package></packages></coverage>`;
+
+  ok('check-coverage: <source> 根が違っても同一の実ファイルは 1 回だけ数える（#562）', () => {
+    // 実測した二重計上そのものの再現: 同じ AssumptionsChanged.cs を、根の深さが違う 2 レポートが報告する。
+    const contracts = withSources(
+      ['/w/backend/Shared/AiStockTrading.Shared.Contracts/'],
+      'Events/AssumptionsChanged.cs',
+      [1, 0]
+    );
+    const infra = withSources(
+      ['/w/backend/Shared/'],
+      'AiStockTrading.Shared.Contracts/Events/AssumptionsChanged.cs',
+      [0, 0]
+    );
+    const acc = new Map();
+    cov.accumulate(contracts, acc);
+    cov.accumulate(infra, acc);
+    // 是正前はキーが別物になり total=4（2 行 × 2 レポート）になっていた。
+    assert.strictEqual(acc.size, 1);
+    const s = cov.summarize(acc);
+    assert.strictEqual(s.total, 2);
+    assert.strictEqual(s.covered, 1); // 片方のレポートで被覆されていれば covered（和集合）
+  });
+
+  ok('check-coverage: 根を解決しても別のファイルまでは畳まない（過剰併合の否定形・#562）', () => {
+    // 肯定形（上のテスト）だけだと「全部同じキーにする」壊れ方を検出できない。
+    const a = withSources(['/w/backend/Shared/'], 'A/X.cs', [1]);
+    const b = withSources(['/w/backend/Shared/'], 'B/X.cs', [0]);
+    const acc = new Map();
+    cov.accumulate(a, acc);
+    cov.accumulate(b, acc);
+    assert.strictEqual(acc.size, 2);
+    const s = cov.summarize(acc);
+    assert.strictEqual(s.total, 2);
+    assert.strictEqual(s.covered, 1);
+  });
+
+  ok('check-coverage: 集計キーは <source> 根を解決した絶対パスである（#562）', () => {
+    const acc = new Map();
+    cov.accumulate(withSources(['/w/backend/Shared/'], 'Pkg/Y.cs', [1]), acc);
+    assert.deepStrictEqual([...acc.keys()], ['/w/backend/Shared/Pkg/Y.cs']);
+  });
+
+  ok('check-coverage: <source> が無いレポートは filename をそのままキーにする（後方互換・#562）', () => {
+    const acc = new Map();
+    cov.accumulate('<class filename="A.cs"><lines><line number="1" hits="1" /></lines></class>', acc);
+    assert.deepStrictEqual([...acc.keys()], ['/A.cs']);
+  });
+
+  ok('check-coverage: filename が既に絶対パスなら根と結合しない（#562）', () => {
+    assert.strictEqual(
+      cov.resolveCoverageKey('/abs/A.cs', ['/w/backend/Shared/'], () => true),
+      '/abs/A.cs'
+    );
+    assert.strictEqual(cov.resolveCoverageKey('C:\\w\\A.cs', ['/w/'], () => true), '/C:/w/A.cs');
+  });
+
+  ok('check-coverage: 根が複数ある場合は実在する結合を選ぶ（#562）', () => {
+    const roots = ['/w/no-such/', '/w/real/'];
+    // 実在判定を差し替えて、ファイルシステムに触れずに肯定・否定の両方を固定する。
+    assert.strictEqual(
+      cov.resolveCoverageKey('Pkg/Z.cs', roots, (p) => p === '/w/real/Pkg/Z.cs'),
+      '/w/real/Pkg/Z.cs'
+    );
+    // どれも実在しなければ最初の根へ倒す（キーが未定義にならないこと）。
+    assert.strictEqual(cov.resolveCoverageKey('Pkg/Z.cs', roots, () => false), '/w/no-such/Pkg/Z.cs');
+  });
+
+  ok('check-coverage: readSourceRoots は <sources> の全ての根を順に返す（#562）', () => {
+    assert.deepStrictEqual(cov.readSourceRoots('<sources><source>/a/</source><source>/b/</source></sources>'), [
+      '/a/',
+      '/b/',
+    ]);
+    assert.deepStrictEqual(cov.readSourceRoots('<coverage/>'), []);
+  });
+
   ok('check-coverage: coverage-floor.json の lineRateFloor を読む', () => {
     const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'cov-floor-'));
     fsTt.writeFileSync(pathTt.join(root, 'coverage-floor.json'), JSON.stringify({ lineRateFloor: 0.42 }));
