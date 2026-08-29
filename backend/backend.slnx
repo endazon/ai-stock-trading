@@ -61,18 +61,9 @@
     <Project Path="Services/NotificationService/tests/NotificationService.Infrastructure.Tests/NotificationService.Infrastructure.Tests.csproj" />
     <Project Path="Services/NotificationService/tests/NotificationService.Api.Tests/NotificationService.Api.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/MarketMonitorService/" />
-  <Folder Name="/Services/MarketMonitorService/src/">
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Application/MarketMonitorService.Application.csproj" />
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Domain/MarketMonitorService.Domain.csproj" />
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Infrastructure/MarketMonitorService.Infrastructure.csproj" />
-    <Project Path="Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/MarketMonitorService/tests/">
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Application.Tests/MarketMonitorService.Application.Tests.csproj" />
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Domain.Tests/MarketMonitorService.Domain.Tests.csproj" />
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Infrastructure.Tests/MarketMonitorService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/MarketMonitorService/tests/MarketMonitorService.Api.Tests/MarketMonitorService.Api.Tests.csproj" />
+  <Folder Name="/Services/MarketMonitorService/">
+    <Project Path="Services/MarketMonitorService/MarketMonitorService.csproj" />
+    <Project Path="Services/MarketMonitorService/Tests/MarketMonitorService.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/OrderExecutionService/" />
   <Folder Name="/Services/OrderExecutionService/src/">
