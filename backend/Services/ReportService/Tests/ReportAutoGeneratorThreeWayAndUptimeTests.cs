@@ -148,6 +148,33 @@ public class ReportAutoGeneratorThreeWayAndUptimeTests
         body.Should().NotContain("**稼働率の観測を照会できませんでした（供給元がありません）**");
     }
 
+    // 🔴 **変異試験で生き残った穴を塞ぐ（#569）**: 日報のセルは「Days が空」でも
+    // 「供給されていません」と描くため、**未注入を空の記録（0 日）へ倒しても日報のテストは緑になる**。
+    // 月報 §5 の分布は空の記録なら「100%: 0 日 …」を出してしまうため、ここで両者を分けて固定する。
+    [Fact]
+    public async Task 稼働率の未注入と観測0日を月報で描き分ける()
+    {
+        var unsupplied = new InMemoryReportStore();
+        await NewGenerator(unsupplied, MonthEndAfterClose).RunOnceAsync();
+
+        var thrown = new InMemoryReportStore();
+        await NewGenerator(thrown, MonthEndAfterClose, uptimeSource: new ThrowingUptimeSource()).RunOnceAsync();
+
+        var empty = new InMemoryReportStore();
+        await NewGenerator(empty, MonthEndAfterClose, uptimeSource: new StubUptimeSource(new OpenDUptimeRecord([]))).RunOnceAsync();
+
+        // 未注入・照会失敗は「照会できませんでした」。
+        BodyOf(unsupplied, ReportKind.Monthly)
+            .Should().Contain("**稼働率の観測を照会できませんでした（供給元がありません）**");
+        BodyOf(thrown, ReportKind.Monthly)
+            .Should().Contain("**稼働率の観測を照会できませんでした（供給元がありません）**");
+
+        // 引けたが観測が 1 日も無い場合は**分布の 0 日**として描く（別の事実である）。
+        BodyOf(empty, ReportKind.Monthly)
+            .Should().NotContain("**稼働率の観測を照会できませんでした（供給元がありません）**");
+        BodyOf(empty, ReportKind.Monthly).Should().Contain("| 100% | 0 日 |");
+    }
+
     // 供給の照会は**当該報告書の期間**で行う（別の期間の稼働率を載せない）。
     [Fact]
     public async Task 稼働率の照会は当該報告書の期間で行う()
