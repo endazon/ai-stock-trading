@@ -17,18 +17,12 @@
     <Project Path="Services/CostControlService/CostControlService.csproj" />
     <Project Path="Services/CostControlService/Tests/CostControlService.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/ReportService/" />
-  <Folder Name="/Services/ReportService/src/">
-    <Project Path="Services/ReportService/src/ReportService.Domain/ReportService.Domain.csproj" />
-    <Project Path="Services/ReportService/src/ReportService.Application/ReportService.Application.csproj" />
-    <Project Path="Services/ReportService/src/ReportService.Infrastructure/ReportService.Infrastructure.csproj" />
-    <Project Path="Services/ReportService/src/ReportService.Api/ReportService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/ReportService/tests/">
-    <Project Path="Services/ReportService/tests/ReportService.Domain.Tests/ReportService.Domain.Tests.csproj" />
-    <Project Path="Services/ReportService/tests/ReportService.Application.Tests/ReportService.Application.Tests.csproj" />
-    <Project Path="Services/ReportService/tests/ReportService.Infrastructure.Tests/ReportService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/ReportService/tests/ReportService.Api.Tests/ReportService.Api.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1, IADR-0263/IADR-0264 決定3: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み
+       （W11 段 4-10）。EF Core 永続化（Infrastructure/Persistence/）・外部接続アダプタ
+       （Infrastructure/ExternalServices/）・自動生成の常駐ジョブ（Hosted/）を含む。 -->
+  <Folder Name="/Services/ReportService/">
+    <Project Path="Services/ReportService/ReportService.csproj" />
+    <Project Path="Services/ReportService/Tests/ReportService.Tests.csproj" />
   </Folder>
   <!-- NFR/IADR-0259 決定1, IADR-0264: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-2）。
        他サービスへ公開していた ConfigurationService.Client は廃止し、呼び出し元 2 サービスの
