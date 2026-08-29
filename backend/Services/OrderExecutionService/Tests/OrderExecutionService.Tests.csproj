@@ -1,0 +1,24 @@
+<!-- NFR/IADR-0259 決定4: サービス単位のテストは 1 プロジェクトへ統合する（旧 Api/Application/Domain/Infrastructure
+     の 4 本を統合。中身は移送のみで変えていない）。NFR-07, #287, IADR-0255: 業務メトリクスの発火を MeterListener で
+     観測する共有支援（TestSupport.Metrics）は旧 Infrastructure.Tests から引き継いだ。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <ProjectReference Include="..\OrderExecutionService.csproj" />
+    <!-- ADR-0013, IADR-0129, #354: Wolverine のハンドラをランタイム生成で動かすため（RuntimeCompilation）、
+         共通配線ヘルパを持つ shim をテストからのみ参照する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- NFR-07, #287, IADR-0255: 業務メトリクスが実際に発火することを MeterListener で観測する共有支援。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
+  </ItemGroup>
+</Project>

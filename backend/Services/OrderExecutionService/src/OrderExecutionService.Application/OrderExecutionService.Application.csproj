@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <RootNamespace>OrderExecutionService.Application</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\OrderExecutionService.Domain\OrderExecutionService.Domain.csproj" />
-  </ItemGroup>
-</Project>

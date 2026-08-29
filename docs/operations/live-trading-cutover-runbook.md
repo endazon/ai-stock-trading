@@ -44,11 +44,11 @@ provider × environment の 2 軸表現が置く解禁ゲート）。
 
 | # | 閂 | 実体 | 実装箇所 | config で通せるか |
 | --- | --- | --- | --- | --- |
-| 0 | **実弾解禁ゲート** | ブローカ階層が実弾（`Broker:Environment=live`）なら**起動時に `InvalidOperationException`**。`LiveTradingReleased`（`const false`）が唯一の解禁点で、OpenD 接続クライアントを構成する前に停止する | `.../Composable/Adapters/LiveTradingGate.cs` | **いいえ（コード拒否）** |
-| 1 | **ブローカ選択ゲート** | `Broker:Provider` 既定 `paper`（実発注しない）。`moomoo` は OpenD 接続クライアント必須で、無ければ**起動時停止**。未知値も停止 | `backend/Services/OrderExecutionService/src/OrderExecutionService.Infrastructure/Composable/Adapters/BrokerFactory.cs` | **はい**（`Broker:Provider=moomoo`）。ただし SIMULATE 発注になるだけ |
-| 2 | **SIMULATE のヘッダ固定** | 発注ヘッダ `TrdHeader` に `TrdEnv_Simulate` を**無条件**でセット。`OrderIntent.Mode=Live` でも SIMULATE で発注する | `.../Composable/Adapters/MMApiMoomooTradeClient.cs`（`BuildHeader` の `SetTrdEnv(TrdEnv_Simulate)`）／ `MoomooBrokerAdapter.cs` | **いいえ（コード固定）** |
-| 3 | **`TrdEnv=real` の起動時拒否** | `Broker:Moomoo:TrdEnv` が `simulate` 以外なら**起動時に `InvalidOperationException`**。黙って SIMULATE で流さず、運用者の「実弾で動いている」誤認を防ぐ | `.../Composable/Adapters/MoomooBrokerOptions.cs`（`EnsureSimulate`） | **いいえ（コード拒否）** |
-| 4 | **SIMULATE 口座のみ採用** | OpenD が返す口座一覧から `TrdEnv_Simulate` の口座だけを掴む。実口座の `accId` は保持しない | `.../Composable/Adapters/MMApiMoomooTradeClient.cs`（`FetchSimulateAccIdAsync`） | **いいえ（コード固定）** |
+| 0 | **実弾解禁ゲート** | ブローカ階層が実弾（`Broker:Environment=live`）なら**起動時に `InvalidOperationException`**。`LiveTradingReleased`（`const false`）が唯一の解禁点で、OpenD 接続クライアントを構成する前に停止する | `.../Infrastructure/ExternalServices/LiveTradingGate.cs` | **いいえ（コード拒否）** |
+| 1 | **ブローカ選択ゲート** | `Broker:Provider` 既定 `paper`（実発注しない）。`moomoo` は OpenD 接続クライアント必須で、無ければ**起動時停止**。未知値も停止 | `backend/Services/OrderExecutionService/Infrastructure/ExternalServices/BrokerFactory.cs` | **はい**（`Broker:Provider=moomoo`）。ただし SIMULATE 発注になるだけ |
+| 2 | **SIMULATE のヘッダ固定** | 発注ヘッダ `TrdHeader` に `TrdEnv_Simulate` を**無条件**でセット。`OrderIntent.Mode=Live` でも SIMULATE で発注する | `.../Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs`（`BuildHeader` の `SetTrdEnv(TrdEnv_Simulate)`）／ `MoomooBrokerAdapter.cs` | **いいえ（コード固定）** |
+| 3 | **`TrdEnv=real` の起動時拒否** | `Broker:Moomoo:TrdEnv` が `simulate` 以外なら**起動時に `InvalidOperationException`**。黙って SIMULATE で流さず、運用者の「実弾で動いている」誤認を防ぐ | `.../Infrastructure/ExternalServices/MoomooBrokerOptions.cs`（`EnsureSimulate`） | **いいえ（コード拒否）** |
+| 4 | **SIMULATE 口座のみ採用** | OpenD が返す口座一覧から `TrdEnv_Simulate` の口座だけを掴む。実口座の `accId` は保持しない | `.../Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs`（`FetchSimulateAccIdAsync`） | **いいえ（コード固定）** |
 | 外周 | **Helm 描画時の拒否** | `broker.tier=moomoo-live` は `helm template` の時点で `fail`＝誤設定がクラスタへ届かない | `deploy/helm/ai-stock-trading/templates/deployment.yaml` | **いいえ（描画時 fail）** |
 
 > 番号は `LiveTradingGate.cs` のコメントが定義する閂番号（0〜4）に一致させてある。
