@@ -29,7 +29,7 @@ MAPPING=(
   "cost-control-service|backend/Services/CostControlService/CostControlService.csproj|CostControlService.dll"
   "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj|InformationCollectionService.Api.dll"
   "market-monitor-service|backend/Services/MarketMonitorService/src/MarketMonitorService.Api/MarketMonitorService.Api.csproj|MarketMonitorService.Api.dll"
-  "notification-service|backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj|NotificationService.Api.dll"
+  "notification-service|backend/Services/NotificationService/NotificationService.csproj|NotificationService.dll"
   "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj|OrderExecutionService.Api.dll"
   "report-service|backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj|ReportService.Api.dll"
   "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj|RiskManagementService.Api.dll"
