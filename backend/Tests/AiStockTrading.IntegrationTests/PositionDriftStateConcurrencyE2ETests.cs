@@ -1,7 +1,7 @@
 extern alias RiskManagementWorker;
 
 using System.Data;
-using RiskManagementService.Application.Ports;
+using RiskManagementWorker::RiskManagementService.Features.RiskManagement;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;

@@ -26,7 +26,7 @@ plan_refs:
 - 対象 Issue: #25
 - 対象コード: [`OrderIntent.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/OrderIntent.cs)、
   [`PositionEffect.cs`](../../backend/Shared/AiStockTrading.Shared.Contracts/Trading/PositionEffect.cs)、
-  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/Domain/RiskEvaluator.cs)
 
 ## コンテキストと課題
 

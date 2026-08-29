@@ -28,12 +28,13 @@
     <ProjectReference Include="..\..\Services\OrderExecutionService\OrderExecutionService.csproj" />
     <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。
          新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
-    <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（RiskManagementWorker）は
-         テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。
-         永続化（#305/IADR-0124 の並行トークン E2E が使う internal 型）は Infrastructure へ移ったため、
-         同じ別名を Infrastructure にも与え `RiskManagementWorker::…Infrastructure.Foundation.Persistence` で解決する。 -->
-    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Api\RiskManagementService.Api.csproj" Aliases="RiskManagementWorker" />
-    <ProjectReference Include="..\..\Services\RiskManagementService\src\RiskManagementService.Infrastructure\RiskManagementService.Infrastructure.csproj" Aliases="RiskManagementWorker" />
+    <!-- NFR/IADR-0259 決定1, IADR-0263: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-11）。
+         層プロジェクトが 1 本になったため、旧 .Api / .Infrastructure への 2 参照を 1 本へ畳んだ。
+         extern alias 名（RiskManagementWorker）はテスト本文の変更を避けるため据え置く。
+         永続化の型（#305/IADR-0124 の並行トークン E2E が使う）は
+         `RiskManagementWorker::RiskManagementService.Infrastructure.Persistence` で解決する
+         （名前空間に Foundation セグメントは無い）。 -->
+    <ProjectReference Include="..\..\Services\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
     <!-- 報告書 Worker も extern alias で参照する（Slice D の daily-policy 提供側・IADR-0050 決定1）。 -->
     <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（ReportWorker）は
          テスト本文の変更を避けるため据え置く（命名の整理は #354 以降）。 -->

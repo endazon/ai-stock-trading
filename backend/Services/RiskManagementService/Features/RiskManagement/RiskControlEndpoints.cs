@@ -1,0 +1,518 @@
+using RiskManagementService.Domain;
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+using Wolverine;
+
+namespace RiskManagementService.Features.RiskManagement;
+
+// FR-10, FR-19, FR-20, UC-06, ADR-0003, ADR-0007, ADR-0008: kill switch 操作・リスク設定変更の HTTP エンドポイント。
+// 書き込み系は OwnerOnly（利用者のみ・Keycloak ロール trading-owner）を要求する。actor は認証済みトークンの名前
+// （preferred_username）を用いる。生成AI・自動処理はこのロールを持たないため変更できない。
+// IADR-0051: 読み取り系の同期照会（sizing-context / open-positions）はサービス間 s2s（trading-service）でも呼べる
+// よう OwnerOrService に分離する（サービスへ書き込み権限は与えない＝最小権限）。
+internal static class RiskControlEndpoints
+{
+    public static IEndpointRouteBuilder MapRiskControlEndpoints(this IEndpointRouteBuilder app)
+    {
+        // 例外→HTTP マッピング（読み書き共通）: アクター/理由欠如などの検証失敗は 400、設定の楽観排他競合（IADR-0012）は 409。
+        // これらを既定の 500 にせず、クライアントが区別できるステータスに写像する。
+        var g = app.MapGroup("/risk-controls")
+            .WithTags("RiskControls")
+            .AddEndpointFilter(async (ctx, next) =>
+            {
+                try
+                {
+                    return await next(ctx);
+                }
+                catch (ArgumentException e)
+                {
+                    return Results.BadRequest(new { error = e.Message });
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    return Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" });
+                }
+            });
+
+        // ---- 読み取り系: 利用者またはサービス（IADR-0051・OwnerOrService） ----
+        // 未認証は 401、trading-owner/trading-service いずれも持たなければ 403。
+        var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
+        // サイジング文脈（FR-04/10, IADR-0029）: 取引判断（#11）が同期照会する（設定＋ポートフォリオ状態から導出）。
+        read.MapGet("/sizing-context", (SizingContextService svc) => Results.Ok(svc.Build()));
+
+        // 保有ポジション（FR-03/10, IADR-0030）: 市場監視（#10）が損切りライン検知のため同期照会する
+        // （#63 台帳の射影＋損切り価格の近似導出）。
+        read.MapGet("/open-positions", (OpenPositionsService svc) => Results.Ok(svc.Build()));
+
+        // 期間の約定（FR-06/16, IADR-0115 決定5, #280）: 報告書サービス（#14）が日報/週報/月報の数値集計のため
+        // 同期照会する。取引台帳（承認 Intent × 約定）を取引日（JST 境界）で絞って返す。読み取り専用で、
+        // 新規テーブル・新規イベントは持たない。期間が逆順・未指定でも 200（空列）＝報告書生成を止めない。
+        read.MapGet("/fills", (DateOnly? from, DateOnly? to, IPortfolioLedgerStore ledger) =>
+        {
+            if (from is not { } fromDay || to is not { } toDay)
+                return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
+
+            return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger.GetFills(), fromDay, toDay));
+        });
+
+        // 強制買戻しの推定（FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181）:
+        // 報告書サービス（#14）が日報の「発生有無」・月報の「発生回数」のため同期照会する。
+        //
+        // **観測の到達（FR-21）と推定行を同じ応答で返す。** 2 つのエンドポイントに分けると、
+        // 呼び出し側が推定行だけを見て 0 件と判断する経路が作れてしまう——台帳は推定が起きたときにしか
+        // 行を書かないため、**行数 0 は「観測が一度も届いていない（異常）」と「観測して 0 件だった（正常）」を
+        // 区別できない**。1 回の応答で両方を運び、判断を分離できないようにする。
+        //
+        // **`from`・`to` の省略・逆順は 400 とする**（`/fills` は 200 空列だが、こちらは向きが違う）——
+        // 黙って空列を返すと、それが「推定 0 件」として報告書に載り得る。**照会できなかったことは
+        // 空の結果ではない。**
+        read.MapGet("/buy-in-inferences",
+            (DateOnly? from, DateOnly? to,
+             IBuyInInferenceStore inferences,
+             IPositionObservationArrivalStore arrivals,
+             IBusinessCalendar calendar) =>
+        {
+            if (from is not { } fromDay || to is not { } toDay)
+                return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
+
+            if (fromDay > toDay)
+                return Results.BadRequest(new { error = "from は to 以前の日付を指定してください。" });
+
+            // **［2026-08-08 改定］期間が観測の届いた取引日で覆われているかを返す**
+            //（計画 FR-21・裁定 planning#292）。従前は「最終観測時刻が非 null か」であり、
+            // **初回観測より前の期間や観測が途中で止まった期間が「正当な 0」として報告されていた**。
+            var observedDays = arrivals.GetObservedDaysBetween(fromDay, toDay);
+
+            return Results.Ok(new
+            {
+                // false＝この期間は観測に覆われていない。**呼び出し側はこのとき件数を 0 と読んではならない。**
+                periodCovered = ObservationCoverage.Covers(observedDays, fromDay, toDay, calendar),
+                // 診断用（どの日が欠けているかを運用者が特定できるようにする）。判定には使わせない。
+                observedTradingDays = observedDays,
+                inferences = inferences.GetInferredBetween(fromDay, toDay),
+            });
+        });
+
+        // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
+        var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
+
+        owner.MapGet("/kill-switch", (KillSwitchService svc) => Results.Ok(svc.GetState()));
+
+        owner.MapPost("/kill-switch/engage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
+        {
+            svc.Engage(ActorOf(http), req.Reason);
+            return Results.Ok(svc.GetState());
+        });
+
+        owner.MapPost("/kill-switch/disengage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
+        {
+            svc.Disengage(ActorOf(http), req.Reason);
+            return Results.Ok(svc.GetState());
+        });
+
+        // ---- 取引の一時停止/再開（FR-10, FR-14, UC-06, ADR-0009）: 利用者のみ（OwnerOnly）。理由必須 ----
+        // pause は kill switch より軽い統制で、`/resume` は pause のみ解除する（日次損失ロックアウトは解除しない）。
+        // 操作は冪等（停止中の再 pause・非停止中の resume は現状態を返すのみ）。actor は認証済みトークン名。
+        owner.MapGet("/pause", (PauseService svc) => Results.Ok(svc.GetState()));
+
+        owner.MapPost("/pause", (PauseRequest req, PauseService svc, HttpContext http) =>
+            Results.Ok(svc.Pause(ActorOf(http), req.Reason)));
+
+        owner.MapPost("/resume", (PauseRequest req, PauseService svc, HttpContext http) =>
+            Results.Ok(svc.Resume(ActorOf(http), req.Reason)));
+
+        // ---- 建玉の手仕舞い（FR-10, FR-11, UC-06, #292, IADR-0117）: 利用者のみ（OwnerOnly）。理由必須 ----
+        // FR-10 本文「kill switch・日次損失ロックアウト・一時停止は…いずれも手仕舞い（Close）と損切りは止めない」に従い、
+        // 発注前スクリーニング（OrderScreeningService）を通さない（手仕舞い・損切りは統制で止めない〔FR-10〕・旧 IADR-0015 → IADR-0210 決定3 の規律）。
+        // サービストークンには開かない（生成AI・自動処理が建玉を落とせないようにする＝FR-10「生成AIはこれらを上書きできない」・ADR-0003）。
+        owner.MapPost("/positions/close",
+            async (PositionCloseRequest req, PositionCloseService svc, IMessageBus bus, HttpContext http) =>
+        {
+            // market は Market?（非 nullable enum は省略時に暗黙 0＝日本市場へ束縛され、誤市場の決済を通してしまう）。
+            if (string.IsNullOrWhiteSpace(req.Symbol))
+                return Results.BadRequest(new { error = "symbol（銘柄コード）は必須です。" });
+            if (req.Market is not { } market || !Enum.IsDefined(market))
+                return Results.BadRequest(new { error = "market は有効な市場（Japan/UnitedStates）を指定してください。" });
+            if (string.IsNullOrWhiteSpace(req.Reason))
+                return Results.BadRequest(new { error = "reason（理由）は必須です。" });
+
+            var outcome = svc.Request(
+                new PositionCloseCommand(req.Symbol, market, req.Quantity, req.LimitPrice, req.Reason),
+                ActorOf(http));
+
+            if (!outcome.Accepted)
+            {
+                var error = DescribeRejection(outcome.Rejection);
+                return outcome.Rejection == PositionCloseRejection.PositionNotFound
+                    ? Results.NotFound(new { error })
+                    : Results.UnprocessableEntity(new { error });
+            }
+
+            // FR-11: 監査（誰が・なぜ）を先に発行する。OrderApproved はアクターも理由も持たないため、これが無いと
+            // 手仕舞いの操作者が監査台帳に残らない。順序の根拠は「起きた操作に監査が無い」より「監査があるのに操作が
+            // 無い」ほうが安全（後者は同一 DecisionId の後続イベント不在で検知できる）。
+            await bus.PublishAsync(outcome.Requested!);
+            await bus.PublishAsync(outcome.Approval!);
+
+            // 約定は後から非同期に成立するため 202（200 ではない）。以降は既存経路（発注執行 → OrderExecuted → 台帳 → 通知）。
+            var intent = outcome.Approval!.Intent;
+            return Results.Accepted(value: new
+            {
+                decisionId = outcome.Approval.DecisionId,
+                symbol = intent.Symbol,
+                market = intent.Market,
+                side = intent.Side,
+                quantity = intent.Quantity,
+                price = intent.Price,
+                mode = intent.Mode,
+            });
+        });
+
+        // ---- GFV 違反による停止の解除（FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182）----
+        //
+        // **OwnerOnly。** ADR-0028 §結果 が「解除操作そのものが新たな攻撃面・誤操作面になる」と明記しており、
+        // 既存の破壊的統制操作（kill switch・pause）と同じ権限管理の下に置く。s2s トークンでは 403
+        // （生成AI・自動処理が統制を解けないようにする）。
+        //
+        // 🔴 **解除は記録を消さない**（決定1「違反記録は失効させない」）。解除行を追記するだけであり、
+        // 違反記録そのものは台帳に残る。
+        //
+        // 🔴 **未供給時の fail-closed は解けない。** 決定2 の解除は**記録が積まれた場合**の解除であり、
+        // 供給が無い場合の拒否を解除する手段ではない（本経路は件数にしか作用しない）。
+        //
+        // **解除の窓口は Discord Bot である**（決定3）。本エンドポイントはその実行先であり、
+        // 画面（SC-02 / SC-03）からは呼ばない（BFF にプロキシ経路を作らない）。
+        owner.MapPost("/good-faith-violations/clear",
+            async (GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc,
+                   IMessageBus bus, HttpContext http) =>
+        {
+            var outcome = svc.Clear(ActorOf(http), req.Reason ?? string.Empty);
+
+            if (!outcome.Accepted)
+            {
+                var error = DescribeGfvClearingRejection(outcome.Rejection);
+                return outcome.Rejection == GoodFaithViolationClearingRejection.NothingToClear
+                    ? Results.UnprocessableEntity(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            // FR-11, ADR-0028 決定2: **誰が・いつ・どの記録に対して**解除したかを中央監査集約へ発行する。
+            // 永続化（解除台帳）はサービス内で先に完了しており、それが権威（fail-safe・IADR-0082 と同型）。
+            await bus.PublishAsync(new GoodFaithViolationsCleared(
+                ActorOf(http), req.Reason!, outcome.ClearedOrderIds, outcome.RemainingCount,
+                outcome.ClearedAt!.Value));
+
+            return Results.Ok(new
+            {
+                clearedOrderIds = outcome.ClearedOrderIds,
+                clearedAt = outcome.ClearedAt,
+                // **0 とは限らない。**「解除したのに止まったまま」を利用者応答からも説明できるようにする。
+                remainingCount = outcome.RemainingCount,
+            });
+        });
+
+        // ---- 稼働状態の集約照会（FR-10, UC-07, ADR-0009）: 表示専用。Discord `/status` が参照する ----
+        // 3 統制の状態・優先順位・段階・当日損益・上限使用率・ポジションを 1 回で返す（設定変更は含まない）。
+        // 認可は OwnerOnly とする（読み取り系だが sizing-context / open-positions の OwnerOrService とは分ける）。
+        // 理由: 当日損益・ポジション等の機微情報を束ねた利用者向けサマリであり、サービス（trading-service）に開く
+        // 用途が無いため。最小権限（IADR-0051）に従い、必要のない読み取り権限をサービスへ与えない。
+        owner.MapGet("/status", (RiskStatusService svc) => Results.Ok(svc.Build()));
+
+        // ---- 空売りの現況（FR-10, UC-06, SC-03, ADR-0016 決定3/7/9/15, #340, IADR-0154）: 表示専用 ----
+        // 維持率（SC-03 の最上位）・空売り比率・保有建玉の方向・借株料の累計・維持率割れ自動縮小の現況。
+        // **応答は各指標の供給可否（MetricAvailability）を明示的に宣言する。** 維持率・借株料の累計・
+        // 発動履歴は供給元が無く、0 や空列で運ぶと画面が「正常な統制」として描いてしまう（#403 と同型の
+        // fail-open）。供給可否の判定はサーバ側にしか置けない——フロントへ「未供給」と書き込むと、
+        // 供給元が入った日に画面が嘘をつき続ける。
+        // 認可は /status と同じ OwnerOnly（機微情報を束ねた利用者向けサマリであり s2s の用途が無い）。
+        owner.MapGet("/short-selling", (ShortSellingStatusService svc) => Results.Ok(svc.Build()));
+
+        // ---- 設定（FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008） ----
+        owner.MapGet("/settings", (RiskSettingsService svc) => Results.Ok(svc.GetCurrent()));
+
+        owner.MapGet("/settings/history", (ISettingsChangeLog changeLog) => Results.Ok(changeLog.GetHistory()));
+
+        // FR-10, SC-02, UC-06, #362, IADR-0151 決定2: **リスク上限の値域はここで実効させる。**
+        //
+        // 本検査の導入前、当エンドポイントには値域検証が一切無く（`UpdateLimits` は actor / reason の空検査のみ）、
+        // `MaxOrderAmountRatio = 35000`（equity の 35,000 倍）をそのまま受理していた。SC-02 の保存が 400 に
+        // なっていたのは値が危険だからではなく、**フロントが送るキー名が required プロパティを満たさなかった**
+        // からにすぎない（#389 が意図的に据え置いた状態）。#362 でキー名を是正した以上、その偶然の防壁は消える。
+        //
+        // **画面（SC-02）にも同じ表があるが、実効はここである** —— 画面だけの統制は API 直叩きで消える
+        // （IADR-0141 決定1 と同じ判断）。規則の単一情報源は `RiskLimitBounds` であり、ここは 400 の details を
+        // 組み立てるために全件を受け取る（1 件ずつ直させると保存を何度も試させることになる）。
+        owner.MapPut("/settings/limits", (LimitsUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        {
+            var violations = RiskLimitBounds.Validate(req.Limits);
+            if (violations.Count > 0)
+            {
+                // 拒否時は設定を変更せず履歴も残さない（`UpdateLimits` を呼ばない）。
+                return Results.BadRequest(new
+                {
+                    error = "リスク上限の値が設定可能な範囲を外れています。",
+                    details = violations,
+                });
+            }
+
+            svc.UpdateLimits(req.Limits, ActorOf(http), req.Reason);
+            return Results.Ok(svc.GetCurrent());
+        });
+
+        owner.MapPut("/settings/stage", (StageUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        {
+            svc.UpdateStage(req.Stage, ActorOf(http), req.Reason);
+            return Results.Ok(svc.GetCurrent());
+        });
+
+        // FR-19, #375, ADR-0021 決定4-4: 口座が対応しない商品種別（現金口座での信用買い・空売り）の有効化は
+        // RiskSettingsService が ArgumentException で拒否する（＝400。設定も履歴も一切変えない）。
+        owner.MapPut("/settings/guard", (GuardUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        {
+            // 口座種別の省略は「変更しない」。現行値を渡して既定値 0 への暗黙束縛を防ぐ（GuardUpdateRequest 参照）。
+            var current = svc.GetCurrent().Guard.ConfiguredAccountType;
+            svc.UpdateGuard(req.ToGuardSettings(current), ActorOf(http), req.Reason);
+            return Results.Ok(svc.GetCurrent());
+        });
+
+        // ---- 発注先（FR-20, FR-12, FR-13, SC-02, INDEX 決定 46, #334, IADR-0140/0141）----
+        // 運用段階とは独立した軸であり、変更操作を持つ画面は SC-02 だけである（SC-03 は参照専用）。
+        // **実弾（moomoo REAL）への切替は「OK」1 押しで通してはならない**（FR-20 (1)）。同意フラグと
+        // 「REAL」の文字入力の両方を要求し、欠ければ 400 を返して設定を変更しない。画面だけの統制は
+        // API 直叩きで消えるため、サーバ側にも同じ関門を置く（IADR-0141 決定1）。
+        owner.MapPut("/settings/broker-provider",
+            (BrokerProviderUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        {
+            // 値域検証: provider の省略（null）は 400。非 nullable enum で受けると本文省略時に既定値 0
+            // （＝内蔵 paper）へ暗黙束縛され、「送っていない値へ黙って切り替わる」経路になる
+            // （段階遷移エンドポイントの TargetStage と同じ扱い）。
+            if (req.Provider is not { } target)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "provider は発注先（0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE）を指定してください。",
+                });
+            }
+
+            var assessment = svc.UpdateBrokerProvider(
+                new BrokerProviderChangeRequest(
+                    target,
+                    req.Reason ?? string.Empty,
+                    req.AcknowledgedLiveTrading,
+                    req.Acknowledgement),
+                ActorOf(http));
+
+            if (!assessment.Accepted)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "発注先の変更を受理できません。",
+                    details = assessment.Rejections.Select(DescribeBrokerProviderRejection).ToArray(),
+                });
+            }
+
+            // 受理時は更新後の設定と、段階との組み合わせに関する警告（拒否ではない）を返す。
+            return Results.Ok(new { settings = svc.GetCurrent(), skipsStageGate = assessment.SkipsStageGate });
+        });
+
+        // ---- Stage 1 の最小取引件数（FR-20, FR-13, SC-02, #423, 06_daytrading-review §4.1 条件 3, IADR-0164）----
+        // 2026-08-07 の裁定により、条件 3 の件数は SC-02 から変更できる設定値になった（既定 100・値域 1〜1000）。
+        // **100 件未満でも受理する**——裁定は「警告は設定を妨げない。下げた事実が記録に残ることを担保する」
+        // と定めている。警告は `Stage1GateCriteria.BelowStatisticalBasis`（GET /stage-gate）が宣言する。
+        // **ここで拒否すると裁定に反する**（利用者が下げられなくなる）。
+        owner.MapPut("/settings/stage1-minimum-trade-count",
+            (Stage1MinimumTradeCountUpdateRequest req, RiskSettingsService svc, HttpContext http) =>
+        {
+            // 省略（null）は 400。非 nullable int で受けると本文省略時に既定値 0 へ暗黙束縛され、
+            // 「送っていない値へ黙って切り替わる」経路になる（BrokerProviderUpdateRequest.Provider と同じ規律）。
+            // 0 は値域外のため実害は無いが、400 の文言を「省略」と「値域外」で分けられるようにする。
+            if (req.MinimumTradeCount is not { } value)
+            {
+                return Results.BadRequest(new { error = "minimumTradeCount（件数）は必須です。" });
+            }
+
+            if (Stage1TradeCountBounds.Validate(value) is { } violation)
+            {
+                // 拒否時は設定を変更せず履歴も残さない（`UpdateStage1MinimumTradeCount` を呼ばない）。
+                return Results.BadRequest(new
+                {
+                    error = "Stage 1 の最小取引件数が設定可能な範囲を外れています。",
+                    details = new[] { violation },
+                });
+            }
+
+            svc.UpdateStage1MinimumTradeCount(value, ActorOf(http), req.Reason ?? string.Empty);
+            return Results.Ok(svc.GetCurrent());
+        });
+
+        // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070）: 利用者のみ（OwnerOnly）----
+        // 承認による昇格・差し戻し。承認者＝認証済み利用者名。承認欠如時の遷移は純ドメインが構造的に拒否する。
+        // 認可は owner サブグループに付与し親グループには付けない（親は 403）。Discord（UC-06）承認は #15 Bot 基盤が
+        // trading-owner マップで本 OwnerOnly エンドポイントを呼ぶ（kill switch と同型・Bot ハンドラは後続）。
+        owner.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()));
+
+        owner.MapGet("/stage-gate/history", (StageGateService svc) => Results.Ok(svc.GetHistory()));
+
+        owner.MapPost("/stage-gate/transition",
+            async (StageTransitionRequest req, StageGateService svc, IMessageBus bus, HttpContext http) =>
+        {
+            // 値域検証: targetStage の省略（null）や範囲外 enum は 400。範囲外（負値・4 以上）の降格方向は
+            // StageGate 側の連番検証を素通りし StageGatePolicy.SettingsFor で KeyNotFoundException（500）になり得るため、
+            // サービス到達前に弾く（省略時の暗黙 Stage 0 差し戻しも防ぐ）。
+            if (req.TargetStage is not { } target || !Enum.IsDefined(target))
+            {
+                return Results.BadRequest(new { error = "targetStage は有効な運用段階（Stage 0〜3）を指定してください。" });
+            }
+
+            var result = svc.RequestTransition(target, ActorOf(http));
+
+            // FR-11, #167, IADR-0082: 受理時のみ中央監査集約のため StageTransitioned を発行する（拒否時は非発行）。
+            // 永続化（Risk 専有台帳 stage_transitions）はサービス内で先に完了しており、それが権威（fail-safe）。
+            // 段階/種別は Shared.Contracts が Risk.Domain へ依存しないよう primitive（int/文字列）へ写す。
+            if (result is { Accepted: true, Transition: { } t })
+            {
+                // FR-11, #466, §4.1 追補3（Q13-b）, IADR-0180: **警告を無視して昇格した事実**を監査へ残す。
+                // 昇格に絞らず**受理された遷移すべて**に載せる——絞ると降格の記録が「設定不明」になり、
+                // null が「昇格ではなかった」と「供給されなかった」の両方を意味してしまう。
+                await bus.PublishAsync(new StageTransitioned(
+                    t.Sequence, (int)t.FromStage, (int)t.ToStage, t.Kind.ToString(), t.ApprovedBy, t.Reason, t.OccurredAtUtc,
+                    result.Stage1Criteria.MinimumTradeCount, result.Stage1Criteria.BelowStatisticalBasis));
+            }
+
+            // 受理は 200、受理不能な遷移（未充足基準・飛び級・現段階指定）は 422 に写像する。
+            return result.Accepted ? Results.Ok(result) : Results.UnprocessableEntity(result);
+        });
+
+        // 撤退基準の評価＋自動安全側（HaltNewEntries なら kill switch を自動起動）。実降格は行わず降格提案を返す。
+        // 応答は撤退判定（Assessment）のみ（NewlyEngaged はドライバ #166 用の内部フラグ・API 契約は不変）。
+        owner.MapPost("/stage-gate/withdrawal/evaluate",
+            (StageGateService svc) => Results.Ok(svc.EvaluateWithdrawal().Assessment));
+
+        return app;
+    }
+
+    // #464, ADR-0028, IADR-0182: GFV 解除を受理しない理由を利用者向け文言に写す。
+    // **何が足りないかを具体的に返す**——「不正な要求です」では、理由が必須であること自体が伝わらない。
+    private static string DescribeGfvClearingRejection(GoodFaithViolationClearingRejection rejection) => rejection switch
+    {
+        GoodFaithViolationClearingRejection.ReasonRequired =>
+            "reason（解除の理由）は必須です。原因の是正が済んでいることを記録として残してください。",
+        GoodFaithViolationClearingRejection.ActorRequired => "解除者を特定できませんでした。",
+        GoodFaithViolationClearingRejection.NothingToClear =>
+            "解除できる GFV 違反記録がありません（停止していません）。"
+            + "**発生回数が未供給であることによる拒否は、本操作では解除できません**（ADR-0028）。",
+        _ => "解除要求を受理できません。",
+    };
+
+    // #292, IADR-0117: 決済要求の拒否理由を利用者向け文言に写す（HTTP ステータスは呼び出し側で分ける）。
+    private static string DescribeRejection(PositionCloseRejection rejection) => rejection switch
+    {
+        PositionCloseRejection.PositionNotFound => "該当する建玉がありません（全決済済みを含む）。",
+        PositionCloseRejection.InvalidQuantity => "quantity は 1 以上を指定してください。",
+        PositionCloseRejection.ExceedsAvailable =>
+            "決済数量が利用可能数量（建玉 − 処理中の決済）を超えています。処理中の決済の約定を待って再試行してください。",
+        PositionCloseRejection.PriceUnavailable =>
+            "決済価格を決められません（現在値を取得できず limitPrice も指定されていません）。limitPrice を指定してください。",
+        _ => "決済要求を受理できません。",
+    };
+
+    // FR-20, #334, IADR-0141: 発注先の変更を受理しない理由を利用者向け文言に写す。
+    // **何が足りないかを具体的に返す**——「不正な要求です」だけでは、確認操作を求められていること自体が伝わらず、
+    // 利用者は統制を回避する方向（API を直接叩く等）へ動機づけられる。
+    private static string DescribeBrokerProviderRejection(BrokerProviderChangeRejection rejection) => rejection switch
+    {
+        BrokerProviderChangeRejection.ReasonRequired =>
+            "変更理由は 1 文字以上を指定してください（監査のため必須）。",
+        BrokerProviderChangeRejection.LiveAcknowledgementMissing =>
+            "実弾（moomoo REAL）への切替には、実資金で執行されることへの同意が必要です。",
+        BrokerProviderChangeRejection.LivePhraseMismatch =>
+            $"実弾（moomoo REAL）への切替には「{BrokerProviderChange.LiveAcknowledgementPhrase}」の入力が必要です。",
+        BrokerProviderChangeRejection.UnknownProvider =>
+            "provider は 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE のいずれかを指定してください。",
+        _ => "発注先の変更を受理できません。",
+    };
+
+    // 認証済みトークンの名前（preferred_username）。OwnerOnly を通過している前提だが、null は unknown に倒す。
+    private static string ActorOf(HttpContext http) =>
+        http.User.Identity?.Name is { Length: > 0 } name ? name : "unknown";
+}
+
+// kill switch 操作の要求（理由必須・FR-11・ADR-0003）。
+public sealed record KillSwitchRequest(string Reason);
+
+// 一時停止/再開操作の要求（理由必須・FR-11・ADR-0009）。
+public sealed record PauseRequest(string Reason);
+
+// #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の解除要求。
+// **理由は必須**（`string?` で受けて空を明示的に弾く——非 nullable で受けると本文省略時に空文字へ
+// 暗黙束縛され、「理由なしの解除」が通る）。**確認フレーズは Discord 側の閂であり本文には含めない**
+// （kill switch と同型。窓口は Discord Bot＝決定3）。
+internal sealed record GoodFaithViolationClearRequest(string? Reason);
+
+// #292, IADR-0117: 建玉の手仕舞い要求（理由必須）。売買方向は含めない（建玉方向からサーバが決める）。
+// Market は nullable。非 nullable enum は本文省略時に既定値 0（＝Japan）へ暗黙束縛され、意図しない市場の建玉を
+// 対象にしてしまうため、省略を 400 として弾けるようにする。
+// Quantity 省略＝処理中を除いた残り全量。LimitPrice 省略＝現在値。
+internal sealed record PositionCloseRequest(
+    string? Symbol,
+    Market? Market,
+    int? Quantity,
+    decimal? LimitPrice,
+    string? Reason);
+
+// 上限変更の要求。RiskLimitSettings は具象プロパティのレコードで標準の逆直列化が可能。
+public sealed record LimitsUpdateRequest(RiskLimitSettings Limits, string Reason);
+
+// 段階変更の要求。
+internal sealed record StageUpdateRequest(StageSettings Stage, string Reason);
+
+// FR-20, FR-13, SC-02, #334: 発注先の変更要求。
+// Provider は nullable（省略・範囲外をエンドポイントで 400 に弾く。既定値 0 への暗黙束縛を防ぐ）。
+// AcknowledgedLiveTrading / Acknowledgement は**実弾（moomoo REAL）への切替でのみ**必須である
+// （計画: チェックボックスの同意と「REAL」の文字入力の両方。IADR-0141 決定1）。
+internal sealed record BrokerProviderUpdateRequest(
+    BrokerProvider? Provider,
+    string? Reason,
+    bool AcknowledgedLiveTrading = false,
+    string? Acknowledgement = null);
+
+// FR-20, FR-13, SC-02, #423: Stage 1 の最小取引件数の変更要求（理由必須・FR-11）。
+// MinimumTradeCount は nullable（省略をエンドポイントで 400 に弾く。既定値 0 への暗黙束縛を防ぐ）。
+internal sealed record Stage1MinimumTradeCountUpdateRequest(int? MinimumTradeCount, string? Reason);
+
+// FR-20, UC-06: 段階ゲート遷移の要求。承認者は要求本文ではなく認証済みトークン（OwnerOnly）から取る
+// （承認なりすまし防止）。TradingStage は既定 JSON では数値で往復する。TargetStage は nullable とし、省略や
+// 範囲外値をエンドポイントで 400 に弾く（省略時に既定値 0＝Stage 0 として暗黙処理されるのを防ぐ）。
+internal sealed record StageTransitionRequest(TradingStage? TargetStage);
+
+// ガード変更の要求。TradingGuardSettings は IReadOnlySet 等を用いるため、逆直列化可能な具象コレクションで受ける。
+internal sealed record GuardUpdateRequest(
+    List<ProductType> EnabledProductTypes,
+    List<Market> EnabledMarkets,
+    List<BannedSymbol> BannedSymbols,
+    bool PreventSameDayReentry,
+    bool ProhibitManipulativeOrderPatterns,
+    string Reason,
+    // FR-19, #375, ADR-0021 決定3: 利用者が設定した口座種別。
+    // **省略（null）は「変更しない」**であり、既定値 0（＝信用口座）へ暗黙束縛しない。本エンドポイントは
+    // 全置換 PUT であり、非 nullable enum で受けると**送り漏らした瞬間に口座種別が信用口座へ戻る**
+    // （禁止銘柄を 1 件足しただけで口座種別の設定が消える）。BrokerProviderUpdateRequest.Provider と同じ規律である。
+    AccountType? ConfiguredAccountType = null)
+{
+    public TradingGuardSettings ToGuardSettings(AccountType currentAccountType) => new()
+    {
+        EnabledProductTypes = new HashSet<ProductType>(EnabledProductTypes),
+        EnabledMarkets = new HashSet<Market>(EnabledMarkets),
+        BannedSymbols = BannedSymbols,
+        PreventSameDayReentry = PreventSameDayReentry,
+        ProhibitManipulativeOrderPatterns = ProhibitManipulativeOrderPatterns,
+        ConfiguredAccountType = ConfiguredAccountType ?? currentAccountType,
+    };
+}

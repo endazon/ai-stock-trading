@@ -117,15 +117,15 @@ issues: [#329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381,
 
 | 対象 | テストプロジェクト |
 | --- | --- |
-| 金額系上限の解決と判定（`RiskLimitSettings` / `RiskEvaluator`） | `RiskManagementService.Domain.Tests` |
-| 既定値の固定（`TradingDefaults` / `SimulatorTradingDefaults`） | `RiskManagementService.Domain.Tests` |
-| 日次発注枠のカウンタ（`PortfolioProjection`） | `RiskManagementService.Application.Tests` |
-| サイジング文脈・統制状態の上限解決（`SizingContextService` / `RiskStatusService`） | `RiskManagementService.Application.Tests` |
-| SIMULATE プロファイルの配線 | `RiskManagementService.Api.Tests` |
+| 金額系上限の解決と判定（`RiskLimitSettings` / `RiskEvaluator`） | `RiskManagementService.Tests` |
+| 既定値の固定（`TradingDefaults` / `SimulatorTradingDefaults`） | `RiskManagementService.Tests` |
+| 日次発注枠のカウンタ（`PortfolioProjection`） | `RiskManagementService.Tests` |
+| サイジング文脈・統制状態の上限解決（`SizingContextService` / `RiskStatusService`） | `RiskManagementService.Tests` |
+| SIMULATE プロファイルの配線 | `RiskManagementService.Tests` |
 | 計画確定値との適合（既知逸脱レジストリ） | `AiStockTrading.PlanConformance.Tests` |
-| **空売り専用統制 8 規則**（`ShortSellEvaluator` / `ShortSellingLimits` / `RiskEvaluator`） | `RiskManagementService.Domain.Tests` |
+| **空売り専用統制 8 規則**（`ShortSellEvaluator` / `ShortSellingLimits` / `RiskEvaluator`） | `RiskManagementService.Tests` |
 | **拒否理由のクラス分類**（`RejectionReasonClassification`） | `AiStockTrading.Shared.Contracts.Tests` |
-| **3 統制の優先順位**（`RiskStatusService` / `OrderScreeningService`） | `RiskManagementService.Application.Tests` |
+| **3 統制の優先順位**（`RiskStatusService` / `OrderScreeningService`） | `RiskManagementService.Tests` |
 
 対象外（担当 issue）: 維持率割れの自動縮小・商品種別 3 値化・段階ゲート・
 発注先の 2 軸分離・画面・空売り文脈の供給元。
@@ -542,7 +542,7 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 
 ## 借株料の累計（記録側）（#465。借株料は「建玉 × 取引日」で積み、未供給の日を別テーブル・別イベントで持つ）
 
-`BorrowFeeAccrualServiceTests`（`RiskManagementService.Application.Tests`）。
+`BorrowFeeAccrualServiceTests`（`RiskManagementService.Tests`）。
 **主眼は 2 つ** ——「**未供給の日を 0 として積まない**」（決定4）と「**供給が始まっていないこと**」（決定6）である。
 後者は値ではなく**構造**で見る。結線が生えた瞬間に赤くなる形でなければ、供給は静かに始まってしまう。
 
@@ -605,7 +605,7 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 `OrderExecutionServiceProtectiveStopTests` / `ProtectiveStopGuardTests` / `OrderApprovedConsumerTests` /
 `MoomooBrokerAdapterTests` / `EfProtectiveStopOrderStoreTests`（`OrderExecutionService.Tests`）・
 `StopLossTriggeredConsumerTests` / `RejectionSeparationTests` /
-`ProtectiveStopLedgerHandlersTests`（`RiskManagementService.Infrastructure.Tests`）。
+`ProtectiveStopLedgerHandlersTests`（`RiskManagementService.Tests`）。
 
 **主眼は 3 つ**——「**建玉あり ⇒ 有効な逆指値あり**」の不変条件（同時発注・未受理時の建玉解消/不成立の全分岐）、
 「**システムは到達検知で決済注文を発行しない**」（否定形。二重決済の防止）、

@@ -24,8 +24,8 @@ plan_refs:
 - 関連する計画書 ID: FR-20（段階ゲート）、ADR-0008（段階ゲートと資金上限）
 - 関連する実装仕様書: [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)
 - 対象 Issue: #27
-- 対象コード: [`PortfolioSnapshot.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/PortfolioSnapshot.cs)、
-  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
+- 対象コード: [`PortfolioSnapshot.cs`](../../backend/Services/RiskManagementService/Domain/PortfolioSnapshot.cs)、
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/Domain/RiskEvaluator.cs)
 
 ## コンテキストと課題
 
