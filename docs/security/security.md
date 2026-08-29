@@ -121,7 +121,7 @@ issues: [#24, #346, #450, #456, MSP#445]
 
 ### Discord からの操作 — **6 層。すべて既定拒否**（Discord 対話の要求と設定変更・緊急停止のユースケース。Bot は Gateway 常駐＋多層認証とし、既定 no-op・owner トークンで kill switch を呼ぶ）
 
-`DiscordCommandAuthorizer`（`backend/Services/NotificationService/src/NotificationService.Application/Services/DiscordCommandAuthorizer.cs`）。**1 層でも不成立なら以降を評価せず拒否する。**
+`DiscordCommandAuthorizer`（`backend/Services/NotificationService/Features/Notifications/DiscordCommandAuthorizer.cs`）。**1 層でも不成立なら以降を評価せず拒否する。**
 
 | 層 | 内容 | 未設定時 |
 | --- | --- | --- |

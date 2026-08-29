@@ -50,16 +50,10 @@
     <Project Path="Services/AuditService/AuditService.csproj" />
     <Project Path="Services/AuditService/Tests/AuditService.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/NotificationService/" />
-  <Folder Name="/Services/NotificationService/src/">
-    <Project Path="Services/NotificationService/src/NotificationService.Application/NotificationService.Application.csproj" />
-    <Project Path="Services/NotificationService/src/NotificationService.Infrastructure/NotificationService.Infrastructure.csproj" />
-    <Project Path="Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/NotificationService/tests/">
-    <Project Path="Services/NotificationService/tests/NotificationService.Application.Tests/NotificationService.Application.Tests.csproj" />
-    <Project Path="Services/NotificationService/tests/NotificationService.Infrastructure.Tests/NotificationService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/NotificationService/tests/NotificationService.Api.Tests/NotificationService.Api.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（MSP:IADR-0282 決定1 と同一樹形。W11 段 4-6）。 -->
+  <Folder Name="/Services/NotificationService/">
+    <Project Path="Services/NotificationService/NotificationService.csproj" />
+    <Project Path="Services/NotificationService/Tests/NotificationService.Tests.csproj" />
   </Folder>
   <Folder Name="/Services/MarketMonitorService/">
     <Project Path="Services/MarketMonitorService/MarketMonitorService.csproj" />
