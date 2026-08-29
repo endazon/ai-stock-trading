@@ -15,8 +15,9 @@ namespace TradeDecisionService.Features.TradeDecision;
 //   | それ以外（`finnhub-news` / `google-news` / `sec-edgar` / `edinet` / `boj` / `fred` 等） | ニュース/開示 | 段 3 で古い順・関連度の低い順に削る |
 //
 // **確定した日報の方針は材料ですらない**（プロンプトの骨格＝共有保護分としてサイズだけ数える）。
-// 発行時刻は KnowledgeHit が持たないため現状 null（＝最古扱いで先に削る保守側）。供給は KB 契約の拡張
-// （別作業。IADR-0247 残余リスク）。
+// 発行時刻は RetrievedContext.PublishedAt（KnowledgeHit 由来）をそのまま渡す（#568・IADR-0247 残余
+// リスクの解消・IADR-0270）。取得できなかった材料は null のままであり、プランナ側の保守側既定
+// （発行時刻不明＝最古扱いで先に削る）へ倒れる。
 public static class ScreeningContextAssembler
 {
     // 語彙は RetrievalSourcePolicy.Default（＝収集側 SourceAllowlist）と同一。市況源と欠測明示のみ保護。
@@ -62,7 +63,7 @@ public static class ScreeningContextAssembler
                 ? ScreeningMaterialKind.RagReference
                 : ScreeningMaterialKind.NewsDisclosure;
             reducible.Add((reference, new ScreeningMaterial(
-                i, kind, EstimateChars(reference), PublishedAt: null, reference.Score)));
+                i, kind, EstimateChars(reference), reference.PublishedAt, reference.Score)));
         }
 
         // 保護分: プロンプト骨格 + 方針全文（共有）と、銘柄行 + 現在値行 + 保護参考情報（銘柄側）。
