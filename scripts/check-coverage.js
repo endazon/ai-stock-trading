@@ -27,8 +27,10 @@
  *   1. **CI は Release ビルド**である（ci.yml の build-and-test）。Debug で測ると行数が変わり
  *      CI と違う値が出る（実測: Debug 63.11% vs Release 61.10%）。
  *   2. **bin / obj / TestResults の残骸が混入する**（#353）。過去の実行が残っていると分母・分子とも
- *      水増しされる（実測: 未清掃 64.99%・レポート 255 件 / 清掃後 51 件）。
- *      → 本スクリプトが出す**レポート件数**が普段の件数と乖離していたら残骸を疑うこと。
+ *      水増しされる（当時の実測: 未清掃 64.99%・レポート 255 件 / 清掃後 51 件）。
+ *      → 本スクリプトが出す**レポート件数**が `node scripts/list-test-projects.js --count` と
+ *      一致しない場合は残骸を疑うこと。**期待値をここへ書かない** —— テストプロジェクト数は
+ *      移送や統廃合で動く（実測で 51 → 20 になった）ため、固定値を書くと必ず腐る。
  *
  * 使い方:
  *   node scripts/check-coverage.js                     # coverage-floor.json の floor で検査
@@ -93,13 +95,57 @@ function findReports(dir) {
 }
 
 /**
+ * Cobertura の `<sources><source>…</source></sources>` を読む（#562）。
+ * coverlet が出す `class/@filename` は**この根からの相対パス**であり、根は
+ * **テストプロジェクトごとに違う**。根を無視して `filename` を集計キーにすると、
+ * 同一の実ファイルが別キーとして数えられる。
+ */
+function readSourceRoots(xml) {
+  const block = String(xml).match(/<sources\b[^>]*>([\s\S]*?)<\/sources>/);
+  if (!block) return [];
+  return [...block[1].matchAll(/<source>([\s\S]*?)<\/source>/g)]
+    .map((m) => m[1].trim())
+    .filter(Boolean);
+}
+
+/** パスが絶対か（POSIX の `/` と Windows の `C:\` の両方を見る）。 */
+function isAbsolutePath(p) {
+  return /^([/\\]|[A-Za-z]:[/\\])/.test(String(p));
+}
+
+/**
+ * #562: `class/@filename` を `<source>` 根と結合して**絶対パスの集計キー**へ解決する。
+ *
+ * 🔴 これが本検査器の同一性の定義である。ここが根を無視すると、
+ * `Shared.Contracts` のように**複数のテストプロジェクトのレポートに現れるファイル**が
+ * レポートの数だけ分母へ積まれる（実測で 70 ファイルが丸ごと二重計上されていた）。
+ *
+ * 根が複数ある場合は**実在する結合を優先**する。判定を差し替えられるようにしてあるのは、
+ * ファイルシステムに触れずに肯定・否定の両方を固定できるようにするためである。
+ */
+function resolveCoverageKey(filename, sourceRoots, exists) {
+  const raw = String(filename).replace(/\\/g, '/');
+  if (isAbsolutePath(raw) || !sourceRoots || sourceRoots.length === 0) return normalizePath(raw);
+
+  const joined = sourceRoots.map((root) =>
+    normalizePath(`${String(root).replace(/\\/g, '/').replace(/\/+$/, '')}/${raw.replace(/^\/+/, '')}`)
+  );
+  if (joined.length === 1) return joined[0];
+  const probe = typeof exists === 'function' ? exists : fs.existsSync;
+  return joined.find((p) => probe(p)) || joined[0];
+}
+
+/**
  * Cobertura XML から (ファイル, 行番号) → 被覆有無を積み上げる。
  * XML パーサを持ち込まずに済む範囲の単純な走査で足りる（属性順は coverlet が固定）。
+ *
+ * キーは `<source>` 根を解決した絶対パスである（#562。上の `resolveCoverageKey` を参照）。
  */
-function accumulate(xml, acc) {
+function accumulate(xml, acc, options = {}) {
+  const roots = readSourceRoots(xml);
   const classPattern = /<class\b[^>]*\bfilename="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
   for (const cls of xml.matchAll(classPattern)) {
-    const filename = cls[1];
+    const filename = resolveCoverageKey(cls[1], roots, options.exists);
     let lines = acc.get(filename);
     if (!lines) {
       lines = new Map();
@@ -133,9 +179,15 @@ function summarize(acc) {
  * Cobertura の filename を比較用に正規化する。
  * 区切りを `/` に揃え、先頭へ `/` を 1 つ置く（絶対パス・相対パスのどちらで出力されても
  * `**\/` 始まりのパターンが同じように当たるようにするため）。
+ *
+ * 🔴 `..` / `.` のセグメントも解決する（#562 のレビュー指摘）。ここが解決しないと、
+ * `<source>` 根と相対 `filename` の単純結合で `…/Other/../Contracts/X.cs` のようなキーが生まれ、
+ * **同一の実ファイルが再び別キーとして二重計上される**。本関数は集計キーと除外パターン照合の
+ * 両方が通る唯一の関門なので、ここで畳んでおく。
  */
 function normalizePath(filename) {
-  return '/' + String(filename).replace(/\\/g, '/').replace(/^\/+/, '');
+  const slashed = '/' + String(filename).replace(/\\/g, '/').replace(/^\/+/, '');
+  return path.posix.normalize(slashed);
 }
 
 /**
@@ -538,6 +590,9 @@ module.exports = {
   parseArgs,
   findReports,
   accumulate,
+  readSourceRoots,
+  isAbsolutePath,
+  resolveCoverageKey,
   summarize,
   readFloor,
   readConfig,

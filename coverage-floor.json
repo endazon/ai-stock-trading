@@ -12,7 +12,7 @@
     "測定は Release ビルドかつ bin/obj/TestResults を清掃した状態で行うこと（罠の詳細は",
     ".ai-context/specs/20260805_coverage-exclude-generated.md の『測定手順』を参照）。"
   ],
-  "lineRateFloor": 0.79,
+  "lineRateFloor": 0.83,
   "maxExcludedLineShare": 0.35,
   "exclude": [
     {
@@ -24,7 +24,7 @@
       "reason": "dotnet ef が生成するモデル全体のスナップショット。理由は同上（実測 0/767 行・7 ファイル）。なお手書きのマイグレーション本体（Up/Down）は人が編集し得るため除外しない（IADR-0143 決定2）"
     }
   ],
-  "measuredAt": "2026-08-05",
-  "measuredLineRate": 0.8155,
-  "measuredNote": "Release ビルド・bin/obj/TestResults 清掃済み・Category!=Integration・51 レポート。除外後 10794/13236 行 = 81.55%（除外前 10794/17402 行 = 62.03%）。develop 5df9049 での実測。floor は check-coverage.js の RATCHET_MARGIN=0.02 を引いた値（--suggest の候補と同一）。"
+  "measuredAt": "2026-08-29",
+  "measuredLineRate": 0.853,
+  "measuredNote": "Release ビルド・bin/obj/TestResults 清掃済み・Category!=Integration・20 レポート（= list-test-projects --count と一致）。除外後 16208/19001 行 = 85.30%。develop 145446a での実測。floor は check-coverage.js の RATCHET_MARGIN=0.02 を引いた値（--suggest の候補と同一）。#562 で集計キーを cobertura の <source> 根で正規化したため、同一レポート集合でも 82.50%（16504/20006）→ 85.30%（16208/19001）へ +2.80pt 変わっている（分母 −1005 行・分子 −296 行）。数値が飛んで見えるのはテストが増えたからではなく、二重計上をやめたためである。"
 }
