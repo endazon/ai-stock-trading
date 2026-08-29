@@ -14,18 +14,21 @@ public interface IRetrievalContextProvider
 }
 
 // FR-08, IADR-0072: RAG で引いた参考情報 1 件（KnowledgeHit の Application 側写像）。
-//   Title     — 出典文書のタイトル。
-//   Text      — 検索ヒットの本文抜粋（プロンプト側で長さを切り詰める）。
-//   SourceUri — 出典参照（あれば）。
-//   Score     — 関連度スコア（並び順の参考。プロンプトには出さない）。
-//   Tags      — 出所タグ（FR-04, ADR-0003, #252, IADR-0169）。**出典限定の判定に使う**。
-//               収集側は KB へ書くとき収集ソース名を載せる（KnowledgeBaseWriterSink）。空＝出所不明＝注入しない。
+//   Title       — 出典文書のタイトル。
+//   Text        — 検索ヒットの本文抜粋（プロンプト側で長さを切り詰める）。
+//   SourceUri   — 出典参照（あれば）。
+//   Score       — 関連度スコア（並び順の参考。プロンプトには出さない）。
+//   Tags        — 出所タグ（FR-04, ADR-0003, #252, IADR-0169）。**出典限定の判定に使う**。
+//                 収集側は KB へ書くとき収集ソース名を載せる（KnowledgeBaseWriterSink）。空＝出所不明＝注入しない。
+//   PublishedAt — 発行時刻（FR-02, FR-04, #568）。ScreeningContextAssembler が段③（古い順）の
+//                 並び替え鍵として使う。KnowledgeHit と同じく取得不能なら null（最古扱いの保守側既定）。
 public sealed record RetrievedContext(
     string Title,
     string Text,
     string? SourceUri = null,
     double Score = 0d,
-    IReadOnlyList<string>? Tags = null)
+    IReadOnlyList<string>? Tags = null,
+    DateTimeOffset? PublishedAt = null)
 {
     /// <summary>出所タグ（null は空として扱う。<b>空は「出所不明」であり注入しない</b>）。</summary>
     public IReadOnlyList<string> Tags { get; init; } = Tags ?? [];

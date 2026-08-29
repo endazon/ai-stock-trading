@@ -55,6 +55,77 @@ public class HttpKnowledgeBaseSearchTests
         handler.LastRequestUri.Should().Be("http://retrieval/search");
     }
 
+    // FR-08, #568: 供給側（platform 検索応答）の attributes.publishedAt を KnowledgeHit.PublishedAt へ写像する
+    // （対の肯定形。IADR-0247 残余リスクの解消・IADR-0270）。
+    [Fact]
+    public async Task publishedAt属性をKnowledgeHitのPublishedAtへ写像する()
+    {
+        var expected = new DateTimeOffset(2026, 8, 20, 9, 30, 0, TimeSpan.Zero);
+        var json = JsonSerializer.Serialize(new
+        {
+            results = new[]
+            {
+                new
+                {
+                    chunkId = Guid.NewGuid(),
+                    documentId = Guid.NewGuid(),
+                    documentTitle = "重要ニュース",
+                    text = "本文",
+                    score = 0.5f,
+                    markdownUri = (string?)null,
+                    attributes = new Dictionary<string, string> { ["publishedAt"] = expected.ToString("O") },
+                    tags = new[] { "google-news" },
+                },
+            },
+            totalHits = 1,
+            elapsedMs = 3,
+        });
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, json);
+        var search = CreateSearch(handler);
+
+        var hits = await search.SearchAsync(new KnowledgeQuery("q"));
+
+        hits.Should().ContainSingle().Which.PublishedAt.Should().Be(expected);
+    }
+
+    // FR-08, #568: 対の否定形（保守側既定）。attributes に publishedAt が無い／解釈できない値は
+    // すべて null に倒す（捏造しない。ScreeningContextPlanner 段③の最古扱いへつながる）。
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-date")]
+    public async Task publishedAt属性が無いか解釈不能ならPublishedAtはnullに倒す(string? rawValue)
+    {
+        var attributes = rawValue is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string> { ["publishedAt"] = rawValue };
+        var json = JsonSerializer.Serialize(new
+        {
+            results = new[]
+            {
+                new
+                {
+                    chunkId = Guid.NewGuid(),
+                    documentId = Guid.NewGuid(),
+                    documentTitle = "発行時刻不明の記事",
+                    text = "本文",
+                    score = 0.5f,
+                    markdownUri = (string?)null,
+                    attributes,
+                    tags = Array.Empty<string>(),
+                },
+            },
+            totalHits = 1,
+            elapsedMs = 1,
+        });
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, json);
+        var search = CreateSearch(handler);
+
+        var hits = await search.SearchAsync(new KnowledgeQuery("q"));
+
+        hits.Should().ContainSingle().Which.PublishedAt.Should().BeNull();
+    }
+
     [Fact]
     public async Task クエリとTopKを本文に写像する()
     {
