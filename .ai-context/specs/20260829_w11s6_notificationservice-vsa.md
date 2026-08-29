@@ -468,3 +468,28 @@ node scripts/check-coverage.js --root cov
 中断した `dotnet test` が生きたまま `bin`/`obj` を消すと、**走行中のビルドと消去が競合**して
 上の 1 と見分けのつかないエラーになる。`pgrep -c dotnet` が 0 になるまで確認してから消すこと
 （`dotnet build-server shutdown` だけでは MSBuild のワーカーノードが残る）。
+
+## 最終再検証（コミット後・再開セッションで実施）
+
+上記のコミット3本（移送本体・develop 取り込みマージ・検証手順の申し送り追記）の後、
+作業ツリーを一度完全に片付けてから独立に再検証した。**restore 先行の手順**（上記「落とし穴1」）
+を使い、レースを一切踏まずに 1 回で通った。
+
+- `dotnet build-server shutdown` → `bin`/`obj`/`TestResults` 全消去 → 空ディレクトリ削除
+  （`find backend -type d -empty -delete`。develop 取り込みの残骸
+  `backend/Services/MarketMonitorService/tests/{Application,Domain}.Tests` を含む）
+- `dotnet restore backend/backend.slnx`（exit 0）→ `dotnet build backend/backend.slnx --no-restore`
+  → **0 Warning / 0 Error**（Elapsed 00:00:49）
+- `dotnet test backend/backend.slnx --no-build` → **35 アセンブリ中、失敗は
+  `AiStockTrading.IntegrationTests` の 8 件のみ**（`NotificationService.Tests` は 398/398）
+- `dotnet format backend/backend.slnx --verify-no-changes` → exit 0
+- `node scripts/list-test-projects.js --count` → **35**（`backend/Services/*/**/*.Tests.csproj` の
+  物理ファイル数と一致。37 → 35 の突合はこの値で確認済み）
+- 検査器一式（`check-*.js` 20 種 ＋ `gen-knowledge-graph.js --check` ＋
+  `validate-pipeline-config.js` ＋ `validate-runtime-scaffold.js` ＋
+  `node --test scripts/scripts.test.js scripts/scripts.repo.test.js`）→ **全て exit 0**
+  （`check-adr-index-sync.js` も緑。develop 取り込みで base が揃ったため、
+  「想定外1」で記録した IADR-0090 の誤検出は再発しなかった）
+- カバレッジ（restore 先行・Release・`-m:1`・`--no-build` で再測定）: **82.24%**
+  （floor 79.00%。上記「落とし穴2」の 82.27% とは 0.03pt の差——テスト実行順序に依存する
+  カバレッジ計装の測定誤差の範囲内であり、いずれも floor を大きく上回るため実害なし）
