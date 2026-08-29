@@ -1,0 +1,40 @@
+<!-- #11 Slice A, IADR-0013/0017, NFR/IADR-0259 決定1, IADR-0263/IADR-0264 決定3: 取引判断サービス。
+     単一プロジェクト＋VSA/DDD フォルダ構成（層プロジェクト .Api/.Application/.Domain/.Infrastructure は撤去し、
+     Features/・Domain/・Common/・Infrastructure/ のフォルダで境界を表す。基盤 MSP:IADR-0282 決定1 と
+     同一樹形）。ヘルスチェックの HTTP サーフェスのため Web SDK を使用。判断はステートレス（DB なし）。
+     LLM/為替/監視銘柄/日報/建玉の各アダプタ・PriceMovementDetected / InformationCollected の consumer は
+     Infrastructure/ に置く。FR-17, NFR, #526, IADR-0264 決定1: 旧 ConfigurationService.Client の呼び出し元
+     複製（前提条件解決）は Infrastructure/ExternalServices/ にある。実行時基盤は test-support shim
+     （本番非使用・IADR-0013）を参照する。実 LLM/実データはプレースホルダ（安全既定＝取引しない）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
+         （入れ子のままだと二重コンパイルで CS0246 が出る。基盤が実測済み・NFR/IADR-0259）。 -->
+    <Compile Remove="Tests/**" />
+    <Content Remove="Tests/**" />
+    <None Remove="Tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!-- IADR-0003/0017: サイジングは判断サービスの責務。PositionSizer/RiskLimitSettings/TradingDefaults を参照する
+         （ロジックの単一情報源を複製しない。未移送サービスへのクロスサービス参照 ── IADR-0260 の射程外）。 -->
+    <ProjectReference Include="..\RiskManagementService\src\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
+    <!-- Domain/ が共有イベント契約・値型を使うため参照する（旧 TradeDecisionService.Domain.csproj の直接参照を継承）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- FR-17, NFR/IADR-0260/IADR-0264 決定1: 全体前提条件（VersionedAssumptions）はサービスを跨いで
+         消費されるため共有カーネルに置く。Infrastructure/ExternalServices の複製ファイルが参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
+    <!-- FR-08, IADR-0069/0072: RAG 取得ポート IKnowledgeBaseSearch（#18 共有クライアント）を判断文脈へ結線するため参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
+    <!-- FR-02, IADR-0068/0099: 判断文脈の現在値供給に共有の現在値ソース（MarketDataSourceFactory・IMarketDataSource）を用いるため参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- FR-17, NFR, #526, IADR-0264 決定1: 前提条件の解決（ExternalServices/）は s2s トークン付与
+         （AddAiStockTradingServiceToken）を使うため shim を参照する。旧 ConfigurationService.Client が
+         持っていた参照を、複製先である本プロジェクトが引き継いだもの。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+  </ItemGroup>
+</Project>

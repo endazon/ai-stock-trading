@@ -72,7 +72,7 @@ HTTP 疎通（ヘルスチェック `/health/live`・`/health/ready`、同期照
   標準プロジェクト構成の実装ADR）に設定する。例:
 
   ```sh
-  cd backend/Services/TradeDecisionService/src/TradeDecisionService.Api
+  cd backend/Services/TradeDecisionService
   dotnet user-secrets init
   dotnet user-secrets set "Anthropic:ApiKey" "<your-key>"
   ```
