@@ -104,8 +104,17 @@ C# は自分の名前空間の**祖先**を暗黙に探索する。移送前は
 移送でテストが `ReportService.Tests` へ、例外が `ReportService.Common.Exceptions` へ移った瞬間、
 **祖先関係が消えて一斉に `CS0246`／`CS0103` になる**。クリーンビルドで観測したエラー数の推移は
 **4 → 89 → 54 → 6 → 0**（1 回のビルドでは全容が出ない。指示 (b) のとおり）。
-是正は **`using` の追加のみ・22 ファイル**（`using ReportService.Domain;` を 18 ファイル、
-`using ReportService.Common.Exceptions;` を 4 ファイル）で、**テスト本文・アサーションは 1 行も変えていない**。
+是正は **`using` の追加のみ・27 ファイル**（`using ReportService.Domain;` を 19 ファイル、
+`using ReportService.Common.Exceptions;` を 8 ファイル）で、**テスト本文・アサーションは 1 行も変えていない**。
+
+［2026-08-29 追記 / #599］🔴 **当初の記載「22 ファイル（18 + 4）」は誤りだった**（レビュー指摘）。
+`git diff origin/develop...HEAD --unified=0` で追加行を数え直した実測は
+**`ReportService.Domain` が 19 ファイル・`ReportService.Common.Exceptions` が 8 ファイル＝計 27 ファイル**である
+（同一ファイル内の重複を排除したファイル単位の数）。**是正の中身（`using` の追加のみ・本文無変更）は変わらない。**
+数え漏れていたのは `Infrastructure/Persistence/EfReportStore.cs`・`Features/Reports/{IReportStore,ReportAutoGenerator,ReportEndpoints}.cs` など、
+**テストではなく実装側のファイル**であった —— 「テストの名前空間フラット化で壊れる」と考えて
+**テストだけを数えていた**のが原因である。**実装側も同じ親名前空間の暗黙解決に依存していた。**
+🔴 **最後の 1 本への含意: `using` 追随はテストだけの現象ではない。実装ファイルも数える。**
 **この型の事故は `using` の走査でも `grep` でも事前に見つからない**——**壊れる前のソースには
 その `using` が存在しないからである**。クリーンビルドの 1 回目でしか出ない。
 
