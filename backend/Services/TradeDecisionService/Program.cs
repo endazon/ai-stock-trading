@@ -87,13 +87,6 @@ builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovern
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
 
-// FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
-// フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
-builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovernanceReporter(
-    sp.GetRequiredService<IMessageBus>(),
-    sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
-
 builder.Services.AddScoped<ILlmCompletionClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
