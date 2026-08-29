@@ -602,9 +602,9 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 
 ## 損切りのブローカー側逆指値への一本化（#331。保護逆指値の同時発注・建玉解消・失効ガード・見送り）
 
-`OrderExecutionServiceProtectiveStopTests` / `ProtectiveStopGuardTests`（`OrderExecutionService.Application.Tests`）・
-`OrderApprovedConsumerTests` / `MoomooBrokerAdapterTests` / `EfProtectiveStopOrderStoreTests`
-（`OrderExecutionService.Infrastructure.Tests`）・`StopLossTriggeredConsumerTests` / `RejectionSeparationTests` /
+`OrderExecutionServiceProtectiveStopTests` / `ProtectiveStopGuardTests` / `OrderApprovedConsumerTests` /
+`MoomooBrokerAdapterTests` / `EfProtectiveStopOrderStoreTests`（`OrderExecutionService.Tests`）・
+`StopLossTriggeredConsumerTests` / `RejectionSeparationTests` /
 `ProtectiveStopLedgerHandlersTests`（`RiskManagementService.Infrastructure.Tests`）。
 
 **主眼は 3 つ**——「**建玉あり ⇒ 有効な逆指値あり**」の不変条件（同時発注・未受理時の建玉解消/不成立の全分岐）、

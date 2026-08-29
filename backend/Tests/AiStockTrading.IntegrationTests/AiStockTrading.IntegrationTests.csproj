@@ -23,8 +23,9 @@
     <!-- NFR, ADR-0013, IADR-0129, #354: fan-out の実配線検証（RabbitMqTopologyProbe）が実ブローカへ
          受動宣言で問い合わせるために用いる。版はルート Directory.Packages.props の CPM で一元管理。 -->
     <PackageReference Include="RabbitMQ.Client" />
-    <!-- 発注執行 Worker は無名（global）参照。`Program` = 発注執行（Slice A・既存テストは無改修）。 -->
-    <ProjectReference Include="..\..\Services\OrderExecutionService\src\OrderExecutionService.Api\OrderExecutionService.Api.csproj" />
+    <!-- 発注執行 Worker は無名（global）参照。`Program` = 発注執行（Slice A・既存テストは無改修）。
+         NFR/IADR-0259 決定1, IADR-0263: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-8）。 -->
+    <ProjectReference Include="..\..\Services\OrderExecutionService\OrderExecutionService.csproj" />
     <!-- リスク管理 Worker は extern alias で参照し `Program` の曖昧を回避する（Slice B/C・IADR-0050 決定1）。
          新規テストは `extern alias RiskManagementWorker;` で RiskManagementWorker::Program を指す。 -->
     <!-- IADR-0128: ホストは <Svc>.Api へ再配置済み。extern alias 名（RiskManagementWorker）は
