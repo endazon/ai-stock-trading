@@ -373,6 +373,15 @@ BacktestService「判断3」（[20260829_w11s4d](20260829_w11s4d_backtestservice
 - [x] `dotnet format backend/backend.slnx --verify-no-changes` が通る（exit 0）
 - [x] `dotnet ef migrations has-pending-model-changes` は対象外（DbContext 0 件。実測証跡を上記に記録）
 - [x] `list-test-projects.js --count` が移送前より 2 少ない（40 → 38）
+
+  ［2026-08-29 追記 / #591］**この 40 → 38 は base `5ec764a` に対する値である。**
+  その後 develop（`35b330a`＝MarketMonitorService #590 の移送を含む）を取り込んだため、
+  **PR の最終状態では 37 → 35 になる**（#590 がテストプロジェクトを 3 本減らしたぶん、
+  移送前後とも 3 少ない）。**どちらも正しく、基準が違うだけである。**
+  🔴 併せて訂正する: 上の「母集合の引き直し」節はタスク文の「37」を*古い*と書いたが、
+  **37 は取り込み後の base に対して正しい値**であり、古かったのは比較の基準の側である。
+  **`--count` のような導出値は、develop 取り込みの前後で必ず変わる。**
+  記録するときは*どの base に対する値か*を必ず添えること（残り 4 本への申し送り）。
 - [x] `coverage-floor.json` の床（79.00%）を割らない（実測は「検証（再測定）」節）
 - [x] 検査器一式（`scripts/README.md` 掲載分）が緑（`check-adr-index-sync.js` の一時的な赤は
       base の世代遅れが原因であり、rebase 後に解消したことを「検証（再測定）」節で確認する）
