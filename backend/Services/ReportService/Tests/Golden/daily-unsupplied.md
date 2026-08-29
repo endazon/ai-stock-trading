@@ -25,26 +25,13 @@ confidentiality: internal
 | モデル利用不能による取引判断スキップ | **供給されていません**（0 件ではありません） |
 | 日次目標に対する達成 | （データ連携後） |
 
-## 2. 市況・振り返り
+## 2. 取引履歴（全明細）
 
-当期間は指数が上昇し、押し目買いが機能した。
+- **取引履歴を照会できませんでした（供給元がありません）**: 「当日の約定なし」とは区別しています。**0 件ではありません。**
 
-## 3. 翌営業日の方針
+## 3. ポジション一覧（当日終了時点）
 
-監視銘柄は AAPL・TSLA。1 注文の上限は equity の 25%。
-
-```yaml
-report_type: daily
-period: 2026-08-28
-status: fixed
-based_on: weekly-2026-W35
-assumptions_version: v3
-confidentiality: internal
-trading_conditions: null
-trading_conditions_note: >-
-  構造化された売買条件は供給されていない（方針本文は散文である）。
-  未供給であり「条件なし」ではない。散文からの推測でこの欄を埋めてはならない。
-```
+- **建玉を照会できませんでした（供給元がありません）**: 「建玉なし」とは区別しています。**0 件ではありません。**
 
 ## 4. リスク統制の記録
 
@@ -63,3 +50,24 @@ trading_conditions_note: >-
 ### 空売りの記録（当日）
 
 - **借株コストを照会できませんでした（供給元がありません）**: 「0 USD」とは区別しています。**費用が無かったのではありません。**
+
+## 5. 市況・振り返り
+
+当期間は指数が上昇し、押し目買いが機能した。
+
+## 6. 翌営業日の方針
+
+監視銘柄は AAPL・TSLA。1 注文の上限は equity の 25%。
+
+```yaml
+report_type: daily
+period: 2026-08-28
+status: fixed
+based_on: weekly-2026-W35
+assumptions_version: v3
+confidentiality: internal
+trading_conditions: null
+trading_conditions_note: >-
+  構造化された売買条件は供給されていない（方針本文は散文である）。
+  未供給であり「条件なし」ではない。散文からの推測でこの欄を埋めてはならない。
+```

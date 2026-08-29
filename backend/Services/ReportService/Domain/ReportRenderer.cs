@@ -46,28 +46,27 @@ public static class ReportRenderer
             sb.Append(CultureInfo.InvariantCulture, $"| {label} | {value} |\n");
         sb.Append('\n');
 
-        // 2. 散文（LLM ドラフト）。数値は含めない。
-        sb.Append(CultureInfo.InvariantCulture, $"{narrativeHeading}\n\n");
-        sb.Append(string.IsNullOrWhiteSpace(view.Narrative) ? "（散文ドラフトなし）" : view.Narrative.Trim());
-        sb.Append("\n\n");
-
-        // 3. 翌期間の方針（確定で取引方針として有効化される）。
-        sb.Append(CultureInfo.InvariantCulture, $"{policyHeading}\n\n");
-        sb.Append(string.IsNullOrWhiteSpace(view.PolicySummary) ? "（方針未設定）" : view.PolicySummary.Trim());
-        sb.Append("\n\n");
-
-        // INDEX 決定29, #338, IADR-0252: 目標値の **YAML ブロック併記**。
-        // 表（人間可読）と YAML（機械可読）を併記し、**取引判断サービスは YAML だけを読む**。
-        sb.Append(ReportPolicyYaml.Render(view));
-
-        // 4. リスク統制の記録（維持率割れによる自動縮小／強制買戻しの推定）。
-        // 日報＝明細・月報＝回数（04_report-templates・ADR-0016 決定15）。
-        AppendMarginReductions(sb, view);
-        AppendFxSourceStatus(sb, view);
-        AppendBuyInInferences(sb, view);
-        AppendShortSelling(sb, view);
-        AppendControlActivations(sb, view);
-        AppendLlmModelUsage(sb, view);
+        // 🔴 #563, IADR-0269: **日報だけ**、サマリの直後に §2 取引履歴（全明細）・取引詳細・見送り判断と
+        // §3 ポジション一覧が入り、リスク統制の記録（§4）→ 散文（§5）→ 翌営業日の方針（§6）と続く。
+        // 週報・月報は従来どおり 散文（§2）→ 方針（§3）→ リスク統制（§4）… の並びである
+        //（計画の粒度対応表が、週報・月報には明細ではなく集計を求めているため）。
+        if (view.Kind == ReportKind.Daily)
+        {
+            AppendTradeHistory(sb, view);
+            AppendPositions(sb, view);
+            AppendRiskControlRecords(sb, view);
+            // リスク統制の記録の各節は末尾に空行を残さない（次節が "\n" を前置する契約）。
+            // 散文はその契約を持たない見出しのため、ここで 1 行空ける。
+            sb.Append('\n');
+            AppendNarrative(sb, view, narrativeHeading);
+            AppendPolicy(sb, view, policyHeading);
+        }
+        else
+        {
+            AppendNarrative(sb, view, narrativeHeading);
+            AppendPolicy(sb, view, policyHeading);
+            AppendRiskControlRecords(sb, view);
+        }
 
         // 5. 稼働状況（OpenD）— 日報＝当日の稼働率と Stage 1 日数への算入可否 / 月報＝分布（INDEX 決定34）。
         AppendUptime(sb, view);
@@ -78,6 +77,127 @@ public static class ReportRenderer
 
         return sb.ToString();
     }
+
+    // 散文（LLM ドラフト）。数値は含めない。
+    private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
+    {
+        sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+        sb.Append(string.IsNullOrWhiteSpace(view.Narrative) ? "（散文ドラフトなし）" : view.Narrative.Trim());
+        sb.Append("\n\n");
+    }
+
+    // 翌期間の方針（確定で取引方針として有効化される）＋ INDEX 決定29, #338, IADR-0252 の **YAML ブロック併記**。
+    // 表（人間可読）と YAML（機械可読）を併記し、**取引判断サービスは YAML だけを読む**。
+    private static void AppendPolicy(StringBuilder sb, ReportView view, string heading)
+    {
+        sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+        sb.Append(string.IsNullOrWhiteSpace(view.PolicySummary) ? "（方針未設定）" : view.PolicySummary.Trim());
+        sb.Append("\n\n");
+        sb.Append(ReportPolicyYaml.Render(view));
+    }
+
+    // リスク統制の記録（維持率割れによる自動縮小／強制買戻しの推定ほか）。
+    // 日報＝明細・月報＝回数（04_report-templates・ADR-0016 決定15）。
+    private static void AppendRiskControlRecords(StringBuilder sb, ReportView view)
+    {
+        AppendMarginReductions(sb, view);
+        AppendFxSourceStatus(sb, view);
+        AppendBuyInInferences(sb, view);
+        AppendShortSelling(sb, view);
+        AppendControlActivations(sb, view);
+        AppendLlmModelUsage(sb, view);
+    }
+
+    // FR-16, #563, IADR-0269, 04_report-templates 日報 §2: 取引履歴（全明細）＋取引詳細＋見送り判断。
+    //
+    // 🔴 **これが #563 で欠けていた結線そのものである。** 呼び出しを外すと日報のゴールデンが全文で赤くなる
+    //（レンダラ単体テストだけでは再発を捕まえられない——「呼ばれたこと」と「結果が出口へ出たこと」は別の事実）。
+    //
+    // 🔴 **`null`（明細を組み立てられていない）を「約定なし」へ潰さない。** 約定 0 件は空の Lines で表す。
+    private static void AppendTradeHistory(StringBuilder sb, ReportView view)
+    {
+        if (view.TradeHistory is not { } history)
+        {
+            sb.Append("## 2. 取引履歴（全明細）\n\n");
+            sb.Append("- **取引履歴を照会できませんでした（供給元がありません）**: "
+                + "「当日の約定なし」とは区別しています。**0 件ではありません。**\n\n");
+            return;
+        }
+
+        sb.Append(TradeHistoryRenderer.RenderMarkdown(history));
+        sb.Append('\n');
+    }
+
+    // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
+    //
+    // 🔴 **`null`（照会できていない）を空列（建玉なし）へ潰さない。**
+    // 「建玉ゼロ」は重い事実であり、照会不能と同じに書けば「今は何も持っていない」と読める。
+    private static void AppendPositions(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 3. ポジション一覧（当日終了時点）\n\n");
+
+        // 各節は自前で "\n" を前置するため、本節は**末尾に空行を残さない**（残すと空行が 2 つ並ぶ）。
+        if (view.Positions is not { } positions)
+        {
+            sb.Append("- **建玉を照会できませんでした（供給元がありません）**: "
+                + "「建玉なし」とは区別しています。**0 件ではありません。**\n");
+            return;
+        }
+
+        if (positions.Count == 0)
+        {
+            sb.Append("（当日終了時点の建玉なし）\n");
+            return;
+        }
+
+        sb.Append("| 市場 | 銘柄 | 方向 | 数量 | 平均取得単価 | 現在値 | 評価損益 | 損切りライン | 借株料累計 | 保有日数 |\n");
+        sb.Append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+        foreach (var p in positions)
+        {
+            // 借株料はショートのみ記載し、ロングは「—」とする（04_report-templates 日報 §3 の注記）。
+            var borrowFee = p.Side == TradeSide.Buy ? "—" : DecimalOrUnsupplied(p.BorrowFeeTotal);
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {MarketLabel(p.Market)} | {p.Symbol} | {DirectionLabel(p.Side)} | {Quantity(p.Quantity)} | "
+                    + $"{Price(p.AverageEntryPrice)} | {DecimalOrUnsupplied(p.CurrentPrice)} | "
+                    + $"{SignedOrUnsupplied(p.UnrealizedPnl)} | {Price(p.StopLossPrice)} | {borrowFee} | "
+                    + $"{IntOrUnsupplied(p.HoldingDays)} |\n");
+        }
+
+        sb.Append('\n');
+        sb.Append("- 価格・評価損益は**市場の現地通貨**建てです（供給元の単位）。"
+            + "**損切りラインは、取引判断が決めた実値が無い建玉では既定比率からの近似値**です。\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- `{UnsuppliedCell}` は**記録源が無い**ことを表します。**「該当なし」「0」とは区別しています。**\n");
+        sb.Append("  - **現在値・評価損益**: 市場データ源から現在値を引けなかった銘柄（**評価損益 0 ではありません**）。\n");
+        sb.Append("  - **借株料累計**: 建玉開始からの累計の記録源がありません"
+            + "（当期間の計上額は §4「空売りの記録」にあり、累計とは別物です）。\n");
+        sb.Append("  - **保有日数**: 台帳の射影が建玉の開始時刻を持っていません。\n");
+    }
+
+    /// <summary>表のセルで「記録源が無い」ことを表す標識（TradeHistoryRenderer と同一）。</summary>
+    private const string UnsuppliedCell = "**未供給**";
+
+    private static string MarketLabel(Market market) => market switch
+    {
+        Market.Japan => "JP",
+        Market.UnitedStates => "US",
+        _ => market.ToString(),
+    };
+
+    // 04_report-templates 日報 §3: 「方向」は **ロング（現物・信用買い） / ショート（空売り）** で記す。
+    private static string DirectionLabel(TradeSide side) => side == TradeSide.Buy ? "ロング" : "ショート";
+
+    private static string Quantity(int quantity) => quantity.ToString("#,##0", CultureInfo.InvariantCulture);
+
+    private static string Price(decimal value) => value.ToString("#,##0.##", CultureInfo.InvariantCulture);
+
+    private static string DecimalOrUnsupplied(decimal? value) => value is { } v ? Price(v) : UnsuppliedCell;
+
+    private static string SignedOrUnsupplied(decimal? value) =>
+        value is { } v ? v.ToString("+#,##0.##;-#,##0.##;0", CultureInfo.InvariantCulture) : UnsuppliedCell;
+
+    private static string IntOrUnsupplied(int? value) =>
+        value is { } v ? v.ToString(CultureInfo.InvariantCulture) : UnsuppliedCell;
 
     // FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: 報告書のメタ情報として「実際に使用したモデル」を残す。
     //
@@ -659,7 +779,10 @@ public static class ReportRenderer
     {
         ReportKind.Weekly => ("週報", "## 1. 週間サマリ", "## 2. 振り返りと評価", "## 3. 翌週の方針"),
         ReportKind.Monthly => ("月報", "## 1. 月間サマリ", "## 2. 総括と評価", "## 3. 翌月の方針・投資方針"),
-        _ => ("日報", "## 1. 当日サマリ", "## 2. 市況・振り返り", "## 3. 翌営業日の方針"),
+        // 🔴 #563, IADR-0269: 日報は §2・§3 を取引履歴・ポジション一覧へ譲り、散文と方針が §5・§6 へ下がる
+        //（計画 04_report-templates の日報テンプレートの並び。実装は計画 §5 市況・特記事項と §6 振り返りを
+        // 1 節に統合しているため、計画 §7 翌営業日の目標が実装では §6 になる）。週報・月報の番号は動かさない。
+        _ => ("日報", "## 1. 当日サマリ", "## 5. 市況・振り返り", "## 6. 翌営業日の方針"),
     };
 
     // データ連携（#63 台帳/#12/#81・市場データ）が必要でこのスライスでは算出しない項目の表記。

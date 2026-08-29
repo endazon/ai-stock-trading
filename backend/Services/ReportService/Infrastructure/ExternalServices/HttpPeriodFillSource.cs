@@ -62,8 +62,12 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     // 台帳の約定単価はローカル通貨（IADR-0107 決定1）。報告書の集計は基準通貨（USD）建てのため、
     // 同伴レート（承認時に固定された FxRateToBase）で換算する。LedgerFill.PriceInBase と同じ規則だが、
     // 別サービスの型は参照しないため、ここで一次フィールドから導出する。
+    //
+    // #563, IADR-0269: DecisionId をそのまま通す。**欠落した応答（旧版 Risk）は Guid.Empty のままにする**——
+    // ここで別の値を作ると、無関係な判断根拠が明細へ載る。相関できない約定は判断根拠が未供給になる。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(
-        r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt);
+        r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,
+        r.DecisionId);
 
     // 権威源の LedgerFill と同形（camelCase・列挙は数値で往復する）。StopLossPrice は報告書の集計に不要のため持たない。
     private sealed record LedgerFillDto(
@@ -74,5 +78,6 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
         int Quantity,
         decimal Price,
         DateTimeOffset ExecutedAt,
-        decimal FxRateToBase = 1m);
+        decimal FxRateToBase = 1m,
+        Guid DecisionId = default);
 }
