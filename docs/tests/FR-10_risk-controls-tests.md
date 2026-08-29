@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-08-28
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-06]
-adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0022, ADR-0027]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection]
-issues: [#329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470]
+ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
+adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027]
+iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability]
+issues: [#329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564]
 -->
 
 
@@ -34,6 +34,7 @@ issues: [#329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381,
 - [借株料の累計（記録側）（#465。借株料は「建玉 × 取引日」で積み、未供給の日を別テーブル・別イベントで持つ）](#借株料の累計記録側465借株料は建玉--取引日で積み未供給の日を別テーブル別イベントで持つ)
 - [統制状態参照画面の強制買戻し発生回数の供給（#470。当月が観測の届いた取引日で覆われているときに限り供給する）](#統制状態参照画面の強制買戻し発生回数の供給470当月が観測の届いた取引日で覆われているときに限り供給する)
 - [損切りのブローカー側逆指値への一本化（#331。保護逆指値の同時発注・建玉解消・失効ガード・見送り）](#損切りのブローカー側逆指値への一本化331保護逆指値の同時発注建玉解消失効ガード見送り)
+- [情報収集の縮退による新規建て停止の耐久化（#564。供給が途切れたら止める側へ倒す）](#情報収集の縮退による新規建て停止の耐久化564供給が途切れたら止める側へ倒す)
 - [未カバー・実施予定](#未カバー実施予定)
 - [関連仕様](#関連仕様)
 - [未決事項](#未決事項)
@@ -751,3 +752,33 @@ row20: FR-21
 row21: FR-21
 row22: FR-21
 -->
+
+
+## 情報収集の縮退による新規建て停止の耐久化（#564。供給が途切れたら止める側へ倒す）
+
+`InformationDegradationStoreFreshnessTests` / `InformationDegradationConsumerTests` /
+`InformationDegradationScreeningTests`（`RiskManagementService.Tests`）・
+`DegradationStateTrackerTests`（`InformationCollectionService.Tests`）。
+
+**この guard も「緩む方向」に壊れても静かである** —— 情報が欠測したまま新規建てが通るだけで何も赤くならない。
+とりわけ**再起動は日常的に起きる**（デプロイ・スケール・障害復旧）ため、
+**「記録が無い＝健全」と読む実装は、平常運転の中で統制を外す。** よって 3 点セットで両側から固定する。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| T-10-306 | 縮退が続いている（状態は変化していない） | 情報収集が 1 巡回する | **現況（止めているものの全量）が毎巡回 1 件出る**。状態変化のイベントは出ない（従来どおり抑止） | ① | 自動 |
+| T-10-307 | 縮退が無い | 同上 | **空の現況が出る**（「観測して健全だった」の明示）。**出さないと「まだ何も聞いていない」と区別できない** | ① | 自動（対の肯定形） |
+| T-10-308 | 新規建てを止めない縮退（記録・通知のみ）が起きている | 同上 | 現況には**載らない**（受け手が振る舞いを再解釈して停止範囲を広げない） | ① | 自動（否定形） |
+| T-10-309 | リスク管理を起こしたばかり（現況を一度も受け取っていない） | 新規建てを審査する | **拒否**（不明は止める）。**「縮退の記録が無い」を「健全」と読まない** | ② | 自動（**否定形・最重要**） |
+| T-10-310 | 同上 | **決済**を審査する | **承認**（手仕舞い・損切りは止めない）。新規建て短絡の構造的担保の回帰 | ③ | 自動（否定形） |
+| T-10-311 | 同上。状態変化のイベントは 1 件も来ない | 現況（止めているものあり）が 1 件届く | **新規建ての停止が復元される**（再起動を跨いで統制が戻る） | ① | 自動 |
+| T-10-312 | 同上 | 現況（止めるものなし）が 1 件届く | **新規建てが通る**（恒久停止にしない） | ② | 自動（対の肯定形） |
+| T-10-313 | 有効な現況を受け取っている | 有効期間ちょうど / 1 分超で審査する | ちょうどは**通る**、超えたら**止める**（両側の境界） | ② | 自動（境界値） |
+| T-10-314 | 情報収集が極端に長い有効期間を宣言する | 同上 | **上限（2 時間）で失効する**。宣言を信じ切らない（下限側は 0・負値を 1 分へ） | ② | 自動（境界値・クランプ） |
+| T-10-315 | 観測の有無 × 失効の有無 × 止めるものの有無（**8 通り**） | 判定する | **新規建てが通るのは「有効な現況 ∧ 止めるものなし」のときだけ**という不変条件が全通りで成り立つ | ② | 自動（プロパティベース） |
+| T-10-316 | 有効な現況を受け取っていない | 縮退 → 回復の状態変化だけを受け取る | **止まったまま**（集合は空になるが現況は不明のまま）。**状態変化は鮮度を与えない** | ② | 自動（否定形） |
+| T-10-317 | 有効な現況を受け取っている | 縮退 → 回復の状態変化を受け取る | 縮退で**即時に止まり**、回復で解ける（次の巡回を待たない） | ② | 自動（対の肯定形） |
+| T-10-318 | 現況を受け取り済み | **より古い時刻**の現況が遅れて届く | **無視する**（古い現況で新しい状態を上書きしない）。前進する現況は適用する | ② | 自動（否定形＋対の肯定形） |
+| T-10-319 | 現況を受け取り済み | 止めているものが変わった現況が届く | **全量で置き換わる**（差分ではない。取りこぼした回復が残り続けない） | ① | 自動 |
+
+> **対応受け入れ基準**は #564 の 3 つ —— ①復元される ②復元できないときは止める側へ倒す ③決済は止まらない。
