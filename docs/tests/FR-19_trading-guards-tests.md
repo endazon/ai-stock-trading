@@ -66,7 +66,7 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 | **口座種別 × 市場 × 商品種別**・GFV 回避・fail-closed | `RiskManagementService.Domain.Tests` | **`CashAccountControlsTests.cs`** |
 | **現金口座での信用系の設定不能化** | `RiskManagementService.Application.Tests` / `…Api.Tests` | **`CashAccountSettingsGuardTests.cs`** / **`CashAccountGuardEndpointTests.cs`** |
 | **口座種別の観測の保持・鮮度・供給経路** | `RiskManagementService.Application.Tests` / `…Infrastructure.Tests` | **`BrokerAccountObservationStoreTests.cs`** / **`BrokerAccountObservedConsumerTests.cs`** |
-| **口座種別の照会と観測の発行** | `OrderExecutionService.Infrastructure.Tests` | `MoomooBrokerAdapterTests.cs` / `BrokerAvailabilityProbeServiceTests.cs` |
+| **口座種別の照会と観測の発行** | `OrderExecutionService.Tests` | `MoomooBrokerAdapterTests.cs` / `BrokerAvailabilityProbeServiceTests.cs` |
 | **新拒否理由 3 種の序数・クラス分類** | `AiStockTrading.Shared.Contracts.Tests` | `RejectionReasonOrdinalStabilityTests.cs` / `RejectionReasonClassificationTests.cs` |
 | 約定到達後に差金決済ガードが拘束すること（#270 回帰） | `RiskManagementService.Infrastructure.Tests` | `MoomooFillControlRegressionTests.cs` |
 | 禁止銘柄の登録内容と照合規則 | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` |

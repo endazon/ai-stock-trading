@@ -1,4 +1,4 @@
-using OrderExecutionService.Application.Ports;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
