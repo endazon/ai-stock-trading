@@ -281,6 +281,43 @@ builder.Services.AddSingleton<IOpenPositionSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpOpenPositionSource>>());
 });
 
+// FR-06, FR-20, #569, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2, IADR-0271:
+// 日報の「OpenD 稼働率」行と月報の「稼働率分布」。権威源はリスク管理サービスの稼働観測ログであり、
+// GET /risk-controls/session-uptime（OwnerOrService・IADR-0051）へ s2s 同期照会する。
+//
+// **RiskManagement:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**
+// 🔴 ここで空（＝観測された取引日が 0 日）へ倒さない。**OpenD は本番で実際に稼働している**ため、
+// 「稼働率 0%」「算入 0 日」は端的な嘘になる（上の period-fills が空列で正しいのとは状況が違う。
+// **揃えてはならない**）。
+builder.Services.AddSingleton<IOpenDUptimeSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedOpenDUptimeSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpOpenDUptimeSource(http, sp.GetRequiredService<ILogger<HttpOpenDUptimeSource>>());
+});
+
+// FR-06, FR-15, FR-20, #569, 04_report-templates 月報 §5, IADR-0271: 三者比較の**現在の運用段階**。
+// 権威源はリスク管理サービスの段階ゲートであり、GET /risk-controls/stage-gate（OwnerOrService）へ
+// s2s 同期照会する。
+//
+// 🔴 **段階は「空欄（その段をまだ走らせていない）」と「値 0」を分ける唯一の鍵である。**
+// **未設定/不正 URI は Unsupplied（常に null）＝三者比較の節ごと「照会できませんでした」**であり、
+// Stage 0 等の既定へ倒さない——到達済みの段の列を静かに空欄にしてしまう。
+builder.Services.AddSingleton<IStageProgressSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedStageProgressSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpStageProgressSource(http, sp.GetRequiredService<ILogger<HttpStageProgressSource>>());
+});
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

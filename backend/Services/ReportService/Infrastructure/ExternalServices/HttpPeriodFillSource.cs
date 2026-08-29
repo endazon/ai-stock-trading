@@ -65,9 +65,13 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     //
     // #563, IADR-0269: DecisionId をそのまま通す。**欠落した応答（旧版 Risk）は Guid.Empty のままにする**——
     // ここで別の値を作ると、無関係な判断根拠が明細へ載る。相関できない約定は判断根拠が未供給になる。
+    //
+    // #569, IADR-0271: Provider（**実際に発注したアダプタの発注先**）もそのまま通す。
+    // **欠落した応答（旧版 Risk・列追加前の行）は null のままにする**——承認 Intent の Mode や
+    // 「たぶん SIMULATE」で埋めると、三者比較の列が水増しされる。不明はどちらの段にも算入しない。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(
         r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,
-        r.DecisionId);
+        r.DecisionId, r.Provider);
 
     // 権威源の LedgerFill と同形（camelCase・列挙は数値で往復する）。StopLossPrice は報告書の集計に不要のため持たない。
     private sealed record LedgerFillDto(
@@ -79,5 +83,6 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
         decimal Price,
         DateTimeOffset ExecutedAt,
         decimal FxRateToBase = 1m,
-        Guid DecisionId = default);
+        Guid DecisionId = default,
+        BrokerProvider? Provider = null);
 }

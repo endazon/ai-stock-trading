@@ -108,12 +108,20 @@ public class ReportTemplateGoldenTests
             new ReportPosition(Market.UnitedStates, "TSLA", TradeSide.Sell, 5, 240m, 252m,
                 CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null),
         ],
+        // FR-06, FR-15, FR-20, #569, IADR-0271, 04_report-templates 月報 §5:
+        // **現在の供給経路（ThreeWayComparisonAggregator）が実際に組み立てる形**を置く。
+        //   - バックテスト列は常に空欄（BacktestService は永続化もイベント発行も持たない）
+        //   - 最大ドローダウンはどの列も未供給（エクイティ曲線の権威源が期間集計を持たない）
+        //   - 実弾列は Stage 1 の間は空欄／SIMULATE 列は到達済みなので約定 0 件でも「0 件」
+        //   - 要因考察は人間の所見であり供給元が無い（「未記入」と出る）
+        //   - 発注先が記録されていない約定（列追加前の行）は列へ算入せず件数だけを出す
         ThreeWayComparison = new ThreeWayComparison(
-            new ThreeWayMetric(0.55m, 0m, null),
-            new ThreeWayMetric(12.5m, 0m, null),
-            new ThreeWayMetric(0.08m, 0m, null),
-            new ThreeWayMetric(120m, 0m, null),
-            "③ 執行の差が勝率に出ている。"),
+            new ThreeWayMetric(null, 0.55m, null),
+            new ThreeWayMetric(null, 12.5m, null),
+            new ThreeWayMetric(null, null, null),
+            new ThreeWayMetric(null, 120m, null),
+            DivergenceNote: null,
+            UnattributedTradeCount: 3),
     };
 
     // 種別ごとの散文用途（ReportNarrativePurpose は Application 層のため、ここでは同値を写す）。

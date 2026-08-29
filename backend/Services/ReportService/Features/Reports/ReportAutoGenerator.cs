@@ -2,6 +2,7 @@ using ReportService.Common.Exceptions;
 using ReportService.Common.Abstractions;
 using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace ReportService.Features.Reports;
 
@@ -27,7 +28,9 @@ public sealed class ReportAutoGenerator(
     ILlmUsageRecordSource? llmUsageSource = null,
     IBorrowFeeRecordSource? borrowFeeSource = null,
     ITradeRationaleSource? rationaleSource = null,
-    IOpenPositionSource? openPositionSource = null)
+    IOpenPositionSource? openPositionSource = null,
+    IOpenDUptimeSource? uptimeSource = null,
+    IStageProgressSource? stageProgressSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -95,6 +98,8 @@ public sealed class ReportAutoGenerator(
         var borrowFees = await SafeBorrowFeesAsync(due, cancellationToken).ConfigureAwait(false);
         var rationales = await SafeRationalesAsync(due, cancellationToken).ConfigureAwait(false);
         var positions = await SafeOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
+        var uptime = await SafeUptimeAsync(due, cancellationToken).ConfigureAwait(false);
+        var currentStage = await SafeCurrentStageAsync(cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -116,7 +121,9 @@ public sealed class ReportAutoGenerator(
                 LlmUsage: llmUsage,
                 BorrowFees: borrowFees,
                 TradeRationales: rationales,
-                Positions: positions),
+                Positions: positions,
+                Uptime: uptime,
+                CurrentStage: currentStage),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -326,6 +333,53 @@ public sealed class ReportAutoGenerator(
         try
         {
             return await openPositionSource.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-20, #569, INDEX 決定34, IADR-0271: 日報 §1 の稼働率・月報 §6.2 の分布。
+    // **未注入・照会失敗のいずれも null（未供給）である**——為替・LLM 実績・判断根拠と同じ向きであり、
+    // 約定の供給（空列へ倒す）とは逆である。🔴 **OpenD は本番で実際に稼働している**ため、
+    // 「稼働率 0%」を既定にすると「終日停止していた」と読める端的な嘘になる。
+    private async Task<OpenDUptimeRecord?> SafeUptimeAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        if (uptimeSource is null)
+            return null;
+
+        try
+        {
+            return await uptimeSource
+                .GetUptimeAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-15, FR-20, #569, IADR-0271: 月報 §5 の三者比較が「空欄」と「0」を分けるための現在段階。
+    // **未注入・照会失敗のいずれも null（未供給）＝節ごと「照会できませんでした」**であり、
+    // 🔴 **Stage 0 等の既定へ倒さない**——到達済みの段の列を静かに空欄にする。
+    private async Task<TradingStage?> SafeCurrentStageAsync(CancellationToken cancellationToken)
+    {
+        if (stageProgressSource is null)
+            return null;
+
+        try
+        {
+            return await stageProgressSource.GetCurrentStageAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
