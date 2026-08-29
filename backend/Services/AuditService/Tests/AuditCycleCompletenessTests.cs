@@ -239,6 +239,7 @@ public class AuditCycleCompletenessTests
             new InformationCollected(Guid.NewGuid(), 5, t),
             new InformationSourceDegraded("news", "LimitedDegradation", ["finnhub-company-news"], true, t),
             new InformationSourceRecovered("news", t.AddHours(-2), 4, t),
+            new InformationSourceStateObserved(["news"], TimeSpan.FromHours(1), t),
             new LlmCostIncurred(12.5m, t),
             new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", t),
             new MaintenanceMarginReductionExecuted(

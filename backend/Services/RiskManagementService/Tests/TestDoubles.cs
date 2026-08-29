@@ -20,6 +20,42 @@ internal sealed class FakePortfolioStateProvider(PortfolioState state) : IPortfo
     public PortfolioState GetCurrent() => State;
 }
 
+// TimeProvider の最小の偽装（FakeTimeProvider は中央パッケージ管理に未登録。IADR-0064/0066 と同じ理由）。
+// 観測の鮮度を扱うテスト（#564）と口座種別の失効テストが同じ形を使う。
+internal sealed class StubTimeProvider(DateTimeOffset now) : TimeProvider
+{
+    public DateTimeOffset Now { get; set; } = now;
+
+    public override DateTimeOffset GetUtcNow() => Now;
+}
+
+// FR-01, FR-02, FR-10, #337, #564, IADR-0249, IADR-0267: テスト用の情報収集の縮退ストア。
+//
+// **既定引数を持たせない**（呼び出し側が必ず状態を選ぶ）。#564 以降、実物のストアは
+// **有効な現況観測が無いかぎり新規建てを止める**（不明は止める側）。縮退を関心に持たないテストが
+// 実物をそのまま使うと「観測が無いので止まる」で落ちるため、**「観測できていて健全」を明示する**
+// 本ダブルを使う——「既定でなんとなく通る」形に戻さないための選択である。
+internal sealed class FakeInformationDegradation : IInformationDegradationStore
+{
+    private FakeInformationDegradation(bool blocksNewEntries) => BlocksNewEntries = blocksNewEntries;
+
+    public bool BlocksNewEntries { get; private set; }
+
+    /// <summary>収集の現況を観測できており、<b>新規建てを止めるものが無い</b>状態。</summary>
+    public static FakeInformationDegradation Affirmed() => new(false);
+
+    /// <summary>新規建てを止めるべき状態（縮退中、または現況が不明）。</summary>
+    public static FakeInformationDegradation Blocking() => new(true);
+
+    public void MarkDegraded(string category) => BlocksNewEntries = true;
+
+    public void MarkRecovered(string category) => BlocksNewEntries = false;
+
+    public void ApplyObservation(
+        IReadOnlyCollection<string> blockingCategories, TimeSpan validFor, DateTimeOffset observedAt) =>
+        BlocksNewEntries = blockingCategories.Count > 0;
+}
+
 // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: テスト用の口座種別観測ストア。
 //
 // **既定引数を持たせない**（呼び出し側が必ず状態を選ぶ）。口座種別は統制の適用可否を決める最上位の条件であり、

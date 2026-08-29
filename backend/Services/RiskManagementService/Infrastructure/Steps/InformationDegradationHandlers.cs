@@ -38,7 +38,33 @@ public sealed class InformationSourceDegradedRiskHandler(
     }
 }
 
-// #337, IADR-0249: 回復の遷移。該当カテゴリを外し、残が無ければ新規建て停止が解ける。
+// #564, IADR-0267: 収集サービスの**現況観測**（毎巡回 1 件）。停止カテゴリの集合を全量で置き換え、
+// **観測の鮮度を更新する**。
+//
+// 🔴 **本ハンドラが「再起動しても停止が復元される」の実現手段である。** 遷移は状態が変わったときにしか
+// 来ないため、縮退が続く静かな区間に本サービスが再起動すると停止が届かなかった（#564 の fail-open）。
+// 現況観測は遷移の有無にかかわらず届くため、**再起動から 1 巡回で必ず復元される**。
+// 復元されるまでの間は、ストアが「未観測＝不明」として**止める側**に倒す。
+public sealed class InformationSourceStateObservedRiskHandler(
+    IInformationDegradationStore store,
+    ILogger<InformationSourceStateObservedRiskHandler> logger)
+{
+    public void Handle(InformationSourceStateObserved message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        store.ApplyObservation(message.BlockingCategories, message.ValidFor, message.ObservedAt);
+        logger.LogInformation(
+            "情報収集の現況を観測: 新規建て停止カテゴリ={Categories} 有効期間={ValidFor} 観測時刻={ObservedAt}。"
+                + "手仕舞い・損切りは止めない（ADR-0020）。",
+            message.BlockingCategories.Count == 0 ? "（なし）" : string.Join(",", message.BlockingCategories),
+            message.ValidFor,
+            message.ObservedAt);
+    }
+}
+
+// #337, IADR-0249: 回復の遷移。該当カテゴリを外し、残が無ければ新規建て停止が解ける
+// （**ただし有効な現況観測がある場合に限る**。遷移は鮮度を与えない・#564）。
 public sealed class InformationSourceRecoveredRiskHandler(
     IInformationDegradationStore store,
     ILogger<InformationSourceRecoveredRiskHandler> logger)

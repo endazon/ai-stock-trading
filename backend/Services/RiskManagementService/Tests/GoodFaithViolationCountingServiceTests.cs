@@ -255,7 +255,7 @@ public class GoodFaithViolationCountingServiceTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             FakeBrokerAccountObservations.Cash(),
-            new InMemoryInformationDegradationStore(),
+            FakeInformationDegradation.Affirmed(),
             new InMemoryGoodFaithViolationStore());
 
         var snapshot = builder.Build();
@@ -274,7 +274,7 @@ public class GoodFaithViolationCountingServiceTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             FakeBrokerAccountObservations.Cash(),
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
 
         var snapshot = builder.Build();
 
@@ -301,7 +301,7 @@ public class GoodFaithViolationCountingServiceTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             observations,
-            new InMemoryInformationDegradationStore(),
+            FakeInformationDegradation.Affirmed(),
             store).Build();
 
         snapshot.GoodFaithViolations!.Count.Should().Be(2);

@@ -409,6 +409,18 @@ public static class AuditEntryFactory
             + $"（{e.DegradedAt:yyyy-MM-dd HH:mm}Z 〜）・該当サイクル {e.AffectedCycles} 回",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-01, FR-10, FR-11, #564, ADR-0020 決定2-3, IADR-0267: 情報収集の**現況観測**（毎巡回 1 件）。
+    //
+    // 🔴 **相関はカテゴリ別ではなく「収集の現況」1 本である。** 本イベントは特定カテゴリの出来事ではなく
+    // **その巡回時点の全量の宣言**であり、カテゴリ相関へ混ぜると欠測 → 回復の 1 本の筋が読めなくなる。
+    //
+    // 要約に**有効期間**を出す。「観測が途切れたら新規建てが止まる」までの猶予が、台帳から読めるためである。
+    public static AuditEntry From(InformationSourceStateObserved e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(InformationSourceStateObserved), AuditCorrelation.From("information-source:state"), Symbol: null,
+        Truncate($"情報収集の現況: 新規建ての停止={(e.BlocksNewEntries ? string.Join(",", e.BlockingCategories) : "なし")}"
+            + $"・有効期間 {FormatDuration(e.ValidFor)}。手仕舞い・損切りは止まっていない"),
+        AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
+
     // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の発動／解除。
     //
     // 🔴 **暫定期限を要約へ出す。** 「恒久化しない」は期限が読めて初めて検証できる。
