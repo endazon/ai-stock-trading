@@ -84,6 +84,30 @@ public class ReportTemplateGoldenTests
             new OpenDUptimeDay(new DateOnly(2026, 8, 4), 0.60m),
             new OpenDUptimeDay(new DateOnly(2026, 8, 5), 0.20m),
         ], Stage1CumulativeCountedDays: 41),
+        // FR-16, #563, IADR-0268, 04_report-templates 日報 §2: 取引履歴（全明細）。
+        // **現在の供給経路が実際に組み立てる形**を置く（銘柄名・税・トリガーは記録源が無く、
+        // 判断根拠は監査台帳から引けた約定にだけ入る）。日報以外では描画されない。
+        TradeHistory = new TradeHistoryView
+        {
+            Lines =
+            [
+                new TradeHistoryLine(1, new TimeOnly(9, 5), Market.Japan, "7203", SymbolName: null, TradeSide.Buy,
+                    Quantity: 100, FillPrice: 2_500m, Cost: 120m, Tax: null, RealizedPnl: 0m,
+                    Trigger: null, RationaleSummary: "始値が支持線で反発。出来高増。"),
+                new TradeHistoryLine(2, new TimeOnly(14, 30), Market.UnitedStates, "AAPL", SymbolName: null, TradeSide.Sell,
+                    Quantity: 10, FillPrice: 315m, Cost: 20m, Tax: null, RealizedPnl: 1_520m,
+                    Trigger: null, RationaleSummary: null),
+            ],
+        },
+        // FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧（ロング＋ショート）。
+        // 現在値が引けた建玉と引けなかった建玉の両方を置く（未供給と 0 を混同していないことを全文で固定する）。
+        Positions =
+        [
+            new ReportPosition(Market.Japan, "7203", TradeSide.Buy, 100, 2_500m, 2_375m,
+                CurrentPrice: 2_560m, UnrealizedPnl: 6_000m, BorrowFeeTotal: null, HoldingDays: null),
+            new ReportPosition(Market.UnitedStates, "TSLA", TradeSide.Sell, 5, 240m, 252m,
+                CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null),
+        ],
         ThreeWayComparison = new ThreeWayComparison(
             new ThreeWayMetric(0.55m, 0m, null),
             new ThreeWayMetric(12.5m, 0m, null),

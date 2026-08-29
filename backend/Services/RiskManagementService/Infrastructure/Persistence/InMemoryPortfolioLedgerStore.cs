@@ -53,7 +53,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             // IADR-0107: 承認 Intent の換算レートを台帳の約定に引き継ぐ（金額集計は基準通貨で行う）。
             result.Add(new LedgerFill(
                 intent.Symbol, intent.Market, intent.Side, intent.PositionEffect,
-                fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt, intent.StopLossPrice, intent.FxRateToBase));
+                fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt, intent.StopLossPrice, intent.FxRateToBase,
+                // #563, IADR-0268: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
+                fill.DecisionId));
         }
 
         return result;

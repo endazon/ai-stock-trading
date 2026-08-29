@@ -51,6 +51,37 @@ public class HttpPeriodFillSourceTests
         fill.Price.Should().Be(2100.5m);
     }
 
+    // 🔴 **肯定形（#563, IADR-0268）**: 判断記録と突き合わせる相関キー（DecisionId）をそのまま通す。
+    // これが欠けると日報 §2 の「判断根拠（要約）」が全行で未供給になる。
+    [Fact]
+    public async Task 台帳のDecisionIdをそのまま通す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"7203","market":0,"side":0,"positionEffect":0,"quantity":100,
+              "price":2500,"executedAt":"2026-07-08T01:00:00+00:00","fxRateToBase":1,
+              "decisionId":"11111111-1111-1111-1111-111111111111"}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.DecisionId
+            .Should().Be(new Guid("11111111-1111-1111-1111-111111111111"));
+    }
+
+    // 🔴 **否定形（上の肯定形と対）**: 相関キーを欠く応答へ別の値を作らない（無関係な根拠が明細へ載る）。
+    [Fact]
+    public async Task DecisionIdを欠く応答は相関できないままにする()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"7203","market":0,"side":0,"positionEffect":0,"quantity":100,
+              "price":2500,"executedAt":"2026-07-08T01:00:00+00:00","fxRateToBase":1}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.DecisionId.Should().Be(Guid.Empty);
+    }
+
     [Fact]
     public async Task 外貨建ての約定単価は同伴レートで基準通貨へ換算する()
     {

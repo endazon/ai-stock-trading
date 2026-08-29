@@ -36,6 +36,41 @@ public class EfPortfolioLedgerStoreTests
         new EfPortfolioLedgerStore(db2).GetFills().Single().StopLossPrice.Should().Be(950m);
     }
 
+    // 🔴 **#563, IADR-0268**: 約定に DecisionId を載せる。報告書の日報 §2「判断根拠（要約）」が、
+    // 監査台帳の TradeDecisionMade を**この鍵で**引く。載っていないと全行が未供給になる。
+    [Fact]
+    public void 約定に相関キー_DecisionId_を載せて返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow);
+            store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow);
+        }
+
+        using var db2 = NewContext(dbName);
+        var fill = new EfPortfolioLedgerStore(db2).GetFills().Single();
+        fill.DecisionId.Should().Be(decisionId);
+        // 🔴 **対の否定形**: 既定値（相関できない）のまま返さない。
+        fill.DecisionId.Should().NotBe(Guid.Empty);
+    }
+
+    // 🔴 **2 実装のドリフトを防ぐ。** InMemory 実装（テスト・開発既定）が相関キーを落とすと、
+    // EF 実装だけが正しい状態になり、テストでは再現しない未供給が本番でだけ直る／壊れる。
+    [Fact]
+    public void InMemory実装も同じ相関キーを載せる()
+    {
+        var decisionId = Guid.NewGuid();
+        var store = new InMemoryPortfolioLedgerStore();
+        store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow);
+        store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow);
+
+        store.GetFills().Single().DecisionId.Should().Be(decisionId);
+    }
+
     [Fact]
     public void 承認と約定を記録すると相関済みの約定を返す()
     {

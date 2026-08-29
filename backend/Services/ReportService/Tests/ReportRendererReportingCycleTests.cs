@@ -50,9 +50,13 @@ public class ReportRendererReportingCycleTests
     {
         var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily));
 
+        // 🔴 #563: **見出しの実在を先に主張する。** IndexOf は見つからないと -1 を返すため、
+        // 見出しが消えても「YAML はそれより後ろにある」が真になり、**節が消えたことを緑で通してしまう**
+        //（日報の節番号が §3 → §6 へ動いたとき、この検査は実際に何も検知しなかった）。
         md.Should().Contain("```yaml");
+        md.Should().Contain("## 6. 翌営業日の方針");
         md.IndexOf("```yaml", StringComparison.Ordinal)
-            .Should().BeGreaterThan(md.IndexOf("## 3. 翌営業日の方針", StringComparison.Ordinal));
+            .Should().BeGreaterThan(md.IndexOf("## 6. 翌営業日の方針", StringComparison.Ordinal));
     }
 
     // --- 為替差損益（独立表示） ---

@@ -242,6 +242,45 @@ builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpBorrowFeeRecordSource>>());
 });
 
+// FR-16, FR-11, #563, IADR-0268: 日報 §2「判断根拠（要約）」。**権威源は監査台帳**であり、
+// GET /audit/events/by-type（OwnerOrService）へ s2s 同期照会して `TradeDecisionMade.Rationale` を
+// **そのまま**明細へ載せる（報告書生成時に LLM へ書かせない・FR-16 / IADR-0251）。
+//
+// 🔴 **取引判断サービスへ引きに行かない。** あちらは根拠を**ログにしか残さず**保持もプロセス内である。
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝明細の判断根拠が「未供給」。**
+// 🔴 ここで空の辞書（＝根拠の記録が 1 件も無い）へ倒さない。**判断根拠は本番で実際に記録されている**ため嘘になる。
+builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedTradeRationaleSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpTradeRationaleSource(
+        http, sp.GetRequiredService<ILogger<HttpTradeRationaleSource>>());
+});
+
+// FR-06, FR-16, #563, IADR-0268, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
+// 権威源はリスク管理サービスの取引台帳の射影であり、GET /risk-controls/open-positions（OwnerOrService・
+// IADR-0051）へ s2s 同期照会する。
+//
+// **RiskManagement:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**
+// 🔴 ここで空列（＝建玉なし）へ倒さない。**建玉は本番で実際に存在し得る**ため、
+// 「今は何も持っていない」と読めてしまう（上の period-fills が空列で正しいのは、約定 0 件が §1 サマリの
+// 取引回数 0 と整合する事実だからであり、状況が違う。**揃えてはならない**）。
+builder.Services.AddSingleton<IOpenPositionSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedOpenPositionSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpOpenPositionSource(
+        http, sp.GetRequiredService<ILogger<HttpOpenPositionSource>>());
+});
+
 // FR-06/07, UC-03〜05, ADR-0003, IADR-0115, #280: 日報/週報/月報の自動生成（生成→提示まで・確定はしない）。
 // 既定は無効（opt-in）。有効化しない限り常駐は登録されず現行挙動とバイト等価（IADR-0103 と同型）。
 builder.Services.Configure<ReportAutoGenerationOptions>(

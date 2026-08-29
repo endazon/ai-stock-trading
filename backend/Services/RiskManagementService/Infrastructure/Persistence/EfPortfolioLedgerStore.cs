@@ -119,7 +119,9 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             // IADR-0107: 列追加前の既存行（FxRateToBase が null）はレート 1＝基準通貨建てとして扱う（当時の暗黙の前提）。
             select new LedgerFill(
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
-                f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice, a.FxRateToBase ?? 1m);
+                f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice, a.FxRateToBase ?? 1m,
+                // #563, IADR-0268: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
+                f.DecisionId);
 
         return query.ToList();
     }
