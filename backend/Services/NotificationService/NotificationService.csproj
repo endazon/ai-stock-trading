@@ -1,0 +1,27 @@
+<!-- #15 Slice A, FR-09, IADR-0020, NFR/IADR-0259 決定1: 通知サービス。単一プロジェクト＋VSA/DDD フォルダ構成
+     （層プロジェクト .Api/.Application/.Infrastructure は撤去し、Features/・Infrastructure/ のフォルダで
+     境界を表す。基盤 MSP:IADR-0282 決定1 と同一樹形）。イベント購読と Discord アウトバウンド通知の
+     DI 構成、ヘルスチェックのため Web SDK を使用。DB・認可なし（送信は fire-and-forget）。実 Discord 送信は
+     既定で無効（安全既定）。実行時基盤は test-support shim（本番非使用・IADR-0013）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
+         （入れ子のままだと二重コンパイルで CS0246 が出る。基盤が実測済み・NFR/IADR-0259）。 -->
+    <Compile Remove="Tests/**" />
+    <Content Remove="Tests/**" />
+    <None Remove="Tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!-- FR-14, IADR-0062 決定1: Gateway 常駐（詳細設計07 の採用方式）。 -->
+    <PackageReference Include="Discord.Net.WebSocket" />
+    <!-- FR-09: 取引パイプラインのイベントを購読・整形するため共有イベント契約を参照する（通知に固有 Domain 層は持たない）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+  </ItemGroup>
+</Project>
