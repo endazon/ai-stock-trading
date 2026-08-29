@@ -96,9 +96,10 @@ backend/Services/<Svc>/
 | （標準外） | **無し。** かつて設定サービスが持っていた「他サービスへ公開するクライアントライブラリ」は 2026-08-29 に廃止し、呼び出し元 2 サービスの `Infrastructure/ExternalServices/` へ吸収した（#526） |
 
 - **サービスのルート名前空間は基盤と同じ規則で `<Name>Service` である**（`RiskManagementService.Domain` /
-  `AuditService.Infrastructure.Persistence`）。`.Foundation` / `.Composable` の名前空間セグメントは持たない
-  （**フォルダとしての `Foundation/` `Composable/` は移送波まで残る**——名前空間とフォルダは独立に動かせる）。
-  **アセンブリ名・プロジェクト名は変えていない**（旧構成が残るサービスの `ReportService.Domain.csproj` のまま）。
+  `AuditService.Infrastructure.Persistence`）。`.Foundation` / `.Composable` の名前空間セグメントは持たない。
+  **移送波は 11 サービスすべてで完了しており、`backend/Services/` 配下に `Foundation/` `Composable/` フォルダは
+  1 つも残っていない**（残るのは据え置き集合の `backend/Shared/` と `backend/TestSupport/` の配下のみ）。
+  **サービスのアセンブリ名・プロジェクト名は `<Name>Service` に統一された**（1 サービス = 本体 1 本 ＋ `Tests` 1 本）。
 - **共有物の名前空間は `AiStockTrading.Shared.*` / `AiStockTrading.TestSupport.*` のまま据え置く**
   （横断テストの `AiStockTrading.Architecture.Tests` / `AiStockTrading.IntegrationTests` / `AiStockTrading.Bff.Endpoints` も同じ）。
   基盤も `Platform.Shared.*` を据え置いている。
