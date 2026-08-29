@@ -31,7 +31,7 @@ MAPPING=(
   "market-monitor-service|backend/Services/MarketMonitorService/MarketMonitorService.csproj|MarketMonitorService.dll"
   "notification-service|backend/Services/NotificationService/NotificationService.csproj|NotificationService.dll"
   "order-execution-service|backend/Services/OrderExecutionService/OrderExecutionService.csproj|OrderExecutionService.dll"
-  "report-service|backend/Services/ReportService/src/ReportService.Api/ReportService.Api.csproj|ReportService.Api.dll"
+  "report-service|backend/Services/ReportService/ReportService.csproj|ReportService.dll"
   "risk-management-service|backend/Services/RiskManagementService/RiskManagementService.csproj|RiskManagementService.dll"
   "trade-decision-service|backend/Services/TradeDecisionService/TradeDecisionService.csproj|TradeDecisionService.dll"
 )
