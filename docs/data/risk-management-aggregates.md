@@ -3,15 +3,15 @@ title: リスク管理ドメインの集約（設定・スナップショット�
 type: data-spec
 status: draft
 created: 2026-07-09
-updated: 2026-08-28
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0183, IADR-0260]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271]
 specs: []
-issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465]
+issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569]
 -->
 
 
@@ -155,6 +155,7 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 | DecisionId | Guid (index) | `approved_orders` との相関キー。DB 強制 FK は張らず、整合性はアプリ層で担保（`AppendFill` が承認存在を確認） |
 | FilledQuantity / AveragePrice | int / decimal | 約定数量・約定単価 |
 | ExecutedAt | DateTimeOffset | 約定時刻（取引日境界は JST 固定オフセットで解釈） |
+| Provider | BrokerProvider? | **実際に発注したアダプタの発注先**。月報の「バックテスト / SIMULATE / 実弾の三者比較」が段を分ける鍵。承認 Intent の `Mode`（段階が定める既定の発注先）で代用しない——実行アダプタの発注先は構成から解決され、`Mode` とは独立に決まる。🔴 **`null` ＝本列の追加前に記録された行（発注先不明）であり、推定で埋めない。** 不明の約定はどちらの段にも算入せず、件数だけを別掲する |
 
 > 部分約定の累積更新（実ブローカー）は #13/moomoo 後続でゲート済み。含み損益・DD の日次終値マークは市場データ
 > 連携まで対象外（`UnrealizedPnl`/`DrawdownRatio` は射影上 0。日次損失基準の実装 ADR に紐づく #12 後続）。
