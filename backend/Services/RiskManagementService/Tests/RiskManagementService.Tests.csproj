@@ -1,0 +1,27 @@
+<!-- NFR/IADR-0259 決定4: サービス単位のテストは 1 プロジェクトへ統合する（旧 Api/Application/Domain/Infrastructure
+     の 4 本を統合。中身は移送のみで変えていない）。#389 / #340, IADR-0146: バックエンド応答↔フロント契約
+     フィクスチャの突合は旧 Api.Tests から、NFR-07 / #287 / IADR-0255 の業務メトリクス観測（TestSupport.Metrics）と
+     キュー名規則（PlatformShim）・Wolverine のランタイム生成（Messaging）は旧 Infrastructure.Tests から引き継いだ。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <ProjectReference Include="..\RiskManagementService.csproj" />
+    <!-- #389 / #340, IADR-0146: バックエンド応答↔フロント契約フィクスチャの突合（テスト専用の共有支援）。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
+    <!-- ADR-0013, IADR-0129, #354: キュー名規則（QueueNameFor）と Wolverine のランタイム生成（RuntimeCompilation）を
+         テストから参照する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- NFR-07, #287, IADR-0255: 業務メトリクスが実際に発火することを MeterListener で観測する共有支援。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
+  </ItemGroup>
+</Project>

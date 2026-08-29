@@ -32,7 +32,7 @@ MAPPING=(
   "notification-service|backend/Services/NotificationService/NotificationService.csproj|NotificationService.dll"
   "order-execution-service|backend/Services/OrderExecutionService/OrderExecutionService.csproj|OrderExecutionService.dll"
   "report-service|backend/Services/ReportService/ReportService.csproj|ReportService.dll"
-  "risk-management-service|backend/Services/RiskManagementService/src/RiskManagementService.Api/RiskManagementService.Api.csproj|RiskManagementService.Api.dll"
+  "risk-management-service|backend/Services/RiskManagementService/RiskManagementService.csproj|RiskManagementService.dll"
   "trade-decision-service|backend/Services/TradeDecisionService/TradeDecisionService.csproj|TradeDecisionService.dll"
 )
 

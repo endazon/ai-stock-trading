@@ -175,7 +175,7 @@ issues: [#24, #346, #450, #456, MSP#445]
 | 対象イベント | 記録項目 | 保管期間 |
 | --- | --- | --- |
 | **全ドメインイベント**（監査・時系列記録の要求と取引履歴の参照。専用サービスが全ドメインイベントを購読し追記専用台帳へ記録する）<br>`AuditService/Features/AuditEvents/AuditEntry.cs` | `Id`（冪等キー＝Wolverine `Envelope.Id`）／`EventType`／`CorrelationId`（注文系は `DecisionId`・市場系は `EventId`）／`Symbol`／`Summary`（人間可読 1 行）／`Detail`（**イベント全量 JSON**）／`OccurredAt`（イベント時刻）／`RecordedAt`（記録時刻）。**追記専用** | 🔴 **未実装**（下記） |
-| **設定変更**<br>`RiskManagementService.Application/State/SettingsChangeEntry.cs` | `Before` / `After`（前後値の全量）／`Actor`／`Reason`／`ChangedAt`／`SettingsChangeType`。**`RequireActorAndReason` により Actor と Reason は必須**（`RiskSettingsService`） | 🔴 **未実装**（下記） |
+| **設定変更**<br>`RiskManagementService/Features/RiskManagement/SettingsChangeEntry.cs` | `Before` / `After`（前後値の全量）／`Actor`／`Reason`／`ChangedAt`／`SettingsChangeType`。**`RequireActorAndReason` により Actor と Reason は必須**（`RiskSettingsService`） | 🔴 **未実装**（下記） |
 
 **照会経路**: `GET /audit`（`OwnerOnly`・`AuditService/Features/AuditEvents/AuditQueryEndpoints.cs`）／設定変更履歴は設定変更・取引履歴参照の各ユースケースが定める画面。
 

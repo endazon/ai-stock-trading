@@ -16,6 +16,10 @@
          固定するためのテスト専用参照。土台 5 まではバックテストの Domain 経由で推移的に入っていたが、
          Domain 跨ぎ参照を解消したため、テストプロジェクト側で明示的に持つ
          （Domain 層の依存規律はテストプロジェクトへは及ばない）。 -->
-    <ProjectReference Include="..\..\RiskManagementService\src\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
+    <!-- NFR/IADR-0259 決定1: リスク管理サービスの単一プロジェクト移送（W11 段 4-11）に伴い、
+         旧 RiskManagementService.Domain.csproj からサービス本体の csproj へ張り替えた。移送先は Web SDK で
+         `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
+         （IADR-0050 決定1 と同じ機構。別名は AiStockTrading.IntegrationTests と同一にそろえる）。 -->
+    <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
   </ItemGroup>
 </Project>

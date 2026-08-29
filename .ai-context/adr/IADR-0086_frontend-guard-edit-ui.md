@@ -28,7 +28,7 @@ plan_refs:
 - 関連する実装仕様書: [作業仕様](../specs/20260718_188_frontend-guard-edit-ui.md)、画面 [SC-02 リスク設定](../../docs/screens/20260718_SC-02_risk-settings.md)
 - 前段: [IADR-0084](IADR-0084_frontend-risk-settings-and-control-status.md)（SC-02/SC-03 新設・リスク上限変更のみ・ガード/段階は参照）、
   [IADR-0080](IADR-0080_frontend-settings-screen.md)（frontend 新設・単独リポの @foundation スタブ＋vitest）
-- 前提（develop マージ済み）: Risk `PUT /risk-controls/settings/guard`（OwnerOnly・[RiskControlEndpoints.cs](../../backend/Services/RiskManagementService/src/RiskManagementService.Api/Foundation/Endpoints/RiskControlEndpoints.cs)）
+- 前提（develop マージ済み）: Risk `PUT /risk-controls/settings/guard`（OwnerOnly・[RiskControlEndpoints.cs](../../backend/Services/RiskManagementService/Features/RiskManagement/RiskControlEndpoints.cs)）
 - **採番について（IADR-0085 の欠番は意図的）**: 本 IADR は **0086** を用いる。**0085 は並行作業の #189 に先着で割り当て済み**（ユーザー調整による）で、
   本ブランチで 0085 を使うと #189 と衝突する。番号衝突の扱いは「先着尊重」（[README の「採番前の確認手順」](README.md)・
   前例 [20260717_iadr-0059-number-collision-fix.md](../specs/20260717_iadr-0059-number-collision-fix.md)）に従い、当面 0085 を空けて 0086 とする。

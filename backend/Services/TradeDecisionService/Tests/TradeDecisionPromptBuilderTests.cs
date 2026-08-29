@@ -1,4 +1,6 @@
-using RiskManagementService.Domain;
+extern alias RiskManagementWorker;
+
+using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Features.TradeDecision;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;

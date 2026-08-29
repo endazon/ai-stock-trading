@@ -61,17 +61,17 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 
 | 対象 | テストプロジェクト | ファイル |
 | --- | --- | --- |
-| 商品種別 3 値・実効値の解決・ガードの適用範囲 | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` |
-| 差金決済ガードの適用範囲（日本株現物） | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` / `RiskEvaluatorTests.cs` |
-| **口座種別 × 市場 × 商品種別**・GFV 回避・fail-closed | `RiskManagementService.Domain.Tests` | **`CashAccountControlsTests.cs`** |
-| **現金口座での信用系の設定不能化** | `RiskManagementService.Application.Tests` / `…Api.Tests` | **`CashAccountSettingsGuardTests.cs`** / **`CashAccountGuardEndpointTests.cs`** |
-| **口座種別の観測の保持・鮮度・供給経路** | `RiskManagementService.Application.Tests` / `…Infrastructure.Tests` | **`BrokerAccountObservationStoreTests.cs`** / **`BrokerAccountObservedConsumerTests.cs`** |
+| 商品種別 3 値・実効値の解決・ガードの適用範囲 | `RiskManagementService.Tests` | `TradingGuardProductTypeTests.cs` |
+| 差金決済ガードの適用範囲（日本株現物） | `RiskManagementService.Tests` | `TradingGuardProductTypeTests.cs` / `RiskEvaluatorTests.cs` |
+| **口座種別 × 市場 × 商品種別**・GFV 回避・fail-closed | `RiskManagementService.Tests` | **`CashAccountControlsTests.cs`** |
+| **現金口座での信用系の設定不能化** | `RiskManagementService.Tests` | **`CashAccountSettingsGuardTests.cs`** / **`CashAccountGuardEndpointTests.cs`** |
+| **口座種別の観測の保持・鮮度・供給経路** | `RiskManagementService.Tests` | **`BrokerAccountObservationStoreTests.cs`** / **`BrokerAccountObservedConsumerTests.cs`** |
 | **口座種別の照会と観測の発行** | `OrderExecutionService.Tests` | `MoomooBrokerAdapterTests.cs` / `BrokerAvailabilityProbeServiceTests.cs` |
 | **新拒否理由 3 種の序数・クラス分類** | `AiStockTrading.Shared.Contracts.Tests` | `RejectionReasonOrdinalStabilityTests.cs` / `RejectionReasonClassificationTests.cs` |
-| 約定到達後に差金決済ガードが拘束すること（#270 回帰） | `RiskManagementService.Infrastructure.Tests` | `MoomooFillControlRegressionTests.cs` |
-| 禁止銘柄の登録内容と照合規則 | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` |
-| 相場操縦パターン禁止（既定・クラス C） | `RiskManagementService.Domain.Tests` / `…Application.Tests` | `TradingGuardProductTypeTests.cs` / `Manipulation/*` |
-| 空売り統制との接続（有効化しても統制は解除されない） | `RiskManagementService.Domain.Tests` | `TradingGuardProductTypeTests.cs` / `ShortSellingControlsTests.cs` |
+| 約定到達後に差金決済ガードが拘束すること（#270 回帰） | `RiskManagementService.Tests` | `MoomooFillControlRegressionTests.cs` |
+| 禁止銘柄の登録内容と照合規則 | `RiskManagementService.Tests` | `TradingGuardProductTypeTests.cs` |
+| 相場操縦パターン禁止（既定・クラス C） | `RiskManagementService.Tests` | `TradingGuardProductTypeTests.cs` / `Manipulation/*` |
+| 空売り統制との接続（有効化しても統制は解除されない） | `RiskManagementService.Tests` | `TradingGuardProductTypeTests.cs` / `ShortSellingControlsTests.cs` |
 | 既定値の計画適合（`ProductType.Values` ほか） | `AiStockTrading.PlanConformance.Tests` | `PlanRiskDefaults.cs` / `ActualDefaults.cs` |
 | 画面の商品種別 3 値・危険な緩和の確認 | `frontend`（vitest） | `risk/contracts.test.ts` / `sc02-risk-settings/RiskSettingsPage.guard.test.tsx` |
 
@@ -134,7 +134,7 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 
 ## 5. 現金口座対応（#375。米国口座種別の計画 ADR と、口座種別の観測供給の実装 ADR）— 口座種別 × 市場 × 商品種別
 
-すべて `RiskManagementService.Domain.Tests/CashAccountControlsTests.cs`（明記のあるものを除く）。
+すべて `RiskManagementService.Tests/CashAccountControlsTests.cs`（明記のあるものを除く）。
 
 | ID | 観点 | 入力 | 期待 | テスト |
 | --- | --- | --- | --- | --- |
@@ -203,7 +203,7 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 
 ### 8.1 しきい値・「0 件」と「未供給」の区別（境界値）
 
-すべて `RiskManagementService.Domain.Tests/GoodFaithViolationCountingTests.cs`。
+すべて `RiskManagementService.Tests/GoodFaithViolationCountingTests.cs`。
 
 | ID | 観点 | 入力 | 期待 | テスト |
 | --- | --- | --- | --- | --- |
@@ -236,8 +236,8 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 
 ### 8.4 供給経路・計上単位・監査
 
-`RiskManagementService.Application.Tests/GoodFaithViolationCountingServiceTests.cs` および
-`RiskManagementService.Infrastructure.Tests/GoodFaithViolationCountingConsumerTests.cs`。
+`RiskManagementService.Tests/GoodFaithViolationCountingServiceTests.cs` および
+`RiskManagementService.Tests/GoodFaithViolationCountingConsumerTests.cs`。
 
 | ID | 観点 | 状況 | 期待 | テスト |
 | --- | --- | --- | --- | --- |

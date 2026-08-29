@@ -1,4 +1,6 @@
-using RiskManagementService.Domain;
+extern alias RiskManagementWorker;
+
+using RiskManagementWorker::RiskManagementService.Domain;
 using AiStockTrading.TestSupport.Messaging;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;

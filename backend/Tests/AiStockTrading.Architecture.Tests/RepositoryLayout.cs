@@ -16,50 +16,16 @@ internal static class RepositoryLayout
             .OrderBy(p => p, StringComparer.Ordinal)
             .ToArray();
 
-    /// <summary>
-    /// Domain 層のプロジェクト。プロジェクト名の接尾辞 <c>.Domain</c> で識別する
-    /// （命名規則は IADR-0128 決定 3。`<Svc>.<Layer>` の Layer セグメントが層を表す唯一の情報源である）。
-    /// </summary>
-    public static IReadOnlyList<string> DomainProjectFiles { get; } =
-        ServiceProjectFiles
-            .Where(p => Path.GetFileNameWithoutExtension(p).EndsWith(".Domain", StringComparison.Ordinal))
-            .ToArray();
-
-    /// <summary>
-    /// NFR, IADR-0265: <c>*.Domain.csproj</c> を持つ<b>未移送</b>サービス（旧構成の <c>src/</c> が実在し、
-    /// その配下に <c>*.Domain</c> ディレクトリを持つサービス）の数。<c>DomainProjectFiles</c> と同じ実測に
-    /// 収束するはずの値だが、**探索の経路をあえて分ける**（本プロパティはサービスディレクトリの
-    /// 直下 <c>src/</c> を見るだけで <c>*.csproj</c> の中身までは読まない）。
-    /// <para>
-    /// 単一プロジェクト＋VSA への移送（IADR-0259）が 1 サービス進むたびに、ここでの母集合からも
-    /// <c>DomainProjectFiles</c> の実測からも同じ 1 件が消える。<c>DomainLayerDependencyTests</c> の
-    /// メタ検査（探索が空振りしていないこと）の下限を、移送のたびに手で書き換える数値ではなく
-    /// ここから動的に導く——2 件減らすべきところを 1 件しか減らさない、逆に減らし過ぎる、といった
-    /// 手書き更新の事故を避けるためである。
-    /// </para>
-    /// </summary>
-    public static int UnmigratedServicesWithDomainProjectCount { get; } =
-        Directory.EnumerateDirectories(Path.Combine(Root, "backend", "Services"))
-            .Count(serviceDir =>
-            {
-                var srcDir = Path.Combine(serviceDir, "src");
-                var srcExists = Directory.Exists(srcDir);
-                var subdirNames = srcExists
-                    ? Directory.EnumerateDirectories(srcDir).Select(Path.GetFileName)!
-                    : Enumerable.Empty<string>();
-                return CountsAsUnmigratedServiceWithDomainProject(srcExists, subdirNames!);
-            });
-
-    /// <summary>
-    /// NFR, IADR-0265: 「未移送で Domain を持つサービス」の判定を、実ディスク I/O から切り離した
-    /// 純関数として切り出したもの（<c>UnmigratedServicesWithDomainProjectCount</c> の実測ロジック本体）。
-    /// ファイルシステムに触れずに肯定・否定の両方を固定できるようにするための切り出しであり、
-    /// 自己試験は <c>DomainLayerDependencyTests</c> 側に置く（消費側と同じ場所で読めるように）。
-    /// </summary>
-    internal static bool CountsAsUnmigratedServiceWithDomainProject(
-        bool srcDirectoryExists, IEnumerable<string> srcSubdirectoryNames) =>
-        srcDirectoryExists
-        && srcSubdirectoryNames.Any(name => name.EndsWith(".Domain", StringComparison.Ordinal));
+    // NFR, IADR-0265 フォローアップ, IADR-0259: かつてここには DomainProjectFiles（`*.Domain.csproj` の走査）と
+    // UnmigratedServicesWithDomainProjectCount（未移送サービスの実測）があり、DomainLayerDependencyTests が
+    // csproj の静的解析で Domain 層の依存規律を強制していた。単一プロジェクト＋VSA への移送が 11 サービス
+    // すべてで完了し **`*.Domain.csproj` が 0 本になった**ため、その検査は入力集合が空になり構造的に
+    // 何も検査できなくなった——IADR-0265 が仕込んだ「0 件になったら役目を終えたと名指しして落ちる」
+    // メタ検査が設計どおり作動したので、宣言どおりクラスごと退役させた。
+    //
+    // 🔴 規律そのものは失っていない。後継は DomainSourceDependencyTests（IADR-0256 で二重化のために新設）で、
+    // Domain の**ソース**を新旧樹形の和集合で走査し、using 許可リスト・CPM 由来の禁止トークン（完全修飾での
+    // 迂回を塞ぐ）・他サービス参照を検査する。走査件数の下限検査を持つため「0 件走査で緑」にはならない。
 
     /// <summary>ビルド成果物（<c>bin/</c> <c>obj/</c>）の下でないこと。</summary>
     public static bool NotUnderBuildOutput(string path)

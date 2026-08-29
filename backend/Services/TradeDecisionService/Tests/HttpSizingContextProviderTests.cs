@@ -1,6 +1,8 @@
+extern alias RiskManagementWorker;
+
 using System.Net;
 using System.Text.Json;
-using RiskManagementService.Domain;
+using RiskManagementWorker::RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;

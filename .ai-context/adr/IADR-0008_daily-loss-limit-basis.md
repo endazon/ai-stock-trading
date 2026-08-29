@@ -26,8 +26,8 @@ plan_refs:
 - 関連する実装仕様書: [20260709_risk-eval-core-fixes](../specs/20260709_risk-eval-core-fixes.md)、
   機能仕様書 [FR-10_risk-controls](../../docs/functional/FR-10_risk-controls.md)
 - 対象 Issue: #31
-- 対象コード: [`PortfolioSnapshot.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/PortfolioSnapshot.cs)、
-  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/RiskEvaluator.cs)
+- 対象コード: [`PortfolioSnapshot.cs`](../../backend/Services/RiskManagementService/Domain/PortfolioSnapshot.cs)、
+  [`RiskEvaluator.cs`](../../backend/Services/RiskManagementService/Domain/RiskEvaluator.cs)
 
 ## コンテキストと課題
 

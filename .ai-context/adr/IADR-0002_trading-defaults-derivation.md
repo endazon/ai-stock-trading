@@ -24,7 +24,7 @@ plan_refs:
 - 関連する計画書 ID: FR-10（リスク統制）、FR-17（前提条件の一元管理）、FR-19（取引ガード）、FR-20（段階ゲート）
 - 一次情報: 全体前提条件（`05_trading-assumptions.md` §5）、要求定義（`01_requirements.md`）
 - 関連する実装仕様書: [20260708_risk-guard-core](../specs/20260708_risk-guard-core.md)
-- 対象コード: [`TradingDefaults.cs`](../../backend/Services/RiskManagementService/src/RiskManagementService.Domain/TradingDefaults.cs)
+- 対象コード: [`TradingDefaults.cs`](../../backend/Services/RiskManagementService/Domain/TradingDefaults.cs)
 
 ## コンテキストと課題
 

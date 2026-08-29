@@ -21,8 +21,12 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <!-- IADR-0003/0017: サイジングは判断サービスの責務。PositionSizer/RiskLimitSettings/TradingDefaults を参照する
-         （ロジックの単一情報源を複製しない。未移送サービスへのクロスサービス参照 ── IADR-0260 の射程外）。 -->
-    <ProjectReference Include="..\RiskManagementService\src\RiskManagementService.Domain\RiskManagementService.Domain.csproj" />
+         （ロジックの単一情報源を複製しない。クロスサービス参照 ── IADR-0260 の射程外）。
+         NFR/IADR-0259 決定1: リスク管理サービスも単一プロジェクトへ移送済み（W11 段 4-11）のため、
+         旧 RiskManagementService.Domain.csproj からサービス本体の csproj へ張り替えた。移送先は Web SDK で
+         `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
+         （IADR-0050 決定1 と同じ機構。別名は AiStockTrading.IntegrationTests と同一にそろえる）。 -->
+    <ProjectReference Include="..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
     <!-- Domain/ が共有イベント契約・値型を使うため参照する（旧 TradeDecisionService.Domain.csproj の直接参照を継承）。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
     <!-- FR-17, NFR/IADR-0260/IADR-0264 決定1: 全体前提条件（VersionedAssumptions）はサービスを跨いで

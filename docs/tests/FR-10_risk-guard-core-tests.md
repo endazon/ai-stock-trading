@@ -24,7 +24,7 @@ issues: [#11, #12, #25, #257, #26, #27, #270, #28, #29, #292, #30, #32, #364]
 > （SIMULATE の 1,700 倍スケール）は同書が置き換えた。
 >
 > 計画書の受け入れ基準と作業仕様書のチェックリストを、実装済みの xUnit テストへ写像した対応表。
-> 対象は `RiskManagementService.Domain.Tests`（RiskEvaluator / PositionSizer / TradingDefaults）と
+> 対象は `RiskManagementService.Tests`（RiskEvaluator / PositionSizer / TradingDefaults）と
 > `AiStockTrading.Shared.Infrastructure.Tests`（PaperBrokerAdapter）。
 >
 > **テスト件数の注記**: リスク評価コア是正（Issue #25〜#31）・サイジングキャップ・トレーサビリティ整備は

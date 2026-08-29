@@ -12,6 +12,11 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="..\TradeDecisionService.csproj" />
+    <!-- NFR/IADR-0259 決定1: リスク管理サービスの単一プロジェクト移送（W11 段 4-11）で、推移参照として入る
+         RiskManagementService（Web SDK・`public partial class Program` を持つ）が `Program` を曖昧にする（CS0433）。
+         推移参照には Aliases が伝播しないため、ここで同じプロジェクトを明示参照して extern alias を与える
+         （IADR-0050 決定1 と同じ機構。別名は本リポジトリ共通の RiskManagementWorker）。 -->
+    <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
          共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />

@@ -98,7 +98,7 @@ backend/Services/<Svc>/
 - **サービスのルート名前空間は基盤と同じ規則で `<Name>Service` である**（`RiskManagementService.Domain` /
   `AuditService.Infrastructure.Persistence`）。`.Foundation` / `.Composable` の名前空間セグメントは持たない
   （**フォルダとしての `Foundation/` `Composable/` は移送波まで残る**——名前空間とフォルダは独立に動かせる）。
-  **アセンブリ名・プロジェクト名は変えていない**（`RiskManagementService.Domain.csproj` のまま）。
+  **アセンブリ名・プロジェクト名は変えていない**（旧構成が残るサービスの `ReportService.Domain.csproj` のまま）。
 - **共有物の名前空間は `AiStockTrading.Shared.*` / `AiStockTrading.TestSupport.*` のまま据え置く**
   （横断テストの `AiStockTrading.Architecture.Tests` / `AiStockTrading.IntegrationTests` / `AiStockTrading.Bff.Endpoints` も同じ）。
   基盤も `Platform.Shared.*` を据え置いている。

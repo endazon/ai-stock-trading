@@ -1,5 +1,7 @@
+extern alias RiskManagementWorker;
+
 using BacktestService.Domain;
-using RiskManagementService.Domain;
+using RiskManagementWorker::RiskManagementService.Domain;
 using AwesomeAssertions;
 using Xunit;
 

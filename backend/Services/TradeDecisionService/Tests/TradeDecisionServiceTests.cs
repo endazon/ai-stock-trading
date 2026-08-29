@@ -1,4 +1,6 @@
-using RiskManagementService.Domain;
+extern alias RiskManagementWorker;
+
+using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;

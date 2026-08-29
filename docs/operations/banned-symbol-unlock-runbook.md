@@ -88,8 +88,8 @@ issues: [#380]
 
 **コードの所在**:
 
-- `backend/Services/RiskManagementService/src/RiskManagementService.Application/Services/RiskSettingsService.cs`（`UpdateGuard` → `RequireActorAndReason` → `Save(..., SettingsChangeType.Guard, actor, reason)`）
-- `backend/Services/RiskManagementService/src/RiskManagementService.Application/State/SettingsChangeEntry.cs`
+- `backend/Services/RiskManagementService/Features/RiskManagement/RiskSettingsService.cs`（`UpdateGuard` → `RequireActorAndReason` → `Save(..., SettingsChangeType.Guard, actor, reason)`）
+- `backend/Services/RiskManagementService/Features/RiskManagement/SettingsChangeEntry.cs`
 
 照会は設定変更（一時停止・緊急停止）および取引履歴・判断根拠の参照の各ユースケースが定める設定変更履歴から行う。
 
