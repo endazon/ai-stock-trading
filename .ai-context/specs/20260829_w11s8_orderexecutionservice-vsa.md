@@ -340,6 +340,10 @@ TradeDecisionService。BacktestService・MarketMonitorService は既に移送済
 - [x] `dotnet format backend/backend.slnx --verify-no-changes` が通る（exit 0）
 - [x] `dotnet ef migrations has-pending-model-changes` が「変更なし」を返す
 - [x] `list-test-projects.js --count` が 35 → 32（base `58854e3`）
+
+  ［2026-08-29 追記 / #593］develop（`f434ce5`＝InformationCollectionService #592 の移送を含む）
+  を取り込んだため、**PR の最終状態では 32 → 29 になる**（#592 がテストプロジェクトを 3 本
+  減らしたぶん、移送前後とも 3 少ない）。**どちらも正しく、基準が違うだけである。**
 - [x] `coverage-floor.json` の床（79.00%）を割らない（実測 82.25%。Release ビルド・
       `bin`/`obj`/`cov` 清掃後・32 レポート＝`list-test-projects --count` と一致）
 - [x] 検査器一式が緑（`check-doc-links` / `check-adr-index-sync` / `check-cross-repo-refs` /
