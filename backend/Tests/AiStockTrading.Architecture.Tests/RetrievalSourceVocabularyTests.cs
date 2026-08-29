@@ -24,8 +24,8 @@ public class RetrievalSourceVocabularyTests
         "Domain", "SourceAllowlist.cs");
 
     private static readonly string RetrievalPolicyPath = Path.Combine(
-        RepositoryLayout.Root, "backend", "Services", "TradeDecisionService", "src",
-        "TradeDecisionService.Application", "Services", "RetrievalSourcePolicy.cs");
+        RepositoryLayout.Root, "backend", "Services", "TradeDecisionService",
+        "Features", "TradeDecision", "RetrievalSourcePolicy.cs");
 
     [Fact]
     public void 収集側の許可ソースはすべてRAG注入側でも許可されている()
