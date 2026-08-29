@@ -44,8 +44,9 @@ public class MonitorContractFixtureTests
 
         // 監視銘柄を 1 件積んでから採る——空のままだと `MonitoredSymbol` の形が契約に現れない
         // （フィクスチャが表現しない形は守れない・IADR-0146 残余リスク2）。
-        await client.PostAsJsonAsync("/monitor/watchlist",
-            new { Symbol = "CONTRACT", Market = Market.UnitedStates, Reason = "契約フィクスチャ生成" });
+        (await client.PostAsJsonAsync("/monitor/watchlist",
+            new { Symbol = "CONTRACT", Market = Market.UnitedStates, Reason = "契約フィクスチャ生成" }))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var res = await client.GetAsync("/monitor/settings");
 

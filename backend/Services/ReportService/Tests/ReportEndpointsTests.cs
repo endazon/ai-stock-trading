@@ -91,7 +91,8 @@ public class ReportEndpointsTests
 
         // 利用者が確定させる（前提）。
         var owner = OwnerClient(factory);
-        await owner.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await owner.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
         (await owner.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -112,7 +113,8 @@ public class ReportEndpointsTests
     {
         await using var factory = new ReportWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var confirm = await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 99 });
 
@@ -271,7 +273,8 @@ public class ReportEndpointsTests
     {
         await using var factory = new ReportWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         // 初期はレビュー局面 Drafting。
         (await client.GetFromJsonAsync<ReviewDto>("/reports/daily-2026-07-10/review"))!.State.Should().Be("Drafting");
@@ -306,7 +309,8 @@ public class ReportEndpointsTests
     {
         await using var factory = new ReportWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 99 }))
             .StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -317,8 +321,10 @@ public class ReportEndpointsTests
     {
         await using var factory = new ReportWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
-        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         (await client.PostAsJsonAsync("/reports/daily-2026-07-10/present", new { ExpectedVersion = 2 }))
             .StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -373,7 +379,7 @@ public class ReportEndpointsTests
         var client = OwnerClient(factory);
 
         // 月報を作成・確定（ブートストラップ済み）。
-        await client.PutAsJsonAsync("/reports/monthly-2026-06", new
+        (await client.PutAsJsonAsync("/reports/monthly-2026-06", new
         {
             Kind = "Monthly",
             PeriodStart = "2026-06-01",
@@ -381,7 +387,8 @@ public class ReportEndpointsTests
             AssumptionsVersion = 1,
             PolicySummary = "6月方針",
             ExpectedVersion = 0,
-        });
+        }))
+            .IsSuccessStatusCode.Should().BeTrue();
         (await client.PostAsJsonAsync("/reports/monthly-2026-06/confirm", new { ExpectedVersion = 1 }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -403,7 +410,8 @@ public class ReportEndpointsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
 
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
         (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -427,10 +435,13 @@ public class ReportEndpointsTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
 
-        await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody());
-        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        (await client.PutAsJsonAsync("/reports/daily-2026-07-10", DraftBody()))
+            .IsSuccessStatusCode.Should().BeTrue();
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .IsSuccessStatusCode.Should().BeTrue();
         // 確定済みの再確定（冪等・遷移なし）。
-        await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         recorder.Saved.Should().ContainSingle();
     }

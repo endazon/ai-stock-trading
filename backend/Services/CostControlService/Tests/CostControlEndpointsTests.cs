@@ -94,7 +94,8 @@ public class CostControlEndpointsTests
     {
         await using var factory = new CostControlWorkerWebApplicationFactory();
         var client = OwnerClient(factory);
-        await client.PostAsJsonAsync("/costs/record", Record("Llm", 2_000m));
+        (await client.PostAsJsonAsync("/costs/record", Record("Llm", 2_000m)))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var review = await client.GetFromJsonAsync<ReviewDto>("/costs/review?capital=100000");
 

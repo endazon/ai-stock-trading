@@ -118,14 +118,15 @@ public class CollectionIntervalNotConfigurableTests(MonitorWorkerWebApplicationF
     {
         var client = OwnerClient();
 
-        await client.PutAsJsonAsync("/monitor/settings", new
+        (await client.PutAsJsonAsync("/monitor/settings", new
         {
             MovementThresholdRatio = 0.03m,
             Cooldown = TimeSpan.FromMinutes(15),
             MonitoredSymbols = Array.Empty<MonitoredSymbol>(),
             Reason = "間隔の混入検証",
             PollIntervalSeconds = 1,
-        });
+        }))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var body = await client.GetStringAsync("/monitor/settings");
 
