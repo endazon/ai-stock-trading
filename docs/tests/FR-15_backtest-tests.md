@@ -58,10 +58,10 @@ issues: [#20, #82, #164, #208, #211, #382, #417]
 
 ## テスト対象・範囲
 
-- 対象: `BacktestService.Domain.Tests`（純ドメイン: シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）、
-  `BacktestService.Application.Tests`（過去データのスナップショット化・PIT ユニバース適用・verdict 供給の結合）、
-  `BacktestService.Infrastructure.Tests`（実過去データ源アダプタ・provider 選択）、
-  `BacktestService.Api.Tests`（ホストの配線と実効構成の自己申告。クラス名 `BacktestWorker…` は据え置き＝標準プロジェクト構成の決定による）。
+- 対象: `BacktestService.Tests`（単一プロジェクト＋VSA 樹形への移送で 4 プロジェクトを 1 本へ統合した。**テストの中身と件数は不変**）。
+  covered する範囲は移送前と同じで、純ドメイン（シミュレーション・指標・過剰適合補正・Stage 0 合格判定・撤退キルスイッチ）、
+  過去データのスナップショット化・PIT ユニバース適用・verdict 供給の結合、実過去データ源アダプタ・provider 選択、
+  ホストの配線と実効構成の自己申告（クラス名 `BacktestWorker…` は据え置き）を含む。
 - 対象外（別スライス）: **実市場データによる閾値の水準確認**（偽陰性の測定。閾値そのものの較正は
   Stage 0 の最小試行数の較正で実施済・[#208](https://github.com/endazon/ai-stock-trading/issues/208)）、
   実 Stooq に対する live 検証（ボット検知チャレンジのため取得不可。**回避は履歴源の計画 ADR の決定 1 が禁じた**ため

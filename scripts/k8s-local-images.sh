@@ -24,7 +24,7 @@ echo "==> runtime: $RUNTIME"
 # service-name : SERVICE_PROJECT : SERVICE_DLL（compose の build args と一致）
 MAPPING=(
   "audit-service|backend/Services/AuditService/AuditService.csproj|AuditService.dll"
-  "backtest-service|backend/Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj|BacktestService.Api.dll"
+  "backtest-service|backend/Services/BacktestService/BacktestService.csproj|BacktestService.dll"
   "configuration-service|backend/Services/ConfigurationService/ConfigurationService.csproj|ConfigurationService.dll"
   "cost-control-service|backend/Services/CostControlService/CostControlService.csproj|CostControlService.dll"
   "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj|InformationCollectionService.Api.dll"
