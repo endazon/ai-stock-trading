@@ -51,7 +51,7 @@ issues: [#20, #82, #99, #100, #208, #382]
 | 実アダプタ（採用） | `MoomooHistoricalBarSource`（Infrastructure） | **米国株日足 OHLC 履歴源を確定させた計画 ADR の決定 5 が採用した moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・`RehabType_Forward`）。1 リクエスト 1,000 件・`NextReqKey` でページング。米国株のみ（日本株は写像せず欠測）。SDK 依存は `MMApiMoomooHistoryKLineClient` に閉じる。送信前に `IRateLimiter` で自制。**ただし決定 5 の未確認 2 点が済むまで本番のバックテストへ流さない**（下記「米国株日足 OHLC 履歴の現況」） |
 | 実アダプタ（候補・取得不能） | `StooqHistoricalBarSource`（Infrastructure） | 情報源の計画 ADR が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。**現在は取得不能**（ボット検知チャレンジ。回避実装は履歴源の計画 ADR の決定 1 が禁止）。**削除しない**（決定 5 でも決定 1 の扱いは不変） |
 | 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・構成不備も警告して no-op（**allow-list**: 既知の provider が構成の妥当性を満たしたときだけ実アダプタを返す） |
-| 合成・自己申告 | `BacktestService.Api`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
+| 合成・自己申告 | `BacktestService`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
 | 評価（テスト用） | `InMemoryBarDataSource` | **テスト・検証専用**（決定的スタブ） |
 | 取得対象の導出 | `SecurityUniverse.MembersBetween` | 期間内に一度でも構成銘柄だった銘柄（廃止銘柄含む）＝生存者バイアス排除を取得段階から一貫 |

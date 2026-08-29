@@ -13,18 +13,10 @@
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Infrastructure.Tests/InformationCollectionService.Infrastructure.Tests.csproj" />
     <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Api.Tests/InformationCollectionService.Api.Tests.csproj" />
   </Folder>
-  <Folder Name="/Services/BacktestService/" />
-  <Folder Name="/Services/BacktestService/src/">
-    <Project Path="Services/BacktestService/src/BacktestService.Domain/BacktestService.Domain.csproj" />
-    <Project Path="Services/BacktestService/src/BacktestService.Application/BacktestService.Application.csproj" />
-    <Project Path="Services/BacktestService/src/BacktestService.Infrastructure/BacktestService.Infrastructure.csproj" />
-    <Project Path="Services/BacktestService/src/BacktestService.Api/BacktestService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/BacktestService/tests/">
-    <Project Path="Services/BacktestService/tests/BacktestService.Domain.Tests/BacktestService.Domain.Tests.csproj" />
-    <Project Path="Services/BacktestService/tests/BacktestService.Application.Tests/BacktestService.Application.Tests.csproj" />
-    <Project Path="Services/BacktestService/tests/BacktestService.Infrastructure.Tests/BacktestService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/BacktestService/tests/BacktestService.Api.Tests/BacktestService.Api.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（MSP:IADR-0282 決定1 と同一樹形。W11 段 4-4）。 -->
+  <Folder Name="/Services/BacktestService/">
+    <Project Path="Services/BacktestService/BacktestService.csproj" />
+    <Project Path="Services/BacktestService/Tests/BacktestService.Tests.csproj" />
   </Folder>
   <!-- NFR/IADR-0259 決定1, IADR-0264 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（W11 段 4-3）。
        旧 ConfigurationService.Client（w11s4b で廃止）から複製した前提条件の解決口
