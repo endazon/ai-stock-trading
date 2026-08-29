@@ -11,6 +11,7 @@ using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
 using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext;
+using IInformationDegradationStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.IInformationDegradationStore;
 
 namespace AiStockTrading.IntegrationTests;
 
@@ -110,6 +111,19 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         await WaitReadyAsync(riskClient);
         await WaitReadyAsync(execClient);
         await WaitSubscribedAsync(RiskServiceName, typeof(TradeDecisionMade));
+
+        // 🔴 FR-01, FR-02, FR-10, #564, IADR-0267: **新規建ての前提条件を本番と同じ経路で整える。**
+        // リスク管理は「情報収集の有効な現況観測が無い＝不明」を **fail-closed で新規建て停止**へ倒す
+        // （拒否理由 InformationSourceDegraded）。本 fixture には収集サービスが居らず観測が永久に届かないため、
+        // 整えなければ TradeDecisionMade は必ず拒否される（実測。統制は正しく働いている）。
+        //
+        // **統制を迂回・無効化しない。** 収集サービスが毎巡回発行するのと同じ現況観測イベントを
+        // 実ブローカへ発行し、「止めるカテゴリは無い」を正規の経路で届ける（＝観測経路も E2E で通す）。
+        await WaitSubscribedAsync(RiskServiceName, typeof(InformationSourceStateObserved));
+        await OrderExecutionPipelineE2ETests.PublishAsync(
+            _riskFactory.Services,
+            new InformationSourceStateObserved([], TimeSpan.FromMinutes(10), DateTimeOffset.UtcNow));
+        await WaitInformationObservedAsync(TimeSpan.FromSeconds(30));
 
         // #364, IADR-0152 決定1/3: 既定資金（InitialCapital ＝ equity $3,000・基準通貨 USD）に対し十分小さい
         // 新規建て。10 株 × $20 ＝ $200 は 1 注文上限（25% ＝ $750）・日次上限（150% ＝ $4,500）の内側であり、
@@ -224,6 +238,27 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         }
 
         return false;
+    }
+
+    // #564, IADR-0267: 現況観測がリスク管理へ**実際に適用された**（新規建て停止が解けた）まで待つ。
+    // 発行の完了と適用の完了は別であり、待たずに TradeDecisionMade を出すと競合で拒否され得る。
+    private async Task WaitInformationObservedAsync(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            using (var scope = _riskFactory!.Services.CreateScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IInformationDegradationStore>();
+                if (!store.BlocksNewEntries)
+                    return;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException(
+            "情報収集の現況観測がリスク管理へ適用されませんでした（新規建て停止が解けない）。");
     }
 
     // 購読準備の待ち合わせ: 対象キューに consumer が付くまで待つ（付かなければ表明で落とす）。
