@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Logging;
@@ -23,13 +24,16 @@ internal sealed class HttpKnowledgeBaseSearch(
         Dictionary<string, string>? AttributeFilters);
 
     // platform SearchResponse / SearchResultDto の受け皿。
+    // Attributes, #568: ABAC 属性（`publishedAt` を含み得る。KnowledgeBaseWriterSink が書き込み時に
+    // 載せた値が platform 側でチャンクペイロードへ伝播し、検索応答でそのまま返る）。
     private sealed record SearchResultBody(
         Guid DocumentId,
         string DocumentTitle,
         string Text,
         float Score,
         string? MarkdownUri,
-        List<string>? Tags);
+        List<string>? Tags,
+        Dictionary<string, string>? Attributes);
 
     private sealed record SearchResponseBody(List<SearchResultBody>? Results);
 
@@ -68,7 +72,8 @@ internal sealed class HttpKnowledgeBaseSearch(
                     r.Text,
                     (double)r.Score, // platform は float スコア。KnowledgeHit は double のため明示変換（拡大・非損失）。
                     r.MarkdownUri,
-                    r.Tags ?? []))
+                    r.Tags ?? [],
+                    ExtractPublishedAt(r.Attributes)))
                 .ToList();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -81,5 +86,35 @@ internal sealed class HttpKnowledgeBaseSearch(
             logger.LogWarning(ex, "KB 検索で例外。空結果に倒します。");
             return Empty;
         }
+    }
+
+    // FR-08, #568: ABAC 属性 `publishedAt`（KnowledgeBaseWriterSink が書き込み時に "O" 形式で載せ、
+    // platform 検索応答がそのまま返す）から発行時刻を復元する。
+    // 🔴 fail-safe（捏造しない）: 属性なし・キー欠落・解釈不能はすべて null——
+    // ScreeningContextPlanner 段③の保守側既定（発行時刻不明＝最古扱いで先に削る）へ倒れる。
+    // キー比較は platform 側 ExtractAttributes と同じ OrdinalIgnoreCase に揃える。
+    private const string PublishedAtAttributeKey = "publishedAt";
+
+    private static DateTimeOffset? ExtractPublishedAt(Dictionary<string, string>? attributes)
+    {
+        if (attributes is null || attributes.Count == 0)
+            return null;
+
+        string? raw = null;
+        foreach (var (key, value) in attributes)
+        {
+            if (string.Equals(key, PublishedAtAttributeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                raw = value;
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed
+            : null;
     }
 }
