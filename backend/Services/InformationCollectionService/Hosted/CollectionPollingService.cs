@@ -24,9 +24,17 @@ public sealed class CollectionPollingService(
     // Halted 時の再照会倍率（収集はしないが、復帰検知のため Throttled と同じ間隔で回す）。
     private const decimal HaltedRecheckMultiplier = 2m;
 
+    // #564, IADR-0267: 現況観測に載せる有効期間。**実効巡回間隔の 2 倍**（下限 5 分）とする——
+    // 1 巡回ぶんの取りこぼし（発行失敗・再配送遅延）で統制が誤発動しない最小の余裕である。
+    // 受け手はこの値を過ぎた観測を「無い」と同じに扱い、新規建てを止める（フェイルクローズ）。
+    private const double ObservationValidityFactor = 2d;
+    private static readonly TimeSpan MinObservationValidity = TimeSpan.FromMinutes(5);
+
     // #336, ADR-0020 決定2-3: 欠測の遷移判定（発生時刻・継続時間・該当サイクル数）。巡回をまたいで状態を持つため
     // ポーラ（singleton）が保持する。判定そのものは DegradationStateTracker（外部依存なし）が行う。
-    private readonly DegradationStateTracker _degradationTracker = new();
+    // #564: あわせて毎巡回の現況観測を作る（有効期間を与える。受け手は巡回間隔を知らないため発行側が宣言する）。
+    private readonly DegradationStateTracker _degradationTracker =
+        new(ObservationValidity(TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds))));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -66,6 +74,15 @@ public sealed class CollectionPollingService(
                 break;
             }
         }
+    }
+
+    // #564: 巡回間隔から現況観測の有効期間を導く純関数（境界テスト用）。
+    // 🔴 **巡回間隔そのものを渡さない。** 等値にすると、わずかな揺らぎ（発行の遅れ・再配送）で観測が
+    // 失効し、健全なのに新規建てが止まる。逆に長すぎれば古い現況を信じ続けるため、受け手側が上限をクランプする。
+    public static TimeSpan ObservationValidity(TimeSpan pollInterval)
+    {
+        var scaled = pollInterval * ObservationValidityFactor;
+        return scaled < MinObservationValidity ? MinObservationValidity : scaled;
     }
 
     // 費用統制の状態から次回巡回までの実効間隔を算出する純関数（境界テスト用）。
@@ -130,7 +147,10 @@ public sealed class CollectionPollingService(
         return gate;
     }
 
-    // #336, ADR-0020 決定2-3: 欠測・回復の遷移イベントを発行する。
+    // #336, ADR-0020 決定2-3: 欠測・回復の遷移イベントと、#564 の現況観測を発行する。
+    // 🔴 **現況観測は毎巡回 1 件出る。** 受け手（リスク管理）はこれが途切れると新規建てを止めるため、
+    // External トリガ（K8s CronJob）で運用するときは **Collection:PollIntervalSeconds を cron の周期と揃える**こと
+    // （揃わない場合は観測が早く失効し、新規建てが止まる＝安全側に落ちる）。
     // fail-safe: 発行の失敗で収集を止めない。**ただし状態は巻き戻す**——巻き戻さないと「発行済み」として
     // 記録され、次の機会にも二度と出なくなる（IADR-0196 と同じ理由）。
     private async Task PublishDegradationSafeAsync(IMessageBus publish, CollectionDegradation degradation)

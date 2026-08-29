@@ -119,7 +119,7 @@ public class BrokerAccountObservationStoreTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             store,
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
 
         builder.Build().Account.Should().Be(observed);
     }
@@ -132,7 +132,7 @@ public class BrokerAccountObservationStoreTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Origin)),
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
 
         builder.Build().Account.Should().BeNull();
     }
@@ -149,7 +149,7 @@ public class BrokerAccountObservationStoreTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             store,
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
 
         builder.Build().Account.Should().BeNull();
     }

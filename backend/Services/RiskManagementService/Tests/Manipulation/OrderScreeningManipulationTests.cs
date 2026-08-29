@@ -62,7 +62,7 @@ public class OrderScreeningManipulationTests
         // 本テストの注文は内蔵 paper であり口座種別を要求しない（IADR-0153 決定2）。
         var builder = new PortfolioSnapshotBuilder(
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
         var detector = new ManipulativeOrderPatternDetector(
             source, clock, TradingDefaults.CreateManipulationDetectionSettings());
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため**空の台帳**を渡す

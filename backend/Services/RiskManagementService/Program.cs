@@ -131,11 +131,15 @@ builder.Services.AddScoped<IGoodFaithViolationStore, EfGoodFaithViolationStore>(
 // **解除は記録を消さず追記する**（決定1「違反記録は失効させない」）。DbContext が scoped のため本サービスも scoped。
 builder.Services.AddScoped<GoodFaithViolationClearingService>();
 builder.Services.AddScoped<GoodFaithViolationCountingService>();
-// FR-01, FR-02, FR-10, ADR-0020, #337, IADR-0249: 情報収集の縮退状態（新規建て停止）の保持。
-// **singleton・非永続**である——発行側（収集サービスの遷移判定）もプロセス内であり、こちらだけ永続化しても
-// 再起動時の取りこぼしは解消しない（残余リスクは IADR-0249）。状態は Wolverine ハンドラ
-// （InformationSourceDegradedRiskHandler / InformationSourceRecoveredRiskHandler）が畳む。
-builder.Services.AddSingleton<IInformationDegradationStore, InMemoryInformationDegradationStore>();
+// FR-01, FR-02, FR-10, ADR-0020, #337, #564, IADR-0249, IADR-0267: 情報収集の縮退状態（新規建て停止）の保持。
+// **singleton・非永続**である——縮退は「いま収集サービスが観測している事実」であり、プロセスをまたいで
+// 引き継ぐべき値ではない。**再起動で観測が消えれば新規建ては止まり（フェイルクローズ）、次の巡回の
+// 現況観測（InformationSourceStateObserved）で復帰する。** 状態は Wolverine ハンドラ
+// （InformationSourceDegradedRiskHandler / InformationSourceRecoveredRiskHandler /
+// InformationSourceStateObservedRiskHandler）が畳む。
+// 🔴 **TimeProvider を要求するのは観測に有効期間があるからである**（未観測・失効はいずれも「不明」＝止める）。
+builder.Services.AddSingleton<IInformationDegradationStore>(sp =>
+    new InMemoryInformationDegradationStore(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped<PortfolioSnapshotBuilder>();
 // FR-04/10, IADR-0029: 取引判断へ供給するサイジング文脈（設定＋ポートフォリオ状態から導出）。
 builder.Services.AddScoped<SizingContextService>();

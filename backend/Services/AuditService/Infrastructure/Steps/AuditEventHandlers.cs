@@ -441,6 +441,19 @@ public sealed class InformationSourceRecoveredAuditHandler(IAuditEventStore stor
     }
 }
 
+// FR-01, FR-10, FR-11, #564, IADR-0267: 情報収集の現況観測（毎巡回 1 件）を台帳へ記録する。
+//
+// 🔴 **「止まっていなかった」ことの証跡でもある。** 停止カテゴリが空の観測を残さないと、
+// 事後に「その時刻に統制が働いていなかったのか、観測が途切れていたのか」を区別できない。
+public sealed class InformationSourceStateObservedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(InformationSourceStateObserved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかったときの建玉解消を中央監査台帳へ記録する。
 // 利用者の承認なしに注文取消・建玉決済が起きるため、記録が無いと「知らないうちに建玉が消えた」状態になる。
 public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore store, IClock clock)

@@ -72,7 +72,7 @@ public class MoomooFillControlRegressionTests
         var snapshotBuilder = new PortfolioSnapshotBuilder(
             provider, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
             new InMemoryBrokerAccountObservationStore(TimeProvider.System),
-            new InMemoryInformationDegradationStore());
+            FakeInformationDegradation.Affirmed());
         var settings = new InMemoryRiskSettingsStore();
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         return (new OrderScreeningService(settings, snapshotBuilder, new InMemoryLockoutStore(), clock,
