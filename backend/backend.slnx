@@ -1,17 +1,9 @@
 <Solution>
   <Folder Name="/Services/" />
-  <Folder Name="/Services/InformationCollectionService/" />
-  <Folder Name="/Services/InformationCollectionService/src/">
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Domain/InformationCollectionService.Domain.csproj" />
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Application/InformationCollectionService.Application.csproj" />
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Infrastructure/InformationCollectionService.Infrastructure.csproj" />
-    <Project Path="Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj" />
-  </Folder>
-  <Folder Name="/Services/InformationCollectionService/tests/">
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Domain.Tests/InformationCollectionService.Domain.Tests.csproj" />
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Application.Tests/InformationCollectionService.Application.Tests.csproj" />
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Infrastructure.Tests/InformationCollectionService.Infrastructure.Tests.csproj" />
-    <Project Path="Services/InformationCollectionService/tests/InformationCollectionService.Api.Tests/InformationCollectionService.Api.Tests.csproj" />
+  <!-- NFR/IADR-0259 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（MSP:IADR-0282 決定1 と同一樹形。W11 段 4-7）。 -->
+  <Folder Name="/Services/InformationCollectionService/">
+    <Project Path="Services/InformationCollectionService/InformationCollectionService.csproj" />
+    <Project Path="Services/InformationCollectionService/Tests/InformationCollectionService.Tests.csproj" />
   </Folder>
   <!-- NFR/IADR-0259 決定1: 単一プロジェクト＋VSA/DDD フォルダ構成へ移送済み（MSP:IADR-0282 決定1 と同一樹形。W11 段 4-4）。 -->
   <Folder Name="/Services/BacktestService/">

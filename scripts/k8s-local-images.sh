@@ -27,7 +27,7 @@ MAPPING=(
   "backtest-service|backend/Services/BacktestService/BacktestService.csproj|BacktestService.dll"
   "configuration-service|backend/Services/ConfigurationService/ConfigurationService.csproj|ConfigurationService.dll"
   "cost-control-service|backend/Services/CostControlService/CostControlService.csproj|CostControlService.dll"
-  "information-collection-service|backend/Services/InformationCollectionService/src/InformationCollectionService.Api/InformationCollectionService.Api.csproj|InformationCollectionService.Api.dll"
+  "information-collection-service|backend/Services/InformationCollectionService/InformationCollectionService.csproj|InformationCollectionService.dll"
   "market-monitor-service|backend/Services/MarketMonitorService/MarketMonitorService.csproj|MarketMonitorService.dll"
   "notification-service|backend/Services/NotificationService/src/NotificationService.Api/NotificationService.Api.csproj|NotificationService.Api.dll"
   "order-execution-service|backend/Services/OrderExecutionService/src/OrderExecutionService.Api/OrderExecutionService.Api.csproj|OrderExecutionService.Api.dll"
