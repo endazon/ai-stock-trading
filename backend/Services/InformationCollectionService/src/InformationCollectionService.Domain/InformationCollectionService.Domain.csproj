@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <RootNamespace>InformationCollectionService.Domain</RootNamespace>
-  </PropertyGroup>
-</Project>

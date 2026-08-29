@@ -1,0 +1,32 @@
+<!-- #9 Slice A, FR-01, IADR-0022, NFR/IADR-0259 決定1, IADR-0263/IADR-0264 決定3: 情報収集サービス。
+     単一プロジェクト＋VSA/DDD フォルダ構成（層プロジェクト .Api/.Application/.Domain/.Infrastructure は撤去し、
+     Features/・Domain/・Common/・Infrastructure/・Hosted/ のフォルダで境界を表す。基盤 MSP:IADR-0282 決定1 と
+     同一樹形）。定時ポーリングで収集→正規化→サニタイズ→KB保存→収集完了イベント発行（Hosted/）。
+     公式情報源アダプタ・費用統制ゲート・KB シンク（Infrastructure/ExternalServices/）を持つ。DB なし。
+     ヘルスチェック・run-once トリガの HTTP サーフェスのため Web SDK を使用。外部情報源・KB 保存は既定で無効
+     （安全既定）。実行時基盤は test-support shim（本番非使用・IADR-0013）を参照する。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
+         （入れ子のままだと二重コンパイルで CS0246 が出る。基盤が実測済み・NFR/IADR-0259）。 -->
+    <Compile Remove="Tests/**" />
+    <Content Remove="Tests/**" />
+    <None Remove="Tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!-- 収集完了イベント（InformationCollected）の発行に共有契約を参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- IADR-0068: Finnhub 呼び出し（FinnhubQuoteClient）とレート制限（TokenBucket 系）を共有物へ抽出したため参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- FR-08, IADR-0069: 実 KB 保存（IKnowledgeBaseWriter）へ委譲する KnowledgeBaseWriterSink の登録・参照に
+         共有 KB クライアントを参照する。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
+  </ItemGroup>
+</Project>

@@ -20,8 +20,8 @@ namespace AiStockTrading.Architecture.Tests;
 public class RetrievalSourceVocabularyTests
 {
     private static readonly string CollectionAllowlistPath = Path.Combine(
-        RepositoryLayout.Root, "backend", "Services", "InformationCollectionService", "src",
-        "InformationCollectionService.Domain", "SourceAllowlist.cs");
+        RepositoryLayout.Root, "backend", "Services", "InformationCollectionService",
+        "Domain", "SourceAllowlist.cs");
 
     private static readonly string RetrievalPolicyPath = Path.Combine(
         RepositoryLayout.Root, "backend", "Services", "TradeDecisionService", "src",
