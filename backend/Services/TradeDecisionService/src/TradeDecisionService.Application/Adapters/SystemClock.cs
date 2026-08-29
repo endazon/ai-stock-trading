@@ -1,9 +1,0 @@
-using TradeDecisionService.Application.Ports;
-
-namespace TradeDecisionService.Application.Adapters;
-
-// FR-04: システム時刻に基づく IClock。
-public sealed class SystemClock : IClock
-{
-    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-}
