@@ -75,3 +75,9 @@ plan_refs:
 - 残余リスク: `RetrievedContext` に発行時刻が無く、段 3 の「古い順」は現状**関連度順のみ**が実効
   （発行時刻 null＝最古扱いで先に削る保守側）。`KnowledgeHit` への発行時刻の伝搬は KB 契約の拡張であり
   別作業。予算の実値も実測待ち（既定は未設定＝縮退制御オフ）。
+
+［2026-08-29 追記 / #568］ **上記の発行時刻の残余リスクは解消済み。** `KnowledgeHit` へ発行時刻を追加し、
+`HttpKnowledgeBaseSearch` が platform 検索応答の ABAC 属性 `publishedAt`（`KnowledgeBaseWriterSink` が
+書き込み側で既に載せていた値）を復元して供給する形で埋めた。段③のソート式自体（本 IADR の決定）は
+無改修。詳細・設計判断は [IADR-0270](./IADR-0270_knowledgehit-published-at-supply.md) を参照。
+**予算の実値が実測待ちである点は未解消のまま残る。**
