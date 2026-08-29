@@ -97,7 +97,13 @@ plan_refs: []
 | `.ai-context/adr/` 配下の `TradeDecisionService\.(Api\|Application\|Domain\|Infrastructure)` 参照 | **11 件**（8 ファイル: IADR-0017・IADR-0212・IADR-0257・IADR-0135・IADR-0122・IADR-0260・IADR-0194・README.md 索引）。**いずれも凍結記録の point-in-time の記述**（決定当時の実測・構造の引用）であり、[IADR-0261](../adr/IADR-0261_namespace-alignment-to-platform.md)・6・7 本目と同じ判断ですべて据え置いた（個別の判定根拠は後述） | — |
 | `.ai-context/specs/` 配下の同パターン参照 | 実測 **44 件**（19 ファイル）。いずれも point-in-time の記録（`.claude/rules/traceability.repo.md` 除外規定）であり未更新 | — |
 | `deploy/helm/.../pipeline.json` の TradeDecisionService 関連参照 | **2 件**（`TradeDecisionService.Infrastructure.Steps.PriceMovementDetectedHandler` / `...InformationCollectedHandler`）。**`Infrastructure.Steps` 名前空間は移送で変えていないため書き換え不要**（8 本目と同型の判断） | — |
-| `internal` 型のうち Tests が直接参照するもの | **31 型 + 3 メンバー**（後述「`internal`→`public` の判断」） | — |
+| `internal` 型のうち Tests が直接参照するもの | **30 型 + 2 メンバー**（後述「`internal`→`public` の判断」） | — |
+
+［2026-08-29 追記 / #594］🔴 **本行の当初の記載「31 型 + 3 メンバー」は誤りだった**（レビュー指摘）。
+`git diff origin/develop...HEAD` の実測は **型 30 件・メンバー 2 件**であり、**後述の判断 8 の表に
+挙げた型の集合とちょうど一致する**（表は正しく、この要約行の数値だけが誤っていた）。
+メンバー 2 件は `FxRateSourceFactory.ResolveMaxRateAge` / `.ResolveStaleRateWarning` である。
+**数え直しの結果、表と要約が一致することを確認したうえで訂正した。**
 | `list-test-projects.js --count`（base `f434ce5`） | **32**（クリーンな作業ツリーで実測） | — |
 
 ### 母集合の走査で見つかった「想定外」（`backend/` 全体の裸文字列走査で発見。7 本目の申し送り 1 を適用）
