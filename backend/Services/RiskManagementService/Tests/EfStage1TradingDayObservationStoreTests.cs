@@ -160,4 +160,69 @@ public class EfStage1TradingDayObservationStoreTests
         store.GetQualifiedTradingDayCount().Should().Be(0);
         db.Stage1SessionUptimes.Single().QualifiesTowardStage1.Should().BeFalse();
     }
+
+    // ---- FR-06, FR-20, #569, IADR-0271: 報告書への期間照会 ----
+
+    // 🔴 **否定形**: 期間の外の取引日は返さない（別の期間の稼働率を報告書へ載せない）。
+    [Fact]
+    public void 期間照会は範囲外の取引日を返さない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        IStage1TradingDayObservationStore store = new EfStage1TradingDayObservationStore(db);
+
+        CreditSession(store, Weekday);
+        CreditSession(store, Weekday.AddDays(1));
+        CreditSession(store, Weekday.AddDays(2));
+
+        var rows = store.GetSessionUptimesBetween(Weekday.AddDays(1), Weekday.AddDays(1));
+
+        rows.Should().ContainSingle();
+        rows[0].SessionDateEasternTime.Should().Be(Weekday.AddDays(1));
+    }
+
+    // **対の肯定形**: 範囲内の観測は発注先ごとに（1 取引日 1 発注先 1 行で）返る。
+    [Fact]
+    public void 期間照会は範囲内の観測を発注先ごとに返す()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        IStage1TradingDayObservationStore store = new EfStage1TradingDayObservationStore(db);
+
+        CreditSession(store, Weekday, BrokerProvider.MoomooSimulate);
+        CreditSession(store, Weekday, BrokerProvider.InternalPaper);
+
+        var rows = store.GetSessionUptimesBetween(Weekday, Weekday);
+
+        rows.Should().HaveCount(2);
+        rows.Select(r => r.Provider)
+            .Should().BeEquivalentTo([BrokerProvider.MoomooSimulate, BrokerProvider.InternalPaper]);
+        rows.Should().AllSatisfy(r => r.OperationalMinutesBeforeRegularClose.Should().BeGreaterThan(0));
+    }
+
+    // 逆順の期間は空（例外にしない。呼び出し側の 400 判定はエンドポイントが担う）。
+    [Fact]
+    public void 逆順の期間は空を返す()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        IStage1TradingDayObservationStore store = new EfStage1TradingDayObservationStore(db);
+
+        CreditSession(store, Weekday);
+
+        store.GetSessionUptimesBetween(Weekday.AddDays(1), Weekday).Should().BeEmpty();
+    }
+
+    // 🔴 **観測窓を区切ると行そのものが消える**（0% の日として残らない）。
+    // 報告書側は「返らなかった日 ＝ 稼働 0%」と読んではならない、という契約の裏づけである。
+    [Fact]
+    public void 観測窓を区切ると期間照会からも消える()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        IStage1TradingDayObservationStore store = new EfStage1TradingDayObservationStore(db);
+
+        CreditSession(store, Weekday);
+        store.GetSessionUptimesBetween(Weekday, Weekday).Should().ContainSingle();
+
+        store.ResetWindow();
+
+        store.GetSessionUptimesBetween(Weekday, Weekday).Should().BeEmpty();
+    }
 }

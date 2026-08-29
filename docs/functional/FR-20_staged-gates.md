@@ -3,15 +3,15 @@ title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
 created: 2026-07-09
-updated: 2026-08-21
+updated: 2026-08-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-13, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0018, ADR-0023]
-iadrs: [IADR-0005, IADR-0041, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187]
+iadrs: [IADR-0005, IADR-0041, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271]
 specs: [20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
-issues: [#27, #333, #334, #382, #385, #386, #387, #407, #422, #423, #431, #466]
+issues: [#27, #333, #334, #382, #385, #386, #387, #407, #422, #423, #431, #466, #569]
 -->
 
 
@@ -412,6 +412,22 @@ OpenD 停止・ブローカー障害は分子（稼働分数）の減少とし�
   - **安全側の割り切りだと誤読しないこと。** 誤読すると後から祝日カレンダーを足す動機になる（裁定が明示した警告）。
 - **稼働の定義の限界**: 実装が観測できるのは「照会に応答したこと」までであり、**発注を試さない**
   （試し発注は統制の外側で注文を出すことになる）。§4.2 の「発注可能であった時間」の代理である。
+
+### 5-2. 稼働率の期間照会（#569。報告書へ供給する読み取り経路）
+
+日報の「OpenD 稼働率」行と月報の「稼働率分布」は、同じ観測ログを**期間で引いて**供給する
+（`GET /risk-controls/session-uptime?from&to`・読み取り系＝利用者またはサービス）。
+判定には用いず、**合否には一切入力されない**。
+
+- **返す稼働率は 2 仮説の最小値**である。`比率 >= 50%` と昇格判定の稼働率条件（**すべての仮説で 50% 以上**）が
+  **恒等に一致する**ため、報告書が「算入」と描いた日は判定側でも必ず算入される。
+- **母集団は OpenD を経由する発注先のみ**（moomoo `SIMULATE` / `REAL`）。内蔵 `paper` は外部へ一度も発注せず
+  OpenD を経由しないため、その稼働分数は OpenD 稼働率ではない。
+  🔴 **除外した日は 0% として並べない**——行として現れないだけである。
+- **累計算入日数**は合否判定と同じ権威関数（発注先の許可制まで含む）をそのまま返す。
+- 🔴 **観測窓（段階遷移で区切られる）の外の取引日は行そのものが無い。**
+  返らなかった日を「稼働 0%」と読んではならない。
+- **期間の省略・逆順は 400** とする。黙って空を返すと、それが「稼働率 0%」「算入 0 日」として報告書に載り得る。
 
 ### 6. 件数不足時の扱い（§4.3・INDEX 決定 42）
 

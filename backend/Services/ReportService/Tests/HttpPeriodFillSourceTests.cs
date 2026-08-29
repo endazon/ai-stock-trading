@@ -82,6 +82,37 @@ public class HttpPeriodFillSourceTests
         fills.Should().ContainSingle().Which.DecisionId.Should().Be(Guid.Empty);
     }
 
+    // 🔴 **肯定形（#569, IADR-0271）**: 実際に発注したアダプタの発注先をそのまま通す。
+    // これが欠けると月報 §5 の三者比較で SIMULATE 列と実弾列が分けられない。
+    // provider=2（MoomooSimulate）。
+    [Fact]
+    public async Task 台帳の発注先をそのまま通す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"7203","market":0,"side":0,"positionEffect":0,"quantity":100,
+              "price":2500,"executedAt":"2026-07-08T01:00:00+00:00","fxRateToBase":1,"provider":2}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.Provider.Should().Be(BrokerProvider.MoomooSimulate);
+    }
+
+    // 🔴 **否定形（上の肯定形と対）**: 発注先を欠く応答へ値を作らない。
+    // 既定の列挙値（0＝InternalPaper）へ落ちると、**発注先不明の約定が「内蔵 paper」になる**。
+    [Fact]
+    public async Task 発注先を欠く応答は発注先不明のままにする()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"7203","market":0,"side":0,"positionEffect":0,"quantity":100,
+              "price":2500,"executedAt":"2026-07-08T01:00:00+00:00","fxRateToBase":1}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.Provider.Should().BeNull();
+    }
+
     [Fact]
     public async Task 外貨建ての約定単価は同伴レートで基準通貨へ換算する()
     {

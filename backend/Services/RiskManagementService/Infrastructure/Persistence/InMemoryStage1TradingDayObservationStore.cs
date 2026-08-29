@@ -45,6 +45,24 @@ public sealed class InMemoryStage1TradingDayObservationStore : IStage1TradingDay
         }
     }
 
+    // FR-06, FR-20, #569, IADR-0271: 報告書への供給（期間の稼働率）。
+    public IReadOnlyList<Stage1SessionUptime> GetSessionUptimesBetween(DateOnly fromInclusive, DateOnly toInclusive)
+    {
+        if (fromInclusive > toInclusive)
+        {
+            return [];
+        }
+
+        lock (_gate)
+        {
+            return
+            [
+                .. _uptimes.Values
+                    .Where(u => u.SessionDateEasternTime >= fromInclusive && u.SessionDateEasternTime <= toInclusive),
+            ];
+        }
+    }
+
     public void ResetWindow()
     {
         lock (_gate)

@@ -1866,10 +1866,15 @@ module.exports = ({ ok, assert }) => {
     const fsTb = require('fs');
     const pathTb = require('path');
     const { execFileSync: execTb } = require('child_process');
+    // #569: 実データの知識グラフ（--json / --mermaid）は 1MB を超える。execFileSync の既定 maxBuffer は
+    // 1MB であり、超えると SIGTERM ＋ ENOBUFS で**テストプロセスごと落ちる**（検査器の異常ではない）。
+    // 「クラッシュせず走る」ことを見るテストが、出力量が増えただけで落ちてはならない。
+    const MAX_BUFFER_TB = 64 * 1024 * 1024;
     const REPO_ROOT_TB = pathTb.resolve(__dirname, '..');
 
     ok('check-trace-blocks: 自己試験が全件通る', () => {
       execTb(process.execPath, [pathTb.join(__dirname, 'check-trace-blocks.js'), '--self-test'], {
+        maxBuffer: MAX_BUFFER_TB,
         cwd: REPO_ROOT_TB,
         stdio: 'pipe',
       });
@@ -1877,6 +1882,7 @@ module.exports = ({ ok, assert }) => {
 
     ok('gen-knowledge-graph: 自己試験が全件通る', () => {
       execTb(process.execPath, [pathTb.join(__dirname, 'gen-knowledge-graph.js'), '--self-test'], {
+        maxBuffer: MAX_BUFFER_TB,
         cwd: REPO_ROOT_TB,
         stdio: 'pipe',
       });
@@ -1902,7 +1908,11 @@ module.exports = ({ ok, assert }) => {
 
     ok('check-trace-blocks: 実データに対してクラッシュせず走る（合否は自己試験主体。docs/ は並行編集中）', () => {
       try {
-        execTb(process.execPath, [pathTb.join(__dirname, 'check-trace-blocks.js')], { cwd: REPO_ROOT_TB, stdio: 'pipe' });
+        execTb(process.execPath, [pathTb.join(__dirname, 'check-trace-blocks.js')], {
+          cwd: REPO_ROOT_TB,
+          stdio: 'pipe',
+          maxBuffer: MAX_BUFFER_TB,
+        });
       } catch (e) {
         assert.strictEqual(e.status, 1, `異常終了（クラッシュ）の可能性がある: status=${e.status}\n${e.stderr}`);
       }
@@ -1914,6 +1924,7 @@ module.exports = ({ ok, assert }) => {
           cwd: REPO_ROOT_TB,
           stdio: 'pipe',
           encoding: 'utf8',
+          maxBuffer: MAX_BUFFER_TB,
         });
         assert.ok(out.length > 0, `${args.join(' ')} の出力が空`);
       }
@@ -1921,6 +1932,7 @@ module.exports = ({ ok, assert }) => {
         execTb(process.execPath, [pathTb.join(__dirname, 'gen-knowledge-graph.js'), '--check'], {
           cwd: REPO_ROOT_TB,
           stdio: 'pipe',
+          maxBuffer: MAX_BUFFER_TB,
         });
       } catch (e) {
         assert.strictEqual(e.status, 1, `--check が異常終了（クラッシュ）した可能性がある: status=${e.status}\n${e.stderr}`);

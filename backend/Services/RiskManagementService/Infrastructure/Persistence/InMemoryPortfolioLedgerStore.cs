@@ -17,18 +17,25 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt));
     }
 
-    public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt)
+    public bool AppendFill(
+        Guid decisionId,
+        string orderId,
+        int filledQuantity,
+        decimal averagePrice,
+        DateTimeOffset executedAt,
+        BrokerProvider? provider = null)
     {
         if (!_approvals.ContainsKey(decisionId))
             return false;
 
         // #270, IADR-0113: 単調 upsert（EfPortfolioLedgerStore と同一の意味論）。約定数量は累積値であり、
         // 累積が増えたときだけ更新する。再送・順序前後で二重計上も巻き戻りも起こさない。
+        // #569, IADR-0271: 発注先は**分かったときだけ上書きする**（EfPortfolioLedgerStore と同一の意味論）。
         _fills.AddOrUpdate(
             orderId,
-            _ => new FillRecord(decisionId, filledQuantity, averagePrice, executedAt),
+            _ => new FillRecord(decisionId, filledQuantity, averagePrice, executedAt, provider),
             (_, current) => filledQuantity > current.FilledQuantity
-                ? new FillRecord(decisionId, filledQuantity, averagePrice, executedAt)
+                ? new FillRecord(decisionId, filledQuantity, averagePrice, executedAt, provider ?? current.Provider)
                 : current);
         return true;
     }
@@ -55,7 +62,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 intent.Symbol, intent.Market, intent.Side, intent.PositionEffect,
                 fill.FilledQuantity, fill.AveragePrice, fill.ExecutedAt, intent.StopLossPrice, intent.FxRateToBase,
                 // #563, IADR-0269: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
-                fill.DecisionId));
+                fill.DecisionId,
+                // #569, IADR-0271: **実際に発注したアダプタの発注先**（不明は null）。intent.Mode へ倒さない。
+                fill.Provider));
         }
 
         return result;
@@ -93,5 +102,10 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
 
     private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt);
 
-    private sealed record FillRecord(Guid DecisionId, int FilledQuantity, decimal AveragePrice, DateTimeOffset ExecutedAt);
+    private sealed record FillRecord(
+        Guid DecisionId,
+        int FilledQuantity,
+        decimal AveragePrice,
+        DateTimeOffset ExecutedAt,
+        BrokerProvider? Provider);
 }

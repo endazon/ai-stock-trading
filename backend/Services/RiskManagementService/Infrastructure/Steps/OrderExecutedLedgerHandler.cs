@@ -29,8 +29,12 @@ public sealed class OrderExecutedLedgerHandler(
         if (message.FilledQuantity <= 0)
             return;
 
+        // #569, IADR-0271: **実際に発注したアダプタの発注先**を台帳へ残す。月報 §5 の三者比較が
+        // SIMULATE 列と実弾列を分ける唯一正しい情報であり（IADR-0149 決定1 と同じ理由）、
+        // 承認 Intent の Mode（段階が定める既定）では代用できない。
         var recorded = ledger.AppendFill(
-            message.DecisionId, message.OrderId, message.FilledQuantity, message.AveragePrice, message.ExecutedAt);
+            message.DecisionId, message.OrderId, message.FilledQuantity, message.AveragePrice, message.ExecutedAt,
+            message.Provider);
         if (!recorded)
         {
             // 相関する承認が台帳に無い異常（承認は約定に先行して発行されるため通常は発生しない）。

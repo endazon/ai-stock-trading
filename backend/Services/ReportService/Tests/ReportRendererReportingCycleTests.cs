@@ -335,6 +335,67 @@ public class ReportRendererReportingCycleTests
         md.Should().Contain("- 差分が大きい指標の要因考察: **未記入**");
     }
 
+    // 🔴 #569, IADR-0271: **供給されていない指標を「該当なし」と読ませない。**
+    // 表の「該当なし」は「その段をまだ走らせていない」と直前の行で宣言しているため、
+    // 供給元が無いだけの最大ドローダウンを同じ記号で描くとその宣言が嘘になる。
+    [Fact]
+    public void 最大ドローダウンが全列未供給なら別行で明記する()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            ThreeWayComparison = new ThreeWayComparison(
+                new ThreeWayMetric(null, 0.55m, null), new ThreeWayMetric(null, 12.5m, null),
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, 120m, null)),
+        });
+
+        md.Should().Contain("- 最大ドローダウンは**どの列も供給されていません**");
+        md.Should().Contain("**表中の「該当なし」とは別の理由です。**");
+    }
+
+    // **対の否定形**: 1 列でも値があれば、その行は供給されている＝明記しない。
+    [Fact]
+    public void 最大ドローダウンが1列でも供給されていれば明記しない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            ThreeWayComparison = new ThreeWayComparison(
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, null, null),
+                new ThreeWayMetric(0.08m, null, null), new ThreeWayMetric(null, null, null)),
+        });
+
+        md.Should().NotContain("- 最大ドローダウンは**どの列も供給されていません**");
+    }
+
+    // 🔴 #569, IADR-0271: 発注先が記録されていない約定を**黙って落とさない**。
+    // 出さないと「その段では 1 件も取引していない」と読まれる。
+    [Fact]
+    public void 発注先不明の約定件数を明記する()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            ThreeWayComparison = new ThreeWayComparison(
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, null, null),
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, 0m, null),
+                DivergenceNote: null, UnattributedTradeCount: 4),
+        });
+
+        md.Should().Contain("- 発注先が記録されていない約定が 4 件あり、**どの列にも算入していません**");
+    }
+
+    // **対の否定形**: 未算入が 0 件なら余計な行を出さない（「0 件あります」は雑音である）。
+    [Fact]
+    public void 発注先不明が0件なら行を出さない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            ThreeWayComparison = new ThreeWayComparison(
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, null, null),
+                new ThreeWayMetric(null, null, null), new ThreeWayMetric(null, 0m, null)),
+        });
+
+        md.Should().NotContain("発注先が記録されていない約定が");
+    }
+
     // --- LLM 利用実績（月報 §7・#282 の出口） ---
 
     [Fact]

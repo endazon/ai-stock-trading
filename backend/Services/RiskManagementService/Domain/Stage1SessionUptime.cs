@@ -193,6 +193,29 @@ public static class Stage1SessionHypotheses
         Hypotheses(uptime).All(Stage1DayQualification.MeetsUptimeThreshold);
 
     /// <summary>
+    /// FR-06, FR-20, #569, 04_report-templates 日報 §1 / 月報 §6.2: <b>報告書へ載せる稼働率</b>
+    /// （仮説の<b>最小値</b>）。
+    /// <para>
+    /// 🔴 <b>報告書側は分母を発明しない</b>（報告書サービス側の稼働率レコード（<c>OpenDUptimeRecord</c>）の明文）。
+    /// 分母を知る唯一の場所は本クラスであり、しかしその日の実際の通常取引時間は
+    /// <b>実装が知らない</b>（<see cref="Hypotheses"/>）。そこで <b>2 仮説の最小値</b>を返す。
+    /// </para>
+    /// <para>
+    /// 最小値を選ぶ理由は<b>算入可否と食い違わせないため</b>である。
+    /// <c>Min(ratio) &gt;= 0.50</c> と <see cref="MeetsUptimeThreshold"/>（＝<b>すべての</b>仮説で 50% 以上）は
+    /// <b>恒等に一致する</b>。報告書は比率だけを受け取って算入可否を導く
+    /// （<c>OpenDUptimeAggregator.IsCounted</c>）ため、最大値・平均を返すと
+    /// <b>「算入」と描いた日が権威源では算入されていない</b>という食い違いが生じる。
+    /// </para>
+    /// <para>週末は分母 0 の仮説 1 つであり、稼働率は 0 になる（<see cref="Stage1DayQualification.UptimeRatio"/>）。</para>
+    /// </summary>
+    public static decimal UptimeRatio(Stage1SessionUptime uptime)
+    {
+        ArgumentNullException.ThrowIfNull(uptime);
+        return Hypotheses(uptime).Min(Stage1DayQualification.UptimeRatio);
+    }
+
+    /// <summary>
     /// その日を Stage 1 の営業日 1 日として算入するか。稼働率の条件に加えて、
     /// <b>発注先が算入対象（moomoo <c>SIMULATE</c>）であること</b>を要する（許可制・IADR-0142 決定2）。
     /// </summary>

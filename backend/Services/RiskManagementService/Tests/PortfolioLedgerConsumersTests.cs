@@ -54,6 +54,10 @@ public class PortfolioLedgerConsumersTests
         fills[0].Symbol.Should().Be("AAPL");
         fills[0].Quantity.Should().Be(10);
         fills[0].Price.Should().Be(1_050m);
+        // #569, IADR-0149 決定1, IADR-0271: 🔴 **実際に発注したアダプタの発注先**を台帳へ残す
+        // （月報 §5 の三者比較が SIMULATE 列と実弾列を分ける鍵）。
+        // 承認 Intent の Mode は InternalPaper であり、そこへ倒れていないことも同時に固定する。
+        fills[0].Provider.Should().Be(BrokerProvider.MoomooSimulate);
 
         await host.StopAsync();
     }

@@ -17,4 +17,10 @@ public sealed record PeriodTradeFill(
     int Quantity,
     decimal Price,
     DateTimeOffset ExecutedAt,
-    Guid DecisionId = default);
+    Guid DecisionId = default,
+    // FR-06, FR-15, FR-20, #569, IADR-0149 決定1, IADR-0271: **実際に発注したアダプタの発注先**。
+    // 月報 §5 の三者比較が SIMULATE 列と実弾列を分ける鍵である（承認 Intent の Mode では代用できない
+    // ——実行アダプタの発注先は構成から解決され、段階が定める既定とは独立に決まる）。
+    // 既定 `null`＝**発注先不明**（供給元が運ばない・列追加前のレガシー行）＝**どちらの段にも算入しない**。
+    // 🔴 **推定で埋めない**——寄せた先の列の実績が水増しされ、比較の意味が壊れる。
+    BrokerProvider? Provider = null);

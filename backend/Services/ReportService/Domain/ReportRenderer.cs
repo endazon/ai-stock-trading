@@ -664,6 +664,24 @@ public static class ReportRenderer
             ? "- 差分が大きい指標の要因考察: **未記入**（① 証拠金条件の差 / ② 借株料の差 / ③ 執行の差 のいずれか）\n"
             : $"- 差分が大きい指標の要因考察: {c.DivergenceNote.Trim()}\n");
         sb.Append("- 「該当なし」はその段をまだ走らせていないことを表す。**値 0 とは区別する。**\n");
+
+        // #569, IADR-0271: 🔴 **供給されていない指標を「該当なし」と読ませない。**
+        // 表の「該当なし」は「その段をまだ走らせていない」を意味すると直前の行で宣言している。
+        // 供給元が無いだけの指標を同じ記号で描くと、その宣言が嘘になる。行を分けて明記する。
+        if (c.MaxDrawdown is { Backtest: null, Simulate: null, Live: null })
+        {
+            sb.Append("- 最大ドローダウンは**どの列も供給されていません**"
+                + "（エクイティ曲線に対する比率であり、期間集計の権威源が無いため）。"
+                + "**表中の「該当なし」とは別の理由です。**\n");
+        }
+
+        // #569, IADR-0271: 🔴 **発注先が記録されていない約定を黙って落とさない。**
+        // 列へ算入しなかった件数を出さないと、読み手は「その段では 1 件も取引していない」と読む。
+        if (c.UnattributedTradeCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- 発注先が記録されていない約定が {c.UnattributedTradeCount} 件あり、**どの列にも算入していません**（推定で寄せると、その列の実績が水増しされるため）。\n");
+        }
     }
 
     private enum MetricFormat { Ratio, BaseAmount, Count }

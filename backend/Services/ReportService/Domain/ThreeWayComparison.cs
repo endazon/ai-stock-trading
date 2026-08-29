@@ -25,9 +25,18 @@ public sealed record ThreeWayMetric(decimal? Backtest, decimal? Simulate, decima
 /// 差分が大きい指標の要因考察（① 証拠金条件の差 / ② 借株料の差 / ③ 執行の差）。
 /// <b>数値ではなく人間の所見</b>であるため、供給が無ければ <c>null</c>（節は出るが考察行は出ない）。
 /// </param>
+/// <param name="UnattributedTradeCount">
+/// #569, IADR-0271: 当期間の約定のうち<b>発注先が記録されていない</b>件数（どの列にも算入していない）。
+/// <para>
+/// 🔴 <b>0 件として黙って落とさない。</b> 台帳へ発注先を記録し始める前の行は発注先が不明であり、
+/// 推定で埋めない（決定2）。その結果、列の取引件数は<b>期間の全約定より少なくなり得る</b>。
+/// 件数を出さないと、読み手は「その段では 1 件も取引していない」と読んでしまう。
+/// </para>
+/// </param>
 public sealed record ThreeWayComparison(
     ThreeWayMetric WinRate,
     ThreeWayMetric AveragePnlUsd,
     ThreeWayMetric MaxDrawdown,
     ThreeWayMetric TradeCount,
-    string? DivergenceNote = null);
+    string? DivergenceNote = null,
+    int UnattributedTradeCount = 0);
