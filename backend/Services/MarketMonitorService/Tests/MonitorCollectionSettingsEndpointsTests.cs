@@ -97,8 +97,9 @@ public class MonitorCollectionSettingsEndpointsTests(MonitorWorkerWebApplication
     public async Task 変動閾値の変更は監視銘柄を巻き込まない()
     {
         var client = OwnerClient();
-        await client.PostAsJsonAsync("/monitor/watchlist",
-            new { Symbol = "MSFT", Market = AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, Reason = "監視開始" });
+        (await client.PostAsJsonAsync("/monitor/watchlist",
+            new { Symbol = "MSFT", Market = AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, Reason = "監視開始" }))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         await PutThresholdAsync(client, new { movementThresholdRatio = 0.09m, reason = "引き上げ" });
 

@@ -386,8 +386,10 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         // FR-11・ADR-0009: pause/resume の監査（アクター・理由・種別）を設定変更履歴へ残す。
         var client = OwnerClient();
 
-        await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));
-        await client.PostAsJsonAsync("/risk-controls/resume", new PauseRequest("再開"));
+        (await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見")))
+            .IsSuccessStatusCode.Should().BeTrue();
+        (await client.PostAsJsonAsync("/risk-controls/resume", new PauseRequest("再開")))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var history = await client.GetFromJsonAsync<List<SettingsChangeDto>>("/risk-controls/settings/history");
         history.Should().NotBeNull();
@@ -437,11 +439,13 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         // 起動していないことを前提にする。同クラスの別テスト（kill switch の永続化）は起動したまま
         // 終わるうえ、xUnit v3 は既定のテストケース順序が v2 と異なる（IClassFixture の InMemory DB は
         // クラス内で共有される）。前提を順序に依存させず、ここで自ら成立させる。
-        await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage",
-            new KillSwitchRequest("前提条件の初期化"));
+        (await client.PostAsJsonAsync("/risk-controls/kill-switch/disengage",
+            new KillSwitchRequest("前提条件の初期化")))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         // 一時停止を成立させてから照会する（優先中の統制が pause として示されること）。
-        await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見"));
+        (await client.PostAsJsonAsync("/risk-controls/pause", new PauseRequest("様子見")))
+            .IsSuccessStatusCode.Should().BeTrue();
 
         var status = await client.GetFromJsonAsync<RiskStatusDto>("/risk-controls/status");
 
