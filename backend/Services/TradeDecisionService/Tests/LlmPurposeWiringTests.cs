@@ -90,9 +90,14 @@ public class LlmPurposeWiringTests
                 .DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
         });
 
+        // 🔴 ここは **集合** を見る（順序は見ない）。`session.Sent` は Wolverine が「送信した」と
+        // 記録した並びであり、上の `handler.Purposes`（逐次的な HTTP 呼び出しの順）とは別の事象で、
+        // 並列負荷のもとで前後しうる（#597）。層の取り違えを順序で捕まえる検出力は
+        // `一次と二次で層別の用途が使われる` 側（`handler.Purposes.Should().Equal(...)`）が持つ。
+        // ここが守るのは「両方の層がそれぞれ別の purpose で課金計上されている」という集合の性質である。
         session.Sent.MessagesOf<LlmCostIncurred>()
             .Select(e => e.Purpose)
-            .Should().Equal(ExpectedPurposes);
+            .Should().BeEquivalentTo(ExpectedPurposes);
     }
 
     // 実ゲートウェイと同じく **purpose からモデルを解決して名乗る**スタブ（実ネットワーク不使用）。
