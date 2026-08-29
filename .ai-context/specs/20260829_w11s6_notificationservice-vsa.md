@@ -412,3 +412,50 @@ BacktestService「判断3」（[20260829_w11s4d](20260829_w11s4d_backtestservice
    構成セクション名（`Notifications:...`）と基盤 `NotificationService` の `Features/Notifications/`
    の 2 つの実例が一致したため。機械的規則と実例が食い違う場合は実例を優先する
    （AuditService の `AuditEvents`・ConfigurationService の `Assumptions` と同じ判断の型）。
+
+## 検証手順そのものの落とし穴（本 PR で親が実測。残り 5 本へ申し送る）
+
+移送の中身とは無関係に、**検証のやり方で偽の赤が 2 種類出た**。どちらも「移送が壊れている」
+という顔をするので、切り分け方を残す。
+
+### 1. 🔴 `bin`/`obj` を全消去した直後の `dotnet build` は MSBuild が obj の生成で競合する
+
+キャッシュ消去後にいきなり `dotnet build backend/backend.slnx` を叩くと、
+`Could not find a part of the path '.../obj/Debug/net10.0/*.GeneratedMSBuildEditorConfig.editorconfig'`
+のような**「今まさに自分が作るはずのファイルが無い」エラー**が 9〜24 件出る（実測。4 コアの
+負荷が高い状態で再現）。**ソースの問題ではない**——同じツリーで増分ビルドすると 0 error になる。
+
+**対処**: 消去後は **`dotnet restore` を先に通してから `dotnet build --no-restore`** する。
+restore が obj の骨格を先に作るので競合しない。実測でこの順なら **0 Warning / 0 Error**。
+
+> ⚠️ 4 本目の申し送り「1 回目のビルドは嘘をつく（キャッシュを消して全容を出す）」は**有効なまま**である。
+> 消すこと自体は正しい。**消した後に restore を挟む**という一手が足りていなかった。
+
+### 2. 🔴🔴 中断したカバレッジ収集が残す部分的なレポートは、床割れの偽陽性になる
+
+`dotnet test --collect:"XPlat Code Coverage"` を途中で止めると、**走り終えた分のレポートだけが
+`cov/` に残る**。この状態で `check-coverage.js` を掛けると、**走らなかったテストプロジェクトの
+被覆が丸ごと欠けた分母**で計算され、実測より低く出る。本 PR では **レポート 24 件で 78.04%（床割れ）→
+35 件で 82.27%（合格）** と、**同じツリーで 4.2 ポイント**動いた。
+
+🔴 **レポート件数がテストプロジェクト数と一致しているかを必ず先に見ること。**
+CI も同じ不変条件（`want=$(wc -l < shard.txt)` と `got=$(find cov -name coverage.cobertura.xml | wc -l)`
+の突合）を持っており、**「走らなかった」と「二重に走った」を両方捕まえる**ために置かれている。
+ローカルで `--root` を指すときはこの門が無いので、**自分で数える**。
+
+**正しい収集手順（CI と同じ）**:
+```bash
+rm -rf cov                                   # 🔴 古いレポートを必ず消す
+dotnet test backend/backend.slnx --configuration Release \
+  --filter "Category!=Integration" \
+  --collect:"XPlat Code Coverage" --results-directory "$PWD/cov"
+find cov -name coverage.cobertura.xml | wc -l    # = テストプロジェクト数であること
+node scripts/check-coverage.js --root cov
+```
+**Release である**こと・**`Category!=Integration`** であること・**`cov/` を作り直す**ことの 3 点が要る。
+
+### 3. 背景で走らせた検証を止めるときは、プロセスが本当に消えたか確かめる
+
+中断した `dotnet test` が生きたまま `bin`/`obj` を消すと、**走行中のビルドと消去が競合**して
+上の 1 と見分けのつかないエラーになる。`pgrep -c dotnet` が 0 になるまで確認してから消すこと
+（`dotnet build-server shutdown` だけでは MSBuild のワーカーノードが残る）。
