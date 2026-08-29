@@ -84,6 +84,27 @@ builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovern
      捕まえられなかった性質そのものである。
    - **不在の表明だけの否定形にしない**（この波の実測。対の肯定形を必ず添える）。
 
+3. **`PublishingLlmGovernanceReporter` を `internal` → `public` にする**（`TradeDecisionService` 側のみ）。
+   [IADR-0263](../adr/IADR-0263_auditservice-vsa-migration-first-of-eleven.md) 決定 4
+   「**`internal`→`public` は Tests が直接参照する型だけ**」に従う。上の肯定形が
+   `BeOfType<PublishingLlmGovernanceReporter>()` で直接参照するため、この条件に当たる。
+   **姉妹サービスの `ReportService` では同じ型が既に `public`** であり（`LlmGovernanceWiringTests` が
+   同じ形で参照しているため）、本変更で 2 サービスの公開面が対称になる。
+   🔴 **同ディレクトリの他の `internal` 型（`NoOpFxSourceStatusNotifier` /
+   `PublishingScreeningReductionReporter` 等）は変えない**——テストが直接参照していないため。
+
+## 変異試験（実走・実出力）
+
+| 変異 | 期待 | 実測 |
+| --- | --- | --- |
+| 重複ブロックを再導入する | **個数のテストが落ちる** | `Failed: 1, Passed: 1`。`Expected … GetServices<ILlmGovernanceReporter>() to contain a single item, but found {PublishingLlmGovernanceReporter{ }, PublishingLlmGovernanceReporter{ }}` |
+| 発行実装を `NoOpLlmGovernanceReporter` へ差し替える | **肯定形が落ちる** | `Failed: 1, Passed: 1`。`Expected type to be … PublishingLlmGovernanceReporter, but found … NoOpLlmGovernanceReporter` |
+
+🔴 **1 つ目の変異で「肯定形（`GetRequiredService` で型を見る形）」は緑のまま**である。
+**これが既存の 16 本の配線テストが二重登録を見逃していた理由そのもの**であり、
+2 本を対で置く必要があることの実証になっている。いずれの変異も適用後に復元し、
+`git status --short` が本 PR の 3 変更だけを示すことを確認した。
+
 ## やらないこと（射程を広げない）
 
 - 🔴 **「同一インタフェースの重複登録」を全サービスで機械検査する検査器は追加しない。**
