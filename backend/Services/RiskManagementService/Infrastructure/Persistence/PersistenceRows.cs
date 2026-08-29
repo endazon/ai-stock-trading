@@ -127,6 +127,21 @@ public sealed class TradeFillRow
     public decimal AveragePrice { get; set; }
 
     public DateTimeOffset ExecutedAt { get; set; }
+
+    /// <summary>
+    /// FR-06, FR-15, FR-20, #569, IADR-0149 決定1, IADR-0271: <b>実際に発注したアダプタの発注先</b>
+    /// （<c>OrderExecuted.Provider</c>）。月報 §5 の三者比較が SIMULATE 列と実弾列を分ける鍵である。
+    /// <para>
+    /// 🔴 <b>承認 Intent の <c>Mode</c> で代用しない。</b> 実行アダプタの発注先は構成
+    /// （<c>BrokerSelection.ToBrokerProvider()</c>）から解決され、<b><c>intent.Mode</c>（段階が定める既定）
+    /// とは独立に決まる</b>。取り違えると実弾の約定が SIMULATE 列へ載る。
+    /// </para>
+    /// <para>
+    /// <b>nullable ＝本列の追加前に記録された行</b>である。🔴 <b>推定で埋めない</b>——
+    /// 発注先不明の約定は SIMULATE 列にも実弾列にも算入しない（どちらかへ寄せると比較の意味が壊れる）。
+    /// </para>
+    /// </summary>
+    public AiStockTrading.Shared.Contracts.Trading.BrokerProvider? Provider { get; set; }
 }
 
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移履歴（追記専用・監査対象）。Sequence を主キーとし、

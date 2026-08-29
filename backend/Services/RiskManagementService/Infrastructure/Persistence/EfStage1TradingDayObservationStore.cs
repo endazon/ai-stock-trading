@@ -75,6 +75,23 @@ public sealed class EfStage1TradingDayObservationStore(RiskManagementDbContext d
             .Count(d => !qualifiedDates.Contains(d));
     }
 
+    // FR-06, FR-20, #569, IADR-0271: 報告書への供給（期間の稼働率）。**観測窓の外は行そのものが無い**。
+    public IReadOnlyList<Stage1SessionUptime> GetSessionUptimesBetween(DateOnly fromInclusive, DateOnly toInclusive)
+    {
+        if (fromInclusive > toInclusive)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. db.Stage1SessionUptimes
+                .Where(r => r.SessionDateEasternTime >= fromInclusive && r.SessionDateEasternTime <= toInclusive)
+                .ToList()
+                .Select(Map),
+        ];
+    }
+
     public void ResetWindow()
     {
         // 低頻度（段階遷移時のみ）のため一括読み出しで消す。ExecuteDelete を使わないのは、

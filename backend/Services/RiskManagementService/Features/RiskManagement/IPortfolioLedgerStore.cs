@@ -19,7 +19,20 @@ public interface IPortfolioLedgerStore
     /// #270, IADR-0113: <paramref name="filledQuantity"/> はブローカの**累積**約定数量（差分ではない）。
     /// 既存 OrderId は単調 upsert＝累積が増えたときだけ更新し、同数・少ない数量の後追いは無視する（冪等）。
     /// </summary>
-    bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt);
+    /// <param name="provider">
+    /// FR-06, FR-15, FR-20, #569, IADR-0149 決定1, IADR-0271: <b>実際に発注したアダプタの発注先</b>
+    /// （<c>OrderExecuted.Provider</c>）。月報 §5 の三者比較が段（SIMULATE / 実弾）を分けるために要る。
+    /// <b>既定 <c>null</c> ＝発注先不明</b>であり、その約定は<b>どちらの段にも算入されない</b>
+    /// （fail-safe。既定を与えるのは既存の呼び出しを非破壊で通すためであり、
+    /// 書き忘れは「算入されない側」へ倒れる）。
+    /// </param>
+    bool AppendFill(
+        Guid decisionId,
+        string orderId,
+        int filledQuantity,
+        decimal averagePrice,
+        DateTimeOffset executedAt,
+        BrokerProvider? provider = null);
 
     /// <summary>相関済みの約定列（射影入力）。</summary>
     IReadOnlyList<LedgerFill> GetFills();

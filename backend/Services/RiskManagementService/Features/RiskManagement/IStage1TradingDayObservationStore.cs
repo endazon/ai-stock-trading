@@ -1,3 +1,4 @@
+using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace RiskManagementService.Features.RiskManagement;
@@ -35,6 +36,19 @@ public interface IStage1TradingDayObservationStore
     /// 合格判定には用いない。
     /// </summary>
     int GetExcludedInternalPaperDayCount();
+
+    /// <summary>
+    /// FR-06, FR-20, #569, 04_report-templates 日報 §1 / 月報 §6.2, IADR-0271:
+    /// 取引日（米国東部時間）が <paramref name="fromInclusive"/>〜<paramref name="toInclusive"/> に入る観測を返す。
+    /// <b>報告書が期間の稼働率を引くための読み取り専用の照会</b>であり、合格判定には用いない。
+    /// <para>
+    /// 🔴 <b>本ログは観測窓（<see cref="ResetWindow"/>）で区切られる。</b> 段階遷移で窓が切られた後は、
+    /// それ以前の取引日は<b>行として存在しない</b>——0% の日ではなく<b>現れない日</b>である。
+    /// 期間の一部しか返らないことは正常であり、呼び出し側は「返らなかった日 ＝ 稼働 0%」と読んではならない。
+    /// </para>
+    /// <para>逆順の期間（<paramref name="fromInclusive"/> &gt; <paramref name="toInclusive"/>）は空を返す。</para>
+    /// </summary>
+    IReadOnlyList<Stage1SessionUptime> GetSessionUptimesBetween(DateOnly fromInclusive, DateOnly toInclusive);
 
     /// <summary>
     /// 観測窓を区切る（現在窓の観測を破棄する）。

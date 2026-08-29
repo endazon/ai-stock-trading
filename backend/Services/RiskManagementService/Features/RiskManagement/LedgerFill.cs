@@ -21,7 +21,12 @@ public sealed record LedgerFill(
     DateTimeOffset ExecutedAt,
     decimal? StopLossPrice = null,
     decimal FxRateToBase = 1m,
-    Guid DecisionId = default)
+    Guid DecisionId = default,
+    // FR-06, FR-15, FR-20, #569, IADR-0149 決定1, IADR-0271: **実際に発注したアダプタの発注先**。
+    // 月報 §5 の三者比較（バックテスト / SIMULATE / 実弾）が段を分ける鍵である。
+    // **既定 null＝発注先不明（本列の追加前に記録された行）。推定で埋めない**——
+    // 不明の約定はどちらの段にも算入しない。
+    BrokerProvider? Provider = null)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;

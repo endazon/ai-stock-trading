@@ -47,7 +47,13 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 a.PositionEffect, a.StopLossPrice, a.FxRateToBase ?? 1m)
             : null;
 
-    public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt)
+    public bool AppendFill(
+        Guid decisionId,
+        string orderId,
+        int filledQuantity,
+        decimal averagePrice,
+        DateTimeOffset executedAt,
+        BrokerProvider? provider = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(orderId);
 
@@ -68,6 +74,9 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             existing.FilledQuantity = filledQuantity;
             existing.AveragePrice = averagePrice;
             existing.ExecutedAt = executedAt;
+            // #569, IADR-0271: 発注先は**分かったときだけ上書きする**。続報が発注先を運ばない
+            // （旧版・不明）場合に既知の値を null へ戻さない。
+            existing.Provider = provider ?? existing.Provider;
             db.SaveChanges();
             return true;
         }
@@ -79,6 +88,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             FilledQuantity = filledQuantity,
             AveragePrice = averagePrice,
             ExecutedAt = executedAt,
+            Provider = provider,
         });
         db.SaveChanges();
         return true;
@@ -121,7 +131,10 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
                 f.FilledQuantity, f.AveragePrice, f.ExecutedAt, a.StopLossPrice, a.FxRateToBase ?? 1m,
                 // #563, IADR-0269: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
-                f.DecisionId);
+                f.DecisionId,
+                // #569, IADR-0271: **実際に発注したアダプタの発注先**（列追加前の行は null＝不明）。
+                // 承認 Intent の Mode（a.Mode）へフォールバックしない——段が食い違う。
+                f.Provider);
 
         return query.ToList();
     }

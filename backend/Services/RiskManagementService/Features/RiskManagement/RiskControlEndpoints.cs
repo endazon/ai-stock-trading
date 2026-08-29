@@ -100,6 +100,28 @@ internal static class RiskControlEndpoints
             });
         });
 
+        // FR-06, FR-20, #569, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2, IADR-0271:
+        // 期間の **OpenD 稼働率**。報告書サービス（#14）が日報の稼働率行・月報の稼働率分布のため同期照会する。
+        //
+        // **`from`・`to` の省略・逆順は 400 とする**（`/buy-in-inferences` と同じ向き）——黙って空を返すと、
+        // それが「稼働率 0%」「算入 0 日」として報告書に載り得る。**照会できなかったことは空の結果ではない。**
+        //
+        // 稼働率は Domain の純関数が決める（分母の解釈を SQL・HTTP 層へ写さない）。
+        // 累計算入日数は**発注先の許可制まで含む権威判定**（GetQualifiedTradingDayCount）をそのまま返す。
+        read.MapGet("/session-uptime",
+            (DateOnly? from, DateOnly? to, IStage1TradingDayObservationStore observations) =>
+        {
+            if (from is not { } fromDay || to is not { } toDay)
+                return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
+
+            if (fromDay > toDay)
+                return Results.BadRequest(new { error = "from は to 以前の日付を指定してください。" });
+
+            return Results.Ok(new SessionUptimeView(
+                OpenDUptimeReporting.Days(observations.GetSessionUptimesBetween(fromDay, toDay)),
+                observations.GetQualifiedTradingDayCount()));
+        });
+
         // ---- 利用者のみ（kill switch は ADR-0003・ガード設定は ADR-0007・段階は ADR-0008／OwnerOnly）: kill switch・設定変更。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
@@ -356,7 +378,12 @@ internal static class RiskControlEndpoints
         // 承認による昇格・差し戻し。承認者＝認証済み利用者名。承認欠如時の遷移は純ドメインが構造的に拒否する。
         // 認可は owner サブグループに付与し親グループには付けない（親は 403）。Discord（UC-06）承認は #15 Bot 基盤が
         // trading-owner マップで本 OwnerOnly エンドポイントを呼ぶ（kill switch と同型・Bot ハンドラは後続）。
-        owner.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()));
+        // FR-06, FR-20, #569, IADR-0051, IADR-0271: **読み取り系（OwnerOrService）へ移した。**
+        // 報告書サービスが月報 §5 の三者比較で「その段に到達しているか」を知る必要があり、
+        // 到達していない段（空欄）と到達済みで 0 件の段を区別できないと、計画が求める書き分けができない。
+        // 読み取り専用であり、遷移（POST /stage-gate/transition）は OwnerOnly のまま据え置く。
+        // 機微情報を含む /status（OwnerOnly）とは別物である——本応答は段階と閾値・進捗のみを持つ。
+        read.MapGet("/stage-gate", (StageGateService svc) => Results.Ok(svc.GetStatus()));
 
         owner.MapGet("/stage-gate/history", (StageGateService svc) => Results.Ok(svc.GetHistory()));
 
@@ -516,3 +543,15 @@ internal sealed record GuardUpdateRequest(
         ConfiguredAccountType = ConfiguredAccountType ?? currentAccountType,
     };
 }
+
+// FR-06, FR-20, #569, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2, IADR-0271:
+// GET /risk-controls/session-uptime の応答。
+//
+// 🔴 **Days に現れない取引日は「稼働率 0%」ではない。** 観測窓（ResetWindow）の外・OpenD を経由しない
+// 発注先しか観測が無い日は、行そのものが存在しない。呼び出し側は欠けた日を 0% として描いてはならない。
+//
+// Stage1CumulativeCountedDays は**期間ではなく累計**（現在の観測窓での算入日数）であり、
+// **発注先の許可制（moomoo SIMULATE）まで含む権威判定**である（Days の比率から導かれる値ではない）。
+internal sealed record SessionUptimeView(
+    IReadOnlyList<OpenDSessionUptimeDay> Days,
+    int Stage1CumulativeCountedDays);

@@ -173,4 +173,67 @@ public class EfPortfolioLedgerStoreTests
         fills.Should().HaveCount(1);
         fills[0].Quantity.Should().Be(10);
     }
+
+    // ---- FR-06, FR-15, FR-20, #569, IADR-0149 決定1, IADR-0271: 実際に発注したアダプタの発注先 ----
+
+    // 🔴 **否定形**: 発注先を渡さずに記録された約定（列追加前のレガシー行）は **null のまま**であり、
+    // 承認 Intent の Mode（＝段階が定める既定の発注先）へフォールバックしない。
+    // 推定で埋めると、実弾の約定が SIMULATE 列へ載る（またはその逆）。
+    [Fact]
+    public void 発注先を渡さない約定は発注先不明のままにする()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            // 承認 Intent の Mode は InternalPaper（BuyIntent の既定）。ここへ倒れてはならない。
+            store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow);
+            store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2).GetFills().Single().Provider.Should().BeNull();
+    }
+
+    // **対の肯定形**: 渡した発注先は永続化され、別コンテキストからも読める。
+    [Fact]
+    public void 実際に発注した発注先を永続化して返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow);
+            store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2).GetFills().Single().Provider.Should().Be(BrokerProvider.MoomooSimulate);
+    }
+
+    // 🔴 続報（部分約定 → 全量約定）が発注先を運ばなくても、**既知の発注先を null へ戻さない**。
+    [Fact]
+    public void 続報が発注先を運ばなくても既知の値を消さない()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+        var t0 = DateTimeOffset.UtcNow;
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            store.AppendApproval(decisionId, BuyIntent(100, 1_000m), t0);
+            store.AppendFill(decisionId, "ORD-1", 30, 1_000m, t0, BrokerProvider.MoomooReal);
+            store.AppendFill(decisionId, "ORD-1", 100, 1_010m, t0.AddSeconds(30));
+        }
+
+        using var db2 = NewContext(dbName);
+        var fill = new EfPortfolioLedgerStore(db2).GetFills().Single();
+        fill.Quantity.Should().Be(100);
+        fill.Provider.Should().Be(BrokerProvider.MoomooReal);
+    }
 }
