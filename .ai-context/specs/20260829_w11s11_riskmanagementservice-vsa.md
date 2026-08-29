@@ -436,3 +436,59 @@ backend/Services/RiskManagementService/
 選択肢に恒久解（共有カーネルへの移設）が実在し、それを**採らない**と決めた以上、
 **採らなかった理由と残余リスクを記録しないと、次に触る人が同じ検討をゼロからやり直す**。
 `.ai-context/adr/README.md` の索引行も同時に追加した。
+
+---
+
+## ［2026-08-29 追記］develop 取り込みで作動した検査器の退役（IADR-0265 フォローアップ）
+
+**本仕様書の本文は base `00458d7` に対する記録であり、そこでは検出できなかった事象がある。**
+親が `origin/develop`（`c9d3d5a`＝ReportService 移送 #599 を含む）を取り込んだ時点で、
+`AiStockTrading.Architecture.Tests.DomainLayerDependencyTests.Domain_プロジェクトの探索が空振りしていない`
+が落ちた。
+
+### なぜ base では緑で、合流で赤くなるのか
+
+この検査の下限は `RepositoryLayout.UnmigratedServicesWithDomainProjectCount`（未移送で
+`src/*.Domain` を持つサービスの実測）から動的に導かれる。
+
+| ツリー | 未移送で Domain を持つサービス | 判定 |
+| --- | ---: | --- |
+| base `00458d7`（ReportService 未移送） | **1** | 緑 |
+| develop 取り込み後（ReportService 移送済み ＋ 本 PR で RiskManagement 移送） | **0** | **赤** |
+
+🔴 **これは退行ではなく、`IADR-0265` が仕込んだ設計どおりの作動である。** 0 件になった時点で
+「`*.Domain.csproj` が 1 本も残っていない＝csproj 静的解析は入力集合が空で構造的に何も検査できない」
+ため、黙って「違反なし」の緑を返さず、次にすることを名指しして落ちる。
+
+**「合流でしか赤くならないテスト」の 4 例目**である（既知の 3 種＝`NotificationTemplateGoldenTests` /
+`AuditCycleCompletenessTests` / `event-schemas.baseline.json`＋`EventMessageTypeNameTests` は
+いずれも「他ブランチが母集合へ足す」型だったが、**本件は「他ブランチが母集合から引く」型**で向きが逆である）。
+
+### 実施した退役
+
+`IADR-0265` の宣言どおり退役させた。**利用者の明示的な承認を得て実施している**（テストファイルの
+削除は既定で禁止されているため）。
+
+| 対象 | 措置 |
+| --- | --- |
+| `DomainLayerDependencyTests.cs`（4 `[Fact]` ＋ 6 `[Theory]` ケース） | 削除 |
+| `RepositoryLayout.DomainProjectFiles` | 削除（利用者は本クラスのみだった） |
+| `RepositoryLayout.UnmigratedServicesWithDomainProjectCount` | 同上 |
+| `RepositoryLayout.CountsAsUnmigratedServiceWithDomainProject` | 同上 |
+| `RepositoryLayout.ServiceProjectFiles` / `SharedProjectFiles` / `ProjectFile` | **残す**（`ServiceClientProjectAbolishedTests` / `SharedProjectDependencyTests` が使用中） |
+
+🔴 **enforcement は減っていない。** 削除した 3 検査（外部ライブラリ依存・プロジェクト参照の許可リスト・
+推移閉包）は、`*.Domain.csproj` が 0 本になった時点で**入力集合が空**であり、残しても永久に
+0 件走査で無条件に緑になる——本リポジトリが各所で潰してきた「静かに失効した検査器」そのものになる。
+後継は `DomainSourceDependencyTests`（`IADR-0256` で二重化のために新設）であり、Domain の**ソース**を
+**新旧樹形の和集合**で走査して、①`using` 許可リスト ②CPM 由来の禁止トークン（**完全修飾での迂回を塞ぐ**
+＝旧・推移閉包検査の役割）③他サービス参照 を検査する。**走査件数・`using` 数・禁止トークン数の
+3 つの下限検査を持つため「0 件走査で緑」にならない。**
+
+### 実測
+
+- `AiStockTrading.Architecture.Tests` **88 → 78**（削除した 10 ケースと完全一致）・**失敗 0**
+- 全量 `dotnet test` の失敗は **8 件・全て `AiStockTrading.IntegrationTests`**（Docker 不在の環境制約）
+- `dotnet build` 0 Warning / 0 Error ／ `dotnet format --verify-no-changes` exit 0
+- カバレッジ **82.50%**（16504/20006）/ floor 79.00%・**レポート 20 件 = テストプロジェクト 20 件**
+- `has-pending-model-changes`「変更なし」／ migration 関連 **41 ファイルすべて base と byte 一致**
