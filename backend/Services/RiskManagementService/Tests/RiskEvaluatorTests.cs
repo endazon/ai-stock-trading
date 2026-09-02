@@ -796,7 +796,8 @@ public class RiskEvaluatorTests
             Snapshot(capital: StageProductPolicy.ShortSellLiveReleaseEquityUsd),
             patternDetector: null,
             shortSellContext: null,
-            stageRelease: new StageProductPolicy.StageReleaseContext(ShortSellStrategyBacktestPassed: true));
+            // FR-20, ADR-0016 決定14, #388, IADR-0281: 解禁は 3 項の AND（equity / Stage 0 再充足 / verdict 有効）。
+            stageRelease: ShortSellReleaseFixtures.Released());
 
         result.Reasons.Should().NotContain(RejectionReason.StageShortSellReleaseUnmet);
     }

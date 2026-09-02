@@ -102,6 +102,48 @@ public static class StageGate
             Stage1Criteria: criteria);
     }
 
+    // FR-20, UC-06, ADR-0016 決定14, #388, IADR-0281 決定1: **空売り実弾解禁の verdict を承認記録へ載せる。**
+    //
+    // 裁定（2026-08-07）は「利用者承認とし、段階ゲートの承認記録と同じ経路に載せる。別記録にしない」と定めた。
+    // よって段階遷移とまったく同じ台帳・同じ承認判定（承認者が空なら拒否）を通し、**段階は動かさない**
+    // （FromStage == ToStage == 現段階）。台帳の畳み込みは ToStage を読むため、現在段階は変わらない。
+    //
+    // **合格基準（昇格の未充足基準）は評価しない。** verdict は「実弾解禁前の机上確認が済んだ」という
+    // 事実の記録であり、段階を上げる要求ではない。解禁の可否そのものは発注審査（StageProductPolicy）が
+    // equity・Stage 0 再充足・verdict の有効性の AND で判定する。
+    public static StageTransitionResult RequestShortSellReleaseVerdict(
+        TradingStage current,
+        int nextSequence,
+        StageApproval approval,
+        ShortSellReleaseAttestation attestation,
+        StageGatePolicy policy,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(attestation);
+
+        var criteria = policy.Stage1Criteria;
+
+        // **承認なしに verdict が生じない**（段階遷移と同じ規律・同じ拒否理由）。
+        if (string.IsNullOrWhiteSpace(approval.ApprovedBy))
+        {
+            return Reject(criteria, StageGateCriterion.NoUserApproval);
+        }
+
+        var record = new StageTransition(
+            nextSequence, current, current, StageTransitionKind.ShortSellReleaseVerdict,
+            approval.ApprovedBy, now, "利用者承認による空売り実弾解禁の verdict", attestation);
+
+        // ResultingSettings は**現段階の設定**を返す（段階が動いていないため変化しない）。
+        // null にすると「設定が不明」と読めてしまう——実際には現段階の設定がそのまま続く。
+        return new StageTransitionResult(
+            Accepted: true,
+            Transition: record,
+            ResultingSettings: policy.SettingsFor(current),
+            RejectionReasons: [],
+            Stage1Criteria: criteria);
+    }
+
     // FR-20, ADR-0008: 撤退（差し戻し）基準の評価。到達時は自動停止（HaltNewEntries）と降格提案（ProposedStage）を返す。
     // Stage 2/3: 実DD ≥ バックテスト最大DD × 倍率 で自動停止＋Stage 0 再検証提案。Stage 1: 乖離が説明不能で Stage 0 差し戻し提案。
     // 段階の実降格は提案に留め、確定は承認付き RequestTransition を要する（自動＝停止、承認＝段階変更）。

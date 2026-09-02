@@ -59,9 +59,45 @@ public static class StageProductPolicy
     /// <param name="ShortSellStrategyBacktestPassed">
     /// **空売りを含む戦略で Stage 0 の 7 条件を再度満たしたか**（ADR-0016 決定14）。
     /// 取引可能な商品種別の追加は、ADR-0014 が再検証を課したモデルの版数変更より戦略への影響が大きい。
-    /// <para>**供給元は未実装である**（<c>BacktestEvaluated</c> に「空売りを含む戦略か」の属性が無い）。</para>
+    /// <para>
+    /// FR-15, #388, IADR-0281 決定3: 供給は <c>BacktestEvaluated.Passed &amp;&amp; IncludesShortSelling</c> の
+    /// 射影である（<c>StagePerformance.ShortSellStrategyBacktestPassed</c>）。**空売りを含まない戦略の
+    /// Stage 0 合格では満たされない。**
+    /// </para>
     /// </param>
-    public sealed record StageReleaseContext(bool ShortSellStrategyBacktestPassed);
+    /// <param name="Verdict">
+    /// FR-20, ADR-0016 決定14（2026-08-07 確定）, #388, IADR-0281: **実弾解禁前の確認が済んだという判定**。
+    /// 段階ゲートの承認記録（<see cref="StageGateLedger.LatestShortSellReleaseVerdict"/>）から復元する。
+    /// <c>null</c>＝未承認であり、equity と Stage 0 再充足を満たしていても**解禁しない**。
+    /// </param>
+    /// <param name="CurrentSourceFingerprint">
+    /// **評価時点**の情報源フィンガープリント（借株料の照会経路・維持率の供給）。
+    /// verdict の発行時の値と異なれば無効（裁定の無効化契機 ①）。
+    /// </param>
+    /// <param name="CurrentStrategyId">
+    /// **評価時点**の戦略識別子（バックテスト verdict が名乗る戦略 ID）。
+    /// verdict の発行時の値と異なれば無効（裁定の無効化契機 ②）。
+    /// </param>
+    /// <param name="EvaluatedAtUtc">評価時刻。verdict の有効期限 30 日（無効化契機 ③）の判定に用いる。</param>
+    /// <remarks>
+    /// **追加メンバに既定値を与えていない。** 構築点すべてに材料を渡させ、渡し忘れをコンパイルで止めるためである
+    /// （既定値を許すと「verdict を渡し忘れたまま解禁される」経路は作れないが、
+    /// 「情報源・戦略を渡し忘れて常に不一致」という別の静かな誤りが生じる）。
+    /// </remarks>
+    public sealed record StageReleaseContext(
+        bool ShortSellStrategyBacktestPassed,
+        ShortSellReleaseVerdict? Verdict,
+        string CurrentSourceFingerprint,
+        string CurrentStrategyId,
+        DateTimeOffset EvaluatedAtUtc)
+    {
+        /// <summary>
+        /// FR-20, ADR-0016 決定14: verdict の有効性（<see cref="ShortSellReleasePolicy.Evaluate"/> の適用）。
+        /// </summary>
+        public ShortSellReleaseVerdictStatus VerdictStatus =>
+            ShortSellReleasePolicy.Evaluate(
+                Verdict, CurrentSourceFingerprint, CurrentStrategyId, EvaluatedAtUtc);
+    }
 
     /// <summary>
     /// 当該段階が当該商品種別の**新規建て**を許すか判定する。許さない場合は拒否理由を返す。
@@ -104,9 +140,17 @@ public static class StageProductPolicy
                     return null;
                 }
 
+                // FR-20, ADR-0016 決定8・決定14, #388, IADR-0281 決定3: **3 項の AND** である。
+                //   (a) equity ≥ $5,000（決定8）
+                //   (b) 空売りを**含む**戦略で Stage 0 の 7 条件を再充足（決定14 前段）
+                //   (c) 実弾解禁前の確認 verdict が**有効**（決定14 の 2026-08-07 確定）
+                // (b) と (c) は別の条件である——同じ戦略のまま空売りを外した版で合格しても解禁してはならず、
+                // 空売りを含む合格があっても戦略を差し替えれば verdict は無効になる。
                 var equitySufficient = equity >= ShortSellLiveReleaseEquityUsd;
                 var revalidated = release?.ShortSellStrategyBacktestPassed ?? false;
-                return equitySufficient && revalidated
+                var verdictValid =
+                    release?.VerdictStatus == ShortSellReleaseVerdictStatus.Valid;
+                return equitySufficient && revalidated && verdictValid
                     ? null
                     : RejectionReason.StageShortSellReleaseUnmet;
 

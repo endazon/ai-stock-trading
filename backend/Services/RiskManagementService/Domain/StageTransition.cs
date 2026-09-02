@@ -4,11 +4,28 @@ namespace RiskManagementService.Domain;
 
 // FR-20, ADR-0008, UC-06: 段階遷移の型（承認フロー・履歴・撤退評価の結果）。
 
-/// <summary>遷移の方向。昇格（Promotion）か差し戻し（Demotion）か。</summary>
+/// <summary>
+/// 承認の種別。昇格（Promotion）か差し戻し（Demotion）か、**空売り実弾解禁の verdict**（段階は動かさない）か。
+/// <para>
+/// FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: 裁定は verdict を「段階ゲートの承認記録と**同じ経路**に載せる。
+/// 別記録にしない」と定めた。よって**承認種別を 1 個増やして相乗り**させる（別テーブル・別 API を作らない）。
+/// </para>
+/// <para>
+/// **序数は DB 列・HTTP 経路（<c>StageTransitioned.Kind</c> は文字列だが履歴応答は数値）で往来する。**
+/// 既存メンバの序数を動かさず、追加は末尾へ行う。
+/// </para>
+/// </summary>
 public enum StageTransitionKind
 {
-    Promotion,
-    Demotion,
+    Promotion = 0,
+    Demotion = 1,
+
+    /// <summary>
+    /// FR-20, ADR-0016 決定14: 空売り実弾解禁の verdict（確認が「済んだ」という利用者承認）。
+    /// **段階は動かさない**（行の <c>FromStage == ToStage == 現段階</c>）ため、台帳の畳み込み
+    /// （<see cref="StageGateLedger.CurrentStage"/>）に影響しない。
+    /// </summary>
+    ShortSellReleaseVerdict = 2,
 }
 
 // 段階遷移の合格/拒否理由。AssessPromotion の未充足基準および RequestTransition の拒否理由に用いる。
@@ -67,7 +84,12 @@ public enum StageGateCriterion
 // FR-20, UC-06: 利用者の承認（Discord/チャット UI 由来）。承認者が空なら承認なしとして扱う。
 public record StageApproval(TradingStage TargetStage, string ApprovedBy);
 
-// FR-20: 遷移履歴の 1 件（不変・監査対象）。承認者・時刻・from/to・理由を保持する。
+// FR-20: 承認記録 1 件（不変・監査対象・追記専用）。承認者・時刻・from/to・理由を保持する。
+//
+// FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: **空売り実弾解禁の verdict もこの型で記録する**
+// （Kind == ShortSellReleaseVerdict・FromStage == ToStage）。verdict 固有の材料（情報源フィンガープリント・
+// 戦略識別子）だけを末尾の任意添付 ShortSellRelease に持たせ、承認者・発行時刻・承認記録 ID（Sequence）は
+// **既存の列をそのまま使う**（重複して持たない＝2 つの供給源が食い違わない）。
 public record StageTransition(
     int Sequence,
     TradingStage FromStage,
@@ -75,7 +97,8 @@ public record StageTransition(
     StageTransitionKind Kind,
     string ApprovedBy,
     DateTimeOffset OccurredAtUtc,
-    string Reason);
+    string Reason,
+    ShortSellReleaseAttestation? ShortSellRelease = null);
 
 // AssessPromotion の結果。昇格先（最上段なら null）と合格可否・未充足基準。
 public record PromotionAssessment(

@@ -33,9 +33,11 @@ public class BacktestEvaluatedProjectionConsumerTests
             })
             .StartAsync();
 
-    private static BacktestEvaluated Verdict(bool passed, decimal maxDd) =>
+    private static BacktestEvaluated Verdict(
+        bool passed, decimal maxDd, bool includesShortSelling = false, string strategyId = "baseline-v1") =>
         new(passed, maxDd, DeflatedSharpe: 1.2, ProbabilityOfBacktestOverfitting: 0.1,
-            FailedChecks: passed ? string.Empty : "DeflatedSharpe", DateTimeOffset.UtcNow);
+            FailedChecks: passed ? string.Empty : "DeflatedSharpe", DateTimeOffset.UtcNow,
+            includesShortSelling, strategyId);
 
     [Fact]
     public async Task 合格verdictを段階別実績へ射影し昇格を解錠する()
@@ -108,6 +110,7 @@ public class BacktestEvaluatedProjectionConsumerTests
             // #423, IADR-0164 決定4: 最小取引件数は設定値であり、段階ゲートは設定ストアから実効値を読む。
             new InMemoryRiskSettingsStore(),
             new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
+            new ShortSellReleaseSourceInventory([]),
             clock);
 
         // 供給前: fail-safe 既定で昇格は拒否される。

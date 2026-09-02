@@ -300,7 +300,9 @@ public class AuditEntryFactoryTests
         // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
         var e = new BacktestEvaluated(
             Passed: false, MaxDrawdownRatio: 0.30m, DeflatedSharpe: 0.42,
-            ProbabilityOfBacktestOverfitting: 0.7, FailedChecks: "DeflatedSharpe, MaxDrawdown", RecordedAt);
+            ProbabilityOfBacktestOverfitting: 0.7, FailedChecks: "DeflatedSharpe, MaxDrawdown", RecordedAt,
+            // FR-20, ADR-0016 決定14, #388, IADR-0281: 空売り解禁の判定入力（監査は素通しで payload へ載せる）。
+            IncludesShortSelling: false, StrategyId: "baseline-v1");
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 
