@@ -2103,5 +2103,25 @@ module.exports = ({ ok, assert }) => {
       const readme = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /summarize-test-failures\.js/, 'scripts/README.md に記載が無い');
     });
+
+    // 🔴 [2026-09-03 追記] `--diag` は A/B 計測（NFR, #596 フォローアップ / IADR-0277
+    // §結果フォローアップ）の結果、既定無効の切り替え口へ落とした。戻し忘れ（既定を "1" に
+    // 書き換える・素の `--diag` を直書きし直す）を機械で止める。
+    ok('ci.yml: VSTEST_DIAG が既定無効である（--diag は既定 off）', () => {
+      const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ciYml, /VSTEST_DIAG:\s*""/, 'VSTEST_DIAG の既定が空文字列で ci.yml に無い');
+    });
+
+    ok('ci.yml: --diag が切り替え口を経由せず素で直書きされていない', () => {
+      const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
+      // `--diag "${RUNNER_TEMP}/...` のように直接コマンドラインへ書かれていないこと。
+      // 許すのは `diag_args=(--diag ...)` の配列定義の中だけである。
+      assert.ok(
+        !/dotnet test[\s\S]{0,400}--diag\b/.test(ciYml),
+        '--diag が dotnet test の呼び出しへ直書きされている（VSTEST_DIAG の切り替え口を経由していない）'
+      );
+      assert.match(ciYml, /diag_args=\(--diag /, 'diag_args 経由の --diag 組み立てが無い');
+      assert.match(ciYml, /"\$\{diag_args\[@\]\}"/, 'dotnet test 呼び出しが diag_args を展開していない');
+    });
   }
 };
