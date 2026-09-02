@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AuditService.Domain;
 using AuditService.Features.AuditEvents;
 
 namespace AuditService.Infrastructure.Persistence;

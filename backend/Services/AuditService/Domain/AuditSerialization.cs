@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace AuditService.Features.AuditEvents;
+namespace AuditService.Domain;
 
 // FR-11, IADR-0019: 監査記録 Detail のシリアライズ方針。列挙は文字列化して人間可読・監査容易にする。
 //

@@ -1,4 +1,4 @@
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Domain;
 
 // FR-14, IADR-0062: Discord Bot の多層認証・有効化の設定。
 //

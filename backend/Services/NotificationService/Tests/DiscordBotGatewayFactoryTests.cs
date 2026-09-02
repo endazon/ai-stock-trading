@@ -1,3 +1,4 @@
+using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using NotificationService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
