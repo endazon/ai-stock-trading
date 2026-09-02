@@ -10,7 +10,10 @@
 - [補足: 「実装済み」だが実際には発動しない機能](#補足-実装済みだが実際には発動しない機能)
 
 - 作成日: 2026-08-05
-- 最終更新: 2026-08-14（**#473（運用ガイドの機械的強制化）を反映**。**B-2 を blocked:human の記録へ更新**——
+- 最終更新: 2026-09-02（**#566（Finnhub 実効レート制限の実測）の実装結果を反映**。**A-11 を新設**し、
+  実クラスタでの実測結果（分次は解消・日次は依然未確定）と、実測で新たに判明した同一鍵共有時の
+  自制レート合計超過を登録した（[IADR-0272](../.ai-context/adr/IADR-0272_finnhub-effective-rate-limit-measurement.md)）。
+- 前回更新: 2026-08-14（**#473（運用ガイドの機械的強制化）を反映**。**B-2 を blocked:human の記録へ更新**——
   従前の「`ci` / `security` / `codeql` を必須チェックに」は**ワークフロー名であり check として存在しない**ことを
   訂正し（誤りは消さず訂正として残す。正しい check 名は `docs/ai-workflow.md`）、能力の不在と規則による禁止を
   書き分け、「最後に測った時点」と再測定手順を付した（[IADR-0185](../.ai-context/adr/IADR-0185_required-check-contexts-and-blocked-record.md)）。
@@ -388,6 +391,19 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 | 追跡 | **[#500](https://github.com/endazon/ai-stock-trading/issues/500)（本項の受け皿・2026-08-14 起票）**／#348（構造ガードの実施をもってクローズ済み）／ MSP#445（待ち先） |
 
 **未了の帰結**: **本リポジトリのテストは基盤側の許可リストを見ていない。** 基盤側の PR で AST の文書コレクションが公開対象へ追加された場合、**AST の CI は緑のまま統制が破れる**。ADR-0012 §結果 のフォローアップ（構成情報 API / SC-11 のドリフト検出で監視）は**まだ実装されていない**。
+
+### A-11. Finnhub 実効レート制限 — 2026-09-02 実測で解消
+
+[#566](https://github.com/endazon/ai-stock-trading/issues/566)（#336 の受け皿）。利用者承認済みの実クラスタ（namespace `ai-stock-trading`）で使い捨て Pod から実測した。
+
+| 項目 | 内容 |
+| --- | --- |
+| 実測できたもの | **分次の実効上限**: Finnhub Free `/quote` は公称どおり **60 回/60 秒の固定ウィンドウ**（ローリングではない）。`X-Ratelimit-Remaining` が要求ごとに 1 ずつ減り 60 件目で 429、`X-Ratelimit-Reset` の時刻を過ぎると満額へ完全リセットされる。秒単位の追加バースト制限は検出されなかった（逐次実行での検証。真の並列は未検証） |
+| 実測できなかったもの | **日次上限は依然として未確定。** 累計約 159 回・約 11 分の実測セッションでは持続的なブロックを観測できなかった（第三者観測「約 300 回/日」の裏取りには、より長時間・高頻度の実測か本番運用ログの継続観察が要る） |
+| 新たに判明した問題 | ローカル実行環境（`values-local.yaml`）で情報収集用と実市況用の Finnhub 鍵が**バイト一致する同一鍵**であることを確認。市況の消費サービスは実装上 **4 つ**（`MarketMonitorService`/`ReportService`/`RiskManagementService`/`TradeDecisionService`。[IADR-0068](../.ai-context/adr/IADR-0068_live-quote-feed-finnhub-extraction.md) 決定4 の「3 サービス」は過小算定だった）であり、既定値の合計（情報収集30 + 市況10×4=70/分）が実測上限 60/分を超過していた |
+| 是正 | `MarketData:Finnhub:RequestsPerMinute` の既定を 10→5 に是正（合計 50/分）。[IADR-0272](../.ai-context/adr/IADR-0272_finnhub-effective-rate-limit-measurement.md) 参照。**監視銘柄数の絶対的な上限（`MaxMonitoredSymbols` 相当）は新設しなかった**（自制レートは銘柄数に依らず一定であり、代理指標が実際のボトルネックを隠しかねないため。同 IADR 決定5） |
+| 記録 | [IADR-0272](../.ai-context/adr/IADR-0272_finnhub-effective-rate-limit-measurement.md)・[作業仕様書 20260902_566](../.ai-context/specs/20260902_566_finnhub-effective-rate-limit.md) |
+| 最後に測った時点 | **2026-09-02** |
 
 ---
 

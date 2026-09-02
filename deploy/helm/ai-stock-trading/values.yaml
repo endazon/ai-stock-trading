@@ -238,11 +238,12 @@ services:
       # （例: "finnhub,finnhub-news,google-news,sec-edgar,edinet,boj,fred"）。列挙しても必須設定（キー・銘柄・CIK・系列コード）が
       # 空のソースは、そのソースだけ無効に倒れる（他ソースは有効なまま・IADR-0064）。
       - { name: Collection__Source__Provider, value: "" }
-      # Finnhub Free（米国株の市況・60回/分）。
+      # Finnhub Free（米国株の市況・60回/60秒固定ウィンドウ。IADR-0272 で実測確認済み）。
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
-      # ADR-0020 §結果 / IADR-0224: 日次上限は空=未実測（銘柄数上限を逆算しない）。実測後に設定する。
+      # ADR-0020 §結果 / IADR-0224 / IADR-0272: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
+      # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
       # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。空=本ソース無効。
       - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
