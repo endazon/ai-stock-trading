@@ -12,7 +12,7 @@
 - 作成日: 2026-08-05
 - 最終更新: 2026-09-02（**#566（Finnhub 実効レート制限の実測）の実装結果を反映**。**A-11 を新設**し、
   実クラスタでの実測結果（分次は解消・日次は依然未確定）と、実測で新たに判明した同一鍵共有時の
-  自制レート合計超過を登録した（[IADR-0274](../.ai-context/adr/IADR-0274_finnhub-effective-rate-limit-measurement.md)）。
+  自制レート合計超過を登録した（[IADR-0275](../.ai-context/adr/IADR-0275_finnhub-effective-rate-limit-measurement.md)）。
 - 前回更新: 2026-09-02（**#397（日本株市況権限の切り分け）・#342 残項目6/7/8 の読み取り専用 probe 実施結果を反映**。
   実測: **市況権限（quote）と発注権限は別建てであり、`GetStaticInfo`/`GetMarketState` は権限なしでも成功する**
   （`Snapshot`/`HistoryKL` のみが `No permission` で失敗する）。A-2 の項目6（35日・19 restarts に更新）・
@@ -410,8 +410,8 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 | 実測できたもの | **分次の実効上限**: Finnhub Free `/quote` は公称どおり **60 回/60 秒の固定ウィンドウ**（ローリングではない）。`X-Ratelimit-Remaining` が要求ごとに 1 ずつ減り 60 件目で 429、`X-Ratelimit-Reset` の時刻を過ぎると満額へ完全リセットされる。秒単位の追加バースト制限は検出されなかった（逐次実行での検証。真の並列は未検証） |
 | 実測できなかったもの | **日次上限は依然として未確定。** 累計約 159 回・約 11 分の実測セッションでは持続的なブロックを観測できなかった（第三者観測「約 300 回/日」の裏取りには、より長時間・高頻度の実測か本番運用ログの継続観察が要る） |
 | 新たに判明した問題 | ローカル実行環境（`values-local.yaml`）で情報収集用と実市況用の Finnhub 鍵が**バイト一致する同一鍵**であることを確認。市況の消費サービスは実装上 **4 つ**（`MarketMonitorService`/`ReportService`/`RiskManagementService`/`TradeDecisionService`。[IADR-0068](../.ai-context/adr/IADR-0068_live-quote-feed-finnhub-extraction.md) 決定4 の「3 サービス」は過小算定だった）であり、既定値の合計（情報収集30 + 市況10×4=70/分）が実測上限 60/分を超過していた |
-| 是正 | `MarketData:Finnhub:RequestsPerMinute` の既定を 10→5 に是正（合計 50/分）。[IADR-0274](../.ai-context/adr/IADR-0274_finnhub-effective-rate-limit-measurement.md) 参照。**監視銘柄数の絶対的な上限（`MaxMonitoredSymbols` 相当）は新設しなかった**（自制レートは銘柄数に依らず一定であり、代理指標が実際のボトルネックを隠しかねないため。同 IADR 決定5） |
-| 記録 | [IADR-0274](../.ai-context/adr/IADR-0274_finnhub-effective-rate-limit-measurement.md)・[作業仕様書 20260902_566](../.ai-context/specs/20260902_566_finnhub-effective-rate-limit.md) |
+| 是正 | `MarketData:Finnhub:RequestsPerMinute` の既定を 10→5 に是正（合計 50/分）。[IADR-0275](../.ai-context/adr/IADR-0275_finnhub-effective-rate-limit-measurement.md) 参照。**監視銘柄数の絶対的な上限（`MaxMonitoredSymbols` 相当）は新設しなかった**（自制レートは銘柄数に依らず一定であり、代理指標が実際のボトルネックを隠しかねないため。同 IADR 決定5） |
+| 記録 | [IADR-0275](../.ai-context/adr/IADR-0275_finnhub-effective-rate-limit-measurement.md)・[作業仕様書 20260902_566](../.ai-context/specs/20260902_566_finnhub-effective-rate-limit.md) |
 | 最後に測った時点 | **2026-09-02** |
 
 ---

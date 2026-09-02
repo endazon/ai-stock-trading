@@ -4,12 +4,12 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.MarketData;
 
-// FR-01, IADR-0274: 実クラスタでの実測（60 回/60 秒固定ウィンドウ）と、ローカル実行環境（values-local.yaml）で
+// FR-01, IADR-0275: 実クラスタでの実測（60 回/60 秒固定ウィンドウ）と、ローカル実行環境（values-local.yaml）で
 // 情報収集（Collection:Source:Finnhub）と実市況（MarketData:Finnhub）が実際に同一 Finnhub 鍵を共有し得ることの
 // 確認を踏まえ、自制レートの合計が実測上限を超えないことを固定する退行テスト。
 //
 // プロセス間の協調は行わない設計（IADR-0068 決定4）のため、超過は「合計を実測上限以下に保つ」構成上の
-// 責務でしか防げない。IADR-0274 決定3 が指摘したとおり、市況の消費サービスは実装上 4 つ
+// 責務でしか防げない。IADR-0275 決定3 が指摘したとおり、市況の消費サービスは実装上 4 つ
 // （MarketMonitorService/ReportService/RiskManagementService/TradeDecisionService）であり、
 // IADR-0068 決定4 の「3 サービス」という前提は過小算定だった。
 public class FinnhubSharedKeyBudgetTests
@@ -21,7 +21,7 @@ public class FinnhubSharedKeyBudgetTests
     // MarketMonitorService / ReportService / RiskManagementService / TradeDecisionService の 4 サービス。
     private const int MarketDataConsumerServiceCount = 4;
 
-    // IADR-0274 実測: Finnhub Free `/quote` は 60 回/60 秒の固定ウィンドウ（ローリングではない）。
+    // IADR-0275 実測: Finnhub Free `/quote` は 60 回/60 秒の固定ウィンドウ（ローリングではない）。
     private const int MeasuredRealLimitPerWindow = 60;
 
     [Fact]

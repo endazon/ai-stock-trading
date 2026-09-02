@@ -120,6 +120,60 @@ public class HttpKnowledgeBaseWriterTests
     }
 
     [Fact]
+    public async Task 本文は上限以内ならBodyとして送られる()
+    {
+        // FR-08, #565, IADR-0274: RAG 検索が本文をヒットさせるには Body を送る必要がある。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        await writer.SaveAsync(new KnowledgeDocument("t", Content: "# 見出し\n\n本文本文本文"));
+
+        var root = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        root.GetProperty("body").GetString().Should().Be("# 見出し\n\n本文本文本文");
+    }
+
+    [Fact]
+    public async Task 本文が無ければBodyはnullで送られる_否定形()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        var root = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        root.GetProperty("body").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task 上限を超える本文は送らずメタデータのみで登録する_否定形()
+    {
+        // FR-08, #565, IADR-0274: platform 側は 1 MB 超を 413 で拒否する（切り詰めない）。
+        // 送信側も切り詰めず、Body を外してメタデータの保存だけは維持する。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+        var oversized = new string('a', KnowledgeBodyLimits.MaxBytes + 1);
+
+        var result = await writer.SaveAsync(new KnowledgeDocument("t", Content: oversized));
+
+        result.Saved.Should().BeTrue("本文超過はメタデータ登録まで妨げない");
+        var root = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        root.GetProperty("body").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task 上限ちょうどの本文は送られる_対の肯定形()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+        var atLimit = new string('a', KnowledgeBodyLimits.MaxBytes);
+
+        await writer.SaveAsync(new KnowledgeDocument("t", Content: atLimit));
+
+        var root = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        root.GetProperty("body").GetString().Should().Be(atLimit);
+    }
+
+    [Fact]
     public async Task 非2xxは未保存に倒し例外を投げない()
     {
         var handler = StubHttpMessageHandler.Status(HttpStatusCode.Forbidden); // ロール未付与＝403（IADR-0069）

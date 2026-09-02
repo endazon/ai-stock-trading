@@ -1,5 +1,5 @@
 ---
-title: IADR-0274 Finnhub Free の実効レート制限を実測し、同一鍵共有時の自制レート合計を実測上限内へ是正する
+title: IADR-0275 Finnhub Free の実効レート制限を実測し、同一鍵共有時の自制レート合計を実測上限内へ是正する
 type: impl-adr
 status: Accepted
 related_ids: [FR-01, ADR-0020, IADR-0064, IADR-0068, IADR-0224]
@@ -13,7 +13,7 @@ related_specs:
   - ../specs/20260902_566_finnhub-effective-rate-limit.md
 ---
 
-# IADR-0274: Finnhub Free の実効レート制限を実測し、同一鍵共有時の自制レート合計を実測上限内へ是正する
+# IADR-0275: Finnhub Free の実効レート制限を実測し、同一鍵共有時の自制レート合計を実測上限内へ是正する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
