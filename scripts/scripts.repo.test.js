@@ -2014,4 +2014,71 @@ module.exports = ({ ok, assert }) => {
       assert.match(readme, /check-observability-assets\.js/, 'scripts/README.md に記載が無い');
     });
   }
+
+  // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
+  //
+  // 🔴 `dotnet test <solution>` の並列実行では、各 VSTest のコンソールロガーが同じ標準出力へ
+  // 同期せずに書くため**サマリ塊が分断される**。実測（#596）では `Test Run Failed.` が
+  // `Total tests:` と `Passed:` の間へ入り込み、**ログ末尾に最も近いサマリは別プロジェクトの
+  // `Test Run Successful.`** だった。結果「テスト失敗 0 件なのに exit 1」と読まれ、
+  // テストホストの異常終了を疑う issue が立った（実際は 3 観測すべてが名前の付いた
+  // アサーション失敗）。要約器は TRX（構造化データ）を読むのでこの誤診を構造的に断つ。
+  //
+  // 🔴 **要約器そのものが 0 件検査へ退行すると、断ったはずの誤診が戻る。**
+  // 自己試験（否定形 4 件を含む 13 件）をここから毎回走らせ、配線も一緒に固定する。
+  {
+    const fsSt = require('fs');
+    const pathSt = require('path');
+    const { execFileSync: execSt } = require('child_process');
+    const REPO_ROOT_ST = pathSt.resolve(__dirname, '..');
+    const st = require('./summarize-test-failures.js');
+
+    ok('summarize-test-failures: 自己試験が全件通る', () => {
+      execSt(process.execPath, [pathSt.join(__dirname, 'summarize-test-failures.js'), '--self-test'], {
+        cwd: REPO_ROOT_ST,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('summarize-test-failures: 実 TRX 形（名前空間つき XML）の失敗結果を拾う', () => {
+      // VSTest が実際に吐く形（`xmlns` つき・`<Output><ErrorInfo>` の入れ子）を固定する。
+      const real =
+        '﻿<?xml version="1.0" encoding="utf-8"?>\n' +
+        '<TestRun id="x" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">\n' +
+        '  <ResultSummary outcome="Failed"><Counters total="28" executed="28" passed="27" failed="1" /></ResultSummary>\n' +
+        '  <Results>\n' +
+        '    <UnitTestResult executionId="e" testId="t" testName="Ns.C.日本語の名前" computerName="R" duration="00:00:00.01" outcome="Failed" testListId="l">\n' +
+        '      <Output><ErrorInfo><Message>期待 A / 実際 B</Message><StackTrace>   at X()</StackTrace></ErrorInfo></Output>\n' +
+        '    </UnitTestResult>\n' +
+        '  </Results>\n' +
+        '</TestRun>\n';
+      const parsed = st.parseTrx(real.replace(/^﻿/, ''));
+      assert.strictEqual(parsed.failures.length, 1, '失敗件数');
+      assert.strictEqual(parsed.failures[0].testName, 'Ns.C.日本語の名前', 'テスト名');
+      assert.strictEqual(parsed.failures[0].message, '期待 A / 実際 B', 'メッセージ');
+      assert.strictEqual(parsed.counters.failed, 1, 'カウンタ');
+    });
+
+    ok('ci.yml: backend-test が TRX ロガーと要約器を配線している', () => {
+      const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
+      // 🔴 TRX が出ていなければ要約器は何も読めない。両方そろって初めて効く。
+      assert.match(ciYml, /--logger trx/, 'TRX ロガーが ci.yml に無い');
+      assert.match(ciYml, /summarize-test-failures\.js/, '要約器が ci.yml に無い');
+      // 本物のホスト異常終了（＝ TRX に失敗 0 件のまま exit≠0）が起きたときの成果物。
+      assert.match(ciYml, /--blame-crash/, 'blame の収集が ci.yml に無い');
+      // 🔴 `-m:1` は入れない（IADR-0277。恒久策として遅く、原因が並列度ではない）。
+      assert.ok(!/dotnet test[^\n]*-m:1/.test(ciYml), '-m:1 が入っている（IADR-0277 で入れないと決めた）');
+    });
+
+    ok('ci.yml: 必須チェックのジョブ名を変えていない（backend-test / build-and-test）', () => {
+      const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ciYml, /^ {2}backend-test:$/m, 'ジョブ backend-test が無い');
+      assert.match(ciYml, /^ {2}build-and-test:$/m, 'ジョブ build-and-test が無い');
+    });
+
+    ok('scripts/README.md: 本リポジトリ固有の表に summarize-test-failures.js を記載している', () => {
+      const readme = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /summarize-test-failures\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
 };
