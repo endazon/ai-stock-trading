@@ -538,6 +538,17 @@ jobs:
       - name: Build
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: dotnet build backend/backend.slnx --no-restore --configuration Release
+      # NFR, #616: 11 Worker の publish を乾式実行する（shard 1 のみ・--no-build＝ファイルコピーだけ）。
+      # VSA 移送でサービス本体（Web SDK）同士の参照ができ、参照先の appsettings*.json が publish 出力へ
+      # 流れ込んで NETSDK1152 で落ちる退行を、build/test だけの CI が見逃していた。対象は
+      # scripts/k8s-local-images.sh の MAPPING と同じ 11 本（Dockerfile と同じ publish を行う）。
+      - name: Publish (dry run)
+        if: ${{ steps.gate.outputs.backend == 'true' && matrix.shard == 1 }}
+        run: |
+          set -euo pipefail
+          for csproj in backend/Services/*/*.csproj; do
+            dotnet publish "$csproj" --no-build --no-restore --configuration Release               -o "${RUNNER_TEMP}/publish/$(basename "$csproj" .csproj)"
+          done
       - name: Test (shard ${{ matrix.shard }} / 4)
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: |
