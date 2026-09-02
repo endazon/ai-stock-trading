@@ -1,0 +1,6 @@
+# app 層（MSP/ADR-0067 決定 5）: providers / router / アプリシェル。
+#
+# 本ユニットは合成される側であり、providers・router・シェルは基盤（platform SPA）が持つ。
+# **層としての app の実体は合成点 `src/features/index.ts` である**（同 決定 4。置き場が
+# `features/` 直下なのは参照面 `@ai-stock-trading/features` の都合であり、層は app）。
+# したがって本ディレクトリは枠のみになる。実体が生じたらここへ置く（IADR-0290）。

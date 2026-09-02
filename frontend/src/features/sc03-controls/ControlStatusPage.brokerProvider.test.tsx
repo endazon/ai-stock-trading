@@ -15,20 +15,20 @@ import {
   BROKER_PROVIDER_INTERNAL_PAPER,
   BROKER_PROVIDER_MOOMOO_SIMULATE,
   CHANGE_TYPE_BROKER_PROVIDER,
-} from '../risk/contracts';
-import type { RiskStatusView, SettingsChangeEntry, StageGateStatus } from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
+import type { RiskStatusView, SettingsChangeEntry, StageGateStatus } from '@ai-stock-trading/lib/risk/contracts';
 import {
   CONTRACT_RISK_STATUS,
   CONTRACT_SETTINGS_HISTORY,
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
-} from '../risk/contractFixtures';
+} from '@ai-stock-trading/testing/riskContractFixtures';
 import {
   PAPER_BANNER_DEBUG_MESSAGE,
   PAPER_BANNER_EXCLUSION_MESSAGE,
   PAPER_REFERENCE_LABEL,
-} from '../shared/paperMode';
+} from '@ai-stock-trading/lib/paperMode';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台に作る。
 function status(brokerProvider: number): RiskStatusView {

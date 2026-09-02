@@ -9,7 +9,7 @@ import type {
   RiskStatusView,
   SettingsChangeEntry,
   TradingGuardSettings,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   brokerProviderLabel,
   BROKER_PROVIDER_OPTIONS,
@@ -32,7 +32,7 @@ import {
   stageLabel,
   validateLimitInput,
   wireToLimitInput,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   useRiskSettings,
   useRiskSettingsHistory,
@@ -40,8 +40,8 @@ import {
   useSaveBrokerProvider,
   useSaveRiskLimits,
   useSaveTradingGuard,
-} from '../risk/queries';
-import { PaperModeBanner } from '../shared/PaperModeBanner';
+} from '@ai-stock-trading/lib/risk/queries';
+import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
 import { WatchlistForm } from './WatchlistForm';
@@ -114,7 +114,7 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function RiskSettingsPage() {
-  // IADR-0288: 取得・更新は TanStack Query（`../risk/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`@ai-stock-trading/lib/risk/queries`）が持つ。
   const settingsQuery = useRiskSettings();
   const historyQuery = useRiskSettingsHistory();
   // FR-10, SC-02, #362, IADR-0151 決定4: 実額の併記と実弾切替モーダル③に使う equity・統制状態。

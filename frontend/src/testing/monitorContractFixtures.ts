@@ -15,7 +15,7 @@
 // （それが #389 の根因である）。
 import settingsJson from './contract-fixtures/monitor.settings.json';
 import settingsHistoryJson from './contract-fixtures/monitor.settings-history.json';
-import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from './contracts';
+import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
 
 /** `GET /monitor/settings` の実応答（SC-01 §2 の収集パラメータ・SC-02 の監視銘柄）。 */
 export const CONTRACT_MONITOR_SETTINGS: MarketMonitorSettings = settingsJson;

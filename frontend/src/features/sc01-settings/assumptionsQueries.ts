@@ -4,7 +4,7 @@ import { apiFetch } from '@foundation/api/apiClient';
 // SC-01, FR-17, UC-06, IADR-0288: 全体前提条件（ConfigurationService。BFF `/bff/assumptions`）の
 // サーバー状態と、その型。
 //
-// `apiFetch` を呼んでよいのはこの層だけである（理由は `../risk/queries.ts` 冒頭）。
+// `apiFetch` を呼んでよいのはこの層だけである（理由は `@ai-stock-trading/lib/risk/queries.ts` 冒頭）。
 // **本 feature 以外はこの端点を消費しない**ため、共有層ではなく feature の中に置く。
 
 export interface CommissionSchedule {

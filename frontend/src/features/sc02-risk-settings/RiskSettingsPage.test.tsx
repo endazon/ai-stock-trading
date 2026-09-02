@@ -15,14 +15,14 @@ import {
   CONTRACT_RISK_STATUS,
   CONTRACT_SETTINGS_HISTORY,
   cloneContract,
-} from '../risk/contractFixtures';
-import { CONTRACT_MONITOR_SETTINGS } from '../monitor/contractFixtures';
+} from '@ai-stock-trading/testing/riskContractFixtures';
+import { CONTRACT_MONITOR_SETTINGS } from '@ai-stock-trading/testing/monitorContractFixtures';
 import type {
   RiskManagementSettings,
   RiskStatusView,
   SettingsChangeEntry,
-} from '../risk/contracts';
-import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
+import { METRIC_NOT_SUPPLIED_TEXT } from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台に作り、テストが要る差分だけ
 // 上書きする。インラインの literal で書くと「フロントが思っている形をフロント自身が検証する」構造へ戻り、

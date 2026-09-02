@@ -19,17 +19,17 @@ import {
   BROKER_PROVIDER_MOOMOO_REAL,
   BROKER_PROVIDER_MOOMOO_SIMULATE,
   formatAmount,
-} from '../risk/contracts';
-import type { RiskManagementSettings, RiskStatusView } from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
+import type { RiskManagementSettings, RiskStatusView } from '@ai-stock-trading/lib/risk/contracts';
 import {
   CONTRACT_RISK_SETTINGS,
   CONTRACT_RISK_STATUS,
   cloneContract,
-} from '../risk/contractFixtures';
+} from '@ai-stock-trading/testing/riskContractFixtures';
 import {
   PAPER_BANNER_DEBUG_MESSAGE,
   PAPER_BANNER_EXCLUSION_MESSAGE,
-} from '../shared/paperMode';
+} from '@ai-stock-trading/lib/paperMode';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台にする。
 // 実弾切替モーダル③は equity と統制値の**実額**を提示するため、フィクスチャの数値をそのまま使う。

@@ -11,8 +11,8 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { RiskSettingsPage } from './RiskSettingsPage';
-import { CONTRACT_RISK_SETTINGS, cloneContract } from '../risk/contractFixtures';
-import type { RiskManagementSettings } from '../risk/contracts';
+import { CONTRACT_RISK_SETTINGS, cloneContract } from '@ai-stock-trading/testing/riskContractFixtures';
+import type { RiskManagementSettings } from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）を土台にする（インライン literal で
 // 自作した形を自分で検証しない）。ガードの差分だけを上書きする。

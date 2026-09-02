@@ -1,5 +1,5 @@
-import { isInternalPaper } from '../risk/contracts';
-import { PAPER_BANNER_DEBUG_MESSAGE, PAPER_BANNER_EXCLUSION_MESSAGE } from './paperMode';
+import { isInternalPaper } from '@ai-stock-trading/lib/risk/contracts';
+import { PAPER_BANNER_DEBUG_MESSAGE, PAPER_BANNER_EXCLUSION_MESSAGE } from '@ai-stock-trading/lib/paperMode';
 
 // FR-12, SC-01, SC-02, SC-03, INDEX 決定 46, #334:
 // 内蔵 `paper`（擬似約定・外部へ発注しない）で稼働している間、**全画面（SC-01 / SC-02 / SC-03）の上部に

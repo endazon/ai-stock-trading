@@ -17,8 +17,8 @@ import {
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
-} from '../risk/contractFixtures';
-import type { RiskStatusView, StageGateStatus } from '../risk/contracts';
+} from '@ai-stock-trading/testing/riskContractFixtures';
+import type { RiskStatusView, StageGateStatus } from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）から作る。
 const STATUS: RiskStatusView = { ...cloneContract(CONTRACT_RISK_STATUS), stage: 1 };

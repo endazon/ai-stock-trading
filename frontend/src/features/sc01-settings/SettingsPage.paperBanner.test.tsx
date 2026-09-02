@@ -19,11 +19,11 @@ import { SettingsPage } from './SettingsPage';
 import {
   BROKER_PROVIDER_INTERNAL_PAPER,
   BROKER_PROVIDER_MOOMOO_SIMULATE,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   PAPER_BANNER_DEBUG_MESSAGE,
   PAPER_BANNER_EXCLUSION_MESSAGE,
-} from '../shared/paperMode';
+} from '@ai-stock-trading/lib/paperMode';
 
 const ASSUMPTIONS = {
   assumptions: {
