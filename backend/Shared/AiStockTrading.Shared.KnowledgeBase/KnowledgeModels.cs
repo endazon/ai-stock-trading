@@ -47,7 +47,7 @@ public static class KnowledgeAttributeDefaults
 }
 
 // FR-08: KB へ保存する 1 文書。Title/属性/タグはカタログ登録に用いる。
-//   Content     — 正規化 Markdown 本文。#565, IADR-0272: POST /documents の Body として送る
+//   Content     — 正規化 Markdown 本文。#565, IADR-0274: POST /documents の Body として送る
 //                 （platform 側がオブジェクトストレージへ格納し Ingestion が索引する。IADR-0069 のスコープ境界は解消済み）。
 //                 1 MB（UTF-8 バイト数。KnowledgeBodyLimits.Exceeds）超は送らず、メタデータのみで登録する。
 //   SourceUri   — 元情報への参照（platform 側 OriginalUri に写像）。

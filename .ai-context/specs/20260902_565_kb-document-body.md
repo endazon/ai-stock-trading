@@ -16,7 +16,7 @@ plan_refs:
 > の実装と、[#564](https://github.com/endazon/ai-stock-trading/issues/564)（情報収集の縮退の fail-open）の
 > 実コード監査（PR #605 / [IADR-0267](../adr/IADR-0267_information-degradation-state-heartbeat-and-fail-closed.md)
 > による解消済みの確認）を対象とする。設計判断は
-> [IADR-0272](../adr/IADR-0272_kb-document-body-forwarding.md)。
+> [IADR-0274](../adr/IADR-0274_kb-document-body-forwarding.md)。
 
 ## 前提の確認結果（着手前調査）
 

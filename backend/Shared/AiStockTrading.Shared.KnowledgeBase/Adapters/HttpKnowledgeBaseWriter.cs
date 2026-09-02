@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 
-// FR-08, IADR-0069 決定 1/3, #565, IADR-0272: platform DocumentService の POST /documents へ
+// FR-08, IADR-0069 決定 1/3, #565, IADR-0274: platform DocumentService の POST /documents へ
 // カタログ登録（＋本文投入）する実アダプタ。当リポ DTO（KnowledgeDocument）を platform 契約
 // （CreateDocumentRequest 形状）へ HTTP 境界の内側でのみ写像する。
 //
@@ -20,7 +20,7 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // の予約値（owner=system, department=unassigned）へ倒す（欠落させない）。
 // 🔴 lifecycle は planning#361 で既定が未裁定のため、意図的に補完しない（推測で入れない）。
 //
-// FR-08, #565, IADR-0272: **本文（Markdown）は POST /documents の Body として送る**（platform 側が
+// FR-08, #565, IADR-0274: **本文（Markdown）は POST /documents の Body として送る**（platform 側が
 // FR-21 で新設した任意フィールド。空ならオブジェクトストレージへ格納し Ingestion が索引する）。
 // 🔴 **1 MB（UTF-8 バイト数。KnowledgeBodyLimits.Exceeds）超は送らない。** platform 側が 413 で
 // 登録そのものを拒否するため（DocumentBodyIntake.ExceedsLimit）、超過分を黙って切り詰めて送ると
@@ -50,7 +50,7 @@ internal sealed class HttpKnowledgeBaseWriter(
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        // #565, IADR-0272: 上限超過は Body を外してメタデータのみで登録する（切り詰めない）。
+        // #565, IADR-0274: 上限超過は Body を外してメタデータのみで登録する（切り詰めない）。
         var exceedsLimit = KnowledgeBodyLimits.Exceeds(document.Content);
         if (exceedsLimit)
         {

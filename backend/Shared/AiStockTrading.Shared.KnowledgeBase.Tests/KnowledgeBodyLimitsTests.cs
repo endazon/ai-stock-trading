@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.KnowledgeBase.Tests;
 
-// FR-08, #565, IADR-0272: 本文サイズ上限判定の純関数を境界値で固定する。
+// FR-08, #565, IADR-0274: 本文サイズ上限判定の純関数を境界値で固定する。
 // 上限値・判定方法（UTF-8 バイト数）は platform DocumentBodyIntake.ExceedsLimit と同値でなければならない
 // （送信側で緩く判定すると、platform 側の 413 を常に引いて無駄な往復になる）。
 public class KnowledgeBodyLimitsTests

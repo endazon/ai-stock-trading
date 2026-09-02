@@ -1,5 +1,5 @@
 ---
-title: IADR-0272 KB 文書の本文は POST /documents の Body として送り、1 MB 超は切り詰めずメタデータのみで登録する
+title: IADR-0274 KB 文書の本文は POST /documents の Body として送り、1 MB 超は切り詰めずメタデータのみで登録する
 type: impl-adr
 status: Accepted
 related_ids: [FR-08, ADR-0001, ADR-0010, IADR-0069, IADR-0093]
@@ -10,7 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
 
-# IADR-0272: KB 文書の本文は POST /documents の Body として送り、1 MB 超は切り詰めずメタデータのみで登録する
+# IADR-0274: KB 文書の本文は POST /documents の Body として送り、1 MB 超は切り詰めずメタデータのみで登録する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

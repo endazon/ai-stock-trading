@@ -122,7 +122,7 @@ public class HttpKnowledgeBaseWriterTests
     [Fact]
     public async Task 本文は上限以内ならBodyとして送られる()
     {
-        // FR-08, #565, IADR-0272: RAG 検索が本文をヒットさせるには Body を送る必要がある。
+        // FR-08, #565, IADR-0274: RAG 検索が本文をヒットさせるには Body を送る必要がある。
         var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
         var writer = CreateWriter(handler);
 
@@ -147,7 +147,7 @@ public class HttpKnowledgeBaseWriterTests
     [Fact]
     public async Task 上限を超える本文は送らずメタデータのみで登録する_否定形()
     {
-        // FR-08, #565, IADR-0272: platform 側は 1 MB 超を 413 で拒否する（切り詰めない）。
+        // FR-08, #565, IADR-0274: platform 側は 1 MB 超を 413 で拒否する（切り詰めない）。
         // 送信側も切り詰めず、Body を外してメタデータの保存だけは維持する。
         var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
         var writer = CreateWriter(handler);
