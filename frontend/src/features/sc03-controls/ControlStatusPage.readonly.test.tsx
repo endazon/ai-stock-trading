@@ -20,7 +20,7 @@ import {
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
-} from '../risk/contractFixtures';
+} from '@ai-stock-trading/testing/riskContractFixtures';
 
 beforeEach(() => {
   mocks.apiFetch.mockReset();

@@ -6,7 +6,7 @@ import type {
   ShortSellingStatusView,
   StageGateStatus,
   StageTransition,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   activeControlLabel,
   brokerProviderLabel,
@@ -18,15 +18,15 @@ import {
   stageLabel,
   transitionKindLabel,
   withdrawalReasonLabel,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   useRiskSettingsHistory,
   useRiskStatus,
   useShortSelling,
   useStageGate,
-} from '../risk/queries';
-import { PaperModeBanner } from '../shared/PaperModeBanner';
-import { PAPER_REFERENCE_LABEL } from '../shared/paperMode';
+} from '@ai-stock-trading/lib/risk/queries';
+import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
+import { PAPER_REFERENCE_LABEL } from '@ai-stock-trading/lib/paperMode';
 import type { ShortSellingState } from './ShortSellingStatusSection';
 import { ShortSellingStatusSection } from './ShortSellingStatusSection';
 
@@ -40,7 +40,7 @@ type StageGateState = 'loading' | 'ok' | 'unavailable';
 type HistoryState = 'loading' | 'ok' | 'unavailable';
 
 export function ControlStatusPage() {
-  // IADR-0288: 取得は TanStack Query（`../risk/queries`）が持つ。**領域ごとに別のクエリのままにする**
+  // IADR-0288: 取得は TanStack Query（`@ai-stock-trading/lib/risk/queries`）が持つ。**領域ごとに別のクエリのままにする**
   // ——一方の失敗が他方を巻き込まない縮退（下の各 state 導出）はクエリの分割がそのまま担う。
   const statusQuery = useRiskStatus();
   const stageGateQuery = useStageGate();

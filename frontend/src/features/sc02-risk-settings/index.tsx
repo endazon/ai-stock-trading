@@ -2,7 +2,7 @@ import { createRoute, lazyRouteComponent } from '@tanstack/react-router';
 import type { NavItem } from '@foundation/routing/featureRegistry';
 import type { ShellRoute } from '@foundation/routing/shell';
 import { RequireRole } from '@foundation/auth/RequireRole';
-import { TradingRole } from '../roles';
+import { TradingRole } from '@ai-stock-trading/lib/roles';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, IADR-0084: リスク設定 feature の公開面（リスク上限の閲覧/変更）。
 //

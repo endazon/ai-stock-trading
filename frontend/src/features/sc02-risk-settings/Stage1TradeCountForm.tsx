@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
-import { useSaveStage1MinimumTradeCount } from '../risk/queries';
+import { useSaveStage1MinimumTradeCount } from '@ai-stock-trading/lib/risk/queries';
 import {
   inputBelowStatisticalBasis,
   STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING,
   STAGE1_TRADE_COUNT_DEFAULT,
   STAGE1_TRADE_COUNT_RANGE_TEXT,
   validateStage1TradeCountInput,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 
 // SC-02, FR-20, FR-13, FR-11, UC-06, #423, 06_daytrading-review §4.1 条件 3 / §4.3, IADR-0164 決定4〜決定6:
 // **Stage 1 の最小取引件数の変更。**

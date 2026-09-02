@@ -20,11 +20,11 @@ const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
 import { RiskSettingsPage } from './RiskSettingsPage';
-import { CONTRACT_RISK_SETTINGS, CONTRACT_RISK_STATUS, cloneContract } from '../risk/contractFixtures';
+import { CONTRACT_RISK_SETTINGS, CONTRACT_RISK_STATUS, cloneContract } from '@ai-stock-trading/testing/riskContractFixtures';
 import {
   CONTRACT_MONITOR_SETTINGS,
   CONTRACT_MONITOR_SETTINGS_HISTORY,
-} from '../monitor/contractFixtures';
+} from '@ai-stock-trading/testing/monitorContractFixtures';
 
 const SETTINGS = cloneContract(CONTRACT_RISK_SETTINGS);
 const STATUS = cloneContract(CONTRACT_RISK_STATUS);

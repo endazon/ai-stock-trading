@@ -2,7 +2,7 @@ import { createRoute, lazyRouteComponent } from '@tanstack/react-router';
 import type { NavItem } from '@foundation/routing/featureRegistry';
 import type { ShellRoute } from '@foundation/routing/shell';
 import { RequireRole } from '@foundation/auth/RequireRole';
-import { TradingRole } from '../roles';
+import { TradingRole } from '@ai-stock-trading/lib/roles';
 
 // SC-01, FR-13, FR-17, UC-06: 設定画面 feature の公開面。
 //

@@ -18,14 +18,14 @@ import {
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
-} from '../risk/contractFixtures';
-import type { ShortSellingStatusView } from '../risk/contracts';
+} from '@ai-stock-trading/testing/riskContractFixtures';
+import type { ShortSellingStatusView } from '@ai-stock-trading/lib/risk/contracts';
 import {
   METRIC_AVAILABLE,
   METRIC_NOT_APPLICABLE,
   METRIC_NOT_SUPPLIED,
   METRIC_NOT_SUPPLIED_TEXT,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台にし、各テストが要る差分だけを
 // 上書きする。インライン literal で全体を自作すると、フロントが「こう返ってくるはずだ」と思っている形を

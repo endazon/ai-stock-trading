@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
-import { formatAt, marketLabel, MARKET_OPTIONS } from '../risk/contracts';
-import type { MonitoredSymbol, MonitorSettingsChangeEntry } from '../monitor/contracts';
-import { monitorChangeTypeLabel } from '../monitor/contracts';
+import { formatAt, marketLabel, MARKET_OPTIONS } from '@ai-stock-trading/lib/risk/contracts';
+import type { MonitoredSymbol, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
+import { monitorChangeTypeLabel } from '@ai-stock-trading/lib/monitor/contracts';
 import {
   useAddWatchlistSymbol,
   useRemoveWatchlistSymbol,
   useWatchlist,
   useWatchlistHistory,
-} from '../monitor/queries';
+} from '@ai-stock-trading/lib/monitor/queries';
 
 // SC-02, FR-13, FR-03, FR-11, UC-06, IADR-0088, IADR-0090: 監視銘柄（watchlist）の一覧表示・追加・削除。
 // データ源は MarketMonitorService `/monitor/watchlist`（OwnerOnly・PR #195）。リスク設定（RiskManagementService）とは
@@ -44,7 +44,7 @@ function messageOf(e: unknown): string {
 }
 
 export function WatchlistForm() {
-  // IADR-0288: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`@ai-stock-trading/lib/monitor/queries`）が持つ。
   const watchlistQuery = useWatchlist();
   const historyQuery = useWatchlistHistory();
   const addSymbol = useAddWatchlistSymbol();
