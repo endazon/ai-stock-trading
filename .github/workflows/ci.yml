@@ -550,6 +550,7 @@ jobs:
             dotnet publish "$csproj" --no-build --no-restore --configuration Release               -o "${RUNNER_TEMP}/publish/$(basename "$csproj" .csproj)"
           done
       - name: Test (shard ${{ matrix.shard }} / 4)
+        id: test
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: |
           set -euo pipefail
@@ -559,16 +560,63 @@ jobs:
           node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 4 --slnx shard.slnx > shard.txt
           echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
           cat shard.txt
+          # NFR, #596: 実行の前後で空きメモリと並列度を記録する。
+          # 🔴 「メモリ枯渇でテストホストが落ちた」という仮説は実測で棄却済みだが（IADR-0277）、
+          # **次に同じ疑いが出たとき推定ではなく実測で棄却できるようにする**。出力は数行で費用が無い。
+          echo "--- 実行前: nproc=$(nproc) ---"
+          free -m
+          # 成否によらず実行後も記録する（落ちたときこそ知りたい値である）。
+          trap 'echo "--- 実行後 ---"; free -m || true' EXIT
           # 🔴 **シャード用 solution を 1 回だけ叩く。** 1 プロジェクトずつ回すと
           # **1 回あたり約 4.9 秒の起動コスト**（MSBuild 評価・テストホスト立ち上げ）が
           # 本数だけ積み上がる —— 実測で較正した値であり、51 本なら**約 250 秒**の無駄になる。
           # solution にまとめれば起動はシャードごとに 1 回で済み、
           # **プロジェクト間の 4 並列は MSBuild が従来どおり面倒を見る**（分割前と同じ経路）。
+          #
+          # NFR, #596 / IADR-0277 —— ここに足した 3 つの計装:
+          #   --logger trx : **失敗したテストを機械で名指しできる唯一の出力**。並列実行では
+          #     各 VSTest のコンソールロガーが同じ標準出力へ同期せずに書くため、サマリ塊が
+          #     他プロジェクトの逐次出力に割り込まれて分断される。実測では `Test Run Failed.` が
+          #     `Total tests:` と `Passed:` の間へ入り込み、**ログ末尾に最も近いサマリは別
+          #     プロジェクトの `Test Run Successful.`** だった。人は必ず読み違える。
+          #   --blame-crash / --blame-hang : **本物のホスト異常終了が起きたときだけ**
+          #     Sequence.xml と dump を残す（何も起きなければ書かないので定常の費用はほぼ無い）。
+          #     #596 が求めた保険はここに掛かる。
+          #   --diag : VSTest の診断ログ。失敗時のみ artifact として上げる。
+          # 🔴 `-m:1`（プロジェクト間並列の停止）は入れない —— 恒久策として遅く、かつ
+          # 原因が並列度ではないことが実測で判明している（IADR-0277）。
           dotnet test shard.slnx --no-build --configuration Release \
             --filter "Category!=Integration" \
             --collect:"XPlat Code Coverage" \
             --results-directory "$PWD/cov" \
+            --logger trx \
+            --blame-crash --blame-hang --blame-hang-timeout 10m \
+            --diag "${RUNNER_TEMP}/vstest-diag/log.txt" \
             --verbosity normal
+      # 🔴 **失敗したテストを名指しする**（NFR, #596 / IADR-0277）。
+      # TRX は構造化データなので並列の割り込みを受けない。ここを読めば
+      # 「テスト失敗 0 件なのに exit 1」という誤診は起こらない。
+      # 要約器は 🔴 **TRX を 1 件も読めなければ落ちる**（0 件検査で緑にしない）し、
+      # 🔴 **TRX はあるが失敗 0 件のときは「ホスト異常終了を疑え」と次に見る成果物を挙げる**。
+      # `steps.test.outcome` で条件を絞る —— Test より前（Build 等）で落ちた場合に
+      # TRX が無いのは当然であり、そこで fail-loud を鳴らすと信号が濁る。
+      - name: Summarize test failures
+        if: ${{ always() && steps.test.outcome == 'failure' }}
+        run: node scripts/summarize-test-failures.js cov
+      # 診断成果物（VSTest 診断ログ・blame の Sequence.xml / dump・TRX）は**失敗時のみ**残す。
+      # 常時上げると保管と転送を毎 run 払うことになる（IADR-0208 のレイテンシ・費用の方針）。
+      - name: Upload test diagnostics
+        if: ${{ failure() && steps.gate.outputs.backend == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-diagnostics-shard-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/vstest-diag/**
+            cov/**/*.trx
+            cov/**/*Sequence.xml
+            cov/**/*.dmp
+          retention-days: 3
+          if-no-files-found: warn
       # 🔴 **1 テストプロジェクト = 1 カバレッジレポート**の不変条件で、
       # 「走らなかった」と「二重に走った」を**両方**捕まえる。
       # 第 1 弾では同じテストプロジェクトが 2 回走ってレポートが 30 件になり、
@@ -578,7 +626,13 @@ jobs:
         run: |
           set -euo pipefail
           want=$(wc -l < shard.txt)
-          got=$(find cov -name coverage.cobertura.xml | wc -l)
+          # 🔴 **深さ 2 に限定する**（NFR, #596 / IADR-0277）。XPlat Code Coverage の収集器は
+          # `cov/<guid>/coverage.cobertura.xml` へ**テストプロジェクト 1 本につき 1 件**書く。
+          # 一方 **TRX ロガーは添付をすべて deployment root へ複製する** ——
+          # `cov/<user>_<machine>_<timestamp>/In/<machine>/coverage.cobertura.xml` が増える。
+          # 深さを見ずに数えると**同じレポートを二重に数える**（実測: 期待 6 件に対し 11 件）。
+          # この不変条件が無ければ、複製されたレポートがそのまま artifact へ載っていた。
+          got=$(find cov -mindepth 2 -maxdepth 2 -name coverage.cobertura.xml | wc -l)
           echo "期待 $want 件 / 実際 $got 件"
           if [ "$want" -ne "$got" ]; then
             echo "::error::シャード ${{ matrix.shard }}: カバレッジレポートが $want 件でなく $got 件である。テストが走っていないか二重に走っている。"
@@ -588,7 +642,11 @@ jobs:
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           name: coverage-shard-${{ matrix.shard }}
-          path: cov/**/coverage.cobertura.xml
+          # 🔴 `**` ではなく `*`（NFR, #596 / IADR-0277）。TRX ロガーが deployment root へ
+          # 複製した `.../In/<machine>/coverage.cobertura.xml` を**載せないため**である。
+          # 🔴 こちらの誤りは**上の不変条件と違って赤くならない** —— 集計は (ファイル, 行番号) の
+          # 和集合なので率は変わらず、**重複を黙って運ぶだけ**になる。だから glob 側にも書く。
+          path: cov/*/coverage.cobertura.xml
           retention-days: 3
           if-no-files-found: error
 
