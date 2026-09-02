@@ -163,6 +163,13 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 **[運用仕様書の本番切替チェックリスト](../../docs/operations/operations.md#opend-の本番切替チェックリスト132)**
 に集約してある（egress-IP 実測・Vault 化・非 root の実動作確認などは**未充足**）。
 
+> **PVC `opend-persist` は `resource-policy: keep` で保護されている**（#626 /
+> [IADR-0275](../../.ai-context/adr/IADR-0275_deploy-value-preservation-and-kb-realm-fix.md)。
+> `deploy/opend/k8s/pvc.yaml` と chart 版 `templates/opend.yaml` の双方）。`opend.enabled` の
+> 切り替えや `helm uninstall` では PVC が消えない＝デバイス信頼状態（本ページの「デバイス信頼の
+> 永続化」）は保たれる。デバイス信頼をリセットしたいときだけ手動で
+> `kubectl delete pvc opend-persist -n ai-stock-trading` を実行する。
+
 ## 既知のリスク・制約（dev 割り切り）
 
 - **root 実行**: コンテナは既定 root で動く（OpenD は `$HOME/.com.moomoo.OpenD` を使うため）。
