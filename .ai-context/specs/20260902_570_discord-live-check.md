@@ -56,10 +56,10 @@ golden を実装したが、**実 Discord への接続確認は未実施**のま
 | `Notifications__Discord__WebhookUrl` | secret 投入済み（`ast-secrets/discord-webhook-url`・base64 長 164 で非空を確認。値は未取得） | helm values + `kubectl get secret` |
 | `Notifications__Discord__Bot__Enabled` | `"true"`（投入済み） | helm values |
 | `Notifications__Discord__Bot__Token` | secret 投入済み（`discord-bot-token`・base64 長 96 で非空を確認） | helm values + `kubectl get secret` |
-| `Notifications__Discord__Bot__GuildId` | **投入済み**（`1519273423510179953`） | helm values |
-| `Notifications__Discord__Bot__ChannelId` | **投入済み**（`1528646300885848074`・チャンネル名「株取引通知-demo」） | helm values |
-| `Notifications__Discord__Bot__AllowedUserIds` | **投入済み**（`1124938277833670756`） | helm values |
-| `Notifications__Discord__Bot__UserMapping` | **投入済み**（`1124938277833670756:developer`） | helm values |
+| `Notifications__Discord__Bot__GuildId` | **投入済み**（`<guild-id>`） | helm values |
+| `Notifications__Discord__Bot__ChannelId` | **投入済み**（`<channel-id>`・チャンネル名「株取引通知-demo」） | helm values |
+| `Notifications__Discord__Bot__AllowedUserIds` | **投入済み**（`<user-id>`） | helm values |
+| `Notifications__Discord__Bot__UserMapping` | **投入済み**（`<user-id>:developer`） | helm values |
 | `Notifications__Discord__Bot__KillSwitchConfirmationPhrase` | secret 投入済み（`discord-bot-killswitch-phrase`・base64 長 16） | helm values + `kubectl get secret` |
 | `Notifications__Discord__OwnerAuth__ClientId` / `ClientSecret` | secret 投入済み（base64 長 32 / 28） | helm values + `kubectl get secret` |
 
@@ -104,7 +104,7 @@ golden を実装したが、**実 Discord への接続確認は未実施**のま
 [11:00:51 INF] Discord.Net: 11:00:51 Gateway     Connecting
 [11:00:56 INF] Discord.Net: 11:00:56 Gateway     Connected
 [11:00:59 INF] Discord.Net: 11:00:59 Gateway     A Ready handler is blocking the gateway task.
-[11:01:18 INF] スラッシュコマンドを登録しました（guild=1519273423510179953）。
+[11:01:18 INF] スラッシュコマンドを登録しました（guild=<guild-id>）。
 [11:01:18 INF] Discord.Net: 11:01:18 Gateway     Ready
 ```
 
@@ -153,7 +153,7 @@ notification-service の稼働中 Pod（`Notifications__Discord__WebhookUrl` を
 - 実行コマンド概要: `curl -X POST -H "Content-Type: application/json" -d '{"content":"**[検証] #570 …**\n…"}' "${Notifications__Discord__WebhookUrl}?wait=true"`
 - **結果: HTTP 200。** Discord 応答（`?wait=true` で返る作成済みメッセージ JSON）を確認した:
   - メッセージ ID: `1544661678254325770`
-  - チャンネル ID: `1528646300885848074`
+  - チャンネル ID: `<channel-id>`
   - `content` は送信した本文と完全一致（UTF-8 の日本語も正しくエスケープ・デコードされて表示された）
   - 送信者は Webhook（`"webhook_id":"1532015424852721705"`、`author.username: "AST Bot"`）
 - **テンプレート golden との突合**: 実送信した本文は本番テンプレートの実イベントを模したものではなく、
