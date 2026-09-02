@@ -41,6 +41,7 @@
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
 | `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
+| `measure-region-latency.sh` | Hetzner のリージョン選定根拠（実測値）を得るための依存ゼロのレイテンシ実測（moomoo OpenD の接続先ホスト・主要情報源〔Finnhub / FRED / SEC EDGAR / EDINET〕への TCP/TLS 接続を N 回測り中央値を出す）。`--count` / `--host`（HTTPS 追加）/ `--tcp-only`（moomoo OpenD 等 TLS を話さないホスト向け）。**実行には対象ホストへの実 egress が要るため、実行そのものは Hetzner 契約後**（`docs/blocked-tasks.md` A-1a・A-1b／#24 の Tier 3 節参照） | 標準出力（試行値・中央値） |
 | `lib/trace-blocks.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。trace / trace-table ブロックのパーサと ID トークン分類（修飾子の汎用規則を含む）の単一情報源 | — |
 | `lib/plan-ranges.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。計画 ADR の実在レンジを `.claude/rules/traceability.repo.md` から読む（`check-test-traceability.js` の `readPlanIds()`/`planRangeSection()` を拡張点として再利用。同ファイル自体は変更しない） | — |
 | `scripts.repo.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
