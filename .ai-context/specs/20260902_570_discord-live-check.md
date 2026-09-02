@@ -56,65 +56,83 @@ golden を実装したが、**実 Discord への接続確認は未実施**のま
 | `Notifications__Discord__WebhookUrl` | secret 投入済み（`ast-secrets/discord-webhook-url`・base64 長 164 で非空を確認。値は未取得） | helm values + `kubectl get secret` |
 | `Notifications__Discord__Bot__Enabled` | `"true"`（投入済み） | helm values |
 | `Notifications__Discord__Bot__Token` | secret 投入済み（`discord-bot-token`・base64 長 96 で非空を確認） | helm values + `kubectl get secret` |
-| `Notifications__Discord__Bot__GuildId` | **`""`（未投入）** | helm values |
-| `Notifications__Discord__Bot__ChannelId` | **`""`（未投入）** | helm values |
-| `Notifications__Discord__Bot__AllowedUserIds` | **`""`（未投入）** | helm values |
-| `Notifications__Discord__Bot__UserMapping` | **`""`（未投入）** | helm values |
+| `Notifications__Discord__Bot__GuildId` | **投入済み**（`1519273423510179953`） | helm values |
+| `Notifications__Discord__Bot__ChannelId` | **投入済み**（`1528646300885848074`・チャンネル名「株取引通知-demo」） | helm values |
+| `Notifications__Discord__Bot__AllowedUserIds` | **投入済み**（`1124938277833670756`） | helm values |
+| `Notifications__Discord__Bot__UserMapping` | **投入済み**（`1124938277833670756:developer`） | helm values |
 | `Notifications__Discord__Bot__KillSwitchConfirmationPhrase` | secret 投入済み（`discord-bot-killswitch-phrase`・base64 長 16） | helm values + `kubectl get secret` |
 | `Notifications__Discord__OwnerAuth__ClientId` / `ClientSecret` | secret 投入済み（base64 長 32 / 28） | helm values + `kubectl get secret` |
 
-**判定**: `discord.bot.guildId` / `channelId` / `allowedUserIds` / `userMapping`（chart 設定点。標準手順は
-`scripts/k8s-local-deploy.sh` の `DISCORD_BOT_*` env → `--set-string`）が**未投入**である。`DiscordBotGatewayFactory`
-（`backend/Services/NotificationService/Infrastructure/ExternalServices/DiscordBotGatewayFactory.cs`）は
-この 3 つのいずれかが欠けると **Gateway に接続する前に** no-op（`NullDiscordBotGateway`）へフォールバックする
-（IADR-0062 決定1・多層認証の設定が 1 つでも欠ければ接続しない）。実測ログ（後述）でこれを確認した。
+**判定（訂正・2026-09-02 20:0x 時点で再確認）**: 本作業の当初の実測（10:45 台）では
+`discord.bot.guildId` / `channelId` / `allowedUserIds` / `userMapping`（chart 設定点。標準手順は
+`scripts/k8s-local-deploy.sh` の `DISCORD_BOT_*` env → `--set-string`）が空であり、
+`DiscordBotGatewayFactory` が Gateway 接続前に no-op（`NullDiscordBotGateway`）へフォールバックしていた。
+その後、Helm revision 11/12（本日 20:00 台）で `scripts/k8s-local-deploy.sh` に `DISCORD_BOT_*` env を
+与えて**投入済み（GuildId/ChannelId/AllowedUserIds は本作業前半で判明した候補値と同一。UserMapping は
+`<userId>:developer`）**であることを、`helm get values ast -n ai-stock-trading` の
+`discord.bot.*`（USER-SUPPLIED VALUES）で再確認した。GuildId/ChannelId/AllowedUserIds は非機密の ID
+であり、値そのものを本書へ記録することは秘密情報の露出に当たらない（Bot トークン・Webhook URL・
+確認フレーズ等の secret 値は引き続き未取得のまま）。
 
-**人間依頼（投入に必要な値）**:
-
-1. **GuildId**（Discord サーバ ID）・**ChannelId**（通知先チャンネル ID）: 実 Webhook 経由の投稿テスト
-   （下記「2. 通知の実投稿」）で使用中のチャンネルを Discord Bot トークンで読み取り専用照会した結果、
-   **候補値**が判明した: ChannelId `1528646300885848074`（チャンネル名「株取引通知-demo」）・
-   GuildId `1519273423510179953`。**これらは非機密の ID であり、投入してよいかは利用者が判断する**
-   （本セッションでは chart/values への反映は行っていない）。
-2. **AllowedUserIds**（操作を許可する Discord ユーザー ID）・**UserMapping**（`discordUserId:Keycloak利用者名`）:
-   **利用者本人の Discord ユーザー ID と、対応する trading-owner の Keycloak 利用者名が要る**。
-   これは「誰に破壊的操作の権限を与えるか」という利用者の判断そのものであり、AI が推測・代入すべきでは
-   ないため、本セッションでは投入していない。
-3. 投入後は `scripts/k8s-local-deploy.sh` の `DISCORD_BOT_GUILD_ID` / `DISCORD_BOT_CHANNEL_ID` /
-   `DISCORD_BOT_ALLOWED_USER_IDS` / `DISCORD_BOT_USER_MAPPING` を env で与えて再実行するか、
-   `helm upgrade --set-string discord.bot.guildId=... ...` で反映する（`kubectl set env` は使わない
-   ——CLAUDE.md 「🔴 kubectl set env で Deployment に env を注入しない」）。
-
-上記が未投入のため、issue #570 の 5 項目のうち **Gateway 接続・多層認証の実チャンネル実測・冪等確定の
-実機確認・`/gfv clear` の実機確認**は現状の投入範囲では測れない。**測れないことと、できないことは別である**
-（`docs/blocked-tasks.md` の記録方針）——AllowedUserIds 等が投入されれば、恒久制約なく再測定できる。
+**当初あった人間依頼（GuildId/ChannelId/AllowedUserIds/UserMapping の投入）は解消済み。** 残る人間依頼は
+下記「3. `/report`」「4. `/gfv clear`」「5. 権限外ユーザーの否定形」節を参照（いずれも Discord から
+実際にコマンドを打つ操作そのものは利用者本人が行う必要がある）。
 
 ### 1. 実 Bot トークンで Gateway に接続できるか
 
-**結果: 現状の投入範囲では「接続しない」（多層認証設定不足により no-op へフォールバック）。ただしトークン
-自体は有効であることを別途確認した。**
+**結果: 接続できる。2026-09-02 20:00 台の再デプロイ（Helm revision 11/12）で多層認証設定が投入され、
+現行 Pod で Gateway 接続・`Ready`・スラッシュコマンド登録まで実測した。**
 
-- notification-service の起動ログ（2026-09-02 実測。値は含まない）:
-  ```
-  [10:45:43 WRN] Discord Bot の多層認証の設定が不足しているため Gateway に接続しません
-    （不足: GuildId, ChannelId, AllowedUserIds・IADR-0062）。
-  [10:45:44 INF] Discord Bot は無効です（Gateway に接続しません・安全既定・IADR-0062）。
-  ```
-  → `DiscordBotGatewayFactory.MissingAuthSettings` が GuildId/ChannelId/AllowedUserIds の欠落を検出し、
-  `DiscordNetBotGateway`（実 Gateway 実装）を**一度も構築せずに** `NullDiscordBotGateway` を返している
-  （コード: `backend/Services/NotificationService/Infrastructure/ExternalServices/DiscordBotGatewayFactory.cs:32-56`）。
-  スラッシュコマンド登録（`DiscordNetBotGateway.cs` の `_logger.LogInformation("スラッシュコマンドを登録しました…")`）
-  はこの経路に到達しないため、ログに一切出ていないことを確認した（`kubectl logs` に該当行なし）。
-- **Bot トークン自体の有効性は、Gateway（WebSocket）とは別に Discord REST API への読み取り専用呼び出し
-  （`GET /users/@me`・`Authorization: Bot <token>`）で個別に確認した**。notification-service の稼働中 Pod に
-  既に注入済みの環境変数（`Notifications__Discord__Bot__Token`）を `kubectl exec` 経由の curl で参照し、
-  トークン値を一切標準出力へ出さずに検証した。応答は HTTP 200・`"bot":true`・`"verified":true` であり、
-  **トークンは Discord 側で有効**であることを確認した（Bot ユーザー名は日本語表示名のため本書には転記しない）。
-  同じ手順で通知チャンネルの `GET /channels/{id}` も呼び、上記のチャンネル/サーバ ID を得た。
-- **結論**: 「Bot トークンで Gateway に接続できる」の**手前の条件（トークンの有効性）は実測済み**。
-  「Gateway（WebSocket）接続」自体は、多層認証設定が投入されるまで実行され得ない設計であり（IADR-0062 の
-  意図した動作——設定不備のまま Bot をオンラインに見せない）、**バグではなく設計どおりの安全既定**である。
-  AllowedUserIds/UserMapping が投入され次第、再測定する。
+まず当初（10:45 台・Helm revision 10 相当）の実測では、多層認証設定（GuildId/ChannelId/AllowedUserIds）が
+空だったため、`DiscordBotGatewayFactory.MissingAuthSettings` が欠落を検出し
+（コード: `backend/Services/NotificationService/Infrastructure/ExternalServices/DiscordBotGatewayFactory.cs:32-56`）、
+`DiscordNetBotGateway`（実 Gateway 実装）を**一度も構築せずに** `NullDiscordBotGateway` を返していた:
+
+```
+[10:45:43 WRN] Discord Bot の多層認証の設定が不足しているため Gateway に接続しません
+  （不足: GuildId, ChannelId, AllowedUserIds・IADR-0062）。
+[10:45:44 INF] Discord Bot は無効です（Gateway に接続しません・安全既定・IADR-0062）。
+```
+
+**その後、`scripts/k8s-local-deploy.sh` に `DISCORD_BOT_*` env を与えた再デプロイ（Helm revision 11/12・
+20:00 台）で `discord.bot.guildId`/`channelId`/`allowedUserIds`/`userMapping` が投入され、新しい Pod
+（`notification-service-58889978c5-vthtf`）のログで実際の Gateway 接続を確認した**:
+
+```
+[11:00:51 INF] Discord.Net: 11:00:51 Discord     Discord.Net v3.20.1 (API v10)
+[11:00:51 INF] Discord Bot の Gateway 接続を開始しました。
+[11:00:51 INF] Discord.Net: 11:00:51 Gateway     Connecting
+[11:00:56 INF] Discord.Net: 11:00:56 Gateway     Connected
+[11:00:59 INF] Discord.Net: 11:00:59 Gateway     A Ready handler is blocking the gateway task.
+[11:01:18 INF] スラッシュコマンドを登録しました（guild=1519273423510179953）。
+[11:01:18 INF] Discord.Net: 11:01:18 Gateway     Ready
+```
+
+`kubectl -n ai-stock-trading logs notification-service-58889978c5-vthtf` を直接確認した（値は一切
+含まれておらず、ログをそのまま転記できる）。`スラッシュコマンドを登録しました` は
+`DiscordNetBotGateway.cs` のコマンド登録処理（`killswitch`/`pause`/`resume`/`status`/`stage`/
+`gfv`/`report` の 7 コマンドを `SlashCommandBuilder`（`.WithName(...)`）で構築し一括登録する箇所）に
+対応する。Discord.Net はコマンドごとの個別ログを出さないため、登録済みコマンド名の内訳はコード
+（`DiscordNetBotGateway.cs` 126〜217 行の `WithName` 呼び出し）を根拠とする。
+
+- **Bot トークン自体の有効性**は、この再デプロイ前に Gateway（WebSocket）とは別に Discord REST API への
+  読み取り専用呼び出し（`GET /users/@me`・`Authorization: Bot <token>`）で個別に確認していた。
+  notification-service の稼働中 Pod に既に注入済みの環境変数（`Notifications__Discord__Bot__Token`）を
+  `kubectl exec` 経由の curl で参照し、トークン値を一切標準出力へ出さずに検証した。応答は HTTP 200・
+  `"bot":true`・`"verified":true` であり、**トークンは Discord 側で有効**であることを確認した
+  （Bot ユーザー名は日本語表示名のため本書には転記しない）。同じ手順で通知チャンネルの
+  `GET /channels/{id}` も呼び、GuildId/ChannelId の候補値を得た（後に実際に投入された値と一致）。
+- **結論**: Gateway 接続・`Ready`・スラッシュコマンド登録のすべてを実機で確認した。issue #570 の
+  「実 Bot トークンで Gateway に接続できる」は**充足**とする。
+
+**Bot 経路の能動的な通知送信について（コード確認）**: `IDiscordBotGateway`
+（`backend/Services/NotificationService/Features/Notifications/IDiscordBotGateway.cs`）は
+`StartAsync`/`StopAsync` のみを持ち、任意のメッセージをチャンネルへ能動的に送信するメソッドを
+持たない。Bot がチャンネルへ書き込む経路は「スラッシュコマンドへの応答（interaction response /
+followup）」に限られ、これは**利用者が実際にコマンドを実行して初めて発生する**。イベント駆動の
+通知（`NotificationHandlers.cs` の 19 種）はすべて `INotificationSender`（Webhook 経路。上記
+「2. 通知の実投稿」で実測済み）を通り、Bot Gateway 経路とは独立している。**つまり「Bot 経路の通知」
+は本コードベースには存在せず**、上記「2.」の Webhook 実投稿がイベント駆動通知の実機確認を兼ねる。
 
 ### 2. 通知の実投稿（テンプレート golden との突合）
 
@@ -148,14 +166,14 @@ notification-service の稼働中 Pod（`Notifications__Discord__WebhookUrl` を
 
 ### 3. `/report` の版番号付き冪等確定（実機確認）
 
-**結果: 実機（Discord スラッシュコマンド経由）では確認できなかった（Bot Gateway が上記の理由で接続していない
-ため、そもそもスラッシュコマンドを送信する経路が無い）。人間依頼として記録し、既存の単体テストで担保されている
-範囲を記録する。**
+**結果: 本セッションでは未実施。Bot Gateway は `Ready`（上記「1.」で確認済み）であり `/report` コマンドも
+登録済みだが、これを実際に Discord から送信する操作は利用者本人が行う必要がある（人間依頼）。**
 
 `report-service` の確定 API（`OwnerOnly`）へ実際に POST するコードパス（`HttpReportReviewController`）を
-Bot 経路を経由せず直接叩くことも技術的には可能だが、これは「報告書を実際に確定させる」本番操作であり、
-Auto Mode のクラシファイアにより高リスク操作として拒否された（下記「未決事項」）。**これは issue が
-そもそも想定していた「有人操作が要る」区分に該当するため、意図した安全側の停止として受け止め、実行しない。**
+Bot・Discord コマンドを経由せず直接叩くことも技術的には可能だが、これは「報告書を実際に確定させる」
+本番操作であり、Auto Mode のクラシファイアにより高リスク操作として拒否された（下記「未決事項」）。
+**これは issue がそもそも想定していた「有人操作が要る」区分に該当するため、意図した安全側の停止として
+受け止め、実行しない。**
 
 既存の単体テストが担保している範囲（`backend/Services/NotificationService/Tests/ReportCommandHandlerTests.cs`・
 `VersionedConfirmationGuardTests.cs`）:
@@ -169,9 +187,9 @@ Auto Mode のクラシファイアにより高リスク操作として拒否さ�
 
 ### 4. `/gfv clear`（実機確認）
 
-**結果: 実機（Discord スラッシュコマンド経由）では確認できなかった（理由は同上）。加えて、Risk 側の
-`/risk-controls/good-faith-violations/clear` エンドポイントを Bot を経由せず直接叩く経路も試みたが、
-Auto Mode のクラシファイアにより拒否された。**
+**結果: 本セッションでは未実施（理由は同上——Gateway は `Ready`・コマンド登録済みだが、実行は利用者本人が
+行う人間依頼とする）。加えて、Risk 側の `/risk-controls/good-faith-violations/clear` エンドポイントを
+Bot を経由せず直接叩く経路も試みたが、Auto Mode のクラシファイアにより拒否された。**
 
 コード確認により、**この操作は「解除対象が無ければ no-op で終わる」設計であることを実行前に確認済みである**
 （issue の指示どおり）: `RiskControlEndpoints.cs` の `POST /good-faith-violations/clear` は
@@ -206,10 +224,17 @@ Auto Mode のクラシファイアにより拒否された。**
 
 ## 計画書との差異
 
-- 差異: あり。issue #570 の「やること」5 項目のうち、実機で完了できたのは「通知の実投稿（Webhook 経路）」の
-  みである。残り 4 項目（Gateway 接続・多層認証の実チャンネル確認・`/report` 冪等・`/gfv clear`）は、
-  **GuildId/ChannelId/AllowedUserIds/UserMapping が未投入**であることと、**破壊的/本番操作を避ける
-  Auto Mode のクラシファイア判断**の 2 つの理由により、人間依頼として残す。
+- 差異: あり。issue #570 の「やること」5 項目のうち、**本セッションで実機確認できたのは「① 実 Bot トークンで
+  Gateway に接続できる」「③ 通知が実チャンネルへ投稿される（Webhook 経路）」の 2 項目**である。
+  - **①・③ が実機確認できた経緯**: 本作業の前半（10:45 台）は `discord.bot.guildId`/`channelId`/
+    `allowedUserIds`/`userMapping` が未投入で Gateway は no-op であったが、その後 Helm revision 11/12
+    （本日 20:00 台の再デプロイ）でこれらが投入され、Gateway 接続・`Ready`・スラッシュコマンド登録を
+    実測できた。GuildId/ChannelId は本作業が Bot トークンの読み取り専用照会で判明させた候補値と一致する。
+  - **② 多層認証が実チャンネル・実ユーザーで期待どおり働くこと・④ `/report` 冪等・⑤ `/gfv clear`** は、
+    Gateway 自体は `Ready` になったが、**実際にコマンドを送信する操作（Discord クライアントからの
+    スラッシュコマンド実行）は利用者本人が行う必要がある**ため、人間依頼として残る。`/report` 確定・
+    `/gfv clear` を Bot を経由せず HTTP で直接検証する代替案は、no-op であることをコードで確認していても
+    Auto Mode のクラシファイアが本番 OwnerOnly 操作として拒否したため実施していない。
   - 実際の本番テンプレート文面（例: `GoodFaithViolationRecorded` の通知文）をそのまま実チャンネルへ
     投稿することは意図的に避けた。実際の取引・リスク統制イベントが発生したと利用者に誤認させる恐れが
     あるためであり、これは issue の受け入れ基準（テンプレート golden との突合）を字義通り満たさない
@@ -217,12 +242,16 @@ Auto Mode のクラシファイアにより拒否された。**
     明示的に「検証テストである」と分かる文面で確認した。本文の完全一致は `NotificationTemplateGoldenTests`
     （21 ケース）が CI で担保しており、本作業はその golden が実 Discord 上でも正しく描画されることの
     確認に絞った。
+  - コード確認の結果、**「Bot 経路の通知」という別経路は存在しない**（`IDiscordBotGateway` は能動送信
+    メソッドを持たない）。イベント駆動の通知はすべて Webhook 経路 1 本であり、③ の実測がそれを兼ねる。
 
 ## 未決事項
 
-- GuildId / ChannelId（候補値: 前述）と AllowedUserIds / UserMapping（利用者の Discord ID が要る）の投入は
-  利用者の判断・作業が要る。投入後、`docs/blocked-tasks.md` A-7a の再測定手順に従って残り 4 項目を再測定する。
+- GuildId/ChannelId/AllowedUserIds/UserMapping は投入済みとなったため、この点の人間依頼は解消した。
 - `/report` 確定・`/gfv clear` を Bot を経由せず HTTP で直接検証する案は、たとえ no-op であることを
   コードで確認していても、**本番の OwnerOnly 操作を AI セッションが直接呼ぶこと自体を安全側で避けるべきという
-  判断**（Auto Mode のクラシファイアの拒否と整合）を尊重し、本セッションでは行わなかった。次回、利用者が
-  Discord から直接コマンドを叩ける状態（AllowedUserIds 投入後）になった時点で実測するのが望ましい。
+  判断**（Auto Mode のクラシファイアの拒否と整合）を尊重し、本セッションでは行わなかった。**Gateway が
+  `Ready` になったため、残る作業は「利用者本人が Discord から `/report` を 2 回連投し、`/gfv clear` を
+  実行する」ことのみ**であり、コード側の準備は完了している。
+- 権限外ユーザーの否定形は第 2 の Discord アカウントが無いため、本セッションでは実機確認できない
+  （引き続き人間依頼）。

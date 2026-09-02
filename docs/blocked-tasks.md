@@ -10,12 +10,15 @@
 - [補足: 「実装済み」だが実際には発動しない機能](#補足-実装済みだが実際には発動しない機能)
 
 - 作成日: 2026-08-05
-- 最終更新: 2026-09-02（**#570（実 Discord への接続確認）の実測結果を反映**。**A-7a を一部解消**——
-  Webhook 経路の実投稿は成功（HTTP 200・実メッセージ生成を確認）。Bot Gateway は `discord.bot.guildId` /
-  `channelId` / `allowedUserIds` / `userMapping` が未投入のため多層認証設定不足で no-op へフォールバックする
-  ことを実測ログで確認した（Bot トークン自体は Discord REST API への読み取り専用呼び出しで有効性を確認済み）。
-  GuildId / ChannelId の候補値（利用者が判断）を記録し、AllowedUserIds / UserMapping・`/report` 冪等・
-  `/gfv clear` の実機確認は人間依頼として残した。記録: [作業仕様書 20260902_570](../.ai-context/specs/20260902_570_discord-live-check.md)。
+- 最終更新: 2026-09-02（**#570（実 Discord への接続確認）の実測結果を反映**。**A-7a を大部分解消**——
+  Webhook 経路の実投稿は成功（HTTP 200・実メッセージ生成を確認）。**〔⚠️ 同日中の訂正〕** 当初（10:45 台）の
+  実測では Bot Gateway 側の `discord.bot.guildId`/`channelId`/`allowedUserIds`/`userMapping` が未投入で
+  Gateway が no-op へフォールバックしていたが、その後 20:00 台の再デプロイ（Helm revision 11/12）でこれらが
+  投入され、**現行 Pod のログで Gateway 接続（`Connected`）・`Ready`・スラッシュコマンド登録を実測した**
+  （Bot トークン自体は Discord REST API への読み取り専用呼び出しで有効性を確認済み・GuildId/ChannelId は
+  本作業が判明させた候補値と一致）。残るのは「利用者本人が Discord から `/report` 2 回連投・`/gfv clear` を
+  実際に叩く操作」と「権限外ユーザーの否定形（第 2 アカウントが要る）」のみ。記録:
+  [作業仕様書 20260902_570](../.ai-context/specs/20260902_570_discord-live-check.md)。
   develop 時点・計画は隣接クローンで直接確認（submodule 撤去済み・ADR-0029）)
 - 前回更新: 2026-09-02（**#397（日本株市況権限の切り分け）・#342 残項目6/7/8 の読み取り専用 probe 実施結果を反映**。
   実測: **市況権限（quote）と発注権限は別建てであり、`GetStaticInfo`/`GetMarketState` は権限なしでも成功する**
@@ -355,11 +358,11 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 | 項目 | 内容 |
 | --- | --- |
 | 対象 | FR-11（監査ログ・通知）／FR-20（段階昇格の利用者承認） |
-| **A-7a. 実 Discord サーバと Bot トークンの用意** | **一部解消（2026-09-02・#570）。** テスト用 Discord サーバ・Bot トークン・Webhook URL は投入済みで、**Webhook 経路の実投稿は成功した**（HTTP 200・メッセージ実生成を確認）。**ただし Bot Gateway 側は `discord.bot.guildId` / `channelId` / `allowedUserIds` / `userMapping`（chart 設定点）が未投入のままで、`DiscordBotGatewayFactory` が多層認証設定不足を検出して Gateway 接続前に no-op へフォールバックする**（実測ログで確認）。Bot トークン自体は Discord REST API（`GET /users/@me`）への読み取り専用呼び出しで有効性を確認済み。残る投入（利用者の Discord ユーザー ID・Keycloak 利用者名の対応）は利用者の判断が要る。詳細は [作業仕様書 20260902_570](../.ai-context/specs/20260902_570_discord-live-check.md) |
+| **A-7a. 実 Discord サーバと Bot トークンの用意** | **大部分解消（2026-09-02・#570）。** テスト用 Discord サーバ・Bot トークン・Webhook URL に加え、**Bot Gateway の多層認証設定（`discord.bot.guildId`/`channelId`/`allowedUserIds`/`userMapping`）も投入済み**（20:00 台の再デプロイ・Helm revision 11/12）。**〔⚠️ 訂正〕当初（10:45 台）の実測時点ではこれらが空で Gateway が no-op へフォールバックしていたが、再デプロイ後の現行 Pod で Gateway `Connected`→`Ready`、スラッシュコマンド登録（`スラッシュコマンドを登録しました（guild=...）`）まで実測した。** Webhook 経路の実投稿も成功（HTTP 200・メッセージ実生成を確認）。Bot トークン自体は Discord REST API（`GET /users/@me`）への読み取り専用呼び出しで有効性を確認済み。詳細は [作業仕様書 20260902_570](../.ai-context/specs/20260902_570_discord-live-check.md) |
 | **A-7b. 利用者本人による昇格承認操作** | **恒久制約である。** 段階昇格は**設計上、利用者の承認を要件としている**（FR-20）。**AI が自分に課された関門を自分で通してはならない**という統制そのものであり、環境が変わっても消えない（B-2 の「規則による禁止」と同型） |
-| **最後に測った時点** | **2026-09-02 / #570**（A-7a は Webhook 経路のみ実測完了。Bot Gateway 接続・多層認証の実チャンネル確認・`/report` 冪等・`/gfv clear` の実機確認は、AllowedUserIds 等の未投入と、本番 OwnerOnly 操作を AI セッションが直接叩くことを避けたため、引き続き未測定） |
-| 再測定手順 | ① 利用者が Discord ユーザー ID・Keycloak 利用者名の対応（UserMapping）と AllowedUserIds を用意し、`scripts/k8s-local-deploy.sh` の `DISCORD_BOT_*` env（`kubectl set env` は使わない）で投入する ② GuildId `1519273423510179953` / ChannelId `1528646300885848074`（2026-09-02 実測の候補値。株取引通知-demo チャンネル）を使うかは利用者が判断する ③ 投入後、Gateway 接続ログ（`スラッシュコマンドを登録しました`）を確認する ④ 利用者が実際に Discord から `/report` を 2 回連投・`/gfv clear` を実行し、冪等・解除窓口を実機確認する ⑤ **A-7b は測る対象ではない**（設計上の要請であり、測定で覆らない） |
-| 未了の帰結 | 段階の昇格・差し戻しは**設計上すべて利用者承認を要する**ため、この経路が動かないと段階は 1 つも上がらない。**ただしこれは A-7b（恒久）の帰結であり、A-7a の残り（Bot Gateway・多層認証・冪等確定・GFV 解除の実機確認）は AllowedUserIds 等が投入されれば進む** |
+| **最後に測った時点** | **2026-09-02 / #570**（A-7a は Webhook 実投稿・Bot Gateway 接続・スラッシュコマンド登録まで実測完了。残るのは「利用者本人が Discord から `/report` 2 回連投・`/gfv clear` を実際に叩く実機確認」と「権限外ユーザーの否定形（第 2 アカウントが要る）」のみ——いずれも AI セッションでは代行できない操作であり、本番 OwnerOnly 操作を AI が Bot 経由せず直接叩く代替も安全側で見送った） |
+| 再測定手順 | ① 利用者が実際に Discord から `/report` を 2 回連投し、確定 API が一度しか呼ばれないことを report-service 側のログ・監査で確認する ② 利用者が `/gfv clear` を実行し、Risk 側の解除応答（対象 0 件なら no-op メッセージ）を確認する ③ 第 2 アカウントで許可リスト外の操作を試み、拒否されることを確認する ④ **A-7b は測る対象ではない**（設計上の要請であり、測定で覆らない） |
+| 未了の帰結 | 段階の昇格・差し戻しは**設計上すべて利用者承認を要する**ため、この経路が動かないと段階は 1 つも上がらない。**ただしこれは A-7b（恒久）の帰結であり、A-7a は Gateway 接続まで進み、残るのは利用者本人によるコマンド実行のみ** |
 
 ### A-8. 🆕 moomoo アカウントの**日本株 市況権限**が無い（2026-08-05 発覚・2026-09-02 切り分け実施）
 
