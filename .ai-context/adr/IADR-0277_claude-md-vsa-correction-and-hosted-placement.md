@@ -6,7 +6,8 @@ related_ids:
   - NFR
   - IADR-0259
   - IADR-0265
-  - ADR-0065
+  - MSP:ADR-0065
+  - MSP:ADR-0068
 author: endazon (with Claude Code)
 created: 2026-09-02
 updated: 2026-09-02
