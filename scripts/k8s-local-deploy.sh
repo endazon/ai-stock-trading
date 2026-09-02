@@ -3,7 +3,10 @@
 # 前提: MSP 側 scripts/k8s-local-up.sh が platform-infra（Postgres/RabbitMQ/Keycloak/otel）と
 # AST 用 DB（ai ユーザ・*_svc）・Keycloak realm `ai-stock-trading` を用意済みであること。
 #
-#   scripts/k8s-local-deploy.sh [cluster-name]
+#   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [cluster-name]
+# #267, IADR-0111 / #132, IADR-0060: ブローカ階層・OpenD 常駐配備は BROKER_TIER（"" / paper / moomoo-sim）/
+#   OPEND_ENABLED（true / false）で切り替える。**未設定なら前回リリースの値を引き継ぐ**（#626, IADR-0283）。
+#   明示的な空指定で前回の非空値を消す場合は --force-empty-values が要る（ast-secrets と同型）。
 # #238, IADR-0100: 経路B（ローカル SIMULATE）の ①時価②実LLM③実KB＋Discord＋価格文脈は、chart の
 # local プロファイル values-local.yaml を `-f` で重ねて恒常有効化する（臨時 overlay は不要）。本番（ArgoCD＝
 # values.yaml のみ）はバイト等価のまま。有効化に要る実値は下記 ast-secrets を env で与える（未設定=空=no-op の fail-safe）。
@@ -36,13 +39,21 @@
 # 従来の「env から毎回まるごと再作成」は、export し忘れた鍵を空で上書きして無言で壊していた
 # （症状は「デプロイは成功するのに外部連携が静かに no-op へ倒れる」）。挙動は
 # scripts/k8s-local-deploy.test.sh が固定する。
+# #626, IADR-0283: `helm upgrade --install` は `--reuse-values` を使わない（-f values-local.yaml との
+# 合成順序が読みにくく、「values-local.yaml を直しても一部が反映されない」副作用を実測したため）。
+# そのため broker.tier / opend.enabled は BROKER_TIER / OPEND_ENABLED を env で明示しないと、
+# 前回リリースで手動 --set した値が黙って既定（paper / false）へ戻る。opend.enabled=false は
+# OpenD の Deployment・PVC ごと削除する（デバイス信頼の再認証が要る）。ast-secrets と同じ
+# 「保持／明示上書き／明示空値は --force-empty-values で確認／新規環境」を Helm values へ適用する。
 set -euo pipefail
 
 FORCE_EMPTY=0
+FORCE_EMPTY_VALUES=0
 CLUSTER=""
 for arg in "$@"; do
   case "$arg" in
     --force-empty-secrets) FORCE_EMPTY=1 ;;
+    --force-empty-values) FORCE_EMPTY_VALUES=1 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) CLUSTER="$arg" ;;
   esac
@@ -52,6 +63,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 NS="ai-stock-trading"
 SECRET_NAME="ast-secrets"
+RELEASE="ast"
 
 # ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
 # 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
@@ -154,19 +166,95 @@ sync_ast_secrets() {
   return 0
 }
 
+# #626, IADR-0283: 前回リリースの値を個別に引き継ぐ Helm values のキー定義: <top>.<nested>|<環境変数>。
+# ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは chart 既定＝paper / false に委ねる）。
+AST_VALUE_KEYS=(
+  "broker.tier|BROKER_TIER"
+  "opend.enabled|OPEND_ENABLED"
+)
+
+# 直前リリースの user-supplied values から <top>.<nested> の値を読む（release 不在・キー不在は空を返す）。
+# jq 等の追加依存を持ち込まない（本リポの他スクリプトは go-template / awk のみで完結させる慣行）。
+ast_prev_release_value() {
+  local top="$1" nested="$2"
+  helm get values "$RELEASE" -n "$NS" -o yaml 2>/dev/null | awk -v top="${top}:" -v nested="  ${nested}:" '
+    $0 == top { intop=1; next }
+    intop && index($0, nested) == 1 {
+      v = substr($0, length(nested) + 1)
+      gsub(/^[ \t"]+|["]+$/, "", v)
+      print v
+      exit
+    }
+    intop && $0 !~ /^ / { intop = 0 }
+  ' || true
+}
+
+# AST_VALUE_KEYS を解決し、AST_VALUE_OVERRIDES（helm upgrade へ渡す --set 列）を組み立てる。
+resolve_ast_value_overrides() {
+  local spec key var top nested existing value clobber=''
+  local n_set=0 n_preserved=0
+  AST_VALUE_OVERRIDES=()
+
+  for spec in "${AST_VALUE_KEYS[@]}"; do
+    key="${spec%%|*}"
+    var="${spec#*|}"
+    top="${key%%.*}"
+    nested="${key#*.}"
+    existing="$(ast_prev_release_value "$top" "$nested")"
+
+    if [ -n "${!var+set}" ]; then
+      # env の明示指定が唯一の権威。ただし「明示的な空」で既存の非空値を消すのは確認を挟む（#263 と同型）。
+      value="${!var}"
+      if [ -z "$value" ] && [ -n "$existing" ]; then
+        clobber="${clobber}${key} (\$${var}, 前回値=${existing})
+"
+        [ "$FORCE_EMPTY_VALUES" = "1" ] || continue
+      fi
+    elif [ -n "$existing" ]; then
+      # env 未設定＋前回値あり → 引き継ぐ（うっかり既定へ戻すのを防ぐ）。
+      value="$existing"
+      n_preserved=$((n_preserved + 1))
+      echo "  引き継ぎ: ${key}=${existing}（前回リリースの値。\$${var} 未設定）" >&2
+    else
+      # env 未設定＋前回値も無い（新規環境）→ 何もしない。chart 既定に委ねる。
+      continue
+    fi
+
+    AST_VALUE_OVERRIDES+=("--set" "${key}=${value}")
+    n_set=$((n_set + 1))
+  done
+
+  if [ -n "$clobber" ] && [ "$FORCE_EMPTY_VALUES" != "1" ]; then
+    {
+      echo "ERROR: 次の設定は前回リリースに値がありますが、環境変数が**空**で指定されています。"
+      echo "       空で上書きすると前回の設定を失うため中断しました（#626 / IADR-0283）:"
+      printf '%s' "$clobber" | sed 's/^/         - /'
+      echo "       - export し忘れなら当該変数を unset して再実行する（前回値がそのまま引き継がれます）。"
+      echo "       - 意図した既定への戻しなら --force-empty-values を付けて再実行する。"
+    } >&2
+    return 1
+  fi
+
+  echo "  release values: 設定 ${n_set} 件（うち引き継ぎ ${n_preserved} 件）"
+  return 0
+}
+
 # scripts/k8s-local-deploy.test.sh から関数だけを読み込むための入口（デプロイ手順は実行しない）。
 if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-echo "==> [1/3] build & import AST images"
+echo "==> [1/4] build & import AST images"
 "$ROOT/scripts/k8s-local-images.sh" "$CLUSTER"
 
-echo "==> [2/3] namespace & ast-secrets (fail-safe 空既定・既存値は保持)"
+echo "==> [2/4] namespace & ast-secrets (fail-safe 空既定・既存値は保持)"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 sync_ast_secrets
 
-echo "==> [3/3] helm upgrade --install (local/SIMULATE プロファイル)"
+echo "==> [3/4] broker.tier / opend.enabled (前回リリースの値を引き継ぐ・#626 / IADR-0283)"
+resolve_ast_value_overrides
+
+echo "==> [4/4] helm upgrade --install (local/SIMULATE プロファイル)"
 # #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
 # 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。これで helm へは値がそのまま届く。
 # 注: 届いた先（DiscordBotOptionsReader のコンパクト形式）は `,` で要素分割するため、**keycloak 利用者名に `,` は
@@ -178,8 +266,9 @@ helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
 # #238, IADR-0100: values-local.yaml を重ねて ①時価②実LLM③実KB＋Discord＋価格文脈を有効化する（本番描画には不関与）。
 # #245, IADR-0102: Discord の環境固有 ID は --set-string（--set だと 18〜19 桁の snowflake が float64 に解釈され
 # 1.234567890123456e+18 に化ける）。空指定は差し替えなし＝描画は既定のまま（fail-safe）。
-helm upgrade --install ast deploy/helm/ai-stock-trading -n "$NS" \
+helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" \
   --set namespace.create=false \
+  "${AST_VALUE_OVERRIDES[@]}" \
   --set-string discord.bot.guildId="$(helm_escape "${DISCORD_BOT_GUILD_ID:-}")" \
   --set-string discord.bot.channelId="$(helm_escape "${DISCORD_BOT_CHANNEL_ID:-}")" \
   --set-string discord.bot.allowedUserIds="$(helm_escape "${DISCORD_BOT_ALLOWED_USER_IDS:-}")" \

@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 # #263 / IADR-0109: scripts/k8s-local-deploy.sh の ast-secrets 同期（sync_ast_secrets）の挙動を固定する。
+# #626 / IADR-0283: broker.tier / opend.enabled の前回値引き継ぎ（resolve_ast_value_overrides）も併せて固定する。
 #
 #   bash scripts/k8s-local-deploy.test.sh
 #
-# 実クラスタは要らない。PATH の先頭に `kubectl` スタブを置き、スタブが「既存 Secret の状態」を
-# 疑似し、生成されたパッチ（--patch-file の中身）を記録する。対象スクリプトは AST_DEPLOY_LIB=1 で
-# source すると関数定義だけを読み込み、デプロイ手順（image build / helm）は実行しない。
+# 実クラスタは要らない。PATH の先頭に `kubectl` / `helm` スタブを置き、スタブが「既存 Secret の状態」
+# 「前回リリースの values」を疑似し、生成されたパッチ（--patch-file の中身）を記録する。対象スクリプトは
+# AST_DEPLOY_LIB=1 で source すると関数定義だけを読み込み、デプロイ手順（image build / helm）は実行しない。
 #
 # 検証する不変条件（Issue #263 の受け入れ基準）:
 #   - 鍵を export せずに再実行しても投入済みの値が失われない（パッチに載せない＝API サーバ側で保持）
 #   - 空上書きが避けられない場合はキー名を列挙して中断し、明示フラグでのみ実行する
 #   - 新規環境（Secret 未作成）では従来どおり作成できる
 #   - 平文の鍵を標準出力・標準エラーへ出さない（キー名のみ）
+#
+# 検証する不変条件（Issue #626 の受け入れ基準）:
+#   - BROKER_TIER / OPEND_ENABLED を export せずに再実行しても前回リリースの値が引き継がれる
+#   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
+#   - 前回リリースが無い（新規環境）場合は helm upgrade へ --set を追加しない（chart 既定に委ねる）
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -49,6 +55,25 @@ esac
 exit 0
 STUB
 chmod +x "$STUB_BIN/kubectl"
+
+# ---- helm スタブ -----------------------------------------------------------
+# `helm get values ast -n <ns> -o yaml` だけを疑似する（resolve_ast_value_overrides が唯一使う呼び出し）。
+# 状態は $AST_TEST_STATE/prev-values.yaml（release 不在は当該ファイルを置かない）。
+cat > "$STUB_BIN/helm" <<'STUB'
+#!/usr/bin/env bash
+set -u
+S="$AST_TEST_STATE"
+case "${1:-} ${2:-}" in
+  "get values")
+    [ -f "$S/prev-values.yaml" ] || { echo 'Error: release: not found' >&2; exit 1; }
+    cat "$S/prev-values.yaml"
+    exit 0
+    ;;
+esac
+exit 0
+STUB
+chmod +x "$STUB_BIN/helm"
+
 PATH="$STUB_BIN:$PATH"
 export PATH
 export AST_TEST_STATE="$STATE"
@@ -83,7 +108,9 @@ DISCORD_OWNERAUTH_CLIENTSECRET"
 given_secret() {
   local v
   for v in $SECRET_ENV_VARS; do unset "$v"; done
+  unset BROKER_TIER OPEND_ENABLED
   FORCE_EMPTY=0
+  FORCE_EMPTY_VALUES=0
   rm -rf "$STATE"; mkdir -p "$STATE"
   : > "$STATE/nonempty_keys"
   if [ "${1:-}" != "absent" ]; then
@@ -100,6 +127,30 @@ run_sync() {
   ERR="$(cat "$STATE/err")"
   PATCH=""
   [ -f "$STATE/patch.json" ] && PATCH="$(cat "$STATE/patch.json")"
+}
+
+# 前回リリースの values（helm get values の疑似出力）を作り直す。
+# $1 = "absent"（release 不在）もしくは values-local.yaml と同じ書式の YAML 断片
+given_release_values() {
+  rm -f "$STATE/prev-values.yaml"
+  if [ "${1:-}" != "absent" ]; then
+    printf '%s\n' "$1" > "$STATE/prev-values.yaml"
+  fi
+}
+
+# resolve_ast_value_overrides をサブシェルで実行し、RC / OUT / ERR / OVERRIDES を埋める。
+# AST_VALUE_OVERRIDES は配列のためサブシェル越しに直接は返せない。デバッグ用の可読表現をファイルへ書かせる。
+run_resolve() {
+  (
+    resolve_ast_value_overrides
+    rc=$?
+    printf '%s\n' "${AST_VALUE_OVERRIDES[@]:-}" > "$STATE/overrides.txt"
+    exit $rc
+  ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  OVERRIDES="$(cat "$STATE/overrides.txt" 2>/dev/null || true)"
 }
 
 b64() { printf '%s' "${1:-}" | base64 | tr -d '\r\n'; }
@@ -209,6 +260,78 @@ SEC_EDGAR_USER_AGENT="ua-canary-do-not-log"; export SEC_EDGAR_USER_AGENT
 run_sync
 assert_missing 'T-279-05 秘匿: stdout に平文を出さない' "$OUT" 'ua-canary-do-not-log'
 assert_missing 'T-279-05 秘匿: stderr に平文を出さない' "$ERR" 'ua-canary-do-not-log'
+
+
+# ---- #626 / IADR-0283: broker.tier / opend.enabled の前回値引き継ぎ --------
+# helm upgrade --install が --reuse-values を使わないため、env passthrough が無いと前回リリースの
+# 値が既定（paper / false）へ黙って戻る（opend.enabled=false は OpenD の Deployment/PVC を削除する）。
+printf '\nk8s-local-deploy.sh: broker.tier / opend.enabled の前回値引き継ぎ（#626 / IADR-0283）\n'
+
+# T-626-01: env 未設定 ＋ 前回値あり → 引き継ぐ（--set が前回値で載る）
+given_secret ""
+given_release_values 'broker:
+  tier: moomoo-sim
+opend:
+  enabled: true'
+run_resolve
+assert_eq   'T-626-01 引き継ぎ: 正常終了する' "$RC" "0"
+assert_contains 'T-626-01 引き継ぎ: broker.tier=moomoo-sim を --set する' "$OVERRIDES" 'broker.tier=moomoo-sim'
+assert_contains 'T-626-01 引き継ぎ: opend.enabled=true を --set する' "$OVERRIDES" 'opend.enabled=true'
+assert_contains 'T-626-01 引き継ぎ: 引き継いだキー名を表示する（stderr）' "$ERR" 'broker.tier=moomoo-sim'
+
+# T-626-02: env に非空値を指定 → その値で上書きする（前回値は無視）
+given_release_values 'broker:
+  tier: moomoo-sim'
+BROKER_TIER="paper"; export BROKER_TIER
+run_resolve
+assert_eq   'T-626-02 上書き: 正常終了する' "$RC" "0"
+assert_contains 'T-626-02 上書き: 指定値 paper が載る' "$OVERRIDES" 'broker.tier=paper'
+assert_missing  'T-626-02 上書き: 前回値 moomoo-sim は載らない' "$OVERRIDES" 'broker.tier=moomoo-sim'
+unset BROKER_TIER
+
+# T-626-03: env に空を明示指定 ＋ 前回値が非空 → キー名を列挙して中断（--set しない）
+given_release_values 'opend:
+  enabled: true'
+OPEND_ENABLED=""; export OPEND_ENABLED
+run_resolve
+assert_eq   'T-626-03 中断: 非ゼロ終了する' "$RC" "1"
+assert_contains 'T-626-03 中断: 対象キー名を列挙する' "$ERR" 'opend.enabled'
+assert_contains 'T-626-03 中断: 環境変数名を示す' "$ERR" 'OPEND_ENABLED'
+assert_contains 'T-626-03 中断: 前回値を示す' "$ERR" '前回値=true'
+unset OPEND_ENABLED
+
+# T-626-04: T-626-03 ＋ 明示フラグ → 空で上書きする（chart 既定と同値に倒す）
+given_release_values 'opend:
+  enabled: true'
+OPEND_ENABLED=""; export OPEND_ENABLED
+FORCE_EMPTY_VALUES=1
+run_resolve
+assert_eq   'T-626-04 強制: 正常終了する' "$RC" "0"
+assert_contains 'T-626-04 強制: 空値で上書きする' "$OVERRIDES" 'opend.enabled='
+unset OPEND_ENABLED
+FORCE_EMPTY_VALUES=0
+
+# T-626-05: 前回リリースが無い（新規環境）＋ env 未設定 → 何も --set しない（chart 既定に委ねる）
+given_release_values "absent"
+run_resolve
+assert_eq   'T-626-05 新規: 正常終了する' "$RC" "0"
+assert_eq   'T-626-05 新規: --set を追加しない' "$OVERRIDES" ''
+
+# T-626-06: 前回リリースが無い ＋ env 明示指定 → その値を --set する
+given_release_values "absent"
+BROKER_TIER="moomoo-sim"; export BROKER_TIER
+run_resolve
+assert_eq   'T-626-06 新規+明示: 正常終了する' "$RC" "0"
+assert_contains 'T-626-06 新規+明示: 指定値が --set される' "$OVERRIDES" 'broker.tier=moomoo-sim'
+unset BROKER_TIER
+
+# T-626-07: env の空指定 ＋ 前回値も空/不在 → 失うものが無いので中断しない
+given_release_values "absent"
+OPEND_ENABLED=""; export OPEND_ENABLED
+run_resolve
+assert_eq   'T-626-07 空同士: 中断しない' "$RC" "0"
+assert_contains 'T-626-07 空同士: 空のまま載る' "$OVERRIDES" 'opend.enabled='
+unset OPEND_ENABLED
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1

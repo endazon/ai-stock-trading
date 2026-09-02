@@ -274,10 +274,11 @@ services:
       # Documents:BaseUrl を platform DocumentService へ向けると実 KB 保存へ切替（KnowledgeBaseWriterSink）。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP `microservices-platform` レルムの専用クライアント
+      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP の `platform` レルムの専用クライアント
       # （ai-stock-trading-kb-writer／service-account に platform-operator）で認証する。AST レルムの ServiceAuth__* は
       # issuer 不一致（401）・role 不一致（403）で KB 書き込みに使えないため（IADR-0093）。fail-safe: 空=トークン無し→401→未保存。
-      # Authority は MSP レルムを指す（例 http://keycloak:8080/realms/microservices-platform）。ClientSecret は Secret 経由（空既定）。
+      # #626, IADR-0283: Authority は MSP レルムを指す（例 http://keycloak:8080/realms/platform。
+      # `microservices-platform` という realm は存在しない）。ClientSecret は Secret 経由（空既定）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
@@ -407,6 +408,12 @@ services:
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
       - { name: LlmGateway__BaseUrl, value: "" }
+      # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=軽量モデル→二次本判断）の有効化。
+      # コード側の構成既定も true（#571 で反転。明示行はここでの可視化が目的で挙動を変えない）。
+      # ⚠️ 前提: 基盤 LlmGateway に用途 trade-decision-screening（claude-haiku-4-5）が登録されていること
+      # （microservices-platform 側 PR。未登録のまま true でも安全側（見送り）に倒れるだけで発注はされないが、
+      # スクリーニングによる費用統制は機能しない＝IADR-0212 が挙げた帰結）。無効化する場合は "false" にする。
+      - { name: Decision__EnableScreening, value: "true" }
       # 空・不正・非正値=既定 30 秒（IADR-0061 決定2）。
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
@@ -419,8 +426,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       # FR-08, #11, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。fail-safe: 空=NoOp 検索（参考情報なし）。
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP `microservices-platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
-      # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。Authority は MSP レルムを指す。
+      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP の `platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
+      # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。
+      # #626, IADR-0283: Authority は MSP の `platform` レルムを指す（`microservices-platform` という realm は存在しない）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
