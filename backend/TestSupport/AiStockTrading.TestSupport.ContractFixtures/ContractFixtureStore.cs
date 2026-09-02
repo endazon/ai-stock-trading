@@ -5,7 +5,7 @@ namespace AiStockTrading.TestSupport.ContractFixtures;
 // FR-10, FR-20, SC-01, SC-02, SC-03, #389, #340, IADR-0146:
 // 契約フィクスチャ（フロントが読む実応答 JSON）の置き場と入出力。
 //
-// フィクスチャは **frontend 側に置く**（`frontend/src/features/<領域>/contract-fixtures/`）。フロントの
+// フィクスチャは **frontend 側に置く**（`frontend/src/testing/contract-fixtures/`。#529〔PR #653〕で領域別の置き場から 1 か所へ集約した）。フロントの
 // `tsc` / `vitest` が `import` して型と突き合わせるためであり、単独リポとしての frontend の自己完結性
 // （IADR-0080）を壊さないためでもある（platform へ合成されるときにフィクスチャも一緒に運ばれる）。
 //
