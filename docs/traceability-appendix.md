@@ -1,9 +1,9 @@
 <!-- trace:
 ids: [FR-10]
 adrs: [ADR-0029]
-iadrs: [IADR-0140]
-specs: []
-issues: [planning#202, planning#237, planning#244, planning#354, planning#395, planning#415]
+iadrs: [IADR-0140, IADR-0272]
+specs: [20260902_573_iadr-gap-acceptance]
+issues: [#573, planning#202, planning#237, planning#244, planning#354, planning#395, planning#415]
 -->
 
 # トレーサビリティ規約の別紙（該当作業のときだけ読む）
@@ -180,6 +180,12 @@ issues: [planning#202, planning#237, planning#244, planning#354, planning#395, p
    依存するため最も漏れやすい。ブランチ名は既 push なら変更不要だが、タイトルは必ず直す）
 5. **計画リポジトリが引く自番号**（`projects/<name>/07_adr/*.md` の地の文）。**ここは fail-open で
    ある** —— 探さなければ何も起きない。**主たる担保は計画側の機械検査である。**
+
+🔴 **本リポジトリはこの手順の前提（改番して欠番を作らない）を採らない。** companion 規約
+（`traceability.repo.md`）が定めるとおり、**欠番は許容し埋めない**運用へ転換した。採番衝突時は
+次の空き番号ではなく、その時点の新たな最大番号＋1へ改番する。上記 5 項目は「改番そのものを行う
+場合」の追随先としては引き続き有効だが、**欠番の解消を目的に改番することはしない**。経緯は
+companion 規約と、冒頭 trace ブロックが引く実装ADR を参照。
 
 ## クロスリポジトリの issue / PR 番号 —— 面ごとの壊れ方と書き方
 
