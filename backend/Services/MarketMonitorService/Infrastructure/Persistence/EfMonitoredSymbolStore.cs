@@ -64,8 +64,20 @@ public sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db, MonitorSee
         row.Version += 1;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         row.SeededAt = DateTimeOffset.UtcNow;
-        db.SaveChanges();
-        return reseeded;
+        try
+        {
+            db.SaveChanges();
+            return reseeded;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // 同時に他リクエスト（定時ポーリング・別 HTTP 呼び出し）が同じ再シードや Add/Remove を
+            // 先に確定させた場合の Version 競合。row is null 分岐と同じ規律で「他方が確定させた最新を
+            // 読み直す」（冪等・呼び出し側へ 500 を波及させない）。
+            db.ChangeTracker.Clear();
+            var raced = db.MonitorSettings.Find(SingletonKeys.Id);
+            return raced is not null ? MonitorSettingsSerialization.Deserialize(raced.Json) : settings;
+        }
     }
 
     public void Save(MarketMonitorSettings settings)

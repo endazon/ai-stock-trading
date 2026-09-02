@@ -83,6 +83,12 @@ plan_refs: []
    結線し、`market-monitor.Monitor__SeedSymbols__0__*` へ `trade-decision.TradeCycle__Watchlist__0__*`
    （AAPL/UnitedStates）と同じ銘柄を投入する。`TradeCycle__Watchlist__0__*` 自体は削除せず、照会不達時の
    フォールバックとして残す。本番 `values.yaml` は無変更（`MarketMonitor__BaseUrl` は引き続き空）。
+6. `EfMonitoredSymbolStore.GetSettings()` の「空行の再シード」経路（決定3）も、`row is null` 分岐
+   （真の未設定）と同じ規律で `DbUpdateConcurrencyException` を捕捉し読み直す（AI コードレビュー指摘・
+   PR #639）。マイグレーション適用直後は既存の空行（`ClearedByUserAt=null`）に対して定時ポーリング・
+   HTTP 照会が同時に再シードを試み得るため、非対称に無防備だと一過性の 500 として表面化しうる。
+   `WatchlistConfigSeedTests` に「B の競合書き込みが A の追加（MSFT）を消してはならない」という
+   否定形のテストを追加し、修正前は実際に未捕捉の例外で失敗することを確認したうえで固定した。
 
 ## 理由
 
