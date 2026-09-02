@@ -248,3 +248,64 @@ feature 内部（`api/ components/ hooks/ routes/ stores/ types/`）: 🔴 **0/5
 - **`src/app/` に実体が入らない。** 合成点は `ADR-0067` 決定 4 により層としては `app` だが、置き場は
   `features/index.ts` のままである（参照面 `@ai-stock-trading/features` の都合）。したがって `app/` は枠のみになる。
   **これを「適合していない」と読むべきかは計画側の判断であり、実装は枠を置いて記録する。**
+
+---
+
+## PR ② の実測と確定（2026-09-03・骨格 PR #653 マージ後）
+
+着手時に「未決事項」としていた点を実測で確定した。
+
+### 参照した実装（基盤の姉妹ユニット）
+
+`microservices-platform` の `knowledge/frontend/src/features/sc04-wiki/` を実ツリーで確認した。
+**本 PR はこの形をそのまま採る。**
+
+```
+sc04-wiki/
+  index.ts            ← 再輸出 1 行のみ（公開面）
+  routes/sc04WikiRoute.ts
+  components/WikiAccessPage.tsx ＋ .test.tsx
+  api/ hooks/ stores/ types/    ← いずれも .gitkeep のみ
+```
+
+### 確定した内部配置
+
+| feature | api/ | components/ | hooks/ | routes/ | stores/ | types/ |
+| --- | --- | --- | --- | --- | --- | --- |
+| `sc01-settings` | `assumptionsQueries.ts` | 画面 1 ＋テスト 2 | 枠 | ルート ＋ access テスト | 枠 | **`index.ts`（型 5 件）** |
+| `sc02-risk-settings` | 枠 | 画面 1 ＋フォーム 3 ＋テスト 6 | 枠 | ルート ＋ access テスト | 枠 | 枠 |
+| `sc03-controls` | 枠 | 画面 1 ＋区画 1 ＋テスト 4 | 枠 | ルート ＋ access テスト | 枠 | 枠 |
+
+- **`hooks/` は 3 feature とも枠になった。** 実測すると画面内で閉じたフックは 1 つも無い
+  （`export function use` / `const use` が 0 件）。サーバー状態は TanStack Query、フォームの
+  ローカル状態は各コンポーネントの `useState` に閉じている。**枠を埋めるために抽象を作らない。**
+- **`stores/` は 3 feature とも枠。** Zustand は本ユニット未導入（`IADR-0288` 決定 6）。
+- **`api/` は sc02 / sc03 が枠。** 両画面が読む端点（`/risk-controls/*` ／ `/monitor/*`）は
+  **2 つ以上の画面が消費する**ため、クエリ層は骨格 PR で共有側（`src/lib/`）へ出た。
+  **枠であることは、共有側にあることの帰結である**（欠落ではない）。
+- 🔴 **`types/` は sc01 だけ実体が入った。** `assumptionsQueries.ts` に値（クエリ）と型 5 件が
+  同居しており、**画面は型のためだけに「取得の実装」を import していた**。`api/` と `components/` の
+  双方が要る型なので `types/index.ts` へ出す。sc02 / sc03 は契約型が共有側にあり、画面内だけで
+  閉じる型（`ShortSellingState`）は使う側と同じ `components/` にあるため、切り出す理由が無い。
+
+### あわせて直したもの
+
+- **他 feature の内部パスを指すコメント 2 件**（`sc02` / `sc03` のルートが
+  `` `../sc01-settings/index.tsx` `` を指していた）。**参照の禁止（`ADR-0066` 決定 1）を文章の側に
+  残すことになり、しかも本 PR の移送で実在しないパスになる。** 公開面の名前（SC-01）だけを指す形に改めた。
+- **ESLint の `ignores` を `src/features/*/*Queries.ts` → `src/features/*/api/*.ts` へ**
+  （`IADR-0288` 決定 6 が「#529 で `api/` へ移すときは同時に更新すること」と指定した追随点）。
+  **直さないと `api/` が禁止に掛かって赤くなるか、古い glob が何にも一致せず「例外を書いたつもりで
+  実は無い」状態になる。**
+- **`components/` 配下のテストが引く共有ハーネス**は段数が変わるため、エイリアス
+  （`@ai-stock-trading/testing/renderWithProviders`）へ寄せた（骨格 PR の決定 4 と同じ理由）。
+
+### 実測（受け入れ）
+
+- 3 feature × 6 区分 ＝ **18 ディレクトリすべて実在**（`0/3` → `3/3`）
+- **feature の外から内部ディレクトリを参照する箇所は 0 件**（合成点は barrel のみを引く）
+- 規則の実効性を再度実測: 画面へ `apiFetch` と他 feature の**深いパス**
+  （`../../sc02-risk-settings/components/RiskSettingsPage`）を一時的に足し、
+  `no-restricted-imports` と `import/no-restricted-paths` の両方が error になることを確認して戻した
+- `typecheck` / `lint` / `test`（19 ファイル 362 件）/ `e2e:typecheck` / `e2e`（60 件）すべて緑。
+  **テストの `expect` は 1 行も変えていない**

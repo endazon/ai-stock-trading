@@ -167,3 +167,75 @@ knowledge は MSP#785 で 10 ディレクトリを `.gitkeep` だけで置き、
   同決定そのものを覆していない）
 - Superseded by: なし
 - 後続: #529 の PR ②（feature 内部の 6 分割）・PR ③（`import/no-restricted-paths` の 4 層ゾーン化）
+
+---
+
+## 追記（2026-09-03・#529 第 2 段: feature 内部の 6 分割）
+
+**本 IADR に決定 7・8 を加える。新しい IADR は起こさない**——第 1 段（骨格）と同じ判断基準
+（`MSP/ADR-0066` 決定 1 の「2 つ以上の feature が要るか」と `MSP/ADR-0067` の層分類）を
+feature の**内部**へ適用しただけであり、覆す決定も新しい軸も無いためである。
+
+### 決定 7 — 内部配置は基盤の姉妹ユニットの形をそのまま採る
+
+`microservices-platform` の `knowledge/frontend/src/features/sc04-wiki/` を実ツリーで確認し、同じ形にした。
+
+```
+<feature>/
+  index.ts          ← 再輸出のみ（公開面。ADR-0066 決定 4 が barrel の維持を決めている）
+  routes/           ← createRoute factory ＋ NavItem ＋ アクセス制御テスト
+  components/       ← 画面・区画とそのテスト
+  api/ hooks/ stores/ types/
+```
+
+| feature | 実体が入った区分 | 枠（`.gitkeep`）になった区分 |
+| --- | --- | --- |
+| `sc01-settings` | `api/` `components/` `routes/` **`types/`** | `hooks/` `stores/` |
+| `sc02-risk-settings` | `components/` `routes/` | `api/` `hooks/` `stores/` `types/` |
+| `sc03-controls` | `components/` `routes/` | `api/` `hooks/` `stores/` `types/` |
+
+- 🔴 **枠を埋めるために抽象を作らない。** `hooks/` が 3 feature とも枠なのは実測の結果である
+  （画面内で閉じたフックは 0 件。サーバー状態は TanStack Query、フォームのローカル状態は
+  各コンポーネントの `useState` に閉じている）。**「6 分割だから 6 つ埋める」は計画外の抽象化であり、
+  CLAUDE.md の禁止事項に当たる。**
+- **`api/` が sc02 / sc03 で枠なのは、共有側にあることの帰結である**（欠落ではない）。両画面が読む
+  端点は 2 つ以上の画面が消費するため、クエリ層は第 1 段で `src/lib/` へ出た。
+  **この理由を `.gitkeep` 本文へ書く**（第 1 段の決定 2 と同じ扱い——空の枠は「該当なし」と「未達」を
+  区別しないため）。
+
+### 決定 8 — `api/` と `components/` の双方が要る型だけを `types/` へ出す
+
+`sc01-settings` の `assumptionsQueries.ts` は値（クエリ）と型 5 件が同居しており、
+🔴 **画面は型を得るためだけに「取得の実装」を import していた**（`import type { ChangeEntry,
+TradingAssumptions } from './assumptionsQueries'`）。分割後は `api/` と `components/` が別ディレクトリに
+なるため、この同居は**層をまたぐ依存を型の都合で作る**形になる。型を `types/index.ts` へ出す。
+
+- **`api/` から再輸出しない。** 再輸出すると参照先が 2 つになり、「どちらから引くのが正しいか」が
+  ファイルごとに割れる。**参照先は `../types` の 1 つに保つ。**
+- **sc02 / sc03 は出さない。** 契約型は共有側（`src/lib/{risk,monitor}/contracts.ts`）にあり、
+  画面内だけで閉じる型（`ShortSellingState`）は使う側と同じ `components/` にある。
+  **切り出す理由が無いものを切り出さない。**
+
+### あわせて直したもの（いずれも移送と不可分）
+
+1. **ESLint の `ignores` を `src/features/*/*Queries.ts` → `src/features/*/api/*.ts` へ。**
+   `IADR-0288` 決定 6 が「#529 で `api/` へ移すときは同時に更新すること」と指定した追随点である。
+   🔴 **直さないと 2 通りに壊れる**——`api/` が `apiFetch` 禁止に掛かって lint が赤くなるか、
+   （移送前に直した場合は）古い glob が何にも一致せず**「例外を書いたつもりで実は無い」**状態になる。
+2. **他 feature の内部パスを指すコメント 2 件を是正。** `sc02` / `sc03` のルートが
+   `` `../sc01-settings/index.tsx` `` を指していた。**`ADR-0066` 決定 1 が禁じた向きを文章の側に
+   残すことになり**、しかも本 PR の移送で実在しないパスになる。公開面の名前（SC-01）だけを指す形へ改めた。
+3. **`components/` 配下のテストが引く共有ハーネスをエイリアスへ。** 段数が変わるため
+   （決定 4 と同じ理由）。
+
+### 結果（第 2 段）
+
+- **feature 内部分割 0/3 → 3/3**（3 feature × 6 区分 ＝ 18 ディレクトリすべて実在）。
+- **feature の外から内部ディレクトリを参照する箇所は 0 件**——合成点 `src/features/index.ts` は
+  各 feature の `index.ts` だけを引く。
+- 規則の実効性を再度実測した: 画面へ `apiFetch` と**他 feature の深いパス**
+  （`../../sc02-risk-settings/components/RiskSettingsPage`）を一時的に足し、両規則が error になることを
+  確認して戻した。**分割で相対パスが深くなっても `import/no-restricted-paths` は効いている。**
+- 挙動は変えていない（テストの `expect` は 1 行も動かさず、単体 362 件・E2E 60 件が緑）。
+- **残余**: 依存の向き（`shared → features → app`）の 4 層ゾーン化は第 3 段が引き受ける。
+  それまでは shared から feature を引く逆流は目視でしか止まらない。
