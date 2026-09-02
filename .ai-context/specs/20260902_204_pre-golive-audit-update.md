@@ -190,6 +190,20 @@ plan_refs:
 - 既存 issue の検索結果: **無し**（[#378](https://github.com/endazon/ai-stock-trading/issues/378)（人手転記の検査）は CLOSED で、削除より前の話）。
 - **起票**: [#636](https://github.com/endazon/ai-stock-trading/issues/636)
 
+## 本監査で起票した issue（全 8 件）
+
+| # | 内容 | ラベル |
+| --- | --- | --- |
+| [#632](https://github.com/endazon/ai-stock-trading/issues/632) | Stage 0 判定を本番で走らせる駆動が無い（D-1） | `enhancement` |
+| [#633](https://github.com/endazon/ai-stock-trading/issues/633) | 取引の経費区分が本番で一度も記録されない（D-2） | `bug` |
+| [#634](https://github.com/endazon/ai-stock-trading/issues/634) | 維持率割れの自動縮小に駆動が無い（D-3） | `bug` |
+| [#636](https://github.com/endazon/ai-stock-trading/issues/636) | 計画適合検査が消えたのに DoD が「担保している」と書き続けている（D-4） | `tech-debt` |
+| [#637](https://github.com/endazon/ai-stock-trading/issues/637) | NFR-01/02 の実測検証が追跡先を失っている（計測器自体も不足） | `chore` |
+| [#640](https://github.com/endazon/ai-stock-trading/issues/640) | SC-03 の空売り現況が本番で必ず「取得不能」（BFF ルート欠落） | `bug` |
+| [#642](https://github.com/endazon/ai-stock-trading/issues/642) | ADR-0016 決定11 の空売り AI ガードレール 4 件が不在・未追跡 | `enhancement` |
+| [#643](https://github.com/endazon/ai-stock-trading/issues/643) | 日銀が第一に設定されていない／FINRA がアダプタ不在のまま必須登録 | `bug` |
+
+
 ### D-5: `StageProhibitsLiveTrading` は事実上トートロジーである（FR-20・**参考所見・起票しない**）
 
 - `RiskEvaluator.cs:81` は `intent.Mode == MoomooReal && settings.Stage.Mode != MoomooReal` で拒否する。
@@ -211,6 +225,127 @@ plan_refs:
 | GFV 通知 | 結線済み | `GoodFaithViolationRecorded` に `NotificationHandlers` の handler が在る |
 | 縮退による新規建て停止 | 結線済み | `RiskEvaluator.cs:73` の `InformationSourceDegraded`。再起動 fail-open は `IADR-0267` の heartbeat 方式で是正（`RiskManagementService/Program.cs:142`） |
 | 日報の取引履歴 | 結線済み | [#563](https://github.com/endazon/ai-stock-trading/issues/563) CLOSED。`TradeHistoryView` が `ReportService/Domain` に在り本番から参照される |
+
+## トレース表
+
+判定基準は 3 点をそれぞれ個別に確認したもの: **(a)** `Program.cs` の DI 登録 ／ **(b)** 本番の呼び出し元（`Hosted/` の常駐・`Infrastructure/Steps/` の Wolverine ハンドラ・`Features/` の HTTP）／ **(c)** publish するイベントの購読ハンドラ。
+
+## トレース表 1: FR-01〜FR-21
+
+| ID | 実装の所在（`backend/` 相対） | 結線（根拠 `パス:行`） | 発動条件（既定） | 判定 |
+| --- | --- | --- | --- | --- |
+| FR-01 | `InformationCollectionService/Hosted/CollectionPollingService.cs` ほか | (a) `Program.cs:69`/`:96` (b) `Program.cs:133` 常駐＋`:150` `POST /internal/collection/run-once` (c) `InformationCollected` → `TradeDecisionService/.../InformationCollectedHandler.cs:30` | `Collection:Source:Provider` 既定 空（no-op）。実クラスタ `finnhub,sec-edgar,fred` | ✅ 結線済み |
+| FR-02 | `TradeDecisionService/Infrastructure/Steps/*`・`Features/TradeDecision/*` | (a) `Program.cs:292`/`:298` (b) `InformationCollectedHandler.cs:30` (c) `TradeDecisionMade` → `RiskManagementService/.../TradeDecisionMadeHandler.cs:24` | `Collection:PollIntervalSeconds`=1800。休場ガード `IMarketCalendar`（`Program.cs:195`） | ✅ 結線済み |
+| FR-03 | `MarketMonitorService/Hosted/MonitorPollingService.cs`・`Features/MarketMonitor/MarketMonitorAppService.cs` | (a) `Program.cs:55`/`:96` (b) `MonitorPollingService.cs:70` publish (c) `PriceMovementDetected` → `PriceMovementDetectedHandler.cs:30` | `MarketData:Provider` 既定 空（no-op）。実クラスタ `finnhub` | ✅ 結線済み |
+| FR-04 | `TradeDecisionService/Features/TradeDecision/{DecisionOrchestrator,TradeDecisionAppService}.cs` | (a) `Program.cs:90`/`:143`/`:217` (b) 両 Steps ハンドラ (c) `TradeDecisionMade`/`TradeDecisionSkipped` に監査・通知 | `LlmGateway:BaseUrl` 未設定＝`Placeholder`＝**常に Hold**。実クラスタ設定済 | ✅ 結線済み（用途別割当の一部が基盤側未登録 #571） |
+| FR-05 | `OrderExecutionService/Infrastructure/Steps/OrderApprovedHandler.cs`・`Features/OrderExecution/*` | (a) `Program.cs:57`/`:184` (b) `OrderApprovedHandler.cs:25` (c) `OrderExecuted` → Risk 台帳＋監査＋通知 | `Broker:Provider`×`Environment` 既定 paper。`LiveTradingGate.Ensure` が live を起動時停止（`Program.cs:46`） | ⚠️ 一部（**訂正・取消に駆動元が無い**。下記 §11-2） |
+| FR-06 | `ReportService/Domain/{ReportSchedule,ReportRenderer}.cs`・`Features/Reports/ReportDraftService.cs` | (a) `Program.cs:53`/`:131` (b) `ReportEndpoints.cs:91`/`:145` (c) `ReportConfirmed` → 通知・監査 | 常時（HTTP 経路） | ✅ 結線済み |
+| FR-07 | `ReportService/Hosted/ReportAutoGenerationService.cs`・`Domain/ReportNoResponsePolicy.cs` | (a) `Program.cs:334`／`:335-337` **条件付き** 常駐 (b) 手動は `ReportEndpoints.cs:91/136/145` (c) `ReportDraftPresented` → 通知 | `Reports:AutoGeneration:Enabled` 既定 **false**。**`values.yaml` にも `values-local.yaml` にも設定が無い** | ⚠️ opt-in 既定オフ（自動生成が起動しない） |
+| FR-08 | `Shared.KnowledgeBase/*`・`InformationCollectionService/.../KnowledgeBaseWriterSink.cs`・`TradeDecisionService/.../KnowledgeBaseRetrievalContextProvider.cs` | (a) 3 サービスで `AddAiStockTradingKnowledgeBase`（`InformationCollectionService/Program.cs:86`・`ReportService/Program.cs:135`・`TradeDecisionService/Program.cs:185`）(b) 収集＝Sink、報告書＝confirm 時保存、**判断＝取得のみ** | `Search:BaseUrl` 既定 空（NoOp）。**実クラスタでも空** | 🔴 部分未結線（**判断根拠の KB 保存が無い**＋RAG 取得が実環境で不活性） |
+| FR-09 | `NotificationService/Infrastructure/Steps/NotificationHandlers.cs` | (a) `Program.cs:36`/`:155` (b) 18 個の `*NotificationHandler`（走査発見）(c) 該当 | `Notifications:Provider` 既定 空（no-op）。実クラスタ `discord-webhook` | ✅ 結線済み |
+| FR-10 | `RiskManagementService/Domain/RiskEvaluator.cs`・`Features/RiskManagement/OrderScreeningService.cs` | (a) `Program.cs:193` (b) `TradeDecisionMadeHandler.cs:36` (c) `OrderApproved`/`OrderRejected` 購読あり | 常時（`TradingDefaults`）。時価評価は `MarketData:EnableMarkToMarket` 既定 false | ⚠️ 一部（**維持率自動縮小・借株料計上・空売り文脈が未供給**） |
+| FR-11 | `AuditService/Infrastructure/Steps/AuditEventHandlers.cs`・`Features/AuditEvents/*` | (a) `Program.cs:39`/`:49` (b) 48 個の `*AuditHandler`＋`AuditQueryEndpoints`（`Program.cs:76`）(c) 該当 | 常時 | ⚠️ 一部（**経費区分 `TradeExpenseRecorded` の publisher が 0**・#633） |
+| FR-12 | `OrderExecutionService/.../{BrokerSelection,BrokerFactory}.cs`・`frontend/.../PaperModeBanner.tsx` | (a) `Program.cs:41`/`:57` (b) `OrderApprovedHandler` 経由で擬似約定 (c) 該当。バナーは 3 画面すべてに配置 | `Broker:Provider` 既定 `paper` | ✅ 結線済み |
+| FR-13 | `RiskControlEndpoints.cs`・`MonitorSettingsEndpoints.cs`・`AssumptionsEndpoints.cs`・`frontend/src/features/sc0*` | (a) `RiskManagementService/Program.cs:152`・`MarketMonitorService/Program.cs:86-88`・`ConfigurationService/Program.cs:37` (b) BFF `RiskControlsBffEndpoints.cs:42-62` ほか (c) `AssumptionsChanged` 購読あり | 常時（要 `trading-owner`）。変更理由必須・楽観排他 | ✅ 結線済み |
+| FR-14 | `NotificationService/Features/Notifications/{BotCommandParser,*CommandHandler}.cs` | (a) `Program.cs:52/68/83/99/117/132` (b) `Program.cs:140` 常駐（`DiscordBotHostedService`） | `Bot:Enabled` 既定 false＋多層認証（**未設定は全拒否**）。実クラスタ true | ✅ 結線済み（**報告書系コマンドは `Reports__BaseUrl` 不在で到達しない**） |
+| FR-15 | `BacktestService/Domain/*`・`Features/Backtest/{BacktestRunner,Stage0GateService,BacktestEvaluatedFactory}.cs` | (a) `Program.cs:57` は `IHistoricalBarSource` のみ (b) **呼び出し元なし**（HTTP 0・常駐 0・`Program.cs:10-17` が自認）(c) `BacktestEvaluated` の **publisher なし** | `Backtest:BarData:Provider` 既定 `none`。**有効化しても実行主体が無い** | 🔴 **未結線**（#632） |
+| FR-16 | `ReportService/Domain/{ReportRenderer,PnlAggregator,TradeHistoryViewBuilder,FxTranslationSummary}.cs` | (a) `Program.cs:131` (b) `ReportDraftService.cs` から呼ぶ | 常時。数値はコード集計・散文のみ LLM | ⚠️ 一部（**為替差損益の集計に呼び出し元が無い**＝節が恒久 null。#611） |
+| FR-17 | `ConfigurationService/Features/Assumptions/*`・`AssumptionsProfitabilityProvider.cs` | (a) `ConfigurationService/Program.cs:37-38/68`・`TradeDecisionService/Program.cs:228/230` (b) 採算ゲート (c) `AssumptionsChanged` → `CostControlService/.../AssumptionsChangedHandler.cs`＋監査＋通知 | 採算ゲートは `Profitability:*` 既定無効。**実クラスタは trade-decision に `Configuration__BaseUrl` 不在＝費用見積り不能** | ⚠️ opt-in ＋実環境未投入 |
+| FR-18 | — | — | — | ➖ 計画で Won't（将来拡張）。**過剰実装なし** |
+| FR-19 | `RiskManagementService/Domain/{RiskEvaluator,ShortSellEvaluator,AccountTypePolicy,Manipulation/*}.cs` | (a) `Program.cs:184-200`（相場操縦検出器＋活動射影）/`:123`/`:129` (b) `TradeDecisionMadeHandler.cs:36` (c) `BrokerAccountObserved`/`GoodFaithViolationRecorded` 購読あり | 常時。`RejectionReason` 29 種すべて本番で使用 | ⚠️ 一部（**空売り文脈が恒久 fail-closed**＋相場操縦の一部指標が実クラスタで観測不能。§11-2） |
+| FR-20 | `RiskManagementService/Domain/StageGate.cs`・`Features/RiskManagement/StageGateService.cs` | (a) `Program.cs:160-161`/`:72`/`:75`/`:78` (b) `RiskControlEndpoints.cs:386-422`＋Discord (c) `StageTransitioned`/`WithdrawalTriggered` 購読あり | 常時。撤退定時評価は `WithdrawalEvaluation:Enabled` 既定 false（実クラスタ true） | 🔴 一部（**Stage 0→1 の `BacktestPassed` 供給が構造的に不可能**・`Domain/StageGate.cs:158`） |
+| FR-21 | `RiskManagementService/Features/RiskManagement/{IPositionObservationArrivalStore,ObservationCoverage}.cs` | (a) `Program.cs:231`（EF 実装） (b) `Steps/BrokerPositionsObservedHandler.cs:27` が記録・`RiskControlEndpoints.cs:76/111` が消費 (c) publisher は `OrderExecutionService/Hosted/BrokerPositionSnapshotService.cs` | 供給元は **moomoo 選択時のみ**。paper では 1 件も届かない（＝仕様どおり「未供給」表示） | ✅ 結線済み |
+
+## トレース表 2: UC-01〜07 / SC-01〜03
+
+| ID | 結線（根拠 `パス:行`） | 判定 |
+| --- | --- | --- |
+| UC-01 | 収集→判断→審査→発注→通知の 5 サービス連鎖: `InformationCollectionService/Program.cs:133` → `InformationCollectedHandler.cs:68` → `TradeDecisionMadeHandler.cs:47` → `OrderApprovedHandler.cs:51` → `NotificationHandlers.cs` | ✅ 結線済み |
+| UC-02 | `MonitorPollingService.cs:65/70` publish → `PriceMovementDetectedHandler.cs:30` ／ `StopLossTriggeredHandler`（**記録のみ**・二重決済防止） | ✅ 結線済み |
+| UC-03 | `ReportEndpoints.cs:91/136/140/145` ＋ Discord `ReportCommandHandler`（`NotificationService/Program.cs:128`） | ✅ 結線済み（定時起動のみ opt-in オフ） |
+| UC-04 | `ReportService/Domain/ReportSchedule.cs:44`（`ReportKind.Weekly`）・同一エンドポイント | ✅ 結線済み（**起点 ID コメントが 0 件**＝トレーサビリティ表記の欠落） |
+| UC-05 | `ReportSchedule.cs:52`・`Domain/MonthlyBootstrap.cs` → `Features/Reports/ReportAppService.cs` | ✅ 結線済み（**起点 ID コメントが 0 件**） |
+| UC-06 | 設定・停止系は `RiskControlEndpoints.cs:130/136/147/150/274/299/312/390`、Discord は `NotificationService/Program.cs:52/68/83` | ⚠️ 一部（**維持率割れ自動縮小のみ呼び出し元なし**・#634） |
+| UC-07 | `AuditService/Features/AuditEvents/AuditQueryEndpoints.cs`（`Program.cs:76`） | ⚠️ 一部（**判断根拠が KB へ入らない**ため RAG では引けない。監査台帳の期間照会では引ける） |
+| SC-01 | `/bff/assumptions` GET/PUT/history → `Bff/.../AssumptionsBffEndpoints.cs:29/34/39` → ConfigurationService。paper バナー配置済 | ✅ 結線済み |
+| SC-02 | 全 9 経路が BFF に存在（`RiskControlsBffEndpoints.cs:33-62`＋`MonitorBffEndpoints.cs:33-74`）。実弾切替の確認は `RiskControlEndpoints.cs:312` が**サーバ側でも強制** | ✅ 結線済み |
+| SC-03 | status / stage-gate / history は BFF あり。🔴 **`/risk-controls/short-selling` が BFF に無い**（画面 `ControlStatusPage.tsx:85` ↔ BFF `RiskControlsBffEndpoints.cs` の 8 経路に不在） | 🔴 部分未結線（#640） |
+
+## 追加で検出した未結線（D-1〜D-4 に加えて）
+
+1. **判断根拠が KB へ保存されない（FR-08 / UC-07）** —— `TradeDecisionService` に `IKnowledgeBaseWriter` の参照が**1 件も無い**（`Program.cs:185` は取得側 `IKnowledgeBaseSearch` の配線）。根拠の権威源は監査台帳で、報告書は `ReportService/.../HttpTradeRationaleSource.cs:9-15` が台帳から引く設計である。**設計としては一貫しているが、FR-08 の「根拠を KB 保存し RAG 参照」は満たしていない。** RAG 取得側も実クラスタで `Search:BaseUrl` が空。
+
+2. **注文の訂正・取消に駆動元が無く、実クラスタでは型ごと存在しない（FR-05 / FR-19）** —— `OrderAmendmentDispatcher` は `OrderExecutionService/Program.cs:85` の DI 登録以外に本番参照ゼロ。しかも `Program.cs:79` の `if (!brokerSelection.IsMoomoo)` の内側にあり、**実クラスタ（moomoo-sim）では登録すらされない**。
+   これは `Program.cs:73-77` が**意図的な fail-safe として明記**しており（「実ブローカー選択時は本経路を登録しない＝実弾に対する訂正・取消が構成上も存在しない」）、**未結線そのものは欠陥ではない。**
+   🔴 **ただし波及が文書化されていない**: `OrderModified` / `OrderCancelled` が実クラスタで一度も publish されないため、相場操縦検知（FR-19）が使う `MaxCancellationRatio`（取消率 0.7）と `MaxAmendmentsPerOrder`（3.0）が**構造的に発火し得ない**。`TradingDefaults.CreateManipulationDetectionSettings()` の 2 指標は実クラスタで死んでいる。
+
+3. **借株料の日次計上が動かない（FR-10 / ADR-0027）** —— `RiskManagementService/Program.cs:236-241` が「日次で計上を回すスケジューラも、料率の供給元も登録しない」と明記。`BorrowFeeAccrualService` は登録以外に本番参照なし。**意図的な保留であり自認もある。**
+
+4. **空売り専用統制が恒久 fail-closed（FR-10 / FR-19 / ADR-0016）** —— `OrderScreeningService.cs:49` が `shortSellContext` を渡さず（同 `:42-44` が「借株照会の供給元が無いため空売り文脈は今も組めない」と自認）、`ShortSellEvaluator.cs:83-86` が `context is null` で `BorrowUnavailable` を足して即 return する。**安全側だが、Stage 1 での空売り統制の検証は不可能。**
+
+5. **UC-04 / UC-05 の起点 ID コメントが本番コード・テストのいずれにも 0 件** —— 実体（`ReportKind.Weekly/Monthly`）は実装済みだが、**トレーサビリティ規約上の欠落**である。
+
+> §11 の 2〜4 は**いずれもコード側に自認コメントがあり、意図的な保留である**。
+> 本監査が指摘するのは**保留そのものではなく、保留の波及（とくに 2 の FR-19 への影響）が記録されていないこと**である。
+
+## トレース表 3: 計画 ADR-0001〜0029
+
+> **初版監査は ADR-0001〜0008 しか見ていない。ADR-0009〜0029 は本監査が初めての監査である。**
+
+
+| ADR | 決定の要旨 | 実装と結線（根拠 `パス:行`） | 判定 |
+| --- | --- | --- | --- |
+| 0001 | platform を無改修で再利用し、可変ユニットとして `src/<unit>/` へ合成 | 11 サービスは VSA 構成で実在。ただし**本番配備物の 11 個の `Program.cs` がすべて `AiStockTrading.TestSupport.PlatformShim` を参照**（例 `RiskManagementService/Program.cs:9-10`）。shim の csproj 自身が「本番では platform 本体を用いるため本プロジェクトは本番非使用」と宣言（`AiStockTrading.TestSupport.PlatformShim.csproj:1-3`） | ⚠️ 一部（合成未了） |
+| 0002 | moomoo OpenAPI 採用・OpenD 常駐・SIMULATE PoC | 閂 0〜4 ＋ Helm 外周が健在（`LiveTradingGate.cs:22` ほか）。OpenD chart は `templates/opend.yaml` | ✅ 準拠 |
+| 0003 | AI 入力を確定済み日報等に限定・方針確定は対話必須・Risk を直列配置 | policy-null は取引しない（`TradeDecisionAppService.cs:99-104`）。Risk 直列＝`RiskEvaluator`。注入対策は JSON フェンスの構造分離（`TradeDecisionPromptBuilder.cs:150-175`） | ✅ 準拠 |
+| 0004 | 案A+ の情報源構成・日米両市場 | `InformationSourceCatalog.cs:118-154` に全源を登録。**取得アダプタが実在するのは 7 種のみ**（`InformationSourceFactory.cs:22-29`） | ⚠️ 一部（FINRA 不在・#643） |
+| 0005 | 有料情報源は条件付き・既定は無料 | 実接続する源はすべて無料。決定5 の一時降格は `InformationSourceCatalog.DemoteToRecommended`（`:101-111`） | ✅ 準拠 |
+| 0006 | Hetzner 上に k3s ＋ OpenD | `deploy/argocd` のマニフェストのみ。`docs/infra/infra.md:37,55` が **Tier 3・対象外／未充足**と明記 | 🔴 未実装（#24） |
+| 0007 | 取引ガードをソフト設定で保持し発注前に決定的に強制。適用範囲は非対称 | `RiskEvaluator.cs`: 商品種別 `:115-116`（新規建てのみ）／市場 `:137`（全注文）／禁止銘柄 `:142-144`（全注文）／差金決済 `:162-166`（新規建てのみ）／相場操縦 `:211-215`（全注文） | ✅ 準拠 |
+| 0008 | FR-15 を Must 化・Stage 0〜3 ゲート・撤退基準 1.5 倍 | 判定は純ドメイン（`BacktestService/Domain/Stage0Gate.cs:73-` 7 条件）。🔴 **本番の呼び出し元が無い**（`BacktestService/Program.cs:10-17` が自認） | 🔴 一部（未結線・#632） |
+| 0009 | pause を日次損失ロックアウトと別状態に。Close/損切りは止めない | 3 統制の OR と `isEntry` 短絡（`RiskEvaluator.cs:53-63`）。優先順位表示（`RiskStatusService.cs:31-41`）。pause/resume の監査記録と冪等（`PauseService.cs:30-33, 50-53`） | ✅ 準拠 |
+| 0010 | 全実装の TFM を `net10.0` へ | `Directory.Build.props:14`（`net10.0`）・`:17`（C# 13） | ✅ 準拠 |
+| 0011 | 取引判断モデルをピン留めし基盤の既定改定に追随しない | `Shared.Contracts/Llm/LlmAssignments.cs:15-50`。実効モデル検証は `HttpLlmCompletionClient.cs:170` / `HttpReportNarrativeDrafter.cs:139` | ✅ 準拠 |
+| 0012 | 取引文書を MCP 公開許可リストに含めない | `Tests/AiStockTrading.Architecture.Tests/McpExposureNotDeclaredTests.cs`（`backend`/`deploy` に `mcp` の出現 0 件を強制）＋基盤側許可リストのドリフト検査。実測結合確認済み | ✅ 準拠 |
+| 0013 | Wolverine へ移行・RabbitMQ 継続・Kafka は先送り | `Directory.Packages.props:30-32`（WolverineFx・**MassTransit なし**）。全 host が `UseAiStockTradingRabbitMq` | ✅ 準拠 |
+| 0014 | 用途別割当を確定・**取引判断は Stage 0 再検証を実弾解禁の必須ゲート**とする | 割当は `LlmAssignments.cs:37-50`。🔴 **決定3 のゲートが機械化されていない** —— `LiveTradingGate.cs:36-41` の解禁前提の列挙にモデル再検証が無い。Stage 0 自体も未結線（ADR-0008 行）ため**二重に空洞** | 🔴 一部 |
+| 0015 | 月報を `claude-fable-5` → `claude-opus-5` へ | `LlmAssignments.cs:46`。`ForbiddenModel = claude-fable-5`（`:31`）を全用途から排除 | ✅ 準拠 |
+| 0016 | 空売りの段階解禁（15 決定） | 統制値は `TradingDefaults.cs:74-` が決定6 の表と一致。8 規則は `ShortSellEvaluator.cs`（文脈 null は fail-closed `:42`）。段階解禁は `StageProductPolicy.cs:29-110`。決定4 の事後推定は `BuyInInferenceService.cs`。🔴 **決定11（AI ガードレール 4 件）がリポジトリ全体に 1 文字も無い**。決定7 の自動縮小は呼び出し元なし。決定12 の FINRA アダプタなし。決定15 の経費実費は供給ゼロ | 🔴 一部（#642 / #634 / #643 / #633） |
+| 0017 | 用途別フォールバック順・**取引判断はフォールバック禁止**・失敗分類・可観測性 3 点 | 順序と禁止フラグ `LlmAssignments.cs:41-50`。429 と 400 系の分離 `LlmFailureClassification.cs:22-27`。発行は `PublishingLlmGovernanceReporter`（`TradeDecisionService/Program.cs:85`・`ReportService/Program.cs:82`）。月報 §7（`ReportRenderer.cs:717-748`）・日報スキップ行（`:849`） | ✅ 準拠 |
+| 0018 | 統制既定値の確定単一値・Stage 0 最大 DD を 10% | `TradingDefaults.cs:52-71`（2% / 1% / 10% / 5 連敗）。Stage 0 は `Stage0Gate.cs:33`（`MaxDrawdownToleranceDefault = 0.10m`） | ✅ 準拠 |
+| 0019 | moomoo PoC 9 項目と不成立時の帰結 | 実装側は全項目に対し fail-closed。借株照会は未実装（`MMApiMoomooTradeClient.cs:574` の `OnReply_GetMarginRatio` が**空実装**） | ⏳ PoC 待ち（#342） |
+| 0020 | 情報源 4 区分・欠測時 3 挙動・一般 Web 4 条件 | 区分と挙動は `InformationSourceCatalog.cs:4-56, 118-154`、判定は `Domain/CollectionDegradation.cs:105-130`。判断側への遮断は `RiskEvaluator.cs:71-75`。一般 Web 4 条件は `Domain/GeneralWebActivation.cs` → `Program.cs:167` | ⚠️ 一部（FINRA 未実装・#643） |
+| 0021 | 信用口座を既定・現金口座は拡張・照会結果を正 | 照会は `BrokerAvailabilityProbeService.cs:130` → `BrokerAccountObservedHandler.cs`。fail-closed は `RiskEvaluator.cs:36-42`（`BrokerAccountTypeUnverified`）。口座種別分岐は `AccountTypePolicy.cs:70` | ✅ 準拠（決定4 の現金口座運用は供給待ち。計画も同認識） |
+| 0022 | 為替は**日銀を第一・FRED をフォールバック**、警告 5 日・上限 30 日 | 実装は決定どおり（`FxRateSourceFactory.cs:48, 88-120`／`FxOptions.cs:46/60/72`）。🔴 **配備構成が日銀を選んでいない** —— `values.yaml:421` は `Fx__Provider: ""`、`values-local.yaml:227` は `"fred"`。**`boj` を指す設定行が 1 件も無い** | 🔴 一部（構成未適用・#643） |
+| 0023 | Stooq は取得不能として扱い回避しない・履歴源は moomoo 履歴 K 線 | 回避実装なし（`HistoricalBarSourceFactory.cs:17-21` に明記）、moomoo アダプタあり、既定は no-op | ✅ 準拠（実装側確認 2 点は未了で本番投入せず） |
+| 0024 | 無人再起動は条件付き成立（デバイス信頼の PVC 永続化＋安定 egress IP） | PVC を `$HOME/.com.moomoo.OpenD` へ（`templates/opend.yaml:25-30, 124, 134`）、RSA Secret 未指定は描画時 fail（同:18） | ✅ 準拠（実クラスタでは SMS 認証待ちで停止中・#342） |
+| 0025 | 決済済み資金は PoC 項目 8・GFV 回数は自前計数・現金口座は解禁不可 | 自前計数は `GoodFaithViolationCountingService.cs`（`OrderExecutedGoodFaithViolationHandler.cs:26` から結線）。決済済み資金は**常に null**（`MoomooBrokerAdapter.cs:181-182`）→ fail-closed | ✅ 準拠（PoC 待ちを含む） |
+| 0026 | `ShortFeeRate` の単位確定を PoC 項目 9 とする | 実装側は単位確定済み年率のみ受ける契約で遮断（`ShortSellOrderContext.cs:23-28`） | ⏳ PoC 待ち |
+| 0027 | 借株料を日次で積む（5 決定） | 記録側は 5 決定どおり実装（`BorrowFeeAccrualService.cs:20-70`・`DaysPerYear=365`）。🔴 **本番の呼び出し元が無い**（`RiskManagementService/Program.cs:241` の DI 登録のみ）。ただし同 `:238-240` が決定6（PoC 成立まで供給しない）に沿った**意図的な遮断**と明記 | ⚠️ 一部（意図した遮断） |
+| 0028 | GFV 記録は失効させない・解除は明示操作＋監査・窓口は Discord | 解除は追記のみ（`GoodFaithViolationClearingService.cs:40-57`）、監査発行は `RiskControlEndpoints.cs:215-236`、窓口は `GoodFaithViolationCommandHandler.cs`、フロントに解除経路なし | ✅ 準拠（決定4/6 の突合手順は計画どおり繰り延べ） |
+| 0029 | IADR/仕様書を `.ai-context/` へ・planning 依存全撤去・trace ブロック | `.ai-context/{adr,specs}` 実在、`.gitmodules` 不在、`feedback/` 不在、`check-trace-blocks.js` ＋ `gen-knowledge-graph.js` 実在 | ✅ 準拠 |
+
+## トレース表 4: NFR-01〜NFR-17
+
+| NFR | 要件 | 実装・確認（根拠 `パス:行`） | 判定 |
+| --- | --- | --- | --- |
+| 01 | 価格変動検知→発注完了 5 分以内 | 計測は判断ハンドラ内のみ（`PriceMovementDetectedHandler.cs:45` → `ast.trade_cycle.decision_duration_ms`）。**発注完了までの端点間計測器が無い** | 🔴 一部（#637） |
+| 02 | 定時サイクル 1 回 10 分以内 | `BusinessMetricNames.cs:26-58` の 9 メトリクスに**サイクル端点間の所要時間が存在しない** | 🔴 未実装（#637） |
+| 03 | 開場時間帯稼働率 99%・停止を Discord 通知 | 本リポジトリに `PrometheusRule` / アラート定義が **0 件**。計画どおり基盤管掌だが、その基盤が未稼働 | 🔴 未実装（#24） |
+| 04 | 障害時は安全側（新規発注停止・損切りはブローカー逆指値） | 全統制が `isEntry` 短絡で Close/損切りを通す。逆指値の再発注巡回は `ProtectiveStopGuard.cs`、`StopLossTriggeredHandler.cs:13` は記録のみ | ✅ 準拠 |
+| 05 | 認証情報を Vault で秘匿・リポに含めない | 平文なしは gitleaks で担保。🔴 **`values.yaml:147-148` で `externalSecrets.enabled: false`**、同 `:111` が「ストア整備は #24 で未充足」と明記。現行は手動 k8s Secret | ⚠️ 一部（#24） |
+| 06 | 発注機能は利用者本人のみ・外部公開しない | Keycloak `OwnerOnly` / `OwnerOrService`。`templates/service.yaml` に `type:` 指定なし（ClusterIP）、Ingress テンプレート無し | ✅ 準拠 |
+| 07 | メトリクス・ログ・トレースを基盤スタックへ | 全 host が `AddAiStockTradingObservability`（OTel＋Serilog）。業務メトリクスは `Observability/BusinessMetrics.cs` | ✅ 準拠 |
+| 08 | 重複排除メタデータのパージ（既定 90 日・下限 7 日） | `Operations/RetentionOptions.cs:19` ＋ `RetentionPolicy.MinimumRetentionDays` クランプ。実行は `CostControlService/Hosted/ProcessedMessageRetentionService.cs` | ✅ 準拠 |
+| 09 | 未確定予約は期限超過でも削除しない | `OrderReservationRetentionService.cs:13-14`（Completed のみ・**Reserved は対象外**） | ✅ 準拠 |
+| 10 | 業務台帳・監査証跡は 7 年・自動パージ対象外 | `Operations/RetentionScope.cs:39-60`（**許可リスト方式**・列挙外を指すと例外）。両パージが `EnsurePurgeable` を通る | ✅ 準拠 |
+| 11 | パージは既定無効・失敗をサービス停止に波及させない | `RetentionOptions.cs:13`（`Enabled` 既定 false）＋各常駐の無効時ログ | ✅ 準拠 |
+| 12 | データ取得費用 0 円/月 | 実接続する 7 源はすべて無料枠。履歴 OHLC も moomoo（追加費用なし） | ✅ 準拠 |
+| 13 | 月次 LLM 費用上限・80% で間隔延長・100% で停止。**対象は取引判断のみ** | `CostControlService/Domain/CostGovernor.cs:43-63`、対象範囲判定 `Llm/LlmCostScope.cs:20-24`、消費側は `CollectionPollingService.cs:91-102` | ✅ 準拠 |
+| 14 | Hetzner インフラ費の月次上限管理 | 実基盤が未稼働（NFR-03 と同根） | 🔴 未実装（#24） |
+| 15 | 月次総費用は目安のみ・自動統制も定期把握も行わない | 総費用に対する統制コードが**存在しないこと自体**が要求どおり（統制は `CostCategory.Llm` のみ） | ✅ 準拠 |
+| 16 | 証券会社・情報源・LLM をポートで抽象化 | `Shared.Contracts/Ports/` 9 種＋各 Factory（`BrokerFactory` / `MarketDataSourceFactory` / `FxRateSourceFactory` / `HistoricalBarSourceFactory` / `InformationSourceFactory`） | ✅ 準拠 |
+| 17 | 情報源・証券 API の利用規約遵守 | `RateLimiting/TokenBucket.cs` を全源に配分（BOJ 1 回/分・FRED 5 回/分・SEC は秒単位）。SEC は連絡先入り UA 必須で未設定なら無効化（`InformationSourceFactory.cs:210-215`）。Stooq のボット検知回避は実装せず | ✅ 準拠 |
 
 ## 走査の再現手順
 
