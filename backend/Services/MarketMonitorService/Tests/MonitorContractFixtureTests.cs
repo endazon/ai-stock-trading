@@ -23,8 +23,8 @@ namespace MarketMonitorService.Tests;
 // ＝機構が無効化される（IADR-0146 決定5 が避けたい状態そのもの）。
 public class MonitorContractFixtureTests
 {
-    // IADR-0146: フィクスチャは frontend 側（`src/features/monitor/contract-fixtures/`）に置く。
-    private static readonly ContractFixtureStore Fixtures = new("frontend/src/features/monitor/contract-fixtures");
+    // IADR-0146: フィクスチャは frontend 側（`src/testing/contract-fixtures/`。#529〔PR #653〕で領域別の置き場から 1 か所へ集約）に置く。
+    private static readonly ContractFixtureStore Fixtures = new("frontend/src/testing/contract-fixtures");
 
     private static HttpClient OwnerClient(MonitorWorkerWebApplicationFactory factory)
     {
