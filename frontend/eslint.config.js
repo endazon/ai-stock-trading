@@ -170,7 +170,10 @@ export default tseslint.config(
   // 展開する（片方だけ書くと、この files に一致するファイルで採用外ライブラリの禁止が消える）。
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/lib/*/queries.ts', 'src/features/*/*Queries.ts'],
+    // #529: feature 固有のクエリ層は `src/features/<feature>/api/` へ移った（IADR-0288 決定 6 の残件）。
+    // 🔴 **`ignores` は移送と同時に直す。** 直さないと `api/` が禁止に掛かって lint が赤くなるか、
+    // 逆に古い glob（`*Queries.ts`）が何にも一致せず「例外を書いたつもりで実は無い」状態になる。
+    ignores: ['src/lib/*/queries.ts', 'src/features/*/api/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -182,7 +185,7 @@ export default tseslint.config(
               name: '@foundation/api/apiClient',
               importNames: ['apiFetch'],
               message:
-                '画面から apiFetch を直接呼ばない（IADR-0288 決定 3）。取得・更新は TanStack Query 層（src/lib/*/queries.ts ／ feature 固有は src/features/*/*Queries.ts）を通す。',
+                '画面から apiFetch を直接呼ばない（IADR-0288 決定 3）。取得・更新は TanStack Query 層（src/lib/*/queries.ts ／ feature 固有は src/features/<feature>/api/）を通す。',
             },
           ],
         },
