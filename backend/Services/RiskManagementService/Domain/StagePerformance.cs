@@ -14,6 +14,33 @@ public record StagePerformance
     /// <summary>バックテスト時の最大ドローダウン比率（撤退基準 実DD ≥ 本値 × 1.5 の分母。ADR-0008）。</summary>
     public decimal BacktestMaxDrawdownRatio { get; init; }
 
+    /// <summary>
+    /// FR-20, FR-15, ADR-0016 決定14, #388, IADR-0281 決定3: 直近のバックテスト verdict が
+    /// **空売りを含む戦略**のものか（<c>BacktestEvaluated.IncludesShortSelling</c> の射影）。
+    /// <para>
+    /// 既定 <c>false</c> ＝ fail-safe（空売りの実弾解禁は起こらない）。決定14 は「**空売りを含む戦略で**
+    /// Stage 0 の 7 条件を再度満たす」と定めており、**空売りを含まない戦略の合格では解禁できない**。
+    /// </para>
+    /// </summary>
+    public bool BacktestIncludesShortSelling { get; init; }
+
+    /// <summary>
+    /// FR-20, FR-15, ADR-0016 決定14, #388, IADR-0281 決定3: 直近のバックテスト verdict が名乗る**戦略識別子**
+    /// （<c>BacktestEvaluated.StrategyId</c> の射影）。verdict の無効化契機「戦略の変更」を機械的に判定する唯一の鍵。
+    /// <para>
+    /// 既定は空文字＝**戦略の同一性を名乗れない**状態であり、verdict は
+    /// <see cref="ShortSellReleaseVerdictStatus.StrategyChanged"/> として無効になる（fail-safe）。
+    /// </para>
+    /// </summary>
+    public string BacktestStrategyId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// FR-20, ADR-0016 決定14: **空売りを含む戦略で Stage 0 を再充足したか**（解禁条件の 1 項）。
+    /// <c>BacktestPassed</c> と <c>BacktestIncludesShortSelling</c> の AND であり、**導出値をここだけで定義する**
+    /// （2 か所で組み立てると必ず食い違う）。
+    /// </summary>
+    public bool ShortSellStrategyBacktestPassed => BacktestPassed && BacktestIncludesShortSelling;
+
     /// <summary>実運用/SIMULATE で観測した最大ドローダウン比率（撤退基準の実測値）。</summary>
     public decimal ObservedMaxDrawdownRatio { get; init; }
 

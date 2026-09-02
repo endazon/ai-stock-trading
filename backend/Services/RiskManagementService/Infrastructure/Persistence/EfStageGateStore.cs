@@ -15,7 +15,13 @@ public sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateSto
             .OrderBy(r => r.Sequence)
             .AsEnumerable()
             .Select(r => new StageTransition(
-                r.Sequence, r.FromStage, r.ToStage, r.Kind, r.ApprovedBy, r.OccurredAtUtc, r.Reason))
+                r.Sequence, r.FromStage, r.ToStage, r.Kind, r.ApprovedBy, r.OccurredAtUtc, r.Reason,
+                // FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: verdict の行だけが添付を持つ。
+                // 段階遷移の行は 2 列とも null であり、null のまま復元する（偽の添付を発明しない）。
+                r.ShortSellReleaseSourceFingerprint is null || r.ShortSellReleaseStrategyId is null
+                    ? null
+                    : new ShortSellReleaseAttestation(
+                        r.ShortSellReleaseSourceFingerprint, r.ShortSellReleaseStrategyId)))
             .ToList();
 
         return StageGateLedger.Empty(TradingStage.Stage0Verification) with { History = history };
@@ -34,6 +40,8 @@ public sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateSto
             ApprovedBy = transition.ApprovedBy,
             OccurredAtUtc = transition.OccurredAtUtc,
             Reason = transition.Reason,
+            ShortSellReleaseSourceFingerprint = transition.ShortSellRelease?.SourceFingerprint,
+            ShortSellReleaseStrategyId = transition.ShortSellRelease?.StrategyId,
         });
 
         try

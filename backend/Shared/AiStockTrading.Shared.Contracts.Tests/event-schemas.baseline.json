@@ -9,9 +9,11 @@
     "DeflatedSharpe": "Double",
     "EvaluatedAt": "DateTimeOffset",
     "FailedChecks": "String",
+    "IncludesShortSelling": "Boolean",
     "MaxDrawdownRatio": "Decimal",
     "Passed": "Boolean",
-    "ProbabilityOfBacktestOverfitting": "Double"
+    "ProbabilityOfBacktestOverfitting": "Double",
+    "StrategyId": "String"
   },
   "BorrowFeeAccrualUnavailable": {
     "Market": "Market",
