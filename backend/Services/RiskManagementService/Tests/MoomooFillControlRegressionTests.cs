@@ -54,7 +54,7 @@ public class MoomooFillControlRegressionTests
             .UseWolverine(opts =>
             {
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
-                // #611, IADR-0282: 承認ハンドラが要する認識時レートの解決器（本テストの関心外・未記録で通す）。
+                // #611, IADR-0285: 承認ハンドラが要する認識時レートの解決器（本テストの関心外・未記録で通す）。
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver());
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<OrderApprovedLedgerHandler>()

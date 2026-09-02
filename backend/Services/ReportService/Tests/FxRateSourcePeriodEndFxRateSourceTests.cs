@@ -8,7 +8,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, #611, 05_trading-assumptions §3（評価損益＝日次終値）, ADR-0022, IADR-0282 決定2:
+// FR-06, FR-16, #611, 05_trading-assumptions §3（評価損益＝日次終値）, ADR-0022, IADR-0285 決定2:
 // 既存の為替レート源から期末レート（期末日以前の直近の日次観測）を導くアダプタ。採らない条件（推定しない）を固定する。
 public class FxRateSourcePeriodEndFxRateSourceTests
 {

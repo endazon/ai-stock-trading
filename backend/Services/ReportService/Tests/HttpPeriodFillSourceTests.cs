@@ -182,7 +182,7 @@ public class HttpPeriodFillSourceTests
         (await source.GetFillsAsync(From, To)).Should().BeEmpty();
     }
 
-    // 🔴 **肯定形（#611, IADR-0282 決定1）**: 承認時点の認識時レート（1 USD あたりの円）をそのまま通す。
+    // 🔴 **肯定形（#611, IADR-0285 決定1）**: 承認時点の認識時レート（1 USD あたりの円）をそのまま通す。
     // これが欠けると為替差損益が全期間で未供給になる。
     [Fact]
     public async Task 台帳の認識時レートをそのまま通す()
@@ -198,7 +198,7 @@ public class HttpPeriodFillSourceTests
         fills.Should().ContainSingle().Which.FxRateBaseToDisplay.Should().Be(159.38m);
     }
 
-    // 🔴 **否定形（#611, IADR-0282 決定3）**: 欠落した応答（旧版 Risk・列追加前の行・未解決の行）は **null のまま**にする。
+    // 🔴 **否定形（#611, IADR-0285 決定3）**: 欠落した応答（旧版 Risk・列追加前の行・未解決の行）は **null のまま**にする。
     // FxRateToBase の既定 1 と違い、既定へ倒す正当な値が無い（1 円/ドルは事実ではない）。推定で埋めない。
     [Fact]
     public async Task 認識時レートが無い応答はnullのまま通す()

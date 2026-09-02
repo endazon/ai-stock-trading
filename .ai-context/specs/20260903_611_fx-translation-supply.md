@@ -2,7 +2,7 @@
 title: 為替差損益の供給——認識時 JPY/USD レートの記録と期末レート照会経路（#611）
 type: spec
 status: review
-related_ids: [FR-06, FR-16, FR-10, FR-17, UC-05, ADR-0022, IADR-0107, IADR-0152, IADR-0194, IADR-0197, IADR-0250, IADR-0251, IADR-0271, IADR-0282]
+related_ids: [FR-06, FR-16, FR-10, FR-17, UC-05, ADR-0022, IADR-0107, IADR-0152, IADR-0194, IADR-0197, IADR-0250, IADR-0251, IADR-0271, IADR-0285]
 author: endazon (with Claude Code)
 created: 2026-09-03
 updated: 2026-09-03
@@ -27,7 +27,7 @@ plan_refs:
   [IADR-0152](../adr/IADR-0152_usd-base-currency-migration.md)（基準通貨 USD・表示通貨 JPY）・
   [IADR-0194](../adr/IADR-0194_boj-fx-rate-source-and-ordered-fallback.md) 決定1（**3 つ目の利用者が現れたら抽出する**）・
   [IADR-0197](../adr/IADR-0197_fx-stale-exit.md)（鮮度切れでも値は返す）
-- 本作業の実装ADR: [IADR-0282](../adr/IADR-0282_fx-translation-supply-recognition-rate-and-period-end-rate.md)
+- 本作業の実装ADR: [IADR-0285](../adr/IADR-0285_fx-translation-supply-recognition-rate-and-period-end-rate.md)
 - 計画書リンク: `04_report-templates.md` §数値の定義（為替差損益・円換算）・日報 §1・月報 §1、
   `05_trading-assumptions.md` §3（基準通貨〔判定〕USD・〔表示〕JPY・**為替評価方法＝実現損益は約定時レート／評価損益は日次終値**）
 
@@ -85,7 +85,7 @@ PR #610 / IADR-0271 決定4 が「為替差損益は供給不能」と確定し�
 | 7 | `Fx__Provider`（Helm・docs の設定点） | 4 ファイル（`deploy` 2 ＋ `docs` 2） | `values.yaml` / `values-local.yaml`（report・risk-management へ追加）・chart README | `docs/operations/operations.md`（trade-decision の症状記述。変更不要） |
 
 > **自己参照の引き算（規則 8）**: 本仕様書は走査時点で未追跡のため母集合に入っていない。コミット後に軸 1・2・3・4 は
-> 本仕様書と IADR-0282 のぶん **+2** される（例: 軸 1 は 12 → 14）。**値はコミットで固定する。**
+> 本仕様書と IADR-0285 のぶん **+2** される（例: 軸 1 は 12 → 14）。**値はコミットで固定する。**
 
 **除外の総則**: `.ai-context/adr/` と `.ai-context/specs/` は凍結記録であり、本作業の是正対象に含めない。
 
@@ -210,4 +210,4 @@ PR #610 / IADR-0271 決定4 が「為替差損益は供給不能」と確定し�
 ## 未決事項
 
 - 実 FX 源（日銀 API・FRED）との疎通は実環境（Istio 断・API キー）の都合で本作業では未検証。単体は fake ハンドラで固定する。
-- USD 現金残高に対する為替差損益（入出金の取得レート）は台帳が持たず、本作業の対象外（残余リスクとして IADR-0282 に記す）。
+- USD 現金残高に対する為替差損益（入出金の取得レート）は台帳が持たず、本作業の対象外（残余リスクとして IADR-0285 に記す）。

@@ -33,7 +33,7 @@ public class Stage1FillObservationConsumerTests
             {
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
                 opts.Services.AddSingleton<IStage1FillObservationStore>(fills);
-                // #611, IADR-0282: 承認ハンドラが要する認識時レートの解決器（本テストの関心外・未記録で通す）。
+                // #611, IADR-0285: 承認ハンドラが要する認識時レートの解決器（本テストの関心外・未記録で通す）。
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver());
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<OrderApprovedLedgerHandler>()

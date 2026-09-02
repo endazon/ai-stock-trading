@@ -5,7 +5,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, #611, 04_report-templates §数値の定義（為替差損益）, 05_trading-assumptions §3, IADR-0282 決定3・決定4:
+// FR-06, FR-16, #611, 04_report-templates §数値の定義（為替差損益）, 05_trading-assumptions §3, IADR-0285 決定3・決定4:
 // 期間の約定から為替差損益の明細を組み立てる純関数。**何を明細にするか**（決済＝決済時レートへ・期末残＝期末レートへ）と、
 // 供給できない条件（未記録の約定・期末レート無し）の向きを固定する。
 public class FxTranslationBuilderTests

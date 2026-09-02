@@ -116,7 +116,7 @@ public sealed record ReportView
     public FxTranslationSummary? FxTranslation { get; init; }
 
     /// <summary>
-    /// FR-06, FR-16, #611, IADR-0282 決定3: 認識時レートが<b>未記録</b>だった USD 建て約定の件数。
+    /// FR-06, FR-16, #611, IADR-0285 決定3: 認識時レートが<b>未記録</b>だった USD 建て約定の件数。
     /// <para>
     /// 0 より大きいとき <see cref="FxTranslation"/> は必ず <c>null</c>（未供給）であり、描画は件数を明記する
     /// （🔴 <b>黙って落とさない</b>——未記録を落として残りだけ集計すると別の数値になるため部分集計は出さない。

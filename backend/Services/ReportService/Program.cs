@@ -151,7 +151,7 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
     return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
 });
 
-// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0282 決定2: 為替差損益の**期末レート**
+// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0285 決定2: 為替差損益の**期末レート**
 // （期末日以前の直近の日次観測・1 USD あたりの円）。源は判断サービスと同じ為替レート源
 // （Fx:Provider＝日銀第一・FRED フォールバック・鮮度装飾。Shared.Infrastructure の factory）を同じ構成キーで組む。
 // HTTP 面は新設しない（判断サービスの状態は in-memory で照会先として権威がない・IADR-0199 決定1 と同じ理由）。
@@ -375,7 +375,7 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // #463, IADR-0181: 強制買戻しの推定の供給（権威源へ s2s 照会 or 未供給）。
     // **noop ではなく unsupplied** と自己申告する——空列を返す no-op と違い、こちらは null（未供給）を返す。
     .AddPortFromBaseUrl("buy-in-inferences", builder.Configuration["RiskManagement:BaseUrl"], "http", "unsupplied")
-    // #611, IADR-0282 決定2: 期末レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
+    // #611, IADR-0285 決定2: 期末レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
     // （構成不備で no-op へ倒れる場合は none＝為替差損益は未供給）。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
         builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))

@@ -18,7 +18,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         decimal? fxRateBaseToDisplay = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        // #611, IADR-0282 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する（EfPortfolioLedgerStore と同一の意味論）。
+        // #611, IADR-0285 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する（EfPortfolioLedgerStore と同一の意味論）。
         _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt, fxRateBaseToDisplay));
     }
 
@@ -70,7 +70,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 fill.DecisionId,
                 // #569, IADR-0271: **実際に発注したアダプタの発注先**（不明は null）。intent.Mode へ倒さない。
                 fill.Provider,
-                // #611, IADR-0282 決定1: 認識時レート（1 USD あたりの円）。未記録は null のまま（既定へ倒さない）。
+                // #611, IADR-0285 決定1: 認識時レート（1 USD あたりの円）。未記録は null のまま（既定へ倒さない）。
                 approval.FxRateBaseToDisplay));
         }
 

@@ -34,7 +34,7 @@ public class ProtectiveStopLedgerHandlersTests
         recorded!.PositionEffect.Should().Be(PositionEffect.Close);
         recorded.Side.Should().Be(TradeSide.Sell);
 
-        // #611, IADR-0282 決定1: 保護レグの承認行にも認識時レート（1 USD あたりの円）が固定され、レグの約定へ引き継がれる。
+        // #611, IADR-0285 決定1: 保護レグの承認行にも認識時レート（1 USD あたりの円）が固定され、レグの約定へ引き継がれる。
         // **これが OrderIntent に載せず承認記録の漏斗で解決する理由**——発注執行が再構成するレグにも同じ規則で入る。
         ledger.AppendFill(stopDecisionId, "stop-1", 10, 950m, Now);
         ledger.GetFills().Single().FxRateBaseToDisplay.Should().Be(150m);

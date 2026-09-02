@@ -3,7 +3,7 @@ title: インフラ・構成仕様書（AST）
 type: infra-spec
 status: draft
 created: 2026-07-19
-updated: 2026-08-21
+updated: 2026-09-03
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -52,9 +52,27 @@ issues: [#24, #282]
 
 | # | 稼働環境の計画 ADR ／ #24 の受け入れ基準 | 状況 | 根拠・後続 |
 | --- | --- | --- | --- |
-| 1 | ペーパー構成が Hetzner k3s で稼働し GitOps でデプロイ | **未充足（Tier 3）** | 宣言マニフェスト（`deploy/argocd`）の妥当性まで。実 k3s の実同期は実基盤 |
-| 2 | 認証情報が Git に含まれず Vault で管理 | **部分（受け口 opt-in）** | 受け口・opt-in 配線は本 PR。ストア（Vault/ESO）は MSP stand-up、実運用は Tier 3 |
-| 3 | リージョン選定根拠（実測値）の記録 | **未充足（Tier 3）** | レイテンシ実測は実 egress 依存。実測後、稼働環境の計画 ADR へ issue 起票で環流 |
+| 1 | ペーパー構成が Hetzner k3s で稼働し GitOps でデプロイ | **未充足（Tier 3）** | 宣言マニフェスト（`deploy/argocd`）の妥当性まで。実 k3s の実同期は実基盤。**2026-09-03 実測でマニフェスト自体の不具合を検出**（後述） |
+| 2 | 認証情報が Git に含まれず Vault で管理 | **部分（受け口 opt-in）** | 受け口・opt-in 配線は本 PR。ストア（Vault/ESO）は MSP stand-up、実運用は Tier 3。**2026-09-03 実測**: ローカル k3s では `externalSecrets.appSecrets.enabled=false`（既定 opt-in のまま）で `ExternalSecret` リソースは 0 件 |
+| 3 | リージョン選定根拠（実測値）の記録 | **未充足（Tier 3）** | レイテンシ実測は実 egress 依存。実測後、稼働環境の計画 ADR へ issue 起票で環流。**`scripts/measure-region-latency.sh` を用意した**（Hetzner 契約後に実行） |
+
+### 2026-09-03 実測（ローカル k3s・#24 棚卸し）
+
+- **ArgoCD Application が 2 件とも同期不能（`SYNC STATUS: Unknown`）。** `kubectl -n argocd get applications` は `ai-stock-trading` / `microservices-platform` の両方で HEALTH `Healthy`・SYNC `Unknown` を返し、`status.conditions` に
+  `Failed to load target state: ... deploy/helm/ai-stock-trading: app path does not exist` が記録されている。
+  **原因は `deploy/argocd/application.yaml` の `targetRevision: main` である。** 本リポジトリの `main` ブランチは
+  2026-07-08 の「Initial commit」1 件のみを持つほぼ空のブランチであり、`deploy/helm/ai-stock-trading` を含む
+  実装は既定ブランチ `develop` にしかない（`gh api repos/.../contents/...?ref=main` は 404、`?ref=develop` は
+  実在を返すことを実測）。**GitOps のブートストラップ検証（受け入れ基準1の一部）は、実 Hetzner 以前にこの
+  マニフェスト不整合で止まる。** 是正（`targetRevision` を実際にデプロイするブランチへ揃える、または
+  release ブランチ運用を先に決める）は Tier 3 着手前に直しておくべき軽微な修正である。
+- **可観測性スタックはローカルで健全に稼働している。** `kubectl -n platform-infra get pods` で
+  `prometheus` / `loki` / `tempo` / `grafana` / `otel-collector` / `alertmanager` / `vault` 等 15 Pod が
+  すべて `Running`（1/1）。ダッシュボード資産 `deploy/observability/dashboards/` に
+  `ai-stock-trading-overview.json` / `ai-stock-trading-business.json` の 2 件が存在する（業務メトリクス。#287）。
+- **`ExternalSecret` はローカル k3s に 0 件。** `helm get values ast -n ai-stock-trading -a` で
+  `externalSecrets.appSecrets.enabled: false` を確認（既定 opt-in のまま未有効化。秘匿情報は `ast-secrets`
+  の手動 Secret 経路が現行）。
 
 ### Tier 3（対象外・後続）に含めるもの
 

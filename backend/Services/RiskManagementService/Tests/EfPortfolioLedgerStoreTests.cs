@@ -237,7 +237,7 @@ public class EfPortfolioLedgerStoreTests
         fill.Provider.Should().Be(BrokerProvider.MoomooReal);
     }
 
-    // FR-06, FR-16, #611, IADR-0282 決定1: 承認時点の認識時レート（1 USD あたりの円）が approved_orders に永続化され、
+    // FR-06, FR-16, #611, IADR-0285 決定1: 承認時点の認識時レート（1 USD あたりの円）が approved_orders に永続化され、
     // 約定（LedgerFill）へ補完される。報告書の為替差損益の根である。
     [Fact]
     public void 承認_Intent_の認識時レートを約定に補完して返す()

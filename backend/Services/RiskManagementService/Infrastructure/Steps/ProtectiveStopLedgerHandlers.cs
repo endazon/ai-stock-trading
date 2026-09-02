@@ -13,7 +13,7 @@ namespace RiskManagementService.Infrastructure.Steps;
 // （AppendFill は承認 Intent 必須）、**損切りが成立しても台帳の建玉が減らない**。
 // 冪等は AppendApproval の DecisionId 冪等がそのまま担保する（再送・ガードの再巡回で二重計上しない）。
 //
-// FR-06, FR-16, #611, IADR-0282 決定1: 保護レグの承認行にも**認識時レート**（1 USD あたりの円）を固定する。
+// FR-06, FR-16, #611, IADR-0285 決定1: 保護レグの承認行にも**認識時レート**（1 USD あたりの円）を固定する。
 // 🔴 **これが OrderIntent に載せず承認記録の漏斗で解決する理由である**——保護レグの決済 Intent は発注執行が再構成し、
 // 発注執行は為替レート源を持たない。Intent に載せる設計では、機械執行の決済だけが恒久的に未記録になる。
 
@@ -50,7 +50,7 @@ public sealed class ProtectiveStopCoverageLostLedgerHandler(
         // 手仕舞いレグを伴う場合のみ承認行を追加する（EntryCancelled / None は追加すべきレグが無い）。
         if (message is { CloseDecisionId: { } closeDecisionId, CloseIntent: { } closeIntent })
         {
-            // #611, IADR-0282 決定1: レグが無いときは解決しない（外部照会を無駄に増やさない）。
+            // #611, IADR-0285 決定1: レグが無いときは解決しない（外部照会を無駄に増やさない）。
             var fxRateBaseToDisplay = await recognitionFxRate
                 .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 

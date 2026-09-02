@@ -97,7 +97,7 @@ builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.C
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<QuoteCache>();
 builder.Services.AddSingleton(TimeProvider.System);
-// FR-06, FR-16, FR-10, #611, ADR-0022, IADR-0282 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）の源。
+// FR-06, FR-16, FR-10, #611, ADR-0022, IADR-0285 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）の源。
 // 判断サービスと同じ為替レート源（Fx:Provider＝日銀第一・FRED フォールバック・鮮度装飾。Shared.Infrastructure の factory）を
 // 同じ構成キーで組む。**未設定/none/構成不備は no-op＝承認は未記録（null）のまま記録される**（承認を止めない・推定しない）。
 // 報告書はその期間の為替差損益を未供給とし、未記録の件数を明記する。
@@ -282,7 +282,7 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
-    // #611, IADR-0282 決定1: 認識時レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
+    // #611, IADR-0285 決定1: 認識時レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
     // （構成不備で no-op へ倒れる場合は none＝承認の認識時レートは未記録）。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
         builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions())));

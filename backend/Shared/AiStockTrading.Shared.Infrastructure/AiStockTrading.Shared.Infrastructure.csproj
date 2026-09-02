@@ -5,7 +5,7 @@
   <ItemGroup>
     <!-- IADR-0066: 既定 no-op の現在値ソースが差し替え漏れを警告するためのログ抽象（実装には依存しない）。 -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <!-- FR-10, ADR-0022, IADR-0282: 為替レート源（日銀・FRED）を共有化した。FRED は API キーをクエリで渡すため、
+    <!-- FR-10, ADR-0022, IADR-0285: 為替レート源（日銀・FRED）を共有化した。FRED は API キーをクエリで渡すため、
          OTel の HttpClient 計装を当該要求だけ抑止する（SuppressInstrumentationScope・IADR-0064）。 -->
     <PackageReference Include="OpenTelemetry" />
   </ItemGroup>

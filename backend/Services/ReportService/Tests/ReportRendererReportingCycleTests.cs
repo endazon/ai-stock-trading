@@ -92,7 +92,7 @@ public class ReportRendererReportingCycleTests
         ReportRenderer.RenderMarkdown(View(ReportKind.Weekly)).Should().NotContain("為替差損益");
     }
 
-    // #611, IADR-0282 決定5: 期末の再測定に使ったときは**期末レートと観測日を併記**する（どの日の終値で再測定したかを読める）。
+    // #611, IADR-0285 決定5: 期末の再測定に使ったときは**期末レートと観測日を併記**する（どの日の終値で再測定したかを読める）。
     [Theory]
     [InlineData(ReportKind.Daily)]
     [InlineData(ReportKind.Monthly)]
@@ -106,7 +106,7 @@ public class ReportRendererReportingCycleTests
         md.Should().Contain("為替差損益（独立表示） | +10,000 JPY（明細 1 件・期末レート 159.38 JPY/USD〔2026-08-26 観測〕）");
     }
 
-    // 🔴 #611, IADR-0282 決定3: 認識時レートが未記録の USD 建て約定で供給できないときは**件数を明記**する（黙って落とさない）。
+    // 🔴 #611, IADR-0285 決定3: 認識時レートが未記録の USD 建て約定で供給できないときは**件数を明記**する（黙って落とさない）。
     // 0 円とは書かない（「為替では損得が無かった」と読める）。
     [Theory]
     [InlineData(ReportKind.Daily)]

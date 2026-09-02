@@ -8,7 +8,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-16, #611, ADR-0022, IADR-0282 決定2: 期末レートの供給が**composition root で実際に結線されている**ことを固定する。
+// FR-06, FR-16, #611, ADR-0022, IADR-0285 決定2: 期末レートの供給が**composition root で実際に結線されている**ことを固定する。
 //
 // 🔴 **コンストラクタへ直接値を渡す単体テストでは、本番の配線が切れていても緑になる。**
 // ポートは安全既定（Unsupplied）を持つため、配線を落としてもアダプタ単体のテストは通り、

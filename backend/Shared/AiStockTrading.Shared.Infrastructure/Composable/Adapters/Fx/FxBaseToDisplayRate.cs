@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
-// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0282 決定1・決定2: 為替レート源の読み（JPY 1 単位あたりの USD 額）から
+// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0285 決定1・決定2: 為替レート源の読み（JPY 1 単位あたりの USD 額）から
 // **基準通貨（USD）1 単位あたりの表示通貨（JPY）額**＝「1 USD あたりの円」を導く純関数。
 //
 // 🔴 **認識時（リスク管理の承認記録）と期末（報告書の期末レート）の両方がこの 1 箇所を通る。**
