@@ -274,10 +274,11 @@ services:
       # Documents:BaseUrl を platform DocumentService へ向けると実 KB 保存へ切替（KnowledgeBaseWriterSink）。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP `microservices-platform` レルムの専用クライアント
+      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP の `platform` レルムの専用クライアント
       # （ai-stock-trading-kb-writer／service-account に platform-operator）で認証する。AST レルムの ServiceAuth__* は
       # issuer 不一致（401）・role 不一致（403）で KB 書き込みに使えないため（IADR-0093）。fail-safe: 空=トークン無し→401→未保存。
-      # Authority は MSP レルムを指す（例 http://keycloak:8080/realms/microservices-platform）。ClientSecret は Secret 経由（空既定）。
+      # #626, IADR-0283: Authority は MSP レルムを指す（例 http://keycloak:8080/realms/platform。
+      # `microservices-platform` という realm は存在しない）。ClientSecret は Secret 経由（空既定）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
@@ -413,8 +414,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       # FR-08, #11, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。fail-safe: 空=NoOp 検索（参考情報なし）。
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP `microservices-platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
-      # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。Authority は MSP レルムを指す。
+      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP の `platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
+      # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。
+      # #626, IADR-0283: Authority は MSP の `platform` レルムを指す（`microservices-platform` という realm は存在しない）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
