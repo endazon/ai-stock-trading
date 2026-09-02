@@ -626,7 +626,13 @@ jobs:
         run: |
           set -euo pipefail
           want=$(wc -l < shard.txt)
-          got=$(find cov -name coverage.cobertura.xml | wc -l)
+          # 🔴 **深さ 2 に限定する**（NFR, #596 / IADR-0277）。XPlat Code Coverage の収集器は
+          # `cov/<guid>/coverage.cobertura.xml` へ**テストプロジェクト 1 本につき 1 件**書く。
+          # 一方 **TRX ロガーは添付をすべて deployment root へ複製する** ——
+          # `cov/<user>_<machine>_<timestamp>/In/<machine>/coverage.cobertura.xml` が増える。
+          # 深さを見ずに数えると**同じレポートを二重に数える**（実測: 期待 6 件に対し 11 件）。
+          # この不変条件が無ければ、複製されたレポートがそのまま artifact へ載っていた。
+          got=$(find cov -mindepth 2 -maxdepth 2 -name coverage.cobertura.xml | wc -l)
           echo "期待 $want 件 / 実際 $got 件"
           if [ "$want" -ne "$got" ]; then
             echo "::error::シャード ${{ matrix.shard }}: カバレッジレポートが $want 件でなく $got 件である。テストが走っていないか二重に走っている。"
@@ -636,7 +642,11 @@ jobs:
         if: ${{ steps.gate.outputs.backend == 'true' }}
         with:
           name: coverage-shard-${{ matrix.shard }}
-          path: cov/**/coverage.cobertura.xml
+          # 🔴 `**` ではなく `*`（NFR, #596 / IADR-0277）。TRX ロガーが deployment root へ
+          # 複製した `.../In/<machine>/coverage.cobertura.xml` を**載せないため**である。
+          # 🔴 こちらの誤りは**上の不変条件と違って赤くならない** —— 集計は (ファイル, 行番号) の
+          # 和集合なので率は変わらず、**重複を黙って運ぶだけ**になる。だから glob 側にも書く。
+          path: cov/*/coverage.cobertura.xml
           retention-days: 3
           if-no-files-found: error
 

@@ -2070,6 +2070,29 @@ module.exports = ({ ok, assert }) => {
       assert.ok(!/dotnet test[^\n]*-m:1/.test(ciYml), '-m:1 が入っている（IADR-0277 で入れないと決めた）');
     });
 
+    // 🔴 TRX ロガーは**添付をすべて deployment root へ複製する**
+    // （`cov/<user>_<machine>_<ts>/In/<machine>/coverage.cobertura.xml`）。実測で、
+    // `--logger trx` を足した最初の CI が「期待 6 件に対し 11 件」で赤くなった。
+    //
+    // 🔴 **2 箇所のうち赤くなるのは片方だけである。**
+    //   - 件数の不変条件（`Verify report count`）→ **赤くなる**。深さ 2 に限定して直した。
+    //   - カバレッジ artifact の glob → **赤くならない**。集計は (ファイル, 行番号) の和集合なので
+    //     率は変わらず、**重複を黙って運ぶだけ**になる。だからこちらをテストで固定する。
+    ok('ci.yml: カバレッジ artifact が TRX の複製を拾う `**` glob へ戻っていない', () => {
+      const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.ok(
+        !ciYml.includes('path: cov/**/coverage.cobertura.xml'),
+        'cov/**/coverage.cobertura.xml は TRX が deployment root へ複製したレポートも拾う'
+      );
+      assert.ok(
+        ciYml.includes('path: cov/*/coverage.cobertura.xml'),
+        '収集器が書く深さ（cov/<guid>/coverage.cobertura.xml）に限定した glob が無い'
+      );
+      // 件数の不変条件も深さを見ていること（こちらは赤くなるが、対で読めるようにしておく）。
+      assert.match(ciYml, /find cov -mindepth 2 -maxdepth 2 -name coverage\.cobertura\.xml/,
+        '件数の不変条件が深さを限定していない');
+    });
+
     ok('ci.yml: 必須チェックのジョブ名を変えていない（backend-test / build-and-test）', () => {
       const ciYml = fsSt.readFileSync(pathSt.join(REPO_ROOT_ST, '.github', 'workflows', 'ci.yml'), 'utf8');
       assert.match(ciYml, /^ {2}backend-test:$/m, 'ジョブ backend-test が無い');

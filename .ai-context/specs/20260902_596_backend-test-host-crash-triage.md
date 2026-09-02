@@ -220,7 +220,83 @@ MSBuild ターゲットは**テストの失敗を戻り値で伝える**ので�
 
 ## 実測 4: CI 実走の記録
 
-<!-- PR 作成後に追記する -->
+### 🔴 前提: 競合のある PR では CI が 1 本も起動しない
+
+PR を作った直後、`gh pr checks` が `no checks reported` を返し、`gh run list --branch` も空だった。
+原因は**ブランチが `develop` と競合していた**ことである（`.ai-context/adr/README.md` の索引行。
+並行 PR が同じ末尾へ追記していた）。`pull_request` イベントのワークフローは `refs/pull/N/merge` を
+対象に走るため、**マージコミットを作れない＝ワークフローが 1 本も起動しない**。
+
+⚠️ **この状態は「CI が全部緑」と見分けが付きにくい** —— 赤い check が 1 つも無いからである。
+`gh pr view --json mergeable` が `CONFLICTING` を返していないかを先に確かめること。
+`origin/develop` をマージして解消したら（force push も `reset --hard` も使わずに済む）、
+同じ head で 5 本のワークフローが即座に queued になった。
+
+
+### run 1（33642953401 / head `38b7cdab`）: 🔴 計装そのものが既存の不変条件を壊した
+
+**4 シャードすべてが同じ理由で赤くなった。** 計装の副作用であり、**既存の不変条件が正しく捕まえた**。
+
+| シャード | 結果 | 期待レポート数 | 実際 |
+| --- | --- | ---: | ---: |
+| `backend-test (1)` | failure | 1 | **2** |
+| `backend-test (2)` | failure | 6 | **11** |
+| `backend-test (3)` | failure | 6 | **12** |
+| `backend-test (4)` | failure | 7 | **13** |
+
+#### 原因: TRX ロガーは添付をすべて deployment root へ複製する
+
+ローカルで再現して確かめた（3 プロジェクトの solution を `--collect:"XPlat Code Coverage" --logger trx` で 1 回実走）。
+
+```
+cov-dup/471cec17-.../coverage.cobertura.xml                        ← 収集器が書く本体（深さ 2）
+cov-dup/6a026c18-.../coverage.cobertura.xml
+cov-dup/a31a90b6-.../coverage.cobertura.xml
+cov-dup/endaz_ENDAZON-PC_2026-09-02_23_38_16/In/ENDAZON-PC/coverage.cobertura.xml   ← TRX の複製
+cov-dup/endaz_ENDAZON-PC_2026-09-02_23_38_17/In/ENDAZON-PC/coverage.cobertura.xml
+cov-dup/endaz_ENDAZON-PC_2026-09-02_23_38_18/In/ENDAZON-PC/coverage.cobertura.xml
+```
+
+XPlat Code Coverage の収集器は `cov/<guid>/coverage.cobertura.xml` へ**テストプロジェクト 1 本につき 1 件**書く。
+TRX ロガーは実行ごとに deployment root（`cov/<user>_<machine>_<timestamp>/In/<machine>/`）を作り、
+**添付をそこへ複製する**。深さを見ずに数えると同じレポートを二重に数える。
+（複製が本体と同数にならないことがある —— run 1 のシャード 2 は 6 → 11、シャード 4 は 7 → 13。
+タイミング依存であり、**複製の件数を不変条件にはできない**。）
+
+#### 修正と、2 箇所のうち片方だけが赤くなること
+
+| 箇所 | 直し方 | 誤ったときの倒れ方 |
+| --- | --- | --- |
+| `Verify report count` | `find cov -mindepth 2 -maxdepth 2 -name coverage.cobertura.xml` | 🔴 **赤くなる**（run 1 がまさにこれ） |
+| カバレッジ artifact の glob | `cov/**/...` → **`cov/*/...`** | ⚠️ **赤くならない。** 集計は (ファイル, 行番号) の**和集合**なのでカバレッジ率は変わらず、**重複を黙って運ぶだけ**になる |
+
+🔴 **赤くならない側があるため、glob は `scripts.repo.test.js` のテストで固定した**
+（`cov/**/coverage.cobertura.xml` へ戻すと落ちる）。
+**この不変条件（IADR-0208 決定 10 で「1 テストプロジェクト = 1 カバレッジレポート」として置かれたもの）が
+無ければ、複製されたレポートがそのまま artifact に載り、誰も気付かなかった。**
+
+#### 🔴 仮説 1（メモリ枯渇）の定量的な棄却
+
+計装の目的どおり、**推定ではなく実測で**棄却できるようになった（単位 MB・`nproc=4`）。
+
+| シャード | total | used（前 → 後） | free（前 → 後） | **available（前 → 後）** |
+| --- | ---: | --- | --- | --- |
+| 1 | 15,989 | 2,123 → 2,313 | 7,458 → 7,165 | **13,866 → 13,676** |
+| 2 | 15,993 | 1,926 → 2,051 | 9,172 → 8,946 | **14,067 → 13,941** |
+| 3 | 15,989 | 1,956 → 2,149 | 8,203 → 7,894 | **14,033 → 13,839** |
+| 4 | 15,989 | 1,952 → 2,200 | 8,204 → 7,838 | **14,037 → 13,788** |
+
+**available は最も低いシャードでも 13.4 GB（全体の 85%）を割らず、used のピークは 2.3 GB である。**
+枯渇には程遠い。仮説 1 は棄却で確定した。
+
+#### 計装そのものの健全性
+
+- `Blame: Attaching crash dump utility to process dotnet (NNNN).` がテストホストごとに出る
+  ＝ `--blame-crash` は Linux ランナーで**実際に有効になっている**（procdump 不在で無効化されていない）。
+- `Data collector 'Blame' message: All tests finished running, Sequence file will not be generated.`
+  ＝ **異常終了しなかったので Sequence.xml を書かない**。定常の費用がゼロであることの実測。
+
+<!-- run 2 / run 3 の記録をここへ追記する -->
 
 ## 計画書との差異
 
