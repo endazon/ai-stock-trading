@@ -1,7 +1,22 @@
+using System.Text;
+
 namespace AiStockTrading.Shared.KnowledgeBase;
 
 // FR-08, IADR-0069: KB 保存・RAG 取得の当リポ側 DTO（platform の Knowledge.Contracts へ直接依存しない疎な境界）。
 // platform 契約への写像は HTTP アダプタの内側にのみ閉じる。
+
+// FR-08, #565: 本文（Markdown）を POST /documents へ渡すときの上限判定。
+// **上限値は platform DocumentService.Domain.DocumentBodyIntake.MaxBytes（1 MB）と同値**——
+// 送信側で緩く・受信側で厳しいと、いつも 413 を引いて未保存に倒れる（無駄な往復）。
+// 判定は **UTF-8 のバイト数**で行う（文字数で測ると日本語本文が実サイズの 3 分の 1 で通り、上限が事実上 3 MB へ化ける。
+// platform 側と同じ理由）。純関数として切り出し、境界値をテストで固定する。
+public static class KnowledgeBodyLimits
+{
+    public const int MaxBytes = 1024 * 1024;
+
+    public static bool Exceeds(string? content) =>
+        !string.IsNullOrEmpty(content) && Encoding.UTF8.GetByteCount(content) > MaxBytes;
+}
 
 // FR-08: 機密区分（microservices-platform IADR-0047 の正準値。本リポの IADR-0047 とは別採番）。保存時に必須のため、未指定は既定 Internal を補完する。
 public static class KnowledgeConfidentiality
@@ -32,7 +47,9 @@ public static class KnowledgeAttributeDefaults
 }
 
 // FR-08: KB へ保存する 1 文書。Title/属性/タグはカタログ登録に用いる。
-//   Content     — 正規化 Markdown 本文（将来のオブジェクトストレージ取り込み用。現行の POST /documents は本文を受けない）。
+//   Content     — 正規化 Markdown 本文。#565, IADR-0272: POST /documents の Body として送る
+//                 （platform 側がオブジェクトストレージへ格納し Ingestion が索引する。IADR-0069 のスコープ境界は解消済み）。
+//                 1 MB（UTF-8 バイト数。KnowledgeBodyLimits.Exceeds）超は送らず、メタデータのみで登録する。
 //   SourceUri   — 元情報への参照（platform 側 OriginalUri に写像）。
 //   Confidentiality — 機密区分（未指定は既定 internal）。
 //   Attributes  — 追加の ABAC 属性（confidentiality は Confidentiality から補完し上書きしない）。
