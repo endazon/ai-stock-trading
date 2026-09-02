@@ -4,9 +4,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace TradeDecisionService.Infrastructure.ExternalServices;
 
-// FR-04, IADR-0039, IADR-0212, IADR-0272, #571: Decision:* から多数決・二段オーケストレーションの構成を読む。
+// FR-04, IADR-0039, IADR-0212, IADR-0276, #571: Decision:* から多数決・二段オーケストレーションの構成を読む。
 // VoteCount 未設定・不正値は Default（1 票）に倒す安全側フォールバック。
-// 🔴 EnableScreening は Default（false）ではなく true をベースラインにする（IADR-0272）——
+// 🔴 EnableScreening は Default（false）ではなく true をベースラインにする（IADR-0276）——
 // #335（IADR-0212）が層別 purpose を配線済みで、基盤 LlmGateway への trade-decision-screening 登録
 // （#571・microservices-platform 側）を前提に二段判断を既定で有効化する。構成で明示的に
 // Decision:EnableScreening=false を与えれば従来どおり無効化できる（上書き経路は維持）。
@@ -18,7 +18,7 @@ public static class DecisionOptionsLoader
         ArgumentNullException.ThrowIfNull(configuration);
 
         var section = configuration.GetSection("Decision");
-        // IADR-0272: 構成既定は DecisionOrchestrationOptions.Default そのものではなく EnableScreening=true。
+        // IADR-0276: 構成既定は DecisionOrchestrationOptions.Default そのものではなく EnableScreening=true。
         // Default レコード自体（VoteCount=1・スクリーニング無効）は単体テストの便宜的基準値として不変。
         var options = DecisionOrchestrationOptions.Default with { EnableScreening = true };
 

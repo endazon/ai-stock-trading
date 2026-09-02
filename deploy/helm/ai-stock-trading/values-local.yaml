@@ -165,7 +165,7 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
-      # FR-04, ADR-0014/0017, IADR-0212/0272, #571: 二段判断（一次スクリーニング=claude-haiku-4-5→二次本判断=
+      # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=claude-haiku-4-5→二次本判断=
       # claude-sonnet-5）を経路B で確認する。前提: 基盤 LlmGateway へ trade-decision-screening が登録済み
       # （microservices-platform 側 PR。#571）。未登録のままだと一次が本判断の割当と照合され「割当外」と
       # 判定され全サイクルが見送りへ倒れる（IADR-0212）。コード既定も true（#571）だが本表でも明示する。

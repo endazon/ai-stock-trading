@@ -1,5 +1,5 @@
 ---
-title: IADR-0272 Decision:EnableScreening の構成既定を反転し、反転範囲を構成ローダーに限定する
+title: IADR-0276 Decision:EnableScreening の構成既定を反転し、反転範囲を構成ローダーに限定する
 type: impl-adr
 status: Accepted
 related_ids: [FR-04, UC-01, NFR, ADR-0014, ADR-0017]
@@ -11,7 +11,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0017_llm-fallback-policy.md
 ---
 
-# IADR-0272: `Decision:EnableScreening` の構成既定を反転し、反転範囲を構成ローダーに限定する
+# IADR-0276: `Decision:EnableScreening` の構成既定を反転し、反転範囲を構成ローダーに限定する
 
 - 状態: Accepted
 - 日付: 2026-09-02

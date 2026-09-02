@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.8
+        uses: github/codeql-action/init@v4.37.9
         with:
           languages: ${{ matrix.language }}
           # NFR / IADR-0208 決定 4（改定 3）: **PR だけ build-mode: none にする。**
@@ -87,9 +87,9 @@ jobs:
       - name: Autobuild
         # 🔴 build-mode: autobuild のときだけ走らせる（IADR-0208 改定 3）。
         if: github.event_name != 'pull_request'
-        uses: github/codeql-action/autobuild@v4.37.8
+        uses: github/codeql-action/autobuild@v4.37.9
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.37.8
+        uses: github/codeql-action/analyze@v4.37.9
         with:
           category: "/language:${{ matrix.language }}"
 
