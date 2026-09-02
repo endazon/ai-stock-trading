@@ -157,6 +157,16 @@ const CRASH_HINT = [
   '  - VSTest の診断ログ（`--diag`）→ 同じ artifact に入っている',
 ].join('\n');
 
+// 🔴 壊れた TRX があるときに CRASH_HINT だけを出すと、「失敗 0 件だからホストを疑え」と
+// **読み手を誤った方向へ誘導する** —— 読めなかった TRX の中に本物の失敗が入っていたかもしれず、
+// そこは「0 件」ではなく「不明」である。本件（#596）が誤診で 1 日溶かしたのは
+// **不明を 0 と読んだ**ことによる。同じ取り違えを要約器の側で作らない。
+const MALFORMED_HINT = [
+  '🔴 ただし**読めなかった TRX が上にある**。「失敗 0 件」ではなく「**一部が不明**」である。',
+  '   読めなかったアセンブリに本物の失敗が入っていた可能性を先に潰すこと',
+  '   （artifact の TRX を直接開く）。ホストの異常終了を疑うのはそのあとである。',
+].join('\n');
+
 function formatReport(result) {
   const lines = [];
   const { files, assemblies, failures, malformed } = result;
@@ -181,6 +191,10 @@ function formatReport(result) {
   lines.push('');
   if (failures.length === 0) {
     lines.push(CRASH_HINT);
+    if (malformed.length > 0) {
+      lines.push('');
+      lines.push(MALFORMED_HINT);
+    }
   } else {
     lines.push(`## 実際に落ちたテスト（${failures.length} 件）`);
     for (const f of failures) {
@@ -312,6 +326,24 @@ function selfTest() {
     const report = formatReport(collect(dir));
     if (!report.includes('失敗したテストは 1 件も無い')) throw new Error('案内が出ていない');
     if (!report.includes('Sequence.xml')) throw new Error('次に見る成果物を挙げていない');
+  });
+
+  t('🔴 壊れた TRX があって失敗 0 件なら「0 件」ではなく「一部が不明」と案内する', () => {
+    const dir = path.join(tmp, 'green-malformed');
+    write(path.join('green-malformed', 'ok.trx'), trxFixture({ total: 3, passed: 3, failed: 0, results: '' }));
+    write(path.join('green-malformed', 'ng.trx'), 'garbage');
+    const report = formatReport(collect(dir));
+    if (!report.includes('一部が不明')) throw new Error('不明であることを案内していない');
+    // 走査自体が失敗しているので、緑で返してはならない。
+    assertEq(run(dir, { quiet: true }), 1, '終了コード');
+  });
+
+  t('壊れた TRX が無ければ「一部が不明」の案内は出さない', () => {
+    const dir = path.join(tmp, 'green-clean');
+    write(path.join('green-clean', 'a.trx'), trxFixture({ total: 3, passed: 3, failed: 0, results: '' }));
+    const report = formatReport(collect(dir));
+    if (report.includes('一部が不明')) throw new Error('案内が誤って出ている');
+    assertEq(run(dir, { quiet: true }), 0, '終了コード');
   });
 
   t('失敗があるときはホスト異常終了の案内を出さない', () => {
