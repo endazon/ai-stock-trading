@@ -91,7 +91,7 @@ docs/
 | `authz` | 権限・認可仕様書 | `docs/authz/`（未作成。必要になった時点で作る） |
 | `integration` | 外部連携仕様書 | `docs/integration/` |
 | `batch` | バッチ・ジョブ仕様書 | `docs/batch/`（未作成。必要になった時点で作る） |
-| `migration` | 移行仕様書 | `docs/migration/`（未作成。必要になった時点で作る） |
+| `migration` | 移行仕様書 | `docs/migration/`（再実装版への切替と 7 年保持データの保全 [`20260903_cutover-and-retention.md`](migration/20260903_cutover-and-retention.md) が初出） |
 | `error` | エラー・メッセージ仕様書 | `docs/errors/`（未作成。必要になった時点で作る） |
 | `infra` | インフラ・構成仕様書 | `docs/infra/` |
 | `runbook` | 運用 Runbook（運用仕様書の**下位**にあたる手順書） | `docs/operations/` |
