@@ -179,3 +179,15 @@ SC-02 / SC-03 のコンポーネントテスト・E2E のルートモックは�
 [IADR-0127]: ./IADR-0127_plan-conformance-known-deviation-registry.md
 [IADR-0143]: ./IADR-0143_coverage-denominator-generated-code-exclusion.md
 [IADR-0145]: ./IADR-0145_permission-denial-fixability-classification.md
+
+---
+
+## ［2026-09-03 追記］置き場の集約と変更領域判定の追随
+
+#529（PR #653）で領域別の置き場 `frontend/src/features/<領域>/contract-fixtures/` を
+`frontend/src/testing/contract-fixtures/` へ集約した。バックエンドの契約テスト 2 本が旧パスを読んだまま
+develop が赤になった（`detect-changed-areas.js` が frontend 専用の変更と判定し backend-test を skip したため
+PR では検知できなかった）。追随として (1) 両テストの相対パスを新置き場へ、(2) `detect-changed-areas.js` の
+FORCE に `contract-fixtures/` を含むパスを加えた（作業仕様書 `20260903_contract-fixture-path-after-layout.md`）。
+本 IADR の決定（フィクスチャは frontend 側に置く・更新は明示オプトイン）は変えない。
+

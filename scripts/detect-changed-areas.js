@@ -56,6 +56,10 @@ const SAFE = [
  */
 const FORCE = [
   /^backend\//,
+  // NFR, #653 の事故: 契約フィクスチャ（IADR-0146）は frontend 側に置くが backend の xUnit が読む。
+  // frontend だけの PR が置き場を動かしたとき frontend/ を SAFE と判定して backend-test を skip し、
+  // develop に「フィクスチャが無い」赤を持ち込んだ。パスに contract-fixtures/ を含む変更は backend を走らせる。
+  /contract-fixtures\//,
   // 🔴 `.editorconfig` は **`dotnet format --verify-no-changes` がまさに反応すべき入力**である。
   // 当初は「テスト結果は変わらない」として許可リストへ入れていたが、**`backend` フラグ 1 本で
   // `backend-test` と `lint` の両方を出し分けている**以上、その理由づけは lint 側に通らない
@@ -137,6 +141,9 @@ function selfTest() {
   };
 
   ok('docs だけなら skip', () => isSkip(['docs/a.md', 'docs/b/c.md']));
+  // #653: 契約フィクスチャの移動は frontend/ 配下でも backend を走らせる
+  ok('contract-fixtures は frontend 配下でも走らせる', () => isRun(['frontend/src/testing/contract-fixtures/risk-controls.settings.json']));
+  ok('contract-fixtures が混在しても走らせる', () => isRun(['frontend/src/x.ts', 'frontend/src/features/risk/contract-fixtures/x.json']));
   ok('作業仕様書・ADR だけなら skip', () => isSkip(['.ai-context/specs/x.md', '.ai-context/adr/IADR-0001_x.md']));
   ok('検査器だけなら skip', () => isSkip(['scripts/check-foo.js', 'scripts/README.md']));
   ok('フロントエンドだけなら skip', () => isSkip(['frontend/src/App.tsx']));
