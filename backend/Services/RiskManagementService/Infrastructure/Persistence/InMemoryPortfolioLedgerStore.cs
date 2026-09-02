@@ -11,10 +11,15 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     private readonly ConcurrentDictionary<Guid, ApprovalRecord> _approvals = new();
     private readonly ConcurrentDictionary<string, FillRecord> _fills = new();
 
-    public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt)
+    public void AppendApproval(
+        Guid decisionId,
+        OrderIntent intent,
+        DateTimeOffset approvedAt,
+        decimal? fxRateBaseToDisplay = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt));
+        // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する（EfPortfolioLedgerStore と同一の意味論）。
+        _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt, fxRateBaseToDisplay));
     }
 
     public bool AppendFill(
@@ -64,7 +69,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 // #563, IADR-0269: 判断記録（監査台帳の TradeDecisionMade）と突き合わせる相関キー。
                 fill.DecisionId,
                 // #569, IADR-0271: **実際に発注したアダプタの発注先**（不明は null）。intent.Mode へ倒さない。
-                fill.Provider));
+                fill.Provider,
+                // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。未記録は null のまま（既定へ倒さない）。
+                approval.FxRateBaseToDisplay));
         }
 
         return result;
@@ -100,7 +107,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return total;
     }
 
-    private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt);
+    private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt, decimal? FxRateBaseToDisplay = null);
 
     private sealed record FillRecord(
         Guid DecisionId,

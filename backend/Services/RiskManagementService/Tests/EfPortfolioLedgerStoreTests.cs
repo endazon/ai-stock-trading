@@ -236,4 +236,42 @@ public class EfPortfolioLedgerStoreTests
         fill.Quantity.Should().Be(100);
         fill.Provider.Should().Be(BrokerProvider.MoomooReal);
     }
+
+    // FR-06, FR-16, #611, IADR-0286 決定1: 承認時点の認識時レート（1 USD あたりの円）が approved_orders に永続化され、
+    // 約定（LedgerFill）へ補完される。報告書の為替差損益の根である。
+    [Fact]
+    public void 承認_Intent_の認識時レートを約定に補完して返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow, fxRateBaseToDisplay: 159.38m);
+            store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2).GetFills().Single().FxRateBaseToDisplay.Should().Be(159.38m);
+    }
+
+    // 🔴 否定形: 列追加前の行・承認時に解決できなかった行は **null のまま**返す（FxRateToBase の `?? 1m` とは違い、
+    // 既定へ倒す正当な値が無い）。推定で埋めない——報告書が「未記録 N 件」と明記する。
+    [Fact]
+    public void 認識時レートが未記録の承認はnullのまま返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var decisionId = Guid.NewGuid();
+
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            store.AppendApproval(decisionId, BuyIntent(10, 1_000m), DateTimeOffset.UtcNow);
+            store.AppendFill(decisionId, "ORD-1", 10, 1_050m, DateTimeOffset.UtcNow);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2).GetFills().Single().FxRateBaseToDisplay.Should().BeNull();
+    }
 }

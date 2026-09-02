@@ -1,12 +1,12 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
 // FR-10, #257, IADR-0107 決定5: FX レート源の選択。既定・構成不備はすべて no-op（実接続しない）へ倒す
 // （MarketDataSourceFactory・IADR-0068 と同形）。

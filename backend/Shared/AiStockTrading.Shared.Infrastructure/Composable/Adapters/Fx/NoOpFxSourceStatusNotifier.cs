@@ -1,7 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
-using TradeDecisionService.Features.TradeDecision;
 
-namespace TradeDecisionService.Infrastructure.ExternalServices;
+namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
 // FR-10, #381, IADR-0196: 可視化を配線しない構成での既定。
 //

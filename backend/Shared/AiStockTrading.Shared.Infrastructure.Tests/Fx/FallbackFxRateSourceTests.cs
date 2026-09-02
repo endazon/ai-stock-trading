@@ -1,11 +1,11 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
 // FR-10, FR-17, #381, ADR-0022 決定2, IADR-0194 決定3: 為替レート源の**順位つき**フォールバック。
 // 「第一が駄目なら次」であり、情報収集側の CompositeInformationSource（全ソースを合算）とは別物である。

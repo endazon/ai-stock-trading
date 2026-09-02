@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
 using Microsoft.Extensions.Logging;

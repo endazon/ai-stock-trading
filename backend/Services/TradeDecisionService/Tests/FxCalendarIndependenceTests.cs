@@ -1,5 +1,6 @@
 using System.Reflection;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
