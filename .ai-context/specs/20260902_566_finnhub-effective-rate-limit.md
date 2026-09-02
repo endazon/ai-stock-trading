@@ -20,7 +20,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-01（情報収集）
 - 関連 ADR: ADR-0020（データソース階層化とフォールバック）§結果 のフォローアップ
-- 計画書リンク: `../../../project-planning/projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md`
+- 計画書リンク: `projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md`（隣接クローン参照）
 - 起点 issue: [#566](https://github.com/endazon/ai-stock-trading/issues/566)（#336 の受け皿。実 API 疎通が要るため分離）
 
 ## 目的・背景
