@@ -2,7 +2,7 @@
 title: IADR 欠番 16 件の受容とルール改定
 type: spec
 status: draft
-related_ids: [IADR-0272]
+related_ids: [IADR-0280]
 author: Claude (worker)
 created: 2026-09-02
 updated: 2026-09-02

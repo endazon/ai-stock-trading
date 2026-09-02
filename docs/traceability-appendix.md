@@ -1,7 +1,7 @@
 <!-- trace:
 ids: [FR-10]
 adrs: [ADR-0029]
-iadrs: [IADR-0140, IADR-0272]
+iadrs: [IADR-0140, IADR-0280]
 specs: [20260902_573_iadr-gap-acceptance]
 issues: [#573, planning#202, planning#237, planning#244, planning#354, planning#395, planning#415]
 -->
