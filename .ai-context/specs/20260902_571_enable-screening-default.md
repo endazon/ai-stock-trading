@@ -44,7 +44,7 @@ IADR-0212 が導入した層別 purpose（`trade-decision` / `trade-decision-scr
   - `deploy/helm/ai-stock-trading/values.yaml` / `values-local.yaml`（明示的な `Decision__EnableScreening` 行を
     追加し、反転を運用設定としても可視化する）
   - `.ai-context/adr/IADR-0212_per-call-llm-purpose.md`（日付付き改訂節。基盤登録により「潜伏」が解消したことを追記）
-  - `.ai-context/adr/IADR-0276_...`（本作業の決定を記録する新規 IADR）
+  - `.ai-context/adr/IADR-0277_...`（本作業の決定を記録する新規 IADR）
 - 対象外（本リポジトリでは変更しない。microservices-platform 側の担当）:
   - 基盤 `Llm:Routing:PurposeModels` / `PurposeFallbackModels` の登録そのもの（別リポジトリ・別 PR）
   - `DecisionOrchestrationOptions.Default`（レコードの既定値そのもの）は**変更しない**。理由は次節。
@@ -97,8 +97,8 @@ LLM 呼び出しが 1 段増える変更であり、値を helm 側で追わず�
 3. `deploy/helm/ai-stock-trading/values.yaml` と `values-local.yaml` の `trade-decision.extraEnv` に
    `Decision__EnableScreening: "true"` を追加し、根拠（IADR-0212/0272・基盤登録前提・#571）をコメントに残す。
 4. `.ai-context/adr/IADR-0212_per-call-llm-purpose.md` に日付付き改訂節を追記（本文は書き換えない）。
-5. `.ai-context/adr/IADR-0276_...`（新規）: 本判断（判断1〜3）を記録する。
-6. `.ai-context/adr/README.md` の索引へ IADR-0276 の行を追加。
+5. `.ai-context/adr/IADR-0277_...`（新規）: 本判断（判断1〜3）を記録する。
+6. `.ai-context/adr/README.md` の索引へ IADR-0277 の行を追加。
 
 ## 受け入れ基準
 
@@ -110,7 +110,7 @@ LLM 呼び出しが 1 段増える変更であり、値を helm 側で追わず�
       無改修のまま緑
 - [ ] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` が通る
 - [ ] `values.yaml` / `values-local.yaml` に明示行が入り、コメントが基盤登録前提を明記する
-- [ ] IADR-0212 に日付付き改訂節、IADR-0276 が新規決定を記録し、索引に反映される
+- [ ] IADR-0212 に日付付き改訂節、IADR-0277 が新規決定を記録し、索引に反映される
 
 ## 確認手順（本リポジトリ完結。基盤側の実クラスタ確認は別 worker・MSP 側仕様書を参照）
 

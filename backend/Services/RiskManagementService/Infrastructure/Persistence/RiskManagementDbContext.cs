@@ -164,6 +164,10 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.Sequence).ValueGeneratedNever();
             e.Property(r => r.ApprovedBy).HasMaxLength(256).IsRequired();
             e.Property(r => r.Reason).HasMaxLength(1024).IsRequired();
+            // FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: 空売り解禁 verdict の相乗り列（nullable）。
+            // 段階遷移の行は null であり、**verdict 専用テーブルは作らない**（裁定「別記録にしない」）。
+            e.Property(r => r.ShortSellReleaseSourceFingerprint).HasMaxLength(512);
+            e.Property(r => r.ShortSellReleaseStrategyId).HasMaxLength(256);
         });
 
         // FR-20, FR-15, IADR-0070: 段階別実績（単一行）。未記録は fail-safe 既定を返す（ストア側）。
@@ -172,6 +176,8 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.ToTable("stage_performance");
             e.HasKey(r => r.Id);
             e.Property(r => r.Id).ValueGeneratedNever();
+            // FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 戦略識別子（既定は空文字＝同一性を名乗れない）。
+            e.Property(r => r.BacktestStrategyId).HasMaxLength(256).IsRequired();
         });
 
         // FR-20, FR-11, #387, IADR-0148: 発注審査の観測ログ。DecisionId が主キー＝**計上単位**

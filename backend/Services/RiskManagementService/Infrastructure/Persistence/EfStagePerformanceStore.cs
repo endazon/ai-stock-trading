@@ -41,6 +41,8 @@ public sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStage
         {
             row.BacktestPassed = performance.BacktestPassed;
             row.BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio;
+            row.BacktestIncludesShortSelling = performance.BacktestIncludesShortSelling;
+            row.BacktestStrategyId = performance.BacktestStrategyId;
             row.ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio;
             row.SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected;
             row.DailyLossLimitRespected = performance.DailyLossLimitRespected;
@@ -54,6 +56,8 @@ public sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStage
     {
         BacktestPassed = row.BacktestPassed,
         BacktestMaxDrawdownRatio = row.BacktestMaxDrawdownRatio,
+        BacktestIncludesShortSelling = row.BacktestIncludesShortSelling,
+        BacktestStrategyId = row.BacktestStrategyId,
         ObservedMaxDrawdownRatio = row.ObservedMaxDrawdownRatio,
         SlippageAndCostWithinExpected = row.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = row.DailyLossLimitRespected,
@@ -64,6 +68,8 @@ public sealed class EfStagePerformanceStore(RiskManagementDbContext db) : IStage
         Id = SingletonKeys.Id,
         BacktestPassed = performance.BacktestPassed,
         BacktestMaxDrawdownRatio = performance.BacktestMaxDrawdownRatio,
+        BacktestIncludesShortSelling = performance.BacktestIncludesShortSelling,
+        BacktestStrategyId = performance.BacktestStrategyId,
         ObservedMaxDrawdownRatio = performance.ObservedMaxDrawdownRatio,
         SlippageAndCostWithinExpected = performance.SlippageAndCostWithinExpected,
         DailyLossLimitRespected = performance.DailyLossLimitRespected,

@@ -158,6 +158,12 @@ builder.Services.AddScoped<RiskSettingsService>();
 // 結果として「検証用フラグで実弾段階の上限を動かさない」という不変条件（IADR-0108 決定4）は
 // 差し替え対象そのものが無いことで構造的に成立する。
 builder.Services.AddSingleton(RiskManagementService.Domain.TradingDefaults.CreateStagePolicy());
+// FR-20, ADR-0016 決定14, #388, IADR-0281 決定2: 空売り実弾解禁 verdict の**情報源フィンガープリント**。
+// 借株照会・維持率の供給アダプタ（#417 / #419）は IShortSellReleaseSource を実装して登録すること——
+// 登録しないとフィンガープリントが変わらず、**経路が変わったのに古い verdict が生き残る**。
+// 現時点で登録は 0 件であり、フィンガープリントは `borrow=none;margin=none` である（供給元が未実装であることの
+// 正しい表現。供給が結線された瞬間に値が変わり、既存 verdict は自動で失効する）。
+builder.Services.AddSingleton<ShortSellReleaseSourceInventory>();
 builder.Services.AddScoped<StageGateService>();
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の

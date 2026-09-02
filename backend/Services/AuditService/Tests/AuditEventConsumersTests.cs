@@ -193,7 +193,8 @@ public class AuditEventConsumersTests
 
         var session0 = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new BacktestEvaluated(
             Passed: true, MaxDrawdownRatio: 0.08m, DeflatedSharpe: 1.2,
-            ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow));
+            ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow,
+            IncludesShortSelling: false, StrategyId: "baseline-v1"));
         session0.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var stageCorr = AuditEntryFactory

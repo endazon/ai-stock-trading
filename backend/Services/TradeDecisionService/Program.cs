@@ -212,7 +212,7 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpWatchlistProvider(http, configFallback, sp.GetRequiredService<ILogger<HttpWatchlistProvider>>());
 });
-// FR-04, IADR-0039, IADR-0212, IADR-0276, #571: 多数決・二段オーケストレーションの構成（Decision:*）。
+// FR-04, IADR-0039, IADR-0212, IADR-0277, #571: 多数決・二段オーケストレーションの構成（Decision:*）。
 // 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。
 // 明示的に Decision:EnableScreening=false を与えれば従来どおり単発判断（IADR-0017）へ戻せる。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));

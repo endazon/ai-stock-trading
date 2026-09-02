@@ -150,11 +150,11 @@ trade-decision-screening  → claude-haiku-4-5  （フォールバック禁止�
 >
 > - microservices-platform 側で `trade-decision-screening`（`claude-haiku-4-5`）の登録 PR が進行し
 >   （AST#571・別 worker 担当）、登録が完了次第「潜伏していた」状態は解消する。
-> - AST 側は本追記と同日、[IADR-0276](IADR-0276_enable-screening-default-and-config-loader-baseline.md) により
+> - AST 側は本追記と同日、[IADR-0277](IADR-0277_enable-screening-default-and-config-loader-baseline.md) により
 >   `Decision:EnableScreening` の**構成既定**を false → true へ反転した（`DecisionOptionsLoader` の
 >   構成読み取りベースラインのみ。`DecisionOrchestrationOptions.Default` レコード自体は本 IADR が導入した
 >   層別配線の単体テスト基準値として不変のまま残す）。
-> - **現行の既定値は IADR-0276 を正とする。** 本 IADR の決定1〜4（purpose の呼び出しごと引数化・egress
+> - **現行の既定値は IADR-0277 を正とする。** 本 IADR の決定1〜4（purpose の呼び出しごと引数化・egress
 >   1 箇所での解決・`LlmUsage.Purpose` の必須化・composition root テスト）はいずれも改定しない。
 
 ## 関連
