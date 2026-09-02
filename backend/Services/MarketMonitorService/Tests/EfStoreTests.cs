@@ -26,7 +26,7 @@ public class EfStoreTests
         settings.Cooldown.Should().Be(MonitorDefaults.Cooldown);
     }
 
-    // #286, IADR-0281: 監視銘柄の構成シード（Monitor:SeedSymbols）。
+    // #286, IADR-0282: 監視銘柄の構成シード（Monitor:SeedSymbols）。
     private static MonitorSeedOptions SeedOptionsWith(params (string Symbol, Market Market)[] symbols) => new()
     {
         SeedSymbols = [.. symbols.Select(s => new MonitorSeedOptions.SeedSymbolEntry { Symbol = s.Symbol, Market = s.Market })],
@@ -115,7 +115,7 @@ public class EfStoreTests
         settings.MonitoredSymbols.Should().ContainSingle(s => s.Symbol == "AAPL");
     }
 
-    // #286, IADR-0281: 空行の再シード（GetSettings 内・未設定と同視した経路）で Version 楽観排他の競合が
+    // #286, IADR-0282: 空行の再シード（GetSettings 内・未設定と同視した経路）で Version 楽観排他の競合が
     // 起きても、row is null 分岐（真の未設定）と同じ規律で読み直して返す（AI コードレビュー指摘・PR #639）。
     // 「例外を捕捉して読み直すだけ」を実際に確認するため、競合相手（A）に**B からは見えない追加変更**
     // （MSFT の追加）を行わせる。もし B の競合処理が機能せず素朴に上書き保存されると、A の追加が

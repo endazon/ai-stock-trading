@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace MarketMonitorService.Infrastructure.Persistence;
 
-// FR-02, FR-13, #286, IADR-0281: watchlist の初回シード（構成ベース。利用者裁定 2026-09-02・案(b)）。
+// FR-02, FR-13, #286, IADR-0282: watchlist の初回シード（構成ベース。利用者裁定 2026-09-02・案(b)）。
 // TradeDecisionService の ConfigurationWatchlistProvider.WatchlistEntry（TradeCycle:Watchlist）と対称の
 // 構成形式（列挙は列挙名でバインド）。既定は空リスト＝構成未投入の環境（本番 values.yaml 含む）は
 // MonitorDefaults.CreateSettings() が従来どおり空でシードする（現行挙動のバイト等価）。

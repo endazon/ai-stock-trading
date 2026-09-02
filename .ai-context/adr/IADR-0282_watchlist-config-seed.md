@@ -1,5 +1,5 @@
 ---
-title: IADR-0281 watchlist の初回シードは構成（Monitor:SeedSymbols）から供給し、全削除の意思は永続フラグで区別する
+title: IADR-0282 watchlist の初回シードは構成（Monitor:SeedSymbols）から供給し、全削除の意思は永続フラグで区別する
 type: impl-adr
 status: Accepted
 related_ids: [FR-02, FR-13, UC-06, SC-02, IADR-0088, IADR-0095, IADR-0114]
@@ -9,7 +9,7 @@ updated: 2026-09-02
 plan_refs: []
 ---
 
-# IADR-0281: watchlist の初回シードは構成（Monitor:SeedSymbols）から供給し、全削除の意思は永続フラグで区別する
+# IADR-0282: watchlist の初回シードは構成（Monitor:SeedSymbols）から供給し、全削除の意思は永続フラグで区別する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。

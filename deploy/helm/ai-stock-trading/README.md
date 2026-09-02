@@ -49,7 +49,7 @@ kubectl -n ai-stock-trading get pods
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement`/`MarketMonitor` BaseUrl。
   監視銘柄（watchlist）は権威源（market-monitor）を `Monitor__SeedSymbols__0__*` で初回シードし
   （AAPL/UnitedStates）、trade-decision 側の `TradeCycle__Watchlist__0__*` は同じ銘柄をフォールバック用に
-  据える（#286 / IADR-0281。詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。
+  据える（#286 / IADR-0282。詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../.ai-context/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
@@ -234,7 +234,7 @@ ADR-0008（計画リポ） の撤退基準に該当すると、
 撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
 （実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
 
-### 監視銘柄（watchlist）の初回シードと全削除の尊重（#286 / IADR-0281）
+### 監視銘柄（watchlist）の初回シードと全削除の尊重（#286 / IADR-0282）
 
 trade-decision の `MarketMonitor__BaseUrl` を market-monitor へ結線すると、定時サイクルの監視銘柄は
 **権威源（market-monitor の watchlist）** から取得するようになる（[IADR-0095](../../../.ai-context/adr/IADR-0095_watchlist-authoritative-wiring.md)）。

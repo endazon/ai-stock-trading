@@ -6,7 +6,7 @@ namespace MarketMonitorService.Infrastructure.Persistence;
 
 // FR-03, FR-13, IADR-0012 踏襲: 監視設定ストアの EF 実装。単一行 JSON＋Version 楽観排他。
 // 未設定時は MonitorDefaults をシードして返す。
-// #286, IADR-0281: 「未設定」は構成（Monitor:SeedSymbols・seedOptions）でシードする。空既定（seedOptions
+// #286, IADR-0282: 「未設定」は構成（Monitor:SeedSymbols・seedOptions）でシードする。空既定（seedOptions
 // 未指定 or SeedSymbols 未投入）は従来どおり空でシードし現行挙動を保つ。「利用者が明示的に全削除した」状態
 // （行の ClearedByUserAt）は区別し、構成シードで巻き戻さない（IADR-0095 の設計思想を踏襲）。
 public sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db, MonitorSeedOptions? seedOptions = null)
@@ -108,7 +108,7 @@ public sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db, MonitorSee
             row.Version += 1;
             row.UpdatedAt = now;
 
-            // #286, IADR-0281: 「利用者が今まさに全削除した」遷移（非空→空）だけを記録する。既に空のまま
+            // #286, IADR-0282: 「利用者が今まさに全削除した」遷移（非空→空）だけを記録する。既に空のまま
             // 空で保存し直す場合（変動閾値・クールダウンの部分更新等）はタイムスタンプを上書きしない。
             // 1 件でも監視銘柄があれば「削除された」状態ではないので解除する（再追加で復活）。
             if (nowEmpty && previousCount > 0)

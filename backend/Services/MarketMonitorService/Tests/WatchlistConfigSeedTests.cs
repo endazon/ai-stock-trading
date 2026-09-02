@@ -8,7 +8,7 @@ using Xunit;
 
 namespace MarketMonitorService.Tests;
 
-// FR-02, FR-13, UC-06, #286, IADR-0281: watchlist の初回シード（構成 Monitor:SeedSymbols）と、
+// FR-02, FR-13, UC-06, #286, IADR-0282: watchlist の初回シード（構成 Monitor:SeedSymbols）と、
 // 「利用者が明示的に全削除した」意思の尊重（ClearedByUserAt）を、実際の変更経路
 // （MonitorWatchlistService.Add/Remove）を通して EfMonitoredSymbolStore（実体）で検証する。
 // EfStoreTests は永続層単体（GetSettings/Save の判定ロジック）を検証するのに対し、本ファイルは
