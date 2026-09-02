@@ -7,7 +7,7 @@ using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 
-namespace TradeDecisionService.Infrastructure.ExternalServices;
+namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
 // FR-10, FR-17, #257, #364, ADR-0004, IADR-0064/0106/0152: FRED の為替系列（既定 DEXJPUS＝円/ドル・営業日次）から
 // 直近の観測を取得する。取得できない場合はすべて null（＝レート無し）へ縮退し、呼び出し側が

@@ -1,12 +1,12 @@
 using System.Net;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
-using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
 // FR-10, FR-17, #381, ADR-0022 決定1, IADR-0194: 日銀「外国為替市況（日次）」の FX レート源を
 // fake HttpMessageHandler で検証する。実 API は叩かない（IADR-0049。外部依存で CI を落とさない）。

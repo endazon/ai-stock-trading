@@ -7,7 +7,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 
-namespace TradeDecisionService.Infrastructure.ExternalServices;
+namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
 // FR-10, FR-17, #381, ADR-0022 決定1, IADR-0194: 日本銀行 時系列統計データ API（無料・認証不要）から
 // 「外国為替市況（日次）」の**仲値**を取得する。為替レートの**第一の情報源**である（FRED はフォールバック）。

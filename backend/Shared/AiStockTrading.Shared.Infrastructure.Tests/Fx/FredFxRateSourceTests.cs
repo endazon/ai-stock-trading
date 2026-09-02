@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Net;
 using AiStockTrading.Shared.Contracts.Trading;
-using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
 // FR-10, FR-17, #257, #364, IADR-0107 決定5 / IADR-0152 決定2: FRED（DEXJPUS＝JPY per USD）の FX レート源を
 // fake HttpMessageHandler で検証する。実 FRED API は叩かない（IADR-0049）。

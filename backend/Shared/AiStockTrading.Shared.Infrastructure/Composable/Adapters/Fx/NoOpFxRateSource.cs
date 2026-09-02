@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 
-namespace TradeDecisionService.Infrastructure.ExternalServices;
+namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
 // FR-10, #257, #364, IADR-0107/0152: IFxRateSource の既定実装＝非基準通貨のレートを解決しない（null）。
 // 実接続は Fx:Provider の明示指定でのみ有効化する（既定では外部へ 1 リクエストも出さない）。
