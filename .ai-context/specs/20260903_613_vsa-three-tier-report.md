@@ -65,7 +65,13 @@ plan_refs:
     [IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) 決定 2）
   - 2 段目（集約）の切り直し
   - 振る舞い・公開面（ルート・認可・応答形）・DI 登録・wire 契約の変更
-  - 新規 IADR の起草・`.ai-context/adr/README.md`（索引）の変更（並行 PR との競合回避）
+  - 新規 IADR の起草（規則の正本は [IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md)。追記で足りる）
+
+> **索引（`.ai-context/adr/README.md`）について**: 当初は並行 PR との競合を避けるため触らない方針だったが、
+> **`scripts/check-adr-index-sync.js` が「本文を変えたのに索引行を変えていない」を CI で落とす**。
+> 追記 1 は索引行に「🔴 残余（裁定が要る）」として載っている事項を**解消**するものであり、
+> 索引を古いまま残すのは同検査器が防いでいる事故そのものである。**IADR-0289 の行 1 行だけ**を
+> 書き換えた（他の行は触っていない＝並行 PR の追記行とは競合しない）。
 
 ## 設計
 
@@ -120,7 +126,7 @@ plan_refs:
 | `Tests/Infrastructure/ExternalServices/` | 14 | `Http*Source` 系 10・`HttpReportNarrativeDrafter` 2・`PublishingLlmReportersTests`・`ReportKnowledgeMapperTests` |
 | `Tests/Hosted/` | 2 | `ReportAutoGenerationOptionsTests`・`ReportAutoGenerationServiceLoggingTests` |
 | `Tests/`（直下・据え置き） | 11 | `Program.cs` の配線テスト 8（`*WiringTests`）・`HealthEndpointTests`・テスト土台 2（`ReportWorkerWebApplicationFactory`・`TestAuthHandler`） |
-| `Tests/Golden/`（据え置き） | 6（`.md`） | ゴールデンのテストデータ。**1 バイトも変えない**。`ReportService.Tests.csproj` の Golden 複写指定はテストプロジェクト直下の相対指定であり、据え置きなら csproj を触らずに済む |
+| `Tests/Domain/Golden/` | 6（`.md`） | ゴールデンのテストデータ。**1 バイトも変えない**。当初は `Tests/` 直下へ据え置く設計だったが、`UPDATE_GOLDEN=1` の書き戻しが**テストのソース位置からの相対パス**であるため、テストと対で移す必要があった（§移送後の実測 の該当節・[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) §追記 3）。csproj の複写指定へ `Link` を足して出力先を `Golden\` に固定し、読み取りパスは移送前と同一に保つ |
 
 - **テストの名前空間は `ReportService.Tests` のまま据え置く**（決定 5）。
 - 3 段目の型（4 DTO）を名指しするテストは存在しない（実測: `PnlSummaryRequest` / `DraftReportRequest` /
@@ -130,15 +136,15 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [ ] `dotnet build backend/backend.slnx` が成功し、**警告 0・エラー 0**
-- [ ] `dotnet test backend/backend.slnx --filter "Category!=Integration"` の**テスト件数がアセンブリ単位で移送前と同数**
-- [ ] 端点の verb + path・所属グループ・**登録順序**の集合が移送前後で 1:1（機械 diff）
-- [ ] `AiStockTrading.Architecture.Tests` が緑（`Domain/` ソース走査件数が下限以上）
-- [ ] `dotnet format backend/backend.slnx --verify-no-changes` が差分なし
-- [ ] `node scripts/check-trace-blocks.js` / `check-test-traceability.js` / `check-doc-links.js` /
+- [x] `dotnet build backend/backend.slnx` が成功し、**警告 0・エラー 0**
+- [x] `dotnet test backend/backend.slnx --filter "Category!=Integration"` の**テスト件数がアセンブリ単位で移送前と同数**
+- [x] 端点の verb + path・所属グループ・**登録順序**の集合が移送前後で 1:1（機械 diff）
+- [x] `AiStockTrading.Architecture.Tests` が緑（`Domain/` ソース走査件数が下限以上）
+- [x] `dotnet format backend/backend.slnx --verify-no-changes` が差分なし
+- [x] `node scripts/check-trace-blocks.js` / `check-test-traceability.js` / `check-doc-links.js` /
       `check-adr-index-sync.js` が OK
-- [ ] `Tests/Golden/*.md` が 1 バイトも変わっていない（`git diff` に内容差分が現れない）
-- [ ] 公開面（ルート・認可ポリシー・応答形・`Program.cs` の DI 登録・wire 契約）に差分が無い
+- [x] ゴールデン `*.md` 6 件が 1 バイトも変わっていない（100% rename）（`git diff` に内容差分が現れない）
+- [x] 公開面（ルート・認可ポリシー・応答形・`Program.cs` の DI 登録・wire 契約）に差分が無い
 
 ## テスト方針
 
@@ -154,9 +160,89 @@ plan_refs:
 （一時テストで HTTP メソッド ＋ ルートパターン ＋ 認可ポリシー ＋ 登録順を出力し、差分を取る。
 一時テストはコミットしない）。
 
-## 移送後の実測
+## 移送後の実測（2026-09-03）
 
-<!-- 移送完了時に記入する -->
+移送前の基準は `develop` `b8367987`（＝第 1 弾マージ直後）。
+
+| 観点 | 移送前 | 移送後 |
+| --- | ---: | ---: |
+| `ReportService.Tests` | 749 | **749** |
+| `AiStockTrading.Architecture.Tests` | 87 | **87** |
+| 全アセンブリ合計（`Category!=Integration`・20 アセンブリ） | 5444 | **5444** |
+| `Features/Reports/` の操作ディレクトリ | 0 | **11** |
+| `Features/Reports/` 直下の `.cs`（2 段目） | 25 | **26**（＋`ReviewCommandRequest.cs`。11 操作の `Endpoint.cs` は 3 段目のため数に入らない） |
+| `Tests/` の `.cs`（総数） | 68 | **68** |
+| `Tests/` 直下の `.cs` | 68 | **11**（配線テスト 8・`HealthEndpointTests`・土台 2） |
+
+**アセンブリ別の件数は 20 アセンブリすべてで移送前と一致した**（`trx` の `Counters` を突き合わせ）。
+
+### 操作フォルダ（11・すべて `Endpoint.cs` 1 ファイル）
+
+`GetConfirmedDailyPolicy` / `ListReports` / `GetMonthlyBootstrap` / `SummarizePnl` / `DraftReport` /
+`GetReport` / `UpsertReportDraft` / `GetReportReview` / `PresentReport` / `RequestReportChanges` /
+`ConfirmReport`。うち 4 つ（`SummarizePnl` / `DraftReport` / `UpsertReportDraft` / `ConfirmReport`）は
+その操作専属の要求レコードを同居させる。
+
+### 端点集合の 1:1（機械 diff）
+
+移送前後それぞれで、`ReportWorkerWebApplicationFactory` が起こしたホストの `EndpointDataSource` を
+**実列挙**し、`登録順 → HTTP メソッド → ルートパターン → 認可ポリシー` の 4 列を出力して `diff` した
+（`/health/live` `/health/ready` `/internal/introspection` を含む全 14 行）。**差分なし。**
+出力は次のとおり（移送前・移送後で完全一致）。
+
+```text
+0		/health/live	[]
+1		/health/ready	[]
+2	GET	/internal/introspection	[]
+3	GET	/reports/daily-policy	[OwnerOrService]
+4	GET	/reports/	[OwnerOnly]
+5	GET	/reports/monthly-bootstrap	[OwnerOnly]
+6	POST	/reports/pnl-summary	[OwnerOnly]
+7	POST	/reports/{periodKey}/draft	[OwnerOnly]
+8	GET	/reports/{periodKey}	[OwnerOnly]
+9	PUT	/reports/{periodKey}	[OwnerOnly]
+10	GET	/reports/{periodKey}/review	[OwnerOnly]
+11	POST	/reports/{periodKey}/present	[OwnerOnly]
+12	POST	/reports/{periodKey}/request-changes	[OwnerOnly]
+13	POST	/reports/{periodKey}/confirm	[OwnerOnly]
+```
+
+列挙に使った一時テスト（`Tests/TempEndpointDumpTests.cs`）は**コミットしていない**。
+
+### 追随が要った参照側
+
+3 段目は 2 段目の入れ子であるため、**下ろしたファイル自身の `using` は 1 行も増えていない**
+（[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) 決定 4 の効き方が第 1 弾と同じであることの再確認）。
+
+| 追随した側 | 件数 |
+| --- | ---: |
+| `Program.cs` | **0 行**（`MapReportEndpoints()` を呼ぶだけで、DI 登録は 2 段目の型しか見ない） |
+| `ReportEndpoints.cs`（登録表が呼ぶ 11 操作の `using` ＋ 呼び出し） | 11 ＋ 11 行 |
+| テスト（3 段目の型を触るもの） | **0 ファイル** |
+| `ReportService.Tests.csproj`（ゴールデンの複写指定） | 1 箇所（`Link` の追加。§未決事項の追記 3） |
+
+### 検査器
+
+- `dotnet build backend/backend.slnx`: 成功・**警告 0・エラー 0**
+- `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし
+- `node scripts/check-trace-blocks.js`（41 件）／`check-doc-links.js`（630 件）／
+  `check-cross-repo-refs.js`（2025 件）／`check-plan-id-qualification.js`（2071 件）／
+  `check-adr-index-sync.js --range=origin/develop..HEAD`／`check-commit-messages.js`: いずれも OK
+- `node scripts/check-test-traceability.js`: **Windows ローカルでのみ [T1] が偽陽性になる**
+  （第 1 弾の作業仕様書 §移送後の実測 に同じ記録がある。`serviceTestDirs()` が
+  `fs.existsSync(<Svc>/tests)` で旧樹形を数えるが Windows のパスは大文字小文字を区別しないため
+  実在する `Tests/` が `tests/` として 11 件数えられる）。**本移送の前後で同じ**であり、
+  CI（Linux）では発生しない。本 PR が持ち込んだ違反ではない。
+
+### `Tests/Golden` の扱い（決定 5 の適用で判断が要った点）
+
+`ReportTemplateGoldenTests` は**読み取りを出力ディレクトリ**（`AppContext.BaseDirectory/Golden/`）から、
+**`UPDATE_GOLDEN=1` の書き戻しをソースツリー**（`CallerFilePath` からの相対 `Golden/`）へ行う。
+テストだけを `Tests/Domain/` へ移すと、更新モードが `Tests/Domain/Golden/` という存在しない場所へ
+**静かに**書く。そのためゴールデン 6 ファイルをテストと対で `Tests/Domain/Golden/` へ移し、
+csproj の複写指定へ `Link` を足して**出力先を `Golden\` に固定**した（読み取りパスは移送前と同一）。
+ゴールデンの中身は **1 バイトも変えていない**（`git diff` 上は 6 件すべて 100% rename）。
+この判断は [IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) §追記 3 として記録した。
 
 ## 計画書との差異
 
@@ -166,8 +252,11 @@ plan_refs:
 
 ## 未決事項
 
-- 🔴 **[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) §フォローアップ 1（HTTP 端点を持たない
-  5 サービスの扱い）は本 PR で裁定し、同 IADR へ日付付きで追記する**（案 B ＝「操作」は HTTP 端点に限る）。
-  `ReportService` 自身は HTTP 端点を 11 本持つため裁定の影響を受けないが、**後続の弾が読みを割らないよう
-  本 PR で確定させる**。
-- 併せて計画側（platform `ADR-0065` 決定 2 の「操作」の語義）へ明確化を環流する。
+- ✅ **解消**: [IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) §フォローアップ 1
+  （HTTP 端点を持たない 5 サービスの扱い）を本 PR で裁定し、同 IADR §追記 1（2026-09-03）として記録した
+  （案 B ＝「操作」は HTTP 端点に限る。`Backtest` / `InformationCollection` / `Notification` /
+  `OrderExecution` / `TradeDecision` は `Features/` の移送対象なし）。索引行も追随させた。
+- ✅ **解消**: 計画側（platform `ADR-0065` 決定 2 の「操作」の語義）への明確化依頼を
+  `project-planning` へ `feedback` issue で環流した（planning#527）。
+- **残る**: `Domain/` 欠け 3 サービスの是正（[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md)
+  §フォローアップ 3）は本 PR の対象外のまま。走査母集合が変わるため独立した PR で扱う。
