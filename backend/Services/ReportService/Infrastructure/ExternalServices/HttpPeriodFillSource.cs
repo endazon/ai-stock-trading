@@ -69,9 +69,13 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     // #569, IADR-0271: Provider（**実際に発注したアダプタの発注先**）もそのまま通す。
     // **欠落した応答（旧版 Risk・列追加前の行）は null のままにする**——承認 Intent の Mode や
     // 「たぶん SIMULATE」で埋めると、三者比較の列が水増しされる。不明はどちらの段にも算入しない。
+    //
+    // #611, IADR-0282: FxRateBaseToDisplay（承認時点の認識時レート＝1 USD あたりの円）もそのまま通す。
+    // **欠落した応答（旧版 Risk・列追加前の行・未解決の行）は null のままにする**——FxRateToBase の `1` と違い、
+    // 既定へ倒す正当な値が無い（1 円/ドルは事実ではない）。未記録は報告書が件数つきで明記する。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(
         r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,
-        r.DecisionId, r.Provider);
+        r.DecisionId, r.Provider, r.FxRateBaseToDisplay);
 
     // 権威源の LedgerFill と同形（camelCase・列挙は数値で往復する）。StopLossPrice は報告書の集計に不要のため持たない。
     private sealed record LedgerFillDto(
@@ -84,5 +88,6 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
         DateTimeOffset ExecutedAt,
         decimal FxRateToBase = 1m,
         Guid DecisionId = default,
-        BrokerProvider? Provider = null);
+        BrokerProvider? Provider = null,
+        decimal? FxRateBaseToDisplay = null);
 }

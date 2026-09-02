@@ -182,6 +182,37 @@ public class HttpPeriodFillSourceTests
         (await source.GetFillsAsync(From, To)).Should().BeEmpty();
     }
 
+    // 🔴 **肯定形（#611, IADR-0282 決定1）**: 承認時点の認識時レート（1 USD あたりの円）をそのまま通す。
+    // これが欠けると為替差損益が全期間で未供給になる。
+    [Fact]
+    public async Task 台帳の認識時レートをそのまま通す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"AAPL","market":1,"side":0,"positionEffect":0,"quantity":10,
+              "price":100,"executedAt":"2026-07-08T14:30:00+00:00","fxRateToBase":1,
+              "fxRateBaseToDisplay":159.38}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.FxRateBaseToDisplay.Should().Be(159.38m);
+    }
+
+    // 🔴 **否定形（#611, IADR-0282 決定3）**: 欠落した応答（旧版 Risk・列追加前の行・未解決の行）は **null のまま**にする。
+    // FxRateToBase の既定 1 と違い、既定へ倒す正当な値が無い（1 円/ドルは事実ではない）。推定で埋めない。
+    [Fact]
+    public async Task 認識時レートが無い応答はnullのまま通す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """
+            [{"symbol":"AAPL","market":1,"side":0,"positionEffect":0,"quantity":10,
+              "price":100,"executedAt":"2026-07-08T14:30:00+00:00","fxRateToBase":1}]
+            """);
+
+        var fills = await Source(handler).GetFillsAsync(From, To);
+
+        fills.Should().ContainSingle().Which.FxRateBaseToDisplay.Should().BeNull();
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         public Uri? LastUri { get; private set; }

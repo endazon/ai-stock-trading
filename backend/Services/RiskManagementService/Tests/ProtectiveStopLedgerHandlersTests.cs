@@ -20,31 +20,36 @@ public class ProtectiveStopLedgerHandlersTests
             qty, 950m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m);
 
     [Fact]
-    public void 逆指値レグの承認行が台帳へ記録される()
+    public async Task 逆指値レグの承認行が台帳へ記録される()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
-        var handler = new ProtectiveStopPlacedLedgerHandler(ledger, NullLogger<ProtectiveStopPlacedLedgerHandler>.Instance);
+        var handler = new ProtectiveStopPlacedLedgerHandler(ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopPlacedLedgerHandler>.Instance);
         var stopDecisionId = Guid.NewGuid();
         var closeIntent = CloseIntent();
 
-        handler.Handle(new ProtectiveStopPlaced(Guid.NewGuid(), stopDecisionId, "stop-1", closeIntent, 950m, 1, Now));
+        await handler.Handle(new ProtectiveStopPlaced(Guid.NewGuid(), stopDecisionId, "stop-1", closeIntent, 950m, 1, Now), CancellationToken.None);
 
         var recorded = ledger.FindApprovedIntent(stopDecisionId);
         recorded.Should().NotBeNull("逆指値の約定（OrderExecuted）を台帳が相関できるようにする");
         recorded!.PositionEffect.Should().Be(PositionEffect.Close);
         recorded.Side.Should().Be(TradeSide.Sell);
+
+        // #611, IADR-0282 決定1: 保護レグの承認行にも認識時レート（1 USD あたりの円）が固定され、レグの約定へ引き継がれる。
+        // **これが OrderIntent に載せず承認記録の漏斗で解決する理由**——発注執行が再構成するレグにも同じ規則で入る。
+        ledger.AppendFill(stopDecisionId, "stop-1", 10, 950m, Now);
+        ledger.GetFills().Single().FxRateBaseToDisplay.Should().Be(150m);
     }
 
     [Fact]
-    public void 逆指値レグの承認行は再送で二重計上されない()
+    public async Task 逆指値レグの承認行は再送で二重計上されない()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
-        var handler = new ProtectiveStopPlacedLedgerHandler(ledger, NullLogger<ProtectiveStopPlacedLedgerHandler>.Instance);
+        var handler = new ProtectiveStopPlacedLedgerHandler(ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopPlacedLedgerHandler>.Instance);
         var stopDecisionId = Guid.NewGuid();
         var evt = new ProtectiveStopPlaced(Guid.NewGuid(), stopDecisionId, "stop-1", CloseIntent(), 950m, 1, Now);
 
-        handler.Handle(evt);
-        handler.Handle(evt); // 再送
+        await handler.Handle(evt, CancellationToken.None);
+        await handler.Handle(evt, CancellationToken.None); // 再送
 
         // AppendApproval の DecisionId 冪等が担保する（二重の承認行は在庫の二重控除に見える）。
         ledger.FindApprovedIntent(stopDecisionId).Should().NotBeNull();
@@ -53,17 +58,17 @@ public class ProtectiveStopLedgerHandlersTests
     }
 
     [Fact]
-    public void 手仕舞いレグを伴う保護喪失は承認行が台帳へ記録される()
+    public async Task 手仕舞いレグを伴う保護喪失は承認行が台帳へ記録される()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
         var handler = new ProtectiveStopCoverageLostLedgerHandler(
-            ledger, NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
         var closeDecisionId = Guid.NewGuid();
 
-        handler.Handle(new ProtectiveStopCoverageLost(
+        await handler.Handle(new ProtectiveStopCoverageLost(
             Guid.NewGuid(), "AAPL", Market.UnitedStates,
             ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.PositionClosed,
-            10, closeDecisionId, CloseIntent(), Now));
+            10, closeDecisionId, CloseIntent(), Now), CancellationToken.None);
 
         ledger.FindApprovedIntent(closeDecisionId).Should().NotBeNull();
     }
@@ -71,17 +76,17 @@ public class ProtectiveStopLedgerHandlersTests
     [Theory]
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]
-    public void 手仕舞いレグの無い保護喪失は台帳へ何も書かない_否定形(ProtectiveStopRemediation remediation)
+    public async Task 手仕舞いレグの無い保護喪失は台帳へ何も書かない_否定形(ProtectiveStopRemediation remediation)
     {
         // EntryCancelled / None に決済レグは無い。無い承認行を書くと、存在しない決済が在庫を控除する。
         var ledger = new InMemoryPortfolioLedgerStore();
         var handler = new ProtectiveStopCoverageLostLedgerHandler(
-            ledger, NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
 
-        handler.Handle(new ProtectiveStopCoverageLost(
+        await handler.Handle(new ProtectiveStopCoverageLost(
             Guid.NewGuid(), "AAPL", Market.UnitedStates,
             ProtectiveStopLossCause.RejectedAtEntry, remediation,
-            10, CloseDecisionId: null, CloseIntent: null, Now));
+            10, CloseDecisionId: null, CloseIntent: null, Now), CancellationToken.None);
 
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(0);
     }

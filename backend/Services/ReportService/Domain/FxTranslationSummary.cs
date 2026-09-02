@@ -26,7 +26,16 @@ public sealed record FxTranslationEntry(decimal AmountBase, decimal RateAtRecogn
 /// </summary>
 /// <param name="TranslationGainJpy">為替差損益（円）。プラスは円換算で得、マイナスは損。</param>
 /// <param name="EntryCount">集計に用いた明細数。</param>
-public sealed record FxTranslationSummary(decimal TranslationGainJpy, int EntryCount);
+/// <param name="PeriodEndRate">
+/// FR-06, #611, IADR-0282 決定5: 期末の再測定に用いた期末レート（1 USD あたりの円）。期末に建玉が残らず期末レートを
+/// 使わなかった集計では <c>null</c>。報告書は値と観測日を併記し、「どの日の終値で再測定したか」を読み手が確かめられるようにする。
+/// </param>
+/// <param name="PeriodEndRateAsOf">期末レートの観測日（源の収録遅延により期末日以前になり得る）。</param>
+public sealed record FxTranslationSummary(
+    decimal TranslationGainJpy,
+    int EntryCount,
+    decimal? PeriodEndRate = null,
+    DateOnly? PeriodEndRateAsOf = null);
 
 // FR-16, #338, IADR-0251: 為替差損益の集計（純関数・決定的・副作用なし）。
 // 🔴 **LLM に計算させない。** 本関数が唯一の算出経路であり、散文（Narrative）はこの値に触れない。

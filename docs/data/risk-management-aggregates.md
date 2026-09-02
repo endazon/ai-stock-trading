@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0282]
 specs: []
-issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569]
+issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611]
 -->
 
 
@@ -145,6 +145,7 @@ Accepted / PartiallyFilled / Filled / Expired / Cancelled / **Rejected**（証�
 | DecisionId | Guid (PK) | 判断/機械執行イベント由来の一意キー（冪等）。通常経路・owner 手仕舞い・自動縮小に加え、保護逆指値レグ・その手仕舞いレグ（#331。発注執行が発注済みのレグを専用イベントで結線）の承認を記録 |
 | Symbol / Market / Side / ProductType / PositionEffect / Mode | 各列挙・文字列 | 承認 Intent の写し（約定に銘柄・方向・建玉効果を補完するための権威情報） |
 | Quantity / Price | int / decimal | 承認数量・参照価格 |
+| FxRateBaseToDisplay | decimal? | 承認時点の**認識時レート**＝基準通貨（USD）1 単位あたりの表示通貨（JPY）額（1 USD あたりの円）。報告書の為替差損益（認識時レートと期末レートの差）の根。`FxRateToBase`（ローカル通貨→USD）とは軸が違い、米国株では後者が 1 で円の情報を持たない。リスク管理サービスが承認記録時に為替レート源（判断サービスと同じ `Fx:*`）から解決して固定する。🔴 **`null` ＝本列の追加前の行、または承認時に為替レート源が解決できなかった行（未記録）であり、推定で埋めない。** 未記録の約定を含む期間の為替差損益は報告書が未供給とし、件数を明記する |
 | ApprovedAt | DateTimeOffset | 承認時刻 |
 
 `trade_fills`（約定。主キー `OrderId`）:

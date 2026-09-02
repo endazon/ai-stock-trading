@@ -53,6 +53,12 @@ services:
       #   実利は「Stage 1 到達後の乖離検出」と「将来 Stage 2/3 で最初から効いていること」。
       #   実際に起動したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
       - { name: WithdrawalEvaluation__Enabled, value: "true" }     # ← 撤退評価（既定 false＝本番既定）
+      # ============ 承認記録時の認識時レート（#611/IADR-0282 決定1）============
+      # 承認台帳へ「1 USD あたりの円」を固定する源。trade-decision と同じ源・同じ鍵（ast-secrets/fred-api-key）を再利用する。
+      # 空だと承認は未記録のまま記録され、報告書の為替差損益が恒久的に「供給されていません」になる。
+      - { name: Fx__Provider, value: "fred" }                     # ← 認識時レート源（既定 ""＝no-op＝未記録）
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -153,6 +159,12 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: Reports__NoResponseBehavior, value: "" }
+      # ============ 為替差損益の期末レート（#611/IADR-0282 決定2）============
+      # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
+      # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
+      - { name: Fx__Provider, value: "fred" }                     # ← 期末レート源（既定 ""＝no-op＝未供給）
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
   # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
   # FR-02/04/11, ADR-0003, IADR-0061/0088/0095/0099。LogPrompts は既定 ""（記録しない・安全側）。

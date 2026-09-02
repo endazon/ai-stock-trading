@@ -46,6 +46,9 @@ kubectl -n ai-stock-trading get pods
 - **為替換算（#257 / #364 / IADR-0107 / IADR-0152）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
   **日本株を取引するための必須前提**（下記「為替換算」参照）。未設定だと JPY 建て銘柄は LLM 呼び出し前に全件見送りになる。
   **#364 で基準通貨が USD へ移行したため、必須となる市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株は本キー無しで回る）。
+  **#611 / [IADR-0282](../../../.ai-context/adr/IADR-0282_fx-translation-supply-recognition-rate-and-period-end-rate.md) で
+  risk-management（承認記録時の認識時レート＝1 USD あたりの円）と report（為替差損益の期末レート）にも同じ `Fx__*` を置いた。**
+  空だと承認の認識時レートが未記録になり、報告書の為替差損益は「供給されていません（0 円ではありません）」のまま（推定で埋めない）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../.ai-context/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に

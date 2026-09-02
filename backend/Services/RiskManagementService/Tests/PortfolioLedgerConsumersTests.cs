@@ -23,11 +23,13 @@ public class PortfolioLedgerConsumersTests
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
     // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
-    private static Task<IHost> BuildHostAsync(InMemoryPortfolioLedgerStore ledger) =>
+    // #611, IADR-0282 決定1: 承認ハンドラは認識時レート（1 USD あたりの円）の解決器を要する。既定は 150 円/ドルを与える。
+    private static Task<IHost> BuildHostAsync(InMemoryPortfolioLedgerStore ledger, decimal? recognitionRate = 150m) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
                 opts.Services.AddSingleton<IPortfolioLedgerStore>(ledger);
+                opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver(recognitionRate));
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<OrderApprovedLedgerHandler>()
                     .IncludeType<OrderExecutedLedgerHandler>();
@@ -58,6 +60,27 @@ public class PortfolioLedgerConsumersTests
         // （月報 §5 の三者比較が SIMULATE 列と実弾列を分ける鍵）。
         // 承認 Intent の Mode は InternalPaper であり、そこへ倒れていないことも同時に固定する。
         fills[0].Provider.Should().Be(BrokerProvider.MoomooSimulate);
+        // #611, IADR-0282 決定1: 承認記録時に解決した認識時レート（1 USD あたりの円）が台帳の約定へ引き継がれる。
+        fills[0].FxRateBaseToDisplay.Should().Be(150m);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 #611, IADR-0282 決定1（否定形）: 為替レート源が解決できなくても**承認は記録される**（fail-safe）。
+    // 認識時レートは null（未記録）のまま——推定で埋めない。報告書はこの約定を含む期間を未供給にする。
+    [Fact]
+    public async Task 認識時レートが解決できなくても承認は記録され未記録のまま()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger, recognitionRate: null);
+
+        var decisionId = Guid.NewGuid();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(decisionId, BuyIntent(10, 1_000m), 10, DateTimeOffset.UtcNow));
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+            decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate));
+
+        var fill = ledger.GetFills().Should().ContainSingle().Subject;
+        fill.FxRateBaseToDisplay.Should().BeNull("解決できない認識時レートを推定で埋めない");
 
         await host.StopAsync();
     }

@@ -370,6 +370,12 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       - { name: Reports__NoResponseBehavior, value: "" }
+      # FR-06/16, #611, ADR-0022, IADR-0282 決定2: 為替差損益の**期末レート**（期末日以前の直近の日次観測・1 USD あたりの円）。
+      # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
+      # fail-safe: 空/none/未知/キー無し=no-op＝期末レート未供給＝為替差損益は「供給されていません（0 円ではありません）」。
+      - { name: Fx__Provider, value: "" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
@@ -382,6 +388,12 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # FR-06/16, #611, ADR-0022, IADR-0282 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）を承認台帳へ固定する源。
+      # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
+      # fail-safe: 空/none/未知/キー無し=no-op＝承認は未記録（null）のまま記録される（承認を止めない・推定しない）。
+      - { name: Fx__Provider, value: "" }
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
     extraEnv:

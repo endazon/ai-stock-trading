@@ -26,7 +26,13 @@ public sealed record LedgerFill(
     // 月報 §5 の三者比較（バックテスト / SIMULATE / 実弾）が段を分ける鍵である。
     // **既定 null＝発注先不明（本列の追加前に記録された行）。推定で埋めない**——
     // 不明の約定はどちらの段にも算入しない。
-    BrokerProvider? Provider = null)
+    BrokerProvider? Provider = null,
+    // FR-06, FR-16, #611, IADR-0282 決定1: 承認時点の**認識時レート**（基準通貨〔USD〕1 単位あたりの表示通貨〔JPY〕額
+    // ＝1 USD あたりの円）。報告書の為替差損益（認識時レートと期末レートの差）の根。FxRateToBase（ローカル通貨→USD）
+    // とは軸が違い、米国株では後者が 1 で円の情報を持たない。
+    // **既定 null＝未記録（列追加前の行・承認時に為替レート源が解決できなかった行）。推定で埋めない**——
+    // 報告書は当該約定を含む期間の為替差損益を未供給とし、未記録の件数を明記する。
+    decimal? FxRateBaseToDisplay = null)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;

@@ -5,6 +5,7 @@ using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
@@ -149,6 +150,28 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
     http.BaseAddress = uri;
     return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
 });
+
+// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0282 決定2: 為替差損益の**期末レート**
+// （期末日以前の直近の日次観測・1 USD あたりの円）。源は判断サービスと同じ為替レート源
+// （Fx:Provider＝日銀第一・FRED フォールバック・鮮度装飾。Shared.Infrastructure の factory）を同じ構成キーで組む。
+// HTTP 面は新設しない（判断サービスの状態は in-memory で照会先として権威がない・IADR-0199 決定1 と同じ理由）。
+//
+// **Fx:Provider 未設定/none/構成不備は Unsupplied（常に null）＝「供給されていません（0 円ではありません）」。**
+// 🔴 ここで 0 円へ倒さない。**USD 建ての建玉は本番で実際に存在し得る**ため、期末レート無しで 0 円と描けば
+// 「為替では損得が無かった」という端的な嘘になる。認識時レートは約定（period-fills）が運ぶ。
+builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
+builder.Services.AddHttpClient("fx", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<IFxRateSource>(sp => FxRateSourceFactory.Create(
+    sp.GetRequiredService<IOptions<FxOptions>>().Value,
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("fx"),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IPeriodEndFxRateSource>(sp =>
+    FxRateSourceFactory.ResolveProvider(sp.GetRequiredService<IOptions<FxOptions>>().Value) == FxRateSourceFactory.None
+        ? new UnsuppliedPeriodEndFxRateSource()
+        : new FxRateSourcePeriodEndFxRateSource(
+            sp.GetRequiredService<IFxRateSource>(),
+            sp.GetRequiredService<ILogger<FxRateSourcePeriodEndFxRateSource>>()));
 
 // FR-10, UC-06, #330, IADR-0133 決定7: 日報・月報へ載せる「維持率割れによる自動縮小」の記録。
 // 権威源への結線は発火元（維持率の供給・#331 / #342）と同時に行う。それまでの既定は空列＝「発動なし」であり、
@@ -352,6 +375,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // #463, IADR-0181: 強制買戻しの推定の供給（権威源へ s2s 照会 or 未供給）。
     // **noop ではなく unsupplied** と自己申告する——空列を返す no-op と違い、こちらは null（未供給）を返す。
     .AddPortFromBaseUrl("buy-in-inferences", builder.Configuration["RiskManagement:BaseUrl"], "http", "unsupplied")
+    // #611, IADR-0282 決定2: 期末レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
+    // （構成不備で no-op へ倒れる場合は none＝為替差損益は未供給）。
+    .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
+        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))
     .AddPort("report-auto-generation",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
             .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled")
