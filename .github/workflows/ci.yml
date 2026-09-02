@@ -552,6 +552,11 @@ jobs:
       - name: Test (shard ${{ matrix.shard }} / 4)
         id: test
         if: ${{ steps.gate.outputs.backend == 'true' }}
+        env:
+          # NFR, #596 フォローアップ / IADR-0277 §結果フォローアップ・[2026-09-03 追記]:
+          # `--diag` 単体の寄与を A/B 計測した結果、既定は無効にした（切り替え口は残す）。
+          # `"1"` にした PR を出せば再現できる。
+          VSTEST_DIAG: ""
         run: |
           set -euo pipefail
           # 🔴 分配は **LPT 貪欲**（重み＝走査で数えた `[Fact` / `[Theory` の件数）。
@@ -583,15 +588,24 @@ jobs:
           #     Sequence.xml と dump を残す（何も起きなければ書かないので定常の費用はほぼ無い）。
           #     #596 が求めた保険はここに掛かる。
           #   --diag : VSTest の診断ログ。失敗時のみ artifact として上げる。
+          #     🔴 [2026-09-03 追記] A/B 計測の結果、既定は無効（`VSTEST_DIAG` が空）にした
+          #     （NFR, #596 フォローアップ / IADR-0277 §結果フォローアップ）。狙う仮説
+          #     （テストホストの異常終了）は IADR-0277 の調査で実測により棄却済みであり、
+          #     計装は「棄却済みの仮説のために毎 run 払う」形になっていた。取り外さず
+          #     切り替え口として残す（`VSTEST_DIAG=1` で再現できる）。
           # 🔴 `-m:1`（プロジェクト間並列の停止）は入れない —— 恒久策として遅く、かつ
           # 原因が並列度ではないことが実測で判明している（IADR-0277）。
+          diag_args=()
+          if [ -n "${VSTEST_DIAG}" ]; then
+            diag_args=(--diag "${RUNNER_TEMP}/vstest-diag/log.txt")
+          fi
           dotnet test shard.slnx --no-build --configuration Release \
             --filter "Category!=Integration" \
             --collect:"XPlat Code Coverage" \
             --results-directory "$PWD/cov" \
             --logger trx \
             --blame-crash --blame-hang --blame-hang-timeout 10m \
-            --diag "${RUNNER_TEMP}/vstest-diag/log.txt" \
+            "${diag_args[@]}" \
             --verbosity normal
       # 🔴 **失敗したテストを名指しする**（NFR, #596 / IADR-0277）。
       # TRX は構造化データなので並列の割り込みを受けない。ここを読めば

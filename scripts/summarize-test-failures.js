@@ -154,7 +154,7 @@ const CRASH_HINT = [
   '  - テストホストの異常終了（クラッシュ / ハング）→ artifact の `*.Sequence.xml` と dump を見る',
   '  - `dotnet test` 自体の失敗（引数・solution の生成・ビルド）→ ジョブログの Test ステップ冒頭',
   '  - Test ステップより後のステップの失敗 → どのステップが赤いかを確認する',
-  '  - VSTest の診断ログ（`--diag`）→ 同じ artifact に入っている',
+  '  - VSTest の診断ログ（`--diag`）→ 既定は無効。`ci.yml` の `VSTEST_DIAG` を "1" にした PR を出して再現させる',
 ].join('\n');
 
 // 🔴 壊れた TRX があるときに CRASH_HINT だけを出すと、「失敗 0 件だからホストを疑え」と
