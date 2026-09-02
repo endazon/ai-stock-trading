@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import type {
   RiskStatusView,
@@ -21,6 +19,12 @@ import {
   transitionKindLabel,
   withdrawalReasonLabel,
 } from '../risk/contracts';
+import {
+  useRiskSettingsHistory,
+  useRiskStatus,
+  useShortSelling,
+  useStageGate,
+} from '../risk/queries';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { PAPER_REFERENCE_LABEL } from '../shared/paperMode';
 import type { ShortSellingState } from './ShortSellingStatusSection';
@@ -36,67 +40,47 @@ type StageGateState = 'loading' | 'ok' | 'unavailable';
 type HistoryState = 'loading' | 'ok' | 'unavailable';
 
 export function ControlStatusPage() {
-  const [status, setStatus] = useState<Status>('loading');
-  const [view, setView] = useState<RiskStatusView | null>(null);
-  const [gateState, setGateState] = useState<StageGateState>('loading');
-  const [gate, setGate] = useState<StageGateStatus | null>(null);
+  // IADR-0286: 取得は TanStack Query（`../risk/queries`）が持つ。**領域ごとに別のクエリのままにする**
+  // ——一方の失敗が他方を巻き込まない縮退（下の各 state 導出）はクエリの分割がそのまま担う。
+  const statusQuery = useRiskStatus();
+  const stageGateQuery = useStageGate();
   // FR-20 (2), SC-03, #334: 発注先の変更履歴（日時・変更前後・理由）。設定変更履歴から発注先だけを絞る。
-  const [historyState, setHistoryState] = useState<HistoryState>('loading');
-  const [providerHistory, setProviderHistory] = useState<SettingsChangeEntry[]>([]);
+  const historyQuery = useRiskSettingsHistory();
   // FR-10, SC-03, ADR-0016 決定15, #340: 維持率・空売りの現況（本画面の最上位）。
-  const [shortSellingState, setShortSellingState] = useState<ShortSellingState>('loading');
-  const [shortSelling, setShortSelling] = useState<ShortSellingStatusView | null>(null);
+  const shortSellingQuery = useShortSelling();
 
-  async function loadStatus(): Promise<void> {
-    try {
-      const data = await apiFetch<RiskStatusView>('/risk-controls/status');
-      setView(data);
-      setStatus('ok');
-    } catch (e: unknown) {
-      // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側に縮退。
-      setStatus(e instanceof ApiError && e.kind === 'notFound' ? 'notFound' : 'error');
-    }
-  }
-
-  async function loadStageGate(): Promise<void> {
-    try {
-      const data = await apiFetch<StageGateStatus>('/risk-controls/stage-gate');
-      setGate(data);
-      setGateState('ok');
-    } catch {
-      // 段階ゲートの取得不能はその領域のみ縮退（統制状態と疎結合）。
-      setGateState('unavailable');
-    }
-  }
-
-  async function loadProviderHistory(): Promise<void> {
-    try {
-      const data = await apiFetch<SettingsChangeEntry[]>('/risk-controls/settings/history');
-      setProviderHistory((data ?? []).filter((h) => h.changeType === CHANGE_TYPE_BROKER_PROVIDER));
-      setHistoryState('ok');
-    } catch {
-      // 履歴の取得不能はその領域のみ縮退（統制状態・段階ゲートと疎結合）。
-      setHistoryState('unavailable');
-    }
-  }
-
-  async function loadShortSelling(): Promise<void> {
-    try {
-      const data = await apiFetch<ShortSellingStatusView>('/risk-controls/short-selling');
-      setShortSelling(data);
-      setShortSellingState('ok');
-    } catch {
-      // 取得不能はその領域のみ縮退（統制状態・段階ゲートと疎結合）。**「問題なし」に見せない。**
-      setShortSellingState('unavailable');
-    }
-  }
-
-  useEffect(() => {
-    void loadStatus();
-    void loadStageGate();
-    void loadProviderHistory();
-    void loadShortSelling();
-  }, []);
+  const view: RiskStatusView | null = statusQuery.data ?? null;
+  // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側に縮退。
+  const status: Status = statusQuery.isPending
+    ? 'loading'
+    : statusQuery.isError
+      ? statusQuery.error instanceof ApiError && statusQuery.error.kind === 'notFound'
+        ? 'notFound'
+        : 'error'
+      : 'ok';
+  // 段階ゲートの取得不能はその領域のみ縮退（統制状態と疎結合）。
+  const gate: StageGateStatus | null = stageGateQuery.data ?? null;
+  const gateState: StageGateState = stageGateQuery.isPending
+    ? 'loading'
+    : stageGateQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  // 履歴の取得不能はその領域のみ縮退（統制状態・段階ゲートと疎結合）。
+  const historyState: HistoryState = historyQuery.isPending
+    ? 'loading'
+    : historyQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  const providerHistory: SettingsChangeEntry[] = (historyQuery.data ?? []).filter(
+    (h) => h.changeType === CHANGE_TYPE_BROKER_PROVIDER,
+  );
+  // 取得不能はその領域のみ縮退（統制状態・段階ゲートと疎結合）。**「問題なし」に見せない。**
+  const shortSelling: ShortSellingStatusView | null = shortSellingQuery.data ?? null;
+  const shortSellingState: ShortSellingState = shortSellingQuery.isPending
+    ? 'loading'
+    : shortSellingQuery.isError
+      ? 'unavailable'
+      : 'ok';
 
   return (
     <section>

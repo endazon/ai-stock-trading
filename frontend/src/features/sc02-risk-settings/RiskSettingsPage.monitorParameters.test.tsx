@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
@@ -65,7 +66,7 @@ beforeEach(() => {
 describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管）', () => {
   it('変動閾値とクールダウンを SC-02 で閲覧できる', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     // 現在値（比率 0.03 → 3%／TimeSpan "00:15:00" → 0.25 時間）が表示される。
     expect(await screen.findByLabelText('変動閾値 %')).toHaveValue(3);
@@ -80,7 +81,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   // SC-01 §2 を消したうえで SC-02 に作り直したら、裁定に反したことになる。
   it('収集間隔の入力欄は SC-02 に存在しない', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByLabelText('変動閾値 %');
 
     expect(screen.queryByLabelText(/収集間隔/)).not.toBeInTheDocument();
@@ -95,7 +96,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
 
   it('変動閾値は理由が無いと保存できない', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '変動閾値の変更' });
 
     expect(within(form).getByRole('button', { name: '変動閾値を保存' })).toBeDisabled();
@@ -104,7 +105,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('変動閾値は百分率で入力し比率で送る', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '変動閾値の変更' });
 
     await user.clear(within(form).getByLabelText('変動閾値 %'));
@@ -124,7 +125,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it.each(['0', '-1', '51'])('値域外の変動閾値（%s）は保存できずサーバへ送らない', async (value) => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '変動閾値の変更' });
 
     await user.type(within(form).getByLabelText('変動閾値の変更理由'), '検証');
@@ -141,7 +142,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('境界値（0.01% と 50%）は保存できる', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '変動閾値の変更' });
 
     await user.type(within(form).getByLabelText('変動閾値の変更理由'), '境界の検証');
@@ -157,7 +158,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
 
   it('クールダウンは理由が無いと保存できない', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'クールダウンの変更' });
 
     expect(within(form).getByRole('button', { name: 'クールダウンを保存' })).toBeDisabled();
@@ -166,7 +167,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('クールダウンは時間で入力し TimeSpan 文字列で送る', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'クールダウンの変更' });
 
     await user.clear(within(form).getByLabelText('クールダウン 時間'));
@@ -185,7 +186,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('クールダウンの 0（抑制なし）は保存できる', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'クールダウンの変更' });
 
     await user.clear(within(form).getByLabelText('クールダウン 時間'));
@@ -199,7 +200,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
     '値域外のクールダウン（%s）は保存できずサーバへ送らない', async (value) => {
       mockBff();
       const user = userEvent.setup();
-      render(<RiskSettingsPage />);
+      renderWithProviders(<RiskSettingsPage />);
       const form = await screen.findByRole('form', { name: 'クールダウンの変更' });
 
       await user.type(within(form).getByLabelText('クールダウンの変更理由'), '検証');
@@ -213,7 +214,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('クールダウンの 24 時間ちょうどは保存できる（上限は含む）', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'クールダウンの変更' });
 
     await user.type(within(form).getByLabelText('クールダウンの変更理由'), '境界の検証');
@@ -229,7 +230,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
 
   it('市場監視パラメータの変更履歴を表示する（監視銘柄の履歴とは別の表）', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     const table = await screen.findByRole('table', { name: '市場監視パラメータの変更履歴' });
     // 変動閾値・クールダウンの変更だけを出す（監視銘柄の追加・削除は隣の節の関心）。
@@ -239,7 +240,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   it('楽観排他の競合（409）は自動再試行せず再読込を促す', async () => {
     mockBff({ put: 'conflict' });
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '変動閾値の変更' });
 
     await user.type(within(form).getByLabelText('変動閾値の変更理由'), '競合検証');
@@ -255,7 +256,7 @@ describe('SC-02 市場監視パラメータ（#423・SC-01 §2 からの移管�
   // 別サービス（MarketMonitorService）の障害をリスク設定の障害にしない（fail-safe な疎結合）。
   it('市場監視パラメータの取得失敗は当該領域のみ縮退する', async () => {
     mockBff({ settings: 'fail', history: 'fail' });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     // #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つであり、規約の文言で示す。
     // 文言は `<strong>` を挟んで複数のテキストノードへ分かれるため、要素の textContent で検証する。

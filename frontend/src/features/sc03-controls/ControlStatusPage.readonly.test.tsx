@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 
 // SC-03, FR-10, FR-20, UC-06, #340: **参照専用性の否定形。**
 //
@@ -33,7 +34,7 @@ beforeEach(() => {
 
 describe('SC-03 参照専用性（#340）', () => {
   it('入力要素（テキスト・数値・チェックボックス・ラジオ・選択）を 1 つも持たない', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     // 全領域が描画されるまで待つ（描画前に数えると常に 0 で緑になる＝検査が死ぬ）。
     await screen.findByRole('table', { name: '上限使用率' });
     await screen.findByRole('table', { name: '取引統制（優先順位順）' });
@@ -49,7 +50,7 @@ describe('SC-03 参照専用性（#340）', () => {
   });
 
   it('変更・統制操作のボタンを 1 つも持たない', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('table', { name: '上限使用率' });
 
     // details/summary は開閉のみで副作用が無いため button ロールを持たない。
@@ -58,7 +59,7 @@ describe('SC-03 参照専用性（#340）', () => {
   });
 
   it('参照専用であること・変更は SC-02 であることを画面に明記する', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(
       await screen.findByText(/発注先の変更は「リスク設定」画面（SC-02）で行います。本画面は参照専用です。/),
@@ -69,7 +70,7 @@ describe('SC-03 参照専用性（#340）', () => {
   });
 
   it('書き込み系の API を一切呼ばない（GET のみ）', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('table', { name: '上限使用率' });
 
     // apiFetch の第 2 引数（method 等）を渡している呼び出しが無い＝すべて既定の GET である。

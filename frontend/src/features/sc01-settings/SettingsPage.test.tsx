@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
@@ -46,7 +47,7 @@ beforeEach(() => {
 
 describe('SettingsPage (SC-01, FR-17)', () => {
   it('renders current assumptions and version', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     expect(await screen.findByRole('heading', { name: '設定' })).toBeInTheDocument();
     // 読み込み完了（フォーム描画）を待ってから現在値を検証する（見出しは読み込み中も描画されるため待受にしない）。
     expect(await screen.findByText(/現在のバージョン:\s*3/)).toBeInTheDocument();
@@ -55,7 +56,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
   });
 
   it('lists change history (newest first) and degrades when history fails', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     const table = await screen.findByRole('table', { name: '変更履歴' });
     const rows = within(table).getAllByRole('row');
     // 先頭はヘッダ行、次にデータ行（新しい順）。
@@ -68,13 +69,13 @@ describe('SettingsPage (SC-01, FR-17)', () => {
       if (path === '/assumptions/history') throw new ApiError('server', 'boom', 500);
       return SAMPLE;
     });
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     expect(await screen.findByText('変更履歴は利用できません。')).toBeInTheDocument();
   });
 
   it('requires a reason before saving (save disabled until reason entered)', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     const save = screen.getByRole('button', { name: '保存' });
     expect(save).toBeDisabled();
@@ -84,7 +85,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 
   it('disables save and warns when a numeric field is empty or non-numeric', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     const save = screen.getByRole('button', { name: '保存' });
@@ -97,7 +98,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 
   it('submits PUT with assumptions, expectedVersion and reason', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -113,7 +114,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 
   it('reflects an edited field in the submitted payload', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     const taxInput = screen.getByLabelText('譲渡益税率');
     await user.clear(taxInput);
@@ -133,7 +134,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
       if (path === '/assumptions' && req?.method === 'PUT') throw new ApiError('conflict', '競合', 409);
       return SAMPLE;
     });
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '税率調整');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -152,7 +153,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
         throw new ApiError('validation', '入力エラー', 400, ['理由は必須です']);
       return SAMPLE;
     });
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
     await user.type(screen.getByLabelText('変更理由'), '不正値');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -170,7 +171,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
       if (path === '/assumptions/history') return HISTORY;
       return { ...SAMPLE, version: 0, isResolved: false };
     });
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     const notice = screen.getByText(/全体前提条件を/);
@@ -182,7 +183,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 
   it('does not warn about supply when the server declares the assumptions resolved', async () => {
     // 逆方向の否定形。供給があるのに未供給の警告を出すと、警告が常時出て誰も読まなくなる。
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     expect(screen.queryByText(/全体前提条件を/)).not.toBeInTheDocument();
@@ -199,7 +200,7 @@ describe('SettingsPage (SC-01, FR-17)', () => {
 // 裁定に反する実装が「機能追加」の顔をして入り込む経路を、ここで赤くする。
 describe('SC-01 §2 の廃止（#423）', () => {
   it('収集パラメータの節そのものが存在しない', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     expect(screen.queryByText(/収集パラメータ/)).not.toBeInTheDocument();
@@ -208,7 +209,7 @@ describe('SC-01 §2 の廃止（#423）', () => {
   });
 
   it('変動閾値の入力欄・保存操作が存在しない（SC-02 へ移管済み）', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     expect(screen.queryByLabelText(/変動閾値/)).not.toBeInTheDocument();
@@ -217,7 +218,7 @@ describe('SC-01 §2 の廃止（#423）', () => {
   });
 
   it('収集間隔の入力欄が存在しない', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     expect(screen.queryByLabelText(/収集間隔/)).not.toBeInTheDocument();
@@ -227,7 +228,7 @@ describe('SC-01 §2 の廃止（#423）', () => {
 
   // **MarketMonitorService を一切呼ばない。** 呼んでいれば、節を隠しただけで実体が残っている。
   it('MarketMonitorService（/monitor/*）を 1 度も呼ばない', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     const monitorCalls = mocks.apiFetch.mock.calls.filter(
@@ -239,7 +240,7 @@ describe('SC-01 §2 の廃止（#423）', () => {
   // 「変更しないことが裁定である」ことを画面に書く。入力欄を消すだけでは
   // 「未実装なので実装しよう」と読まれる余地が残る。
   it('収集間隔は起動時構成である旨を画面に明記する', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     const note = screen.getByText(/収集間隔/);
@@ -249,7 +250,7 @@ describe('SC-01 §2 の廃止（#423）', () => {
 
   // 移管先（SC-02）への導線を示す。「無くなった」だけでは利用者が探せない。
   it('市場監視パラメータが SC-02 にある旨を案内する', async () => {
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
     await screen.findByRole('form', { name: '全体前提条件の変更' });
 
     expect(screen.getByText(/市場監視パラメータ（変動閾値・クールダウン）/)).toBeInTheDocument();

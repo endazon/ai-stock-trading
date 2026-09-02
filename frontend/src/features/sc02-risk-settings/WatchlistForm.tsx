@@ -1,10 +1,15 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
+import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
 import { formatAt, marketLabel, MARKET_OPTIONS } from '../risk/contracts';
 import type { MonitoredSymbol, MonitorSettingsChangeEntry } from '../monitor/contracts';
 import { monitorChangeTypeLabel } from '../monitor/contracts';
+import {
+  useAddWatchlistSymbol,
+  useRemoveWatchlistSymbol,
+  useWatchlist,
+  useWatchlistHistory,
+} from '../monitor/queries';
 
 // SC-02, FR-13, FR-03, FR-11, UC-06, IADR-0088, IADR-0090: 監視銘柄（watchlist）の一覧表示・追加・削除。
 // データ源は MarketMonitorService `/monitor/watchlist`（OwnerOnly・PR #195）。リスク設定（RiskManagementService）とは
@@ -14,7 +19,6 @@ import { monitorChangeTypeLabel } from '../monitor/contracts';
 
 type Status = 'loading' | 'ok' | 'notFound' | 'error';
 type HistoryStatus = 'loading' | 'ok' | 'unavailable';
-type OpState = 'idle' | 'saving' | 'error';
 
 // (Symbol, Market) の同一性キー。区切りは銘柄コードに現れない縦棒を用いる（削除確認の対象特定に使う）。
 function keyOf(s: MonitoredSymbol): string {
@@ -40,78 +44,62 @@ function messageOf(e: unknown): string {
 }
 
 export function WatchlistForm() {
-  const [status, setStatus] = useState<Status>('loading');
-  const [symbols, setSymbols] = useState<MonitoredSymbol[]>([]);
-  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
-  const [history, setHistory] = useState<MonitorSettingsChangeEntry[]>([]);
+  // IADR-0286: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  const watchlistQuery = useWatchlist();
+  const historyQuery = useWatchlistHistory();
+  const addSymbol = useAddWatchlistSymbol();
+  const removeSymbol = useRemoveWatchlistSymbol();
 
   // 追加の下書き。
   const [newSymbol, setNewSymbol] = useState('');
   const [newMarket, setNewMarket] = useState<number>(MARKET_OPTIONS[0]?.value ?? 0);
   const [newReason, setNewReason] = useState('');
-  const [addState, setAddState] = useState<OpState>('idle');
   const [addError, setAddError] = useState<string | null>(null);
   const [addNotice, setAddNotice] = useState<string | null>(null);
 
   // 削除の明示確認（対象キー・理由・状態）。pendingKey が null の間は確認パネルを開かない。
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
-  const [deleteState, setDeleteState] = useState<OpState>('idle');
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  async function loadWatchlist(): Promise<void> {
-    try {
-      const data = await apiFetch<MonitoredSymbol[]>('/monitor/watchlist');
-      // 想定外の形（配列でない）は空扱いにする（画面を壊さない・fail-safe）。
-      setSymbols(Array.isArray(data) ? data : []);
-      setStatus('ok');
-    } catch (e: unknown) {
-      // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未結線（/monitor/* 未プロキシ）も安全側に縮退する。
-      setStatus(e instanceof ApiError && e.kind === 'notFound' ? 'notFound' : 'error');
-    }
-  }
+  const symbols: MonitoredSymbol[] = watchlistQuery.data ?? [];
+  // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未結線（/monitor/* 未プロキシ）も安全側に縮退する。
+  const status: Status = watchlistQuery.isPending
+    ? 'loading'
+    : watchlistQuery.isError
+      ? watchlistQuery.error instanceof ApiError && watchlistQuery.error.kind === 'notFound'
+        ? 'notFound'
+        : 'error'
+      : 'ok';
+  // 履歴の取得不能はその領域のみ縮退する（一覧・追加/削除と疎結合）。
+  const historyStatus: HistoryStatus = historyQuery.isPending
+    ? 'loading'
+    : historyQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  const history: MonitorSettingsChangeEntry[] = historyQuery.data ?? [];
 
-  async function loadHistory(): Promise<void> {
-    try {
-      const data = await apiFetch<MonitorSettingsChangeEntry[]>('/monitor/watchlist/history');
-      setHistory(Array.isArray(data) ? data : []);
-      setHistoryStatus('ok');
-    } catch {
-      // 履歴の取得不能はその領域のみ縮退する（一覧・追加/削除と疎結合）。
-      setHistoryStatus('unavailable');
-    }
-  }
-
-  useEffect(() => {
-    void loadWatchlist();
-    void loadHistory();
-  }, []);
-
-  const canAdd = newSymbol.trim() !== '' && newReason.trim() !== '' && addState !== 'saving';
+  const canAdd = newSymbol.trim() !== '' && newReason.trim() !== '' && !addSymbol.isPending;
 
   async function handleAdd(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     // 理由必須・銘柄コード必須を送信の前提にする（ボタン無効化と二重の防御・安全既定）。
     if (!canAdd) return;
-    setAddState('saving');
     setAddError(null);
     setAddNotice(null);
     try {
       // POST /monitor/watchlist（{ symbol, market, reason }）。重複追加・空・未定義 market はサーバ 400（#191）。
-      await apiFetch<MonitoredSymbol[]>('/monitor/watchlist', {
-        method: 'POST',
-        json: { symbol: newSymbol.trim(), market: newMarket, reason: newReason.trim() },
+      // 成功後の一覧・履歴の再取得は mutation がキャッシュの無効化として行う。破壊的操作はしない。
+      await addSymbol.mutateAsync({
+        symbol: newSymbol.trim(),
+        market: newMarket,
+        reason: newReason.trim(),
       });
-      // 成功後は下書きを消し、一覧・履歴を再取得して最新化する。破壊的操作はしない。
       setNewSymbol('');
       setNewReason('');
-      setAddState('idle');
       setAddNotice('追加しました。');
-      await loadWatchlist();
-      await loadHistory();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setAddState('error');
       setAddError(messageOf(err));
     }
   }
@@ -120,7 +108,6 @@ export function WatchlistForm() {
     // 削除は破壊的なため、行の「削除」では確定せず確認パネルを開く（明示確認・IADR-0090 決定 3）。
     setPendingKey(keyOf(target));
     setDeleteReason('');
-    setDeleteState('idle');
     setDeleteError(null);
   }
 
@@ -132,25 +119,21 @@ export function WatchlistForm() {
 
   async function confirmDelete(target: MonitoredSymbol): Promise<void> {
     // 理由必須を確定の前提にする（ボタン無効化と二重の防御・安全既定）。
-    if (deleteReason.trim() === '' || deleteState === 'saving') return;
-    setDeleteState('saving');
+    if (deleteReason.trim() === '' || removeSymbol.isPending) return;
     setDeleteError(null);
     try {
       // DELETE /monitor/watchlist（body に { symbol, market, reason }）。不在削除はサーバ 400（#191）。
-      await apiFetch<MonitoredSymbol[]>('/monitor/watchlist', {
-        method: 'DELETE',
-        json: { symbol: target.symbol, market: target.market, reason: deleteReason.trim() },
+      // 成功後の一覧・履歴の再取得は mutation がキャッシュの無効化として行う。
+      await removeSymbol.mutateAsync({
+        symbol: target.symbol,
+        market: target.market,
+        reason: deleteReason.trim(),
       });
-      // 成功後は確認を閉じ、一覧・履歴を再取得する。
       setPendingKey(null);
       setDeleteReason('');
-      setDeleteState('idle');
       setAddNotice(null);
-      await loadWatchlist();
-      await loadHistory();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（確認パネルは開いたまま・安全既定）。
-      setDeleteState('error');
       setDeleteError(messageOf(err));
     }
   }
@@ -214,14 +197,14 @@ export function WatchlistForm() {
               <button
                 type="button"
                 onClick={() => void confirmDelete(pendingTarget)}
-                disabled={deleteReason.trim() === '' || deleteState === 'saving'}
+                disabled={deleteReason.trim() === '' || removeSymbol.isPending}
               >
                 監視から削除
               </button>
-              <button type="button" onClick={cancelDelete} disabled={deleteState === 'saving'}>
+              <button type="button" onClick={cancelDelete} disabled={removeSymbol.isPending}>
                 キャンセル
               </button>
-              {deleteState === 'saving' && <span role="status">削除中…</span>}
+              {removeSymbol.isPending && <span role="status">削除中…</span>}
               {deleteError && <p role="alert">{deleteError}</p>}
             </div>
           )}
@@ -250,7 +233,7 @@ export function WatchlistForm() {
               <button type="submit" disabled={!canAdd}>
                 監視銘柄を追加
               </button>
-              {addState === 'saving' && <span role="status">追加中…</span>}
+              {addSymbol.isPending && <span role="status">追加中…</span>}
               {addNotice && <p role="status">{addNotice}</p>}
               {addError && <p role="alert">{addError}</p>}
             </fieldset>

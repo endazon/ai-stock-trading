@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
+import { useSaveStage1MinimumTradeCount } from '../risk/queries';
 import {
   inputBelowStatisticalBasis,
   STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING,
@@ -29,8 +29,6 @@ import {
 // 本フォームは**入力中の値**に対する即時提示を担う。閾値 100 の単一情報源は
 // サーバ側 `Stage1TradeCountBounds` である（IADR-0164 決定6）。
 
-type SaveState = 'idle' | 'saving' | 'error';
-
 // ApiError の種別を利用者向けメッセージへ写像する（SC-02 の他フォームと同方針）。
 function saveMessageOf(e: unknown): string {
   if (e instanceof ApiError) {
@@ -51,15 +49,16 @@ function saveMessageOf(e: unknown): string {
 
 export function Stage1TradeCountForm({
   current,
-  onSaved,
 }: {
   /** 現在保存されている件数（`GET /risk-controls/settings` 由来）。 */
   current: number;
-  onSaved: () => Promise<void> | void;
 }) {
+  // IADR-0286: 保存の成功後の再取得は mutation（`useSaveStage1MinimumTradeCount`）が
+  // キャッシュの無効化として持つ。**親から `onSaved` を配らない**——「誰が再取得を呼ぶか」を
+  // 画面の木構造に持たせると、節を足すたびに配線が増える。
+  const save = useSaveStage1MinimumTradeCount();
   const [value, setValue] = useState(() => String(current));
   const [reason, setReason] = useState('');
-  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
@@ -85,7 +84,7 @@ export function Stage1TradeCountForm({
   const validationError = validateStage1TradeCountInput(value);
   const reasonMissing = reason.trim() === '';
   // **値域外・理由欠如だけが保存を妨げる。** 統計的根拠の警告は妨げない（裁定が明示）。
-  const blocked = validationError !== null || reasonMissing || saveState === 'saving';
+  const blocked = validationError !== null || reasonMissing || save.isPending;
   // 入力中の値が 100 未満か（即時提示）。保存済みの値の警告はサーバの宣言に従う（SC-03）。
   const belowBasis = inputBelowStatisticalBasis(value);
 
@@ -94,21 +93,14 @@ export function Stage1TradeCountForm({
     // 理由必須・値域内を送信の前提とする（ボタン無効化と二重の防御・安全既定）。
     if (blocked) return;
 
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
-      await apiFetch('/risk-controls/settings/stage1-minimum-trade-count', {
-        method: 'PUT',
-        json: { minimumTradeCount: Number(value), reason: reason.trim() },
-      });
+      await save.mutateAsync({ minimumTradeCount: Number(value), reason: reason.trim() });
       setReason('');
-      setSaveState('idle');
       setSavedNotice('Stage 1 の最小取引件数を保存しました。');
-      await onSaved();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -170,7 +162,7 @@ export function Stage1TradeCountForm({
         <button type="submit" disabled={blocked}>
           最小取引件数を保存
         </button>
-        {saveState === 'saving' && <span role="status">最小取引件数を保存中…</span>}
+        {save.isPending && <span role="status">最小取引件数を保存中…</span>}
         {savedNotice && <p role="status">{savedNotice}</p>}
         {saveError && <p role="alert">{saveError}</p>}
       </form>

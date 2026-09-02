@@ -3,15 +3,15 @@ title: 外部連携仕様書 — AST フロントエンド/設定画面の micro
 type: integration
 status: Requirements (MSP 側実装は別リポ/別セッション)
 created: 2026-07-18
-updated: 2026-08-29
+updated: 2026-09-03
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-13, FR-17, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0080, IADR-0128, IADR-0259, IADR-0264, MSP:IADR-0056]
+iadrs: [IADR-0080, IADR-0128, IADR-0259, IADR-0264, IADR-0286, MSP:IADR-0056]
 specs: [20260718_SC-01_settings, 20260718_frontend-settings-screen, IADR-0080_frontend-settings-screen]
-issues: [#106, #185, #275, #353, #526]
+issues: [#106, #185, #275, #353, #414, #526]
 -->
 
 
@@ -45,6 +45,21 @@ issues: [#106, #185, #275, #353, #526]
 - **依存**: 2b。
 - **受け入れ基準**: SPA ビルドが通り、認証済みレイアウトに `/settings`（設定）ナビ/ルートが出る（`trading-owner` のみ）。横断 Vitest が AST の feature テストも収集して緑。
 - **二重定義回避**: AST は `@features`（platform 合成点）を import しない（AST 側 ESLint `no-restricted-imports` で既に禁止）。
+- ［2026-09-03 追記 / #414］🔴 **合成の契約が変わった。上の 2 行（`features` 配列のスプレッド）は旧契約であり、そのまま実装しても載らない。**
+  基盤 SPA がルータを移行し、可変ユニットは **宣言的な feature 配列ではなく、型付きルート factory ＋ ナビ項目**を公開する形になった。
+  AST 側は本日この新契約へ移った。合成点の追記は次の形である。
+
+  - import 1 行: `import { createAiStockTradingRoutes, aiStockTradingNavItems } from '@ai-stock-trading/features';`
+  - ルート: ユニットのルートを束ねるタプルへ `...createAiStockTradingRoutes(shell)` を 1 行
+  - ナビ: 機能名（「株式自動売買」）のグループの `items` へ `aiStockTradingNavItems`
+  - エイリアス 2 か所: `src/platform/frontend/vite.config.ts` の `resolve.alias` と `tsconfig.app.json` の `paths`
+
+  **ルートとナビは別経路である**——片方だけ足すと「画面は開けるのに左ナビに出ない」（あるいはその逆）になる。
+  **ルートを束ねる関数の戻り値へ型注釈を書かないこと**（付けるとルート ID とパスの union が失われ、リンクの静的検査が全ユニットで消える）。
+  旧契約のための互換ブリッジ（`legacyUnitFeatures` / `createLegacyRoutes` / `legacyNavItems`）は、
+  **本追記の時点で削除できる状態**になった（削除そのものは基盤側の PR で行う）。
+  あわせて **AST は認証トークンを一切扱わなくなった**（基盤の BFF セッション方式に追随）ため、
+  基盤側にあった「AST のテストが旧形の値を流し込むため」の JWT 復号フォールバックも削除できる。
 
 ### 2d. ConfigurationService のデプロイ物登録
 - **要件**: 設定画面の BFF 先である ConfigurationService を MSP のデプロイ面に載せる。
@@ -83,6 +98,11 @@ issues: [#106, #185, #275, #353, #526]
 ### 2e. Keycloak 認可
 - **要件**: realm ロール `trading-owner` を定義し owner ユーザーへ付与。SPA クライアントの access_token に `realm_access.roles` が載る（AST フロントの `RequireRole`／バックエンド `OwnerOnly` の一次情報）。
 - **対象**: `deploy/keycloak/microservices-platform-realm.json`（現状 `trading-owner` 未定義）。必要なら SPA/サービスのクライアント・スコープ設定。
+- ［2026-09-03 追記 / #414］**SPA 側の一次情報が変わった。** 基盤が BFF セッション方式へ移ったため、
+  ブラウザはトークンを持たず、`RequireRole` が読むのは **BFF の身元端点が返すロール配列**である
+  （`access_token` の `realm_access.roles` を SPA が復号する経路は AST 側から消えた）。
+  **realm ロール `trading-owner` の定義と付与という要件そのものは変わらない**——変わったのは
+  そのロールが SPA へ届く経路であり、バックエンドの認可（`OwnerOnly`）の一次情報も従来どおりである。
 - **依存**: —。
 - **受け入れ基準**: owner でログイン→`/settings` が表示され変更が反映。非 owner は存在秘匿（NotFound）＋サーバ 403。
 

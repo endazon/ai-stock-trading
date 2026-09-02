@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
+import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
 import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { useBrokerProvider } from '../shared/paperMode';
+import type { ChangeEntry, TradingAssumptions } from './assumptionsQueries';
+import { useAssumptions, useAssumptionsHistory, useSaveAssumptions } from './assumptionsQueries';
 
 // SC-01, FR-17, UC-06, IADR-0080, IADR-0164: 設定画面。
 //
@@ -26,39 +27,6 @@ import { useBrokerProvider } from '../shared/paperMode';
 // リスク上限・監視銘柄・市場監視パラメータは本画面の範囲外である
 // （RiskManagementService / MarketMonitorService 由来のため SC-02。planning#33 の責務分界）。
 
-interface CommissionSchedule {
-  rate: number;
-  minimum: number;
-  cap: number;
-}
-interface MonthlyCostLimits {
-  total: number;
-  llm: number;
-  infrastructure: number;
-  data: number;
-}
-interface TradingAssumptions {
-  capitalGainsTaxRate: number;
-  japanCommission: CommissionSchedule;
-  unitedStatesCommission: CommissionSchedule;
-  fxSpreadRatio: number;
-  minimumExpectedProfitMultiple: number;
-  costLimits: MonthlyCostLimits;
-}
-interface VersionedAssumptions {
-  assumptions: TradingAssumptions;
-  version: number;
-  isResolved: boolean;
-}
-interface ChangeEntry {
-  actor: string;
-  reason: string;
-  changedAt: string;
-  version: number;
-  before?: string | null;
-  after?: string | null;
-}
-
 // フォームは文字列で保持し、送信時に数値へ変換する（type=number の制御入力の往復問題を避ける）。
 interface FormModel {
   capitalGainsTaxRate: string;
@@ -78,7 +46,6 @@ interface FormModel {
 
 type Status = 'loading' | 'ok' | 'notFound' | 'error';
 type HistoryStatus = 'loading' | 'ok' | 'unavailable';
-type SaveState = 'idle' | 'saving' | 'error';
 
 function toForm(a: TradingAssumptions): FormModel {
   return {
@@ -176,67 +143,68 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function SettingsPage() {
-  const [status, setStatus] = useState<Status>('loading');
-  const [current, setCurrent] = useState<VersionedAssumptions | null>(null);
+  // IADR-0286: 取得・更新は TanStack Query（`assumptionsQueries`）が持つ。画面は
+  // 「取得済みの値をどう見せるか」と「入力の検証」だけを持つ（MSP/ADR-0031）。
+  const assumptionsQuery = useAssumptions();
+  const historyQuery = useAssumptionsHistory();
+  const saveAssumptions = useSaveAssumptions();
+
   const [form, setForm] = useState<FormModel | null>(null);
   const [reason, setReason] = useState('');
-  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
-  const [history, setHistory] = useState<ChangeEntry[]>([]);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   // FR-12, #334: 内蔵 paper 警告バナーの判定に用いる現在の発注先（取得不能は null＝バナーを出さない）。
   const brokerProvider = useBrokerProvider();
 
-  async function loadCurrent(): Promise<void> {
-    try {
-      const data = await apiFetch<VersionedAssumptions>('/assumptions');
-      setCurrent(data);
-      setForm(toForm(data.assumptions));
-      setStatus('ok');
-    } catch (e: unknown) {
-      // 404 は不在/秘匿を区別しない（IADR-0009）。
-      setStatus(e instanceof ApiError && e.kind === 'notFound' ? 'notFound' : 'error');
-    }
+  const current = assumptionsQuery.data ?? null;
+  // 404 は不在/秘匿を区別しない（IADR-0009）。
+  const status: Status = assumptionsQuery.isPending
+    ? 'loading'
+    : assumptionsQuery.isError
+      ? assumptionsQuery.error instanceof ApiError && assumptionsQuery.error.kind === 'notFound'
+        ? 'notFound'
+        : 'error'
+      : 'ok';
+  // 履歴の取得不能はその領域のみ縮退（設定表示・変更と疎結合）。
+  const historyStatus: HistoryStatus = historyQuery.isPending
+    ? 'loading'
+    : historyQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  const history: ChangeEntry[] = historyQuery.data ?? [];
+
+  // 取得した現在値に追随してフォームを初期化する。
+  //
+  // 🔴 #498, #539, NFR: **これを `useEffect` で行わない。** commit（DOM が見える）と passive effect の
+  // 実行の間には窓があり、その窓で利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って巻き戻す。
+  // 比較対象を「値のシグネチャ」にしているのは、**再取得のたびに編集を捨てない**ためである
+  // （TanStack Query は無効化のたびに新しいオブジェクトを配るので、参照で比べると毎回初期化になる）。
+  const assumptionsSignature = current === null ? null : JSON.stringify(current.assumptions);
+  const [syncedSignature, setSyncedSignature] = useState<string | null>(null);
+  if (current !== null && assumptionsSignature !== syncedSignature) {
+    setSyncedSignature(assumptionsSignature);
+    setForm(toForm(current.assumptions));
   }
 
-  async function loadHistory(): Promise<void> {
-    try {
-      const data = await apiFetch<ChangeEntry[]>('/assumptions/history');
-      setHistory(data ?? []);
-      setHistoryStatus('ok');
-    } catch {
-      // 履歴の取得不能はその領域のみ縮退（設定表示・変更と疎結合）。
-      setHistoryStatus('unavailable');
-    }
-  }
-
-  useEffect(() => {
-    void loadCurrent();
-    void loadHistory();
-  }, []);
+  const saving = saveAssumptions.isPending;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     // 理由必須・全フィールド有効を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
     if (!current || !form || reason.trim() === '' || invalidFieldLabels(form).length > 0) return;
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
-      await apiFetch<VersionedAssumptions>('/assumptions', {
-        method: 'PUT',
-        json: { assumptions: fromForm(form), expectedVersion: current.version, reason: reason.trim() },
+      // 成功時は mutation が現在値・履歴を無効化して最新化する。破壊的操作はしない。
+      await saveAssumptions.mutateAsync({
+        assumptions: fromForm(form),
+        expectedVersion: current.version,
+        reason: reason.trim(),
       });
-      // 成功後は現在値・履歴を再取得して最新化する。破壊的操作はしない。
       setReason('');
-      setSaveState('idle');
       setSavedNotice('保存しました。');
-      await loadCurrent();
-      await loadHistory();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -334,11 +302,11 @@ export function SettingsPage() {
 
             <button
               type="submit"
-              disabled={reason.trim() === '' || saveState === 'saving' || invalidFieldLabels(form).length > 0}
+              disabled={reason.trim() === '' || saving || invalidFieldLabels(form).length > 0}
             >
               保存
             </button>
-            {saveState === 'saving' && <span role="status">保存中…</span>}
+            {saving && <span role="status">保存中…</span>}
             {savedNotice && <p role="status">{savedNotice}</p>}
             {saveError && <p role="alert">{saveError}</p>}
           </form>

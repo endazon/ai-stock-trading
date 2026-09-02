@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
 import { ApiError } from '@foundation/api/ApiError';
 import type {
   BannedSymbol,
@@ -34,6 +33,14 @@ import {
   validateLimitInput,
   wireToLimitInput,
 } from '../risk/contracts';
+import {
+  useRiskSettings,
+  useRiskSettingsHistory,
+  useRiskStatus,
+  useSaveBrokerProvider,
+  useSaveRiskLimits,
+  useSaveTradingGuard,
+} from '../risk/queries';
 import { PaperModeBanner } from '../shared/PaperModeBanner';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
@@ -52,7 +59,6 @@ type FormModel = Record<LimitFieldKey, string>;
 
 type Status = 'loading' | 'ok' | 'notFound' | 'error';
 type HistoryStatus = 'loading' | 'ok' | 'unavailable';
-type SaveState = 'idle' | 'saving' | 'error';
 
 function toForm(l: RiskLimitSettings): FormModel {
   return Object.fromEntries(
@@ -108,82 +114,66 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function RiskSettingsPage() {
-  const [status, setStatus] = useState<Status>('loading');
-  const [current, setCurrent] = useState<RiskManagementSettings | null>(null);
-  const [form, setForm] = useState<FormModel | null>(null);
-  const [reason, setReason] = useState('');
-  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
-  const [history, setHistory] = useState<SettingsChangeEntry[]>([]);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // IADR-0286: 取得・更新は TanStack Query（`../risk/queries`）が持つ。
+  const settingsQuery = useRiskSettings();
+  const historyQuery = useRiskSettingsHistory();
   // FR-10, SC-02, #362, IADR-0151 決定4: 実額の併記と実弾切替モーダル③に使う equity・統制状態。
   // **ページで 1 回だけ取得して配る**（2 か所で別々に取りに行くと、同じ画面が違う equity を見る状態を作れる）。
-  // 別サービスの障害を本ページの障害にしないため、失敗しても null で縮退する（実額は「—」になる）。
-  const [riskStatus, setRiskStatus] = useState<RiskStatusView | null>(null);
+  // キャッシュが同じキーの購読者へ同じ値を配るため、この不変条件はクエリ層が持つ。
+  // 別サービスの障害を本ページの障害にしないため、失敗しても null で縮退する（実額は未供給表示になる）。
+  const riskStatusQuery = useRiskStatus();
+  const saveLimits = useSaveRiskLimits();
 
-  async function loadCurrent(): Promise<void> {
-    try {
-      const data = await apiFetch<RiskManagementSettings>('/risk-controls/settings');
-      setCurrent(data);
-      setForm(toForm(data.limits));
-      setStatus('ok');
-    } catch (e: unknown) {
-      // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側に縮退。
-      setStatus(e instanceof ApiError && e.kind === 'notFound' ? 'notFound' : 'error');
-    }
+  const [form, setForm] = useState<FormModel | null>(null);
+  const [reason, setReason] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const current = settingsQuery.data ?? null;
+  const riskStatus: RiskStatusView | null = riskStatusQuery.data ?? null;
+  // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側に縮退。
+  const status: Status = settingsQuery.isPending
+    ? 'loading'
+    : settingsQuery.isError
+      ? settingsQuery.error instanceof ApiError && settingsQuery.error.kind === 'notFound'
+        ? 'notFound'
+        : 'error'
+      : 'ok';
+  // 履歴の取得不能はその領域のみ縮退（設定表示・変更と疎結合）。
+  const historyStatus: HistoryStatus = historyQuery.isPending
+    ? 'loading'
+    : historyQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  const history: SettingsChangeEntry[] = historyQuery.data ?? [];
+
+  // 現在値に追随してフォームを初期化する。比較対象を「値のシグネチャ」にして、上限が実際に変わった
+  // ときだけ初期化する（隣接するフォームの保存でも設定は再取得されるため、参照で比べると編集中の
+  // 入力を黙って破棄することになる）。**`useEffect` で行わない**理由は GuardForm と同じ（#498 / #539）。
+  const limitsSignature = current === null ? null : JSON.stringify(current.limits);
+  const [syncedLimits, setSyncedLimits] = useState<string | null>(null);
+  if (current !== null && limitsSignature !== syncedLimits) {
+    setSyncedLimits(limitsSignature);
+    setForm(toForm(current.limits));
   }
 
-  async function loadHistory(): Promise<void> {
-    try {
-      const data = await apiFetch<SettingsChangeEntry[]>('/risk-controls/settings/history');
-      setHistory(data ?? []);
-      setHistoryStatus('ok');
-    } catch {
-      // 履歴の取得不能はその領域のみ縮退（設定表示・変更と疎結合）。
-      setHistoryStatus('unavailable');
-    }
-  }
-
-  async function loadRiskStatus(): Promise<void> {
-    try {
-      setRiskStatus(await apiFetch<RiskStatusView>('/risk-controls/status'));
-    } catch {
-      // 取得不能は実額を「—」に縮退させる（実弾切替は別途、equity 不明を理由に禁じる）。
-      setRiskStatus(null);
-    }
-  }
-
-  useEffect(() => {
-    void loadCurrent();
-    void loadHistory();
-    void loadRiskStatus();
-  }, []);
+  const saving = saveLimits.isPending;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     // 理由必須・全フィールド有効（値域内）を送信の前提とする（安全既定。ボタン無効化と二重の防御）。
     if (!current || !form || reason.trim() === '' || invalidFieldMessages(form).length > 0) return;
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
       // PUT /risk-controls/settings/limits（{ limits, reason }）。楽観排他は EF 側（競合は 409）。
-      await apiFetch<RiskManagementSettings>('/risk-controls/settings/limits', {
-        method: 'PUT',
-        json: { limits: fromForm(form), reason: reason.trim() },
-      });
-      // 成功後は現在値・履歴を再取得して最新化する。破壊的操作はしない。
+      // 成功後は設定・履歴・統制状態を mutation が無効化して最新化する（上限が変われば解決済みの
+      // 実額も変わるため、実額の併記を古いままにしない）。破壊的操作はしない。
+      await saveLimits.mutateAsync({ limits: fromForm(form), reason: reason.trim() });
       setReason('');
-      setSaveState('idle');
       setSavedNotice('保存しました。');
-      await loadCurrent();
-      await loadHistory();
-      // 上限が変われば解決済みの実額（統制状態）も変わる。実額の併記を古いままにしない。
-      await loadRiskStatus();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -250,43 +240,26 @@ export function RiskSettingsPage() {
 
             <button
               type="submit"
-              disabled={reason.trim() === '' || saveState === 'saving' || invalidFieldMessages(form).length > 0}
+              disabled={reason.trim() === '' || saving || invalidFieldMessages(form).length > 0}
             >
               保存
             </button>
-            {saveState === 'saving' && <span role="status">保存中…</span>}
+            {saving && <span role="status">保存中…</span>}
             {savedNotice && <p role="status">{savedNotice}</p>}
             {saveError && <p role="alert">{saveError}</p>}
           </form>
 
-          <GuardForm
-            guard={current.guard}
-            onSaved={async () => {
-              await loadCurrent();
-              await loadHistory();
-            }}
-          />
+          <GuardForm guard={current.guard} />
           <StageView stage={current.stage} provider={current.brokerProvider} />
           {/* SC-02, FR-20, FR-13, #423, IADR-0164 決定4: Stage 1 の最小取引件数。
               計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に
               属する値であるため）。したがって StageView の直後に置く。 */}
-          <Stage1TradeCountForm
-            current={current.stage1MinimumTradeCount}
-            onSaved={async () => {
-              await loadCurrent();
-              await loadHistory();
-            }}
-          />
+          <Stage1TradeCountForm current={current.stage1MinimumTradeCount} />
           <BrokerProviderForm
             current={current.brokerProvider}
             stageMode={current.stage.mode}
             stage={current.stage.stage}
             status={riskStatus}
-            onSaved={async () => {
-              await loadCurrent();
-              await loadHistory();
-              await loadRiskStatus();
-            }}
           />
           <HistoryView status={historyStatus} history={history} />
         </>
@@ -365,7 +338,6 @@ function LimitField({
 // FR-13, FR-19, IADR-0086: 取引ガードの変更フォーム。`PUT /risk-controls/settings/guard`（全置換）。
 // 現在値を初期値に読み込み、編集後の全体を理由とともに送る。危険な緩和（トグル OFF・禁止銘柄削除・信用の新規有効化）は
 // 明示確認を要求する（安全側 fail-safe・#188）。厳格化（禁止追加・トグル ON・信用無効化）は確認不要（非対称）。
-type GuardSaveState = 'idle' | 'saving' | 'error';
 
 function toggleValue(list: number[], value: number): number[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value].sort((a, b) => a - b);
@@ -434,11 +406,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: () => Promise<void> | void }) {
+function GuardForm({ guard }: { guard: TradingGuardSettings }) {
+  // IADR-0286: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  const save = useSaveTradingGuard();
   const [form, setForm] = useState<GuardFormState>(() => toGuardForm(guard));
   const [reason, setReason] = useState('');
   const [confirmDanger, setConfirmDanger] = useState(false);
-  const [saveState, setSaveState] = useState<GuardSaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   // 新規禁止銘柄の下書き。
@@ -476,7 +449,7 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
     setConfirmDanger(false);
   }, [dangersSignature]);
 
-  const blocked = reason.trim() === '' || saveState === 'saving' || (dangers.length > 0 && !confirmDanger);
+  const blocked = reason.trim() === '' || save.isPending || (dangers.length > 0 && !confirmDanger);
 
   function addBannedSymbol(): void {
     const symbol = newSymbol.trim();
@@ -502,29 +475,23 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
     e.preventDefault();
     // 理由必須・危険確認を送信の前提にする（ボタン無効化と二重の防御・安全既定）。
     if (blocked) return;
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
       // PUT /risk-controls/settings/guard（全置換）。楽観排他は EF 側（競合は 409）。
-      await apiFetch<RiskManagementSettings>('/risk-controls/settings/guard', {
-        method: 'PUT',
-        json: {
-          enabledProductTypes: form.enabledProductTypes,
-          enabledMarkets: form.enabledMarkets,
-          bannedSymbols: form.bannedSymbols,
-          preventSameDayReentry: form.preventSameDayReentry,
-          prohibitManipulativeOrderPatterns: form.prohibitManipulativeOrderPatterns,
-          reason: reason.trim(),
-        },
+      // 成功後は mutation が設定・履歴を無効化する（guardSignature の変化を描画中に検知して
+      // form／理由／確認を初期化する）。破壊的操作はしない。
+      await save.mutateAsync({
+        enabledProductTypes: form.enabledProductTypes,
+        enabledMarkets: form.enabledMarkets,
+        bannedSymbols: form.bannedSymbols,
+        preventSameDayReentry: form.preventSameDayReentry,
+        prohibitManipulativeOrderPatterns: form.prohibitManipulativeOrderPatterns,
+        reason: reason.trim(),
       });
-      // 成功後は現在値・履歴を再取得（guardSignature の変化を描画中に検知して form/理由/確認を初期化する）。破壊的操作はしない。
-      setSaveState('idle');
       setSavedNotice('保存しました。');
-      await onSaved();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -648,7 +615,7 @@ function GuardForm({ guard, onSaved }: { guard: TradingGuardSettings; onSaved: (
         <button type="submit" disabled={blocked}>
           保存
         </button>
-        {saveState === 'saving' && <span role="status">保存中…</span>}
+        {save.isPending && <span role="status">保存中…</span>}
         {savedNotice && <p role="status">{savedNotice}</p>}
         {saveError && <p role="alert">{saveError}</p>}
       </form>
@@ -708,7 +675,6 @@ function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']
 //
 // 同じ関門はサーバ側にもある（IADR-0141 決定1）。画面だけの統制は API 直叩きで消えるためであり、
 // ここでの二重化は冗長ではない。
-type ProviderSaveState = 'idle' | 'saving' | 'error';
 
 // FR-20 (1), SC-02, #422, IADR-0161 決定4: 計画（FR-20 の 2026-08-07 追記 (1)）が画面へ出すことを
 // 明示的に義務づけた文言。
@@ -730,7 +696,6 @@ function BrokerProviderForm({
   stageMode,
   stage,
   status,
-  onSaved,
 }: {
   current: number;
   stageMode: number;
@@ -741,14 +706,14 @@ function BrokerProviderForm({
    * 要るため、**同じ画面が 2 つの equity を見る**状態を避けてページへ引き上げた。`null` は取得不能。
    */
   status: RiskStatusView | null;
-  onSaved: () => Promise<void> | void;
 }) {
+  // IADR-0286: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  const save = useSaveBrokerProvider();
   const [selected, setSelected] = useState<number>(current);
   const [reason, setReason] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [phrase, setPhrase] = useState('');
-  const [saveState, setSaveState] = useState<ProviderSaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
@@ -782,28 +747,21 @@ function BrokerProviderForm({
   const skipsStageGate = live && !isLiveProvider(stageMode);
 
   async function submit(): Promise<void> {
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
-      await apiFetch('/risk-controls/settings/broker-provider', {
-        method: 'PUT',
-        json: {
-          provider: selected,
-          reason: reason.trim(),
-          acknowledgedLiveTrading: live ? acknowledged : false,
-          acknowledgement: live ? phrase.trim() : null,
-        },
+      await save.mutateAsync({
+        provider: selected,
+        reason: reason.trim(),
+        acknowledgedLiveTrading: live ? acknowledged : false,
+        acknowledgement: live ? phrase.trim() : null,
       });
-      setSaveState('idle');
       setModalOpen(false);
       setAcknowledged(false);
       setPhrase('');
       setSavedNotice('保存しました。');
-      await onSaved();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
       setModalOpen(false);
     }
@@ -811,7 +769,7 @@ function BrokerProviderForm({
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (unchanged || reasonMissing || saveState === 'saving') return;
+    if (unchanged || reasonMissing || save.isPending) return;
     if (live) {
       // 実弾は直接保存しない。**必ず警告モーダルを経由する。**
       setModalOpen(true);
@@ -863,11 +821,11 @@ function BrokerProviderForm({
           </p>
         )}
 
-        <button type="submit" disabled={unchanged || reasonMissing || saveState === 'saving'}>
+        <button type="submit" disabled={unchanged || reasonMissing || save.isPending}>
           {live ? '実弾への切替を確認する' : '保存'}
         </button>
         {unchanged && <p>発注先は変更されていません。</p>}
-        {saveState === 'saving' && <span role="status">保存中…</span>}
+        {save.isPending && <span role="status">保存中…</span>}
         {savedNotice && <p role="status">{savedNotice}</p>}
         {saveError && <p role="alert">{saveError}</p>}
       </form>
@@ -882,7 +840,7 @@ function BrokerProviderForm({
           acknowledged={acknowledged}
           phrase={phrase}
           confirmationComplete={confirmationComplete}
-          saving={saveState === 'saving'}
+          saving={save.isPending}
           onAcknowledgedChange={setAcknowledged}
           onPhraseChange={setPhrase}
           onCancel={() => {
