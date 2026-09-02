@@ -13,7 +13,7 @@ import { SettingsPage } from './SettingsPage';
 // #424, IADR-0162: §1 の「供給が無い値」の表示規約で使う文言。**monitor の契約フィクスチャは
 // 意図的に import しない** —— 本画面は `/monitor/*` を 1 度も呼ばないことを下の否定形テストで
 // 固定しており（#423）、テスト側にだけ monitor の口を残すと「呼ばない」の根拠が薄まる。
-import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
+import { METRIC_NOT_SUPPLIED_TEXT } from '@ai-stock-trading/lib/risk/contracts';
 
 const SAMPLE = {
   assumptions: {

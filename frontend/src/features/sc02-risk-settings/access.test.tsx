@@ -12,8 +12,8 @@ import { createSc02RiskSettingsRoute, sc02RiskSettingsNav } from './index';
 // 本 feature のルートだけを載せる（理由は SC-01 の同名テスト）。
 const createRoutes = (shell: Parameters<typeof createSc02RiskSettingsRoute>[0]) =>
   [createSc02RiskSettingsRoute(shell)] as const;
-import { CONTRACT_RISK_SETTINGS, cloneContract } from '../risk/contractFixtures';
-import type { RiskManagementSettings } from '../risk/contracts';
+import { CONTRACT_RISK_SETTINGS, cloneContract } from '@ai-stock-trading/testing/riskContractFixtures';
+import type { RiskManagementSettings } from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックはバックエンドの実応答（契約フィクスチャ）から作る。
 const SAMPLE_SETTINGS: RiskManagementSettings = {

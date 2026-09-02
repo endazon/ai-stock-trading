@@ -14,8 +14,8 @@ import {
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
   cloneContract,
-} from '../risk/contractFixtures';
-import type { RiskStatusView, StageGateStatus, StageTransition } from '../risk/contracts';
+} from '@ai-stock-trading/testing/riskContractFixtures';
+import type { RiskStatusView, StageGateStatus, StageTransition } from '@ai-stock-trading/lib/risk/contracts';
 
 // #389, IADR-0146: モックは**バックエンドの実応答**（契約フィクスチャ）を土台に作り、この画面の検証に必要な
 // 差分（統制成立・損益・使用率・遷移履歴）だけを上書きする。インライン literal で全体を自作すると、

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ShortSellingStatusView } from '../risk/contracts';
+import type { ShortSellingStatusView } from '@ai-stock-trading/lib/risk/contracts';
 import {
   availabilityAmountText,
   availabilityCountText,
@@ -10,7 +10,7 @@ import {
   marketLabel,
   positionSideLabel,
   ratioToPercentDisplay,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 
 // SC-03, FR-10, UC-06, ADR-0016（決定3・決定7・決定9・決定15）, #340, IADR-0154:
 // 「維持率・空売りの現況」。**画面の最上位に置く**（3 統制の表より上）。

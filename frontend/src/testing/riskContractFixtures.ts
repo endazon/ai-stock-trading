@@ -25,7 +25,7 @@ import type {
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
-} from './contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 
 // ---- 契約型への代入（＝コンパイル時の突合。ここが赤くなることが本機構の第一の関門） ----
 

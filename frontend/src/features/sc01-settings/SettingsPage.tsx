@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
-import { METRIC_NOT_SUPPLIED_TEXT } from '../risk/contracts';
-import { PaperModeBanner } from '../shared/PaperModeBanner';
-import { useBrokerProvider } from '../shared/paperMode';
+import { METRIC_NOT_SUPPLIED_TEXT } from '@ai-stock-trading/lib/risk/contracts';
+import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
+import { useBrokerProvider } from '@ai-stock-trading/hooks/useBrokerProvider';
 import type { ChangeEntry, TradingAssumptions } from './assumptionsQueries';
 import { useAssumptions, useAssumptionsHistory, useSaveAssumptions } from './assumptionsQueries';
 

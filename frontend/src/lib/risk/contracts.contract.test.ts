@@ -5,7 +5,7 @@ import {
   CONTRACT_SETTINGS_HISTORY,
   CONTRACT_SHORT_SELLING,
   CONTRACT_STAGE_GATE,
-} from './contractFixtures';
+} from '@ai-stock-trading/testing/riskContractFixtures';
 import type { RiskLimitSettings, ShortSellingStatusView, StageSettings } from './contracts';
 import {
   availabilityAmountText,

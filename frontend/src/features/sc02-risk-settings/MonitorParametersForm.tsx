@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
-import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from '../monitor/contracts';
+import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
 import {
   useMonitorSettings,
   useMonitorSettingsHistory,
   useSaveCooldown,
   useSaveMovementThreshold,
-} from '../monitor/queries';
+} from '@ai-stock-trading/lib/monitor/queries';
 import {
   COOLDOWN_RANGE_TEXT,
   hoursTextToTimeSpan,
@@ -18,13 +18,13 @@ import {
   timeSpanToHoursText,
   validateCooldownHours,
   validateMovementThresholdPercent,
-} from '../monitor/contracts';
+} from '@ai-stock-trading/lib/monitor/contracts';
 import {
   formatAt,
   METRIC_NOT_SUPPLIED_TEXT,
   percentTextToRatio,
   ratioToPercentText,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 
 // SC-02, FR-03, FR-13, FR-11, UC-06, #423, IADR-0155 / IADR-0164 決定2:
 // **市場監視パラメータ（変動閾値・クールダウン）の閲覧・変更。**

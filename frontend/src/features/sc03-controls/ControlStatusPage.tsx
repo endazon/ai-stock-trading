@@ -6,7 +6,7 @@ import type {
   ShortSellingStatusView,
   StageGateStatus,
   StageTransition,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   activeControlLabel,
   brokerProviderLabel,
@@ -18,15 +18,15 @@ import {
   stageLabel,
   transitionKindLabel,
   withdrawalReasonLabel,
-} from '../risk/contracts';
+} from '@ai-stock-trading/lib/risk/contracts';
 import {
   useRiskSettingsHistory,
   useRiskStatus,
   useShortSelling,
   useStageGate,
-} from '../risk/queries';
-import { PaperModeBanner } from '../shared/PaperModeBanner';
-import { PAPER_REFERENCE_LABEL } from '../shared/paperMode';
+} from '@ai-stock-trading/lib/risk/queries';
+import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
+import { PAPER_REFERENCE_LABEL } from '@ai-stock-trading/lib/paperMode';
 import type { ShortSellingState } from './ShortSellingStatusSection';
 import { ShortSellingStatusSection } from './ShortSellingStatusSection';
 
