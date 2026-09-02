@@ -373,21 +373,23 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 **未了の帰結**: **本番相当環境（Hetzner）での無人運用は保証されない。** ローカル単一ノードでの成立（実測済み）を本番へ外挿しない。
 [IADR-0053](../.ai-context/adr/IADR-0053_moomoo-opend-dockerization.md) を `Proposed` に据え置く唯一の理由が 2 である（[IADR-0167](../.ai-context/adr/IADR-0167_opend-unattended-restart-followup.md) 決定1）。
 
-### A-10. 🆕 MCP 非公開の**結合確認**（基盤 MCP の再実装待ち・2026-08-07 登録）
+### A-10. ✅ MCP 非公開の**結合確認** — **結合確認済み（2026-09-02）**
 
 計画 ADR-0012（計画リポ）（`Accepted`）は取引報告書・判断根拠・収集情報を MCP 公開許可リストに**含めない**と定めた。[#348](https://github.com/endazon/ai-stock-trading/issues/348) はこれを「構成とテストの両方で担保する」ことを求めている。
 
-**AST 側でできることは実施した**（[IADR-0171](../.ai-context/adr/IADR-0171_mcp-non-exposure-structural-guard.md)）。**残るのは結合確認だけであり、これは基盤 MCP が存在しないと書けない。**
+**待ち先（基盤 MCP の再実装・MSP#445）は完了した。** 基盤に `McpServer` が実装され、宣言的公開構成（6 ツール）を持ち、ローカル k3s で稼働している。**結合確認を実測で行い、基盤側許可リストのドリフト検査を本リポジトリへ追加した**（[IADR-0273](../.ai-context/adr/IADR-0273_msp-mcp-publication-allowlist-drift-detection.md)・[作業仕様書](../.ai-context/specs/20260902_500_mcp-non-exposure-integration-check.md)）。
 
 | 項目 | 内容 |
 | --- | --- |
-| 何を待っているか | 基盤 MCP サーバーの再実装（**MSP#445**）。宣言的公開構成が作り直される |
-| なぜ AI にできないか | **相手が存在しない。** 基盤リポジトリの実装と、実際に起動した MCP サーバーの両方が要る |
-| 実施済み（本リポジトリ内） | `McpExposureNotDeclaredTests` が `backend/` `deploy/` を走査し、**MCP 公開の宣言が入ると落ちる**（着手時点の実測: 0 件） |
-| **未了で残るもの** | **MCP ツール一覧・検索・文書取得のいずれの経路でも AST の報告書・判断根拠が返らないこと**の結合テスト（サービスアカウント・有人クライアントの双方から） |
-| 追跡 | **[#500](https://github.com/endazon/ai-stock-trading/issues/500)（本項の受け皿・2026-08-14 起票）**／#348（構造ガードの実施をもってクローズ済み）／ MSP#445（待ち先） |
-
-**未了の帰結**: **本リポジトリのテストは基盤側の許可リストを見ていない。** 基盤側の PR で AST の文書コレクションが公開対象へ追加された場合、**AST の CI は緑のまま統制が破れる**。ADR-0012 §結果 のフォローアップ（構成情報 API / SC-11 のドリフト検出で監視）は**まだ実装されていない**。
+| 実測結果 | **ツール一覧・検索・文書取得のいずれの経路でも AST の文書は 1 件も返らない。** 匿名は 401、サービスアカウントは `tools/list` が 0 件・`tools/call` が拒否 |
+| 肯定形の対照 | **同じサービスアカウントで `GET /documents`（REST）は基盤側の文書を返す。** 「MCP が壊れているから 0 件」ではなく経路の差である |
+| 追加した検査 | `McpPublicationAllowlistDriftTests` が**基盤側の公開許可リストそのもの**を読み、AST のサービスが載っていれば落ちる（隣接クローン不在時は**理由つき skip**・照合器は常に検査） |
+| 🔴 残る実害 | **公開許可リストの粒度は「ツール」であり、文書コレクションでも retrieval スコープでもない。** 公開済みの `document.*` / `retrieval.*` は**基盤の共有ナレッジベース全体**を対象とし、AST の保存先も同じ document-service である。**「許可リストに載せない」だけでは ADR-0012 の決定は守れない** |
+| 現在の非公開が成立している理由（統制ではない） | ① MCP クライアント登録簿が空（0 行） ② 下流のツール実行口（`/internal/mcp/*`）が 404 ③ AST の KB 保存が realm 不整合で全件失敗し文書が 0 件。**いずれも実装途上の状態であり、解消すれば公開され得る** |
+| 未了（人間の判断） | ① 有人クライアントからの実測（`directAccessGrantsEnabled` のクライアントが realm に無くトークンを取れない） ② 上記「残る実害」の計画／基盤への環流方針 |
+| 追跡 | **[#500](https://github.com/endazon/ai-stock-trading/issues/500)（本項の受け皿）**／#348（構造ガードの実施をもってクローズ済み）／ MSP#445（待ち先・完了） |
+| **最後に測った時点** | **2026-09-02 / #500**（ローカル k3s に対する読み取り専用の実測。棚卸しごとに測り直す） |
+| 再測定手順 | ① `microservices-platform` namespace に curl の使い捨て Pod を起動（同 namespace は mTLS STRICT のため他 namespace からは到達不能） ② サービスアカウントのトークンで `POST /mcp` の `initialize` → `tools/list` → `tools/call` ③ 同じトークンで `GET /documents` を叩き肯定形の対照を取る ④ `Clients` テーブルの行数と公開許可リストの内容を確認する |
 
 ---
 
