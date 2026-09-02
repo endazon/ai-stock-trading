@@ -65,7 +65,7 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
 
 ## 対象範囲
 
-- 対象: 射程の実測表（下記）、判断案 A/B/B′/C の比較と推奨、planning への環流 issue、`IADR-0282`、README 索引、#584 へのコメント
+- 対象: 射程の実測表（下記）、判断案 A/B/B′/C の比較と推奨、planning への環流 issue、`IADR-0282`、README 索引、`docs/blocked-tasks.md` B-4 の裁定待ち行、#584 へのコメントと `blocked:decision` ラベル
 - 対象外: コードの変更（`.proto`・CPM・Kestrel・Helm・クライアントの書き換え）、`Http.Resilience` / `HybridCache` への置換、
   結合テストの追加（いずれも #584 に残す）
 
@@ -167,7 +167,7 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
 - [x] #584 の記述と `MSP/ADR-0029` の衝突が planning へ環流されている（既存 issue を先に検索し 0 件を確認）
 - [x] `IADR-0282` に判断（暫定）と環流先が記録され、README 索引が更新されている
 - [x] #584 へ要約と planning issue URL をコメントした
-- [x] コードを変更していない（`git diff --stat` が `.ai-context/` のみ）
+- [x] コードを変更していない（`git diff --stat` が `.ai-context/` と `docs/blocked-tasks.md`〔B-4 の裁定待ち行〕のみ）
 - [x] `check-trace-blocks` / `check-cross-repo-refs` / `check-doc-links` / `check-adr-index-sync` / `check-plan-id-qualification` が緑
 
 ## テスト方針
