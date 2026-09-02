@@ -395,6 +395,12 @@ services:
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
       - { name: LlmGateway__BaseUrl, value: "" }
+      # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=軽量モデル→二次本判断）の有効化。
+      # コード側の構成既定も true（#571 で反転。明示行はここでの可視化が目的で挙動を変えない）。
+      # ⚠️ 前提: 基盤 LlmGateway に用途 trade-decision-screening（claude-haiku-4-5）が登録されていること
+      # （microservices-platform 側 PR。未登録のまま true でも安全側（見送り）に倒れるだけで発注はされないが、
+      # スクリーニングによる費用統制は機能しない＝IADR-0212 が挙げた帰結）。無効化する場合は "false" にする。
+      - { name: Decision__EnableScreening, value: "true" }
       # 空・不正・非正値=既定 30 秒（IADR-0061 決定2）。
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
