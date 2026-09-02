@@ -25,6 +25,12 @@ scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+im
 kubectl -n ai-stock-trading get pods
 ```
 
+> **`BROKER_TIER` / `OPEND_ENABLED` を export せずに再実行しても、前回リリースの値が引き継がれる**
+> （#626 / [IADR-0283](../../../.ai-context/adr/IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)。
+> `ast-secrets` と同じ挙動——明示的な空指定で前回の非空値を消す場合だけ中断し、`--force-empty-values`
+> で確認のうえ強制する）。以前は env passthrough 自体が無く、再実行のたびに `broker.tier`/`opend.enabled`
+> が既定（`paper`/`false`）へ黙って戻っていた（`opend.enabled=false` は OpenD の Deployment を削除する）。
+
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
@@ -46,7 +52,10 @@ kubectl -n ai-stock-trading get pods
 - **為替換算（#257 / #364 / IADR-0107 / IADR-0152）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
   **日本株を取引するための必須前提**（下記「為替換算」参照）。未設定だと JPY 建て銘柄は LLM 呼び出し前に全件見送りになる。
   **#364 で基準通貨が USD へ移行したため、必須となる市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株は本キー無しで回る）。
-- **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の watchlist（AAPL/UnitedStates）・`Reports`/`RiskManagement` BaseUrl。
+- **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement`/`MarketMonitor` BaseUrl。
+  監視銘柄（watchlist）は権威源（market-monitor）を `Monitor__SeedSymbols__0__*` で初回シードし
+  （AAPL/UnitedStates）、trade-decision 側の `TradeCycle__Watchlist__0__*` は同じ銘柄をフォールバック用に
+  据える（#286 / IADR-0282。詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../.ai-context/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
@@ -231,6 +240,27 @@ ADR-0008（計画リポ） の撤退基準に該当すると、
 撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
 （実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
 
+### 監視銘柄（watchlist）の初回シードと全削除の尊重（#286 / IADR-0282）
+
+trade-decision の `MarketMonitor__BaseUrl` を market-monitor へ結線すると、定時サイクルの監視銘柄は
+**権威源（market-monitor の watchlist）** から取得するようになる（[IADR-0095](../../../.ai-context/adr/IADR-0095_watchlist-authoritative-wiring.md)）。
+権威源の watchlist が空だと、`HttpWatchlistProvider` は **200 ＋ 空配列を正常応答として扱い**
+（「空の watchlist は監視しない利用者の正当な選択」を尊重するため意図的にフォールバックしない）、
+判断対象がゼロになり取引サイクルが沈黙する。
+
+これを避けるため、market-monitor の watchlist は `Monitor__SeedSymbols__0__Symbol` /
+`Monitor__SeedSymbols__0__Market`（複数銘柄は `__1__*`・`__2__*` と続ける）で**構成から初回シード**される。
+`values-local.yaml` は trade-decision の `TradeCycle__Watchlist__0__*`（フォールバック用の構成ベース
+watchlist）と同じ銘柄を投入しており、結線しても判断対象は減らない。
+
+- **シードされるのは「未設定」のときだけ**。SC-02（画面）または API で監視銘柄を 1 件でも追加・削除した
+  時点で、以後は利用者の操作が正となり構成シードは効かなくなる。
+- **全削除した状態は再シードで巻き戻らない。** watchlist の最後の 1 件を削除する、または全置換 PUT で
+  空にすると、その意思が記録され、Pod 再作成やサービス再起動を挟んでも空のまま維持される
+  （再び 1 件でも追加すれば、以後また通常どおり増減できる）。
+- 本番 `values.yaml` には `Monitor:SeedSymbols` の設定点自体を置かない（既定は空リスト＝
+  `MarketMonitor__BaseUrl` を結線しない限りこの経路は関与しない・現行挙動のバイト等価）。
+
 ### LLM 費用の単価（#303 / IADR-0122 ／ #279 / IADR-0114 決定6）
 
 `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens` は **円 / 1,000 トークン**の**モデル別**単価。
@@ -363,6 +393,9 @@ scripts/k8s-local-deploy.sh
 - 稼働中の階層は `GET /internal/introspection` の `broker` ポートが自己申告する（`paper` / `moomoo-sim`）。
 - **`moomoo.enabled` は非推奨エイリアス**である。`broker.tier` を指定していないときだけ `moomoo-sim` として
   解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
+- `scripts/k8s-local-deploy.sh` 経由でローカル配備する場合は **env `BROKER_TIER`** で指定する
+  （`--set broker.tier=...` を直接叩く場合と異なり、**未設定なら前回リリースの値を引き継ぐ**。
+  #626 / IADR-0283。上記「PVC は消えない」と同じ「export し忘れで既定へ戻さない」設計）。
 
 ### ⚠️ `paper` と `moomoo-sim` は「どちらも実弾でない」だけで**別物**である（#268）
 
@@ -427,6 +460,9 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 既定 **無効**（何も描画しない＝fail-safe）。dev の現行経路は `deploy/opend/k8s` の生 manifest で、そちらは残してある
 （IADR-0060 決定 1）。本 chart 経路は**本番配備**用で、既定値では生 manifest と同等に描画される。
 
+> `scripts/k8s-local-deploy.sh` 経由でローカル配備する場合は **env `OPEND_ENABLED=true`** で指定する
+> （未設定なら前回リリースの値を引き継ぐ。#626 / IADR-0283）。以下は直接 `helm upgrade` する場合のコマンド。
+
 ```bash
 # 前提: イメージのビルド＆import（scripts/opend-build.sh）、Secret moomoo-credentials / moomoo-rsa の作成。
 helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
@@ -440,6 +476,15 @@ kubectl -n ai-stock-trading attach -it deploy/opend
 > egress IP はノードの NAT 後 IP である（**Pod IP は無関係である**。ADR-0024 決定1）。ノードを跨いで
 > 再スケジュールされたときに再検証が要るかは **ADR-0024 決定5-1 で未検証**であり、**安全側に「有人の再検証に戻る」と想定する**
 > （マルチノード/クラウドでの実測は **#132 で未了**）。
+
+### PVC（`opend-persist`）は `opend.enabled` の切り替え・`helm uninstall` で消えない（#626, IADR-0283）
+
+PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を付けてある。デバイス信頼状態
+（`$HOME/.com.moomoo.OpenD`）の永続化先であり、消えると次回有効化時に SMS/画像 CAPTCHA の再認証が要るため
+（実測: `opend.enabled=false` への再描画・`helm uninstall` のいずれでも通常は PVC ごと削除される）。
+
+- **明示的に消す場合は手動で `kubectl delete pvc opend-persist -n ai-stock-trading` を実行する**（Helm には削除させない）。
+- デバイス信頼をリセットしたい（再認証からやり直したい）場合以外は消さないこと。
 
 ### 非 root 実行へ切り替える（既定は root・**未検証**）
 

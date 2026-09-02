@@ -76,6 +76,11 @@ builder.Services.AddScoped<IPositionStore>(sp =>
     http.BaseAddress = uri;
     return new HttpPositionStore(http, sp.GetRequiredService<ILogger<HttpPositionStore>>());
 });
+// FR-02, FR-13, #286, IADR-0282: watchlist 初回シード（構成 Monitor:SeedSymbols）。空既定（未設定）は
+// MonitorDefaults が従来どおり空でシードする（現行挙動のバイト等価）。
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IConfiguration>().GetSection(MonitorSeedOptions.SectionName).Get<MonitorSeedOptions>()
+    ?? new MonitorSeedOptions());
 // DbContext が scoped のため設定/基準値/クールダウンの EF ストアも scoped。
 builder.Services.AddScoped<IMonitoredSymbolStore, EfMonitoredSymbolStore>();
 builder.Services.AddScoped<IPriceBaselineStore, EfPriceBaselineStore>();

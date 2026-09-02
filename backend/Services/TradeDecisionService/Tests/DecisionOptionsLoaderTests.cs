@@ -6,8 +6,10 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// FR-04, IADR-0039: Decision:* 構成の読み取りと安全側フォールバックの検証。
-// 既定＝現行挙動（1 票・スクリーニング無効）を config 経由で壊さないことを保証する。
+// FR-04, IADR-0039, IADR-0212, IADR-0278, #571: Decision:* 構成の読み取りと安全側フォールバックの検証。
+// VoteCount の既定＝現行挙動（1 票）を config 経由で壊さないことを保証する。
+// EnableScreening は #571（基盤 trade-decision-screening 登録が前提）により既定 true へ反転した
+// （IADR-0278。DecisionOrchestrationOptions.Default 自体は不変であり、ローダーの構成既定だけが変わる）。
 public class DecisionOptionsLoaderTests
 {
     private static DecisionOrchestrationOptions Load(params (string Key, string? Value)[] pairs)
@@ -19,14 +21,21 @@ public class DecisionOptionsLoaderTests
     }
 
     [Fact]
-    public void 未設定なら既定_現行挙動と等価()
+    public void 未設定なら既定でスクリーニングが有効になる()
     {
         var options = Load();
 
         options.VoteCount.Should().Be(1);
-        options.EnableScreening.Should().BeFalse();
+        options.EnableScreening.Should().BeTrue();
         options.PrimaryModel.Should().BeNull();
         options.SecondaryModel.Should().BeNull();
+    }
+
+    // IADR-0278: 新既定（true）を構成で明示的に打ち消せること（fail-safe な上書き経路の否定形テスト）。
+    [Fact]
+    public void 明示的にfalseを設定すれば無効化できる()
+    {
+        Load(("Decision:EnableScreening", "false")).EnableScreening.Should().BeFalse();
     }
 
     [Fact]
@@ -65,9 +74,10 @@ public class DecisionOptionsLoaderTests
     }
 
     [Fact]
-    public void 不正なEnableScreeningは既定false()
+    public void 不正なEnableScreeningは既定true()
     {
-        Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeFalse();
+        // bool.TryParse が失敗する値（非 true/false）は新既定（true）のまま倒れる（IADR-0278）。
+        Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeTrue();
     }
 
     // #337, IADR-0247: スクリーニング入力のコンテキスト予算（縮退制御）の読み込み。
