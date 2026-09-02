@@ -212,8 +212,9 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpWatchlistProvider(http, configFallback, sp.GetRequiredService<ILogger<HttpWatchlistProvider>>());
 });
-// FR-04, IADR-0039: 多数決・二段オーケストレーションの構成（Decision:*）。未設定なら Default（1 票・スクリーニング無効）
-// ＝単発判断（IADR-0017）と等価＝現行挙動。実 LLM/モデル解決・回数の実値は後続（#23/#79 と連動）。
+// FR-04, IADR-0039, IADR-0212, IADR-0272, #571: 多数決・二段オーケストレーションの構成（Decision:*）。
+// 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。
+// 明示的に Decision:EnableScreening=false を与えれば従来どおり単発判断（IADR-0017）へ戻せる。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
 // FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（Decision:ScreeningContextBudgetChars
 // 設定時のみ発火）の記録経路。発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の
