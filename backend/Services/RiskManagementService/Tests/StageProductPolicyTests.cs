@@ -16,7 +16,10 @@ public class StageProductPolicyTests
     // #364, IADR-0152 決定3: 基準通貨が USD になったため、equity と解禁下限は同一通貨であり近似換算が要らない。
     private static readonly decimal ReleaseEquity = StageProductPolicy.ShortSellLiveReleaseEquityUsd;
 
-    private static readonly StageProductPolicy.StageReleaseContext Revalidated = new(true);
+    // FR-20, ADR-0016 決定14, #388, IADR-0281: 「解禁されるべき状態」＝equity 以外の 2 項（Stage 0 再充足・
+    // verdict が有効）が成立している文脈。素材は ShortSellReleaseFixtures に集約する。
+    private static readonly StageProductPolicy.StageReleaseContext Revalidated =
+        ShortSellReleaseFixtures.Released();
 
     // ------------------------------------------------------------------
     // 1. 段階 × 商品種別のマトリクス（ADR-0016 決定8 の表）
@@ -93,7 +96,7 @@ public class StageProductPolicyTests
                 TradingStage.Stage3ScaledLive,
                 ProductType.ShortSell,
                 ReleaseEquity * 100m,
-                new StageProductPolicy.StageReleaseContext(ShortSellStrategyBacktestPassed: false))
+                ShortSellReleaseFixtures.Released(shortSellStrategyBacktestPassed: false))
             .Should().Be(RejectionReason.StageShortSellReleaseUnmet);
     }
 

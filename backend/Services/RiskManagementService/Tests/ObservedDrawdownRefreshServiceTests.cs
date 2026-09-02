@@ -166,6 +166,7 @@ public class ObservedDrawdownRefreshServiceTests
             // #423, IADR-0164 決定4: 最小取引件数は設定値であり、段階ゲートは設定ストアから実効値を読む。
             new InMemoryRiskSettingsStore(),
             killSwitch,
+            new ShortSellReleaseSourceInventory([]),
             clock);
 
         // 実DD 未供給（0）では撤退は発火しない＝fail-safe。

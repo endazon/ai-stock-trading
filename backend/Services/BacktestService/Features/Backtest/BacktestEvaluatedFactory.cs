@@ -13,8 +13,21 @@ namespace BacktestService.Features.Backtest;
 // から導出すること（Stage 0 判定と供給値の乖離を避けるための発行側の契約・IADR-0089）。
 public static class BacktestEvaluatedFactory
 {
+    /// <param name="includesShortSelling">
+    /// FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 評価した戦略が**空売りを含む**か。
+    /// Stage0Decision は取引可能な商品種別を保持しないため、呼び出し元（発行ホスト）が渡す。
+    /// **既定値を与えない**——省略できると「含む戦略で合格した」と読める既定が生まれ、空売りが解禁されうる。
+    /// </param>
+    /// <param name="strategyId">
+    /// 評価した戦略の識別子。verdict の無効化契機「戦略の変更」を機械判定する鍵であり、
+    /// **戦略を変えたら変わる値**を渡すこと（同じ値のまま中身を変えると、古い verdict が生き残る）。
+    /// </param>
     public static BacktestEvaluated From(
-        Stage0Decision decision, decimal backtestMaxDrawdownRatio, DateTimeOffset evaluatedAt)
+        Stage0Decision decision,
+        decimal backtestMaxDrawdownRatio,
+        DateTimeOffset evaluatedAt,
+        bool includesShortSelling,
+        string strategyId)
     {
         ArgumentNullException.ThrowIfNull(decision);
         ArgumentNullException.ThrowIfNull(decision.Gate);
@@ -26,6 +39,8 @@ public static class BacktestEvaluatedFactory
             ProbabilityOfBacktestOverfitting: decision.ProbabilityOfBacktestOverfitting,
             // 未達条件は Risk 側の監査・診断のため名称の連結で持つ（合格なら空文字）。ドメインの単一情報源を共有する。
             FailedChecks: decision.Gate.FormatFailedChecks(),
-            EvaluatedAt: evaluatedAt);
+            EvaluatedAt: evaluatedAt,
+            IncludesShortSelling: includesShortSelling,
+            StrategyId: strategyId ?? string.Empty);
     }
 }
