@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 
 // SC-01, FR-12, INDEX 決定 46, #334:
 // 内蔵 `paper` 稼働中の警告バナーを **SC-01 でも**表示する。
@@ -55,7 +56,7 @@ beforeEach(() => {
 describe('SC-01 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () => {
   it('内蔵 paper 稼働中は必須 2 文言のバナーを表示する', async () => {
     mockApi(BROKER_PROVIDER_INTERNAL_PAPER);
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
 
     const banner = await screen.findByRole('alert', { name: '内蔵 paper 稼働中の警告' });
     expect(within(banner).getByText(PAPER_BANNER_DEBUG_MESSAGE)).toBeInTheDocument();
@@ -65,7 +66,7 @@ describe('SC-01 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () 
   // 否定形: paper でないときに出してはならない（SIMULATE / 実弾稼働をデバッグ稼働と誤認させる）。
   it('SIMULATE 稼働中はバナーを表示しない', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
 
     await screen.findByRole('heading', { name: '設定' });
     expect(screen.queryByRole('alert', { name: '内蔵 paper 稼働中の警告' })).not.toBeInTheDocument();
@@ -75,7 +76,7 @@ describe('SC-01 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () 
   // 本画面本来の機能（全体前提条件の閲覧）は Risk サービスの障害に巻き込まれない。
   it('発注先を取得できない場合はバナーを出さず、本画面の機能は動く', async () => {
     mockApi('unavailable');
-    render(<SettingsPage />);
+    renderWithProviders(<SettingsPage />);
 
     await screen.findByRole('heading', { name: '設定' });
     expect(await screen.findByText('現在のバージョン: 1')).toBeInTheDocument();

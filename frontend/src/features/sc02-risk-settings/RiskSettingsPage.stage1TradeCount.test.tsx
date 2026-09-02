@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
@@ -58,7 +59,7 @@ beforeEach(() => {
 describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it('現在の設定値を表示する', async () => {
     mockBff({ stage1MinimumTradeCount: 100 });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     expect(within(form).getByLabelText('Stage 1 の最小取引件数 件')).toHaveValue(100);
@@ -68,7 +69,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   // 計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に効く値であるため）。
   it('運用段階の参照表示の近くに置かれている', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await tradeCountForm();
 
     const html = document.body.innerHTML;
@@ -80,7 +81,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
 
   it('理由が無いと保存できない（監査のため理由必須）', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     expect(within(form).getByRole('button', { name: '最小取引件数を保存' })).toBeDisabled();
@@ -89,7 +90,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it('件数と理由を入れると PUT する', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.clear(within(form).getByLabelText('Stage 1 の最小取引件数 件'));
@@ -150,7 +151,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it.each(['1', '1000'])('境界値（%s 件）は保存できる', async (value) => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.type(within(form).getByLabelText('最小取引件数の変更理由'), '境界の検証');
@@ -163,7 +164,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it.each(['0', '-1', '1001'])('値域外（%s 件）は保存できずサーバへ送らない', async (value) => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.type(within(form).getByLabelText('最小取引件数の変更理由'), '値域外');
@@ -184,7 +185,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it.each(['1', '30', '99'])('%s 件（100 件未満）を入力すると警告を常時表示する', async (value) => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.clear(within(form).getByLabelText('Stage 1 の最小取引件数 件'));
@@ -199,7 +200,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it.each(['100', '101', '1000'])('%s 件（100 件以上）では警告を出さない', async (value) => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.clear(within(form).getByLabelText('Stage 1 の最小取引件数 件'));
@@ -213,7 +214,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it('100 件未満でも保存できる（警告は設定を妨げない）', async () => {
     mockBff();
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.clear(within(form).getByLabelText('Stage 1 の最小取引件数 件'));
@@ -236,7 +237,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   // 保存済みの値が 100 件未満なら、画面を開いた時点で警告が出ている（**常時表示**）。
   it('保存済みの値が 100 件未満なら画面を開いた時点で警告が出ている', async () => {
     mockBff({ stage1MinimumTradeCount: 40 });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     expect(within(form).getByText(/統計的な根拠/)).toBeInTheDocument();
@@ -248,7 +249,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
 
   it('条件 1・条件 2・打ち切り規則は変えられない旨を明記する', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await tradeCountForm();
 
     expect(screen.getByText(/変更できるのは/)).toHaveTextContent('取引件数だけ');
@@ -259,7 +260,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   // 計上単位を画面にも書く（「件」の意味が読み手によって変わらないようにする）。
   it('計上単位（約定が成立した新規建て注文 1 件）を画面に明記する', async () => {
     mockBff();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await tradeCountForm();
 
     const note = screen.getByText(/計上単位は/);
@@ -271,7 +272,7 @@ describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
   it('検証エラー（400）はメッセージ表示に留め破壊的な再試行をしない', async () => {
     mockBff({ put: 'validation' });
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await tradeCountForm();
 
     await user.type(within(form).getByLabelText('最小取引件数の変更理由'), '検証');

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import { ApiError } from '@foundation/api/ApiError';
 
 // SC-03, FR-10, FR-20, UC-06, IADR-0084: 承認・統制状態参照画面（参照専用）の振る舞い。
@@ -68,7 +69,7 @@ beforeEach(() => {
 
 describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   it('renders control status with the active control mapped to a label', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     expect(await screen.findByRole('heading', { name: '統制状態' })).toBeInTheDocument();
     // 読み込み完了（統制状態の描画）を待ってから内容を検証する（見出しは読み込み中も描画されるため待受にしない）。
     const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
@@ -81,7 +82,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   // FR-10, ADR-0009, SC-03, #340: 3 統制を**優先順位順**（kill switch ＞ 日次損失ロックアウト ＞ 一時停止）で
   // 表示し、**優先統制を明示**する。順序を画面に書かないと「同時に成立したときどれが効くのか」が読めない。
   it('3 統制を優先順位順に表示し優先統制を明示する', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
     const rows = within(table).getAllByRole('row');
 
@@ -100,21 +101,21 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   });
 
   it('shows usage ratios computed from current/limit', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     const table = await screen.findByRole('table', { name: '上限使用率' });
     // 1日発注 150000/300000 = 50.0%
     expect(within(table).getByText('50.0%')).toBeInTheDocument();
   });
 
   it('renders stage-gate promotion assessment with unmet criteria labels', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('heading', { name: '統制状態' });
     expect(await screen.findByText(/未充足基準/)).toHaveTextContent('スリッページ/費用が想定超過');
     expect(screen.getByText(/未充足基準/)).toHaveTextContent('日次損失上限の運用違反');
   });
 
   it('lists transition history newest first with from→to stage labels', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     const table = await screen.findByRole('table', { name: '段階遷移履歴' });
     const rows = within(table).getAllByRole('row');
     // 先頭データ行が新しい順（sequence 2）。
@@ -123,7 +124,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
   });
 
   it('has no destructive control buttons (read-only; #165 Bot owns those)', async () => {
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('heading', { name: '統制状態' });
     // 参照専用: いかなるボタンも持たない（pause/resume/kill switch/承認は Bot 側）。
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
@@ -135,7 +136,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
       if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return STATUS;
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     // 統制状態は表示され、段階ゲート領域のみ縮退する。
     const table = await screen.findByRole('table', { name: '取引統制（優先順位順）' });
     expect(within(table).getByText('緊急停止（kill switch）')).toBeInTheDocument();
@@ -147,7 +148,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
       if (path === '/risk-controls/status') throw new ApiError('notFound', '未登録', 404);
       throw new ApiError('notFound', '未登録', 404);
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     expect(await screen.findByText('統制状態は利用できません。')).toBeInTheDocument();
   });
 
@@ -158,7 +159,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
       if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return { ...STATUS, activeControl: 9, maxOpenPositions: 0, openPositionCount: 0 };
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     // 読み込み完了（統制状態の描画）を待つ。未知 enum は安全側フォールバック表示になる。
     expect(await screen.findByText('不明(9)')).toBeInTheDocument();
     const table = screen.getByRole('table', { name: '上限使用率' });
@@ -178,7 +179,7 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
       if (path === '/risk-controls/short-selling') return SHORT_SELLING;
       return STATUS;
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     const alert = await screen.findByText(/撤退基準に到達/);
     expect(alert).toHaveTextContent('実DD がバックテスト最大DD × 倍率に到達');
   });

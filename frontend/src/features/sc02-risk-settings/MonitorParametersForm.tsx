@@ -1,8 +1,13 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
-import { apiFetch } from '@foundation/api/apiClient';
+import { useState } from 'react';
 import { ApiError } from '@foundation/api/ApiError';
 import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from '../monitor/contracts';
+import {
+  useMonitorSettings,
+  useMonitorSettingsHistory,
+  useSaveCooldown,
+  useSaveMovementThreshold,
+} from '../monitor/queries';
 import {
   COOLDOWN_RANGE_TEXT,
   hoursTextToTimeSpan,
@@ -44,7 +49,6 @@ import {
 // 1 つのフォームで両方を送ると「片方だけ成功した」状態を作れる。アクセシブル名も完全に分ける。
 
 type LoadState = 'loading' | 'ok' | 'unavailable';
-type SaveState = 'idle' | 'saving' | 'error';
 
 // ApiError の種別を利用者向けメッセージへ写像する（SC-01 §1・SC-02 と同方針）。
 function saveMessageOf(e: unknown): string {
@@ -65,47 +69,27 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function MonitorParametersForm() {
-  const [state, setState] = useState<LoadState>('loading');
-  const [current, setCurrent] = useState<MarketMonitorSettings | null>(null);
-  const [historyState, setHistoryState] = useState<LoadState>('loading');
-  const [history, setHistory] = useState<MonitorSettingsChangeEntry[]>([]);
+  // IADR-0288: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  const settingsQuery = useMonitorSettings();
+  const historyQuery = useMonitorSettingsHistory();
 
-  async function loadCurrent(): Promise<void> {
-    try {
-      const data = await apiFetch<MarketMonitorSettings>('/monitor/settings');
-      setCurrent(data);
-      setState('ok');
-    } catch {
-      setState('unavailable');
-    }
-  }
-
-  async function loadHistory(): Promise<void> {
-    try {
-      const data = await apiFetch<MonitorSettingsChangeEntry[]>('/monitor/settings/history');
-      // 市場監視パラメータの変更だけを出す（監視銘柄の追加・削除は隣の節の関心である）。
-      setHistory(
-        (data ?? []).filter(
-          (h) =>
-            h.changeType === MONITOR_CHANGE_TYPE_MOVEMENT_THRESHOLD
-            || h.changeType === MONITOR_CHANGE_TYPE_COOLDOWN,
-        ),
-      );
-      setHistoryState('ok');
-    } catch {
-      setHistoryState('unavailable');
-    }
-  }
-
-  useEffect(() => {
-    void loadCurrent();
-    void loadHistory();
-  }, []);
-
-  async function reload(): Promise<void> {
-    await loadCurrent();
-    await loadHistory();
-  }
+  const current = settingsQuery.data ?? null;
+  const state: LoadState = settingsQuery.isPending
+    ? 'loading'
+    : settingsQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  const historyState: LoadState = historyQuery.isPending
+    ? 'loading'
+    : historyQuery.isError
+      ? 'unavailable'
+      : 'ok';
+  // 市場監視パラメータの変更だけを出す（監視銘柄の追加・削除は隣の節の関心である）。
+  const history: MonitorSettingsChangeEntry[] = (historyQuery.data ?? []).filter(
+    (h) =>
+      h.changeType === MONITOR_CHANGE_TYPE_MOVEMENT_THRESHOLD
+      || h.changeType === MONITOR_CHANGE_TYPE_COOLDOWN,
+  );
 
   return (
     <Section title="市場監視パラメータ（変動閾値・クールダウン）">
@@ -131,8 +115,8 @@ export function MonitorParametersForm() {
             現在のクールダウン: <strong>{timeSpanToHoursText(current.cooldown)} 時間</strong>
           </p>
 
-          <MovementThresholdForm current={current} onSaved={reload} />
-          <CooldownForm current={current} onSaved={reload} />
+          <MovementThresholdForm current={current} />
+          <CooldownForm current={current} />
         </>
       )}
 
@@ -143,27 +127,28 @@ export function MonitorParametersForm() {
 
 // FR-03, FR-13: 変動閾値の変更。ワイヤは**比率**（0.03）、画面は**百分率**（3）である。
 // 変換は `percentTextToRatio` / `ratioToPercentText`（risk/contracts）だけを通す（IADR-0151 決定1）。
-function MovementThresholdForm({
-  current,
-  onSaved,
-}: {
-  current: MarketMonitorSettings;
-  onSaved: () => Promise<void>;
-}) {
+function MovementThresholdForm({ current }: { current: MarketMonitorSettings }) {
+  // IADR-0288: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  const save = useSaveMovementThreshold();
   const [percent, setPercent] = useState(() => ratioToPercentText(current.movementThresholdRatio));
   const [reason, setReason] = useState('');
-  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // 現在値に追随して入力を初期化する（自分の保存成功後の再取得・外部変更）。
-  useEffect(() => {
+  //
+  // 🔴 #498, NFR: **これを `useEffect` で行わない。** commit（DOM が見える）と passive effect の実行の
+  // 間には窓があり、その窓で利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って巻き戻す
+  // （同型の flake が実測されている）。前回値を state に持ち、**描画中に同期的に**調整する。
+  const [syncedRatio, setSyncedRatio] = useState(current.movementThresholdRatio);
+  if (syncedRatio !== current.movementThresholdRatio) {
+    setSyncedRatio(current.movementThresholdRatio);
     setPercent(ratioToPercentText(current.movementThresholdRatio));
     setReason('');
-  }, [current.movementThresholdRatio]);
+  }
 
   const validationError = validateMovementThresholdPercent(percent);
-  const blocked = validationError !== null || reason.trim() === '' || saveState === 'saving';
+  const blocked = validationError !== null || reason.trim() === '' || save.isPending;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -173,21 +158,14 @@ function MovementThresholdForm({
     // 読めない値は送らない（**黙って 0 を送らない**。0 はすべての変動で発火する危険側の設定である）。
     if (ratio === null) return;
 
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
-      await apiFetch<MarketMonitorSettings>('/monitor/settings/movement-threshold', {
-        method: 'PUT',
-        json: { movementThresholdRatio: ratio, reason: reason.trim() },
-      });
+      await save.mutateAsync({ movementThresholdRatio: ratio, reason: reason.trim() });
       setReason('');
-      setSaveState('idle');
       setSavedNotice('変動閾値を保存しました。');
-      await onSaved();
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -225,7 +203,7 @@ function MovementThresholdForm({
       <button type="submit" disabled={blocked}>
         変動閾値を保存
       </button>
-      {saveState === 'saving' && <span role="status">変動閾値を保存中…</span>}
+      {save.isPending && <span role="status">変動閾値を保存中…</span>}
       {savedNotice && <p role="status">{savedNotice}</p>}
       {saveError && <p role="alert">{saveError}</p>}
     </form>
@@ -234,26 +212,23 @@ function MovementThresholdForm({
 
 // FR-03, FR-13: クールダウンの変更。ワイヤは **`TimeSpan` 文字列**（`"00:15:00"`）、画面は**時間**である。
 // 変換は `hoursTextToTimeSpan` / `timeSpanToHoursText`（monitor/contracts）だけを通す。
-function CooldownForm({
-  current,
-  onSaved,
-}: {
-  current: MarketMonitorSettings;
-  onSaved: () => Promise<void>;
-}) {
+function CooldownForm({ current }: { current: MarketMonitorSettings }) {
+  const save = useSaveCooldown();
   const [hours, setHours] = useState(() => timeSpanToHoursText(current.cooldown));
   const [reason, setReason] = useState('');
-  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
-  useEffect(() => {
+  // 現在値への追随は描画中に同期的に行う（理由は `MovementThresholdForm` と同じ。#498）。
+  const [syncedCooldown, setSyncedCooldown] = useState(current.cooldown);
+  if (syncedCooldown !== current.cooldown) {
+    setSyncedCooldown(current.cooldown);
     setHours(timeSpanToHoursText(current.cooldown));
     setReason('');
-  }, [current.cooldown]);
+  }
 
   const validationError = validateCooldownHours(hours);
-  const blocked = validationError !== null || reason.trim() === '' || saveState === 'saving';
+  const blocked = validationError !== null || reason.trim() === '' || save.isPending;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -262,20 +237,13 @@ function CooldownForm({
     // 読めない値は送らない（**黙って "00:00:00" を送らない**。0 は「抑制なし」という別の設定である）。
     if (cooldown === null) return;
 
-    setSaveState('saving');
     setSaveError(null);
     setSavedNotice(null);
     try {
-      await apiFetch<MarketMonitorSettings>('/monitor/settings/cooldown', {
-        method: 'PUT',
-        json: { cooldown, reason: reason.trim() },
-      });
+      await save.mutateAsync({ cooldown, reason: reason.trim() });
       setReason('');
-      setSaveState('idle');
       setSavedNotice('クールダウンを保存しました。');
-      await onSaved();
     } catch (err: unknown) {
-      setSaveState('error');
       setSaveError(saveMessageOf(err));
     }
   }
@@ -313,7 +281,7 @@ function CooldownForm({
       <button type="submit" disabled={blocked}>
         クールダウンを保存
       </button>
-      {saveState === 'saving' && <span role="status">クールダウンを保存中…</span>}
+      {save.isPending && <span role="status">クールダウンを保存中…</span>}
       {savedNotice && <p role="status">{savedNotice}</p>}
       {saveError && <p role="alert">{saveError}</p>}
     </form>

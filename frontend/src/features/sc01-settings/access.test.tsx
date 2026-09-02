@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import type { User } from 'oidc-client-ts';
-import { AuthContext } from '@foundation/auth/AuthContext';
-import type { AuthState } from '@foundation/auth/AuthContext';
+import { screen } from '@testing-library/react';
+import { renderUnitRoute } from '@foundation/testing/renderUnitRoute';
 
-// SC-01, FR-17, UC-06, IADR-0009/0035/0080: 設定画面のアクセス制御（利用者 trading-owner 限定＋存在秘匿）。
-// feature ルート要素（RequireRole でラップ済み）をロール別に描画し、権限外は NotFound で画面の存在を示さないことを検証する。
-// 許可時のデータ取得はモックする（実 BFF 疎通に依存しない）。
+// SC-01, FR-17, UC-06, IADR-0009/0035/0080/0282: 設定画面のアクセス制御（利用者 trading-owner 限定＋存在秘匿）。
+//
+// **ルート factory を実際に描画する。** `renderUnitRoute` は実アプリと同じ id（`_shell`）を持つ
+// 共通シェルの下にユニットのルートを載せるため、「ルート木に載っていない画面」「パスの取り違え」も
+// ここで落ちる（従前は feature オブジェクトから element を取り出して描いており、ルートに載って
+// いるかどうかは何も検証していなかった）。
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('@foundation/api/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 
-import { sc01SettingsFeature } from './index';
+import { createSc01SettingsRoute, sc01SettingsNav } from './index';
+
+// **本 feature のルートだけ**を載せる。ユニットの合成面（`../index`）を引くと、feature の
+// テストが他の feature の存在に依存する（ADR-0066 決定 1 の向きにも反する。ESLint が error にする）。
+// 合成面そのものの不変条件は `src/features/index.test.tsx` が持つ。
+const createRoutes = (shell: Parameters<typeof createSc01SettingsRoute>[0]) =>
+  [createSc01SettingsRoute(shell)] as const;
 
 const EMPTY_ASSUMPTIONS = {
   assumptions: {
@@ -26,29 +32,6 @@ const EMPTY_ASSUMPTIONS = {
   isResolved: true,
 };
 
-function makeJwt(payload: unknown): string {
-  const b64url = (obj: unknown) =>
-    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  return `h.${b64url(payload)}.sig`;
-}
-
-function renderSettingsRoute(roles: string[]) {
-  const user = { access_token: makeJwt({ realm_access: { roles } }) } as unknown as User;
-  const value: AuthState = {
-    user,
-    isAuthenticated: true,
-    isLoading: false,
-    login: async () => {},
-    logout: async () => {},
-  };
-  const element = sc01SettingsFeature.routes[0].element;
-  return render(
-    <AuthContext.Provider value={value}>
-      <MemoryRouter>{element}</MemoryRouter>
-    </AuthContext.Provider>,
-  );
-}
-
 beforeEach(() => {
   mocks.apiFetch.mockReset();
   mocks.apiFetch.mockImplementation(async (path: string) => {
@@ -57,14 +40,20 @@ beforeEach(() => {
   });
 });
 
-describe('SC-01 access control (#106)', () => {
+describe('SC-01 access control (#106, #414)', () => {
   it('grants access to trading-owner', async () => {
-    renderSettingsRoute(['trading-owner']);
+    await renderUnitRoute(createRoutes, {
+      initialEntry: sc01SettingsNav.to,
+      roles: ['trading-owner'],
+    });
     expect(await screen.findByRole('heading', { name: '設定' })).toBeInTheDocument();
   });
 
-  it('hides existence (NotFound) for a non-owner user', () => {
-    renderSettingsRoute(['user']);
+  it('hides existence (NotFound) for a non-owner user', async () => {
+    await renderUnitRoute(createRoutes, {
+      initialEntry: sc01SettingsNav.to,
+      roles: ['user'],
+    });
     expect(screen.queryByRole('heading', { name: '設定' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '見つかりませんでした' })).toBeInTheDocument();
     // 権限外では設定 API を呼ばない（存在を推測させない）。
@@ -72,6 +61,7 @@ describe('SC-01 access control (#106)', () => {
   });
 
   it('exposes a nav entry limited to trading-owner', () => {
-    expect(sc01SettingsFeature.nav?.requiresAnyRole).toEqual(['trading-owner']);
+    expect(sc01SettingsNav.requiresAnyRole).toEqual(['trading-owner']);
+    expect(sc01SettingsNav.to).toBe('/settings');
   });
 });

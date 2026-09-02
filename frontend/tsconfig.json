@@ -19,9 +19,25 @@
     "noUncheckedSideEffectImports": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
+    // IADR-0080 / IADR-0288: **platform へ合成されたときの向き先**（単独リポでは
+    // `tsconfig.standalone.json` がスタブへ差し替える）。
+    //
+    // `@foundation` は**ディレクトリ名ではなく platform 基盤の公開面の名前**であり、実体は
+    // 基盤側で `app/` `lib/` `components/` `testing/` へ分かれている（MSP/IADR-0262 決定 1）。
+    // ワイルドカード 1 本では解決できないので、**本ユニットが使う区分ごとに張る**。
+    // 従前ここは `@foundation/*` → `../../platform/frontend/src/foundation/*` という
+    // **基盤側に既に存在しない配置**を指していた。
     "paths": {
-      "@foundation/*": ["../../platform/frontend/src/foundation/*"],
-      "@features/*": ["../../platform/frontend/src/features/*"],
+      "@foundation/routing/*": ["../../platform/frontend/src/app/routing/*"],
+      "@foundation/routing": ["../../platform/frontend/src/app/routing"],
+      "@foundation/api/*": ["../../platform/frontend/src/lib/api/*"],
+      "@foundation/api": ["../../platform/frontend/src/lib/api"],
+      "@foundation/auth/*": ["../../platform/frontend/src/lib/auth/*"],
+      "@foundation/auth": ["../../platform/frontend/src/lib/auth"],
+      "@foundation/ui/*": ["../../platform/frontend/src/components/ui/*"],
+      "@foundation/ui": ["../../platform/frontend/src/components/ui"],
+      "@foundation/testing/*": ["../../platform/frontend/src/testing/*"],
+      "@foundation/testing": ["../../platform/frontend/src/testing"],
       "@ai-stock-trading/*": ["src/*"]
     }
   },
