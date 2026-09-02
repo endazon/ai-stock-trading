@@ -17,6 +17,7 @@ public sealed class StageGateService(
     StageGatePolicy policy,
     IRiskSettingsStore settingsStore,
     KillSwitchService killSwitch,
+    ShortSellReleaseSourceInventory releaseSources,
     IClock clock)
 {
     // FR-20, FR-13, SC-02, #423, §4.1 条件 3, IADR-0164 決定4: **最小取引件数だけが設定値である。**
@@ -73,7 +74,68 @@ public sealed class StageGateService(
             performance.Stage1Progress,
             // SC-02, SC-03, #423: **実効の合格条件**を返す（設定で変わった件数を含む）。
             // `BelowStatisticalBasis`（100 件未満か）もここに載り、画面と Discord はこの宣言に従う。
-            effective.Stage1Criteria);
+            effective.Stage1Criteria,
+            // FR-20, SC-03, ADR-0016 決定14, #388, IADR-0281 決定5: 空売り実弾解禁 verdict の現況。
+            // 拒否理由（StageShortSellReleaseUnmet）は「verdict 無効」と「その他の未充足」を区別しないため、
+            // **区別はここが担う**（状態・現在のフィンガープリント・現在の戦略 ID・失効時刻）。
+            DescribeShortSellRelease(ledger, performance));
+    }
+
+    // FR-20, ADR-0016 決定14, #388, IADR-0281: 発注審査（StageProductPolicy）へ渡す解禁条件の文脈を組み立てる。
+    //
+    // **本メソッドの戻り値を発注審査へ渡す配線は本 PR では行わない**（IADR-0281 決定6）。
+    // 借株照会・維持率の供給（#417 / #419）が未実装であり、解禁の材料が揃っていない状態で
+    // 「揃った」と見える配線を先に作らない。供給が揃った時点でここを 1 行で結線できる。
+    public StageProductPolicy.StageReleaseContext CurrentShortSellRelease()
+    {
+        var ledger = ledgerStore.Load();
+        var performance = performanceStore.GetCurrent();
+        return new StageProductPolicy.StageReleaseContext(
+            performance.ShortSellStrategyBacktestPassed,
+            ledger.LatestShortSellReleaseVerdict,
+            releaseSources.CurrentFingerprint(),
+            performance.BacktestStrategyId,
+            clock.UtcNow);
+    }
+
+    // FR-20, UC-06, ADR-0016 決定14, #388, IADR-0281 決定1: **verdict を承認記録へ載せる**（段階は動かさない）。
+    //
+    // 発行時点の情報源フィンガープリントと戦略識別子は**サーバが写し取る**——承認者に手で入力させると
+    // 自己申告になり、機械的な突合にならない（打ち間違いが verdict を恒久的に無効化することもある）。
+    // 受理しても観測窓（統制違反・約定・稼働・実DD）は区切らない。段階が動いていないためである。
+    public StageTransitionResult RecordShortSellReleaseVerdict(string approver)
+    {
+        var ledger = ledgerStore.Load();
+        var performance = performanceStore.GetCurrent();
+        var attestation = new ShortSellReleaseAttestation(
+            releaseSources.CurrentFingerprint(), performance.BacktestStrategyId);
+
+        var result = StageGate.RequestShortSellReleaseVerdict(
+            ledger.CurrentStage, ledger.NextSequence,
+            new StageApproval(ledger.CurrentStage, approver), attestation,
+            EffectivePolicy(), clock.UtcNow);
+
+        if (result is { Accepted: true, Transition: not null })
+        {
+            ledgerStore.Append(result.Transition);
+        }
+
+        return result;
+    }
+
+    private ShortSellReleaseState DescribeShortSellRelease(
+        StageGateLedger ledger, StagePerformance performance)
+    {
+        var verdict = ledger.LatestShortSellReleaseVerdict;
+        var fingerprint = releaseSources.CurrentFingerprint();
+        return new ShortSellReleaseState(
+            ShortSellReleasePolicy.Evaluate(
+                verdict, fingerprint, performance.BacktestStrategyId, clock.UtcNow),
+            verdict,
+            fingerprint,
+            performance.BacktestStrategyId,
+            performance.ShortSellStrategyBacktestPassed,
+            verdict is null ? null : ShortSellReleasePolicy.ExpiresAt(verdict));
     }
 
     // FR-20: 遷移履歴（追記順・監査対象）。

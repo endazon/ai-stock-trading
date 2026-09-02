@@ -19,6 +19,37 @@ public record StageGateLedger
     /// <summary>次に付与すべきシーケンス。履歴が空なら 1、以降は連番。</summary>
     public int NextSequence => History.Count == 0 ? 1 : History[^1].Sequence + 1;
 
+    /// <summary>
+    /// FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: **最新の空売り実弾解禁 verdict**（無ければ null）。
+    /// <para>
+    /// 承認記録（本台帳）を後ろから走査して最初に見つかった verdict の行を返す。**別記録を持たない**
+    /// ——裁定が「別記録にしない」と明示したためであり、ここが verdict の唯一の権威源である。
+    /// </para>
+    /// <para>
+    /// 有効性（30 日期限・情報源の変更・戦略の変更）は判定しない。判定は純関数
+    /// <see cref="ShortSellReleasePolicy.Evaluate"/> が評価時点の材料を突き合わせて行う。
+    /// </para>
+    /// </summary>
+    public ShortSellReleaseVerdict? LatestShortSellReleaseVerdict
+    {
+        get
+        {
+            for (var i = History.Count - 1; i >= 0; i--)
+            {
+                var entry = History[i];
+                if (entry.Kind == StageTransitionKind.ShortSellReleaseVerdict
+                    && entry.ShortSellRelease is { } attestation)
+                {
+                    return new ShortSellReleaseVerdict(
+                        entry.Sequence, entry.ApprovedBy, entry.OccurredAtUtc,
+                        attestation.SourceFingerprint, attestation.StrategyId);
+                }
+            }
+
+            return null;
+        }
+    }
+
     /// <summary>起点段階の空台帳を作る。</summary>
     public static StageGateLedger Empty(TradingStage initialStage) => new() { InitialStage = initialStage };
 
