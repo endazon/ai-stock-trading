@@ -202,6 +202,37 @@ export interface StageTransition {
   approvedBy: string;
   occurredAtUtc: string; // DateTimeOffset（ISO 文字列）
   reason: string;
+  // 空売り実弾解禁の verdict が**相乗り**した行だけが値を持つ（段階遷移の行は null）。
+  // 承認記録は 1 本であり、verdict 専用の記録は存在しない。
+  shortSellRelease: ShortSellReleaseAttestation | null;
+}
+
+// 空売り実弾解禁の verdict が「何を確認したか」の添付（発行時点の情報源・戦略）。
+export interface ShortSellReleaseAttestation {
+  sourceFingerprint: string;
+  strategyId: string;
+}
+
+// 承認記録から復元した verdict 1 件。承認記録 ID＝段階ゲート台帳の連番である。
+export interface ShortSellReleaseVerdict {
+  approvalSequence: number;
+  approvedBy: string;
+  issuedAtUtc: string; // DateTimeOffset（ISO 文字列）
+  sourceFingerprint: string;
+  strategyId: string;
+}
+
+// 空売り実弾解禁 verdict の現況。
+//
+// **拒否理由（StageShortSellReleaseUnmet）は「verdict 無効」と「その他の解禁条件未充足」を区別しない。**
+// 区別を担うのが本型であり、状態と**現在**の値の両方を返すため「何が変わって無効になったのか」が読める。
+export interface ShortSellReleaseState {
+  status: number; // ShortSellReleaseVerdictStatus enum（数値）
+  verdict: ShortSellReleaseVerdict | null;
+  currentSourceFingerprint: string;
+  currentStrategyId: string;
+  shortSellStrategyBacktestPassed: boolean;
+  expiresAtUtc: string | null;
 }
 
 // FR-20, #334, IADR-0142: Stage 1 の進捗（**moomoo SIMULATE の実績のみ**）と、内蔵 paper 稼働により
@@ -235,6 +266,7 @@ export interface StageGateStatus {
   withdrawal: WithdrawalAssessment;
   stage1Progress: Stage1Progress;
   stage1Criteria: Stage1GateCriteria;
+  shortSellRelease: ShortSellReleaseState;
 }
 
 // ---- 数値 enum → 表示ラベルの写像（未知値は安全側フォールバック） ----
@@ -266,10 +298,23 @@ const ACTIVE_CONTROL_LABELS: Record<number, string> = {
   3: '一時停止',
 };
 
-// StageTransitionKind（0=Promotion,1=Demotion）。
+// StageTransitionKind（0=Promotion,1=Demotion,2=ShortSellReleaseVerdict）。
+// 2 は**段階を動かさない承認**である（空売り実弾解禁の確認が済んだという判定）。承認記録は 1 本であり、
+// 段階遷移と同じ履歴に載る——別記録にすると「段階は承認したが verdict は誰も出していない」状態が生じる。
 const TRANSITION_KIND_LABELS: Record<number, string> = {
   0: '昇格',
   1: '差し戻し',
+  2: '空売り実弾解禁の verdict',
+};
+
+// ShortSellReleaseVerdictStatus（0=Valid,1=Missing,2=Expired,3=SourceChanged,4=StrategyChanged）。
+// **Valid 以外はすべて「解禁しない」**（フェイルクローズ）。無効化の契機は情報源の変更・戦略の変更・期限切れの 3 つ。
+const SHORT_SELL_RELEASE_STATUS_LABELS: Record<number, string> = {
+  0: '有効',
+  1: '未承認（確認が記録されていません）',
+  2: '期限切れ（発行から 30 日超）',
+  3: '情報源が変わったため無効',
+  4: '戦略が変わったため無効',
 };
 
 // StageGateCriterion（StageTransition.cs の列挙順）。
@@ -453,6 +498,8 @@ export const brokerProviderLabel = (v: number): string => labelOf(BROKER_PROVIDE
 export const activeControlLabel = (v: number): string => labelOf(ACTIVE_CONTROL_LABELS, v);
 export const transitionKindLabel = (v: number): string => labelOf(TRANSITION_KIND_LABELS, v);
 export const criterionLabel = (v: number): string => labelOf(CRITERION_LABELS, v);
+export const shortSellReleaseStatusLabel = (v: number): string =>
+  labelOf(SHORT_SELL_RELEASE_STATUS_LABELS, v);
 export const withdrawalReasonLabel = (v: number): string => labelOf(WITHDRAWAL_REASON_LABELS, v);
 export const changeTypeLabel = (v: number): string => labelOf(CHANGE_TYPE_LABELS, v);
 export const productTypeLabel = (v: number): string => labelOf(PRODUCT_TYPE_LABELS, v);

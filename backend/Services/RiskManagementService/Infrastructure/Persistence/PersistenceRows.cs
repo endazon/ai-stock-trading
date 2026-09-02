@@ -162,6 +162,16 @@ public sealed class StageTransitionRow
     public DateTimeOffset OccurredAtUtc { get; set; }
 
     public string Reason { get; set; } = string.Empty;
+
+    // FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: 空売り実弾解禁の verdict が**相乗り**する 2 列。
+    // Kind == ShortSellReleaseVerdict の行だけが値を持ち、段階遷移の行は null（**専用テーブルを作らない**）。
+    // 承認者・発行時刻・承認記録 ID は上の既存列（ApprovedBy / OccurredAtUtc / Sequence）がそのまま担う。
+
+    /// <summary>発行時点の情報源フィンガープリント（借株照会・維持率の登録アダプタ名）。</summary>
+    public string? ShortSellReleaseSourceFingerprint { get; set; }
+
+    /// <summary>発行時点の戦略識別子（バックテスト verdict が名乗る戦略 ID）。</summary>
+    public string? ShortSellReleaseStrategyId { get; set; }
 }
 
 // FR-20, FR-15, IADR-0070: 段階ゲートの合格・撤退基準の入力＝段階別実績の単一行。未記録時は fail-safe 既定
@@ -191,6 +201,12 @@ public sealed class StagePerformanceRow
     // 発注審査の観測ログ（order_screening_observations）であり、供給の有無（未供給 / 0 件）を
     // 非 nullable の int 列では表現できない。死んだ列を残すと「まだ使う値」に見え、次の実装者が
     // 判定へ結線し直す余地が残る（IADR-0137 決定2 と同じ規律）。
+
+    // FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 空売り実弾解禁の判定入力（backtest 由来・射影が所有する）。
+    // 既定は false / 空文字＝fail-safe（空売りは解禁されず、verdict も「戦略の同一性を名乗れない」として無効）。
+    public bool BacktestIncludesShortSelling { get; set; }
+
+    public string BacktestStrategyId { get; set; } = string.Empty;
 
     public bool SlippageAndCostWithinExpected { get; set; }
 

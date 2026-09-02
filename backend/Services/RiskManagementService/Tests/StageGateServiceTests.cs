@@ -45,7 +45,9 @@ public class StageGateServiceTests
         var settings = new InMemoryRiskSettingsStore(
             TradingDefaults.CreateSettings() with { Stage1MinimumTradeCount = minimumTradeCount });
         var svc = new StageGateService(
-            ledger, perf, violations, fills, uptime, TradingDefaults.CreateStagePolicy(), settings, kill, clock);
+            ledger, perf, violations, fills, uptime, TradingDefaults.CreateStagePolicy(), settings, kill,
+            // FR-20, ADR-0016 決定14, #388, IADR-0281 決定2: 供給アダプタ未登録＝`borrow=none;margin=none`。
+            new ShortSellReleaseSourceInventory([]), clock);
         return (svc, ledger, perf, violations, kill, fills, uptime);
     }
 

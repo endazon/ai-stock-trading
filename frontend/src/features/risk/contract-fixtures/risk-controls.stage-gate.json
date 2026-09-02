@@ -13,7 +13,8 @@
       "kind": 0,
       "approvedBy": "test-owner",
       "occurredAtUtc": "2026-08-05T00:00:00.0000000+00:00",
-      "reason": "利用者承認による昇格"
+      "reason": "利用者承認による昇格",
+      "shortSellRelease": null
     }
   ],
   "promotion": {
@@ -41,5 +42,13 @@
     "minimumTradeCount": 100,
     "maximumTradingDays": 120,
     "belowStatisticalBasis": false
+  },
+  "shortSellRelease": {
+    "status": 1,
+    "verdict": null,
+    "currentSourceFingerprint": "borrow=none;margin=none",
+    "currentStrategyId": "",
+    "shortSellStrategyBacktestPassed": false,
+    "expiresAtUtc": null
   }
 }

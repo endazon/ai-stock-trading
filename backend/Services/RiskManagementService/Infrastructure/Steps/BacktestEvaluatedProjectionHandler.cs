@@ -27,9 +27,14 @@ public sealed class BacktestEvaluatedProjectionHandler(
         {
             BacktestPassed = message.Passed,
             BacktestMaxDrawdownRatio = message.MaxDrawdownRatio,
+            // FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 空売り実弾解禁の判定入力も backtest 由来である。
+            // 戦略識別子が変われば、既発行の解禁 verdict は「戦略の変更」で自動的に無効になる。
+            BacktestIncludesShortSelling = message.IncludesShortSelling,
+            BacktestStrategyId = message.StrategyId ?? string.Empty,
         });
         logger.LogInformation(
-            "バックテスト verdict を段階別実績へ射影: Passed={Passed} 最大DD={MaxDrawdown}",
-            message.Passed, message.MaxDrawdownRatio);
+            "バックテスト verdict を段階別実績へ射影: Passed={Passed} 最大DD={MaxDrawdown} "
+            + "空売り含む={IncludesShortSelling} 戦略={StrategyId}",
+            message.Passed, message.MaxDrawdownRatio, message.IncludesShortSelling, message.StrategyId);
     }
 }
