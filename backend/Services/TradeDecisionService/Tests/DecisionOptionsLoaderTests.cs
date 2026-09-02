@@ -6,10 +6,10 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// FR-04, IADR-0039, IADR-0212, IADR-0277, #571: Decision:* 構成の読み取りと安全側フォールバックの検証。
+// FR-04, IADR-0039, IADR-0212, IADR-0278, #571: Decision:* 構成の読み取りと安全側フォールバックの検証。
 // VoteCount の既定＝現行挙動（1 票）を config 経由で壊さないことを保証する。
 // EnableScreening は #571（基盤 trade-decision-screening 登録が前提）により既定 true へ反転した
-// （IADR-0277。DecisionOrchestrationOptions.Default 自体は不変であり、ローダーの構成既定だけが変わる）。
+// （IADR-0278。DecisionOrchestrationOptions.Default 自体は不変であり、ローダーの構成既定だけが変わる）。
 public class DecisionOptionsLoaderTests
 {
     private static DecisionOrchestrationOptions Load(params (string Key, string? Value)[] pairs)
@@ -31,7 +31,7 @@ public class DecisionOptionsLoaderTests
         options.SecondaryModel.Should().BeNull();
     }
 
-    // IADR-0277: 新既定（true）を構成で明示的に打ち消せること（fail-safe な上書き経路の否定形テスト）。
+    // IADR-0278: 新既定（true）を構成で明示的に打ち消せること（fail-safe な上書き経路の否定形テスト）。
     [Fact]
     public void 明示的にfalseを設定すれば無効化できる()
     {
@@ -76,7 +76,7 @@ public class DecisionOptionsLoaderTests
     [Fact]
     public void 不正なEnableScreeningは既定true()
     {
-        // bool.TryParse が失敗する値（非 true/false）は新既定（true）のまま倒れる（IADR-0277）。
+        // bool.TryParse が失敗する値（非 true/false）は新既定（true）のまま倒れる（IADR-0278）。
         Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeTrue();
     }
 
