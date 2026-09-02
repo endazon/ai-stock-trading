@@ -1,0 +1,4 @@
+# utils 層（計画 13_frontend-stack §ディレクトリ構成・shared）: 純粋なユーティリティ関数。
+#
+# 本ユニットの純関数は BFF 契約の正規化・判定であり、契約と同じファイル
+# （`src/lib/{risk,monitor}/contracts.ts`）に置いている。ドメインに紐づかない汎用関数は現状無い。枠のみ。

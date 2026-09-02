@@ -7,11 +7,11 @@ import type {
   SettingsChangeEntry,
   ShortSellingStatusView,
   StageGateStatus,
-} from '../src/features/risk/contracts';
+} from '../src/lib/risk/contracts';
 import type {
   MarketMonitorSettings,
   MonitorSettingsChangeEntry,
-} from '../src/features/monitor/contracts';
+} from '../src/lib/monitor/contracts';
 
 // SC-01/02/03, IADR-0087: E2E の BFF モック定義（test-only）。
 // 画面が叩く BFF パス/メソッドを Playwright の page.route で横取りし、決定的な応答を返す（実 API に依存しない）。
@@ -25,21 +25,17 @@ export type BffConfig = Record<string, BffHandler>;
 // （契約フィクスチャ）を土台にする。手書きの literal で組むと、フロントが「こう返ってくるはずだ」と
 // 思っている形を E2E でも検証することになり、バックエンドの改名（#329 / #333）を素通りさせる。
 // フィクスチャ本体はバックエンドの xUnit（FrontendContractFixtureTests）が生成・突合しており、
-// 型としての突合は src 側（contractFixtures.ts）がコンパイル時に行う。
+// 型としての突合は src 側（src/testing/{risk,monitor}ContractFixtures.ts）がコンパイル時に行う。
+//
+// #529: 置き場を `src/testing/contract-fixtures/` の 1 か所へ寄せた（計画 §ディレクトリ構成 の
+// テスト専用層）。**領域はディレクトリではなくファイル名の前置き**（`risk-controls.*` / `monitor.*`）が
+// 表しており、衝突しない。したがって loader も 1 本で足りる。
 const CONTRACT_FIXTURE_DIR = fileURLToPath(
-  new URL('../src/features/risk/contract-fixtures/', import.meta.url),
-);
-// SC-01 §2, #340: 監視設定（MarketMonitorService）の契約フィクスチャ。置き場は領域ごとに分かれる。
-const MONITOR_CONTRACT_FIXTURE_DIR = fileURLToPath(
-  new URL('../src/features/monitor/contract-fixtures/', import.meta.url),
+  new URL('../src/testing/contract-fixtures/', import.meta.url),
 );
 
 function loadContract<T>(fileName: string): T {
   return JSON.parse(readFileSync(CONTRACT_FIXTURE_DIR + fileName, 'utf8')) as T;
-}
-
-function loadMonitorContract<T>(fileName: string): T {
-  return JSON.parse(readFileSync(MONITOR_CONTRACT_FIXTURE_DIR + fileName, 'utf8')) as T;
 }
 
 // ---- 既定のサンプル応答（受け入れ基準の主要フロー用） ----
@@ -76,9 +72,9 @@ export const SHORT_SELLING: ShortSellingStatusView = loadContract<ShortSellingSt
 );
 // SC-01 §2, FR-13, #340: 収集パラメータ（変動閾値・クールダウン）と監視設定の変更履歴。
 export const MONITOR_SETTINGS: MarketMonitorSettings =
-  loadMonitorContract<MarketMonitorSettings>('monitor.settings.json');
+  loadContract<MarketMonitorSettings>('monitor.settings.json');
 export const MONITOR_SETTINGS_HISTORY: MonitorSettingsChangeEntry[] =
-  loadMonitorContract<MonitorSettingsChangeEntry[]>('monitor.settings-history.json');
+  loadContract<MonitorSettingsChangeEntry[]>('monitor.settings-history.json');
 
 export const RISK_SETTINGS: RiskManagementSettings = {
   ...CONTRACT_RISK_SETTINGS,

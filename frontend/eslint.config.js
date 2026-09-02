@@ -13,19 +13,19 @@ import tseslint from 'typescript-eslint';
 
 const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url));
 
-// MSP/ADR-0066 決定 1: **`features/` の下にありながら feature ではない**ディレクトリ。
-// 機密区分・契約型・共通バナーのような「2 つ以上の feature が要るもの」は、原典（Bulletproof React）
-// では `lib/` `components/` に属する。
+// ✅ **IADR-0288 決定 4 が置いた暫定の除外（`risk` / `monitor` / `shared` / `roles.ts`）は、#529 の
+// 骨格 PR（IADR-0290）で消えた。** 外す条件は同決定が「#529 が `src/lib/` `src/components/` へ
+// 移したとき」と明記しており、実際に移送済みである:
 //
-// 🔴 **この配列は暫定である。外す条件と一緒に置く**（条件を書かない除外は恒久化する）:
-// **#529（ディレクトリ再編）が `risk` / `monitor` を `src/lib/` へ、`shared` を `src/components/` へ
-// 移したとき、この配列は空になり、下のゾーン定義は `src/lib` → `src/features` → `src/app` の
-// 素直な 3 層へ置き換わる。**
-const SHARED_INSIDE_FEATURES = ['risk', 'monitor', 'shared'];
-
-// `features/` 直下のうち、feature の外から参照してよいファイル（本ユニット固有のロール定数）。
-// これも #529 で `src/lib/` へ移る対象である。
-const SHARED_FILES_INSIDE_FEATURES = ['roles.ts'];
+//   features/risk/{contracts,queries}.ts    → src/lib/risk/
+//   features/monitor/{contracts,queries}.ts → src/lib/monitor/
+//   features/shared/PaperModeBanner.tsx     → src/components/
+//   features/shared/paperMode.ts            → src/lib/paperMode.ts ＋ src/hooks/useBrokerProvider.ts
+//   features/roles.ts                       → src/lib/roles.ts
+//   features/*/contract-fixtures/           → src/testing/contract-fixtures/
+//
+// **したがって `except` は「自分自身」だけになった。** 依存の向き（`shared → features → app`）を
+// 4 層のゾーンとして張るのは #529 の第 3 PR である（本ファイルはまだ feature 間禁止のみ）。
 
 // `src/features/` の実ディレクトリを走査して作る。**列挙を手で持たない**のは、新しい feature を
 // 足したときに規則から漏れる（＝黙って無防備になる）のを避けるためである。
@@ -47,9 +47,9 @@ const FEATURE_AREA_DIRS = readdirSync(fileURLToPath(new URL('./src/features', im
 const featureIsolationZones = FEATURE_AREA_DIRS.map((dir) => ({
   target: `./src/features/${dir}`,
   from: './src/features',
-  except: [...new Set([dir, ...SHARED_INSIDE_FEATURES, ...SHARED_FILES_INSIDE_FEATURES])],
+  except: [dir],
   message:
-    'feature どうしを import しない（ADR-0066 決定 1）。2 つ以上の feature が要るものは共有側へ出す。',
+    'feature どうしを import しない（ADR-0066 決定 1）。2 つ以上の feature が要るものは共有側（src/lib・src/components・src/hooks）へ出す。',
 }));
 
 // MSP/ADR-0031 §基本方針 / MSP/ADR-0032: 採用しなかった**パッケージそのもの**。
@@ -154,18 +154,26 @@ export default tseslint.config(
       ],
     },
   },
-  // MSP/IADR-0146 の本ユニット版（IADR-0288）: **画面から `apiFetch` を直接呼ばない。**
+  // MSP/IADR-0146 の本ユニット版（IADR-0288 決定 3・IADR-0290）: **画面から `apiFetch` を直接呼ばない。**
   //
   // 基盤は BFF 呼び出しを orval 生成フックへ寄せ、`apiFetch` を画面から禁じている。本ユニットは
   // 生成フックを持てない（生成の入力は基盤の OpenAPI であり、本ユニットの端点はそこに無い）ため
   // 「`apiFetch` を使わない」ことはできない。代わりに**使ってよい場所を 1 段に閉じる**
   // ——`ignores` に挙げた薄いクエリ層だけが呼んでよい。
   //
+  // 🔴 **#529 で対象を `src/features/**` から `src/**` へ広げた。** クエリ層（`risk` / `monitor`）が
+  // `src/lib/` へ出たため、`src/features/**` のままでは**移送先が禁止の外に落ちる**——
+  // 「1 段に閉じる」という不変条件が、ディレクトリを動かしただけで静かに消える形だった。
+  // **禁止は src 全体に掛け、呼んでよい場所だけを `ignores` で名指しする。**
+  //
   // 🔴 flat config は同名ルールを**後勝ちで置換する**ため、上のブロックの `patterns` をここへも
   // 展開する（片方だけ書くと、この files に一致するファイルで採用外ライブラリの禁止が消える）。
   {
-    files: ['src/features/**/*.{ts,tsx}'],
-    ignores: ['src/features/*/queries.ts', 'src/features/*/*Queries.ts'],
+    files: ['src/**/*.{ts,tsx}'],
+    // #529: feature 固有のクエリ層は `src/features/<feature>/api/` へ移った（IADR-0288 決定 6 の残件）。
+    // 🔴 **`ignores` は移送と同時に直す。** 直さないと `api/` が禁止に掛かって lint が赤くなるか、
+    // 逆に古い glob（`*Queries.ts`）が何にも一致せず「例外を書いたつもりで実は無い」状態になる。
+    ignores: ['src/lib/*/queries.ts', 'src/features/*/api/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -177,7 +185,7 @@ export default tseslint.config(
               name: '@foundation/api/apiClient',
               importNames: ['apiFetch'],
               message:
-                '画面から apiFetch を直接呼ばない（IADR-0288）。取得・更新は feature の TanStack Query 層（queries.ts / *Queries.ts）を通す。',
+                '画面から apiFetch を直接呼ばない（IADR-0288 決定 3）。取得・更新は TanStack Query 層（src/lib/*/queries.ts ／ feature 固有は src/features/<feature>/api/）を通す。',
             },
           ],
         },
