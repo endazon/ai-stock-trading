@@ -79,7 +79,7 @@ services:
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
       # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
-      # IADR-0272: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
+      # IADR-0274: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
       # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============

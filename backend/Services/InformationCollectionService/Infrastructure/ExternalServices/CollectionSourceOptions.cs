@@ -29,7 +29,7 @@ public sealed class CollectionSourceOptions
 
 // Finnhub Free（米国株のライブ市況・企業ニュース）。
 //
-// IADR-0272: 実クラスタでの実測により、**分次の実効上限は公称どおり 60 回/60 秒の固定ウィンドウ**である
+// IADR-0274: 実クラスタでの実測により、**分次の実効上限は公称どおり 60 回/60 秒の固定ウィンドウ**である
 // ことを確認した（ローリングではない。ウィンドウ境界で満額へ完全リセットされる）。既定値 30 は公称値の
 // 1/2（保守側）のまま据え置く。**日次上限は依然として未実測**（ADR-0020 §結果 のフォローアップ。実測
 // セッションでは持続的なブロックを観測できなかったが、確定にはより長時間の観察が要る）。
@@ -40,11 +40,11 @@ public sealed class FinnhubOptions
 
     public string[] Symbols { get; set; } = [];
 
-    /// <summary>送信前に自制する 1 分あたりの要求数（既定 30 ＝ 実測確認済み上限 60 回/60 秒の 1/2。IADR-0272）。</summary>
+    /// <summary>送信前に自制する 1 分あたりの要求数（既定 30 ＝ 実測確認済み上限 60 回/60 秒の 1/2。IADR-0274）。</summary>
     public int RateLimitPerMinute { get; set; } = 30;
 
     /// <summary>
-    /// 1 日あたりの要求上限。<b>null＝未実測</b>（IADR-0272 の実測セッションでも確定できず、継続観察が要る）。
+    /// 1 日あたりの要求上限。<b>null＝未実測</b>（IADR-0274 の実測セッションでも確定できず、継続観察が要る）。
     /// 設定されたときだけ監視銘柄数の上限を逆算する（FinnhubQuotaCalculator）。
     /// </summary>
     public int? DailyRequestLimit { get; set; }

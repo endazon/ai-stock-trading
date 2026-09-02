@@ -72,7 +72,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
-| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0272 実測で確認済みの構成。既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
+| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0274 実測で確認済みの構成。既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
 | `FRED_API_KEY` | `fred-api-key` | **日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・IADR-0107 / IADR-0152）。収集ソース（FRED）にも同じ鍵を使う | **空=JPY 建て銘柄が全件見送り**（米国株は無影響）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
