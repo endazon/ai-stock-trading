@@ -7,7 +7,7 @@ import { TradingRole } from '../roles';
 // SC-02, FR-13, FR-19, FR-20, UC-06, IADR-0084: リスク設定 feature の公開面（リスク上限の閲覧/変更）。
 //
 // ルートの契約と存在秘匿の扱いは SC-01（`../sc01-settings/index.tsx`）と同じである（MSP/IADR-0124 決定 1 /
-// IADR-0286）。データ源は SC-01（ConfigurationService `/assumptions`）とは別サービス
+// IADR-0288）。データ源は SC-01（ConfigurationService `/assumptions`）とは別サービス
 // （RiskManagementService・MarketMonitorService）のため独立画面とする。
 
 // NFR, MSP/IADR-0134: 画面はルート単位の遅延チャンクへ分ける。

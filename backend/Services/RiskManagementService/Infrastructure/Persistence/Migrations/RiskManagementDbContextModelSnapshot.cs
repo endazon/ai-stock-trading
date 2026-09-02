@@ -30,6 +30,9 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("FxRateBaseToDisplay")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("FxRateToBase")
                         .HasColumnType("numeric");
 

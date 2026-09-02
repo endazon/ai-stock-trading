@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import { renderUnitRoute } from '@foundation/testing/renderUnitRoute';
 import { ApiError } from '@foundation/api/ApiError';
 
-// #414, SC-01, SC-02, SC-03, IADR-0286: 本ユニットの**合成面**（ルート factory ＋ ナビ項目）の不変条件。
+// #414, SC-01, SC-02, SC-03, IADR-0288: 本ユニットの**合成面**（ルート factory ＋ ナビ項目）の不変条件。
 //
 // ここで固定するのは「画面が何を描くか」ではなく、**合成点が本ユニットを束ねたときに成り立つべきこと**である。
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));

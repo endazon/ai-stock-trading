@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { AuthContext } from '@foundation/auth/AuthContext';
 import type { AuthState, SessionUser } from '@foundation/auth/AuthContext';
 
-// SC-01/02/03, IADR-0087, IADR-0286: E2E ハーネスの認証プロバイダ（test-only）。
+// SC-01/02/03, IADR-0087, IADR-0288: E2E ハーネスの認証プロバイダ（test-only）。
 //
 // ロールは URL クエリ `?roles=trading-owner,...` から供給する。
 // 既定（未指定/空）は空ロール＝非利用者とし、RequireRole が NotFound を描画する

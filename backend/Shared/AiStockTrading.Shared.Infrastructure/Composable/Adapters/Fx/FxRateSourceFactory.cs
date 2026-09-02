@@ -2,10 +2,9 @@ using System.Collections.Immutable;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
-using TradeDecisionService.Features.TradeDecision;
 using Microsoft.Extensions.Logging;
 
-namespace TradeDecisionService.Infrastructure.ExternalServices;
+namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 
 // FR-10, FR-17, #257, IADR-0107 決定5: 構成 Fx:Provider による為替レート源の選択。
 // 安全既定は no-op（外部接続しない）。形は MarketDataSourceFactory（IADR-0068）に揃える。

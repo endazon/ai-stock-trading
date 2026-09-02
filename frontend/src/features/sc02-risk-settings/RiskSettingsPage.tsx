@@ -114,7 +114,7 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function RiskSettingsPage() {
-  // IADR-0286: 取得・更新は TanStack Query（`../risk/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`../risk/queries`）が持つ。
   const settingsQuery = useRiskSettings();
   const historyQuery = useRiskSettingsHistory();
   // FR-10, SC-02, #362, IADR-0151 決定4: 実額の併記と実弾切替モーダル③に使う equity・統制状態。
@@ -407,7 +407,7 @@ function todayIso(): string {
 }
 
 function GuardForm({ guard }: { guard: TradingGuardSettings }) {
-  // IADR-0286: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  // IADR-0288: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
   const save = useSaveTradingGuard();
   const [form, setForm] = useState<GuardFormState>(() => toGuardForm(guard));
   const [reason, setReason] = useState('');
@@ -707,7 +707,7 @@ function BrokerProviderForm({
    */
   status: RiskStatusView | null;
 }) {
-  // IADR-0286: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  // IADR-0288: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
   const save = useSaveBrokerProvider();
   const [selected, setSelected] = useState<number>(current);
   const [reason, setReason] = useState('');

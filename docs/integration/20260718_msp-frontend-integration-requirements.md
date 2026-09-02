@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-13, FR-17, UC-06]
 adrs: [ADR-0001]
-iadrs: [IADR-0080, IADR-0128, IADR-0259, IADR-0264, IADR-0286, MSP:IADR-0056]
+iadrs: [IADR-0080, IADR-0128, IADR-0259, IADR-0264, IADR-0288, MSP:IADR-0056]
 specs: [20260718_SC-01_settings, 20260718_frontend-settings-screen, IADR-0080_frontend-settings-screen]
 issues: [#106, #185, #275, #353, #414, #526]
 -->

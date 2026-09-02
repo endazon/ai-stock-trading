@@ -143,7 +143,7 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function SettingsPage() {
-  // IADR-0286: 取得・更新は TanStack Query（`assumptionsQueries`）が持つ。画面は
+  // IADR-0288: 取得・更新は TanStack Query（`assumptionsQueries`）が持つ。画面は
   // 「取得済みの値をどう見せるか」と「入力の検証」だけを持つ（MSP/ADR-0031）。
   const assumptionsQuery = useAssumptions();
   const historyQuery = useAssumptionsHistory();

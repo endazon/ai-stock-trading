@@ -856,11 +856,28 @@ public static class ReportRenderer
     //
     // 🔴 **未供給を 0 円と書かない。** 「為替では損得が無かった」と読めるためである。
     // 取引損益とは別の型（FxTranslationSummary）で持つため、この行が取引損益と合算されることはない。
-    private static string FxTranslationCell(ReportView view) =>
-        view.FxTranslation is { } fx
-            ? string.Format(CultureInfo.InvariantCulture, "{0}（明細 {1} 件）",
-                ReportAmountFormat.Jpy(fx.TranslationGainJpy), fx.EntryCount)
+    //
+    // #611, IADR-0286 決定3・決定5: 供給時は**期末レートと観測日を併記**する（期末の再測定に使ったときだけ。
+    // 「どの日の終値で再測定したか」を読み手が確かめられる）。認識時レートが未記録の USD 建て約定があって
+    // 供給できないときは、**未記録の件数を明記**する（🔴 黙って落とさない。件数 0 の未供給は従来の文言のまま）。
+    private static string FxTranslationCell(ReportView view)
+    {
+        if (view.FxTranslation is { } fx)
+        {
+            return fx is { PeriodEndRate: { } periodEndRate, PeriodEndRateAsOf: { } asOf }
+                ? string.Format(CultureInfo.InvariantCulture,
+                    "{0}（明細 {1} 件・期末レート {2:0.00} JPY/USD〔{3:yyyy-MM-dd} 観測〕）",
+                    ReportAmountFormat.Jpy(fx.TranslationGainJpy), fx.EntryCount, periodEndRate, asOf)
+                : string.Format(CultureInfo.InvariantCulture, "{0}（明細 {1} 件）",
+                    ReportAmountFormat.Jpy(fx.TranslationGainJpy), fx.EntryCount);
+        }
+
+        return view.FxTranslationUnrecordedFillCount > 0
+            ? string.Format(CultureInfo.InvariantCulture,
+                "**供給されていません**（0 円ではありません。認識時レートが未記録の USD 建て約定 {0} 件）",
+                view.FxTranslationUnrecordedFillCount)
             : "**供給されていません**（0 円ではありません）";
+    }
 
     // INDEX 決定34, 06_daytrading-review §4.2: 当日の稼働率と Stage 1 日数への算入可否。
     // 🔴 **未供給を「稼働率 0%」と書かない**——終日停止という重い事実と混同させない。

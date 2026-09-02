@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
-// IADR-0080 / IADR-0286: 単独リポのフロント lint。platform（`src/eslint.config.js`）と同じ規則を
+// IADR-0080 / IADR-0288: 単独リポのフロント lint。platform（`src/eslint.config.js`）と同じ規則を
 // 本ユニットに閉じて適用する。テスト専用スタブ（test/foundation-stub）は @foundation の代替であり
 // lint 対象外にする（合成時は実 foundation を使う）。
 
@@ -134,7 +134,7 @@ export default tseslint.config(
       'react-refresh/only-export-components': 'off',
     },
   },
-  // MSP/ADR-0066 決定 3 / IADR-0286: feature 境界の機械強制。
+  // MSP/ADR-0066 決定 3 / IADR-0288: feature 境界の機械強制。
   //
   // `import/no-restricted-paths` は**解決できた import しか検査しない**ため、TypeScript の
   // 拡張子・パスエイリアスを解決できる resolver を必ず与える（与えないと規則は静かに 0 件検査になる）。
@@ -154,7 +154,7 @@ export default tseslint.config(
       ],
     },
   },
-  // MSP/IADR-0146 の本ユニット版（IADR-0286）: **画面から `apiFetch` を直接呼ばない。**
+  // MSP/IADR-0146 の本ユニット版（IADR-0288）: **画面から `apiFetch` を直接呼ばない。**
   //
   // 基盤は BFF 呼び出しを orval 生成フックへ寄せ、`apiFetch` を画面から禁じている。本ユニットは
   // 生成フックを持てない（生成の入力は基盤の OpenAPI であり、本ユニットの端点はそこに無い）ため
@@ -177,7 +177,7 @@ export default tseslint.config(
               name: '@foundation/api/apiClient',
               importNames: ['apiFetch'],
               message:
-                '画面から apiFetch を直接呼ばない（IADR-0286）。取得・更新は feature の TanStack Query 層（queries.ts / *Queries.ts）を通す。',
+                '画面から apiFetch を直接呼ばない（IADR-0288）。取得・更新は feature の TanStack Query 層（queries.ts / *Queries.ts）を通す。',
             },
           ],
         },

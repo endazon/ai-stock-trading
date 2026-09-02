@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/api/queryClient のテスト/型検査用スタブ。
+// IADR-0080 / IADR-0288: @foundation/api/queryClient のテスト/型検査用スタブ。
 // 実体は platform の src/platform/frontend/src/lib/api/queryClient.ts（合成時に解決）。挙動を写像する。
 //
 // MSP/ADR-0031 / MSP/IADR-0121: サーバー状態は TanStack Query に一元化し、**QueryClient の生成点は

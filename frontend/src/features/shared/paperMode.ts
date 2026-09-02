@@ -21,7 +21,7 @@ export const PAPER_REFERENCE_LABEL = 'paper・参考値';
  * バナーだけは出す（05_screens SC-01）。取得できない場合は `null`（＝バナーを出さない）へ縮退し、
  * 本画面本来の機能（前提条件の閲覧・変更）を巻き込まない。
  *
- * IADR-0286: 取得は TanStack Query（`useRiskStatus`）に委ねる。**同じキーを購読する他の画面と
+ * IADR-0288: 取得は TanStack Query（`useRiskStatus`）に委ねる。**同じキーを購読する他の画面と
  * キャッシュを共有する**ため、1 画面が 2 つの発注先を見る状態を作れない。
  */
 export function useBrokerProvider(): number | null {

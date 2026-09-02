@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@foundation/api/apiClient';
 import type { MarketMonitorSettings, MonitoredSymbol, MonitorSettingsChangeEntry } from './contracts';
 
-// SC-02, FR-03, FR-13, IADR-0286: MarketMonitorService（BFF `/bff/monitor/*`）のサーバー状態。
+// SC-02, FR-03, FR-13, IADR-0288: MarketMonitorService（BFF `/bff/monitor/*`）のサーバー状態。
 //
 // **リスク統制（RiskManagementService）とは別サービスである。** 片方の障害・BFF 未結線を
 // もう片方が巻き込まないよう、クエリを分けたまま保つ（IADR-0090 決定1）。

@@ -1,5 +1,5 @@
 ---
-title: IADR-0286 フロントエンドを React 19 / TanStack Router / TanStack Query へ移し、旧契約の互換ブリッジを不要にする
+title: IADR-0288 フロントエンドを React 19 / TanStack Router / TanStack Query へ移し、旧契約の互換ブリッジを不要にする
 type: impl-adr
 status: Accepted
 related_ids: [SC-01, SC-02, SC-03, FR-13, FR-17, FR-19, FR-20, UC-06]
@@ -12,7 +12,7 @@ plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0066_frontend-feature-isolation-and-import-direction.md
 ---
 
-# IADR-0286: フロントエンドを React 19 / TanStack Router / TanStack Query へ移し、旧契約の互換ブリッジを不要にする
+# IADR-0288: フロントエンドを React 19 / TanStack Router / TanStack Query へ移し、旧契約の互換ブリッジを不要にする
 
 - 状態: Accepted
 - 日付: 2026-09-03

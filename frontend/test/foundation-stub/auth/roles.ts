@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/auth/roles のテスト/型検査用スタブ。実体は platform 合成時に解決。
+// IADR-0080 / IADR-0288: @foundation/auth/roles のテスト/型検査用スタブ。実体は platform 合成時に解決。
 //
 // MSP/IADR-0035 / MSP/IADR-0273: ロール判定は `/bff/auth/me` が返す `roles` を一次情報とする
 // （BFF 側のロール変換と同一ソース）。表示制御・存在秘匿の出し分け専用であり、認可の実効境界は

@@ -44,7 +44,7 @@ function messageOf(e: unknown): string {
 }
 
 export function WatchlistForm() {
-  // IADR-0286: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
   const watchlistQuery = useWatchlist();
   const historyQuery = useWatchlistHistory();
   const addSymbol = useAddWatchlistSymbol();

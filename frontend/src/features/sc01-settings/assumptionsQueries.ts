@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@foundation/api/apiClient';
 
-// SC-01, FR-17, UC-06, IADR-0286: 全体前提条件（ConfigurationService。BFF `/bff/assumptions`）の
+// SC-01, FR-17, UC-06, IADR-0288: 全体前提条件（ConfigurationService。BFF `/bff/assumptions`）の
 // サーバー状態と、その型。
 //
 // `apiFetch` を呼んでよいのはこの層だけである（理由は `../risk/queries.ts` 冒頭）。

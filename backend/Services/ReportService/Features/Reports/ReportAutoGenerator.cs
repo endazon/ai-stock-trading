@@ -30,7 +30,8 @@ public sealed class ReportAutoGenerator(
     ITradeRationaleSource? rationaleSource = null,
     IOpenPositionSource? openPositionSource = null,
     IOpenDUptimeSource? uptimeSource = null,
-    IStageProgressSource? stageProgressSource = null)
+    IStageProgressSource? stageProgressSource = null,
+    IPeriodEndFxRateSource? periodEndFxRateSource = null)
 {
     /// <summary>1 巡回。生成境界を過ぎていて未生成の期間だけドラフトを生成し、提示（PendingApproval）まで進める。</summary>
     public async Task<ReportAutoGenerationResult> RunOnceAsync(CancellationToken cancellationToken = default)
@@ -100,6 +101,7 @@ public sealed class ReportAutoGenerator(
         var positions = await SafeOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
         var uptime = await SafeUptimeAsync(due, cancellationToken).ConfigureAwait(false);
         var currentStage = await SafeCurrentStageAsync(cancellationToken).ConfigureAwait(false);
+        var periodEndFxRate = await SafePeriodEndFxRateAsync(due, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
         //
@@ -123,7 +125,8 @@ public sealed class ReportAutoGenerator(
                 TradeRationales: rationales,
                 Positions: positions,
                 Uptime: uptime,
-                CurrentStage: currentStage),
+                CurrentStage: currentStage,
+                PeriodEndFxRate: periodEndFxRate),
             cancellationToken).ConfigureAwait(false);
 
         var report = new TradingReport
@@ -380,6 +383,29 @@ public sealed class ReportAutoGenerator(
         try
         {
             return await stageProgressSource.GetCurrentStageAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-16, #611, 05_trading-assumptions §3, IADR-0286 決定2: 為替差損益の**期末レート**（期末日以前の直近の日次観測）。
+    // **未注入・照会失敗のいずれも null（未供給）である**——為替・LLM 実績・稼働率と同じ向きであり、
+    // 約定の供給（空列へ倒す）とは逆である。🔴 **USD 建ての建玉は本番で実際に存在し得る**ため、
+    // 期末レートが無いのに「為替差損益 0 円」と描くと「為替では損得が無かった」という端的な嘘になる。
+    private async Task<PeriodEndFxRate?> SafePeriodEndFxRateAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        if (periodEndFxRateSource is null)
+            return null;
+
+        try
+        {
+            return await periodEndFxRateSource.GetRateAsync(due.PeriodEnd, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

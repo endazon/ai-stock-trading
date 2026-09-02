@@ -6,6 +6,7 @@ using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using Microsoft.Extensions.Logging;
 
 namespace TradeDecisionService.Features.TradeDecision;

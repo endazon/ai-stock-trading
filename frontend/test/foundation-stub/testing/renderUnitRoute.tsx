@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/testing/renderUnitRoute のテスト用スタブ。
+// IADR-0080 / IADR-0288: @foundation/testing/renderUnitRoute のテスト用スタブ。
 // 実体は platform の src/platform/frontend/src/testing/renderUnitRoute.tsx（合成時に解決）。
 //
 // MSP/ADR-0031 / MSP/IADR-0124: 可変ユニットの画面テスト用ハーネス。ユニットの画面は型付きルート

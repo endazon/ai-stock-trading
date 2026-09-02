@@ -8,7 +8,7 @@ import type {
   StageGateStatus,
 } from './contracts';
 
-// SC-02, SC-03, FR-10, FR-13, FR-19, FR-20, IADR-0286: RiskManagementService（BFF `/bff/risk-controls/*`）の
+// SC-02, SC-03, FR-10, FR-13, FR-19, FR-20, IADR-0288: RiskManagementService（BFF `/bff/risk-controls/*`）の
 // サーバー状態。
 //
 // MSP/ADR-0031: **サーバー状態は TanStack Query に一元化する。** 画面が `useEffect` ＋ `useState` で

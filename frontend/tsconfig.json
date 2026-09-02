@@ -19,7 +19,7 @@
     "noUncheckedSideEffectImports": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
-    // IADR-0080 / IADR-0286: **platform へ合成されたときの向き先**（単独リポでは
+    // IADR-0080 / IADR-0288: **platform へ合成されたときの向き先**（単独リポでは
     // `tsconfig.standalone.json` がスタブへ差し替える）。
     //
     // `@foundation` は**ディレクトリ名ではなく platform 基盤の公開面の名前**であり、実体は

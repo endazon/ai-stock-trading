@@ -53,7 +53,7 @@ export function Stage1TradeCountForm({
   /** 現在保存されている件数（`GET /risk-controls/settings` 由来）。 */
   current: number;
 }) {
-  // IADR-0286: 保存の成功後の再取得は mutation（`useSaveStage1MinimumTradeCount`）が
+  // IADR-0288: 保存の成功後の再取得は mutation（`useSaveStage1MinimumTradeCount`）が
   // キャッシュの無効化として持つ。**親から `onSaved` を配らない**——「誰が再取得を呼ぶか」を
   // 画面の木構造に持たせると、節を足すたびに配線が増える。
   const save = useSaveStage1MinimumTradeCount();

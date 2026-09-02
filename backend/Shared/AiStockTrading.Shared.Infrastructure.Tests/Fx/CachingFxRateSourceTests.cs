@@ -1,14 +1,13 @@
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
-using TradeDecisionService.Features.TradeDecision;
-using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
 // FR-10, #257, IADR-0107 決定5: 取得回数の抑制（TTL）と、古すぎる観測を使わない鮮度上限。
 // いずれも「そのレートを使ってよいか」を決める判断であり、同じ装飾に置く。

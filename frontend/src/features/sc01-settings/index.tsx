@@ -6,7 +6,7 @@ import { TradingRole } from '../roles';
 
 // SC-01, FR-13, FR-17, UC-06: 設定画面 feature の公開面。
 //
-// MSP/ADR-0031 / MSP/IADR-0124 決定 1 / IADR-0286: ルートは **`(shell: ShellRoute) => Route` の factory** で
+// MSP/ADR-0031 / MSP/IADR-0124 決定 1 / IADR-0288: ルートは **`(shell: ShellRoute) => Route` の factory** で
 // 公開する。platform を import せず、共通シェルを引数で受け取る——これが「platform → 可変ユニットの
 // 参照禁止」を保ったまま型付きルート木へ載る唯一の形である。
 // **旧契約 `FeatureModule { id, routes: [{ path, element }], nav }` は #414 で廃した**（互換ブリッジ

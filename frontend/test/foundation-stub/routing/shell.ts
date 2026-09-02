@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/routing/shell のテスト/型検査用スタブ。
+// IADR-0080 / IADR-0288: @foundation/routing/shell のテスト/型検査用スタブ。
 // 実体は platform の src/platform/frontend/src/app/routing/shell.tsx（合成時に解決）。
 //
 // MSP/IADR-0124 決定 1: 認証済み領域の共通シェルは **path を持たないレイアウトルート**であり、

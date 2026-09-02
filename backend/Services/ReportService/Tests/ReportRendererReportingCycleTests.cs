@@ -92,6 +92,33 @@ public class ReportRendererReportingCycleTests
         ReportRenderer.RenderMarkdown(View(ReportKind.Weekly)).Should().NotContain("為替差損益");
     }
 
+    // #611, IADR-0286 決定5: 期末の再測定に使ったときは**期末レートと観測日を併記**する（どの日の終値で再測定したかを読める）。
+    [Theory]
+    [InlineData(ReportKind.Daily)]
+    [InlineData(ReportKind.Monthly)]
+    public void 為替差損益は期末レートを使ったなら観測日つきで併記する(ReportKind kind)
+    {
+        var md = ReportRenderer.RenderMarkdown(View(kind) with
+        {
+            FxTranslation = new FxTranslationSummary(10_000m, 1, 159.38m, new DateOnly(2026, 8, 26)),
+        });
+
+        md.Should().Contain("為替差損益（独立表示） | +10,000 JPY（明細 1 件・期末レート 159.38 JPY/USD〔2026-08-26 観測〕）");
+    }
+
+    // 🔴 #611, IADR-0286 決定3: 認識時レートが未記録の USD 建て約定で供給できないときは**件数を明記**する（黙って落とさない）。
+    // 0 円とは書かない（「為替では損得が無かった」と読める）。
+    [Theory]
+    [InlineData(ReportKind.Daily)]
+    [InlineData(ReportKind.Monthly)]
+    public void 為替差損益は未記録の約定があれば件数つきで未供給と描く(ReportKind kind)
+    {
+        var md = ReportRenderer.RenderMarkdown(View(kind) with { FxTranslationUnrecordedFillCount = 3 });
+
+        md.Should().Contain("為替差損益（独立表示） | **供給されていません**（0 円ではありません。認識時レートが未記録の USD 建て約定 3 件）");
+        md.Should().NotContain("為替差損益（独立表示） | 0 JPY");
+    }
+
     // --- 日報: OpenD 稼働率と取引判断スキップ（INDEX 決定34 / ADR-0017 決定2） ---
 
     [Fact]

@@ -16,7 +16,7 @@ import { NotFound } from '@foundation/ui/NotFound';
 import { aiStockTradingNavItems, createAiStockTradingRoutes } from '@ai-stock-trading/features';
 import { AuthHarness } from './AuthHarness';
 
-// SC-01/02/03, IADR-0087, IADR-0286: E2E 実行用の test-only ハーネス。
+// SC-01/02/03, IADR-0087, IADR-0288: E2E 実行用の test-only ハーネス。
 //
 // 本ユニットは platform SPA へ合成される feature ユニットで単独の実行アプリを持たないため、
 // **合成点がするのと同じこと**——共通シェル（id `_shell`）の下へルート factory を載せる——を

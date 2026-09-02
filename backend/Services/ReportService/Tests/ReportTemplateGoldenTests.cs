@@ -77,7 +77,9 @@ public class ReportTemplateGoldenTests
         BorrowFees = new BorrowFeeRecord(
             [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 8, 3), 0.06m, 10_000m, 1.64m, T0)],
             [new BorrowFeeAccrualUnavailable("TSLA", Market.UnitedStates, new DateOnly(2026, 8, 4), "料率照会に失敗", T0)]),
-        FxTranslation = new FxTranslationSummary(-1_234m, 5),
+        // FR-06, FR-16, #611, IADR-0286 決定5: **現在の供給経路（FxTranslationBuilder）が実際に組み立てる形**を置く
+        // （期末に建玉が残る期間は期末レートと観測日を伴う）。
+        FxTranslation = new FxTranslationSummary(-1_234m, 5, 159.38m, new DateOnly(2026, 8, 26)),
         Uptime = new OpenDUptimeRecord(
         [
             new OpenDUptimeDay(new DateOnly(2026, 8, 3), 1.0m),

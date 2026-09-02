@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/auth/AuthContext のテスト/型検査用スタブ。
+// IADR-0080 / IADR-0288: @foundation/auth/AuthContext のテスト/型検査用スタブ。
 // 実体は platform の src/platform/frontend/src/lib/auth/AuthContext.ts（合成時に解決）。挙動を写像する。
 //
 // 🔴 MSP/ADR-0032 / MSP/IADR-0251 / MSP/IADR-0273: **SPA はトークンを扱わない**（BFF セッション方式）。

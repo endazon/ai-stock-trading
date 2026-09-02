@@ -31,6 +31,8 @@
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.24.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <!-- IADR-0286: 共有基盤の FRED アダプタが API キー入り URL の計装を抑止する（SuppressInstrumentationScope）。Hosting と同版に揃える。 -->
+    <PackageVersion Include="OpenTelemetry" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />

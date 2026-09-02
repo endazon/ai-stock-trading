@@ -1,4 +1,4 @@
-// IADR-0080 / IADR-0286: @foundation/routing/featureRegistry のテスト/型検査用スタブ。
+// IADR-0080 / IADR-0288: @foundation/routing/featureRegistry のテスト/型検査用スタブ。
 // 実体は platform（microservices-platform）の src/platform/frontend/src/app/routing/featureRegistry.ts
 // （合成時に解決）。**型のみを写像する。**
 //

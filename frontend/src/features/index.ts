@@ -4,7 +4,7 @@ import { createSc01SettingsRoute, sc01SettingsNav } from './sc01-settings';
 import { createSc02RiskSettingsRoute, sc02RiskSettingsNav } from './sc02-risk-settings';
 import { createSc03ControlsRoute, sc03ControlsNav } from './sc03-controls';
 
-// #106, #414, ADR-0001, IADR-0080, IADR-0286: 本ユニット（AI 株取引）の合成面。
+// #106, #414, ADR-0001, IADR-0080, IADR-0288: 本ユニット（AI 株取引）の合成面。
 //
 // platform の合成点（`src/platform/frontend/src/features/index.ts`）は、ここから 2 つを import して
 // スプレッドする（MSP/ADR-0031 / MSP/IADR-0124 決定 1 / MSP/IADR-0056）:

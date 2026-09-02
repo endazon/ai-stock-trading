@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 
-// IADR-0286: 画面**単体**のテスト用ハーネス（test-only）。
+// IADR-0288: 画面**単体**のテスト用ハーネス（test-only）。
 //
 // MSP/ADR-0031 でサーバー状態を TanStack Query へ移したため、取得を行う画面は
 // `QueryClientProvider` の下でしか描画できない。**各テストファイルで provider を書き直さない**

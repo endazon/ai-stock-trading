@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "AI 株取引ユニットの画面 features（sc01-settings ほか）。platform SPA の合成点（src/features/index.ts）が型付きルート factory ＋ ナビ項目を束ねる可変機能ユニット。単独リポでは @foundation をテスト/型検査用スタブへ解決して自己完結する（IADR-0080 / IADR-0286）。",
+  "description": "AI 株取引ユニットの画面 features（sc01-settings ほか）。platform SPA の合成点（src/features/index.ts）が型付きルート factory ＋ ナビ項目を束ねる可変機能ユニット。単独リポでは @foundation をテスト/型検査用スタブへ解決して自己完結する（IADR-0080 / IADR-0288）。",
   "scripts": {
     "typecheck": "tsc -p tsconfig.standalone.json --noEmit",
     "lint": "eslint .",

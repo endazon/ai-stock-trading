@@ -69,7 +69,7 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function MonitorParametersForm() {
-  // IADR-0286: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
   const settingsQuery = useMonitorSettings();
   const historyQuery = useMonitorSettingsHistory();
 
@@ -128,7 +128,7 @@ export function MonitorParametersForm() {
 // FR-03, FR-13: 変動閾値の変更。ワイヤは**比率**（0.03）、画面は**百分率**（3）である。
 // 変換は `percentTextToRatio` / `ratioToPercentText`（risk/contracts）だけを通す（IADR-0151 決定1）。
 function MovementThresholdForm({ current }: { current: MarketMonitorSettings }) {
-  // IADR-0286: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
+  // IADR-0288: 保存の成功後の再取得は mutation がキャッシュの無効化として持つ（`onSaved` は配らない）。
   const save = useSaveMovementThreshold();
   const [percent, setPercent] = useState(() => ratioToPercentText(current.movementThresholdRatio));
   const [reason, setReason] = useState('');
