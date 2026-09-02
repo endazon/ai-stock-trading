@@ -166,6 +166,11 @@ jobs:
       - name: Test opend entrypoint.sh (RSA key permission check)
         if: ${{ !cancelled() }}
         run: bash deploy/opend/entrypoint.test.sh
+      # #346, IADR-0287: 切替前後の件数突合（7 年保持対象の欠損ゼロ・未確定予約の減少を FAIL）を psql スタブで固定する。
+      # 実 DB・実 psql は不要（Bash のみ）。manifest と EF ModelSnapshot の突合は scripts-tests 側。
+      - name: Test cutover-count-reconcile.sh (retention reconcile)
+        if: ${{ !cancelled() }}
+        run: bash scripts/cutover-count-reconcile.test.sh
 
       # スタック非依存: docs/ ・ .ai-context/ 配下 Markdown の相対リンク切れを検査（再発防止）。
       # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。

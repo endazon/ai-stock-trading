@@ -2124,4 +2124,88 @@ module.exports = ({ ok, assert }) => {
       assert.match(ciYml, /"\$\{diag_args\[@\]\}"/, 'dotnet test 呼び出しが diag_args を展開していない');
     });
   }
+
+  // --- cutover-count-reconcile.sh: 保全対象 manifest と EF ModelSnapshot の突合（FR-11 / NFR-09 / NFR-10 / #346 / IADR-0287） ---
+  // manifest（切替前後の件数突合が数える母集合）は手で列挙した表であり、DbSet が増減すると黙って腐る。
+  // 腐り方は「新テーブルが保全対象から漏れる」側（切替時に数え落とす）なので、CI でスナップショットと突き合わせる。
+  // 実行時にも snapshot が DB の実在テーブルと manifest を双方向に照合するが、それは切替当日の検知であり遅い。
+  {
+    const fsCo = require('fs');
+    const pathCo = require('path');
+    const rootCo = pathCo.join(__dirname, '..');
+    const scriptCo = fsCo.readFileSync(pathCo.join(rootCo, 'scripts', 'cutover-count-reconcile.sh'), 'utf8');
+    const manifestMatch = scriptCo.match(/AST_CUTOVER_MANIFEST="\\\n([\s\S]*?)"\n/);
+    const manifest = manifestMatch
+      ? manifestMatch[1].split('\n').filter((l) => l.trim()).map((l) => {
+        const [db, table, cls, ts, cond] = l.split('\t');
+        return { db, table, cls, ts, cond };
+      })
+      : [];
+
+    const snapshots = [];
+    (function walk(d) {
+      for (const e of fsCo.readdirSync(d, { withFileTypes: true })) {
+        const p = pathCo.join(d, e.name);
+        if (e.isDirectory()) { if (!['bin', 'obj', 'node_modules'].includes(e.name)) walk(p); }
+        else if (e.name.endsWith('ModelSnapshot.cs')) snapshots.push(p);
+      }
+    })(pathCo.join(rootCo, 'backend', 'Services'));
+
+    // サービス名 → DB 名（appsettings / Helm の `<snake_case>_svc`）。AuditService → audit_svc。
+    const dbOf = (svc) => svc.replace(/Service$/, '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase() + '_svc';
+    const efTables = new Map(); // "db.table" → Set(propertyNames)
+    for (const f of snapshots) {
+      const svc = f.split(/[\\/]/).find((s) => s.endsWith('Service'));
+      const src = fsCo.readFileSync(f, 'utf8');
+      for (const block of src.split(/modelBuilder\.Entity\("/).slice(1)) {
+        const table = (block.match(/\.ToTable\("([^"]+)"/) || [])[1];
+        if (!table) continue;
+        const props = new Set([...block.matchAll(/b\.Property<[^>]+>\("([^"]+)"\)/g)].map((m) => m[1]));
+        efTables.set(`${dbOf(svc)}.${table}`, props);
+      }
+    }
+
+    ok('cutover manifest: スクリプトから manifest を読み出せる（書式が崩れたら 0 件で緑にならない）', () => {
+      assert.ok(manifestMatch, 'AST_CUTOVER_MANIFEST="\\ … " のブロックが見つからない');
+      assert.ok(manifest.length >= 30, `manifest が ${manifest.length} 件しか無い`);
+      assert.ok(snapshots.length >= 7, `ModelSnapshot が ${snapshots.length} 件しか無い`);
+      for (const m of manifest) {
+        assert.ok(m.db && m.table && m.cls && m.ts && m.cond, `列が欠けている: ${JSON.stringify(m)}`);
+      }
+    });
+
+    ok('cutover manifest: (db, table) の集合が EF ModelSnapshot の全テーブルと一致する（増減すると赤）', () => {
+      const inManifest = new Set(manifest.map((m) => `${m.db}.${m.table}`));
+      const inEf = new Set(efTables.keys());
+      const missing = [...inEf].filter((k) => !inManifest.has(k)).sort();
+      const stale = [...inManifest].filter((k) => !inEf.has(k)).sort();
+      assert.deepStrictEqual(missing, [], `manifest に無いテーブル（保全対象から漏れる）: ${missing.join(', ')}`);
+      assert.deepStrictEqual(stale, [], `EF に無いテーブル（manifest の腐り）: ${stale.join(', ')}`);
+    });
+
+    ok('cutover manifest: 時刻列が各エンティティのプロパティに実在する（列名は PascalCase のまま＝HasColumnName 無し）', () => {
+      for (const m of manifest) {
+        const props = efTables.get(`${m.db}.${m.table}`);
+        if (!props) continue; // 前のテストが報告する
+        assert.ok(props.has(m.ts), `${m.db}.${m.table} の時刻列 ${m.ts} がエンティティに無い`);
+      }
+    });
+
+    ok('cutover manifest: class は 4 値のみ。dedup/reserved は RetentionScope.PurgeableStores（閉世界）と一致する', () => {
+      const scope = fsCo.readFileSync(
+        pathCo.join(rootCo, 'backend', 'Shared', 'AiStockTrading.Shared.Contracts', 'Operations', 'RetentionScope.cs'), 'utf8');
+      const purgeable = [...(scope.match(/PurgeableStores =\s*\[([\s\S]*?)\]/) || ['', ''])[1].matchAll(/"([a-z_]+)"/g)]
+        .map((x) => x[1]).sort();
+      assert.ok(purgeable.length >= 2, 'RetentionScope.PurgeableStores を読み出せない');
+      const classes = new Set(manifest.map((m) => m.cls));
+      for (const c of classes) assert.ok(['ledger', 'state', 'reserved', 'dedup'].includes(c), `未知の class: ${c}`);
+      const manifestPurgeable = manifest.filter((m) => m.cls === 'dedup' || m.cls === 'reserved').map((m) => m.table).sort();
+      assert.deepStrictEqual(manifestPurgeable, purgeable,
+        'パージ可（dedup/reserved）の集合が RetentionScope の閉世界と食い違う');
+      // Reserved の無期限保持（NFR-09）は pending 条件で数える。条件を持つのは reserved だけ。
+      for (const m of manifest) {
+        assert.strictEqual(m.cond !== '-', m.cls === 'reserved', `${m.table}: 未確定条件と class が食い違う`);
+      }
+    });
+  }
 };
