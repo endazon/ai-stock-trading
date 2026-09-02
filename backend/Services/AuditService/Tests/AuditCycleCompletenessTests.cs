@@ -215,7 +215,7 @@ public class AuditCycleCompletenessTests
         return
         [
             new AssumptionsChanged(3, "endazon", "前提の見直し", t),
-            new BacktestEvaluated(true, 0.08m, 1.4d, 0.2d, string.Empty, t),
+            new BacktestEvaluated(true, 0.08m, 1.4d, 0.2d, string.Empty, t, false, "baseline-v1"),
             new BorrowFeeAccrualUnavailable("AAPL", Market.UnitedStates, day, "料率を取得できない", t),
             new BorrowFeeAccrued("AAPL", Market.UnitedStates, day, 0.05m, 1_000m, 0.14m, t),
             new BrokerAccountObserved(
