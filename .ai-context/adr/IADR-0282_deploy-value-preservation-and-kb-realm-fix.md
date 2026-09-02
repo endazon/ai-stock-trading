@@ -1,5 +1,5 @@
 ---
-title: IADR-0275 k8s-local-deploy.sh は broker.tier/opend.enabled を個別に前回値へ引き継ぎ、KB レルム名を platform へ是正する
+title: IADR-0282 k8s-local-deploy.sh は broker.tier/opend.enabled を個別に前回値へ引き継ぎ、KB レルム名を platform へ是正する
 type: impl-adr
 status: Accepted
 related_ids: [NFR, IADR-0109, IADR-0100, IADR-0102, IADR-0111, IADR-0060, IADR-0093, IADR-0273, IADR-0274]
@@ -9,7 +9,7 @@ updated: 2026-09-02
 plan_refs: []
 ---
 
-# IADR-0275: k8s-local-deploy.sh は broker.tier/opend.enabled を個別に前回値へ引き継ぎ、KB レルム名を platform へ是正する
+# IADR-0282: k8s-local-deploy.sh は broker.tier/opend.enabled を個別に前回値へ引き継ぎ、KB レルム名を platform へ是正する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

@@ -26,7 +26,7 @@ kubectl -n ai-stock-trading get pods
 ```
 
 > **`BROKER_TIER` / `OPEND_ENABLED` を export せずに再実行しても、前回リリースの値が引き継がれる**
-> （#626 / [IADR-0275](../../../.ai-context/adr/IADR-0275_deploy-value-preservation-and-kb-realm-fix.md)。
+> （#626 / [IADR-0282](../../../.ai-context/adr/IADR-0282_deploy-value-preservation-and-kb-realm-fix.md)。
 > `ast-secrets` と同じ挙動——明示的な空指定で前回の非空値を消す場合だけ中断し、`--force-empty-values`
 > で確認のうえ強制する）。以前は env passthrough 自体が無く、再実行のたびに `broker.tier`/`opend.enabled`
 > が既定（`paper`/`false`）へ黙って戻っていた（`opend.enabled=false` は OpenD の Deployment を削除する）。
@@ -371,7 +371,7 @@ scripts/k8s-local-deploy.sh
   解釈され（既存構成の互換維持）、両方を矛盾して指定すると描画時に止まる。新規は `broker.tier` を使うこと。
 - `scripts/k8s-local-deploy.sh` 経由でローカル配備する場合は **env `BROKER_TIER`** で指定する
   （`--set broker.tier=...` を直接叩く場合と異なり、**未設定なら前回リリースの値を引き継ぐ**。
-  #626 / IADR-0275。上記「PVC は消えない」と同じ「export し忘れで既定へ戻さない」設計）。
+  #626 / IADR-0282。上記「PVC は消えない」と同じ「export し忘れで既定へ戻さない」設計）。
 
 ### ⚠️ `paper` と `moomoo-sim` は「どちらも実弾でない」だけで**別物**である（#268）
 
@@ -437,7 +437,7 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 （IADR-0060 決定 1）。本 chart 経路は**本番配備**用で、既定値では生 manifest と同等に描画される。
 
 > `scripts/k8s-local-deploy.sh` 経由でローカル配備する場合は **env `OPEND_ENABLED=true`** で指定する
-> （未設定なら前回リリースの値を引き継ぐ。#626 / IADR-0275）。以下は直接 `helm upgrade` する場合のコマンド。
+> （未設定なら前回リリースの値を引き継ぐ。#626 / IADR-0282）。以下は直接 `helm upgrade` する場合のコマンド。
 
 ```bash
 # 前提: イメージのビルド＆import（scripts/opend-build.sh）、Secret moomoo-credentials / moomoo-rsa の作成。
@@ -453,7 +453,7 @@ kubectl -n ai-stock-trading attach -it deploy/opend
 > 再スケジュールされたときに再検証が要るかは **ADR-0024 決定5-1 で未検証**であり、**安全側に「有人の再検証に戻る」と想定する**
 > （マルチノード/クラウドでの実測は **#132 で未了**）。
 
-### PVC（`opend-persist`）は `opend.enabled` の切り替え・`helm uninstall` で消えない（#626, IADR-0275）
+### PVC（`opend-persist`）は `opend.enabled` の切り替え・`helm uninstall` で消えない（#626, IADR-0282）
 
 PersistentVolumeClaim `opend-persist` には `helm.sh/resource-policy: keep` を付けてある。デバイス信頼状態
 （`$HOME/.com.moomoo.OpenD`）の永続化先であり、消えると次回有効化時に SMS/画像 CAPTCHA の再認証が要るため
