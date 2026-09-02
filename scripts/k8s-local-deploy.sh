@@ -5,7 +5,7 @@
 #
 #   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [cluster-name]
 # #267, IADR-0111 / #132, IADR-0060: ブローカ階層・OpenD 常駐配備は BROKER_TIER（"" / paper / moomoo-sim）/
-#   OPEND_ENABLED（true / false）で切り替える。**未設定なら前回リリースの値を引き継ぐ**（#626, IADR-0282）。
+#   OPEND_ENABLED（true / false）で切り替える。**未設定なら前回リリースの値を引き継ぐ**（#626, IADR-0283）。
 #   明示的な空指定で前回の非空値を消す場合は --force-empty-values が要る（ast-secrets と同型）。
 # #238, IADR-0100: 経路B（ローカル SIMULATE）の ①時価②実LLM③実KB＋Discord＋価格文脈は、chart の
 # local プロファイル values-local.yaml を `-f` で重ねて恒常有効化する（臨時 overlay は不要）。本番（ArgoCD＝
@@ -39,7 +39,7 @@
 # 従来の「env から毎回まるごと再作成」は、export し忘れた鍵を空で上書きして無言で壊していた
 # （症状は「デプロイは成功するのに外部連携が静かに no-op へ倒れる」）。挙動は
 # scripts/k8s-local-deploy.test.sh が固定する。
-# #626, IADR-0282: `helm upgrade --install` は `--reuse-values` を使わない（-f values-local.yaml との
+# #626, IADR-0283: `helm upgrade --install` は `--reuse-values` を使わない（-f values-local.yaml との
 # 合成順序が読みにくく、「values-local.yaml を直しても一部が反映されない」副作用を実測したため）。
 # そのため broker.tier / opend.enabled は BROKER_TIER / OPEND_ENABLED を env で明示しないと、
 # 前回リリースで手動 --set した値が黙って既定（paper / false）へ戻る。opend.enabled=false は
@@ -166,7 +166,7 @@ sync_ast_secrets() {
   return 0
 }
 
-# #626, IADR-0282: 前回リリースの値を個別に引き継ぐ Helm values のキー定義: <top>.<nested>|<環境変数>。
+# #626, IADR-0283: 前回リリースの値を個別に引き継ぐ Helm values のキー定義: <top>.<nested>|<環境変数>。
 # ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは chart 既定＝paper / false に委ねる）。
 AST_VALUE_KEYS=(
   "broker.tier|BROKER_TIER"
@@ -227,7 +227,7 @@ resolve_ast_value_overrides() {
   if [ -n "$clobber" ] && [ "$FORCE_EMPTY_VALUES" != "1" ]; then
     {
       echo "ERROR: 次の設定は前回リリースに値がありますが、環境変数が**空**で指定されています。"
-      echo "       空で上書きすると前回の設定を失うため中断しました（#626 / IADR-0282）:"
+      echo "       空で上書きすると前回の設定を失うため中断しました（#626 / IADR-0283）:"
       printf '%s' "$clobber" | sed 's/^/         - /'
       echo "       - export し忘れなら当該変数を unset して再実行する（前回値がそのまま引き継がれます）。"
       echo "       - 意図した既定への戻しなら --force-empty-values を付けて再実行する。"
@@ -251,7 +251,7 @@ echo "==> [2/4] namespace & ast-secrets (fail-safe 空既定・既存値は保�
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 sync_ast_secrets
 
-echo "==> [3/4] broker.tier / opend.enabled (前回リリースの値を引き継ぐ・#626 / IADR-0282)"
+echo "==> [3/4] broker.tier / opend.enabled (前回リリースの値を引き継ぐ・#626 / IADR-0283)"
 resolve_ast_value_overrides
 
 echo "==> [4/4] helm upgrade --install (local/SIMULATE プロファイル)"

@@ -164,7 +164,7 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
 に集約してある（egress-IP 実測・Vault 化・非 root の実動作確認などは**未充足**）。
 
 > **PVC `opend-persist` は `resource-policy: keep` で保護されている**（#626 /
-> [IADR-0282](../../.ai-context/adr/IADR-0282_deploy-value-preservation-and-kb-realm-fix.md)。
+> [IADR-0283](../../.ai-context/adr/IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)。
 > `deploy/opend/k8s/pvc.yaml` と chart 版 `templates/opend.yaml` の双方）。`opend.enabled` の
 > 切り替えや `helm uninstall` では PVC が消えない＝デバイス信頼状態（本ページの「デバイス信頼の
 > 永続化」）は保たれる。デバイス信頼をリセットしたいときだけ手動で

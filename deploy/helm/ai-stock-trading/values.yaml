@@ -277,7 +277,7 @@ services:
       # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は MSP の `platform` レルムの専用クライアント
       # （ai-stock-trading-kb-writer／service-account に platform-operator）で認証する。AST レルムの ServiceAuth__* は
       # issuer 不一致（401）・role 不一致（403）で KB 書き込みに使えないため（IADR-0093）。fail-safe: 空=トークン無し→401→未保存。
-      # #626, IADR-0282: Authority は MSP レルムを指す（例 http://keycloak:8080/realms/platform。
+      # #626, IADR-0283: Authority は MSP レルムを指す（例 http://keycloak:8080/realms/platform。
       # `microservices-platform` という realm は存在しない）。ClientSecret は Secret 経由（空既定）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
@@ -410,7 +410,7 @@ services:
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
       # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP の `platform` レルムの専用クライアント（ai-stock-trading-kb-writer）で
       # 認証する（AST レルムの ServiceAuth__* ではない）。fail-safe: 空=トークン無し（現行の NoOp 検索を保持）。
-      # #626, IADR-0282: Authority は MSP の `platform` レルムを指す（`microservices-platform` という realm は存在しない）。
+      # #626, IADR-0283: Authority は MSP の `platform` レルムを指す（`microservices-platform` という realm は存在しない）。
       - { name: KnowledgeBase__Auth__Authority, value: "" }
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }

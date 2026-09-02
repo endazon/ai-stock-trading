@@ -30,7 +30,7 @@ metadata:
     app: opend
     app.kubernetes.io/part-of: ai-stock-trading
   annotations:
-    # #626, IADR-0282: opend.enabled=false への切り替え（helm upgrade の再描画）や helm uninstall で
+    # #626, IADR-0283: opend.enabled=false への切り替え（helm upgrade の再描画）や helm uninstall で
     # PVC ごと削除されると、OpenD のデバイス信頼状態（$HOME/.com.moomoo.OpenD）が失われ、次回有効化時に
     # SMS/画像 CAPTCHA の再認証が要る（実測済み）。keep で削除対象から外す。明示的に消す場合は
     # `kubectl delete pvc opend-persist -n <namespace>` を手動実行する（chart README 参照）。

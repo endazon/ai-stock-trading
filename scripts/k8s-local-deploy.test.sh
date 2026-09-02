@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # #263 / IADR-0109: scripts/k8s-local-deploy.sh の ast-secrets 同期（sync_ast_secrets）の挙動を固定する。
-# #626 / IADR-0282: broker.tier / opend.enabled の前回値引き継ぎ（resolve_ast_value_overrides）も併せて固定する。
+# #626 / IADR-0283: broker.tier / opend.enabled の前回値引き継ぎ（resolve_ast_value_overrides）も併せて固定する。
 #
 #   bash scripts/k8s-local-deploy.test.sh
 #
@@ -262,10 +262,10 @@ assert_missing 'T-279-05 秘匿: stdout に平文を出さない' "$OUT" 'ua-can
 assert_missing 'T-279-05 秘匿: stderr に平文を出さない' "$ERR" 'ua-canary-do-not-log'
 
 
-# ---- #626 / IADR-0282: broker.tier / opend.enabled の前回値引き継ぎ --------
+# ---- #626 / IADR-0283: broker.tier / opend.enabled の前回値引き継ぎ --------
 # helm upgrade --install が --reuse-values を使わないため、env passthrough が無いと前回リリースの
 # 値が既定（paper / false）へ黙って戻る（opend.enabled=false は OpenD の Deployment/PVC を削除する）。
-printf '\nk8s-local-deploy.sh: broker.tier / opend.enabled の前回値引き継ぎ（#626 / IADR-0282）\n'
+printf '\nk8s-local-deploy.sh: broker.tier / opend.enabled の前回値引き継ぎ（#626 / IADR-0283）\n'
 
 # T-626-01: env 未設定 ＋ 前回値あり → 引き継ぐ（--set が前回値で載る）
 given_secret ""

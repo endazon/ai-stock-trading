@@ -112,7 +112,7 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # #626, IADR-0282: realm id は `platform`（`microservices-platform` という realm は存在しない）。
+      # #626, IADR-0283: realm id は `platform`（`microservices-platform` という realm は存在しない）。
       # 根拠: 隣接クローン ../microservices-platform の deploy/keycloak/microservices-platform-realm.json
       # 2 行目 `"realm": "platform"`、および MSP 自身の Helm chart 既定値 global.auth.authority も同じ realm。
       - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/platform" }       # ← ③（MSP レルム）
@@ -150,7 +150,7 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
-      # #626, IADR-0282: realm id は `platform`（`microservices-platform` という realm は存在しない）。
+      # #626, IADR-0283: realm id は `platform`（`microservices-platform` という realm は存在しない）。
       # 根拠: 隣接クローン ../microservices-platform の deploy/keycloak/microservices-platform-realm.json
       # 2 行目 `"realm": "platform"`、および MSP 自身の Helm chart 既定値 global.auth.authority も同じ realm。
       - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/platform" }       # ← ③（MSP レルム）
