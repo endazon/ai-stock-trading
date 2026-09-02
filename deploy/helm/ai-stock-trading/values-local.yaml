@@ -65,6 +65,13 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # --- 監視銘柄（watchlist）の初回シード（#286/IADR-0282。利用者裁定・案(b)）。
+      #     trade-decision 側で下記 MarketMonitor__BaseUrl を結線するため、権威源（本サービス）の watchlist を
+      #     空のまま結線すると判断対象ゼロになる（200+[] は HttpWatchlistProvider の正常応答＝フォールバックしない・
+      #     IADR-0095）。trade-decision の TradeCycle__Watchlist__0__* と同じ銘柄を投入し、結線しても判断対象が
+      #     減らないことを保証する。初回のみ有効（利用者が SC-02 等で全削除した後は再投入されない）。
+      - { name: Monitor__SeedSymbols__0__Symbol, value: "AAPL" }
+      - { name: Monitor__SeedSymbols__0__Market, value: "UnitedStates" }
 
   # ============ ③ 実KB保存（収集情報）＋ 収集起動（サイクル配線）============
   # FR-01/08, #9/#18, IADR-0064/0069/0073/0093: 収集を finnhub＋AAPL で起動し（Count>0 で InformationCollected 発行）、
@@ -166,7 +173,9 @@ services:
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }# サイジング文脈(残枠/DD)
-      - { name: MarketMonitor__BaseUrl, value: "" }                                    # 空=構成 watchlist(下)を使う(IADR-0095)
+      # #286/IADR-0282: market-monitor の watchlist を初回シード（上の market-monitor.Monitor__SeedSymbols__0）
+      # したうえで結線する。下の TradeCycle__Watchlist__0__* は照会不達時のフォールバックとして残す（IADR-0095）。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
@@ -218,7 +227,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
-      # --- 監視銘柄（構成ベース watchlist・MarketMonitor__BaseUrl 空のため使われる。Market は列挙名）。収集の銘柄と揃える。
+      # --- 監視銘柄（構成ベース watchlist）。#286/IADR-0282 で MarketMonitor__BaseUrl を結線した後は
+      #     権威源（market-monitor）が優先され、本設定は**照会不達時のフォールバックのみ**（IADR-0095）。
+      #     権威源側（market-monitor.Monitor__SeedSymbols__0）と同じ銘柄に揃える。Market は列挙名。
       - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
       - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }
       # --- 価格文脈（#236/IADR-0099）: 判断へ現在値を供給し権威価格でサイジング。MarketData:Provider=finnhub＋鍵で実結線
