@@ -19,6 +19,16 @@ public sealed class MonitorSettingsRow
     public int Version { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    // #286, IADR-0282: 構成（Monitor:SeedSymbols）シードを最後に適用した時刻。未適用（旧行含む）は null。
+    // ドメイン型 MarketMonitorSettings には持たせない（API 契約で直接動かせる値ではないため。
+    // IADR-0164 決定1 と同型の理由）。
+    public DateTimeOffset? SeededAt { get; set; }
+
+    // #286, IADR-0282: 利用者が監視銘柄を明示的に全削除した時刻。null なら未削除（＝構成シードの対象）。
+    // 一度でも設定されれば、監視銘柄が再び追加されるまで構成シードによる再投入を止める
+    // （IADR-0095「空の watchlist は利用者の正当な選択」を尊重する）。
+    public DateTimeOffset? ClearedByUserAt { get; set; }
 }
 
 // FR-03: 銘柄別の基準値（前回判断時点価格）。

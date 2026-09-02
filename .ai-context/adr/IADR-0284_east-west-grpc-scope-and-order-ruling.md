@@ -1,5 +1,5 @@
 ---
-title: IADR-0282 east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
+title: IADR-0284 east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
 type: impl-adr
 status: Proposed
 related_ids:
@@ -22,7 +22,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
 ---
 
-# IADR-0282: east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
+# IADR-0284: east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -166,5 +166,5 @@ planning へ feedback issue を起票する（起票前に `ADR-0029 gRPC` / `gR
 - Superseded by: なし
 - 前提: `IADR-0259` 決定 9（切り出し）・`IADR-0264` 決定 1（`.Client` 廃止）・`IADR-0063`（同期照会・fail-safe の順序。決定 1/4/5/6 は gRPC 化後も不変）・
   `IADR-0051`（s2s。`ServiceTokenHandler` を gRPC でも再利用）
-- 採番注記: `ls .ai-context/adr | sort | tail -1` ＝ 0281 → 0282。PR #618 が 0280 を予約、PR #639 が `IADR-0281_watchlist-config-seed.md` を追加しており
-  develop の 0281 と衝突している（#639 側の是正事項）。並行 PR が 0282 を先にマージした場合は先着尊重で改番する（`.claude/rules/traceability.md`）。
+- 採番注記: 当初 `ls .ai-context/adr | sort | tail -1` ＝ 0281 → 0282 で起票した。PR #639（watchlist シード・`IADR-0282_watchlist-config-seed.md`）が先に develop へ
+  マージして 0282 を確保し、0283 は PR #647 が予約したため、**先着尊重で 0284 へ改番した**（2026-09-03。`.claude/rules/traceability.md`「採番衝突時の改番手順」）。

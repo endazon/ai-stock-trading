@@ -13,7 +13,7 @@ related_ids:
   - IADR-0063
   - IADR-0259
   - IADR-0264
-  - IADR-0282
+  - IADR-0284
 author: endazon (with Claude Code)
 created: 2026-09-03
 updated: 2026-09-03
@@ -65,7 +65,7 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
 
 ## 対象範囲
 
-- 対象: 射程の実測表（下記）、判断案 A/B/B′/C の比較と推奨、planning への環流 issue、`IADR-0282`、README 索引、`docs/blocked-tasks.md` B-4 の裁定待ち行、#584 へのコメントと `blocked:decision` ラベル
+- 対象: 射程の実測表（下記）、判断案 A/B/B′/C の比較と推奨、planning への環流 issue、`IADR-0284`、README 索引、`docs/blocked-tasks.md` B-4 の裁定待ち行、#584 へのコメントと `blocked:decision` ラベル
 - 対象外: コードの変更（`.proto`・CPM・Kestrel・Helm・クライアントの書き換え）、`Http.Resilience` / `HybridCache` への置換、
   結合テストの追加（いずれも #584 に残す）
 
@@ -158,14 +158,14 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
   後から MSP が別の形で決めたときに**揃え直しが 22 本ぶん発生する**。
 - **A/C は「実装してから合わせる」、B は「例外を自認する」であり、どちらも計画側の判断を実装側で先取りする。**
   推奨が ADR-0029 と食い違うわけではない（移行義務は認める）ので、**実装せず環流を先にする**（オーケストレータ指示の原則）。
-- 裁定後に A を採る場合の切り方は `IADR-0282` 決定 5 に先に書いておく（判断が下りたら即着手できるように）。
+- 裁定後に A を採る場合の切り方は `IADR-0284` 決定 5 に先に書いておく（判断が下りたら即着手できるように）。
 
 ## 受け入れ基準
 
 - [x] 26 本（24 ＋ 軸 2 の 2）の射程表が、各行の判定根拠（境界・所有者・fail-safe）とともに本書と IADR にある
 - [x] 判断案 A/B/B′/C の工数・退行リスク・計画整合の表があり、推奨が 1 つ選ばれている
 - [x] #584 の記述と `MSP/ADR-0029` の衝突が planning へ環流されている（既存 issue を先に検索し 0 件を確認）
-- [x] `IADR-0282` に判断（暫定）と環流先が記録され、README 索引が更新されている
+- [x] `IADR-0284` に判断（暫定）と環流先が記録され、README 索引が更新されている
 - [x] #584 へ要約と planning issue URL をコメントした
 - [x] コードを変更していない（`git diff --stat` が `.ai-context/` と `docs/blocked-tasks.md`〔B-4 の裁定待ち行〕のみ）
 - [x] `check-trace-blocks` / `check-cross-repo-refs` / `check-doc-links` / `check-adr-index-sync` / `check-plan-id-qualification` が緑
@@ -177,7 +177,7 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
 ## 計画書との差異
 
 - 差異: **あり**。#584（本リポの issue）の「REST 継続なら閉じてよい」と `MSP/ADR-0029` 2026-08-04 追記「該当するものをすべて gRPC へ移行する」が衝突。
-  対応: planning へ環流（feedback.yml・`feedback` `decision-needed`）。issue 番号・URL は `IADR-0282` §環流 に記録。
+  対応: planning へ環流（feedback.yml・`feedback` `decision-needed`）。issue 番号・URL は `IADR-0284` §環流 に記録。
 
 ## 未決事項（計画側の裁定待ち）
 
@@ -188,6 +188,5 @@ ADR の射程（east-west すべて）より狭い。本作業は (1) 射程を�
 ## 申し送り
 
 - **ID 名前空間の罠**: 本リポで `ADR-0029` と裸で書くと資料再編 ADR を指す。gRPC 基準は必ず `MSP/ADR-0029`（本文）／`MSP:ADR-0029`（frontmatter）。
-- **IADR 番号**: `ls .ai-context/adr | sort | tail -1` ＝ 0281 → 0282 を採った（PR #618 が 0280、PR #639 が `IADR-0281_watchlist-config-seed.md` を追加しており
-  **develop の 0281（空売り verdict）と衝突している**——#639 側の問題として報告のみ）。#611 の担当が 0282 を採った場合は先着尊重で改番する。
-- 開いた PR #639 の IADR-0281 衝突は本作業の対象外（担当へ知らせる）。
+- **IADR 番号**: 当初 `ls .ai-context/adr | sort | tail -1` ＝ 0281 → 0282 を採ったが、PR #639（watchlist シード）が先に develop へマージして 0282 を確保し、
+  0283 は PR #647 が予約したため、**先着尊重で 0284 へ改番した**（2026-09-03）。改番はファイル名・索引・仕様書・blocked-tasks 行・PR 本文・#584 コメントの全 6 箇所へ追随した。
