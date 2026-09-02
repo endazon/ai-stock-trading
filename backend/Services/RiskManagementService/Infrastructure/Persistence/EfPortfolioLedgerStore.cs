@@ -33,7 +33,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             StopLossPrice = intent.StopLossPrice,
             // IADR-0107: 承認時点の換算レート（＝約定時レートの近似）を台帳に固定する。後から引き直さない。
             FxRateToBase = intent.FxRateToBase,
-            // #611, IADR-0285 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する。null＝未記録（推定で埋めない）。
+            // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する。null＝未記録（推定で埋めない）。
             FxRateBaseToDisplay = fxRateBaseToDisplay,
             ApprovedAt = approvedAt,
         });
@@ -141,7 +141,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 // #569, IADR-0271: **実際に発注したアダプタの発注先**（列追加前の行は null＝不明）。
                 // 承認 Intent の Mode（a.Mode）へフォールバックしない——段が食い違う。
                 f.Provider,
-                // #611, IADR-0285 決定1: 認識時レート（1 USD あたりの円）。**列追加前の行・未解決の行は null のまま**
+                // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。**列追加前の行・未解決の行は null のまま**
                 // （FxRateToBase の `?? 1m` とは違い、既定へ倒さない——1 円/ドルは事実ではなく、推定でもない誤りである）。
                 a.FxRateBaseToDisplay);
 

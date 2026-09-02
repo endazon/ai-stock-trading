@@ -112,7 +112,7 @@ public sealed class ApprovedOrderRow
     public decimal? FxRateToBase { get; set; }
 
     /// <summary>
-    /// FR-06, FR-16, #611, IADR-0285 決定1: 承認時点の<b>認識時レート</b>＝基準通貨（USD）1 単位あたりの表示通貨（JPY）額
+    /// FR-06, FR-16, #611, IADR-0286 決定1: 承認時点の<b>認識時レート</b>＝基準通貨（USD）1 単位あたりの表示通貨（JPY）額
     /// （1 USD あたりの円）。報告書の為替差損益（認識時レートと期末レートの差）の根である。
     /// <para>
     /// <see cref="FxRateToBase"/>（ローカル通貨 → USD）とは<b>軸が違う</b>——米国株では後者が契約上 1 で円の情報を持たない。

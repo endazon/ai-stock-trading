@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.Fx;
 
-// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0285 決定1・決定2: 為替レート源の読みから「1 USD あたりの円」を導く規則。
+// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0286 決定1・決定2: 為替レート源の読みから「1 USD あたりの円」を導く規則。
 // 認識時（リスク管理の承認記録）と期末（報告書）の両方が通る 1 箇所であり、ここが崩れると両方が同時にずれる。
 public class FxBaseToDisplayRateTests
 {

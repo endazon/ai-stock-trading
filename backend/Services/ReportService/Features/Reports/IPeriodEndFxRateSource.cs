@@ -2,7 +2,7 @@ using ReportService.Domain;
 
 namespace ReportService.Features.Reports;
 
-// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0285 決定2: 為替差損益の**期末レート**を供給するポート。
+// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**を供給するポート。
 // 「期末日以前の直近の日次観測（1 USD あたりの円）」を観測日つきで返す。
 //
 // **供給不達を空へ倒さない。** 為替差損益は**期末に建玉が残る期間**では期末レートが無いと集計できず、

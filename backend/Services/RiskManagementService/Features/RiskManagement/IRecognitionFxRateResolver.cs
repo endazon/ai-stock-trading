@@ -1,6 +1,6 @@
 namespace RiskManagementService.Features.RiskManagement;
 
-// FR-06, FR-16, FR-10, #611, 05_trading-assumptions §3（実現損益＝約定時レート）, IADR-0107 決定2, IADR-0285 決定1:
+// FR-06, FR-16, FR-10, #611, 05_trading-assumptions §3（実現損益＝約定時レート）, IADR-0107 決定2, IADR-0286 決定1:
 // 承認記録時の**認識時レート**（基準通貨〔USD〕1 単位あたりの表示通貨〔JPY〕額＝1 USD あたりの円）を解決するポート。
 //
 // 承認は取引判断の直後・約定の直前であり、IADR-0107 決定2 が「承認時点の換算レート＝約定時レートの近似」と定めた

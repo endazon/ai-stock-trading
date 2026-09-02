@@ -36,7 +36,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var assumptions = TradingAssumptionsDefaults.Create();
         var pnl = PnlAggregator.Aggregate(fills, assumptions, currentPrices);
 
-        // FR-06, FR-16, #611, IADR-0285 決定3・決定4: 為替差損益は**ここで集計する**（三者比較・取引履歴と同じ形。
+        // FR-06, FR-16, #611, IADR-0286 決定3・決定4: 為替差損益は**ここで集計する**（三者比較・取引履歴と同じ形。
         // 数値はコード集計であり LLM に渡さない）。集計の単一情報源は FxTranslationBuilder（純関数）。
         // 期末レートが未供給でも、期末に建玉が残らなければ集計できる（供給元が組み立てた表を受けない理由と同じ）。
         var fxTranslation = FxTranslationBuilder.Build(fills, request.PeriodEndFxRate);
@@ -91,7 +91,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // **null（未供給）を空・0 へ潰さない**——既存の各節と同じ規律である。
             LlmUsage = request.LlmUsage,
             BorrowFees = request.BorrowFees,
-            // #611, IADR-0285: **null（未供給）を 0 円へ潰さない**。未記録の約定があれば件数を明記する（黙って落とさない）。
+            // #611, IADR-0286: **null（未供給）を 0 円へ潰さない**。未記録の約定があれば件数を明記する（黙って落とさない）。
             FxTranslation = fxTranslation.Summary,
             FxTranslationUnrecordedFillCount = fxTranslation.UnrecordedFillCount,
             Uptime = request.Uptime,
@@ -233,7 +233,7 @@ public sealed record DraftRequest(
     LlmUsageRecord? LlmUsage = null,
     // FR-06, #338, ADR-0016 決定15, ADR-0027 決定4: 当期間の借株料の記録。**null＝照会できていない**。
     BorrowFeeRecord? BorrowFees = null,
-    // FR-06, FR-16, #338, #611, IADR-0285 決定2・決定4: 為替差損益（独立表示）の**期末レート**（期末日以前の直近の
+    // FR-06, FR-16, #338, #611, IADR-0286 決定2・決定4: 為替差損益（独立表示）の**期末レート**（期末日以前の直近の
     // 日次観測・1 USD あたりの円）。為替差損益そのものは受け取らない——**数値はコード集計であり、集計の単一情報源は
     // `FxTranslationBuilder`（純関数）である**（三者比較の CurrentStage と同じ形）。認識時レートは約定（Fills）が運ぶ。
     // **null＝期末レートを照会できていない**。期末に建玉が残る期間は節ごと未供給になる（0 円と書かない）。

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace RiskManagementService.Infrastructure.ExternalServices;
 
-// FR-06, FR-16, FR-10, #611, ADR-0022, IADR-0285 決定1: 為替レート源（IFxRateSource＝判断サービスと同じ factory で組む）から
+// FR-06, FR-16, FR-10, #611, ADR-0022, IADR-0286 決定1: 為替レート源（IFxRateSource＝判断サービスと同じ factory で組む）から
 // 認識時レート（1 USD あたりの円）を解決する。逆数・鮮度の規則は FxBaseToDisplayRate（報告書の期末レートと同じ 1 箇所）。
 //
 // 🔴 **承認記録を為替解決の失敗で止めない。** 例外は捕捉して null（未記録）へ倒し、取り消しだけ伝播する。
@@ -41,7 +41,7 @@ public sealed class FxSourceRecognitionFxRateResolver(
         {
             logger.LogInformation(
                 "認識時レート（JPY/USD）を解決できませんでした（鮮度 {Freshness}）。承認は未記録（null）のまま記録します。" +
-                "報告書の為替差損益は当該約定を含む期間で未供給になります（推定で埋めません・IADR-0285）。",
+                "報告書の為替差損益は当該約定を含む期間で未供給になります（推定で埋めません・IADR-0286）。",
                 reading?.Freshness);
         }
 

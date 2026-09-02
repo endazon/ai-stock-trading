@@ -70,7 +70,7 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     // **欠落した応答（旧版 Risk・列追加前の行）は null のままにする**——承認 Intent の Mode や
     // 「たぶん SIMULATE」で埋めると、三者比較の列が水増しされる。不明はどちらの段にも算入しない。
     //
-    // #611, IADR-0285: FxRateBaseToDisplay（承認時点の認識時レート＝1 USD あたりの円）もそのまま通す。
+    // #611, IADR-0286: FxRateBaseToDisplay（承認時点の認識時レート＝1 USD あたりの円）もそのまま通す。
     // **欠落した応答（旧版 Risk・列追加前の行・未解決の行）は null のままにする**——FxRateToBase の `1` と違い、
     // 既定へ倒す正当な値が無い（1 円/ドルは事実ではない）。未記録は報告書が件数つきで明記する。
     private static PeriodTradeFill ToFill(LedgerFillDto r) => new(

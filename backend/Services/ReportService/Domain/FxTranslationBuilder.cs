@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace ReportService.Domain;
 
-// FR-06, FR-16, #611, 04_report-templates §数値の定義（為替差損益・円換算）, 05_trading-assumptions §3, IADR-0285 決定3・決定4:
+// FR-06, FR-16, #611, 04_report-templates §数値の定義（為替差損益・円換算）, 05_trading-assumptions §3, IADR-0286 決定3・決定4:
 // 期間の約定から為替差損益の明細（FxTranslationEntry）を組み立てる**純関数**（決定的・副作用なし・LLM に触れさせない）。
 //
 // 対象は**基準通貨（USD）建てで、表示通貨（JPY）建てでない**約定＝米国株である。計画は「円換算 | **米国株は**前提条件の
@@ -137,7 +137,7 @@ public static class FxTranslationBuilder
 }
 
 /// <summary>
-/// FR-06, FR-16, #611, IADR-0285 決定3: 組み立ての結果。
+/// FR-06, FR-16, #611, IADR-0286 決定3: 組み立ての結果。
 /// </summary>
 /// <param name="Summary">集計結果。<b><c>null</c> は「供給されていない」</b>（0 円ではない）。</param>
 /// <param name="UnrecordedFillCount">

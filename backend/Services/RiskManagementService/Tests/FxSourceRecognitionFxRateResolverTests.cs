@@ -7,7 +7,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0285 決定1: 承認記録時の認識時レート（1 USD あたりの円）の解決。
+// FR-06, FR-16, FR-10, #611, ADR-0022 決定5, IADR-0286 決定1: 承認記録時の認識時レート（1 USD あたりの円）の解決。
 // **承認記録を為替解決の失敗で止めない**（fail-safe）向きと、鮮度・逆数の規則を固定する。
 public class FxSourceRecognitionFxRateResolverTests
 {

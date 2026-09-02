@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ReportService.Infrastructure.ExternalServices;
 
-// FR-06, FR-16, #611, 05_trading-assumptions §3（評価損益＝日次終値）, ADR-0022, IADR-0285 決定2:
+// FR-06, FR-16, #611, 05_trading-assumptions §3（評価損益＝日次終値）, ADR-0022, IADR-0286 決定2:
 // 既存の為替レート源（IFxRateSource＝日銀第一・FRED フォールバック・鮮度装飾。判断サービスと同じ factory で組む）から
 // 期末レート（1 USD あたりの円）を導くアダプタ。HTTP 面は新設しない——判断サービスの状態は in-memory であり
 // 照会先として権威がない（IADR-0199 決定1 と同じ理由）。
