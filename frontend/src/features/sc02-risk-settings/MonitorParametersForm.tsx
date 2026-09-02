@@ -69,7 +69,7 @@ function saveMessageOf(e: unknown): string {
 }
 
 export function MonitorParametersForm() {
-  // IADR-0288: 取得・更新は TanStack Query（`../monitor/queries`）が持つ。
+  // IADR-0288: 取得・更新は TanStack Query（`@ai-stock-trading/lib/monitor/queries`）が持つ。
   const settingsQuery = useMonitorSettings();
   const historyQuery = useMonitorSettingsHistory();
 

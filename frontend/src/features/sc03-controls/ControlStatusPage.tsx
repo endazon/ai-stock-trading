@@ -40,7 +40,7 @@ type StageGateState = 'loading' | 'ok' | 'unavailable';
 type HistoryState = 'loading' | 'ok' | 'unavailable';
 
 export function ControlStatusPage() {
-  // IADR-0288: 取得は TanStack Query（`../risk/queries`）が持つ。**領域ごとに別のクエリのままにする**
+  // IADR-0288: 取得は TanStack Query（`@ai-stock-trading/lib/risk/queries`）が持つ。**領域ごとに別のクエリのままにする**
   // ——一方の失敗が他方を巻き込まない縮退（下の各 state 導出）はクエリの分割がそのまま担う。
   const statusQuery = useRiskStatus();
   const stageGateQuery = useStageGate();
