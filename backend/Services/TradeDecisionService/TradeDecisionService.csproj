@@ -41,4 +41,19 @@
          持っていた参照を、複製先である本プロジェクトが引き継いだもの。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
+  <!-- NFR, #616: 参照先サービス（RiskManagementService＝Web SDK）の appsettings*.json が publish 出力へ推移的に流れ込み、
+       自プロジェクトの同名ファイルと衝突して NETSDK1152 で publish が落ちる（コンテナイメージが作れない）。
+       自プロジェクトのディレクトリ外から来た appsettings*.json だけを publish 対象から除く。
+       ErrorOnDuplicatePublishOutputFiles=false は採らない（どちらの設定が出荷されるか不定になる）。 -->
+  <Target Name="AstRemoveForeignAppSettingsFromPublish"
+          AfterTargets="ComputeFilesToPublish"
+          BeforeTargets="_HandleFileConflictsForPublish">
+    <ItemGroup>
+      <_AstForeignAppSettings Include="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('appsettings')) And $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').EndsWith('.json')) And !$([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').StartsWith('$(MSBuildProjectDirectory)'))" />
+      <ResolvedFileToPublish Remove="@(_AstForeignAppSettings)" />
+    </ItemGroup>
+    <Message Importance="high" Text="AST: publish から除いた参照先の設定ファイル: @(_AstForeignAppSettings->'%(FullPath)', ', ')" Condition="'@(_AstForeignAppSettings)' != ''" />
+  </Target>
+
 </Project>
