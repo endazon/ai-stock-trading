@@ -1,11 +1,10 @@
 ---
-title: IADR-0277 CLAUDE.md の 3 段化記述を platform ADR-0065 へ追随させ、Hosted/ を AST 固有の第4の頂点として確定する
+title: IADR-0276 CLAUDE.md の 3 段化記述を platform ADR-0065 へ追随させ、Hosted/ を AST 固有の第4の頂点として確定する
 type: impl-adr
 status: Accepted
 related_ids:
   - NFR
   - IADR-0259
-  - IADR-0265
   - MSP:ADR-0065
   - MSP:ADR-0068
 author: endazon (with Claude Code)
@@ -17,7 +16,7 @@ plan_refs:
   - planning:projects/microservices-platform/06_technical/12_backend-application-stack.md
 ---
 
-# IADR-0277: CLAUDE.md の 3 段化記述を platform ADR-0065 へ追随させ、Hosted/ を AST 固有の第4の頂点として確定する
+# IADR-0276: CLAUDE.md の 3 段化記述を platform ADR-0065 へ追随させ、Hosted/ を AST 固有の第4の頂点として確定する
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。

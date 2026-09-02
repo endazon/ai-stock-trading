@@ -5,7 +5,6 @@ status: draft
 related_ids:
   - NFR
   - IADR-0259
-  - IADR-0265
 author: endazon (with Claude Code)
 created: 2026-09-02
 updated: 2026-09-02
@@ -111,7 +110,7 @@ AST の該当 6 サービスは **同一ホストで HTTP 面と定時巡回を�
 このハイブリッド構成そのものには触れていない）。
 
 **採る案**: (a) 現状維持 —— `Hosted/` を AST 固有の第 4 の頂点として `CLAUDE.md` に明記する。
-理由・却下案の詳細は IADR-0277 に記す。
+理由・却下案の詳細は IADR-0276 に記す。
 
 ## 受け入れ基準
 
