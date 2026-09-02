@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 
 // SC-03, FR-10, UC-06, ADR-0016（決定3・決定7・決定9・決定15）, #340, IADR-0154:
 // 「維持率・空売りの現況」（画面最上位）の表示。
@@ -52,7 +53,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
   it('維持率が未供給のとき「取得できていません」と明示し、統制が働いていない旨を警告する', async () => {
     // 実応答（既定構成）そのものが未供給である。**これが現在の事実**であり、テストはそれを固定する。
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByRole('heading', { name: '維持率' })).toBeInTheDocument();
     // 値の位置に「取得できていません」が出る（0.0% でも「—」でもない）。
@@ -65,7 +66,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('維持率が未供給のとき 0% や — を維持率の値として表示しない（fail-open を作らない）', async () => {
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('heading', { name: '維持率' });
 
     // 「現在の維持率: 0.0%」のような**正常に見える表示**が無いことを否定形で固定する。
@@ -85,7 +86,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
     // moomoo SIMULATE では照会 API 自体が失敗する。**「そのうち直るバグ」と読まれると、利用者は
     // 統制が無いまま待ってしまう。**
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('heading', { name: '維持率' });
 
     expect(screen.getByText(/Stage 1（moomoo SIMULATE）の全期間にわたって表示できません/)).toBeInTheDocument();
@@ -100,7 +101,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
       appliedMaintenanceMarginThreshold: 0.4,
       appliedMaintenanceRecoveryTarget: 0.45,
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText('38.0%')).toBeInTheDocument();
     // 適用閾値（40.0%）と設定上の閾値（40.0%）は別の行として並ぶ（この応答では一致する）。
@@ -119,7 +120,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
   it('回復目標のオフセット（+5 ポイント）を応答から取り、画面に直書きしない', async () => {
     // 計画の改訂に画面が追随しないことを防ぐ（Stage1GateCriteria と同じ方針）。
     mockBff({ ...BASE(), maintenanceRecoveryTargetOffset: 0.07 });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/回復目標（閾値 \+ 7\.0%）/)).toBeInTheDocument();
   });
@@ -133,12 +134,12 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
       shortExposureAvailability: METRIC_NOT_APPLICABLE,
       shortExposureRatio: null,
     });
-    const { unmount } = render(<ControlStatusPage />);
+    const { unmount } = renderWithProviders(<ControlStatusPage />);
     expect(await screen.findByText(/該当なし（対象の建玉がありません）/)).toBeInTheDocument();
     unmount();
 
     mockBff({ ...BASE(), shortExposureAvailability: METRIC_NOT_SUPPLIED, shortExposureRatio: null });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     expect(
       await screen.findByText(/空売り比率の分母（建玉総額）は/),
     ).toBeInTheDocument();
@@ -151,7 +152,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
       shortExposureRatio: 0.42,
       shortExposureRatioCap: 0.5,
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/現在の空売り比率:/)).toHaveTextContent('42.0%');
     expect(screen.getByText(/現在の空売り比率:/)).toHaveTextContent('50.0%');
@@ -168,7 +169,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
         { ...base.positions[0], symbol: 'LONG', side: 0 },
       ],
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const table = await screen.findByRole('table', { name: '保有ポジション（方向・借株料）' });
     const rows = within(table).getAllByRole('row');
@@ -178,7 +179,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('借株料の累計は未供給として明示され、0 を表示しない', async () => {
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/借株料の累計:/)).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
     // 「0 ではなく不明」であることを利用者に伝える（費用が発生していないと読ませない）。
@@ -191,7 +192,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
   it('強制買戻しの発生回数は未供給として明示され、0 件と表示しない', async () => {
     // 計画（05_screens SC-03 の供給元の表）は本項目へ **「0 件と表示してはならない」**と名指しで注記した。
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const line = await screen.findByText(/強制買戻しの発生回数:/);
     expect(line).toHaveTextContent(METRIC_NOT_SUPPLIED_TEXT);
@@ -205,7 +206,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
     // **逆方向の否定形。** 「0 なら未供給だろう」と画面が推測すると、正当な 0（本当に 1 件も
     // 起きていない）と未供給が区別できなくなる——供給可否は**サーバの宣言だけ**で決める。
     mockBff({ ...BASE(), buyInCountAvailability: METRIC_AVAILABLE, buyInCount: 0 });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const line = await screen.findByText(/強制買戻しの発生回数:/);
     expect(line).toHaveTextContent('強制買戻しの発生回数: 0');
@@ -216,7 +217,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('強制買戻しが供給されていれば件数をそのまま表示する', async () => {
     mockBff({ ...BASE(), buyInCountAvailability: METRIC_AVAILABLE, buyInCount: 2 });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/強制買戻しの発生回数:/)).toHaveTextContent('強制買戻しの発生回数: 2');
   });
@@ -233,7 +234,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
       borrowFeeAvailability: METRIC_AVAILABLE,
       totalAccruedBorrowFeeUsd: 0,
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const exposure = await screen.findByText(/現在の空売り比率:/);
     expect(exposure).toHaveTextContent('0.0%');
@@ -249,7 +250,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('維持率割れ自動縮小は 3 統制と別枠で「動かす」統制として描かれる', async () => {
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     // 3 統制の表とは別の region に置く（計画: 3 統制と同じ枠に並べると誤読されるため視覚的に区別する）。
     const region = await screen.findByRole('region', {
@@ -268,7 +269,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('発動履歴が未供給のとき「発動なし」と表示しない', async () => {
     mockBff(BASE());
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const region = await screen.findByRole('region', {
       name: '維持率割れによる自動縮小（動かす統制）',
@@ -295,7 +296,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
         },
       ],
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const table = await screen.findByRole('table', { name: '維持率割れ自動縮小の発動履歴' });
     expect(within(table).getByText('39.0%')).toBeInTheDocument();
@@ -307,7 +308,7 @@ describe('SC-03 維持率・空売りの現況（#340・ADR-0016 決定15）', (
 
   it('空売り現況の取得失敗は当該領域のみ縮退し「問題なし」に見せない', async () => {
     mockBff('fail');
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(
       await screen.findByText(/値が無いのではなく、確認できていません/),

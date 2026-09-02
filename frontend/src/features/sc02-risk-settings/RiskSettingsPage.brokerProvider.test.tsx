@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 
 // SC-02, FR-20, FR-12, FR-13, UC-06, INDEX 決定 46, #334, IADR-0140 / IADR-0141:
@@ -96,7 +97,7 @@ beforeEach(() => {
 describe('SC-02 発注先（Broker Provider）の表示（#334）', () => {
   it('運用段階と発注先を別々の行として表示する（1 行に混ぜない）', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     await screen.findByRole('form', { name: '発注先の変更' });
     // 05_screens 共通規約: 「運用段階と発注先は独立した 2 軸（1 行に混ぜて表示しない）」。
@@ -107,7 +108,7 @@ describe('SC-02 発注先（Broker Provider）の表示（#334）', () => {
 
   it('発注先の選択肢は計画の 3 値だけを出す', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     const form = await screen.findByRole('form', { name: '発注先の変更' });
     expect(within(form).getAllByRole('radio')).toHaveLength(3);
@@ -117,7 +118,7 @@ describe('SC-02 発注先（Broker Provider）の表示（#334）', () => {
 describe('SC-02 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () => {
   it('内蔵 paper 稼働中は必須 2 文言のバナーを表示する', async () => {
     mockApi(BROKER_PROVIDER_INTERNAL_PAPER);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     await screen.findByRole('form', { name: '発注先の変更' });
     const banner = screen.getByRole('alert', { name: '内蔵 paper 稼働中の警告' });
@@ -128,7 +129,7 @@ describe('SC-02 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () 
   // 否定形: paper でないときに出してはならない（実弾稼働をデバッグ稼働と誤認させる）。
   it('SIMULATE 稼働中はバナーを表示しない', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
 
     await screen.findByRole('form', { name: '発注先の変更' });
     expect(screen.queryByRole('alert', { name: '内蔵 paper 稼働中の警告' })).not.toBeInTheDocument();
@@ -138,7 +139,7 @@ describe('SC-02 内蔵 paper 稼働中の警告バナー（FR-12・#334）', () 
 describe('SC-02 発注先の変更（FR-13・#334）', () => {
   it('理由が空では保存できない（ボタンが無効）', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /内蔵 paper/ }));
@@ -149,7 +150,7 @@ describe('SC-02 発注先の変更（FR-13・#334）', () => {
 
   it('実弾以外への切替は理由だけで PUT できる', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /内蔵 paper/ }));
@@ -183,7 +184,7 @@ describe('SC-02 発注先の変更（FR-13・#334）', () => {
         return settings(liveCurrent);
       },
     );
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /内蔵 paper/ }));
@@ -201,7 +202,7 @@ describe('SC-02 発注先の変更（FR-13・#334）', () => {
 describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）', () => {
   async function openModal() {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));
@@ -321,7 +322,7 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
   // 否定形: ③ を提示できない状態（equity が取れない）では切り替えさせない。
   it('equity と統制値を取得できない場合は切替ボタンが無効である', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE, { statusFails: true });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));
@@ -352,7 +353,7 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
   // 一覧側（モーダルを開く前）にも同じ旨を出す。モーダルへ進まない利用者にも届かせるため。
   it('フォームの段階ゲート警告にも発注が行われない旨を含む', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));
@@ -367,7 +368,7 @@ describe('SC-02 実弾（moomoo REAL）への切替（FR-20 (1)・IADR-0141）',
       stageMode: BROKER_PROVIDER_MOOMOO_REAL,
       stage: 2,
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: '発注先の変更' });
 
     await userEvent.click(within(form).getByRole('radio', { name: /moomoo REAL/ }));

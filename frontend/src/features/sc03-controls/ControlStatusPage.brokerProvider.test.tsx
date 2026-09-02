@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 
 // SC-03, FR-20, FR-12, UC-06, INDEX 決定 46, #334, IADR-0140 / IADR-0142:
 // 統制状態参照画面における発注先の**参照表示**・`paper` 警告バナー／ラベル・変更履歴・
@@ -78,7 +79,7 @@ beforeEach(() => {
 describe('SC-03 発注先の参照表示（#334）', () => {
   it('運用段階と発注先を別々の行として表示する（1 行に混ぜない）', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     await screen.findByText('発注先');
     expect(screen.getByText('運用段階')).toBeInTheDocument();
@@ -89,7 +90,7 @@ describe('SC-03 発注先の参照表示（#334）', () => {
   // 05_screens:「本画面は参照専用のため表示のみとし、変更は SC-02 で行う」。
   it('発注先の変更 UI を持たない（参照専用）', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     await screen.findByText('発注先');
     expect(screen.queryByRole('form', { name: '発注先の変更' })).not.toBeInTheDocument();
@@ -100,7 +101,7 @@ describe('SC-03 発注先の参照表示（#334）', () => {
 describe('SC-03 内蔵 paper 稼働中の表示（FR-12・#334）', () => {
   it('必須 2 文言のバナーと統制状態カードの paper ラベルを表示する', async () => {
     mockApi(BROKER_PROVIDER_INTERNAL_PAPER);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const banner = await screen.findByRole('alert', { name: '内蔵 paper 稼働中の警告' });
     expect(within(banner).getByText(PAPER_BANNER_DEBUG_MESSAGE)).toBeInTheDocument();
@@ -112,7 +113,7 @@ describe('SC-03 内蔵 paper 稼働中の表示（FR-12・#334）', () => {
   // 否定形: paper でないときにバナー・ラベルを出してはならない。
   it('SIMULATE 稼働中はバナーも paper ラベルも出さない', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     await screen.findByText('発注先');
     expect(screen.queryByRole('alert', { name: '内蔵 paper 稼働中の警告' })).not.toBeInTheDocument();
@@ -123,7 +124,7 @@ describe('SC-03 内蔵 paper 稼働中の表示（FR-12・#334）', () => {
 describe('SC-03 発注先の変更履歴（FR-20 (2)・#334）', () => {
   it('日時・変更前後・理由を表示し、発注先以外の履歴は混ぜない', async () => {
     mockApi(BROKER_PROVIDER_INTERNAL_PAPER);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const table = await screen.findByRole('table', { name: '発注先の変更履歴' });
     const rows = within(table).getAllByRole('row');
@@ -139,7 +140,7 @@ describe('SC-03 発注先の変更履歴（FR-20 (2)・#334）', () => {
 describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () => {
   it('経過営業日数に paper 稼働による除外日数を併記する', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/経過 42 \/ 60 営業日/)).toHaveTextContent(
       'paper 稼働により 3 日を除外',
@@ -149,7 +150,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
 
   it('SIMULATE の約定のみを集計している旨の注記を置く', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/moomoo SIMULATE.*の約定のみを集計/)).toBeInTheDocument();
   });
@@ -160,7 +161,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
       ...STAGE_GATE,
       stage1Progress: { qualifiedTradingDays: 42, tradeCount: 70, excludedInternalPaperDays: 0 },
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     const line = await screen.findByText(/経過 42 \/ 60 営業日/);
     expect(line).not.toHaveTextContent('除外');
@@ -184,7 +185,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
         belowStatisticalBasis: true,
       },
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     // 警告の段落そのものを取る（`統計的な根拠` は `<strong>` の中にあり、直接の子テキストではない）。
     const warning = await screen.findByText(/Stage 1 の最小取引件数が/);
@@ -198,7 +199,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
   // 逆方向の否定形。**満たしているのに警告を出すと、警告が常時出て誰も読まなくなる。**
   it('最小取引件数が既定なら警告を出さない', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByText(/経過 42 \/ 60 営業日/);
 
     expect(screen.queryByText(/Stage 1 の最小取引件数が/)).not.toBeInTheDocument();
@@ -216,7 +217,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
         belowStatisticalBasis: false,
       },
     });
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
     await screen.findByText(/経過 42 \/ 60 営業日/);
 
     expect(screen.queryByText(/Stage 1 の最小取引件数が/)).not.toBeInTheDocument();
@@ -226,7 +227,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
   // 件数が設定値であることを画面に出す（100 という定数だと思わせない）。
   it('取引件数の閾値が設定値である旨と計上単位を明記する', async () => {
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText(/取引 70 \/ 100 件（設定値）/)).toBeInTheDocument();
     const note = screen.getByText(/計上単位は/);
@@ -240,7 +241,7 @@ describe('SC-03 Stage 1 進捗と除外営業日数（FR-20・IADR-0142）', () 
     delete withoutProgress.stage1Progress;
     delete withoutProgress.stage1Criteria;
     mockApi(BROKER_PROVIDER_MOOMOO_SIMULATE, withoutProgress);
-    render(<ControlStatusPage />);
+    renderWithProviders(<ControlStatusPage />);
 
     expect(await screen.findByText('Stage 1 の進捗は利用できません。')).toBeInTheDocument();
     expect(screen.getByText('発注先')).toBeInTheDocument();

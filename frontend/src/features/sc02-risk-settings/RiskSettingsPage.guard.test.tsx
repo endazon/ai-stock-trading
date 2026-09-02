@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import type { RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
@@ -47,8 +48,11 @@ function guardForm(view: RenderResult): HTMLElement {
 }
 
 async function renderReady(): Promise<RenderResult> {
-  const view = render(<RiskSettingsPage />);
-  await screen.findByRole('heading', { name: 'リスク設定' });
+  const view = renderWithProviders(<RiskSettingsPage />);
+  // #414: **見出しの出現を「準備完了」にしない。** 見出しは取得の前から描かれるため、
+  // 取得が済んだことを何も保証しない（従前はたまたま取得が 1 tick で終わっていた）。
+  // 取得済みでなければ現れない要素＝ガードのフォームそのものを待つ。
+  await screen.findByRole('form', { name: '取引ガードの変更' });
   return view;
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import type { RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
@@ -35,7 +36,7 @@ beforeEach(() => {
 });
 
 async function renderReady(): Promise<RenderResult> {
-  const view = render(<WatchlistForm />);
+  const view = renderWithProviders(<WatchlistForm />);
   // 一覧（表）の描画完了を待つ。
   await screen.findByRole('table', { name: '監視銘柄' });
   return view;
@@ -201,7 +202,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
       if (path === '/monitor/watchlist') throw new ApiError('notFound', '未登録', 404);
       return [];
     });
-    render(<WatchlistForm />);
+    renderWithProviders(<WatchlistForm />);
     expect(await screen.findByText('監視銘柄設定は利用できません。')).toBeInTheDocument();
   });
 
@@ -211,7 +212,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
       if (path === '/monitor/watchlist') return WATCHLIST;
       return [];
     });
-    render(<WatchlistForm />);
+    renderWithProviders(<WatchlistForm />);
     expect(await screen.findByText('変更履歴は利用できません。')).toBeInTheDocument();
   });
 
@@ -221,7 +222,7 @@ describe('WatchlistForm (SC-02, FR-13, FR-03, IADR-0090)', () => {
       if (path === '/monitor/watchlist') return [];
       return [];
     });
-    render(<WatchlistForm />);
+    renderWithProviders(<WatchlistForm />);
     expect(await screen.findByText('監視銘柄はありません。')).toBeInTheDocument();
   });
 });

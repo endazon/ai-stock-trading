@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders } from '../../testing/renderWithProviders';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@foundation/api/ApiError';
 
@@ -81,7 +82,7 @@ function limitsForm(): HTMLElement {
 
 describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('renders current limits into the form', async () => {
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     expect(await screen.findByRole('heading', { name: 'リスク設定' })).toBeInTheDocument();
     // 読み込み完了（フォーム描画）を待ってから現在値を検証する（見出しは読み込み中も描画されるため待受にしない）。
     // FR-10, #329, #389, #362: 発注額の上限は **equity 比**（実応答の 0.25）であり、画面には
@@ -95,7 +96,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     // #362, IADR-0151 決定1: 比率（0.25）ではなく百分率（25）で入力させる。比率入力で `25` と打つと
     // equity の 25 倍（統制の消滅）になるが、百分率入力で `0.25` と打っても 0.25%（安全側）で済む。
     // **単位は必ず画面に出す**（比率・百分率・金額の取り違えを目視で検出できるようにする）。
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'リスク上限の変更' });
     expect(within(form).getByLabelText('1日発注額上限（equity 比） %/日')).toHaveValue(150);
     expect(within(form).getByLabelText('日次損失上限（equity 比） %')).toHaveValue(2);
@@ -110,7 +111,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     // #362, IADR-0151 決定4: 割合だけでは実効額を判断できない。**保存前の入力値に対する実額**は
     // サーバの解決済み実額（現在の設定由来）では表せないため、画面が `capital × 入力比率` を計算する。
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'リスク上限の変更' });
     const expected = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
     // 既定 25%（＝実応答の 0.25）の実額。
@@ -133,7 +134,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       if (path === '/monitor/watchlist/history') return [];
       return SETTINGS;
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const form = await screen.findByRole('form', { name: 'リスク上限の変更' });
     // equity 比の 5 項目すべてが未供給として明示される（一部だけ数字が残る中途半端な状態にしない）。
     expect(
@@ -151,14 +152,14 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('shows the stage orderable cap as a ratio of total capital', async () => {
     // FR-20, #333, #389, IADR-0136: capitalCapRatio（総資金比）。#389 まで画面に一切出ておらず、
     // キー名のずれが描画結果に現れなかった。
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const term = screen.getByText('段階の発注可能額（総資金比）');
     expect(term.nextElementSibling).toHaveTextContent(String(SETTINGS.stage.capitalCapRatio));
   });
 
   it('shows stage as read-only (stage change is via gate approval, not this screen)', async () => {
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     // 段階（数値 enum）がラベルへ写像される（参照表示。直接変更 UI は無い＝#20/#165 段階ゲート承認へ一元化）。
     // #333/#334: 段階の呼称は計画（06_daytrading-review §4 表）に従う。
@@ -171,7 +172,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   });
 
   it('lists change history (newest first) mapping changeType to a label', async () => {
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     const table = await screen.findByRole('table', { name: '変更履歴' });
     const rows = within(table).getAllByRole('row');
     expect(within(rows[1]).getByText('上限')).toBeInTheDocument();
@@ -184,13 +185,13 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       if (path === '/risk-controls/settings/history') throw new ApiError('server', 'boom', 500);
       return SETTINGS;
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     expect(await screen.findByText('変更履歴は利用できません。')).toBeInTheDocument();
   });
 
   it('requires a reason before saving (save disabled until reason entered)', async () => {
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     // ガード変更フォーム（#188）も同名の「保存」「変更理由」を持つため、上限フォームに絞る。
     const form = limitsForm();
@@ -202,7 +203,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
 
   it('disables save and warns when a numeric field is empty or non-numeric', async () => {
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
@@ -227,7 +228,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     ['0', '1注文上限が 0（発注できない）'],
   ])('never issues PUT when the order limit is out of range (%s)', async (value) => {
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText(LIMIT_RATIO_LABEL);
@@ -250,7 +251,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('rejects a losing-streak size factor of 1.0 (which would disable the control)', async () => {
     // IADR-0151 決定2: 1.0 は「縮小しない」＝連敗時縮小の無効化であり、設定値として認めない。
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText('連敗時サイズ縮小係数 倍');
@@ -265,7 +266,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
   it('rejects a fractional position count', async () => {
     // 3.5 件の建玉は存在しない（件数項目は整数のみ）。
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText(POSITIONS_LABEL);
@@ -282,7 +283,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     // #389 まで旧名（金額キー）で送って 400 に落ちていたのは、入力欄が金額のままだったためである。
     // 百分率入力と値域の関門（画面＋サーバ）が揃った本 issue で初めてこの形にしてよい。
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
@@ -314,7 +315,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
     // #362, IADR-0151 決定1: 変換は 10 進文字列の小数点移動で行う。`33 / 100` の丸め誤差が
     // 統制値としてサーバへ届く経路を作らない。
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText(LIMIT_RATIO_LABEL);
@@ -331,7 +332,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
 
   it('reflects an edited limit in the submitted payload', async () => {
     const user = userEvent.setup();
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     const input = within(form).getByLabelText(POSITIONS_LABEL);
@@ -361,7 +362,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       if (path === '/monitor/watchlist/history') return [];
       return SETTINGS;
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
@@ -378,7 +379,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
         throw new ApiError('conflict', '競合', 409);
       return SETTINGS;
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     await screen.findByRole('form', { name: 'リスク上限の変更' });
     const form = limitsForm();
     await user.type(within(form).getByLabelText('変更理由'), '上限調整');
@@ -396,7 +397,7 @@ describe('RiskSettingsPage (SC-02, FR-13)', () => {
       if (path === '/risk-controls/settings') throw new ApiError('notFound', '未登録', 404);
       return [];
     });
-    render(<RiskSettingsPage />);
+    renderWithProviders(<RiskSettingsPage />);
     expect(await screen.findByText('リスク設定は利用できません。')).toBeInTheDocument();
   });
 });
