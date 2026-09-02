@@ -4,8 +4,9 @@ using Microsoft.Extensions.Logging;
 
 namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 
-// FR-08, IADR-0069 決定 1/3: platform DocumentService の POST /documents へカタログ登録する実アダプタ。
-// 当リポ DTO（KnowledgeDocument）を platform 契約（CreateDocumentRequest 形状）へ HTTP 境界の内側でのみ写像する。
+// FR-08, IADR-0069 決定 1/3, #565, IADR-0274: platform DocumentService の POST /documents へ
+// カタログ登録（＋本文投入）する実アダプタ。当リポ DTO（KnowledgeDocument）を platform 契約
+// （CreateDocumentRequest 形状）へ HTTP 境界の内側でのみ写像する。
 //
 // fail-safe（決定 3）: 非 2xx・例外・タイムアウトはすべて「未保存（NotSaved）」に倒し、業務経路（収集サイクル等）へ
 // 例外を伝播しない。とくに書き込みは platform-admin/operator ロールを要するため（microservices-platform IADR-0044）、s2s クライアントが
@@ -19,20 +20,28 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // の予約値（owner=system, department=unassigned）へ倒す（欠落させない）。
 // 🔴 lifecycle は planning#361 で既定が未裁定のため、意図的に補完しない（推測で入れない）。
 //
-// 注意: 現行の POST /documents は本文（Markdown）を受け取らない（本文はオブジェクトストレージ + Ingestion 経由）。
-// 本アダプタはカタログ登録（メタデータ）に限る。本文取り込みによる検索可能化は後続 #9（IADR-0069 スコープ境界）。
+// FR-08, #565, IADR-0274: **本文（Markdown）は POST /documents の Body として送る**（platform 側が
+// FR-21 で新設した任意フィールド。空ならオブジェクトストレージへ格納し Ingestion が索引する）。
+// 🔴 **1 MB（UTF-8 バイト数。KnowledgeBodyLimits.Exceeds）超は送らない。** platform 側が 413 で
+// 登録そのものを拒否するため（DocumentBodyIntake.ExceedsLimit）、超過分を黙って切り詰めて送ると
+// 「保存はできたが本文の一部だけが索引される」という中途半端な状態を作る。**メタデータの保存価値は
+// 本文のサイズと無関係**なので、超過時は Body を外してメタデータのみで登録し、警告ログで縮退を残す
+// （収集サイクル・報告確定は失敗させない。既存の fail-safe と同じ向き）。
 internal sealed class HttpKnowledgeBaseWriter(
     HttpClient httpClient,
     ILogger<HttpKnowledgeBaseWriter> logger)
     : IKnowledgeBaseWriter
 {
     // platform CreateDocumentRequest と JSON 互換の送信形状（Knowledge.Contracts に依存しない）。
+    // #565: Body は末尾へ追加する（platform 側 CreateDocumentRequest.Body と同じ理由。位置引数の
+    // 呼び出しを壊さない）。
     private sealed record CreateDocumentBody(
         string Title,
         string? OriginalUri,
         string? ContentType,
         Dictionary<string, string> Attributes,
-        List<string> Tags);
+        List<string> Tags,
+        string? Body = null);
 
     // platform DocumentDto の受け皿（Id のみ使用）。
     private sealed record DocumentIdDto(Guid Id);
@@ -41,12 +50,22 @@ internal sealed class HttpKnowledgeBaseWriter(
     {
         ArgumentNullException.ThrowIfNull(document);
 
+        // #565, IADR-0274: 上限超過は Body を外してメタデータのみで登録する（切り詰めない）。
+        var exceedsLimit = KnowledgeBodyLimits.Exceeds(document.Content);
+        if (exceedsLimit)
+        {
+            logger.LogWarning(
+                "KB 保存: 本文が上限（{MaxBytes} バイト）を超えるため本文なしで登録します（「{Title}」）。",
+                KnowledgeBodyLimits.MaxBytes, document.Title);
+        }
+
         var body = new CreateDocumentBody(
             document.Title,
             document.SourceUri,
             document.ContentType,
             BuildAttributes(document),
-            document.Tags is null ? [] : [.. document.Tags]);
+            document.Tags is null ? [] : [.. document.Tags],
+            exceedsLimit ? null : document.Content);
 
         try
         {
