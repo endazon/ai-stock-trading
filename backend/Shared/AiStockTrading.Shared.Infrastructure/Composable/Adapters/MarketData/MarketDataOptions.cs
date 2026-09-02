@@ -33,6 +33,9 @@ public sealed class MarketDataOptions
 // #158, IADR-0068: Finnhub 実市況の構成。情報収集の Collection:Source:Finnhub とは**別枠**にする（有効化の判断も
 // レート予算も別。片方の有効化でもう片方が黙って有効になるのは opt-in の粒度として粗い）。同じ Finnhub アカウントの
 // 鍵を両方へ設定するのは運用上は自由。
+// 🔴 IADR-0275: 実クラスタでの実測により、ローカル実行環境（values-local.yaml）では実際に同一鍵が使われて
+// いることを確認した。同一鍵運用では両枠の自制レート合計が実測上限（60/分）を超えないことが必要になる
+// （RequestsPerMinute の既定値はこれを踏まえて是正済み）。
 public sealed class FinnhubMarketDataOptions
 {
     /// <summary>API キー（既定は空＝no-op へフォールバック）。環境変数から与え、appsettings に実値を置かない。</summary>
@@ -42,8 +45,12 @@ public sealed class FinnhubMarketDataOptions
     public string BaseUrl { get; set; } = FinnhubQuoteClient.DefaultBaseUrl;
 
     /// <summary>
-    /// 当サービスに配るレート予算（回/分）。既定 10。プロセスをまたぐ協調は行わないため、全プロセスの合計が
-    /// 無料枠（60 回/分）を超えないよう運用で守る（既定の内訳は IADR-0068 決定 4）。
+    /// 当サービスに配るレート予算（回/分）。既定 5。プロセスをまたぐ協調は行わないため、全プロセスの合計が
+    /// 無料枠（実測 60 回/60 秒固定ウィンドウ。IADR-0275）を超えないよう運用で守る。
+    /// IADR-0068 決定 4 は「情報収集 30 ＋ 市況 10 × 3 サービス = 60」としていたが、市況の消費サービスは
+    /// 実装上 4 つ（MarketMonitorService/ReportService/RiskManagementService/TradeDecisionService）であり
+    /// 過小算定だった。IADR-0275 実測を受け既定を 10→5 に是正（情報収集 30 ＋ 市況 5 × 4 = 50/分。
+    /// 情報収集と同一 Finnhub 鍵を共有する運用を前提にした保守値であり、鍵を分ければ引き上げてよい）。
     /// </summary>
-    public int RequestsPerMinute { get; set; } = 10;
+    public int RequestsPerMinute { get; set; } = 5;
 }
