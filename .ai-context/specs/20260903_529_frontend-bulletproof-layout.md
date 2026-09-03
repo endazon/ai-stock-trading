@@ -1,7 +1,7 @@
 ---
 title: フロントエンドの src/ 直下と Feature 内部構成を Bulletproof React（計画 §ディレクトリ構成）へ適合させる
 type: spec
-status: review
+status: done
 related_ids: [SC-01, SC-02, SC-03, FR-12, FR-13, FR-17, FR-19, FR-20, UC-06]
 author: endazon
 created: 2026-09-03
@@ -309,3 +309,90 @@ sc04-wiki/
   `no-restricted-imports` と `import/no-restricted-paths` の両方が error になることを確認して戻した
 - `typecheck` / `lint` / `test`（19 ファイル 362 件）/ `e2e:typecheck` / `e2e`（60 件）すべて緑。
   **テストの `expect` は 1 行も変えていない**
+
+---
+
+## PR ③ の実測と確定（2026-09-03・feature 内部分割 PR #656 マージ後）— #529 完了
+
+### 着手前の実測（既存コードの違反は 0 件）
+
+| 検査 | 実測 |
+| --- | --- |
+| shared 層 → `features` / `app` の参照 | **0 件** |
+| `src/testing/` → `features` の参照 | **0 件** |
+| `src/testing/` を参照するファイル | **15 件。すべて `*.test.*`** |
+
+**第 1 段・第 2 段の移送が先行していたため、本 PR は検査器を足すだけで済んだ**——
+本番コードの差分は 0 行である。
+
+### 配備した 6 本のゾーン（`MSP/ADR-0067` 決定 5 の表をそのまま写した）
+
+| # | target | from | 根拠 |
+| --- | --- | --- | --- |
+| ① | `./src/features/<各 feature>` | `./src/features`（`except` は自分自身） | `ADR-0066` 決定 1 |
+| ②a | `./src/<shared 9 ディレクトリ>` | `./src/features` | `ADR-0066` 決定 2 |
+| ②b | `./src/<shared 9 ディレクトリ>` | `./src/app` | `ADR-0067` 決定 5・6 |
+| ③ | `./src/features/*/**` | `./src/app` | `ADR-0066` 決定 2 |
+| ④ | `./src/testing` | `./src/features` | `ADR-0067` 決定 5 |
+| ⑤ | `./src/!(testing)/**/!(*.test\|*.spec).{ts,tsx}` | `./src/testing` | `ADR-0067` 決定 5 |
+
+shared の 9 ディレクトリ: `components` / `hooks` / `lib` / `types` / `utils` / `stores` /
+**`config`** / `assets` / `locales`。
+
+- **feature の列挙は `readdirSync`（実ディレクトリ走査）のまま**——未知のディレクトリが
+  既定で feature 扱いになり、**厳しい側へ倒れる**。
+- **shared は逆に名前で持つ**——走査にすると新しい層が既定で shared 扱いになり**緩い側へ倒れる**。
+  **倒れる向きが逆なので、持ち方も逆にする。**
+
+### 未決事項だった「テストファイルの扱い」の確定
+
+着手時の仕様書は「ゾーンの `target` から `**/*.test.*` を外す形で書く」としていた。
+**`import/no-restricted-paths` の `target` がグロブを解釈することを実測で確認**し、そのとおりにした。
+
+**これは規則の緩和ではない。** `ADR-0067` 決定 5 が縛るのは「本番コード」であり、
+テストコードが `testing/` を引くのは目的そのものである。外さないと
+`src/lib/risk/contracts.contract.test.ts`（shared に置かれたテスト）が違反になる。
+
+**合成点の除外も同じ手法で書いた**——`except` を伸ばす形は `ADR-0066` §理由 が退けた
+「許可リストの保守が人に戻る」形だからである。`./src/features/*/**` は合成点
+（`./src/features/index.ts`）に**深さが足りず一致しない**ので、除外を書かずに済む。
+
+### 実効性の実測（陽性 6・陰性 2）
+
+🔴 **「lint が緑」は「規則が働いている」の証拠にならない**（resolver が無ければ静かに 0 件検査になる。
+`IADR-0288` 決定 4 の実測）。プローブを置いて全ゾーンを測った。
+
+| 種別 | 検査 | 結果 |
+| --- | --- | --- |
+| 陽性 | ① feature → 他 feature ／ ②a shared → features ／ ②b shared → app ／ ③ feature → app ／ ④ testing → features ／ ⑤ 本番コード → testing | ✅ **6 件すべて error** |
+| 陰性 | shared に置かれた**テスト** → testing | ✅ error にならない |
+| 陰性 | 合成点の位置（`features/` 直下） → app | ✅ error にならない |
+
+`app/` は枠であるため、②b と ③ は一時ファイル `src/app/__probe.ts` を置いて測った
+（参照先が無いと「規則が働いた」のか「import が解決できず素通りした」のかを区別できない）。
+プローブはすべて削除済み。
+
+### 残余（記録として残す）
+
+**`src/features/` 直下の野良ファイルは、どの feature ゾーンの `target` にも入らない**
+（合成点を除外した `./src/features/*/**` の裏返し）。**ただし野良ファイルはどの feature からも
+import できない**ことを実測で確認した（ゾーン ① が `../../__stray` を error にする）ため、
+**共有の裏口にはならない**。グロブをこれ以上複雑にせず、同型事故 2 回で検査器を足す。
+
+### 受け入れ（PR ③）
+
+- [x] `import/no-restricted-paths` が shared / features / app / testing の 4 層と feature 間禁止を強制する
+- [x] `except` から `risk` / `monitor` / `shared` / `roles.ts` が消えている（第 1 段で解消済み。`except` は自分自身のみ）
+- [x] 規則が実際に働くことを実測で示した（陽性 6・陰性 2）
+- [x] `typecheck` / `lint` / `test`（362 件）/ `e2e`（60 件）が緑
+
+### #529 の完了
+
+| 段 | 内容 | 結果 |
+| --- | --- | --- |
+| ① | `src/` 直下の骨格と共有物の移送 | **2/12 → 12/12** |
+| ② | feature 内部の 6 分割 | **0/3 → 3/3（18 ディレクトリ）** |
+| ③ | 依存の向きの機械強制 | **6 ゾーン配備・実効性を実測** |
+
+**未達として残るのは `MSP/ADR-0031` の 3 技術**（Lingui・`@platform/ui`・orval）。
+いずれも単独リポジトリでは解決できず（`IADR-0288` 決定 6）、#529 の射程外である。
