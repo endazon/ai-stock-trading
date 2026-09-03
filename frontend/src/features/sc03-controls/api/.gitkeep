@@ -1,5 +1,0 @@
-# api/（計画 13_frontend-stack §ディレクトリ構成）: この feature の BFF 取得・更新。
-#
-# 本画面が読む端点（`/risk-controls/*` ／ `/monitor/*`）は **2 つ以上の画面が消費する**ため、
-# クエリ層は共有側（`src/lib/{risk,monitor}/queries.ts`）にある（MSP/ADR-0066 決定 1）。
-# したがってこの feature 固有の api は無い。枠のみ（IADR-0290 追記）。
