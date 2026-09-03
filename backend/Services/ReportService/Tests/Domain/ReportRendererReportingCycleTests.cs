@@ -54,9 +54,9 @@ public class ReportRendererReportingCycleTests
         // 見出しが消えても「YAML はそれより後ろにある」が真になり、**節が消えたことを緑で通してしまう**
         //（日報の節番号が §3 → §6 へ動いたとき、この検査は実際に何も検知しなかった）。
         md.Should().Contain("```yaml");
-        md.Should().Contain("## 6. 翌営業日の方針");
+        md.Should().Contain("## 7. 翌営業日の方針");
         md.IndexOf("```yaml", StringComparison.Ordinal)
-            .Should().BeGreaterThan(md.IndexOf("## 6. 翌営業日の方針", StringComparison.Ordinal));
+            .Should().BeGreaterThan(md.IndexOf("## 7. 翌営業日の方針", StringComparison.Ordinal));
     }
 
     // --- 為替差損益（独立表示） ---
@@ -552,17 +552,17 @@ public class ReportRendererReportingCycleTests
         md.Should().Contain("月間実現損益（税引後・費用込み） | +1,520.00 USD");
         md.Should().Contain("為替差損益（独立表示） | -1,234 JPY（明細 5 件）");
         md.Should().Contain("### 当月の統制作動状況");
-        md.Should().Contain("## 5. 当月の OpenD 稼働率分布");
-        md.Should().Contain("## 6. バックテスト / SIMULATE / 実弾の三者比較");
+        md.Should().Contain("### 6.2 当月の OpenD 稼働率分布");
+        md.Should().Contain("## 5. バックテスト / SIMULATE / 実弾の三者比較");
         md.Should().Contain("## 7. 当月の LLM 利用実績");
         md.Should().Contain("取引判断の費用実績（月次上限 15,000 JPY に対する消費率） | +3,000 JPY / 20.0%");
     }
 
-    // 散文節（"## 2." 〜 "## 3." の直前）を除いた本文。数値はすべてこちら側にある。
+    // 散文節（"## 4." 〜 "## 5." の直前）を除いた本文。数値はすべてこちら側にある（ADR-0030 決定1 で月報の散文は §4）。
     private static string NumericSections(string markdown)
     {
-        var start = markdown.IndexOf("## 2.", StringComparison.Ordinal);
-        var end = markdown.IndexOf("## 3.", StringComparison.Ordinal);
+        var start = markdown.IndexOf("## 4.", StringComparison.Ordinal);
+        var end = markdown.IndexOf("## 5.", StringComparison.Ordinal);
         return markdown[..start] + markdown[end..];
     }
 }

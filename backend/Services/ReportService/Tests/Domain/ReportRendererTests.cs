@@ -47,11 +47,13 @@ public class ReportRendererTests
         md.Should().Contain("評価損益（税引前・参考） | -300.00 USD");
         md.Should().Contain("取引回数（買/売/決済） | 2 / 1 / 4");
         md.Should().Contain("源泉徴収税額 | +380.00 USD");
-        // #563, IADR-0269: 日報の §2 / §3 は取引履歴・ポジション一覧が占め、散文と方針は §5 / §6 へ下がる。
+        // #563, IADR-0269, ADR-0030 決定1・決定5: 日報の §2 / §3 は取引履歴・ポジション一覧が占め、
+        // 散文は §5（市況・特記事項）・方針は計画どおり §7 へ置く（§6 振り返りは未実装の見出しとして出る）。
         md.Should().Contain("## 2. 取引履歴（全明細）");
         md.Should().Contain("## 3. ポジション一覧（当日終了時点）");
-        md.Should().Contain("## 5. 市況・振り返り");
-        md.Should().Contain("## 6. 翌営業日の方針");
+        md.Should().Contain("## 5. 市況・特記事項");
+        md.Should().Contain("## 6. 振り返り（週次目標との照合）");
+        md.Should().Contain("## 7. 翌営業日の方針");
         // 日報は勝率行を持たない。
         md.Should().NotContain("勝率");
     }
@@ -70,8 +72,8 @@ public class ReportRendererTests
         md.Should().Contain("週間実現損益（税引後・費用込み） | +1,520.00 USD");
         md.Should().Contain("勝率（勝ち取引/全決済取引） | 75%（3/4）"); // 04_report-templates の <n%（n/n）> 形式
         md.Should().Contain("週次目標に対する達成 | （データ連携後）"); // 目標データ連携は後続
-        md.Should().Contain("## 2. 振り返りと評価");
-        md.Should().Contain("## 3. 翌週の方針");
+        md.Should().Contain("## 4. 振り返りと評価");
+        md.Should().Contain("## 6. 翌週の方針");
     }
 
     // --- 月報 ---
@@ -89,7 +91,7 @@ public class ReportRendererTests
         // 04_report-templates の月間サマリ行構成。データ依存行は後続連携で埋める（形式は保つ）。
         md.Should().Contain("総資産（月初 → 月末） | （データ連携後）");
         md.Should().Contain("年初来累計損益 | （データ連携後）");
-        md.Should().Contain("## 3. 翌月の方針・投資方針");
+        md.Should().Contain("## 8. 翌月の方針・投資方針");
     }
 
     [Fact]
@@ -309,5 +311,101 @@ public class ReportRendererTests
             View(ReportKind.Weekly, "2026-W32") with { BuyInInferences = [] });
 
         md.Should().NotContain("強制買戻し");
+    }
+
+    // --- ADR-0030（節番号・節順は計画を正とする）/ IADR-0291 ---
+
+    // FR-06, FR-07, FR-16, ADR-0030 決定1・決定2: 週報の 6 節が計画の番号・並び順どおりに昇順で出る。
+    // **未実装の §2・§3・§5 があっても番号を詰めない。**
+    [Fact]
+    public void 週報の節は計画の番号と並び順で昇順に出る()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Weekly, "2026-W28"));
+
+        AssertAscendingSections(md,
+            "## 1. 週間サマリ",
+            "## 2. 日別推移",
+            "## 3. ハイライト取引",
+            "## 4. 振り返りと評価",
+            "## 5. リスク・費用レビュー",
+            "## 6. 翌週の方針");
+    }
+
+    // FR-06, FR-07, FR-16, ADR-0030 決定1・決定2・決定4: 月報の 8 節が計画の番号・並び順どおりに昇順で出る。
+    // **三者比較は §2・§3 が未実装でも §5 のまま**（決定2）であり、稼働率分布は §6 の子節 §6.2 である（決定4）。
+    [Fact]
+    public void 月報の節は計画の番号と並び順で昇順に出る()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly, "2026-08"));
+
+        AssertAscendingSections(md,
+            "## 1. 月間サマリ",
+            "## 2. 週別・市場別の内訳",
+            "## 3. 税金レビュー",
+            "## 4. 総括と評価",
+            "## 5. バックテスト / SIMULATE / 実弾の三者比較",
+            "## 6. リスク統制と前提条件の見直し",
+            "### 6.1 空売りの記録（当月）",
+            "### 6.2 当月の OpenD 稼働率分布",
+            "## 7. 当月の LLM 利用実績",
+            "## 8. 翌月の方針・投資方針");
+    }
+
+    // 🔴 ADR-0030 決定4 の**否定形**: 稼働率分布を親節へ昇格させない。
+    // 親節から切り離すと、稼働率の数字を見て前提を見直すという読みの筋が切れる。
+    [Fact]
+    public void 稼働率分布を独立した親節にしない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly, "2026-08"));
+
+        md.Should().NotContain("## 5. 当月の OpenD 稼働率分布");
+        md.Should().NotContain("\n## 当月の OpenD 稼働率分布");
+    }
+
+    // 🔴 ADR-0030 決定3: 未実装の節は**見出しごと**出し、本文に未実装である旨を記す。
+    // 見出しを落として番号だけ飛ばす形は採らない（番号の飛びは計画書を読んでいない利用者に何も伝えない）。
+    [Theory]
+    [InlineData(ReportKind.Weekly, "2026-W28", "## 2. 日別推移", "#615 で実装予定")]
+    [InlineData(ReportKind.Weekly, "2026-W28", "## 3. ハイライト取引", "#615 で実装予定")]
+    [InlineData(ReportKind.Weekly, "2026-W28", "## 5. リスク・費用レビュー", "#615 で実装予定")]
+    [InlineData(ReportKind.Monthly, "2026-08", "## 2. 週別・市場別の内訳", "#615 で実装予定")]
+    [InlineData(ReportKind.Monthly, "2026-08", "## 3. 税金レビュー", "年初来累積の権威源")]
+    [InlineData(ReportKind.Daily, "2026-07-10", "## 6. 振り返り（週次目標との照合）", "週次目標の参照値")]
+    public void 未実装の節は見出しごと出して未実装であることを本文に書く(
+        ReportKind kind, string periodLabel, string heading, string reasonFragment)
+    {
+        var md = ReportRenderer.RenderMarkdown(View(kind, periodLabel));
+
+        md.Should().Contain(heading);
+
+        var body = md[md.IndexOf(heading, StringComparison.Ordinal)..];
+        body.Should().Contain("**本節は未実装です**");
+        body.Should().Contain(reasonFragment);
+        // 🔴 **「該当なし」「0 件」と読ませない。** 未供給と 0 を区別する本サービスの規律を節の不在にも当てる。
+        body.Should().Contain("**「該当なし」「0 件」ではありません。**");
+    }
+
+    // ADR-0030 決定5 の**否定形**: 日報の市況・特記事項と振り返りを 1 節へ統合しない。
+    [Fact]
+    public void 日報の市況と振り返りを統合しない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily, "2026-07-10"));
+
+        md.Should().NotContain("市況・振り返り");
+    }
+
+    // 節が昇順に出ることを主張する。🔴 **-1 を許さない**（IndexOf は見つからないと -1 を返すため、
+    // 実在を先に主張しないと「節が消えた」状態で順序の検査が通ってしまう）。
+    private static void AssertAscendingSections(string markdown, params string[] headings)
+    {
+        var indexes = new List<int>();
+        foreach (var heading in headings)
+        {
+            var at = markdown.IndexOf(heading, StringComparison.Ordinal);
+            at.Should().BeGreaterThanOrEqualTo(0, $"{heading} が本文に無い");
+            indexes.Add(at);
+        }
+
+        indexes.Should().BeInAscendingOrder();
     }
 }
