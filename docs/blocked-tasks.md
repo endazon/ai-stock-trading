@@ -10,6 +10,12 @@
 - [補足: 「実装済み」だが実際には発動しない機能](#補足-実装済みだが実際には発動しない機能)
 
 - 作成日: 2026-08-05
+- 最終更新: 2026-09-03（**#636（DoD/本文書の「担保している」記述の是正）に伴う実測反映**。**A-13 に `openai-api-key`
+  も空である旨を追記**（2 キーとも base64 長 0）。**A-14 を是正**——是正 PR [#647](https://github.com/endazon/ai-stock-trading/pull/647)
+  がマージ済みで PVC `opend-persist` に `helm.sh/resource-policy: keep` が付与されていることを実測（再測定手順①合格。
+  挙動としての切替確認は未実施のまま残る）。**A-16 を新設**——Keycloak の AST レルム消失（`keycloak-realms` ConfigMap
+  に realm が無く全 s2s が 401 縮退）を発見し同日中に復旧済み（再発条件を記録）。借株料 20% 統制の残置行を、
+  計画適合検査が #536 で削除済みで担保していないことが分かるよう是正した）
 - 最終更新: 2026-09-03（**#584（east-west 同期照会の gRPC 化）の判断フェーズを反映**。**B-4 に 1 行追加**——基盤側の計画 ADR-0029 と
   #584 の記述の衝突・射程 26 本の実測・移行順序の裁定依頼（planning#520）。着手せず `blocked:decision`。
   記録: [IADR-0284](../.ai-context/adr/IADR-0284_east-west-grpc-scope-and-order-ruling.md)・
@@ -482,16 +488,17 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 
 ### A-13. 🆕 ローカル基盤の LLM API キー未投入（実 LLM 呼び出しが構造的に不成立）
 
-MSP `llm-provider-credentials` Secret の `anthropic-api-key` が空であることを 2026-09-02〜03 の実測で
-確認した。A-12（Istio mTLS 断）が解消しても、鍵が無ければ実 LLM 呼び出しは成立しない（別レイヤーの制約）。
+MSP `llm-provider-credentials` Secret の `anthropic-api-key` **および `openai-api-key`** が
+いずれも空（base64 長 0）であることを 2026-09-02〜03 の実測で確認した。A-12（Istio mTLS 断）が
+解消しても、鍵が無ければ実 LLM 呼び出しは成立しない（別レイヤーの制約）。
 
 | 項目 | 内容 |
 | --- | --- |
 | なぜ AI にできないか | Anthropic API キーの発行・登録は認証情報の投入であり、AI セッションが値を扱ってはならない（本作業の安全ルール上も禁止事項） |
 | 未了の帰結 | ローカル k3s（経路B）での実 LLM 判断・報告書所感生成が既定構成のままでは動かない（プロンプトが Sent されない／構造化出力が得られない） |
 | 追跡 | **未起票。** 専用 issue は無く、A-12（#627）とは別の閉塞であるため混同しないこと |
-| **最後に測った時点** | **2026-09-02〜03**（`kubectl -n microservices-platform get secret llm-provider-credentials -o jsonpath` 相当の実測。値は本文書に記載しない） |
-| 再測定手順 | ① 該当 Secret の `anthropic-api-key` フィールドが空でないか確認（値は記録・出力しない）② `trade-decision-service` のログで LLM 呼び出しの認証エラーの有無を確認 |
+| **最後に測った時点** | **2026-09-03**（`kubectl -n microservices-platform get secret llm-provider-credentials -o jsonpath` 相当の実測で `anthropic-api-key`・`openai-api-key` の両フィールドとも base64 長 0 を確認。値は本文書に記載しない） |
+| 再測定手順 | ① 該当 Secret の `anthropic-api-key` と `openai-api-key` の両フィールドが空でないか確認（値は記録・出力しない）② `trade-decision-service` のログで LLM 呼び出しの認証エラーの有無を確認 |
 
 ### A-14. 🆕 OpenD の PVC 喪失に伴う SMS 再認証（`opend.enabled` 切替の副作用）
 
@@ -504,10 +511,10 @@ CAPTCHA の再認証**（利用者本人の操作）が要る。
 | --- | --- |
 | 経緯 | #626（`k8s-local-deploy.sh` が env 未設定時に `opend.enabled`／`broker.tier`／Discord 4 ID を前回値へ引き継がず既定へ戻す。#263 と同型の「export し忘れが無言で壊す」事故）の副作用として発覚 |
 | なぜ AI にできないか | SMS／画像 CAPTCHA の受信・入力は利用者本人の端末操作が要る |
-| **是正 PR（進行中）** | #626 が `helm.sh/resource-policy: keep` を PVC へ付与する対応方針を示している（**未マージ**。2026-09-03 時点で open） |
-| 追跡 | **[#626](https://github.com/endazon/ai-stock-trading/issues/626)** |
-| **最後に測った時点** | **2026-09-02**（PVC 不在の実測・`deploy/opend/README.md` 常駐モデルとの突合） |
-| 再測定手順 | ① `kubectl -n ai-stock-trading get pvc opend-persist`（存在確認）② `opend.enabled` を false→true で切り替え、PVC が保持されるか確認（#626 是正後） |
+| **是正 PR** | **[#647](https://github.com/endazon/ai-stock-trading/pull/647) がマージ済み**（2026-09-02）。`deploy/helm/ai-stock-trading/templates/opend.yaml` の PVC `opend-persist` に `helm.sh/resource-policy: keep` アノテーションが付与されていることを 2026-09-03 実測で確認した（再測定手順①は合格） |
+| 追跡 | **[#626](https://github.com/endazon/ai-stock-trading/issues/626)（CLOSED）** |
+| **最後に測った時点** | **2026-09-03**（アノテーション付与の実測。再測定手順②〔`opend.enabled` の false→true 切替時に PVC が実際に保持されるかの挙動確認〕は未実施のまま残る） |
+| 再測定手順 | ① `kubectl -n ai-stock-trading get pvc opend-persist -o jsonpath='{.metadata.annotations}'`（`helm.sh/resource-policy: keep` の存在確認。**合格済み**）② `opend.enabled` を false→true で切り替え、PVC が保持されるか確認（挙動としての実証は未実施） |
 
 ### A-15. ✅ #571（基盤 LLM ゲートウェイの用途登録）— ブロッカーとしての性質は解消（2026-09-03）
 
@@ -521,6 +528,22 @@ CAPTCHA の再認証**（利用者本人の操作）が要る。
 | 残る依存 | **MSP#1158 のマージ待ち。** マージ後、AST PR #619 をリベース・マージすれば二段判断（一次スクリーニング→本判断）が実運用で機能する |
 | 追跡 | **#571**（ラベルは `blocked:env` のまま残るが、実質的な作業は完了し統合待ちの状態） |
 | **最後に測った時点** | **2026-09-03** |
+
+### A-16. ✅ Keycloak の AST レルム消失に伴う全 s2s 401 縮退 — 解消済み（2026-09-03）
+
+2026-09-03 の実測で、`keycloak-realms` ConfigMap から `ai-stock-trading-realm.json` が失われ
+`realms/ai-stock-trading` が 404 になっていることを発見した。AST の全サービスの s2s 呼び出しが
+「認証なしで送信」→ 401 → fail-safe 縮退という形で無音に壊れていた。
+
+| 項目 | 内容 |
+| --- | --- |
+| 経緯 | MSP の `k8s-local-up.sh` を再実行せずに Keycloak の DB を作り直す操作（クラスタ再構築時の手順漏れ）を行うと、Keycloak が ConfigMap の realm import を再適用しないまま起動し、AST レルムが存在しない状態になる |
+| 対応 | 2026-09-03 に `keycloak-realms` ConfigMap へ `ai-stock-trading-realm.json` を再投入し Keycloak を再起動して復旧した |
+| **実測（2026-09-03・復旧後）** | `Realm 'ai-stock-trading' imported` のログを確認。`platform`／`ai-stock-trading` の両レルムが 200 で応答。s2s 呼び出しの認証失敗 0 件を確認 |
+| 再発条件 | MSP の `k8s-local-up.sh` を再実行せずに Keycloak の DB のみを作り直すこと |
+| 追跡 | **未起票。** 再発時は本項〔A-16〕へ追記する（専用 issue は無し） |
+| **最後に測った時点** | **2026-09-03**（復旧確認まで実施済み） |
+| 再測定手順 | ① `kubectl -n microservices-platform logs <keycloak-pod> \| grep "imported"` で両レルムの import ログを確認 ② `curl -s -o /dev/null -w '%{http_code}' http://keycloak.microservices-platform:8080/realms/ai-stock-trading` が 200 を返すか確認 ③ AST 各サービスのログで s2s 認証エラー（401）が無いか確認 |
 
 ---
 
@@ -648,7 +671,7 @@ A 群・B 群が未了であるため、以下は**コードは存在するが�
 | 機能 | 実装 | 発動しない理由 | 担当 |
 | --- | --- | --- | --- |
 | 維持率割れの自動縮小（FR-10・UC-06） | #330 / **#420** | **照会 API が SIMULATE で使えず、実弾ヘッダでの読み取りが要る**（PoC 項目 3）。定期評価ドライバも無い。**#340 で SC-03 は維持率を「取得できていません（供給元がありません）」と明示表示するようにした**（0 や「—」で正常値に見せない・IADR-0154）。**#424 で「Stage 1 の全期間にわたって表示できない／これは不具合ではない」旨を画面とコードに明記した**（ADR-0016 決定7 の 2026-08-07 追記。「そのうち直る不具合」と読まれると統制が無いまま待たれる・IADR-0162 決定5）。**#420 で判定側を口座単位の適用閾値へ揃え、新規建ての評価も同じ束（`MaintenanceMarginSnapshot`）を入力に取るようにした**——**供給が無い間は新規空売りが fail-closed で拒否されるだけであり、縮小は 1 株も動かない**（IADR-0160 決定4） | #331 / #342 |
-| 借株料 20% 超の拒否（ADR-0016 決定 3） | #329 / **#417** | **借株料が銘柄によらず一律 `1.5`** のため閾値に届かない（PoC 実測）。**2026-08-06 の裁定により、これは「発火しない既知の統制」として意図的に残置する状態になった**（一次ゲートは `IsShortPermit` へ移した。#417 / IADR-0158 決定2）。**残置は削除を検知するテスト 3 件と計画適合検査で担保している**——「発火しない」ことと「無い」ことは別である | **裁定済み（B-4 解消）。** 発火の可否は料率が銘柄別になるかに依存し、実装側で解けるものではない |
+| 借株料 20% 超の拒否（ADR-0016 決定 3） | #329 / **#417** | **借株料が銘柄によらず一律 `1.5`** のため閾値に届かない（PoC 実測）。**2026-08-06 の裁定により、これは「発火しない既知の統制」として意図的に残置する状態になった**（一次ゲートは `IsShortPermit` へ移した。#417 / IADR-0158 決定2）。**残置は削除を検知するテスト 3 件で担保している**（`借株料上限は境界で切り替わる`／`借株料の閾値判定は発火しない既知の統制として残置される`／`実測の借株料をそのまま年率として写像すると全件拒否になる`。2026-09-03 実測で健在を確認）。**計画適合検査は #536（資料再編）で削除済みであり、現在は担保していない**（#636）——「発火しない」ことと「無い」ことは別である | **裁定済み（B-4 解消）。** 発火の可否は料率が銘柄別になるかに依存し、実装側で解けるものではない |
 | 🆕 **空売りの一次ゲート `IsShortPermit`**（ADR-0016 決定 3 改訂） | **#417** | **判定は実装したが、借株照会の供給元が無い**（`TrdGetMarginRatio` は**実弾口座のヘッダ**でのみ成功し、SIMULATE では失敗する。レート制限は 30 秒あたり 10 回で**失敗した照会も枠を消費する**）。文脈が `null` である限り**すべての新規売り建てが `BorrowUnavailable` で拒否される**（フェイルクローズ・安全側だが「空売りが 1 件も通らない」ということでもある）。加えて `ShortFeeRate` の単位が未確定であり、照会を実装しても料率を供給できない | 供給元の実装は **#331 / #342** 系。単位は **B-4 の裁定待ち** |
 | 🆕 **借株料の累計の記録**（ADR-0016 決定 15・ADR-0027・SC-03） | **#465（記録側のみ）** | ~~累計を保持する型・ストア・イベントがコード全体に存在しない~~ → **記録側を実装した**（[IADR-0183](../.ai-context/adr/IADR-0183_borrow-fee-accrual-recording.md)。型・2 テーブル・2 イベント・監査結線）。🔴 **供給（実際に積み始めること）は開始していない** —— ADR-0027 決定6 が **ADR-0026 の PoC 項目 9（`ShortFeeRate` の単位確定・期限 2026-08-31）を前提**としており、**単位を取り違えると累計は 100 倍ずれる**。日次の料率照会もスケジューラも実装せず、SC-03 へも結線していない（`BorrowFeeAvailability` は `NotSupplied` のまま）。**これは実装漏れではなく意図した遮断であり、構造テスト 2 件（T-10-275 / T-10-276）が結線の発生を赤で止める** | **計画側の記録要件は ADR-0027（2026-08-07 Accepted）で明記済み**（環流記録 `feedback/20260806_sc01-sc03-unsupplied-screen-items.md` 問題 4 は解消）。**供給の開始は PoC 項目 9（#342）の成立後**。日次照会の実装は #331 / #342 系 |
 | 🆕 **取引記録の経費区分 7 種の実費供給**（ADR-0016 決定 15・FR-11） | **#339（記録側のみ）** | **記録側（区分 7 種・建玉単位の紐づけ・経費台帳イベント・監査結線・集計の導出）は実装した**（[IADR-0226](../.ai-context/adr/IADR-0226_trade-expense-categories-and-position-linkage.md)）。🔴 **実費が供給されている区分は 1 つも無い** —— `OrderExecuted` は手数料を運ばず（`Commission` / `Fee` / `FxCost` の供給なし）、`BorrowFeeAccrualService` は本番の呼び出し元を持たず（直上の行と同じ遮断）、`MarginInterest` / `DividendInLieu` はブローカ照会の実装自体が無い。**`CostCalculator` の概算を実費として積まない**（ADR-0027 が塞いだ「表示されている数字が何を意味するか誰も答えられない」状態へ戻るため）。経費台帳は**行が 1 件も無い**状態であり、集計は `LineCount = 0`（＝未計上）で 0 円と区別できる | 供給の開始は PoC 項目 9（#342）と発注執行の手数料供給。**画面・報告書への表示は FR-18（Won't）とともに範囲外** |

@@ -1,0 +1,96 @@
+---
+title: IADR-0295 LlmPricing の本番/report-service 投入と計画適合検査の復活見送り
+type: impl-adr
+status: Accepted
+related_ids: [FR-04, FR-06, FR-16, FR-10, NFR, ADR-0011, ADR-0014, ADR-0015, ADR-0016, ADR-0029]
+author: claude (worker)
+created: 2026-09-03
+updated: 2026-09-03
+plan_refs: [ADR-0016 決定6, ADR-0014, ADR-0015]
+---
+
+# IADR-0295: LlmPricing の本番/report-service 投入と計画適合検査の復活見送り
+
+> 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
+
+- 状態: Accepted
+- 日付: 2026-09-03
+- 決定者: claude (worker)
+
+## 起点・関連
+
+- 関連する計画書 ID: FR-04, FR-06, FR-16, FR-10, ADR-0011, ADR-0014, ADR-0015, ADR-0016 決定6, ADR-0029 決定2
+- 関連する実装仕様書: `.ai-context/specs/20260903_636_243_plan-conformance-and-llm-pricing.md`
+- 起点 issue: #243（コード瑕疵の切り出し）／#636（利用者裁定 (b)）／#675（本 IADR で切り出した後続 issue）
+
+## コンテキストと課題
+
+3 つの独立した「文書・設定と実体の食い違い」が同時に見つかった。
+
+1. 本番 `deploy/helm/ai-stock-trading/values.yaml` に `LlmPricing__PerModel__*` が 0 件のまま
+   残っており、月次 LLM 費用上限（¥15,000）の 80%/100% 判定が構造的に発火しない
+   （`LlmPriceTable.Resolve` は表が空だと fail-safe ペア＝既定 0 へ倒れる）。
+2. 調査の過程で、`LlmPriceTable` が**サービスごとに独立して構成される**ことが判明した
+   （`ReportService.Program.cs` と `TradeDecisionService.Program.cs` がそれぞれ自前の
+   `IConfiguration` から組み立てる）。そのため `report` サービスの helm セクションにも
+   同じ単価表を投入しない限り、#282（report-service 自身の計上経路実装）が完了していても
+   report 分の LLM 費用は ¥0 のままである。取引判断は `claude-opus-4-8` 固定（ADR-0011）のため、
+   Opus 5 の思考トークン増が直接効くのは report-narrative（#243 の背景に明記）——まさにここへ
+   単価が入っていないことは #243 の趣旨に反する。
+3. `docs/DEFINITION_OF_DONE.md` と `docs/blocked-tasks.md` が、#536 で削除済みの計画適合検査
+   （`PlanConformance.Tests`）が「担保している」という前提の記述を残していた（#636）。
+
+## 検討した選択肢
+
+### 単価表の投入範囲
+
+- **A. trade-decision サービスのみに投入する**（issue #243 の文面どおりの最小対応）
+- **B. trade-decision と report の両サービスに投入する**（実際に単価表を必要とする全サービスへ投入）
+
+### #636（計画適合検査）
+
+- **(a) 検査を復活させる**（planning 非依存の形で。計画値の C# 表＋リフレクション突合を新規実装）
+- **(b) 検査を復活させないと決め、担保の記述を是正するだけに留める**
+
+### `MaxTokens` の構成化
+
+- **X. 今 PR で Options 化する**（`values.yaml`/`values-local.yaml` に構成点を追加）
+- **Y. 据え置く**（コード直書きのまま）
+
+## 決定
+
+- 単価表は **B（trade-decision と report の両方に投入）** を採る。
+- #636 は **(b)（検査を復活させない）** を採る（利用者裁定）。復活の是非自体は
+  別 issue [#675](https://github.com/endazon/ai-stock-trading/issues/675) へ切り出し、本 PR の
+  範囲から外す。
+- `MaxTokens` は **Y（据え置く）** を採る。
+
+## 理由
+
+- **B を採った理由**: `LlmPriceTable` の構成がサービスごとに独立している以上、A では
+  「#243 が問題視した Opus 5 の思考トークン増によるコスト増」が最も直接効く report-service の
+  費用計上が ¥0 のまま残ってしまい、issue の趣旨（月次上限の統制を実効化する）を半分しか
+  満たさない。値・出典・fail-safe の説明は重複を避けるため trade-decision 側のコメントを正とし、
+  report 側は要点のみを再掲した。
+- **(b) を採った理由**: 利用者裁定として与えられた前提。加えて (a) には #378 が指摘した
+  「計画書 → 計画値の人手転記」というホップが残り、転記を誤ると「検査は緑だが実際は計画と
+  ずれている」という**担保があるという誤認を伴う劣化**を起こし得る。この判断自体は #675 で
+  改めて検討する余地を残す。
+- **Y を採った理由**: #243 自身が「稼働環境での実測を経てから再調整する」「基盤側 #380 と
+  値を揃える」ことを明記しており、実測前に構成点だけ先行させると根拠のない可変性を持ち込む
+  だけになる（計画外の過剰な抽象化）。前回の変更（#241）もコード変更＋デプロイで行っており、
+  ホットな構成変更を要する運用実績が無い。
+
+## 結果
+
+- 良い影響: 月次 LLM 費用上限が trade-decision・report-service の両方で実効化される。
+  #636 の文書の「担保している」という誤った記述が解消される。
+- 悪い影響・トレードオフ: 統制値（`TradingDefaults`）の計画からのずれを機械的に検知する
+  手段が引き続き存在しない（棚卸し・監査セッションでの人手突合のみ）。`MaxTokens` の再調整には
+  今後もコード変更＋デプロイが要る。
+- フォローアップ: #675（検査復活の是非）／#243（稼働環境での実測・MaxTokens 再調整・MSP #380 との整合）。
+
+## 関連
+
+- Supersedes: なし
+- Superseded by: なし
