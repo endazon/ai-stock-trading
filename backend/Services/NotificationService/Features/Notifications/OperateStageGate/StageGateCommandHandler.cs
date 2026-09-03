@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
 
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Features.Notifications.OperateStageGate;
 
 // FR-20, FR-14, UC-06, ADR-0008, IADR-0070/0081: 段階ゲートのコマンド処理。多層認証 → コマンド解析 →
 // Risk 呼び出しの順に閂を掛ける。kill switch / pause（KillSwitchCommandHandler / PauseCommandHandler）と同型。

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
 
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Features.Notifications.ReviewReport;
 
 // FR-14, FR-07, UC-03〜05, ADR-0003, IADR-0240: 報告書レビューコマンドの処理。
 // 多層認証 → コマンド解析 → 版番号ガード → 報告書サービス呼び出しの順に閂を掛ける。

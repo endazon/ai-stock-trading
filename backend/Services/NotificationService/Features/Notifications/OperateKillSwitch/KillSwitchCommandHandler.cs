@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
 
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Features.Notifications.OperateKillSwitch;
 
 // FR-14, UC-06, IADR-0062: kill switch コマンドの処理。多層認証 → コマンド解析 → 確認ステップ → Risk 呼び出し
 // の順に閂を掛ける。いずれかで不成立なら Risk を呼ばない（誤爆防止）。
