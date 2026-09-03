@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ReportService.Domain;
+using ReportService.Features.Reports;
 using Wolverine.Tracking;
 using Xunit;
 
@@ -418,6 +420,9 @@ public class ReportEndpointsTests
         recorder.Saved.Should().ContainSingle();
         recorder.Saved[0].Title.Should().Be("確定報告書 Daily daily-2026-07-10");
         recorder.Saved[0].Confidentiality.Should().Be(KnowledgeConfidentiality.Internal);
+        // FR-08, #565, IADR-0274［2026-09-03 追記］: 手動 PUT 経路は本文を受け取らないため常に空——
+        // 空文字列を「本文あり（0 文字）」として送らないことを、この既存の手動経路テストでも固定する。
+        recorder.Saved[0].Content.Should().BeNull();
     }
 
     // 冪等な再確定（遷移なし）では KB 保存を重ねない。
@@ -444,6 +449,48 @@ public class ReportEndpointsTests
             .IsSuccessStatusCode.Should().BeTrue();
 
         recorder.Saved.Should().ContainSingle();
+    }
+
+    // FR-08, #565, IADR-0274［2026-09-03 追記］: 「呼ばれたこと ≠ 出口へ出たこと」の再発防止（#563 と同型）。
+    // KB 保存が呼ばれるだけでなく、確定報告書の本文（TradingReport.Body）が実際に Content として
+    // writer へ渡ることを、自動生成相当の本文入りドラフトを直接ストアへ投入して固定する
+    // （手動 PUT 経路は本文を受け取らないため、他の KB 保存テストは意図的に空本文のままにしてある）。
+    [Fact]
+    public async Task 確定すると本文入りの文書がKBへ渡る()
+    {
+        const string body = "# 日次報告\n\n本日は継続方針。";
+
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var recorder = new RecordingKnowledgeBaseWriter();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IKnowledgeBaseWriter>();
+                s.AddSingleton<IKnowledgeBaseWriter>(recorder);
+            }));
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IReportStore>();
+            store.UpsertDraft(new TradingReport
+            {
+                PeriodKey = "daily-2026-07-10",
+                Kind = ReportKind.Daily,
+                PeriodStart = new DateOnly(2026, 7, 10),
+                AssumptionsVersion = 1,
+                PolicySummary = "翌営業日は継続",
+                Body = body,
+            }, expectedVersion: 0);
+        }
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+        (await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        recorder.Saved.Should().ContainSingle();
+        recorder.Saved[0].Content.Should().Be(body);
+        recorder.Saved[0].ContentType.Should().Be("text/markdown");
     }
 
     private sealed class RecordingKnowledgeBaseWriter : IKnowledgeBaseWriter

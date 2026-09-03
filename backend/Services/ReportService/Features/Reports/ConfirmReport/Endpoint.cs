@@ -25,16 +25,16 @@ internal static class ConfirmReportEndpoint
                 await bus.PublishAsync(new ReportConfirmed(
                     r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow));
 
-                // FR-08, IADR-0069/0071 決定3: 確定報告書を KB へ保存（カタログ登録）。既定 no-op。
+                // FR-08, IADR-0069/0071 決定3, #565, IADR-0274: 確定報告書を KB へ保存（本文つき。既定 no-op）。
                 // 保存の失敗・例外は握りつぶし確定を壊さない（KB は best-effort・保存ポート自体も fail-safe）。
+                var kbLogger = loggerFactory.CreateLogger("ReportKnowledgeBase");
                 try
                 {
-                    await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r), http.RequestAborted);
+                    await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r, kbLogger), http.RequestAborted);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    loggerFactory.CreateLogger("ReportKnowledgeBase")
-                        .LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
+                    kbLogger.LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
                 }
             }
 
