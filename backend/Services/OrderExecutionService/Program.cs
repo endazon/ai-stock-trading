@@ -1,5 +1,12 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.AmendOrder;
+using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
+using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
+using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
+using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.ExternalServices;
 using OrderExecutionService.Infrastructure.Steps;
@@ -138,13 +145,13 @@ if (brokerSelection.IsMoomoo)
 // FR-10, UC-02, #331, IADR-0210 決定4: 保護逆指値ガード（失効検知・再発注・残存取消。既定有効）。
 // 判定の前提（ブローカー注文照会＋建玉照会 IBrokerPositionSource）を持つ moomoo 構成でのみ配線する。
 // paper は建玉照会を実装しないため常駐そのものを登録しない（構造的な非干渉。分岐は単体テストで固定）。
-builder.Services.Configure<OrderExecutionService.Features.OrderExecution.ProtectiveStopGuardOptions>(
+builder.Services.Configure<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuardOptions>(
     builder.Configuration.GetSection(
-        OrderExecutionService.Features.OrderExecution.ProtectiveStopGuardOptions.SectionName));
+        OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuardOptions.SectionName));
 if (brokerSelection.IsMoomoo)
 {
-    builder.Services.AddScoped<OrderExecutionService.Features.OrderExecution.ProtectiveStopGuard>(sp =>
-        new OrderExecutionService.Features.OrderExecution.ProtectiveStopGuard(
+    builder.Services.AddScoped<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(sp =>
+        new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
             sp.GetRequiredService<IBrokerAdapter>(),
             (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
             sp.GetRequiredService<IProtectiveStopOrderStore>(),

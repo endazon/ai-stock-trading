@@ -8,12 +8,14 @@ related_ids:
   - IADR-0276
   - MSP:ADR-0065
   - MSP:ADR-0068
+  - MSP:ADR-0077
 author: endazon (with Claude Code)
 created: 2026-09-03
 updated: 2026-09-03
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0065_backend-service-single-project-vsa.md
   - planning:projects/microservices-platform/07_adr/ADR-0068_three-level-slice-split-rule.md
+  - planning:projects/microservices-platform/07_adr/ADR-0077_operation-semantics-in-three-level-slice.md
 ---
 
 # IADR-0289: Features/<集約>/<操作>/ 3 段化の移送規則を確定し、Tests は本体の鏡写しにする
@@ -236,6 +238,104 @@ platform `ADR-0065` 決定 2 は `Features/<集約>/<操作>/` の 3 段を規�
 `ReportService.Tests.csproj` の複写指定へ出力先を `Golden\` に固定する `Link` を足した
 （出力ディレクトリからの読み取りパスは移送前と同一・ゴールデンの中身は 1 バイトも変えていない）。
 **csproj の 1 行は移送に伴う機械的な追随であり、決定 4 の「追随が要るのは参照する側だけ」と同じ性質**である。
+
+## 追記（2026-09-03・第 5 弾 `TradeDecisionService` / `OrderExecutionService` / `BacktestService` の移送）
+
+> **追記の位置づけ**: 決定 1〜6 のうち**決定 1 と決定 2 の適用範囲だけ**が計画側の裁定で変わる。
+> §追記 1（案 B）は**撤回する**。決定 3〜6 と §追記 2・3 はそのままである。
+
+### 追記 4 — §追記 1（案 B）を撤回する。「操作」は契機の形で決めない
+
+計画側は 2026-09-03 に **platform `ADR-0077`（Accepted）** を出し、**暫定解釈 B（操作＝登録表に登録された
+HTTP 端点に限る）を明示的に退けた**。§追記 1 は自ら「計画側がこれと異なる裁定を出す場合は追随する」と
+述べていたため、**本追記をもって撤回する**（§追記 1 は履歴として残す。書き換えない）。
+
+`ADR-0077` が B を退けた理由は 3 つである。(a) 基盤には既に HTTP 端点を持たない操作フォルダが実在する
+（`GraphService/Features/KnowledgeHealth/Report/`）。(b) 端点の宣言場所で答えが変わる
+（`InformationCollectionService` の 2 本は `Program.cs` 直書きで登録表を経ていない）。
+(c) 5 サービス 75 ファイルを 2 段のまま残す。
+
+**新しい語義**（`ADR-0077` 決定 1・2）:
+
+- **操作 ＝ そのサービスが外部からの 1 つの契機に応えて行う 1 つのユースケース。契機の形では決めない。**
+  **契機が 2 つある操作は 1 つの操作である。**
+- **分界は「入口の配線」と「操作の処理」。** 入口の配線は現在の置き場に残し、操作の処理を 3 段目へ下ろす。
+
+### 追記 5 — `ADR-0077` の分界を AST の置き場へ写す（決定 1・決定 2 の適用範囲の更新）
+
+`ADR-0077` は基盤の置き場の名前で書かれているため、AST の置き場へ次のとおり写す。
+
+| `ADR-0077` の言い方 | AST での実体 | 扱い |
+| --- | --- | --- |
+| HTTP の登録表 | `Features/<集約>/<集約>Endpoints.cs` | 2 段目に残す（決定 1 のまま） |
+| イベント購読の宣言（`Infrastructure/Messaging`） | `Infrastructure/Steps/<X>Handler.cs` | 🔴 **型も名前空間も動かさない** |
+| 常駐ジョブの起動と間隔設定 | `Hosted/<Y>Service.cs` | 🔴 **型も名前空間も動かさない**（[IADR-0276](IADR-0276_claude-md-vsa-correction-and-hosted-placement.md) 決定 2） |
+
+🔴 **購読ハンドラ型の名前空間を動かさないのは規約以上の理由がある。** Wolverine のハンドラ探索は
+`UseAiStockTradingRabbitMq` がアセンブリで固定しており（[#607](https://github.com/endazon/ai-stock-trading/issues/607)）、
+キュー名・consumer 端点名の検査（`scripts/check-consumer-endpoint-names` 系）はハンドラ型の名前に効く。
+**移送で wire を触らない**（決定 6 と同じ趣旨）。
+
+**決定 2 の参照元の数え方は、次の 1 点だけ更新する。**
+
+- 従来: 「`Infrastructure/`・`Hosted/`・他サービスから使われるものは 2 段目に残す」
+- 更新後: **`Infrastructure/Steps/<X>Handler.cs` と `Hosted/<Y>Service.cs` は「その操作 1 つの入口」として数える**
+  （＝そこからしか使われないファイルは 3 段目へ下ろす）。
+  **`Infrastructure/ExternalServices/` と `Infrastructure/Persistence/`（ポートの実装＝外向きのアダプタ）は
+  従来どおり 2 段目へ固定する。** 他サービスから使われるもの・2 操作以上から使われるものも従来どおりである。
+- **コメント内の言及は参照元に数えない**（実測で除外する）。第 1 弾の割り当て表が
+  「`BrokerAvailabilityProbeOptions.cs` は `RiskManagementService` からも参照される」としていた 3 件は
+  **すべてコメント内のクランプ上限の説明**であり、実参照ではなかった。
+
+### 追記 6 — 移すのは `Features/` に既に居るファイルだけである（切り出しの上限）
+
+`ADR-0077` §結果は「**購読ハンドラ・常駐ジョブの置き場は動かない。移すのは `Features/` に既に居る
+ファイルだけである**」と明記している。したがって、**常駐型や購読ハンドラの中にインラインで書かれた
+1 巡回の処理を新規ファイルへ切り出すことはしない。**
+
+`OrderExecutionService/Hosted/OrderReservationRetentionService.cs`（`PurgeOnceAsync`）がその例である。
+切り出せば新しい協調オブジェクトと **DI 登録の新設**が要り、「純粋な移送」（決定 1〜6 の前提）を外れる。
+**この常駐ジョブには操作フォルダを作らない**（`Features/` に該当ファイルが 1 つも無いため）。
+
+> **HTTP 端点の場合と非対称に見えるが、非対称なのは入力の側である。** 端点の切り出し（決定 1）は
+> **登録表のラムダ本体**という「既に `Features/` に居るコード」を動かす。常駐型の中の処理は
+> `Features/` の外にあり、`ADR-0077` §結果が対象外と述べたものである。
+
+### 追記 7 — 契機が未結線でも操作は在る（`BacktestService`）
+
+`BacktestService` は実行時の契機を 1 つも持たない（HTTP 0・購読 0・常駐 0）。本番戦略
+（`IBacktestStrategy` 実装）が未実装で、定時トリガと `BacktestEvaluated` の実 publish は #82 系に残っている。
+
+**`ADR-0077` 決定 1 は操作をユースケースで定義するため、契機の結線待ちであることは操作の不在を意味しない。**
+計画のユースケース（FR-15 バックテスト実行／FR-20 Stage 0 判定）で `RunBacktest` / `EvaluateStage0Gate` の
+2 操作に切る。#82 で載せる定時トリガの置き場は `Hosted/` であり（追記 5 の表）、本操作フォルダではない。
+
+### 追記 8 — 第 6 弾（`InformationCollectionService` / `NotificationService`・[#669](https://github.com/endazon/ai-stock-trading/pull/669)）からの申し送り
+
+第 6 弾は本弾と並行して同じ規則を当て、次の 3 点を確認した。**追記 5・6 と同じ内容であり、
+書き方を補強するために残す**（第 6 弾は本弾より先に `develop` へマージされている）。
+
+1. 🔴 **`MSP/ADR-0077` の下では、決定 2 の「`Infrastructure/`・`Hosted/` から使われるものは
+   2 段目に残す」を字義どおり当てない。** 購読ハンドラ・常駐ジョブ・Discord のコマンドディスパッチは
+   いずれも**入口の配線**であり、**そこから使われることは「操作専属でない」根拠にならない。**
+2. **ただし `Infrastructure` のアダプタに実装されるポート（インターフェース）は 2 段目に残す。**
+   下ろすと参照方向が `Infrastructure` → 3 段目になる（`MSP/ADR-0065` 決定 7 の規律が読みにくくなる）。
+   🔴 **「入口の配線から使われる」と「`Infrastructure` に実装される」を区別する** —— 前者は下ろす
+   根拠を消さず、後者は 2 段目へ固定する。
+3. **`partial` で分割された共通処理は操作フォルダを作らない。** `NotificationService` の
+   `NotificationFormatter`（22 種のイベント購読が共有する整形処理）は `partial` の分割であり、
+   **`partial` の各断片は名前空間をまたげない** —— 一部だけを 3 段目へ下ろすとコンパイルが通らない。
+   共有物として 2 段目に置く（決定 3 の「共通部分は 2 段目に残す」の物理的な帰結である）。
+
+### 実測（第 5 弾）
+
+| サービス | 操作フォルダ | 3 段目へ下ろしたファイル | 2 段目に残るファイル | テスト件数 |
+| --- | ---: | ---: | ---: | --- |
+| `TradeDecisionService` | 1（`DecideTrade`） | 4 | 18 | 459 → 459 |
+| `OrderExecutionService` | 7 | 13 | 6 | 302 → 302 |
+| `BacktestService` | 2 | 3 | 2 | 241 → 241 |
+
+全アセンブリ合計は **5444 → 5444** で一致した。
 
 ## 関連
 

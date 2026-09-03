@@ -1,6 +1,7 @@
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
