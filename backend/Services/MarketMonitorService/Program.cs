@@ -4,12 +4,14 @@ using MarketMonitorService.Infrastructure.ExternalServices;
 using MarketMonitorService.Hosted;
 using MarketMonitorService.Infrastructure.Steps;
 using MarketMonitorService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Wolverine;
 
@@ -52,11 +54,28 @@ builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
 // 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する（IADR-0066 決定 2）。
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient("marketdata");
-builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
-    sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
-    sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IMarketDataSource>(sp =>
+{
+    var marketDataOptions =
+        sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>()
+        ?? new();
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
+    // 既定 0 のときは挙動中立）。監視間隔は本サービス自身の巡回間隔（MonitorOptions.PollIntervalSeconds）を使う。
+    MarketDataSourceFactory.EvaluateDailyVolume(
+        marketDataOptions,
+        sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
+        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return MarketDataSourceFactory.Create(
+        marketDataOptions,
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+});
 // FR-03/FR-10, IADR-0030: 保有ポジションはリスク管理（#12）の GET /risk-controls/open-positions を同期照会して供給する。
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（保有なし＝損切り検知対象なし）＝安全既定でゲート。
 // 選択は解決時に構成を読む（起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため）。HttpClient は
@@ -112,7 +131,14 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
-    .AddPortFromBaseUrl("position-store", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder"));
+    .AddPortFromBaseUrl("position-store", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告。
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        MarketDataSourceFactory.EstimateDailyVolume(
+            builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
+            builder.Configuration.GetSection(MonitorOptions.SectionName).Get<MonitorOptions>()?.PollIntervalSeconds
+                ?? new MonitorOptions().PollIntervalSeconds).ToString()));
 
 var app = builder.Build();
 

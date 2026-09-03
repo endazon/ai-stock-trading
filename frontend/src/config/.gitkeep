@@ -1,4 +1,0 @@
-# config 層（MSP/ADR-0067 決定 1。shared 層の最上位）: 実行時構成・環境変数。
-#
-# 本ユニットは実行時構成を基盤（`@foundation`）から受け取り、自前の構成を持たない。
-# 原典（Bulletproof React）が config を app の兄弟と定めているため枠は置く（IADR-0290）。

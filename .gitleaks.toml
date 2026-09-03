@@ -17,4 +17,8 @@ description = "報告書の期間キー（ReportPeriod.ExpectedKey が導出す�
 regexTarget = "secret"
 regexes = [
   '''^(daily|weekly|monthly)-\d{4}(-W?\d{1,2})?(-\d{2})?$''',
+  # #667 / IADR-0294: 設定キー名 `MarketData:Finnhub:EstimatedSymbolCount` の末尾が finnhub-access-token 規則
+  # （`Finnhub:` に続く英数 20 字）に一致する。キー名であり値ではない。squash 後は SHA が変わり
+  # .gitleaksignore の fingerprint では develop の push 走査を通せないため、秘密値そのものを許可する。
+  '''^EstimatedSymbolCount$''',
 ]

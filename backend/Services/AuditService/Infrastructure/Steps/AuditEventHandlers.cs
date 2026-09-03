@@ -1,4 +1,5 @@
 using AuditService.Common.Abstractions;
+using AuditService.Domain;
 using AuditService.Features.AuditEvents;
 using AiStockTrading.Shared.Contracts.Events;
 using Wolverine;

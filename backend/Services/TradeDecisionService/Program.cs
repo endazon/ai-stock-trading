@@ -3,6 +3,7 @@ using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
@@ -36,6 +37,9 @@ builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceNa
 builder.Services.AddAiStockTradingHealthChecks();
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）を自己申告へ載せる（下記 AddMetric）。
+var introspectionMarketDataOptions =
+    builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPortFromBaseUrl("llm-completion", builder.Configuration["LlmGateway:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("daily-policy", builder.Configuration["Reports:BaseUrl"], "http", "placeholder")
@@ -51,7 +55,11 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // FR-10, FR-17, #257, IADR-0107: 基準通貨への換算レート源の選択中実装を自己申告する。解決規則は
     // FxRateSourceFactory.ResolveProvider を単一情報源にし（構成不備で no-op へ倒れる場合は none）、申告と実体をずらさない。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
-        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions())));
+        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        MarketDataSourceFactory.EstimateDailyVolume(
+            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
 // --- 取引判断のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
@@ -249,11 +257,27 @@ else
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
 builder.Services.AddHttpClient("marketdata");
-builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
-    sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
-    sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IMarketDataSource>(sp =>
+{
+    var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
+    // 既定 0 のときは挙動中立）。本サービスは判断サイクル起動時にのみ問い合わせる（固定間隔ではない）ため、
+    // 巡回間隔は MarketData:RefreshIntervalSeconds を保守的な仮定として使う（他 3 サービスと共通の構成キー）。
+    MarketDataSourceFactory.EvaluateDailyVolume(
+        marketDataOptions,
+        marketDataOptions.RefreshIntervalSeconds,
+        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return MarketDataSourceFactory.Create(
+        marketDataOptions,
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+});
 builder.Services.AddScoped<ICurrentPriceProvider>(sp =>
 {
     var source = sp.GetRequiredService<IMarketDataSource>();

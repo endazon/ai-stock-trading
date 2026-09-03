@@ -1,5 +1,0 @@
-# types/（計画 13_frontend-stack §ディレクトリ構成）: この feature 固有の型。
-#
-# 本 feature が使う契約型は共有側（`src/lib/{risk,monitor}/contracts.ts`）にある。
-# 画面内だけで閉じる型（例: 表示状態の union）は使う側のコンポーネントに同居させており、
-# **`api/` と `components/` の双方が要る型が生じたらここへ出す**（sc01-settings がその例）。枠のみ。

@@ -42,7 +42,8 @@ public static class IntrospectionExtensions
             pipelineService,
             steps,
             builder.Ports,
-            string.IsNullOrWhiteSpace(configVersion) ? null : configVersion);
+            string.IsNullOrWhiteSpace(configVersion) ? null : configVersion,
+            builder.Metrics);
 
         services.AddSingleton(dto);
         return services;
@@ -72,9 +73,13 @@ public static class IntrospectionExtensions
 public sealed class IntrospectionBuilder
 {
     private readonly List<PortSelectionDto> _ports = [];
+    private readonly List<MetricSelectionDto> _metrics = [];
 
     // 申告済みのポート実装（読み取り専用）。
     public IReadOnlyList<PortSelectionDto> Ports => _ports;
+
+    // 申告済みの数値等の自己申告値（読み取り専用）。
+    public IReadOnlyList<MetricSelectionDto> Metrics => _metrics;
 
     // 選択中のポート実装を申告する（例: AddPort("broker", "moomoo"), AddPort("llm-completion", "http", baseUrl)）。
     public IntrospectionBuilder AddPort(string port, string implementation, string? target = null)
@@ -90,5 +95,13 @@ public sealed class IntrospectionBuilder
         return string.IsNullOrWhiteSpace(baseUrl)
             ? AddPort(port, fallbackImplementation)
             : AddPort(port, httpImplementation, baseUrl);
+    }
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: ポート選択に当たらない数値等の自己申告値を足す
+    // （例: AddMetric("finnhub-daily-request-estimate", "142")）。
+    public IntrospectionBuilder AddMetric(string name, string value)
+    {
+        _metrics.Add(new MetricSelectionDto(name, value));
+        return this;
     }
 }

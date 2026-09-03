@@ -1,5 +1,6 @@
 using System.Reflection;
 using AuditService.Common.Abstractions;
+using AuditService.Domain;
 using AuditService.Features.AuditEvents;
 using AuditService.Infrastructure.Persistence;
 using AuditService.Infrastructure.Steps;
