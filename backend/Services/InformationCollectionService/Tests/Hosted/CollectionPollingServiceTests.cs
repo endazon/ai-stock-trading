@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = InformationCollectionService.Features.InformationCollection.InformationCollectionAppService;
+using AppSvc = InformationCollectionService.Features.InformationCollection.RunCollectionCycle.InformationCollectionAppService;
 
 namespace InformationCollectionService.Tests;
 

@@ -1,7 +1,7 @@
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Domain;
 
-namespace InformationCollectionService.Features.InformationCollection;
+namespace InformationCollectionService.Features.InformationCollection.RunCollectionCycle;
 
 // FR-01, ADR-0003, ADR-0004, ADR-0020: 1 巡回の収集オーケストレーション。
 // 取得（ソース単位の成否つき）→ 欠測判定 → 検証用途の排除 → 許可リストで選別 → 正規化 → サニタイズ → KB 保存。
