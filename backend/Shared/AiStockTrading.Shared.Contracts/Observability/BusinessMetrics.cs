@@ -48,6 +48,8 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _orderDispatchForgone;
     private readonly Counter<double> _llmCostJpy;
     private readonly Gauge<double> _llmCostLimitRatioPercent;
+    private readonly Gauge<long> _finnhubDailyVolumeEstimate;
+    private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
 
     public BusinessMetrics()
     {
@@ -89,6 +91,14 @@ public sealed class BusinessMetrics : IDisposable
         _llmCostLimitRatioPercent = _meter.CreateGauge<double>(
             BusinessMetricNames.LlmCostLimitRatioPercent,
             description: "当月 LLM 費用が月次上限に占める割合（%）。80 で間隔延長・100 で停止（NFR-13）");
+
+        _finnhubDailyVolumeEstimate = _meter.CreateGauge<long>(
+            BusinessMetricNames.FinnhubDailyVolumeEstimate,
+            description: "プロセスごとの Finnhub 日次要求見積り（回/日。ADR-0031 決定2〜3）");
+
+        _finnhubDailyVolumeLimitRatioPercent = _meter.CreateGauge<double>(
+            BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent,
+            description: "Finnhub 日次要求見積りが暫定上限に占める割合（%）。100 超で警告（ADR-0031 決定3）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -159,6 +169,15 @@ public sealed class BusinessMetrics : IDisposable
             (double)amount,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagCategory, category));
         _llmCostLimitRatioPercent.Record((double)limitRatioPercent);
+    }
+
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、暫定上限に対する比率を記録する。
+    /// </summary>
+    public void RecordFinnhubDailyVolumeEstimate(long estimatedDailyRequests, double limitRatioPercent)
+    {
+        _finnhubDailyVolumeEstimate.Record(estimatedDailyRequests);
+        _finnhubDailyVolumeLimitRatioPercent.Record(limitRatioPercent);
     }
 
     public void Dispose() => _meter.Dispose();

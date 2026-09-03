@@ -57,6 +57,15 @@ public static class BusinessMetricNames
     /// <summary>NFR-13: 当月の LLM 費用が月次上限に占める割合（%）。80 で間隔延長・100 で停止。</summary>
     public const string LlmCostLimitRatioPercent = "ast.llm.cost_limit_ratio_percent";
 
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスごとの Finnhub 日次要求見積り（回/日）。
+    /// 銘柄数の運用者申告（既定 0）が無ければ計上しない（挙動中立）。
+    /// </summary>
+    public const string FinnhubDailyVolumeEstimate = "ast.finnhub.daily_request_estimate";
+
+    /// <summary>FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが暫定日次上限（既定300）に占める割合（%）。100 超で警告。</summary>
+    public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 

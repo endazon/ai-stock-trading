@@ -9,5 +9,6 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
     <ProjectReference Include="..\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
   </ItemGroup>
 </Project>

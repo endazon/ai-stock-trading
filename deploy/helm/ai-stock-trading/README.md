@@ -92,6 +92,25 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
 
+### Finnhub の日次要求量の見積り（ADR-0031〔計画〕決定2〜4 / IADR-0292）
+
+分次の自制レート（上表）は瞬間的な要求レートしか保証せず、**1 日の総量**（銘柄数 × 1 巡回あたりの要求数 ×
+1 日の巡回回数）は別の制約である。日次上限は未実測のため、暫定手段として第三者観測「約 300 回/日」を
+`Finnhub:ProvisionalDailyLimit`（既定 300）で前提値として扱う。
+
+- `MarketData:Finnhub:EstimatedSymbolCount`（`market-monitor` / `risk-management` / `report` / `trade-decision`
+  の各 `MarketData` 節。既定 **0＝未申告**）: 当該サービスが 1 巡回で問い合わせる銘柄数（監視銘柄数・保有建玉数等）の
+  運用者による申告値。実際の銘柄数は DB・台帳等の動的な値のため、起動時に確定させず運用者が実態に近い値を明示する。
+  **既定 0 は挙動中立**（日次見積りへ寄与しない・警告もメトリクスも出ない）。
+- `Finnhub:ProvisionalDailyLimit`（`information-collection` と上記 4 サービス共通。既定 **300**）: 暫定日次上限。
+  日次上限が実測されたら実測値で上書きする（推測値の既定を残したまま「実測済み」の顔をさせない）。
+- 見積りが上限を超えると**警告ログ＋業務メトリクス**（`ast.finnhub.daily_request_estimate` /
+  `ast.finnhub.daily_request_limit_ratio_percent`。Grafana ダッシュボード「統制: Finnhub 日次要求見積り」）を
+  出す。**送出は止めない**——現時点の統制は可視化であり、確定した数値上限による強制ではない。
+  各プロセスの見積り値は `GET /internal/introspection` の自己申告（`finnhub-daily-request-estimate`）でも読める。
+- 情報収集（`information-collection`）は `Collection:Source:Finnhub:Symbols` の実銘柄数から**厳密に**算出する
+  （申告不要）。上記 4 サービスは動的な実数を持たないため運用者申告に依る。
+
 > **Discord の環境固有 ID**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は**空既定**であり、
 > 下記「Discord の環境固有 ID」の env（`DISCORD_BOT_*`）で与える（[#245](https://github.com/endazon/ai-stock-trading/issues/245) /
 > [IADR-0102](../../../.ai-context/adr/IADR-0102_discord-env-ids-via-values.md)）。**空のまま**だと IADR-0062 の
