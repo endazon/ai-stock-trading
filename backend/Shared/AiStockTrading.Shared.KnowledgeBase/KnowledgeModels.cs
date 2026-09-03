@@ -44,6 +44,13 @@ public static class KnowledgeAttributeDefaults
     // 09_datasource-connectors.md §未確定事項「値域が定まるまで department の写像は行わない」）。
     // 推測で値を決めず、予約値へ倒す。
     public const string UnassignedDepartment = "unassigned";
+
+    // FR-08, ADR-0032 決定2(1), IADR-0293: 本ユニットが基盤へ保存する文書は project 属性に
+    // この値を必須で持つ（platform 07_abac-attribute-model.md の project＝プロジェクトコード。単値）。
+    // owner/department と異なり許容値は単一のため、異なる明示指定は補完せず拒否する
+    // （HttpKnowledgeBaseWriter.BuildAttributes 参照）。
+    public const string ProjectKey = "project";
+    public const string RequiredProject = "ai-stock-trading";
 }
 
 // FR-08: KB へ保存する 1 文書。Title/属性/タグはカタログ登録に用いる。

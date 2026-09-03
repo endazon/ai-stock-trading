@@ -1,8 +1,9 @@
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Domain;
 
 // FR-14, IADR-0062: Discord から着信したコマンドの文脈（Gateway 実装に依存しない素の値）。
-// Discord.Net の型を Application へ持ち込まないための境界。DM は GuildId/ChannelId が専用サーバーと
-// 一致し得ないが、なりすまし防止のため IsDirectMessage を明示的に受け取り最優先で拒否する。
+// 🔴 NFR, IADR-0128 決定6, IADR-0256: 本型は Domain 層に置くため、Gateway ライブラリ（Discord 連携の
+// クライアント実装）の型を Application へ持ち込まないための境界として働く。DM は GuildId/ChannelId が
+// 専用サーバーと一致し得ないが、なりすまし防止のため IsDirectMessage を明示的に受け取り最優先で拒否する。
 public sealed record DiscordCommandContext(
     string? GuildId,
     string? ChannelId,

@@ -1,11 +1,12 @@
 ---
 title: IADR-0284 east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
 type: impl-adr
-status: Proposed
+status: Accepted
 related_ids:
   - FR-17
   - NFR
   - MSP:ADR-0029
+  - MSP:ADR-0075
   - ADR-0001
   - IADR-0001
   - IADR-0051
@@ -18,6 +19,7 @@ created: 2026-09-03
 updated: 2026-09-03
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
+  - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
   - planning:projects/microservices-platform/06_technical/12_backend-application-stack.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
 ---
@@ -28,9 +30,9 @@ plan_refs:
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
 > 計画に影響する決定は planning へ issue で環流する（`feedback.yml` テンプレート）。
 
-- 状態: Proposed（**暫定**。計画側の裁定〔§環流〕で Accepted へ確定するか、裁定の内容に応じて改定する）
+- 状態: **Accepted**（起案 2026-09-03 → 確定 2026-09-03。計画側の裁定 `MSP/ADR-0075` により Proposed から確定。§追記参照）
 - 日付: 2026-09-03
-- 決定者: Claude Code（実測・起案）／ endazon（裁定は planning 側）
+- 決定者: Claude Code（実測・起案）／ endazon（裁定は planning 側・`MSP/ADR-0075`）
 
 ## 起点・関連
 
@@ -159,6 +161,28 @@ planning へ feedback issue を起票する（起票前に `ADR-0029 gRPC` / `gR
   1. planning の裁定を受けて本 ADR を Accepted へ確定するか改定する（裁定 → `docs/blocked-tasks.md` 解除 → 決定 5 の段 0 から着手）。
   2. MSP が proto を公開したら AST→MSP 4 本を決定 2 の「基盤待ち」から外して段を追加する。
   3. `MSP:IADR-0122` の「east-west が gRPC へ移行した時点で proto を正本にする」は AST でも同じ扱いになる（段 0 の互換検査で受ける）。
+
+## 追記（2026-09-03・計画側裁定 `MSP/ADR-0075` を受けて Proposed → Accepted）
+
+planning#520 の環流（§決定4）に対し、計画側が `MSP/ADR-0075`
+（`projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md`。2026-09-03 確定）で裁定した。
+本 IADR の決定 1〜4（境界基準に固定・射程 22 本＋基盤待ち 4 本・今は着手しない・環流する）は**裁定と同じ向き**であり、覆らない。
+
+- **移行の順序は基盤先行**とする。MSP が proto の置き場（共有契約プロジェクト）・versioning 規約・h2c 用ポートの扱い・
+  s2s トークンの写し方の現物を作り、AST はそれに追随する（proto の所有者は呼び出される側という §決定 2 の基準どおり）。
+- `MSP/ADR-0029` フォローアップ（proto 契約の配置と versioning 規約を実装ガイドへ落とす）の履行を、移行着手の**先行条件**とし、
+  **期限を 2026-11-30** に置く。**期限までに履行されなければ、基盤先行（決定 1）そのものを見直す**（覆り得るのはこの一点のみ）。
+- **一括移行の義務は緩めない。例外 ADR は起こさない。** AST の 22 本は基準に該当する。理由（頻度・低レイテンシ）の一部が
+  AST の呼び出しプロファイルに当たらないことは、基準を緩める理由にならない。
+- **AST→MSP の 4 本**（LlmGateway `POST /complete` ×2・DocumentService `POST /documents`・RetrievalService `POST /search`）は、
+  MSP が該当 proto を公開した時点で移行する。それまでの REST 継続は例外ではなく、`MSP/ADR-0029` 自身が「過渡的」と呼ぶ状態の継続である。
+- **#584 の「REST 継続で閉じてよい」は採らない**（本 IADR 決定1 と同じ結論。実装側の IADR で REST 継続を自認する余地は無い）。
+- **「基盤先行」は MSP 自身の east-west 移行を含む**（MSP にも `.proto` は 1 件も無い実測。AST は「基盤が先例を作ること」を待つのであって
+  「基盤が AST のために proto を書くこと」を待つのではない）。
+- **本 IADR の決定 5**（裁定で着手する場合の切り方。段 0 土台 → 段 1 Assumptions → … → 段 6 REST 撤去）は**変更しない**。
+- #584 は `Refs`（閉じない）のまま。`blocked:decision` を外し `blocked:env`（他リポジトリ〔MSP〕の実装待ち）へ張り替え、
+  待ち先を「MSP が `MSP/ADR-0029` フォローアップ（実装ガイド）を履行すること（期限 2026-11-30）」とする。
+  `docs/blocked-tasks.md` B-4 の該当行を追随させた。
 
 ## 関連
 

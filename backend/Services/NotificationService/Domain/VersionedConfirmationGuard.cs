@@ -1,4 +1,4 @@
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Domain;
 
 // FR-14, IADR-0062 決定6: 詳細設計07「二重実行防止（確定・kill switch の冪等性）」の楽観ロック機構。
 //
