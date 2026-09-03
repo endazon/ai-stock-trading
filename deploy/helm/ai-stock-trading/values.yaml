@@ -245,6 +245,9 @@ services:
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      # ADR-0031（計画）決定2〜3, IADR-0292: 暫定日次上限（既定300回/日。第三者観測の前提値・実測ではない）。
+      # 監視銘柄数×巡回頻度からの見積りがこれを超えると警告ログ＋業務メトリクスを出す（送出は止めない）。
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。空=本ソース無効。
       - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # SEC EDGAR（米国の開示・キー不要）。連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
@@ -300,6 +303,10 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 監視銘柄数の運用者申告（空=未申告・既定0＝日次見積りへ寄与しない）。
+      # 実際の監視銘柄数（DB）に近い値を設定すると、日次要求見積り（警告ログ・業務メトリクス）が有効になる。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
   notification:
     image: ai-stock-trading/notification-service
     extraEnv:
@@ -351,6 +358,9 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 監視銘柄数の運用者申告（空=未申告・既定0＝日次見積りへ寄与しない）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
       - { name: LlmGateway__BaseUrl, value: "" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
@@ -389,6 +399,9 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 保有建玉数の運用者申告（空=未申告・既定0＝日次見積りへ寄与しない）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）を承認台帳へ固定する源。
       # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
       # fail-safe: 空/none/未知/キー無し=no-op＝承認は未記録（null）のまま記録される（承認を止めない・推定しない）。
@@ -404,6 +417,10 @@ services:
       # fail-safe: 空=構成ベース（TradeCycle:Watchlist）＝現行挙動。実結線時は市場監視サービス URL（例: http://market-monitor-service:8080）を入れると
       # SC-02 での監視銘柄変更が定時サイクルの判断対象に反映される。本 PR では実 URL を投入しない（他 s2s と足並みを揃える）。
       - { name: MarketMonitor__BaseUrl, value: "" }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 判断サイクルあたりの銘柄数の運用者申告
+      # （空=未申告・既定0＝日次見積りへ寄与しない）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-04, ADR-0010, IADR-0061: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。

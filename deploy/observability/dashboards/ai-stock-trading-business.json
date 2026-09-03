@@ -130,6 +130,43 @@
         "expr": "max(ast_llm_cost_limit_ratio_percent)",
         "legendFormat": "上限消費率"
       }]
+    },
+    {
+      "id": 10,
+      "title": "統制: Finnhub 日次要求見積り（プロセス別）",
+      "description": "ADR-0031（計画）決定2〜4: 監視銘柄数 × 巡回頻度からの日次総量見積り（回/日）。銘柄数未申告（既定）のプロセスは 0 のまま。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "max by (service_name) (ast_finnhub_daily_request_estimate)",
+        "legendFormat": "{{service_name}}"
+      }]
+    },
+    {
+      "id": 11,
+      "title": "統制: Finnhub 日次暫定上限に対する比率（%・プロセス別）",
+      "description": "暫定上限（既定300回/日。第三者観測の前提値・実測ではない。ADR-0031 決定3）に対する比率。100% 超は警告ログを伴う（送出は止めない）。",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "max by (service_name) (ast_finnhub_daily_request_limit_ratio_percent)",
+        "legendFormat": "{{service_name}}"
+      }]
     }
   ]
 }
