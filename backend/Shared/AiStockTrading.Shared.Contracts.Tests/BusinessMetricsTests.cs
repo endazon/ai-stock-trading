@@ -192,6 +192,21 @@ public class BusinessMetricsTests
             .Should().ContainSingle().Which.Value.Should().BeApproximately(percent, 0.001);
     }
 
+    // FR-01, ADR-0031（計画）決定2〜3, IADR-0292: Finnhub 日次要求見積りと暫定上限に対する比率の計上。
+    [Fact]
+    public void Finnhub日次要求見積りは与えた値をそのまま計上する()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+
+        metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate)
+            .Should().ContainSingle().Which.Value.Should().Be(480);
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent)
+            .Should().ContainSingle().Which.Value.Should().Be(160);
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -208,5 +223,6 @@ public class BusinessMetricsTests
         metrics.RecordOrderExecuted(OrderStatus.Filled, BrokerProvider.InternalPaper);
         metrics.RecordOrderDispatchForgone(OrderDispatchForgoneReason.BrokerUnavailable);
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
+        metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
     }
 }

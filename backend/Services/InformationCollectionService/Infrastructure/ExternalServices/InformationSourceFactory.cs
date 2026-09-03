@@ -1,6 +1,7 @@
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Features.InformationCollection;
 using InformationCollectionService.Domain;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
@@ -81,6 +82,74 @@ public static class InformationSourceFactory
             "Finnhub Free の日次上限 {Limit} 回から逆算した監視銘柄数の上限は {Cap} 銘柄です"
             + "（1 日 {Cycles} 巡回 × 1 銘柄あたり {PerSymbol} 要求）。現在の構成は {Configured} 銘柄。",
             options.Finnhub.DailyRequestLimit, cap, CyclesPerDay, requestsPerSymbol, options.Finnhub.Symbols.Length);
+    }
+
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求見積り（回/日）。
+    /// finnhub / finnhub-news がいずれも無効、または銘柄が未設定なら 0（挙動中立）。
+    /// introspection 自己申告（数値のみ・ログ副作用なし）から使う軽量版。
+    /// </summary>
+    public static long EstimateDailyVolume(CollectionSourceOptions options, int pollIntervalSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        // Create() と同じ正規化（空要素の除去）を適用してから数える（Symbols の空要素混入を実体ありと数えない）。
+        var normalized = Normalize(options);
+        var providers = ParseProviders(normalized.Provider).ToHashSet();
+        var requestsPerSymbol = new[] { Finnhub, FinnhubNews }.Count(providers.Contains);
+        if (requestsPerSymbol == 0 || normalized.Finnhub.Symbols.Length == 0)
+            return 0;
+
+        var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
+        return new FinnhubDailyVolumeEstimator.ProcessVolume(
+            ProcessName: "information-collection",
+            ApiKeyGroup: "self",
+            SymbolCount: normalized.Finnhub.Symbols.Length,
+            RequestsPerSymbolPerCycle: requestsPerSymbol,
+            CyclesPerDay: cyclesPerDay).EstimatedDailyRequests;
+    }
+
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量を見積もり、
+    /// 業務メトリクスへ記録する。<see cref="Create"/> の実行後に呼ぶ（有効化中のソース集合を要る）。
+    /// finnhub / finnhub-news がいずれも無効、または銘柄が未設定なら見積らない（挙動中立）。
+    /// </summary>
+    public static void EvaluateDailyVolumeEstimate(
+        CollectionSourceOptions options,
+        int pollIntervalSeconds,
+        FinnhubDailyVolumeGuardOptions dailyVolumeGuard,
+        BusinessMetrics metrics,
+        ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(dailyVolumeGuard);
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        var estimatedDailyRequests = EstimateDailyVolume(options, pollIntervalSeconds);
+        if (estimatedDailyRequests == 0)
+            return;
+
+        var result = FinnhubDailyVolumeEstimator.Evaluate(
+            estimatedDailyRequests, dailyVolumeGuard.ProvisionalDailyLimit, "information-collection");
+
+        metrics.RecordFinnhubDailyVolumeEstimate(result.EstimatedDailyRequests, result.ExceedRatio * 100);
+
+        if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.Exceeds)
+        {
+            var normalized = Normalize(options);
+            var providers = ParseProviders(normalized.Provider).ToHashSet();
+            var requestsPerSymbol = new[] { Finnhub, FinnhubNews }.Count(providers.Contains);
+            var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
+
+            var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
+            logger.LogWarning(
+                "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）が"
+                + "暫定日次上限 {Limit} 回/日（第三者観測の前提値。実測ではない。ADR-0031 決定3）を超えています。"
+                + "収集は継続します（統制は現時点では警告のみ）。監視銘柄数・巡回頻度を上げる前に日次上限の実測を検討してください。",
+                result.EstimatedDailyRequests, normalized.Finnhub.Symbols.Length, requestsPerSymbol, cyclesPerDay,
+                dailyVolumeGuard.ProvisionalDailyLimit);
+        }
     }
 
     // 一覧系の構成から空要素を除く（空だけなら空配列＝未設定として扱われる）。
