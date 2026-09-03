@@ -99,6 +99,11 @@ PVC 削除をどう防ぐか。
 - フォローアップ: `DISCORD_BOT_*` も将来「明示的な空値での中断」が要求されたら本 IADR のパターンを
   適用する（現状は空既定＝差し替えなしの設計で別種の安全策が既にあるため対象外とした）。
 
+**［2026-09-03 追記］上記フォローアップは実際に必要になった**——`#570` の訂正記録で `DISCORD_BOT_*`
+4 変数の export し忘れにより Discord Bot が無言で no-op へ落ちる事故が発生した（`#263` と同型の
+再発。2 回目）。[IADR-0295](IADR-0295_discord-bot-value-carryover-and-rollout-restart.md) が
+`discord.bot.*` を本 IADR と同じ `resolve_ast_value_overrides` へ合流させ、この対象外を解消した。
+
 ## 関連
 
 - Supersedes: なし

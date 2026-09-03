@@ -28,6 +28,9 @@
 # #245, IADR-0102: Discord Bot の**環境固有 ID**（非機密）は values 経路（--set-string discord.bot.*）で渡す:
 #   DISCORD_BOT_GUILD_ID / DISCORD_BOT_CHANNEL_ID / DISCORD_BOT_ALLOWED_USER_IDS / DISCORD_BOT_USER_MAPPING。
 #   未設定=空=差し替えなし（IADR-0062 の安全既定＝空は「全許可」ではなく全拒否で no-op）。
+#   **未設定なら前回リリースの値を引き継ぐ**（#673。broker.tier / opend.enabled と同じ AST_VALUE_KEYS の
+#   仕組みに 2026-09-03 に合流した。従来は引き継ぎ対象外で、4 変数を export し忘れると投入済みの ID が
+#   空へ戻り Bot が無言で no-op へ落ちる事故が実際に発生していた＝#263 と同型の再発）。
 #   ⚠️ `kubectl set env deploy/notification-service ...` で注入しないこと。env の所有が Helm と kubectl(kubectl-set)へ
 #      割れ、次回の helm upgrade が `conflict with "kubectl-set"` で失敗する。既に競合している場合は
 #      `kubectl set env deploy/notification-service -n ai-stock-trading Notifications__Discord__Bot__GuildId- ...`
@@ -45,6 +48,11 @@
 # 前回リリースで手動 --set した値が黙って既定（paper / false）へ戻る。opend.enabled=false は
 # OpenD の Deployment・PVC ごと削除する（デバイス信頼の再認証が要る）。ast-secrets と同じ
 # 「保持／明示上書き／明示空値は --force-empty-values で確認／新規環境」を Helm values へ適用する。
+# #673: 上記と同じ「触らない＝保持」の 4 分岐を discord.bot.* の 4 環境固有 ID にも適用する
+# （IADR-0283 決定時は対象外としたが、export し忘れで Bot が無言 no-op へ落ちる事故が実際に発生した）。
+# また、helm upgrade だけでは Pod テンプレートが変わらないサービスにイメージ更新が届かない
+# （タグ :latest 固定 + imagePullPolicy IfNotPresent）ため、末尾で OpenD を除く Deployment へ
+# `kubectl rollout restart` を打つ（OpenD は SMS/画像認証済みセッションを切らないため除外）。
 set -euo pipefail
 
 FORCE_EMPTY=0
@@ -101,6 +109,15 @@ ast_has_value() { printf '%s\n' "$1" | grep -Fxq -- "$2"; }
 
 # 値は base64 で載せる（"・\・改行・空白を含む値のエスケープ問題が構造的に消える。IADR-0109 決定4）。
 ast_b64() { printf '%s' "${1:-}" | base64 | tr -d '\r\n'; }
+
+# #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
+# 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。これで helm へは値がそのまま届く。
+# 注: 届いた先（DiscordBotOptionsReader のコンパクト形式）は `,` で要素分割するため、**keycloak 利用者名に `,` は
+# 使えない**（本スクリプトのエスケープではなくアプリ側の値形式の制約。`:` は最初の 1 つのみ区切り・形式不正の
+# 要素は破棄＝拒否側。chart README「Discord の環境固有 ID」参照）。
+# #673: resolve_ast_value_overrides（AST_DEPLOY_LIB=1 でも読み込む関数）から呼ぶため、ここ（ヘルパー群）で
+# 定義する。以前は helm upgrade 直前（実行末尾）にのみ定義されており、テスト経路からは未定義エラーになっていた。
+helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
 
 sync_ast_secrets() {
   local existing entries='' preserved='' clobber='' spec key var default value
@@ -166,41 +183,60 @@ sync_ast_secrets() {
   return 0
 }
 
-# #626, IADR-0283: 前回リリースの値を個別に引き継ぐ Helm values のキー定義: <top>.<nested>|<環境変数>。
-# ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは chart 既定＝paper / false に委ねる）。
+# #626, IADR-0283 / #673: 前回リリースの値を個別に引き継ぐ Helm values のキー定義:
+# <ドット区切りパス>|<環境変数>|<set 方式>。<set 方式> は "set"（--set。列挙値・真偽値向け）または
+# "set-string"（--set-string。snowflake ID 等の数値化事故を避ける。helm_escape を適用する）。
+# ast-secrets と異なり dev 既定は持たない（未指定・前回値なしは chart 既定＝paper / false / 空文字 に委ねる）。
+# discord.bot.* の 4 件は #673 で合流した（従来は values-local.yaml の env 直渡しのみで引き継ぎ対象外だった）。
 AST_VALUE_KEYS=(
-  "broker.tier|BROKER_TIER"
-  "opend.enabled|OPEND_ENABLED"
+  "broker.tier|BROKER_TIER|set"
+  "opend.enabled|OPEND_ENABLED|set"
+  "discord.bot.guildId|DISCORD_BOT_GUILD_ID|set-string"
+  "discord.bot.channelId|DISCORD_BOT_CHANNEL_ID|set-string"
+  "discord.bot.allowedUserIds|DISCORD_BOT_ALLOWED_USER_IDS|set-string"
+  "discord.bot.userMapping|DISCORD_BOT_USER_MAPPING|set-string"
 )
 
-# 直前リリースの user-supplied values から <top>.<nested> の値を読む（release 不在・キー不在は空を返す）。
-# jq 等の追加依存を持ち込まない（本リポの他スクリプトは go-template / awk のみで完結させる慣行）。
+# 直前リリースの user-supplied values からドット区切りパス（任意階層。例 "broker.tier" /
+# "discord.bot.guildId"）の値を読む（release 不在・パス不在は空を返す）。インデント幅（2 space/階層）と
+# キー名の一致で先頭から逐次降下照合する。jq 等の追加依存を持ち込まない（本リポの他スクリプトは
+# go-template / awk のみで完結させる慣行）。#673 で 2 階層専用（<top> <nested> の 2 引数）から
+# 任意階層（1 引数のドット区切りパス）へ一般化した。
 ast_prev_release_value() {
-  local top="$1" nested="$2"
-  helm get values "$RELEASE" -n "$NS" -o yaml 2>/dev/null | awk -v top="${top}:" -v nested="  ${nested}:" '
-    $0 == top { intop=1; next }
-    intop && index($0, nested) == 1 {
-      v = substr($0, length(nested) + 1)
-      gsub(/^[ \t"]+|["]+$/, "", v)
-      print v
-      exit
+  local path="$1"
+  helm get values "$RELEASE" -n "$NS" -o yaml 2>/dev/null | awk -v path="$path" '
+    BEGIN { n = split(path, segs, "."); depth = 0 }
+    {
+      line = $0
+      if (match(line, /^ */)) { indent = RLENGTH } else { indent = 0 }
+      content = substr(line, indent + 1)
+      if (content == "") next
+      if (!match(content, /^[^:]+:/)) next
+      key = substr(content, 1, RLENGTH - 1)
+      rest = substr(content, RLENGTH + 1)
+      gsub(/^[ \t"]+|["]+$/, "", rest)
+
+      expected = depth * 2
+      if (indent < expected) { depth = 0; expected = 0 }
+      if (indent == expected && key == segs[depth + 1]) {
+        depth++
+        if (depth == n) { print rest; exit }
+      }
     }
-    intop && $0 !~ /^ / { intop = 0 }
   ' || true
 }
 
-# AST_VALUE_KEYS を解決し、AST_VALUE_OVERRIDES（helm upgrade へ渡す --set 列）を組み立てる。
+# AST_VALUE_KEYS を解決し、AST_VALUE_OVERRIDES（helm upgrade へ渡す --set / --set-string 列）を組み立てる。
 resolve_ast_value_overrides() {
-  local spec key var top nested existing value clobber=''
+  local spec key var setmode existing value clobber=''
   local n_set=0 n_preserved=0
   AST_VALUE_OVERRIDES=()
 
   for spec in "${AST_VALUE_KEYS[@]}"; do
     key="${spec%%|*}"
-    var="${spec#*|}"
-    top="${key%%.*}"
-    nested="${key#*.}"
-    existing="$(ast_prev_release_value "$top" "$nested")"
+    var="${spec#*|}"; var="${var%%|*}"
+    setmode="${spec##*|}"
+    existing="$(ast_prev_release_value "$key")"
 
     if [ -n "${!var+set}" ]; then
       # env の明示指定が唯一の権威。ただし「明示的な空」で既存の非空値を消すのは確認を挟む（#263 と同型）。
@@ -220,14 +256,21 @@ resolve_ast_value_overrides() {
       continue
     fi
 
-    AST_VALUE_OVERRIDES+=("--set" "${key}=${value}")
+    if [ "$setmode" = "set-string" ]; then
+      # #245, IADR-0102: --set-string はカンマ・バックスラッシュを helm 側の要素区切り/エスケープ文字として
+      # 解釈するため、env 由来・前回値由来のどちらでも helm へ渡す直前で 1 回だけエスケープする
+      # （helm get values が返す前回値は既にエスケープ解除済みの生値のため、ここで初めて退避が要る）。
+      AST_VALUE_OVERRIDES+=("--set-string" "${key}=$(helm_escape "$value")")
+    else
+      AST_VALUE_OVERRIDES+=("--set" "${key}=${value}")
+    fi
     n_set=$((n_set + 1))
   done
 
   if [ -n "$clobber" ] && [ "$FORCE_EMPTY_VALUES" != "1" ]; then
     {
       echo "ERROR: 次の設定は前回リリースに値がありますが、環境変数が**空**で指定されています。"
-      echo "       空で上書きすると前回の設定を失うため中断しました（#626 / IADR-0283）:"
+      echo "       空で上書きすると前回の設定を失うため中断しました（#626 / IADR-0283、discord.bot.* は #673）:"
       printf '%s' "$clobber" | sed 's/^/         - /'
       echo "       - export し忘れなら当該変数を unset して再実行する（前回値がそのまま引き継がれます）。"
       echo "       - 意図した既定への戻しなら --force-empty-values を付けて再実行する。"
@@ -239,41 +282,58 @@ resolve_ast_value_overrides() {
   return 0
 }
 
+# #673: helm upgrade は Pod テンプレートを変えない限り既存 Pod を再作成しない。タグ :latest 固定 +
+# imagePullPolicy IfNotPresent のため、イメージを焼き直しても（k8s-local-images.sh）helm upgrade だけでは
+# 新イメージが Pod へ届かない（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。
+# 実クラスタの Deployment 一覧から動的に導出する（chart の .Values.services が増減しても本関数の
+# 追随作業が要らない）。OpenD（Deployment 名 "opend"）は除外する: SMS/画像認証済みの moomoo セッションを
+# 持ち、Recreate 戦略・単一レプリカで再起動コストが高い（ADR-0024 決定3/4）ため、ローカル配備の便宜で
+# 不要な再起動によりセッションを失わせない。
+ast_rollout_restart_workers() {
+  local dep restarted='' n=0
+  while IFS= read -r dep; do
+    [ -z "$dep" ] && continue
+    [ "$dep" = "opend" ] && continue
+    kubectl rollout restart deployment "$dep" -n "$NS" >/dev/null
+    restarted="${restarted}${dep}
+"
+    n=$((n + 1))
+  done < <(kubectl get deployment -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+
+  echo "  rollout restart: ${n} 件（OpenD は除外）"
+  [ -n "$restarted" ] && printf '%s' "$restarted" | sed 's/^/    /'
+  return 0
+}
+
 # scripts/k8s-local-deploy.test.sh から関数だけを読み込むための入口（デプロイ手順は実行しない）。
 if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-echo "==> [1/4] build & import AST images"
+echo "==> [1/5] build & import AST images"
 "$ROOT/scripts/k8s-local-images.sh" "$CLUSTER"
 
-echo "==> [2/4] namespace & ast-secrets (fail-safe 空既定・既存値は保持)"
+echo "==> [2/5] namespace & ast-secrets (fail-safe 空既定・既存値は保持)"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 sync_ast_secrets
 
-echo "==> [3/4] broker.tier / opend.enabled (前回リリースの値を引き継ぐ・#626 / IADR-0283)"
+echo "==> [3/5] broker.tier / opend.enabled / discord.bot.* (前回リリースの値を引き継ぐ・#626 / IADR-0283 / #673)"
 resolve_ast_value_overrides
 
-echo "==> [4/4] helm upgrade --install (local/SIMULATE プロファイル)"
-# #245, IADR-0102: helm の --set パーサはカンマを要素区切り・バックスラッシュをエスケープ文字として解釈するため、
-# 値側の `,` `\` を退避する（AllowedUserIds / UserMapping はカンマ区切り）。これで helm へは値がそのまま届く。
-# 注: 届いた先（DiscordBotOptionsReader のコンパクト形式）は `,` で要素分割するため、**keycloak 利用者名に `,` は
-# 使えない**（本スクリプトのエスケープではなくアプリ側の値形式の制約。`:` は最初の 1 つのみ区切り・形式不正の
-# 要素は破棄＝拒否側。chart README「Discord の環境固有 ID」参照）。
-helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
+echo "==> [4/5] helm upgrade --install (local/SIMULATE プロファイル)"
 # namespace は本スクリプトが先に作成（ast-secrets 投入のため）。chart に Namespace を template させると
 # 既存 ns に Helm 所有メタデータが無く install が衝突するため、namespace.create=false で無効化する。
 # #238, IADR-0100: values-local.yaml を重ねて ①時価②実LLM③実KB＋Discord＋価格文脈を有効化する（本番描画には不関与）。
-# #245, IADR-0102: Discord の環境固有 ID は --set-string（--set だと 18〜19 桁の snowflake が float64 に解釈され
-# 1.234567890123456e+18 に化ける）。空指定は差し替えなし＝描画は既定のまま（fail-safe）。
+# #673: discord.bot.* は resolve_ast_value_overrides が AST_VALUE_OVERRIDES へ --set-string 済みで積む
+# （helm_escape も内部で適用済み）。以前ここにあった 4 行の直接 --set-string は削除した
+# （引き継ぎ機構の外にあり、export し忘れで前回値を無条件に空へ戻していたため）。
 helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" \
   --set namespace.create=false \
   "${AST_VALUE_OVERRIDES[@]}" \
-  --set-string discord.bot.guildId="$(helm_escape "${DISCORD_BOT_GUILD_ID:-}")" \
-  --set-string discord.bot.channelId="$(helm_escape "${DISCORD_BOT_CHANNEL_ID:-}")" \
-  --set-string discord.bot.allowedUserIds="$(helm_escape "${DISCORD_BOT_ALLOWED_USER_IDS:-}")" \
-  --set-string discord.bot.userMapping="$(helm_escape "${DISCORD_BOT_USER_MAPPING:-}")" \
   -f deploy/helm/ai-stock-trading/values-local.yaml
+
+echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673)"
+ast_rollout_restart_workers
 
 echo ""
 echo "done. 状態確認:"

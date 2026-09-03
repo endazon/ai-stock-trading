@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # #263 / IADR-0109: scripts/k8s-local-deploy.sh の ast-secrets 同期（sync_ast_secrets）の挙動を固定する。
 # #626 / IADR-0283: broker.tier / opend.enabled の前回値引き継ぎ（resolve_ast_value_overrides）も併せて固定する。
+# #673: discord.bot.* 4 件の前回値引き継ぎ（同じ resolve_ast_value_overrides への合流）と、
+#   helm upgrade 後の rollout restart（ast_rollout_restart_workers）を併せて固定する。
 #
 #   bash scripts/k8s-local-deploy.test.sh
 #
 # 実クラスタは要らない。PATH の先頭に `kubectl` / `helm` スタブを置き、スタブが「既存 Secret の状態」
-# 「前回リリースの values」を疑似し、生成されたパッチ（--patch-file の中身）を記録する。対象スクリプトは
-# AST_DEPLOY_LIB=1 で source すると関数定義だけを読み込み、デプロイ手順（image build / helm）は実行しない。
+# 「前回リリースの values」「現在の Deployment 一覧」を疑似し、生成されたパッチ（--patch-file の中身）・
+# rollout restart の呼び出しを記録する。対象スクリプトは AST_DEPLOY_LIB=1 で source すると関数定義だけを
+# 読み込み、デプロイ手順（image build / helm）は実行しない。
 #
 # 検証する不変条件（Issue #263 の受け入れ基準）:
 #   - 鍵を export せずに再実行しても投入済みの値が失われない（パッチに載せない＝API サーバ側で保持）
@@ -18,6 +21,12 @@
 #   - BROKER_TIER / OPEND_ENABLED を export せずに再実行しても前回リリースの値が引き継がれる
 #   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
 #   - 前回リリースが無い（新規環境）場合は helm upgrade へ --set を追加しない（chart 既定に委ねる）
+#
+# 検証する不変条件（Issue #673 の受け入れ基準）:
+#   - DISCORD_BOT_GUILD_ID 等 4 変数を export せずに再実行しても前回リリースの値が引き継がれる
+#     （カンマ・バックスラッシュを含む allowedUserIds / userMapping のエスケープが壊れない）
+#   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
+#   - helm upgrade の後、OpenD を除く Deployment へ rollout restart が呼ばれる
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,7 +36,8 @@ trap 'rm -rf "$STATE" "$STUB_BIN"' EXIT
 
 # ---- kubectl スタブ -------------------------------------------------------
 # 状態は $AST_TEST_STATE に置く: exists（Secret 実在）/ nonempty_keys（非空の値を持つキー名）/
-# created（create secret が呼ばれた）/ patch.json（適用されたパッチ）。
+# created（create secret が呼ばれた）/ patch.json（適用されたパッチ）/ deployments（現在の Deployment
+# 名一覧・ast_rollout_restart_workers 用）/ restarted.log（rollout restart が呼ばれた Deployment 名）。
 cat > "$STUB_BIN/kubectl" <<'STUB'
 #!/usr/bin/env bash
 set -u
@@ -49,6 +59,19 @@ case "${1:-} ${2:-}" in
       [ "$prev" = "--patch-file" ] && cp "$a" "$S/patch.json"
       prev="$a"
     done
+    exit 0
+    ;;
+  "get deployment")
+    [ -f "$S/deployments" ] && cat "$S/deployments"
+    exit 0
+    ;;
+  "rollout restart")
+    prev="" name=""
+    for a in "$@"; do
+      [ "$prev" = "deployment" ] && name="$a"
+      prev="$a"
+    done
+    printf '%s\n' "$name" >> "$S/restarted.log"
     exit 0
     ;;
 esac
@@ -103,12 +126,17 @@ DISCORD_WEBHOOK_URL DISCORD_BOT_TOKEN DISCORD_BOT_KILLSWITCH_PHRASE SERVICEAUTH_
 SERVICEAUTH_CLIENTSECRET KB_AUTH_CLIENTID KB_AUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTID
 DISCORD_OWNERAUTH_CLIENTSECRET"
 
+# #673 で resolve_ast_value_overrides に合流した discord.bot.* 4 件の環境変数（ast-secrets の
+# DISCORD_WEBHOOK_URL 等とは別枠。values 経路の環境固有 ID）。
+VALUE_ENV_VARS="DISCORD_BOT_GUILD_ID DISCORD_BOT_CHANNEL_ID DISCORD_BOT_ALLOWED_USER_IDS DISCORD_BOT_USER_MAPPING"
+
 # 既存 Secret の状態を作り直し、環境変数とフラグを既定へ戻す。
 # $1 = "absent" もしくは非空の値を持つキー名の空白区切り（"" なら Secret は在るが全キー空）
 given_secret() {
   local v
   for v in $SECRET_ENV_VARS; do unset "$v"; done
   unset BROKER_TIER OPEND_ENABLED
+  for v in $VALUE_ENV_VARS; do unset "$v"; done
   FORCE_EMPTY=0
   FORCE_EMPTY_VALUES=0
   rm -rf "$STATE"; mkdir -p "$STATE"
@@ -154,6 +182,22 @@ run_resolve() {
 }
 
 b64() { printf '%s' "${1:-}" | base64 | tr -d '\r\n'; }
+
+# 現在の Deployment 名一覧（kubectl get deployment の疑似出力）を作り直す。
+# $1 = 改行区切りの Deployment 名一覧（未指定なら空＝クラスタに Deployment が無い）
+given_deployments() {
+  rm -f "$STATE/deployments" "$STATE/restarted.log"
+  [ -n "${1:-}" ] && printf '%s\n' "$1" > "$STATE/deployments"
+}
+
+# ast_rollout_restart_workers をサブシェルで実行し、RC / OUT / ERR / RESTARTED を埋める。
+run_rollout() {
+  ( ast_rollout_restart_workers ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  RESTARTED="$(cat "$STATE/restarted.log" 2>/dev/null || true)"
+}
 
 printf 'k8s-local-deploy.sh: ast-secrets 同期（#263 / IADR-0109）\n'
 
@@ -332,6 +376,94 @@ run_resolve
 assert_eq   'T-626-07 空同士: 中断しない' "$RC" "0"
 assert_contains 'T-626-07 空同士: 空のまま載る' "$OVERRIDES" 'opend.enabled='
 unset OPEND_ENABLED
+
+# ---- #673: discord.bot.* の前回値引き継ぎ ---------------------------------
+# broker.tier / opend.enabled と同じ resolve_ast_value_overrides へ discord.bot.* 4 件を合流させた。
+# 3 階層ネスト（discord: bot: guildId 等）の読み取りと、--set-string 用エスケープが壊れないことを固定する。
+printf '\nk8s-local-deploy.sh: discord.bot.* の前回値引き継ぎ（#673）\n'
+
+# T-673-01: env 未設定 ＋ 前回値あり（3 階層）→ 引き継ぐ（--set-string・エスケープ込み）
+given_secret ""
+given_release_values 'discord:
+  bot:
+    guildId: "111111111111111111"
+    channelId: "222222222222222222"
+    allowedUserIds: 111,222
+    userMapping: 111:alice,222:bob'
+run_resolve
+assert_eq   'T-673-01 引き継ぎ: 正常終了する' "$RC" "0"
+assert_contains 'T-673-01 引き継ぎ: guildId が --set-string で載る' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
+assert_contains 'T-673-01 引き継ぎ: allowedUserIds のカンマがエスケープされる' "$OVERRIDES" 'discord.bot.allowedUserIds=111\,222'
+assert_contains 'T-673-01 引き継ぎ: userMapping のカンマがエスケープされる（コロンは温存）' "$OVERRIDES" 'discord.bot.userMapping=111:alice\,222:bob'
+assert_contains 'T-673-01 引き継ぎ: 引き継いだキー名を表示する（stderr）' "$ERR" 'discord.bot.guildId=111111111111111111'
+
+# T-673-02: env に非空値を指定 → その値で上書きする（前回値は無視）
+given_release_values 'discord:
+  bot:
+    guildId: "111111111111111111"'
+DISCORD_BOT_GUILD_ID="999999999999999999"; export DISCORD_BOT_GUILD_ID
+run_resolve
+assert_eq   'T-673-02 上書き: 正常終了する' "$RC" "0"
+assert_contains 'T-673-02 上書き: 指定値が載る' "$OVERRIDES" 'discord.bot.guildId=999999999999999999'
+assert_missing  'T-673-02 上書き: 前回値は載らない' "$OVERRIDES" '111111111111111111'
+unset DISCORD_BOT_GUILD_ID
+
+# T-673-03: env に空を明示指定 ＋ 前回値が非空 → キー名を列挙して中断（--set-string しない）
+given_release_values 'discord:
+  bot:
+    userMapping: 111:alice,222:bob'
+DISCORD_BOT_USER_MAPPING=""; export DISCORD_BOT_USER_MAPPING
+run_resolve
+assert_eq   'T-673-03 中断: 非ゼロ終了する' "$RC" "1"
+assert_contains 'T-673-03 中断: 対象キー名を列挙する' "$ERR" 'discord.bot.userMapping'
+assert_contains 'T-673-03 中断: 環境変数名を示す' "$ERR" 'DISCORD_BOT_USER_MAPPING'
+unset DISCORD_BOT_USER_MAPPING
+
+# T-673-04: T-673-03 ＋ 明示フラグ → 空で上書きする
+given_release_values 'discord:
+  bot:
+    userMapping: 111:alice,222:bob'
+DISCORD_BOT_USER_MAPPING=""; export DISCORD_BOT_USER_MAPPING
+FORCE_EMPTY_VALUES=1
+run_resolve
+assert_eq   'T-673-04 強制: 正常終了する' "$RC" "0"
+assert_contains 'T-673-04 強制: 空値で上書きする' "$OVERRIDES" 'discord.bot.userMapping='
+unset DISCORD_BOT_USER_MAPPING
+FORCE_EMPTY_VALUES=0
+
+# ---- #673: helm upgrade 後の rollout restart（OpenD を除く） --------------
+# タグ :latest 固定 + imagePullPolicy IfNotPresent のため、Pod テンプレートが変わらないサービスは
+# イメージを焼き直しても Pod が古いまま残る。ast_rollout_restart_workers が OpenD を除く全 Deployment を
+# 再起動することを固定する。
+printf '\nk8s-local-deploy.sh: helm upgrade 後の rollout restart（#673）\n'
+
+# T-673-05: OpenD を含む Deployment 一覧 → OpenD を除く全件へ rollout restart を打つ
+given_secret ""
+given_deployments 'audit-service
+backtest-service
+configuration-service
+cost-control-service
+information-collection-service
+market-monitor-service
+notification-service
+order-execution-service
+report-service
+risk-management-service
+trade-decision-service
+opend'
+run_rollout
+assert_eq   'T-673-05 rollout: 正常終了する' "$RC" "0"
+assert_contains 'T-673-05 rollout: audit-service を再起動する' "$RESTARTED" 'audit-service'
+assert_contains 'T-673-05 rollout: notification-service を再起動する' "$RESTARTED" 'notification-service'
+assert_contains 'T-673-05 rollout: trade-decision-service を再起動する' "$RESTARTED" 'trade-decision-service'
+assert_missing  'T-673-05 rollout: OpenD は除外する' "$RESTARTED" 'opend'
+assert_contains 'T-673-05 rollout: 件数を表示する（OpenD を除いた 11 件）' "$OUT" '11 件'
+
+# T-673-06: Deployment が 1 つも無い（クラスタ未作成等）→ エラーにならず何も再起動しない
+given_deployments ""
+run_rollout
+assert_eq   'T-673-06 空: 正常終了する' "$RC" "0"
+assert_eq   'T-673-06 空: 何も再起動しない' "$RESTARTED" ''
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1
