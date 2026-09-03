@@ -119,11 +119,13 @@ public class ReportRendererTradeHistoryTests
 
         md.Should().NotContain("## 2. 取引履歴（全明細）");
         md.Should().NotContain("## 3. ポジション一覧（当日終了時点）");
-        // 週報・月報の見出し番号は動かしていない（対の肯定形）。
-        md.Should().Contain(kind == ReportKind.Weekly ? "## 2. 振り返りと評価" : "## 2. 総括と評価");
+        // ADR-0030 決定1: 週報・月報の散文節は計画の §4 である（対の肯定形）。
+        md.Should().Contain(kind == ReportKind.Weekly ? "## 4. 振り返りと評価" : "## 4. 総括と評価");
     }
 
-    // 日報の節番号は計画 04_report-templates の並び（§2 取引履歴・§3 ポジション・§4 リスク統制）に寄せる。
+    // FR-06, UC-05, ADR-0030 決定1・決定2・決定3・決定5, IADR-0291:
+    // 日報の節番号・節順は計画 04_report-templates の 7 節そのものである。
+    // §6 振り返りは未実装だが、**番号を詰めず見出しごと出す**（決定2・決定3）。
     [Fact]
     public void 日報の節は計画の並びで昇順に出る()
     {
@@ -135,8 +137,9 @@ public class ReportRendererTradeHistoryTests
             "## 2. 取引履歴（全明細）",
             "## 3. ポジション一覧（当日終了時点）",
             "## 4. リスク統制の記録",
-            "## 5. 市況・振り返り",
-            "## 6. 翌営業日の方針",
+            "## 5. 市況・特記事項",
+            "## 6. 振り返り（週次目標との照合）",
+            "## 7. 翌営業日の方針",
         };
 
         var indexes = new List<int>();

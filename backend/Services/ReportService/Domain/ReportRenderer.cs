@@ -46,36 +46,86 @@ public static class ReportRenderer
             sb.Append(CultureInfo.InvariantCulture, $"| {label} | {value} |\n");
         sb.Append('\n');
 
-        // 🔴 #563, IADR-0269: **日報だけ**、サマリの直後に §2 取引履歴（全明細）・取引詳細・見送り判断と
-        // §3 ポジション一覧が入り、リスク統制の記録（§4）→ 散文（§5）→ 翌営業日の方針（§6）と続く。
-        // 週報・月報は従来どおり 散文（§2）→ 方針（§3）→ リスク統制（§4）… の並びである
-        //（計画の粒度対応表が、週報・月報には明細ではなく集計を求めているため）。
-        if (view.Kind == ReportKind.Daily)
+        // 🔴 FR-06/07/16, ADR-0030 決定1・決定2, IADR-0291: **節番号・節順は計画 04_report-templates が正である。**
+        // 実装の出力順に連番を振る規約（IADR-0269 決定5）は ADR-0030 が改めた。**未実装の節があっても
+        // 後続の番号を繰り上げない**（決定2）——番号は計画が持つ識別子であり、実装の完成度を表さない。
+        // **未実装の節は見出しごと出し、本文に未実装である旨を記す**（決定3。AppendNotImplemented）。
+        switch (view.Kind)
         {
-            AppendTradeHistory(sb, view);
-            AppendPositions(sb, view);
-            AppendRiskControlRecords(sb, view);
-            // リスク統制の記録の各節は末尾に空行を残さない（次節が "\n" を前置する契約）。
-            // 散文はその契約を持たない見出しのため、ここで 1 行空ける。
-            sb.Append('\n');
-            AppendNarrative(sb, view, narrativeHeading);
-            AppendPolicy(sb, view, policyHeading);
-        }
-        else
-        {
-            AppendNarrative(sb, view, narrativeHeading);
-            AppendPolicy(sb, view, policyHeading);
-            AppendRiskControlRecords(sb, view);
-        }
+            case ReportKind.Weekly:
+                AppendNotImplemented(sb, "## 2. 日別推移", PendingIssueReason);
+                AppendNotImplemented(sb, "## 3. ハイライト取引", PendingIssueReason);
+                AppendNarrative(sb, view, narrativeHeading);
+                AppendNotImplemented(sb, "## 5. リスク・費用レビュー", PendingIssueReason);
+                AppendPolicy(sb, view, policyHeading);
+                // 週報のリスク統制の記録は「散文生成に使用した LLM」だけを出す（他の子節は計画が週報に求めていない）。
+                AppendRiskControlRecords(sb, view);
+                break;
 
-        // 5. 稼働状況（OpenD）— 日報＝当日の稼働率と Stage 1 日数への算入可否 / 月報＝分布（INDEX 決定34）。
-        AppendUptime(sb, view);
-        // 6. 三者比較（月報のみ・04_report-templates 月報 §5）。
-        AppendThreeWayComparison(sb, view);
-        // 7. 当月の LLM 利用実績（月報のみ・同 §7。#282 で計上された費用の出口）。
-        AppendLlmUsage(sb, view);
+            case ReportKind.Monthly:
+                AppendNotImplemented(sb, "## 2. 週別・市場別の内訳", PendingIssueReason);
+                AppendNotImplemented(sb, "## 3. 税金レビュー", TaxReviewReason);
+                AppendNarrative(sb, view, narrativeHeading);
+                // §5 三者比較（04_report-templates 月報 §5）。
+                AppendThreeWayComparison(sb, view);
+                // §6 リスク統制と前提条件の見直し（§6.1 空売りの記録・§6.2 OpenD 稼働率分布を子節に持つ）。
+                AppendRiskControlRecords(sb, view);
+                // §7 当月の LLM 利用実績（#282 で計上された費用の出口）。
+                AppendLlmUsage(sb, view);
+                // §7 の各節は末尾に空行を残さない（次節が "\n" を前置する契約）。§8 はその契約を持たない。
+                sb.Append('\n');
+                AppendPolicy(sb, view, policyHeading);
+                break;
+
+            default:
+                // 🔴 #563, IADR-0269: 日報はサマリの直後に §2 取引履歴（全明細）・取引詳細・見送り判断と
+                // §3 ポジション一覧が入り、§4 リスク統制の記録 → §5 市況・特記事項 → §6 振り返り → §7 方針と続く。
+                AppendTradeHistory(sb, view);
+                AppendPositions(sb, view);
+                AppendRiskControlRecords(sb, view);
+                // リスク統制の記録の各節は末尾に空行を残さない（次節が "\n" を前置する契約）。
+                // 散文はその契約を持たない見出しのため、ここで 1 行空ける。
+                sb.Append('\n');
+                AppendNarrative(sb, view, narrativeHeading);
+                // ADR-0030 決定5: **§5 市況・特記事項と §6 振り返りを統合しない。**
+                // §6 が求めるのは「週次目標 <参照値> に対する進捗・乖離の評価」であり市況の要約とは関心が違う。
+                AppendNotImplemented(sb, "## 6. 振り返り（週次目標との照合）", DailyReviewReason);
+                AppendPolicy(sb, view, policyHeading);
+                break;
+        }
 
         return sb.ToString();
+    }
+
+    // FR-06, FR-07, FR-16, ADR-0030 決定3, IADR-0291: **未実装の節の本文**。
+    //
+    // 🔴 **見出しごと落として番号だけ飛ばす形は採らない。** 番号の飛びは、計画書を読んでいない利用者に
+    // 何も伝えない（ADR-0030 決定3 の明文）。**「出ていないこと」が読み手に見えなければ、報告書は
+    // 完成しているように見える。**
+    //
+    // 🔴 **「該当なし」「0 件」と読ませない。** 本サービスが全節で守っている規律（未供給と 0 の区別）を
+    // 節そのものの不在にも当てる。
+    //
+    // **文言は本定数 1 か所に集約する。** 実装するときは、その節の AppendNotImplemented 呼び出しを
+    // 実体の描画へ置き換えるだけでよい（文言を各所へ散らさない）。
+    private const string NotImplementedNoteFormat =
+        "- **本節は未実装です**（{0}）。見出しは計画の節番号のまま出しています——"
+        + "**「該当なし」「0 件」ではありません。**";
+
+    /// <summary>入力データが揃っており、機能追加として起票済みの節（#615）。</summary>
+    private const string PendingIssueReason = "#615 で実装予定";
+
+    /// <summary>前提整備（年初来累積の権威源・口座区分・配当）が無く着手できない節（IADR-0272 決定3）。</summary>
+    private const string TaxReviewReason = "年初来累積の権威源・口座区分・配当がいずれも未実装のため着手できていません";
+
+    /// <summary>週次目標の参照値を日報が取得できないため出せない節（ADR-0030 結果「日報が 1 節増える」）。</summary>
+    private const string DailyReviewReason = "週次目標の参照値を日報が取得できる経路がまだありません";
+
+    private static void AppendNotImplemented(StringBuilder sb, string heading, string reason)
+    {
+        sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+        sb.Append(string.Format(CultureInfo.InvariantCulture, NotImplementedNoteFormat, reason));
+        sb.Append("\n\n");
     }
 
     // 散文（LLM ドラフト）。数値は含めない。
@@ -104,6 +154,10 @@ public static class ReportRenderer
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
         AppendShortSelling(sb, view);
+        // ADR-0030 決定4: 「当月の OpenD 稼働率分布」は §6.2 のまま。**親節へ昇格させない**——
+        // 稼働率は取引システムが動く前提そのものの成否であり、親節（前提条件の見直し）の主題に属する。
+        // **親節から切り離すと、稼働率の数字を見て前提を見直すという読みの筋が切れる。**
+        AppendUptime(sb, view);
         AppendControlActivations(sb, view);
         AppendLlmModelUsage(sb, view);
     }
@@ -440,7 +494,11 @@ public static class ReportRenderer
         if (view.Kind == ReportKind.Weekly)
             return;
 
-        sb.Append("\n## 4. リスク統制の記録\n\n");
+        // ADR-0030 決定1: 節番号・見出し語は計画 04_report-templates（日報 §4 / 月報 §6）を正とする。
+        // 月報の親節は「リスク統制と前提条件の見直し」であり、§6.1 空売り・§6.2 稼働率分布を子節に持つ。
+        sb.Append(view.Kind == ReportKind.Monthly
+            ? "\n## 6. リスク統制と前提条件の見直し\n\n"
+            : "\n## 4. リスク統制の記録\n\n");
         sb.Append("### 維持率割れによる自動縮小");
         sb.Append(view.Kind == ReportKind.Monthly ? "（当月）\n\n" : "（当日）\n\n");
 
@@ -495,8 +553,8 @@ public static class ReportRenderer
         if (view.Kind == ReportKind.Weekly)
             return; // 計画は週報への記載を求めていない（求められていない節を勝手に増やさない）。
 
-        sb.Append("\n### 空売りの記録");
-        sb.Append(view.Kind == ReportKind.Monthly ? "（当月）\n\n" : "（当日）\n\n");
+        // ADR-0030 決定1: 月報では計画 §6.1（親節「リスク統制と前提条件の見直し」の子節）として採番する。
+        sb.Append(view.Kind == ReportKind.Monthly ? "\n### 6.1 空売りの記録（当月）\n\n" : "\n### 空売りの記録（当日）\n\n");
 
         if (view.BorrowFees is not { } record)
         {
@@ -607,7 +665,7 @@ public static class ReportRenderer
         if (view.Kind != ReportKind.Monthly)
             return; // 日報はサマリ行で出す（本節は月報の分布）。週報は計画が求めていない。
 
-        sb.Append("\n## 5. 当月の OpenD 稼働率分布\n\n");
+        sb.Append("\n### 6.2 当月の OpenD 稼働率分布\n\n");
 
         if (view.Uptime is not { } uptime)
         {
@@ -643,7 +701,8 @@ public static class ReportRenderer
         if (view.Kind != ReportKind.Monthly)
             return;
 
-        sb.Append("\n## 6. バックテスト / SIMULATE / 実弾の三者比較\n\n");
+        // 前節（§4 総括と評価）が末尾に空行を残す契約のため、本節は "\n" を前置しない。
+        sb.Append("## 5. バックテスト / SIMULATE / 実弾の三者比較\n\n");
 
         if (view.ThreeWayComparison is not { } c)
         {
@@ -795,12 +854,13 @@ public static class ReportRenderer
     // 種別ごとの見出し（漢字名・サマリ/散文/方針の各見出し）。
     private static (string Kanji, string Summary, string Narrative, string Policy) Labels(ReportKind kind) => kind switch
     {
-        ReportKind.Weekly => ("週報", "## 1. 週間サマリ", "## 2. 振り返りと評価", "## 3. 翌週の方針"),
-        ReportKind.Monthly => ("月報", "## 1. 月間サマリ", "## 2. 総括と評価", "## 3. 翌月の方針・投資方針"),
-        // 🔴 #563, IADR-0269: 日報は §2・§3 を取引履歴・ポジション一覧へ譲り、散文と方針が §5・§6 へ下がる
-        //（計画 04_report-templates の日報テンプレートの並び。実装は計画 §5 市況・特記事項と §6 振り返りを
-        // 1 節に統合しているため、計画 §7 翌営業日の目標が実装では §6 になる）。週報・月報の番号は動かさない。
-        _ => ("日報", "## 1. 当日サマリ", "## 5. 市況・振り返り", "## 6. 翌営業日の方針"),
+        // 🔴 ADR-0030 決定1・決定2, IADR-0291: **番号は計画 04_report-templates のものであり、実装の出力順の
+        // 連番ではない。** 未実装の節（週報 §2・§3・§5 / 月報 §2・§3 / 日報 §6）があっても**詰めない**。
+        ReportKind.Weekly => ("週報", "## 1. 週間サマリ", "## 4. 振り返りと評価", "## 6. 翌週の方針"),
+        ReportKind.Monthly => ("月報", "## 1. 月間サマリ", "## 4. 総括と評価", "## 8. 翌月の方針・投資方針"),
+        // 🔴 #563, IADR-0269: 日報は §2・§3 を取引履歴・ポジション一覧へ譲る。
+        // ADR-0030 決定5 で計画 §5 市況・特記事項と §6 振り返りの統合をやめたため、方針は計画どおり §7 である。
+        _ => ("日報", "## 1. 当日サマリ", "## 5. 市況・特記事項", "## 7. 翌営業日の方針"),
     };
 
     // データ連携（#63 台帳/#12/#81・市場データ）が必要でこのスライスでは算出しない項目の表記。
