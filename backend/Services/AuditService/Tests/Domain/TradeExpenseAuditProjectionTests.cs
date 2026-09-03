@@ -1,5 +1,5 @@
 using System.Text.Json;
-using AuditService.Features.AuditEvents;
+using AuditService.Domain;
 using AuditService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;

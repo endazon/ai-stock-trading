@@ -1,4 +1,4 @@
-using NotificationService.Features.Notifications;
+using NotificationService.Domain;
 using AwesomeAssertions;
 using Xunit;
 

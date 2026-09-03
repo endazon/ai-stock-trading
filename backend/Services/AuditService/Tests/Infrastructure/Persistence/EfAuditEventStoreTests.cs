@@ -1,4 +1,4 @@
-using AuditService.Features.AuditEvents;
+using AuditService.Domain;
 using AuditService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;

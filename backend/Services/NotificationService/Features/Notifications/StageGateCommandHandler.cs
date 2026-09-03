@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NotificationService.Domain;
 
 namespace NotificationService.Features.Notifications;
 

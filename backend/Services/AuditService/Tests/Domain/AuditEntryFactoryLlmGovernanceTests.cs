@@ -1,4 +1,4 @@
-using AuditService.Features.AuditEvents;
+using AuditService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
