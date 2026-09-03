@@ -4,6 +4,8 @@ using InformationCollectionService.Features.InformationCollection;
 using InformationCollectionService.Hosted;
 using InformationCollectionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
@@ -42,7 +44,15 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // 構成値をそのまま実装文字列として申告する（有効化中のソース集合を忠実に反映。BFF 突合時は集合として解釈）。
     .AddPort("source", string.IsNullOrWhiteSpace(builder.Configuration["Collection:Source:Provider"]) ? "noop" : builder.Configuration["Collection:Source:Provider"]!)
     .AddPortFromBaseUrl("cost-state", builder.Configuration["CostControl:BaseUrl"], "http", "placeholder")
-    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop"));
+    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop")
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
+    // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        InformationSourceFactory.EstimateDailyVolume(
+            builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
+            builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+                ?? new CollectionOptions().PollIntervalSeconds).ToString()));
 
 // 収集ポーリングの構成（間隔）。
 builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(CollectionOptions.SectionName));
@@ -68,11 +78,25 @@ builder.Services.AddSingleton(TimeProvider.System);
 // 欠測判定へ渡すため）。有効なソースが 0 件なら NoSourcesFetcher（外部接続しない安全既定）。
 builder.Services.AddSingleton<ISourceFetcher>(sp =>
 {
+    var sourceOptions =
+        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new();
+
     var sources = InformationSourceFactory.Create(
-        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
+        sourceOptions,
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
+    // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
+    InformationSourceFactory.EvaluateDailyVolumeEstimate(
+        sourceOptions,
+        builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+            ?? new CollectionOptions().PollIntervalSeconds,
+        builder.Configuration.GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
         sp.GetRequiredService<ILoggerFactory>());
 
     return sources.Count == 0
