@@ -29,8 +29,8 @@ public class FrontendContractFixtureTests
 {
     private const string Owner = "trading-owner";
 
-    // IADR-0146: フィクスチャは frontend 側（`src/features/risk/contract-fixtures/`）に置く。
-    private static readonly ContractFixtureStore Fixtures = new("frontend/src/features/risk/contract-fixtures");
+    // IADR-0146: フィクスチャは frontend 側（`src/testing/contract-fixtures/`。#529〔PR #653〕で領域別の置き場から 1 か所へ集約）に置く。
+    private static readonly ContractFixtureStore Fixtures = new("frontend/src/testing/contract-fixtures");
 
     private static HttpClient OwnerClient(RiskWorkerWebApplicationFactory factory)
     {
