@@ -181,6 +181,62 @@ platform `ADR-0065` 決定 2 は `Features/<集約>/<操作>/` の 3 段を規�
      `Domain/` へ切り出せる。本 PR では動かさない（`DomainSourceDependencyTests` の走査母集合が増える＝
      依存規律の検査対象が変わるため、独立した PR で扱う）。
 
+## 追記（2026-09-03・第 2 弾 `ReportService` の移送）
+
+> **追記の位置づけ**: 本 IADR の決定 1〜6 は変えない。§フォローアップ 1 として残していた裁定を確定させ、
+> あわせて第 2 弾で判断が要った 2 点を記録する。以降の弾はこの追記を**参照するだけ**でよい
+> （弾ごとに新しい IADR を起こさない）。
+
+### 追記 1 — 「操作」は HTTP 端点に限る（§フォローアップ 1 の裁定・案 B を採用）
+
+§検討した選択肢 論点 1 の**案 1（登録表の 1 端点＝1 操作）を、`Features/<集約>/<操作>/` を作る唯一の
+根拠とする**。Wolverine 購読（`Infrastructure/Steps/`）と `BackgroundService`（`Hosted/`）は
+**操作フォルダを作らない**。
+
+- **根拠**: 置き場は既に決まっている —— ハンドラは platform `ADR-0065` 決定 1 の `Messaging`
+  （本リポでは `Infrastructure/Steps/`）、`BackgroundService` は
+  [IADR-0276](IADR-0276_claude-md-vsa-correction-and-hosted-placement.md) 決定 2 の `Hosted/` である。
+  これらを `Features/` へ引き上げるのは **3 段化ではなく置き場の決定の覆し**であり、
+  「純粋な移送」の枠を外れる。決定 2（`Infrastructure/`・`Hosted/` から使われるものは 2 段目に残す）とも
+  一貫する —— 操作フォルダを作らない以上、それらの共有物は 2 段目に留まる。
+- **#613 の受け入れ基準の読み**: 「全ユースケースが操作フォルダを持つ」は **HTTP 端点を持つ 6 サービス
+  （Audit / Configuration / CostControl / MarketMonitor / Report / RiskManagement）に対する基準**として読む。
+  **HTTP 端点を持たない 5 サービス（Backtest / InformationCollection / Notification / OrderExecution /
+  TradeDecision）は「移送対象なし」**であり、操作フォルダが 0 個であることが本規則に照らした正しい姿である
+  （`Tests/` の鏡写し〔決定 5〕は 11 サービスすべてに当てる）。
+- **残余リスク**: 購読・常駐ジョブが増えても `Features/` の深さは 2 のままである。将来これを 3 段へ
+  割りたくなったときは、置き場の決定（`ADR-0065` 決定 1・IADR-0276 決定 2）から改める必要がある。
+  この曖昧さ自体は **platform `ADR-0065` 決定 2 の「操作」の語義**に由来するため、
+  計画側へ明確化を環流する（planning へ `feedback` issue を 1 本起票）。
+
+### 追記 2 — 1 操作専属の要求レコードは 3 段目へ下ろす（決定 3 の適用例の明確化）
+
+第 1 弾の作業仕様書 §残る 10 サービスの割り当て表は、2 段目に残るものとして `ReportEndpoints.cs` を
+「登録表（11 操作＋**5 DTO**＋`ReviewResult`/`RejectionMessage`/`ActorOf`）」と書いていた。
+これは**移送前のファイルの中身の記述**であって、5 DTO をすべて 2 段目へ固定する指示ではない。
+
+**決定 3 のとおり、1 操作しか使わない要求レコードは `<操作>/Endpoint.cs` へ同居させ、
+2 操作以上が共有するものだけを 2 段目の独立ファイルへ出す。** 第 1 弾が
+`KillSwitchRequest` / `PauseRequest` に対して採った扱いと同じである。
+`ReportService` では `PnlSummaryRequest` / `DraftReportRequest` / `UpsertReportRequest` /
+`ConfirmReportRequest` の 4 件を 3 段目へ下ろし、`ReviewCommandRequest`（present / request-changes の
+2 操作が共有）だけを `Features/Reports/ReviewCommandRequest.cs` として 2 段目へ出した。
+
+### 追記 3 — ソース位置に依存するテストデータは、テストと対で移す
+
+決定 5 は「テスト土台（フィクスチャ）は `Tests/` 直下に残す」と定めたが、**テストのソースファイルからの
+相対パスで書き戻すテストデータは、テストと離してはならない**。
+
+`ReportService` の `ReportTemplateGoldenTests` は、読み取りを `AppContext.BaseDirectory/Golden/`
+（出力ディレクトリ）から行う一方、`UPDATE_GOLDEN=1` の書き戻しを
+`Path.GetDirectoryName(CallerFilePath)/Golden/`（**ソースツリー**）へ行う。テストだけを
+`Tests/Domain/` へ移すと、更新モードが `Tests/Domain/Golden/` という存在しない場所へ静かに書く。
+
+**採った形**: ゴールデン 6 ファイルをテストと対で `Tests/Domain/Golden/` へ移し、
+`ReportService.Tests.csproj` の複写指定へ出力先を `Golden\` に固定する `Link` を足した
+（出力ディレクトリからの読み取りパスは移送前と同一・ゴールデンの中身は 1 バイトも変えていない）。
+**csproj の 1 行は移送に伴う機械的な追随であり、決定 4 の「追随が要るのは参照する側だけ」と同じ性質**である。
+
 ## 関連
 
 - Supersedes: なし
