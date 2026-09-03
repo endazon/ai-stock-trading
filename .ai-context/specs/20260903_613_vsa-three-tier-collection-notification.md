@@ -211,15 +211,15 @@ run-once 端点は `CollectionPollingService.RunOnceAsync` を呼ぶだけであ
 
 ## 受け入れ基準
 
-- [ ] `dotnet build backend/backend.slnx` が成功し、**警告 0・エラー 0**
-- [ ] `dotnet test backend/backend.slnx --filter "Category!=Integration"` の**テスト件数がアセンブリ単位で移送前と同数**
+- [x] `dotnet build backend/backend.slnx` が成功し、**警告 0・エラー 0**
+- [x] `dotnet test backend/backend.slnx --filter "Category!=Integration"` の**テスト件数がアセンブリ単位で移送前と同数**
       （移送前: `InformationCollectionService.Tests` 462・`NotificationService.Tests` 398・全 20 アセンブリ合計 5447）
-- [ ] `Features/InformationCollection/` に操作ディレクトリ 2 個、`Features/Notifications/` に 5 個
-- [ ] `AiStockTrading.Architecture.Tests` が緑（`Domain/` ソース走査件数が下限以上）
-- [ ] `dotnet format backend/backend.slnx --verify-no-changes` が差分なし
-- [ ] `node scripts/check-trace-blocks.js` / `check-test-traceability.js` / `check-doc-links.js` /
+- [x] `Features/InformationCollection/` に操作ディレクトリ 2 個、`Features/Notifications/` に 5 個
+- [x] `AiStockTrading.Architecture.Tests` が緑（`Domain/` ソース走査件数が下限以上）
+- [x] `dotnet format backend/backend.slnx --verify-no-changes` が差分なし
+- [x] `node scripts/check-trace-blocks.js` / `check-test-traceability.js` / `check-doc-links.js` /
       `check-adr-index-sync.js` / `check-cross-repo-refs.js` が OK
-- [ ] 公開面に差分が無い —— HTTP 端点（verb + path + 認可 + 登録順）・Discord のスラッシュコマンド名と
+- [x] 公開面に差分が無い —— HTTP 端点（verb + path + 認可 + 登録順）・Discord のスラッシュコマンド名と
       登録順・Wolverine のハンドラ発見（キュー名＝`ai-stock-trading.notification-service.<イベント型名>`）・
       メッセージ URN・`Shared.Contracts`
 
@@ -240,6 +240,52 @@ run-once 端点は `CollectionPollingService.RunOnceAsync` を呼ぶだけであ
 - 差異: なし。platform `ADR-0065` 決定 2・決定 3、`ADR-0068` 決定 1〜5、`ADR-0077` 決定 1〜3 の形をそのまま採る。
   `Hosted/` の扱いは [IADR-0276](../adr/IADR-0276_claude-md-vsa-correction-and-hosted-placement.md) 決定 2（現状維持）に従う
   （`ADR-0077` §残るもの は「`Hosted/` の置き場は別に裁定が要る」と明記しており、本 PR では動かさない）。
+
+## 移送後の実測（2026-09-03）
+
+移送前の基準は `origin/develop` `947329ea`。
+
+| 観点 | 移送前 | 移送後 |
+| --- | ---: | ---: |
+| `InformationCollectionService.Tests` | 462 | **462** |
+| `NotificationService.Tests` | 398 | **398** |
+| `AiStockTrading.Architecture.Tests` | 87 | **87** |
+| 全アセンブリ合計（`Category!=Integration`・20 アセンブリ） | 5447 | **5447** |
+| `Features/InformationCollection/` の操作ディレクトリ | 0 | **2** |
+| `Features/Notifications/` の操作ディレクトリ | 0 | **5** |
+| `Features/InformationCollection/` 直下の `.cs`（2 段目） | 8 | **6** |
+| `Features/Notifications/` 直下の `.cs`（2 段目） | 14 | **9** |
+| `InformationCollectionService/Tests/` 直下の `.cs` | 31 | **9** |
+| `NotificationService/Tests/` 直下の `.cs` | 29 | **3** |
+
+**アセンブリ別の件数は 20 アセンブリすべてで移送前と一致した。**
+
+- `dotnet build backend/backend.slnx`: 成功・警告 0・エラー 0
+- `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし
+- `node scripts/check-trace-blocks.js`（走査 41 件）／`check-doc-links.js`（640 件）／
+  `check-cross-repo-refs.js`（2061 件）／`check-adr-index-sync.js --range=origin/develop..HEAD`: いずれも OK
+- `node scripts/check-consumer-endpoint-names.js`: OK（11 サービス・本番 `.cs` 780 件。
+  キュー名の規則 `<ServiceName>.<メッセージ型名>` は不変）
+- `node scripts/check-test-traceability.js`: **Windows ローカルでのみ [T1] が偽陽性になる**
+  （第 1 弾の仕様書 §移送後の実測 に記録済みの既知事象。`fs.existsSync(<Svc>/tests)` が
+  Windows の大文字小文字を区別しないパスで実在する `Tests/` を旧樹形として数える。
+  CI〔Linux〕では発生しない。**本 PR が持ち込んだ違反ではない**）
+- **フレーク 1 件**: 全量実行の 1 巡目で
+  `ReportService.Tests.HttpOpenDUptimeSourceTests.タイムアウトは未供給へ倒す` が失敗した。
+  **本 PR は `ReportService` を 1 バイトも触っていない**時間依存のテストであり、
+  単独で再実行して緑（7/7）を確認した。合計件数は 749 で移送前と一致する。
+
+### 追随が要った参照側（[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) 決定 4 の効き方の実測）
+
+3 段目は 2 段目の入れ子であるため、**下ろしたファイル自身の `using` は 1 行も増えていない**。
+
+| サービス | 追随した側 | 件数 |
+| --- | --- | ---: |
+| InformationCollection | `Program.cs`（`using` 1・`AppSvc` エイリアス 1・端点呼び出し 1） | 3 行 |
+| | `Hosted/CollectionPollingService.cs`（`AppSvc` エイリアス） | 1 行 |
+| | テスト（`CollectionPollingServiceTests` の別名・`InformationCollectionServiceTests` の `using`） | 2 ファイル |
+| Notification | `Program.cs`・`Infrastructure/ExternalServices/DiscordNetBotGateway.cs`・`DiscordBotGatewayFactory.cs` | 3 ファイル × 5 行 |
+| | テスト（3 段目の型を触るもの） | 9 ファイル |
 
 ## 未決事項
 
