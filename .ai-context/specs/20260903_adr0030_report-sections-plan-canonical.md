@@ -1,7 +1,7 @@
 ---
 title: 報告書の節番号・節順を計画正へ戻し、未実装の節を見出しごと出す（ADR-0030 追随）
 type: spec
-status: draft
+status: review
 related_ids: [FR-06, FR-07, FR-16, UC-05, ADR-0030, IADR-0269, IADR-0272, IADR-0291]
 author: endazon (with Claude Code)
 created: 2026-09-03
@@ -141,15 +141,15 @@ ADR-0030 の射程（節番号・節順）の外にあり、本 PR の差分を�
 
 ## 受け入れ基準
 
-- [ ] 日報 7 節・週報 6 節・月報 8 節が計画 `04_report-templates.md` の番号・並び順どおりに出る
-- [ ] 未実装の 6 節が**見出しごと**出て、本文に「未実装」である旨と理由が出る（見出しを落として番号だけ飛ばさない）
-- [ ] 月報の「当月の OpenD 稼働率分布」が §6 の子節 §6.2 として出る（独立した親節にしない）
-- [ ] 日報の §5 市況・特記事項 と §6 振り返り が別節として出る
-- [ ] ゴールデン 6 本の差分が「番号・順序・未実装節の追加」だけであり、**既存節の本文が 1 バイトも変わっていない**
-- [ ] `dotnet build backend/backend.slnx` が警告 0 で通る
-- [ ] `dotnet test backend/Services/ReportService/Tests/ReportService.Tests.csproj` が緑
-- [ ] `dotnet format --verify-no-changes` が緑
-- [ ] `check-trace-blocks.js` / `check-test-traceability.js` / `check-adr-index-sync.js` / `check-doc-links.js` / `check-cross-repo-refs.js` が緑
+- [x] 日報 7 節・週報 6 節・月報 8 節が計画 `04_report-templates.md` の番号・並び順どおりに出る
+- [x] 未実装の 6 節が**見出しごと**出て、本文に「未実装」である旨と理由が出る（見出しを落として番号だけ飛ばさない）
+- [x] 月報の「当月の OpenD 稼働率分布」が §6 の子節 §6.2 として出る（独立した親節にしない）
+- [x] 日報の §5 市況・特記事項 と §6 振り返り が別節として出る
+- [x] ゴールデン 6 本の差分が「番号・順序・未実装節の追加」だけであり、**既存節の本文が 1 バイトも変わっていない**
+- [x] `dotnet build backend/backend.slnx` が警告 0 で通る
+- [x] `dotnet test backend/Services/ReportService/Tests/ReportService.Tests.csproj` が緑
+- [x] `dotnet format --verify-no-changes` が緑
+- [x] `check-trace-blocks.js` / `check-test-traceability.js` / `check-adr-index-sync.js` / `check-doc-links.js` / `check-cross-repo-refs.js` が緑
 
 ## テスト方針
 
