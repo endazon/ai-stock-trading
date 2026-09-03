@@ -1,6 +1,6 @@
 using CostControlService.Domain;
 
-namespace CostControlService.Features.CostControl;
+namespace CostControlService.Features.CostControl.GetCostUsage;
 
 // NFR（費用）, FR-16, 05_trading-assumptions §6.1, #347, IADR-0218: 当月の費用実績（月報への供給形）。
 //
