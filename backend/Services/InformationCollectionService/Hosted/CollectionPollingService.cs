@@ -7,7 +7,7 @@ using InformationCollectionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Wolverine;
-using AppSvc = InformationCollectionService.Features.InformationCollection.InformationCollectionAppService;
+using AppSvc = InformationCollectionService.Features.InformationCollection.RunCollectionCycle.InformationCollectionAppService;
 
 namespace InformationCollectionService.Hosted;
 

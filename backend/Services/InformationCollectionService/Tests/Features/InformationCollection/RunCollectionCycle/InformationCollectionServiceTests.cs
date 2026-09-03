@@ -1,5 +1,6 @@
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Features.InformationCollection;
+using InformationCollectionService.Features.InformationCollection.RunCollectionCycle;
 using InformationCollectionService.Infrastructure.ExternalServices;
 using InformationCollectionService.Domain;
 using AwesomeAssertions;

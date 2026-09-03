@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NotificationService.Domain;
 
-namespace NotificationService.Features.Notifications;
+namespace NotificationService.Features.Notifications.ClearGoodFaithViolations;
 
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定2/決定3, IADR-0182:
 // GFV 違反による停止の解除コマンドの処理。**kill switch と同じ閂の並び**（多層認証 → コマンド解析 →

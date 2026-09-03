@@ -1,5 +1,10 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.ClearGoodFaithViolations;
+using NotificationService.Features.Notifications.OperateKillSwitch;
+using NotificationService.Features.Notifications.OperateStageGate;
+using NotificationService.Features.Notifications.OperateTradingPause;
+using NotificationService.Features.Notifications.ReviewReport;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.OperateTradingPause;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

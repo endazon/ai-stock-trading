@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.OperateStageGate;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
