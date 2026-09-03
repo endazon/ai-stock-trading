@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.Logging;
 using Wolverine;

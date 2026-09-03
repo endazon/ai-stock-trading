@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = OrderExecutionService.Features.OrderExecution.OrderExecutionAppService;
+using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder.OrderExecutionAppService;
 
 namespace OrderExecutionService.Infrastructure.Steps;
 
