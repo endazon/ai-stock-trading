@@ -116,6 +116,16 @@ public sealed record ReportView
     public FxTranslationSummary? FxTranslation { get; init; }
 
     /// <summary>
+    /// FR-06, FR-16, #611, IADR-0286 決定3: 認識時レートが<b>未記録</b>だった USD 建て約定の件数。
+    /// <para>
+    /// 0 より大きいとき <see cref="FxTranslation"/> は必ず <c>null</c>（未供給）であり、描画は件数を明記する
+    /// （🔴 <b>黙って落とさない</b>——未記録を落として残りだけ集計すると別の数値になるため部分集計は出さない。
+    /// 既存行は推定で埋めない）。既定 0＝該当なし（従来の未供給描画と 1 バイトも変わらない）。
+    /// </para>
+    /// </summary>
+    public int FxTranslationUnrecordedFillCount { get; init; }
+
+    /// <summary>
     /// FR-06, FR-20, #338, INDEX 決定34, 04_report-templates 日報 §1 / 月報 §6.2: OpenD の稼働率。
     /// <para>🔴 <c>null</c> は「照会できていない」であり「稼働率 0%」ではない。</para>
     /// </summary>

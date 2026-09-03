@@ -4,7 +4,9 @@ using ReportService.Features.Reports;
 using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
@@ -119,15 +121,31 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient("marketdata");
 // FR-16, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定 no-op＝実接続しない）。報告書は
 // ゲートを持たず、実市況ソースへの差し替えがそのまま評価損益の有効化になる（発注判断を伴わないため・IADR-0066 決定 4）。
-builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
-    MarketDataSourceFactory.Create(
-        sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
-        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+builder.Services.AddSingleton<IMarketDataSource>(sp =>
+{
+    var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
+    // 既定 0 のときは挙動中立）。本サービスは報告書ドラフト生成時にのみ問い合わせる（固定間隔ではない）ため、
+    // 巡回間隔は MarketData:RefreshIntervalSeconds を保守的な仮定として使う（他 3 サービスと共通の構成キー）。
+    MarketDataSourceFactory.EvaluateDailyVolume(
+        marketDataOptions,
+        marketDataOptions.RefreshIntervalSeconds,
+        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return new LastKnownQuoteSource(
+        MarketDataSourceFactory.Create(
+            marketDataOptions,
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILoggerFactory>()),
+        sp.GetRequiredService<QuoteCache>(),
         sp.GetRequiredService<TimeProvider>(),
-        sp.GetRequiredService<ILoggerFactory>()),
-    sp.GetRequiredService<QuoteCache>(),
-    sp.GetRequiredService<TimeProvider>(),
-    TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
+        TimeSpan.FromSeconds(Math.Max(1, marketDataOptions.MaxQuoteStalenessSeconds)));
+});
 builder.Services.AddScoped<ReportDraftService>();
 
 // FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存（共有クライアント）。既定は no-op（KnowledgeBase:Documents:BaseUrl
@@ -149,6 +167,28 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
     http.BaseAddress = uri;
     return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
 });
+
+// FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**
+// （期末日以前の直近の日次観測・1 USD あたりの円）。源は判断サービスと同じ為替レート源
+// （Fx:Provider＝日銀第一・FRED フォールバック・鮮度装飾。Shared.Infrastructure の factory）を同じ構成キーで組む。
+// HTTP 面は新設しない（判断サービスの状態は in-memory で照会先として権威がない・IADR-0199 決定1 と同じ理由）。
+//
+// **Fx:Provider 未設定/none/構成不備は Unsupplied（常に null）＝「供給されていません（0 円ではありません）」。**
+// 🔴 ここで 0 円へ倒さない。**USD 建ての建玉は本番で実際に存在し得る**ため、期末レート無しで 0 円と描けば
+// 「為替では損得が無かった」という端的な嘘になる。認識時レートは約定（period-fills）が運ぶ。
+builder.Services.Configure<FxOptions>(builder.Configuration.GetSection(FxOptions.SectionName));
+builder.Services.AddHttpClient("fx", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<IFxRateSource>(sp => FxRateSourceFactory.Create(
+    sp.GetRequiredService<IOptions<FxOptions>>().Value,
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("fx"),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IPeriodEndFxRateSource>(sp =>
+    FxRateSourceFactory.ResolveProvider(sp.GetRequiredService<IOptions<FxOptions>>().Value) == FxRateSourceFactory.None
+        ? new UnsuppliedPeriodEndFxRateSource()
+        : new FxRateSourcePeriodEndFxRateSource(
+            sp.GetRequiredService<IFxRateSource>(),
+            sp.GetRequiredService<ILogger<FxRateSourcePeriodEndFxRateSource>>()));
 
 // FR-10, UC-06, #330, IADR-0133 決定7: 日報・月報へ載せる「維持率割れによる自動縮小」の記録。
 // 権威源への結線は発火元（維持率の供給・#331 / #342）と同時に行う。それまでの既定は空列＝「発動なし」であり、
@@ -343,6 +383,9 @@ builder.Host.UseWolverine(opts =>
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）を自己申告へ載せる（下記 AddMetric）。
+var introspectionMarketDataOptions =
+    builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPortFromBaseUrl("llm-completion", builder.Configuration["LlmGateway:BaseUrl"], "http", "placeholder")
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
@@ -352,13 +395,21 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // #463, IADR-0181: 強制買戻しの推定の供給（権威源へ s2s 照会 or 未供給）。
     // **noop ではなく unsupplied** と自己申告する——空列を返す no-op と違い、こちらは null（未供給）を返す。
     .AddPortFromBaseUrl("buy-in-inferences", builder.Configuration["RiskManagement:BaseUrl"], "http", "unsupplied")
+    // #611, IADR-0286 決定2: 期末レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
+    // （構成不備で no-op へ倒れる場合は none＝為替差損益は未供給）。
+    .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
+        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))
     .AddPort("report-auto-generation",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
             .Get<ReportAutoGenerationOptions>()?.Enabled == true ? "scheduler" : "disabled")
     // IADR-0116: 提示（確定依頼）の通知経路。bus=ReportDraftPresented を発行する／noop=発行しない。
     .AddPort("report-draft-notification",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
-            .Get<ReportAutoGenerationOptions>()?.NotifyOnDraftPresented == false ? "noop" : "bus"));
+            .Get<ReportAutoGenerationOptions>()?.NotifyOnDraftPresented == false ? "noop" : "bus")
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        MarketDataSourceFactory.EstimateDailyVolume(
+            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
 var app = builder.Build();
 

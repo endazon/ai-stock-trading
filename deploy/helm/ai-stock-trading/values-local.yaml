@@ -37,6 +37,9 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（既定 ""）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 保有建玉数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # ============ 実DD（観測最大ドローダウン）の供給（#279/IADR-0114・#164/IADR-0103）============
       # ADR-0008 の撤退基準は実DD を入力に取るが、それを書く本番コードがバックテスト射影 1 箇所しか無いため
       # 構造的に発火し得なかった。本ドライバが営業日の定時に建玉台帳の DrawdownRatio をサンプリングし、
@@ -53,6 +56,12 @@ services:
       #   実利は「Stage 1 到達後の乖離検出」と「将来 Stage 2/3 で最初から効いていること」。
       #   実際に起動したときの解除手順は chart README「撤退評価と自動 kill switch」を参照。
       - { name: WithdrawalEvaluation__Enabled, value: "true" }     # ← 撤退評価（既定 false＝本番既定）
+      # ============ 承認記録時の認識時レート（#611/IADR-0286 決定1）============
+      # 承認台帳へ「1 USD あたりの円」を固定する源。trade-decision と同じ源・同じ鍵（ast-secrets/fred-api-key）を再利用する。
+      # 空だと承認は未記録のまま記録され、報告書の為替差損益が恒久的に「供給されていません」になる。
+      - { name: Fx__Provider, value: "fred" }                     # ← 認識時レート源（既定 ""＝no-op＝未記録）
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -65,6 +74,9 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 監視銘柄数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # --- 監視銘柄（watchlist）の初回シード（#286/IADR-0282。利用者裁定・案(b)）。
       #     trade-decision 側で下記 MarketMonitor__BaseUrl を結線するため、権威源（本サービス）の watchlist を
       #     空のまま結線すると判断対象ゼロになる（200+[] は HttpWatchlistProvider の正常応答＝フォールバックしない・
@@ -89,6 +101,8 @@ services:
       # IADR-0275: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
+      # ADR-0031（計画）決定2〜3, IADR-0292: 暫定日次上限（既定300回/日。第三者観測の前提値）。
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============
       # ローカルでは Provider に finnhub-news / google-news を含めていないため**未構成**である
       # （未構成は欠測に数えない＝IADR-0220）。boj と同じく env の枠だけ保持し、既定描画から
@@ -140,6 +154,9 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（報告書の評価損益）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # ADR-0031（計画）決定2〜4, IADR-0292: 保有建玉数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=fable-5・IADR-0120／MSP#422）
@@ -166,6 +183,12 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: Reports__NoResponseBehavior, value: "" }
+      # ============ 為替差損益の期末レート（#611/IADR-0286 決定2）============
+      # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
+      # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
+      - { name: Fx__Provider, value: "fred" }                     # ← 期末レート源（既定 ""＝no-op＝未供給）
+      - name: Fx__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
   # ============ ②実LLM ＋ 価格文脈(#236/IADR-0099) ＋ サイクル配線: trade-decision ============
   # FR-02/04/11, ADR-0003, IADR-0061/0088/0095/0099。LogPrompts は既定 ""（記録しない・安全側）。
@@ -243,6 +266,9 @@ services:
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
       - { name: MarketData__MaxQuoteStalenessSeconds, value: "300" }  # 鮮度期限（秒・既定 300）。非正値は既定 300s。
+      # ADR-0031（計画）決定2〜4, IADR-0292: 判断サイクルあたりの銘柄数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
+      - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
+      - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # --- 通貨換算（#257/IADR-0107）: 統制上限・サイジングは基準通貨（円）で判定する。外貨建て（米国株）は
       #     レートが解決できないと新規建てを見送るため、経路B で米国株を回すには本設定と鍵が要る。
       #     鍵は既存の ast-secrets/fred-api-key（情報収集の FRED と同じ FRED アカウント）を再利用する。

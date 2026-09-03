@@ -429,6 +429,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: node scripts/check-observability-assets.js
 
+      # MSP/ADR-0069 決定 5・#663: frontend/src 配下に「.gitkeep のみのディレクトリ」が
+      # 無いことを検査する。MSP/ADR-0069 は MSP/ADR-0065 決定 4（バックエンド 8 要素標準の
+      # `.gitkeep` 枠置きの撤回）と同じ理由（枠が「適合の見え方」を作る）がフロントエンドにも
+      # 及ぶと定め、本リポジトリの IADR-0290 決定 2（枠置きの採用）を覆した。17 件の枠を撤去した
+      # 状態を固定し、新しい枠の再導入を機械で止める。
+      - name: Self-test frontend empty-frame checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-frontend-empty-frames.js --self-test
+      - name: Check frontend has no .gitkeep-only directories
+        if: ${{ !cancelled() }}
+        run: node scripts/check-frontend-empty-frames.js
+
 
   lint:
     runs-on: ubuntu-latest

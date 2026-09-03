@@ -4,6 +4,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using ShimIntrospection = AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection.IntrospectionExtensions;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

@@ -1,9 +1,12 @@
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Domain;
 using InformationCollectionService.Features.InformationCollection;
+using InformationCollectionService.Features.InformationCollection.ActivateGeneralWebCollection;
 using InformationCollectionService.Hosted;
 using InformationCollectionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
@@ -11,7 +14,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;
 using Wolverine;
-using AppSvc = InformationCollectionService.Features.InformationCollection.InformationCollectionAppService;
+using AppSvc = InformationCollectionService.Features.InformationCollection.RunCollectionCycle.InformationCollectionAppService;
 
 const string ServiceName = "ai-stock-trading.information-collection-service";
 
@@ -42,7 +45,15 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // 構成値をそのまま実装文字列として申告する（有効化中のソース集合を忠実に反映。BFF 突合時は集合として解釈）。
     .AddPort("source", string.IsNullOrWhiteSpace(builder.Configuration["Collection:Source:Provider"]) ? "noop" : builder.Configuration["Collection:Source:Provider"]!)
     .AddPortFromBaseUrl("cost-state", builder.Configuration["CostControl:BaseUrl"], "http", "placeholder")
-    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop"));
+    .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop")
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
+    // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        InformationSourceFactory.EstimateDailyVolume(
+            builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
+            builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+                ?? new CollectionOptions().PollIntervalSeconds).ToString()));
 
 // 収集ポーリングの構成（間隔）。
 builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(CollectionOptions.SectionName));
@@ -68,11 +79,25 @@ builder.Services.AddSingleton(TimeProvider.System);
 // 欠測判定へ渡すため）。有効なソースが 0 件なら NoSourcesFetcher（外部接続しない安全既定）。
 builder.Services.AddSingleton<ISourceFetcher>(sp =>
 {
+    var sourceOptions =
+        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new();
+
     var sources = InformationSourceFactory.Create(
-        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
+        sourceOptions,
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
+    // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
+    InformationSourceFactory.EvaluateDailyVolumeEstimate(
+        sourceOptions,
+        builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+            ?? new CollectionOptions().PollIntervalSeconds,
+        builder.Configuration.GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
         sp.GetRequiredService<ILoggerFactory>());
 
     return sources.Count == 0
@@ -156,38 +181,9 @@ app.MapPost("/internal/collection/run-once",
     .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
 // FR-01, FR-11, #336, ADR-0020 決定4: 一般インターネット収集（最終手段）の**発動申請**。
-// 4 条件をすべて満たす場合に限り、**次回月報までの暫定措置**として発動を記録する。
-//
-// 🔴 **認可は OwnerOnly**（run-once の OwnerOrService とは非対称）。ADR-0020 決定4 は
-// **利用者の承認**を要件としており、無人サービスが自動で発動してよいものではない。
-//
-// 🔴 **本エンドポイントは発動条件の判定と記録だけを行い、一般 Web からの取得は実装しない。**
-// 承認前に取得経路を作らない（条件が成立していない状態で「使える」ものを置かない）。
-app.MapPost("/internal/collection/general-web-activation",
-    async (GeneralWebActivationRequest request, IMessageBus publish, IClock clock, CancellationToken ct) =>
-    {
-        var decision = GeneralWebActivationPolicy.Evaluate(request, clock.UtcNow);
-        if (!decision.Approved)
-        {
-            // **満たしていない条件を必ず返す。** 「だいたい満たしている」を作らない。
-            return Results.BadRequest(new { error = "一般 Web 収集の発動条件を満たしていません。", decision.UnmetConditions });
-        }
-
-        await publish.PublishAsync(new GeneralWebCollectionStateChanged(
-            request.Category,
-            Engaged: true,
-            Reason: $"ADR-0020 決定4 の 4 条件を充足（欠測 {request.OutageBusinessDays} 営業日"
-                + $"・提供終了公表={request.ProviderAnnouncedDiscontinuation}"
-                + $"・実害の記録確認={request.HarmConfirmedInReports}"
-                + $"・規約上の自動取得可={request.TermsPermitAutomatedAccess}"
-                + $"・データ分離={request.DataSeparationApplied}"
-                + $"・複数独立ソースの裏取り={request.CorroboratedByIndependentSources}）",
-            decision.ProvisionalUntil,
-            clock.UtcNow)).ConfigureAwait(false);
-
-        return Results.Ok(decision);
-    })
-    .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
+// 端点の本体は Features/InformationCollection/ActivateGeneralWebCollection/Endpoint.cs にある
+// （MSP:ADR-0077 決定2・IADR-0289 決定1: 入口の配線はここに残し、操作の処理は 3 段目へ下ろす）。
+app.MapActivateGeneralWebCollection();
 
 app.Run();
 

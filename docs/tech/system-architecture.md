@@ -54,7 +54,7 @@ flowchart TB
 
   subgraph platform["microservices-platform（基盤・再利用 / 無改修）"]
     direction TB
-    FE["frontend（SPA 基盤）<br/>oidc-client-ts / PKCE"]
+    FE["frontend（SPA 基盤）<br/>BFF セッション（HttpOnly Cookie）"]
     BFF["BFF（エッジ・唯一の入口）<br/>Keycloak JWT 検証 / 集約"]
     AUTHZ["AuthorizationService<br/>ABAC 認可判定"]
     GW["LlmGateway<br/>LLM エグレス統制 / POST /complete"]

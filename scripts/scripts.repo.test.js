@@ -2208,4 +2208,63 @@ module.exports = ({ ok, assert }) => {
       }
     });
   }
+
+  // --- check-frontend-empty-frames: frontend/src の `.gitkeep` のみの枠を検査（MSP/ADR-0069 決定 5 / #663） ---
+  //
+  // 計画 ADR-0069 は MSP/ADR-0065 決定 4（バックエンド 8 要素標準の `.gitkeep` 枠置きの撤回）と
+  // 同じ理由（枠が「適合の見え方」を作る）がフロントエンドにも及ぶと定め、本リポジトリの
+  // IADR-0290 決定 2（枠置きの採用）を覆した。17 件の枠を撤去した状態を固定し、
+  // 新しい枠の再導入を機械で止める。
+  {
+    const fsFe = require('fs');
+    const osFe = require('os');
+    const pathFe = require('path');
+    const { execFileSync } = require('child_process');
+    const SCRIPT_FE = pathFe.join(__dirname, 'check-frontend-empty-frames.js');
+    const REPO_ROOT_FE = pathFe.resolve(__dirname, '..');
+
+    ok('check-frontend-empty-frames: 自己試験が通る（#663）', () => {
+      execFileSync(process.execPath, [SCRIPT_FE, '--self-test'], { cwd: REPO_ROOT_FE, stdio: 'pipe' });
+    });
+
+    ok('check-frontend-empty-frames: 実ツリー（frontend/src）に枠が無い（#663 の回帰）', () => {
+      execFileSync(process.execPath, [SCRIPT_FE], { cwd: REPO_ROOT_FE, stdio: 'pipe' });
+    });
+
+    // 🔴 否定形。`.gitkeep` のみのディレクトリを実際に置くと検査が落ちることを確認する
+    // （実効性の証拠。「たまたま緑」と区別が付かない問題を避ける。check-reading-budget.js の
+    // 自己試験と同じ作法）。
+    ok('check-frontend-empty-frames: .gitkeep のみのディレクトリを検出する（実効している証拠）', () => {
+      const tmp = fsFe.mkdtempSync(pathFe.join(osFe.tmpdir(), 'check-frontend-empty-frames-repo-test-'));
+      try {
+        fsFe.mkdirSync(pathFe.join(tmp, 'locales'), { recursive: true });
+        fsFe.writeFileSync(pathFe.join(tmp, 'locales', '.gitkeep'), '# 理由\n');
+        let failed = false;
+        try {
+          execFileSync(process.execPath, [SCRIPT_FE], {
+            cwd: REPO_ROOT_FE,
+            env: { ...process.env, FRONTEND_EMPTY_FRAMES_ROOT: tmp },
+            stdio: 'pipe',
+          });
+        } catch {
+          failed = true;
+        }
+        assert.ok(failed, '.gitkeep のみのディレクトリがあっても緑のまま（検査が働いていない）');
+      } finally {
+        fsFe.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    ok('ci.yml: check-frontend-empty-frames の自己試験と本検査の両方が配線されている', () => {
+      const ciYml = fsFe.readFileSync(pathFe.join(REPO_ROOT_FE, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ciYml, /check-frontend-empty-frames\.js --self-test/, '自己試験が ci.yml に無い');
+      const count = (ciYml.match(/check-frontend-empty-frames\.js/g) || []).length;
+      assert.ok(count >= 2, `呼び出しが ${count} 件（自己試験＋本検査で最低 2 件必要）`);
+    });
+
+    ok('scripts/README.md: 本リポジトリ固有の表に check-frontend-empty-frames.js を記載している', () => {
+      const readme = fsFe.readFileSync(pathFe.join(REPO_ROOT_FE, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-frontend-empty-frames\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
 };
