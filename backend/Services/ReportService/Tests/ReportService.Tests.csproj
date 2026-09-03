@@ -21,7 +21,10 @@
   </ItemGroup>
   <ItemGroup>
     <!-- FR-06, #338: 報告書テンプレートのゴールデンファイル（種別 × 供給あり/なし）。
-         テスト実行ディレクトリへ複写し、実出力とバイト単位で突き合わせる。 -->
-    <None Include="Golden\*.md" CopyToOutputDirectory="PreserveNewest" />
+         テスト実行ディレクトリへ複写し、実出力とバイト単位で突き合わせる。
+         NFR/IADR-0289 決定5: ゴールデンは ReportTemplateGoldenTests と対で Domain/ の鏡写しへ移した
+         （UPDATE_GOLDEN=1 がテストのソース位置から相対で書き戻すため、対を離せない）。Link で
+         出力先を Golden\ に固定し、AppContext.BaseDirectory からの読み取りパスは移送前と同じに保つ。 -->
+    <None Include="Domain\Golden\*.md" CopyToOutputDirectory="PreserveNewest" Link="Golden\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
