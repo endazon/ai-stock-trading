@@ -1,4 +1,5 @@
 using BacktestService.Features.Backtest;
+using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;

@@ -1,7 +1,7 @@
 using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 
-namespace BacktestService.Features.Backtest;
+namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 
 // FR-15, FR-20, FR-11, IADR-0089: Stage 0 合格判定（Stage0Decision）を Risk へ供給する契約イベント
 // （BacktestEvaluated）へ写す純関数。発行側（BacktestService）が自分の verdict の契約表現を所有する。

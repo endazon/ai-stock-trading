@@ -1,4 +1,6 @@
 using BacktestService.Features.Backtest;
+using BacktestService.Features.Backtest.RunBacktest;
+using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Domain;
 using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;

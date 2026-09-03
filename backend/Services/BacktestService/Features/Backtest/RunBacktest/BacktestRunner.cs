@@ -1,7 +1,7 @@
 using BacktestService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace BacktestService.Features.Backtest;
+namespace BacktestService.Features.Backtest.RunBacktest;
 
 // FR-15, IADR-0043: バックテスト実行要求。ユニバース（PIT）・期間・戦略・設定。
 public sealed record BacktestRequest(
