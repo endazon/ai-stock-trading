@@ -275,6 +275,19 @@ run-once 端点は `CollectionPollingService.RunOnceAsync` を呼ぶだけであ
   **本 PR は `ReportService` を 1 バイトも触っていない**時間依存のテストであり、
   単独で再実行して緑（7/7）を確認した。合計件数は 749 で移送前と一致する。
 
+### PR 直前の `origin/develop` 取り込み後（`229a413b`）
+
+マージ後にもう一度全量を実行し、**20 アセンブリすべてが緑（失敗 0）**であることを確認した。
+合計は **5470**（＝ 5447 ＋ develop 側が本 PR と独立に増やした 23 件。
+`InformationCollectionService.Tests` 462 → 468 ＝ #668 の 6 件、`AiStockTrading.Shared.Infrastructure.Tests`
+258 → 274、`AiStockTrading.Shared.Contracts.Tests` 350 → 351）。
+**`NotificationService.Tests` は 398 のまま**であり、本 PR の移送は前後で件数を動かしていない。
+
+取り込みに伴う追随は 1 件だけである —— #668 が `Tests/` 直下へ追加した
+`InformationSourceFactoryDailyVolumeTests` を、被テスト型（`Infrastructure/ExternalServices/
+InformationSourceFactory`）に合わせて `Tests/Infrastructure/ExternalServices/` へ移した
+（鏡写しの規範を新規テストにも当てる。名前空間は据え置きで件数に影響しない）。
+
 ### 追随が要った参照側（[IADR-0289](../adr/IADR-0289_three-tier-slice-transfer-rules.md) 決定 4 の効き方の実測）
 
 3 段目は 2 段目の入れ子であるため、**下ろしたファイル自身の `using` は 1 行も増えていない**。
