@@ -3,7 +3,7 @@ using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace TradeDecisionService.Features.TradeDecision;
+namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 
 // FR-04, FR-11, ADR-0003, IADR-0039: 多数決・二段（一次スクリーニング→二次本判断）オーケストレーション。
 // LLM 非決定性への対策として、二次は同一入力を VoteCount 回実行し DecisionAggregator で多数決を採る（L128）。

@@ -5,7 +5,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using AppSvc = TradeDecisionService.Features.TradeDecision.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
 
 namespace TradeDecisionService.Infrastructure.Steps;
 

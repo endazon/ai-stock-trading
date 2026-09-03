@@ -9,7 +9,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using Microsoft.Extensions.Logging;
 
-namespace TradeDecisionService.Features.TradeDecision;
+namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 
 // FR-04, FR-07, FR-10, FR-11, UC-01, UC-02, ADR-0003, IADR-0003/0004/0017/0037: 取引判断の中核。
 // トリガー → 確定済み日報の方針＋リスク制約で LLM 判断（多数決・二段オーケストレーション・IADR-0039）→ 構造化解析

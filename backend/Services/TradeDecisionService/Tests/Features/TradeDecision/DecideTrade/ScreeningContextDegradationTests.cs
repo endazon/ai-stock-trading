@@ -8,7 +8,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
-using AppSvc = TradeDecisionService.Features.TradeDecision.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
 
 namespace TradeDecisionService.Tests;
 

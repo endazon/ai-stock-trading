@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Llm;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using TradeDecisionService.Domain;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;

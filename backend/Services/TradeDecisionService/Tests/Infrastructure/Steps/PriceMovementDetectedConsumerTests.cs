@@ -16,7 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using AppSvc = TradeDecisionService.Features.TradeDecision.TradeDecisionAppService;
+using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
 
 namespace TradeDecisionService.Tests;
 

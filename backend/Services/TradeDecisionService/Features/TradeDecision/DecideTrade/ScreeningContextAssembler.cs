@@ -1,7 +1,7 @@
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Domain;
 
-namespace TradeDecisionService.Features.TradeDecision;
+namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 
 // FR-02, FR-04, ADR-0003, #337, IADR-0247: RAG 取得文脈からスクリーニング入力（材料）を組み、
 // ScreeningContextPlanner（縮退順序の純関数）を適用して「プロンプトへ残す参考情報」を確定する。

@@ -1,5 +1,6 @@
 using TradeDecisionService.Domain;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using AwesomeAssertions;
 using Xunit;
 

@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
-using Orchestrated = TradeDecisionService.Features.TradeDecision;
+using Orchestrated = TradeDecisionService.Features.TradeDecision.DecideTrade;
 
 namespace TradeDecisionService.Tests;
 
