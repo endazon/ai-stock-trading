@@ -1,3 +1,4 @@
+using AuditService.Domain;
 using AuditService.Features.AuditEvents;
 using Microsoft.EntityFrameworkCore;
 

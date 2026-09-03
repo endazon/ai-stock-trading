@@ -1,4 +1,4 @@
-using NotificationService.Features.Notifications;
+using NotificationService.Domain;
 using Microsoft.Extensions.Configuration;
 
 namespace NotificationService.Infrastructure.ExternalServices;

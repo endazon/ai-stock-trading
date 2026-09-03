@@ -10,6 +10,7 @@ plan_refs:
   - planning:projects/microservices-platform/06_technical/13_frontend-stack.md
   - planning:projects/microservices-platform/07_adr/ADR-0066_frontend-feature-isolation-and-import-direction.md
   - planning:projects/microservices-platform/07_adr/ADR-0067_frontend-layer-classification-and-composition-point.md
+  - planning:projects/microservices-platform/07_adr/ADR-0069_frontend-scaffolding-frames-and-absence-semantics.md
 ---
 
 # IADR-0290: `src/` 直下を計画ツリーへ揃え、`features/` 配下の非 feature を shared 層へ出す
@@ -332,3 +333,91 @@ TradingAssumptions } from './assumptionsQueries'`）。分割後は `api/` と `
 - 挙動は変えていない（**本番コードの差分 0 行**。検査器の追加のみ。単体 362 件・E2E 60 件が緑）。
 - **未達として残るのは `MSP/ADR-0031` の 3 技術**（Lingui・`@platform/ui`・orval）である。
   いずれも単独リポジトリでは解決できず（`IADR-0288` 決定 6）、#529 の射程外である。
+
+---
+
+## 追記（2026-09-03・#663: 決定 2 の撤回。`.gitkeep` 枠置きを撤去する）
+
+**本 IADR に決定 11 を加える。新しい IADR は起こさない**——判断基準は `MSP/ADR-0069` の決定を
+そのまま実装側へ写しただけであり、覆す決定も新しい軸も無いためである。
+
+### 決定 11 — 決定 2 を撤回する。実体の無いディレクトリに `.gitkeep` の枠を置かない
+
+計画 `MSP/ADR-0069`（2026-09-02 確定・利用者裁定）は、`MSP/ADR-0065` 決定 4（バックエンド
+8 要素標準の `.gitkeep` 枠置きの撤回）と同じ理由（**枠が「適合の見え方」を作る**）が
+フロントエンドにも及ぶと定めた。
+
+- 決定 1: `.gitkeep` のみのディレクトリを置かない。射程は feature 内部・ユニット直下
+  （`src/` 最上位）・雛形の 3 者すべて。
+- 決定 3: 不在の意味は 2 通りある。**(a) 関心が無い＝適合**（不在それ自体が情報）、
+  **(b) 関心はあるが置き場所が違う＝非適合**（枠の有無にかかわらず非適合）。
+  **枠はこの区別を作らない**——枠を置いても (b) は直らず、「揃っている」ように見せるだけである。
+- 決定 4: 共有層の区分（`hooks/ lib/ stores/ types/ utils/`）は「関心のあるモジュールの隣に
+  置けない共有物の置き場」であって唯一の置き場ではない。
+- 決定 5: 「`.gitkeep` のみのディレクトリが無いこと」を機械検査に載せる。
+
+**これは本 IADR の決定 2（実体の無いディレクトリは `.gitkeep` の枠として置き、枠である理由を
+`.gitkeep` に書く）を覆す。** 決定 1・3〜10（`src/` 直下 12 項目・feature 内部 6 分割・
+依存の向きの 4 層ゾーン化）はいずれも「配置」の決定であり、覆らない。覆るのは
+「実体の無い区分をどう表現するか」という決定 2 だけである。
+
+### (a)/(b) 分類（実測。#663）
+
+`frontend/src` 配下の `.gitkeep` 枠 17 件を全数、`MSP/ADR-0069` 決定 3 の (a)/(b) で分類した。
+**(b)（関心はあるが置き場所が違う）は 0 件だった**——#529 の PR①（骨格）が着手前に実際に
+存在した (b) 型の誤配置（`features/risk` `features/monitor` `features/shared`
+`features/roles.ts`）を `src/lib/` `src/components/` `src/hooks/` へ既に是正済みであり、
+残る 17 件は「是正済みの残り」＝最初から実体を伴わない (a) 型である。
+
+| ディレクトリ | 分類 | 根拠 |
+| --- | --- | --- |
+| `src/app/` | (a) | 層としての実体は合成点 `src/features/index.ts`（`MSP/ADR-0067` 決定 4） |
+| `src/assets/` | (a) | 自己ホスト資産を持たない（3 画面は素の HTML 要素で描画。`IADR-0288` 決定 6） |
+| `src/config/` | (a) | 実行時構成は基盤（`@foundation`）から受け取り、自前の構成を持たない |
+| `src/locales/` | (a) | Lingui 未採用（`IADR-0288` 決定 6）。単独リポジトリでは解決できない未達であり、この単位には i18n カタログという関心そのものが無い |
+| `src/stores/`（共有） | (a) | Zustand 未導入。画面をまたぐクライアント状態が無い |
+| `src/types/`（共有） | (a)† | 共有型は正規化関数と不可分なため `src/lib/{risk,monitor}/contracts.ts` に同居。`MSP/ADR-0069` 決定 4 が共有層区分は唯一の置き場ではないと定めており、shared 区分間の再配置は非適合ではない |
+| `src/utils/`（共有） | (a)† | 同上（純関数の同居） |
+| `sc01-settings/hooks/` `sc02-risk-settings/hooks/` `sc03-controls/hooks/` | (a) | 画面内で閉じたフックが無い（TanStack Query + `useState` で完結） |
+| `sc01-settings/stores/` `sc02-risk-settings/stores/` `sc03-controls/stores/` | (a) | Zustand 未導入 |
+| `sc02-risk-settings/api/` `sc03-controls/api/` | (a) | 端点は 2 画面以上が消費するため、クエリ層は共有側 `src/lib/{risk,monitor}/queries.ts` にある |
+| `sc02-risk-settings/types/` `sc03-controls/types/` | (a) | 契約型は共有側にあり、画面内だけで閉じる型は使う側のコンポーネントに同居 |
+
+† 物理的な移送は行わない。`src/types/` `src/utils/`（共有）へ型・純関数だけを分離すると、
+`IADR-0290` が最初から避けた「型と正規化ロジックの分割事故」を再導入する。**計画外の抽象化
+（値のためだけに型ファイルを新設する）は避ける。**
+
+詳細な分類根拠は作業仕様書 `.ai-context/specs/20260903_663_frontend-no-empty-frames.md` を参照。
+
+### 実施したこと
+
+- 17 件の `.gitkeep` と、その結果空になったディレクトリを撤去した。
+- `frontend/eslint.config.js` の無害性を実測で確認した——`SHARED_LAYER_DIRS` は名前の静的配列で
+  あり、`import/no-restricted-paths` の `zones[].target` / `from` はファイルパスへの glob 一致
+  であって対象ディレクトリの存在を要求しない。撤去後も `npm run lint` は緑のままだった。
+- **規則の実効性を再実測した**（陽性 6 ゾーンすべてが引き続き error になることをプローブで確認し、
+  削除した）。撤去は依存の向きの機械強制（決定 9・10）を弱めない。
+- 機械検査 `scripts/check-frontend-empty-frames.js` を新設した（`MSP/ADR-0069` 決定 5）。
+  `frontend/src` 配下の葉ディレクトリを走査し、直下のファイルが `.gitkeep` だけ、または 0 件なら
+  枠と判定する。`--self-test` あり。`.github/workflows/ci.yml` の `static-checks` ジョブへ配線した
+  （ジョブ名は変更しない）。
+
+### 結果
+
+- **良い影響**: フロントエンドの `.gitkeep` 枠置きが撤去され、`MSP/ADR-0069` 決定 1 に適合した。
+  再発（新しい枠の追加）は機械検査が止める。ESLint のゾーン定義は無傷であり、規則の実効性は
+  維持されている（陽性 6・撤去前と同数）。
+- **悪い影響 / トレードオフ**: `src/types/` `src/utils/`（共有）の 2 件は文字どおりには
+  「実体はあるが置き場所が違う」(b) の定義に近く読めるが、決定 4 の shared 区分間再配置の許容と
+  `IADR-0290` 自身の分割事故回避の判断を優先し、物理的な移送はしなかった。**この判断は境界事例
+  であり、将来 `MSP/ADR-0069` フォローアップ 4（型 (b) の常設検査）が配備されたときに
+  再検証の対象になり得る。**
+- **残余リスク**: `MSP/ADR-0069` 決定 5 が明示するとおり、本検査は「枠が無いこと」しか見ない。
+  型 (b)（置き場所違い）の常設検査は本作業の射程外であり、同型の事故が実際に起きたら別途起票する
+  （CLAUDE.md「検査器の追加は同型事故 2 回から」）。
+
+### 関連
+
+- Supersedes: なし（決定 2 を本追記が覆す。決定 1・3〜10 は不変）
+- Superseded by: なし
+- 実装 issue: #663（起点は `MSP/ADR-0069`）

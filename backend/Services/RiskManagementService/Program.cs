@@ -10,6 +10,7 @@ using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Hosted;
 using RiskManagementService.Infrastructure.Steps;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -96,11 +97,26 @@ builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(M
 // finnhub 指定＋API キーありのときだけ実市況になる。補充（QuoteRefreshService）は EnableMarkToMarket=false の
 // 既定では起動しないため、Provider を指定しても実際の取得はゲートを人手で ON にするまで起きない（IADR-0066 決定 4）。
 builder.Services.AddHttpClient("marketdata");
-builder.Services.AddSingleton<IMarketDataSource>(sp => MarketDataSourceFactory.Create(
-    sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
-    sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IMarketDataSource>(sp =>
+{
+    var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
+    // 既定 0 のときは挙動中立）。巡回間隔は QuoteRefreshService と同じ MarketData:RefreshIntervalSeconds を使う。
+    MarketDataSourceFactory.EvaluateDailyVolume(
+        marketDataOptions,
+        marketDataOptions.RefreshIntervalSeconds,
+        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return MarketDataSourceFactory.Create(
+        marketDataOptions,
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>());
+});
 builder.Services.AddSingleton<QuoteCache>();
 builder.Services.AddSingleton(TimeProvider.System);
 // FR-06, FR-16, FR-10, #611, ADR-0022, IADR-0286 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）の源。
@@ -286,12 +302,19 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）を自己申告へ載せる（下記 AddMetric）。
+var introspectionMarketDataOptions =
+    builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
     // #611, IADR-0286 決定1: 認識時レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
     // （構成不備で no-op へ倒れる場合は none＝承認の認識時レートは未記録）。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
-        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions())));
+        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        MarketDataSourceFactory.EstimateDailyVolume(
+            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
 var app = builder.Build();
 

@@ -1,0 +1,787 @@
+using AuditService.Domain;
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
+using AwesomeAssertions;
+using Xunit;
+
+namespace AuditService.Tests;
+
+// FR-11, UC-07, IADR-0019: 各ドメインイベント→AuditEntry の写像（EventType・相関・銘柄・拒否理由）を検証する。
+public class AuditEntryFactoryTests
+{
+    private static readonly Guid Id = Guid.NewGuid();
+    private static readonly DateTimeOffset RecordedAt = new(2026, 7, 10, 3, 0, 0, TimeSpan.Zero);
+
+    private static OrderIntent Intent(PositionEffect effect = PositionEffect.Open) =>
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m, effect);
+
+    [Fact]
+    public void TradeDecisionMade_は_DecisionId_相関で銘柄と根拠を記録する()
+    {
+        var decisionId = Guid.NewGuid();
+        var e = new TradeDecisionMade(decisionId, Intent(), "上昇トレンドのため買い", new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero));
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("TradeDecisionMade");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("上昇トレンド");
+        entry.OccurredAt.Should().Be(e.DecidedAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("AAPL");
+    }
+
+    [Fact]
+    public void OrderApproved_は_承認数量を要約に含める()
+    {
+        var decisionId = Guid.NewGuid();
+        var e = new OrderApproved(decisionId, Intent(), 7, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderApproved");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Summary.Should().Contain("7");
+    }
+
+    [Fact]
+    public void OrderRejected_は_拒否理由を記録し照会できる()
+    {
+        var decisionId = Guid.NewGuid();
+        var reasons = new[] { RejectionReason.KillSwitchActive, RejectionReason.DailyLossLimitReached };
+        var e = new OrderRejected(decisionId, Intent(), reasons, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderRejected");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Summary.Should().Contain(nameof(RejectionReason.KillSwitchActive));
+        entry.Detail.Should().Contain(nameof(RejectionReason.DailyLossLimitReached)); // 列挙は文字列化
+    }
+
+    [Fact]
+    public void OrderExecuted_は_銘柄なしで_DecisionId_相関を記録する()
+    {
+        var decisionId = Guid.NewGuid();
+        var e = new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow, BrokerProvider.MoomooSimulate);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderExecuted");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("ORD-1");
+    }
+
+    [Fact]
+    public void OrderModified_は_訂正前後の値つきで_DecisionId_相関を記録する()
+    {
+        // #154, IADR-0067: 注文履歴テレメトリ。訂正は既存の注文系と同じ DecisionId 相関に載せる。
+        var decisionId = Guid.NewGuid();
+        var e = new OrderModified(decisionId, "ORD-1", 10, 3_000m, 4, 2_950m, "数量縮小", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderModified");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("ORD-1").And.Contain("数量縮小");
+        // 監査台帳から「何がどう変わったか」が読めること（FR-11）。
+        entry.Detail.Should().Contain("PreviousQuantity").And.Contain("PreviousPrice");
+    }
+
+    [Fact]
+    public void OrderCancelled_は_理由つきで_DecisionId_相関を記録する()
+    {
+        // #154, IADR-0067: 注文履歴テレメトリ。取消も既存の注文系と同じ DecisionId 相関に載せる。
+        var decisionId = Guid.NewGuid();
+        var e = new OrderCancelled(decisionId, "ORD-1", "pause による強制取消", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("OrderCancelled");
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("ORD-1").And.Contain("pause による強制取消");
+    }
+
+    [Fact]
+    public void PriceMovementDetected_は_EventId_相関で銘柄を記録する()
+    {
+        var eventId = Guid.NewGuid();
+        var e = new PriceMovementDetected(eventId, "7203", Market.Japan, 1_100m, 1_000m, 0.1m, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("PriceMovementDetected");
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().Be("7203");
+    }
+
+    [Fact]
+    public void AssumptionsChanged_は共通相関でバージョンとアクターを記録する()
+    {
+        var e = new AssumptionsChanged(3, "owner", "税率見直し", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("AssumptionsChanged");
+        entry.Summary.Should().Contain("v3");
+        entry.Summary.Should().Contain("owner");
+        // 同一「assumptions」キーは同一相関になる。
+        entry.CorrelationId.Should().Be(AuditEntryFactory.From(
+            new AssumptionsChanged(4, "owner", "別の変更", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt).CorrelationId);
+    }
+
+    [Fact]
+    public void ReportConfirmed_は_PeriodKey_相関で確定者を記録する()
+    {
+        var e = new ReportConfirmed("daily-2026-07-10", "Daily", "owner", 2, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("ReportConfirmed");
+        entry.Summary.Should().Contain("daily-2026-07-10");
+        entry.Summary.Should().Contain("owner");
+        // 同一 PeriodKey は同一相関、別 PeriodKey は別相関。
+        var same = AuditEntryFactory.From(new ReportConfirmed("daily-2026-07-10", "Daily", "u2", 3, DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        var other = AuditEntryFactory.From(new ReportConfirmed("daily-2026-07-11", "Daily", "u2", 3, DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(same.CorrelationId);
+        entry.CorrelationId.Should().NotBe(other.CorrelationId);
+    }
+
+    [Fact]
+    public void CostThresholdReached_は_月とカテゴリの相関でしきい値を記録する()
+    {
+        var e = new CostThresholdReached("2026-07", "Llm", 1.00m, "Halted", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("CostThresholdReached");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("Halted");
+        entry.Summary.Should().Contain("2026-07");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        // 同一「月×カテゴリ」は同一相関、別カテゴリは別相関。
+        var same = AuditEntryFactory.From(new CostThresholdReached("2026-07", "Llm", 0.80m, "Throttled", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        var other = AuditEntryFactory.From(new CostThresholdReached("2026-07", "Infrastructure", 0.80m, "Throttled", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(same.CorrelationId);
+        entry.CorrelationId.Should().NotBe(other.CorrelationId);
+    }
+
+    [Fact]
+    public void InformationCollected_は_EventId_相関で件数を記録する()
+    {
+        var eventId = Guid.NewGuid();
+        var e = new InformationCollected(eventId, 5, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("InformationCollected");
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("5");
+        entry.OccurredAt.Should().Be(e.CollectedAt);
+    }
+
+    [Fact]
+    public void StopLossTriggered_は_EventId_相関で損切り情報を記録する()
+    {
+        var eventId = Guid.NewGuid();
+        var e = new StopLossTriggered(eventId, "7203", Market.Japan, TradeSide.Buy, 5, 950m, 940m, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("StopLossTriggered");
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().Be("7203");
+        entry.Summary.Should().Contain("損切り");
+    }
+
+    [Fact]
+    public void PositionCloseRequested_は操作者と理由を残し注文と同一相関になる()
+    {
+        // FR-10/FR-11, #292, IADR-0117: OrderApproved はアクターも理由も持たないため、これが唯一の「誰が・なぜ」の証跡。
+        var decisionId = Guid.NewGuid();
+        var e = new PositionCloseRequested(
+            decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 4072, 21m,
+            "owner-1", "過大建玉の清算", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("PositionCloseRequested");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("owner-1").And.Contain("過大建玉の清算").And.Contain("4072");
+        entry.OccurredAt.Should().Be(e.RequestedAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("Actor");
+
+        // 後続の承認・約定と同一 DecisionId 相関で束ねられ、要求から約定までを 1 本で辿れる。
+        entry.CorrelationId.Should().Be(decisionId);
+    }
+
+    [Fact]
+    public void StageTransitioned_は共通相関でfrom_to_承認者_種別を記録する()
+    {
+        // FR-20, FR-11, #167, IADR-0082: 段階遷移は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
+        var e = new StageTransitioned(3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt, 100, false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("StageTransitioned");
+        entry.Symbol.Should().BeNull();
+        // from/to・承認者・種別が一行で読める（FR-11）。
+        entry.Summary.Should().Contain("0").And.Contain("1").And.Contain("owner").And.Contain("Promotion");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        // Detail からも承認者・種別が辿れる。
+        entry.Detail.Should().Contain("ApprovedBy").And.Contain("Kind");
+        // 段階遷移はすべて同一「stage-gate」相関で束ねられる（別遷移でも同一相関）。
+        var other = AuditEntryFactory.From(
+            new StageTransitioned(4, 1, 0, "Demotion", "owner", "利用者承認による差し戻し", RecordedAt, 100, false), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(other.CorrelationId);
+    }
+
+    // FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180:
+    // **警告を無視して昇格した事実を記録に残す。** 設定変更の履歴には「下げた事実」が残るが、
+    // **その設定で昇格した事実**は本イベント以外に残らない。
+    [Fact]
+    public void StageTransitioned_は警告を無視した昇格を要約とペイロードの両方へ残す()
+    {
+        var e = new StageTransitioned(
+            5, 1, 2, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 5, Stage1BelowStatisticalBasis: true);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        // 要約を走査する監査で「なぜ 5 件で Stage 2 へ上がったのか」が目に入る。
+        entry.Summary.Should().Contain("5 件").And.Contain("統計的根拠");
+        // ペイロードにも 2 項目が残る（後から機械的に集計できる）。
+        entry.Detail.Should().Contain("Stage1MinimumTradeCount").And.Contain("Stage1BelowStatisticalBasis");
+    }
+
+    // **否定形**: 既定値のままの遷移では要約に警告を足さない。
+    // 常時添えると要約が長くなり、**警告そのものが埋もれる**。
+    [Fact]
+    public void StageTransitioned_は既定値のままなら要約に警告を足さない()
+    {
+        var e = new StageTransitioned(
+            6, 0, 1, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 100, Stage1BelowStatisticalBasis: false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().NotContain("⚠").And.NotContain("統計的根拠");
+        // 設定値そのものはペイロードに残る（警告が無くても「100 件だった」ことは追える）。
+        entry.Detail.Should().Contain("Stage1MinimumTradeCount");
+    }
+
+    // 決定4: **設定値と警告有無を両方持つ。** 警告有無を設定値から後で導出しない——
+    // 統計的根拠（100）が将来改訂されると、導出では**過去の記録の解釈が黙って書き換わる**。
+    // 本テストは「同じ設定値でも警告有無が独立に記録され得る」ことで、両者が別の事実であることを固定する。
+    [Fact]
+    public void StageTransitioned_の警告有無は設定値から導出されていない()
+    {
+        var e = new StageTransitioned(
+            7, 1, 2, "Promotion", "endazon", "利用者承認による昇格", RecordedAt,
+            Stage1MinimumTradeCount: 100, Stage1BelowStatisticalBasis: true);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        // 件数 100 でも「当時警告が出ていた」と記録されていれば、そちらが記録として通る
+        // （＝要約は設定値ではなく警告有無の項目を見ている）。
+        entry.Summary.Should().Contain("統計的根拠");
+    }
+
+    [Fact]
+    public void BacktestEvaluated_は段階ゲート相関でverdictと実DDを記録する()
+    {
+        // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict は注文/市場相関を持たないため "stage-gate" 共通相関に載せる。
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.30m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0.7, FailedChecks: "DeflatedSharpe, MaxDrawdown", RecordedAt,
+            // FR-20, ADR-0016 決定14, #388, IADR-0281: 空売り解禁の判定入力（監査は素通しで payload へ載せる）。
+            IncludesShortSelling: false, StrategyId: "baseline-v1");
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BacktestEvaluated");
+        entry.Symbol.Should().BeNull();
+        // verdict・最大DD・未達条件が一行で読める（FR-11）。
+        entry.Summary.Should().Contain("不合格").And.Contain("DeflatedSharpe");
+        entry.OccurredAt.Should().Be(e.EvaluatedAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("Passed").And.Contain("MaxDrawdownRatio");
+        // 段階ゲート系（遷移・撤退・バックテスト）は同一「stage-gate」相関で束ねられる。
+        var stage = AuditEntryFactory.From(
+            new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt, 100, false), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(stage.CorrelationId);
+    }
+
+    [Fact]
+    public void DailyPolicyUnconfirmed_は共通相関で営業日を記録する()
+    {
+        // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による見送りは注文/市場相関を持たないため "daily-policy" 共通相関に載せる。
+        var e = new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 20), RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("DailyPolicyUnconfirmed");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("日報未確定").And.Contain("2026-07-20");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("BusinessDay");
+        // 日報未確定の見送りはすべて同一「daily-policy」相関で束ねられる（別営業日でも同一相関）。
+        var other = AuditEntryFactory.From(
+            new DailyPolicyUnconfirmed(new DateOnly(2026, 7, 21), RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(other.CorrelationId);
+    }
+
+    [Fact]
+    public void ReportDraftPresented_は確定と同じ報告書相関で提示を記録する()
+    {
+        // FR-06/07/09, FR-11, IADR-0116, #280: 提示と確定を同一相関で束ね、提示から確定までを監査照会で辿れるようにする。
+        var e = new ReportDraftPresented("daily-2026-07-29", "Daily", "2026-07-29", "日報の要約", 2, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("ReportDraftPresented");
+        entry.Symbol.Should().BeNull();
+        entry.Summary.Should().Contain("daily-2026-07-29").And.Contain("提示");
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        entry.Detail.Should().Contain("PeriodKey");
+
+        // 同一 PeriodKey の確定（ReportConfirmed）と同じ相関になる。
+        var confirmed = AuditEntryFactory.From(
+            new ReportConfirmed("daily-2026-07-29", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt);
+        entry.CorrelationId.Should().Be(confirmed.CorrelationId);
+    }
+
+    [Fact]
+    public void BrokerPositionsObserved_と_PositionReconciliationDrift_は同一相関で束ねられる()
+    {
+        // FR-05/FR-10/FR-11, #292, IADR-0118: 是正を伴わないため、この記録が乖離の唯一の永続証跡になる。
+        // 観測と検知を同一相関に載せ、「いつ何を観測して、いつ乖離と判定したか」を 1 本で辿れるようにする。
+        var observed = new BrokerPositionsObserved(
+            [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 4072, 20.5m)], RecordedAt);
+        var drift = new PositionReconciliationDrift(
+            [new PositionDriftItem("AAPL", Market.UnitedStates, 0, 4072, PositionDriftKind.BrokerOnly)],
+            RecordedAt, RecordedAt);
+
+        var observedEntry = AuditEntryFactory.From(observed, Id, RecordedAt);
+        var driftEntry = AuditEntryFactory.From(drift, Guid.NewGuid(), RecordedAt);
+
+        observedEntry.EventType.Should().Be("BrokerPositionsObserved");
+        observedEntry.Summary.Should().Contain("AAPL").And.Contain("4072");
+        observedEntry.OccurredAt.Should().Be(observed.ObservedAt);
+
+        driftEntry.EventType.Should().Be("PositionReconciliationDrift");
+        driftEntry.Summary.Should().Contain("AAPL").And.Contain("4072").And.Contain("BrokerOnly");
+        driftEntry.OccurredAt.Should().Be(drift.DetectedAt);
+        driftEntry.Detail.Should().Contain("Drifts");
+
+        driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
+    }
+    // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 1: 監査ログ**）。
+    // 利用者の承認も AI も介在しない自動決済であるため、この記録が「なぜ建玉が減ったか」の一次証跡になる。
+    [Fact]
+    public void MaintenanceMarginReductionExecuted_は決済前後の維持率と決済建玉を要約に残す()
+    {
+        var e = new MaintenanceMarginReductionExecuted(
+            Guid.NewGuid(), RatioBefore: 0.40m, Threshold: 0.40m, RecoveryTarget: 0.45m, RatioAfter: 0.4504m,
+            [new MaintenanceMarginReductionItem(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 112, 100m, 3_360m)],
+            RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("MaintenanceMarginReductionExecuted");
+        entry.Summary.Should().Contain("AAPL").And.Contain("112").And.Contain("3360");
+        entry.Summary.Should().Contain("40.0%").And.Contain("45.0%");
+        entry.OccurredAt.Should().Be(e.ExecutedAt);
+        // 明細（必要証拠金・数量）を含む全量 JSON が残る＝規則どおりの作動を事後に検証できる。
+        entry.Detail.Should().Contain("RequiredMarginUsd").And.Contain("RecoveryTarget");
+    }
+
+    // 全量決済すると建玉が無くなり維持率の概念が消える。「0%」と書くと破綻したように読めるため区別する。
+    [Fact]
+    public void MaintenanceMarginReductionExecuted_は全量決済後の維持率を建玉なしと記す()
+    {
+        var e = new MaintenanceMarginReductionExecuted(
+            Guid.NewGuid(), 0.20m, 0.40m, 0.45m, RatioAfter: null,
+            [new MaintenanceMarginReductionItem(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell, 1_000, 100m, 30_000m)],
+            RecordedAt);
+
+        AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("建玉なし");
+    }
+
+
+    // T-10-243: FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 ——
+    // 強制買戻しの**推定**（記録先 1: 監査ログ）。**推定である以上、後から人が検証できなければならない**。
+    // 要約に「推定」であることと突合に用いた 3 つの数量を、本文に根拠の全量（突合した自らの決済約定）を残す。
+    [Fact]
+    public void BuyInInferred_は推定であることと突合の根拠を残す()
+    {
+        var e = new BuyInInferred(
+            Id, "GME", Market.UnitedStates,
+            LedgerShortQuantity: 100, BrokerShortQuantity: 20, InFlightCloseQuantity: 10,
+            UnexplainedQuantity: 70, NewlyInferredQuantity: 70,
+            CoveringFills: [new BuyInCoveringFill(TradeSide.Buy, 40, 30m, RecordedAt)],
+            BanUntil: new DateOnly(2026, 9, 6), ObservedAt: RecordedAt, InferredAt: RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BuyInInferred");
+        entry.Symbol.Should().Be("GME");
+        entry.Summary.Should().Contain("推定").And.Contain("検知ではない");
+        entry.Summary.Should().Contain("100").And.Contain("20").And.Contain("10").And.Contain("70");
+        entry.Summary.Should().Contain("2026-09-06");
+        entry.OccurredAt.Should().Be(e.InferredAt);
+        // 根拠の全量（突合した自らの決済約定）が本文に残る＝推定の妥当性を事後に検証できる。
+        entry.Detail.Should().Contain("CoveringFills").And.Contain("InFlightCloseQuantity");
+    }
+    // T-19-317: FR-19, FR-10, FR-11, UC-06, #425, ADR-0025 決定2, IADR-0165 ——
+    // **GFV 発生回数の自前計数**を監査台帳へ残す（ADR-0025 が手入力を採らなかった理由の 1 つが
+    // 「監査証跡に乗らない」ことであった）。
+    //
+    // **要約は「自前計数」「ガードの失敗」であることを明記しなければならない。** ブローカーの GFV 判定と
+    // 一致する保証は無く、取り違えると「監査ログが 0 件だからブローカー側も 0 件だ」と読まれる。
+    [Fact]
+    public void GoodFaithViolationRecorded_は自前計数でありブローカー判定と一致しないことを明記する()
+    {
+        var decisionId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var e = new GoodFaithViolationRecorded(
+            Id, decisionId, "ORD-9", "AAPL", Market.UnitedStates,
+            PurchaseAmountInBase: 1_234m, SettledCashInBase: null,
+            OccurredOn: new DateOnly(2026, 8, 7), ExecutedAt: RecordedAt, RecordedAt: RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("GoodFaithViolationRecorded");
+        entry.Symbol.Should().Be("AAPL");
+        // 注文相関で束ねる（発注審査の記録と突き合わせて「なぜ拒否しなかったのか」を再構成できる）。
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.Summary.Should().Contain("自前計数").And.Contain("ガードの失敗");
+        entry.Summary.Should().Contain("ブローカーの GFV 判定とは一致しない");
+        entry.Summary.Should().Contain("ORD-9").And.Contain("1234");
+        // **決済済み資金は「未供給」と書く。** 0 と書くと「残高が 0 だった」と読まれる（#424 の表示規約）。
+        entry.Summary.Should().Contain("未供給");
+        entry.OccurredAt.Should().Be(e.RecordedAt);
+        entry.Detail.Should().Contain("PurchaseAmountInBase").And.Contain("OccurredOn");
+    }
+
+    // FR-19, FR-11, UC-06, #464, ADR-0028 決定2, IADR-0182:
+    // 解除は「誰が・いつ・どの記録に対して」の粒度で監査へ残る。
+    [Fact]
+    public void GoodFaithViolationsCleared_は誰がどの記録を解除したかを残す()
+    {
+        var e = new GoodFaithViolationsCleared(
+            "endazon", "決済済み資金の判定を修正した", ["ord-1", "ord-2"], RemainingCount: 0, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("GoodFaithViolationsCleared");
+        entry.Summary.Should().Contain("endazon").And.Contain("2 件");
+        // 🔴 **解けたのは停止であって記録ではない。** 監査を読む者が「記録が消えた」と誤読しないよう明示する。
+        entry.Summary.Should().Contain("失効しません");
+        // どの記録に対して解除したかは payload に残る（決定2 の「どの記録に対して」）。
+        entry.Detail.Should().Contain("ord-1").And.Contain("ord-2");
+        entry.OccurredAt.Should().Be(e.ClearedAt);
+    }
+
+    // **残件数を載せる。** 解除の最中に新たな違反が計上され得るため 0 とは限らず、
+    // 0 でなければ停止は続いている——「解除したのに止まったまま」を監査から説明できるようにする。
+    [Fact]
+    public void GoodFaithViolationsCleared_は解除後の残件数を残す()
+    {
+        var e = new GoodFaithViolationsCleared(
+            "endazon", "是正済み", ["ord-1"], RemainingCount: 1, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("残 1 件");
+        entry.Detail.Should().Contain("RemainingCount");
+    }
+
+    // FR-10, FR-11, SC-03, #465, ADR-0027 決定1, IADR-0183:
+    // **日次の計上額**を監査へ残す（累計だけでは日別の内訳を復元できない）。
+    [Fact]
+    public void BorrowFeeAccrued_は日次の計上額と計上日の料率を残す()
+    {
+        var e = new BorrowFeeAccrued(
+            "AAPL", Market.UnitedStates, new DateOnly(2026, 8, 12),
+            RateAnnual: 0.10m, PositionValueUsd: 36_500m, AmountUsd: 10m, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BorrowFeeAccrued");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("2026-08-12").And.Contain("AAPL").And.Contain("10");
+        // **計上日の料率**（決定4）が要約から追える。建玉時の料率で固定していないことの証跡である。
+        entry.Summary.Should().Contain("0.10");
+        entry.Detail.Should().Contain("RateAnnual").And.Contain("PositionValueUsd");
+        entry.OccurredAt.Should().Be(e.AccruedAt);
+    }
+
+    // FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183:
+    // 🔴 **料率が取れなかった日を「0 円」と書かない。** 0 と書けば「その日は費用が発生しなかった」と読め、
+    // Stage 1 の「借株料は 1 円も掛かっていない」という誤読が構造的に起こる。
+    [Fact]
+    public void BorrowFeeAccrualUnavailable_は0円ではなく未計上と書く()
+    {
+        var e = new BorrowFeeAccrualUnavailable(
+            "GME", Market.UnitedStates, new DateOnly(2026, 8, 12), "料率照会に失敗", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("BorrowFeeAccrualUnavailable");
+        entry.Symbol.Should().Be("GME");
+        entry.Summary.Should().Contain("未計上").And.Contain("料率照会に失敗");
+        // **「0 円ではない」と明言する**（費用は発生しているが金額が分からない、という事実である）。
+        entry.Summary.Should().Contain("0 円ではありません");
+        entry.OccurredAt.Should().Be(e.ObservedAt);
+    }
+
+    // --- FR-10, FR-17, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化 ---
+
+    private static readonly DateTimeOffset FxT0 = new(2026, 8, 15, 3, 0, 0, TimeSpan.Zero);
+
+    // 相関は落ちた側と戻った側で同じにする（台帳から**期間を 1 本の相関で辿れる**ようにするため）。
+    [Fact]
+    public void 為替の切替と復帰は同じ相関を持ち_期間を辿れる()
+    {
+        var fell = AuditEntryFactory.From(new FxRateSourceFellBack("USD", "fred", 2, 2, FxT0), Id, RecordedAt);
+        var back = AuditEntryFactory.From(
+            new FxRateSourcePrimaryRestored("USD", "boj", FxT0, FxT0.AddHours(6)), Id, RecordedAt);
+
+        back.CorrelationId.Should().Be(fell.CorrelationId);
+
+        // 🔴 **相関は通貨ごとに分ける。** USD と EUR は独立して劣化し得るため、固定の相関だと
+        // 複数通貨の事象が 1 本に混在し「期間を 1 本の相関で辿れる」が成立しない。
+        var eur = AuditEntryFactory.From(new FxRateSourceFellBack("EUR", "fred", 2, 2, FxT0), Id, RecordedAt);
+        eur.CorrelationId.Should().NotBe(fell.CorrelationId);
+        // Symbol 欄には通貨を入れる（銘柄ではない）——為替の劣化は銘柄単位ではなく通貨単位で起きる。
+        fell.Symbol.Should().Be("USD");
+        back.Summary.Should().Contain("6 時間");
+    }
+
+    // #513 / IADR-0225: **使用記録は切替・復帰と同じ相関へ置く**——通貨ごとの 1 本のタイムラインに
+    // 「使った・落ちた・戻った」が時系列で並ぶ。別相関にすると期間の追跡が 2 本に割れる。
+    [Fact]
+    public void 為替の使用記録は_切替と同じ相関で_使った源を要約に残す()
+    {
+        var used = AuditEntryFactory.From(new FxRateSourceUsed("USD", "boj", 1, 2, FxT0), Id, RecordedAt);
+        var fell = AuditEntryFactory.From(new FxRateSourceFellBack("USD", "fred", 2, 2, FxT0), Id, RecordedAt);
+
+        used.CorrelationId.Should().Be(fell.CorrelationId);
+        used.Symbol.Should().Be("USD", "為替は銘柄単位ではなく通貨単位で記録する");
+        used.Summary.Should().Contain("boj", "どの源を使ったかが分からなければ出典を導けない");
+        used.Summary.Should().Contain("第一の情報源");
+    }
+
+    // 🔴 台帳を読む人が「止まっていた」と誤読すると、事後の検証が事実とずれる。
+    [Fact]
+    public void 為替の鮮度警告は_止まっていないことを要約に明記する()
+    {
+        var entry = AuditEntryFactory.From(new FxRateStale("USD", FxT0.AddDays(-7), 7, 5, 30, FxT0), Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(FxRateStale));
+        entry.Summary.Should().Contain("新規建ては止まっていない");
+    }
+
+    // --- #381 停止側 / IADR-0198 決定3 ------------------------------------------------------------
+
+    // 🔴 **台帳の行（ApprovedOrderRow）は観測日の列を持たない。**
+    // 本エントリの要約が「何日前のレートで換算したか」を残す唯一の手掛かりである。
+    [Fact]
+    public void 鮮度切れでの決済は_観測日を要約に残す()
+    {
+        var entry = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(PositionClosedWithStaleFxRate));
+        entry.Symbol.Should().Be("7203", "決済は銘柄単位の事実である（通貨単位の劣化とは別）");
+        entry.Summary.Should().Contain("鮮度切れのレートで決済");
+        entry.Summary.Should().Contain("観測日");
+        // 手仕舞いを止めていないことも読めること（ADR-0022 決定5）。
+        entry.Summary.Should().Contain("手仕舞いは止めていない");
+    }
+
+    // 🔴 **相関は銘柄ごとに分ける**——同じ銘柄の決済を時系列で辿れるようにするため。
+    // ここが固定だと、全銘柄の決済が 1 本の相関に混ざる。
+    [Fact]
+    public void 鮮度切れでの決済の相関は_銘柄ごとに分かれる()
+    {
+        var a = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+        var b = AuditEntryFactory.From(
+            new PositionClosedWithStaleFxRate("6758", Market.Japan, "JPY", 100, 0.0067m, FxT0.AddDays(-31), 31, FxT0),
+            Id, RecordedAt);
+
+        b.CorrelationId.Should().NotBe(a.CorrelationId);
+    }
+
+    // ── FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費区分 7 種 ───────────────
+
+    private static readonly DateOnly ExpenseDay = new(2026, 8, 28);
+    private static readonly DateTimeOffset ExpenseAt = new(2026, 8, 28, 9, 0, 0, TimeSpan.Zero);
+
+    private static TradeExpenseRecorded Expense(
+        TradeExpenseCategory category, string symbol = "AAPL", Market market = Market.UnitedStates) =>
+        new(new TradeExpense(symbol, market, category, 12.34m, ExpenseDay, "ORD-1", ExpenseAt));
+
+    [Fact]
+    public void 経費計上は建玉ごとの相関と銘柄で記録される()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(TradeExpenseRecorded));
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("売買手数料");
+        entry.Summary.Should().Contain("AAPL/UnitedStates");
+        entry.OccurredAt.Should().Be(ExpenseAt);
+        entry.RecordedAt.Should().Be(RecordedAt);
+        // 区分は payload にも残る（要約は切り詰められるが、payload は全量である）。
+        entry.Detail.Should().Contain("Commission");
+    }
+
+    // 建玉の一次識別子は (銘柄, 市場) である（ADR-0027 決定2）。
+    // 相関が固定だと、全建玉の経費が 1 本に混ざり「建玉単位で紐づけられる」が成立しない。
+    [Fact]
+    public void 経費計上の相関は建玉ごとに分かれる()
+    {
+        var apple = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+        var microsoft = AuditEntryFactory.From(
+            Expense(TradeExpenseCategory.Commission, "MSFT"), Id, RecordedAt);
+        var appleInJapan = AuditEntryFactory.From(
+            Expense(TradeExpenseCategory.Commission, "AAPL", Market.Japan), Id, RecordedAt);
+
+        microsoft.CorrelationId.Should().NotBe(apple.CorrelationId);
+        appleInJapan.CorrelationId.Should().NotBe(apple.CorrelationId, "市場が違えば別の建玉である");
+    }
+
+    [Fact]
+    public void 同じ建玉の経費は区分が違っても同じ相関で辿れる()
+    {
+        var commission = AuditEntryFactory.From(Expense(TradeExpenseCategory.Commission), Id, RecordedAt);
+        var borrowFee = AuditEntryFactory.From(Expense(TradeExpenseCategory.BorrowFee), Id, RecordedAt);
+
+        borrowFee.CorrelationId.Should().Be(commission.CorrelationId);
+    }
+
+    // 🔴 ADR-0016 決定15 の要点。要約を走査する監査で「配当を受け取った」と読み違えられないこと。
+    [Fact]
+    public void 否定形_配当相当額の要約は配当の受取ではないと明示する()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.DividendInLieu), Id, RecordedAt);
+
+        entry.Summary.Should().Contain("配当相当額の支払い");
+        entry.Summary.Should().Contain("配当の受取ではありません");
+        entry.Summary.Should().Contain("譲渡費用");
+    }
+
+    // 🔴 要約は 200 文字で切り詰める。注記を金額や発生元より後ろに置くと、
+    // **発生元 ID が長いだけで「配当ではない」が落ちる**。区分ラベルを先頭側に置いてあることを固定する。
+    [Fact]
+    public void 否定形_発生元が極端に長くても配当ではない旨は切り詰めで落ちない()
+    {
+        var longSource = new string('X', 500);
+        var e = new TradeExpenseRecorded(new TradeExpense(
+            "AAPL", Market.UnitedStates, TradeExpenseCategory.DividendInLieu,
+            12.34m, ExpenseDay, longSource, ExpenseAt));
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("配当の受取ではありません");
+    }
+
+    [Fact]
+    public void 実現損益の要約は費用ではないと明示する()
+    {
+        var entry = AuditEntryFactory.From(Expense(TradeExpenseCategory.Realized), Id, RecordedAt);
+
+        entry.Summary.Should().Contain("実現損益");
+        entry.Summary.Should().Contain("費用ではありません");
+    }
+
+    // 区分を増やして表示ラベルの写像を足し忘れたら、既定値へ倒れず例外で落ちる。
+    [Fact]
+    public void 全区分に表示ラベルが定義されている()
+    {
+        foreach (var category in TradeExpenseClassification.All)
+        {
+            var act = () => AuditEntryFactory.From(Expense(category), Id, RecordedAt);
+            act.Should().NotThrow($"区分 {category} の表示ラベルが定義されていない");
+        }
+    }
+
+    [Fact]
+    public void 否定形_未知の区分は既定ラベルへ倒れず例外になる()
+    {
+        var e = new TradeExpenseRecorded(new TradeExpense(
+            "AAPL", Market.UnitedStates, (TradeExpenseCategory)999, 1m, ExpenseDay, "S", ExpenseAt));
+
+        var act = () => AuditEntryFactory.From(e, Id, RecordedAt);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    // ===== FR-05, FR-10, FR-11, #331, IADR-0210/0211: 見送り・保護逆指値の記録 =====
+
+    private static readonly DateTimeOffset StopT0 = new(2026, 8, 28, 6, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void 見送りは_拒否とも事前拒否とも別のEventTypeで記録される()
+    {
+        // 別状態・別集計（issue #331 受け入れ基準 3）: 台帳上の種別が 3 者で異なることを固定する。
+        var forgone = AuditEntryFactory.From(
+            new OrderDispatchForgone(Guid.NewGuid(), Intent(), OrderDispatchForgoneReason.BrokerUnavailable, StopT0),
+            Id, RecordedAt);
+        var preRejected = AuditEntryFactory.From(
+            new OrderRejected(Guid.NewGuid(), Intent(), [RejectionReason.KillSwitchActive], StopT0),
+            Id, RecordedAt);
+        var brokerRejected = AuditEntryFactory.From(
+            new OrderExecuted(Guid.NewGuid(), "o1", OrderStatus.Rejected, 0, 0m, StopT0, BrokerProvider.MoomooSimulate),
+            Id, RecordedAt);
+
+        forgone.EventType.Should().Be(nameof(OrderDispatchForgone));
+        forgone.EventType.Should().NotBe(preRejected.EventType);
+        forgone.EventType.Should().NotBe(brokerRejected.EventType);
+        preRejected.EventType.Should().NotBe(brokerRejected.EventType);
+        // 「拒否ではない・再試行されない」と読めること（誤読は集計と運用判断を狂わせる）。
+        forgone.Summary.Should().Contain("発注していない");
+        forgone.Summary.Should().Contain("再試行されない");
+    }
+
+    [Fact]
+    public void 保護逆指値の発注はエントリーのDecisionIdで相関する()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopPlaced(entryDecisionId, Guid.NewGuid(), "stop-1", Intent(PositionEffect.Close), 950m, 1, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopPlaced));
+        entry.CorrelationId.Should().Be(entryDecisionId, "「建玉あり ⇒ 逆指値あり」の証跡をエントリーと 1 本で辿る");
+        entry.Summary.Should().Contain("保護逆指値");
+    }
+
+    [Fact]
+    public void 保護喪失のNoneは人手対応が要ると読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,
+                10, null, null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("人手対応");
+    }
+}

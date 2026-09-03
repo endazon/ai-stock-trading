@@ -4,6 +4,7 @@ using ReportService.Features.Reports;
 using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -120,15 +121,31 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient("marketdata");
 // FR-16, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定 no-op＝実接続しない）。報告書は
 // ゲートを持たず、実市況ソースへの差し替えがそのまま評価損益の有効化になる（発注判断を伴わないため・IADR-0066 決定 4）。
-builder.Services.AddSingleton<IMarketDataSource>(sp => new LastKnownQuoteSource(
-    MarketDataSourceFactory.Create(
-        sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
-        sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+builder.Services.AddSingleton<IMarketDataSource>(sp =>
+{
+    var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
+
+    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
+    // 既定 0 のときは挙動中立）。本サービスは報告書ドラフト生成時にのみ問い合わせる（固定間隔ではない）ため、
+    // 巡回間隔は MarketData:RefreshIntervalSeconds を保守的な仮定として使う（他 3 サービスと共通の構成キー）。
+    MarketDataSourceFactory.EvaluateDailyVolume(
+        marketDataOptions,
+        marketDataOptions.RefreshIntervalSeconds,
+        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
+            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>());
+
+    return new LastKnownQuoteSource(
+        MarketDataSourceFactory.Create(
+            marketDataOptions,
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILoggerFactory>()),
+        sp.GetRequiredService<QuoteCache>(),
         sp.GetRequiredService<TimeProvider>(),
-        sp.GetRequiredService<ILoggerFactory>()),
-    sp.GetRequiredService<QuoteCache>(),
-    sp.GetRequiredService<TimeProvider>(),
-    TimeSpan.FromSeconds(Math.Max(1, sp.GetRequiredService<IOptions<MarketDataOptions>>().Value.MaxQuoteStalenessSeconds))));
+        TimeSpan.FromSeconds(Math.Max(1, marketDataOptions.MaxQuoteStalenessSeconds)));
+});
 builder.Services.AddScoped<ReportDraftService>();
 
 // FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存（共有クライアント）。既定は no-op（KnowledgeBase:Documents:BaseUrl
@@ -366,6 +383,9 @@ builder.Host.UseWolverine(opts =>
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）を自己申告へ載せる（下記 AddMetric）。
+var introspectionMarketDataOptions =
+    builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPortFromBaseUrl("llm-completion", builder.Configuration["LlmGateway:BaseUrl"], "http", "placeholder")
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
@@ -385,7 +405,11 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     // IADR-0116: 提示（確定依頼）の通知経路。bus=ReportDraftPresented を発行する／noop=発行しない。
     .AddPort("report-draft-notification",
         builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName)
-            .Get<ReportAutoGenerationOptions>()?.NotifyOnDraftPresented == false ? "noop" : "bus"));
+            .Get<ReportAutoGenerationOptions>()?.NotifyOnDraftPresented == false ? "noop" : "bus")
+    .AddMetric(
+        "finnhub-daily-request-estimate",
+        MarketDataSourceFactory.EstimateDailyVolume(
+            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
 var app = builder.Build();
 

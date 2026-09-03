@@ -29,3 +29,10 @@ ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:
 # gitleaks は commit 範囲（履歴）を走査するため当該コミットの finding を fingerprint で無効化する。
 121e18b94f63ea84e0df10873214b7af6114d219:backend/Services/ReportService/tests/ReportService.Worker.Tests/HttpReportNarrativeDrafterTests.cs:generic-api-key:99
 121e18b94f63ea84e0df10873214b7af6114d219:backend/Services/ReportService/tests/ReportService.Worker.Tests/HttpReportNarrativeDrafterTests.cs:generic-api-key:118
+
+# #667 / IADR-0294: 設定キー名 `MarketData:Finnhub:EstimatedSymbolCount` が finnhub-access-token 規則（Finnhub: に続く英数 20 字）に
+# 誤検知される。値ではなくキー名であり秘密ではない。履歴走査のため当該コミットの finding を fingerprint で無効化する。
+53aaa5eab5416408d70f41716c88ac4d3cfab235:.ai-context/adr/README.md:finnhub-access-token:324
+53aaa5eab5416408d70f41716c88ac4d3cfab235:.ai-context/specs/20260903_667_finnhub-daily-volume-control.md:finnhub-access-token:54
+53aaa5eab5416408d70f41716c88ac4d3cfab235:.ai-context/specs/20260903_667_finnhub-daily-volume-control.md:finnhub-access-token:85
+cf093d22f9f30fb286bbfacf3eab696a766397e7:deploy/helm/ai-stock-trading/README.md:finnhub-access-token:101

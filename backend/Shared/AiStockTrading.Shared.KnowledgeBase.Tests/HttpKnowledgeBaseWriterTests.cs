@@ -107,6 +107,52 @@ public class HttpKnowledgeBaseWriterTests
     }
 
     [Fact]
+    public async Task projectは未指定ならai_stock_tradingを補完して送る()
+    {
+        // FR-08, ADR-0032 決定2(1), #662: 基盤へ保存する文書は project=ai-stock-trading を必須で持つ。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.GetProperty("project").GetString().Should().Be("ai-stock-trading");
+    }
+
+    [Fact]
+    public async Task projectは同値の明示指定なら維持して送る_対の肯定形()
+    {
+        // FR-08, ADR-0032 決定2(1), #662: 呼び出し側が正しい値を明示していてもエラーにしない。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        var doc = new KnowledgeDocument(
+            "t",
+            Attributes: new Dictionary<string, string> { ["project"] = "ai-stock-trading" });
+        await writer.SaveAsync(doc);
+
+        var attributes = ExtractAttributes(handler.LastRequestBody!);
+        attributes.GetProperty("project").GetString().Should().Be("ai-stock-trading");
+    }
+
+    [Fact]
+    public async Task projectに異なる値を明示指定すると例外で拒否する_否定形()
+    {
+        // FR-08, ADR-0032 決定2(1), #662: owner/department と異なり許容値は単一のため、
+        // 異なる値は黙って上書きせず fail-loud（他ユニットの文書との取り違えを検出する）。
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+        var writer = CreateWriter(handler);
+
+        var doc = new KnowledgeDocument(
+            "t",
+            Attributes: new Dictionary<string, string> { ["project"] = "microservices-platform" });
+
+        var act = async () => await writer.SaveAsync(doc);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task lifecycleは意図的に付与しない()
     {
         // FR-08, #520: planning#361 が未裁定のため、推測で lifecycle を入れないことを固定する。
