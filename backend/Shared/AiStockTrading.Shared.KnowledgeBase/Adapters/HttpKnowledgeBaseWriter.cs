@@ -20,6 +20,10 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // の予約値（owner=system, department=unassigned）へ倒す（欠落させない）。
 // 🔴 lifecycle は planning#361 で既定が未裁定のため、意図的に補完しない（推測で入れない）。
 //
+// FR-08, ADR-0032 決定2(1), IADR-0293: project 属性は本ユニットの文書に project=ai-stock-trading を
+// 必須で付与する。owner/department と異なり**許容値は単一**であり、異なる明示指定は上書きせず
+// fail-loud（例外）で拒否する（他ユニットの文書との取り違えを黙って通さない。#662）。
+//
 // FR-08, #565, IADR-0274: **本文（Markdown）は POST /documents の Body として送る**（platform 側が
 // FR-21 で新設した任意フィールド。空ならオブジェクトストレージへ格納し Ingestion が索引する）。
 // 🔴 **1 MB（UTF-8 バイト数。KnowledgeBodyLimits.Exceeds）超は送らない。** platform 側が 413 で
@@ -121,6 +125,20 @@ internal sealed class HttpKnowledgeBaseWriter(
 
         if (!attributes.TryGetValue("department", out var department) || string.IsNullOrWhiteSpace(department))
             attributes["department"] = KnowledgeAttributeDefaults.UnassignedDepartment;
+
+        // project (FR-08, ADR-0032 決定2(1), IADR-0293): 本ユニットの文書は project=ai-stock-trading を
+        // 必須で持つ。owner/department と異なり許容値は単一であり、異なる明示指定を黙って上書きすると
+        // 「他ユニットの文書との取り違え」というプログラミング誤りが検出されないまま統制の前提
+        // （文書が正しく project を持つこと）を静かに壊す。fail-loud（例外）で拒否する。
+        if (attributes.TryGetValue(KnowledgeAttributeDefaults.ProjectKey, out var project)
+            && !string.IsNullOrWhiteSpace(project)
+            && !string.Equals(project, KnowledgeAttributeDefaults.RequiredProject, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"KB 保存: project 属性は '{KnowledgeAttributeDefaults.RequiredProject}' 以外を指定できません" +
+                $"（指定値: '{project}'。ADR-0032 決定2(1)）。");
+        }
+        attributes[KnowledgeAttributeDefaults.ProjectKey] = KnowledgeAttributeDefaults.RequiredProject;
 
         // lifecycle は意図的に補完しない（planning#361 未裁定。上記コメント参照）。
 
