@@ -353,4 +353,95 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("採算評価（費用控除後の期待利益）");
         prompt.Should().NotContain("expectedProfitPerShare");
     }
+
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件が本判断プロンプトに含まれる。
+    // **否定形**: `TradeDecisionPromptBuilder` の private const（結論文言）と同一の文字列をここへ直接
+    // 書き、突合する。いずれか 1 件でも文言が消える・変わると、この Theory が失敗する。
+    [Theory]
+    [InlineData("「株価が下がると予想する」ことと「空売りする」ことは別の判断です。")]
+    [InlineData("急落した銘柄への追随空売りは禁止します。")]
+    [InlineData("ニュース由来の急落に対する即時の空売りは保留します。")]
+    [InlineData("空売りの余力（証拠金枠）を作る目的でロング建玉を取得することは禁止します。")]
+    public void 本判断プロンプトは空売りガードレール4件をいずれも含む(string guardrail)
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain("# 空売りの制約");
+        prompt.Should().Contain(guardrail);
+    }
+
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 一次スクリーニングにも短縮版（結論のみ）が
+    // 無条件で含まれる（二段判断のどちらの段でも同じ4制約の結論が効く。IADR-0297 決定2）。
+    [Theory]
+    [InlineData("「株価が下がると予想する」ことと「空売りする」ことは別の判断です。")]
+    [InlineData("急落した銘柄への追随空売りは禁止します。")]
+    [InlineData("ニュース由来の急落に対する即時の空売りは保留します。")]
+    [InlineData("空売りの余力（証拠金枠）を作る目的でロング建玉を取得することは禁止します。")]
+    public void スクリーニングプロンプトは空売りガードレール4件の結論をいずれも含む(string guardrail)
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().Contain("# 空売りの制約（結論）");
+        prompt.Should().Contain(guardrail);
+    }
+
+    // FR-04, ADR-0016 決定11, IADR-0297: 受け入れ基準「空売りが無効な構成でもプロンプトの内容が
+    // 変わらない（解禁時に初めて入る形にしない）」。`Build` は空売り可否のフラグを一切受け取らないため、
+    // 採算ゲート・RAG 取得文脈・現在値供給の有無を変えても「# 空売りの制約」節自体は不変であることを示す。
+    [Fact]
+    public void 本判断の空売りガードレール節は他の構成の有無に関わらず不変である()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var retrieved = new[] { new RetrievedContext("メモ", "本文", "kb://x", 0.5d, ["finnhub"]) };
+
+        var baseline = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+        var withProfitability = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, includeProfitability: true);
+        var withRetrieval = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, retrieved);
+        var withPrice = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, currentPrice: 150m);
+
+        var section = ExtractSection(baseline, "# 空売りの制約");
+        section.Should().NotBeNullOrWhiteSpace();
+        ExtractSection(withProfitability, "# 空売りの制約").Should().Be(section);
+        ExtractSection(withRetrieval, "# 空売りの制約").Should().Be(section);
+        ExtractSection(withPrice, "# 空売りの制約").Should().Be(section);
+    }
+
+    // FR-04, ADR-0016 決定11, IADR-0297: 同じ受け入れ基準を一次スクリーニング側でも固定する。
+    // 縮退制御（IADR-0247）が渡す currentPrice / references の有無で短縮版が変わらないことを示す。
+    [Fact]
+    public void スクリーニングの空売りガードレール節は他の構成の有無に関わらず不変である()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var references = new[] { new RetrievedContext("重要ニュース", "内容", null, 0.5d, ["google-news"]) };
+
+        var baseline = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+        var withPrice = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context, currentPrice: 150m);
+        var withReferences = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context, references: references);
+
+        var section = ExtractSection(baseline, "# 空売りの制約（結論）");
+        section.Should().NotBeNullOrWhiteSpace();
+        ExtractSection(withPrice, "# 空売りの制約（結論）").Should().Be(section);
+        ExtractSection(withReferences, "# 空売りの制約（結論）").Should().Be(section);
+    }
+
+    // 指定した見出し行から、次の `# ` 見出し（または末尾）までを切り出す（節の不変性比較に使う）。
+    private static string ExtractSection(string prompt, string heading)
+    {
+        var lines = prompt.Split('\n');
+        var start = Array.FindIndex(lines, l => l.TrimEnd('\r') == heading);
+        if (start < 0)
+            throw new InvalidOperationException($"見出し '{heading}' がプロンプトに見つからない");
+
+        var end = start + 1;
+        while (end < lines.Length && !lines[end].TrimEnd('\r').StartsWith("# ", StringComparison.Ordinal))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[start..end]);
+    }
 }
