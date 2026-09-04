@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using Microsoft.Extensions.Logging;
+using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using Wolverine;
 using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder.OrderExecutionAppService;
 
@@ -17,8 +18,13 @@ namespace OrderExecutionService.Infrastructure.Steps;
 //
 // NFR-07, #287, IADR-0255: 発注の健全性メトリクス（発注結果と、発注に届かなかった見送り）はここで計上する。
 // **見送りは注文状態を持たない**ため、ブローカーの拒否（OrderStatus.Rejected）とは別の計器で数える。
+//
+// FR-11, FR-16, ADR-0016 決定15, #633, IADR-0300: 即時約定（内蔵 paper）の経費を記録する経路もここに置く。
+// 段 1 の既定（UnsuppliedOrderExpenseSource）ではイベントが 1 本も出ないため、発行の面での挙動は不変であり、
+// 増えるのは「7 区分すべて未計上」を残す警告ログ 1 行だけである。
 public sealed class OrderApprovedHandler(
     AppSvc executionService,
+    TradeExpenseRecordingService tradeExpenses,
     BusinessMetrics metrics,
     ILogger<OrderApprovedHandler> logger)
 {
@@ -50,6 +56,9 @@ public sealed class OrderApprovedHandler(
 
         await bus.PublishAsync(executed).ConfigureAwait(false);
 
+        // FR-11, ADR-0016 決定15, #633, IADR-0300: 約定の経費を記録する（段 1 では常に「取得できない」）。
+        await RecordTradeExpensesAsync(executed, bus, cancellationToken).ConfigureAwait(false);
+
         // FR-10, #331, IADR-0210: 保護逆指値の結果。Placed はリスク管理が台帳の承認行へ結線し、
         // CoverageLost は監査・Critical 通知（および手仕舞いレグの台帳結線）へ流れる。
         if (result.StopPlaced is { } stopPlaced)
@@ -67,6 +76,33 @@ public sealed class OrderApprovedHandler(
                 coverageLost.EntryDecisionId, coverageLost.Symbol, coverageLost.Cause,
                 coverageLost.Remediation, coverageLost.Quantity);
             await bus.PublishAsync(coverageLost).ConfigureAwait(false);
+        }
+    }
+
+    // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300:
+    // 約定 1 件ぶんの経費を記録する。**経費の記録が発注執行を止めてはならない**ため例外は握る
+    // （発注は既に成立しており、ここで投げると再配送で同じ OrderApproved が再処理される）。
+    //
+    // 🔴 **段 2（実費の供給）の前提**: 供給が始まると本経路は同じ約定を 2 度観測し得る
+    // （メッセージ再配送・約定追跡の複数巡回）。TradeExpenseRecorded の発行には
+    // TradeExpense.SourceId を鍵とした重複排除が要る。**実装するまで供給を有効にしない。**
+    private async Task RecordTradeExpensesAsync(
+        OrderExecuted executed, IMessageBus bus, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var outcome = await tradeExpenses
+                .RecordForExecutionAsync(executed, cancellationToken)
+                .ConfigureAwait(false);
+
+            TradeExpenseRecordingLog.Write(logger, executed, outcome);
+
+            foreach (var recorded in outcome.Events)
+                await bus.PublishAsync(recorded).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "経費の記録に失敗しました（発注執行は継続します）。OrderId={OrderId}", executed.OrderId);
         }
     }
 }
