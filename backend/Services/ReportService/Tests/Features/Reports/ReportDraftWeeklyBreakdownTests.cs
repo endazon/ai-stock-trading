@@ -117,4 +117,55 @@ public class ReportDraftWeeklyBreakdownTests
         draft.Markdown.Should().NotContain("## 3. ハイライト取引");
         draft.Markdown.Should().NotContain("| 費用の区分 | 金額 |");
     }
+
+    // 🔴 FR-06, FR-07, FR-16, #615, IADR-0306: **月報も同じ帰属を消費する**（週報だけの供給ゲートだと
+    // 月報 §2 が「供給元がありません」のままになる——結線はレンダラのテストでは捕まえられない）。
+    [Fact]
+    public async Task 月報ドラフトは約定列から週別市場別方向別の内訳を出す()
+    {
+        var fills = new[]
+        {
+            Fill(TradeSide.Buy, 10, 1_000m, 0),                       // 2026-W35（月）
+            Fill(TradeSide.Sell, 10, 1_200m, 60 * 24 * 14),           // 2026-W37（持ち越した玉の決済）
+        };
+        var svc = new ReportDraftService(new FakeDrafter());
+
+        var draft = await svc.BuildDraftAsync(Request(
+            ReportKind.Monthly, "monthly-2026-08", new DateOnly(2026, 8, 24), fills));
+
+        draft.Markdown.Should().Contain("## 2. 週別・市場別の内訳");
+        draft.Markdown.Should().Contain("| 2026-W35 |");
+        draft.Markdown.Should().Contain("| 2026-W37 |");
+        draft.Markdown.Should().Contain("| 日本株 |");
+        draft.Markdown.Should().Contain("| 米国株 |");
+        draft.Markdown.Should().Contain("| ロング（現物・信用買い） |");
+        draft.Markdown.Should().Contain("| ショート（空売り） |");
+
+        // 🔴 **§2 の中だけを見る**（§3 税金レビューは未実装のまま残るため、全文で見ると必ず拾う）。
+        var start = draft.Markdown.IndexOf("## 2. 週別・市場別の内訳", StringComparison.Ordinal);
+        var end = draft.Markdown.IndexOf("## 3. 税金レビュー", start, StringComparison.Ordinal);
+        draft.Markdown[start..end].Should().NotContain("本節は未実装です");
+    }
+
+    // 🔴 **内訳の和が §1 サマリと一致する**（週で切って集計器を呼び直していないことの、出口での証跡）。
+    [Fact]
+    public async Task 月報の市場別の費用の合計が月間サマリの費用合計と一致する()
+    {
+        var fills = new[]
+        {
+            Fill(TradeSide.Buy, 10, 1_000m, 0),
+            Fill(TradeSide.Sell, 10, 1_200m, 60 * 24 * 14),
+        };
+        var svc = new ReportDraftService(new FakeDrafter());
+
+        var draft = await svc.BuildDraftAsync(Request(
+            ReportKind.Monthly, "monthly-2026-08", new DateOnly(2026, 8, 24), fills));
+
+        // 既定前提（US・手数料 0）では費用が 0 であり、実現損益（税引前・費用前）は 2,000。
+        draft.Pnl.RealizedPnlGross.Should().Be(2_000m);
+        draft.Markdown.Should().Contain(
+            $"| 米国株 | {ReportAmountFormat.Base(draft.Pnl.RealizedPnlGross)} | {ReportAmountFormat.Base(draft.Pnl.TotalCost)} |");
+        // 建てた週と決済した週が分かれても、実現損益は決済した週の行に丸ごと出る（再畳み込みしていない証跡）。
+        draft.Markdown.Should().Contain($"| 2026-W37 | {ReportAmountFormat.Base(2_000m)} | 1 |");
+    }
 }

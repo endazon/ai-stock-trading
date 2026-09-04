@@ -48,8 +48,9 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         // 🔴 **期間を切って PnlAggregator を呼び直さない。** 帰属は期間全体を 1 回だけ畳み込んだ結果であり、
         // 日・週・市場・方向のどの軸へもここから集計する（内訳の合計が §1 サマリと一致する唯一の形である）。
         // 判断根拠は日報 §2 と同じ記録の転記であり、報告書生成時に文章を作らない（FR-16）。
-        // **週報だけが持つ**（月報 §2 週別・市場別の内訳は #615 の別スライスで同じ帰属を消費する）。
-        var fillAttributions = request.Kind == ReportKind.Weekly
+        // **週報（§2/§3）と月報（§2 週別・市場別・方向別の内訳）が同じ帰属を消費する**（#615・IADR-0306）。
+        // 日報は明細（TradeHistory）を持つため要らない。
+        var fillAttributions = request.Kind is ReportKind.Weekly or ReportKind.Monthly
             ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales)
             : null;
 
@@ -121,7 +122,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: 費用の内訳と費用率。
             // 🔴 **同じ帰属から数える**（費用合計が §1 サマリと一致する唯一の形である）。
             // 税は期間合計にのみ課されるため PnlSummary の値をそのまま渡す（約定単位へ按分しない）。
-            CostReview = fillAttributions is { } attributions
+            // **週報だけが持つ**（月報 §1 の「費用合計 / 費用率」は分母の裁定〔planning#535〕待ちで、まだ埋めない）。
+            CostReview = request.Kind == ReportKind.Weekly && fillAttributions is { } attributions
                 ? PeriodCostReviewBuilder.Build(attributions, assumptions, pnl.TaxWithheld)
                 : null,
             // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。

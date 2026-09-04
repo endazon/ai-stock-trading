@@ -113,12 +113,12 @@ public class ReportTemplateGoldenTests
             new ReportPosition(Market.UnitedStates, "TSLA", TradeSide.Sell, 5, 240m, 252m,
                 CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null),
         ],
-        // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2 / §3:
+        // FR-06, FR-07, FR-16, #615, IADR-0301, IADR-0306, 04_report-templates 週報 §2 / §3・月報 §2:
         // **現在の供給経路（FillPnlAttributionBuilder）が実際に組み立てる形**を置く。
         //   - 新規建てだけの日（08-24）と決済のある日（08-26 / 08-27）の両方を持つ
         //   - 約定が 1 件も無い日（08-25）は**行そのものが出ない**ことを全文で固定する
         //   - 判断根拠は記録の転記であり、相関できなかった決済は `**未供給**` になる
-        //   - 週報以外では描画されない
+        //   - **週報（§2/§3）と月報（§2）が同じ帰属を消費する**（日報では描画されない）
         //
         // 🔴 **本フィクスチャの `Pnl`（§1）と本列（§2/§3）は独立に手組みしており、互いに整合していない。**
         // `Bare()` の `Pnl` は全種別で共有する固定値（約定 5 件・決済 4 件）であり、ここの 4 件とは合わない
