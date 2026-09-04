@@ -10,6 +10,9 @@
 - [補足: 「実装済み」だが実際には発動しない機能](#補足-実装済みだが実際には発動しない機能)
 
 - 作成日: 2026-08-05
+- 最終更新: 2026-09-04（**A-17 を新設**——基盤 namespace の作り直しで AST の Postgres が空になり、
+  Pod が再起動しないままだったため全テーブルが欠落していた事象と復旧手順を記録した。
+  **A-13 の LLM API キー・A-12 の Istio STRICT mTLS は未解消のまま**）
 - 最終更新: 2026-09-03（**#636（DoD/本文書の「担保している」記述の是正）に伴う実測反映**。**A-13 に `openai-api-key`
   も空である旨を追記**（2 キーとも base64 長 0）。**A-14 を是正**——是正 PR [#647](https://github.com/endazon/ai-stock-trading/pull/647)
   がマージ済みで PVC `opend-persist` に `helm.sh/resource-policy: keep` が付与されていることを実測（再測定手順①合格。
@@ -544,6 +547,26 @@ CAPTCHA の再認証**（利用者本人の操作）が要る。
 | 追跡 | **未起票。** 再発時は本項〔A-16〕へ追記する（専用 issue は無し） |
 | **最後に測った時点** | **2026-09-03**（復旧確認まで実施済み） |
 | 再測定手順 | ① `kubectl -n microservices-platform logs <keycloak-pod> \| grep "imported"` で両レルムの import ログを確認 ② `curl -s -o /dev/null -w '%{http_code}' http://keycloak.microservices-platform:8080/realms/ai-stock-trading` が 200 を返すか確認 ③ AST 各サービスのログで s2s 認証エラー（401）が無いか確認 |
+
+### A-17. ✅ 基盤 namespace の作り直しで AST の DB が空になり全テーブルが消えた — 解消済み（2026-09-04）
+
+2026-09-04 10:46 に `platform-infra` / `microservices-platform` の両 namespace が作り直され（PVC も新規に
+provisioning された）、AST が使う Postgres が**空の状態で再作成**された。AST の namespace 自身は無傷で
+`ast-secrets`（14 キー）も残ったが、**各サービスの Pod は再起動しておらず、空の DB に対して
+`42P01: relation "trade_fills" does not exist` を出し続けた**（`risk-management-service` は 28 回再起動）。
+
+| 項目 | 内容 |
+| --- | --- |
+| 経緯 | MSP の `k8s-local-up.sh`（相当の再構築操作）を実行すると両 namespace と PVC が作り直される。AST の DB そのものは MSP の `deploy/create-multiple-dbs.sh` が作るため**データベースは存在する**が、**テーブルは 1 つも無い** |
+| 🔴 なぜ自動では直らないか | AST の各サービスはスキーマを**プロセス起動時の `MigrateAsync()` でのみ**適用する（例: `RiskManagementService/Program.cs`）。Postgres が作り直されても Pod が生きていれば起動時処理は再実行されないため、**空の DB を掴んだまま動き続ける** |
+| 対応 | `opend` を除く AST の全 Deployment を `kubectl rollout restart` してスキーマを再生成した |
+| **実測（2026-09-04・復旧後）** | 全 12 Pod が Running・restarts 0。直近 60 分の `[ERR]`/`[FTL]` は**全 12 サービスで 0 件**。`trade_fills` の欠落エラーも 0 件 |
+| **失われたもの** | 取引台帳・監査証跡・監視銘柄・設定履歴など、その Postgres にあった業務データはすべて失われた。**リポジトリの内容には影響しない** |
+| 再発条件 | 基盤側の namespace／PVC を作り直したあと、**AST の Deployment を再起動しないこと** |
+| 🔴 保持義務との関係 | 監査証跡・業務台帳は 7 年保持であり、**ローカル検証環境ではこの保持を満たしていない**。本番環境では PVC に `helm.sh/resource-policy: keep` 相当の保護が要る（`opend-persist` に対する [#647](https://github.com/endazon/ai-stock-trading/pull/647) と同型の措置） |
+| 追跡 | **未起票。** 再発時は本項〔A-17〕へ追記する |
+| **最後に測った時点** | **2026-09-04**（復旧確認まで実施済み） |
+| 再測定手順 | ① `kubectl -n platform-infra get pvc` で `postgres-data` の AGE を見る（namespace の再構築直後は数分） ② `kubectl -n ai-stock-trading get pods` で Pod の AGE が PVC より**古ければ空 DB を掴んでいる疑い** ③ `kubectl -n ai-stock-trading logs deploy/risk-management-service --since=10m \| grep 42P01` ④ 復旧は `kubectl -n ai-stock-trading get deploy -o name \| grep -v opend \| xargs -r kubectl -n ai-stock-trading rollout restart` |
 
 ---
 
