@@ -24,6 +24,9 @@ public class ReportTemplateGoldenTests
     private static readonly DateTimeOffset T0 = new(2026, 8, 5, 3, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset ConfirmedAt = new(2026, 8, 28, 12, 0, 0, TimeSpan.Zero);
 
+    // 週報 §2 / §3 の代表データの起点（JST 月曜 09:05）。**固定値のみ**（ゴールデンが決定的である）。
+    private static readonly DateTimeOffset W0 = new(2026, 8, 24, 9, 5, 0, TimeSpan.FromHours(9));
+
     // 代表データ。**固定値のみ**（時刻・乱数・カルチャに依存しない＝ゴールデンが決定的である）。
     private static ReportView Bare(ReportKind kind) => new()
     {
@@ -109,6 +112,33 @@ public class ReportTemplateGoldenTests
                 CurrentPrice: 2_560m, UnrealizedPnl: 6_000m, BorrowFeeTotal: null, HoldingDays: null),
             new ReportPosition(Market.UnitedStates, "TSLA", TradeSide.Sell, 5, 240m, 252m,
                 CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null),
+        ],
+        // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2 / §3:
+        // **現在の供給経路（FillPnlAttributionBuilder）が実際に組み立てる形**を置く。
+        //   - 新規建てだけの日（08-24）と決済のある日（08-26 / 08-27）の両方を持つ
+        //   - 約定が 1 件も無い日（08-25）は**行そのものが出ない**ことを全文で固定する
+        //   - 判断根拠は記録の転記であり、相関できなかった決済は `**未供給**` になる
+        //   - 週報以外では描画されない
+        //
+        // 🔴 **本フィクスチャの `Pnl`（§1）と本列（§2/§3）は独立に手組みしており、互いに整合していない。**
+        // `Bare()` の `Pnl` は全種別で共有する固定値（約定 5 件・決済 4 件）であり、ここの 4 件とは合わない
+        // ——§1 の値を本列へ合わせると**日報・月報のゴールデン 4 本まで動く**（本 PR の差分が「新設 2 節の
+        // 中身だけ」でなくなる）ため、揃えていない。**ゴールデンが固定するのは描画の形式だけである。**
+        // 🔴 **したがって `weekly-supplied.md` は「内訳の和が §1 と一致する例」ではない。**
+        // その一致は約定列から両方を作る経路でしか成り立たず、`FillPnlAttributionTests`（純関数）と
+        // `ReportDraftWeeklyBreakdownTests`（出口）が**別途固定している**。
+        FillAttributions =
+        [
+            new FillPnlAttribution(1, W0, new DateOnly(2026, 8, 24), Market.Japan, "7203", TradeSide.Buy,
+                Quantity: 100, Price: 2_500m, Cost: 120m, RealizedPnlGross: 0m, Realizing: false,
+                Rationale: "始値が支持線で反発。出来高増。"),
+            new FillPnlAttribution(2, W0.AddDays(2), new DateOnly(2026, 8, 26), Market.UnitedStates, "AAPL", TradeSide.Buy,
+                Quantity: 10, Price: 290m, Cost: 18m, RealizedPnlGross: 0m, Realizing: false, Rationale: null),
+            new FillPnlAttribution(3, W0.AddDays(2).AddHours(4), new DateOnly(2026, 8, 26), Market.UnitedStates, "AAPL", TradeSide.Sell,
+                Quantity: 10, Price: 315m, Cost: 20m, RealizedPnlGross: 250m, Realizing: true,
+                Rationale: "目標価格へ到達したため利確。"),
+            new FillPnlAttribution(4, W0.AddDays(3), new DateOnly(2026, 8, 27), Market.Japan, "7203", TradeSide.Sell,
+                Quantity: 100, Price: 2_480m, Cost: 118m, RealizedPnlGross: -2_000m, Realizing: true, Rationale: null),
         ],
         // FR-06, FR-15, FR-20, #569, IADR-0271, 04_report-templates 月報 §5:
         // **現在の供給経路（ThreeWayComparisonAggregator）が実際に組み立てる形**を置く。

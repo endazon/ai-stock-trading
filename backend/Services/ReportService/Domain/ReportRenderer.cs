@@ -53,8 +53,8 @@ public static class ReportRenderer
         switch (view.Kind)
         {
             case ReportKind.Weekly:
-                AppendNotImplemented(sb, "## 2. 日別推移", PendingIssueReason);
-                AppendNotImplemented(sb, "## 3. ハイライト取引", PendingIssueReason);
+                AppendDailyProgression(sb, view);
+                AppendTradeHighlights(sb, view);
                 AppendNarrative(sb, view, narrativeHeading);
                 AppendNotImplemented(sb, "## 5. リスク・費用レビュー", PendingIssueReason);
                 AppendPolicy(sb, view, policyHeading);
@@ -127,6 +127,111 @@ public static class ReportRenderer
         sb.Append(string.Format(CultureInfo.InvariantCulture, NotImplementedNoteFormat, reason));
         sb.Append("\n\n");
     }
+
+    // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2: 日別推移。
+    //
+    // 🔴 **期間を切って PnlAggregator を呼び直した内訳ではない。** 期間全体を 1 回だけ畳み込んだ
+    // 約定単位の帰属（FillPnlAttribution）を日へ寄せている——スライスして畳み込み直すと、**持ち越し建玉の
+    // 平均取得単価がスライス内に存在しない**ため、内訳の合計が §1 サマリと一致しなくなる（しかも全テストは
+    // 緑のままである）。
+    //
+    // 🔴 **`null`（帰属を組み立てていない）を「約定なし」へ潰さない。** 約定 0 件は空列で表す。
+    private static void AppendDailyProgression(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 2. 日別推移\n\n");
+
+        if (view.FillAttributions is not { } entries)
+        {
+            sb.Append("- **日別の内訳を組み立てられませんでした（供給元がありません）**: "
+                + "「当週の約定なし」とは区別しています。**0 件ではありません。**\n\n");
+            return;
+        }
+
+        var rows = FillPnlAttributionBuilder.ByDay(entries);
+        if (rows.Count == 0)
+        {
+            sb.Append("（当週の約定なし）\n\n");
+            return;
+        }
+
+        sb.Append("| 日付 | 実現損益 | 取引数 | 主な要因 |\n");
+        sb.Append("| --- | --- | --- | --- |\n");
+        foreach (var r in rows)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {r.SessionDateJst:yyyy-MM-dd} | {Amount(r.RealizedPnlAfterCost)} | {r.FillCount} | {ContributorCell(r)} |\n");
+        }
+
+        sb.Append('\n');
+        sb.Append("- 日付は **JST**（報告期間の基準時刻）。**約定が 1 件も無い日は行を出しません**"
+            + "（休場日を含みます。**「実現損益 0」ではありません**）。\n");
+        sb.Append("- 「実現損益」は**税引前・費用込み**（当日の決済損益 − 当日の約定に掛かる概算費用）です。"
+            + "**源泉徴収税額は期間合計にのみ課され、日へ配分する規則がありません**——"
+            + "本節の合計は §1 の「週間実現損益（税引後・費用込み）」と**源泉徴収税額のぶんだけ違います**。\n");
+        sb.Append("- 「取引数」は**約定件数**（決済に至らない新規建てを含む）です。"
+            + "合計は §1 の「取引回数（買/売/決済）」の 買＋売 に一致します。\n");
+        sb.Append("- 「主な要因」は**当日の実現損益への寄与が最大の決済を機械的に選んだ事実**であり、"
+            + "要因の説明（散文）ではありません。**散文の要因を持つ記録源がありません。**\n\n");
+    }
+
+    // 「主な要因」セル。**決済が無い日を「未供給」と書かない**（新規建てのみという事実である）。
+    private static string ContributorCell(DailyPnlRow row) =>
+        row.LargestContributor is { } top
+            ? string.Format(CultureInfo.InvariantCulture, "寄与最大: {0}（{1}） {2}（当日の決済 {3} 件）",
+                top.Symbol, MarketLabel(top.Market), Amount(top.RealizedPnlGross), row.RealizingCount)
+            : "決済なし（新規建てのみ）";
+
+    // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §3: ハイライト取引（最良・最悪）。
+    //
+    // 🔴 **母集合は決済（在庫が減った約定）である。** 新規建ては実現損益 0 であり、
+    // 母集合へ入れると「損益 0 の取引が最良/最悪」という無意味な行になる。
+    private static void AppendTradeHighlights(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 3. ハイライト取引\n\n");
+
+        if (view.FillAttributions is not { } entries)
+        {
+            sb.Append("- **ハイライトを組み立てられませんでした（供給元がありません）**: "
+                + "「該当する取引なし」とは区別しています。**0 件ではありません。**\n\n");
+            return;
+        }
+
+        if (FillPnlAttributionBuilder.Highlights(entries) is not { Best: { } best, Worst: { } worst })
+        {
+            sb.Append("（当週に決済取引はありません）\n\n");
+            sb.Append("- 決済が無いことは**事実**です（**「損益 0」でも未供給でもありません**）——"
+                + "新規建てのみの週・約定が 1 件も無い週が該当します。\n\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **最良**: {Highlight(best)} — 判断の要点: {TextOrUnsupplied(best.Rationale)}\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **最悪**: {Highlight(worst)} — 原因: {TextOrUnsupplied(worst.Rationale)}\n");
+
+        // **同一の取引が両方に出ることを隠さない**（2 件あったように読める）。理由は 2 通りある。
+        if (best.Sequence == worst.Sequence)
+        {
+            sb.Append(entries.Count(e => e.Realizing) == 1
+                ? "- **当週の決済は 1 件のみ**のため、最良と最悪は**同一の取引**です。\n"
+                : "- **当週の決済はすべて同額**のため、最良と最悪に**同一の取引**を選んでいます（同値の決定規則による）。\n");
+        }
+
+        sb.Append('\n');
+        sb.Append("- 損益は**税引前・費用前**（当該決済の約定代金差額）です。"
+            + "**費用・源泉徴収税額は期間合計にのみ集計され、約定単位へ配分する規則がありません。**\n");
+        sb.Append("- 「該当日報」は**リンクではなく報告書の自然キー**です（報告書に URL 体系がありません）。"
+            + "当該日の日報が生成されていない場合、対応する報告書はありません。\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- 「判断の要点」「原因」は**取引判断の記録をそのまま転記**しています"
+                + $"（報告書生成時に文章を作っていません）。相関できなかった決済は `{UnsuppliedCell}` です。\n\n");
+    }
+
+    // ハイライト 1 件の見出し部（銘柄・市場・損益・決済日・該当日報の自然キー）。
+    private static string Highlight(FillPnlAttribution entry) =>
+        string.Format(CultureInfo.InvariantCulture, "{0}（{1}） {2} — {3:yyyy-MM-dd} 決済（該当日報: `{4}`）",
+            entry.Symbol, MarketLabel(entry.Market), Amount(entry.RealizedPnlGross), entry.SessionDateJst,
+            ReportPeriod.ExpectedKey(ReportKind.Daily, entry.SessionDateJst));
 
     // 散文（LLM ドラフト）。数値は含めない。
     private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
@@ -252,6 +357,10 @@ public static class ReportRenderer
 
     private static string IntOrUnsupplied(int? value) =>
         value is { } v ? v.ToString(CultureInfo.InvariantCulture) : UnsuppliedCell;
+
+    // 記録の転記（判断根拠など）。**空文字を「根拠なし」と書かない**（TradeHistoryRenderer と同じ規律）。
+    private static string TextOrUnsupplied(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? UnsuppliedCell : value.ReplaceLineEndings(" ");
 
     // FR-06, FR-07, ADR-0017 決定4-(1), #335, IADR-0217: 報告書のメタ情報として「実際に使用したモデル」を残す。
     //

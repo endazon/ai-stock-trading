@@ -108,6 +108,14 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             TradeHistory = request.Kind == ReportKind.Daily
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales)
                 : null,
+            // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2/§3: 約定単位の損益帰属。
+            // **週報だけが持つ**（月報 §2 週別・市場別の内訳は #615 の別スライスで同じ帰属を消費する）。
+            // 🔴 **期間を切って PnlAggregator を呼び直さない。** 帰属は期間全体を 1 回だけ畳み込んだ結果であり、
+            // 日・週・市場・方向のどの軸へもここから集計する（内訳の合計が §1 サマリと一致する唯一の形である）。
+            // 判断根拠は日報 §2 と同じ記録の転記であり、報告書生成時に文章を作らない（FR-16）。
+            FillAttributions = request.Kind == ReportKind.Weekly
+                ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales)
+                : null,
             // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
             // **null（照会できていない）を空列（建玉なし）へ潰さない。**
             Positions = request.Kind == ReportKind.Daily
