@@ -29,8 +29,8 @@ plan_refs:
   （情報源の 4 区分・必須源の欠測時振る舞い 3 種。FINRA は「空売りの新規建てのみ停止」＝
   `LimitedDegradation` かつ `LimitsShortEntriesOnly`）
 - 計画書リンク:
-  - `../project-planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md` 決定12
-  - `../project-planning/projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md` 決定1・決定3
+  - `project-planning/projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md`（隣接クローン・読み取り専用）決定12
+  - `project-planning/projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md`（隣接クローン・読み取り専用）決定1・決定3
 - 対象 Issue: [#687](https://github.com/endazon/ai-stock-trading/issues/687)（分割元 #643）
 
 ## 目的・背景
