@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-08-28
+updated: 2026-09-04
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-03, NFR-07]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07]
 adrs: [ADR-0006]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0255, MSP:IADR-0077]
-specs: [20260828_287_business-metrics-and-dashboards]
-issues: [#24, #287]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0255, IADR-0307, MSP:IADR-0077]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics]
+issues: [#24, #287, #689]
 -->
 
 
@@ -63,7 +63,10 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
+| 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
+| 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
+| 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |
+| 取引サイクル | `ast_trade_cycle_latency_unobserved_total` | `stage` / `reason` | 🔴 **端点間の所要を確定できなかった件数。**起点を持たない注文（利用者の手仕舞い・維持証拠金の自動縮小・約定追跡の後追い）や時計ずれで負になった区間はここへ出し、**ヒストグラムには 1 件も入れない**（0 ms を入れると目標を満たしているように見えるため） |
 | 統制 | `ast_risk_screenings_total` | `outcome` | 発注前審査。**承認も拒否も数える**（拒否だけを数えると「違反 0 件」と「審査が動いていない」を区別できない） |
 | 統制 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳（上限超過・緊急停止・一時停止・禁止銘柄ほか） |
 | 発注 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
@@ -81,6 +84,13 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
   そのため `node scripts/check-observability-assets.js` が CI で、ダッシュボードとコードの**双方向の一致**
   （実在しない系列を引いていないか／誰も引いていない計器が無いか）を検査する。
 - **タグの基数を業務量に比例させない。** 銘柄・注文 ID・判断 ID はタグにしない。銘柄単位の追跡はログとトレースが担う。
+- **端点間レイテンシのバケット境界は明示する。** OTel の既定境界は上限 10,000 ms であり、5 分・10 分の
+  目標値はすべて `+Inf` バケットへ落ちて分位点も超過件数も読めない。境界は
+  `AddAiStockTradingObservability` の View で与え、**目標値そのもの（300,000 / 600,000）を境界に置く**
+  ——超過件数が隣り合うバケットの引き算で読め、分位点の補間に頼らずに済む。
+- 🔴 **「測れなかった」を 0 として記録しない。** 端点間の計測は、起点（どの契機で・いつ始まったか）を
+  イベントが運んでこなければ確定できない。確定できない件は専用のカウンタへ理由つきで出し、
+  ヒストグラムへは入れない。**未観測を 0 ms として混ぜると、目標を満たしているように見える。**
 
 ### 既定では外部へ送らない
 

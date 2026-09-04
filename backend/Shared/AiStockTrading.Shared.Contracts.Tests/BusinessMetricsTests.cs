@@ -207,6 +207,100 @@ public class BusinessMetricsTests
             .Should().ContainSingle().Which.Value.Should().Be(160);
     }
 
+    // NFR-01, #689, IADR-0307: 起点イベント → 発注完了の端点間所要が、trigger タグつきで刻まれる。
+    [Theory]
+    [InlineData(BusinessMetrics.TriggerPriceMovement, 42_000)]
+    [InlineData(BusinessMetrics.TriggerScheduled, 301_000)]
+    public void 発注完了までの端点間所要は起点からの経過をそのまま計上する(string trigger, double expectedMs)
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+        var startedAt = new DateTimeOffset(2026, 9, 4, 0, 30, 0, TimeSpan.Zero);
+
+        metrics.RecordOrderCompletionLatency(trigger, startedAt, startedAt.AddMilliseconds(expectedMs));
+
+        var measurement = capture.ValuesOf(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
+            .Should().ContainSingle().Which;
+        measurement.Value.Should().BeApproximately(expectedMs, 0.001);
+        measurement.Tags[BusinessMetricNames.TagTrigger].Should().Be(trigger);
+    }
+
+    // NFR-02, #689, IADR-0307: 起点イベント → 記録完了（監査台帳へ記録した時点）の端点間所要。
+    [Fact]
+    public void 記録完了までの端点間所要は起点からの経過をそのまま計上する()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+        var startedAt = new DateTimeOffset(2026, 9, 4, 0, 30, 0, TimeSpan.Zero);
+
+        metrics.RecordRecordCompletionLatency(
+            BusinessMetrics.TriggerScheduled, startedAt, startedAt.AddMinutes(9));
+
+        var measurement = capture.ValuesOf(BusinessMetricNames.TradeCycleRecordCompletionLatencyMs)
+            .Should().ContainSingle().Which;
+        measurement.Value.Should().BeApproximately(540_000, 0.001);
+        measurement.Tags[BusinessMetricNames.TagTrigger].Should().Be(BusinessMetrics.TriggerScheduled);
+    }
+
+    // 🔴 NFR-01, NFR-02, #689, IADR-0307 決定3【否定形】: **起点が無いとき 0 を記録しない。**
+    // 0 を刻むと「5 分以内・10 分以内を満たしている」と読めてしまう。ヒストグラムには 1 件も入れず、
+    // 未観測カウンタへ理由つきで数える。起点は 2 フィールドあり、**どちらが欠けても未観測である**。
+    [Theory]
+    [InlineData(null, true)]   // trigger が無い
+    [InlineData(BusinessMetrics.TriggerScheduled, false)] // 起点時刻が無い
+    [InlineData(null, false)]  // どちらも無い
+    public void 起点を持たない注文はヒストグラムへ入らず未観測として数える(string? trigger, bool hasStartedAt)
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+        var completedAt = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
+        DateTimeOffset? startedAt = hasStartedAt ? completedAt.AddMinutes(-1) : null;
+
+        metrics.RecordOrderCompletionLatency(trigger, startedAt, completedAt);
+
+        capture.ValuesOf(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
+            .Should().BeEmpty("測れなかったものを 0 ms として記録すると目標を満たしているように見える");
+        var unobserved = capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved)
+            .Should().ContainSingle().Which;
+        unobserved.Tags[BusinessMetricNames.TagStage].Should().Be(BusinessMetrics.StageOrderCompletion);
+        unobserved.Tags[BusinessMetricNames.TagReason].Should().Be(BusinessMetrics.UnobservedOriginMissing);
+    }
+
+    // NFR-01, NFR-02, #689, IADR-0307 決定3【否定形】: サービス間の時計ずれで終点が起点より前になった区間は
+    // 捨てる（負の値を入れると分位点が下振れする）。件数だけを別の理由で残す。
+    [Fact]
+    public void 終点が起点より前なら値を捨てて未観測として数える()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+        var startedAt = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
+
+        metrics.RecordRecordCompletionLatency(
+            BusinessMetrics.TriggerScheduled, startedAt, startedAt.AddMilliseconds(-1));
+
+        capture.ValuesOf(BusinessMetricNames.TradeCycleRecordCompletionLatencyMs).Should().BeEmpty();
+        var unobserved = capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved)
+            .Should().ContainSingle().Which;
+        unobserved.Tags[BusinessMetricNames.TagStage].Should().Be(BusinessMetrics.StageRecordCompletion);
+        unobserved.Tags[BusinessMetricNames.TagReason].Should().Be(BusinessMetrics.UnobservedNegativeElapsed);
+    }
+
+    // NFR-01, NFR-02, #689: 経過 0 ms（起点と終点が同時刻）は**測れた 0** であり、未観測ではない。
+    // 「測れなかった」と「0 だった」の区別は、0 の側からも表明しておく。
+    [Fact]
+    public void 経過ゼロは測れた値として計上し未観測にはしない()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+        var at = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
+
+        metrics.RecordOrderCompletionLatency(BusinessMetrics.TriggerPriceMovement, at, at);
+
+        capture.ValuesOf(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
+            .Should().ContainSingle().Which.Value.Should().Be(0);
+        capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved).Should().BeEmpty();
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -224,5 +318,14 @@ public class BusinessMetricsTests
         metrics.RecordOrderDispatchForgone(OrderDispatchForgoneReason.BrokerUnavailable);
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
+
+        // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
+        // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。
+        var startedAt = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
+        metrics.RecordOrderCompletionLatency(
+            BusinessMetrics.TriggerPriceMovement, startedAt, startedAt.AddSeconds(30));
+        metrics.RecordRecordCompletionLatency(
+            BusinessMetrics.TriggerScheduled, startedAt, startedAt.AddSeconds(45));
+        metrics.RecordOrderCompletionLatency(cycleTrigger: null, cycleStartedAt: null, startedAt);
     }
 }

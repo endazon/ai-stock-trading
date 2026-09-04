@@ -179,6 +179,8 @@
   "OrderApproved": {
     "ApprovedAt": "DateTimeOffset",
     "ApprovedQuantity": "Int32",
+    "CycleStartedAt": "DateTimeOffset?",
+    "CycleTrigger": "String",
     "DecisionId": "Guid",
     "Intent": "OrderIntent"
   },
@@ -196,6 +198,8 @@
   },
   "OrderExecuted": {
     "AveragePrice": "Decimal",
+    "CycleStartedAt": "DateTimeOffset?",
+    "CycleTrigger": "String",
     "DecisionId": "Guid",
     "ExecutedAt": "DateTimeOffset",
     "FilledQuantity": "Int32",
@@ -322,6 +326,8 @@
     "Symbol": "String"
   },
   "TradeDecisionMade": {
+    "CycleStartedAt": "DateTimeOffset?",
+    "CycleTrigger": "String",
     "DecidedAt": "DateTimeOffset",
     "DecisionId": "Guid",
     "Intent": "OrderIntent",

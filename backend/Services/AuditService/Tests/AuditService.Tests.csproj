@@ -17,5 +17,7 @@
          共通配線ヘルパを持つ shim をテストからのみ参照する。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- NFR-02, #689, IADR-0307: 記録完了までの端点間所要が実際に刻まれることを MeterListener で観測する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
   </ItemGroup>
 </Project>

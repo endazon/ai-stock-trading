@@ -39,6 +39,10 @@ public sealed class PriceMovementDetectedHandler(
             return;
         }
 
+        // NFR-01, #689, IADR-0307: 端点間レイテンシの起点は **message.DetectedAt**（検知時刻）である。
+        // DecisionTrigger.FromPriceMovement が起点として載せ、TradeDecisionMade → OrderApproved →
+        // OrderExecuted と運ばれる。ここで現在時刻へ置き換えると、検知から配送までの区間が計測から消える。
+        //
         // NFR-07, #287: 判断の所要は「判断が成立したか」に関わらず計上する（見送りも 1 回の判断である）。
         var started = Stopwatch.GetTimestamp();
         var decision = await decisionService.DecideAsync(message, cancellationToken).ConfigureAwait(false);

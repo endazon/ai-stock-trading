@@ -4,6 +4,7 @@ using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -69,6 +70,36 @@ public class OrderScreeningServiceTests
         outcome.Approved!.ApprovedQuantity.Should().Be(10);
         outcome.Approved.Intent.Should().Be(intent);
         outcome.Rejected.Should().BeNull();
+    }
+
+    // NFR-01, NFR-02, #689, IADR-0307 決定1/7: 取引サイクルの起点は判断から発注執行へ**そのまま**中継する。
+    // 🔴 審査時刻（clock.UtcNow）で上書きすると、審査より前の区間（検知・収集・LLM 判断）が計測から消え、
+    // 端点間レイテンシが実際より短く出る。統制の判定には一切使わない（読まない）。
+    [Fact]
+    public void 承認は判断が運んできた取引サイクルの起点をそのまま中継する()
+    {
+        var (service, _, _, _, _) = CreateService();
+        var startedAt = Now.AddMinutes(-4);
+        var decision = new TradeDecisionMade(
+            Guid.NewGuid(), EntryIntent(), "テスト判断", Now, BusinessMetrics.TriggerPriceMovement, startedAt);
+
+        var outcome = service.Screen(decision);
+
+        outcome.IsApproved.Should().BeTrue();
+        outcome.Approved!.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+        outcome.Approved.CycleStartedAt.Should().Be(startedAt, "審査時刻で上書きすると前段の区間が消える");
+    }
+
+    // NFR-01, NFR-02, #689, IADR-0307 決定4: 起点を持たない判断は起点なしのまま通す（**作らない**）。
+    [Fact]
+    public void 起点を持たない判断の承認には起点を作らない()
+    {
+        var (service, _, _, _, _) = CreateService();
+
+        var outcome = service.Screen(Decision(EntryIntent()));
+
+        outcome.Approved!.CycleTrigger.Should().BeNull();
+        outcome.Approved.CycleStartedAt.Should().BeNull();
     }
 
     [Fact]

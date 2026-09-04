@@ -38,10 +38,31 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>審査が拒否したことを表す <c>outcome</c> タグ値。</summary>
     public const string OutcomeRejected = "rejected";
 
+    /// <summary>NFR-01, #689: 端点間計測の区間タグ値。起点イベント → 発注完了（<c>OrderExecuted</c> の発行）。</summary>
+    public const string StageOrderCompletion = "order-completion";
+
+    /// <summary>NFR-02, #689: 端点間計測の区間タグ値。起点イベント → 記録完了（監査台帳への記録）。</summary>
+    public const string StageRecordCompletion = "record-completion";
+
+    /// <summary>
+    /// NFR-01, NFR-02, #689: 未観測の理由タグ値。**起点（trigger / 起点時刻）を持たない**注文である。
+    /// 取引サイクル外の経路（owner 手仕舞い・維持証拠金の自動縮小・約定追跡の後追い）で正常に発生する。
+    /// </summary>
+    public const string UnobservedOriginMissing = "origin-missing";
+
+    /// <summary>
+    /// NFR-01, NFR-02, #689: 未観測の理由タグ値。終点が起点より**前**になった（サービス間の時計ずれ）。
+    /// 負の所要をヒストグラムへ入れると分位点が下振れするため、値を捨てて件数だけ残す。
+    /// </summary>
+    public const string UnobservedNegativeElapsed = "negative-elapsed";
+
     private readonly Meter _meter;
     private readonly Counter<long> _informationItemsCollected;
     private readonly Counter<long> _tradeCycleDecisions;
     private readonly Histogram<double> _tradeCycleDecisionDurationMs;
+    private readonly Histogram<double> _tradeCycleOrderCompletionLatencyMs;
+    private readonly Histogram<double> _tradeCycleRecordCompletionLatencyMs;
+    private readonly Counter<long> _tradeCycleLatencyUnobserved;
     private readonly Counter<long> _riskScreenings;
     private readonly Counter<long> _riskRejections;
     private readonly Counter<long> _orderExecutions;
@@ -67,6 +88,21 @@ public sealed class BusinessMetrics : IDisposable
         _tradeCycleDecisionDurationMs = _meter.CreateHistogram<double>(
             BusinessMetricNames.TradeCycleDecisionDurationMs,
             description: "取引判断 1 回の所要ミリ秒（FR-04）");
+
+        // NFR-01, NFR-02, #689, IADR-0307: 端点間レイテンシ。**バケット境界は View で明示する**
+        // （ObservabilityExtensions）——既定境界は上限 10,000 ms であり、5 分 / 10 分の目標値は
+        // すべて +Inf に落ちて分位点が意味を失う。
+        _tradeCycleOrderCompletionLatencyMs = _meter.CreateHistogram<double>(
+            BusinessMetricNames.TradeCycleOrderCompletionLatencyMs,
+            description: "起点イベントから発注完了までのミリ秒（trigger 別。NFR-01）");
+
+        _tradeCycleRecordCompletionLatencyMs = _meter.CreateHistogram<double>(
+            BusinessMetricNames.TradeCycleRecordCompletionLatencyMs,
+            description: "起点イベントから記録完了までのミリ秒（trigger 別。NFR-02）");
+
+        _tradeCycleLatencyUnobserved = _meter.CreateCounter<long>(
+            BusinessMetricNames.TradeCycleLatencyUnobserved,
+            description: "端点間の所要を確定できなかった件数（stage・reason 別。NFR-01/NFR-02）");
 
         _riskScreenings = _meter.CreateCounter<long>(
             BusinessMetricNames.RiskScreenings,
@@ -122,6 +158,65 @@ public sealed class BusinessMetrics : IDisposable
         _tradeCycleDecisionDurationMs.Record(
             elapsedMilliseconds,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, trigger));
+
+    /// <summary>
+    /// NFR-01, #689, IADR-0307: <b>起点イベント → 発注完了</b>の端点間所要を計上する（NFR-01 の計器）。
+    /// <paramref name="cycleTrigger"/> / <paramref name="cycleStartedAt"/> は注文が運んできた
+    /// 取引サイクルの起点であり、いずれかが <c>null</c> なら<b>未観測として数える</b>。
+    /// </summary>
+    public void RecordOrderCompletionLatency(
+        string? cycleTrigger, DateTimeOffset? cycleStartedAt, DateTimeOffset completedAt) =>
+        RecordCycleLatency(
+            _tradeCycleOrderCompletionLatencyMs, StageOrderCompletion, cycleTrigger, cycleStartedAt, completedAt);
+
+    /// <summary>
+    /// NFR-02, #689, IADR-0307: <b>起点イベント → 記録完了</b>の端点間所要を計上する（NFR-02 の計器）。
+    /// <paramref name="recordedAt"/> は監査台帳へ記録した時刻である。
+    /// </summary>
+    public void RecordRecordCompletionLatency(
+        string? cycleTrigger, DateTimeOffset? cycleStartedAt, DateTimeOffset recordedAt) =>
+        RecordCycleLatency(
+            _tradeCycleRecordCompletionLatencyMs, StageRecordCompletion, cycleTrigger, cycleStartedAt, recordedAt);
+
+    /// <summary>
+    /// NFR-01, NFR-02, #689, IADR-0307: 端点間計測の<b>唯一の判断点</b>。
+    /// <para>
+    /// 🔴 <b>「測れなかった」と「0 だった」を区別する。</b>起点が無い・経過が負のときは
+    /// ヒストグラムへ 1 件も入れず、未観測カウンタへ理由つきで 1 件だけ数える。
+    /// 2 つの計上点（発注執行・監査）で判断が割れないよう、分岐はここ 1 か所に持つ。
+    /// </para>
+    /// </summary>
+    private void RecordCycleLatency(
+        Histogram<double> histogram,
+        string stage,
+        string? cycleTrigger,
+        DateTimeOffset? cycleStartedAt,
+        DateTimeOffset completedAt)
+    {
+        if (cycleStartedAt is not { } startedAt || string.IsNullOrEmpty(cycleTrigger))
+        {
+            RecordLatencyUnobserved(stage, UnobservedOriginMissing);
+            return;
+        }
+
+        var elapsed = (completedAt - startedAt).TotalMilliseconds;
+        if (elapsed < 0)
+        {
+            RecordLatencyUnobserved(stage, UnobservedNegativeElapsed);
+            return;
+        }
+
+        histogram.Record(
+            elapsed,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, cycleTrigger));
+    }
+
+    /// <summary>NFR-01, NFR-02, #689: 端点間の所要を確定できなかった 1 件を計上する。</summary>
+    private void RecordLatencyUnobserved(string stage, string reason) =>
+        _tradeCycleLatencyUnobserved.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagStage, stage),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
 
     /// <summary>
     /// FR-10, FR-19: 発注前審査 1 件を計上する。承認なら <paramref name="rejectionReasons"/> は空である。

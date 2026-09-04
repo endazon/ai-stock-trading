@@ -41,9 +41,12 @@ public sealed class OrderExecutionAppService(
             // 発注先を保持しないため、再発行の時点で構成が変わっていれば当時と異なる値が載り得る。
             // 下流（Stage 1 の取引件数）は DecisionId で先着優先に記録するため、既に観測済みの注文は
             // 上書きされない。残余リスクは IADR-0149 に記録した。
+            // NFR-01, NFR-02, #689, IADR-0307: 再発行でも起点は**今届いた承認**が運ぶものを載せる
+            // （記録（ExecutionRecord）は起点を保持しない）。載せなければ記録完了の区間が閉じない。
             return OrderDispatchResult.FromExecuted(new OrderExecuted(
                 existing.DecisionId, existing.OrderId, existing.Status,
-                existing.FilledQuantity, existing.AveragePrice, existing.ExecutedAt, broker.Provider));
+                existing.FilledQuantity, existing.AveragePrice, existing.ExecutedAt, broker.Provider,
+                approved.CycleTrigger, approved.CycleStartedAt));
         }
 
         var intent = approved.Intent;
@@ -118,6 +121,7 @@ public sealed class OrderExecutionAppService(
 
         // FR-20, FR-12, #386, IADR-0149 決定1: **実際に発注したアダプタの発注先**を載せる。
         // 取引判断が運ぶ intent.Mode は「段階が定める既定の発注先」であって現在の発注先ではない（IADR-0140 決定3）。
+        // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を記録側（監査）まで運ぶ。
         var executed = new OrderExecuted(
             approved.DecisionId,
             brokerOrder.OrderId,
@@ -125,7 +129,9 @@ public sealed class OrderExecutionAppService(
             brokerOrder.FilledQuantity,
             brokerOrder.AveragePrice,
             now,
-            broker.Provider);
+            broker.Provider,
+            approved.CycleTrigger,
+            approved.CycleStartedAt);
 
         // FR-10, #331, IADR-0210 決定1/3: Open のエントリーが生きている（＝建玉になった・なり得る:
         // Accepted / PartiallyFilled / Filled）なら、保護逆指値を**同時発注**する。
