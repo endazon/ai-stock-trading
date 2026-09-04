@@ -3,15 +3,15 @@ title: Vault 秘匿参照（External Secrets）opt-in 手順 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-08-21
+updated: 2026-09-05
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-05]
-adrs: [ADR-0006]
-iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, MSP:IADR-0077]
+adrs: [ADR-0006, ADR-0022]
+iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, MSP:IADR-0077]
 specs: []
-issues: [#24, #262, #263, #364]
+issues: [#24, #262, #263, #364, #686]
 -->
 
 
@@ -44,12 +44,12 @@ issues: [#24, #262, #263, #364]
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
 `discord-owner-auth-client-id` / `discord-owner-auth-client-secret`。
 
-> **`fred-api-key` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 / #364。
-> 統制の金額は基準通貨で判定し換算は判断境界の 1 点で行う、および判定の基準通貨を USD へ反転した各決定による）。
-> 欠けると JPY 建て銘柄は判断前に全件見送りになる
-> （米国株は無影響）。**#364 で基準通貨が USD へ移行し、必須となる市場が US 株から日本株へ入れ替わった。**
-> 他の API 鍵と違い「無ければ当該ソースが無効」で済まないため、日本株を回す環境では
-> 投入必須として扱う。詳細は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)。
+> **`fred-api-key` は為替レートの「フォールバック用」であり、必須前提ではない**（#686 以降）。
+> **第一の情報源は日銀「外国為替市況（日次）」で認証不要**のため、鍵が無くても JPY 建て銘柄の換算は動く
+> （基準通貨〔USD〕への換算レート源。統制の金額は基準通貨で判定し、換算は判断境界の 1 点で行う）。
+> **投入しないと冗長化が失われる** —— 日銀側の障害・仕様変更で為替の取得が完全に止まり、
+> JPY 建て銘柄は判断前に全件見送りになる（米国株は無影響）。起動時に「フォールバックがありません」の
+> 警告が 1 回出る。詳細は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)。
 >
 > **既定（Vault 非依存）の手動 Secret では `scripts/k8s-local-deploy.sh` が env 未設定のキーに触れない**
 > （投入済みの値を保持する・#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ）。

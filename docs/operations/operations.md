@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
-adrs: [ADR-0002, ADR-0007, ADR-0013]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187]
-specs: [20260716_132_opend-production-readiness]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, MSP#266, planning#54]
+adrs: [ADR-0002, ADR-0007, ADR-0013, ADR-0022]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #686, MSP#266, planning#54]
 -->
 
 
@@ -44,7 +44,7 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 | GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24。ローカル経路の GitOps は AST リポ内の opt-in manifest として整備する）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
 | 秘匿情報 | 既定は k8s Secret 直（`ast-secrets` 手動）。Vault 化は opt-in（[Vault 秘匿 runbook](vault-secrets-runbook.md)・#24）。実充足は MSP stand-up＋Tier 3。**`k8s-local-deploy.sh` の再実行は env 未設定のキーに触れない**（投入済みの値を保持する。明示的な空指定だけはキー名を列挙して中断・#263。`ast-secrets` は差分パッチで同期する） |
-| 為替レート（日本株） | **`FRED_API_KEY` は日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・#262 / #364。換算は判断境界の 1 点で行い、基準通貨は USD である）。未設定＝JPY 建て銘柄は判断前に全件見送り（米国株は無影響）。**#364 で必須となる市場が US 株から日本株へ入れ替わった。** 手順・切り分けは [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md) |
+| 為替レート（日本株） | **第一の情報源は日銀「外国為替市況（日次）」**（系列 `FXERD04`・`db=fm08`・**認証不要**・毎営業日公表／収録は翌々営業日 8:50 頃）。**`FRED_API_KEY` は必須前提ではなくフォールバック用**（無くても日銀単独で換算できるが冗長化が失われ、起動時に警告が 1 回出る・#686）。換算は判断境界の 1 点で行い、基準通貨は USD である（#262 / #364）。レート未解決＝JPY 建て銘柄は判断前に全件見送り（米国株は無影響）。設定点 `Fx__Provider=boj` は **`report` / `risk-management` / `trade-decision` の 3 サービス分**あり、**1 箇所だけ直すと挙動が食い違う**。手順・切り分けは [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md) |
 | 可観測性 | OTLP→otel-collector→Prometheus/Loki/Tempo（[可観測性仕様](../observability/observability.md)）。環境境界は [インフラ仕様](../infra/infra.md) |
 
 > 環境境界（経路A/B／実基盤 Tier 3）と #24 受け入れ基準の充足状況は [インフラ仕様](../infra/infra.md) を単一情報源とする。
@@ -279,7 +279,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | **発注予約が `Reserved` のまま滞留**（#131。発注の冪等化は 3 相で行い、不明な窓は再発注せず拒否する。自動化は #141） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。自動リコンサイルが有効かつ実照会プローブが配線済みなら自動解消される。未配線（既定 no-op）なら手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可 | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
 | **重複排除ストアが肥大化する**（#137。終端行のみを保持期間でパージする） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（パージ方針の代替案） |
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
-| **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364。基準通貨は USD で、換算は判断境界の 1 点で行う） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源（FRED `DEXJPUS`）が未接続。**`FRED_API_KEY` は日本株取引の必須前提**（#364 以降。任意の収集ソース鍵ではない）。鍵を `export FRED_API_KEY=…` して `scripts/k8s-local-deploy.sh` を再実行し、`fx-rate` が `fred` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` でも鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点 | 鍵が正しいのに `none` のままなら provider 名の誤り（未知の値は警告して no-op）。`fred` 申告でも見送りが続く場合は FRED 側の `DEXJPUS` 更新停止（**鮮度上限 14 日**超過は採らない。鮮度上限はデータ源の公表周期から導く）を疑う。`DEXJPUS` の公表は **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であり、**最新観測が 10 日前でも正常**である点に注意する（鮮度上限はこの公表周期から導いており、これを超える空白は系列側の異常）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |
+| **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364。基準通貨は USD で、換算は判断境界の 1 点で行う） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源が未接続。**設定点は `Fx__Provider=boj`（日銀・認証不要）で、3 サービス分ある**（#686 以降。`fred` は鍵があるときだけ後段に積まれるフォールバックであり、第一に据えない）。`fx-rate` が `boj` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` は鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点。**`boj` は認証不要のため鍵の有無で `none` へ倒れない** | `none` のままなら provider 名の誤り（未知の値は警告して no-op）か、`Fx__Provider` を空へ戻している。`boj` 申告でも見送りが続く場合は日銀側の収録停止を疑う（**鮮度上限 30 日**超過は採らない。上限・警告しきい値はデータ源の公表周期から計画が定めた値）。日銀は**毎営業日**公表だが**実装が読む経路への収録は翌々営業日 8:50 頃**であり、**最新観測が 2〜4 日前でも正常**である。FRED へフォールバック中は `DEXJPUS` の公表が **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であるため**最新観測が 10 日前でも正常**（警告しきい値 5 日を常に超えうる）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |
 | **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
 
 > **`Reserved` 滞留の発生条件**: ブローカ発注の前後でプロセスが落ちる／DB が書けない場合に限る。moomoo の

@@ -57,9 +57,10 @@ kubectl -n ai-stock-trading get pods
 - **Discord 通知**: notification `Notifications__Provider=discord-webhook` / `Bot__Enabled=true`（FR-09/14・IADR-0062）。
 - **価格文脈（#236 / IADR-0099）**: trade-decision へ現在値を供給し権威価格でサイジング
   （`MarketData__Provider=finnhub`＋鍵で `ICurrentPriceProvider.IsEnabled` が真・鮮度 `MaxQuoteStalenessSeconds=300`）。
-- **為替換算（#257 / #364 / IADR-0107 / IADR-0152）**: trade-decision の `Fx__Provider=fred`＋`Fx__Fred__ApiKey`。
-  **日本株を取引するための必須前提**（下記「為替換算」参照）。未設定だと JPY 建て銘柄は LLM 呼び出し前に全件見送りになる。
-  **#364 で基準通貨が USD へ移行したため、必須となる市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株は本キー無しで回る）。
+- **為替換算（#257 / #364 / #686 / IADR-0107 / IADR-0152 / IADR-0308）**: trade-decision の
+  `Fx__Provider=boj`（**第一・認証不要**）＋`Fx__Fred__ApiKey`（**フォールバック**）。
+  **JPY 建て銘柄を取引するための前提**（下記「為替換算」参照）。レートが解決できないと LLM 呼び出し前に全件見送りになる。
+  **#364 で基準通貨が USD へ移行したため、レートを要する市場が US 株から日本株へ入れ替わった**（主ターゲットの US 株はレート源なしで回る）。
   **#611 / [IADR-0286](../../../.ai-context/adr/IADR-0286_fx-translation-supply-recognition-rate-and-period-end-rate.md) で
   risk-management（承認記録時の認識時レート＝1 USD あたりの円）と report（為替差損益の期末レート）にも同じ `Fx__*` を置いた。**
   空だと承認の認識時レートが未記録になり、報告書の為替差損益は「供給されていません（0 円ではありません）」のまま（推定で埋めない）。
@@ -93,7 +94,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
 | `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0275 実測で確認済みの構成。既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
-| `FRED_API_KEY` | `fred-api-key` | **日本株取引の必須前提**（基準通貨〔USD〕への換算レート源＝FRED `DEXJPUS` の**逆数**・IADR-0107 / IADR-0152）。収集ソース（FRED）にも同じ鍵を使う | **空=JPY 建て銘柄が全件見送り**（米国株は無影響）。下記「為替換算」参照 |
+| `FRED_API_KEY` | `fred-api-key` | 為替レートの**フォールバック**（第一は日銀・認証不要。#686 / IADR-0308）＋収集ソース（FRED）。基準通貨〔USD〕への換算は FRED `DEXJPUS` の**逆数**（IADR-0107 / IADR-0152） | **空=冗長化なし**（日銀単独で動く。起動時に警告 1 回）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
@@ -176,42 +177,53 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 > [Vault 秘匿 runbook](../../../docs/operations/vault-secrets-runbook.md) 側で行い、本スクリプトの env は使わない
 > （両方から書くと所有が割れる）。既定はオフ＝手動 Secret 直運用。
 
-### 為替換算（`FRED_API_KEY`）— **日本株取引の必須前提**
+### 為替換算（`Fx__Provider=boj`）— **第一は日銀・FRED はフォールバック**
 
 > 起点: [#262](https://github.com/endazon/ai-stock-trading/issues/262) / [#257](https://github.com/endazon/ai-stock-trading/issues/257) /
-> [#364](https://github.com/endazon/ai-stock-trading/issues/364) /
+> [#364](https://github.com/endazon/ai-stock-trading/issues/364) / [#686](https://github.com/endazon/ai-stock-trading/issues/686) /
 > [IADR-0107](../../../.ai-context/adr/IADR-0107_base-currency-conversion.md) /
 > [IADR-0152](../../../.ai-context/adr/IADR-0152_usd-base-currency-migration.md) /
+> [IADR-0194](../../../.ai-context/adr/IADR-0194_boj-fx-rate-source-and-ordered-fallback.md) /
+> [IADR-0308](../../../.ai-context/adr/IADR-0308_fx-provider-boj-first-in-values.md) /
 > 作業仕様書 [`.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md`](../../../.ai-context/specs/20260728_262_263_fx-key-required-and-secret-preservation.md) /
 > [`.ai-context/specs/20260805_364_usd-base-currency.md`](../../../.ai-context/specs/20260805_364_usd-base-currency.md)
 
 統制の金額判定（1 注文金額・日次発注累計・段階資金上限）は**基準通貨＝米ドル**で行う（計画 §3・IADR-0152 決定1）。
 非基準通貨（JPY 建て）の銘柄は、USD への換算レートが解決できない限り**新規建てを見送る**（IADR-0107 決定3 の
-fail-safe＝「古い/無いレートで発注しない」）。したがって **`FRED_API_KEY` は日本株を取引するための必須前提**であり、
-「任意の収集ソース鍵」ではない。
+fail-safe＝「古い/無いレートで発注しない」）。
 
-> **#364 で必須となる市場が入れ替わった。** 旧（基準通貨＝JPY）では US 株が本キーを要したが、
-> 現在は**主ターゲットの US 株が本キー無しで回り**、日本株が本キーを要する。
+> **#686 で第一の情報源が日銀へ移った。** 計画 ADR-0022 決定1 は**日銀「外国為替市況（日次）」を第一**と定め、
+> FRED を決定2 のフォールバックとする。**日銀は認証不要**であるため、`FRED_API_KEY` は
+> **日本株取引の必須前提ではなくなった**（旧記述）。鍵が無くても日銀単独で換算できる —— ただし
+> **冗長化は失われる**（起動時に「フォールバックがありません」を 1 回警告する）。
+>
+> `Fx__Provider` は **`report` / `risk-management` / `trade-decision` の 3 サービス分**あり、
+> `values.yaml`（本番）・`values-local.yaml`（経路B）の**両方**が `boj` を指す（CI が 3 件そろっているかを数える）。
+> **1 箇所だけ直すと 3 サービスで挙動が食い違う。**
 
 | 項目 | 値 | 実装上の根拠 |
 | --- | --- | --- |
-| 設定点 | `Fx__Provider=fred` ＋ `Fx__Fred__ApiKey`（`values-local.yaml` は `ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
-| 系列 | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載）。基準通貨が USD のため **JPY のレートは本系列の逆数**（IADR-0152 決定2・丸めない） | `FredFxOptions.SeriesId` 既定 |
+| 設定点 | `Fx__Provider=boj`（**第一・鍵不要**）＋ `Fx__Fred__ApiKey`（**フォールバック**。`ast-secrets/fred-api-key` を `secretKeyRef`） | `FxRateSourceFactory` |
+| 系列（第一） | 日銀 `FXERD04`（`db=fm08`・東京市場 ドル・円 スポット **17 時時点＝仲値**・**毎営業日**公表／実装が読む経路への収録は**翌々営業日 8:50 頃**）。🔴 **中心相場 `FXERD05` は別系列**であり、取り違えても値がもっともらしいため**テストでしか捕まらない**（IADR-0194） | `BojFxRateSource.DefaultSeriesCode` 既定 |
+| 系列（フォールバック） | `DEXJPUS`（円/ドル・系列は**営業日次**だが**公表は H.10 週次**＝月曜・前週金曜まで一括収載）。基準通貨が USD のため **JPY のレートは本系列の逆数**（IADR-0152 決定2・丸めない） | `FredFxOptions.SeriesId` 既定 |
 | 鮮度上限（**停止**） | **30 日**（超過した観測は採らない＝レート無し扱い＝新規建てを見送る）。計画 ADR-0022 決定5 の**絶対上限**（#381 / IADR-0174 決定2。旧値 14 日＝#271 / IADR-0112 は FRED の週次公表からの逆算であり、根拠が計画へ移った）。`Fx__MaxRateAgeDays` で変更可・0 以下は既定へ・**30 日超は 30 日へ丸める** | `FxOptions.MaxRateAgeDays` 既定 |
-| 鮮度警告（**続行**） | **5 日**（超過すると WRN を出すが、**新規建ては止めず直近レートで続行する**）。計画 ADR-0022 決定4 / §5 の 3 段縮退の中段（#381 / IADR-0174 決定1）。`Fx__StaleRateWarningDays` で変更可・0 以下は既定へ・**鮮度上限超は上限へ丸める**（警告が上限を超えると警告が一度も出ないまま停止するため）。<br>⚠️ **FRED 単独では最新観測の齢が最大 12.84 日まで積み上がるため、警告域に常駐しうる**（日銀アダプタ＝#381 の残りが入るまでの既知の状態） | `FxOptions.StaleRateWarningDays` 既定 |
+| 鮮度警告（**続行**） | **5 日**（超過すると WRN を出すが、**新規建ては止めず直近レートで続行する**）。計画 ADR-0022 決定4 / §5 の 3 段縮退の中段（#381 / IADR-0174 決定1）。`Fx__StaleRateWarningDays` で変更可・0 以下は既定へ・**鮮度上限超は上限へ丸める**（警告が上限を超えると警告が一度も出ないまま停止するため）。<br>⚠️ **FRED へフォールバック中は最新観測の齢が最大 12.84 日まで積み上がるため、警告域に常駐しうる**（第一の日銀は毎営業日公表・収録は翌々営業日のため平常時は 2〜4 日） | `FxOptions.StaleRateWarningDays` 既定 |
 | キャッシュ TTL | 6 時間（日次系列のため判断サイクルごとに叩かない） | `FxOptions.CacheTtlSeconds` 既定 |
-| 既定（未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**） | `Fx:Provider` 空/`none`/未知/キー無し |
+| 既定（`Fx:Provider` 未設定時） | `NoOpFxRateSource`（外部へ 1 リクエストも出さない・**起動は落とさない**）。**chart は 3 サービスとも `boj` を投入するため、この既定に落ちるのは chart を使わない場合だけ**である | `Fx:Provider` 空/`none`/未知 |
 
-**米国株（基準通貨）は本キー無しでも従来どおり取引できる。** ドル建て市場はレート 1 が定義から決まるため
-FX 源へ問い合わせない。すなわち症状は「**日本株だけ何も起きない**」という形（沈黙）で出る。
+**米国株（基準通貨）はレート源が無くても従来どおり取引できる。** ドル建て市場はレート 1 が定義から決まるため
+FX 源へ問い合わせない。すなわちレート源が壊れたときの症状は「**日本株だけ何も起きない**」という形（沈黙）で出る。
 
-**未設定時の観測ログ**（症状 → 原因の辿り方）:
+**観測ログ**（症状 → 原因の辿り方）:
 
 ```text
-# trade-decision（レート源が未接続）— 判断サイクルごとではなく初回 1 回だけ出る
+# trade-decision（レート源が未接続＝Fx__Provider を空へ戻した場合）— 判断サイクルごとではなく初回 1 回だけ出る
 warn: NoOpFxRateSource を使用中: 為替レート源が未接続のため Usd 建て銘柄の新規建ては見送られます（IADR-0107）。
 
-# Fx__Provider=fred だが鍵が空（＝「有効化したつもり」の典型）
+# Fx__Provider=boj で FRED の鍵が空（＝冗長化が無い状態。日銀単独では動いている）
+warn: Fx:Provider に boj が指定されていますが、FRED の APIキー（Fx:Fred:ApiKey）が未設定のためフォールバックがありません。…
+
+# Fx__Provider=fred だが鍵が空（＝「有効化したつもり」の典型。fred は第一に据えない）
 warn: Fx:Provider に fred が指定されていますが、APIキー（Fx:Fred:ApiKey）が未設定のため為替レートを取得しません（no-op へフォールバック・IADR-0107）。
 
 # 実際に見送られた銘柄（LLM 呼び出しより前・銘柄ごと）
@@ -224,12 +236,15 @@ warn: 基準通貨への換算レートが解決できないため見送り（�
 kubectl -n ai-stock-trading port-forward svc/trade-decision-service 8080:8080 &
 curl -s localhost:8080/internal/introspection | tr ',' '\n' | grep -A1 fx-rate
 #   "port":"fx-rate"
-#   "implementation":"none"     ← 未接続（鍵未設定・provider 未指定・未知の値）。"fred" なら接続済み
+#   "implementation":"boj"      ← 期待値（日銀第一）。"none" なら未接続（provider を空へ戻した・未知の値）
 ```
 
 `implementation` は実際に選択された実装を申告する（`FxRateSourceFactory.ResolveProvider` が単一情報源）。
-**`Fx__Provider=fred` を設定していても鍵が空なら `none` を申告する**ため、「設定したのに効いていない」を
-ここで検知できる。
+**`boj` は認証不要のため鍵の有無で `none` へ倒れない**（申告が `boj` でもフォールバックが無いことは別問題であり、
+上記の起動時警告で見る）。一方 **`Fx__Provider=fred` は鍵が空なら `none` を申告する**ため、
+「設定したのに効いていない」をここで検知できる。
+
+フォールバック（FRED）を有効化して冗長化する場合のみ、鍵を投入する:
 
 ```bash
 export FRED_API_KEY=<FRED の API キー>   # https://fred.stlouisfed.org/docs/api/api_key.html
