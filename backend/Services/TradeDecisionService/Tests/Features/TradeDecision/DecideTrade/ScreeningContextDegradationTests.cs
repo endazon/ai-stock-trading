@@ -121,9 +121,10 @@ public class ScreeningContextDegradationTests
     [Fact]
     public async Task 予算超過なら段2のRAGと段3の低関連ニュースが削られ発生が記録される()
     {
-        // 保護分（骨格 600 + 方針 11 + 銘柄行 120 + 市況 168）≒ 899。予算 1080 → 材料は 181 文字分まで。
+        // 保護分（骨格 750 + 方針 11 + 銘柄行 120 + 市況 168）≒ 1049。予算 1230 → 材料は 181 文字分まで。
         // RAG（171）を削っても足りず、段 3 で関連度の低いニュース（171）を削って収まる。
-        var (service, llm, reporter) = Create(budget: 1_080);
+        // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ（予算も同幅シフト）。
+        var (service, llm, reporter) = Create(budget: 1_230);
 
         await service.DecideAsync(Trigger());
 
@@ -148,7 +149,7 @@ public class ScreeningContextDegradationTests
     [Fact]
     public async Task 全材料を削っても収まらない場合も保護対象は削らず超過を記録する_否定形()
     {
-        // 予算 500 は保護分（≒899）未満。材料はすべて削られるが、方針・市況は**削れない**まま呼び出し、
+        // 予算 500 は保護分（≒1049）未満。材料はすべて削られるが、方針・市況は**削れない**まま呼び出し、
         // 解消不能な超過として記録する（上位モデルへの退避もしない）。
         var (service, llm, reporter) = Create(budget: 500);
 
