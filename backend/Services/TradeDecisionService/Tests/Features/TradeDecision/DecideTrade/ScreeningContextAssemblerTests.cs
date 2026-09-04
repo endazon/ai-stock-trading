@@ -44,7 +44,7 @@ public class ScreeningContextAssemblerTests
 
         // 保護分（骨格 750 + 方針 2 文字 + 銘柄行 120）= 872。材料 2 件（171+172=343）を足すと
         // 1215 > 予算 1050 のため 1 件だけ削れば収まる（872+172=1044 ≤ 1050）。
-        // IADR-0296: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ。
+        // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ。
         var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_050);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1, "予算内に収まらない 1 件が削られる");

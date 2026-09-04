@@ -354,7 +354,7 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("expectedProfitPerShare");
     }
 
-    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件が本判断プロンプトに含まれる。
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件が本判断プロンプトに含まれる。
     // **否定形**: `TradeDecisionPromptBuilder` の private const（結論文言）と同一の文字列をここへ直接
     // 書き、突合する。いずれか 1 件でも文言が消える・変わると、この Theory が失敗する。
     [Theory]
@@ -372,8 +372,8 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().Contain(guardrail);
     }
 
-    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 一次スクリーニングにも短縮版（結論のみ）が
-    // 無条件で含まれる（二段判断のどちらの段でも同じ4制約の結論が効く。IADR-0296 決定2）。
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 一次スクリーニングにも短縮版（結論のみ）が
+    // 無条件で含まれる（二段判断のどちらの段でも同じ4制約の結論が効く。IADR-0297 決定2）。
     [Theory]
     [InlineData("「株価が下がると予想する」ことと「空売りする」ことは別の判断です。")]
     [InlineData("急落した銘柄への追随空売りは禁止します。")]
@@ -389,7 +389,7 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().Contain(guardrail);
     }
 
-    // FR-04, ADR-0016 決定11, IADR-0296: 受け入れ基準「空売りが無効な構成でもプロンプトの内容が
+    // FR-04, ADR-0016 決定11, IADR-0297: 受け入れ基準「空売りが無効な構成でもプロンプトの内容が
     // 変わらない（解禁時に初めて入る形にしない）」。`Build` は空売り可否のフラグを一切受け取らないため、
     // 採算ゲート・RAG 取得文脈・現在値供給の有無を変えても「# 空売りの制約」節自体は不変であることを示す。
     [Fact]
@@ -410,7 +410,7 @@ public class TradeDecisionPromptBuilderTests
         ExtractSection(withPrice, "# 空売りの制約").Should().Be(section);
     }
 
-    // FR-04, ADR-0016 決定11, IADR-0296: 同じ受け入れ基準を一次スクリーニング側でも固定する。
+    // FR-04, ADR-0016 決定11, IADR-0297: 同じ受け入れ基準を一次スクリーニング側でも固定する。
     // 縮退制御（IADR-0247）が渡す currentPrice / references の有無で短縮版が変わらないことを示す。
     [Fact]
     public void スクリーニングの空売りガードレール節は他の構成の有無に関わらず不変である()

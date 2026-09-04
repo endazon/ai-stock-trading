@@ -17,11 +17,11 @@ public static class TradeDecisionPromptBuilder
     // FR-08, IADR-0072 決定3: 参考情報 1 件あたりの本文抜粋の上限。RAG 文脈でプロンプトが過度に膨らむのを防ぐ。
     private const int MaxSnippetChars = 400;
 
-    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件の結論文言。
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の結論文言。
     // 空売り可否のフラグはこのクラスに一切持ち込まない（Build/BuildScreening いずれも無条件でこの節を出す）。
     // 受け入れ基準「空売りが無効な構成でもプロンプトの内容が変わらない（解禁時に初めて入る形にしない）」を
     // 満たす唯一の形は、条件分岐そのものを作らないことである。
-    // **否定形テストがこの const を直接参照する**——文言の一部でも消えるとテストが落ちる（IADR-0296 決定1）。
+    // **否定形テストがこの const を直接参照する**——文言の一部でも消えるとテストが落ちる（IADR-0297 決定1）。
     private const string ShortSellDivergenceRule = "「株価が下がると予想する」ことと「空売りする」ことは別の判断です。";
     private const string ShortSellChaseCrashRule = "急落した銘柄への追随空売りは禁止します。";
     private const string ShortSellNewsCrashRule = "ニュース由来の急落に対する即時の空売りは保留します。";
@@ -88,7 +88,7 @@ public static class TradeDecisionPromptBuilder
         }
 
         sb.AppendLine();
-        // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件。空売りの有効・無効に
+        // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件。空売りの有効・無効に
         // かかわらず常に出す（このメソッドは空売り可否のフラグを受け取らない）。誘因の構造（なぜ危険か）
         // まで書くのは本判断側のみで、一次スクリーニング側（BuildScreening）は結論の短縮版に留める。
         AppendShortSellingSection(sb);
@@ -147,7 +147,7 @@ public static class TradeDecisionPromptBuilder
         }
 
         sb.AppendLine();
-        // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件の短縮版（結論のみ）。
+        // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
         AppendShortSellingSectionShort(sb);
@@ -157,7 +157,7 @@ public static class TradeDecisionPromptBuilder
         return sb.ToString();
     }
 
-    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件（全文・誘因の説明つき）。
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件（全文・誘因の説明つき）。
     // 本判断（Build）のみが用いる。「なぜ危険か」という誘因の構造まで書くのは、禁止事項の列挙だけでは
     // LLM がその場限りの言い換えで抜け道を探すのを防ぐため（他のガードレール文言と同じ規律・ADR-0003）。
     private static void AppendShortSellingSection(StringBuilder sb)
@@ -171,7 +171,7 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine();
     }
 
-    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0296: 空売り固有ガードレール4件の短縮版（結論のみ）。
+    // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
     // 一次スクリーニング（BuildScreening）のみが用いる。誘因の説明は本判断側が担うため、ここでは
     // 費用統制（IADR-0039・IADR-0247）のため結論のみを渡す。
     private static void AppendShortSellingSectionShort(StringBuilder sb)

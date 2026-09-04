@@ -123,7 +123,7 @@ public class ScreeningContextDegradationTests
     {
         // 保護分（骨格 750 + 方針 11 + 銘柄行 120 + 市況 168）≒ 1049。予算 1230 → 材料は 181 文字分まで。
         // RAG（171）を削っても足りず、段 3 で関連度の低いニュース（171）を削って収まる。
-        // IADR-0296: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ（予算も同幅シフト）。
+        // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ（予算も同幅シフト）。
         var (service, llm, reporter) = Create(budget: 1_230);
 
         await service.DecideAsync(Trigger());

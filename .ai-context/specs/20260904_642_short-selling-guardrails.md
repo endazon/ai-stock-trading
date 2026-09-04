@@ -2,7 +2,7 @@
 title: ADR-0016 決定11 の空売り固有 AI ガードレール 4 件をプロンプトへ追加する
 type: spec
 status: draft
-related_ids: [FR-04, ADR-0016, ADR-0003, IADR-0072, IADR-0247, IADR-0296]
+related_ids: [FR-04, ADR-0016, ADR-0003, IADR-0072, IADR-0247, IADR-0297]
 author: claude
 created: 2026-09-04
 updated: 2026-09-04
@@ -50,7 +50,7 @@ ADR-0016 決定11 は「AI ガードレールの追加」として次の 4 制�
   - `backend/Services/TradeDecisionService/Features/TradeDecision/DecideTrade/TradeDecisionPromptBuilder.cs`
     の `Build`（本判断）へ「# 空売りの制約」節を無条件で追加する
   - `BuildScreening`（一次スクリーニング）へも同節（短縮版）を無条件で追加する
-    （設計判断の理由は後述「設計」節・実装ADR IADR-0296 に記録する）
+    （設計判断の理由は後述「設計」節・実装ADR IADR-0297 に記録する）
   - `ScreeningContextAssembler.PromptScaffoldChars` の見積りを追加分だけ引き上げる
   - `TradeDecisionPromptBuilderTests.cs` へ 4 制約の存在テスト（否定形を含む）・空売り無効構成でも
     プロンプトが変わらないことのテスト・スクリーニング側のテストを追加する
