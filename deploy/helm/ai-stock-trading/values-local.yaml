@@ -164,16 +164,32 @@ services:
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       - { name: LlmGateway__TimeoutSeconds, value: "" }
-      # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=fable-5・IADR-0120／MSP#422）
-      # ため所要時間も違う。共通 30 秒では週報・月報が構造的に間に合わず所感がプレースホルダへ縮退していた。
-      # 組込既定（日報 30 秒 / 週報・月報 120 秒）と同じ値を経路B では**明示**する＝live で効いている上限を
-      # マニフェスト上で読めるようにする。空/不正/非正値は組込既定へ倒す（fail-safe）。
+      # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=opus-5・
+      # ADR-0015・MSP#429 で fable-5 から改定済み）ため所要時間も違う。共通 30 秒では週報・月報が
+      # 構造的に間に合わず所感がプレースホルダへ縮退していた。組込既定（日報 30 秒 / 週報・月報 120 秒）
+      # と同じ値を経路B では**明示**する＝live で効いている上限をマニフェスト上で読めるようにする。
+      # 空/不正/非正値は組込既定へ倒す（fail-safe）。
       - { name: LlmGateway__TimeoutSecondsByKind__Daily, value: "30" }
       - { name: LlmGateway__TimeoutSecondsByKind__Weekly, value: "120" }
       - { name: LlmGateway__TimeoutSecondsByKind__Monthly, value: "120" }
       # 安全既定 "" ＝プロンプト/生応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。恒常設定では既定オフに寄せる。
       - { name: LlmGateway__LogPrompts, value: "" }
+      # ====== LLM 費用の単価（#303/IADR-0122・#243）======
+      # 単価表は**サービスごとに独立して構成される**（`LlmPriceTable` は各サービスの Program.cs が
+      # 自前の IConfiguration から組み立てる。trade-decision の単価表を共有しない）。本表を投入しないと
+      # report-monthly/weekly/daily の LLM 費用は fail-safe ペア（未設定 0）へ落ちて ¥0 計上のままになる
+      # （#243 実測で発見。値・出典・fail-safe の詳細な説明は trade-decision.extraEnv の同名コメントを参照）。
+      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
+      - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
+      - { name: LlmPricing__PerModel__claude-opus-5__OutputPer1kTokens, value: "4.093" }    # $25/1M
+      - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
+      - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
+      - { name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens, value: "0.327" }   # $2/1M（report-daily・フォールバック先）
+      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
+      - { name: LlmPricing__PerModel__claude-haiku-4-5__InputPer1kTokens, value: "0.164" }  # $1/1M（report-daily フォールバック先）
+      - { name: LlmPricing__PerModel__claude-haiku-4-5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -219,14 +235,16 @@ services:
       # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。
       #
       # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」）。
-      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / MSP/IADR-0112）で
-      #   trade-decision=sonnet-5 / report-monthly=fable-5 / report-weekly=opus-5 / report-daily=sonnet-5 と
-      #   モデルが混在するため、global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の
-      #   過大計上だった）。単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
+      # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / ADR-0015 / MSP/IADR-0112）で
+      #   trade-decision=sonnet-5 / report-monthly=opus-5（フォールバック sonnet-5・MSP#429・計画 ADR-0015 で
+      #   fable-5 から改定済み）/ report-weekly=opus-5 / report-daily=sonnet-5 とモデルが混在するため、
+      #   global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の過大計上だった）。
+      #   単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
       # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
       #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
-      #   表が空（本番 values.yaml の状態）→ 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
+      #   表が空 → 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。#243 実測で
+      #   本番 values.yaml が表 0 件のまま残っていた瑕疵を発見・是正済み（本表を移植した）。
       #
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
       #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、
@@ -238,11 +256,12 @@ services:
       #   claude-sonnet-5-introductory-pricing「2026-08-31 までの導入価格として発表した $2/$10 を標準単価とし、
       #   2026-09-01 予定だった $3/$15 への改定は行わない」）。USD 単価が変わっていないため本表の値
       #   （0.327 / 1.637）は変更不要。
-      #   ※ 為替・他モデルの公開単価はいずれも変動する。乖離が出たら本値と #243（実測再ベースライン）を更新する。
-      #   ※ 報告書散文（report-service）は計上経路自体が無い（#282）。本表は #282 の解消後に報告書へも効く。
-      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（report-monthly）
+      #   ※ 為替・他モデルの公開単価はいずれも変動する。乖離が出たら本値と実測値を更新する。
+      #   ※ 報告書散文（report-service）は #282 で計上経路（自前の ILlmUsageReporter）を実装済み
+      #     （PR f1b26d4b・IADR-0121）。本表は trade-decision・report-service の両方に効く。
+      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
       - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
-      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-weekly・既定）
+      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude-opus-5__OutputPer1kTokens, value: "4.093" }    # $25/1M
       - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
       - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
