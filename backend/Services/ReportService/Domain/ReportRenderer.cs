@@ -63,7 +63,7 @@ public static class ReportRenderer
                 break;
 
             case ReportKind.Monthly:
-                AppendNotImplemented(sb, "## 2. 週別・市場別の内訳", PendingIssueReason);
+                AppendMonthlyBreakdown(sb, view);
                 AppendNotImplemented(sb, "## 3. 税金レビュー", TaxReviewReason);
                 AppendNarrative(sb, view, narrativeHeading);
                 // §5 三者比較（04_report-templates 月報 §5）。
@@ -112,8 +112,9 @@ public static class ReportRenderer
         "- **本節は未実装です**（{0}）。見出しは計画の節番号のまま出しています——"
         + "**「該当なし」「0 件」ではありません。**";
 
-    /// <summary>入力データが揃っており、機能追加として起票済みの節（#615）。</summary>
-    private const string PendingIssueReason = "#615 で実装予定";
+    // 🔴 #615, IADR-0306: 「#615 で実装予定」の理由定数は**削除した**（スライス a・b・c で 4 節すべてを
+    // 実装し、使う節が 1 つも無くなったため）。**使わない理由定数を残さない**——残すと
+    // 「まだ #615 の対象が残っている」と読める。
 
     /// <summary>前提整備（年初来累積の権威源・口座区分・配当）が無く着手できない節（IADR-0272 決定3）。</summary>
     private const string TaxReviewReason = "年初来累積の権威源・口座区分・配当がいずれも未実装のため着手できていません";
@@ -297,6 +298,151 @@ public static class ReportRenderer
                 "**算出不能**（分母となる実現損益〔税引前・費用前〕が {0} で、0 以下です）。**0% ではありません。**",
                 Amount(review.RealizedPnlGross));
 
+    // FR-06, FR-07, FR-16, #615, IADR-0306, 04_report-templates 月報 §2: 週別・市場別の内訳（表 3 つ）。
+    //
+    // 🔴 **期間・区分を切って PnlAggregator を呼び直した内訳ではない。** 期間全体を 1 回だけ畳み込んだ
+    // 約定単位の帰属（FillPnlAttribution）を週・市場・方向へ寄せている（IADR-0301 決定1）。
+    //
+    // 🔴 **計画は §2 に小見出しを持たない。** 表の区別は**太字のキャプション**で付け、`###` の見出しを
+    // 増やさない（見出し語は計画から採る・IADR-0269）。
+    private static void AppendMonthlyBreakdown(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 2. 週別・市場別の内訳\n\n");
+
+        // 🔴 `null`（帰属を組み立てていない）を「約定なし」へ潰さない。
+        if (view.FillAttributions is not { } entries)
+        {
+            sb.Append("- **内訳を組み立てられませんでした（供給元がありません）**: "
+                + "「当月の約定なし」とは区別しています。**0 件ではありません。**\n\n");
+            return;
+        }
+
+        AppendWeeklyRows(sb, entries);
+        AppendMarketRows(sb, entries);
+        AppendDirectionRows(sb, view, entries);
+
+        sb.Append("- 週は **ISO 週**（月曜起点。ラベルは年を含みます）です。"
+            + "**約定が 1 件も無い週は行を出しません**（休場を含みます。**「実現損益 0」ではありません**）。"
+            + "月初・月末の週は前月・翌月にまたがるため、**当月に約定があった分だけ**が入ります。\n");
+        sb.Append("- 週別の「実現損益」は**税引前・費用込み**、市場別・方向別の「実現損益」は"
+            + "**税引前・費用前**です（後者は同じ行に費用の列があるため）。"
+            + "**源泉徴収税額はいずれの表にも配分していません**——期間合計にのみ課され、配分する規則がありません。\n");
+        sb.Append("- 「取引数」は**約定件数**（決済に至らない新規建てを含む）です。"
+            + "合計は §1 の「取引回数」に一致します。\n");
+        sb.Append("- **約定が 1 件も無い市場も行を出します**（「（当月の約定なし）」と明記）。"
+            + "**数値の 0 は「取引して収支が 0 だった」ではありません。**\n");
+        sb.Append("- 「主要銘柄」の母集合は**決済**です（新規建ては実現損益 0 であり、上位・下位の意味を持ちません）。"
+            + "**上位と下位が同じ銘柄のときは、当該市場の決済銘柄が 1 種類だった**ことを表します"
+            + "（2 銘柄あったようには読まないでください）。\n");
+        sb.Append("- 建玉の方向は約定の記録から導いています"
+            + "（決済は必ず反対方向の約定であるため、決済かどうかと売買方向の組み合わせで一意に決まります）。"
+            + "**反転（建玉を跨いで反対側へ抜ける約定）は決済した側に数えます**——1 約定を 2 行へ割っていません。\n");
+        // 報告書の本文に絵文字は出さない（他節と同じ体裁を保つ）。強調は太字だけで行う。
+        sb.Append("- **借株料は「費用」の列に含めていません**（別掲）。"
+            + "本サービスの費用合計は**売買手数料と為替スプレッド相当額だけ**であり、借株料はそこに入っていません"
+            + "——足すと本節の費用の合計が §1 の「費用合計」と一致しなくなります。"
+            + "借株コストの明細は §6.1 にあります。\n\n");
+    }
+
+    // 月報 §2 表 1: 週別。**約定のあった週だけ**が行になる。
+    private static void AppendWeeklyRows(StringBuilder sb, IReadOnlyList<FillPnlAttribution> entries)
+    {
+        sb.Append("**週別**\n\n");
+
+        var rows = PeriodBreakdownBuilder.ByWeek(entries);
+        if (rows.Count == 0)
+        {
+            sb.Append("（当月の約定なし）\n\n");
+            return;
+        }
+
+        sb.Append("| 週 | 実現損益 | 取引数 | 備考 |\n");
+        sb.Append("| --- | --- | --- | --- |\n");
+        foreach (var r in rows)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {r.WeekLabel} | {Amount(r.RealizedPnlAfterCost)} | {r.FillCount} | {ContributorCell(r)} |\n");
+        }
+
+        sb.Append('\n');
+    }
+
+    // 月報 §2 表 2: 市場別。🔴 **約定が 1 件も無い市場も行を出す**（計画が行を固定している）。
+    private static void AppendMarketRows(StringBuilder sb, IReadOnlyList<FillPnlAttribution> entries)
+    {
+        sb.Append("**市場別**\n\n");
+        sb.Append("| 市場 | 実現損益 | 費用 | 主要銘柄（損益上位/下位） |\n");
+        sb.Append("| --- | --- | --- | --- |\n");
+
+        foreach (var r in PeriodBreakdownBuilder.ByMarket(entries))
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {MarketRowLabel(r.Market)} | {Amount(r.RealizedPnlGross)} | {Amount(r.Cost)} | {LeadersCell(r)} |\n");
+        }
+
+        sb.Append('\n');
+    }
+
+    // 月報 §2 表 3: 建玉の方向別。**常に 2 行**（計画が行を固定している）。
+    private static void AppendDirectionRows(StringBuilder sb, ReportView view, IReadOnlyList<FillPnlAttribution> entries)
+    {
+        sb.Append("**建玉の方向別**\n\n");
+        sb.Append("| 建玉の方向 | 実現損益 | 取引数 | 勝率 | 費用（うち借株料） |\n");
+        sb.Append("| --- | --- | --- | --- | --- |\n");
+
+        foreach (var r in PeriodBreakdownBuilder.ByDirection(entries))
+        {
+            // 04_report-templates 月報 §2 の表本文がこの語で行を持っている。
+            var label = r.IsLong ? "ロング（現物・信用買い）" : "ショート（空売り）";
+            sb.Append(CultureInfo.InvariantCulture,
+                $"| {label} | {Amount(r.RealizedPnlGross)} | {r.FillCount} | {WinRateOf(r.WinningCount, r.RealizingCount)} | "
+                    + $"{Amount(r.Cost)}（借株料 {BorrowFeeCell(view, r.IsLong)}） |\n");
+        }
+
+        sb.Append('\n');
+    }
+
+    // 週別の「備考」。**決済が無い週を「未供給」と書かない**（新規建てのみという事実である）。
+    private static string ContributorCell(WeeklyPnlRow row) =>
+        row.LargestContributor is { } top
+            ? string.Format(CultureInfo.InvariantCulture, "寄与最大: {0}（{1}） {2}（当週の決済 {3} 件）",
+                top.Symbol, MarketLabel(top.Market), Amount(top.RealizedPnlGross), row.RealizingCount)
+            : "決済なし（新規建てのみ）";
+
+    // 市場別の「主要銘柄（損益上位/下位）」。**約定なしと決済なしを別の文言にする**（どちらも 0 ではない）。
+    private static string LeadersCell(MarketPnlRow row)
+    {
+        if (row.FillCount == 0)
+            return "（当月の約定なし）";
+
+        if (row.Best is not { } best || row.Worst is not { } worst)
+            return "（当月の決済なし＝新規建てのみ）";
+
+        return string.Format(CultureInfo.InvariantCulture, "上位: {0} {1} / 下位: {2} {3}",
+            best.Symbol, Amount(best.RealizedPnlGross), worst.Symbol, Amount(worst.RealizedPnlGross));
+    }
+
+    // 「費用（うち借株料）」の借株料部分。
+    //
+    // 🔴 **借株料を費用へ足さない。** 本サービスの費用合計は手数料と為替スプレッドだけであり、
+    // 足すと本節の費用の合計が §1 の「費用合計」と一致しなくなる（IADR-0306 決定4）。
+    // ロングには借株料が発生しないため「—」（日報 §3 の借株料列と同じ規則）。
+    private static string BorrowFeeCell(ReportView view, bool isLong)
+    {
+        if (isLong)
+            return "—";
+
+        // 🔴 `null`（照会できていない）を 0 円へ潰さない。
+        if (view.BorrowFees is not { } record)
+            return UnsuppliedCell;
+
+        var summary = BorrowFeeAggregator.Aggregate(record);
+        var note = summary.UnavailableDayCount > 0
+            ? string.Format(CultureInfo.InvariantCulture, "・未計上 {0} 件あり", summary.UnavailableDayCount)
+            : string.Empty;
+        return string.Format(CultureInfo.InvariantCulture, "{0} は別掲・§6.1{1}", Amount(summary.TotalUsd), note);
+    }
+
     // 散文（LLM ドラフト）。数値は含めない。
     private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
     {
@@ -404,6 +550,15 @@ public static class ReportRenderer
     {
         Market.Japan => "JP",
         Market.UnitedStates => "US",
+        _ => market.ToString(),
+    };
+
+    // 04_report-templates 月報 §2 表 2 の**行ラベル**。計画の表本文が「日本株 / 米国株」で行を持っているため、
+    // 他節の JP/US ではなくこの語を使う（見出し語・行ラベルは計画から採る・IADR-0269）。
+    private static string MarketRowLabel(Market market) => market switch
+    {
+        Market.Japan => "日本株",
+        Market.UnitedStates => "米国株",
         _ => market.ToString(),
     };
 
@@ -1144,12 +1299,15 @@ public static class ReportRenderer
     }
 
     // 勝率（04_report-templates: 週報「<n%（n/n）>」形式）。決済ゼロなら "-（0/0）"。パーセントは文化非依存で整数表記する。
-    private static string WinRate(PnlSummary p) =>
-        p.RealizingTradeCount == 0
+    private static string WinRate(PnlSummary p) => WinRateOf(p.WinningTradeCount, p.RealizingTradeCount);
+
+    // 勝率の書式は 1 か所に置く（#615, IADR-0306: 月報 §2 の方向別も同じ書式で出す。
+    // **同じ数字が節によって違って見えないようにする**）。
+    private static string WinRateOf(int winning, int realizing) =>
+        realizing == 0
             ? "-（0/0）"
             : string.Format(CultureInfo.InvariantCulture, "{0:0}%（{1}/{2}）",
-                (decimal)p.WinningTradeCount / p.RealizingTradeCount * 100m,
-                p.WinningTradeCount, p.RealizingTradeCount);
+                (decimal)winning / realizing * 100m, winning, realizing);
 
     // 基準通貨建て表記（符号付き・千区切り・単位付き）。書式は ReportAmountFormat に単一化する
     // （IADR-0116: Discord 要約と同じ表記／#364, IADR-0152 決定6: 単位は MarketCurrency.Base から導く）。
