@@ -118,6 +118,24 @@ jobs:
             echo "::error::既定値の Broker__Provider が paper ではない（IADR-0016 の安全既定に違反）。"
             exit 1
           fi
+      # #686 / IADR-0308: 為替レート源は**本番既定でも**計画 ADR-0022 決定1 の第一情報源（日銀）を指す。
+      # 日銀は認証不要であり「鍵が無ければどのみち no-op」という空既定の根拠が無い。空へ戻すと
+      # 外貨建ての判断・記録・報告が**黙って供給されない**（症状は「日本株だけ何も起きない」沈黙）。
+      # report / risk-management / trade-decision の 3 サービス分あるため件数で数える。
+      - name: Assert FX rate source is BOJ-first in prod default (計画 ADR-0022 決定1)
+        run: |
+          out="$(helm template ast "$CHART")"
+          fx_prod="$(printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -c 'value: "boj"' || true)"
+          if [ "$fx_prod" -ne 3 ]; then
+            echo "::error::既定描画の Fx__Provider=boj が 3 件でない（実測 $fx_prod 件）。計画 ADR-0022 決定1（日銀第一）に違反する（#686）。"
+            printf '%s' "$out" | grep -A1 'name: Fx__Provider' || true
+            exit 1
+          fi
+          # FRED は決定2 のフォールバックであり、第一に据えてはならない（公表が H.10 週次）。
+          if printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -q 'value: "fred"'; then
+            echo "::error::既定描画の Fx__Provider に fred が現れた（フォールバックを第一に据えている・ADR-0022 決定1/2）。"; exit 1
+          fi
+          echo "ok: 為替レート源は 3 サービスとも日銀第一（本番既定）"
       # #267 / IADR-0111: ブローカ階層（broker.tier＝provider × environment）の 3 系統検査。
       #   ① 既定（paper）描画がバイト等価であること（Broker__Environment を注入しない）
       #   ② 各 tier が期待どおり描画されること（新スイッチ・非推奨エイリアスの双方）
@@ -219,9 +237,17 @@ jobs:
           # SIMULATE 限定のリスク上限プロファイル（#257/IADR-0108）: 経路B でのみ有効化する（本番描画には現れない）。
           printf '%s' "$out" | grep -A1 'name: Risk__SimulatorProfile__Enabled' | grep -q 'value: "true"' \
             || { echo "::error::values-local で Risk__SimulatorProfile__Enabled=true が描画されない（SIMULATE 上限が本番既定のまま）。"; exit 1; }
-          # 通貨換算（#257/IADR-0107）: 外貨建て銘柄はレート源が無いと新規建てを見送るため、経路B では実 provider が要る。
-          printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -q 'value: "fred"' \
-            || { echo "::error::values-local で Fx__Provider=fred が描画されない（外貨建て銘柄が恒久的に見送られる）。"; exit 1; }
+          # 通貨換算（#257/IADR-0107）: 非基準通貨の銘柄はレート源が無いと新規建てを見送るため、経路B では実 provider が要る。
+          # #686/IADR-0308: 第一情報源は日銀（計画 ADR-0022 決定1）。FRED は鍵があるときだけ後段に積まれる
+          # フォールバックであり、**第一に据えてはならない**（公表が H.10 週次＝最新観測が最大 12.84 日古い）。
+          # 3 サービス（report / risk-management / trade-decision）分あるため**件数で数える**——
+          # 1 箇所だけ直すと 3 サービスで挙動が食い違うのが本設定点の事故の形である（#686）。
+          fx_local="$(printf '%s' "$out" | grep -A1 'name: Fx__Provider' | grep -c 'value: "boj"' || true)"
+          if [ "$fx_local" -ne 3 ]; then
+            echo "::error::values-local の Fx__Provider=boj が 3 件でない（実測 $fx_local 件）。3 サービス分そろって日銀第一である必要がある（#686）。"; exit 1
+          fi
+          # フォールバック（FRED）の鍵は残す＝ADR-0022 決定2 の冗長化。消えると日銀単独になる。
+          need "FRED フォールバックの鍵" 'key: fred-api-key'
           # 実弾/危険既定は OFF のまま（有効化しても paper・秘匿ストア/OpenD 不在）。
           printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
             || { echo "::error::values-local 描画の Broker__Provider が paper でない（実弾 OFF 不変に違反）。"; exit 1; }

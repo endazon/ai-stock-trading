@@ -14,8 +14,10 @@
 # 機密の上書き（未設定=空=no-op）:
 #   FINNHUB_API_KEY（情報収集）/ MARKETDATA_FINNHUB_API_KEY（①時価・価格文脈。IADR-0068 の別枠＝収集鍵とは独立の
 #     opt-in。FINNHUB_API_KEY へはフォールバックしない＝収集鍵の設定だけで①が黙って全面有効化されない）/
-#   EDINET_SUBSCRIPTION_KEY / FRED_API_KEY（**US 株取引の必須前提**＝基準通貨・円への換算レート源 FRED DEXJPUS。
-#     #262, IADR-0107。未設定だと USD 建て銘柄は判断前に全件見送りになる。日本株は定義上レート 1 で無影響）/
+#   EDINET_SUBSCRIPTION_KEY / FRED_API_KEY（為替レートの**フォールバック**＝FRED DEXJPUS。#262, IADR-0107。
+#     **第一の情報源は日銀（Fx__Provider=boj・認証不要）であり、本キーは必須前提ではない**（#686, IADR-0308）。
+#     未設定だと冗長化が失われるだけで、日銀単独で換算できる。レートが解決できないときに見送られるのは
+#     非基準通貨＝JPY 建て銘柄であり、基準通貨の米国株は定義上レート 1 で無影響〔#364 で入れ替わった〕）/
 #   DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
 #   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）。
 # #279, IADR-0114: SEC_EDGAR_USER_AGENT は**機密ではない**が、SEC 規約が求める**連絡先（実在のメール

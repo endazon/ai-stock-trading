@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-04
+updated: 2026-09-05
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634]
+iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686]
 -->
 
 
@@ -274,8 +274,12 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 
 > ⚠️ **既知の残余**（鮮度の実装 ADR の §悪い影響）: 既定上限が 14 → 30 日になったため、
 > **「週次リリース 1 回の丸ごと欠落（17.84 日）を系列側の異常として止める」保護は失われた**
-> （警告は出るが発注は続く）。**これは計画が選んだ緩和である**。また **FRED 単独では警告域に常駐しうる**ため、
-> **決定1 は日銀アダプタ（#381 の残り）が入って初めて実効する**。
+> （警告は出るが発注は続く）。**これは計画が選んだ緩和である**。また **FRED 単独では警告域に常駐しうる**。
+> **#686 で構成（`Fx__Provider`）が本番・経路B とも日銀を第一に指すようになり、決定1 が初めて実効した** ——
+> アダプタ自体は #381 で入っていたが、**6 箇所（2 ファイル × 3 サービス）の構成がどこも日銀を指しておらず**、
+> 実際に使われていたのはフォールバックの FRED（または no-op）だった。日銀の最新観測の齢は 2026-09-05 の実測で 2〜3 日
+> であり、警告しきい値 5 日の内側に収まる（毎営業日公表だが収録は翌々営業日 8:50 頃のため、**曜日により最大 4 日**まで開く——月曜・火曜は 2 営業日遅れが週末を跨ぐ）。
+> **FRED へフォールバックしている間は依然として警告域に常駐しうる。**
 
 > **移行の安全性**（基準通貨反転の決定 5）は EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が担う。
 > `Up` / `Down` と「意味が変わる行があれば移行が止まる」ことは実 PostgreSQL 16 に対して手動検証した

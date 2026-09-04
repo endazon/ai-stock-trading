@@ -64,7 +64,7 @@ services:
       # ============ 承認記録時の認識時レート（#611/IADR-0286 決定1）============
       # 承認台帳へ「1 USD あたりの円」を固定する源。trade-decision と同じ源・同じ鍵（ast-secrets/fred-api-key）を再利用する。
       # 空だと承認は未記録のまま記録され、報告書の為替差損益が恒久的に「供給されていません」になる。
-      - { name: Fx__Provider, value: "fred" }                     # ← 認識時レート源（既定 ""＝no-op＝未記録）
+      - { name: Fx__Provider, value: "boj" }                      # ← 認識時レート源（日銀第一・#686/IADR-0308）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
@@ -207,7 +207,7 @@ services:
       # ============ 為替差損益の期末レート（#611/IADR-0286 決定2）============
       # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
       # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
-      - { name: Fx__Provider, value: "fred" }                     # ← 期末レート源（既定 ""＝no-op＝未供給）
+      - { name: Fx__Provider, value: "boj" }                      # ← 期末レート源（日銀第一・#686/IADR-0308）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
@@ -293,10 +293,11 @@ services:
       # ADR-0031（計画）決定2〜4, IADR-0292: 判断サイクルあたりの銘柄数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
-      # --- 通貨換算（#257/IADR-0107）: 統制上限・サイジングは基準通貨（円）で判定する。外貨建て（米国株）は
-      #     レートが解決できないと新規建てを見送るため、経路B で米国株を回すには本設定と鍵が要る。
-      #     鍵は既存の ast-secrets/fred-api-key（情報収集の FRED と同じ FRED アカウント）を再利用する。
-      - { name: Fx__Provider, value: "fred" }                     # ← 換算レート源（既定 ""＝no-op＝外貨は見送り）
+      # --- 通貨換算（#257/#364/IADR-0107/0152）: 統制上限・サイジングは基準通貨（USD）で判定する。
+      #     非基準通貨（JPY 建て）はレートが解決できないと新規建てを見送るため、経路B で日本株を回すには本設定が要る。
+      #     #686/IADR-0308: 第一情報源は日銀（ADR-0022 決定1・認証不要）。下の fred-api-key は決定2 の
+      #     フォールバック用として残す（鍵があるときだけ日銀の後段に積まれ、FxRateSourceFellBack で可視化される）。
+      - { name: Fx__Provider, value: "boj" }                      # ← 換算レート源（日銀第一・FRED フォールバック）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 
