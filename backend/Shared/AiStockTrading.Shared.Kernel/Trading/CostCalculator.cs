@@ -11,14 +11,42 @@ public static class CostCalculator
     // 旧実装は市場（Market.Japan）を直書きしており、「基準通貨は JPY」という前提に暗黙に依存していた。
     // MarketCurrency.IsBaseCurrency へ一般化し、基準通貨が変わっても定義に忠実であり続けるようにする
     //（結果として基準通貨 USD では日本市場へ適用が反転する）。
-    public static decimal EstimateOneWayCost(TradingAssumptions assumptions, Market market, decimal notional)
+    public static decimal EstimateOneWayCost(TradingAssumptions assumptions, Market market, decimal notional) =>
+        EstimateOneWayCostBreakdown(assumptions, market, notional).Total;
+
+    // FR-06, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5「費用の内訳（手数料/諸費用/税）」:
+    // 片道の概算費用を**区分ごとに**返す。報告書が内訳を出すために要る。
+    //
+    // 🔴 **式は 1 か所にしか無い。** EstimateOneWayCost は本関数の Total を返す——内訳版を別式で書くと、
+    // 内訳の合計が費用合計と一致しなくなる（しかも両方とも「それらしい数字」なので気付けない）。
+    //
+    // 🔴 **計画が定める「取引諸費用」（05_trading-assumptions §2「米国株 売却時諸費用（SEC Fee・TAF 等）」）は
+    // 本関数に無い**——同項は計画側で **要確認** のままであり、前提条件にも設定点が無い。
+    // **本型は諸費用の区分を持たない**ことで、「0 円の諸費用が計上された」と読める形を構造的に作らない
+    //（報告書は該当欄を**未供給**と描く。**0 と書かない**）。
+    /// <summary>
+    /// 片道の概算費用の内訳。<b><see cref="Total"/> は <see cref="EstimateOneWayCost"/> と同値である</b>。
+    /// <para>
+    /// 🔴 <b>計画の「取引諸費用」はここに含まれない</b>（前提条件が値を持っていない）。
+    /// したがって <see cref="Total"/> は<b>諸費用のぶんだけ過小である</b>。
+    /// </para>
+    /// </summary>
+    public readonly record struct OneWayCostBreakdown(decimal Commission, decimal FxSpread)
+    {
+        /// <summary>費用合計（手数料＋為替スプレッド相当額）。</summary>
+        public decimal Total => Commission + FxSpread;
+    }
+
+    /// <summary>片道の概算費用を区分ごとに見積もる（純関数）。</summary>
+    public static OneWayCostBreakdown EstimateOneWayCostBreakdown(
+        TradingAssumptions assumptions, Market market, decimal notional)
     {
         ArgumentNullException.ThrowIfNull(assumptions);
 
         var schedule = market == Market.Japan ? assumptions.JapanCommission : assumptions.UnitedStatesCommission;
         var commission = schedule.For(notional);
         var fxSpread = MarketCurrency.IsBaseCurrency(market) ? 0m : notional * assumptions.FxSpreadRatio;
-        return commission + fxSpread;
+        return new OneWayCostBreakdown(commission, fxSpread);
     }
 
     // 往復（建て＋手仕舞い）の概算費用。

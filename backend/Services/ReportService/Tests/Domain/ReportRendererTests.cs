@@ -364,10 +364,12 @@ public class ReportRendererTests
 
     // 🔴 ADR-0030 決定3: 未実装の節は**見出しごと**出し、本文に未実装である旨を記す。
     // 見出しを落として番号だけ飛ばす形は採らない（番号の飛びは計画書を読んでいない利用者に何も伝えない）。
+    //
+    // 🔴 #615, IADR-0305: **母集合は実装が進むたびに縮む。** 週報 §2・§3（スライス a）と §5（スライス b）は
+    // 実体化したので行から外した。**外し忘れても赤くならなかった**——本文の切り出しが「見出し以降の全文」
+    // だったため、§2・§3 の行は**まだ未実装だった §5 の文言を拾って緑になっていた**（実測）。
+    // 下の切り出しは**次の `## ` 見出しまで**に閉じ、同じ形の空振りを起こさないようにしている。
     [Theory]
-    [InlineData(ReportKind.Weekly, "2026-W28", "## 2. 日別推移", "#615 で実装予定")]
-    [InlineData(ReportKind.Weekly, "2026-W28", "## 3. ハイライト取引", "#615 で実装予定")]
-    [InlineData(ReportKind.Weekly, "2026-W28", "## 5. リスク・費用レビュー", "#615 で実装予定")]
     [InlineData(ReportKind.Monthly, "2026-08", "## 2. 週別・市場別の内訳", "#615 で実装予定")]
     [InlineData(ReportKind.Monthly, "2026-08", "## 3. 税金レビュー", "年初来累積の権威源")]
     [InlineData(ReportKind.Daily, "2026-07-10", "## 6. 振り返り（週次目標との照合）", "週次目標の参照値")]
@@ -378,7 +380,10 @@ public class ReportRendererTests
 
         md.Should().Contain(heading);
 
-        var body = md[md.IndexOf(heading, StringComparison.Ordinal)..];
+        // 🔴 **当該節の中だけを見る。** 見出し以降の全文を見ると、後続の未実装節の文言で緑になる。
+        var start = md.IndexOf(heading, StringComparison.Ordinal) + heading.Length;
+        var next = md.IndexOf("\n## ", start, StringComparison.Ordinal);
+        var body = next < 0 ? md[start..] : md[start..next];
         body.Should().Contain("**本節は未実装です**");
         body.Should().Contain(reasonFragment);
         // 🔴 **「該当なし」「0 件」と読ませない。** 未供給と 0 を区別する本サービスの規律を節の不在にも当てる。

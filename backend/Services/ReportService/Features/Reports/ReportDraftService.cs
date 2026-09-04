@@ -44,6 +44,15 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var buyCount = fills.Count(f => f.Side == TradeSide.Buy);
         var sellCount = fills.Count(f => f.Side == TradeSide.Sell);
 
+        // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2/§3: 約定単位の損益帰属。
+        // 🔴 **期間を切って PnlAggregator を呼び直さない。** 帰属は期間全体を 1 回だけ畳み込んだ結果であり、
+        // 日・週・市場・方向のどの軸へもここから集計する（内訳の合計が §1 サマリと一致する唯一の形である）。
+        // 判断根拠は日報 §2 と同じ記録の転記であり、報告書生成時に文章を作らない（FR-16）。
+        // **週報だけが持つ**（月報 §2 週別・市場別の内訳は #615 の別スライスで同じ帰属を消費する）。
+        var fillAttributions = request.Kind == ReportKind.Weekly
+            ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales)
+            : null;
+
         // FR-07, IADR-0120 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
         // 期間キーと本文の**両方が揃ったときだけ**参照とする。片方だけでは差異評価も出典提示もできないため、
         // 欠損は「上位未確定」の 1 通りに閉じる（プロンプト側がその旨を明記する＝捏造しない）。
@@ -108,13 +117,12 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             TradeHistory = request.Kind == ReportKind.Daily
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales)
                 : null,
-            // FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2/§3: 約定単位の損益帰属。
-            // **週報だけが持つ**（月報 §2 週別・市場別の内訳は #615 の別スライスで同じ帰属を消費する）。
-            // 🔴 **期間を切って PnlAggregator を呼び直さない。** 帰属は期間全体を 1 回だけ畳み込んだ結果であり、
-            // 日・週・市場・方向のどの軸へもここから集計する（内訳の合計が §1 サマリと一致する唯一の形である）。
-            // 判断根拠は日報 §2 と同じ記録の転記であり、報告書生成時に文章を作らない（FR-16）。
-            FillAttributions = request.Kind == ReportKind.Weekly
-                ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales)
+            FillAttributions = fillAttributions,
+            // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: 費用の内訳と費用率。
+            // 🔴 **同じ帰属から数える**（費用合計が §1 サマリと一致する唯一の形である）。
+            // 税は期間合計にのみ課されるため PnlSummary の値をそのまま渡す（約定単位へ按分しない）。
+            CostReview = fillAttributions is { } attributions
+                ? PeriodCostReviewBuilder.Build(attributions, assumptions, pnl.TaxWithheld)
                 : null,
             // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
             // **null（照会できていない）を空列（建玉なし）へ潰さない。**
