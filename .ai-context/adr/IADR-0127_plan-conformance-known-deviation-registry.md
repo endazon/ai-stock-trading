@@ -132,3 +132,18 @@ plan_refs:
 
 - Supersedes: なし
 - Superseded by: なし
+
+## 追記（2026-09-04・#675 / IADR-0302）
+
+**本 IADR が定義した既知逸脱レジストリ（`KnownPlanDeviations`）は実在しない。**
+`backend/Tests/AiStockTrading.PlanConformance.Tests/` は planning submodule を読んでいたため
+#536（資料再編・計画 ADR-0029 決定2「planning 依存の全撤去」）で削除された。
+
+#675 で **planning 非依存の形で復活させないことが確定した**（利用者裁定 2026-09-04。
+理由は IADR-0302 決定1 —— 同型事故 2 回の条件を満たしていないこと、#378 が同型を試みて #536 で
+削除された往復であること、そして**人手転記の誤りが「CI は緑だが計画とずれている」という
+偽の担保**を生むこと）。
+
+**本文プロズは当時の判断としてそのまま残す。** 統制値のずれの現在の検知経路は
+`docs/DEFINITION_OF_DONE.md` の人手照合のみである。
+
