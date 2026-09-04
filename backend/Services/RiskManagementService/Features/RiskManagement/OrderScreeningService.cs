@@ -79,8 +79,13 @@ public sealed class OrderScreeningService(
                 new OrderRejected(decision.DecisionId, intent, reasons, clock.UtcNow), observation);
         }
 
+        // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を判断から発注執行へ**そのまま**中継する
+        // （統制の判定には一切使わない・審査時刻で上書きしない）。上書きすると審査より前の区間が消える。
         return ScreeningOutcome.Approve(
-            new OrderApproved(decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow), observation);
+            new OrderApproved(
+                decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow,
+                decision.CycleTrigger, decision.CycleStartedAt),
+            observation);
     }
 
     // #249 / IADR-0246: 当日（tradingDay）は呼び出し側が注文の市場の現地取引日で解決して渡す。

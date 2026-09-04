@@ -295,7 +295,10 @@ public sealed class TradeDecisionAppService(
                     trigger, effect.CloseQuantity, rateToBase, fxReading, cancellationToken).ConfigureAwait(false);
             }
 
-            return new TradeDecisionMade(Guid.NewGuid(), closeIntent, decision.Rationale, clock.UtcNow);
+            // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
+            return new TradeDecisionMade(
+                Guid.NewGuid(), closeIntent, decision.Rationale, clock.UtcNow,
+                trigger.MetricTrigger, trigger.CycleStartedAt);
         }
 
         // 以降は新規建て（Open）の従来経路。IADR-0035 の不変量（損切り幅は参照価格より小さく正）を権威価格に対して
@@ -367,7 +370,10 @@ public sealed class TradeDecisionAppService(
             stopLossPrice,
             rateToBase);
 
-        return new TradeDecisionMade(Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow);
+        // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
+        return new TradeDecisionMade(
+            Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow,
+            trigger.MetricTrigger, trigger.CycleStartedAt);
     }
 
     // FR-04, FR-05, #292, IADR-0119: 保有建玉の照会（fail-safe ラッパ）。

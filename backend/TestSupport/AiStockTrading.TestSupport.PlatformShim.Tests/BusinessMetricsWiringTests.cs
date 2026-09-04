@@ -99,6 +99,77 @@ public class BusinessMetricsWiringTests
         exported.Should().NotContain(BusinessMetricNames.InformationItemsCollected);
     }
 
+    // NFR-01, NFR-02, #689, IADR-0307 決定6: 端点間レイテンシのバケット境界に**目標値そのもの**が入っている。
+    // 🔴 OTel 既定の境界は上限 10,000 ms である。境界を与えないと 5 分（300,000 ms）・10 分（600,000 ms）は
+    // すべて +Inf バケットへ落ち、**分位点も「目標超過の件数」も読めない**——計器は在るのに読めない、という
+    // 最も気付きにくい失敗になる。境界は 2 本のヒストグラムで共有する。
+    [Fact]
+    public void 端点間レイテンシのバケット境界に目標値が含まれる()
+    {
+        ObservabilityExtensions.TradeCycleLatencyBucketsMs.Should().ContainInOrder(300_000d, 600_000d);
+        ObservabilityExtensions.TradeCycleLatencyBucketsMs.Should().BeInAscendingOrder();
+    }
+
+    // 上の境界が**実際に View として適用されている**ことを export された測定値で確かめる。
+    // 定数を持っているだけでは AddView の行が消えても緑になる（配線 (2) と同じ形の失効）。
+    [Theory]
+    [InlineData(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)]
+    [InlineData(BusinessMetricNames.TradeCycleRecordCompletionLatencyMs)]
+    public void 端点間レイテンシのヒストグラムは既定ではなく明示した境界で出ていく(string instrumentName)
+    {
+        var bounds = new List<(string Name, double[] Bounds)>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingObservability(EmptyConfig(), "audit-service");
+        services.ConfigureOpenTelemetryMeterProvider(builder =>
+            builder.AddReader(new BaseExportingMetricReader(new BucketCapturingExporter(bounds))));
+
+        using var provider = services.BuildServiceProvider();
+        var meterProvider = provider.GetRequiredService<MeterProvider>();
+        var startedAt = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
+        var metrics = provider.GetRequiredService<BusinessMetrics>();
+        if (instrumentName == BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
+        {
+            metrics.RecordOrderCompletionLatency(
+                BusinessMetrics.TriggerPriceMovement, startedAt, startedAt.AddMinutes(7));
+        }
+        else
+        {
+            metrics.RecordRecordCompletionLatency(
+                BusinessMetrics.TriggerScheduled, startedAt, startedAt.AddMinutes(7));
+        }
+
+        // 戻り値は見ない（OTLP exporter は otel-collector が居ないため失敗する。上の肯定形と同じ理由）。
+        meterProvider.ForceFlush(10_000);
+
+        bounds.Should().ContainSingle(b => b.Name == instrumentName)
+            .Which.Bounds.Should().Equal(ObservabilityExtensions.TradeCycleLatencyBucketsMs);
+    }
+
+    /// <summary>ヒストグラムの明示バケット境界を集める exporter（View が適用されたかを見るため）。</summary>
+    private sealed class BucketCapturingExporter(List<(string Name, double[] Bounds)> sink) : BaseExporter<Metric>
+    {
+        public override ExportResult Export(in Batch<Metric> batch)
+        {
+            foreach (var metric in batch)
+            {
+                if (metric.MetricType != MetricType.Histogram) continue;
+                foreach (ref readonly var point in metric.GetMetricPoints())
+                {
+                    var bounds = new List<double>();
+                    foreach (var bucket in point.GetHistogramBuckets())
+                    {
+                        if (!double.IsPositiveInfinity(bucket.ExplicitBound)) bounds.Add(bucket.ExplicitBound);
+                    }
+
+                    sink.Add((metric.Name, [.. bounds]));
+                }
+            }
+
+            return ExportResult.Success;
+        }
+    }
+
     /// <summary>export された Metric の名前だけを集める最小の exporter（InMemory exporter パッケージを足さないため）。</summary>
     private sealed class CapturingExporter(List<string> names) : BaseExporter<Metric>
     {

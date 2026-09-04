@@ -14,6 +14,16 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 // OTel（トレース/メトリクス）と Serilog（OTLP）への統一計装。各サービスの起動時に登録する。
 public static class ObservabilityExtensions
 {
+    // NFR-01, NFR-02, #689, IADR-0307: 端点間レイテンシ（ミリ秒）のバケット境界。
+    // **300,000（NFR-01 の 5 分）と 600,000（NFR-02 の 10 分）を境界そのものに置く** ——
+    // 目標超過の件数が隣り合うバケットの差でそのまま読め、分位点の補間に頼らずに済む。
+    // 本配列は 2 本のヒストグラムで共有する（片方だけ動かすと比較できなくなるため）。
+    public static readonly double[] TradeCycleLatencyBucketsMs =
+    [
+        1_000, 5_000, 15_000, 30_000, 60_000, 120_000, 180_000, 240_000,
+        300_000, 420_000, 600_000, 900_000,
+    ];
+
     public static IServiceCollection AddAiStockTradingObservability(
         this IServiceCollection services,
         IConfiguration config,
@@ -44,6 +54,15 @@ public static class ObservabilityExtensions
                 // **この 1 行が消えると BusinessMetrics は記録し続けるが 1 件も外へ出ない**（無音の失効）。
                 // BusinessMetricsWiringTests が否定形（AddMeter が無ければ出ない）と対で固定している。
                 .AddMeter(BusinessMetricNames.MeterName)
+                // NFR-01, NFR-02, #689, IADR-0307: 端点間レイテンシのバケット境界を明示する。
+                // 🔴 **既定の境界は上限 10,000 ms である。** 5 分（300,000 ms）・10 分（600,000 ms）の
+                // 目標値はすべて +Inf バケットへ落ち、分位点も「目標超過の件数」も読めなくなる。
+                .AddView(
+                    BusinessMetricNames.TradeCycleOrderCompletionLatencyMs,
+                    new ExplicitBucketHistogramConfiguration { Boundaries = TradeCycleLatencyBucketsMs })
+                .AddView(
+                    BusinessMetricNames.TradeCycleRecordCompletionLatencyMs,
+                    new ExplicitBucketHistogramConfiguration { Boundaries = TradeCycleLatencyBucketsMs })
                 .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
 
         return services;
