@@ -28,6 +28,11 @@ services:
   # FR-10, #81, #158, IADR-0066/0068: 含み損益・DD の判定入力を実市況にする。true は最大DD 取引ゲートの入力を変える。
   risk-management:
     extraEnv:
+      # FR-10, UC-06, ADR-0016 決定7, #634, IADR-0296: 維持率割れ自動縮小の定期評価ドライバ。
+      # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える。helm.yml の
+      # 「values-local drops no env from prod default」検査に掛かる）。経路B 固有の差し替え理由は無い。
+      - { name: MaintenanceMarginEvaluation__Enabled, value: "true" }
+      - { name: MaintenanceMarginEvaluation__IntervalSeconds, value: "300" }
       # ============ SIMULATE 限定のリスク上限プロファイル（#257/IADR-0108）============
       # moomoo シミュレータ残高（USD $1M / JPY ¥20M）相当へ統制上限を引き上げ、米国株（AAPL ≒ ¥50,250/株）の
       # 数量算出→発注を成立させる。値は Domain 定数（SimulatorTradingDefaults）で、構成は有効/無効のみ。
