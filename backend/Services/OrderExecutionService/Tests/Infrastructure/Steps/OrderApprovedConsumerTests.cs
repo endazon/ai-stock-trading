@@ -305,4 +305,52 @@ public class OrderApprovedConsumerTests
 
         await host.StopAsync();
     }
+
+    // NFR-01, #689, IADR-0307: **発注完了（OrderExecuted の発行）が NFR-01 の終点である。**
+    // 承認が運んできた起点（価格変動検知の時刻）との差が端点間所要として刻まれ、
+    // 起点そのものも OrderExecuted へ中継される（記録完了＝NFR-02 の終点で使うため）。
+    [Fact]
+    public async Task 起点を運ぶ承認は発注完了までの端点間所要を刻み起点を発注結果へ中継する()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await NewHostAsync(new InMemoryExecutedOrderStore(), new PaperBrokerAdapter());
+
+        var startedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(
+                Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow,
+                BusinessMetrics.TriggerPriceMovement, startedAt));
+
+        var executed = session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle().Which;
+        executed.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+        executed.CycleStartedAt.Should().Be(startedAt);
+
+        capture.TagValuesOf(
+                BusinessMetricNames.TradeCycleOrderCompletionLatencyMs, BusinessMetricNames.TagTrigger)
+            .Should().Contain(BusinessMetrics.TriggerPriceMovement);
+        capture.ValuesOf(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
+            .Should().Contain(m => m.Value > 0);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 NFR-01, #689, IADR-0307 決定3/4: **取引サイクル起点を持たない承認**（利用者の手仕舞い・
+    // 維持証拠金の自動縮小）は、0 ms ではなく**未観測**として数える。0 を刻むと「5 分以内」を
+    // 満たしているように見える。値を刻まないことの表明は BusinessMetricsTests（否定形の集約先）に置く。
+    [Fact]
+    public async Task 起点を持たない承認は未観測として数える()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var host = await NewHostAsync(new InMemoryExecutedOrderStore(), new PaperBrokerAdapter());
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow));
+
+        capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved)
+            .Should().Contain(m =>
+                m.Tags[BusinessMetricNames.TagStage] == BusinessMetrics.StageOrderCompletion &&
+                m.Tags[BusinessMetricNames.TagReason] == BusinessMetrics.UnobservedOriginMissing);
+
+        await host.StopAsync();
+    }
 }

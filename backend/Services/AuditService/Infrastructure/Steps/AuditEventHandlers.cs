@@ -2,6 +2,7 @@ using AuditService.Common.Abstractions;
 using AuditService.Domain;
 using AuditService.Features.AuditEvents;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using Wolverine;
 
 namespace AuditService.Infrastructure.Steps;
@@ -62,12 +63,22 @@ public sealed class OrderRejectedAuditHandler(IAuditEventStore store, IClock clo
     }
 }
 
-public sealed class OrderExecutedAuditHandler(IAuditEventStore store, IClock clock)
+// NFR-02, #689, IADR-0307: **ここが「記録完了」＝ NFR-02 の終点である。**
+// 計画の NFR-02 は「収集→判断→発注→**記録**」の 1 周を 10 分以内と定める。台帳へ 1 行書いた
+// 時点が記録完了であり、発注完了（OrderExecutionService の計上点）より後になる。
+// 起点（InformationCollected.CollectedAt）はイベントが運んでくるため、突き合わせ（join）も
+// 状態も要らない —— **記録の後に計上する**（記録に失敗したものを完了と数えない）。
+// 起点を持たない注文は 0 ms ではなく未観測として数える（BusinessMetrics 側で 1 か所に判断を持つ）。
+public sealed class OrderExecutedAuditHandler(IAuditEventStore store, IClock clock, BusinessMetrics metrics)
 {
     public void Handle(OrderExecuted message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+        ArgumentNullException.ThrowIfNull(message);
+
+        var recordedAt = clock.UtcNow;
+        store.Append(AuditEntryFactory.From(message, envelope.Id, recordedAt));
+        metrics.RecordRecordCompletionLatency(message.CycleTrigger, message.CycleStartedAt, recordedAt);
     }
 }
 

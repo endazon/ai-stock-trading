@@ -185,4 +185,46 @@ public class InformationCollectedConsumerTests
 
         await host.StopAsync();
     }
+
+    // NFR-02, #689, IADR-0307 決定1: 定時サイクルの起点は**収集の完了時刻**である。
+    // ここで運ばないと、下流（発注完了・記録完了）は区間を閉じられず未観測になる。
+    // 判断サービスの現在時刻で代用してもいけない——収集からの配送・巡回の区間が計測から消える。
+    [Fact]
+    public async Task 定時系統の判断は収集完了時刻を取引サイクルの起点として載せる()
+    {
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new CalendarStub(open: true));
+        var collectedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, collectedAt));
+
+        var decision = session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle().Which;
+        decision.CycleTrigger.Should().Be(BusinessMetrics.TriggerScheduled);
+        decision.CycleStartedAt.Should().Be(collectedAt);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 NFR-02, #689, IADR-0307 決定5【否定形】: **休場の早期 return をサイクル完了として数えない。**
+    // 休場では判断が走らず TradeDecisionMade が出ないため、起点を運ぶ注文が 1 件も生まれない
+    // ＝端点間の計器はヒストグラムにも未観測にも入らない。#637 が「0〜18 ms を実績にしない」と
+    // 求めた再発防止は、計器側の条件分岐ではなく**この構造**で担保されている。
+    [Fact]
+    public async Task 休場の早期returnは起点を運ぶ判断を生まない()
+    {
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new CalendarStub(open: false));
+
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<TradeDecisionMade>().Should()
+            .BeEmpty("休場の早期 return は取引サイクル 1 周ではない");
+
+        await host.StopAsync();
+    }
 }

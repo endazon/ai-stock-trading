@@ -147,4 +147,23 @@ public class PriceMovementDetectedConsumerTests
 
         await host.StopAsync();
     }
+
+    // NFR-01, #689, IADR-0307 決定1: NFR-01 の起点は**検知時刻（DetectedAt）**である。
+    // 判断サービスの現在時刻へ置き換えると、検知から配送までの区間が計測から消える。
+    [Fact]
+    public async Task 価格変動起点の判断は検知時刻を取引サイクルの起点として載せる()
+    {
+        using var host = await BuildAsync(BuyJson, new DailyPolicy(new DateOnly(2026, 7, 10), "押し目買い"));
+        var detectedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var trigger = new PriceMovementDetected(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_040m, 1_000m, 0.04m, detectedAt);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(trigger);
+
+        var decision = session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle().Which;
+        decision.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+        decision.CycleStartedAt.Should().Be(detectedAt);
+
+        await host.StopAsync();
+    }
 }

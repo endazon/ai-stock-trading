@@ -167,6 +167,54 @@
         "expr": "max by (service_name) (ast_finnhub_daily_request_limit_ratio_percent)",
         "legendFormat": "{{service_name}}"
       }]
+    },
+    {
+      "id": 12,
+      "title": "NFR-01: 価格変動検知 → 発注完了 の所要 P95（ms・目標 300,000）",
+      "description": "trigger 別。NFR-01 は price-movement の系列で読む（目標 5 分＝300,000 ms）。判断 1 回の所要（ast_trade_cycle_decision_duration_ms）は内訳であって端点間ではない。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 28, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.95, sum by (le, trigger) (rate(ast_trade_cycle_order_completion_latency_ms_bucket[1h])))",
+        "legendFormat": "{{trigger}}"
+      }]
+    },
+    {
+      "id": 13,
+      "title": "NFR-02: 情報収集 → 記録完了 の所要 P95（ms・目標 600,000）",
+      "description": "trigger 別。NFR-02 は scheduled の系列で読む（目標 10 分＝600,000 ms）。終点は監査台帳への記録時点であり、発注完了より後になる。",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 28, "w": 8, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "histogram_quantile(0.95, sum by (le, trigger) (rate(ast_trade_cycle_record_completion_latency_ms_bucket[1h])))",
+        "legendFormat": "{{trigger}}"
+      }]
+    },
+    {
+      "id": 14,
+      "title": "NFR-01/02: 目標超過の件数と、測れなかった件数（24h）",
+      "description": "🔴 未観測（unobserved）を 0 ms と混ぜない。上 2 本は目標バケットを超えた件数（バケット境界に 300,000 / 600,000 を置いてあるため引き算で読める）、下 1 本は起点が無い・経過が負で区間を確定できなかった件数である。未観測が増えているのに超過が 0 なら、それは「速い」のではなく「測れていない」。",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 28, "w": 8, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum (increase(ast_trade_cycle_order_completion_latency_ms_count[24h])) - sum (increase(ast_trade_cycle_order_completion_latency_ms_bucket{le=\"300000\"}[24h]))",
+          "legendFormat": "NFR-01 超過"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum (increase(ast_trade_cycle_record_completion_latency_ms_count[24h])) - sum (increase(ast_trade_cycle_record_completion_latency_ms_bucket{le=\"600000\"}[24h]))",
+          "legendFormat": "NFR-02 超過"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (stage, reason) (increase(ast_trade_cycle_latency_unobserved_total[24h]))",
+          "legendFormat": "未観測 {{stage}}/{{reason}}"
+        }
+      ]
     }
   ]
 }

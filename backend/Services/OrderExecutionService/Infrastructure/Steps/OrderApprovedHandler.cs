@@ -50,6 +50,14 @@ public sealed class OrderApprovedHandler(
 
         var executed = result.Executed!;
         metrics.RecordOrderExecuted(executed.Status, executed.Provider);
+
+        // NFR-01, #689, IADR-0307: **ここが「発注完了」＝ NFR-01 の終点である。**
+        // 起点（価格変動検知・情報収集の完了）は承認が運んでくる。起点を持たない注文
+        // （owner 手仕舞い・維持証拠金の自動縮小）は 0 ms ではなく**未観測**として数える
+        // ——0 を入れると「5 分以内」を満たしているように見えてしまう。判断は BusinessMetrics 側に 1 か所。
+        metrics.RecordOrderCompletionLatency(
+            executed.CycleTrigger, executed.CycleStartedAt, executed.ExecutedAt);
+
         logger.LogInformation(
             "発注執行: DecisionId={DecisionId} OrderId={OrderId} 状態={Status} 約定数={Filled} 平均価格={AvgPrice}",
             executed.DecisionId, executed.OrderId, executed.Status, executed.FilledQuantity, executed.AveragePrice);
