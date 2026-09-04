@@ -1,6 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "enabledMcpjsonServers": ["context7"],
+  "cleanupPeriodDays": 30,
+  "includeCoAuthoredBy": true,
   "permissions": {
     "allow": [
       "mcp__context7__resolve-library-id",
@@ -13,6 +15,11 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git -C planning log:*)",
+      "Bash(git -C planning show:*)",
+      "Bash(git -C planning diff:*)",
+      "Bash(git -C planning ls-tree:*)",
+      "Bash(git -C planning grep:*)",
       "Bash(git ls-tree:*)",
       "Bash(git submodule status:*)",
       "Bash(git fetch:*)",
@@ -30,6 +37,7 @@
       "Bash(find:*)",
       "Bash(rg:*)",
       "Bash(grep:*)",
+      "Bash(awk:*)",
       "Bash(sort:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
@@ -47,6 +55,7 @@
       "Bash(bash scripts/k8s-local-deploy.test.sh:*)",
       "Bash(bash deploy/opend/entrypoint.test.sh:*)",
       "Bash(bash scripts/cutover-count-reconcile.test.sh:*)",
+      "Bash(npx markdownlint-cli2:*)",
       "Bash(dotnet build:*)",
       "Bash(dotnet test:*)",
       "Bash(dotnet format:*)",
@@ -80,10 +89,6 @@
       "mcp__github__get_issue_comments",
       "mcp__github__get_pull_request_reviews",
       "mcp__github__search_issues"
-    ],
-    "ask": [
-      "Bash(git merge:*)",
-      "Bash(git branch -D:*)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
@@ -121,22 +126,36 @@
       "Write(./secrets.*)",
       "Write(./**/secrets.*)",
       "Write(./.claude/settings.json)"
+    ],
+    "ask": [
+      "Bash(git merge:*)",
+      "Bash(git branch -D:*)"
     ]
   },
-  "includeCoAuthoredBy": true,
-  "cleanupPeriodDays": 30,
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-bash.js"] }
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-bash.js"
+            ]
+          }
         ]
       },
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-secrets.js"] }
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-secrets.js"
+            ]
+          }
         ]
       }
     ],
@@ -144,17 +163,49 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/check-impl.js"] }
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-impl.js"
+            ]
+          }
         ]
       }
     ],
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash", "args": ["${CLAUDE_PROJECT_DIR}/scripts/setup.sh"] }
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/scripts/setup.sh"
+            ]
+          }
         ]
       }
     ]
   },
-  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する。【重要】許可リストは「本ファイル / claude-coding / claude-code-review」の3系統を手作業で同期する構造であり、実際に乖離した実績がある（レビュー側にビルド/テスト系が無く、AI レビューが検証できず静的読解へ退行した状態が2週間継続）。ビルド/テスト/フォーマットのコマンドを増減したときは必ず3系統すべてを更新すること。とくにレビュー側から実行系を落とすと、レビューは毎回「実行できませんでした」という無価値な指摘を返すようになる。読み取り専用の基本コマンド（grep / sort / which 等）も同様に3系統で揃える（rg があるから grep 不要とは言えず、パイプは各コマンドが個別判定されるため後段の欠落で鎖全体が落ちる）。submodule が複数ある構成では git -C の許可を .gitmodules のパスごとに 5 サブコマンド（log / show / diff / ls-tree / grep）で列挙する（前方一致のため親パスの許可は入れ子パスに当たらない。Bash(git -C:*) の一括許可は書き込み系まで通るため不可。本リポジトリは資料再編〔ADR-0029〕で submodule を持たないため現在は該当なし）。GitHub MCP のツール名はサーバの版に依存する（claude-code-action v1 が pin する github-mcp-server v0.17.1 には get_issue / get_pull_request / list_sub_issues が在り、統合名 issue_read / pull_request_read / pull_request_review_write は無い。統合名は v1.x 系で導入）。新旧を併記して許可しているのでどちらも削らないこと。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。【環境条件】この deny と hooks が実効するのは、本ファイルを読み込む**ローカルの Claude Code セッションに限る**。リモート実行環境（クラウドセッション・CI）は本ファイルの permissions を自セッションの権限判定に読み込まないため、deny も hooks も掛からず、防御はそれぞれの環境側に委ねられる。実測（実装 endazon/microservices-platform の IADR-0226）: リモートセッションでは Edit(./.claude/settings.json) が deny に遮られず適用できた一方、permissions.allow へのツール追加を含む Edit とそのコミットは環境側の権限分類器が遮断した。すなわち守備は「ローカル＝本ファイルの deny ＋ hooks / リモート＝環境側の分類器」と層が分かれており、**deny は環境非依存の保証ではない**。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。"
+  "extraKnownMarketplaces": {
+    "ui-ux-pro-max-skill": {
+      "source": {
+        "source": "github",
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill"
+      }
+    },
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "mattpocock-skills@claude-plugins-official": true
+  },
+  "//": "このファイルはローカルの Claude Code 用。GitHub Actions（claude-coding.yml / claude-code-review.yml）はこの settings.json を自動読込しないため、CI のツール許可は各ワークフローの claude_args(--allowedTools) で指定する。【重要】許可リストは「本ファイル / claude-coding / claude-code-review」の3系統を手作業で同期する構造であり、実際に乖離した実績がある（レビュー側にビルド/テスト系が無く、AI レビューが検証できず静的読解へ退行した状態が2週間継続）。ビルド/テスト/フォーマットのコマンドを増減したときは必ず3系統すべてを更新すること。とくにレビュー側から実行系を落とすと、レビューは毎回「実行できませんでした」という無価値な指摘を返すようになる。読み取り専用の基本コマンド（grep / sort / which 等）も同様に3系統で揃える（issue planning#163 / planning#168。rg があるから grep 不要とは言えず、パイプは各コマンドが個別判定されるため後段の欠落で鎖全体が落ちる）。submodule が複数ある構成では git -C の許可を .gitmodules のパスごとに 5 サブコマンド（log / show / diff / ls-tree / grep）で列挙する（前方一致のため親パスの許可は入れ子パスに当たらない。Bash(git -C:*) の一括許可は書き込み系まで通るため不可）。GitHub MCP のツール名はサーバの版に依存する（claude-code-action v1 が pin する github-mcp-server v0.17.1 には get_issue / get_pull_request / list_sub_issues が在り、統合名 issue_read / pull_request_read / pull_request_review_write は無い。統合名は v1.x 系で導入）。新旧を併記して許可しているのでどちらも削らないこと（issue planning#163）。deny は機密（.env / secrets.* / CLAUDE.local.md）の Read に加え Bash 読み取り・Edit/Write・本設定自体の書き換えも塞ぎ、すり抜け形は hooks/guard-bash.js が第 2 層でブロックする。【環境条件】この deny と hooks が実効するのは、本ファイルを読み込む**ローカルの Claude Code セッションに限る**。リモート実行環境（クラウドセッション・CI）は本ファイルの permissions を自セッションの権限判定に読み込まないため、deny も hooks も掛からず、防御はそれぞれの環境側に委ねられる。実測（planning#422 / 実装 endazon/microservices-platform の IADR-0226）: リモートセッションでは Edit(./.claude/settings.json) が deny に遮られず適用できた一方、permissions.allow へのツール追加を含む Edit とそのコミットは環境側の権限分類器が遮断した。すなわち守備は「ローカル＝本ファイルの deny ＋ hooks / リモート＝環境側の分類器」と層が分かれており、**deny は環境非依存の保証ではない**。技術スタックに合わせ、ビルド/テスト/フォーマットのコマンドを allow に追記すること（既定は C#/.NET 例）。例: Bash(npm run:*) / Bash(pytest:*) / Bash(go test:*) など。SessionStart は scripts/setup.sh を実行する。 【プラグイン】enabledPlugins には**全実装リポ共通の必須のみ**を置く（code-review / code-simplifier / superpowers / mattpocock-skills）。それ以外は各実装リポの技術スタックに応じて追加する。追加を手作業にしないため、任意候補のマーケットも extraKnownMarketplaces へ登録してある（ui-ux-pro-max-skill = 画面を持つリポ向け / anthropic-agent-skills = webapp-testing 用）。enabledPlugins のキーは plugin@marketplace 形式だが、マーケット自体の登録を担うのは extraKnownMarketplaces であり、既定で解決できるのは claude-plugins-official だけである。未登録のマーケットを enabledPlugins に書いても**無言で解決に失敗する**ため、両者は必ず対で増減させること（extraKnownMarketplaces は permissions.allow と同様、各自がフォルダを信頼するまで適用されない）。extraKnownMarketplaces に ref は付けない（HEAD 追従とする）。本ファイルの登録は 2 件 —— ui-ux-pro-max-skill（nextlevelbuilder。画面を持つリポ向け）と anthropic-agent-skills（anthropics/skills。webapp-testing = example-skills 用）—— であり、どちらも marketplace.json の source が ./ の自リポ追従である。ref によるピン留めはタグの整備状況に依存し、ui-ux-pro-max-skill は v2.9.0 まで追従しているが anthropic-agent-skills（anthropics/skills）はタグを打っていないため揃わない。よって付けず、上流の破壊的変更は都度対応とする。なお計画リポ側の settings.json も同じ「ref を付けない」方針だが、登録しているマーケットの顔ぶれが違うので判断根拠の記述はこのファイル固有である。**冒頭のとおり両ファイルは同期させてはならない（issue #253）。この段落を計画リポ側からコピーしないこと**（2026-09-05 に一度やって AI レビューに検出された）。方針の全体像は計画リポの判断記録 draft/cross-project/20260817_skill-mcp-adoption-decision.md の 2026-09-05 追補にある。superpowers は claude-plugins-official に収録されたため、旧案内の obra/superpowers-marketplace ではなく公式マーケット経由で入れる（manifest 側で sha が固定される）。ponytail は入れない —— 毎プロンプトとサブエージェントへルールセットを注入するフックを持ち（原則 5）、/ponytail-review が superpowers のコードレビュー系と重なる（原則 1）ためである。独自マーケットの source が ./（HEAD 追従・SHA 非固定）である点は、採用した第三者マーケットも同条件なのでponytail 固有の理由にはならない。毎プロンプト実行されるフックが黙って入れ替わるという形で危険度を上げる増幅要因である。mattpocock-skills は収録 25 スキルが言語非依存（tdd / code-review / domain-modeling / triage / to-spec / resolving-merge-conflicts ほか）であり、スタックを問わず効くため必須に置く。"
 }
