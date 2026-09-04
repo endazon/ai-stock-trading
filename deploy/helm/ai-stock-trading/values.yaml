@@ -1,6 +1,9 @@
 # ai-stock-trading k8s chart values（MSP 連結ローカル k8s dev 既定）。
 # fail-safe: 外部連携（実 LLM/市場データ/Discord/実発注）は既定 no-op / paper。
 # 実接続は Secret `ast-secrets`（空既定）を明示設定したときのみ有効化する。
+# 例外は為替レート源（Fx__Provider=boj）だけである（#686 / IADR-0308）——日銀 時系列統計データは
+# 認証不要のため鍵で門を作れず、計画 ADR-0022 決定1 が第一情報源と定めている。
+# 外部へ出るのは公開統計 API への GET のみ（1 回/分の自制・6 時間キャッシュ）。
 
 global:
   image:
@@ -383,8 +386,9 @@ services:
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**（期末日以前の直近の日次観測・1 USD あたりの円）。
       # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
-      # fail-safe: 空/none/未知/キー無し=no-op＝期末レート未供給＝為替差損益は「供給されていません（0 円ではありません）」。
-      - { name: Fx__Provider, value: "" }
+      # #686, IADR-0308: 計画 ADR-0022 決定1 の第一情報源＝日銀（認証不要）。鍵があれば FRED が後段に積まれる。
+      # fail-safe: 空/none/未知=no-op＝期末レート未供給＝為替差損益は「供給されていません（0 円ではありません）」。
+      - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
   risk-management:
@@ -411,8 +415,9 @@ services:
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）を承認台帳へ固定する源。
       # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
-      # fail-safe: 空/none/未知/キー無し=no-op＝承認は未記録（null）のまま記録される（承認を止めない・推定しない）。
-      - { name: Fx__Provider, value: "" }
+      # #686, IADR-0308: 計画 ADR-0022 決定1 の第一情報源＝日銀（認証不要）。鍵があれば FRED が後段に積まれる。
+      # fail-safe: 空/none/未知=no-op＝承認は未記録（null）のまま記録される（承認を止めない・推定しない）。
+      - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
   trade-decision:
@@ -458,11 +463,14 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
-      # FR-10/17, #257, IADR-0107: 基準通貨（円）への換算レート源。統制上限・サイジングは円建てで判定するため、
-      # 外貨建て銘柄はレートが解決できないと新規建てを見送る（過大発注を招かない安全側）。
-      # fail-safe: 空/none/未知/キー無し=no-op（外部へ接続しない）。日本株は定義上レート 1 で従来どおり判断できる。
-      # 実結線は fred＋API キー（FRED の DEXJPUS＝円/ドル）。本 PR では実 provider を投入しない。
-      - { name: Fx__Provider, value: "" }
+      # FR-10/17, #257, #364, IADR-0107/0152: 基準通貨（USD）への換算レート源。統制上限・サイジングは
+      # 基準通貨で判定するため、非基準通貨（JPY 建て）はレートが解決できないと新規建てを見送る
+      # （過大発注を招かない安全側）。基準通貨の米国株は定義上レート 1 で従来どおり判断できる。
+      # #686, IADR-0308: 計画 ADR-0022 決定1 の第一情報源＝日銀（認証不要のため鍵を要さない）。
+      # FRED は決定2 のフォールバックであり、Fx__Fred__ApiKey があるときだけ後段に積まれる
+      # （空なら日銀単独＝「フォールバックがありません」を起動時に 1 回警告する）。
+      # fail-safe: 空/none/未知=no-op（外部へ接続しない）＝非基準通貨は見送り。
+      - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
 

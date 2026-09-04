@@ -7,8 +7,14 @@ public sealed class FxOptions
     public const string SectionName = "Fx";
 
     /// <summary>
-    /// レート源の選択。既定・空・"none"・未知の値・キー無しはすべて no-op（実接続しない）へ倒す。
-    /// 現在の実装は "fred"（計画 05_trading-assumptions §3 の「日銀API または FRED」のうち FRED）。
+    /// レート源の選択。既定・空・"none"・未知の値はすべて no-op（実接続しない）へ倒す。
+    /// <para>
+    /// #686, ADR-0022 決定1・決定2, IADR-0308: <b>配備される構成は "boj"（日銀＝第一の情報源）</b>である
+    /// （Helm の <c>Fx__Provider</c> は本番・経路B とも 3 サービス分すべて "boj"）。
+    /// "fred" は<b>フォールバック</b>であり、<see cref="FredFxOptions.ApiKey"/> があるときだけ
+    /// 日銀の後段へ積まれる（<c>Fx:Provider</c> に "fred" を直接指定すると<b>冗長化の無い週次公表の源</b>を
+    /// 第一に据えることになる）。<b>"fred" 指定はキー無しなら no-op へ倒れるが、"boj" は認証不要のため倒れない。</b>
+    /// </para>
     /// </summary>
     public string? Provider { get; set; }
 
