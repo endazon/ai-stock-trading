@@ -134,8 +134,11 @@ public class BusinessMetricsTests
     [Fact]
     public void 承認では拒否カウンタが動かない()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695: 否定形の表明なので Meter をこのテストへ隔離する（既定名だと並行する
+        // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = new BusinessMetrics(meterName);
 
         metrics.RecordOrderScreening(approved: true, []);
 
@@ -271,8 +274,11 @@ public class BusinessMetricsTests
     [Fact]
     public void 終点が起点より前なら値を捨てて未観測として数える()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695: 否定形の表明なので Meter をこのテストへ隔離する（既定名だと並行する
+        // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = new BusinessMetrics(meterName);
         var startedAt = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
 
         metrics.RecordRecordCompletionLatency(
@@ -290,8 +296,11 @@ public class BusinessMetricsTests
     [Fact]
     public void 経過ゼロは測れた値として計上し未観測にはしない()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695: 否定形の表明なので Meter をこのテストへ隔離する（既定名だと並行する
+        // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = new BusinessMetrics(meterName);
         var at = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
 
         metrics.RecordOrderCompletionLatency(BusinessMetrics.TriggerPriceMovement, at, at);
@@ -299,6 +308,45 @@ public class BusinessMetricsTests
         capture.ValuesOf(BusinessMetricNames.TradeCycleOrderCompletionLatencyMs)
             .Should().ContainSingle().Which.Value.Should().Be(0);
         capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved).Should().BeEmpty();
+    }
+
+    // NFR-07, #695（否定形・隔離そのものの証明）: 隔離した MeterCapture は、**既定名の Meter が
+    // 同時に発火しても拾わない**。これが成り立たないと、本ファイルの `BeEmpty()` を使う表明は
+    // すべて「他人の発火で赤くなる」——2026-09-04 の Integration E2E で実際に起きた形である
+    // （`ast.finnhub.daily_request_estimate` に値 24.0 が混入して赤）。
+    //
+    // 🔴 **隔離を外すとこのテストが赤くなることが、隔離が効いている証拠である。**
+    [Fact]
+    public void 隔離した捕捉は既定名の計器の発火を拾わない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var isolated = new BusinessMetrics(meterName);
+
+        // 別テストの相当物: 既定名の BusinessMetrics が同じ計器を発火させる。
+        using (var shared = new BusinessMetrics())
+        {
+            shared.RecordOrderScreening(approved: false, [Enum.GetValues<RejectionReason>()[0]]);
+        }
+
+        // 隔離した側では 1 件も見えない。
+        capture.ValuesOf(BusinessMetricNames.RiskRejections).Should().BeEmpty();
+        capture.Measurements.Should().BeEmpty();
+
+        // 対の肯定形: 隔離した側の発火はちゃんと見える（捕捉そのものが死んでいないことの担保）。
+        isolated.RecordOrderScreening(approved: false, [Enum.GetValues<RejectionReason>()[0]]);
+        capture.ValuesOf(BusinessMetricNames.RiskRejections).Should().ContainSingle();
+    }
+
+    // NFR-07, #695: 一意名は呼び出しごとに異なる（同じ名前を配ると隔離が成立しない）。
+    [Fact]
+    public void 隔離用のMeter名は呼び出しごとに異なる()
+    {
+        var a = MeterCapture.NewIsolatedMeterName();
+        var b = MeterCapture.NewIsolatedMeterName();
+
+        a.Should().NotBe(b);
+        a.Should().NotBe(BusinessMetricNames.MeterName);
     }
 
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>

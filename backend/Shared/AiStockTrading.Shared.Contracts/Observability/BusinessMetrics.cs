@@ -72,9 +72,20 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
 
-    public BusinessMetrics()
+    /// <param name="meterName">
+    /// Meter 名。既定は <see cref="BusinessMetricNames.MeterName"/> であり、**本番では必ず既定を使う**。
+    /// <para>
+    /// 🔴 <b>テストが「計器が発火しなかった」ことを表明するためだけの引数である</b>（#695）。
+    /// <see cref="Meter"/> はプロセス全体で観測されるため、既定名のままだと
+    /// <c>MeterCapture</c> が<b>同時に走っている別テストの測定値まで拾い</b>、否定形の表明
+    /// （<c>ValuesOf(...).Should().BeEmpty()</c>）が**他人の発火で偽陽性になる**——2026-09-04 の
+    /// Integration E2E で実際に起きた（`ast.finnhub.daily_request_estimate` に値 24.0 が混入）。
+    /// テストごとに一意な名前を与えれば、捕捉の母集合がそのテストの発火だけに閉じる。
+    /// </para>
+    /// </param>
+    public BusinessMetrics(string? meterName = null)
     {
-        _meter = new Meter(BusinessMetricNames.MeterName);
+        _meter = new Meter(meterName ?? BusinessMetricNames.MeterName);
 
         // 🔴 unit は与えない。単位は名前へ埋めてある（BusinessMetricNames の説明を参照）。
         _informationItemsCollected = _meter.CreateCounter<long>(

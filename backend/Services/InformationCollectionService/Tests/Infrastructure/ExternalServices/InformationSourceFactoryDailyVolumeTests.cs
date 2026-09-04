@@ -15,8 +15,11 @@ public class InformationSourceFactoryDailyVolumeTests
     [Fact]
     public void 銘柄未設定は見積らず警告もメトリクスも出さない()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695: 否定形の表明なので Meter をこのテストへ隔離する（既定名だと並行する
+        // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = new BusinessMetrics(meterName);
         var logs = new CapturingLoggerFactory();
 
         InformationSourceFactory.EvaluateDailyVolumeEstimate(
@@ -33,8 +36,11 @@ public class InformationSourceFactoryDailyVolumeTests
     [Fact]
     public void finnhub系ソースが未有効なら銘柄設定があっても見積らない()
     {
-        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        using var metrics = new BusinessMetrics();
+        // #695: 否定形の表明なので Meter をこのテストへ隔離する（既定名だと並行する
+        // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = new BusinessMetrics(meterName);
         var logs = new CapturingLoggerFactory();
 
         InformationSourceFactory.EvaluateDailyVolumeEstimate(
