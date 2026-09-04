@@ -72,20 +72,44 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
 
-    /// <param name="meterName">
-    /// Meter 名。既定は <see cref="BusinessMetricNames.MeterName"/> であり、**本番では必ず既定を使う**。
-    /// <para>
-    /// 🔴 <b>テストが「計器が発火しなかった」ことを表明するためだけの引数である</b>（#695）。
-    /// <see cref="Meter"/> はプロセス全体で観測されるため、既定名のままだと
-    /// <c>MeterCapture</c> が<b>同時に走っている別テストの測定値まで拾い</b>、否定形の表明
-    /// （<c>ValuesOf(...).Should().BeEmpty()</c>）が**他人の発火で偽陽性になる**——2026-09-04 の
-    /// Integration E2E で実際に起きた（`ast.finnhub.daily_request_estimate` に値 24.0 が混入）。
-    /// テストごとに一意な名前を与えれば、捕捉の母集合がそのテストの発火だけに閉じる。
-    /// </para>
-    /// </param>
-    public BusinessMetrics(string? meterName = null)
+    /// <summary>
+    /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>DI が解決できる公開コンストラクタはこれ 1 本だけに保つ。</b> 引数つきの公開
+    /// コンストラクタを足すと <c>AddSingleton&lt;BusinessMetrics&gt;()</c> が <c>string</c> を
+    /// 解決できず、**consumer が起動できないまま MassTransit のハーネスが 30 秒でタイムアウトする**
+    /// という遠い形で壊れる（#695 の実装中に実測。原因が DI だと分かりにくい）。
+    /// テスト用の隔離は <see cref="WithMeterName(string)"/> を使うこと。
+    /// </remarks>
+    public BusinessMetrics()
+        : this(BusinessMetricNames.MeterName)
     {
-        _meter = new Meter(meterName ?? BusinessMetricNames.MeterName);
+    }
+
+    /// <summary>
+    /// **テスト専用**: Meter 名を差し替えて構築する。
+    /// <para>
+    /// 🔴 <b>否定形の表明（「計器が発火しなかった」）のためだけにある</b>（#695・IADR-0309）。
+    /// <see cref="Meter"/> はプロセス全体で観測されるため、既定名のままだと <c>MeterCapture</c> が
+    /// <b>同時に走っている別テストの測定値まで拾い</b>、<c>ValuesOf(...).Should().BeEmpty()</c> が
+    /// **他人の発火で偽陽性になる** —— 2026-09-04 の Integration E2E で実際に起きた
+    /// （<c>ast.finnhub.daily_request_estimate</c> に値 24.0 が混入して赤）。
+    /// </para>
+    /// <para>
+    /// <b>本番からは呼ばない。</b> 肯定形の表明も既定名のままでよい（他人の測定値が混ざっても
+    /// 「含む」の表明は壊れない）。
+    /// </para>
+    /// </summary>
+    public static BusinessMetrics WithMeterName(string meterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(meterName);
+        return new BusinessMetrics(meterName);
+    }
+
+    private BusinessMetrics(string meterName)
+    {
+        _meter = new Meter(meterName);
 
         // 🔴 unit は与えない。単位は名前へ埋めてある（BusinessMetricNames の説明を参照）。
         _informationItemsCollected = _meter.CreateCounter<long>(

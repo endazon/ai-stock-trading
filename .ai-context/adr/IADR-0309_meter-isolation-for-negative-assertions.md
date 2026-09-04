@@ -54,18 +54,25 @@ related_specs:
 
 ## 決定
 
-### 決定 1: `BusinessMetrics` に省略可能な `meterName` 引数を足す
+### 決定 1: `BusinessMetrics` にテスト専用の静的ファクトリを足す（公開コンストラクタは増やさない）
 
 ```csharp
-public BusinessMetrics(string? meterName = null)
-{
-    _meter = new Meter(meterName ?? BusinessMetricNames.MeterName);
+public BusinessMetrics() : this(BusinessMetricNames.MeterName) { }
+public static BusinessMetrics WithMeterName(string meterName) => new(meterName);
+private BusinessMetrics(string meterName) { _meter = new Meter(meterName); ... }
 ```
 
-**既定は従来と同一**であり、本番コードの呼び出しは 1 か所も変わらない。**テストのためだけに
-本番クラスへ引数を足すこと**は一般には避けるべきだが、ここでは代替が無い —— Meter は
-`BusinessMetrics` の private フィールドであり、**外から名前を変える手段が他に無い**。
-引数には「テストの否定形の表明のためである」ことと**実際に起きた事故**を doc コメントで残した。
+**本番コードの呼び出しは 1 か所も変わらない。** テストのためだけに本番クラスへ手を入れること自体は
+一般には避けるべきだが、ここでは代替が無い —— Meter は private フィールドであり、**外から名前を
+変える手段が他に無い**。
+
+🔴 **公開コンストラクタを 1 本に保つことが要点である。** 最初の実装は
+`public BusinessMetrics(string? meterName = null)` としたが、これは
+`AddSingleton<BusinessMetrics>()` が `string` を解決できず**consumer が起動できないまま
+MassTransit のハーネスが 30 秒でタイムアウトする**という遠い形で壊れた（CI で実測。
+CostControlService の 8 テストが `TimeoutException` で失敗し、**原因が DI だとは読み取れない**）。
+静的ファクトリなら DI が見る公開コンストラクタは引数なしの 1 本だけで、この形は生じない。
+この落とし穴は `BusinessMetrics` の doc コメントにも残した。
 
 ### 決定 2: `MeterCapture.NewIsolatedMeterName()` を新設する
 

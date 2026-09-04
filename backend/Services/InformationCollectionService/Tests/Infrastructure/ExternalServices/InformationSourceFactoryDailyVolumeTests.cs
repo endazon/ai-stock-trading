@@ -19,7 +19,7 @@ public class InformationSourceFactoryDailyVolumeTests
         // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var metrics = new BusinessMetrics(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
 
         InformationSourceFactory.EvaluateDailyVolumeEstimate(
@@ -40,7 +40,7 @@ public class InformationSourceFactoryDailyVolumeTests
         // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var metrics = new BusinessMetrics(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
 
         InformationSourceFactory.EvaluateDailyVolumeEstimate(

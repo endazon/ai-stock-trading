@@ -47,8 +47,8 @@ Failed InformationCollectionService.Tests.InformationSourceFactoryDailyVolumeTes
 
 詳細と根拠は [IADR-0309](../adr/IADR-0309_meter-isolation-for-negative-assertions.md)。要点のみ。
 
-1. `BusinessMetrics` に**省略可能な `meterName` 引数**を足す（既定は `BusinessMetricNames.MeterName`
-   ＝**本番の挙動は 1 バイトも変わらない**）。
+1. `BusinessMetrics` に**テスト専用の静的ファクトリ `WithMeterName(string)`** を足す（公開
+   コンストラクタは引数なしの 1 本のまま＝**本番の挙動は 1 バイトも変わらない**）。
 2. `MeterCapture.NewIsolatedMeterName()` を新設し、**否定形の表明だけ**が一意名を使う。
 3. **隔離そのものを証明するテスト**を追加する（既定名の Meter が同時に発火しても隔離側は拾わない／
    一意名が呼び出しごとに異なる）。
@@ -59,7 +59,7 @@ Failed InformationCollectionService.Tests.InformationSourceFactoryDailyVolumeTes
 
 | ファイル | 変更 |
 | --- | --- |
-| `Shared.Contracts/Observability/BusinessMetrics.cs` | 省略可能な `meterName` 引数（既定は従来と同じ） |
+| `Shared.Contracts/Observability/BusinessMetrics.cs` | 静的ファクトリ `WithMeterName(string)` ＋ private ctor（公開 ctor は引数なしの 1 本のまま） |
 | `TestSupport/AiStockTrading.TestSupport.Metrics/MeterCapture.cs` | `NewIsolatedMeterName()` を新設・書き方の doc |
 | `Shared.Contracts.Tests/BusinessMetricsTests.cs` | 否定形 3 件を隔離 ＋ **隔離の証明テスト 2 件を新設** |
 | `InformationCollectionService/Tests/.../InformationSourceFactoryDailyVolumeTests.cs` | 否定形 2 件を隔離 |

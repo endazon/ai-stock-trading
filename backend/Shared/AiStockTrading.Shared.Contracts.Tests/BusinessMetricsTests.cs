@@ -138,7 +138,7 @@ public class BusinessMetricsTests
         // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var metrics = new BusinessMetrics(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
 
         metrics.RecordOrderScreening(approved: true, []);
 
@@ -278,7 +278,7 @@ public class BusinessMetricsTests
         // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var metrics = new BusinessMetrics(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var startedAt = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
 
         metrics.RecordRecordCompletionLatency(
@@ -300,7 +300,7 @@ public class BusinessMetricsTests
         // 別テストの測定値を拾い、BeEmpty が他人の発火で偽陽性になる）。
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var metrics = new BusinessMetrics(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
         var at = new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero);
 
         metrics.RecordOrderCompletionLatency(BusinessMetrics.TriggerPriceMovement, at, at);
@@ -321,7 +321,7 @@ public class BusinessMetricsTests
     {
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
-        using var isolated = new BusinessMetrics(meterName);
+        using var isolated = BusinessMetrics.WithMeterName(meterName);
 
         // 別テストの相当物: 既定名の BusinessMetrics が同じ計器を発火させる。
         using (var shared = new BusinessMetrics())
