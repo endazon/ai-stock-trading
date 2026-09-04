@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-08-29
+updated: 2026-09-04
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability]
-issues: [#329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564]
+iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634]
 -->
 
 
@@ -396,6 +396,21 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-202 | **記録先 2: Discord** が Critical で決済前後の維持率・建玉・「AI 非介在」を通知する | `維持率割れの自動縮小は決済前後の維持率と建玉をCriticalで通知する`（`NotificationFormatterTests`） |
 | T-10-204 | **記録先 3: 日報**が 7 列の表で記載し、発動が無い日も「なし」と明記する | `日報は維持率割れの自動縮小を7列の表で記載する`・`日報は発動が無い日もなしと明記する`（`ReportRendererTests`） |
 | T-10-205 | **記録先 4: 月報**が当月の発動回数のみを記載し、発動が無い月も「0 件」と明記する | `月報は当月の発動回数を記載し発動が無い月も0件と明記する`（同上。週報には節を作らない） |
+
+### 5. 駆動ドライバの結線（#634。「登録されているが呼ばれない」の再発防止）
+
+クラスは `MaintenanceMarginEvaluationWiringTests`（実 DI・構造）・`MaintenanceMarginEvaluationServiceTests`
+（`RunOnceAsync` の振る舞い）。
+
+| ID | 受け入れ基準 | テストメソッド（クラス） |
+| --- | --- | --- |
+| T-10-320 | 既定（構成未設定）で駆動が `IHostedService` の解決集合に実在する（DI 登録だけでなく実 DI で固定） | `既定で維持率評価の駆動が登録される`（`MaintenanceMarginEvaluationWiringTests`） |
+| T-10-321 | 明示的に無効化すると駆動が登録されない（緊急停止用の逃げ道） | `明示的に無効化すると駆動が登録されない`（同上） |
+| T-10-322 | 供給される構成で閾値割れなら決済承認と記録イベントが発行される | `閾値割れの構成では決済承認と記録イベントが発行される`（`MaintenanceMarginEvaluationServiceTests`） |
+| T-10-323 | **否定形（最重要）**: 供給元が `Unavailable*`（null）を返す間は決済も記録イベントも一切発生しない | `供給元が供給なしを返す間は決済も記録イベントも発生しない`（同上） |
+| T-10-324 | **否定形**: `SnapshotUntrusted`（壊れたスナップショット）でも決済も記録イベントも発生しない | `スナップショットが信頼できない間は決済も記録イベントも発生しない`（同上） |
+| T-10-325 | 休場日は評価をスキップし発行しない（他 2 件の定期評価ドライバと同型） | `休場日は評価をスキップし発行しない`（同上） |
+| T-10-326 | **否定形**: kill switch / 日次損失ロックアウト / 一時停止が成立していても自動縮小は動く | `三統制が成立していても自動縮小は動く`（同上） |
 
 ## 維持率の適用閾値は口座単位（#420。空売り段階解禁の計画 ADR の決定 7 の 2026-08-07 追記）
 

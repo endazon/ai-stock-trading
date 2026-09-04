@@ -286,7 +286,7 @@ jobs:
           # 他スタック例: Bash(npm run:*) / Bash(npx vitest:*) / Bash(pytest:*) / Bash(go test:*)
           claude_args: |
             --model ${{ steps.model.outputs.model }}
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-tree:*),Bash(git ls-files:*),Bash(git submodule status:*),Bash(git fetch:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(sed:*),Bash(cmp:*),Bash(diff:*),Bash(echo:*),Bash(which:*),Bash(yq:*),Bash(helm template:*),Bash(helm lint:*),Bash(gh issue create:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__pull_request_read,mcp__github__get_file_contents,mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_pull_request,mcp__github__get_issue_comments,mcp__github__get_pull_request_reviews,mcp__github__search_issues,mcp__github__list_sub_issues,mcp__github__list_workflow_runs,mcp__github__actions_list,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__add_issue_comment,mcp__github__push_files,Bash(node:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*),Bash(dotnet ef:*),Bash(dotnet --version),Bash(dotnet --info),Bash(npm ci:*),Bash(npm run:*),Bash(npm --prefix:*),Bash(bash scripts/k8s-local-deploy.test.sh:*),Bash(bash deploy/opend/entrypoint.test.sh:*),Bash(bash scripts/cutover-count-reconcile.test.sh:*)"
           # 【プロンプトの書き方】prompt: の中身は毎 PR そのまま送信され課金される。事故の経緯・
           # 実測値の記録は送信されないこの YAML コメント側へ書き、prompt には AI が従う指示だけを
           # 置く（planning#416 の追随。#530）。prompt が禁じる各項目の経緯:
@@ -431,6 +431,20 @@ jobs:
             計画リポジトリ（project-planning）は本リポジトリから参照できない（資料再編
             ADR-0029 決定 2 で submodule を撤去済み）。PR が計画書の内容に言及している場合、
             その照合はできないため「未検証（計画リポ参照不可）」と明記すること（推測で ✅ にしない）。
+
+            **シェルテスト（`*.test.sh`）も実走できる**（#683 で許可を揃えた）。CI の
+            `static-checks` が実行しているのと同じ 3 本だけが許可されている。
+            - `bash scripts/k8s-local-deploy.test.sh`
+            - `bash deploy/opend/entrypoint.test.sh`
+            - `bash scripts/cutover-count-reconcile.test.sh`
+            🔴 **必ず `bash <パス>` の形で呼ぶこと。** `sh <パス>`・`./<パス>`・
+            `cd <dir> && bash ...`・環境変数を前置した `VAR=1 bash ...` はいずれも許可の
+            前方一致に掛からず拒否される（拒否は `check-permission-denials.js` が CI を
+            赤くする）。出力を絞りたいときは `bash <パス> | tail -20` のようにパイプで継ぐ
+            （パイプは各コマンドが個別に判定されるため `tail` 側も許可済みである）。
+            上記以外の `*.test.sh` を PR が追加している場合、**実行は許可されていない**。
+            許可を足すにはワークフローの `--allowedTools` を変更する必要があり、
+            それ自体がレビュー対象になる（IADR-0299）。
 
             【.claude / CLAUDE.md を変更する PR での注意】
             アクションはセキュリティ上、`.claude` / `CLAUDE.md` / `.mcp.json` 等を統合ブランチ版へ
