@@ -44,11 +44,13 @@
  */
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { warn } = require('./lib/ci-annotate.js');
 
 const REPO_ROOT = path.join(__dirname, '..');
 const DEFAULT_DIR = path.join(REPO_ROOT, '.github', 'workflows');
 const SETTINGS_PATH = path.join(REPO_ROOT, '.claude', 'settings.json');
+const CI_WORKFLOW_PATH = path.join(DEFAULT_DIR, 'ci.yml');
 
 // setup-* アクションと、それが用意したツールチェーンを使うために必要な Bash 許可の候補。
 // いずれか 1 つでも許可されていれば「実行できる」とみなす。
@@ -347,6 +349,52 @@ function genericBashDrift(files) {
   return errors;
 }
 
+/**
+ * CI が `bash <path>` で実走するシェルテストを、AI（実装用・レビュー用）も実行できるかを検査する。
+ *
+ * 🔴 **同型の事故が 2 回起きたので入れた検査である**（#683）。`*.test.sh` を触る PR で
+ * `claude-review` が権限拒否で赤くなった実測: **#647（8 件中 5 件）と #678（6 件すべて）**。
+ * どちらも「PR 本文の『テスト N 件緑』を自分で実走して確かめようとして拒否された」もので、
+ * **CI 自身が実行しているものをレビューだけが実行できない**という非対称が原因だった。
+ *
+ * 照合は `ci.yml` の `run: bash <path>` を単一情報源にする。**許可リストを先に書いても
+ * CI が実行していなければ意味が無く、逆に CI が実行しているのに許可が無ければ必ず拒否される**
+ * ——どちらの向きの乖離も、人手の規律では 2 度守れなかった。
+ *
+ * `sh <path>` / `./<path>` は許可しない（CI と同じ `bash <path>` の 1 形だけを通す）。
+ * 形を増やすほど許可リストが実態から離れ、レビューがどの形なら通るか分からなくなる。
+ */
+function shellTestDrift(files, ciPath = CI_WORKFLOW_PATH) {
+  const errors = [];
+  let ci;
+  try {
+    ci = fs.readFileSync(ciPath, 'utf8');
+  } catch (e) {
+    return errors; // ci.yml が無い構成は対象外（キット配布先で名前が違う場合など）
+  }
+
+  // `run: bash scripts/foo.test.sh` の形だけを拾う（引数つきは対象外＝CI もそう書いていない）。
+  const wanted = new Set();
+  for (const m of ci.matchAll(/^\s*run:\s*bash\s+(\S+\.test\.sh)\s*$/gm)) {
+    wanted.add(`Bash(bash ${m[1]}:*)`);
+  }
+  if (wanted.size === 0) return errors;
+
+  for (const f of files) {
+    const base = path.basename(f.file);
+    if (!/claude-(coding|code-review)/.test(base)) continue;
+    const missing = [...wanted].filter((w) => !f.tools.includes(w));
+    if (missing.length) {
+      errors.push(
+        `${base}: CI が実走しているシェルテストの実行が許可されていない: ${missing.join(', ')}` +
+          '（AI が PR の「テストが通る」という主張を自分で確かめられず、権限拒否で claude-review が' +
+          '赤くなる。#647 / #678 で 2 度起きた。ci.yml の `run: bash <path>` と揃えること）'
+      );
+    }
+  }
+  return errors;
+}
+
 /** 1 ファイルを検査し {errors, warnings, tools} を返す。 */
 function checkWorkflow(file, text) {
   const errors = [];
@@ -615,6 +663,57 @@ function selfTest() {
       process.stderr.write(`  NG  ${label}（期待 ${expectDrift} / 実際 ${got}）\n`);
     }
   }
+  // #683: CI が `bash <path>` で実走するシェルテストを AI も実行できるか（同型事故 2 回で新設）。
+  const shellCiYaml = [
+    'jobs:',
+    '  static-checks:',
+    '    steps:',
+    '      - name: Test k8s-local-deploy.sh',
+    '        run: bash scripts/k8s-local-deploy.test.sh',
+    '      - name: Test opend entrypoint.sh',
+    '        run: bash deploy/opend/entrypoint.test.sh',
+  ].join('\n');
+  const shellCiPath = path.join(os.tmpdir(), `ai-workflow-shelltest-${process.pid}.yml`);
+  fs.writeFileSync(shellCiPath, shellCiYaml, 'utf8');
+  const withTools = (name, tools) => ({ file: `/x/${name}`, text: '', tools });
+  const bothAllowed = [
+    'Bash(bash scripts/k8s-local-deploy.test.sh:*)',
+    'Bash(bash deploy/opend/entrypoint.test.sh:*)',
+  ];
+  const shellCases = [
+    ['シェルテストが両系統で許可されていれば違反なし',
+      [withTools('claude-coding.yml', bothAllowed), withTools('claude-code-review.yml', bothAllowed)], false],
+    ['レビュー用に 1 本欠けていれば違反（#678 の形）',
+      [withTools('claude-coding.yml', bothAllowed), withTools('claude-code-review.yml', [bothAllowed[0]])], true],
+    ['実装用に欠けていても違反（テストを書き換える側も実走できないと意味が無い）',
+      [withTools('claude-coding.yml', []), withTools('claude-code-review.yml', bothAllowed)], true],
+    ['`sh <path>` では通らない（CI と同じ `bash <path>` の 1 形だけを認める）',
+      [withTools('claude-coding.yml', ['Bash(sh scripts/k8s-local-deploy.test.sh:*)']),
+        withTools('claude-code-review.yml', ['Bash(sh scripts/k8s-local-deploy.test.sh:*)'])], true],
+    ['claude 系以外のワークフローは対象外',
+      [withTools('ci.yml', [])], false],
+  ];
+  for (const [label, files, expectDrift] of shellCases) {
+    const got = shellTestDrift(files, shellCiPath).length > 0;
+    if (got === expectDrift) {
+      process.stdout.write(`  ok  ${label}\n`);
+    } else {
+      failed++;
+      process.stderr.write(`  NG  ${label}（期待 ${expectDrift} / 実際 ${got}）\n`);
+    }
+  }
+  // ci.yml が読めない構成では黙って skip する（キット配布先で名前が違う場合）。
+  {
+    const got = shellTestDrift([withTools('claude-code-review.yml', [])], path.join(os.tmpdir(), 'no-such-ci.yml')).length > 0;
+    if (!got) {
+      process.stdout.write('  ok  ci.yml が無ければ skip する（fail-open）\n');
+    } else {
+      failed++;
+      process.stderr.write('  NG  ci.yml が無ければ skip する（fail-open）\n');
+    }
+  }
+  fs.unlinkSync(shellCiPath);
+
   for (const [label, files, expectDrift] of genericCases) {
     const got = genericBashDrift(files).length > 0;
     if (got === expectDrift) {
@@ -676,6 +775,7 @@ function main(argv) {
   allErrors.push(...toolchainDrift(forDrift));
   // スタック別以外の Bash 指定（読み取り専用の汎用コマンド等）も突き合わせる（issue planning#163）。
   allErrors.push(...genericBashDrift(forDrift));
+  allErrors.push(...shellTestDrift(forDrift));
 
   process.stdout.write(`AI ワークフロー設定チェック: ${checked} 件を検査\n`);
   // 第 2 引数（ディスク上の全ワークフロー）を渡さないと、issue planning#134 の検査は黙って
