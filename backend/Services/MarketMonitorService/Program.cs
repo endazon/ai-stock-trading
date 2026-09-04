@@ -65,8 +65,7 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
     MarketDataSourceFactory.EvaluateDailyVolume(
         marketDataOptions,
         sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
-        sp.GetRequiredService<IConfiguration>().GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
-            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
         sp.GetRequiredService<BusinessMetrics>(),
         sp.GetRequiredService<ILoggerFactory>());
 

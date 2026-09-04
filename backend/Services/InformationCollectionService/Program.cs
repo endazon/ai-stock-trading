@@ -95,8 +95,7 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
         sourceOptions,
         builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
             ?? new CollectionOptions().PollIntervalSeconds,
-        builder.Configuration.GetSection(FinnhubDailyVolumeGuardOptions.SectionName)
-            .Get<FinnhubDailyVolumeGuardOptions>() ?? new(),
+        FinnhubDailyVolumeGuardOptions.Read(builder.Configuration),
         sp.GetRequiredService<BusinessMetrics>(),
         sp.GetRequiredService<ILoggerFactory>());
 
