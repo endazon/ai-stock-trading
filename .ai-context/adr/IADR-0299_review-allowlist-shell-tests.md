@@ -2,7 +2,7 @@
 title: IADR-0299 AI が実走できるシェルテストは CI が実走している 3 本だけを列挙で許可し、CI との非対称を検査で固定する
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0190, IADR-0243]
+related_ids: [NFR, IADR-0145, IADR-0190]
 author: claude (Claude Code)
 created: 2026-09-04
 updated: 2026-09-04
@@ -21,6 +21,10 @@ related_specs:
 - 関連する計画書 ID: なし（AI 運用装備の是正。`NFR` 無採番＝工程のメタ作業）
 - 関連する実装仕様書: [20260904_683_review-allowlist-shell-tests](../specs/20260904_683_review-allowlist-shell-tests.md)
 - 起点 issue: [#683](https://github.com/endazon/ai-stock-trading/issues/683)
+- 関連 IADR: [IADR-0145](IADR-0145_permission-denial-fixability-classification.md)（権限拒否を
+  「許可リストで直せるか」で分類し、直せる拒否だけで失敗判定する。**本件はその「直せる拒否」が
+  2 PR にわたって直されないまま放置されていた事例である**）、
+  [IADR-0190](IADR-0190_review-verdict-gate.md)（レビュー判定ゲートと検証の絞り込み）
 
 ## コンテキストと課題
 
