@@ -87,7 +87,7 @@ public class InformationSourceFactoryTests
     public void 複数指定_は名前つきで並べて返す()
     {
         var options = Finnhub();
-        options.Provider = "finnhub,sec-edgar,edinet,boj,fred";
+        options.Provider = "finnhub,sec-edgar,edinet,boj,fred,finra-short";
         options.SecEdgar = new SecEdgarOptions
         {
             UserAgent = "AiStockTrading/1.0 (owner@example.com)",
@@ -96,8 +96,34 @@ public class InformationSourceFactoryTests
         options.Edinet = new EdinetOptions { SubscriptionKey = "key" };
         options.Boj = new BojOptions { Db = "CO", SeriesCodes = ["CODE"] };
         options.Fred = new FredOptions { ApiKey = "key", SeriesIds = ["DGS10"] };
+        options.Finra = new FinraOptions { Symbols = ["AAPL"] };
 
-        Create(options).Select(s => s.Name).Should().Equal("finnhub", "sec-edgar", "edinet", "boj", "fred");
+        Create(options).Select(s => s.Name).Should()
+            .Equal("finnhub", "sec-edgar", "edinet", "boj", "fred", "finra-short");
+    }
+
+    // FR-01, ADR-0016 決定12, #687: 資格情報不要（Finra:Symbols のみ必須）。
+    [Fact]
+    public void finra_かつ銘柄あり_は_FinraShortVolumeInformationSource()
+    {
+        var options = new CollectionSourceOptions
+        {
+            Provider = "finra-short",
+            Finra = new FinraOptions { Symbols = ["AAPL"] },
+        };
+
+        var source = Create(options).Should().ContainSingle().Which;
+
+        source.Name.Should().Be("finra-short");
+        source.Source.Should().BeOfType<FinraShortVolumeInformationSource>();
+    }
+
+    [Fact]
+    public void finra_だが_銘柄未設定_は除外される()
+    {
+        var options = new CollectionSourceOptions { Provider = "finra-short" };
+
+        Create(options).Should().BeEmpty();
     }
 
     [Fact]

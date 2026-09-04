@@ -25,6 +25,8 @@ public sealed class CollectionSourceOptions
     public BojOptions Boj { get; set; } = new();
 
     public FredOptions Fred { get; set; } = new();
+
+    public FinraOptions Finra { get; set; } = new();
 }
 
 // Finnhub Free（米国株のライブ市況・企業ニュース）。
@@ -102,4 +104,16 @@ public sealed class FredOptions
     public string[] SeriesIds { get; set; } = [];
 
     public int RateLimitPerMinute { get; set; } = 60;
+}
+
+// FR-01, ADR-0016 決定12, #687: FINRA Daily Short Sale Volume Files（登録不要・無料・当日 18:00 ET 更新）。
+// Symbols は突合対象の銘柄（大文字小文字を無視）。公式のレート上限公表は無い（静的 CDN ファイル 1 本／巡回の
+// 負荷特性を踏まえた自制値）。LookbackDays は当日ファイル未公表・週末・休場日に備えた日付遡りの試行日数上限。
+public sealed class FinraOptions
+{
+    public string[] Symbols { get; set; } = [];
+
+    public int RateLimitPerMinute { get; set; } = 5;
+
+    public int LookbackDays { get; set; } = 7;
 }
