@@ -1,5 +1,7 @@
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
+using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -76,6 +78,7 @@ public sealed class OrderFillPollingService(
 
         using var scope = scopeFactory.CreateScope();
         var poller = scope.ServiceProvider.GetRequiredService<OrderFillPoller>();
+        var tradeExpenses = scope.ServiceProvider.GetRequiredService<TradeExpenseRecordingService>();
 
         var result = await poller
             .PollOnceAsync(options.Value.MaxTracking, options.Value.EffectiveBatchSize, cancellationToken)
@@ -85,7 +88,18 @@ public sealed class OrderFillPollingService(
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         var bus = new MessageBus(runtime);
         foreach (var executed in result.Executed)
+        {
             await bus.PublishAsync(executed).ConfigureAwait(false);
+
+            // FR-11, FR-16, ADR-0016 決定15, #633, IADR-0300: **moomoo の約定はここでしか観測されない**
+            // （発注時は Accepted であり、経費が発生し得るのは約定してからである）。段 1 の既定では
+            // イベントが 1 本も出ないため、発行の面での挙動は不変で、増えるのは警告ログ 1 行だけである。
+            //
+            // 🔴 **段 2（実費の供給）の前提**: 部分約定は同じ注文を複数の巡回で観測する。
+            // TradeExpenseRecorded の発行には TradeExpense.SourceId を鍵とした重複排除が要る。
+            // **実装するまで供給を有効にしない。**
+            await RecordTradeExpensesAsync(tradeExpenses, bus, executed, cancellationToken).ConfigureAwait(false);
+        }
 
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(
@@ -94,5 +108,29 @@ public sealed class OrderFillPollingService(
                 result.Scanned, result.Updated, result.Terminalized, result.Unchanged, result.Unknown, result.Failed);
 
         return result;
+    }
+
+    // FR-11, #633, IADR-0300: 経費の記録は約定の追跡を止めない（1 件の失敗で巡回全体を落とさない＝既存の流儀）。
+    private async Task RecordTradeExpensesAsync(
+        TradeExpenseRecordingService tradeExpenses,
+        MessageBus bus,
+        OrderExecuted executed,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var outcome = await tradeExpenses
+                .RecordForExecutionAsync(executed, cancellationToken)
+                .ConfigureAwait(false);
+
+            TradeExpenseRecordingLog.Write(logger, executed, outcome);
+
+            foreach (var recorded in outcome.Events)
+                await bus.PublishAsync(recorded).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "経費の記録に失敗しました（約定の追跡は継続します）。OrderId={OrderId}", executed.OrderId);
+        }
     }
 }

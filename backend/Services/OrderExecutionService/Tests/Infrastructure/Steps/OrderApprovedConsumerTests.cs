@@ -1,6 +1,8 @@
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
+using OrderExecutionService.Infrastructure.ExternalServices;
 using OrderExecutionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
@@ -122,6 +124,9 @@ public class OrderApprovedConsumerTests
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<AppSvc>();
+                // FR-11, #633, IADR-0300: 経費の記録もハンドラの必須依存である（既定は常に「取得できない」）。
+                opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+                opts.Services.AddSingleton<TradeExpenseRecordingService>();
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -218,6 +223,9 @@ public class OrderApprovedConsumerTests
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<AppSvc>();
+                // FR-11, #633, IADR-0300: 経費の記録もハンドラの必須依存である（既定は常に「取得できない」）。
+                opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+                opts.Services.AddSingleton<TradeExpenseRecordingService>();
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
                 opts.StubAllExternalTransports();

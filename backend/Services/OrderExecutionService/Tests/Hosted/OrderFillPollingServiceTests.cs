@@ -1,6 +1,7 @@
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Infrastructure.ExternalServices;
@@ -76,6 +77,9 @@ public class OrderFillPollingServiceTests
                 opts.Services.AddSingleton(broker);
                 opts.Services.AddSingleton(store);
                 opts.Services.AddScoped<OrderFillPoller>();
+                // FR-11, #633, IADR-0300: 約定を観測したら経費も記録する（既定は常に「取得できない」）。
+                opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+                opts.Services.AddScoped<TradeExpenseRecordingService>();
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 opts.StubAllExternalTransports();

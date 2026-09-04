@@ -7,6 +7,7 @@ using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
+using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.ExternalServices;
 using OrderExecutionService.Infrastructure.Steps;
@@ -76,6 +77,14 @@ builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 // FR-10, #331, IADR-0210: 保護逆指値レグの記録（同時発注の保存とガードの巡回対象）。
 builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore>();
 builder.Services.AddScoped<OrderExecutionAppService>();
+
+// FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
+// 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
+// 出るのは「7 区分すべて未計上（明細 0 件）」を残す警告ログだけである——「照会する経路が無い」と
+// 「照会したが取得できない」を区別できるようにするのが段 1 の目的である。
+// 実費の取得（moomoo の注文費用照会）は段 2（実口座での応答仕様の確認が前提）。
+builder.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+builder.Services.AddScoped<TradeExpenseRecordingService>();
 
 // #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
 // 訂正・取消の口（IOrderAmendmentBroker）はペーパーだけが実装する。実ブローカー（moomoo）選択時は本経路を
