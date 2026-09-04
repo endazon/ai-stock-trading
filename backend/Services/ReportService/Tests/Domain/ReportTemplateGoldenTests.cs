@@ -140,6 +140,15 @@ public class ReportTemplateGoldenTests
             new FillPnlAttribution(4, W0.AddDays(3), new DateOnly(2026, 8, 27), Market.Japan, "7203", TradeSide.Sell,
                 Quantity: 100, Price: 2_480m, Cost: 118m, RealizedPnlGross: -2_000m, Realizing: true, Rationale: null),
         ],
+        // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5:
+        // **現在の供給経路（PeriodCostReviewBuilder）が実際に組み立てる形**を置く。
+        //   - 手数料と為替スプレッドの和が「費用合計」であり、それが `Bare()` の `Pnl.TotalCost`（+100）と一致する
+        //   - **「取引諸費用」は本型に無い**（記録源が無い）ため、描画は未供給になる
+        //   - 費用率の分母は `Pnl.RealizedPnlGross`（+2,000）＝ 100 / 2,000 = 5.0%
+        //   - 週報以外では描画されない
+        CostReview = new PeriodCostReview(
+            Commission: 80m, FxSpread: 20m, TotalCost: 100m,
+            TaxWithheld: 380m, RealizedPnlGross: 2_000m, CostRatio: 0.05m),
         // FR-06, FR-15, FR-20, #569, IADR-0271, 04_report-templates 月報 §5:
         // **現在の供給経路（ThreeWayComparisonAggregator）が実際に組み立てる形**を置く。
         //   - バックテスト列は常に空欄（BacktestService は永続化もイベント発行も持たない）

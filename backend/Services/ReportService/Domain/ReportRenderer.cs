@@ -56,7 +56,7 @@ public static class ReportRenderer
                 AppendDailyProgression(sb, view);
                 AppendTradeHighlights(sb, view);
                 AppendNarrative(sb, view, narrativeHeading);
-                AppendNotImplemented(sb, "## 5. リスク・費用レビュー", PendingIssueReason);
+                AppendRiskCostReview(sb, view);
                 AppendPolicy(sb, view, policyHeading);
                 // 週報のリスク統制の記録は「散文生成に使用した LLM」だけを出す（他の子節は計画が週報に求めていない）。
                 AppendRiskControlRecords(sb, view);
@@ -232,6 +232,70 @@ public static class ReportRenderer
         string.Format(CultureInfo.InvariantCulture, "{0}（{1}） {2} — {3:yyyy-MM-dd} 決済（該当日報: `{4}`）",
             entry.Symbol, MarketLabel(entry.Market), Amount(entry.RealizedPnlGross), entry.SessionDateJst,
             ReportPeriod.ExpectedKey(ReportKind.Daily, entry.SessionDateJst));
+
+    // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: リスク・費用レビュー。
+    //
+    // 計画の節本文は 2 行である。
+    //   - 損切り執行 <n 件>・発注拒否 <n 件>・上限使用率の週間最大 <n%>
+    //   - 費用の内訳（手数料/諸費用/税）と損益に対する費用率 <n%>
+    //
+    // 🔴 **1 行目の 3 項目は記録源が無い。** それでも**行ごと落とさない**——計画が求めた項目が出ていないことは
+    // 報告書自身に見えていなければならない（ADR-0030 決定3 と同じ理由）。**「0 件」とも書かない**
+    //（「損切りは 1 度も執行されなかった」と読めるが、実際は「記録していない」である）。
+    //
+    // 🔴 **費用の内訳は帰属（期間全体を 1 回だけ畳み込んだ結果）から数える。** 期間を切って
+    // PnlAggregator を呼び直すと、内訳の合計が §1 サマリと一致しなくなる（IADR-0301 決定1）。
+    private static void AppendRiskCostReview(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 5. リスク・費用レビュー\n\n");
+
+        // 計画の 1 行目。3 項目とも記録源が無いため、**理由を項目ごとに**書く（まとめて 1 行にしない）。
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- 損切り執行: {UnsuppliedCell} / 発注拒否: {UnsuppliedCell} / 上限使用率の週間最大: {UnsuppliedCell}\n");
+        sb.Append("  - **損切り執行**: 判断の起点（損切りか否か）が記録されていません"
+            + "（取引判断の記録にも発注の意図にも、起点を表す列がありません）。**「損切りが 0 件だった」ではありません。**\n");
+        sb.Append("  - **発注拒否**: 本サービスに発注拒否の記録源がありません"
+            + "（**約定の記録には拒否が現れません**——約定していないためです）。\n");
+        sb.Append("  - **上限使用率の週間最大**: 算出元が本サービスにも取引管理サービスにもありません"
+            + "（日報「リスク統制の記録」の同項目も同じ理由で出せていません）。\n\n");
+
+        // 計画の 2 行目。**null（内訳を組み立てていない）を「費用 0」へ潰さない。**
+        if (view.CostReview is not { } review)
+        {
+            sb.Append("- **費用の内訳を組み立てられませんでした（供給元がありません）**: "
+                + "「費用 0」とは区別しています。**0 円ではありません。**\n\n");
+            return;
+        }
+
+        sb.Append("| 費用の区分 | 金額 |\n");
+        sb.Append("| --- | --- |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 売買手数料 | {Amount(review.Commission)} |\n");
+        // 🔴 諸費用は**記録源が無い**。0 と書くと「諸費用が発生しなかった」と読める。
+        sb.Append(CultureInfo.InvariantCulture, $"| 取引諸費用 | {UnsuppliedCell} |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 為替スプレッド相当額 | {Amount(review.FxSpread)} |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 費用合計（§1 と同じ値） | {Amount(review.TotalCost)} |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 源泉徴収税額 | {Amount(review.TaxWithheld)} |\n");
+        sb.Append('\n');
+
+        sb.Append(CultureInfo.InvariantCulture, $"- 損益に対する費用率: {CostRatioCell(review)}\n");
+        sb.Append("- **「取引諸費用」（米国株の SEC Fee・TAF 等）は記録源がありません。**"
+            + "全体前提条件に設定点が無く、概算費用関数も手数料と為替スプレッドしか計算していません——"
+            + "**費用合計は諸費用のぶんだけ過小です。**\n");
+        sb.Append("- 費用率の**分母は実現損益（税引前・費用前）**です。"
+            + "**§1 の「週間実現損益（税引後・費用込み）」は分母に採れません**——費用と税を既に引いた値であり、"
+            + "費用が増えるほど分母が縮んで比率が跳ね上がります。\n");
+        sb.Append("- 「費用合計」は §1 の「費用合計（手数料・諸費用・為替）」と**同じ値**です"
+            + "（同じ約定・同じ費用関数から数えており、期間を切って集計し直していません）。\n\n");
+    }
+
+    // 費用率のセル。**分母 0 以下は「算出不能」であり「未供給」でも「0%」でもない。**
+    private static string CostRatioCell(PeriodCostReview review) =>
+        review.CostRatio is { } ratio
+            ? string.Format(CultureInfo.InvariantCulture, "{0}（費用合計 {1} ÷ 実現損益〔税引前・費用前〕 {2}）",
+                Percent(ratio), Amount(review.TotalCost), Amount(review.RealizedPnlGross))
+            : string.Format(CultureInfo.InvariantCulture,
+                "**算出不能**（分母となる実現損益〔税引前・費用前〕が {0} で、0 以下です）。**0% ではありません。**",
+                Amount(review.RealizedPnlGross));
 
     // 散文（LLM ドラフト）。数値は含めない。
     private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
@@ -964,7 +1028,7 @@ public static class ReportRenderer
     private static (string Kanji, string Summary, string Narrative, string Policy) Labels(ReportKind kind) => kind switch
     {
         // 🔴 ADR-0030 決定1・決定2, IADR-0291: **番号は計画 04_report-templates のものであり、実装の出力順の
-        // 連番ではない。** 未実装の節（週報 §2・§3・§5 / 月報 §2・§3 / 日報 §6）があっても**詰めない**。
+        // 連番ではない。** 未実装の節（月報 §2・§3 / 日報 §6）があっても**詰めない**。
         ReportKind.Weekly => ("週報", "## 1. 週間サマリ", "## 4. 振り返りと評価", "## 6. 翌週の方針"),
         ReportKind.Monthly => ("月報", "## 1. 月間サマリ", "## 4. 総括と評価", "## 8. 翌月の方針・投資方針"),
         // 🔴 #563, IADR-0269: 日報は §2・§3 を取引履歴・ポジション一覧へ譲る。

@@ -78,6 +78,31 @@ public class ReportDraftWeeklyBreakdownTests
         draft.Markdown.Should().Contain("取引回数（買/売/決済） | 1 / 1 / 1");
     }
 
+    // 🔴 FR-17, #615, IADR-0305: **§5 の費用内訳の合計が §1 の費用合計と一致する**
+    //（同じ約定・同じ費用関数から数えていることの、出口での証跡）。
+    [Fact]
+    public async Task 費用レビューの内訳の合計が週間サマリの費用合計と一致する()
+    {
+        var fills = new[]
+        {
+            Fill(TradeSide.Buy, 10, 1_000m, 0),
+            Fill(TradeSide.Sell, 10, 1_200m, 2_880),
+        };
+        var svc = new ReportDraftService(new FakeDrafter());
+
+        var draft = await svc.BuildDraftAsync(Request(
+            ReportKind.Weekly, "weekly-2026-W35", new DateOnly(2026, 8, 24), fills));
+
+        draft.Markdown.Should().Contain("## 5. リスク・費用レビュー");
+        draft.Markdown.Should().Contain("| 費用の区分 | 金額 |");
+        // §1 の費用合計と §5 の「費用合計」が**同じ文字列**で出る（表記も 1 か所に単一化されている）。
+        var total = ReportAmountFormat.Base(draft.Pnl.TotalCost);
+        draft.Markdown.Should().Contain($"| 費用合計（§1 と同じ値） | {total} |");
+        draft.Markdown.Should().Contain($"| 費用合計（手数料・諸費用・為替） | {total} |");
+        // 諸費用は記録源が無い（0 と書かない）。
+        draft.Markdown.Should().Contain("| 取引諸費用 | **未供給** |");
+    }
+
     [Theory]
     [InlineData(ReportKind.Daily, "daily-2026-08-24")]
     [InlineData(ReportKind.Monthly, "monthly-2026-08")]
@@ -90,5 +115,6 @@ public class ReportDraftWeeklyBreakdownTests
 
         draft.Markdown.Should().NotContain("## 2. 日別推移");
         draft.Markdown.Should().NotContain("## 3. ハイライト取引");
+        draft.Markdown.Should().NotContain("| 費用の区分 | 金額 |");
     }
 }

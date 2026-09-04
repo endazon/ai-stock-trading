@@ -167,6 +167,19 @@ public sealed record ReportView
     public IReadOnlyList<FillPnlAttribution>? FillAttributions { get; init; }
 
     /// <summary>
+    /// FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: <b>費用の内訳と費用率</b>。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>内訳を組み立てていない</b>」であり「費用 0」ではない。
+    /// <see cref="FillAttributions"/> と同じ規律で、<b>0 円と未供給を潰さない</b>。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>本型の <c>TotalCost</c> は <see cref="Pnl"/> の費用合計と一致する</b>——
+    /// 同じ約定・同じ費用関数から数えているためである。<b>期間を切って集計し直した値を入れてはならない。</b>
+    /// </para>
+    /// </summary>
+    public PeriodCostReview? CostReview { get; init; }
+
+    /// <summary>
     /// FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
     /// <para>
     /// 🔴 <c>null</c> は「<b>照会できていない</b>」であり「建玉なし」ではない。

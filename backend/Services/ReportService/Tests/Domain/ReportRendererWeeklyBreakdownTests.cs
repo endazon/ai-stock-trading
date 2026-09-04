@@ -66,7 +66,7 @@ public class ReportRendererWeeklyBreakdownTests
 
         md.Should().Contain("## 1. 週間サマリ");
         md.Should().Contain("## 4. 振り返りと評価");
-        // §5 は本スライスの対象外（未実装のまま番号を保つ）。
+        // §5 は #615 スライス b で実体化した（ReportRendererRiskCostReviewTests が中身を見る）。
         md.Should().Contain("## 5. リスク・費用レビュー");
         md.Should().Contain("## 6. 翌週の方針");
     }
@@ -110,7 +110,9 @@ public class ReportRendererWeeklyBreakdownTests
 
         md.Should().Contain("（当週の約定なし）");
         md.Should().Contain("（当週に決済取引はありません）");
-        md.Should().NotContain("供給元がありません");
+        // 🔴 §2・§3 の中だけを見る（本フィクスチャは §5 の費用レビューを供給しておらず、
+        // そちらは正しく「供給元がありません」と書くため。全文で見ると別の節の文言を拾う）。
+        Section(md, "## 2. 日別推移", "## 4. 振り返りと評価").Should().NotContain("供給元がありません");
     }
 
     [Fact]
