@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-08, ADR-0001, ADR-0010, IADR-0069, IADR-0093]
 author: claude (Claude Code)
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-03
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
@@ -120,3 +120,31 @@ platform `DocumentBodyIntake.WithOwner`（ADR-0060 決定3・#1057）は `POST /
 - Supersedes: なし（[IADR-0069](IADR-0069_knowledge-base-rag-foundation.md) の決定は生きている。
   本 ADR はその「本文は受け取らない」というスコープ境界の記述のみを更新する）
 - Superseded by: なし
+
+## ［2026-09-03 追記］呼び出し元（ReportKnowledgeMapper）の空 Body 判定を追記する
+
+本 ADR の決定1〜4は `HttpKnowledgeBaseWriter`（送信アダプタ）の挙動を扱ったが、**確定報告書側の
+呼び出し元 `ReportService.Infrastructure.ExternalServices.ReportKnowledgeMapper` は本 ADR の
+マージ（PR #623）に含まれておらず、`Content: null` を明示的に渡すコードのまま取り残されていた**
+（issue [#565](https://github.com/endazon/ai-stock-trading/issues/565) の再調査で発覚。
+作業仕様書 [20260903_565_report-body-to-kb](../specs/20260903_565_report-body-to-kb.md)）。
+本追記はその是正にあたって決めた 1 点（空 Body の扱い）を記録する。
+
+### 決定5: `TradingReport.Body` が空文字列（`string.Empty`）のときは `Content: null` として送り、`LogWarning` を残す
+
+`TradingReport.Body` は non-null な `string`（既定値 `string.Empty`）であり、`手動 PUT
+/reports/{periodKey}`（`UpsertReportDraft`）経路は本文を受け取らないため、この経路で作られた
+報告書は常に `Body == ""` になる（自動生成のみが埋める。`TradingReport.cs` のコメント参照）。
+
+- **空文字列を「本文あり（0 文字）」としてそのまま送らない。** `string.Empty` は「意図的に空の
+  本文で確定した」のではなく「本文を供給する手段が無かった」ことを表す——本リポジトリの規律
+  （未供給と 0 を区別する）に合わせ、`Content`/`ContentType` を両方 `null` に倒す。
+- **例外にはしない。** KB 保存は既存どおり best-effort（IADR-0069/0071 決定3）であり、本文欠落を
+  理由に確定そのものを失敗させない。
+- **`LogWarning` を残す。** 手動確定という運用上あり得る経路で本文が欠落することに運用者が
+  気づけるようにするため（`ReportKnowledgeMapper.ToDocument` のオプション引数 `ILogger? logger`
+  に委譲する）。
+- **決定2（`KnowledgeBodyLimits.Exceeds`）・決定3（1 MB 超の縮退）とは独立の判定である。** 空文字列は
+  `Exceeds` が既に「本文なし」相当として扱う（`!string.IsNullOrEmpty(content) && ...`）ため
+  `HttpKnowledgeBaseWriter` 側の挙動は変わらないが、呼び出し元で明示的に `null` へ倒すことで
+  「未供給」の意図をコード上に残す。
