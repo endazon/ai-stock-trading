@@ -8,15 +8,23 @@ namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 // バス発行の実駆動（IPublishEndpoint）は BacktestService の go-live ホスト（#82 系）で結線し、本 mapper は
 // 配線の発行側を単体テストで担保する。
 //
+// FR-20, ADR-0016 決定14, #388, IADR-0304: 「空売りを含む戦略か」は**申告ではなく観測**である。
+// 呼び出し元（発行ホスト）は走行（BacktestRun）を渡すだけであり、真偽値を名乗る口は無い。
+//
 // backtestMaxDrawdownRatio と evaluatedAt は Stage0Decision が保持しないため呼び出し元（発行ホスト）が渡す。
 // go-live ホストは backtestMaxDrawdownRatio を、評価に用いた同一 Stage0GateContext.BaselineMetrics.MaxDrawdown
 // から導出すること（Stage 0 判定と供給値の乖離を避けるための発行側の契約・IADR-0089）。
 public static class BacktestEvaluatedFactory
 {
-    /// <param name="includesShortSelling">
-    /// FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 評価した戦略が**空売りを含む**か。
-    /// Stage0Decision は取引可能な商品種別を保持しないため、呼び出し元（発行ホスト）が渡す。
-    /// **既定値を与えない**——省略できると「含む戦略で合格した」と読める既定が生まれ、空売りが解禁されうる。
+    /// <param name="run">
+    /// FR-20, ADR-0016 決定14, #388, IADR-0304: 評価した**走行そのもの**。
+    /// 「空売りを含む戦略か」は**この走行の約定列から観測する**（<see cref="ShortSellingObservation"/>）。
+    /// <para>
+    /// 🔴 **真偽値で申告する引数は置かない。** 置けば発行ホストは渡し違えられ、**一度も空売りをしていない
+    /// 戦略の Stage 0 合格で実弾の空売りが解禁され得る**（#388 が最重要とした否定形を、呼び出し元の
+    /// 正直さだけで守ることになる）。計画（ADR-0016 決定14）は「含む」の判定方法を定めていないため、
+    /// **保守的な側（観測）**を採った（IADR-0304 決定1・環流 planning#534）。
+    /// </para>
     /// </param>
     /// <param name="strategyId">
     /// 評価した戦略の識別子。verdict の無効化契機「戦略の変更」を機械判定する鍵であり、
@@ -26,11 +34,12 @@ public static class BacktestEvaluatedFactory
         Stage0Decision decision,
         decimal backtestMaxDrawdownRatio,
         DateTimeOffset evaluatedAt,
-        bool includesShortSelling,
+        BacktestRun run,
         string strategyId)
     {
         ArgumentNullException.ThrowIfNull(decision);
         ArgumentNullException.ThrowIfNull(decision.Gate);
+        ArgumentNullException.ThrowIfNull(run);
 
         return new BacktestEvaluated(
             Passed: decision.Gate.Passed,
@@ -40,7 +49,7 @@ public static class BacktestEvaluatedFactory
             // 未達条件は Risk 側の監査・診断のため名称の連結で持つ（合格なら空文字）。ドメインの単一情報源を共有する。
             FailedChecks: decision.Gate.FormatFailedChecks(),
             EvaluatedAt: evaluatedAt,
-            IncludesShortSelling: includesShortSelling,
+            IncludesShortSelling: ShortSellingObservation.Includes(run.Fills),
             StrategyId: strategyId ?? string.Empty);
     }
 }

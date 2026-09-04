@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158]
-specs: [20260711_backtest-foundation, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
-issues: [#20, #82, #164, #208, #211, #382, #417]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304]
+specs: [20260711_backtest-foundation, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
 -->
 
 
@@ -164,6 +164,8 @@ issues: [#20, #82, #164, #208, #211, #382, #417]
 | T-15-35 | データ源から期間内バーを取得しシミュレート・PIT で廃止後バーを除外 | `データ源から期間内のバーを取得してシミュレーションする` / `PITユニバースで上場廃止後のバーを除外する_生存者バイアス排除` / `期間外のバーは取得されない` | 自動 |
 | T-15-36 | 合格戦略は Stage 0 合格・Stage 1 昇格推奨（サービス結合） | `全条件を満たす戦略はStage0合格しStage1昇格を推奨する` / `匿名化済みならカットオフ以前でもデータ健全性を満たす_OR経路` / `カットオフ以前のデータを含む戦略は不合格_昇格しない` | 自動 |
 | T-15-37 | 合格 verdict と実 DD を契約イベント（`BacktestEvaluated`）へ写像（段階ゲートへの供給） | `合格verdictと実DDを契約イベントへ写す` / `不合格は未達条件を名称で連結して持つ` / `decisionがnullなら例外` | 自動 |
+| **T-15-70** | **「空売りを含む戦略か」は走行の約定列から観測する**（Stage 3 の空売り実弾解禁の判定入力）: ①売り建てから入る走行は「含む」／②**否定形**: 買い建てから入り手仕舞うだけの走行は「含まない」／③買い建玉を跨いで売り建てへ反転した走行は「含む」（売り注文の有無ではなく**売り建玉**の有無を見る）／④**否定形**: 銘柄・市場ごとに畳み、他銘柄・他市場の買い建玉で相殺しない／⑤**否定形（保守側）**: 約定が無い走行（未約定のみ）は「含まない」／⑥**否定形（fail-safe）**: 約定列が `null` でも「含まない」／⑦空売りの後に買い建てへ戻しても「含む」のまま | `ShortSellingObservationTests`（8 メソッド。`売り建てから入る走行は空売りを含むと観測される` / `買い建てから入り手仕舞うだけの走行は空売りを含まない` / `ゼロを跨いで売り建てへ反転した走行は空売りを含む` / `建玉は銘柄ごとに畳み他銘柄の買い建玉で相殺しない` / `建玉は市場ごとに畳み別市場の買い建玉で相殺しない` / `約定が無い走行は空売りを含まない` / `約定列がnullなら空売りを含まない` / `空売りの後に買い建てへ戻しても含むのままである`） | 自動 |
+| **T-15-71** | **否定形（構造・最重要）**: verdict の純写像に「空売りを含む」と**申告できる引数が公開面に存在しない**こと。機能テストでは守れない要求である——真偽値の引数を足しても、観測値と一致する値を渡す限り既存テストは緑のまま通る。母集合が空だと否定形が真空的に成立するため、**走行そのものを受け取っていること**を対照として併せて見る。あわせて**走行が `null` なら例外**（`false` へ倒さない＝渡し忘れが静かに合格 verdict を作らない） | `BacktestEvaluatedFactoryTests.空売りを含むと申告できる引数が公開面に存在しない` / `走行がnullなら例外` / `空売りを含まない戦略の合格はその旨を運ぶ` | 自動 |
 
 ### 実過去データ源（Stooq / moomoo）と安全既定（#208。非同期ポートで取得しスナップショットへ固定し、既定は `none` のままとする）
 

@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0018]
-iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281]
-specs: [20260803_343_regression-test-foundation, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
+iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304]
+specs: [20260803_343_regression-test-foundation, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
 issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569]
 -->
 
@@ -339,6 +339,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | T-125 | 承認種別に verdict を指定し、**同時に段階も指定** | 同上 | **400**（「昇格のつもりが verdict だけ記録された」を黙って通さない） | 取り違えの防止 | 自動（否定形） |
 | T-126 | 承認種別を**省略**して段階遷移を要求 | 同上 | 従来どおり段階遷移として扱われる（後方互換） | 後方互換 | 自動 |
 | T-127 | サービスロール | 承認種別に verdict を指定して要求する | **403**（verdict は**利用者承認**であり、生成AI・自動処理では出せない） | 承認の要件 | 自動（否定形） |
+| **T-128** | バックテスト verdict の純写像（供給の**先頭**） | 「空売りを含む戦略か」の供給元を走査する | **申告できる引数が公開面に存在しない**（走行そのものを受け取り、約定列から観測する）。詳細はバックテストのテスト仕様書 T-15-70 / T-15-71 | 条件 2 の供給 | 自動（構造・否定形） |
 
 ### 段階の発注可能額（総資金比）
 
