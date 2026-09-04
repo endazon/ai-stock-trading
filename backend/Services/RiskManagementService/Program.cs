@@ -247,9 +247,18 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
 builder.Services.AddScoped<PositionCloseService>();
 // FR-10, UC-06, ADR-0016 決定7, #330, IADR-0133: 維持率割れによる建玉の自動縮小（システム自動・AI 非介在）。
 // 統制ストアもスクリーニングも依存に持たない＝3 統制が成立していても動く（UC-06・ADR-0009）。
-// 維持率の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。
+// 維持率・純資産・必要証拠金の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。
 builder.Services.AddSingleton<IMaintenanceMarginSnapshotSource, UnavailableMaintenanceMarginSnapshotSource>();
 builder.Services.AddScoped<MaintenanceMarginReductionService>();
+// FR-10, UC-06, ADR-0016 決定7, #634, IADR-0133, IADR-0298: 上の評価を定期的に呼ぶ駆動ドライバ。
+// #634: 従前は本サービスを解決して呼ぶ本番コードが 1 行も無かった（「供給なし」ではなく「未結線」）。
+// 既定は**有効**（他 2 件〔下〕の既定無効とは意図的に異なる。理由は Options のコメント参照）。
+// 供給元が「供給なし」を返す間は構造的に不活性のため、発動可否の単一の制御点は供給元の実装差し替えである。
+builder.Services.Configure<MaintenanceMarginEvaluationOptions>(
+    builder.Configuration.GetSection(MaintenanceMarginEvaluationOptions.SectionName));
+if (builder.Configuration.GetSection(MaintenanceMarginEvaluationOptions.SectionName)
+        .Get<MaintenanceMarginEvaluationOptions>()?.Enabled != false)
+    builder.Services.AddHostedService<MaintenanceMarginEvaluationService>();
 // FR-10, UC-06, SC-03, ADR-0016 決定15, #340, IADR-0154: SC-03「維持率・空売りの現況」の集約（表示専用）。
 // 上の IMaintenanceMarginSnapshotSource が「供給なし」を返す限り、画面は維持率を**未供給として明示**する
 // （0 や「—」で正常値のように見せない）。
