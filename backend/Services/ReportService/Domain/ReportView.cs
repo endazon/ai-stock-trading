@@ -153,6 +153,20 @@ public sealed record ReportView
     public TradeHistoryView? TradeHistory { get; init; }
 
     /// <summary>
+    /// FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2/§3: <b>約定単位の損益帰属</b>
+    /// （期間全体を 1 回だけ畳み込んだ結果）。週報の「日別推移」「ハイライト取引」はここから集計する。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>帰属を組み立てていない</b>」であり「約定が無かった」ではない。
+    /// 約定 0 件は<b>空列</b>で表す（<see cref="TradeHistory"/> と同じ規律）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>受け取った側で期間を切って畳み込み直さない。</b> 持ち越し建玉の平均取得単価がスライス内に
+    /// 存在しないため、内訳の合計が <see cref="Pnl"/> と一致しなくなる（しかも全テストは緑のままである）。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<FillPnlAttribution>? FillAttributions { get; init; }
+
+    /// <summary>
     /// FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
     /// <para>
     /// 🔴 <c>null</c> は「<b>照会できていない</b>」であり「建玉なし」ではない。
