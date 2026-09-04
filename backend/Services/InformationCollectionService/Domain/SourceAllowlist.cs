@@ -27,5 +27,7 @@ public sealed class SourceAllowlist
         "boj",
         "fred",
         "moomoo",
+        // FR-01, ADR-0016 決定12, #687: FINRA 空売りデータ（需給・米国株のみ必須）。
+        "finra-short",
     });
 }

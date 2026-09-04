@@ -28,6 +28,7 @@ public static class InformationSourceFactory
     public const string Edinet = "edinet";
     public const string Boj = "boj";
     public const string Fred = "fred";
+    public const string Finra = "finra-short";
 
     public static IReadOnlyList<NamedInformationSource> Create(
         CollectionSourceOptions options,
@@ -190,6 +191,12 @@ public static class InformationSourceFactory
             SeriesIds = Clean(options.Fred.SeriesIds),
             RateLimitPerMinute = options.Fred.RateLimitPerMinute,
         },
+        Finra = new FinraOptions
+        {
+            Symbols = Clean(options.Finra.Symbols),
+            RateLimitPerMinute = options.Finra.RateLimitPerMinute,
+            LookbackDays = options.Finra.LookbackDays,
+        },
     };
 
     private static string[] Clean(string[] values) =>
@@ -310,6 +317,15 @@ public static class InformationSourceFactory
                     httpClient, options.Fred.ApiKey, options.Fred.SeriesIds,
                     Limiter(options.Fred.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider),
                     loggerFactory.CreateLogger<FredInformationSource>());
+
+            case Finra:
+                if (options.Finra.Symbols.Length == 0)
+                    return Skip(logger, provider, "銘柄（Finra:Symbols）");
+
+                return new FinraShortVolumeInformationSource(
+                    httpClient, options.Finra.Symbols, options.Finra.LookbackDays, clock,
+                    Limiter(options.Finra.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider),
+                    loggerFactory.CreateLogger<FinraShortVolumeInformationSource>());
 
             default:
                 logger.LogWarning(
