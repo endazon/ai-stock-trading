@@ -153,8 +153,9 @@ public sealed record ReportView
     public TradeHistoryView? TradeHistory { get; init; }
 
     /// <summary>
-    /// FR-06, FR-07, FR-16, #615, IADR-0301, 04_report-templates 週報 §2/§3: <b>約定単位の損益帰属</b>
-    /// （期間全体を 1 回だけ畳み込んだ結果）。週報の「日別推移」「ハイライト取引」はここから集計する。
+    /// FR-06, FR-07, FR-16, #615, IADR-0301, IADR-0306, 04_report-templates 週報 §2/§3・月報 §2:
+    /// <b>約定単位の損益帰属</b>（期間全体を 1 回だけ畳み込んだ結果）。
+    /// 週報の「日別推移」「ハイライト取引」と<b>月報の「週別・市場別の内訳」</b>はここから集計する。
     /// <para>
     /// 🔴 <c>null</c> は「<b>帰属を組み立てていない</b>」であり「約定が無かった」ではない。
     /// 約定 0 件は<b>空列</b>で表す（<see cref="TradeHistory"/> と同じ規律）。
