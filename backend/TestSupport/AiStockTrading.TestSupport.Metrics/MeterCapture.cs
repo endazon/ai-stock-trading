@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Runtime.CompilerServices;
 
 namespace AiStockTrading.TestSupport.Metrics;
 
@@ -38,6 +39,25 @@ public sealed class MeterCapture : IDisposable
 
         _listener.Start();
     }
+
+    /// <summary>
+    /// 否定形の表明（「計器が発火しなかった」）のために、テストごとに一意な Meter 名を作る。
+    /// <para>
+    /// 🔴 <b>否定形の表明では既定の Meter 名を使ってはならない</b>（#695）。<see cref="Meter"/> は
+    /// プロセス全体で観測されるため、既定名のままだと<b>同時に走っている別テストの測定値まで拾い</b>、
+    /// <c>ValuesOf(...).Should().BeEmpty()</c> が**他人の発火で偽陽性になる**。2026-09-04 の
+    /// Integration E2E で実際に起きた（`ast.finnhub.daily_request_estimate` に値 24.0 が混入して赤）。
+    /// </para>
+    /// <para>
+    /// 使い方: 本メソッドで作った名前を <see cref="MeterCapture(string)"/> と、計器を持つ側
+    /// （<c>BusinessMetrics</c> の <c>meterName</c> 引数）の<b>両方へ同じ値で渡す</b>。
+    /// 肯定形（「発火した」）の表明は既定名のままでよい——他人の測定値が混ざっても
+    /// 「含む」の表明は壊れないためである。
+    /// </para>
+    /// </summary>
+    /// <param name="caller">呼び出し元のテストメソッド名（自動）。名前を読める形にするためだけに使う。</param>
+    public static string NewIsolatedMeterName([CallerMemberName] string? caller = null) =>
+        $"AiStockTrading.Business.Test.{caller}.{Guid.NewGuid():N}";
 
     /// <summary>捕まえた測定値（記録順）。</summary>
     public IReadOnlyList<Measurement> Measurements
