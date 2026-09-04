@@ -4,8 +4,10 @@ using AuditService.Features.AuditEvents;
 using AuditService.Infrastructure.Persistence;
 using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,6 +35,9 @@ public class AuditEventConsumersTests
             {
                 opts.Services.AddSingleton<IClock, SystemClock>();
                 opts.Services.AddSingleton<IAuditEventStore>(store);
+                // NFR-02, #689, IADR-0307: 記録完了までの端点間所要を刻むため、
+                // BusinessMetrics は監査ハンドラの**必須依存**である（本番も同じ配線）。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 // 本番（Program.cs）と同じ発見範囲。個別の購読列挙は不要になった。
                 opts.Discovery.IncludeAssembly(typeof(PriceMovementDetectedAuditHandler).Assembly);
                 // 実ブローカへ接続しない（ローカル・CI ともに RabbitMQ を要求しない）。
@@ -369,6 +374,58 @@ public class AuditEventConsumersTests
             .Should().ContainSingle(e => e.EventType == nameof(ProtectiveStopCoverageLost)).Subject;
         entry.CorrelationId.Should().Be(entryDecisionId, "エントリーの DecisionId で注文チェーンへ束ねる");
         entry.Symbol.Should().Be("AAPL");
+
+        await host.StopAsync();
+    }
+
+    // NFR-02, #689, IADR-0307: **記録完了（台帳へ 1 行書いた時点）が NFR-02 の終点である。**
+    // 計画は「収集→判断→発注→記録」の 1 周を 10 分以内と定めており、発注完了で代表すると
+    // 構造的に過少報告になる。起点はイベントが運んでくるため、突き合わせ（join）も状態も要らない。
+    [Fact]
+    public async Task 起点を運ぶ発注結果は記録完了までの端点間所要を刻む()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var decisionId = Guid.NewGuid();
+        var collectedAt = DateTimeOffset.UtcNow.AddMinutes(-3);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderExecuted(
+                decisionId, "ORD-1", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow,
+                BrokerProvider.MoomooSimulate, BusinessMetrics.TriggerScheduled, collectedAt));
+        session.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
+
+        // 記録そのものは従来どおり残る（計器は挙動を変えない）。
+        store.GetByCorrelation(decisionId).Select(e => e.EventType).Should().Contain(nameof(OrderExecuted));
+
+        capture.TagValuesOf(
+                BusinessMetricNames.TradeCycleRecordCompletionLatencyMs, BusinessMetricNames.TagTrigger)
+            .Should().Contain(BusinessMetrics.TriggerScheduled);
+        capture.ValuesOf(BusinessMetricNames.TradeCycleRecordCompletionLatencyMs)
+            .Should().Contain(m => m.Value > 0);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 NFR-02, #689, IADR-0307 決定3/4: 取引サイクル起点を持たない発注結果（約定追跡の後追い・
+    // 利用者の手仕舞い）は 0 ms ではなく**未観測**として数える。
+    [Fact]
+    public async Task 起点を持たない発注結果は未観測として数える()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderExecuted(
+                Guid.NewGuid(), "ORD-2", OrderStatus.Filled, 10, 1_050m, DateTimeOffset.UtcNow,
+                BrokerProvider.MoomooSimulate));
+
+        capture.ValuesOf(BusinessMetricNames.TradeCycleLatencyUnobserved)
+            .Should().Contain(m =>
+                m.Tags[BusinessMetricNames.TagStage] == BusinessMetrics.StageRecordCompletion &&
+                m.Tags[BusinessMetricNames.TagReason] == BusinessMetrics.UnobservedOriginMissing);
 
         await host.StopAsync();
     }

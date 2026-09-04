@@ -53,7 +53,11 @@ public sealed class InformationCollectedHandler(
                 // NFR-07, #287: 判断の所要と結果は「成立したか」に関わらず計上する（見送りも 1 回の判断である）。
                 var started = Stopwatch.GetTimestamp();
                 var decision = await decisionService
-                    .DecideAsync(DecisionTrigger.Scheduled(watched.Symbol, watched.Market), cancellationToken)
+                    // NFR-02, #689, IADR-0307: 定時サイクルの起点は**収集の完了時刻**である。
+                    // ここで渡さないと、下流（発注完了・記録完了）が区間を閉じられず未観測になる。
+                    .DecideAsync(
+                        DecisionTrigger.Scheduled(watched.Symbol, watched.Market, message.CollectedAt),
+                        cancellationToken)
                     .ConfigureAwait(false);
                 metrics.RecordTradeDecisionDuration(
                     BusinessMetrics.TriggerScheduled, Stopwatch.GetElapsedTime(started).TotalMilliseconds);

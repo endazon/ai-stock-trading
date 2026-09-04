@@ -32,6 +32,34 @@ public static class BusinessMetricNames
     public const string TradeCycleDecisionDurationMs = "ast.trade_cycle.decision_duration_ms";
 
     /// <summary>
+    /// NFR-01, #689, IADR-0307: <b>起点イベント → 発注完了</b>の端点間所要（ミリ秒）。タグ <c>trigger</c>。
+    /// <para>
+    /// NFR-01（価格変動検知から発注完了まで 5 分以内）は <c>trigger=price-movement</c> の系列で読む。
+    /// 上の <see cref="TradeCycleDecisionDurationMs"/> は<b>判断 1 回</b>の所要であり、
+    /// サービスを跨ぐ端点間ではない（#637 が「下地であって検証ではない」と自認していた区別）。
+    /// </para>
+    /// </summary>
+    public const string TradeCycleOrderCompletionLatencyMs = "ast.trade_cycle.order_completion_latency_ms";
+
+    /// <summary>
+    /// NFR-02, #689, IADR-0307: <b>起点イベント → 記録完了</b>（監査台帳へ記録した時点）の端点間所要（ミリ秒）。
+    /// タグ <c>trigger</c>。NFR-02（定時サイクル 1 回 10 分以内・収集→判断→発注→<b>記録</b>）は
+    /// <c>trigger=scheduled</c> の系列で読む。
+    /// </summary>
+    public const string TradeCycleRecordCompletionLatencyMs = "ast.trade_cycle.record_completion_latency_ms";
+
+    /// <summary>
+    /// NFR-01, NFR-02, #689, IADR-0307: <b>端点間の所要を確定できなかった</b>件数。
+    /// タグ <c>stage</c>（order-completion / record-completion）・<c>reason</c>。
+    /// <para>
+    /// 🔴 <b>「測れなかった」を 0 として記録しない。</b>起点が無い注文（owner 手仕舞い・自動縮小・
+    /// 約定追跡の後追い）で 0 ms を計上すると、上の 2 本のヒストグラムが<b>目標を満たしているように見える</b>。
+    /// 未観測は本カウンタへ理由つきで出し、ヒストグラムには 1 件も入れない。
+    /// </para>
+    /// </summary>
+    public const string TradeCycleLatencyUnobserved = "ast.trade_cycle.latency_unobserved";
+
+    /// <summary>
     /// FR-10, FR-19: 発注前審査の回数。タグ <c>outcome</c>（approved/rejected）。
     /// <b>承認も拒否も数える</b>——拒否だけを数えると「違反 0 件」と「そもそも審査が動いていない」を
     /// 区別できない（fail-open）。
@@ -86,4 +114,7 @@ public static class BusinessMetricNames
 
     /// <summary>タグ名: 費用カテゴリ。</summary>
     public const string TagCategory = "category";
+
+    /// <summary>NFR-01, NFR-02, #689: タグ名: 端点間計測の区間（order-completion / record-completion）。</summary>
+    public const string TagStage = "stage";
 }

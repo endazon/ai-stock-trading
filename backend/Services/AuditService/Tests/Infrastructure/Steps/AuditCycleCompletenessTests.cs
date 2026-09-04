@@ -5,6 +5,7 @@ using AuditService.Features.AuditEvents;
 using AuditService.Infrastructure.Persistence;
 using AuditService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
@@ -40,6 +41,9 @@ public class AuditCycleCompletenessTests
             {
                 opts.Services.AddSingleton<IClock, SystemClock>();
                 opts.Services.AddSingleton<IAuditEventStore>(store);
+                // NFR-02, #689, IADR-0307: 記録完了までの端点間所要を刻むため、
+                // BusinessMetrics は監査ハンドラの**必須依存**である（本番も同じ配線）。
+                opts.Services.AddSingleton<BusinessMetrics>();
                 // 本番（Program.cs）と同じ発見範囲。
                 opts.Discovery.IncludeAssembly(typeof(PriceMovementDetectedAuditHandler).Assembly);
                 opts.StubAllExternalTransports();
