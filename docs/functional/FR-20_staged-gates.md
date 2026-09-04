@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-13, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0018, ADR-0023]
-iadrs: [IADR-0005, IADR-0041, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281]
-specs: [20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
+iadrs: [IADR-0005, IADR-0041, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304]
+specs: [20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
 issues: [#27, #333, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #466, #569]
 -->
 
@@ -214,6 +214,17 @@ issues: [#27, #333, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, 
 同じ戦略のまま空売りを外した版で合格しても満たされない。条件 3 は「実弾でしか確認できない統制
 （借株の一次ゲート・維持率・強制買戻しの事後推定・借株料の累計）の机上確認が済んだか」であり、
 空売りを含む合格があっても、確認そのものが無ければ解禁されない。
+
+#### 3-0. 条件 2 の「空売りを含む」は申告ではなく観測である（#388）
+
+条件 2 の供給はバックテストの verdict の射影（`BacktestPassed` かつ `BacktestIncludesShortSelling`）である。
+**この「空売りを含む」は、バックテスト走行の約定列から観測した値であり、実行側の申告ではない。**
+verdict を組み立てる純写像は走行そのものを受け取り、真偽値で申告する引数を持たない
+（申告できる口があると、一度も空売りをしていない戦略の合格で実弾の空売りが解禁され得る）。
+観測の定義・未約定の扱いはバックテストの機能仕様書を正とする。
+
+🟠 **計画は「空売りを含む」の判定方法を定めていない。** 実装は**解禁しない側＝観測**を採り、
+判定方法の裁定を計画側へ環流してある。
 
 #### 3-1. 実弾解禁前の確認 verdict（条件 3）
 
@@ -577,7 +588,7 @@ stateDiagram-v2
 | Stage 1 の営業日数・除外日数 | **未実装**（稼働監視ドライバが無い。判定の純関数は #333 / #334 で用意済み・供給元は [#385](https://github.com/endazon/ai-stock-trading/issues/385)） | 0 → 昇格しない |
 | 発注先の設定値 → 実際の発注経路 | **未結線**（発注先は起動時構成 `Broker:Provider` / `Broker:Environment` が決める） | 設定変更は**記録と表示まで**。実弾は閂 0 が止める |
 | クラス C 統制違反件数 | **実装済み**（発注審査の観測ログから集計。#387） | 未供給（`null`）→ **昇格しない**。審査が動けば 0 件として供給される |
-| Stage 3 の Stage 0 再充足（空売りを含む戦略か） | **実装済み**（バックテスト verdict の射影）／供給は Stage 0 合格 verdict と同じく未接続 | `false` → 空売りは開かない |
+| Stage 3 の Stage 0 再充足（空売りを含む戦略か） | **実装済み**（バックテスト verdict の射影。verdict 側の値は**走行の観測**であり申告ではない）／供給は Stage 0 合格 verdict と同じく未接続 | `false` → 空売りは開かない |
 | Stage 3 の実弾解禁前の確認 verdict | **実装済み**（承認記録へ相乗り・判定は 30 日 / 情報源 / 戦略の 3 契機）。**発注審査への供給は未結線**（借株照会・維持率の供給が未実装のため） | 承認記録に無ければ未承認 → 空売りは開かない。供給が `null` の間もフェイルクローズのまま |
 | 借株料の照会経路・維持率の供給（verdict の情報源） | **未実装**（[#417](https://github.com/endazon/ai-stock-trading/issues/417) / [#419](https://github.com/endazon/ai-stock-trading/issues/419)） | 識別子は「供給元なし」。**結線された時点で既発行の verdict は失効する** |
 | 段階別の商品種別強制・発注可能額 | — | **実効する**（`RiskEvaluator` 経路） |
