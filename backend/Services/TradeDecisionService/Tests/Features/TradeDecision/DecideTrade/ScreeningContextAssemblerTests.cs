@@ -42,9 +42,10 @@ public class ScreeningContextAssemblerTests
         var newLowRelevance = News("新しいが関連度が低い記事", score: 0.1, New);
         var retrieved = new[] { oldHighRelevance, newLowRelevance };
 
-        // 保護分（骨格 600 + 方針 2 文字 + 銘柄行 120）= 722。材料 2 件（171+172=343）を足すと
-        // 1065 > 予算 900 のため 1 件だけ削れば収まる（722+172=894 ≤ 900）。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 900);
+        // 保護分（骨格 750 + 方針 2 文字 + 銘柄行 120）= 872。材料 2 件（171+172=343）を足すと
+        // 1215 > 予算 1050 のため 1 件だけ削れば収まる（872+172=1044 ≤ 1050）。
+        // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ。
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_050);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1, "予算内に収まらない 1 件が削られる");
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();
@@ -61,9 +62,9 @@ public class ScreeningContextAssemblerTests
         var datedLowRelevance = News("発行時刻ありで関連度が低い記事", score: 0.1, New);
         var retrieved = new[] { unknownHighRelevance, datedLowRelevance };
 
-        // 保護分 722 ＋材料 2 件（176+175=351）=1073 > 予算 900 のため 1 件だけ削れば収まる
-        // （722+175=897 ≤ 900）。発行時刻不明（HasValue=false）は関連度に関わらずソート順の先頭に来る。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 900);
+        // 保護分 872 ＋材料 2 件（176+175=351）=1223 > 予算 1050 のため 1 件だけ削れば収まる
+        // （872+175=1047 ≤ 1050）。発行時刻不明（HasValue=false）は関連度に関わらずソート順の先頭に来る。
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_050);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1);
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();

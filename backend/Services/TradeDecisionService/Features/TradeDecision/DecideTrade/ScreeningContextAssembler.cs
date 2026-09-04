@@ -28,7 +28,9 @@ public static class ScreeningContextAssembler
 
     // プロンプト骨格（指示文・見出し・出力形式）の概算。予算は 200K トークンの文字数プロキシであり、
     // ここは精密である必要はない（過大に見積もるほど安全側＝早めに縮退する）。
-    private const int PromptScaffoldChars = 600;
+    // FR-04, ADR-0016 決定11, IADR-0297: 空売りガードレール短縮版（`# 空売りの制約（結論）` 節。
+    // BuildScreening が無条件で追加）の実測 142 文字ぶんを 600→750 へ底上げした（安全側の余裕込み）。
+    private const int PromptScaffoldChars = 750;
 
     // 銘柄・市場・現在値の行の概算（保護対象）。
     private const int PerSymbolLineChars = 120;
