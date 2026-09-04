@@ -6,6 +6,7 @@ using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
@@ -163,6 +164,7 @@ public class TradeExpenseRecordingServiceTests
         var outcome = await service.RecordForExecutionAsync(Executed(decisionId, filledQuantity: 0));
 
         outcome.IsSkipped.Should().BeTrue();
+        outcome.SkipReason.Should().Be(TradeExpenseSkipReason.NotFilled);
         outcome.Summary.Should().BeNull();
         outcome.Events.Should().BeEmpty();
         source.CallCount.Should().Be(0);
@@ -178,8 +180,62 @@ public class TradeExpenseRecordingServiceTests
         var outcome = await service.RecordForExecutionAsync(Executed(Guid.NewGuid()));
 
         outcome.IsSkipped.Should().BeTrue();
+        outcome.SkipReason.Should().Be(TradeExpenseSkipReason.PositionUnresolved);
         outcome.Summary.Should().BeNull();
         source.CallCount.Should().Be(0);
+    }
+
+    // 🔴 「照会しなかった」2 つを同じ無音へ畳まない（AI レビュー指摘・IADR-0300 決定10）。
+    // 想定内（約定していない）は**無音**——正常な運転で毎回起きるため、記録すると見るべき行が埋もれる。
+    [Fact]
+    public async Task 想定内の照会しなかったは記録されない()
+    {
+        var decisionId = Guid.NewGuid();
+        var (service, _) = Build(new CountingUnsuppliedSource(), decisionId);
+        var logger = new CapturingLogger();
+
+        var outcome = await service.RecordForExecutionAsync(Executed(decisionId, filledQuantity: 0));
+        TradeExpenseRecordingLog.Write(logger, Executed(decisionId, filledQuantity: 0), outcome);
+
+        logger.Entries.Should().BeEmpty();
+    }
+
+    // 想定外（発注記録が無く建玉を特定できない）は**警告 1 回**——無音にすると手がかりが 1 つも残らない。
+    [Fact]
+    public async Task 想定外の照会しなかったは警告として記録される()
+    {
+        var service = new TradeExpenseRecordingService(
+            new CountingUnsuppliedSource(), new InMemoryExecutedOrderStore());
+        var executed = Executed(Guid.NewGuid());
+        var logger = new CapturingLogger();
+
+        var outcome = await service.RecordForExecutionAsync(executed);
+        TradeExpenseRecordingLog.Write(logger, executed, outcome);
+
+        var entry = logger.Entries.Should().ContainSingle().Which;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Message.Should().Contain(executed.OrderId).And.Contain("発注記録");
+    }
+
+    // 記録された行（水準と本文）だけを見る最小のロガー。
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 
     // fail-safe: 経費の記録が発注執行を止めてはならない。例外は「取得できない」へ倒す。

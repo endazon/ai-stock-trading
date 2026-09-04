@@ -11,12 +11,35 @@ namespace OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 // 段 2（実費の供給）が入るまで、経費が 1 件も計上されない事実はこの行以外に現れない。
 public static class TradeExpenseRecordingLog
 {
-    /// <summary>記録の結果をログへ残す。照会しなかった場合は何も残さない（約定していない注文が大半のため）。</summary>
+    /// <summary>
+    /// 記録の結果をログへ残す。
+    /// <para>
+    /// 🔴 <b>照会しなかった 2 つを同じ無音へ畳まない。</b> 約定していない注文（<see
+    /// cref="TradeExpenseSkipReason.NotFilled"/>）は正常な運転で毎回起きるため**無音のまま**にするが、
+    /// 建玉を特定できない（<see cref="TradeExpenseSkipReason.PositionUnresolved"/>）は整合性の異常であり、
+    /// 無音にすると**手がかりが 1 つも残らない**。
+    /// </para>
+    /// </summary>
     public static void Write(ILogger logger, OrderExecuted executed, TradeExpenseRecordingOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(executed);
         ArgumentNullException.ThrowIfNull(outcome);
+
+        if (outcome.SkipReason is { } skipped)
+        {
+            if (skipped == TradeExpenseSkipReason.PositionUnresolved)
+            {
+                logger.LogWarning(
+                    "経費を照会できませんでした（照会そのものを行っていません）: 注文={OrderId}"
+                        + " DecisionId={DecisionId} に対応する発注記録が無く、建玉 (銘柄, 市場) を特定できません。"
+                        + " 建玉を推測して記録することはしません。",
+                    executed.OrderId, executed.DecisionId);
+            }
+
+            // NotFilled は想定内・高頻度（moomoo は発注時 Accepted）。記録すると本当に見るべき行が埋もれる。
+            return;
+        }
 
         if (outcome.Summary is not { } summary)
         {

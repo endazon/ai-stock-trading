@@ -36,14 +36,17 @@ public sealed class TradeExpenseRecordingService(IOrderExpenseSource source, IEx
 
         if (executed.FilledQuantity <= 0)
         {
-            return TradeExpenseRecordingOutcome.Skip("約定していない注文（経費は発生していない）。");
+            // 想定内・高頻度（moomoo は発注時 Accepted で必ずここを通る）。
+            return TradeExpenseRecordingOutcome.Skip(TradeExpenseSkipReason.NotFilled);
         }
 
         var record = store.FindByDecisionId(executed.DecisionId);
         if (record is null)
         {
             // 建玉が特定できない。銘柄を推測して記録すると、別の建玉の費用として 7 年残る。
-            return TradeExpenseRecordingOutcome.Skip("発注記録が見つからず建玉 (銘柄, 市場) を特定できない。");
+            // 🔴 **想定外**（発注記録は約定より先に保存される）。上と同じ「照会しなかった」でも、
+            // 起きたら整合性の異常であり、無音にすると手がかりが 1 つも残らない。
+            return TradeExpenseRecordingOutcome.Skip(TradeExpenseSkipReason.PositionUnresolved);
         }
 
         OrderExpenseLookup lookup;
@@ -86,15 +89,20 @@ public sealed class TradeExpenseRecordingService(IOrderExpenseSource source, IEx
 /// 未供給のときは**7 区分すべてが <c>LineCount</c> = 0** になる。
 /// </param>
 /// <param name="UnavailableReason">照会できなかった理由（診断用）。照会できたなら <c>null</c>。</param>
-/// <param name="SkipReason">照会しなかった理由。照会した場合は <c>null</c>。</param>
+/// <param name="SkipReason">
+/// 照会しなかった理由。照会した場合は <c>null</c>。
+/// 🔴 <b>文字列ではなく列挙で持つ</b> —— 想定内の skip（約定していない）と想定外の skip
+/// （建玉を特定できない）は**扱いが違う**（後者だけ警告を残す）ため、
+/// 呼び出し側が理由文の部分一致で分岐する経路を作らせない。
+/// </param>
 public sealed record TradeExpenseRecordingOutcome(
     IReadOnlyList<TradeExpenseRecorded> Events,
     PositionExpenseSummary? Summary,
     string? UnavailableReason,
-    string? SkipReason)
+    TradeExpenseSkipReason? SkipReason)
 {
     /// <summary>照会しなかった（約定していない・建玉を特定できない）。</summary>
-    public static TradeExpenseRecordingOutcome Skip(string reason) => new([], null, null, reason);
+    public static TradeExpenseRecordingOutcome Skip(TradeExpenseSkipReason reason) => new([], null, null, reason);
 
     /// <summary>照会できなかった。**イベントは 1 本も出さない。**</summary>
     public static TradeExpenseRecordingOutcome Unavailable(PositionExpenseSummary summary, string reason) =>
@@ -110,4 +118,26 @@ public sealed record TradeExpenseRecordingOutcome(
 
     /// <summary>照会したが取得できなかったか。</summary>
     public bool IsUnavailable => UnavailableReason is not null;
+}
+
+/// <summary>
+/// FR-11, #633, IADR-0300: 経費の照会**そのものを行わなかった**理由。
+/// <para>
+/// 🔴 <b>2 つを同じ無音へ畳まない。</b> 本 PR の核心は「照会する経路が無い」「照会したが取れない」
+/// 「照会できて 0 件」を外から区別できるようにすることであり、
+/// **「そもそも照会を試みられなかった」も区別の対象**である。ただし
+/// <see cref="NotFilled"/> は正常な運転で毎回起きる（moomoo は発注時 Accepted）ため、
+/// これを記録すると本当に見るべき行が埋もれる —— 記録するのは想定外の側だけである。
+/// </para>
+/// </summary>
+public enum TradeExpenseSkipReason
+{
+    /// <summary>**想定内**: 約定していない注文（経費は発生していない）。高頻度のため記録しない。</summary>
+    NotFilled = 0,
+
+    /// <summary>
+    /// **想定外**: 発注記録が見つからず建玉 (銘柄, 市場) を特定できない。
+    /// 発注記録は約定より先に保存されるため、正常系では起きない（起きたら整合性の異常）。
+    /// </summary>
+    PositionUnresolved = 1,
 }
