@@ -15,7 +15,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-10, FR-11, UC-06, ADR-0003, ADR-0009, ADR-0016 決定7, #330, #634, IADR-0133, IADR-0296:
+// FR-10, FR-11, UC-06, ADR-0003, ADR-0009, ADR-0016 決定7, #330, #634, IADR-0133, IADR-0298:
 // 維持率割れ自動縮小の定期評価ドライバ（MaintenanceMarginEvaluationService）の結線を検証する。
 //
 // 受け入れ基準（#634）:
@@ -23,7 +23,7 @@ namespace RiskManagementService.Tests;
 //   (b) 否定形（最重要）: 供給元が Unavailable* を返す間は縮小注文も通知も一切発生しない
 //   (c) 否定形: kill switch / 日次損失ロックアウト / 一時停止が成立していても自動縮小は動く
 //
-// 実 DI（RiskWorkerWebApplicationFactory）の駆動自体は既定有効（#634・IADR-0296）だが、本クラスは
+// 実 DI（RiskWorkerWebApplicationFactory）の駆動自体は既定有効（#634・IADR-0298）だが、本クラスは
 // RunOnceAsync を直接叩く単体観点のため、各テストで実駆動（BackgroundService の自動巡回）を明示的に
 // 無効化し、二重発行を避ける（駆動の存在そのものは MaintenanceMarginEvaluationWiringTests が別途固定する）。
 public class MaintenanceMarginEvaluationServiceTests

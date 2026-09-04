@@ -1,5 +1,5 @@
 ---
-title: IADR-0296 維持率割れ自動縮小は定時常駐で駆動し、既定を有効にして単一の制御点（供給元）に発動可否を寄せる
+title: IADR-0298 維持率割れ自動縮小は定時常駐で駆動し、既定を有効にして単一の制御点（供給元）に発動可否を寄せる
 type: impl-adr
 status: Accepted
 related_ids: [FR-10, UC-06, ADR-0003, ADR-0009, ADR-0016, IADR-0133, IADR-0160]
@@ -12,7 +12,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
 ---
 
-# IADR-0296: 維持率割れ自動縮小は定時常駐で駆動し、既定を有効にして単一の制御点（供給元）に発動可否を寄せる
+# IADR-0298: 維持率割れ自動縮小は定時常駐で駆動し、既定を有効にして単一の制御点（供給元）に発動可否を寄せる
 
 - 状態: Accepted
 - 日付: 2026-09-04

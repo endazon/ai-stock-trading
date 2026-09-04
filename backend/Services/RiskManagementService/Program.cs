@@ -250,7 +250,7 @@ builder.Services.AddScoped<PositionCloseService>();
 // 維持率・純資産・必要証拠金の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。
 builder.Services.AddSingleton<IMaintenanceMarginSnapshotSource, UnavailableMaintenanceMarginSnapshotSource>();
 builder.Services.AddScoped<MaintenanceMarginReductionService>();
-// FR-10, UC-06, ADR-0016 決定7, #634, IADR-0133, IADR-0296: 上の評価を定期的に呼ぶ駆動ドライバ。
+// FR-10, UC-06, ADR-0016 決定7, #634, IADR-0133, IADR-0298: 上の評価を定期的に呼ぶ駆動ドライバ。
 // #634: 従前は本サービスを解決して呼ぶ本番コードが 1 行も無かった（「供給なし」ではなく「未結線」）。
 // 既定は**有効**（他 2 件〔下〕の既定無効とは意図的に異なる。理由は Options のコメント参照）。
 // 供給元が「供給なし」を返す間は構造的に不活性のため、発動可否の単一の制御点は供給元の実装差し替えである。

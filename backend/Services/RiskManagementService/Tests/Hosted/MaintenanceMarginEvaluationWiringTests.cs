@@ -6,7 +6,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-10, UC-06, ADR-0016 決定7, #634, IADR-0133, IADR-0296: 駆動の存在そのものを構造的に固定する。
+// FR-10, UC-06, ADR-0016 決定7, #634, IADR-0133, IADR-0298: 駆動の存在そのものを構造的に固定する。
 //
 // #634 が指摘した穴は「MaintenanceMarginReductionService は DI に登録されているが、それを解決して呼ぶ
 // 本番コードが 1 行も無い」ことだった。**DI 登録だけを確認するテストは同じ穴を再発させる**——本テストは
@@ -23,7 +23,7 @@ public class MaintenanceMarginEvaluationWiringTests(RiskWorkerWebApplicationFact
     public void 既定で維持率評価の駆動が登録される()
     {
         HasDriver(factory.Services).Should().BeTrue(
-            "供給元が「供給なし」を返す間は構造的に不活性のため、駆動自体は既定で有効にする（#634・IADR-0296）");
+            "供給元が「供給なし」を返す間は構造的に不活性のため、駆動自体は既定で有効にする（#634・IADR-0298）");
     }
 
     // T-10-321: 明示的に無効化した場合は登録されない（緊急停止用の逃げ道が機能すること）。

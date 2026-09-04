@@ -9,7 +9,7 @@ using Wolverine;
 
 namespace RiskManagementService.Hosted;
 
-// FR-10, FR-11, UC-06, ADR-0003, ADR-0009, ADR-0016 決定7, #330, #634, IADR-0133, IADR-0296:
+// FR-10, FR-11, UC-06, ADR-0003, ADR-0009, ADR-0016 決定7, #330, #634, IADR-0133, IADR-0298:
 // 維持率割れ自動縮小（MaintenanceMarginReductionService）の定期評価ドライバ。
 //
 // #634: 本サービスは DI に登録されているだけで、それを解決して呼ぶ本番コードが存在しなかった
