@@ -21,15 +21,23 @@ k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推�
 > `K8S_LOCAL_RUNTIME` で明示指定する。
 
 ```bash
-scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ ast-secrets → helm install（-f values-local.yaml）
+scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ ast-secrets → helm install（-f values-local.yaml）→ rollout restart
 kubectl -n ai-stock-trading get pods
 ```
 
-> **`BROKER_TIER` / `OPEND_ENABLED` を export せずに再実行しても、前回リリースの値が引き継がれる**
-> （#626 / [IADR-0283](../../../.ai-context/adr/IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)。
-> `ast-secrets` と同じ挙動——明示的な空指定で前回の非空値を消す場合だけ中断し、`--force-empty-values`
-> で確認のうえ強制する）。以前は env passthrough 自体が無く、再実行のたびに `broker.tier`/`opend.enabled`
-> が既定（`paper`/`false`）へ黙って戻っていた（`opend.enabled=false` は OpenD の Deployment を削除する）。
+> **`BROKER_TIER` / `OPEND_ENABLED` / `DISCORD_BOT_*`（4 変数）を export せずに再実行しても、
+> 前回リリースの値が引き継がれる**（#626 / [IADR-0283](../../../.ai-context/adr/IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)、
+> `DISCORD_BOT_*` は #673 で合流。`ast-secrets` と同じ挙動——明示的な空指定で前回の非空値を消す場合だけ
+> 中断し、`--force-empty-values` で確認のうえ強制する）。以前は env passthrough 自体が無く、再実行のたびに
+> `broker.tier`/`opend.enabled` が既定（`paper`/`false`）へ黙って戻っていた（`opend.enabled=false` は
+> OpenD の Deployment を削除する）。`DISCORD_BOT_*` の 4 環境固有 ID も同様に、export し忘れると投入済みの
+> ID が空へ戻り Discord Bot が無言で no-op へ落ちる事故が実際に発生していた（#673）。
+
+> **`scripts/k8s-local-deploy.sh` は helm upgrade の後、OpenD を除く全 Deployment へ
+> `kubectl rollout restart` を打つ**（#673）。イメージタグは `:latest` 固定 + `imagePullPolicy: IfNotPresent`
+> であり、Pod テンプレートが変わらないサービスは `scripts/k8s-local-images.sh` でイメージを焼き直しても
+> Pod が古いまま残るため（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。OpenD は
+> SMS/画像認証済みの moomoo セッションを持つため対象から除外する。
 
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
@@ -325,7 +333,10 @@ USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同�
 
 `GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping` は**非機密**の識別子であり、chart の設定点
 `discord.bot.*`（空既定）から与える。`scripts/k8s-local-deploy.sh` が下表の env を読み、`helm upgrade` へ
-`--set-string discord.bot.*` として渡す（未設定=空=差し替えなし＝全拒否のまま）。
+`--set-string discord.bot.*` として渡す。**未設定なら前回リリースの値を引き継ぐ**（`broker.tier` /
+`opend.enabled` と同じ `AST_VALUE_KEYS` の仕組み。#673。明示的な空指定で前回の非空値を消す場合は
+`--force-empty-values` が要る）。前回リリースも無い（新規環境）場合は空のまま＝差し替えなし
+（IADR-0062 の安全既定＝全拒否）。
 
 | 環境変数 | chart 値 | 設定キー | 備考 |
 | --- | --- | --- | --- |
