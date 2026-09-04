@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-09-04
+updated: 2026-09-05
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
-adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0026, ADR-0027, ADR-0028]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, planning#292]
+adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, planning#292]
 -->
 
 
@@ -659,9 +659,15 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 `Price` を基準通貨へ換算しないのは、発注執行がこの値をブローカーの注文価格として送るため（換算すると実発注価格が壊れる）。
 建玉の平均取得単価・損切り価格も現在値と同一通貨で比較するためローカル通貨のまま保持する。
 
-**FX レート源の向き**（基準通貨反転の決定 2）: FRED `DEXJPUS` は「1 USD あたりの円」であるため、
-USD 基準では JPY のレートを**逆数**（`1 ÷ DEXJPUS`）で得る。逆数は丸めない（丸めると往復換算の誤差が
-片側へ偏り統制の実効上限が系統的にずれる）。基準通貨（USD）は外部へ問い合わせず必ず 1 を返す。
+**FX レート源の向き**（基準通貨反転の決定 2）: 日銀「外国為替市況（日次）」の東京市場 ドル・円 スポット
+17 時時点（仲値）も FRED `DEXJPUS` も「1 USD あたりの円」であるため、USD 基準では JPY のレートを
+**逆数**で得る。逆数は丸めない（丸めると往復換算の誤差が片側へ偏り統制の実効上限が系統的にずれる）。
+基準通貨（USD）は外部へ問い合わせず必ず 1 を返す。
+
+**FX レート源の順位**（#686。計画 ADR の決定 1・2）: **第一は日銀**（認証不要・毎営業日公表）で、
+**FRED は API キーが設定されているときだけ後段へ積まれるフォールバック**である。切り替わった事実は
+イベントとして発行され、監査・通知・報告書へ伝播する。**構成点は 3 サービス分（判断の換算レート・
+承認記録の認識時レート・報告書の期末レート）あり、1 つだけ変えると挙動が食い違う。**
 
 **移行の安全性**（基準通貨反転の決定 5）: `approved_orders.FxRateToBase` は基準通貨が変われば意味が変わるため、
 EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後も意味が変わらない行しか無いこと」を検査し、
