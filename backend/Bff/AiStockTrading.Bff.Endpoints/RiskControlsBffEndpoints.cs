@@ -14,9 +14,10 @@ namespace AiStockTrading.Bff.Endpoints;
 // 後段不達は 502 へ縮退する（fail-safe）。フロントの存在秘匿（RequireRole→NotFound）はサーバ 401/403 の
 // 表示側バックストップ（IADR-0009/0035）。#285 の AssumptionsBffEndpoints と同型。
 //
-// 登録経路は SC-02/03 が実消費する 7 本のみ（IADR-0071 決定2。kill-switch・pause・sizing-context 等は
+// 登録経路は SC-02/03 が実消費するものに限る（IADR-0071 決定2。kill-switch・pause・sizing-context 等は
 // フロントが叩かないため登録しない＝起こり得ない経路への防御的追加を避ける）。
-// AST #334 で発注先の変更（PUT /settings/broker-provider）を 1 本追加した（SC-02 が実消費する）。
+// AST #334 で発注先の変更（PUT /settings/broker-provider）を追加した（SC-02 が実消費する）。
+// AST #640 で空売りの現況（GET /short-selling）を追加した（SC-03 が実消費するが登録が漏れていた）。
 public static class RiskControlsBffEndpoints
 {
     // 後段の名前付き HTTP クライアント（BaseAddress は Program.cs で Services:RiskManagementService から設定）。
@@ -70,6 +71,13 @@ public static class RiskControlsBffEndpoints
         g.MapGet("/stage-gate", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/stage-gate", ct))
             .WithName("BffRiskControlsStageGate");
+
+        // AST #640, SC-03, FR-10, FR-19, ADR-0016 決定15: 空売りの現況（維持率・空売り比率・
+        // 保有建玉の方向・借株料の累計・維持率割れ自動縮小の現況）。後段は実装済み（IADR-0154）だが
+        // BFF のパススルーが漏れており本番で必ず「取得できていません」になっていた。後段 OwnerOnly。
+        g.MapGet("/short-selling", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Get, "/risk-controls/short-selling", ct))
+            .WithName("BffRiskControlsShortSelling");
 
         return app;
     }

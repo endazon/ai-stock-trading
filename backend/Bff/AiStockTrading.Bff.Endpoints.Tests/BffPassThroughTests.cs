@@ -23,7 +23,7 @@ namespace AiStockTrading.Bff.Endpoints.Tests;
 // 後段は StubHandler で差し替え、実サービスに依存しない。
 public class BffPassThroughTests
 {
-    // すべての BFF ルート（3 モジュール・計 18 ルート）が期待どおり登録され、グループが認証必須であることの
+    // すべての BFF ルート（3 モジュール・計 20 ルート）が期待どおり登録され、グループが認証必須であることの
     // 最小固定（ルート脱落・改名・メソッド変更・RequireAuthorization 抜けを検知）。
     public static IEnumerable<object[]> AllRoutes =>
     [
@@ -40,6 +40,8 @@ public class BffPassThroughTests
         ["PUT", "/bff/risk-controls/settings/stage1-minimum-trade-count"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
+        // AST #640, SC-03, FR-10, FR-19: 空売りの現況（維持率等）。後段は実装済みだが BFF 登録が漏れていた。
+        ["GET", "/bff/risk-controls/short-selling"],
         ["GET", "/bff/monitor/watchlist"],
         ["POST", "/bff/monitor/watchlist"],
         ["DELETE", "/bff/monitor/watchlist"],
@@ -155,6 +157,35 @@ public class BffPassThroughTests
         host.Downstream.Throw = true;
 
         var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/status");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+    }
+
+    // AST #640, SC-03, FR-10, FR-19: **否定形**。空売りの現況（維持率等）は後段が 5xx やタイムアウトの
+    // とき、0 や「—」のような正常値らしい応答へ縮退してはならない（05_screens §供給が無い値の表示規約）。
+    // BFF は DTO へ結合せず本文を素通しするだけなので、後段の 5xx はそのまま透過されるはずであり、
+    // ここでその不変を固定する（500 を勝手に 200 や既定値へ書き換えない）。
+    [Fact]
+    public async Task Downstream_5xx_for_short_selling_is_not_disguised_as_success()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.InternalServerError;
+        host.Downstream.ResponseBody = """{"error":"downstream failure"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/short-selling");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"downstream failure"}""");
+    }
+
+    // AST #640: 後段不達/タイムアウトも他経路（/status）と同じく 502 へ縮退する（正常値化しない）。
+    [Fact]
+    public async Task Downstream_unreachable_for_short_selling_degrades_to_502()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Throw = true;
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/short-selling");
 
         resp.StatusCode.Should().Be(HttpStatusCode.BadGateway);
     }
