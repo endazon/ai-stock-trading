@@ -47,6 +47,10 @@ public sealed class RetrievalSourcePolicy
         "edinet",
         "boj",
         "fred",
+        // #687, ADR-0016 決定12: FINRA の空売り出来高（需給データ）。収集側 SourceAllowlist へ足した
+        // のと**対で**足す —— 片方だけだと KB へは入るのに判断へは一度も届かない（本ファイル冒頭の
+        // 「片方を増やしてもう片方を忘れる形」そのものであり、`RetrievalSourceVocabularyTests` が検知する）。
+        "finra-short",
         "moomoo",
         // --- 自リポジトリが書いた文書 ---
         "report",

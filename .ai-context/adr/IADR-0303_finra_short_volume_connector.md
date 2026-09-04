@@ -109,6 +109,13 @@ FINRA は `CNMS`（全市場 Consolidated NMS 銘柄）・`FNRA`（ADF 単独）
 4. `SourceAllowlist.Default` へ `"finra-short"` を追加する（ADR-0016 決定12 の実装状況が明記する
    対応）。
 5. `InformationKind` へ `SupplyDemand` を追加する。
+6. 🔴 **`RetrievalSourcePolicy.Default`（TradeDecisionService）へも `"finra-short"` を対で追加する。**
+   決定 4 だけでは**片肺**である —— 収集側の許可リストに足しただけだと文書は KB へ入るが、
+   RAG 注入側の出所語彙に無いため**判断へは一度も届かない**（しかも「文脈なし」で正常動作している
+   ように見えるので気付けない）。判断サービスは収集サービスを参照しない（ユニット境界）ため語彙は
+   2 か所に書かれる設計であり、その不一致は `AiStockTrading.Architecture.Tests.RetrievalSourceVocabularyTests`
+   （IADR-0169 決定2）が検知する。**本 IADR の初版はこの対を落としており、実際に同テストが赤くなって
+   発覚した**（PR #694 の `backend-test (4)`）。検査が意図どおり働いた事例として記録する。
 
 ## 影響・トレードオフ
 
