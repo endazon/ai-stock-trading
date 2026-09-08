@@ -2364,6 +2364,24 @@ module.exports = ({ ok, assert }) => {
     const pathSs = require('path');
     const REPO_ROOT_SS = pathSs.resolve(__dirname, '..');
 
+    // 「dotnet が PATH に無い」環境を **どのランナーでも** 再現する。CI の ubuntu イメージは
+    // /usr/bin/dotnet を持つため、PATH を '/usr/bin:/bin' に絞るだけでは自己修復の分岐へ入らず、
+    // 通常の restore 経路が走って本試験が落ちた（run 34288592460 で実測）。setup.sh が使う
+    // 外部コマンドだけを symlink で集めた一時ディレクトリを PATH にする（dotnet は含めない）。
+    const toolboxPathSs = (() => {
+      const dir = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-bin-'));
+      for (const tool of ['bash', 'sh', 'grep', 'sed', 'head', 'cut', 'find', 'sort', 'mktemp', 'rm', 'cat', 'ls']) {
+        for (const from of ['/usr/bin', '/bin']) {
+          const src = pathSs.join(from, tool);
+          if (fsSs.existsSync(src)) {
+            try { fsSs.symlinkSync(src, pathSs.join(dir, tool)); } catch { /* 既に張った */ }
+            break;
+          }
+        }
+      }
+      return dir;
+    })();
+
     ok('setup.sh: 構文エラーが無い（bash -n）', () => {
       execFileSyncSs('bash', ['-n', pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], { stdio: 'pipe' });
     });
@@ -2374,7 +2392,7 @@ module.exports = ({ ok, assert }) => {
       try {
         const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
           cwd: REPO_ROOT_SS,
-          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
           stdio: 'pipe',
           encoding: 'utf8',
         });
@@ -2400,7 +2418,7 @@ module.exports = ({ ok, assert }) => {
         );
         const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
           cwd: tmpRepo,
-          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
           stdio: 'pipe',
           encoding: 'utf8',
         });
@@ -2422,7 +2440,7 @@ module.exports = ({ ok, assert }) => {
         );
         const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
           cwd: tmpRepo,
-          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
           stdio: 'pipe',
           encoding: 'utf8',
         });
@@ -2446,7 +2464,7 @@ module.exports = ({ ok, assert }) => {
         fsSs.chmodSync(stub, 0o755);
         const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
           cwd: REPO_ROOT_SS,
-          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin' },
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs },
           stdio: 'pipe',
           encoding: 'utf8',
         });

@@ -54,7 +54,9 @@ const ALLOWED_FILES = new Set([
 ]);
 
 const SCAN_EXT = new Set(['.cs']);
-const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', '.git', 'planning']);
+// '.claude' は Claude Code のサブエージェント用 worktree（.claude/worktrees/<agent>/）が本ツリーの
+// 複製を持つため除外する（複製側の ALLOWED_FILES 相対パスは一致せず偽陽性になる。CI には現れない）。
+const SKIP_DIRS = new Set(['bin', 'obj', 'node_modules', '.git', 'planning', '.claude']);
 
 function scanFiles(dir, out = []) {
   let entries;
