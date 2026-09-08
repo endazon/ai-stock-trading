@@ -2353,4 +2353,126 @@ module.exports = ({ ok, assert }) => {
       assert.match(readme, /check-backlog-audit-output\.js/, 'scripts/README.md に記載が無い');
     });
   }
+
+  // --- setup.sh: .NET SDK 自己修復（NFR / #709 / IADR-0311） ---
+  {
+    const { execFileSync: execFileSyncSs } = require('child_process');
+    const fsSs = require('fs');
+    const osSs = require('os');
+    const pathSs = require('path');
+    const REPO_ROOT_SS = pathSs.resolve(__dirname, '..');
+
+    ok('setup.sh: 構文エラーが無い（bash -n）', () => {
+      execFileSyncSs('bash', ['-n', pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], { stdio: 'pipe' });
+    });
+
+    // dry-run: 実ネットワークを叩かず channel 導出だけを固定する。global.json を優先する経路。
+    ok('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
+          cwd: REPO_ROOT_SS,
+          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `channel の導出結果が違う: ${out}`);
+        assert.match(out, /\[dry-run\]/, 'dry-run 分岐を通っていない（実 curl を試みた可能性）');
+      } finally {
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // global.json が無いツリーでは Directory.Build.props の TargetFramework から導出する。
+    ok('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
+      const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh'),
+          pathSs.join(tmpRepo, 'setup.sh')
+        );
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'Directory.Build.props'),
+          pathSs.join(tmpRepo, 'Directory.Build.props')
+        );
+        const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
+          cwd: tmpRepo,
+          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `channel の導出結果が違う（global.json 無しのフォールバック）: ${out}`);
+      } finally {
+        fsSs.rmSync(tmpRepo, { recursive: true, force: true });
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // 否定形: channel も導出できないツリーでは既定 10.0 へ倒れる（例外を投げて落ちない）。
+    ok('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
+      const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh'),
+          pathSs.join(tmpRepo, 'setup.sh')
+        );
+        const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
+          cwd: tmpRepo,
+          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin', DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `既定 channel に倒れていない: ${out}`);
+      } finally {
+        fsSs.rmSync(tmpRepo, { recursive: true, force: true });
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // 実効性の証拠: dotnet が PATH に無くても $HOME/.dotnet/dotnet があれば PATH へ足す経路。
+    // 実 SDK を新たに用意すると重いため、実行可能ファイルのスタブで代用する（PATH 追加の判定
+    // ロジック自体を固定するのが目的であり、本物の dotnet の挙動はここでは検証しない）。
+    ok('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        const dotnetDir = pathSs.join(emptyHome, '.dotnet');
+        fsSs.mkdirSync(dotnetDir, { recursive: true });
+        const stub = pathSs.join(dotnetDir, 'dotnet');
+        fsSs.writeFileSync(stub, '#!/usr/bin/env bash\necho "stub dotnet called: $*"\n');
+        fsSs.chmodSync(stub, 0o755);
+        const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
+          cwd: REPO_ROOT_SS,
+          env: { ...process.env, HOME: emptyHome, PATH: '/usr/bin:/bin' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /PATH へ追加します/, 'PATH 追加の案内が出ていない');
+        assert.match(out, /export PATH="\$HOME\/\.dotnet:\$PATH"/, '呼び出し元向けの export 案内が出ていない');
+      } finally {
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    ok('devcontainer.json: .NET 10 のベースイメージを使っている（#709）', () => {
+      const dc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.devcontainer', 'devcontainer.json'), 'utf8');
+      assert.match(dc, /mcr\.microsoft\.com\/devcontainers\/dotnet:10\.0/, 'devcontainer のベースイメージが .NET 10 になっていない');
+    });
+
+    ok('Node のバージョンが全ワークフロー・.nvmrc で 20 に揃っている（#709）', () => {
+      const wfDir = pathSs.join(REPO_ROOT_SS, '.github', 'workflows');
+      const offenders = [];
+      for (const f of fsSs.readdirSync(wfDir)) {
+        if (!f.endsWith('.yml')) continue;
+        const src = fsSs.readFileSync(pathSs.join(wfDir, f), 'utf8');
+        for (const m of src.matchAll(/node-version:\s*['"]?(\d+)['"]?/g)) {
+          if (m[1] !== '20') offenders.push(`${f}: node-version ${m[1]}`);
+        }
+      }
+      assert.deepStrictEqual(offenders, [], `20 以外の node-version が残っている: ${offenders.join(', ')}`);
+      const nvmrc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.nvmrc'), 'utf8').trim();
+      assert.strictEqual(nvmrc, '20', `.nvmrc が 20 でない: ${nvmrc}`);
+    });
+  }
 };
