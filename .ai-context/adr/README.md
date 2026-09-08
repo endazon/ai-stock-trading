@@ -119,7 +119,7 @@
 | IADR-0069 | KB 保存・RAG 取得は共有クライアントの疎な境界で platform 文書管理／検索を包み、既定 no-op・構成で opt-in とする | Accepted |
 | IADR-0070 | 段階ゲートの遷移を追記専用台帳＋単一行実績で永続化し、承認は OwnerOnly エンドポイント、撤退は kill switch 自動起動に結線する | Accepted |
 | IADR-0071 | 報告書サービス残スコープは ReportService に閉じ、実 LLM/実 KB を既定オフ・opt-in、対話的確定は状態機械の薄い HTTP 結線で実装する | Accepted |
-| IADR-0072 | RAG 文脈は Application 抽象ポートで受け、本判断プロンプトのみに参考情報として注入し、既定 no-op・取得失敗は文脈なしへ縮退する | Accepted |
+| IADR-0072 | RAG 文脈は Application 抽象ポートで受け、本判断プロンプトのみに参考情報として注入し、既定 no-op・取得失敗は文脈なしへ縮退する（**決定2〔スクリーニングは据え置き〕は 2026-09-09 に [IADR-0313](./IADR-0313_screening-context-budget-default.md) により既定で置き換え**。[#567](https://github.com/endazon/ai-stock-trading/issues/567)。決定1・3 は不変） | Accepted |
 | IADR-0073 | 情報収集の実 KB 保存 opt-in はデプロイ面（compose/helm/.env.example）への env 露出のみで開け、既定は空＝no-op のまま据え置く | Accepted |
 | IADR-0074 | Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実 OpenD 照会は後続へ分離する | Accepted |
 | IADR-0075 | 取引の一時停止(pause)を kill switch と同経路の別状態として新設し、監査は既存の設定変更履歴で満たす | Accepted |
