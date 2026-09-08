@@ -2335,7 +2335,9 @@ module.exports = ({ ok, assert }) => {
         });
       } catch (e) {
         failed = true;
-        stderr = String(e.stderr || e.message || '');
+        // ci-annotate.js は GITHUB_ACTIONS=true のとき workflow コマンド（::error::）を **stdout** へ
+        // 書く（stderr だとアノテーションが出ない）。ローカルは stderr。両方を見る。
+        stderr = String(e.stderr || '') + String(e.stdout || '') + String(e.message || '');
       }
       assert.ok(failed, 'gh が使えないのに exit 0 になった');
       assert.match(stderr, /取得できない/, 'issue 取得失敗の理由が報告に出ていない');
