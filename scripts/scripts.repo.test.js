@@ -1845,6 +1845,27 @@ module.exports = ({ ok, assert }) => {
       assert.match(section, /readPlanIds/, '節が機械の単一情報源であることを書いていない');
       assert.match(section, /SC-13/, 'SC-13 / SC-16 を実在集合へ入れない理由が書かれていない');
     });
+
+    // --- #710: 計画 ADR レンジ宣言（ADR-0001..0032）が計画側の実在（0035 まで）より遅れていた ---
+    //
+    // 純関数（plan-ranges.readPlanAdrRange）は「実ツリーの現在値」を読むだけで鮮度そのものは
+    // 検査できない（規約ファイルを書き換えれば追随してしまう）。**鮮度の実害はコミット件名 /
+    // PR タイトルの実在性検査（`--title` CLI 経路）に出る**——ADR-0035 を参照するコミットが
+    // 「実在しない」として恒久拒否される。ここでは CLI バイナリを直接叩き、宣言が実測値
+    // （project-planning 07_adr/ の最大 ADR-0035。ブリーフ #710 で実測）に追随していることを保証する。
+    ok('#710: 計画 ADR レンジ宣言が ADR-0035 を実在として通し、ADR-0036 は依然として拒否する', () => {
+      const { execFileSync: execFileSyncAdrFresh } = require('child_process');
+      const runTitle = (title) => execFileSyncAdrFresh(
+        process.execPath,
+        [pathRp.join(__dirname, 'check-commit-messages.js'), '--title', title],
+        { cwd: pathRp.join(__dirname, '..'), stdio: 'pipe', encoding: 'utf8' },
+      );
+      // ADR-0035 は実在（project-planning 07_adr/ADR-0035_*.md）——素通りせず exit 0 で受理される。
+      runTitle('feat(ADR-0035): x');
+      // ADR-0036 はまだ存在しない——lib/plan-ranges.js 側の isAdrInRange 上限検査
+      // （scripts.repo.test.js 内の別テストが r.to+1 で保証）と整合し、依然として拒否される。
+      assert.throws(() => runTitle('feat(ADR-0036): x'), /実在しない/);
+    });
   }
 
   // --- check-trace-blocks.js / gen-knowledge-graph.js -------------------------------
