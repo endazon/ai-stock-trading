@@ -310,6 +310,23 @@ jobs:
           PLAN_ID_PREFIXES: "MSP,AST"
         run: node scripts/check-plan-id-qualification.js
 
+      # NFR / #712: 他リポジトリの issue / PR 番号の修飾（.claude/rules/traceability.repo.md）を
+      # 追跡下の全ファイルに対して検査する。姉妹検査器（check-plan-id-qualification.js）と同じく、
+      # 置換点をファイル内に直書きしているため引数なしでも既定で走査できるが、**env を明示するのは
+      # 冗長化のため**であり、落としても skip して緑にはならない（`scripts.repo.test.js` に既定へ
+      # 戻る退行の回帰テストがある）。**これまで scripts.repo.test.js の中でしか本走していなかった**
+      # ——監査時の本走は違反 0 件・exit 0 であり配線コストは小さい。自己試験を先に走らせる。
+      - name: Self-test cross-repo reference checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-cross-repo-refs.js --self-test
+      - name: Check cross-repo references
+        if: ${{ !cancelled() }}
+        env:
+          CROSS_REPO_NAMES: "project-planning:planning,microservices-platform:MSP"
+          CROSS_REPO_SELF_NAMES: "AST,ai-stock-trading"
+          CROSS_REPO_EXCLUDES: ":!.ai-context/specs"
+        run: node scripts/check-cross-repo-refs.js
+
       # 実行環境スキャフォールド（docker-compose / appsettings / .env.example）の静的検査（issue #107 / IADR-0048）。
       # fail-safe 既定（base appsettings が挙動中立・機密は空既定）と構成の存在・整合を Docker 起動なしで検証する。
       # 実コンテナ/実 API 疎通は #82 に分離するため、本ジョブは Node 標準のみ（依存・Docker 不要）で完結する。
@@ -475,9 +492,14 @@ jobs:
       # **新規 PR ブランチは初回からヒットする**。逆に **develop へマージ直後の初回 run は miss** する。
       # **miss を見たら壊れたと決めつけず、どのブランチのスコープかを先に確かめること。**
       #
-      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測では
+      # NFR / IADR-0208: NuGet のグローバルパッケージをキャッシュする。着手前の実測（導入当時）では
       # setup-dotnet が本リポジトリで 6 箇所使われて 1 つも cache: を設定しておらず、
       # 101 個の csproj を毎 run コールドで restore していた（Restore 20 秒 ＋ Build 47 秒）。
+      # 🔴 この 101 は**導入当時の実測値であり、現在の csproj 数ではない**（#712 で判明）。
+      # VSA 単一プロジェクト化（IADR-0259）でサービス配下が集約され、2026-09-09 実測では
+      # `find backend -name '*.csproj' | wc -l` が **40** を返す。キャッシュの要否判断（本数が
+      # 多いほど恩恵が大きい）は変わらないため運用は維持するが、この段落の数値を現在値の根拠と
+      # して引用しないこと。
       # packages.lock.json を持たないため setup-dotnet の cache: true は使えない
       # （ロックファイルのハッシュをキーにする実装のため）。
       - uses: actions/cache@v6
@@ -496,10 +518,14 @@ jobs:
 
   # 🔴 テストのシャーディング（NFR / IADR-0208 決定 10）。
   #
-  # 着手前の実測: build-and-test 208 秒 ＝ Restore 13 / Build 43 / **Test 133** / セットアップ 19。
+  # 着手前の実測（導入当時）: build-and-test 208 秒 ＝ Restore 13 / Build 43 / **Test 133** / セットアップ 19。
   # テストアセンブリ 51 本・所要の合計 480 秒・実効並列度 3.61 本・**最長 28 秒**。
   # 決定 8 で確かめたとおり **1 ランナー内は既に 4 並列で頭打ち**であり、
   # これ以上縮めるには**ランナーを増やす**しかない。
+  # 🔴 上記「51 本」は**導入当時の実測値であり、現在のテストアセンブリ数ではない**（#712 で判明）。
+  # 2026-09-09 実測では `node scripts/list-test-projects.js --count` が **20** を返す
+  # （VSA 単一プロジェクト化に伴うサービス統合で減少）。シャーディング方式（LPT 貪欲）自体は
+  # 本数非依存で機能するため運用は維持するが、この段落の数値を現在の本数の根拠として引用しないこと。
   #
   # ⚠️ **このジョブは必須チェックではない。** 必須チェック名 `build-and-test` は
   # 下の集約ジョブが保持する（改名は恒久的なマージ不能を招く）。
