@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AiStockTrading.Architecture.Tests;
@@ -24,6 +25,16 @@ internal static class DomainSourceScan
         @"^\s*(?:global\s+)?using\s+(?:static\s+)?(?:[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?"
             + @"(?<ns>[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*;\s*$",
         RegexOptions.Compiled);
+
+    /// <summary>
+    /// <c>global using</c> ディレクティブの見分け（検査 (f)。IADR-0312 決定 1）。
+    /// <c>global</c> が付く <c>using</c> は<b>コンパイル単位の全ファイル</b>へ効くため、
+    /// Domain の外に置かれていても Domain のソースの名前解決を変える。
+    /// </summary>
+    private static readonly Regex GlobalUsingPrefix = new(@"^\s*global\s+using\s", RegexOptions.Compiled);
+
+    /// <summary>Domain 層のフォルダ／プロジェクト名を示すセグメント（検査 (e) が唯一許すもの）。</summary>
+    public const string DomainSegment = "Domain";
 
     /// <summary>
     /// <b>共有物</b>の名前空間の接頭辞。IADR-0261 でサービスのルート名前空間は <c>&lt;Name&gt;Service</c> へ
@@ -66,6 +77,193 @@ internal static class DomainSourceScan
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// 1 行を <c>global using</c> ディレクティブとして解析する（検査 (f)。IADR-0312 決定 1）。
+    /// <c>global</c> の付かない通常の <c>using</c> は解析しない —— それはそのファイルにしか効かず、
+    /// Domain の名前解決を変えないためである。
+    /// </summary>
+    public static bool TryParseGlobalUsingNamespace(string line, out string ns)
+    {
+        if (!GlobalUsingPrefix.IsMatch(line))
+        {
+            ns = string.Empty;
+            return false;
+        }
+
+        return TryParseUsingNamespace(line, out ns);
+    }
+
+    /// <summary>ソース全体から <c>global using</c> の名前空間を列挙する（出現順・重複を残す）。</summary>
+    public static IReadOnlyList<string> GlobalUsingNamespacesIn(string sourceText)
+    {
+        var found = new List<string>();
+        foreach (var line in sourceText.Split('\n'))
+        {
+            if (TryParseGlobalUsingNamespace(line.TrimEnd('\r'), out var ns)) found.Add(ns);
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// 検査 (e) の禁止トークン（IADR-0312 決定 2）: <c>&lt;自サービスのルート&gt;.&lt;Domain 以外の層&gt;</c>。
+    /// <para>
+    /// 層のセグメントは<b>実ツリーのフォルダ名から導く</b>（<c>Common</c> / <c>Features</c> /
+    /// <c>Hosted</c> / <c>Infrastructure</c> / <c>Tests</c>）。手で書いた拒否リストにすると、
+    /// 次に足された層フォルダが素通りする。
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<string> CrossLayerTokensFor(
+        string ownServiceNamespaceRoot, IEnumerable<string> layerSegments) =>
+        layerSegments
+            .Where(s => !string.Equals(s, DomainSegment, StringComparison.Ordinal))
+            .Select(s => $"{ownServiceNamespaceRoot}.{s}")
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// 検査 (e): Domain のソースが<b>自サービスの Domain 以外の層</b>を完全修飾で参照していないか
+    /// （IADR-0312 決定 2。#601 の経路 (ii)）。
+    /// <para>
+    /// <c>using RiskManagementService.Infrastructure.Persistence;</c> は検査 (b) が止めるが、
+    /// <c>RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext</c> と
+    /// <b>完全修飾で書くと <c>using</c> 行が無い</b>ため (b) に当たらない。
+    /// 検査 (d)（他サービス参照）は<b>自サービスのルートを設計上除外している</b>ため、これも当たらない。
+    /// </para>
+    /// 🔴 <b>コメントと文字列リテラルを取り除いた本文で照合する。</b> Domain のコメントには層の名前が
+    /// 地の文で現れ得る（「Infrastructure 側で解決する」等）。検査 (c) はコメントも見る既存挙動のままで、
+    /// <b>除去するのは本検査だけ</b>である（既存の検出を弱めない）。
+    /// </summary>
+    public static IReadOnlyList<string> OwnServiceCrossLayerReferencesIn(
+        string sourceText, string ownServiceNamespaceRoot, IEnumerable<string> layerSegments)
+    {
+        var code = StripCommentsAndStringLiterals(sourceText);
+        return CrossLayerTokensFor(ownServiceNamespaceRoot, layerSegments)
+            .Where(token => ContainsQualifiedNameRoot(code, token))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// コメント（<c>//</c> / <c>/* */</c>）と文字列・文字リテラル（通常・逐語 <c>@""</c>・生 <c>"""</c>）を
+    /// 取り除き、<b>コードとして評価される部分だけ</b>を残す。改行は保つ。
+    /// <para>
+    /// 補間文字列（<c>$"…{X.Y}…"</c>）は穴の中もリテラルとして落ちる。**リフレクションで層をまたぐ**
+    /// 書き方（型名を文字列で持つ）は検出できないが、これはコンパイル時の依存ではなく、
+    /// 本検査が止めたい対象と異なる（IADR-0312 残余リスク）。
+    /// </para>
+    /// </summary>
+    public static string StripCommentsAndStringLiterals(string sourceText)
+    {
+        var code = new StringBuilder(sourceText.Length);
+        var i = 0;
+        while (i < sourceText.Length)
+        {
+            var c = sourceText[i];
+
+            // 行コメント: 改行の手前まで捨てる（改行そのものは残す）。
+            if (c == '/' && Peek(i + 1) == '/')
+            {
+                while (i < sourceText.Length && sourceText[i] != '\n') i++;
+                code.Append(' ');
+                continue;
+            }
+
+            // ブロックコメント。
+            if (c == '/' && Peek(i + 1) == '*')
+            {
+                i += 2;
+                while (i < sourceText.Length && !(sourceText[i] == '*' && Peek(i + 1) == '/'))
+                {
+                    if (sourceText[i] == '\n') code.Append('\n');
+                    i++;
+                }
+
+                i = Math.Min(i + 2, sourceText.Length);
+                code.Append(' ');
+                continue;
+            }
+
+            // 生文字列リテラル（""" 以上の引用符で囲む。C# 11+）。
+            if (c == '"' && Peek(i + 1) == '"' && Peek(i + 2) == '"')
+            {
+                var quotes = 0;
+                while (i + quotes < sourceText.Length && sourceText[i + quotes] == '"') quotes++;
+                var fence = new string('"', quotes);
+                i += quotes;
+                var end = sourceText.IndexOf(fence, i, StringComparison.Ordinal);
+                var stop = end < 0 ? sourceText.Length : end + quotes;
+                for (; i < stop; i++)
+                {
+                    if (sourceText[i] == '\n') code.Append('\n');
+                }
+
+                code.Append(' ');
+                continue;
+            }
+
+            // 逐語的文字列 @"…"（"" が引用符のエスケープ）。
+            if (c == '@' && Peek(i + 1) == '"')
+            {
+                i += 2;
+                while (i < sourceText.Length)
+                {
+                    if (sourceText[i] == '"')
+                    {
+                        if (Peek(i + 1) == '"')
+                        {
+                            i += 2;
+                            continue;
+                        }
+
+                        i++;
+                        break;
+                    }
+
+                    if (sourceText[i] == '\n') code.Append('\n');
+                    i++;
+                }
+
+                code.Append(' ');
+                continue;
+            }
+
+            // 通常の文字列・文字リテラル（\ でエスケープ。行をまたいだら異常なので打ち切る）。
+            if (c is '"' or '\'')
+            {
+                var quote = c;
+                i++;
+                while (i < sourceText.Length)
+                {
+                    if (sourceText[i] == '\\')
+                    {
+                        i += 2;
+                        continue;
+                    }
+
+                    if (sourceText[i] == quote)
+                    {
+                        i++;
+                        break;
+                    }
+
+                    if (sourceText[i] == '\n') break;
+                    i++;
+                }
+
+                code.Append(' ');
+                continue;
+            }
+
+            code.Append(c);
+            i++;
+        }
+
+        return code.ToString();
+
+        char Peek(int index) => index < sourceText.Length ? sourceText[index] : '\0';
     }
 
     /// <summary>
