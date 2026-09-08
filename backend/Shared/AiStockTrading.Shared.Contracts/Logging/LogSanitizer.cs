@@ -67,7 +67,13 @@ public static class LogSanitizer
         if (kept < value.Length)
             sb.Append($"…(truncated {value.Length - kept} chars)");
 
-        return sb.ToString();
+        // 静的解析（CodeQL cs/log-forging）が「無害化済み」と認識する形で締める。上の走査で CR / LF は
+        // 既に Replacement へ置換済みのため意味的には no-op だが、CodeQL の汚染追跡は StringBuilder 経由の
+        // 文字単位の再構築を無害化と見なさず、String.Replace("\n"/"\r") の呼び出しだけを sanitizer として
+        // 扱う。この 2 呼び出しを外すと、呼び出し側 8 ファイル 13 箇所すべてが再び指摘対象へ戻る（#708）。
+        return sb.ToString()
+            .Replace("\r", Replacement.ToString(), StringComparison.Ordinal)
+            .Replace("\n", Replacement.ToString(), StringComparison.Ordinal);
     }
 
     // 「行を割り得る文字」の判定。制御文字はレコード分割（LF / CR）と表示破壊（ESC）の両方を含む。
