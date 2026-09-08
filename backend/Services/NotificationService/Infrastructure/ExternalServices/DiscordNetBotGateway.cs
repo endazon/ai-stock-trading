@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Logging;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
@@ -730,7 +731,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
     private Task OnLogAsync(LogMessage message)
     {
-        _logger.LogInformation("Discord.Net: {Message}", message.ToString());
+        // NFR, IADR-0316, #708: Discord.Net のログ文言は gateway 応答・例外メッセージをそのまま載せる
+        // ＝外部由来である。行指向のログへ偽の行を注入され得るため、発生源で正規化する（CWE-117）。
+        _logger.LogInformation("Discord.Net: {Message}", LogSanitizer.Sanitize(message.ToString()));
         return Task.CompletedTask;
     }
 

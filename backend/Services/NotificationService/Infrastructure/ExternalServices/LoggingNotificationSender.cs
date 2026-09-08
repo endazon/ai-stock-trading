@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Logging;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +11,10 @@ public sealed class LoggingNotificationSender(ILogger<LoggingNotificationSender>
     public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
-        logger.LogInformation("[通知/{Severity}] {Title}: {Content}", message.Severity, message.Title, message.Content);
+        // NFR, IADR-0316, #708: 通知本文には LLM 生成の報告書要約が入る。改行・ESC を素通しすると
+        // 行指向のログへ偽の行を注入できる（CWE-117）。**発生源で正規化してから渡す。**
+        logger.LogInformation("[通知/{Severity}] {Title}: {Content}",
+            message.Severity, LogSanitizer.Sanitize(message.Title), LogSanitizer.Sanitize(message.Content));
         return Task.CompletedTask;
     }
 }

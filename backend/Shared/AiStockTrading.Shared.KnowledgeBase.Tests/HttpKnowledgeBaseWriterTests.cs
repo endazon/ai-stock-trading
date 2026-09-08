@@ -282,7 +282,7 @@ public class HttpKnowledgeBaseWriterTests
         await writer.SaveAsync(new KnowledgeDocument("t"));
 
         var message = logger.Warnings.Single();
-        message.Should().Contain("省略");
+        message.Should().Contain("truncated"); // IADR-0316 LogSanitizer の切り詰め注記
         message.Length.Should().BeLessThan(oversized.Length);
     }
 

@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
-iadrs: [IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314]
-specs: [20260807_450_security-spec-from-measurement, 20260909_627_mesh-sidecar-injection-switch]
-issues: [#24, #346, #450, #456, #627, MSP#445]
+iadrs: [IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316]
+specs: [20260807_450_security-spec-from-measurement, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization]
+issues: [#24, #346, #450, #456, #627, MSP#445, #708, MSP#1015]
 -->
 
 
@@ -203,6 +203,7 @@ issues: [#24, #346, #450, #456, #627, MSP#445]
 | T-9 | **依存パッケージの脆弱性** | 任意コード実行等 | ✅ **3 種**（`.github/workflows/`）。**CodeQL**（`codeql.yml`）／**Dependency Review**（PR 差分）／**`dotnet list package --vulnerable`**（推移的依存を含む） |
 | T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**基盤側の mTLS 方針が STRICT へ変わったことで、本リポジトリの namespace が未注入のままだと露出どころか基盤方向の HTTP 呼び出し自体が全断する事象を確認した**（逆方向は到達可能） | 🔴 **未対策のまま（設定点のみ用意）**。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。chart にメッシュ参加の設定点（既定 off）を追加したが、**有効化・実クラスタでの疎通確認は未実施**（[#627](https://github.com/endazon/ai-stock-trading/issues/627)。手順は chart README・実装ADR 参照）。**LLM ゲートウェイの結線時に TLS を前提にすること**（未結線の今が是正の好機である） |
 | T-11 | **監査証跡が失われる** | 事後追跡の不能 | 🔴 **保管期間・バックアップは未実装**（上記「監査ログ」）。記録項目とパージ除外は実装済み。担当 [#346](https://github.com/endazon/ai-stock-trading/issues/346) |
+| T-12 | **外部由来の文字列にログ行を偽装される**（ログインジェクション・CWE-117） | 監査・障害調査の記録が汚染され、「起きたこと」と「注入された行」を読み分けられなくなる | ✅ **発生源で正規化する**（[#708](https://github.com/endazon/ai-stock-trading/issues/708)）。LLM の生出力・プロンプト・KB 文書の表題・通知本文・外部データ源の失敗理由をログの引数へ渡す前に、制御文字（C0・C1）と U+2028 / U+2029 を置換し、長さ上限で切って切った旨を明示する共有純関数を通す（実測 13 箇所 / 8 ファイル）。🔴 **プロンプト・生出力の全量記録が既定オフであることは代替にならない**（障害調査で有効化した瞬間に露出する）ため、既定オフに**加えて**適用している。ログ基盤側（sink / collector）での正規化は**対象外**＝基盤の管掌である |
 
 ## 未決事項
 

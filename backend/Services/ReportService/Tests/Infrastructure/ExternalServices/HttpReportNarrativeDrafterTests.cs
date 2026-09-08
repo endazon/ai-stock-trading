@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports;
 using ReportService.Domain;
 using ReportService.Infrastructure.ExternalServices;
@@ -226,6 +227,82 @@ public class HttpReportNarrativeDrafterTests
         var log = string.Join("\n", logger.Messages);
         log.Should().NotContain("堅調でした。");
     }
+
+    // --- NFR, #708, IADR-0316: ログ偽装（CWE-117）の防止。全量記録は保ったまま行を割らせない ------------
+
+    // 攻撃の形: 外部由来の文字列へ改行と「それらしい偽のログ行」を仕込む。ESC は端末表示を、
+    // U+2028 は JSON を読むログビューアの行分割を壊す。
+    private const string ForgedTail = "2026-07-18 09:00:00 [INF] 取引ガードを解除しました";
+    private static readonly string ForgedText = $"正常な散文\r\n{ForgedTail}\u001b[31m\u2028末尾\t\u0085";
+
+    private static readonly ReportNarrativeContext ForgedCtx = Ctx with { PolicySummary = ForgedText };
+
+    [Fact]
+    public async Task LogPrompts有効時_プロンプト中の制御文字はログ行を割らない()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(HttpStatusCode.OK, """{"text":"堅調でした。","model":"claude","sent":true}""");
+
+        await Drafter(handler, logger, logPrompts: true).DraftNarrativeAsync(ForgedCtx);
+
+        var promptLog = logger.Messages.Single(m => m.Contains("報告書散文 LLM 要求"));
+        ContainsControlCharacters(promptLog).Should().BeFalse("ログ 1 レコードは 1 行でなければならない");
+        // 🔴「そもそも書かない」で逃げていないこと: 本文は識別できる形で残る。
+        promptLog.Should().Contain("正常な散文");
+        promptLog.Should().Contain(ForgedTail);
+    }
+
+    [Fact]
+    public async Task LogPrompts有効時_生出力中の制御文字はログ行を割らない()
+    {
+        var logger = new RecordingLogger();
+        // 生出力（LLM が返す本文）に同じ細工を入れる。JSON エスケープで渡すため実体は制御文字である。
+        var handler = new StubHandler(HttpStatusCode.OK,
+            JsonSerializer.Serialize(new { text = ForgedText, model = "claude", sent = true }));
+
+        await Drafter(handler, logger, logPrompts: true).DraftNarrativeAsync(Ctx);
+
+        var responseLog = logger.Messages.Single(m => m.Contains("報告書散文 LLM 応答"));
+        ContainsControlCharacters(responseLog).Should().BeFalse();
+        responseLog.Should().Contain("正常な散文");
+        responseLog.Should().Contain(ForgedTail);
+    }
+
+    [Fact]
+    public async Task 生出力が上限を超えるとログでは切られ落とした文字数が明示される()
+    {
+        var logger = new RecordingLogger();
+        var body = JsonSerializer.Serialize(new
+        {
+            text = new string('あ', LogSanitizer.DefaultMaxLength + 25),
+            model = "claude",
+            sent = true,
+        });
+
+        await Drafter(new StubHandler(HttpStatusCode.OK, body), logger, logPrompts: true).DraftNarrativeAsync(Ctx);
+
+        logger.Messages.Single(m => m.Contains("報告書散文 LLM 応答"))
+            .Should().Contain("…(truncated 25 chars)");
+    }
+
+    // 🔴 **陽性対照。** 正規化を通さずに同じ値を同じ土台（RecordingLogger）へ書けば、
+    // ログ行は実際に割れる。これが無いと、上の 2 件は「値をログへ書かない実装」でも緑になる。
+    [Fact]
+    public void 陽性対照_正規化を通さなければ同じ値がログ行を割る()
+    {
+        var logger = new RecordingLogger();
+
+        logger.LogInformation("報告書散文 LLM 応答: text={Text}", ForgedText);
+
+        var raw = logger.Messages.Single();
+        ContainsControlCharacters(raw).Should().BeTrue("素通しなら制御文字がログ行へ入る");
+        raw.Should().Contain("\n");
+        raw.Split('\n').Should().HaveCountGreaterThan(1, "行が割れて偽のログ行が生まれる");
+    }
+
+    // 行を割り得る文字（制御文字＋ U+2028 / U+2029）が 1 つでも残っていれば true。
+    private static bool ContainsControlCharacters(string text) =>
+        text.Any(ch => char.IsControl(ch) || ch is '\u2028' or '\u2029');
 
     // --- #247, FR-06, IADR-0104: 終了理由（stopReason）の評価 -------------------------------------
 
