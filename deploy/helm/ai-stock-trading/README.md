@@ -588,6 +588,47 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 > 手順は [`docs/operations/vault-secrets-runbook.md`](../../../docs/operations/vault-secrets-runbook.md)。GitOps（ArgoCD）は
 > [`deploy/argocd`](../../argocd/README.md)、可観測性は [`docs/observability/observability.md`](../../../docs/observability/observability.md)。
 
+## #627: Istio サイドカー注入（メッシュ参入）の設定点（`mesh.sidecarInjection`）
+
+> 起点: [IADR-0314](../../../.ai-context/adr/IADR-0314_mesh-sidecar-injection-switch.md) /
+> 作業仕様書 [`.ai-context/specs/20260909_627_mesh-sidecar-injection-switch.md`](../../../.ai-context/specs/20260909_627_mesh-sidecar-injection-switch.md) /
+> Issue #627 / `docs/blocked-tasks.md` A-12
+
+既定 **無効**（`mesh.sidecarInjection.enabled: false`＝現状維持・fail-safe）。基盤
+`microservices-platform` namespace の `PeerAuthentication` が **STRICT** である一方、AST namespace の
+Pod はサイドカー未注入（平文）のため、AST→基盤方向の HTTP（LlmGateway・KB・RAG・MCP）が受信側 Envoy
+に RST で全断している（逆方向・MSP BFF→AST は到達可能）。🔴 **本設定点は受け皿であり、実クラスタでの
+有効化・疎通確認は未了**（IADR-0314 は Proposed のまま。再測定手順は同 IADR 参照）。
+
+```bash
+helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+  --set mesh.sidecarInjection.enabled=true
+kubectl -n ai-stock-trading rollout restart deployment   # 既存 Pod への遡及適用は無い
+```
+
+- **`namespace.create=false`（namespace を本チャートが所有しない構成）のときはラベルが描画されない。**
+  その場合は運用側で対象 namespace へ手動で `istio-injection=enabled` を付ける。
+- **OpenD は既定でサイドカー注入対象外**（`mesh.sidecarInjection.excludeOpend: true`）。独自プロトコル
+  （TCP 11111・常駐 1 セッション）であり HTTP でないためメッシュの恩恵が無く、Envoy 傍受で常駐 TCP
+  接続の挙動が変わるリスクの方が上回る（IADR-0314 決定2）。含めたい場合は `excludeOpend=false`。
+- **CronJob（#121）は `mesh.sidecarInjection.cronJobNativeSidecar`（既定 true）で Job 完了の前提を
+  申告する。** ローカル環境（k8s 1.35 + Istio 1.30.4）はネイティブサイドカー対応済みで、メイン
+  コンテナ終了によりサイドカーも自動終了し Job は完了する想定。`false` にすると従来型サイドカーの
+  起動順序競合を避ける annotation（`proxy.istio.io/config: holdApplicationUntilProxyStarts`）を
+  Job Pod へ追加するが、🔴 **Job 完了自体（サイドカー常駐によるハング）は解決しない**（残余リスク。
+  ネイティブサイドカー非対応の環境では別途ワークアラウンドが要る）。
+- **`platform-infra`（postgres/rabbitmq）宛の非 HTTP は対象外。** `platform-infra` namespace は
+  非注入のままである前提を維持し、auto-mTLS が平文へフォールバックする想定だが**未実測**（再測定
+  手順⑤）。
+- **確認コマンド**（有効化後）:
+  ```bash
+  kubectl -n ai-stock-trading get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].name}{"\n"}{end}'
+  # istio-proxy が opend 以外の全 Pod に含まれ、opend には含まれないこと（excludeOpend=true の既定）
+  ```
+- **退行観点**（有効化前に確認すること）: OpenD（moomoo セッション TCP 11111 が継続すること）／
+  RabbitMQ（AMQP 5672 の接続断が無いこと）／Postgres（5432 の接続断が無いこと）／Keycloak
+  （token エンドポイントへの到達が保たれること）。
+
 ## #121: 取引サイクル CronJob
 
 既定 **無効**（在来 in-process ポーリング IADR-0023 を維持＝fail-safe）。有効化:

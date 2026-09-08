@@ -3,15 +3,15 @@ title: インフラ・構成仕様書（AST）
 type: infra-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-03
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-03, NFR-05, NFR-07, NFR-14]
+ids: [NFR-03, NFR-05, NFR-07, NFR-14, NFR]
 adrs: [ADR-0001, ADR-0006]
-iadrs: [IADR-0052, IADR-0060, IADR-0094]
-specs: []
-issues: [#24, #282]
+iadrs: [IADR-0052, IADR-0060, IADR-0094, IADR-0314]
+specs: [20260909_627_mesh-sidecar-injection-switch]
+issues: [#24, #282, #627]
 -->
 
 
@@ -44,6 +44,19 @@ issues: [#24, #282]
   Namespace へ宣言的同期する骨子。**ブートストラップのみ kubectl・以降 Git 同期**。ArgoCD 本体 install は MSP 共有 stand-up。
 - **秘匿情報**: 既定は k8s Secret 直（`ast-secrets`・手動作成）。**Vault 化は opt-in**（[`docs/operations/vault-secrets-runbook.md`](../operations/vault-secrets-runbook.md)）。
 - **可観測性**: OTLP→otel-collector→Prometheus/Loki/Tempo（[`docs/observability/observability.md`](../observability/observability.md)）。
+
+### メッシュ注入（Istio サイドカー）— 設定点のみ用意・既定 off
+
+基盤 namespace の mTLS 方針が `STRICT` へ変わった一方、本リポジトリの namespace はサイドカー未注入
+（平文）のままであるため、本リポジトリ→基盤方向の HTTP 呼び出し（LLM ゲートウェイ・文書管理・検索・
+MCP）が受信側で全断する事象を確認した（逆方向は到達可能）。
+
+chart に `mesh.sidecarInjection.*` の設定点（既定 `false`＝現状維持）を用意した。有効化すると
+namespace へメッシュ参加ラベルが付き、以後の Pod 再作成でサイドカーが注入される。OpenD（独自
+プロトコルの常駐セッション）は既定で注入対象外とし、CronJob は Job 完了の前提（ネイティブサイド
+カーの利用可否）を申告値として持つ。**設定点の追加だけであり、実クラスタでの有効化・疎通確認・
+退行確認は未実施**（次回デプロイ時に実施し、結果を実装ADR へ反映する）。手順・確認コマンドは
+chart README を参照。
 
 ## Tier 境界（重要・受け入れ基準の充足状況）
 

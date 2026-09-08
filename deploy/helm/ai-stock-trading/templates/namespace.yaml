@@ -6,4 +6,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ai-stock-trading
     environment: local-dev
+    {{- /* #627, IADR-0314: メッシュ参入（Istio サイドカー注入）の設定点。既定 false のため
+           このラベルは既定描画に現れない（本番バイト等価）。namespace.create=false（namespace を
+           本チャートが所有しない構成）のときはこの Namespace 自体が描画されないため、ラベルも
+           付かない——その場合は運用側で対象 namespace へ手動でラベルを付ける。 */}}
+    {{- if .Values.mesh.sidecarInjection.enabled }}
+    istio-injection: enabled
+    {{- end }}
 {{- end }}

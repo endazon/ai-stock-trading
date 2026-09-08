@@ -10,6 +10,9 @@
 - [補足: 「実装済み」だが実際には発動しない機能](#補足-実装済みだが実際には発動しない機能)
 
 - 作成日: 2026-08-05
+- 最終更新: 2026-09-09（**A-12 に AST 側の設定点を追記**——Helm chart にメッシュ参加（Istio サイドカー
+  注入）の設定点を既定 off で用意した（#627）。**有効化・実クラスタでの疎通確認は未実施のまま**残る。
+  実装ADR IADR-0314 は Proposed のまま）
 - 最終更新: 2026-09-04（**A-17 を新設**——基盤 namespace の作り直しで AST の Postgres が空になり、
   Pod が再起動しないままだったため全テーブルが欠落していた事象と復旧手順を記録した。
   **A-13 の LLM API キー・A-12 の Istio STRICT mTLS は未解消のまま**）
@@ -486,8 +489,9 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 | 塞がっている機能 | `trade-decision-service` の実 LLM 呼び出し（`LlmGateway__BaseUrl`）・`report-service` の所感生成／KB 保存・`information-collection-service` の KB 保存（`KB 保存で例外。未保存に倒します` が継続出力）。RAG 取得・MCP 結合も同経路で同様に塞がる |
 | なぜ AI にできないか | 基盤側の是正（メッシュ設定の変更・サイドカー注入方針の決定）は稼働中のクラスタへの構成変更であり、AST がテナントとしてメッシュへ入る／入らないの決定は**新規 IADR を要する設計判断**（基盤の IADR-0026〔STRICT mTLS を第一防御とする〕が別 namespace のテナント到達を想定していない欠落を埋める必要がある） |
 | 追跡 | **[#627](https://github.com/endazon/ai-stock-trading/issues/627)（AST 側の受け皿）**／基盤側の本体: MSP#1159／基盤のメッシュ再構築: MSP#442 |
-| **最後に測った時点** | **2026-09-02**（#627 起票時点の実測。使い捨て Pod からの curl で TLS handshake 未発生のまま RST を確認） |
-| 再測定手順 | ① `ai-stock-trading` namespace の使い捨て Pod から `curl -v http://document-service.microservices-platform:8080/health/live` ② `Recv failure: Connection reset by peer` が続くか確認 ③ MSP#1159 のクローズ状況を確認 |
+| **AST 側の設定点（2026-09-09）** | **Helm chart にメッシュ参加の設定点（既定 off）を用意した。** `mesh.sidecarInjection.enabled`（既定 false・namespace へ `istio-injection: enabled` ラベル）／`excludeOpend`（既定 true・OpenD は独自プロトコル TCP 11111 の常駐セッションのため既定除外）／`cronJobNativeSidecar`（既定 true・CronJob の Job 完了前提）。**設定点の追加のみであり、有効化・実クラスタでの疎通確認は未実施**（`helm template` の既定描画は追加前とバイト等価であることを `diff` で確認済み）。詳細は chart README「#627: Istio サイドカー注入」・実装ADR IADR-0314（Proposed のまま） |
+| **最後に測った時点** | **2026-09-02**（#627 起票時点の実測。使い捨て Pod からの curl で TLS handshake 未発生のまま RST を確認。**2026-09-09 時点でも実クラスタでの再測定は未実施**） |
+| 再測定手順 | ① `ai-stock-trading` namespace の使い捨て Pod から `curl -v http://document-service.microservices-platform:8080/health/live` ② `Recv failure: Connection reset by peer` が続くか確認 ③ MSP#1159 のクローズ状況を確認 ④ 上記「AST 側の設定点」を有効化して①②を再確認し、OpenD／CronJob／`platform-infra`（postgres/rabbitmq）が退行しないことも確認する（手順は IADR-0314 の再測定手順1〜5に一本化） |
 
 ### A-13. 🆕 ローカル基盤の LLM API キー未投入（実 LLM 呼び出しが構造的に不成立）
 

@@ -3,15 +3,15 @@ title: セキュリティ仕様書
 type: security-spec
 status: review
 created: 2026-08-07
-updated: 2026-08-21
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, UC-06, UC-07]
+ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
-iadrs: [IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176]
-specs: [20260807_450_security-spec-from-measurement]
-issues: [#24, #346, #450, #456, MSP#445]
+iadrs: [IADR-0011, IADR-0019, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314]
+specs: [20260807_450_security-spec-from-measurement, 20260909_627_mesh-sidecar-injection-switch]
+issues: [#24, #346, #450, #456, #627, MSP#445]
 -->
 
 
@@ -201,7 +201,7 @@ issues: [#24, #346, #450, #456, MSP#445]
 | T-7 | **Discord から第三者が統制操作を行う** | kill switch・段階昇格の乗っ取り | ✅ **6 層すべて既定拒否**（上記「Discord からの操作」）。**設定が空＝全許可にしない** |
 | T-8 | **秘密情報がリポジトリへ混入する** | 資格情報の流出 | ✅ **2 段**（`guard-secrets.js` ＋ gitleaks。上記「秘密情報管理」） |
 | T-9 | **依存パッケージの脆弱性** | 任意コード実行等 | ✅ **3 種**（`.github/workflows/`）。**CodeQL**（`codeql.yml`）／**Dependency Review**（PR 差分）／**`dotnet list package --vulnerable`**（推移的依存を含む） |
-| T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**LLM ゲートウェイ経路はプロンプトと応答（＝判断根拠・保有銘柄）が名前空間を跨ぐため露出面が広いが、本番は未結線であり現状は流れていない**（ローカル経路B のみ平文） | 🔴 **未対策**（上記「データ保護」）。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。**LLM ゲートウェイの結線時に TLS を前提にすること**（未結線の今が是正の好機である） |
+| T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**基盤側の mTLS 方針が STRICT へ変わったことで、本リポジトリの namespace が未注入のままだと露出どころか基盤方向の HTTP 呼び出し自体が全断する事象を確認した**（逆方向は到達可能） | 🔴 **未対策のまま（設定点のみ用意）**。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。chart にメッシュ参加の設定点（既定 off）を追加したが、**有効化・実クラスタでの疎通確認は未実施**（[#627](https://github.com/endazon/ai-stock-trading/issues/627)。手順は chart README・実装ADR 参照）。**LLM ゲートウェイの結線時に TLS を前提にすること**（未結線の今が是正の好機である） |
 | T-11 | **監査証跡が失われる** | 事後追跡の不能 | 🔴 **保管期間・バックアップは未実装**（上記「監査ログ」）。記録項目とパージ除外は実装済み。担当 [#346](https://github.com/endazon/ai-stock-trading/issues/346) |
 
 ## 未決事項

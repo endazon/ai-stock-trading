@@ -30,6 +30,30 @@ namespace:
   create: true
   name: ai-stock-trading
 
+# #627, IADR-0314: AST namespace の Istio サイドカー注入（メッシュ参入）の設定点。
+# 既定 disabled = fail-safe（現状維持・平文のまま）。基盤（microservices-platform namespace）の
+# PeerAuthentication が STRICT のため、有効化しない限り AST→MSP 方向の HTTP（LlmGateway/
+# DocumentService/RetrievalService/MCP）は受信側 Envoy に RST で切られる（逆方向・MSP BFF→AST は
+# 到達可能で片方向のみの断）。基盤側本体の是正は MSP#1159、メッシュ再構築は MSP#442。
+# ⚠️ **実クラスタでの疎通確認は未了**（本設定点は受け皿のみ。IADR-0314 は Proposed のまま。
+#    再測定手順は同 IADR 参照。有効化は `docs/blocked-tasks.md` A-12 の再測定後に判断する）。
+mesh:
+  sidecarInjection:
+    # true にすると namespace.create=true のとき namespace へ istio-injection=enabled ラベルを
+    # 描画する（既存 Pod への遡及適用は無い＝ロールアウト再起動が要る。chart README 参照）。
+    enabled: false
+    # OpenD（独自プロトコル TCP 11111・常駐 1 セッション）は既定でサイドカー注入対象外にする。
+    # HTTP でないためメッシュ mTLS/ルーティングの恩恵が無く、Envoy 傍受で常駐 TCP 接続の挙動が
+    # 変わるリスクの方が上回る（IADR-0314 決定2）。
+    excludeOpend: true
+    # #121 CronJob の Job 完了・起動順序に関する申告。ネイティブサイドカー（k8s 1.29+ の
+    # initContainer restartPolicy: Always）前提ならメインコンテナ終了でサイドカーも自動終了し
+    # Job は完了する。ローカル環境（k8s 1.35 + Istio 1.30.4）はこれに該当する（既定 true）。
+    # false にすると、従来型サイドカー注入でのプロキシ起動前の通信競合（トークン取得の空振り）を
+    # 避ける annotation を Job Pod へ追加する（IADR-0314 決定4。Job 完了自体〔サイドカー常駐に
+    # よるハング〕はネイティブサイドカー前提でしか解決しない＝残余リスク）。
+    cronJobNativeSidecar: true
+
 # 共有インフラを素のサービス名で解決するための ExternalName（platform-infra を指す）。
 infraAliases:
   enabled: true
