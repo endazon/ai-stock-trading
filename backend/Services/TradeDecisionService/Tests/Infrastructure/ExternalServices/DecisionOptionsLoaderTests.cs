@@ -6,7 +6,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// FR-04, IADR-0039, IADR-0212, IADR-0278, #571: Decision:* 構成の読み取りと安全側フォールバックの検証。
+// FR-02, FR-04, IADR-0039, IADR-0212, IADR-0278, IADR-0313, #571, #567: Decision:* 構成の読み取りと安全側フォールバックの検証。
 // VoteCount の既定＝現行挙動（1 票）を config 経由で壊さないことを保証する。
 // EnableScreening は #571（基盤 trade-decision-screening 登録が前提）により既定 true へ反転した
 // （IADR-0278。DecisionOrchestrationOptions.Default 自体は不変であり、ローダーの構成既定だけが変わる）。
@@ -80,7 +80,7 @@ public class DecisionOptionsLoaderTests
         Load(("Decision:EnableScreening", "yes")).EnableScreening.Should().BeTrue();
     }
 
-    // #337, IADR-0247: スクリーニング入力のコンテキスト予算（縮退制御）の読み込み。
+    // #337, IADR-0247 / #567, IADR-0313 決定3: スクリーニング入力のコンテキスト予算（縮退制御）の読み込み。
     [Fact]
     public void スクリーニング予算を読み込む()
     {
@@ -88,14 +88,54 @@ public class DecisionOptionsLoaderTests
             .ScreeningContextBudgetChars.Should().Be(500_000);
     }
 
+    // #567, IADR-0313 決定2: 未設定なら既定値（150,000 文字）＝**縮退制御は既定で有効**。
+    [Fact]
+    public void 未設定なら既定の予算で縮退制御が有効になる()
+    {
+        Load().ScreeningContextBudgetChars
+            .Should().Be(DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars);
+    }
+
+    // #567, IADR-0313 決定1: 既定値そのものを固定する（算出式 200,000 × 1.0 × 0.75 の結果）。
+    // 値を動かすなら IADR-0313 決定1 の算出過程も一緒に改める、という束縛をテストで表す。
+    [Fact]
+    public void 既定の予算は算出式どおり150000文字である()
+    {
+        DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars.Should().Be(150_000);
+    }
+
+    // #567, IADR-0313 決定3: 統制を落とす操作は明示に限る（否定形＝無効化の経路が残っていること）。
     [Theory]
     [InlineData("0")]
+    [InlineData("off")]
+    [InlineData("OFF")]
+    [InlineData(" off ")]
+    public void 明示的に無効化すれば縮退制御なしへ戻せる(string raw)
+    {
+        Load(("Decision:ScreeningContextBudgetChars", raw)).ScreeningContextBudgetChars.Should().BeNull();
+    }
+
+    // #567, IADR-0313 決定3: **不正値の倒し先が反転した。** 既定が有効になった以上、不正値で統制が
+    // 黙って外れてはならない（旧テスト `不正なスクリーニング予算は未設定のまま_縮退制御なし` の置き換え）。
+    [Theory]
     [InlineData("-1")]
+    [InlineData("-150000")]
     [InlineData("abc")]
     [InlineData("")]
-    public void 不正なスクリーニング予算は未設定のまま_縮退制御なし(string raw)
+    [InlineData("   ")]
+    [InlineData("150000.5")]
+    public void 不正なスクリーニング予算は既定へ倒れる_統制を残す側(string raw)
     {
-        // 0・負数・非数値・空は null（縮退制御なし＝現行プロンプト）を保つ安全側フォールバック。
-        Load(("Decision:ScreeningContextBudgetChars", raw)).ScreeningContextBudgetChars.Should().BeNull();
+        Load(("Decision:ScreeningContextBudgetChars", raw)).ScreeningContextBudgetChars
+            .Should().Be(DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars);
+    }
+
+    // #567, IADR-0313 決定2: レコードの既定（単体テストの「現行挙動」基準値）は据え置きであること。
+    // ここが動くと DecisionOrchestratorTests 等の意味が変わる（IADR-0278 と同じ線引き）。
+    [Fact]
+    public void レコードの既定は縮退制御なしのまま_ローダーだけが既定を持つ()
+    {
+        DecisionOrchestrationOptions.Default.ScreeningContextBudgetChars.Should().BeNull();
+        DecisionOrchestrationOptions.Default.EnableScreening.Should().BeFalse();
     }
 }

@@ -230,6 +230,9 @@ services:
       # （microservices-platform 側 PR。#571）。未登録のままだと一次が本判断の割当と照合され「割当外」と
       # 判定され全サイクルが見送りへ倒れる（IADR-0212）。コード既定も true（#571）だが本表でも明示する。
       - { name: Decision__EnableScreening, value: "true" }
+      # FR-02, FR-04, IADR-0247/0313, #567: スクリーニング入力のコンテキスト予算（文字数プロキシ・既定 150,000 文字）。
+      # 空=コード側の既定。無効化するときだけ "0" か "off" を明示する（統制を落とす操作は明示に限る）。
+      - { name: Decision__ScreeningContextBudgetChars, value: "" }
       # ====== LLM 費用の単価（#303/IADR-0122・#279/IADR-0114 決定6・NFR/IADR-0055）======
       # 未設定（既定 0）だと PublishingLlmUsageReporter が毎回 ¥0 を計上し、月次費用上限（¥15,000）が
       # **構造的に発火しない**（台帳は動くが金額が積み上がらない）。経路B では実単価を与えて統制を実効化する。

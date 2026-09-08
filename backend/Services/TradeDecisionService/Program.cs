@@ -226,9 +226,11 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
 // 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。
 // 明示的に Decision:EnableScreening=false を与えれば従来どおり単発判断（IADR-0017）へ戻せる。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
-// FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（Decision:ScreeningContextBudgetChars
-// 設定時のみ発火）の記録経路。発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の
-// 集計経路）へ届ける。予算未設定（既定）では縮退自体が起きないため publish は発生しない。
+// FR-02, FR-04, FR-06, FR-11, #337, #567, IADR-0247, IADR-0313: スクリーニング入力の縮退の記録経路。
+// 発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の集計経路）へ届ける。
+// 予算は既定で有効（150,000 文字。IADR-0313 決定1）。ただし現行構成（Retrieval:TopK=5・参考情報 1 件あたり
+// 最大 1,160 文字）では材料が予算に届かないため、実際の publish はまだ発生しない（同 決定5 の安全網）。
+// 無効化する場合は Decision:ScreeningContextBudgetChars=0（または "off"）を明示する。
 builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReductionReporter>();
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
