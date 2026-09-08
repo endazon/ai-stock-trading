@@ -229,13 +229,18 @@ services:
     auth: true
   backtest:
     image: ai-stock-trading/backtest-service
-    # DB もメッセージバスも持たない（永続化なし・verdict の実 publish は #82）。auth も要らない
-    # （公開する HTTP 面はヘルスチェックと実効構成の自己申告のみ・いずれもメッシュ内部限定）。
+    # DB は持たない（永続化なし）。**メッセージバスは持つ**（#688 / IADR-0310: verdict の発行。接続文字列は
+    # 全 Worker 共通の RabbitMq__ConnectionString が入るため個別の env は要らない。実 RabbitMQ の E2E は #82）。
+    # auth は要らない（公開する HTTP 面はヘルスチェックと実効構成の自己申告のみ・いずれもメッシュ内部限定）。
     extraEnv:
       # FR-15, ADR-0004, #208, IADR-0105: バックテストの実過去データ源。
       # fail-safe: 空/"none"/未知の値/不正な BaseUrl はすべて no-op＝**外部へ 1 リクエストも出さない**。
       # "stooq"（登録不要・鍵なし）を入れると実過去データ取得が有効になる。
       - { name: Backtest__BarData__Provider, value: "" }
+      # FR-15, FR-20, ADR-0008, #688, IADR-0310: Stage 0 判定の定時駆動。
+      # fail-safe: **既定は無効**。無効なら巡回もバー取得も verdict の発行も起きない。
+      # 有効化しても本番戦略（AI 判断の記録・再生）が載るまで verdict は**不合格固定**である（経路確認専用）。
+      - { name: Backtest__Stage0__Enabled, value: "false" }
   configuration:
     image: ai-stock-trading/configuration-service
     db: configuration_svc

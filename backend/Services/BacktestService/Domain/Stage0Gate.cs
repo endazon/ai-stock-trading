@@ -1,6 +1,10 @@
 namespace BacktestService.Domain;
 
 // FR-15, FR-20, ADR-0008: Stage 0 合格判定の各条件。
+//
+// 先頭 7 つが判定器（Stage0GateEvaluator）の 7 条件である。末尾 2 つは**駆動側（Hosted の定時評価）の事前条件**であり、
+// 判定器は決して出さない（#688, IADR-0310 決定3）。同じ enum に同居させるのは、未達理由の文字列表現を
+// Stage0GateResult.FormatFailedChecks() の単一情報源に保つためである（2 系統に分けると区切り文字がドリフトする）。
 public enum Stage0GateCheck
 {
     DeflatedSharpe,
@@ -10,6 +14,18 @@ public enum Stage0GateCheck
     WalkForward,
     TrialCount,
     DataCutoff,
+
+    /// <summary>
+    /// FR-15, #688, IADR-0310 決定2: 過去データが 1 本も無い（**判定そのものを走らせていない**）。
+    /// DataCutoff は空バーを違反と見なさない（`bars.All(...)` は空に対して真）ため、駆動側が明示的に載せる。
+    /// </summary>
+    NoHistoricalBars,
+
+    /// <summary>
+    /// FR-15, FR-20, ADR-0033, #688, IADR-0310 決定3: 評価対象がプレースホルダ戦略である
+    /// （**本番の合否ではない**）。本番戦略＝AI 判断の記録・再生が載るまで、駆動が出す verdict は必ずこれを含む。
+    /// </summary>
+    PlaceholderStrategy,
 }
 
 // FR-15, ADR-0008, 06_daytrading-review §4: Stage 0 合格基準の閾値。
