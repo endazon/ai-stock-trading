@@ -3,6 +3,7 @@ using BacktestService.Features.Backtest;
 using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Features.Backtest.RunBacktest;
 using BacktestService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Contracts.Backtest;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,21 +20,29 @@ namespace BacktestService.Hosted;
 //
 // 🔴 **既定は無効である**（Backtest:Stage0:Enabled。IADR-0310 決定1）。無効なら巡回もバー取得も publish も起きない。
 //
-// 🔴 **現時点の verdict は必ず不合格である**（IADR-0310 決定3）。評価対象が本番戦略ではなく
-// プレースホルダ（ADR-0033 の記録・再生は未実装）であるため、Stage0DriverVerdict が不合格固定で組む。
-// **経路は通るが go-live の判断材料にはならない。**
+// 🔴 **評価対象は構成 `Backtest:Stage0:Strategy` で選ぶ**（#632, IADR-0318 決定3）。
+//   - `placeholder`（**既定**）: IADR-0310 のまま。verdict は不合格固定で、go-live の判断材料にならない。
+//   - `recorded-replay`: ADR-0033 の記録・再生。**記録が構成と整合するときだけ**本物の Stage0GateService へ進む。
+//     整合しなければ判定を走らせず、理由（NoDecisionRecords / RecordingMismatch / DataCutoff /
+//     InsufficientEvaluationSample）を載せた不合格 verdict を出す。
+// **どちらの経路にも合格を作る口は無い**——合格を出せるのは Stage0GateService（7 条件）だけである。
 public sealed class Stage0EvaluationService(
     IServiceScopeFactory scopeFactory,
     IOptions<Stage0EvaluationOptions> options,
     TimeProvider timeProvider,
     ILogger<Stage0EvaluationService> logger) : BackgroundService
 {
-    // プレースホルダ走行のシミュレーション設定。**判定に使わない**（verdict は不合格固定）ため、
-    // 費用・初期資金は前提条件の既定値をそのまま用いる（独自の数値を発明しない）。
-    private static readonly BacktestConfig PlaceholderConfig = new(
-        InitialCapital: 1_000_000m,
-        CostModel: new BacktestCostModel(TradingAssumptionsDefaults.Create(), SlippageRatio: 0m),
-        Sensitivity: CostSensitivity.Baseline);
+    // シミュレーションの初期資金と費用モデル。前提条件の既定値をそのまま用いる（独自の数値を発明しない）。
+    // #632, IADR-0318: 記録再生（本番戦略）の走行も同じ費用式を使う——判断時見積り・事後集計・バックテストで
+    // 費用式を分けない（FR-17 の単一情報源）。
+    private const decimal InitialCapital = 1_000_000m;
+
+    private static BacktestCostModel CostModel() =>
+        new(TradingAssumptionsDefaults.Create(), SlippageRatio: 0m);
+
+    // プレースホルダ走行のシミュレーション設定。**判定に使わない**（verdict は不合格固定）。
+    private static BacktestConfig PlaceholderConfig() =>
+        new(InitialCapital, CostModel(), CostSensitivity.Baseline);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -87,9 +96,32 @@ public sealed class Stage0EvaluationService(
             .ConfigureAwait(false);
         var bars = snapshot.GetBars(from, to);
 
-        var evaluated = bars.Count == 0
-            ? EmptyBarVerdict(from, to, snapshot)
-            : PlaceholderVerdict(settings, from, to, snapshot, bars);
+        BacktestEvaluated evaluated;
+        if (bars.Count == 0)
+        {
+            evaluated = EmptyBarVerdict(from, to, snapshot);
+        }
+        else if (settings.ResolveStrategy() == Stage0EvaluationOptions.RecordedReplayStrategyName)
+        {
+            // FR-04, ADR-0033 決定1/決定2, #632, IADR-0318: 評価対象は AI 判断の記録・再生である。
+            var records = await scope.ServiceProvider
+                .GetRequiredService<IStage0DecisionRecordSource>()
+                .LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+            evaluated = RecordedReplayVerdict(settings, from, to, snapshot, records);
+        }
+        else
+        {
+            if (settings.HasUnknownStrategy())
+            {
+                // 綴り違いで本番戦略が黙って走らない（＝毎日プレースホルダの不合格が出続ける）ことを可視化する。
+                logger.LogWarning(
+                    "Stage 0: 未知の戦略名 {Strategy} が構成されています。既定（{Default}）で走行します。",
+                    settings.Strategy, Stage0EvaluationOptions.PlaceholderStrategyName);
+            }
+
+            evaluated = PlaceholderVerdict(settings, from, to, snapshot, bars);
+        }
 
         await bus.PublishAsync(evaluated).ConfigureAwait(false);
     }
@@ -121,7 +153,7 @@ public sealed class Stage0EvaluationService(
         IReadOnlyList<PriceBar> bars)
     {
         var run = new BacktestRunner(snapshot).Run(
-            new BacktestRequest(settings.ToUniverse(), from, to, new PlaceholderStrategy(), PlaceholderConfig));
+            new BacktestRequest(settings.ToUniverse(), from, to, new PlaceholderStrategy(), PlaceholderConfig()));
 
         // ADR-0033 決定3: 汚染対策はカットオフ後データを原則とする。**カットオフ日が未構成なら未充足**へ倒す。
         var cutoff = settings.ParseLlmTrainingCutoff();
@@ -134,6 +166,66 @@ public sealed class Stage0EvaluationService(
 
         // IADR-0089: backtestMaxDrawdownRatio は評価に用いた同一走行の最大 DD から導出する（乖離させない）。
         return Publishable(Stage0DriverVerdict.PlaceholderRun(cutoffSatisfied), run.Metrics.MaxDrawdown, run);
+    }
+
+    // FR-04, FR-15, FR-20, ADR-0033 決定1/決定2/決定3, #632, IADR-0318: **本番戦略（AI 判断の記録・再生）の評価。**
+    //
+    // 🔴 **否定形（最重要）**: 記録が無い／構成と整合しない／カットオフ日が未構成・不一致／標本不足 の
+    // いずれかなら、**本物の判定器を呼ばずに不合格固定へ倒す**。整合しない記録で判定を通すと、
+    // 「別の期間・別の銘柄・別の汚染対策前提で採った判断」の成績が Stage 0 の合否として記録され得る。
+    //
+    // 整合するときだけ Stage0GateService（DSR/PBO・コスト 2 倍・ウォークフォワード・試行数・カットオフの
+    // 7 条件）へ進む。**合否はそこが決める**——駆動は合格を作る口を一切持たない。
+    private BacktestEvaluated RecordedReplayVerdict(
+        Stage0EvaluationOptions settings,
+        DateOnly from,
+        DateOnly to,
+        MaterializedBarDataSource snapshot,
+        Stage0DecisionRecordSet? records)
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(new Stage0ReplayEvaluationRequest(
+            RecordSet: records,
+            DataSource: snapshot,
+            Universe: settings.ToUniverse(),
+            From: from,
+            To: to,
+            LlmTrainingCutoff: settings.ParseLlmTrainingCutoff(),
+            InitialCapital: InitialCapital,
+            CostModel: CostModel(),
+            Criteria: Stage0GateCriteria.Default));
+
+        if (!preparation.IsReady)
+        {
+            logger.LogWarning(
+                "Stage 0: 記録再生の評価文脈を組めないため**判定を行いません**（理由 {Reasons}・期間 {From}〜{To}）。"
+                + "不合格の verdict を発行します（合格 verdict は出しません）。",
+                string.Join(", ", preparation.BlockingChecks), from, to);
+
+            // 走行できた分（標本不足のとき）は最大 DD と空売り観測に使う。走行できていなければ空の走行を渡す。
+            var run = preparation.BaselineRun
+                ?? new BacktestRun([], [], [], BacktestMetricsCalculator.Compute([], []), UnfilledOrderCount: 0);
+            return BacktestEvaluatedFactory.From(
+                Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks),
+                run.Metrics.MaxDrawdown,
+                timeProvider.GetUtcNow(),
+                run,
+                // 記録が読めていれば戦略 ID を名乗る（読めていなければ空＝「戦略が無い」）。
+                preparation.StrategyId);
+        }
+
+        var decision = new Stage0GateService().Evaluate(preparation.GateContext!);
+        var baseline = preparation.BaselineRun!;
+
+        logger.LogInformation(
+            "Stage 0: 記録再生戦略 {StrategyId} を評価しました（期間 {From}〜{To}・欠測 {Gaps} 件・"
+            + "合格 {Passed}・未達 {Failed}）。",
+            preparation.StrategyId, from, to, snapshot.Gaps.Count, decision.Gate.Passed,
+            decision.Gate.FormatFailedChecks());
+
+        // IADR-0089: backtestMaxDrawdownRatio は評価に用いた同一走行の最大 DD から導出する（乖離させない）。
+        // IADR-0304: 「空売りを含む戦略か」は同じ走行の約定列から観測する（申告させない）。
+        return BacktestEvaluatedFactory.From(
+            decision, baseline.Metrics.MaxDrawdown, timeProvider.GetUtcNow(), baseline, preparation.StrategyId);
     }
 
     private BacktestEvaluated Publishable(Stage0Decision decision, decimal backtestMaxDrawdownRatio, BacktestRun run) =>

@@ -43,6 +43,23 @@ public static class Stage0DriverVerdict
         return Build(checks, dataCutoffSatisfied);
     }
 
+    /// <summary>
+    /// FR-04, FR-15, ADR-0033 決定2/決定3, #632, IADR-0318 決定3: **記録再生戦略を選んだが評価できない**
+    /// 場合の verdict（記録なし・構成と不整合・カットオフ日未構成／不一致・標本不足）。
+    /// <para>
+    /// 🔴 本メソッドも合格を作れない。<paramref name="blockingChecks"/> は
+    /// <see cref="Stage0ReplayEvaluation.Prepare"/> が返した理由をそのまま載せ、
+    /// **なぜ評価しなかったのかを受け手（Risk・監査）が文字列で読める**ようにする。
+    /// </para>
+    /// </summary>
+    public static Stage0Decision RecordingUnusable(IReadOnlyList<Stage0GateCheck> blockingChecks)
+    {
+        ArgumentNullException.ThrowIfNull(blockingChecks);
+        // 空で呼ばれたら「理由の無い不合格」になり、Passed=false の意味が読めなくなる。理由を必ず 1 つは載せる。
+        var checks = blockingChecks.Count == 0 ? [Stage0GateCheck.NoDecisionRecords] : blockingChecks;
+        return Build(checks, dataCutoffSatisfied: !checks.Contains(Stage0GateCheck.DataCutoff));
+    }
+
     // 不合格固定の組み立て。DSR/PBO は「算出していない」ことを表す 0 を置く（プレースホルダの走行から
     // 意味のある値は出ない。試行台帳も PBO 行列も本番戦略が要る）。
     private static Stage0Decision Build(IReadOnlyList<Stage0GateCheck> failedChecks, bool dataCutoffSatisfied)

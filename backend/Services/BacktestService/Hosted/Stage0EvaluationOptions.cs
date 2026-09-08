@@ -33,6 +33,40 @@ public sealed class Stage0EvaluationOptions
     /// <summary>評価対象の銘柄。空なら取得対象が無く、バーは 0 本になる（＝fail-closed の経路）。</summary>
     public IReadOnlyList<SymbolEntry> Symbols { get; init; } = [];
 
+    /// <summary>
+    /// FR-04, FR-15, ADR-0033, #632, IADR-0318 決定3: 評価対象の戦略。
+    /// <para>
+    /// <c>placeholder</c>（**既定**）は #688 / IADR-0310 の駆動確認用であり、verdict は不合格固定である。
+    /// <c>recorded-replay</c> は ADR-0033 の記録再生戦略で、**記録が構成と整合するときだけ**本物の判定器へ進む。
+    /// 未知の値・空は既定（<c>placeholder</c>）へ倒す —— 綴り違いで本番戦略が黙って走らないようにするため、
+    /// 未知の値はログへ警告を出す（<see cref="ResolveStrategy"/>）。
+    /// </para>
+    /// </summary>
+    public string? Strategy { get; set; }
+
+    /// <summary>AI 判断の記録の供給（<c>recorded-replay</c> のときだけ使う）。</summary>
+    public RecordingOptions Recording { get; init; } = new();
+
+    /// <summary>戦略識別子（構成値）。</summary>
+    public const string PlaceholderStrategyName = "placeholder";
+
+    /// <summary>戦略識別子（構成値）。</summary>
+    public const string RecordedReplayStrategyName = "recorded-replay";
+
+    /// <summary>
+    /// 実効の戦略名。未設定・空・未知はすべて <see cref="PlaceholderStrategyName"/>（＝不合格固定）へ倒す。
+    /// </summary>
+    public string ResolveStrategy() =>
+        string.Equals(Strategy?.Trim(), RecordedReplayStrategyName, StringComparison.OrdinalIgnoreCase)
+            ? RecordedReplayStrategyName
+            : PlaceholderStrategyName;
+
+    /// <summary>構成に戦略名が書かれているが解釈できないか（＝綴り違いの疑い。警告の材料）。</summary>
+    public bool HasUnknownStrategy() =>
+        !string.IsNullOrWhiteSpace(Strategy)
+        && !string.Equals(Strategy.Trim(), PlaceholderStrategyName, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(Strategy.Trim(), RecordedReplayStrategyName, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>実効の巡回間隔。</summary>
     public TimeSpan EffectiveInterval() => TimeSpan.FromSeconds(Math.Max(60, IntervalSeconds));
 
@@ -65,5 +99,15 @@ public sealed class Stage0EvaluationOptions
         public string? Symbol { get; set; }
 
         public Market Market { get; set; }
+    }
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: AI 判断の記録の供給（<c>Backtest:Stage0:Recording</c>）。
+    /// **未設定なら記録なし**＝合格 verdict は出ない。
+    /// </summary>
+    public sealed class RecordingOptions
+    {
+        /// <summary>記録集合（JSON）のパス。未設定・存在しない・解釈不能はすべて「記録なし」へ倒す。</summary>
+        public string? Path { get; set; }
     }
 }

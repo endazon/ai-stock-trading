@@ -1,4 +1,5 @@
 using BacktestService.Features.Backtest;
+using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Hosted;
 using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -81,6 +82,17 @@ builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
 builder.Services.Configure<Stage0EvaluationOptions>(
     builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
+// FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: AI 判断の記録の供給。
+// **既定は「記録なし」**（NoStage0DecisionRecordSource＝ファイルも読まない）。パスを明示したときだけ実読み込みに
+// なる。記録が無ければ記録再生戦略は評価対象を持たず、合格 verdict は出ない（fail-closed）。
+builder.Services.AddScoped<IStage0DecisionRecordSource>(sp =>
+{
+    var recordingPath = sp.GetRequiredService<IConfiguration>()[$"{Stage0EvaluationOptions.SectionName}:Recording:Path"];
+    return string.IsNullOrWhiteSpace(recordingPath)
+        ? new NoStage0DecisionRecordSource()
+        : new FileStage0DecisionRecordSource(
+            recordingPath, sp.GetRequiredService<ILogger<FileStage0DecisionRecordSource>>());
+});
 builder.Services.AddHostedService<Stage0EvaluationService>();
 var stage0DriverEnabled = builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName)
     .Get<Stage0EvaluationOptions>()?.Enabled == true;
@@ -88,9 +100,14 @@ var stage0DriverEnabled = builder.Configuration.GetSection(Stage0EvaluationOptio
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（選択中ポート実装）の自己申告。
 // 「有効化したつもりで効いていない」を、メッシュ内部から provider 名で確認できるようにする。
 // #688, IADR-0310 決定1: 定時駆動の実効状態も同じ手段で確認できるようにする（構成と挙動の乖離を見せる）。
+// #632, IADR-0318: 評価対象（戦略）の実効値も自己申告に載せる。**綴り違いで既定へ倒れていることを
+// メッシュ内部から確認できる**ようにするためであり、駆動の有効・無効と同じ手段で見えることに意味がある。
+var stage0Options = builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName)
+    .Get<Stage0EvaluationOptions>() ?? new Stage0EvaluationOptions();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("historical-bar-data", barDataProvider)
-    .AddPort("stage0-driver", stage0DriverEnabled ? "enabled" : "disabled"));
+    .AddPort("stage0-driver", stage0DriverEnabled ? "enabled" : "disabled")
+    .AddPort("stage0-strategy", stage0Options.ResolveStrategy()));
 
 var app = builder.Build();
 
