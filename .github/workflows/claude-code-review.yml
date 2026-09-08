@@ -207,15 +207,6 @@ jobs:
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
           echo "Selected model: $MODEL"
 
-      # NFR: claude-code-action の native インストーラ（Claude Code v2.1.265 で実測）は
-      # ランチャを ~/.local/bin/claude へ置くが、**ディレクトリが無いと作らずに「missing or broken」
-      # と警告して成功扱いで進み**、直後の SDK 起動が ENOENT（executable_not_found）で落ちる
-      # （PR #713 で 3 run 連続・2026-09-04 の run 1399/1400 も同型）。事前にディレクトリを
-      # 用意してインストーラの前提を満たす。差分と無関係に必須チェックが赤くなる経路の是正であり、
-      # 許可リスト（3 系統同期の対象）には触れない。
-      - name: Prepare Claude Code launcher directory
-        run: mkdir -p "$HOME/.local/bin"
-
       - name: Run Claude Code Review
         id: claude
         uses: anthropics/claude-code-action@v1
