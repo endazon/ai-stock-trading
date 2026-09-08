@@ -17,6 +17,22 @@ public static class LlmPurposes
     /// </summary>
     public const string TradeDecisionScreening = "trade-decision-screening";
 
+    /// <summary>
+    /// FR-15, ADR-0033 決定5, IADR-0318 決定4: Stage 0 の**記録**（AI 判断の記録・再生方式）で発生した費用の計上区分。
+    /// <para>
+    /// 🔴 **これはゲートウェイへ送る用途キーではない。** 記録は本番と同じ用途（<see cref="TradeDecision"/>）で
+    /// LLM を呼ぶ ——ADR-0011 が「検証したモデルと本番モデルの一致」を段階ゲートの前提としているため、
+    /// モデル割当とフォールバック禁止の統制は本番と同一でなければならない。
+    /// 一方 ADR-0033 決定5 は Stage 0 の費用を月次上限（15,000 円・取引判断サイクル対象）の**外**に置く。
+    /// 用途キーは 1 つしかないため、**計上の境界（<c>ILlmUsageReporter</c>）で本キーへ付け替える**。
+    /// </para>
+    /// <para>
+    /// 本キーは <see cref="IsTradeDecision"/> にも <see cref="IsReport"/> にも該当しないため、
+    /// <c>LlmCostScope.IsGoverned</c> は偽になる（＝抑制動作を引き起こさない）。
+    /// </para>
+    /// </summary>
+    public const string Stage0Recording = "stage0-recording";
+
     /// <summary>月報。ADR-0015 により第 1 候補は ZDR 対応モデルへ改定された。</summary>
     public const string ReportMonthly = "report-monthly";
 

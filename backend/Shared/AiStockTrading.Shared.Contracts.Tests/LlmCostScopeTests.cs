@@ -30,6 +30,24 @@ public class LlmCostScopeTests
     public void 報告書生成と情報収集の費用は上限の対象外である(string purpose) =>
         LlmCostScope.IsGoverned(purpose).Should().BeFalse();
 
+    // 🔴 **否定形**（FR-15, ADR-0033 決定5, #632, IADR-0318 決定4）: Stage 0 の記録で発生した LLM 費用は
+    // 月次上限（15,000 円・取引判断サイクル対象）へ積まない。積むと、検証の実行が本番取引の抑制
+    // （80% で間隔延長・100% で停止）を引き起こす —— 計画 §6.1 が報告書生成について既に避けている連鎖と同型である。
+    [Theory]
+    [InlineData(LlmPurposes.Stage0Recording)]
+    [InlineData("STAGE0-RECORDING")] // 大小は無視する
+    public void Stage0記録の費用は上限の対象外である(string purpose) =>
+        LlmCostScope.IsGoverned(purpose).Should().BeFalse();
+
+    // FR-15, ADR-0033 決定5: Stage 0 の記録は取引判断系にも報告書にも属さない**第 3 の区分**である
+    // （どちらかに寄せると、抑制動作か月報の内訳のどちらかが実態と食い違う）。
+    [Fact]
+    public void Stage0記録は取引判断系でも報告書でもない()
+    {
+        LlmPurposes.IsTradeDecision(LlmPurposes.Stage0Recording).Should().BeFalse();
+        LlmPurposes.IsReport(LlmPurposes.Stage0Recording).Should().BeFalse();
+    }
+
     // 🔴 用途不明は**上限側へ倒す**。費用統制の危険側は過小計上であり、対象外へ倒すと上限が構造的に効かなくなる
     // （IADR-0122 決定3 と同じ判断）。用途を持たない LlmCostIncurred は取引判断サービスの従来の形でもある。
     [Theory]
