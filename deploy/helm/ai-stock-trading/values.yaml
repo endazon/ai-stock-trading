@@ -33,7 +33,7 @@ namespace:
 # #627, IADR-0314: AST namespace の Istio サイドカー注入（メッシュ参入）の設定点。
 # 既定 disabled = fail-safe（現状維持・平文のまま）。基盤（microservices-platform namespace）の
 # PeerAuthentication が STRICT のため、有効化しない限り AST→MSP 方向の HTTP（LlmGateway/
-# DocumentService/RetrievalService/MCP）は受信側 Envoy に RST で切られる（逆方向・MSP BFF→AST は
+# DocumentService/RetrievalService・外部エージェント連携）は受信側 Envoy に RST で切られる（逆方向・MSP BFF→AST は
 # 到達可能で片方向のみの断）。基盤側本体の是正は MSP#1159、メッシュ再構築は MSP#442。
 # ⚠️ **実クラスタでの疎通確認は未了**（本設定点は受け皿のみ。IADR-0314 は Proposed のまま。
 #    再測定手順は同 IADR 参照。有効化は `docs/blocked-tasks.md` A-12 の再測定後に判断する）。
