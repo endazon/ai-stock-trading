@@ -2288,4 +2288,69 @@ module.exports = ({ ok, assert }) => {
       assert.match(readme, /check-frontend-empty-frames\.js/, 'scripts/README.md に記載が無い');
     });
   }
+
+  // --- check-backlog-audit-output.js: バックログ監査の産出検証（NFR / #711） ---
+  //
+  // backlog-audit.yml は週次スケジュール実行のため、壊れても気付くのが最短で 1 週間後になる。
+  // 自己試験だけでなく PR 時にも継続的に走らせ、判定ロジックの退行を早期に検出する
+  // （check-frontend-empty-frames.js 等と同じ「実バイナリを execFileSync で叩く」作法）。
+  {
+    const { execFileSync: execFileSyncBa } = require('child_process');
+    const pathBa = require('path');
+    const fsBa = require('fs');
+    const SCRIPT_BA = pathBa.join(__dirname, 'check-backlog-audit-output.js');
+    const REPO_ROOT_BA = pathBa.resolve(__dirname, '..');
+
+    ok('check-backlog-audit-output: 自己試験が通る（#711）', () => {
+      execFileSyncBa(process.execPath, [SCRIPT_BA, '--self-test'], { cwd: REPO_ROOT_BA, stdio: 'pipe' });
+    });
+
+    // 🔴 否定形。run 開始時刻を渡さない・issue が存在しない体で main() を叩き、
+    // 「産出なし」を確かに exit 1 で検出することを実バイナリで固定する（issue 側は gh を
+    // 呼ばず失敗するため、GITHUB_TOKEN の有無に依存せずローカルでも再現できる）。
+    ok('check-backlog-audit-output: run 開始時刻が無ければ exit 1（実バイナリ）', () => {
+      let failed = false;
+      try {
+        execFileSyncBa(process.execPath, [SCRIPT_BA], {
+          cwd: REPO_ROOT_BA,
+          env: { ...process.env, RUN_START_TIME: '' },
+          stdio: 'pipe',
+        });
+      } catch {
+        failed = true;
+      }
+      assert.ok(failed, 'run 開始時刻が無いのに exit 0 になった（検査が働いていない）');
+    });
+
+    ok('check-backlog-audit-output: gh が使えない環境では issue 取得に失敗し exit 1（実バイナリ）', () => {
+      let failed = false;
+      let stderr = '';
+      try {
+        execFileSyncBa(process.execPath, [SCRIPT_BA, '--run-start', '2026-01-01T00:00:00Z'], {
+          cwd: REPO_ROOT_BA,
+          // gh が PATH に無い状態を作る（存在しないディレクトリのみの PATH）。
+          env: { ...process.env, PATH: '/nonexistent-bin-for-test' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+      } catch (e) {
+        failed = true;
+        stderr = String(e.stderr || e.message || '');
+      }
+      assert.ok(failed, 'gh が使えないのに exit 0 になった');
+      assert.match(stderr, /取得できない/, 'issue 取得失敗の理由が報告に出ていない');
+    });
+
+    ok('backlog-audit.yml: 産出検証ステップと run 開始時刻の記録が配線されている（#711）', () => {
+      const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
+      assert.match(wf, /check-backlog-audit-output\.js/, '産出検証ステップが無い');
+      assert.match(wf, /date -u \+%Y-%m-%dT%H:%M:%SZ/, 'run 開始時刻を記録するステップが無い');
+      assert.match(wf, /RUN_START_TIME/, 'RUN_START_TIME が後段へ渡されていない');
+    });
+
+    ok('scripts/README.md: check-backlog-audit-output.js を記載している', () => {
+      const readme = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-backlog-audit-output\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
 };

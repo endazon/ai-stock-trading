@@ -43,6 +43,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # NFR / #711: run success でも issue の産出・更新が無い（「指摘なし」と「黙って落ちた」の
+      # 区別が付かない）事象を検出するため、run 開始時刻を先頭で記録する。後段の
+      # `Verify backlog audit output` がこの時刻より issue.updated_at が新しいかを確認する。
+      # Claude ステップより**前**に取ることが重要——後で取ると、その間に起きた正当な更新まで
+      # 「run 開始より前」と誤判定し得る。
+      - name: Record run start time
+        id: run_start
+        run: echo "run_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       # 監査プロンプトが node で検査器を実走するため setup-node は維持する。
       # （旧 check-feedback-dispatched.js のステップは資料再編 ADR-0029 決定 5 で撤去した。
       #   環流はファイルではなく planning の issue で管理され、突合対象が存在しない。）
@@ -150,6 +159,11 @@ jobs:
 
             してください。本文には**実施日**と**各項目の根拠**を必ず含めてください。
             該当が 0 件の項目は「該当なし」と明記してください（黙って省略しないこと）。
+            **本文冒頭に実施日（本日）を必ず書き換えてください。** これは体裁の指示ではありません
+            ——本 run が issue へ実際に書き込んだかどうかを、後段のステップが
+            `issue.updated_at` と本 run の開始時刻の比較だけで機械的に検証します（#711）。
+            実施日を古いまま・空のままにする、あるいは編集を忘れて over-write しないと、
+            本文の中身にかかわらず**その検証が失敗し、このジョブは fail します**。
             長い本文は Write でファイルへ下書きし、`gh issue create --body-file <path>` /
             `gh issue edit <番号> --body-file <path>` で渡してください（引用符の入れ子が要らない唯一の形です）。
 
@@ -183,3 +197,17 @@ jobs:
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node scripts/check-permission-denials.js "$EXECUTION_FILE"
+
+      # NFR / #711: run success（かつ権限拒否も許容範囲）でも、結果 issue（#483）へ実際には
+      # 何も書けていない事象を検出する。「今週は指摘なしだった」（issue は更新されたが内容が
+      # 「該当なし」ばかり）と「今週は黙って落ちた」（issue が更新すらされていない）は
+      # run success という外形だけでは区別できないため、**issue.updated_at が本 run の開始時刻
+      # より新しいか**だけを機械的に見る。本文の質（監査の妥当性）は見ない——それは人間の
+      # レビュー対象である。always() にしているのは、Claude ステップ自体が失敗した場合こそ
+      # 「産出が無い」ことを確実に検出したいため（権限拒否検査の対象外の失敗形もここで拾える）。
+      - name: Verify backlog audit output
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_START_TIME: ${{ steps.run_start.outputs.run_start }}
+        run: node scripts/check-backlog-audit-output.js
