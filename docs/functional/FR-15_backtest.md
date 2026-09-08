@@ -3,14 +3,14 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-08-21
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0016, ADR-0018, ADR-0019, ADR-0023]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304]
-specs: [20260711_backtest-foundation, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation]
 issues: [#20, #82, #99, #100, #208, #382, #388, #688]
 -->
 
@@ -51,7 +51,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #688]
 | 実アダプタ（採用） | `MoomooHistoricalBarSource`（Infrastructure） | **米国株日足 OHLC 履歴源を確定させた計画 ADR の決定 5 が採用した moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・`RehabType_Forward`）。1 リクエスト 1,000 件・`NextReqKey` でページング。米国株のみ（日本株は写像せず欠測）。SDK 依存は `MMApiMoomooHistoryKLineClient` に閉じる。送信前に `IRateLimiter` で自制。**ただし決定 5 の未確認 2 点が済むまで本番のバックテストへ流さない**（下記「米国株日足 OHLC 履歴の現況」） |
 | 実アダプタ（候補・取得不能） | `StooqHistoricalBarSource`（Infrastructure） | 情報源の計画 ADR が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。**現在は取得不能**（ボット検知チャレンジ。回避実装は履歴源の計画 ADR の決定 1 が禁止）。**削除しない**（決定 5 でも決定 1 の扱いは不変） |
 | 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・構成不備も警告して no-op（**allow-list**: 既知の provider が構成の妥当性を満たしたときだけ実アダプタを返す） |
-| 合成・自己申告 | `BacktestService`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装を申告する。定時実行・verdict の実 publish は持たない（本番戦略が未実装・publish は #82） |
+| 合成・自己申告・駆動 | `BacktestService`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装と**定時駆動の有効・無効**を申告する。**定時駆動と verdict の発行を持つ**（下記「Stage 0 判定の定時駆動と verdict の発行」。実 RabbitMQ を介した疎通は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
 | 評価（テスト用） | `InMemoryBarDataSource` | **テスト・検証専用**（決定的スタブ） |
 | 取得対象の導出 | `SecurityUniverse.MembersBetween` | 期間内に一度でも構成銘柄だった銘柄（廃止銘柄含む）＝生存者バイアス排除を取得段階から一貫 |
@@ -96,6 +96,41 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #688]
 項目 1〜6 は 2026-08-31（工程 ②）、**項目 7 は go-live 相当（基盤・可変機能ユニット双方の実装完了）を
 起算日とし 1 か月以内**（工程 ⑤）。⑤ は ①→④ の連鎖に含まれない。
 **なお決定 5 により、期限超過時に情報源の費用方針の有料枠へ移る（決定 4）という帰結は発動しない**（追加費用が生じないため）。
+
+### Stage 0 判定の定時駆動と verdict の発行（[#688](https://github.com/endazon/ai-stock-trading/issues/688)）
+
+判定結果（verdict）は非同期イベントとしてリスク統制側の段階別実績へ射影され、段階ゲートの入力になる。
+発行側（本サービス）はメッセージバスを持ち、**定時常駐**が 1 巡回ごとに「取得 → 走行 → 写像 → 発行」を行う。
+
+| 事項 | 実装 |
+| --- | --- |
+| 駆動の形 | 常駐（`Hosted/Stage0EvaluationService`）。構成 `Backtest:Stage0`。HTTP の起動口は持たない |
+| 既定 | 🔴 **無効**（`Backtest:Stage0:Enabled=false`）。無効なら巡回もデータ取得も発行も起きない |
+| 巡回間隔 | `IntervalSeconds`（既定 86,400＝日次・下限 60 秒） |
+| 評価期間 | 当日から `LookbackDays`（既定 365・下限 1 日）遡った範囲 |
+| 取得 | 実過去データ源から**1 回だけ**取得しスナップショットへ固定する（決定性の保全） |
+| 発行 | `BacktestEvaluated`（不合格固定・下記）。共通ヘルパの配線のみを用い、キュー名・再試行・DLQ をサービス側で選ばない |
+| 実効状態の確認 | `GET /internal/introspection` の `stage0-driver` が `enabled` / `disabled` を示す |
+
+#### 🔴 バーが 0 本のときは判定を走らせない（fail-closed・最重要の否定形）
+
+`DataCutoffPolicy.IsAllAfterCutoff` は `bars.All(...)` であり、**空バーに対して真を返す**（真空的に真）。
+つまり空データは検証条件①だけを満たしているように見える。従来これを弾いていたのは
+「エッジ有意・コスト頑健性・ウォークフォワードが不成立になる」という**間接的な**担保だけで、
+判定の入力供給が変われば崩れる。**駆動は、バーが 1 本も無いときは判定器を呼ばず**、
+未達理由に「過去データ 0 本」を明示した不合格 verdict を発行する。
+
+#### 🔴 評価対象はプレースホルダであり、verdict は不合格固定である
+
+計画は 2026-09-05 の裁定で **Stage 0 の評価対象を「AI 判断そのもの（記録・再生方式）」と確定**したが、
+記録器・記録再生戦略は未実装である。同裁定は本作業に対し「プレースホルダ戦略での動作確認に留める」と定めている。
+
+- 評価対象は `PlaceholderStrategy`（注文を 1 件も出さない）。verdict が名乗る戦略識別子は `placeholder/no-op`。
+- verdict は**必ず不合格**であり、未達理由に「プレースホルダ戦略」を含む。合格を作れる口が構造的に無い
+  （駆動の verdict 組み立ては判定器を呼ばず、不合格の結果を直接組む）。
+- LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は**未設定なら未充足**として扱う
+  （カットオフ日の供給元は計画側に未登録である。未設定を充足へ倒さない）。
+- **したがって「経路は通るが、go-live の判断材料にはならない」。** 段階昇格は従来どおり止まる。
 
 ### シミュレーション（Slice A）
 
@@ -154,7 +189,7 @@ Stage 3 の**空売り実弾解禁**の判定入力になる（解禁条件の�
 | 保有中の銘柄が上場廃止（PIT で以降バーが除外） | **Slice A の既知の制約**: シミュレータは最終観測終値で当該建玉を凍結評価し続ける（強制決済しない。下記「既知の制約」参照） |
 | 試行数 0 / 標本長不足 | DSR/PBO は保守側（合格させない方向）に倒す |
 | いずれかの合格基準を満たさない | `Stage0GateResult.Passed=false` と不合格理由を返す |
-| 実過去データ源が未接続（provider 既定 `none`）／取得できた銘柄が無い | バーが 0 本になり `DeflatedSharpe`・`CostRobustness`・`WalkForward` が不成立＝**不合格・昇格拒否**（fail-safe）。なお `DataCutoffPolicy` は空バーを違反と見なさない（空は真空的に真）ため、拒否はこの 3 条件が担う（#208）。**2026-08-06 現在、既定は `none` のままであり実運用は常にこの経路である**（上記「米国株日足 OHLC 履歴の現況」） |
+| 実過去データ源が未接続（provider 既定 `none`）／取得できた銘柄が無い | **駆動は判定を走らせず、「過去データ 0 本」を理由にした不合格 verdict を発行する**（#688。上記 fail-closed）。判定器へ通した場合も `DeflatedSharpe`・`CostRobustness`・`WalkForward` が不成立＝不合格になるが、`DataCutoffPolicy` は空バーを違反と見なさない（空は真空的に真）ため、**空の検出を判定器へ委ねない**（#208）。**2026-08-06 現在、既定は `none` のままであり実運用は常にこの経路である**（上記「米国株日足 OHLC 履歴の現況」） |
 | Stooq がボット検知チャレンジ（HTTP 200 の HTML）を返す | 解析不能＝**銘柄丸ごと欠測**として記録し、他銘柄の取得は続ける。バーが 0 本なら上行と同じく昇格拒否。**チャレンジを回避する実装は書かない**（履歴源の計画 ADR の決定 1・履歴源不在の実装 ADR の決定 3） |
 | moomoo が非成功（retType != 0）を返す／ページングの途中で失敗する | **その銘柄を丸ごと欠測**として記録し、他銘柄の取得は続ける。**半端に取れたページのバーは 1 本も採らない**（部分履歴で Stage 0 を合格させない） |
 | moomoo に米国株以外（日本株）を渡す | 外部へ要求せず**欠測**として残す。履歴源の計画 ADR の決定 5 が定めたのは米国株の履歴源であり、日本株の写像は計画側の決定を要する |
