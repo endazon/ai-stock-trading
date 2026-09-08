@@ -493,6 +493,8 @@ ADR-0021 / ADR-0023 は**`Proposed` に留める理由自体は解消してお�
 | **最後に測った時点** | **2026-09-02**（#627 起票時点の実測。使い捨て Pod からの curl で TLS handshake 未発生のまま RST を確認。**2026-09-09 時点でも実クラスタでの再測定は未実施**） |
 | 再測定手順 | ① `ai-stock-trading` namespace の使い捨て Pod から `curl -v http://document-service.microservices-platform:8080/health/live` ② `Recv failure: Connection reset by peer` が続くか確認 ③ MSP#1159 のクローズ状況を確認 ④ 上記「AST 側の設定点」を有効化して①②を再確認し、OpenD／CronJob／`platform-infra`（postgres/rabbitmq）が退行しないことも確認する（手順は IADR-0314 の再測定手順1〜5に一本化） |
 
+> **〔2026-09-09 追記〕** #705 でタグ辞書検証（400）に起因する KB 保存の全件失敗（`Symbol` タグが未登録で構造的に拒否される形）はコード側で是正済み（[IADR-0315](../.ai-context/adr/IADR-0315_kb-tags-static-vocabulary.md)）。ただし**実 KB での `KB 保存: N/N`（N=N）確認は本項目（到達性の断）が解消するまで実行できない**——現状は 400 の手前で接続自体が RST に切られるため、コード側の是正が効いているかどうかを実測できない。再測定手順は本項目のものをそのまま使う。
+
 ### A-13. 🆕 ローカル基盤の LLM API キー未投入（実 LLM 呼び出しが構造的に不成立）
 
 MSP `llm-provider-credentials` Secret の `anthropic-api-key` **および `openai-api-key`** が

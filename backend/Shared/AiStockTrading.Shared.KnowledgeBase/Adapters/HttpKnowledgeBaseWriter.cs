@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Logging;
 
@@ -79,7 +80,15 @@ internal sealed class HttpKnowledgeBaseWriter(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("KB 保存に失敗（{Status}）。未保存に倒します（「{Title}」）。", (int)response.StatusCode, document.Title);
+                // FR-08, #705, #708 と同型: 400（例: MSP#635 のタグ辞書検証で未登録タグ）等の
+                // ProblemDetails 応答本文を警告ログへ含める——「タグ辞書未登録」のような fail-safe 縮退の
+                // 原因を運用が気付けるようにする（決定を例外にはしない。既存の fail-safe と同じ向き）。
+                // 応答本文は外部（platform）由来のため、制御文字を除去し長さを上限で切ってから出す
+                // （改行混入によるログの偽装・肥大化を防ぐ）。
+                var responseBody = await ReadResponseBodyForLogAsync(response, cancellationToken).ConfigureAwait(false);
+                logger.LogWarning(
+                    "KB 保存に失敗（{Status}）。未保存に倒します（「{Title}」）。応答: {ResponseBody}",
+                    (int)response.StatusCode, document.Title, NormalizeForLog(responseBody));
                 return KnowledgeWriteResult.NotSaved;
             }
 
@@ -105,6 +114,44 @@ internal sealed class HttpKnowledgeBaseWriter(
             logger.LogWarning(ex, "KB 保存で例外。未保存に倒します（「{Title}」）。", document.Title);
             return KnowledgeWriteResult.NotSaved;
         }
+    }
+
+    // FR-08, #705, #708 と同型: 非 2xx 応答本文（ProblemDetails 等）を警告ログに載せるための読み取り。
+    // 読み取り自体が失敗しても診断ログの都合で保存結果を変えてはならないため、ここで握りつぶし
+    // 「取得不可」を返す（呼び出し元の try/catch と役割が重複しないよう、例外は投げない）。
+    private static async Task<string?> ReadResponseBodyForLogAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-08, #705, #708 と同型: ログへ載せる外部由来の文字列を正規化する（制御文字を潰し長さ上限を設ける）。
+    // 改行・タブ等を含む応答本文をそのままログへ出すとログ 1 行が偽装・肥大化し得るため、
+    // 制御文字は空白へ置換し、長い応答は上限で切って「省略」を明示する。
+    private const int MaxLoggedResponseBodyLength = 500;
+
+    private static string NormalizeForLog(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "(なし)";
+
+        var sb = new StringBuilder(text.Length);
+        foreach (var ch in text)
+            sb.Append(char.IsControl(ch) ? ' ' : ch);
+
+        var normalized = sb.ToString().Trim();
+        if (normalized.Length == 0)
+            return "(なし)";
+
+        return normalized.Length > MaxLoggedResponseBodyLength
+            ? string.Concat(normalized.AsSpan(0, MaxLoggedResponseBodyLength), "…(省略)")
+            : normalized;
     }
 
     // 機密区分を必ず補完する（microservices-platform IADR-0047 必須検証。未指定・空は既定 internal）。
