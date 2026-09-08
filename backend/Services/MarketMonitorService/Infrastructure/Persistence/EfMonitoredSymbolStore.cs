@@ -17,8 +17,9 @@ public sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db, MonitorSee
         var row = db.MonitorSettings.Find(SingletonKeys.Id);
         if (row is null)
         {
-            // 真の未設定: 構成シードを適用する。同時初回リクエストが競合して一意制約違反になり得るため、
-            // 失敗時は他リクエストがシード済みとみなして読み直す（冪等・レース窓を 500 にしない）。
+            // 真の未設定: 構成シードを適用する。同時初回リクエスト（定時巡回・別の HTTP 呼び出し）が
+            // 競合して一意制約違反になり得るため、失敗時は行を読み直し、**行があれば**他方がシード済み
+            // とみなして返す（冪等・レース窓を 500 にしない）。**行が無ければ再送出する**（下記 catch）。
             var seeded = MonitorDefaults.CreateSettings(ResolveSeedSymbols());
             var now = DateTimeOffset.UtcNow;
             db.MonitorSettings.Add(new MonitorSettingsRow
@@ -35,11 +36,25 @@ public sealed class EfMonitoredSymbolStore(MarketMonitorDbContext db, MonitorSee
                 db.SaveChanges();
                 return seeded;
             }
-            catch (DbUpdateException)
+            // FR-03, FR-13, #707, IADR-0317: **競合の判定は例外の型ではなく「行が実在するか」で行う。**
+            // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、EF Core の
+            // InMemory は ArgumentException「An item with the same key has already been added」）。
+            // 型を列挙すると取りこぼした側だけが素通りし、エンドポイントの例外フィルタで
+            // ArgumentException が **400（＝利用者の要求が悪い）** へ写像されるという遠い形で壊れる
+            // （実測: 定時巡回 MonitorPollingService の初回巡回と HTTP 要求が同じ単一行を同時に
+            // シードし、200 を期待するテストが不定期に 400 になった）。
+            catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
             {
                 db.ChangeTracker.Clear();
                 var raced = db.MonitorSettings.Find(SingletonKeys.Id);
-                return raced is not null ? MonitorSettingsSerialization.Deserialize(raced.Json) : seeded;
+                if (raced is null)
+                {
+                    // 行が生まれていない＝競合ではなく本物の保存失敗である。**握り潰さない**
+                    // （未永続の既定値を返すと「保存できていないのに既定で動く」状態を黙って作る）。
+                    throw;
+                }
+
+                return MonitorSettingsSerialization.Deserialize(raced.Json);
             }
         }
 
