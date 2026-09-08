@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 -->
 
 
@@ -240,6 +240,30 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
 
 > **⚑ T-15-69 は変異試験で load-bearing を実測した。** 空判定の条件を無効化（`bars.Count == 0` を偽になる形へ）すると
 > 当該テストだけが失敗し、他は緑のままだった（失敗 1 / 合格 8）。**空データの検出は他のテストが代替しない。**
+
+### 評価対象＝記録した AI 判断の再生（[#632](https://github.com/endazon/ai-stock-trading/issues/632)。記録・再生方式）
+
+計画の 2026-09-05 の裁定が定めた評価対象（AI 判断そのもの）の**再生側**を固定する。
+記録そのものの作成（as-of 入力・多数決・費用の見積り承認）は取引判断側の関心事であり本書の範囲外である。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-79 | 記録した判断が注文へ写る（符号付き数量をそのまま使う＝再生側でサイジングを再計算しない） | `RecordedDecisionReplayStrategyTests.記録した判断を注文へ写す` | 自動 |
+| T-15-80 | **プロパティベース**: 同一入力に対して常に同一の出力を返す（純関数。統計手続きが決定的に回る前提） | `RecordedDecisionReplayStrategyTests.同一入力に対して常に同一の出力を返す` | 自動 |
+| T-15-81 | 🔴 **否定形（最重要）**: 記録集合の期間外では 1 件も発注しない（記録の取り違えで別期間の判断が紛れ込む経路を断つ） | `RecordedDecisionReplayStrategyTests.記録集合の期間外では発注しない`（Theory 4 ケース） | 自動 |
+| T-15-82 | 境界: 期間の両端は「内」である／記録の無い日・見送り（数量 0）・記録が空はいずれも無発注／同一銘柄同一日の重複は 1 件に畳む | `RecordedDecisionReplayStrategyTests.期間の両端は記録が引かれる`（Theory 2 ケース） / `記録の無い日は無発注である` / `見送りの記録は注文を作らない` / `記録が空なら常に無発注である` / `同一銘柄同一日の重複記録は1件に畳まれる` | 自動 |
+| T-15-83 | 🔴 **否定形（最重要）**: 記録が無い・判断 0 件なら評価文脈を組まない（判定器を呼ばない） | `Stage0ReplayEvaluationTests.記録が無ければ評価文脈を組まない_failclosed` / `判断が0件の記録集合は評価文脈を組まない_failclosed` | 自動 |
+| T-15-84 | 🔴 **否定形**: カットオフ日が未構成／記録と構成で食い違うなら評価文脈を組まない（別の汚染対策前提の記録を流用させない） | `Stage0ReplayEvaluationTests.カットオフ日が未構成なら評価文脈を組まない_failclosed` / `記録のカットオフ日が構成と違えば評価文脈を組まない_failclosed` | 自動 |
+| T-15-85 | 🔴 **否定形**: 記録が評価期間を覆っていない／銘柄集合が違うなら評価文脈を組まない | `Stage0ReplayEvaluationTests.記録が評価期間を覆っていなければ評価文脈を組まない_failclosed`（Theory 2 ケース） / `銘柄集合が構成と違えば評価文脈を組まない_failclosed` | 自動 |
+| T-15-86 | 🔴 **否定形**: 過剰適合補正の標本が足りなければ評価文脈を組まない（走行の材料は verdict へ残す） | `Stage0ReplayEvaluationTests.標本が足りなければ評価文脈を組まない_failclosed` | 自動 |
+| T-15-87 | 肯定形: 記録が整合すれば**本物の判定器**へ到達し、7 条件で合否が決まる（試行 1 本のため試行数条件で落ちる＝駆動側の理由は載らない）／整合する記録に対して阻害理由は空 | `Stage0ReplayEvaluationTests.記録が整合すれば本物の判定器へ到達する` / `整合する記録に対して阻害理由は空である` | 自動 |
+| T-15-88 | **陽性対照**: カットオフ以前のバーが混ざれば判定器が検証条件①を未達にする／全バーがカットオフ後なら未達に載らない | `Stage0ReplayEvaluationTests.カットオフ以前のバーが混ざれば検証条件1が未達になる` / `全バーがカットオフ後なら検証条件1は未達にならない` | 自動 |
+| T-15-89 | 駆動: 記録が揃えば本物の判定器に到達して verdict が出る／記録なし・不整合（期間・銘柄・カットオフ）・カットオフ未構成のいずれも合格 verdict を出さない | `Stage0EvaluationServiceTests.記録が揃えば本物の判定器に到達する` / `記録が無ければ判定を走らせず不合格verdictを発行する_failclosed` / `記録が構成と整合しなければ不合格verdictを発行する_failclosed`（Theory 3 ケース） / `記録再生でもカットオフ日が未構成なら不合格verdictを発行する_failclosed` | 自動 |
+| T-15-90 | 🔴 **否定形**: 未設定・空・未知の綴りの評価対象はすべて既定（プレースホルダ＝不合格固定）へ倒す | `Stage0EvaluationServiceTests.既定と未知の戦略名はプレースホルダへ倒す`（Theory 4 ケース） | 自動 |
+| T-15-91 | 記録ファイルの読み込み: 書き出した記録を読み戻せる／パス未設定・ファイル無し・解釈不能はすべて「記録なし」へ倒す（例外を投げない） | `FileStage0DecisionRecordSourceTests.記録ファイルを読み戻せる` / `パス未設定は記録なしになる` / `ファイルが無ければ記録なしになる` / `解釈できないファイルは記録なしになる` | 自動 |
+
+> **⚑ T-15-81 は変異試験で load-bearing を実測した。** 期間外ガードを無効化すると当該 Theory の 4 ケースだけが
+> 失敗し、他は緑のままだった（失敗 4 / 合格 308。戻して 312 合格）。**期間外の無発注は他のテストが代替しない。**
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 
