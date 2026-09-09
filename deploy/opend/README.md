@@ -108,7 +108,10 @@ kubectl -n ai-stock-trading attach -it opend-bootstrap
   ```
   >>> input_pic_verify_code -code=<4文字>
   ```
-> コードは数分で失効。失効/やり直しは `>>> relogin` で新コードを出す（画像は再度 cp して読む）。
+> コードは数分で失効。失効/やり直しは `>>> req_phone_verify_code` で新しいコードを出す（画像は再度 cp して読む）。
+> **［2026-09-09 訂正 / #722］従前ここは `relogin` と書いていたが誤りである。** `relogin` は
+> `-login_pwd=` を取る**再ログイン**のコマンドで、検証コードの再送ではない。引数なしで打つと
+> 意図しない挙動になり得る。再送は `req_phone_verify_code`（引数なし）である。
 
 成功すればログイン完了・API が `:11111` で待受。**別ターミナル**で保存されたデバイス状態を確認:
 ```bash
@@ -125,6 +128,50 @@ kubectl apply -f deploy/opend/k8s/opend.yaml           # Deployment + Service（
 kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_verify_code / input_phone_verify_code
 kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```
+
+#### 画面（ブラウザ）から検証コードを入れる（#722）
+
+**手元に kubeconfig が無くても検証できる。** `entrypoint.sh` は OpenD の標準入力を
+**FIFO（`/run/opend/stdin`）経由**にしてあるので、`kubectl exec` からも同じ標準入力へ届く。
+`attach` が要るのは tty を掴むときだけで、コードを 1 行入れるだけなら exec で足りる。
+
+したがって**既に配備済みの Headlamp**（`https://headlamp.localhost`。Keycloak の OIDC で入る）が
+そのまま入力面になる。専用の画面は作っていない。
+
+1. Headlamp で `ai-stock-trading` / Pod `opend` を開き、**Logs** で `Command Tips:` を読む
+   （`input_phone_verify_code` か `input_pic_verify_code` のどちらを求められているか）。
+2. 同じ Pod の **Terminal** を開いて、次の 1 行を打つ。
+
+```bash
+printf 'input_phone_verify_code -code=123456\n' > /run/opend/stdin
+```
+
+3. 画像 CAPTCHA を求められたときは、Terminal で画像を base64 にして読む。
+
+```bash
+base64 -w0 "$HOME/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png"
+```
+
+出力を `data:image/png;base64,<貼り付け>` としてブラウザのアドレス欄へ入れると画像が見える。
+読み取った 4 文字を `printf 'input_pic_verify_code -code=ab12\n' > /run/opend/stdin` で入れる。
+
+4. 再送は `printf 'req_phone_verify_code\n' > /run/opend/stdin`。
+
+同じことを CLI からやるなら次のとおり。
+
+```bash
+kubectl -n ai-stock-trading exec deploy/opend -- \
+  sh -c "printf 'input_phone_verify_code -code=123456\n' > /run/opend/stdin"
+```
+
+> **認可は apiserver の RBAC がそのまま効く。** 書けるのは `pods/exec` を持つ主体だけである。
+> 専用の HTTP 面を作らなかったのはこのためで、OpenD のコンソールには
+> `show_delay_report -detail_report_path=<path>`（**root 権限で任意パスへ書ける**）や
+> `relogin -login_pwd=` のような、検証コード以外の強いコマンドがある。
+> 標準入力への書き込みは実口座に対する強い権限であり、自前のトークン検査で守る対象ではない。
+>
+> **注意**: FIFO に書いた行は次のプロンプトで消費される。失効したコードを入れたまま再送すると、
+> 古い行が再送後の 1 回を食う。**入れる前に Logs で現在のプロンプトを確かめること。**
 > ⚠️ 初回の `attach` 検証以降は、**デバイス信頼の永続化（PVC）＋ egress IP の安定**が保てれば
 > **無人再ログインが成立**する（追検証で実証。IADR-0053 の初回結論「再起動＝毎回再検証」は撤回済み）。
 > ただし **egress IP が変わる再起動**（ノード跨ぎの再スケジュール・クラウド/別リージョン）や moomoo 側の
