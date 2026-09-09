@@ -39,16 +39,25 @@ public sealed class EfPositionObservationArrivalStore(RiskManagementDbContext db
         {
             db.SaveChanges();
         }
-        catch (DbUpdateException)
+        // FR-21, #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「その日の行が実在するか」で行う。**
+        // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、InMemory は
+        // ArgumentException）ため、型を列挙すると取りこぼした側だけが素通りする。
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
+            db.ChangeTracker.Clear();
+
             // **その日の行が既に在る（別レプリカが同じ日を記録した）** ことが実務上の主因であり、
             // その場合「観測が届いた日である」という記録の目的は達成されている。
-            //
-            // ⚠️ **接続断など真の書き込み失敗も同じ分岐に入る**（既存 7 ストアと同じ広域 catch の踏襲だが、
-            // 本ストアは観測のたびに呼ばれるため頻度が高い）。**倒れる向きは「記録できていない」であり、
-            // 期間判定はその日を未観測として扱う＝未供給へ倒れる**ため、fail-open にはならない。
-            // 観測の記録に失敗したことを理由に観測の処理そのもの（推定・乖離検知）を止めない。
-            db.ChangeTracker.Clear();
+            if (db.PositionObservationDays.AsNoTracking().Any(r => r.TradingDay == tradingDay))
+            {
+                return;
+            }
+
+            // 🔴 **行が生まれていない＝競合ではなく本物の書き込み失敗である。握り潰さない。**
+            // 従来は接続断などの真の失敗も無言で飲み込んでいた。倒れる向きが「未供給」で安全側だとしても、
+            // **記録できていないことが呼び出し側から見えない**のは統制として弱い（メッセージが再配送されず、
+            // 「観測は届いたが記録だけが落ちた日」が誰にも気づかれないまま残る）。
+            throw;
         }
     }
 

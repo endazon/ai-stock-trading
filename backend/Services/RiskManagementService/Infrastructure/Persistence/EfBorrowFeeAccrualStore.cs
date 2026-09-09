@@ -8,7 +8,9 @@ namespace RiskManagementService.Infrastructure.Persistence;
 // **永続でなければならない。** 累計は建玉の生涯にわたって積み上がる値であり、プロセス内に持つと
 // 再起動で費用が消える —— **実費より小さい累計が「正しい累計」として報告される**（過小計上へ倒れる）。
 // DbContext は scoped のため本ストアも scoped。
-internal sealed class EfBorrowFeeAccrualStore(RiskManagementDbContext db) : IBorrowFeeAccrualStore
+// #714: 可視性は public（兄弟の EF ストア・InMemoryBorrowFeeAccrualStore と揃える）。
+// 順序固定の競合再現テストが本クラスを直接組み立てるため、internal では届かない。
+public sealed class EfBorrowFeeAccrualStore(RiskManagementDbContext db) : IBorrowFeeAccrualStore
 {
     public bool Record(BorrowFeeAccrual accrual)
     {
@@ -32,7 +34,8 @@ internal sealed class EfBorrowFeeAccrualStore(RiskManagementDbContext db) : IBor
             AccruedAtUtc = accrual.AccruedAt,
         });
 
-        return SaveNewRow();
+        return SaveNewRow(() =>
+            db.BorrowFeeAccruals.Find(accrual.Symbol, accrual.Market, accrual.TradingDay) is not null);
     }
 
     public bool RecordUnavailable(BorrowFeeUnavailableDay day)
@@ -53,7 +56,8 @@ internal sealed class EfBorrowFeeAccrualStore(RiskManagementDbContext db) : IBor
             ObservedAtUtc = day.ObservedAt,
         });
 
-        return SaveNewRow();
+        return SaveNewRow(() =>
+            db.BorrowFeeUnavailableDays.Find(day.Symbol, day.Market, day.TradingDay) is not null);
     }
 
     public IReadOnlyList<BorrowFeeAccrual> GetAccrualsBetween(DateOnly fromInclusive, DateOnly toInclusive) =>
@@ -77,21 +81,32 @@ internal sealed class EfBorrowFeeAccrualStore(RiskManagementDbContext db) : IBor
 
     // 主キー衝突（＝別レプリカが同じ建玉・同じ日を先に書いた）は**目的が達成されている**ため false を返す。
     //
-    // ⚠️ **接続断など真の書き込み失敗も同じ分岐に入る**（既存ストアと同じ広域 catch の踏襲）。
-    // **倒れる向きは「その日は計上されていない」** であり、集計はその日を計上日数にも未供給日数にも
-    // 数えない —— 合計が実費より**小さく**出る側であり、費用を過小に見せる。したがって
-    // **計上に失敗した日は未供給として残る保証が無い**点は残余リスクとして IADR-0183 に記載する。
-    private bool SaveNewRow()
+    // FR-10, FR-11, #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「対象行が実在するか」で行う。**
+    // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、InMemory は
+    // ArgumentException）ため、型を列挙すると取りこぼした側だけが素通りする。
+    // <paramref name="rowExists"/> は呼び出し側が渡す「自分が書こうとした行の実在」判定である
+    // （計上と未供給で別テーブルを見るため、ここでは決め打ちできない）。
+    private bool SaveNewRow(Func<bool> rowExists)
     {
         try
         {
             db.SaveChanges();
             return true;
         }
-        catch (DbUpdateException)
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
             db.ChangeTracker.Clear();
-            return false;
+            if (rowExists())
+            {
+                // 別レプリカが同じ建玉・同じ日を先に書いた＝記録の目的は達成されている（冪等）。
+                return false;
+            }
+
+            // 🔴 **行が生まれていない＝競合ではなく本物の書き込み失敗である。握り潰さない。**
+            // 従来は接続断なども false に化け、集計はその日を計上日数にも未供給日数にも数えなかった ——
+            // **合計が実費より小さく出る（費用を過小に見せる）** 側へ無言で倒れていた
+            // （IADR-0183 が残余リスクとして明記していたもの）。再送出すれば再配送で再試行される。
+            throw;
         }
     }
 }

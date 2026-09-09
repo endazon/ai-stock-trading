@@ -48,12 +48,23 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
                 db.SaveChanges();
                 return 1;
             }
-            catch (DbUpdateException)
+            // FR-06, FR-07, #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「行が実在するか」で行う。**
+            // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、InMemory は
+            // ArgumentException）ため、型を列挙すると取りこぼした側だけが素通りする。
+            catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
             {
-                // 同一 PeriodKey の並行作成による一意制約違反。競合として扱う（他リクエストが作成済み）。
                 db.ChangeTracker.Clear();
                 var current = db.Reports.Find(report.PeriodKey);
-                throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, current?.Version ?? 0);
+                if (current is null)
+                {
+                    // 行が生まれていない＝競合ではなく本物の保存失敗である。**握り潰さない**
+                    // （従来は current?.Version ?? 0 として「版 0 との競合」を発明し、本物の保存失敗を
+                    //   409 相当の競合へ偽装していた）。
+                    throw;
+                }
+
+                // 同一 PeriodKey の並行作成による一意制約違反。競合として扱う（他リクエストが作成済み）。
+                throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, current.Version);
             }
         }
 
