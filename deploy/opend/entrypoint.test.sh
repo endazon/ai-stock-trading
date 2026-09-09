@@ -151,6 +151,21 @@ write_line() {
   return 1
 }
 
+# ファイルへ期待する内容が現れるまで待つ（最大 5 秒）。
+#
+# 🔴 **固定の sleep で待たない。** `script` の複製も pty 越しのエコーも書かれる時刻が揺れるため、
+# `sleep 0.7` で足りる回と足りない回が出る（実測: 同じコンテナで緑と skip に振れた）。
+# 待ち方を「時間」から「事象」へ変えると、遅い環境でも速い環境でも同じ判定になる。
+wait_for_content() {
+  local f="$1" needle="$2" limit="${3:-50}" i=0
+  while [ "$i" -lt "$limit" ]; do
+    grep -q "$needle" "$f" 2>/dev/null && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
+}
+
 # FIFO が現れるまで待つ（起動は背景で走るため）。
 wait_for_fifo() {
   local f="$1" i=0
@@ -291,41 +306,47 @@ start_fake_opend_with_console() {
   disown "$CHILD" 2>/dev/null || :
 }
 
-console_mechanism_works() {
-  [ "$FIFO_OK" = "1" ] || return 1
-  command -v script >/dev/null 2>&1 || return 1
-  local probe="$WORK/console-probe/stdin"
-  local console="$WORK/console-probe/console.log"
-  mkdir -p "$WORK/console-probe"
-  start_fake_opend_with_console "$probe" "$WORK/console-probe.out" "$console" /dev/null
-  local ok=1
-  if wait_for_fifo "$probe" && write_line "$probe" 'console-ping'; then
-    sleep 0.7
-    grep -q 'console-ping' "$console" 2>/dev/null || ok=0
-  else
-    ok=0
-  fi
-  stop_fake_opend
-  [ "$ok" = "1" ]
-}
-
+# この群を走らせる条件は 2 つだけである。
+#
+# 🔴 **本番と同じ関数を「下見」として一度余計に走らせない。** 当初はそうしていたが、
+# 下見が失敗したときに群ごと skip されるため、**同じコンテナで緑と skip に振れた**（実測）。
+# 下見は保護になっていない —— MSYS は `FIFO_OK` の側で既に落ちており（あちらは 3 回連続を要求する）、
+# Linux では `script` が在れば機序は成立する。下見を挟むぶんだけ揺らぎが増えるだけであった。
+# 断定側は `wait_for_content` で事象を待つので、遅い環境でも待ち時間で落ちない。
 CONSOLE_OK=0
-console_mechanism_works && CONSOLE_OK=1
+if [ "$FIFO_OK" = "1" ] && command -v script >/dev/null 2>&1; then
+  CONSOLE_OK=1
+fi
 
 if [ "$CONSOLE_OK" = "1" ]; then
+  # 🔴 **入力を経由して測らない。** ここで固定したいのは「OpenD が出した行が複製と標準出力の
+  # 両方に出る」ことであって、入力が届くことではない（それは T-722-01/03 が既に測っている）。
+  # 当初は FIFO へ書いた行の echo を見ていたが、`script` が pty を起こし終える前に書くと
+  # 届かない回があり、**同じコンテナで 6 回中 4 回落ちた**（実測）。測る対象と無関係な依存だった。
+  #
+  # 代わりに、偽の OpenD 自身に印を出させる。待ちは事象で行う。
   F5="$WORK/run5/stdin"
   C5="$WORK/run5/console.log"
   mkdir -p "$WORK/run5"
-  start_fake_opend_with_console "$F5" "$WORK/out5" "$C5" /dev/null
-  if wait_for_fifo "$F5"; then
-    write_line "$F5" 'input_phone_verify_code -code=123456'
-    sleep 0.7
-    assert_contains 'T-722-05 複製ファイルにコンソール出力が入る' "$(cat "$C5")" 'input_phone_verify_code -code=123456'
-    # 🔴 これを外すと `kubectl logs` と attach が沈黙する（複製のために本線を壊さない）。
-    assert_contains 'T-722-05 コンテナの標準出力にも従来どおり出る' "$(cat "$WORK/out5")" 'input_phone_verify_code -code=123456'
-  else
-    ng 'T-722-05 複製ファイルにコンソール出力が入る' 'FIFO が作られなかった'
-  fi
+  : > "$WORK/out5"
+  # `start_opend_with_console` は残りの引数を `$*` で 1 つの文字列へ畳んで `script -c` へ渡すため、
+  # 引用符は保たれない（`sh -c 'a; b'` は壊れる）。**単一の実行ファイル**を渡す。
+  cat > "$WORK/fake-opend.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo OPEND-CONSOLE-MARK
+sleep 30
+FAKE
+  chmod +x "$WORK/fake-opend.sh"
+  ( start_opend_with_console "$F5" "$C5" "$WORK/fake-opend.sh" > "$WORK/out5" 2>&1 ) < /dev/null &
+  CHILD=$!
+  disown "$CHILD" 2>/dev/null || :
+  # 🔴 待ちを長く取る。`script(1)` は起動が遅れる回があり、2 秒では複製の見出し行すら
+  # 出ていないことを実測した（同じコンテナで 4 回中 2 回）。事象で待つ以上、上限は寛容でよい。
+  wait_for_content "$C5" 'OPEND-CONSOLE-MARK' 150 || :
+  wait_for_content "$WORK/out5" 'OPEND-CONSOLE-MARK' 150 || :
+  assert_contains 'T-722-05 複製ファイルにコンソール出力が入る' "$(cat "$C5")" 'OPEND-CONSOLE-MARK'
+  # 🔴 これを外すと `kubectl logs` と attach が沈黙する（複製のために本線を壊さない）。
+  assert_contains 'T-722-05 コンテナの標準出力にも従来どおり出る' "$(cat "$WORK/out5")" 'OPEND-CONSOLE-MARK'
   stop_fake_opend
 
   # T-722-06: 再起動を跨いだ前回の複製は捨てる（emptyDir はコンテナ再起動で消えない）。
