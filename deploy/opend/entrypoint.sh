@@ -46,6 +46,45 @@ require_rsa_key_file() {
 	return 0
 }
 
+# #722: OpenD の標準入力を FIFO 経由にして起動する。
+#
+# なぜ要るか: OpenD はログイン時の検証コード（SMS / 画像 CAPTCHA）を **PID 1 の標準入力**から読む。
+# 素の構成では標準入力が Pod の tty（`/proc/1/fd/0 -> /dev/pts/0`）に直結しているため、
+# **`kubectl exec` からは書けない**（exec は別プロセスを起こすだけである）。結果として入力手段は
+# `kubectl attach` だけになり、手元に kubeconfig を持つ人しか再認証できない。
+# 標準入力を FIFO にすると exec からも書けるようになり、**既に配備済みの Headlamp の Terminal が
+# そのまま入力面になる**（認可は apiserver の RBAC がそのまま効く。新しい信頼の基点を作らない）。
+#
+# 🔴 3 つの細部が効く。どれを外しても壊れる。
+#   1. **作る前に消す。** コンテナ再起動では前回の FIFO が残っており、`set -e` の下で
+#      mkfifo が EEXIST になると OpenD が上がらない（CrashLoopBackOff になる）。
+#   2. **保持用の書き手プロセスを置かず `0<>`（O_RDWR）で開く。** 書き手がゼロになると OpenD は
+#      EOF を見て終了し、再起動 → SMS 再送になる。読み手自身が書き手なら EOF は来ない。
+#   3. **fd 1 / 2 は触らない。** `tee` を挟むと C の stdio が行バッファから全バッファへ切り替わり、
+#      `Command Tips` が 4KB バッファに埋もれて `kubectl logs` にも attach にも出なくなる。
+#
+# tty を FIFO へ流す背景プロセスを 1 本置くので、**`kubectl attach` の既存手順はそのまま動く**。
+start_opend_with_fifo() {
+	fifo="$1"
+	shift
+	mkdir -p "$(dirname "$fifo")"
+	# 細部 1。存在しないときの unlink 失敗で set -e に落とされないようにする。
+	unlink "$fifo" 2>/dev/null || :
+	mkfifo -m 600 "$fifo"
+	# コンテナ本来の標準入力（tty）を FIFO へ流す。attach で打った行はここを通る。
+	# FIFO の open(O_WRONLY) は読み手が現れるまで塞がるので、背景に置いて下の exec で解く。
+	#
+	# 🔴 背景ジョブの標準入力を `<&0` で渡してはならない。ジョブ制御が無いシェルは背景ジョブの
+	# 標準入力を **/dev/null へ差し替えてから**リダイレクトを適用するため、`<&0` は
+	# 差し替え後の /dev/null を複製してしまう（attach で打った行が消える。実測で踏んだ）。
+	# 先に別の fd へ退避してから渡す。
+	exec 3<&0
+	( exec cat > "$fifo" ) <&3 &
+	exec 3<&-
+	# 細部 2。0<> は O_RDWR。
+	exec "$@" 0<> "$fifo"
+}
+
 # deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
 # scripts/k8s-local-deploy.sh の AST_DEPLOY_LIB と同じ idiom（#263 / IADR-0109）。
 # コンテナ実行時には設定されない（Dockerfile / chart のいずれにも現れない）。
@@ -94,4 +133,9 @@ chmod 600 /opt/opend/OpenD.xml
 
 echo "==> starting moomoo OpenD (headless) api_port=${API_PORT} ip=${API_IP} (SIMULATE 前提・実弾なし)"
 [ -x ./OpenD ] || { echo "ERROR: /opt/opend/OpenD が見つかりません。" >&2; ls -la /opt/opend >&2; exit 1; }
-exec ./OpenD
+
+# #722: 標準入力は FIFO 経由にする（画面＝Headlamp の Terminal から検証コードを入れられるようにするため）。
+# 運用手順は deploy/opend/README.md を参照。`kubectl attach` の従来手順も引き続き使える。
+OPEND_STDIN_FIFO="${OPEND_STDIN_FIFO:-/run/opend/stdin}"
+echo "==> stdin FIFO: ${OPEND_STDIN_FIFO}（exec からも検証コードを流し込める）"
+start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD

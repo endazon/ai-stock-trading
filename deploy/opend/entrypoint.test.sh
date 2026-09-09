@@ -133,5 +133,133 @@ assert_eq       'T-274-06 不在: 非ゼロ終了する（起動を止める）'
 assert_contains 'T-274-06 不在: ERROR にパスを示す' "$ERR" 'does-not-exist.pem'
 assert_contains 'T-274-06 不在: Secret のマウント確認を促す' "$ERR" 'moomoo-rsa'
 
+# ---- T-722: 標準入力の FIFO 経路（#722） -----------------------------------
+# 実 OpenD は要らない。`start_opend_with_fifo` の最後は `exec "$@"` なので、OpenD の代わりに
+# `cat` を渡せば「標準入力へ届いたもの」がそのまま標準出力に出る＝届いたかどうかを観測できる。
+
+# FIFO への書き込みは読み手が居なければ塞がる。**試験が固まらないよう必ず時間を切る。**
+#
+# 読み手（起動中の child）が FIFO を開くまでの間は塞がるので、数回やり直す。
+# **1 回で諦めると、FIFO が既に在る場合（＝再起動を模したケース）に競走で落ちる** ——
+# `wait_for_fifo` は「在ること」しか見られず、「読み手が開いたこと」は見られない。
+write_line() {
+  local i=0
+  while [ "$i" -lt 4 ]; do
+    timeout 3 bash -c 'printf "%s\n" "$2" > "$1"' _ "$1" "$2" && return 0
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# FIFO が現れるまで待つ（起動は背景で走るため）。
+wait_for_fifo() {
+  local f="$1" i=0
+  while [ "$i" -lt 50 ]; do
+    [ -p "$f" ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# 背景で起動し、child の PID を CHILD へ、標準出力を $2 へ入れる。$3 は child の標準入力にするファイル。
+start_fake_opend() {
+  local fifo="$1" out="$2" stdin_src="$3"
+  : > "$out"
+  ( start_opend_with_fifo "$fifo" cat > "$out" 2>&1 ) < "$stdin_src" &
+  CHILD=$!
+  # 片付けの kill -9 でシェルが「Killed」を出すのを抑える（試験の出力を読みにくくするだけのため）。
+  disown "$CHILD" 2>/dev/null || :
+}
+
+stop_fake_opend() {
+  # child は 0<> で開いているので EOF では終わらない。必ず落とす（wait では止まらない）。
+  kill -9 "$CHILD" 2>/dev/null || :
+  CHILD=""
+}
+
+# この環境で **この機序そのもの**が成立するかを測る。
+#
+# 🔴 `mkfifo` の成否では足りず、読み書きの往復でも足りない。Git Bash（MSYS）は mkfifo にも
+# 素朴な往復にも成功しながら、**`0<>`（O_RDWR）で開いた FIFO 経由では届かない**（実測）。
+# したがって探針は**本番と同じ関数を同じ形で 1 回走らせて**判定する。
+# 実機（Linux コンテナ）での実測は #722 の作業仕様書に残してある。
+fifo_mechanism_works() {
+  command -v timeout >/dev/null 2>&1 || return 1
+  # 既存の試験が $WORK/probe を**通常ファイル**として使っている。名前を分ける（衝突すると mkdir が失敗する）。
+  local probe="$WORK/fifo-probe/stdin"
+  start_fake_opend "$probe" "$WORK/fifo-probe.out" /dev/null
+  local ok=1
+  if wait_for_fifo "$probe" && write_line "$probe" 'ping'; then
+    sleep 0.5
+    grep -q 'ping' "$WORK/fifo-probe.out" || ok=0
+    # **`0<>` が効いているかまで見る。** 書き手がゼロになった後も読み手が生きていること。
+    # MSYS の FIFO は往復だけなら通ることがあるが、ここは通らない（実測。ここを見ないと群が不安定に緑/赤へ振れる）。
+    kill -0 "$CHILD" 2>/dev/null || ok=0
+  else
+    ok=0
+  fi
+  stop_fake_opend
+  [ "$ok" = "1" ]
+}
+
+FIFO_OK=0
+fifo_mechanism_works && FIFO_OK=1
+
+if [ "$FIFO_OK" = "1" ]; then
+  # T-722-01: FIFO へ書いた 1 行が OpenD の標準入力へ届く（＝exec から検証コードを入れられる）
+  F1="$WORK/run1/stdin"
+  start_fake_opend "$F1" "$WORK/out1" /dev/null
+  if wait_for_fifo "$F1"; then
+    write_line "$F1" 'input_phone_verify_code -code=123456'
+    sleep 0.5
+    assert_contains 'T-722-01 FIFO へ書いた行が標準入力へ届く' "$(cat "$WORK/out1")" 'input_phone_verify_code -code=123456'
+  else
+    ng 'T-722-01 FIFO へ書いた行が標準入力へ届く' 'FIFO が作られなかった'
+  fi
+
+  # T-722-02: 書き手がゼロになっても child は終わらない（0<> ＝ O_RDWR。EOF を見ない）
+  # 上の書き込みで開いた fd は既に閉じており、tty 側の copier も /dev/null で EOF 済みである。
+  # それでも child が生きていること＝保持用プロセス無しで EOF を防げていること。
+  if kill -0 "$CHILD" 2>/dev/null; then
+    ok 'T-722-02 書き手がゼロでも終了しない（EOF を見ない）'
+  else
+    ng 'T-722-02 書き手がゼロでも終了しない（EOF を見ない）' 'child が終了していた（再起動 → SMS 再送につながる）'
+  fi
+  stop_fake_opend
+
+  # T-722-03: tty（コンテナ本来の標準入力）から打った行も同じ標準入力へ届く
+  #           ＝ `kubectl attach` の既存手順を壊していない
+  printf 'input_pic_verify_code -code=ab12\n' > "$WORK/tty-input"
+  F3="$WORK/run3/stdin"
+  start_fake_opend "$F3" "$WORK/out3" "$WORK/tty-input"
+  if wait_for_fifo "$F3"; then
+    sleep 0.5
+    assert_contains 'T-722-03 tty から打った行も届く（attach を壊さない）' "$(cat "$WORK/out3")" 'input_pic_verify_code -code=ab12'
+  else
+    ng 'T-722-03 tty から打った行も届く（attach を壊さない）' 'FIFO が作られなかった'
+  fi
+  stop_fake_opend
+
+  # T-722-04: 前回の FIFO が残っていても EEXIST で落ちない（コンテナ再起動の形）
+  #           これを外すと OpenD が CrashLoopBackOff になる。
+  F4="$WORK/run4/stdin"
+  mkdir -p "$(dirname "$F4")"
+  mkfifo "$F4"
+  start_fake_opend "$F4" "$WORK/out4" /dev/null
+  if wait_for_fifo "$F4"; then
+    write_line "$F4" 'req_phone_verify_code'
+    sleep 0.5
+    assert_contains 'T-722-04 残存 FIFO があっても起動する（再起動の形）' "$(cat "$WORK/out4")" 'req_phone_verify_code'
+    assert_missing  'T-722-04 EEXIST を出さない' "$(cat "$WORK/out4")" 'File exists'
+  else
+    ng 'T-722-04 残存 FIFO があっても起動する（再起動の形）' 'FIFO が作られなかった（EEXIST で落ちた可能性）'
+  fi
+  stop_fake_opend
+else
+  skip 'T-722-01/02/03/04 標準入力の FIFO 経路' \
+    'この環境では FIFO の機序が成立しない（MSYS は mkfifo に成功しても 0<> 経由で届かない）。Linux で走らせること'
+fi
+
 printf '\n%d passed, %d failed, %d skipped\n' "$PASSED" "$FAILED" "$SKIPPED"
 [ "$FAILED" -eq 0 ] || exit 1
