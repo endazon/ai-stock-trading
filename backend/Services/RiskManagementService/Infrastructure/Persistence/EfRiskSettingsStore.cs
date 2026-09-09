@@ -17,7 +17,8 @@ public sealed class EfRiskSettingsStore(RiskManagementDbContext db) : IRiskSetti
         }
 
         // 未設定: 既定値をシードする。同時初回リクエストが競合して一意制約違反になり得るため、
-        // 失敗時は他リクエストがシード済みとみなして読み直す（冪等・レース窓を 500 にしない。#58 の是正を踏襲）。
+        // 失敗時は行を読み直し、**行があれば**他リクエストがシード済みとみなして返す
+        // （冪等・レース窓を 500 にしない。#58 の是正を踏襲）。**行が無ければ再送出する**（下記 catch）。
         var defaults = TradingDefaults.CreateSettings();
         db.RiskSettings.Add(new RiskSettingsRow
         {
@@ -31,11 +32,23 @@ public sealed class EfRiskSettingsStore(RiskManagementDbContext db) : IRiskSetti
             db.SaveChanges();
             return defaults;
         }
-        catch (DbUpdateException)
+        // FR-10, FR-17, #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「行が実在するか」で行う。**
+        // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、EF Core の
+        // InMemory は ArgumentException「An item with the same key has already been added」）。
+        // 型を列挙すると取りこぼした側だけが素通りし、エンドポイントの例外フィルタで
+        // ArgumentException が 400（＝利用者の要求が悪い）へ写像されるという遠い形で壊れる（#707 の実測）。
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
             db.ChangeTracker.Clear();
             var seeded = db.RiskSettings.Find(SingletonKeys.Id);
-            return seeded is not null ? RiskSettingsSerialization.Deserialize(seeded.Json) : defaults;
+            if (seeded is null)
+            {
+                // 行が生まれていない＝競合ではなく本物の保存失敗である。**握り潰さない**
+                // （未永続の既定値を返すと「保存できていないのに既定値でリスク統制が動く」状態を黙って作る）。
+                throw;
+            }
+
+            return RiskSettingsSerialization.Deserialize(seeded.Json);
         }
     }
 

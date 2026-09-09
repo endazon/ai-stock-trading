@@ -25,12 +25,22 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             db.SaveChanges();
             return true;
         }
-        catch (DbUpdateException)
+        // FR-05, #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「予約行が実在するか」で行う。**
+        // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、InMemory は
+        // ArgumentException）ため、型を列挙すると取りこぼした側だけが素通りする。
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
-            // 一意制約違反＝他プロセスが先に予約を確保した。書き込み失敗一般もここに落ちるが、いずれも
-            // 「予約を確保できていない」ことに変わりはなく、false（＝発注しない）が安全側（IADR-0057）。
             db.ChangeTracker.Clear();
-            return false;
+            if (db.DispatchReservations.AsNoTracking().Any(r => r.DecisionId == decisionId))
+            {
+                // 一意制約違反＝他プロセスが先に予約を確保した。false（＝発注しない）が安全側（IADR-0057）。
+                return false;
+            }
+
+            // 🔴 **予約行が生まれていない＝競合ではなく本物の書き込み失敗である。握り潰さない。**
+            // 従来は false に化け、呼び出し側が OrderDispatchReservationConflictException（＝「既に予約
+            // されている」）という**嘘の説明**で終わっていた。発注しない点は変わらないが、原因が読めない。
+            throw;
         }
     }
 
@@ -82,10 +92,20 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             db.SaveChanges();
             return true;
         }
-        catch (DbUpdateException)
+        // #714, IADR-0317, IADR-0319: **競合の判定は例外の型ではなく「対象行が実在するか」で行う。**
+        // 🔴 本メソッドは削除であるため**実在の向きが反転する** —— 消したかった行が消えていれば競合、
+        // まだ残っていれば本物の失敗である。
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
-            // 並行で既に解放/確定された等。安全側＝「解放していない」に倒す。
             db.ChangeTracker.Clear();
+            if (db.DispatchReservations.AsNoTracking().Any(r => r.DecisionId == decisionId))
+            {
+                // 行がまだ在る＝解放できていない本物の書き込み失敗である。**握り潰さない**
+                // （「解放していない」を返して黙ると、滞留 Reserved が誰にも気づかれないまま残る）。
+                throw;
+            }
+
+            // 行が消えている＝並行で既に解放/削除された。安全側＝「自分は解放していない」に倒す。
             return false;
         }
     }

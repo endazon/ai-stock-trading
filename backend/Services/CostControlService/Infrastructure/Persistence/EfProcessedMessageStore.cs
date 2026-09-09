@@ -29,10 +29,23 @@ public sealed class EfProcessedMessageStore(DbContextOptions<CostControlDbContex
             db.SaveChanges();
             return true;
         }
-        catch (DbUpdateException)
+        // NFR（費用）, #714, IADR-0317, IADR-0319: **重複の判定は例外の型ではなく「行が実在するか」で行う。**
+        // 一意キー違反の例外型はプロバイダごとに違う（relational は DbUpdateException、InMemory は
+        // ArgumentException）ため、型を列挙すると取りこぼした側だけが素通りする。
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
         {
-            // 同時到達で主キー衝突＝他方が先に処理済み。二重計上を避けるため false（no-op）に倒す。
-            return false;
+            db.ChangeTracker.Clear();
+            if (db.ProcessedMessages.AsNoTracking().Any(r => r.MessageId == messageId))
+            {
+                // 同時到達で主キー衝突＝他方が先に処理済み。二重計上を避けるため false（no-op）に倒す。
+                return false;
+            }
+
+            // 🔴 **マーク行が生まれていない＝重複ではなく本物の書き込み失敗である。握り潰さない。**
+            // 従来は false に化け、呼び出し側（LlmCostIncurredHandler）が「処理済み」とみなして
+            // return していた —— **費用が 1 円も計上されないままメッセージが消える**（fail-open）。
+            // 再送出すれば再配送で再試行される。
+            throw;
         }
     }
 

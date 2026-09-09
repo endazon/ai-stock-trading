@@ -50,10 +50,12 @@ public class EfStageGateStoreTests
         ledger.History[0].ApprovedBy.Should().Be("owner");
     }
 
-    // 注（IADR-0070 決定1）: 同一 Sequence の並行二重追記は relational プロバイダで一意制約違反（DbUpdateException）となり、
-    // EfStageGateStore.Append がこれを DbUpdateConcurrencyException へ変換して 409 に写像する。InMemory プロバイダは
-    // 一意制約を relational と同型にモデル化せず（キー重複を ArgumentException として送出する）この 409 経路を再現できないため、
-    // 本経路のテストは実 Postgres 前提の実コンテナ E2E（#82 系）に切り分ける（500 は両プロバイダで回避される）。
+    // 注（IADR-0070 決定1・#714・IADR-0319 で更新）: 同一 Sequence の並行二重追記は
+    // EfStageGateStore.Append が DbUpdateConcurrencyException へ変換して 409 に写像する。
+    // **旧注記はここで「InMemory では再現できない」としていたが、それは判定が Npgsql の
+    // SqlState "23505" に固定されていたためである。** 競合の判定を「その Sequence の行が実在するか」へ
+    // 移した結果、プロバイダに依らず再現できるようになった —— 順序固定の再現テストは
+    // EfStoreSeedRaceTests.段階遷移の同一シーケンス並行追記は競合として_409_経路へ変換される にある。
 
     [Fact]
     public void 段階別実績は未記録時に_fail_safe既定_を返す()
