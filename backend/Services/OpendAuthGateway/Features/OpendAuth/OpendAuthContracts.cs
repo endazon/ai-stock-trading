@@ -5,14 +5,18 @@ namespace OpendAuthGateway.Features.OpendAuth;
 /// <summary>
 /// #722: <c>POST /opend-auth/verify</c> の要求本文。
 /// <para>
-/// 🔴 <b>コマンド文字列を受け取る欄は無い。</b> 受け取るのは閉じた列挙（<c>phone</c> / <c>pic</c> /
-/// <c>resend</c>）とコードだけで、OpenD へ渡る行は <see cref="OpendConsoleCommand"/> が組み立てる。
+/// 🔴 <b>受け取るのはコードだけである。</b> コマンド文字列も種別も受け取らない ——
+/// <b>どのコマンドを送るかは、OpenD がいま待っているプロンプトからサーバが決める</b>
+/// （planning#594 の裁定: 「画面に自由入力のコンソールは置かず、送信するコマンドは
+/// サーバ側が待機中のプロンプト種別から決める。利用者はコマンドを選べない」）。
+/// </para>
+/// <para>
+/// 種別を要求で受けると、待機中のプロンプトと食い違う組み合わせを呼び出し側が作れてしまう。
+/// 判定の源を 1 つ（コンソールの複製）に絞れば、その食い違い自体が存在しなくなる。
 /// </para>
 /// </summary>
-/// <param name="Kind"><c>phone</c> / <c>pic</c> / <c>resend</c> のいずれか。</param>
-/// <param name="Code">検証コード。<c>resend</c> では指定しない。</param>
+/// <param name="Code">検証コード。</param>
 public sealed record VerifyRequest(
-    [property: JsonPropertyName("kind")] string? Kind,
     [property: JsonPropertyName("code")] string? Code);
 
 /// <summary>
@@ -28,6 +32,19 @@ public sealed record VerifyAccepted(
 /// <summary>
 /// #722: <c>GET /opend-auth/state</c> の応答。
 /// </summary>
+/// <para>
+/// 🔴 <b>3 状態を潰さずに描き分けられる形にしてある</b>（planning#594 の裁定）。
+/// 画面はこの 2 欄を組にして読むこと。
+/// </para>
+/// <list type="table">
+///   <item><description><c>consoleAvailable=false</c> …… <b>供給が無い</b>（状態を取得できていない）</description></item>
+///   <item><description><c>consoleAvailable=true</c> かつ <c>prompt=null</c> …… <b>対象なし</b>（いま入力を待っていない）</description></item>
+///   <item><description><c>consoleAvailable=true</c> かつ <c>prompt</c> あり …… 入力待ち</description></item>
+/// </list>
+/// <para>
+/// 前 2 者を取り違えると<b>正常にログインできているように見える</b>ため、
+/// 「値が無い」を一括りにしないこと。
+/// </para>
 /// <param name="Prompt">
 /// いま OpenD が待っている入力（<c>phone</c> / <c>pic</c> / <c>resend</c>）。判定できなければ <c>null</c>。
 /// </param>

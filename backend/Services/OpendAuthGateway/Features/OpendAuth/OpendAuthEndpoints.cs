@@ -38,6 +38,7 @@ public static class OpendAuthEndpoints
         group.MapGet("/state", GetState);
         group.MapGet("/captcha", GetCaptcha);
         group.MapPost("/verify", PostVerifyAsync);
+        group.MapPost("/resend", PostResend);
         return app;
     }
 
@@ -126,7 +127,27 @@ public static class OpendAuthEndpoints
             return Results.Json(new OpendAuthError("invalid_json"), statusCode: StatusCodes.Status400BadRequest);
         }
 
-        if (!OpendConsoleCommand.TryCompose(request.Kind, request.Code, out var line, out var rejection))
+        // 🔴 planning#594: **どのコマンドを送るかはサーバが決める。** 判定の源は
+        // コンソールの複製から検出した「いま待っているプロンプト」ただ 1 つであり、要求本文ではない。
+        // これにより「待機中のプロンプトと食い違う種別」という組み合わせが存在しなくなる。
+        var raw = ReadTail(opt.ConsoleLogPath, opt.ConsoleTailBytes, out var consoleAvailable);
+        if (!consoleAvailable)
+        {
+            // **「入力を待っていない」と混ぜない。** ここは状態を取得できていない側である。
+            logger.LogWarning("opend-auth: コンソールの複製を読めないため投入を受け付けない。何も書いていない。");
+            return Results.Json(new OpendAuthError("console_unavailable"), statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var prompt = ConsoleTail.DetectPrompt(ConsoleTail.Sanitize(raw));
+        if (prompt is not VerifyKind.Phone and not VerifyKind.Pic)
+        {
+            // 入力待ちでないときにコードを流すと、次のプロンプトで消費されて 1 回を食う。
+            logger.LogWarning("opend-auth: 検証コードの入力待ちではないため棄却した（prompt={Prompt}）。何も書いていない。",
+                ConsoleTail.ToWireValue(prompt) ?? "(なし)");
+            return Results.Json(new OpendAuthError("not_waiting"), statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (!OpendConsoleCommand.TryCompose(prompt.Value, request.Code, out var line, out var rejection))
         {
             // 🔴 投入値は載せない。載せてよいのは「なぜ落としたか」だけである。
             logger.LogWarning("opend-auth: 投入を棄却した（理由={Reason}）。何も書いていない。", rejection);
@@ -150,8 +171,65 @@ public static class OpendAuthEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        logger.LogInformation("opend-auth: 投入を受理した（kind={Kind}）。", request.Kind);
-        return Results.Ok(new VerifyAccepted("accepted", request.Kind!));
+        // 🔴 記録するのは「受理した事実・時刻・コマンド種別・結果」だけである（planning#594・NFR-05）。
+        // コードの値はここにも応答にも載せない。
+        logger.LogInformation("opend-auth: 投入を受理した（kind={Kind}）。", ConsoleTail.ToWireValue(prompt));
+        return Results.Ok(new VerifyAccepted("accepted", ConsoleTail.ToWireValue(prompt)!));
+    }
+
+    /// <summary>
+    /// #722 / planning#594: SMS の再送を要求する（<c>req_phone_verify_code</c>・引数なし）。
+    /// <para>
+    /// 本文を取らない。<b>コードが失効したときの唯一の出口</b>であり、待機中のプロンプトが
+    /// <c>phone</c> でも <c>resend</c> でも打てる（失効したコードを待っている状態から抜ける手段が要る）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>流量制限は投入と同じ枠を使う。</b> 別枠にすると、再送だけを連打して
+    /// moomoo 側の SMS 送信枠を使い切れてしまう。
+    /// </para>
+    /// </summary>
+    private static IResult PostResend(
+        HttpContext context,
+        IOptions<OpendAuthOptions> options,
+        IOpendStdinWriter writer,
+        SubmissionRateLimiter limiter,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger(LoggerCategory);
+        var opt = options.Value;
+
+        ReadTail(opt.ConsoleLogPath, opt.ConsoleTailBytes, out var consoleAvailable);
+        if (!consoleAvailable)
+        {
+            logger.LogWarning("opend-auth: コンソールの複製を読めないため再送を受け付けない。何も書いていない。");
+            return Results.Json(new OpendAuthError("console_unavailable"), statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (!OpendConsoleCommand.TryCompose(VerifyKind.Resend, code: null, out var line, out var rejection))
+        {
+            logger.LogWarning("opend-auth: 再送を棄却した（理由={Reason}）。何も書いていない。", rejection);
+            return Results.Json(new OpendAuthError(ToErrorCode(rejection)), statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!limiter.TryAcquire(out var retryAfter))
+        {
+            logger.LogWarning("opend-auth: 流量制限により再送を棄却した（{Max} 件 / {Window} 秒）。",
+                limiter.MaxSubmissions, limiter.Window.TotalSeconds);
+            context.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+            return Results.Json(new OpendAuthError("rate_limited"), statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        var outcome = writer.WriteLine(line);
+        if (outcome != StdinWriteOutcome.Written)
+        {
+            return Results.Json(
+                new OpendAuthError(outcome == StdinWriteOutcome.NoReader ? "opend_not_listening" : "stdin_unavailable"),
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        logger.LogInformation("opend-auth: 再送を受理した。");
+        return Results.Ok(new VerifyAccepted("accepted", "resend"));
     }
 
     /// <summary>棄却理由 → 応答に載せる符号。<b>入力そのものは決して含めない。</b></summary>

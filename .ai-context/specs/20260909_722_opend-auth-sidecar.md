@@ -135,7 +135,8 @@ O_APPEND でないと `script` は自分のオフセットへ書き続け、切�
 | --- | --- |
 | `GET /opend-auth/state` | 整形済みのコンソール末尾（上限つき）／待たれているプロンプト／CAPTCHA の有無 |
 | `GET /opend-auth/captcha` | `/run/opend/captcha.png` を `image/png` で返す。**固定パス・引数なし**。不在なら 404 |
-| `POST /opend-auth/verify` | `{ "kind": "phone"｜"pic"｜"resend", "code": "..." }` |
+| `POST /opend-auth/verify` | `{ "code": "..." }` **のみ**。種別は受け取らず、**待機中のプロンプトからサーバが決める** |
+| `POST /opend-auth/resend` | 本文なし。`req_phone_verify_code`（引数なし）を書く |
 
 安全要件（すべて試験を持つ。詳細は IADR-0320）:
 

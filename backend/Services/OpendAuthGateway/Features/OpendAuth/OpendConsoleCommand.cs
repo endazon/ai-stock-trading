@@ -115,6 +115,21 @@ public static partial class OpendConsoleCommand
             return false;
         }
 
+        return TryCompose(parsed, code, out line, out rejection);
+    }
+
+    /// <summary>
+    /// #722 / planning#594: <b>種別が既に決まっているとき</b>の組み立て。
+    /// <para>
+    /// 本番の経路はこちらである —— 種別は<b>コンソールの複製から検出したプロンプト</b>であって、
+    /// 呼び出し側の申告ではない。文字列を受ける上の多重定義は、綴りの検証そのものを固定する
+    /// 試験のために残してある。
+    /// </para>
+    /// </summary>
+    public static bool TryCompose(VerifyKind parsed, string? code, out string line, out VerifyRejection rejection)
+    {
+        line = string.Empty;
+
         if (parsed == VerifyKind.Resend)
         {
             // 再送は引数を取らない。コードが付いてくるのは呼び出し側の誤りであり、黙って捨てない。
