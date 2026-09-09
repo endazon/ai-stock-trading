@@ -253,6 +253,48 @@ public class OpendAuthEndpointsTests : IDisposable
         (await PostAsync("""{"code":"123456"}""")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // ---- GET /opend-auth/state: 🔴 3 状態はサーバが宣言する ------------------------------
+
+    [Theory]
+    // 読めて入力待ち → waiting。読めて入力待ちでない → idle（**対象なし**）。
+    // 読めない → unavailable（**供給が無い**）。後ろ 2 つを取り違えると
+    // 「正常にログインできているように見える」（planning#594）。
+    [InlineData(WaitingForPhone, "waiting", "phone")]
+    [InlineData(WaitingForPic, "waiting", "pic")]
+    [InlineData(NotWaiting, "idle", null)]
+    public async Task 状態は3状態をサーバ側で宣言する(string console, string expectedStatus, string? expectedPrompt)
+    {
+        _factory.GivenConsole(console);
+
+        var state = await _client.GetFromJsonAsync<JsonElement>("/opend-auth/state");
+
+        state.GetProperty("status").GetString().Should().Be(expectedStatus);
+        state.GetProperty("prompt").GetString().Should().Be(expectedPrompt);
+        state.GetProperty("consoleAvailable").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task 状態は取得できないことを対象なしと混ぜない()
+    {
+        // コンソールの複製を置かない。
+        var state = await _client.GetFromJsonAsync<JsonElement>("/opend-auth/state");
+
+        state.GetProperty("status").GetString().Should().Be("unavailable",
+            "「読めていない」を「入力待ちでない（idle）」へ倒すと、壊れているのに正常に見える");
+        state.GetProperty("consoleAvailable").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task 最後のログイン時刻は推測で埋めない()
+    {
+        _factory.GivenConsole(NotWaiting);
+
+        var state = await _client.GetFromJsonAsync<JsonElement>("/opend-auth/state");
+
+        state.GetProperty("lastLoginAt").ValueKind.Should().Be(JsonValueKind.Null,
+            "OpenD のコンソールは成功の行に時刻を持たない。作れない値を埋めると「取得できていない」が化ける");
+    }
+
     // ---- GET /opend-auth/state ---------------------------------------------------------
 
     [Fact]

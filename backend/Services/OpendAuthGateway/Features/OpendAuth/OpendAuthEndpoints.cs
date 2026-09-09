@@ -53,10 +53,22 @@ public static class OpendAuthEndpoints
         var console = ConsoleTail.Sanitize(raw);
         var prompt = ConsoleTail.DetectPrompt(console);
 
+        // 🔴 3 状態は**ここで宣言する**。画面が `prompt` の null から推測する形にしない
+        // （「供給可否はサーバ側が宣言し、画面はそれに従う」）。
+        //   unavailable … コンソールの複製を読めない（状態を取得できていない＝供給が無い）
+        //   waiting     … 検証コードの入力を待っている
+        //   idle        … 読めてはいるが入力待ちではない（対象なし）
+        var status = !consoleAvailable
+            ? "unavailable"
+            : prompt is VerifyKind.Phone or VerifyKind.Pic ? "waiting" : "idle";
+
         return Results.Ok(new OpendAuthState(
+            status,
             ConsoleTail.ToWireValue(prompt),
             CaptchaAvailable(opt),
             consoleAvailable,
+            // 最後のログイン成功時刻は作れない。**推測で埋めない**（契約の doc コメント参照）。
+            LastLoginAt: null,
             console));
     }
 

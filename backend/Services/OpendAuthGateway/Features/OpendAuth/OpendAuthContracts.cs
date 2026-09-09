@@ -51,10 +51,21 @@ public sealed record VerifyAccepted(
 /// <param name="CaptchaAvailable">画像 CAPTCHA の写しが取得できる状態か。</param>
 /// <param name="ConsoleAvailable">コンソール複製が読める状態か（OpenD 未起動なら <c>false</c>）。</param>
 /// <param name="ConsoleTail">整形済みのコンソール末尾（上限バイト数で切り、資格情報は伏せてある）。</param>
+/// <param name="Status">
+/// 3 状態を<b>サーバが宣言した</b>もの。<c>waiting</c> / <c>idle</c> / <c>unavailable</c>。
+/// 🔴 <b>画面はこれに従い、値の有無から推測しない</b>（「供給が無い値の表示規約」）。
+/// </param>
+/// <param name="LastLoginAt">
+/// 最後にログインへ成功した時刻。**常に <c>null</c> である** ——
+/// OpenD のコンソールは成功を告げる行に時刻を持たず、こちらで作れる値ではない。
+/// **推測して埋めない**（埋めると「取得できていない」が「取得できた」に化ける）。
+/// </param>
 public sealed record OpendAuthState(
+    [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("prompt")] string? Prompt,
     [property: JsonPropertyName("captchaAvailable")] bool CaptchaAvailable,
     [property: JsonPropertyName("consoleAvailable")] bool ConsoleAvailable,
+    [property: JsonPropertyName("lastLoginAt")] string? LastLoginAt,
     [property: JsonPropertyName("consoleTail")] string ConsoleTail);
 
 /// <summary>
