@@ -1,3 +1,4 @@
+using System.Data.Common;
 using RiskManagementService.Features.RiskManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -69,6 +70,23 @@ public sealed class EfPositionDriftStateStore(RiskManagementDbContext db) : IPos
             // 共有されうるため、無関係な追跡状態まで捨ててしまう。読み直しは AsNoTracking で行う。
             entry.State = EntityState.Detached;
 
+            // #719, IADR-0319 追記: **読み直しは、呼び出し側の明示トランザクションの中では証拠にならない。**
+            // REPEATABLE READ 以上のスナップショットは他方のコミット済み行を隠し（「行が無い」と読めてしまう）、
+            // Postgres は失敗した文でトランザクション自体が abort する。実 DB の E2E
+            // （PositionDriftStateConcurrencyE2ETests）はまさにその形で初回行の同時挿入を決定的に再現しており、
+            // 読み直しだけに頼った版は「行が無い＝本物の失敗」と誤って再送出した（2026-09-09・develop 後段 E2E）。
+            // そこで、EF／DB が既に確定させた事実を先に見る:
+            //   - DbUpdateConcurrencyException ＝ 並行トークン不一致（更新対象の行が他方に先に進められた）。
+            //   - SQLSTATE 23505（unique_violation。SQL 標準。プロバイダ固有の例外型ではなく
+            //     DbException.SqlState という .NET の抽象で読む）＝ 固定キーの単一行 INSERT が制約で失敗する
+            //     唯一の理由であり、他方が先に行を作ったことと同値である。
+            // どちらでもないとき（InMemory の ArgumentException・SQLSTATE を持たない失敗）は従来どおり
+            // 「行の実在」で判定する。
+            if (ex is DbUpdateConcurrencyException || IsUniqueViolation(ex))
+            {
+                return false;
+            }
+
             var current = db.PositionDriftStates.AsNoTracking()
                 .FirstOrDefault(r => r.Id == SingletonKeys.Id);
 
@@ -83,4 +101,9 @@ public sealed class EfPositionDriftStateStore(RiskManagementDbContext db) : IPos
             throw;
         }
     }
+
+    // SQL 標準の SQLSTATE 23505（unique_violation）。DbException.SqlState は .NET 標準の抽象であり、
+    // Npgsql の PostgresException 型へ依存しない（IADR-0317 決定 1 の「型を列挙しない」を保つ）。
+    private static bool IsUniqueViolation(Exception ex) =>
+        ex.InnerException is DbException { SqlState: "23505" };
 }
