@@ -1,7 +1,7 @@
 ---
 title: 仕様書: 計画 ID レンジの宣言を実物へ前進させ、公開 kg-ranges.json との突合へ切り替える
 type: spec
-status: draft
+status: done
 related_ids: [NFR, ADR-0029, MSP:ADR-0093, IADR-0200, IADR-0204, IADR-0206, IADR-0262]
 author: endazon (with Claude Code)
 created: 2026-09-09
@@ -24,6 +24,9 @@ plan_refs:
 - 画面（SC）: なし
 - 関連 ADR: `MSP/ADR-0093`（計画 ID レンジは実物から導出して公開し、実装リポジトリはそれへ追随する。Accepted 2026-09-09）／`ADR-0029` 決定 2（planning 依存の禁止。`MSP/ADR-0093` 決定 3 が範囲を 4 点に限って部分改定した）
 - 関連 IADR: `IADR-0200`（クロスリポ参照表記）／`IADR-0206`（`check-cross-repo-refs.js` の置換点）／`IADR-0262`（`check-plan-id-qualification.js` の置換点）
+- 裁定の経緯: planning#591（裁定依頼。Q1 Spec Kit ＝案 A / **Q2 計画 ID レンジ ＝案 A**〔本作業の起点〕/ Q3 Ruflo ＝案 C）と、
+  その調査記録 `planning:draft/cross-project/20260909_ruflo-spec-kit-adoption-decision.md`。
+  **同記録 §6.1 が本作業のずれ（宣言 `0035` / 実物 `0037`）を最初に実測した文書である**（frontmatter `plan_refs` に挙げている理由）
 - 計画書リンク: 隣接クローン `../project-planning` の読み取り、または GitHub URL（`ADR-0029` 決定 2 のとおり submodule は張らない）
 
 ## 目的・背景
@@ -105,15 +108,17 @@ compareRanges()         種別ごとに ok / behind / ahead を出し、scanned�
 
 ## 受け入れ基準
 
-- [ ] `.claude/rules/traceability.repo.md` の計画 ADR レンジが `ADR-0001..0037` になっている（節内 2 箇所とも）
-- [ ] `node scripts/check-planning-adr-range.js --self-test` が全件 pass する（新規ケースを含む）
-- [ ] secret 不在で `--out` を実行すると **exit 0**・`status: "unverified"`・`scanned: 0`・理由つきの JSON が書かれる
-- [ ] 公開 `kg-ranges.json` を模したスタブで実行すると `scanned: 4`・`status: "ok"` になる
-- [ ] 宣言を 1 種だけずらしたスタブで `status: "behind"` になり、`ranges` にその種別だけが `behind` として出る（陽性対照）
-- [ ] `node scripts/check-trace-blocks.js` / `check-commit-messages.js` が通る（レンジ前進による退行が無い）
-- [ ] `node scripts/check-reading-budget.js` が warn を増やさない
-- [ ] `node scripts/scripts.test.js` が通る（既存 3 件を含む）
-- [ ] `scripts/README.md` の当該行が新しい出典・キー・自己試験件数を書いている
+- [x] `.claude/rules/traceability.repo.md` の計画 ADR レンジが `ADR-0001..0037` になっている（節内 2 箇所とも）
+- [x] `node scripts/check-planning-adr-range.js --self-test` が全件 pass する（新規ケースを含む）
+- [x] secret 不在で `--out` を実行すると **exit 0**・`status: "unverified"`・`scanned: 0`・理由つきの JSON が書かれる
+- [x] 公開 `kg-ranges.json` を模したスタブで実行すると `scanned: 4`・`status: "ok"` になる
+- [x] 宣言を 1 種だけずらしたスタブで `status: "behind"` になり、`ranges` にその種別だけが `behind` として出る（陽性対照）
+- [x] `node scripts/check-trace-blocks.js` / `check-commit-messages.js` が通る（レンジ前進による退行が無い）
+- [x] `node scripts/check-reading-budget.js` が warn を増やさない
+- [x] `node scripts/scripts.test.js` が通る（既存 3 件を含む）
+- [x] `scripts/README.md` の当該行が新しい出典・キー・自己試験件数を書いている
+
+**実測（2026-09-09。すべてこのブランチで実走）**: 自己試験 14 件合格 / `scripts.test.js` 338 件合格 / `check-trace-blocks` 43 件・違反 0 / `check-doc-links` 707 件・破損 0 / `gen-knowledge-graph --check` 違反 0 / `check-reading-budget` 43,915 バイト・85.8%（warn なし）/ `check-cross-repo-refs` 2,147 件・違反 0 / `check-plan-id-qualification` 2,198 件・違反 0 / `check-commit-messages --range origin/develop..HEAD` 適合。
 
 ## テスト方針
 
