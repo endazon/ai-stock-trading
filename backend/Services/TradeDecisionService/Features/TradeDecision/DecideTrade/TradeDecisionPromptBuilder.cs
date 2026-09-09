@@ -115,9 +115,12 @@ public static class TradeDecisionPromptBuilder
     // FR-04, IADR-0039, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
     // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させ、Parser を共有する。方針外・不確実は Hold。
     //
-    // #337, IADR-0247: 縮退制御が有効（Decision:ScreeningContextBudgetChars 設定）なときだけ、呼び出し側が
-    // currentPrice（当日の市況・価格＝**保護対象**）と references（ScreeningContextPlanner が縮退順序を適用した
-    // 残余）を渡す。既定（両方 null）は従来のプロンプトと完全に一致する（IADR-0072 決定2 の従来挙動を保つ）。
+    // #337, IADR-0247: 縮退制御が有効なときだけ、呼び出し側が currentPrice（当日の市況・価格＝**保護対象**）と
+    // references（ScreeningContextPlanner が縮退順序を適用した残余）を渡す。両方 null なら従来のプロンプトと
+    // 完全に一致する（IADR-0072 決定2 の従来挙動）。
+    // 🔴 #567, IADR-0313 決定2/決定6: **縮退制御は既定で有効になった**（Decision:ScreeningContextBudgetChars の
+    // 既定 150,000 文字）。したがって**既定の呼び出しは市況・参考情報つきの側**であり、従来のプロンプトを
+    // 観測できるのは同構成へ "0" / "off" を明示した場合に限られる。
     // 参考情報の構造分離（1 件 1 行 JSON フェンス）は本判断と同じ防御を再利用する（ADR-0003 追補）。
     public static string BuildScreening(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,

@@ -1,6 +1,10 @@
 namespace BacktestService.Domain;
 
 // FR-15, FR-20, ADR-0008: Stage 0 合格判定の各条件。
+//
+// 先頭 7 つが判定器（Stage0GateEvaluator）の 7 条件である。末尾 5 つは**駆動側（Hosted の定時評価）の事前条件**であり、
+// 判定器は決して出さない（#688, IADR-0310 決定3・#632, IADR-0318）。同じ enum に同居させるのは、未達理由の文字列表現を
+// Stage0GateResult.FormatFailedChecks() の単一情報源に保つためである（2 系統に分けると区切り文字がドリフトする）。
 public enum Stage0GateCheck
 {
     DeflatedSharpe,
@@ -10,6 +14,38 @@ public enum Stage0GateCheck
     WalkForward,
     TrialCount,
     DataCutoff,
+
+    /// <summary>
+    /// FR-15, #688, IADR-0310 決定2: 過去データが 1 本も無い（**判定そのものを走らせていない**）。
+    /// DataCutoff は空バーを違反と見なさない（`bars.All(...)` は空に対して真）ため、駆動側が明示的に載せる。
+    /// </summary>
+    NoHistoricalBars,
+
+    /// <summary>
+    /// FR-15, FR-20, ADR-0033, #688, IADR-0310 決定3: 評価対象がプレースホルダ戦略である
+    /// （**本番の合否ではない**）。本番戦略＝AI 判断の記録・再生が載るまで、駆動が出す verdict は必ずこれを含む。
+    /// </summary>
+    PlaceholderStrategy,
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: 記録再生戦略を選んだが、**AI 判断の記録が 1 件も無い**
+    /// （供給ポートが既定の「記録なし」・ファイルが無い・空の記録集合）。評価対象が存在しないため判定を走らせない。
+    /// </summary>
+    NoDecisionRecords,
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0033 決定2/決定3, #632, IADR-0318: 記録はあるが**評価の構成と整合しない**
+    /// （期間が評価期間を覆っていない・銘柄集合が違う・記録のカットオフ日が構成と違う）。
+    /// 別の前提で採った記録を、いまの構成の検証結果として使わせない。
+    /// </summary>
+    RecordingMismatch,
+
+    /// <summary>
+    /// FR-15, ADR-0008, #632, IADR-0318: 記録は整合するが、**過剰適合補正（PBO）の標本が足りない**
+    /// （評価期間の日次リターンが分割数に満たない）。判定を走らせず不合格に倒す
+    /// —— 標本不足のまま算出した PBO は「過剰適合が無い」ように見えるだけである。
+    /// </summary>
+    InsufficientEvaluationSample,
 }
 
 // FR-15, ADR-0008, 06_daytrading-review §4: Stage 0 合格基準の閾値。

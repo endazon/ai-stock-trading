@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-08-28
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-05, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
-adrs: [ADR-0002, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #686, MSP#266, planning#54]
+ids: [FR-01, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -281,6 +281,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
 | **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364。基準通貨は USD で、換算は判断境界の 1 点で行う） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源が未接続。**設定点は `Fx__Provider=boj`（日銀・認証不要）で、3 サービス分ある**（#686 以降。`fred` は鍵があるときだけ後段に積まれるフォールバックであり、第一に据えない）。`fx-rate` が `boj` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` は鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点。**`boj` は認証不要のため鍵の有無で `none` へ倒れない** | `none` のままなら provider 名の誤り（未知の値は警告して no-op）か、`Fx__Provider` を空へ戻している。`boj` 申告でも見送りが続く場合は日銀側の収録停止を疑う（**鮮度上限 30 日**超過は採らない。上限・警告しきい値はデータ源の公表周期から計画が定めた値）。日銀は**毎営業日**公表だが**実装が読む経路への収録は翌々営業日 8:50 頃**であり、**最新観測が 2〜4 日前でも正常**である。FRED へフォールバック中は `DEXJPUS` の公表が **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であるため**最新観測が 10 日前でも正常**（警告しきい値 5 日を常に超えうる）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |
 | **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
+| **KB 保存が未登録タグで 400 になり全件失敗する**（#705。基盤のタグ辞書検証が未登録タグを拒否する） | 収集サイクル・報告確定のログに `KB 保存: 0/N` が継続出力される | 監視銘柄コードのような**運用中に増える動的な値をタグへ載せていないか**を確認する（属性へは載せてよい。単値完全一致フィルタで絞り込める）。登録すべき静的タグ一覧の生成は [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) の手順に従う | タグ辞書への実登録操作は基盤（document-service）側の所有物であり、本リポジトリからは登録 API の有無を確認できない。実 KB での `N/N`（N=N）確認は接続性の残件（[ブロック中のタスク](../blocked-tasks.md) A-12）に依存する |
 
 > **`Reserved` 滞留の発生条件**: ブローカ発注の前後でプロセスが落ちる／DB が書けない場合に限る。moomoo の
 > API 瞬断・不達そのものは `MoomooBrokerAdapter` が終端 `Rejected` へ倒すため、滞留にはならない。
@@ -297,6 +298,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | --- | --- |
 | [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（セキュリティ仕様書における「無いこと」の書き分けの決定 3） |
 | [禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) | **建玉を手仕舞えないとき**の手順（一時解除 → 手仕舞い → 再登録）。解除・再登録が監査に残る根拠つき |
+| [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) | 基盤（document-service）のタグ辞書へ事前登録すべきタグ一覧の生成手順。KB 保存が未登録タグで 400 になる事象への対処 |
 | [ブロック中のタスク](../blocked-tasks.md) | 基盤・実機待ちで本リポジトリだけでは進められない項目 |
 
 ## 未決事項

@@ -24,6 +24,20 @@ spec:
     spec:
       backoffLimit: 0
       template:
+        {{- /* #627, IADR-0314 決定4: メッシュ参入時、CronJob の Job Pod にもサイドカーが注入される。
+               ネイティブサイドカー（k8s 1.29+ の initContainer restartPolicy: Always。ローカル環境は
+               k8s 1.35 + Istio 1.30.4 で対応済み・既定 mesh.sidecarInjection.cronJobNativeSidecar=true）
+               前提なら、メインコンテナ終了でサイドカーも自動終了し Job は完了する。
+               🔴 cronJobNativeSidecar=false（ネイティブサイドカー非対応の環境）の場合、下記 annotation は
+               プロキシ起動前に本体がトークン取得へ通信する競合（起動順序の空振り）だけを避けるもので
+               あり、**Job 完了自体（サイドカー常駐によるハング）は解決しない**——従来型サイドカーの
+               「サイドカー終了」ワークアラウンド（例: 本体コマンド末尾で pilot-agent の quitquitquit を
+               叩く）は本設定点の範囲外である（残余リスク。IADR-0314 参照）。 */}}
+        {{- if and .Values.mesh.sidecarInjection.enabled (not .Values.mesh.sidecarInjection.cronJobNativeSidecar) }}
+        metadata:
+          annotations:
+            proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+        {{- end }}
         spec:
           restartPolicy: Never
           containers:

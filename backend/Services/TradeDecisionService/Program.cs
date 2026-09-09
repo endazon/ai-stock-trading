@@ -2,6 +2,8 @@ using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Features.TradeDecision.DecideTrade;
+using TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
+using TradeDecisionService.Hosted;
 using TradeDecisionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
@@ -84,11 +86,16 @@ builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 // NFR（費用）, #347, IADR-0218: 用途（purpose）を必ず載せる。費用統制の対象範囲は購読側が purpose で判別する。
 // #335, IADR-0212: 用途は**計測ごと**に egress（HttpLlmCompletionClient）が載せる。ここで固定すると
 // 二段判断の一次スクリーニングと本判断が同じ用途で積まれ、層別の内訳が取れない。
-builder.Services.AddScoped<ILlmUsageReporter>(sp => new PublishingLlmUsageReporter(
+// FR-15, ADR-0033 決定5, #632, IADR-0318 決定4: Stage 0 記録の費用は月次上限（取引判断サイクル対象）の**外**に置く。
+// 呼び出しの用途は本番と同じ trade-decision のまま（ADR-0011 のモデル一致を守る）で、
+// **計上の境界だけ** Stage0RecordingUsageCollector が stage0-recording へ付け替える。
+// 記録中でなければ素通しであり、本番の計上は 1 バイトも変わらない。
+builder.Services.AddScoped(sp => new Stage0RecordingUsageCollector(new PublishingLlmUsageReporter(
     sp.GetRequiredService<IMessageBus>(),
     sp.GetRequiredService<IClock>(),
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
-    sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>()));
+    sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>())));
+builder.Services.AddScoped<ILlmUsageReporter>(sp => sp.GetRequiredService<Stage0RecordingUsageCollector>());
 
 // FR-04, FR-09, FR-11, ADR-0017 決定2/決定4, #335, IADR-0216/0217: 割当統制の可観測性。
 // フォールバック発火（LlmFallbackFired）と取引判断の見送り（TradeDecisionSkipped）を publish する。
@@ -226,9 +233,11 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
 // 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。
 // 明示的に Decision:EnableScreening=false を与えれば従来どおり単発判断（IADR-0017）へ戻せる。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
-// FR-02, FR-04, FR-06, FR-11, #337, IADR-0247: スクリーニング入力の縮退（Decision:ScreeningContextBudgetChars
-// 設定時のみ発火）の記録経路。発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の
-// 集計経路）へ届ける。予算未設定（既定）では縮退自体が起きないため publish は発生しない。
+// FR-02, FR-04, FR-06, FR-11, #337, #567, IADR-0247, IADR-0313: スクリーニング入力の縮退の記録経路。
+// 発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の集計経路）へ届ける。
+// 予算は既定で有効（150,000 文字。IADR-0313 決定1）。ただし現行構成（Retrieval:TopK=5・参考情報 1 件あたり
+// 最大 1,160 文字）では材料が予算に届かないため、実際の publish はまだ発生しない（同 決定5 の安全網）。
+// 無効化する場合は Decision:ScreeningContextBudgetChars=0（または "off"）を明示する。
 builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReductionReporter>();
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
@@ -316,6 +325,31 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));
 
 builder.Services.AddScoped<TradeDecisionAppService>();
+
+// FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。
+//
+// 🔴 **既定では走らない**（Stage0Recording:Enabled 既定 false ＋ 承認値が見積りと一致しない限り実行しない）。
+// as-of 入力の供給は既定「入力なし」であり、実供給を構成するまで記録は 1 件も作られない（LLM も呼ばれない）。
+builder.Services.Configure<Stage0RecordingOptions>(
+    builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
+builder.Services.AddScoped<IAsOfDecisionInputProvider, NoAsOfDecisionInputProvider>();
+builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
+{
+    var outputPath = sp.GetRequiredService<IConfiguration>()[$"{Stage0RecordingOptions.SectionName}:OutputPath"];
+    return string.IsNullOrWhiteSpace(outputPath)
+        ? new NoStage0DecisionRecordSink()
+        : new FileStage0DecisionRecordSink(
+            outputPath, sp.GetRequiredService<ILogger<FileStage0DecisionRecordSink>>());
+});
+builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
+    sp.GetRequiredService<ILlmCompletionClient>(),
+    sp.GetRequiredService<IAsOfDecisionInputProvider>(),
+    sp.GetRequiredService<IStage0DecisionRecordSink>(),
+    sp.GetRequiredService<Stage0RecordingUsageCollector>(),
+    BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Stage0DecisionRecorder>>()));
+builder.Services.AddHostedService<Stage0RecordingService>();
 
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、
 // 取引判断で合流して TradeDecisionMade を発行する。

@@ -3,15 +3,15 @@ title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
 created: 2026-07-09
-updated: 2026-08-29
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-13, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0018, ADR-0023]
-iadrs: [IADR-0005, IADR-0041, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304]
-specs: [20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
-issues: [#27, #333, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #466, #569]
+iadrs: [IADR-0005, IADR-0041, IADR-0089, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0310]
+specs: [20260804_333_stage-gate, 20260909_688_stage0-bus-and-driver, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
+issues: [#27, #333, #688, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #466, #569]
 -->
 
 
@@ -583,12 +583,12 @@ stateDiagram-v2
 
 | 判定 | 供給元 | 既定の振る舞い |
 | --- | --- | --- |
-| Stage 0 合格 verdict | **未接続**（米国株の日足 OHLC 履歴源が未確定。[#382](https://github.com/endazon/ai-stock-trading/issues/382)） | `BacktestPassed = false` → 昇格しない |
+| Stage 0 合格 verdict | **経路は結線済み・合格 verdict は出ない**（[#688](https://github.com/endazon/ai-stock-trading/issues/688)）。定時駆動が verdict を発行するようになったが、**既定は無効**であり、有効化しても評価対象がプレースホルダのため **verdict は不合格固定**である。実過去データ源も既定は無効のまま（[#382](https://github.com/endazon/ai-stock-trading/issues/382)） | `BacktestPassed = false` → 昇格しない（**供給が届いても false のまま**） |
 | Stage 1 の取引件数 | **実装済み**（約定の観測ログから集計。#386） | 記録が無ければ 0 → 昇格しない。`SIMULATE` の新規建て約定が届けば増える |
 | Stage 1 の営業日数・除外日数 | **未実装**（稼働監視ドライバが無い。判定の純関数は #333 / #334 で用意済み・供給元は [#385](https://github.com/endazon/ai-stock-trading/issues/385)） | 0 → 昇格しない |
 | 発注先の設定値 → 実際の発注経路 | **未結線**（発注先は起動時構成 `Broker:Provider` / `Broker:Environment` が決める） | 設定変更は**記録と表示まで**。実弾は閂 0 が止める |
 | クラス C 統制違反件数 | **実装済み**（発注審査の観測ログから集計。#387） | 未供給（`null`）→ **昇格しない**。審査が動けば 0 件として供給される |
-| Stage 3 の Stage 0 再充足（空売りを含む戦略か） | **実装済み**（バックテスト verdict の射影。verdict 側の値は**走行の観測**であり申告ではない）／供給は Stage 0 合格 verdict と同じく未接続 | `false` → 空売りは開かない |
+| Stage 3 の Stage 0 再充足（空売りを含む戦略か） | **実装済み**（バックテスト verdict の射影。verdict 側の値は**走行の観測**であり申告ではない）／供給は Stage 0 合格 verdict と同じ（経路は通るが不合格固定であり、プレースホルダは注文を出さないため観測も `false`） | `false` → 空売りは開かない |
 | Stage 3 の実弾解禁前の確認 verdict | **実装済み**（承認記録へ相乗り・判定は 30 日 / 情報源 / 戦略の 3 契機）。**発注審査への供給は未結線**（借株照会・維持率の供給が未実装のため） | 承認記録に無ければ未承認 → 空売りは開かない。供給が `null` の間もフェイルクローズのまま |
 | 借株料の照会経路・維持率の供給（verdict の情報源） | **未実装**（[#417](https://github.com/endazon/ai-stock-trading/issues/417) / [#419](https://github.com/endazon/ai-stock-trading/issues/419)） | 識別子は「供給元なし」。**結線された時点で既発行の verdict は失効する** |
 | 段階別の商品種別強制・発注可能額 | — | **実効する**（`RiskEvaluator` 経路） |

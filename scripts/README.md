@@ -43,6 +43,7 @@
 | `k8s-local-images.sh` | ローカル k8s へのイメージ投入（Rancher=nerdctl / Docker Desktop=k3d import を自動判定）。**単体では Pod を再作成しない**（タグ `:latest` 固定 + `imagePullPolicy: IfNotPresent` のため、Pod テンプレートが変わらないサービスは古いイメージのまま残る）。`k8s-local-deploy.sh` は本スクリプトの直後に helm upgrade → `kubectl rollout restart` まで行うため、通常は本スクリプト単体ではなく `k8s-local-deploy.sh` から使う（#673） | — |
 | `opend-build.sh` | moomoo OpenD コンテナのビルド | — |
 | `e2e-local-infra.sh` | 実コンテナ統合 E2E 用のローカル基盤起動 | — |
+| `check-backlog-audit-output.js` | **週次バックログ監査（`backlog-audit.yml`）が run success でも結果 issue（#483 相当。タイトル `chore(NFR): バックログ定期監査の結果`）を更新できていない事象を検出する**（NFR / #711）。`--run-start <ISO8601>`（または env `RUN_START_TIME`）で渡された run 開始時刻より `gh issue view <n> --json updatedAt` の `updated_at` が新しいかだけを見る（本文の質は見ない）。同時刻は**不合格側に倒す**（見逃す方向より誤って fail する方向を安全とみなす）。issue 不在・`gh` 失敗・run 開始時刻が渡されていない場合はいずれも終了コード 1（fail-loud——「今週は指摘なしだった」と「今週は黙って落ちた」を区別できない状態を再生産しないため）。`gh` 呼び出しは差し替え可能（`fetchIssue(issueNumber, execFn)`）にしてあり、`--self-test`（6 件）は実ネットワークを叩かない | 標準出力（判定） |
 | `measure-region-latency.sh` | Hetzner のリージョン選定根拠（実測値）を得るための依存ゼロのレイテンシ実測（moomoo OpenD の接続先ホスト・主要情報源〔Finnhub / FRED / SEC EDGAR / EDINET〕への TCP/TLS 接続を N 回測り中央値を出す）。`--count` / `--host`（HTTPS 追加）/ `--tcp-only`（moomoo OpenD 等 TLS を話さないホスト向け）。**実行には対象ホストへの実 egress が要るため、実行そのものは Hetzner 契約後**（`docs/blocked-tasks.md` A-1a・A-1b／#24 の Tier 3 節参照） | 標準出力（試行値・中央値） |
 | `lib/trace-blocks.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。trace / trace-table ブロックのパーサと ID トークン分類（修飾子の汎用規則を含む）の単一情報源 | — |
 | `lib/plan-ranges.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。計画 ADR の実在レンジを `.claude/rules/traceability.repo.md` から読む（`check-test-traceability.js` の `readPlanIds()`/`planRangeSection()` を拡張点として再利用。同ファイル自体は変更しない） | — |
@@ -88,8 +89,17 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 > 計画リポジトリを見ており、**参照できないとき既定で skip する**ため CI では `--require-planning` を
 > 必ず付ける運用だった（付け忘れると「配線したのに一度も検査していない」まま緑になる。planning#343）。
 > 資料再編（計画 ADR 決定 2・5・6）で 3 本とも退役したため、**残る `--require-planning` は
-> `check-test-traceability.js` の 1 本**である。**ローカルでは付けない**（隣接クローンが無い環境で
-> 落ちるだけである）。
+> `check-test-traceability.js` の 1 本**であった。
+>
+> 🔴 **［2026-09-09 変更・#712］`--require-planning` は ADR-0029 以降使えない（付けると恒久的に
+> `exit 1` になる）。** 判定条件 `planningPopulated()` は `planning/projects` ディレクトリの存在を
+> 見るが、**その `planning` submodule 自体が ADR-0029 決定 2 で本リポジトリから撤去済み**であり、
+> どの環境（CI・ローカル・隣接クローンの有無を問わず）でも存在し得ない。**フラグを付ける限り
+> 実行環境に関わらず必ず失敗する**——「隣接クローンが無い環境で落ちる」という一時的な話ではない。
+> **CI（`ci.yml` の `Check test traceability` ステップ）はフラグ無しで実行する**。フラグ無しでは
+> テストが参照する FR/UC/SC の計画書実在検査が `notice` 付きで恒久的に skip へ倒れるだけで、
+> 必須 FR のテスト・仕様書の存在チェック（本検査器の主眼）は元々 planning 非依存のため引き続き
+> 実効する。**ローカルでも付けない。**
 
 > **［2026-08-28 変更］`check-test-traceability.js` は構造依存の検査器の 3 本目である（NFR / IADR-0258）。**
 > `testFiles()` はサービス配下のテストを新旧 2 通りの樹形から拾う —— 旧: `backend/Services/<Svc>/tests/**`
@@ -162,8 +172,9 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `doc-links` | `check-doc-links.js`（相対リンクの実在） |
 | `adr-index-sync` | `check-adr-index-sync.js`（IADR 本文と索引行の同時変更） |
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
+| `cross-repo-refs`（#712 で新設。**#487 実装時は `scripts.repo.test.js` の中でしか本走していなかった**） | `check-cross-repo-refs.js --self-test` と本検査（他リポジトリの issue / PR 番号の修飾。`CROSS_REPO_NAMES` / `CROSS_REPO_SELF_NAMES` / `CROSS_REPO_EXCLUDES` を明示。実データ本走は違反 0 件・exit 0） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
-| `test-traceability` | `check-test-traceability.js --require-planning`（必須範囲の機能要求のテスト・仕様書の存在。本リポ固有。**計画リポジトリを参照する唯一の検査器**） |
+| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
 | `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |

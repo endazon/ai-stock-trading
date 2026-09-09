@@ -1,20 +1,24 @@
 using BacktestService.Features.Backtest;
+using BacktestService.Features.Backtest.EvaluateStage0Gate;
+using BacktestService.Hosted;
 using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Wolverine;
 
 const string ServiceName = "ai-stock-trading.backtest-service";
 
-// FR-15, FR-20, ADR-0008, #208, IADR-0105: バックテストサービスのホスト。
+// FR-15, FR-20, ADR-0008, #208, IADR-0105, #688, IADR-0310: バックテストサービスのホスト。
 //
-// 本ホストの責務は**実過去データ源の合成**に限る。Stage 0 判定そのもの（DSR/PBO/ウォークフォワード等）は
-// 純ドメイン（BacktestService.Domain / .Application）が持ち、定時実行・verdict の実 publish は行わない。
-//   - 本番戦略（IBacktestStrategy 実装）はまだ存在せず、実行する対象が無い
-//   - BacktestEvaluated の実 publish と実コンテナ E2E は #82（IADR-0089 で整理済）
-// したがって現時点では「no-op 既定の過去データ源を構成から解決し、実効構成を自己申告する」ホストである。
-// 定時トリガ・publish を足す場所は本ホストであり、それらは別 issue で載せる。
+// 本ホストは**実過去データ源の合成**と、**Stage 0 判定の定時駆動＋verdict の発行**を持つ。
+// Stage 0 判定そのもの（DSR/PBO/ウォークフォワード等）は純ドメイン（BacktestService.Domain）が持つ。
+//   - 定時駆動は Hosted/Stage0EvaluationService（**既定は無効**＝fail-safe。IADR-0310 決定1）
+//   - 🔴 **本番戦略（IBacktestStrategy 実装）はまだ存在しない。** 計画 ADR-0033（2026-09-05 裁定）は評価対象を
+//     「AI 判断そのもの（記録・再生）」と定めたが未実装であり、駆動はプレースホルダ戦略で経路のみ確認する。
+//     **その verdict は不合格固定であり、go-live の判断材料にはならない**（IADR-0310 決定3）。
+//   - 実 RabbitMQ / 実過去データを用いた E2E は #82（IADR-0089 で整理済・IADR-0310 決定5 で維持）
 //
 // IADR-0013: 本 Program.cs の standalone 配線は dev/test/CI のローカル単体実行のためのもの。本番は platform 統合（#22）で置換。
 var builder = WebApplication.CreateBuilder(args);
@@ -23,9 +27,14 @@ builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
 
-// DB もメッセージバスも持たない（BacktestService は永続化を持たず、イベント発行は #82）。
-// stateless のため /health/ready は起動直後に healthy（IADR-0049 決定 3）。
+// DB は持たない（BacktestService は永続化を持たない）。stateless のため /health/ready は起動直後に healthy
+// （IADR-0049 決定 3）。**メッセージバスは持つ**（下の Wolverine 配線。#688 / IADR-0310 決定4）。
 builder.Services.AddAiStockTradingHealthChecks();
+
+// ADR-0013, IADR-0129, #688, IADR-0310 決定4: Wolverine（RabbitMQ）。**発行専用**（ハンドラは持たない）。
+// キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
+builder.Host.UseWolverine(opts =>
+    opts.UseAiStockTradingRabbitMq(ServiceName, builder.Configuration["RabbitMq:ConnectionString"]));
 
 // 公開する HTTP 面はヘルスチェックと実効構成の自己申告のみで、いずれも無認可（メッシュ内部限定）である。
 // よって Keycloak 認証（AddAiStockTradingAuth）は登録しない。ただし共通ミドルウェア
@@ -66,10 +75,39 @@ builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
         sp.GetService<IMoomooHistoryKLineClient>()); // moomoo 時のみ登録済み
 });
 
+// FR-15, FR-20, ADR-0008, ADR-0033, #688, IADR-0310 決定1: Stage 0 判定の定時駆動（**既定は無効**）。
+// 常駐は常に登録し、有効・無効の判定は ExecuteAsync が持つ（無効なら 1 度も巡回せず、外部要求も発行も起きない）。
+// 評価には過去データの取得（scoped スコープからの解決）と Wolverine の IMessageBus が要るため、
+// 上の 2 つの登録より後に置く。
+builder.Services.Configure<Stage0EvaluationOptions>(
+    builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
+// FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: AI 判断の記録の供給。
+// **既定は「記録なし」**（NoStage0DecisionRecordSource＝ファイルも読まない）。パスを明示したときだけ実読み込みに
+// なる。記録が無ければ記録再生戦略は評価対象を持たず、合格 verdict は出ない（fail-closed）。
+builder.Services.AddScoped<IStage0DecisionRecordSource>(sp =>
+{
+    var recordingPath = sp.GetRequiredService<IConfiguration>()[$"{Stage0EvaluationOptions.SectionName}:Recording:Path"];
+    return string.IsNullOrWhiteSpace(recordingPath)
+        ? new NoStage0DecisionRecordSource()
+        : new FileStage0DecisionRecordSource(
+            recordingPath, sp.GetRequiredService<ILogger<FileStage0DecisionRecordSource>>());
+});
+builder.Services.AddHostedService<Stage0EvaluationService>();
+var stage0DriverEnabled = builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName)
+    .Get<Stage0EvaluationOptions>()?.Enabled == true;
+
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（選択中ポート実装）の自己申告。
 // 「有効化したつもりで効いていない」を、メッシュ内部から provider 名で確認できるようにする。
+// #688, IADR-0310 決定1: 定時駆動の実効状態も同じ手段で確認できるようにする（構成と挙動の乖離を見せる）。
+// #632, IADR-0318: 評価対象（戦略）の実効値も自己申告に載せる。**綴り違いで既定へ倒れていることを
+// メッシュ内部から確認できる**ようにするためであり、駆動の有効・無効と同じ手段で見えることに意味がある。
+var stage0Options = builder.Configuration.GetSection(Stage0EvaluationOptions.SectionName)
+    .Get<Stage0EvaluationOptions>() ?? new Stage0EvaluationOptions();
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
-    .AddPort("historical-bar-data", barDataProvider));
+    .AddPort("historical-bar-data", barDataProvider)
+    .AddPort("stage0-driver", stage0DriverEnabled ? "enabled" : "disabled")
+    .AddPort("stage0-strategy", stage0Options.ResolveStrategy()));
 
 var app = builder.Build();
 

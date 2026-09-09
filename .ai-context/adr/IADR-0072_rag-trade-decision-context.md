@@ -115,3 +115,20 @@ Application 層に `IRetrievalContextProvider`（`GetContextAsync(trigger, polic
 - `Shared.Contracts`・`Shared.KnowledgeBase` は不変（新イベントなし・監査 Consumer への影響なし）。
 - 実接続時、RAG 文脈が全量ログ（`LogPrompts`＝既定オフ）に載る。プロンプトは既に機微（残枠・方針）を含むため区分は不変。
 - 実 RAG のヒット品質・トークン費用は実基盤・実データ検証（#82 系）で確認する後続事項。
+
+---
+
+［2026-09-09 追記 / #567］ **決定2（「注入は本判断プロンプトのみ。一次スクリーニングは据え置き」）は、
+[IADR-0313](./IADR-0313_screening-context-budget-default.md) により既定で置き換えられた。**
+
+[IADR-0247](./IADR-0247_screening-context-degradation.md) 決定4 は「スクリーニング入力の縮退制御が
+**有効なときに限り**、本 IADR の決定2 を置き換える」と定めていた（縮退制御は当時 opt-in であり、既定では
+決定2 のままだった）。IADR-0313 が `Decision:ScreeningContextBudgetChars` を**既定で有効**（150,000 文字）に
+したため、**既定の挙動として一次スクリーニングにも市況（保護対象）と縮退後の参考情報が載る**。
+
+- **決定2 の目的（費用統制）は予算そのものが引き継ぐ**（IADR-0247 決定4 の明文）。スクリーニング層の
+  単価は `claude-haiku-4-5` であり本判断（`claude-sonnet-5`）の 1/3 である（計画 ADR-0014）。
+- 決定1（抽象ポート `IRetrievalContextProvider`）・決定3（参考情報は方針・制約を上書きしない権威順序）は
+  **いずれも不変**である。置き換わったのは決定2 の適用範囲だけである。
+- 従来挙動（スクリーニングは方針＋銘柄のみ）を観測できるのは、`Decision:ScreeningContextBudgetChars` へ
+  `0` または `off` を明示した構成に限られる。

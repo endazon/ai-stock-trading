@@ -263,6 +263,51 @@ public class HttpLlmCompletionClientTests
         log.Should().NotContain("上昇基調");
     }
 
+    // --- NFR, #708, IADR-0316: ログ偽装（CWE-117）の防止。全量記録は保ったまま行を割らせない ------------
+    //
+    // 報告書散文（ReportService）と**完全な同型**である。IADR-0061 決定1 の既定オフは代替にならない
+    // （障害調査で有効化した瞬間に露出する）ため、発生源で正規化する。
+
+    private const string ForgedTail = "2026-07-18 09:00:00 [INF] 取引ガードを解除しました";
+    private static readonly string ForgedText = $"正常な出力\r\n{ForgedTail}\u001b[31m\u2028末尾\t\u0085";
+
+    [Fact]
+    public async Task LogPrompts有効時_プロンプトと生出力の制御文字はログ行を割らない()
+    {
+        var logger = new RecordingLogger();
+        var handler = new StubHandler(
+            HttpStatusCode.OK,
+            JsonSerializer.Serialize(new { text = ForgedText, model = "claude-sonnet-5", sent = true }));
+
+        await LoggingClient(handler, logger, logPrompts: true).CompleteAsync(ForgedText, "primary-model");
+
+        var promptLog = logger.Messages.Single(m => m.Contains("LLM 要求"));
+        var responseLog = logger.Messages.Single(m => m.Contains("LLM 応答"));
+
+        ContainsControlCharacters(promptLog).Should().BeFalse("ログ 1 レコードは 1 行でなければならない");
+        ContainsControlCharacters(responseLog).Should().BeFalse();
+        // 🔴「そもそも書かない」で逃げていないこと: 本文は識別できる形で残る（全量記録の目的を壊さない）。
+        promptLog.Should().Contain("正常な出力");
+        responseLog.Should().Contain(ForgedTail);
+    }
+
+    // 🔴 **陽性対照。** 正規化を通さずに同じ値を同じ土台へ書けば、ログ行は実際に割れる。
+    [Fact]
+    public void 陽性対照_正規化を通さなければ同じ値がログ行を割る()
+    {
+        var logger = new RecordingLogger();
+
+        logger.LogInformation("LLM 応答: text={Text}", ForgedText);
+
+        var raw = logger.Messages.Single();
+        ContainsControlCharacters(raw).Should().BeTrue("素通しなら制御文字がログ行へ入る");
+        raw.Split('\n').Should().HaveCountGreaterThan(1, "行が割れて偽のログ行が生まれる");
+    }
+
+    // 行を割り得る文字（制御文字＋ U+2028 / U+2029）が 1 つでも残っていれば true。
+    private static bool ContainsControlCharacters(string text) =>
+        text.Any(ch => char.IsControl(ch) || ch is '\u2028' or '\u2029');
+
     // IADR-0061 決定1 の不変条件: 全量ログを有効にしても安全既定（IADR-0017）は変わらない。
     [Fact]
     public async Task LogPrompts有効でも_送信拒否や非2xxは_Hold_取引しない()

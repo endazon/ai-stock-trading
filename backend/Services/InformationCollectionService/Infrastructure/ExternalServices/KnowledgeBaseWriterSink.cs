@@ -34,11 +34,17 @@ public sealed class KnowledgeBaseWriterSink(
 
     // CollectedInformation → KnowledgeDocument。ABAC/検索の絞り込みに使える属性・タグを付与する。
     // 機密区分は既定 internal（取引の収集情報は社外秘扱い。IADR-0069 決定 3）。
+    //
+    // FR-01, FR-08, #705, IADR-0315: Tags は Kind・Source の**静的語彙**（KnowledgeTagVocabulary 参照）に
+    // 閉じる。🔴 Symbol（銘柄コード）はタグに載せない —— 監視銘柄は運用中に増える動的集合であり、
+    // platform document-service の POST /documents はタグ辞書検証（未登録タグは 400。MSP#635）を
+    // 持つため、事前登録できない値をタグに載せると保存が構造的に失敗する（本 issue の事象そのもの）。
+    // 銘柄での絞り込みは attributes["symbol"]（単値完全一致フィルタ。KnowledgeQuery.AttributeFilters）で
+    // 引き続き行えるため、絞り込み手段は失わない。RetrievalSourcePolicy（出典限定）は Source タグしか
+    // 見ないため、本変更はプロンプトインジェクション対策（IADR-0169 決定2/4）に影響しない。
     private static KnowledgeDocument ToDocument(CollectedInformation item)
     {
         var tags = new List<string> { item.Kind.ToString(), item.Source };
-        if (!string.IsNullOrWhiteSpace(item.Symbol))
-            tags.Add(item.Symbol);
 
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
         {

@@ -37,6 +37,9 @@
  * 使い方:
  *   node scripts/check-test-traceability.js
  *   node scripts/check-test-traceability.js --require-planning   # 計画書実在検査の skip を許さない
+ *     🔴 ADR-0029 以降、本リポジトリに `planning` submodule は存在しない（撤去済み）ため、
+ *     このフラグは環境に関わらず恒久的に exit 1 になる（#712）。CI・ローカルとも付けないこと
+ *     （詳細は scripts/README.md）。
  *   TEST_TRACE_ROOT=<dir> node scripts/check-test-traceability.js  # 任意のツリーを検査する（模擬ツリーの実証用）
  */
 const fs = require('fs');

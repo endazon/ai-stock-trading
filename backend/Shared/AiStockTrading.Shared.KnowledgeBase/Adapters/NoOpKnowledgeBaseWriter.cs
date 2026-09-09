@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +11,10 @@ internal sealed class NoOpKnowledgeBaseWriter(ILogger<NoOpKnowledgeBaseWriter> l
     public Task<KnowledgeWriteResult> SaveAsync(KnowledgeDocument document, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
-        logger.LogInformation("KB 保存（no-op）: 「{Title}」（実 platform 保存は KnowledgeBase:Documents:BaseUrl 設定で opt-in・#18）。", document.Title);
+        // NFR, IADR-0316, #708: 表題は外部由来（収集した見出し）。ログへ渡す前に正規化する（CWE-117）。
+        logger.LogInformation(
+            "KB 保存（no-op）: 「{Title}」（実 platform 保存は KnowledgeBase:Documents:BaseUrl 設定で opt-in・#18）。",
+            LogSanitizer.Sanitize(document.Title));
         return Task.FromResult(KnowledgeWriteResult.NotSaved);
     }
 }

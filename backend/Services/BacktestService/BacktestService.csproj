@@ -1,8 +1,9 @@
 <!-- FR-15, #208, IADR-0105, IADR-0128, NFR/IADR-0259 決定1: バックテストサービス。単一プロジェクト＋
      VSA/DDD フォルダ構成（層プロジェクト .Api/.Application/.Domain/.Infrastructure は撤去し、Features/・Domain/・
      Infrastructure/ のフォルダで境界を表す。基盤 MSP:IADR-0282 決定1 と同一樹形）。ヘルスチェックと実効構成の
-     自己申告（GET /internal/introspection）のため Web SDK を使用する。DB・メッセージバスは持たない
-     （永続化は無く、verdict の実 publish は #82）。実過去データ源のアダプタ（Stooq・moomoo）は
+     自己申告（GET /internal/introspection）のため Web SDK を使用する。DB は持たない（永続化は無い）。
+     **メッセージバスは持つ**（#688 / IADR-0310 で verdict の発行経路を配線した。実 RabbitMQ を用いた E2E は #82）。
+     実過去データ源のアダプタ（Stooq・moomoo）は
      Infrastructure/ExternalServices/ に置く。実行時基盤は test-support shim（IADR-0013）。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
@@ -15,6 +16,10 @@
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!-- ADR-0013, IADR-0129, #688, IADR-0310 決定4: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の
+         WolverineExtensions（サービス側はトポロジを選ばない）。本サービスは**発行専用**（ハンドラを持たない）。 -->
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <!-- ADR-0023 決定5, IADR-0157: 米国株日足 OHLC の履歴源（moomoo OpenAPI の履歴 K 線）。
          発注経路（OrderExecutionService）と同一バージョンの SDK を使う。 -->
     <PackageReference Include="moomoo-api" />

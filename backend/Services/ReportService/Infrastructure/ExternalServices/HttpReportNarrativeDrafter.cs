@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports;
 using ReportService.Domain;
 using Microsoft.Extensions.Logging;
@@ -65,9 +66,11 @@ public sealed class HttpReportNarrativeDrafter(
 
         try
         {
+            // NFR, IADR-0316, #708: プロンプト本文は外部由来（収集情報・LLM 生成の前段散文）を含み、改行や ESC を
+            // 素通しすると行指向のログへ偽の行を注入できる（CWE-117）。**発生源で正規化してから渡す。**
             if (logPrompts)
                 logger.LogInformation("報告書散文 LLM 要求: kind={Kind} periodKey={PeriodKey} prompt={Prompt}",
-                    context.Kind, context.PeriodKey, prompt);
+                    context.Kind, context.PeriodKey, LogSanitizer.Sanitize(prompt));
 
             // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
             // 1024 のままだと思考が上限を食い、途中で切れた文章がそのまま成果物になる（安全網なし）。
@@ -112,9 +115,11 @@ public sealed class HttpReportNarrativeDrafter(
             }
 
             // IADR-0061 決定1: 生出力の全量記録は、以降で破棄し得る本文も含めて拒否・空応答の判定より前に行う。
+            // NFR, IADR-0316, #708: 生出力は最も直接的な外部入力である。全量記録という目的は変えずに、
+            // 制御文字だけを潰して 1 行へ収める（本文の先頭は残るため、調査の用は足りる）。
             if (logPrompts)
                 logger.LogInformation("報告書散文 LLM 応答: model={Model} stopReason={StopReason} text={Text}",
-                    dto.Model, dto.StopReason, dto.Text);
+                    dto.Model, dto.StopReason, LogSanitizer.Sanitize(dto.Text));
 
             // #347, IADR-0219, IADR-0104 決定4: 送信が成立した（Sent=true）応答のトークンを費用計測へ渡す。
             // 本文の扱い（拒否・空・上限到達で破棄するか否か）とは独立に課金は発生しているため、

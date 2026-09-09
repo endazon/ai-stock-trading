@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using BacktestService.Features.Backtest;
+using BacktestService.Hosted;
 using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BacktestService.Tests;
@@ -126,13 +129,53 @@ public class BacktestWorkerWiringTests
     }
 
     [Fact]
-    public async Task ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない()
+    public async Task ヘルスチェックは起動直後にreadyを返す_DBを持たない()
     {
         using var factory = new BacktestWorkerWebApplicationFactory();
 
         var response = await factory.CreateClient().GetAsync("/health/ready");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // FR-15, FR-20, ADR-0008, #688, IADR-0310 決定1: Stage 0 判定の定時駆動が常駐として登録されている。
+    // 登録が外れると、有効化しても verdict が一通も出ない（しかも構成は「有効」を示したままになる）。
+    [Fact]
+    public void Stage0の定時駆動が常駐として登録される()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory();
+
+        factory.Services.GetServices<IHostedService>()
+            .Should().ContainSingle(s => s is Stage0EvaluationService);
+    }
+
+    // **否定形（fail-safe）**: 既定構成では駆動は無効であり、自己申告もそれを示す。
+    [Fact]
+    public async Task 既定では定時駆動は無効で自己申告もdisabledを示す_failsafe()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory();
+
+        factory.Services.GetRequiredService<IOptions<Stage0EvaluationOptions>>().Value.Enabled.Should().BeFalse();
+
+        var dto = await factory.CreateClient()
+            .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
+
+        dto!.Ports.Should().ContainSingle(p => p.Port == "stage0-driver" && p.Implementation == "disabled");
+    }
+
+    // 有効化したときだけ自己申告が enabled になる（「有効化したつもりで効いていない」を過去データ源と同じ手段で見る）。
+    [Fact]
+    public async Task 有効化すると自己申告がenabledを示す()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:Stage0:Enabled"] = "true",
+        });
+
+        var dto = await factory.CreateClient()
+            .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
+
+        dto!.Ports.Should().ContainSingle(p => p.Port == "stage0-driver" && p.Implementation == "enabled");
     }
 }
 

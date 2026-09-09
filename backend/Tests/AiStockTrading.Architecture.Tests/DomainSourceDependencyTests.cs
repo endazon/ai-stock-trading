@@ -15,19 +15,28 @@ namespace AiStockTrading.Architecture.Tests;
 /// </para>
 /// <para>
 /// 🔴 <b>一本化によって、二重化が補っていた弱さがむき出しになった。</b>ソース走査は
-/// <b>コンパイラより弱い</b>——<c>global using</c>・ソースジェネレータの生成参照は見えない。
-/// 層が別プロジェクトだった頃はコンパイラが構造的に防いでいた次の 2 つが、
-/// フォルダ境界になった今は<b>本クラスを素通りする</b>（フェーズ末監査が違反を注入して実測）:
+/// <b>コンパイラより弱い</b>——層が別プロジェクトだった頃はコンパイラが構造的に防いでいた次の 2 つが、
+/// フォルダ境界になった時点で<b>本クラスを素通りしていた</b>（#601。フェーズ末監査が違反を注入して実測）:
 /// <list type="number">
 ///   <item><c>global using</c> 迂回 —— Domain 外のファイルに <c>global using Wolverine;</c> を置くと、
 ///     Domain のソースは非修飾で外部型を使えてしまう。</item>
 ///   <item>自サービス他層への<b>完全修飾</b>参照 —— <c>using</c> 形は検査 (b) が止めるが、
 ///     <c>RiskManagementService.Infrastructure.Persistence.X</c> と完全修飾で書くと止まらない。</item>
 /// </list>
-/// <b>他サービスの名前空間と、CPM 由来の外部ライブラリについては完全修飾でも検出する</b>（検査 (c)・(d)）。
-/// 塞がっていないのは<b>自サービス内の層またぎ</b>と <c>global using</c> の 2 つだけである。
-/// 追跡は #601（検査器の追加は「同型の事故が 2 回起きたら」の規約に従い、現時点では記録に留める。
-/// <b>実ツリーの違反は 0 件であり、両経路とも注入実験でのみ再現する</b>）。
+/// <b>この 2 つは IADR-0312（#601）で塞いだ</b>——検査 (f) が <c>global using</c> を
+/// <b>コンパイル単位（サービス）全体</b>から拾って検査 (b) の許可リストに掛け、検査 (e) が
+/// 自サービスの <c>.Domain</c> 以外の層への完全修飾参照を禁止トークンとして検出する。
+/// 新設ではなく<b>既知の穴の閉鎖</b>であるため「検査器の追加は同型の事故が 2 回起きたら」の規約には当たらない
+/// （規約は<b>新しい規律</b>を足すときの歯止めであり、既存の規律が書き方次第で効かない状態は欠陥である）。
+/// <b>他サービスの名前空間と、CPM 由来の外部ライブラリは従前どおり完全修飾でも検出する</b>（検査 (c)・(d)）。
+/// <b>実ツリーの違反は (e)・(f) とも 0 件であり、両経路とも注入実験でのみ再現する</b>
+/// （閉鎖後の実測: 注入すると (e) は 1 件、(f) は 1 件で赤くなる）。
+/// </para>
+/// <para>
+/// 🔴 <b>ソース走査が弱いこと自体は変わっていない。</b> ソースジェネレータが生成する参照は
+/// <c>obj/</c> にしか現れず、本クラスの母集合には入らない（<c>bin/</c> <c>obj/</c> を除外しているため）。
+/// NsDepCop のような名前空間依存の<b>ビルド時</b>強制は IADR-0259 で撤回済みであり、
+/// 導入するには改定 IADR が要る（IADR-0312 決定 3）。
 /// </para>
 /// </summary>
 public class DomainSourceDependencyTests
@@ -50,6 +59,24 @@ public class DomainSourceDependencyTests
     /// 母集合の導出が壊れて 0 件になれば、走査は何も見つけずに緑になる。
     /// </summary>
     private const int MinimumForbiddenTokens = 30;
+
+    /// <summary>
+    /// 検査 (f) の走査対象ファイル数の下限（IADR-0312 着手時点の実測 768 ＝ Domain を持つ 10 サービスの
+    /// <c>Tests/</c> 以外の <c>.cs</c>。全 11 サービスでは 791）。
+    /// <para>
+    /// 🔴 <b>下限を「<c>global using</c> の本数」に置くことはできない</b>——実ツリーの <c>global using</c> は
+    /// <b>0 本</b>であり（実測。<c>bin/</c> <c>obj/</c> を除く <c>backend</c> 配下）、0 と「解析器が壊れて 0」を
+    /// 件数では区別できない。**下限はファイル数に置き**、解析器が load-bearing であることは
+    /// 陽性対照のユニットテスト（<c>global_using_解析器は…</c>）で固定する。
+    /// </para>
+    /// </summary>
+    private const int MinimumServiceCompilationSourceFiles = 700;
+
+    /// <summary>
+    /// 検査 (e) の禁止トークン数の下限（着手時点の実測 44 ＝ Domain を持つ 10 サービス × 直下の層フォルダ
+    /// から <c>Domain</c> を除いた数）。導出が壊れて 0 件になれば、走査は何も見つけずに緑になる。
+    /// </summary>
+    private const int MinimumCrossLayerTokens = 30;
 
     /// <summary>
     /// 🔴 <b>既知の逸脱。</b> Domain から他サービスの名前空間を参照している箇所である。
@@ -236,6 +263,95 @@ public class DomainSourceDependencyTests
             string.Join(" / ", stale));
     }
 
+    // ── 検査 (e): 自サービスの他層への完全修飾参照を塞ぐ（#601 経路 (ii)。IADR-0312 決定 2）──
+    [Fact]
+    public void Domain_は自サービスの他層を完全修飾でも参照しない()
+    {
+        var violations = new List<string>();
+        foreach (var (area, file) in DomainFilesWithArea())
+        {
+            var segments = LayerSegmentsOf(area.ServiceNamespaceRoot);
+            var hits = DomainSourceScan.OwnServiceCrossLayerReferencesIn(
+                File.ReadAllText(file), area.ServiceNamespaceRoot, segments);
+            if (hits.Count > 0) violations.Add($"{Relative(file)} → {string.Join(", ", hits)}");
+        }
+
+        violations.Should().BeEmpty(
+            "Domain は自サービスの中でも Domain 以外の層（Infrastructure / Features / Hosted / Common / Tests）へ"
+                + "依存してはならない。層が別プロジェクトだった頃はコンパイラが構造的に防いでいたが、"
+                + "VSA でフォルダ境界になった今は検査器が止めるほかない（IADR-0259 / IADR-0312）。"
+                + "🔴 using 形は検査 (b) が止めるので、**書き方によって結果が変わらない**ようにするのが本検査である。"
+                + "違反: {0}",
+            string.Join(" / ", violations));
+    }
+
+    [Fact]
+    public void 自サービス他層の禁止トークンが実ツリーの層フォルダから導けている()
+    {
+        var tokens = RepositoryLayout.DomainBearingCompilationAreas
+            .SelectMany(a => DomainSourceScan.CrossLayerTokensFor(a.ServiceNamespaceRoot, a.LayerSegments))
+            .ToArray();
+
+        tokens.Should().HaveCountGreaterThan(
+            MinimumCrossLayerTokens,
+            "トークンが導けていないと、検査 (e) は何も見つけずに緑になる（着手時点の実測は 44 件）。"
+                + "実際に導けたのは: {0}",
+            string.Join(", ", tokens));
+
+        // 導出が「サービスのルート」と「実在する層フォルダ」の積になっていることを対で押さえる。
+        tokens.Should().Contain("RiskManagementService.Infrastructure");
+        tokens.Should().Contain("RiskManagementService.Features");
+
+        // Domain だけは唯一許される層である。禁止トークンへ混ざると Domain の全ファイルが違反になる。
+        tokens.Should().NotContain(t => t.EndsWith($".{DomainSourceScan.DomainSegment}", StringComparison.Ordinal));
+    }
+
+    // ── 検査 (f): global using は Domain 外でも許可リスト内のみ（#601 経路 (i)。IADR-0312 決定 1）──
+    [Fact]
+    public void サービス全体の_global_using_は_Domain_の許可リストを破らない()
+    {
+        var violations = new List<string>();
+        foreach (var area in RepositoryLayout.DomainBearingCompilationAreas)
+        {
+            foreach (var file in area.SourceFiles)
+            {
+                foreach (var ns in DomainSourceScan.GlobalUsingNamespacesIn(File.ReadAllText(file)))
+                {
+                    if (!DomainSourceScan.IsAllowedDomainNamespace(ns, ServiceNamespaceRoots))
+                    {
+                        violations.Add($"{Relative(file)} → global using {ns} (service={area.ServiceNamespaceRoot})");
+                    }
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            "global using は**コンパイル単位の全ファイルへ効く**。単一プロジェクト＋VSA では Domain も"
+                + "同じコンパイル単位に居るため、Domain 外の global using Wolverine; ひとつで"
+                + "Domain のソースが非修飾で外部型を使えるようになる（検査 (b) は Domain/ 配下しか見ず、"
+                + "検査 (c) は本文に文字列が現れないと当たらない）。"
+                + "外部ライブラリを global using したい場合でも、Domain を持つサービスでは置けない。違反: {0}",
+            string.Join(" / ", violations));
+    }
+
+    [Fact]
+    public void サービス全体の走査対象が痩せていない()
+    {
+        var areas = RepositoryLayout.DomainBearingCompilationAreas;
+        var files = areas.SelectMany(a => a.SourceFiles).ToArray();
+
+        areas.Should().HaveCountGreaterThanOrEqualTo(
+            8,
+            "Domain を持つサービスは実測 10 件である（Configuration は IADR-0264 で Domain が空になった）。"
+                + "検査 (a) と同じ下限を置き、母集合が片方だけ痩せる形を防ぐ。実際に見つかったのは: {0}",
+            string.Join(", ", areas.Select(a => a.RelativePath)));
+
+        files.Should().HaveCountGreaterThan(
+            MinimumServiceCompilationSourceFiles,
+            "走査対象が痩せると「global using の違反 0 件」が「1 件も読んでいない」と区別できなくなる"
+                + "（着手時点の実測は 768 件。Tests/ と bin/ obj/ と *.g.cs を除く）");
+    }
+
     // ── 否定形: 照合器そのものが load-bearing であること ──────────────────────────
     // 実ツリーの違反は現時点で（既知の逸脱を除き）0 件であるため、
     // 照合器が常に「違反なし」を返すよう壊れても上のテストはすべて緑のままである。
@@ -369,6 +485,161 @@ public class DomainSourceDependencyTests
             .Should().Equal("Npgsql", "Npgsql.EntityFrameworkCore", "Npgsql.EntityFrameworkCore.PostgreSQL");
     }
 
+    // ── 否定形（#601 経路 (i)）: global using の解析器と許可リストの結線 ──────────────
+    [Theory]
+    [InlineData("global using Wolverine;", "Wolverine")]
+    [InlineData("  global using static System.Math;", "System.Math")]
+    [InlineData("global using Ef = Microsoft.EntityFrameworkCore;", "Microsoft.EntityFrameworkCore")]
+    public void global_using_解析器はディレクティブを実際に解析する(string line, string expected)
+    {
+        DomainSourceScan.TryParseGlobalUsingNamespace(line, out var ns).Should().BeTrue();
+        ns.Should().Be(expected);
+    }
+
+    [Theory]
+    // 通常の using はそのファイルにしか効かない。検査 (f) の対象ではない（Domain 内なら検査 (b) が見る）。
+    [InlineData("using Wolverine;")]
+    [InlineData("// global using Wolverine;")]
+    [InlineData("using var db = NewContext(dbName);")]
+    [InlineData("")]
+    public void global_using_解析器は通常の_using_やコメントを拾わない(string line)
+    {
+        DomainSourceScan.TryParseGlobalUsingNamespace(line, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void 経路_i_の注入_Domain外の_global_using_は許可リストが拒む()
+    {
+        // Features 層のファイル（＝Domain の外）に置かれた global using。同じコンパイル単位に居る
+        // Domain のソースが **非修飾で** Wolverine の型を使えるようになる（#601 経路 (i)）。
+        const string featuresFile = """
+            global using Wolverine;
+            global using AiStockTrading.Shared.Kernel;
+            namespace RiskManagementService.Features.RiskManagement.ClosePosition;
+            """;
+
+        var globals = DomainSourceScan.GlobalUsingNamespacesIn(featuresFile);
+        globals.Should().Equal("Wolverine", "AiStockTrading.Shared.Kernel");
+
+        DomainSourceScan.IsAllowedDomainNamespace(globals[0], ServiceNamespaceRoots).Should().BeFalse();
+        DomainSourceScan.IsAllowedDomainNamespace(globals[1], ServiceNamespaceRoots).Should().BeTrue();
+    }
+
+    // ── 否定形（#601 経路 (ii)）: 自サービス他層の照合器 ──────────────────────────
+    [Fact]
+    public void 自サービス他層のトークンは層フォルダから導かれ_Domain_は含まない()
+    {
+        DomainSourceScan.CrossLayerTokensFor(
+                "RiskManagementService", ["Common", "Domain", "Features", "Hosted", "Infrastructure", "Tests"])
+            .Should().Equal(
+                "RiskManagementService.Common",
+                "RiskManagementService.Features",
+                "RiskManagementService.Hosted",
+                "RiskManagementService.Infrastructure",
+                "RiskManagementService.Tests");
+    }
+
+    [Fact]
+    public void 経路_ii_の注入_自サービス他層への完全修飾参照を検出する()
+    {
+        const string domainFile = """
+            namespace RiskManagementService.Domain;
+            public static class Probe
+            {
+                // using を書かずに完全修飾で書くと、検査 (b) にも検査 (d) にも当たらない（#601 経路 (ii)）。
+                public static object Context() =>
+                    new RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext();
+            }
+            """;
+
+        DomainSourceScan.OwnServiceCrossLayerReferencesIn(domainFile, "RiskManagementService", SampleLayerSegments)
+            .Should().Equal("RiskManagementService.Infrastructure");
+    }
+
+    [Fact]
+    public void 自サービス他層の照合器は補間文字列の穴の中の完全修飾参照も検出する()
+    {
+        const string domainFile = """
+            namespace RiskManagementService.Domain;
+            public static class Probe
+            {
+                // 穴の中はコードである（PR #713 の AI レビュー指摘。文字列リテラル扱いで落とすと迂回路になる）。
+                public static string Describe() =>
+                    $"rows={RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext.RowCount}";
+            }
+            """;
+
+        DomainSourceScan.OwnServiceCrossLayerReferencesIn(domainFile, "RiskManagementService", SampleLayerSegments)
+            .Should().Equal("RiskManagementService.Infrastructure");
+    }
+
+    [Fact]
+    public void 自サービス他層の照合器は正当な書き方を検出しない()
+    {
+        const string domainFile = """
+            using AiStockTrading.Shared.Kernel;
+            namespace RiskManagementService.Domain;
+
+            // 永続化は RiskManagementService.Infrastructure.Persistence 側で解決する（コメントの言及は違反ではない）。
+            public static class Policy
+            {
+                /* RiskManagementService.Features.RiskManagement.ClosePosition から呼ばれる */
+                public const string Marker = "RiskManagementService.Hosted.Worker";
+
+                public static RiskManagementService.Domain.Manipulation.Detector? Detector() => null;
+            }
+            """;
+
+        DomainSourceScan.OwnServiceCrossLayerReferencesIn(domainFile, "RiskManagementService", SampleLayerSegments)
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("var x = 1; // RiskManagementService.Infrastructure.Db を使ってはいけない")]
+    [InlineData("/* RiskManagementService.Infrastructure.Db */ var x = 1;")]
+    [InlineData("var s = \"RiskManagementService.Infrastructure.Db\";")]
+    [InlineData("var s = @\"RiskManagementService.Infrastructure.Db\";")]
+    [InlineData("var s = $\"{{RiskManagementService.Infrastructure.Db}}\";")] // {{ }} はエスケープ＝リテラル
+    [InlineData("var s = $\"RiskManagementService.Infrastructure.Db は {1 + 1} 件\";")]
+    [InlineData("var s = $@\"RiskManagementService.Infrastructure.Db {{x}}\";")]
+    public void コメントと文字列リテラルは本文から取り除かれる(string source)
+    {
+        DomainSourceScan.StripCommentsAndStringLiterals(source)
+            .Should().NotContain("RiskManagementService.Infrastructure");
+    }
+
+    [Fact]
+    public void 生文字列リテラルも取り除かれる()
+    {
+        const string source = """"
+            var sql = """
+                RiskManagementService.Infrastructure.Persistence
+                """;
+            """";
+
+        DomainSourceScan.StripCommentsAndStringLiterals(source)
+            .Should().NotContain("RiskManagementService.Infrastructure");
+    }
+
+    [Theory]
+    // 対（肯定形）: 除去器がコードまで消してしまうと、検査 (e) は何も見つけずに緑になる。
+    [InlineData("public static RiskManagementService.Domain.Stage0Promotion P() => new();", "RiskManagementService.Domain")]
+    [InlineData("// コメント\nRiskManagementService.Infrastructure.Db _db;", "RiskManagementService.Infrastructure")]
+    [InlineData("var s = \"文字列\"; RiskManagementService.Features.X.Y();", "RiskManagementService.Features")]
+    // PR #713 の AI レビュー指摘: 補間文字列の穴はコンパイル時に評価される実コードであり、
+    // $"{RiskManagementService.Infrastructure.Foo.Bar}" で検査 (e) を迂回できてはならない。
+    [InlineData("var s = $\"値={RiskManagementService.Infrastructure.Db.Count}\";", "RiskManagementService.Infrastructure")]
+    [InlineData("var s = $@\"値={RiskManagementService.Infrastructure.Db.Count}\";", "RiskManagementService.Infrastructure")]
+    [InlineData("var s = $\"{{literal}} {RiskManagementService.Hosted.Worker.Name}\";", "RiskManagementService.Hosted")]
+    public void コードとして書かれた修飾名は残る(string source, string expected)
+    {
+        DomainSourceScan.StripCommentsAndStringLiterals(source).Should().Contain(expected);
+    }
+
+    /// <summary>照合器のユニットテスト用の層セグメント（実ツリーの実測と同じ形）。</summary>
+    private static readonly string[] SampleLayerSegments =
+        ["Common", "Domain", "Features", "Hosted", "Infrastructure", "Tests"];
+
     // ── 走査のヘルパ ──────────────────────────────────────────────────────────
     private static IReadOnlyList<string> AllDomainSourceFiles() =>
         RepositoryLayout.DomainSourceDirectories.SelectMany(a => a.SourceFiles).ToArray();
@@ -378,6 +649,20 @@ public class DomainSourceDependencyTests
 
     /// <summary>サービスのルート名前空間（実ツリー由来。IADR-0261）。</summary>
     private static IReadOnlyList<string> ServiceNamespaceRoots => RepositoryLayout.ServiceNamespaceRoots;
+
+    /// <summary>
+    /// サービス直下の層フォルダ名（実ツリー由来。IADR-0312）。
+    /// <b>見つからなければ例外で落とす</b>——空を返すと検査 (e) が黙って 0 件検査になる。
+    /// </summary>
+    private static IReadOnlyList<string> LayerSegmentsOf(string serviceNamespaceRoot)
+    {
+        var area = RepositoryLayout.ServiceCompilationAreas.FirstOrDefault(
+            a => string.Equals(a.ServiceNamespaceRoot, serviceNamespaceRoot, StringComparison.Ordinal));
+
+        return area?.LayerSegments
+            ?? throw new InvalidOperationException(
+                $"サービス {serviceNamespaceRoot} のコンパイル単位が backend/Services 配下に見つからない。");
+    }
 
     private static string Relative(string path) =>
         Path.GetRelativePath(RepositoryLayout.Root, path).Replace('\\', '/');

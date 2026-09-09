@@ -230,6 +230,62 @@ public class HttpKnowledgeBaseWriterTests
         result.Should().Be(KnowledgeWriteResult.NotSaved);
     }
 
+    // FR-08, #705, #708 と同型: 400（タグ辞書検証等の ProblemDetails）の応答本文を、
+    // 制御文字を除去したうえで警告ログへ残す——「タグ辞書未登録」を運用が気付けるようにする。
+    [Fact]
+    public async Task 非2xxの応答本文は制御文字を除去して警告ログへ残す()
+    {
+        var handler = StubHttpMessageHandler.Json(
+            HttpStatusCode.BadRequest,
+            "{\"title\":\"unknown tags\",\"detail\":\"tag\\nnot\\tregistered: AAPL\"}");
+        var logger = new CapturingLogger();
+        var writer = new HttpKnowledgeBaseWriter(
+            new HttpClient(handler) { BaseAddress = new Uri("http://documents") }, logger);
+
+        var result = await writer.SaveAsync(new KnowledgeDocument("開示A"));
+
+        result.Should().Be(KnowledgeWriteResult.NotSaved);
+        logger.Warnings.Should().ContainSingle();
+        var message = logger.Warnings.Single();
+        message.Should().Contain("400");
+        message.Should().Contain("開示A");
+        message.Should().Contain("unknown tags");
+        message.Should().NotContain("\n");
+        message.Should().NotContain("\t");
+    }
+
+    // 否定形: 応答本文が空でも例外にならず「(なし)」のような取得不可の表示に倒れる。
+    [Fact]
+    public async Task 非2xxで応答本文が無くても警告ログを残し例外を投げない_否定形()
+    {
+        var handler = StubHttpMessageHandler.Status(HttpStatusCode.BadRequest);
+        var logger = new CapturingLogger();
+        var writer = new HttpKnowledgeBaseWriter(
+            new HttpClient(handler) { BaseAddress = new Uri("http://documents") }, logger);
+
+        var act = async () => await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        await act.Should().NotThrowAsync();
+        logger.Warnings.Should().ContainSingle();
+    }
+
+    // 長大な応答本文は上限で切られ、ログ 1 行が肥大化しない。
+    [Fact]
+    public async Task 長い応答本文は上限で切って省略を示す()
+    {
+        var oversized = new string('a', 2000);
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.BadRequest, oversized);
+        var logger = new CapturingLogger();
+        var writer = new HttpKnowledgeBaseWriter(
+            new HttpClient(handler) { BaseAddress = new Uri("http://documents") }, logger);
+
+        await writer.SaveAsync(new KnowledgeDocument("t"));
+
+        var message = logger.Warnings.Single();
+        message.Should().Contain("truncated"); // IADR-0316 LogSanitizer の切り詰め注記
+        message.Length.Should().BeLessThan(oversized.Length);
+    }
+
     [Fact]
     public async Task 送信例外は未保存に倒し例外を投げない()
     {
@@ -244,4 +300,28 @@ public class HttpKnowledgeBaseWriterTests
     // 送信本文（camelCase JSON）から attributes オブジェクトを取り出す。
     private static JsonElement ExtractAttributes(string body)
         => JsonDocument.Parse(body).RootElement.GetProperty("attributes");
+
+    // 中央パッケージ管理にログ用のテストダブルが無いため最小の実装を置く
+    // （ReportService.Tests.ReportKnowledgeMapperTests.CapturingLogger と同型）。
+    private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger<HttpKnowledgeBaseWriter>
+    {
+        private readonly List<string> _warnings = [];
+
+        public IReadOnlyList<string> Warnings => _warnings;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning)
+                _warnings.Add(formatter(state, exception));
+        }
+    }
 }

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Logging;
 
@@ -54,13 +55,18 @@ internal sealed class HttpKnowledgeBaseWriter(
     {
         ArgumentNullException.ThrowIfNull(document);
 
+        // NFR, IADR-0316, #708: 表題には収集した外部ニュースの見出しが入る（改行・ESC を含み得る）。
+        // 行指向のログへ偽の行を注入されないよう、**ログへ渡す値だけ**を発生源で正規化する（CWE-117）。
+        // 送信本文（CreateDocumentBody）と保存内容は原文のまま——無害化はログの関心事である。
+        var titleForLog = LogSanitizer.Sanitize(document.Title);
+
         // #565, IADR-0274: 上限超過は Body を外してメタデータのみで登録する（切り詰めない）。
         var exceedsLimit = KnowledgeBodyLimits.Exceeds(document.Content);
         if (exceedsLimit)
         {
             logger.LogWarning(
                 "KB 保存: 本文が上限（{MaxBytes} バイト）を超えるため本文なしで登録します（「{Title}」）。",
-                KnowledgeBodyLimits.MaxBytes, document.Title);
+                KnowledgeBodyLimits.MaxBytes, titleForLog);
         }
 
         var body = new CreateDocumentBody(
@@ -79,7 +85,14 @@ internal sealed class HttpKnowledgeBaseWriter(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("KB 保存に失敗（{Status}）。未保存に倒します（「{Title}」）。", (int)response.StatusCode, document.Title);
+                // FR-08, #705, #708: 400（例: MSP#635 のタグ辞書検証で未登録タグ）等の ProblemDetails 応答本文を
+                // 警告ログへ含める——「タグ辞書未登録」のような fail-safe 縮退の原因を運用が気付けるようにする
+                // （決定を例外にはしない。既存の fail-safe と同じ向き）。応答本文は外部（platform）由来のため、
+                // LogSanitizer（IADR-0316）で制御文字を潰し 500 文字で切ってから出す。
+                var responseBody = await ReadResponseBodyForLogAsync(response, cancellationToken).ConfigureAwait(false);
+                logger.LogWarning(
+                    "KB 保存に失敗（{Status}）。未保存に倒します（「{Title}」）。応答: {ResponseBody}",
+                    (int)response.StatusCode, titleForLog, DescribeResponseBodyForLog(responseBody));
                 return KnowledgeWriteResult.NotSaved;
             }
 
@@ -89,7 +102,7 @@ internal sealed class HttpKnowledgeBaseWriter(
 
             if (dto is null || dto.Id == Guid.Empty)
             {
-                logger.LogWarning("KB 保存の応答が不正（Id なし）。未保存に倒します（「{Title}」）。", document.Title);
+                logger.LogWarning("KB 保存の応答が不正（Id なし）。未保存に倒します（「{Title}」）。", titleForLog);
                 return KnowledgeWriteResult.NotSaved;
             }
 
@@ -97,14 +110,41 @@ internal sealed class HttpKnowledgeBaseWriter(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("KB 保存がタイムアウト。未保存に倒します（「{Title}」）。", document.Title);
+            logger.LogWarning("KB 保存がタイムアウト。未保存に倒します（「{Title}」）。", titleForLog);
             return KnowledgeWriteResult.NotSaved;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "KB 保存で例外。未保存に倒します（「{Title}」）。", document.Title);
+            logger.LogWarning(ex, "KB 保存で例外。未保存に倒します（「{Title}」）。", titleForLog);
             return KnowledgeWriteResult.NotSaved;
         }
+    }
+
+    // FR-08, #705: 非 2xx 応答本文（ProblemDetails 等）を警告ログに載せるための読み取り。
+    // 読み取り自体が失敗しても診断ログの都合で保存結果を変えてはならないため、ここで握りつぶし
+    // 「取得不可」を返す（呼び出し元の try/catch と役割が重複しないよう、例外は投げない）。
+    private static async Task<string?> ReadResponseBodyForLogAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-08, #705, IADR-0316: ログへ載せる応答本文の上限（ProblemDetails の unknown tags が読める長さで足りる）。
+    private const int MaxLoggedResponseBodyLength = 500;
+
+    private static string DescribeResponseBodyForLog(string? body)
+    {
+        var trimmed = body?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return "(なし)";
+
+        return LogSanitizer.Sanitize(trimmed, MaxLoggedResponseBodyLength)!;
     }
 
     // 機密区分を必ず補完する（microservices-platform IADR-0047 必須検証。未指定・空は既定 internal）。

@@ -73,6 +73,32 @@ internal static class RepositoryLayout
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 
+    /// <summary>
+    /// NFR, IADR-0312: サービスの<b>コンパイル単位</b>（<c>backend/Services/&lt;Svc&gt;/</c>）の一覧。
+    /// <c>global using</c> はコンパイル単位の全ファイルへ効くため、検査 (f) はこの単位で走査する。
+    /// </summary>
+    public static IReadOnlyList<ServiceCompilationArea> ServiceCompilationAreas { get; } =
+        Directory.EnumerateDirectories(Path.Combine(Root, "backend", "Services"))
+            .Select(dir => new ServiceCompilationArea(Path.GetFullPath(dir), Path.GetFileName(dir)!))
+            .OrderBy(a => a.FullPath, StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// NFR, IADR-0312: <b>同一コンパイル単位に Domain のソースを持つ</b>サービスだけを残したもの。
+    /// <para>
+    /// 検査 (f)（<c>global using</c>）と検査 (e)（自サービス他層への完全修飾参照）が守るのは
+    /// 「Domain の依存規律」である。Domain を 1 ファイルも持たないサービス（実測:
+    /// <c>ConfigurationService</c>。IADR-0264 で Domain が空になった）には守るべき Domain が
+    /// 同一コンパイル内に無いため、<c>global using</c> を禁じる根拠が無い。
+    /// </para>
+    /// <b>Domain が生えれば自動で対象へ戻る</b>（一覧を手で持たない）。
+    /// </summary>
+    public static IReadOnlyList<ServiceCompilationArea> DomainBearingCompilationAreas { get; } =
+        ServiceCompilationAreas
+            .Where(a => DomainSourceDirectories.Any(
+                d => string.Equals(d.ServiceNamespaceRoot, a.ServiceNamespaceRoot, StringComparison.Ordinal)))
+            .ToArray();
+
     private static IReadOnlyList<DomainSourceArea> BuildDomainSourceDirectories()
     {
         var servicesRoot = Path.Combine(Root, "backend", "Services");

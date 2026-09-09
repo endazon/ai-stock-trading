@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Contracts.Logging;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
 using Microsoft.Extensions.Logging;
@@ -69,8 +70,10 @@ public sealed class HttpLlmCompletionClient(
         try
         {
             // FR-11, IADR-0061 決定1: 送信前にプロンプト全量を記録する（応答前に失敗しても入力は残る）。
+            // NFR, IADR-0316, #708: プロンプトは収集した外部テキストを含むため、行指向のログへ偽の行を
+            // 注入され得る（CWE-117）。**発生源で正規化してから渡す**（既定オフはこれの代替にならない）。
             if (logPrompts)
-                logger.LogInformation("LLM 要求: model={Model} prompt={Prompt}", model, prompt);
+                logger.LogInformation("LLM 要求: model={Model} prompt={Prompt}", model, LogSanitizer.Sanitize(prompt));
 
             // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
             // purpose=trade-decision は基盤の PurposeModels に未登録で default（Opus 5 化される層）へ着地するため、
@@ -134,9 +137,10 @@ public sealed class HttpLlmCompletionClient(
 
             // FR-11, IADR-0061 決定1: LLM の生出力を全量記録する（構造化解析前＝パーサが Hold へ丸める前の原文）。
             // #247, IADR-0104: 拒否・空応答の判定より前に記録し、以降で破棄する本文も事後に再構成できるようにする。
+            // NFR, IADR-0316, #708: 生出力は最も直接的な外部入力である。全量記録の目的は変えずに 1 行へ収める。
             if (logPrompts)
                 logger.LogInformation("LLM 応答: model={Model} tokens={Input}/{Output} stopReason={StopReason} text={Text}",
-                    dto.Model, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.StopReason, dto.Text);
+                    dto.Model, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.StopReason, LogSanitizer.Sanitize(dto.Text));
 
             // #79, IADR-0055, IADR-0104 決定4: 送信が成立した（Sent=true）応答のトークンを費用計測へ渡す。本文の扱い
             //（拒否・空・上限到達で破棄するか否か）とは独立に課金は発生しているため、本文を読む前に一度だけ計測する

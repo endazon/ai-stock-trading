@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-08-21
+updated: 2026-09-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304]
-specs: [20260711_backtest-foundation, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 -->
 
 
@@ -203,7 +203,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
 | T-15-50 | **実データ未供給（バー 0 本）では Stage 0 不合格＝昇格拒否**（fail-safe 維持・#208 受け入れ基準③） | `Stage0GateServiceTests.実データ未供給ならStage0は不合格で昇格しない_failsafe` | 自動 |
 | T-15-51 | ホストの配線: 既定は no-op／`stooq` 指定で実データ源／**`moomoo` 指定で履歴 K 線アダプタ**／未知 provider でも起動して no-op／単一インスタンス | `BacktestWorkerWiringTests.既定構成では外部へ接続しないno_opが解決される_failsafe` / `provider_stooq_の指定で実データ源が解決される` / `provider_moomoo_の指定で履歴K線アダプタが解決される_ADR0023決定5` / `未知のproviderでもホストは起動しno_opへ倒れる` / `過去データ源は単一インスタンスとして解決される` | 自動 |
 | T-15-52 | 実効構成の自己申告（`GET /internal/introspection`）が選択中の過去データ源を示す（不正 URL・OpenD 接続先不正では `none`） | `BacktestWorkerWiringTests.実効構成の自己申告に選択中の過去データ源を載せる` / `ベースURLが不正なら自己申告もno_opを示す` / `moomooのOpenD接続先が不正なら自己申告もno_opを示す` | 自動 |
-| T-15-53 | ヘルスチェックが起動直後に ready（DB もバスも持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBもバスも持たない` | 自動 |
+| T-15-53 | ヘルスチェックが起動直後に ready（DB を持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBを持たない` | 自動 |
 | T-15-67 | **構成不備は起動時に落ちる**（OpenD 本番化の実装 ADR の決定 5・moomoo アダプタの実装 ADR の決定 6）: ①`provider=moomoo` で鍵パスが設定済みなのにファイルが無ければ**ホストの起動そのものが失敗する**／②**否定形**: `provider` 未指定の既定構成では鍵パスが不正でも起動する（moomoo を使わない環境を巻き込まない） | `BacktestWorkerStartupPreflightTests.provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する` / `既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない` | 自動 |
 | T-15-68 | **起動時検査の判定内容**（moomoo アダプタの実装 ADR の決定 6）: ①正常な構成は通す／②鍵パス設定済み＋ファイル不在は落とす／③**鍵パス未設定は正当な構成として通す**（相場系は暗号化必須ではない）／④OpenD のホストが空なら落とす／⑤ポートが 0 なら落とす | `MoomooBarDataPreflightTests`（5 メソッド・Theory 含む 6 ケース） | 自動 |
 
@@ -219,6 +219,51 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
 >
 > 実際にこの欠陥を一度作り込んでいる（`8451255` → `6de5b83` で是正）。**「例外の種類と文言が
 > 改善されても、表面化のタイミングが変わらなければ preflight の意味が無い。」**
+
+### Stage 0 判定の定時駆動と verdict の発行（[#688](https://github.com/endazon/ai-stock-trading/issues/688)。既定無効・空データは fail-closed・プレースホルダは不合格固定）
+
+実 RabbitMQ は使わない（本番と同じ配線を用い、送信先だけ stub へ倒して発行を捕捉する）。実ブローカ疎通は
+[#82](https://github.com/endazon/ai-stock-trading/issues/82) に残る。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-69 | 🔴 **否定形（最重要）**: 過去データが 0 本のとき**判定を走らせず**、合格 verdict を出さない（理由に「過去データ 0 本」が載る） | `Stage0EvaluationServiceTests.過去データが空なら判定を走らせず不合格verdictを発行する_failclosed` | 自動 |
+| T-15-70 | 駆動経路が実行され verdict が 1 通発行される（バーがあれば走行し、戦略識別子はプレースホルダ・空売りの観測は false） | `Stage0EvaluationServiceTests.バーがあれば走行して不合格固定のverdictを発行する` | 自動 |
+| T-15-71 | LLM 学習カットオフ日が未構成なら検証条件①を未達として載せる（未設定を充足へ倒さない） | `Stage0EvaluationServiceTests.カットオフ日が未構成ならデータカットオフを未達として載せる` | 自動 |
+| T-15-72 | 評価期間は当日から遡った範囲（0・負値は 1 日へクランプ） | `Stage0EvaluationServiceTests.評価期間は当日から遡った範囲になる`（Theory 4 ケース） | 自動 |
+| T-15-73 | 🔴 **否定形（fail-safe）**: 既定（無効）では常駐が巡回もデータ取得も行わない／有効化したときだけ起動時に 1 巡回する | `Stage0EvaluationServiceTests.既定は無効で常駐は巡回もデータ取得も行わない` / `有効化すると常駐が起動時に1巡回する` | 自動 |
+| T-15-74 | **プロパティベース**: 駆動が組む verdict はどの入口・どの入力でも不合格であり、未達理由が空にならない（昇格推奨も出ない） | `Stage0DriverVerdictTests.どの入口でも不合格で理由が空でない`（Theory 3 ケース） / `プレースホルダ走行はカットオフ充足に関わらず不合格でプレースホルダ理由を含む`（Theory 2 ケース） | 自動 |
+| T-15-75 | 境界: カットオフ充足なら理由はプレースホルダのみ／未充足ならデータカットオフも載る | `Stage0DriverVerdictTests.カットオフ充足なら理由はプレースホルダのみ` / `カットオフ未充足なら理由にデータカットオフも載る` | 自動 |
+| T-15-76 | 🔴 **否定形**: 空バーは判定器の 7 条件では検出できない（`DataCutoffPolicy` は空に真を返す）ことを明示し、駆動側の理由で塞ぐ／判定器は駆動側の理由を出さない | `Stage0DriverVerdictTests.バー0本の理由は判定器の条件では出ない値である_空を検出できない穴を塞ぐ` / `判定器は駆動側の理由を出さない` | 自動 |
+| T-15-77 | 🔴 **否定形**: 駆動が発行した verdict は段階別実績へ射影されるが、**昇格は止まったままである**（記録されるのは不合格） | `Stage0DriverToRiskProjectionTests.駆動が発行したverdictはリスク管理へ射影され昇格を止め続ける` | 自動 |
+| T-15-78 | 配線: 定時駆動が常駐として登録され、既定は無効・自己申告も `disabled`／有効化したときだけ `enabled` | `BacktestWorkerWiringTests.Stage0の定時駆動が常駐として登録される` / `既定では定時駆動は無効で自己申告もdisabledを示す_failsafe` / `有効化すると自己申告がenabledを示す` | 自動 |
+
+> **⚑ T-15-69 は変異試験で load-bearing を実測した。** 空判定の条件を無効化（`bars.Count == 0` を偽になる形へ）すると
+> 当該テストだけが失敗し、他は緑のままだった（失敗 1 / 合格 8）。**空データの検出は他のテストが代替しない。**
+
+### 評価対象＝記録した AI 判断の再生（[#632](https://github.com/endazon/ai-stock-trading/issues/632)。記録・再生方式）
+
+計画の 2026-09-05 の裁定が定めた評価対象（AI 判断そのもの）の**再生側**を固定する。
+記録そのものの作成（as-of 入力・多数決・費用の見積り承認）は取引判断側の関心事であり本書の範囲外である。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-79 | 記録した判断が注文へ写る（符号付き数量をそのまま使う＝再生側でサイジングを再計算しない） | `RecordedDecisionReplayStrategyTests.記録した判断を注文へ写す` | 自動 |
+| T-15-80 | **プロパティベース**: 同一入力に対して常に同一の出力を返す（純関数。統計手続きが決定的に回る前提） | `RecordedDecisionReplayStrategyTests.同一入力に対して常に同一の出力を返す` | 自動 |
+| T-15-81 | 🔴 **否定形（最重要）**: 記録集合の期間外では 1 件も発注しない（記録の取り違えで別期間の判断が紛れ込む経路を断つ） | `RecordedDecisionReplayStrategyTests.記録集合の期間外では発注しない`（Theory 4 ケース） | 自動 |
+| T-15-82 | 境界: 期間の両端は「内」である／記録の無い日・見送り（数量 0）・記録が空はいずれも無発注／同一銘柄同一日の重複は 1 件に畳む | `RecordedDecisionReplayStrategyTests.期間の両端は記録が引かれる`（Theory 2 ケース） / `記録の無い日は無発注である` / `見送りの記録は注文を作らない` / `記録が空なら常に無発注である` / `同一銘柄同一日の重複記録は1件に畳まれる` | 自動 |
+| T-15-83 | 🔴 **否定形（最重要）**: 記録が無い・判断 0 件なら評価文脈を組まない（判定器を呼ばない） | `Stage0ReplayEvaluationTests.記録が無ければ評価文脈を組まない_failclosed` / `判断が0件の記録集合は評価文脈を組まない_failclosed` | 自動 |
+| T-15-84 | 🔴 **否定形**: カットオフ日が未構成／記録と構成で食い違うなら評価文脈を組まない（別の汚染対策前提の記録を流用させない） | `Stage0ReplayEvaluationTests.カットオフ日が未構成なら評価文脈を組まない_failclosed` / `記録のカットオフ日が構成と違えば評価文脈を組まない_failclosed` | 自動 |
+| T-15-85 | 🔴 **否定形**: 記録が評価期間を覆っていない／銘柄集合が違うなら評価文脈を組まない | `Stage0ReplayEvaluationTests.記録が評価期間を覆っていなければ評価文脈を組まない_failclosed`（Theory 2 ケース） / `銘柄集合が構成と違えば評価文脈を組まない_failclosed` | 自動 |
+| T-15-86 | 🔴 **否定形**: 過剰適合補正の標本が足りなければ評価文脈を組まない（走行の材料は verdict へ残す） | `Stage0ReplayEvaluationTests.標本が足りなければ評価文脈を組まない_failclosed` | 自動 |
+| T-15-87 | 肯定形: 記録が整合すれば**本物の判定器**へ到達し、7 条件で合否が決まる（試行 1 本のため試行数条件で落ちる＝駆動側の理由は載らない）／整合する記録に対して阻害理由は空 | `Stage0ReplayEvaluationTests.記録が整合すれば本物の判定器へ到達する` / `整合する記録に対して阻害理由は空である` | 自動 |
+| T-15-88 | **陽性対照**: カットオフ以前のバーが混ざれば判定器が検証条件①を未達にする／全バーがカットオフ後なら未達に載らない | `Stage0ReplayEvaluationTests.カットオフ以前のバーが混ざれば検証条件1が未達になる` / `全バーがカットオフ後なら検証条件1は未達にならない` | 自動 |
+| T-15-89 | 駆動: 記録が揃えば本物の判定器に到達して verdict が出る／記録なし・不整合（期間・銘柄・カットオフ）・カットオフ未構成のいずれも合格 verdict を出さない | `Stage0EvaluationServiceTests.記録が揃えば本物の判定器に到達する` / `記録が無ければ判定を走らせず不合格verdictを発行する_failclosed` / `記録が構成と整合しなければ不合格verdictを発行する_failclosed`（Theory 3 ケース） / `記録再生でもカットオフ日が未構成なら不合格verdictを発行する_failclosed` | 自動 |
+| T-15-90 | 🔴 **否定形**: 未設定・空・未知の綴りの評価対象はすべて既定（プレースホルダ＝不合格固定）へ倒す | `Stage0EvaluationServiceTests.既定と未知の戦略名はプレースホルダへ倒す`（Theory 4 ケース） | 自動 |
+| T-15-91 | 記録ファイルの読み込み: 書き出した記録を読み戻せる／パス未設定・ファイル無し・解釈不能はすべて「記録なし」へ倒す（例外を投げない） | `FileStage0DecisionRecordSourceTests.記録ファイルを読み戻せる` / `パス未設定は記録なしになる` / `ファイルが無ければ記録なしになる` / `解釈できないファイルは記録なしになる` | 自動 |
+
+> **⚑ T-15-81 は変異試験で load-bearing を実測した。** 期間外ガードを無効化すると当該 Theory の 4 ケースだけが
+> 失敗し、他は緑のままだった（失敗 4 / 合格 308。戻して 312 合格）。**期間外の無発注は他のテストが代替しない。**
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 
@@ -261,7 +306,8 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #688]
 | **実 OpenD に対する moomoo 履歴 K 線の疎通** | **一度も検証していない。** protobuf の組み立て（`QotRequestHistoryKL` のビルダ）・`NextReqKey` の往復・`KLine.Time` の実書式・取得枠を使い切ったときの応答（非成功か空応答か）は実 OpenD でしか確認できない。**最初に繋ぐ人が疎通を確認すること**（moomoo アダプタの実装 ADR の残余リスク 1・3） | **[#382](https://github.com/endazon/ai-stock-trading/issues/382)**／[blocked-tasks](../blocked-tasks.md) A-3 |
 | 実 Stooq に対する live 検証（実効レート上限・User-Agent 要否） | **実施しない。** ボット検知チャレンジが返り、**回避は履歴源の計画 ADR の決定 1 が明示的に禁じた**（旧記述の「手動 opt-in で確認する」は、確認しても取得できないため意味を持たない） | [#382](https://github.com/endazon/ai-stock-trading/issues/382) |
 | J-Quants Free アダプタ | 2 段認証＋ページングの契約確認に実アカウントが要る。**なお J-Quants は日本株のみで米国株を含まない**ため、本件（米国株日足 OHLC）の代替にはならない（履歴源の計画 ADR の §コンテキスト） | [#208](https://github.com/endazon/ai-stock-trading/issues/208) |
-| Risk への verdict 実 publish / E2E | イベント射影は実装済み・実バス配線は統合基盤側 | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |
+| Risk への verdict 実 publish / E2E（**実 RabbitMQ 経由**） | 発行側の配線・駆動・射影までは実装しテストで固定した（T-15-69〜T-15-78）。**実ブローカを介した疎通と実過去データでの走行は未実施** | [#82](https://github.com/endazon/ai-stock-trading/issues/82) |
+| **本番の評価対象（AI 判断の記録・再生）による Stage 0 判定** | 計画は 2026-09-05 の裁定で評価対象を確定したが、記録器・記録再生戦略は未実装。駆動はプレースホルダで経路のみ確認しており、**verdict は不合格固定である** | 追跡 issue は未起票（[#688](https://github.com/endazon/ai-stock-trading/issues/688) の後続） |
 | 段階遷移の承認オペレーション | バックテストは昇格「推奨」まで・実遷移は利用者承認 | [#20](https://github.com/endazon/ai-stock-trading/issues/20) |
 
 ## 関連仕様

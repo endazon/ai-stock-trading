@@ -1845,6 +1845,27 @@ module.exports = ({ ok, assert }) => {
       assert.match(section, /readPlanIds/, '節が機械の単一情報源であることを書いていない');
       assert.match(section, /SC-13/, 'SC-13 / SC-16 を実在集合へ入れない理由が書かれていない');
     });
+
+    // --- #710: 計画 ADR レンジ宣言（ADR-0001..0032）が計画側の実在（0035 まで）より遅れていた ---
+    //
+    // 純関数（plan-ranges.readPlanAdrRange）は「実ツリーの現在値」を読むだけで鮮度そのものは
+    // 検査できない（規約ファイルを書き換えれば追随してしまう）。**鮮度の実害はコミット件名 /
+    // PR タイトルの実在性検査（`--title` CLI 経路）に出る**——ADR-0035 を参照するコミットが
+    // 「実在しない」として恒久拒否される。ここでは CLI バイナリを直接叩き、宣言が実測値
+    // （project-planning 07_adr/ の最大 ADR-0035。ブリーフ #710 で実測）に追随していることを保証する。
+    ok('#710: 計画 ADR レンジ宣言が ADR-0035 を実在として通し、ADR-0036 は依然として拒否する', () => {
+      const { execFileSync: execFileSyncAdrFresh } = require('child_process');
+      const runTitle = (title) => execFileSyncAdrFresh(
+        process.execPath,
+        [pathRp.join(__dirname, 'check-commit-messages.js'), '--title', title],
+        { cwd: pathRp.join(__dirname, '..'), stdio: 'pipe', encoding: 'utf8' },
+      );
+      // ADR-0035 は実在（project-planning 07_adr/ADR-0035_*.md）——素通りせず exit 0 で受理される。
+      runTitle('feat(ADR-0035): x');
+      // ADR-0036 はまだ存在しない——lib/plan-ranges.js 側の isAdrInRange 上限検査
+      // （scripts.repo.test.js 内の別テストが r.to+1 で保証）と整合し、依然として拒否される。
+      assert.throws(() => runTitle('feat(ADR-0036): x'), /実在しない/);
+    });
   }
 
   // --- check-trace-blocks.js / gen-knowledge-graph.js -------------------------------
@@ -2265,6 +2286,213 @@ module.exports = ({ ok, assert }) => {
     ok('scripts/README.md: 本リポジトリ固有の表に check-frontend-empty-frames.js を記載している', () => {
       const readme = fsFe.readFileSync(pathFe.join(REPO_ROOT_FE, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /check-frontend-empty-frames\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
+
+  // --- check-backlog-audit-output.js: バックログ監査の産出検証（NFR / #711） ---
+  //
+  // backlog-audit.yml は週次スケジュール実行のため、壊れても気付くのが最短で 1 週間後になる。
+  // 自己試験だけでなく PR 時にも継続的に走らせ、判定ロジックの退行を早期に検出する
+  // （check-frontend-empty-frames.js 等と同じ「実バイナリを execFileSync で叩く」作法）。
+  {
+    const { execFileSync: execFileSyncBa } = require('child_process');
+    const pathBa = require('path');
+    const fsBa = require('fs');
+    const SCRIPT_BA = pathBa.join(__dirname, 'check-backlog-audit-output.js');
+    const REPO_ROOT_BA = pathBa.resolve(__dirname, '..');
+
+    ok('check-backlog-audit-output: 自己試験が通る（#711）', () => {
+      execFileSyncBa(process.execPath, [SCRIPT_BA, '--self-test'], { cwd: REPO_ROOT_BA, stdio: 'pipe' });
+    });
+
+    // 🔴 否定形。run 開始時刻を渡さない・issue が存在しない体で main() を叩き、
+    // 「産出なし」を確かに exit 1 で検出することを実バイナリで固定する（issue 側は gh を
+    // 呼ばず失敗するため、GITHUB_TOKEN の有無に依存せずローカルでも再現できる）。
+    ok('check-backlog-audit-output: run 開始時刻が無ければ exit 1（実バイナリ）', () => {
+      let failed = false;
+      try {
+        execFileSyncBa(process.execPath, [SCRIPT_BA], {
+          cwd: REPO_ROOT_BA,
+          env: { ...process.env, RUN_START_TIME: '' },
+          stdio: 'pipe',
+        });
+      } catch {
+        failed = true;
+      }
+      assert.ok(failed, 'run 開始時刻が無いのに exit 0 になった（検査が働いていない）');
+    });
+
+    ok('check-backlog-audit-output: gh が使えない環境では issue 取得に失敗し exit 1（実バイナリ）', () => {
+      let failed = false;
+      let stderr = '';
+      try {
+        execFileSyncBa(process.execPath, [SCRIPT_BA, '--run-start', '2026-01-01T00:00:00Z'], {
+          cwd: REPO_ROOT_BA,
+          // gh が PATH に無い状態を作る（存在しないディレクトリのみの PATH）。
+          env: { ...process.env, PATH: '/nonexistent-bin-for-test' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+      } catch (e) {
+        failed = true;
+        // ci-annotate.js は GITHUB_ACTIONS=true のとき workflow コマンド（::error::）を **stdout** へ
+        // 書く（stderr だとアノテーションが出ない）。ローカルは stderr。両方を見る。
+        stderr = String(e.stderr || '') + String(e.stdout || '') + String(e.message || '');
+      }
+      assert.ok(failed, 'gh が使えないのに exit 0 になった');
+      assert.match(stderr, /取得できない/, 'issue 取得失敗の理由が報告に出ていない');
+    });
+
+    ok('backlog-audit.yml: 産出検証ステップと run 開始時刻の記録が配線されている（#711）', () => {
+      const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
+      assert.match(wf, /check-backlog-audit-output\.js/, '産出検証ステップが無い');
+      assert.match(wf, /date -u \+%Y-%m-%dT%H:%M:%SZ/, 'run 開始時刻を記録するステップが無い');
+      assert.match(wf, /RUN_START_TIME/, 'RUN_START_TIME が後段へ渡されていない');
+    });
+
+    ok('scripts/README.md: check-backlog-audit-output.js を記載している', () => {
+      const readme = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-backlog-audit-output\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
+
+  // --- setup.sh: .NET SDK 自己修復（NFR / #709 / IADR-0311） ---
+  {
+    const { execFileSync: execFileSyncSs } = require('child_process');
+    const fsSs = require('fs');
+    const osSs = require('os');
+    const pathSs = require('path');
+    const REPO_ROOT_SS = pathSs.resolve(__dirname, '..');
+
+    // 「dotnet が PATH に無い」環境を **どのランナーでも** 再現する。CI の ubuntu イメージは
+    // /usr/bin/dotnet を持つため、PATH を '/usr/bin:/bin' に絞るだけでは自己修復の分岐へ入らず、
+    // 通常の restore 経路が走って本試験が落ちた（run 34288592460 で実測）。setup.sh が使う
+    // 外部コマンドだけを symlink で集めた一時ディレクトリを PATH にする（dotnet は含めない）。
+    const toolboxPathSs = (() => {
+      const dir = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-bin-'));
+      for (const tool of ['bash', 'sh', 'grep', 'sed', 'head', 'cut', 'find', 'sort', 'mktemp', 'rm', 'cat', 'ls']) {
+        for (const from of ['/usr/bin', '/bin']) {
+          const src = pathSs.join(from, tool);
+          if (fsSs.existsSync(src)) {
+            try { fsSs.symlinkSync(src, pathSs.join(dir, tool)); } catch { /* 既に張った */ }
+            break;
+          }
+        }
+      }
+      return dir;
+    })();
+
+    ok('setup.sh: 構文エラーが無い（bash -n）', () => {
+      execFileSyncSs('bash', ['-n', pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], { stdio: 'pipe' });
+    });
+
+    // dry-run: 実ネットワークを叩かず channel 導出だけを固定する。global.json を優先する経路。
+    ok('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
+          cwd: REPO_ROOT_SS,
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `channel の導出結果が違う: ${out}`);
+        assert.match(out, /\[dry-run\]/, 'dry-run 分岐を通っていない（実 curl を試みた可能性）');
+      } finally {
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // global.json が無いツリーでは Directory.Build.props の TargetFramework から導出する。
+    ok('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
+      const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh'),
+          pathSs.join(tmpRepo, 'setup.sh')
+        );
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'Directory.Build.props'),
+          pathSs.join(tmpRepo, 'Directory.Build.props')
+        );
+        const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
+          cwd: tmpRepo,
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `channel の導出結果が違う（global.json 無しのフォールバック）: ${out}`);
+      } finally {
+        fsSs.rmSync(tmpRepo, { recursive: true, force: true });
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // 否定形: channel も導出できないツリーでは既定 10.0 へ倒れる（例外を投げて落ちない）。
+    ok('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
+      const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        fsSs.copyFileSync(
+          pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh'),
+          pathSs.join(tmpRepo, 'setup.sh')
+        );
+        const out = execFileSyncSs('bash', [pathSs.join(tmpRepo, 'setup.sh')], {
+          cwd: tmpRepo,
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs, DOTNET_INSTALL_DRY_RUN: '1' },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /channel: 10\.0/, `既定 channel に倒れていない: ${out}`);
+      } finally {
+        fsSs.rmSync(tmpRepo, { recursive: true, force: true });
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    // 実効性の証拠: dotnet が PATH に無くても $HOME/.dotnet/dotnet があれば PATH へ足す経路。
+    // 実 SDK を新たに用意すると重いため、実行可能ファイルのスタブで代用する（PATH 追加の判定
+    // ロジック自体を固定するのが目的であり、本物の dotnet の挙動はここでは検証しない）。
+    ok('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
+      const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
+      try {
+        const dotnetDir = pathSs.join(emptyHome, '.dotnet');
+        fsSs.mkdirSync(dotnetDir, { recursive: true });
+        const stub = pathSs.join(dotnetDir, 'dotnet');
+        fsSs.writeFileSync(stub, '#!/usr/bin/env bash\necho "stub dotnet called: $*"\n');
+        fsSs.chmodSync(stub, 0o755);
+        const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
+          cwd: REPO_ROOT_SS,
+          env: { ...process.env, HOME: emptyHome, PATH: toolboxPathSs },
+          stdio: 'pipe',
+          encoding: 'utf8',
+        });
+        assert.match(out, /PATH へ追加します/, 'PATH 追加の案内が出ていない');
+        assert.match(out, /export PATH="\$HOME\/\.dotnet:\$PATH"/, '呼び出し元向けの export 案内が出ていない');
+      } finally {
+        fsSs.rmSync(emptyHome, { recursive: true, force: true });
+      }
+    });
+
+    ok('devcontainer.json: .NET 10 のベースイメージを使っている（#709）', () => {
+      const dc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.devcontainer', 'devcontainer.json'), 'utf8');
+      assert.match(dc, /mcr\.microsoft\.com\/devcontainers\/dotnet:10\.0/, 'devcontainer のベースイメージが .NET 10 になっていない');
+    });
+
+    ok('Node のバージョンが全ワークフロー・.nvmrc で 20 に揃っている（#709）', () => {
+      const wfDir = pathSs.join(REPO_ROOT_SS, '.github', 'workflows');
+      const offenders = [];
+      for (const f of fsSs.readdirSync(wfDir)) {
+        if (!f.endsWith('.yml')) continue;
+        const src = fsSs.readFileSync(pathSs.join(wfDir, f), 'utf8');
+        for (const m of src.matchAll(/node-version:\s*['"]?(\d+)['"]?/g)) {
+          if (m[1] !== '20') offenders.push(`${f}: node-version ${m[1]}`);
+        }
+      }
+      assert.deepStrictEqual(offenders, [], `20 以外の node-version が残っている: ${offenders.join(', ')}`);
+      const nvmrc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.nvmrc'), 'utf8').trim();
+      assert.strictEqual(nvmrc, '20', `.nvmrc が 20 でない: ${nvmrc}`);
     });
   }
 };

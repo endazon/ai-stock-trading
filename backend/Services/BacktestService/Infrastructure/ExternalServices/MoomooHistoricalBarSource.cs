@@ -1,5 +1,6 @@
 using BacktestService.Features.Backtest;
 using BacktestService.Domain;
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
@@ -140,9 +141,11 @@ public sealed class MoomooHistoricalBarSource(
     private void Record(List<HistoricalBarGap> gaps, string symbol, Market market, string reason)
     {
         // 欠測は無音破棄しない。バックテストの合否に影響する（銘柄が丸ごと欠けた検証は合格材料にできない）。
+        // NFR, IADR-0316, #708: reason には外部（OpenD）由来の例外メッセージが入る。
+        // 行指向のログへ偽の行を注入されないよう、ログへ渡す値だけを正規化する（CWE-117）。欠測記録は原文のまま。
         logger.LogWarning(
             "moomoo から過去データを取得できませんでした（銘柄 {Symbol} / {Market}）: {Reason}。欠測として記録します。",
-            symbol, market, reason);
+            symbol, market, LogSanitizer.Sanitize(reason));
         gaps.Add(new HistoricalBarGap(symbol, market, reason));
     }
 }

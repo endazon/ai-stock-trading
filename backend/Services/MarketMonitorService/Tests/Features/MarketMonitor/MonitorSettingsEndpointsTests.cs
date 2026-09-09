@@ -9,6 +9,9 @@ using Xunit;
 namespace MarketMonitorService.Tests;
 
 // FR-03, FR-13: 監視設定エンドポイントの認可（OwnerOnly）と永続化・反映を検証する。
+//
+// #707, IADR-0317: ステータスの断定は `ShouldHaveStatusAsync`（応答本文つき）を通す。素の断定は
+// 400 の理由を隠し、**インフラ層の障害を「検証で弾かれた」と読み違えさせる**。
 public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory factory)
     : IClassFixture<MonitorWorkerWebApplicationFactory>
 {
@@ -23,7 +26,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
     public async Task 未認証の設定取得は401()
     {
         var res = await factory.CreateClient().GetAsync("/monitor/settings");
-        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -34,7 +37,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
 
         var res = await client.GetAsync("/monitor/settings");
 
-        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.Forbidden);
     }
 
     [Fact]
@@ -51,11 +54,41 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
         };
 
         var put = await client.PutAsJsonAsync("/monitor/settings", request);
-        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        await put.ShouldHaveStatusAsync(HttpStatusCode.OK);
 
         var settings = await client.GetFromJsonAsync<SettingsDto>("/monitor/settings");
         settings!.MovementThresholdRatio.Should().Be(0.05m);
         settings.MonitoredSymbols.Should().ContainSingle(s => s.Symbol == "AAPL");
+    }
+
+    // #707, IADR-0317 陽性対照: **わざと汚した状態から始めても緑になる。**
+    // クラス内の実行順序は保証されないため、「先行テストが残した設定・監視銘柄」を拾って落ちないことを
+    // 明示的に固定する。全置換 PUT は前の値に依存しない（差分でも楽観排他の再送でもない）。
+    [Fact]
+    public async Task 汚れた状態から始めても全置換で更新できる()
+    {
+        var client = OwnerClient();
+        var pollute = await client.PutAsJsonAsync("/monitor/settings", new
+        {
+            MovementThresholdRatio = 0.23m,
+            Cooldown = TimeSpan.FromHours(7),
+            MonitoredSymbols = new[] { new MonitoredSymbol("SOXL", Market.UnitedStates) },
+            Reason = "汚染",
+        });
+        await pollute.ShouldHaveStatusAsync(HttpStatusCode.OK);
+
+        var put = await client.PutAsJsonAsync("/monitor/settings", new
+        {
+            MovementThresholdRatio = 0.02m,
+            Cooldown = TimeSpan.FromMinutes(20),
+            MonitoredSymbols = new[] { new MonitoredSymbol("9432", Market.Japan) },
+            Reason = "汚染後の全置換",
+        });
+
+        await put.ShouldHaveStatusAsync(HttpStatusCode.OK);
+        var settings = await client.GetFromJsonAsync<SettingsDto>("/monitor/settings");
+        settings!.MovementThresholdRatio.Should().Be(0.02m);
+        settings.MonitoredSymbols.Should().ContainSingle(s => s.Symbol == "9432");
     }
 
     [Fact]
@@ -72,7 +105,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
 
         var res = await client.PutAsJsonAsync("/monitor/settings", request);
 
-        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.BadRequest);
     }
 
     // ---- #423, IADR-0164 決定3: 全置換も部分更新と同じ規律（値域・理由・履歴）である ----
@@ -95,7 +128,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
             Reason = "値域外",
         });
 
-        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.BadRequest);
     }
 
     // クールダウンの上限（24 時間）も全置換で効く。
@@ -110,7 +143,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
             Reason = "値域外",
         });
 
-        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.BadRequest);
     }
 
     // FR-11: 理由なしでは保存できない（#423 の退行防止項目「変更理由なしでは保存できないこと」）。
@@ -128,7 +161,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
             Reason = reason,
         });
 
-        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.BadRequest);
     }
 
     // FR-11: 全置換で変えた値も**監査ログ（変更履歴）に残る**（#423 の退行防止項目）。
@@ -144,7 +177,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
             MonitoredSymbols = Array.Empty<MonitoredSymbol>(),
             Reason = "全置換で履歴に残ることの検証",
         });
-        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.OK);
 
         var history = await client.GetFromJsonAsync<List<HistoryDto>>("/monitor/settings/history");
         history.Should().Contain(e =>
@@ -159,7 +192,7 @@ public class MonitorSettingsEndpointsTests(MonitorWorkerWebApplicationFactory fa
     public async Task ヘルスチェック_live_は認証不要で応答する()
     {
         var res = await factory.CreateClient().GetAsync("/health/live");
-        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        await res.ShouldHaveStatusAsync(HttpStatusCode.OK);
     }
 
     private sealed record SettingsDto(decimal MovementThresholdRatio, List<MonitoredSymbol> MonitoredSymbols);
