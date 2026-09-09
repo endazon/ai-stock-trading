@@ -352,6 +352,12 @@ services:
       LlmGateway__BaseUrl: ${LLM_GATEWAY_BASEURL:-}
       LlmGateway__TimeoutSeconds: ${LLM_GATEWAY_TIMEOUTSECONDS:-}
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
+      # NFR-05, #724, IADR-0323: LLM ゲートウェイの s2s。基盤が REST 3 口へ端点単位の認可（ServiceCaller）を掛けたため
+      # 匿名では 401 になる。KB と同じ MSP `platform` レルムの confidential client で認証する
+      # （AST レルムの ServiceAuth では issuer 不一致で 401）。空=トークン無し→401→プレースホルダ散文へ fail-safe。
+      LlmGateway__Auth__Authority: ${LLM_GATEWAY_AUTH_AUTHORITY:-}
+      LlmGateway__Auth__ClientId: ${LLM_GATEWAY_AUTH_CLIENTID:-}
+      LlmGateway__Auth__ClientSecret: ${LLM_GATEWAY_AUTH_CLIENTSECRET:-}
       # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。空=no-op（保存しない）。設定時のみ opt-in。
       KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGE_BASE_DOCUMENTS_BASEURL:-}
       # FR-08, IADR-0051: 自身の API・s2s の Authority 導出元（AST レルム）。
@@ -421,6 +427,11 @@ services:
       LlmGateway__TimeoutSeconds: ${LLM_GATEWAY_TIMEOUTSECONDS:-}
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       LlmGateway__LogPrompts: ${LLM_GATEWAY_LOGPROMPTS:-}
+      # NFR-05, #724, IADR-0323: LLM ゲートウェイの s2s（report と同じ設定点・同じ client）。空=トークン無し→401。
+      # 🔴 その 401 は「割当モデル不可」ではなく**「認可の失敗」として記録される**（IADR-0323 決定3）。
+      LlmGateway__Auth__Authority: ${LLM_GATEWAY_AUTH_AUTHORITY:-}
+      LlmGateway__Auth__ClientId: ${LLM_GATEWAY_AUTH_CLIENTID:-}
+      LlmGateway__Auth__ClientSecret: ${LLM_GATEWAY_AUTH_CLIENTSECRET:-}
       # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
       # FR-08, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。
       # fail-safe: 空=NoOp 検索（参考情報なし＝現行動作）。設定時のみ platform RetrievalService（POST /search）へ s2s 照会する。

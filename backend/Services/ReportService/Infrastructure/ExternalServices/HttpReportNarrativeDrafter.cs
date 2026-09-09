@@ -13,7 +13,12 @@ namespace ReportService.Infrastructure.ExternalServices;
 // - プロンプトは純関数 ReportNarrativePromptBuilder で構築（散文のみ・数値は再計算/改変しない＝数値はコード集計が権威・FR-16）。
 // - 送信拒否（Sent=false）・非 2xx・タイムアウト・空/不正応答・例外は「プレースホルダ散文」へ倒す。取引判断の Hold と異なり
 //   報告書は発注を伴わないため、安全側＝捏造しない定型散文（数値には一切関与しない）。
-// - ADR-0010: /complete は匿名エンドポイントゆえ s2s トークンは付けない。リトライはゲートウェイ側一元化に委ね重ねない。
+// - NFR-05, #724, IADR-0323: **`/complete` へは MSP レルムの s2s トークンを付ける。**
+//   〔2026-09-10 是正〕従前ここには「MSP/ADR-0010: /complete は匿名エンドポイントゆえ s2s トークンは付けない」と
+//   書いてあったが、基盤が REST 3 口へ端点単位の認可（`ServiceCaller`）を掛けたため事実でなくなった（MSP#1364）。
+//   付与は Program.cs の名前付き HttpClient（"report-llm"）で `LlmGateway:Auth` から行う。未設定なら付けない
+//   ＝現行どおり（→ 認可を要求する上流では 401 → 下の非 2xx 分岐でプレースホルダ散文へ倒れる＝安全側）。
+//   リトライはゲートウェイ側一元化（MSP/ADR-0010）に委ね重ねない。
 // - IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する。既定オフ＝機微を既定でログ基盤へ流さない。
 // - IADR-0120 決定1/2: purpose は要求ごとに種別（context.Kind）から決める。purposeOverride は構成
 //   LlmGateway:Purpose の明示設定で、指定時は全種別へ適用する（既存デプロイの非破壊）。
@@ -83,7 +88,17 @@ public sealed class HttpReportNarrativeDrafter(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("報告書散文 LLM /complete が非 2xx（{Status}）。プレースホルダ散文に倒します。", (int)response.StatusCode);
+                // NFR-05, #724, IADR-0323: 倒れ先はプレースホルダ散文のまま（報告書は発注を伴わない＝安全側）だが、
+                // **原因は取り違えない。** 認可の失敗（401/403）を「モデルが使えない」と読める記録にしない。
+                var status = (int)response.StatusCode;
+                if (LlmFailureClassification.Classify(status) == LlmFailureKind.Unauthorized)
+                    logger.LogWarning(
+                        "報告書散文 LLM /complete が認可を拒否しました（{Status}）。s2s の資格情報（LlmGateway:Auth）または"
+                        + "サービスアカウントの付与ロールを確認してください。プレースホルダ散文に倒します（モデルの可否とは無関係）。",
+                        status);
+                else
+                    logger.LogWarning("報告書散文 LLM /complete が非 2xx（{Status}）。プレースホルダ散文に倒します。", status);
+
                 return Placeholder(modelUsage);
             }
 

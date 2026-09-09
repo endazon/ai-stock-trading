@@ -2,10 +2,10 @@
 title: IADR-0071 報告書サービス残スコープは ReportService に閉じ、実 LLM/実 KB を既定オフ・opt-in、対話的確定は状態機械の薄い HTTP 結線で実装する
 type: impl-adr
 status: Accepted
-related_ids: [FR-06, FR-07, FR-16, FR-08, FR-09, UC-03, UC-04, UC-05, ADR-0003]
+related_ids: [FR-06, FR-07, FR-16, FR-08, FR-09, UC-03, UC-04, UC-05, ADR-0003, IADR-0323]
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-09-10
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
@@ -60,6 +60,12 @@ plan_refs:
 - `LlmGateway:TimeoutSeconds`（既定 30・非正値は既定へ）、`LlmGateway:LogPrompts`（既定オフ＝機微を既定でログへ流さない）、
   `LlmGateway:Confidentiality`（既定 internal）、`LlmGateway:Purpose`（既定 report-narrative）。
 - `/complete` は匿名（platform 側）ゆえ s2s トークンは付けない。リトライはゲートウェイ側一元化（ADR-0010）に委ね呼び出し側で重ねない。
+  > ［2026-09-10 追記 / [#724](https://github.com/endazon/ai-stock-trading/issues/724)］
+  > **この 1 点は [IADR-0323](IADR-0323_llm-gateway-service-token-and-authz-failure-classification.md) が置き換えた。**
+  > 基盤が LLM ゲートウェイの REST 3 口へ端点単位の認可（`ServiceCaller`）を掛けた（MSP#1364）ため、
+  > `/complete` は匿名エンドポイントではなくなり、`report-llm` クライアントへ **MSP レルム**の s2s トークンを
+  > `LlmGateway:Auth` から付ける（AST レルムの `ServiceAuth` では issuer 不一致で 401）。
+  > **リトライを重ねない**という後半は変更していない。
 - **費用計測（`LlmCostIncurred`）は本作業では結線しない**（報告書生成は低頻度・スコープ外）。seam を残す（申し送り）。
 
 ### 2. 無応答時の既定動作は「直近の確定済み方針を継続」を安全既定とし、純ドメインで決定する（S2）

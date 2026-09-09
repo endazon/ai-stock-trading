@@ -61,6 +61,41 @@ public class HttpReportNarrativeDrafterTests
             .Should().Be(ReportNarrativeDefaults.PlaceholderText);
     }
 
+    // NFR-05, #724, IADR-0323: 🔴 **否定形。** 認可の失敗（401/403）でも倒れ先はプレースホルダのままだが、
+    // 記録は「モデルが使えない」と読める形にしない。基盤が LLM ゲートウェイの REST 面へ `ServiceCaller` を
+    // 掛けた（MSP#1364）とき、原因を取り違えた記録が残ると、次に読む人が LLM 提供側を疑うことになる。
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]  // 401: 資格情報が無い・失効
+    [InlineData(HttpStatusCode.Forbidden)]     // 403: 認証は通ったがロールが足りない
+    public async Task 認可の失敗は資格情報を名指しし_モデルの可否として記録しない(HttpStatusCode status)
+    {
+        var logger = new RecordingLogger();
+
+        var text = await Drafter(new StubHandler(status, ""), logger).DraftNarrativeAsync(Ctx);
+
+        // ① 倒れ先は不変（安全側＝捏造しない定型散文）。
+        text.Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        // ② 原因を名指しする（運用者が見る場所を誤らせない）。
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("認可");
+        log.Should().Contain("LlmGateway:Auth");
+        // ③ 🔴 モデルの可否として記録しない。
+        log.Should().NotContain("モデル不可");
+    }
+
+    // 対照群: 認可以外の非 2xx は従来どおりの汎用メッセージ（上の否定形が「常に認可と書く」実装で緑にならない）。
+    [Fact]
+    public async Task 認可以外の非_2xx_は従来どおりの記録のまま()
+    {
+        var logger = new RecordingLogger();
+
+        await Drafter(new StubHandler(HttpStatusCode.InternalServerError, ""), logger).DraftNarrativeAsync(Ctx);
+
+        var log = string.Join("\n", logger.Messages);
+        log.Should().Contain("非 2xx");
+        log.Should().NotContain("認可");
+    }
+
     [Fact]
     public async Task 例外_不達_は_プレースホルダ散文へ倒す()
     {

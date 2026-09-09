@@ -163,6 +163,17 @@ services:
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
+      # NFR-05, #724, IADR-0323: ②の s2s。基盤が LLM ゲートウェイの REST 3 口へ認可（ServiceCaller＝realm ロール
+      # platform-service）を掛けたため、匿名では 401 になる（MSP#1364）。**MSP の `platform` レルム**の
+      # confidential client で認証する（AST レルムの ServiceAuth__* は issuer 不一致で通らない）。
+      # 🔴 資格情報は KB（③）と**同じ client `ai-stock-trading-kb-writer` を再利用する**ため、secret の鍵名は
+      # `kb-auth-*` のままである（IADR-0323 決定5。LLM 専用 client へ分けるときは下の 2 行だけ差し替える）。
+      # 🔴 realm 側で当該 service account へ `platform-service` を付与するまでは 403 になる（IADR-0323 決定6・MSP 所有）。
+      - { name: LlmGateway__Auth__Authority, value: "http://keycloak:8080/realms/platform" }           # ← ②（MSP レルム）
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=opus-5・
       # ADR-0015・MSP#429 で fable-5 から改定済み）ため所要時間も違う。共通 30 秒では週報・月報が
@@ -221,6 +232,14 @@ services:
       # したうえで結線する。下の TradeCycle__Watchlist__0__* は照会不達時のフォールバックとして残す（IADR-0095）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
+      # NFR-05, #724, IADR-0323: ②の s2s（report と同じ設定点・同じ client）。匿名では 401 になり、
+      # **その 401 は「割当モデル不可」ではなく「認可の失敗」として記録される**（IADR-0323 決定3）。
+      # 🔴 realm 側で service account へ `platform-service` を付与するまでは 403 になる（決定6・MSP 所有）。
+      - { name: LlmGateway__Auth__Authority, value: "http://keycloak:8080/realms/platform" }           # ← ②（MSP レルム）
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。

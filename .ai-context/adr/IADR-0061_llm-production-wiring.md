@@ -11,8 +11,10 @@ related_ids:
   - IADR-0039
   - IADR-0051
   - IADR-0055
+  - IADR-0323
 author: claude
 created: 2026-07-17
+updated: 2026-09-10
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04: AI 売買判断 / FR-11: 判断根拠の記録)
   - planning:projects/microservices-platform/07_adr/ADR-0010_llm-gateway.md (LLM ゲートウェイ)
@@ -65,6 +67,15 @@ plan_refs:
   付けても認可は 1 ミリも強くならず、無意味な結合と資格情報の伝播先だけが増える。
 - **再評価の条件**: MSP 側が `/complete` に認可を導入した時点で本決定を見直す（その時は IADR-0051 の
   横断ハンドラを `llm` にも適用するだけで済む）。
+
+> ［2026-09-10 追記 / [#724](https://github.com/endazon/ai-stock-trading/issues/724)］
+> **上の「再評価の条件」が満たされたため、決定3 は [IADR-0323](IADR-0323_llm-gateway-service-token-and-authz-failure-classification.md)
+> が置き換えた。** 基盤が LLM ゲートウェイの REST 3 口へ端点単位の認可（`ServiceCaller`＝realm ロール
+> `platform-service`）を掛けた（MSP#1364）ため、**`/complete` は匿名エンドポイントではなくなった**。
+> 現在は `llm` クライアントへ `LlmGateway:Auth` から s2s トークンを付ける。
+> なお当時の見込み（「IADR-0051 の横断ハンドラを `llm` にも適用するだけで済む」）は**誤りだった** ——
+> IADR-0051 は **AST レルム**のトークンを出すため MSP では issuer 不一致で 401 になる。実際に必要だったのは
+> [IADR-0093](IADR-0093_kb-writer-cross-realm-s2s.md) と同じ**クロスレルムの inline ハンドラ**である。
 
 ### 決定4: 呼び出し側リトライを**足さない**
 

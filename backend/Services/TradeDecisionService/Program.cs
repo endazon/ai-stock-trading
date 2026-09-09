@@ -72,9 +72,16 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // ため HttpClient のタイムアウトは長め。送信拒否/失敗/タイムアウトは Hold に倒す（HttpLlmCompletionClient）。
 // #11, IADR-0061 決定2: タイムアウトは LlmGateway:TimeoutSeconds（秒）。実運用ではモデル・プロンプト長で適正値が変わる。
 // fail-safe: 未設定・不正・非正値は既定 30 秒（＝従来値）へ倒す（無限待ちや 0 秒にはしない）。
-// IADR-0061 決定3/4: /complete は匿名エンドポイント（platform 側に RequireAuthorization/FallbackPolicy なし）のため
-// s2s トークンは付けない。リトライはゲートウェイ側が一元化する（ADR-0010）ため呼び出し側では重ねない。
-builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]));
+// NFR-05, #724, IADR-0323: **`/complete` へは MSP レルムの s2s トークンを付ける。**
+// 〔2026-09-10 是正〕従前ここには「IADR-0061 決定3/4: /complete は匿名エンドポイント（platform 側に
+// RequireAuthorization/FallbackPolicy なし）のため s2s トークンは付けない」と書いてあったが、基盤が REST 3 口へ
+// 端点単位の認可（ServiceCaller）を掛けたため事実でなくなった（MSP#1364）。**AST レルムの ServiceAuth__* では
+// issuer 不一致で通らない**ため、KB（IADR-0093）と同じ MSP レルムの confidential client を使う。
+// fail-safe: LlmGateway:Auth 未設定なら何も付けない＝本変更前とバイト等価。
+// リトライはゲートウェイ側が一元化する（MSP/ADR-0010）ため呼び出し側では重ねない。
+builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Configuration["LlmGateway:TimeoutSeconds"]))
+    .AddAiStockTradingPlatformRealmToken(
+        builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 
 // #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する

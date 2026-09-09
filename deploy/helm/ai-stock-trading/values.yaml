@@ -420,6 +420,15 @@ services:
       - { name: LlmGateway__BaseUrl, value: "" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       - { name: LlmGateway__LogPrompts, value: "" }
+      # NFR-05, #724, IADR-0323: LLM ゲートウェイの s2s。基盤が REST 3 口へ端点単位の認可（ServiceCaller＝realm ロール
+      # platform-service）を掛けたため、匿名では 401 になる。KB と同じ **MSP の `platform` レルム**の confidential
+      # client で認証する（AST レルムの ServiceAuth__* は issuer 不一致で通らない）。
+      # fail-safe: 空=トークン無し→401→プレースホルダ散文（＝本設定点の追加前と同じ挙動）。
+      - { name: LlmGateway__Auth__Authority, value: "" }
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。fail-safe: 空=no-op（保存しない）。設定時のみ opt-in。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
       # FR-08, IADR-0051: 自身の API・s2s の Authority 導出元（AST レルム）。
@@ -505,6 +514,15 @@ services:
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # FR-11: プロンプト・生出力の全量ログ。空=残さない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       - { name: LlmGateway__LogPrompts, value: "" }
+      # NFR-05, #724, IADR-0323: LLM ゲートウェイの s2s。基盤が REST 3 口へ端点単位の認可（ServiceCaller＝realm ロール
+      # platform-service）を掛けたため、匿名では 401 になる。KB と同じ **MSP の `platform` レルム**の confidential
+      # client で認証する（AST レルムの ServiceAuth__* は issuer 不一致で通らない）。
+      # fail-safe: 空=トークン無し→401→**認可の失敗として**記録し Hold（＝モデル不可へは倒さない・IADR-0323 決定3）。
+      - { name: LlmGateway__Auth__Authority, value: "" }
+      - name: LlmGateway__Auth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+      - name: LlmGateway__Auth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
       # IADR-0051: s2s 同期照会（daily-policy/sizing-context）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
       - name: ServiceAuth__ClientId
