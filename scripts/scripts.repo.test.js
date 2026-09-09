@@ -1850,21 +1850,28 @@ module.exports = ({ ok, assert }) => {
     //
     // 純関数（plan-ranges.readPlanAdrRange）は「実ツリーの現在値」を読むだけで鮮度そのものは
     // 検査できない（規約ファイルを書き換えれば追随してしまう）。**鮮度の実害はコミット件名 /
-    // PR タイトルの実在性検査（`--title` CLI 経路）に出る**——ADR-0035 を参照するコミットが
-    // 「実在しない」として恒久拒否される。ここでは CLI バイナリを直接叩き、宣言が実測値
-    // （project-planning 07_adr/ の最大 ADR-0035。ブリーフ #710 で実測）に追随していることを保証する。
-    ok('#710: 計画 ADR レンジ宣言が ADR-0035 を実在として通し、ADR-0036 は依然として拒否する', () => {
+    // PR タイトルの実在性検査（`--title` CLI 経路）に出る**——実在する ADR を参照するコミットが
+    // 「実在しない」として恒久拒否される。ここでは CLI バイナリを直接叩き、宣言の**上限そのもの**が
+    // 通り、その**次の番号**が拒否されることを保証する。
+    //
+    // 🔴 番号を直書きしない（planning#591 の是正）。従前は `ADR-0035` / `ADR-0036` と書いていたため、
+    // レンジを 0037 へ前進させた PR でこのテストが落ちた。**導出値は書き写さず計算し直す**
+    // （母集合の規則 10）。鮮度そのものの突合は check-planning-adr-range.js が計画側の公開
+    // `kg-ranges.json` と行う。
+    ok('#710 / planning#591: 計画 ADR レンジ宣言の上限は実在として通り、その次の番号は拒否される', () => {
       const { execFileSync: execFileSyncAdrFresh } = require('child_process');
+      const { readPlanAdrRange: readAdrRangeFresh } = require('./lib/plan-ranges.js');
       const runTitle = (title) => execFileSyncAdrFresh(
         process.execPath,
         [pathRp.join(__dirname, 'check-commit-messages.js'), '--title', title],
         { cwd: pathRp.join(__dirname, '..'), stdio: 'pipe', encoding: 'utf8' },
       );
-      // ADR-0035 は実在（project-planning 07_adr/ADR-0035_*.md）——素通りせず exit 0 で受理される。
-      runTitle('feat(ADR-0035): x');
-      // ADR-0036 はまだ存在しない——lib/plan-ranges.js 側の isAdrInRange 上限検査
-      // （scripts.repo.test.js 内の別テストが r.to+1 で保証）と整合し、依然として拒否される。
-      assert.throws(() => runTitle('feat(ADR-0036): x'), /実在しない/);
+      const pad4 = (n) => String(n).padStart(4, '0');
+      const { to } = readAdrRangeFresh();
+      // 上限の ADR は実在——素通りせず exit 0 で受理される。
+      runTitle(`feat(ADR-${pad4(to)}): x`);
+      // その次はまだ存在しない——lib/plan-ranges.js 側の isAdrInRange 上限検査と整合し、拒否される。
+      assert.throws(() => runTitle(`feat(ADR-${pad4(to + 1)}): x`), /実在しない/);
     });
   }
 
