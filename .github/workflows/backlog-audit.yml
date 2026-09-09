@@ -59,6 +59,20 @@ jobs:
         with:
           node-version: "20"
 
+      # NFR / #717 / #710: 監査項目 6（計画 ADR レンジ鮮度）は AI ではなく決定的なステップで解決する。
+      # `secrets.GITHUB_TOKEN` は本リポジトリしか読めず、AI が `mcp__github__get_file_contents` で
+      # `endazon/project-planning` を読もうとすると 404 になる（2026-09-09・run 34303693213 の #483 §6
+      # で実測。項目 6 が恒久的に「未確認」になっていた）。cross-repo 読み取り用の
+      # `PLANNING_REPO_TOKEN`（#496 で PR CI から使えることが実測済み）で計画側の一覧を取り、
+      # 宣言（traceability.repo.md）との突き合わせ結果を JSON に書く。AI はそのファイルを読んで
+      # 報告するだけ（cross-repo の資格情報を AI に持たせない）。secret が無い／API が失敗しても
+      # exit 0 で `status: unverified` を書く（fail-open。項目 6 の検証不能で他 5 項目を巻き込まない）。
+      # 出力先はワークスペース内（AI の Read が届く範囲。contents: read のため永続しない）。
+      - name: Resolve planning ADR range
+        env:
+          PLANNING_REPO_TOKEN: ${{ secrets.PLANNING_REPO_TOKEN }}
+        run: node scripts/check-planning-adr-range.js --out .backlog-audit/planning-adr-range.json
+
       - name: Run backlog audit
         # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
         # 参照する（claude-coding.yml / claude-code-review.yml と同じ配線）。実行ログのパスを
@@ -153,16 +167,19 @@ jobs:
                本リポにも前例があります（A-4 の「日銀サイトが自動取得を拒否」は実測で覆りました）。
                **分類を書き換えるのはあなたではありません**。候補と根拠を出すだけです（最重要の制約と同じ）。
 
-            6. **計画 ADR レンジ鮮度**（#710） — `.claude/rules/traceability.repo.md`「起点 ID の種別
-               （固有）」節が宣言する ` ADR-0001..NNNN ` の上限 `NNNN` と、計画リポジトリ
-               `projects/ai-stock-trading/07_adr/` の実在する最大の ADR 番号を突き合わせてください。
-               計画リポジトリのファイル一覧は `mcp__github__get_file_contents` で
-               `endazon/project-planning` の当該ディレクトリを読んで確認します（許可済み・パイプ等を
-               使わない 1 回の呼び出しで済みます）。**両者が食い違っていれば**（宣言が計画側の実在に
-               追いついていない、またはその逆）、レンジ宣言の更新漏れとして報告してください
-               （2026-09-09 の #710 は `ADR-0001..0032` の宣言が計画側の実在 `0035` まで 3 件遅れて
-               いた事例です——気付かれないまま放置すると、実在する新しい ADR を引くコミット件名・
-               PR タイトルが「存在しない ADR」として恒久的に拒否され続けます）。
+            6. **計画 ADR レンジ鮮度**（#710 / #717） — `.claude/rules/traceability.repo.md`「起点 ID の
+               種別（固有）」節が宣言する ` ADR-0001..NNNN ` の上限と、計画リポジトリ
+               `projects/ai-stock-trading/07_adr/` の実在する最大の ADR 番号の突き合わせ結果は、
+               **本 run の前段ステップが `.backlog-audit/planning-adr-range.json` に書いています。**
+               Read ツールでそのファイルを読み、`status` に従って報告してください:
+               `ok` = 一致（`declaredMax` を根拠に添える）／ `behind` = 宣言が計画側の実在に
+               追いついていない（レンジ宣言の更新漏れ。`reason` をそのまま引用）／ `ahead` = 宣言が
+               実在を超えている／ `unverified` = 検証できなかった（`reason` を引用し「未確認」と書く）。
+               **`endazon/project-planning` を自分で読みに行かないでください**——この run の
+               トークンでは 404 になります（2026-09-09 実測）。2026-09-09 の #710 は
+               `ADR-0001..0032` の宣言が計画側の実在 `0035` まで 3 件遅れていた事例です——
+               気付かれないまま放置すると、実在する新しい ADR を引くコミット件名・PR タイトルが
+               「存在しない ADR」として恒久的に拒否され続けます。
 
             ## 環流（計画へのフィードバック）について
 

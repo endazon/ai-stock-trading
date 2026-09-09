@@ -2370,6 +2370,36 @@ module.exports = ({ ok, assert }) => {
       assert.match(verifyStep, /EXECUTION_FILE: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, '産出検証へ実行記録（EXECUTION_FILE）が渡されていない（fail 時の手掛かりが出ない）');
     });
 
+    // #717: 監査項目 6 は AI が project-planning を読む設計だったが GITHUB_TOKEN では 404 になる。
+    // 前段の決定的ステップ（check-planning-adr-range.js）が JSON を書き、AI はそれを読む。
+    ok('check-planning-adr-range: 自己試験が通る（#717）', () => {
+      execFileSyncBa(process.execPath, [pathBa.join(__dirname, 'check-planning-adr-range.js'), '--self-test'], { cwd: REPO_ROOT_BA, stdio: 'pipe' });
+    });
+
+    ok('check-planning-adr-range: secret 不在でも exit 0 で unverified を書く（実バイナリ・fail-open）', () => {
+      const out = pathBa.join(require('os').tmpdir(), `planning-adr-range-${process.pid}.json`);
+      const env = { ...process.env };
+      delete env.PLANNING_REPO_TOKEN;
+      execFileSyncBa(process.execPath, [pathBa.join(__dirname, 'check-planning-adr-range.js'), '--out', out], { cwd: REPO_ROOT_BA, stdio: 'pipe', env });
+      const j = JSON.parse(fsBa.readFileSync(out, 'utf8'));
+      fsBa.unlinkSync(out);
+      assert.strictEqual(j.status, 'unverified');
+      assert.match(j.reason, /PLANNING_REPO_TOKEN/);
+      assert.ok(Number.isInteger(j.declaredMax) && j.declaredMax >= 35, '宣言側の上限が読めていない');
+    });
+
+    ok('backlog-audit.yml: 項目 6 は前段ステップの JSON を読む配線になっている（#717）', () => {
+      const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
+      const stepIdx = wf.indexOf('- name: Resolve planning ADR range');
+      const claudeIdx = wf.indexOf('- name: Run backlog audit');
+      assert.ok(stepIdx > 0 && claudeIdx > stepIdx, '前段ステップが Claude ステップより前に無い');
+      const step = wf.slice(stepIdx, claudeIdx);
+      assert.match(step, /PLANNING_REPO_TOKEN: \$\{\{ secrets\.PLANNING_REPO_TOKEN \}\}/, 'cross-repo 用 secret が渡されていない');
+      assert.match(step, /check-planning-adr-range\.js --out \.backlog-audit\/planning-adr-range\.json/, '出力先がプロンプトの参照先と一致していない');
+      assert.match(wf, /\.backlog-audit\/planning-adr-range\.json` に書いています/, 'プロンプト項目 6 が前段の JSON を参照していない');
+      assert.doesNotMatch(wf, /許可済み・パイプ等を\s*使わない 1 回の呼び出しで済みます/, '誤った「許可済み」の記述が残っている');
+    });
+
     ok('check-backlog-audit-output: 実行記録から Agent 委任を手掛かりとして出す（#711）', () => {
       const { inspectExecution, describeExecution } = require(SCRIPT_BA);
       const s = describeExecution(inspectExecution([
