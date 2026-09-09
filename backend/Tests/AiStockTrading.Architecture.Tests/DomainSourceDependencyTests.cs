@@ -557,6 +557,23 @@ public class DomainSourceDependencyTests
     }
 
     [Fact]
+    public void 自サービス他層の照合器は補間文字列の穴の中の完全修飾参照も検出する()
+    {
+        const string domainFile = """
+            namespace RiskManagementService.Domain;
+            public static class Probe
+            {
+                // 穴の中はコードである（PR #713 の AI レビュー指摘。文字列リテラル扱いで落とすと迂回路になる）。
+                public static string Describe() =>
+                    $"rows={RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext.RowCount}";
+            }
+            """;
+
+        DomainSourceScan.OwnServiceCrossLayerReferencesIn(domainFile, "RiskManagementService", SampleLayerSegments)
+            .Should().Equal("RiskManagementService.Infrastructure");
+    }
+
+    [Fact]
     public void 自サービス他層の照合器は正当な書き方を検出しない()
     {
         const string domainFile = """
@@ -582,7 +599,9 @@ public class DomainSourceDependencyTests
     [InlineData("/* RiskManagementService.Infrastructure.Db */ var x = 1;")]
     [InlineData("var s = \"RiskManagementService.Infrastructure.Db\";")]
     [InlineData("var s = @\"RiskManagementService.Infrastructure.Db\";")]
-    [InlineData("var s = $\"{RiskManagementService.Infrastructure.Db}\";")]
+    [InlineData("var s = $\"{{RiskManagementService.Infrastructure.Db}}\";")] // {{ }} はエスケープ＝リテラル
+    [InlineData("var s = $\"RiskManagementService.Infrastructure.Db は {1 + 1} 件\";")]
+    [InlineData("var s = $@\"RiskManagementService.Infrastructure.Db {{x}}\";")]
     public void コメントと文字列リテラルは本文から取り除かれる(string source)
     {
         DomainSourceScan.StripCommentsAndStringLiterals(source)
@@ -607,6 +626,11 @@ public class DomainSourceDependencyTests
     [InlineData("public static RiskManagementService.Domain.Stage0Promotion P() => new();", "RiskManagementService.Domain")]
     [InlineData("// コメント\nRiskManagementService.Infrastructure.Db _db;", "RiskManagementService.Infrastructure")]
     [InlineData("var s = \"文字列\"; RiskManagementService.Features.X.Y();", "RiskManagementService.Features")]
+    // PR #713 の AI レビュー指摘: 補間文字列の穴はコンパイル時に評価される実コードであり、
+    // $"{RiskManagementService.Infrastructure.Foo.Bar}" で検査 (e) を迂回できてはならない。
+    [InlineData("var s = $\"値={RiskManagementService.Infrastructure.Db.Count}\";", "RiskManagementService.Infrastructure")]
+    [InlineData("var s = $@\"値={RiskManagementService.Infrastructure.Db.Count}\";", "RiskManagementService.Infrastructure")]
+    [InlineData("var s = $\"{{literal}} {RiskManagementService.Hosted.Worker.Name}\";", "RiskManagementService.Hosted")]
     public void コードとして書かれた修飾名は残る(string source, string expected)
     {
         DomainSourceScan.StripCommentsAndStringLiterals(source).Should().Contain(expected);

@@ -150,9 +150,12 @@ internal static class DomainSourceScan
     /// コメント（<c>//</c> / <c>/* */</c>）と文字列・文字リテラル（通常・逐語 <c>@""</c>・生 <c>"""</c>）を
     /// 取り除き、<b>コードとして評価される部分だけ</b>を残す。改行は保つ。
     /// <para>
-    /// 補間文字列（<c>$"…{X.Y}…"</c>）は穴の中もリテラルとして落ちる。**リフレクションで層をまたぐ**
-    /// 書き方（型名を文字列で持つ）は検出できないが、これはコンパイル時の依存ではなく、
-    /// 本検査が止めたい対象と異なる（IADR-0312 残余リスク）。
+    /// 補間文字列（<c>$"…{X.Y}…"</c> / <c>$@"…"</c> / 生の <c>$"""…"""</c>）は<b>穴の中身をコードとして残す</b>——
+    /// 穴はコンパイル時に評価される実コードであり、<c>$"{RiskManagementService.Infrastructure.Foo.Bar}"</c> と
+    /// 書けば検査 (e) を素通りできてしまう（PR #713 の AI レビュー指摘）。<c>{{</c> / <c>}}</c> は
+    /// エスケープ（リテラルの波括弧）なので落とす。**リフレクションで層をまたぐ**書き方（型名を
+    /// 文字列で持つ）は引き続き検出できないが、これはコンパイル時の依存ではなく、本検査が止めたい
+    /// 対象と異なる（IADR-0312 残余リスク）。
     /// </para>
     /// </summary>
     public static string StripCommentsAndStringLiterals(string sourceText)
@@ -185,6 +188,10 @@ internal static class DomainSourceScan
                 code.Append(' ');
                 continue;
             }
+
+            // 補間文字列（$"…" / $@"…" / @$"…" / 生の $"""…"""）。穴 {…} の中身はコードとして残す。
+            if (TryScanInterpolated(ref i))
+                continue;
 
             // 生文字列リテラル（""" 以上の引用符で囲む。C# 11+）。
             if (c == '"' && Peek(i + 1) == '"' && Peek(i + 2) == '"')
@@ -264,6 +271,96 @@ internal static class DomainSourceScan
         return code.ToString();
 
         char Peek(int index) => index < sourceText.Length ? sourceText[index] : '\0';
+
+        // 補間文字列の走査。先頭が $" / $@" / @$" / 生の $""" のいずれかなら、リテラル部分を落とし
+        // 穴 {…} の中身だけを code へ写して true を返す。それ以外は何もせず false（pos は動かさない）。
+        bool TryScanInterpolated(ref int pos)
+        {
+            var verbatim = false;
+            var start = pos;
+            if (Peek(pos) == '$' && Peek(pos + 1) == '@' && Peek(pos + 2) == '"') { verbatim = true; pos += 3; }
+            else if (Peek(pos) == '@' && Peek(pos + 1) == '$' && Peek(pos + 2) == '"') { verbatim = true; pos += 3; }
+            else if (Peek(pos) == '$' && Peek(pos + 1) == '"') { pos += 2; }
+            else return false;
+
+            // 生の補間文字列（$"""）: 引用符の本数をフェンスとして扱う（改行を含んでよい）。
+            var raw = false;
+            var fence = "\"";
+            if (Peek(pos) == '"' && Peek(pos + 1) == '"')
+            {
+                var quotes = 1; // 既に 1 本読んでいる
+                while (Peek(pos) == '"') { quotes++; pos++; }
+                raw = true;
+                fence = new string('"', quotes);
+                verbatim = true;
+            }
+
+            while (pos < sourceText.Length)
+            {
+                var ch = sourceText[pos];
+
+                if (ch == '{')
+                {
+                    if (Peek(pos + 1) == '{') { pos += 2; continue; } // エスケープ（リテラルの波括弧）
+                    pos++;
+                    var depth = 1;
+                    while (pos < sourceText.Length && depth > 0)
+                    {
+                        var h = sourceText[pos];
+                        if (h == '{') depth++;
+                        else if (h == '}')
+                        {
+                            depth--;
+                            if (depth == 0) { pos++; break; }
+                        }
+                        else if (h == '"')
+                        {
+                            // 穴の中の文字列（例: {x ?? "既定"}）はリテラルとして落とす。
+                            pos++;
+                            while (pos < sourceText.Length && sourceText[pos] != '"') pos++;
+                            pos++;
+                            code.Append(' ');
+                            continue;
+                        }
+
+                        code.Append(h);
+                        pos++;
+                    }
+
+                    code.Append(' ');
+                    continue;
+                }
+
+                if (ch == '}' && Peek(pos + 1) == '}') { pos += 2; continue; }
+
+                if (!verbatim && ch == '\\') { pos += 2; continue; }
+
+                if (ch == '"')
+                {
+                    if (raw)
+                    {
+                        if (string.CompareOrdinal(sourceText, pos, fence, 0, fence.Length) == 0) { pos += fence.Length; break; }
+                        pos++;
+                        continue;
+                    }
+
+                    if (verbatim && Peek(pos + 1) == '"') { pos += 2; continue; }
+                    pos++;
+                    break;
+                }
+
+                if (ch == '\n')
+                {
+                    code.Append('\n');
+                    if (!verbatim) break; // 通常の補間文字列は行をまたがない（異常なので打ち切る）
+                }
+
+                pos++;
+            }
+
+            code.Append(' ');
+            return pos > start;
+        }
     }
 
     /// <summary>

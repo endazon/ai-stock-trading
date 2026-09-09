@@ -193,6 +193,8 @@ public sealed class Stage0DecisionRecorder(
 
                     // 🔴 ADR-0033 決定5: 実行中に見積り額を超えたら停止して報告する（黙って消費しない）。
                     // 判断時点の単位で見るため、超過は最大 1 判断ぶん（多数決回数だけの呼び出し）に限られる。
+                    // 裏返すと超過幅は VoteCount に比例する（VoteCount 回 × 1 判断あたりの費用まで上振れし得る）。
+                    // 判断の途中で打ち切ると多数決が成立せず記録が壊れるため、判断単位で見る（IADR-0318）。
                     if (actualCost > estimate.TotalJpy)
                     {
                         stopped = true;
