@@ -4,6 +4,7 @@ using ReportService.Features.Reports;
 using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
@@ -63,8 +64,15 @@ builder.Services.AddScoped<AppSvc>();
 // IADR-0123 決定1/2, #308: LLM は応答が遅く、しかも所要時間は**報告書種別ごとに違う**（種別ごとに別モデルが
 // 割り当たる・IADR-0120）。タイムアウトは種別ごとに解決し（ReportNarrativeTimeouts）、要求単位で適用する。
 // HttpClient 自体の Timeout には解決値の最大を置く＝要求単位の打ち切りが壊れても無制限に待たない上限（多層防御）。
+//
+// NFR-05, #724, IADR-0323: 基盤が LLM ゲートウェイの REST 3 口へ端点単位の認可（ServiceCaller）を掛けたため
+// （MSP#1364）、匿名では 401 になる。**MSP レルム**の confidential client で取った s2s トークンを付ける
+// （AST レルムの ServiceAuth__* は issuer 不一致で通らない＝IADR-0093 が KB で実測した故障と同型）。
+// fail-safe: LlmGateway:Auth 未設定なら何も付けない＝本変更前とバイト等価。
 builder.Services.AddHttpClient("report-llm",
-    c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max);
+        c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max)
+    .AddAiStockTradingPlatformRealmToken(
+        builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
 
 // NFR（費用）, #347, IADR-0219: 報告書生成の LLM 費用の計測点。**用途（purpose）を載せて発行する**ため、

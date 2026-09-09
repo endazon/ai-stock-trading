@@ -20,7 +20,8 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // #11, FR-11, IADR-0061 決定1: logPrompts=true でプロンプト本文と LLM 生出力を全量記録する（判断根拠の事後再構成）。
 // プロンプトは保有ポジション・資金残枠等の機微を含むため既定オフ＝記録しない（最小権限）。
 // #335, ADR-0014 §決定3, ADR-0017 決定2/決定3, IADR-0216: 取引判断は**フォールバックしない**。
-// - 上流の失敗は 429（再試行）と 400 系（モデル不可）へ分け、モデル不可のときだけ見送りとして記録・通知する。
+// - 上流の失敗は 429（再試行）・401/403（認可）・残る 400 系（モデル不可）へ分け、モデル不可のときだけ
+//   見送りとして記録・通知する（NFR-05, #724, IADR-0323 で認可を独立させた。それ以前は 401 がモデル不可へ倒れていた）。
 // - 応答が返っても**ピン留めしたモデル以外が答えたなら本文を読まずに破棄する**（基盤で用途エントリが未登録・
 //   ZDR 除外・提供終了だと LlmRouter が無音で DefaultModel へ落ちるため。platform IADR-0102）。
 // いずれの経路でも返すのは Hold であり、**発注は構造的に生じない**。見送りは障害ではなく設計上の正常な結果である。
@@ -61,6 +62,11 @@ public sealed class HttpLlmCompletionClient(
     // 伝送の失敗（HoldFallback）と区別して記録する——「使えるモデルが無かった」は運用の判断材料が違う。
     private const string HoldModelUnavailable = """{"action":"Hold","rationale":"割当モデルが利用できないため取引判断を見送り（フォールバック禁止）"}""";
 
+    // NFR-05, #724, IADR-0323: **認可の失敗による見送り。** 上の HoldModelUnavailable と必ず分ける——
+    // 401/403 は「資格情報・付与ロールが足りない」であって「モデルが使えない」ではない。混ぜると
+    // 監査台帳・月報に「割当モデルが利用できない」という誤った原因が残り、後から見た人が LLM 提供側を疑う。
+    private const string HoldUnauthorized = """{"action":"Hold","rationale":"LLM ゲートウェイの認可が拒否されたため取引判断を見送り（資格情報・権限の不足）"}""";
+
     public async Task<string> CompleteAsync(
         string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
     {
@@ -90,6 +96,21 @@ public sealed class HttpLlmCompletionClient(
                 // 運用シグナルが積み上がり、恒常的な格下げを疑う根拠になってしまう。
                 var status = (int)response.StatusCode;
                 var kind = LlmFailureClassification.Classify(status);
+
+                // NFR-05, #724, IADR-0323: 認可の失敗（401/403）は**モデル不可へ倒さない**。
+                // 🔴 TradeDecisionSkipped も publish しない —— 同イベントの通知本文は
+                // 「取引判断の見送り: 割当モデルが利用できません」と題名に焼き込まれており
+                //（NotificationFormatter）、事由の文字列だけ足しても誤帰属を別の層で再生産する。
+                // 見送り自体は Hold として成立し、理由は下の専用の rationale が監査へ残す。
+                if (kind == LlmFailureKind.Unauthorized)
+                {
+                    logger.LogWarning(
+                        "LLM ゲートウェイ /complete が認可を拒否しました（{Status}）。s2s の資格情報（LlmGateway:Auth）または"
+                        + "サービスアカウントの付与ロールを確認してください。取引判断を実行せず見送ります（モデルの可否とは無関係）。",
+                        status);
+                    return HoldUnauthorized;
+                }
+
                 if (kind == LlmFailureKind.ModelUnavailable)
                 {
                     logger.LogWarning(

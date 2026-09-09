@@ -51,7 +51,10 @@ kubectl -n ai-stock-trading get pods
 
 - **①時価評価（mark-to-market）**: risk-management `MarketData__EnableMarkToMarket=true` / `Provider=finnhub`、
   market-monitor・report の `MarketData__Provider=finnhub`（FR-10/16・IADR-0068）。
-- **②実 LLM**: trade-decision・report の `LlmGateway__BaseUrl`（MSP LlmGateway・ADR-0010 / IADR-0061）。
+- **②実 LLM**: trade-decision・report の `LlmGateway__BaseUrl`（MSP LlmGateway・ADR-0010 / IADR-0061）＋
+  `LlmGateway__Auth`（MSP レルムの s2s。基盤が REST 3 口へ端点単位の認可を掛けたため匿名では 401 になる）。
+  資格情報は③と同じ client を再利用するため secret の鍵名は `kb-auth-*` である。
+  **realm 側で当該 service account に `platform-service` が付くまでは 403 になる**（基盤リポジトリの管掌）。
 - **③実 KB 保存**: information-collection・report の `KnowledgeBase__Documents__BaseUrl`（MSP DocumentService）＋
   `KnowledgeBase__Auth`（MSP レルムの `ai-stock-trading-kb-writer`・IADR-0093）。
 - **Discord 通知**: notification `Notifications__Provider=discord-webhook` / `Bot__Enabled=true`（FR-09/14・IADR-0062）。
