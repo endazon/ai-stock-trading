@@ -25,8 +25,14 @@
  * 実行時間ぶん比較がずれる（取得漏れを見逃す方向にずれる）。
  *
  * gh CLI は `GH_TOKEN` / `GITHUB_TOKEN` を環境変数から読む（gh 自身の既定動作）。
+ *
+ * 補助（fail-open）: env `EXECUTION_FILE`（Claude ステップの実行記録 JSON）が読めれば、fail 時に
+ * その中身から「サブエージェントへ委任して自分は終了した」「ターン数」を手掛かりとして併記する。
+ * 2026-09-09 の実測（run 34303318956）では、AI が Agent ツールへ監査全体をバックグラウンド委任し
+ * 2 ターンで終了したため issue が更新されなかった。判定そのものは updated_at の比較だけで決める。
  */
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const { emit, warn } = require('./lib/ci-annotate.js');
 
 const DEFAULT_ISSUE_NUMBER = 483;
@@ -102,9 +108,86 @@ function evaluate({ issueNumber, runStart, fetchFn = fetchIssue }) {
   return verdict({ updatedAt: issue.updatedAt, runStart });
 }
 
+/** サブエージェント委任（Agent / Task ツール）に当たる tool_use 名。 */
+const DELEGATION_TOOLS = new Set(['Agent', 'Task']);
+
+/**
+ * 実行記録（claude-code-action の execution_file。メッセージの配列）から、fail の手掛かりを抽出する。
+ * 純関数。読めない・形が違う場合は空の結果を返し、判定へ影響させない（fail-open）。
+ *
+ * @param {unknown} records
+ * @returns {{delegated: string[], numTurns: number|null}}
+ */
+function inspectExecution(records) {
+  const out = { delegated: [], numTurns: null };
+  if (!Array.isArray(records)) return out;
+  for (const m of records) {
+    if (!m || typeof m !== 'object') continue;
+    if (m.type === 'result' && Number.isFinite(m.num_turns)) out.numTurns = m.num_turns;
+    if (m.type !== 'assistant') continue;
+    const content = m.message && Array.isArray(m.message.content) ? m.message.content : [];
+    for (const c of content) {
+      if (c && c.type === 'tool_use' && DELEGATION_TOOLS.has(c.name)) {
+        const desc = c.input && typeof c.input.description === 'string' ? c.input.description : '';
+        out.delegated.push(desc ? `${c.name}（${desc}）` : c.name);
+      }
+    }
+  }
+  return out;
+}
+
+/** inspectExecution の結果を人が読む 1 文にする。手掛かりが無ければ空文字。 */
+function describeExecution(info) {
+  const parts = [];
+  if (info.delegated.length > 0) {
+    parts.push(
+      `AI が監査をサブエージェントへ委任している（${info.delegated.join(' / ')}）。` +
+        'headless の run は親の応答終了で終わり、子は完了を待たれない——委任させない（--disallowedTools Agent,Task とプロンプトの禁止）',
+    );
+  }
+  if (info.numTurns !== null) parts.push(`ターン数 ${info.numTurns}`);
+  return parts.join('。');
+}
+
+/** env EXECUTION_FILE を読み、手掛かりの文を返す。読めなければ空文字（判定へ影響させない）。 */
+function executionHint(filePath) {
+  if (!filePath) return '';
+  try {
+    return describeExecution(inspectExecution(JSON.parse(fs.readFileSync(filePath, 'utf8'))));
+  } catch {
+    return '';
+  }
+}
+
 /** 検証器自体の自己試験。gh を実際には呼ばず、fetchFn を差し替えて判定ロジックのみ確かめる。 */
 function selfTest() {
+  const delegatedRecords = [
+    { type: 'system', subtype: 'init' },
+    {
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name: 'Agent', input: { description: 'Repo backlog audit and issue upsert', prompt: '…' } }] },
+    },
+    { type: 'result', subtype: 'success', num_turns: 2 },
+  ];
   const cases = [
+    {
+      name: '実行記録: Agent への委任とターン数を手掛かりとして抽出する',
+      run: () => describeExecution(inspectExecution(delegatedRecords)),
+      expect: (s) => /委任/.test(s) && /Repo backlog audit/.test(s) && /ターン数 2/.test(s),
+    },
+    {
+      name: '実行記録: 委任が無ければ委任の文は出さない（ターン数のみ）',
+      run: () => describeExecution(inspectExecution([
+        { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'gh issue list' } }] } },
+        { type: 'result', num_turns: 36 },
+      ])),
+      expect: (s) => !/委任/.test(s) && /ターン数 36/.test(s),
+    },
+    {
+      name: '実行記録: 配列でない・空ならば手掛かりは空（fail-open）',
+      run: () => [describeExecution(inspectExecution(null)), describeExecution(inspectExecution({})), executionHint('/nonexistent/execution.json'), executionHint('')],
+      expect: (r) => r.every((s) => s === ''),
+    },
     {
       name: 'run 開始より後に更新されていれば ok',
       run: () => evaluate({
@@ -199,7 +282,11 @@ function main(argv) {
 
   const result = evaluate({ issueNumber, runStart });
   if (!result.ok) {
-    emit('error', `バックログ監査の産出検証に失敗: ${result.reason}`, { stream: process.stderr, prefix: '  error  ' });
+    const hint = executionHint(process.env.EXECUTION_FILE);
+    emit('error', `バックログ監査の産出検証に失敗: ${result.reason}${hint ? `。実行記録の手掛かり: ${hint}` : ''}`, {
+      stream: process.stderr,
+      prefix: '  error  ',
+    });
     process.exit(1);
   }
   process.stdout.write(`✓ issue #${issueNumber}（"${DEFAULT_ISSUE_TITLE}"）は run 開始時刻以降に更新されている\n`);
@@ -216,5 +303,8 @@ module.exports = {
   fetchIssue,
   verdict,
   evaluate,
+  inspectExecution,
+  describeExecution,
+  executionHint,
   selfTest,
 };
