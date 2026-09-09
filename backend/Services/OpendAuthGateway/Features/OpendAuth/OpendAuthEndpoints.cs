@@ -8,15 +8,16 @@ using OpendAuthGateway.Infrastructure;
 namespace OpendAuthGateway.Features.OpendAuth;
 
 /// <summary>
-/// #722, ADR-0002, IADR-0053, IADR-0320: OpenD 認証サイドカーの HTTP 面。
+/// #722, ADR-0002, IADR-0053, IADR-0322: OpenD 認証サイドカーの HTTP 面。
 /// <para>
-/// 公開するのは<b>ちょうど 3 本</b>である。増やすときは IADR-0320 を改定すること —— この面は
+/// 公開するのは<b>ちょうど 4 本</b>である。増やすときは IADR-0322 を改定すること —— この面は
 /// 実口座への窓口（OpenD のコンソール）に直結しており、口が増えるたびに攻撃面が増える。
 /// </para>
 /// <list type="bullet">
 ///   <item><c>GET  /opend-auth/state</c>   … コンソール末尾（整形済み）と待たれているプロンプト</item>
 ///   <item><c>GET  /opend-auth/captcha</c> … 画像 CAPTCHA の写し（固定パス・引数なし）</item>
-///   <item><c>POST /opend-auth/verify</c>  … 検証コードの投入（閉じた 3 コマンドのみ）</item>
+///   <item><c>POST /opend-auth/verify</c>  … 検証コードの投入（種別はサーバがプロンプトから決める）</item>
+///   <item><c>POST /opend-auth/resend</c>  … SMS の再送要求（本文なし）</item>
 /// </list>
 /// <para>
 /// ⚠️ <b>本サービス自身は認証を持たない。</b> Ingress を持たず Pod 網にしか bind せず、
@@ -31,7 +32,7 @@ public static class OpendAuthEndpoints
 
     private static readonly JsonSerializerOptions RequestJson = new(JsonSerializerDefaults.Web);
 
-    /// <summary>3 本のエンドポイントを登録する。</summary>
+    /// <summary>4 本のエンドポイントを登録する。</summary>
     public static IEndpointRouteBuilder MapOpendAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/opend-auth");

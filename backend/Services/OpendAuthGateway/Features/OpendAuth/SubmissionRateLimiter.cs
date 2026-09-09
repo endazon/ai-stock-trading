@@ -1,7 +1,7 @@
 namespace OpendAuthGateway.Features.OpendAuth;
 
 /// <summary>
-/// #722, IADR-0320 決定 4: 投入（<c>POST /opend-auth/verify</c>）の流量制限。
+/// #722, IADR-0322 決定 4: 投入（<c>POST /opend-auth/verify</c>）の流量制限。
 /// <para>
 /// 🔴 <b>呼び出し元ごとではなく、サービス全体で数える。</b> 守っている資源が全体で 1 つしか
 /// 無いためである —— moomoo の SMS 送信枠（<c>resend</c> が消費する）と、OpenD のコンソール

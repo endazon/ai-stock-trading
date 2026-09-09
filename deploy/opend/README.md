@@ -179,7 +179,7 @@ kubectl -n ai-stock-trading exec deploy/opend -- \
 > **［2026-09-09 追記 / #722 段 2］** 段 1 ではここに「だから専用の HTTP 面は作らない」と書いていた。
 > サイドカー（`opend-auth`）は**その HTTP 面を作らずに済ませる代わりに、通せる行を 3 つに固定した**
 > ——面が任意のコマンドを通さないなら、面そのものの権限は「検証コードを入れること」以上に広がらない。
-> 経緯と判断は [IADR-0320](../../.ai-context/adr/IADR-0320_opend-auth-sidecar-command-allowlist.md)。
+> 経緯と判断は [IADR-0322](../../.ai-context/adr/IADR-0322_opend-auth-sidecar-command-allowlist.md)。
 >
 > **注意**: FIFO に書いた行は次のプロンプトで消費される。失効したコードを入れたまま再送すると、
 > 古い行が再送後の 1 回を食う。**入れる前に Logs で現在のプロンプトを確かめること。**
@@ -244,7 +244,7 @@ kubectl -n ai-stock-trading run curl --rm -it --image=curlimages/curl --restart=
 
 > 🔴 **サイドカーは `opend-persist`（PVC）を絶対にマウントしない。** PVC にはデバイス信頼の実体
 > （`Device.dat`）と `OpenD.xml`（ログイン資格情報の MD5）が同居する。
-> 判断の全体は [IADR-0320](../../.ai-context/adr/IADR-0320_opend-auth-sidecar-command-allowlist.md)。
+> 判断の全体は [IADR-0322](../../.ai-context/adr/IADR-0322_opend-auth-sidecar-command-allowlist.md)。
 
 ### 5) 発注執行（#13）から利用
 moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中の `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。

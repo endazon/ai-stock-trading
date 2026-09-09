@@ -7,7 +7,7 @@ adr_refs:
   - ADR-0002
   - IADR-0053
   - IADR-0060
-  - IADR-0320
+  - IADR-0322
 status: in-progress
 created: 2026-09-09
 ---
@@ -30,7 +30,7 @@ created: 2026-09-09
 `.ai-context/README.md` は「作業仕様書は書いた時点の判断を凍結し、判断が変わった場合は
 **新しい作業仕様書・PR で対応する**」と定める。段 1 の仕様書は「専用の HTTP 面・サイドカーは作らない」と
 書いており、本 PR はその判断を**覆す**。したがって段 1 の本文には追記も訂正もせず、**本書を新設**した。
-覆した理由は IADR-0320 に記録する。
+覆した理由は IADR-0322 に記録する。
 
 ## 対象範囲
 
@@ -42,7 +42,7 @@ created: 2026-09-09
    共有 `emptyDir`（`/run/opend`）とサイドカーの配備。
 4. `deploy/opend/entrypoint.test.sh`: 複製・複写・上限・パス導出の試験。
 5. `scripts/k8s-local-images.sh`・`.github/workflows/helm.yml`: イメージのビルドと描画の検査。
-6. 記録: 本書・IADR-0320・`.ai-context/adr/README.md`・`deploy/opend/README.md`。
+6. 記録: 本書・IADR-0322・`.ai-context/adr/README.md`・`deploy/opend/README.md`。
 
 ### 対象外（この PR では作らない）
 
@@ -50,7 +50,7 @@ created: 2026-09-09
   したがって本 PR の成果物は「配線されていない受け口」であり、`opend.authGateway.enabled` は
   **既定 false** で入る（fail-safe）。
 - NetworkPolicy による「BFF からだけ到達可能」の強制。現状 chart に NetworkPolicy の枠が無く、
-  ここで新設すると射程が広がる。名前空間内は相互到達可能であるという前提は IADR-0320 の残余リスクに書く。
+  ここで新設すると射程が広がる。名前空間内は相互到達可能であるという前提は IADR-0322 の残余リスクに書く。
 - `deploy/opend/k8s/bootstrap-pod.yaml`（使い捨ての検証用 Pod）。常駐しないので投入面を持つ意味が無い。
 
 ## 母集合の引き直し（着手前・[[IADR-0141]] 規則 1〜6 / 本リポ規則 9・10）
@@ -81,7 +81,7 @@ created: 2026-09-09
 | `docs/operations/operations.md` L101 | 除外 | 段階 2→3 の切替手順における**初回の有人検証**の記述。初回は `attach` のままであり
 （サイドカーは OpenD 起動後にしか使えない）、SPA 画面が入るまで運用手順は変わらない。**画面が入る PR で更新する** |
 | `deploy/helm/.../values.yaml` L120 のコメント | 除外 | 同上（初回検証の注記） |
-| `.ai-context/adr/IADR-0053` / `IADR-0060` | 除外 | **凍結記録**。本文を書き換えない（新 IADR-0320 で記録する） |
+| `.ai-context/adr/IADR-0053` / `IADR-0060` | 除外 | **凍結記録**。本文を書き換えない（新 IADR-0322 で記録する） |
 | `.ai-context/specs/2026*` 5 件 | 除外 | 同上（凍結記録。段 1 の仕様書を含む） |
 | `docs/blocked-tasks.md` | 除外 | SPA / BFF の裁定待ちは**計画側 issue（planning#594）で追跡中**であり、
 本リポの「実機・権限が要る作業」の一覧とは性質が違う。画面を作る PR で B 群へ起票するかを判断する |
@@ -138,7 +138,7 @@ O_APPEND でないと `script` は自分のオフセットへ書き続け、切�
 | `POST /opend-auth/verify` | `{ "code": "..." }` **のみ**。種別は受け取らず、**待機中のプロンプトからサーバが決める** |
 | `POST /opend-auth/resend` | 本文なし。`req_phone_verify_code`（引数なし）を書く |
 
-安全要件（すべて試験を持つ。詳細は IADR-0320）:
+安全要件（すべて試験を持つ。詳細は IADR-0322）:
 
 1. **クライアントはコマンド文字列を渡さない。** 書かれ得る行は 3 つだけで、サーバが組み立てる。
 2. **照合はアンカー付き全一致。** `\A[0-9]{4,8}\z` / `\A[A-Za-z0-9]{4}\z`。
@@ -210,7 +210,7 @@ base run 5: 6 passed, 2 failed  (T-722-01/02 NG)
 
 ## 残余リスク
 
-- 名前空間内の他 Pod からもサイドカーへ到達できる（NetworkPolicy 未整備）。IADR-0320 に記録。
+- 名前空間内の他 Pod からもサイドカーへ到達できる（NetworkPolicy 未整備）。IADR-0322 に記録。
 - `script` が無いイメージでは複製を諦めて従来どおり起動する（OpenD を上げないほうが害が大きい）。
   そのとき画面からの投入は使えない。警告を stderr へ出す。
 - サイドカーは `kubectl exec`／`attach` の経路を**置き換えない**。両方が生き続ける

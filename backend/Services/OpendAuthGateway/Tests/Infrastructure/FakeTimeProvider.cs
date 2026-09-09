@@ -4,7 +4,7 @@ namespace OpendAuthGateway.Tests.Infrastructure;
 /// #722: 試験用の時刻源。実時間を待たずに流量制限の窓を跨ぐために使う。
 /// <para>
 /// <c>Microsoft.Extensions.TimeProvider.Testing</c> は入れない —— 本サイドカーは
-/// 依存ゼロで保つ方針であり（IADR-0320）、必要なのは「進められる現在時刻」だけである。
+/// 依存ゼロで保つ方針であり（IADR-0322）、必要なのは「進められる現在時刻」だけである。
 /// </para>
 /// </summary>
 public sealed class FakeTimeProvider : TimeProvider

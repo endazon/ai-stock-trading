@@ -10,7 +10,7 @@ using Xunit;
 namespace OpendAuthGateway.Tests.Infrastructure;
 
 /// <summary>
-/// #722, IADR-0320 決定 2: 実 FIFO に対する書き込みの性質を固定する。
+/// #722, IADR-0322 決定 2: 実 FIFO に対する書き込みの性質を固定する。
 /// <para>
 /// 🔴 <b>MSYS / Windows では FIFO の機序が再現できない</b>ため、Linux 以外では skip する
 /// （偽の赤を出さない。<c>deploy/opend/entrypoint.test.sh</c> と同じ作法）。CI は ubuntu なので本体は必ず走る。

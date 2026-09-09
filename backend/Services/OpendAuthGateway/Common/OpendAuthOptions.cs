@@ -1,11 +1,11 @@
 namespace OpendAuthGateway.Common;
 
 /// <summary>
-/// #722, IADR-0320: OpenD 認証サイドカーの構成。
+/// #722, IADR-0322: OpenD 認証サイドカーの構成。
 /// <para>
 /// 実体はすべて <see cref="RuntimeDirectory"/>（OpenD コンテナと共有する <c>emptyDir</c>）配下にあり、
 /// <b>ファイル名は定数で固定する</b>。構成で名前まで動かせるようにすると、
-/// 「クライアントが渡したパスを読む／書く」形へ一歩近づくためである（IADR-0320 決定 2）。
+/// 「クライアントが渡したパスを読む／書く」形へ一歩近づくためである（IADR-0322 決定 2）。
 /// </para>
 /// <para>
 /// 🔴 <b>PVC は絶対にマウントしない。</b> 画像 CAPTCHA の実体は PVC 上（<c>$HOME/.com.moomoo.OpenD/</c>）に
@@ -51,7 +51,7 @@ public sealed class OpendAuthOptions
     /// <summary>
     /// 流量制限の窓あたり上限件数。
     /// <b>呼び出し元ごとではなくサービス全体で数える</b> —— 守る対象（moomoo の SMS 送信枠と
-    /// OpenD のコンソール）が全体で 1 つしかないためである（IADR-0320 決定 4）。
+    /// OpenD のコンソール）が全体で 1 つしかないためである（IADR-0322 決定 4）。
     /// </summary>
     public int RateLimitMaxSubmissions { get; set; } = 5;
 

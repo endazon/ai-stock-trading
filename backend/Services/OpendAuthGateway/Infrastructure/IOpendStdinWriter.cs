@@ -1,6 +1,6 @@
 namespace OpendAuthGateway.Infrastructure;
 
-/// <summary>#722, IADR-0320: FIFO への書き込み結果。</summary>
+/// <summary>#722, IADR-0322: FIFO への書き込み結果。</summary>
 public enum StdinWriteOutcome
 {
     /// <summary>1 行を書き終えた。</summary>
@@ -17,7 +17,7 @@ public enum StdinWriteOutcome
 }
 
 /// <summary>
-/// #722, IADR-0320 決定 2: OpenD の標準入力（FIFO）へ<b>組み立て済みの 1 行</b>を書く口。
+/// #722, IADR-0322 決定 2: OpenD の標準入力（FIFO）へ<b>組み立て済みの 1 行</b>を書く口。
 /// <para>
 /// 実装は <see cref="FifoOpendStdinWriter"/> ただ 1 つで、試験は差し替えて
 /// 「棄却されたときに<b>1 バイトも書かれない</b>こと」を観測する。

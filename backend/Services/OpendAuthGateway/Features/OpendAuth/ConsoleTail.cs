@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace OpendAuthGateway.Features.OpendAuth;
 
 /// <summary>
-/// #722, IADR-0320 決定 3: OpenD のコンソール複製（<c>script -q -f -a</c> の出力）から、
+/// #722, IADR-0322 決定 3: OpenD のコンソール複製（<c>script -q -f -a</c> の出力）から、
 /// <b>画面へ出してよい末尾</b>と<b>いま待たれているプロンプト</b>を導く純関数。
 /// <para>
 /// コンソールは端末の記録であるため、そのままでは (a) ANSI エスケープ、(b) <c>\r</c> による行内上書き、

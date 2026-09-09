@@ -5,7 +5,7 @@ using Xunit;
 namespace OpendAuthGateway.Tests.Features.OpendAuth;
 
 /// <summary>
-/// #722, IADR-0320 決定 1: <b>OpenD のコンソールへ書ける行は 3 つだけ</b>という不変条件を固定する。
+/// #722, IADR-0322 決定 1: <b>OpenD のコンソールへ書ける行は 3 つだけ</b>という不変条件を固定する。
 /// <para>
 /// ここが破れると、<c>show_delay_report -detail_report_path=&lt;path&gt;</c>（root 権限で任意パスへ
 /// ファイルを書く）や <c>relogin -login_pwd=</c> が 1 行で通ってしまう。

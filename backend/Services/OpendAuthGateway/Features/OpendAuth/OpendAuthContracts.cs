@@ -21,7 +21,7 @@ public sealed record VerifyRequest(
 
 /// <summary>
 /// #722: <c>POST /opend-auth/verify</c> の応答。
-/// <b>投入したコードは載せない</b>（要求と同じ値でも返さない。IADR-0320 決定 5）。
+/// <b>投入したコードは載せない</b>（要求と同じ値でも返さない。IADR-0322 決定 5）。
 /// </summary>
 /// <param name="Status">常に <c>accepted</c>（受理できなかった場合は本文ごと別の形になる）。</param>
 /// <param name="Kind">受理した操作の種別。</param>
@@ -33,13 +33,13 @@ public sealed record VerifyAccepted(
 /// #722: <c>GET /opend-auth/state</c> の応答。
 /// </summary>
 /// <para>
-/// 🔴 <b>3 状態を潰さずに描き分けられる形にしてある</b>（planning#594 の裁定）。
-/// 画面はこの 2 欄を組にして読むこと。
+/// 🔴 <b>3 状態はサーバが <c>status</c> で宣言する</b>（planning#594 の裁定）。
+/// 画面は <c>status</c> に従い、<b>値の有無から推測しない</b>。
 /// </para>
 /// <list type="table">
-///   <item><description><c>consoleAvailable=false</c> …… <b>供給が無い</b>（状態を取得できていない）</description></item>
-///   <item><description><c>consoleAvailable=true</c> かつ <c>prompt=null</c> …… <b>対象なし</b>（いま入力を待っていない）</description></item>
-///   <item><description><c>consoleAvailable=true</c> かつ <c>prompt</c> あり …… 入力待ち</description></item>
+///   <item><description><c>unavailable</c> …… <b>供給が無い</b>（状態を取得できていない）</description></item>
+///   <item><description><c>idle</c> …… <b>対象なし</b>（いま入力を待っていない）</description></item>
+///   <item><description><c>waiting</c> …… 入力待ち（<c>prompt</c> がどちらを待っているかを示す）</description></item>
 /// </list>
 /// <para>
 /// 前 2 者を取り違えると<b>正常にログインできているように見える</b>ため、

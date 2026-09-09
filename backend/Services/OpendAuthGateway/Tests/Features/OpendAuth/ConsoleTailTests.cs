@@ -5,7 +5,7 @@ using Xunit;
 namespace OpendAuthGateway.Tests.Features.OpendAuth;
 
 /// <summary>
-/// #722, IADR-0320 決定 3・決定 5: コンソール複製の整形とプロンプト判定。
+/// #722, IADR-0322 決定 3・決定 5: コンソール複製の整形とプロンプト判定。
 /// <para>
 /// 最重要は<b>コードを画面へ返さないこと</b>である。<c>script</c> は tty の記録なので、
 /// 運用者が打った <c>input_phone_verify_code -code=123456</c> が<b>そのまま複製に残る</b>。

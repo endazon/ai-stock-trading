@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace OpendAuthGateway.Features.OpendAuth;
 
-/// <summary>#722, IADR-0320: 利用者が選べる操作。<b>閉じた列挙であり、これ以外は存在しない。</b></summary>
+/// <summary>#722, IADR-0322: 利用者が選べる操作。<b>閉じた列挙であり、これ以外は存在しない。</b></summary>
 public enum VerifyKind
 {
     /// <summary>SMS の検証コードを入れる（<c>input_phone_verify_code -code=&lt;code&gt;</c>）。</summary>
@@ -15,7 +15,7 @@ public enum VerifyKind
     Resend,
 }
 
-/// <summary>#722, IADR-0320: 受け付けなかった理由。<b>入力そのものは決して載せない</b>（応答にもログにも）。</summary>
+/// <summary>#722, IADR-0322: 受け付けなかった理由。<b>入力そのものは決して載せない</b>（応答にもログにも）。</summary>
 public enum VerifyRejection
 {
     /// <summary>棄却なし。</summary>
@@ -38,7 +38,7 @@ public enum VerifyRejection
 }
 
 /// <summary>
-/// #722, IADR-0320 決定 1: <b>OpenD のコンソールへ書いてよい行を組み立てる唯一の場所</b>。
+/// #722, IADR-0322 決定 1: <b>OpenD のコンソールへ書いてよい行を組み立てる唯一の場所</b>。
 /// <para>
 /// 🔴 <b>クライアントはコマンド文字列を渡さない。</b> 渡すのは閉じた列挙（<c>phone</c> / <c>pic</c> /
 /// <c>resend</c>）とコードだけで、実際に書かれる行は<b>本クラスが組み立てる</b>。

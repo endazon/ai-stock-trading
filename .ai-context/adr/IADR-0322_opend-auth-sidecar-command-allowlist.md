@@ -1,5 +1,5 @@
 ---
-title: IADR-0320 OpenD の検証コード投入はサイドカー経由にし、書ける行を閉じた 3 コマンドの allowlist に限る
+title: IADR-0322 OpenD の検証コード投入はサイドカー経由にし、書ける行を閉じた 3 コマンドの allowlist に限る
 type: impl-adr
 status: Accepted
 related_ids:
@@ -11,7 +11,7 @@ plan_refs:
   - NFR
 ---
 
-# IADR-0320: OpenD の検証コード投入はサイドカー経由にし、書ける行を閉じた 3 コマンドの allowlist に限る
+# IADR-0322: OpenD の検証コード投入はサイドカー経由にし、書ける行を閉じた 3 コマンドの allowlist に限る
 
 - 状態: Accepted
 - 日付: 2026-09-09

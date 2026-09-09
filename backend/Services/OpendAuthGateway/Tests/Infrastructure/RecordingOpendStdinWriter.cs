@@ -3,7 +3,7 @@ using OpendAuthGateway.Infrastructure;
 namespace OpendAuthGateway.Tests.Infrastructure;
 
 /// <summary>
-/// #722, IADR-0320: 書き込みの<b>観測点</b>。
+/// #722, IADR-0322: 書き込みの<b>観測点</b>。
 /// <para>
 /// この試験群で最も重要な主張は「棄却した要求では<b>1 バイトも書かれない</b>」である。
 /// 実 FIFO では観測できない（Linux 専用・OpenD が要る）ため、口を差し替えて数える。

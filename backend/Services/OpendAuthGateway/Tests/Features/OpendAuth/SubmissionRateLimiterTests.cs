@@ -6,7 +6,7 @@ using Xunit;
 namespace OpendAuthGateway.Tests.Features.OpendAuth;
 
 /// <summary>
-/// #722, IADR-0320 決定 4: 投入の流量制限。
+/// #722, IADR-0322 決定 4: 投入の流量制限。
 /// 守っているのは moomoo の SMS 送信枠（<c>resend</c>）と総当たり耐性である。
 /// </summary>
 public class SubmissionRateLimiterTests

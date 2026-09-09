@@ -4,13 +4,13 @@ using OpendAuthGateway.Common;
 using OpendAuthGateway.Features.OpendAuth;
 using OpendAuthGateway.Infrastructure;
 
-// #722, NFR, ADR-0002, IADR-0053, IADR-0320: OpenD 認証サイドカー。
+// #722, NFR, ADR-0002, IADR-0053, IADR-0322: OpenD 認証サイドカー。
 //
 // なぜ在るか: OpenD はログイン時の検証コード（SMS / 画像 CAPTCHA）を **PID 1 の標準入力**から読む。
 // #722 段 1 でその標準入力を FIFO（/run/opend/stdin）にしたので `kubectl exec` から届くようになったが、
 // それは「手元に kubeconfig を持つ人だけが再認証できる」という制約を「Headlamp を開ける人だけ」へ
 // 移しただけである。利用者が **ai-stock-trading の画面**から入れられるようにするため、
-// OpenD Pod へ小さな HTTP 面を同居させる（IADR-0320 決定 1）。
+// OpenD Pod へ小さな HTTP 面を同居させる（IADR-0322 決定 1）。
 //
 // 🔴 ネットワークの立ち位置:
 //   - **Ingress を持たない。TLS も持たない。**（クラスタ外から到達する経路を作らない）
@@ -29,10 +29,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<OpendAuthOptions>(builder.Configuration.GetSection(OpendAuthOptions.SectionName));
 
-// IADR-0320 決定 2: FIFO への書き込みは要求ごとに open/close する（fd をキャッシュしない）。
+// IADR-0322 決定 2: FIFO への書き込みは要求ごとに open/close する（fd をキャッシュしない）。
 builder.Services.AddSingleton<IOpendStdinWriter, FifoOpendStdinWriter>();
 
-// IADR-0320 決定 4: 投入の流量制限はサービス全体で 1 つ（守る資源が全体で 1 つしかない）。
+// IADR-0322 決定 4: 投入の流量制限はサービス全体で 1 つ（守る資源が全体で 1 つしかない）。
 builder.Services.AddSingleton(sp =>
 {
     var options = sp.GetRequiredService<IOptions<OpendAuthOptions>>().Value;

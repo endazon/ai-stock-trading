@@ -7,7 +7,7 @@ using OpendAuthGateway.Common;
 namespace OpendAuthGateway.Infrastructure;
 
 /// <summary>
-/// #722, IADR-0320 決定 2: OpenD の標準入力 FIFO（<c>/run/opend/stdin</c>）へ 1 行を書く実装。
+/// #722, IADR-0322 決定 2: OpenD の標準入力 FIFO（<c>/run/opend/stdin</c>）へ 1 行を書く実装。
 /// <para>
 /// 🔴 <b>fd をキャッシュしない。要求ごとに開いて閉じる。</b> OpenD が再起動すると
 /// <c>entrypoint.sh</c> は FIFO を<b>消してから作り直す</b>ため、保持していた fd は

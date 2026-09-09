@@ -9,7 +9,7 @@ using Xunit;
 namespace OpendAuthGateway.Tests;
 
 /// <summary>
-/// #722, ADR-0002, IADR-0053, IADR-0320: サイドカーの HTTP 面の受け入れ試験。
+/// #722, ADR-0002, IADR-0053, IADR-0322: サイドカーの HTTP 面の受け入れ試験。
 /// <para>
 /// 安全要件は<b>両向き</b>で押さえる —— 正しい入力が通ること、壊れた入力ごとに 400 になり
 /// <b>OpenD の標準入力へ 1 バイトも書かれない</b>こと。
@@ -80,7 +80,7 @@ public class OpendAuthEndpointsTests : IDisposable
         var response = await PostAsync("""{"code":"987654"}""");
 
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("987654", "一度きりのコードを応答へ echo しない（IADR-0320 決定 5）");
+        body.Should().NotContain("987654", "一度きりのコードを応答へ echo しない（IADR-0322 決定 5）");
         body.Should().Contain("accepted");
     }
 
