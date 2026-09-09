@@ -17,6 +17,11 @@
       "category": "B"
     },
     {
+      "hash": "7c8bb0b5cecb6f97db0579750c84bde5e29909f4",
+      "reason": "[category=B] 本文 1 行目に `microservices-platform#1357` と書き、他リポ参照の短縮形（`MSP#1357`）の規約に反した（件名は適合）。プッシュ済みで force push 禁止（CLAUDE.md・settings.json の deny）のため書き換えられない。除外の人間レビューは #721 の PR 上で利用者が承認済み（2026-09-09）。同型の再発を防ぐため、本 PR では以後の commit 本文でも短縮形（`MSP#NNN` / `planning#NNN`）を用いる。",
+      "category": "B"
+    },
+    {
       "hash": "739bf023b83bb748e35ce635978cb63038212f79",
       "reason": "[category=B] 件名 `fix: 修正されたソリューションファイル名を使用して脆弱性スキャンを更新`（起点 ID 無し。CI の脆弱性スキャン設定修正のため本来 ci/chore 相当）。d1cfeb5f と同様に規約チェック有効後の develop への直接 push で、プッシュ済み・force push 禁止のため件名を書き換えられない。除外の人間レビューは Issue #47 の PR で承認済み。",
       "category": "B"
