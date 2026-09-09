@@ -55,6 +55,10 @@ require_rsa_key_file() {
 # 標準入力を FIFO にすると exec からも書けるようになり、**既に配備済みの Headlamp の Terminal が
 # そのまま入力面になる**（認可は apiserver の RBAC がそのまま効く。新しい信頼の基点を作らない）。
 #
+# ［2026-09-09 追記 / #722 段 2］この FIFO には**サイドカー（opend-auth）も書く**ようになった。
+# サイドカーが書けるのは検証コードの 3 コマンドだけである（allowlist。IADR-0320）。
+# exec / attach の従来経路は意図的に残してある（サイドカーが落ちても再認証できるようにするため）。
+#
 # 🔴 3 つの細部が効く。どれを外しても壊れる。
 #   1. **作る前に消す。** コンテナ再起動では前回の FIFO が残っており、`set -e` の下で
 #      mkfifo が EEXIST になると OpenD が上がらない（CrashLoopBackOff になる）。
@@ -64,15 +68,14 @@ require_rsa_key_file() {
 #      `Command Tips` が 4KB バッファに埋もれて `kubectl logs` にも attach にも出なくなる。
 #
 # tty を FIFO へ流す背景プロセスを 1 本置くので、**`kubectl attach` の既存手順はそのまま動く**。
-start_opend_with_fifo() {
+prepare_stdin_fifo() {
 	fifo="$1"
-	shift
 	mkdir -p "$(dirname "$fifo")"
 	# 細部 1。存在しないときの unlink 失敗で set -e に落とされないようにする。
 	unlink "$fifo" 2>/dev/null || :
 	mkfifo -m 600 "$fifo"
 	# コンテナ本来の標準入力（tty）を FIFO へ流す。attach で打った行はここを通る。
-	# FIFO の open(O_WRONLY) は読み手が現れるまで塞がるので、背景に置いて下の exec で解く。
+	# FIFO の open(O_WRONLY) は読み手が現れるまで塞がるので、背景に置いて呼び出し側の exec で解く。
 	#
 	# 🔴 背景ジョブの標準入力を `<&0` で渡してはならない。ジョブ制御が無いシェルは背景ジョブの
 	# 標準入力を **/dev/null へ差し替えてから**リダイレクトを適用するため、`<&0` は
@@ -81,8 +84,118 @@ start_opend_with_fifo() {
 	exec 3<&0
 	( exec cat > "$fifo" ) <&3 &
 	exec 3<&-
+}
+
+start_opend_with_fifo() {
+	fifo="$1"
+	shift
+	prepare_stdin_fifo "$fifo"
 	# 細部 2。0<> は O_RDWR。
 	exec "$@" 0<> "$fifo"
+}
+
+# #722 段 2: 標準入力は FIFO のまま、**コンソールの複製**を共有 emptyDir 上のファイルへ落として起動する。
+#
+# なぜ要るか: 検証コードの入力面を ai-stock-trading の画面にするには、画面側が
+# 「いまどのプロンプトが出ているか」を読めなければならない。`kubectl logs` は人が読む面であって
+# サイドカーが読む面ではない（コンテナのログは Pod の外＝ノードのログドライバが持つ）。
+# 同一 Pod のサイドカーへ渡すには **ファイルとして共有 emptyDir に置く**のがいちばん素直である。
+#
+# 🔴 `tee` ではなく `script` を使う。 `tee` を挟むと OpenD の stdout がパイプになり、C の stdio が
+# 行バッファから**全バッファ**へ切り替わる。`Command Tips` が 4KB のバッファに埋もれ、
+# `kubectl logs` にも attach にも出なくなる（段 1 の細部 3 と同じ罠）。`script` は疑似端末（pty）を
+# 与えるので、子から見た fd 1 は**依然として tty** であり行バッファのままである。
+# 実 OpenD コンテナでの実測で次の 4 点を確認済み（#722 の作業仕様書）:
+#   - FIFO からの入力が子プロセスへ届く
+#   - コンテナの標準出力にも従来どおり出る（`kubectl logs` が壊れない）
+#   - 複製ファイルにも同じ出力が入る
+#   - 子から `[ -t 0 ]` が真＝本物の tty に見える
+#
+# 🔴 `-a`（追記）を付ける。 これが**コンソールの上限**（cap_console_log）を成立させている。
+# `-a` は複製ファイルを O_APPEND で開くため、外から `: > file` で切り詰めても
+# 次の書き込みは**ファイルの現在の末尾＝先頭**へ行く。`-a` が無い（O_APPEND でない）場合、
+# `script` は自分が数えているオフセットへ書き続けるので、切り詰めた直後のファイルが
+# **NUL で埋まった穴あきファイル**になる（見かけのサイズが減らず、末尾を読むとゴミが混ざる）。
+#
+# `-e` は子の終了コードをそのまま返す（OpenD が落ちたときに Pod が Running のまま残らないようにする）。
+start_opend_with_console() {
+	fifo="$1"
+	console="$2"
+	shift 2
+	mkdir -p "$(dirname "$console")"
+	# 再起動を跨いで残った前回の複製は捨てる（emptyDir はコンテナ再起動で消えない）。
+	: > "$console"
+	prepare_stdin_fifo "$fifo"
+	exec script -q -e -f -a -c "$*" "$console" 0<> "$fifo"
+}
+
+# #722 段 2: コンソール複製の上限。OpenD は週単位で常駐するため、放っておくと際限なく積む。
+#
+# 単発の判定と切り詰めだけを行う（ループは cap_console_log 側）。**分けてあるのは試験のためである**
+# ——タイミングに依存せず「閾値を超えたら切り、超えていなければ触らない」を観測できる。
+# 切り詰めは 1 回の truncate であり、`script -a`（O_APPEND）の書き込みと競合しても
+# 行が壊れることはない（追記は常に現在の末尾へ行く）。
+truncate_console_log_if_needed() {
+	console="$1"
+	max_bytes="$2"
+	size="$(stat -c '%s' "$console" 2>/dev/null || echo 0)"
+	[ "$size" -gt "$max_bytes" ] || return 1
+	: > "$console"
+	printf '==> console log truncated at %s bytes (cap=%s)\n' "$size" "$max_bytes" >> "$console"
+	return 0
+}
+
+cap_console_log() {
+	console="$1"
+	max_bytes="$2"
+	interval="$3"
+	while :; do
+		sleep "$interval"
+		truncate_console_log_if_needed "$console" "$max_bytes" || :
+	done
+}
+
+# #722 段 2: 画像 CAPTCHA の写しを共有 emptyDir へ置く。
+#
+# 🔴 **サイドカーに PVC をマウントさせない。** 画像の実体は PVC 上の
+# `$HOME/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png` にあり、そこには**デバイス信頼の実体**
+# （`Device.dat`）と `OpenD.xml`（ログイン資格情報の MD5）が同居する。サイドカーへ PVC を
+# 見せると、画像 1 枚のために口座の信頼状態そのものを晒すことになる。
+# **複写するのは OpenD 本体（このコンテナ）の役目**であり、サイドカーは写しだけを読む。
+#
+# `$HOME` は chart の `opend.home` で可変である（非 root 化すると /home/opend になる）。**/root を焼き付けない。**
+opend_captcha_source_path() {
+	printf '%s/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png' "${HOME:-/root}"
+}
+
+# 変化したときだけ複写する（複写したら 0、しなければ非 0）。
+# 変化の判定は **mtime とサイズの両方**で行う —— OpenD は同じ秒内に画像を差し替えることがあり、
+# mtime だけでは取りこぼす。
+# 差し替えは同一ディレクトリ内の rename（不可分）なので、読み手が**半分書けた PNG** を読むことはない。
+copy_captcha_if_changed() {
+	src="$1"
+	dst="$2"
+	[ -f "$src" ] || return 1
+	if [ -f "$dst" ] && [ ! "$src" -nt "$dst" ]; then
+		src_size="$(stat -c '%s' "$src" 2>/dev/null || echo 0)"
+		dst_size="$(stat -c '%s' "$dst" 2>/dev/null || echo -1)"
+		[ "$src_size" != "$dst_size" ] || return 1
+	fi
+	cp "$src" "$dst.tmp" 2>/dev/null || return 1
+	# 画像は秘密ではない（これから画面へ出すものである）。サイドカーが別 uid でも読めるようにしておく。
+	chmod 0644 "$dst.tmp" 2>/dev/null || :
+	mv "$dst.tmp" "$dst" 2>/dev/null || return 1
+	return 0
+}
+
+watch_captcha() {
+	src="$1"
+	dst="$2"
+	interval="$3"
+	while :; do
+		copy_captcha_if_changed "$src" "$dst" || :
+		sleep "$interval"
+	done
 }
 
 # deploy/opend/entrypoint.test.sh から関数だけを読み込むための入口（起動手順は実行しない）。
@@ -134,8 +247,33 @@ chmod 600 /opt/opend/OpenD.xml
 echo "==> starting moomoo OpenD (headless) api_port=${API_PORT} ip=${API_IP} (SIMULATE 前提・実弾なし)"
 [ -x ./OpenD ] || { echo "ERROR: /opt/opend/OpenD が見つかりません。" >&2; ls -la /opt/opend >&2; exit 1; }
 
-# #722: 標準入力は FIFO 経由にする（画面＝Headlamp の Terminal から検証コードを入れられるようにするため）。
+# #722: 標準入力は FIFO 経由にする（画面から検証コードを入れられるようにするため）。
 # 運用手順は deploy/opend/README.md を参照。`kubectl attach` の従来手順も引き続き使える。
 OPEND_STDIN_FIFO="${OPEND_STDIN_FIFO:-/run/opend/stdin}"
-echo "==> stdin FIFO: ${OPEND_STDIN_FIFO}（exec からも検証コードを流し込める）"
-start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD
+# #722 段 2: コンソールの複製と画像 CAPTCHA の写しを、サイドカー（OpendAuthGateway）と共有する
+# emptyDir へ置く。サイドカーはこの 3 つ（FIFO / console.log / captcha.png）しか見ない。
+OPEND_CONSOLE_LOG="${OPEND_CONSOLE_LOG:-/run/opend/console.log}"
+OPEND_CONSOLE_MAX_BYTES="${OPEND_CONSOLE_MAX_BYTES:-1048576}"
+OPEND_CONSOLE_ROTATE_INTERVAL="${OPEND_CONSOLE_ROTATE_INTERVAL:-30}"
+OPEND_CAPTCHA_SRC="${OPEND_CAPTCHA_SRC:-$(opend_captcha_source_path)}"
+OPEND_CAPTCHA_DEST="${OPEND_CAPTCHA_DEST:-/run/opend/captcha.png}"
+OPEND_CAPTCHA_POLL_INTERVAL="${OPEND_CAPTCHA_POLL_INTERVAL:-2}"
+
+echo "==> stdin FIFO: ${OPEND_STDIN_FIFO}（exec / サイドカーから検証コードを流し込める）"
+echo "==> console duplicate: ${OPEND_CONSOLE_LOG}（上限 ${OPEND_CONSOLE_MAX_BYTES} バイト）"
+echo "==> captcha copy: ${OPEND_CAPTCHA_SRC} -> ${OPEND_CAPTCHA_DEST}"
+
+mkdir -p "$(dirname "${OPEND_CONSOLE_LOG}")" "$(dirname "${OPEND_CAPTCHA_DEST}")"
+
+# 背景の 2 本。どちらも**落ちても OpenD を巻き込まない**（複製が止まるだけで、
+# `kubectl logs` と `kubectl attach` の従来経路は生きている）。
+cap_console_log "${OPEND_CONSOLE_LOG}" "${OPEND_CONSOLE_MAX_BYTES}" "${OPEND_CONSOLE_ROTATE_INTERVAL}" &
+watch_captcha "${OPEND_CAPTCHA_SRC}" "${OPEND_CAPTCHA_DEST}" "${OPEND_CAPTCHA_POLL_INTERVAL}" &
+
+# `script` が無いイメージでは複製を諦めて従来どおり起動する（OpenD を上げないほうが害が大きい）。
+if command -v script >/dev/null 2>&1; then
+	start_opend_with_console "${OPEND_STDIN_FIFO}" "${OPEND_CONSOLE_LOG}" ./OpenD
+else
+	echo "WARN: script(1) が無いためコンソール複製を行いません（画面からの検証コード投入は使えません）。" >&2
+	start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD
+fi

@@ -73,13 +73,48 @@ spec:
             - name: rsa
               mountPath: /opt/opend/rsa
               readOnly: true
+            # #722: サイドカーと共有する作業領域。標準入力の FIFO（stdin）・コンソールの複製
+            # （console.log）・画像 CAPTCHA の写し（captcha.png）の 3 つだけがここに置かれる。
+            - name: runtime
+              mountPath: /run/opend
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 1Gi }
+        # #722 / IADR-0320: 検証コードの投入面（サイドカー）。
+        #
+        # ⚠️ **先にイメージを用意すること**: `scripts/k8s-local-images.sh`（opend-auth-gateway）。
+        #    未 import のまま apply すると本コンテナが ImagePullBackOff になり、**Pod ごと NotReady**
+        #    ＝ Service `opend` の endpoint から外れて発注経路まで止まる。
+        #
+        # 🔴 ここには **opend-persist（PVC）を絶対にマウントしない**。PVC にはデバイス信頼の実体
+        #    （Device.dat）と OpenD.xml（ログイン資格情報の MD5）が入っている。サイドカーが見てよいのは
+        #    OpenD 本体が emptyDir へ複製した写しだけである。
+        #
+        # 🔴 Ingress も Route も TLS も持たない。 呼び出し元はクラスタ内の BFF だけであり、
+        #    利用者認証はその手前で済んでいる。書ける行は閉じた 3 コマンドに限られる（allowlist）。
+        - name: opend-auth
+          image: "k3d-local/ai-stock-trading/opend-auth-gateway:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 8080, name: auth }
+          env:
+            - name: OpendAuth__RuntimeDirectory
+              value: /run/opend
+          volumeMounts:
+            - name: runtime
+              mountPath: /run/opend
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
       volumes:
         - name: persist
           persistentVolumeClaim:
             claimName: opend-persist
+        # #722: OpenD 本体とサイドカーの共有領域。**PVC ではない**（消えてよいものしか置かない）。
+        # sizeLimit はコンソール複製の上限（既定 1MiB）＋画像 1 枚に対して十分な余裕を見た値。
+        - name: runtime
+          emptyDir:
+            sizeLimit: 16Mi
         - name: rsa
           secret:
             secretName: moomoo-rsa
@@ -98,3 +133,6 @@ spec:
   selector: { app: opend }
   ports:
     - { name: api, port: 11111, targetPort: 11111 }
+    # #722: 検証コードの投入面（サイドカー）。**ClusterIP のみ**＝クラスタ内からしか到達しない。
+    # Ingress も NodePort も作らない。呼び出すのは BFF だけである。
+    - { name: auth, port: 8080, targetPort: 8080 }

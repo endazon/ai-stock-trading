@@ -1,0 +1,19 @@
+<!-- #722, IADR-0320: OpenD 認証サイドカーの試験。
+     ここで固定するのは**安全要件そのもの**である（allowlist・アンカー付き照合・fd を持ち回さないこと・
+     読み手不在で塞がらないこと・流量制限・コードを決して返さない／記録しないこと）。
+     各要件は**両向き**で試験する —— 正しい入力が通ること、壊れた入力ごとに 400 になり
+     **1 バイトも書かれない**こと。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <ProjectReference Include="..\OpendAuthGateway.csproj" />
+  </ItemGroup>
+</Project>

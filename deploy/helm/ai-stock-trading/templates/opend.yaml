@@ -139,14 +139,63 @@ spec:
             - name: rsa
               mountPath: {{ $o.rsaMountPath | quote }}
               readOnly: true
+            {{- /* #722, IADR-0320: サイドカーと共有する作業領域。標準入力の FIFO（stdin）・
+                   コンソールの複製（console.log）・画像 CAPTCHA の写し（captcha.png）だけを置く。
+                   authGateway が無効でも常にマウントする —— entrypoint.sh はどちらでもここへ書くので、
+                   有効／無効で置き場が変わらないほうが挙動が読みやすい。 */}}
+            - name: runtime
+              mountPath: {{ $o.authGateway.runtimeDirectory | quote }}
           resources:
             {{- toYaml $o.resources | nindent 12 }}
+        {{- if $o.authGateway.enabled }}
+        {{- /*
+          #722, IADR-0320: 検証コードの投入面（サイドカー）。既定 false = fail-safe。
+
+          🔴 opend-persist（PVC）は**絶対にマウントしない**。PVC にはデバイス信頼の実体（Device.dat）と
+             OpenD.xml（ログイン資格情報の MD5）が入っており、画像 1 枚のために口座の信頼状態を晒すことになる。
+             サイドカーが読むのは OpenD 本体が emptyDir へ複製した写しだけである。
+
+          🔴 Ingress も Route も TLS も持たない。呼び出し元はクラスタ内の BFF だけで、利用者認証はその手前で
+             済んでいる。書ける行は閉じた 3 コマンド（input_phone_verify_code / input_pic_verify_code /
+             req_phone_verify_code）に限られる。
+
+          securityContext は OpenD 本体と**同じ値**を与える。共有 emptyDir 上のファイルは OpenD 本体が
+          umask 077 で作るため、uid がずれると読めなくなる（非 root 化したときに静かに壊れる）。
+        */}}
+        - name: opend-auth
+          image: "{{ .Values.global.image.registry }}/{{ $o.authGateway.image.repository }}:{{ $o.authGateway.image.tag | default .Values.global.image.tag }}"
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- with $o.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - { containerPort: {{ $o.authGateway.port }}, name: auth }
+          env:
+            - name: ASPNETCORE_URLS
+              value: {{ printf "http://+:%v" $o.authGateway.port | quote }}
+            - name: OpendAuth__RuntimeDirectory
+              value: {{ $o.authGateway.runtimeDirectory | quote }}
+            - name: OpendAuth__RateLimitMaxSubmissions
+              value: {{ $o.authGateway.rateLimitMaxSubmissions | quote }}
+            - name: OpendAuth__RateLimitWindowSeconds
+              value: {{ $o.authGateway.rateLimitWindowSeconds | quote }}
+          volumeMounts:
+            - name: runtime
+              mountPath: {{ $o.authGateway.runtimeDirectory | quote }}
+          resources:
+            {{- toYaml $o.authGateway.resources | nindent 12 }}
+        {{- end }}
       volumes:
         {{- if $o.persistence.enabled }}
         - name: persist
           persistentVolumeClaim:
             claimName: opend-persist
         {{- end }}
+        {{- /* #722: OpenD 本体とサイドカーの共有領域。**PVC ではない**（消えてよいものしか置かない）。 */}}
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ $o.authGateway.runtimeSizeLimit | quote }}
         - name: rsa
           secret:
             secretName: {{ $o.rsaSecretName }}
@@ -165,4 +214,9 @@ spec:
   selector: { app: opend }
   ports:
     - { name: api, port: {{ $o.apiPort }}, targetPort: {{ $o.apiPort }} }
+    {{- if $o.authGateway.enabled }}
+    {{- /* #722: 検証コードの投入面。**ClusterIP のみ**＝クラスタ内からしか到達しない。
+           Ingress も NodePort も作らない（呼び出すのは BFF だけである）。 */}}
+    - { name: auth, port: {{ $o.authGateway.port }}, targetPort: {{ $o.authGateway.port }} }
+    {{- end }}
 {{- end }}
