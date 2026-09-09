@@ -34,6 +34,10 @@ MAPPING=(
   "report-service|backend/Services/ReportService/ReportService.csproj|ReportService.dll"
   "risk-management-service|backend/Services/RiskManagementService/RiskManagementService.csproj|RiskManagementService.dll"
   "trade-decision-service|backend/Services/TradeDecisionService/TradeDecisionService.csproj|TradeDecisionService.dll"
+  # #722 / IADR-0320: OpenD Pod のサイドカー（検証コードの投入面）。Worker ではないが、Web SDK・
+  # :8080 待受という点は同型なので共有 Dockerfile で足りる。opend.authGateway.enabled=true と
+  # deploy/opend/k8s/opend.yaml がこのイメージを参照する。
+  "opend-auth-gateway|backend/Services/OpendAuthGateway/OpendAuthGateway.csproj|OpendAuthGateway.dll"
 )
 
 k3d_images=()

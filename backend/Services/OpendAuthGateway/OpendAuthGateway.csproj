@@ -1,0 +1,21 @@
+<!-- #722, NFR, ADR-0002, IADR-0053, IADR-0320: OpenD 認証サイドカー。
+     OpenD Pod へ同居し、共有 emptyDir（/run/opend）越しに **検証コードの 3 コマンドだけ**を
+     OpenD の標準入力（FIFO）へ流す最小の HTTP 面である。
+
+     🔴 依存を持たない。 本プロジェクトは Web SDK 以外に **ProjectReference も PackageReference も
+     持たない**。サイドカーは OpenD と同じ Pod の中で動き、Wolverine（RabbitMQ）・EF Core・Keycloak の
+     いずれも使わない —— それらを引くと、口座への窓口と同居するコンテナの攻撃面が無関係に広がる。
+     可観測性（Serilog / OTel）も入れない（本コンテナのログは kubectl logs で足りる）。
+
+     ⚠️ 認証は持たない。 本サービスは **Ingress を持たず Pod 網にのみ bind する**（Program.cs 参照）。
+     呼び出し元は同一クラスタ内の BFF だけであり、その手前で利用者認証が済んでいる。
+     入力面の安全は「閉じた 3 コマンドの allowlist」で担保する（IADR-0320 決定 1）。 -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
+         （入れ子のままだと二重コンパイルで CS0246 が出る。NFR/IADR-0259）。 -->
+    <Compile Remove="Tests/**" />
+    <Content Remove="Tests/**" />
+    <None Remove="Tests/**" />
+  </ItemGroup>
+</Project>
