@@ -53,6 +53,12 @@ public class BffPassThroughTests
         ["PUT", "/bff/monitor/settings/movement-threshold"],
         ["PUT", "/bff/monitor/settings/cooldown"],
         ["GET", "/bff/monitor/settings/history"],
+        // SC-04, FR-09, FR-11, UC-06, planning#594: OpenD 認証操作の 4 端点。
+        // **自由入力のコンソールは無い**——ここに載っているのが画面から到達できる経路のすべてである。
+        ["GET", "/bff/opend-auth/state"],
+        ["GET", "/bff/opend-auth/captcha"],
+        ["POST", "/bff/opend-auth/code"],
+        ["POST", "/bff/opend-auth/resend"],
     ];
 
     [Theory]
@@ -231,6 +237,7 @@ internal sealed class BffTestHost : IAsyncDisposable
         app.MapAssumptionsBffEndpoints();
         app.MapRiskControlsBffEndpoints();
         app.MapMonitorBffEndpoints();
+        app.MapOpendAuthBffEndpoints();
 
         await app.StartAsync();
         return new BffTestHost { App = app, Client = app.GetTestClient(), Downstream = downstream };

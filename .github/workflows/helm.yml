@@ -70,6 +70,13 @@ jobs:
             --set opend.securityContext.runAsNonRoot=true \
             --set opend.securityContext.runAsUser=10001 \
             --set opend.podSecurityContext.fsGroup=10001 > /dev/null
+      # #722 / IADR-0322: 検証コードの投入面（サイドカー）。既定 false のため既定描画では評価されない。
+      # ON にした派生を描画し、有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
+      - name: helm template (opend.authGateway.enabled=true)
+        run: |
+          helm template ast "$CHART" \
+            --set opend.enabled=true \
+            --set opend.authGateway.enabled=true > /dev/null
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
@@ -408,7 +415,23 @@ jobs:
           # デバイス信頼の永続化先は $HOME/.com.moomoo.OpenD。既定 HOME は生 manifest と同じ /root。
           printf '%s' "$out" | grep -q 'value: "/root"' || fail "既定 HOME が /root でない"
           printf '%s' "$out" | grep -q 'mountPath: "/root/.com.moomoo.OpenD"' || fail "デバイス信頼の永続化先が /root/.com.moomoo.OpenD でない"
+          # #722 / IADR-0322: 検証コードの投入面は既定で立てない（OpenD のコンソールへ書ける面を既定で開かない）。
+          if printf '%s' "$out" | grep -q 'name: opend-auth'; then fail "authGateway が既定で有効になっている"; fi
           echo "ok: opend の既定描画は生 manifest と同等の不変条件を満たす"
+      # #722 / IADR-0322: サイドカーを有効にしたときの不変条件。**PVC を見せない**ことがいちばん重い
+      # （PVC にはデバイス信頼の実体 Device.dat と OpenD.xml が入っている）。
+      - name: Assert opend auth sidecar never mounts the PVC
+        run: |
+          out="$(helm template ast "$CHART" --set opend.enabled=true --set opend.authGateway.enabled=true -s templates/opend.yaml)"
+          fail() { echo "::error::opend-auth サイドカーの描画が前提を満たさない: $1"; exit 1; }
+          printf '%s' "$out" | grep -q 'name: opend-auth' || fail "サイドカーが描画されていない（有効化が空振り）"
+          # サイドカーの container ブロック（次の container / volumes まで）に persist が現れないこと。
+          sidecar="$(printf '%s\n' "$out" | awk '/- name: opend-auth/,/^      volumes:/')"
+          if printf '%s' "$sidecar" | grep -q 'persist'; then fail "サイドカーが opend-persist（PVC）をマウントしている"; fi
+          # クラスタ外へ出す口を作らない。
+          if printf '%s' "$out" | grep -qE 'kind: (Ingress|Gateway|VirtualService)'; then fail "Ingress/Route を作っている"; fi
+          if printf '%s' "$out" | grep -q 'nodePort'; then fail "NodePort を作っている"; fi
+          echo "ok: opend-auth サイドカーは PVC を見ず、クラスタ外への口も持たない"
       # #132 / IADR-0060: 誤配備を描画時に止めるゲートが**実際に落ちる**ことを検査する（ゲートの空振り防止）。
       - name: Assert misconfiguration gates fail
         run: |

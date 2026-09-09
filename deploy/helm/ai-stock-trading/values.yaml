@@ -166,6 +166,29 @@ opend:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: "1", memory: 1Gi }
+  # #722, IADR-0320: 検証コード（SMS / 画像 CAPTCHA）を **画面から**入れるためのサイドカー。
+  # 既定 false = fail-safe（OpenD のコンソールへ書ける面を、要らないうちは立てない）。
+  # 🔴 有効にする前に opend-auth-gateway のイメージを用意すること（scripts/k8s-local-images.sh）。
+  #    未 import のまま有効化すると ImagePullBackOff で **Pod ごと NotReady** になり、
+  #    Service opend の endpoint から外れて発注経路まで止まる。
+  # 🔴 Ingress も TLS も持たない（ClusterIP のみ）。呼び出すのは BFF だけで、利用者認証はその手前で済む。
+  # 🔴 PVC（opend-persist）はマウントしない。デバイス信頼の実体と OpenD.xml が同居するためである。
+  authGateway:
+    enabled: false
+    image:
+      repository: ai-stock-trading/opend-auth-gateway
+      tag: ""
+    port: 8080
+    # OpenD 本体と共有する emptyDir のマウント先（entrypoint.sh の既定と一致させること）。
+    runtimeDirectory: /run/opend
+    # 共有領域の上限。コンソール複製の上限（既定 1MiB）＋画像 1 枚に十分な余裕を見た値。
+    runtimeSizeLimit: 16Mi
+    # 投入の流量制限（サービス全体で数える）。守っているのは moomoo の SMS 送信枠と総当たり耐性である。
+    rateLimitMaxSubmissions: 5
+    rateLimitWindowSeconds: 60
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 200m, memory: 128Mi }
 
 # #132, IADR-0060 決定 4: 秘匿情報の External Secrets（Vault）**受け口**。既定 disabled = fail-safe。
 # ⚠️ **これは Vault 化の充足ではない**。ストア（Vault / External Secrets Operator）は #24 の管掌で本リポジトリには無く、

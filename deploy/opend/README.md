@@ -108,7 +108,10 @@ kubectl -n ai-stock-trading attach -it opend-bootstrap
   ```
   >>> input_pic_verify_code -code=<4文字>
   ```
-> コードは数分で失効。失効/やり直しは `>>> relogin` で新コードを出す（画像は再度 cp して読む）。
+> コードは数分で失効。失効/やり直しは `>>> req_phone_verify_code` で新しいコードを出す（画像は再度 cp して読む）。
+> **［2026-09-09 訂正 / #722］従前ここは `relogin` と書いていたが誤りである。** `relogin` は
+> `-login_pwd=` を取る**再ログイン**のコマンドで、検証コードの再送ではない。引数なしで打つと
+> 意図しない挙動になり得る。再送は `req_phone_verify_code`（引数なし）である。
 
 成功すればログイン完了・API が `:11111` で待受。**別ターミナル**で保存されたデバイス状態を確認:
 ```bash
@@ -125,11 +128,123 @@ kubectl apply -f deploy/opend/k8s/opend.yaml           # Deployment + Service（
 kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_verify_code / input_phone_verify_code
 kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```
+
+#### 画面（ブラウザ）から検証コードを入れる（#722）
+
+**手元に kubeconfig が無くても検証できる。** `entrypoint.sh` は OpenD の標準入力を
+**FIFO（`/run/opend/stdin`）経由**にしてあるので、`kubectl exec` からも同じ標準入力へ届く。
+`attach` が要るのは tty を掴むときだけで、コードを 1 行入れるだけなら exec で足りる。
+
+> **［2026-09-09 追記 / #722 段 2］入力面はこの先 ai-stock-trading の画面になる。**
+> 利用者裁定により、検証コードは **ai-stock-trading の SPA 画面**から入れられるようにする
+> （Headlamp は入力面にしない）。そのための受け口（サイドカー `opend-auth`）は本 PR で入ったが、
+> **画面と BFF のルートは裁定待ち（planning#594）で未着手**である。
+> **画面ができるまでの現行手段は、以下の Headlamp / `kubectl exec` のままである。**
+> サイドカーの詳細は後段「サイドカー経由で入れる（#722 段 2）」を参照。
+
+**画面ができるまで**は、**既に配備済みの Headlamp**（`https://headlamp.localhost`。Keycloak の OIDC で入る）が
+そのまま入力面になる。
+
+1. Headlamp で `ai-stock-trading` / Pod `opend` を開き、**Logs** で `Command Tips:` を読む
+   （`input_phone_verify_code` か `input_pic_verify_code` のどちらを求められているか）。
+2. 同じ Pod の **Terminal** を開いて、次の 1 行を打つ。
+
+```bash
+printf 'input_phone_verify_code -code=123456\n' > /run/opend/stdin
+```
+
+3. 画像 CAPTCHA を求められたときは、Terminal で画像を base64 にして読む。
+
+```bash
+base64 -w0 "$HOME/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png"
+```
+
+出力を `data:image/png;base64,<貼り付け>` としてブラウザのアドレス欄へ入れると画像が見える。
+読み取った 4 文字を `printf 'input_pic_verify_code -code=ab12\n' > /run/opend/stdin` で入れる。
+
+4. 再送は `printf 'req_phone_verify_code\n' > /run/opend/stdin`。
+
+同じことを CLI からやるなら次のとおり。
+
+```bash
+kubectl -n ai-stock-trading exec deploy/opend -- \
+  sh -c "printf 'input_phone_verify_code -code=123456\n' > /run/opend/stdin"
+```
+
+> **認可は apiserver の RBAC がそのまま効く。** 書けるのは `pods/exec` を持つ主体だけである。
+> OpenD のコンソールには `show_delay_report -detail_report_path=<path>`（**root 権限で任意パスへ書ける**）や
+> `relogin -login_pwd=` のような、検証コード以外の強いコマンドがある。
+> 標準入力への書き込みは実口座に対する強い権限であり、**この経路（exec）を誰に許すかは RBAC で決める**。
+>
+> **［2026-09-09 追記 / #722 段 2］** 段 1 ではここに「だから専用の HTTP 面は作らない」と書いていた。
+> サイドカー（`opend-auth`）は**その HTTP 面を作らずに済ませる代わりに、通せる行を 3 つに固定した**
+> ——面が任意のコマンドを通さないなら、面そのものの権限は「検証コードを入れること」以上に広がらない。
+> 経緯と判断は [IADR-0322](../../.ai-context/adr/IADR-0322_opend-auth-sidecar-command-allowlist.md)。
+>
+> **注意**: FIFO に書いた行は次のプロンプトで消費される。失効したコードを入れたまま再送すると、
+> 古い行が再送後の 1 回を食う。**入れる前に Logs で現在のプロンプトを確かめること。**
 > ⚠️ 初回の `attach` 検証以降は、**デバイス信頼の永続化（PVC）＋ egress IP の安定**が保てれば
 > **無人再ログインが成立**する（追検証で実証。IADR-0053 の初回結論「再起動＝毎回再検証」は撤回済み）。
 > ただし **egress IP が変わる再起動**（ノード跨ぎの再スケジュール・クラウド/別リージョン）や moomoo 側の
 > セッション失効では**再び有人検証が要る**見込み（実測は #132 で未了）。**再起動は最小化**し、
 > 本番ではノードを固定する（chart の `opend.nodeSelector`）。再検証が要る状態になったら再度 `attach` する。
+
+#### サイドカー経由で入れる（#722 段 2・**画面の受け口**）
+
+**このサイドカーは既定で立たない**（`opend.authGateway.enabled=false`）。SPA の画面と BFF のルートが
+入るまで面を開けないためである（裁定待ち: planning#594）。
+
+`opend` Pod へ `opend-auth`（`backend/Services/OpendAuthGateway/`）を同居させ、
+共有 `emptyDir`（`/run/opend`）越しに OpenD の標準入力 FIFO へ書く。
+呼び出すのは**クラスタ内の BFF だけ**であり、Ingress も TLS も持たない（ClusterIP のみ）。
+
+| 口 | 役割 |
+| --- | --- |
+| `GET /opend-auth/state` | 整形済みのコンソール末尾・待たれているプロンプト（`phone` / `pic` / `resend`）・CAPTCHA の有無 |
+| `GET /opend-auth/captcha` | 画像 CAPTCHA を `image/png` で返す（**固定パス・引数なし**。不在なら 404） |
+| `POST /opend-auth/verify` | `{"kind":"phone"｜"pic"｜"resend","code":"..."}` |
+
+🔴 **クライアントはコマンド文字列を渡さない。** 書かれ得る行は次の 3 つだけで、サーバが組み立てる。
+
+```
+input_phone_verify_code -code=<4〜8 桁の ASCII 数字>
+input_pic_verify_code   -code=<4 文字の ASCII 英数>
+req_phone_verify_code
+```
+
+有効化の手順（**イメージを先に用意する**）:
+
+```bash
+# 1) サイドカーのイメージを作って import（未 import で有効化すると ImagePullBackOff → Pod ごと NotReady
+#    ＝ Service opend の endpoint から外れて発注経路まで止まる）
+bash scripts/k8s-local-images.sh          # opend-auth-gateway を含む
+
+# 2) chart 経由
+helm upgrade --install ast deploy/helm/ai-stock-trading \
+  --set opend.enabled=true --set opend.authGateway.enabled=true
+
+# 3) 生 manifest（dev 経路）は opend.yaml にサイドカーが入っている
+kubectl apply -f deploy/opend/k8s/opend.yaml
+```
+
+クラスタ内からの動作確認（BFF が入るまでの暫定手段）:
+
+```bash
+kubectl -n ai-stock-trading run curl --rm -it --image=curlimages/curl --restart=Never -- \
+  curl -s http://opend:8080/opend-auth/state
+```
+
+**OpenD 本体が担う複写**（サイドカーは PVC を見ない）:
+
+- コンソールの複製は `script -q -e -f -a` で `/run/opend/console.log` へ落とす
+  （`OPEND_CONSOLE_MAX_BYTES` 既定 1MiB を超えたら切り詰める）。
+  **`kubectl logs` と `attach` は従来どおり動く**（`tee` を使うと C stdio が全バッファへ落ちて沈黙する）。
+- 画像 CAPTCHA は `$HOME/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png` を `/run/opend/captcha.png` へ複写する
+  （`$HOME` は chart の `opend.home` から。非 root 化すると `/home/opend`）。
+
+> 🔴 **サイドカーは `opend-persist`（PVC）を絶対にマウントしない。** PVC にはデバイス信頼の実体
+> （`Device.dat`）と `OpenD.xml`（ログイン資格情報の MD5）が同居する。
+> 判断の全体は [IADR-0322](../../.ai-context/adr/IADR-0322_opend-auth-sidecar-command-allowlist.md)。
 
 ### 5) 発注執行（#13）から利用
 moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中の `opend:11111` へ接続し、`TrdEnv.SIMULATE` で発注する。
