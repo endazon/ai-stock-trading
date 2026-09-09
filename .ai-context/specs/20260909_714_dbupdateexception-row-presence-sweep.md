@@ -163,3 +163,11 @@ catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
 - グループ例外フィルタ（`ArgumentException → 400`）の構造改修は本作業でも採らない（IADR-0319 決定6）。
 - リレーショナル（Npgsql）実機での再現は本作業では行っていない（テストは InMemory）。
   ただし**判定が例外の型に依存しなくなった**ため、プロバイダ差は原理的に判定へ影響しない。
+
+## 追補（2026-09-09・#719）
+
+develop マージ直後の後段 E2E で `EfPositionDriftStateStore` の初回行同時挿入テスト（REPEATABLE READ の
+明示トランザクション内で 23505 を決定的に再現する装置）が赤になった。同じトランザクション内の読み直しは
+スナップショットしか見ないため他方の行が「無い」と読め、本物の失敗として再送出していた。
+`DbUpdateConcurrencyException` または SQLSTATE 23505 を先に「負け」と判定し、それ以外を行の実在で判定する
+順序へ補正した（IADR-0319 追記）。テスト 3 件追加・`RiskManagementService.Tests` 1,617 件緑。

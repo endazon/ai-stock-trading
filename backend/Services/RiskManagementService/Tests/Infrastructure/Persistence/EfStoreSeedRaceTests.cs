@@ -1,3 +1,4 @@
+using System.Data.Common;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
@@ -57,6 +58,28 @@ public class EfStoreSeedRaceTests
         public override InterceptionResult<int> SavingChanges(
             DbContextEventData eventData, InterceptionResult<int> result) =>
             throw new DbUpdateException("保存に失敗した（競合ではない）。");
+    }
+
+    // relational プロバイダが返す DbException を、SQLSTATE だけ与えて模す（Npgsql 型へ依存しない）。
+    private sealed class SqlStateDbException(string sqlState) : DbException($"SQLSTATE {sqlState}")
+    {
+        public override string? SqlState => sqlState;
+    }
+
+    // relational の SaveChanges 失敗（DbUpdateException の内側に SQLSTATE 付き DbException）を模す。
+    private sealed class RelationalFailureInterceptor(string sqlState) : SaveChangesInterceptor
+    {
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData, InterceptionResult<int> result) =>
+            throw new DbUpdateException("relational の保存失敗", new SqlStateDbException(sqlState));
+    }
+
+    // 並行トークン不一致（更新対象の行が他方に先に進められ、影響行数 0）を模す。
+    private sealed class ConcurrencyFailureInterceptor : SaveChangesInterceptor
+    {
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData, InterceptionResult<int> result) =>
+            throw new DbUpdateConcurrencyException("並行トークン不一致");
     }
 
     // ---------------------------------------------------------------- EfRiskSettingsStore
@@ -195,6 +218,45 @@ public class EfStoreSeedRaceTests
     public void 乖離追跡状態は行が生まれない保存失敗を握り潰さず送出する()
     {
         using var db = NewContext(Guid.NewGuid().ToString(), new ThrowingSaveChangesInterceptor());
+
+        var act = () => new EfPositionDriftStateStore(db)
+            .TrySave(new PositionDriftState("LATE", 1, string.Empty, 0));
+
+        act.Should().Throw<DbUpdateException>();
+    }
+
+    // #719（是正前は赤）: 実 DB では、呼び出し側の明示トランザクション（REPEATABLE READ のスナップショット）
+    // の中で初回行の同時挿入が起きると、読み直しが他方の行を見られず「行が無い」と誤読する。
+    // EF／DB が確定させた事実——SQLSTATE 23505（unique_violation）——を先に見て負けを返す。
+    [Fact]
+    public void 乖離追跡状態は一意キー違反_SQLSTATE_23505_を読み直しに依らず負けとして返す()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString(), new RelationalFailureInterceptor("23505"));
+
+        var saved = new EfPositionDriftStateStore(db)
+            .TrySave(new PositionDriftState("LATE", 1, string.Empty, 0));
+
+        saved.Should().BeFalse("固定キーの単一行 INSERT が unique_violation で失敗する理由は、他方が先に作ったこと以外に無い");
+    }
+
+    // 並行トークン不一致（DbUpdateConcurrencyException）も EF が確定させた事実であり、読み直しに依らず負け。
+    [Fact]
+    public void 乖離追跡状態は並行トークン不一致を読み直しに依らず負けとして返す()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString(), new ConcurrencyFailureInterceptor());
+
+        var saved = new EfPositionDriftStateStore(db)
+            .TrySave(new PositionDriftState("LATE", 1, string.Empty, 0));
+
+        saved.Should().BeFalse();
+    }
+
+    // 否定形: 一意キー違反でない relational の保存失敗（接続断 08006 等）は、行が生まれていなければ送出する。
+    [Fact]
+    public void 乖離追跡状態は一意キー違反でない保存失敗を握り潰さず送出する()
+    {
+        // 08006 = connection_failure（SQL 標準）。
+        using var db = NewContext(Guid.NewGuid().ToString(), new RelationalFailureInterceptor("08006"));
 
         var act = () => new EfPositionDriftStateStore(db)
             .TrySave(new PositionDriftState("LATE", 1, string.Empty, 0));
