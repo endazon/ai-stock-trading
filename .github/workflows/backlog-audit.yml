@@ -67,6 +67,14 @@ jobs:
         # 週次のスケジュール実行は誰も見ていないため、その warn は長期間気付かれない。
         id: claude
         uses: anthropics/claude-code-action@v1
+        # gh CLI（issue list / view / create / edit）を既定トークンで認証する。gh は
+        # GH_TOKEN / GITHUB_TOKEN を環境変数から読む。claude-coding.yml / claude-code-review.yml は
+        # 以前からこの env を持つが本ファイルには無く、2026-09-07（run 34080423564・15 ターン）と
+        # 2026-09-09（run 34301133063・16 ターン）の 2 回、監査が 3 分未満で終わり結果 issue（#483）
+        # へ何も書かないまま subtype: success になった（#711。08-31 の正常な run は 36 ターン・10 分）。
+        # `with.github_token` は MCP GitHub ツールへ渡るだけで、Bash から呼ぶ gh には届かない。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           # 認証はどちらか一方を登録する（サブスク = OAuth トークン / API = API キー）。
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -189,6 +197,22 @@ jobs:
               ラベルは `gh issue list --json labels` で読んでください。issue のタイムラインや
               cross-reference など**上記の手段で確認できないものは「未確認」と明記**してください
               （確認したふりをしないこと）。
+
+      # NFR / #711: Claude ステップの実行記録（各ターンのツール呼び出しと結果）を artifact として
+      # 残す。アクションは「full output hidden for security」でジョブログに出さないため、
+      # 産出検証が fail したときに**なぜ書けなかったか**（gh の認証失敗・検索の空振り・
+      # 途中終了）をこの記録でしか追えない。失敗時だけでなく常に残す——「成功したがおかしい」
+      # 回（15 ターンで success）こそ比較対象が要る。保管は 30 日（週次 run 4 回ぶん）。
+      # 公開範囲はリポジトリの Actions を読める者に限られ、GITHUB_TOKEN は記録に含まれない
+      # （アクションが env を書き出さない。gh の出力は issue 本文と JSON のみ）。
+      - name: Upload audit transcript
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backlog-audit-transcript-${{ github.run_id }}
+          path: ${{ steps.claude.outputs.execution_file }}
+          if-no-files-found: warn
+          retention-days: 30
 
       # AI がツール権限拒否に当たっていないかを検査する。
       # 拒否が起きると監査は静かに劣化する（「調べていない」ことが本文からは判らない）。

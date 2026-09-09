@@ -2350,6 +2350,21 @@ module.exports = ({ ok, assert }) => {
       assert.match(wf, /RUN_START_TIME/, 'RUN_START_TIME が後段へ渡されていない');
     });
 
+    // 2026-09-07 / 09-09 の 2 回、監査が 15〜16 ターンで終わり #483 へ何も書かなかった。
+    // 姉妹ワークフロー（claude-coding.yml / claude-code-review.yml）は Claude ステップに
+    // GH_TOKEN を渡しているが本ワークフローだけ欠けていた。`with.github_token` は MCP へ
+    // 渡るだけで Bash の gh には届かない。実行記録を artifact に残さないと再発時に追えない。
+    ok('backlog-audit.yml: Claude ステップへ GH_TOKEN を渡し、実行記録を artifact に残す（#711）', () => {
+      const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
+      const claudeStep = wf.slice(wf.indexOf('id: claude'), wf.indexOf('- name: Upload audit transcript'));
+      assert.ok(claudeStep.length > 0, 'Claude ステップ（id: claude）と transcript upload ステップの並びが崩れている');
+      assert.match(claudeStep, /^\s+env:\n\s+GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/m, 'Claude ステップに GH_TOKEN の env が無い（Bash の gh が未認証になる）');
+      assert.match(wf, /uses: actions\/upload-artifact@v\d+/, '実行記録を残す upload-artifact ステップが無い');
+      assert.match(wf, /path: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, 'artifact の path が steps.claude.outputs.execution_file を参照していない');
+      const uploadStep = wf.slice(wf.indexOf('- name: Upload audit transcript'), wf.indexOf('- name: Check permission denials'));
+      assert.match(uploadStep, /if: always\(\)/, 'transcript upload が always() でない（失敗時こそ要る）');
+    });
+
     ok('scripts/README.md: check-backlog-audit-output.js を記載している', () => {
       const readme = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /check-backlog-audit-output\.js/, 'scripts/README.md に記載が無い');
