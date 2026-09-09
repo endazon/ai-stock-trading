@@ -313,8 +313,16 @@ function selfTest() {
       expect: (r) => KINDS.every((k) => Array.isArray(r[k]) && r[k][1] >= r[k][0] && r[k][0] === 1),
     },
     {
-      name: 'readDeclaredRanges: 宣言と `kg-ranges.json` の実測値が現時点で一致している（陰性対照）',
-      run: () => compareRanges(readDeclaredRanges(), PLANNING_OK),
+      // 🔴 **現在の宣言値をリテラルと突き合わせない。** それをやると、次にレンジを前進させる PR で
+      //    この自己試験まで同時に直さないと `ahead` で落ちる —— **本検査器が塞ごうとしている
+      //    「導出値の書き写し」そのものである**（母集合の規則 10）。ここで固定するのは
+      //    「実物の宣言が 4 種そろってパースでき、比較器がそれを処理できる」という配線であり、
+      //    **ずれの検出は上の陽性対照（フィクスチャ）が持つ。** 実際のずれは CI の本走が見る。
+      name: 'readDeclaredRanges → compareRanges の配線が実物の宣言で通る（値は固定しない）',
+      run: () => {
+        const declared = readDeclaredRanges();
+        return compareRanges(declared, declared);
+      },
       expect: (r) => r.status === 'ok' && r.scanned === 4,
     },
   ];
