@@ -3,6 +3,7 @@ import type { ShellRoute } from '@foundation/routing/shell';
 import { createSc01SettingsRoute, sc01SettingsNav } from './sc01-settings';
 import { createSc02RiskSettingsRoute, sc02RiskSettingsNav } from './sc02-risk-settings';
 import { createSc03ControlsRoute, sc03ControlsNav } from './sc03-controls';
+import { createSc04OpendAuthRoute, sc04OpendAuthNav } from './sc04-opend-auth';
 
 // #106, #414, ADR-0001, IADR-0080, IADR-0288: 本ユニット（AI 株取引）の合成面。
 //
@@ -28,6 +29,7 @@ export const createAiStockTradingRoutes = (shell: ShellRoute) =>
     createSc01SettingsRoute(shell), // SC-01 設定画面（FR-17 全体前提条件の閲覧/変更・UC-06）
     createSc02RiskSettingsRoute(shell), // SC-02 リスク設定（FR-13/FR-19/FR-20 リスク上限の閲覧/変更）
     createSc03ControlsRoute(shell), // SC-03 承認・統制状態参照（FR-10/FR-20/UC-06・参照専用）
+    createSc04OpendAuthRoute(shell), // SC-04 OpenD 認証操作（FR-09/FR-11/UC-06 代替フロー・有人認証）
   ] as const;
 
 /**
@@ -42,4 +44,5 @@ export const aiStockTradingNavItems: readonly NavItem[] = [
   sc01SettingsNav,
   sc02RiskSettingsNav,
   sc03ControlsNav,
+  sc04OpendAuthNav,
 ];
