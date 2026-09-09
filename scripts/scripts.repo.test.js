@@ -1801,14 +1801,16 @@ module.exports = ({ ok, assert }) => {
     const ttRp = require('./check-test-traceability.js');
     const cmRp = require('./check-commit-messages.js');
 
-    ok('#532: readPlanIds が規約節のレンジを実在集合へ展開する（FR-01..21 / UC-01..07 / SC-01..03）', () => {
+    ok('#532: readPlanIds が規約節のレンジを実在集合へ展開する（FR-01..21 / UC-01..07 / SC-01..04）', () => {
       const ids = ttRp.readPlanIds();
-      assert.strictEqual(ids.length, 31, `実在集合の件数が違う: ${ids.length}`);
-      for (const id of ['FR-01', 'FR-21', 'UC-01', 'UC-07', 'SC-01', 'SC-03']) {
+      // planning#594 で SC-04（OpenD 認証操作画面）が新設され 31 → 32 件になった。
+      // **走査ではなく計算し直す**: FR 21 + UC 7 + SC 4 = 32。
+      assert.strictEqual(ids.length, 32, `実在集合の件数が違う: ${ids.length}`);
+      for (const id of ['FR-01', 'FR-21', 'UC-01', 'UC-07', 'SC-01', 'SC-03', 'SC-04']) {
         assert.ok(ids.includes(id), `${id} が実在集合に無い`);
       }
       // SC-13 / SC-16 は基盤（MSP）の画面への参照であり本リポの名前空間ではない。
-      for (const id of ['SC-04', 'SC-13', 'SC-16', 'FR-22', 'UC-08']) {
+      for (const id of ['SC-05', 'SC-13', 'SC-16', 'FR-22', 'UC-08']) {
         assert.ok(!ids.includes(id), `${id} が実在集合に混ざっている`);
       }
     });
@@ -1823,7 +1825,7 @@ module.exports = ({ ok, assert }) => {
       assert.strictEqual(cmRp.validateIdExistence('feat(FR-21): x', null, null, ids).length, 0);
       // キット側の入口（拡張点の解決）も通ること。null が返ると検査は skip へ落ちる。
       const loaded = cmRp.loadExistingPlanIds();
-      assert.ok(loaded && loaded.size === 31, `loadExistingPlanIds が拡張点を解決していない: ${loaded && loaded.size}`);
+      assert.ok(loaded && loaded.size === 32, `loadExistingPlanIds が拡張点を解決していない: ${loaded && loaded.size}`);
     });
 
     // ★ fail-loud。規約側の破壊（節の改名・書式変更）を黙って skip すると
