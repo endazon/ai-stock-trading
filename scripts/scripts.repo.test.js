@@ -2350,11 +2350,12 @@ module.exports = ({ ok, assert }) => {
       assert.match(wf, /RUN_START_TIME/, 'RUN_START_TIME が後段へ渡されていない');
     });
 
-    // 2026-09-07 / 09-09 の 2 回、監査が 15〜16 ターンで終わり #483 へ何も書かなかった。
-    // 姉妹ワークフロー（claude-coding.yml / claude-code-review.yml）は Claude ステップに
-    // GH_TOKEN を渡しているが本ワークフローだけ欠けていた。`with.github_token` は MCP へ
-    // 渡るだけで Bash の gh には届かない。実行記録を artifact に残さないと再発時に追えない。
-    ok('backlog-audit.yml: Claude ステップへ GH_TOKEN を渡し、実行記録を artifact に残す（#711）', () => {
+    // 2026-09-07 / 09-09 の 3 回、監査が 2〜16 ターンで終わり #483 へ何も書かなかった。
+    // 原因（run 34303318956 の実行記録 artifact で確認）: AI が監査全体を Agent ツールへ
+    // バックグラウンド委任して 2 ターンで終了し、headless の run が子を待たずに終わった。
+    // 対処は --disallowedTools で Agent/Task を塞ぐこと＋プロンプトでの禁止。あわせて
+    // 姉妹ワークフローと同じ GH_TOKEN の配線と、実行記録の artifact 保全（次の再発を追える）。
+    ok('backlog-audit.yml: Agent/Task への委任を塞ぎ、GH_TOKEN を渡し、実行記録を artifact に残す（#711）', () => {
       const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
       const claudeStep = wf.slice(wf.indexOf('id: claude'), wf.indexOf('- name: Upload audit transcript'));
       assert.ok(claudeStep.length > 0, 'Claude ステップ（id: claude）と transcript upload ステップの並びが崩れている');
@@ -2363,6 +2364,21 @@ module.exports = ({ ok, assert }) => {
       assert.match(wf, /path: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, 'artifact の path が steps.claude.outputs.execution_file を参照していない');
       const uploadStep = wf.slice(wf.indexOf('- name: Upload audit transcript'), wf.indexOf('- name: Check permission denials'));
       assert.match(uploadStep, /if: always\(\)/, 'transcript upload が always() でない（失敗時こそ要る）');
+      assert.match(claudeStep, /--disallowedTools "Agent,Task"/, 'claude_args に --disallowedTools "Agent,Task" が無い（監査をサブエージェントへ委任して 2 ターンで終わる再発を塞げない）');
+      assert.match(claudeStep, /サブエージェント（Agent \/ Task ツール）へ委任してはいけません/, 'プロンプトに委任禁止の指示が無い');
+      const verifyStep = wf.slice(wf.indexOf('- name: Verify backlog audit output'));
+      assert.match(verifyStep, /EXECUTION_FILE: \$\{\{ steps\.claude\.outputs\.execution_file \}\}/, '産出検証へ実行記録（EXECUTION_FILE）が渡されていない（fail 時の手掛かりが出ない）');
+    });
+
+    ok('check-backlog-audit-output: 実行記録から Agent 委任を手掛かりとして出す（#711）', () => {
+      const { inspectExecution, describeExecution } = require(SCRIPT_BA);
+      const s = describeExecution(inspectExecution([
+        { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Task', input: { description: 'audit' } }] } },
+        { type: 'result', num_turns: 2 },
+      ]));
+      assert.match(s, /委任/);
+      assert.match(s, /Task（audit）/);
+      assert.match(s, /ターン数 2/);
     });
 
     ok('scripts/README.md: check-backlog-audit-output.js を記載している', () => {

@@ -68,11 +68,9 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@v1
         # gh CLI（issue list / view / create / edit）を既定トークンで認証する。gh は
-        # GH_TOKEN / GITHUB_TOKEN を環境変数から読む。claude-coding.yml / claude-code-review.yml は
-        # 以前からこの env を持つが本ファイルには無く、2026-09-07（run 34080423564・15 ターン）と
-        # 2026-09-09（run 34301133063・16 ターン）の 2 回、監査が 3 分未満で終わり結果 issue（#483）
-        # へ何も書かないまま subtype: success になった（#711。08-31 の正常な run は 36 ターン・10 分）。
-        # `with.github_token` は MCP GitHub ツールへ渡るだけで、Bash から呼ぶ gh には届かない。
+        # GH_TOKEN / GITHUB_TOKEN を環境変数から読む。claude-coding.yml / claude-code-review.yml と
+        # 同じ配線（#711 追補で揃えた。`with.github_token` は MCP GitHub ツールへ渡るだけで、
+        # Bash から呼ぶ gh には届かない）。
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -95,10 +93,28 @@ jobs:
           #     （レビュー用ワークフローの「書き込み手段を持たない設計」とは目的が異なる）。
           #   - 許可リストで直せない形（パイプ・ループ・リダイレクト・引用符内の `|`）は
           #     プロンプト側の「使ってよいコマンドの形」で回避する（下記）。
+          # 【#711・2026-09-09 実測】監査が 15〜16 ターン・3 分未満で終わり #483 へ何も書かない事象の
+          # 原因は、AI が**監査全体をサブエージェント（Agent ツール）へバックグラウンドで委任し、
+          # 自分は 2 ターンで「完了したらお知らせします」と終了した**ことである（run 34303318956 の
+          # 実行記録 artifact で確認。親が終わると headless の run は子を待たずに終了し、
+          # 「Terminate orphan process」で子が殺される）。08-31 の正常回（36 ターン・10 分）は
+          # 委任していない。--disallowedTools で Agent（旧名 Task）を塞ぎ、プロンプトでも禁じる。
+          # 許可リスト（--allowedTools）は変えていない。
           claude_args: |
+            --disallowedTools "Agent,Task"
             --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sort:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(echo:*),Bash(node:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue edit:*),Bash(gh pr view:*),Bash(gh run list:*),mcp__github__issue_read,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__list_issues,mcp__github__search_issues,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__pull_request_read,mcp__github__get_pull_request,mcp__github__list_pull_requests,mcp__github__list_sub_issues,mcp__github__get_file_contents,mcp__github__list_workflow_runs,mcp__github__actions_list"
           prompt: |
             このリポジトリのバックログを監査し、結果を**単一の追跡 issue へ upsert** してください。
+
+            ## 実行の形（最重要）
+
+            - **サブエージェント（Agent / Task ツール）へ委任してはいけません。** 調査から issue の
+              upsert まで、**すべてをこのセッション内であなた自身が順に実行**してください。
+              この run は headless であり、あなたの応答が終わった時点で終了します。バックグラウンドの
+              エージェントは完了を待たれずに強制終了され、**issue は更新されず、このジョブは後段の
+              産出検証で fail します**（2026-09-09 の実測。#711）。
+            - 「起動しました。完了したらお知らせします」で応答を終えることは、本 run では
+              **何もしなかったことと同じ**です。
 
             ## 最重要の制約
 
@@ -234,4 +250,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_START_TIME: ${{ steps.run_start.outputs.run_start }}
+          # 実行記録が読めれば、fail の理由の手掛かり（サブエージェントへの委任・ターン数）を
+          # 併記する。無くても判定自体は変わらない（fail-open な補助情報）。
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node scripts/check-backlog-audit-output.js
