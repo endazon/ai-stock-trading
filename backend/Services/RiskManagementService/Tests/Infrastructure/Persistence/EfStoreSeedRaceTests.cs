@@ -82,7 +82,6 @@ public class EfStoreSeedRaceTests
             throw new DbUpdateConcurrencyException("並行トークン不一致");
     }
 
-
     // ---------------------------------------------------------------- EfRiskSettingsStore
 
     // 再現（是正前は赤）: 後発は例外を投げず、**先発が書いた行**を読み直して返す。
