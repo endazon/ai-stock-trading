@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-08-28
+updated: 2026-09-11
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry]
-issues: [#203, #211, #331, #335, #337, #340, #342, #343, #344, MSP#446]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0307]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics]
+issues: [#211, #331, #335, #337, #340, #342, #343, #344, #689, #690, MSP#446]
 -->
 
 
@@ -118,10 +118,11 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 | フェイクブローカー / フェイク LLM によるサイクル 1 周のシナリオテスト | #331 / #335 / #337 | 対象の実体が無い段階では書けない |
 | moomoo `SIMULATE` 結合テスト | #342 | PoC（2026-08-31 期限）の完了が前提 |
 | フロント Playwright E2E | #340 | 基盤側の新スタック追随後 |
-| 性能ゲート（取引サイクル 10 分 / 変動→発注 5 分） | #337（実測は #203 を接続） | 取引サイクルの実体が必要 |
+| 性能ゲート（取引サイクル 10 分 / 変動→発注 5 分） | #337（計器は #689 で新設済み。実測は #690 を接続） | 取引サイクルの実体が必要 |
 
 ## 変更履歴
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-09-11 | 「性能ゲート」行の追跡先を是正（#637）。#203 は 2026-08-02 に DUPLICATE でクローズされ後継が無いまま残っていた。計器の新設は #689 で完了済み、実測（実 LLM＋開場中）は #690 が引き継ぐ |
 | 2026-08-03 | 初版作成（#343・全面再実装の退行防止テスト基盤） |
