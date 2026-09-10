@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-14, UC-06, UC-07, ADR-0003, ADR-0009]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-09-10
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0009_pause-resume-and-lockout-states.md
@@ -115,3 +115,12 @@ owner クライアント・TokenEndpoint・ast-secrets 既定が揃っても、B
   フレーズ＝NotificationService コード）とは領域が分離しており競合しない。
 - ローカル反映は realm 再インポート（docker-compose はボリューム破棄／k8s は ConfigMap 再作成＋restart）が要る。
   手順は仕様書と README に明記する。
+
+## ［2026-09-10 追記 / #727 / IADR-0324］選択肢 C の却下理由の前提が MSP 連結配備では変わる
+
+選択肢 C（owner クライアントを MSP レルムに置く）を却下した理由は「制御先 RiskManagement は AST レルムで検証するため」
+であった。[IADR-0324](IADR-0324_msp-linked-deploy-single-auth-realm.md) が **MSP 連結プロファイル（`values-local.yaml`）
+では `global.authAuthority` を MSP レルムへ向ける**と決めたため、MSP 連結配備ではこの前提が成り立たない。
+決定 1〜3（専用 confidential client `ai-stock-trading-owner`・`TokenEndpoint` を `global.authAuthority` から導出・inbound
+認証を増やさない）はそのまま生きる —— 導出元が MSP レルムになるだけで、owner クライアントは MSP レルム側に同名・同 dev
+secret で宣言される（MSP#1372）。単体 E2E（AST レルム）では従来どおり。
