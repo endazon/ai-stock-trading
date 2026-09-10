@@ -22,7 +22,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #132: 応答待ちは構成から外部化する（Broker:Moomoo:OpenD:ReplyTimeoutSeconds・既定 15 秒＝従来のハードコード値）。
     private readonly TimeSpan _replyTimeout;
     private readonly ILogger<MMApiMoomooTradeClient> _logger;
-    private readonly MMAPI_Trd _trd = new();
+    // #732, IADR-0326: 接続オブジェクトは**作り直せる**必要がある（readonly にしない）。一度 Connection refused を
+    // 受けた MMAPI_Trd は、以後 InitConnect を呼んでも TCP を張り直さない（true を返すだけ）。
+    private readonly IMoomooTradeConnectionFactory _connectionFactory;
+    private IMoomooTradeConnection _connection;
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<object>> _pending = new();
     private readonly object _sendGate = new(); // serial 採番＋登録とコールバック完了の相互排他（レース防止）。
     // 照会/取消は市場（TrdMarket/TrdSecMarket）を要するため、発注時に orderId→市場を控える。
@@ -31,20 +34,33 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
     private TaskCompletionSource<long>? _connectTcs;
     private volatile bool _connected;
+    // #732: 直前の接続試行が失敗した／切断された＝次の InitConnect の前に接続オブジェクトを作り直す。
+    private volatile bool _connectionStale;
+    // #732, FR-11: 通算の作り直し回数。固着（作り直しに入っていない）と不達（作り直しても繋がらない）を
+    // ログだけで切り分けられるようにするための目印。
+    private int _recreateCount;
     private readonly bool _encrypt;
+    // #732: RSA 秘密鍵（PKCS#1 PEM の内容）。作り直しのたびに再適用するため保持する。**ログへ出さない。**
+    private readonly string? _rsaPrivateKeyPem;
     private ulong _simAccId;
     // #375, ADR-0021 決定3: 接続時に確定する SIMULATE 口座の種別（TrdAcc.AccType の写像）。
     // **不明（TrdAccType_Unknown・未対応値）は null のまま**であり、「信用口座とみなす」に倒さない。
     private MoomooAccountType? _simAccType;
     private bool _disposed;
 
-    public MMApiMoomooTradeClient(MoomooBrokerOptions options, ILogger<MMApiMoomooTradeClient> logger)
+    // #732, IADR-0326: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
+    // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
+    public MMApiMoomooTradeClient(
+        MoomooBrokerOptions options,
+        ILogger<MMApiMoomooTradeClient> logger,
+        IMoomooTradeConnectionFactory? connectionFactory = null)
     {
         // #132, IADR-0060: 構成ミス（RSA 鍵の未マウント等）は「接続はするが trade だけ落ちる」ではなく起動時に落とす。
         MoomooPreflight.Validate(options, File.Exists);
         _options = options;
         _replyTimeout = options.ReplyTimeout;
         _logger = logger;
+        _connectionFactory = connectionFactory ?? new MMApiTradeConnectionFactory();
         lock (InitGate)
         {
             if (!_apiInitialized)
@@ -53,18 +69,32 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
                 _apiInitialized = true;
             }
         }
-        _trd.SetClientInfo("ai-stock-trading", 1);
-        _trd.SetConnCallback(this);
-        _trd.SetTrdCallback(this);
         // moomoo は cross-network の trade 接続に暗号化を要求する。RSA 秘密鍵が構成されていれば暗号化で接続する。
-        // SetRSAPrivateKey は鍵の内容（PKCS#1 PEM 文字列）を受け取る（パスではない）。
+        // SetRsaPrivateKey は鍵の内容（PKCS#1 PEM 文字列）を受け取る（パスではない）。
         // 鍵パスが構成済みなら存在は preflight が保証済み（不在なら上で停止している）。同一コンストラクタ内で
         // 直後に読むため TOCTOU は問題にならない。ここを非同期化・遅延化するなら読み取り失敗の扱いを足すこと。
+        // #732: 読むのはここ 1 度きりで、接続オブジェクトを作り直すたびに保持した内容を再適用する
+        // （作り直しのたびにファイルを読み直すと、鍵の差し替え中に失敗する経路が増える）。
         if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath))
         {
-            _trd.SetRSAPrivateKey(File.ReadAllText(options.RsaPrivateKeyPath));
+            _rsaPrivateKeyPem = File.ReadAllText(options.RsaPrivateKeyPath);
             _encrypt = true;
         }
+        _connection = CreateConfiguredConnection();
+    }
+
+    // 接続オブジェクトを 1 つ作り、コールバックと鍵を配線して返す。**状態は持たせない。**
+    private IMoomooTradeConnection CreateConfiguredConnection()
+    {
+        var connection = _connectionFactory.Create();
+        connection.SetClientInfo("ai-stock-trading", 1);
+        connection.SetConnCallback(this);
+        connection.SetTrdCallback(this);
+        if (_rsaPrivateKeyPem is not null)
+        {
+            connection.SetRsaPrivateKey(_rsaPrivateKeyPem);
+        }
+        return connection;
     }
 
     // ---- IMoomooTradeClient ----
@@ -84,7 +114,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             _ => TrdCommon.OrderType.OrderType_Normal,
         };
         var c2sBuilder = TrdPlaceOrder.C2S.CreateBuilder()
-            .SetPacketID(_trd.NextPacketID()) // 発注は packetID（冪等キー）必須
+            .SetPacketID(_connection.NextPacketId()) // 発注は packetID（冪等キー）必須
             .SetHeader(BuildHeader(trdMarket))
             .SetTrdSide((int)side)
             .SetOrderType((int)orderType)
@@ -101,7 +131,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             c2sBuilder.SetRemark(request.Remark);
         var req = TrdPlaceOrder.Request.CreateBuilder().SetC2S(c2sBuilder.Build()).Build();
 
-        var rsp = (TrdPlaceOrder.Response)await SendAsync(() => _trd.PlaceOrder(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdPlaceOrder.Response)await SendAsync(() => _connection.PlaceOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "PlaceOrder");
 
         var orderId = rsp.S2C.OrderID.ToString();
@@ -184,7 +214,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
                 .SetRefreshCache(true)
                 .Build();
             var req = TrdGetPositionList.Request.CreateBuilder().SetC2S(c2s).Build();
-            var rsp = (TrdGetPositionList.Response)await SendAsync(() => _trd.GetPositionList(req), cancellationToken)
+            var rsp = (TrdGetPositionList.Response)await SendAsync(() => _connection.GetPositionList(req), cancellationToken)
                 .ConfigureAwait(false);
             EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetPositionList");
 
@@ -219,7 +249,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             .SetRefreshCache(true)
             .Build();
         var req = TrdGetOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
-        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _trd.GetOrderList(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _connection.GetOrderList(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetOrderList");
         return MatchByRemark(rsp.S2C.OrderListList, remark);
     }
@@ -237,7 +267,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             .SetFilterConditions(filter)
             .Build();
         var req = TrdGetHistoryOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
-        var rsp = (TrdGetHistoryOrderList.Response)await SendAsync(() => _trd.GetHistoryOrderList(req), cancellationToken)
+        var rsp = (TrdGetHistoryOrderList.Response)await SendAsync(() => _connection.GetHistoryOrderList(req), cancellationToken)
             .ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetHistoryOrderList");
         return MatchByRemark(rsp.S2C.OrderListList, remark);
@@ -314,14 +344,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             return; // 注文が見つからない（既に消えた等）→ no-op
         }
         var c2s = TrdModifyOrder.C2S.CreateBuilder()
-            .SetPacketID(_trd.NextPacketID()) // 変更/取消も packetID 必須
+            .SetPacketID(_connection.NextPacketId()) // 変更/取消も packetID 必須
             .SetHeader(BuildHeader(trdMarket.Value))
             .SetOrderID(oid)
             .SetModifyOrderOp((int)TrdCommon.ModifyOrderOp.ModifyOrderOp_Cancel)
             .Build();
         var req = TrdModifyOrder.Request.CreateBuilder().SetC2S(c2s).Build();
 
-        var rsp = (TrdModifyOrder.Response)await SendAsync(() => _trd.ModifyOrder(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdModifyOrder.Response)await SendAsync(() => _connection.ModifyOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "CancelOrder");
     }
 
@@ -333,7 +363,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             .SetRefreshCache(true)
             .Build();
         var req = TrdGetOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
-        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _trd.GetOrderList(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdGetOrderList.Response)await SendAsync(() => _connection.GetOrderList(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetOrderList");
         foreach (TrdCommon.Order o in rsp.S2C.OrderListList)
         {
@@ -370,9 +400,16 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             {
                 return;
             }
+            // #732: 前回の試行が失敗した（または切断された）なら、InitConnect の前に接続オブジェクトを作り直す。
+            // これをしないと、SDK が固着したまま InitConnect が true を返し続け、TCP が 1 本も張られないまま
+            // 応答待ちのタイムアウトを繰り返す（＝入れ直すまで発注経路が死ぬ）。
+            if (_connectionStale)
+            {
+                RecreateConnection();
+            }
             _connectTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
             _logger.LogInformation("OpenD へ接続します {Host}:{Port} encrypt={Encrypt}", _options.OpenDHost, _options.OpenDPort, _encrypt);
-            if (!_trd.InitConnect(_options.OpenDHost, _options.OpenDPort, _encrypt))
+            if (!_connection.InitConnect(_options.OpenDHost, _options.OpenDPort, _encrypt))
             {
                 throw new BrokerUnavailableException($"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
             }
@@ -391,8 +428,43 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         }
         finally
         {
+            // #732: **接続が確立できなかった経路をここで一様に拾う。** InitConnect が false を返した経路は
+            // BrokerUnavailableException を直接投げるため上の catch フィルタを通らず、キャンセルも通らない。
+            // 失敗した接続オブジェクトは次の試行で作り直す。
+            if (!_connected)
+            {
+                _connectionStale = true;
+            }
+            // 打ち切った試行の待ち合わせを残さない（遅れて来たコールバックは行き先を失って no-op になる）。
+            _connectTcs = null;
             _connectGate.Release();
         }
+    }
+
+    // #732, FR-11, IADR-0326: 固着した接続オブジェクトを捨てて作り直す。**_connectGate の内側でのみ呼ぶ。**
+    private void RecreateConnection()
+    {
+        var stale = _connection;
+        try
+        {
+            stale.Close();
+            stale.Dispose();
+        }
+        catch (Exception ex)
+        {
+            // 解放に失敗しても作り直しは続ける（固着したまま使い続けるより捨てるほうが安全）。
+            _logger.LogWarning(ex, "固着した OpenD 接続オブジェクトの解放中に例外（作り直しは続行します）");
+        }
+        _connection = CreateConfiguredConnection();
+        _connectionStale = false;
+        _recreateCount++;
+        // 「作り直しても繋がらない（＝OpenD が本当に落ちている）」と「作り直しに入っていない（＝別の欠陥）」を
+        // ログだけで切り分けられるようにする。**秘匿情報は出さない**（ホスト・ポート・回数のみ）。
+        _logger.LogWarning(
+            "OpenD 接続オブジェクトを作り直しました（直前の接続試行が失敗／切断されたため）。{Host}:{Port} 通算作り直し={RecreateCount}",
+            _options.OpenDHost,
+            _options.OpenDPort,
+            _recreateCount);
     }
 
     private async Task<(ulong AccId, MoomooAccountType? AccType)> FetchSimulateAccountAsync(
@@ -401,7 +473,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         // userID は protobuf required。0 = 現在ログイン中のユーザー（全口座）。
         var c2s = TrdGetAccList.C2S.CreateBuilder().SetUserID(0).Build();
         var req = TrdGetAccList.Request.CreateBuilder().SetC2S(c2s).Build();
-        var rsp = (TrdGetAccList.Response)await SendAsync(() => _trd.GetAccList(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdGetAccList.Response)await SendAsync(() => _connection.GetAccList(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetAccList");
 
         foreach (TrdCommon.TrdAcc acc in rsp.S2C.AccListList)
@@ -548,6 +620,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     public void OnDisconnect(MMAPI_Conn client, long errCode)
     {
         _connected = false;
+        // #732: 切断後も同じ固着に入り得るため、次の接続は作り直してから張る（issue の方針 2）。
+        _connectionStale = true;
         _logger.LogWarning("OpenD 切断 errCode={ErrCode}", errCode);
     }
 
@@ -587,8 +661,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         _disposed = true;
         try
         {
-            _trd.Close();
-            _trd.Dispose();
+            _connection.Close();
+            _connection.Dispose();
         }
         catch (Exception ex)
         {
