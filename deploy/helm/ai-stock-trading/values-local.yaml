@@ -235,6 +235,12 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: Reports__NoResponseBehavior, value: "" }
+      # FR-06, UC-03, #740, IADR-0115 決定6: 日報ドラフトの自動生成（スケジューラ常駐）。既定 opt-in（無効）のままだと
+      # 報告書が一度も作られず、利用者が確定する対象が無い → trade-decision は「確定済み日報の方針が無い」で
+      # fail-closed し、経路B の周回は構造的に発注へ到達しない。境界・間隔は組込既定（日報 16:00 JST / 300 秒）。
+      # **確定は従来どおり利用者のみ**（OwnerOnly・Discord `/report action:approve`・ADR-0003）。本番既定は不変。
+      - { name: Reports__AutoGeneration__Enabled, value: "true" }
+      - { name: Reports__AutoGeneration__Markets__0, value: "US" }
       # ============ 為替差損益の期末レート（#611/IADR-0286 決定2）============
       # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
       # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
