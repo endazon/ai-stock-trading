@@ -67,23 +67,43 @@ require_rsa_key_file() {
 #   3. **fd 1 / 2 は触らない。** `tee` を挟むと C の stdio が行バッファから全バッファへ切り替わり、
 #      `Command Tips` が 4KB バッファに埋もれて `kubectl logs` にも attach にも出なくなる。
 #
-# tty を FIFO へ流す背景プロセスを 1 本置くので、**`kubectl attach` の既存手順はそのまま動く**。
-prepare_stdin_fifo() {
+# tty を FIFO へ流す背景プロセス（tty 転送）は **FIFO 直読み経路（start_opend_with_fifo）でだけ**張る。
+# 🔴 console 経路（start_opend_with_console）では張らない —— [[IADR-0325]] / #727。理由は tty 転送の直下。
+make_stdin_fifo() {
 	fifo="$1"
 	mkdir -p "$(dirname "$fifo")"
 	# 細部 1。存在しないときの unlink 失敗で set -e に落とされないようにする。
 	unlink "$fifo" 2>/dev/null || :
 	mkfifo -m 600 "$fifo"
-	# コンテナ本来の標準入力（tty）を FIFO へ流す。attach で打った行はここを通る。
-	# FIFO の open(O_WRONLY) は読み手が現れるまで塞がるので、背景に置いて呼び出し側の exec で解く。
-	#
-	# 🔴 背景ジョブの標準入力を `<&0` で渡してはならない。ジョブ制御が無いシェルは背景ジョブの
-	# 標準入力を **/dev/null へ差し替えてから**リダイレクトを適用するため、`<&0` は
-	# 差し替え後の /dev/null を複製してしまう（attach で打った行が消える。実測で踏んだ）。
-	# 先に別の fd へ退避してから渡す。
+}
+
+# コンテナ本来の標準入力（tty）を FIFO へ流す。attach で打った行はここを通る。
+# FIFO の open(O_WRONLY) は読み手が現れるまで塞がるので、背景に置いて呼び出し側の exec で解く。
+#
+# 🔴 背景ジョブの標準入力を `<&0` で渡してはならない。ジョブ制御が無いシェルは背景ジョブの
+# 標準入力を **/dev/null へ差し替えてから**リダイレクトを適用するため、`<&0` は
+# 差し替え後の /dev/null を複製してしまう（attach で打った行が消える。実測で踏んだ）。先に別の fd へ退避する。
+#
+# 🔴 **この転送は `script`（console 経路）とは併用できない。** #727 で実測・再現した:
+# tty（＝コンテナの標準入力）が **開いたまま塞がっている**とき（＝実 Pod の常態。attach していなくても
+# kubelet が stdin を保持する）、この `cat` は生き続け、その状態だと **`script` が FIFO への外部書き込みを
+# 子（OpenD）へ転送しなくなる**（検証コードが「入れたのに無反応」になる本症状）。tty を /dev/null にした
+# 試験（stdin=/dev/null）では `cat` が即 EOF で消えるため転送が働き、**live だけで壊れて試験が素通り**した。
+# したがって console 経路では tty 転送を張らず、入力は**サイドカー（画面）と `kubectl exec … > FIFO`** で行う
+# （`0<>` の O_RDWR が EOF を抑えるので、`cat` が無くても OpenD は終了しない）。
+start_tty_forwarder() {
+	fifo="$1"
 	exec 3<&0
 	( exec cat > "$fifo" ) <&3 &
 	exec 3<&-
+}
+
+# FIFO 直読み経路（console 複製を要しないとき）。ここは `script` を挟まないので tty 転送を併用できる
+# （attach がそのまま効く）。
+prepare_stdin_fifo() {
+	fifo="$1"
+	make_stdin_fifo "$fifo"
+	start_tty_forwarder "$fifo"
 }
 
 start_opend_with_fifo() {
@@ -111,6 +131,11 @@ start_opend_with_fifo() {
 #   - 複製ファイルにも同じ出力が入る
 #   - 子から `[ -t 0 ]` が真＝本物の tty に見える
 #
+# 🔴 **tty 転送（start_tty_forwarder）を張らない。** #727 で、tty が開いたまま塞がる live 常態では
+# tty 転送の `cat` が生き続け、その状態で `script` が FIFO への外部書き込みを子へ転送しなくなることを
+# 再現した（詳細は start_tty_forwarder の直上）。console 経路の入力面はサイドカー（画面）と
+# `kubectl exec … > FIFO` である。`0<>`（O_RDWR）が EOF を抑えるので tty 転送は不要。
+#
 # 🔴 `-a`（追記）を付ける。 これが**コンソールの上限**（cap_console_log）を成立させている。
 # `-a` は複製ファイルを O_APPEND で開くため、外から `: > file` で切り詰めても
 # 次の書き込みは**ファイルの現在の末尾＝先頭**へ行く。`-a` が無い（O_APPEND でない）場合、
@@ -125,7 +150,8 @@ start_opend_with_console() {
 	mkdir -p "$(dirname "$console")"
 	# 再起動を跨いで残った前回の複製は捨てる（emptyDir はコンテナ再起動で消えない）。
 	: > "$console"
-	prepare_stdin_fifo "$fifo"
+	# 🔴 make_stdin_fifo のみ。tty 転送（start_tty_forwarder）は張らない（#727・上のコメント）。
+	make_stdin_fifo "$fifo"
 	exec script -q -e -f -a -c "$*" "$console" 0<> "$fifo"
 }
 
@@ -270,10 +296,33 @@ mkdir -p "$(dirname "${OPEND_CONSOLE_LOG}")" "$(dirname "${OPEND_CAPTCHA_DEST}")
 cap_console_log "${OPEND_CONSOLE_LOG}" "${OPEND_CONSOLE_MAX_BYTES}" "${OPEND_CONSOLE_ROTATE_INTERVAL}" &
 watch_captcha "${OPEND_CAPTCHA_SRC}" "${OPEND_CAPTCHA_DEST}" "${OPEND_CAPTCHA_POLL_INTERVAL}" &
 
-# `script` が無いイメージでは複製を諦めて従来どおり起動する（OpenD を上げないほうが害が大きい）。
-if command -v script >/dev/null 2>&1; then
-	start_opend_with_console "${OPEND_STDIN_FIFO}" "${OPEND_CONSOLE_LOG}" ./OpenD
-else
+# #727: 標準入力の与え方を選べるようにする。**既定は console のまま**（#722 段 2 の画面経路）。
+#
+# 🔴 なぜ選択肢が要るか —— **`tty` は「実口座でログイン成功」を実際に確認できている唯一の構成**である
+# （README の実績。OpenD の標準入力＝コンテナ本来の tty、`kubectl attach` で打つ）。#722 で標準入力を
+# FIFO へ、段 2 で `script` の pty へ移したが、**稼働クラスタでは検証コードが OpenD に届かない**ことを
+# #727 で実測した（画面・サイドカー・FIFO 直書きのいずれからも無反応。OpenD の 54 スレッドに端末を
+# 読んでいるものが 1 つも無い）。原因は未特定であり、**特定できるまで実績構成へ戻せる逃げ道を残す**。
+#
+#   OPEND_STDIN_MODE=console（既定） … FIFO → script(pty) → OpenD。画面から入れられる（#722 段 2）
+#   OPEND_STDIN_MODE=fifo            … FIFO → OpenD 直読み。console 複製は作らない（画面は使えない）
+#   OPEND_STDIN_MODE=tty             … コンテナ本来の tty → OpenD。**実績構成**。`kubectl attach` で打つ
+#
+# `script` が無いイメージでは複製を諦めて fifo へ落とす（OpenD を上げないほうが害が大きい）。
+OPEND_STDIN_MODE="${OPEND_STDIN_MODE:-console}"
+if [ "$OPEND_STDIN_MODE" = "console" ] && ! command -v script >/dev/null 2>&1; then
 	echo "WARN: script(1) が無いためコンソール複製を行いません（画面からの検証コード投入は使えません）。" >&2
-	start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD
+	OPEND_STDIN_MODE=fifo
 fi
+echo "==> stdin mode: ${OPEND_STDIN_MODE}"
+case "$OPEND_STDIN_MODE" in
+	console) start_opend_with_console "${OPEND_STDIN_FIFO}" "${OPEND_CONSOLE_LOG}" ./OpenD ;;
+	fifo)    start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD ;;
+	tty)
+		# 実績構成。標準入力を一切すげ替えず、コンテナの tty のまま OpenD へ渡す。
+		# 画面（サイドカー）は console 複製が無いので「供給なし」を宣言する＝入力は attach で行う。
+		echo "==> 検証コードは kubectl attach -it deploy/opend から入れてください（実績構成）" >&2
+		exec ./OpenD
+		;;
+	*) echo "ERROR: OPEND_STDIN_MODE は console | fifo | tty のいずれかです（受け取った値: ${OPEND_STDIN_MODE}）" >&2; exit 2 ;;
+esac
