@@ -21,7 +21,7 @@ public class Stage0DriverVerdictTests
     [MemberData(nameof(AllEntryPoints))]
     public void どの入口でも不合格で理由が空でない(string label, Stage0Decision decision)
     {
-        // FR-15, FR-20, ADR-0008: 合格 verdict は駆動からは出ない（本番戦略が無いため）。
+        // FR-15, FR-20, ADR-0008: 合格 verdict は本型からは出ない（合格を出せるのは Stage0GateService の 7 条件だけ）。
         decision.Gate.Passed.Should().BeFalse(label);
         decision.Gate.FailedChecks.Should().NotBeEmpty(label);
         decision.Gate.FormatFailedChecks().Should().NotBeNullOrWhiteSpace(label);

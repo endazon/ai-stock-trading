@@ -140,8 +140,27 @@ public sealed class Stage0EvaluationService(
 
         // 走行が無いため空の走行を渡す（約定 0＝空売りの観測も false）。最大 DD は 0（評価していない）。
         var emptyRun = new BacktestRun([], [], [], BacktestMetricsCalculator.Compute([], []), UnfilledOrderCount: 0);
-        return Publishable(Stage0DriverVerdict.NoHistoricalBars(), backtestMaxDrawdownRatio: 0m, emptyRun);
+
+        // 🔴 #632, IADR-0329 決定3: **走らせていない戦略の名を verdict に載せない**（IADR-0310 決定3 の
+        // 「`StrategyId` は `placeholder/no-op`」を、この経路に限り改める）。この経路は評価対象を 1 度も
+        // 呼んでおらず、`Backtest:Stage0:Strategy=recorded-replay` の構成下でも同じ枝を通る。従来の
+        // `placeholder/no-op` は「プレースホルダ戦略を評価した」と読めてしまい、**選ばれている戦略とも
+        // 評価した戦略とも一致しない値**を受け手（Risk・監査）へ渡していた。
+        // 空文字は `StagePerformance.BacktestStrategyId` の既定と同じ＝**戦略の同一性を名乗れない**状態であり、
+        // 空売り実弾解禁 verdict は `StrategyChanged` として無効になる（fail-safe 側・IADR-0281 決定3）。
+        return BacktestEvaluatedFactory.From(
+            Stage0DriverVerdict.NoHistoricalBars(),
+            backtestMaxDrawdownRatio: 0m,
+            timeProvider.GetUtcNow(),
+            emptyRun,
+            UnevaluatedStrategyId);
     }
+
+    /// <summary>
+    /// #632, IADR-0329 決定3: **評価対象を 1 度も走らせていない**ことを表す戦略識別子（空文字）。
+    /// 受け手では `StagePerformance.BacktestStrategyId` の既定と同値になり、fail-safe 側へ倒れる。
+    /// </summary>
+    private const string UnevaluatedStrategyId = "";
 
     // FR-15, FR-20, ADR-0033, IADR-0310 決定3: バーがあってもプレースホルダ戦略の走行は**不合格固定**である。
     // 走行そのものは行う（駆動経路＝取得→シミュレーション→写像→発行が実際に動くことの確認）。
@@ -165,7 +184,8 @@ public sealed class Stage0EvaluationService(
             from, to, bars.Count, snapshot.Gaps.Count);
 
         // IADR-0089: backtestMaxDrawdownRatio は評価に用いた同一走行の最大 DD から導出する（乖離させない）。
-        return Publishable(Stage0DriverVerdict.PlaceholderRun(cutoffSatisfied), run.Metrics.MaxDrawdown, run);
+        return PlaceholderPublishable(
+            Stage0DriverVerdict.PlaceholderRun(cutoffSatisfied), run.Metrics.MaxDrawdown, run);
     }
 
     // FR-04, FR-15, FR-20, ADR-0033 決定1/決定2/決定3, #632, IADR-0318: **本番戦略（AI 判断の記録・再生）の評価。**
@@ -228,7 +248,10 @@ public sealed class Stage0EvaluationService(
             decision, baseline.Metrics.MaxDrawdown, timeProvider.GetUtcNow(), baseline, preparation.StrategyId);
     }
 
-    private BacktestEvaluated Publishable(Stage0Decision decision, decimal backtestMaxDrawdownRatio, BacktestRun run) =>
+    // プレースホルダ走行の verdict。**この経路だけ**が `placeholder/no-op` を名乗る（実際に走らせたため）。
+    // 走らせていない経路は名乗らない（<see cref="UnevaluatedStrategyId"/>。#632, IADR-0329 決定3）。
+    private BacktestEvaluated PlaceholderPublishable(
+        Stage0Decision decision, decimal backtestMaxDrawdownRatio, BacktestRun run) =>
         BacktestEvaluatedFactory.From(
             decision,
             backtestMaxDrawdownRatio,

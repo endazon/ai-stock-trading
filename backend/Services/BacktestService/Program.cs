@@ -15,9 +15,11 @@ const string ServiceName = "ai-stock-trading.backtest-service";
 // 本ホストは**実過去データ源の合成**と、**Stage 0 判定の定時駆動＋verdict の発行**を持つ。
 // Stage 0 判定そのもの（DSR/PBO/ウォークフォワード等）は純ドメイン（BacktestService.Domain）が持つ。
 //   - 定時駆動は Hosted/Stage0EvaluationService（**既定は無効**＝fail-safe。IADR-0310 決定1）
-//   - 🔴 **本番戦略（IBacktestStrategy 実装）はまだ存在しない。** 計画 ADR-0033（2026-09-05 裁定）は評価対象を
-//     「AI 判断そのもの（記録・再生）」と定めたが未実装であり、駆動はプレースホルダ戦略で経路のみ確認する。
-//     **その verdict は不合格固定であり、go-live の判断材料にはならない**（IADR-0310 決定3）。
+//   - 評価対象は構成 `Backtest:Stage0:Strategy` で選ぶ（#632, IADR-0318 決定3）。
+//     `recorded-replay` は計画 ADR-0033（2026-09-05 裁定）の「AI 判断そのもの（記録・再生）」であり、
+//     **記録が構成と整合するときだけ**本物の判定器（Stage0GateService）へ進む。既定の `placeholder` は
+//     駆動経路の確認用で、**その verdict は不合格固定であり go-live の判断材料にはならない**（IADR-0310 決定3）。
+//   - 🔴 **どちらの経路にも合格を作る口は無い。** 合格を出せるのは Stage0GateService の 7 条件だけである。
 //   - 実 RabbitMQ / 実過去データを用いた E2E は #82（IADR-0089 で整理済・IADR-0310 決定5 で維持）
 //
 // IADR-0013: 本 Program.cs の standalone 配線は dev/test/CI のローカル単体実行のためのもの。本番は platform 統合（#22）で置換。
@@ -116,7 +118,8 @@ var app = builder.Build();
 // `MMApiMoomooHistoryKLineClient` のコンストラクタが `MoomooBarDataPreflight` を呼ぶが、**それだけでは
 // 起動時に効かない**。`AddSingleton<T>(factory)` で登録したシングルトンは遅延生成であり、組み込み DI は
 // `builder.Build()` では構築しない。BacktestService には発注経路の `BrokerAvailabilityProbeService` に
-// あたる eager な消費者が無く（本番戦略が未実装で `IHistoricalBarSource` を解決する実消費者が無い）、
+// あたる eager な消費者が無く（`IHistoricalBarSource` を解決するのは定時駆動だが、**既定は無効**であり、
+// 有効でも解決は初回巡回まで遅延する）、
 // **鍵のマウントを誤ってもプロセスは正常に起動し続け、失敗は初回のバー取得まで顕在化しない。**
 // 例外の種類と文言が改善されても、**表面化のタイミングという核心が変わらなければ preflight の意味が無い。**
 //
