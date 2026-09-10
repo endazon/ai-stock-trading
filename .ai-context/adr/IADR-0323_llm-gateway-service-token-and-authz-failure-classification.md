@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-06, FR-11, FR-16, NFR-05, ADR-0017, IADR-0051, IADR-0061, IADR-0071, IADR-0093, IADR-0216]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0017_llm-fallback-policy.md
@@ -163,3 +163,16 @@ AST 側を先にマージしても壊れない（issue #724 の「順序」の�
 - **`/complete/stream`・`/embed` は本リポジトリから呼んでいない**ため対象外である。将来呼ぶ場合は
   同じ `LlmGateway:Auth` に乗る（名前付きクライアントへ同じ登録点を足すだけ）。
 - **既存の裸の `ADR-0010`（MSP の ADR を指す）が本文・values に残る**。別 issue で是正する。
+
+## ［2026-09-11 追記 / #734］決定 4 の負債を解消し、資格情報を LLM 専用 client へ分けた
+
+決定 4 は「既存の MSP レルム客体（`ai-stock-trading-kb-writer`・`platform-operator`）を再利用する」とし、決定 6 は
+「realm 側で当該 service account へ `platform-service` を付与するまでは 403 になる」と申し送った。基盤側はその付与を
+採らず、**別主体 `ai-stock-trading-llm-caller`（`platform-service`）を realm へ足した**（MSP#1368。kb-writer に
+`platform-service` を足すと東西端点すべてへ届くため）。同時に LlmGateway の REST 3 口へ `ServiceCaller` の門が
+入った（MSP#1365 / MSP/IADR-0424）。
+
+したがって `LlmGateway:Auth` の資格情報は kb-writer のままでは 403 になる。`ast-secrets` に **`llm-auth-client-id` /
+`llm-auth-client-secret`** を持ち、trade-decision / report の `LlmGateway__Auth__*` はそこを読む。KB（③）の
+`kb-auth-*` は KB 書き込み専用のまま。決定 1〜3・5 は生きる。2026-09-10 の稼働クラスタでは基盤のイメージが
+MSP#1365 より古く kb-writer でも 200 だったが、それは偶然であり次の再デプロイで壊れる（AST#734 の実測）。
