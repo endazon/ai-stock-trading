@@ -9,7 +9,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// #732, FR-05, FR-11, ADR-0002, IADR-0326: OpenD 接続に失敗した後の**接続オブジェクトの作り直し**を固定する。
+// #732, FR-05, FR-11, ADR-0002, IADR-0327: OpenD 接続に失敗した後の**接続オブジェクトの作り直し**を固定する。
 //
 // 直す欠陥: OpenD 停止中に一度 Connection refused を受けた MMAPI_Trd は、以後 InitConnect を呼んでも
 // TCP を張り直さない（true を返すだけで SYN も出ない・実測）。作り直さない限り、OpenD が復旧しても

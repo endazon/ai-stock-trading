@@ -101,6 +101,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
+| `LLM_AUTH_CLIENTSECRET` | `llm-auth-client-secret` | ②実 LLM の s2s（`llm-auth-client-id` は dev 既定 `ai-stock-trading-llm-caller`。基盤の LlmGateway が `platform-service` を要求するため KB 書き込みの kb-writer とは別主体） | 空=トークン無し（基盤側で 401） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
 

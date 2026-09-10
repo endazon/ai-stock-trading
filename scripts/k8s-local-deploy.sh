@@ -40,6 +40,8 @@
 #      `kubectl set env deploy/notification-service -n ai-stock-trading Notifications__Discord__Bot__GuildId- ...`
 #      （`KEY-`＝削除）で剥がしてから本スクリプトを回す（chart README 参照）。
 # #18, IADR-0093: KB 書き込みの s2s は MSP レルムの client ai-stock-trading-kb-writer（KB_AUTH_CLIENTID で上書き可）。
+# #734, IADR-0323: LLM ゲートウェイ呼び出しの s2s は MSP レルムの client ai-stock-trading-llm-caller
+#   （LLM_AUTH_CLIENTID で上書き可・秘密は LLM_AUTH_CLIENTSECRET）。KB 書き込みとは別主体（MSP#1368）。
 # LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
 # #263, IADR-0109: ast-secrets は**再作成しない**。env 未設定のキーには触れず（投入済みの値を保持）、
 # 明示的な空指定が既存の非空値を消す場合だけキー名を列挙して中断する（--force-empty-secrets で許可）。
@@ -93,6 +95,8 @@ AST_SECRET_KEYS=(
   "service-auth-client-secret|SERVICEAUTH_CLIENTSECRET|dev-only-service-secret"
   "kb-auth-client-id|KB_AUTH_CLIENTID|ai-stock-trading-kb-writer"
   "kb-auth-client-secret|KB_AUTH_CLIENTSECRET|"
+  "llm-auth-client-id|LLM_AUTH_CLIENTID|ai-stock-trading-llm-caller"
+  "llm-auth-client-secret|LLM_AUTH_CLIENTSECRET|"
   "discord-owner-auth-client-id|DISCORD_OWNERAUTH_CLIENTID|ai-stock-trading-owner"
   "discord-owner-auth-client-secret|DISCORD_OWNERAUTH_CLIENTSECRET|dev-only-owner-secret"
 )

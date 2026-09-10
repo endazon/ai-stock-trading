@@ -1,5 +1,5 @@
 ---
-title: IADR-0326 OpenD 接続は試行が失敗するたびに接続オブジェクトを作り直し、SDK に差し替え口を設ける
+title: IADR-0327 OpenD 接続は試行が失敗するたびに接続オブジェクトを作り直し、SDK に差し替え口を設ける
 type: impl-adr
 status: Accepted
 related_ids: [FR-05, FR-11, UC-01, UC-02, ADR-0002, IADR-0016, IADR-0060, IADR-0153, IADR-0211]
@@ -11,7 +11,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
 ---
 
-# IADR-0326: OpenD 接続は試行が失敗するたびに接続オブジェクトを作り直す
+# IADR-0327: OpenD 接続は試行が失敗するたびに接続オブジェクトを作り直す
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 

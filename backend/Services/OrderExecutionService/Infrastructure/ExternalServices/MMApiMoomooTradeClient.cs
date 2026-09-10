@@ -22,7 +22,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #132: 応答待ちは構成から外部化する（Broker:Moomoo:OpenD:ReplyTimeoutSeconds・既定 15 秒＝従来のハードコード値）。
     private readonly TimeSpan _replyTimeout;
     private readonly ILogger<MMApiMoomooTradeClient> _logger;
-    // #732, IADR-0326: 接続オブジェクトは**作り直せる**必要がある（readonly にしない）。一度 Connection refused を
+    // #732, IADR-0327: 接続オブジェクトは**作り直せる**必要がある（readonly にしない）。一度 Connection refused を
     // 受けた MMAPI_Trd は、以後 InitConnect を呼んでも TCP を張り直さない（true を返すだけ）。
     private readonly IMoomooTradeConnectionFactory _connectionFactory;
     // 差し替えは _connectGate の内側だけで起きるが、読み手はその外側（送信側）にもいる。
@@ -51,7 +51,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     private MoomooAccountType? _simAccType;
     private bool _disposed;
 
-    // #732, IADR-0326: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
+    // #732, IADR-0327: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
     // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
     public MMApiMoomooTradeClient(
         MoomooBrokerOptions options,
@@ -448,7 +448,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         }
     }
 
-    // #732, FR-11, IADR-0326: 固着した接続オブジェクトを捨てて作り直す。**_connectGate の内側でのみ呼ぶ。**
+    // #732, FR-11, IADR-0327: 固着した接続オブジェクトを捨てて作り直す。**_connectGate の内側でのみ呼ぶ。**
     private void RecreateConnection()
     {
         var stale = _connection;

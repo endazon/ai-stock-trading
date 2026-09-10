@@ -3,7 +3,7 @@ using Moomoo.OpenApi.Pb;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
 
-// #732, FR-05, ADR-0002, IADR-0326: moomoo SDK の取引接続オブジェクト（MMAPI_Trd）への薄いシーム。
+// #732, FR-05, ADR-0002, IADR-0327: moomoo SDK の取引接続オブジェクト（MMAPI_Trd）への薄いシーム。
 //
 // なぜ要るか: OpenD が停止中に一度 `Connection refused` を受けた MMAPI_Trd は、以後 InitConnect を
 // 呼んでも TCP を張り直さない（true を返すだけで SYN も出さない・#732 の実測）。固着した接続オブジェクトを
@@ -43,7 +43,7 @@ public interface IMoomooTradeConnection : IDisposable
     uint GetPositionList(TrdGetPositionList.Request request);
 }
 
-// #732, IADR-0326: 接続オブジェクトの生成点。接続試行が失敗するたびに Create() し直す。
+// #732, IADR-0327: 接続オブジェクトの生成点。接続試行が失敗するたびに Create() し直す。
 public interface IMoomooTradeConnectionFactory
 {
     IMoomooTradeConnection Create();

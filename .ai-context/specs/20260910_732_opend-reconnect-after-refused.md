@@ -2,7 +2,7 @@
 title: OpenD 接続失敗後に接続オブジェクトを作り直し、入れ直さずに再接続できるようにする
 type: spec
 status: draft
-related_ids: [FR-05, FR-11, UC-01, UC-02, ADR-0002, IADR-0016, IADR-0153, IADR-0211, IADR-0326]
+related_ids: [FR-05, FR-11, UC-01, UC-02, ADR-0002, IADR-0016, IADR-0153, IADR-0211, IADR-0327]
 author: endazon (with Claude Code)
 created: 2026-09-10
 updated: 2026-09-11
@@ -144,7 +144,7 @@ OpenD が本当に不達の間は**従来どおり `BrokerUnavailableException` 
 | `backend/Services/OrderExecutionService/Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs` | **変更**（本件の実装点） |
 | `backend/Services/OrderExecutionService/Infrastructure/ExternalServices/IMoomooTradeConnection.cs` | **新規**（シーム＋本番実装＋ファクトリ） |
 | `backend/Services/OrderExecutionService/Tests/Infrastructure/ExternalServices/MMApiMoomooTradeClientReconnectTests.cs` | **新規**（再接続の陽性・陰性） |
-| `.ai-context/adr/IADR-0326_*` ＋ `.ai-context/adr/README.md` | **新規／索引追記**（内部設計の決定） |
+| `.ai-context/adr/IADR-0327_*` ＋ `.ai-context/adr/README.md` | **新規／索引追記**（内部設計の決定）。🔴 **当初は `IADR-0326` で起草したが、[#737](https://github.com/endazon/ai-stock-trading/pull/737)（BFF の 401→502 写像）が先に develop へ入って同番号を確保したため、先着尊重で `IADR-0327` へ改番した**（本リポは欠番を許し、後発はその時点の新たな最大番号＋1 へ進む。IADR-0280）。**プッシュ済みコミット 2 件の件名は `IADR-0326` を名乗ったまま残る**——force push 禁止のため遡及修正できない |
 | `.ai-context/adr/IADR-0153_*`（`差し替え口が無い`）＋索引行 | **追記**（規則 10。`［2026-09-11 追記 / #732］`。**結論〔再照会の挙動は単体テストで固定できていない〕は変えない**——シームはできたが、そのテストは本作業では書いていない） |
 | 🔴 `backend/Services/BacktestService/Infrastructure/ExternalServices/MMApiMoomooHistoryKLineClient.cs` | **対象外（同型の欠陥が残る）**: `MMAPI_Qot` を直接生成し、同じ `_connectTcs` 待ちで**同じ固着に入り得る**。ただし #732 の射程は発注経路であり、バックテストの相場取得は発注しない（fail-safe の重みが違う）。**同型として別 issue で追う**。本 PR では触らない |
 | `backend/Services/BacktestService/Program.cs`（`EnsureConnectedAsync` の語） | **据え置き**: 上記クライアントの呼び出し側であり、本変更の対象ではない |
@@ -191,5 +191,5 @@ xUnit v3 ＋ AwesomeAssertions。`IMoomooTradeConnectionFactory` にフェイク
 - 進行中の送信と作り直しの競合（AI レビュー指摘・2026-09-11）。`volatile` 化・1 操作 1 インスタンス・
   「先に差し替えてから解放」で窓を狭めたが、完全な相互排他は採っていない（`await` を跨ぐロックになるため）。
   残る窓で起きるのは `TimeoutException` が `ObjectDisposedException` に替わることだけで、
-  いずれも「発注送信後の不明な失敗」として従来どおりリコンサイルが守る。詳細は IADR-0326 の残余リスク。
+  いずれも「発注送信後の不明な失敗」として従来どおりリコンサイルが守る。詳細は IADR-0327 の残余リスク。
 - `MMApiMoomooHistoryKLineClient`（バックテストの相場取得）に同型の欠陥が残る（上表）。
