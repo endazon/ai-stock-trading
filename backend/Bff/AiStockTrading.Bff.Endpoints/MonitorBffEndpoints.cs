@@ -1,7 +1,12 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 
 namespace AiStockTrading.Bff.Endpoints;
 
@@ -109,6 +114,13 @@ public static class MonitorBffEndpoints
         {
             using var resp = await client.SendAsync(req, ct);
 
+            // Issue #728, FR-17, UC-06, SC-01, IADR-0326: 上流 401 は「利用者未認証」ではなく
+            // BFF↔上流間の資格情報・構成不整合である（本 BFF はグループで RequireAuthorization 済み）。
+            // 透過すると SPA の apiFetch が「セッション失効」と誤認し再ログインの無限ループになるため、
+            // 既存の「後段不達は 502」fail-safe へ合流させる。403（権限不足）は変更せず透過する。
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
+                return UpstreamUnauthenticatedToBadGateway(http, resp, path);
+
             // 応答本文は ReadAsStringAsync で一括読み込みし Results.Content で透過する（RiskControlsBff と同方式）。
             // 監視銘柄・変更履歴は小さな管理系ペイロードのためバッファ方式で足りる（SSE 不要）。
             var body = await resp.Content.ReadAsStringAsync(ct);
@@ -120,5 +132,33 @@ public static class MonitorBffEndpoints
             // 後段不達・タイムアウトは 502 へ縮退する（利用者のキャンセルは除外）。
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
+    }
+
+    // Issue #728, IADR-0326: 上流 401 を 502 へ写像する。警告ログには上流パスと WWW-Authenticate の
+    // error/error_description のみを残し、Authorization ヘッダ・トークンは一切出さない。
+    // 上流の応答本文は読まない（読むと後段の 401 本文がそのまま漏れる経路が増える）。
+    private static IResult UpstreamUnauthenticatedToBadGateway(HttpContext http, HttpResponseMessage resp, string path)
+    {
+        var (error, description) = ParseWwwAuthenticateChallenge(resp);
+        http.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("AiStockTrading.Bff.Endpoints.MonitorBffEndpoints")
+            .LogWarning(
+                "BFF proxy: upstream {UpstreamPath} returned 401 (mapped to 502). WWW-Authenticate error={Error} error_description={ErrorDescription}",
+                path, error ?? "(none)", description ?? "(none)");
+        return Results.Json(new { reason = "upstream_unauthenticated" }, statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    // WWW-Authenticate の error / error_description パラメータを取り出す（RFC 6750 Bearer チャレンジの一般形）。
+    // 読めなければ null を返し、ログの欠落を許容する（本流は止めない）。
+    private static (string? Error, string? Description) ParseWwwAuthenticateChallenge(HttpResponseMessage resp)
+    {
+        var value = resp.Headers.WwwAuthenticate.Select(h => h.Parameter).FirstOrDefault(p => !string.IsNullOrEmpty(p));
+        if (string.IsNullOrEmpty(value)) return (null, null);
+
+        var errorMatch = Regex.Match(value, "error=\"([^\"]*)\"");
+        var descriptionMatch = Regex.Match(value, "error_description=\"([^\"]*)\"");
+        return (
+            errorMatch.Success ? errorMatch.Groups[1].Value : null,
+            descriptionMatch.Success ? descriptionMatch.Groups[1].Value : null);
     }
 }

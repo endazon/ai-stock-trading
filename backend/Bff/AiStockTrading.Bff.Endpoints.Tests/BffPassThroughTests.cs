@@ -196,6 +196,77 @@ public class BffPassThroughTests
         resp.StatusCode.Should().Be(HttpStatusCode.BadGateway);
     }
 
+    // AST #728, FR-17, UC-06, SC-01, IADR-0326: 上流 401 は「利用者未認証」ではなく BFF↔上流間の
+    // 構成不整合である（本 BFF はグループで RequireAuthorization 済み）。透過すると SPA の apiFetch が
+    // 「セッション失効」と誤認し再ログインの無限ループになるため、502＋理由コードへ写像する。
+    [Theory]
+    [InlineData("GET", "/bff/assumptions")]
+    [InlineData("GET", "/bff/risk-controls/status")]
+    [InlineData("GET", "/bff/monitor/watchlist")]
+    public async Task Upstream_401_is_mapped_to_502_with_reason(string method, string path)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.Unauthorized;
+        host.Downstream.WwwAuthenticateChallenge = "Bearer error=\"invalid_token\", error_description=\"issuer mismatch\"";
+
+        var resp = await host.SendAuthed(new HttpMethod(method), path);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"reason":"upstream_unauthenticated"}""");
+    }
+
+    // AST #728: 陰性対照。403（利用者の権限不足）は従来どおり透過する——401 の写像を追加しても
+    // 403 の意味（RequireRole→NotFound の裏側にある本来のバックストップ）は変えない。
+    // Downstream_4xx_is_passed_through_unchanged（400/403/404/409）が既に固定しているが、
+    // 401→502 の写像と対で読めるよう本 issue の受け入れ基準として明示的に置く。
+    [Fact]
+    public async Task Upstream_403_still_passes_through_unchanged()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.Forbidden;
+        host.Downstream.ResponseBody = """{"error":"forbidden"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/status");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"forbidden"}""");
+    }
+
+    // AST #728, IADR-0326: 401 のログには上流パスと WWW-Authenticate の error/error_description は
+    // 残るが、Authorization ヘッダ・トークンの値は一切残らない。
+    [Fact]
+    public async Task Upstream_401_log_contains_diagnostics_but_not_authorization_or_token()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.Unauthorized;
+        host.Downstream.WwwAuthenticateChallenge = "Bearer error=\"invalid_token\", error_description=\"issuer mismatch\"";
+
+        await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/status");
+
+        host.LogMessages.Should().Contain(m =>
+            m.Contains("/risk-controls/status", StringComparison.Ordinal)
+            && m.Contains("invalid_token", StringComparison.Ordinal)
+            && m.Contains("issuer mismatch", StringComparison.Ordinal));
+        host.LogMessages.Should().NotContain(m => m.Contains("test-token", StringComparison.OrdinalIgnoreCase));
+        host.LogMessages.Should().NotContain(m => m.Contains("Authorization", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // AST #728: WWW-Authenticate が無い（error/error_description が読めない）構成不整合でも、
+    // ログに例外を投げず (none) で欠落を許容し、502 の写像自体は成立する。
+    [Fact]
+    public async Task Upstream_401_without_www_authenticate_still_maps_to_502()
+    {
+        await using var host = await BffTestHost.StartAsync();
+        host.Downstream.Status = HttpStatusCode.Unauthorized;
+        host.Downstream.WwwAuthenticateChallenge = null;
+
+        var resp = await host.SendAuthed(HttpMethod.Get, "/bff/risk-controls/status");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"reason":"upstream_unauthenticated"}""");
+        host.LogMessages.Should().Contain(m => m.Contains("(none)", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Delete_forwards_request_body_to_downstream()
     {
@@ -218,13 +289,20 @@ internal sealed class BffTestHost : IAsyncDisposable
     public required WebApplication App { get; init; }
     public required HttpClient Client { get; init; }
     public required StubHandler Downstream { get; init; }
+    public required CapturingLoggerProvider Logs { get; init; }
+
+    // AST #728: 401→502 写像のログ（Authorization を含まないこと）を検査するための整形済みメッセージ一覧。
+    // CapturingLoggerProvider は OpendAuthBffTests.cs が定義する共有ヘルパー（同一名前空間）を再利用する。
+    public IReadOnlyCollection<string> LogMessages => Logs.Lines;
 
     public static async Task<BffTestHost> StartAsync()
     {
         var downstream = new StubHandler();
+        var logs = new CapturingLoggerProvider();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
+        builder.Logging.AddProvider(logs);
         builder.Services.AddSingleton<IHttpClientFactory>(new StubHttpClientFactory(downstream));
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
@@ -240,7 +318,7 @@ internal sealed class BffTestHost : IAsyncDisposable
         app.MapOpendAuthBffEndpoints();
 
         await app.StartAsync();
-        return new BffTestHost { App = app, Client = app.GetTestClient(), Downstream = downstream };
+        return new BffTestHost { App = app, Client = app.GetTestClient(), Downstream = downstream, Logs = logs };
     }
 
     // 認証済み（Bearer トークン付き）でリクエストする。body を渡すと JSON 本文を付ける。
@@ -277,6 +355,10 @@ internal sealed class StubHandler : HttpMessageHandler
     public HttpRequestMessage? LastRequest { get; private set; }
     public string? LastRequestBody { get; private set; }
 
+    // AST #728, IADR-0326: 上流の WWW-Authenticate チャレンジ（Bearer error/error_description）を
+    // テストから注入するためのフック。null なら応答にヘッダを付けない。
+    public string? WwwAuthenticateChallenge { get; set; }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         LastRequest = request;
@@ -284,10 +366,13 @@ internal sealed class StubHandler : HttpMessageHandler
             LastRequestBody = await request.Content.ReadAsStringAsync(cancellationToken);
         if (Throw)
             throw new HttpRequestException("downstream unreachable");
-        return new HttpResponseMessage(Status)
+        var response = new HttpResponseMessage(Status)
         {
             Content = new StringContent(ResponseBody, Encoding.UTF8, "application/json"),
         };
+        if (WwwAuthenticateChallenge is not null)
+            response.Headers.TryAddWithoutValidation("WWW-Authenticate", WwwAuthenticateChallenge);
+        return response;
     }
 }
 

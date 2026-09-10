@@ -123,7 +123,7 @@ assert_eq() { [ "$2" = "$3" ] && ok "$1" || ng "$1" "expected [$3] but was [$2]"
 SECRET_ENV_VARS="FINNHUB_API_KEY MARKETDATA_FINNHUB_API_KEY EDINET_SUBSCRIPTION_KEY FRED_API_KEY
 SEC_EDGAR_USER_AGENT
 DISCORD_WEBHOOK_URL DISCORD_BOT_TOKEN DISCORD_BOT_KILLSWITCH_PHRASE SERVICEAUTH_CLIENTID
-SERVICEAUTH_CLIENTSECRET KB_AUTH_CLIENTID KB_AUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTID
+SERVICEAUTH_CLIENTSECRET KB_AUTH_CLIENTID KB_AUTH_CLIENTSECRET LLM_AUTH_CLIENTID LLM_AUTH_CLIENTSECRET DISCORD_OWNERAUTH_CLIENTID
 DISCORD_OWNERAUTH_CLIENTSECRET"
 
 # #673 で resolve_ast_value_overrides に合流した discord.bot.* 4 件の環境変数（ast-secrets の
@@ -240,6 +240,8 @@ run_sync
 assert_eq   'T-263-05 新規: 正常終了する' "$RC" "0"
 [ -f "$STATE/created" ] && ok 'T-263-05 新規: Secret を作成する' || ng 'T-263-05 新規: Secret を作成する' 'create secret が呼ばれていない'
 assert_contains 'T-263-05 新規: dev 既定（s2s クライアント ID）が入る' "$PATCH" "\"service-auth-client-id\":\"$(b64 ai-stock-trading-svc)\""
+# #734, IADR-0323: LLM ゲートウェイ呼び出しの s2s は KB 書き込みとは別主体（llm-caller）。dev 既定が入ること。
+assert_contains 'T-734-01 新規: dev 既定（LLM caller クライアント ID）が入る' "$PATCH" "\"llm-auth-client-id\":\"$(b64 ai-stock-trading-llm-caller)\""
 assert_contains 'T-263-05 新規: 空既定のキーも作られる' "$PATCH" '"fred-api-key":""'
 
 # T-263-06: 平文の鍵を標準出力・標準エラーへ出さない（キー名のみ）
