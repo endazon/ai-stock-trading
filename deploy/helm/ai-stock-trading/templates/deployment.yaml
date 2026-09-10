@@ -89,6 +89,17 @@ spec:
             - name: Auth__Authority
               value: {{ $g.authAuthority | quote }}
             {{- end }}
+            {{- /* #736, IADR-0324: s2s 発信者（extraEnv に ServiceAuth__ClientId を持つ）へ token エンドポイントを
+                   global.authAuthority から導出して注入する。auth:true なら ServiceAuthExtensions が Auth:Authority
+                   から同じ値を導くが、auth:true でない発信者（trade-decision）はコード既定の AST レルムに倒れ、
+                   MSP レルムへ寄せた受け手（report / market-monitor）で issuer 不一致 → 401 になる。
+                   cronjob.yaml の TOKEN_ENDPOINT（#456）・Notifications OwnerAuth（#226）と同じ導出。 */}}
+            {{- $hasServiceAuth := false }}
+            {{- range $e := $svc.extraEnv }}{{- if eq $e.name "ServiceAuth__ClientId" }}{{- $hasServiceAuth = true }}{{- end }}{{- end }}
+            {{- if $hasServiceAuth }}
+            - name: ServiceAuth__TokenEndpoint
+              value: {{ printf "%s/protocol/openid-connect/token" (trimSuffix "/" $g.authAuthority) | quote }}
+            {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}
               {{- if $e.secretKeyRef }}

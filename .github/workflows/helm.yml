@@ -293,6 +293,36 @@ jobs:
           printf '%s' "$out" | grep -A3 'name: Collection__Source__SecEdgar__UserAgent' | grep -q 'secretKeyRef' \
             || { echo "::error::SecEdgar__UserAgent が secretKeyRef 経由でない（連絡先メールを values へ直書きしていないか確認）。"; exit 1; }
           echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源を有効化し、実弾/危険既定は OFF のまま"
+      # #736 / IADR-0324: s2s 発信者（ServiceAuth__ClientId を持つ）の token エンドポイントは global.authAuthority から
+      # 導出される。auth:true でない発信者（trade-decision）は Auth__Authority が無く、導出が無いとコード既定の
+      # AST レルムに倒れて受け手（MSP レルム）で 401 になる（#456 の CronJob と同型の 2 回目）。
+      - name: Assert ServiceAuth token endpoint follows global.authAuthority (#736)
+        run: |
+          check() { # $1=説明 $2=描画。ServiceAuth__ClientId を持つ Deployment 全部に TokenEndpoint が在り、持たないものには無い
+            printf '%s' "$2" | awk -v label="$1" '
+              BEGIN{RS="---"}
+              /kind: Deployment/ {
+                match($0,/\n  name: [a-z-]+/); n=substr($0,RSTART+9,RLENGTH-9)
+                has=($0 ~ /ServiceAuth__ClientId/); te=($0 ~ /ServiceAuth__TokenEndpoint/)
+                if(has && !te){print "::error::" label ": " n " に ServiceAuth__TokenEndpoint が無い（s2s が AST レルムに倒れ 401）"; bad=1}
+                if(!has && te){print "::error::" label ": " n " に不要な ServiceAuth__TokenEndpoint が在る"; bad=1}
+                if(has && te) seen++
+              }
+              END{ if(seen<1){print "::error::" label ": ServiceAuth を持つ Deployment が 1 つも無い（検査の空振り）"; bad=1}; exit bad }'
+          }
+          check "既定" "$(helm template ast "$CHART")"
+          out_local="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          check "values-local" "$out_local"
+          # trade-decision（auth:true でない唯一の s2s 発信者）が MSP レルムの token エンドポイントを持つ
+          printf '%s' "$out_local" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: trade-decision-service/' \
+            | grep -A1 'name: ServiceAuth__TokenEndpoint' | grep -q 'realms/platform/protocol/openid-connect/token' \
+            || { echo "::error::values-local で trade-decision の ServiceAuth__TokenEndpoint が MSP レルムでない。"; exit 1; }
+          # --set で authAuthority を動かすと追随する（values にリテラルを置いていない）
+          if helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/x/ \
+            | grep -A1 'name: ServiceAuth__TokenEndpoint' | grep 'value:' | grep -qv 'realms/x/protocol/openid-connect/token'; then
+            echo "::error::ServiceAuth__TokenEndpoint が global.authAuthority に追随しない。"; exit 1
+          fi
+          echo "ok: ServiceAuth__TokenEndpoint は global.authAuthority から導出され、s2s 発信者にだけ注入される"
       # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
       # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで
       # 機能を落とす）。既定描画に在る env 名が values-local 描画から失われていないことを検査する。
