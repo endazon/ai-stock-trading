@@ -362,6 +362,50 @@ FAKE
     ng 'T-722-06 前回の複製を持ち越さない' 'FIFO が作られなかった'
   fi
   stop_fake_opend
+
+  # T-722-10 (#727): console 経路は、**標準入力が開いたまま塞がっている** live 常態でも
+  #   FIFO への書き込みを子（OpenD）へ届ける。旧実装は tty 転送の `cat` を張っており、この状態だと
+  #   `script` が入力を子へ転送しなくなって「検証コードを入れたのに無反応」になった。tty を /dev/null に
+  #   した T-722-05 では `cat` が即 EOF で消えるため転送が働き、**live だけで壊れて試験が素通り**した。
+  #   ここは stdin を開いたまま塞ぐ（`<(sleep …)`）ことでその常態を再現し、回帰を止める。
+  # 🔴 構造で測る（振る舞いでは測らない）。#727 のバグは「console 経路が tty 転送の `cat` を張ると、
+  #   標準入力が塞がった live 常態で `script` が FIFO 入力を子へ渡さなくなる」ことだった。振る舞い
+  #   （入力が子へ届くか）は `script`/pty の起動タイミングに依存して緑/赤へ揺れ、変異（cat を張る旧実装）
+  #   を安定に捕まえられない（実測）。代わりに**不変条件そのもの**を測る: console 経路の起動後、
+  #   その FIFO を開いている `cat`（＝tty 転送）が 1 つも無いこと。fifo 直読み経路（T-722-03）は逆に張る。
+  #
+  #   FIFO を開いている cat を /proc から数える（Linux 限定。console 群は既に Linux ゲート済み）。
+  forwarder_on_fifo_count() {
+    local fifo="$1" n=0 fd tgt pid comm
+    for fd in /proc/[0-9]*/fd/*; do
+      tgt="$(readlink "$fd" 2>/dev/null)" || continue
+      [ "$tgt" = "$fifo" ] || continue
+      pid="$(printf '%s' "$fd" | cut -d/ -f3)"
+      comm="$(tr -d '\0' < "/proc/$pid/comm" 2>/dev/null || :)"
+      [ "$comm" = "cat" ] && n=$((n + 1))
+    done
+    printf '%s' "$n"
+  }
+  F10="$WORK/run10/stdin"
+  C10="$WORK/run10/console.log"
+  mkdir -p "$WORK/run10"
+  # live と同じく標準入力を開いたまま塞ぐ（旧実装ならここで cat が生き続ける）。
+  ( start_opend_with_console "$F10" "$C10" sleep 40 >/dev/null 2>&1 ) < <(sleep 40) &
+  CHILD=$!
+  disown "$CHILD" 2>/dev/null || :
+  if wait_for_fifo "$F10"; then
+    sleep 0.5
+    CATN="$(forwarder_on_fifo_count "$F10")"
+    if [ "${CATN:-0}" -eq 0 ]; then
+      ok 'T-722-10 console 経路は tty 転送 cat を張らない（#727 回帰・script の入力転送を殺さない）'
+    else
+      ng 'T-722-10 console 経路は tty 転送 cat を張らない（#727 回帰・script の入力転送を殺さない）' \
+        "FIFO を開く cat が $CATN 個居る（旧実装＝入力が OpenD へ届かなくなる）"
+    fi
+  else
+    ng 'T-722-10 console 経路は tty 転送 cat を張らない（#727 回帰）' 'FIFO が作られなかった'
+  fi
+  stop_fake_opend
 else
   skip 'T-722-05/06 コンソール複製' \
     'この環境では複製の機序が成立しない（script(1) が無いか FIFO が成立しない）。Linux で走らせること'
