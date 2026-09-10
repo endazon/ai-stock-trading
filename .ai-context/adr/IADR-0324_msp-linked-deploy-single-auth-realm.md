@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
@@ -71,6 +71,13 @@ chart は inbound の `Auth__Authority`・`ServiceAuth` の token エンドポ�
 run-once CronJob の token エンドポイント（IADR-0176）・Discord OwnerAuth の `TokenEndpoint`（IADR-0098）を**すべて
 `global.authAuthority` から導出する**。この設計のおかげで、レルムを移す変更は 1 値で済み、「inbound は MSP レルム・
 s2s は AST レルム」という**片側だけ移って 401 になる**状態が構造的に作れない。
+
+> ［2026-09-11 追記 / #736］**上の「構造的に作れない」は破れていた。** `ServiceAuth` の token エンドポイントの導出元
+> `Auth:Authority` は `auth: true` のサービスにしか注入されず、inbound 認証を掛けない s2s 発信者（trade-decision）は
+> コード既定の AST レルムに倒れ、MSP レルムへ寄せた受け手（report / market-monitor）で issuer 不一致の 401 になった
+> （2026-09-10 稼働で実測。fail-closed により周回は発注へ到達しない）。是正は chart 側で、`ServiceAuth__ClientId` を持つ
+> サービスへ `ServiceAuth__TokenEndpoint` を `global.authAuthority` から導出して注入する（CronJob の #456 と同型の
+> 2 回目なので helm.yml に描画検査を足した）。決定 1〜3 は不変。
 
 ### 3. MSP レルムに要る客体は MSP 側が所有し、dev secret は AST レルムと同値にする
 
