@@ -129,10 +129,34 @@ kubectl -n ai-stock-trading attach -it deploy/opend    # `>>>` に input_pic_ver
 kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 ```
 
+#### 標準入力の与え方（`OPEND_STDIN_MODE`。#730）
+
+🔴 **2026-09-10 の実測: 稼働クラスタでは `console` / `fifo` 経路から検証コードが OpenD に届かない。**
+画面・サイドカー・`kubectl exec` での FIFO 直書きのいずれも無反応で、原因は未特定である（[#730](https://github.com/endazon/ai-stock-trading/issues/730)）。
+**実口座でログイン成功を確認できている構成は `tty` だけ**なので、当面はそれを使う。
+
+| `OPEND_STDIN_MODE` | 経路 | 入力手段 | 状態 |
+| --- | --- | --- | --- |
+| `console`（既定） | FIFO → `script`(pty) → OpenD | 画面 SC-04 / サイドカー | 🔴 **稼働クラスタで届かない（#730）** |
+| `fifo` | FIFO → OpenD 直読み | `kubectl exec … > /run/opend/stdin` | 🔴 同上。console 複製が無いので画面も使えない |
+| `tty` | コンテナ本来の tty → OpenD | `kubectl attach` | ✅ **実績あり**（下記） |
+
+```bash
+kubectl -n ai-stock-trading set env deploy/opend -c opend OPEND_STDIN_MODE=tty
+kubectl -n ai-stock-trading attach -it deploy/opend -c opend
+#   >>> に  input_phone_verify_code -code=<6桁>  を打って Enter
+#   🔴 端末は raw・エコー無しなので打った文字は見えない。見えなくてもそのまま打ち切る。
+#   🔴 抜けるときに Ctrl+C を押さない（OpenD が落ちて SMS からやり直しになる）。ウィンドウごと閉じる。
+```
+
+> `set env` は Helm の管理外なので、次回の `helm upgrade` で剥がれて既定（`console`）へ戻る。
+> #730 が解決するまでは再デプロイのたびに再設定が要る。
+
 #### 画面（ブラウザ）から検証コードを入れる（#722）
 
-**手元に kubeconfig が無くても検証できる。** `entrypoint.sh` は OpenD の標準入力を
-**FIFO（`/run/opend/stdin`）経由**にしてあるので、`kubectl exec` からも同じ標準入力へ届く。
+**手元に kubeconfig が無くても検証できる**（**ただし #730 のとおり現在は届かない**）。
+`entrypoint.sh` は `console` / `fifo` モードで OpenD の標準入力を
+**FIFO（`/run/opend/stdin`）経由**にするので、`kubectl exec` からも同じ標準入力へ届く**はずの設計**である。
 `attach` が要るのは tty を掴むときだけで、コードを 1 行入れるだけなら exec で足りる。
 
 > **［2026-09-09 追記 / #722 段 2］入力面はこの先 ai-stock-trading の画面になる。**
