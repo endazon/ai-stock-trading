@@ -14,9 +14,10 @@ related_ids:
   - IADR-0063
   - IADR-0259
   - IADR-0264
+  - IADR-0328
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-11
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
@@ -183,6 +184,23 @@ planning#520 の環流（§決定4）に対し、計画側が `MSP/ADR-0075`
 - #584 は `Refs`（閉じない）のまま。`blocked:decision` を外し `blocked:env`（他リポジトリ〔MSP〕の実装待ち）へ張り替え、
   待ち先を「MSP が `MSP/ADR-0029` フォローアップ（実装ガイド）を履行すること（期限 2026-11-30）」とする。
   `docs/blocked-tasks.md` B-4 の該当行を追随させた。
+
+## 追記（2026-09-11・先行条件の履行を実測し段 0 へ着手 / #584）
+
+**決定 3（今は実装に入らない）の前提は消えた。** `MSP/ADR-0075` が着手の先行条件に置いた
+`MSP/ADR-0029` フォローアップ（proto 契約の配置と versioning 規約の実装ガイド化）は履行済みである
+——基盤の `docs/api/east-west-grpc.md`（`status: completed` / `updated: 2026-09-10`。proto の置き場と所有・
+versioning・h2c ポート・s2s トークンの 4 点を規約表で持つ）・`.proto` 11 件・`MapGrpcService` 10 件・
+共通部品 `Platform.Shared.Infrastructure/Foundation/Grpc/` を 2026-09-11 に隣接クローンで実測した
+（#584 の再測定手順 1〜3）。**決定 1・2・4・5 は変わらない**（射程・境界基準・順序・段の切り方）。
+
+- **段 0（土台）へ着手した。** 具体の置き方は [IADR-0328](IADR-0328_east-west-grpc-foundation-stage0.md)。
+- 🔴 **決定 5 の「proto の置き場」は IADR-0328 が上書きする。** 本 ADR は「基盤先行の裁定なら MSP の置き場へ
+  揃える（本行は上書きされる）」と留保しており、基盤の現物はユニットの共有契約プロジェクトである。
+- 決定 5 の段 0 に含めていた **proto 互換検査器は段 1 へ移した**（検査対象が 0 件では「通った」が何も意味しない）。
+- **AST→MSP 4 本のうち LlmGateway の 2 本は「基盤待ち」から外れた**（`platform/llmgateway/v1/completion.proto`
+  が公開された）。DocumentService `POST /documents`・RetrievalService `POST /search` は proto がまだ無く基盤待ちのまま。
+- #584 は引き続き `Refs`（閉じない）。`blocked:env` は外した。
 
 ## 関連
 

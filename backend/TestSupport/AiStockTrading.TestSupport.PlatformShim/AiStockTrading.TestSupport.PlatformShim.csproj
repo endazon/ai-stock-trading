@@ -10,6 +10,11 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- NFR, MSP:ADR-0029, IADR-0284 決定5（段0）, IADR-0328, #584: east-west gRPC の共通配線。
+         Grpc.AspNetCore = 受け側（AddGrpc / MapGrpcService と h2c リスナ）、Grpc.Net.Client = 呼び出し側
+         （s2s トークン付きの平文チャネル）。 -->
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
@@ -26,5 +31,11 @@
     <!-- NFR-07, #287, IADR-0255: 業務メトリクスの計器（BusinessMetrics）は契約プロジェクトが持つ。
          可観測性の配線は 11 サービスが等しく通る本 shim にしか無いため、DI 登録と AddMeter をここで行う。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- IADR-0328, #584: h2c リスナの構成解決（ポート・ホスティング URL・待受ホスト）は公開面ではないが、
+         「HTTP ポートが消えない」「0 は立てない」を単体で固定する必要があるため試験にだけ見せる
+         （Shared.KnowledgeBase と同じ形。基盤 Platform.Shared.Infrastructure も同様）。 -->
+    <InternalsVisibleTo Include="AiStockTrading.TestSupport.PlatformShim.Tests" />
   </ItemGroup>
 </Project>

@@ -62,11 +62,26 @@ spec:
           imagePullPolicy: {{ $g.image.pullPolicy }}
           ports:
             - containerPort: 8080
+            {{- if $svc.grpcPort }}
+              {{- /* NFR, IADR-0284 決定5（段0）, IADR-0328, #584: 複数ポートになるので名前を付ける
+                     （grpcPort 未宣言のサービスは追加前とバイト等価）。 */}}
+              name: http
+            - containerPort: {{ $svc.grpcPort }}
+              name: grpc
+            {{- end }}
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: Development
             - name: ASPNETCORE_URLS
               value: http://+:8080
+            {{- /* NFR, MSP:ADR-0029 / MSP:ADR-0075, IADR-0328, #584: east-west gRPC の h2c リスナ
+                   （TLS 無し HTTP/2 専用ポート）。未設定ならアプリはリスナを立てない。
+                   readiness は HTTP 側（8080 の /health/ready）のまま —— 1 プロセスが両ポートを
+                   起動時に bind するので、8080 が ready なら h2c も bind 済みである。 */}}
+            {{- if $svc.grpcPort }}
+            - name: Grpc__Port
+              value: {{ $svc.grpcPort | quote }}
+            {{- end }}
             - name: RabbitMq__ConnectionString
               value: {{ $g.rabbitmqConnectionString | quote }}
             - name: Otlp__Endpoint
