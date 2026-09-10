@@ -15,4 +15,16 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+    {{- if $svc.grpcPort }}
+      {{- /* NFR, IADR-0284 決定5（段0）, IADR-0328, #584: 複数ポートになるので名前を付ける
+             （grpcPort 未宣言のサービスは追加前とバイト等価）。 */}}
+      name: http
+      appProtocol: http
+    {{- /* NFR, MSP:ADR-0029 / MSP:ADR-0075, IADR-0328, #584: east-west gRPC（h2c）。
+           appProtocol: grpc でサイドカーのプロトコル推定に頼らない。mTLS はサイドカーが終端する。 */}}
+    - port: {{ $svc.grpcPort }}
+      targetPort: {{ $svc.grpcPort }}
+      name: grpc
+      appProtocol: grpc
+    {{- end }}
 {{- end }}

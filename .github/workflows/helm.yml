@@ -77,6 +77,33 @@ jobs:
           helm template ast "$CHART" \
             --set opend.enabled=true \
             --set opend.authGateway.enabled=true > /dev/null
+      # #584 / IADR-0284 決定5（段0）/ IADR-0328: east-west gRPC の h2c ポート（services.<name>.grpcPort）。
+      # 既定では**どのサービスも宣言しない**ため既定描画では評価されない。ON にした派生を描画し、
+      # 有効化時に初めて壊れるテンプレートを CI で捕まえる（IADR-0058 の核心）。
+      - name: Assert grpcPort opt-in (h2c 第 2 ポート)
+        run: |
+          # ① 既定描画は追加前とバイト等価（gRPC の痕跡が 1 つも無い）。
+          out="$(helm template ast "$CHART")"
+          for forbidden in 'Grpc__Port' 'appProtocol: grpc' 'name: grpc'; do
+            if printf '%s' "$out" | grep -q "$forbidden"; then
+              echo "::error::既定描画に「$forbidden」が現れた（grpcPort は宣言したサービスにだけ描く・#584）。"
+              exit 1
+            fi
+          done
+          # ② 宣言したサービスにだけ 3 点（containerPort・Service ポート・env）が描かれる。
+          out="$(helm template ast "$CHART" --set services.configuration.grpcPort=8081)"
+          printf '%s' "$out" | grep -A1 'name: Grpc__Port' | grep -q 'value: "8081"' \
+            || { echo "::error::grpcPort を宣言しても env Grpc__Port が描画されない。"; exit 1; }
+          printf '%s' "$out" | grep -q 'appProtocol: grpc' \
+            || { echo "::error::Service の gRPC ポート（appProtocol: grpc）が描画されない。"; exit 1; }
+          printf '%s' "$out" | grep -q 'containerPort: 8081' \
+            || { echo "::error::Deployment の containerPort（h2c）が描画されない。"; exit 1; }
+          # ③ 宣言していないサービスへは波及しない（1 件だけであること）。
+          count="$(printf '%s' "$out" | grep -c 'name: Grpc__Port' || true)"
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Grpc__Port が 1 件でない（実測 $count 件）。宣言していないサービスへ波及している。"; exit 1
+          fi
+          echo "ok: grpcPort は宣言したサービスにだけ h2c の 3 点を描画する"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
