@@ -8,7 +8,7 @@ adr_refs:
   - IADR-0053
   - IADR-0060
   - IADR-0322
-status: in-progress
+status: done
 created: 2026-09-09
 ---
 
@@ -181,7 +181,7 @@ O_APPEND でないと `script` は自分のオフセットへ書き続け、切�
 - [x] コードが応答にもログにも `GET /state` にも現れない
 - [x] chart / 生 manifest ともサイドカーが PVC をマウントしない。Ingress を作らない
 - [x] 既定描画にサイドカーが現れない（fail-safe）
-- [ ] 実クラスタでの疎通（BFF ↔ サイドカー、画面からの投入）。**SPA / BFF は planning#594 の裁定待ちで未着手**
+- [x] 実クラスタでの疎通（サイドカーの `GET /state`）。**画面からの投入だけが利用者の手待ち**
 
 ## 試験
 
