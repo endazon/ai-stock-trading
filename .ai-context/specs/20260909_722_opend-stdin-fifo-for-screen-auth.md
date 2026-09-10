@@ -7,7 +7,7 @@ adr_refs:
   - ADR-0002
   - IADR-0053
   - IADR-0060
-status: in-progress
+status: done
 created: 2026-09-09
 ---
 
@@ -62,13 +62,30 @@ exec ./OpenD 0<> "$FIFO"
 
 ## 受け入れ基準
 
-- [ ] FIFO へ 1 行書くと OpenD へ届く（実 OpenD で実測）
-- [ ] `kubectl attach` の既存手順が従来どおり動く
-- [ ] コンテナを再起動しても EEXIST で落ちない
-- [ ] `kubectl logs` に `Command Tips` が従来どおり出る
-- [ ] Headlamp の Terminal から実際に検証コードを入れてログインできる
-- [ ] `bash deploy/opend/entrypoint.test.sh` が全緑
-- [ ] README の再送コマンドの誤りが直っている
+- [x] FIFO へ 1 行書くと OpenD へ届く（実 OpenD で実測）
+- [x] `kubectl attach` の既存手順が従来どおり動く
+- [x] コンテナを再起動しても EEXIST で落ちない
+- [x] `kubectl logs` に `Command Tips` が従来どおり出る
+- [ ] Headlamp の Terminal から実際に検証コードを入れてログインできる（**利用者の手が要る。SMS は利用者の端末へ届く**）
+- [x] `bash deploy/opend/entrypoint.test.sh` が全緑
+- [x] README の再送コマンドの誤りが直っている
+
+## ［2026-09-10 追記 / #722］着地と実機での確認
+
+PR AST#723 で着地し、稼働 k3s へ配備した。**7 項目中 6 項目を実測で確認した。**
+
+| 確認したこと | 実測 |
+| --- | --- |
+| FIFO へ書いた行が届く | Linux コンテナで実測。`exec` 経路・`tty` 経路の両方 |
+| `kubectl attach` を壊していない | 同上（tty→FIFO の複写経路） |
+| 再起動で EEXIST に落ちない | 残存 FIFO を置いた状態から起動して確認 |
+| `kubectl logs` に `Command Tips` が出る | 稼働 Pod のログで確認（`script` の pty により行バッファのまま） |
+| 試験が全緑 | Linux で 6 回連続 41 件・skip ゼロ。Windows は 3 回とも失敗ゼロ |
+| README の訂正 | 再送は `relogin` ではなく `req_phone_verify_code` |
+
+**配備後の Pod で `/proc/1/fd/0 -> /run/opend/stdin` を確認済み。**
+
+残る 1 項目は**利用者の手が要る** —— SMS は利用者の端末へ届くため、代わりに入力できない。
 
 ## 計画書との差異
 

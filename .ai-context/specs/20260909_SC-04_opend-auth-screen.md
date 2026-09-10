@@ -1,7 +1,7 @@
 ---
 title: SC-04 OpenD 認証操作画面（BFF 4 端点＋画面）を新設する
 type: spec
-status: draft
+status: done
 related_ids: [FR-09, FR-11, SC-04, UC-06, NFR-03, NFR-05, NFR-06, ADR-0002, ADR-0024, IADR-0321]
 author: claude (Claude Code)
 created: 2026-09-09
@@ -244,6 +244,16 @@ BFF が `NotSupplied` を宣言する（`KnowledgeBase__Search__BaseUrl` の空�
 - [ ] `pnpm`（npm）の `lint` / `typecheck` / `test` が通る
 - [ ] 文書検査（`check-trace-blocks` / `check-cross-repo-refs` / `check-plan-id-qualification` /
       `gen-knowledge-graph --check` / `check-commit-messages`）が通る
+
+## ［2026-09-10 追記 / AST#723］着地と配備
+
+PR AST#723 で着地し、基盤側の BFF 合成点へも登録した（MSP#1366）。基盤の BFF とフロントエンドを
+焼き直して配備済みで、**画面は 404 ではなくなっている**。
+
+上流サイドカーとの契約のずれ 4 点は調停済みである。サイドカー側を本仕様書の契約へ寄せた
+（`status` と `lastLoginAt` を足し、`verify` はコードだけを受け、`resend` を別の口に出した）。
+
+残るのは**画面からの実投入**で、これは利用者の手が要る（SMS は利用者の端末へ届く）。
 
 ## 計画書との差異
 

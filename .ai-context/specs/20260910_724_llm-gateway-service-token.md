@@ -1,7 +1,7 @@
 ---
 title: LLM ゲートウェイ呼び出しへ MSP レルムの s2s トークンを載せ、401/403 を ModelUnavailable へ倒さない
 type: spec
-status: draft
+status: done
 related_ids: [FR-04, FR-06, FR-11, FR-16, NFR-05, IADR-0323]
 author: endazon (with Claude Code)
 created: 2026-09-10
@@ -291,3 +291,15 @@ deploy/keycloak/microservices-platform-realm.json
 - **`ast-secrets` の鍵名が `kb-` のままである**（決定 5 の負債）。将来 LLM 専用 client へ分けるときは
   values の 2 行の差し替えで済む。
 - **既存の裸の `ADR-0010`（MSP の ADR を指す）は残る。** 別 issue へ切り出す（除外表）。
+
+## ［2026-09-10 追記 / #724］着地と、基盤側の受け皿
+
+PR AST#725 で着地した。**基盤側の受け皿も揃っている** —— 本仕様書が引き継ぎとして挙げた
+「サービスアカウントにロールが足りず 403 になる」件は、基盤側で**専用クライアント
+`ai-stock-trading-llm-caller`（`platform-service`）を新設**して解決した（MSP#1368）。
+
+既存の `ai-stock-trading-kb-writer` へロールを足す案は採られていない。`platform-service` は
+基盤内部の 10 サービスが持つロールで、あの主体へ足すと**文書 API 以外の東西端点すべてへ届く**ためである。
+**用途ごとに主体を分けたので、片方の失効がもう片方を巻き込まない。**
+
+マージ順序は realm（MSP#1368）→ 本 PR（AST#725）→ 認可（MSP#1365）で守られた。
