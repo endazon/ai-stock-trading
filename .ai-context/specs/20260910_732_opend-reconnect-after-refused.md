@@ -188,4 +188,8 @@ xUnit v3 ＋ AwesomeAssertions。`IMoomooTradeConnectionFactory` にフェイク
   `MMAPI_Trd` で繋がった）から導いた推論である。稼働環境での確認は次回の配備で行う。
 - 古い接続オブジェクトからのコールバックが新しい試行の `_connectTcs` を完了させ得る（上記「採らなかった案」）。
   収束し fail-safe は破らないが、1 回分の無駄な試行になる。
+- 進行中の送信と作り直しの競合（AI レビュー指摘・2026-09-11）。`volatile` 化・1 操作 1 インスタンス・
+  「先に差し替えてから解放」で窓を狭めたが、完全な相互排他は採っていない（`await` を跨ぐロックになるため）。
+  残る窓で起きるのは `TimeoutException` が `ObjectDisposedException` に替わることだけで、
+  いずれも「発注送信後の不明な失敗」として従来どおりリコンサイルが守る。詳細は IADR-0326 の残余リスク。
 - `MMApiMoomooHistoryKLineClient`（バックテストの相場取得）に同型の欠陥が残る（上表）。

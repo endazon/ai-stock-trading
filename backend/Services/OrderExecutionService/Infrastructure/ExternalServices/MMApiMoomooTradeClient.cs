@@ -25,7 +25,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #732, IADR-0326: 接続オブジェクトは**作り直せる**必要がある（readonly にしない）。一度 Connection refused を
     // 受けた MMAPI_Trd は、以後 InitConnect を呼んでも TCP を張り直さない（true を返すだけ）。
     private readonly IMoomooTradeConnectionFactory _connectionFactory;
-    private IMoomooTradeConnection _connection;
+    // 差し替えは _connectGate の内側だけで起きるが、読み手はその外側（送信側）にもいる。
+    // 差し替えを読み手へ確実に見せるため volatile とし、1 回の操作の中では**必ずローカルへ受けてから使う**
+    // （途中で別インスタンスへ移らないようにする）。
+    private volatile IMoomooTradeConnection _connection;
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<object>> _pending = new();
     private readonly object _sendGate = new(); // serial 採番＋登録とコールバック完了の相互排他（レース防止）。
     // 照会/取消は市場（TrdMarket/TrdSecMarket）を要するため、発注時に orderId→市場を控える。
@@ -102,6 +105,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     public async Task<MoomooOrderResult> PlaceOrderAsync(MoomooOrderRequest request, CancellationToken cancellationToken = default)
     {
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+        // #732: 1 操作の中で接続オブジェクトが別インスタンスへ移らないよう、ここで受けて以降は local を使う。
+        var connection = _connection;
         var (trdMarket, secMarket) = MapMarket(request.Market);
         var side = request.Side == MoomooSide.Sell ? TrdCommon.TrdSide.TrdSide_Sell : TrdCommon.TrdSide.TrdSide_Buy;
 
@@ -114,7 +119,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             _ => TrdCommon.OrderType.OrderType_Normal,
         };
         var c2sBuilder = TrdPlaceOrder.C2S.CreateBuilder()
-            .SetPacketID(_connection.NextPacketId()) // 発注は packetID（冪等キー）必須
+            .SetPacketID(connection.NextPacketId()) // 発注は packetID（冪等キー）必須
             .SetHeader(BuildHeader(trdMarket))
             .SetTrdSide((int)side)
             .SetOrderType((int)orderType)
@@ -131,7 +136,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             c2sBuilder.SetRemark(request.Remark);
         var req = TrdPlaceOrder.Request.CreateBuilder().SetC2S(c2sBuilder.Build()).Build();
 
-        var rsp = (TrdPlaceOrder.Response)await SendAsync(() => _connection.PlaceOrder(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdPlaceOrder.Response)await SendAsync(() => connection.PlaceOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "PlaceOrder");
 
         var orderId = rsp.S2C.OrderID.ToString();
@@ -343,15 +348,17 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         {
             return; // 注文が見つからない（既に消えた等）→ no-op
         }
+        // #732: PlaceOrderAsync と同じく、採番と送信を同じ接続オブジェクトで行う。
+        var connection = _connection;
         var c2s = TrdModifyOrder.C2S.CreateBuilder()
-            .SetPacketID(_connection.NextPacketId()) // 変更/取消も packetID 必須
+            .SetPacketID(connection.NextPacketId()) // 変更/取消も packetID 必須
             .SetHeader(BuildHeader(trdMarket.Value))
             .SetOrderID(oid)
             .SetModifyOrderOp((int)TrdCommon.ModifyOrderOp.ModifyOrderOp_Cancel)
             .Build();
         var req = TrdModifyOrder.Request.CreateBuilder().SetC2S(c2s).Build();
 
-        var rsp = (TrdModifyOrder.Response)await SendAsync(() => _connection.ModifyOrder(req), cancellationToken).ConfigureAwait(false);
+        var rsp = (TrdModifyOrder.Response)await SendAsync(() => connection.ModifyOrder(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "CancelOrder");
     }
 
@@ -445,17 +452,30 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     private void RecreateConnection()
     {
         var stale = _connection;
+        // 先に差し替える。**新しい接続を見せてから古い方を手放す**——順序が逆だと、この瞬間に
+        // 進行中の呼び出しが「解放済みの接続」を掴む窓が広がる（Close/Dispose は下で行う）。
+        _connection = CreateConfiguredConnection();
         try
         {
             stale.Close();
-            stale.Dispose();
         }
         catch (Exception ex)
         {
             // 解放に失敗しても作り直しは続ける（固着したまま使い続けるより捨てるほうが安全）。
-            _logger.LogWarning(ex, "固着した OpenD 接続オブジェクトの解放中に例外（作り直しは続行します）");
+            _logger.LogWarning(ex, "固着した OpenD 接続オブジェクトの Close で例外（解放は続行します）");
         }
-        _connection = CreateConfiguredConnection();
+        finally
+        {
+            // Close が投げても Dispose は必ず呼ぶ（同じ try に置くと握りっぱなしで漏れる）。
+            try
+            {
+                stale.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "固着した OpenD 接続オブジェクトの Dispose で例外");
+            }
+        }
         _connectionStale = false;
         _recreateCount++;
         // 「作り直しても繋がらない（＝OpenD が本当に落ちている）」と「作り直しに入っていない（＝別の欠陥）」を
