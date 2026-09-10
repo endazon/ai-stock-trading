@@ -194,6 +194,10 @@ jobs:
               echo "::error::既定描画に経路B有効化の痕跡「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
             fi
           done
+          # #740 / IADR-0115 決定6: 日報自動生成は経路B 限定の opt-in。本番 values.yaml には設定点自体を置かない。
+          if printf '%s' "$out" | grep -q 'Reports__AutoGeneration__Enabled'; then
+            echo "::error::既定描画に Reports__AutoGeneration__Enabled が現れた（経路B 限定の有効化が本番へ漏れた）。"; exit 1
+          fi
           # #279 / IADR-0114: 実DD 供給ドライバは経路B 限定の opt-in。本番 values.yaml には設定点自体を置かない。
           if printf '%s' "$out" | grep -q 'ObservedDrawdownRefresh__Enabled'; then
             echo "::error::既定描画に ObservedDrawdownRefresh__Enabled が現れた（経路B 限定の有効化が本番へ漏れた）。"; exit 1
@@ -292,6 +296,8 @@ jobs:
           need "SEC EDGAR UserAgent の secretKeyRef" 'key: sec-edgar-user-agent'
           printf '%s' "$out" | grep -A3 'name: Collection__Source__SecEdgar__UserAgent' | grep -q 'secretKeyRef' \
             || { echo "::error::SecEdgar__UserAgent が secretKeyRef 経由でない（連絡先メールを values へ直書きしていないか確認）。"; exit 1; }
+          # #740 / IADR-0115 決定6: 方針階層の入口＝日報ドラフト自動生成が ON（無いと周回は発注へ到達しない）。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: report-service/'             | grep -A1 'name: Reports__AutoGeneration__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で report の Reports__AutoGeneration__Enabled=true が描画されない（日報が作られず確定対象が無い）。"; exit 1; }
           echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源を有効化し、実弾/危険既定は OFF のまま"
       # #736 / IADR-0324: s2s 発信者（ServiceAuth__ClientId を持つ）の token エンドポイントは global.authAuthority から
       # 導出される。auth:true でない発信者（trade-decision）は Auth__Authority が無く、導出が無いとコード既定の
