@@ -2,6 +2,8 @@
 # #122 / IADR-0052: AST を既存の k3d クラスタ（MSP 連結・platform-infra 稼働済み）へデプロイする。
 # 前提: MSP 側 scripts/k8s-local-up.sh が platform-infra（Postgres/RabbitMQ/Keycloak/otel）と
 # AST 用 DB（ai ユーザ・*_svc）・Keycloak realm `ai-stock-trading` を用意済みであること。
+# #727, IADR-0324: MSP 連結では利用者認証と s2s の token 発行を values-local.yaml の global.authAuthority＝MSP レルム
+#   （platform）で行う。realm `ai-stock-trading` の import は単体 E2E（IADR-0050）用に残るだけで、本スクリプトの経路では使わない。
 #
 #   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [cluster-name]
 # #267, IADR-0111 / #132, IADR-0060: ブローカ階層・OpenD 常駐配備は BROKER_TIER（"" / paper / moomoo-sim）/
