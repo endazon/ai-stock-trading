@@ -185,6 +185,14 @@ internal static class CSharpSource
         {
             end = FindVerbatimEnd(buffer, start + 1);
         }
+        else if (IsInterpolated(buffer, start))
+        {
+            // 🔴 補間ホールは「文字列」ではなくコードである。潰すと中の識別子（`nameof(Foo)` /
+            // `typeof(Foo).Name`）が利用として数えられなくなり、しかもホール内の入れ子リテラル
+            // （`$"{x.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}"`。実測で本番に 15 ファイル以上）を
+            // 外側の終端と誤読して**字句がずれる**。
+            return BlankInterpolated(buffer, start);
+        }
         else
         {
             end = FindRegularStringEnd(buffer, start + 1);
@@ -201,6 +209,57 @@ internal static class CSharpSource
         for (var i = quoteIndex - 1; i >= 0 && (buffer[i] == '@' || buffer[i] == '$'); i--)
             if (buffer[i] == '@') return true;
         return false;
+    }
+
+    /// <summary>直前が <c>$</c> なら補間文字列である。</summary>
+    private static bool IsInterpolated(char[] buffer, int quoteIndex) =>
+        quoteIndex > 0 && buffer[quoteIndex - 1] == '$';
+
+    /// <summary>
+    /// 非逐語の補間文字列（<c>$"..."</c>）を潰す。<b>リテラル部分だけを潰し、補間ホール
+    /// <c>{ }</c> の中はコードとして残す</b>（ホール内の入れ子リテラルは再帰的に潰す）。
+    /// </summary>
+    private static int BlankInterpolated(char[] buffer, int start)
+    {
+        buffer[start] = ' ';
+        var depth = 0;
+        var i = start + 1;
+        while (i < buffer.Length)
+        {
+            var c = buffer[i];
+            if (depth == 0)
+            {
+                if (c == '\n') return i;                       // 非逐語の文字列は行を跨がない（未終端）
+                if (c == '\\') { Blank(buffer, i, Math.Min(i + 2, buffer.Length)); i += 2; continue; }
+                if (c == '"') { buffer[i] = ' '; return i + 1; }
+                if (c is '{' or '}' && i + 1 < buffer.Length && buffer[i + 1] == c)
+                {
+                    Blank(buffer, i, i + 2);                   // `{{` / `}}` は波括弧そのもののエスケープ
+                    i += 2;
+                    continue;
+                }
+
+                if (c == '{') { buffer[i] = ' '; depth = 1; i++; continue; }
+                buffer[i] = ' ';
+                i++;
+                continue;
+            }
+
+            if (c == '"') { i = BlankStringLiteral(buffer, i); continue; }
+            if (c == '\'') { i = BlankCharLiteral(buffer, i); continue; }
+            if (c == '{') { depth++; i++; continue; }
+            if (c == '}')
+            {
+                depth--;
+                if (depth == 0) buffer[i] = ' ';
+                i++;
+                continue;
+            }
+
+            i++;
+        }
+
+        return buffer.Length;
     }
 
     private static int FindRawStringEnd(char[] buffer, int from, int quotes)

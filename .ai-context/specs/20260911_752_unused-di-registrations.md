@@ -189,6 +189,7 @@ CI ワークフローの側は `list-test-projects.js` が `backend.slnx` から
 | ファイル | 役割 |
 | --- | --- |
 | `backend/Tests/AiStockTrading.Architecture.Tests/CSharpSource.cs`（新規） | コメント・文字列リテラルの除去（**長さを保つ**置換）、`using` エイリアスの抽出、単純型名への正規化 |
+| `backend/Tests/AiStockTrading.Architecture.Tests/CSharpSourceTests.cs`（新規） | 上の前処理の分岐ごとの直接試験（[2026-09-11 追記 / #761] 下記「レビューで判明した欠陥」） |
 | `backend/Tests/AiStockTrading.Architecture.Tests/DiRegistrationScan.cs`（新規） | 走査の中核。**入力を注入できる**形（`ScannedProject` の配列）にし、実ツリーからの構築は別メソッドにする |
 | `backend/Tests/AiStockTrading.Architecture.Tests/UnwiredDiRegistrationTests.cs`（新規） | 検査本体・既知リスト・自己試験 |
 | `backend/Tests/AiStockTrading.Architecture.Tests/RepositoryLayout.cs`（変更） | `ProductionProjectFiles`（本番プロジェクトの走査）を足す |
@@ -221,6 +222,27 @@ CI ワークフローの側は `list-test-projects.js` が `backend.slnx` から
 
 **ミューテーション証跡**は #5 の自己試験が恒久的に担うが、それとは別に、
 **実ツリーの `Program.cs` へ捨て型を 1 つ登録して赤になること・戻して緑になること**を PR 本文で示す。
+
+### ［2026-09-11 追記 / #761］レビューで判明した欠陥と、試験の弱さ
+
+PR の AI レビューが、**前処理の字句解析に実害のある欠陥**を指摘した（🟡 推奨・実コードで実在を提示）。
+
+- **欠陥**: 非逐語の補間文字列 `$"..."` でホール `{ }` を認識していなかったため、
+  ホール内の入れ子リテラル（`$"{x.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}"`。
+  実測で本番に 15 ファイル以上）の**開きクォートを外側の終端と誤読**し、
+  そのあと**実コード（`CultureInfo` / `InvariantCulture`）を「文字列」として潰していた**。
+  現状は違反 0 件（緑）のままだが、将来ある型の唯一の利用箇所がこの構文の中に現れると
+  **実際には使われているのに赤くなる**。
+- **是正**: ホールの深さを追跡し、**リテラル部分だけを潰してホールの中はコードとして残す**
+  （ホール内の入れ子リテラルは再帰的に潰す）。ホールの中は `nameof(Foo)` のように
+  **型の実利用**が書かれ得るため、潰すこと自体も誤りであった。
+- **試験の弱さ**（🟢 軽微の指摘）: 前処理の分岐（ブロックコメント・文字リテラル・逐語文字列・
+  生文字列）は**判定の入口からしか通っておらず**、字句のずれ（＝後続の実コードを巻き込む壊れ方）が
+  見えなかった。`CSharpSourceTests` を新設し、各分岐で「長さが変わらない」「リテラル内の識別子が
+  消える」「**後続の実コードが残る**」の 3 点を固定した。
+- **是正後の再測**: 判定の結果は 18 件（常駐 16 ＋ 既知 2）のままで**変わらない**。
+  捨て型のミューテーションも是正後に引き直して赤を確認した。
+  `Architecture.Tests` は **122 → 171 件**（検査本体 +11・前処理の直接試験 +38）。
 
 ## 計画書との差異
 
