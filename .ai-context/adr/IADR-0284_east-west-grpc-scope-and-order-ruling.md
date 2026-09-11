@@ -202,6 +202,20 @@ versioning・h2c ポート・s2s トークンの 4 点を規約表で持つ）�
   が公開された）。DocumentService `POST /documents`・RetrievalService `POST /search` は proto がまだ無く基盤待ちのまま。
 - #584 は引き続き `Refs`（閉じない）。`blocked:env` は外した。
 
+## 追記（2026-09-11・LlmGateway の 2 本を実装した / #746）
+
+上の追記で「基盤待ちから外れた」とだけ書いた **AST→MSP の LlmGateway `POST /complete` 2 本を実装した**
+（具体の置き方は [IADR-0332](IADR-0332_llm-gateway-completion-grpc-transport.md)）。
+
+- **決定 5 の段 0〜6 は AST 内 22 本の順序であり、AST→MSP は別系列である。** 本件を段の番号へ差し込むと
+  #745（段 1 ＝ Configuration `Assumptions`）と番号が競合するので、**段 1′（AST→MSP・LlmGateway）**と呼ぶ。
+  提供側が違い、ファイル領域も交差しないため並行して進められる。
+- **決定 1・2・4・5 は変わらない**（境界基準・射程 26 本の内訳・環流・段の切り方）。残る AST→MSP 2 本
+  （DocumentService `POST /documents`・RetrievalService `POST /search`）は proto がまだ無く**基盤待ちのまま**である。
+- 決定 5 の「fail-safe 写像の共通方針」のうち **`Unauthenticated` / `PermissionDenied` は
+  「各クライアントの既存の安全側既定」へ倒すだけでは足りない**ことが分かった —— 倒れ先は同じ Hold でも、
+  **記録の原因**を分けないと `IADR-0323` が閉じた誤帰属が復活する。IADR-0332 決定 3 がこれを具体化した。
+
 ## 関連
 
 - Supersedes: なし

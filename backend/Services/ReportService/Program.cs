@@ -4,6 +4,7 @@ using ReportService.Features.Reports;
 using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -13,6 +14,7 @@ using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -75,6 +77,23 @@ builder.Services.AddHttpClient("report-llm",
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
 
+// NFR, FR-06, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0328, IADR-0332, #746:
+// east-west gRPC（`platform.llmgateway.v1.LlmCompletion/Complete`）。**`LlmGateway:Grpc` があるときだけ**
+// 登録する ＝ 既定は REST でありこの行は何もしない（未設定なら本変更前とバイト等価）。
+// s2s は REST と**同じ資格情報**（`LlmGateway:Auth` ＝ MSP レルムの `ai-stock-trading-llm-caller`。IADR-0323）。
+var llmGrpcAddress = LlmGatewayGrpc.ResolveAddress(builder.Configuration[LlmGatewayGrpc.AddressKey]);
+if (llmGrpcAddress is not null)
+{
+    builder.Services.AddSingleton(sp => new LlmCompletion.LlmCompletionClient(
+        GrpcClientExtensions.CreateAiStockTradingChannel(
+            llmGrpcAddress.ToString(),
+            // 🔴 DI へ登録せず inline で作る（AST レルムの IServiceAccessTokenProvider と TryAdd 衝突すると
+            // レルムを跨いでトークンが漏れる。IADR-0323 決定1 / IADR-0093 決定2）。
+            PlatformRealmAuthExtensions.CreatePlatformRealmTokenProvider(
+                sp, sp.GetRequiredService<IConfiguration>(),
+                LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName))));
+}
+
 // NFR（費用）, #347, IADR-0219: 報告書生成の LLM 費用の計測点。**用途（purpose）を載せて発行する**ため、
 // 費用統制サービスは上限の対象外（LlmUncapped）として計上し、抑制せずに月報の実績へ供給できる。
 // #303, IADR-0122: 単価は応答が名乗った実効モデルから引く（LlmPricing:PerModel:<model-id>:*・円/1k）。
@@ -98,13 +117,28 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     var baseUrl = cfg["LlmGateway:BaseUrl"];
-    // 未設定・不正 URI は安全既定（プレースホルダ＝定型散文）に倒す。
-    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        return sp.GetRequiredService<PlaceholderReportNarrativeDrafter>();
+    var timeouts = NarrativeTimeouts(cfg);
 
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm");
-    http.BaseAddress = uri;
-    return new HttpReportNarrativeDrafter(http,
+    // NFR, IADR-0332 決定 2, #746: 輸送の選択。**gRPC が構成されていればそれを使い、無ければ REST**。
+    // どちらも無ければ安全既定（プレースホルダ＝定型散文）に倒す。判定器は輸送に依らず 1 つである。
+    var grpcClient = sp.GetService<LlmCompletion.LlmCompletionClient>();
+    ILlmCompletionTransport? transport = grpcClient is not null
+        // IADR-0123 / IADR-0332 決定 4: 種別別の上限は要求単位で渡す（下の timeoutFor）。ここに置く既定は
+        // REST の HttpClient.Timeout（＝解決値の最大）に相当する多層防御の上限である。
+        ? new GrpcLlmCompletionTransport(grpcClient, timeouts.Max)
+        : null;
+
+    if (transport is null)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+            return sp.GetRequiredService<PlaceholderReportNarrativeDrafter>();
+
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm");
+        http.BaseAddress = uri;
+        transport = new RestLlmCompletionTransport(http);
+    }
+
+    return new HttpReportNarrativeDrafter(transport,
         sp.GetRequiredService<ILogger<HttpReportNarrativeDrafter>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
         // IADR-0120 決定1/2: 未設定なら要求ごとに種別から purpose（report-daily/weekly/monthly）を決める。
@@ -113,11 +147,14 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
         // IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
         // IADR-0123 決定1: 要求ごとに種別のタイムアウトを解決する（日報 30 秒 / 週報・月報 120 秒が組込既定）。
-        timeoutFor: NarrativeTimeouts(cfg).For,
+        timeoutFor: timeouts.For,
         // #347, IADR-0219: 報告書生成の費用計測（上限の対象外だが実績は月報へ記載する）。
         usageReporter: sp.GetRequiredService<ILlmUsageReporter>(),
         // #335, ADR-0017 決定4, IADR-0217: フォールバック発火の可視化（②通知・③月報集計）。
-        governanceReporter: sp.GetRequiredService<ILlmGovernanceReporter>());
+        governanceReporter: sp.GetRequiredService<ILlmGovernanceReporter>(),
+        // IADR-0123 決定5: 縮退ログに出す「どの上限で切られたか」の既定（種別別の上限が無い構成のとき）。
+        // REST では HttpClient.Timeout がこの値だった（＝解決値の最大）。
+        transportTimeout: timeouts.Max);
 });
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため

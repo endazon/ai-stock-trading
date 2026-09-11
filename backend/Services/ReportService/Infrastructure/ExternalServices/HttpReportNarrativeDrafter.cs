@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports;
@@ -28,17 +26,42 @@ namespace ReportService.Infrastructure.ExternalServices;
 // - #335, #347, ADR-0017 決定4, IADR-0217/0219: 送信が成立した応答から **①実効モデル（報告書メタ）**・
 //   **②フォールバック発火の通知**・**③費用の計上（月報の利用実績）** の 3 つを取り出す。
 //   従来は応答の `Model` を受け取りながら捨てており、報告書がどのモデルで書かれたか誰も知り得なかった。
+// NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: **輸送は差し替えられる。**
+// 🔴 本クラスは「送る」ではなく**「応答を解釈してプレースホルダへ振り分ける判定器」**であり、
+// REST（既定）と east-west gRPC のどちらで送っても同じ判定を通す（`ILlmCompletionTransport`）。
+// クラス名 `Http…` は REST しか無かった頃の名残であり、**輸送を意味しない**（改名は挙動を変えないため
+// 別 PR。IADR-0332 決定 5）。
 public sealed class HttpReportNarrativeDrafter(
-    HttpClient httpClient,
+    ILlmCompletionTransport transport,
     ILogger<HttpReportNarrativeDrafter> logger,
     string confidentiality,
     string? purposeOverride,
     bool logPrompts = false,
     Func<ReportKind, TimeSpan>? timeoutFor = null,
     ILlmUsageReporter? usageReporter = null,
-    ILlmGovernanceReporter? governanceReporter = null)
+    ILlmGovernanceReporter? governanceReporter = null,
+    TimeSpan? transportTimeout = null)
     : IReportNarrativeDrafter
 {
+    /// <summary>
+    /// REST（`POST /complete`）で送る従来の形。既存の配線・試験はこちらを使う（既定は REST のまま）。
+    /// 種別別の上限が無い構成では <c>HttpClient.Timeout</c> が上限であり、縮退ログの秒数もそこから採る
+    /// （IADR-0123 決定 5）。
+    /// </summary>
+    public HttpReportNarrativeDrafter(
+        HttpClient httpClient,
+        ILogger<HttpReportNarrativeDrafter> logger,
+        string confidentiality,
+        string? purposeOverride,
+        bool logPrompts = false,
+        Func<ReportKind, TimeSpan>? timeoutFor = null,
+        ILlmUsageReporter? usageReporter = null,
+        ILlmGovernanceReporter? governanceReporter = null)
+        : this(new RestLlmCompletionTransport(httpClient), logger, confidentiality, purposeOverride,
+            logPrompts, timeoutFor, usageReporter, governanceReporter, httpClient.Timeout)
+    {
+    }
+
     private readonly ILlmUsageReporter _usage = usageReporter ?? new NoOpLlmUsageReporter();
     private readonly ILlmGovernanceReporter _governance = governanceReporter ?? new NoOpLlmGovernanceReporter();
 
@@ -81,17 +104,22 @@ public sealed class HttpReportNarrativeDrafter(
             // 1024 のままだと思考が上限を食い、途中で切れた文章がそのまま成果物になる（安全網なし）。
             // IADR-0120 決定1: Model は引き続き明示しない（null）＝モデルの決定権は基盤の LlmRouter に残す。
             // AST がモデル ID を持つと NonZdrModels による除外や版数改定へ追随できず、許可一覧との整合も崩れる。
-            var request = new CompletionRequest(prompt, MaxTokens: 4096, Model: null, confidentiality, purpose);
-            using var response = await httpClient
-                .PostAsJsonAsync("/complete", request, requestToken)
+            // IADR-0123 決定1 / IADR-0332 決定4: 種別ごとの上限を要求単位で渡す。REST は上の CTS が担い、
+            // gRPC は `CallOptions.Deadline` へ写す（deadline はサーバ側へも伝播する）。
+            var exchange = await transport
+                .CompleteAsync(
+                    new LlmCompletionCall(prompt, MaxTokens: 4096, Model: null, confidentiality, purpose),
+                    timeout,
+                    requestToken)
                 .ConfigureAwait(false);
 
-            if (!response.IsSuccessStatusCode)
+            if (exchange.Outcome == LlmTransportOutcome.Failed)
             {
                 // NFR-05, #724, IADR-0323: 倒れ先はプレースホルダ散文のまま（報告書は発注を伴わない＝安全側）だが、
-                // **原因は取り違えない。** 認可の失敗（401/403）を「モデルが使えない」と読める記録にしない。
-                var status = (int)response.StatusCode;
-                if (LlmFailureClassification.Classify(status) == LlmFailureKind.Unauthorized)
+                // **原因は取り違えない。** 認可の失敗（401/403・gRPC の UNAUTHENTICATED / PERMISSION_DENIED）を
+                // 「モデルが使えない」と読める記録にしない。
+                var status = exchange.Detail;
+                if (exchange.Failure == LlmFailureKind.Unauthorized)
                     logger.LogWarning(
                         "報告書散文 LLM /complete が認可を拒否しました（{Status}）。s2s の資格情報（LlmGateway:Auth）または"
                         + "サービスアカウントの付与ロールを確認してください。プレースホルダ散文に倒します（モデルの可否とは無関係）。",
@@ -104,24 +132,16 @@ public sealed class HttpReportNarrativeDrafter(
 
             // Sent=false は機密区分による送信拒否（縮退）。空応答・欠落もプレースホルダ散文に倒す。
             // #247, IADR-0104 決定3: 縮退の理由（応答不正 / 送信拒否 / 拒否 / 空応答 / 上限到達）を区別して記録する。
-            CompletionResponse? dto;
-            try
+            if (exchange.Outcome == LlmTransportOutcome.Malformed)
             {
-                dto = await response.Content
-                    .ReadFromJsonAsync<CompletionResponse>(requestToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is JsonException or NotSupportedException)
-            {
-                logger.LogWarning(ex, "報告書散文 LLM /complete の応答を解釈できません（不正 JSON・想定外の形式）。プレースホルダ散文に倒します。");
+                if (exchange.Error is { } malformed)
+                    logger.LogWarning(malformed, "報告書散文 LLM /complete の応答を解釈できません（不正 JSON・想定外の形式）。プレースホルダ散文に倒します。");
+                else
+                    logger.LogWarning("報告書散文 LLM /complete の応答が空です（JSON null）。プレースホルダ散文に倒します。");
                 return Placeholder(modelUsage);
             }
 
-            if (dto is null)
-            {
-                logger.LogWarning("報告書散文 LLM /complete の応答が空です（JSON null）。プレースホルダ散文に倒します。");
-                return Placeholder(modelUsage);
-            }
+            var dto = exchange.Payload!;
 
             if (!dto.Sent)
             {
@@ -207,7 +227,7 @@ public sealed class HttpReportNarrativeDrafter(
             // timeout が null（種別別の上限が無い構成）のときは HttpClient 自体の上限で切られている。
             logger.LogWarning(
                 "報告書散文 LLM /complete がタイムアウト（kind={Kind} timeoutSeconds={TimeoutSeconds}）。プレースホルダ散文に倒します。",
-                context.Kind, (timeout ?? httpClient.Timeout).TotalSeconds);
+                context.Kind, (timeout ?? transportTimeout)?.TotalSeconds);
             return Placeholder(modelUsage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -235,14 +255,10 @@ public sealed class HttpReportNarrativeDrafter(
         }
     }
 
-    // POST /complete の要求（platform LlmGateway CompletionApiRequest 相当・camelCase JSON）。
-    private sealed record CompletionRequest(string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose);
-
-    // POST /complete の応答（CompletionApiResponse の必要部分）。Sent=false は送信拒否（縮退）。
-    // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
-    // #247, IADR-0104: StopReason は送信が成立した場合のモデル側の終了理由（Sent とは独立した軸）。
-    // 未設定（null）＝上流未更新・未対応プロバイダでは従来どおりの分岐へ素通りする（非破壊）。
+    // 要求・応答の写像（REST の CompletionApiRequest / CompletionApiResponse、gRPC の
+    // CompleteRequest / CompleteResponse）は輸送側（`RestLlmCompletionTransport` /
+    // `GrpcLlmCompletionTransport`）へ移した。本クラスが読むのは輸送に依らない `LlmCompletionPayload` である。
+    // Sent=false は送信拒否（縮退）。#247, IADR-0104: StopReason は送信が成立した場合のモデル側の終了理由
+    // （Sent とは独立した軸）。未設定（null）＝上流未更新・未対応プロバイダでは従来どおりの分岐へ素通りする。
     // #347, IADR-0219: InputTokens/OutputTokens は費用計測の入力。欠落時は 0 として扱う（部分写像・非破壊）。
-    private sealed record CompletionResponse(
-        string? Text, bool Sent, string? Model, string? StopReason = null, int? InputTokens = null, int? OutputTokens = null);
 }

@@ -5,6 +5,7 @@ using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
 using TradeDecisionService.Hosted;
 using TradeDecisionService.Infrastructure.Steps;
+using AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -17,6 +18,7 @@ using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Options;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;
 using Wolverine;
@@ -84,6 +86,26 @@ builder.Services.AddHttpClient("llm", c => c.Timeout = ParseTimeout(builder.Conf
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderLlmCompletionClient>();
 
+// NFR, FR-04, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0328, IADR-0332, #746:
+// east-west gRPC（`platform.llmgateway.v1.LlmCompletion/Complete`）。**`LlmGateway:Grpc` があるときだけ**
+// 登録する ＝ 既定は REST でありこの行は何もしない（未設定なら本変更前とバイト等価）。
+// 🔴 **チャネルはプロセスに 1 本**（`ILlmCompletionClient` は Scoped であり、解決のたびに作ると
+// HTTP/2 接続が増え続ける）。生成クライアントは LlmGateway 専用の型なので、他の面（#745 の
+// Configuration Assumptions ほか）が同じサービスへ入っても DI で衝突しない。
+// s2s は REST と**同じ資格情報**（`LlmGateway:Auth` ＝ MSP レルムの `ai-stock-trading-llm-caller`。IADR-0323）。
+var llmGrpcAddress = LlmGatewayGrpc.ResolveAddress(builder.Configuration[LlmGatewayGrpc.AddressKey]);
+if (llmGrpcAddress is not null)
+{
+    builder.Services.AddSingleton(sp => new LlmCompletion.LlmCompletionClient(
+        GrpcClientExtensions.CreateAiStockTradingChannel(
+            llmGrpcAddress.ToString(),
+            // 🔴 DI へ登録せず inline で作る（AST レルムの IServiceAccessTokenProvider と TryAdd 衝突すると
+            // レルムを跨いでトークンが漏れる。IADR-0323 決定1 / IADR-0093 決定2）。
+            PlatformRealmAuthExtensions.CreatePlatformRealmTokenProvider(
+                sp, sp.GetRequiredService<IConfiguration>(),
+                LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName))));
+}
+
 // #79, IADR-0055 決定2/3: LLM 費用計測。egress の成功応答トークンに単価を適用し LlmCostIncurred を publish する
 // （費用統制サービスが購読して月次計上。HTTP /costs/record は OwnerOnly のため使わない）。
 // #303, IADR-0122 決定2/3: 単価は**応答が名乗った実効モデル**で引く（用途別モデル割当でモデルが混在するため）。
@@ -115,13 +137,27 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     var baseUrl = cfg["LlmGateway:BaseUrl"];
-    // 未設定・不正 URI は安全既定（プレースホルダ＝常に Hold・取引しない）に倒す。
-    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        return sp.GetRequiredService<PlaceholderLlmCompletionClient>();
 
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("llm");
-    http.BaseAddress = uri;
-    return new HttpLlmCompletionClient(http,
+    // NFR, IADR-0332 決定 2, #746: 輸送の選択。**gRPC が構成されていればそれを使い、無ければ REST**。
+    // どちらも無ければ安全既定（プレースホルダ＝常に Hold・取引しない）に倒す。
+    // 判定器（HttpLlmCompletionClient）は輸送に依らず 1 つである。
+    var grpcClient = sp.GetService<LlmCompletion.LlmCompletionClient>();
+    ILlmCompletionTransport? transport = grpcClient is not null
+        // IADR-0123 / IADR-0332 決定 4: REST では HttpClient.Timeout が担っていた上限を deadline へ写す。
+        ? new GrpcLlmCompletionTransport(grpcClient, ParseTimeout(cfg["LlmGateway:TimeoutSeconds"]))
+        : null;
+
+    if (transport is null)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+            return sp.GetRequiredService<PlaceholderLlmCompletionClient>();
+
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("llm");
+        http.BaseAddress = uri;
+        transport = new RestLlmCompletionTransport(http);
+    }
+
+    return new HttpLlmCompletionClient(transport,
         sp.GetRequiredService<ILogger<HttpLlmCompletionClient>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
         // #335, IADR-0212: 用途は**呼び出しごと**に DecisionOrchestrator が名乗る（一次=trade-decision-screening／
