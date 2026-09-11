@@ -210,7 +210,7 @@ csproj の推移閉包で強制している（platform ADR-0030 §基本方針 /
 （IADR-0332 / #746 が `Shared.Infrastructure` へ入れた）。**所有者が置き場を決める**という規約は同じであり、
 どちらの形かは決定 5 の allowlist（`aistocktrading` / `platform`）が機械で区別する。
 
-### 決定 8 — protoc の生成 C# はカバレッジの分母から外す（`coverage-floor.json` の 3 つ目の除外）
+### 決定 8 — protoc の生成 C# はカバレッジの分母から外す（`coverage-floor.json` の 3・4 つ目の除外）
 
 生成物は `obj/` に落ちるが、**カバレッジのレポートには載る**（実測: 段 1 の proto 1 本で `Assumptions.cs` /
 `AssumptionsGrpc.cs` の **751 行・被覆 348 行＝46.34%**）。
