@@ -168,6 +168,11 @@ export default tseslint.config(
       '**/playwright-report',
       '**/test-results',
       'test/foundation-stub/**',
+      // @platform/ui のテスト/型検査用スタブ（@foundation スタブと同じ扱い。合成時は実体を使う）。
+      'test/ui-stub/**',
+      // lingui compile の生成物（カタログ）。基盤と同じく lint 対象外にする
+      // （乖離は `npm run i18n` の再生成差分で検出する）。
+      'src/locales/**',
     ],
   },
   {

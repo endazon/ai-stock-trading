@@ -57,7 +57,7 @@ jobs:
       #   環流はファイルではなく planning の issue で管理され、突合対象が存在しない。）
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       # NFR / #717 / #710: 監査項目 6（計画 ADR レンジ鮮度）は AI ではなく決定的なステップで解決する。
       # `secrets.GITHUB_TOKEN` は本リポジトリしか読めず、AI が `mcp__github__get_file_contents` で

@@ -2588,19 +2588,23 @@ module.exports = ({ ok, assert }) => {
       assert.match(dc, /mcr\.microsoft\.com\/devcontainers\/dotnet:10\.0/, 'devcontainer のベースイメージが .NET 10 になっていない');
     });
 
-    ok('Node のバージョンが全ワークフロー・.nvmrc で 20 に揃っている（#709）', () => {
+    // 2026-09-12 / IADR-0338 決定 3: 20 → 22（`@lingui/cli` 6.x が Node >=22.19 を要求。合成先の基盤も 22）。
+    // 「単一バージョンに揃っている」という #709 の主張はそのまま、値だけを進めた。
+    ok('Node のバージョンが全ワークフロー・devcontainer・.nvmrc で 22 に揃っている（#709 / IADR-0338）', () => {
       const wfDir = pathSs.join(REPO_ROOT_SS, '.github', 'workflows');
       const offenders = [];
       for (const f of fsSs.readdirSync(wfDir)) {
         if (!f.endsWith('.yml')) continue;
         const src = fsSs.readFileSync(pathSs.join(wfDir, f), 'utf8');
         for (const m of src.matchAll(/node-version:\s*['"]?(\d+)['"]?/g)) {
-          if (m[1] !== '20') offenders.push(`${f}: node-version ${m[1]}`);
+          if (m[1] !== '22') offenders.push(`${f}: node-version ${m[1]}`);
         }
       }
-      assert.deepStrictEqual(offenders, [], `20 以外の node-version が残っている: ${offenders.join(', ')}`);
+      assert.deepStrictEqual(offenders, [], `22 以外の node-version が残っている: ${offenders.join(', ')}`);
       const nvmrc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.nvmrc'), 'utf8').trim();
-      assert.strictEqual(nvmrc, '20', `.nvmrc が 20 でない: ${nvmrc}`);
+      assert.strictEqual(nvmrc, '22', `.nvmrc が 22 でない: ${nvmrc}`);
+      const dc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.devcontainer', 'devcontainer.json'), 'utf8');
+      assert.match(dc, /"ghcr\.io\/devcontainers\/features\/node:1":\s*\{\s*"version":\s*"22"/, 'devcontainer の Node feature が 22 でない');
     });
   }
 };

@@ -53,3 +53,39 @@ export interface NavItem extends FeatureNav {
  * スタブの読み手に見せるためである。**
  */
 export type PlanNavItem = NavItem & { group: NavGroup };
+
+// ---------------------------------------------------------------------------
+// パンくず（基盤 05_screens §共通シェル「パンくず・権限バッジ」。MSP/#446）
+// ---------------------------------------------------------------------------
+//
+// UI/UX 改善 2026-09-12: 本ユニットの 4 画面も**パンくずを宣言する**（合成点が
+// `registerBreadcrumbs` へ渡す）。ルート・ナビと同じく**別の登録面**であり、
+// 片方だけ足すと「画面は開けるのにパンくずが出ない」になる。
+// 実体は platform の `app/routing/featureRegistry.ts`。**型のみを写像する。**
+
+/** パンくずの親画面の段（実在する到達可能な画面なのでリンクにする）。 */
+export interface BreadcrumbCrumb {
+  label: NavLabel;
+  /** 遷移先パス（例: "/settings"）。 */
+  to: string;
+}
+
+/**
+ * 1 画面のパンくず宣言。
+ *
+ * 🔴 **ナビ項目とは別の登録面である**（ナビに出さない画面もパンくずを持つため、相乗りできない）。
+ * `requiresAnyRole` は**存在秘匿（IADR-0009）の経路**であり、ルートの `RequireRole anyOf` および
+ * 左ナビの `requiresAnyRole` と同じ値を置く。
+ */
+export interface FeatureBreadcrumb {
+  /** 対象ルートの完全パス（TanStack の `fullPath`）。宣言の主キー。 */
+  routePath: string;
+  /** 画面グループ。`user` はグループ段を描かない（基盤の実測）。 */
+  group: NavGroup;
+  /** 親画面の段（上位から順）。持たない画面は省略する。 */
+  parents?: readonly BreadcrumbCrumb[];
+  /** 自画面の段。動的な葉を持つ画面は宣言しない。 */
+  label?: NavLabel;
+  /** 表示に必要なロール（いずれか一致）。省略時は認証済み全員。 */
+  requiresAnyRole?: readonly string[];
+}

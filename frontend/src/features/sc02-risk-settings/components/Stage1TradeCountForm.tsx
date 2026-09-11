@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { Button, Input, Kv, KvItem, Label, Note, Panel } from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
 import { useSaveStage1MinimumTradeCount } from '@ai-stock-trading/lib/risk/queries';
 import {
@@ -28,23 +30,27 @@ import {
 //   入力中の値   … `inputBelowStatisticalBasis`（まだ保存されておらず、問い合わせる相手が存在しない）。
 // 本フォームは**入力中の値**に対する即時提示を担う。閾値 100 の単一情報源は
 // サーバ側 `Stage1TradeCountBounds` である（IADR-0164 決定6）。
+//
+// UI/UX 改善 2026-09-12（hi-fi モック `sc-02.html` の「段階ゲートの設定」）: `Panel` ＋ `Kv` ＋
+// `Label` / `Input` / `Button` に載せ替えた。**統計的根拠の警告は `role="alert"` を保つ**——
+// 常設の注記ではなく、利用者が下げたことに対する即時の提示である。
 
 // ApiError の種別を利用者向けメッセージへ写像する（SC-02 の他フォームと同方針）。
 function saveMessageOf(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.kind === 'conflict') {
-      return '競合が発生しました。最新を取得して再試行してください。';
+      return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
       const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `入力内容に誤りがあります。${detail}`;
+      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
     }
     if (e.kind === 'forbidden') {
-      return '変更する権限がありません。';
+      return i18n._(msg`変更する権限がありません。`);
     }
     return e.message;
   }
-  return '保存に失敗しました。';
+  return i18n._(msg`保存に失敗しました。`);
 }
 
 export function Stage1TradeCountForm({
@@ -98,7 +104,7 @@ export function Stage1TradeCountForm({
     try {
       await save.mutateAsync({ minimumTradeCount: Number(value), reason: reason.trim() });
       setReason('');
-      setSavedNotice('Stage 1 の最小取引件数を保存しました。');
+      setSavedNotice(i18n._(msg`Stage 1 の最小取引件数を保存しました。`));
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveError(saveMessageOf(err));
@@ -106,75 +112,106 @@ export function Stage1TradeCountForm({
   }
 
   return (
-    <Section title="Stage 1 の最小取引件数（変更）">
-      <p>
-        Stage 1（moomoo SIMULATE）から Stage 2 へ昇格するために必要な取引件数です
-        （既定 {STAGE1_TRADE_COUNT_DEFAULT} 件）。
+    <Panel className="m-0" heading={i18n._(msg`Stage 1 の最小取引件数（変更）`)}>
+      <Note>
+        {i18n._(msg`Stage 1（moomoo SIMULATE）から Stage 2 へ昇格するために必要な取引件数です（既定`)}{' '}
+        {STAGE1_TRADE_COUNT_DEFAULT} {i18n._(msg`件）。`)}
         <strong>
-          計上単位は「約定が成立した新規建て注文 1 件」です（1 注文が分割約定しても 1 件、手仕舞いは計上しません）。
+          {i18n._(
+            msg`計上単位は「約定が成立した新規建て注文 1 件」です（1 注文が分割約定しても 1 件、手仕舞いは計上しません）。`,
+          )}
         </strong>
-      </p>
+      </Note>
       {/* 裁定「この設定は条件 1・条件 2 には及ばない」「打ち切り規則も変わらない」を画面に明記する。
           明記しないと「昇格条件を全部ここで緩められる」と読まれ得る。 */}
-      <p>
-        変更できるのは<strong>取引件数だけ</strong>です。統制違反 0 件・60 営業日の条件と、
-        累計 120 営業日で Stage 0 へ差し戻す規則は変わりません。
-      </p>
+      <Note>
+        {i18n._(msg`変更できるのは`)}
+        <strong>{i18n._(msg`取引件数だけ`)}</strong>
+        {i18n._(
+          msg`です。統制違反 0 件・60 営業日の条件と、累計 120 営業日で Stage 0 へ差し戻す規則は変わりません。`,
+        )}
+      </Note>
 
-      <form onSubmit={handleSubmit} aria-label="Stage 1 の最小取引件数の変更">
-        <p>
-          現在の設定: <strong>{current} 件</strong>
+      <form onSubmit={handleSubmit} aria-label={i18n._(msg`Stage 1 の最小取引件数の変更`)}>
+        <p className="text-xs">
+          {i18n._(msg`現在の設定:`)}{' '}
+          <strong>
+            {current} {i18n._(msg`件`)}
+          </strong>
         </p>
-        <div>
-          <label htmlFor="stage1-minimum-trade-count">Stage 1 の最小取引件数 件</label>
-          <input
-            id="stage1-minimum-trade-count"
-            type="number"
-            step="1"
-            value={value}
-            aria-invalid={validationError !== null}
-            aria-describedby="stage1-minimum-trade-count-help"
-            onChange={(e) => setValue(e.target.value)}
-          />
-          <span id="stage1-minimum-trade-count-help">
-            {`許容範囲: ${STAGE1_TRADE_COUNT_RANGE_TEXT}`}
-          </span>
-        </div>
-
-        <div>
-          <label htmlFor="stage1-minimum-trade-count-reason">最小取引件数の変更理由</label>
-          <textarea
-            id="stage1-minimum-trade-count-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            required
-          />
-        </div>
+        <Kv columns={2} className="mt-2">
+          <KvItem
+            label={
+              <Label htmlFor="stage1-minimum-trade-count">
+                {i18n._(msg`Stage 1 の最小取引件数 件`)}
+              </Label>
+            }
+          >
+            <Input
+              id="stage1-minimum-trade-count"
+              type="number"
+              step="1"
+              value={value}
+              invalid={validationError !== null}
+              aria-describedby="stage1-minimum-trade-count-help"
+              onChange={(e) => setValue(e.target.value)}
+              className="w-full border-0 bg-transparent p-0"
+            />
+            <span
+              id="stage1-minimum-trade-count-help"
+              className="mt-1 block text-[10.5px] text-fg-muted"
+            >
+              {`${i18n._(msg`許容範囲:`)} ${STAGE1_TRADE_COUNT_RANGE_TEXT}`}
+            </span>
+          </KvItem>
+          <KvItem
+            label={
+              <Label htmlFor="stage1-minimum-trade-count-reason">
+                {i18n._(msg`最小取引件数の変更理由`)}
+              </Label>
+            }
+          >
+            <Input
+              id="stage1-minimum-trade-count-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+              className="w-full border-0 bg-transparent p-0"
+            />
+          </KvItem>
+        </Kv>
 
         {/* FR-20, §4.3, #423: **100 件未満は警告を常時表示する。ただし設定を妨げない。**
             `role="alert"` で出すが、保存ボタンの `disabled` には入れない（裁定が明示）。 */}
         {belowBasis && (
-          <p role="alert">{STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING}</p>
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {STAGE1_TRADE_COUNT_BELOW_BASIS_WARNING}
+          </p>
         )}
 
-        {validationError && <p role="alert">{validationError}</p>}
+        {validationError !== null && (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {validationError}
+          </p>
+        )}
 
-        <button type="submit" disabled={blocked}>
-          最小取引件数を保存
-        </button>
-        {save.isPending && <span role="status">最小取引件数を保存中…</span>}
-        {savedNotice && <p role="status">{savedNotice}</p>}
-        {saveError && <p role="alert">{saveError}</p>}
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Button type="submit" variant="primary" disabled={blocked}>
+            {i18n._(msg`最小取引件数を保存`)}
+          </Button>
+          {save.isPending && <span role="status">{i18n._(msg`最小取引件数を保存中…`)}</span>}
+        </div>
+        {savedNotice !== null && (
+          <p role="status" className="mt-2 text-[11px] text-success">
+            {savedNotice}
+          </p>
+        )}
+        {saveError !== null && (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {saveError}
+          </p>
+        )}
       </form>
-    </Section>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <details open style={{ margin: '0.75rem 0' }} aria-label={title}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{title}</summary>
-      <div style={{ marginTop: '0.5rem' }}>{children}</div>
-    </details>
+    </Panel>
   );
 }

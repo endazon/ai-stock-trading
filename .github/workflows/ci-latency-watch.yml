@@ -48,10 +48,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # NFR / #709: 他ワークフロー・devcontainer とも Node 20 で揃える（本ファイルだけ 22 だった）。
+      # NFR / #709: 他ワークフロー・devcontainer と Node のバージョンを揃える（本ファイルだけ 22 だった）。
+      # 2026-09-12 / IADR-0338 決定 3: 全体を 22 へ（`@lingui/cli` 6.x が Node >=22.19 を要求。合成先の基盤も 22）。
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
       # 判定ロジックの回帰試験。監視そのものが壊れていないことを毎回確かめる
       # （監視が黙って壊れるのは、監視が無いより悪い）。
       - name: Self-test

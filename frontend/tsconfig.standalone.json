@@ -5,6 +5,9 @@
   "compilerOptions": {
     "paths": {
       "@foundation/*": ["./test/foundation-stub/*"],
+      // 共有 UI（@platform/ui）は基盤の pnpm workspace パッケージであり単独リポでは解決できない。
+      // 役割・テキストを実物と一致させた薄いスタブへ解決する（vitest.config.ts の alias と同じ向き先）。
+      "@platform/ui": ["./test/ui-stub/index.ts"],
       "@ai-stock-trading/*": ["src/*"]
     }
   },

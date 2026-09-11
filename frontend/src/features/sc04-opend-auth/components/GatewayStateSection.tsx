@@ -1,10 +1,14 @@
-import type { ReactNode } from 'react';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { Kv, KvItem, Note, Panel } from '@platform/ui';
 import {
   brokerProviderLabel,
   formatAt,
   isNotSupplied,
   METRIC_NOT_SUPPLIED_TEXT,
 } from '@ai-stock-trading/lib/risk/contracts';
+import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
+import type { useOpendAuthState } from '../api/opendAuthQueries';
 import type { OpendAuthStateView } from '../types';
 import { CONNECTION_IDLE, CONNECTION_WAITING, connectionLabel, promptLabel } from '../types';
 
@@ -22,103 +26,122 @@ import { CONNECTION_IDLE, CONNECTION_WAITING, connectionLabel, promptLabel } fro
 // 供給可否は**サーバの宣言**（`*Availability`）だけで決める。画面が値の有無から推測しない
 // ——推測すると、供給が始まった日に画面が嘘をつき続ける（IADR-0154 / IADR-0162）。
 //
-// **色だけで意味を持たせない。** 状態はすべて文言で述べる（未供給は `role="alert"` を伴う）。
-
-export type GatewayState = 'loading' | 'ok' | 'unavailable';
+// **色だけで意味を持たせない。** 状態はすべて文言で述べる。
+//
+// UI/UX 改善 2026-09-12（hi-fi モック `sc-04.html`）: 状態参照を `Panel` ＋ `Kv` に載せ、
+// 取得そのものの失敗は `QueryPhase` に一本化した。**`role="alert"` は結果通知のためのものであり、
+// 常設の供給宣言には付けない**（`Note tone="err"`。常時ライブリージョンにすると、画面を開くたびに
+// 読み上げられ、本当の通知が埋もれる）。
 
 export function GatewayStateSection({
-  state,
+  query,
+  brokerProvider,
+}: {
+  query: ReturnType<typeof useOpendAuthState>;
+  brokerProvider: number | null;
+}) {
+  return (
+    <Panel heading={i18n._(msg`ゲートウェイの状態（OpenD 常駐コンテナ）`)}>
+      <QueryPhase
+        query={query}
+        loadingLabel={i18n._(msg`ゲートウェイの状態を確認中…`)}
+        // 取得そのものに失敗した（BFF 未登録・ネットワーク断など）。**「入力待ちではない」と描かない。**
+        // 404（端点未登録）を含むため文言は**縮退の宣言**にする。再試行は残す——ネットワーク断なら効く。
+        errorTitle={
+          <>
+            {i18n._(msg`ゲートウェイの状態を`)}
+            {METRIC_NOT_SUPPLIED_TEXT}
+            {i18n._(msg`。`)}
+            <strong>
+              {i18n._(msg`「いま入力を待っていない」のではなく、確認できていません。`)}
+            </strong>
+          </>
+        }
+      >
+        {(view: OpendAuthStateView) => <GatewayStateView view={view} brokerProvider={brokerProvider} />}
+      </QueryPhase>
+    </Panel>
+  );
+}
+
+function GatewayStateView({
   view,
   brokerProvider,
 }: {
-  state: GatewayState;
-  view: OpendAuthStateView | null;
+  view: OpendAuthStateView;
   brokerProvider: number | null;
 }) {
-  if (state === 'loading') {
-    return (
-      <Section title="ゲートウェイの状態（OpenD 常駐コンテナ）">
-        <p role="status">ゲートウェイの状態を確認中…</p>
-      </Section>
-    );
-  }
-  if (state === 'unavailable' || !view) {
-    // 取得そのものに失敗した（BFF 未登録・ネットワーク断など）。**「入力待ちではない」と描かない。**
-    return (
-      <Section title="ゲートウェイの状態（OpenD 常駐コンテナ）">
-        <p role="alert">
-          ゲートウェイの状態を{METRIC_NOT_SUPPLIED_TEXT}。
-          <strong>「いま入力を待っていない」のではなく、確認できていません。</strong>
-        </p>
-      </Section>
-    );
-  }
-
   const promptUnsupplied = isNotSupplied(view.promptAvailability);
 
   return (
-    <Section title="ゲートウェイの状態（OpenD 常駐コンテナ）">
-      <dl>
-        <dt>接続状態</dt>
-        <dd role={promptUnsupplied ? 'alert' : undefined}>
+    <>
+      <Kv columns={4}>
+        <KvItem label={i18n._(msg`接続状態`)}>
           <strong>{connectionLabel(view.connection)}</strong>
-          {view.connection === CONNECTION_WAITING && '（API は未稼働 — 発注・照会は届きません）'}
-        </dd>
+          {view.connection === CONNECTION_WAITING
+            && i18n._(msg`（API は未稼働 — 発注・照会は届きません）`)}
+        </KvItem>
 
         {/* 🔴 待機中プロンプトこそ 3 状態の要である。 */}
-        <dt>待機中のプロンプト</dt>
-        <dd role={promptUnsupplied ? 'alert' : undefined}>
+        <KvItem label={i18n._(msg`待機中のプロンプト`)}>
           <strong>{promptText(view)}</strong>
-          {!promptUnsupplied && view.connection !== CONNECTION_IDLE && (
-            <>（サーバ側が宣言します。画面は種別を選べません）</>
-          )}
-        </dd>
+          {!promptUnsupplied && view.connection !== CONNECTION_IDLE
+            && i18n._(msg`（サーバ側が宣言します。画面は種別を選べません）`)}
+        </KvItem>
 
-        <dt>最終ログイン成功</dt>
-        <dd role={isNotSupplied(view.lastLoginAtAvailability) ? 'alert' : undefined}>
+        <KvItem label={i18n._(msg`最終ログイン成功`)}>
           {view.lastLoginAtAvailability === 0 && view.lastLoginAt !== null
             ? formatAt(view.lastLoginAt)
             : METRIC_NOT_SUPPLIED_TEXT}
-        </dd>
+        </KvItem>
 
         {/* 現在の発注先は参照のみ。**変更は SC-02 が持つ**（05_screens「変更操作を持つ画面は SC-02 だけ」）。 */}
-        <dt>現在の発注先</dt>
-        <dd>
+        <KvItem label={i18n._(msg`現在の発注先`)}>
           {brokerProvider === null ? METRIC_NOT_SUPPLIED_TEXT : brokerProviderLabel(brokerProvider)}
-          （参照のみ — 変更は「リスク設定」画面）
-        </dd>
+          {i18n._(msg`（参照のみ — 変更は「リスク設定」画面）`)}
+        </KvItem>
+      </Kv>
 
-        {/* ADR-0024 決定1 の 2 条件。**配備構成（PVC・固定 NAT）から静的に決まる。** */}
-        <dt>デバイス信頼の永続化</dt>
-        <dd role={isNotSupplied(view.deviceTrustAvailability) ? 'alert' : undefined}>
-          {booleanText(view.deviceTrustAvailability, view.deviceTrustPersisted, '永続化済', '永続化されていません')}
-        </dd>
-
-        <dt>egress IP の安定性</dt>
-        <dd role={isNotSupplied(view.egressStabilityAvailability) ? 'alert' : undefined}>
-          {booleanText(view.egressStabilityAvailability, view.egressStable, '安定（固定 NAT）', '不安定')}
-        </dd>
-      </dl>
+      {/* ADR-0024 決定1 の 2 条件。**配備構成（PVC・固定 NAT）から静的に決まる。** */}
+      <Kv columns={2} className="mt-3">
+        <KvItem label={i18n._(msg`デバイス信頼の永続化`)}>
+          {booleanText(
+            view.deviceTrustAvailability,
+            view.deviceTrustPersisted,
+            i18n._(msg`永続化済`),
+            i18n._(msg`永続化されていません`),
+          )}
+        </KvItem>
+        <KvItem label={i18n._(msg`egress IP の安定性`)}>
+          {booleanText(
+            view.egressStabilityAvailability,
+            view.egressStable,
+            i18n._(msg`安定（固定 NAT）`),
+            i18n._(msg`不安定`),
+          )}
+        </KvItem>
+      </Kv>
 
       {promptUnsupplied && (
-        <p role="alert">
-          OpenD の常駐コンテナへ到達できず、待機中のプロンプトを読めていません。
+        <Note tone="err">
+          {i18n._(msg`OpenD の常駐コンテナへ到達できず、待機中のプロンプトを読めていません。`)}
           <strong>
-            「いま入力を待っていない（ログイン済み）」とは別の状態です。
+            {i18n._(msg`「いま入力を待っていない（ログイン済み）」とは別の状態です。`)}
           </strong>
-          入力欄は無効にしています。
-        </p>
+          {i18n._(msg`入力欄は無効にしています。`)}
+        </Note>
       )}
 
-      {view.detail !== null && view.detail !== '' && <p>{view.detail}</p>}
+      {view.detail !== null && view.detail !== '' && <Note>{view.detail}</Note>}
 
-      <p>
-        デバイス信頼の永続化と egress IP の安定という 2 条件がそろう環境では、
-        <strong>再起動をまたいで無人で再ログインできます</strong>。
-        本画面が要るのは、初回のデバイス信頼の確立と、条件が崩れた場合の再認証だけです
-        （毎回の手作業が要るという意味ではありません）。
-      </p>
-    </Section>
+      <Note>
+        {i18n._(msg`デバイス信頼の永続化と egress IP の安定という 2 条件がそろう環境では、`)}
+        <strong>{i18n._(msg`再起動をまたいで無人で再ログインできます`)}</strong>
+        {i18n._(
+          msg`。本画面が要るのは、初回のデバイス信頼の確立と、条件が崩れた場合の再認証だけです（毎回の手作業が要るという意味ではありません）。`,
+        )}
+      </Note>
+    </>
   );
 }
 
@@ -130,7 +153,7 @@ export function GatewayStateSection({
  */
 function promptText(view: OpendAuthStateView): string {
   if (isNotSupplied(view.promptAvailability)) return METRIC_NOT_SUPPLIED_TEXT;
-  if (view.prompt === null) return 'いま OpenD は入力を待っていません';
+  if (view.prompt === null) return i18n._(msg`いま OpenD は入力を待っていません`);
   return promptLabel(view.prompt);
 }
 
@@ -143,13 +166,4 @@ function booleanText(
 ): string {
   if (availability !== 0 || value === null) return METRIC_NOT_SUPPLIED_TEXT;
   return value ? whenTrue : whenFalse;
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <details open style={{ margin: '0.75rem 0' }}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{title}</summary>
-      <div style={{ marginTop: '0.5rem' }}>{children}</div>
-    </details>
-  );
 }

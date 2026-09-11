@@ -3,14 +3,14 @@ title: 画面仕様書（素案） — SC-03 承認・統制状態参照画面
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-08-21
+updated: 2026-09-12
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-13, FR-20, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019]
-iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
+iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162, IADR-0338, IADR-0339]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
 issues: [#20, #165, #331, #334, #340, #342, #419, #424, planning#31, planning#33]
 -->
 
@@ -105,6 +105,25 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 - 数値 enum（`activeControl`/`stage`/`kind`/未充足基準/撤退理由）は表示ラベルへ写像し、未知値はフォールバック表示。
 - 取得不能・権限外・BFF 未登録は安全側（縮退・存在秘匿）へ倒す。機微情報は権限外に載せない。
 - 各領域（統制状態・段階ゲート・履歴）は独立に縮退する（一方の取得失敗が他方を巻き込まない）。
+
+## 待ち・失敗・空の表示と再試行（2026-09-12）
+
+取得結果の**待ち・失敗・空・本体**を 1 か所（共通部品 `QueryPhase`）で描き分ける。画面ごとの
+手書き分岐は撤去した。
+
+- **判定順は 失敗 → 待ち → 空 → 本体**である。**失敗を先に見るのは、0 件と失敗を混同しないため**
+  である。🔴 **本画面ではこの取り違えが最も高くつく** —— 取得に失敗したのに「発動なし」「0 件」と
+  描くと、**統制が働いていない画面と見分けがつかなくなる**。空の判定は**成功した応答に対してだけ**行う。
+- **失敗の告知には再試行ボタンを伴わせる。** 押すと同じ取得をやり直す（`refetch`）。
+- 🔴 **404 では再試行ボタンを出さない。** 取得先が BFF に登録されていない場合の 404 は
+  **再試行しても直らない**。この判定は画面側が持ち、共通部品へ渡す。
+- **本画面は参照専用のままである。** 再試行ボタンは**失敗したときにだけ**現れるため、
+  **正常系には変更操作が 1 つも無い**という性質は変わらない（既存の単体テストと E2E が固定している）。
+  再試行は失敗した取得をやり直すだけで、**状態を変えない**。
+- 統制状態・段階ゲート・遷移履歴・変更履歴・維持率と空売りの現況は**独立に縮退する**
+  （一方の取得失敗が他方を巻き込まない）。
+- **0 件・対象なし・供給が無いの描き分けは従来どおりである。** 本節は**取得そのものの状態**を
+  扱うものであり、サーバが宣言する供給可否の規約を置き換えない。
 
 ## テストとの対応
 

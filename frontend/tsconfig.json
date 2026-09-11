@@ -38,6 +38,9 @@
       "@foundation/ui": ["../../platform/frontend/src/components/ui"],
       "@foundation/testing/*": ["../../platform/frontend/src/testing/*"],
       "@foundation/testing": ["../../platform/frontend/src/testing"],
+      // 共有 UI（@platform/ui）。基盤の pnpm workspace パッケージ（packages/ui）を、合成時のツリー内の相対で指す。
+      // 単独リポでは `tsconfig.standalone.json` が test/ui-stub へ差し替える（@foundation と同じ二重性）。
+      "@platform/ui": ["../../packages/ui/src/index.ts"],
       "@ai-stock-trading/*": ["src/*"]
     }
   },

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [SC-01, SC-02, SC-03, FR-13, FR-17, FR-19, FR-20, UC-06]
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-12
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0031_frontend-stack.md
   - planning:projects/microservices-platform/07_adr/ADR-0032_spa-auth-bff-session.md
@@ -14,7 +14,7 @@ plan_refs:
 
 # IADR-0288: フロントエンドを React 19 / TanStack Router / TanStack Query へ移し、旧契約の互換ブリッジを不要にする
 
-- 状態: Accepted
+- 状態: Accepted（**決定 6 のみ Superseded by IADR-0338**。他の決定 1〜5 は現行のまま）
 - 日付: 2026-09-03
 - 決定者: endazon（`MSP/ADR-0031` / `MSP/ADR-0032` / `MSP/ADR-0066` に従う実装判断）
 
@@ -188,5 +188,10 @@ export const aiStockTradingNavItems: readonly NavItem[] = [ /* 3 項目 */ ];
 
 - Supersedes: なし（IADR-0080 の「単独リポでは `@foundation` をスタブへ解決する」という骨格は維持し、
   スタブの**中身**を基盤の現行 foundation へ写像し直した）
-- Superseded by: なし
+- Superseded by: **IADR-0338（決定 6 のみ）**。
+  ［2026-09-12 追記］決定 6 が「単独リポジトリでは解決できない」として採らなかった 3 技術のうち、
+  **Lingui と `@platform/ui` は [IADR-0338](./IADR-0338_platform-ui-lingui-lucide-adoption-and-ui-stub.md)
+  が置き換えた**（`@foundation` と同型の二重解決＝合成時は実体・単独リポでは `test/ui-stub`／
+  Lingui は ja 単独カタログを合成点へ公開）。**orval は引き続き未達である。**
+  本文プロズは当時の記録として書き換えない。
 - 後続: #529（Bulletproof React のディレクトリ構成への適合）

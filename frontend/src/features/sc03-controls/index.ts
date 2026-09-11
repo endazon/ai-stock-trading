@@ -5,4 +5,4 @@
 // 🔴 **barrel は Bulletproof React の現行版では非推奨である**（tree shaking を妨げる）。本 SPA は
 // 合成点アーキテクチャを採っており feature に「外から呼んでよい面」が要るため、この一点で
 // 意図的に外れる（MSP/ADR-0066 決定 4 が逸脱として記録している）。
-export { createSc03ControlsRoute, sc03ControlsNav } from './routes/sc03ControlsRoute';
+export { createSc03ControlsRoute, sc03ControlsNav, sc03ControlsBreadcrumb } from './routes/sc03ControlsRoute';

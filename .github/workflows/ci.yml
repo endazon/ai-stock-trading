@@ -86,7 +86,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Check commit messages
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -110,7 +110,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Run scripts unit tests
         # 本リポジトリは固有テスト（scripts/scripts.repo.test.js）を持つため有効化する。
         # companion が消失（誤削除・リネーム・キット同期での上書き）したときに失敗する。
@@ -154,7 +154,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
       # kubectl スタブで検証する。実クラスタ・実 kubectl・追加パッケージは不要（Bash のみ）。
@@ -789,7 +789,7 @@ jobs:
       # 参考: 他スタックの例
       # Node.js:
       #   - uses: actions/setup-node@v7
-      #     with: { node-version: "20" }
+      #     with: { node-version: "22" }
       #   - run: npm ci
       #   - run: npm run lint --if-present
       #   - run: npm run build --if-present
@@ -824,7 +824,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install
@@ -835,6 +835,13 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm run test
+      # SC-01〜04 / IADR-0338 決定 3: 翻訳カタログ（src/locales/ja）は lingui の生成物であり、
+      # 再生成して差分が出ないことを CI で固定する（未抽出の文言があると本番画面にハッシュが出る）。
+      # `@lingui/cli` 6.x は Node >=22.19 を要求するため、本ジョブは Node 22 で回す（合成先の基盤も 22）。
+      - name: i18n catalog is up to date
+        run: |
+          npm run i18n
+          git diff --exit-code -- src/locales
 
   # フロント3画面（SC-01/02/03）の Playwright E2E（issue #187 / IADR-0087）。実ブラウザ（chromium）で UI フロー
   # （表示・保存の 200/400/409 出し分け・権限外の存在秘匿・縮退）を検証する。BFF 応答はモック（page.route）で、
@@ -858,7 +865,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install
