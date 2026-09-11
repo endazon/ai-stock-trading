@@ -118,6 +118,16 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 > 0 件のため、新樹形側に静的な下限を置くと着手初日から CI が赤になる）。`TEST_TRACE_ROOT` で任意の
 > ツリーを検査できる（模擬ツリーでの実証用。`--require-planning` と併用可）。
 
+> 🔴 **［2026-09-11 変更・#757］T1 の母数（`serviceTestDirs()`）は `fs.existsSync` の個別呼び出しで
+> 判定しない。** 旧実装は `fs.existsSync(<Svc>/'tests')` と `fs.existsSync(<Svc>/'Tests')` を別々に
+> 呼んでいたが、`fs.existsSync` は OS のパス解決を経由するため、大文字小文字を区別しない FS
+> （Windows の NTFS 既定・macOS の APFS 既定）では実在する `Tests/` が `tests` への `existsSync`
+> にも一致し、`old`/`new` の両方が誤って真になる（12 サービス全てが新樹形 `Tests/` だけを持つ本リポでは
+> `old` が丸ごと誤計上され、T1 が「旧樹形のテストが 1 件も走査できていない」を常に赤で報告した。
+> CI は Linux・大文字小文字を区別する FS のため再現しない）。現在は `fs.readdirSync` が返す**実
+> エントリ名**を `Set` に集め、`===` の文字列完全一致で判定する——OS のパス解決を経由しないため、
+> 大文字小文字を区別する/しない FS のどちらでも同じ結果になる。
+
 ### 検査器を書くときの規約（fail-open の閉じ方。裁定 planning#343）
 
 **外部の存在（隣接クローン・実行ログ。かつては submodule も）に依存して skip する検査器は、
