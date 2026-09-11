@@ -12,13 +12,1725 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid " には及ばず、禁止した 6 コマンドを送れる状態が残ります。暫定手段は実行権限を運用者に限ることです。"
+msgstr " には及ばず、禁止した 6 コマンドを送れる状態が残ります。暫定手段は実行権限を運用者に限ることです。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "——強制買戻しが起きていないことを意味しません。"
+msgstr "——強制買戻しが起きていないことを意味しません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "——費用が発生していないことを意味しません。"
+msgstr "——費用が発生していないことを意味しません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "—（対象なし）"
+msgstr "—（対象なし）"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "。"
+msgstr "。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "。「発動なし」ではなく「記録する経路がない」状態です。"
+msgstr "。「発動なし」ではなく「記録する経路がない」状態です。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "。以下に表示しているのは"
+msgstr "。以下に表示しているのは"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "。値が無いのではなく、確認できていません。"
+msgstr "。値が無いのではなく、確認できていません。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "。入力・送信はできません。"
+msgstr "。入力・送信はできません。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "。実額が「"
+msgstr "。実額が「"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "。本画面が要るのは、初回のデバイス信頼の確立と、条件が崩れた場合の再認証だけです（毎回の手作業が要るという意味ではありません）。"
+msgstr "。本画面が要るのは、初回のデバイス信頼の確立と、条件が崩れた場合の再認証だけです（毎回の手作業が要るという意味ではありません）。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "。画面はコマンド名を持たず、利用者も選べません。"
+msgstr "。画面はコマンド名を持たず、利用者も選べません。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "。起動時の構成値として運用します（費用・負荷のパラメータであり、月報レビュー時に構成で見直します）。"
+msgstr "。起動時の構成値として運用します（費用・負荷のパラメータであり、月報レビュー時に構成で見直します）。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "（6 桁の数字）"
+msgstr "（6 桁の数字）"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "（API は未稼働 — 発注・照会は届きません）"
+msgstr "（API は未稼働 — 発注・照会は届きません）"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "（サーバ側が宣言します。画面は種別を選べません）"
+msgstr "（サーバ側が宣言します。画面は種別を選べません）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "（全量決済）"
+msgstr "（全量決済）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "（最上段・昇格先なし）"
+msgstr "（最上段・昇格先なし）"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "（参照のみ — 変更は「リスク設定」画面）"
+msgstr "（参照のみ — 変更は「リスク設定」画面）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "（既定 100 件）に設定されています。"
+msgstr "（既定 100 件）に設定されています。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "（正常値の見た目）"
+msgstr "（正常値の見た目）"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "（設定サービスの値を一度も解決できていません）。"
+msgstr "（設定サービスの値を一度も解決できていません）。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "）。間隔はサーバ側が課します。"
+msgstr "）。間隔はサーバ側が課します。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "）／新規建て停止:"
+msgstr "）／新規建て停止:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "）が想定する発注先は"
+msgstr "）が想定する発注先は"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "）での実額"
+msgstr "）での実額"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "［残存リスク］本統制は本画面と裏側 API の配備後に働きます。"
+msgstr "［残存リスク］本統制は本画面と裏側 API の配備後に働きます。"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "「いま入力を待っていない（ログイン済み）」とは別の状態です。"
+msgstr "「いま入力を待っていない（ログイン済み）」とは別の状態です。"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "「いま入力を待っていない」のではなく、確認できていません。"
+msgstr "「いま入力を待っていない」のではなく、確認できていません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "「約定が成立した新規建て注文 1 件」"
+msgstr "「約定が成立した新規建て注文 1 件」"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "「送ってよいコマンドの一覧」"
+msgstr "「送ってよいコマンドの一覧」"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "」と入力してください"
+msgstr "」と入力してください"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "」と表示されている項目は、"
+msgstr "」と表示されている項目は、"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "§1 全体前提条件（FR-17）— 税・手数料・為替・計算方針・費用上限"
+msgstr "§1 全体前提条件（FR-17）— 税・手数料・為替・計算方針・費用上限"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "／ 取引"
+msgstr "／ 取引"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "／上限:"
+msgstr "／上限:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "／判定:"
+msgstr "／判定:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "／新規建て:"
+msgstr "／新規建て:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "／段階が想定する発注先:"
+msgstr "／段階が想定する発注先:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "／降格提案:"
+msgstr "／降格提案:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "← リスク設定"
+msgstr "← リスク設定"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "← 現在の優先統制"
+msgstr "← 現在の優先統制"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "← 統制状態"
+msgstr "← 統制状態"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "← 設定"
+msgstr "← 設定"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "→ 履歴追記・監査ログ・Discord 通知（FR-09）。各報告書に適用版を記録"
+msgstr "→ 履歴追記・監査ログ・Discord 通知（FR-09）。各報告書に適用版を記録"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "0 ではなく「不明」です"
+msgstr "0 ではなく「不明」です"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "0 でも「該当なし」でもなく、判断材料が無い状態"
+msgstr "0 でも「該当なし」でもなく、判断材料が無い状態"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "0 件ではなく「不明」です"
+msgstr "0 件ではなく「不明」です"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "1 日あたり発注金額上限"
+msgstr "1 日あたり発注金額上限"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "1 注文あたり発注金額上限"
+msgstr "1 注文あたり発注金額上限"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "100 件未満では勝率・平均損益の推定分散が大きく、条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。変更は「リスク設定」画面（SC-02）で行います。"
+msgstr "100 件未満では勝率・平均損益の推定分散が大きく、条件 3 の目的（運用に足るかを統計的に判断できる）を満たしません。変更は「リスク設定」画面（SC-02）で行います。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "1日発注金額"
+msgstr "1日発注金額"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "3 統制はいずれも"
+msgstr "3 統制はいずれも"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "egress IP の安定性"
+msgstr "egress IP の安定性"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "equity 比の項目は"
+msgstr "equity 比の項目は"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "moomoo OpenD がログイン時に要求する検証コード（SMS / 画像 CAPTCHA）を入力し、ゲートウェイを稼働状態へ戻します（ゲートウェイの有人認証）。"
+msgstr "moomoo OpenD がログイン時に要求する検証コード（SMS / 画像 CAPTCHA）を入力し、ゲートウェイを稼働状態へ戻します（ゲートウェイの有人認証）。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "OpenD が返した画像 CAPTCHA"
+msgstr "OpenD が返した画像 CAPTCHA"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "OpenD の常駐コンテナへ到達できず、待機中のプロンプトを読めていません。"
+msgstr "OpenD の常駐コンテナへ到達できず、待機中のプロンプトを読めていません。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "OpenD 認証操作"
+msgstr "OpenD 認証操作"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "paper 稼働により"
+msgstr "paper 稼働により"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "SMS の再送を要求しました。"
+msgstr "SMS の再送を要求しました。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "SMS を再送"
+msgstr "SMS を再送"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "Stage 1 の最小取引件数 件"
+msgstr "Stage 1 の最小取引件数 件"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "Stage 1 の最小取引件数（変更）"
+msgstr "Stage 1 の最小取引件数（変更）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "Stage 1 の最小取引件数が"
+msgstr "Stage 1 の最小取引件数が"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "Stage 1 の最小取引件数の変更"
+msgstr "Stage 1 の最小取引件数の変更"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "Stage 1 の最小取引件数を保存しました。"
+msgstr "Stage 1 の最小取引件数を保存しました。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "Stage 1 の進捗"
+msgstr "Stage 1 の進捗"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "Stage 1 の進捗は利用できません。"
+msgstr "Stage 1 の進捗は利用できません。"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "Stage 1（moomoo SIMULATE）から Stage 2 へ昇格するために必要な取引件数です（既定"
+msgstr "Stage 1（moomoo SIMULATE）から Stage 2 へ昇格するために必要な取引件数です（既定"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "あり"
+msgstr "あり"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "いま OpenD は入力を待っていないため、入力・送信はできません（ログイン済みです）。"
+msgstr "いま OpenD は入力を待っていないため、入力・送信はできません（ログイン済みです）。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "いま OpenD は入力を待っていないため、送信できませんでした。"
+msgstr "いま OpenD は入力を待っていないため、送信できませんでした。"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "いま OpenD は入力を待っていません"
+msgstr "いま OpenD は入力を待っていません"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "キャンセル"
+msgstr "キャンセル"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウン 時間"
+msgstr "クールダウン 時間"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウンの変更"
+msgstr "クールダウンの変更"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウンの変更理由"
+msgstr "クールダウンの変更理由"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウンを保存"
+msgstr "クールダウンを保存"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウンを保存しました。"
+msgstr "クールダウンを保存しました。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "クールダウンを保存中…"
+msgstr "クールダウンを保存中…"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "ゲートウェイの状態（OpenD 常駐コンテナ）"
+msgstr "ゲートウェイの状態（OpenD 常駐コンテナ）"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "ゲートウェイの状態を"
+msgstr "ゲートウェイの状態を"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "ゲートウェイの状態を確認中…"
+msgstr "ゲートウェイの状態を確認中…"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "ゲートウェイの認証操作のみ"
+msgstr "ゲートウェイの認証操作のみ"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "ゲートウェイへ到達できず、再送を要求できませんでした。"
+msgstr "ゲートウェイへ到達できず、再送を要求できませんでした。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "ゲートウェイへ到達できず、送信できませんでした。"
+msgstr "ゲートウェイへ到達できず、送信できませんでした。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "この値は Stage 1（moomoo SIMULATE）の全期間にわたって表示できません。これは不具合ではなく、供給が無いという事実の表示です。"
+msgstr "この値は Stage 1（moomoo SIMULATE）の全期間にわたって表示できません。これは不具合ではなく、供給が無いという事実の表示です。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "この画面から送れる操作"
+msgstr "この画面から送れる操作"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "この画面から送れる操作（許可リスト・サーバ側で強制する）"
+msgstr "この画面から送れる操作（許可リスト・サーバ側で強制する）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。"
+msgstr "この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "この統制は現在まったく働いていません。"
+msgstr "この統制は現在まったく働いていません。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "コマンド"
+msgstr "コマンド"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "これ以降の注文は実際の資金で執行されます。"
+msgstr "これ以降の注文は実際の資金で執行されます。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "サーバ側が待機中のプロンプトから決めます"
+msgstr "サーバ側が待機中のプロンプトから決めます"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "サーバ側で強制"
+msgstr "サーバ側で強制"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "されます。上表は「現時点で確認できたコマンドの一覧」ではなく"
+msgstr "されます。上表は「現時点で確認できたコマンドの一覧」ではなく"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "システム自動"
+msgstr "システム自動"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "します（25 ＝ equity の 25%）。比率（0.25）ではありません。各項目には"
+msgstr "します（25 ＝ equity の 25%）。比率（0.25）ではありません。各項目には"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "します（設定値からの固定値ではありません）。"
+msgstr "します（設定値からの固定値ではありません）。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "ショート"
+msgstr "ショート"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "だけを記録します。"
+msgstr "だけを記録します。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "であり、保有建玉のうち最も厳しいものが口座へ適用されます。回復目標は"
+msgstr "であり、保有建玉のうち最も厳しいものが口座へ適用されます。回復目標は"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "であり、建玉の現在値が揃わなければ算出できません。取得原価で代用した値は表示しません（別物の比率になり、上限の判定を誤らせるためです）。"
+msgstr "であり、建玉の現在値が揃わなければ算出できません。取得原価で代用した値は表示しません（別物の比率になり、上限の判定を誤らせるためです）。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "です。"
+msgstr "です。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "です。実弾へ切り替えると段階ゲートを飛ばすことになります。"
+msgstr "です。実弾へ切り替えると段階ゲートを飛ばすことになります。"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "です。統制違反 0 件・60 営業日の条件と、累計 120 営業日で Stage 0 へ差し戻す規則は変わりません。"
+msgstr "です。統制違反 0 件・60 営業日の条件と、累計 120 営業日で Stage 0 へ差し戻す規則は変わりません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "です（1 注文が分割約定しても 1 件・手仕舞いは計上しません）。moomoo SIMULATE（moomoo のデモ環境）の約定のみを集計しています。内蔵 paper の約定・稼働日数は算入されません。累計"
+msgstr "です（1 注文が分割約定しても 1 件・手仕舞いは計上しません）。moomoo SIMULATE（moomoo のデモ環境）の約定のみを集計しています。内蔵 paper の約定・稼働日数は算入されません。累計"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "です（維持率の回復効率が最も高い順であり、含み損の大きい順ではありません）。回復目標へ届く最小限だけを決済します。"
+msgstr "です（維持率の回復効率が最も高い順であり、含み損の大きい順ではありません）。回復目標へ届く最小限だけを決済します。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "です（許可リスト方式であり、拒否リスト方式ではありません）。"
+msgstr "です（許可リスト方式であり、拒否リスト方式ではありません）。"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "デバイス信頼の永続化"
+msgstr "デバイス信頼の永続化"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "デバイス信頼の永続化と egress IP の安定という 2 条件がそろう環境では、"
+msgstr "デバイス信頼の永続化と egress IP の安定という 2 条件がそろう環境では、"
+
+#: src/components/PaperModeBanner.tsx
+msgid "デバッグ稼働"
+msgstr "デバッグ稼働"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "ドローダウン"
+msgstr "ドローダウン"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "なし"
+msgstr "なし"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "の使用率"
+msgstr "の使用率"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "は「リスク設定」画面（SC-02）で扱います。"
+msgstr "は「リスク設定」画面（SC-02）で扱います。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "バージョン"
+msgstr "バージョン"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク上限 8項目（FR-13・変更可 / 生成AIは上書き不可）"
+msgstr "リスク上限 8項目（FR-13・変更可 / 生成AIは上書き不可）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク上限の変更"
+msgstr "リスク上限の変更"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク統制の上限（発注額・保有数・損失/DD 上限など）と取引ガードの閲覧と変更を行います（FR-13）。変更は利用者のみが行えます。段階は参照表示です（段階の変更は段階ゲートの承認で行います）。ガードの緩和など危険な変更は確認を求めます。"
+msgstr "リスク統制の上限（発注額・保有数・損失/DD 上限など）と取引ガードの閲覧と変更を行います（FR-13）。変更は利用者のみが行えます。段階は参照表示です（段階の変更は段階ゲートの承認で行います）。ガードの緩和など危険な変更は確認を求めます。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク設定"
+msgstr "リスク設定"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "リスク設定 →"
+msgstr "リスク設定 →"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク設定の取得に失敗しました。"
+msgstr "リスク設定の取得に失敗しました。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "リスク設定は利用できません。"
+msgstr "リスク設定は利用できません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "ロング"
+msgstr "ロング"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
+msgstr "を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "を持ちます。取引の統制操作（昇格承認・一時停止/再開・緊急停止）は Discord からのみ行えます。"
+msgstr "を持ちます。取引の統制操作（昇格承認・一時停止/再開・緊急停止）は Discord からのみ行えます。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "を止めます（手仕舞い・損切りは止めません）。同時に成立した場合は上の優先順位で表示され、新規建ての停止判定はいずれか 1 つでも成立すれば有効です。"
+msgstr "を止めます（手仕舞い・損切りは止めません）。同時に成立した場合は上の優先順位で表示され、新規建ての停止判定はいずれか 1 つでも成立すれば有効です。"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "を監視から削除します。理由を入力して確定してください。"
+msgstr "を監視から削除します。理由を入力して確定してください。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "一時停止"
+msgstr "一時停止"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "上記の危険な変更を確認しました"
+msgstr "上記の危険な変更を確認しました"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "上限"
+msgstr "上限"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "上限使用率"
+msgstr "上限使用率"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "不可"
+msgstr "不可"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "不安定"
+msgstr "不安定"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "件"
+msgstr "件"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "件（設定値）"
+msgstr "件（設定値）"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "件）。"
+msgstr "件）。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "作動中"
+msgstr "作動中"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "使用率"
+msgstr "使用率"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "例"
+msgstr "例"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "供給が無い"
+msgstr "供給が無い"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "供給が無い値の表示規約"
+msgstr "供給が無い値の表示規約"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "保存"
+msgstr "保存"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "保存しました。"
+msgstr "保存しました。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "保存に失敗しました。"
+msgstr "保存に失敗しました。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "保存中…"
+msgstr "保存中…"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "保有ポジション（方向・借株料）"
+msgstr "保有ポジション（方向・借株料）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "保有ポジションはありません。"
+msgstr "保有ポジションはありません。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "保有建玉数上限"
+msgstr "保有建玉数上限"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "保有銘柄数"
+msgstr "保有銘柄数"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "借株料の累計:"
+msgstr "借株料の累計:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "借株料の累計を記録する経路がまだありません。"
+msgstr "借株料の累計を記録する経路がまだありません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "借株料累計"
+msgstr "借株料累計"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "値（検証コード・画像の文字列）は列に持ちません。"
+msgstr "値（検証コード・画像の文字列）は列に持ちません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "値が 0"
+msgstr "値が 0"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "停止中"
+msgstr "停止中"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "備考"
+msgstr "備考"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "優先統制"
+msgstr "優先統制"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "優先順位"
+msgstr "優先順位"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "入力できない値があります:"
+msgstr "入力できない値があります:"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "入力内容に誤りがあります。"
+msgstr "入力内容に誤りがあります。"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "入力欄は無効にしています。"
+msgstr "入力欄は無効にしています。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "全体前提条件（税・手数料・為替・費用上限。FR-17）の閲覧と変更を行います。変更は利用者のみが行えます。リスク上限・監視銘柄・"
+msgstr "全体前提条件（税・手数料・為替・費用上限。FR-17）の閲覧と変更を行います。変更は利用者のみが行えます。リスク上限・監視銘柄・"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "全体前提条件の変更"
+msgstr "全体前提条件の変更"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "全体前提条件を"
+msgstr "全体前提条件を"
+
+#: src/components/PaperModeBanner.tsx
+msgid "内蔵 paper 稼働中の警告"
+msgstr "内蔵 paper 稼働中の警告"
+
 #: src/components/QueryPhase.tsx
 msgid "再試行"
 msgstr "再試行"
 
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "再起動をまたいで無人で再ログインできます"
+msgstr "再起動をまたいで無人で再ログインできます"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "再送の間隔制限に掛かったか、いま再送できない状態です。しばらく待って再度お試しください。"
+msgstr "再送の間隔制限に掛かったか、いま再送できない状態です。しばらく待って再度お試しください。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "再送は 60 秒に 1 回まで（"
+msgstr "再送は 60 秒に 1 回まで（"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "最小取引件数の変更理由"
+msgstr "最小取引件数の変更理由"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "最小取引件数を保存"
+msgstr "最小取引件数を保存"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "最小取引件数を保存中…"
+msgstr "最小取引件数を保存中…"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "最終ログイン成功"
+msgstr "最終ログイン成功"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "利用者（Discord）"
+msgstr "利用者（Discord）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "利用者による再開（Discord）"
+msgstr "利用者による再開（Discord）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "利用者による解除（Discord）"
+msgstr "利用者による解除（Discord）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "削除"
+msgstr "削除"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "削除中…"
+msgstr "削除中…"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "削除理由"
+msgstr "削除理由"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "前回判断時点の価格に対する変動率です。許容範囲:"
+msgstr "前回判断時点の価格に対する変動率です。許容範囲:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "厳しい方"
+msgstr "厳しい方"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "参照のみ — 変更は「リスク設定」画面（SC-02）"
+msgstr "参照のみ — 変更は「リスク設定」画面（SC-02）"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "収集間隔（情報収集・市場監視のポーリング間隔）は"
+msgstr "収集間隔（情報収集・市場監視のポーリング間隔）は"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "取引ガード"
+msgstr "取引ガード"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "取引ガード（変更）"
+msgstr "取引ガード（変更）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "取引ガードの変更"
+msgstr "取引ガードの変更"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "取引の設定変更・統制操作は行いません。"
+msgstr "取引の設定変更・統制操作は行いません。"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "取引件数だけ"
+msgstr "取引件数だけ"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "取引件数の計上単位は"
+msgstr "取引件数の計上単位は"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "取引停止の3統制（優先順位順・ADR-0009）"
+msgstr "取引停止の3統制（優先順位順・ADR-0009）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "取引統制（優先順位順）"
+msgstr "取引統制（優先順位順）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "取引統制（緊急停止・日次損失ロックアウト・一時停止）と運用段階の現況を参照します（UC-06 の統制状態の閲覧面）。統制の変更・段階の承認は Discord からのみ行えます（本画面は参照専用）。"
+msgstr "取引統制（緊急停止・日次損失ロックアウト・一時停止）と運用段階の現況を参照します（UC-06 の統制状態の閲覧面）。統制の変更・段階の承認は Discord からのみ行えます（本画面は参照専用）。"
+
 #: src/components/QueryPhase.tsx
 msgid "取得に失敗しました。"
 msgstr "取得に失敗しました。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "可"
+msgstr "可"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "合計"
+msgstr "合計"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲:"
+msgstr "同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "同日再エントリー禁止"
+msgstr "同日再エントリー禁止"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "同日再エントリー禁止を無効化"
+msgstr "同日再エントリー禁止を無効化"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "含み"
+msgstr "含み"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "含み損益"
+msgstr "含み損益"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "営業日"
+msgstr "営業日"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "営業日を経ても取引件数に届かない場合は Stage 0 へ差し戻します。"
+msgstr "営業日を経ても取引件数に届かない場合は Stage 0 へ差し戻します。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "回復目標"
+msgstr "回復目標"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "回復目標（閾値 +"
+msgstr "回復目標（閾値 +"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値 %"
+msgstr "変動閾値 %"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値の変更"
+msgstr "変動閾値の変更"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値の変更理由"
+msgstr "変動閾値の変更理由"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値を保存"
+msgstr "変動閾値を保存"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値を保存しました。"
+msgstr "変動閾値を保存しました。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "変動閾値を保存中…"
+msgstr "変動閾値を保存中…"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "変更する権限がありません。"
+msgstr "変更する権限がありません。"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "変更できるのは"
+msgstr "変更できるのは"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "変更前"
+msgstr "変更前"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "変更履歴"
+msgstr "変更履歴"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "変更履歴はありません。"
+msgstr "変更履歴はありません。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "変更履歴は利用できません。"
+msgstr "変更履歴は利用できません。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "変更後"
+msgstr "変更後"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "変更操作の一部は Discord へ（変更 UI は後続の issue で拡張する）"
+msgstr "変更操作の一部は Discord へ（変更 UI は後続の issue で拡張する）"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "変更理由"
+msgstr "変更理由"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "変更者"
+msgstr "変更者"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "安定（固定 NAT）"
+msgstr "安定（固定 NAT）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "実弾（moomoo REAL）への切替の確認"
+msgstr "実弾（moomoo REAL）への切替の確認"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "実弾への切替を確認する"
+msgstr "実弾への切替を確認する"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "実弾へ切り替える"
+msgstr "実弾へ切り替える"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "実現"
+msgstr "実現"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "実現損益"
+msgstr "実現損益"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "実資金で執行されることを理解しました"
+msgstr "実資金で執行されることを理解しました"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "実際に適用される閾値は、設定上の閾値と規制上の要求（$5.00 ÷ 株価 と 30% の大きい方）の"
+msgstr "実際に適用される閾値は、設定上の閾値と規制上の要求（$5.00 ÷ 株価 と 30% の大きい方）の"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "実額を併記できません"
+msgstr "実額を併記できません"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "対象なし"
+msgstr "対象なし"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "履歴を確認中…"
+msgstr "履歴を確認中…"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "市場"
+msgstr "市場"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータ（変動閾値・クールダウン）"
+msgstr "市場監視パラメータ（変動閾値・クールダウン）"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータの変更履歴"
+msgstr "市場監視パラメータの変更履歴"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータの変更履歴はありません。"
+msgstr "市場監視パラメータの変更履歴はありません。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータの変更履歴は利用できません。"
+msgstr "市場監視パラメータの変更履歴は利用できません。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータの変更履歴を確認中…"
+msgstr "市場監視パラメータの変更履歴を確認中…"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータを"
+msgstr "市場監視パラメータを"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "市場監視パラメータを確認中…"
+msgstr "市場監視パラメータを確認中…"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "平均取得単価"
+msgstr "平均取得単価"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "建玉が 1 件も無いときの空売り比率"
+msgstr "建玉が 1 件も無いときの空売り比率"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "建玉方向"
+msgstr "建玉方向"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "強制買戻しの発生回数"
+msgstr "強制買戻しの発生回数"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "強制買戻しの発生回数:"
+msgstr "強制買戻しの発生回数:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "強制買戻しの発生回数を取得できません。事後推定の台帳はありますが、推定が起きたときにしか行が書かれないため、件数 0 は「ブローカー建玉の観測が一度も届いていない」状態と区別できません。"
+msgstr "強制買戻しの発生回数を取得できません。事後推定の台帳はありますが、推定が起きたときにしか行が書かれないため、件数 0 は「ブローカー建玉の観測が一度も届いていない」状態と区別できません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "当日の統制違反 0 件"
+msgstr "当日の統制違反 0 件"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "当日損益"
+msgstr "当日損益"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "待機中のプロンプト"
+msgstr "待機中のプロンプト"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "必要証拠金が最も大きい建玉から"
+msgstr "必要証拠金が最も大きい建玉から"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "成立中で最優先の統制:"
+msgstr "成立中で最優先の統制:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "承認者"
+msgstr "承認者"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "接続状態"
+msgstr "接続状態"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "撤退基準に到達（"
+msgstr "撤退基準に到達（"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "撤退基準への到達はありません。"
+msgstr "撤退基準への到達はありません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "撤退評価"
+msgstr "撤退評価"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "操作"
+msgstr "操作"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "操作に失敗しました。"
+msgstr "操作に失敗しました。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "数量"
+msgstr "数量"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "新規建てのみ"
+msgstr "新規建てのみ"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "方向"
+msgstr "方向"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "既定の「OK」ボタン 1 押しでは通過できません（チェックと文字入力の明示的な操作を必須とします）。"
+msgstr "既定の「OK」ボタン 1 押しでは通過できません（チェックと文字入力の明示的な操作を必須とします）。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "日を除外"
+msgstr "日を除外"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "日時"
+msgstr "日時"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "日本株 手数料体系"
+msgstr "日本株 手数料体系"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "日次損失ロックアウト"
+msgstr "日次損失ロックアウト"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "昇格先:"
+msgstr "昇格先:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "昇格可"
+msgstr "昇格可"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "昇格評価"
+msgstr "昇格評価"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "時価"
+msgstr "時価"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "時間"
+msgstr "時間"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "暫定値・算定根拠が無く実測待ち"
+msgstr "暫定値・算定根拠が無く実測待ち"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "月次費用上限"
+msgstr "月次費用上限"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "有効"
+msgstr "有効"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "有効な商品種別"
+msgstr "有効な商品種別"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "有効な市場"
+msgstr "有効な市場"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "未充足基準:"
+msgstr "未充足基準:"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "未入力または数値でない項目があります:"
+msgstr "未入力または数値でない項目があります:"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "本画面からも API からも変更しません"
+msgstr "本画面からも API からも変更しません"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "本画面は"
+msgstr "本画面は"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "本画面は自由入力のコンソールではありません。"
+msgstr "本画面は自由入力のコンソールではありません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "本統制は、緊急停止・日次損失ロックアウト・一時停止（新規建てを「止める」3 統制）とは性質が異なります。すでに建てた玉を決済します。利用者の承認を待たず、AI を介さずに動きます。"
+msgstr "本統制は、緊急停止・日次損失ロックアウト・一時停止（新規建てを「止める」3 統制）とは性質が異なります。すでに建てた玉を決済します。利用者の承認を待たず、AI を介さずに動きます。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "本統制はまだ一度も発動し得ません"
+msgstr "本統制はまだ一度も発動し得ません"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コード"
+msgstr "検証コード"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードが受け付けられませんでした。もう一度入力してください。"
+msgstr "検証コードが受け付けられませんでした。もう一度入力してください。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードそのものは残しません。"
+msgstr "検証コードそのものは残しません。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードの入力"
+msgstr "検証コードの入力"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードの入力 — 本画面の主操作"
+msgstr "検証コードの入力 — 本画面の主操作"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードの送信"
+msgstr "検証コードの送信"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "検証コードを送信しました。"
+msgstr "検証コードを送信しました。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "楽観排他: 表示中の版と現行版が一致する場合のみ保存します。競合したときは再読込を促します（自動では上書きしません）。"
+msgstr "楽観排他: 表示中の版と現行版が一致する場合のみ保存します。競合したときは再読込を促します（自動では上書きしません）。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "次の変更は取引ガードを緩めます。内容を確認してください:"
+msgstr "次の変更は取引ガードを緩めます。内容を確認してください:"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階ゲート 現況・評価・遷移履歴（FR-20）"
+msgstr "段階ゲート 現況・評価・遷移履歴（FR-20）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階ゲートは利用できません。"
+msgstr "段階ゲートは利用できません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階ゲートを確認中…"
+msgstr "段階ゲートを確認中…"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階の既定発注先"
+msgstr "段階の既定発注先"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階の発注可能額（総資金比）"
+msgstr "段階の発注可能額（総資金比）"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "段階遷移履歴"
+msgstr "段階遷移履歴"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "永続化されていません"
+msgstr "永続化されていません"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "永続化済"
+msgstr "永続化済"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "決済した建玉（必要証拠金の降順）"
+msgstr "決済した建玉（必要証拠金の降順）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "決済前の維持率"
+msgstr "決済前の維持率"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "決済後の維持率"
+msgstr "決済後の維持率"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "無効"
+msgstr "無効"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "状態"
+msgstr "状態"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "現 Stage ／ 発注先"
+msgstr "現 Stage ／ 発注先"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "現在"
+msgstr "現在"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity での実額:"
+msgstr "現在の equity での実額:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity と統制値"
+msgstr "現在の equity と統制値"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity と統制値を取得できないため、実弾へ切り替えられません。時間をおいて再度お試しください。"
+msgstr "現在の equity と統制値を取得できないため、実弾へ切り替えられません。時間をおいて再度お試しください。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity を取得できていないため、"
+msgstr "現在の equity を取得できていないため、"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity（"
+msgstr "現在の equity（"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の equity（自己資金）"
+msgstr "現在の equity（自己資金）"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "現在のクールダウン"
+msgstr "現在のクールダウン"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "現在のバージョン:"
+msgstr "現在のバージョン:"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "現在の変動閾値"
+msgstr "現在の変動閾値"
+
+#: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
+msgid "現在の発注先"
+msgstr "現在の発注先"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の発注先:"
+msgstr "現在の発注先:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "現在の空売り比率:"
+msgstr "現在の空売り比率:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "現在の維持率:"
+msgstr "現在の維持率:"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "現在の設定:"
+msgstr "現在の設定:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の運用段階:"
+msgstr "現在の運用段階:"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "現在の運用段階（"
+msgstr "現在の運用段階（"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "現段階"
+msgstr "現段階"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "理由"
+msgstr "理由"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "理由不明"
+msgstr "理由不明"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "画面から"
+msgstr "画面から"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発動主体"
+msgstr "発動主体"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "発動履歴はありません。"
+msgstr "発動履歴はありません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "発動履歴を取得できません。維持率の供給元が無いため、"
+msgstr "発動履歴を取得できません。維持率の供給元が無いため、"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "発動日時"
+msgstr "発動日時"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先"
+msgstr "発注先"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "発注先（変更）"
+msgstr "発注先（変更）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "発注先の変更"
+msgstr "発注先の変更"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先の変更は「リスク設定」画面（SC-02）で行います。本画面は参照専用です。"
+msgstr "発注先の変更は「リスク設定」画面（SC-02）で行います。本画面は参照専用です。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "発注先の変更は理由必須・監査ログ記録・版（楽観排他）の対象です。moomoo REAL への切替は警告モーダルを伴います。"
+msgstr "発注先の変更は理由必須・監査ログ記録・版（楽観排他）の対象です。moomoo REAL への切替は警告モーダルを伴います。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先の変更履歴"
+msgstr "発注先の変更履歴"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先の変更履歴はありません。"
+msgstr "発注先の変更履歴はありません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先の変更履歴は利用できません。"
+msgstr "発注先の変更履歴は利用できません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "発注先の変更履歴を確認中…"
+msgstr "発注先の変更履歴を確認中…"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "発注先は変更されていません。"
+msgstr "発注先は変更されていません。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "登録日"
+msgstr "登録日"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "百分率（%）で入力"
+msgstr "百分率（%）で入力"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "監査のため必須・1 文字以上"
+msgstr "監査のため必須・1 文字以上"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "監査ログ・送信履歴・Discord 通知のいずれにも値を記録せず、"
+msgstr "監査ログ・送信履歴・Discord 通知のいずれにも値を記録せず、"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視から削除"
+msgstr "監視から削除"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視対象の銘柄を一覧・追加・削除します（FR-03/FR-13）。追加・削除は理由必須です。削除は監視から外す破壊的操作のため、確認のうえ実行します。市場ごとに管理します。"
+msgstr "監視対象の銘柄を一覧・追加・削除します（FR-03/FR-13）。追加・削除は理由必須です。削除は監視から外す破壊的操作のため、確認のうえ実行します。市場ごとに管理します。"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄"
+msgstr "監視銘柄"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄コード"
+msgstr "監視銘柄コード"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄の削除確認"
+msgstr "監視銘柄の削除確認"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄の取得に失敗しました。"
+msgstr "監視銘柄の取得に失敗しました。"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄の変更履歴"
+msgstr "監視銘柄の変更履歴"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄の市場"
+msgstr "監視銘柄の市場"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄の追加"
+msgstr "監視銘柄の追加"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄はありません。"
+msgstr "監視銘柄はありません。"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+msgid "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。"
+msgstr "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄を追加"
+msgstr "監視銘柄を追加"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "監視銘柄設定は利用できません。"
+msgstr "監視銘柄設定は利用できません。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "目的"
+msgstr "目的"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "直近の発動履歴"
+msgstr "直近の発動履歴"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "相場操縦パターン禁止"
+msgstr "相場操縦パターン禁止"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "相場操縦パターン禁止を無効化"
+msgstr "相場操縦パターン禁止を無効化"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "確認のため「"
+msgstr "確認のため「"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止理由"
+msgstr "禁止理由"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄"
+msgstr "禁止銘柄"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄（編集）"
+msgstr "禁止銘柄（編集）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄コード"
+msgstr "禁止銘柄コード"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄の削除"
+msgstr "禁止銘柄の削除"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄の市場"
+msgstr "禁止銘柄の市場"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄はありません。"
+msgstr "禁止銘柄はありません。"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "禁止銘柄を追加"
+msgstr "禁止銘柄を追加"
+
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "種別"
+msgstr "種別"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "稼働"
+msgstr "稼働"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "空売り比率"
+msgstr "空売り比率"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "空売り比率の分母（建玉総額）は"
+msgstr "空売り比率の分母（建玉総額）は"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "空欄/非数値は保存無効化（黙って 0 を送らない）。競合 409 は再読込を促す"
+msgstr "空欄/非数値は保存無効化（黙って 0 を送らない）。競合 409 は再読込を促す"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "競合が発生しました。最新を取得して再試行してください。"
+msgstr "競合が発生しました。最新を取得して再試行してください。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "米国株 手数料体系"
+msgstr "米国株 手数料体系"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "組み込みの既定値であり、実際に適用されている値ではありません"
+msgstr "組み込みの既定値であり、実際に適用されている値ではありません"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "経過"
+msgstr "経過"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "統制"
+msgstr "統制"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "統制状態"
+msgstr "統制状態"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "統制状態 →"
+msgstr "統制状態 →"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "統制状態の取得に失敗しました。"
+msgstr "統制状態の取得に失敗しました。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "統制状態は利用できません。"
+msgstr "統制状態は利用できません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。"
+msgstr "統計的な根拠（06_daytrading-review §4.3）を満たさない設定です。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率"
+msgstr "維持率"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率・空売りの現況を取得できませんでした。値が無いのではなく、確認できていません。"
+msgstr "維持率・空売りの現況を取得できませんでした。値が無いのではなく、確認できていません。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率・空売りの現況を確認中…"
+msgstr "維持率・空売りの現況を確認中…"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率（Stage 1 中）"
+msgstr "維持率（Stage 1 中）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率と自動縮小（信用取引）— 玉を「動かす」統制"
+msgstr "維持率と自動縮小（信用取引）— 玉を「動かす」統制"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率はブローカーの口座照会に由来しますが、供給元がまだ実装されていません（moomoo SIMULATE では照会 API 自体が利用できず、実弾口座での読み取りが要ります）。"
+msgstr "維持率はブローカーの口座照会に由来しますが、供給元がまだ実装されていません（moomoo SIMULATE では照会 API 自体が利用できず、実弾口座での読み取りが要ります）。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率割れによる自動縮小 —— 「動かす」統制"
+msgstr "維持率割れによる自動縮小 —— 「動かす」統制"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率割れによる自動縮小（動かす統制）"
+msgstr "維持率割れによる自動縮小（動かす統制）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "維持率割れ自動縮小の発動履歴"
+msgstr "維持率割れ自動縮小の発動履歴"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "緊急停止（kill switch）"
+msgstr "緊急停止（kill switch）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "縮小の対象は"
+msgstr "縮小の対象は"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "翌営業日に自動解除"
+msgstr "翌営業日に自動解除"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "翌営業日に自動解除（利用者は解除できない）"
+msgstr "翌営業日に自動解除（利用者は解除できない）"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "表示"
+msgstr "表示"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "解除"
+msgstr "解除"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "解除条件"
+msgstr "解除条件"
+
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "計上単位は「約定が成立した新規建て注文 1 件」です（1 注文が分割約定しても 1 件、手仕舞いは計上しません）。"
+msgstr "計上単位は「約定が成立した新規建て注文 1 件」です（1 注文が分割約定しても 1 件、手仕舞いは計上しません）。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "記録そのものは監査ログに残ります（日時・アクター・コマンド種別・結果。保持は 7 年）。"
+msgstr "記録そのものは監査ログに残ります（日時・アクター・コマンド種別・結果。保持は 7 年）。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "設定"
+msgstr "設定"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "設定上の維持率閾値"
+msgstr "設定上の維持率閾値"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "設定情報の取得に失敗しました。"
+msgstr "設定情報の取得に失敗しました。"
+
+#: src/features/sc01-settings/components/SettingsPage.tsx
+msgid "設定情報は利用できません。"
+msgstr "設定情報は利用できません。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "許可"
+msgstr "許可"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "許可・禁止コマンドの一覧"
+msgstr "許可・禁止コマンドの一覧"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "許可リストは"
+msgstr "許可リストは"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+msgid "許容範囲:"
+msgstr "許容範囲:"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "評価額"
+msgstr "評価額"
 
 #: src/components/QueryPhase.tsx
 msgid "該当するものはありません。"
@@ -27,3 +1739,106 @@ msgstr "該当するものはありません。"
 #: src/components/QueryPhase.tsx
 msgid "読み込み中…"
 msgstr "読み込み中…"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "資金:"
+msgstr "資金:"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "追加しました。"
+msgstr "追加しました。"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "追加中…"
+msgstr "追加中…"
+
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+msgid "追加理由"
+msgstr "追加理由"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "送れない"
+msgstr "送れない"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信"
+msgstr "送信"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "送信が無いのではなく、履歴を読む照会 API がまだありません。"
+msgstr "送信が無いのではなく、履歴を読む照会 API がまだありません。"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信した事実・日時・アクター・コマンド種別・結果"
+msgstr "送信した事実・日時・アクター・コマンド種別・結果"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信するコマンドは"
+msgstr "送信するコマンドは"
+
+#: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
+msgid "送信の成否とログイン成功は Discord へ通知されます。"
+msgstr "送信の成否とログイン成功は Discord へ通知されます。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "送信履歴（監査ログ・FR-11）"
+msgstr "送信履歴（監査ログ・FR-11）"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "送信履歴を"
+msgstr "送信履歴を"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "連番"
+msgstr "連番"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "運用段階"
+msgstr "運用段階"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "運用段階と発注先（参照）"
+msgstr "運用段階と発注先（参照）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。"
+msgstr "運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "適用される閾値"
+msgstr "適用される閾値"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "適用される閾値に連動"
+msgstr "適用される閾値に連動"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "遷移"
+msgstr "遷移"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "遷移履歴"
+msgstr "遷移履歴"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "遷移履歴はありません。"
+msgstr "遷移履歴はありません。"
+
+#: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
+msgid "配備までの唯一の経路である "
+msgstr "配備までの唯一の経路である "
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+#: src/features/sc02-risk-settings/components/WatchlistForm.tsx
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "銘柄"
+msgstr "銘柄"
+
+#: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
+msgid "閾値"
+msgstr "閾値"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "項目"
+msgstr "項目"

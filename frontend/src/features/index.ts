@@ -1,9 +1,17 @@
-import type { NavItem } from '@foundation/routing/featureRegistry';
+import type { FeatureBreadcrumb, NavItem } from '@foundation/routing/featureRegistry';
 import type { ShellRoute } from '@foundation/routing/shell';
-import { createSc01SettingsRoute, sc01SettingsNav } from './sc01-settings';
-import { createSc02RiskSettingsRoute, sc02RiskSettingsNav } from './sc02-risk-settings';
-import { createSc03ControlsRoute, sc03ControlsNav } from './sc03-controls';
-import { createSc04OpendAuthRoute, sc04OpendAuthNav } from './sc04-opend-auth';
+import { createSc01SettingsRoute, sc01SettingsNav, sc01SettingsBreadcrumb } from './sc01-settings';
+import {
+  createSc02RiskSettingsRoute,
+  sc02RiskSettingsNav,
+  sc02RiskSettingsBreadcrumb,
+} from './sc02-risk-settings';
+import { createSc03ControlsRoute, sc03ControlsNav, sc03ControlsBreadcrumb } from './sc03-controls';
+import {
+  createSc04OpendAuthRoute,
+  sc04OpendAuthNav,
+  sc04OpendAuthBreadcrumb,
+} from './sc04-opend-auth';
 
 // #106, #414, ADR-0001, IADR-0080, IADR-0288: 本ユニット（AI 株取引）の合成面。
 //
@@ -45,6 +53,23 @@ export const aiStockTradingNavItems: readonly NavItem[] = [
   sc02RiskSettingsNav,
   sc03ControlsNav,
   sc04OpendAuthNav,
+];
+
+/**
+ * 共通シェルのパンくず帯へ出す宣言（UI/UX 改善 2026-09-12・基盤 05_screens §共通シェル）。
+ *
+ * 🔴 **ルート・ナビと並ぶ第 4 の契約である。** 合成点（platform の `features/index.ts`）が
+ * `registerBreadcrumbs` へ渡す——**渡さなければ本ユニットの画面だけパンくずが出ない**
+ * （「画面は開けるのに帯が空」という、気付きにくい欠落になる）。
+ *
+ * 並びは hi-fi モックの crumb 帯（`基盤ポータル / 取引 / <画面名>`）に合わせ、
+ * 親の段「取引」は本ユニットの入口（SC-01 設定）を指す。
+ */
+export const aiStockTradingBreadcrumbs: readonly FeatureBreadcrumb[] = [
+  sc01SettingsBreadcrumb,
+  sc02RiskSettingsBreadcrumb,
+  sc03ControlsBreadcrumb,
+  sc04OpendAuthBreadcrumb,
 ];
 
 // 利用者裁定 2026-09-12 #3（Lingui 導入・英訳不要）: 本ユニットの文言カタログ（ja のみ）。

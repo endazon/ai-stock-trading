@@ -1,9 +1,10 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { cn } from './cn';
 
 // @platform/ui の Button のスタブ。実物は cva のバリアント（variant / size）を持つ。
 // 写すのは **`type` の既定を button に固定する**振る舞い（フォーム内で意図せず submit にならない）だけである。
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+// 実物は ComponentPropsWithRef<'button'>（Base UI の render prop が ref を載せる）。スタブも ref を通す。
+export type ButtonProps = ComponentPropsWithRef<'button'> & {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | null;
   size?: 'sm' | 'md' | 'lg' | null;
 };

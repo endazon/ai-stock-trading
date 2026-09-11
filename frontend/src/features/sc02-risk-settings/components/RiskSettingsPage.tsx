@@ -1,5 +1,25 @@
-import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  Input,
+  Kv,
+  KvItem,
+  Label,
+  Note,
+  Panel,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
 import type {
   BannedSymbol,
@@ -42,6 +62,8 @@ import {
   useSaveTradingGuard,
 } from '@ai-stock-trading/lib/risk/queries';
 import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
+import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
+import { ScreenHeader, ScreenLink } from '@ai-stock-trading/components/ScreenHeader';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
 import { WatchlistForm } from './WatchlistForm';
@@ -51,14 +73,16 @@ import { WatchlistForm } from './WatchlistForm';
 // リスク上限（limits 8 項目・#186）に加え、取引ガード（guard・#188/IADR-0086）を変更できる。段階（stage）は参照表示に留める
 // （段階変更は段階ゲート承認フロー＝#20/#165 Bot 側と重複するため直接は開かない）。検証(400)・競合(409)はメッセージ表示し、
 // 破壊的な自動再試行はしない（安全既定）。ガードの危険な緩和は明示確認を要求する（fail-safe）。
+//
+// UI/UX 改善 2026-09-12（hi-fi モック `sc-02.html` 400 行目以降）: 区画を `Panel`、項目を `Kv`、
+// 注記を `Note`、実弾切替の確認を `Dialog`（Base UI 土台・**初期フォーカスは取消側**）へ載せ替え、
+// **待ち・失敗は `QueryPhase` に一本化**した。`role="alert"` は**結果通知と、利用者の編集に対する
+// 危険の提示**にだけ残す（常設の注記は `Note`）。
 
 // FR-10, SC-02, #362, IADR-0151: フォームは**画面の単位**（百分率／件数／倍率）を文字列で保持し、
 // 送信時にワイヤの単位（比率／整数／倍率）へ変換する（type=number 制御入力の往復問題を避ける・SC-01 と同方針）。
 // 単位の定義・値域・変換は `contracts.ts`（`LIMIT_FIELDS` ほか）が単一情報源であり、ここでは持たない。
 type FormModel = Record<LimitFieldKey, string>;
-
-type Status = 'loading' | 'ok' | 'notFound' | 'error';
-type HistoryStatus = 'loading' | 'ok' | 'unavailable';
 
 function toForm(l: RiskLimitSettings): FormModel {
   return Object.fromEntries(
@@ -99,18 +123,23 @@ function fromForm(f: FormModel): RiskLimitsPayload {
 function saveMessageOf(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.kind === 'conflict') {
-      return '競合が発生しました。最新を取得して再試行してください。';
+      return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
       const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `入力内容に誤りがあります。${detail}`;
+      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
     }
     if (e.kind === 'forbidden') {
-      return '変更する権限がありません。';
+      return i18n._(msg`変更する権限がありません。`);
     }
     return e.message;
   }
-  return '保存に失敗しました。';
+  return i18n._(msg`保存に失敗しました。`);
+}
+
+/** 404（BFF 未登録・不在の秘匿）かどうか。**再試行しても直らない**ため導線を出さない（IADR-0009）。 */
+function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === 'notFound';
 }
 
 export function RiskSettingsPage() {
@@ -131,21 +160,6 @@ export function RiskSettingsPage() {
 
   const current = settingsQuery.data ?? null;
   const riskStatus: RiskStatusView | null = riskStatusQuery.data ?? null;
-  // 404 は不在/秘匿を区別しない（IADR-0009）。BFF 未登録も安全側に縮退。
-  const status: Status = settingsQuery.isPending
-    ? 'loading'
-    : settingsQuery.isError
-      ? settingsQuery.error instanceof ApiError && settingsQuery.error.kind === 'notFound'
-        ? 'notFound'
-        : 'error'
-      : 'ok';
-  // 履歴の取得不能はその領域のみ縮退（設定表示・変更と疎結合）。
-  const historyStatus: HistoryStatus = historyQuery.isPending
-    ? 'loading'
-    : historyQuery.isError
-      ? 'unavailable'
-      : 'ok';
-  const history: SettingsChangeEntry[] = historyQuery.data ?? [];
 
   // 現在値に追随してフォームを初期化する。比較対象を「値のシグネチャ」にして、上限が実際に変わった
   // ときだけ初期化する（隣接するフォームの保存でも設定は再取得されるため、参照で比べると編集中の
@@ -171,99 +185,158 @@ export function RiskSettingsPage() {
       // 実額も変わるため、実額の併記を古いままにしない）。破壊的操作はしない。
       await saveLimits.mutateAsync({ limits: fromForm(form), reason: reason.trim() });
       setReason('');
-      setSavedNotice('保存しました。');
+      setSavedNotice(i18n._(msg`保存しました。`));
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveError(saveMessageOf(err));
     }
   }
 
+  const settingsNotFound = settingsQuery.isError && isNotFound(settingsQuery.error);
+  const invalid = form === null ? [] : invalidFieldMessages(form);
+
   return (
     <section>
       {/* FR-12, #334: 内蔵 paper 稼働中の警告バナー（画面上部に常時表示。05_screens 共通規約）。 */}
       <PaperModeBanner provider={current?.brokerProvider} />
-      <h1>リスク設定</h1>
-      <p>
-        リスク統制の上限（発注額・保有数・損失/DD 上限など）と取引ガードの閲覧と変更を行います（FR-13）。変更は利用者のみが行えます。
-        段階は参照表示です（段階の変更は段階ゲートの承認で行います）。ガードの緩和など危険な変更は確認を求めます。
-      </p>
 
-      {status === 'loading' && <p role="status">読み込み中…</p>}
-      {status === 'notFound' && <p>リスク設定は利用できません。</p>}
-      {status === 'error' && <p role="alert">リスク設定の取得に失敗しました。</p>}
+      <ScreenHeader title={i18n._(msg`リスク設定`)}>
+        <ScreenLink to="/settings">{i18n._(msg`← 設定`)}</ScreenLink>
+        <ScreenLink to="/controls">{i18n._(msg`統制状態 →`)}</ScreenLink>
+      </ScreenHeader>
 
-      {status === 'ok' && current && form && (
-        <>
-          <form onSubmit={handleSubmit} aria-label="リスク上限の変更">
-            <fieldset>
-              <legend>リスク上限</legend>
-              {/* FR-10, SC-02, #362, #364, IADR-0151 決定1 / IADR-0152 決定6: 割合は**百分率**で入力する。
-                  equity 比の項目には現在 equity での実額を併記する（割合だけでは実効額を判断できない）。
-                  #364 で判定の基準通貨が USD へ移行したため、実額は**米ドル建て**であり計画 SC-02 の
-                  表記例「25%（$750）」と一致する。 */}
-              {/* SC-02, #424, IADR-0162: equity が供給されていないときは規約の文言で明示する
-                  （「—」「取得できません」といった弱い表現に落とさない。05_screens 共通規約）。 */}
-              <p>
-                equity 比の項目は<strong>百分率（%）で入力</strong>します（25 ＝ equity の 25%）。比率（0.25）ではありません。
-                各項目には<strong>現在の equity（
-                {riskStatus === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(riskStatus.capital)}
-                ）での実額</strong>を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。
-              </p>
-              {riskStatus === null && (
-                <p role="alert">
-                  現在の equity を取得できていないため、<strong>実額を併記できません</strong>。
-                  実額が「{METRIC_NOT_SUPPLIED_TEXT}」と表示されている項目は、
-                  <strong>0 でも「該当なし」でもなく、判断材料が無い状態</strong>です。
-                </p>
-              )}
-              {LIMIT_FIELD_KEYS.map((k) => (
-                <LimitField
-                  key={k}
-                  fieldKey={k}
-                  value={form[k]}
-                  equity={riskStatus?.capital ?? null}
-                  onChange={(v) => setForm({ ...form, [k]: v })}
-                />
-              ))}
-            </fieldset>
+      <Note>
+        {i18n._(
+          msg`リスク統制の上限（発注額・保有数・損失/DD 上限など）と取引ガードの閲覧と変更を行います（FR-13）。変更は利用者のみが行えます。段階は参照表示です（段階の変更は段階ゲートの承認で行います）。ガードの緩和など危険な変更は確認を求めます。`,
+        )}
+      </Note>
 
-            <div>
-              <label htmlFor="reason">変更理由</label>
-              <textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
-            </div>
+      <QueryPhase
+        query={settingsQuery}
+        errorTitle={
+          settingsNotFound
+            ? i18n._(msg`リスク設定は利用できません。`)
+            : i18n._(msg`リスク設定の取得に失敗しました。`)
+        }
+        canRetry={!settingsNotFound}
+      >
+        {(loaded: RiskManagementSettings) =>
+          form === null ? null : (
+            <>
+              <Panel heading={i18n._(msg`リスク上限 8項目（FR-13・変更可 / 生成AIは上書き不可）`)}>
+                <form onSubmit={handleSubmit} aria-label={i18n._(msg`リスク上限の変更`)}>
+                  {/* FR-10, SC-02, #362, #364, IADR-0151 決定1 / IADR-0152 決定6: 割合は**百分率**で入力する。
+                      equity 比の項目には現在 equity での実額を併記する（割合だけでは実効額を判断できない）。
+                      #364 で判定の基準通貨が USD へ移行したため、実額は**米ドル建て**であり計画 SC-02 の
+                      表記例「25%（$750）」と一致する。
+                      SC-02, #424, IADR-0162: equity が供給されていないときは規約の文言で明示する
+                      （「—」「取得できません」といった弱い表現に落とさない。05_screens 共通規約）。 */}
+                  <Note>
+                    {i18n._(msg`equity 比の項目は`)}
+                    <strong>{i18n._(msg`百分率（%）で入力`)}</strong>
+                    {i18n._(msg`します（25 ＝ equity の 25%）。比率（0.25）ではありません。各項目には`)}
+                    <strong>
+                      {i18n._(msg`現在の equity（`)}
+                      {riskStatus === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(riskStatus.capital)}
+                      {i18n._(msg`）での実額`)}
+                    </strong>
+                    {i18n._(
+                      msg`を併記します（基準通貨＝米ドル建て。統制の判定はすべて自己資金の USD 建てで行います）。`,
+                    )}
+                  </Note>
+                  {/* 供給が無いことの宣言は**常設の状態表示**であり結果通知ではない（`role` を付けない）。 */}
+                  {riskStatus === null && (
+                    <Note tone="err">
+                      {i18n._(msg`現在の equity を取得できていないため、`)}
+                      <strong>{i18n._(msg`実額を併記できません`)}</strong>
+                      {i18n._(msg`。実額が「`)}
+                      {METRIC_NOT_SUPPLIED_TEXT}
+                      {i18n._(msg`」と表示されている項目は、`)}
+                      <strong>{i18n._(msg`0 でも「該当なし」でもなく、判断材料が無い状態`)}</strong>
+                      {i18n._(msg`です。`)}
+                    </Note>
+                  )}
 
-            {invalidFieldMessages(form).length > 0 && (
-              <p role="alert">
-                入力できない値があります: {invalidFieldMessages(form).join('、')}
-              </p>
-            )}
+                  <Kv columns={2}>
+                    {LIMIT_FIELD_KEYS.map((k) => (
+                      <LimitField
+                        key={k}
+                        fieldKey={k}
+                        value={form[k]}
+                        equity={riskStatus?.capital ?? null}
+                        onChange={(v) => setForm({ ...form, [k]: v })}
+                      />
+                    ))}
+                  </Kv>
 
-            <button
-              type="submit"
-              disabled={reason.trim() === '' || saving || invalidFieldMessages(form).length > 0}
-            >
-              保存
-            </button>
-            {saving && <span role="status">保存中…</span>}
-            {savedNotice && <p role="status">{savedNotice}</p>}
-            {saveError && <p role="alert">{saveError}</p>}
-          </form>
+                  <div className="mt-3">
+                    <Label htmlFor="reason">{i18n._(msg`変更理由`)}</Label>
+                    <Input
+                      id="reason"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      required
+                      className="mt-1 w-full"
+                    />
+                  </div>
 
-          <GuardForm guard={current.guard} />
-          <StageView stage={current.stage} provider={current.brokerProvider} />
-          {/* SC-02, FR-20, FR-13, #423, IADR-0164 決定4: Stage 1 の最小取引件数。
-              計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に
-              属する値であるため）。したがって StageView の直後に置く。 */}
-          <Stage1TradeCountForm current={current.stage1MinimumTradeCount} />
-          <BrokerProviderForm
-            current={current.brokerProvider}
-            stageMode={current.stage.mode}
-            stage={current.stage.stage}
-            status={riskStatus}
-          />
-          <HistoryView status={historyStatus} history={history} />
-        </>
-      )}
+                  {invalid.length > 0 && (
+                    <p role="alert" className="mt-2 text-[11px] text-danger">
+                      {`${i18n._(msg`入力できない値があります:`)} ${invalid.join('、')}`}
+                    </p>
+                  )}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={reason.trim() === '' || saving || invalid.length > 0}
+                    >
+                      {i18n._(msg`保存`)}
+                    </Button>
+                    <span className="text-[11px] text-fg-muted">
+                      {i18n._(
+                        msg`空欄/非数値は保存無効化（黙って 0 を送らない）。競合 409 は再読込を促す`,
+                      )}
+                    </span>
+                    {saving && <span role="status">{i18n._(msg`保存中…`)}</span>}
+                  </div>
+                  {savedNotice !== null && (
+                    <p role="status" className="mt-2 text-[11px] text-success">
+                      {savedNotice}
+                    </p>
+                  )}
+                  {saveError !== null && (
+                    <p role="alert" className="mt-2 text-[11px] text-danger">
+                      {saveError}
+                    </p>
+                  )}
+                </form>
+              </Panel>
+
+              {/* hi-fi モック `.g2`: 取引ガードと「運用段階／発注先」を 2 列に並べる。 */}
+              <div className="grid gap-3 lg:grid-cols-2">
+                <GuardForm guard={loaded.guard} />
+                <div>
+                  <StagePanel stage={loaded.stage} provider={loaded.brokerProvider} />
+                  {/* SC-02, FR-20, FR-13, #423, IADR-0164 決定4: Stage 1 の最小取引件数。
+                      計画は「**運用段階（FR-20）の参照表示の近くに置く**」と定める（段階ゲートの合格条件に
+                      属する値であるため）。したがって StagePanel の直後に置く。 */}
+                  <Stage1TradeCountForm current={loaded.stage1MinimumTradeCount} />
+                  <BrokerProviderForm
+                    current={loaded.brokerProvider}
+                    stageMode={loaded.stage.mode}
+                    stage={loaded.stage.stage}
+                    status={riskStatus}
+                  />
+                </div>
+              </div>
+
+              <HistoryPanel query={historyQuery} />
+            </>
+          )
+        }
+      </QueryPhase>
 
       {/* SC-02, FR-03, FR-13, IADR-0090: 監視銘柄（watchlist）セクション。別サービス（MarketMonitorService `/monitor/watchlist`）を
           消費するため、リスク設定の取得可否に連動させず独立してロード/縮退する（片方の障害・BFF 未結線を巻き込まない・fail-safe）。 */}
@@ -287,7 +360,7 @@ export function RiskSettingsPage() {
 // **現在保存されている設定**から解決した実額であり、保存前の入力値は表せない。よって画面が
 // `resolveEquityAmount(equity, 入力比率)` で計算する（equity の出どころは 1 つに保つ）。
 //
-// ラベルは単位を含む文字列を <label> に置き、`getByLabelText` で参照できるようにする。
+// ラベルは単位を含む文字列を `Label` に置き、`getByLabelText` で参照できるようにする。
 function LimitField({
   fieldKey,
   value,
@@ -309,29 +382,29 @@ function LimitField({
     : '';
 
   return (
-    <div>
-      <label htmlFor={fieldKey}>{label}</label>
-      <input
+    <KvItem label={<Label htmlFor={fieldKey}>{label}</Label>}>
+      <Input
         id={fieldKey}
         type="number"
         step="any"
         value={value}
-        aria-invalid={error !== null}
+        invalid={error !== null}
         aria-describedby={`${fieldKey}-help`}
         onChange={(e) => onChange(e.target.value)}
+        className="w-full border-0 bg-transparent p-0"
       />
-      <span id={`${fieldKey}-help`}>
-        {`許容範囲: ${describeLimitRange(fieldKey)}`}
+      <span id={`${fieldKey}-help`} className="mt-1 block text-[10.5px] text-fg-muted">
+        {`${i18n._(msg`許容範囲:`)} ${describeLimitRange(fieldKey)}`}
         {isEquityRatioField(fieldKey) && (
           // equity が未供給なら「取得できていません（供給元がありません）」、入力が読めないだけなら「—」。
           // 併記できないことを黙って隠さない。
           <>
-            {` / 現在の equity での実額: ${amountText}`}
+            {` / ${i18n._(msg`現在の equity での実額:`)} ${amountText}`}
             {spec.kind === 'equityPercentPerDay' && amountText !== METRIC_NOT_SUPPLIED_TEXT && '/日'}
           </>
         )}
       </span>
-    </div>
+    </KvItem>
   );
 }
 
@@ -352,10 +425,10 @@ function bannedKey(b: BannedSymbol): string {
 function dangerousChanges(original: TradingGuardSettings, form: GuardFormState): string[] {
   const dangers: string[] = [];
   if (original.preventSameDayReentry && !form.preventSameDayReentry) {
-    dangers.push('同日再エントリー禁止を無効化');
+    dangers.push(i18n._(msg`同日再エントリー禁止を無効化`));
   }
   if (original.prohibitManipulativeOrderPatterns && !form.prohibitManipulativeOrderPatterns) {
-    dangers.push('相場操縦パターン禁止を無効化');
+    dangers.push(i18n._(msg`相場操縦パターン禁止を無効化`));
   }
   // FR-19, ADR-0016 決定1, #332: 商品種別は 3 値。現物以外（信用買い・空売り）の**新規有効化**を危険な緩和とみなす。
   for (const risky of RISKY_PRODUCT_TYPES) {
@@ -378,7 +451,7 @@ function dangerousChanges(original: TradingGuardSettings, form: GuardFormState):
     else removed.push(b);
   }
   if (removed.length > 0) {
-    dangers.push(`禁止銘柄の削除（${removed.map((b) => b.symbol).join('、')}）`);
+    dangers.push(`${i18n._(msg`禁止銘柄の削除`)}（${removed.map((b) => b.symbol).join('、')}）`);
   }
   return dangers;
 }
@@ -489,7 +562,7 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
         prohibitManipulativeOrderPatterns: form.prohibitManipulativeOrderPatterns,
         reason: reason.trim(),
       });
-      setSavedNotice('保存しました。');
+      setSavedNotice(i18n._(msg`保存しました。`));
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveError(saveMessageOf(err));
@@ -497,10 +570,12 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
   }
 
   return (
-    <Section title="取引ガード（変更）">
-      <form onSubmit={handleSubmit} aria-label="取引ガードの変更">
-        <fieldset>
-          <legend>有効な商品種別</legend>
+    <Panel className="m-0" heading={i18n._(msg`取引ガード（変更）`)}>
+      <form onSubmit={handleSubmit} aria-label={i18n._(msg`取引ガードの変更`)}>
+        <fieldset className="border-0 p-0">
+          <legend className="text-[10.5px] text-fg-muted">
+            {i18n._(msg`有効な商品種別`)}
+          </legend>
           {PRODUCT_TYPE_OPTIONS.map((o) => (
             <Check
               key={`pt-${o.value}`}
@@ -511,8 +586,10 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
           ))}
         </fieldset>
 
-        <fieldset>
-          <legend>有効な市場</legend>
+        <fieldset className="mt-2 border-0 p-0">
+          <legend className="text-[10.5px] text-fg-muted">
+            {i18n._(msg`有効な市場`)}
+          </legend>
           {MARKET_OPTIONS.map((o) => (
             <Check
               key={`mk-${o.value}`}
@@ -523,15 +600,17 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
           ))}
         </fieldset>
 
-        <fieldset>
-          <legend>取引ガード</legend>
+        <fieldset className="mt-2 border-0 p-0">
+          <legend className="text-[10.5px] text-fg-muted">
+            {i18n._(msg`取引ガード`)}
+          </legend>
           <Check
-            label="同日再エントリー禁止"
+            label={i18n._(msg`同日再エントリー禁止`)}
             checked={form.preventSameDayReentry}
             onChange={() => setForm({ ...form, preventSameDayReentry: !form.preventSameDayReentry })}
           />
           <Check
-            label="相場操縦パターン禁止"
+            label={i18n._(msg`相場操縦パターン禁止`)}
             checked={form.prohibitManipulativeOrderPatterns}
             onChange={() =>
               setForm({ ...form, prohibitManipulativeOrderPatterns: !form.prohibitManipulativeOrderPatterns })
@@ -539,87 +618,113 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
           />
         </fieldset>
 
-        <fieldset>
-          <legend>禁止銘柄</legend>
+        <fieldset className="mt-2 border-0 p-0">
+          <legend className="text-[10.5px] text-fg-muted">{i18n._(msg`禁止銘柄`)}</legend>
           {form.bannedSymbols.length === 0 ? (
-            <p>禁止銘柄はありません。</p>
+            <Note>{i18n._(msg`禁止銘柄はありません。`)}</Note>
           ) : (
-            <table aria-label="禁止銘柄（編集）">
-              <thead>
-                <tr>
-                  <th>銘柄</th>
-                  <th>市場</th>
-                  <th>理由</th>
-                  <th>登録日</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table aria-label={i18n._(msg`禁止銘柄（編集）`)}>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell>{i18n._(msg`銘柄`)}</TableHeaderCell>
+                  <TableHeaderCell>{i18n._(msg`市場`)}</TableHeaderCell>
+                  <TableHeaderCell>{i18n._(msg`理由`)}</TableHeaderCell>
+                  <TableHeaderCell>{i18n._(msg`登録日`)}</TableHeaderCell>
+                  <TableHeaderCell>{i18n._(msg`操作`)}</TableHeaderCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {form.bannedSymbols.map((b, i) => (
-                  <tr key={`${i}-${b.symbol}-${b.market}`}>
-                    <td>{b.symbol}</td>
-                    <td>{marketLabel(b.market)}</td>
-                    <td>{b.reason}</td>
-                    <td>{formatAt(b.registeredOn)}</td>
-                    <td>
-                      <button type="button" onClick={() => removeBannedSymbol(i)}>
-                        削除
-                      </button>
-                    </td>
-                  </tr>
+                  <TableRow key={`${i}-${b.symbol}-${b.market}`}>
+                    <TableCell>{b.symbol}</TableCell>
+                    <TableCell>{marketLabel(b.market)}</TableCell>
+                    <TableCell>{b.reason}</TableCell>
+                    <TableCell>{formatAt(b.registeredOn)}</TableCell>
+                    <TableCell>
+                      <Button type="button" onClick={() => removeBannedSymbol(i)}>
+                        {i18n._(msg`削除`)}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
-          <div>
-            <label htmlFor="guard-new-symbol">禁止銘柄コード</label>
-            <input id="guard-new-symbol" value={newSymbol} onChange={(e) => setNewSymbol(e.target.value)} />
-            <label htmlFor="guard-new-market">禁止銘柄の市場</label>
-            <select id="guard-new-market" value={newMarket} onChange={(e) => setNewMarket(Number(e.target.value))}>
-              {MARKET_OPTIONS.map((o) => (
-                <option key={`nm-${o.value}`} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="guard-new-reason">禁止理由</label>
-            {/* 追加サブフォームの下書き入力には HTML5 required を付けない（付けると本体フォームの送信が空欄で妨げられる）。
-                理由の必須化は「禁止銘柄を追加」ボタンの無効化で担保する（FR-19）。 */}
-            <input id="guard-new-reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} />
-            <button
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <div>
+              <Label htmlFor="guard-new-symbol">{i18n._(msg`禁止銘柄コード`)}</Label>
+              <Input id="guard-new-symbol" value={newSymbol} onChange={(e) => setNewSymbol(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="guard-new-market">{i18n._(msg`禁止銘柄の市場`)}</Label>
+              <Select id="guard-new-market" value={newMarket} onChange={(e) => setNewMarket(Number(e.target.value))}>
+                {MARKET_OPTIONS.map((o) => (
+                  <option key={`nm-${o.value}`} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="guard-new-reason">{i18n._(msg`禁止理由`)}</Label>
+              {/* 追加サブフォームの下書き入力には HTML5 required を付けない（付けると本体フォームの送信が空欄で妨げられる）。
+                  理由の必須化は「禁止銘柄を追加」ボタンの無効化で担保する（FR-19）。 */}
+              <Input id="guard-new-reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} />
+            </div>
+            <Button
               type="button"
               onClick={addBannedSymbol}
               disabled={newSymbol.trim() === '' || newReason.trim() === ''}
             >
-              禁止銘柄を追加
-            </button>
+              {i18n._(msg`禁止銘柄を追加`)}
+            </Button>
           </div>
         </fieldset>
 
-        <div>
-          <label htmlFor="guard-reason">変更理由</label>
-          <textarea id="guard-reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
+        <div className="mt-3">
+          <Label htmlFor="guard-reason">{i18n._(msg`変更理由`)}</Label>
+          <Input
+            id="guard-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+            className="mt-1 w-full"
+          />
         </div>
 
+        {/* 利用者の編集に対する**危険の提示**であり、結果として現れる通知である（`role="alert"` を保つ）。 */}
         {dangers.length > 0 && (
-          <div role="alert">
-            <p>次の変更は取引ガードを緩めます。内容を確認してください: {dangers.join('、')}</p>
+          <div role="alert" className="mt-2 rounded-md border border-danger p-2">
+            <p className="text-[11px] text-danger">
+              {`${i18n._(msg`次の変更は取引ガードを緩めます。内容を確認してください:`)} ${dangers.join('、')}`}
+            </p>
             <Check
-              label="上記の危険な変更を確認しました"
+              label={i18n._(msg`上記の危険な変更を確認しました`)}
               checked={confirmDanger}
               onChange={() => setConfirmDanger(!confirmDanger)}
             />
           </div>
         )}
 
-        <button type="submit" disabled={blocked}>
-          保存
-        </button>
-        {save.isPending && <span role="status">保存中…</span>}
-        {savedNotice && <p role="status">{savedNotice}</p>}
-        {saveError && <p role="alert">{saveError}</p>}
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Button type="submit" variant="primary" disabled={blocked}>
+            {i18n._(msg`保存`)}
+          </Button>
+          {save.isPending && <span role="status">{i18n._(msg`保存中…`)}</span>}
+        </div>
+        {savedNotice !== null && (
+          <p role="status" className="mt-2 text-[11px] text-success">
+            {savedNotice}
+          </p>
+        )}
+        {saveError !== null && (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {saveError}
+          </p>
+        )}
       </form>
-    </Section>
+      <Note>{i18n._(msg`変更操作の一部は Discord へ（変更 UI は後続の issue で拡張する）`)}</Note>
+    </Panel>
   );
 }
 
@@ -627,7 +732,7 @@ function GuardForm({ guard }: { guard: TradingGuardSettings }) {
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
     <div>
-      <label>
+      <label className="flex items-center gap-1.5 text-xs">
         <input type="checkbox" checked={checked} onChange={onChange} />
         {label}
       </label>
@@ -638,26 +743,24 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 // FR-20, #334, INDEX 決定 46: 段階（参照専用）と発注先（現在値）の並記。
 // **運用段階と発注先は独立した 2 軸であり、1 行に混ぜて表示しない**（05_screens 共通規約）。
 // 段階変更は段階ゲート承認フロー（#165 Bot 側）、発注先の変更は下の「発注先（変更）」で行う。
-function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']; provider: number }) {
+function StagePanel({ stage, provider }: { stage: RiskManagementSettings['stage']; provider: number }) {
   return (
-    <Section title="運用段階と発注先（参照）">
-      <dl>
-        <dt>運用段階</dt>
-        <dd>{stageLabel(stage.stage)}</dd>
-        <dt>発注先</dt>
-        <dd>{brokerProviderLabel(provider)}</dd>
-        <dt>段階の既定発注先</dt>
-        <dd>{brokerProviderLabel(stage.mode)}</dd>
+    <Panel className="m-0" heading={i18n._(msg`運用段階と発注先（参照）`)}>
+      <Kv columns={2}>
+        <KvItem label={i18n._(msg`運用段階`)}>{stageLabel(stage.stage)}</KvItem>
+        <KvItem label={i18n._(msg`発注先`)}>{brokerProviderLabel(provider)}</KvItem>
+        <KvItem label={i18n._(msg`段階の既定発注先`)}>{brokerProviderLabel(stage.mode)}</KvItem>
         {/* FR-20, #333, #389, IADR-0136: 段階の発注可能額は**総資金比**である（Stage 2 は 0.30 ＝ 30%）。
             #389 まで画面はこの値を一切表示しておらず（型とモックにしか存在しなかった）、キー名のずれが
             描画結果に現れなかった。表示することで以後のずれは画面に出る。 */}
-        <dt>段階の発注可能額（総資金比）</dt>
-        <dd>{stage.capitalCapRatio}</dd>
-      </dl>
-      <p>
-        運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。
-      </p>
-    </Section>
+        <KvItem label={i18n._(msg`段階の発注可能額（総資金比）`)}>{stage.capitalCapRatio}</KvItem>
+      </Kv>
+      <Note>
+        {i18n._(
+          msg`運用段階と発注先は独立した 2 軸です。段階が定める発注先は既定の組み合わせを示すにとどまります（FR-20）。`,
+        )}
+      </Note>
+    </Panel>
   );
 }
 
@@ -687,9 +790,9 @@ function StageView({ stage, provider }: { stage: RiskManagementSettings['stage']
 // **出すのは段階が実弾を既定としないときだけである。** 段階が既に実弾（Stage 2 / 3）なら注文は実際に
 // 発注されるため、同じ文言を出すと嘘になる（狼少年にもなる）。条件は `skipsStageGate` と同一。
 const STAGE_GATE_BLOCKS_LIVE_ORDERS =
-  'ただし、段階が実弾を既定とするまで発注は行われません。' +
-  '発注先の設定は保存できますが、実弾の注文は段階ゲートが拒否します（1 件も発注されません）。' +
-  '実弾で発注するには運用段階の昇格が必要です。';
+  'ただし、段階が実弾を既定とするまで発注は行われません。'
+  + '発注先の設定は保存できますが、実弾の注文は段階ゲートが拒否します（1 件も発注されません）。'
+  + '実弾で発注するには運用段階の昇格が必要です。';
 
 function BrokerProviderForm({
   current,
@@ -719,12 +822,7 @@ function BrokerProviderForm({
 
   // 現在値に追随して選択を初期化する（自分の保存成功後の再取得・外部変更）。
   //
-  // 🔴 #539, NFR: **これを `useEffect` で行わない。** #498（`.ai-context/specs/20260821_498_...md`）で
-  // 実証された機序と同型——commit（DOM が見える）と passive effect の実行の間には窓があり、その窓で
-  // 利用者の入力が入ると、遅れて流れてきた初期化が入力を黙って巻き戻す。React 公式の「prop が変わった
-  // ときに state を調整する」書き方（前回の prop を state に持ち、描画中に同期的に比較・調整する）へ
-  // 寄せる。**mount 時は走らない**ため窓そのものが消え、`current` が実際に変わったときの初期化は
-  // 従来どおり効く。
+  // 🔴 #539, NFR: **これを `useEffect` で行わない。**（理由は GuardForm と同じ。#498）
   const [syncedCurrent, setSyncedCurrent] = useState(current);
   if (syncedCurrent !== current) {
     setSyncedCurrent(current);
@@ -759,7 +857,7 @@ function BrokerProviderForm({
       setModalOpen(false);
       setAcknowledged(false);
       setPhrase('');
-      setSavedNotice('保存しました。');
+      setSavedNotice(i18n._(msg`保存しました。`));
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveError(saveMessageOf(err));
@@ -779,16 +877,16 @@ function BrokerProviderForm({
   }
 
   return (
-    <Section title="発注先（変更）">
-      <form onSubmit={handleSubmit} aria-label="発注先の変更">
-        <p>
-          現在の発注先: <strong>{brokerProviderLabel(current)}</strong>
+    <Panel className="m-0" heading={i18n._(msg`発注先（変更）`)}>
+      <form onSubmit={handleSubmit} aria-label={i18n._(msg`発注先の変更`)}>
+        <p className="text-xs">
+          {i18n._(msg`現在の発注先:`)} <strong>{brokerProviderLabel(current)}</strong>
         </p>
-        <fieldset>
-          <legend>発注先</legend>
+        <fieldset className="mt-2 border-0 p-0">
+          <legend className="text-[10.5px] text-fg-muted">{i18n._(msg`発注先`)}</legend>
           {BROKER_PROVIDER_OPTIONS.map((o) => (
             <div key={`bp-${o.value}`}>
-              <label>
+              <label className="flex items-center gap-1.5 text-xs">
                 <input
                   type="radio"
                   name="broker-provider"
@@ -802,62 +900,94 @@ function BrokerProviderForm({
           ))}
         </fieldset>
 
-        <div>
-          <label htmlFor="broker-provider-reason">変更理由</label>
-          <textarea
+        <div className="mt-3">
+          <Label htmlFor="broker-provider-reason">{i18n._(msg`変更理由`)}</Label>
+          <Input
             id="broker-provider-reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             required
+            className="mt-1 w-full"
           />
         </div>
 
+        {/* 利用者が実弾を選んだことに対する**危険の提示**（結果として現れる）。`role="alert"` を保つ。 */}
         {skipsStageGate && (
-          <p role="alert">
-            現在の運用段階（{stageLabel(stage)}）が想定する発注先は
-            {brokerProviderLabel(stageMode)}です。実弾へ切り替えると段階ゲートを飛ばすことになります。
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {i18n._(msg`現在の運用段階（`)}
+            {stageLabel(stage)}
+            {i18n._(msg`）が想定する発注先は`)}
+            {brokerProviderLabel(stageMode)}
+            {i18n._(msg`です。実弾へ切り替えると段階ゲートを飛ばすことになります。`)}
             {/* FR-20 (1), #422: 保存できることは発注できることを意味しない。 */}
             <strong>{STAGE_GATE_BLOCKS_LIVE_ORDERS}</strong>
           </p>
         )}
 
-        <button type="submit" disabled={unchanged || reasonMissing || save.isPending}>
-          {live ? '実弾への切替を確認する' : '保存'}
-        </button>
-        {unchanged && <p>発注先は変更されていません。</p>}
-        {save.isPending && <span role="status">保存中…</span>}
-        {savedNotice && <p role="status">{savedNotice}</p>}
-        {saveError && <p role="alert">{saveError}</p>}
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={unchanged || reasonMissing || save.isPending}
+          >
+            {live ? i18n._(msg`実弾への切替を確認する`) : i18n._(msg`保存`)}
+          </Button>
+          {unchanged && (
+            <span className="text-[11px] text-fg-muted">
+              {i18n._(msg`発注先は変更されていません。`)}
+            </span>
+          )}
+          {save.isPending && <span role="status">{i18n._(msg`保存中…`)}</span>}
+        </div>
+        {savedNotice !== null && (
+          <p role="status" className="mt-2 text-[11px] text-success">
+            {savedNotice}
+          </p>
+        )}
+        {saveError !== null && (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {saveError}
+          </p>
+        )}
       </form>
 
-      {modalOpen && (
-        <LiveSwitchWarningModal
-          stage={stage}
-          stageMode={stageMode}
-          skipsStageGate={skipsStageGate}
-          status={status}
-          equityUnavailable={equityUnavailable}
-          acknowledged={acknowledged}
-          phrase={phrase}
-          confirmationComplete={confirmationComplete}
-          saving={save.isPending}
-          onAcknowledgedChange={setAcknowledged}
-          onPhraseChange={setPhrase}
-          onCancel={() => {
-            setModalOpen(false);
-            setAcknowledged(false);
-            setPhrase('');
-          }}
-          onConfirm={() => void submit()}
-        />
-      )}
-    </Section>
+      <Note>
+        {i18n._(
+          msg`発注先の変更は理由必須・監査ログ記録・版（楽観排他）の対象です。moomoo REAL への切替は警告モーダルを伴います。`,
+        )}
+      </Note>
+
+      <LiveSwitchWarningDialog
+        open={modalOpen}
+        stage={stage}
+        stageMode={stageMode}
+        skipsStageGate={skipsStageGate}
+        status={status}
+        equityUnavailable={equityUnavailable}
+        acknowledged={acknowledged}
+        phrase={phrase}
+        confirmationComplete={confirmationComplete}
+        saving={save.isPending}
+        onAcknowledgedChange={setAcknowledged}
+        onPhraseChange={setPhrase}
+        onCancel={() => {
+          setModalOpen(false);
+          setAcknowledged(false);
+          setPhrase('');
+        }}
+        onConfirm={() => void submit()}
+      />
+    </Panel>
   );
 }
 
 // FR-20 (1), 05_screens SC-02, #334, IADR-0141: 実弾切替の警告モーダル。計画が定める 4 点を必ず描く。
 // **切替ボタンは「同意」と「REAL の入力」が両方揃うまで無効である**（「OK」1 押しで通過させない）。
-function LiveSwitchWarningModal({
+//
+// 🔴 **初期フォーカスは取消側に当てる**（`initialFocus`）。危険側にフォーカスが当たった状態で
+// Enter を押すと 1 打鍵で通過してしまう——「OK 1 押しでは通過できない」という統制の趣旨に反する。
+function LiveSwitchWarningDialog({
+  open,
   stage,
   stageMode,
   skipsStageGate,
@@ -872,6 +1002,7 @@ function LiveSwitchWarningModal({
   onCancel,
   onConfirm,
 }: {
+  open: boolean;
   stage: number;
   stageMode: number;
   skipsStageGate: boolean;
@@ -886,135 +1017,171 @@ function LiveSwitchWarningModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  // 🔴 取消ボタンへ **ref を直接渡さない**——`@platform/ui` の `Button` は ref を受けるが、
+  // 単独リポの型検査用スタブは受けない（写しの差は合成時にしか判らない）。包む要素の ref から
+  // 取り出す形なら、実物・スタブのどちらでも同じ挙動になる。
+  const cancelWrapRef = useRef<HTMLSpanElement>(null);
+  // 🔴 **恒等性を保つ**（`useCallback`）。初期フォーカスの指定は「開いたとき」の副作用の依存に
+  // 入るため、毎描画で新しい関数を渡すと**打鍵のたびに取消ボタンへフォーカスが戻る**
+  // （実測: 確認フレーズが 1 文字しか入らず、切替ボタンが有効にならなかった）。
+  const focusCancel = useCallback(() => cancelWrapRef.current?.querySelector('button') ?? null, []);
+
   return (
-    <div role="dialog" aria-modal="true" aria-label="実弾（moomoo REAL）への切替の確認">
-      {/* ① 実資金で執行される旨 */}
-      <p role="alert">
-        <strong>これ以降の注文は実際の資金で執行されます。</strong>
-      </p>
-
-      {/* ② 切替先と現在の Stage の組み合わせの妥当性 */}
-      <p>
-        現在の運用段階: <strong>{stageLabel(stage)}</strong>／段階が想定する発注先:{' '}
-        <strong>{brokerProviderLabel(stageMode)}</strong>
-      </p>
-      {skipsStageGate && (
-        <>
-          <p role="alert">
-            この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。
-          </p>
-          {/*
-            FR-20 (1), #422: **同意しても 1 件も発注されない**旨を必ず出す。これが無いと
-            「警告に同意したのに発注されない＝壊れている」と読まれる（計画が名指しした誤読）。
-          */}
-          <p role="alert">
-            <strong>{STAGE_GATE_BLOCKS_LIVE_ORDERS}</strong>
-          </p>
-        </>
-      )}
-
-      {/* ③ 現在の equity と、それに対する統制値の実額 */}
-      {equityUnavailable || status === null ? (
-        <p role="alert">
-          現在の equity と統制値を取得できないため、実弾へ切り替えられません。時間をおいて再度お試しください。
-        </p>
-      ) : (
-        <table aria-label="現在の equity と統制値">
-          <tbody>
-            <tr>
-              <th>現在の equity（自己資金）</th>
-              <td>{formatAmount(status.capital)}</td>
-            </tr>
-            <tr>
-              <th>1 注文あたり発注金額上限</th>
-              <td>{formatAmount(status.maxOrderAmount)}</td>
-            </tr>
-            <tr>
-              <th>1 日あたり発注金額上限</th>
-              <td>{formatAmount(status.maxDailyOrderAmount)}</td>
-            </tr>
-            <tr>
-              <th>保有建玉数上限</th>
-              <td>{status.maxOpenPositions}</td>
-            </tr>
-          </tbody>
-        </table>
-      )}
-
-      {/* ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力） */}
-      <div>
-        <label>
-          <input
-            type="checkbox"
-            checked={acknowledged}
-            onChange={(e) => onAcknowledgedChange(e.target.checked)}
-          />
-          実資金で執行されることを理解しました
-        </label>
-      </div>
-      <div>
-        <label htmlFor="live-switch-phrase">
-          確認のため「{LIVE_ACKNOWLEDGEMENT_PHRASE}」と入力してください
-        </label>
-        <input
-          id="live-switch-phrase"
-          value={phrase}
-          onChange={(e) => onPhraseChange(e.target.value)}
-        />
-      </div>
-
-      <button type="button" onClick={onCancel} disabled={saving}>
-        キャンセル
-      </button>
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={!confirmationComplete || equityUnavailable || saving}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <DialogContent
+        aria-label={i18n._(msg`実弾（moomoo REAL）への切替の確認`)}
+        initialFocus={focusCancel}
+        className="rounded-md border border-danger bg-surface p-4"
       >
-        実弾へ切り替える
-      </button>
-    </div>
+        {/* ① 実資金で執行される旨 */}
+        <p role="alert" className="text-danger">
+          <strong>{i18n._(msg`これ以降の注文は実際の資金で執行されます。`)}</strong>
+        </p>
+
+        {/* ② 切替先と現在の Stage の組み合わせの妥当性 */}
+        <p className="mt-2 text-xs">
+          {i18n._(msg`現在の運用段階:`)} <strong>{stageLabel(stage)}</strong>
+          {i18n._(msg`／段階が想定する発注先:`)} <strong>{brokerProviderLabel(stageMode)}</strong>
+        </p>
+        {skipsStageGate && (
+          <>
+            <p role="alert" className="mt-2 text-[11px] text-danger">
+              {i18n._(
+                msg`この組み合わせは段階ゲート（統制違反 0 件・60 営業日・取引 100 件）を飛ばしています。`,
+              )}
+            </p>
+            {/*
+              FR-20 (1), #422: **同意しても 1 件も発注されない**旨を必ず出す。これが無いと
+              「警告に同意したのに発注されない＝壊れている」と読まれる（計画が名指しした誤読）。
+            */}
+            <p role="alert" className="mt-2 text-[11px] text-danger">
+              <strong>{STAGE_GATE_BLOCKS_LIVE_ORDERS}</strong>
+            </p>
+          </>
+        )}
+
+        {/* ③ 現在の equity と、それに対する統制値の実額 */}
+        {equityUnavailable || status === null ? (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {i18n._(
+              msg`現在の equity と統制値を取得できないため、実弾へ切り替えられません。時間をおいて再度お試しください。`,
+            )}
+          </p>
+        ) : (
+          <Table aria-label={i18n._(msg`現在の equity と統制値`)} className="mt-2">
+            <TableBody>
+              <TableRow>
+                <TableHeaderCell scope="row">
+                  {i18n._(msg`現在の equity（自己資金）`)}
+                </TableHeaderCell>
+                <TableCell>{formatAmount(status.capital)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableHeaderCell scope="row">
+                  {i18n._(msg`1 注文あたり発注金額上限`)}
+                </TableHeaderCell>
+                <TableCell>{formatAmount(status.maxOrderAmount)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableHeaderCell scope="row">{i18n._(msg`1 日あたり発注金額上限`)}</TableHeaderCell>
+                <TableCell>{formatAmount(status.maxDailyOrderAmount)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableHeaderCell scope="row">{i18n._(msg`保有建玉数上限`)}</TableHeaderCell>
+                <TableCell>{status.maxOpenPositions}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        )}
+
+        {/* ④ 確認のための明示的な操作（チェックボックスの同意と「REAL」の文字入力） */}
+        <div className="mt-3">
+          <label className="flex items-center gap-1.5 text-xs">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => onAcknowledgedChange(e.target.checked)}
+            />
+            {i18n._(msg`実資金で執行されることを理解しました`)}
+          </label>
+        </div>
+        <div className="mt-2">
+          <Label htmlFor="live-switch-phrase">
+            {`${i18n._(msg`確認のため「`)}${LIVE_ACKNOWLEDGEMENT_PHRASE}${i18n._(msg`」と入力してください`)}`}
+          </Label>
+          <Input
+            id="live-switch-phrase"
+            value={phrase}
+            onChange={(e) => onPhraseChange(e.target.value)}
+            className="mt-1"
+          />
+        </div>
+
+        <DialogActions className="mt-3 flex flex-wrap items-center gap-2">
+          {/* 🔴 取消側を先に置き、初期フォーカスもここへ当てる。 */}
+          <span ref={cancelWrapRef}>
+            <Button type="button" onClick={onCancel} disabled={saving}>
+              {i18n._(msg`キャンセル`)}
+            </Button>
+          </span>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={onConfirm}
+            disabled={!confirmationComplete || equityUnavailable || saving}
+          >
+            {i18n._(msg`実弾へ切り替える`)}
+          </Button>
+        </DialogActions>
+        <Note>
+          {i18n._(
+            msg`既定の「OK」ボタン 1 押しでは通過できません（チェックと文字入力の明示的な操作を必須とします）。`,
+          )}
+        </Note>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // FR-11: 変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
-function HistoryView({ status, history }: { status: HistoryStatus; history: SettingsChangeEntry[] }) {
+function HistoryPanel({ query }: { query: ReturnType<typeof useRiskSettingsHistory> }) {
   return (
-    <Section title={`変更履歴（${status === 'ok' ? history.length : '—'}）`}>
-      {status === 'loading' && <p role="status">履歴を確認中…</p>}
-      {status === 'unavailable' && <p>変更履歴は利用できません。</p>}
-      {status === 'ok' && history.length === 0 && <p>変更履歴はありません。</p>}
-      {status === 'ok' && history.length > 0 && (
-        <table aria-label="変更履歴">
-          <thead>
-            <tr>
-              <th>種別</th>
-              <th>変更者</th>
-              <th>理由</th>
-              <th>日時</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((h, i) => (
-              <tr key={`${i}-${h.changeType}-${h.changedAt}`}>
-                <td>{changeTypeLabel(h.changeType)}</td>
-                <td>{h.actor}</td>
-                <td>{h.reason}</td>
-                <td>{formatAt(h.changedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Section>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <details open style={{ margin: '0.75rem 0' }}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{title}</summary>
-      <div style={{ marginTop: '0.5rem' }}>{children}</div>
-    </details>
+    <Panel heading={i18n._(msg`変更履歴`)}>
+      <QueryPhase
+        query={query}
+        loadingLabel={i18n._(msg`履歴を確認中…`)}
+        errorTitle={i18n._(msg`変更履歴は利用できません。`)}
+        isEmpty={(rows: SettingsChangeEntry[]) => rows.length === 0}
+        empty={<Note>{i18n._(msg`変更履歴はありません。`)}</Note>}
+      >
+        {(history: SettingsChangeEntry[]) => (
+          <Table aria-label={i18n._(msg`変更履歴`)}>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{i18n._(msg`種別`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`変更者`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`理由`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`日時`)}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {history.map((h, i) => (
+                <TableRow key={`${i}-${h.changeType}-${h.changedAt}`}>
+                  <TableCell>{changeTypeLabel(h.changeType)}</TableCell>
+                  <TableCell>{h.actor}</TableCell>
+                  <TableCell>{h.reason}</TableCell>
+                  <TableCell>{formatAt(h.changedAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </QueryPhase>
+    </Panel>
   );
 }

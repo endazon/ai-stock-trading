@@ -1,5 +1,21 @@
-import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import {
+  Button,
+  Input,
+  Kv,
+  KvItem,
+  Label,
+  Note,
+  Panel,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@platform/ui';
 import { ApiError } from '@foundation/api/ApiError';
 import type { MarketMonitorSettings, MonitorSettingsChangeEntry } from '@ai-stock-trading/lib/monitor/contracts';
 import {
@@ -25,6 +41,7 @@ import {
   percentTextToRatio,
   ratioToPercentText,
 } from '@ai-stock-trading/lib/risk/contracts';
+import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 
 // SC-02, FR-03, FR-13, FR-11, UC-06, #423, IADR-0155 / IADR-0164 決定2:
 // **市場監視パラメータ（変動閾値・クールダウン）の閲覧・変更。**
@@ -47,25 +64,27 @@ import {
 // **変動閾値とクールダウンは別々のフォームである。** サーバ側が項目単位の部分更新
 // （`PUT /monitor/settings/movement-threshold` と `/cooldown`）を 2 本持つためであり、
 // 1 つのフォームで両方を送ると「片方だけ成功した」状態を作れる。アクセシブル名も完全に分ける。
-
-type LoadState = 'loading' | 'ok' | 'unavailable';
+//
+// UI/UX 改善 2026-09-12（hi-fi モック `sc-02.html` の「市場監視パラメータ」）: `Panel` ＋ `Kv` ＋
+// `Label` / `Input` / `Button` に載せ替え、**取得の待ち・失敗は `QueryPhase` に一本化**した
+// （#424 で入れた規約の文言は `errorTitle` としてそのまま持つ——落としてはならない）。
 
 // ApiError の種別を利用者向けメッセージへ写像する（SC-01 §1・SC-02 と同方針）。
 function saveMessageOf(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.kind === 'conflict') {
-      return '競合が発生しました。最新を取得して再試行してください。';
+      return i18n._(msg`競合が発生しました。最新を取得して再試行してください。`);
     }
     if (e.kind === 'validation') {
       const detail = e.details.length > 0 ? `（${e.details.join(' / ')}）` : '';
-      return `入力内容に誤りがあります。${detail}`;
+      return `${i18n._(msg`入力内容に誤りがあります。`)}${detail}`;
     }
     if (e.kind === 'forbidden') {
-      return '変更する権限がありません。';
+      return i18n._(msg`変更する権限がありません。`);
     }
     return e.message;
   }
-  return '保存に失敗しました。';
+  return i18n._(msg`保存に失敗しました。`);
 }
 
 export function MonitorParametersForm() {
@@ -73,55 +92,47 @@ export function MonitorParametersForm() {
   const settingsQuery = useMonitorSettings();
   const historyQuery = useMonitorSettingsHistory();
 
-  const current = settingsQuery.data ?? null;
-  const state: LoadState = settingsQuery.isPending
-    ? 'loading'
-    : settingsQuery.isError
-      ? 'unavailable'
-      : 'ok';
-  const historyState: LoadState = historyQuery.isPending
-    ? 'loading'
-    : historyQuery.isError
-      ? 'unavailable'
-      : 'ok';
-  // 市場監視パラメータの変更だけを出す（監視銘柄の追加・削除は隣の節の関心である）。
-  const history: MonitorSettingsChangeEntry[] = (historyQuery.data ?? []).filter(
-    (h) =>
-      h.changeType === MONITOR_CHANGE_TYPE_MOVEMENT_THRESHOLD
-      || h.changeType === MONITOR_CHANGE_TYPE_COOLDOWN,
-  );
-
   return (
-    <Section title="市場監視パラメータ（変動閾値・クールダウン）">
-      <p>
-        監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか
-        （クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。
-      </p>
+    <Panel heading={i18n._(msg`市場監視パラメータ（変動閾値・クールダウン）`)}>
+      <Note>
+        {i18n._(
+          msg`監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。`,
+        )}
+      </Note>
 
-      {state === 'loading' && <p role="status">市場監視パラメータを確認中…</p>}
-      {/* SC-02, #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つである（05_screens 共通規約）。
-          「値が無い」のではなく「確認できていない」ことを規約の文言で明示する。
-          **本節が SC-01 §2 から移ってきたときに、#424 で入れた規約の文言を落とさないこと。** */}
-      {state === 'unavailable' && (
-        <p role="alert">
-          市場監視パラメータを<strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>。値が無いのではなく、確認できていません。
-        </p>
-      )}
+      <QueryPhase
+        query={settingsQuery}
+        loadingLabel={i18n._(msg`市場監視パラメータを確認中…`)}
+        // SC-02, #424, IADR-0162: 取得失敗も**供給が無い**状態の 1 つである（05_screens 共通規約）。
+        // 「値が無い」のではなく「確認できていない」ことを規約の文言で明示する。
+        // **本節が SC-01 §2 から移ってきたときに、#424 で入れた規約の文言を落とさないこと。**
+        errorTitle={
+          <>
+            {i18n._(msg`市場監視パラメータを`)}
+            <strong>{METRIC_NOT_SUPPLIED_TEXT}</strong>
+            {i18n._(msg`。値が無いのではなく、確認できていません。`)}
+          </>
+        }
+      >
+        {(current: MarketMonitorSettings) => (
+          <>
+            <Kv columns={2}>
+              <KvItem label={i18n._(msg`現在の変動閾値`)}>
+                {`${ratioToPercentText(current.movementThresholdRatio)}%`}
+              </KvItem>
+              <KvItem label={i18n._(msg`現在のクールダウン`)}>
+                {`${timeSpanToHoursText(current.cooldown)} ${i18n._(msg`時間`)}`}
+              </KvItem>
+            </Kv>
 
-      {state === 'ok' && current && (
-        <>
-          <p>
-            現在の変動閾値: <strong>{ratioToPercentText(current.movementThresholdRatio)}%</strong>／
-            現在のクールダウン: <strong>{timeSpanToHoursText(current.cooldown)} 時間</strong>
-          </p>
+            <MovementThresholdForm current={current} />
+            <CooldownForm current={current} />
+          </>
+        )}
+      </QueryPhase>
 
-          <MovementThresholdForm current={current} />
-          <CooldownForm current={current} />
-        </>
-      )}
-
-      <MonitorParameterHistoryView state={historyState} history={history} />
-    </Section>
+      <MonitorParameterHistoryView query={historyQuery} />
+    </Panel>
   );
 }
 
@@ -163,7 +174,7 @@ function MovementThresholdForm({ current }: { current: MarketMonitorSettings }) 
     try {
       await save.mutateAsync({ movementThresholdRatio: ratio, reason: reason.trim() });
       setReason('');
-      setSavedNotice('変動閾値を保存しました。');
+      setSavedNotice(i18n._(msg`変動閾値を保存しました。`));
     } catch (err: unknown) {
       // 409/400 等は自動再試行せずメッセージ表示に留める（安全既定）。
       setSaveError(saveMessageOf(err));
@@ -171,41 +182,60 @@ function MovementThresholdForm({ current }: { current: MarketMonitorSettings }) 
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="変動閾値の変更">
-      <div>
-        <label htmlFor="movement-threshold">変動閾値 %</label>
-        <input
-          id="movement-threshold"
-          type="number"
-          step="any"
-          value={percent}
-          aria-invalid={validationError !== null}
-          aria-describedby="movement-threshold-help"
-          onChange={(e) => setPercent(e.target.value)}
-        />
-        <span id="movement-threshold-help">
-          {`前回判断時点の価格に対する変動率です。許容範囲: ${MOVEMENT_THRESHOLD_RANGE_TEXT}`}
-        </span>
+    <form onSubmit={handleSubmit} aria-label={i18n._(msg`変動閾値の変更`)} className="mt-3">
+      <Kv columns={2}>
+        <KvItem label={<Label htmlFor="movement-threshold">{i18n._(msg`変動閾値 %`)}</Label>}>
+          <Input
+            id="movement-threshold"
+            type="number"
+            step="any"
+            value={percent}
+            invalid={validationError !== null}
+            aria-describedby="movement-threshold-help"
+            onChange={(e) => setPercent(e.target.value)}
+            className="w-full border-0 bg-transparent p-0"
+          />
+          <span id="movement-threshold-help" className="mt-1 block text-[10.5px] text-fg-muted">
+            {`${i18n._(msg`前回判断時点の価格に対する変動率です。許容範囲:`)} ${MOVEMENT_THRESHOLD_RANGE_TEXT}`}
+          </span>
+        </KvItem>
+        <KvItem
+          label={
+            <Label htmlFor="movement-threshold-reason">{i18n._(msg`変動閾値の変更理由`)}</Label>
+          }
+        >
+          <Input
+            id="movement-threshold-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+            className="w-full border-0 bg-transparent p-0"
+          />
+        </KvItem>
+      </Kv>
+
+      {validationError !== null && (
+        <p role="alert" className="mt-2 text-[11px] text-danger">
+          {validationError}
+        </p>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="primary" disabled={blocked}>
+          {i18n._(msg`変動閾値を保存`)}
+        </Button>
+        {save.isPending && <span role="status">{i18n._(msg`変動閾値を保存中…`)}</span>}
       </div>
-
-      <div>
-        <label htmlFor="movement-threshold-reason">変動閾値の変更理由</label>
-        <textarea
-          id="movement-threshold-reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
-        />
-      </div>
-
-      {validationError && <p role="alert">{validationError}</p>}
-
-      <button type="submit" disabled={blocked}>
-        変動閾値を保存
-      </button>
-      {save.isPending && <span role="status">変動閾値を保存中…</span>}
-      {savedNotice && <p role="status">{savedNotice}</p>}
-      {saveError && <p role="alert">{saveError}</p>}
+      {savedNotice !== null && (
+        <p role="status" className="mt-2 text-[11px] text-success">
+          {savedNotice}
+        </p>
+      )}
+      {saveError !== null && (
+        <p role="alert" className="mt-2 text-[11px] text-danger">
+          {saveError}
+        </p>
+      )}
     </form>
   );
 }
@@ -242,101 +272,122 @@ function CooldownForm({ current }: { current: MarketMonitorSettings }) {
     try {
       await save.mutateAsync({ cooldown, reason: reason.trim() });
       setReason('');
-      setSavedNotice('クールダウンを保存しました。');
+      setSavedNotice(i18n._(msg`クールダウンを保存しました。`));
     } catch (err: unknown) {
       setSaveError(saveMessageOf(err));
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="クールダウンの変更">
-      <div>
-        <label htmlFor="monitor-cooldown">クールダウン 時間</label>
-        <input
-          id="monitor-cooldown"
-          type="number"
-          step="any"
-          value={hours}
-          aria-invalid={validationError !== null}
-          aria-describedby="monitor-cooldown-help"
-          onChange={(e) => setHours(e.target.value)}
-        />
-        <span id="monitor-cooldown-help">
-          {`同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲: ${COOLDOWN_RANGE_TEXT}`}
-        </span>
+    <form onSubmit={handleSubmit} aria-label={i18n._(msg`クールダウンの変更`)} className="mt-3">
+      <Kv columns={2}>
+        <KvItem label={<Label htmlFor="monitor-cooldown">{i18n._(msg`クールダウン 時間`)}</Label>}>
+          <Input
+            id="monitor-cooldown"
+            type="number"
+            step="any"
+            value={hours}
+            invalid={validationError !== null}
+            aria-describedby="monitor-cooldown-help"
+            onChange={(e) => setHours(e.target.value)}
+            className="w-full border-0 bg-transparent p-0"
+          />
+          <span id="monitor-cooldown-help" className="mt-1 block text-[10.5px] text-fg-muted">
+            {`${i18n._(msg`同一銘柄の再トリガーを抑制する時間です（0 は抑制なし）。許容範囲:`)} ${COOLDOWN_RANGE_TEXT}`}
+          </span>
+        </KvItem>
+        <KvItem
+          label={<Label htmlFor="monitor-cooldown-reason">{i18n._(msg`クールダウンの変更理由`)}</Label>}
+        >
+          <Input
+            id="monitor-cooldown-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+            className="w-full border-0 bg-transparent p-0"
+          />
+        </KvItem>
+      </Kv>
+
+      {validationError !== null && (
+        <p role="alert" className="mt-2 text-[11px] text-danger">
+          {validationError}
+        </p>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="primary" disabled={blocked}>
+          {i18n._(msg`クールダウンを保存`)}
+        </Button>
+        {save.isPending && <span role="status">{i18n._(msg`クールダウンを保存中…`)}</span>}
       </div>
-
-      <div>
-        <label htmlFor="monitor-cooldown-reason">クールダウンの変更理由</label>
-        <textarea
-          id="monitor-cooldown-reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
-        />
-      </div>
-
-      {validationError && <p role="alert">{validationError}</p>}
-
-      <button type="submit" disabled={blocked}>
-        クールダウンを保存
-      </button>
-      {save.isPending && <span role="status">クールダウンを保存中…</span>}
-      {savedNotice && <p role="status">{savedNotice}</p>}
-      {saveError && <p role="alert">{saveError}</p>}
+      {savedNotice !== null && (
+        <p role="status" className="mt-2 text-[11px] text-success">
+          {savedNotice}
+        </p>
+      )}
+      {saveError !== null && (
+        <p role="alert" className="mt-2 text-[11px] text-danger">
+          {saveError}
+        </p>
+      )}
     </form>
   );
 }
 
 // FR-11, FR-13: 市場監視パラメータの変更履歴（新しい順）。取得不能・0 件はその旨を明示する（縮退表示）。
+// 市場監視パラメータの変更だけを出す（監視銘柄の追加・削除は隣の節の関心である）。
 function MonitorParameterHistoryView({
-  state,
-  history,
+  query,
 }: {
-  state: LoadState;
-  history: MonitorSettingsChangeEntry[];
+  query: ReturnType<typeof useMonitorSettingsHistory>;
 }) {
-  return (
-    <div>
-      <h3>市場監視パラメータの変更履歴（{state === 'ok' ? history.length : '—'}）</h3>
-      {state === 'loading' && <p role="status">市場監視パラメータの変更履歴を確認中…</p>}
-      {state === 'unavailable' && <p>市場監視パラメータの変更履歴は利用できません。</p>}
-      {state === 'ok' && history.length === 0 && <p>市場監視パラメータの変更履歴はありません。</p>}
-      {state === 'ok' && history.length > 0 && (
-        <table aria-label="市場監視パラメータの変更履歴">
-          <thead>
-            <tr>
-              <th>種別</th>
-              <th>変更前</th>
-              <th>変更後</th>
-              <th>変更者</th>
-              <th>理由</th>
-              <th>日時</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((h, i) => (
-              <tr key={`${i}-${h.changeType}-${h.changedAt}`}>
-                <td>{monitorChangeTypeLabel(h.changeType)}</td>
-                <td>{h.before ?? '—'}</td>
-                <td>{h.after ?? '—'}</td>
-                <td>{h.actor}</td>
-                <td>{h.reason}</td>
-                <td>{formatAt(h.changedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
+  const onlyParameterChanges = (rows: MonitorSettingsChangeEntry[]) =>
+    rows.filter(
+      (h) =>
+        h.changeType === MONITOR_CHANGE_TYPE_MOVEMENT_THRESHOLD
+        || h.changeType === MONITOR_CHANGE_TYPE_COOLDOWN,
+    );
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <details open style={{ margin: '0.75rem 0' }} aria-label={title}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{title}</summary>
-      <div style={{ marginTop: '0.5rem' }}>{children}</div>
-    </details>
+    <div className="mt-3">
+      <h3 className="text-[10.5px] text-fg-muted">
+        {i18n._(msg`市場監視パラメータの変更履歴`)}
+      </h3>
+      <QueryPhase
+        query={query}
+        loadingLabel={i18n._(msg`市場監視パラメータの変更履歴を確認中…`)}
+        errorTitle={i18n._(msg`市場監視パラメータの変更履歴は利用できません。`)}
+        isEmpty={(rows: MonitorSettingsChangeEntry[]) => onlyParameterChanges(rows).length === 0}
+        empty={<Note>{i18n._(msg`市場監視パラメータの変更履歴はありません。`)}</Note>}
+      >
+        {(rows: MonitorSettingsChangeEntry[]) => (
+          <Table aria-label={i18n._(msg`市場監視パラメータの変更履歴`)}>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{i18n._(msg`種別`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`変更前`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`変更後`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`変更者`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`理由`)}</TableHeaderCell>
+                <TableHeaderCell>{i18n._(msg`日時`)}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {onlyParameterChanges(rows).map((h, i) => (
+                <TableRow key={`${i}-${h.changeType}-${h.changedAt}`}>
+                  <TableCell>{monitorChangeTypeLabel(h.changeType)}</TableCell>
+                  <TableCell>{h.before ?? '—'}</TableCell>
+                  <TableCell>{h.after ?? '—'}</TableCell>
+                  <TableCell>{h.actor}</TableCell>
+                  <TableCell>{h.reason}</TableCell>
+                  <TableCell>{formatAt(h.changedAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </QueryPhase>
+    </div>
   );
 }

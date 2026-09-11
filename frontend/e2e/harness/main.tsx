@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { i18n } from '@lingui/core';
 import {
   createRootRoute,
   createRoute,
@@ -14,6 +15,7 @@ import { queryClient } from '@foundation/api/queryClient';
 import type { ShellRoute } from '@foundation/routing/shell';
 import { NotFound } from '@foundation/ui/NotFound';
 import { aiStockTradingNavItems, createAiStockTradingRoutes } from '@ai-stock-trading/features';
+import { messages } from '@ai-stock-trading/locales/ja/messages';
 import { AuthHarness } from './AuthHarness';
 
 // SC-01/02/03, IADR-0087, IADR-0288: E2E 実行用の test-only ハーネス。
@@ -24,6 +26,13 @@ import { AuthHarness } from './AuthHarness';
 // #414 で `react-router-dom` から TanStack Router へ移した。
 //
 // 認証/ロールは AuthHarness が URL クエリから供給し、BFF 応答は Playwright の page.route がモックする。
+//
+// MSP/ADR-0031（i18n = Lingui）: **ロケールを ja で活性化する**（`test/setup.ts` と同じ理由）。
+// `i18n._()` は**ロケール未活性だと例外を投げる**ため、これを省くと文言を持つ部品の描画が
+// すべて落ちる（画面が真っ白になり、E2E は「ルートが解決しない」ように見える）。
+// 合成時は基盤の i18n が活性化し、合成点が `registerUnitMessages` で本ユニットのカタログを載せる。
+i18n.load('ja', messages);
+i18n.activate('ja');
 
 // ナビゲーション＋子ルートの描画枠。nav はロール可視性を問わず全項目を列挙する
 // （E2E は URL 直接遷移が基本であり、ここは「ナビ項目が公開されている」ことの表示面である）。

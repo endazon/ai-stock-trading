@@ -22,7 +22,7 @@ export function Section({
   return (
     <details
       open={defaultOpen}
-      className="mb-3 rounded-md border border-[--color-divider] bg-[--color-surface]"
+      className="mb-3 rounded-md border border-divider bg-surface"
     >
       <summary className="cursor-pointer px-3 py-2 text-[12.5px] font-medium">{title}</summary>
       <div className="px-3 pb-3">{children}</div>

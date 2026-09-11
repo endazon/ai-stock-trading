@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { Alert } from '@platform/ui';
 import { isInternalPaper } from '@ai-stock-trading/lib/risk/contracts';
 import { PAPER_BANNER_DEBUG_MESSAGE, PAPER_BANNER_EXCLUSION_MESSAGE } from '@ai-stock-trading/lib/paperMode';
 
@@ -13,6 +16,13 @@ import { PAPER_BANNER_DEBUG_MESSAGE, PAPER_BANNER_EXCLUSION_MESSAGE } from '@ai-
 //
 // 注記（計画本文の明示的な警告）: バナーの見た目は SC-02 のモックアップの「状態例」区画にのみ描かれており、
 // SC-01・SC-03・SC-04 のモックアップ本体には描かれていない。**モックアップの見た目だけを頼りにすると実装を落とす。**
+//
+// UI/UX 改善 2026-09-12: 見た目を `@platform/ui` の `Alert`（色 ＋ アイコン ＋ ラベルの 3 点セット。
+// INDEX 決定 21）へ載せ替えた。モックの `.note`（err 配色）に相当する。
+//
+// 🔴 **本バナーは `role="alert"` を保つ。** 「静的な注記は `Note`」の一般則の例外である——
+// 出る条件が「内蔵 paper で稼働している」という**運用状態の通知**であり、画面を開いた利用者へ
+// 割り込んで伝える必要がある（外部へ発注していないことを知らずに成績を読むのが最も高くつく誤りである）。
 
 /**
  * 発注先が内蔵 `paper` のときだけバナーを描く。それ以外（不明を含む）は何も描かない。
@@ -26,11 +36,15 @@ export function PaperModeBanner({ provider }: { provider: number | null | undefi
     return null;
   }
   return (
-    <div role="alert" aria-label="内蔵 paper 稼働中の警告">
-      <p>
-        <strong>{PAPER_BANNER_DEBUG_MESSAGE}</strong>
-      </p>
-      <p>{PAPER_BANNER_EXCLUSION_MESSAGE}</p>
-    </div>
+    <Alert
+      tone="danger"
+      role="alert"
+      aria-label={i18n._(msg`内蔵 paper 稼働中の警告`)}
+      label={i18n._(msg`デバッグ稼働`)}
+      className="mb-3"
+    >
+      <strong>{PAPER_BANNER_DEBUG_MESSAGE}</strong>
+      <span className="ml-1">{PAPER_BANNER_EXCLUSION_MESSAGE}</span>
+    </Alert>
   );
 }
