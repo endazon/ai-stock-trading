@@ -132,6 +132,13 @@ function testFiles(root) {
  * **走査結果ではなくディレクトリの有無から引く**——走査結果から引くと「走査が壊れて 0 件」と
  * 「その樹形のテストがそもそも無い」を区別できない（`check-consumer-endpoint-names.js` の
  * `dirs` と同じ設計）。
+ *
+ * 🔴 判定は `fs.existsSync(<Svc>/'tests')` / `fs.existsSync(<Svc>/'Tests')` の**個別呼び出しに
+ * しない**（#757）。`fs.existsSync` は OS のパス解決を経由するため、大文字小文字を区別しない FS
+ * （Windows の NTFS 既定・macOS の APFS 既定）では実在する `Tests/` が `tests` への `existsSync`
+ * にも一致し、`old`/`new` の両方が誤って真になる。`fs.readdirSync` が返す**実エントリ名**を
+ * `Set` に集め、`===` の文字列完全一致で判定すれば OS のパス解決を経由しないため、大文字小文字を
+ * 区別する/しない FS のどちらでも同じ結果になる。
  */
 function serviceTestDirs(root) {
   const dirs = { old: 0, new: 0 };
@@ -139,8 +146,15 @@ function serviceTestDirs(root) {
   if (!fs.existsSync(services)) return dirs;
   for (const e of fs.readdirSync(services, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
-    if (fs.existsSync(path.join(services, e.name, 'tests'))) dirs.old++;
-    if (fs.existsSync(path.join(services, e.name, 'Tests'))) dirs.new++;
+    let entries;
+    try {
+      entries = fs.readdirSync(path.join(services, e.name), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const names = new Set(entries.filter((x) => x.isDirectory()).map((x) => x.name));
+    if (names.has('tests')) dirs.old++;
+    if (names.has('Tests')) dirs.new++;
   }
   return dirs;
 }
