@@ -1,0 +1,107 @@
+// NFR, FR-04, FR-06, FR-11, FR-16, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0323, IADR-0328, IADR-0332, #746:
+// 基盤（microservices-platform）の LlmGateway が所有するテキスト生成の gRPC 契約の**写し**である。
+//
+// ■ 出所（provenance）—— 追随は人手である
+//   正本: microservices-platform リポジトリ
+//     `src/platform/backend/Shared/Platform.Shared.Contracts/Protos/platform/llmgateway/v1/completion.proto`
+//     （所有者は呼び出される側＝LlmGateway。MSP:ADR-0029 / 実装ガイド `docs/api/east-west-grpc.md` §1）
+//   写した日: 2026-09-11（隣接クローンの読み取り専用参照）。
+//   🔴 **本リポジトリは planning にも MSP にも依存しない**（ADR-0029 決定 2 / IADR-0328）。submodule も pin も無い。
+//   したがって**正本が変わっても機械は気付かない**。正本を変更する PR（MSP 側）と対で本ファイルを更新すること。
+//   契約の破れは実往復で `UNIMPLEMENTED` / 復号不能として現れる（黙って壊れはしないが、CI では捕まらない）。
+//
+// ■ 何を変えたか / 変えていないか（IADR-0332 決定 1）
+//   変えていない: `syntax` / `package` / `service` 名 / `rpc` の名前と形（unary・server-streaming）/
+//                 `message` 名 / フィールドの名前・番号・型。**wire 面は 1 文字も違わない。**
+//   変えた: `option csharp_namespace` のみ（`Platform.Shared.Contracts.Grpc.LlmGateway.V1` →
+//           `AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1`）。C# の見え方だけで wire には出ない。
+//           AST のアセンブリが `Platform.Shared.Contracts.*` の型を出荷するのは所有関係の誤表示になるため。
+//   コメントは AST の表記規約（他リポジトリの ID・issue 番号を修飾する）に合わせて書き直してある。
+//   **規約そのものは正本と同じ**: フィールド番号は不変・削除は `reserved`・破壊的変更は `v<N+1>` の並走。
+//
+// ■ 生成（IADR-0328 決定 4）
+//   `<Protobuf Include="Protos/**/*.proto" ProtoRoot="Protos" GrpcServices="Client" />`。
+//   🔴 置き場は `AiStockTrading.Shared.Infrastructure` である（`…Shared.Contracts` ではない）——
+//   Contracts は Domain から到達でき、「Domain は .NET 標準のみ」を守るため PackageReference ゼロで
+//   保たれている（MSP:ADR-0030 §基本方針 / IADR-0256。`SharedProjectDependencyTests` が止める）。
+//   IADR-0328 決定 4 は置き場を Contracts と書いていたが、当時 proto が 0 件で当たっていなかった
+//   （IADR-0332 決定 1 が上書きする。パスの規約＝所有者に従う、は不変）。
+//   **本リポジトリは呼び出し側だけ**（提供側は MSP）。生成物は `obj/` に落ち、コミットしない。
+//
+// ■ s2s（MSP 実装ガイド §4 / IADR-0328 決定 2 / IADR-0323）
+//   `authorization` メタデータは**呼び出し側サービス自身の JWT**（MSP レルムの confidential client
+//   `ai-stock-trading-llm-caller`）。利用者トークンは載せない（confused deputy）。本経路は利用者の文脈を持たない。
+//
+// ■ 🔴 proto3 に null は無い。REST の既定値はゲートウェイ側が明示的に写す:
+//   max_tokens=0 → 4096 ／ model="" → 未指定（ルータが用途で選ぶ）／ confidentiality="" → restricted ／
+//   purpose="" → "default"。**sent だけは向きが逆である**（下記 CompletionStreamEvent の 🔴）。
+syntax = "proto3";
+
+package platform.llmgateway.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1";
+
+// テキスト生成。REST と同じルータ・同じ計器を通る（判定器を 2 つにしない）。
+service LlmCompletion {
+  // 一括生成。REST `POST /complete` と同値。縮退（越境拒否・プロバイダ未登録・上流不調）は
+  // **エラーではなく sent=false の応答**で表す（REST の 200 ＋ Sent=false と同じ）。
+  rpc Complete(CompleteRequest) returns (CompleteResponse);
+
+  // 逐次生成。REST `POST /complete/stream`（SSE）と同値。本文の増分を 1 メッセージ 1 delta で送り、
+  // 最後に done=true のメッセージを送る。
+  //
+  // 🔴 **サーバストリーミングである。unary へ潰してはならない。** 初回トークンの境界は「最初の delta
+  // メッセージの到着」であり、SSE の「最初の data: 行」と同じ位置にある。
+  //
+  // 🔴 **本リポジトリはこの rpc を呼んでいない**（`/complete/stream` の消費点が無い。IADR-0323 残余リスク）。
+  // それでも写しから落とさないのは、**落とすと「写しが正本の部分集合である」ことを次に見る人が判別できず**、
+  // 将来 stream を使うときに「消したのか、正本に無いのか」を確かめ直す羽目になるためである。
+  rpc CompleteStream(CompleteRequest) returns (stream CompletionStreamEvent);
+}
+
+// REST の CompletionApiRequest と同じ形。
+message CompleteRequest {
+  string prompt = 1;
+  // 0 は未指定＝4096。負数は INVALID_ARGUMENT（0 を「未指定」に使う以上、0 未満は意味を持たない）。
+  int32 max_tokens = 2;
+  // 空文字は未指定＝ゲートウェイが用途（purpose）で選ぶ。
+  string model = 3;
+  // 入力文書の最高機密区分。空文字・未知値は restricted（安全側）。
+  string confidentiality = 4;
+  // 用途。空文字は "default"。値域は基盤の設定が閉じる（契約は閉じない）。
+  string purpose = 5;
+}
+
+// REST の CompletionApiResponse と同じ形。
+message CompleteResponse {
+  string text = 1;
+  string model = 2;
+  int32 input_tokens = 3;
+  int32 output_tokens = 4;
+  // false は縮退（越境拒否・プロバイダ未登録・上流不調）。text に理由が入る。🔴 サーバは常に明示的に設定する。
+  bool sent = 5;
+  string endpoint = 6;
+  string routing_reason = 7;
+  // モデル側の終了理由（end_turn / max_tokens / refusal ほか）。未送信・未報告は空文字。
+  string stop_reason = 8;
+}
+
+// REST の CompletionStreamEvent（SSE の data: 行）と同じ形。
+message CompletionStreamEvent {
+  // 本文の増分（done=false のとき）。
+  string delta = 1;
+  // 最終メッセージ。model / input_tokens / output_tokens / stop_reason が確定する。
+  bool done = 2;
+  // false は縮退（text に理由）。
+  //
+  // 🔴 **DTO の既定は true・proto3 の既定は false であり、向きが逆である。**
+  // delta メッセージでもサーバは sent=true を**明示的に**設定する。写し漏れは例外にならず、
+  // **全 delta が縮退に見える**形で静かに壊れる。
+  bool sent = 3;
+  string text = 4;
+  string model = 5;
+  int32 input_tokens = 6;
+  int32 output_tokens = 7;
+  string routing_reason = 8;
+  string stop_reason = 9;
+}

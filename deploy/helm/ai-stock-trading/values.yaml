@@ -430,6 +430,12 @@ services:
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
       - { name: LlmGateway__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる。IADR-0332 決定 2）。
+      # 有効化するときだけ、この env 配列へ 1 行足す:
+      #   - { name: LlmGateway__Grpc, value: "http://llmgateway-service.microservices-platform:8081" }
+      # 前提（クラスタ側の作業と一体）: 基盤の LlmGateway が h2c ポート（Grpc__Port）を配備していること、
+      # AST から当該ポートへ到達できること（Istio PeerAuthentication）。s2s は下の LlmGateway__Auth__* をそのまま使う。
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       - { name: LlmGateway__LogPrompts, value: "" }
       # NFR-05, #724, IADR-0323: LLM ゲートウェイの s2s。基盤が REST 3 口へ端点単位の認可（ServiceCaller＝realm ロール
@@ -525,6 +531,12 @@ services:
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
       - { name: LlmGateway__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる。IADR-0332 決定 2）。
+      # 有効化するときだけ、この env 配列へ 1 行足す:
+      #   - { name: LlmGateway__Grpc, value: "http://llmgateway-service.microservices-platform:8081" }
+      # 前提（クラスタ側の作業と一体）: 基盤の LlmGateway が h2c ポート（Grpc__Port）を配備していること、
+      # AST から当該ポートへ到達できること（Istio PeerAuthentication）。s2s は下の LlmGateway__Auth__* をそのまま使う。
       # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=軽量モデル→二次本判断）の有効化。
       # コード側の構成既定も true（#571 で反転。明示行はここでの可視化が目的で挙動を変えない）。
       # ⚠️ 前提: 基盤 LlmGateway に用途 trade-decision-screening（claude-haiku-4-5）が登録されていること

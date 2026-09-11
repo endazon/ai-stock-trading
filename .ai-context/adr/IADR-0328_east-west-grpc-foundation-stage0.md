@@ -157,6 +157,20 @@ REST の `AddAiStockTradingServiceToken`（`ServiceTokenHandler`）と**同じ�
      まだ無く、基盤待ちのまま。
   3. #584 は `Refs`（閉じない）。段 6（REST 撤去）まで開けておく。
 
+## ［2026-09-11 追記 / #746］フォローアップ 2 を履行した（LlmGateway の 2 本）
+
+フォローアップ 2 の「段の追加を起票する」を #746 として起票し、実装した
+（[IADR-0332](IADR-0332_llm-gateway-completion-grpc-transport.md)）。
+
+- **決定 1〜5 は不動である。** 段 1′ は本 ADR の土台（`CreateAiStockTradingChannel` ＋
+  `IServiceAccessTokenProvider`）をそのまま使い、`Foundation/Grpc/` に手を入れていない。
+- 決定 4 の置き場規約（`Protos/<unit>/<service>/v<N>/`）を、**基盤が所有する proto の写し**にも当てはめた
+  —— パスは所有者（platform / llmgateway / v1）に従い、`aistocktrading/` の下には置かない。
+- 決定 5 の写像表のうち **`Unauthenticated` / `PermissionDenied` は「既存の安全側既定」で終わらせない**
+  （記録の原因を分ける）。IADR-0332 決定 3 を参照。
+- 決定 3 の「h2c は専用ポート」は**受け側**の話であり、本リポジトリはまだ gRPC を**提供**していない。
+  段 1′ で使ったのは呼び出し側だけである（`grpcPort` を宣言したサービスは引き続き 0 件）。
+
 ## 関連
 
 - Supersedes: なし（IADR-0284 決定 5 の「proto の置き場」1 行だけを、同決定の明示的な留保に従って上書きする）
