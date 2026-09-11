@@ -65,7 +65,7 @@ public class Stage0GateServiceTests
         var decision = new Stage0GateService().Evaluate(context);
 
         decision.DeflatedSharpe.Should().BeGreaterThan(0.95);
-        decision.ProbabilityOfBacktestOverfitting.Should().Be(0d);
+        decision.Pbo.Should().BeOfType<PboVerdict.Evaluated>().Which.Value.Should().Be(0d);
         decision.DataCutoffSatisfied.Should().BeTrue();
         decision.Gate.Passed.Should().BeTrue();
         decision.Promotion.Recommended.Should().BeTrue();
@@ -153,6 +153,63 @@ public class Stage0GateServiceTests
             [Stage0GateCheck.DeflatedSharpe, Stage0GateCheck.CostRobustness, Stage0GateCheck.WalkForward]);
         // データカットオフ条件だけは空バーを検出しない（空は真空的に真）。昇格拒否は上記 3 条件が担っている。
         decision.DataCutoffSatisfied.Should().BeTrue();
+    }
+
+    // ---- ADR-0039 決定1・決定2（#777・IADR-0337）: 探索を持たない記録再生の扱い ----
+
+    // 探索を持たない台帳（試行 1 本。記録再生戦略が組むのと同じ形）。
+    private static TrialLedger SingleTrial()
+    {
+        var ledger = new TrialLedger();
+        ledger.Record(new BacktestTrial("recorded-replay", 2.9, 0.2));
+        return ledger;
+    }
+
+    private static Stage0GateContext ContextWith(TrialLedger trials) => new(
+        BaselineMetrics: RisingMetrics(),
+        DoubledCostTotalReturn: 0.30m,
+        Trials: trials,
+        OverfittingPerformanceMatrix: DominantMatrix,
+        OverfittingPartitions: 4,
+        WalkForwardOutOfSampleReturn: 0.05m,
+        Bars: [BarAfterCutoff(2), BarAfterCutoff(3)],
+        LlmTrainingCutoff: Cutoff,
+        Criteria: Stage0GateCriteria.Default);
+
+    // **陽性**: 試行 1 本（探索なし）なら PBO は評価不能になり、残る条件で合否が決まる。
+    // 🔴 **「PBO は 0」ではない** —— 性能行列を渡していても算出しない（測る対象が存在しないため）。
+    [Fact]
+    public void 探索を持たない試行1本ではPBOを評価せず他の条件で合否が決まる()
+    {
+        var decision = new Stage0GateService().Evaluate(ContextWith(SingleTrial()));
+
+        decision.Pbo.Should().BeOfType<PboVerdict.NotEvaluable>()
+            .Which.Reason.Should().Be(PboNotEvaluableReason.NoSearchSingleTrial);
+        decision.Pbo.Format().Should().Be("評価不能(NoSearchSingleTrial)");
+        decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.Overfitting);
+        decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.TrialCount);
+        decision.Gate.Passed.Should().BeTrue();
+        decision.Promotion.Recommended.Should().BeTrue();
+    }
+
+    // 🔴 **陰性対照（ADR-0039 決定2）**: **探索がある**（PBO を評価する）経路では、2〜19 本でも下限 20 で
+    // 不合格のままである。「試行が少ないから緩める」のではない —— 探索の有無で門の適用が決まる。
+    [Theory]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(19)]
+    public void 探索がある2から19本は下限20で不合格のまま(int trialCount)
+    {
+        var ledger = new TrialLedger();
+        for (var i = 0; i < trialCount; i++)
+            ledger.Record(new BacktestTrial($"trial-{i}", 2.8 + (i % 5) * 0.05, 0.18 + (i % 5) * 0.01));
+
+        var decision = new Stage0GateService().Evaluate(ContextWith(ledger));
+
+        decision.Pbo.Should().BeOfType<PboVerdict.Evaluated>();
+        decision.Gate.FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
+        decision.Gate.Passed.Should().BeFalse();
+        decision.Promotion.Recommended.Should().BeFalse();
     }
 
     private sealed class NoOrderStrategy : IBacktestStrategy

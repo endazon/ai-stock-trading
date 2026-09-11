@@ -11,6 +11,18 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //                          含まない戦略の合格では解禁できない（Passed だけでは表現できない）。
 //   StrategyId           — 戦略の同一性を名乗る識別子。verdict の無効化契機「戦略の変更」を機械判定する唯一の鍵。
 // いずれも primitive であり、段階/enum への依存は増やさない。
+//
+// FR-15, ADR-0039 決定1, #777, IADR-0337 決定4: **PBO を測ったかどうかを運ぶ 2 項目を足した。**
+//   PboEvaluated           — PBO を実際に算出したか。🔴 **false のとき ProbabilityOfBacktestOverfitting の値は
+//                            意味を持たない**（探索を持たない戦略では PBO が測る対象そのものが存在しない）。
+//                            読み手は必ず本項目を先に見ること。計画 ADR-0039 は「**『PBO は 0 だった』と
+//                            書かない**」と定めた —— 測っていないことと差が無かったことを読み分ける。
+//   PboNotEvaluableReason  — false のときの理由（FailedChecks と同じく enum 名を運ぶ。評価済みなら空文字）。
+// 🔴 **ProbabilityOfBacktestOverfitting の型は変えない。** Double → Double? は
+// EventBackwardCompatibilityTests が破壊的変更（型変更）として赤にする。「追加のみ許可」の規律に従い、
+// 意味づけを追加項目で与える。
+// 🔴 **既定値を置かない。** 省略できる口を作ると、書き忘れが「PBO を測った」と名乗る。旧メッセージが
+// JSON から復元されたときは PboEvaluated=false へ倒れる＝**数値を名乗らない側**であり fail-safe である。
 public record BacktestEvaluated(
     bool Passed,
     decimal MaxDrawdownRatio,
@@ -19,4 +31,6 @@ public record BacktestEvaluated(
     string FailedChecks,
     DateTimeOffset EvaluatedAt,
     bool IncludesShortSelling,
-    string StrategyId);
+    string StrategyId,
+    bool PboEvaluated,
+    string PboNotEvaluableReason);

@@ -72,6 +72,23 @@ public sealed record Stage0GateCriteria(
     /// </summary>
     public const decimal MaxDrawdownToleranceDefault = 0.10m;
 
+    /// <summary>
+    /// FR-15, ADR-0039 決定2, #777, IADR-0337 決定2: 試行数の下限（**20**）。
+    /// <para>
+    /// 🔴 **本値の正本は計画（ADR-0039 決定2）である。実装で動かさない。** 変更が要るなら計画へ環流する。
+    /// 根拠は IADR-0110 の決定論モンテカルロによる較正であり、**2 つの基準の交点**である ——
+    /// **被害の上限**（200 候補を探索して下限ぶんだけ記録した最悪ケースでも偽陽性率 0.62%）と、
+    /// **補正の安定**（SR0 の推定変動係数が N=2 の 75.9% から N=20 で 16.3% へ収束する）。片方だけでは 20 は導けない。
+    /// </para>
+    /// <para>
+    /// 🔴 **適用の範囲**: 本下限は <b>PBO を評価する場合（探索があり試行が 2 本以上になり得る場合）にだけ</b>効く。
+    /// 探索を持たない記録再生（試行 1 本）には適用しない —— そこでは PBO 自体が `評価不能` であり、
+    /// 下限が立つ 2 つの基準はいずれも成立しない（守るべき被害が無く、安定させる推定も無い）。
+    /// **正直に記録した試行が 2〜19 本のときは下限 20 を維持する。緩めない。**
+    /// </para>
+    /// </summary>
+    public const int MinTrialsDefault = 20;
+
     // 既定閾値（DSR 0.95・PBO 0.5・最大DD 0.10・最小試行数 20）。
     //
     // #208, IADR-0110: MinTrials を暫定値 1 から 20 へ較正した。1 では ExpectedMaxSharpe が 0 を返し
@@ -85,13 +102,16 @@ public sealed record Stage0GateCriteria(
         MinDeflatedSharpe: 0.95,
         MaxProbabilityOfOverfitting: 0.50,
         MaxDrawdownTolerance: MaxDrawdownToleranceDefault,
-        MinTrials: 20);
+        MinTrials: MinTrialsDefault);
 }
 
 // FR-15, ADR-0008: Stage 0 合格判定の入力（Slice A/B の集計・補正結果）。
+//
+// ADR-0039 決定1, #777, IADR-0337 決定1: PBO は `double` ではなく判定結果（PboVerdict）で受け取る。
+// **「測っていない」を 0 で表せる口を型から消す**ためである。
 public sealed record Stage0GateEvaluation(
     double DeflatedSharpe,
-    double ProbabilityOfBacktestOverfitting,
+    PboVerdict Pbo,
     decimal MaxDrawdown,
     decimal DoubledCostTotalReturn,
     decimal WalkForwardOutOfSampleReturn,
@@ -108,6 +128,10 @@ public sealed record Stage0GateResult(bool Passed, IReadOnlyList<Stage0GateCheck
 
 // FR-15, FR-20, ADR-0008, 06_daytrading-review §4, IADR-0045: Stage 0 合格判定（純関数）。
 // DSR 補正後のエッジ・過剰適合・最大DD・コスト2倍頑健性・ウォークフォワードOOS・試行数・データカットオフの 7 条件を合成する。
+//
+// 🔴 ADR-0039, #777, IADR-0337: **7 条件のうち 2 つ（過剰適合・試行数）は常に効くわけではない。**
+// PBO が `評価不能` のとき、過剰適合条件は**合否の根拠から外れ**（満たしたと数えるのではない）、
+// 試行数の下限も適用されない。残る 5 条件で合否が決まる。「測っていない」ことは Stage0Decision.Pbo が運ぶ。
 public static class Stage0GateEvaluator
 {
     public static Stage0GateResult Evaluate(Stage0GateEvaluation evaluation, Stage0GateCriteria criteria)
@@ -115,13 +139,19 @@ public static class Stage0GateEvaluator
         ArgumentNullException.ThrowIfNull(evaluation);
         ArgumentNullException.ThrowIfNull(criteria);
 
+        ArgumentNullException.ThrowIfNull(evaluation.Pbo);
+
         var failed = new List<Stage0GateCheck>();
 
         // エッジ有意: DSR 補正後もエッジが正（閾値以上）。
         if (evaluation.DeflatedSharpe < criteria.MinDeflatedSharpe)
             failed.Add(Stage0GateCheck.DeflatedSharpe);
         // 過剰適合: PBO が閾値以下。
-        if (evaluation.ProbabilityOfBacktestOverfitting > criteria.MaxProbabilityOfOverfitting)
+        //
+        // 🔴 ADR-0039 決定1, #777, IADR-0337 決定1: **PBO を評価した場合にだけ判定する。**
+        // `評価不能`（探索を持たない／判定を走らせていない）のときは本条件を **合否の根拠から外す** ——
+        // **満たしたと数えるのではない。** 「測っていない」ことは判定結果（Stage0Decision.Pbo）が明示的に運ぶ。
+        if (evaluation.Pbo is PboVerdict.Evaluated pbo && pbo.Value > criteria.MaxProbabilityOfOverfitting)
             failed.Add(Stage0GateCheck.Overfitting);
         // 最大 DD: 許容内。
         if (evaluation.MaxDrawdown > criteria.MaxDrawdownTolerance)
@@ -133,7 +163,12 @@ public static class Stage0GateEvaluator
         if (evaluation.WalkForwardOutOfSampleReturn <= 0m)
             failed.Add(Stage0GateCheck.WalkForward);
         // 試行数: 最小以上（過剰適合補正の前提）。
-        if (evaluation.TrialCount < criteria.MinTrials)
+        //
+        // 🔴 ADR-0039 決定2, #777, IADR-0337 決定2: **下限は PBO を評価する経路にだけ適用する。**
+        // 下限 20 が立つ 2 つの基準（過少申告への防御・補正項 SR0 の推定の安定）は、探索を持たない
+        // 試行 1 本ではいずれも成立しない —— 守るべき被害が無く、安定させる推定も無い。
+        // **緩めたのではなく、門が何を測っているかの読みを直した。** 探索がある経路では 2〜19 本でも落ちる。
+        if (evaluation.Pbo.IsEvaluated && evaluation.TrialCount < criteria.MinTrials)
             failed.Add(Stage0GateCheck.TrialCount);
         // データ健全性: 全バーが LLM 学習カットオフ後（または匿名化）＝汚染なし（FR-15 検証条件①）。
         if (!evaluation.DataCutoffSatisfied)

@@ -39,17 +39,25 @@ public static class BacktestEvaluatedFactory
     {
         ArgumentNullException.ThrowIfNull(decision);
         ArgumentNullException.ThrowIfNull(decision.Gate);
+        ArgumentNullException.ThrowIfNull(decision.Pbo);
         ArgumentNullException.ThrowIfNull(run);
 
         return new BacktestEvaluated(
             Passed: decision.Gate.Passed,
             MaxDrawdownRatio: backtestMaxDrawdownRatio,
             DeflatedSharpe: decision.DeflatedSharpe,
-            ProbabilityOfBacktestOverfitting: decision.ProbabilityOfBacktestOverfitting,
+            // FR-15, ADR-0039 決定1, #777, IADR-0337 決定4: 評価不能のときの 0 は**意味を持たない**。
+            // 読み手は PboEvaluated を先に見る（数値だけを読むと「差が無かった」と誤読する）。
+            ProbabilityOfBacktestOverfitting:
+                decision.Pbo is PboVerdict.Evaluated evaluatedPbo ? evaluatedPbo.Value : 0d,
             // 未達条件は Risk 側の監査・診断のため名称の連結で持つ（合格なら空文字）。ドメインの単一情報源を共有する。
             FailedChecks: decision.Gate.FormatFailedChecks(),
             EvaluatedAt: evaluatedAt,
             IncludesShortSelling: ShortSellingObservation.Includes(run.Fills),
-            StrategyId: strategyId ?? string.Empty);
+            StrategyId: strategyId ?? string.Empty,
+            PboEvaluated: decision.Pbo.IsEvaluated,
+            // 理由は FailedChecks と同じく enum 名で運ぶ（受け手は BacktestService.Domain を参照できない）。
+            PboNotEvaluableReason:
+                decision.Pbo is PboVerdict.NotEvaluable notEvaluable ? notEvaluable.Reason.ToString() : string.Empty);
     }
 }

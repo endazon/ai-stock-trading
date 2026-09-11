@@ -19,7 +19,11 @@ public class BacktestEvaluatedFactoryTests
     private static readonly DateOnly Day = new(2026, 7, 17);
 
     private static Stage0Decision Decision(Stage0GateResult gate, double dsr, double pbo, bool cutoff) =>
-        new(gate, Stage0Promotion.Evaluate(gate), dsr, pbo, cutoff);
+        new(gate, Stage0Promotion.Evaluate(gate), dsr, new PboVerdict.Evaluated(pbo), cutoff);
+
+    // ADR-0039 決定1, #777, IADR-0337: PBO を測っていない判定（探索なし／判定を走らせていない）。
+    private static Stage0Decision NotEvaluableDecision(Stage0GateResult gate, PboNotEvaluableReason reason) =>
+        new(gate, Stage0Promotion.Evaluate(gate), 1.23, new PboVerdict.NotEvaluable(reason), true);
 
     // 約定列だけを差し替えた走行。エクイティ曲線・指標は本テストの関心事ではないため最小で埋める。
     private static BacktestRun Run(params BacktestFill[] fills) =>
@@ -42,6 +46,9 @@ public class BacktestEvaluatedFactoryTests
         e.MaxDrawdownRatio.Should().Be(0.08m);
         e.DeflatedSharpe.Should().Be(1.23);
         e.ProbabilityOfBacktestOverfitting.Should().Be(0.10);
+        // FR-15, ADR-0039 決定1, #777, IADR-0337 決定4: 測った場合は評価済みを名乗り、理由は空である。
+        e.PboEvaluated.Should().BeTrue();
+        e.PboNotEvaluableReason.Should().BeEmpty();
         e.FailedChecks.Should().BeEmpty();
         e.EvaluatedAt.Should().Be(EvaluatedAt);
         // FR-20, ADR-0016 決定14, #388, IADR-0281 決定3: 空売り実弾解禁の判定入力を運ぶ。
@@ -108,6 +115,24 @@ public class BacktestEvaluatedFactoryTests
         e.Passed.Should().BeFalse();
         e.FailedChecks.Should().Contain(nameof(Stage0GateCheck.DeflatedSharpe))
             .And.Contain(nameof(Stage0GateCheck.MaxDrawdown));
+    }
+
+    // 🔴 **否定形（最重要・ADR-0039 決定1）**: 測っていない PBO は「評価済みの 0」として契約へ載らない。
+    // 載せてしまうと受け手（Risk・監査・月報）が「過剰適合が無かった」と読む —— 計画の逐語は
+    // 「**『PBO は 0 だった』と書かない**」である。
+    [Theory]
+    [InlineData(PboNotEvaluableReason.NoSearchSingleTrial)]
+    [InlineData(PboNotEvaluableReason.NotEvaluated)]
+    public void 測っていないPBOは評価済みとして契約へ載らない(PboNotEvaluableReason reason)
+    {
+        var decision = NotEvaluableDecision(new Stage0GateResult(true, []), reason);
+
+        var e = BacktestEvaluatedFactory.From(decision, 0.08m, EvaluatedAt, Run(Fill(+10)), "recorded-replay");
+
+        e.PboEvaluated.Should().BeFalse();
+        e.PboNotEvaluableReason.Should().Be(reason.ToString());
+        // 数値の口は互換のため残るが、**評価済みを名乗らない**ことで読み手が区別できる。
+        e.ProbabilityOfBacktestOverfitting.Should().Be(0d);
     }
 
     [Fact]

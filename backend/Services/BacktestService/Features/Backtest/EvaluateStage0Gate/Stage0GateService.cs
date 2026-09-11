@@ -17,18 +17,36 @@ public sealed record Stage0GateContext(
     Stage0GateCriteria Criteria,
     bool DataAnonymized = false);
 
-// FR-15, FR-20: Stage 0 判定の結果（ゲート・昇格推奨・算出した DSR/PBO・カットオフ充足）。
+// FR-15, FR-20: Stage 0 判定の結果（ゲート・昇格推奨・算出した DSR・PBO の判定結果・カットオフ充足）。
+//
+// 🔴 ADR-0039 決定1, #777, IADR-0337 決定1: PBO は数値ではなく**判定結果**（PboVerdict）で持つ。
+// `評価不能` は合格ではない —— 合否の根拠から外れたことを、判定結果そのものが明示的に運ぶ。
 public sealed record Stage0Decision(
     Stage0GateResult Gate,
     StagePromotionRecommendation Promotion,
     double DeflatedSharpe,
-    double ProbabilityOfBacktestOverfitting,
+    PboVerdict Pbo,
     bool DataCutoffSatisfied);
 
 // FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定を合成するオーケストレータ。
 // DSR（試行台帳＋標本モーメント）・PBO（CSCV）・データカットオフを算出し、ゲート判定と Stage 1 昇格推奨に落とす。
 public sealed class Stage0GateService
 {
+    /// <summary>
+    /// FR-15, ADR-0039 決定1, #777, IADR-0337 決定3: **PBO の評価を始める試行数の下限（2）。**
+    /// <para>
+    /// 🔴 **構成へは出さない**（IADR-0329 決定2 が分割値に対して採ったのと同じ規律）——
+    /// 運用が動かせる形にした瞬間、ADR-0039 決定1 の適用範囲を実装の外から変えられる。
+    /// `public const` にしているのは**テストが値そのものを固定できるようにするため**である。
+    /// </para>
+    /// <para>
+    /// 2 は較正値ではなく**構造**から来る: <see cref="DeflatedSharpeRatio.ExpectedMaxSharpe"/> は
+    /// <c>trials &lt; 2</c> で 0 を返し、<see cref="ProbabilityOfBacktestOverfitting.Compute"/> は
+    /// 戦略候補 2 本以上を要求する。
+    /// </para>
+    /// </summary>
+    public const int MinTrialsForPbo = 2;
+
     public Stage0Decision Evaluate(Stage0GateContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -42,13 +60,19 @@ public sealed class Stage0GateService
         var dsr = DeflatedSharpeRatio.Compute(
             moments.SharpePerPeriod, moments.Count, moments.Skewness, moments.Kurtosis, expectedMax);
 
-        var pbo = ProbabilityOfBacktestOverfitting.Compute(context.OverfittingPerformanceMatrix, context.OverfittingPartitions);
+        // 🔴 FR-15, ADR-0039 決定1, #777, IADR-0337: **探索を持たない（試行が下限未満の）ときは PBO を算出しない。**
+        // PBO が測るのは「多数試したうちの最良を選んだこと」による過剰適合であり、選択が無いところに罰する
+        // 対象が無い。算出して 0 を置くと「測っていない」と「差が無かった」が区別できなくなる。
+        PboVerdict pbo = context.Trials.Count < MinTrialsForPbo
+            ? new PboVerdict.NotEvaluable(PboNotEvaluableReason.NoSearchSingleTrial)
+            : new PboVerdict.Evaluated(ProbabilityOfBacktestOverfitting.Compute(
+                context.OverfittingPerformanceMatrix, context.OverfittingPartitions));
         // 検証条件①（ADR-0008/IADR-0044）は「全バーがカットオフ後 または 匿名化」の OR。匿名化済みなら日付は不問。
         var cutoffSatisfied = context.DataAnonymized || DataCutoffPolicy.IsAllAfterCutoff(context.Bars, context.LlmTrainingCutoff);
 
         var evaluation = new Stage0GateEvaluation(
             DeflatedSharpe: dsr,
-            ProbabilityOfBacktestOverfitting: pbo,
+            Pbo: pbo,
             MaxDrawdown: context.BaselineMetrics.MaxDrawdown,
             DoubledCostTotalReturn: context.DoubledCostTotalReturn,
             WalkForwardOutOfSampleReturn: context.WalkForwardOutOfSampleReturn,

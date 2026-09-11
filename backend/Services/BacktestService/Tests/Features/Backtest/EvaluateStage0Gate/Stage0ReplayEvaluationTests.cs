@@ -164,15 +164,25 @@ public class Stage0ReplayEvaluationTests
         preparation.GateContext!.LlmTrainingCutoff.Should().Be(Cutoff);
         // ADR-0033 決定3: 匿名化は合否判定の根拠に用いない（true にできる口を作らない）。
         preparation.GateContext.DataAnonymized.Should().BeFalse();
-        // 記録再生戦略はパラメータ探索を持たないため試行は 1 本である（＝MinTrials を満たさない）。
+        // 🔴 ADR-0039 決定1, #777, IADR-0337: 記録再生戦略はパラメータ探索を持たないため試行は 1 本である。
+        // **試行数の記録は免除されない** —— 記録しなければ「探索が無い」と「探索を隠した」が区別できない。
         preparation.GateContext.Trials.Count.Should().Be(1);
         preparation.GateContext.OverfittingPartitions.Should().Be(Stage0ReplayEvaluation.OverfittingPartitions);
 
         var decision = new Stage0GateService().Evaluate(preparation.GateContext);
 
-        // 🔴 **合否は判定器が決める。** 探索が無い現状は試行数条件を満たさないため必ず不合格である。
+        // 🔴 **合否は判定器が決める。**
+        // 🔴 **［2026-09-11 変更 / #777・ADR-0039 決定1・決定2・IADR-0337］** 旧アサーション
+        // 「試行数条件（`TrialCount`）で必ず落ちる」は**もはや成立しない** —— 探索を持たない試行 1 本では
+        // PBO が `評価不能` であり、試行数の下限 20 は適用されない。**合否は残る条件で決まる。**
+        decision.Pbo.Should().BeOfType<PboVerdict.NotEvaluable>()
+            .Which.Reason.Should().Be(PboNotEvaluableReason.NoSearchSingleTrial);
+        decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.TrialCount);
+        decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.Overfitting);
+        // この記録（買い 1 回のみ・雑音のバー）では DSR とウォークフォワードが満たせず、なお不合格である。
         decision.Gate.Passed.Should().BeFalse();
-        decision.Gate.FailedChecks.Should().Contain(Stage0GateCheck.TrialCount);
+        decision.Gate.FailedChecks.Should().Contain(Stage0GateCheck.DeflatedSharpe)
+            .And.Contain(Stage0GateCheck.WalkForward);
         // 駆動側の事前条件（プレースホルダ・記録なし）は判定器からは決して出ない。
         decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.PlaceholderStrategy);
         decision.Gate.FailedChecks.Should().NotContain(Stage0GateCheck.NoDecisionRecords);

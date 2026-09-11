@@ -118,8 +118,16 @@ public static class Stage0ReplayEvaluation
         var walkForwardReturn = WalkForwardOutOfSampleReturn(request, strategy);
 
         // 試行台帳は **1 本**（記録そのもの）である。記録再生戦略はパラメータ探索を持たないため
-        // 「何回試したか」は 1 回であり、`MinTrials`（既定 20）を満たさない＝現時点の合否は必ず不合格になる。
-        // これは仕様である —— 探索を経ずに合格させれば、DSR の多重検定補正が恒等的に消える（IADR-0110 の実測）。
+        // 「何回試したか」は 1 回である。
+        //
+        // 🔴 **［2026-09-11 変更 / #777・ADR-0039 決定1・決定2・IADR-0337］** 旧記述「`MinTrials`（既定 20）を
+        // 満たさない＝現時点の合否は必ず不合格になる。これは仕様である」は**もはや誤りである**。
+        // 計画 ADR-0039 は、探索を持たない試行 1 本では **PBO を `評価不能`** とし、**試行数の下限 20 を
+        // 適用しない**と定めた —— 下限が立つ 2 つの基準（過少申告への防御・補正項の推定の安定）が
+        // いずれも成立しないためである。合否は残る条件で決まる。
+        //
+        // **試行数の記録そのものは免除されない**（ADR-0039 決定1）—— 記録しなければ「探索が無い」と
+        // 「探索を隠した」が区別できなくなる。だからここは従来どおり 1 本を記録する。
         var trials = new TrialLedger();
         trials.Record(new BacktestTrial(
             recordSet.StrategyId, baseline.Metrics.SharpeRatio, (double)walkForwardReturn));
@@ -223,6 +231,11 @@ public static class Stage0ReplayEvaluation
     // 記録再生方式には探索の候補群が無いため、意味のある比較対象は**エッジの有無**しかない。
     // 「何もしない」の各ブロック成績は定義から 0 であり、走行して求める必要がない。
     // 得られる PBO は「IS で現金に勝った記録が、OOS でも現金に勝つか」の割合であり、保守的な読みができる。
+    //
+    // 🔴 **［2026-09-11 追記 / #777・ADR-0039・IADR-0337］** 記録再生は試行 1 本であるため、判定器は
+    // **本行列から PBO を算出しない**（`評価不能`）。それでも行列と標本不足の fail-closed
+    // （`InsufficientEvaluationSample`）は**残す** —— ADR-0039 はこの遮断を緩めておらず、
+    // 探索が実装されたときに評価文脈の組み方を作り直さずに済む。
     private static double[][] OverfittingMatrix(IReadOnlyList<double> dailyReturns) =>
         [.. dailyReturns.Select(r => new[] { r, 0d })];
 }

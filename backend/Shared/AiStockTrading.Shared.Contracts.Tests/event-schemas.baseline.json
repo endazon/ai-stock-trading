@@ -12,6 +12,8 @@
     "IncludesShortSelling": "Boolean",
     "MaxDrawdownRatio": "Decimal",
     "Passed": "Boolean",
+    "PboEvaluated": "Boolean",
+    "PboNotEvaluableReason": "String",
     "ProbabilityOfBacktestOverfitting": "Double",
     "StrategyId": "String"
   },
