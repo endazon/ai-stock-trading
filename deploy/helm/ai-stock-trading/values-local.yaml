@@ -410,3 +410,6 @@ services:
       - name: Notifications__Discord__OwnerAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-secret, optional: true }
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }  # kill switch/pause の呼び先
+      # #772 / UC-03 / IADR-0240: Discord `/report`（照会・承認・差し戻し）の報告書サービス。Bot 有効なのにこれが無いと
+      # BaseAddress 未設定＝照会失敗（InvalidOperationException）で日報の確定が Discord からできない。
+      - { name: Reports__BaseUrl, value: "http://report-service:8080" }
