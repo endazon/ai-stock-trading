@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0307]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0307, IADR-0335]
 specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics]
-issues: [#211, #331, #335, #337, #340, #342, #343, #344, #689, #690, MSP#446]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, MSP#446]
 -->
 
 
@@ -106,6 +106,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 | ホスト / エンドポイント | `.../<Svc>.Api.Tests`（`WebApplicationFactory<Program>` 系・配線） | 同上（サービスにつき 1 プロジェクトへ統合） | 既定 CI |
 | 技術詳細（Infrastructure） | `.../<Svc>.Infrastructure.Tests`（EF Core・consumer・外部 API アダプタ） | 同上 `Infrastructure/` フォルダ | 既定 CI |
 | 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析。プロジェクト境界で層を強制） | 同上（ソース走査を併置。プロジェクト境界が無い新構成はこちらが本体） | 既定 CI |
+| DI 登録の結線（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（DI に登録した型に本番の利用箇所があるかをソース走査で突き合わせる。常駐サービスは対象外、既知の未結線は理由と外す条件つきのラチェット） | 新旧不変（横断テストは統合しない） | 既定 CI |
 | 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 新旧不変（横断テストは統合しない） | 既定 CI |
 | 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | 新旧不変（横断テストは統合しない） | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
 
