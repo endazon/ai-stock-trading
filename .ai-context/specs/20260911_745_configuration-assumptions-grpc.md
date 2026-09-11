@@ -217,7 +217,7 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 | `git grep -n "IsAllowedDomainNamespace" -A 12` | 許可接頭辞は `System` / `…Shared.Contracts` / `…Shared.Kernel` / 自サービスの `Domain` | **名前空間を `AiStockTrading.Shared.Grpc` にする**（`…Shared.Contracts.Grpc` だと Domain から使えてしまう） |
 | `git grep -ln "AiStockTrading.Shared.Infrastructure.csproj" --include=*.csproj` | 7 サービス ＋ 1 テスト。**設定管理・費用統制は未参照** | 検査の失敗メッセージが示す「Shared.Infrastructure へ置け」は採らない（無関係な依存を巻き込む） |
 | `git grep -n "IsServiceClientProject" -A 4` | `*.Client` / `*.Client.Tests` の名前だけを見る | 新プロジェクト名は該当しない（`*.Client` の復活ではない） |
-| `dotnet test … --collect:"XPlat Code Coverage"` の cobertura を `filename` で引く | 🔴 **生成 proto が分母に入っていた**（`obj/Debug/.../Assumptions.cs` / `AssumptionsGrpc.cs` = 751 行・被覆 348 行＝46.34%）。**床は割っていない**（除外前 86.00% / 除外後 87.10%・floor 83.00%） | **`coverage-floor.json` へ 3 つ目の除外**（IADR-0331 決定 8）。理由は「割るから」ではなく「ratchet が proto の本数で動くから」 |
+| `dotnet test … --collect:"XPlat Code Coverage"` の cobertura を `filename` で引く | 🔴 **生成 proto が分母に入っていた**（`obj/Debug/.../Assumptions.cs` / `AssumptionsGrpc.cs` = 751 行・被覆 348 行＝46.34%）。**床は割っていない**（除外前 86.00% / 除外後 87.10%・floor 83.00%） | **`coverage-floor.json` へ除外を追加**（IADR-0331 決定 8）。理由は「割るから」ではなく「ratchet が proto の本数で動くから」。**ユニット名で引く 2 エントリ**（`aistocktrading` / `platform`）——初版はプロジェクト名で引いて #746 の写しの生成物 1,646 行を取りこぼした（AI レビューが検出） |
 | `git grep -n "findSourceFiles" -A 18 scripts/check-coverage.js` | `bin` / `obj` / `node_modules` を走査しない | G4（除外は自動生成の部分集合）は構造的に破れない＝この除外は手書きを飲み込まない |
 
 ## develop の先着への追随（#746 / PR MSP なし・本リポの #762）
