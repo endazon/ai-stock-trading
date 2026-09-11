@@ -17,7 +17,7 @@
  *
  * 規約（baseline と無関係に常に fail）:
  *   R1 置き場と名前の一致: パスは `backend/Shared/<Project>/Protos/<unit>/<service>/v<N>/<name>.proto`、
- *      `<unit>` は本リポの単一ユニット `aistocktrading`（proto の package は識別子なのでハイフンは書けない）、
+ *      `<unit>` は allowlist（`aistocktrading` ＝自リポ所有／`platform` ＝基盤所有の契約の写し）、
  *      `package` は `<unit>.<service>.v<N>`（パスと一致）、`option csharp_namespace` は `.Grpc.<Service>.V<N>` で
  *      終わる（N はパスと一致）。所有サービスのユニットの共有契約プロジェクトに置く（IADR-0328 決定 4）。
  *   R2 フィールド番号は message 内で一意。範囲は 1..536870911、19000..19999（protobuf 予約）は不可。
@@ -60,8 +60,16 @@ const ALLOWLIST_FILE = path.join(__dirname, 'proto-breaking-allowlist.json');
 const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', '.git', 'coverage']);
 const SCHEMA_VERSION = 1;
 
-// 本リポジトリの単一ユニット名（IADR-0328 決定 4）。proto の package は識別子であり `ai-stock-trading` は書けない。
-const UNIT = 'aistocktrading';
+// `Protos/` 直下に置いてよいユニット名（IADR-0328 決定 4 / IADR-0331 決定 5）。
+//
+//   aistocktrading … **本リポジトリが所有する**契約（proto の package は識別子なので `ai-stock-trading` は書けない）。
+//   platform       … **基盤（microservices-platform）が所有する契約の写し**（IADR-0332 / #746）。
+//                    所有者は呼び出される側であり、AST は消費するだけである。正本の追随は人手であり、
+//                    その旨は各 proto の冒頭コメント（provenance）が持つ。
+//
+// 🔴 **ここは allowlist であって「何でも通る」ではない。** 綴り誤りや新しいユニットの持ち込みは R1 で落とす
+// —— 通してしまうと、パスと package が一致しているだけの**所有者不明の契約**が静かに増える。
+const UNITS = new Set(['aistocktrading', 'platform']);
 
 // --- 文字列ユーティリティ ------------------------------------------------------
 
@@ -299,8 +307,9 @@ function checkRules(relPath, parsed) {
     violations.push(`R1: 置き場が規約外です: ${rel}（backend/Shared/<Project>/Protos/<unit>/<service>/v<N>/<name>.proto）`);
   } else {
     const [, , unitSeg, service, major] = m;
-    if (unitSeg !== UNIT) {
-      violations.push(`R1: Protos/ 直下のユニット名 "${unitSeg}" が本リポジトリのユニット "${UNIT}" と一致しません: ${rel}`);
+    if (!UNITS.has(unitSeg)) {
+      violations.push(`R1: Protos/ 直下のユニット名 "${unitSeg}" は許可されていません`
+        + `（許可: ${[...UNITS].join(' / ')}）: ${rel}`);
     }
     const expectedPackage = `${unitSeg}.${service}.v${major}`;
     if (parsed.package !== expectedPackage) {
@@ -733,8 +742,15 @@ function selfTest() {
     checkRules('backend/Shared/AiStockTrading.Shared.Grpc/Protos/authz_scope.proto', p).some((v) => v.startsWith('R1: 置き場')));
   ok('R1: サービスプロジェクト配下（Shared の外）は違反',
     checkRules('backend/Services/ConfigurationService/Protos/aistocktrading/authz/v1/x.proto', p).some((v) => v.startsWith('R1: 置き場')));
-  ok('R1: Protos/ 直下のユニット名が本リポジトリのユニットと違えば違反',
-    checkRules('backend/Shared/AiStockTrading.Shared.Grpc/Protos/platform/authz/v1/authz_scope.proto', p).some((v) => v.includes('一致しません')));
+  // 陰性対照: allowlist 外のユニット名は落ちる（綴り誤り・所有者不明の契約の持ち込み）。
+  ok('R1: Protos/ 直下のユニット名が allowlist 外なら違反',
+    checkRules('backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktradng/authz/v1/authz_scope.proto', p)
+      .some((v) => v.includes('許可されていません')));
+  // 陽性対照: 基盤所有の契約の写し（`platform`）は allowlist に在るので置き場では落ちない
+  //（package はパス由来で判定されるため、ここでは置き場の判定だけを見る）。
+  ok('R1: 基盤所有の写し（platform）は置き場としては許される',
+    !checkRules('backend/Shared/AiStockTrading.Shared.Infrastructure/Protos/platform/authz/v1/x.proto', p)
+      .some((v) => v.includes('許可されていません')));
   ok('R2: 番号の重複は違反', checkRules(SAMPLE_REL, parseProto(SAMPLE.replace('string action = 3;', 'string action = 1;')))
     .some((v) => v.startsWith('R2') && v.includes('重複')));
   ok('R2: 19000..19999 は違反', checkRules(SAMPLE_REL, parseProto(SAMPLE.replace('string action = 3;', 'string action = 19001;')))

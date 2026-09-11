@@ -128,6 +128,9 @@ proto3 に `decimal` は無い。`double` へ落とすと `0.20315`（譲渡益�
   「呼び出し元ごとの設定が実際に効く」の実体）。**gRPC 組み込みの retry ポリシー（`ServiceConfig`）は採らない**
   —— 段 0 の共通チャネル生成（IADR-0328 決定 1）へ手を入れずに済み、再試行の境界（試行ごとの deadline）が
   呼び出し元のコードとして読めるためである。
+- s2s の資格情報が未整備のときは、**共有の `NoServiceAccessTokenProvider`**（IADR-0332 決定 6 / #746 が
+  shim の `Foundation/Auth` へ置いた）へ倒す。**null 実装を呼び出し元ごとに書かない**
+  （書かせると「未整備のとき例外」を書く実装が混ざる）。
 - 🔴 **helm・compose の既定値は変えない。** 宛先を既定で書くと「既定は REST」が描画のバイト等価とともに崩れる。
   有効化するときは**提供側の `grpcPort` と呼び出し元の宛先を同じ変更で揃える**（片方だけだと常に安全側既定へ倒れる）。
 
@@ -144,16 +147,22 @@ proto3 に `decimal` は無い。`double` へ落とすと `0.20315`（譲渡益�
 
 ### 決定 5 — proto 互換検査器は基盤から判定ロジックそのままで移植し、走査の基点だけ直す
 
-`scripts/check-proto-contracts.js`（基盤の同名スクリプト 852 行の移植）。**変えたのは 2 点だけ**である。
+`scripts/check-proto-contracts.js`（基盤の同名スクリプト 852 行の移植）。**変えたのは 3 点だけ**である。
 
 1. 走査の基点とパス規約: 基盤 `src/<unit>/backend/Shared/<Project>/Protos/…` → 本リポ
-   `backend/Shared/<Project>/Protos/…`（ユニットリポジトリレイアウト。IADR-0046）。`<unit>` は `aistocktrading`。
+   `backend/Shared/<Project>/Protos/…`（ユニットリポジトリレイアウト。IADR-0046）。
 2. ユニット除外（`lib/excluded-units.js`）の撤去 —— 本リポは単一ユニットで除外対象が無い。
+
+3. `Protos/` 直下のユニット名を **allowlist** にした（`aistocktrading` ＝自リポ所有／`platform` ＝**基盤所有の
+   契約の写し**）。基盤の検査器は「プロジェクトのユニット」と一致するかを見るが、本リポは**単一ユニットで
+   ありながら基盤所有の契約を写して持つ**（IADR-0332 / #746 が `platform/llmgateway/v1/completion.proto` を
+   入れた）ため、その形では表せない。🔴 **allowlist であって「何でも通る」ではない** —— 綴り誤りや
+   新しいユニットの持ち込みは R1 で落とす（通すと所有者不明の契約が静かに増える）。
 
 - baseline `scripts/proto-contract-baseline.json`・allowlist `scripts/proto-breaking-allowlist.json`（空）。
 - CI（`ci.yml` の `static-checks`）に `--self-test` と本走の 2 ステップ。
 - 🔴 **走査の基点を取り違えると「0 件で全件合格」になる。** 基点そのものが基盤と違う移植であるため、
-  自己試験に**段 1 の proto を名指しで拾う陽性対照**を 1 件足した（基盤には無い 41 件目）。
+  自己試験に**段 1 の proto を名指しで拾う陽性対照**を足し、allowlist の陰陽 2 件も置いた（基盤には無い 3 件）。
   「0 件走査で緑を返さない」ガードは基盤から写したまま残す。
 - **本 ADR は kit / 基盤とのバイト一致を課さない**（乖離は受容する。`ADR-0029` 決定 6）。
 

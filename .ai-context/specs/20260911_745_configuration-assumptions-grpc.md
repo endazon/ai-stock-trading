@@ -109,8 +109,11 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 | --- | --- |
 | proto3 部分集合のパーサ・R1〜R4 の規約・baseline 比較（破壊的／非破壊）・allowlist・`--self-test` | `lib/excluded-units.js`（本リポにユニット除外は無い）・`src/` 前提のパス正規表現（本リポは `backend/Shared/<Project>/Protos/…`） |
 
-**足したのは 1 件だけ**（自己試験 41 件目）: 🔴 **走査の基点を取り違えると「0 件で全件合格」になる**ため、
-段 1 の proto を名指しで拾う陽性対照を置いた（基点そのものが基盤と違う移植であるから）。
+**足したのは 3 件**（自己試験 42 件）: 🔴 **走査の基点を取り違えると「0 件で全件合格」になる**ため、
+段 1 の proto を名指しで拾う陽性対照を置いた（基点そのものが基盤と違う移植であるから）。加えて
+`Protos/` 直下のユニット名を **allowlist**（`aistocktrading` / `platform`）にし、その陰陽 2 件を置いた
+—— **#746 が基盤所有の契約の写しを持ち込んだため**（`platform/llmgateway/v1/completion.proto`。develop で
+先着したので本 PR が追随した。実測: allowlist 化前は R1 で赤くなった）。
 
 - baseline: `scripts/proto-contract-baseline.json`（`--update` で生成）／allowlist: `scripts/proto-breaking-allowlist.json`（空）
 - CI: `ci.yml` の `static-checks` へ `--self-test` と本走の 2 ステップ（既存の作法と同形）
@@ -211,6 +214,16 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 | `git grep -n "IsServiceClientProject" -A 4` | `*.Client` / `*.Client.Tests` の名前だけを見る | 新プロジェクト名は該当しない（`*.Client` の復活ではない） |
 | `dotnet test … --collect:"XPlat Code Coverage"` の cobertura を `filename` で引く | 🔴 **生成 proto が分母に入っていた**（`obj/Debug/.../Assumptions.cs` / `AssumptionsGrpc.cs` = 751 行・被覆 348 行＝46.34%）。**床は割っていない**（除外前 86.00% / 除外後 87.10%・floor 83.00%） | **`coverage-floor.json` へ 3 つ目の除外**（IADR-0331 決定 8）。理由は「割るから」ではなく「ratchet が proto の本数で動くから」 |
 | `git grep -n "findSourceFiles" -A 18 scripts/check-coverage.js` | `bin` / `obj` / `node_modules` を走査しない | G4（除外は自動生成の部分集合）は構造的に破れない＝この除外は手書きを飲み込まない |
+
+## develop の先着への追随（#746 / PR MSP なし・本リポの #762）
+
+作業中に **#746（LlmGateway の gRPC 化）が develop へ先着**した（`IADR-0332`）。FIFO のとおり本 PR が追随した実測:
+
+| 先着が持ち込んだもの | 本 PR への影響 | 追随 |
+| --- | --- | --- |
+| `Shared.Infrastructure/Protos/platform/llmgateway/v1/completion.proto`（**基盤所有の契約の写し**） | 🔴 proto 互換検査器が **R1 で赤**（ユニット名 `platform` が単一ユニット前提と合わない） | `Protos/` 直下のユニット名を allowlist 化（陰陽 2 件の自己試験つき）・baseline を 2 ファイルへ更新 |
+| shim の `Foundation/Auth/NoServiceAccessTokenProvider`（共有の no-op 供給元） | 本 PR が呼び出し元ごとに置いた `NoServiceAccessToken` と重複 | **本 PR の複製 2 件を撤去**し共有のものを使う（同クラスの意図＝「null 実装を呼び出し側ごとに書かせない」に従う） |
+| `Shared.Infrastructure` への `Grpc.*` 追加 | 影響なし（同プロジェクトは Domain 到達可能の集合外） | —— |
 
 ## 未決事項
 

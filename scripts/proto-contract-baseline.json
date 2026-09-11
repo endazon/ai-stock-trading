@@ -143,6 +143,167 @@
           }
         }
       }
+    },
+    "backend/Shared/AiStockTrading.Shared.Infrastructure/Protos/platform/llmgateway/v1/completion.proto": {
+      "syntax": "proto3",
+      "package": "platform.llmgateway.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1",
+      "imports": [],
+      "messages": {
+        "CompleteRequest": {
+          "fields": {
+            "confidentiality": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            },
+            "max_tokens": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "prompt": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "purpose": {
+              "number": 5,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "CompleteResponse": {
+          "fields": {
+            "endpoint": {
+              "number": 6,
+              "type": "string",
+              "label": "singular"
+            },
+            "input_tokens": {
+              "number": 3,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            },
+            "output_tokens": {
+              "number": 4,
+              "type": "int32",
+              "label": "singular"
+            },
+            "routing_reason": {
+              "number": 7,
+              "type": "string",
+              "label": "singular"
+            },
+            "sent": {
+              "number": 5,
+              "type": "bool",
+              "label": "singular"
+            },
+            "stop_reason": {
+              "number": 8,
+              "type": "string",
+              "label": "singular"
+            },
+            "text": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "CompletionStreamEvent": {
+          "fields": {
+            "delta": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "done": {
+              "number": 2,
+              "type": "bool",
+              "label": "singular"
+            },
+            "input_tokens": {
+              "number": 6,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 5,
+              "type": "string",
+              "label": "singular"
+            },
+            "output_tokens": {
+              "number": 7,
+              "type": "int32",
+              "label": "singular"
+            },
+            "routing_reason": {
+              "number": 8,
+              "type": "string",
+              "label": "singular"
+            },
+            "sent": {
+              "number": 3,
+              "type": "bool",
+              "label": "singular"
+            },
+            "stop_reason": {
+              "number": 9,
+              "type": "string",
+              "label": "singular"
+            },
+            "text": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "LlmCompletion": {
+          "rpcs": {
+            "Complete": {
+              "request": "CompleteRequest",
+              "response": "CompleteResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "CompleteStream": {
+              "request": "CompleteRequest",
+              "response": "CompletionStreamEvent",
+              "clientStreaming": false,
+              "serverStreaming": true
+            }
+          }
+        }
+      }
     }
   }
 }

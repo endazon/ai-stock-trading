@@ -65,7 +65,10 @@ public static class AssumptionsClientExtensions
         {
             services.AddSingleton(sp => GrpcClientExtensions.CreateAiStockTradingChannel(
                 grpcAddress.AbsoluteUri,
-                sp.GetService<IServiceAccessTokenProvider>() ?? NoServiceAccessToken.Instance));
+                // s2s の資格情報が未整備なら**トークンを出さない供給元**へ倒す（IADR-0051 決定 1 /
+                // IADR-0328 決定 2）。null 実装は呼び出し側ごとに書かない —— 共有の
+                // `NoServiceAccessTokenProvider`（IADR-0332 決定 6 / #746）を使う。
+                sp.GetService<IServiceAccessTokenProvider>() ?? NoServiceAccessTokenProvider.Instance));
         }
 
         // 解決時に構成を読む（他の同期照会の配線と同形）。取得元を組み立てられなければ既定プロバイダ。
@@ -162,15 +165,4 @@ public static class AssumptionsClientExtensions
         int.TryParse(config[GrpcMaxAttemptsKey], out var attempts) && attempts > 1
             ? attempts
             : GrpcAssumptionsClient.DefaultMaxAttempts;
-}
-
-// IADR-0051 決定 1 / IADR-0328 決定 2: s2s の資格情報が未整備（ServiceAuth:ClientId/ClientSecret 未設定）の
-// ときの供給元。**例外にせず null を返す** —— メタデータを付けずに送る → 提供側が `UNAUTHENTICATED` →
-// 呼び出し元の既存 fail-safe、という REST（ヘッダ無し → 401 → 安全既定）と同じ向きへ倒すためである。
-internal sealed class NoServiceAccessToken : IServiceAccessTokenProvider
-{
-    internal static readonly NoServiceAccessToken Instance = new();
-
-    public Task<string?> GetTokenAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<string?>(null);
 }
