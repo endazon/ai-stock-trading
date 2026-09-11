@@ -285,8 +285,13 @@ public class Stage0EvaluationServiceTests
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.NoDecisionRecords));
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.RecordingMismatch));
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.InsufficientEvaluationSample));
-        // 探索が無いため試行数条件で落ちる（記録再生戦略は 1 試行）。判定器の 7 条件が働いている。
-        verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.TrialCount));
+        // 🔴 ADR-0039 決定1・決定2, #777, IADR-0337: 探索が無い（試行 1 本）ため **PBO は評価不能**であり、
+        // 試行数の下限 20 は適用されない。判定器は残る条件で合否を決める（ここでは DSR ほかで落ちる）。
+        verdict.PboEvaluated.Should().BeFalse();
+        verdict.PboNotEvaluableReason.Should().Be(nameof(PboNotEvaluableReason.NoSearchSingleTrial));
+        verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.TrialCount));
+        verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.Overfitting));
+        verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.DeflatedSharpe));
         verdict.Passed.Should().BeFalse();
         verdict.StrategyId.Should().Be("ai-decision-replay/claude-sonnet-5/abc123");
 

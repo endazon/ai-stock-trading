@@ -80,6 +80,19 @@ public class Stage0DriverVerdictTests
         decision.DataCutoffSatisfied.Should().BeFalse();
     }
 
+    // 🔴 **否定形（ADR-0039 決定1・#777・IADR-0337 決定1）**: 判定を走らせていない経路は
+    // **「PBO は 0」と名乗らない。** 旧実装は 0 を置いており、契約へ出た先では「差が無かった」と
+    // 読めてしまっていた。表示にも数値が現れないことを併せて固定する。
+    [Theory]
+    [MemberData(nameof(AllEntryPoints))]
+    public void 判定を走らせていない入口はPBOを0と名乗らない(string label, Stage0Decision decision)
+    {
+        decision.Pbo.Should().BeOfType<PboVerdict.NotEvaluable>(label)
+            .Which.Reason.Should().Be(PboNotEvaluableReason.NotEvaluated, label);
+        decision.Pbo.IsEvaluated.Should().BeFalse(label);
+        decision.Pbo.Format().Should().Contain("評価不能", label).And.NotContain("0", label);
+    }
+
     // **否定形**: 判定器（Stage0GateEvaluator）は駆動側の 2 値を決して出さない（判定器の 7 条件は不変）。
     [Fact]
     public void 判定器は駆動側の理由を出さない()
@@ -87,7 +100,7 @@ public class Stage0DriverVerdictTests
         // FR-15, ADR-0008: 7 条件すべてが未達になる入力を与えても、出るのは 7 条件だけである。
         var evaluation = new Stage0GateEvaluation(
             DeflatedSharpe: 0d,
-            ProbabilityOfBacktestOverfitting: 1d,
+            Pbo: new PboVerdict.Evaluated(1d),
             MaxDrawdown: 1m,
             DoubledCostTotalReturn: -1m,
             WalkForwardOutOfSampleReturn: -1m,

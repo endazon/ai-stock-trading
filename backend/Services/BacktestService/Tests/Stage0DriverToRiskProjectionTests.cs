@@ -121,8 +121,10 @@ public class Stage0DriverToRiskProjectionTests
     // 本テストは**本物の判定器（Stage0GateService）まで到達した verdict** が射影されることを見る。
     //
     // 🔴 見ているのは「本番戦略で経路が通ること」と同時に「**通っても昇格しないこと**」である。
-    // 記録再生はパラメータ探索を持たず試行 1 本なので、判定器の 7 条件のうち試行数（最小 20）で落ちる。
-    // **これは仕様である** —— 探索を経ずに合格させれば DSR の多重検定補正が恒等的に消える。
+    //
+    // 🔴 **［2026-09-11 変更 / #777・ADR-0039・IADR-0337］** 旧記述「試行数（最小 20）で落ちる。これは
+    // 仕様である」は**もはや成立しない** —— 記録再生は探索を持たないため **PBO は `評価不能`** であり、
+    // 試行数の下限は適用されない。**合否は残る条件で決まる**（この記録では DSR ほかで落ちる）。
     [Fact]
     public async Task 本番戦略の判定結果もリスク管理へ射影され昇格を止め続ける()
     {
@@ -162,7 +164,12 @@ public class Stage0DriverToRiskProjectionTests
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.NoHistoricalBars));
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.NoDecisionRecords));
         verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.RecordingMismatch));
-        verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.TrialCount));
+        // 🔴 ADR-0039 決定1・決定2: PBO は評価不能・試行数の下限は適用外。残る条件で落ちている。
+        verdict.PboEvaluated.Should().BeFalse();
+        verdict.PboNotEvaluableReason.Should().Be(nameof(PboNotEvaluableReason.NoSearchSingleTrial));
+        verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.TrialCount));
+        verdict.FailedChecks.Should().NotContain(nameof(Stage0GateCheck.Overfitting));
+        verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.DeflatedSharpe));
         // 走らせた戦略の識別子を名乗る（記録の内容から導出された値。IADR-0281 決定3 の「戦略の変更」の鍵）。
         verdict.StrategyId.Should().Be(records.StrategyId);
 

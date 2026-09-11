@@ -236,11 +236,13 @@ public sealed class Stage0EvaluationService(
         var decision = new Stage0GateService().Evaluate(preparation.GateContext!);
         var baseline = preparation.BaselineRun!;
 
+        // FR-15, ADR-0039 決定1, #777, IADR-0337 決定5: 🔴 **PBO は「測っていない」と「差が無かった」を
+        // 読み分けられる形で出す。** 評価不能のとき数値は出さない（PboVerdict.Format() が表示の単一情報源）。
         logger.LogInformation(
             "Stage 0: 記録再生戦略 {StrategyId} を評価しました（期間 {From}〜{To}・欠測 {Gaps} 件・"
-            + "合格 {Passed}・未達 {Failed}）。",
+            + "合格 {Passed}・PBO {Pbo}・未達 {Failed}）。",
             preparation.StrategyId, from, to, snapshot.Gaps.Count, decision.Gate.Passed,
-            decision.Gate.FormatFailedChecks());
+            decision.Pbo.Format(), decision.Gate.FormatFailedChecks());
 
         // IADR-0089: backtestMaxDrawdownRatio は評価に用いた同一走行の最大 DD から導出する（乖離させない）。
         // IADR-0304: 「空売りを含む戦略か」は同じ走行の約定列から観測する（申告させない）。

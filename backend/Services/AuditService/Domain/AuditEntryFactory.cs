@@ -1,3 +1,4 @@
+using System.Globalization;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
@@ -173,11 +174,23 @@ public static class AuditEntryFactory
 
     // FR-20, FR-15, FR-11, #164, IADR-0089: バックテスト verdict（Stage 0 合格判定・#16）。段階ゲート系（Stage 0→1 解錠）の
     // ため段階遷移と同じ "stage-gate" 相関で束ね、監査照会でバックテスト供給と遷移をまとめて辿れるようにする。
+    //
+    // FR-15, ADR-0039 決定1, #777, IADR-0337 決定5: 🔴 **PBO は「測っていない」と「差が無かった」を
+    // 読み分けられる形で出す。** 評価不能の verdict に対して数値（「PBO 0.00」）を出さない ——
+    // 計画 ADR-0039 の逐語「**『PBO は 0 だった』と書かない**」である。
     public static AuditEntry From(BacktestEvaluated e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(BacktestEvaluated), AuditCorrelation.From("stage-gate"), Symbol: null,
-        Truncate($"バックテスト verdict: {(e.Passed ? "合格" : "不合格")}（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}）"
+        Truncate($"バックテスト verdict: {(e.Passed ? "合格" : "不合格")}"
+            + $"（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}・PBO {FormatPbo(e)}）"
             + (e.Passed ? string.Empty : $" 未達: {e.FailedChecks}")),
         AuditSerialization.Serialize(e), e.EvaluatedAt, recordedAt);
+
+    // PBO の表示。評価済みなら数値、評価不能なら理由を出す（発行側サービスのドメインが持つ判定結果の
+    // 表示と同じ形。監査は発行側のドメインを参照しないため、契約の 2 項目から同じ表現を組み直す）。
+    private static string FormatPbo(BacktestEvaluated e) =>
+        e.PboEvaluated
+            ? e.ProbabilityOfBacktestOverfitting.ToString("F2", CultureInfo.InvariantCulture)
+            : $"評価不能({(string.IsNullOrEmpty(e.PboNotEvaluableReason) ? "理由不明" : e.PboNotEvaluableReason)})";
 
     // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
     // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。

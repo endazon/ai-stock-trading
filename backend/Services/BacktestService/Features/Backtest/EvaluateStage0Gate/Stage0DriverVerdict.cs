@@ -61,8 +61,13 @@ public static class Stage0DriverVerdict
         return Build(checks, dataCutoffSatisfied: !checks.Contains(Stage0GateCheck.DataCutoff));
     }
 
-    // 不合格固定の組み立て。DSR/PBO は「算出していない」ことを表す 0 を置く（プレースホルダの走行から
-    // 意味のある値は出ない。試行台帳も PBO 行列も、記録が揃った記録再生の評価文脈でしか組めない）。
+    // 不合格固定の組み立て。プレースホルダの走行から意味のある値は出ない（試行台帳も PBO 行列も、
+    // 記録が揃った記録再生の評価文脈でしか組めない）。
+    //
+    // 🔴 ADR-0039 決定1, #777, IADR-0337 決定1: **PBO は「算出していない」ことを 0 では表さない。**
+    // 旧実装はここで 0 を置き、コメントで「算出していないことを表す 0」と断っていたが、**契約へ出た先では
+    // ただの 0 である** —— 受け手（Risk・監査）は「測っていない」と「差が無かった」を区別できなかった。
+    // DSR は数値のまま 0 を置く（PBO と違い ADR-0039 の射程ではなく、判定結果の型を変えていない）。
     private static Stage0Decision Build(IReadOnlyList<Stage0GateCheck> failedChecks, bool dataCutoffSatisfied)
     {
         var gate = new Stage0GateResult(Passed: false, FailedChecks: failedChecks);
@@ -70,7 +75,7 @@ public static class Stage0DriverVerdict
             gate,
             Stage0Promotion.Evaluate(gate),
             DeflatedSharpe: 0d,
-            ProbabilityOfBacktestOverfitting: 0d,
+            Pbo: new PboVerdict.NotEvaluable(PboNotEvaluableReason.NotEvaluated),
             DataCutoffSatisfied: dataCutoffSatisfied);
     }
 }

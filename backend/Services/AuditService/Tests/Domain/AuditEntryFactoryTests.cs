@@ -302,7 +302,9 @@ public class AuditEntryFactoryTests
             Passed: false, MaxDrawdownRatio: 0.30m, DeflatedSharpe: 0.42,
             ProbabilityOfBacktestOverfitting: 0.7, FailedChecks: "DeflatedSharpe, MaxDrawdown", RecordedAt,
             // FR-20, ADR-0016 決定14, #388, IADR-0281: 空売り解禁の判定入力（監査は素通しで payload へ載せる）。
-            IncludesShortSelling: false, StrategyId: "baseline-v1");
+            IncludesShortSelling: false, StrategyId: "baseline-v1",
+            // FR-15, ADR-0039, #777, IADR-0337: PBO を測ったかどうかを運ぶ 2 項目（本ケースは評価済み）。
+            PboEvaluated: true, PboNotEvaluableReason: "");
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 
@@ -310,6 +312,8 @@ public class AuditEntryFactoryTests
         entry.Symbol.Should().BeNull();
         // verdict・最大DD・未達条件が一行で読める（FR-11）。
         entry.Summary.Should().Contain("不合格").And.Contain("DeflatedSharpe");
+        // FR-15, ADR-0039 決定1, #777, IADR-0337 決定5: 測った PBO は数値で読める。
+        entry.Summary.Should().Contain("PBO 0.70");
         entry.OccurredAt.Should().Be(e.EvaluatedAt);
         entry.RecordedAt.Should().Be(RecordedAt);
         entry.Detail.Should().Contain("Passed").And.Contain("MaxDrawdownRatio");
@@ -317,6 +321,40 @@ public class AuditEntryFactoryTests
         var stage = AuditEntryFactory.From(
             new StageTransitioned(0, 0, 1, "Promotion", "owner", "x", RecordedAt, 100, false), Guid.NewGuid(), RecordedAt);
         entry.CorrelationId.Should().Be(stage.CorrelationId);
+    }
+
+    // 🔴 **否定形（最重要・FR-15, ADR-0039 決定1, #777, IADR-0337 決定5）**:
+    // **測っていない PBO を「0」と書かない。** 台帳の要約は「評価不能」とその理由を出し、数値を出さない ——
+    // 計画の逐語は「**『PBO は 0 だった』と書かない**」であり、測っていないことと差が無かったことを
+    // 読み分けられる形にする（`PboEvaluated` を見ずに数値だけ読むと「過剰適合が無かった」と誤読する）。
+    [Theory]
+    [InlineData("NoSearchSingleTrial")]
+    [InlineData("NotEvaluated")]
+    public void BacktestEvaluated_は測っていないPBOを0と書かない(string reason)
+    {
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
+            // 契約は互換のため数値の口を残すが、評価済みを名乗らないため値に意味は無い。
+            ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "DeflatedSharpe", RecordedAt,
+            IncludesShortSelling: false, StrategyId: "ai-decision-replay/x",
+            PboEvaluated: false, PboNotEvaluableReason: reason);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain($"PBO 評価不能({reason})");
+        entry.Summary.Should().NotContain("PBO 0");
+    }
+
+    // 理由が空で届いた場合も数値へ倒さない（旧メッセージの復元・発行側の取りこぼしを想定した fail-safe）。
+    [Fact]
+    public void BacktestEvaluated_は評価不能の理由が空でも数値へ倒さない()
+    {
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "DeflatedSharpe", RecordedAt,
+            IncludesShortSelling: false, StrategyId: "", PboEvaluated: false, PboNotEvaluableReason: "");
+
+        AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("PBO 評価不能(理由不明)");
     }
 
     [Fact]
