@@ -12,16 +12,25 @@
     "e2e": "playwright test",
     "e2e:typecheck": "tsc -p e2e/tsconfig.json --noEmit",
     "e2e:serve": "vite --config e2e/vite.harness.config.ts",
-    "e2e:install": "playwright install --with-deps chromium"
+    "e2e:install": "playwright install --with-deps chromium",
+    "i18n:extract": "lingui extract --clean",
+    "i18n:compile": "lingui compile --strict",
+    "i18n": "npm run i18n:extract && npm run i18n:compile"
   },
   "dependencies": {
+    "@lingui/core": "^6.6.0",
+    "@lingui/react": "^6.6.0",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.170.18",
+    "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.1",
+    "@lingui/babel-plugin-lingui-macro": "^6.6.0",
+    "@lingui/cli": "^6.6.0",
+    "@lingui/format-po": "^6.6.0",
     "@playwright/test": "^1.48.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.5.0",

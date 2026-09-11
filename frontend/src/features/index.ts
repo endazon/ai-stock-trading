@@ -46,3 +46,8 @@ export const aiStockTradingNavItems: readonly NavItem[] = [
   sc03ControlsNav,
   sc04OpendAuthNav,
 ];
+
+// 利用者裁定 2026-09-12 #3（Lingui 導入・英訳不要）: 本ユニットの文言カタログ（ja のみ）。
+// 合成点が `registerUnitMessages(aiStockTradingMessages)` で基盤の i18n へ追加ロードする
+// （ルート・ナビ・パンくずと同じく「合成点へ 1 行」で載る第 3 の契約）。実体と理由は `src/lib/i18n.ts`。
+export { aiStockTradingMessages } from '@ai-stock-trading/lib/i18n';

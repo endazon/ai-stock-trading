@@ -1,0 +1,1 @@
+/*eslint-disable*/import type{Messages}from"@lingui/core";export const messages=JSON.parse("{\"2zEOCI\":[\"該当するものはありません。\"],\"IraPad\":[\"読み込み中…\"],\"K4SqNZ\":[\"再試行\"],\"g1_dDm\":[\"取得に失敗しました。\"]}")as Messages;
