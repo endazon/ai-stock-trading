@@ -27,6 +27,34 @@ internal static class RepositoryLayout
     // Domain の**ソース**を新旧樹形の和集合で走査し、using 許可リスト・CPM 由来の禁止トークン（完全修飾での
     // 迂回を塞ぐ）・他サービス参照を検査する。走査件数の下限検査を持つため「0 件走査で緑」にはならない。
 
+    /// <summary>
+    /// NFR, IADR-0335: <c>backend/</c> 配下の全 <c>*.csproj</c>（テスト・shim を含む）。
+    /// プロジェクトの入れ子（<c>&lt;Svc&gt;/Tests/</c>）を判定するために、本番以外も要る。
+    /// </summary>
+    public static IReadOnlyList<string> AllProjectFiles { get; } =
+        Directory.EnumerateFiles(Path.Combine(Root, "backend"), "*.csproj", SearchOption.AllDirectories)
+            .Where(NotUnderBuildOutput)
+            .Select(Path.GetFullPath)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// NFR, IADR-0335: <b>本番プロジェクト</b>（実行時に動く成果物）の <c>*.csproj</c>。
+    /// <para>
+    /// 「DI 登録に本番の利用箇所があるか」を数える母集合である。🔴 <b>テストと shim を必ず外す</b> ——
+    /// 入れたままにすると<b>テストの中にしか呼び出し元が無い型が「結線済み」に見える</b>。
+    /// 2026-09-02 監査の D-1（<c>IBacktestStrategy</c> の実装がテストの中にしか無かった）が
+    /// まさにその形であり、外さない検査は検出したい当のものを取りこぼす。
+    /// </para>
+    /// <b>一覧を手で書かない</b>（プロジェクトが増減しても母集合が自動で追随する）。
+    /// </summary>
+    public static IReadOnlyList<string> ProductionProjectFiles { get; } =
+        AllProjectFiles
+            .Where(p => !Path.GetFileName(p).EndsWith(".Tests.csproj", StringComparison.Ordinal))
+            .Where(p => !IsUnder(p, Path.Combine(Root, "backend", "TestSupport")))
+            .Where(p => !IsUnder(p, Path.Combine(Root, "backend", "Tests")))
+            .ToArray();
+
     /// <summary>ビルド成果物（<c>bin/</c> <c>obj/</c>）の下でないこと。</summary>
     public static bool NotUnderBuildOutput(string path)
     {
@@ -98,6 +126,10 @@ internal static class RepositoryLayout
             .Where(a => DomainSourceDirectories.Any(
                 d => string.Equals(d.ServiceNamespaceRoot, a.ServiceNamespaceRoot, StringComparison.Ordinal)))
             .ToArray();
+
+    /// <summary>パスが指定ディレクトリの配下にあるか。</summary>
+    private static bool IsUnder(string path, string directory) =>
+        path.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<DomainSourceArea> BuildDomainSourceDirectories()
     {
