@@ -213,6 +213,14 @@ jobs:
       - name: Check trace blocks
         if: ${{ !cancelled() }}
         run: node scripts/check-trace-blocks.js
+      # NFR-06, ADR-0038, #787: realm export の description / attributes が Keycloak の varchar(255) を超えると
+      # 基盤の integration-stack で Keycloak が起動しない。基盤の check-realm-constraints（MSP#18）と同じ規律。
+      - name: Self-test realm export checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-realm-export.js --self-test
+      - name: Check realm export fits Keycloak columns
+        if: ${{ !cancelled() }}
+        run: node scripts/check-realm-export.js
 
       # ナレッジグラフ生成（docs/ の trace / trace-table ブロックと .ai-context/{adr,specs}/ の
       # frontmatter〔related_ids / related_specs / plan_refs〕から組み立てる）。生成物はコミットしない
