@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
@@ -24,7 +25,11 @@ public class FoundationRegistrationTests
         services.AddLogging();
 
         services.AddAiStockTradingObservability(EmptyConfig(), "risk-management-service");
-        var provider = services.BuildServiceProvider();
+        // #766: TracerProvider を内包する ServiceProvider を破棄しないと、グローバルな
+        // ActivityListener（Microsoft.AspNetCore / System.Net.Http）がプロセス内に残り、
+        // 同アセンブリの他クラス（例: CredentialBearingUriTraceRedactionTests の陰性対照）が
+        // 干渉を受ける（PR #760 で実測）。
+        using var provider = services.BuildServiceProvider();
 
         provider.GetService<TracerProvider>().Should().NotBeNull();
     }
@@ -36,7 +41,7 @@ public class FoundationRegistrationTests
         services.AddLogging();
 
         services.AddAiStockTradingAuth(EmptyConfig());
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(); // #766: 同型の破棄漏れを避ける
 
         // 認証・認可・ロール展開の中核サービスが登録されていること。
         provider.GetService<Microsoft.AspNetCore.Authorization.IAuthorizationService>().Should().NotBeNull();
@@ -51,7 +56,7 @@ public class FoundationRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAiStockTradingAuth(EmptyConfig());
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(); // #766: 同型の破棄漏れを避ける
 
         var policyProvider = provider
             .GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider>();
@@ -67,13 +72,53 @@ public class FoundationRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAiStockTradingAuth(EmptyConfig());
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(); // #766: 同型の破棄漏れを避ける
 
         var policyProvider = provider
             .GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider>();
         var policy = await policyProvider.GetPolicyAsync(AiStockTradingAuthPolicies.OwnerOrService);
 
         policy.Should().NotBeNull();
+    }
+
+    // #766, #751, PR #760, IADR-0333: FoundationRegistrationTests が組み立てた TracerProvider を
+    // 破棄せず、グローバルな ActivityListener がプロセス内に残っていた（PR #760 の陰性対照を実送信で
+    // 書くと、単体では通るのにアセンブリ全体では落ちた。原因は本クラスの破棄漏れ）。
+    //
+    // 🔴 「他の [Fact] の後に実行される」ことを前提にしない。xUnit v3 の既定の TestCaseOrderer は
+    // メソッド宣言順を保証しない（同一クラス内は直列に走るが、順序は無保証）。代わりに、
+    // 上の 可観測性の登録は例外なく解決できる() と同じ配線（AddAiStockTradingObservability →
+    // BuildServiceProvider → TracerProvider の解決）へ**専用の一意な ActivitySource**を相乗りさせ、
+    // 破棄の前後で HasListeners() を同一テスト内で観測する（他クラスの ActivitySource 購読とは
+    // 一意名のため衝突しない）。
+    [Fact]
+    public void 可観測性のTracerProviderを破棄するとActivityListenerが残らない()
+    {
+        using var marker = new ActivitySource($"ast.test.foundation-registration.{Guid.NewGuid():N}");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingObservability(EmptyConfig(), "foundation-registration-isolation");
+        services.ConfigureOpenTelemetryTracerProvider(builder => builder.AddSource(marker.Name));
+
+        var provider = services.BuildServiceProvider();
+        try
+        {
+            provider.GetRequiredService<TracerProvider>();
+
+            marker.HasListeners().Should().BeTrue(
+                "TracerProvider を解決した直後は、相乗りさせた専用 ActivitySource にも " +
+                "ActivityListener が付いているはずである（この前提が崩れていたら以降のアサーションは意味を持たない）");
+        }
+        finally
+        {
+            provider.Dispose(); // ← #766 で欠けていた破棄。ここを外すと下のアサーションが赤くなる。
+        }
+
+        marker.HasListeners().Should().BeFalse(
+            "ServiceProvider（＝ TracerProvider）を破棄したら、グローバルな ActivityListener も " +
+            "外れているべきである。外れていなければ、他クラスのテストがこの ActivityListener の " +
+            "干渉を受け続ける（#751/PR #760 で実測）");
     }
 
     [Fact]
