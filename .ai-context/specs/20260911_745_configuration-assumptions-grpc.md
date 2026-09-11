@@ -159,15 +159,17 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 | --- | --- |
 | `.ai-context/adr/IADR-0328`（決定 4「proto 互換検査器は段 1 へ移す」・決定 5「結合テストは段 1」） | **書き換えない**（凍結記録。本 PR がその履行であって、当時の記述は正しいままである） |
 | `.ai-context/adr/README.md` | **変更**（IADR-0331 の行を追加） |
-| `Directory.Packages.props` | **変更**（`Grpc.Tools` / `Google.Protobuf` を Contracts が使い始めるためコメントの「推移的に持ち込む」を実態へ） |
+| `Directory.Packages.props` | **変更**（`Grpc.Tools` / `Google.Protobuf` を `Shared.Grpc` が直接参照し始めるため、コメントの「推移的に持ち込む」を実態へ。**当初は Contracts と書いていたが置き場が変わったので引き直した**） |
 | `docs/blocked-tasks.md` | 据え置き（B-4 は段 0 で解消済みと記録済み。本 PR で真偽が動かないことを本文で確認した） |
 | `.github/workflows/helm.yml` | 据え置き（段 0 が入れた ON 派生の描画検査。本 PR は helm を変えない） |
 | `docs/observability/observability.md`・`infra/README.md`・`infra/otel/otel-collector-config.yaml`・`Foundation/Extensions/ObservabilityExtensions.cs` | 据え置き（**OTLP の gRPC**。east-west とは別物） |
 | `docs/templates/api_spec_template.md` | 据え置き（雛形の例示） |
 | 残り（`IADR-0259`/`0264`/`0284`、`specs/` 6 件、`Foundation/Grpc/*` 2 件、その試験 3 件、shim csproj、helm templates 2 件） | 据え置き（凍結記録／段 0 の成果物で本 PR は**足すだけ**） |
 
-**軸 4**（`.proto` の実在）: `git ls-files "*.proto"` = **0 件**（本 PR が最初の 1 件）。
+**軸 4**（`.proto` の実在）: 着手時点の `git ls-files "*.proto"` = **0 件**（本 PR が最初の 1 件）。
 したがって検査器の「0 件走査で緑を返さない」ガードは、本 PR のあとで初めて意味を持つ。
+🔴 **この数は作業中に動いた** —— #746 が develop で先着し 2 件目（基盤所有の写し）が入った。
+追随は後述「develop の先着への追随」に書いた（**着手前の走査の値は書き換えず、時点を明示して残す**）。
 
 **除外したものと理由**: `CHANGELOG.md`（生成物。是正は `scripts/changelog-overrides.json` の `remap` で行う規約）。
 `.ai-context/specs/` の既存 6 件と `.ai-context/adr/` の既存 5 件（**凍結記録**。本文プロズを後から書き換えない）。
@@ -188,7 +190,10 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 
 1. `GrpcAssumptionsClient` の再試行判定から `StatusCode.Unavailable` を外す → retry の陽性試験が落ちる。
 2. 同じ判定に `StatusCode.PermissionDenied` を足す → retry の陰性対照（1 回しか呼ばない）が落ちる。
-3. `CallOptions.Deadline` の設定を外す → timeout の陽性試験が落ちる（永久に待つ）。
+3. `CallOptions.Deadline` を長い固定値（`AddSeconds(30)`）へ変える → timeout の試験が落ちる。
+   🔴 **初版の試験はこの変異を素通りした。** 「安全側既定へ倒れた」だけを見ていたためであり、
+   **構成した秒数で倒れること**（経過時間 < 10 秒）を assert する形へ直してから落ちるようになった。
+   固定したいのは「倒れる」ではなく「**呼び出し元ごとの設定が効く**」である。
 4. `AssumptionsMapping` の `decimal` を `double` 経由にする → 桁保存の試験が落ちる。
 5. `ResolveGrpcAddress` の scheme 検証を外す → `https` の陰性対照が落ちる。
 6. proto のフィールド番号を 1 つ付け替える → `check-proto-contracts.js` が `[breaking]` で赤になる。
