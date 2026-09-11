@@ -41,12 +41,31 @@ public class LlmCostScopeTests
 
     // FR-15, ADR-0033 決定5: Stage 0 の記録は取引判断系にも報告書にも属さない**第 3 の区分**である
     // （どちらかに寄せると、抑制動作か月報の内訳のどちらかが実態と食い違う）。
+    // #750: その第 3 の区分は `IsStage0Recording` が名指しで判定する（月報 §7 の対比列がこれで分別する）。
     [Fact]
-    public void Stage0記録は取引判断系でも報告書でもない()
+    public void Stage0記録は取引判断系でも報告書でもない独立の区分である()
     {
         LlmPurposes.IsTradeDecision(LlmPurposes.Stage0Recording).Should().BeFalse();
         LlmPurposes.IsReport(LlmPurposes.Stage0Recording).Should().BeFalse();
+        LlmPurposes.IsStage0Recording(LlmPurposes.Stage0Recording).Should().BeTrue();
     }
+
+    // 🔴 **否定形**（FR-15, ADR-0037 決定3, #750）: 他の用途を Stage 0 記録と誤って数えない。
+    // 誤ると月報 §7 の対比の分子が膨らみ、**起きていない超過を報告する**。
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecision)]
+    [InlineData(LlmPurposes.TradeDecisionScreening)]
+    [InlineData(LlmPurposes.ReportMonthly)]
+    [InlineData("information-collection")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Stage0記録の判定は他の用途を拾わない(string? purpose) =>
+        LlmPurposes.IsStage0Recording(purpose).Should().BeFalse();
+
+    // 大小は無視する（他の判定と同じ規律。台帳の記録が大文字で残っても取りこぼさない）。
+    [Fact]
+    public void Stage0記録の判定は大小を無視する() =>
+        LlmPurposes.IsStage0Recording("STAGE0-RECORDING").Should().BeTrue();
 
     // 🔴 用途不明は**上限側へ倒す**。費用統制の危険側は過小計上であり、対象外へ倒すと上限が構造的に効かなくなる
     // （IADR-0122 決定3 と同じ判断）。用途を持たない LlmCostIncurred は取引判断サービスの従来の形でもある。

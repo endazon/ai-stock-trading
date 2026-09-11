@@ -26,6 +26,7 @@ public sealed class ReportAutoGenerator(
     IBuyInInferenceRecordSource? buyInSource = null,
     IFxSourceStatusSource? fxSourceStatusSource = null,
     ILlmUsageRecordSource? llmUsageSource = null,
+    IStage0RecordingEstimateSource? stage0RecordingEstimateSource = null,
     IBorrowFeeRecordSource? borrowFeeSource = null,
     ITradeRationaleSource? rationaleSource = null,
     IOpenPositionSource? openPositionSource = null,
@@ -121,6 +122,7 @@ public sealed class ReportAutoGenerator(
                 BuyInInferences: buyIns,
                 FxSourceStatus: fxStatus,
                 LlmUsage: llmUsage,
+                Stage0RecordingApprovedEstimateJpy: SafeStage0RecordingEstimate(),
                 BorrowFees: borrowFees,
                 TradeRationales: rationales,
                 Positions: positions,
@@ -270,6 +272,26 @@ public sealed class ReportAutoGenerator(
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-15, ADR-0033 決定5・5.3, ADR-0037 決定3, #750: Stage 0 記録実行の**見積り承認額**。
+    //
+    // **未注入・読み取り失敗のいずれも null（未供給）である**——他の供給と同じ向きであり、
+    // 🔴 **0 円へ倒さない**。承認が無いのに対比が成立して見えると、`ADR-0033` 決定5.3 の停止が
+    // 働いたのかどうかを月報から誤って読むことになる（対比列を置いた理由そのものが失われる）。
+    private decimal? SafeStage0RecordingEstimate()
+    {
+        if (stage0RecordingEstimateSource is null)
+            return null;
+
+        try
+        {
+            return stage0RecordingEstimateSource.GetApprovedEstimateJpy();
         }
         catch (Exception)
         {

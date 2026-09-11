@@ -47,6 +47,18 @@ public static class LlmPurposes
         string.Equals(purpose, TradeDecision, StringComparison.OrdinalIgnoreCase)
         || string.Equals(purpose, TradeDecisionScreening, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// FR-06, FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: Stage 0 の記録実行の計上区分か。
+    /// <para>
+    /// 🔴 <b>月報 §7 は本区分を「その他の用途」から分けて出す</b>——計画（04_report-templates 月報 §7）は
+    /// 見積り承認額との対比を求めており、対比の分子が他の用途と混ざると超過が起きたのかを読めない。
+    /// 分別の語彙を <see cref="IsTradeDecision"/> / <see cref="IsReport"/> と同じ場所に置くのは、
+    /// 報告書側と費用統制側で判定がずれないようにするためである。
+    /// </para>
+    /// </summary>
+    public static bool IsStage0Recording(string? purpose) =>
+        string.Equals(purpose, Stage0Recording, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>報告書生成の用途か（月報・週報・日報）。</summary>
     public static bool IsReport(string? purpose) =>
         string.Equals(purpose, ReportMonthly, StringComparison.OrdinalIgnoreCase)

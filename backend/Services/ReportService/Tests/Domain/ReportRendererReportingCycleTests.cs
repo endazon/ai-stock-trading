@@ -457,6 +457,75 @@ public class ReportRendererReportingCycleTests
         md.Should().Contain($"モデル利用不能による取引判断スキップ回数 | 1 件（{TradeDecisionSkipReasons.ModelUnavailable}: 1 件）");
     }
 
+    // --- 🔴 Stage 0 記録実行の対比列（月報 §7・ADR-0037 決定3・#750） ---
+
+    // 対比の 4 象限（実績あり／なし × 承認あり／なし）を 1 本で固定する。
+    // 🔴 **未供給を 0 円と書かない**（計画注記）・**片方が欠ければ差を出さない**（欠けた側を 0 とみなした差は嘘になる）。
+    [Theory]
+    // 実績あり × 承認あり: 差額と差率が出る（超過は +・下振れは −）。
+    [InlineData(1_800.0, 2_000.0, "実績 +1,800 JPY / 承認 +2,000 JPY / 差 -200 JPY（-10.0%）")]
+    [InlineData(2_400.0, 2_000.0, "実績 +2,400 JPY / 承認 +2,000 JPY / 差 +400 JPY（+20.0%）")]
+    [InlineData(2_000.0, 2_000.0, "実績 +2,000 JPY / 承認 +2,000 JPY / 差 0 JPY（0.0%）")]
+    // 承認 0 円に対する率は定義できない（消費率が上限 0 のときと同じ規律）。
+    [InlineData(500.0, 0.0, "実績 +500 JPY / 承認 0 JPY / 差 +500 JPY（算出不能）")]
+    // 実績あり × 承認なし: **承認を 0 円と書かない**。差も出さない。
+    [InlineData(1_800.0, null, "実績 +1,800 JPY / 承認 **供給されていません**（0 円ではありません） / 差 算出不能")]
+    // 実績なし × 承認あり: **実績を 0 円と書かない**（「実行しなかった」と「実行して 0 円だった」を区別する）。
+    [InlineData(null, 2_000.0, "実績 **当月の記録実行はありません**（0 円ではありません） / 承認 +2,000 JPY / 差 算出不能")]
+    // 両方なし: 行は出るが値は未供給である（行ごと消すと計画の表から節が欠ける）。
+    [InlineData(null, null, "**供給されていません**（当月の記録実行なし・承認額の供給なし。**0 円ではありません**）")]
+    public void 月報のStage0記録実行は見積り承認額との対比を出す(double? actual, double? approved, string expected)
+    {
+        var costs = actual is { } a
+            ? new[] { new LlmCostIncurred((decimal)a, T0, LlmPurposes.Stage0Recording, "m") }
+            : [];
+
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            LlmUsage = new LlmUsageRecord(costs, [], []),
+            Stage0RecordingApprovedEstimateJpy = (decimal?)approved,
+        });
+
+        md.Should().Contain(
+            "| Stage 0 記録実行の費用実績（`stage0-recording`。**上限の対象外**）と見積り承認額との対比 | "
+            + expected + " |");
+    }
+
+    // 🔴 **否定形**: Stage 0 記録の費用が「その他の用途」へ混ざらない（混ざると対比が対比でなくなる）。
+    // **対の肯定形**: 同じ入力で Stage 0 の行には確かに載り、情報収集の費用は「その他」に残る。
+    [Fact]
+    public void Stage0記録の費用はその他の用途の行へ混ざらない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            LlmUsage = new LlmUsageRecord(
+            [
+                new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "m"),
+                new LlmCostIncurred(120m, T0, "information-collection", "m"),
+            ], [], []),
+            Stage0RecordingApprovedEstimateJpy = 2_000m,
+        });
+
+        md.Should().Contain("その他の用途の費用実績（上限の対象外） | +120 JPY"); // 否定形: 1,800 が混ざっていない
+        md.Should().Contain("実績 +1,800 JPY / 承認 +2,000 JPY"); // 肯定形
+        // ADR-0033 決定5.1: 上限の対象外である（消費率の分子へも積まない）。
+        md.Should().Contain("取引判断の費用実績（月次上限 15,000 JPY に対する消費率） | 0 JPY / 0.0%");
+    }
+
+    // 🔴 未供給の**階層を潰さない**: 台帳そのものが引けていないとき、本行は出ない
+    // （§7 は「照会できませんでした」の 1 行で終わる）。承認額だけあっても対比を偽装しない。
+    [Fact]
+    public void 台帳が未供給なら承認額があっても対比行を出さない()
+    {
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            Stage0RecordingApprovedEstimateJpy = 2_000m,
+        });
+
+        md.Should().Contain("**LLM の利用実績を照会できませんでした（供給元がありません）**");
+        md.Should().NotContain("見積り承認額との対比");
+    }
+
     // ADR-0017 決定2: スキップ 0 件は**障害ではない**と本文が明示する。
     [Fact]
     public void スキップゼロ件には設計上の正常な結果である旨を添える()
