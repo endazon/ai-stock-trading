@@ -65,7 +65,9 @@ plan_refs:
 「**解決キーを登録したのに、それを解決する者が誰も居ない**」ほう（＝ D-3 の形）である。
 
 **決定2: 走査の母集合は「本番プロジェクト」だけにする。**
-`*.Tests.csproj` / `backend/TestSupport/**` / `backend/Tests/**` を除いた 17 本が持つ `.cs` 962 件が母集合である。
+`*.Tests.csproj` / `backend/TestSupport/**` / `backend/Tests/**` を除いた 17 本が持つ `.cs` **965 件**が母集合である
+（2026-09-11 実測。本ブランチが `origin/develop` = `2343f624` を取り込んだ時点。
+起票時点の `1da636de` では 962 件・登録 189 件で、**判定の結果は同じ 18 件**である）。
 🔴 **テストを入れたままにすると、テストの中にしか呼び出し元が無い型が「結線済み」に見える** ——
 **D-1 がまさにその形**であり、外さない検査は検出したい当のものを取りこぼす。
 母集合は `.csproj` の実走査から導き、**一覧を手で書かない**（プロジェクトの増減に自動で追随する）。
@@ -117,7 +119,7 @@ plan_refs:
 ## 結果
 
 - 良い影響:
-  - `AddScoped` / `AddSingleton` / `AddTransient` / `AddHostedService` の型引数つき登録 189 件が
+  - `AddScoped` / `AddSingleton` / `AddTransient` / `AddHostedService` の型引数つき登録 190 件が
     毎 CI で「本番の利用箇所があるか」を突き合わされる。**追加の CI 配線は要らない**
     （`backend.slnx` の `dotnet test` が既に本プロジェクトを走らせる）。
   - `Architecture.Tests` は **122 → 133 件**（+11）。

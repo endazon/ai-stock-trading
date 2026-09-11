@@ -54,7 +54,7 @@ public class UnwiredDiRegistrationTests
 
         Repository.Projects.Sum(p => p.Sources.Count).Should().BeGreaterThan(
             800,
-            "本番プロジェクトが持つ .cs は実測 962 件である。大きく下回るならファイル走査が壊れている。"
+            "本番プロジェクトが持つ .cs は 2026-09-11 実測で 965 件である。大きく下回るならファイル走査が壊れている。"
                 + "実際に走査したのは {0} 件（プロジェクト {1} 本）",
             Repository.Projects.Sum(p => p.Sources.Count),
             Repository.Projects.Count);
@@ -66,7 +66,7 @@ public class UnwiredDiRegistrationTests
     {
         Repository.Registrations.Should().HaveCountGreaterThan(
             150,
-            "型引数つきの DI 登録は実測 189 件（AddScoped 87 / AddSingleton 86 / AddHostedService 16）である。"
+            "型引数つきの DI 登録は 2026-09-11 実測で 190 件（AddScoped 87 / AddSingleton 87 / AddHostedService 16）である。"
                 + "大きく下回るなら登録の走査が壊れている。実際に見つかったのは {0} 件",
             Repository.Registrations.Count);
 
