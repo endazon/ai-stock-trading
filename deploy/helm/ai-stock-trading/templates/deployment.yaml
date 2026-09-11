@@ -74,6 +74,13 @@ spec:
               value: Development
             - name: ASPNETCORE_URLS
               value: http://+:8080
+            {{- /* NFR, ADR-0006, #778: 512Mi の小容器で ASP.NET Core 既定の Server GC は、ヒープ上限（limit の 75%）に
+                   達する前にネイティブ分を含む RSS が limit を超えて OOMKilled になる（audit-service が 3h で 5 回・
+                   risk-management も 1 回実測）。Workstation GC ＋ GCConserveMemory で RSS を抑える。全 .NET サービス共通。 */}}
+            - name: DOTNET_gcServer
+              value: "0"
+            - name: DOTNET_GCConserveMemory
+              value: "5"
             {{- /* NFR, MSP:ADR-0029 / MSP:ADR-0075, IADR-0328, #584: east-west gRPC の h2c リスナ
                    （TLS 無し HTTP/2 専用ポート）。未設定ならアプリはリスナを立てない。
                    readiness は HTTP 側（8080 の /health/ready）のまま —— 1 プロセスが両ポートを

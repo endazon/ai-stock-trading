@@ -11,10 +11,11 @@
 project-planning `projects/ai-stock-trading/07_adr/` の実ファイルと一致。**2026-09-09 に 0032→0035→0037 へ更新**
 〔0035 まで: ADR-0033 Stage 0 の評価対象／ADR-0034 空売り「含む」の判定／ADR-0035 費用率の分母。#688 / #710。
 0037 まで: ADR-0036 Stage 0 入力の完全性／ADR-0037 sonnet-5 単価の是正。planning#591 Q2 裁定〕。
-**2026-09-11 に 0037→0039 へ更新**〔ADR-0038 連結配備の認可レルム／ADR-0039 探索なしの PBO と試行数下限の所有権。
-planning#601 裁定。#777〕。
+**2026-09-11 に 0037→0039 へ更新**〔ADR-0038 連結配備の認証レルムは基盤レルム。環流は planning#597 で本リポの追随は #776／
+ADR-0039 探索なしでは PBO を評価できない〕。
 🔴 **転記元は計画 ADR の本文ではなく、計画リポの `node tools/doc-checks/gen-plan-ranges.js --check` の実測である**
-（ADR 本文の数値は、その ADR 自身が加わった時点で古くなる。実測 2026-09-09: 37 件・欠番なし）。
+（ADR 本文の数値は、その ADR 自身が加わった時点で古くなる。実測 2026-09-11: `git ls-tree origin/main
+projects/ai-stock-trading/07_adr/` が 39 件・`ADR-0001`〜`ADR-0039` で欠番なし）。
 trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 
 - **この節は機械の単一情報源である。** `scripts/check-test-traceability.js` の `readPlanIds()` が
