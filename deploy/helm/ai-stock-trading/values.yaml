@@ -455,6 +455,12 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+      # FR-06, FR-15, ADR-0033 決定5.3, ADR-0037 決定3, #750: 月報 §7 の対比列の**見積り承認額**（分母）。
+      # 🔴 **取引判断側（trade-decision の Stage0Recording__ApprovedEstimateJpy）と必ず同値にする** ——
+      # 承認は 1 つの事実であり、片方だけ変えると月報の対比が黙って誤る（検知する機械は無い）。
+      # 実績（分子）は監査台帳から引くが、承認は台帳に事象として載らないため構成から読む。
+      # fail-safe: 空=未供給＝「供給されていません（0 円ではありません）」。**0 円へ倒さない。**
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**（期末日以前の直近の日次観測・1 USD あたりの円）。
@@ -507,6 +513,10 @@ services:
       # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。
       # 記録の実行そのものは既定無効（Stage0Recording:Enabled）＋見積り承認ゲート（ADR-0033 決定5）で止まる。
       - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-01-31" }
+      # FR-06, FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: 承認額（既定 null＝未承認＝記録は実行されない）。
+      # 🔴 **報告サービス側（report の Stage0Recording__ApprovedEstimateJpy）と必ず同値にする** ——
+      # 月報 §7 の対比はこの値を分母に取る。片方だけ書き換えると対比が黙って誤る。
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
       # ADR-0031（計画）決定2〜4, IADR-0292: 判断サイクルあたりの銘柄数の運用者申告
       # （空=未申告・既定0＝日次見積りへ寄与しない）。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }

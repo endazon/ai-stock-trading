@@ -73,10 +73,14 @@ public class ReportTemplateGoldenTests
         [
             new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5"),
             new LlmCostIncurred(450m, T0, LlmPurposes.ReportMonthly, "claude-opus-5"),
+            // FR-15, ADR-0037 決定3, #750: Stage 0 記録実行の計上（**上限の対象外の独立区分**）。
+            new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5"),
         ],
         [new LlmFallbackFired("report-daily", "claude-sonnet-5", "claude-haiku-4-5", "FallbackFired", T0)],
         [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "claude-sonnet-5", null, T0)],
         new ScreeningDegradationCounts(4, 2, new Dictionary<string, int> { ["RAG"] = 1, ["ニュース"] = 1 })),
+        // FR-15, ADR-0033 決定5.3, ADR-0037 決定3, #750: 見積り承認額（対比の分母）。
+        Stage0RecordingApprovedEstimateJpy = 2_000m,
         BorrowFees = new BorrowFeeRecord(
             [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 8, 3), 0.06m, 10_000m, 1.64m, T0)],
             [new BorrowFeeAccrualUnavailable("TSLA", Market.UnitedStates, new DateOnly(2026, 8, 4), "料率照会に失敗", T0)]),
