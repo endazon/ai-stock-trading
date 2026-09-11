@@ -17,6 +17,18 @@
 `trading-owner`＝Discord Bot 制御コマンド `/pause`・`/resume`・`/killswitch`・`/stage` の OwnerAuth・#226 / IADR-0098）。
 owner クライアントの dev secret は `dev-only-owner-secret`（`scripts/k8s-local-deploy.sh` の ast-secrets 既定と一致）。
 
+> 🔴 **このレルムは単体起動（単体 E2E・開発者のローカル）専用である。** 計画 ADR-0038 決定 1 は「**基盤と連結して
+> 配備するとき**の利用者認証レルムは**基盤レルム**」と定めており、連結配備（`values-local.yaml` の
+> `global.authAuthority`）はこのレルムを読まない（IADR-0324）。
+>
+> 🔴 **`trading-owner` / `trading-service` と、連結配備で使うクライアント（`ai-stock-trading-svc` /
+> `ai-stock-trading-owner`）は写しである**（ADR-0038 決定 3）。**正本は基盤レルムの宣言**
+> （`microservices-platform` リポジトリの `deploy/keycloak/microservices-platform-realm.json`。MSP#1372）。
+> 連結配備では基盤レルム側しか読まれないため、**写しが古くなっても連結配備の挙動には出ない** ——
+> 出るのは単体 E2E であり、それは統制ではなく副作用である。**突合の受け皿は基盤側**（ADR-0038 フォローアップ 2）。
+> JSON にコメント構文が無いため、この位置づけはファイル冒頭の `attributes`（Keycloak の自由形式フィールド。
+> import されるが挙動に影響しない）と各 `description` にも書いてある。
+
 > **⚠️ dev 専用・本番へ import しない。** `dev-owner` のパスワードや client secret はローカル検証用の使い捨て値であり、
 > 他の dev ダミー資格情報（`.env.example` の `POSTGRES_PASSWORD` 等）と同じ位置づけ。JSON 直書きなのは
 > Keycloak の realm import が静的 JSON を要求するため（環境変数補間に非対応）。実 OwnerOnly 疎通の検証は #82。

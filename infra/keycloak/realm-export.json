@@ -1,16 +1,21 @@
 {
   "realm": "ai-stock-trading",
+  "attributes": {
+    "_header": "HEADER NOTE (ADR-0038 decision 3 / IADR-0324, AST#776). JSON has no comment syntax and Keycloak imports this file as-is, so this note rides in the realm's free-form attributes map. It is descriptive only and affects nothing at runtime.",
+    "_scope": "STANDALONE ONLY. This realm is for standalone startup: single-unit E2E (IADR-0050) and a developer's local run. Linked deployment with the platform (microservices-platform) authenticates users against the PLATFORM realm instead -- see values-local.yaml global.authAuthority (IADR-0324).",
+    "_sourceOfTruth": "COPIES. The realm roles trading-owner / trading-service and the linked-deploy clients ai-stock-trading-svc / ai-stock-trading-owner below are COPIES. Their authoritative source is the platform realm declaration in the microservices-platform repository: deploy/keycloak/microservices-platform-realm.json (MSP#1372). Only the platform realm is read in a linked deployment, so a copy here may drift without being detected; the drift shows up as a failing standalone E2E, which is a side effect and not a control (ADR-0038 'remaining' section). Cross-realm reconciliation is owned by the platform side (ADR-0038 follow-up 2)."
+  },
   "enabled": true,
   "sslRequired": "none",
   "roles": {
     "realm": [
       {
         "name": "trading-owner",
-        "description": "dev: OwnerOnly (ADR-0003 / ADR-0007 / ADR-0008 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion."
+        "description": "dev: OwnerOnly (ADR-0003 / ADR-0007 / ADR-0008 / IADR-0011). The sole role allowed to operate kill switch / risk settings / stage promotion. COPY -- authoritative source is the platform realm (microservices-platform deploy/keycloak/microservices-platform-realm.json). ADR-0038 decision 3."
       },
       {
         "name": "trading-service",
-        "description": "dev: OwnerOrService read-only (IADR-0051). Service-to-service role for sync queries (sizing-context / open-positions / daily-policy). Cannot operate kill switch / settings."
+        "description": "dev: OwnerOrService read-only (IADR-0051). Service-to-service role for sync queries (sizing-context / open-positions / daily-policy). Cannot operate kill switch / settings. COPY -- authoritative source is the platform realm (microservices-platform deploy/keycloak/microservices-platform-realm.json). ADR-0038 decision 3."
       }
     ]
   },
@@ -66,7 +71,7 @@
     },
     {
       "clientId": "ai-stock-trading-svc",
-      "description": "dev: confidential service client for s2s sync queries (IADR-0051). client_credentials only. Production secret comes from config (user-secrets / .env), not this dev export.",
+      "description": "dev: confidential service client for s2s sync queries (IADR-0051). client_credentials only. Production secret comes from config (user-secrets / .env), not this dev export. COPY -- the linked-deploy counterpart in the platform realm (microservices-platform deploy/keycloak/microservices-platform-realm.json, MSP#1372) is authoritative. ADR-0038 decision 3.",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -78,7 +83,7 @@
     },
     {
       "clientId": "ai-stock-trading-owner",
-      "description": "dev: confidential owner client for Discord Bot control commands (pause/resume/killswitch/stage). client_credentials with trading-owner (IADR-0098/0062). Production secret comes from Secret/Vault, not this dev export.",
+      "description": "dev: confidential owner client for Discord Bot control commands (pause/resume/killswitch/stage). client_credentials with trading-owner (IADR-0098/0062). Production secret comes from Secret/Vault, not this dev export. COPY -- the linked-deploy counterpart in the platform realm (microservices-platform deploy/keycloak/microservices-platform-realm.json, MSP#1372) is authoritative. ADR-0038 decision 3.",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
