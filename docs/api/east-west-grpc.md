@@ -25,7 +25,8 @@ issues: [#526, #584, #745]
 
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
-- **状態**: gRPC 面を持つのは **1 経路**（全体前提条件の照会）。**並走中の正は REST** であり、
+- **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面）である。
+  基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。**並走中の正は REST** であり、
   gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -35,8 +36,9 @@ issues: [#526, #584, #745]
 | 項目 | 規約 |
 | --- | --- |
 | 所有者 | **呼び出される側**のサービス |
-| 置き場 | 共有プロジェクト `backend/Shared/AiStockTrading.Shared.Grpc/` |
-| パス | `Protos/<unit>/<service>/v<N>/<name>.proto`（`<unit>` は `aistocktrading`） |
+| 置き場（本リポジトリが所有する契約） | 共有プロジェクト `backend/Shared/AiStockTrading.Shared.Grpc/` |
+| 置き場（**基盤が所有する契約の写し**） | `backend/Shared/AiStockTrading.Shared.Infrastructure/`（消費するだけ。生成は `GrpcServices="Client"`） |
+| パス | `Protos/<unit>/<service>/v<N>/<name>.proto`（`<unit>` は `aistocktrading` ＝自リポ所有 / `platform` ＝基盤所有の写し） |
 | 生成 | `<Protobuf Include="Protos/**/*.proto" ProtoRoot="Protos" GrpcServices="Both" />`。**`*.Client` プロジェクトは作らない** |
 | 生成物 | `obj/` に落ち、コミットしない |
 
@@ -46,6 +48,14 @@ issues: [#526, #584, #745]
 到達してよい共有物であり、**外部ライブラリ依存ゼロ**をアーキテクチャ検査が強制している。名前空間も
 `…Shared.Contracts.*` にしない（Domain の許可接頭辞であり、生成型を Domain から使えてしまう）。
 判断の記録は trace ブロックの実装 ADR にある。
+
+🔴 **基盤が所有する契約は「写し」であり、追随は人手である。** 本リポジトリは基盤にも計画にも依存しない
+（submodule も pin も無い）ので、**正本が変わっても機械は気付かない**。写した proto の冒頭に出所
+（正本のパス・写した日）を書き、正本を変更する PR と対で更新すること。契約の破れは実往復で
+`UNIMPLEMENTED` や復号不能として現れる（黙って壊れはしないが、CI では捕まらない）。
+
+`Protos/` 直下のユニット名は **allowlist**（`aistocktrading` / `platform`）であり、検査器が
+それ以外を落とす —— 通してしまうと、パスと package が一致しているだけの**所有者不明の契約**が静かに増える。
 
 ## 2. versioning
 
