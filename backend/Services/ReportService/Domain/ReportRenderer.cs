@@ -1123,6 +1123,13 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture,
             $"| 報告書生成の費用実績（上限の対象外） | {ReportCostBreakdown(u)} |\n");
 
+        // FR-15, ADR-0033 決定5.1・5.3, ADR-0037 決定3, #750: Stage 0 記録実行の費用と**見積り承認額との対比**。
+        // 🔴 計画は行の位置まで定めている（報告書生成の次・ADR-0030「節番号と並び順は計画が正」）。
+        // 「その他の用途」は実装が足した行であるため、計画の行の後ろへ置く。
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| Stage 0 記録実行の費用実績（`stage0-recording`。**上限の対象外**）と見積り承認額との対比 "
+            + $"| {Stage0RecordingComparison(u.Stage0RecordingCostJpy, view.Stage0RecordingApprovedEstimateJpy)} |\n");
+
         // 🔴 上限の対象でも報告書でもない用途（情報収集等）を**落とさない**。
         // 落とすと「どこにも現れない費用」ができ、#282 と同じ形が別の用途で再発する。
         sb.Append(CultureInfo.InvariantCulture,
@@ -1136,6 +1143,37 @@ public static class ReportRenderer
 
         sb.Append(CultureInfo.InvariantCulture,
             $"| スクリーニング入力の分割回数・切り詰め発生件数 | {ScreeningBreakdown(record.ScreeningDegradation)} |\n");
+    }
+
+    // FR-06, FR-15, ADR-0033 決定5.3, ADR-0037 決定3, #750, 04_report-templates 月報 §7:
+    // 「実績 N 円 / 承認 N 円 / 差 ±N 円（±n%）」の対比。
+    //
+    // 🔴 **未供給を 0 円と書かない。** 計画注記の明文:「当月に記録実行が無ければ空欄とし、`0 円` と書かない
+    // （『実行しなかった』と『実行して 0 円だった』を区別する）」。承認額側も同じで、
+    // **未承認を 0 円と書くと「0 円の承認に対して超過した」という別の主張になる。**
+    // 🔴 **片方が欠ければ差を出さない。** 欠けた側を 0 とみなした差は、超過の有無について嘘をつく。
+    private static string Stage0RecordingComparison(decimal? actualJpy, decimal? approvedJpy)
+    {
+        var actual = actualJpy is { } a
+            ? $"実績 {ReportAmountFormat.Jpy(a)}"
+            : "実績 **当月の記録実行はありません**（0 円ではありません）";
+
+        var approved = approvedJpy is { } p
+            ? $"承認 {ReportAmountFormat.Jpy(p)}"
+            : "承認 **供給されていません**（0 円ではありません）";
+
+        if (actualJpy is null && approvedJpy is null)
+            return "**供給されていません**（当月の記録実行なし・承認額の供給なし。**0 円ではありません**）";
+
+        if (actualJpy is not { } actualValue || approvedJpy is not { } approvedValue)
+            return $"{actual} / {approved} / 差 算出不能";
+
+        var diff = actualValue - approvedValue;
+        // 承認 0 円に対する比率は定義できない（消費率が上限 0 で「算出不能」を出すのと同じ規律）。
+        // 差は符号を明示する（計画の表記 `±n%`）。超過（+）と下振れ（−）を読み分けるための行である。
+        var rate = approvedValue == 0m ? "算出不能" : SignedPercent(diff / approvedValue);
+
+        return $"{actual} / {approved} / 差 {ReportAmountFormat.Jpy(diff)}（{rate}）";
     }
 
     private static string ReportCostBreakdown(LlmUsageSummary u) =>
@@ -1178,6 +1216,11 @@ public static class ReportRenderer
     // "P1" は文化により数値と % の間に空白が入るため使わない（テンプレートの表記は <n%>）。
     private static string Percent(decimal ratio) =>
         (ratio * 100m).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+
+    // #750, 04_report-templates 月報 §7: 符号つきの率（計画の表記 `±n%`）。
+    // 対比の差にだけ用いる（消費率のような「量」には符号を付けない・ReportAmountFormat.Threshold と同じ理由）。
+    private static string SignedPercent(decimal ratio) =>
+        (ratio * 100m).ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture) + "%";
 
     // 種別ごとの見出し（漢字名・サマリ/散文/方針の各見出し）。
     private static (string Kanji, string Summary, string Narrative, string Policy) Labels(ReportKind kind) => kind switch

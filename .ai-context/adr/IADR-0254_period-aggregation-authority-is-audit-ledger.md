@@ -2,10 +2,10 @@
 title: IADR-0254 期間集計の権威源は監査台帳であり、費用統制サービスの月次カウンタを使わない
 type: impl-adr
 status: Accepted
-related_ids: [FR-06, FR-11, FR-16, ADR-0016, ADR-0017, ADR-0027, IADR-0199, IADR-0218, IADR-0219]
+related_ids: [FR-06, FR-11, FR-15, FR-16, ADR-0016, ADR-0017, ADR-0027, ADR-0033, ADR-0037, IADR-0199, IADR-0218, IADR-0219, IADR-0318]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -88,4 +88,24 @@ ADR-0027 決定4 が 2 つのイベントに分けたのは、**未計上を 0 �
 ## 関連
 
 - Supersedes: なし
-- Superseded by: なし
+- Superseded by: なし（**射程の明確化を下記追記が足す。決定は 1 つも改めない**）
+
+［2026-09-11 追記 / #750］**月報 §7 の対比列のうち「見積り承認額」だけは台帳から来ない。**
+計画 `ADR-0037` 決定 3（2026-09-09 裁定）は §7 に `stage0-recording` の**見積り対実績**の列を求めた。
+実績（分子）は本 IADR の決定 1 のまま監査台帳から引く（`purpose == stage0-recording` の `LlmCostIncurred`）。
+🔴 **一方、承認額（分母）は事象ではない** —— `ADR-0033` 決定 5 の「承認」は利用者が**実行前に構成へ書き入れる値**であり
+（[IADR-0318](IADR-0318_stage0-ai-decision-record-and-replay.md) 決定 5 は「構成値が算出した見積りと一致すること」で承認を表す）、
+**台帳に書かれるイベントが存在しない。** したがって承認額だけは構成（`Stage0Recording:ApprovedEstimateJpy`）から読む
+（`IStage0RecordingEstimateSource` / `ConfigurationStage0RecordingEstimateSource`）。
+**本 IADR の決定 1〜7 はいずれも不変である** —— 決定 1 が権威源を定めたのは**期間の集計**についてであり、承認額は集計ではない。
+
+- **棄却案 1: 記録側（取引判断サービス）へ HTTP で承認額を取りに行く。** 同サービスの HTTP 面は無認可であり
+  （IADR-0318 決定 5「HTTP へは足さない＝本サービスの HTTP 面は無認可」）、月報のために承認額の口をそこへ開けるのは主従が逆である。
+- **棄却案 2: 記録の実行時に承認額をイベントとして台帳へ書く。** 権威源は 1 本になるが、**記録側の契約を変える**必要があり
+  （#750 の射程は報告書生成側）、かつ**実行しなかった月には承認額も出なくなる** —— 「承認したが実行しなかった」を月報から読めない。
+- 🔴 **残余リスク: 同じ値が 2 サービスの構成に載る。** 片方だけ変えると対比が黙って誤る。
+  **検知する機械は無い**（`Stage0Recording__LlmTrainingCutoff` が既に同じ扱いである）。緩和は 2 つ ——
+  (a) 既定を空＝未供給にし「設定しない限り対比を出さない」、(b) helm の**両方**の設定点へ「必ず同値にする」注記を置く。
+- **未供給と 0 円は潰さない**（決定 4 の向きをそのまま当てる）。実績側の `null` は「当月に記録実行が無かった」、
+  承認側の `null` は「承認額が供給されていない」であり、いずれも `0 円` と書かない
+  （計画 `04_report-templates` 月報 §7 の注記が名指しで求めた区別である）。
