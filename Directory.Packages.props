@@ -31,6 +31,15 @@
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.24.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <!-- NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段0）, IADR-0328, #584: east-west 同期呼び出しの gRPC。
+         Grpc.AspNetCore = 受け側（AddGrpc / MapGrpcService と h2c リスナ）、Grpc.Net.Client = 呼び出し側。
+         Grpc.Tools / Google.Protobuf は前 2 者が推移的に持ち込むが、**版は基盤リポ（microservices-platform の
+         src/Directory.Packages.props）と同一に保つ**という本リポの規約に従い明示的に宣言する（CPM の推移
+         ピン留めが有効なため、宣言が無いと基盤と版がずれ得る）。proto の現物は段 1 で置く。 -->
+    <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0" />
+    <PackageVersion Include="Grpc.Net.Client" Version="2.83.0" />
+    <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
     <!-- IADR-0286: 共有基盤の FRED アダプタが API キー入り URL の計装を抑止する（SuppressInstrumentationScope）。Hosting と同版に揃える。 -->
     <PackageVersion Include="OpenTelemetry" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
