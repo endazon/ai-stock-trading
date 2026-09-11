@@ -55,6 +55,40 @@ public static class PlatformRealmAuthExtensions
     }
 
     /// <summary>
+    /// NFR-05, IADR-0323 決定 1, IADR-0328 決定 2, IADR-0332 決定 6, #746:
+    /// **gRPC チャネル用**に MSP レルムのトークン供給を inline で作る（`IHttpClientBuilder` が無い経路のため）。
+    /// REST の <see cref="AddAiStockTradingPlatformRealmToken"/> と**同じセクション・同じ資格情報**を読む。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 **DI へ登録しない。** 同一プロセスは <c>AddAiStockTradingServiceToken</c>（AST レルム）も呼び
+    /// <c>IServiceAccessTokenProvider</c> を <c>TryAddSingleton</c> する。ここで DI 登録すると先勝ちで
+    /// **レルムを跨いでトークンが漏れる**（IADR-0093 決定 2 と同じ理由）。返り値は呼び出し側が
+    /// チャネル 1 本へ閉じ込めて使う。
+    ///
+    /// 安全既定: 資格情報/エンドポイントが揃わなければ**常に <c>null</c> を返す供給元**を返す
+    /// （＝メタデータを付けずに送る → 提供側が <c>UNAUTHENTICATED</c> → 呼び出し元の既存 fail-safe）。
+    /// REST の「ハンドラを付けない → 401」と向きを揃える（IADR-0328 決定 2）。
+    /// </remarks>
+    public static IServiceAccessTokenProvider CreatePlatformRealmTokenProvider(
+        IServiceProvider services, IConfiguration config, string sectionName, string tokenClientName)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenClientName);
+
+        var options = ReadOptions(config, sectionName);
+        if (!options.IsEnabled)
+            return NoServiceAccessTokenProvider.Instance;
+
+        return new ClientCredentialsTokenProvider(
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(tokenClientName),
+            options,
+            services.GetRequiredService<ILogger<ClientCredentialsTokenProvider>>(),
+            TimeProvider.System);
+    }
+
+    /// <summary>
     /// 指定セクションを読む。<c>TokenEndpoint</c> 未指定なら**同セクションの** <c>Authority</c>（＝MSP レルム）から導出する。
     /// AST の <c>Auth:Authority</c> へはフォールバックしない（取り違え防止）。
     /// </summary>

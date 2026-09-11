@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Logging;
@@ -29,8 +27,14 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 二段判断は層ごとに別の用途を名乗り（一次=trade-decision-screening／二次=trade-decision）、割当モデルの照合も
 // 費用の計上区分もその用途で引かれる。`purposeOverride` は構成 `LlmGateway:Purpose` の明示設定で、指定時は
 // 全呼び出しへ適用する（既存デプロイの非破壊。報告書側 HttpReportNarrativeDrafter と同型）。
+// NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: **輸送は差し替えられる。**
+// 🔴 本クラスは「送る」ではなく**「応答を解釈して Hold へ振り分ける判定器」**であり、REST（既定）と
+// east-west gRPC のどちらで送っても同じ判定を通す（`ILlmCompletionTransport`）。gRPC 用の判定器を
+// 別に作らないのは、片方だけ直る事故を構造的に入れないためである。
+// クラス名 `Http…` は REST しか無かった頃の名残であり、**輸送を意味しない**（改名は挙動を変えないため
+// 別 PR。IADR-0332 決定 5）。
 public sealed class HttpLlmCompletionClient(
-    HttpClient httpClient,
+    ILlmCompletionTransport transport,
     ILogger<HttpLlmCompletionClient> logger,
     string confidentiality,
     string? purposeOverride,
@@ -39,6 +43,22 @@ public sealed class HttpLlmCompletionClient(
     ILlmGovernanceReporter? governanceReporter = null)
     : ILlmCompletionClient
 {
+    /// <summary>
+    /// REST（`POST /complete`）で送る従来の形。既存の配線・試験はこちらを使う（既定は REST のまま）。
+    /// </summary>
+    public HttpLlmCompletionClient(
+        HttpClient httpClient,
+        ILogger<HttpLlmCompletionClient> logger,
+        string confidentiality,
+        string? purposeOverride,
+        ILlmUsageReporter usageReporter,
+        bool logPrompts = false,
+        ILlmGovernanceReporter? governanceReporter = null)
+        : this(new RestLlmCompletionTransport(httpClient), logger, confidentiality, purposeOverride,
+            usageReporter, logPrompts, governanceReporter)
+    {
+    }
+
     // 割当統制の記録先。未注入は安全既定（記録しないだけで、見送りの統制自体は本クラスが担う）。
     private readonly ILlmGovernanceReporter _governance = governanceReporter ?? new NoOpLlmGovernanceReporter();
 
@@ -84,18 +104,23 @@ public sealed class HttpLlmCompletionClient(
             // IADR-0101, MSP/ADR-0025: MaxTokens は思考トークンと本文の合算上限（Opus 5 等は thinking が既定有効）。
             // purpose=trade-decision は基盤の PurposeModels に未登録で default（Opus 5 化される層）へ着地するため、
             // 1024 のままだと思考が上限を食い本文が空になり、下の空応答判定で全判断が Hold に固定される。
-            var request = new CompletionRequest(prompt, MaxTokens: 4096, model, confidentiality, effectivePurpose);
-            using var response = await httpClient
-                .PostAsJsonAsync("/complete", request, cancellationToken)
+            var exchange = await transport
+                .CompleteAsync(
+                    new LlmCompletionCall(prompt, MaxTokens: 4096, model, confidentiality, effectivePurpose),
+                    // 上限は輸送側が持つ（REST は HttpClient.Timeout、gRPC は構成の既定 deadline）。
+                    // 取引判断は報告書と違い**種別による上限差が無い**ため、要求単位の指定はしない。
+                    deadline: null,
+                    cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!response.IsSuccessStatusCode)
+            if (exchange.Outcome == LlmTransportOutcome.Failed)
             {
                 // #335, ADR-0017 決定3, IADR-0216: 429（再試行）と 400 系（モデル不可）を分ける。
                 // **429 でスキップ事象を出さない** —— 混雑のたびに「モデルが使えない」という誤った
                 // 運用シグナルが積み上がり、恒常的な格下げを疑う根拠になってしまう。
-                var status = (int)response.StatusCode;
-                var kind = LlmFailureClassification.Classify(status);
+                // IADR-0332 決定 3: gRPC でも同じ語彙へ写す（status 名が `{Status}` に入る）。
+                var status = exchange.Detail;
+                var kind = exchange.Failure;
 
                 // NFR-05, #724, IADR-0323: 認可の失敗（401/403）は**モデル不可へ倒さない**。
                 // 🔴 TradeDecisionSkipped も publish しない —— 同イベントの通知本文は
@@ -130,24 +155,16 @@ public sealed class HttpLlmCompletionClient(
 
             // 応答本文が空・不正 JSON で写像できない場合。取引しない安全側に倒す（送信可否は不明のため、伝送の失敗＝
             // HoldFallback とは区別して記録する。IADR-0104 決定3）。
-            CompletionResponse? dto;
-            try
+            if (exchange.Outcome == LlmTransportOutcome.Malformed)
             {
-                dto = await response.Content
-                    .ReadFromJsonAsync<CompletionResponse>(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is JsonException or NotSupportedException)
-            {
-                logger.LogWarning(ex, "LLM ゲートウェイ /complete の応答を解釈できません（不正 JSON・想定外の形式）。取引しない安全側（Hold）に倒します。");
+                if (exchange.Error is { } malformed)
+                    logger.LogWarning(malformed, "LLM ゲートウェイ /complete の応答を解釈できません（不正 JSON・想定外の形式）。取引しない安全側（Hold）に倒します。");
+                else
+                    logger.LogWarning("LLM ゲートウェイ /complete の応答が空です（JSON null）。取引しない安全側（Hold）に倒します。");
                 return HoldMalformed;
             }
 
-            if (dto is null)
-            {
-                logger.LogWarning("LLM ゲートウェイ /complete の応答が空です（JSON null）。取引しない安全側（Hold）に倒します。");
-                return HoldMalformed;
-            }
+            var dto = exchange.Payload!;
 
             // Sent=false は機密区分による送信拒否（縮退）＝越境させておらず費用も発生していない。取引しない安全側に倒す。
             if (!dto.Sent)
@@ -287,22 +304,11 @@ public sealed class HttpLlmCompletionClient(
         }
     }
 
-    // POST /complete の要求（platform LlmGateway CompletionApiRequest 相当・camelCase JSON）。
-    private sealed record CompletionRequest(string Prompt, int MaxTokens, string? Model, string? Confidentiality, string? Purpose);
-
-    // POST /complete の応答（CompletionApiResponse の必要部分）。Sent=false は送信拒否（縮退）。
-    // InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。欠落時は 0 として扱う。
+    // 要求・応答の写像（REST の CompletionApiRequest / CompletionApiResponse、gRPC の
+    // CompleteRequest / CompleteResponse）は輸送側（`RestLlmCompletionTransport` /
+    // `GrpcLlmCompletionTransport`）へ移した。本クラスが読むのは輸送に依らない `LlmCompletionPayload` である。
+    // Sent=false は送信拒否（縮退）。InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。
     // Model はゲートウェイが実際に選択したモデル（要求の Model は希望値であり、越境ルーティングで変わり得る）。
-    // FR-11 の全量ログで「どのモデルが答えたか」を残すために受ける（IADR-0061 決定1）。
-    // 実基盤の契約（microservices-platform リポジトリ
-    // src/platform/backend/Shared/Platform.Shared.Contracts/Dtos/CompletionDto.cs の CompletionApiResponse。
-    // 2026-07-17 時点で Text/Model/InputTokens/OutputTokens/Sent/Endpoint/RoutingReason）に Model は実在する。
-    // 本リポジトリからは参照できない外部契約のため、追随漏れの検出はここの写像ではなく実結線時の疎通に委ねる。
-    // 本 record は必要部分のみを受ける部分写像であり、欠落しても既定値に落ちるだけで安全側は崩れない。
     // #247, IADR-0104: StopReason は**送信が成立した**場合のモデル側の終了理由（"end_turn" / "max_tokens" / "refusal" 等）で、
     // Sent とは独立した軸（Sent=false＝越境させていない／StopReason="refusal"＝送信したがモデルが拒否した）。
-    // 上流（MSP#379 / PR #391）が CompletionApiResponse に追加した。未設定（null）＝上流未更新・未対応プロバイダでは
-    // 本フィールドを見ない従来どおりの分岐へ素通りする（非破壊）。
-    private sealed record CompletionResponse(
-        string? Text, bool Sent, int? InputTokens, int? OutputTokens, string? Model, string? StopReason = null);
 }
