@@ -377,6 +377,8 @@ services:
   notification:
     image: ai-stock-trading/notification-service
     extraEnv:
+      # #772, UC-03, IADR-0240: Discord Bot の /report が照会・承認する報告書サービス。fail-safe: 空=未設定=照会失敗（Succeeded=false）。
+      - { name: Reports__BaseUrl, value: "" }
       # fail-safe: 空=NoOp（外部送信しない。実 Discord は #15）。
       - { name: Notifications__Provider, value: "" }
       - name: Notifications__Discord__WebhookUrl

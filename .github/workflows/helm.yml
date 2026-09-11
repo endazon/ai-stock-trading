@@ -283,6 +283,10 @@ jobs:
             || { echo "::error::values-local で Notifications__Provider=discord-webhook が描画されない（Discord 未配線）。"; exit 1; }
           printf '%s' "$out" | grep -A1 'name: Notifications__Discord__Bot__Enabled' | grep -q 'value: "true"' \
             || { echo "::error::values-local で Bot__Enabled=true が描画されない。"; exit 1; }
+          # #772 / UC-03: Bot が有効なら /report の照会先（Reports__BaseUrl）が非空。無いと日報の確定が Discord からできない。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: notification-service/' \
+            | grep -A1 'name: Reports__BaseUrl' | grep -q 'value: "http' \
+            || { echo "::error::values-local の notification に Reports__BaseUrl が無い（Discord /report が照会失敗になる・#772）。"; exit 1; }
           # 価格文脈（#236/IADR-0099・trade-decision の鮮度設定）。
           need "価格文脈 鮮度設定" 'name: MarketData__MaxQuoteStalenessSeconds'
           # SIMULATE 限定のリスク上限プロファイル（#257/IADR-0108）: 経路B でのみ有効化する（本番描画には現れない）。
