@@ -126,6 +126,7 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 | 〃 | 構成の検証 | `http://…` は通る | `https://`・相対・非 URI は**起動時に例外** |
 | 〃（**結合**・実 Kestrel h2c） | timeout | 遅い提供側 → deadline で `null`（既定 5 秒を短縮して観測） | 速い提供側 → 値が返る |
 | 〃（**結合**） | retry | `Unavailable` を 1 回返す提供側に `MaxAttempts=2` → 2 回目で成功（**呼ばれた回数を数える**） | `PermissionDenied` は `MaxAttempts=3` でも **1 回**しか呼ばれない |
+| 〃（**結合**） | 応答の fail-safe | —— | 線上の 10 進が読めない応答（`"not-a-decimal"`）も**例外を出さず**安全側既定へ倒れ、再試行もしない |
 | `scripts` | 互換検査器 | `--self-test`（正例・負例・変異試験） | フィールド番号の付け替え・削除・型変更が**赤**になる |
 
 ## 走査した母集合（`.claude/rules/traceability.md` 規則 1〜10）
@@ -188,6 +189,8 @@ issue #745（傘は #584・`Refs`）。段 0（土台）は PR #744 / [IADR-0328
 4. `AssumptionsMapping` の `decimal` を `double` 経由にする → 桁保存の試験が落ちる。
 5. `ResolveGrpcAddress` の scheme 検証を外す → `https` の陰性対照が落ちる。
 6. proto のフィールド番号を 1 つ付け替える → `check-proto-contracts.js` が `[breaking]` で赤になる。
+7. `GrpcAssumptionsClient` の `catch (FormatException)` を外す → 「線上の 10 進が読めなくても例外を出さない」が落ちる
+   （AI レビューの 🟡 指摘で足した対照。実測で落ちることを確認した）。
 
 ## 計画書との差異
 
