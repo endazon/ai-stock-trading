@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-11, ADR-0003, IADR-0039, IADR-0104, IADR-0248]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
@@ -51,3 +51,10 @@ plan_refs:
 - 良い影響: 構造化出力の退行が「解析不能 N 件」として監査ログから直接読める。
 - 残余リスク: 記録はログであり台帳（AuditService）ではない。台帳化が要るなら見送り（IADR-0104）と
   併せて別途起こす（片方だけイベント化すると粒度が割れる）。
+
+> ［2026-09-11 追記 / #785］**「解析不能」と「見送り」の区別が、解析器の型で崩れていた。** `DecisionDto` の数値 3 項目を
+> 非 null の `decimal` で受けていたため、一次スクリーニングが Hold 候補で `null`（または数値でない文字列）を返すと、
+> `action` を読む前に `MalformedJson` になり、**LLM の見送りが解析不能に化けていた**（2026-09-11 開場中の稼働で実測。
+> `Path: $.stopLossDistancePerShare`）。項目ごとに寛容に読む形へ改め（数値・数値文字列は値、それ以外は未供給）、
+> Hold は数値が無くても解析成功の見送り、Buy / Sell で数値が無ければ従来どおり `InvalidValues`（解析不能系）とする。
+> 決定 1〜3 は不変。プロンプトの出力形式に「Hold のとき数値は null でよい」を明記した。

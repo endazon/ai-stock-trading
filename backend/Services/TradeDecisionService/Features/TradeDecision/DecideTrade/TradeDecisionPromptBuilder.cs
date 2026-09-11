@@ -109,6 +109,7 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(includeProfitability
             ? "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益}"
             : "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
+        sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。""");
         return sb.ToString();
     }
 
@@ -157,6 +158,7 @@ public static class TradeDecisionPromptBuilder
         AppendRetrievalSection(sb, references);
         sb.AppendLine("# 出力形式（JSON のみ・関心の方向のみ）");
         sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"絞り込み理由\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
+        sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。""");
         return sb.ToString();
     }
 
