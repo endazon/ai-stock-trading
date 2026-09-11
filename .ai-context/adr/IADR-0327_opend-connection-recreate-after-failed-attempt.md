@@ -2,7 +2,7 @@
 title: IADR-0327 OpenD 接続は試行が失敗するたびに接続オブジェクトを作り直し、SDK に差し替え口を設ける
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-11, UC-01, UC-02, ADR-0002, IADR-0016, IADR-0060, IADR-0153, IADR-0211]
+related_ids: [FR-05, FR-11, FR-15, UC-01, UC-02, ADR-0002, IADR-0016, IADR-0060, IADR-0153, IADR-0157, IADR-0211]
 author: endazon (with Claude Code)
 created: 2026-09-11
 updated: 2026-09-11
@@ -136,6 +136,14 @@ OpenD が本当に不達の間は**従来どおり `BrokerUnavailableException` 
   - 🔴 **実 OpenD での再現・検証は本 PR では行っていない**（稼働クラスタへ触らない制約）。次回の配備で確認する。
   - `MMApiMoomooHistoryKLineClient`（バックテストの相場取得）に**同型の欠陥が残る**
     （`MMAPI_Qot` を直接生成し、同じ `_connectTcs` 待ち）。発注しない経路であり #732 の射程外のため、別 issue で追う。
+    - ［2026-09-11 追記 / [#743](https://github.com/endazon/ai-stock-trading/issues/743)］
+      **この追随を消化した。** 本 IADR の決定 1〜4 を相場（Qot）経路へ同型に適用し、
+      `IMoomooQotConnection` / `IMoomooQotConnectionFactory`（BacktestService.Infrastructure.ExternalServices）と
+      `RecreateConnection()` を置き、偽 OpenD による陽性・陰性の試験 4 件で固定した
+      （仕様書 [`.ai-context/specs/20260911_743_qot-reconnect-after-refused.md`](../specs/20260911_743_qot-reconnect-after-refused.md)）。
+      **新しい決定は起こしていない**——決定は本 IADR が持ち、#743 は適用先を広げただけである。
+      シームの実体は発注経路と共有していない（サービス境界を跨ぐ横断参照になるため）。
+      **上の「実 OpenD での検証は未実施」は相場経路でも同じく未実施である。**
 
 ## 関連
 
