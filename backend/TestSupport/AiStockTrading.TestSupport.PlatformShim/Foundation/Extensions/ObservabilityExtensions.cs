@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Observability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -44,6 +45,13 @@ public static class ObservabilityExtensions
                 .SetResourceBuilder(resourceBuilder)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
+                // FR-09, NFR（セキュリティ）, #751, IADR-0121, IADR-0333: URI 自体が資格情報である送信先
+                // （Discord Webhook。トークンは**パス**に載る）の `url.full` を scheme+host まで落とす。
+                // ログ側は IADR-0121 が塞いだが、同 ADR の残存リスクどおりトレース（Tempo）には残っていた。
+                // 🔴 **登録位置に意味がある。** プロセッサは登録順に OnEnd が走り、`AddOtlpExporter()` は
+                // 末尾にバッチ処理プロセッサを足す。**この行が exporter より後ろへ回ると、バッチへ積まれた
+                // 後に書き換えることになり間に合わない**（テストは exporter と同じ「後ろ」の位置から観測する）。
+                .AddProcessor(new CredentialBearingUriRedactionProcessor())
                 .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
             .WithMetrics(metrics => metrics
                 .SetResourceBuilder(resourceBuilder)

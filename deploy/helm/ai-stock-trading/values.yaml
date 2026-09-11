@@ -438,9 +438,9 @@ services:
       # fail-safe: 空=トークン無し→401→プレースホルダ散文（＝本設定点の追加前と同じ挙動）。
       - { name: LlmGateway__Auth__Authority, value: "" }
       - name: LlmGateway__Auth__ClientId
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
       - name: LlmGateway__Auth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       # FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存。fail-safe: 空=no-op（保存しない）。設定時のみ opt-in。
       - { name: KnowledgeBase__Documents__BaseUrl, value: "" }
       # FR-08, IADR-0051: 自身の API・s2s の Authority 導出元（AST レルム）。
@@ -547,9 +547,9 @@ services:
       # fail-safe: 空=トークン無し→401→**認可の失敗として**記録し Hold（＝モデル不可へは倒さない・IADR-0323 決定3）。
       - { name: LlmGateway__Auth__Authority, value: "" }
       - name: LlmGateway__Auth__ClientId
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
       - name: LlmGateway__Auth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+        secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       # LLM プロバイダ鍵は注入しない。鍵は MSP の LlmGateway 側が保持し AST は鍵を持たない（ADR-0010 / IADR-0061 決定6）。
       # IADR-0051: s2s 同期照会（daily-policy/sizing-context）用の client_credentials。fail-safe: 未設定=認証なし→401→安全既定。
       - name: ServiceAuth__ClientId
