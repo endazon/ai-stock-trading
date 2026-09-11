@@ -3,14 +3,14 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-08-21
+updated: 2026-09-12
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
 adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation]
 issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, planning#31, planning#33]
 -->
 
@@ -211,6 +211,24 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 - 409/400 では破壊的な自動再試行をしない。競合時は「最新を取得して再試行」を促す。
 - 取得不能・権限外・BFF 未登録は安全側（縮退・存在秘匿）へ倒す。
 - `changeType` 等の数値 enum は表示ラベルへ写像し、未知値はフォールバック表示。
+
+## 待ち・失敗・空の表示と再試行（2026-09-12）
+
+取得結果の**待ち・失敗・空・本体**を 1 か所（共通部品 `QueryPhase`）で描き分ける。画面ごとの
+手書き分岐は撤去した。
+
+- **判定順は 失敗 → 待ち → 空 → 本体**である。**失敗を先に見るのは、0 件と失敗を混同しないため**
+  である（監視銘柄・禁止銘柄が「1 件も無い」のと「取得できていない」のは別の事実である）。
+  空の判定は**成功した応答に対してだけ**行う。
+- **失敗の告知には再試行ボタンを伴わせる。** 押すと同じ取得をやり直す（`refetch`）。
+- 🔴 **404 では再試行ボタンを出さない。** 取得先が BFF に登録されていない場合の 404 は
+  **再試行しても直らない**。この判定は画面側が持ち、共通部品へ渡す。本画面ではリスク設定の取得と
+  監視銘柄の取得の 2 か所で判定する。
+- リスク設定・監視銘柄・変更履歴・現況の各領域は**独立に縮退する**。
+- **保存（更新）の失敗は本節の対象外である。** 保存の 400（検証）・409（競合）は従来どおり
+  結果通知として出し、**破壊的な自動再試行をしない**。再試行ボタンは**取得の失敗にだけ**付く。
+- **0 件・対象なし・供給が無いの描き分けは従来どおりである。** 本節は**取得そのものの状態**を
+  扱うものであり、サーバが宣言する供給可否の規約を置き換えない。
 
 ## スコープ外（後続）
 
