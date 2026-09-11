@@ -1,7 +1,9 @@
 using ConfigurationService.Common.Abstractions;
 using ConfigurationService.Infrastructure.Persistence;
 using ConfigurationService.Features.Assumptions;
+using ConfigurationService.Features.Assumptions.GetAssumptions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -47,6 +49,12 @@ builder.Host.UseWolverine(opts =>
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName);
 
+// FR-17, NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段1）, IADR-0328 決定3, IADR-0331, #745 (#584):
+// east-west gRPC の h2c 専用ポート。**`Grpc:Port`（env `Grpc__Port`）が未設定・0 なら立たない**ので、
+// 既定配備の振る舞いは変わらない（並走中の正は REST）。`AddGrpc()` はリスナの有無に関わらず呼ばれる
+// —— そうでないと下の `MapGrpcService` が起動時に落ちる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -66,6 +74,10 @@ app.MapAiStockTradingIntrospection();
 
 // FR-17, UC-06: 前提条件の照会・変更（利用者のみ）。
 app.MapAssumptionsEndpoints();
+
+// FR-17, UC-06, IADR-0331 決定1, #745 (#584): 同じ照会の gRPC 面（REST と同じ AssumptionsService を呼ぶ）。
+// 認可は REST の読み取りと同じ OwnerOrService（サービス実装のクラス属性）。
+app.MapGrpcService<AssumptionsGrpcService>();
 
 app.Run();
 

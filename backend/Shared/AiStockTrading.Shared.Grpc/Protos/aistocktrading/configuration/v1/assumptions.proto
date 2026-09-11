@@ -1,0 +1,83 @@
+// FR-17, UC-06, NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定 5（段 1）, IADR-0328 決定 4, IADR-0331, #745 (#584):
+// 全体前提条件（TradingAssumptions）の同期照会の gRPC 契約。REST の `GET /assumptions` と同じ意味論であり、
+// 提供側は同じ `AssumptionsService.GetCurrent()` を呼ぶ（評価器を 2 つにしない）。
+//
+// ■ 置き場と所有（IADR-0328 決定 4 ＝ 基盤の実装ガイド `docs/api/east-west-grpc.md` §1 に揃えた）
+//   所有者は呼び出される側（ConfigurationService）。置き場は共有プロジェクト
+//   `AiStockTrading.Shared.Grpc` の `Protos/<unit>/<service>/v<N>/`。クライアント・サーバ基底の両方を
+//   ここから生成し、`*.Client` プロジェクトは作らない（#526 / IADR-0264 決定 1 で廃止した形へ戻さない）。
+//   🔴 ユニットのセグメントは `aistocktrading`（ハイフン無し）である —— proto の package は識別子であり
+//   `ai-stock-trading` は書けない。
+//   🔴 `AiStockTrading.Shared.Contracts` へは置けない（IADR-0331 決定 7）—— 同プロジェクトは Domain から
+//   到達してよい共有物であり、外部ライブラリ依存ゼロを AiStockTrading.Architecture.Tests が強制している。
+//   名前空間も `…Shared.Contracts.*` にしない（Domain の許可接頭辞であり、生成型を Domain から使えてしまう）。
+//
+// ■ versioning（IADR-0328 決定 4。scripts/check-proto-contracts.js が検査する）
+//   package は `<unit>.<service>.v<N>`、csharp_namespace は `<ContractsRoot>.Grpc.<Service>.V<N>`。
+//   フィールド番号は不変。削除するときは番号と名前を `reserved` に残す。破壊的変更は `v<N+1>` を並走させる。
+//
+// ■ s2s（IADR-0328 決定 2）
+//   `authorization` メタデータには**呼び出し側サービス自身**の client credentials JWT を載せる
+//   （`trading-service` ロール）。利用者のトークンは載せない。本 rpc は利用者の文脈を 1 つも取らない
+//   （REST の `GET /assumptions` が主体を読まないのと同じ）ので、本文で運ぶ利用者文脈も無い。
+//
+// ■ 🔴 金額・率を `string` で運ぶ理由（IADR-0331 決定 2）
+//   proto3 に `decimal` は無い。`double` にすると `0.20315`（譲渡益税率）や手数料率・上限額が 2 進浮動小数へ
+//   丸められ、**同じ版なのに REST と gRPC で採算判定・費用上限判定の結果が変わり得る**。REST 側は
+//   `System.Text.Json` が `decimal` を桁を保ったまま JSON 数値へ書いている。そこで線上は
+//   **不変文化（InvariantCulture）の丸め無し 10 進表記**の文字列とし、両端で `decimal` へ厳密に往復させる。
+//   空文字は「未指定」= `0`（proto3 に null は無いため。REST の DTO 既定と同じ向き）。
+syntax = "proto3";
+
+package aistocktrading.configuration.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.Configuration.V1";
+
+// 全体前提条件の照会。REST の `GET /assumptions`（OwnerOrService）と同じ認可・同じ評価器を通る。
+service Assumptions {
+  // 現在の前提条件とバージョンを返す。
+  // - 呼び出し側サービスの資格情報が無い → UNAUTHENTICATED、`trading-service` ロールが無い → PERMISSION_DENIED
+  // - 提供側が不調・不達 → UNAVAILABLE、deadline 超過 → DEADLINE_EXCEEDED
+  //   （いずれも呼び出し元は既存の fail-safe〔last known good ＞ 既定値〕へ倒す。IADR-0063 決定 5）
+  rpc Get(GetAssumptionsRequest) returns (GetAssumptionsResponse);
+}
+
+// 引数を持たない（REST の `GET /assumptions` と同じ）。将来の絞り込みはフィールド追加＝非破壊で足せる。
+message GetAssumptionsRequest {}
+
+// REST の CommissionSchedule と同じ形。手数料 = clamp(約定代金 × rate, minimum, cap)。cap <= 0 は上限なし。
+message CommissionSchedule {
+  // 10 進表記の文字列（上の 🔴 を参照）。
+  string rate = 1;
+  string minimum = 2;
+  string cap = 3;
+}
+
+// REST の MonthlyCostLimits と同じ形（円）。
+message MonthlyCostLimits {
+  string total = 1;
+  string llm = 2;
+  string infrastructure = 3;
+  string data = 4;
+}
+
+// REST の TradingAssumptions と同じ形。
+message TradingAssumptions {
+  // 譲渡益税率（例 "0.20315"）。
+  string capital_gains_tax_rate = 1;
+  CommissionSchedule japan_commission = 2;
+  CommissionSchedule united_states_commission = 3;
+  // 非 JPY 市場に適用する為替スプレッド率（片道・約定代金比）。
+  string fx_spread_ratio = 4;
+  // 最小期待利益倍率（往復費用の何倍を下回る期待利益の取引を見送るか）。
+  string minimum_expected_profit_multiple = 5;
+  MonthlyCostLimits cost_limits = 6;
+}
+
+// REST の VersionedAssumptions と同じ形。
+message GetAssumptionsResponse {
+  TradingAssumptions assumptions = 1;
+  // 実在する版は 1 から始まる。0 は未解決の番兵（VersionedAssumptions.UnresolvedVersion）であり、
+  // 提供側は 0 を返さない（呼び出し元は 0 を「取得不可」として扱う）。
+  int32 version = 2;
+}

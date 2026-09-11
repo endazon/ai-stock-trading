@@ -1,0 +1,13 @@
+{
+  "$comment": [
+    "proto 契約の破壊的変更に対する承認エントリ（#745 (#584) / IADR-0328 決定 4 / IADR-0331 決定 5）。",
+    "手順: (1) 破壊的変更の key を check-proto-contracts.js の失敗出力からコピーし、",
+    "      (2) 下の approvals へ { key, reason, approvedBy, issue, date } を書き、",
+    "      (3) node scripts/check-proto-contracts.js --update を実行する。",
+    "--update は承認エントリを proto-contract-baseline.json の $acceptedBreakingChanges へ移し、ここを空へ戻す。",
+    "🔴 フィールド削除時の reserved 不在と reserved の再利用は規約違反であり、承認では通らない。",
+    "🔴 破壊的変更の本来の道は新しいメジャー（v<N+1>）の並走である。in-place の承認は旧版の撤去に限る。",
+    "定常状態では空である。変更に対応しない承認が残っていれば fail する。"
+  ],
+  "approvals": []
+}

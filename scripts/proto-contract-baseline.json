@@ -1,0 +1,309 @@
+{
+  "$comment": [
+    "east-west gRPC の proto 契約の正規化スナップショット（#745 (#584) / IADR-0328 決定 4 / IADR-0331 決定 5）。",
+    "scripts/check-proto-contracts.js が生成する。手で編集しない。",
+    "更新: node scripts/check-proto-contracts.js --update",
+    "破壊的変更は scripts/proto-breaking-allowlist.json へ承認エントリを書いてから --update する。",
+    "承認の記録は $acceptedBreakingChanges へ追記され、以後も残る（削除しない）。"
+  ],
+  "$schemaVersion": 1,
+  "$acceptedBreakingChanges": [],
+  "files": {
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/configuration/v1/assumptions.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.configuration.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.Configuration.V1",
+      "imports": [],
+      "messages": {
+        "CommissionSchedule": {
+          "fields": {
+            "cap": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "minimum": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            },
+            "rate": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetAssumptionsRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetAssumptionsResponse": {
+          "fields": {
+            "assumptions": {
+              "number": 1,
+              "type": "TradingAssumptions",
+              "label": "singular"
+            },
+            "version": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "MonthlyCostLimits": {
+          "fields": {
+            "data": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            },
+            "infrastructure": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "llm": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            },
+            "total": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradingAssumptions": {
+          "fields": {
+            "capital_gains_tax_rate": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "cost_limits": {
+              "number": 6,
+              "type": "MonthlyCostLimits",
+              "label": "singular"
+            },
+            "fx_spread_ratio": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            },
+            "japan_commission": {
+              "number": 2,
+              "type": "CommissionSchedule",
+              "label": "singular"
+            },
+            "minimum_expected_profit_multiple": {
+              "number": 5,
+              "type": "string",
+              "label": "singular"
+            },
+            "united_states_commission": {
+              "number": 3,
+              "type": "CommissionSchedule",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "Assumptions": {
+          "rpcs": {
+            "Get": {
+              "request": "GetAssumptionsRequest",
+              "response": "GetAssumptionsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
+    "backend/Shared/AiStockTrading.Shared.Infrastructure/Protos/platform/llmgateway/v1/completion.proto": {
+      "syntax": "proto3",
+      "package": "platform.llmgateway.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Infrastructure.Grpc.LlmGateway.V1",
+      "imports": [],
+      "messages": {
+        "CompleteRequest": {
+          "fields": {
+            "confidentiality": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            },
+            "max_tokens": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "prompt": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "purpose": {
+              "number": 5,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "CompleteResponse": {
+          "fields": {
+            "endpoint": {
+              "number": 6,
+              "type": "string",
+              "label": "singular"
+            },
+            "input_tokens": {
+              "number": 3,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            },
+            "output_tokens": {
+              "number": 4,
+              "type": "int32",
+              "label": "singular"
+            },
+            "routing_reason": {
+              "number": 7,
+              "type": "string",
+              "label": "singular"
+            },
+            "sent": {
+              "number": 5,
+              "type": "bool",
+              "label": "singular"
+            },
+            "stop_reason": {
+              "number": 8,
+              "type": "string",
+              "label": "singular"
+            },
+            "text": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "CompletionStreamEvent": {
+          "fields": {
+            "delta": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "done": {
+              "number": 2,
+              "type": "bool",
+              "label": "singular"
+            },
+            "input_tokens": {
+              "number": 6,
+              "type": "int32",
+              "label": "singular"
+            },
+            "model": {
+              "number": 5,
+              "type": "string",
+              "label": "singular"
+            },
+            "output_tokens": {
+              "number": 7,
+              "type": "int32",
+              "label": "singular"
+            },
+            "routing_reason": {
+              "number": 8,
+              "type": "string",
+              "label": "singular"
+            },
+            "sent": {
+              "number": 3,
+              "type": "bool",
+              "label": "singular"
+            },
+            "stop_reason": {
+              "number": 9,
+              "type": "string",
+              "label": "singular"
+            },
+            "text": {
+              "number": 4,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "LlmCompletion": {
+          "rpcs": {
+            "Complete": {
+              "request": "CompleteRequest",
+              "response": "CompleteResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "CompleteStream": {
+              "request": "CompleteRequest",
+              "response": "CompletionStreamEvent",
+              "clientStreaming": false,
+              "serverStreaming": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -458,6 +458,19 @@ jobs:
         if: ${{ !cancelled() }}
         run: node scripts/check-frontend-empty-frames.js
 
+      # NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段1）, IADR-0328 決定4, IADR-0331 決定5, #745 (#584):
+      # east-west gRPC の proto 契約（配置・package・フィールド番号・reserved・後方互換）の機械検査。
+      # 🔴 **proto の破壊的変更はコンパイルで止まらない** —— 番号を付け替えても両側が再生成されるので
+      # ビルドは緑のまま通り、**古いピアだけが黙って別のフィールドを読む**。C# の契約検査
+      # （check-contract-schema 相当）とは母集合を共有しない（構文も互換規則も違う。1 構文 1 パーサ）。
+      # 🔴 段 0（IADR-0328）で入れなかったのは、検査対象が 0 件では「通った」が何も意味しないためである。
+      - name: Self-test proto contract checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-proto-contracts.js --self-test
+      - name: Check proto contracts (placement / versioning / backward compatibility)
+        if: ${{ !cancelled() }}
+        run: node scripts/check-proto-contracts.js
+
 
   lint:
     runs-on: ubuntu-latest

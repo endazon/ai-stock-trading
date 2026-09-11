@@ -13,6 +13,12 @@
     <None Remove="Tests/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- NFR, IADR-0331 決定2, #745 (#584): east-west gRPC 段 1 の線上写像（AssumptionsWireMapping）は
+         公開面ではないが、`decimal` の桁が線上で失われないことを単体で固定する必要があるため試験にだけ見せる
+         （Shared.KnowledgeBase・PlatformShim と同じ形）。 -->
+    <InternalsVisibleTo Include="ConfigurationService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
@@ -29,6 +35,9 @@
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <!-- FR-17: 更新通知 AssumptionsChanged を発行するため共有イベント契約を参照する。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR, IADR-0328 決定4, IADR-0331 決定7, #745 (#584): east-west gRPC の proto 契約と生成物。
+         Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
     <!-- FR-17, NFR/IADR-0260/IADR-0264 決定2: 全体前提条件（TradingAssumptions）と版付きの型
          （VersionedAssumptions）はサービスを跨いで消費されるため共有カーネルに置く。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />

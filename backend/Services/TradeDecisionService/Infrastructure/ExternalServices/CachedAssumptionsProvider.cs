@@ -36,6 +36,11 @@ public sealed class CachedAssumptionsProvider(
     // 真偽値フラグだと「取得中に届いた AssumptionsChanged」を取得成功時の解除で消してしまい、次の版へ追随できない。
     private long _invalidationTicket;
 
+    // NFR, IADR-0331 決定 3, #745: 選ばれたトランスポート（REST / gRPC）を試験へ見せる。
+    // 切替は組み立て時に構成を読んで決まるため、**登録関数に対して**「既定は REST」を固定する必要がある
+    // （振る舞い越しにしか観測できないと、既定の退行が実配線でしか露見しない）。公開面には出さない。
+    internal IAssumptionsSource Source => source;
+
     public void Invalidate() => Interlocked.Increment(ref _invalidationTicket);
 
     public async ValueTask<VersionedAssumptions> GetCurrentAsync(CancellationToken cancellationToken = default)

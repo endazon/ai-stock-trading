@@ -72,6 +72,10 @@
   <Folder Name="/Shared/">
     <Project Path="Shared/AiStockTrading.Shared.Contracts/AiStockTrading.Shared.Contracts.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Contracts.Tests/AiStockTrading.Shared.Contracts.Tests.csproj" />
+    <!-- NFR, IADR-0328 決定4, IADR-0331 決定7, #745 (#584): east-west gRPC の proto 契約と生成物だけを持つ。
+         Shared.Contracts と分けてあるのは、あちらが Domain 到達可能で外部ライブラリ依存ゼロだからである。
+         手書きコードを持たないため Tests プロジェクトは無い（契約は proto 検査器と両端の試験が守る）。 -->
+    <Project Path="Shared/AiStockTrading.Shared.Grpc/AiStockTrading.Shared.Grpc.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure/AiStockTrading.Shared.Infrastructure.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.Infrastructure.Tests/AiStockTrading.Shared.Infrastructure.Tests.csproj" />
     <Project Path="Shared/AiStockTrading.Shared.KnowledgeBase/AiStockTrading.Shared.KnowledgeBase.csproj" />

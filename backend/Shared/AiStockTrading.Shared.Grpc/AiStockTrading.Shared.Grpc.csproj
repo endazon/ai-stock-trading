@@ -1,0 +1,38 @@
+<!-- NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段1）, IADR-0328 決定4, IADR-0331 決定7, #745 (#584):
+     east-west gRPC の proto 契約と、そこから生成されるクライアント／サーバ基底だけを持つ共有プロジェクト。
+
+     🔴 **なぜ AiStockTrading.Shared.Contracts ではなく別プロジェクトなのか。**
+     基盤（microservices-platform）の実装ガイドは「proto はユニットの共有契約プロジェクトへ置く」と定めるが、
+     本リポジトリの `AiStockTrading.Shared.Contracts` は **Domain から到達してよい共有プロジェクト**であり、
+     **外部ライブラリ依存ゼロ**を `AiStockTrading.Architecture.Tests` の
+     `SharedProjectDependencyTests` が強制している（platform ADR-0030 §基本方針 / IADR-0256）。
+     そこへ Grpc.* / Google.Protobuf を足すと「Domain は .NET 標準のみに依存する」が迂回できてしまう
+     （実測: 本 PR で一度そうして検査が赤くなった）。基盤にこの制約は無い。
+
+     🔴 **名前空間を `AiStockTrading.Shared.Contracts.*` にしない**のも同じ理由である。
+     `DomainSourceScan.IsAllowedDomainNamespace` は当該接頭辞を Domain へ許すため、
+     `…Shared.Contracts.Grpc.*` と名乗ると **Domain から生成型を using できてしまう**。
+     ルート名前空間は `AiStockTrading.Shared.Grpc` とし、Domain からは到達不能に保つ。
+
+     `GrpcServices="Both"` でクライアントとサーバ基底の両方を生成し、`*.Client` プロジェクトは作らない
+     （#526 / IADR-0264 決定1 で廃止した形へ戻さない）。生成物は obj/ に落ち、コミットしない。
+     Grpc.Tools はビルド時専用（PrivateAssets=all）。Grpc.Net.Client は生成物が要る Grpc.Core.Api を推移的に運ぶ。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>AiStockTrading.Shared.Grpc</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- パス `Protos/<unit>/<service>/v<N>/*.proto` と package `<unit>.<service>.v<N>` の一致は
+         scripts/check-proto-contracts.js が検査する（IADR-0328 決定4 / IADR-0331 決定5）。 -->
+    <Protobuf Include="Protos/**/*.proto" ProtoRoot="Protos" GrpcServices="Both" />
+  </ItemGroup>
+</Project>
