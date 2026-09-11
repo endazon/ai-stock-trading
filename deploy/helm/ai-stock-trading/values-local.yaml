@@ -257,6 +257,9 @@ services:
       # #286/IADR-0282: market-monitor の watchlist を初回シード（上の market-monitor.Monitor__SeedSymbols__0）
       # したうえで結線する。下の TradeCycle__Watchlist__0__* は照会不達時のフォールバックとして残す（IADR-0095）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日（本番既定と同値の写し）。
+      # 🔴 backtest 側の Backtest__Stage0__LlmTrainingCutoff と必ず同値にする（食い違うと RecordingMismatch）。
+      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-01-31" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       # NFR-05, #724, IADR-0323: ②の s2s（report と同じ設定点・同じ client）。匿名では 401 になり、
       # **その 401 は「割当モデル不可」ではなく「認可の失敗」として記録される**（IADR-0323 決定3）。
@@ -353,6 +356,33 @@ services:
   # FR-09/14, IADR-0062/0098。Provider/Bot__Enabled は配線恒常化。GuildId/ChannelId/AllowedUserIds/UserMapping は
   # 環境固有＝空既定（ユーザーが与える。未設定は安全既定＝全拒否で no-op）。TokenEndpoint は template 自動注入で入れない。
   # Discord を使わないなら Provider="" と Bot__Enabled="false" に戻す（他は secret 空で送信されない）。
+  # ============ Stage 0 判定の定時駆動（FR-15, FR-20, ADR-0008, ADR-0033, #632, IADR-0329 決定4）============
+  # 受け側（risk-management の BacktestEvaluatedProjectionHandler）は verdict を待っているが、駆動が本番既定で
+  # 無効なため**一通も届かない**状態が続いていた（#632）。経路B ではそれを開ける。
+  #
+  # 🔴 **合格は出ない。出せる状態でもない。** 過去データ源は空のまま（下記）＝バー 0 本であり、駆動は
+  # 判定を走らせず `NoHistoricalBars` の不合格 verdict を出す（IADR-0310 決定2 の fail-closed）。
+  # したがって `BacktestPassed` は false のままで、Stage 0→1 の昇格は従来どおり止まる。**開けるのは経路であって門ではない。**
+  backtest:
+    extraEnv:
+      # 🔴 **過去データ源は空のまま**（本番既定と同値の写し）。ADR-0023 決定5 の「実装側で確認を要する 2 点」
+      # （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）が実 OpenD 待ちで未了であり、
+      # docs/blocked-tasks.md A-3 に残る。**確認が済むまで moomoo を入れない**（Stooq は ADR-0023 決定1 により取得不能）。
+      - { name: Backtest__BarData__Provider, value: "" }
+      # ← 経路B で有効化（本番既定は "false"）。日次 1 巡回で verdict を publish する。
+      - { name: Backtest__Stage0__Enabled, value: "true" }
+      # 本番既定と同値の写し（ADR-0037 決定2 が登録した `claude-sonnet-5` の学習カットオフ日）。
+      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-01-31" }
+      # ← 経路B で**本番戦略**を選ぶ（本番既定は空＝placeholder）。記録（Recording__Path）が空である間は
+      #    `NoDecisionRecords` で fail-closed する。記録の取得は ADR-0033 決定5 の見積り提示→利用者承認が要る
+      #    （docs/blocked-tasks.md B-7）。実効値は GET /internal/introspection の port `stage0-strategy` で見える。
+      - { name: Backtest__Stage0__Strategy, value: "recorded-replay" }
+      # 記録集合（JSON）のパス。**空＝記録なし**（ファイルも読まない）。値を入れるのは記録の取得後である。
+      - { name: Backtest__Stage0__Recording__Path, value: "" }
+      # 評価銘柄（経路B は AAPL 1 銘柄。市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
+      - { name: Backtest__Stage0__Symbols__0__Symbol, value: "AAPL" }
+      - { name: Backtest__Stage0__Symbols__0__Market, value: "UnitedStates" }
+
   notification:
     extraEnv:
       - { name: Notifications__Provider, value: "discord-webhook" }        # 配線恒常化（WebhookUrl 空なら送らない）

@@ -262,8 +262,20 @@ services:
       - { name: Backtest__BarData__Provider, value: "" }
       # FR-15, FR-20, ADR-0008, #688, IADR-0310: Stage 0 判定の定時駆動。
       # fail-safe: **既定は無効**。無効なら巡回もバー取得も verdict の発行も起きない。
-      # 有効化しても本番戦略（AI 判断の記録・再生）が載るまで verdict は**不合格固定**である（経路確認専用）。
+      # 有効化は経路B（values-local.yaml）で行う（#632 / IADR-0329 決定4）。**本番既定は無効のまま**であり、
+      # 過去データ源（上の Provider・ADR-0023 決定5 の未確認 2 点）と記録が揃うまで覆さない。
       - { name: Backtest__Stage0__Enabled, value: "false" }
+      # FR-15, FR-04, ADR-0033 決定3, ADR-0037 決定2, #632: `claude-sonnet-5` の学習カットオフ日。
+      # 提供元 Models overview の training data cutoff（Jan 2026）を**その月の月末へ写した**値
+      # （月末は窓を狭く取る＝保守側。確認日 2026-09-09・計画 05_trading-assumptions §6.1 に登録済み）。
+      # fail-safe: 空・解釈不能は**検証条件①を未充足**として扱う（未設定を充足へ倒さない）。
+      # 🔴 モデルのピン（ADR-0011）を変えたら本値も引き直し、Stage 0 を再実施すること。
+      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-01-31" }
+      # FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: 評価対象の戦略。
+      # 空・未知の綴りは既定（placeholder＝不合格固定）へ倒す。本番戦略は "recorded-replay"。
+      # **本番既定は空のまま**（有効化と同じく経路B で選ぶ）。実効値は GET /internal/introspection の
+      # port `stage0-strategy` で確認できる（綴り違いで既定へ倒れていることが見える）。
+      - { name: Backtest__Stage0__Strategy, value: "" }
   configuration:
     image: ai-stock-trading/configuration-service
     db: configuration_svc
@@ -490,6 +502,11 @@ services:
       # fail-safe: 空=構成ベース（TradeCycle:Watchlist）＝現行挙動。実結線時は市場監視サービス URL（例: http://market-monitor-service:8080）を入れると
       # SC-02 での監視銘柄変更が定時サイクルの判断対象に反映される。本 PR では実 URL を投入しない（他 s2s と足並みを揃える）。
       - { name: MarketMonitor__BaseUrl, value: "" }
+      # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日。
+      # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと
+      # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。
+      # 記録の実行そのものは既定無効（Stage0Recording:Enabled）＋見積り承認ゲート（ADR-0033 決定5）で止まる。
+      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-01-31" }
       # ADR-0031（計画）決定2〜4, IADR-0292: 判断サイクルあたりの銘柄数の運用者申告
       # （空=未申告・既定0＝日次見積りへ寄与しない）。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }

@@ -243,6 +243,13 @@ jobs:
               echo "::error::既定描画に公式情報源の実値「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
             fi
           done
+          # #632 / IADR-0329 決定4: Stage 0 の定時駆動と本番戦略の選択は経路B 限定の有効化である。
+          # 🔴 **設定点そのものは本番 values.yaml にも在る**（有効化ではなく「実効値が見える」ことに意味がある）ため、
+          # 名前ではなく**値**で漏れを検査する。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Enabled' | grep -q 'value: "false"'             || { echo "::error::既定描画の Backtest__Stage0__Enabled が false でない（Stage 0 駆動が本番既定で開いた）。"; exit 1; }
+          if printf '%s' "$out" | grep -q 'value: "recorded-replay"'; then
+            echo "::error::既定描画に Backtest__Stage0__Strategy=recorded-replay が現れた（経路B 限定の選択が本番へ漏れた）。"; exit 1
+          fi
           echo "ok: 既定描画（本番）は経路B有効化を含まない＝バイト等価の担保"
       # #238 / IADR-0100: 経路B の有効化プロファイルが ①②③＋Discord＋価格文脈を実際に ON にし、かつ実弾/危険既定は
       # OFF のまま（Broker=paper・opend/ExternalSecret 不在）であることを描画で検査する。有効化の空振り・過剰有効化を防ぐ。
@@ -325,7 +332,19 @@ jobs:
             || { echo "::error::SecEdgar__UserAgent が secretKeyRef 経由でない（連絡先メールを values へ直書きしていないか確認）。"; exit 1; }
           # #740 / IADR-0115 決定6: 方針階層の入口＝日報ドラフト自動生成が ON（無いと周回は発注へ到達しない）。
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: report-service/'             | grep -A1 'name: Reports__AutoGeneration__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で report の Reports__AutoGeneration__Enabled=true が描画されない（日報が作られず確定対象が無い）。"; exit 1; }
-          echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源を有効化し、実弾/危険既定は OFF のまま"
+          # #632 / IADR-0329 決定4: Stage 0 の定時駆動を開け、評価対象に本番戦略（記録・再生）を選ぶ。
+          # 🔴 **合格は出ない** —— 過去データ源が空（バー 0 本）で fail-closed するため、開くのは経路であって門ではない。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で backtest の Backtest__Stage0__Enabled=true が描画されない（verdict が 1 通も出ない）。"; exit 1; }
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Strategy' | grep -q 'value: "recorded-replay"'             || { echo "::error::values-local で backtest の Strategy=recorded-replay が描画されない（本番戦略が選ばれていない）。"; exit 1; }
+          need "Stage 0 評価銘柄（AAPL）" 'name: Backtest__Stage0__Symbols__0__Symbol'
+          # 🔴 過去データ源は空のまま（ADR-0023 決定5 の未確認 2 点・blocked A-3）。実データ源を開けていないこと。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: ""'             || { echo "::error::values-local の Backtest__BarData__Provider が空でない（ADR-0023 決定5 の確認前に実データ源を開けた）。"; exit 1; }
+          # カットオフ日（ADR-0037 決定2 の登録値）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
+          cutoffs="$(printf '%s' "$out" | grep -A1 'LlmTrainingCutoff' | grep -c 'value: "2026-01-31"')"
+          if [ "$cutoffs" -ne 2 ]; then
+            echo "::error::values-local の学習カットオフ日 2026-01-31 が 2 件でない（実測 $cutoffs 件）。駆動側と記録側で同値である必要がある（#632）。"; exit 1
+          fi
+          echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋Stage 0 駆動を有効化し、実弾/危険既定は OFF のまま"
       # #736 / IADR-0324: s2s 発信者（ServiceAuth__ClientId を持つ）の token エンドポイントは global.authAuthority から
       # 導出される。auth:true でない発信者（trade-decision）は Auth__Authority が無く、導出が無いとコード既定の
       # AST レルムに倒れて受け手（MSP レルム）で 401 になる（#456 の CronJob と同型の 2 回目）。

@@ -211,4 +211,46 @@ public class Stage0ReplayEvaluationTests
     [Fact]
     public void 整合する記録に対して阻害理由は空である() =>
         Stage0ReplayEvaluation.Validate(SetOf(), Request(SetOf())).Should().BeEmpty();
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-15, ADR-0008, ADR-0036 決定2, #632, IADR-0329: **検証の分割の固定**（フォローアップ 3 の履行）
+    // ------------------------------------------------------------------------------------------------
+
+    // 計画 ADR-0036 決定2 は分割（IS:OOS 比・PBO 分割数）を実装の裁量として追認したうえで、
+    // 🔴 **「決めたら固定する。後から動かすことを禁じる」**と定めた。**同決定は「機械検査は無い」と明記している**ため、
+    // せめて回帰で動かないよう、値そのものをここで固定する（根拠は IADR-0329）。
+    [Fact]
+    public void 検証の分割はIS_OOS2対1とPBO分割4に固定される()
+    {
+        // FR-15, ADR-0008, ADR-0036 決定2: 動かすには新しい IADR が要る（本テストを書き換えるだけで通してはならない）。
+        Stage0ReplayEvaluation.InSampleNumerator.Should().Be(2);
+        Stage0ReplayEvaluation.InSampleDenominator.Should().Be(3);
+        Stage0ReplayEvaluation.OverfittingPartitions.Should().Be(4);
+    }
+
+    // 🔴 **値だけ合わせて使っていないこと**を見る（定数を宣言しても使われていなければ固定の意味が無い）。
+    // 評価文脈が名乗る分割数は上の定数そのものであり、標本不足の境界も同じ定数から動く。
+    [Fact]
+    public void PBO分割数は評価文脈にそのまま載る()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf()));
+
+        preparation.GateContext!.OverfittingPartitions.Should().Be(Stage0ReplayEvaluation.OverfittingPartitions);
+    }
+
+    // 境界の対（つい）: 日次リターンは「バー数 − 1」本である。分割数に**1 本足りない**と組まず、**ちょうど足りる**と組む。
+    // 期待値を直書きせず定数から導く（規則 10: 導出値は走査ではなく計算し直す）。
+    [Theory]
+    [InlineData(0, false)]  // バー数 = 分割数 → 日次リターンは分割数 − 1 本 → 足りない
+    [InlineData(1, true)]   // バー数 = 分割数 + 1 → 日次リターンは分割数 ちょうど → 足りる
+    public void 標本不足の境界はPBO分割数から動く(int extraBars, bool expectedReady)
+    {
+        var barDays = Stage0ReplayEvaluation.OverfittingPartitions + extraBars;
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(), barDays: barDays));
+
+        preparation.IsReady.Should().Be(expectedReady);
+        preparation.BlockingChecks.Contains(Stage0GateCheck.InsufficientEvaluationSample)
+            .Should().Be(!expectedReady);
+    }
 }

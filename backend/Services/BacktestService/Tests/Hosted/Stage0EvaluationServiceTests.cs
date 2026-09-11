@@ -85,6 +85,31 @@ public class Stage0EvaluationServiceTests
         verdict.Passed.Should().BeFalse();
         verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.NoHistoricalBars));
         verdict.MaxDrawdownRatio.Should().Be(0m);
+        // 🔴 #632, IADR-0329 決定3: **走らせていない戦略の名を載せない**（陰性側の対。陽性側は
+        // 「バーがあれば走行して不合格固定のverdictを発行する」が placeholder/no-op を名乗ることで見る）。
+        verdict.StrategyId.Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // 🔴 **否定形**（#632, IADR-0329 決定3）: 評価対象に**本番戦略**を選んでいても、バーが 0 本なら
+    // 判定を走らせないため戦略を名乗らない。従来は構成に関わらず `placeholder/no-op` を名乗っており、
+    // **選ばれている戦略とも評価した戦略とも一致しない値**が受け手（Risk・監査）へ渡っていた。
+    [Fact]
+    public async Task 本番戦略を選んでいてもバー0本なら戦略を名乗らない_failclosed()
+    {
+        using var host = await StartHostAsync(new StubBarSource([]), new StubRecordSource(ReplayRecords()));
+        var driver = Driver(host, ReplayOptions());
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => driver.RunOnceAsync(CancellationToken.None));
+
+        var verdict = session.Sent.MessagesOf<BacktestEvaluated>().Should().ContainSingle().Which;
+        verdict.Passed.Should().BeFalse();
+        verdict.FailedChecks.Should().Contain(nameof(Stage0GateCheck.NoHistoricalBars));
+        verdict.StrategyId.Should().BeEmpty();
+        // 記録は在るが、バーが無いので**記録を読みにすら行かない**（判定の手前で断つ）。
+        verdict.StrategyId.Should().NotBe(PlaceholderStrategy.StrategyId);
 
         await host.StopAsync();
     }
@@ -124,7 +149,7 @@ public class Stage0EvaluationServiceTests
     [Fact]
     public async Task カットオフ日が未構成ならデータカットオフを未達として載せる()
     {
-        // ADR-0033 決定3: 汚染対策はカットオフ後データを原則とする。カットオフ日の供給元は計画側に未登録であり、
+        // ADR-0033 決定3: 汚染対策はカットオフ後データを原則とする。**構成に無ければ**確認していないのと同じであり、
         // 未設定を「充足」に倒すと、確認していない条件を満たしたように読める。
         using var host = await StartHostAsync(new StubBarSource([Bar(new DateOnly(2026, 9, 1), 100m)]));
         var driver = Driver(host, Options_(cutoff: null));

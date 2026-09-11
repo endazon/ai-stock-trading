@@ -23,7 +23,8 @@ public enum Stage0GateCheck
 
     /// <summary>
     /// FR-15, FR-20, ADR-0033, #688, IADR-0310 決定3: 評価対象がプレースホルダ戦略である
-    /// （**本番の合否ではない**）。本番戦略＝AI 判断の記録・再生が載るまで、駆動が出す verdict は必ずこれを含む。
+    /// （**本番の合否ではない**）。#632 / IADR-0318 で本番戦略（AI 判断の記録・再生）が載ったため、
+    /// 本理由が載るのは **`Backtest:Stage0:Strategy` が既定（`placeholder`）のまま走ったとき**に限る。
     /// </summary>
     PlaceholderStrategy,
 

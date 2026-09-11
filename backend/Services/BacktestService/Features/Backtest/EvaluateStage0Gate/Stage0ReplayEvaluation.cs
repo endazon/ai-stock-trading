@@ -19,7 +19,7 @@ namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 /// <summary>評価文脈を組むための入力。</summary>
 /// <param name="LlmTrainingCutoff">
 /// 構成の LLM 学習カットオフ日。**null（未構成）は判定を組まない理由になる**（ADR-0033 決定3。
-/// カットオフ日の供給元は計画側に未登録であり、未構成を充足へ倒さない）。
+/// 未構成を充足へ倒さない）。値そのものは ADR-0037 決定2 が計画へ登録済みであり、実装は構成から受け取る。
 /// </param>
 public sealed record Stage0ReplayEvaluationRequest(
     Stage0DecisionRecordSet? RecordSet,
@@ -47,23 +47,41 @@ public sealed record Stage0ReplayPreparation(
 
 public static class Stage0ReplayEvaluation
 {
+    // FR-15, ADR-0008, ADR-0036 決定2, #632, IADR-0329: **検証の分割は固定値である。**
+    //
+    // 計画 ADR-0036 決定2（2026-09-09 の利用者裁定）は、IS:OOS 比と PBO 分割数を**実装の裁量として追認**し、
+    // 「**ただし決めたら固定する。分割を後から動かすことを禁じる**」「**根拠を IADR へ残す**」と定めた
+    // （根拠は IADR-0329）。理由は同決定のとおり —— **分割を動かせる状態は、過剰適合の検出（DSR / PBO）
+    // そのものを無効にする**（PBO は試行数による過剰適合を補正するが、分割自体を試行にすると補正の外へ出る）。
+    //
+    // 🔴 **したがって構成（appsettings / 環境変数）へは出さない。** 運用が動かせる形にした瞬間、
+    // 上の禁止は守れなくなる。変更するときは**新しい IADR で、変更の理由と Stage 0 再実施の要否を明記する**。
+    // 公開（public const）にしているのは、**テストが値そのものを固定できるようにするため**である
+    // （ADR-0036 決定2 には機械検査が無いと明記されており、せめて回帰では動かないようにする）。
+
     /// <summary>
-    /// FR-15, ADR-0008: PBO（CSCV）の分割数。`ProbabilityOfBacktestOverfitting` は偶数・2 以上・
+    /// FR-15, ADR-0008, ADR-0036 決定2: PBO（CSCV）の分割数。`ProbabilityOfBacktestOverfitting` は偶数・2 以上・
     /// ブロック数以下を要求する。4 は「日次リターンが 4 本以上あれば組める」最小の実用値であり、
-    /// 組合せ数 C(4,2)=6 で決定的に回る。
+    /// 組合せ数 C(4,2)=6 で決定的に回る。**固定値であり、構成では変えられない**（IADR-0329）。
     /// </summary>
     public const int OverfittingPartitions = 4;
 
     /// <summary>
-    /// FR-15, ADR-0008: ウォークフォワードの IS:OOS 比（2:1）。
+    /// FR-15, ADR-0008, ADR-0036 決定2: ウォークフォワードの IS:OOS 比（2:1）の分子。
     /// <para>
     /// 🔴 **記録再生戦略はパラメータ探索を持たない。** したがって IS 区間の役割は「最適化する」ことではなく、
     /// OOS 区間を「記録の後半だけで確かめる」ために切り分けることに尽きる。比率を構成へ出さないのは、
-    /// **探索が実装されるまで運用が調整できる意味を持たない**ためである（探索が入る時点で構成化する）。
+    /// **探索が実装されるまで運用が調整できる意味を持たない**ことに加え、**ADR-0036 決定2 が分割を後から
+    /// 動かすことを禁じている**ためである（IADR-0329）。
     /// </para>
     /// </summary>
-    private const int InSampleNumerator = 2;
-    private const int InSampleDenominator = 3;
+    public const int InSampleNumerator = 2;
+
+    /// <summary>
+    /// FR-15, ADR-0008, ADR-0036 決定2: ウォークフォワードの IS:OOS 比（2:1）の分母。
+    /// IS が 2/3・OOS が残り 1/3 になる（<see cref="InSampleNumerator"/> と対で読む）。
+    /// </summary>
+    public const int InSampleDenominator = 3;
 
     public static Stage0ReplayPreparation Prepare(Stage0ReplayEvaluationRequest request)
     {

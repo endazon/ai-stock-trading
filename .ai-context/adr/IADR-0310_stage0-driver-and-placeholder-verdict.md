@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-15, FR-20, ADR-0008, ADR-0023, ADR-0033, IADR-0089, IADR-0105, IADR-0129, IADR-0157, IADR-0276, IADR-0281, IADR-0304]
 author: endazon (with Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0033_stage0-evaluation-target-is-ai-decision-replay.md
@@ -149,4 +149,12 @@ HTTP の run-once は**作らない**（`BacktestService` は HTTP 端点を持�
 ## 関連
 
 - Supersedes: なし
-- Superseded by: なし
+- Superseded by: なし（**決定 3 のうち 1 点だけ**を [IADR-0329](IADR-0329_stage0-split-fixation-cutoff-registration-and-route-b-enablement.md) が改める。下記追記を参照）
+
+［2026-09-11 追記 / #632］**決定 3 の「`StrategyId` は `placeholder/no-op`」は、バー 0 本の経路
+（`EmptyBarVerdict`）に限り [IADR-0329](IADR-0329_stage0-split-fixation-cutoff-registration-and-route-b-enablement.md)
+決定 3 が「名乗らない（空文字）」へ改めた。** #632 / [IADR-0318](IADR-0318_stage0-ai-decision-record-and-replay.md) で
+評価対象の選択（`Backtest:Stage0:Strategy`）が入り、**選択に依存しないこの枝が固定の戦略名を名乗り続けると、
+選ばれている戦略とも評価した戦略とも一致しない値**を受け手へ渡すためである。**決定 3 の他の部分
+（不合格固定・合格を作る口を持たないこと・プレースホルダ走行が `placeholder/no-op` を名乗ること）は不変である。**
+

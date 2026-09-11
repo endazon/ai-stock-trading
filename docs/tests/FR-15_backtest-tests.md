@@ -3,14 +3,14 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-09-09
+updated: 2026-09-11
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
-adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate]
+adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement]
 issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 -->
 
@@ -212,8 +212,8 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 >
 > 検査を `MMApiMoomooHistoryKLineClient` のコンストラクタへ置くだけでは**起動時に発火しない**。
 > `AddSingleton<T>(factory)` は遅延生成であり、BacktestService には発注経路の
-> `BrokerAvailabilityProbeService` にあたる eager な消費者が無いためである（本番戦略が未実装で
-> `IHistoricalBarSource` を解決する実消費者すら無い）。
+> `BrokerAvailabilityProbeService` にあたる eager な消費者が無いためである（`IHistoricalBarSource` を
+> 解決するのは定時駆動だが**既定は無効**であり、有効でも解決は初回巡回まで遅延する）。
 > **コンストラクタを直接呼ぶ単体テスト（T-15-68）だけでは緑になる一方で、起動時には落ちない**——
 > T-15-68 は判定内容を、**T-15-67 は発火するタイミングを**固定しており、両方が要る。
 >
@@ -230,6 +230,9 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 | T-15-69 | 🔴 **否定形（最重要）**: 過去データが 0 本のとき**判定を走らせず**、合格 verdict を出さない（理由に「過去データ 0 本」が載る） | `Stage0EvaluationServiceTests.過去データが空なら判定を走らせず不合格verdictを発行する_failclosed` | 自動 |
 | T-15-70 | 駆動経路が実行され verdict が 1 通発行される（バーがあれば走行し、戦略識別子はプレースホルダ・空売りの観測は false） | `Stage0EvaluationServiceTests.バーがあれば走行して不合格固定のverdictを発行する` | 自動 |
 | T-15-71 | LLM 学習カットオフ日が未構成なら検証条件①を未達として載せる（未設定を充足へ倒さない） | `Stage0EvaluationServiceTests.カットオフ日が未構成ならデータカットオフを未達として載せる` | 自動 |
+| T-15-92 | 🔴 **否定形**: 評価対象を 1 度も走らせていない verdict は戦略識別子を名乗らない（バー 0 本。**本番の評価対象を選んでいても**同じ）。陽性対照は T-15-70（走らせたプレースホルダは名乗る） | `Stage0EvaluationServiceTests.過去データが空なら判定を走らせず不合格verdictを発行する_failclosed` / `本番戦略を選んでいてもバー0本なら戦略を名乗らない_failclosed` | 自動 |
+| T-15-93 | 検証の分割（IS:OOS 2:1・PBO 分割 4）が固定値である／**値だけでなく実際に使われている**（評価文脈が名乗る分割数が同値・標本不足の境界が同定数から動く） | `Stage0ReplayEvaluationTests.検証の分割はIS_OOS2対1とPBO分割4に固定される` / `PBO分割数は評価文脈にそのまま載る` / `標本不足の境界はPBO分割数から動く`（Theory 2 ケース） | 自動 |
+| T-15-94 | 🔴 **通し（本番の評価対象）**: 駆動 → 発行 → 段階別実績への射影 → 昇格ゲートまで到達し、**本物の判定器の結果**（戦略識別子は記録から導出・未達は試行数）が射影されてなお**昇格は拒否され続ける** | `Stage0DriverToRiskProjectionTests.本番戦略の判定結果もリスク管理へ射影され昇格を止め続ける` | 自動 |
 | T-15-72 | 評価期間は当日から遡った範囲（0・負値は 1 日へクランプ） | `Stage0EvaluationServiceTests.評価期間は当日から遡った範囲になる`（Theory 4 ケース） | 自動 |
 | T-15-73 | 🔴 **否定形（fail-safe）**: 既定（無効）では常駐が巡回もデータ取得も行わない／有効化したときだけ起動時に 1 巡回する | `Stage0EvaluationServiceTests.既定は無効で常駐は巡回もデータ取得も行わない` / `有効化すると常駐が起動時に1巡回する` | 自動 |
 | T-15-74 | **プロパティベース**: 駆動が組む verdict はどの入口・どの入力でも不合格であり、未達理由が空にならない（昇格推奨も出ない） | `Stage0DriverVerdictTests.どの入口でも不合格で理由が空でない`（Theory 3 ケース） / `プレースホルダ走行はカットオフ充足に関わらず不合格でプレースホルダ理由を含む`（Theory 2 ケース） | 自動 |
