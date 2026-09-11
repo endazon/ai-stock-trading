@@ -389,6 +389,85 @@ jobs:
             echo "::error::ServiceAuth__TokenEndpoint が global.authAuthority に追随しない。"; exit 1
           fi
           echo "ok: ServiceAuth__TokenEndpoint は global.authAuthority から導出され、s2s 発信者にだけ注入される"
+      # #776 / ADR-0038 決定2 / IADR-0324: 「配備された全経路が同じレルムを指していること」を描画で**網羅**検査する。
+      #
+      # 上の #736 の検査は **env 名の許可リスト**（ServiceAuth__*）で書かれており、**経路が 1 つ増えるたびに検査を
+      # 書き足さないと漏れる**。実際、同型の破れが 2 回起きている —— #456（CronJob の token エンドポイント）と
+      # #736（auth:true でない s2s 発信者 trade-decision）。壊れ方は同じで、「導出元の設定が注入されない経路が
+      # 1 つ残り、そこだけコード既定の AST レルムへ倒れる」である。破れた向きは **fail-closed**（issuer 不一致 →
+      # 401 → 周回は発注へ到達しない）だが、**それは停止であって検知ではない**（気付くのは稼働してからである）。
+      #
+      # そこで本検査は **env 名ではなく値のパターン（/realms/<name>）**で経路を拾う。新しい env が増えても、
+      # 値にレルムを含む限り自動的に母集合へ入る。期待値は**描画からではなく values ファイルから**取る
+      # （描画から取ると自己参照になり、「全部そろって間違ったレルム」を緑にしてしまう）。
+      - name: Assert every rendered realm matches global.authAuthority (#776)
+        run: |
+          realm_of() { printf '%s' "$1" | sed -n 's#.*/realms/\([^/"]*\).*#\1#p'; }
+          # $@=values ファイル（helm の -f と同じ後勝ち）。global: ブロック直下の authAuthority: を取る。
+          authority_of() {
+            a=""
+            for f in "$@"; do
+              v="$(awk '/^global:/{g=1;next} /^[^[:space:]#]/{g=0} g && /^[[:space:]]+authAuthority:[[:space:]]/{print $2}' "$f")"
+              if [ -n "$v" ]; then a="$v"; fi
+            done
+            printf '%s' "$a"
+          }
+          # $1=描画。Deployment / CronJob / Job の中で /realms/ を含む行をすべて拾う（env 名の許可リストを持たない）。
+          # value: 行でなければ "(非env行)" として拾う＝インラインスクリプトへ焼き込まれたレルムも取りこぼさない。
+          enumerate() {
+            printf '%s' "$1" | awk '
+              BEGIN{RS="---"}
+              /(^|\n)kind: (Deployment|CronJob|Job)\n/ {
+                kind=""; wl="";
+                if (match($0,/(^|\n)kind: [A-Za-z]+/)) { kind=substr($0,RSTART,RLENGTH); sub(/.*kind: /,"",kind) }
+                if (match($0,/\n  name: [A-Za-z0-9.-]+/)) { wl=substr($0,RSTART+9,RLENGTH-9) }
+                n=split($0,L,"\n"); env="";
+                for(i=1;i<=n;i++){
+                  if (L[i] ~ /^[ \t]*-[ \t]+name:[ \t]/) { env=L[i]; sub(/^[^:]*:[ \t]*/,"",env); gsub(/["\r ]/,"",env) }
+                  if (L[i] ~ /\/realms\//) {
+                    if (L[i] ~ /^[ \t]*value:[ \t]/) { key=env } else { key="(非env行)" }
+                    v=L[i]; sub(/^[ \t]*/,"",v); gsub(/["\r]/,"",v);
+                    r=L[i]; sub(/.*\/realms\//,"",r); sub(/[\/"\r].*/,"",r); gsub(/[ \t]/,"",r);
+                    printf "%s/%s/%s\t%s\t%s\n", kind, wl, key, r, v
+                  }
+                }
+              }'
+          }
+          # 抽出が壊れると「1 件も違わない＝緑」で静かに壊れるため、下限件数で破綻を検出する
+          # （既定描画の実測は 13 件・values-local は 17 件・CronJob を含む描画は 18 件。2026-09-11）。
+          FLOOR=10
+          check() { # $1=ラベル $2=描画 $3=期待 authority
+            exp="$(realm_of "$3")"
+            [ -n "$exp" ] || { echo "::error::$1: global.authAuthority から realm を取り出せない（値: 「$3」）。values の書式が変わった可能性がある。"; exit 1; }
+            rows="$(enumerate "$2")"
+            cnt="$(printf '%s' "$rows" | grep -c . || true)"
+            if [ "$cnt" -lt "$FLOOR" ]; then
+              echo "::error::$1: レルムを含む経路が $cnt 件しか取れなかった（下限 $FLOOR）。抽出が壊れると無検査の緑になるため件数下限で破綻を検出している。"
+              exit 1
+            fi
+            echo "--- $1: レルムを含む経路 $cnt 件（期待レルム: $exp） ---"
+            printf '%s\n' "$rows"
+            bad="$(printf '%s\n' "$rows" | awk -F'\t' -v e="$exp" 'NF && $2!=e')"
+            if [ -n "$bad" ]; then
+              echo "::error::$1: global.authAuthority（realm=$exp）と違うレルムを指す経路がある。発行元と検証元がずれ、issuer 不一致の 401 で止まる（fail-closed）:"
+              printf '%s\n' "$bad"
+              exit 1
+            fi
+            echo "ok: $1 は $cnt 件すべてが realm=$exp を指す"
+          }
+          check "既定（本番）" "$(helm template ast "$CHART")" "$(authority_of "$CHART/values.yaml")"
+          check "values-local（経路B・連結配備）" \
+            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")" \
+            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")"
+          # 既定 false のフラグを ON にしないと CronJob は描画されない＝#456 で破れた当の経路が検査の外に落ちる。
+          check "values-local + 全フラグ ON（CronJob を含む）" \
+            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set tradingCycle.cronjob.enabled=true --set opend.enabled=true --set moomoo.enabled=true)" \
+            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")"
+          # 本番描画にレルムのリテラルが 1 つも無いこと（--set に全経路が追随する）。
+          check "既定 + --set global.authAuthority 差し替え" \
+            "$(helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
+            "http://kc:8080/realms/zzsentinel"
+          echo "ok: 配備される全経路（Deployment/CronJob/Job の env）が単一レルムを指す（ADR-0038 決定2）"
       # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
       # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで
       # 機能を落とす）。既定描画に在る env 名が values-local 描画から失われていないことを検査する。

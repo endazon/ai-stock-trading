@@ -2,13 +2,14 @@
 title: IADR-0324 MSP 連結配備では AST サービスの認証レルムを MSP レルムへ統一する（`global.authAuthority` の 1 値で inbound 検証と s2s の発行元を揃えて移す）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
+related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0038, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
 author: endazon (with Claude Code)
 created: 2026-09-10
 updated: 2026-09-11
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
+  - planning:projects/ai-stock-trading/07_adr/ADR-0038_linked-deploy-auth-realm-is-the-platform-realm.md
 ---
 
 # IADR-0324: MSP 連結配備では AST サービスの認証レルムを MSP レルムへ統一する
@@ -97,6 +98,32 @@ IADR-0098 は「owner クライアントを MSP レルムに置く」案を「�
 本 ADR で MSP 連結配備の検証レルムが MSP レルムになるため、**その前提は MSP 連結配備では成り立たない**。IADR-0098 の
 決定 1〜3（専用 confidential client・TokenEndpoint を `global.authAuthority` から導出・inbound 認証を増やさない）は
 生きるので、置換ではなく日付つき追記で残す。
+
+> ［2026-09-11 追記 / #776］**計画 ADR-0038 が本 IADR を計画側の明文にした**（`projects/ai-stock-trading/07_adr/
+> ADR-0038_linked-deploy-auth-realm-is-the-platform-realm.md`。Accepted・環流 planning#597）。**決定 1〜4 は追認であり
+> 変わらない。** 同 ADR が本 IADR へ足したのは次の 3 点である。
+>
+> 1. **決定 2 の統制を「規律」ではなく「機械」で確かめる**（ADR-0038 決定 2・フォローアップ 1）。本 IADR の
+>    上の追記が示したとおり、「1 値で揃うから構造的に作れない」は 2 回破れた（#456 CronJob・#736 s2s 発信者）。
+>    **破れ方は同じ**で、導出元が注入されない経路が 1 つ増えるだけで起きる。#736 で足した描画検査は
+>    `ServiceAuth__TokenEndpoint` という **env 名の許可リスト**であり、経路が増えるたびに書き足さないと漏れる。
+>    そこで **値のパターン（`/realms/<name>`）で経路を列挙する**検査を `helm.yml` へ足した
+>    （`Assert every rendered realm matches global.authAuthority (#776)`）。既定描画・`values-local` 描画・
+>    CronJob を含む描画・`--set` 差し替えの 4 面に掛け、`global.authAuthority` のレルムと違うものが 1 件でもあれば赤にする。
+>    **`values-local.yaml` が `extraEnv` にリテラルで置いている 4 件**（`KnowledgeBase__Auth__Authority` ×2 /
+>    `LlmGateway__Auth__Authority` ×2）は **#736 の検査では 1 件も見えない**が、本検査の母集合には入る。
+> 2. 🔴 **破れたときの向きは fail-closed であり、それは偶然ではなく設計である**（ADR-0038 決定 2）。
+>    レルムがずれた経路は issuer 不一致の **401 で止まり、周回は発注へ到達しない**。
+>    **ただしこれは停止であって検知ではない** —— 気付くのは稼働してからである。網羅の検査を置くのはこのためである。
+> 3. **決定 3（正本は 1 つ）**: `trading-owner` / `trading-service` と連結配備で使うクライアントの宣言は
+>    **基盤レルム側が正本**であり、AST 専用レルム（`infra/keycloak/realm-export.json`）の同名ロール・クライアントは
+>    **写し**である。本 issue ではその位置づけを同ファイル（`attributes` と各 `description`）と `infra/README.md` へ
+>    記録した。🔴 **写しのずれを検知する手段は無い** —— 連結配備では基盤レルム側しか読まれないため、
+>    ずれは連結配備の挙動に出ない（出るのは単体 E2E であり、それは統制ではなく副作用である）。
+>    **突合の受け皿は基盤側**であり（AST の CI から基盤リポジトリを読めない）、ADR-0038 フォローアップ 2 が扱う。
+>
+> **残った負債**: `values-local.yaml` のリテラル 4 件はテンプレート導出ではないため `global.authAuthority` に
+> 追随しない。**本検査はそのずれを赤で捕まえるが、ずれを作らない構造にはしていない**（別 issue）。
 
 ## 検討した選択肢
 
