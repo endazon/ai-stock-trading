@@ -141,6 +141,11 @@ jobs:
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
         run: |
           out="$(helm template ast "$CHART")"
+          # #778 / ADR-0006: 全 .NET サービス（ASPNETCORE_URLS を持つ Deployment）に Workstation GC が入っている。
+          # Server GC 既定のまま 512Mi 容器へ置くと OOMKilled を繰り返す（実測）。1 つでも欠ければ赤。
+          missing_gc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_gcServer/ {match($0,/
+  name: [a-z-]+/); print substr($0,RSTART+9,RLENGTH-9)}')"
+          if [ -n "$missing_gc" ]; then echo "::error::DOTNET_gcServer=0 が無い .NET Deployment がある（#778）: $missing_gc"; exit 1; fi
           # #764 / IADR-0323 追記: LlmGateway の s2s は llm-caller（platform-service）。kb-writer（platform-operator）は基盤の
           # ServiceCaller 門（MSP#1365）で 403 になる。本番既定でも llm-auth-* を参照していること（values-local 側の検査と対）。
           if printf '%s' "$out" | grep -A4 'name: LlmGateway__Auth__ClientId' | grep -q 'key: kb-auth-client-id'; then
