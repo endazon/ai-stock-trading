@@ -101,6 +101,20 @@ public sealed record ReportView
     public LlmUsageRecord? LlmUsage { get; init; }
 
     /// <summary>
+    /// FR-06, FR-15, ADR-0033 決定5・5.3, ADR-0037 決定3, #750, 04_report-templates 月報 §7:
+    /// Stage 0 記録実行の<b>見積り承認額</b>（円）。<see cref="LlmUsage"/> から集計する実績と並べて対比を出す。
+    /// <para>
+    /// 🔴 <c>null</c> は「<b>承認額が供給されていない</b>」であり「承認額 0 円」ではない。
+    /// 潰すと、承認が無いのに対比が成立して見える（超過の有無を誤って読ませる）。
+    /// </para>
+    /// <para>
+    /// 🔴 本値だけは<b>監査台帳から来ない</b>——承認は利用者が実行前に構成へ書き入れる値であり、
+    /// 事象として台帳に載らない（IADR-0254 の 2026-09-11 追記）。
+    /// </para>
+    /// </summary>
+    public decimal? Stage0RecordingApprovedEstimateJpy { get; init; }
+
+    /// <summary>
     /// FR-06, #338, ADR-0016 決定15, ADR-0027, 04_report-templates 月報 §6.1 / 日報 §4: 当期間の借株料の記録。
     /// <para>🔴 <c>null</c> は「照会できていない」であり「借株コスト 0」ではない。</para>
     /// </summary>

@@ -55,6 +55,50 @@ public class ReportingCycleWiringTests(ReportWorkerWebApplicationFactory factory
             .Should().BeOfType<UnsuppliedBorrowFeeRecordSource>();
     }
 
+    // FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: 見積り承認額の供給は**構成から読む唯一のポート**である。
+    //
+    // 🔴 **否定形**: 構成が無ければ null（未供給）——0 円へ倒さない。
+    // 🔴 **対の肯定形**: 構成すれば同じポートがその値を返す（否定形だけでは、読み取りが常に null でも緑になる）。
+    [Fact]
+    public void 見積り承認額は構成が無ければ未供給であり構成すれば読める()
+    {
+        factory.Services.GetRequiredService<IStage0RecordingEstimateSource>()
+            .Should().BeOfType<ConfigurationStage0RecordingEstimateSource>()
+            .Which.GetApprovedEstimateJpy().Should().BeNull();
+
+        using var configured = factory.WithWebHostBuilder(
+            b => b.UseSetting(ConfigurationStage0RecordingEstimateSource.ConfigurationKey, "2000"));
+
+        configured.Services.GetRequiredService<IStage0RecordingEstimateSource>()
+            .GetApprovedEstimateJpy().Should().Be(2_000m);
+    }
+
+    // 🔴 **不正な構成は未供給へ倒す。0 円へ倒さない**（0 円で承認された、という別の主張になる）。
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-a-number")]
+    [InlineData("-1")]
+    public void 見積り承認額の構成が不正なら未供給へ倒す(string value)
+    {
+        using var configured = factory.WithWebHostBuilder(
+            b => b.UseSetting(ConfigurationStage0RecordingEstimateSource.ConfigurationKey, value));
+
+        configured.Services.GetRequiredService<IStage0RecordingEstimateSource>()
+            .GetApprovedEstimateJpy().Should().BeNull();
+    }
+
+    // 🔴 **0 円の承認は未供給ではない**（構成に明示された値はそのまま出す）。
+    [Fact]
+    public void 見積り承認額のゼロ円は未供給ではない()
+    {
+        using var configured = factory.WithWebHostBuilder(
+            b => b.UseSetting(ConfigurationStage0RecordingEstimateSource.ConfigurationKey, "0"));
+
+        configured.Services.GetRequiredService<IStage0RecordingEstimateSource>()
+            .GetApprovedEstimateJpy().Should().Be(0m);
+    }
+
     // 🔴 **ポートを登録しただけでは報告書に載らない。** 自動生成オーケストレータが
     // 両ポートを受け取れる形で組み上がることまで確かめる（受け取らなければ既定 null＝常に未供給になる）。
     [Fact]

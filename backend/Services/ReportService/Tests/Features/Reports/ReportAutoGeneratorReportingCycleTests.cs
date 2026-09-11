@@ -23,6 +23,9 @@ public class ReportAutoGeneratorReportingCycleTests
     private static readonly DateTimeOffset WedAfterClose = new(2026, 7, 8, 7, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset T0 = new(2026, 7, 8, 3, 0, 0, TimeSpan.Zero);
 
+    // 2026-07-31（金・当月最終営業日）17:00 JST ＝ 08:00 UTC。月報の生成境界を越えている時刻（月報 §7 を描かせる）。
+    private static readonly DateTimeOffset MonthEndAfterClose = new(2026, 7, 31, 8, 0, 0, TimeSpan.Zero);
+
     private sealed class FixedClock(DateTimeOffset now) : IClock
     {
         public DateTimeOffset UtcNow { get; } = now;
@@ -63,24 +66,41 @@ public class ReportAutoGeneratorReportingCycleTests
             throw new HttpRequestException("監査台帳へ到達できません");
     }
 
+    // FR-15, ADR-0037 決定3, #750: 見積り承認額の供給（構成由来）。読み取りが失敗する形も置く。
+    private sealed class StubStage0EstimateSource(decimal? approvedJpy) : IStage0RecordingEstimateSource
+    {
+        public decimal? GetApprovedEstimateJpy() => approvedJpy;
+    }
+
+    private sealed class ThrowingStage0EstimateSource : IStage0RecordingEstimateSource
+    {
+        public decimal? GetApprovedEstimateJpy() => throw new InvalidOperationException("構成を読めません");
+    }
+
     private static ReportAutoGenerator NewGenerator(
         IReportStore store,
         ILlmUsageRecordSource? llmUsageSource = null,
-        IBorrowFeeRecordSource? borrowFeeSource = null) =>
+        IBorrowFeeRecordSource? borrowFeeSource = null,
+        IStage0RecordingEstimateSource? stage0EstimateSource = null,
+        DateTimeOffset? now = null) =>
         new(store,
             new ReportDraftService(new StubDrafter()),
             new NoOpPeriodFillSource(),
-            new FixedClock(WedAfterClose),
+            new FixedClock(now ?? WedAfterClose),
             new ReportAutoGenerationSettings(),
             notifier: null,
             reductionSource: null,
             buyInSource: null,
             fxSourceStatusSource: null,
             llmUsageSource: llmUsageSource,
+            stage0RecordingEstimateSource: stage0EstimateSource,
             borrowFeeSource: borrowFeeSource);
 
     private static string BodyOf(IReportStore store) =>
         store.List().Single(r => r.Kind == ReportKind.Daily).Body;
+
+    private static string MonthlyBodyOf(IReportStore store) =>
+        store.List().Single(r => r.Kind == ReportKind.Monthly).Body;
 
     // 🔴 **未注入の既定は「未供給」である**（空・0 ではない）。
     [Fact]
@@ -155,5 +175,43 @@ public class ReportAutoGeneratorReportingCycleTests
         BodyOf(unsupplied).Should().Contain("**借株コストを照会できませんでした（供給元がありません）**");
         BodyOf(empty).Should().Contain("**空売り建玉: 0 件**");
         BodyOf(empty).Should().NotContain("**借株コストを照会できませんでした（供給元がありません）**");
+    }
+
+    // ---- 🔴 Stage 0 記録実行の見積り承認額（月報 §7・ADR-0037 決定3・#750） ----
+
+    // 🔴 **否定形**: 未注入の既定は「未供給」である（承認額 0 円ではない）。
+    // **対の肯定形**: 供給されたら月報へ確かに載る（未供給の表明だけでは、結線が切れていても緑になる）。
+    [Fact]
+    public async Task 見積り承認額は未注入なら未供給として描き供給されれば載る()
+    {
+        var usage = new LlmUsageRecord(
+            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5")], [], []);
+
+        var unsupplied = new InMemoryReportStore();
+        await NewGenerator(unsupplied, new StubLlmUsageSource(usage), now: MonthEndAfterClose).RunOnceAsync();
+
+        MonthlyBodyOf(unsupplied).Should().Contain(
+            "実績 +1,800 JPY / 承認 **供給されていません**（0 円ではありません） / 差 算出不能");
+
+        var supplied = new InMemoryReportStore();
+        await NewGenerator(supplied, new StubLlmUsageSource(usage),
+            stage0EstimateSource: new StubStage0EstimateSource(2_000m), now: MonthEndAfterClose).RunOnceAsync();
+
+        MonthlyBodyOf(supplied).Should().Contain("実績 +1,800 JPY / 承認 +2,000 JPY / 差 -200 JPY（-10.0%）");
+    }
+
+    // 🔴 **読み取りが失敗しても未供給へ倒す**（0 円へ倒さない）。承認が無いのに対比が成立して見えると、
+    // ADR-0033 決定5.3 の停止が働いたのかを誤って読む。
+    [Fact]
+    public async Task 見積り承認額の読み取りが失敗しても未供給へ倒す()
+    {
+        var store = new InMemoryReportStore();
+        var usage = new LlmUsageRecord(
+            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5")], [], []);
+
+        await NewGenerator(store, new StubLlmUsageSource(usage),
+            stage0EstimateSource: new ThrowingStage0EstimateSource(), now: MonthEndAfterClose).RunOnceAsync();
+
+        MonthlyBodyOf(store).Should().Contain("承認 **供給されていません**（0 円ではありません）");
     }
 }

@@ -696,6 +696,44 @@ module.exports = ({ ok, assert }) => {
     assert.deepStrictEqual(counts, { old: 1, new: 1 });
   });
 
+  // ==========================================================================
+  // check-test-traceability.js: serviceTestDirs() の大文字小文字誤検出（#757）
+  //
+  // `fs.existsSync(<Svc>/'tests')` は、大文字小文字を区別しない FS（Windows の NTFS 既定・
+  // macOS の APFS 既定）では実在する `Tests/` にも一致してしまう。実名（`fs.readdirSync` が
+  // 返すエントリ名）の完全一致で判定し、大文字小文字を区別する/しない FS のどちらでも
+  // 同じ結果になることを固定する。
+  // ==========================================================================
+
+  ok('🔴 [陰性対照/#757] check-test-traceability: 実在が大文字始まり Tests/ だけなら old を誤計上しない', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-757-neg-'));
+    // 新樹形（大文字始まり Tests/）のみを作る。小文字 tests/ は作らない。
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'OnlyNew', 'Tests'), { recursive: true });
+    const dirs = tt.serviceTestDirs(root);
+    assert.deepStrictEqual(
+      dirs, { old: 0, new: 1 },
+      `大文字小文字を区別しない FS で Tests/ を tests/ と誤認している: ${JSON.stringify(dirs)}`
+    );
+  });
+
+  ok('🔴 [陽性対照/#757] check-test-traceability: 実在が小文字 tests/ だけなら old を正しく計上する', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-757-pos-'));
+    // 旧樹形（小文字 tests/）のみを作る。大文字始まり Tests/ は作らない。
+    fsTt.mkdirSync(pathTt.join(root, 'backend', 'Services', 'OnlyOld', 'tests'), { recursive: true });
+    const dirs = tt.serviceTestDirs(root);
+    assert.deepStrictEqual(
+      dirs, { old: 1, new: 0 },
+      `実在する小文字 tests/ の検出漏れが起きている: ${JSON.stringify(dirs)}`
+    );
+  });
+
+  // 🔴 同一サービス直下に `tests/` と `Tests/` の両方を作る混在テストは書かない——
+  // 大文字小文字を区別しない FS（本ホスト）では、同一親ディレクトリの下で大文字小文字だけが
+  // 異なる 2 エントリは物理的に共存できない（2 回目の mkdir が 1 回目のエントリを指すだけで、
+  // 実際には 1 個のディレクトリしか作られない）。新旧の混在は「サービスをまたいで」起きる事象で
+  // あり、それは既存テスト（直前の「serviceTestDirs / serviceTestLayoutCounts は新旧を分けて
+  // 数える」）が別サービス A（tests/）・B（Tests/）で既に固定している。
+
   // 🔴 否定形（T1 の中核）: 樹形のサービスディレクトリが実在するのに、その樹形が 0 件走査なら落とす。
   const runTraceability = (root, extraArgv = []) => {
     try {
