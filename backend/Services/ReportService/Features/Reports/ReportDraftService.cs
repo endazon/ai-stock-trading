@@ -100,6 +100,9 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // #338: 以下はいずれもコード集計値であり、散文（LLM）には渡さない（FR-16）。
             // **null（未供給）を空・0 へ潰さない**——既存の各節と同じ規律である。
             LlmUsage = request.LlmUsage,
+            // FR-15, ADR-0037 決定3, #750: 見積り承認額。**null（未供給）を 0 円へ潰さない**——
+            // 承認が無いのに対比が成立して見えると、超過が起きたのかを誤って読ませる。
+            Stage0RecordingApprovedEstimateJpy = request.Stage0RecordingApprovedEstimateJpy,
             BorrowFees = request.BorrowFees,
             // #611, IADR-0286: **null（未供給）を 0 円へ潰さない**。未記録の約定があれば件数を明記する（黙って落とさない）。
             FxTranslation = fxTranslation.Summary,
@@ -249,6 +252,10 @@ public sealed record DraftRequest(
     // FR-06, FR-16, #338, #282, ADR-0017 決定2・決定4, 04_report-templates 月報 §7: 当期間の LLM 利用実績。
     // **null＝照会できていない**（費用 0 円・スキップ 0 件と書かない）。既定 null で既存の呼び出しは非破壊。
     LlmUsageRecord? LlmUsage = null,
+    // FR-06, FR-15, ADR-0033 決定5・5.3, ADR-0037 決定3, #750, 04_report-templates 月報 §7:
+    // Stage 0 記録実行の**見積り承認額**（円）。**null＝承認額が供給されていない**（0 円と書かない）。
+    // 実績（監査台帳）と違い**構成から来る値**である（IADR-0254 の 2026-09-11 追記）。
+    decimal? Stage0RecordingApprovedEstimateJpy = null,
     // FR-06, #338, ADR-0016 決定15, ADR-0027 決定4: 当期間の借株料の記録。**null＝照会できていない**。
     BorrowFeeRecord? BorrowFees = null,
     // FR-06, FR-16, #338, #611, IADR-0286 決定2・決定4: 為替差損益（独立表示）の**期末レート**（期末日以前の直近の

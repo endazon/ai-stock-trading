@@ -38,17 +38,35 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
     private readonly MoomooBarDataOptions _options;
     private readonly TimeSpan _replyTimeout;
     private readonly ILogger<MMApiMoomooHistoryKLineClient> _logger;
-    private readonly MMAPI_Qot _qot = new();
+    // #743, IADR-0327: 接続オブジェクトは**作り直せる**必要がある（readonly にしない）。一度 Connection refused を
+    // 受けた MMAPI_Qot は、以後 InitConnect を呼んでも TCP を張り直さない（true を返すだけ）。
+    private readonly IMoomooQotConnectionFactory _connectionFactory;
+    // 差し替えは _connectGate の内側だけで起きるが、読み手はその外側（送信側）にもいる。
+    // 差し替えを読み手へ確実に見せるため volatile とし、1 回の操作の中では**必ずローカルへ受けてから使う**
+    // （途中で別インスタンスへ移らないようにする）。
+    private volatile IMoomooQotConnection _connection;
     private readonly Dictionary<uint, TaskCompletionSource<QotRequestHistoryKL.Response>> _pending = [];
     private readonly object _sendGate = new(); // serial 採番＋登録とコールバック完了の相互排他（レース防止）。
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private readonly bool _encrypt;
+    // #743: RSA 秘密鍵（PKCS#1 PEM の内容）。作り直しのたびに再適用するため保持する。**ログへ出さない。**
+    private readonly string? _rsaPrivateKeyPem;
 
     private TaskCompletionSource<long>? _connectTcs;
     private volatile bool _connected;
+    // #743: 直前の接続試行が失敗した／切断された＝次の InitConnect の前に接続オブジェクトを作り直す。
+    private volatile bool _connectionStale;
+    // #743, FR-15: 通算の作り直し回数。固着（作り直しに入っていない）と不達（作り直しても繋がらない）を
+    // ログだけで切り分けられるようにするための目印。
+    private int _recreateCount;
     private bool _disposed;
 
-    public MMApiMoomooHistoryKLineClient(MoomooBarDataOptions options, ILogger<MMApiMoomooHistoryKLineClient> logger)
+    // #743, IADR-0327: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
+    // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
+    public MMApiMoomooHistoryKLineClient(
+        MoomooBarDataOptions options,
+        ILogger<MMApiMoomooHistoryKLineClient> logger,
+        IMoomooQotConnectionFactory? connectionFactory = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         // IADR-0060 決定5: **Secret のマウント漏れは起動時に落とす。** 発注経路（MMApiMoomooTradeClient）が
@@ -58,6 +76,7 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
         _options = options;
         _replyTimeout = TimeSpan.FromSeconds(options.ReplyTimeoutSeconds);
         _logger = logger;
+        _connectionFactory = connectionFactory ?? new MMApiQotConnectionFactory();
         lock (InitGate)
         {
             if (!_apiInitialized)
@@ -66,15 +85,29 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
                 _apiInitialized = true;
             }
         }
-        _qot.SetClientInfo("ai-stock-trading", 1);
-        _qot.SetConnCallback(this);
-        _qot.SetQotCallback(this);
         // 相場系は暗号化必須ではないが、OpenD 側が暗号化を要求する構成なら鍵を渡す（発注経路と同じ扱い）。
+        // #743: 読むのはここ 1 度きりで、接続オブジェクトを作り直すたびに保持した内容を再適用する
+        // （作り直しのたびにファイルを読み直すと、鍵の差し替え中に失敗する経路が増える）。
         if (!string.IsNullOrWhiteSpace(options.RsaPrivateKeyPath))
         {
-            _qot.SetRSAPrivateKey(File.ReadAllText(options.RsaPrivateKeyPath));
+            _rsaPrivateKeyPem = File.ReadAllText(options.RsaPrivateKeyPath);
             _encrypt = true;
         }
+        _connection = CreateConfiguredConnection();
+    }
+
+    // 接続オブジェクトを 1 つ作り、コールバックと鍵を配線して返す。**状態は持たせない。**
+    private IMoomooQotConnection CreateConfiguredConnection()
+    {
+        var connection = _connectionFactory.Create();
+        connection.SetClientInfo("ai-stock-trading", 1);
+        connection.SetConnCallback(this);
+        connection.SetQotCallback(this);
+        if (_rsaPrivateKeyPem is not null)
+        {
+            connection.SetRsaPrivateKey(_rsaPrivateKeyPem);
+        }
+        return connection;
     }
 
     // ---- IMoomooHistoryKLineClient ----
@@ -85,6 +118,8 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
     {
         ArgumentNullException.ThrowIfNull(request);
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+        // #743: 1 操作の中で接続オブジェクトが別インスタンスへ移らないよう、ここで受けて以降は local を使う。
+        var connection = _connection;
 
         var security = QotCommon.Security.CreateBuilder()
             .SetMarket(UsSecurityMarket)
@@ -103,7 +138,7 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
             c2s.SetNextReqKey(ByteString.CopyFrom(key));
 
         var req = QotRequestHistoryKL.Request.CreateBuilder().SetC2S(c2s.Build()).Build();
-        var rsp = await SendAsync(() => _qot.RequestHistoryKL(req), cancellationToken).ConfigureAwait(false);
+        var rsp = await SendAsync(() => connection.RequestHistoryKL(req), cancellationToken).ConfigureAwait(false);
         if (rsp.RetType != 0) // RetType_Succeed=0
         {
             throw new MoomooHistoryKLineException(
@@ -166,11 +201,18 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
             if (_connected)
                 return;
 
+            // #743, IADR-0327: 前回の試行が失敗した（または切断された）なら、InitConnect の前に接続オブジェクトを
+            // 作り直す。これをしないと、SDK が固着したまま InitConnect が true を返し続け、TCP が 1 本も
+            // 張られないまま応答待ちのタイムアウトを繰り返す（＝入れ直すまで履歴取得の経路が死ぬ）。
+            if (_connectionStale)
+            {
+                RecreateConnection();
+            }
             _connectTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
             _logger.LogInformation(
                 "OpenD（相場・履歴 K 線）へ接続します {Host}:{Port} encrypt={Encrypt}",
                 _options.OpenDHost, _options.OpenDPort, _encrypt);
-            if (!_qot.InitConnect(_options.OpenDHost, _options.OpenDPort, _encrypt))
+            if (!_connection.InitConnect(_options.OpenDHost, _options.OpenDPort, _encrypt))
             {
                 throw new InvalidOperationException(
                     $"OpenD への InitConnect が失敗しました（{_options.OpenDHost}:{_options.OpenDPort}）。");
@@ -180,8 +222,56 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
         }
         finally
         {
+            // #743: **接続が確立できなかった経路をここで一様に拾う。** InitConnect が false を返した経路は
+            // 例外を直接投げ、応答待ちのタイムアウトもキャンセルも別の型で抜ける。失敗した接続オブジェクトは
+            // 次の試行で作り直す。
+            if (!_connected)
+            {
+                _connectionStale = true;
+            }
+            // 打ち切った試行の待ち合わせを残さない（遅れて来たコールバックは行き先を失って no-op になる）。
+            _connectTcs = null;
             _connectGate.Release();
         }
+    }
+
+    // #743, FR-15, IADR-0327: 固着した接続オブジェクトを捨てて作り直す。**_connectGate の内側でのみ呼ぶ。**
+    private void RecreateConnection()
+    {
+        var stale = _connection;
+        // 先に差し替える。**新しい接続を見せてから古い方を手放す**——順序が逆だと、この瞬間に
+        // 進行中の呼び出しが「解放済みの接続」を掴む窓が広がる（Close/Dispose は下で行う）。
+        _connection = CreateConfiguredConnection();
+        try
+        {
+            stale.Close();
+        }
+        catch (Exception ex)
+        {
+            // 解放に失敗しても作り直しは続ける（固着したまま使い続けるより捨てるほうが安全）。
+            _logger.LogWarning(ex, "固着した OpenD（相場）接続オブジェクトの Close で例外（解放は続行します）");
+        }
+        finally
+        {
+            // Close が投げても Dispose は必ず呼ぶ（同じ try に置くと握りっぱなしで漏れる）。
+            try
+            {
+                stale.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "固着した OpenD（相場）接続オブジェクトの Dispose で例外");
+            }
+        }
+        _connectionStale = false;
+        _recreateCount++;
+        // 「作り直しても繋がらない（＝OpenD が本当に落ちている）」と「作り直しに入っていない（＝別の欠陥）」を
+        // ログだけで切り分けられるようにする。**秘匿情報は出さない**（ホスト・ポート・回数のみ）。
+        _logger.LogWarning(
+            "OpenD（相場）接続オブジェクトを作り直しました（直前の接続試行が失敗／切断されたため）。{Host}:{Port} 通算作り直し={RecreateCount}",
+            _options.OpenDHost,
+            _options.OpenDPort,
+            _recreateCount);
     }
 
     // ---- 応答相関 ----
@@ -227,6 +317,8 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
     public void OnDisconnect(MMAPI_Conn client, long errCode)
     {
         _connected = false;
+        // #743: 切断後も同じ固着に入り得るため、次の接続は作り直してから張る（IADR-0327 決定2 と同型）。
+        _connectionStale = true;
         _logger.LogWarning("OpenD（相場）切断 errCode={ErrCode}", errCode);
     }
 
@@ -243,8 +335,8 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
         _disposed = true;
         try
         {
-            _qot.Close();
-            _qot.Dispose();
+            _connection.Close();
+            _connection.Dispose();
         }
         catch (Exception ex)
         {

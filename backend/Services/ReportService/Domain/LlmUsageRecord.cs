@@ -44,13 +44,25 @@ public sealed record ScreeningDegradationCounts(
 /// </summary>
 /// <param name="TradeDecisionCostJpy">月次 LLM 費用上限の対象となる費用（円）。</param>
 /// <param name="ReportCostJpyByPurpose">報告書生成の費用（円）を用途別に。上限の対象外。</param>
-/// <param name="OtherCostJpy">上限の対象でも報告書でもない用途の費用（情報収集等）。</param>
+/// <param name="Stage0RecordingCostJpy">
+/// FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: Stage 0 記録実行（<c>stage0-recording</c>）の費用（円）。上限の対象外。
+/// <para>
+/// 🔴 <c>null</c> は「<b>当月に記録実行が無かった</b>」であり <b>0 円ではない</b>。計画
+/// （04_report-templates 月報 §7 の注記）が「当月に記録実行が無ければ空欄とし <c>0 円</c> と書かない
+/// （『実行しなかった』と『実行して 0 円だった』を区別する）」と名指しで求めている。
+/// 計上が 1 件でもあれば合計を返す（合計が 0 円でも <c>0</c> であり <c>null</c> ではない）。
+/// </para>
+/// </param>
+/// <param name="OtherCostJpy">
+/// 上限の対象でも報告書でも Stage 0 記録でもない用途の費用（情報収集等）。
+/// </param>
 /// <param name="FallbacksByPurposeAndOutcome">フォールバック発火の件数（用途 × 原因）。</param>
 /// <param name="SkipCount">モデル利用不能による取引判断スキップ回数。</param>
 /// <param name="SkipsByReason">スキップ回数の事由別内訳。</param>
 public sealed record LlmUsageSummary(
     decimal TradeDecisionCostJpy,
     IReadOnlyList<(string Purpose, decimal AmountJpy)> ReportCostJpyByPurpose,
+    decimal? Stage0RecordingCostJpy,
     decimal OtherCostJpy,
     IReadOnlyList<(string Purpose, string Outcome, int Count)> FallbacksByPurposeAndOutcome,
     int SkipCount,
@@ -87,6 +99,10 @@ public static class LlmUsageAggregator
         var other = 0m;
         var reportCosts = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
+        // 🔴 **null のまま始める。** 計上が 1 件も無いことを 0 円と書かないための状態であり、
+        // 0m で初期化すると「実行しなかった」と「実行して 0 円だった」が潰れる（計画注記が禁じた向き）。
+        decimal? stage0Recording = null;
+
         foreach (var cost in record.Costs)
         {
             // 🔴 上限の対象判定は購読側（費用統制）と同じ関数で行う。
@@ -104,6 +120,15 @@ public static class LlmUsageAggregator
                 continue;
             }
 
+            // FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: Stage 0 記録実行は**上限の対象外だが独立区分**である。
+            // 🔴 「その他」へ吸わせない——月報 §7 は本区分と**見積り承認額との対比**を求めており、
+            // 他の用途と混ざった値では超過が起きたのかを読めない（対比が対比でなくなる）。
+            if (LlmPurposes.IsStage0Recording(cost.Purpose))
+            {
+                stage0Recording = (stage0Recording ?? 0m) + cost.Amount;
+                continue;
+            }
+
             // 情報収集など、上限の対象でも報告書でもない用途。**捨てない**——
             // 落とすと「どこにも現れない費用」ができ、#282 と同じ形になる。
             other += cost.Amount;
@@ -112,6 +137,7 @@ public static class LlmUsageAggregator
         return new LlmUsageSummary(
             governed,
             [.. reportCosts.OrderBy(e => e.Key, StringComparer.Ordinal).Select(e => (e.Key, e.Value))],
+            stage0Recording,
             other,
             [.. record.Fallbacks
                 .GroupBy(f => (f.Purpose, f.Outcome))
