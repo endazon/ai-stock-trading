@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
-adrs: [ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
+adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743]
 -->
 
 
@@ -206,6 +206,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688]
 | T-15-53 | ヘルスチェックが起動直後に ready（DB を持たない） | `BacktestWorkerWiringTests.ヘルスチェックは起動直後にreadyを返す_DBを持たない` | 自動 |
 | T-15-67 | **構成不備は起動時に落ちる**（OpenD 本番化の実装 ADR の決定 5・moomoo アダプタの実装 ADR の決定 6）: ①`provider=moomoo` で鍵パスが設定済みなのにファイルが無ければ**ホストの起動そのものが失敗する**／②**否定形**: `provider` 未指定の既定構成では鍵パスが不正でも起動する（moomoo を使わない環境を巻き込まない） | `BacktestWorkerStartupPreflightTests.provider_moomooで鍵パスが設定済みでもファイルが無ければホストの起動が失敗する` / `既定構成では鍵パスが不正でも起動する_moomooを使わない環境を巻き込まない` | 自動 |
 | T-15-68 | **起動時検査の判定内容**（moomoo アダプタの実装 ADR の決定 6）: ①正常な構成は通す／②鍵パス設定済み＋ファイル不在は落とす／③**鍵パス未設定は正当な構成として通す**（相場系は暗号化必須ではない）／④OpenD のホストが空なら落とす／⑤ポートが 0 なら落とす | `MoomooBarDataPreflightTests`（5 メソッド・Theory 含む 6 ケース） | 自動 |
+| T-15-95 | **接続試行が失敗した後は接続オブジェクトを作り直す**（[#743](https://github.com/endazon/ai-stock-trading/issues/743)。発注経路で確定した接続再生成の実装 ADR を相場経路へ同型に適用）: ①1 回目の接続失敗の後、次の取得は**新しい接続オブジェクト**を張って成功する（旧オブジェクトは `Close` / `Dispose`）／②**陰性対照**: 不達のままなら毎回失敗し、作り直しは**呼び出し回数を超えず**ハングしない／③**陰性対照**: 接続できない間は履歴 K 線の要求が OpenD へ 1 件も届かない／④作り直しを区別できる `Warning` が 1 行出る（ホスト・ポート・通算回数のみで秘匿情報を含まない） | `MMApiMoomooHistoryKLineClientReconnectTests`（4 メソッド） | 自動（実 OpenD 不使用。偽 OpenD で固着と復旧を再現。**実 OpenD での再現は未実施**） |
 
 > **⚑ T-15-67 が「例外が出ること」ではなく「ホストの起動そのものが失敗すること」を検証する理由**
 > （moomoo アダプタの実装 ADR の決定 6）。

@@ -272,6 +272,16 @@ builder.Services.AddSingleton<ILlmUsageRecordSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpLlmUsageRecordSource>>());
 });
 
+// FR-06, FR-15, ADR-0033 決定5・5.3, ADR-0037 決定3, #750, IADR-0254（2026-09-11 追記）,
+// 04_report-templates 月報 §7: 対比列の**見積り承認額**（分母側）。
+//
+// 🔴 **台帳から来ない唯一の供給である。** 承認は利用者が実行前に構成へ書き入れる値であり、事象として台帳に載らない。
+// **記録側（取引判断サービス）へ HTTP で取りに行かない**——同サービスの HTTP 面は無認可である（IADR-0318 決定5）。
+//
+// **`Stage0Recording:ApprovedEstimateJpy` 未設定＝null（未供給）＝「供給されていません」。0 円へ倒さない。**
+builder.Services.AddSingleton<IStage0RecordingEstimateSource>(sp =>
+    new ConfigurationStage0RecordingEstimateSource(sp.GetRequiredService<IConfiguration>()));
+
 // FR-06, FR-11, #338, ADR-0016 決定15, ADR-0027 決定1・決定4, 04_report-templates 月報 §6.1 / 日報 §4:
 // 「空売りの記録」の借株コスト。**権威源は監査台帳**（日次の計上額を残すのは ADR-0027 決定1 の要求である）。
 //
