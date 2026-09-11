@@ -33,9 +33,13 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <!-- NFR, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定5（段0）, IADR-0328, #584: east-west 同期呼び出しの gRPC。
          Grpc.AspNetCore = 受け側（AddGrpc / MapGrpcService と h2c リスナ）、Grpc.Net.Client = 呼び出し側。
-         Grpc.Tools / Google.Protobuf は前 2 者が推移的に持ち込むが、**版は基盤リポ（microservices-platform の
+         Grpc.Tools / Google.Protobuf は、**版は基盤リポ（microservices-platform の
          src/Directory.Packages.props）と同一に保つ**という本リポの規約に従い明示的に宣言する（CPM の推移
-         ピン留めが有効なため、宣言が無いと基盤と版がずれ得る）。proto の現物は段 1 で置く。 -->
+         ピン留めが有効なため、宣言が無いと基盤と版がずれ得る）。
+         ［2026-09-11 / #745（段 1・IADR-0331 決定7）］**Grpc.Tools（ビルド時の protoc）と Google.Protobuf は
+         AiStockTrading.Shared.Grpc が直接参照する**ようになった（最初の proto を置いたため）。段 0 時点の
+         「前 2 者が推移的に持ち込む」は成立しない。🔴 置き場が AiStockTrading.Shared.Contracts で**ない**のは、
+         同プロジェクトが Domain 到達可能で外部ライブラリ依存ゼロを強制されているためである（IADR-0331 決定7）。 -->
     <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0" />
     <PackageVersion Include="Grpc.Net.Client" Version="2.83.0" />
     <PackageVersion Include="Grpc.Tools" Version="2.83.0" />

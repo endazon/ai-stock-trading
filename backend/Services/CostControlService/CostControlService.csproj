@@ -13,6 +13,13 @@
     <None Remove="Tests/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- NFR, IADR-0331 決定3, #745 (#584): east-west gRPC 段 1 で入れた「トランスポートの選択点」
+         （`Configuration:Grpc` の有無で REST / gRPC を選ぶ）を試験が観測するため、選ばれた
+         `IAssumptionsSource` を internal で見せる（`CachedAssumptionsProvider.Source`）。
+         公開面は増やさない（Shared.KnowledgeBase・PlatformShim と同じ形）。 -->
+    <InternalsVisibleTo Include="CostControlService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
@@ -28,6 +35,9 @@
     </PackageReference>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR, IADR-0328 決定4, IADR-0331 決定7, #745 (#584): east-west gRPC の proto 契約と生成物。
+         Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
     <!-- NFR, IADR-0260: サービスを跨いで共有する Domain 型（全体前提条件・概算費用関数・運用段階）。
          Domain/CostGovernor.cs が MonthlyCostLimits を、Infrastructure/ExternalServices の複製ファイルが
          TradingAssumptions 系の型を使う。 -->
