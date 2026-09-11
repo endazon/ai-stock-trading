@@ -141,6 +141,12 @@ jobs:
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
         run: |
           out="$(helm template ast "$CHART")"
+          # #764 / IADR-0323 追記: LlmGateway の s2s は llm-caller（platform-service）。kb-writer（platform-operator）は基盤の
+          # ServiceCaller 門（MSP#1365）で 403 になる。本番既定でも llm-auth-* を参照していること（values-local 側の検査と対）。
+          if printf '%s' "$out" | grep -A3 'name: LlmGateway__Auth__ClientId' | grep -q 'key: kb-auth-client-id'; then
+            echo "::error::既定描画の LlmGateway__Auth__ClientId が kb-auth-client-id を参照している（llm-auth-client-id であるべき・#764）。"; exit 1
+          fi
+          printf '%s' "$out" | grep -A3 'name: LlmGateway__Auth__ClientId' | grep -q 'key: llm-auth-client-id'             || { echo "::error::既定描画に LlmGateway__Auth__ClientId → llm-auth-client-id が無い（#764）。"; exit 1; }
           for forbidden in 'kind: ExternalSecret' 'name: opend'; do
             if printf '%s' "$out" | grep -q "$forbidden"; then
               echo "::error::既定値の描画に「$forbidden」が現れた（#132 の絶対条件＝既定 no-op に違反）。"
