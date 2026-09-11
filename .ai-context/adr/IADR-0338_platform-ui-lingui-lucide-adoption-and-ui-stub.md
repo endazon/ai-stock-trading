@@ -136,6 +136,12 @@ export を使えば単独リポの型検査が落ちるので気付ける。**�
   再公開する。基盤の合成点が `registerUnitMessages(aiStockTradingMessages)` を呼び、
   **与えられたロケール（ja）を追加ロードし、与えられていないロケール（en）には ja を流す。**
   本ユニットの画面は en ロケールでも日本語で出る。
+- **CI の検査所在**（PR #791 のレビュー指摘への追随）: `@lingui/cli@6.x` は `engines.node >=22.19` を
+  要求するため、`.github/workflows/ci.yml` の `frontend` / `frontend-e2e` ジョブと `.nvmrc` を
+  **Node 22** へ揃え（合成先の基盤も 22）、`frontend/package.json` に `engines.node` を宣言した。
+  `frontend` ジョブは `npm run i18n` 後に `git diff --exit-code -- frontend/src/locales` で
+  **再生成差分が無いこと**を検査する（基盤の `check-i18n-catalogs` に相当する差分検査。未訳検査は
+  ja 単独のため不要）。
 
 🔴 **本番ビルドでは `msg` マクロが `message` を落とし、ID（ハッシュ）だけを残す**
 （`@lingui/babel-plugin-lingui-macro` の `descriptorFields: 'auto'` ＝ production では `id-only`）。
