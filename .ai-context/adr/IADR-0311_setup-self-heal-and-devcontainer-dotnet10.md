@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR]
 author: claude (Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-12
 plan_refs: []
 related_specs:
   - ../specs/20260909_709_712_ops-hygiene-bundle.md
@@ -113,6 +113,12 @@ CI と揃っていたため変更していない。
 `scripts/check-action-versions.js` 等の既存検査器は `node-version` の値そのものは検査していない
 （grep で確認済み。アクションのメジャーバージョンのみを見る）ため、本件の再発を機械で
 止める仕組みは今回追加していない——残余リスクとして記録する。
+
+> ［2026-09-12 追記 / #791 / IADR-0338］**値を `20` → `22` へ進めた（決定 4 のうち「値」のみ IADR-0338 決定 3 が supersede する）。**
+> `@lingui/cli` 6.x が `engines.node >=22.19` を要求し、frontend ジョブだけ 22 にすると本決定の
+> 「単一バージョンに揃える」主張と衝突する（`scripts.repo.test.js` の回帰試験が実際に赤になった）ため、
+> 全ワークフロー・devcontainer の Node feature・`.nvmrc` を **22** へ揃えた（合成先の基盤も 22）。
+> 「揃える」という決定そのものは維持し、回帰試験は 22 を固定する（devcontainer の feature も検査対象へ加えた）。
 
 ## 影響
 

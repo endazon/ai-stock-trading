@@ -86,7 +86,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Check commit messages
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -110,7 +110,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Run scripts unit tests
         # 本リポジトリは固有テスト（scripts/scripts.repo.test.js）を持つため有効化する。
         # companion が消失（誤削除・リネーム・キット同期での上書き）したときに失敗する。
@@ -154,7 +154,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       # #263, IADR-0109: ローカルデプロイスクリプトの ast-secrets 同期（投入済みの鍵を無言で壊さない）を
       # kubectl スタブで検証する。実クラスタ・実 kubectl・追加パッケージは不要（Bash のみ）。
@@ -789,7 +789,7 @@ jobs:
       # 参考: 他スタックの例
       # Node.js:
       #   - uses: actions/setup-node@v7
-      #     with: { node-version: "20" }
+      #     with: { node-version: "22" }
       #   - run: npm ci
       #   - run: npm run lint --if-present
       #   - run: npm run build --if-present

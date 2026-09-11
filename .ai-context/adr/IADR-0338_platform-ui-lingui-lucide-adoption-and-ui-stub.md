@@ -137,8 +137,10 @@ export を使えば単独リポの型検査が落ちるので気付ける。**�
   **与えられたロケール（ja）を追加ロードし、与えられていないロケール（en）には ja を流す。**
   本ユニットの画面は en ロケールでも日本語で出る。
 - **CI の検査所在**（PR #791 のレビュー指摘への追随）: `@lingui/cli@6.x` は `engines.node >=22.19` を
-  要求するため、`.github/workflows/ci.yml` の `frontend` / `frontend-e2e` ジョブと `.nvmrc` を
-  **Node 22** へ揃え（合成先の基盤も 22）、`frontend/package.json` に `engines.node` を宣言した。
+  要求するため、**全ワークフロー（`ci.yml` の `frontend` / `frontend-e2e` を含む 9 箇所）・devcontainer の
+  Node feature・`.nvmrc` を Node 22 へ揃え**（合成先の基盤も 22。IADR-0311 決定 4「単一バージョンに揃える」は
+  維持し値だけを進めた＝同決定の値のみ supersede。`scripts.repo.test.js` の回帰試験は 22 を固定する）、
+  `frontend/package.json` に `engines.node` を宣言した。
   `frontend` ジョブは `npm run i18n` 後に `git diff --exit-code -- frontend/src/locales` で
   **再生成差分が無いこと**を検査する（基盤の `check-i18n-catalogs` に相当する差分検査。未訳検査は
   ja 単独のため不要）。
@@ -232,7 +234,7 @@ IADR-0288 には `Superseded by IADR-0338（決定 6 のみ）` を追記する�
 
 ## 関連
 
-- Supersedes: IADR-0288（**決定 6 のうち Lingui と `@platform/ui` に関する部分のみ**。
+- Supersedes: IADR-0311（**決定 4 のうち Node の値 `20` のみ。「揃える」は維持**）、IADR-0288（**決定 6 のうち Lingui と `@platform/ui` に関する部分のみ**。
   orval に関する部分と他の決定 1〜5 は現行のまま）
 - Superseded by: なし
 - 併走: IADR-0339（本 IADR が敷いた部品語彙で 4 画面をモックへ合わせる決定）
