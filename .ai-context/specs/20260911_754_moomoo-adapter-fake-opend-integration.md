@@ -1,7 +1,7 @@
 ---
 title: 偽 OpenD を CI 内で駆動する moomoo アダプタ結合試験と、手数料・為替スプレッド実績登録の可否判定
 type: spec
-status: review
+status: done
 related_ids: [FR-05, FR-12, FR-17, FR-20, UC-01, UC-02, ADR-0002, ADR-0019, ADR-0021, ADR-0026, IADR-0016, IADR-0021, IADR-0111, IADR-0144, IADR-0211, IADR-0327, IADR-0334]
 author: endazon (with Claude Code)
 created: 2026-09-11
