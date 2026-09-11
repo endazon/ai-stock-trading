@@ -11,7 +11,6 @@ namespace TradeDecisionService.Domain;
 // 監査から見えなくなる。区別は ParseDetailed が返す ParseFailure が持ち、挙動（Hold に倒す）は変えない。
 public static class TradeDecisionParser
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     /// <summary>互換 API。解析不能・不正出力は安全側で Hold（取引しない）に倒す（従来どおり）。</summary>
     public static LlmDecision Parse(string? llmOutput) => ParseDetailed(llmOutput).Decision;
@@ -36,10 +35,10 @@ public static class TradeDecisionParser
 
         try
         {
-            var dto = JsonSerializer.Deserialize<DecisionDto>(json, Options);
+            var dto = ReadDto(json);
             if (dto is null)
             {
-                return ParsedTradeDecision.Failed(TradeDecisionParseFailureKind.MalformedJson, "JSON が null");
+                return ParsedTradeDecision.Failed(TradeDecisionParseFailureKind.MalformedJson, "JSON がオブジェクトでない");
             }
 
             if (!TryParseAction(dto.Action, out var action))
@@ -59,7 +58,8 @@ public static class TradeDecisionParser
             // IADR-0035: 損切り幅が参照価格以上だと損切り価格が 0 以下（ロングでは損切り監視から外れる）になるため、
             // 異常値（幻覚）として Hold に倒す（損切り価格が権威データとして下流に渡るため下限を担保する）。
             // #290: これは「解析はできたが値が成立しない」＝解析不能系（InvalidValues）として区別する。
-            if (dto.ReferencePrice <= 0m || dto.StopLossDistancePerShare <= 0m
+            // #785: null（未供給）も「成立しない」に含める（Buy/Sell で数値が無ければサイジング不能）。
+            if (dto.ReferencePrice is not > 0m || dto.StopLossDistancePerShare is not > 0m
                 || dto.StopLossDistancePerShare >= dto.ReferencePrice)
             {
                 return ParsedTradeDecision.Failed(
@@ -68,14 +68,64 @@ public static class TradeDecisionParser
             }
 
             // FR-17, IADR-0076: 想定利益（任意）。欠損は 0、負値は 0 に正規化する（保守側＝採算ゲート有効時は Hold に倒れる）。
-            var expectedProfit = dto.ExpectedProfitPerShare > 0m ? dto.ExpectedProfitPerShare : 0m;
+            var expectedProfit = dto.ExpectedProfitPerShare is > 0m ? dto.ExpectedProfitPerShare.Value : 0m;
             return ParsedTradeDecision.Ok(new LlmDecision(
-                action, dto.Rationale ?? string.Empty, dto.ReferencePrice, dto.StopLossDistancePerShare, expectedProfit));
+                action, dto.Rationale ?? string.Empty, dto.ReferencePrice.Value, dto.StopLossDistancePerShare.Value, expectedProfit));
         }
         catch (JsonException ex)
         {
             return ParsedTradeDecision.Failed(TradeDecisionParseFailureKind.MalformedJson, ex.Message);
         }
+    }
+
+    // #785: 型付き Deserialize は数値項目の null / 非数値で action を読む前に落ちる。項目ごとに寛容に読み、
+    // 数値は「数値・数値文字列なら値、それ以外は null（未供給）」とする。未供給の扱いは呼び出し側が action で決める。
+    private static DecisionDto? ReadDto(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        var root = doc.RootElement;
+        return new DecisionDto(
+            ReadString(root, "action"),
+            ReadString(root, "rationale"),
+            ReadDecimal(root, "referencePrice"),
+            ReadDecimal(root, "stopLossDistancePerShare"),
+            ReadDecimal(root, "expectedProfitPerShare"));
+    }
+
+    private static bool TryGet(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (var prop in obj.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = prop.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
+
+    private static string? ReadString(JsonElement obj, string name)
+        => TryGet(obj, name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static decimal? ReadDecimal(JsonElement obj, string name)
+    {
+        if (!TryGet(obj, name, out var v))
+        {
+            return null;
+        }
+        return v.ValueKind switch
+        {
+            JsonValueKind.Number when v.TryGetDecimal(out var d) => d,
+            JsonValueKind.String when decimal.TryParse(v.GetString(), System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var d) => d,
+            _ => null,
+        };
     }
 
     private static bool TryParseAction(string? value, out TradeAction action)
@@ -132,12 +182,13 @@ public static class TradeDecisionParser
         return null; // 対応する閉じ括弧が見つからない
     }
 
+    // #785: 数値は null 許容（Hold のときモデルは null を返してよい。Buy/Sell では必須＝無ければ InvalidValues）。
     private sealed record DecisionDto(
         string? Action,
         string? Rationale,
-        decimal ReferencePrice,
-        decimal StopLossDistancePerShare,
-        decimal ExpectedProfitPerShare);
+        decimal? ReferencePrice,
+        decimal? StopLossDistancePerShare,
+        decimal? ExpectedProfitPerShare);
 }
 
 /// <summary>

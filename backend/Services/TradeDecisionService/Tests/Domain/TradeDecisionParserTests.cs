@@ -7,6 +7,47 @@ namespace TradeDecisionService.Tests;
 // FR-04, FR-11: LLM 構造化出力の解析（不正は Hold へ倒す安全側）の検証。
 public class TradeDecisionParserTests
 {
+    // #785: 一次スクリーニングは Hold 候補で数値項目を null で返す。null → decimal の変換で action を読む前に
+    // MalformedJson になり、見送りが解析不能に化けていた（2026-09-11 開場中の実測）。Hold は数値が無くても解析成功。
+    [Theory]
+    [InlineData("""{"action":"Hold","rationale":"方針外","referencePrice":null,"stopLossDistancePerShare":null}""")]
+    [InlineData("""{"action":"Hold","rationale":"方針外"}""")]
+    [InlineData("""{"action":"Hold","rationale":"方針外","referencePrice":"n/a","stopLossDistancePerShare":null}""")]
+    public void Holdは数値項目が無くても解析成功の見送りとして扱う(string json)
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(json);
+
+        parsed.IsUnparseable.Should().BeFalse("Hold は LLM の判断であり解析不能ではない");
+        parsed.Decision.Action.Should().Be(TradeAction.Hold);
+        parsed.Decision.Rationale.Should().Be("方針外");
+    }
+
+    // #785 陰性対照: Buy/Sell で数値が無ければサイジング不能＝解析不能系（InvalidValues）として Hold に倒す。
+    [Theory]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":1000,"stopLossDistancePerShare":null}""")]
+    [InlineData("""{"action":"Sell","rationale":"反落","referencePrice":null,"stopLossDistancePerShare":20}""")]
+    public void BuySellで数値項目が無ければInvalidValuesでHoldに倒す(string json)
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(json);
+
+        parsed.IsUnparseable.Should().BeTrue();
+        parsed.Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.InvalidValues);
+        parsed.Decision.Action.Should().Be(TradeAction.Hold);
+    }
+
+    // #785: 数値文字列も読む（モデルが "1000" と返しても Buy は成立する）。
+    [Fact]
+    public void 数値文字列のBuyを解析する()
+    {
+        var json = """{"action":"Buy","rationale":"上昇","referencePrice":"1000","stopLossDistancePerShare":"30"}""";
+
+        var parsed = TradeDecisionParser.ParseDetailed(json);
+
+        parsed.IsUnparseable.Should().BeFalse();
+        parsed.Decision.Action.Should().Be(TradeAction.Buy);
+        parsed.Decision.ReferencePrice.Should().Be(1000m);
+    }
+
     [Fact]
     public void 正常なBuyのJSONを解析する()
     {
