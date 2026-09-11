@@ -92,6 +92,15 @@ Serilog は OTLP で collector へ送るため、これらは **Loki に蓄積**
 Webhook URL が残る**。本 ADR はログ経路（Loki）に対する決定であり、トレース側の対策は共有 shim の計装
 （全サービス共通）に手を入れるため [#313](https://github.com/endazon/ai-stock-trading/issues/313) で別途扱う。
 
+> ✅ **［2026-09-11 追記］この残存リスクは解消した。** 後継は
+> [IADR-0333](IADR-0333_credential-bearing-uri-trace-redaction.md)
+> （[#751](https://github.com/endazon/ai-stock-trading/issues/751)）。
+> 🔴 **上で送り先とした #313 は 2026-08-02 に後継なしで `DUPLICATE` クローズされ、緩和は 1 行も入らないまま
+> 出力が続いていた**——「別 issue へ送る」は着地の保証にならない、という実例である。
+> IADR-0333 は共有 shim のトレースパイプラインへ `CredentialBearingUriRedactionProcessor` を
+> **`AddOtlpExporter()` より前に**置き、`/api/webhooks/<id>/<token>` の形のパスを持つ `url.full` を
+> 本 ADR 決定 3 と**同じ出力形**（`scheme://host/***`）へ落とす。本 ADR の決定（ログ側）は不変である。
+
 ## 代替案（棄却）
 
 | 案 | 棄却理由 |

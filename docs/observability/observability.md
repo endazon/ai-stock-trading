@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-04
+updated: 2026-09-11
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, FR-09]
 adrs: [ADR-0006]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0255, IADR-0307, MSP:IADR-0077]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics]
-issues: [#24, #287, #689]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, MSP:IADR-0077]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction]
+issues: [#24, #287, #689, #751]
 -->
 
 
@@ -103,6 +103,11 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
 - **ログ**: 構造化ログを OTLP で送出。Loki の `{namespace="ai-stock-trading"}` で参照する。個人情報・秘匿値は
   ログへ流さない（実 LLM 接続の安全既定により、LLM プロンプトの全量ログは既定オフ）。
 - **トレース**: サービス間（s2s）呼び出しは Tempo で追跡する。Grafana の Trace→Logs 相関を有効化済み（MSP datasource）。
+- **URI 自体が資格情報である送信先は、トレースでも宛先を伏せる。** HTTP クライアントのスパンが持つフル URL は、
+  出ていく直前に**スキーム＋ホストだけ**へ落とす（パスにトークンを載せる送信先——通知の Webhook——が対象）。
+  🔴 **クエリの秘匿では足りない。** トークンは**パス**に載るため、実行環境の既定のクエリ秘匿も計装の既定も効かない。
+  抑止は資格情報を含む形の URL に限り、他の送信のパスは残す（障害切り分けを落とさない）。
+  スパン自体・ステータス・所要時間・宛先ホストは従来どおり残る。
 
 ## ローカル（経路B）での可観測性バックエンド stand-up（opt-in）
 
