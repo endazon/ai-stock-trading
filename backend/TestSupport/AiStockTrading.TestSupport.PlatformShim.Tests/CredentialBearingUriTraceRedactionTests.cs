@@ -225,7 +225,11 @@ public sealed class CredentialBearingUriTraceRedactionTests
     [InlineData("https://discord.com/api/v10/channels/1/messages")]     // Bot API（秘密はヘッダ側）
     [InlineData("https://discord.com/api/webhooks/1234567890")]         // token を持たない形は資格情報ではない
     [InlineData("http://risk-management-service:8080/health/ready")]    // 内部の s2s
-    [InlineData("/api/webhooks/1234567890/SECRET")]                     // 相対 URI（url.full には現れない形）
+    // 🔴 **先頭が `/` の相対パスは、Unix では `file:///…` として絶対 URI と見なされる**（Windows では見なされない）。
+    // scheme を見ないと `file:///***` を書き戻す。**Windows では緑・Linux の CI でだけ赤**になった実測に基づく。
+    [InlineData("/api/webhooks/1234567890/SECRET")]
+    [InlineData("file:///api/webhooks/1234567890/SECRET")]
+    [InlineData("ftp://example.com/api/webhooks/1234567890/SECRET")]
     [InlineData("")]
     [InlineData(null)]
     public void 資格情報を含まない_URI_は書き換えない(string? url)

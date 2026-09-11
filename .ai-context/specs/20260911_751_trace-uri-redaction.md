@@ -37,9 +37,13 @@ issue [#751](https://github.com/endazon/ai-stock-trading/issues/751)。
   `url.full` はクエリ値を既定で伏せるが、**パスは伏せない**。したがって OTel 既定のクエリ秘匿では効かない
   （IADR-0121 の根拠節と同じ事実）。
 - ログ側は `RedactedUriHttpClientLogger`（`scheme://host/***`）で塞がっており、**本作業では触らない**。
-- shim のテスト資産（`AiStockTrading.TestSupport.PlatformShim.Tests`）に `TracerProvider` /
+- ~~shim のテスト資産（`AiStockTrading.TestSupport.PlatformShim.Tests`）に `TracerProvider` /
   `ActivityListener` を使うテストは **1 件も無い**（`git grep` で確認）。プロセス全体で共有される
-  `ActivityListener` の相互干渉を考慮する必要があるのは**本作業が新設するクラス内だけ**である。
+  `ActivityListener` の相互干渉を考慮する必要があるのは**本作業が新設するクラス内だけ**である。~~
+  🔴 **［着手後に判明・この事前調査は誤りであった］** `FoundationRegistrationTests` が
+  `TracerProvider` を解決している（しかも破棄していない）。**走査の出力を `head -30` で切ったために見落とした**
+  ——`.claude/rules/traceability.md` の規則 7「走査の出力を加工して読まない」を、まさにこの調査で破っていた。
+  誤りの代償は陰性対照の設計やり直しであった（下記「テスト方針」）。
 
 ## 走査した母集合（規則 1・2・3・6。誤りの側＝「秘匿されていない計装」と「秘密の形」から引いた）
 
@@ -90,6 +94,11 @@ stand-up 手順・運用手順への言及）。同節のみ 1 行を足す。
 - `url.full` タグが `/api/webhooks/<seg>/<seg>…` の形のパスを持つとき、**`scheme://host/***` へ落とす**。
 - 部分開示（トークンだけ伏せて ID は残す）は**しない**（IADR-0121 決定 5 と同じ理由）。
 - userinfo（`https://user:pass@host/...`）も `Uri.Host` を使うことで自動的に落ちる。
+- 🔴 **対象は http/https に限る。** `Uri.TryCreate(…, UriKind.Absolute)` の結果は**プラットフォームで違う**——
+  Unix では先頭が `/` の相対パスが `file:///…` として**絶対 URI と見なされる**（Windows では見なされない）。
+  scheme を見ないと `file:///***` を書き戻す。**手元の Windows では 101 件すべて緑・Linux の CI でだけ 1 件が赤**
+  になって判明した（本 PR の初回 CI・`backend-test (4)`）。回帰は `[Theory]`（相対パス／`file://`／`ftp://`）で固定した。
+  **手元の全緑は「CI でも緑」を意味しない**——`Uri` の解釈のように OS に依存する API では特にそうである。
 
 ### なぜ enrich / filter ではなくプロセッサか
 
@@ -121,11 +130,11 @@ IADR-0121 決定 4 が「抑止は当該クライアントに閉じる」とし�
 
 ## 対照実験（実測）
 
-新設 15 件（`[Fact]` 4 ＋ `[Theory]` 11 ケース）を含め、当アセンブリ **99 件が緑**（変更前の母数は 84 件）。
+新設 17 件（`[Fact]` 4 ＋ `[Theory]` 13 ケース）を含め、当アセンブリ **101 件が緑**（変更前の母数は 84 件）。
 3 回連続で緑を確認した（`ActivityListener` の共有に起因する不安定さが無いことの確認）。
 
-**秘匿の 1 行（`.AddProcessor(new CredentialBearingUriRedactionProcessor())`）を外して同じ 99 件を走らせると、
-肯定形 1 件だけが赤になり、残り 98 件は緑のまま**であった。
+**秘匿の 1 行（`.AddProcessor(new CredentialBearingUriRedactionProcessor())`）を外して同じ 101 件を走らせると、
+肯定形 1 件だけが赤になり、残り 100 件は緑のまま**であった。
 
 ```text
 失敗 …CredentialBearingUriTraceRedactionTests.共有の可観測性配線を通した_Webhook_送信のトレースにトークンが現れない
@@ -136,8 +145,10 @@ IADR-0121 決定 4 が「抑止は当該クライアントに閉じる」とし�
   to not have any items matching s.Contains("SUPER-SECRET-WEBHOOK-TOKEN", Ordinal) …
   but found {"url.full=http://localhost:28524/api/webhooks/wh-test-id/SUPER-SECRET-WEBHOOK-TOKEN"}.
 
-失敗!  -失敗: 1、合格: 98、スキップ: 0、合計: 99
+失敗!  -失敗: 1、合格: 100、スキップ: 0、合計: 101
 ```
+
+（上の失敗出力のタグ列は初回計測時のもの。ポート番号は実行ごとに変わる。）
 
 **失敗メッセージ自体が #313 の指摘した漏洩をそのまま出力している**（`url.full` にトークンが平文で載る）。
 重要なのは**赤が 1 件で止まったこと**である——陰性対照（A/B）と巻き添えなしの試験は緑のままであり、

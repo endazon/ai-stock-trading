@@ -49,6 +49,11 @@ public sealed class CredentialBearingUriRedactionProcessor : BaseProcessor<Activ
         redacted = string.Empty;
         if (string.IsNullOrEmpty(urlFull)) return false;
         if (!Uri.TryCreate(urlFull, UriKind.Absolute, out var uri)) return false;
+        // 🔴 **http/https に限る。** `Uri.TryCreate(..., UriKind.Absolute)` の結果は**プラットフォームで違う** ——
+        // Unix では先頭が `/` の相対パスが `file:///…` として**絶対 URI と見なされ true になる**（Windows では false）。
+        // scheme を見ないと、その場合に `file:///***` を書き戻してしまう（CI の Linux で実測）。
+        // `url.full` は常に http/https であり、ここを絞っても取りこぼしは生じない。
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
         if (!CarriesCredentialInPath(uri)) return false;
 
         redacted = $"{uri.Scheme}://{uri.Host}{RedactedPath}";

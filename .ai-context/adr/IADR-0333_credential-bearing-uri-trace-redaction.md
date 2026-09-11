@@ -78,6 +78,9 @@ IADR-0121 のように「notification-service の中だけ」へ閉じた対策�
 3. **落とす先は `scheme://host/***`。** ログ側（`RedactedUriHttpClientLogger`）と**同じ出力形に揃える**。
    部分開示（トークンだけ伏せて id は出す）は**しない**（IADR-0121 決定 5 と同じ理由——どこまでが秘密かは
    送信先の実装に依存し、アプリ側が正しく知り続けられる保証がない）。userinfo は `Uri.Host` を使うことで落ちる。
+   🔴 **対象は http/https に限る。** `Uri.TryCreate(…, UriKind.Absolute)` の結果は**プラットフォームで違う**——
+   Unix では先頭が `/` の相対パスが `file:///…` として**絶対 URI と見なされ**、scheme を見ないと `file:///***` を
+   書き戻す。**Windows では緑・Linux の CI でだけ赤**になった（本 PR の初回 CI で実測。回帰は `[Theory]` で固定）。
 4. 🔴 **登録位置は `AddOtlpExporter()` より前とする。** OTel のプロセッサは**登録順**に `OnEnd` が走り、
    `AddOtlpExporter()` は末尾にバッチ処理プロセッサを足す。**秘匿がその後ろへ回ると、バッチへ積まれてから
    書き換えることになり間に合わない。** テストは exporter と同じ「後ろ」の位置から観測することで、
