@@ -358,6 +358,9 @@ graph LR
    **同型の事故が 2 回目に起きたら規則を足す。**
 5. **基盤側の記録（`chunk-budget-baseline.json` の帰属・合成点のコメント）は誤ったままである。**
    本リポジトリからは直せない（`MSP/IADR-0120`）。訂正は親が基盤側で行う。
+6. ［2026-09-12 追記 / MSP bump］**母集合テストが `process.cwd()` から実ソースを解決していたため、基盤の合成
+   `test:coverage`（cwd = `src/`）で ENOENT になった**（基盤で submodule を `c5cd0de` へ進めた実測。単独では通る）。
+   `expect.getState().testPath` 基点へ是正した（`.ai-context/specs/20260912_catalog-test-cwd-independent.md`）。
 
 ## 未決事項
 

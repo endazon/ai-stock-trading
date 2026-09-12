@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 // SC-01, SC-02, SC-03, SC-04, IADR-0340: **文言カタログの登録が、画面の遅延チャンク側に載っていること**の固定。
 //
@@ -72,11 +72,13 @@ describe('文言カタログの登録が画面の遅延チャンク側に載っ�
     // `lazyRouteComponent(() => import('../components/XxxPage'), 'XxxPage')` の import 先を抜く。
     const found = ROUTE_FILES.map(([dir, file]) => {
       // 🔴 `import.meta.url` は jsdom 環境では `http://localhost/...` になりファイルを指さない（実測）。
-      // vitest の root（`frontend/`）＝ `process.cwd()` から解決する。
-      const source = readFileSync(
-        resolve(process.cwd(), `src/features/${dir}/routes/${file}.tsx`),
-        'utf-8',
-      );
+      // 🔴 `process.cwd()` から解決してはならない —— 本テストは基盤（MSP）の合成 `test:coverage` でも
+      // 横断実行され、そこでは cwd が `src/`（pnpm workspace の root）で ENOENT になる（MSP の bump で実測）。
+      // **本ファイル自身の絶対パス**（vitest の `expect.getState().testPath`）から解決すると、
+      // 単独（cwd = `frontend/`）でも合成（cwd = `src/`）でも同じ場所を指す。
+      const testPath = expect.getState().testPath;
+      expect(testPath, 'vitest が testPath を返さない').toBeTruthy();
+      const source = readFileSync(resolve(dirname(testPath!), `${dir}/routes/${file}.tsx`), 'utf-8');
       const match = /lazyRouteComponent\(\s*\(\)\s*=>\s*import\('\.\.\/components\/([A-Za-z0-9_]+)'\)/.exec(
         source,
       );
