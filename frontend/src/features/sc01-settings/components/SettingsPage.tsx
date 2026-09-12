@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { i18n } from '@lingui/core';
+// IADR-0340 決定 2: **`i18n` は `@lingui/core` ではなく本ユニットの `lib/i18n` から受け取る。**
+// 本モジュールは route factory の `lazyRouteComponent` が動的 import する**遅延チャンクの入口**であり、
+// この import が本ユニットの文言カタログ（ja・442 キー）を初期ロードではなく遅延側へ連れてくる。
+// **`@lingui/core` へ戻すとカタログの登録経路が切れる**（本番ビルドは画面にハッシュを出す）。
+import { i18n } from '@ai-stock-trading/lib/i18n';
 import { msg } from '@lingui/core/macro';
 import {
   Button,

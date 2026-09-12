@@ -73,6 +73,13 @@ export const aiStockTradingBreadcrumbs: readonly FeatureBreadcrumb[] = [
 ];
 
 // 利用者裁定 2026-09-12 #3（Lingui 導入・英訳不要）: 本ユニットの文言カタログ（ja のみ）。
-// 合成点が `registerUnitMessages(aiStockTradingMessages)` で基盤の i18n へ追加ロードする
-// （ルート・ナビ・パンくずと同じく「合成点へ 1 行」で載る第 3 の契約）。実体と理由は `src/lib/i18n.ts`。
-export { aiStockTradingMessages } from '@ai-stock-trading/lib/i18n';
+//
+// 🔴 **カタログはここから公開しない**（IADR-0340 決定 2。従前は `aiStockTradingMessages` を再公開し、
+// 基盤の合成点が `registerUnitMessages` を呼んでいた）。本ファイルは合成点が**静的 import** する
+// 公開面であり、ここから辿れるものはすべて基盤の**初期チャンク**に入る——カタログ 25,267 B（442 キー）が
+// そこに載っていた（合成時の初期ロード増 +25,907 B の 97.5%。実測）。
+//
+// 登録は `src/lib/i18n.ts` がモジュール評価時に行い、**それを import するのは 4 画面の Page
+// （`lazyRouteComponent` の遅延チャンク）だけ**である。**ここから `@ai-stock-trading/lib/i18n` を
+// import してはならない**——1 本でも静的辺ができた瞬間にカタログは初期ロードへ戻り、
+// **ビルドは成功したまま誰も気付かない**。

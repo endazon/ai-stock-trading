@@ -28,6 +28,11 @@
     // 従前ここは `@foundation/*` → `../../platform/frontend/src/foundation/*` という
     // **基盤側に既に存在しない配置**を指していた。
     "paths": {
+      // IADR-0340: 本ユニットは基盤の `registerUnitMessages` でカタログを登録する（`src/lib/i18n.ts`）。
+      // 単独リポは `tsconfig.standalone.json` の `@foundation/*` ワイルドカードが
+      // `test/foundation-stub/i18n.ts` へ落とすので、**足すのはここだけ**である。
+      "@foundation/i18n/*": ["../../platform/frontend/src/lib/i18n/*"],
+      "@foundation/i18n": ["../../platform/frontend/src/lib/i18n"],
       "@foundation/routing/*": ["../../platform/frontend/src/app/routing/*"],
       "@foundation/routing": ["../../platform/frontend/src/app/routing"],
       "@foundation/api/*": ["../../platform/frontend/src/lib/api/*"],
