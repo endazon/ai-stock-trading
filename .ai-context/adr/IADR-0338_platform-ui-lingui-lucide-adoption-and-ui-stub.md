@@ -124,6 +124,17 @@ export を使えば単独リポの型検査が落ちるので気付ける。**�
 
 ### 決定 3 — Lingui は `ja` 単独カタログとし、英訳を持たない。カタログは合成点へ公開する
 
+> **［2026-09-12 追記 / [#792](https://github.com/endazon/ai-stock-trading/issues/792) / [IADR-0340](./IADR-0340_lazy-route-components-for-composition.md)］**
+> **本決定のうち「`src/features/index.ts` が再公開し、基盤の合成点が `registerUnitMessages` を呼ぶ」
+> という配線は [IADR-0340](./IADR-0340_lazy-route-components-for-composition.md) 決定 2 が置き換えた**
+> （Superseded by。下記の本文プロズは当時の記録として据え置く）。
+> 合成点の公開面から辿れるものは基盤の**初期チャンク**に入るため、この配線はカタログ
+> **25,267 B（442 キー）** を初期ロードへ載せていた（合成時の初期ロード増 +25,907 B の 97.5%。実測）。
+> 現在は `src/lib/i18n.ts` がモジュール評価時に登録し、**それを import するのは 4 画面の Page
+> （`lazyRouteComponent` の遅延チャンク）だけ**である。
+> **`ja` 単独カタログで英訳を持たないこと・`en` へ ja を流すこと・`POT-Creation-Date` の扱い・
+> CI の検査所在は現行のまま**である（置き換わったのは「いつ・どこから登録するか」だけ）。
+
 - `frontend/lingui.config.ts`: `sourceLocale: 'ja'` / `locales: ['ja']` / `compileNamespace: 'ts'`。
   抽出・コンパイルは `npm run i18n` で**本リポジトリ内に完結**する（基盤の抽出範囲は本ユニットを
   含まない。`MSP/IADR-0120`）。生成物（`src/locales/ja/messages.{po,ts}`）は**コミットする**
@@ -149,6 +160,13 @@ export を使えば単独リポの型検査が落ちるので気付ける。**�
 （`@lingui/babel-plugin-lingui-macro` の `descriptorFields: 'auto'` ＝ production では `id-only`）。
 **カタログが基盤の i18n に載っていないと、本番の画面にハッシュがそのまま出る。**
 開発・テストでは `message` が残るため気付けない。**合成点への配線を外してはならない。**
+
+> **［2026-09-12 追記 / [#792](https://github.com/endazon/ai-stock-trading/issues/792) / [IADR-0340](./IADR-0340_lazy-route-components-for-composition.md)］**
+> **この危険は消えていない。守る場所が移っただけである**——現在「外してはならない配線」は
+> **4 画面の Page が `@ai-stock-trading/lib/i18n` から `i18n` を受け取っていること**である。
+> あわせて実測を 1 つ残す: **E2E はこの破れを捕まえない**（ハーネスは `vite dev` で動き、
+> 開発ビルドは `message` を残すため。登録を止めて `sc03-controls.spec.ts` は 10/10 通った）。
+> 守っているのは `src/features/catalogRegistration.test.ts` である。
 
 ### 決定 4 — 文言は `i18n._(msg…)` に統一し、`<Trans>` を使わない
 
@@ -236,5 +254,6 @@ IADR-0288 には `Superseded by IADR-0338（決定 6 のみ）` を追記する�
 
 - Supersedes: IADR-0311（**決定 4 のうち Node の値 `20` のみ。「揃える」は維持**）、IADR-0288（**決定 6 のうち Lingui と `@platform/ui` に関する部分のみ**。
   orval に関する部分と他の決定 1〜5 は現行のまま）
-- Superseded by: なし
+- Superseded by: **IADR-0340（決定 3 のうち「合成点が再公開し `registerUnitMessages` を呼ぶ」配線の部分のみ。**
+  **ja 単独カタログ・en へ ja を流す・`POT-Creation-Date` の扱い・CI の検査所在は現行のまま）**
 - 併走: IADR-0339（本 IADR が敷いた部品語彙で 4 画面をモックへ合わせる決定）
