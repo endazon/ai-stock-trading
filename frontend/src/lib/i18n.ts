@@ -33,7 +33,7 @@ import { messages as ja } from '../locales/ja/messages';
 //     こうすると「文言を描く入口」と「カタログの登録」が同じ import で結ばれ、**片方だけ消せない**。
 //   - Page の**子部品**（`QueryPhase` / `PaperModeBanner` / 各 Form 等）は `@lingui/core` から
 //     直接 `i18n` を取ってよい。**必ず Page を経由して描かれる**ため、描画時点で登録済みである。
-// 不変条件は `i18n.test.ts` が固定する（4 画面それぞれが登録を連れていること）。
+// 不変条件は `src/features/catalogRegistration.test.ts` が固定する（4 画面それぞれが登録を連れていること）。
 const aiStockTradingMessages = { ja } as const;
 
 let registered = false;

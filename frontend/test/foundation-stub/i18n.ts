@@ -17,7 +17,7 @@ type Locale = 'ja' | 'en';
  * 食い違う原因になる（`test/ui-stub/index.ts` 冒頭の規律と同じ理由）。
  *
  * ここが担うのは 1 つだけ——**渡されたカタログが `i18n` に載ること**である。
- * これは「4 画面の遅延チャンクがカタログ登録を連れている」不変条件（`src/lib/i18n.test.ts`）と、
+ * これは「4 画面の遅延チャンクがカタログ登録を連れている」不変条件（`src/features/catalogRegistration.test.ts`）と、
  * E2E ハーネス（自前で `load` せず活性化だけ行う）が実際に依存している挙動である。
  */
 export function registerUnitMessages(messagesByLocale: Partial<Record<Locale, Messages>>): void {
