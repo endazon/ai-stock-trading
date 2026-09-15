@@ -71,7 +71,10 @@ plan_refs:
 - [x] AC6: `k8s-local-deploy.test.sh` が ESO / 非 ESO の両経路を固定する（ESO で `ast-secrets` を作成・パッチしない／管理外 Secret の警告と非削除／discord.bot.* 非引き継ぎ／CRD 不在で中断／helm へのフラグ明示）。既存 79 件は緑のまま
 - [x] AC7: 突然変異 3 種が赤になる: (a) OpenD に注釈 (b) 本番描画の変化 (c) ESO で `ast-secrets` を同期（加えて (d) ESO で discord.bot.* を渡す）
 - [x] AC8: README（opend / chart）と Vault runbook が「画面（SC-22 で資格情報・RSA 生成・API キー・Discord ID、SC-04 で検証コード）→ フォールバックとしてコンソール」の順で読める
-- [ ] AC9: IADR-0341 を作成し索引へ登録。文書検査（trace-blocks / knowledge-graph / cross-repo-refs / plan-id-qualification / doc-links）は緑。commit-messages はコミット後に確認する
+- [x] AC9: IADR-0341 を作成し索引へ登録。文書検査（trace-blocks / knowledge-graph / cross-repo-refs / plan-id-qualification / doc-links）は緑。`check-commit-messages.js`（`origin/develop..HEAD`・4 件）も適合
+
+> 注: `node scripts/scripts.test.js` はこの Windows 環境で `spawnSync bash ENOENT` により途中終了する。**変更前の `origin/develop`（`d05e873f`）を
+> 別ワークツリーで実行しても同じ位置（ok 322 件の直後）で同じ例外になる**ため、本変更に起因しない環境要因である。完走の確認は CI（Linux）に委ねる。
 
 ## 検証の証跡（2026-09-15・ワークツリー上の実行）
 
