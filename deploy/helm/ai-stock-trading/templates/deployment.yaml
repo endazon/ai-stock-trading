@@ -26,13 +26,36 @@
        これにより Helm が env を単独所有し、`kubectl set env`（フィールドマネージャ kubectl-set）との
        所有権競合（helm upgrade の `conflict with "kubectl-set"`）が構造的に起きない。 */}}
 {{- $envOverrides := dict -}}
+{{- /* #795, IADR-0341: ESO 所有（externalSecrets.enabled かつ appSecrets.enabled）では、Discord の環境固有 ID 4 件を
+       values ではなく ast-secrets の契約キーから読む（値は基盤の画面から Vault へ書く）。$envSecretRefs は
+       env 名 → Secret キー。optional のため未設定は env 無し＝IADR-0062 の安全既定（全拒否）のまま。
+       env 名は変えない（DiscordBotOptionsReader は無改修）。 */ -}}
+{{- $envSecretRefs := dict -}}
+{{- $es := $.Values.externalSecrets | default dict -}}
+{{- $appSecretsOn := and $es.enabled (($es.appSecrets | default dict).enabled) -}}
 {{- if eq $name "notification" -}}
 {{- $bot := (($.Values.discord | default dict).bot) | default dict -}}
+{{- if $appSecretsOn -}}
+{{- if or $bot.guildId $bot.channelId $bot.allowedUserIds $bot.userMapping -}}
+{{- fail "externalSecrets.appSecrets.enabled=true（Discord ID を ast-secrets から読む）と discord.bot.* の非空指定は併用できません。値は ast-secrets（Vault の ai-stock-trading/app-secrets の discord-bot-*）へ入れるか、ESO を使わない経路（k8s-local-deploy.sh の AST_ESO=0）で discord.bot.* を使ってください（#795 / IADR-0341）。" -}}
+{{- end -}}
+{{- $_ := set $envSecretRefs "Notifications__Discord__Bot__GuildId" "discord-bot-guild-id" -}}
+{{- $_ := set $envSecretRefs "Notifications__Discord__Bot__ChannelId" "discord-bot-channel-id" -}}
+{{- $_ := set $envSecretRefs "Notifications__Discord__Bot__AllowedUserIds" "discord-bot-allowed-user-ids" -}}
+{{- $_ := set $envSecretRefs "Notifications__Discord__Bot__UserMapping" "discord-bot-user-mapping" -}}
+{{- else -}}
 {{- with $bot.guildId }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__GuildId" . -}}{{- end -}}
 {{- with $bot.channelId }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__ChannelId" . -}}{{- end -}}
 {{- with $bot.allowedUserIds }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__AllowedUserIds" . -}}{{- end -}}
 {{- with $bot.userMapping }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__UserMapping" . -}}{{- end -}}
-{{- end }}
+{{- end -}}
+{{- end -}}
+{{- /* #795, IADR-0341: Reloader の注釈に載せる Secret 名を描画時に導出する（手書きの一覧を持たない）。
+       env の secretKeyRef ＋ 上の Discord 切り替え分 ＋ moomoo 経路の order-execution がマウントする RSA 鍵。 */ -}}
+{{- $reloadSecrets := list -}}
+{{- range $e := $svc.extraEnv }}{{- if $e.secretKeyRef }}{{- $reloadSecrets = append $reloadSecrets $e.secretKeyRef.name -}}{{- end }}{{- end -}}
+{{- if $envSecretRefs }}{{- $reloadSecrets = append $reloadSecrets $es.appSecrets.targetName -}}{{- end -}}
+{{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -42,6 +65,12 @@ metadata:
   labels:
     app: {{ $name }}-service
     app.kubernetes.io/part-of: ai-stock-trading
+  {{- if and (($.Values.reloader | default dict).enabled) $reloadSecrets }}
+  {{- /* #795, IADR-0341: Secret の変更（画面からの書き込み→ESO force-sync）で Reloader がこの Deployment を再起動する。
+         本 template は Worker だけを描く＝OpenD（templates/opend.yaml）には付かない。 */}}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ $reloadSecrets | uniq | sortAlpha | join "," | quote }}
+  {{- end }}
 spec:
   replicas: 1
   selector:
@@ -124,7 +153,15 @@ spec:
             {{- end }}
             {{- range $e := $svc.extraEnv }}
             - name: {{ $e.name }}
-              {{- if $e.secretKeyRef }}
+              {{- $refKey := index $envSecretRefs $e.name }}
+              {{- if $refKey }}
+              {{- /* #795, IADR-0341: ESO 所有では Discord ID を ast-secrets の契約キーから読む（上の $envSecretRefs）。 */}}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $es.appSecrets.targetName }}
+                  key: {{ $refKey }}
+                  optional: true
+              {{- else if $e.secretKeyRef }}
               valueFrom:
                 secretKeyRef:
                   name: {{ $e.secretKeyRef.name }}

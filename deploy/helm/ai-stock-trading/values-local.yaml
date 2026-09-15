@@ -12,13 +12,16 @@
 # ★ 非破壊・安全の前提:
 #   - Helm はリスト(extraEnv)を「置換」する。よって各サービスの extraEnv は values.yaml の全要素＋有効化分を写す
 #     （欠落=そのキーが消える）。image/db/auth はマップのため merge され保持される（extraEnv のみ置換）。
-#   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は k8s-local-deploy.sh の ast-secrets
-#     作成（env 上書き）／ ESO(Vault) 同期（IADR-0094）に委ねる。
+#   - secret は secretKeyRef のまま（平文の鍵・トークンは置かない）。実値は ESO(Vault) 同期（IADR-0094）が既定で
+#     供給する（#795 / IADR-0341: 値は基盤の画面から Vault へ書く）。AST_ESO=0 の従来経路でだけ
+#     k8s-local-deploy.sh が env から ast-secrets を作る。
 #   - order-execution は含めない → Broker__Provider は template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
-#   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は空既定。未設定時は IADR-0062 の安全既定
-#     （空は「全許可」ではなく全拒否）で no-op。値は chart の設定点 discord.bot.*（#245/IADR-0102）から与える
-#     （標準手順 = k8s-local-deploy.sh の DISCORD_BOT_* env → --set-string。`kubectl set env` は使わない）。
+#   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は未設定時 IADR-0062 の安全既定
+#     （空は「全許可」ではなく全拒否）で no-op。ESO 所有（本プロファイルの既定）では template が ast-secrets の
+#     discord-bot-* キー（画面から入れる）を optional secretKeyRef で読む（#795 / IADR-0341）。AST_ESO=0 の従来経路でだけ
+#     chart の設定点 discord.bot.*（#245/IADR-0102。k8s-local-deploy.sh の DISCORD_BOT_* env → --set-string）から与える。
+#     `kubectl set env` は使わない。
 #
 # DNS: 同 ns=短名(<svc>-service)、MSP=<svc>.microservices-platform、keycloak=ExternalName alias(短名可・infraAliases)。
 
@@ -40,6 +43,22 @@ global:
 opend:
   authGateway:
     enabled: true
+
+# #795, IADR-0341: 連結ローカル（基盤を VAULT=1 ESO=1 で起動）では秘密情報・接続設定を基盤の画面から Vault へ書き、
+# ESO が同期する。ast-secrets / moomoo-credentials / moomoo-rsa は ExternalSecret が所有する（ExternalSecret 名＝
+# Secret 名。基盤 BFF は書き込み後にこの名前で force-sync する）。store は values.yaml 既定の vault-backend
+# （ClusterSecretStore・基盤が作る）。scripts/k8s-local-deploy.sh は AST_ESO（未設定＝本値から導出）で経路を選び、
+# ESO 所有の間は ast-secrets を作らず discord.bot.* も渡さない。ESO の無いクラスタでは AST_ESO=0 で従来経路へ戻す
+# （helm へ両フラグ false を明示する）。OpenD は moomoo-credentials / moomoo-rsa が揃うまで起動を待つ（fail-closed）。
+externalSecrets:
+  enabled: true
+  appSecrets:
+    enabled: true
+
+# #795, IADR-0341: 画面からの書き込み（→ force-sync → Secret 更新）で消費側 Deployment を Reloader に再起動させる。
+# OpenD には reload 注釈を付けず、代わりに reloader.stakater.com/auto: "false" を付けて明示的に対象外にする。
+reloader:
+  enabled: true
 
 services:
 
@@ -395,9 +414,10 @@ services:
       - { name: Notifications__Discord__Bot__Enabled, value: "true" }      # 配線恒常化（Token 空なら接続しない）
       - name: Notifications__Discord__Bot__Token
         secretKeyRef: { name: ast-secrets, key: discord-bot-token, optional: true }
-      # 環境固有 ID（非機密）。値は chart の設定点 discord.bot.*（空既定）が非空のとき template が上書きする
-      # （#245, IADR-0102）。標準手順では k8s-local-deploy.sh の DISCORD_BOT_GUILD_ID / DISCORD_BOT_CHANNEL_ID /
-      # DISCORD_BOT_ALLOWED_USER_IDS / DISCORD_BOT_USER_MAPPING を env で与える（→ --set-string）。
+      # 環境固有 ID（非機密）。#795, IADR-0341: ESO 所有（本プロファイルの既定）では template が下の 4 件を
+      # ast-secrets の discord-bot-guild-id / -channel-id / -allowed-user-ids / -user-mapping（optional）へ差し替える
+      # （値は基盤の画面から入れる）。AST_ESO=0 の従来経路では chart の設定点 discord.bot.* が非空のとき上書きする
+      # （#245, IADR-0102。k8s-local-deploy.sh の DISCORD_BOT_GUILD_ID 等の env → --set-string）。
       # ⚠️ `kubectl set env` で注入しないこと（次回の helm upgrade が `conflict with "kubectl-set"` で失敗する）。
       - { name: Notifications__Discord__Bot__GuildId, value: "" }          # ← 環境固有（空=全拒否）
       - { name: Notifications__Discord__Bot__ChannelId, value: "" }        # ← 環境固有（空=全拒否）

@@ -3,15 +3,15 @@ title: Vault 秘匿参照（External Secrets）opt-in 手順 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-09-05
+updated: 2026-09-15
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-05]
+ids: [NFR-05, SC-04]
 adrs: [ADR-0006, ADR-0022]
-iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, MSP:IADR-0077]
-specs: []
-issues: [#24, #262, #263, #364, #686]
+iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, IADR-0341, MSP:IADR-0077]
+specs: [20260915_795_screen-only-eso-wiring]
+issues: [#24, #262, #263, #364, #686, #795, MSP#1477]
 -->
 
 
@@ -24,9 +24,24 @@ issues: [#24, #262, #263, #364, #686]
 > ⚠️ **既定は k8s Secret 直運用（Vault 非依存）。本手順は opt-in で、有効化しない限り現行挙動は変わらない。**
 > **平文の秘密を Git にコミットしない。** 実際に Vault へ鍵が載り ESO が同期して初めて「Vault 化」は充足する。
 
-## 現状（既定・Vault 非依存）
+## 基盤と連結したローカル配備（既定で有効・値は画面から入れる）
 
-- API 鍵群は Secret `ast-secrets`（手動作成の out-of-band）に置き、各サービスが
+基盤と連結したローカル k8s（基盤を `VAULT=1 ESO=1` で起動）では、ローカルプロファイル `values-local.yaml` が
+`externalSecrets.enabled` / `externalSecrets.appSecrets.enabled` / `reloader.enabled` を有効にしている。
+下表の 3 つの Secret はすべて `ExternalSecret` が所有し、**値は基盤の「秘密情報・接続設定の管理」画面から Vault へ書く**
+（手順 1 の `vault kv put` はフォールバック）。
+
+- 外部 API キーと **Discord の環境固有 ID 4 件**は画面から書く。`*-auth-client-*` は画面では書けない（基盤が dev 既定を seed する）。
+- moomoo の**パスワードは平文で入力し、基盤の BFF が MD5 に変換して** `login-pwd-md5` に書く。**RSA 鍵は画面の「生成」**で作る。
+- 書き込み後、基盤の BFF が対象の `ExternalSecret` を即時同期させ、Stakater Reloader が消費側 Deployment を再起動する。
+  **OpenD は再起動しない**（RSA 鍵を生成し直したら OpenD を手動で再起動する。詳細は
+  [chart README「画面だけで PoC を立ち上げる」](../../deploy/helm/ai-stock-trading/README.md)）。
+- `scripts/k8s-local-deploy.sh` はこの間 `ast-secrets` を作らない。ESO の無いクラスタでは `AST_ESO=0` で下記「既定」の手動運用へ戻す。
+- `ExternalSecret` の apiVersion は `external-secrets.io/v1`（基盤の ESO は `v1beta1` を提供しない）。
+
+## 現状（chart 既定・Vault 非依存）
+
+- chart 既定（本番描画・`AST_ESO=0` の従来経路）では、API 鍵群は Secret `ast-secrets`（手動作成の out-of-band）に置き、各サービスが
   `secretKeyRef`（`optional: true`）で参照する。moomoo 資格情報・RSA 鍵も同様に手動 Secret。
 - この状態で `externalSecrets.enabled=false`（既定）＝`ExternalSecret` は一切描画されない（fail-safe）。
 
@@ -42,7 +57,13 @@ issues: [#24, #262, #263, #364, #686]
 `finnhub-api-key` / `edinet-subscription-key` / `fred-api-key` / `marketdata-finnhub-api-key` /
 `service-auth-client-id` / `service-auth-client-secret` / `kb-auth-client-id` / `kb-auth-client-secret` /
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
-`discord-owner-auth-client-id` / `discord-owner-auth-client-secret`。
+`discord-owner-auth-client-id` / `discord-owner-auth-client-secret` / `sec-edgar-user-agent` /
+`llm-auth-client-id` / `llm-auth-client-secret`。
+
+**Discord の環境固有 ID**（非機密）も同じ KV に置く: `discord-bot-guild-id` / `discord-bot-channel-id` /
+`discord-bot-allowed-user-ids` / `discord-bot-user-mapping`。`appSecrets` 有効時、notification の env
+（名前は不変）はこれらを `optional` の `secretKeyRef` で読む。未設定は空＝全拒否の no-op（Helm values の
+`discord.bot.*` は使わない。併用は描画時に止まる）。
 
 > **`fred-api-key` は為替レートの「フォールバック用」であり、必須前提ではない**（#686 以降）。
 > **第一の情報源は日銀「外国為替市況（日次）」で認証不要**のため、鍵が無くても JPY 建て銘柄の換算は動く

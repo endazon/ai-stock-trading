@@ -36,3 +36,9 @@ ff2291a26e121e7898febab61166b502d2da51a1:deploy/helm/ai-stock-trading/README.md:
 53aaa5eab5416408d70f41716c88ac4d3cfab235:.ai-context/specs/20260903_667_finnhub-daily-volume-control.md:finnhub-access-token:54
 53aaa5eab5416408d70f41716c88ac4d3cfab235:.ai-context/specs/20260903_667_finnhub-daily-volume-control.md:finnhub-access-token:85
 cf093d22f9f30fb286bbfacf3eab696a766397e7:deploy/helm/ai-stock-trading/README.md:finnhub-access-token:101
+
+# #795 / IADR-0341: helm.yml の描画アサーション（AST_ESO=0 相当・appSecrets と discord.bot.* の併用拒否）で
+# **ダミー**の 18 桁 ID `123456789012345678` を `--set-string discord.bot.guildId=` に渡した行を
+# discord-client-id ルールが検知した（#245 と同型）。Discord のサーバー ID は認証情報ではなく、当該値は実在しないダミーである。
+# gitleaks は commit 範囲（履歴）を走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない）。
+aa010d6023710320264e183fb540b8379286ecee:.github/workflows/helm.yml:discord-client-id:624
