@@ -32,7 +32,8 @@ set -u
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 STATE="$(mktemp -d)"
 STUB_BIN="$(mktemp -d)"
-trap 'rm -rf "$STATE" "$STUB_BIN"' EXIT
+PROFILES="$(mktemp -d)"   # #795: ESO 判定に使うプロファイル（values ファイル）の疑似。given_secret で消さない
+trap 'rm -rf "$STATE" "$STUB_BIN" "$PROFILES"' EXIT
 
 # ---- kubectl スタブ -------------------------------------------------------
 # 状態は $AST_TEST_STATE に置く: exists（Secret 実在）/ nonempty_keys（非空の値を持つキー名）/
@@ -44,10 +45,29 @@ set -u
 S="$AST_TEST_STATE"
 case "${1:-} ${2:-}" in
   "get secret")
-    [ -f "$S/exists" ] || { echo 'Error from server (NotFound): secrets "ast-secrets" not found' >&2; exit 1; }
+    # #795: Secret 名ごとの実在（ast-secrets は従来どおり $S/exists、他は $S/exists-<name>）と
+    # ownerReferences の kind（$S/owner-<name>）を疑似する。
+    name="${3:-}"
+    if [ "$name" = "ast-secrets" ]; then f="$S/exists"; else f="$S/exists-$name"; fi
+    [ -f "$f" ] || { echo "Error from server (NotFound): secrets \"$name\" not found" >&2; exit 1; }
     for a in "$@"; do
-      case "$a" in go-template=*) cat "$S/nonempty_keys"; exit 0 ;; esac
+      case "$a" in
+        go-template=*) cat "$S/nonempty_keys"; exit 0 ;;
+        jsonpath=*ownerReferences*) [ -f "$S/owner-$name" ] && cat "$S/owner-$name"; exit 0 ;;
+      esac
     done
+    exit 0
+    ;;
+  "get crd")
+    [ -f "$S/crd" ] || { echo 'Error from server (NotFound): customresourcedefinitions not found' >&2; exit 1; }
+    exit 0
+    ;;
+  "get clustersecretstore")
+    [ -f "$S/store-${3:-}" ] || { echo 'Error from server (NotFound): clustersecretstores not found' >&2; exit 1; }
+    exit 0
+    ;;
+  "delete secret")
+    printf '%s\n' "${3:-}" >> "$S/deleted.log"
     exit 0
     ;;
   "create secret")
@@ -109,7 +129,7 @@ export AST_DEPLOY_LIB
 set +e +o pipefail   # 対象が有効化した set -e を戻し、失敗ケースを観測できるようにする
 # 対象スクリプトの `trap ast_cleanup EXIT` が上の EXIT トラップを上書きするため、両方を呼ぶ形で張り直す
 # （張り直さないと本スクリプトが確保した一時ディレクトリが残置される）。
-trap 'ast_cleanup; rm -rf "$STATE" "$STUB_BIN"' EXIT
+trap 'ast_cleanup; rm -rf "$STATE" "$STUB_BIN" "$PROFILES"' EXIT
 
 # ---- テストハーネス -------------------------------------------------------
 PASSED=0
@@ -137,6 +157,7 @@ given_secret() {
   for v in $SECRET_ENV_VARS; do unset "$v"; done
   unset BROKER_TIER OPEND_ENABLED
   for v in $VALUE_ENV_VARS; do unset "$v"; done
+  unset AST_ESO AST_ESO_MODE AST_PROFILE_VALUES
   FORCE_EMPTY=0
   FORCE_EMPTY_VALUES=0
   rm -rf "$STATE"; mkdir -p "$STATE"
@@ -466,6 +487,181 @@ given_deployments ""
 run_rollout
 assert_eq   'T-673-06 空: 正常終了する' "$RC" "0"
 assert_eq   'T-673-06 空: 何も再起動しない' "$RESTARTED" ''
+
+# ---- #795 / IADR-0341: 連結ローカルの ESO 所有（画面から入れた値を Pod へ届ける） ----------
+# ESO が ast-secrets / moomoo-credentials / moomoo-rsa を所有するプロファイルでは、本スクリプトがそれらを作る・
+# パッチする・discord.bot.* を values で渡すと所有が割れる（画面で入れた値と食い違う）。AST_ESO で経路を選ぶ。
+printf '\nk8s-local-deploy.sh: ESO 所有の経路切り替え（#795 / IADR-0341）\n'
+
+cat > "$PROFILES/eso.yaml" <<'YAML'
+# コメント: コロンを含む行でも降下が崩れないこと
+externalSecrets:
+  # 入れ子のコメント: 同上
+  enabled: true
+  appSecrets:
+    enabled: true
+YAML
+cat > "$PROFILES/noeso.yaml" <<'YAML'
+externalSecrets:
+  enabled: true
+  appSecrets:
+    enabled: false
+YAML
+
+# resolve_ast_eso_mode をサブシェルで実行し、RC / OUT / ERR / MODE / ESO_OVERRIDES を埋める。
+run_eso_mode() {
+  (
+    resolve_ast_eso_mode
+    rc=$?
+    printf '%s\n' "${AST_ESO_MODE:-}" > "$STATE/mode.txt"
+    printf '%s\n' "${AST_ESO_OVERRIDES[@]:-}" > "$STATE/eso-overrides.txt"
+    exit $rc
+  ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  MODE="$(cat "$STATE/mode.txt" 2>/dev/null || true)"
+  ESO_OVERRIDES="$(cat "$STATE/eso-overrides.txt" 2>/dev/null || true)"
+}
+
+# 経路を解決したうえで ast_prepare_secrets を実行し、RC / OUT / ERR / PATCH / DELETED を埋める。
+run_prepare() {
+  ( resolve_ast_eso_mode > /dev/null 2>&1 || exit 9; ast_prepare_secrets ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  PATCH=""
+  [ -f "$STATE/patch.json" ] && PATCH="$(cat "$STATE/patch.json")"
+  DELETED="$(cat "$STATE/deleted.log" 2>/dev/null || true)"
+}
+
+# 経路を解決したうえで resolve_ast_value_overrides を実行する（run_resolve の ESO 版）。
+run_resolve_with_mode() {
+  (
+    resolve_ast_eso_mode > /dev/null 2>&1 || exit 9
+    resolve_ast_value_overrides
+    rc=$?
+    printf '%s\n' "${AST_VALUE_OVERRIDES[@]:-}" > "$STATE/overrides.txt"
+    exit $rc
+  ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  OVERRIDES="$(cat "$STATE/overrides.txt" 2>/dev/null || true)"
+}
+
+# ESO が稼働している連結クラスタ（CRD と ClusterSecretStore vault-backend が在る）を疑似する。
+given_eso_cluster() { : > "$STATE/crd"; : > "$STATE/store-vault-backend"; }
+
+# T-795-01: AST_ESO 未設定 → 実プロファイル（values-local.yaml）から ESO を導出し、helm へ両フラグ true を明示する
+given_secret ""
+run_eso_mode
+assert_eq   'T-795-01 導出: 正常終了する' "$RC" "0"
+assert_eq   'T-795-01 導出: values-local は ESO 所有（mode=1）' "$MODE" "1"
+assert_contains 'T-795-01 導出: externalSecrets.enabled=true を明示する' "$ESO_OVERRIDES" 'externalSecrets.enabled=true'
+assert_contains 'T-795-01 導出: appSecrets.enabled=true を明示する' "$ESO_OVERRIDES" 'externalSecrets.appSecrets.enabled=true'
+
+# T-795-02: AST_ESO=0 → 非 ESO（従来経路）。プロファイルが ESO でも helm へ両フラグ false を明示する
+given_secret ""
+AST_ESO=0; export AST_ESO
+run_eso_mode
+assert_eq   'T-795-02 明示 0: mode=0' "$MODE" "0"
+assert_contains 'T-795-02 明示 0: externalSecrets.enabled=false を明示する' "$ESO_OVERRIDES" 'externalSecrets.enabled=false'
+assert_contains 'T-795-02 明示 0: appSecrets.enabled=false を明示する' "$ESO_OVERRIDES" 'externalSecrets.appSecrets.enabled=false'
+
+# T-795-03: AST_ESO 未設定 ＋ appSecrets を有効にしていないプロファイル → 非 ESO（ast-secrets を ESO が持たない）
+given_secret ""
+AST_PROFILE_VALUES="$PROFILES/noeso.yaml"; export AST_PROFILE_VALUES
+run_eso_mode
+assert_eq   'T-795-03 導出（非 ESO プロファイル）: mode=0' "$MODE" "0"
+AST_PROFILE_VALUES="$PROFILES/eso.yaml"
+run_eso_mode
+assert_eq   'T-795-03 導出（コメント入り ESO プロファイル）: mode=1' "$MODE" "1"
+
+# T-795-04: AST_ESO に解釈できない値 → 中断（黙って片方の経路へ倒さない）
+given_secret ""
+AST_ESO=yes; export AST_ESO
+run_eso_mode
+assert_eq   'T-795-04 不正値: 終了コード 2' "$RC" "2"
+assert_contains 'T-795-04 不正値: 変数名を示す' "$ERR" 'AST_ESO'
+
+# T-795-05: ESO モード → ast-secrets を作成もパッチもしない（sync_ast_secrets を呼ばない）
+given_secret "absent"
+given_eso_cluster
+run_prepare
+assert_eq   'T-795-05 ESO: 正常終了する' "$RC" "0"
+[ -f "$STATE/created" ] && ng 'T-795-05 ESO: Secret を作成しない' 'create secret が呼ばれた' || ok 'T-795-05 ESO: Secret を作成しない'
+assert_eq   'T-795-05 ESO: パッチしない' "$PATCH" ""
+assert_contains 'T-795-05 ESO: 同期を行わない旨を表示する' "$OUT" 'ExternalSecret'
+
+# T-795-06: ESO モード ＋ CRD 不在（基盤を ESO=1 で起動していない）→ 案内して中断（helm upgrade を失敗させない）
+given_secret "absent"
+run_prepare
+assert_eq   'T-795-06 CRD 不在: 非ゼロ終了する' "$RC" "1"
+assert_contains 'T-795-06 CRD 不在: 基盤側の起動方法を示す' "$ERR" 'ESO=1'
+assert_contains 'T-795-06 CRD 不在: 従来経路への逃げ道を示す' "$ERR" 'AST_ESO=0'
+assert_eq   'T-795-06 CRD 不在: パッチしない' "$PATCH" ""
+
+# T-795-06b: ESO モード ＋ CRD はあるが ClusterSecretStore が無い → 中断
+given_secret "absent"
+: > "$STATE/crd"
+run_prepare
+assert_eq   'T-795-06b store 不在: 非ゼロ終了する' "$RC" "1"
+assert_contains 'T-795-06b store 不在: store 名を示す' "$ERR" 'vault-backend'
+
+# T-795-07: ESO モード ＋ 管理外の既存 Secret → 1 回だけ警告して名前を列挙し、削除しない
+given_secret "fred-api-key"
+given_eso_cluster
+: > "$STATE/exists-moomoo-credentials"
+: > "$STATE/exists-moomoo-rsa"
+printf 'ExternalSecret\n' > "$STATE/owner-moomoo-rsa"
+run_prepare
+assert_eq   'T-795-07 管理外: 正常終了する（警告のみ）' "$RC" "0"
+assert_contains 'T-795-07 管理外: ast-secrets を列挙する' "$ERR" '- ast-secrets'
+assert_contains 'T-795-07 管理外: moomoo-credentials を列挙する' "$ERR" '- moomoo-credentials'
+assert_missing  'T-795-07 管理外: ESO 所有済みの moomoo-rsa は列挙しない' "$ERR" '- moomoo-rsa'
+assert_eq   'T-795-07 管理外: 警告は 1 回だけ' "$(printf '%s\n' "$ERR" | grep -c 'WARN:' || true)" "1"
+assert_contains 'T-795-07 管理外: 解消手順（画面で先に入れる）を示す' "$ERR" '画面'
+assert_eq   'T-795-07 管理外: 削除しない' "$DELETED" ""
+assert_eq   'T-795-07 管理外: パッチしない' "$PATCH" ""
+
+# T-795-08: ESO モード ＋ 鍵の env を export 済み → 使わない旨を変数名で警告し、値は出さない
+given_secret "absent"
+given_eso_cluster
+FINNHUB_API_KEY="eso-canary-do-not-log"; export FINNHUB_API_KEY
+run_prepare
+assert_contains 'T-795-08 env 無視: 変数名を示す' "$ERR" 'FINNHUB_API_KEY'
+assert_missing  'T-795-08 env 無視: stderr に値を出さない' "$ERR" 'eso-canary-do-not-log'
+assert_missing  'T-795-08 env 無視: stdout に値を出さない' "$OUT" 'eso-canary-do-not-log'
+assert_eq   'T-795-08 env 無視: パッチしない' "$PATCH" ""
+
+# T-795-09: ESO モード → discord.bot.* を env からも前回リリースからも渡さない（broker.tier は従来どおり引き継ぐ）
+given_secret ""
+given_release_values 'broker:
+  tier: moomoo-sim
+discord:
+  bot:
+    guildId: "111111111111111111"'
+DISCORD_BOT_CHANNEL_ID="222222222222222222"; export DISCORD_BOT_CHANNEL_ID
+run_resolve_with_mode
+assert_eq   'T-795-09 ESO: 正常終了する' "$RC" "0"
+assert_contains 'T-795-09 ESO: broker.tier は引き継ぐ' "$OVERRIDES" 'broker.tier=moomoo-sim'
+assert_missing  'T-795-09 ESO: 前回値の discord.bot.guildId を渡さない' "$OVERRIDES" 'discord.bot.guildId'
+assert_missing  'T-795-09 ESO: env の discord.bot.channelId を渡さない' "$OVERRIDES" 'discord.bot.channelId'
+assert_contains 'T-795-09 ESO: 使わない旨を警告する' "$ERR" 'discord.bot'
+
+# T-795-10: AST_ESO=0 → 従来どおり ast-secrets を同期し、discord.bot.* を引き継ぐ
+given_secret "absent"
+AST_ESO=0; export AST_ESO
+run_prepare
+assert_eq   'T-795-10 非 ESO: 正常終了する' "$RC" "0"
+[ -f "$STATE/created" ] && ok 'T-795-10 非 ESO: Secret を作成する' || ng 'T-795-10 非 ESO: Secret を作成する' 'create secret が呼ばれていない'
+assert_contains 'T-795-10 非 ESO: dev 既定が載る' "$PATCH" "\"service-auth-client-id\":\"$(b64 ai-stock-trading-svc)\""
+given_release_values 'discord:
+  bot:
+    guildId: "111111111111111111"'
+run_resolve_with_mode
+assert_contains 'T-795-10 非 ESO: discord.bot.guildId を引き継ぐ' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1
