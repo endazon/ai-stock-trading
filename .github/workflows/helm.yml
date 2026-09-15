@@ -307,10 +307,12 @@ jobs:
           fi
           # フォールバック（FRED）の鍵は残す＝ADR-0022 決定2 の冗長化。消えると日銀単独になる。
           need "FRED フォールバックの鍵" 'key: fred-api-key'
-          # 実弾/危険既定は OFF のまま（有効化しても paper・秘匿ストア/OpenD 不在）。
+          # 実弾/危険既定は OFF のまま（有効化しても paper・OpenD 不在）。
+          # #795 / IADR-0341: ExternalSecret は連結ローカルの ESO 所有で**意図して描画する**ため禁止対象から外した
+          # （件数・名前・Vault パスの契約は下の「Assert screen-only ESO wiring (#795)」が検査する）。
           printf '%s' "$out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
             || { echo "::error::values-local 描画の Broker__Provider が paper でない（実弾 OFF 不変に違反）。"; exit 1; }
-          for forbidden in 'kind: ExternalSecret' 'name: opend'; do
+          for forbidden in 'name: opend'; do
             if printf '%s' "$out" | grep -q "$forbidden"; then
               echo "::error::values-local 描画に「$forbidden」が現れた（経路B有効化で危険既定が開いた）。"; exit 1
             fi
@@ -533,8 +535,11 @@ jobs:
           }
           # (a) 既定 values（本番形）＋ 値指定。
           check "$(render)" "既定values"
-          # (a') 経路B プロファイル（標準手順 k8s-local-deploy.sh と同じ組み合わせ）。
-          local_out="$(render -f "$CHART/values-local.yaml")"
+          # (a') 経路B プロファイルの**非 ESO 経路**（k8s-local-deploy.sh の AST_ESO=0 と同じフラグ）。
+          # #795 / IADR-0341: values-local は既定で ESO 所有（appSecrets 有効）であり、そこでは Discord ID は
+          # ast-secrets から読むため discord.bot.* の指定は描画時に止まる（下の #795 ステップが検査する）。
+          local_out="$(render -f "$CHART/values-local.yaml" \
+            --set externalSecrets.enabled=false --set externalSecrets.appSecrets.enabled=false)"
           check "$local_out" "values-local"
           # 値を与えても実弾/危険既定は OFF のまま。
           printf '%s' "$local_out" | grep -A1 'name: Broker__Provider' | grep -q 'value: "paper"' \
@@ -551,6 +556,103 @@ jobs:
             echo "::error::GuildId の上書き先が notification-service ではない（実際: 「$owner」）。"; exit 1
           fi
           echo "ok: discord.bot.* は notification の env を 1 度だけ上書きする"
+      # #795 / IADR-0341: 画面（基盤の秘密情報・接続設定の管理画面）で Vault へ書いた値を、連結ローカル配備の Pod へ届ける配線。
+      #   ① 既定（本番）描画に ExternalSecret・Reloader 注釈・Discord ID の secretKeyRef が現れない（ArgoCD 描画は不変）
+      #   ② values-local 描画は契約どおりの ExternalSecret 3 件（名前＝同期先 Secret 名。基盤 BFF が名前で force-sync する）
+      #   ③ Discord ID 4 件は ast-secrets の optional secretKeyRef。非 ESO（AST_ESO=0 と同じフラグ）では values 経路へ戻る
+      #   ④ appSecrets 有効のまま discord.bot.* を与えたら描画を止める（片方を黙って無視しない）
+      #   ⑤ Reloader 注釈は Secret を読む Deployment にだけ付き、**OpenD には決して付かない**（SMS 認証済みセッションを切らない）
+      - name: Assert screen-only ESO wiring (#795)
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          # $1=描画 $2=kind $3=metadata.name → その 1 文書だけを返す
+          doc_of() { printf '%s' "$1" | awk -v k="$2" -v n="$3" 'BEGIN{RS="---"} index($0, "\nkind: " k "\n") && index($0, "\n  name: " n "\n")'; }
+          CONTRACT_KEYS='GuildId:discord-bot-guild-id ChannelId:discord-bot-channel-id AllowedUserIds:discord-bot-allowed-user-ids UserMapping:discord-bot-user-mapping'
+
+          # ① 既定（本番）描画。
+          prod="$(helm template ast "$CHART")"
+          if printf '%s' "$prod" | grep -q 'kind: ExternalSecret'; then fail "既定描画に ExternalSecret が現れた（連結ローカルの ESO 所有が本番へ漏れた・#795）。"; fi
+          if printf '%s' "$prod" | grep -q 'reloader.stakater.com'; then fail "既定描画に Reloader 注釈が現れた（本番既定で自動再起動が開いた・#795）。"; fi
+          for pair in $CONTRACT_KEYS; do
+            if printf '%s' "$prod" | grep -q "key: ${pair##*:}\$"; then fail "既定描画に ${pair##*:} の secretKeyRef が現れた（本番の Discord ID は values 経路のまま・#795）。"; fi
+          done
+
+          # ② values-local 描画の ExternalSecret（契約の表と 1 対 1）。
+          local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          names="$(printf '%s' "$local_out" | awk 'BEGIN{RS="---"} index($0, "\nkind: ExternalSecret\n") { if (match($0, /\n  name: [a-z-]+/)) print substr($0, RSTART+9, RLENGTH-9) }' | sort | tr '\n' ' ')"
+          [ "$names" = "ast-secrets moomoo-credentials moomoo-rsa " ] || fail "values-local の ExternalSecret が契約の 3 件でない（実測: 「$names」）。"
+          for n in ast-secrets moomoo-credentials moomoo-rsa; do
+            d="$(doc_of "$local_out" ExternalSecret "$n")"
+            printf '%s\n' "$d" | grep -qx 'apiVersion: external-secrets.io/v1' || fail "ExternalSecret $n が external-secrets.io/v1 でない（基盤の ESO は v1beta1 を提供しない）。"
+            printf '%s\n' "$d" | grep -q 'name: vault-backend' || fail "ExternalSecret $n の store が vault-backend でない。"
+            printf '%s\n' "$d" | grep -q 'kind: ClusterSecretStore' || fail "ExternalSecret $n の store が ClusterSecretStore でない。"
+            # target: の直下にはテンプレートの説明コメント行が入るため -A3 で取る（-A1 だとコメントしか見えない）。
+            printf '%s\n' "$d" | grep -A3 '^  target:' | grep -qx "    name: $n" || fail "ExternalSecret $n の同期先 Secret 名が $n でない（BFF の force-sync 対象と食い違う）。"
+            printf '%s\n' "$d" | grep -q 'creationPolicy: Owner' || fail "ExternalSecret $n が creationPolicy: Owner でない。"
+          done
+          printf '%s\n' "$(doc_of "$local_out" ExternalSecret ast-secrets)" | grep -A1 'extract:' | grep -q 'key: "ai-stock-trading/app-secrets"' \
+            || fail "ast-secrets が Vault ai-stock-trading/app-secrets を dataFrom.extract しない。"
+          cred="$(doc_of "$local_out" ExternalSecret moomoo-credentials)"
+          for p in login-account login-pwd-md5; do
+            printf '%s\n' "$cred" | grep -A3 "secretKey: $p\$" | grep -q 'key: "ai-stock-trading/moomoo"' || fail "moomoo-credentials/$p の Vault パスが ai-stock-trading/moomoo でない。"
+            printf '%s\n' "$cred" | grep -A3 "secretKey: $p\$" | grep -q "property: \"$p\"" || fail "moomoo-credentials/$p のプロパティ名が契約と違う。"
+          done
+          printf '%s\n' "$(doc_of "$local_out" ExternalSecret moomoo-rsa)" | grep -A3 'secretKey: opend_rsa.pem' | grep -q 'key: "ai-stock-trading/moomoo-rsa"' \
+            || fail "moomoo-rsa の Vault パスが ai-stock-trading/moomoo-rsa でない。"
+
+          # ③ Discord ID 4 件は ast-secrets の optional secretKeyRef（各 1 回だけ）。
+          notif="$(doc_of "$local_out" Deployment notification-service)"
+          [ -n "$notif" ] || fail "values-local に notification-service の Deployment が無い（検査の空振り）。"
+          for pair in $CONTRACT_KEYS; do
+            envn="Notifications__Discord__Bot__${pair%%:*}"; key="${pair##*:}"
+            c="$(printf '%s\n' "$notif" | grep -c "name: $envn\$" || true)"
+            [ "$c" -eq 1 ] || fail "$envn が $c 回描画された（1 回であるべき）。"
+            ref="$(printf '%s\n' "$notif" | grep -A5 "name: $envn\$")"
+            printf '%s' "$ref" | grep -q 'name: ast-secrets' || fail "$envn が ast-secrets を参照しない（画面で入れた Discord ID が届かない）。"
+            printf '%s' "$ref" | grep -q "key: $key\$" || fail "$envn の secretKeyRef.key が $key でない（契約違反）。"
+            printf '%s' "$ref" | grep -q 'optional: true' || fail "$envn の secretKeyRef が optional でない（未設定で Pod が起動しなくなる。空＝全拒否の no-op であるべき）。"
+          done
+          # 非 ESO（AST_ESO=0）では従来の values 経路へ戻る。
+          noeso="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" \
+            --set externalSecrets.enabled=false --set externalSecrets.appSecrets.enabled=false \
+            --set-string discord.bot.guildId=123456789012345678)"
+          if printf '%s' "$noeso" | grep -q 'kind: ExternalSecret'; then fail "AST_ESO=0 相当の描画に ExternalSecret が現れた。"; fi
+          printf '%s' "$noeso" | grep -A1 'name: Notifications__Discord__Bot__GuildId$' | grep -q 'value: "123456789012345678"' \
+            || fail "AST_ESO=0 相当の描画で discord.bot.guildId が env へ入らない（values 経路が壊れた）。"
+
+          # ④ appSecrets 有効のまま discord.bot.* を与えたら描画を止める。
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set-string discord.bot.guildId=123456789012345678 >/dev/null 2>&1; then
+            fail "appSecrets 有効で discord.bot.* を与えても描画が通った（どちらの値が効くか読めない構成を許した）。"
+          fi
+
+          # ⑤ Reloader 注釈（OpenD・moomoo-sim の order-execution を含む描画）。
+          all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true --set broker.tier=moomoo-sim)"
+          opend_doc="$(doc_of "$all" Deployment opend)"
+          [ -n "$opend_doc" ] || fail "OpenD の Deployment が描画されない（検査の空振り）。"
+          if printf '%s' "$opend_doc" | grep -Eq 'reloader\.stakater\.com/(reload|search|match)|reloader\.stakater\.com/auto: "true"'; then
+            fail "OpenD に Reloader の再起動注釈が付いた（Secret の変更で SMS 認証済みセッションが切れる・#795）。"
+          fi
+          printf '%s' "$opend_doc" | grep -q 'reloader.stakater.com/auto: "false"' \
+            || fail "OpenD に reloader.stakater.com/auto: \"false\" が無い（Reloader を全体自動で動かすと OpenD まで再起動される・#795）。"
+          printf '%s' "$all" | awk '
+            BEGIN{RS="---"}
+            index($0, "\nkind: Deployment\n") {
+              match($0, /\n  name: [a-z0-9-]+/); n=substr($0, RSTART+9, RLENGTH-9)
+              if (n == "opend") next
+              uses = index($0, "name: ast-secrets") > 0
+              ann = ($0 ~ /secret\.reloader\.stakater\.com\/reload: "[^"]*ast-secrets/)
+              if (uses && !ann) { print "::error::" n " は ast-secrets を読むのに Reloader 注釈が無い（画面で入れた値が反映されない）"; bad=1 }
+              if (!uses && ann) { print "::error::" n " は ast-secrets を読まないのに注釈がある"; bad=1 }
+              if (uses && ann) seen++
+            }
+            END { if (seen < 5) { print "::error::注釈つき Deployment が " seen+0 " 件しか取れない（下限 5・抽出の破綻）"; bad=1 }; exit bad }'
+          printf '%s' "$(doc_of "$all" Deployment order-execution-service)" | grep -q 'secret.reloader.stakater.com/reload: ".*moomoo-rsa' \
+            || fail "moomoo-sim の order-execution の Reloader 注釈に moomoo-rsa が無い（RSA 鍵を生成し直しても発注側が古い鍵のまま）。"
+          # 非 ESO でも reloader.enabled=false なら注釈は描かない（設定点が効くこと）。
+          if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set reloader.enabled=false | grep -q 'reloader.stakater.com'; then
+            fail "reloader.enabled=false でも Reloader 注釈が描画された。"
+          fi
+          echo "ok: 連結ローカルは契約どおり ESO 所有・Discord ID は ast-secrets・Reloader は OpenD を除く消費側だけ／本番描画は不変"
       - name: Assert empty discord.bot.* is byte-identical to default (本番バイト等価)
         run: |
           # 空指定（= k8s-local-deploy.sh で DISCORD_BOT_* 未設定の場合）が描画を 1 バイトも変えないこと。

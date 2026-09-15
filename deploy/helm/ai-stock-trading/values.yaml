@@ -220,6 +220,20 @@ externalSecrets:
     targetName: ast-secrets
     # 全プロパティを吸い上げる Vault KV のパス。
     remoteKey: ai-stock-trading/app-secrets
+    # #795, IADR-0341: 有効時、notification の Discord 環境固有 ID 4 件（Notifications__Discord__Bot__GuildId /
+    # ChannelId / AllowedUserIds / UserMapping）は discord.bot.* ではなく本 Secret の discord-bot-guild-id /
+    # discord-bot-channel-id / discord-bot-allowed-user-ids / discord-bot-user-mapping（optional）から読む。
+    # 有効のまま discord.bot.* を非空にすると描画時に止める（どちらが効くか読めない構成を許さない）。
+
+# #795, IADR-0341: Stakater Reloader の注釈（secret.reloader.stakater.com/reload）の設定点。既定 false＝注釈を描かない
+# （本番描画は不変）。true にすると templates/deployment.yaml の各 Deployment に「その Deployment が読む Secret 名」
+# （extraEnv の secretKeyRef・Discord ID の切り替え分・moomoo 経路の order-execution の RSA 鍵）を描画時に導出して付け、
+# Secret の変更で Reloader が再起動させる。読む Secret が無い Deployment には付けない。
+# 🔴 OpenD（templates/opend.yaml）には付けず、reloader.stakater.com/auto: "false" を付ける（Secret の変更で SMS 認証済み
+#    セッションを切らない。導入側が --auto-reload-all 等で動いてもワークロード単位の除外が効く）。
+# Reloader 本体は本 chart に無い（連結ローカルでは基盤が ESO=1 で導入する）。無いクラスタでは注釈は無害な印に留まる。
+reloader:
+  enabled: false
 
 # FR-09/14, #245, IADR-0102: Discord Bot の**環境固有 ID**（非機密）の設定点。すべて空既定 = 差し替えなし。
 # templates/deployment.yaml が notification の extraEnv 値を**非空のときだけ**上書きする（env は増やさない）
