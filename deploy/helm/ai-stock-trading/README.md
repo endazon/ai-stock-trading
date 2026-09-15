@@ -21,9 +21,52 @@ k8s ランタイムは MSP 側と同じく **Rancher Desktop（内蔵 k3s・推�
 > `K8S_LOCAL_RUNTIME` で明示指定する。
 
 ```bash
-scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ ast-secrets → helm install（-f values-local.yaml）→ rollout restart
+scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+import）→ secret 供給（ESO 所有＝作らない / AST_ESO=0＝ast-secrets 同期）→ helm install（-f values-local.yaml）→ rollout restart
 kubectl -n ai-stock-trading get pods
 ```
+
+### 画面だけで PoC を立ち上げる（連結ローカル・ESO 所有。#795 / [IADR-0341](../../../.ai-context/adr/IADR-0341_screen-only-eso-wiring-local-profile.md)）
+
+MSP 連結のローカル配備では、秘密情報・接続設定を**画面から**入れる。`values-local.yaml` は
+`externalSecrets.enabled` / `externalSecrets.appSecrets.enabled` / `reloader.enabled` を有効にしており、
+`ast-secrets` / `moomoo-credentials` / `moomoo-rsa` は **ExternalSecret（ESO）が所有する**（ExternalSecret 名＝Secret 名）。
+
+1. **基盤を `VAULT=1 ESO=1` で起動する**（MSP の `scripts/k8s-local-up.sh`。ESO・ClusterSecretStore `vault-backend`・Stakater Reloader・
+   `ai-stock-trading/*` の seed は基盤側が用意する。MSP#1477）。
+2. **`scripts/k8s-local-deploy.sh` を回す**（`AST_ESO` 未設定＝プロファイルから導出＝ESO 所有）。本スクリプトは
+   `ast-secrets` を作らず・パッチせず、`DISCORD_BOT_*` / 前回リリースの `discord.bot.*` も helm へ渡さない。
+   ESO の CRD や ClusterSecretStore が無ければ案内して中断する。`OPEND_ENABLED` / `BROKER_TIER` は従来どおり。
+3. **基盤の画面 SC-22（秘密情報・接続設定の管理）で値を入れる**:
+   外部 API キー（finnhub / EDINET / FRED / Discord Webhook・Bot Token 等）・**Discord の環境固有 ID 4 件**・
+   **moomoo のログインアカウントとパスワード**（パスワードは BFF が MD5 に変換して保存。平文は保存されない）・
+   **RSA 鍵は「生成」**（値は画面にも出ない）。`*-auth-client-*` は画面では書けない（realm と対の dev 既定を基盤が seed する）。
+   書き込み後、BFF が対象 ExternalSecret を即時同期させ、Secret の変更を見た Reloader が**消費側 Deployment を再起動する**。
+4. **OpenD（`opend.enabled=true`）は Secret が揃うまで待つ**。`moomoo-rsa`（secret volume）・`moomoo-credentials`
+   （非 optional の `secretKeyRef`）が無い間、Pod は `ContainerCreating`（`FailedMount` イベント。`moomoo-rsa` だけ揃うと
+   `CreateContainerConfigError`）のまま止まり、ESO が Secret を作ると **kubelet の再試行で自然に起動する**
+   （Deployment の再作成は不要。Kubernetes の既定挙動であり、本 PR では稼働クラスタで実測していない）。
+5. **検証コード（SMS / 画像）は画面 SC-04 から入れる**（現状の制約は [`deploy/opend/README.md`](../../opend/README.md)
+   「標準入力の与え方」の #730 を参照。届かない間は同 README の `tty` 手順がフォールバック）。
+
+| | ESO 所有（既定・連結ローカル） | 従来経路（`AST_ESO=0`・フォールバック） |
+| --- | --- | --- |
+| `ast-secrets` | ExternalSecret が作る（値は画面 → Vault） | 本スクリプトが env から差分同期（下記「鍵の供給と再実行時の挙動」） |
+| `moomoo-credentials` / `moomoo-rsa` | ExternalSecret が作る（パスワード→MD5・RSA 生成は画面） | コンソールで `kubectl create secret`（[`deploy/opend/README.md`](../../opend/README.md) 手順 2 / 2b） |
+| Discord ID 4 件 | `ast-secrets` の `discord-bot-guild-id` / `-channel-id` / `-allowed-user-ids` / `-user-mapping`（optional） | `DISCORD_BOT_*` → `discord.bot.*`（下記「Discord の環境固有 ID」） |
+| helm へのフラグ | `externalSecrets.enabled=true` / `appSecrets.enabled=true` を明示 | 両方 `false` を明示（ESO の無いクラスタで ExternalSecret を描かない） |
+
+> ⚠️ **Reloader は OpenD を再起動しない**（OpenD の Deployment には注釈を付けない＝SMS 認証済みセッションを切らない）。
+> RSA 鍵を画面で**生成し直す**と、`moomoo-rsa` を読む order-execution（`broker.tier=moomoo-sim`）は再起動されて新しい鍵を読むが、
+> OpenD は古い鍵のまま動き続け、**暗号化接続が食い違う**。生成し直したときは OpenD を手動で再起動する
+> （`kubectl -n ai-stock-trading rollout restart deploy/opend`。デバイス信頼は PVC に残るが、再検証を求められる場合がある）。
+
+> ⚠️ **従来経路で作った Secret が残っている環境**では、本スクリプトが「ExternalSecret の管理外で既に存在する」と
+> 1 回だけ警告する（**削除はしない**）。ESO が同名 Secret を所有しにいくため、中の値が Vault の値で置き換わるか、
+> 所有の衝突で同期が止まるかのいずれかになり得る。**先に画面で必要な値を入れてから**
+> `kubectl -n ai-stock-trading delete secret <名前>` で消す（ESO が作り直す）。従来経路のまま使うなら `AST_ESO=0`。
+
+> ESO 所有のまま `--set-string discord.bot.*` に非空値を渡すと**描画時に止まる**（Discord ID を Secret と values の
+> どちらから読むか読めない構成を許さない）。
 
 > **`BROKER_TIER` / `OPEND_ENABLED` / `DISCORD_BOT_*`（4 変数）を export せずに再実行しても、
 > 前回リリースの値が引き継がれる**（#626 / [IADR-0283](../../../.ai-context/adr/IADR-0283_deploy-value-preservation-and-kb-realm-fix.md)、
@@ -136,7 +179,11 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 > [IADR-0109](../../../.ai-context/adr/IADR-0109_deploy-secret-preservation.md) /
 > [IADR-0052](../../../.ai-context/adr/IADR-0052_k8s-helm-chart-shared-infra.md)
 
-`ast-secrets` は**手動作成の Secret**（既定は Vault 非依存）。`scripts/k8s-local-deploy.sh` が上表の env を読み、
+> **本節は従来経路（`AST_ESO=0`）の挙動である。** 連結ローカルの既定（ESO 所有）では `ast-secrets` を ExternalSecret が作り、
+> 値は画面から入れる（前掲「画面だけで PoC を立ち上げる」。#795 / IADR-0341）。ESO 所有の経路で下表の env を export しても
+> 使われない（変数名だけを挙げて警告する）。
+
+従来経路の `ast-secrets` は**手動作成の Secret**（Vault 非依存）。`scripts/k8s-local-deploy.sh` が上表の env を読み、
 **キー単位の差分パッチ**で同期する。**env を export せずに再実行しても、投入済みの値は失われない。**
 
 | env の状態 | `ast-secrets` の当該キー | 挙動 |
@@ -179,7 +226,7 @@ kubectl -n ai-stock-trading get secret ast-secrets \
 > **ESO（Vault）同期を有効化した環境**（`externalSecrets.appSecrets.enabled=true`・IADR-0094）では
 > `ast-secrets` は `ExternalSecret` が所有する。値の投入は
 > [Vault 秘匿 runbook](../../../docs/operations/vault-secrets-runbook.md) 側で行い、本スクリプトの env は使わない
-> （両方から書くと所有が割れる）。既定はオフ＝手動 Secret 直運用。
+> （両方から書くと所有が割れる）。**chart 既定（本番描画）はオフ**、**連結ローカルの `values-local.yaml` はオン**（#795）。
 
 ### 為替換算（`Fx__Provider=boj`）— **第一は日銀・FRED はフォールバック**
 
@@ -350,7 +397,13 @@ USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同�
 
 ### Discord の環境固有 ID（`kubectl set env` は使わない）
 
-`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping` は**非機密**の識別子であり、chart の設定点
+> **連結ローカルの既定（ESO 所有）では、4 件は画面 SC-22 から入れる**。template が notification の env
+> （`Notifications__Discord__Bot__GuildId` 等・名前は不変）を `ast-secrets` の `discord-bot-guild-id` /
+> `discord-bot-channel-id` / `discord-bot-allowed-user-ids` / `discord-bot-user-mapping`（`optional: true`）へ差し替える。
+> 未設定は従来どおり空＝全拒否の no-op。**以下の env と `discord.bot.*` は従来経路（`AST_ESO=0`）でだけ使う**
+> （#795 / IADR-0341。ESO 所有で `discord.bot.*` を非空にすると描画時に止まる）。
+
+`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping` は**非機密**の識別子であり、従来経路では chart の設定点
 `discord.bot.*`（空既定）から与える。`scripts/k8s-local-deploy.sh` が下表の env を読み、`helm upgrade` へ
 `--set-string discord.bot.*` として渡す。**未設定なら前回リリースの値を引き継ぐ**（`broker.tier` /
 `opend.enabled` と同じ `AST_VALUE_KEYS` の仕組み。#673。明示的な空指定で前回の非空値を消す場合は
@@ -588,7 +641,13 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 ```
 
 > Vault 側のプロパティ名は **Secret キー名**（`finnhub-api-key` / `service-auth-client-id` 等）に一致させる。
-> 欠けた鍵は同期されず、消費側 `secretKeyRef.optional=true` で許容する（fail-safe）。既定オフ＝手動 Secret 直運用を維持。
+> 欠けた鍵は同期されず、消費側 `secretKeyRef.optional=true` で許容する（fail-safe）。chart 既定はオフ＝手動 Secret 直運用を維持
+> （連結ローカルの `values-local.yaml` はオン。前掲「画面だけで PoC を立ち上げる」）。
+> 有効時は notification の Discord ID 4 件も本 Secret から読む（上記「Discord の環境固有 ID」）。
+>
+> #795 / IADR-0341: `ExternalSecret` の apiVersion は **`external-secrets.io/v1`**（基盤の ESO は chart 2.8.0 に pin されており
+> `v1beta1` を提供しない）。**Reloader の注釈は `reloader.enabled`**（chart 既定 false・`values-local.yaml` は true）で、
+> 各 Deployment が読む Secret 名を描画時に導出して `secret.reloader.stakater.com/reload` に載せる。**OpenD には付けない。**
 > 手順は [`docs/operations/vault-secrets-runbook.md`](../../../docs/operations/vault-secrets-runbook.md)。GitOps（ArgoCD）は
 > [`deploy/argocd`](../../argocd/README.md)、可観測性は [`docs/observability/observability.md`](../../../docs/observability/observability.md)。
 

@@ -56,6 +56,19 @@ scripts/opend-build.sh
 ```
 
 ### 2) 資格情報 Secret（実値はコミットしない）
+
+> **［2026-09-15 追記 / #795］連結ローカル（chart の `values-local.yaml`・既定は ESO 所有）では手順 2 / 2b を画面で行う。**
+> 基盤の画面 SC-22（秘密情報・接続設定の管理）で **moomoo のログインアカウントとパスワード**（BFF が MD5 に変換して
+> Vault へ書く。平文は保存されない）を入れ、**RSA 鍵は「生成」**を押す（値は画面にも出ない）。ESO が
+> `moomoo-credentials` / `moomoo-rsa` を作り、OpenD はそれまで `ContainerCreating` / `CreateContainerConfigError` で待って
+> **自然に起動する**（Deployment の再作成は不要）。検証コードは画面 SC-04 から入れる（下記「標準入力の与え方」の #730 に注意）。
+> 手順は [chart README「画面だけで PoC を立ち上げる」](../helm/ai-stock-trading/README.md)、設計は
+> [IADR-0341](../../.ai-context/adr/IADR-0341_screen-only-eso-wiring-local-profile.md)。
+>
+> **以下のコンソール手順はフォールバック**である（ESO を使わない経路＝`scripts/k8s-local-deploy.sh` の `AST_ESO=0`、
+> または本ディレクトリの生 manifest）。🔴 **ESO 所有の環境で `kubectl create secret` すると所有が割れる**
+> （ExternalSecret が同名 Secret を所有しにいき、画面で入れた値と食い違う）。
+
 ```bash
 PWD_MD5=$(printf '%s' "<ログインパスワード>" | md5sum | cut -d' ' -f1)
 kubectl create secret generic moomoo-credentials -n ai-stock-trading \
@@ -315,7 +328,11 @@ moomoo アダプタ（#13・未実装）は `IBrokerAdapter` 経由で稼働中�
   #132 でイメージに **uid/gid 10001 と `/home/opend` を用意済み**で、chart の `opend.home=/home/opend` ＋
   `opend.securityContext` で非 root へ切り替えられる（`USER` は切り替えていない＝既定は現行維持）。
   **実 OpenD では未検証**（HOME 変更でデバイス信頼を失う恐れ）。恒久の秘匿は Vault/External Secrets
-  （chart の `externalSecrets.enabled`＝**受け口のみ**。ストアは #24 で未整備）。
+  （chart の `externalSecrets.enabled`。連結ローカルでは `values-local.yaml` が有効化し基盤の Vault/ESO が供給する〔#795〕。
+  **本番の Vault 化は未充足のまま**）。
+- **RSA 鍵の再生成と OpenD**: 画面で RSA 鍵を生成し直すと order-execution は Reloader で再起動されるが、OpenD は
+  再起動されない（#795 / IADR-0341。SMS 認証済みセッションを切らないため注釈を付けない）。鍵が食い違うので OpenD を手動で
+  再起動する（`kubectl -n ai-stock-trading rollout restart deploy/opend`）。
 - **資格情報の露出面**: `entrypoint.sh` は env の資格情報から `OpenD.xml` を生成する（コマンドライン引数には載せない
   ＝`ps` 露出は回避）。#132 で `umask 077` ＋ `chmod 600` を掛けた（RSA 鍵は Secret の `defaultMode: 0400`）が、
   **`OpenD.xml` はコンテナ内に平文（MD5）で存在する**ことに変わりはない。
