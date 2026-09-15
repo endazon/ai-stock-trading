@@ -160,6 +160,7 @@ given_secret() {
   unset AST_ESO AST_ESO_MODE AST_PROFILE_VALUES
   FORCE_EMPTY=0
   FORCE_EMPTY_VALUES=0
+  ADOPT_EXISTING=0
   rm -rf "$STATE"; mkdir -p "$STATE"
   : > "$STATE/nonempty_keys"
   if [ "${1:-}" != "absent" ]; then
@@ -609,21 +610,35 @@ run_prepare
 assert_eq   'T-795-06b store 不在: 非ゼロ終了する' "$RC" "1"
 assert_contains 'T-795-06b store 不在: store 名を示す' "$ERR" 'vault-backend'
 
-# T-795-07: ESO モード ＋ 管理外の既存 Secret → 1 回だけ警告して名前を列挙し、削除しない
+# T-795-07: ESO モード ＋ 管理外の既存 Secret → 名前を列挙して中断し（helm upgrade へ進ませない）、削除しない
 given_secret "fred-api-key"
 given_eso_cluster
 : > "$STATE/exists-moomoo-credentials"
 : > "$STATE/exists-moomoo-rsa"
 printf 'ExternalSecret\n' > "$STATE/owner-moomoo-rsa"
 run_prepare
-assert_eq   'T-795-07 管理外: 正常終了する（警告のみ）' "$RC" "0"
+assert_eq   'T-795-07 管理外: 非ゼロ終了する（中断）' "$RC" "1"
 assert_contains 'T-795-07 管理外: ast-secrets を列挙する' "$ERR" '- ast-secrets'
 assert_contains 'T-795-07 管理外: moomoo-credentials を列挙する' "$ERR" '- moomoo-credentials'
 assert_missing  'T-795-07 管理外: ESO 所有済みの moomoo-rsa は列挙しない' "$ERR" '- moomoo-rsa'
-assert_eq   'T-795-07 管理外: 警告は 1 回だけ' "$(printf '%s\n' "$ERR" | grep -c 'WARN:' || true)" "1"
+assert_eq   'T-795-07 管理外: エラーは 1 回だけ' "$(printf '%s\n' "$ERR" | grep -c 'ERROR:' || true)" "1"
 assert_contains 'T-795-07 管理外: 解消手順（画面で先に入れる）を示す' "$ERR" '画面'
+assert_contains 'T-795-07 管理外: 取り込みの明示フラグを示す' "$ERR" '--adopt-existing-secrets'
 assert_eq   'T-795-07 管理外: 削除しない' "$DELETED" ""
 assert_eq   'T-795-07 管理外: パッチしない' "$PATCH" ""
+
+# T-795-07b: T-795-07 ＋ --adopt-existing-secrets → 1 回だけ警告して進む（削除もパッチもしない）
+given_secret "fred-api-key"
+given_eso_cluster
+: > "$STATE/exists-moomoo-credentials"
+ADOPT_EXISTING=1
+run_prepare
+assert_eq   'T-795-07b 取り込み許可: 正常終了する' "$RC" "0"
+assert_contains 'T-795-07b 取り込み許可: 名前を列挙する' "$ERR" '- ast-secrets'
+assert_eq   'T-795-07b 取り込み許可: 警告は 1 回だけ' "$(printf '%s\n' "$ERR" | grep -c 'WARN:' || true)" "1"
+assert_missing  'T-795-07b 取り込み許可: エラーにしない' "$ERR" 'ERROR:'
+assert_eq   'T-795-07b 取り込み許可: 削除しない' "$DELETED" ""
+assert_eq   'T-795-07b 取り込み許可: パッチしない' "$PATCH" ""
 
 # T-795-08: ESO モード ＋ 鍵の env を export 済み → 使わない旨を変数名で警告し、値は出さない
 given_secret "absent"

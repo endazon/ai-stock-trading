@@ -5,14 +5,15 @@
 # #727, IADR-0324: MSP 連結では利用者認証と s2s の token 発行を values-local.yaml の global.authAuthority＝MSP レルム
 #   （platform）で行う。realm `ai-stock-trading` の import は単体 E2E（IADR-0050）用に残るだけで、本スクリプトの経路では使わない。
 #
-#   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [cluster-name]
+#   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [--adopt-existing-secrets] [cluster-name]
 #
 # #795, IADR-0341: **秘密情報・接続設定の供給経路は AST_ESO で選ぶ**（未設定＝values-local.yaml から導出＝既定は ESO 所有）。
 #   - ESO 所有（AST_ESO=1 / values-local 既定）: 基盤を VAULT=1 ESO=1 で起動した連結クラスタ向け。ast-secrets /
 #     moomoo-credentials / moomoo-rsa は ExternalSecret が所有し、値は**基盤の画面（秘密情報・接続設定の管理）**から
 #     Vault へ書く。本スクリプトは ast-secrets を作らず・パッチせず、discord.bot.* も helm へ渡さない（両方から書くと
 #     所有が割れ、画面で入れた値と Pod が読む値が食い違う）。CRD / ClusterSecretStore が無ければ案内して中断する。
-#     管理外の既存 Secret（従来経路で作ったもの）があれば 1 回だけ警告する（削除はしない）。
+#     管理外の既存 Secret（従来経路で作ったもの）があれば名前を挙げて helm upgrade の前で中断する（削除はしない）。
+#     ESO に取り込ませてよいと判断したときだけ --adopt-existing-secrets で警告に下げて進める。
 #   - 従来経路（AST_ESO=0）: ESO の無いクラスタ向け。下記の env → ast-secrets 同期と discord.bot.* の values 経路。
 #   どちらでも helm へ externalSecrets.enabled / appSecrets.enabled を明示する（プロファイルとの食い違いを残さない）。
 # #267, IADR-0111 / #132, IADR-0060: ブローカ階層・OpenD 常駐配備は BROKER_TIER（"" / paper / moomoo-sim）/
@@ -76,11 +77,13 @@ set -euo pipefail
 
 FORCE_EMPTY=0
 FORCE_EMPTY_VALUES=0
+ADOPT_EXISTING=0
 CLUSTER=""
 for arg in "$@"; do
   case "$arg" in
     --force-empty-secrets) FORCE_EMPTY=1 ;;
     --force-empty-values) FORCE_EMPTY_VALUES=1 ;;
+    --adopt-existing-secrets) ADOPT_EXISTING=1 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) CLUSTER="$arg" ;;
   esac
@@ -347,9 +350,11 @@ ast_eso_preflight() {
   return 0
 }
 
-# #795, IADR-0341: ESO が所有しにいく Secret が、ExternalSecret の管理外で既に在れば 1 回だけ警告する。
+# #795, IADR-0341: ESO が所有しにいく Secret が、ExternalSecret の管理外で既に在れば名前を挙げて中断する。
+# 警告だけで同じ実行の helm upgrade へ進むと「先に画面で値を入れる」機会が無く、従来経路で入れた鍵が
+# Vault の seed（空）で置き換わり得る。--adopt-existing-secrets（ADOPT_EXISTING=1）のときだけ警告に下げて進める。
 # 🔴 削除はしない（中の値を失うのは利用者の判断に残す）。管理の判定は ownerReferences の kind（平文は読まない）。
-ast_warn_unmanaged_eso_targets() {
+ast_check_unmanaged_eso_targets() {
   local name owners unmanaged=''
   for name in "${AST_ESO_TARGET_SECRETS[@]}"; do
     kubectl get secret "$name" -n "$NS" >/dev/null 2>&1 || continue
@@ -360,16 +365,23 @@ ast_warn_unmanaged_eso_targets() {
 "
   done
   [ -z "$unmanaged" ] && return 0
+  local level='ERROR'
+  [ "${ADOPT_EXISTING:-0}" = "1" ] && level='WARN'
   {
-    echo "WARN: 次の Secret は ExternalSecret の管理外で既に存在します（手動作成・従来経路の本スクリプトが作ったもの）:"
+    echo "${level}: 次の Secret は ExternalSecret の管理外で既に存在します（手動作成・従来経路の本スクリプトが作ったもの）:"
     printf '%s' "$unmanaged" | sed 's/^/         - /'
     echo "      ESO（creationPolicy: Owner）が同名の Secret を所有しにいくため、中の値が Vault の値で置き換わるか、所有の"
     echo "      衝突で同期が止まるかのいずれかになり、画面で入れた値と Pod が読む値が食い違い得ます。本スクリプトは削除しません。"
     echo "      解消: 1) 基盤の画面（秘密情報・接続設定の管理）で必要な値を入れる（moomoo の RSA 鍵は画面の「生成」）"
     echo "            2) kubectl -n $NS delete secret <上記の名前>   # ESO が Vault の値で作り直す"
+    echo "            3) 本スクリプトを再実行する"
     echo "      従来経路のまま使うなら AST_ESO=0 を付けて再実行する。#795 / IADR-0341"
+    if [ "$level" = 'ERROR' ]; then
+      echo "      中の値を失ってよい（ESO に取り込ませる）と判断したときだけ --adopt-existing-secrets を付けて再実行する。"
+    fi
   } >&2
-  return 0
+  [ "$level" = 'WARN' ] && return 0
+  return 1
 }
 
 # #795, IADR-0341: ESO 所有の経路で従来経路用の鍵 env が export されていたら、変数名だけを挙げて使わない旨を伝える。
@@ -387,13 +399,13 @@ ast_warn_ignored_secret_env() {
   return 0
 }
 
-# #795, IADR-0341: 経路に応じて Secret を用意する。ESO 所有なら作らず（事前確認と警告のみ）、従来経路なら同期する。
+# #795, IADR-0341: 経路に応じて Secret を用意する。ESO 所有なら作らず（事前確認・管理外 Secret の検査・警告）、従来経路なら同期する。
 ast_prepare_secrets() {
   if [ "${AST_ESO_MODE:-0}" = "1" ]; then
     ast_eso_preflight || return 1
     echo "  ${AST_ESO_TARGET_SECRETS[*]}: ExternalSecret（ESO）が所有するため作成・同期しません（値は基盤の画面から入れる）"
     ast_warn_ignored_secret_env
-    ast_warn_unmanaged_eso_targets
+    ast_check_unmanaged_eso_targets || return 1
     return 0
   fi
   sync_ast_secrets

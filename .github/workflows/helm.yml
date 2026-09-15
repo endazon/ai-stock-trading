@@ -629,9 +629,11 @@ jobs:
           all="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set opend.enabled=true --set broker.tier=moomoo-sim)"
           opend_doc="$(doc_of "$all" Deployment opend)"
           [ -n "$opend_doc" ] || fail "OpenD の Deployment が描画されない（検査の空振り）。"
-          if printf '%s' "$opend_doc" | grep -q 'reloader.stakater.com'; then
-            fail "OpenD に Reloader 注釈が付いた（Secret の変更で SMS 認証済みセッションが切れる・#795）。"
+          if printf '%s' "$opend_doc" | grep -Eq 'reloader\.stakater\.com/(reload|auto|search)|reloader\.stakater\.com/match'; then
+            fail "OpenD に Reloader の再起動注釈が付いた（Secret の変更で SMS 認証済みセッションが切れる・#795）。"
           fi
+          printf '%s' "$opend_doc" | grep -q 'reloader.stakater.com/ignore: "true"' \
+            || fail "OpenD に reloader.stakater.com/ignore が無い（Reloader を全体自動で動かすと OpenD まで再起動される・#795）。"
           printf '%s' "$all" | awk '
             BEGIN{RS="---"}
             index($0, "\nkind: Deployment\n") {

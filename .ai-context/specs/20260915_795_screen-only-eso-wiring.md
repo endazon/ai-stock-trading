@@ -36,7 +36,7 @@ plan_refs:
 | `ai-stock-trading/moomoo-rsa` | `opend_rsa.pem` | `moomoo-rsa` |
 
 - BFF（MSP）は書き込み後に上記名の ExternalSecret へ force-sync 注釈を付ける → **ExternalSecret 名は同期先 Secret 名と同一であること**（現行テンプレートで確認済み: `metadata.name` が `moomoo-credentials` / `moomoo-rsa` / `ast-secrets`）。
-- 消費側 Deployment の再起動は Stakater Reloader（MSP が ESO=1 で導入）。**OpenD には注釈を付けない**。
+- 消費側 Deployment の再起動は Stakater Reloader（MSP が ESO=1 で導入）。**OpenD には reload 注釈を付けず、`reloader.stakater.com/ignore: "true"` で明示的に除外する**。
 
 ## 対象範囲
 
@@ -54,9 +54,9 @@ plan_refs:
    `Notifications__Discord__Bot__{GuildId,ChannelId,AllowedUserIds,UserMapping}` を `secretKeyRef{name: appSecrets.targetName, key: discord-bot-*, optional: true}` で描く。
    無効時は従来の values 経路（`discord.bot.*` の上書き）のまま。**両方に非空値がある（appSecrets 有効かつ discord.bot.* 非空）は描画時に止める**（黙って片方を無視しない。broker.tier の矛盾指定と同じ規律）。
 4. **Reloader**: `reloader.enabled`（values.yaml 既定 false）のとき、AST の各 Deployment の `metadata.annotations` に
-   `secret.reloader.stakater.com/reload: <消費する Secret 名のカンマ区切り>` を描く。名前は extraEnv の `secretKeyRef.name`・Discord 切替分・order-execution の moomoo 経路の RSA Secret から**描画時に導出**する（手書きの一覧を持たない）。消費 Secret が無いサービスには描かない。**`templates/opend.yaml` は触らない**。
+   `secret.reloader.stakater.com/reload: <消費する Secret 名のカンマ区切り>` を描く。名前は extraEnv の `secretKeyRef.name`・Discord 切替分・order-execution の moomoo 経路の RSA Secret から**描画時に導出**する（手書きの一覧を持たない）。消費 Secret が無いサービスには描かない。**`templates/opend.yaml` には reload 注釈を描かず、`reloader.enabled` のときだけ `reloader.stakater.com/ignore: "true"` を描く**（監査指摘: 導入側の全体自動に対する多重防御）。
 5. **deploy script**: `AST_ESO`（`1` / `0` / 未設定＝プロファイルから導出）で分岐し、helm へ `externalSecrets.enabled` / `appSecrets.enabled` を常に明示する。
-   - ESO モード: 事前確認（CRD `externalsecrets.external-secrets.io`・ClusterSecretStore が無ければ案内して中断）→ `sync_ast_secrets` を呼ばない → 管理外（`ownerReferences` に ExternalSecret が無い）既存 Secret を 1 回だけ警告（削除しない）→ `DISCORD_BOT_*` / 前回リリースの `discord.bot.*` を引き継がない（使われない旨を警告）→ export 済みの鍵 env は無視する旨を警告（値は出さない）。
+   - ESO モード: 事前確認（CRD `externalsecrets.external-secrets.io`・ClusterSecretStore が無ければ案内して中断）→ `sync_ast_secrets` を呼ばない → 管理外（`ownerReferences` に ExternalSecret が無い）既存 Secret があれば名前を挙げて中断（削除しない。`--adopt-existing-secrets` のときだけ 1 回警告して進む。監査指摘: 警告だけでは画面で先に値を入れる機会が無い）→ `DISCORD_BOT_*` / 前回リリースの `discord.bot.*` を引き継がない（使われない旨を警告）→ export 済みの鍵 env は無視する旨を警告（値は出さない）。
    - 非 ESO モード（`AST_ESO=0`）: 従来どおり（`sync_ast_secrets`・discord.bot.* 引き継ぎ）＋ helm へ両フラグ false。
 6. **OpenD の待機**: `moomoo-credentials` は非 optional の `secretKeyRef`、`moomoo-rsa` は非 optional の secret volume。Secret 不在の間 Pod は
    `ContainerCreating`（volume の FailedMount）→ 作成後に kubelet の再試行で起動する（Deployment の再作成は不要）。本作業では稼働クラスタに触れないため**実測ではなく Kubernetes の既知挙動として文書化**する。
@@ -67,8 +67,8 @@ plan_refs:
 - [x] AC2: values-local 描画に ExternalSecret がちょうど 3 件（`ast-secrets` / `moomoo-credentials` / `moomoo-rsa`・`external-secrets.io/v1`・store `vault-backend`・Vault パスが契約どおり）
 - [x] AC3: values-local 描画の notification に Discord ID 4 件が `ast-secrets` / 契約キー / `optional: true` の `secretKeyRef` で各 1 回だけ現れる。非 ESO 描画では従来の values 経路（`discord.bot.*` 上書き）が効く
 - [x] AC4: appSecrets 有効かつ `discord.bot.*` 非空の描画は失敗する
-- [x] AC5: values-local 描画で `ast-secrets` を消費する Deployment に Reloader 注釈が付き、`opend.enabled=true` でも OpenD には付かない。moomoo-sim の order-execution は `moomoo-rsa` を含む
-- [x] AC6: `k8s-local-deploy.test.sh` が ESO / 非 ESO の両経路を固定する（ESO で `ast-secrets` を作成・パッチしない／管理外 Secret の警告と非削除／discord.bot.* 非引き継ぎ／CRD 不在で中断／helm へのフラグ明示）。既存 79 件は緑のまま
+- [x] AC5: values-local 描画で `ast-secrets` を消費する Deployment に Reloader 注釈が付き、`opend.enabled=true` でも OpenD には reload 注釈が付かず `reloader.stakater.com/ignore: "true"` が付く。moomoo-sim の order-execution は `moomoo-rsa` を含む
+- [x] AC6: `k8s-local-deploy.test.sh` が ESO / 非 ESO の両経路を固定する（ESO で `ast-secrets` を作成・パッチしない／管理外 Secret での中断・`--adopt-existing-secrets` での警告と非削除／discord.bot.* 非引き継ぎ／CRD 不在で中断／helm へのフラグ明示）。既存 79 件は緑のまま
 - [x] AC7: 突然変異 3 種が赤になる: (a) OpenD に注釈 (b) 本番描画の変化 (c) ESO で `ast-secrets` を同期（加えて (d) ESO で discord.bot.* を渡す）
 - [x] AC8: README（opend / chart）と Vault runbook が「画面（SC-22 で資格情報・RSA 生成・API キー・Discord ID、SC-04 で検証コード）→ フォールバックとしてコンソール」の順で読める
 - [x] AC9: IADR-0341 を作成し索引へ登録。文書検査（trace-blocks / knowledge-graph / cross-repo-refs / plan-id-qualification / doc-links）は緑。`check-commit-messages.js`（`origin/develop..HEAD`・4 件）も適合

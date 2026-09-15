@@ -55,15 +55,17 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 | Discord ID 4 件 | `ast-secrets` の `discord-bot-guild-id` / `-channel-id` / `-allowed-user-ids` / `-user-mapping`（optional） | `DISCORD_BOT_*` → `discord.bot.*`（下記「Discord の環境固有 ID」） |
 | helm へのフラグ | `externalSecrets.enabled=true` / `appSecrets.enabled=true` を明示 | 両方 `false` を明示（ESO の無いクラスタで ExternalSecret を描かない） |
 
-> ⚠️ **Reloader は OpenD を再起動しない**（OpenD の Deployment には注釈を付けない＝SMS 認証済みセッションを切らない）。
+> ⚠️ **Reloader は OpenD を再起動しない**（OpenD の Deployment には reload 注釈を付けず、`reloader.stakater.com/ignore: "true"` で
+> 明示的に対象外にする＝SMS 認証済みセッションを切らない。Reloader を全体自動で動かしても除外が優先される）。
 > RSA 鍵を画面で**生成し直す**と、`moomoo-rsa` を読む order-execution（`broker.tier=moomoo-sim`）は再起動されて新しい鍵を読むが、
 > OpenD は古い鍵のまま動き続け、**暗号化接続が食い違う**。生成し直したときは OpenD を手動で再起動する
 > （`kubectl -n ai-stock-trading rollout restart deploy/opend`。デバイス信頼は PVC に残るが、再検証を求められる場合がある）。
 
 > ⚠️ **従来経路で作った Secret が残っている環境**では、本スクリプトが「ExternalSecret の管理外で既に存在する」と
-> 1 回だけ警告する（**削除はしない**）。ESO が同名 Secret を所有しにいくため、中の値が Vault の値で置き換わるか、
-> 所有の衝突で同期が止まるかのいずれかになり得る。**先に画面で必要な値を入れてから**
-> `kubectl -n ai-stock-trading delete secret <名前>` で消す（ESO が作り直す）。従来経路のまま使うなら `AST_ESO=0`。
+> 名前を挙げて **helm upgrade の前で中断する**（**削除はしない**）。ESO が同名 Secret を所有しにいくため、中の値が Vault の値で
+> 置き換わるか、所有の衝突で同期が止まるかのいずれかになり得る。**先に画面で必要な値を入れてから**
+> `kubectl -n ai-stock-trading delete secret <名前>` で消し（ESO が作り直す）、再実行する。従来経路のまま使うなら `AST_ESO=0`。
+> 中の値を失ってよいと判断したときだけ `--adopt-existing-secrets` で警告に下げて進められる。
 
 > ESO 所有のまま `--set-string discord.bot.*` に非空値を渡すと**描画時に止まる**（Discord ID を Secret と values の
 > どちらから読むか読めない構成を許さない）。

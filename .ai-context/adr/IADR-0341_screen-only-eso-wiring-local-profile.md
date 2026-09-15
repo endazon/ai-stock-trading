@@ -94,7 +94,9 @@ related_specs:
   （`--set` は `-f` より優先されるので、`AST_ESO=0` はプロファイルの true を上書きする）。
 - **ESO 所有**: CRD `externalsecrets.external-secrets.io` と store の実在を確認し、無ければ「基盤を `VAULT=1 ESO=1` で起動する／`AST_ESO=0`」を
   案内して中断する。`sync_ast_secrets` を呼ばない（作成もパッチもしない）。**ExternalSecret の管理外で既に存在する同名 Secret**
-  （`ownerReferences` に ExternalSecret が無い）を 1 回だけ警告し、**削除はしない**（先に画面で値を入れてから手動で消す手順を示す）。
+  （`ownerReferences` に ExternalSecret が無い）があれば名前を挙げて **helm upgrade の前で中断**し、**削除はしない**（先に画面で値を入れてから
+  手動で消し、再実行する手順を示す）。中の値を失ってよいと利用者が判断したときだけ `--adopt-existing-secrets` で警告に下げて進める
+  （IADR-0109 の `--force-empty-secrets` と同じ「明示の意思表示でだけ値を失わせる」形）。
   従来経路用の鍵 env が export されていれば**変数名だけ**を挙げて使わない旨を警告する。
 - **従来経路**: IADR-0109 / IADR-0283 / IADR-0295 の挙動をそのまま残す。
 - values ファイルの読み取りは `ast_yaml_path_value`（従来の `ast_prev_release_value` の awk を切り出し、コメント行と行末コメントを飛ばす）で行い、
@@ -116,7 +118,9 @@ related_specs:
   `secret.reloader.stakater.com/reload` を描く。値は **extraEnv の `secretKeyRef.name`・決定3 の切り替え分・`broker.tier=moomoo-sim` の
   order-execution がマウントする RSA 鍵 Secret** の重複を除いた昇順で、読む Secret が無い Deployment には描かない。
 - 🔴 **OpenD（`templates/opend.yaml`）には付けない**。OpenD は SMS / 画像 CAPTCHA で認証したセッションを持ち、Secret の変更で
-  再起動させると有人の再検証に戻り得る（ADR-0024 決定3 / 4・IADR-0295 の rollout restart 除外と同じ理由）。本設定点は OpenD のテンプレートからは読まない。
+  再起動させると有人の再検証に戻り得る（ADR-0024 決定3 / 4・IADR-0295 の rollout restart 除外と同じ理由）。さらに `reloader.enabled` のとき
+  OpenD の Deployment に **`reloader.stakater.com/ignore: "true"`** を描き、導入側が `--auto-reload-all` 等で動いても除外が最優先で効くようにする
+  （reload 注釈を付けないだけでは導入側の設定に依存する）。本番既定（false）では描かない。
 - OpenD は `moomoo-credentials`（非 optional の `secretKeyRef`）と `moomoo-rsa`（secret volume）が揃うまで `ContainerCreating`
   （`FailedMount`）/ `CreateContainerConfigError` で待ち、ESO が Secret を作ると kubelet の再試行で起動する。**Deployment の再作成は要らない**
   （Kubernetes の既定挙動。本 PR では稼働クラスタに触れないため実測していない）。
@@ -126,6 +130,7 @@ related_specs:
 - 真偽の源をプロファイル 1 つに置き、helm へ明示することで、「スクリプトは ESO 所有と思っているのに chart は描いていない」形が起きない。
 - 前提（CRD / store）の欠落を helm の前で止めるので、中途半端なリリースが残らない。
 - 管理外 Secret を消さないのは、中の値（従来経路で投入した鍵）を失うのが利用者の判断だからである（IADR-0109 の「黙って消さない」と同じ）。
+  警告だけで同じ実行の helm upgrade へ進むと「先に画面で値を入れる」機会が無いまま ESO が所有しにいくため、既定は中断にした。
 - Discord ID をフラグで切り替えることで、ESO の無いクラスタでも従来経路が完全に残る。
 
 ## 検証
@@ -140,6 +145,10 @@ related_specs:
   - M2b 本番 values で `externalSecrets.enabled=true` → #795 ステップと既存の fail-safe 既定ステップの 2 つが赤
   - M3 ESO 所有でも `sync_ast_secrets` を呼ぶ → 5 件赤（作成しない・パッチしないの各アサーション）
   - M4 ESO 所有でも `discord.bot.*` を渡す → 2 件赤
+- 監査指摘の反映（2026-09-15）: `k8s-local-deploy.test.sh` 128 passed / 0 failed（T-795-07 を中断へ改め、T-795-07b を追加）。
+  本番描画は sha256 先頭 `8b3378f29a0c32b1` のまま、`helm lint --strict`（既定・values-local）とも 0 failed、#795 ステップはローカル実行で rc=0。
+  突然変異: M5 管理外 Secret の検査を警告のみへ戻す → 3 件赤／M6 OpenD の `reloader.stakater.com/ignore` を外す → #795 ステップが「ignore が無い」で赤／
+  M7 OpenD に `secret.reloader.stakater.com/reload` を足す → 「再起動注釈が付いた」で赤。
 
 ## 結果
 
@@ -150,13 +159,14 @@ related_specs:
     README に手動の `rollout restart deploy/opend` を明記した。
   - ESO 所有へ切り替えた環境では前回リリースの `discord.bot.*` が引き継がれない（警告のみ）。画面で入れ直す必要がある。
   - 管理外の既存 Secret を ESO が取り込むときの挙動（値の置き換えか、所有の衝突による同期停止か）は ESO の公開文書で断定できず、
-    警告文はどちらにも読める形にした。
+    文言はどちらにも読める形にし、既定で中断する（`--adopt-existing-secrets` で進める）。
 - 残余リスク:
   - 🔴 **契約の表の「既存 15 キー」に `sec-edgar-user-agent` が含まれない**。AST が消費するキー（`AST_SECRET_KEYS`）は 16 件で、
     基盤の許可リスト（`deploy/bootstrap/sc22-secret-items.json` の `ast-app-secrets`。書ける 7 件＋書けない 8 件＝15 件）に同キーが無い。
     ESO 所有の経路では SEC EDGAR の User-Agent を画面から入れられず、SEC EDGAR だけが収集対象から外れる（IADR-0064 決定1 の fail-safe）。
     `dataFrom.extract` は Vault にキーがあれば取り込むので、AST 側の配線は変更不要。**契約の変更は MSP#1477 と同時に行う事項であり、本 IADR では変えない**。
-  - Reloader を `--auto-reload-all` 相当で動かすと注釈の無い OpenD まで再起動対象になり得る。導入側（基盤）が注釈駆動で動かす前提に依存する。
+  - Reloader を `--auto-reload-all` 相当で動かすと注釈の無い OpenD まで再起動対象になり得る点は、OpenD の `reloader.stakater.com/ignore` で塞いだ。
+    ただし導入側が `--resources-to-ignore=secrets` にする・`ai-stock-trading` を名前空間セレクタから外すと、消費側も再起動されなくなる（基盤の設定に依存する）。
   - OpenD の Secret 待ち→自然起動は稼働クラスタで実測していない。
 - フォローアップ: 上記 `sec-edgar-user-agent` の扱いを MSP#1477 側と揃える（契約の表の更新）。
 
