@@ -41,4 +41,6 @@ cf093d22f9f30fb286bbfacf3eab696a766397e7:deploy/helm/ai-stock-trading/README.md:
 # **ダミー**の 18 桁 ID `123456789012345678` を `--set-string discord.bot.guildId=` に渡した行を
 # discord-client-id ルールが検知した（#245 と同型）。Discord のサーバー ID は認証情報ではなく、当該値は実在しないダミーである。
 # gitleaks は commit 範囲（履歴）を走査するため当該コミットの finding を fingerprint で無効化する（履歴は書き換えない）。
-aa010d6023710320264e183fb540b8379286ecee:.github/workflows/helm.yml:discord-client-id:624
+# PR は #797（#796 の置き換え・1 コミットへ集約）であり、develop へ入るのはこのコミットだけなので、#796 の途中コミットの
+# fingerprint ではなく集約コミットのものを置く（履歴に実在しない SHA を残さない）。
+6154bbfeb747415b0fa489baa1a79c11ad928165:.github/workflows/helm.yml:discord-client-id:624
