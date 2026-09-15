@@ -56,7 +56,7 @@ externalSecrets:
     enabled: true
 
 # #795, IADR-0341: 画面からの書き込み（→ force-sync → Secret 更新）で消費側 Deployment を Reloader に再起動させる。
-# OpenD には reload 注釈を付けず、代わりに reloader.stakater.com/ignore を付けて明示的に対象外にする。
+# OpenD には reload 注釈を付けず、代わりに reloader.stakater.com/auto: "false" を付けて明示的に対象外にする。
 reloader:
   enabled: true
 

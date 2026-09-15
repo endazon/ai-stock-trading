@@ -229,8 +229,8 @@ externalSecrets:
 # （本番描画は不変）。true にすると templates/deployment.yaml の各 Deployment に「その Deployment が読む Secret 名」
 # （extraEnv の secretKeyRef・Discord ID の切り替え分・moomoo 経路の order-execution の RSA 鍵）を描画時に導出して付け、
 # Secret の変更で Reloader が再起動させる。読む Secret が無い Deployment には付けない。
-# 🔴 OpenD（templates/opend.yaml）には付けず、reloader.stakater.com/ignore: "true" を付ける（Secret の変更で SMS 認証済み
-#    セッションを切らない。導入側が --auto-reload-all 等で動いても除外が最優先で効く）。
+# 🔴 OpenD（templates/opend.yaml）には付けず、reloader.stakater.com/auto: "false" を付ける（Secret の変更で SMS 認証済み
+#    セッションを切らない。導入側が --auto-reload-all 等で動いてもワークロード単位の除外が効く）。
 # Reloader 本体は本 chart に無い（連結ローカルでは基盤が ESO=1 で導入する）。無いクラスタでは注釈は無害な印に留まる。
 reloader:
   enabled: false

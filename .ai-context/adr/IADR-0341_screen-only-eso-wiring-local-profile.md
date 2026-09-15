@@ -119,8 +119,9 @@ related_specs:
   order-execution がマウントする RSA 鍵 Secret** の重複を除いた昇順で、読む Secret が無い Deployment には描かない。
 - 🔴 **OpenD（`templates/opend.yaml`）には付けない**。OpenD は SMS / 画像 CAPTCHA で認証したセッションを持ち、Secret の変更で
   再起動させると有人の再検証に戻り得る（ADR-0024 決定3 / 4・IADR-0295 の rollout restart 除外と同じ理由）。さらに `reloader.enabled` のとき
-  OpenD の Deployment に **`reloader.stakater.com/ignore: "true"`** を描き、導入側が `--auto-reload-all` 等で動いても除外が最優先で効くようにする
-  （reload 注釈を付けないだけでは導入側の設定に依存する）。本番既定（false）では描かない。
+  OpenD の Deployment に **`reloader.stakater.com/auto: "false"`** を描き、導入側が `--auto-reload-all` 等で動いてもワークロード単位で除外されるようにする
+  （reload 注釈を付けないだけでは導入側の設定に依存する）。`reloader.stakater.com/ignore` は Secret / ConfigMap 側に付ける注釈で Deployment には効かない
+  （Reloader v1.4.22 の README・`flags.go` の `IgnoreResourceAnnotation`。MSP PR #1478 の監査で判明し、当初の ignore から改めた）。本番既定（false）では描かない。
 - OpenD は `moomoo-credentials`（非 optional の `secretKeyRef`）と `moomoo-rsa`（secret volume）が揃うまで `ContainerCreating`
   （`FailedMount`）/ `CreateContainerConfigError` で待ち、ESO が Secret を作ると kubelet の再試行で起動する。**Deployment の再作成は要らない**
   （Kubernetes の既定挙動。本 PR では稼働クラスタに触れないため実測していない）。
@@ -147,7 +148,7 @@ related_specs:
   - M4 ESO 所有でも `discord.bot.*` を渡す → 2 件赤
 - 監査指摘の反映（2026-09-15）: `k8s-local-deploy.test.sh` 128 passed / 0 failed（T-795-07 を中断へ改め、T-795-07b を追加）。
   本番描画は sha256 先頭 `8b3378f29a0c32b1` のまま、`helm lint --strict`（既定・values-local）とも 0 failed、#795 ステップはローカル実行で rc=0。
-  突然変異: M5 管理外 Secret の検査を警告のみへ戻す → 3 件赤／M6 OpenD の `reloader.stakater.com/ignore` を外す → #795 ステップが「ignore が無い」で赤／
+  突然変異: M5 管理外 Secret の検査を警告のみへ戻す → 3 件赤／M6 OpenD の `reloader.stakater.com/auto: "false"` を外す → #795 ステップが「auto: "false" が無い」で赤／
   M7 OpenD に `secret.reloader.stakater.com/reload` を足す → 「再起動注釈が付いた」で赤。
 
 ## 結果
@@ -165,7 +166,7 @@ related_specs:
     基盤の許可リスト（`deploy/bootstrap/sc22-secret-items.json` の `ast-app-secrets`。書ける 7 件＋書けない 8 件＝15 件）に同キーが無い。
     ESO 所有の経路では SEC EDGAR の User-Agent を画面から入れられず、SEC EDGAR だけが収集対象から外れる（IADR-0064 決定1 の fail-safe）。
     `dataFrom.extract` は Vault にキーがあれば取り込むので、AST 側の配線は変更不要。**契約の変更は MSP#1477 と同時に行う事項であり、本 IADR では変えない**。
-  - Reloader を `--auto-reload-all` 相当で動かすと注釈の無い OpenD まで再起動対象になり得る点は、OpenD の `reloader.stakater.com/ignore` で塞いだ。
+  - Reloader を `--auto-reload-all` 相当で動かすと注釈の無い OpenD まで再起動対象になり得る点は、OpenD の `reloader.stakater.com/auto: "false"` で塞いだ。
     ただし導入側が `--resources-to-ignore=secrets` にする・`ai-stock-trading` を名前空間セレクタから外すと、消費側も再起動されなくなる（基盤の設定に依存する）。
   - OpenD の Secret 待ち→自然起動は稼働クラスタで実測していない。
 - フォローアップ: 上記 `sec-edgar-user-agent` の扱いを MSP#1477 側と揃える（契約の表の更新）。

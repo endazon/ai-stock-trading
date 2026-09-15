@@ -55,8 +55,8 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 | Discord ID 4 件 | `ast-secrets` の `discord-bot-guild-id` / `-channel-id` / `-allowed-user-ids` / `-user-mapping`（optional） | `DISCORD_BOT_*` → `discord.bot.*`（下記「Discord の環境固有 ID」） |
 | helm へのフラグ | `externalSecrets.enabled=true` / `appSecrets.enabled=true` を明示 | 両方 `false` を明示（ESO の無いクラスタで ExternalSecret を描かない） |
 
-> ⚠️ **Reloader は OpenD を再起動しない**（OpenD の Deployment には reload 注釈を付けず、`reloader.stakater.com/ignore: "true"` で
-> 明示的に対象外にする＝SMS 認証済みセッションを切らない。Reloader を全体自動で動かしても除外が優先される）。
+> ⚠️ **Reloader は OpenD を再起動しない**（OpenD の Deployment には reload 注釈を付けず、`reloader.stakater.com/auto: "false"` で
+> 明示的に対象外にする＝SMS 認証済みセッションを切らない。Reloader を全体自動で動かしてもワークロード単位の除外が効く）。
 > RSA 鍵を画面で**生成し直す**と、`moomoo-rsa` を読む order-execution（`broker.tier=moomoo-sim`）は再起動されて新しい鍵を読むが、
 > OpenD は古い鍵のまま動き続け、**暗号化接続が食い違う**。生成し直したときは OpenD を手動で再起動する
 > （`kubectl -n ai-stock-trading rollout restart deploy/opend`。デバイス信頼は PVC に残るが、再検証を求められる場合がある）。

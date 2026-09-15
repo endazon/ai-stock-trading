@@ -55,10 +55,12 @@ metadata:
     app.kubernetes.io/part-of: ai-stock-trading
   {{- /* #795, IADR-0341 決定4: Reloader を使う描画では OpenD を明示的に対象外にする。reload 注釈を付けないだけだと、
          導入側が --auto-reload-all 等で動いたときに OpenD まで再起動され、SMS 認証済みセッションが切れる。
-         ignore は Reloader の判定で最優先の除外である。reloader.enabled=false（本番既定）では描かない。 */}}
+         ワークロードの除外は reloader.stakater.com/auto: "false"（Reloader v1.4 の README「auto: "false" は
+         そのワークロードの再起動を明示的に止める」。reloader.stakater.com/ignore は Secret / ConfigMap 側に付ける注釈で、
+         Deployment に付けても効かない）。reloader.enabled=false（本番既定）では描かない。 */}}
   {{- if (.Values.reloader | default dict).enabled }}
   annotations:
-    reloader.stakater.com/ignore: "true"
+    reloader.stakater.com/auto: "false"
   {{- end }}
 spec:
   replicas: 1
