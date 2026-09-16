@@ -180,7 +180,9 @@ start_opend_with_console() {
 		-c "stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200} 2>/dev/null || :; exec $*" \
 		"$console" 0<> "$fifo" &
 	script_pid=$!
-	# Pod 削除の SIGTERM は script へ渡す（script が子＝OpenD へ渡し、-e で終了コードを返す）。
+	# Pod 削除の SIGTERM は script へ渡す（script が子＝OpenD へ TERM を渡し、2 秒後に KILL する。この経路では script の
+	# -e は 0 を返す＝util-linux 2.37 の script は配達済みシグナルでループを抜け、子の終了状態を拾わない。実測）。
+	# OpenD の終了コードがコンテナの終了コードになるのは、OpenD が自分で終了した場合だけ。
 	got_sig=0
 	trap 'got_sig=1; kill -TERM "$script_pid" 2>/dev/null || :' TERM INT HUP
 	# trap で wait が中断されると 128+signo が返るので、script が生きている間は wait し直す。

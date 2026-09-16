@@ -50,9 +50,12 @@ plan_refs:
 **採用: `script` を `exec` せず、本体（bash＝PID 1）の子として起こし、本体が `wait` して同じ終了コードで終わる。**
 
 - `script` の子は OpenD だけになる（背景ループは本体の子のまま）ので、OpenD の終了と同時に `script` は `-e` の終了コードで自ら抜ける（10 ms の leaving timeout）。
-- 本体は `wait "$script_pid"` の戻り値で `exit` する。`-e` により OpenD の終了コード（シグナル死は `0x80+signo`）がそのままコンテナの終了コードになる。
-- Pod 削除の SIGTERM は本体が `trap` で `script` へ転送し、`script` が子（OpenD）へ渡す（従来と同じ経路）。trap で `wait` が中断された場合は
-  `script` が生きている限り `wait` し直す。
+- 本体は `wait "$script_pid"` の戻り値で `exit` する。**OpenD が自分で終了した場合**は `-e` により OpenD の終了コード（シグナル死は `0x80+signo`）が
+  そのままコンテナの終了コードになる（監査で実測: `exit 3` → 3、FIFO 経由の `exit 5` → 5）。
+- Pod 削除の SIGTERM は本体が `trap` で `script` へ転送し、`script` が子（OpenD）へ TERM を渡し **2 秒後に KILL する**（従来と同じ経路。
+  Pod の `terminationGracePeriodSeconds` 30 秒ではなく `script` 固有の 2 秒が実効の猶予）。この経路では **コンテナの終了コードは 0** になる
+  （util-linux 2.37.2 の `script` は配達済みシグナルでプロキシループを抜け、子の終了状態を拾わないまま `-e` が 0 を返す。監査で実測。
+  `restartPolicy: Always` は終了コードを見ないので運用上の影響は無い）。trap で `wait` が中断された場合は `script` が生きている限り `wait` し直す。
 - **据え置き**: FIFO の `0<>`（O_RDWR。書き手が来ては去っても EOF を出さない＝決定 1）、`-a`（console 上限の成立条件）、`-f`、`stty rows/cols`（#730）、
   `$*` を 1 つの文字列で `exec` する形（OpenD は `script` の直接の子のまま＝SIGTERM がそのまま届く）。
 - 背景ジョブの標準入力は `/dev/null` へ差し替えられるが、`0<> "$fifo"` は**明示のリダイレクト**なので差し替えの後に適用される（`<&0` の罠には当たらない）。
@@ -155,4 +158,4 @@ Windows ホスト（Git Bash）では FIFO / console 群は従来どおり skip 
   livenessProbe を付けない判断（IADR-0167）とも矛盾しない（ハング検知は依然として監視＋有人）。
 - `script` の版が上がって `ul_pty_wait_for_child` が直っても、本変更は害にならない（`script` の子が OpenD だけである形は変わらない）。
 - 本体が `wait` 中に SIGTERM を受け、`script` が同時に終了した極小の窓では、本体の終了コードが 143 になる（OpenD の終了コードではない）。
-  非ゼロであることは変わらず、Pod 削除の文脈でしか起きない。
+  通常の SIGTERM 経路の終了コードは 0（上記）であり、いずれも Pod 削除の文脈でしか起きない。

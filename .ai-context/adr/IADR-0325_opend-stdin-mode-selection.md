@@ -107,6 +107,7 @@ plan_refs:
   ——util-linux 2.37 の `ul_pty_wait_for_child` は子（OpenD）を回収した次の周で `waitpid(-1, WNOHANG)` を回し、他に生きている子が
   居ると 0 が返り続けて抜けられない（stdin=`/dev/null` でも同じ形で固まることを稼働イメージの使い捨てコンテナで確認）。
   `script` を本体の子にすれば `script` の子は OpenD だけになり、OpenD の終了と同時に `-e` の終了コードで抜け、本体が `wait` して
-  同じコードで終わる（SIGTERM は trap で `script` へ転送）。決定 1 の「`0<>` が EOF を抑える」・`-a`・`stty rows/cols` は据え置き。
+  同じコードで終わる（SIGTERM は trap で `script` へ転送。ただし SIGTERM 経路では `script` が子に TERM→2 秒後 KILL を行い `-e` は 0 を返すため、
+  OpenD の終了コードが伝わるのは OpenD が自分で終了した場合だけ＝監査の実測）。決定 1 の「`0<>` が EOF を抑える」・`-a`・`stty rows/cols` は据え置き。
   livenessProbe を付けない方針（IADR-0167）は変えず、復旧は `restartPolicy: Always` の再起動に委ねる。T-802-01/02 で固定。
   作業仕様書 `20260916_802_console-script-exit-on-child-exit.md`。
