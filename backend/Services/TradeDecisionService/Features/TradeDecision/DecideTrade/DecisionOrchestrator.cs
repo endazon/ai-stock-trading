@@ -36,8 +36,11 @@ public sealed class DecisionOrchestrator(
                 .CompleteAsync(
                     screeningPromptFactory(), options.PrimaryModel, LlmPurposes.TradeDecisionScreening, cancellationToken)
                 .ConfigureAwait(false);
-            var screen = TradeDecisionParser.ParseDetailed(screenOutput);
-            if (screen.Decision.Action == TradeAction.Hold)
+            // #806, IADR-0248: 一次は**方向（関心の有無）だけ**を読む（ParseScreening）。本判断用の不変量
+            // （Buy/Sell は価格・損切り幅が正）を一次に掛けると、数値を省いた Buy 候補が InvalidValues＝解析不能で
+            // 打ち切られ、関心ありの銘柄が本判断に届かない（2026-09-16 開場中の実測）。価格・損切り幅は二次が改めて出す。
+            var screen = TradeDecisionParser.ParseScreening(screenOutput);
+            if (!screen.IsInterested)
             {
                 // #247, IADR-0104 決定6: 一次で打ち切る場合も見送りの根拠（LLM 由来。拒否・空応答等）を保つ。
                 // Hold は TradeDecisionMade を発行しないため、FR-11 ログが唯一の監査記録である。
@@ -54,11 +57,11 @@ public sealed class DecisionOrchestrator(
                 {
                     logger.LogInformation(
                         "一次スクリーニングで見送り（二次判断をスキップ・費用統制）: rationale={Rationale}",
-                        screen.Decision.Rationale);
+                        screen.Rationale);
                 }
 
                 return new OrchestratedDecision(
-                    screen.Decision, TotalVotes: 0, AgreementVotes: 0, ScreenedOut: true,
+                    screen.AsHold, TotalVotes: 0, AgreementVotes: 0, ScreenedOut: true,
                     UnparseableVotes: 0, ScreeningUnparseable: screen.IsUnparseable);
             }
         }

@@ -190,4 +190,62 @@ public class TradeDecisionParserTests
             TradeDecisionParser.Parse(output).Should().Be(TradeDecisionParser.ParseDetailed(output).Decision);
         }
     }
+
+    // --- FR-04, FR-11, #806, IADR-0248: 一次スクリーニングは方向（関心の有無）だけを読む ---
+
+    // #806: 一次スクリーニングで意味を持つのは方向だけ。価格・損切り幅は二次本判断が改めて出すため、
+    // Buy/Sell の数値欠損・不変量違反（本判断なら InvalidValues）でも「関心あり」として読む
+    // （2026-09-16 開場中の実測: Buy で stopLossDistancePerShare=null → InvalidValues → 見送り、本判断に届かず）。
+    [Theory]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":332.55,"stopLossDistancePerShare":null}""", TradeAction.Buy)]
+    [InlineData("""{"action":"Buy","rationale":"上昇"}""", TradeAction.Buy)]
+    [InlineData("""{"action":"Sell","rationale":"反落","referencePrice":null,"stopLossDistancePerShare":null}""", TradeAction.Sell)]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":1000,"stopLossDistancePerShare":1000}""", TradeAction.Buy)]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":0,"stopLossDistancePerShare":30}""", TradeAction.Buy)]
+    [InlineData("""{"action":"buy","rationale":"上昇","referencePrice":1000,"stopLossDistancePerShare":30}""", TradeAction.Buy)]
+    public void 一次スクリーニングはBuySellの数値が無くても不変量違反でも関心ありとして読む(string json, TradeAction expected)
+    {
+        var screening = TradeDecisionParser.ParseScreening(json);
+
+        screening.IsUnparseable.Should().BeFalse("一次では InvalidValues を出さない（数値は本判断が決める）");
+        screening.Failure.Should().BeNull();
+        screening.IsInterested.Should().BeTrue();
+        screening.Action.Should().Be(expected);
+        screening.Rationale.Should().NotBeEmpty();
+    }
+
+    // #806: Hold は数値の有無を問わず見送り（解析不能ではない）。根拠を保つ（IADR-0104 決定6）。
+    [Theory]
+    [InlineData("""{"action":"Hold","rationale":"方針外","referencePrice":null,"stopLossDistancePerShare":null}""")]
+    [InlineData("""{"action":"Hold","rationale":"方針外"}""")]
+    [InlineData("""{"action":"Hold","rationale":"方針外","referencePrice":1000,"stopLossDistancePerShare":30}""")]
+    public void 一次スクリーニングのHoldは数値の有無を問わず見送り(string json)
+    {
+        var screening = TradeDecisionParser.ParseScreening(json);
+
+        screening.IsUnparseable.Should().BeFalse("Hold は LLM の判断であり解析不能ではない");
+        screening.IsInterested.Should().BeFalse();
+        screening.Action.Should().Be(TradeAction.Hold);
+        screening.Rationale.Should().Be("方針外");
+        screening.AsHold.Should().Be(LlmDecision.Hold with { Rationale = "方針外" });
+    }
+
+    // #806: 解析不能として残すのは出力の形の問題（空・JSON なし・JSON 不正・action 不明）だけ（#290 の区別を維持）。
+    [Theory]
+    [InlineData("", TradeDecisionParseFailureKind.EmptyOutput)]
+    [InlineData("応答が JSON ではない", TradeDecisionParseFailureKind.NoJsonObject)]
+    [InlineData("""{"action":"Buy","rationale":""", TradeDecisionParseFailureKind.NoJsonObject)]
+    [InlineData("""{"action":"Buy",}""", TradeDecisionParseFailureKind.MalformedJson)]
+    [InlineData("""{"action":"Maybe","rationale":"x"}""", TradeDecisionParseFailureKind.UnknownAction)]
+    [InlineData("""{"rationale":"action なし"}""", TradeDecisionParseFailureKind.UnknownAction)]
+    public void 一次スクリーニングの解析不能は失敗種別つき(string output, TradeDecisionParseFailureKind expected)
+    {
+        var screening = TradeDecisionParser.ParseScreening(output);
+
+        screening.IsUnparseable.Should().BeTrue();
+        screening.Failure!.Kind.Should().Be(expected);
+        screening.IsInterested.Should().BeFalse("解析不能は安全側で見送り");
+        screening.Action.Should().Be(TradeAction.Hold);
+        screening.AsHold.Should().Be(LlmDecision.Hold);
+    }
 }

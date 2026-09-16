@@ -428,6 +428,32 @@ public class TradeDecisionPromptBuilderTests
         ExtractSection(withReferences, "# 空売りの制約（結論）").Should().Be(section);
     }
 
+    // FR-04, #806, IADR-0248: 一次スクリーニングは方向だけを読む。出力形式は Buy/Sell でも数値を null でよいと述べ、
+    // 「Buy/Sell では必ず数値を入れる」（本判断側の要求）を一次に持ち込まない。
+    [Fact]
+    public void スクリーニングプロンプトはBuySellでも数値をnullでよいと述べる()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().Contain("Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい");
+        prompt.Should().Contain("Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）");
+        prompt.Should().NotContain("Buy/Sell では必ず数値を入れる");
+    }
+
+    // #806 対の否定形: 本判断（Build）はサイジングへ渡すため Buy/Sell に数値を必須とする（不変）。
+    [Fact]
+    public void 本判断プロンプトはBuySellに数値を必須とする_対の否定形()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain("Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。");
+        prompt.Should().NotContain("Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい");
+    }
+
     // 指定した見出し行から、次の `# ` 見出し（または末尾）までを切り出す（節の不変性比較に使う）。
     private static string ExtractSection(string prompt, string heading)
     {

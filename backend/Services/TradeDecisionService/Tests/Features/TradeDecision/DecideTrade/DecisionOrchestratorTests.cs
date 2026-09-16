@@ -251,4 +251,65 @@ public class DecisionOrchestratorTests
         result.UnparseableVotes.Should().Be(0);
         result.ScreeningUnparseable.Should().BeFalse();
     }
+
+    // --- FR-04, FR-11, #806, IADR-0248: 一次スクリーニングは方向だけを読む ---
+
+    // #806: 一次で意味を持つのは関心の方向だけ。Buy/Sell の数値欠損・不変量違反（本判断なら InvalidValues）でも
+    // 見送りにせず二次本判断へ進める（2026-09-16 開場中の実測: Buy＋stopLossDistancePerShare=null で
+    // screenedOut=True / screeningUnparseable=True になり本判断へ届かなかった）。
+    [Theory]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":332.55,"stopLossDistancePerShare":null}""")]
+    [InlineData("""{"action":"Buy","rationale":"上昇","referencePrice":1000,"stopLossDistancePerShare":1000}""")]
+    [InlineData("""{"action":"Sell","rationale":"反落"}""")]
+    public async Task 一次のBuySellは数値が無くても不変量違反でも二次へ進む(string screeningOutput)
+    {
+        var llm = new SequencedLlm(screeningOutput, Json("Buy"), Json("Buy"), Json("Buy"));
+        var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
+
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+
+        result.ScreenedOut.Should().BeFalse("一次の関心ありは数値の有無に関わらず二次へ進む");
+        result.ScreeningUnparseable.Should().BeFalse("数値欠損は出力の形の問題ではない");
+        result.Decision.Action.Should().Be(TradeAction.Buy, "二次本判断が価格・損切り幅を決める");
+        result.TotalVotes.Should().Be(3);
+        llm.Calls.Should().HaveCount(4);
+        llm.Calls[0].Prompt.Should().Be("screen");
+        llm.Calls.Skip(1).Should().OnlyContain(c => c.Prompt == "decision");
+    }
+
+    // #806 陰性対照: Hold は数値 null でも見送り（解析不能ではない・根拠を保つ）。二次は呼ばない。
+    [Fact]
+    public async Task 一次のHoldは数値がnullでも見送りとして打ち切り解析不能にしない()
+    {
+        var llm = new SequencedLlm(
+            """{"action":"Hold","rationale":"方針外","referencePrice":null,"stopLossDistancePerShare":null}""", Json("Buy"));
+        var options = DecisionOrchestrationOptions.Default with { EnableScreening = true };
+
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+
+        result.ScreenedOut.Should().BeTrue();
+        result.ScreeningUnparseable.Should().BeFalse("LLM が選んだ見送りは解析不能ではない");
+        result.Decision.Action.Should().Be(TradeAction.Hold);
+        result.Decision.Rationale.Should().Be("方針外");
+        result.TotalVotes.Should().Be(0);
+        llm.Calls.Should().ContainSingle();
+    }
+
+    // #806 陰性対照: 壊れた JSON・不明な action は引き続き解析不能として打ち切る（#290 の区別を維持）。
+    [Theory]
+    [InlineData("""{"action":"Buy",}""")]
+    [InlineData("""{"action":"Maybe","rationale":"x"}""")]
+    public async Task 一次の壊れたJSONや不明なactionは解析不能として打ち切る(string screeningOutput)
+    {
+        var llm = new SequencedLlm(screeningOutput, Json("Buy"));
+        var options = DecisionOrchestrationOptions.Default with { EnableScreening = true };
+
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+
+        result.ScreenedOut.Should().BeTrue("解析不能でも安全側で打ち切る");
+        result.ScreeningUnparseable.Should().BeTrue("打ち切りの理由が解析不能であることを区別して残す（#290）");
+        result.Decision.Action.Should().Be(TradeAction.Hold);
+        result.TotalVotes.Should().Be(0);
+        llm.Calls.Should().ContainSingle("二次は呼ばない");
+    }
 }

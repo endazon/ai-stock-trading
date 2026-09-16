@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-11, ADR-0003, IADR-0039, IADR-0104, IADR-0248]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-11
+updated: 2026-09-16
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
@@ -58,3 +58,14 @@ plan_refs:
 > `Path: $.stopLossDistancePerShare`）。項目ごとに寛容に読む形へ改め（数値・数値文字列は値、それ以外は未供給）、
 > Hold は数値が無くても解析成功の見送り、Buy / Sell で数値が無ければ従来どおり `InvalidValues`（解析不能系）とする。
 > 決定 1〜3 は不変。プロンプトの出力形式に「Hold のとき数値は null でよい」を明記した。
+
+> ［2026-09-16 追記 / #806］**一次スクリーニングは方向（関心の有無）だけを読む。** #785 の後も、一次の出力を本判断用の
+> `ParseDetailed` で読んでいたため、Buy/Sell で数値を省いた出力（2026-09-16 開場中の実測: Buy で
+> `stopLossDistancePerShare=null`）が決定 1 の「値の不変量違反＝`InvalidValues`」に掛かり、**関心ありの銘柄が解析不能として
+> 打ち切られ本判断に届かなかった**。決定 1 の不変量は**二次本判断（サイジングへ渡す）だけ**のものであり、一次で意味を持つのは
+> 方向だけである（IADR-0039。価格・損切り幅は二次が改めて出す）。`TradeDecisionParser.ParseScreening` を分け、一次では
+> action が Buy/Sell なら数値の有無・不変量に関わらず「関心あり」、Hold は数値の有無を問わず見送り、解析不能（Failure）は
+> 出力の形の問題（空・JSON なし・JSON 不正・action 不明）だけとする（`InvalidValues` は一次では出ない）。
+> `DecisionOrchestrator` の一次分岐だけがこれを使い、ログ 2 行・`ScreeningUnparseable` の意味（真の解析不能のみ true）・
+> 二次の解釈（`ParseDetailed`）・サイジングは不変。`BuildScreening` の出力形式は「Buy/Sell でも null でよい（本判断で決める）」に
+> 改めた（本判断側 `Build` は「必ず数値」のまま）。決定 1〜4 は不変。
