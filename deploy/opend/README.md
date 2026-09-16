@@ -144,15 +144,21 @@ kubectl -n ai-stock-trading logs deploy/opend | grep -i "Login successful"
 
 #### 標準入力の与え方（`OPEND_STDIN_MODE`。#730）
 
-🔴 **2026-09-10 の実測: 稼働クラスタでは `console` / `fifo` 経路から検証コードが OpenD に届かない。**
-画面・サイドカー・`kubectl exec` での FIFO 直書きのいずれも無反応で、原因は未特定である（[#730](https://github.com/endazon/ai-stock-trading/issues/730)）。
-**実口座でログイン成功を確認できている構成は `tty` だけ**なので、当面はそれを使う。
+> **［2026-09-16 / #730 解決］`console` 経路が届かなかった原因は pty の画面サイズが 0 行 0 桁だったこと**である。
+> `script` は自分の標準入力が端末のときだけウィンドウサイズを pty へ写すが、console 経路の標準入力は FIFO なので
+> pty は `rows 0; columns 0` のまま起動し、OpenD の行エディタは幅 0 のとき入力文字をすべて捨てて空行だけを送る
+> （プロンプト `>>>` の再描画だけが出る）。`entrypoint.sh` は OpenD を起動する前に `stty rows 24 cols 200`
+> （`OPEND_CONSOLE_ROWS` / `OPEND_CONSOLE_COLS` で上書き可）を打つようになり、画面 SC-04 から入れた行が届く。
+> 修正前のイメージで動いている Pod は `kubectl -n ai-stock-trading exec deploy/opend -c opend -- stty -F /dev/pts/1 rows 24 cols 200`
+> で即時に直る（実行中に打っても効く）。
 
 | `OPEND_STDIN_MODE` | 経路 | 入力手段 | 状態 |
 | --- | --- | --- | --- |
-| `console`（既定） | FIFO → `script`(pty) → OpenD | 画面 SC-04 / サイドカー | 🔴 **稼働クラスタで届かない（#730）** |
-| `fifo` | FIFO → OpenD 直読み | `kubectl exec … > /run/opend/stdin` | 🔴 同上。console 複製が無いので画面も使えない |
-| `tty` | コンテナ本来の tty → OpenD | `kubectl attach` | ✅ **実績あり**（下記） |
+| `console`（既定） | FIFO → `script`(pty・画面サイズつき) → OpenD | 画面 SC-04 / サイドカー / `kubectl exec … > /run/opend/stdin` | ✅ 既定。画面から検証コードを入れる |
+| `fifo` | FIFO → OpenD 直読み | `kubectl exec … > /run/opend/stdin` | console 複製が無いので画面は使えない |
+| `tty` | コンテナ本来の tty → OpenD | `kubectl attach` | ✅ 実績あり。**最終手段**（画面・サイドカーは使えない） |
+
+`tty` へ退避する手順（最終手段）:
 
 ```bash
 kubectl -n ai-stock-trading set env deploy/opend -c opend OPEND_STDIN_MODE=tty
@@ -162,14 +168,14 @@ kubectl -n ai-stock-trading attach -it deploy/opend -c opend
 #   🔴 抜けるときに Ctrl+C を押さない（OpenD が落ちて SMS からやり直しになる）。ウィンドウごと閉じる。
 ```
 
-> `set env` は Helm の管理外なので、次回の `helm upgrade` で剥がれて既定（`console`）へ戻る。
-> #730 が解決するまでは再デプロイのたびに再設定が要る。
+> `set env` は Helm の管理外なので、次回の `helm upgrade` で剥がれて既定（`console`）へ戻る
+> （#730 の解決後は既定の `console` で画面から入れられるので、戻ってよい）。
 
 #### 画面（ブラウザ）から検証コードを入れる（#722）
 
-**手元に kubeconfig が無くても検証できる**（**ただし #730 のとおり現在は届かない**）。
+**手元に kubeconfig が無くても検証できる**（#730 の解決で `console` 経路が届くようになった）。
 `entrypoint.sh` は `console` / `fifo` モードで OpenD の標準入力を
-**FIFO（`/run/opend/stdin`）経由**にするので、`kubectl exec` からも同じ標準入力へ届く**はずの設計**である。
+**FIFO（`/run/opend/stdin`）経由**にするので、`kubectl exec` からも同じ標準入力へ届く。
 `attach` が要るのは tty を掴むときだけで、コードを 1 行入れるだけなら exec で足りる。
 
 > **［2026-09-09 追記 / #722 段 2］入力面はこの先 ai-stock-trading の画面になる。**

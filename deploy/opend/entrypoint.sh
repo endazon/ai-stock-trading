@@ -152,7 +152,19 @@ start_opend_with_console() {
 	: > "$console"
 	# 🔴 make_stdin_fifo のみ。tty 転送（start_tty_forwarder）は張らない（#727・上のコメント）。
 	make_stdin_fifo "$fifo"
-	exec script -q -e -f -a -c "$*" "$console" 0<> "$fifo"
+	# 🔴 #730: pty に**画面サイズ**を与えてから OpenD を起動する。
+	#   `script` は自分の標準入力が端末のときだけウィンドウサイズを pty へ写す。ここでは標準入力が FIFO なので
+	#   pty は **0 行 0 桁**のまま起動し、OpenD の行エディタは幅 0 のとき入力文字をすべて捨てて空行だけを
+	#   送る（プロンプトの再描画だけが出て「入れたのに無反応」になる。稼働クラスタと使い捨てコンテナで実測。
+	#   `stty rows 40 cols 120` を打った直後から `help` が実行される）。`kubectl attach` が動くのは端末の
+	#   実サイズ（TIOCSWINSZ）が送られるからであり、読み口の違いではない（#730 の仮説 A・B は外れ）。
+	#   `script -c` の子は標準入力＝pty のスレーブなので、その場で `stty rows/cols` を打てば OpenD に見える。
+	#   桁数は `relogin -login_pwd=…` のような長いコマンドが折り返さない幅にしておく（折り返しは行エディタの
+	#   再描画を狂わせ得る）。上書きは OPEND_CONSOLE_ROWS / OPEND_CONSOLE_COLS。
+	#   `$*` は従来どおり 1 つの文字列（単一の実行ファイル）として `exec` に渡す。
+	exec script -q -e -f -a \
+		-c "stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200} 2>/dev/null || :; exec $*" \
+		"$console" 0<> "$fifo"
 }
 
 # #722 段 2: コンソール複製の上限。OpenD は週単位で常駐するため、放っておくと際限なく積む。
