@@ -17,7 +17,7 @@ related_ids:
   - IADR-0128
 author: claude
 created: 2026-08-03
-updated: 2026-08-04
+updated: 2026-09-16
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -282,6 +282,23 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   > **実施状況（2026-08-04 追記）**: 1（第 2 段階）と 2（第 3 段階）は完了した。記録は作業仕様書
   > `docs/specs/20260803_354_wolverine-migration.md` の §12・§13。3（計画への環流）は**未実施**である。
   > 決定 7（混在デプロイの禁止）の解除条件は同仕様書 §13.11 に整理した。
+
+## ［2026-09-16 追記 / #808］決定 6 の再評価条件（メモリ）が成立した —— 実行時コンパイルの作業メモリが glibc アリーナに残り 512Mi 容器を殺す
+
+決定 6 は「起動時間・コンテナサイズ・メモリが問題になった時点」を再評価条件とした。稼働クラスタ（limit 512Mi）で
+**メモリが問題になった**（#778 → #782 → #808）。実測は作業仕様書
+`../specs/20260916_808_audit-service-heap-external-growth.md` に置く。要点:
+
+- `TypeLoadMode.Dynamic` は**メッセージ型ごとに 1 通目の受信時**、そのキューのリスナスレッド上で Roslyn コンパイルを走らせる。
+  コンパイル（Roslyn 本体の JIT を含む）の作業メモリはネイティブ（glibc malloc）で、解放後もそのスレッドのアリーナ
+  （64MiB heap）に残る。スレッドが違えばアリーナも違うため、**購読型数に比例して RSS が積み上がる**
+  （実測 ≈53Mi / 型。契約イベント全数 45 型を購読する audit-service は 6 型で 337Mi → OOMKilled）。
+- GC ヒープは小さい（audit で ≈64Mi）ので、#778 / #782 の GC 設定はこの伸びに効かない。
+- **暫定策（本追記・#808）**: chart の共通 env に `MALLOC_ARENA_MAX=2`。作業メモリを 2 アリーナで再利用させ、
+  比例の伸びを断つ（上限 ≈2×64MiB）。決定 6 そのもの（RuntimeCompilation を参照する）は**まだ変えない**。
+- **恒久策（別 issue）**: Wolverine の本番推奨どおり `dotnet run -- codegen write` で事前生成し `TypeLoadMode.Static` で
+  読む（本番イメージから Roslyn を外す）。11 サービスの `Program.cs`（`RunJasperFxCommands`）と Dockerfile
+  （ビルド段で `codegen write`。移行を DB 無しで通す並べ替え）に跨るため、決定 6 の見直しは別 IADR で行う。
 
 ## 関連
 

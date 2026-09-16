@@ -117,6 +117,15 @@ spec:
                    opend.yaml の opend-auth-gateway は対象外（ログイン済み OpenD Pod を再起動させない。別途）。 */}}
             - name: DOTNET_GCHeapHardLimitPercent
               value: "60"
+            {{- /* NFR-01, ADR-0006, IADR-0129 決定 6 追記, #808: 3 つの GC 設定を入れても audit-service は 10 分で RSS 476Mi
+                   → OOMKilled（実測）。伸びているのは GC ヒープ（実測 ≈64Mi）ではなく glibc malloc の per-thread アリーナで、
+                   Wolverine がメッセージ型ごとに 1 通目の受信時に Roslyn でハンドラをコンパイルするたび（別スレッド＝別
+                   アリーナ）に ≈53Mi ずつ積まれる（audit は 45 型を購読。/proc/1/smaps の 64MiB 整列 rw-p が 6 回で 337Mi）。
+                   アリーナ数を 2 に固定して作業メモリを同じアリーナで再利用させ、購読型数に比例した伸びを断つ
+                   （上限 ≈2×64MiB）。全 .NET サービス共通・本番既定にも入れる。opend.yaml は #782 と同じく対象外。
+                   引き金（実行時コンパイル）を無くす恒久策は codegen 事前生成＋TypeLoadMode.Static（別 issue）。 */}}
+            - name: MALLOC_ARENA_MAX
+              value: "2"
             {{- /* NFR, MSP:ADR-0029 / MSP:ADR-0075, IADR-0328, #584: east-west gRPC の h2c リスナ
                    （TLS 無し HTTP/2 専用ポート）。未設定ならアプリはリスナを立てない。
                    readiness は HTTP 側（8080 の /health/ready）のまま —— 1 プロセスが両ポートを
