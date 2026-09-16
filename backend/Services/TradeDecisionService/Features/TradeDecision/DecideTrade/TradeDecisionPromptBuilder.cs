@@ -114,7 +114,8 @@ public static class TradeDecisionPromptBuilder
     }
 
     // FR-04, IADR-0039, L129: 二段判断の一次スクリーニング（軽量モデル・対象銘柄の絞り込み）用プロンプト。
-    // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させ、Parser を共有する。方針外・不確実は Hold。
+    // 本判断は不要。関心（Buy/Sell 候補か）だけを同一 JSON スキーマで返させる。方針外・不確実は Hold。
+    // #806: 解釈は TradeDecisionParser.ParseScreening（方向のみ。本判断の不変量は掛けない）。
     //
     // #337, IADR-0247: 縮退制御が有効なときだけ、呼び出し側が currentPrice（当日の市況・価格＝**保護対象**）と
     // references（ScreeningContextPlanner が縮退順序を適用した残余）を渡す。両方 null なら従来のプロンプトと
@@ -158,7 +159,9 @@ public static class TradeDecisionPromptBuilder
         AppendRetrievalSection(sb, references);
         sb.AppendLine("# 出力形式（JSON のみ・関心の方向のみ）");
         sb.AppendLine("{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"絞り込み理由\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
-        sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。""");
+        // #806, IADR-0248: 一次は方向だけを読む（ParseScreening）。数値は本判断が決めるため Buy/Sell でも必須にしない
+        // （「必ず数値を入れる」と要求しても LLM 出力は揺れ、数値欠損の Buy を見送りにすると関心ありの銘柄が本判断に届かない）。
+        sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）。""");
         return sb.ToString();
     }
 
