@@ -153,6 +153,12 @@ jobs:
           # ヒープ外（Wolverine の実行時コンパイルの作業メモリが per-thread アリーナに残る）で RSS が limit を超える（実測）。1 つでも欠ければ赤。
           missing_arena="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: MALLOC_ARENA_MAX/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
           if [ -n "$missing_arena" ]; then echo "::error::MALLOC_ARENA_MAX が無い .NET Deployment がある（#808）: $missing_arena"; exit 1; fi
+          # #812 / ADR-0006: 同じ母集合に glibc の固定 mmap / trim 閾値（MALLOC_MMAP_THRESHOLD_ / MALLOC_TRIM_THRESHOLD_）が入っている。
+          # アリーナ上限だけでは伸びが main arena の [heap] へ移るだけで OOMKilled が続く（実測）。#811 までの暫定。1 つでも欠ければ赤。
+          missing_mmap="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: MALLOC_MMAP_THRESHOLD_/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
+          if [ -n "$missing_mmap" ]; then echo "::error::MALLOC_MMAP_THRESHOLD_ が無い .NET Deployment がある（#812）: $missing_mmap"; exit 1; fi
+          missing_trim="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: MALLOC_TRIM_THRESHOLD_/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
+          if [ -n "$missing_trim" ]; then echo "::error::MALLOC_TRIM_THRESHOLD_ が無い .NET Deployment がある（#812）: $missing_trim"; exit 1; fi
           # #764 / IADR-0323 追記: LlmGateway の s2s は llm-caller（platform-service）。kb-writer（platform-operator）は基盤の
           # ServiceCaller 門（MSP#1365）で 403 になる。本番既定でも llm-auth-* を参照していること（values-local 側の検査と対）。
           if printf '%s' "$out" | grep -A4 'name: LlmGateway__Auth__ClientId' | grep -q 'key: kb-auth-client-id'; then
