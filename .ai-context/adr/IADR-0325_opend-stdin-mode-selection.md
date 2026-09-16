@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-09, FR-11, UC-06, SC-04, IADR-0053, IADR-0060, IADR-0321, IADR-0322]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-16
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
@@ -94,3 +94,9 @@ plan_refs:
   有力な仮説は「OpenD が fd 0 ではなく制御端末（`/dev/tty`）を読んでおり、`script` 配下では制御端末が
   移っていない」で、`console` モードの `/proc/<pid>/stat` の `tty_nr` と fd 0 の突き合わせで判定できる
   （#730 のコメントに検査手順を残した）。
+
+  ［2026-09-16 追記 / #730］**原因は制御端末ではなく、`script` が作る pty の画面サイズが 0 行 0 桁だったこと**である
+  （`script` は標準入力が端末のときだけウィンドウサイズを写す。console 経路の標準入力は FIFO）。OpenD の行エディタは
+  幅 0 のとき入力文字をすべて捨てて空行だけを送る。`start_opend_with_console` は OpenD を `exec` する前に
+  `stty rows 24 cols 200` を打つようになり（T-730-01 で固定）、`console` 経路で画面 SC-04 から検証コードが届く。
+  `tty` モードは最終手段として残す。作業仕様書 `20260916_730_console-pty-winsize.md`。

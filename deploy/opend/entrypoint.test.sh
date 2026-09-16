@@ -406,6 +406,35 @@ FAKE
     ng 'T-722-10 console 経路は tty 転送 cat を張らない（#727 回帰）' 'FIFO が作られなかった'
   fi
   stop_fake_opend
+
+  # T-730-01 (#730): console 経路の pty に**画面サイズ**が入っている。
+  #   `script` の標準入力は FIFO（端末ではない）なので、pty のウィンドウサイズは 0 行 0 桁のまま起動する。
+  #   OpenD の行エディタは幅 0 のとき入力文字をすべて捨てて空行だけを送る（プロンプトの再描画だけが
+  #   出る「入れたのに無反応」。稼働クラスタと使い捨てコンテナで実測）。`kubectl attach` が動くのは
+  #   端末の実サイズ（TIOCSWINSZ）が送られるからで、読み口の違いではない。
+  #   偽の OpenD 自身に `stty size` を出させ、0 でない行数・桁数が入っていることを複製で確かめる。
+  F11="$WORK/run11/stdin"
+  C11="$WORK/run11/console.log"
+  mkdir -p "$WORK/run11"
+  cat > "$WORK/fake-opend-size.sh" <<'FAKE'
+#!/usr/bin/env bash
+printf 'OPEND-WINSIZE=%s\n' "$(stty size 2>/dev/null || echo 'unavailable')"
+sleep 30
+FAKE
+  chmod +x "$WORK/fake-opend-size.sh"
+  ( start_opend_with_console "$F11" "$C11" "$WORK/fake-opend-size.sh" >/dev/null 2>&1 ) < /dev/null &
+  CHILD=$!
+  disown "$CHILD" 2>/dev/null || :
+  wait_for_content "$C11" 'OPEND-WINSIZE=' 150 || :
+  SIZE_LINE="$(tr -d '\r' < "$C11" | sed -n 's/^.*OPEND-WINSIZE=//p' | head -1)"
+  case "$SIZE_LINE" in
+    '0 0'|''|unavailable)
+      ng 'T-730-01 console 経路の pty に画面サイズが入る（0 行 0 桁だと OpenD が入力を捨てる）' \
+        "stty size が「${SIZE_LINE:-（出力なし）}」" ;;
+    *) ok 'T-730-01 console 経路の pty に画面サイズが入る（0 行 0 桁だと OpenD が入力を捨てる）' ;;
+  esac
+  assert_contains 'T-730-01 既定は 24 行 200 桁（コマンド 1 行が折り返さない幅）' "$SIZE_LINE" '24 200'
+  stop_fake_opend
 else
   skip 'T-722-05/06 コンソール複製' \
     'この環境では複製の機序が成立しない（script(1) が無いか FIFO が成立しない）。Linux で走らせること'

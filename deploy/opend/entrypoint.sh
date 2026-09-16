@@ -152,7 +152,19 @@ start_opend_with_console() {
 	: > "$console"
 	# 🔴 make_stdin_fifo のみ。tty 転送（start_tty_forwarder）は張らない（#727・上のコメント）。
 	make_stdin_fifo "$fifo"
-	exec script -q -e -f -a -c "$*" "$console" 0<> "$fifo"
+	# 🔴 #730: pty に**画面サイズ**を与えてから OpenD を起動する。
+	#   `script` は自分の標準入力が端末のときだけウィンドウサイズを pty へ写す。ここでは標準入力が FIFO なので
+	#   pty は **0 行 0 桁**のまま起動し、OpenD の行エディタは幅 0 のとき入力文字をすべて捨てて空行だけを
+	#   送る（プロンプトの再描画だけが出て「入れたのに無反応」になる。稼働クラスタと使い捨てコンテナで実測。
+	#   `stty rows 40 cols 120` を打った直後から `help` が実行される）。`kubectl attach` が動くのは端末の
+	#   実サイズ（TIOCSWINSZ）が送られるからであり、読み口の違いではない（#730 の仮説 A・B は外れ）。
+	#   `script -c` の子は標準入力＝pty のスレーブなので、その場で `stty rows/cols` を打てば OpenD に見える。
+	#   桁数は `relogin -login_pwd=…` のような長いコマンドが折り返さない幅にしておく（折り返しは行エディタの
+	#   再描画を狂わせ得る）。上書きは OPEND_CONSOLE_ROWS / OPEND_CONSOLE_COLS。
+	#   `$*` は従来どおり 1 つの文字列（単一の実行ファイル）として `exec` に渡す。
+	exec script -q -e -f -a \
+		-c "stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200} 2>/dev/null || :; exec $*" \
+		"$console" 0<> "$fifo"
 }
 
 # #722 段 2: コンソール複製の上限。OpenD は週単位で常駐するため、放っておくと際限なく積む。
@@ -300,9 +312,10 @@ watch_captcha "${OPEND_CAPTCHA_SRC}" "${OPEND_CAPTCHA_DEST}" "${OPEND_CAPTCHA_PO
 #
 # 🔴 なぜ選択肢が要るか —— **`tty` は「実口座でログイン成功」を実際に確認できている唯一の構成**である
 # （README の実績。OpenD の標準入力＝コンテナ本来の tty、`kubectl attach` で打つ）。#722 で標準入力を
-# FIFO へ、段 2 で `script` の pty へ移したが、**稼働クラスタでは検証コードが OpenD に届かない**ことを
-# #727 で実測した（画面・サイドカー・FIFO 直書きのいずれからも無反応。OpenD の 54 スレッドに端末を
-# 読んでいるものが 1 つも無い）。原因は未特定であり、**特定できるまで実績構成へ戻せる逃げ道を残す**。
+# FIFO へ、段 2 で `script` の pty へ移したが、当時は**稼働クラスタで検証コードが OpenD に届かず**（#727 で実測。
+# 画面・サイドカー・FIFO 直書きのいずれからも無反応）、原因未特定のまま実績構成へ戻せる逃げ道として残した。
+# 原因は #730 で特定した（`script` の pty が 0 行 0 桁で OpenD の行エディタが入力を捨てる。start_opend_with_console
+# が `stty rows/cols` を打つことで console 経路が届く）。**`tty` は最終手段**として残す。
 #
 #   OPEND_STDIN_MODE=console（既定） … FIFO → script(pty) → OpenD。画面から入れられる（#722 段 2）
 #   OPEND_STDIN_MODE=fifo            … FIFO → OpenD 直読み。console 複製は作らない（画面は使えない）

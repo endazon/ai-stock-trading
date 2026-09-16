@@ -45,8 +45,8 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
    （非 optional の `secretKeyRef`）が無い間、Pod は `ContainerCreating`（`FailedMount` イベント。`moomoo-rsa` だけ揃うと
    `CreateContainerConfigError`）のまま止まり、ESO が Secret を作ると **kubelet の再試行で自然に起動する**
    （Deployment の再作成は不要。Kubernetes の既定挙動であり、本 PR では稼働クラスタで実測していない）。
-5. **検証コード（SMS / 画像）は画面 SC-04 から入れる**（現状の制約は [`deploy/opend/README.md`](../../opend/README.md)
-   「標準入力の与え方」の #730 を参照。届かない間は同 README の `tty` 手順がフォールバック）。
+5. **検証コード（SMS / 画像）は画面 SC-04 から入れる**（経路の説明は [`deploy/opend/README.md`](../../opend/README.md)
+   「標準入力の与え方」。#730 は pty の画面サイズで解決済み。同 README の `tty` 手順は最終手段）。
 
 | | ESO 所有（既定・連結ローカル） | 従来経路（`AST_ESO=0`・フォールバック） |
 | --- | --- | --- |
