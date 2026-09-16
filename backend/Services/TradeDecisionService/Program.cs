@@ -408,7 +408,8 @@ var app = builder.Build();
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
 
-app.Run();
+// #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
+return await app.RunAiStockTradingAsync(args);
 
 // IADR-0023, #337: 市場別の日付集合（休場日 TradeCycle:Holidays:<Market> / 半日取引日 TradeCycle:HalfDays:<Market>、
 // いずれも ["yyyy-MM-dd", ...]）を構成から読み込む。既定は空（週末と場中時間帯のみ）。

@@ -21,6 +21,21 @@ WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY backend/ ./backend/
 RUN dotnet restore "${SERVICE_PROJECT}"
+RUN dotnet build "${SERVICE_PROJECT}" -c Release --no-restore
+# NFR-01, ADR-0006, IADR-0129（2026-09-17 追記）, #811: Wolverine のハンドラ生成コードを**ビルド時に**書き出す。
+# 既定の TypeLoadMode.Dynamic はメッセージ型ごとに 1 通目の受信時に Roslyn を走らせ、その作業メモリが
+# glibc malloc に残って 512Mi 容器を OOMKilled にした（#808。契約イベント全数を購読する audit-service で顕著）。
+# `codegen write` はホストを Build するだけで Start しない（DB・ブローカ不要。Program.cs の EF 移行は
+# JasperFxCommandLine.IsHostRun で抜ける）。出力は <project>/Internal/Generated/ で、続く publish（--no-build を
+# 付けない）が再コンパイルして DLL に取り込む。`dotnet run --project` はプロジェクト直下を作業ディレクトリに
+# するので、ContentRootPath 由来の出力先がプロジェクト直下になる。
+# Wolverine を配線しないサービス（opend-auth-gateway。同じ Dockerfile で作る）は ICodeFileCollection が無く
+# `codegen` が失敗するため、Program.cs の `UseWolverine(` の有無（check-consumer-endpoint-names.js と同じ信号）で分岐する。
+RUN if grep -q 'UseWolverine(' "$(dirname "${SERVICE_PROJECT}")/Program.cs"; then \
+      dotnet run --project "${SERVICE_PROJECT}" -c Release --no-build -- codegen write; \
+    else \
+      echo "skip codegen: $(dirname "${SERVICE_PROJECT}")/Program.cs does not wire Wolverine"; \
+    fi
 RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
@@ -35,6 +50,11 @@ COPY --from=build /app ./
 # ヘルスチェック（/health/live・/health/ready）と各サービスの HTTP サーフェスは 8080 で待受ける。
 ENV ASPNETCORE_URLS=http://+:8080
 ENV SERVICE_DLL=${SERVICE_DLL}
+# #811: 稼働イメージは生成コードを静的に読み、実行時コンパイルをしない（WolverineExtensions.ResolveTypeLoadMode）。
+# 生成コードの有無の自動判定だけに頼ると、上の codegen 段が黙って抜けたイメージが Dynamic で静かに動いてしまう。
+# env を焼いておけばそのイメージは起動時に落ちる（欠けた生成型の名前つき。fail-loud）。
+# Wolverine を持たない opend-auth-gateway では読まれない（無害）。
+ENV WOLVERINE_TYPE_LOAD_MODE=Static
 EXPOSE 8080
 # aspnet ベースイメージは非 root ユーザー app で実行される。
 # シェル形式で環境変数 SERVICE_DLL を解決し、exec で PID 1 を dotnet に委譲する。

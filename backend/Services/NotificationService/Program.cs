@@ -169,7 +169,8 @@ var app = builder.Build();
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
 
-app.Run();
+// #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
+return await app.RunAiStockTradingAsync(args);
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }

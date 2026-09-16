@@ -17,7 +17,7 @@ related_ids:
   - IADR-0128
 author: claude
 created: 2026-08-03
-updated: 2026-09-16
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -323,6 +323,50 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   その場合は **#811（`codegen write`＋`TypeLoadMode.Static`）だけが直す**。稼働 Pod で `malloc_info` を取る手段（gdb / LD_PRELOAD）は
   持たないため、判定は配備後の実測（audit-service で ≥6 コンパイル後の `[heap]`＋アリーナ heap と、30 分の restarts=0）で付ける。
   128 KiB 固定は mmap / munmap のシステムコールを増やすが、.NET の GC ヒープは別経路であり暫定として受容する。#811 の完了時に閾値の要否を再評価する。
+
+## ［2026-09-17 追記 / #811］決定 6 の見直し —— 稼働は `codegen write` の事前生成＋`TypeLoadMode.Static` に切り替え、実行時コンパイルを止める
+
+上の追記が「別 IADR で行う」とした決定 6 の見直しは、**決定 4（共通ヘルパに封じ込め、サービス側に選択肢を残さない）の
+延長として本 ADR の追記で確定する**（新 IADR は起こさない。決めるのは「どこで・どう読み込み方式を決めるか」であり、
+トポロジと同じ 1 箇所に置くべき判断だからである）。作業仕様書は `../specs/20260917_811_wolverine-static-codegen.md`。
+`MALLOC_ARENA_MAX=2`（#808）は per-thread アリーナの積み上がりを断つだけで、保持されるメモリは main アリーナ `[heap]` へ
+移った（配備後 20 分で audit 214 MB・risk 111 MB）。引き金そのものを止める。
+
+- **決定 6-2: 読み込み方式は共通ヘルパ `UseAiStockTradingRabbitMq` が 1 箇所で決める。** 解決順は
+  ①呼び出し側の明示設定（`TypeLoadModeHasChanged`。テストの固定用で `Program.cs` では使わない）＞
+  ②環境変数 **`WOLVERINE_TYPE_LOAD_MODE`**（`Static` / `Dynamic` / `Auto`。不正値は `ArgumentException` で起動を止める）＞
+  ③application assembly に `Internal.Generated.WolverineHandlers.GeneratedHandlerRegistry`（`codegen write` が必ず書く登録簿）が
+  在れば `Static` ＞ ④`Dynamic`。**JasperFx のプロファイル（`CritterStackDefaults(x => x.Production.GeneratedCodeMode = Static)`）
+  では決めない** —— 稼働クラスタは `ASPNETCORE_ENVIRONMENT=Development` で動いており（chart）、その慣用形は効かない。
+  明示設定は `WolverineOptions.ReadJasperFxOptions` が `TypeLoadModeHasChanged` を見てプロファイルで上書きしない（実測・6.24.5 のソース）。
+- **決定 6-3: `Static` のときは起動時に全生成型の存在を表明する**（hosted service `WolverinePreGeneratedCodeAssertion`。
+  `ICodeFileCollection.AssertPreBuildTypesExist` を全集合に適用）。Wolverine のチェーン組み立ては遅延（`HandlerGraph.HandlerFor` →
+  1 通目の受信時）であり、`Static` だけでは生成コードの無い型が**起動・readiness・キュー宣言・consumer 接続はすべて成功したまま
+  メッセージだけ処理されない**（決定 11 と同型の静かな失敗）。表明により Pod の起動失敗（欠けたファイル名つき）へ変える。
+  `UseWolverine` は configure より前に `WolverineRuntime` を hosted service 登録するので、表明は `HandlerGraph.Compile` の後に走る。
+- **決定 6-4: 生成は稼働イメージのビルド段で毎回行い、生成物はコミットしない。** `backend/Dockerfile` を
+  restore → build → `dotnet run --no-build -- codegen write`（`Program.cs` に `UseWolverine(` があるサービスだけ。opend-auth-gateway は抜ける）
+  → publish に並べ替え、runtime 段に `ENV WOLVERINE_TYPE_LOAD_MODE=Static` を焼く（生成物の有無判定だけに頼ると、codegen 段が黙って
+  抜けたイメージが Dynamic で静かに動くため）。`**/Internal/Generated/` は `.gitignore` / `.dockerignore` の両方で除外する
+  （コミットすると dev/test の Dynamic 経路が Static へ倒れ、ハンドラを足すたびに再生成が要る）。
+- **決定 6-5: 各サービスの `Program.cs` は共通の終端 `return await app.RunAiStockTradingAsync(args)`（shim）で終わる**。
+  引数なし／`run`／JasperFx の動詞は `RunJasperFxCommands` へ（`codegen` を受けるため）、**`--` で始まる ASP.NET 流の引数
+  （`--urls` / `--Key=Value`）は JasperFx へ渡さず従来の `RunAsync` へ**流す。いずれも稼働は従来の `app.Run()` と同じで、
+  SIGTERM は `IHostApplicationLifetime` で従来どおり止まる。
+  🔴 `RunJasperFxCommands` を直接呼ぶと **`WebApplicationFactory` の `UseSetting`（テストの HostSettings）が `--Key=Value`
+  引数としてエントリポイントへ渡り、JasperFx が `run` を前置したうえで知らないフラグを終了コード 1 で拒否するため、ホストが
+  一度も起動せず TestServer が "The server has not been started" で落ちる**（実測: RiskManagement / TradeDecision の
+  Wiring テスト 34 件。JasperFx 自身の素通しは `--urls` 等 3 フラグに限られる）。同じ理由で稼働側でも構成引数を渡すと
+  起動しないため、素通しは shim に閉じて 1 箇所で守る（`JasperFxCommandLine.UsesJasperFxCommands`）。
+  `Build()` 直後の EF `MigrateAsync()` は `JasperFxCommandLine.IsHostRun(args)` で囲み、`codegen write` を DB 無しで通す
+  （`codegen` 中は `WithinCodegenCommand` により外部トランスポートも stub される。ホストは Build されるだけで Start しない）。
+- **`WolverineFx.RuntimeCompilation` の参照は残す**（dev/test/CI の `Dynamic` に要る。`Static` では Roslyn はロードされない）。
+  決定 6 の本文「第 1 段階では `RuntimeCompilation` を参照する」は歴史的記述として据え置く。
+- 再発防止: `WolverineTypeLoadModeTests`（解決順・不正値・**生成コードの無いアセンブリを `Static` で起動すると起動時に失敗する**）と
+  `JasperFxCommandLineTests`。イメージ側の実証（`poc811` タグの audit-service を使い捨ての postgres / rabbitmq と起動し、
+  `The Wolverine code generation mode is Static ...` が出て `Generated code for` が出ないこと）は PR 本文に記録した。
+- 残余: 配備後の実測（45 型受信後も `[heap]` が伸びないこと）は #811 へ記録する。`ci.yml` の乾式 publish は codegen を通さない
+  （Dynamic 経路のビルド確認のまま）。
 
 ## 関連
 

@@ -133,7 +133,8 @@ app.UseAiStockTradingMiddleware();
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
 
-app.Run();
+// #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
+return await app.RunAiStockTradingAsync(args);
 
 // 過去データ取得用の名前付き HttpClient（タイムアウト等の調整点はここに集約する）。
 public partial class Program

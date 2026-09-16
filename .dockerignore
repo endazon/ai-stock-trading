@@ -2,6 +2,9 @@
 # ビルド成果物・IDE・VCS・機密・文書はイメージへ入れない。
 **/bin/
 **/obj/
+# #811: Wolverine の生成コードはイメージのビルド段で毎回 `codegen write` する。開発者がローカルで書き出した
+# 古い生成物をコンテキスト経由で持ち込まない（.gitignore と同じパターン）。
+**/Internal/Generated/
 **/.vs/
 **/.vscode/
 .git

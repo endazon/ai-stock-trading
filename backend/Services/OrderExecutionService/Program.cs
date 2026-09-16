@@ -211,8 +211,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
 var app = builder.Build();
 
 // 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
-using (var scope = app.Services.CreateScope())
+// #811 / IADR-0129 追記: `codegen write` 等の JasperFx コマンドで起動したときは DB に触らない（ホスト稼働時だけ移行する）。
+if (JasperFxCommandLine.IsHostRun(args))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OrderExecutionDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
@@ -221,7 +223,8 @@ using (var scope = app.Services.CreateScope())
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
 
-app.Run();
+// #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
+return await app.RunAiStockTradingAsync(args);
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }

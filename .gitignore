@@ -468,6 +468,9 @@ id_ed25519*
 # C# / .NET（例・既定）
 bin/
 obj/
+# #811 / IADR-0129 追記: Wolverine の `codegen write` の出力。稼働イメージのビルド段で毎回生成し、コミットしない
+# （コミットすると dev/test の Dynamic 経路が Static へ倒れ、ハンドラを足すたびに再生成が要る）。
+**/Internal/Generated/
 *.user
 [Tt]est[Rr]esults/
 coverage/

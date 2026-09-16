@@ -476,8 +476,10 @@ app.Logger.LogInformation(
     noResponseBehavior);
 
 // IADR-0012 準拠: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
-using (var scope = app.Services.CreateScope())
+// #811 / IADR-0129 追記: `codegen write` 等の JasperFx コマンドで起動したときは DB に触らない（ホスト稼働時だけ移行する）。
+if (JasperFxCommandLine.IsHostRun(args))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ReportDbContext>();
     if (db.Database.IsRelational())
         await db.Database.MigrateAsync();
@@ -493,7 +495,8 @@ app.MapAiStockTradingIntrospection();
 // FR-06/07, UC-03〜05: 報告書のドラフト管理・確定・照会（利用者のみ）。
 app.MapReportEndpoints();
 
-app.Run();
+// #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
+return await app.RunAiStockTradingAsync(args);
 
 // IADR-0071 決定1（#11 IADR-0061 決定2 と同形）: 報告書散文 LLM ゲートウェイのタイムアウト（秒）。
 // 未設定・不正・非正値は既定 30 秒（fail-safe）。無限待ちや 0 秒にはしない。

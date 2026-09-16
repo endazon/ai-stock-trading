@@ -1,6 +1,8 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Model;
+using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
@@ -38,6 +40,57 @@ public static class WolverineExtensions
 
     // 既定の RabbitMQ 接続文字列（dev/test/CI のローカル単体実行用。IADR-0013）。
     public const string DefaultRabbitMqConnectionString = "amqp://guest:guest@rabbitmq:5672";
+
+    /// <summary>
+    /// NFR-01, ADR-0006, IADR-0129（2026-09-17 追記）, #811: ハンドラ生成コードの読み込み方式を指定する環境変数。
+    /// 値は <see cref="TypeLoadMode"/> の名前（<c>Static</c> / <c>Dynamic</c> / <c>Auto</c>。大小無視）。
+    /// 稼働イメージ（<c>backend/Dockerfile</c>）は <c>Static</c> を焼き込み、ビルド段で <c>codegen write</c> が
+    /// 書き出した生成コードを読む。未設定なら生成コードの有無から決める（<see cref="ResolveTypeLoadMode"/>）。
+    /// </summary>
+    public const string TypeLoadModeVariable = "WOLVERINE_TYPE_LOAD_MODE";
+
+    /// <summary>
+    /// <c>codegen write</c> が application assembly へ必ず書き出す登録簿型の完全名
+    /// （ハンドラ 0 件のサービスでも書かれる）。これが在れば「生成コードが在る」と判定する。
+    /// </summary>
+    public const string GeneratedHandlerRegistryTypeName = "Internal.Generated.WolverineHandlers.GeneratedHandlerRegistry";
+
+    /// <summary>
+    /// IADR-0129（2026-09-17 追記）, #811: ハンドラ生成コードの読み込み方式を決める純関数。
+    /// 優先順は <paramref name="configured"/>（環境変数 <see cref="TypeLoadModeVariable"/>）＞
+    /// 生成コードの有無（<paramref name="preGeneratedCodePresent"/> なら <see cref="TypeLoadMode.Static"/>）＞
+    /// <see cref="TypeLoadMode.Dynamic"/>（dev/test/CI・<c>codegen write</c> 自身）。
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="configured"/> が <see cref="TypeLoadMode"/> の名前でないとき。黙って Dynamic へ倒すと、
+    /// 実行時コンパイルを止めたつもりのイメージが静かに Roslyn を積む（#808 の再発）ため、起動時に止める。
+    /// </exception>
+    public static TypeLoadMode ResolveTypeLoadMode(string? configured, bool preGeneratedCodePresent)
+    {
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            if (Enum.TryParse<TypeLoadMode>(configured.Trim(), ignoreCase: true, out var mode))
+            {
+                return mode;
+            }
+
+            throw new ArgumentException(
+                $"{TypeLoadModeVariable} は Static / Dynamic / Auto のいずれかでなければならない（実値: '{configured}'）。",
+                nameof(configured));
+        }
+
+        return preGeneratedCodePresent ? TypeLoadMode.Static : TypeLoadMode.Dynamic;
+    }
+
+    /// <summary>
+    /// application assembly が <c>codegen write</c> の生成コード（<see cref="GeneratedHandlerRegistryTypeName"/>）を
+    /// 含むか。ビルド段で生成コードを取り込んだ稼働イメージだけが true になる（リポジトリには生成物をコミットしない）。
+    /// </summary>
+    public static bool HasPreGeneratedHandlerCode(Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        return assembly.GetType(GeneratedHandlerRegistryTypeName, throwOnError: false) is not null;
+    }
 
     /// <summary>
     /// IADR-0129 決定 1: リスニングキューの名前。<c>&lt;ServiceName&gt;.&lt;メッセージ型名&gt;</c>。
@@ -105,6 +158,33 @@ public static class WolverineExtensions
         // 移送前は相手の application assembly（`*.Api`）がハンドラを含まなかったため無害だっただけで、
         // **配線の欠陥は移送前から存在した**。
         options.ApplicationAssembly = Assembly.GetCallingAssembly();
+
+        // 🔴 NFR-01, ADR-0006, IADR-0129（2026-09-16 / 2026-09-17 追記）, #808 / #811: **稼働では実行時コンパイルをしない。**
+        //
+        // 既定の TypeLoadMode.Dynamic は、メッセージ型ごとに 1 通目の受信時、そのリスナスレッド上で Roslyn を走らせる。
+        // コンパイルの作業メモリはネイティブ（glibc malloc）に残り、契約イベント全数（45 型）を購読する audit-service は
+        // 512Mi 容器で OOMKilled になった（実測 ≈53 MB / 型。MALLOC_ARENA_MAX=2 は積み上がる場所を main アリーナへ
+        // 移すだけで、保持自体は消えない）。稼働イメージは backend/Dockerfile のビルド段で `codegen write` を通し、
+        // 生成コードを DLL に取り込んだうえで Static で読む（Roslyn はロードされない）。
+        //
+        // 解決順: 呼び出し側の明示設定（テストの固定用）＞ 環境変数 WOLVERINE_TYPE_LOAD_MODE ＞ 生成コードの有無 ＞ Dynamic。
+        // JasperFx のプロファイル（ASPNETCORE_ENVIRONMENT）で決めない —— 稼働クラスタは Development で動いており、
+        // 「Production なら Static」の慣用形は効かない（明示設定は TypeLoadModeHasChanged によりプロファイルに上書きされない）。
+        if (!options.CodeGeneration.TypeLoadModeHasChanged)
+        {
+            options.CodeGeneration.TypeLoadMode = ResolveTypeLoadMode(
+                Environment.GetEnvironmentVariable(TypeLoadModeVariable),
+                HasPreGeneratedHandlerCode(options.ApplicationAssembly));
+        }
+
+        // Static のときは**起動時に**全生成型の存在を表明する。Wolverine のチェーン組み立ては遅延（1 通目の受信時）で、
+        // Static だけでは「起動・readiness・キュー宣言・consumer 接続はすべて成功したまま、生成コードの無い型のメッセージ
+        // だけが処理されない」（IADR-0129 決定 11 と同型の静かな失敗）になる。表明は WolverineRuntime の起動
+        // （HandlerGraph の Compile）の後に走る —— UseWolverine は configure より前に runtime を hosted service 登録している。
+        if (options.CodeGeneration.TypeLoadMode == TypeLoadMode.Static)
+        {
+            options.Services.AddHostedService<WolverinePreGeneratedCodeAssertion>();
+        }
 
         // IADR-0129 決定 11: ハンドラの生成コードに service location を許可する。
         // 本ユニットの永続アダプタ（EfExecutedOrderStore 等）は `internal sealed` であり、生成コードは
