@@ -189,6 +189,12 @@ start_fake_opend() {
 
 stop_fake_opend() {
   # child は 0<> で開いているので EOF では終わらない。必ず落とす（wait では止まらない）。
+  # #802: console 経路では CHILD は script を wait する本体（サブシェル）であり、-9 だけでは script と偽 OpenD が残る。
+  #   まず TERM（本体の trap が script へ転送し、script が子を落として -e で抜ける）を送り、抜けなければ -9 で落とす。
+  [ -n "${CHILD:-}" ] || return 0
+  kill -TERM "$CHILD" 2>/dev/null || :
+  local i=0
+  while [ "$i" -lt 50 ] && kill -0 "$CHILD" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
   kill -9 "$CHILD" 2>/dev/null || :
   CHILD=""
 }
@@ -434,6 +440,70 @@ FAKE
     *) ok 'T-730-01 console 経路の pty に画面サイズが入る（0 行 0 桁だと OpenD が入力を捨てる）' ;;
   esac
   assert_contains 'T-730-01 既定は 24 行 200 桁（コマンド 1 行が折り返さない幅）' "$SIZE_LINE" '24 200'
+  stop_fake_opend
+
+  # T-802-01 (#802): OpenD が終了したら console 経路の本体も**同じ終了コードで速やかに**終わる。
+  #   旧実装は `exec script` で script を PID 1 にしていたため、本体が先に張った背景ループ（cap_console_log /
+  #   watch_captcha）が script の子として引き継がれ、util-linux 2.37 の script は子（OpenD）を回収した後の
+  #   `waitpid(-1, WNOHANG)` が 0 を返し続けて抜けられなかった（OpenD が落ちても Pod が Running のまま残る）。
+  # 🔴 本体と同じ形＝関数を呼ぶ**前に背景の子を 1 つ張って**再現する。張らないと旧実装でも script は抜けてしまい、
+  #   回帰を捕まえない（背景の子の有無 × stdin の 2×2 で実測。FIFO の 0<> は条件ではない）。
+  cat > "$WORK/fake-opend-exit3.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo OPEND-EXIT3-START
+sleep 1
+exit 3
+FAKE
+  chmod +x "$WORK/fake-opend-exit3.sh"
+  F12="$WORK/run12/stdin"
+  C12="$WORK/run12/console.log"
+  mkdir -p "$WORK/run12"
+  ( sleep 60 & bg=$!
+    start_opend_with_console "$F12" "$C12" "$WORK/fake-opend-exit3.sh" >/dev/null 2>&1; rc=$?
+    kill "$bg" 2>/dev/null; echo "RC=$rc" > "$WORK/rc12" ) < /dev/null &
+  CHILD=$!
+  disown "$CHILD" 2>/dev/null || :
+  # 偽 OpenD は 1 秒で終わる。script の起動が遅い回を見込んでも 8 秒あれば本体は抜ける（抜けないのが本 issue の形）。
+  if wait_for_content "$WORK/rc12" 'RC=' 80; then
+    ok        'T-802-01 OpenD 終了後に本体が抜ける（script が PID 1 に居座らない）'
+    assert_eq 'T-802-01 本体は OpenD の終了コードで終わる' "$(cat "$WORK/rc12")" 'RC=3'
+  else
+    ng 'T-802-01 OpenD 終了後に本体が抜ける（script が PID 1 に居座らない）' '8 秒待っても本体が抜けない（旧実装＝Pod が Running のまま残る形）'
+    ng 'T-802-01 本体は OpenD の終了コードで終わる' '（抜けないので測れない）'
+  fi
+  stop_fake_opend
+
+  # T-802-02 (#802): 直しても入力面は壊れていない —— FIFO へ書いた行が OpenD に届き（0<> は据え置き）、
+  #   その後 OpenD が終われば本体も同じ終了コードで終わる。
+  cat > "$WORK/fake-opend-read.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo OPEND-READ-READY
+IFS= read -r line
+printf 'OPEND-GOT=%s\n' "$line"
+exit 5
+FAKE
+  chmod +x "$WORK/fake-opend-read.sh"
+  F13="$WORK/run13/stdin"
+  C13="$WORK/run13/console.log"
+  mkdir -p "$WORK/run13"
+  ( sleep 60 & bg=$!
+    start_opend_with_console "$F13" "$C13" "$WORK/fake-opend-read.sh" >/dev/null 2>&1; rc=$?
+    kill "$bg" 2>/dev/null; echo "RC=$rc" > "$WORK/rc13" ) < /dev/null &
+  CHILD=$!
+  disown "$CHILD" 2>/dev/null || :
+  # pty が上がる前に書くと届かない回があるので、偽 OpenD 自身の印を待ってから書く（T-722-05 の教訓）。
+  wait_for_content "$C13" 'OPEND-READ-READY' 150 || :
+  write_line "$F13" 'input_phone_verify_code -code=654321' || :
+  wait_for_content "$C13" 'OPEND-GOT=' 100 || :
+  assert_contains 'T-802-02 FIFO へ書いた行が OpenD に届く（0<> の性質を保つ）' \
+    "$(tr -d '\r' < "$C13")" 'OPEND-GOT=input_phone_verify_code -code=654321'
+  if wait_for_content "$WORK/rc13" 'RC=' 80; then
+    ok        'T-802-02 入力後に OpenD が終われば本体も抜ける'
+    assert_eq 'T-802-02 本体は OpenD の終了コードで終わる' "$(cat "$WORK/rc13")" 'RC=5'
+  else
+    ng 'T-802-02 入力後に OpenD が終われば本体も抜ける' '8 秒待っても本体が抜けない'
+    ng 'T-802-02 本体は OpenD の終了コードで終わる' '（抜けないので測れない）'
+  fi
   stop_fake_opend
 else
   skip 'T-722-05/06 コンソール複製' \

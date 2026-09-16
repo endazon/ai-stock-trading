@@ -171,6 +171,12 @@ kubectl -n ai-stock-trading attach -it deploy/opend -c opend
 > `set env` は Helm の管理外なので、次回の `helm upgrade` で剥がれて既定（`console`）へ戻る
 > （#730 の解決後は既定の `console` で画面から入れられるので、戻ってよい）。
 
+> **［2026-09-16 / #802］OpenD が終了すると `console` 経路のコンテナも同じ終了コードで終わり、`restartPolicy: Always` で
+> 再起動される**（livenessProbe は引き続き付けない）。以前は `script` を PID 1 として `exec` していたため、本体が張った背景ループ
+> （console 複製の上限・CAPTCHA の複写）を `script` が子として引き継ぎ、util-linux 2.37 の `script` が OpenD 回収後の
+> `waitpid(-1, WNOHANG)` から抜けられず、OpenD が落ちても Pod が Running（NotReady）のまま残っていた（復旧は手動の Pod 削除）。
+> いまは `script` を本体の子として起こし、本体が `wait` して終了コードを返す（FIFO の `0<>` と `stty` の画面サイズは据え置き）。
+
 #### 画面（ブラウザ）から検証コードを入れる（#722）
 
 **手元に kubeconfig が無くても検証できる**（#730 の解決で `console` 経路が届くようになった）。
@@ -280,7 +286,8 @@ kubectl -n ai-stock-trading run curl --rm -it --image=curlimages/curl --restart=
 **OpenD 本体が担う複写**（サイドカーは PVC を見ない）:
 
 - コンソールの複製は `script -q -e -f -a` で `/run/opend/console.log` へ落とす
-  （`OPEND_CONSOLE_MAX_BYTES` 既定 1MiB を超えたら切り詰める）。
+  （`OPEND_CONSOLE_MAX_BYTES` 既定 1MiB を超えたら切り詰める。`script` は entrypoint の子であり、OpenD が終了すれば
+  `-e` の終了コードで entrypoint も終わる。#802）。
   **`kubectl logs` と `attach` は従来どおり動く**（`tee` を使うと C stdio が全バッファへ落ちて沈黙する）。
 - 画像 CAPTCHA は `$HOME/.com.moomoo.OpenD/F3CNN/PicVerifyCode.png` を `/run/opend/captcha.png` へ複写する
   （`$HOME` は chart の `opend.home` から。非 root 化すると `/home/opend`）。

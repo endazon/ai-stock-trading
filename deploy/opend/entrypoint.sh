@@ -142,7 +142,18 @@ start_opend_with_fifo() {
 # `script` は自分が数えているオフセットへ書き続けるので、切り詰めた直後のファイルが
 # **NUL で埋まった穴あきファイル**になる（見かけのサイズが減らず、末尾を読むとゴミが混ざる）。
 #
-# `-e` は子の終了コードをそのまま返す（OpenD が落ちたときに Pod が Running のまま残らないようにする）。
+# `-e` は子の終了コードをそのまま返す。OpenD が落ちたときにコンテナが同じ終了コードで終わり、`restartPolicy: Always` で
+# 再起動される（livenessProbe は付けない方針＝IADR-0167 のまま。復旧はこの終了に頼る）。
+#
+# 🔴 #802: **`script` を `exec` しない（本体の子として起こし、本体が wait する）。**
+#   旧実装は `exec script …` で `script` を PID 1 にしていた。その形だと、本体が先に張った背景ループ
+#   （cap_console_log / watch_captcha）が **`script` の子として引き継がれる**。util-linux 2.37 の `script` は子（OpenD）を回収した
+#   直後に `waitpid(-1, WNOHANG)` を回し（`lib/pty-session.c` `ul_pty_wait_for_child`。`pty->child` を -1 にした次の周で
+#   任意の子を待つ形になる）、**他に生きている子が居ると 0 が返り続けて抜けられない**。結果、OpenD が終了しても `script` が
+#   CPU を回したまま PID 1 に居座り、コンテナは Running（NotReady）のまま残っていた（#801 の監査で実測）。
+#   FIFO の `0<>` は無関係である（stdin=/dev/null でも同じ形で固まることを稼働イメージの使い捨てコンテナで確認）。
+#   `script` を本体の子にすれば `script` の子は OpenD だけになり、OpenD の終了と同時に `-e` の終了コードで抜ける。
+#   本体（PID 1）はそれを `wait` して同じ終了コードで終わる。Pod 削除の SIGTERM は trap で `script` へ転送し、`script` が OpenD へ渡す。
 start_opend_with_console() {
 	fifo="$1"
 	console="$2"
@@ -161,10 +172,32 @@ start_opend_with_console() {
 	#   `script -c` の子は標準入力＝pty のスレーブなので、その場で `stty rows/cols` を打てば OpenD に見える。
 	#   桁数は `relogin -login_pwd=…` のような長いコマンドが折り返さない幅にしておく（折り返しは行エディタの
 	#   再描画を狂わせ得る）。上書きは OPEND_CONSOLE_ROWS / OPEND_CONSOLE_COLS。
-	#   `$*` は従来どおり 1 つの文字列（単一の実行ファイル）として `exec` に渡す。
-	exec script -q -e -f -a \
+	#   `$*` は従来どおり 1 つの文字列（単一の実行ファイル）として `exec` に渡す（OpenD は `script` の直接の子のまま＝SIGTERM がそのまま届く）。
+	# 🔴 #802: `exec` しない（関数直上のコメント）。背景ジョブの標準入力は /dev/null へ差し替えられるが、`0<> "$fifo"` は
+	#   **明示のリダイレクト**なので差し替えの後に適用され、標準入力は FIFO になる（`<&0` の罠には当たらない）。
+	#   標準出力・標準エラーはコンテナのものをそのまま継ぐ（`kubectl logs` は従来どおり）。
+	script -q -e -f -a \
 		-c "stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200} 2>/dev/null || :; exec $*" \
-		"$console" 0<> "$fifo"
+		"$console" 0<> "$fifo" &
+	script_pid=$!
+	# Pod 削除の SIGTERM は script へ渡す（script が子＝OpenD へ TERM を渡し、2 秒後に KILL する。この経路では script の
+	# -e は 0 を返す＝util-linux 2.37 の script は配達済みシグナルでループを抜け、子の終了状態を拾わない。実測）。
+	# OpenD の終了コードがコンテナの終了コードになるのは、OpenD が自分で終了した場合だけ。
+	got_sig=0
+	trap 'got_sig=1; kill -TERM "$script_pid" 2>/dev/null || :' TERM INT HUP
+	# trap で wait が中断されると 128+signo が返るので、script が生きている間は wait し直す。
+	rc=0
+	while :; do
+		rc=0
+		wait "$script_pid" || rc=$?
+		if [ "$got_sig" = 1 ] && kill -0 "$script_pid" 2>/dev/null; then
+			got_sig=0
+			continue
+		fi
+		break
+	done
+	trap - TERM INT HUP
+	return "$rc"
 }
 
 # #722 段 2: コンソール複製の上限。OpenD は週単位で常駐するため、放っておくと際限なく積む。
@@ -329,7 +362,13 @@ if [ "$OPEND_STDIN_MODE" = "console" ] && ! command -v script >/dev/null 2>&1; t
 fi
 echo "==> stdin mode: ${OPEND_STDIN_MODE}"
 case "$OPEND_STDIN_MODE" in
-	console) start_opend_with_console "${OPEND_STDIN_FIFO}" "${OPEND_CONSOLE_LOG}" ./OpenD ;;
+	console)
+		# #802: script は本体の子。OpenD が終了したら本体も同じ終了コードで終わる（背景ループは pid namespace ごと消える）。
+		rc=0
+		start_opend_with_console "${OPEND_STDIN_FIFO}" "${OPEND_CONSOLE_LOG}" ./OpenD || rc=$?
+		echo "==> moomoo OpenD exited with code ${rc}; leaving the container so it gets restarted" >&2
+		exit "$rc"
+		;;
 	fifo)    start_opend_with_fifo "${OPEND_STDIN_FIFO}" ./OpenD ;;
 	tty)
 		# 実績構成。標準入力を一切すげ替えず、コンテナの tty のまま OpenD へ渡す。
