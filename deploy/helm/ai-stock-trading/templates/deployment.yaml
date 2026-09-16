@@ -110,6 +110,13 @@ spec:
               value: "0"
             - name: DOTNET_GCConserveMemory
               value: "5"
+            {{- /* NFR, ADR-0006, #782: Workstation GC ＋ GCConserveMemory だけでは RSS が limit（512Mi）へ戻る
+                   （audit-service が 11 分で 437Mi、risk-management は開場中の Buy 判断の処理中に OOMKilled を実測）。
+                   ヒープ上限を limit の 60%（≈307Mi）に固定し、ネイティブ分を含めて 512Mi の内側で止める
+                   （#778 の暫定適用で RSS 472Mi 頭打ちを実測）。全 .NET サービス共通・本番既定にも入れる。
+                   opend.yaml の opend-auth-gateway は対象外（ログイン済み OpenD Pod を再起動させない。別途）。 */}}
+            - name: DOTNET_GCHeapHardLimitPercent
+              value: "60"
             {{- /* NFR, MSP:ADR-0029 / MSP:ADR-0075, IADR-0328, #584: east-west gRPC の h2c リスナ
                    （TLS 無し HTTP/2 専用ポート）。未設定ならアプリはリスナを立てない。
                    readiness は HTTP 側（8080 の /health/ready）のまま —— 1 プロセスが両ポートを

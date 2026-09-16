@@ -145,6 +145,10 @@ jobs:
           # Server GC 既定のまま 512Mi 容器へ置くと OOMKilled を繰り返す（実測）。1 つでも欠ければ赤。
           missing_gc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_gcServer/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
           if [ -n "$missing_gc" ]; then echo "::error::DOTNET_gcServer=0 が無い .NET Deployment がある（#778）: $missing_gc"; exit 1; fi
+          # #782 / ADR-0006: 同じ母集合にヒープ上限（DOTNET_GCHeapHardLimitPercent）が入っている。Workstation GC だけでは
+          # RSS が limit へ戻って OOMKilled になる（実測）。1 つでも欠ければ赤。
+          missing_heap="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_GCHeapHardLimitPercent/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
+          if [ -n "$missing_heap" ]; then echo "::error::DOTNET_GCHeapHardLimitPercent が無い .NET Deployment がある（#782）: $missing_heap"; exit 1; fi
           # #764 / IADR-0323 追記: LlmGateway の s2s は llm-caller（platform-service）。kb-writer（platform-operator）は基盤の
           # ServiceCaller 門（MSP#1365）で 403 になる。本番既定でも llm-auth-* を参照していること（values-local 側の検査と対）。
           if printf '%s' "$out" | grep -A4 'name: LlmGateway__Auth__ClientId' | grep -q 'key: kb-auth-client-id'; then
