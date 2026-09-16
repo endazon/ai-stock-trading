@@ -61,7 +61,7 @@ scripts/opend-build.sh
 > 基盤の画面 SC-22（秘密情報・接続設定の管理）で **moomoo のログインアカウントとパスワード**（BFF が MD5 に変換して
 > Vault へ書く。平文は保存されない）を入れ、**RSA 鍵は「生成」**を押す（値は画面にも出ない）。ESO が
 > `moomoo-credentials` / `moomoo-rsa` を作り、OpenD はそれまで `ContainerCreating` / `CreateContainerConfigError` で待って
-> **自然に起動する**（Deployment の再作成は不要）。検証コードは画面 SC-04 から入れる（下記「標準入力の与え方」の #730 に注意）。
+> **自然に起動する**（Deployment の再作成は不要）。検証コードは画面 SC-04 から入れる（経路は下記「標準入力の与え方」を参照）。
 > 手順は [chart README「画面だけで PoC を立ち上げる」](../helm/ai-stock-trading/README.md)、設計は
 > [IADR-0341](../../.ai-context/adr/IADR-0341_screen-only-eso-wiring-local-profile.md)。
 >

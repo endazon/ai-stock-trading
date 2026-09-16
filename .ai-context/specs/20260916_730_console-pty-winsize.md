@@ -47,7 +47,7 @@ SC-04 から 6 桁を送ると、サイドカーは `POST /opend-auth/verify` �
 
 | 箇所 | 扱い |
 | --- | --- |
-| `deploy/opend/entrypoint.sh` `start_opend_with_console` | **変更**: `script -c` の子で OpenD を `exec` する前に `stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200}` を打つ（失敗しても起動を止めない `|| :`）。標準入力＝pty のスレッドなので、その場の `stty` が OpenD に見える |
+| `deploy/opend/entrypoint.sh` `start_opend_with_console` | **変更**: `script -c` の子で OpenD を `exec` する前に `stty rows ${OPEND_CONSOLE_ROWS:-24} cols ${OPEND_CONSOLE_COLS:-200}` を打つ（失敗しても起動を止めない `|| :`）。標準入力＝pty のスレーブなので、その場の `stty` が OpenD に見える |
 | `deploy/opend/entrypoint.test.sh` | **追加** T-730-01: 偽の OpenD に `stty size` を出させ、複製に `24 200` が入ることを固定する（console 群＝Linux ゲート内） |
 | `deploy/opend/README.md` 「標準入力の与え方」 | **改訂**: console 経路が既定で使える旨と根本原因、`tty` は最終手段として残す |
 | `.ai-context/adr/IADR-0325` 残余リスク | **日付つき追記**（凍結本文は書き換えない） |

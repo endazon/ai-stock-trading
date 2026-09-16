@@ -312,9 +312,10 @@ watch_captcha "${OPEND_CAPTCHA_SRC}" "${OPEND_CAPTCHA_DEST}" "${OPEND_CAPTCHA_PO
 #
 # 🔴 なぜ選択肢が要るか —— **`tty` は「実口座でログイン成功」を実際に確認できている唯一の構成**である
 # （README の実績。OpenD の標準入力＝コンテナ本来の tty、`kubectl attach` で打つ）。#722 で標準入力を
-# FIFO へ、段 2 で `script` の pty へ移したが、**稼働クラスタでは検証コードが OpenD に届かない**ことを
-# #727 で実測した（画面・サイドカー・FIFO 直書きのいずれからも無反応。OpenD の 54 スレッドに端末を
-# 読んでいるものが 1 つも無い）。原因は未特定であり、**特定できるまで実績構成へ戻せる逃げ道を残す**。
+# FIFO へ、段 2 で `script` の pty へ移したが、当時は**稼働クラスタで検証コードが OpenD に届かず**（#727 で実測。
+# 画面・サイドカー・FIFO 直書きのいずれからも無反応）、原因未特定のまま実績構成へ戻せる逃げ道として残した。
+# 原因は #730 で特定した（`script` の pty が 0 行 0 桁で OpenD の行エディタが入力を捨てる。start_opend_with_console
+# が `stty rows/cols` を打つことで console 経路が届く）。**`tty` は最終手段**として残す。
 #
 #   OPEND_STDIN_MODE=console（既定） … FIFO → script(pty) → OpenD。画面から入れられる（#722 段 2）
 #   OPEND_STDIN_MODE=fifo            … FIFO → OpenD 直読み。console 複製は作らない（画面は使えない）
