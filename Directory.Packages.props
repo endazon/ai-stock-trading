@@ -24,9 +24,10 @@
          旧基盤の MassTransit は v9 が商用ライセンス・v8 の OSS サポートが 2026 年末で終了するため
          （platform ADR-0027）、#354 の 3 段階で全面移行し、第 3 段階で CPM 宣言ごと削除した。
          再混入は scripts/check-banned-libraries.js が BANNED として止める。
-         WolverineFx.RuntimeCompilation は必須である: Wolverine 6 系はコア本体からランタイムコンパイラ
-         （Roslyn）を分離しており、既定の TypeLoadMode.Dynamic のままでは起動時に例外で停止する
-         （実測。代替は codegen 事前生成＋TypeLoadMode.Static。IADR-0129 決定 6）。 -->
+         WolverineFx.RuntimeCompilation は dev/test/CI（TypeLoadMode.Dynamic）に必須である: Wolverine 6 系はコア本体から
+         ランタイムコンパイラ（Roslyn）を分離しており、Dynamic のままでは起動時に例外で停止する（実測。IADR-0129 決定 6）。
+         ［2026-09-17 / #811］稼働イメージは backend/Dockerfile のビルド段で codegen write を通し TypeLoadMode.Static で
+         読む（実行時コンパイルなし・Roslyn はロードされない）。参照は Dynamic 経路のために残す。 -->
     <PackageVersion Include="WolverineFx" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.24.5" />
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.24.5" />
