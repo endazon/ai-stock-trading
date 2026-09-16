@@ -100,3 +100,13 @@ plan_refs:
   幅 0 のとき入力文字をすべて捨てて空行だけを送る。`start_opend_with_console` は OpenD を `exec` する前に
   `stty rows 24 cols 200` を打つようになり（T-730-01 で固定）、`console` 経路で画面 SC-04 から検証コードが届く。
   `tty` モードは最終手段として残す。作業仕様書 `20260916_730_console-pty-winsize.md`。
+
+  ［2026-09-16 追記 / #802］**`console` 経路では `script` を `exec` せず、本体（PID 1）の子として起こす。** #801 の監査で、OpenD が
+  終了しても `script`（PID 1）が居座り Pod が Running（NotReady）のまま残ることが実測された。原因は FIFO の `0<>` ではなく、
+  `exec script` で本体が先に張った背景ループ（`cap_console_log` / `watch_captcha`）が `script` の子として引き継がれること
+  ——util-linux 2.37 の `ul_pty_wait_for_child` は子（OpenD）を回収した次の周で `waitpid(-1, WNOHANG)` を回し、他に生きている子が
+  居ると 0 が返り続けて抜けられない（stdin=`/dev/null` でも同じ形で固まることを稼働イメージの使い捨てコンテナで確認）。
+  `script` を本体の子にすれば `script` の子は OpenD だけになり、OpenD の終了と同時に `-e` の終了コードで抜け、本体が `wait` して
+  同じコードで終わる（SIGTERM は trap で `script` へ転送）。決定 1 の「`0<>` が EOF を抑える」・`-a`・`stty rows/cols` は据え置き。
+  livenessProbe を付けない方針（IADR-0167）は変えず、復旧は `restartPolicy: Always` の再起動に委ねる。T-802-01/02 で固定。
+  作業仕様書 `20260916_802_console-script-exit-on-child-exit.md`。
