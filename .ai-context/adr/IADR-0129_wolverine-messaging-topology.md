@@ -300,6 +300,30 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   読む（本番イメージから Roslyn を外す）。11 サービスの `Program.cs`（`RunJasperFxCommands`）と Dockerfile
   （ビルド段で `codegen write`。移行を DB 無しで通す並べ替え）に跨るため、決定 6 の見直しは別 IADR で行う。
 
+## ［2026-09-16 追記 / #812］`MALLOC_ARENA_MAX=2` では足りない —— 伸びが main arena の `[heap]` へ移るだけで、固定 mmap / trim 閾値を併せて入れる（#811 までの暫定）
+
+#808 の暫定策（`MALLOC_ARENA_MAX=2`。PR #810・15:02Z 配備）の直後に稼働クラスタを読み取りのみで再測した。実測は作業仕様書
+`../specs/20260916_812_malloc-thresholds-interim.md` に置く。要点:
+
+- **効いていない**: audit-service は配備 9 秒後に OOMKilled（起動直後のメッセージ束で 6 型が同時にコンパイルされた）、再起動後も
+  6 コンパイルで RSS 459Mi・cgroup 91%。`/proc/1/smaps` では **`[heap]`（main arena・brk）が 214,624 kB**（risk-management は
+  111,056 kB）＋ 64MiB 整列のアリーナ heap 2 個で、**`[heap]`＋アリーナ heap ≈ 52 MB × コンパイル回数**の傾きは #808 と同じ。
+  アリーナ数の上限は「積み上がる先」を per-thread アリーナから main arena へ移しただけだった。
+- **読み違えたこと**: #808 は「同じアリーナで作業メモリが**再利用**される」と読んだが、glibc は既定で**動的閾値**を持つ（mallopt(3)）——
+  128 KiB 超〜32 MiB の mmap チャンクを free するたびに `M_MMAP_THRESHOLD` がその大きさへ、`M_TRIM_THRESHOLD` がその 2 倍（最大 64 MiB）へ
+  上がる。以後の割り当ては heap に積まれ、top の空きが閾値（最大 64 MiB）に届くまで trim されない。非 main アリーナの heap は 1 個
+  64 MiB なので構造的に一度も trim されず（#808 で各アリーナが ≈53Mi のまま残った形）、main arena も同じ理由で `[heap]` が伸び続ける。
+  `MALLOC_ARENA_MAX` はこの機構に無関係である。
+- **暫定策（本追記・#812）**: `MALLOC_ARENA_MAX=2` は残し、chart の共通 env に **`MALLOC_MMAP_THRESHOLD_=131072`** と
+  **`MALLOC_TRIM_THRESHOLD_=131072`** を足す。どちらかを明示すると glibc は動的調整を**無効化**するので、128 KiB 超の割り当ては常に mmap
+  （free で即 munmap）、heap top の空き 128 KiB 超は free のたびに trim（main arena は brk 縮小、非 main アリーナは `heap_trim`）になる。
+  決定 6 そのものは**まだ変えない**。
+- **限界（未検証）**: コンパイルの作業メモリが**解放されていない**、または **top より下に断片化して残る**（128 KiB 未満の空きが live な
+  チャンクに挟まれる）なら、閾値の固定では返らない（glibc は `malloc_trim` の明示呼び出し無しに内側の空きを `MADV_DONTNEED` しない）。
+  その場合は **#811（`codegen write`＋`TypeLoadMode.Static`）だけが直す**。稼働 Pod で `malloc_info` を取る手段（gdb / LD_PRELOAD）は
+  持たないため、判定は配備後の実測（audit-service で ≥6 コンパイル後の `[heap]`＋アリーナ heap と、30 分の restarts=0）で付ける。
+  128 KiB 固定は mmap / munmap のシステムコールを増やすが、.NET の GC ヒープは別経路であり暫定として受容する。#811 の完了時に閾値の要否を再評価する。
+
 ## 関連
 
 - **Supersedes: [IADR-0106](./IADR-0106_consumer-endpoint-name-uniqueness.md)**（consumer クラス名＝キュー名。2026-08-04・#354 第 3 段階で Superseded にした。
