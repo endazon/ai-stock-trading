@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
+using TradeDecisionService.Domain;
 using Xunit;
 
 namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decisions;
@@ -230,6 +231,24 @@ public class Stage0DecisionRecorderTests
         await recorder.RunAsync(Options(), CancellationToken.None);
 
         sink.Saved!.Records[0].SignedQuantity.Should().Be(0);
+    }
+
+    // FR-04, FR-11, ADR-0040 決定5, #822, IADR-0343: 記録の多数決根拠も記録した数量と突合する。
+    [Fact]
+    public async Task 多数決根拠の株数が記録数量と異なれば注記を追記する()
+    {
+        var (recorder, _, sink, _) = Build(
+            ["""{"action":"Buy","rationale":"1株単位の新規買いが可能","referencePrice":100,"stopLossDistancePerShare":2}"""]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var record = sink.Saved!.Records[0];
+        record.SignedQuantity.Should().BeGreaterThan(1);
+        record.MajorityRationale.Should().StartWith("1株単位の新規買いが可能");
+        record.MajorityRationale.Should().Contain(RationaleQuantityReconciler.NotePrefix);
+        record.MajorityRationale.Should().Contain($"{record.SignedQuantity} 株");
+        // 生の判断は各票の出力そのもの（数量を持たない）であり注記しない。
+        record.RawDecisions[0].Rationale.Should().Be("1株単位の新規買いが可能");
     }
 
     // 売り判断は負の数量（再生側の空売り観測 IADR-0304 が働く形になる）。
