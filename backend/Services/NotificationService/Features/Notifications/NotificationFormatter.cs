@@ -104,6 +104,15 @@ public static class NotificationFormatter
             $"{e.Symbol}/{e.Market}: 損切りライン {Invariant(e.StopLossPrice)} への到達（検知 {Invariant(e.TriggeredPrice)}）時点で"
                 + $"エントリーが未約定だったため取り消しました（建玉は生じていません・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が無い孤立行。**決済は 1 株も出していない。**
+        // 記録の数量で決済すると同じ銘柄の別の建玉を売るため、猶予を過ぎたら出さずに閉じて人手へ回す。
+        SoftwareStopOutcome.EntryMissing => new(
+            "リスク統制: ソフトウェア逆指値のエントリー記録が見つかりません",
+            $"{e.Symbol}/{e.Market}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
+                + "エントリーの発注記録が猶予を過ぎても見つかりませんでした。"
+                + "**決済は出していません。建玉が残っているかを確認し、必要なら手動で決済してください**"
+                + $"（EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"

@@ -89,3 +89,9 @@ plan_refs:
 | 11 | 発注執行が `StopLossTriggered` を購読し発行まで通る | `StopLossTriggeredConsumerTests`（発注執行） |
 | 12 | 永続化の往復（列の追加） | `EfProtectiveStopOrderStoreTests` |
 | 13 | 契約の後方互換（新イベントの型名・スキーマ基線） | `EventMessageTypeNameTests`・`EventBackwardCompatibilityTests`（基線に追加） |
+| 14 | **同じ銘柄の複数の S1 行は建玉を配分し、合計が保有数量を超えない**（#820 の監査・売り過ぎの防止） | `SoftwareStopExecutorTests.同じ銘柄の複数のソフトウェア逆指値は建玉を配分し合計で保有数量を超えない`（T-10-351） |
+| 15 | 持ち分が無い行は建玉が残っていても完了させず据え置く | `SoftwareStopExecutorTests.持ち分が無い行は建玉が残っていても完了させず据え置く`（T-10-352） |
+| 16 | 配分はハンドラとガードで同じ（呼ぶ順に依らない） | `SoftwareStopExecutorTests.配分は到達時刻と作成時刻で決まりハンドラとガードで同じになる`（T-10-353） |
+| 17 | **エントリーの発注記録が無い行は 1 株も決済しない**（猶予内は据え置き） | `SoftwareStopExecutorTests.エントリーの発注記録が無い行は決済せず猶予内は据え置く`（T-10-354） |
+| 18 | 猶予を過ぎた孤立行は決済せず閉じ、Critical で人手へ知らせる | `SoftwareStopExecutorTests.エントリーの発注記録が無い行は猶予を過ぎるとEntryMissingで閉じる`（T-10-355） |
+| 19 | 孤立行は他の行の建玉を食わない | `SoftwareStopExecutorTests.孤立行の決済は他の行の建玉を食わない`（T-10-356） |

@@ -477,4 +477,125 @@ public class SoftwareStopExecutorTests
         result.Candidates.Should().Be(0);
         f.Broker.MarketCloses.Should().BeEmpty();
     }
+
+    // ---- #820 の監査（売り過ぎの防止）: T-10-351〜353 ----
+
+    [Fact]
+    public async Task 同じ銘柄の複数のソフトウェア逆指値は建玉を配分し合計で保有数量を超えない()
+    {
+        // T-10-351: 10 株のエントリー 2 件（計 20 株）のうち 5 株が手動決済され、建玉は 15 株。
+        // 行ごとに「建玉残」を上限にすると 10+10=20 株を売って空売りになる（監査の実測）。
+        var f = NewFixture();
+        var first = SoftwareStop(createdAt: Now.AddHours(-2));
+        var second = SoftwareStop(createdAt: Now.AddHours(-1));
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(15)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(15, "合計が保有数量を超えない");
+        f.Broker.MarketCloses.Select(c => c.Intent.Quantity).Should().BeEquivalentTo(new[] { 10, 5 },
+            "古い行（先に建てたエントリー）へ先に配分する");
+    }
+
+    [Fact]
+    public async Task 持ち分が無い行は建玉が残っていても完了させず据え置く()
+    {
+        // T-10-352: 先の行へ全量を配分した後の行。完了させると保護のない建玉が残るため据え置く。
+        var f = NewFixture();
+        var first = SoftwareStop(createdAt: Now.AddHours(-2));
+        var second = SoftwareStop(createdAt: Now.AddHours(-1));
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(10)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().HaveCount(1);
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(10);
+        f.Stops.Find(second.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        f.Stops.Find(second.EntryDecisionId)!.TriggeredAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task 配分は到達時刻と作成時刻で決まりハンドラとガードで同じになる()
+    {
+        // T-10-353: ガード（TryCloseAsync 直接）でも同じ配分になる（並行しても合計が保有を超えない）。
+        var f = NewFixture();
+        var first = SoftwareStop(createdAt: Now.AddHours(-2));
+        var second = SoftwareStop(createdAt: Now.AddHours(-1));
+        f.Stops.Save(first with { TriggeredAt = Now, TriggeredPrice = 940m });
+        f.Stops.Save(second with { TriggeredAt = Now, TriggeredPrice = 940m });
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(12)];
+
+        // 呼ぶ順に関わらず配分は同じ（古い行へ 10 株、後の行へ残り 2 株）。合計は保有 12 株を超えない。
+        var later = await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot: null);
+        var earlier = await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot: null);
+
+        later.Kind.Should().Be(SoftwareStopCloseKind.Completed);
+        earlier.Kind.Should().Be(SoftwareStopCloseKind.Completed);
+        f.Broker.MarketCloses.Select(c => c.Intent.Quantity).Should().BeEquivalentTo(new[] { 2, 10 });
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(12);
+    }
+
+    // ---- #820 の監査（孤立行）: T-10-354〜356 ----
+
+    [Fact]
+    public async Task エントリーの発注記録が無い行は決済せず猶予内は据え置く()
+    {
+        // T-10-354: 記録の数量で決済すると同じ銘柄の別の建玉を売る（監査の実測）。1 株も出さない。
+        var f = NewFixture();
+        var stop = SoftwareStop(createdAt: Now.AddMinutes(-5));
+        f.Stops.Save(stop);
+        f.Broker.Positions = [Long(10)];
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty();
+        result.Deferred.Should().Be(1);
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    [Fact]
+    public async Task エントリーの発注記録が無い行は猶予を過ぎるとEntryMissingで閉じる()
+    {
+        // T-10-355: 閉じないと毎巡回この行で決済を試み続ける。閉じる前に Critical で人手へ知らせる。
+        var f = NewFixture();
+        var stop = SoftwareStop(createdAt: Now.AddMinutes(-20));
+        f.Stops.Save(stop);
+        f.Broker.Positions = [Long(10)];
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty();
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        result.Events.Should().ContainSingle()
+            .Which.Should().BeOfType<SoftwareStopExecuted>()
+            .Which.Outcome.Should().Be(SoftwareStopOutcome.EntryMissing);
+    }
+
+    [Fact]
+    public async Task 孤立行の決済は他の行の建玉を食わない()
+    {
+        // T-10-356: 孤立行（記録なし・10 株）と実在の 10 株。監査の実測では 20 株の決済になっていた。
+        var f = NewFixture();
+        var orphan = SoftwareStop(createdAt: Now.AddMinutes(-20));
+        var real = SoftwareStop(createdAt: Now.AddMinutes(-10));
+        f.Stops.Save(orphan);
+        f.Stops.Save(real);
+        Entry(f, real, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(10)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(10);
+        f.Stops.Find(orphan.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
 }

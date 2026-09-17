@@ -27,15 +27,27 @@ public sealed class SoftwareStopExecutor(
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
-    ILogger<SoftwareStopExecutor>? logger = null)
+    ILogger<SoftwareStopExecutor>? logger = null,
+    TimeSpan? orphanGrace = null)
 {
     /// <summary>到達 1 回あたりの決済の試行上限（拒否が続いたら打ち切って Critical を出す。IADR-0344 決定5-6）。</summary>
     public const int MaxCloseAttemptsPerTrigger = 3;
 
+    /// <summary>
+    /// #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が見つからない行を「孤立」と断じるまでの猶予。
+    /// 発注直後に記録だけが遅れている場合（送信と記録のあいだのクラッシュ窓・リコンサイル待ち）を殺さない長さにする。
+    /// </summary>
+    public static readonly TimeSpan DefaultOrphanGrace = TimeSpan.FromMinutes(15);
+
     // 手法混在の按分（IADR-0344 決定5-2・決定6）で参照する Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
     private const int NettingScanLimit = 500;
 
+    // 未約定の決済を数える窓（当日有効の注文しか出さないため 1 日で足りる。IADR-0344 決定5-2）。
+    private static readonly TimeSpan PendingCloseWindow = TimeSpan.FromDays(1);
+
     private readonly ILogger _logger = logger ?? NullLogger<SoftwareStopExecutor>.Instance;
+
+    private readonly TimeSpan _orphanGrace = orphanGrace ?? DefaultOrphanGrace;
 
     /// <summary>
     /// 損切りライン到達を受けて、該当するソフトウェア逆指値を決済する。発行すべきイベントを返す（発行は呼び出し側）。
@@ -111,6 +123,8 @@ public sealed class SoftwareStopExecutor(
         var entry = await ResolveEntryAsync(stop, cancellationToken).ConfigureAwait(false);
         if (entry.Deferred)
             return SoftwareStopCloseOutcome.Deferred;
+        if (entry.Missing)
+            return OnEntryMissing(stop);
 
         if (entry.FilledQuantity <= 0)
         {
@@ -125,7 +139,22 @@ public sealed class SoftwareStopExecutor(
                 CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, clock.UtcNow));
         }
 
-        // 2. 建玉残（手法の異なる Active 行の数量を差し引く）。null＝不明は据え置き。
+        // 2. すでに同じ試行の決済を送って記録まで済んでいる場合（送信後に行の更新だけが失われたクラッシュ窓）は、
+        // 建玉照会も配分も要らない。**新しい注文は出さず**記録の結果で行を確定する（再送しない）。
+        var attempt = stop.Attempt + 1;
+        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, attempt);
+        var referencePrice = stop.TriggeredPrice ?? stop.TriggerPrice;
+        var alreadyPlaced = store.FindByDecisionId(closeDecisionId);
+        if (alreadyPlaced is not null)
+        {
+            return Settle(
+                stop, attempt, closeDecisionId, alreadyPlaced.OrderId, alreadyPlaced.Status,
+                new OrderIntent(
+                    stop.Symbol, stop.Market, stop.CloseSide, stop.ProductType, stop.Mode, alreadyPlaced.Quantity,
+                    referencePrice, PositionEffect.Close, StopLossPrice: null, stop.FxRateToBase));
+        }
+
+        // 3. 建玉残（手法の異なる Active 行の数量・発注済みで未約定の決済を差し引く）。null＝不明は据え置き。
         snapshot ??= await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
@@ -135,33 +164,38 @@ public sealed class SoftwareStopExecutor(
             return SoftwareStopCloseOutcome.Deferred;
         }
 
-        var remaining = ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, stops.FindActive(NettingScanLimit), store);
-        var quantity = Math.Min(entry.FilledQuantity, remaining);
+        // 🔴 #820 の監査: 行ごとに建玉残を上限にすると、同じ銘柄の S1 行が同じ建玉を二重に主張して売り過ぎる
+        //（反対建玉＝空売りになる）。同じ銘柄・方向の S1 行へ決定的に配分し、自分の持ち分だけを決済する。
+        var allocation = ProtectiveStopNetting.AllocateSoftwareStops(
+            stop.Symbol, stop.Market, stop.EntrySide, snapshot, stops.FindActive(NettingScanLimit), store,
+            PendingCloseQuantity(stop));
+        var allowance = allocation.TryGetValue(stop.EntryDecisionId, out var share) ? share : 0;
+        var quantity = Math.Min(entry.FilledQuantity, allowance);
         if (quantity <= 0)
         {
-            // 手動決済等で建玉が既に無い。決済を出すと反対建玉を作る。
-            _logger.LogInformation(
-                "ソフトウェア逆指値を完了します（建玉が残っていないため決済しません）。EntryDecisionId={EntryDecisionId}",
-                stop.EntryDecisionId);
-            Complete(stop);
-            return SoftwareStopCloseOutcome.Completed;
+            if (ProtectiveStopNetting.DirectionalNet(stop, snapshot) <= 0)
+            {
+                // 手動決済等で建玉が既に無い。決済を出すと反対建玉を作る。
+                _logger.LogInformation(
+                    "ソフトウェア逆指値を完了します（建玉が残っていないため決済しません）。EntryDecisionId={EntryDecisionId}",
+                    stop.EntryDecisionId);
+                Complete(stop);
+                return SoftwareStopCloseOutcome.Completed;
+            }
+
+            // 建玉はあるが他の S1 行へ配分済み（自分の持ち分が無い）。**完了させない**——他行が決済して建玉が減れば
+            // 次の巡回で自分の持ち分が生まれる。ここで完了させると保護のない建玉が残る。
+            _logger.LogWarning(
+                "ソフトウェア逆指値の決済を据え置きます（同じ銘柄の他の記録へ建玉を配分済みで持ち分がありません）。"
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.Symbol);
+            return SoftwareStopCloseOutcome.Deferred;
         }
 
-        // 3. 固定 DecisionId の成行決済（記録済みなら再送しない・予約が取れなければ送らない）。
-        var attempt = stop.Attempt + 1;
-        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, attempt);
-        var referencePrice = stop.TriggeredPrice ?? stop.TriggerPrice;
+        // 4. 固定 DecisionId の成行決済（予約が取れなければ送らない）。
         var closeIntent = new OrderIntent(
             stop.Symbol, stop.Market, stop.CloseSide, stop.ProductType, stop.Mode, quantity, referencePrice,
             PositionEffect.Close, StopLossPrice: null, stop.FxRateToBase);
-
-        var existing = store.FindByDecisionId(closeDecisionId);
-        if (existing is not null)
-        {
-            // 送信・記録まで済んだ後に行の更新だけが失われた（クラッシュ窓）。再送せず記録の結果で扱う。
-            return Settle(stop, attempt, closeDecisionId, existing.OrderId, existing.Status,
-                closeIntent with { Quantity = existing.Quantity });
-        }
 
         var now = clock.UtcNow;
         if (!reservations.TryReserve(closeDecisionId, now))
@@ -242,12 +276,14 @@ public sealed class SoftwareStopExecutor(
             : new SoftwareStopCloseOutcome(SoftwareStopCloseKind.Rejected, null);
     }
 
-    // エントリーの約定数量。記録が無ければ（送信後不明）行の数量を上限として扱う（建玉残で頭打ちにされる）。
+    // エントリーの約定数量。
+    // 🔴 #820 の監査: 記録が無い行の数量で決済すると、同じ銘柄の**別のエントリーの建玉**を売る（実測: 孤立行 1 件＋
+    // 実在の 10 株で 20 株の決済）。記録が無いあいだは 1 株も決済しない（Missing）。猶予を過ぎたら Critical で人手へ。
     private async Task<EntryFill> ResolveEntryAsync(ProtectiveStopOrder stop, CancellationToken cancellationToken)
     {
         var record = store.FindByDecisionId(stop.EntryDecisionId);
         if (record is null)
-            return new EntryFill(stop.Quantity, Deferred: false, CancelledByUs: false);
+            return new EntryFill(0, Deferred: false, CancelledByUs: false, Missing: true);
 
         if (OrderStatusLifecycle.IsTerminal(record.Status))
             return new EntryFill(record.FilledQuantity, Deferred: false, CancelledByUs: false);
@@ -288,6 +324,43 @@ public sealed class SoftwareStopExecutor(
         return new EntryFill(filled, Deferred: false, CancelledByUs: current.Status != OrderStatus.Filled);
     }
 
+    // 🔴 #820 の監査: 発注済みで未約定の決済数量（同じ銘柄・同じ決済方向）。建玉照会は決済が約定するまで減らないため、
+    // これを差し引かないと同じ建玉を別の行へ二重に配分する。終端になった決済は建玉に反映されるので数えない。
+    private int PendingCloseQuantity(ProtectiveStopOrder stop) =>
+        store.FindPendingSince(clock.UtcNow - PendingCloseWindow, NettingScanLimit)
+            .Where(r => r.Symbol == stop.Symbol
+                && r.Market == stop.Market
+                && r.PositionEffect == PositionEffect.Close
+                && r.Side == stop.CloseSide)
+            .Sum(r => Math.Max(0, r.Quantity - r.FilledQuantity));
+
+    // 🔴 #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が無い孤立行。**決済は出さない。**
+    // 予約のリコンサイルが記録を補える窓のあいだは据え置き、猶予を過ぎたら Critical を出して行を閉じる
+    //（閉じないと毎巡回この行を引き当てて決済を試み続ける。閉じる前に必ず人手へ知らせる）。
+    private SoftwareStopCloseOutcome OnEntryMissing(ProtectiveStopOrder stop)
+    {
+        var now = clock.UtcNow;
+        var age = now - stop.CreatedAt;
+        if (age < _orphanGrace)
+        {
+            _logger.LogWarning(
+                "ソフトウェア逆指値の決済を据え置きます（エントリーの発注記録が見つかりません・猶予 {Grace} 内）。"
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                _orphanGrace, stop.EntryDecisionId, stop.Symbol);
+            return SoftwareStopCloseOutcome.Deferred;
+        }
+
+        Complete(stop);
+        _logger.LogError(
+            "ソフトウェア逆指値を人手対応として閉じます（エントリーの発注記録が猶予 {Grace} を過ぎても見つかりません・"
+                + "決済は出していません）。EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+            _orphanGrace, stop.EntryDecisionId, stop.Symbol);
+        return SoftwareStopCloseOutcome.CompletedWith(new SoftwareStopExecuted(
+            stop.EntryDecisionId, stop.Symbol, stop.Market, SoftwareStopOutcome.EntryMissing, Quantity: 0,
+            stop.TriggerPrice, stop.TriggeredPrice ?? stop.TriggerPrice, stop.Attempt,
+            CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+    }
+
     private void Complete(ProtectiveStopOrder stop) =>
         stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
 
@@ -295,7 +368,7 @@ public sealed class SoftwareStopExecutor(
     private static bool Reached(ProtectiveStopOrder stop, decimal price) =>
         stop.EntrySide == TradeSide.Buy ? price <= stop.TriggerPrice : price >= stop.TriggerPrice;
 
-    private readonly record struct EntryFill(int FilledQuantity, bool Deferred, bool CancelledByUs);
+    private readonly record struct EntryFill(int FilledQuantity, bool Deferred, bool CancelledByUs, bool Missing = false);
 }
 
 /// <summary>#820, IADR-0344: 1 件の決済試行の結果。</summary>

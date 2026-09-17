@@ -431,6 +431,8 @@ public static class AuditEntryFactory
             {
                 SoftwareStopOutcome.ClosePlaced => $"——成行決済を発注（CloseDecisionId={e.CloseDecisionId}・OrderId={e.CloseOrderId}）",
                 SoftwareStopOutcome.EntryCancelled => "——未約定のエントリーを取消（建玉なし）",
+                SoftwareStopOutcome.EntryMissing =>
+                    "——**エントリーの発注記録が猶予を過ぎても見つからず、決済を出さずに閉じた（要人手対応）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
