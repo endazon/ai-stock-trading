@@ -297,7 +297,7 @@ public sealed class TradeDecisionAppService(
 
             // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
             return new TradeDecisionMade(
-                Guid.NewGuid(), closeIntent, decision.Rationale, clock.UtcNow,
+                Guid.NewGuid(), closeIntent, ReconcileRationale(trigger, decision.Rationale, effect.CloseQuantity), clock.UtcNow,
                 trigger.MetricTrigger, trigger.CycleStartedAt);
         }
 
@@ -372,8 +372,26 @@ public sealed class TradeDecisionAppService(
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
         return new TradeDecisionMade(
-            Guid.NewGuid(), intent, decision.Rationale, clock.UtcNow,
+            Guid.NewGuid(), intent, ReconcileRationale(trigger, decision.Rationale, quantity), clock.UtcNow,
             trigger.MetricTrigger, trigger.CycleStartedAt);
+    }
+
+    // FR-04, FR-10, FR-11, ADR-0040 決定5, #822, IADR-0343 決定2: 発行する記録の根拠文をシステムが決めた数量と突合する。
+    // 🔴 数量（サイジング・保有全量）はここでは変えない。根拠文の株数が食い違えば LLM の文言を保ったまま注記を追記し、
+    // WARN を残す。TradeDecisionMade.Rationale は監査台帳・報告書（ITradeRationaleSource）の唯一の供給元であるため、
+    // 発行点で直せば全消費者へ届く。
+    private string ReconcileRationale(DecisionTrigger trigger, string rationale, int quantity)
+    {
+        var reconciled = RationaleQuantityReconciler.Reconcile(rationale, quantity);
+        if (reconciled.Mismatched)
+        {
+            logger.LogWarning(
+                "根拠文の株数言及がシステムの数量と食い違うため注記を追記（数量は統制値で決まる・ADR-0040 決定5）: " +
+                "{Symbol} quantity={Quantity}",
+                trigger.Symbol, quantity);
+        }
+
+        return reconciled.Rationale;
     }
 
     // FR-04, FR-05, #292, IADR-0119: 保有建玉の照会（fail-safe ラッパ）。

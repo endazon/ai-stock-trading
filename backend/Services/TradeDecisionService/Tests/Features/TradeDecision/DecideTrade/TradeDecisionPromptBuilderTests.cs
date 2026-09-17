@@ -44,6 +44,33 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("現在値");
     }
 
+    // FR-04, FR-10, ADR-0040 決定5, #822, IADR-0343: 数量はシステムが統制値から決める。根拠文で株数に言及させず、
+    // 方針文の「1株単位」を数量の上限と誤読させない（実測: 「1株単位の新規買い」と書いて 849 株を発注した）。
+    [Fact]
+    public void 本判断プロンプトは数量をシステムが決めると明示する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+
+        prompt.Should().Contain(TradeDecisionPromptBuilder.QuantityIsSystemDecidedRule);
+        prompt.Should().Contain(TradeDecisionPromptBuilder.TradingUnitIsNotCapRule);
+        prompt.IndexOf(TradeDecisionPromptBuilder.QuantityIsSystemDecidedRule, StringComparison.Ordinal)
+            .Should().BeGreaterThan(prompt.IndexOf("# リスク制約", StringComparison.Ordinal), "リスク制約節の中に置く");
+    }
+
+    [Fact]
+    public void 数量の明示は採算節の有無や価格変動トリガーでも出る()
+    {
+        var trigger = DecisionTrigger.FromPriceMovement(
+            new PriceMovementDetected(Guid.NewGuid(), "7203", Market.Japan, 1_040m, 1_000m, 0.04m, DateTimeOffset.UtcNow));
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, includeProfitability: true);
+
+        prompt.Should().Contain(TradeDecisionPromptBuilder.QuantityIsSystemDecidedRule);
+        prompt.Should().Contain(TradeDecisionPromptBuilder.TradingUnitIsNotCapRule);
+    }
+
     // IADR-0039, L129: 一次スクリーニング用プロンプトは絞り込みに徹し、本判断と同じ JSON スキーマを再利用する。
     [Fact]
     public void スクリーニングプロンプトは絞り込み文言と共通JSONスキーマを出力する()

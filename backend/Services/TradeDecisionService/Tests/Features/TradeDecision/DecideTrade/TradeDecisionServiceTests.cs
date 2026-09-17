@@ -3,6 +3,7 @@ extern alias RiskManagementWorker;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Common.Abstractions;
+using TradeDecisionService.Domain;
 using TradeDecisionService.Features.TradeDecision;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -205,6 +206,47 @@ public class TradeDecisionServiceTests
         decision.DecidedAt.Should().Be(Now);
         // IADR-0035: ロングの損切り価格＝参照価格 − 損切り幅（1,000 − 30 = 970）。
         decision.Intent.StopLossPrice.Should().Be(970m);
+    }
+
+    // FR-04, FR-10, FR-11, ADR-0040 決定5, #822, IADR-0343: 発行される判断の記録で、根拠文の株数言及と
+    // サイジング数量が食い違わない（実測: 「1株単位の新規買い」と書いて 849 株を発注した）。
+    [Fact]
+    public async Task 根拠文の株数がサイジング数量と異なれば注記を追記する()
+    {
+        const string json =
+            """{"action":"Buy","rationale":"リスク制約内で1株単位の新規買いが可能と判断","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+        var decision = await Create(json, Policy).DecideAsync(Trigger());
+
+        decision!.Intent.Quantity.Should().Be(20, "サイジングは変えない");
+        decision.Rationale.Should().StartWith("リスク制約内で1株単位の新規買いが可能と判断");
+        decision.Rationale.Should().Contain(RationaleQuantityReconciler.NotePrefix);
+        decision.Rationale.Should().Contain("20 株");
+    }
+
+    [Fact]
+    public async Task 根拠文の株数がサイジング数量と一致すれば原文のまま()
+    {
+        const string json =
+            """{"action":"Buy","rationale":"20株の押し目買い","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+        var decision = await Create(json, Policy).DecideAsync(Trigger());
+
+        decision!.Rationale.Should().Be("20株の押し目買い");
+    }
+
+    // #292, IADR-0119 の決済経路（数量＝保有全量）でも同じ突合を掛ける。
+    [Fact]
+    public async Task 決済の根拠文も保有全量と突合する()
+    {
+        const string json =
+            """{"action":"Sell","rationale":"1株を利益確定","referencePrice":1000,"stopLossDistancePerShare":30}""";
+
+        var decision = await CreateWithHeld(json, new FakeHeld(4072)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Rationale.Should().StartWith("1株を利益確定");
+        decision.Rationale.Should().Contain("4072 株");
     }
 
     [Fact]
