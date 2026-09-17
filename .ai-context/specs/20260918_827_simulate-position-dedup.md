@@ -33,28 +33,42 @@ US ヘッダと JP ヘッダの応答に 1 回ずつ含まれ、2 回数えら�
 
 ## 設計
 
-### 決定 1（主）: 照会した市場と応答行の市場が一致する建玉だけを採る
+### 決定 1（主）: 対応市場どうしでは、照会した市場と応答行の市場が一致する建玉だけを採る
 
-- 各応答行について、**行の `TrdMarket` が既知（`HasTrdMarket` かつ `TrdMarket_Unknown`=0 以外）で、照会ヘッダの
-  `TrdMarket` と異なるなら捨てる。** US ヘッダの応答に含まれる JP 建玉・JP ヘッダの応答に含まれる US 建玉は、
+- 各応答行について、**行の `TrdMarket` が対応市場（`SupportedMarkets` = US・JP）のいずれかで、照会ヘッダの
+  `TrdMarket` と異なるときだけ捨てる。** US ヘッダの応答に含まれる JP 建玉・JP ヘッダの応答に含まれる US 建玉は、
   もう一方のヘッダの照会で正しく採られる（SupportedMarkets は US・JP の両方を必ず照会する）ため、捨てても欠けない。
-- **なぜ重複排除だけでなくフィルタを主にするか**: 「その市場の照会で得た、その市場の建玉」だけを採るのが
-  照会契約（IADR-0118「全対応市場を列挙する」）の素直な読みであり、応答がヘッダを無視するという
-  SIMULATE 固有の振る舞いに依存しない。重複排除だけだと、ヘッダ市場外の建玉（例: 将来 HK 等の建玉が
-  US ヘッダの応答に混ざる）を取り込み続ける。
-- **行の市場が不明（未設定・`TrdMarket_Unknown`）の場合は捨てない。** 判定できない行を捨てると、
-  建玉があるのに「ブローカに無い」（`LedgerOnly`）と誤報し、保護逆指値ガードが建玉消滅と誤認する側へ倒れる。
-  不明の行は従来どおり採り、下の決定 2 の重複排除で 1 件に畳む（市場の写像は従来どおり JP 以外を US へ倒す）。
+- **なぜ重複排除だけでなくフィルタを主にするか**: 「その対応市場の照会で得た、その市場の建玉」だけを採るのが
+  照会契約（IADR-0118「全対応市場を列挙する」）の素直な読みであり、US・JP の間の二重計上を、応答が
+  ヘッダを無視するという SIMULATE 固有の振る舞いに依存せず判別できる。
+- **行の市場が対応市場以外（未設定・`TrdMarket_Unknown`・`TrdMarket_HK` / `*_Fund` / `TrdMarket_Futures_Simulate_*` 等の
+  既知の他市場）の場合は捨てない。** SDK（`moomoo-api` 10.8.6808 の `TrdCommon.TrdMarket`）は US・JP 以外に 19 値を持つ
+  （リフレクションで確認: Unknown=0, HK=1, US=2, CN=3, HKCC=4, Futures=5, SG=6, Crypto=7, AU=8, Futures_Simulate_HK/US/SG/JP=10〜13,
+  JP=15, MY=111, CA=112, HK_Fund=113, US_Fund=123, SG_Fund=124, MY_Fund=125, JP_Fund=126）。
+  これらの行は US・JP の**どちらの**照会でも「照会市場と異なる」ため、捨てると両方で捨てられ実在の建玉が消える。
+  消えると `ProtectiveStopGuard.RemainingPositionFor` が 0 を返して生きている保護逆指値を取り消しうる側、
+  リスク管理が偽の `LedgerOnly` を上げる側へ倒れる（fail-unsafe）。**捨てない＝見える側へ倒す。**
+- **対応外の市場の写像は従来どおり**（`ToPositionSnapshot` 以来の「JP 以外は `UnitedStates`」）。照会ヘッダの市場で
+  埋めると、同じ行が US・JP の両照会に現れたとき別市場の 2 件になり決定 2 で畳めず二重計上へ戻るため採らない。
+  結果として HK 等の建玉は `UnitedStates` の建玉として 1 件だけ現れ、台帳に無ければ `BrokerOnly` として**見える**
+  （写像そのものの是正は対応市場の追加と同時に行うもので本 issue の射程外）。
 
-### 決定 2（防御）: (市場, 銘柄, 方向) で重複排除する
+### 決定 2: PositionID があれば (市場, PositionID)、無ければ (市場, 銘柄, 方向) で重複排除する
 
-- フィルタ後に同じ `(Market, Symbol, 方向〔Long/Short〕)` が 2 回以上現れたら**最初の 1 件だけ**を採る。
-  moomoo は同一口座・同一銘柄・同一方向の建玉を 1 行に集約して返すため、正当な 2 行は存在しない。
-- 方向をキーに含めるので、同一銘柄のロングとショートが同時に返る場合（信用口座）はどちらも残る。
+- フィルタ後に同じキーが 2 回以上現れたら**最初の 1 件だけ**を採る。
+- **キーに PositionID を選ぶ理由**: `TrdCommon.Position` は `PositionID`（`HasPositionID`）を持つ＝ブローカ自身が
+  付けた建玉行の識別子である。「同一口座・銘柄・方向の建玉は 1 行に集約して返る」は**実測で確かめていない仮定**であり
+  （初版の記述を撤回する）、別ロットが別行で返る場合に (市場, 銘柄, 方向) で畳むと数量を取りこぼして
+  `QuantityMismatch` を誤報し、保護逆指値ガードの残数量を過小に見る。識別子があるならそれで畳むのが仮定に依存しない。
+  別ロットは別の `MoomooPositionSnapshot` として残り、数量の合算は従来どおり下流（(Symbol, Market) で合算する突合・ガード）が行う。
+- **PositionID が無い行だけ** (市場, 銘柄, 方向) へ退避する。方向をキーに含めるので、同一銘柄のロングとショートが
+  同時に返る場合（信用口座）はどちらも残る。
+- **残余**: 同じ建玉が一方の応答では PositionID 付き・他方では無しで返ると 2 件に数える（キーが混ざる）。
+  実測が無いため防御は足さず、下の「配備後の確認」で PositionID の有無を観測して判断する。
 
 ### 抽出（SDK 非依存の純関数）
 
-- `MoomooPositionRow`（照会ヘッダ市場・行の市場〔不明は null〕・銘柄・ショートか・数量・取得単価）を新設し、
+- `MoomooPositionRow`（照会ヘッダ市場・行の市場〔不明は null〕・銘柄・ショートか・数量・取得単価・PositionID〔無ければ null〕）を新設し、
   `MMApiMoomooTradeClient.CollectPositions(IEnumerable<MoomooPositionRow>)` が決定 1・2 と符号付き数量への畳み込みを行う。
   protobuf → 行への写像（`ToPositionRow`）だけが SDK 依存として残る。
 - 公開 API（`IMoomooTradeClient.GetPositionsAsync` の契約・`MoomooPositionSnapshot`）は変えない。
@@ -110,12 +124,34 @@ US ヘッダと JP ヘッダの応答に 1 回ずつ含まれ、2 回数えら�
 | 2 | JP ヘッダの応答にだけ現れる JP 建玉は残る（Japan） | `JPヘッダにだけ返るJP建玉は残る` |
 | 3 | ショートの方向（負の数量）が保たれ、同一銘柄のロングとショートは別に残る | `ショートは負の数量で残り同一銘柄のロングと別に数える` |
 | 4 | 行の市場が不明なら捨てず、重複は 1 件に畳む | `行の市場が不明なら捨てずに重複だけ畳む` |
-| 5 | フィルタをすり抜けた同一 (市場, 銘柄, 方向) は最初の 1 件だけ採る | `同じ市場の応答に同じ建玉が2行あっても最初の1件だけ採る` |
+| 5 | PositionID の無い行で、フィルタをすり抜けた同一 (市場, 銘柄, 方向) は最初の 1 件だけ採る | `同じ市場の応答に同じ建玉が2行あっても最初の1件だけ採る` |
+| 6 | 対応市場以外の既知の市場（HK・US_Fund・JP_Fund・Futures_Simulate_US）の建玉は捨てず 1 件だけ残る（監査指摘 1） | `対応市場以外の既知の市場の建玉は捨てずに1件だけ残る`（Theory 4 件） |
+| 7 | 同じ銘柄・方向でも PositionID が違えば両方残る（数量の合算は下流）（監査指摘 2） | `PositionIDが違えば同じ銘柄と方向でも両方残る` |
+| 8 | 同じ PositionID が US・JP の両応答に現れたら 1 件（監査指摘 2） | `同じPositionIDがUSとJPの両応答に現れても1件に数える` |
+| 9 | protobuf の PositionID が行へ写り、照会経路でも別ロットが残る。Debug の応答要約は件数と市場値の分布のみで銘柄を含まない | `照会経路_PositionIDが写り別ロットは残り応答要約をDebugに出す` |
+
+## ［2026-09-18 追記 / #827］監査（NEEDS CHANGES）の 2 指摘と扱い
+
+初版（同 PR の最初のコミット）に対するフレッシュな文脈の監査が 2 件の欠陥を指摘した。いずれもテスト先行（赤 → 緑）で是正した。
+
+1. **fail-unsafe な落とし**: 初版の決定 1 は「行の市場が既知で照会市場と異なる行を捨てる」だったため、US・JP 以外の
+   既知の市場の行は US・JP の両照会で捨てられ、実在の建玉が消えた（保護逆指値ガードの残数量 0 → 生きた保護逆指値の取消、
+   偽の `LedgerOnly`）。→ 捨てる条件を「行の市場が対応市場のいずれかで、かつ照会市場と異なる」に狭めた（決定 1）。
+2. **別ロットの併合**: 初版の決定 2 は (市場, 銘柄, 方向) で畳み、「moomoo は 1 行に集約して返す」という未実測の仮定に
+   依存していた。→ PositionID があれば (市場, PositionID) で畳み、無いときだけ従来キーへ退避する（決定 2）。
+
+## 配備後の確認
+
+- order-execution の `OrderExecutionService.Infrastructure.ExternalServices.MMApiMoomooTradeClient` カテゴリを Debug にした状態で（Serilog の `MinimumLevel:Override` を環境変数 `Serilog__MinimumLevel__Override__OrderExecutionService.Infrastructure.ExternalServices.MMApiMoomooTradeClient=Debug` 等で一時的に与える）建玉照会を 1 回観測し、
+  `建玉照会の応答要約 rows=… byQueriedMarket=… byRowMarket=… distinctCodes=… withPositionId=… collected=…` の 1 行を記録する
+  （件数と市場値の分布のみ。銘柄・数量・口座番号は出さない）。これで live SIMULATE の応答行が `TrdMarket` を持つか
+  （`byRowMarket` に `unset` があるか）と `PositionID` を持つか（`withPositionId` が `rows` と一致するか）を確かめ、
+  決定 1 の判別と決定 2 のキー選択の前提を実測で閉じる。`withPositionId` が 0 と `rows` の間なら決定 2 の残余に当たるため起票する。
 
 ## 検証
 
-実行コマンドと出力は PR 本文に記す。live（稼働クラスタ）での確認は本 PR では行わない（配備後の観測で
-監査 `BrokerPositionsObserved` が 1 行・乖離警告が止むことを確認する）。
+実行コマンドと出力は PR 本文（監査指摘の是正分は PR コメント）に記す。live（稼働クラスタ）での確認は本 PR では行わない
+（配備後の観測で監査 `BrokerPositionsObserved` が 1 行・乖離警告が止むことと、上の「配備後の確認」の応答要約を記録する）。
 
 ## デプロイ
 
