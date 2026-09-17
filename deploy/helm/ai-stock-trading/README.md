@@ -125,6 +125,7 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 - **LLM 費用の単価（#303 / IADR-0122 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
   `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
   未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
+  🔴 **env 名ではモデル ID の `-` を `_` で書く**（`claude_sonnet_5`。#817）。
 - **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
   SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
   （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
@@ -362,6 +363,13 @@ watchlist）と同じ銘柄を投入しており、結線しても判断対象�
 ### LLM 費用の単価（#303 / IADR-0122 ／ #279 / IADR-0114 決定6）
 
 `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens` は **円 / 1,000 トークン**の**モデル別**単価。
+
+> 🔴 **env 名ではモデル ID の `-` を `_` で書く**（`LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`。#817 / IADR-0122 追記）。
+> イメージの ENTRYPOINT は `sh -c "exec dotnet …"` であり、シェル（dash）は**シェル識別子でない env 名**（`-` を含む）を
+> exec 先へ渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ届かず、単価表が空＝全呼び出し ¥0 計上になる
+> （稼働実測: Pod env 10 件 → `/proc/1/environ` 0 件）。`LlmPriceTable` は `-` と `_` を同一視して応答の実効モデル名と照合する。
+> CI（`helm.yml`）は描画後の全 env 名が `^[A-Za-z_][A-Za-z0-9_]*$` であることを検査し、ゲートウェイ構成ありで単価が実質 0 なら
+> trade-decision / report が起動時に WARNING（`LLM 単価が未設定 …`）を出す。
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
 80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
 

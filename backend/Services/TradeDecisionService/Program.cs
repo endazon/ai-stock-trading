@@ -110,6 +110,7 @@ if (llmGrpcAddress is not null)
 // （費用統制サービスが購読して月次計上。HTTP /costs/record は OwnerOnly のため使わない）。
 // #303, IADR-0122 決定2/3: 単価は**応答が名乗った実効モデル**で引く（用途別モデル割当でモデルが混在するため）。
 // モデル別は LlmPricing:PerModel:<model-id>:InputPer1kTokens / OutputPer1kTokens（円/1k）。
+// #817: env 名ではモデル ID の `-` を `_` で書く（`-` を含む env 名はイメージの `sh -c` 起動が落とす。照合は同一視する）。
 // 未設定なら従来キー LlmPricing:InputPer1kTokens / OutputPer1kTokens（global 単一ペア）へ倒れる＝後方互換。
 // 金額 0 でも publish して計上経路の健全性を保つ（IADR-0055 根拠）。ポートの安全既定は NoOpLlmUsageReporter。
 // NFR（費用）, #347, IADR-0218: 用途（purpose）を必ず載せる。費用統制の対象範囲は購読側が purpose で判別する。
@@ -404,6 +405,19 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
     typeof(PriceMovementDetectedHandler).Assembly));
 
 var app = builder.Build();
+
+// NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
+// 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に警告する。稼働では env 名のハイフンがイメージの
+// `sh -c` 起動で落ちて表が空になり、**無音で**全呼び出しが 0 円計上＝月次費用上限が発火しなかった。
+// 例外は投げない（IADR-0055: 0 は無害な fail-safe のまま。目的は可視化）。
+if (BuildLlmPriceTable(app.Configuration).IsEffectivelyZero
+    && (llmGrpcAddress is not null || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _)))
+{
+    app.Logger.LogWarning(
+        "LLM 単価が未設定のため、LLM 費用は全呼び出し 0 円で計上される（月次費用上限が発火しない）。" +
+        "LlmPricing__PerModel__<model>__InputPer1kTokens / __OutputPer1kTokens を設定する" +
+        "（env 名ではモデル ID の - を _ で書く。- を含む env 名は起動シェルが落とす・#817）。");
+}
 
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();

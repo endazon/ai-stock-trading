@@ -15,7 +15,7 @@ related_ids:
   - IADR-0120
 author: claude
 created: 2026-07-31
-updated: 2026-08-28
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04／NFR 費用: 月次上限 15,000 円)
   - planning:projects/ai-stock-trading/07_adr/ADR-0014_llm-model-assignment-revision.md (用途別モデル割当・Accepted)
@@ -150,6 +150,28 @@ AST 側で「用途→単価」を静的に対応付けても実際の呼び出�
 > ［2026-08-28 追記 / #243］**上記の再確認期日への対応を実施した。** `values-local.yaml` の
 > コメント・`deploy/helm/ai-stock-trading/README.md`・`docs/operations/operations.md`「LLM 単価の
 > 定期見直し」をいずれも「恒久化確認済み」の記述へ更新した（本 IADR の決定4 直後の追記を参照）。
+
+> ［2026-09-17 追記 / #817］**決定4 の env 名（`LlmPricing__PerModel__<model-id>__*`）は稼働で一度も効いていなかった。**
+> 実測（2026-09-16〜17）: 米国開場中の LLM 呼び出し 150 回がすべて Amount=0.000（audit_svc `LlmCostIncurred`・
+> cost_control_svc `cost_entries` とも 150 件）。trade-decision / report とも Pod 定義のハイフン入り env 名は 10 件、
+> PID 1（`dotnet <dll>`）の `/proc/1/environ` に届いた同名は **0 件**。原因は `backend/Dockerfile` の
+> `ENTRYPOINT ["sh", "-c", "exec dotnet \"${SERVICE_DLL}\""]` —— シェル（dash）は**シェル識別子でない env 名**
+> （`-` を含む）を exec 先へ渡さない。表が空になり決定3 の段 3（従来キー・未設定）へ倒れて `LlmPrice.Zero` だった。
+> 決定3 は「未知モデル」を最大単価へ倒したが、「**表そのものが空**」は後方互換として 0 を許し、しかも**無音**だった。
+>
+> 是正（Dockerfile の ENTRYPOINT は変えない。全サービス共通で波及が大きいため）:
+>
+> 1. **env 名ではモデル ID の `-` を `_` で書く**（`LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`）。
+>    `values-local.yaml` の trade-decision / report 各 10 行を改名した（値は不変）。
+> 2. **照合で `-` と `_` を同一視する**: `LlmPriceTable` は構成キーと実効モデル名の双方を `_`→`-` へ正規化して
+>    大小無視で引く（決定3 の段 1 を「一致（大小無視・`-` と `_` を同一視）」へ読み替える）。旧形式のキーも読める。
+> 3. **fail-loud**: `LlmPriceTable.IsEffectivelyZero`（表が空 かつ 既定ペアも 0）を新設し、trade-decision / report の
+>    `Program.cs` は LLM ゲートウェイ（`LlmGateway:BaseUrl` の絶対 URI か `LlmGateway:Grpc`）が構成されているのに
+>    実質 0 なら起動時に WARNING を出す。**例外は投げない**（IADR-0055 の 0 は無害な fail-safe のまま。目的は可視化）。
+> 4. **再発防止**: `.github/workflows/helm.yml` が既定描画と values-local（＋`opend.enabled=true`）描画の全コンテナ
+>    env 名を `^[A-Za-z_][A-Za-z0-9_]*$` で検査する。負の対照: 是正前の values-local で 20 件を検出して失敗する。
+>
+> 作業仕様書 `.ai-context/specs/20260917_817_llm-pricing-env-names.md`。反映後の確認（非 0 計上）は同仕様書の基準 10。
 
 ## 理由
 

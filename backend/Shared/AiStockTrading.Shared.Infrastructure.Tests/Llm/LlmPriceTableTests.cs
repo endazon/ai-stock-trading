@@ -130,6 +130,66 @@ public class LlmPriceTableTests
             .Resolve("claude-opus-5").Should().Be(new LlmPrice(0.327m, 1.637m));
     }
 
+    // #817: env 名にハイフンを入れるとイメージの `sh -c` 起動（dash）が非識別子として落とす。
+    // 構成は `claude_sonnet_5` のアンダースコア形で書き、応答が名乗る `claude-sonnet-5` と同一視する。
+    [Theory]
+    [InlineData("claude_fable_5", "claude-fable-5")]
+    [InlineData("claude_opus_5", "claude-opus-5")]
+    [InlineData("claude_opus_4_8", "claude-opus-4-8")]
+    [InlineData("claude_sonnet_5", "claude-sonnet-5")]
+    [InlineData("claude_haiku_4_5", "Claude-Haiku-4-5")]
+    public void アンダースコアのキーはハイフンのモデル名に一致する(string key, string model)
+    {
+        // 表に別の高い行を置き、未知扱い（最大単価）に落ちたのではなく一致したことを区別する。
+        LlmPriceTable.From([("other_model", "9", "9"), (key, "0.327", "1.637")])
+            .Resolve(model).Should().Be(new LlmPrice(0.327m, 1.637m));
+    }
+
+    // 逆向き（ハイフンのキー × アンダースコアの名乗り）も同一視する（照合は双方を正規化する）。
+    [Fact]
+    public void ハイフンのキーはアンダースコアのモデル名にも一致する()
+    {
+        Table().Resolve("claude_sonnet_5").Should().Be(new LlmPrice(0.327m, 1.637m));
+    }
+
+    // 正規化しても fail-safe は不変: 表が非空なら未知モデルは成分ごとの最大単価。
+    [Fact]
+    public void アンダースコアの表でも未知モデルは最大単価へ倒す()
+    {
+        var table = LlmPriceTable.From([("claude_fable_5", "1.637", "8.186"), ("claude_sonnet_5", "0.327", "1.637")]);
+
+        table.Resolve("claude-sonnet-4-6").Should().Be(new LlmPrice(1.637m, 8.186m));
+        table.Resolve(null).Should().Be(new LlmPrice(1.637m, 8.186m));
+    }
+
+    // #817 fail-loud: 表が空 かつ 従来キーも無い＝全呼び出しが 0 円になる構成を判定できる（起動時警告の入力）。
+    [Fact]
+    public void IsEffectivelyZero_表も既定ペアも無ければ真()
+    {
+        LlmPriceTable.From([]).IsEffectivelyZero.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEffectivelyZero_全行が不正で既定ペアも無ければ真()
+    {
+        LlmPriceTable.From([("claude_sonnet_5", "abc", "0")]).IsEffectivelyZero.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEffectivelyZero_表があれば偽()
+    {
+        Table().IsEffectivelyZero.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("0.819", "4.093")]
+    [InlineData("0.819", null)]
+    [InlineData(null, "4.093")]
+    public void IsEffectivelyZero_既定ペアのどちらかがあれば偽(string? input, string? output)
+    {
+        LlmPriceTable.From([], input, output).IsEffectivelyZero.Should().BeFalse();
+    }
+
     // 例外を投げない（計測は best-effort＝LLM 応答を壊さない・IADR-0055）。
     [Fact]
     public void 解決は例外を投げない()

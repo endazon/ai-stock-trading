@@ -97,14 +97,11 @@ if (llmGrpcAddress is not null)
 // NFR（費用）, #347, IADR-0219: 報告書生成の LLM 費用の計測点。**用途（purpose）を載せて発行する**ため、
 // 費用統制サービスは上限の対象外（LlmUncapped）として計上し、抑制せずに月報の実績へ供給できる。
 // #303, IADR-0122: 単価は応答が名乗った実効モデルから引く（LlmPricing:PerModel:<model-id>:*・円/1k）。
+// #817: env 名ではモデル ID の `-` を `_` で書く（`-` を含む env 名はイメージの `sh -c` 起動が落とす。照合は同一視する）。
 builder.Services.AddSingleton<ILlmUsageReporter>(sp => new PublishingLlmUsageReporter(
     sp.GetRequiredService<IWolverineRuntime>(),
     sp.GetRequiredService<IClock>(),
-    LlmPriceTable.From(
-        sp.GetRequiredService<IConfiguration>().GetSection("LlmPricing:PerModel").GetChildren()
-            .Select(s => (Model: s.Key, Input: s["InputPer1kTokens"], Output: s["OutputPer1kTokens"])),
-        sp.GetRequiredService<IConfiguration>()["LlmPricing:InputPer1kTokens"],
-        sp.GetRequiredService<IConfiguration>()["LlmPricing:OutputPer1kTokens"]),
+    BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<ILogger<PublishingLlmUsageReporter>>()));
 
 // FR-06, FR-09, ADR-0017 決定4, #335, IADR-0217: フォールバック発火の警告通知・月報集計の供給元。
@@ -467,6 +464,19 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
 
 var app = builder.Build();
 
+// NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
+// 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に警告する。稼働では env 名のハイフンがイメージの
+// `sh -c` 起動で落ちて表が空になり、**無音で**全呼び出しが 0 円計上＝月次費用上限が発火しなかった。
+// 例外は投げない（IADR-0055: 0 は無害な fail-safe のまま。目的は可視化）。
+if (BuildLlmPriceTable(app.Configuration).IsEffectivelyZero
+    && (llmGrpcAddress is not null || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _)))
+{
+    app.Logger.LogWarning(
+        "LLM 単価が未設定のため、LLM 費用は全呼び出し 0 円で計上される（月次費用上限が発火しない）。" +
+        "LlmPricing__PerModel__<model>__InputPer1kTokens / __OutputPer1kTokens を設定する" +
+        "（env 名ではモデル ID の - を _ で書く。- を含む env 名は起動シェルが落とす・#817）。");
+}
+
 // FR-07, IADR-0071 決定2: 無応答時の既定動作を起動時に解釈してログに残す（設定が実際に消費されていることを可視化する）。
 // これによりオペレーターは REPORTS_NORESPONSE_BEHAVIOR の反映を確認できる。期限（翌営業日開場）検知→停止の**実強制**は
 // スケジューラ（#22）が本設定（ReportNoResponsePolicy.Decide）を読み取って行う seam であり、本サービス単体では判定のみを持つ。
@@ -497,6 +507,15 @@ app.MapReportEndpoints();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);
+
+// #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる（LlmPricing:PerModel:<model-id>:*・円/1k）。
+// 解析と fail-safe は LlmPriceTable に閉じている。#817: 起動時警告の判定にも同じ組み立てを使う。
+static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
+    LlmPriceTable.From(
+        cfg.GetSection("LlmPricing:PerModel").GetChildren()
+            .Select(s => (Model: s.Key, Input: s["InputPer1kTokens"], Output: s["OutputPer1kTokens"])),
+        cfg["LlmPricing:InputPer1kTokens"],
+        cfg["LlmPricing:OutputPer1kTokens"]);
 
 // IADR-0071 決定1（#11 IADR-0061 決定2 と同形）: 報告書散文 LLM ゲートウェイのタイムアウト（秒）。
 // 未設定・不正・非正値は既定 30 秒（fail-safe）。無限待ちや 0 秒にはしない。
