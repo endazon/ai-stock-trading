@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-17
+updated: 2026-09-18
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0342]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection]
-issues: [#17, #18, #819]
+iadrs: [IADR-0015, IADR-0019, IADR-0342, IADR-0344]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop]
+issues: [#17, #18, #819, #820]
 -->
 
 
@@ -64,6 +64,10 @@ issues: [#17, #18, #819]
   **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
   相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する
   （システムは決済しない）」を書く——「建玉あり ⇒ 有効な逆指値あり（または解消済み）」の読みの例外を台帳上で明示するため。
+- 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれていた新規建ては、**配置（`SoftwareStopArmed`）**と
+  **発動の結果（`SoftwareStopExecuted`：成行決済の発注／未約定エントリーの取消／決済拒否の打ち切り）**を記録する。
+  相関はいずれもエントリーの `DecisionId` である。配置の要約には「ブローカーへの逆指値なし・システム停止中は決済されない」を、
+  決済拒否の要約には「建玉が無保護で残っている（要人手対応）」を書く——利用者の承認なしに決済注文・取消が起きた理由の一次証跡になるため。
 
 ## 永続化方針
 

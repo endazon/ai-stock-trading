@@ -842,4 +842,39 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("S2").And.Contain("ペーパーで免除").And.Contain("逆指値なしの建玉を保持")
             .And.Contain("MoomooSimulate").And.Contain("950");
     }
+
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
+    [Fact]
+    public void ソフトウェア逆指値の配置はブローカーに保護が無いことが読める()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopArmed(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, BrokerProvider.MoomooSimulate, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(SoftwareStopArmed));
+        entry.CorrelationId.Should().Be(entryDecisionId, "エントリーと 1 本で辿る");
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Contain("S1").And.Contain("ブローカーへの逆指値なし").And.Contain("システム停止中は決済されない")
+            .And.Contain("950");
+    }
+
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: 発動結果は結末ごとに要約が変わり、拒否は人手対応を明示する。
+    [Theory]
+    [InlineData(SoftwareStopOutcome.ClosePlaced, "成行決済を発注")]
+    [InlineData(SoftwareStopOutcome.EntryCancelled, "未約定のエントリーを取消")]
+    [InlineData(SoftwareStopOutcome.CloseRejected, "要人手対応")]
+    public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopExecuted(entryDecisionId, "AAPL", Market.UnitedStates, outcome, 10, 950m, 940m, 1,
+                Guid.NewGuid(), "CLOSE-1", null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(SoftwareStopExecuted));
+        entry.CorrelationId.Should().Be(entryDecisionId);
+        entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
+    }
 }

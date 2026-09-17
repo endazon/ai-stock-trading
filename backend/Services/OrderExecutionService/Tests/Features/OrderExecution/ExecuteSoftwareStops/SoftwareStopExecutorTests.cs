@@ -1,0 +1,480 @@
+using OrderExecutionService.Infrastructure.Persistence;
+using OrderExecutionService.Common.Abstractions;
+using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
+using AwesomeAssertions;
+using Xunit;
+
+namespace OrderExecutionService.Tests;
+
+// FR-10, FR-12, UC-02, ADR-0040 決定1（S1）, #820, IADR-0344 決定4・決定5: ソフトウェア逆指値の発動。
+// 受け入れ基準 2〜6・8・9（成行決済・二重決済なし・部分約定・未到達・再起動耐性・手法混在・拒否の打ち切り）を固定する。
+public class SoftwareStopExecutorTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 9, 18, 15, 0, 0, TimeSpan.Zero);
+
+    private sealed class FakeClock : IClock
+    {
+        public DateTimeOffset UtcNow => Now;
+    }
+
+    private sealed class FakeBroker : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource
+    {
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        /// <summary>建玉（null＝照会不能）。</summary>
+        public IReadOnlyList<BrokerPositionSnapshot>? Positions { get; set; } = [Long(10)];
+
+        /// <summary>注文照会の結果（OrderId → 注文。未登録は null）。</summary>
+        public Dictionary<string, BrokerOrder> Orders { get; } = new();
+
+        /// <summary>取消したらこの状態・約定数量になる（null＝取消しても状態が変わらない）。</summary>
+        public (OrderStatus Status, int Filled)? AfterCancel { get; set; } = (OrderStatus.Cancelled, 0);
+
+        public OrderStatus CloseStatus { get; set; } = OrderStatus.Accepted;
+        public Exception? CloseThrows { get; set; }
+
+        public List<(OrderIntent Intent, Guid DecisionId)> MarketCloses { get; } = [];
+        public List<string> Cancelled { get; } = [];
+        public int PositionQueries { get; private set; }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            throw new NotSupportedException("発動は通常発注を行わない");
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            throw new NotSupportedException("S1 はブローカーへ逆指値を出さない");
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default)
+        {
+            MarketCloses.Add((closeIntent, decisionId));
+            if (CloseThrows is not null)
+                throw CloseThrows;
+            return Task.FromResult(new BrokerOrder(
+                $"close-{MarketCloses.Count}", closeIntent, CloseStatus, 0, 0m, Now,
+                OrderStatusLifecycle.IsTerminal(CloseStatus) ? Now : null));
+        }
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            Task.FromResult(Orders.TryGetValue(orderId, out var order) ? order : null);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
+        {
+            Cancelled.Add(orderId);
+            if (AfterCancel is { } after && Orders.TryGetValue(orderId, out var order))
+                Orders[orderId] = order with { Status = after.Status, FilledQuantity = after.Filled };
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
+        {
+            PositionQueries++;
+            return Task.FromResult(Positions);
+        }
+    }
+
+    private sealed record Fixture(
+        SoftwareStopExecutor Executor, FakeBroker Broker, InMemoryProtectiveStopOrderStore Stops,
+        InMemoryExecutedOrderStore Store, InMemoryOrderReservationStore Reservations);
+
+    private static Fixture NewFixture()
+    {
+        var broker = new FakeBroker();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        return new Fixture(
+            new SoftwareStopExecutor(broker, broker, stops, store, reservations, new FakeClock()),
+            broker, stops, store, reservations);
+    }
+
+    private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
+
+    private static ProtectiveStopOrder SoftwareStop(
+        Guid? entryDecisionId = null, decimal line = 950m, int quantity = 10, DateTimeOffset? createdAt = null)
+    {
+        var id = entryDecisionId ?? Guid.NewGuid();
+        var at = createdAt ?? Now.AddHours(-1);
+        return new ProtectiveStopOrder(
+            id, ProtectiveStopIds.SoftwareStopId(id), string.Empty, "AAPL", Market.UnitedStates, TradeSide.Buy,
+            ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, line, 1m, 0, ProtectiveStopState.Active, at, at,
+            StopLossExecutionMethod.SoftwareStop);
+    }
+
+    // エントリーの発注結果（約定追跡が更新する記録）を置く。
+    private static void Entry(Fixture f, ProtectiveStopOrder stop, OrderStatus status, int filled)
+    {
+        f.Store.Save(new ExecutionRecord(
+            stop.EntryDecisionId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, stop.Quantity, 1_000m, filled, filled > 0 ? 1_000m : 0m, status, 0m, Now.AddHours(-1)));
+        f.Broker.Orders["entry-1"] = new BrokerOrder(
+            "entry-1", new OrderIntent("", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 0, 0m), status, filled, 1_000m, Now.AddHours(-1), null);
+    }
+
+    private static StopLossTriggered Trigger(decimal price = 940m, DateTimeOffset? detectedAt = null) =>
+        new(Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, price, 950m, detectedAt ?? Now);
+
+    // ---- 受け入れ基準 2: 到達で固定 DecisionId の成行決済 ----
+
+    [Fact]
+    public async Task 到達したソフトウェア逆指値は固定のDecisionIdで成行決済され完了する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger(price: 940m));
+
+        var close = f.Broker.MarketCloses.Should().ContainSingle().Which;
+        close.DecisionId.Should().Be(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 1));
+        close.Intent.Side.Should().Be(TradeSide.Sell);
+        close.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        close.Intent.Quantity.Should().Be(10);
+        close.Intent.Price.Should().Be(940m, "参照価格は到達を検知した価格");
+
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.State.Should().Be(ProtectiveStopState.Completed);
+        saved.Attempt.Should().Be(1);
+        saved.TriggeredAt.Should().Be(Now);
+        saved.TriggeredPrice.Should().Be(940m);
+
+        // 決済レグは記録され約定追跡に載り、予約は確定している（IADR-0057 / IADR-0113）。
+        f.Store.FindByDecisionId(close.DecisionId)!.PositionEffect.Should().Be(PositionEffect.Close);
+        f.Reservations.Find(close.DecisionId)!.State.Should().Be(OrderDispatchState.Completed);
+
+        var evt = result.Events.Should().ContainSingle().Which.Should().BeOfType<SoftwareStopExecuted>().Subject;
+        evt.Outcome.Should().Be(SoftwareStopOutcome.ClosePlaced);
+        evt.CloseDecisionId.Should().Be(close.DecisionId);
+        evt.CloseIntent!.Quantity.Should().Be(10);
+        evt.StopLossPrice.Should().Be(950m);
+        evt.TriggeredPrice.Should().Be(940m);
+    }
+
+    // ---- 受け入れ基準 3: 二重決済なし ----
+
+    [Fact]
+    public async Task 毎巡回の再発火でも決済は一度だけ発注される()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        await f.Executor.OnTriggeredAsync(Trigger(price: 940m));
+        var second = await f.Executor.OnTriggeredAsync(Trigger(price: 930m, detectedAt: Now.AddMinutes(1)));
+        var redelivered = await f.Executor.OnTriggeredAsync(Trigger(price: 940m));
+
+        f.Broker.MarketCloses.Should().ContainSingle("完了した行は候補に入らない");
+        second.Events.Should().BeEmpty();
+        redelivered.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 決済のDecisionIdが予約済みなら発注しない()
+    {
+        // ハンドラとガードの並行・送信中の再配送: 予約が取れない＝他方が送信中か成否不明。
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Reservations.TryReserve(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 1), Now).Should().BeTrue();
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty();
+        result.Deferred.Should().Be(1);
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        f.Stops.Find(stop.EntryDecisionId)!.TriggeredAt.Should().NotBeNull("到達の記録は残す（ガードが再試行する）");
+    }
+
+    [Fact]
+    public async Task 決済の記録が既にあれば再送せず記録の結果で完了する()
+    {
+        // 送信・記録の後、行の更新だけが失われた（クラッシュ窓）。
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 1);
+        f.Store.Save(new ExecutionRecord(
+            closeDecisionId, "close-prev", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 10, 940m, 0, 0m, OrderStatus.Accepted, 0m, Now));
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty();
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        result.Events.OfType<SoftwareStopExecuted>().Should().ContainSingle()
+            .Which.CloseOrderId.Should().Be("close-prev");
+    }
+
+    // ---- 受け入れ基準 4: 部分約定・未約定 ----
+
+    [Fact]
+    public async Task 未約定のエントリーは取り消すだけで決済せずEntryCancelledになる()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Accepted, 0);
+        f.Broker.Positions = [];
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancelled.Should().ContainSingle().Which.Should().Be("entry-1");
+        f.Broker.MarketCloses.Should().BeEmpty();
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        result.Events.OfType<SoftwareStopExecuted>().Should().ContainSingle()
+            .Which.Outcome.Should().Be(SoftwareStopOutcome.EntryCancelled);
+    }
+
+    [Fact]
+    public async Task 部分約定のエントリーは残りを取り消してから約定分だけ決済する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.PartiallyFilled, 4);
+        f.Broker.AfterCancel = (OrderStatus.Cancelled, 4);
+        f.Broker.Positions = [Long(4)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancelled.Should().ContainSingle();
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task 取消が終端にならなければ決済を据え置き到達の記録を残す()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.PartiallyFilled, 4);
+        f.Broker.AfterCancel = null; // 取消要求を出しても状態が変わらない（非同期の取消）
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty("残りが後から約定すると無保護の建玉が生まれるため、終端まで決済しない");
+        result.Deferred.Should().Be(1);
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.State.Should().Be(ProtectiveStopState.Active);
+        saved.TriggeredAt.Should().Be(Now);
+    }
+
+    // ---- 受け入れ基準 5: 未到達・到達より後のエントリー ----
+
+    [Fact]
+    public async Task 行自身の損切りラインに達していなければ決済しない()
+    {
+        // 台帳の損切りラインは銘柄単位で最新エントリーの値。別エントリーのライン（930）はまだ割れていない。
+        var f = NewFixture();
+        var stop = SoftwareStop(line: 930m);
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger(price: 940m));
+
+        result.Matched.Should().Be(0);
+        f.Broker.MarketCloses.Should().BeEmpty();
+        f.Stops.Find(stop.EntryDecisionId)!.TriggeredAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 到達の検知より後に建てたエントリーは遅れて届いた到達で決済しない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop(createdAt: Now.AddMinutes(5));
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger(detectedAt: Now));
+
+        result.Matched.Should().Be(0);
+        f.Broker.MarketCloses.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 価格が戻っていても一度到達した到達は決済する()
+    {
+        // FR-10: 損切りラインは到達で発動する。検知時の価格で判定し、処理時点の価格は見ない。
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        await f.Executor.OnTriggeredAsync(Trigger(price: 949m, detectedAt: Now.AddHours(-0.5)));
+
+        f.Broker.MarketCloses.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task 建玉が既に無ければ決済せず完了する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.Positions = []; // 手動決済済み
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().BeEmpty("決済を出すと反対建玉（空売り）を作る");
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        result.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 建玉が一部だけ残っていれば残りだけを決済する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(3)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(3);
+    }
+
+    // ---- 受け入れ基準 6: 据え置き（再起動耐性） ----
+
+    [Fact]
+    public async Task 接続断では予約を解放し到達を記録して据え置く()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.CloseThrows = new BrokerUnavailableException("OpenD へ接続できません（テスト）");
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        result.Deferred.Should().Be(1);
+        result.Events.Should().BeEmpty();
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.State.Should().Be(ProtectiveStopState.Active);
+        saved.TriggeredAt.Should().Be(Now);
+        saved.Attempt.Should().Be(0, "送っていないので試行は進めない");
+        f.Reservations.Find(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 1))
+            .Should().BeNull("確実に未発注のため予約を解放する（次回同じ DecisionId で送れる）");
+
+        // 復旧後の再試行（ガードの巡回と同じ入口）で決済される。
+        f.Broker.CloseThrows = null;
+        var retry = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+        retry.Kind.Should().Be(SoftwareStopCloseKind.Completed);
+        f.Broker.MarketCloses.Should().HaveCount(2);
+        f.Broker.MarketCloses[1].DecisionId.Should().Be(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 1));
+    }
+
+    [Fact]
+    public async Task 送信結果が不明な例外では予約を残し同じDecisionIdで再送しない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.CloseThrows = new InvalidOperationException("送信後に切断（テスト）");
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+        f.Broker.CloseThrows = null;
+        var retry = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+
+        retry.Kind.Should().Be(SoftwareStopCloseKind.Deferred);
+        f.Broker.MarketCloses.Should().ContainSingle("届いたか不明な注文に重ねて送らない");
+    }
+
+    [Fact]
+    public async Task 建玉を照会できなければ据え置く()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.Positions = null;
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        result.Deferred.Should().Be(1);
+        f.Broker.MarketCloses.Should().BeEmpty("不明を「建玉なし」とも「建玉あり」とも取り違えない");
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // ---- 受け入れ基準 9: 拒否の打ち切り ----
+
+    [Fact]
+    public async Task 決済が拒否され続けたら到達1回あたり3試行で打ち切りCriticalを出す()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.CloseStatus = OrderStatus.Rejected;
+
+        var first = await f.Executor.OnTriggeredAsync(Trigger());
+        first.Events.Should().BeEmpty("1 回目の拒否ではまだ打ち切らない");
+        f.Stops.Find(stop.EntryDecisionId)!.TriggeredAt.Should().NotBeNull();
+
+        await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+        var third = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+
+        f.Broker.MarketCloses.Select(c => c.DecisionId).Should().OnlyHaveUniqueItems("試行ごとに別の DecisionId");
+        f.Broker.MarketCloses.Should().HaveCount(3);
+        third.Event!.Outcome.Should().Be(SoftwareStopOutcome.CloseRejected);
+        third.Event.Attempt.Should().Be(3);
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.State.Should().Be(ProtectiveStopState.Active, "建玉は残っている");
+        saved.TriggeredAt.Should().BeNull("次の到達まで再試行しない");
+
+        // 次の到達で再開する（試行番号は続きから）。
+        f.Broker.CloseStatus = OrderStatus.Accepted;
+        await f.Executor.OnTriggeredAsync(Trigger(detectedAt: Now.AddMinutes(1)));
+        f.Broker.MarketCloses.Should().HaveCount(4);
+        f.Broker.MarketCloses[3].DecisionId.Should().Be(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 4));
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // ---- 受け入れ基準 8: 手法混在 ----
+
+    [Fact]
+    public async Task S0の建玉が同じ銘柄にあってもS1の決済はS0の数量を食わない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        var s0EntryId = Guid.NewGuid();
+        f.Stops.Save(new ProtectiveStopOrder(
+            s0EntryId, ProtectiveStopIds.StopDecisionId(s0EntryId, 1), "stop-s0", "AAPL", Market.UnitedStates,
+            TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 5, 900m, 1m, 1, ProtectiveStopState.Active,
+            Now.AddHours(-2), Now.AddHours(-2)));
+        f.Broker.Positions = [Long(12)]; // S1 の 10 のうち 3 を手動決済済み、S0 の 5 は保持
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(7, "純額 12 − S0 の 5");
+    }
+
+    [Fact]
+    public async Task 別銘柄や別方向や完了済みのソフトウェア逆指値は対象にならない()
+    {
+        var f = NewFixture();
+        var other = SoftwareStop() with { Symbol = "MSFT" };
+        var done = SoftwareStop() with { State = ProtectiveStopState.Completed };
+        f.Stops.Save(other);
+        f.Stops.Save(done);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        result.Candidates.Should().Be(0);
+        f.Broker.MarketCloses.Should().BeEmpty();
+    }
+}

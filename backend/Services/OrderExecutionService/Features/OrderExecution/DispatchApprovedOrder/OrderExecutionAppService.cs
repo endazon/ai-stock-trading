@@ -23,7 +23,10 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342: 損切りの実行機構は承認が運ぶ（既定 S0）。解釈は
 // StopLossMethodPolicy だけが行う。**S2（moomoo SIMULATE の新規買いに限る）では保護逆指値を発注せず建玉を保持し、
 // 免除の事実（ProtectiveStopWaived）を発行する**——「逆指値なしの建玉を持たない」の例外はこの 1 分岐だけである。
-// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。S1/S3 は未実装のため S0 と同じ扱い。
+// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。S3 は未実装のため S0 と同じ扱い。
+//
+// FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: **S1（moomoo SIMULATE の新規買いに限る）では保護逆指値を
+// ブローカーへ出さず、エントリーを送る前にソフトウェア逆指値を永続化する**。決済は損切りライン到達で SoftwareStopExecutor が行う。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
@@ -84,6 +87,28 @@ public sealed class OrderExecutionAppService(
             {
                 return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
+
+            // #820, IADR-0344 決定3: S1 はソフトウェア逆指値の記録先が要る（無ければ建玉を守れないため建てない）。
+            if (disposition == StopLossMethodDisposition.SoftwareStop && protectiveStops is null)
+            {
+                _logger.LogError(
+                    "損切りの実行機構 S1 の記録先（保護記録ストア）が構成されていないため発注しません（DecisionId={DecisionId}）。",
+                    approved.DecisionId);
+                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+            }
+        }
+
+        // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: 🔴 **エントリーを送る前に**ソフトウェア逆指値を Active で残す。
+        // 送った後に保存すると「建玉はあるのにソフトウェア逆指値が無い」窓ができる（保存の失敗・プロセス停止）。
+        // 既に行があれば触らない（再配送で到達の記録や試行数を巻き戻さない）。建玉が生じなければ下で完了にする。
+        if (disposition == StopLossMethodDisposition.SoftwareStop && protectiveStops!.Find(approved.DecisionId) is null)
+        {
+            var armedAt = clock.UtcNow;
+            protectiveStops.Save(new ProtectiveStopOrder(
+                approved.DecisionId, ProtectiveStopIds.SoftwareStopId(approved.DecisionId), StopOrderId: string.Empty,
+                intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Mode, intent.Quantity,
+                intent.StopLossPrice!.Value, intent.FxRateToBase, Attempt: 0, ProtectiveStopState.Active, armedAt, armedAt,
+                Mechanism: StopLossExecutionMethod.SoftwareStop));
         }
 
         // 相2（発注着手の権威）: ブローカへ送る「前」に一意予約を確保する。確保できない＝予約済みで未確定であり、
@@ -109,6 +134,7 @@ public sealed class OrderExecutionAppService(
             // 予約を解放し（二重発注の窓は無い）、キューイングせず見送りで正常終了する（Rejected へ丸めない）。
             // 送信後の失敗（届いたか不明）は本例外の契約外であり、従来どおり伝播して予約とリコンサイルが守る。
             reservations.Release(approved.DecisionId);
+            CompleteSoftwareStopWithoutPosition(approved, disposition);
             return Forgone(approved, OrderDispatchForgoneReason.BrokerUnavailable);
         }
 
@@ -171,6 +197,22 @@ public sealed class OrderExecutionAppService(
             return OrderDispatchResult.FromExecuted(executed, stopWaived: waived);
         }
 
+        if (intent.PositionEffect == PositionEffect.Open && disposition == StopLossMethodDisposition.SoftwareStop)
+        {
+            // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: ブローカーへ保護レグを出さない。
+            // 建玉が生じ得る（生きている）ならソフトウェア逆指値の配置を発行し、生じないなら記録を完了にする。
+            if (!entryAlive)
+            {
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+                return OrderDispatchResult.FromExecuted(executed);
+            }
+
+            var armed = new SoftwareStopArmed(
+                approved.DecisionId, intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Quantity,
+                intent.StopLossPrice!.Value, broker.Provider, now);
+            return OrderDispatchResult.FromExecuted(executed, softwareStopArmed: armed);
+        }
+
         if (intent.PositionEffect == PositionEffect.Open && entryAlive)
         {
             var (stopPlaced, coverageLost) = await PlaceProtectiveStopAsync(approved, brokerOrder, cancellationToken)
@@ -197,12 +239,21 @@ public sealed class OrderExecutionAppService(
             case StopLossMethodDisposition.NotImplementedFallbackToBrokerStop:
                 _logger.LogWarning(
                     "損切りの実行機構 {Method} は未実装のため S0（ブローカー側逆指値）と同じ扱いで発注します"
-                    + "（DecisionId={DecisionId}・S1=#820 / S3=#821）。",
+                    + "（DecisionId={DecisionId}・S3=#821）。",
                     approved.StopLossMethod, approved.DecisionId);
                 break;
         }
 
         return disposition;
+    }
+
+    // #820, IADR-0344 決定3: 建玉が生じなかった S1 のエントリー（見送り・終端失敗）の記録を完了にする。
+    private void CompleteSoftwareStopWithoutPosition(OrderApproved approved, StopLossMethodDisposition disposition)
+    {
+        if (disposition != StopLossMethodDisposition.SoftwareStop || protectiveStops?.Find(approved.DecisionId) is not { } stop)
+            return;
+
+        protectiveStops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
     }
 
     private OrderDispatchResult Forgone(OrderApproved approved, OrderDispatchForgoneReason reason) =>

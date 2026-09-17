@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
+using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
@@ -77,6 +78,19 @@ builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 // FR-10, #331, IADR-0210: 保護逆指値レグの記録（同時発注の保存とガードの巡回対象）。
 builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore>();
 builder.Services.AddScoped<OrderExecutionAppService>();
+
+// FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定9: ソフトウェア逆指値の発動（StopLossTriggered の購読と、ガードの再試行が共有）。
+// 🔴 **構成を問わず登録する**——購読ハンドラ（StopLossTriggeredHandler）は規約発見で常に配線され、ビルド時 codegen も
+// 既定（内蔵 paper）構成でホストを組むため、依存が解決できないとハンドラが組めない。建玉照会（IBrokerPositionSource）は
+// moomoo 構成でだけ登録されており、内蔵 paper では null（決済は据え置き）になる。S1 は内蔵 paper では選べない（行ができない）。
+builder.Services.AddScoped(sp => new SoftwareStopExecutor(
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetService<IBrokerPositionSource>(),
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IOrderReservationStore>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -165,7 +179,8 @@ if (brokerSelection.IsMoomoo)
             (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
             sp.GetRequiredService<IProtectiveStopOrderStore>(),
             sp.GetRequiredService<IExecutedOrderStore>(),
-            sp.GetRequiredService<IClock>()));
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<SoftwareStopExecutor>()));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }

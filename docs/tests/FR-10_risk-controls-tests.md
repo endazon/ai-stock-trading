@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-17
+updated: 2026-09-18
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027, ADR-0040]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819]
+iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820]
 -->
 
 
@@ -652,9 +652,18 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-327 | moomoo SIMULATE・損切りの実行機構 S2・新規買い（現物/信用買い × 受付/一部約定/約定） | 承認済み注文を執行する | **保護逆指値を発注せず**、取消・手仕舞いもしない。免除の事実（`ProtectiveStopWaived`）を発行し、保護逆指値の記録を作らない（常駐ガードの巡回対象外）。エントリーが生きていなければ免除の事実は出ない | S2 は建玉を保持する | 自動（境界値） |
 | T-10-328 | 発注先が SIMULATE 以外（moomoo REAL・内蔵 paper）・S0 以外の手法 | 同上 | **発注せず見送る**（理由 `StopLossMethodNotPermitted`・予約も取らない）。空売りでも同じ | 実弾を無防備にしない | 自動（否定形） |
 | T-10-329 | moomoo SIMULATE・S2・空売りのエントリー | 同上 | **S0 と同じ**（買戻しの逆指値を発注し、未受理なら建玉を解消する） | 空売りは手法の対象外 | 自動（否定形） |
-| T-10-330 | moomoo SIMULATE・S1 / S3 / 未知の手法 | 同上 | **S0 と同じ**（未実装。緩い側＝免除へ倒さない） | 未実装の fail-closed | 自動 |
+| T-10-330 | moomoo SIMULATE・S3 / 未知の手法 | 同上 | **S0 と同じ**（未実装。緩い側＝免除へ倒さない） | 未実装の fail-closed | 自動 |
 | T-10-331 | 損切りの実行機構の変更（利用者・理由つき）／実弾での変更／S0 以外のまま実弾へ切替／旧い設定行 | 設定を変更・読み出す | SIMULATE・内蔵 paper では S0〜S3 を選べ前後値つきで履歴に残る。**実弾では S0 以外を 400 で拒否**し設定も履歴も変えない。**S0 以外のまま実弾へは確認操作が揃っていても切り替えない**。サービスロールは 403。旧行・未知の値は S0 | 利用者のみ・実弾での拒否 | 自動（否定形・境界値） |
 | T-10-332 | 手法の搭載と記録 | 審査・監査・通知 | 承認は審査時点の手法を運ぶ（手法を持たない旧いメッセージは S0）。免除は保護喪失と**別の監査種別**で残り、通知は Warning で「決済しない」を明記 | 記録・通知 | 自動 |
+| T-10-333 | moomoo SIMULATE・損切りの実行機構 S1・新規買い（受付/一部約定/約定・拒否/取消/失効・接続断） | 承認済み注文を執行する | **保護逆指値を発注しない**。**エントリーを送る前に**ソフトウェア逆指値（損切りライン・数量）を記録し、エントリーが生きていれば配置の事実を発行する。建玉が生じなければ記録を完了にする。再配送で発注・配置を重ねず記録を巻き戻さない。記録先が無ければ発注しない。空売り・SIMULATE 以外は従来どおり | S1 は建玉を保持しソフトウェア逆指値を残す | 自動（境界値・否定形） |
+| T-10-334 | S1 の建玉・損切りライン到達 | 到達を処理する | **決済の識別子（エントリー＋試行番号から決定的）で成行決済**を 1 回だけ発注し、記録を完了にして決済の事実（取引台帳へ結線される決済レグつき）を発行する。数量は約定数量と建玉残の小さい方 | 到達で成行決済 | 自動 |
+| T-10-335 | 同上・到達の再発火／同じ到達の再配送／識別子が予約済み／決済の発注記録が既にある | 同上 | **二度目の決済を発注しない**（完了した記録は対象外・予約が取れなければ送らない・記録済みなら再送せず記録の結果で扱う） | 二重決済の防止 | 自動（否定形） |
+| T-10-336 | 到達時にエントリーが受付中・一部約定／取消が終端にならない | 同上 | 残りを**取り消してから**約定分だけ決済する。未約定なら取消のみ（エントリー取消の事実）。取消が終端にならなければ**据え置く** | 部分約定の扱い | 自動 |
+| T-10-337 | 記録自身の損切りラインに未到達／到達の検知より後に作られた記録／別銘柄・別方向・完了済み／建玉なし・一部のみ | 同上 | 未到達・後発・対象外は**決済しない**。建玉が無ければ決済せず完了、一部なら残りだけ決済。一度到達したら処理時点で価格が戻っていても決済する | 対象の選別 | 自動（否定形・境界値） |
+| T-10-338 | 接続断（確実に未発注）／送信結果が不明／建玉を照会できない | 同上 | **到達を記録したまま据え置く**。接続断は予約を解放し、復旧後の再試行（常駐ガード）で同じ識別子で決済する。不明は予約を残し同じ識別子で再送しない | 再起動耐性・fail-safe | 自動（否定形） |
+| T-10-339 | 決済が拒否され続ける | 同上・ガードの巡回 | 試行ごとに別の識別子で再試行し、**到達 1 回あたり 3 試行で打ち切り** Critical の事実を発行して到達の記録を外す。次の到達で続きの試行番号から再開する | 拒否の打ち切り | 自動（境界値） |
+| T-10-340 | 常駐ガードとソフトウェア逆指値（未到達・到達済み・建玉消滅・エントリー未終端）／同じ銘柄に S0 と S1 が併存 | ガードを巡回する | S1 の記録には**ブローカーへ注文照会をしない**。到達済みは決済を再試行、建玉消滅・約定 0 の終端は完了、エントリー未終端は据え置き。S0 の建玉残は S1 の約定数量を差し引いて判定する（S1 が無ければ従来と同一） | ガード・手法混在 | 自動（否定形） |
+| T-10-341 | 損切りライン到達・ソフトウェア逆指値の配置と発動の通知・監査・台帳 | 整形・記録・結線 | 到達の通知は**手法ごとの帰結（S0＝ブローカー／S1＝システムが成行決済／S2＝誰も決済しない）を列挙**し、ブローカーが決済すると断定しない。配置は Warning で「システム停止中は決済されない」、決済の拒否の打ち切りだけが Critical。監査はエントリーの相関で配置と発動を残し、決済レグだけが台帳へ 1 回結線される | 記録・通知 | 自動 |
 
 <!-- trace-table:
 row1: FR-10, FR-05, UC-02
@@ -679,12 +688,23 @@ row19: FR-10, ADR-0016, ADR-0040
 row20: FR-10, ADR-0040
 row21: FR-10, UC-06, SC-02, ADR-0040
 row22: FR-10, FR-11, FR-09, ADR-0040
+row23: FR-10, FR-12, ADR-0040
+row24: FR-10, UC-02, ADR-0040
+row25: FR-10, ADR-0040
+row26: FR-10, ADR-0040
+row27: FR-10, ADR-0040
+row28: FR-10, ADR-0040
+row29: FR-10, ADR-0040
+row30: FR-10, ADR-0040
+row31: FR-10, FR-11, FR-09, ADR-0040
 -->
 
 - **実環境依存（PoC #342 待ち）**: moomoo SIMULATE が逆指値（ストップ注文）を受理するか・受け付けない銘柄/
   時間帯の実範囲・トリガー価格の protobuf 実挙動は本書の写像では検証できない（fake client で分岐のみ固定）。
   受理されない環境では設計どおり**建玉が一切作られない**（安全側）。**#809 で moomoo SIMULATE が逆指値を受け付けない
-  ことを実測した**ため、T-10-327〜332（損切りの実行機構の選択・#819）を追加した。S1・S3 の実挙動は未実装のため写像しない。
+  ことを実測した**ため、T-10-327〜332（損切りの実行機構の選択・#819）を追加した。S1（ソフトウェア逆指値・#820）は
+  T-10-333〜341 で写像した（成行決済・二重決済の防止はフェイクで固定。moomoo SIMULATE の成行の受理可否・時間外の扱いは実環境で観測する）。
+  S3 の実挙動は未実装のため写像しない。
 - 従前の「損切りの機械執行」（到達イベントからの決済発行）の写像は**廃止した**——実装そのものが
   計画の逆指値一本化で撤去されたため（旧写像は再実装前のテスト仕様書 T-10-16 に史実として残る）。
 

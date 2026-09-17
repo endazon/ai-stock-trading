@@ -19,12 +19,16 @@ public static class NotificationFormatter
         $"{e.Intent.Symbol} 拒否: {string.Join(",", e.Reasons)}（DecisionId={e.DecisionId}）",
         NotificationSeverity.Warning);
 
-    // リスク統制: 損切りライン到達の検知（#331・逆指値一本化）。決済はブローカー側の逆指値が実行し、
-    // システムは発注しない——本文にその旨を明示する（「システムが決済した」と誤読させない）。
+    // リスク統制: 損切りライン到達の検知（#331・逆指値一本化）。
+    // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは**建玉ごとの損切りの実行機構**で決まるが、
+    // 到達を検知する市場監視は手法を知らない。🔴 「ブローカーの逆指値が決済する」と断定すると S1 / S2 の建玉で誤りになるため、
+    // 手法ごとの帰結を列挙する（S1 の決済・拒否は SoftwareStopExecuted、S2 は免除の通知が建玉を特定して伝える）。
     public static NotificationMessage From(StopLossTriggered e) => new(
         "リスク統制: 損切りライン到達",
         $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）。"
-            + "決済はブローカー側の逆指値が実行します（システムは決済注文を発行しません）。",
+            + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
+            + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
+            + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
         NotificationSeverity.Critical);
 
     // FR-05, ADR-0002（OpenD 常駐・SPOF）, #331, IADR-0211: 発注の見送り。
@@ -75,6 +79,41 @@ public static class NotificationFormatter
             + " に到達しても**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
             + $"EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
+
+    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
+    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことを読み落とさせない。
+    public static NotificationMessage From(SoftwareStopArmed e) => new(
+        "リスク統制: ソフトウェア逆指値を配置（S1）",
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれているため、"
+            + $"{e.Provider} へ保護逆指値を発注せず、損切りライン {Invariant(e.StopLossPrice)} への到達で"
+            + "システムが成行で決済します。**ブローカー側に保護は無く、システム停止中は決済されません**"
+            + $"（実弾口座では選べない手法です・EntryDecisionId={e.EntryDecisionId}）。",
+        NotificationSeverity.Warning);
+
+    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: ソフトウェア逆指値の発動結果。
+    // 決済の発注・未約定エントリーの取消は設計どおりの帰結で Warning、**決済が拒否され続けた（無保護の建玉が残る）ときだけ Critical**。
+    public static NotificationMessage From(SoftwareStopExecuted e) => e.Outcome switch
+    {
+        SoftwareStopOutcome.ClosePlaced => new(
+            "リスク統制: ソフトウェア逆指値で成行決済",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} への到達（検知 {Invariant(e.TriggeredPrice)}）で"
+                + $"成行の決済注文を発注しました（試行 {e.Attempt}・OrderId={e.CloseOrderId}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        SoftwareStopOutcome.EntryCancelled => new(
+            "リスク統制: ソフトウェア逆指値でエントリーを取消",
+            $"{e.Symbol}/{e.Market}: 損切りライン {Invariant(e.StopLossPrice)} への到達（検知 {Invariant(e.TriggeredPrice)}）時点で"
+                + $"エントリーが未約定だったため取り消しました（建玉は生じていません・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        _ => new(
+            "リスク統制: ソフトウェア逆指値の決済が拒否されました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
+                + $"成行の決済注文が {e.Attempt} 回目まで受理されませんでした。"
+                + "**建玉が無保護で残っています。直ちに確認し、必要なら手動で決済してください**"
+                + $"（次の損切りライン到達で再試行します・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+    };
+
+    private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）。enum 名だけでは計画の表と突き合わせにくい。
     private static string StopLossMethodLabel(StopLossExecutionMethod method) => method switch

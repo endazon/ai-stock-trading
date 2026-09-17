@@ -16,12 +16,18 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //   - 1 件の失敗でバッチ全体を止めない（件数集計・OrderFillPoller と同じ流儀）。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
+//
+// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定6: ソフトウェア逆指値（S1）の行は**ブローカーの注文照会をしない**
+// （ブローカーに注文が無い）。到達済みなら SoftwareStopExecutor で決済を再試行し、未到達なら「エントリーが約定 0 で終端」
+// または「建玉残が 0 以下」で完了する。建玉残は手法の異なる Active 行の数量を差し引いて判定する（ProtectiveStopNetting。
+// S1 行が無い構成では差し引く量が 0 で、S0 の判定は従来と同一）。
 public sealed class ProtectiveStopGuard(
     IBrokerAdapter broker,
     IBrokerPositionSource positions,
     IProtectiveStopOrderStore stops,
     IExecutedOrderStore store,
-    IClock clock)
+    IClock clock,
+    OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null)
 {
     public async Task<ProtectiveStopGuardResult> RunOnceAsync(int batchSize, CancellationToken cancellationToken = default)
     {
@@ -50,7 +56,9 @@ public sealed class ProtectiveStopGuard(
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var outcome = await EvaluateAsync(stop, snapshot, events, cancellationToken).ConfigureAwait(false);
+                var outcome = stop.IsSoftwareStop
+                    ? await EvaluateSoftwareStopAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false)
+                    : await EvaluateAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false);
                 switch (outcome)
                 {
                     case Outcome.StillActive: stillActive++; break;
@@ -69,9 +77,50 @@ public sealed class ProtectiveStopGuard(
         return new ProtectiveStopGuardResult(active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events);
     }
 
+    // #820, IADR-0344 決定6: ソフトウェア逆指値の巡回（ブローカーの注文照会をしない）。
+    private async Task<Outcome> EvaluateSoftwareStopAsync(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        IReadOnlyList<ProtectiveStopOrder> active,
+        List<object> events,
+        CancellationToken cancellationToken)
+    {
+        if (stop.TriggeredAt is not null)
+        {
+            // 到達済みで決済できていない（接続断・取消待ち・拒否の途中）。決済を再試行する。
+            if (softwareStops is null)
+                return Outcome.Unknown;
+
+            var outcome = await softwareStops.TryCloseAsync(stop, snapshot, cancellationToken).ConfigureAwait(false);
+            if (outcome.Event is not null)
+                events.Add(outcome.Event);
+            return outcome.Kind switch
+            {
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.Completed =>
+                    outcome.Event is { Outcome: SoftwareStopOutcome.ClosePlaced } ? Outcome.ClosedOut : Outcome.Completed,
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.Rejected => Outcome.StillActive,
+                _ => Outcome.Unknown,
+            };
+        }
+
+        var entry = store.FindByDecisionId(stop.EntryDecisionId);
+        if (entry is null || OrderStatusLifecycle.IsPending(entry.Status))
+            return Outcome.StillActive; // エントリーの結果が未確定（これから約定し得る）。建玉が 0 でも完了しない。
+
+        if (entry.FilledQuantity <= 0 || ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, active, store) <= 0)
+        {
+            // 建玉が生じなかった、または手動決済等で消えた。保護の役目を終える（ブローカーに取り消す注文は無い）。
+            MarkCompleted(stop);
+            return Outcome.Completed;
+        }
+
+        return Outcome.StillActive;
+    }
+
     private async Task<Outcome> EvaluateAsync(
         ProtectiveStopOrder stop,
         IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        IReadOnlyList<ProtectiveStopOrder> active,
         List<object> events,
         CancellationToken cancellationToken)
     {
@@ -82,7 +131,8 @@ public sealed class ProtectiveStopGuard(
             return Outcome.Unknown;
         }
 
-        var remaining = RemainingPositionFor(stop, snapshot);
+        // #820, IADR-0344 決定6: 手法の異なる Active 行（ソフトウェア逆指値）の約定数量を差し引く（無ければ従来と同一）。
+        var remaining = ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, active, store);
 
         if (OrderStatusLifecycle.IsPending(order.Status))
         {
@@ -203,13 +253,8 @@ public sealed class ProtectiveStopGuard(
 
     // 建玉スナップショットから「エントリー方向の残数量」を求める。数量は符号付き（+ロング/−ショート・IADR-0118）。
     // ロング建玉（Buy 建て）は正の数量、ショート建玉（Sell 建て）は負の数量の絶対値が残である。
-    public static int RemainingPositionFor(ProtectiveStopOrder stop, IReadOnlyList<BrokerPositionSnapshot> snapshot)
-    {
-        var net = snapshot
-            .Where(p => p.Symbol == stop.Symbol && p.Market == stop.Market)
-            .Sum(p => p.Quantity);
-        return stop.EntrySide == TradeSide.Buy ? Math.Max(0, net) : Math.Max(0, -net);
-    }
+    public static int RemainingPositionFor(ProtectiveStopOrder stop, IReadOnlyList<BrokerPositionSnapshot> snapshot) =>
+        ProtectiveStopNetting.DirectionalNet(stop, snapshot);
 
     // FR-17, IADR-0107: 決済レグはエントリーの換算レートを引き継ぐ（OrderExecutionService と同じ規律）。
     private static OrderIntent BuildCloseIntent(ProtectiveStopOrder stop, int quantity, decimal referencePrice) =>

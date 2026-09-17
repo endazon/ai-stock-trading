@@ -274,6 +274,13 @@ public class AuditCycleCompletenessTests
                 StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
+            // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動結果。
+            new SoftwareStopArmed(
+                decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+                BrokerProvider.MoomooSimulate, t),
+            new SoftwareStopExecuted(
+                decisionId, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
+                Guid.NewGuid(), "CLOSE-1", Intent(), t),
             new ScreeningContextReduced(
                 ["AAPL", "MSFT"], 2, Split: true, DroppedRagCount: 1, DroppedNewsCount: 2,
                 UnresolvableOverflow: false, BudgetChars: 8_000, t),

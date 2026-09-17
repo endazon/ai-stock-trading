@@ -103,6 +103,10 @@ public class ProtectiveStopGuardServiceTests
         public void Save(ProtectiveStopOrder stop) => inner.Save(stop);
 
         public ProtectiveStopOrder? Find(Guid entryDecisionId) => inner.Find(entryDecisionId);
+
+        // #820, IADR-0344: S1 の突き合わせ（本テストは S0 の巡回だけを観測する）。
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
+            inner.FindActiveSoftwareStops(symbol, market, entrySide);
     }
 
     // 巡回の最中に停止要求が伝播した状況（キャンセル）を再現するストア。
@@ -121,6 +125,8 @@ public class ProtectiveStopGuardServiceTests
         public void Save(ProtectiveStopOrder stop) { }
 
         public ProtectiveStopOrder? Find(Guid entryDecisionId) => null;
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) => [];
     }
 
     // ログを記録するロガー。常駐（BackgroundService）の ExecuteAsync は StartAsync とは別のタスクで

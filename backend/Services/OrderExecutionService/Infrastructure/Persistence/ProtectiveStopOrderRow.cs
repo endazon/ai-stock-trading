@@ -36,4 +36,11 @@ public sealed class ProtectiveStopOrderRow
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: 保護の機構（既定 0＝S0）と損切りライン到達の記録（S1 のみ）。
+    public StopLossExecutionMethod Mechanism { get; set; } = StopLossExecutionMethod.BrokerStopOrder;
+
+    public DateTimeOffset? TriggeredAt { get; set; }
+
+    public decimal? TriggeredPrice { get; set; }
 }

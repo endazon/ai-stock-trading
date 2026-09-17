@@ -401,6 +401,30 @@ public class AuditEventConsumersTests
         await host.StopAsync();
     }
 
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動がエントリーの相関で台帳に残る。
+    [Fact]
+    public async Task ソフトウェア逆指値の配置と発動はエントリーの相関で台帳に残る()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var entryDecisionId = Guid.NewGuid();
+        var armed = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new SoftwareStopArmed(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, BrokerProvider.MoomooSimulate, DateTimeOffset.UtcNow));
+        armed.Executed.MessagesOf<SoftwareStopArmed>().Should().NotBeEmpty();
+
+        var executed = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new SoftwareStopExecuted(entryDecisionId, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced,
+                10, 950m, 940m, 1, Guid.NewGuid(), "CLOSE-1", null, DateTimeOffset.UtcNow));
+        executed.Executed.MessagesOf<SoftwareStopExecuted>().Should().NotBeEmpty();
+
+        store.GetByCorrelation(entryDecisionId).Select(e => e.EventType)
+            .Should().BeEquivalentTo([nameof(SoftwareStopArmed), nameof(SoftwareStopExecuted)]);
+
+        await host.StopAsync();
+    }
+
     // NFR-02, #689, IADR-0307: **記録完了（台帳へ 1 行書いた時点）が NFR-02 の終点である。**
     // 計画は「収集→判断→発注→記録」の 1 周を 10 分以内と定めており、発注完了で代表すると
     // 構造的に過少報告になる。起点はイベントが運んでくるため、突き合わせ（join）も状態も要らない。

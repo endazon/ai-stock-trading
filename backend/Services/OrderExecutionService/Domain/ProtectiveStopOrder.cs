@@ -7,6 +7,10 @@ namespace OrderExecutionService.Domain;
 // StopDecisionId）の権威である。EntryDecisionId につき高々 1 行（最新試行のみを保持する）。
 // ProductType / Mode / FxRateToBase は再発注・手仕舞い時に決済 Intent を再構成するために持つ
 // （FxRateToBase を落とすと外貨建て決済レグが未換算で台帳へ積まれる。IADR-0107）。
+//
+// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: Mechanism で保護の機構を区別する（既定 S0＝ブローカー側逆指値）。
+// S1（ソフトウェア逆指値）の行は StopOrderId が空（ブローカーに注文が無い）、TriggerPrice が損切りライン、
+// Attempt が「送った決済の試行数」（0 始まり）、TriggeredAt / TriggeredPrice が損切りライン到達の記録（未到達は null）。
 public record ProtectiveStopOrder(
     Guid EntryDecisionId,
     Guid StopDecisionId,
@@ -22,8 +26,14 @@ public record ProtectiveStopOrder(
     int Attempt,
     ProtectiveStopState State,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt)
+    DateTimeOffset UpdatedAt,
+    StopLossExecutionMethod Mechanism = StopLossExecutionMethod.BrokerStopOrder,
+    DateTimeOffset? TriggeredAt = null,
+    decimal? TriggeredPrice = null)
 {
+    /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
+    public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
+
     /// <summary>決済方向（エントリーの反対売買）。ロング（Buy 建て）は Sell、ショート（Sell 建て）は Buy。</summary>
     public TradeSide CloseSide => EntrySide == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;
 }

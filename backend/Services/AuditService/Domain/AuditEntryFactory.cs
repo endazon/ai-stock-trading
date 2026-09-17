@@ -411,6 +411,30 @@ public static class AuditEntryFactory
             + "——**逆指値なしの建玉を保持する（システムは決済しない）**"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
+    // 相関はエントリーの DecisionId（ProtectiveStopPlaced / ProtectiveStopWaived と同じ）。「ブローカー側に保護が無い建玉」であることを要約に書く。
+    public static AuditEntry From(SoftwareStopArmed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(SoftwareStopArmed), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} ソフトウェア逆指値を配置（損切りの実行機構 S1・発注先 {e.Provider}） {e.Side} 数量{e.Quantity}"
+            + $" 損切りライン{e.StopLossPrice.ToString(CultureInfo.InvariantCulture)}"
+            + "——**ブローカーへの逆指値なし。到達でシステムが成行決済する（システム停止中は決済されない）**"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: ソフトウェア逆指値の発動結果。
+    // 利用者の承認なしに決済注文・取消が起きる事象であり、この記録が「なぜ建玉が消えたか」の一次証跡になる。
+    public static AuditEntry From(SoftwareStopExecuted e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(SoftwareStopExecuted), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} ソフトウェア逆指値が発動（{e.Outcome}） 数量{e.Quantity}"
+            + $" 損切りライン{e.StopLossPrice.ToString(CultureInfo.InvariantCulture)} 検知{e.TriggeredPrice.ToString(CultureInfo.InvariantCulture)}"
+            + $" 試行{e.Attempt}"
+            + e.Outcome switch
+            {
+                SoftwareStopOutcome.ClosePlaced => $"——成行決済を発注（CloseDecisionId={e.CloseDecisionId}・OrderId={e.CloseOrderId}）",
+                SoftwareStopOutcome.EntryCancelled => "——未約定のエントリーを取消（建玉なし）",
+                _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
+            }),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）で表示する。enum 名だけでは計画の表と突き合わせにくい。
     private static string MethodLabel(StopLossExecutionMethod method) => method switch
     {

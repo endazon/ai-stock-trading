@@ -96,4 +96,64 @@ public class EfProtectiveStopOrderStoreTests
         using var db2 = NewContext(dbName);
         new EfProtectiveStopOrderStore(db2).FindActive(3).Should().HaveCount(3);
     }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: 機構列と到達の記録が往復し、旧い行（列の既定）は S0 として読まれる。
+    [Fact]
+    public void ソフトウェア逆指値の機構と到達の記録はラウンドトリップする()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 2,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop, Now.AddMinutes(1), 940.25m);
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfProtectiveStopOrderStore(db2).Find(entryDecisionId).Should().Be(stop);
+    }
+
+    [Fact]
+    public void 機構を指定しない保護記録はS0として保存される()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(Stop(entryDecisionId));
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Mechanism.Should().Be(StopLossExecutionMethod.BrokerStopOrder);
+        found.IsSoftwareStop.Should().BeFalse();
+        found.TriggeredAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void FindActiveSoftwareStopsはActiveなS1の同一銘柄同一方向だけを古い順に返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        StopLossExecutionMethod s1 = StopLossExecutionMethod.SoftwareStop;
+        var older = Guid.NewGuid();
+        var newer = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfProtectiveStopOrderStore(db);
+            store.Save(Stop(newer, createdAt: Now) with { Mechanism = s1 });
+            store.Save(Stop(older, createdAt: Now.AddMinutes(-5)) with { Mechanism = s1 });
+            store.Save(Stop(Guid.NewGuid()));                                                          // S0
+            store.Save(Stop(Guid.NewGuid(), state: ProtectiveStopState.Completed) with { Mechanism = s1 }); // 完了
+            store.Save(Stop(Guid.NewGuid()) with { Mechanism = s1, Symbol = "MSFT" });                  // 別銘柄
+            store.Save(Stop(Guid.NewGuid()) with { Mechanism = s1, EntrySide = TradeSide.Sell });       // 別方向
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfProtectiveStopOrderStore(db2).FindActiveSoftwareStops("AAPL", Market.UnitedStates, TradeSide.Buy)
+            .Select(s => s.EntryDecisionId).Should().Equal(older, newer);
+    }
 }

@@ -8,19 +8,22 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // 発行（Publish）は Worker 層（OrderApprovedHandler）が非 null のイベントに対して行う。
 // FR-10, ADR-0040 決定1, #819, IADR-0342 決定6: S2 では StopPlaced / CoverageLost の代わりに StopWaived が付く
 // （3 つは排他。末尾の任意項目として足し、既存の生成箇所を変えない）。
+// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: S1 では SoftwareStopArmed が付く（上の 3 つと排他）。
 public sealed record OrderDispatchResult(
     OrderExecuted? Executed,
     OrderDispatchForgone? Forgone,
     ProtectiveStopPlaced? StopPlaced,
     ProtectiveStopCoverageLost? CoverageLost,
-    ProtectiveStopWaived? StopWaived = null)
+    ProtectiveStopWaived? StopWaived = null,
+    SoftwareStopArmed? SoftwareStopArmed = null)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,
         ProtectiveStopPlaced? stopPlaced = null,
         ProtectiveStopCoverageLost? coverageLost = null,
-        ProtectiveStopWaived? stopWaived = null) =>
-        new(executed, null, stopPlaced, coverageLost, stopWaived);
+        ProtectiveStopWaived? stopWaived = null,
+        SoftwareStopArmed? softwareStopArmed = null) =>
+        new(executed, null, stopPlaced, coverageLost, stopWaived, softwareStopArmed);
 
     public static OrderDispatchResult FromForgone(OrderDispatchForgone forgone) =>
         new(null, forgone, null, null);

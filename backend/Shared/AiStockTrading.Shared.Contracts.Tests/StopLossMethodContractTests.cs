@@ -73,6 +73,32 @@ public class StopLossMethodContractTests
         JsonSerializer.Deserialize<ProtectiveStopWaived>(JsonSerializer.Serialize(evt)).Should().Be(evt);
     }
 
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: S1 の配置と発動結果も監査 payload が一次証跡になる。
+    [Fact]
+    public void ソフトウェア逆指値の配置と発動結果はJSONを往復しても値が変わらない()
+    {
+        var armed = new SoftwareStopArmed(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            BrokerProvider.MoomooSimulate, T0);
+        JsonSerializer.Deserialize<SoftwareStopArmed>(JsonSerializer.Serialize(armed)).Should().Be(armed);
+
+        var closeIntent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 10, 940m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m);
+        var executed = new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
+            Guid.NewGuid(), "close-1", closeIntent, T0);
+        var restored = JsonSerializer.Deserialize<SoftwareStopExecuted>(JsonSerializer.Serialize(executed))!;
+        restored.Should().BeEquivalentTo(executed);
+    }
+
+    [Fact]
+    public void ソフトウェア逆指値の発動結果の序数は動かない()
+    {
+        ((int)SoftwareStopOutcome.ClosePlaced).Should().Be(0);
+        ((int)SoftwareStopOutcome.EntryCancelled).Should().Be(1);
+        ((int)SoftwareStopOutcome.CloseRejected).Should().Be(2);
+    }
+
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。
     [Fact]
     public void 手法による見送りの理由は末尾に追加され既存の序数を動かさない()

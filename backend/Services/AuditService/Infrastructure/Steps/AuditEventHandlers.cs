@@ -489,6 +489,26 @@ public sealed class ProtectiveStopWaivedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
+public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopArmed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の発動結果（決済・取消・拒否）を記録する。
+public sealed class SoftwareStopExecutedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopExecuted message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
 //
 // 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**
