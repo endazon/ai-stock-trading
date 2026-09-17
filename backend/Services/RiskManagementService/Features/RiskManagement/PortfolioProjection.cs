@@ -17,12 +17,16 @@ public static class PortfolioProjection
     // 時価で算出する。既定（null）では従来どおり UnrealizedPnl=0/DrawdownRatio=0（実供給の結線は #22/#82 の後続）。
     // #249 / IADR-0246: 「当日」は市場ごとに異なる（同一瞬間でも JST と ET で日付が違う）ため、
     // DateOnly ではなく判定時点（now）を受け、約定ごとに**その市場の現地取引日**同士で比較する。
+    //
+    // FR-10, #829, IADR-0346 決定2: workingEntries（承認済みで終端でない新規建て注文）を与えると、当日分の残数量を
+    // 日次発注累計・段階資金・保有建玉数へ算入する。既定（null）は従来どおり約定だけ。
     public static PortfolioState Project(
         IReadOnlyList<LedgerFill> fills,
         DateTimeOffset now,
         decimal initialCapital,
         IReadOnlyDictionary<(string Symbol, Market Market), decimal>? currentPrices = null,
-        decimal? equityHighWaterMark = null)
+        decimal? equityHighWaterMark = null,
+        IReadOnlyList<WorkingEntryOrder>? workingEntries = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
 
@@ -104,6 +108,49 @@ public static class PortfolioProjection
                 key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost, StopLossPrice: null, impliedRate));
         }
 
+        // FR-10, #829, IADR-0346 決定2: 承認済みで生きている新規建て注文の**残数量**を算入する。
+        // 計画 FR-10 は日次枠を「新規建ての発注代金の合計」で定め、§5 は Stage の上限を「発注可能額」と呼ぶ。
+        // 約定だけを数えると、指値が溜まっている間は上限を超えて承認し続けられる（#27 と同型の累計超過の穴）。
+        var openPositionCount = openPositions.Count;
+        if (workingEntries is { Count: > 0 })
+        {
+            // 残数量＝承認数量 − 同じ DecisionId の約定累計。約定は**同じ fills** から数える——約定が届くと
+            // 約定側が増えて残数量が同じだけ減るため、合計は変わらない（二重計上も取りこぼしもしない）。
+            var filledByDecision = new Dictionary<Guid, int>();
+            foreach (var fill in fills)
+            {
+                if (fill.DecisionId == Guid.Empty)
+                    continue; // 相関できないレガシー行は注文へ帰属させない
+                filledByDecision[fill.DecisionId] = filledByDecision.GetValueOrDefault(fill.DecisionId) + fill.Quantity;
+            }
+
+            var heldKeys = openPositions.Select(p => (p.Symbol, p.Market)).ToHashSet();
+            var pendingNewKeys = new HashSet<(string Symbol, Market Market)>();
+            foreach (var order in workingEntries)
+            {
+                // 当日は承認時刻の**市場の現地取引日**で判定する（約定と同じ規則・IADR-0246）。
+                // 終端イベントが届かない行（実測で翌日も Accepted のまま）が翌日以降の枠を食い続けないため。
+                if (TradeDate(order.ApprovedAt, order.Market) != TradeDate(now, order.Market))
+                    continue;
+
+                var remaining = Math.Max(0, order.Quantity - filledByDecision.GetValueOrDefault(order.DecisionId));
+                if (remaining == 0)
+                    continue;
+
+                var notionalInBase = remaining * order.PriceInBase;
+                orderedToday += notionalInBase;
+                invested += notionalInBase;
+
+                // 保有建玉数は建玉の無い（銘柄, 市場）だけ増やす（建て増しは数を増やさない。建玉キーの粒度は従来のまま）。
+                var key = (order.Symbol, order.Market);
+                if (!heldKeys.Contains(key))
+                    pendingNewKeys.Add(key);
+            }
+
+            openPositionCount += pendingNewKeys.Count;
+            // IADR-0346 決定4: SymbolsTradedToday（同日再エントリーの入力）には算入しない。
+        }
+
         // IADR-0036: 含み損益は現在値入力から時価算出（現在値欠損は 0）。当日開始運用資金（固定基準）= 初期資金 + 当日より前の実現損益。
         var capital = initialCapital + realizedBeforeToday;
         var unrealized = PortfolioValuation.UnrealizedPnl(openPositions, currentPrices);
@@ -113,7 +160,7 @@ public static class PortfolioProjection
         return new PortfolioState
         {
             Capital = capital,
-            OpenPositionCount = openPositions.Count,
+            OpenPositionCount = openPositionCount,
             InvestedCapital = invested,
             DailyOrderedAmount = orderedToday,
             DailyRealizedPnl = realizedToday,

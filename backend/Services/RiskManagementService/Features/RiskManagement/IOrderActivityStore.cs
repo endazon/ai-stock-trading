@@ -28,4 +28,15 @@ public interface IOrderActivityStore
 
     /// <summary>取消で行を更新する（状態を取消・終端時刻を設定）。相関する承認が無ければ何もしない。</summary>
     void RecordCancellation(Guid decisionId, DateTimeOffset cancelledAt);
+
+    /// <summary>
+    /// FR-10, FR-05, #829, IADR-0346 決定5: 発注執行が<b>見送った</b>（ブローカーへ発注しなかった）承認を終端にする。
+    /// 状態は <see cref="OrderStatus.Rejected"/>・終端時刻は見送りの時刻。見送りは板に載っておらず、相場操縦検知は
+    /// Rejected を約定なし取消の母集団から外す（Cancelled にすると短命の取消として嫌疑を積む）。
+    /// <para>
+    /// <b>行が無ければ引数から終端の行を作る</b>（承認の射影より先に届いても、後着の承認は既存 DecisionId として
+    /// 無視されるため終端が保たれる）。<b>既に終端の行は変えない</b>。
+    /// </para>
+    /// </summary>
+    void RecordForgone(Guid decisionId, string symbol, Market market, TradeSide side, int quantity, DateTimeOffset forgoneAt);
 }
