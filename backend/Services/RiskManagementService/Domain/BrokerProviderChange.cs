@@ -58,9 +58,14 @@ public static class BrokerProviderChange
     /// </summary>
     /// <param name="request">変更要求（切替先・理由・確認操作）。</param>
     /// <param name="stage">現在の段階設定（②の警告判定に用いる）。</param>
+    /// <param name="currentStopLossMethod">
+    /// FR-10, ADR-0040 決定1, #819, IADR-0342 決定2: 現在有効な損切りの実行機構。<b>S0 以外が有効なまま実弾へは
+    /// 切り替えられない</b>（省略時は S0 ＝従来の判定と同一）。
+    /// </param>
     public static BrokerProviderChangeAssessment Evaluate(
         BrokerProviderChangeRequest request,
-        StageSettings stage)
+        StageSettings stage,
+        StopLossExecutionMethod currentStopLossMethod = StopLossExecutionMethod.BrokerStopOrder)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(stage);
@@ -97,6 +102,14 @@ public static class BrokerProviderChange
             {
                 rejections.Add(BrokerProviderChangeRejection.LivePhraseMismatch);
             }
+        }
+
+        // FR-10, ADR-0040 決定1, #819, IADR-0342 決定2: 「S1〜S3 が選ばれた状態で実弾へ切り替わる」向きを塞ぐ。
+        // 確認操作（同意・REAL）が揃っていても拒否する——確認操作は実資金を使う意思の確認であり、
+        // 保護逆指値を置かない手法を実弾へ持ち込む許可ではない。
+        if (IsLive(request.Target) && !StopLossMethodChange.IsPermittedOn(currentStopLossMethod, request.Target))
+        {
+            rejections.Add(BrokerProviderChangeRejection.StopLossMethodNotBrokerStop);
         }
 
         return new BrokerProviderChangeAssessment(
@@ -136,6 +149,12 @@ public enum BrokerProviderChangeRejection
 
     /// <summary>発注先が 3 値のいずれでもない。</summary>
     UnknownProvider = 3,
+
+    /// <summary>
+    /// FR-10, ADR-0040 決定1, #819: 損切りの実行機構が S0 以外のまま実弾へ切り替えようとした。
+    /// <b>末尾へ追加する</b>（序数 4）。
+    /// </summary>
+    StopLossMethodNotBrokerStop = 4,
 }
 
 /// <summary>

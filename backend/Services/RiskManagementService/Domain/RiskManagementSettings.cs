@@ -58,4 +58,20 @@ public record RiskManagementSettings(
     /// 明示しない呼び出し（既存の設定生成・テスト）が空売りを有効化してしまわないようにするためである。
     /// </summary>
     public ShortSellSettings ShortSell { get; init; } = TradingDefaults.CreateShortSellSettings();
+
+    /// <summary>
+    /// FR-10, FR-12, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: <b>損切りの実行機構</b>（S0〜S3）。既定は
+    /// <b>S0（ブローカー側逆指値）</b>。
+    /// <para>
+    /// 本値は承認（<c>OrderApproved.StopLossMethod</c>）に載って発注執行へ届き、<b>moomoo SIMULATE の新規買いに限り</b>
+    /// 保護レグの扱いを変える。発注先が実弾（moomoo REAL）の間は S0 以外にできず、S0 以外が有効な間は実弾へ
+    /// 切り替えられない（<see cref="StopLossMethodChange"/> / <see cref="BrokerProviderChange"/>）。
+    /// </para>
+    /// <para>
+    /// 位置指定の引数にせず本体のプロパティに置くのは <see cref="BrokerProvider"/> と同じ理由である——
+    /// <b>既定が安全側（S0）に固定され</b>、明示しない呼び出しや本項目を持たない旧い永続行が
+    /// 「逆指値なしの建玉を許容」を指してしまわないようにするため。
+    /// </para>
+    /// </summary>
+    public StopLossExecutionMethod StopLossMethod { get; init; } = StopLossExecutionMethod.BrokerStopOrder;
 }

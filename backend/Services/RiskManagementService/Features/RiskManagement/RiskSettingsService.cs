@@ -130,7 +130,8 @@ public sealed class RiskSettingsService(
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
 
         var current = store.GetCurrent();
-        var assessment = BrokerProviderChange.Evaluate(request, current.Stage);
+        // FR-10, ADR-0040 決定1, #819, IADR-0342 決定2: 現在の損切りの実行機構も判定へ渡す（S0 以外のまま実弾へ切り替えない）。
+        var assessment = BrokerProviderChange.Evaluate(request, current.Stage, current.StopLossMethod);
         if (!assessment.Accepted)
         {
             return assessment;
@@ -176,6 +177,41 @@ public sealed class RiskSettingsService(
             SettingsChangeType.Stage1MinimumTradeCountChanged,
             actor,
             reason);
+    }
+
+    /// <summary>
+    /// FR-10, FR-12, SC-02, UC-06, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: 損切りの実行機構（S0〜S3）を変更する。
+    /// <para>
+    /// 受理条件は <see cref="StopLossMethodChange.Evaluate"/> が単独で決める。<b>受理しない場合は設定を一切変更せず、
+    /// 履歴も残さない</b>（<see cref="UpdateBrokerProvider"/> と同じ規律）。判定に用いる発注先は<b>保存直前に読んだ
+    /// 現在値</b>であり、同時に発注先が実弾へ変わった場合は版（並行トークン）の競合が 409 で止める。
+    /// </para>
+    /// <para>
+    /// <b>発注先・段階には触れない</b>（`with` が他プロパティを保つ）。生成 AI・サービス間呼び出しは本メソッドへ届かない
+    /// （エンドポイントは OwnerOnly）。
+    /// </para>
+    /// </summary>
+    /// <returns>受理しない理由の全件（空なら受理して保存した）。</returns>
+    public IReadOnlyList<StopLossMethodChangeRejection> UpdateStopLossMethod(
+        StopLossExecutionMethod target, string actor, string? reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        var current = store.GetCurrent();
+        var rejections = StopLossMethodChange.Evaluate(target, reason, current.BrokerProvider);
+        if (rejections.Count > 0)
+        {
+            return rejections;
+        }
+
+        Save(
+            current with { StopLossMethod = target },
+            current.StopLossMethod,
+            target,
+            SettingsChangeType.StopLossMethodChanged,
+            actor,
+            reason!);
+        return rejections;
     }
 
     private void Save(

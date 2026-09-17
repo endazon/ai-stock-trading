@@ -17,5 +17,6 @@
   "drawdownRatio": 0,
   "maxDrawdownRatio": 0.10,
   "openPositionCount": 0,
-  "maxOpenPositions": 3
+  "maxOpenPositions": 3,
+  "stopLossMethod": 0
 }

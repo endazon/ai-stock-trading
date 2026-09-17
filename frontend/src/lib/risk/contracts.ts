@@ -65,6 +65,10 @@ export interface RiskManagementSettings {
   // FR-20, FR-13, SC-02, #423, IADR-0164: **Stage 1 の最小取引件数**（06_daytrading-review §4.1 条件 3）。
   // 2026-08-07 の裁定で設定値になった（既定 100・値域 1〜1000）。変更操作を持つ画面は SC-02 だけである。
   stage1MinimumTradeCount: number;
+  // FR-10, FR-12, SC-02, ADR-0040 決定1・決定3, #819, IADR-0342: **損切りの実行機構**
+  // （StopLossExecutionMethod enum・数値。0=S0 ブローカー側逆指値〔既定〕/ 1=S1 / 2=S2 逆指値なしの建玉を許容 / 3=S3）。
+  // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。入力・表示は #823。
+  stopLossMethod: number;
 }
 
 export interface SettingsChangeEntry {
@@ -101,6 +105,8 @@ export interface RiskStatusView {
   maxDrawdownRatio: number;
   openPositionCount: number;
   maxOpenPositions: number;
+  // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342: 選択中の**損切りの実行機構**（参照専用・数値）。表示は #823。
+  stopLossMethod: number;
 }
 
 // ---- 空売りの現況（GET /risk-controls/short-selling） ----

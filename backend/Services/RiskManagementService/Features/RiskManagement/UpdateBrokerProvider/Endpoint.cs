@@ -59,6 +59,10 @@ internal static class UpdateBrokerProviderEndpoint
             $"実弾（moomoo REAL）への切替には「{BrokerProviderChange.LiveAcknowledgementPhrase}」の入力が必要です。",
         BrokerProviderChangeRejection.UnknownProvider =>
             "provider は 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE のいずれかを指定してください。",
+        // FR-10, ADR-0040 決定1, #819, IADR-0342 決定2: 対処（先に S0 へ戻す）まで書く。
+        BrokerProviderChangeRejection.StopLossMethodNotBrokerStop =>
+            "損切りの実行機構が S0（ブローカー側逆指値）以外のため、実弾（moomoo REAL）へ切り替えられません。"
+            + "先に損切りの実行機構を S0 へ戻してください。",
         _ => "発注先の変更を受理できません。",
     };
 }

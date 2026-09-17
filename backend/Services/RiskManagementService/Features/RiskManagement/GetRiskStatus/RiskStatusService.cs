@@ -61,6 +61,8 @@ public sealed class RiskStatusService(
             DrawdownRatio: snapshot.DrawdownRatio,
             MaxDrawdownRatio: settings.Limits.MaxDrawdownRatio,
             OpenPositionCount: snapshot.OpenPositionCount,
-            MaxOpenPositions: settings.Limits.MaxOpenPositions);
+            MaxOpenPositions: settings.Limits.MaxOpenPositions,
+            // FR-10, SC-03, ADR-0040 決定1, #819: 選択中の損切りの実行機構（参照専用）。
+            StopLossMethod: settings.StopLossMethod);
     }
 }

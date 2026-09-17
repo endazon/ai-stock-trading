@@ -184,7 +184,8 @@
     "CycleStartedAt": "DateTimeOffset?",
     "CycleTrigger": "String",
     "DecisionId": "Guid",
-    "Intent": "OrderIntent"
+    "Intent": "OrderIntent",
+    "StopLossMethod": "StopLossExecutionMethod"
   },
   "OrderCancelled": {
     "CancelledAt": "DateTimeOffset",
@@ -279,6 +280,18 @@
     "StopDecisionId": "Guid",
     "StopOrderId": "String",
     "TriggerPrice": "Decimal"
+  },
+  "ProtectiveStopWaived": {
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "Method": "StopLossExecutionMethod",
+    "OccurredAt": "DateTimeOffset",
+    "ProductType": "ProductType",
+    "Provider": "BrokerProvider",
+    "Quantity": "Int32",
+    "Side": "TradeSide",
+    "StopLossPrice": "Decimal?",
+    "Symbol": "String"
   },
   "ReportConfirmed": {
     "Actor": "String",
