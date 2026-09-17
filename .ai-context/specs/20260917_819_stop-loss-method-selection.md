@@ -94,5 +94,8 @@ plan_refs:
 - バックエンド↔フロントの契約フィクスチャ（`frontend/src/testing/contract-fixtures/risk-controls.{settings,status}.json`）は
   `UPDATE_CONTRACT_FIXTURES=1` で再生成し、フロントの契約型（`frontend/src/lib/risk/contracts.ts`）へ項目を足した（画面は変更しない）。
 - `PUT /settings/broker-provider` の 400 文言に新しい拒否理由（S0 以外のまま実弾へ切り替えない）を足した。
+- **BFF（`/bff/risk-controls/*`）へは経路を足さない。** BFF は経路を明示列挙しており（`RiskControlsBffEndpoints`・
+  `BffPassThroughTests` の全経路表。MSP 側の同趣旨のテストもある）、画面が消費し始める #823 で基盤側と揃えて足す。
+  それまでの選択は risk-management の `PUT /risk-controls/settings/stop-loss-method` を利用者トークンで直接呼ぶ。
 - 計画 ADR のレンジ宣言（`.claude/rules/traceability.repo.md`）を `ADR-0001..0040` へ更新した（`check-trace-blocks.js` と
   `check-commit-messages.js` が ADR-0040 を実在として扱うため。計画リポ `origin/main` の `07_adr/` と公開 `kg-ranges.json` の実測）。
