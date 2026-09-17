@@ -158,6 +158,14 @@ public sealed class ProtectiveStopCoverageLostNotificationHandler(INotificationS
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-10, FR-09, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除（ペーパーで免除）を
+// Discord へ通知する（Warning）。**逆指値なしの建玉が意図して存在する**ことを利用者に明示する。
+public sealed class ProtectiveStopWaivedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(ProtectiveStopWaived message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // FR-04, FR-06, FR-09, ADR-0017 決定4-(2), #335, IADR-0217: フォールバック発火を Discord へ警告通知する
 // （可視化 3 経路の②）。**埋もれない経路で出す**ことが決定の目的である。
 public sealed class LlmFallbackFiredNotificationHandler(INotificationSender sender)

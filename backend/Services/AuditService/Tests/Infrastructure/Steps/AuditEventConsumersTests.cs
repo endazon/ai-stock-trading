@@ -379,6 +379,28 @@ public class AuditEventConsumersTests
         await host.StopAsync();
     }
 
+    // FR-10, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除（ペーパーで免除）が台帳に残る。
+    [Fact]
+    public async Task 保護逆指値の免除は逆指値なしの建玉の理由として台帳に残る()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var entryDecisionId = Guid.NewGuid();
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new ProtectiveStopWaived(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate,
+                DateTimeOffset.UtcNow));
+        session.Executed.MessagesOf<ProtectiveStopWaived>().Should().NotBeEmpty();
+
+        var entry = store.GetByCorrelation(entryDecisionId)
+            .Should().ContainSingle(e => e.EventType == nameof(ProtectiveStopWaived)).Subject;
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("ペーパーで免除");
+
+        await host.StopAsync();
+    }
+
     // NFR-02, #689, IADR-0307: **記録完了（台帳へ 1 行書いた時点）が NFR-02 の終点である。**
     // 計画は「収集→判断→発注→記録」の 1 周を 10 分以内と定めており、発注完了で代表すると
     // 構造的に過少報告になる。起点はイベントが運んでくるため、突き合わせ（join）も状態も要らない。

@@ -110,6 +110,37 @@ public class OrderApprovedConsumerTests
             _inner.CancelOrderAsync(orderId, ct);
     }
 
+    // FR-10, ADR-0040 決定1, #819, IADR-0342: moomoo SIMULATE を名乗り、発注は paper に委譲するブローカ
+    // （S0 以外の手法は SIMULATE でしか適用されないため）。逆指値の発注回数を数える。
+    private sealed class SimulatePaperBroker : IBrokerAdapter, IProtectiveOrderBroker
+    {
+        private readonly PaperBrokerAdapter _inner = new();
+
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public int StopPlaceCount { get; private set; }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            _inner.PlaceOrderAsync(intent, ct);
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default)
+        {
+            StopPlaceCount++;
+            return _inner.PlaceStopOrderAsync(closeIntent, triggerPrice, decisionId, ct);
+        }
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.GetOrderAsync(orderId, ct);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.CancelOrderAsync(orderId, ct);
+    }
+
     private const string ServiceName = "ai-stock-trading.order-execution-service";
 
     private static Task<IHost> NewHostAsync(IExecutedOrderStore store, IBrokerAdapter broker) =>
@@ -268,6 +299,56 @@ public class OrderApprovedConsumerTests
         lost.CloseIntent!.PositionEffect.Should().Be(PositionEffect.Close);
         // 手仕舞いレグも記録され、台帳の建玉を減らす経路（OrderExecuted 相関）に載る。
         store.GetAll().Should().Contain(r => r.DecisionId == lost.CloseDecisionId);
+
+        await host.StopAsync();
+    }
+
+    // FR-10, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: SIMULATE＋S2 の新規買いは保護逆指値を発注せず、
+    // 免除の事実（ProtectiveStopWaived）だけが発行される。🔴 発行が欠けると監査にも通知にも
+    // 「逆指値なしの建玉が意図して存在する」ことが残らない。
+    [Fact]
+    public async Task SIMULATEでS2の新規買いは保護逆指値を発注せずProtectiveStopWaivedが発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var broker = new SimulatePaperBroker();
+        using var host = await NewHostAsync(store, broker);
+
+        var decisionId = Guid.NewGuid();
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(
+            decisionId, NewIntent(), 10, DateTimeOffset.UtcNow,
+            StopLossMethod: StopLossExecutionMethod.NoProtectiveStop));
+
+        broker.StopPlaceCount.Should().Be(0, "S2 は保護レグを発注しない");
+        session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle();
+        session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().BeEmpty();
+        session.Sent.MessagesOf<ProtectiveStopCoverageLost>().Should().BeEmpty("建玉は解消しない");
+        var waived = session.Sent.MessagesOf<ProtectiveStopWaived>().Should().ContainSingle().Which;
+        waived.EntryDecisionId.Should().Be(decisionId);
+        waived.Method.Should().Be(StopLossExecutionMethod.NoProtectiveStop);
+        waived.Provider.Should().Be(BrokerProvider.MoomooSimulate);
+
+        await host.StopAsync();
+    }
+
+    // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: S0 以外が SIMULATE 以外（ここでは内蔵 paper）へ届いたら
+    // 発注せず、手法による見送りとして発行する。
+    [Fact]
+    public async Task SIMULATE以外へS2の承認が届いたら発注せず手法による見送りを発行する()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var broker = new CountingPaperBroker();
+        using var host = await NewHostAsync(store, broker);
+
+        var approved = new OrderApproved(
+            Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow,
+            StopLossMethod: StopLossExecutionMethod.NoProtectiveStop);
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved);
+
+        broker.PlaceCount.Should().Be(0);
+        session.Sent.MessagesOf<OrderDispatchForgone>().Should().ContainSingle()
+            .Which.Reason.Should().Be(OrderDispatchForgoneReason.StopLossMethodNotPermitted);
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
+        session.Sent.MessagesOf<ProtectiveStopWaived>().Should().BeEmpty();
 
         await host.StopAsync();
     }

@@ -400,6 +400,27 @@ public static class AuditEntryFactory
                 : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の**免除**（ペーパーで免除）。
+    // 🔴 保護喪失（ProtectiveStopCoverageLost）とは別の EventType で残す——台帳の「建玉あり ⇒ 有効な逆指値あり
+    // （または解消済み）」の読みに対し、**利用者の選択で逆指値を置かなかった建玉**が存在することを明示する。
+    // 相関はエントリーの DecisionId（エントリーと 1 本で辿れる。ProtectiveStopPlaced と同じ）。
+    public static AuditEntry From(ProtectiveStopWaived e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ProtectiveStopWaived), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 保護逆指値をペーパーで免除（損切りの実行機構 {MethodLabel(e.Method)}・発注先 {e.Provider}）"
+            + $" {e.Side} 数量{e.Quantity} 損切りライン{(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
+            + "——**逆指値なしの建玉を保持する（システムは決済しない）**"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // #819, IADR-0342: 計画の手法 ID（S0〜S3）で表示する。enum 名だけでは計画の表と突き合わせにくい。
+    private static string MethodLabel(StopLossExecutionMethod method) => method switch
+    {
+        StopLossExecutionMethod.BrokerStopOrder => "S0",
+        StopLossExecutionMethod.SoftwareStop => "S1",
+        StopLossExecutionMethod.NoProtectiveStop => "S2",
+        StopLossExecutionMethod.AlternativeBrokerOrderType => "S3",
+        _ => method.ToString(),
+    };
+
     // FR-01, FR-11, #336, ADR-0020 決定3: 情報源の欠測による縮退。
     //
     // 相関は**カテゴリごと**に分ける（ニュース系と開示系は独立に劣化する）。欠測と回復を同じ相関に置くことで、

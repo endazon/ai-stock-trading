@@ -477,6 +477,18 @@ public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore stor
     }
 }
 
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除（ペーパーで免除）を
+// 中央監査台帳へ記録する。**逆指値なしの建玉が意図して存在する**ことの一次証跡であり、無いと保護喪失の記録
+// （ProtectiveStopCoverageLost）が 1 件も無いまま無防備な建玉が並ぶ状態を、事後に説明できない。
+public sealed class ProtectiveStopWaivedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ProtectiveStopWaived message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
 //
 // 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**

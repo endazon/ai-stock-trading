@@ -41,6 +41,8 @@ public sealed class OrderApprovedHandler(
         if (result.Forgone is { } forgone)
         {
             metrics.RecordOrderDispatchForgone(forgone.Reason);
+            // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 手法による拒否は OrderExecutionAppService が
+            // Error で記録済みである（ここでは他の見送りと同じ 1 行を残す）。
             logger.LogWarning(
                 "発注見送り: DecisionId={DecisionId} 銘柄={Symbol} 理由={Reason}（再試行しません）",
                 forgone.DecisionId, forgone.Intent.Symbol, forgone.Reason);
@@ -75,6 +77,16 @@ public sealed class OrderApprovedHandler(
                 "保護逆指値を発注: EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} トリガー={Trigger} 試行={Attempt}",
                 stopPlaced.EntryDecisionId, stopPlaced.StopOrderId, stopPlaced.TriggerPrice, stopPlaced.Attempt);
             await bus.PublishAsync(stopPlaced).ConfigureAwait(false);
+        }
+
+        // FR-10, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除（ペーパーで免除）。
+        // 監査台帳へ記録され、Discord へ通知される。**逆指値なしの建玉が意図して存在する**ことを埋もれさせない。
+        if (result.StopWaived is { } waived)
+        {
+            logger.LogWarning(
+                "保護逆指値を免除（S2・ペーパーで免除）: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity} 損切りライン={StopLossPrice} 発注先={Provider}",
+                waived.EntryDecisionId, waived.Symbol, waived.Quantity, waived.StopLossPrice, waived.Provider);
+            await bus.PublishAsync(waived).ConfigureAwait(false);
         }
 
         if (result.CoverageLost is { } coverageLost)

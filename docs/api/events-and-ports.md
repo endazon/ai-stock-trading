@@ -3,15 +3,15 @@ title: 取引ドメインの通信契約（イベント・ポート）通信仕�
 type: api-spec
 status: draft
 created: 2026-07-09
-updated: 2026-08-21
+updated: 2026-09-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-09, FR-10, FR-11, FR-12, UC-02, UC-06]
-adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, MSP:IADR-0049]
-specs: []
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354]
+adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0342, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #819]
 -->
 
 
@@ -43,9 +43,10 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354]
 | イベント | 発行元 | 主なフィールド | 用途 |
 | --- | --- | --- | --- |
 | `TradeDecisionMade` | 取引判断 | DecisionId, Intent(OrderIntent), Rationale, DecidedAt | 売買判断の確定（判断根拠つき） |
-| `OrderApproved` | リスク管理 | DecisionId, Intent, ApprovedQuantity, ApprovedAt | 発注前検証を通過し発注執行へ |
+| `OrderApproved` | リスク管理 | DecisionId, Intent, ApprovedQuantity, ApprovedAt, StopLossMethod（損切りの実行機構。任意・既定 0＝S0） | 発注前検証を通過し発注執行へ。発注執行は承認が運ぶ手法で保護逆指値を扱う（#819） |
 | `OrderRejected` | リスク管理 | DecisionId, Intent, Reasons(RejectionReason[]), RejectedAt | 発注前拒否（理由列挙。監査ログと Discord 通知が購読） |
 | `OrderExecuted` | 発注執行 | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |
+| `ProtectiveStopWaived` | 発注執行 | EntryDecisionId, Symbol, Market, Side, ProductType, Quantity, StopLossPrice, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S2 が選ばれた新規買いに保護逆指値を発注せず建玉を保持した（ペーパーで免除）。監査ログと Discord 通知が購読（#819） |
 
 市場監視のイベント（価格変動監視と、変動トリガーによる取引の起動に対応する）。`EventId`（Guid）で 1 検知を相関する
 （取引判断サイクルとは別系統。市場監視は検知してイベントを発行し、損切りの執行はリスク管理が担うという責務境界による）。

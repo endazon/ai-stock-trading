@@ -278,6 +278,20 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("950");
     }
 
+    // FR-10, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は Warning（保護喪失の Critical と分ける）で、
+    // 手法 S2・ペーパーで免除・「決済しない」が読める。
+    [Fact]
+    public void 保護逆指値の免除は手法と決済しないことが読めるWarningになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopWaived(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Title.Should().Contain("ペーパーで免除").And.Contain("S2");
+        msg.Content.Should().Contain("決済しません").And.Contain("950").And.Contain("MoomooSimulate");
+    }
+
     [Fact]
     public void 保護喪失のNoneは直ちに確認を求めるCriticalになる()
     {
@@ -319,6 +333,8 @@ public class NotificationFormatterTests
     [InlineData(OrderDispatchForgoneReason.BrokerUnavailable, "接続")]
     [InlineData(OrderDispatchForgoneReason.StopLossPriceMissing, "損切り価格")]
     [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported, "逆指値に対応")]
+    // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 手法による見送りは「S0 へ戻す」が対処である。
+    [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted, "S0 へ戻して")]
     public void 見送りの理由は日本語で読み分けられる(OrderDispatchForgoneReason reason, string expected)
     {
         // 見送りは 3 つの原因で起こり、**対処がそれぞれ違う**（OpenD の復旧／判断側の損切り価格の欠落／
