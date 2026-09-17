@@ -5,6 +5,7 @@ using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
@@ -47,6 +48,66 @@ public class LlmPricingWiringTests
         (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(3.601m);
     }
 
+    // #817: env 名 `LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`（シェル識別子）が構成キー
+    // `LlmPricing:PerModel:claude_sonnet_5:*` になり、応答が名乗る `claude-sonnet-5` の計上額へ届く。
+    [Fact]
+    public async Task アンダースコア形のモデル別単価が計上額に反映される()
+    {
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude_fable_5:InputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude_fable_5:OutputPer1kTokens"] = "8.186",
+        });
+
+        (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(3.601m);
+    }
+
+    // #817 fail-loud: ゲートウェイが構成されているのに単価が実質 0（表が空・従来キーも無い）なら起動時に警告する。
+    // 例外は投げない（IADR-0055: 0 は無害な fail-safe のまま。目的は無音で 0 円計上にしないこと）。
+    [Fact]
+    public void ゲートウェイ構成ありで単価が無ければ起動時に警告する()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmGateway:BaseUrl"] = "http://llmgateway.invalid",
+        }, logs);
+
+        _ = factory.CreateClient();
+
+        logs.Warnings.Should().Contain(m => m.Contains("LLM 単価が未設定"));
+    }
+
+    [Fact]
+    public void 単価があれば起動時に警告しない()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmGateway:BaseUrl"] = "http://llmgateway.invalid",
+            ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+        }, logs);
+
+        _ = factory.CreateClient();
+
+        logs.Warnings.Should().NotContain(m => m.Contains("LLM 単価が未設定"));
+    }
+
+    // ゲートウェイ未構成（プレースホルダ＝LLM を呼ばない）なら 0 円は実害が無いので警告しない（本番既定の静けさを保つ）。
+    [Fact]
+    public void ゲートウェイ未構成なら起動時に警告しない()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = new Factory(logs: logs);
+
+        _ = factory.CreateClient();
+
+        logs.Warnings.Should().NotContain(m => m.Contains("LLM 単価が未設定"));
+    }
+
     // 基準4（#303）: 表に無いモデルは最大単価（fable-5）へ倒れる＝過小計上を作らない。
     [Fact]
     public async Task 表に無いモデルは最大単価で計上される()
@@ -84,7 +145,33 @@ public class LlmPricingWiringTests
         (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(0m);
     }
 
-    private sealed class Factory(IDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _warnings = new();
+
+        public IReadOnlyCollection<string> Warnings => _warnings.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_warnings);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(System.Collections.Concurrent.ConcurrentQueue<string> warnings) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (logLevel == LogLevel.Warning)
+                    warnings.Enqueue(formatter(state, exception));
+            }
+        }
+    }
+
+    private sealed class Factory(IDictionary<string, string?>? settings = null, ILoggerProvider? logs = null)
+        : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -100,6 +187,11 @@ public class LlmPricingWiringTests
                 // ADR-0013, IADR-0129, #354: 実 RabbitMQ を避けて Wolverine の外部トランスポートを無効化する
                 // （ハンドラの発見は Program.cs 側の配線が担う）。
                 services.DisableAllExternalWolverineTransports();
+
+                // #817: Program.cs は AddSerilog で ILoggerFactory を差し替えるため、ConfigureLogging の provider には届かない。
+                // 捕捉用の ILoggerFactory を後勝ちで登録する（app.Logger も ILoggerFactory から作られる）。
+                if (logs is not null)
+                    services.AddSingleton<ILoggerFactory>(new LoggerFactory([logs]));
             });
         }
     }

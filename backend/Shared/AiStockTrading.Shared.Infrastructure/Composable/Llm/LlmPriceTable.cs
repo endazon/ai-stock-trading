@@ -11,12 +11,16 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 // （共有プロジェクトへ構成パッケージを持ち込まないため、単価は文字列で受ける）。
 //
 // fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
-//   1. 完全一致（大小無視）           → その単価
+//   1. 一致（大小無視・`-` と `_` を同一視） → その単価
 //   2. 未知・モデル名なし かつ 表が非空 → 表の**成分ごとの最大単価**
 //   3. 表が空                         → 既定ペア（従来キー・未設定 0）
 // 費用統制の危険側は**過小計上**である。未知モデルを 0 に倒すと月次上限（¥15,000）が構造的に効かなくなり、
 // IADR-0114 決定6 が直した「毎回 ¥0 計上」が未知モデルの形で再発する。過大計上は統制が実態より早く効くだけ。
 // 解決は例外を投げない（計測は best-effort＝LLM 応答を壊さない・IADR-0055）。
+//
+// #817（IADR-0122 2026-09-17 追記）: 単価は env 名 `LlmPricing__PerModel__<model>__*` で注入されるが、イメージの
+// `sh -c` 起動（dash）は `-` を含む（シェル識別子でない）env 名を exec 先へ渡さない。稼働では表が空のまま全呼び出しが
+// 0 円計上になっていた。env 名はモデル ID の `-` を `_` で書き（`claude_sonnet_5`）、照合は双方を正規化して同一視する。
 public sealed class LlmPriceTable
 {
     private readonly IReadOnlyDictionary<string, LlmPrice> _perModel;
@@ -49,7 +53,7 @@ public sealed class LlmPriceTable
                 continue;
             if (ParsePricePer1k(input) is not { } inputPrice || ParsePricePer1k(output) is not { } outputPrice)
                 continue;
-            table[model.Trim()] = new LlmPrice(inputPrice, outputPrice);
+            table[Normalize(model)] = new LlmPrice(inputPrice, outputPrice);
         }
 
         // 未知モデルは成分ごとの最大へ倒す（入力が最大の行と出力が最大の行が別でも過小にしない）。
@@ -65,16 +69,25 @@ public sealed class LlmPriceTable
         return new LlmPriceTable(table, unknown, fallback);
     }
 
+    /// <summary>
+    /// 単価が実質 0 か（モデル別の表が空 かつ 既定ペアも入出力とも 0）。真なら全呼び出しが 0 円で計上される。
+    /// 解決は変えない（0 は IADR-0055 の無害な fail-safe）。起動時の警告（#817）の判定にだけ使う。
+    /// </summary>
+    public bool IsEffectivelyZero => _perModel.Count == 0 && _fallback == LlmPrice.Zero;
+
     /// <summary>実効モデル名から単価を引く。未知・null・空は安全側（過小計上を避ける側）へ倒す。</summary>
     public LlmPrice Resolve(string? model)
     {
         if (_perModel.Count == 0)
             return _fallback;
 
-        return !string.IsNullOrWhiteSpace(model) && _perModel.TryGetValue(model.Trim(), out var price)
+        return !string.IsNullOrWhiteSpace(model) && _perModel.TryGetValue(Normalize(model), out var price)
             ? price
             : _unknownModel;
     }
+
+    // #817: モデル ID の `_` と `-` を同一視する（env 名はシェル識別子に `-` を書けない）。大小は辞書の比較器が無視する。
+    private static string Normalize(string model) => model.Trim().Replace('_', '-');
 
     // 単価の構成読み取り（円/1k トークン）。解析不能・非正値は null＝「設定されていない」として扱う。
     private static decimal? ParsePricePer1k(string? value) =>

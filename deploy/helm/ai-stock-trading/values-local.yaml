@@ -230,16 +230,18 @@ services:
       # 自前の IConfiguration から組み立てる。trade-decision の単価表を共有しない）。本表を投入しないと
       # report-monthly/weekly/daily の LLM 費用は fail-safe ペア（未設定 0）へ落ちて ¥0 計上のままになる
       # （#243 実測で発見。値・出典・fail-safe の詳細な説明は trade-decision.extraEnv の同名コメントを参照）。
-      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
-      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude-opus-5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
-      - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens, value: "0.327" }   # $2/1M（report-daily・フォールバック先）
-      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude-haiku-4-5__InputPer1kTokens, value: "0.164" }  # $1/1M（report-daily フォールバック先）
-      - { name: LlmPricing__PerModel__claude-haiku-4-5__OutputPer1kTokens, value: "0.819" } # $5/1M
+      # 🔴 env 名ではモデル ID の `-` を `_` で書く（`-` を含む env 名は起動シェルが落とし ¥0 計上になる・#817。
+      #   詳細は trade-decision.extraEnv の同名コメント）。
+      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
+      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
+      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
+      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
+      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（report-daily・フォールバック先）
+      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（report-daily フォールバック先）
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -333,16 +335,21 @@ services:
       #   ※ 為替・他モデルの公開単価はいずれも変動する。乖離が出たら本値と実測値を更新する。
       #   ※ 報告書散文（report-service）は #282 で計上経路（自前の ILlmUsageReporter）を実装済み
       #     （PR f1b26d4b・IADR-0121）。本表は trade-decision・report-service の両方に効く。
-      - { name: LlmPricing__PerModel__claude-fable-5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
-      - { name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens, value: "8.186" }   # $50/1M
-      - { name: LlmPricing__PerModel__claude-opus-5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude-opus-5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude-opus-4-8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
-      - { name: LlmPricing__PerModel__claude-opus-4-8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens, value: "0.327" }   # $2/1M（trade-decision・report-daily）
-      - { name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude-haiku-4-5__InputPer1kTokens, value: "0.164" }  # $1/1M
-      - { name: LlmPricing__PerModel__claude-haiku-4-5__OutputPer1kTokens, value: "0.819" } # $5/1M
+      # 🔴 env 名ではモデル ID の `-` を `_` で書く（claude-sonnet-5 → claude_sonnet_5。#817）。イメージの
+      #   ENTRYPOINT `sh -c "exec dotnet …"` のシェル（dash）は、シェル識別子でない（`-` を含む）env 名を exec 先へ
+      #   渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ 0 件しか届かず、表が空＝全呼び出し ¥0 計上に
+      #   なっていた（稼働実測 2026-09-17: Pod env 10 件 → /proc/1/environ 0 件）。LlmPriceTable は `-` と `_` を
+      #   同一視して応答の実効モデル名（claude-sonnet-5）と照合する。helm.yml が描画後の全 env 名を識別子形で検査する。
+      - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
+      - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
+      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
+      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
+      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
+      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（trade-decision・report-daily）
+      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

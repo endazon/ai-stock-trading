@@ -136,6 +136,41 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
+      # #817 / IADR-0122 追記: コンテナの env 名はシェル識別子（^[A-Za-z_][A-Za-z0-9_]*$）に限る。イメージの
+      # ENTRYPOINT は `sh -c "exec dotnet …"` であり、シェル（dash）は識別子でない env 名（例: `-` を含む
+      # LlmPricing__PerModel__claude-sonnet-5__*）を exec 先へ渡さない。Pod 定義には在るのにプロセスへ 0 件しか届かず、
+      # LLM 単価の表が空＝全呼び出し ¥0 計上になっていた（稼働実測）。**描画後**の `env:` 直下の `name:` を全件抜き出して検査する
+      # （volumeMounts / ports / secretKeyRef の name は対象外）。抽出 0 件は抽出器の破綻として落とす（無検査の緑を作らない）。
+      - name: Assert container env names are shell identifiers
+        run: |
+          env_names() {
+            awk '/^ *env: *$/ { match($0, /^ */); ind = RLENGTH; inenv = 1; next }
+              inenv {
+                if ($0 ~ /^ *$/) next
+                match($0, /^ */)
+                if (RLENGTH <= ind) { inenv = 0; next }
+                if (RLENGTH == ind + 2 && $0 ~ /^ *- *[{]? *name: /) {
+                  n = $0; sub(/^ *- *[{]? *name: */, "", n); sub(/[ ,}].*$/, "", n); gsub(/"/, "", n); print n
+                }
+              }'
+          }
+          check() {
+            label="$1"; shift
+            names="$(helm template ast "$CHART" "$@" | env_names)"
+            total="$(printf '%s\n' "$names" | grep -c . || true)"
+            bad="$(printf '%s\n' "$names" | grep -vE '^[A-Za-z_][A-Za-z0-9_]*$' || true)"
+            echo "[$label] env names: $total"
+            if [ "$total" -eq 0 ]; then
+              echo "::error::[$label] 描画から env 名を 1 件も抽出できなかった（抽出器か chart の破綻）。"; exit 1
+            fi
+            if [ -n "$bad" ]; then
+              echo "::error::[$label] シェル識別子でない env 名がある（sh -c 起動で dotnet へ届かない・#817。モデル ID 等の - は _ で書く）:"
+              printf '%s\n' "$bad"
+              exit 1
+            fi
+          }
+          check default
+          check values-local -f "$CHART/values-local.yaml" --set opend.enabled=true
       # #132 / IADR-0060: 既定が no-op（fail-safe）であることを描画で検査する。実弾防止と同じ性質の
       # 「既定で外部へ触らない」保証であり、うっかり既定を反転させたら CI で落とす。
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
@@ -341,12 +376,12 @@ jobs:
           # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
           # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
           # （global 単一ペアの opus 基準では trade-decision＝sonnet-5 が約 2.5 倍の過大計上だった）。
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-sonnet-5__InputPer1kTokens' | grep -q 'value: "0.327"' \
+          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens' | grep -q 'value: "0.327"' \
             || { echo "::error::values-local で claude-sonnet-5 の入力単価 0.327 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-sonnet-5__OutputPer1kTokens' | grep -q 'value: "1.637"' \
+          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens' | grep -q 'value: "1.637"' \
             || { echo "::error::values-local で claude-sonnet-5 の出力単価 1.637 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
           # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude-fable-5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
+          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
             || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
           # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）を収集へ合流させる。provider の列挙漏れは全体の空振りになる。
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'sec-edgar' \

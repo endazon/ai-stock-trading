@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-09-09
+updated: 2026-09-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
+ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, MSP#266, MSP#635, planning#54]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -224,6 +224,11 @@ Reconciliation:
 ## LLM 単価の定期見直し（#303。LLM 費用のモデル別単価解決）
 
 LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__PerModel__<model-id>__*`・円/1k トークン）で計上する。
+**env 名ではモデル ID の `-` を `_` で書く**（例: `LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`）。
+コンテナはシェル経由で起動するため、`-` を含む env 名はプロセスへ届かず、単価表が空のまま全呼び出しが 0 円で計上される
+（照合側は `-` と `_` を同一視する）。LLM ゲートウェイを構成しているのに単価が実質 0 なら、trade-decision / report が
+起動時に `LLM 単価が未設定` で始まる WARNING を出す。**反映後は起動ログにこの WARNING が無いこと、
+`LLM 費用計上イベントを発行 … amount=` が 0 より大きいことを確認する。**
 単価は外部の公開価格と為替から導いた値であり、**恒久値ではない**。放置すると月次上限（¥15,000）の判定が
 実態からずれる（過大なら取引機会を失い、過小なら上限を素通りする）。
 
