@@ -5,7 +5,7 @@ status: done
 related_ids: [NFR-01, ADR-0006]
 author: endazon (with Claude Code)
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_infrastructure-and-deployment.md
 ---
@@ -46,3 +46,15 @@ README・values・Dockerfile に GC 設定の記述は無い（追随なし）�
 | 1 | 既定描画の全 .NET Deployment（11 件）に `DOTNET_GCHeapHardLimitPercent=60` が在る | `helm template` ＋ helm.yml と同じ awk で欠落 0 件（ローカル・CI） |
 | 2 | OpenD の Deployment 描画は変わらない（`opend.enabled=true`・values-local） | develop と本ブランチの描画 diff が deployment.yaml 由来の env 追加のみ |
 | 3 | 稼働で risk-management の RSS が limit 内で頭打ちになり再起動が増えない | デプロイ後に `kubectl top` と restarts を観測し AST#342 / #782 に記録 |
+
+## ［2026-09-17 追記 / #811］受け入れ基準 3 は稼働で成立しなかった
+
+- 基準 3（RSS が limit 内で頭打ち・再起動が増えない）は**不成立**。配備（PR #805・14:07Z マージ）の 10 分後に audit-service が
+  RSS ≈476Mi で OOMKilled になり（#808）、以後 #808（PR #810）・#812（PR #813）の適用後も audit-service・risk-management の
+  再起動が続いた（#812 のコメント。PR #814 の適用前は同じ経過時間で audit 453Mi / risk 361Mi・再起動が 5 分周期。#811 のコメント）。
+- 起点の「`DOTNET_GCHeapHardLimitPercent=60` の暫定適用で RSS 472Mi 頭打ち」は誤読だった。GC ヒープ側は audit で ≈64Mi と上限
+  （≈307Mi）に遠く、伸びていたのは GC ヒープ外の Wolverine 実行時 Roslyn コンパイルの作業メモリで、新しい型のメッセージが
+  来なくなって止まって見えただけである（`20260916_808_audit-service-heap-external-growth.md` §根本原因）。
+- 是正の経緯: #808（`MALLOC_ARENA_MAX=2`）→ #812（固定 mmap / trim 閾値）はいずれも保持量を減らさず、**#811（PR #814。
+  `codegen write`＋`TypeLoadMode.Static`）で伸びが止まった**（2026-09-16 16:49Z の実測で 11 サービスとも再起動 0。#811 のコメント）。
+- 本 env は GC ヒープの上限として無害なので据え置く。`deployment.yaml` の #782 コメントにも同日付の注記を置いた。

@@ -15,6 +15,7 @@ namespace AiStockTrading.TestSupport.PlatformShim.Tests;
 // ただし Wolverine のチェーン組み立ては遅延なので、Static にしただけでは生成コードの無いイメージが「起動・readiness・
 // キュー宣言・consumer 接続はすべて成功したまま、メッセージだけを処理しない」形で静かに壊れる。共通ヘルパは
 // Static のとき起動時に全生成型の存在を表明し、欠けていれば起動を失敗させる。
+[Collection(ProcessEnvironmentCollection.Name)]
 public class WolverineTypeLoadModeTests
 {
     private const string ServiceName = "ai-stock-trading.type-load-mode-probe-service";
@@ -59,14 +60,26 @@ public class WolverineTypeLoadModeTests
     }
 
     // 既定（env なし・生成物なし）の共通配線は Dynamic を選ぶ（既存の WolverineHandlerCodegenTests が実際に動く前提）。
+    // #811（PR #814 の監査指摘）: 共通配線は実プロセスの環境変数を読むので、テストを実行する環境に
+    // WOLVERINE_TYPE_LOAD_MODE が在ると結果が変わる。テストの間だけ未設定にして元へ戻し、周囲の環境に依らせない
+    // （書き換えが並列の他テストへ漏れないよう、本クラスは並列化しないコレクションで走らせる）。
     [Fact]
     public void 共通配線の既定は_Dynamic_である()
     {
-        var options = new WolverineOptions();
+        var ambient = Environment.GetEnvironmentVariable(WolverineExtensions.TypeLoadModeVariable);
+        Environment.SetEnvironmentVariable(WolverineExtensions.TypeLoadModeVariable, null);
+        try
+        {
+            var options = new WolverineOptions();
 
-        options.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+            options.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
 
-        options.CodeGeneration.TypeLoadMode.Should().Be(TypeLoadMode.Dynamic);
+            options.CodeGeneration.TypeLoadMode.Should().Be(TypeLoadMode.Dynamic);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(WolverineExtensions.TypeLoadModeVariable, ambient);
+        }
     }
 
     // 呼び出し側が先に決めた方式は上書きしない（JasperFx の TypeLoadModeHasChanged と同じ意味）。
@@ -106,6 +119,13 @@ public class WolverineTypeLoadModeTests
         await act.Should().ThrowAsync<MissingTypeException>()
             .WithMessage($"*{nameof(TypeLoadModeProbeEvent)}*");
     }
+}
+
+// #811: プロセス環境変数を一時的に書き換えるテストを、他のテストと並列に走らせないためのコレクション。
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ProcessEnvironmentCollection
+{
+    public const string Name = "process-environment";
 }
 
 // 検証用のイベントとハンドラ（Shared.Contracts へ依存させないため本テストプロジェクトに置く）。

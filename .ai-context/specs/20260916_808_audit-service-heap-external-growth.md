@@ -5,7 +5,7 @@ status: done
 related_ids: [NFR-01, ADR-0006, IADR-0129]
 author: endazon (with Claude Code)
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_infrastructure-and-deployment.md
 ---
@@ -112,3 +112,16 @@ OOMKilled されたコンテナのログ（WRN は DataProtection の 2 行の�
 ## 計画書との差異
 
 - 差異: なし（ADR-0006 の配備方式の範囲内。limit を変えない）。
+
+## ［2026-09-17 追記 / #811］受け入れ基準 3 は稼働で成立しなかった・「上限 ≈2×64MiB」の表現の訂正
+
+- 基準 3（アリーナ合計が ≈128MiB で止まり RSS が 512Mi の内側に留まる）は**不成立**。配備 9 秒後に audit-service が再び OOMKilled になり、
+  積み上がる先が per-thread アリーナから main arena の `[heap]` へ移っただけで、傾き（≈52 MB × コンパイル回数）は同じだった
+  （#812 と、その仕様書 `20260916_812_malloc-thresholds-interim.md`）。
+- 「§設計」の「上限 ≈2×64MiB」は誤り。`MALLOC_ARENA_MAX` は**アリーナの数**の上限であってサイズの上限ではなく、非 main アリーナは
+  64 MiB の heap を複数連ねられる。狙いとして正しい言い方は「アリーナ数を 2 に固定し、作業メモリをスレッド間で再利用させる」である。
+- §未検証の二択は「解放されていない」側だった: #812（PR #813）で閾値を固定しても保持先が mmap 領域へ移るだけで総量は変わらなかった
+  （#812 のコメント）。恒久策 #811（PR #814）で実行時コンパイルが 0 件になり、伸びが止まった（#811 のコメント）。
+- §設計の恒久策の記述「11 サービスの `Program.cs`（`RunJasperFxCommands`）」は、実装では共通の shim `RunAiStockTradingAsync` が
+  `--` で始まる引数を `RunAsync` へ、それ以外を `RunJasperFxCommands` へ振り分ける形になった（IADR-0129 の 2026-09-17 追記 決定 6-5）。
+- `MALLOC_ARENA_MAX=2` は無害なので据え置き、#811 の後の要否を再評価する（`deployment.yaml` のコメントにも同日付で注記した）。

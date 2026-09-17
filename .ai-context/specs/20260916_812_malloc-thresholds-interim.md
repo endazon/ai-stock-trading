@@ -5,7 +5,7 @@ status: done
 related_ids: [NFR-01, ADR-0006, IADR-0129]
 author: endazon (with Claude Code)
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_infrastructure-and-deployment.md
 ---
@@ -114,3 +114,16 @@ glibc は Ubuntu 24.04 の **2.39**（`/lib/x86_64-linux-gnu/libc.so.6`）。
 ## 計画書との差異
 
 - 差異: なし（ADR-0006 の配備方式の範囲内。limit を変えない。#811 の射程に踏み込まない）。
+
+## ［2026-09-17 追記 / #811］受け入れ基準 4 は稼働で成立しなかった
+
+- 基準 4（≥6 コンパイル後に `[heap]`＋アリーナが伸びない・30 分 restarts=0・512Mi の内側で頭打ち）は**不成立**。
+  helm rev 4 適用 10 分後（2026-09-16 16:00Z）の実測で、audit-service は `[heap]` 41 MB・64MiB アリーナ 14 MB に減ったが、その他の anon rw-p
+  （mmap 領域）が 304 MB へ増えて `kubectl top` 453Mi、risk-management も同様に 361Mi。**総量は適用前と同じ（≈360 MB / ≈270 MB）で、
+  保持先が brk / アリーナから mmap 領域へ移っただけ**だった。128 KiB 超が mmap になり free で munmap されるはずが残っている＝
+  コンパイルの作業メモリは**解放されていなかった**（§未検証の前者。#812 のコメント）。
+- §3 の「コンパイル 1 回ごとの ≈52 MB は解放済みだが返っていない」という読みは、上の実測で棄却された。
+- §走査した母集合が引用した #808 の「上限 ≈2×64MiB」は、`MALLOC_ARENA_MAX` がアリーナの**数**の上限でありサイズの上限ではない
+  （非 main アリーナは 64 MiB の heap を複数連ねられる）ため、その表現自体も誤りである。
+- 伸びを止めたのは #811（PR #814。実行時コンパイル 0 件・audit `[heap]` 12 MB・11 サービスとも再起動 0。#811 のコメント）。
+  3 つの malloc env は無害なので据え置き、§未検証が予告したとおり #811 の後に要否を再評価する（外す場合は `helm.yml` の検査も同時に外す）。

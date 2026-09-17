@@ -368,6 +368,28 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
 - 残余: 配備後の実測（45 型受信後も `[heap]` が伸びないこと）は #811 へ記録する。`ci.yml` の乾式 publish は codegen を通さない
   （Dynamic 経路のビルド確認のまま）。
 
+## ［2026-09-17 追記 / #811］配備後の実測（malloc の調整は効果なし・Static で伸びが止まった）と、上の追記の表現の是正
+
+上の 3 つの追記は本文を書き換えず、ここで実測と是正を記録する。
+
+- **(i) malloc の調整は効果が無かった（実測）。** #812（PR #813）配備の 10 分後（2026-09-16 16:00Z）、audit-service は `[heap]` 41 MB・
+  64MiB アリーナ 14 MB に減った一方でその他の anon rw-p（mmap 領域）が 304 MB へ増え、**総量は適用前と同じ（audit ≈360 MB・
+  risk-management ≈270 MB）**だった。保持先がアリーナ（#808 前）→ `[heap]`（PR #810 後）→ mmap 領域（PR #813 後）へ移っただけで、
+  コンパイルの作業メモリは**解放されていなかった**（#812 追記の「限界」の前者。#812 のコメント）。`MALLOC_ARENA_MAX` /
+  `MALLOC_MMAP_THRESHOLD_` / `MALLOC_TRIM_THRESHOLD_` は無害なので chart に据え置き、実行時コンパイルが無くなった後の要否を再評価する。
+  PR #814 の配備後（16:49Z）は実行時コンパイル 0 件・audit `[heap]` 12 MB・11 サービスとも再起動 0 で、**伸びを止めたのは決定 6-2〜6-5**
+  である（#811 のコメント）。
+- **表現の是正（#808 追記の「上限 ≈2×64MiB」）。** `MALLOC_ARENA_MAX` は**アリーナの数**の上限であってサイズの上限ではない
+  （非 main アリーナは 64 MiB の heap を複数連ねられる）。狙いの正しい言い方は「アリーナ数を 2 に固定し、作業メモリをスレッド間で
+  再利用させる」である。#808 追記の「11 サービスの `Program.cs`（`RunJasperFxCommands`）」も予告時点の記述で、実装は下の (ii)。
+- **(ii) 索引行の要約の是正。** 索引行が「`Program.cs` は `RunJasperFxCommands`」と要約していたのは不正確で、決定 6-5 のとおり
+  **`Program.cs` は shim `RunAiStockTradingAsync` で終わり、shim が `--` で始まる引数を `RunAsync` へ、引数なし／`run`／JasperFx の
+  動詞を `RunJasperFxCommands` へ振り分ける**。
+- **(iii) 決定 6-4 の codegen 分岐の検出はコメントに反応する。** `backend/Dockerfile` の `grep -q 'UseWolverine('` は `Program.cs` の
+  コメント中の `UseWolverine(` にも一致するが、`scripts/check-consumer-endpoint-names.js` はコメント行を除いて判定する（同 Dockerfile の
+  コメント「同じ信号」は厳密には同一ではない）。どちらへずれても黙っては通らない —— Wolverine を配線しないサービスのコメントに
+  一致すれば `codegen write` がイメージビルドで失敗し、配線するサービスは実呼び出しで必ず一致する（取りこぼしは起きない）。
+
 ## 関連
 
 - **Supersedes: [IADR-0106](./IADR-0106_consumer-endpoint-name-uniqueness.md)**（consumer クラス名＝キュー名。2026-08-04・#354 第 3 段階で Superseded にした。
