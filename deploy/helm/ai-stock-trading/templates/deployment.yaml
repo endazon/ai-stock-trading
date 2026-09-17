@@ -114,16 +114,22 @@ spec:
                    （audit-service が 11 分で 437Mi、risk-management は開場中の Buy 判断の処理中に OOMKilled を実測）。
                    ヒープ上限を limit の 60%（≈307Mi）に固定し、ネイティブ分を含めて 512Mi の内側で止める
                    （#778 の暫定適用で RSS 472Mi 頭打ちを実測）。全 .NET サービス共通・本番既定にも入れる。
-                   opend.yaml の opend-auth-gateway は対象外（ログイン済み OpenD Pod を再起動させない。別途）。 */}}
+                   opend.yaml の opend-auth-gateway は対象外（ログイン済み OpenD Pod を再起動させない。別途）。
+                   ［2026-09-17 追記 / #811］上の「512Mi の内側で止める」「472Mi 頭打ち」の読みは #808 で誤りと判明した。
+                   保持されていたのは GC ヒープの外（Wolverine の実行時 Roslyn コンパイルの作業メモリ）で、新しい型の
+                   メッセージが来なくなって止まって見えただけである（GC ヒープ側は audit で ≈64Mi）。是正は #811（PR #814。
+                   codegen write＋TypeLoadMode.Static）。本 env は GC ヒープの上限として無害なので据え置く。 */}}
             - name: DOTNET_GCHeapHardLimitPercent
               value: "60"
             {{- /* NFR-01, ADR-0006, IADR-0129 決定 6 追記, #808: 3 つの GC 設定を入れても audit-service は 10 分で RSS 476Mi
                    → OOMKilled（実測）。伸びているのは GC ヒープ（実測 ≈64Mi）ではなく glibc malloc の per-thread アリーナで、
                    Wolverine がメッセージ型ごとに 1 通目の受信時に Roslyn でハンドラをコンパイルするたび（別スレッド＝別
                    アリーナ）に ≈53Mi ずつ積まれる（audit は 45 型を購読。/proc/1/smaps の 64MiB 整列 rw-p が 6 回で 337Mi）。
-                   アリーナ数を 2 に固定して作業メモリを同じアリーナで再利用させ、購読型数に比例した伸びを断つ
-                   （上限 ≈2×64MiB）。全 .NET サービス共通・本番既定にも入れる。opend.yaml は #782 と同じく対象外。
-                   引き金（実行時コンパイル）を無くす恒久策は codegen 事前生成＋TypeLoadMode.Static（別 issue）。 */}}
+                   アリーナ数を 2 に固定し、作業メモリをスレッド間で同じアリーナに再利用させる狙い（MALLOC_ARENA_MAX は
+                   アリーナの「数」の上限であってサイズの上限ではない。非 main アリーナは 64MiB の heap を複数連ねられるので
+                   「上限 ≈2×64MiB」にはならない）。全 .NET サービス共通・本番既定にも入れる。opend.yaml は #782 と同じく対象外。
+                   引き金（実行時コンパイル）を無くす恒久策は codegen 事前生成＋TypeLoadMode.Static（#811）。
+                   ［2026-09-17 追記 / #811］配備後の実測では伸びは止まらなかった（下の #812 コメントの追記を参照）。 */}}
             - name: MALLOC_ARENA_MAX
               value: "2"
             {{- /* NFR-01, ADR-0006, IADR-0129 決定 6 追記, #812: MALLOC_ARENA_MAX=2 の配備後も audit-service は起動 9 秒で
@@ -137,7 +143,12 @@ spec:
                    （main arena は brk 縮小、非 main アリーナは heap_trim）。末尾の "_" は glibc の env 名の規約。
                    限界: 解放されていない割り当てや top より下に断片化して残る空きは返らない（その場合は #811 だけが直す）。
                    #811（codegen write＋TypeLoadMode.Static）までの暫定。全 .NET サービス共通・本番既定にも入れる。
-                   opend.yaml は #782 / #808 と同じく対象外。 */}}
+                   opend.yaml は #782 / #808 と同じく対象外。
+                   ［2026-09-17 追記 / #811］実測の結果、MALLOC_ARENA_MAX・MALLOC_MMAP_THRESHOLD_・MALLOC_TRIM_THRESHOLD_ の
+                   いずれも保持されるメモリの総量を減らさなかった。保持先がアリーナ → [heap]（#810 後）→ mmap 領域（#813 後。
+                   2026-09-16 16:00Z: audit の総量 ≈360MB・risk ≈270MB は適用前と同じ）へ移っただけで、作業メモリは解放されて
+                   いなかった（#812 のコメント）。伸びを止めたのは #811（PR #814。実行時コンパイル 0 件で audit [heap] 12MB・
+                   11 サービスとも再起動 0）。3 つの env は無害なので据え置き、実行時コンパイルが無くなった今、要否を再評価する。 */}}
             - name: MALLOC_MMAP_THRESHOLD_
               value: "131072"
             - name: MALLOC_TRIM_THRESHOLD_
