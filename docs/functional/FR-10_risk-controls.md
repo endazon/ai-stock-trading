@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, planning#292]
 -->
 
 
@@ -717,6 +717,26 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 
 > 追跡が無効（`FillPolling:Enabled=false`）または照会不能が続く場合、moomoo 経路では上記の統制が実効しない。
 > 停止は明示的な運用判断としてのみ行うこと。
+
+#### 約定前の新規建て注文も算入する（2026-09-18）
+
+約定だけを入力にすると、**約定が届く前の間**（指値が溜まっている間）は日次枠・段階資金・保有建玉数が減らず、
+上限を超えて承認し続けられる（2026-09-17 の SIMULATE で実測）。計画は 1 日あたりの上限を
+「新規建ての**発注代金**の合計」、段階の上限を「**発注可能額**」と定めているため、承認済みで**まだ生きている**
+新規建て注文も入力に含める。
+
+| 入力 | 算入の規則 |
+| --- | --- |
+| 対象 | 承認済み・新規建て（Open）で、注文アクティビティの**終端時刻が無い**もの（射影の行が未着のものを含む） |
+| 数量 | 残数量 ＝ 承認数量 − 同じ判断 ID の約定累計（約定は台帳と同じ入力から数える＝二重に数えない） |
+| 当日 | **承認時刻の市場の現地取引日**が当日のもの（約定と同じ規則。終端が届かない注文を翌日へ持ち越さない） |
+| 日次発注累計・段階資金 | ＋ 残数量 × 承認価格（承認時レートで基準通貨へ換算） |
+| 保有建玉数 | ＋ 建玉の無い（銘柄, 市場）の数（建て増しは増やさない） |
+| 同日再エントリーの入力 | **算入しない**（決済は約定でしか成立しない） |
+
+取消・失効・ブローカー拒否・約定完了で終端になった注文は、その時点で約定分だけが残る（取消した発注で枠を消費しない）。
+**発注執行が見送った承認**（OpenD 不達など。発注されていない）も注文アクティビティへ終端（拒否）として射影し、
+枠を返す。終端の通知が届かない注文は当日中は枠を食う（止める側に倒れる）。
 
 ### 手仕舞い（Close）は統制で止めない
 

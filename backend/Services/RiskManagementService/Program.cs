@@ -142,11 +142,15 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
     var initialCapital = simulatorProfileEnabled
         ? RiskManagementService.Domain.SimulatorTradingDefaults.InitialCapital
         : (decimal?)null;
+    // FR-10, #829, IADR-0346 決定3: 承認済みで生きている新規建て注文を日次発注累計・段階資金・保有建玉数へ算入する（必須依存）。
+    var workingEntryOrders = sp.GetRequiredService<IWorkingEntryOrderSource>();
     return options.Value.EnableMarkToMarket
         ? new LedgerPortfolioStateProvider(
-            ledger, clock, sp.GetRequiredService<ICurrentPriceSource>(), initialCapital)
-        : new LedgerPortfolioStateProvider(ledger, clock, currentPrices: null, initialCapital);
+            ledger, workingEntryOrders, clock, sp.GetRequiredService<ICurrentPriceSource>(), initialCapital)
+        : new LedgerPortfolioStateProvider(ledger, workingEntryOrders, clock, currentPrices: null, initialCapital);
 });
+// FR-10, #829, IADR-0346 決定1: 未終端の承認済み新規建て注文（approved_orders 左結合 order_activity）。DbContext が scoped のため scoped。
+builder.Services.AddScoped<IWorkingEntryOrderSource, EfWorkingEntryOrderSource>();
 builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
 // 現在値の補充は背景で行う（発注判断の同期経路にネットワーク往復を持ち込まない）。
 // 無効（既定）なら補充自体を起動しない＝台帳への巡回アクセスも発生させない。

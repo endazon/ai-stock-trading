@@ -54,3 +54,18 @@ public sealed class OrderCancelledActivityHandler(IOrderActivityStore store)
         store.RecordCancellation(message.DecisionId, message.CancelledAt);
     }
 }
+
+// FR-10, FR-05, #829, IADR-0346 決定5, IADR-0211: 発注執行が見送った承認（ブローカーへ発注していない）を終端にする。
+// 見送りには OrderExecuted も OrderCancelled も出ないため、これが無いと未終端の新規建てとして当日の発注枠を食い続け、
+// OpenD の再起動中に定時判断が見送られるたびに日次枠が枯れる。見送りは Intent を運ぶため、承認の射影より先に
+// 届いても終端の行を作れる（到着順序に依存しない）。冪等（再送）はストア側で担保する。
+public sealed class OrderDispatchForgoneActivityHandler(IOrderActivityStore store)
+{
+    public void Handle(OrderDispatchForgone message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        store.RecordForgone(
+            message.DecisionId, message.Intent.Symbol, message.Intent.Market,
+            message.Intent.Side, message.Intent.Quantity, message.OccurredAt);
+    }
+}

@@ -90,6 +90,48 @@ public sealed class InMemoryOrderActivityStore : IOrderActivityStore, IOrderActi
         }
     }
 
+    // FR-10, #829, IADR-0346 決定5: 見送りは Rejected の終端（行が無ければ作る・既に終端なら変えない）。
+    public void RecordForgone(
+        Guid decisionId, string symbol, Market market, TradeSide side, int quantity, DateTimeOffset forgoneAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        var e = _byDecision.GetOrAdd(decisionId, _ => new Entry
+        {
+            Symbol = symbol,
+            Market = market,
+            Side = side,
+            PlacedAt = forgoneAt,
+            Quantity = quantity,
+            FilledQuantity = 0,
+            Status = OrderStatus.Rejected,
+            AmendmentCount = 0,
+            TerminalAt = forgoneAt,
+        });
+
+        lock (e)
+        {
+            if (e.TerminalAt is not null)
+                return;
+
+            e.Status = OrderStatus.Rejected;
+            e.TerminalAt = forgoneAt;
+        }
+    }
+
+    // FR-10, #829, IADR-0346 決定1: 注文の終端時刻（InMemoryWorkingEntryOrderSource が生死の判定に使う）。
+    // 行が無ければ null（＝未終端に倒す。EfWorkingEntryOrderSource の左結合と同じ意味論）。
+    internal DateTimeOffset? TerminalAtOf(Guid decisionId)
+    {
+        if (!_byDecision.TryGetValue(decisionId, out var e))
+            return null;
+
+        lock (e)
+        {
+            return e.TerminalAt;
+        }
+    }
+
     public OrderActivityWindow GetRecentActivity(
         string symbol, Market market, DateTimeOffset asOf, TimeSpan lookback)
     {

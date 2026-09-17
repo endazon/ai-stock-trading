@@ -63,4 +63,37 @@ public sealed class EfOrderActivityStore(RiskManagementDbContext db) : IOrderAct
         row.TerminalAt = cancelledAt;
         db.SaveChanges();
     }
+
+    // FR-10, #829, IADR-0346 決定5: 見送りは Rejected の終端（行が無ければ作る・既に終端なら変えない）。
+    public void RecordForgone(
+        Guid decisionId, string symbol, Market market, TradeSide side, int quantity, DateTimeOffset forgoneAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        if (db.OrderActivities.Find(decisionId) is { } row)
+        {
+            if (row.TerminalAt is not null)
+                return;
+
+            row.Status = OrderStatus.Rejected;
+            row.TerminalAt = forgoneAt;
+            db.SaveChanges();
+            return;
+        }
+
+        db.OrderActivities.Add(new OrderActivityRow
+        {
+            DecisionId = decisionId,
+            Symbol = symbol,
+            Market = market,
+            Side = side,
+            PlacedAt = forgoneAt,
+            Quantity = quantity,
+            FilledQuantity = 0,
+            Status = OrderStatus.Rejected,
+            AmendmentCount = 0,
+            TerminalAt = forgoneAt,
+        });
+        db.SaveChanges();
+    }
 }

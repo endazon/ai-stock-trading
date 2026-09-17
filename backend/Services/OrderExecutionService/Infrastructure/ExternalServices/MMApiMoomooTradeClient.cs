@@ -206,12 +206,13 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
     // #292, IADR-0118: SIMULATE 口座の現在建玉を全対応市場について列挙する。
     // いずれかの市場で失敗すれば EnsureSucceeded／タイムアウトの例外がそのまま伝播する（部分列挙を返さない）。
+    // #827: 応答の連結はしない。行は照会ヘッダの市場と組にして CollectPositions へ渡す（二重計上の是正はそちら）。
     public async Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(
         CancellationToken cancellationToken = default)
     {
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
-        var positions = new List<MoomooPositionSnapshot>();
+        var rows = new List<MoomooPositionRow>();
         foreach (var (trdMarket, _) in SupportedMarkets)
         {
             var c2s = TrdGetPositionList.C2S.CreateBuilder()
@@ -224,25 +225,79 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetPositionList");
 
             foreach (TrdCommon.Position p in rsp.S2C.PositionListList)
-                positions.Add(ToPositionSnapshot(p));
+                rows.Add(ToPositionRow(trdMarket, p));
+        }
+
+        var positions = CollectPositions(rows);
+
+        // #827: 配備後に live SIMULATE の応答形（行の TrdMarket・PositionID の有無）を 1 回の観測で確かめるための要約。
+        // 件数と市場値の分布だけを出す（銘柄・数量・口座番号は出さない）。
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "建玉照会の応答要約 rows={Rows} byQueriedMarket={ByQueriedMarket} byRowMarket={ByRowMarket} distinctCodes={DistinctCodes} withPositionId={WithPositionId} collected={Collected}",
+                rows.Count,
+                string.Join(",", rows.GroupBy(r => r.QueriedTrdMarket).OrderBy(g => g.Key).Select(g => $"{g.Key}:{g.Count()}")),
+                string.Join(",", rows.GroupBy(r => r.PositionTrdMarket?.ToString() ?? "unset").OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => $"{g.Key}:{g.Count()}")),
+                rows.Select(r => r.Code).Distinct(StringComparer.Ordinal).Count(),
+                rows.Count(r => r.PositionId is not null),
+                positions.Count);
         }
 
         return positions;
     }
 
-    // moomoo Position → SDK 非依存スナップショット。moomoo の Qty は常に非負で方向は PositionSide が持つため
-    // 符号付きへ畳む（取引台帳の射影と同じ表現に揃える）。写像は protobuf 依存のため live 検証に委ねる。
-    private static MoomooPositionSnapshot ToPositionSnapshot(TrdCommon.Position p)
-    {
-        var quantity = (int)p.Qty;
-        if (p.PositionSide == (int)TrdCommon.PositionSide.PositionSide_Short)
-            quantity = -quantity;
+    // moomoo Position → SDK 非依存の行。写像は protobuf 依存のため live 検証に委ねる（組み立ては照会経路テストで固定）。
+    // 行の市場が未設定なら null（＝不明）。「不明」を照会ヘッダの市場で埋めない（#827 決定 1）。
+    // PositionID も未設定なら null（重複排除は (市場, 銘柄, 方向) へ退避する。#827 決定 2）。
+    private static MoomooPositionRow ToPositionRow(int queriedTrdMarket, TrdCommon.Position p) =>
+        new(
+            QueriedTrdMarket: queriedTrdMarket,
+            PositionTrdMarket: p.HasTrdMarket ? p.TrdMarket : null,
+            Code: p.Code,
+            IsShort: p.PositionSide == (int)TrdCommon.PositionSide.PositionSide_Short,
+            Quantity: (int)p.Qty,
+            CostPrice: (decimal)p.CostPrice,
+            PositionId: p.HasPositionID ? p.PositionID : null);
 
-        return new MoomooPositionSnapshot(
-            Symbol: p.Code,
-            Market: p.TrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates,
-            Quantity: quantity,
-            AverageCost: (decimal)p.CostPrice);
+    // #827, FR-05, FR-10, IADR-0118: 市場ごとの建玉照会の応答行を 1 つの建玉一覧へ畳む（SDK 非依存・単体テスト対象）。
+    //
+    // SIMULATE 口座は照会ヘッダの市場を問わず同じ建玉を返す（稼働クラスタの実測: US 株 848 株が US・JP の両応答に現れ、
+    // 連結すると 1696 株として乖離を誤報した）。
+    //   決定 1（主）: 行の市場が**対応市場（SupportedMarkets）のいずれか**で、かつ照会ヘッダの市場と異なる行だけを捨てる。
+    //                その建玉はもう一方の対応市場の照会で採られるため欠けない。
+    //                それ以外（未設定・TrdMarket_Unknown・HK や *_Fund 等の対応外の市場）は捨てない——どの照会でも
+    //                「照会市場と異なる」ため、捨てると実在する建玉が消え、保護逆指値ガードの残数量 0・偽の LedgerOnly へ倒れる。
+    //                対応外の市場の写像は従来どおり（JP 以外は UnitedStates）で、両照会に現れても決定 2 で 1 件に畳まれる。
+    //   決定 2: PositionID があれば (市場, PositionID) で、無ければ (市場, 銘柄, 方向) で最初の 1 件だけ採る。
+    //           ブローカが同じ銘柄・方向を別ロット（別 PositionID）で返しても併合しない（数量の合算は下流の突合が行う）。
+    // moomoo の Qty は常に非負で方向は PositionSide が持つため符号付きへ畳む（取引台帳の射影と同じ表現に揃える）。
+    public static IReadOnlyList<MoomooPositionSnapshot> CollectPositions(IEnumerable<MoomooPositionRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var positions = new List<MoomooPositionSnapshot>();
+        var seen = new HashSet<(MoomooMarket Market, ulong? PositionId, string? Code, bool? IsShort)>();
+        foreach (var row in rows)
+        {
+            var rowInSupportedMarket = row.PositionTrdMarket is { } m && SupportedMarkets.Any(s => s.TrdMarket == m);
+            if (rowInSupportedMarket && row.PositionTrdMarket != row.QueriedTrdMarket)
+                continue;
+
+            var market = row.PositionTrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates;
+            var key = row.PositionId is { } id
+                ? (market, (ulong?)id, (string?)null, (bool?)null)
+                : (market, null, row.Code, row.IsShort);
+            if (!seen.Add(key))
+                continue;
+
+            positions.Add(new MoomooPositionSnapshot(
+                Symbol: row.Code,
+                Market: market,
+                Quantity: row.IsShort ? -row.Quantity : row.Quantity,
+                AverageCost: row.CostPrice));
+        }
+        return positions;
     }
 
     // 当日注文（GetOrderList）から remark 一致を返す。

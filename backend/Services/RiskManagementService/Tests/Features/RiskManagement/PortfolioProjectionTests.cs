@@ -500,4 +500,142 @@ public class PortfolioProjectionTests
         state.InvestedCapital.Should().Be(10_000m);
         state.DailyOrderedAmount.Should().Be(10_000m);
     }
+
+    // ── FR-10, #829, IADR-0346: 未約定で生きている承認済み新規建て注文の算入 ──
+
+    private static WorkingEntryOrder Working(
+        Guid decisionId, int qty, decimal price, DateTimeOffset approvedAt,
+        string symbol = "AAPL", Market market = Market.UnitedStates, decimal fxRateToBase = 1m) =>
+        new(decisionId, symbol, market, TradeSide.Buy, qty, price, approvedAt, fxRateToBase);
+
+    private static LedgerFill FillOf(
+        Guid decisionId, int qty, decimal price, DateTimeOffset at,
+        string symbol = "AAPL", Market market = Market.UnitedStates) =>
+        new(symbol, market, TradeSide.Buy, PositionEffect.Open, qty, price, at, DecisionId: decisionId);
+
+    // T-10-333: 計画 FR-10「新規建ての発注代金の合計で判定」。約定を待つと指値が溜まる間は枠が減らない（#829 の実測）。
+    [Fact]
+    public void 未約定の承認済み新規建ては承認価格で当日発注累計と段階資金と保有建玉数に算入する()
+    {
+        var state = PortfolioProjection.Project(
+            Array.Empty<LedgerFill>(), Now, InitialCapital,
+            workingEntries: new[] { Working(Guid.NewGuid(), 10, 1_000m, TodayAt(10)) });
+
+        state.DailyOrderedAmount.Should().Be(10_000m);
+        state.InvestedCapital.Should().Be(10_000m);
+        state.OpenPositionCount.Should().Be(1);
+        // IADR-0346 決定4: 同日再エントリーの入力は約定だけ（決済は約定でしか成立しない）。
+        state.SymbolsTradedToday.Should().BeEmpty();
+        // 未約定は損益を持たない。
+        state.DailyRealizedPnl.Should().Be(0m);
+        state.Capital.Should().Be(InitialCapital);
+    }
+
+    // T-10-334: 約定が進んでも「約定分＋残数量」の合計は変わらない（二重計上しない・取りこぼさない）。
+    [Fact]
+    public void 部分約定の注文は約定分と残数量を一度ずつ数える()
+    {
+        var decisionId = Guid.NewGuid();
+        var working = new[] { Working(decisionId, 10, 1_000m, TodayAt(10)) };
+
+        var partial = PortfolioProjection.Project(
+            new[] { FillOf(decisionId, 4, 990m, TodayAt(11)) }, Now, InitialCapital, workingEntries: working);
+
+        // 約定 4 × 990 ＋ 残 6 × 1,000（承認価格）。
+        partial.DailyOrderedAmount.Should().Be(3_960m + 6_000m);
+        partial.InvestedCapital.Should().Be(3_960m + 6_000m);
+        partial.OpenPositionCount.Should().Be(1, "約定済みの建玉と同じ銘柄の残数量は建玉数を増やさない");
+
+        // 全量約定（終端イベントの射影前でも）: 残数量 0 ＝約定分だけ。
+        var full = PortfolioProjection.Project(
+            new[] { FillOf(decisionId, 10, 990m, TodayAt(11)) }, Now, InitialCapital, workingEntries: working);
+
+        full.DailyOrderedAmount.Should().Be(9_900m);
+        full.InvestedCapital.Should().Be(9_900m);
+    }
+
+    // T-10-334（否定形）: 他の注文の約定を自分の約定と取り違えない（DecisionId で相関する）。
+    [Fact]
+    public void 別の注文の約定は残数量を減らさない()
+    {
+        var state = PortfolioProjection.Project(
+            new[] { FillOf(Guid.NewGuid(), 10, 1_000m, TodayAt(11)) }, Now, InitialCapital,
+            workingEntries: new[] { Working(Guid.NewGuid(), 10, 1_000m, TodayAt(10)) });
+
+        state.DailyOrderedAmount.Should().Be(20_000m);
+    }
+
+    // T-10-335: 終端イベントが届かない注文が翌日以降の枠を食い続けない（実測: 2026-09-17 の未終端 2 件が翌日も Accepted）。
+    // 取引日は約定と同じく市場の現地日（IADR-0246）。
+    [Theory]
+    [InlineData(Market.UnitedStates, "2026-07-08T19:00:00Z", "2026-07-09T14:30:00Z", 0)]   // ET 7/8 → ET 7/9: 前取引日
+    [InlineData(Market.UnitedStates, "2026-07-09T13:35:00Z", "2026-07-09T19:30:00Z", 10_000)] // ET 7/9 同日（JST では日付を跨ぐ）
+    [InlineData(Market.Japan, "2026-07-09T05:00:00Z", "2026-07-10T01:00:00Z", 0)]          // JST 7/9 → JST 7/10: 前取引日
+    [InlineData(Market.Japan, "2026-07-10T00:05:00Z", "2026-07-10T05:00:00Z", 10_000)]     // JST 7/10 同日
+    public void 承認時刻の市場の現地取引日が当日の未終端注文だけを算入する(
+        Market market, string approvedAt, string now, int expected)
+    {
+        var state = PortfolioProjection.Project(
+            Array.Empty<LedgerFill>(), DateTimeOffset.Parse(now, System.Globalization.CultureInfo.InvariantCulture),
+            InitialCapital,
+            workingEntries: new[]
+            {
+                Working(Guid.NewGuid(), 10, 1_000m,
+                    DateTimeOffset.Parse(approvedAt, System.Globalization.CultureInfo.InvariantCulture),
+                    symbol: market == Market.Japan ? "7203" : "AAPL", market: market),
+            });
+
+        state.DailyOrderedAmount.Should().Be(expected);
+        state.InvestedCapital.Should().Be(expected);
+        state.OpenPositionCount.Should().Be(expected == 0 ? 0 : 1);
+    }
+
+    // T-10-336: 金額は基準通貨（USD）で積む。承認時レート（約定時レートの近似・IADR-0107）で換算する。
+    [Fact]
+    public void 外貨建ての未約定注文は承認時レートで基準通貨へ換算する()
+    {
+        var state = PortfolioProjection.Project(
+            Array.Empty<LedgerFill>(), Now, InitialCapital,
+            workingEntries: new[]
+            {
+                Working(Guid.NewGuid(), 100, 1_000m, TodayAt(10), symbol: "7203", market: Market.Japan, fxRateToBase: 0.01m),
+            });
+
+        state.DailyOrderedAmount.Should().Be(1_000m);
+        state.InvestedCapital.Should().Be(1_000m);
+    }
+
+    // T-10-337: 保有建玉数は「建玉の無い（銘柄, 市場）」の異なり数だけ増える（建て増し・同一銘柄の複数の未約定は 1）。
+    [Fact]
+    public void 未約定の新規建ては建玉の無い銘柄だけ保有建玉数を増やす()
+    {
+        var state = PortfolioProjection.Project(
+            new[] { FillOf(Guid.NewGuid(), 10, 1_000m, TodayAt(9)) },
+            Now, InitialCapital,
+            workingEntries: new[]
+            {
+                Working(Guid.NewGuid(), 5, 1_000m, TodayAt(10)),                     // AAPL 建て増し
+                Working(Guid.NewGuid(), 5, 500m, TodayAt(10), symbol: "MSFT"),       // 新規銘柄
+                Working(Guid.NewGuid(), 5, 500m, TodayAt(11), symbol: "MSFT"),       // 同じ新規銘柄の 2 本目
+                Working(Guid.NewGuid(), 5, 500m, TodayAt(10), symbol: "AAPL", market: Market.Japan), // 同名別市場
+            });
+
+        state.OpenPositionCount.Should().Be(3);
+        state.InvestedCapital.Should().Be(10_000m + 5_000m + 2_500m + 2_500m + 2_500m);
+    }
+
+    // T-10-333（否定形）: 注文源を渡さなければ従来どおり約定だけ（純関数の既定・既存呼び出しの非破壊）。
+    [Fact]
+    public void 注文源を渡さなければ約定だけを数える_回帰()
+    {
+        var withNull = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt()) }, Now, InitialCapital,
+            workingEntries: null);
+        var withEmpty = PortfolioProjection.Project(
+            new[] { Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, TodayAt()) }, Now, InitialCapital,
+            workingEntries: Array.Empty<WorkingEntryOrder>());
+
+        withNull.DailyOrderedAmount.Should().Be(10_000m);
+        withEmpty.Should().BeEquivalentTo(withNull);
+    }
 }
