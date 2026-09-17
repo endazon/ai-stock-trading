@@ -206,12 +206,13 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
     // #292, IADR-0118: SIMULATE 口座の現在建玉を全対応市場について列挙する。
     // いずれかの市場で失敗すれば EnsureSucceeded／タイムアウトの例外がそのまま伝播する（部分列挙を返さない）。
+    // #827: 応答の連結はしない。行は照会ヘッダの市場と組にして CollectPositions へ渡す（二重計上の是正はそちら）。
     public async Task<IReadOnlyList<MoomooPositionSnapshot>> GetPositionsAsync(
         CancellationToken cancellationToken = default)
     {
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
-        var positions = new List<MoomooPositionSnapshot>();
+        var rows = new List<MoomooPositionRow>();
         foreach (var (trdMarket, _) in SupportedMarkets)
         {
             var c2s = TrdGetPositionList.C2S.CreateBuilder()
@@ -224,25 +225,54 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetPositionList");
 
             foreach (TrdCommon.Position p in rsp.S2C.PositionListList)
-                positions.Add(ToPositionSnapshot(p));
+                rows.Add(ToPositionRow(trdMarket, p));
         }
 
-        return positions;
+        return CollectPositions(rows);
     }
 
-    // moomoo Position → SDK 非依存スナップショット。moomoo の Qty は常に非負で方向は PositionSide が持つため
-    // 符号付きへ畳む（取引台帳の射影と同じ表現に揃える）。写像は protobuf 依存のため live 検証に委ねる。
-    private static MoomooPositionSnapshot ToPositionSnapshot(TrdCommon.Position p)
-    {
-        var quantity = (int)p.Qty;
-        if (p.PositionSide == (int)TrdCommon.PositionSide.PositionSide_Short)
-            quantity = -quantity;
+    // moomoo Position → SDK 非依存の行。写像は protobuf 依存のため live 検証に委ねる（組み立ては照会経路テストで固定）。
+    // 行の市場が未設定なら null（＝不明）。「不明」を照会ヘッダの市場で埋めない（#827 決定 1）。
+    private static MoomooPositionRow ToPositionRow(int queriedTrdMarket, TrdCommon.Position p) =>
+        new(
+            QueriedTrdMarket: queriedTrdMarket,
+            PositionTrdMarket: p.HasTrdMarket ? p.TrdMarket : null,
+            Code: p.Code,
+            IsShort: p.PositionSide == (int)TrdCommon.PositionSide.PositionSide_Short,
+            Quantity: (int)p.Qty,
+            CostPrice: (decimal)p.CostPrice);
 
-        return new MoomooPositionSnapshot(
-            Symbol: p.Code,
-            Market: p.TrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates,
-            Quantity: quantity,
-            AverageCost: (decimal)p.CostPrice);
+    // #827, FR-05, FR-10, IADR-0118: 市場ごとの建玉照会の応答行を 1 つの建玉一覧へ畳む（SDK 非依存・単体テスト対象）。
+    //
+    // SIMULATE 口座は照会ヘッダの市場を問わず同じ建玉を返す（稼働クラスタの実測: US 株 848 株が US・JP の両応答に現れ、
+    // 連結すると 1696 株として乖離を誤報した）。
+    //   決定 1（主）: 行の市場が既知で照会ヘッダの市場と異なる行は捨てる。その建玉はもう一方の市場の照会で採られる。
+    //                行の市場が不明（未設定・TrdMarket_Unknown）なら捨てない——捨てると「建玉が無い」と誤報する側へ倒れる。
+    //   決定 2（防御）: 同じ (市場, 銘柄, 方向) は最初の 1 件だけ採る（moomoo は同一口座・銘柄・方向を 1 行に集約して返す）。
+    // moomoo の Qty は常に非負で方向は PositionSide が持つため符号付きへ畳む（取引台帳の射影と同じ表現に揃える）。
+    public static IReadOnlyList<MoomooPositionSnapshot> CollectPositions(IEnumerable<MoomooPositionRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var positions = new List<MoomooPositionSnapshot>();
+        var seen = new HashSet<(MoomooMarket Market, string Code, bool IsShort)>();
+        foreach (var row in rows)
+        {
+            var knownMarket = row.PositionTrdMarket is { } m && m != (int)TrdCommon.TrdMarket.TrdMarket_Unknown;
+            if (knownMarket && row.PositionTrdMarket != row.QueriedTrdMarket)
+                continue;
+
+            var market = row.PositionTrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_JP ? MoomooMarket.Japan : MoomooMarket.UnitedStates;
+            if (!seen.Add((market, row.Code, row.IsShort)))
+                continue;
+
+            positions.Add(new MoomooPositionSnapshot(
+                Symbol: row.Code,
+                Market: market,
+                Quantity: row.IsShort ? -row.Quantity : row.Quantity,
+                AverageCost: row.CostPrice));
+        }
+        return positions;
     }
 
     // 当日注文（GetOrderList）から remark 一致を返す。

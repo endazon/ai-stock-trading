@@ -54,6 +54,17 @@ public sealed record MoomooPositionSnapshot(
     int Quantity,
     decimal AverageCost);
 
+// #827, IADR-0118: 建玉照会（TrdGetPositionList）の応答 1 行を、照会したヘッダの市場と組にした SDK 非依存の表現。
+// PositionTrdMarket は応答行が持つ市場（TrdMarket の値。未設定なら null）。Quantity は moomoo と同じく非負で、
+// 方向は IsShort が持つ。SIMULATE はヘッダ市場を問わず同じ建玉を返すため、組にしないと二重計上を判別できない。
+public sealed record MoomooPositionRow(
+    int QueriedTrdMarket,
+    int? PositionTrdMarket,
+    string Code,
+    bool IsShort,
+    int Quantity,
+    decimal CostPrice);
+
 // SDK 非依存の発注リクエスト（既定はマーケタブルリミット。SIMULATE は実装側で固定）。
 // #141, IADR-0092: Remark は client order id相当（DecisionId）。滞留 Reserved を後から DecisionId で照合するために
 // ブローカ注文へ紐づける。null/空なら付与しない（従来挙動）。

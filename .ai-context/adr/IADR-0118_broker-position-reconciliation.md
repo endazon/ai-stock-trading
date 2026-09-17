@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-05, FR-09, FR-10, FR-11, UC-02, UC-06, ADR-0002]
 author: endazon (with Claude Code)
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-09-18
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/03_moomoo-integration.md
@@ -171,3 +171,24 @@ IADR-0113 と同じ理由。副作用が**読み取り照会のみ**で、発注
   ブローカ状態を外部へ晒す面が増える。イベント 1 本で足りる。
 - 選択肢 4（既存リコンサイルへ相乗り）: 上表のとおり対象集合も権威も是正方針も異なる。1 機構に混ぜると
   「不明を Indeterminate に倒す」（注文レベル）と「双方を並べる」（建玉レベル）という相反する fail-safe が同居する。
+
+## ［2026-09-18 追記 / #827］SIMULATE は照会ヘッダの市場を問わず同じ建玉を返す —— 市場ごとの応答を連結しない
+
+**決定 2 の「moomoo 実装は全対応市場（US/JP）を列挙する」は維持する。変えるのは応答の畳み方である。**
+
+- **事象（稼働クラスタ・2026-09-17）**: `BrokerPositionsObserved` に同一建玉が 2 行（`AAPL 848 @333.52` ×2）現れ、
+  リスク管理が `AAPL/UnitedStates 台帳848≠ブローカ1696` を乖離として警告した。実際の建玉は 848 株。
+  SIMULATE 口座は `TrdGetPositionList` のヘッダ `TrdMarket` を問わず同じ建玉を返すため、US・JP の応答を
+  連結すると 2 回数えられていた。本文「影響・追随」の「建玉写像は live 検証に委ねる」がこの欠陥の残り場所だった。
+- **是正**: 応答行を照会ヘッダの市場と組（`MoomooPositionRow`）にし、SDK 非依存の純関数
+  `MMApiMoomooTradeClient.CollectPositions` で畳む。
+  (1) **行の市場が既知で照会ヘッダの市場と異なる行は捨てる**（その建玉はもう一方の市場の照会で採られる）。
+  行の市場が不明（未設定・`TrdMarket_Unknown`）なら捨てない（捨てると `LedgerOnly` の誤報と保護逆指値ガードの
+  建玉消滅誤認へ倒れる）。(2) 防御として同じ `(市場, 銘柄, 方向)` は最初の 1 件だけ採る。
+  照会経路は偽接続（[IADR-0327](IADR-0327_opend-connection-recreate-after-failed-attempt.md) のシーム）で protobuf から固定した。
+- **不変**: `IMoomooTradeClient.GetPositionsAsync` の契約（部分列挙を返さない・失敗は例外 → アダプタが null）、
+  比較は符号付き数量のみ（決定 3）、是正しない（決定 4）。消費者（乖離検知・強制買戻し推定・保護逆指値ガード）は
+  変更不要。持続化された追跡状態（`position_drift_state`。IADR-0124）は、修正後の最初の観測で乖離が空になり
+  `PositionDriftDecision` が解消へ戻すため、手作業の是正は要らない。
+- 同型の「市場ごとに照会して連結」を走査した結果（注文照会・remark 照合は最初の一致を返すため該当せず）は
+  作業仕様書 [20260918_827_simulate-position-dedup](../specs/20260918_827_simulate-position-dedup.md) に記す。
